@@ -298,10 +298,17 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 .reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}.reveal.d4{transition-delay:.32s}
 
 /* ---------- Referenzen / Mockups ---------- */
-.ref-teaser-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
-.ref-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:26px}
-.ref-card{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:transform .35s var(--ease),border-color .3s,box-shadow .3s}
-.ref-card:hover{transform:translateY(-6px);border-color:rgba(255,255,255,.22);box-shadow:0 34px 80px -34px rgba(0,0,0,.85)}
+.ref-teaser-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.ref-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.ref-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:26px 24px 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:transform .3s var(--ease),border-color .3s,box-shadow .3s}
+.ref-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c,#5fb0ff);opacity:0;transition:opacity .3s}
+.ref-card:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.2);box-shadow:0 26px 60px -30px rgba(0,0,0,.8)}
+.ref-card:hover::before{opacity:1}
+.ref-cat{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--c,#5fb0ff)}
+.ref-card h3{font-size:21px;margin-top:12px}
+.ref-card p{color:var(--text-dim);font-size:14px;margin-top:6px;flex:1}
+.ref-host{margin-top:18px;display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;color:var(--text)}
+.ref-card:hover .ref-host{color:var(--c,#5fb0ff)}
 .mock-browser{background:#0c0c12}
 .mock-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:#15151d;border-bottom:1px solid rgba(255,255,255,.06)}
 .mock-bar .dot{width:11px;height:11px;border-radius:50%;background:#3a3a46}
@@ -511,7 +518,6 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <p class="lead">Websites und Plattformen, die wir für eigene Marken und Kunden im Montafon entwickelt haben — von der Idee über das Design bis zum laufenden Betrieb. Klick dich direkt zu den Live-Seiten.</p>
     </div>
     <section class="block wrap">
-      <div class="ref-feature" id="ref-feature"></div>
       <div class="ref-grid" id="ref-grid"></div>
       <div class="cta-panel reveal" style="margin-top:50px">
         <h3>Dein Projekt als Nächstes?</h3>
@@ -892,36 +898,29 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
     nav.classList.toggle('scrolled', window.scrollY > 8);
   }, {passive:true});
 
-  // ---- Referenzen (Screenshots via thum.io) ----
+  // ---- Referenzen ----
   var REFS = [
-    {name:'Blitzdings', tag:'Fotobox & 360°-Videobooth', url:'https://blitzdings.co.at', host:'blitzdings.co.at'},
-    {name:'VALUERO', tag:'Tourismusplattform Hochmontafon', url:'https://valuero.at', host:'valuero.at'},
-    {name:'kochdu', tag:'Essen bestellen im Montafon', url:'https://kochdu.at', host:'kochdu.at'},
-    {name:'La Taverna', tag:'Ristorante & Pizzeria, Gaschurn', url:'https://www.la-taverna-pizzeria.at', host:'la-taverna-pizzeria.at'},
-    {name:'Musikfest Gaschurn-Partenen', tag:'100 Jahre Bürgermusik', url:'https://musikfest26.at', host:'musikfest26.at'},
-    {name:'Ortsfeuerwehr Gaschurn', tag:'Vereinswebsite', url:'https://of-gaschurn.at', host:'of-gaschurn.at'},
-    {name:'Feuerwehrfest Gortipohl', tag:'Event-Website', url:'https://feuerwehrfest27.at', host:'feuerwehrfest27.at'},
-    {name:'Spenglerei Flöry', tag:'Handwerksbetrieb', url:'https://www.spenglerei-floery.at', host:'spenglerei-floery.at'}
+    {name:'Blitzdings', tag:'Edle Fotoboxen & 360°-Videobooth für Events.', cat:'Eventservice', url:'https://blitzdings.co.at', host:'blitzdings.co.at', c:'#ffc05f'},
+    {name:'VALUERO', tag:'Tourismusplattform für das Hochmontafon.', cat:'Plattform', url:'https://valuero.at', host:'valuero.at', c:'#5fe08a'},
+    {name:'kochdu', tag:'Essen bestellen & liefern im Montafon.', cat:'Lieferservice', url:'https://kochdu.at', host:'kochdu.at', c:'#bd8cff'},
+    {name:'La Taverna', tag:'Ristorante & Pizzeria in Gaschurn.', cat:'Gastronomie', url:'https://www.la-taverna-pizzeria.at', host:'la-taverna-pizzeria.at', c:'#ff8f6b'},
+    {name:'Musikfest Gaschurn-Partenen', tag:'100 Jahre Bürgermusik & Festwebsite.', cat:'Verein & Event', url:'https://musikfest26.at', host:'musikfest26.at', c:'#5fb0ff'},
+    {name:'Ortsfeuerwehr Gaschurn', tag:'Vereinswebsite der Ortsfeuerwehr.', cat:'Verein', url:'https://of-gaschurn.at', host:'of-gaschurn.at', c:'#ff6b6b'},
+    {name:'Feuerwehrfest Gortipohl', tag:'Event-Website zum Feuerwehrfest.', cat:'Event', url:'https://feuerwehrfest27.at', host:'feuerwehrfest27.at', c:'#ffb05f'},
+    {name:'Spenglerei Flöry', tag:'Website für den Handwerksbetrieb.', cat:'Unternehmen', url:'https://www.spenglerei-floery.at', host:'spenglerei-floery.at', c:'#7fd0ff'}
   ];
-  function shot(u){ return 'https://image.thum.io/get/width/1200/crop/800/' + u; }
-  function phoneShot(u){ return 'https://image.thum.io/get/width/440/viewportwidth/400/crop/910/' + u; }
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
   function refCard(r, extra){
-    return '<a class="ref-card reveal '+(extra||'')+'" href="'+esc(r.url)+'" target="_blank" rel="noopener">'
-      + '<div class="mock-browser"><div class="mock-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="mock-url">'+esc(r.host)+'</span></div>'
-      + '<div class="mock-shot"><img loading="lazy" src="'+shot(r.url)+'" alt="'+esc(r.name)+' Website"></div></div>'
-      + '<div class="ref-meta"><h3>'+esc(r.name)+'</h3><p>'+esc(r.tag)+'</p><span class="ref-go">Website ansehen ↗</span></div></a>';
+    return '<a class="ref-card reveal '+(extra||'')+'" style="--c:'+r.c+'" href="'+esc(r.url)+'" target="_blank" rel="noopener">'
+      + '<span class="ref-cat">'+esc(r.cat)+'</span>'
+      + '<h3>'+esc(r.name)+'</h3>'
+      + '<p>'+esc(r.tag)+'</p>'
+      + '<span class="ref-host">'+esc(r.host)+' <span class="arr">↗</span></span></a>';
   }
   var teaserEl = document.getElementById('ref-teaser');
   if(teaserEl) teaserEl.innerHTML = REFS.slice(0,3).map(function(r,i){return refCard(r,'d'+(i+1));}).join('');
   var gridEl = document.getElementById('ref-grid');
   if(gridEl) gridEl.innerHTML = REFS.map(function(r){return refCard(r);}).join('');
-  var featEl = document.getElementById('ref-feature');
-  if(featEl){ var f = REFS[1]; // VALUERO
-    featEl.innerHTML =
-      '<div class="mock-laptop reveal"><div class="screen"><img loading="lazy" src="'+shot(f.url)+'" alt="'+esc(f.name)+'"></div><div class="base"></div></div>'
-      + '<div class="mock-phone reveal d2"><img loading="lazy" src="'+phoneShot(f.url)+'" alt="'+esc(f.name)+' mobil"></div>';
-  }
 
   document.getElementById('year').textContent = new Date().getFullYear();
   render();
