@@ -135,7 +135,7 @@ main{padding-top:var(--nav-h)}
 @keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 
 /* ---------- Hero ---------- */
-.hero{position:relative;padding:clamp(80px,14vh,160px) 0 clamp(60px,9vh,110px);text-align:center}
+.hero{position:relative;padding-block:clamp(80px,14vh,160px) clamp(60px,9vh,110px);text-align:center}
 .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);background:var(--surface);border:1px solid var(--border);padding:7px 15px;border-radius:999px;margin-bottom:26px}
 .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:#34c759;box-shadow:0 0 0 0 #34c75999;animation:pulse 2.4s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 #34c75966}70%{box-shadow:0 0 0 10px #34c75900}100%{box-shadow:0 0 0 0 #34c75900}}
@@ -209,7 +209,7 @@ section.block{padding-top:clamp(56px,9vh,104px);padding-bottom:clamp(56px,9vh,10
 .proj-card:hover .more .arr{transform:translateX(4px)}
 
 /* ---------- Project detail hero ---------- */
-.phero{position:relative;padding:clamp(70px,11vh,130px) 0 clamp(40px,6vh,70px);text-align:center;overflow:hidden}
+.phero{position:relative;padding-block:clamp(70px,11vh,130px) clamp(40px,6vh,70px);text-align:center;overflow:hidden}
 .phero .pglow{position:absolute;top:-30%;left:50%;transform:translateX(-50%);width:900px;height:600px;border-radius:50%;filter:blur(110px);opacity:.4;z-index:-1}
 .back-link{display:flex;width:-moz-fit-content;width:fit-content;align-items:center;gap:7px;font-size:14px;color:var(--text-dim);margin:0 auto 24px;transition:color .25s var(--ease)}
 .back-link:hover{color:var(--text)}
@@ -315,7 +315,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 @media(max-width:600px){
   .wrap{padding:0 22px}
   section.block{padding-top:clamp(42px,8vh,72px);padding-bottom:clamp(42px,8vh,72px)}
-  .hero{padding:92px 0 56px}
+  .hero{padding-block:92px 56px}
   h1.display{font-size:clamp(31px,8.6vw,46px)}
   .hero p.lead{font-size:16px;margin-top:20px}
   .btn-row{gap:10px;margin-top:30px}
@@ -323,7 +323,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .sec-head{margin-bottom:34px}
   .sec-head h2{font-size:clamp(26px,6.6vw,34px)}
   .sec-head p{font-size:16px}
-  .phero{padding:88px 0 36px}
+  .phero{padding-block:88px 36px}
   .phero h1{font-size:clamp(30px,8vw,42px)}
   .hero-logo{height:auto!important;width:auto;max-width:80vw;max-height:92px}
   .pbadge{font-size:12px}
