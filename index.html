@@ -95,7 +95,8 @@ main{padding-top:var(--nav-h)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 #34c75966}70%{box-shadow:0 0 0 10px #34c75900}100%{box-shadow:0 0 0 0 #34c75900}}
 h1.display{
   font-size:clamp(40px,7.2vw,82px);line-height:1.02;font-weight:700;letter-spacing:-.035em;
-  background:linear-gradient(180deg,#fff 30%,#b9b9c4);-webkit-background-clip:text;background-clip:text;color:transparent;
+  background:linear-gradient(180deg,#ffffff,#9aa0b2 50%,#ffffff);background-size:100% 200%;background-position:0 0;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
 }
 .hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
@@ -729,6 +730,16 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 
   var reduceFX = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(!reduceFX){
+    // parallax fill of the hero headline (only the gradient moves, text stays)
+    var heroFill = document.querySelector('h1.display');
+    function updHero(){
+      if(!heroFill) return;
+      var y = window.scrollY || document.documentElement.scrollTop || 0;
+      heroFill.style.backgroundPositionY = (y * 0.45) + 'px';
+    }
+    window.addEventListener('scroll', updHero, {passive:true});
+    updHero();
+
     var orbEls = document.querySelectorAll('.orb');
     window.addEventListener('mousemove', function(e){
       var cx = e.clientX / window.innerWidth - .5;
