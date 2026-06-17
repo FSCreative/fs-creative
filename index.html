@@ -39,6 +39,7 @@ body{
   letter-spacing:-.01em;
   -webkit-font-smoothing:antialiased;
   overflow-x:hidden;
+  -webkit-tap-highlight-color:transparent;
 }
 a{color:inherit;text-decoration:none}
 img{max-width:100%;display:block}
@@ -94,10 +95,8 @@ main{padding-top:var(--nav-h)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 #34c75966}70%{box-shadow:0 0 0 10px #34c75900}100%{box-shadow:0 0 0 0 #34c75900}}
 h1.display{
   font-size:clamp(40px,7.2vw,82px);line-height:1.02;font-weight:700;letter-spacing:-.035em;
-  background:linear-gradient(110deg,#fff 18%,#8e93a6 38%,#fff 58%,#8e93a6 80%);background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
-  animation:shimmer 7s linear infinite;
+  background:linear-gradient(180deg,#fff 30%,#b9b9c4);-webkit-background-clip:text;background-clip:text;color:transparent;
 }
-@keyframes shimmer{to{background-position:-220% center}}
 .hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
 .btn{
@@ -256,6 +255,36 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 @media(max-width:480px){
   .strip{grid-template-columns:1fr 1fr}
   .proj-card{padding:28px}
+}
+
+/* ---------- Mobile / iPhone ---------- */
+@media(max-width:600px){
+  .wrap{padding:0 18px}
+  section.block{padding:clamp(42px,8vh,72px) 0}
+  .hero{padding:92px 0 56px}
+  h1.display{font-size:clamp(31px,8.6vw,46px)}
+  .hero p.lead{font-size:16px;margin-top:20px}
+  .btn-row{gap:10px;margin-top:30px}
+  .btn{width:100%;justify-content:center;padding:14px 22px}
+  .sec-head{margin-bottom:34px}
+  .sec-head h2{font-size:clamp(26px,6.6vw,34px)}
+  .sec-head p{font-size:16px}
+  .phero{padding:88px 0 36px}
+  .phero h1{font-size:clamp(30px,8vw,42px)}
+  .hero-logo{height:auto!important;width:auto;max-width:80vw;max-height:92px}
+  .pbadge{font-size:12px}
+  .card,.feat,.info-card,.carrier{padding:22px}
+  .cta-panel{padding:32px 22px}
+  .cta-panel h3{font-size:clamp(22px,6vw,28px)}
+  .drone-panel{padding:26px 22px;gap:20px}
+  .strip{gap:12px}
+  .stat{padding:20px 12px}
+  .foot-grid{flex-direction:column;gap:26px}
+  .foot-cols{gap:36px}
+  .foot-bottom{flex-direction:column;gap:6px}
+}
+@media(hover:none){
+  .proj-card::after{display:none}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
@@ -478,6 +507,19 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         <div class="stat reveal d2"><div class="num">Tschagguns</div><div class="lbl">im Montafon</div></div>
         <div class="stat reveal d3"><div class="num">Gaschurn</div><div class="lbl">Hochmontafon</div></div>
         <div class="stat reveal d4"><div class="num">St. Gallenk.</div><div class="lbl">Hochmontafon</div></div>
+      </div>
+    </section>
+    <section class="block wrap">
+      <div class="sec-head reveal"><div class="sec-tag">Für Restaurants</div><h2>Dein Lokal auf kochdu.</h2><p>kochdu ist unsere Bestellplattform für das Montafon — entwickelt und betrieben von FS Creative. Restaurants können sich unkompliziert anschließen und ihre Gerichte online zur Lieferung oder Abholung anbieten.</p></div>
+      <div class="feat-grid">
+        <div class="feat reveal d1"><div class="ico">📋</div><h4>Eigene Speisekarte</h4><p>Gerichte, Preise und Bilder selbst pflegen — jederzeit aktualisierbar, ganz ohne Technikaufwand.</p></div>
+        <div class="feat reveal d2"><div class="ico">📲</div><h4>Bestellungen direkt</h4><p>Bestellungen kommen direkt zu dir — wahlweise mit Lieferung oder Abholung, passend zu deinem Betrieb.</p></div>
+        <div class="feat reveal d3"><div class="ico">🤝</div><h4>Faire Konditionen</h4><p>Lokale Plattform mit persönlichem Support, transparenten Konditionen und schneller Aufschaltung.</p></div>
+      </div>
+      <div class="cta-panel reveal" style="margin-top:36px">
+        <h3 style="font-size:24px">Restaurant im Montafon? Werde Teil von kochdu.</h3>
+        <p>Melde dich bei uns — wir nehmen dein Lokal auf die Plattform und du erreichst hungrige Gäste in der ganzen Region.</p>
+        <div class="btn-row"><a href="https://kochdu.at" target="_blank" rel="noopener" class="btn primary">Auf kochdu.at anmelden <span class="arr">↗</span></a><a href="mailto:simon@fs-creative.at?subject=kochdu%20Restaurant-Anmeldung" class="btn ghost">Schreib uns <span class="arr">→</span></a></div>
       </div>
     </section>
     <section class="block wrap"><div class="cta-panel reveal"><h3>Heute schon kapituliert?</h3><p>Wir liefern. Bestelle jetzt bei deinem Lieblingsrestaurant im Montafon.</p><div class="btn-row"><a href="https://kochdu.at" target="_blank" rel="noopener" class="btn primary">Jetzt bestellen auf kochdu.at <span class="arr">↗</span></a></div></div></section>
