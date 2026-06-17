@@ -216,6 +216,13 @@ section.block{padding:clamp(56px,9vh,104px) 0}
 .map-card .mtop{padding:26px 28px}
 .map-card iframe{border:0;width:100%;flex:1;min-height:240px}
 
+/* ---------- About ---------- */
+.about-grid{display:grid;grid-template-columns:.82fr 1.18fr;gap:40px;align-items:center}
+.about-photo{border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border);box-shadow:0 30px 80px -30px rgba(0,0,0,.85)}
+.about-photo img{width:100%;height:auto;display:block}
+.about-text h2{font-size:clamp(26px,3.6vw,38px);font-weight:700;letter-spacing:-.03em;margin:10px 0 18px;line-height:1.12}
+.about-text p{color:var(--text-dim);font-size:16px;line-height:1.7;margin-bottom:14px}
+
 /* ---------- Paketshop service rows ---------- */
 .carrier-row{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 .carrier{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;display:flex;flex-direction:column;gap:12px}
@@ -250,7 +257,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .nav-links.open{transform:none}
   .nav-links a{padding:13px 16px;font-size:16px;border-radius:14px}
   .burger{display:flex}
-  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row,.drone-panel{grid-template-columns:1fr}
+  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row,.drone-panel,.about-grid{grid-template-columns:1fr}
   .strip{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:480px){
@@ -280,6 +287,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .drone-panel{padding:26px 22px;gap:20px}
   .strip{gap:12px}
   .stat{padding:20px 12px}
+  .about-text .btn{width:100%}
   .foot-grid{flex-direction:column;gap:26px}
   .foot-cols{gap:36px}
   .foot-bottom{flex-direction:column;gap:6px}
@@ -312,6 +320,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <a href="#/valuero" data-link>VALUERO</a>
       <a href="#/kochdu" data-link>kochdu</a>
       <a href="#/paketshop" data-link>Paketshop</a>
+      <a href="#/ueber-uns" data-link>Über uns</a>
       <a href="#/kontakt" class="nav-cta" data-link>Kontakt</a>
     </nav>
     <button class="burger" id="burger" aria-label="Menü"><span></span><span></span><span></span></button>
@@ -577,6 +586,31 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
     </section>
   </section>
 
+  <!-- ============ ÜBER UNS ============ -->
+  <section class="page" data-route="/ueber-uns">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
+      <span class="pbadge" style="color:#5fb0ff;background:#0a84ff1a;border-color:#0a84ff44">Über uns</span>
+      <h1>Die Person hinter FS Creative.</h1>
+      <p class="lead">Eine Agentur — und ein Gesicht, das mit Herzblut dahintersteht.</p>
+    </div>
+    <section class="block wrap">
+      <div class="about-grid">
+        <div class="about-photo reveal d1"><img src="https://static.wixstatic.com/media/d2f3ea_a52bb7f5965a4a67af975160d665367b~mv2.jpg/v1/fill/w_900,h_1120,al_c,q_90,enc_auto/simon.jpg" alt="Simon Felder — Gründer von FS Creative"></div>
+        <div class="about-text reveal d2">
+          <div class="sec-tag">Servus, ich bin Simon</div>
+          <h2>Aus Leidenschaft wurde FS Creative.</h2>
+          <p>Mein Name ist Simon Felder und aus einer reinen Leidenschaft hat sich in den letzten Jahren meine tolle Marketingagentur entwickelt.</p>
+          <p>Ab 1.1.2026 wird dann aus zunächst nebenberuflicher Tätigkeit ein mit Herzblut gelebter Full-Time Job.</p>
+          <p>Von Gaschurn im Montafon aus betreue ich Kundinnen und Kunden in ganz Vorarlberg — von Grafik, Web und Print über Foto, Video und Drohnenaufnahmen bis hin zu eigenen Plattformen wie Blitzdings, VALUERO und kochdu. Was als Nebenprojekt begann, ist heute ein Full-Service-Partner für Marketing, Design und digitale Services.</p>
+          <p>Mir ist wichtig, dass Digitales nicht kompliziert sein muss: Ich nehme dir den technischen Teil ab, denke mit und bleibe auch nach dem Go-Live an deiner Seite — persönlich, regional und auf Augenhöhe.</p>
+          <div class="btn-row" style="justify-content:flex-start;margin-top:28px"><a href="#/kontakt" class="btn primary" data-link>Lern mich kennen <span class="arr">→</span></a></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
   <!-- ============ KONTAKT ============ -->
   <section class="page" data-route="/kontakt">
     <div class="phero wrap">
@@ -626,6 +660,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         <div class="foot-col">
           <h5>Agentur</h5>
           <a href="#/" data-link>Start</a>
+          <a href="#/ueber-uns" data-link>Über uns</a>
           <a href="#/kontakt" data-link>Kontakt</a>
           <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a>
         </div>
