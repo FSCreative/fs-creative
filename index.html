@@ -64,8 +64,8 @@ header.nav{
 header.nav.scrolled{border-bottom-color:var(--border)}
 .nav-inner{max-width:var(--maxw);margin:0 auto;width:100%;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
 .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;letter-spacing:-.02em}
-.brand .mark{width:32px;height:32px;border-radius:9px;background:transparent;display:grid;place-items:center;overflow:hidden}
-.brand .mark img{width:100%;height:100%;object-fit:contain}
+.brand .mark{width:30px;height:30px;border-radius:9px;background:#ececef;display:grid;place-items:center;overflow:hidden}
+.brand .mark img{width:100%;height:100%;object-fit:contain;padding:3px}
 .nav-links{display:flex;align-items:center;gap:4px}
 .nav-links a{
   font-size:14px;color:var(--text-dim);padding:8px 14px;border-radius:999px;
@@ -172,8 +172,8 @@ section.block{padding:clamp(56px,9vh,104px) 0}
 /* ---------- Logos / chips / drone ---------- */
 .logo-chip{display:inline-flex;align-items:center;justify-content:center;background:#ececef;border-radius:18px;padding:14px 24px;margin-bottom:22px;box-shadow:0 14px 50px rgba(0,0,0,.4)}
 .logo-chip img{height:48px;width:auto;display:block}
-.hero-logo-wrap{margin:0 0 4px;line-height:0;display:flex;justify-content:center}
-.hero-logo{display:block;width:auto;height:auto;max-width:min(86%,440px)}
+.hero-logo-wrap{display:inline-flex;align-items:center;justify-content:center;background:#ececef;border-radius:22px;padding:18px 30px;margin:0 0 6px;box-shadow:0 24px 70px -22px rgba(0,0,0,.7)}
+.hero-logo{display:block;width:auto;height:auto;max-width:min(72vw,320px)}
 .drone-panel{border-radius:var(--radius-lg);border:1px solid var(--border);background:linear-gradient(135deg,rgba(10,132,255,.14),rgba(157,78,255,.08));padding:clamp(32px,5vw,56px);display:grid;grid-template-columns:1.3fr .9fr;gap:34px;align-items:center}
 .drone-panel h3{font-size:clamp(24px,3.4vw,34px);font-weight:700;letter-spacing:-.03em}
 .drone-panel p{color:var(--text-dim);margin-top:14px;font-size:16px;max-width:none}
@@ -256,7 +256,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 
 <header class="nav" id="nav">
   <div class="nav-inner">
-    <a href="#/" class="brand" data-link><span class="mark"><img src="/bilder/fs-creative.png" alt="FS Creative Logo"></span> FS Creative</a>
+    <a href="#/" class="brand" data-link><span class="mark"><img src="https://static.wixstatic.com/media/d2f3ea_e9a31d07df3d45198c2101a1c44a4077~mv2.png/v1/fill/w_120,h_150,al_c,q_90,enc_auto/Logo%20Gl%C3%BChbirne.png" alt="FS Creative Logo"></span> FS Creative</a>
     <nav class="nav-links" id="navlinks">
       <a href="#/" data-link>Start</a>
       <a href="#/blitzdings" data-link>Blitzdings</a>
@@ -364,7 +364,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
       <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
       <span class="pbadge" style="color:#5fb0ff;background:#0a84ff1a;border-color:#0a84ff44">Eventservice · Vorarlberg</span>
-      <h1 class="hero-logo-wrap"><img class="hero-logo" src="/bilder/blitzdings.png" alt="Blitzdings" style="height:150px"></h1>
+      <h1 class="hero-logo-wrap"><img class="hero-logo" src="/logo_quadrat.png" alt="Blitzdings" style="height:108px"></h1>
       <p class="lead">Momente, die bleiben — in Szene gesetzt. Edle Fotoboxen und cineastische 360°-Aufnahmen für Hochzeiten, Galas und Firmenfeiern. Online buchbar in wenigen Minuten.</p>
       <div class="btn-row">
         <a href="https://blitzdings.co.at" target="_blank" rel="noopener" class="btn primary">blitzdings.co.at besuchen <span class="arr">↗</span></a>
@@ -401,7 +401,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <div class="pglow" style="background:radial-gradient(circle,#34c759,transparent 70%)"></div>
       <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
       <span class="pbadge" style="color:#5fe08a;background:#34c7591a;border-color:#34c75944">Plattform &amp; Hosting · Hochmontafon</span>
-      <h1 class="hero-logo-wrap"><img class="hero-logo" src="/bilder/valuero.png" alt="VALUERO" style="height:118px"></h1>
+      <h1 class="hero-logo-wrap"><img class="hero-logo" src="https://static.wixstatic.com/media/d2f3ea_950ce3695c5841f9a19524ca8c217da4~mv2.png/v1/fill/w_500,h_266,al_c,q_90,enc_auto/Valuero-01.png" alt="VALUERO" style="height:90px"></h1>
       <p class="lead">Dein Urlaubsplatz im Hochmontafon — von St. Gallenkirch bis Partenen. VALUERO bündelt ausgewählte Unterkünfte, Gastronomie und Veranstaltungen an einem Ort und führt dich direkt zur passenden Buchung.</p>
       <div class="btn-row">
         <a href="https://valuero.at" target="_blank" rel="noopener" class="btn primary">valuero.at besuchen <span class="arr">↗</span></a>
@@ -441,7 +441,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <div class="pglow" style="background:radial-gradient(circle,#9d4eff,transparent 70%)"></div>
       <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
       <span class="pbadge" style="color:#bd8cff;background:#9d4eff1a;border-color:#9d4eff44">Lieferservice · Montafon</span>
-      <h1 class="hero-logo-wrap"><img class="hero-logo" src="/bilder/kochdu.png" alt="kochdu" style="height:74px"></h1>
+      <h1 class="hero-logo-wrap"><img class="hero-logo" src="/kochdu-logo.png" alt="kochdu" style="height:46px"></h1>
       <p class="lead">Hunger? Wir kümmern uns. Online Essen bestellen bei Restaurants im Montafon — einfach, schnell, mit Lieferung oder Abholung. Jetzt beim Lieblingsrestaurant bestellen.</p>
       <div class="btn-row">
         <a href="https://kochdu.at" target="_blank" rel="noopener" class="btn primary">kochdu.at besuchen <span class="arr">↗</span></a>
@@ -550,7 +550,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   <div class="wrap">
     <div class="foot-grid">
       <div class="foot-brand">
-        <div class="brand"><span class="mark"><img src="/bilder/fs-creative.png" alt="FS Creative Logo"></span> FS Creative</div>
+        <div class="brand"><span class="mark"><img src="https://static.wixstatic.com/media/d2f3ea_e9a31d07df3d45198c2101a1c44a4077~mv2.png/v1/fill/w_120,h_150,al_c,q_90,enc_auto/Logo%20Gl%C3%BChbirne.png" alt="FS Creative Logo"></span> FS Creative</div>
         <p>Kreativ- &amp; Digitalagentur aus Gaschurn im Montafon. Wir entwickeln und betreiben eigene Plattformen und Services.</p>
       </div>
       <div class="foot-cols">
