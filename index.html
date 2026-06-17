@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FS Creative — Digitale Projekte aus dem Montafon</title>
+<meta name="description" content="FS Creative ist eine Kreativ- und Digitalagentur aus Gaschurn im Montafon. Wir entwickeln und betreiben eigene Plattformen und Services: Blitzdings, VALUERO, kochdu und einen Paketshop für GLS & Hermes." />
+<meta name="author" content="FS Creative" />
+<meta name="theme-color" content="#0a0a0f" />
+<meta property="og:title" content="FS Creative — Digitale Projekte aus dem Montafon" />
+<meta property="og:description" content="Kreativ- und Digitalagentur aus Gaschurn im Montafon. Eigene Plattformen & Services: Blitzdings, VALUERO, kochdu, Paketshop." />
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="de_AT" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%230a0a0f'/%3E%3Ctext x='50' y='68' font-family='Arial,sans-serif' font-size='52' font-weight='700' fill='white' text-anchor='middle'%3EFS%3C/text%3E%3C/svg%3E" />
+<style>
+:root{
+  --bg:#0a0a0f;
+  --bg-soft:#111118;
+  --surface:rgba(255,255,255,.04);
+  --surface-2:rgba(255,255,255,.06);
+  --border:rgba(255,255,255,.09);
+  --text:#f5f5f7;
+  --text-dim:#a1a1aa;
+  --text-faint:#6e6e78;
+  --accent:#0a84ff;
+  --radius:22px;
+  --radius-lg:32px;
+  --maxw:1120px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --nav-h:60px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.5;
+  letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+
+/* ---------- Background glow ---------- */
+.bg-orbs{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;transition:background .8s var(--ease),opacity .8s var(--ease)}
+.orb.a{width:540px;height:540px;top:-140px;left:-120px;background:radial-gradient(circle,#1c4fff66,transparent 70%)}
+.orb.b{width:620px;height:620px;top:30%;right:-200px;background:radial-gradient(circle,#9d4eff55,transparent 70%)}
+.orb.c{width:480px;height:480px;bottom:-160px;left:30%;background:radial-gradient(circle,#00c2ff44,transparent 70%)}
+
+/* ---------- Nav ---------- */
+header.nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav-h);
+  display:flex;align-items:center;
+  background:rgba(10,10,15,.55);
+  backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid transparent;
+  transition:border-color .4s var(--ease),background .4s var(--ease);
+}
+header.nav.scrolled{border-bottom-color:var(--border)}
+.nav-inner{max-width:var(--maxw);margin:0 auto;width:100%;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;letter-spacing:-.02em}
+.brand .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#0a84ff,#9d4eff);display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;letter-spacing:-.03em}
+.nav-links{display:flex;align-items:center;gap:4px}
+.nav-links a{
+  font-size:14px;color:var(--text-dim);padding:8px 14px;border-radius:999px;
+  transition:color .25s var(--ease),background .25s var(--ease);
+}
+.nav-links a:hover{color:var(--text)}
+.nav-links a.active{color:var(--text);background:var(--surface-2)}
+.nav-cta{font-size:14px!important;color:#fff!important;background:var(--accent);padding:8px 18px!important}
+.nav-cta:hover{background:#3a9bff!important}
+.burger{display:none;width:40px;height:40px;border:none;background:var(--surface-2);border-radius:11px;cursor:pointer;flex-direction:column;gap:5px;align-items:center;justify-content:center}
+.burger span{width:18px;height:2px;background:var(--text);border-radius:2px;transition:.3s var(--ease)}
+.burger.open span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.burger.open span:nth-child(2){opacity:0}
+.burger.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+/* ---------- Pages ---------- */
+main{padding-top:var(--nav-h)}
+.page{display:none;animation:fade .6s var(--ease)}
+.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+/* ---------- Hero ---------- */
+.hero{position:relative;padding:clamp(80px,14vh,160px) 0 clamp(60px,9vh,110px);text-align:center}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);background:var(--surface);border:1px solid var(--border);padding:7px 15px;border-radius:999px;margin-bottom:26px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:#34c759;box-shadow:0 0 0 0 #34c75999;animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #34c75966}70%{box-shadow:0 0 0 10px #34c75900}100%{box-shadow:0 0 0 0 #34c75900}}
+h1.display{
+  font-size:clamp(40px,7.2vw,82px);line-height:1.02;font-weight:700;letter-spacing:-.035em;
+  background:linear-gradient(180deg,#fff 30%,#b9b9c4);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
+.btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
+.btn{
+  display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:500;
+  padding:14px 28px;border-radius:999px;cursor:pointer;border:1px solid transparent;
+  transition:transform .25s var(--ease),background .25s var(--ease),border-color .25s var(--ease);
+}
+.btn:hover{transform:translateY(-2px)}
+.btn.primary{background:#fff;color:#0a0a0f}
+.btn.primary:hover{background:#e9e9ee}
+.btn.ghost{background:var(--surface-2);color:var(--text);border-color:var(--border)}
+.btn.ghost:hover{background:rgba(255,255,255,.1)}
+.btn .arr{transition:transform .25s var(--ease)}
+.btn:hover .arr{transform:translateX(3px)}
+
+/* ---------- Sections ---------- */
+section.block{padding:clamp(56px,9vh,104px) 0}
+.sec-head{max-width:680px;margin:0 auto clamp(40px,6vh,64px);text-align:center}
+.sec-tag{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+.sec-head h2{font-size:clamp(30px,4.6vw,48px);font-weight:700;letter-spacing:-.03em;line-height:1.08}
+.sec-head p{margin-top:18px;font-size:clamp(16px,1.9vw,19px);color:var(--text-dim)}
+
+/* ---------- Service grid ---------- */
+.grid{display:grid;gap:18px}
+.grid.cols-3{grid-template-columns:repeat(3,1fr)}
+.grid.cols-2{grid-template-columns:repeat(2,1fr)}
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:30px;
+  transition:transform .4s var(--ease),background .4s var(--ease),border-color .4s var(--ease);
+  position:relative;overflow:hidden;
+}
+.card:hover{transform:translateY(-5px);background:var(--surface-2);border-color:rgba(255,255,255,.16)}
+.card .ico{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:22px;margin-bottom:18px;background:var(--surface-2)}
+.card h3{font-size:20px;font-weight:600;letter-spacing:-.02em;margin-bottom:9px}
+.card p{font-size:15px;color:var(--text-dim);line-height:1.55}
+
+/* ---------- Project cards ---------- */
+.proj{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:18px;
+}
+.proj-card{
+  position:relative;border-radius:var(--radius-lg);padding:34px;cursor:pointer;overflow:hidden;
+  border:1px solid var(--border);min-height:230px;display:flex;flex-direction:column;justify-content:space-between;
+  background:var(--surface);
+  transition:transform .45s var(--ease),border-color .45s var(--ease);
+}
+.proj-card:hover{transform:translateY(-6px) scale(1.005);border-color:rgba(255,255,255,.2)}
+.proj-card .glow{position:absolute;inset:0;opacity:.16;transition:opacity .45s var(--ease);z-index:0}
+.proj-card:hover .glow{opacity:.32}
+.proj-card>*{position:relative;z-index:1}
+.proj-card .tag{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;opacity:.8}
+.proj-card h3{font-size:30px;font-weight:700;letter-spacing:-.03em;margin:10px 0 8px}
+.proj-card p{font-size:15px;color:var(--text-dim);max-width:90%}
+.proj-card .more{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:500;margin-top:22px}
+.proj-card .more .arr{transition:transform .3s var(--ease)}
+.proj-card:hover .more .arr{transform:translateX(4px)}
+
+/* ---------- Project detail hero ---------- */
+.phero{position:relative;padding:clamp(70px,11vh,130px) 0 clamp(40px,6vh,70px);text-align:center;overflow:hidden}
+.phero .pglow{position:absolute;top:-30%;left:50%;transform:translateX(-50%);width:900px;height:600px;border-radius:50%;filter:blur(110px);opacity:.4;z-index:-1}
+.back-link{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:var(--text-dim);margin-bottom:26px;transition:color .25s var(--ease)}
+.back-link:hover{color:var(--text)}
+.pbadge{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:7px 16px;border-radius:999px;margin-bottom:22px;border:1px solid var(--border)}
+.phero h1{font-size:clamp(38px,6.4vw,68px);font-weight:700;letter-spacing:-.035em;line-height:1.04}
+.phero p.lead{max-width:600px;margin:22px auto 0;font-size:clamp(16px,2vw,20px);color:var(--text-dim)}
+
+/* ---------- Feature list ---------- */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+.feat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px}
+.feat .ico{font-size:24px;margin-bottom:14px}
+.feat h4{font-size:17px;font-weight:600;margin-bottom:7px;letter-spacing:-.02em}
+.feat p{font-size:14px;color:var(--text-dim);line-height:1.55}
+
+/* ---------- Stat / price strip ---------- */
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:36px}
+.stat{text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px 16px}
+.stat .num{font-size:clamp(26px,3.6vw,40px);font-weight:700;letter-spacing:-.03em;background:linear-gradient(180deg,#fff,#b9b9c4);-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat .lbl{font-size:13px;color:var(--text-dim);margin-top:6px}
+
+/* ---------- CTA panel ---------- */
+.cta-panel{
+  margin-top:8px;border-radius:var(--radius-lg);padding:clamp(40px,7vw,72px);text-align:center;position:relative;overflow:hidden;
+  border:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+}
+.cta-panel h3{font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-.03em}
+.cta-panel p{color:var(--text-dim);margin-top:14px;font-size:17px;max-width:520px;margin-left:auto;margin-right:auto}
+
+/* ---------- Contact / info rows ---------- */
+.info-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:stretch}
+.info-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:32px}
+.info-card h3{font-size:20px;font-weight:600;margin-bottom:18px;letter-spacing:-.02em}
+.info-row{display:flex;gap:14px;padding:13px 0;border-top:1px solid var(--border);font-size:15px}
+.info-row:first-of-type{border-top:none}
+.info-row .k{color:var(--text-faint);min-width:104px}
+.info-row .v{color:var(--text)}
+.info-row .v a{color:var(--accent)}
+.map-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.map-card .mtop{padding:26px 28px}
+.map-card iframe{border:0;width:100%;flex:1;min-height:240px}
+
+/* ---------- Paketshop service rows ---------- */
+.carrier-row{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.carrier{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;display:flex;flex-direction:column;gap:12px}
+.carrier .name{font-size:22px;font-weight:700;letter-spacing:-.02em}
+.carrier ul{list-style:none;display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.carrier li{font-size:15px;color:var(--text-dim);display:flex;gap:10px}
+.carrier li::before{content:"✓";color:#34c759;font-weight:700}
+
+/* ---------- Footer ---------- */
+footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
+.foot-grid{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap}
+.foot-brand{max-width:300px}
+.foot-brand p{color:var(--text-dim);font-size:14px;margin-top:12px;line-height:1.6}
+.foot-cols{display:flex;gap:60px;flex-wrap:wrap}
+.foot-col h5{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-bottom:14px}
+.foot-col a,.foot-col span{display:block;font-size:14px;color:var(--text-dim);padding:5px 0;cursor:pointer;transition:color .2s var(--ease)}
+.foot-col a:hover{color:var(--text)}
+.foot-bottom{margin-top:40px;padding-top:24px;border-top:1px solid var(--border);font-size:13px;color:var(--text-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+/* ---------- Reveal ---------- */
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.reveal.in{opacity:1;transform:none}
+.reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}.reveal.d4{transition-delay:.32s}
+
+/* ---------- Responsive ---------- */
+@media(max-width:860px){
+  .nav-links{
+    position:fixed;top:var(--nav-h);left:0;right:0;flex-direction:column;align-items:stretch;gap:6px;
+    background:rgba(12,12,18,.96);backdrop-filter:blur(20px);padding:18px 20px 26px;
+    border-bottom:1px solid var(--border);transform:translateY(-130%);transition:transform .4s var(--ease);
+  }
+  .nav-links.open{transform:none}
+  .nav-links a{padding:13px 16px;font-size:16px;border-radius:14px}
+  .burger{display:flex}
+  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row{grid-template-columns:1fr}
+  .strip{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:480px){
+  .strip{grid-template-columns:1fr 1fr}
+  .proj-card{padding:28px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#/" class="brand" data-link><span class="mark">FS</span> FS Creative</a>
+    <nav class="nav-links" id="navlinks">
+      <a href="#/" data-link>Start</a>
+      <a href="#/blitzdings" data-link>Blitzdings</a>
+      <a href="#/valuero" data-link>VALUERO</a>
+      <a href="#/kochdu" data-link>kochdu</a>
+      <a href="#/paketshop" data-link>Paketshop</a>
+      <a href="#/kontakt" class="nav-cta" data-link>Kontakt</a>
+    </nav>
+    <button class="burger" id="burger" aria-label="Menü"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<main id="app">
+
+  <!-- ============ HOME ============ -->
+  <section class="page active" data-route="/">
+    <div class="hero wrap">
+      <span class="eyebrow"><span class="dot"></span> Kreativ- &amp; Digitalagentur · Montafon</span>
+      <h1 class="display">Ideen aus dem Tal,<br>gebaut für das Netz.</h1>
+      <p class="lead">FS Creative entwickelt und betreibt digitale Plattformen und Services im Montafon — von der Fotobox bis zur Buchungsplattform. Wir denken, gestalten und programmieren alles unter einem Dach.</p>
+      <div class="btn-row">
+        <a href="#/kontakt" class="btn primary" data-link>Projekt starten <span class="arr">→</span></a>
+        <a href="#projekte" class="btn ghost">Unsere Projekte</a>
+      </div>
+    </div>
+
+    <section class="block wrap" id="leistungen">
+      <div class="sec-head reveal">
+        <div class="sec-tag">Was wir machen</div>
+        <h2>Eine Agentur, die selbst baut.</h2>
+        <p>Wir beraten nicht nur — wir betreiben unsere eigenen Produkte. Diese Erfahrung fließt in jedes Kundenprojekt ein.</p>
+      </div>
+      <div class="grid cols-3">
+        <div class="card reveal d1"><div class="ico">🌐</div><h3>Web &amp; Plattformen</h3><p>Moderne Websites, Buchungs- und Bestellsysteme — schnell, mobil und durchdacht bis ins Detail.</p></div>
+        <div class="card reveal d2"><div class="ico">🎨</div><h3>Design &amp; Branding</h3><p>Logos, Corporate Design und visuelle Sprache, die regional verwurzelt und trotzdem zeitlos sind.</p></div>
+        <div class="card reveal d3"><div class="ico">📸</div><h3>Event &amp; Media</h3><p>Fotobox, 360°-Videobooth und Medienproduktion für Events in ganz Vorarlberg.</p></div>
+        <div class="card reveal d1"><div class="ico">🛒</div><h3>E-Commerce</h3><p>Vom Warenkorb bis zur Lieferung — wir bauen Bestell- und Liefersysteme, die funktionieren.</p></div>
+        <div class="card reveal d2"><div class="ico">📦</div><h3>Logistik &amp; Service</h3><p>Lokale Services wie unser Paketshop für GLS &amp; Hermes — digital organisiert, persönlich betreut.</p></div>
+        <div class="card reveal d3"><div class="ico">⚙️</div><h3>Betrieb &amp; Wartung</h3><p>Hosting, Updates und laufende Betreuung. Wir bleiben dran, auch nach dem Go-Live.</p></div>
+      </div>
+    </section>
+
+    <section class="block wrap" id="projekte">
+      <div class="sec-head reveal">
+        <div class="sec-tag">Unsere Projekte</div>
+        <h2>Marken, die wir selbst betreiben.</h2>
+        <p>Jedes dieser Projekte ist bei FS Creative entstanden — entwickelt, gestaltet und betrieben.</p>
+      </div>
+      <div class="proj">
+        <a class="proj-card reveal d1" href="#/blitzdings" data-link>
+          <div class="glow" style="background:radial-gradient(circle at 30% 20%,#0a84ff,transparent 60%)"></div>
+          <span class="tag" style="color:#5fb0ff">Eventservice</span>
+          <div><h3>Blitzdings</h3><p>Edle Fotoboxen &amp; 360°-Videobooth für Hochzeiten, Galas und Firmenfeiern in ganz Vorarlberg.</p></div>
+          <span class="more">Mehr erfahren <span class="arr">→</span></span>
+        </a>
+        <a class="proj-card reveal d2" href="#/valuero" data-link>
+          <div class="glow" style="background:radial-gradient(circle at 30% 20%,#34c759,transparent 60%)"></div>
+          <span class="tag" style="color:#5fe08a">Plattform</span>
+          <div><h3>VALUERO</h3><p>Die Plattform für Unterkünfte, Gastronomie und Veranstaltungen im Hochmontafon.</p></div>
+          <span class="more">Mehr erfahren <span class="arr">→</span></span>
+        </a>
+        <a class="proj-card reveal d3" href="#/kochdu" data-link>
+          <div class="glow" style="background:radial-gradient(circle at 30% 20%,#9d4eff,transparent 60%)"></div>
+          <span class="tag" style="color:#bd8cff">Lieferservice</span>
+          <div><h3>kochdu</h3><p>Online Essen bestellen bei Restaurants im Montafon — mit Lieferung oder Abholung.</p></div>
+          <span class="more">Mehr erfahren <span class="arr">→</span></span>
+        </a>
+        <a class="proj-card reveal d4" href="#/paketshop" data-link>
+          <div class="glow" style="background:radial-gradient(circle at 30% 20%,#ff9f0a,transparent 60%)"></div>
+          <span class="tag" style="color:#ffc05f">Lokaler Service</span>
+          <div><h3>Paketshop</h3><p>GLS- &amp; Hermes-Paketannahme und -abgabe direkt an unserem Standort in Gaschurn.</p></div>
+          <span class="more">Mehr erfahren <span class="arr">→</span></span>
+        </a>
+      </div>
+    </section>
+
+    <section class="block wrap">
+      <div class="cta-panel reveal">
+        <h3>Eine Idee im Kopf?</h3>
+        <p>Ob Website, Plattform oder Eventservice — erzähl uns davon. Wir melden uns persönlich.</p>
+        <div class="btn-row"><a href="#/kontakt" class="btn primary" data-link>Kontakt aufnehmen <span class="arr">→</span></a></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============ BLITZDINGS ============ -->
+  <section class="page" data-route="/blitzdings">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#5fb0ff;background:#0a84ff1a;border-color:#0a84ff44">Eventservice · Vorarlberg</span>
+      <h1>Blitzdings</h1>
+      <p class="lead">Momente, die bleiben — in Szene gesetzt. Edle Fotoboxen und cineastische 360°-Aufnahmen für Hochzeiten, Galas und Firmenfeiern. Online buchbar in wenigen Minuten.</p>
+      <div class="btn-row">
+        <a href="https://blitzdings.co.at" target="_blank" rel="noopener" class="btn primary">blitzdings.co.at besuchen <span class="arr">↗</span></a>
+      </div>
+    </div>
+    <section class="block wrap">
+      <div class="sec-head reveal"><div class="sec-tag">Drei Boxen, unzählige Momente</div><h2>Für jeden Anlass die passende Technik.</h2></div>
+      <div class="feat-grid">
+        <div class="feat reveal d1"><div class="ico">📷</div><h4>Blitzdings Mini</h4><p>Die elegante Säulen-Fotobox mit Spiegelreflexkamera, Touchscreen und optionalem Sofortdruck. Ideal für Hochzeiten &amp; Geburtstage.</p></div>
+        <div class="feat reveal d2"><div class="ico">✨</div><h4>Blitzdings Business</h4><p>Die Premium-Box für Messen und Firmenfeiern — voll gebrandet, mit unlimitierten Ausdrucken, Requisiten und Red Carpet.</p></div>
+        <div class="feat reveal d3"><div class="ico">🎬</div><h4>360° Videobooth</h4><p>Die cineastische SpinCam für spektakuläre Slow-Motion-Videos — inkl. Betreuung und Zustellung vor Ort.</p></div>
+      </div>
+      <div class="strip">
+        <div class="stat reveal d1"><div class="num">ab 169€</div><div class="lbl">pro Event (digital)</div></div>
+        <div class="stat reveal d2"><div class="num">∞</div><div class="lbl">Fotos &amp; Downloads</div></div>
+        <div class="stat reveal d3"><div class="num">360°</div><div class="lbl">Videobooth SpinCam</div></div>
+        <div class="stat reveal d4"><div class="num">10s</div><div class="lbl">bis zum Sofortdruck</div></div>
+      </div>
+    </section>
+    <section class="block wrap">
+      <div class="sec-head reveal"><div class="sec-tag">Vertrauen uns</div><h2>Beliebt bei Gästen &amp; Unternehmen.</h2><p>Von unserem Standort in Gaschurn im Montafon liefern wir in ganz Vorarlberg — vom Montafon über Bludenz, Feldkirch und Dornbirn bis Bregenz und in den Bregenzerwald.</p></div>
+      <div class="grid cols-3">
+        <div class="card reveal d1"><h3>McDonald's Vorarlberg</h3><p>Gebrandete Business-Box im Einsatz bei Aktionen und Events.</p></div>
+        <div class="card reveal d2"><h3>Löwen Hotel</h3><p>Fotobox-Erlebnisse für Gäste und Feiern.</p></div>
+        <div class="card reveal d3"><h3>Sporthotel Silvretta Montafon</h3><p>Stimmungsvolle Momente für Hotelgäste und Events.</p></div>
+      </div>
+    </section>
+    <section class="block wrap"><div class="cta-panel reveal"><h3>Bereit für euren WOW-Moment?</h3><p>Prüft die Verfügbarkeit für euren Termin und sichert euch eure Box in wenigen Klicks.</p><div class="btn-row"><a href="https://blitzdings.co.at" target="_blank" rel="noopener" class="btn primary">Jetzt auf blitzdings.co.at buchen <span class="arr">↗</span></a></div></div></section>
+  </section>
+
+  <!-- ============ VALUERO ============ -->
+  <section class="page" data-route="/valuero">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#34c759,transparent 70%)"></div>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#5fe08a;background:#34c7591a;border-color:#34c75944">Plattform · Hochmontafon</span>
+      <h1>VALUERO</h1>
+      <p class="lead">Dein Urlaubsplatz im Hochmontafon — von St. Gallenkirch bis Partenen. VALUERO bündelt ausgewählte Unterkünfte, Gastronomie und Veranstaltungen an einem Ort und führt dich direkt zur passenden Buchung.</p>
+      <div class="btn-row">
+        <a href="https://valuero.at" target="_blank" rel="noopener" class="btn primary">valuero.at besuchen <span class="arr">↗</span></a>
+      </div>
+    </div>
+    <section class="block wrap">
+      <div class="sec-head reveal"><div class="sec-tag">Alles an einem Ort</div><h2>Transparent, übersichtlich, regional.</h2><p>VALUERO ist die moderne Plattform für deinen Urlaub im inneren Montafon — sie macht das Vergleichen einfach und führt direkt zur Buchungsmöglichkeit beim jeweiligen Anbieter.</p></div>
+      <div class="feat-grid">
+        <div class="feat reveal d1"><div class="ico">🏔️</div><h4>Unterkünfte</h4><p>Ausgewählte Unterkünfte aller Art für deinen Traumurlaub im Hochmontafon — einfach vergleichen und direkt buchen.</p></div>
+        <div class="feat reveal d2"><div class="ico">🍽️</div><h4>Gastronomie</h4><p>Essen &amp; Trinken oder beim gemütlichen Kaffee das Bergpanorama genießen.</p></div>
+        <div class="feat reveal d3"><div class="ico">🎉</div><h4>Veranstaltungen</h4><p>Was geht während deinem Aufenthalt? Veranstaltungen und Highlights im Hochmontafon auf einen Blick.</p></div>
+      </div>
+      <div class="cta-panel reveal" style="margin-top:36px">
+        <h3 style="font-size:24px">„Valuero" — aus Vallüla &amp; Aero</h3>
+        <p>Der Name verbindet den Berg Vallüla mit der klaren Bergluft. Übrigens: Auf der Seite sind wir aufgrund unserer Seehöhe automatisch per „Du".</p>
+        <div class="btn-row"><a href="https://valuero.at" target="_blank" rel="noopener" class="btn primary">Unterkunft finden <span class="arr">↗</span></a></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============ KOCHDU ============ -->
+  <section class="page" data-route="/kochdu">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#9d4eff,transparent 70%)"></div>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#bd8cff;background:#9d4eff1a;border-color:#9d4eff44">Lieferservice · Montafon</span>
+      <h1>kochdu</h1>
+      <p class="lead">Hunger? Wir kümmern uns. Online Essen bestellen bei Restaurants im Montafon — einfach, schnell, mit Lieferung oder Abholung. Jetzt beim Lieblingsrestaurant bestellen.</p>
+      <div class="btn-row">
+        <a href="https://kochdu.at" target="_blank" rel="noopener" class="btn primary">kochdu.at besuchen <span class="arr">↗</span></a>
+      </div>
+    </div>
+    <section class="block wrap">
+      <div class="sec-head reveal"><div class="sec-tag">So funktioniert's</div><h2>Vom Restaurant direkt zu dir.</h2></div>
+      <div class="feat-grid">
+        <div class="feat reveal d1"><div class="ico">📍</div><h4>Ort wählen</h4><p>Wähle deinen Ort im Montafon — von Schruns über Tschagguns bis Gaschurn und St. Gallenkirch.</p></div>
+        <div class="feat reveal d2"><div class="ico">🛵</div><h4>Lieferung</h4><p>Lass dir dein Essen frisch nach Hause liefern, wenn dein Restaurant Lieferung anbietet.</p></div>
+        <div class="feat reveal d3"><div class="ico">🏃</div><h4>Abholung</h4><p>Lieber selbst holen? Bestelle vor und schnapp's dir frisch zur Abholung.</p></div>
+      </div>
+      <div class="strip">
+        <div class="stat reveal d1"><div class="num">Schruns</div><div class="lbl">&amp; Umgebung</div></div>
+        <div class="stat reveal d2"><div class="num">Tschagguns</div><div class="lbl">im Montafon</div></div>
+        <div class="stat reveal d3"><div class="num">Gaschurn</div><div class="lbl">Hochmontafon</div></div>
+        <div class="stat reveal d4"><div class="num">St. Gallenk.</div><div class="lbl">Hochmontafon</div></div>
+      </div>
+    </section>
+    <section class="block wrap"><div class="cta-panel reveal"><h3>Heute schon kapituliert?</h3><p>Wir liefern. Bestelle jetzt bei deinem Lieblingsrestaurant im Montafon.</p><div class="btn-row"><a href="https://kochdu.at" target="_blank" rel="noopener" class="btn primary">Jetzt bestellen auf kochdu.at <span class="arr">↗</span></a></div></div></section>
+  </section>
+
+  <!-- ============ PAKETSHOP ============ -->
+  <section class="page" data-route="/paketshop">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#ff9f0a,transparent 70%)"></div>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#ffc05f;background:#ff9f0a1a;border-color:#ff9f0a44">Lokaler Service · Gaschurn</span>
+      <h1>Paketshop</h1>
+      <p class="lead">Pakete einfach annehmen und abgeben — direkt an unserem Standort im Montafon. Wir sind dein Paketshop für <strong>GLS</strong> und <strong>Hermes</strong> in Gaschurn.</p>
+    </div>
+    <section class="block wrap">
+      <div class="carrier-row">
+        <div class="carrier reveal d1">
+          <span class="name" style="color:#ffc05f">GLS</span>
+          <ul>
+            <li>Pakete annehmen &amp; für dich verwahren</li>
+            <li>Vorfrankierte Pakete abgeben</li>
+            <li>Retouren bequem aufgeben</li>
+          </ul>
+        </div>
+        <div class="carrier reveal d2">
+          <span class="name" style="color:#5fb0ff">Hermes</span>
+          <ul>
+            <li>Pakete annehmen &amp; für dich verwahren</li>
+            <li>Vorfrankierte Pakete abgeben</li>
+            <li>Retouren bequem aufgeben</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="info-grid" style="margin-top:18px">
+        <div class="info-card reveal d1">
+          <h3>Standort &amp; Kontakt</h3>
+          <div class="info-row"><span class="k">Adresse</span><span class="v">Dorfstraße 3/1<br>6793 Gaschurn, Österreich</span></div>
+          <div class="info-row"><span class="k">Betreiber</span><span class="v">FS Creative</span></div>
+          <div class="info-row"><span class="k">Dienste</span><span class="v">GLS · Hermes — Annahme &amp; Abgabe</span></div>
+          <div class="info-row"><span class="k">E-Mail</span><span class="v"><a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a></span></div>
+          <div style="margin-top:20px"><a href="https://www.google.com/maps/search/?api=1&query=Dorfstra%C3%9Fe%203%2F1%2C%206793%20Gaschurn" target="_blank" rel="noopener" class="btn ghost">In Google Maps öffnen <span class="arr">↗</span></a></div>
+        </div>
+        <div class="map-card reveal d2">
+          <div class="mtop"><h3 style="font-size:18px;font-weight:600">So findest du uns</h3><p style="color:var(--text-dim);font-size:14px;margin-top:6px">Dorfstraße 3/1, 6793 Gaschurn — im Herzen des Montafons.</p></div>
+          <iframe loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://maps.google.com/maps?q=Dorfstra%C3%9Fe%203%2C%206793%20Gaschurn&output=embed"></iframe>
+        </div>
+      </div>
+      <div class="cta-panel reveal" style="margin-top:18px">
+        <h3 style="font-size:24px">Paket abzugeben oder abzuholen?</h3>
+        <p>Komm während der Öffnungszeiten vorbei oder schreib uns kurz — wir helfen gern weiter.</p>
+        <div class="btn-row"><a href="mailto:simon@fs-creative.at" class="btn primary">Schreib uns <span class="arr">→</span></a></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============ KONTAKT ============ -->
+  <section class="page" data-route="/kontakt">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#5fb0ff;background:#0a84ff1a;border-color:#0a84ff44">Kontakt</span>
+      <h1>Lass uns reden.</h1>
+      <p class="lead">Ob neues Projekt, Kooperation oder eine Frage zu einem unserer Services — wir freuen uns auf deine Nachricht.</p>
+    </div>
+    <section class="block wrap">
+      <div class="info-grid">
+        <div class="info-card reveal d1">
+          <h3>FS Creative</h3>
+          <div class="info-row"><span class="k">Adresse</span><span class="v">Dorfstraße 3/1<br>6793 Gaschurn, Österreich</span></div>
+          <div class="info-row"><span class="k">E-Mail</span><span class="v"><a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a></span></div>
+          <div class="info-row"><span class="k">Region</span><span class="v">Montafon · Vorarlberg</span></div>
+          <div style="margin-top:20px"><a href="mailto:simon@fs-creative.at" class="btn primary">E-Mail schreiben <span class="arr">→</span></a></div>
+        </div>
+        <div class="info-card reveal d2">
+          <h3>Unsere Projekte</h3>
+          <div class="info-row"><span class="k">Blitzdings</span><span class="v"><a href="https://blitzdings.co.at" target="_blank" rel="noopener">blitzdings.co.at ↗</a></span></div>
+          <div class="info-row"><span class="k">VALUERO</span><span class="v"><a href="https://valuero.at" target="_blank" rel="noopener">valuero.at ↗</a></span></div>
+          <div class="info-row"><span class="k">kochdu</span><span class="v"><a href="https://kochdu.at" target="_blank" rel="noopener">kochdu.at ↗</a></span></div>
+          <div class="info-row"><span class="k">Paketshop</span><span class="v"><a href="#/paketshop" data-link>GLS &amp; Hermes in Gaschurn</a></span></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="brand"><span class="mark">FS</span> FS Creative</div>
+        <p>Kreativ- &amp; Digitalagentur aus Gaschurn im Montafon. Wir entwickeln und betreiben eigene Plattformen und Services.</p>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <h5>Projekte</h5>
+          <a href="#/blitzdings" data-link>Blitzdings</a>
+          <a href="#/valuero" data-link>VALUERO</a>
+          <a href="#/kochdu" data-link>kochdu</a>
+          <a href="#/paketshop" data-link>Paketshop</a>
+        </div>
+        <div class="foot-col">
+          <h5>Agentur</h5>
+          <a href="#/" data-link>Start</a>
+          <a href="#/kontakt" data-link>Kontakt</a>
+          <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a>
+        </div>
+        <div class="foot-col">
+          <h5>Standort</h5>
+          <span>Dorfstraße 3/1</span>
+          <span>6793 Gaschurn</span>
+          <span>Vorarlberg, AT</span>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© <span id="year"></span> FS Creative · Gaschurn</span>
+      <span>Mit ♥ im Montafon gebaut</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var pages = Array.prototype.slice.call(document.querySelectorAll('.page'));
+  var navlinks = document.getElementById('navlinks');
+  var burger = document.getElementById('burger');
+  var nav = document.getElementById('nav');
+
+  function currentRoute(){
+    var h = location.hash.replace(/^#/, '');
+    if(!h || h === '/') return '/';
+    return h;
+  }
+
+  function observeReveals(scope){
+    var els = scope.querySelectorAll('.reveal:not(.in)');
+    if(!('IntersectionObserver' in window)){ els.forEach(function(e){e.classList.add('in')}); return; }
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } });
+    },{threshold:.12, rootMargin:'0px 0px -8% 0px'});
+    els.forEach(function(e){ io.observe(e); });
+  }
+
+  function render(){
+    var route = currentRoute();
+    var found = false;
+    pages.forEach(function(p){
+      var match = p.getAttribute('data-route') === route;
+      if(match){ p.classList.add('active'); found = true; }
+      else p.classList.remove('active');
+    });
+    if(!found){ // fallback to home
+      pages[0].classList.add('active');
+      route = '/';
+    }
+    // active nav link
+    navlinks.querySelectorAll('a[data-link]').forEach(function(a){
+      var target = a.getAttribute('href').replace(/^#/, '');
+      a.classList.toggle('active', target === ('/' + route).replace('//','/') || target === route || (route==='/' && target==='/'));
+    });
+    // close mobile menu
+    navlinks.classList.remove('open'); burger.classList.remove('open');
+    // scroll to top of content
+    window.scrollTo({top:0, behavior:'auto'});
+    // reveal animations for the active page
+    var active = document.querySelector('.page.active');
+    if(active) setTimeout(function(){ observeReveals(active); }, 30);
+  }
+
+  // intercept in-page anchor links (#projekte etc.) for smooth scroll on home
+  document.addEventListener('click', function(e){
+    var a = e.target.closest('a');
+    if(!a) return;
+    var href = a.getAttribute('href') || '';
+    if(href.charAt(0) === '#' && href.charAt(1) !== '/' && href.length > 1){
+      // same-page section scroll
+      var el = document.querySelector(href);
+      if(el){ e.preventDefault(); navlinks.classList.remove('open'); burger.classList.remove('open');
+        el.scrollIntoView({behavior:'smooth', block:'start'}); }
+    }
+  });
+
+  burger.addEventListener('click', function(){
+    navlinks.classList.toggle('open'); burger.classList.toggle('open');
+  });
+
+  window.addEventListener('hashchange', render);
+  window.addEventListener('scroll', function(){
+    nav.classList.toggle('scrolled', window.scrollY > 8);
+  }, {passive:true});
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+  render();
+})();
+</script>
+</body>
+</html>
