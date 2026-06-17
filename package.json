@@ -1,0 +1,12 @@
+{
+  "name": "fs-creative",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FS Creative — Kreativ- & Digitalagentur aus dem Montafon",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
