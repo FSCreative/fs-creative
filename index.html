@@ -46,7 +46,7 @@ img{max-width:100%;display:block}
 
 /* ---------- Background glow ---------- */
 .bg-orbs{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
-.orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;transition:background .8s var(--ease),opacity .8s var(--ease)}
+.orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;transition:background .8s var(--ease),opacity .8s var(--ease),transform .6s ease-out}
 .orb.a{width:540px;height:540px;top:-140px;left:-120px;background:radial-gradient(circle,#1c4fff66,transparent 70%)}
 .orb.b{width:620px;height:620px;top:30%;right:-200px;background:radial-gradient(circle,#9d4eff55,transparent 70%)}
 .orb.c{width:480px;height:480px;bottom:-160px;left:30%;background:radial-gradient(circle,#00c2ff44,transparent 70%)}
@@ -94,16 +94,23 @@ main{padding-top:var(--nav-h)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 #34c75966}70%{box-shadow:0 0 0 10px #34c75900}100%{box-shadow:0 0 0 0 #34c75900}}
 h1.display{
   font-size:clamp(40px,7.2vw,82px);line-height:1.02;font-weight:700;letter-spacing:-.035em;
-  background:linear-gradient(180deg,#fff 30%,#b9b9c4);-webkit-background-clip:text;background-clip:text;color:transparent;
+  background:linear-gradient(110deg,#fff 18%,#8e93a6 38%,#fff 58%,#8e93a6 80%);background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:shimmer 7s linear infinite;
 }
+@keyframes shimmer{to{background-position:-220% center}}
 .hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
 .btn{
   display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:500;
-  padding:14px 28px;border-radius:999px;cursor:pointer;border:1px solid transparent;
-  transition:transform .25s var(--ease),background .25s var(--ease),border-color .25s var(--ease);
+  padding:14px 28px;border-radius:999px;cursor:pointer;border:1px solid transparent;position:relative;overflow:hidden;
+  transition:transform .25s var(--ease),background .25s var(--ease),border-color .25s var(--ease),box-shadow .25s var(--ease);
 }
+.btn::after{content:"";position:absolute;top:0;left:-130%;width:55%;height:100%;background:linear-gradient(120deg,transparent,rgba(255,255,255,.45),transparent);transform:skewX(-20deg);transition:left .6s var(--ease);pointer-events:none}
+.btn:hover::after{left:170%}
+.btn>*{position:relative;z-index:1}
 .btn:hover{transform:translateY(-2px)}
+.btn.primary:hover{box-shadow:0 14px 40px -10px rgba(255,255,255,.35)}
+.btn.ghost:hover{box-shadow:0 14px 40px -14px rgba(10,132,255,.5)}
 .btn.primary{background:#fff;color:#0a0a0f}
 .btn.primary:hover{background:#e9e9ee}
 .btn.ghost{background:var(--surface-2);color:var(--text);border-color:var(--border)}
@@ -139,13 +146,15 @@ section.block{padding:clamp(56px,9vh,104px) 0}
 .proj-card{
   position:relative;border-radius:var(--radius-lg);padding:34px;cursor:pointer;overflow:hidden;
   border:1px solid var(--border);min-height:230px;display:flex;flex-direction:column;justify-content:space-between;
-  background:var(--surface);
-  transition:transform .45s var(--ease),border-color .45s var(--ease);
+  background:var(--surface);transform-style:preserve-3d;will-change:transform;
+  transition:transform .4s var(--ease),border-color .45s var(--ease),box-shadow .4s var(--ease);
 }
-.proj-card:hover{transform:translateY(-6px) scale(1.005);border-color:rgba(255,255,255,.2)}
+.proj-card:hover{border-color:rgba(255,255,255,.22);box-shadow:0 30px 70px -30px rgba(0,0,0,.8)}
 .proj-card .glow{position:absolute;inset:0;opacity:.16;transition:opacity .45s var(--ease);z-index:0}
-.proj-card:hover .glow{opacity:.32}
-.proj-card>*{position:relative;z-index:1}
+.proj-card:hover .glow{opacity:.34}
+.proj-card::after{content:"";position:absolute;inset:0;border-radius:inherit;z-index:1;pointer-events:none;opacity:0;transition:opacity .35s var(--ease);background:radial-gradient(440px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.12),transparent 42%)}
+.proj-card:hover::after{opacity:1}
+.proj-card>*{position:relative;z-index:2}
 .proj-card .tag{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;opacity:.8}
 .proj-card h3{font-size:30px;font-weight:700;letter-spacing:-.03em;margin:10px 0 8px}
 .proj-card p{font-size:15px;color:var(--text-dim);max-width:90%}
@@ -169,7 +178,9 @@ section.block{padding:clamp(56px,9vh,104px) 0}
 .feat h4{font-size:17px;font-weight:600;margin-bottom:7px;letter-spacing:-.02em}
 .feat p{font-size:14px;color:var(--text-dim);line-height:1.55}
 
-/* ---------- Logos / hero logo ---------- */
+/* ---------- Logos / chips / drone ---------- */
+.logo-chip{display:inline-flex;align-items:center;justify-content:center;background:#ececef;border-radius:18px;padding:14px 24px;margin-bottom:22px;box-shadow:0 14px 50px rgba(0,0,0,.4)}
+.logo-chip img{height:48px;width:auto;display:block}
 .hero-logo-wrap{display:flex;align-items:center;justify-content:center;width:-moz-fit-content;width:fit-content;margin:0 auto 6px}
 .hero-logo{display:block;width:auto;height:auto;max-width:min(80vw,360px)}
 .drone-panel{border-radius:var(--radius-lg);border:1px solid var(--border);background:linear-gradient(135deg,rgba(10,132,255,.14),rgba(157,78,255,.08));padding:clamp(32px,5vw,56px);display:grid;grid-template-columns:1.3fr .9fr;gap:34px;align-items:center}
@@ -225,7 +236,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 .foot-bottom{margin-top:40px;padding-top:24px;border-top:1px solid var(--border);font-size:13px;color:var(--text-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 
 /* ---------- Reveal ---------- */
-.reveal{opacity:0;transform:translateY(28px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.reveal{opacity:0;transform:translateY(28px) scale(.985);transition:opacity .7s var(--ease),transform .7s var(--ease)}
 .reveal.in{opacity:1;transform:none}
 .reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}.reveal.d4{transition-delay:.32s}
 
@@ -247,9 +258,19 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .proj-card{padding:28px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- Premium FX ---------- */
+.scroll-prog{position:fixed;top:0;left:0;height:2px;width:0;z-index:300;background:linear-gradient(90deg,#0a84ff,#9d4eff,#34c759);box-shadow:0 0 14px rgba(124,99,255,.7)}
+.grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+::-webkit-scrollbar{width:11px}
+::-webkit-scrollbar-track{background:#0a0a0f}
+::-webkit-scrollbar-thumb{background:#26262e;border-radius:8px;border:2px solid #0a0a0f}
+::-webkit-scrollbar-thumb:hover{background:#3a3a46}
 </style>
 </head>
 <body>
+<div class="scroll-prog" id="prog"></div>
+<div class="grain"></div>
 <div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
 
 <header class="nav" id="nav">
@@ -466,7 +487,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   <section class="page" data-route="/paketshop">
     <div class="phero wrap">
       <div class="pglow" style="background:radial-gradient(circle,#ff9f0a,transparent 70%)"></div>
-      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
       <span class="pbadge" style="color:#ffc05f;background:#ff9f0a1a;border-color:#ff9f0a44">Lokaler Service · Gaschurn</span>
       <h1>Paketshop</h1>
       <p class="lead">Pakete einfach annehmen und abgeben — direkt an unserem Standort im Montafon. Wir sind dein Paketshop für <strong>GLS</strong> und <strong>Hermes</strong> in Gaschurn.</p>
@@ -517,7 +538,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   <section class="page" data-route="/kontakt">
     <div class="phero wrap">
       <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
-      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
       <span class="pbadge" style="color:#5fb0ff;background:#0a84ff1a;border-color:#0a84ff44">Kontakt</span>
       <h1>Lass uns reden.</h1>
       <p class="lead">Ob neues Projekt, Kooperation oder eine Frage zu einem unserer Services — wir freuen uns auf deine Nachricht.</p>
@@ -652,6 +673,43 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 
   document.getElementById('year').textContent = new Date().getFullYear();
   render();
+
+  // ---- Premium FX ----
+  var prog = document.getElementById('prog');
+  function updProg(){
+    var de = document.documentElement;
+    var max = (de.scrollHeight - de.clientHeight) || 1;
+    if(prog) prog.style.width = Math.min(100, (de.scrollTop / max) * 100) + '%';
+  }
+  window.addEventListener('scroll', updProg, {passive:true});
+  window.addEventListener('resize', updProg);
+  updProg();
+
+  var reduceFX = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!reduceFX){
+    var orbEls = document.querySelectorAll('.orb');
+    window.addEventListener('mousemove', function(e){
+      var cx = e.clientX / window.innerWidth - .5;
+      var cy = e.clientY / window.innerHeight - .5;
+      for(var i=0;i<orbEls.length;i++){
+        var f = (i+1)*14;
+        orbEls[i].style.transform = 'translate('+(cx*f).toFixed(1)+'px,'+(cy*f).toFixed(1)+'px)';
+      }
+    }, {passive:true});
+
+    document.querySelectorAll('.proj-card').forEach(function(card){
+      card.addEventListener('mousemove', function(e){
+        var r = card.getBoundingClientRect();
+        var x = e.clientX - r.left, y = e.clientY - r.top;
+        card.style.setProperty('--mx', x + 'px');
+        card.style.setProperty('--my', y + 'px');
+        var rx = (((y / r.height) - .5) * -6).toFixed(2);
+        var ry = (((x / r.width) - .5) * 6).toFixed(2);
+        card.style.transform = 'perspective(900px) rotateX(' + rx + 'deg) rotateY(' + ry + 'deg) translateY(-6px)';
+      });
+      card.addEventListener('mouseleave', function(){ card.style.transform = ''; });
+    });
+  }
 })();
 </script>
 </body>
