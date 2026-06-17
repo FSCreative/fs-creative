@@ -297,6 +297,30 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 .reveal.in{opacity:1;transform:none}
 .reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}.reveal.d4{transition-delay:.32s}
 
+/* ---------- Referenzen / Mockups ---------- */
+.ref-teaser-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.ref-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:26px}
+.ref-card{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:transform .35s var(--ease),border-color .3s,box-shadow .3s}
+.ref-card:hover{transform:translateY(-6px);border-color:rgba(255,255,255,.22);box-shadow:0 34px 80px -34px rgba(0,0,0,.85)}
+.mock-browser{background:#0c0c12}
+.mock-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:#15151d;border-bottom:1px solid rgba(255,255,255,.06)}
+.mock-bar .dot{width:11px;height:11px;border-radius:50%;background:#3a3a46}
+.mock-bar .dot.r{background:#ff5f57}.mock-bar .dot.y{background:#febc2e}.mock-bar .dot.g{background:#28c840}
+.mock-url{margin-left:10px;flex:1;background:#0c0c12;border-radius:8px;padding:5px 12px;font-size:12px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-shot{aspect-ratio:1200/800;background:#0b0b11}
+.mock-shot img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+.ref-meta{padding:18px 20px 20px}
+.ref-meta h3{font-size:19px}
+.ref-meta p{color:var(--text-dim);font-size:14px;margin-top:4px}
+.ref-go{display:inline-block;margin-top:12px;color:var(--accent);font-weight:600;font-size:14px}
+.ref-feature{display:grid;grid-template-columns:1.55fr .75fr;gap:34px;align-items:center;margin-bottom:50px}
+.mock-laptop .screen{background:#0c0c12;border:10px solid #1b1b24;border-radius:18px;overflow:hidden;aspect-ratio:16/10;box-shadow:0 44px 90px -44px rgba(0,0,0,.95)}
+.mock-laptop .screen img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.mock-laptop .base{height:14px;background:linear-gradient(#26262f,#14141b);border-radius:0 0 16px 16px;width:116%;margin:-1px -8% 0;box-shadow:0 18px 26px -16px rgba(0,0,0,.85)}
+.mock-phone{justify-self:center;width:208px;max-width:62vw;border:9px solid #1b1b24;border-radius:36px;overflow:hidden;background:#0c0c12;aspect-ratio:208/430;box-shadow:0 34px 70px -30px rgba(0,0,0,.95);position:relative}
+.mock-phone::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:72px;height:18px;background:#1b1b24;border-radius:0 0 12px 12px;z-index:2}
+.mock-phone img{width:100%;height:100%;object-fit:cover;object-position:top center}
+
 /* ---------- Responsive ---------- */
 @media(max-width:860px){
   .nav-links{
@@ -307,7 +331,8 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .nav-links.open{transform:none}
   .nav-links a{padding:13px 16px;font-size:16px;border-radius:14px}
   .burger{display:flex}
-  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row,.drone-panel,.about-grid{grid-template-columns:1fr}
+  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row,.drone-panel,.about-grid,.ref-teaser-grid,.ref-grid,.ref-feature{grid-template-columns:1fr}
+  .ref-feature{gap:24px}.mock-phone{margin-top:6px}
   .strip{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:480px){
@@ -369,6 +394,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <a href="/valuero" data-link>VALUERO</a>
       <a href="/kochdu" data-link>kochdu</a>
       <a href="/paketshop" data-link>Paketshop</a>
+      <a href="/referenzen" data-link>Referenzen</a>
       <a href="/ueber-uns" data-link>Über uns</a>
       <a href="/kontakt" class="nav-cta" data-link>Kontakt</a>
     </nav>
@@ -456,11 +482,41 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       </div>
     </section>
 
+    <section class="block wrap" id="referenzen">
+      <div class="sec-head reveal">
+        <div class="sec-tag">Referenzen</div>
+        <h2>Live im Einsatz.</h2>
+        <p>Eine Auswahl unserer Websites &amp; Plattformen — entwickelt und betreut von FS Creative.</p>
+      </div>
+      <div class="ref-teaser-grid" id="ref-teaser"></div>
+      <div style="text-align:center;margin-top:36px"><a href="/referenzen" class="btn ghost" data-link>Alle Referenzen ansehen <span class="arr">→</span></a></div>
+    </section>
+
     <section class="block wrap">
       <div class="cta-panel reveal">
         <h3>Eine Idee im Kopf?</h3>
         <p>Ob Website, Plattform oder Eventservice — erzähl uns davon. Wir melden uns persönlich.</p>
         <div class="btn-row"><a href="/kontakt" class="btn primary" data-link>Kontakt aufnehmen <span class="arr">→</span></a></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============ REFERENZEN ============ -->
+  <section class="page" data-route="/referenzen">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
+      <a href="/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#9db7ff;background:#0a84ff1a;border-color:#0a84ff44">Referenzen · Auswahl</span>
+      <h1>Unsere Arbeiten.</h1>
+      <p class="lead">Websites und Plattformen, die wir für eigene Marken und Kunden im Montafon entwickelt haben — von der Idee über das Design bis zum laufenden Betrieb. Klick dich direkt zu den Live-Seiten.</p>
+    </div>
+    <section class="block wrap">
+      <div class="ref-feature" id="ref-feature"></div>
+      <div class="ref-grid" id="ref-grid"></div>
+      <div class="cta-panel reveal" style="margin-top:50px">
+        <h3>Dein Projekt als Nächstes?</h3>
+        <p>Ob Website, Plattform oder Eventservice — wir setzen es um. Erzähl uns von deiner Idee.</p>
+        <div class="btn-row"><a href="/kontakt" class="btn primary" data-link>Projekt starten <span class="arr">→</span></a></div>
       </div>
     </section>
   </section>
@@ -710,6 +766,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         <div class="foot-col">
           <h5>Agentur</h5>
           <a href="/" data-link>Start</a>
+          <a href="/referenzen" data-link>Referenzen</a>
           <a href="/ueber-uns" data-link>Über uns</a>
           <a href="/kontakt" data-link>Kontakt</a>
           <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a>
@@ -750,7 +807,8 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
     '/kochdu': ['kochdu — Essen bestellen im Montafon | FS Creative', 'kochdu ist die Bestell- und Lieferplattform für Restaurants im Montafon. Auch für Gastronomen: einfach anmelden und mitmachen.'],
     '/paketshop': ['Paketshop Gaschurn — GLS & Hermes | FS Creative', 'GLS- und Hermes-Paketshop in Gaschurn, Dorfstraße 3/1. Pakete abholen und abgeben im Montafon.'],
     '/ueber-uns': ['Über uns — FS Creative aus dem Montafon', 'Lerne FS Creative kennen: Kreativ- und Digitalagentur aus Gaschurn im Montafon, gegründet von Simon Felder.'],
-    '/kontakt': ['Kontakt — FS Creative', 'Kontaktiere FS Creative aus Gaschurn im Montafon für dein nächstes digitales Projekt.']
+    '/kontakt': ['Kontakt — FS Creative', 'Kontaktiere FS Creative aus Gaschurn im Montafon für dein nächstes digitales Projekt.'],
+    '/referenzen': ['Referenzen — Websites & Plattformen | FS Creative', 'Referenzen von FS Creative: Websites und Plattformen aus dem Montafon — Blitzdings, VALUERO, kochdu, La Taverna, Ortsfeuerwehr Gaschurn, Spenglerei Flöry u. v. m.']
   };
   function setMeta(sel, attr, val){ var e = document.querySelector(sel); if(e) e.setAttribute(attr, val); }
   function applyMeta(route){
@@ -833,6 +891,37 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   window.addEventListener('scroll', function(){
     nav.classList.toggle('scrolled', window.scrollY > 8);
   }, {passive:true});
+
+  // ---- Referenzen (Screenshots via thum.io) ----
+  var REFS = [
+    {name:'Blitzdings', tag:'Fotobox & 360°-Videobooth', url:'https://blitzdings.co.at', host:'blitzdings.co.at'},
+    {name:'VALUERO', tag:'Tourismusplattform Hochmontafon', url:'https://valuero.at', host:'valuero.at'},
+    {name:'kochdu', tag:'Essen bestellen im Montafon', url:'https://kochdu.at', host:'kochdu.at'},
+    {name:'La Taverna', tag:'Ristorante & Pizzeria, Gaschurn', url:'https://www.la-taverna-pizzeria.at', host:'la-taverna-pizzeria.at'},
+    {name:'Musikfest Gaschurn-Partenen', tag:'100 Jahre Bürgermusik', url:'https://musikfest26.at', host:'musikfest26.at'},
+    {name:'Ortsfeuerwehr Gaschurn', tag:'Vereinswebsite', url:'https://of-gaschurn.at', host:'of-gaschurn.at'},
+    {name:'Feuerwehrfest Gortipohl', tag:'Event-Website', url:'https://feuerwehrfest27.at', host:'feuerwehrfest27.at'},
+    {name:'Spenglerei Flöry', tag:'Handwerksbetrieb', url:'https://www.spenglerei-floery.at', host:'spenglerei-floery.at'}
+  ];
+  function shot(u){ return 'https://image.thum.io/get/width/1200/crop/800/' + u; }
+  function phoneShot(u){ return 'https://image.thum.io/get/width/440/viewportwidth/400/crop/910/' + u; }
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+  function refCard(r, extra){
+    return '<a class="ref-card reveal '+(extra||'')+'" href="'+esc(r.url)+'" target="_blank" rel="noopener">'
+      + '<div class="mock-browser"><div class="mock-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="mock-url">'+esc(r.host)+'</span></div>'
+      + '<div class="mock-shot"><img loading="lazy" src="'+shot(r.url)+'" alt="'+esc(r.name)+' Website"></div></div>'
+      + '<div class="ref-meta"><h3>'+esc(r.name)+'</h3><p>'+esc(r.tag)+'</p><span class="ref-go">Website ansehen ↗</span></div></a>';
+  }
+  var teaserEl = document.getElementById('ref-teaser');
+  if(teaserEl) teaserEl.innerHTML = REFS.slice(0,3).map(function(r,i){return refCard(r,'d'+(i+1));}).join('');
+  var gridEl = document.getElementById('ref-grid');
+  if(gridEl) gridEl.innerHTML = REFS.map(function(r){return refCard(r);}).join('');
+  var featEl = document.getElementById('ref-feature');
+  if(featEl){ var f = REFS[1]; // VALUERO
+    featEl.innerHTML =
+      '<div class="mock-laptop reveal"><div class="screen"><img loading="lazy" src="'+shot(f.url)+'" alt="'+esc(f.name)+'"></div><div class="base"></div></div>'
+      + '<div class="mock-phone reveal d2"><img loading="lazy" src="'+phoneShot(f.url)+'" alt="'+esc(f.name)+' mobil"></div>';
+  }
 
   document.getElementById('year').textContent = new Date().getFullYear();
   render();
