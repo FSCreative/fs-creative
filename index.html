@@ -11,7 +11,7 @@
 <meta property="og:description" content="Kreativ- und Digitalagentur aus Gaschurn im Montafon. Eigene Plattformen & Services: Blitzdings, VALUERO, kochdu, Paketshop." />
 <meta property="og:type" content="website" />
 <meta property="og:locale" content="de_AT" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%230a0a0f'/%3E%3Ctext x='50' y='68' font-family='Arial,sans-serif' font-size='52' font-weight='700' fill='white' text-anchor='middle'%3EFS%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='24'%20fill='%230a0a0f'/%3E%3Cg%20stroke='%23ffd400'%20stroke-width='5'%20stroke-linecap='round'%3E%3Cline%20x1='50'%20y1='13'%20x2='50'%20y2='21'/%3E%3Cline%20x1='28'%20y1='22'%20x2='34'%20y2='28'/%3E%3Cline%20x1='72'%20y1='22'%20x2='66'%20y2='28'/%3E%3Cline%20x1='19'%20y1='44'%20x2='27'%20y2='44'/%3E%3Cline%20x1='81'%20y1='44'%20x2='73'%20y2='44'/%3E%3C/g%3E%3Ccircle%20cx='50'%20cy='45'%20r='17'%20fill='none'%20stroke='%23ffffff'%20stroke-width='5'/%3E%3Crect%20x='43'%20y='60'%20width='14'%20height='9'%20rx='2'%20fill='%23ffffff'/%3E%3Cline%20x1='45'%20y1='72'%20x2='55'%20y2='72'%20stroke='%23ffffff'%20stroke-width='4'%20stroke-linecap='round'/%3E%3C/svg%3E" />
 <style>
 :root{
   --bg:#0a0a0f;
@@ -156,9 +156,9 @@ section.block{padding:clamp(56px,9vh,104px) 0}
 /* ---------- Project detail hero ---------- */
 .phero{position:relative;padding:clamp(70px,11vh,130px) 0 clamp(40px,6vh,70px);text-align:center;overflow:hidden}
 .phero .pglow{position:absolute;top:-30%;left:50%;transform:translateX(-50%);width:900px;height:600px;border-radius:50%;filter:blur(110px);opacity:.4;z-index:-1}
-.back-link{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:var(--text-dim);margin-bottom:26px;transition:color .25s var(--ease)}
+.back-link{display:flex;width:-moz-fit-content;width:fit-content;align-items:center;gap:7px;font-size:14px;color:var(--text-dim);margin:0 auto 24px;transition:color .25s var(--ease)}
 .back-link:hover{color:var(--text)}
-.pbadge{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:7px 16px;border-radius:999px;margin-bottom:22px;border:1px solid var(--border)}
+.pbadge{display:block;width:-moz-fit-content;width:fit-content;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:7px 16px;border-radius:999px;margin:0 auto 22px;border:1px solid var(--border)}
 .phero h1{font-size:clamp(38px,6.4vw,68px);font-weight:700;letter-spacing:-.035em;line-height:1.04}
 .phero p.lead{max-width:600px;margin:22px auto 0;font-size:clamp(16px,2vw,20px);color:var(--text-dim)}
 
@@ -172,7 +172,7 @@ section.block{padding:clamp(56px,9vh,104px) 0}
 /* ---------- Logos / chips / drone ---------- */
 .logo-chip{display:inline-flex;align-items:center;justify-content:center;background:#ececef;border-radius:18px;padding:14px 24px;margin-bottom:22px;box-shadow:0 14px 50px rgba(0,0,0,.4)}
 .logo-chip img{height:48px;width:auto;display:block}
-.hero-logo-wrap{display:inline-flex;align-items:center;justify-content:center;background:#ececef;border-radius:22px;padding:18px 30px;margin:0 0 6px;box-shadow:0 24px 70px -22px rgba(0,0,0,.7)}
+.hero-logo-wrap{display:flex;align-items:center;justify-content:center;width:-moz-fit-content;width:fit-content;background:#ececef;border-radius:22px;padding:18px 30px;margin:0 auto 6px;box-shadow:0 24px 70px -22px rgba(0,0,0,.7)}
 .hero-logo{display:block;width:auto;height:auto;max-width:min(72vw,320px)}
 .drone-panel{border-radius:var(--radius-lg);border:1px solid var(--border);background:linear-gradient(135deg,rgba(10,132,255,.14),rgba(157,78,255,.08));padding:clamp(32px,5vw,56px);display:grid;grid-template-columns:1.3fr .9fr;gap:34px;align-items:center}
 .drone-panel h3{font-size:clamp(24px,3.4vw,34px);font-weight:700;letter-spacing:-.03em}
@@ -468,7 +468,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   <section class="page" data-route="/paketshop">
     <div class="phero wrap">
       <div class="pglow" style="background:radial-gradient(circle,#ff9f0a,transparent 70%)"></div>
-      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
       <span class="pbadge" style="color:#ffc05f;background:#ff9f0a1a;border-color:#ff9f0a44">Lokaler Service · Gaschurn</span>
       <h1>Paketshop</h1>
       <p class="lead">Pakete einfach annehmen und abgeben — direkt an unserem Standort im Montafon. Wir sind dein Paketshop für <strong>GLS</strong> und <strong>Hermes</strong> in Gaschurn.</p>
@@ -519,7 +519,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   <section class="page" data-route="/kontakt">
     <div class="phero wrap">
       <div class="pglow" style="background:radial-gradient(circle,#0a84ff,transparent 70%)"></div>
-      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <a href="#/" class="back-link" data-link>← Zurück zur Übersicht</a>
       <span class="pbadge" style="color:#5fb0ff;background:#0a84ff1a;border-color:#0a84ff44">Kontakt</span>
       <h1>Lass uns reden.</h1>
       <p class="lead">Ob neues Projekt, Kooperation oder eine Frage zu einem unserer Services — wir freuen uns auf deine Nachricht.</p>
