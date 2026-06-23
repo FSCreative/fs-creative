@@ -149,6 +149,16 @@ h1.display{
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
 .hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
+/* Hero lightbulb — dezent interaktiv */
+.hero-bulb{width:74px;height:74px;margin:0 auto 18px;position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;will-change:transform;transition:transform .25s ease-out}
+.bulb-glow{position:absolute;inset:-55%;border-radius:50%;background:radial-gradient(circle,rgba(255,201,92,.16),transparent 66%);opacity:.55;transform:scale(.88);transition:background .45s,opacity .45s,transform .45s;animation:bulbPulse 4.6s ease-in-out infinite;z-index:-1;pointer-events:none}
+@keyframes bulbPulse{0%,100%{opacity:.4;transform:scale(.86)}50%{opacity:.82;transform:scale(1.04)}}
+.bulb-float{display:flex;width:100%;height:100%;animation:bulbFloat 6s ease-in-out infinite}
+@keyframes bulbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.hero-bulb img{width:100%;height:100%;object-fit:contain;opacity:.8;filter:drop-shadow(0 0 6px rgba(255,201,92,.22));transition:opacity .4s,filter .4s,transform .4s}
+.hero-bulb:hover img{opacity:1;filter:drop-shadow(0 0 16px rgba(255,206,104,.95)) drop-shadow(0 0 40px rgba(255,170,60,.5));transform:scale(1.08)}
+.hero-bulb:hover .bulb-glow{background:radial-gradient(circle,rgba(255,201,92,.42),transparent 70%);opacity:1;transform:scale(1.28);animation:none}
+@media(prefers-reduced-motion:reduce){.bulb-glow,.bulb-float{animation:none}}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
 .btn{
   display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:500;
@@ -414,6 +424,10 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   <!-- ============ HOME ============ -->
   <section class="page active" data-route="/">
     <div class="hero wrap">
+      <div class="hero-bulb" id="heroBulb" title="FS Creative">
+        <span class="bulb-glow"></span>
+        <span class="bulb-float"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="" aria-hidden="true"></span>
+      </div>
       <span class="eyebrow"><span class="dot"></span> Kreativ- &amp; Digitalagentur · Montafon</span>
       <h1 class="display">Ideen aus dem Tal,<br>gebaut für das Netz.</h1>
       <p class="lead">FS Creative entwickelt und betreibt digitale Plattformen und Services im Montafon — von der Fotobox bis zur Buchungsplattform. Wir denken, gestalten und programmieren alles unter einem Dach.</p>
@@ -949,6 +963,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
     updHero();
 
     var orbEls = document.querySelectorAll('.orb');
+    var heroBulb = document.getElementById('heroBulb');
     window.addEventListener('mousemove', function(e){
       var cx = e.clientX / window.innerWidth - .5;
       var cy = e.clientY / window.innerHeight - .5;
@@ -956,6 +971,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         var f = (i+1)*14;
         orbEls[i].style.transform = 'translate('+(cx*f).toFixed(1)+'px,'+(cy*f).toFixed(1)+'px)';
       }
+      if(heroBulb) heroBulb.style.transform = 'translate('+(cx*-18).toFixed(1)+'px,'+(cy*-12).toFixed(1)+'px)';
     }, {passive:true});
 
     document.querySelectorAll('.proj-card').forEach(function(card){
