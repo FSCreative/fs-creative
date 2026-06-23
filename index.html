@@ -151,18 +151,20 @@ h1.display{
 .hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
 /* Hero lightbulb — großes, dezentes Hintergrund-Motiv */
 .hero{overflow:hidden}
-.hero-bulb{position:absolute;left:50%;top:78px;transform:translateX(-50%);width:clamp(360px,94vw,1080px);height:auto;z-index:0;pointer-events:none;display:flex;align-items:flex-start;justify-content:center}
-.bulb-glow{position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(255,201,92,.17),rgba(255,193,84,.06) 40%,transparent 74%);z-index:-1}
-.bulb-float{display:flex;width:100%}
-.hero-bulb img{width:100%;height:auto;opacity:.22;filter:drop-shadow(0 0 36px rgba(255,206,104,.7)) drop-shadow(0 0 110px rgba(255,185,75,.42));animation:bulbFlicker 7.3s linear infinite}
+.hero-bulb{position:absolute;left:50%;top:78px;transform:translateX(-50%);width:clamp(340px,72vw,820px);height:auto;z-index:0;pointer-events:none;display:flex;align-items:flex-start;justify-content:center;will-change:transform}
+.bulb-glow{position:absolute;inset:-50%;border-radius:50%;background:radial-gradient(circle,rgba(255,203,96,.22),rgba(255,193,84,.07) 30%,transparent 58%);z-index:-1;opacity:.85;will-change:opacity;animation:bulbFlicker 5.4s linear infinite}
+/* Flackern NUR am Schein, nicht am Logo */
 @keyframes bulbFlicker{
-  0%,10.8%,31%,45%,66%,88%,100%{opacity:.22;filter:drop-shadow(0 0 36px rgba(255,206,104,.72)) drop-shadow(0 0 110px rgba(255,185,75,.42))}
-  11.1%,31.3%,66.3%{opacity:.09;filter:drop-shadow(0 0 14px rgba(255,201,92,.3)) drop-shadow(0 0 56px rgba(255,182,72,.18))}
-  11.4%,31.55%,66.55%{opacity:.22;filter:drop-shadow(0 0 36px rgba(255,206,104,.72)) drop-shadow(0 0 110px rgba(255,185,75,.42))}
-  45.6%{opacity:.27;filter:drop-shadow(0 0 44px rgba(255,212,116,.85)) drop-shadow(0 0 130px rgba(255,190,80,.5))}
+  0%,6.5%,15%,33%,33.6%,49%,63%,78%,86%,100%{opacity:.85}
+  6.8%,15.3%,49.3%,78.3%{opacity:.24}
+  33.2%{opacity:1}
+  63.4%{opacity:.5}
+  86.3%{opacity:.32}
 }
+.bulb-float{display:flex;width:100%}
+.hero-bulb img{width:100%;height:auto;opacity:.24;filter:drop-shadow(0 0 28px rgba(255,201,92,.34))}
 .hero .eyebrow,.hero h1.display,.hero p.lead,.hero .btn-row{position:relative;z-index:2}
-@media(prefers-reduced-motion:reduce){.hero-bulb img{animation:none}}
+@media(prefers-reduced-motion:reduce){.bulb-glow{animation:none}}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
 .btn{
   display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:500;
@@ -427,17 +429,19 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 
   <!-- ============ HOME ============ -->
   <section class="page active" data-route="/">
-    <div class="hero wrap">
+    <div class="hero">
       <div class="hero-bulb" id="heroBulb" title="FS Creative">
         <span class="bulb-glow"></span>
         <span class="bulb-float"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="" aria-hidden="true"></span>
       </div>
+      <div class="wrap">
       <span class="eyebrow"><span class="dot"></span> Kreativ- &amp; Digitalagentur · Montafon</span>
       <h1 class="display">Ideen aus dem Tal,<br>gebaut für das Netz.</h1>
       <p class="lead">FS Creative entwickelt und betreibt digitale Plattformen und Services im Montafon — von der Fotobox bis zur Buchungsplattform. Wir denken, gestalten und programmieren alles unter einem Dach.</p>
       <div class="btn-row">
         <a href="/kontakt" class="btn primary" data-link>Projekt starten <span class="arr">→</span></a>
         <a href="#projekte" class="btn ghost">Unsere Projekte</a>
+      </div>
       </div>
     </div>
 
