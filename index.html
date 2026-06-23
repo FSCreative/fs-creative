@@ -152,10 +152,15 @@ h1.display{
 /* Hero lightbulb — großes, dezentes Hintergrund-Motiv */
 .hero{overflow:hidden}
 .hero-bulb{position:absolute;left:50%;top:78px;transform:translateX(-50%);width:clamp(360px,94vw,1080px);height:auto;z-index:0;pointer-events:none;display:flex;align-items:flex-start;justify-content:center}
-.bulb-glow{position:absolute;inset:4%;border-radius:50%;background:radial-gradient(circle,rgba(255,201,92,.13),transparent 62%);z-index:-1}
+.bulb-glow{position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(255,201,92,.17),rgba(255,193,84,.06) 40%,transparent 74%);z-index:-1}
 .bulb-float{display:flex;width:100%}
-.hero-bulb img{width:100%;height:auto;opacity:.2;filter:drop-shadow(0 0 26px rgba(255,201,92,.6)) drop-shadow(0 0 64px rgba(255,182,72,.32));animation:bulbBeam 6.5s ease-in-out infinite}
-@keyframes bulbBeam{0%,100%{opacity:.15;filter:drop-shadow(0 0 18px rgba(255,201,92,.42)) drop-shadow(0 0 50px rgba(255,182,72,.22))}50%{opacity:.25;filter:drop-shadow(0 0 34px rgba(255,210,110,.85)) drop-shadow(0 0 80px rgba(255,188,78,.45))}}
+.hero-bulb img{width:100%;height:auto;opacity:.22;filter:drop-shadow(0 0 36px rgba(255,206,104,.7)) drop-shadow(0 0 110px rgba(255,185,75,.42));animation:bulbFlicker 7.3s linear infinite}
+@keyframes bulbFlicker{
+  0%,10.8%,31%,45%,66%,88%,100%{opacity:.22;filter:drop-shadow(0 0 36px rgba(255,206,104,.72)) drop-shadow(0 0 110px rgba(255,185,75,.42))}
+  11.1%,31.3%,66.3%{opacity:.09;filter:drop-shadow(0 0 14px rgba(255,201,92,.3)) drop-shadow(0 0 56px rgba(255,182,72,.18))}
+  11.4%,31.55%,66.55%{opacity:.22;filter:drop-shadow(0 0 36px rgba(255,206,104,.72)) drop-shadow(0 0 110px rgba(255,185,75,.42))}
+  45.6%{opacity:.27;filter:drop-shadow(0 0 44px rgba(255,212,116,.85)) drop-shadow(0 0 130px rgba(255,190,80,.5))}
+}
 .hero .eyebrow,.hero h1.display,.hero p.lead,.hero .btn-row{position:relative;z-index:2}
 @media(prefers-reduced-motion:reduce){.hero-bulb img{animation:none}}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
@@ -953,10 +958,11 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   if(!reduceFX){
     // parallax fill of the hero headline (only the gradient moves, text stays)
     var heroFill = document.querySelector('h1.display');
+    var heroBulb = document.getElementById('heroBulb');
     function updHero(){
-      if(!heroFill) return;
       var y = window.scrollY || document.documentElement.scrollTop || 0;
-      heroFill.style.backgroundPositionY = (y * 0.45) + 'px';
+      if(heroFill) heroFill.style.backgroundPositionY = (y * 0.45) + 'px';
+      if(heroBulb) heroBulb.style.transform = 'translateX(-50%) translateY(' + (y * 0.3).toFixed(1) + 'px)';
     }
     window.addEventListener('scroll', updHero, {passive:true});
     updHero();
