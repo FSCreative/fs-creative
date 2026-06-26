@@ -45,6 +45,7 @@ async function initDb() {
     note TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT now()
   );`);
+  await q("ALTER TABLE commissions ADD COLUMN IF NOT EXISTS site TEXT DEFAULT ''");
   // Seed example commissions once (the two the user mentioned).
   const c = await q("SELECT COUNT(*)::int AS c FROM commissions");
   if (c.rows[0].c === 0) {
@@ -55,6 +56,8 @@ async function initDb() {
        ('kochdu – Gebühren','kochdu','in',0,NULL,NULL,'','offen','Bestell-/Servicegebühren')`
     );
   }
+  await q("UPDATE commissions SET site='Antonhaus' WHERE COALESCE(site,'')='' AND title LIKE 'Antonhaus%'");
+  await q("UPDATE commissions SET site='kochdu' WHERE COALESCE(site,'')='' AND (partner='kochdu' OR title LIKE 'kochdu%')");
   const t = await q("SELECT COUNT(*)::int AS c FROM tasks");
   if (t.rows[0].c === 0) {
     await q(
@@ -112,6 +115,8 @@ function parseAmount(v) {
   return isNaN(n) ? null : n;
 }
 function dstr(d) { if (!d) return ""; try { return new Date(d).toISOString().slice(0, 10); } catch (e) { return ""; } }
+const SITES = ["Blitzdings", "VALUERO", "kochdu", "La Taverna", "Antonhaus", "Musikfest Gaschurn-Partenen", "Ortsfeuerwehr Gaschurn", "Feuerwehrfest Gortipohl", "Spenglerei Flöry", "Paketshop", "FS Creative"];
+function siteDatalist() { return '<datalist id="sites">' + SITES.map((s) => `<option value="${esc(s)}">`).join("") + "</datalist>"; }
 
 /* ============================ ADMIN CSS ============================ */
 const ADMIN_CSS = `
@@ -255,7 +260,7 @@ function commRow(c) {
   const dirLabel = c.direction === "out" ? "Ausgabe" : "Einnahme";
   const sub = [c.partner, c.period, c.percent != null ? c.percent + "%" + (c.base != null ? " von " + eur(c.base) : "") : "", c.note].filter(Boolean).join(" · ");
   return `<div class="row">
-    <div class="info"><h3>${esc(c.title)} <span class="tag dir-${c.direction === "out" ? "out" : "in"}">${dirLabel}</span> <span class="tag ${esc(c.status)}">${sLabel}</span></h3>
+    <div class="info"><h3>${esc(c.title)} ${c.site ? `<span class="tag" style="background:#16263a;color:#7fb6ff">${esc(c.site)}</span>` : ""} <span class="tag dir-${c.direction === "out" ? "out" : "in"}">${dirLabel}</span> <span class="tag ${esc(c.status)}">${sLabel}</span></h3>
       ${sub ? `<p>${esc(sub)}</p>` : ""}</div>
     <span class="amt ${c.direction === "out" ? "out" : "in"}">${c.direction === "out" ? "−" : "+"}${eur(amt)}</span>
     <div class="acts">
@@ -300,14 +305,15 @@ function taskForm(t, pending) {
         <option value="hoch" ${sel(t.priority, "hoch")}>Hoch</option></select></div>
       <div class="fr" style="margin:0"><label>Fällig</label><input type="date" name="due" value="${dstr(t.due)}"></div>
     </div>
-    <div class="fr"><label>Projekt / Bezug</label><input name="project" value="${esc(t.project)}" placeholder="z. B. kochdu, Antonhaus, VALUERO"></div>
+    <div class="fr"><label>Projekt / Website</label><input name="project" list="sites" value="${esc(t.project)}" placeholder="auswählen oder eingeben"></div>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Speichern</button><a class="btn btn-ghost" href="/admin/aufgaben">Abbrechen</a></div>
-  </form>`;
+  </form>${siteDatalist()}`;
   return shell({ title: "Aufgabe", active: "/admin/aufgaben", body, pending });
 }
 
-function commPage(items, totals, filter, pending) {
+function commPage(items, totals, filter, pending, siteTotals) {
   const chip = (key, label) => `<a class="chip ${filter === key ? "active" : ""}" href="/admin/provisionen?f=${key}">${label}</a>`;
+  const siteRow = (s) => `<div class="row"><div class="info"><h3>${esc(s.site)}</h3><p>+${eur(s.in)} erhalten · −${eur(s.out)} zahlen</p></div><span class="amt ${s.net >= 0 ? "in" : "out"}">${s.net >= 0 ? "+" : "−"}${eur(Math.abs(s.net))}</span></div>`;
   const body = `
   <div class="ptitle"><h1>Provisionen & Gebühren</h1><a class="btn btn-primary" href="/admin/provisionen/neu">+ Neuer Eintrag</a></div>
   <div class="stat-grid">
@@ -316,6 +322,7 @@ function commPage(items, totals, filter, pending) {
     <div class="stat"><div class="l">Verrechnet (offen bez.)</div><div class="n amber">${eur(totals.invoiced)}</div></div>
     <div class="stat"><div class="l">Bereits bezahlt</div><div class="n">${eur(totals.paid)}</div></div>
   </div>
+  ${siteTotals && siteTotals.length ? `<div class="card" style="margin-bottom:18px"><h2>Offener Saldo pro Website</h2><div class="rows">${siteTotals.map(siteRow).join("")}</div></div>` : ""}
   <div class="filters">
     ${chip("alle", "Alle")}${chip("offen", "Offen")}${chip("verrechnet", "Verrechnet")}${chip("bezahlt", "Bezahlt")}
     ${chip("in", "Einnahmen")}${chip("out", "Ausgaben")}
@@ -332,7 +339,10 @@ function commForm(c, pending) {
   <form class="form" method="POST" action="${isNew ? "/admin/provisionen/neu" : "/admin/provisionen/" + c.id}">
     <div class="fr"><label>Bezeichnung *</label><input name="title" required value="${esc(c.title)}" placeholder="z. B. Antonhaus – 5% Provision"></div>
     <div class="fr two">
-      <div class="fr" style="margin:0"><label>Partner / Quelle</label><input name="partner" value="${esc(c.partner)}" placeholder="z. B. Antonhaus, kochdu"></div>
+      <div class="fr" style="margin:0"><label>Website / Projekt</label><input name="site" list="sites" value="${esc(c.site)}" placeholder="auswählen oder eingeben"></div>
+      <div class="fr" style="margin:0"><label>Partner / Kontakt (optional)</label><input name="partner" value="${esc(c.partner)}" placeholder="z. B. Familie Wachter"></div>
+    </div>
+    <div class="fr two">
       <div class="fr" style="margin:0"><label>Richtung</label><select name="direction">
         <option value="in" ${sel(c.direction, "in")}>Einnahme – ich bekomme/verrechne</option>
         <option value="out" ${sel(c.direction, "out")}>Ausgabe – ich zahle/führe ab</option></select></div>
@@ -352,7 +362,7 @@ function commForm(c, pending) {
       <option value="bezahlt" ${sel(c.status, "bezahlt")}>Bezahlt / erledigt</option></select></div>
     <div class="fr"><label>Notiz</label><textarea name="note">${esc(c.note)}</textarea></div>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Speichern</button><a class="btn btn-ghost" href="/admin/provisionen">Abbrechen</a></div>
-  </form>`;
+  </form>${siteDatalist()}`;
   return shell({ title: "Provision", active: "/admin/provisionen", body, pending });
 }
 
@@ -436,29 +446,36 @@ app.get("/admin/provisionen", async (req, res, next) => {
     const items = (await q(`SELECT * FROM commissions ${where} ORDER BY (status='offen') DESC, id DESC`)).rows;
     const all = (await q("SELECT * FROM commissions")).rows;
     let inOpen = 0, outOpen = 0, invoiced = 0, paid = 0;
+    const bySite = {};
     all.forEach((c) => {
       const a = effAmount(c);
       if (c.status === "bezahlt") paid += a;
       else if (c.status === "verrechnet") invoiced += a;
-      if (c.status !== "bezahlt") { if (c.direction === "out") outOpen += a; else inOpen += a; }
+      if (c.status !== "bezahlt") {
+        if (c.direction === "out") outOpen += a; else inOpen += a;
+        const k = c.site || "— ohne Website";
+        bySite[k] = bySite[k] || { in: 0, out: 0 };
+        if (c.direction === "out") bySite[k].out += a; else bySite[k].in += a;
+      }
     });
-    res.send(commPage(items, { inOpen, outOpen, invoiced, paid }, f, await pendingCount()));
+    const siteTotals = Object.keys(bySite).sort().map((k) => ({ site: k, in: bySite[k].in, out: bySite[k].out, net: bySite[k].in - bySite[k].out }));
+    res.send(commPage(items, { inOpen, outOpen, invoiced, paid }, f, await pendingCount(), siteTotals));
   } catch (e) { next(e); }
 });
 app.get("/admin/provisionen/neu", async (req, res, next) => { try { res.send(commForm({ direction: "in", status: "offen" }, await pendingCount())); } catch (e) { next(e); } });
 function commValues(b) {
   return [String(b.title || "").slice(0, 200), String(b.partner || ""), b.direction === "out" ? "out" : "in",
-    parseAmount(b.amount) || 0, parseAmount(b.percent), parseAmount(b.base), String(b.period || ""), b.status || "offen", String(b.note || "")];
+    parseAmount(b.amount) || 0, parseAmount(b.percent), parseAmount(b.base), String(b.period || ""), b.status || "offen", String(b.note || ""), String(b.site || "")];
 }
 app.post("/admin/provisionen/neu", async (req, res, next) => {
-  try { await q("INSERT INTO commissions (title,partner,direction,amount,percent,base,period,status,note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", commValues(req.body)); res.redirect("/admin/provisionen"); } catch (e) { next(e); }
+  try { await q("INSERT INTO commissions (title,partner,direction,amount,percent,base,period,status,note,site) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", commValues(req.body)); res.redirect("/admin/provisionen"); } catch (e) { next(e); }
 });
 app.get("/admin/provisionen/:id", async (req, res, next) => {
   try { const r = await q("SELECT * FROM commissions WHERE id=$1", [req.params.id]); if (!r.rows[0]) return res.redirect("/admin/provisionen"); res.send(commForm(r.rows[0], await pendingCount())); } catch (e) { next(e); }
 });
 app.post("/admin/provisionen/:id", async (req, res, next) => {
   try { const v = commValues(req.body); v.push(req.params.id);
-    await q("UPDATE commissions SET title=$1,partner=$2,direction=$3,amount=$4,percent=$5,base=$6,period=$7,status=$8,note=$9 WHERE id=$10", v); res.redirect("/admin/provisionen"); } catch (e) { next(e); }
+    await q("UPDATE commissions SET title=$1,partner=$2,direction=$3,amount=$4,percent=$5,base=$6,period=$7,status=$8,note=$9,site=$10 WHERE id=$11", v); res.redirect("/admin/provisionen"); } catch (e) { next(e); }
 });
 app.post("/admin/provisionen/:id/loeschen", async (req, res, next) => { try { await q("DELETE FROM commissions WHERE id=$1", [req.params.id]); res.redirect("/admin/provisionen"); } catch (e) { next(e); } });
 
