@@ -335,6 +335,19 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 .mock-phone::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:72px;height:18px;background:#1b1b24;border-radius:0 0 12px 12px;z-index:2}
 .mock-phone img{width:100%;height:100%;object-fit:cover;object-position:top center}
 
+/* ---------- Empfehlungen ---------- */
+.rec-area{margin-bottom:40px}
+.rec-area > h2{font-size:clamp(20px,3vw,26px);margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.rec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.rec-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:transform .3s var(--ease),border-color .3s}
+.rec-card:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.2)}
+.rec-card h3{font-size:20px}
+.rec-card .role{color:var(--text-dim);font-size:14px;margin-top:6px;line-height:1.45}
+.rec-card .rec-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.rec-card .rec-links a{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:999px;border:1px solid var(--border);font-size:13px;font-weight:600;color:var(--text);transition:.15s}
+.rec-card .rec-links a:hover{border-color:var(--accent);color:#fff}
+.rec-card .rec-links a.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+
 /* ---------- Responsive ---------- */
 @media(max-width:860px){
   .nav-links{
@@ -345,7 +358,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .nav-links.open{transform:none}
   .nav-links a{padding:13px 16px;font-size:16px;border-radius:14px}
   .burger{display:flex}
-  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row,.drone-panel,.about-grid,.ref-teaser-grid,.ref-grid,.ref-feature{grid-template-columns:1fr}
+  .grid.cols-3,.grid.cols-2,.proj,.feat-grid,.info-grid,.carrier-row,.drone-panel,.about-grid,.ref-teaser-grid,.ref-grid,.ref-feature,.rec-grid{grid-template-columns:1fr}
   .ref-feature{gap:24px}.mock-phone{margin-top:6px}
   .strip{grid-template-columns:repeat(2,1fr)}
 }
@@ -409,6 +422,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       <a href="/kochdu" data-link>kochdu</a>
       <a href="/paketshop" data-link>Paketshop</a>
       <a href="/referenzen" data-link>Referenzen</a>
+      <a href="/empfehlungen" data-link>Empfehlungen</a>
       <a href="/ueber-uns" data-link>Über uns</a>
       <a href="/kontakt" class="nav-cta" data-link>Kontakt</a>
     </nav>
@@ -536,6 +550,25 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         <h3>Dein Projekt als Nächstes?</h3>
         <p>Ob Website, Plattform oder Eventservice — wir setzen es um. Erzähl uns von deiner Idee.</p>
         <div class="btn-row"><a href="/kontakt" class="btn primary" data-link>Projekt starten <span class="arr">→</span></a></div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============ EMPFEHLUNGEN ============ -->
+  <section class="page" data-route="/empfehlungen">
+    <div class="phero wrap">
+      <div class="pglow" style="background:radial-gradient(circle,#34c759,transparent 70%)"></div>
+      <a href="/" class="back-link" data-link>← Zurück zur Übersicht</a><br>
+      <span class="pbadge" style="color:#7fe0a0;background:#34c7591a;border-color:#34c75944">Empfehlungen</span>
+      <h1>Wir empfehlen.</h1>
+      <p class="lead"><strong>Wer kann was?</strong> Da ich wie jeder Mensch in meinem Pensum begrenzt bin, habe ich auch Empfehlungen für verschiedene Bereiche — Menschen, mit denen ich gern zusammenarbeite und die ich mit gutem Gewissen weiterempfehle.</p>
+    </div>
+    <section class="block wrap">
+      <div id="rec-list"></div>
+      <div class="cta-panel reveal" style="margin-top:40px">
+        <h3>Du bist stark in einem Bereich, den ich nicht abdecke?</h3>
+        <p>Dann melde dich gern — vielleicht empfehlen wir uns bald gegenseitig.</p>
+        <div class="btn-row"><a href="/kontakt" class="btn primary" data-link>Kontakt aufnehmen <span class="arr">→</span></a></div>
       </div>
     </section>
   </section>
@@ -786,6 +819,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
           <h5>Agentur</h5>
           <a href="/" data-link>Start</a>
           <a href="/referenzen" data-link>Referenzen</a>
+          <a href="/empfehlungen" data-link>Empfehlungen</a>
           <a href="/ueber-uns" data-link>Über uns</a>
           <a href="/kontakt" data-link>Kontakt</a>
           <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a>
@@ -827,7 +861,8 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
     '/paketshop': ['Paketshop Gaschurn — GLS & Hermes | FS Creative', 'GLS- und Hermes-Paketshop in Gaschurn, Dorfstraße 3/1. Pakete abholen und abgeben im Montafon.'],
     '/ueber-uns': ['Über uns — FS Creative aus dem Montafon', 'Lerne FS Creative kennen: Kreativ- und Digitalagentur aus Gaschurn im Montafon, gegründet von Simon Felder.'],
     '/kontakt': ['Kontakt — FS Creative', 'Kontaktiere FS Creative aus Gaschurn im Montafon für dein nächstes digitales Projekt.'],
-    '/referenzen': ['Referenzen — Websites & Plattformen | FS Creative', 'Referenzen von FS Creative: Websites und Plattformen aus dem Montafon — Blitzdings, VALUERO, kochdu, La Taverna, Ortsfeuerwehr Gaschurn, Spenglerei Flöry u. v. m.']
+    '/referenzen': ['Referenzen — Websites & Plattformen | FS Creative', 'Referenzen von FS Creative: Websites und Plattformen aus dem Montafon — Blitzdings, VALUERO, kochdu, La Taverna, Ortsfeuerwehr Gaschurn, Spenglerei Flöry u. v. m.'],
+    '/empfehlungen': ['Wir empfehlen — Partner & Experten | FS Creative', 'Empfehlungen von FS Creative für Bereiche außerhalb unseres Fokus — z. B. Social Media. Menschen, mit denen wir gern zusammenarbeiten.']
   };
   function setMeta(sel, attr, val){ var e = document.querySelector(sel); if(e) e.setAttribute(attr, val); }
   function applyMeta(route){
@@ -937,6 +972,25 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   if(teaserEl){ var feat = REFS.filter(function(r){return r.home;}); teaserEl.innerHTML = feat.map(function(r,i){return refCard(r,'d'+((i%3)+1));}).join(''); }
   var gridEl = document.getElementById('ref-grid');
   if(gridEl) gridEl.innerHTML = REFS.map(function(r){return refCard(r);}).join('');
+
+  // ---- Empfehlungen ----
+  var RECS = [
+    { area:'Social Media', people:[
+      { name:'Sarah Durig', role:'Marketing-Managerin · Social Media & Projektmanagement', url:'https://www.freelancermap.de/profil/marketing-managerin-social-media-und-projektmanagement-werbung-und-marktkommunikation', mail:'hello@sarahdurig.at' }
+    ]}
+  ];
+  function recCard(p){
+    return '<div class="rec-card reveal"><h3>'+esc(p.name)+'</h3>'
+      + (p.role ? '<div class="role">'+esc(p.role)+'</div>' : '')
+      + '<div class="rec-links">'
+      + (p.url ? '<a class="primary" href="'+esc(p.url)+'" target="_blank" rel="noopener">Profil ansehen ↗</a>' : '')
+      + (p.mail ? '<a href="mailto:'+esc(p.mail)+'">✉ '+esc(p.mail)+'</a>' : '')
+      + '</div></div>';
+  }
+  var recEl = document.getElementById('rec-list');
+  if(recEl) recEl.innerHTML = RECS.map(function(a){
+    return '<div class="rec-area reveal"><h2>'+esc(a.area)+'</h2><div class="rec-grid">'+a.people.map(recCard).join('')+'</div></div>';
+  }).join('');
 
   document.getElementById('year').textContent = new Date().getFullYear();
   render();
