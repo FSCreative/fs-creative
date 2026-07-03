@@ -913,9 +913,12 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 
   // ---- Referenzen ----
   var REFS = [
-    {name:'Blitzdings', tag:'Edle Fotoboxen & 360°-Videobooth für Events.', cat:'Eventservice', url:'https://blitzdings.co.at', host:'blitzdings.co.at', c:'#ffc05f'},
-    {name:'VALUERO', tag:'Tourismusplattform für das Hochmontafon.', cat:'Plattform', url:'https://valuero.at', host:'valuero.at', c:'#5fe08a'},
-    {name:'kochdu', tag:'Essen bestellen & liefern im Montafon.', cat:'Lieferservice', url:'https://kochdu.at', host:'kochdu.at', c:'#bd8cff'},
+    {name:'Blitzdings', tag:'Edle Fotoboxen & 360°-Videobooth für Events.', cat:'Eventservice', url:'https://blitzdings.co.at', host:'blitzdings.co.at', c:'#ffc05f', home:true},
+    {name:'VALUERO', tag:'Tourismusplattform für das Hochmontafon.', cat:'Plattform', url:'https://valuero.at', host:'valuero.at', c:'#5fe08a', home:true},
+    {name:'kochdu', tag:'Essen bestellen & liefern im Montafon.', cat:'Lieferservice', url:'https://kochdu.at', host:'kochdu.at', c:'#bd8cff', home:true},
+    {name:'Antonhaus Gaschurn', tag:'Chalets & Wellness im Montafon.', cat:'Unterkunft', url:'https://www.antonhaus.at', host:'antonhaus.at', c:'#e0b877', home:true},
+    {name:'Alpinappart Wachter', tag:'Ferienapartments im Montafon.', cat:'Unterkunft', url:'https://www.alpinappart.at', host:'alpinappart.at', c:'#5fd0c0', home:true},
+    {name:'Steincult', tag:'Naturstein, Design & Handwerk.', cat:'Unternehmen', url:'https://www.steincult.com', host:'steincult.com', c:'#9fb4c8', home:true},
     {name:'La Taverna', tag:'Ristorante & Pizzeria in Gaschurn.', cat:'Gastronomie', url:'https://www.la-taverna-pizzeria.at', host:'la-taverna-pizzeria.at', c:'#ff8f6b'},
     {name:'Musikfest Gaschurn-Partenen', tag:'100 Jahre Bürgermusik & Festwebsite.', cat:'Verein & Event', url:'https://musikfest26.at', host:'musikfest26.at', c:'#5fb0ff'},
     {name:'Ortsfeuerwehr Gaschurn', tag:'Vereinswebsite der Ortsfeuerwehr.', cat:'Verein', url:'https://of-gaschurn.at', host:'of-gaschurn.at', c:'#ff6b6b'},
@@ -931,7 +934,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       + '<span class="ref-host">'+esc(r.host)+' <span class="arr">↗</span></span></a>';
   }
   var teaserEl = document.getElementById('ref-teaser');
-  if(teaserEl) teaserEl.innerHTML = REFS.slice(0,3).map(function(r,i){return refCard(r,'d'+(i+1));}).join('');
+  if(teaserEl){ var feat = REFS.filter(function(r){return r.home;}); teaserEl.innerHTML = feat.map(function(r,i){return refCard(r,'d'+((i%3)+1));}).join(''); }
   var gridEl = document.getElementById('ref-grid');
   if(gridEl) gridEl.innerHTML = REFS.map(function(r){return refCard(r);}).join('');
 
