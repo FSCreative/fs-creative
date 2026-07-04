@@ -110,11 +110,17 @@ const server = http.createServer((req, res) => {
     let base = path.normalize(path.join(ROOT, urlPath));
     if (!base.startsWith(ROOT)) return send(res, 403, "Forbidden");
 
-    // Try the exact path plus Unicode-normalized variants (macOS stores
-    // umlauts as NFD; browsers usually request NFC).
-    const candidates = [base];
-    try { const nfc = base.normalize("NFC"); if (candidates.indexOf(nfc) < 0) candidates.push(nfc); } catch (e) {}
-    try { const nfd = base.normalize("NFD"); if (candidates.indexOf(nfd) < 0) candidates.push(nfd); } catch (e) {}
+    // Candidate files: the exact path, and — for extensionless "clean" URLs
+    // like /webdesign-montafon — the matching .html file. Each is also tried
+    // in NFC/NFD form (macOS stores umlauts as NFD; browsers send NFC).
+    const raw = [base];
+    if (!path.extname(urlPath)) raw.push(base + ".html");
+    const candidates = [];
+    for (const c of raw) {
+      if (candidates.indexOf(c) < 0) candidates.push(c);
+      try { const nfc = c.normalize("NFC"); if (candidates.indexOf(nfc) < 0) candidates.push(nfc); } catch (e) {}
+      try { const nfd = c.normalize("NFD"); if (candidates.indexOf(nfd) < 0) candidates.push(nfd); } catch (e) {}
+    }
 
     let found = null;
     for (const p of candidates) {

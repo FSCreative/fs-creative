@@ -417,6 +417,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
     <a href="/" class="brand" data-link><span class="mark"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="FS Creative Logo"></span> FS Creative</a>
     <nav class="nav-links" id="navlinks">
       <a href="/" data-link>Start</a>
+      <a href="/leistungen">Leistungen</a>
       <a href="/blitzdings" data-link>Blitzdings</a>
       <a href="/valuero" data-link>VALUERO</a>
       <a href="/kochdu" data-link>kochdu</a>
@@ -818,6 +819,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         <div class="foot-col">
           <h5>Agentur</h5>
           <a href="/" data-link>Start</a>
+          <a href="/leistungen">Leistungen</a>
           <a href="/referenzen" data-link>Referenzen</a>
           <!-- Empfehlungen vorübergehend offline (Seite bleibt im Hintergrund erhalten): <a href="/empfehlungen" data-link>Empfehlungen</a> -->
           <a href="/ueber-uns" data-link>Über uns</a>
@@ -845,6 +847,11 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   var navlinks = document.getElementById('navlinks');
   var burger = document.getElementById('burger');
   var nav = document.getElementById('nav');
+
+  // Real in-app SPA routes. Links to anything else (e.g. the standalone
+  // /leistungen landing pages) must load natively, not via the SPA router.
+  var SPA_ROUTES = { '/': 1 };
+  pages.forEach(function(p){ var r = p.getAttribute('data-route'); if(r){ SPA_ROUTES[r] = 1; } });
 
   function currentRoute(){
     var p = (location.pathname || '/').replace(/\/+$/, '');
@@ -929,11 +936,15 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
         el.scrollIntoView({behavior:'smooth', block:'start'}); }
       return;
     }
-    // internal path navigation (same-origin, real URLs)
+    // internal path navigation: only hijack real SPA routes. Standalone
+    // landing pages (real .html files) are left to load natively.
     if(href.charAt(0) === '/' && href.charAt(1) !== '/'){
-      e.preventDefault();
-      if(location.pathname !== href){ history.pushState({}, '', href); }
-      render();
+      var pathOnly = href.split('#')[0].split('?')[0].replace(/\/+$/,'') || '/';
+      if(SPA_ROUTES[pathOnly]){
+        e.preventDefault();
+        if(location.pathname !== pathOnly){ history.pushState({}, '', href); }
+        render();
+      }
     }
   });
 
