@@ -1172,6 +1172,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     moved += Math.abs(p.x - target.x) + Math.abs(p.y - target.y);
     target.x = Math.max(AX - 72, Math.min(AX + 72, p.x));
     target.y = Math.max(AY + 32, Math.min(AY + 340, p.y));
+    if(armed && (target.y - restY) > TRIGGER){ armed = false; toggle(); }
   });
   window.addEventListener('pointerup', function(){
     if(!dragging) return;
