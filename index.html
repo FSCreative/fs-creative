@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>try{if(localStorage.getItem('fsc-theme')==='light')document.documentElement.className+=' light';}catch(e){}</script>
 <title>FS Creative — Digitale Projekte aus dem Montafon</title>
 <meta name="description" content="FS Creative ist eine Kreativ- und Digitalagentur aus Gaschurn im Montafon. Wir entwickeln und betreiben eigene Plattformen und Services: Blitzdings, VALUERO, kochdu und einen Paketshop für GLS & Hermes." />
 <meta name="author" content="FS Creative" />
@@ -405,12 +406,73 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 ::-webkit-scrollbar-track{background:#0a0a0f}
 ::-webkit-scrollbar-thumb{background:#26262e;border-radius:8px;border:2px solid #0a0a0f}
 ::-webkit-scrollbar-thumb:hover{background:#3a3a46}
+
+/* ---------- Theme switch (Light mode via pull chain) ---------- */
+html.theming, html.theming *{transition:background-color .55s ease,color .45s ease,border-color .45s ease,box-shadow .45s ease,fill .4s ease,opacity .4s ease !important}
+html.light{
+  --bg:#f5f6f9; --bg-soft:#ffffff;
+  --surface:rgba(18,20,28,.035); --surface-2:rgba(18,20,28,.06);
+  --border:rgba(18,20,28,.10); --border-2:rgba(18,20,28,.17);
+  --text:#12131a; --text-dim:#565b68; --text-faint:#878c99;
+  --chain:#7c8291;
+}
+html.light .orb{opacity:.2}
+html.light .grain{opacity:.03;mix-blend-mode:multiply}
+html.light header.nav{background:rgba(255,255,255,.72)}
+html.light h1.display{background:linear-gradient(180deg,#14151c,#4b5162 55%,#14151c);-webkit-background-clip:text;background-clip:text;color:transparent}
+html.light .stat .num{background:linear-gradient(180deg,#14151c,#5a6070);-webkit-background-clip:text;background-clip:text;color:transparent}
+html.light .btn.primary{background:#14151c;color:#fff}
+html.light .btn.primary:hover{background:#2c2e3a}
+html.light .btn.ghost:hover{background:rgba(18,20,28,.06)}
+html.light .card:hover,html.light .proj-card:hover,html.light .ref-card:hover,html.light .rec-card:hover{border-color:rgba(18,20,28,.22)}
+html.light .cta-panel{background:linear-gradient(180deg,rgba(18,20,28,.05),rgba(18,20,28,.015))}
+html.light .bulb-glow{opacity:1;background:radial-gradient(circle,rgba(255,196,86,.4),rgba(255,180,60,.12) 30%,transparent 56%)}
+html.light .hero-bulb img{opacity:.5;filter:brightness(.5) sepia(.35) saturate(1.4) drop-shadow(0 0 40px rgba(255,190,70,.6))}
+html.light ::-webkit-scrollbar-track{background:#eceef1}
+html.light ::-webkit-scrollbar-thumb{background:#c3c8d1;border-color:#eceef1}
+html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
+@media(max-width:860px){ html.light .nav-links{background:rgba(255,255,255,.97)} }
+
+/* ---------- Pull chain (desktop light switch) ---------- */
+:root{--chain:#c6cad4}
+.pullchain{position:fixed;top:0;right:30px;width:130px;height:540px;z-index:350;pointer-events:none;-webkit-user-select:none;user-select:none}
+.pullchain svg{display:block;overflow:visible}
+.pc-mount{fill:var(--chain);opacity:.65}
+.pc-bead{fill:var(--chain)}
+.pc-knob{fill:url(#pcKnobGrad);stroke:rgba(0,0,0,.28);stroke-width:.5}
+.pc-knob-nub{fill:#aeb4c0}
+.pc-knob-hit{fill:transparent;pointer-events:auto;cursor:grab;touch-action:none}
+.pullchain.dragging .pc-knob-hit{cursor:grabbing}
+.pc-knob-ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0}
+.pullchain.hint .pc-knob-ring{animation:pcHint 2.1s ease-out .9s 3}
+@keyframes pcHint{0%{opacity:0;r:9}22%{opacity:.5}100%{opacity:0;r:30}}
+@media(max-width:900px),(hover:none){.pullchain{display:none!important}}
 </style>
 </head>
 <body>
 <div class="scroll-prog" id="prog"></div>
 <div class="grain"></div>
 <div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+
+<div class="pullchain hint" id="pullchain" aria-hidden="true" title="Zieh an der Kette – Licht an/aus">
+  <svg width="130" height="540" viewBox="0 0 130 540" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="pcKnobGrad" cx="38%" cy="32%" r="72%">
+        <stop offset="0%" stop-color="#f4f6fa"/>
+        <stop offset="55%" stop-color="#c4c9d3"/>
+        <stop offset="100%" stop-color="#878d9a"/>
+      </radialGradient>
+    </defs>
+    <circle class="pc-mount" cx="65" cy="2" r="5"/>
+    <g id="pcBeads"></g>
+    <g id="pcKnobGroup">
+      <circle class="pc-knob-ring" r="11"/>
+      <circle class="pc-knob" r="8.5"/>
+      <circle class="pc-knob-nub" cx="0" cy="9" r="3.1"/>
+      <circle class="pc-knob-hit" r="22"/>
+    </g>
+  </svg>
+</div>
 
 <header class="nav" id="nav">
   <div class="nav-inner">
@@ -1055,6 +1117,100 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
       card.addEventListener('mouseleave', function(){ card.style.transform = ''; });
     });
   }
+})();
+</script>
+
+<script>
+/* Pull-chain light switch — verlet-physics chain, drag to pull. Desktop only. */
+(function(){
+  var wrap = document.getElementById('pullchain'); if(!wrap) return;
+  var mm = window.matchMedia;
+  if(mm && (mm('(hover:none)').matches || mm('(max-width:900px)').matches)) return;
+
+  var svg = wrap.querySelector('svg'),
+      beadsG = document.getElementById('pcBeads'),
+      knobG = document.getElementById('pcKnobGroup'),
+      hit = wrap.querySelector('.pc-knob-hit');
+
+  var AX = 65, AY = 2, N = 16, SEG = 10.5, GRAV = 0.72, DAMP = 0.985, ITER = 16, TRIGGER = 64;
+  var restY = AY + (N - 1) * SEG;
+  var reduce = mm && mm('(prefers-reduced-motion:reduce)').matches;
+
+  var P = [];
+  for(var i = 0; i < N; i++) P.push({ x: AX, y: AY + i * SEG, ox: AX, oy: AY + i * SEG });
+
+  var beads = [];
+  for(var i = 1; i < N - 1; i++){
+    var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('class', 'pc-bead');
+    c.setAttribute('r', (i >= N - 3 ? 3.3 : 3.0));
+    beadsG.appendChild(c); beads.push(c);
+  }
+
+  var dragging = false, armed = false, moved = 0, autoUntil = 0, target = { x: AX, y: restY };
+  function nowms(){ return window.performance && performance.now ? performance.now() : Date.now(); }
+  function toSvg(e){ var r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+  function toggle(){
+    var el = document.documentElement;
+    el.classList.add('theming');
+    var light = el.classList.toggle('light');
+    try { localStorage.setItem('fsc-theme', light ? 'light' : 'dark'); } catch(_){}
+    setTimeout(function(){ el.classList.remove('theming'); }, 650);
+  }
+
+  hit.addEventListener('pointerdown', function(e){
+    e.preventDefault();
+    dragging = true; armed = true; moved = 0;
+    wrap.classList.add('dragging'); wrap.classList.remove('hint');
+    var p = toSvg(e); target.x = p.x; target.y = p.y;
+    try { hit.setPointerCapture(e.pointerId); } catch(_){}
+  });
+  window.addEventListener('pointermove', function(e){
+    if(!dragging) return;
+    var p = toSvg(e);
+    moved += Math.abs(p.x - target.x) + Math.abs(p.y - target.y);
+    target.x = Math.max(AX - 72, Math.min(AX + 72, p.x));
+    target.y = Math.max(AY + 32, Math.min(AY + 340, p.y));
+  });
+  window.addEventListener('pointerup', function(){
+    if(!dragging) return;
+    dragging = false; wrap.classList.remove('dragging');
+    if(moved < 7 && armed){ autoUntil = nowms() + 150; } else { armed = false; }
+  });
+
+  function step(now){
+    var pulling = dragging || now < autoUntil;
+    if(now < autoUntil){ target.x = AX; target.y = restY + TRIGGER + 24; }
+    for(var i = 1; i < N; i++){
+      if(i === N - 1 && pulling) continue;
+      var p = P[i];
+      var vx = (p.x - p.ox) * DAMP, vy = (p.y - p.oy) * DAMP;
+      p.ox = p.x; p.oy = p.y; p.x += vx; p.y += vy + GRAV;
+    }
+    for(var k = 0; k < ITER; k++){
+      P[0].x = AX; P[0].y = AY;
+      if(pulling){ P[N-1].x = target.x; P[N-1].y = target.y; }
+      for(var i = 0; i < N - 1; i++){
+        var a = P[i], b = P[i+1];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var d = Math.sqrt(dx*dx + dy*dy) || 1e-4;
+        var diff = (SEG - d) / d * 0.5;
+        var ox = dx * diff, oy = dy * diff;
+        if(i !== 0){ a.x -= ox; a.y -= oy; }
+        if(!(i + 1 === N - 1 && pulling)){ b.x += ox; b.y += oy; }
+      }
+    }
+    if(armed && (P[N-1].y - restY) > TRIGGER){ armed = false; toggle(); }
+    for(var i = 1; i < N - 1; i++){
+      beads[i-1].setAttribute('cx', P[i].x.toFixed(2));
+      beads[i-1].setAttribute('cy', P[i].y.toFixed(2));
+    }
+    knobG.setAttribute('transform', 'translate(' + P[N-1].x.toFixed(2) + ',' + P[N-1].y.toFixed(2) + ')');
+    requestAnimationFrame(step);
+  }
+  if(!reduce){ setTimeout(function(){ P[8].x += 11; P[10].x += 6; }, 700); }
+  requestAnimationFrame(step);
 })();
 </script>
 </body>
