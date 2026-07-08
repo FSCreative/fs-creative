@@ -27,6 +27,12 @@
 <meta name="ICBM" content="46.9836, 10.0436" />
 <link rel="canonical" href="https://www.fs-creative.at/" />
 <link rel="icon" type="image/png" href="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" />
+<link rel="apple-touch-icon" href="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="FS Creative" />
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -407,6 +413,52 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 ::-webkit-scrollbar-thumb{background:#26262e;border-radius:8px;border:2px solid #0a0a0f}
 ::-webkit-scrollbar-thumb:hover{background:#3a3a46}
 
+/* ---------- Mobile app shell (bottom tab bar + sheet) ---------- */
+*{-webkit-tap-highlight-color:transparent}
+.tabbar{display:none}
+.nav-scrim{position:fixed;inset:0;z-index:330;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s var(--ease)}
+.nav-scrim.show{opacity:1;pointer-events:auto}
+@media(max-width:680px){
+  .tabbar{
+    display:flex;position:fixed;left:0;right:0;bottom:0;z-index:340;
+    background:rgba(12,12,18,.86);backdrop-filter:saturate(180%) blur(22px);-webkit-backdrop-filter:saturate(180%) blur(22px);
+    border-top:1px solid var(--border);
+    padding:7px 4px calc(7px + env(safe-area-inset-bottom));
+    justify-content:space-around;align-items:stretch;gap:2px;
+  }
+  .tabbar .tab{
+    flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    padding:5px 2px;color:var(--text-faint);font-size:10px;font-weight:600;
+    background:none;border:0;cursor:pointer;text-decoration:none;
+    transition:color .2s var(--ease),transform .1s var(--ease);
+  }
+  .tabbar .tab svg{width:23px;height:23px}
+  .tabbar .tab span{line-height:1}
+  .tabbar .tab:active{transform:scale(.86)}
+  .tabbar .tab.active{color:var(--accent)}
+  body{padding-bottom:calc(58px + env(safe-area-inset-bottom));overscroll-behavior-y:contain}
+  .burger{display:none!important}
+  /* Full menu becomes a bottom sheet */
+  .nav-links{
+    top:auto!important;bottom:0;left:0;right:0;z-index:345;
+    flex-direction:column;align-items:stretch;gap:4px;
+    background:rgba(16,16,22,.98);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+    border:1px solid var(--border);border-bottom:0;border-radius:22px 22px 0 0;
+    padding:12px 16px calc(18px + env(safe-area-inset-bottom));
+    transform:translateY(115%);transition:transform .38s var(--ease);
+    box-shadow:0 -24px 60px rgba(0,0,0,.55);max-height:76vh;overflow:auto;
+  }
+  .nav-links::before{content:"";display:block;width:40px;height:4px;border-radius:99px;background:var(--border-2);margin:2px auto 10px;flex:0 0 auto}
+  .nav-links.open{transform:none}
+  .nav-links a{padding:14px 16px;font-size:16px;border-radius:14px}
+  /* Tactile press feedback */
+  .card,.proj-card,.ref-card,.rec-card,.btn,.pbadge{transition:transform .12s var(--ease),background .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease)}
+  .card:active,.proj-card:active,.ref-card:active,.rec-card:active{transform:scale(.98)}
+  .btn:active{transform:scale(.96)}
+}
+html.light .tabbar{background:rgba(255,255,255,.86)}
+html.light .nav-links{background:rgba(255,255,255,.98)}
+
 /* ---------- Theme switch (Light mode via pull chain) ---------- */
 html.theming, html.theming *{transition:background-color .55s ease,color .45s ease,border-color .45s ease,box-shadow .45s ease,fill .4s ease,opacity .4s ease !important}
 html.light{
@@ -492,6 +544,30 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     <button class="burger" id="burger" aria-label="Menü"><span></span><span></span><span></span></button>
   </div>
 </header>
+
+<nav class="tabbar" id="tabbar" aria-label="Schnellnavigation">
+  <a class="tab" href="/" data-link data-tab="/">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.8 12 3.5l9 7.3"/><path d="M5.2 9.6V20a1 1 0 0 0 1 1H10v-5.4h4V21h3.8a1 1 0 0 0 1-1V9.6"/></svg>
+    <span>Start</span>
+  </a>
+  <a class="tab" href="/leistungen" data-tab="/leistungen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
+    <span>Leistungen</span>
+  </a>
+  <a class="tab" href="/referenzen" data-link data-tab="/referenzen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.9-4.2 4.1 1 5.8L12 17l-5.2 2.7 1-5.8-4.2-4.1 5.8-.9z"/></svg>
+    <span>Referenzen</span>
+  </a>
+  <a class="tab" href="/kontakt" data-link data-tab="/kontakt">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.6"/><path d="M4 7.5l8 5.6 8-5.6"/></svg>
+    <span>Kontakt</span>
+  </a>
+  <button class="tab" id="tabMenu" type="button" aria-label="Menü öffnen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <span>Menü</span>
+  </button>
+</nav>
+<div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
 
 <main id="app">
 
@@ -909,6 +985,8 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   var navlinks = document.getElementById('navlinks');
   var burger = document.getElementById('burger');
   var nav = document.getElementById('nav');
+  var navScrim = document.getElementById('navScrim');
+  var tabMenu = document.getElementById('tabMenu');
 
   // Real in-app SPA routes. Links to anything else (e.g. the standalone
   // /leistungen landing pages) must load natively, not via the SPA router.
@@ -976,8 +1054,11 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
       var target = a.getAttribute('href').replace(/^#/, '');
       a.classList.toggle('active', target === ('/' + route).replace('//','/') || target === route || (route==='/' && target==='/'));
     });
-    // close mobile menu
+    // active bottom-tab
+    document.querySelectorAll('.tab[data-tab]').forEach(function(t){ t.classList.toggle('active', t.getAttribute('data-tab') === route); });
+    // close mobile menu / sheet
     navlinks.classList.remove('open'); burger.classList.remove('open');
+    if(navScrim) navScrim.classList.remove('show');
     // scroll to top of content
     window.scrollTo({top:0, behavior:'auto'});
     // reveal animations for the active page
@@ -1010,9 +1091,15 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     }
   });
 
-  burger.addEventListener('click', function(){
-    navlinks.classList.toggle('open'); burger.classList.toggle('open');
-  });
+  function toggleSheet(open){
+    var willOpen = (open === undefined) ? !navlinks.classList.contains('open') : open;
+    navlinks.classList.toggle('open', willOpen);
+    burger.classList.toggle('open', willOpen);
+    if(navScrim) navScrim.classList.toggle('show', willOpen);
+  }
+  burger.addEventListener('click', function(){ toggleSheet(); });
+  if(tabMenu) tabMenu.addEventListener('click', function(){ toggleSheet(); });
+  if(navScrim) navScrim.addEventListener('click', function(){ toggleSheet(false); });
 
   window.addEventListener('popstate', render);
   window.addEventListener('scroll', function(){

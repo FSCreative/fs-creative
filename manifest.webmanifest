@@ -1,0 +1,16 @@
+{
+  "name": "FS Creative",
+  "short_name": "FS Creative",
+  "description": "Kreativ- und Digitalagentur aus dem Montafon. Websites, Plattformen und digitale Projekte.",
+  "lang": "de-AT",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "icons": [
+    { "src": "/logos/Logo%20Gl%C3%BChbirne%20Weiss.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/logos/Logo%20Gl%C3%BChbirne%20Weiss.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
