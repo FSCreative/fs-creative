@@ -415,7 +415,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 
 /* ---------- Mobile app shell (bottom tab bar + sheet) ---------- */
 *{-webkit-tap-highlight-color:transparent}
-.tabbar{display:none}
+.tabbar,.msheet{display:none}
 .nav-scrim{position:fixed;inset:0;z-index:330;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s var(--ease)}
 .nav-scrim.show{opacity:1;pointer-events:auto}
 @media(max-width:680px){
@@ -438,26 +438,29 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .tabbar .tab.active{color:var(--accent)}
   body{padding-bottom:calc(58px + env(safe-area-inset-bottom));overscroll-behavior-y:contain}
   .burger{display:none!important}
-  /* Full menu becomes a bottom sheet */
-  .nav-links{
-    top:auto!important;bottom:0;left:0;right:0;z-index:345;
-    flex-direction:column;align-items:stretch;gap:4px;
+  /* In-header nav hidden on phones; a body-level bottom sheet is used instead */
+  .nav-links{display:none!important}
+  .msheet{
+    display:flex;flex-direction:column;gap:4px;
+    position:fixed;left:0;right:0;bottom:0;z-index:345;
     background:rgba(16,16,22,.98);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
     border:1px solid var(--border);border-bottom:0;border-radius:22px 22px 0 0;
-    padding:12px 16px calc(18px + env(safe-area-inset-bottom));
+    padding:10px 16px calc(18px + env(safe-area-inset-bottom));
     transform:translateY(115%);transition:transform .38s var(--ease);
-    box-shadow:0 -24px 60px rgba(0,0,0,.55);max-height:76vh;overflow:auto;
+    box-shadow:0 -24px 60px rgba(0,0,0,.55);max-height:78vh;overflow:auto;
   }
-  .nav-links::before{content:"";display:block;width:40px;height:4px;border-radius:99px;background:var(--border-2);margin:2px auto 10px;flex:0 0 auto}
-  .nav-links.open{transform:none}
-  .nav-links a{padding:14px 16px;font-size:16px;border-radius:14px}
+  .msheet.open{transform:translateY(0)}
+  .msheet-grip{width:40px;height:4px;border-radius:99px;background:var(--border-2);margin:2px auto 8px;flex:0 0 auto}
+  .msheet a{padding:14px 16px;font-size:16px;border-radius:14px;color:var(--text-dim);font-weight:500}
+  .msheet a.active{color:var(--text);background:var(--surface-2)}
+  .msheet a.nav-cta{color:#fff;background:var(--accent);text-align:center;margin-top:6px}
   /* Tactile press feedback */
   .card,.proj-card,.ref-card,.rec-card,.btn,.pbadge{transition:transform .12s var(--ease),background .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease)}
   .card:active,.proj-card:active,.ref-card:active,.rec-card:active{transform:scale(.98)}
   .btn:active{transform:scale(.96)}
 }
 html.light .tabbar{background:rgba(255,255,255,.86)}
-html.light .nav-links{background:rgba(255,255,255,.98)}
+html.light .msheet{background:rgba(255,255,255,.98)}
 
 /* ---------- Theme switch (Light mode via pull chain) ---------- */
 html.theming, html.theming *{transition:background-color .55s ease,color .45s ease,border-color .45s ease,box-shadow .45s ease,fill .4s ease,opacity .4s ease !important}
@@ -567,6 +570,18 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     <span>Menü</span>
   </button>
 </nav>
+<div class="msheet" id="msheet" aria-label="Menü">
+  <span class="msheet-grip"></span>
+  <a href="/" data-link>Start</a>
+  <a href="/leistungen">Leistungen</a>
+  <a href="/blitzdings" data-link>Blitzdings</a>
+  <a href="/valuero" data-link>VALUERO</a>
+  <a href="/kochdu" data-link>kochdu</a>
+  <a href="/paketshop" data-link>Paketshop</a>
+  <a href="/referenzen" data-link>Referenzen</a>
+  <a href="/ueber-uns" data-link>Über uns</a>
+  <a href="/kontakt" class="nav-cta" data-link>Kontakt</a>
+</div>
 <div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
 
 <main id="app">
@@ -987,6 +1002,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   var nav = document.getElementById('nav');
   var navScrim = document.getElementById('navScrim');
   var tabMenu = document.getElementById('tabMenu');
+  var msheet = document.getElementById('msheet');
 
   // Real in-app SPA routes. Links to anything else (e.g. the standalone
   // /leistungen landing pages) must load natively, not via the SPA router.
@@ -1050,7 +1066,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     }
     applyMeta(route);
     // active nav link
-    navlinks.querySelectorAll('a[data-link]').forEach(function(a){
+    document.querySelectorAll('#navlinks a[data-link], #msheet a[data-link]').forEach(function(a){
       var target = a.getAttribute('href').replace(/^#/, '');
       a.classList.toggle('active', target === ('/' + route).replace('//','/') || target === route || (route==='/' && target==='/'));
     });
@@ -1058,6 +1074,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     document.querySelectorAll('.tab[data-tab]').forEach(function(t){ t.classList.toggle('active', t.getAttribute('data-tab') === route); });
     // close mobile menu / sheet
     navlinks.classList.remove('open'); burger.classList.remove('open');
+    if(msheet) msheet.classList.remove('open');
     if(navScrim) navScrim.classList.remove('show');
     // scroll to top of content
     window.scrollTo({top:0, behavior:'auto'});
@@ -1091,15 +1108,16 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     }
   });
 
-  function toggleSheet(open){
-    var willOpen = (open === undefined) ? !navlinks.classList.contains('open') : open;
-    navlinks.classList.toggle('open', willOpen);
-    burger.classList.toggle('open', willOpen);
+  // Bottom sheet (phones): toggled by the Menü tab + scrim tap.
+  function openSheet(open){
+    var willOpen = (open === undefined) ? !(msheet && msheet.classList.contains('open')) : open;
+    if(msheet) msheet.classList.toggle('open', willOpen);
     if(navScrim) navScrim.classList.toggle('show', willOpen);
   }
-  burger.addEventListener('click', function(){ toggleSheet(); });
-  if(tabMenu) tabMenu.addEventListener('click', function(){ toggleSheet(); });
-  if(navScrim) navScrim.addEventListener('click', function(){ toggleSheet(false); });
+  // Header burger (tablets): toggles the in-header dropdown.
+  burger.addEventListener('click', function(){ navlinks.classList.toggle('open'); burger.classList.toggle('open'); });
+  if(tabMenu) tabMenu.addEventListener('click', function(){ openSheet(); });
+  if(navScrim) navScrim.addEventListener('click', function(){ openSheet(false); });
 
   window.addEventListener('popstate', render);
   window.addEventListener('scroll', function(){
