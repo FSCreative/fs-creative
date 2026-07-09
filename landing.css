@@ -153,3 +153,14 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
   .tabbar .tab.active{color:var(--accent)}
   body{padding-bottom:calc(58px + env(safe-area-inset-bottom))}
 }
+
+/* ---------- Mobile: square 2-up tiles ---------- */
+@media(max-width:600px){
+  .grid,.rel-grid{grid-template-columns:1fr 1fr!important;gap:12px}
+  .card,.rel-card{aspect-ratio:1;overflow:hidden;display:flex;flex-direction:column;padding:15px}
+  .card .ic{width:34px;height:34px;font-size:16px;margin-bottom:9px}
+  .card h3,.rel-card h3{font-size:15px;margin:0 0 4px}
+  .card p,.rel-card p{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .rel-card .rc-cat{font-size:10px}
+  .rel-card .rc-arrow{margin-top:auto;font-size:12px}
+}
