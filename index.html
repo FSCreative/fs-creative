@@ -405,6 +405,30 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* ---------- Mobile: square 2-up tiles ---------- */
+@media(max-width:600px){
+  .grid.cols-3,.grid.cols-2,.proj,.ref-teaser-grid,.ref-grid,.rec-grid{grid-template-columns:1fr 1fr!important;gap:12px}
+  .card,.ref-card,.rec-card,.proj-card{aspect-ratio:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+  .card{padding:16px}
+  .card .ico{width:36px;height:36px;font-size:17px;margin-bottom:10px}
+  .card h3{font-size:15px;margin-bottom:5px}
+  .card p{font-size:12px;line-height:1.35}
+  .ref-card{padding:16px 15px}
+  .ref-cat{font-size:10px}
+  .ref-card h3{font-size:15px;margin-top:8px}
+  .ref-card p{font-size:12px;margin-top:4px}
+  .ref-host{margin-top:auto;font-size:11.5px}
+  .rec-card{padding:16px}
+  .rec-card h3{font-size:15px}
+  .rec-card .role{font-size:11.5px}
+  .rec-card .rec-links{margin-top:auto}
+  .proj-card{padding:18px}
+  .proj-card .tag{font-size:11px}
+  .proj-card h3{font-size:19px;margin:8px 0 5px}
+  .proj-card p{font-size:12px;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .proj-card .more{margin-top:auto;font-size:13px}
+}
+
 /* ---------- Premium FX ---------- */
 .scroll-prog{position:fixed;top:0;left:0;height:2px;width:0;z-index:300;background:linear-gradient(90deg,#0a84ff,#9d4eff,#34c759);box-shadow:0 0 14px rgba(124,99,255,.7)}
 .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
