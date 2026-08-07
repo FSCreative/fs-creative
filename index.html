@@ -1553,5 +1553,51 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   requestAnimationFrame(step);
 })();
 </script>
+
+<!-- ===== Betriebsurlaub Popup (auto-hide nach 15.8.2026) ===== -->
+<style>
+#fscUrlaub{position:fixed;inset:0;z-index:10000;display:none;place-items:center;padding:24px;background:rgba(0,0,0,.6);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#fscUrlaub.show{display:grid;animation:fscUfade .35s var(--ease)}
+@keyframes fscUfade{from{opacity:0}to{opacity:1}}
+#fscUrlaub .u-card{position:relative;width:100%;max-width:440px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius);padding:40px 32px 32px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.55);animation:fscUpop .45s var(--ease)}
+@keyframes fscUpop{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:none}}
+#fscUrlaub .u-ico{width:60px;height:60px;margin:0 auto 20px;border-radius:17px;display:grid;place-items:center;font-size:30px;background:var(--surface-2)}
+#fscUrlaub .u-tag{display:inline-block;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px}
+#fscUrlaub h3{font-size:25px;margin-bottom:14px;letter-spacing:-.02em}
+#fscUrlaub .u-dates{font-size:19px;font-weight:600;color:var(--text);margin:0 0 16px}
+#fscUrlaub p.u-text{font-size:15px;color:var(--text-dim);line-height:1.6;max-width:34ch;margin:0 auto 26px}
+#fscUrlaub .u-btn{display:inline-block;background:var(--accent);color:#fff;font-size:15px;font-weight:600;padding:13px 32px;border:none;border-radius:999px;cursor:pointer;transition:transform .2s var(--ease),filter .2s var(--ease)}
+#fscUrlaub .u-btn:hover{filter:brightness(1.08);transform:translateY(-2px)}
+#fscUrlaub .u-x{position:absolute;top:14px;right:14px;width:34px;height:34px;border:none;background:var(--surface-2);color:var(--text-dim);border-radius:10px;font-size:16px;cursor:pointer;line-height:1;display:grid;place-items:center;transition:color .2s var(--ease)}
+#fscUrlaub .u-x:hover{color:var(--text)}
+</style>
+<div id="fscUrlaub" role="dialog" aria-modal="true" aria-labelledby="fscUrlaubTitle">
+  <div class="u-card">
+    <button class="u-x" id="fscUrlaubClose" aria-label="Schließen">&#10005;</button>
+    <div class="u-ico">&#127796;</div>
+    <span class="u-tag">Hinweis</span>
+    <h3 id="fscUrlaubTitle">Betriebsurlaub</h3>
+    <p class="u-dates">7. &ndash; 15. August 2026</p>
+    <p class="u-text">In dieser Zeit sind wir nicht erreichbar. Deine Anfrage bearbeiten wir gerne ab dem 16. August. Danke f&uuml;r dein Verst&auml;ndnis!</p>
+    <button class="u-btn" id="fscUrlaubOk">Verstanden</button>
+  </div>
+</div>
+<script>
+(function(){
+  var END = new Date('2026-08-15T23:59:59');
+  var pop = document.getElementById('fscUrlaub');
+  if(!pop) return;
+  function onHome(){ return location.pathname === '/' || location.pathname === ''; }
+  function seen(){ try{ return sessionStorage.getItem('fsc-urlaub-2026')==='1'; }catch(e){ return false; } }
+  function mark(){ try{ sessionStorage.setItem('fsc-urlaub-2026','1'); }catch(e){} }
+  function close(){ pop.classList.remove('show'); mark(); }
+  function open(){ pop.classList.add('show'); }
+  document.getElementById('fscUrlaubClose').addEventListener('click', close);
+  document.getElementById('fscUrlaubOk').addEventListener('click', close);
+  pop.addEventListener('click', function(e){ if(e.target === pop) close(); });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && pop.classList.contains('show')) close(); });
+  if(new Date() <= END && onHome() && !seen()){ setTimeout(open, 900); }
+})();
+</script>
 </body>
 </html>
