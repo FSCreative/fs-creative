@@ -323,6 +323,19 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 .ref-card p{color:var(--text-dim);font-size:14px;margin-top:6px;flex:1}
 .ref-host{margin-top:18px;display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;color:var(--text)}
 .ref-card:hover .ref-host{color:var(--c,#5fb0ff)}
+/* ---- Referenzen: Kategorie-Akkordeons ---- */
+.ref-groups .ref-grid{margin:0}
+.ref-acc-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:19px 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font:inherit;font-size:19px;font-weight:600;letter-spacing:-.01em;text-align:left;cursor:pointer;transition:background .25s var(--ease),border-color .25s var(--ease)}
+.ref-acc-btn:hover{background:var(--surface-2);border-color:rgba(255,255,255,.2)}
+.ref-acc-meta{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--text-dim);font-weight:500;flex:none}
+.ref-acc-ico{position:relative;width:26px;height:26px;border-radius:8px;background:var(--surface-2);flex:none}
+.ref-acc-ico::before,.ref-acc-ico::after{content:"";position:absolute;left:50%;top:50%;background:var(--text);border-radius:2px;transition:transform .3s var(--ease),opacity .3s var(--ease)}
+.ref-acc-ico::before{width:12px;height:2px;transform:translate(-50%,-50%)}
+.ref-acc-ico::after{width:2px;height:12px;transform:translate(-50%,-50%)}
+.ref-acc-btn[aria-expanded="true"] .ref-acc-ico::after{transform:translate(-50%,-50%) scaleY(0);opacity:0}
+.ref-acc-btn[aria-expanded="true"]{background:var(--surface-2);border-color:rgba(255,255,255,.18)}
+.ref-acc-panel{max-height:0;overflow:hidden;transition:max-height .45s var(--ease)}
+.ref-acc-panel .ref-grid{padding-top:16px}
 .mock-browser{background:#0c0c12}
 .mock-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:#15151d;border-bottom:1px solid rgba(255,255,255,.06)}
 .mock-bar .dot{width:11px;height:11px;border-radius:50%;background:#3a3a46}
@@ -741,7 +754,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
       <p class="lead">Websites und Plattformen, die wir für eigene Marken und Kunden im Montafon entwickelt haben — von der Idee über das Design bis zum laufenden Betrieb. Klick dich direkt zu den Live-Seiten.</p>
     </div>
     <section class="block wrap">
-      <div class="ref-grid" id="ref-grid"></div>
+      <div class="ref-groups" id="ref-groups"></div>
       <div class="cta-panel reveal" style="margin-top:50px">
         <h3>Dein Projekt als Nächstes?</h3>
         <p>Ob Website, Plattform oder Eventservice — wir setzen es um. Erzähl uns von deiner Idee.</p>
@@ -1357,9 +1370,9 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
 
   // ---- Referenzen ----
   var REFS = [
-    {name:'Blitzdings', tag:'Edle Fotoboxen & 360°-Videobooth für Events.', cat:'Eventservice', url:'https://blitzdings.co.at', host:'blitzdings.co.at', c:'#ffc05f', home:true},
-    {name:'VALUERO', tag:'Tourismusplattform für das Hochmontafon.', cat:'Plattform', url:'https://valuero.at', host:'valuero.at', c:'#5fe08a', home:true},
-    {name:'kochdu', tag:'Essen bestellen & liefern im Montafon.', cat:'Lieferservice', url:'https://kochdu.at', host:'kochdu.at', c:'#bd8cff', home:true},
+    {name:'Blitzdings', tag:'Edle Fotoboxen & 360°-Videobooth für Events.', cat:'Eventservice', url:'https://blitzdings.co.at', host:'blitzdings.co.at', c:'#ffc05f', home:true, plat:true},
+    {name:'VALUERO', tag:'Tourismusplattform für das Hochmontafon.', cat:'Plattform', url:'https://valuero.at', host:'valuero.at', c:'#5fe08a', home:true, plat:true},
+    {name:'kochdu', tag:'Essen bestellen & liefern im Montafon.', cat:'Lieferservice', url:'https://kochdu.at', host:'kochdu.at', c:'#bd8cff', home:true, plat:true},
     {name:'Antonhaus Gaschurn', tag:'Chalets & Wellness im Montafon.', cat:'Unterkunft', url:'https://www.antonhaus.at', host:'antonhaus.at', c:'#e0b877', home:true},
     {name:'Alpinappart Wachter', tag:'Ferienapartments im Montafon.', cat:'Unterkunft', url:'https://www.alpinappart.at', host:'alpinappart.at', c:'#5fd0c0', home:true},
     {name:'Haus Felder Garfrescha', tag:'Ferienwohnung auf 1.500 m im Silvretta Montafon.', cat:'Unterkunft', url:'https://www.hausfelder-garfrescha.com', host:'hausfelder-garfrescha.com', c:'#7fb3e0'},
@@ -1378,8 +1391,8 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     {name:'Spenglerei Flöry', tag:'Website für den Handwerksbetrieb.', cat:'Unternehmen', url:'https://www.spenglerei-floery.at', host:'spenglerei-floery.at', c:'#7fd0ff'}
   ];
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
-  function refCard(r, extra){
-    return '<a class="ref-card reveal '+(extra||'')+'" style="--c:'+r.c+'" href="'+esc(r.url)+'" target="_blank" rel="noopener">'
+  function refCard(r, extra, noReveal){
+    return '<a class="ref-card '+(noReveal?'':'reveal ')+(extra||'')+'" style="--c:'+r.c+'" href="'+esc(r.url)+'" target="_blank" rel="noopener">'
       + '<span class="ref-cat">'+esc(r.cat)+'</span>'
       + '<h3>'+esc(r.name)+'</h3>'
       + '<p>'+esc(r.tag)+'</p>'
@@ -1387,8 +1400,47 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   }
   var teaserEl = document.getElementById('ref-teaser');
   if(teaserEl){ var feat = REFS.filter(function(r){return r.home;}).slice(0,6); teaserEl.innerHTML = feat.map(function(r,i){return refCard(r,'d'+((i%3)+1));}).join(''); }
-  var gridEl = document.getElementById('ref-grid');
-  if(gridEl) gridEl.innerHTML = REFS.map(function(r){return refCard(r);}).join('');
+  var groupsEl = document.getElementById('ref-groups');
+  if(groupsEl){
+    function grpOf(cat){
+      if(cat==='Gastronomie'||cat==='Konditorei') return 'Gastronomie';
+      if(cat==='Verein'||cat==='Verein & Brauchtum') return 'Vereine';
+      if(cat==='Unterkunft') return 'Unterkünfte';
+      if(cat==='Event') return 'Events';
+      return 'Gewerbe & mehr';
+    }
+    var plats = REFS.filter(function(r){return r.plat;});
+    var rest  = REFS.filter(function(r){return !r.plat;});
+    var order = ['Gastronomie','Unterkünfte','Vereine','Events','Gewerbe & mehr'];
+    var groups = {};
+    rest.forEach(function(r){ var g=grpOf(r.cat); (groups[g]=groups[g]||[]).push(r); });
+    var html = '';
+    if(plats.length){ html += '<div class="ref-grid">'+plats.map(function(r){return refCard(r);}).join('')+'</div>'; }
+    order.forEach(function(g){
+      var items=groups[g]; if(!items||!items.length) return;
+      html += '<button class="ref-acc-btn" type="button" aria-expanded="false">'
+        + '<span>'+esc(g)+'</span>'
+        + '<span class="ref-acc-meta">'+items.length+'<span class="ref-acc-ico"></span></span>'
+        + '</button>'
+        + '<div class="ref-acc-panel"><div class="ref-grid">'+items.map(function(r){return refCard(r,'',true);}).join('')+'</div></div>';
+    });
+    groupsEl.innerHTML = html;
+    [].forEach.call(groupsEl.querySelectorAll('.ref-acc-btn'), function(btn){
+      btn.addEventListener('click', function(){
+        var open=btn.getAttribute('aria-expanded')==='true';
+        var panel=btn.nextElementSibling;
+        btn.setAttribute('aria-expanded', open?'false':'true');
+        if(open){
+          panel.style.maxHeight=panel.scrollHeight+'px';
+          requestAnimationFrame(function(){ panel.style.maxHeight='0px'; });
+        } else {
+          panel.style.maxHeight=panel.scrollHeight+'px';
+          var te=function(){ panel.style.maxHeight='none'; panel.removeEventListener('transitionend',te); };
+          panel.addEventListener('transitionend', te);
+        }
+      });
+    });
+  }
 
   // ---- Empfehlungen ----
   var RECS = [
