@@ -610,6 +610,9 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   function mailAll(){ return (state.mail.messages||[]).filter(function(m){return !m.deleted;}); }
   function mailSorted(){ return mailAll().slice().sort(function(a,b){return (new Date(b.date))-(new Date(a.date));}); }
   var TRASHRX=/trash|papierkorb|deleted|gelösch|geloesch/i;
+  var SPAMRX=/junk|spam/i;
+  function isTrashed(m){ return !!m.deleted || TRASHRX.test(m.folder||""); }        // lokal gelöscht ODER im Server-Papierkorb
+  function isHidden(m){ return isTrashed(m) || SPAMRX.test(m.folder||""); }          // aus Posteingang/Neueste/Ungelesen ausblenden
   function pushPending(op,id,extra){ if(!Array.isArray(state.mail.pending))state.mail.pending=[]; state.mail.pending.push(Object.assign({op:op,id:id,ts:new Date().toISOString()},extra||{})); }
   function folderName(path){ var meta=(state.mail.folders||[]).filter(function(f){return f.path===path;})[0]; if(meta&&meta.name)return meta.name; return String(path).split(/[\/.]/).pop(); }
   function customFolders(){
@@ -620,11 +623,11 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   }
   function mailView(){
     var a=(state.mail.messages||[]).slice(); var f=mailUI.folder||"inbox"; var list;
-    if(f==="trash") list=a.filter(function(m){return m.deleted;});
-    else { a=a.filter(function(m){return !m.deleted;});
+    if(f==="trash") list=a.filter(function(m){return isTrashed(m);});
+    else if(f.indexOf("f:")===0){ var p=f.slice(2); list=a.filter(function(m){return (m.folder||"INBOX")===p && !m.deleted;}); }
+    else { a=a.filter(function(m){return !isHidden(m);});
       if(f==="unread") list=a.filter(function(m){return !m.read;});
       else if(f==="starred") list=a.filter(function(m){return m.starred;});
-      else if(f.indexOf("f:")===0){ var p=f.slice(2); list=a.filter(function(m){return (m.folder||"INBOX")===p;}); }
       else list=a.filter(function(m){return (m.folder||"INBOX")==="INBOX";});
     }
     if(mailUI.search){ var q=mailUI.search.toLowerCase(); list=list.filter(function(m){return ((m.fromName||"")+" "+(m.from||"")+" "+(m.subject||"")+" "+(m.preview||"")+" "+(m.body||"")).toLowerCase().indexOf(q)>-1;}); }
@@ -657,7 +660,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         '<span class="subj">'+subj+pre+'</span>'+star+'<span class="when">'+when+'</span></div>';
     }
     var chk='<label class="mcheck" title="Auswählen"><input type="checkbox" data-selid="'+esc(m.id)+'"'+(mailUI.selected[m.id]?" checked":"")+'></label>';
-    return '<div class="mrow2'+(m.read?"":" unread")+(mailUI.sel===m.id?" sel":"")+(mailUI.selected[m.id]?" picked":"")+(m.deleted?" trashed":"")+'" data-mid="'+esc(m.id)+'">'+
+    return '<div class="mrow2'+(m.read?"":" unread")+(mailUI.sel===m.id?" sel":"")+(mailUI.selected[m.id]?" picked":"")+(isTrashed(m)?" trashed":"")+'" data-mid="'+esc(m.id)+'">'+
       chk+
       '<div class="av" style="background:'+avColor(m.fromName||m.from)+'">'+esc(initials(m))+'</div>'+
       '<div class="mmain">'+
@@ -668,16 +671,16 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   }
   function renderOverviewMail(){
     var host=document.getElementById("ov-mail-list"); if(!host)return;
-    var msgs=mailSorted().slice(0,5);
+    var msgs=(state.mail.messages||[]).filter(function(m){return !isHidden(m);}).sort(function(a,b){return (new Date(b.date))-(new Date(a.date));}).slice(0,5);
     if(!msgs.length){ host.innerHTML='<div class="mempty">Noch keine Nachrichten eingespielt. Sag mir Bescheid — ich hole die neuesten aus deinem World4You-Webmail.</div>'; return; }
     host.innerHTML=msgs.map(function(m){return mailRow(m,true);}).join("");
   }
-  function mailCounts(){ var a=(state.mail.messages||[]); var live=a.filter(function(m){return !m.deleted;});
+  function mailCounts(){ var a=(state.mail.messages||[]); var live=a.filter(function(m){return !isHidden(m);});
     return {inbox:live.filter(function(m){return (m.folder||"INBOX")==="INBOX";}).length,
       inboxUnread:live.filter(function(m){return (m.folder||"INBOX")==="INBOX"&&!m.read;}).length,
       unread:live.filter(function(m){return !m.read;}).length,
       starred:live.filter(function(m){return m.starred;}).length,
-      trash:a.filter(function(m){return m.deleted;}).length}; }
+      trash:a.filter(function(m){return isTrashed(m);}).length}; }
   function renderMailBadge(){ var c=mailCounts(); var b=document.getElementById("mail-badge"); if(b){ if(c.unread>0){b.style.display="";b.textContent=c.unread;}else b.style.display="none"; } }
   function renderMailList(){
     var host=document.getElementById("mail-list"); if(!host)return;
@@ -688,7 +691,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var host=document.getElementById("mail-read"); if(!host)return;
     var m=(state.mail.messages||[]).filter(function(x){return x.id===mailUI.sel;})[0];
     if(!m){ host.innerHTML='<div class="mempty">Wähle links eine Nachricht aus, um sie zu lesen.</div>'; return; }
-    var acts = m.deleted
+    var acts = isTrashed(m)
       ? '<button class="btn sm" data-mact="restore">↺ Wiederherstellen</button>'+
         '<button class="btn sm danger" data-mact="purge">Endgültig löschen</button>'
       : '<button class="btn sm" data-mact="'+(m.read?"unread":"read")+'">'+(m.read?"Als ungelesen":"Als gelesen")+'</button>'+
@@ -982,7 +985,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         {label:"Weiterleiten",act:function(){openCompose("Weiterleiten","","Fwd: "+(m.subject||""),(m.bodyHtml?"":(m.body||m.preview||"")));}},
         {sep:true},
         {label:mailUI.selected[id]?"Abwählen":"Auswählen",act:function(){ if(mailUI.selected[id])delete mailUI.selected[id]; else mailUI.selected[id]=true; renderMailAll(); }},
-        {label:m.deleted?"↺ Wiederherstellen":"🗑 In Papierkorb",danger:!m.deleted,act:function(){ if(m.deleted){m.deleted=false;m.trashedAt=null;pushPending("restore",id,{folder:m.folder});save();renderMailAll();} else trashMessages([id]); }}
+        {label:isTrashed(m)?"↺ Wiederherstellen":"🗑 In Papierkorb",danger:!isTrashed(m),act:function(){ if(isTrashed(m)){m.deleted=false;m.trashedAt=null;pushPending("restore",id,{folder:m.folder});save();renderMailAll();} else trashMessages([id]); }}
       ]);
       return;
     }
