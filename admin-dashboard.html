@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FS Creative Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+:root{ color-scheme: light;
+  --bg1:#eef2fb; --bg2:#f7f9fd; --card:#ffffff; --ink:#0f1729; --dim:#6b7686; --faint:#9aa4b2; --line:#e9edf5;
+  --accent:#2f6bff; --accent2:#7c4dff; --violet:#8b5cf6; --teal:#0ea5b7; --gold:#e0930a; --green:#12b76a; --amber:#f79009; --red:#f04438;
+  --radius:18px; --radius-sm:12px;
+  --shadow:0 12px 34px -20px rgba(15,23,42,.32); --shadow-hover:0 22px 44px -22px rgba(15,23,42,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:linear-gradient(180deg,var(--bg1),var(--bg2))}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);line-height:1.45;-webkit-font-smoothing:antialiased;min-height:100vh}
+.wrap{max-width:1120px;margin:0 auto;padding:24px 20px 70px}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* header */
+header.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-content:space-between;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:13px}
+.logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#fff;box-shadow:0 10px 24px -10px rgba(47,107,255,.7)}
+.logo img{height:30px;width:auto;display:block}
+.brand h1{font-size:21px;letter-spacing:-.02em;font-weight:800}
+.brand p{font-size:12.5px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(18,183,106,.18)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:9px 14px;border-radius:11px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s}
+.btn:hover{border-color:#cdd6e6;background:#f7f9fd;transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn svg{width:15px;height:15px}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;box-shadow:0 10px 22px -12px rgba(47,107,255,.8)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
+.btn.danger{color:var(--red);border-color:#f6cdc9}
+.btn.icon{width:36px;height:36px;padding:0;justify-content:center}
+
+/* tabs */
+.tabs{position:relative;display:flex;gap:4px;background:#fff;padding:6px;border-radius:15px;border:1px solid var(--line);margin-bottom:20px;box-shadow:var(--shadow);overflow:hidden}
+.tab{position:relative;z-index:2;flex:1;min-width:96px;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;border-radius:10px;font-size:13.5px;font-weight:600;color:var(--dim);cursor:pointer;border:none;background:transparent;transition:color .25s}
+.tab svg{width:16px;height:16px;opacity:.9}
+.tab.active{color:#fff}
+.tab-ind{position:absolute;z-index:1;top:6px;bottom:6px;left:0;width:0;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));transition:transform .32s cubic-bezier(.34,1.2,.4,1),width .32s cubic-bezier(.34,1.2,.4,1);box-shadow:0 8px 20px -10px rgba(47,107,255,.8)}
+
+/* panels */
+section.panel{display:none}
+section.panel.active{display:block;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* grid + cards */
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);transition:transform .16s,box-shadow .16s,border-color .16s}
+.card.hoverable:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover);border-color:#dbe3f0}
+.kpi{position:relative;overflow:hidden}
+.kpi .top{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.kpi .ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;flex:none}
+.kpi .ic svg{width:17px;height:17px}
+.kpi .lbl{font-size:12.5px;color:var(--dim);font-weight:600}
+.kpi .val{font-size:27px;font-weight:800;letter-spacing:-.025em}
+.kpi.big .val{font-size:33px}
+.kpi .sub{font-size:12px;color:var(--dim);margin-top:6px}
+.kpi input.ghost{font-size:26px;font-weight:800;letter-spacing:-.02em;background:transparent;border:none;padding:0;width:100%;color:var(--ink)}
+.kpi input.ghost:focus{outline:none}
+.val.amber{color:var(--amber)} .val.green{color:var(--green)} .val.accent{color:var(--accent)} .val.violet{color:var(--violet)} .val.teal{color:var(--teal)} .val.gold{color:var(--gold)}
+.ic.amber{background:#fef3e2;color:var(--amber)} .ic.green{background:#e3f7ee;color:var(--green)} .ic.accent{background:#e8f0ff;color:var(--accent)} .ic.violet{background:#f0eaff;color:var(--violet)} .ic.teal{background:#e2f6f9;color:var(--teal)} .ic.gold{background:#fbf1dc;color:var(--gold)} .ic.grey{background:#eef1f7;color:var(--dim)}
+
+/* section title */
+.sec-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:24px 2px 12px}
+.sec-title h2{font-size:16px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.sec-title .hint{font-size:12px;color:var(--faint)}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* progress */
+.prog{display:flex;align-items:center;gap:12px;margin-top:2px}
+.prog .bar{flex:1;height:9px;border-radius:6px;background:#eef1f7;overflow:hidden}
+.prog .fill{height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,var(--green),#3ddc84);transition:width .6s cubic-bezier(.34,1.1,.4,1)}
+.prog .plabel{font-size:12.5px;color:var(--dim);font-weight:600;white-space:nowrap}
+
+/* charts */
+.chart-box{position:relative;height:270px}
+.chart-box.sm{height:220px}
+
+/* tables */
+.tbl-card{padding:6px 8px 4px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:520px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700;padding:9px 10px;border-bottom:1px solid var(--line)}
+td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:#f9fbfe}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right}
+tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none;padding-top:10px}
+input.cell,select.cell{width:100%;border:1.5px solid transparent;background:#f4f7fc;border-radius:9px;padding:8px 10px;font:inherit;font-size:13.5px;color:var(--ink);transition:border-color .15s,background .15s}
+input.cell:focus,select.cell:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(47,107,255,.12)}
+input.cell.num{text-align:right;font-variant-numeric:tabular-nums}
+input.cell.w-name{background:#eef2fb;font-weight:600}
+.money{font-variant-numeric:tabular-nums;font-weight:700}
+
+/* toggle switch */
+.switch{position:relative;display:inline-block;width:44px;height:25px;cursor:pointer;vertical-align:middle}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch .track{position:absolute;inset:0;background:#d7dce6;border-radius:999px;transition:background .22s}
+.switch .track::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:transform .22s cubic-bezier(.34,1.4,.5,1)}
+.switch input:checked + .track{background:linear-gradient(135deg,var(--green),#3ddc84)}
+.switch input:checked + .track::after{transform:translateX(19px)}
+
+/* pills / chips */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px}
+.pill.green{background:#e3f7ee;color:#0a8a4f} .pill.amber{background:#fef3e2;color:#9a6400} .pill.grey{background:#eef1f6;color:#586074}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#f2f5fb;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;color:var(--dim)}
+.chip b{color:var(--ink)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+/* hero overview */
+.hero{background:linear-gradient(135deg,#101a33,#1b2b52);color:#fff;border:none;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;right:-60px;top:-60px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(124,77,255,.5),transparent 70%)}
+.hero .lbl{color:#aeb9d6}
+.hero .val{color:#fff;font-size:26px}
+.hero .sub{color:#9fb0d6}
+.hero .sub b{color:#fff;font-weight:700}
+.hero .ic{background:rgba(255,255,255,.12);color:#fff}
+.hero.h-blue::after{background:radial-gradient(circle,rgba(47,107,255,.6),transparent 70%)}
+.hero.h-blue .ic{background:rgba(47,107,255,.3)}
+.hero.h-violet::after{background:radial-gradient(circle,rgba(139,92,246,.62),transparent 70%)}
+.hero.h-violet .ic{background:rgba(139,92,246,.32)}
+.hero.h-steel{background:linear-gradient(135deg,#0f1c30,#173a5c)}
+.hero.h-steel::after{background:radial-gradient(circle,rgba(58,138,205,.6),transparent 70%)}
+.hero.h-steel .ic{background:rgba(58,138,205,.32)}
+.hero.h-gold{background:linear-gradient(135deg,#1c1a2c,#3a2f18)}
+.hero.h-gold::after{background:radial-gradient(circle,rgba(224,160,32,.58),transparent 70%)}
+.hero.h-gold .ic{background:rgba(224,160,32,.34)}
+.hero.h-green{background:linear-gradient(135deg,#0f2030,#11402c)}
+.hero.h-green::after{background:radial-gradient(circle,rgba(26,190,110,.58),transparent 70%)}
+.hero.h-green .ic{background:rgba(26,190,110,.32)}
+
+/* footer note */
+.foot-note{margin-top:28px;font-size:12.5px;color:var(--dim);background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:var(--shadow)}
+.foot-note code{background:#f1f4fa;padding:1px 6px;border-radius:6px;font-size:12px}
+.foot-note h3{font-size:13px;margin-bottom:6px;color:var(--ink);display:flex;align-items:center;gap:7px}
+
+/* empty */
+.empty{padding:22px;text-align:center;color:var(--faint);font-size:13px}
+
+/* mail */
+.mlist{display:flex;flex-direction:column}
+.mrow{display:flex;align-items:center;gap:11px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.mrow:last-child{border-bottom:none}
+.mrow:hover{background:#f7fafe}
+.mrow.sel{background:#eaf1ff}
+.mrow .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.mrow .dot.read{background:transparent;box-shadow:inset 0 0 0 1.5px #d7dce6}
+.mrow .who{width:150px;min-width:110px;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .subj{flex:1;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.mrow .subj .pre{color:var(--faint)}
+.mrow.unread .who,.mrow.unread .subj{font-weight:700}
+.mrow .when{font-size:12px;color:var(--faint);white-space:nowrap;flex:none}
+.mrow .star{flex:none;cursor:pointer;color:#d0d6e0;font-size:15px;line-height:1}
+.mrow .star.on{color:var(--gold)}
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;font-weight:700}
+.tab .badge{margin-left:6px}
+.mbox{display:grid;grid-template-columns:172px 330px 1fr;gap:14px;align-items:start}
+.mlistwrap,.mreadwrap{max-height:72vh;overflow:auto}
+.mreadwrap{position:sticky;top:8px}
+.mside{padding:8px}
+/* rich list rows */
+.mrow2{display:flex;gap:11px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.mrow2:last-child{border-bottom:none}
+.mrow2:hover{background:#f7fafe}
+.mrow2.sel{background:#eaf1ff}
+.mrow2.unread{background:#fbfdff}
+.mrow2.picked{background:#eef4ff}
+.mcheck{flex:none;display:flex;align-items:center;cursor:pointer}
+.mcheck input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
+.mbulk{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;background:#eef4ff;border:1px solid #d5e2ff;border-radius:12px;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--accent)}
+.av{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;text-transform:uppercase;box-shadow:0 4px 10px -5px rgba(15,23,42,.5)}
+.av.lg{width:48px;height:48px;font-size:17px;border-radius:14px}
+.mmain{flex:1;min-width:0}
+.mrow2 .l1{display:flex;align-items:center;gap:8px}
+.mrow2 .who{flex:1;min-width:0;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow2.unread .who{font-weight:800}
+.mrow2 .when{font-size:11.5px;color:var(--faint);white-space:nowrap;flex:none}
+.mrow2 .star{flex:none;color:#d0d6e0;font-size:15px;line-height:1;cursor:pointer}
+.mrow2 .star.on{color:var(--gold)}
+.mrow2 .subj{font-size:13px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.mrow2.unread .subj{color:var(--ink);font-weight:600}
+.mrow2 .pre{font-size:12px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.mrow2 .udot{position:relative}
+.mrow2.unread .udot::before{content:"";position:absolute;left:-6px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.mread-head2{display:flex;align-items:center;gap:13px;margin-bottom:14px}
+.mread-head2 .rn{font-size:15px;font-weight:700}
+.mread-head2 .re{font-size:12.5px;color:var(--dim);margin-top:2px;word-break:break-word}
+.rsubj{font-size:20px;font-weight:800;letter-spacing:-.015em;margin:2px 0 14px}
+.fbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:none;background:transparent;padding:9px 11px;border-radius:10px;font:inherit;font-size:13.5px;font-weight:600;color:var(--dim);cursor:pointer;transition:background .12s}
+.fbtn:hover{background:#f2f5fb}
+.fbtn.active{background:#e8f0ff;color:var(--accent)}
+.fbtn .cnt{font-size:11px;color:var(--faint);font-weight:700}
+.fbtn.trash.active{background:#fdecea;color:var(--red)}
+.fdiv{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;padding:12px 11px 5px}
+.mreadhead{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px}
+.mreadhead .s{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.mreadhead .m{font-size:12.5px;color:var(--dim);margin-top:4px}
+.mbody{font-size:13.5px;color:#33404f;white-space:pre-wrap;line-height:1.55;word-break:break-word}
+.mactions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.mempty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
+@media(max-width:980px){.mbox{grid-template-columns:1fr}.mrow .who{width:auto;min-width:0}.mlistwrap,.mreadwrap{max-height:none}.mreadwrap{position:static}}
+
+/* valuero quarter cards */
+.qcard{margin-bottom:14px}
+.qhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.qtitle{font-size:15px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.qsum{font-size:12.5px;font-weight:600;color:var(--dim)}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(12,18,32,.5);backdrop-filter:blur(3px);display:none;place-items:center;padding:20px;z-index:50}
+.overlay.show{display:grid;animation:fade .2s ease}
+.modal{background:#fff;border-radius:18px;max-width:640px;width:100%;padding:24px;box-shadow:0 40px 90px -30px rgba(0,0,0,.55)}
+.modal h3{font-size:17px;margin-bottom:6px}
+.modal p{font-size:12.5px;color:var(--dim);margin-bottom:12px}
+.modal textarea{width:100%;height:230px;border:1px solid var(--line);border-radius:11px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;resize:vertical;background:#fbfcfe}
+.modal .row{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+@media(max-width:640px){ .split{grid-template-columns:1fr} .kpi .val{font-size:24px} .hero .val{font-size:31px} .tab span.t{display:none} .tab{min-width:0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo"><img src="data:image/png;base64,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" alt="FS Creative"/></div>
+      <div>
+        <h1>FS Creative Dashboard</h1>
+        <p><span class="live-dot"></span><span id="updated">Zuletzt aktualisiert: —</span></p>
+      </div>
+    </div>
+    <div class="actions">
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <span class="tab-ind" id="tabInd"></span>
+    <button class="tab active" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg><span class="t">Übersicht</span></button>
+    <button class="tab" data-tab="kochdu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6v6a5 5 0 0 0 10 0V6"/></svg><span class="t">kochdu</span></button>
+    <button class="tab" data-tab="kantineur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 8l16 8"/></svg><span class="t">Kantineur</span></button>
+    <button class="tab" data-tab="blitzdings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg><span class="t">Blitzdings</span></button>
+    <button class="tab" data-tab="valuero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5v14"/><path d="M2 9h17a3 3 0 0 1 3 3v7"/><path d="M2 16h20"/><path d="M6 9v7"/></svg><span class="t">VALUERO</span></button>
+    <button class="tab" data-tab="postfach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="t">Postfach</span><span class="badge" id="mail-badge" style="display:none">0</span></button>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section class="panel active" id="p-overview">
+      <div class="grid kpis">
+        <div class="card kpi hero h-blue hoverable">
+          <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Gesamt-Einnahmen</div></div>
+          <div class="val" id="ov-paid-all">—</div>
+          <div class="sub">Noch offen: <b><span id="ov-offen-all">—</span></b></div>
+        </div>
+        <div class="card kpi hero h-violet hoverable">
+          <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6v6a5 5 0 0 0 10 0V6"/></svg></div><div class="lbl">kochdu-Einnahmen</div></div>
+          <div class="val" id="ov-koch-paid">—</div>
+          <div class="sub">Noch offen: <b><span id="ov-koch-offen">—</span></b></div>
+        </div>
+        <div class="card kpi hero h-steel hoverable">
+          <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 8l16 8"/></svg></div><div class="lbl">Kantineur-Einnahmen</div></div>
+          <div class="val" id="ov-kant-paid">—</div>
+          <div class="sub">mtl. Umsatz: <b><span id="ov-kant-mrr">—</span></b></div>
+        </div>
+        <div class="card kpi hero h-gold hoverable">
+          <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div><div class="lbl">Blitzdings-Einnahmen</div></div>
+          <div class="val" id="ov-bd-paid">—</div>
+          <div class="sub">Noch offen: <b><span id="ov-bd-offen">—</span></b></div>
+        </div>
+        <div class="card kpi hero h-green hoverable">
+          <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5v14"/><path d="M2 9h17a3 3 0 0 1 3 3v7"/><path d="M2 16h20"/><path d="M6 9v7"/></svg></div><div class="lbl">VALUERO-Einnahmen</div></div>
+          <div class="val" id="ov-val-paid">—</div>
+          <div class="sub">Noch offen: <b><span id="ov-val-offen">—</span></b></div>
+        </div>
+      </div>
+      <div class="split" style="margin-top:16px">
+        <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Offen einzunehmen je Plattform</h2></div><div class="chart-box sm"><canvas id="c-ov-offen"></canvas></div></div>
+        <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Umsatzbeitrag (Monat)</h2><span class="hint">MRR + realisierte Umsätze</span></div><div class="chart-box sm"><canvas id="c-ov-mix"></canvas></div></div>
+      </div>
+      <div class="card hoverable" style="margin-top:16px">
+        <div class="sec-title" style="margin:0 0 4px"><h2><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>Neueste Nachrichten</h2><button class="btn sm" data-goto="postfach">Postfach öffnen →</button></div>
+        <div class="mlist" id="ov-mail-list"></div>
+      </div>
+    </section>
+
+    <!-- KOCHDU -->
+    <section class="panel" id="p-kochdu">
+      <div class="grid kpis">
+        <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div><div class="lbl">Downloads</div></div><input class="ghost tnum" type="number" min="0" data-kv="kochdu.downloads"></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div><div class="lbl">Bestellungen (gesamt)</div></div><input class="ghost tnum" type="number" min="0" data-kv="kochdu.bestellungen"></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></div><div class="lbl">Bar-Gebühren offen</div></div><div class="val amber" id="k-baroffen">—</div><div class="sub">noch einzunehmen</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bar-Gebühren bezahlt</div></div><div class="val green" id="k-barpaid">—</div><div class="sub" id="k-online-sub">Online (verrechnet): —</div></div>
+      </div>
+      <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="k-prog-lbl">Bezahlt-Quote —</span><div class="bar"><div class="fill" id="k-prog-fill"></div></div></div></div>
+      <div class="sec-title"><h2>Gebühren pro Restaurant / Shop</h2><button class="btn sm" data-add="kochdu.restaurants">+ Zeile</button></div>
+      <div class="card tbl-card">
+        <table>
+          <thead><tr><th>Restaurant / Shop</th><th class="num">Bestellungen</th><th class="num">Bar-Gebühr €</th><th class="num">Online-Gebühr €</th><th style="text-align:center;width:80px">Bezahlt</th><th style="width:100px">Status</th><th style="width:44px"></th></tr></thead>
+          <tbody id="tb-kochdu"></tbody>
+          <tfoot><tr><td>Gesamt</td><td class="num" id="kf-best">—</td><td class="num money" id="kf-bar" style="color:var(--amber)">—</td><td class="num money" id="kf-online" style="color:var(--green)">—</td><td></td><td></td><td></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="card hoverable" style="margin-top:14px"><div class="sec-title" style="margin:0 0 8px"><h2>Bar-Gebühren je Betrieb</h2><span class="hint">grün = bezahlt · gelb = offen</span></div><div class="chart-box"><canvas id="c-kochdu"></canvas></div></div>
+    </section>
+
+    <!-- KANTINEUR -->
+    <section class="panel" id="p-kantineur">
+      <div class="mactions" style="margin:2px 0 12px;align-items:center">
+        <a class="btn sm primary" href="https://www.kantineur.at/betreiber" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> Betreiber-Bereich öffnen</a>
+        <span class="hint" id="ka-stats-updated"></span>
+      </div>
+      <div class="grid kpis">
+        <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div><div class="lbl">Downloads</div></div><input class="ghost tnum" type="number" min="0" data-kv="kantineur.downloads"></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg></div><div class="lbl">Aktive Abos (gesamt)</div></div><div class="val" id="ka-total">—</div><div class="sub" id="ka-total-sub"></div></div>
+        <div class="card kpi big hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></div><div class="lbl">Umsatz / Monat (MRR)</div></div><div class="val green" id="ka-mrr">—</div><div class="sub" id="ka-mrr-sub">—</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Bereits eingenommen (gesamt)</div></div><div class="val green" id="ka-earned">—</div><div class="sub" id="ka-earned-sub">fließt in Gesamt-Einnahmen ein</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg></div><div class="lbl">Registrierte Kantinen</div></div><div class="val" id="ka-canteens">—</div><div class="sub" id="ka-canteens-sub">inkl. Testphase</div></div>
+      </div>
+      <div class="split" style="margin-top:16px">
+        <div class="card hoverable">
+          <div class="sec-title" style="margin:0 0 10px"><h2>Abo-Varianten</h2><span class="hint">Umsatz = effektiv, Gutscheine/Rabatte eingerechnet</span></div>
+          <div class="tbl-card" style="padding:0">
+          <table style="min-width:0">
+            <thead><tr><th>Variante</th><th class="num">Listenpreis</th><th class="num">Aktiv</th><th class="num">Zahlend</th><th class="num">Umsatz € / M</th></tr></thead>
+            <tbody>
+              <tr><td style="font-weight:600">Kantineur</td><td class="num money" id="ka-price-k">—</td><td class="num" id="ka-act-k">—</td><td class="num" id="ka-pay-k">—</td><td class="num money" id="ka-um-k">—</td></tr>
+              <tr><td style="font-weight:600">Magazineur</td><td class="num money" id="ka-price-m">—</td><td class="num" id="ka-act-m">—</td><td class="num" id="ka-pay-m">—</td><td class="num money" id="ka-um-m">—</td></tr>
+            </tbody>
+            <tfoot><tr><td>Gesamt</td><td></td><td class="num" id="ka-act-sum">—</td><td class="num" id="ka-pay-sum">—</td><td class="num money" id="ka-um-sum" style="color:var(--green)">—</td></tr></tfoot>
+          </table>
+          </div>
+        </div>
+        <div class="card hoverable"><div class="sec-title" style="margin:0 0 8px"><h2>Abo-Verteilung</h2></div><div class="chart-box sm"><canvas id="c-kantineur"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- BLITZDINGS -->
+    <section class="panel" id="p-blitzdings">
+      <div class="grid kpis">
+        <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg></div><div class="lbl">Vergangene Buchungen</div></div><div class="val" id="bd-cnt-past">—</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div><div class="lbl">Anstehende Buchungen</div></div><div class="val" id="bd-cnt-up">—</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Umsatz vergangen</div></div><div class="val green" id="bd-past">—</div><div class="sub">realisiert</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Umsatz anstehend</div></div><div class="val gold" id="bd-up">—</div><div class="sub">Pipeline</div></div>
+      </div>
+      <div class="sec-title"><h2>Buchungen</h2><button class="btn sm" data-add="blitzdings.bookings">+ Buchung</button></div>
+      <div class="card tbl-card">
+        <table>
+          <thead><tr><th style="width:140px">Datum</th><th>Event / Kunde</th><th class="num">Betrag €</th><th style="width:140px">Status</th><th style="width:44px"></th></tr></thead>
+          <tbody id="tb-blitzdings"></tbody>
+        </table>
+      </div>
+      <div class="card hoverable" style="margin-top:14px"><div class="sec-title" style="margin:0 0 8px"><h2>Umsatz nach Monat</h2><span class="hint">nach Datum gruppiert</span></div><div class="chart-box"><canvas id="c-blitzdings"></canvas></div></div>
+    </section>
+
+    <!-- VALUERO -->
+    <section class="panel" id="p-valuero">
+      <div class="grid kpis">
+        <div class="card kpi big hoverable"><div class="top"><div class="ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg></div><div class="lbl">Offene Gebühren</div></div><div class="val amber" id="v-offen">—</div><div class="sub">noch nicht bezahlt</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bereits bezahlt</div></div><div class="val green" id="v-paid">—</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Gebühren gesamt</div></div><div class="val" id="v-total">—</div></div>
+      </div>
+      <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="v-prog-lbl">Bezahlt-Quote —</span><div class="bar"><div class="fill" id="v-prog-fill"></div></div></div></div>
+      <div class="sec-title"><h2>Buchungsgebühren nach Quartal</h2><button class="btn sm primary" data-add="valuero.fees">+ Gebühr</button></div>
+      <p class="hint" style="margin:0 2px 12px;font-size:12.5px;color:var(--faint)">Jede Buchung erzeugt eine Gebühr. Sammle sie über das Quartal und klicke dann „Quartal abrechnen“, um alle auf einmal als bezahlt zu markieren.</p>
+      <div id="valuero-quarters"></div>
+      <div class="card hoverable" style="margin-top:14px;max-width:440px"><div class="sec-title" style="margin:0 0 8px"><h2>Bezahlt vs. offen</h2></div><div class="chart-box sm"><canvas id="c-valuero"></canvas></div></div>
+    </section>
+
+    <!-- POSTFACH -->
+    <section class="panel" id="p-postfach">
+      <div class="sec-title" style="margin-top:2px"><h2 id="mail-account">Postfach</h2><span class="hint" id="mail-updated">—</span></div>
+      <div class="mactions">
+        <input class="cell" id="mail-search" placeholder="Suchen — Absender, Betreff, Text …" style="max-width:340px">
+        <button class="btn sm primary" id="mail-compose"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Verfassen</button>
+        <button class="btn sm" id="mail-webmail">In Webmail öffnen</button>
+      </div>
+      <div class="mbulk" id="mail-bulk">
+        <span id="mail-bulk-count">0 ausgewählt</span>
+        <button class="btn sm" data-bulk="read">Als gelesen</button>
+        <button class="btn sm" data-bulk="unread">Als ungelesen</button>
+        <button class="btn sm danger" data-bulk="trash">🗑 In Papierkorb</button>
+        <button class="btn sm ghost" data-bulk="clear">Abwählen</button>
+      </div>
+      <div class="mbox">
+        <div class="mside card" id="mail-folders"></div>
+        <div class="card mlistwrap" style="padding:0"><div class="mlist" id="mail-list"></div></div>
+        <div class="card mreadwrap" id="mail-read"><div class="mempty">Wähle links eine Nachricht aus, um sie zu lesen.</div></div>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<div class="overlay" id="coverlay">
+  <div class="modal">
+    <h3 id="c-title">Verfassen</h3>
+    <p>Senden ist direkt aus dem Dashboard nicht möglich. Kopiere den Text und füge ihn in World4You-Webmail ein — oder öffne Webmail und schreibe dort.</p>
+    <input class="cell" id="c-to" placeholder="An" style="margin-bottom:8px;background:#f4f7fc;border:1.5px solid transparent">
+    <input class="cell" id="c-subj" placeholder="Betreff" style="margin-bottom:8px;background:#f4f7fc;border:1.5px solid transparent">
+    <textarea id="c-body" spellcheck="false" style="height:180px"></textarea>
+    <div class="row">
+      <button class="btn ghost" id="c-close">Schließen</button>
+      <button class="btn" id="c-copy">Text kopieren</button>
+      <button class="btn primary" id="c-web">Webmail öffnen</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+(function(){
+  "use strict";
+  var KEY="fsc_einnahmen_dashboard_v1";
+  var EUR=new Intl.NumberFormat("de-AT",{style:"currency",currency:"EUR",maximumFractionDigits:2});
+  var NUM=new Intl.NumberFormat("de-AT");
+  function eur(n){ return EUR.format(Number(n)||0); }
+  function num(n){ return NUM.format(Math.round(Number(n)||0)); }
+
+  // Mail-Snapshot: wird bei jedem Abruf aus World4You-Webmail hier neu eingebettet.
+  // Gelesen/Stern/Gelöscht des Nutzers bleiben beim Einspielen erhalten (Merge per id).
+  var MAIL_SNAPSHOT={"account": "simon@fs-creative.at", "fetchedAt": "2026-09-22T09:28:33", "messages": [{"id": "m_a0c6c6fa7e", "fromName": "Railway", "from": "", "subject": "Deployment crashed for la-taverna in La Taverna!", "preview": "", "body": "", "date": "2026-09-22T09:20:00", "read": false, "starred": false}, {"id": "m_9bb43ca0b7", "fromName": "Railway", "from": "", "subject": "Deployment crashed for hausfelder-garfrescha in Haus Felder Garfrescha!", "preview": "", "body": "", "date": "2026-09-22T09:19:30", "read": false, "starred": false}, {"id": "m_dbf1674ce0", "fromName": "Railway", "from": "", "subject": "Deployment crashed for pilates-studio-website in Pilates!", "preview": "", "body": "", "date": "2026-09-22T09:19:20", "read": false, "starred": false}, {"id": "m_bfbcd26408", "fromName": "Railway", "from": "", "subject": "Deployment crashed for map-kellergalerie in MAP Kellergalerie!", "preview": "", "body": "", "date": "2026-09-22T09:19:10", "read": false, "starred": false}, {"id": "m_22364d9bfb", "fromName": "Railway", "from": "", "subject": "Deployment crashed for alpenflair-website in Alpenflair!", "preview": "", "body": "", "date": "2026-09-22T09:19:05", "read": false, "starred": false}, {"id": "m_ba1fbf4cc5", "fromName": "Railway", "from": "", "subject": "Deployment crashed for latschasorri in Latschasorri!", "preview": "", "body": "", "date": "2026-09-22T09:19:00", "read": false, "starred": false}, {"id": "m_f50206cc80", "fromName": "Railway", "from": "", "subject": "Deployment crashed for waga-erdbau in WAGA!", "preview": "", "body": "", "date": "2026-09-22T09:18:30", "read": false, "starred": false}, {"id": "m_f1e98e6fd9", "fromName": "Railway", "from": "", "subject": "Deployment crashed for hauszurkapelle in Haus zur Kapelle!", "preview": "", "body": "", "date": "2026-09-22T09:18:00", "read": false, "starred": false}, {"id": "m_e72ade336a", "fromName": "Railway", "from": "", "subject": "Railway usage alert", "preview": "", "body": "", "date": "2026-09-22T07:04:00", "read": true, "starred": false}, {"id": "m_80a91c622e", "fromName": "Galehr, Florian", "from": "", "subject": "Anfrage Vereins-Homepage", "preview": "", "body": "", "date": "2026-09-21T15:58:00", "read": true, "starred": false}, {"id": "m_b7d3d92def", "fromName": "ÖBFV Office", "from": "", "subject": "AW: Neue Webanwendung für alle Feuerwehren und Vereine", "preview": "", "body": "", "date": "2026-09-21T11:14:00", "read": true, "starred": false}, {"id": "m_121bbf77f2", "fromName": "Photo & Event C.S. GmbH & Co. KG", "from": "", "subject": "Rechnung-Nr. R260095 - Photo & Event C.S. GmbH & Co. KG", "preview": "", "body": "", "date": "2026-09-21T09:45:00", "read": true, "starred": false}, {"id": "m_db455b348a", "fromName": "Fotoboxen-kaufen", "from": "", "subject": "Ihre Bestellung FK22149 bei Photo & Event C.S. GmbH & Co. KG", "preview": "", "body": "", "date": "2026-09-21T08:45:00", "read": true, "starred": false}, {"id": "m_3dd48f8abb", "fromName": "Blitzdings", "from": "", "subject": "Neue Buchung BD-5FWEUS – Martina Zimmermann", "preview": "", "body": "", "date": "2026-09-20T22:00:00", "read": true, "starred": false}, {"id": "m_cf7282c982", "fromName": "Stefanie Forstinger-Haiderer", "from": "", "subject": "AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] Re: [EXT] AW: Anfrage Videobooth", "preview": "", "body": "", "date": "2026-09-19T18:51:00", "read": true, "starred": false}, {"id": "m_1a19c96669", "fromName": "von Känel Seraina", "from": "", "subject": "AW: 360° Videobooth beim Ski Weltcup in Adelboden 2027 – Event-Highlight für Ihre Veranstaltung", "preview": "", "body": "", "date": "2026-09-19T13:21:00", "read": true, "starred": false}, {"id": "m_663852ad95", "fromName": "von Känel Seraina", "from": "", "subject": "AW: 360° Videobooth beim Ski Weltcup in Adelboden 2027 – Event-Highlight für Ihre Veranstaltung", "preview": "", "body": "", "date": "2026-09-19T13:06:00", "read": true, "starred": false}, {"id": "m_708f292587", "fromName": "sponsoring", "from": "", "subject": "AW: 360° Videobooth für das House of Sunrise – Ski-Weltcup Adelboden 2027", "preview": "", "body": "", "date": "2026-09-18T16:17:00", "read": true, "starred": false}, {"id": "m_fd4839147b", "fromName": "hello@sarahdurig.at", "from": "hello@sarahdurig.at", "subject": "Re: AW: AW: AW: AW: Anfrage - Balkonbeklebung WM Cowntdown", "preview": "", "body": "", "date": "2026-09-18T11:42:00", "read": true, "starred": false}, {"id": "m_14c476e971", "fromName": "florian lerch", "from": "", "subject": "WG: Foto, Bild", "preview": "", "body": "", "date": "2026-09-18T09:32:00", "read": true, "starred": false}, {"id": "m_164d448bea", "fromName": "florian lerch", "from": "", "subject": "WG: Fest-Website", "preview": "", "body": "", "date": "2026-09-18T09:28:00", "read": true, "starred": false}, {"id": "m_5c2be414fe", "fromName": "Alicia Stockheim Mäder", "from": "", "subject": "Hallo Herr Felder, es war mir ein Vergnügen, mit Ihnen zu arbeiten. 5404623", "preview": "", "body": "", "date": "2026-09-17T11:51:00", "read": true, "starred": false}, {"id": "m_b57a813243", "fromName": "hello@sarahdurig.at", "from": "hello@sarahdurig.at", "subject": "Re: AW: AW: AW: Anfrage - Balkonbeklebung WM Cowntdown", "preview": "", "body": "", "date": "2026-09-16T08:34:30", "read": true, "starred": false}, {"id": "m_ecf297e75f", "fromName": "Kassa - Gemeinde Galtür", "from": "", "subject": "Anpassung der Homepage auf die neue Dauerausstellung", "preview": "", "body": "", "date": "2026-09-16T08:34:00", "read": true, "starred": false}, {"id": "m_3102a6df7c", "fromName": "hello@sarahdurig.at", "from": "hello@sarahdurig.at", "subject": "Re: AW: AW: Anfrage - Balkonbeklebung WM Cowntdown", "preview": "", "body": "", "date": "2026-09-16T08:19:00", "read": true, "starred": false}, {"id": "m_ae0c94ccb1", "fromName": "hello@sarahdurig.at", "from": "hello@sarahdurig.at", "subject": "Re: AW: Anfrage - Balkonbeklebung WM Cowntdown", "preview": "", "body": "", "date": "2026-09-15T17:39:00", "read": true, "starred": false}, {"id": "m_ab463e47ec", "fromName": "Traktor-Club Gaschurn", "from": "", "subject": "Logo Traktor-Club für Gondel", "preview": "", "body": "", "date": "2026-09-15T11:35:00", "read": true, "starred": false}, {"id": "m_5a96b92fa9", "fromName": "Hermes Paketshop Service", "from": "", "subject": "Automatische Antwort: Öffnungszeiten", "preview": "", "body": "", "date": "2026-09-15T10:03:00", "read": true, "starred": false}, {"id": "m_1cb31a2774", "fromName": "Sarah Durig", "from": "", "subject": "Re: Anfrage - Balkonbeklebung WM Cowntdown", "preview": "", "body": "", "date": "2026-09-15T08:28:00", "read": true, "starred": false}, {"id": "m_5ceae75378", "fromName": "hello@sarahdurig.at", "from": "hello@sarahdurig.at", "subject": "Anfrage - Balkonbeklebung WM Cowntdown", "preview": "", "body": "", "date": "2026-09-14T12:43:00", "read": true, "starred": false}, {"id": "m_3683983c77", "fromName": "Reiner Schmieder", "from": "", "subject": "Gondel - Blauer Anton - Pfälzer Hüttengruppe", "preview": "", "body": "", "date": "2026-09-14T11:40:00", "read": true, "starred": false}, {"id": "m_6063806b98", "fromName": "Pension Valbella", "from": "", "subject": "Neue Homepage fürs Valbella", "preview": "", "body": "", "date": "2026-09-10T09:38:00", "read": true, "starred": false}, {"id": "m_88360565b8", "fromName": "Stefanie Forstinger-Haiderer", "from": "", "subject": "AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] Re: [EXT] AW: Anfrage Videobooth", "preview": "", "body": "", "date": "2026-09-10T07:34:00", "read": true, "starred": false}, {"id": "m_4a69d5b4ac", "fromName": "Stefanie Forstinger-Haiderer", "from": "", "subject": "AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] Re: [EXT] AW: Anfrage Videobooth", "preview": "", "body": "", "date": "2026-09-07T16:29:00", "read": true, "starred": false}, {"id": "m_8bb419a03c", "fromName": "Stefanie Forstinger-Haiderer", "from": "", "subject": "AW: [EXT] AW: [EXT] AW: [EXT] AW: [EXT] Re: [EXT] AW: Anfrage Videobooth", "preview": "", "body": "", "date": "2026-09-07T16:12:00", "read": true, "starred": false}, {"id": "m_9d60286479", "fromName": "Stefanie Forstinger-Haiderer", "from": "", "subject": "AW: [EXT] AW: [EXT] AW: [EXT] Re: [EXT] AW: Anfrage Videobooth", "preview": "", "body": "", "date": "2026-09-07T14:23:00", "read": true, "starred": false}, {"id": "m_9e00ccd9af", "fromName": "mahnungen@druck.at", "from": "mahnungen@druck.at", "subject": "Erinnerung – Ihre Rechnung ist noch immer offen! 588708", "preview": "", "body": "", "date": "2026-09-04T18:32:00", "read": true, "starred": false}, {"id": "m_04f179a4b7", "fromName": "no-reply@gls-austria.com", "from": "no-reply@gls-austria.com", "subject": "Ihr GLS-Beleg Nr. 3520608924 für den Monat 08/2026 - Versandstelle 040aa2HHzB", "preview": "", "body": "", "date": "2026-09-04T07:53:30", "read": true, "starred": false}, {"id": "m_ebd7445bf1", "fromName": "no-reply@gls-austria.com", "from": "no-reply@gls-austria.com", "subject": "Ihr GLS-Beleg Nr. 2521600496 für den Monat 08/2026 - Versandstelle 040aa2HHzB", "preview": "", "body": "", "date": "2026-09-04T07:53:00", "read": true, "starred": false}, {"id": "m_21a2ca8751", "fromName": "Andrea Durig", "from": "", "subject": "Re: Anfrage Flyer Druck", "preview": "", "body": "", "date": "2026-09-03T17:55:00", "read": true, "starred": false}]};
+
+  // Kantineur-Kennzahlen aus /api/stats (bei jedem Abruf hier neu eingebettet).
+  var KANTINEUR_STATS={fetchedAt:"2026-09-22T09:52:30.272Z",revenueGrossCents:0,revenueNetCents:0,thisMonthGrossCents:0,mrrCents:0,subscribers:{active:1,paying:0,sponsored:1,byPlan:{KANTINEUR:{active:0,paying:0,sponsored:0,mrrCents:0},MAGAZINEUR:{active:1,paying:0,sponsored:1,mrrCents:0}}},canteens:{total:1,byStatus:{ACTIVE:1}}};
+
+  var DEFAULTS={
+    meta:{updatedAt:null},
+    mail:{account:"simon@fs-creative.at",lastFetch:null,folders:[],messages:[],pending:[]},
+    kochdu:{downloads:0,bestellungen:0,restaurants:[{name:"Beispiel-Restaurant",bestellungen:0,bar:0,online:0,bezahlt:false}]},
+    kantineur:{downloads:0,preisKantineur:9,preisMagazineur:19,aboKantineur:0,aboMagazineur:0,eingenommenGesamt:0},
+    blitzdings:{bookings:[{date:"",title:"Beispiel-Event",betrag:0,status:"anstehend"}]},
+    valuero:{fees:[{date:"2026-01-15",client:"Antonhaus — Beispielbuchung",betrag:0,bezahlt:false},{date:"2026-01-20",client:"Schoki (Alpinappart Wachter)",betrag:0,bezahlt:false}]}
+  };
+  function clone(o){ return JSON.parse(JSON.stringify(o)); }
+  // Migriert altes valuero.clients -> valuero.fees (Buchungsgebühren-Modell).
+  function normalize(s){
+    if(!s.valuero) s.valuero={};
+    if(!Array.isArray(s.valuero.fees)){
+      if(Array.isArray(s.valuero.clients)) s.valuero.fees=s.valuero.clients.map(function(c){return {date:"",client:c.name||"",betrag:(+c.gebuehr||0),bezahlt:!!c.bezahlt};});
+      else s.valuero.fees=[];
+    }
+    delete s.valuero.clients;
+    // Mail
+    if(!s.mail||typeof s.mail!=="object") s.mail={account:MAIL_SNAPSHOT.account,lastFetch:null,folders:[],messages:[],pending:[]};
+    if(!Array.isArray(s.mail.messages)) s.mail.messages=[];
+    if(!Array.isArray(s.mail.folders)) s.mail.folders=[];
+    if(!Array.isArray(s.mail.pending)) s.mail.pending=[];
+    s.mail.messages.forEach(function(m){ if(!m.folder)m.folder="INBOX"; });
+    if(MAIL_SNAPSHOT.fetchedAt && (!s.mail.lastFetch || MAIL_SNAPSHOT.fetchedAt>s.mail.lastFetch)){
+      var prev={}; s.mail.messages.forEach(function(m){prev[m.id]=m;});
+      s.mail.messages=(MAIL_SNAPSHOT.messages||[]).map(function(m){var p=prev[m.id]||{};
+        return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",date:m.date||"",
+          read:("read" in p)?!!p.read:!!m.read, starred:("starred" in p)?!!p.starred:!!m.starred, deleted:!!p.deleted, trashedAt:p.trashedAt||null};});
+      if(Array.isArray(MAIL_SNAPSHOT.folders)) s.mail.folders=MAIL_SNAPSHOT.folders;
+      s.mail.lastFetch=MAIL_SNAPSHOT.fetchedAt; s.mail.account=MAIL_SNAPSHOT.account||s.mail.account;
+    }
+    // Kantineur-Stats übernehmen (API ist Quelle der Wahrheit für Abos, Umsatz, Kantinen)
+    if(!s.kantineur) s.kantineur={};
+    if(KANTINEUR_STATS.fetchedAt && (!s.kantineur.statsAt || KANTINEUR_STATS.fetchedAt>s.kantineur.statsAt)){
+      var sub=KANTINEUR_STATS.subscribers||{byPlan:{}};
+      var bp=sub.byPlan||{};
+      var planN=function(x){ return (x&&typeof x==="object")?(x.active||0):(+x||0); };
+      s.kantineur.byPlan=bp;
+      s.kantineur.aboKantineur=planN(bp.KANTINEUR);
+      s.kantineur.aboMagazineur=planN(bp.MAGAZINEUR);
+      s.kantineur.aboActive=sub.active||0;
+      s.kantineur.aboPaying=sub.paying||0;
+      s.kantineur.aboSponsored=sub.sponsored||0;
+      s.kantineur.mrrCents=KANTINEUR_STATS.mrrCents||0;
+      s.kantineur.eingenommenGesamt=(KANTINEUR_STATS.revenueGrossCents||0)/100;
+      s.kantineur.thisMonthGross=(KANTINEUR_STATS.thisMonthGrossCents||0)/100;
+      s.kantineur.canteensTotal=KANTINEUR_STATS.canteens.total||0;
+      s.kantineur.canteensByStatus=KANTINEUR_STATS.canteens.byStatus||{};
+      s.kantineur.statsAt=KANTINEUR_STATS.fetchedAt;
+    }
+    return s;
+  }
+  var state=load();
+  function load(){ try{var raw=localStorage.getItem(KEY); if(raw) return normalize(Object.assign(clone(DEFAULTS),JSON.parse(raw)));}catch(e){} return normalize(clone(DEFAULTS)); }
+  function save(){ state.meta.updatedAt=new Date().toISOString(); try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} renderUpdated(); }
+  function renderUpdated(){ var el=document.getElementById("updated"); if(!state.meta.updatedAt){el.textContent="Zuletzt aktualisiert: —";return;} var d=new Date(state.meta.updatedAt); el.textContent="Zuletzt aktualisiert: "+d.toLocaleDateString("de-AT")+" "+d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
+
+  function getPath(p){ return p.split(".").reduce(function(o,k){return o==null?undefined:o[k];},state); }
+  function setPath(p,v){ var ks=p.split("."),o=state; for(var i=0;i<ks.length-1;i++){o=o[ks[i]];} o[ks[ks.length-1]]=v; }
+
+  function comp(){
+    var r=(state.kochdu.restaurants||[]);
+    var bar=0,online=0,best=0,barOffen=0,barPaid=0;
+    r.forEach(function(x){var bv=(+x.bar||0);bar+=bv;online+=(+x.online||0);best+=(+x.bestellungen||0);if(x.bezahlt)barPaid+=bv;else barOffen+=bv;});
+    var ka=state.kantineur;
+    var umK=(+ka.aboKantineur||0)*(+ka.preisKantineur||0), umM=(+ka.aboMagazineur||0)*(+ka.preisMagazineur||0);
+    var mrrEff=(ka.statsAt&&ka.mrrCents!=null)?((+ka.mrrCents||0)/100):(umK+umM);
+    var b=(state.blitzdings.bookings||[]); var past=0,up=0,cntP=0,cntU=0;
+    b.forEach(function(x){var v=+x.betrag||0;if(x.status==="vergangen"){past+=v;cntP++;}else{up+=v;cntU++;}});
+    var v=(state.valuero.fees||[]); var vOffen=0,vPaid=0,vTot=0;
+    v.forEach(function(x){var g=+x.betrag||0;vTot+=g;if(x.bezahlt)vPaid+=g;else vOffen+=g;});
+    return {kochdu:{bar:bar,online:online,sum:bar+online,best:best,barOffen:barOffen,barPaid:barPaid},
+      kantineur:{umK:umK,umM:umM,mrr:mrrEff,listMrr:umK+umM,aboTotal:(+ka.aboKantineur||0)+(+ka.aboMagazineur||0)},
+      blitzdings:{past:past,up:up,cntP:cntP,cntU:cntU},
+      valuero:{offen:vOffen,paid:vPaid,total:vTot}};
+  }
+
+  // ---- animated setters ----
+  function animate(el,to,fmt){ if(!el) return; var from=(typeof el._v==="number")?el._v:to; el._v=to; if(from===to){el.textContent=fmt(to);return;} var s=performance.now(),d=480;
+    function step(t){var k=Math.min(1,(t-s)/d);var e=1-Math.pow(1-k,3);var cur=from+(to-from)*e;el.textContent=fmt(cur);if(k<1)requestAnimationFrame(step);else el.textContent=fmt(to);}
+    requestAnimationFrame(step);
+  }
+  function setMoney(id,to){ animate(document.getElementById(id),to,eur); }
+  function setCount(id,to){ animate(document.getElementById(id),to,num); }
+  function setTxt(id,t){ var el=document.getElementById(id); if(el) el.textContent=t; }
+  function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+  function statusPill(paid){ return paid?'<span class="pill green">✓ Bezahlt</span>':'<span class="pill amber">● Offen</span>'; }
+  function toggle(arr,i,checked){ return '<label class="switch"><input type="checkbox" data-arr="'+arr+'" data-i="'+i+'" data-f="bezahlt" '+(checked?"checked":"")+'><span class="track"></span></label>'; }
+
+  // ---- tables ----
+  function tblKochdu(){
+    var tb=document.getElementById("tb-kochdu"); tb.innerHTML="";
+    if(!state.kochdu.restaurants.length){ tb.innerHTML='<tr><td colspan="7" class="empty">Noch keine Betriebe — „+ Zeile“ oben.</td></tr>'; return; }
+    state.kochdu.restaurants.forEach(function(x,i){
+      var tr=document.createElement("tr");
+      tr.innerHTML=
+        '<td><input class="cell w-name" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="name" value="'+esc(x.name)+'"></td>'+
+        '<td class="num"><input class="cell num" type="number" min="0" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="bestellungen" value="'+(x.bestellungen||0)+'"></td>'+
+        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="bar" value="'+(x.bar||0)+'"></td>'+
+        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="online" value="'+(x.online||0)+'"></td>'+
+        '<td style="text-align:center">'+toggle("kochdu.restaurants",i,x.bezahlt)+'</td>'+
+        '<td>'+statusPill(x.bezahlt)+'</td>'+
+        '<td class="num"><button class="btn sm danger" data-del="kochdu.restaurants" data-i="'+i+'">✕</button></td>';
+      tb.appendChild(tr);
+    });
+  }
+  function tblBlitz(){
+    var tb=document.getElementById("tb-blitzdings"); tb.innerHTML="";
+    if(!state.blitzdings.bookings.length){ tb.innerHTML='<tr><td colspan="5" class="empty">Noch keine Buchungen.</td></tr>'; return; }
+    state.blitzdings.bookings.forEach(function(x,i){
+      var tr=document.createElement("tr");
+      tr.innerHTML=
+        '<td><input class="cell" type="date" data-arr="blitzdings.bookings" data-i="'+i+'" data-f="date" value="'+esc(x.date||"")+'"></td>'+
+        '<td><input class="cell w-name" data-arr="blitzdings.bookings" data-i="'+i+'" data-f="title" value="'+esc(x.title||"")+'"></td>'+
+        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="blitzdings.bookings" data-i="'+i+'" data-f="betrag" value="'+(x.betrag||0)+'"></td>'+
+        '<td><select class="cell" data-arr="blitzdings.bookings" data-i="'+i+'" data-f="status"><option value="anstehend"'+(x.status==="anstehend"?" selected":"")+'>Anstehend</option><option value="vergangen"'+(x.status==="vergangen"?" selected":"")+'>Vergangen</option></select></td>'+
+        '<td class="num"><button class="btn sm danger" data-del="blitzdings.bookings" data-i="'+i+'">✕</button></td>';
+      tb.appendChild(tr);
+    });
+  }
+  function feeQuarter(f){
+    if(f.date&&f.date.length>=7){ var y=+f.date.slice(0,4),mo=+f.date.slice(5,7),q=Math.floor((mo-1)/3)+1; return {key:y+"-Q"+q,label:"Q"+q+" "+y,order:y*10+q}; }
+    return {key:"none",label:"Ohne Datum",order:-1};
+  }
+  function valueroGroups(){
+    var map={};
+    (state.valuero.fees||[]).forEach(function(f,idx){ var q=feeQuarter(f); if(!map[q.key])map[q.key]={key:q.key,label:q.label,order:q.order,items:[]}; map[q.key].items.push({f:f,idx:idx}); });
+    return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return b.order-a.order;});
+  }
+  function renderValueroQuarters(){
+    var host=document.getElementById("valuero-quarters"); if(!host)return; host.innerHTML="";
+    if(!(state.valuero.fees||[]).length){ host.innerHTML='<div class="card"><div class="empty">Noch keine Gebühren — mit „+ Gebühr“ anlegen (später per API).</div></div>'; return; }
+    valueroGroups().forEach(function(g){
+      var offen=0,tot=0,allPaid=true;
+      g.items.forEach(function(o){var b=+o.f.betrag||0;tot+=b;if(o.f.bezahlt){}else{offen+=b;allPaid=false;}});
+      var rows=g.items.map(function(o){var i=o.idx,f=o.f;return (
+        '<tr>'+
+        '<td><input class="cell" type="date" data-arr="valuero.fees" data-i="'+i+'" data-f="date" value="'+esc(f.date||"")+'"></td>'+
+        '<td><input class="cell w-name" data-arr="valuero.fees" data-i="'+i+'" data-f="client" value="'+esc(f.client||"")+'"></td>'+
+        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="valuero.fees" data-i="'+i+'" data-f="betrag" value="'+(f.betrag||0)+'"></td>'+
+        '<td style="text-align:center">'+toggle("valuero.fees",i,f.bezahlt)+'</td>'+
+        '<td>'+statusPill(f.bezahlt)+'</td>'+
+        '<td class="num"><button class="btn sm danger" data-del="valuero.fees" data-i="'+i+'">✕</button></td>'+
+        '</tr>'); }).join("");
+      var action = allPaid
+        ? '<span class="pill green">✓ abgerechnet</span><button class="btn sm" data-qsettle="'+g.key+'" data-mode="open">↺ als offen</button>'
+        : '<button class="btn sm primary" data-qsettle="'+g.key+'" data-mode="pay">✓ Quartal abrechnen</button>';
+      var card=document.createElement("div"); card.className="card qcard";
+      card.innerHTML=
+        '<div class="qhead"><div class="qtitle">'+g.label+' <span class="qsum" id="qsum-'+g.key+'">offen '+eur(offen)+' · gesamt '+eur(tot)+'</span></div><div style="display:flex;gap:8px;align-items:center">'+action+'</div></div>'+
+        '<div class="tbl-card" style="padding:0;margin-top:10px"><table><thead><tr><th style="width:150px">Datum</th><th>Buchung / Kunde</th><th class="num">Gebühr €</th><th style="width:80px;text-align:center">Bezahlt</th><th style="width:110px">Status</th><th style="width:44px"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+      host.appendChild(card);
+    });
+  }
+  function updateValueroTotals(){
+    valueroGroups().forEach(function(g){ var offen=0,tot=0; g.items.forEach(function(o){var b=+o.f.betrag||0;tot+=b;if(!o.f.bezahlt)offen+=b;}); var el=document.getElementById("qsum-"+g.key); if(el)el.textContent="offen "+eur(offen)+" · gesamt "+eur(tot); });
+  }
+
+  function fillKV(){ document.querySelectorAll("[data-kv]").forEach(function(el){var v=getPath(el.getAttribute("data-kv"));el.value=(v==null?0:v);}); }
+
+  /* ---------------- MAIL ---------------- */
+  var mailUI={folder:"inbox",search:"",sel:null,selected:{}};
+  var WEBMAIL_URL="https://webmail.world4you.com";
+  function fmtMailDate(iso){ if(!iso)return""; var d=new Date(iso); if(isNaN(d.getTime()))return iso; var n=new Date();
+    if(d.toDateString()===n.toDateString())return d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
+    var y=new Date(n.getFullYear(),n.getMonth(),n.getDate()-1); if(d.toDateString()===y.toDateString())return"Gestern";
+    return d.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:(d.getFullYear()!==n.getFullYear()?"2-digit":undefined)}); }
+  function mailAll(){ return (state.mail.messages||[]).filter(function(m){return !m.deleted;}); }
+  function mailSorted(){ return mailAll().slice().sort(function(a,b){return (new Date(b.date))-(new Date(a.date));}); }
+  var TRASHRX=/trash|papierkorb|deleted|gelösch|geloesch/i;
+  function pushPending(op,id,extra){ if(!Array.isArray(state.mail.pending))state.mail.pending=[]; state.mail.pending.push(Object.assign({op:op,id:id,ts:new Date().toISOString()},extra||{})); }
+  function folderName(path){ var meta=(state.mail.folders||[]).filter(function(f){return f.path===path;})[0]; if(meta&&meta.name)return meta.name; return String(path).split(/[\/.]/).pop(); }
+  function customFolders(){
+    var map={};
+    (state.mail.messages||[]).forEach(function(m){ if(m.deleted)return; var f=m.folder||"INBOX"; if(f==="INBOX"||TRASHRX.test(f))return; if(!map[f])map[f]={path:f,unread:0}; if(!m.read)map[f].unread++; });
+    (state.mail.folders||[]).forEach(function(fo){ if(fo.path==="INBOX"||TRASHRX.test(fo.path))return; if(!map[fo.path])map[fo.path]={path:fo.path,unread:fo.unread||0}; });
+    return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return folderName(a.path).localeCompare(folderName(b.path));});
+  }
+  function mailView(){
+    var a=(state.mail.messages||[]).slice(); var f=mailUI.folder||"inbox"; var list;
+    if(f==="trash") list=a.filter(function(m){return m.deleted;});
+    else { a=a.filter(function(m){return !m.deleted;});
+      if(f==="unread") list=a.filter(function(m){return !m.read;});
+      else if(f==="starred") list=a.filter(function(m){return m.starred;});
+      else if(f.indexOf("f:")===0){ var p=f.slice(2); list=a.filter(function(m){return (m.folder||"INBOX")===p;}); }
+      else list=a.filter(function(m){return (m.folder||"INBOX")==="INBOX";});
+    }
+    if(mailUI.search){ var q=mailUI.search.toLowerCase(); list=list.filter(function(m){return ((m.fromName||"")+" "+(m.from||"")+" "+(m.subject||"")+" "+(m.preview||"")+" "+(m.body||"")).toLowerCase().indexOf(q)>-1;}); }
+    return list.sort(function(x,y){return (new Date(y.date))-(new Date(x.date));});
+  }
+  function renderFolders(){
+    var host=document.getElementById("mail-folders"); if(!host)return;
+    var c=mailCounts();
+    function fb(key,label,cnt,cls){ return '<button class="fbtn'+(cls?" "+cls:"")+(mailUI.folder===key?" active":"")+'" data-folder="'+key+'">'+label+' <span class="cnt">'+(cnt||0)+'</span></button>'; }
+    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("trash","Papierkorb",c.trash,"trash");
+    var cf=customFolders();
+    if(cf.length){ h+='<div class="fdiv">Ordner</div>'; cf.forEach(function(f){ h+=fb("f:"+f.path,esc(folderName(f.path)),f.unread); }); }
+    host.innerHTML=h;
+  }
+  var AVC=["#2f6bff","#8b5cf6","#0ea5b7","#e0930a","#12b76a","#f0475a","#6366f1","#0891b2","#d946ef","#f79009","#3a8acd"];
+  function avColor(s){ s=s||"?"; var h=0; for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0; return AVC[h%AVC.length]; }
+  function initials(m){ var s=(m.fromName||m.from||"?").trim();
+    if(!m.fromName&&s.indexOf("@")>-1) return s.charAt(0).toUpperCase();
+    var p=s.replace(/[",]/g,"").split(/\s+/).filter(Boolean);
+    return (((p[0]||"?").charAt(0))+((p[1]||"").charAt(0))).toUpperCase(); }
+  function mailRow(m,compact){
+    var who=esc(m.fromName||m.from||"—");
+    var subj=esc(m.subject||"(kein Betreff)");
+    var when=fmtMailDate(m.date);
+    var star='<span class="star'+(m.starred?" on":"")+'" data-star="'+esc(m.id)+'" title="Markieren">'+(m.starred?"★":"☆")+'</span>';
+    if(compact){
+      var pre=m.preview?' <span class="pre">— '+esc(m.preview)+'</span>':"";
+      return '<div class="mrow'+(m.read?"":" unread")+'" data-mid="'+esc(m.id)+'">'+
+        '<span class="dot'+(m.read?" read":"")+'"></span><span class="who">'+who+'</span>'+
+        '<span class="subj">'+subj+pre+'</span>'+star+'<span class="when">'+when+'</span></div>';
+    }
+    var chk='<label class="mcheck" title="Auswählen"><input type="checkbox" data-selid="'+esc(m.id)+'"'+(mailUI.selected[m.id]?" checked":"")+'></label>';
+    return '<div class="mrow2'+(m.read?"":" unread")+(mailUI.sel===m.id?" sel":"")+(mailUI.selected[m.id]?" picked":"")+'" data-mid="'+esc(m.id)+'">'+
+      chk+
+      '<div class="av" style="background:'+avColor(m.fromName||m.from)+'">'+esc(initials(m))+'</div>'+
+      '<div class="mmain">'+
+        '<div class="l1"><span class="who">'+who+'</span>'+star+'<span class="when">'+when+'</span></div>'+
+        '<div class="subj">'+subj+'</div>'+
+        (m.preview?'<div class="pre">'+esc(m.preview)+'</div>':'')+
+      '</div></div>';
+  }
+  function renderOverviewMail(){
+    var host=document.getElementById("ov-mail-list"); if(!host)return;
+    var msgs=mailSorted().slice(0,5);
+    if(!msgs.length){ host.innerHTML='<div class="mempty">Noch keine Nachrichten eingespielt. Sag mir Bescheid — ich hole die neuesten aus deinem World4You-Webmail.</div>'; return; }
+    host.innerHTML=msgs.map(function(m){return mailRow(m,true);}).join("");
+  }
+  function mailCounts(){ var a=(state.mail.messages||[]); var live=a.filter(function(m){return !m.deleted;});
+    return {inbox:live.filter(function(m){return (m.folder||"INBOX")==="INBOX";}).length,
+      inboxUnread:live.filter(function(m){return (m.folder||"INBOX")==="INBOX"&&!m.read;}).length,
+      unread:live.filter(function(m){return !m.read;}).length,
+      starred:live.filter(function(m){return m.starred;}).length,
+      trash:a.filter(function(m){return m.deleted;}).length}; }
+  function renderMailBadge(){ var c=mailCounts(); var b=document.getElementById("mail-badge"); if(b){ if(c.unread>0){b.style.display="";b.textContent=c.unread;}else b.style.display="none"; } }
+  function renderMailList(){
+    var host=document.getElementById("mail-list"); if(!host)return;
+    var msgs=mailView();
+    host.innerHTML=msgs.length?msgs.map(function(m){return mailRow(m,false);}).join(""):'<div class="mempty">Keine Nachrichten in dieser Ansicht.</div>';
+  }
+  function renderMailRead(){
+    var host=document.getElementById("mail-read"); if(!host)return;
+    var m=(state.mail.messages||[]).filter(function(x){return x.id===mailUI.sel;})[0];
+    if(!m){ host.innerHTML='<div class="mempty">Wähle links eine Nachricht aus, um sie zu lesen.</div>'; return; }
+    var acts = m.deleted
+      ? '<button class="btn sm" data-mact="restore">↺ Wiederherstellen</button>'+
+        '<button class="btn sm danger" data-mact="purge">Endgültig löschen</button>'
+      : '<button class="btn sm" data-mact="'+(m.read?"unread":"read")+'">'+(m.read?"Als ungelesen":"Als gelesen")+'</button>'+
+        '<button class="btn sm" data-mact="star">'+(m.starred?"★ Markierung entf.":"☆ Markieren")+'</button>'+
+        '<button class="btn sm" data-mact="reply">Antworten</button>'+
+        '<button class="btn sm" data-mact="forward">Weiterleiten</button>'+
+        '<button class="btn sm danger" data-mact="trash">🗑 In Papierkorb</button>';
+    host.innerHTML=
+      '<div class="mactions">'+acts+'</div>'+
+      '<div class="mread-head2"><div class="av lg" style="background:'+avColor(m.fromName||m.from)+'">'+esc(initials(m))+'</div>'+
+        '<div><div class="rn">'+esc(m.fromName||m.from||"—")+'</div>'+
+        '<div class="re">'+(m.from?esc(m.from)+' · ':'')+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'</div></div></div>'+
+      '<h2 class="rsubj">'+esc(m.subject||"(kein Betreff)")+'</h2>'+
+      '<div class="mbody">'+esc(m.body||m.preview||"")+'</div>'+
+      (m.body||m.preview?'':'<div class="mempty" style="padding:20px 0;text-align:left">Kein Textinhalt im Snapshot. Für die vollständige Nachricht in Webmail öffnen.<br><button class="btn sm" style="margin-top:10px" data-mact="webmail">In Webmail öffnen</button></div>');
+  }
+  function renderMailAll(){
+    var acc=document.getElementById("mail-account"); if(acc)acc.textContent="Postfach — "+(state.mail.account||"");
+    var up=document.getElementById("mail-updated"); if(up)up.textContent=state.mail.lastFetch?("Letzter Abruf: "+new Date(state.mail.lastFetch).toLocaleString("de-AT")):"Noch kein Abruf";
+    renderFolders(); renderMailList(); renderMailRead(); renderMailBadge(); renderOverviewMail(); renderBulk();
+  }
+  function findMsg(id){ return (state.mail.messages||[]).filter(function(x){return x.id===id;})[0]; }
+  function selectedIds(){ return Object.keys(mailUI.selected).filter(function(id){return mailUI.selected[id];}); }
+  function renderBulk(){
+    var bar=document.getElementById("mail-bulk"); if(!bar)return;
+    var n=selectedIds().length;
+    if(n>0){ bar.style.display="flex"; var c=document.getElementById("mail-bulk-count"); if(c)c.textContent=n+" ausgewählt"; }
+    else bar.style.display="none";
+  }
+  // Serverseitige Aktion (nur in der gehosteten Version möglich): echt in den Papierkorb / markieren.
+  function mailActionServer(op,ids){
+    if(!window.__FSD_HOSTED||!window.__FSD_MAIL_ACTION)return;
+    var items=ids.map(function(id){var m=findMsg(id);return (m&&m.uid!=null)?{folder:m.folder||"INBOX",uid:m.uid}:null;}).filter(function(x){return x;});
+    if(!items.length)return;
+    try{ fetch(window.__FSD_MAIL_ACTION,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({op:op,items:items})}); }catch(e){}
+  }
+  function trashMessages(ids){
+    ids.forEach(function(id){var m=findMsg(id); if(m){m.deleted=true;m.trashedAt=new Date().toISOString();pushPending("trash",id,{folder:m.folder,uid:m.uid});} delete mailUI.selected[id];});
+    mailActionServer("trash",ids);
+    if(ids.indexOf(mailUI.sel)>-1) mailUI.sel=null;
+    save(); renderMailAll();
+  }
+  function setReadMany(ids,read){
+    ids.forEach(function(id){var m=findMsg(id); if(m)m.read=read;});
+    mailActionServer(read?"seen":"unseen",ids);
+    save(); renderMailAll();
+  }
+  function openCompose(title,to,subj,body){
+    document.getElementById("c-title").textContent=title;
+    document.getElementById("c-to").value=to||"";
+    document.getElementById("c-subj").value=subj||"";
+    document.getElementById("c-body").value=body||"";
+    document.getElementById("coverlay").classList.add("show");
+  }
+
+  function setProg(fillId,lblId,paid,total){
+    var pct= total>0 ? Math.round(paid/total*100) : 0;
+    var f=document.getElementById(fillId); if(f) f.style.width=pct+"%";
+    var l=document.getElementById(lblId); if(l) l.textContent="Bezahlt-Quote "+pct+"% · "+eur(paid)+" von "+eur(total);
+  }
+
+  function renderKPIs(){
+    var c=comp();
+    var kochPaid=c.kochdu.barPaid + c.kochdu.online;   // Bar bezahlt + Online (bereits verrechnet)
+    var kantPaid=(+state.kantineur.eingenommenGesamt||0);
+    var paidAll=kochPaid + kantPaid + c.blitzdings.past + c.valuero.paid;
+    var offenAll=c.kochdu.barOffen + c.blitzdings.up + c.valuero.offen;
+    setMoney("ov-paid-all", paidAll);       setMoney("ov-offen-all", offenAll);
+    setMoney("ov-koch-paid", kochPaid);     setMoney("ov-koch-offen", c.kochdu.barOffen);
+    setMoney("ov-kant-paid", kantPaid);     setMoney("ov-kant-mrr", c.kantineur.mrr);
+    setMoney("ov-bd-paid", c.blitzdings.past); setMoney("ov-bd-offen", c.blitzdings.up);
+    setMoney("ov-val-paid", c.valuero.paid); setMoney("ov-val-offen", c.valuero.offen);
+    // kochdu
+    setMoney("k-baroffen", c.kochdu.barOffen);
+    setMoney("k-barpaid", c.kochdu.barPaid);
+    setTxt("k-online-sub", "Online (verrechnet): "+eur(c.kochdu.online));
+    setCount("kf-best", c.kochdu.best);
+    setMoney("kf-bar", c.kochdu.bar);
+    setMoney("kf-online", c.kochdu.online);
+    setProg("k-prog-fill","k-prog-lbl", c.kochdu.barPaid, c.kochdu.bar);
+    // kantineur
+    setCount("ka-total", c.kantineur.aboTotal);
+    var spon=(+state.kantineur.aboSponsored||0), pay=(+state.kantineur.aboPaying||0);
+    setTxt("ka-total-sub", state.kantineur.statsAt?(pay+" zahlend · "+spon+" gesponsert"):"");
+    setMoney("ka-mrr", c.kantineur.mrr);
+    setTxt("ka-mrr-sub", eur(c.kantineur.mrr*12)+" / Jahr"+(spon?" · "+spon+"× Gutschein gratis":""));
+    var bp=state.kantineur.byPlan||{};
+    var pk=(bp.KANTINEUR&&typeof bp.KANTINEUR==="object")?bp.KANTINEUR:{active:(+state.kantineur.aboKantineur||0),paying:0,mrrCents:0};
+    var pm=(bp.MAGAZINEUR&&typeof bp.MAGAZINEUR==="object")?bp.MAGAZINEUR:{active:(+state.kantineur.aboMagazineur||0),paying:0,mrrCents:0};
+    setMoney("ka-price-k", (+state.kantineur.preisKantineur||0));
+    setMoney("ka-price-m", (+state.kantineur.preisMagazineur||0));
+    setCount("ka-act-k", pk.active||0); setCount("ka-pay-k", pk.paying||0); setMoney("ka-um-k", (pk.mrrCents||0)/100);
+    setCount("ka-act-m", pm.active||0); setCount("ka-pay-m", pm.paying||0); setMoney("ka-um-m", (pm.mrrCents||0)/100);
+    setCount("ka-act-sum", (pk.active||0)+(pm.active||0));
+    setCount("ka-pay-sum", (pk.paying||0)+(pm.paying||0));
+    setMoney("ka-um-sum", c.kantineur.mrr);
+    setMoney("ka-earned", (+state.kantineur.eingenommenGesamt||0));
+    var thisM=(+state.kantineur.thisMonthGross||0); setTxt("ka-earned-sub", thisM?("davon diesen Monat: "+eur(thisM)):"fließt in Gesamt-Einnahmen ein");
+    setCount("ka-canteens", (+state.kantineur.canteensTotal||0));
+    var bs=state.kantineur.canteensByStatus||{}; setTxt("ka-canteens-sub", (bs.ACTIVE||0)+" aktiv · "+(bs.TRIAL||0)+" Testphase");
+    setTxt("ka-stats-updated", state.kantineur.statsAt?("Stand: "+new Date(state.kantineur.statsAt).toLocaleString("de-AT")):"");
+    // blitzdings
+    setCount("bd-cnt-past", c.blitzdings.cntP);
+    setCount("bd-cnt-up", c.blitzdings.cntU);
+    setMoney("bd-past", c.blitzdings.past);
+    setMoney("bd-up", c.blitzdings.up);
+    // valuero
+    setMoney("v-offen", c.valuero.offen);
+    setMoney("v-paid", c.valuero.paid);
+    setMoney("v-total", c.valuero.total);
+    setProg("v-prog-fill","v-prog-lbl", c.valuero.paid, c.valuero.total);
+  }
+
+  // ---- charts ----
+  var CH={};
+  var C={accent:"#2f6bff",violet:"#8b5cf6",teal:"#0ea5b7",gold:"#e0930a",green:"#12b76a",amber:"#f79009"};
+  Chart.defaults.font.family='-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+  Chart.defaults.color="#6b7686";
+  function baseOpts(extra){ return Object.assign({responsive:true,maintainAspectRatio:false,animation:{duration:500,easing:"easeOutCubic"},plugins:{legend:{labels:{font:{size:12},usePointStyle:true,boxWidth:8}}}}, extra||{}); }
+  function mkChart(id,cfg){ var el=document.getElementById(id); if(!el)return; if(CH[id])CH[id].destroy(); CH[id]=new Chart(el.getContext("2d"),cfg); }
+  function drawCharts(tab){
+    var c=comp();
+    if(tab==="overview"){
+      mkChart("c-ov-offen",{type:"bar",data:{labels:["kochdu (Bar offen)","VALUERO (offen)","Blitzdings (anstehend)"],datasets:[{data:[c.kochdu.barOffen,c.valuero.offen,c.blitzdings.up],backgroundColor:[C.violet,C.green,C.gold],borderRadius:10,maxBarThickness:64}]},options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return eur(x.raw);}}}},scales:{y:{ticks:{callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},x:{grid:{display:false}}}})});
+      mkChart("c-ov-mix",{type:"doughnut",data:{labels:["Kantineur MRR","Blitzdings (realisiert)","kochdu Gebühren"],datasets:[{data:[c.kantineur.mrr,c.blitzdings.past,c.kochdu.sum],backgroundColor:[C.teal,C.gold,C.violet],borderWidth:0}]},options:baseOpts({cutout:"64%",plugins:{tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}})});
+    } else if(tab==="kochdu"){
+      var labels=state.kochdu.restaurants.map(function(x){return x.name||"—";});
+      var vals=state.kochdu.restaurants.map(function(x){return +x.bar||0;});
+      var cols=state.kochdu.restaurants.map(function(x){return x.bezahlt?C.green:C.amber;});
+      mkChart("c-kochdu",{type:"bar",data:{labels:labels,datasets:[{label:"Bar-Gebühr",data:vals,backgroundColor:cols,borderRadius:8,maxBarThickness:54}]},options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){var it=state.kochdu.restaurants[x.dataIndex];return eur(x.raw)+(it&&it.bezahlt?" (bezahlt)":" (offen)");}}}},scales:{y:{ticks:{callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},x:{grid:{display:false}}}})});
+    } else if(tab==="kantineur"){
+      mkChart("c-kantineur",{type:"doughnut",data:{labels:["Kantineur","Magazineur"],datasets:[{data:[+state.kantineur.aboKantineur||0,+state.kantineur.aboMagazineur||0],backgroundColor:[C.teal,C.violet],borderWidth:0}]},options:baseOpts({cutout:"62%"})});
+    } else if(tab==="blitzdings"){
+      var byMonth={}; (state.blitzdings.bookings||[]).forEach(function(x){var key=(x.date&&x.date.length>=7)?x.date.slice(0,7):"o. Datum"; byMonth[key]=(byMonth[key]||0)+(+x.betrag||0);});
+      var keys=Object.keys(byMonth).sort();
+      mkChart("c-blitzdings",{type:"bar",data:{labels:keys,datasets:[{label:"Umsatz",data:keys.map(function(k){return byMonth[k];}),backgroundColor:C.gold,borderRadius:8,maxBarThickness:48}]},options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return eur(x.raw);}}}},scales:{y:{ticks:{callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},x:{grid:{display:false}}}})});
+    } else if(tab==="valuero"){
+      mkChart("c-valuero",{type:"doughnut",data:{labels:["Bezahlt","Offen"],datasets:[{data:[c.valuero.paid,c.valuero.offen],backgroundColor:[C.green,C.amber],borderWidth:0}]},options:baseOpts({cutout:"64%",plugins:{tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}})});
+    }
+  }
+
+  // ---- render ----
+  var activeTab="overview";
+  function renderTables(){ tblKochdu(); tblBlitz(); renderValueroQuarters(); }
+  function renderAll(){ fillKV(); renderTables(); renderKPIs(); renderUpdated(); renderMailAll(); drawCharts(activeTab); }
+  function softUpdate(){ renderKPIs(); refreshRows(); updateValueroTotals(); drawCharts(activeTab); }
+  function refreshRows(){
+    document.querySelectorAll("#tb-kochdu tr").forEach(function(tr,i){var x=state.kochdu.restaurants[i];if(!x)return;var cell=tr.children[5];if(cell)cell.innerHTML=statusPill(x.bezahlt);});
+  }
+
+  // ---- tab indicator ----
+  function moveIndicator(){
+    var wrap=document.getElementById("tabs"); var ind=document.getElementById("tabInd");
+    var act=wrap.querySelector(".tab.active"); if(!act)return;
+    ind.style.width=act.offsetWidth+"px";
+    ind.style.transform="translateX("+(act.offsetLeft-6)+"px)";
+  }
+
+  // ---- events ----
+  function selectTab(name){
+    if(!document.getElementById("p-"+name))return;
+    activeTab=name;
+    document.querySelectorAll(".tab").forEach(function(t){t.classList.toggle("active",t.getAttribute("data-tab")===name);});
+    document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("active");});
+    document.getElementById("p-"+name).classList.add("active");
+    moveIndicator(); drawCharts(name);
+    if(name==="postfach") renderMailAll();
+  }
+  document.getElementById("tabs").addEventListener("click",function(e){
+    var b=e.target.closest(".tab"); if(!b)return; selectTab(b.getAttribute("data-tab"));
+  });
+  window.addEventListener("resize",function(){ moveIndicator(); });
+
+  document.body.addEventListener("input",function(e){
+    var el=e.target;
+    if(el.hasAttribute("data-kv")){ var t=el.type==="number"?parseFloat(el.value):el.value; if(el.type==="number"&&isNaN(t))t=0; setPath(el.getAttribute("data-kv"),t); save(); softUpdate(); return; }
+    if(el.hasAttribute("data-arr")&&el.type!=="checkbox"&&el.tagName!=="SELECT"){ var arr=getPath(el.getAttribute("data-arr"));var i=+el.getAttribute("data-i");var f=el.getAttribute("data-f");var v=el.type==="number"?parseFloat(el.value):el.value; if(el.type==="number"&&isNaN(v))v=0; arr[i][f]=v; save();
+      if(el.type==="date"&&el.getAttribute("data-arr")==="valuero.fees"){ renderValueroQuarters(); renderKPIs(); drawCharts(activeTab); }
+      else softUpdate();
+      return; }
+  });
+  document.body.addEventListener("change",function(e){
+    var el=e.target;
+    if(el.hasAttribute("data-arr")&&(el.type==="checkbox"||el.tagName==="SELECT")){ var pth=el.getAttribute("data-arr");var arr=getPath(pth);var i=+el.getAttribute("data-i");var f=el.getAttribute("data-f"); arr[i][f]=el.type==="checkbox"?el.checked:el.value; save();
+      if(pth==="valuero.fees"){ renderValueroQuarters(); renderKPIs(); drawCharts(activeTab); }
+      else softUpdate();
+    }
+  });
+  document.body.addEventListener("click",function(e){
+    var add=e.target.closest("[data-add]");
+    if(add){ var p=add.getAttribute("data-add");var arr=getPath(p);
+      if(p==="kochdu.restaurants")arr.push({name:"Neuer Betrieb",bestellungen:0,bar:0,online:0,bezahlt:false});
+      else if(p==="blitzdings.bookings")arr.push({date:"",title:"Neue Buchung",betrag:0,status:"anstehend"});
+      else if(p==="valuero.fees"){ var today=new Date().toISOString().slice(0,10); arr.unshift({date:today,client:"Neue Buchung",betrag:0,bezahlt:false}); }
+      save(); renderTables(); renderKPIs(); drawCharts(activeTab); return;
+    }
+    var qs=e.target.closest("[data-qsettle]");
+    if(qs){ var key=qs.getAttribute("data-qsettle");var pay=qs.getAttribute("data-mode")==="pay";
+      (state.valuero.fees||[]).forEach(function(f){ if(feeQuarter(f).key===key) f.bezahlt=pay; });
+      save(); renderValueroQuarters(); renderKPIs(); drawCharts(activeTab); return;
+    }
+    var del=e.target.closest("[data-del]");
+    if(del){ getPath(del.getAttribute("data-del")).splice(+del.getAttribute("data-i"),1); save(); renderTables(); renderKPIs(); drawCharts(activeTab); return; }
+  });
+
+  // ---- mail events ----
+  var msearch=document.getElementById("mail-search");
+  if(msearch) msearch.addEventListener("input",function(){ mailUI.search=this.value.trim(); renderMailList(); });
+  document.body.addEventListener("click",function(e){
+    var goto=e.target.closest("[data-goto]"); if(goto){ selectTab(goto.getAttribute("data-goto")); return; }
+    var fb=e.target.closest(".fbtn"); if(fb){ mailUI.folder=fb.getAttribute("data-folder"); renderMailAll(); return; }
+    if(e.target&&e.target.matches&&e.target.matches("input[data-selid]")){ var cid=e.target.getAttribute("data-selid"); if(e.target.checked)mailUI.selected[cid]=true; else delete mailUI.selected[cid]; var rr=e.target.closest(".mrow2"); if(rr)rr.classList.toggle("picked",e.target.checked); renderBulk(); return; }
+    var bulk=e.target.closest("[data-bulk]"); if(bulk){ var bop=bulk.getAttribute("data-bulk"); var ids=selectedIds();
+      if(bop==="clear"){ mailUI.selected={}; renderMailAll(); }
+      else if(!ids.length){ /* nichts ausgewählt */ }
+      else if(bop==="trash"){ trashMessages(ids); }
+      else if(bop==="read"){ setReadMany(ids,true); }
+      else if(bop==="unread"){ setReadMany(ids,false); }
+      return; }
+    var star=e.target.closest("[data-star]"); if(star){ var ms=findMsg(star.getAttribute("data-star")); if(ms){ms.starred=!ms.starred;save();renderMailAll();} return; }
+    var row=e.target.closest(".mrow, .mrow2"); if(row&&row.getAttribute("data-mid")){ mailUI.sel=row.getAttribute("data-mid"); var mm=findMsg(mailUI.sel); if(mm&&!mm.read){ mm.read=true; mailActionServer("seen",[mm.id]); } save(); selectTab("postfach"); renderMailAll(); return; }
+    var act=e.target.closest("[data-mact]"); if(act){ var m=findMsg(mailUI.sel); if(!m)return; var a=act.getAttribute("data-mact");
+      if(a==="reply"){ openCompose("Antworten",m.from||"","Re: "+(m.subject||""),"\n\n----- Am "+(m.date?new Date(m.date).toLocaleString("de-AT"):"")+" schrieb "+(m.fromName||m.from||"")+" -----\n"+(m.body||m.preview||"")); return; }
+      if(a==="forward"){ openCompose("Weiterleiten","","Fwd: "+(m.subject||""),"\n\n----- Weitergeleitete Nachricht -----\nVon: "+(m.fromName||m.from||"")+"\nBetreff: "+(m.subject||"")+"\n\n"+(m.body||m.preview||"")); return; }
+      if(a==="webmail"){ openWebmail(); return; }
+      if(a==="trash"){ trashMessages([m.id]); return; }
+      if(a==="restore"){ m.deleted=false; m.trashedAt=null; pushPending("restore",m.id,{folder:m.folder}); save(); renderMailAll(); return; }
+      if(a==="purge"){ mailActionServer("trash",[m.id]); state.mail.messages=state.mail.messages.filter(function(x){return x.id!==m.id;}); mailUI.sel=null; save(); renderMailAll(); return; }
+      if(a==="read"){ m.read=true; mailActionServer("seen",[m.id]); } else if(a==="unread"){ m.read=false; mailActionServer("unseen",[m.id]); } else if(a==="star")m.starred=!m.starred;
+      save(); renderMailAll(); return;
+    }
+  });
+  var mc=document.getElementById("mail-compose"); if(mc)mc.addEventListener("click",function(){ openCompose("Verfassen","","",""); });
+  function openWebmail(){ try{window.open(WEBMAIL_URL,"_blank","noopener");}catch(e){ alert("Bitte Webmail manuell öffnen: "+WEBMAIL_URL); } }
+  var mw=document.getElementById("mail-webmail"); if(mw)mw.addEventListener("click",openWebmail);
+  document.getElementById("c-close").addEventListener("click",function(){ document.getElementById("coverlay").classList.remove("show"); });
+  document.getElementById("coverlay").addEventListener("click",function(e){ if(e.target===this)this.classList.remove("show"); });
+  document.getElementById("c-web").addEventListener("click",openWebmail);
+  document.getElementById("c-copy").addEventListener("click",function(){
+    var t="An: "+document.getElementById("c-to").value+"\nBetreff: "+document.getElementById("c-subj").value+"\n\n"+document.getElementById("c-body").value;
+    var ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select();
+    try{document.execCommand("copy");this.textContent="Kopiert ✓";var b=this;setTimeout(function(){b.textContent="Text kopieren";},1200);}catch(e){}
+    document.body.removeChild(ta);
+  });
+
+  // init
+  renderAll();
+  moveIndicator();
+  setTimeout(moveIndicator,60);
+})();
+</script>
+</body>
+</html>
