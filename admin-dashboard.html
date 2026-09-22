@@ -792,7 +792,18 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   }
   var state=load();
   function load(){ try{var raw=localStorage.getItem(KEY); if(raw) return normalize(Object.assign(clone(DEFAULTS),JSON.parse(raw)));}catch(e){} return normalize(clone(DEFAULTS)); }
-  function save(){ state.meta.updatedAt=new Date().toISOString(); try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} renderUpdated(); }
+  // Nur schlanke Daten lokal speichern: Mail-Nachrichten (Texte/Anhänge) kommen ohnehin live vom Server
+  // und würden den localStorage sonst überlaufen lassen (Gefahr: Browser verwirft den kompletten Speicher inkl. To-Dos).
+  function storableState(){ var c=Object.assign({},state); if(state.mail){ c.mail=Object.assign({},state.mail,{messages:[]}); } return c; }
+  function save(){ state.meta.updatedAt=new Date().toISOString(); try{localStorage.setItem(KEY,JSON.stringify(storableState()));}catch(e){} renderUpdated(); syncTodos(); }
+  // To-Dos serverseitig sichern (gerätewechselsicher, überlebt Cache-Löschung)
+  var todosReady=false, todoSyncT=null;
+  function syncTodos(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS||!todosReady) return; clearTimeout(todoSyncT); todoSyncT=setTimeout(function(){ try{ fetch(window.__FSD_TODOS,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({todos:state.todos||[]})}).catch(function(){}); }catch(e){} },600); }
+  function loadTodosFromServer(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS){ todosReady=true; return; }
+    fetch(window.__FSD_TODOS,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d&&Array.isArray(d.todos)&&d.todos.length){ state.todos=d.todos; }
+      todosReady=true; save(); renderTodos(); renderOverviewTodos(); renderCalendar(); renderKPIs();
+    }).catch(function(){ todosReady=true; }); }
   function renderUpdated(){ var el=document.getElementById("updated"); if(!state.meta.updatedAt){el.textContent="Zuletzt aktualisiert: —";return;} var d=new Date(state.meta.updatedAt); el.textContent="Zuletzt aktualisiert: "+d.toLocaleDateString("de-AT")+" "+d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
 
   function getPath(p){ return p.split(".").reduce(function(o,k){return o==null?undefined:o[k];},state); }
@@ -1767,6 +1778,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   renderAll();
   moveIndicator();
   setTimeout(moveIndicator,60);
+  loadTodosFromServer();
 })();
 </script>
 </body>

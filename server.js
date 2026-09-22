@@ -10,6 +10,12 @@ const crypto = require("crypto");
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 
+// Persistenter Speicher (Railway-Volume unter /data, sonst ROOT als Fallback).
+const DATA_DIR = (() => { try { fs.mkdirSync("/data", { recursive: true }); return "/data"; } catch (e) { return ROOT; } })();
+const TODOS_FILE = path.join(DATA_DIR, "todos.json");
+function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function writeTodos(arr) { try { fs.writeFileSync(TODOS_FILE, JSON.stringify(Array.isArray(arr) ? arr : [])); return true; } catch (e) { return false; } }
+
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -205,7 +211,7 @@ function replaceConst(html, name, obj) {
 }
 function injectAdmin(html, stampISO) {
   const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_MAIL_ATTACH="/admin/api/mail-attachment"; window.__FSD_LOGOUT="/admin/logout";' +
+    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_MAIL_ATTACH="/admin/api/mail-attachment"; window.__FSD_TODOS="/admin/api/todos"; window.__FSD_LOGOUT="/admin/logout";' +
     'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
     'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
     'window.__fsdPoll=poll;' +
@@ -297,6 +303,20 @@ async function handleAdmin(req, res, u, p) {
         const txt = await r.text();
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "blitz_pay_failed" }), TYPES[".json"]); }
+    });
+    return;
+  }
+  if (p === "/admin/api/todos" && req.method === "GET") {
+    return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/todos" && req.method === "POST") {
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1000000) req.destroy(); });
+    req.on("end", () => {
+      let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
+      const arr = Array.isArray(payload.todos) ? payload.todos : [];
+      const ok = writeTodos(arr);
+      return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: arr.length }), TYPES[".json"]);
     });
     return;
   }
