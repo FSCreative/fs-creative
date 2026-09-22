@@ -359,6 +359,10 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Umsatzbeitrag (Monat)</h2><span class="hint">MRR + realisierte Umsätze</span></div><div class="chart-box sm"><canvas id="c-ov-mix"></canvas></div></div>
       </div>
       <div class="card hoverable" style="margin-top:16px">
+        <div class="sec-title" style="margin:0 0 8px"><h2><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>Nächste Termine</h2><button class="btn sm" data-goto="kalender">Kalender öffnen →</button></div>
+        <div id="ov-upcoming"></div>
+      </div>
+      <div class="card hoverable" style="margin-top:16px">
         <div class="sec-title" style="margin:0 0 4px"><h2><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>Neueste Nachrichten</h2><button class="btn sm" data-goto="postfach">Postfach öffnen →</button></div>
         <div class="mlist" id="ov-mail-list"></div>
       </div>
@@ -366,22 +370,26 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 
     <!-- KOCHDU -->
     <section class="panel" id="p-kochdu">
-      <div class="grid kpis">
-        <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div><div class="lbl">Downloads</div></div><input class="ghost tnum" type="number" min="0" data-kv="kochdu.downloads"></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div><div class="lbl">Bestellungen (gesamt)</div></div><input class="ghost tnum" type="number" min="0" data-kv="kochdu.bestellungen"></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></div><div class="lbl">Bar-Gebühren offen</div></div><div class="val amber" id="k-baroffen">—</div><div class="sub">noch einzunehmen</div></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bar-Gebühren bezahlt</div></div><div class="val green" id="k-barpaid">—</div><div class="sub" id="k-online-sub">Online (verrechnet): —</div></div>
+      <div class="mactions" style="margin:2px 0 12px;align-items:center">
+        <a class="btn sm primary" href="https://www.kochdu.at/admin" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> kochdu-Admin öffnen</a>
+        <span class="hint" id="k-stats-updated"></span>
       </div>
-      <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="k-prog-lbl">Bezahlt-Quote —</span><div class="bar"><div class="fill" id="k-prog-fill"></div></div></div></div>
-      <div class="sec-title"><h2>Gebühren pro Restaurant / Shop</h2><button class="btn sm" data-add="kochdu.restaurants">+ Zeile</button></div>
+      <div class="grid kpis">
+        <div class="card kpi hoverable"><div class="top"><div class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div><div class="lbl">Bestellungen</div></div><div class="val" id="k-orders">—</div><div class="sub" id="k-orders-sub">bar / online</div></div>
+        <div class="card kpi big hoverable"><div class="top"><div class="ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></div><div class="lbl">Bar-Gebühren offen</div></div><div class="val amber" id="k-baroffen">—</div><div class="sub">musst du verrechnen</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bar-Gebühren verrechnet</div></div><div class="val green" id="k-barpaid">—</div><div class="sub">bereits abgerechnet</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Online-Gebühren</div></div><div class="val teal" id="k-online">—</div><div class="sub">automatisch verrechnet</div></div>
+      </div>
+      <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="k-prog-lbl">Verrechnet-Quote —</span><div class="bar"><div class="fill" id="k-prog-fill"></div></div></div></div>
+      <div class="sec-title"><h2>Gebühren pro Restaurant</h2><span class="hint">Bar = du verrechnest · Online = automatisch</span></div>
       <div class="card tbl-card">
         <table>
-          <thead><tr><th>Restaurant / Shop</th><th class="num">Bestellungen</th><th class="num">Bar-Gebühr €</th><th class="num">Online-Gebühr €</th><th style="text-align:center;width:80px">Bezahlt</th><th style="width:100px">Status</th><th style="width:44px"></th></tr></thead>
-          <tbody id="tb-kochdu"></tbody>
-          <tfoot><tr><td>Gesamt</td><td class="num" id="kf-best">—</td><td class="num money" id="kf-bar" style="color:var(--amber)">—</td><td class="num money" id="kf-online" style="color:var(--green)">—</td><td></td><td></td><td></td></tr></tfoot>
+          <thead><tr><th>Restaurant</th><th class="num">Best. (bar/online)</th><th class="num">Bar offen €</th><th class="num">Bar verrechnet €</th><th class="num">Online €</th><th style="width:150px"></th></tr></thead>
+          <tbody id="tb-kochdu"><tr><td colspan="6" class="empty">Verbindet gerade mit kochdu …</td></tr></tbody>
+          <tfoot><tr><td>Gesamt</td><td class="num" id="kf-best">—</td><td class="num money" id="kf-baroffen" style="color:var(--amber)">—</td><td class="num money" id="kf-barpaid" style="color:var(--green)">—</td><td class="num money" id="kf-online" style="color:var(--teal)">—</td><td></td></tr></tfoot>
         </table>
       </div>
-      <div class="card hoverable" style="margin-top:14px"><div class="sec-title" style="margin:0 0 8px"><h2>Bar-Gebühren je Betrieb</h2><span class="hint">grün = bezahlt · gelb = offen</span></div><div class="chart-box"><canvas id="c-kochdu"></canvas></div></div>
+      <div class="card hoverable" style="margin-top:14px"><div class="sec-title" style="margin:0 0 8px"><h2>Bar-Gebühren je Restaurant</h2><span class="hint">gelb = offen · grün = verrechnet</span></div><div class="chart-box"><canvas id="c-kochdu"></canvas></div></div>
     </section>
 
     <!-- KANTINEUR -->
@@ -557,10 +565,13 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   // Blitzdings-Kennzahlen aus /api/stats (bei jedem Abruf hier neu eingebettet).
   var BLITZDINGS_STATS={fetchedAt:"2026-09-22T12:15:36.017Z",revenue:{paidCents:742678,openCents:489099,refundedCents:0,thisMonthPaidCents:83390},bookings:{total:36,paidCount:26,openCount:10,upcomingCount:14,byStatus:{CONFIRMED:36},byPayment:{PAID:26,UNPAID:10}},upcoming:[]};
 
+  // kochdu-Kennzahlen aus /api/stats (pro Restaurant Bar-/Online-Gebühren; bei jedem Abruf neu eingebettet).
+  var KOCHDU_STATS={fetchedAt:null,year:null,restaurants:[],totals:{barProvisionCents:0,barSettledCents:0,barOpenCents:0,onlineProvisionCents:0,barOrders:0,onlineOrders:0}};
+
   var DEFAULTS={
     meta:{updatedAt:null},
     mail:{account:"simon@fs-creative.at",lastFetch:null,folders:[],messages:[],pending:[]},
-    kochdu:{downloads:0,bestellungen:0,restaurants:[{name:"Beispiel-Restaurant",bestellungen:0,bar:0,online:0,bezahlt:false}]},
+    kochdu:{downloads:0,bestellungen:0,restaurants:[{name:"Beispiel-Restaurant",bestellungen:0,bar:0,online:0,bezahlt:false}],statsAt:null,live:[],totals:null},
     kantineur:{downloads:0,preisKantineur:9,preisMagazineur:19,aboKantineur:0,aboMagazineur:0,eingenommenGesamt:0},
     blitzdings:{bookings:[],statsAt:null,paidCents:0,openCents:0,refundedCents:0,thisMonthPaidCents:0,upcomingCount:0,paidCount:0,openCount:0,upcoming:[]},
     valuero:{fees:[{date:"2026-01-15",client:"Antonhaus — Beispielbuchung",betrag:0,bezahlt:false},{date:"2026-01-20",client:"Schoki (Alpinappart Wachter)",betrag:0,bezahlt:false}]},
@@ -618,6 +629,14 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       s.blitzdings.upcoming=BLITZDINGS_STATS.upcoming||[];
       s.blitzdings.statsAt=BLITZDINGS_STATS.fetchedAt;
     }
+    // kochdu-Stats übernehmen (API ist Quelle der Wahrheit: Bar-/Online-Gebühren je Restaurant)
+    if(!s.kochdu) s.kochdu={};
+    if(KOCHDU_STATS.fetchedAt && (!s.kochdu.statsAt || KOCHDU_STATS.fetchedAt>s.kochdu.statsAt)){
+      s.kochdu.live=Array.isArray(KOCHDU_STATS.restaurants)?KOCHDU_STATS.restaurants:[];
+      s.kochdu.totals=KOCHDU_STATS.totals||null;
+      s.kochdu.statsAt=KOCHDU_STATS.fetchedAt;
+    }
+    if(!Array.isArray(s.kochdu.live)) s.kochdu.live=[];
     if(!Array.isArray(s.todos)) s.todos=[];
     if(!s.calendar||typeof s.calendar!=="object") s.calendar={events:[],outlookAt:null};
     if(!Array.isArray(s.calendar.events)) s.calendar.events=[];
@@ -632,9 +651,16 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   function setPath(p,v){ var ks=p.split("."),o=state; for(var i=0;i<ks.length-1;i++){o=o[ks[i]];} o[ks[ks.length-1]]=v; }
 
   function comp(){
-    var r=(state.kochdu.restaurants||[]);
     var bar=0,online=0,best=0,barOffen=0,barPaid=0;
-    r.forEach(function(x){var bv=(+x.bar||0);bar+=bv;online+=(+x.online||0);best+=(+x.bestellungen||0);if(x.bezahlt)barPaid+=bv;else barOffen+=bv;});
+    if(state.kochdu.statsAt){
+      var t=state.kochdu.totals||{};
+      barPaid=(+t.barSettledCents||0)/100; barOffen=(+t.barOpenCents||0)/100;
+      bar=barPaid+barOffen; online=(+t.onlineProvisionCents||0)/100;
+      best=(+t.barOrders||0)+(+t.onlineOrders||0);
+    } else {
+      var r=(state.kochdu.restaurants||[]);
+      r.forEach(function(x){var bv=(+x.bar||0);bar+=bv;online+=(+x.online||0);best+=(+x.bestellungen||0);if(x.bezahlt)barPaid+=bv;else barOffen+=bv;});
+    }
     var ka=state.kantineur;
     var umK=(+ka.aboKantineur||0)*(+ka.preisKantineur||0), umM=(+ka.aboMagazineur||0)*(+ka.preisMagazineur||0);
     var mrrEff=(ka.statsAt&&ka.mrrCents!=null)?((+ka.mrrCents||0)/100):(umK+umM);
@@ -663,18 +689,24 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 
   // ---- tables ----
   function tblKochdu(){
-    var tb=document.getElementById("tb-kochdu"); tb.innerHTML="";
-    if(!state.kochdu.restaurants.length){ tb.innerHTML='<tr><td colspan="7" class="empty">Noch keine Betriebe — „+ Zeile“ oben.</td></tr>'; return; }
-    state.kochdu.restaurants.forEach(function(x,i){
+    var tb=document.getElementById("tb-kochdu"); if(!tb)return; tb.innerHTML="";
+    var live=(state.kochdu.live||[]);
+    if(!state.kochdu.statsAt){ tb.innerHTML='<tr><td colspan="6" class="empty">Noch keine Live-Daten — verbindet gerade mit kochdu.</td></tr>'; return; }
+    if(!live.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Keine aktiven Restaurants mit Umsätzen im Zeitraum.</td></tr>'; return; }
+    live.forEach(function(r){
+      var barOffen=(+r.barOpenCents||0)/100, barPaid=(+r.barSettledCents||0)/100, online=(+r.onlineProvisionCents||0)/100;
+      var pct=(r.provisionRatePct!=null)?(" · "+r.provisionRatePct+" %"):"";
+      var settleBtn = barOffen>0.005
+        ? '<button class="btn sm primary" data-ksettle="'+esc(r.id)+'" data-amt="'+Math.round(barOffen*100)+'">✓ '+eur(barOffen)+' verrechnet</button>'
+        : (barPaid>0.005?'<button class="btn sm" data-kunsettle="'+esc(r.id)+'">↺ Rückgängig</button>':'<span class="pill grey">—</span>');
       var tr=document.createElement("tr");
       tr.innerHTML=
-        '<td><input class="cell w-name" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="name" value="'+esc(x.name)+'"></td>'+
-        '<td class="num"><input class="cell num" type="number" min="0" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="bestellungen" value="'+(x.bestellungen||0)+'"></td>'+
-        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="bar" value="'+(x.bar||0)+'"></td>'+
-        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="kochdu.restaurants" data-i="'+i+'" data-f="online" value="'+(x.online||0)+'"></td>'+
-        '<td style="text-align:center">'+toggle("kochdu.restaurants",i,x.bezahlt)+'</td>'+
-        '<td>'+statusPill(x.bezahlt)+'</td>'+
-        '<td class="num"><button class="btn sm danger" data-del="kochdu.restaurants" data-i="'+i+'">✕</button></td>';
+        '<td><b>'+esc(r.name||"—")+'</b><span class="hint" style="font-size:11px">'+pct+'</span></td>'+
+        '<td class="num">'+(+r.barOrders||0)+' / '+(+r.onlineOrders||0)+'</td>'+
+        '<td class="num money" style="color:'+(barOffen>0.005?"var(--amber)":"var(--faint)")+'">'+eur(barOffen)+'</td>'+
+        '<td class="num money" style="color:var(--green)">'+eur(barPaid)+'</td>'+
+        '<td class="num money" style="color:var(--teal)">'+eur(online)+'</td>'+
+        '<td class="num">'+settleBtn+'</td>';
       tb.appendChild(tr);
     });
   }
@@ -800,6 +832,31 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         '<div class="subj">'+subj+'</div>'+
         (m.preview?'<div class="pre">'+esc(m.preview)+'</div>':'')+
       '</div></div>';
+  }
+  function renderOverviewUpcoming(){
+    var host=document.getElementById("ov-upcoming"); if(!host)return;
+    var today=new Date(); today.setHours(0,0,0,0);
+    var items=[];
+    (state.blitzdings.upcoming||[]).forEach(function(b){ if(!b.eventDate)return; var d=new Date(b.eventDate+"T00:00:00"); if(isNaN(d)||d<today)return;
+      items.push({date:d,ds:b.eventDate,title:b.package||"Buchung",meta:[b.customerName,b.location].filter(Boolean).join(" · "),kind:"bd",amount:(b.totalCents||0)/100,pay:b.paymentStatus}); });
+    (state.calendar.events||[]).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return;
+      items.push({date:d,ds:ev.date,title:ev.title||"Termin",meta:ev.source==="outlook"?"Outlook":"Termin",kind:"evt"}); });
+    items.sort(function(a,b){return a.date-b.date;});
+    items=items.slice(0,6);
+    if(!items.length){ host.innerHTML='<div class="mempty" style="padding:22px">Keine anstehenden Termine.</div>'; return; }
+    host.innerHTML=items.map(function(x){
+      var day=x.date.getDate(); var mon=x.date.toLocaleDateString("de-AT",{month:"short"});
+      var wd=x.date.toLocaleDateString("de-AT",{weekday:"short"});
+      var pay=x.kind==="bd"?(x.pay==="PAID"?'<span class="pill green">✓ Bezahlt</span>':'<span class="pill amber">● Offen</span>'):'';
+      var amt=x.amount?('<div class="bd-amount" style="font-size:14px">'+eur(x.amount)+'</div>'):'';
+      var dcls=x.kind==="bd"?"bd-date":"bd-date";
+      var dstyle=x.kind==="evt"?' style="background:#f0eaff;color:#6b3ff2"':'';
+      return '<div class="bd-card" style="margin-bottom:8px;padding:11px 13px">'+
+        '<div class="'+dcls+'"'+dstyle+'><div class="d">'+day+'</div><div class="m">'+esc(mon)+'</div></div>'+
+        '<div class="bd-main"><div class="bd-title" style="font-size:14px">'+esc(x.title)+'</div>'+
+          '<div class="bd-meta"><span>'+esc(wd)+', '+x.date.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+'</span>'+(x.meta?'<span>'+esc(x.meta)+'</span>':'')+'</div></div>'+
+        '<div class="bd-right">'+amt+pay+'</div></div>';
+    }).join("");
   }
   function renderOverviewMail(){
     var host=document.getElementById("ov-mail-list"); if(!host)return;
@@ -939,14 +996,19 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     setMoney("ov-kant-paid", kantPaid);     setMoney("ov-kant-mrr", c.kantineur.mrr);
     setMoney("ov-bd-paid", c.blitzdings.past); setMoney("ov-bd-offen", c.blitzdings.up);
     setMoney("ov-val-paid", c.valuero.paid); setMoney("ov-val-offen", c.valuero.offen);
-    // kochdu
+    // kochdu (Live-Daten)
     setMoney("k-baroffen", c.kochdu.barOffen);
     setMoney("k-barpaid", c.kochdu.barPaid);
-    setTxt("k-online-sub", "Online (verrechnet): "+eur(c.kochdu.online));
+    setMoney("k-online", c.kochdu.online);
+    var kt=state.kochdu.totals||{};
+    setCount("k-orders", (+kt.barOrders||0)+(+kt.onlineOrders||0));
+    setTxt("k-orders-sub", (+kt.barOrders||0)+" bar · "+(+kt.onlineOrders||0)+" online");
     setCount("kf-best", c.kochdu.best);
-    setMoney("kf-bar", c.kochdu.bar);
+    setMoney("kf-baroffen", c.kochdu.barOffen);
+    setMoney("kf-barpaid", c.kochdu.barPaid);
     setMoney("kf-online", c.kochdu.online);
     setProg("k-prog-fill","k-prog-lbl", c.kochdu.barPaid, c.kochdu.bar);
+    setTxt("k-stats-updated", state.kochdu.statsAt?("Stand: "+new Date(state.kochdu.statsAt).toLocaleString("de-AT")):"");
     // kantineur
     setCount("ka-total", c.kantineur.aboTotal);
     var spon=(+state.kantineur.aboSponsored||0), pay=(+state.kantineur.aboPaying||0);
@@ -1001,10 +1063,14 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       ]},options:baseOpts({indexAxis:"y",plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return (x.datasetIndex===0?"Bezahlt: ":"Offen: ")+eur(x.raw);}}}},scales:{x:{stacked:true,ticks:{maxTicksLimit:5,callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},y:{stacked:true,grid:{display:false}}}})});
       mkChart("c-ov-mix",{type:"doughnut",data:{labels:["Kantineur MRR","Blitzdings (realisiert)","kochdu Gebühren"],datasets:[{data:[c.kantineur.mrr,c.blitzdings.past,c.kochdu.sum],backgroundColor:[C.teal,C.gold,C.violet],borderWidth:0}]},options:baseOpts({cutout:"64%",plugins:{tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}})});
     } else if(tab==="kochdu"){
-      var labels=state.kochdu.restaurants.map(function(x){return x.name||"—";});
-      var vals=state.kochdu.restaurants.map(function(x){return +x.bar||0;});
-      var cols=state.kochdu.restaurants.map(function(x){return x.bezahlt?C.green:C.amber;});
-      mkChart("c-kochdu",{type:"bar",data:{labels:labels,datasets:[{label:"Bar-Gebühr",data:vals,backgroundColor:cols,borderRadius:8,maxBarThickness:54}]},options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){var it=state.kochdu.restaurants[x.dataIndex];return eur(x.raw)+(it&&it.bezahlt?" (bezahlt)":" (offen)");}}}},scales:{y:{ticks:{maxTicksLimit:5,callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},x:{grid:{display:false}}}})});
+      var kl=(state.kochdu.live||[]);
+      var labels=kl.map(function(x){return x.name||"—";});
+      var offen=kl.map(function(x){return (+x.barOpenCents||0)/100;});
+      var paid=kl.map(function(x){return (+x.barSettledCents||0)/100;});
+      mkChart("c-kochdu",{type:"bar",data:{labels:labels,datasets:[
+        {label:"Verrechnet",data:paid,backgroundColor:C.green,borderRadius:5,maxBarThickness:40,stack:"k"},
+        {label:"Offen",data:offen,backgroundColor:C.amber,borderRadius:5,maxBarThickness:40,stack:"k"}
+      ]},options:baseOpts({plugins:{legend:{labels:{font:{size:12},usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:function(x){return x.dataset.label+": "+eur(x.raw);}}}},scales:{y:{stacked:true,ticks:{maxTicksLimit:5,callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},x:{stacked:true,grid:{display:false}}}})});
     } else if(tab==="kantineur"){
       mkChart("c-kantineur",{type:"doughnut",data:{labels:["Kantineur","Magazineur"],datasets:[{data:[+state.kantineur.aboKantineur||0,+state.kantineur.aboMagazineur||0],backgroundColor:[C.teal,C.violet],borderWidth:0}]},options:baseOpts({cutout:"62%"})});
     } else if(tab==="blitzdings"){
@@ -1093,7 +1159,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   // ---- render ----
   var activeTab="overview";
   function renderTables(){ tblKochdu(); tblBlitz(); renderValueroQuarters(); }
-  function renderAll(){ fillKV(); renderTables(); renderKPIs(); renderUpdated(); renderMailAll(); renderTodos(); renderCalendar(); drawCharts(activeTab); }
+  function renderAll(){ fillKV(); renderTables(); renderKPIs(); renderUpdated(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); drawCharts(activeTab); }
   function softUpdate(){ renderKPIs(); refreshRows(); updateValueroTotals(); drawCharts(activeTab); }
   function refreshRows(){
     document.querySelectorAll("#tb-kochdu tr").forEach(function(tr,i){var x=state.kochdu.restaurants[i];if(!x)return;var cell=tr.children[5];if(cell)cell.innerHTML=statusPill(x.bezahlt);});
@@ -1230,6 +1296,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       if(d.kantineur){ var kc=d.kantineur; sig+="|K"+(kc.mrrCents||0)+"-"+(kc.revenueGrossCents||0)+"-"+((kc.canteens&&kc.canteens.total)||0)+"-"+((kc.subscribers&&kc.subscribers.active)||0); }
       if(d.blitzdings){ var bz0=d.blitzdings; sig+="|B"+((bz0.revenue&&bz0.revenue.paidCents)||0)+"-"+((bz0.revenue&&bz0.revenue.openCents)||0)+"-"+((bz0.upcoming&&bz0.upcoming.length)||0); }
       if(d.calendar&&Array.isArray(d.calendar.events)) sig+="|C"+d.calendar.events.length+"-"+(d.calendar.fetchedAt||"");
+      if(d.kochdu&&d.kochdu.totals){ var kt2=d.kochdu.totals; sig+="|D"+(kt2.barOpenCents||0)+"-"+(kt2.barSettledCents||0)+"-"+(kt2.onlineProvisionCents||0)+"-"+((d.kochdu.restaurants&&d.kochdu.restaurants.length)||0); }
       if(sig && sig===window.__fsdSig) return false;
       window.__fsdSig=sig;
       if(d.kantineur){ var s=d.kantineur; var sub=s.subscribers||{byPlan:{}}; var bp=sub.byPlan||{}; var planN=function(x){return (x&&typeof x==="object")?(x.active||0):(+x||0);};
@@ -1246,6 +1313,10 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         state.mail.folders=Array.isArray(d.mail.folders)?d.mail.folders:state.mail.folders;
         state.mail.account=d.mail.account||state.mail.account; state.mail.lastFetch=d.mail.fetchedAt||state.mail.lastFetch;
         state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null};}); }
+      if(d.kochdu&&d.kochdu.totals){
+        state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
+        state.kochdu.totals=d.kochdu.totals; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
+      }
       if(d.calendar&&Array.isArray(d.calendar.events)){
         // Outlook/CalDAV-Termine ersetzen die zuvor importierten; manuell angelegte bleiben erhalten.
         var manual=(state.calendar.events||[]).filter(function(e){return e.source==="manual";});
@@ -1253,7 +1324,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         state.calendar.events=manual.concat(imported);
         state.calendar.outlookAt=d.calendar.fetchedAt||new Date().toISOString();
       }
-      save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); drawCharts(activeTab);
+      save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); tblKochdu(); drawCharts(activeTab);
       return true;
     }catch(e){ return false; }
   };
@@ -1309,6 +1380,30 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       save(); renderKPIs(); renderBlitzUpcoming(); drawCharts(activeTab);
     }
     blitzPayServer(bid,paid);
+  });
+
+  // kochdu: Bar-Gebühren eines Restaurants als „verrechnet" buchen (schreibt nach kochdu zurück)
+  function kochduSettleServer(payload){ if(!window.__FSD_HOSTED||!window.__FSD_KOCHDU_SETTLE)return; try{ fetch(window.__FSD_KOCHDU_SETTLE,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(){ setTimeout(function(){ if(window.__fsdPoll)window.__fsdPoll(); },1200); }); }catch(e){} }
+  function kochduRecalcTotals(){
+    var t={barProvisionCents:0,barSettledCents:0,barOpenCents:0,onlineProvisionCents:0,barOrders:0,onlineOrders:0};
+    (state.kochdu.live||[]).forEach(function(r){ t.barProvisionCents+=(+r.barProvisionCents||0); t.barSettledCents+=(+r.barSettledCents||0); t.barOpenCents+=(+r.barOpenCents||0); t.onlineProvisionCents+=(+r.onlineProvisionCents||0); t.barOrders+=(+r.barOrders||0); t.onlineOrders+=(+r.onlineOrders||0); });
+    state.kochdu.totals=t;
+  }
+  document.body.addEventListener("click",function(e){
+    var ks=e.target.closest("[data-ksettle]");
+    if(ks){ var id=ks.getAttribute("data-ksettle"); var amt=+ks.getAttribute("data-amt")||0;
+      var r=(state.kochdu.live||[]).filter(function(x){return x.id===id;})[0];
+      if(r){ r.barSettledCents=(+r.barSettledCents||0)+(+r.barOpenCents||0); r.barOpenCents=0; kochduRecalcTotals(); save(); tblKochdu(); renderKPIs(); drawCharts(activeTab); }
+      kochduSettleServer({action:"settle",restaurantId:id,amountCents:amt});
+      return;
+    }
+    var ku=e.target.closest("[data-kunsettle]");
+    if(ku){ var uid2=ku.getAttribute("data-kunsettle");
+      var r2=(state.kochdu.live||[]).filter(function(x){return x.id===uid2;})[0];
+      if(r2){ r2.barOpenCents=(+r2.barOpenCents||0)+(+r2.barSettledCents||0); r2.barSettledCents=0; kochduRecalcTotals(); save(); tblKochdu(); renderKPIs(); drawCharts(activeTab); }
+      kochduSettleServer({action:"unsettle",restaurantId:uid2});
+      return;
+    }
   });
 
   // ---- To-Do-Events ----

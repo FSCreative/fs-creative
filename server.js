@@ -101,6 +101,7 @@ const ADMIN_SECRET = process.env.ADMIN_AUTH_SECRET || "bitte-ADMIN_AUTH_SECRET-s
 const KANTINEUR = { url: process.env.KANTINEUR_STATS_URL || "https://kantineur.at/api/stats", token: process.env.KANTINEUR_STATS_TOKEN || "" };
 const MAIL = { url: process.env.MAIL_API_URL || "", token: process.env.MAIL_API_TOKEN || "" };
 const BLITZ = { url: process.env.BLITZDINGS_STATS_URL || "https://blitzdings.co.at/api/stats", token: process.env.BLITZDINGS_STATS_TOKEN || "" };
+const KOCHDU = { url: process.env.KOCHDU_STATS_URL || "https://kochdu.at/api/stats", token: process.env.KOCHDU_STATS_TOKEN || "" };
 let ADMIN_HTML = "";
 try { ADMIN_HTML = fs.readFileSync(path.join(ROOT, "admin-dashboard.html"), "utf8"); } catch (e) { ADMIN_HTML = "<!doctype html><p>admin-dashboard.html fehlt.</p>"; }
 
@@ -153,6 +154,12 @@ async function blitzdingsStats(year) {
   if (!d || d.error) return null;
   return d;
 }
+async function kochduStats(year) {
+  if (!KOCHDU.token) return null;
+  const d = await getJSON(KOCHDU.url + "?token=" + encodeURIComponent(KOCHDU.token) + yearParam(year));
+  if (!d || d.error) return null;
+  return d;
+}
 // Kalender-Termine (Outlook/CalDAV) über die Mail-API, falls dort ein CalDAV-Server konfiguriert ist.
 async function calendarEvents() {
   if (!MAIL.url || !MAIL.token) return null;
@@ -172,7 +179,7 @@ function injectAdmin(html, stampISO) {
     '<button onclick="location.reload()" style="border:none;background:linear-gradient(135deg,#2f6bff,#7c4dff);color:#fff;border-radius:9px;padding:7px 12px;font:inherit;cursor:pointer">↻ Aktualisieren</button>' +
     '<a href="/admin/logout" style="color:#6b7686;text-decoration:none">Abmelden</a></div>';
   const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay";' +
+    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle";' +
     'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
     'try{var st=' + JSON.stringify(stampISO || null) + ';var el=document.getElementById("fsd-stamp");if(el)el.textContent=st?new Date(st).toLocaleString("de-AT"):"—";}catch(e){}' +
     'var KEY="fsd_seen_unread";' +
@@ -192,9 +199,10 @@ function injectAdmin(html, stampISO) {
 async function renderAdminDashboard() {
   let html = ADMIN_HTML; let stamp = null;
   const year = new Date().getFullYear();
-  const [k, m, b] = await Promise.all([kantineurStats(year), mailSnapshot(), blitzdingsStats(year)]);
+  const [k, m, b, ko] = await Promise.all([kantineurStats(year), mailSnapshot(), blitzdingsStats(year), kochduStats(year)]);
   if (k) { html = replaceConst(html, "KANTINEUR_STATS", k); stamp = k.fetchedAt; }
   if (b) { html = replaceConst(html, "BLITZDINGS_STATS", b); stamp = b.fetchedAt || stamp; }
+  if (ko) { html = replaceConst(html, "KOCHDU_STATS", ko); stamp = ko.fetchedAt || stamp; }
   if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
   return injectAdmin(html, stamp);
 }
@@ -243,8 +251,22 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
-    const [k, m, b, cal] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents()]);
-    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const [k, m, b, cal, ko] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr)]);
+    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/kochdu-settle" && req.method === "POST") {
+    if (!KOCHDU.token) return send(res, 503, JSON.stringify({ error: "kochdu_not_configured" }), TYPES[".json"]);
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on("end", async () => {
+      let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
+      try {
+        const r = await fetch(KOCHDU.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: KOCHDU.token }, payload)) });
+        const txt = await r.text();
+        return send(res, r.status, txt, TYPES[".json"]);
+      } catch (e) { return send(res, 502, JSON.stringify({ error: "kochdu_settle_failed" }), TYPES[".json"]); }
+    });
+    return;
   }
   if (p === "/admin/api/blitz-pay" && req.method === "POST") {
     if (!BLITZ.token) return send(res, 503, JSON.stringify({ error: "blitz_not_configured" }), TYPES[".json"]);
