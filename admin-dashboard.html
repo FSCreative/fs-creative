@@ -100,6 +100,8 @@ input.cell:focus,select.cell:focus{outline:none;border-color:var(--accent);backg
 input.cell.num{text-align:right;font-variant-numeric:tabular-nums}
 input.cell.w-name{background:#eef2fb;font-weight:600}
 .money{font-variant-numeric:tabular-nums;font-weight:700}
+#tb-kochdu td{height:54px;vertical-align:middle}
+#tb-kochdu .btn.sm{white-space:nowrap}
 
 /* toggle switch */
 .switch{position:relative;display:inline-block;width:44px;height:25px;cursor:pointer;vertical-align:middle}
@@ -308,6 +310,15 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 .sparte-opt i{width:11px;height:11px;border-radius:50%;flex:none}
 .sparte-opt.sel{color:var(--ink);border-color:currentColor}
 .sparte-opt.sel[data-k]{box-shadow:0 0 0 3px rgba(47,107,255,.08)}
+/* event detail view */
+.evv-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.evv-titlewrap{display:flex;align-items:center;gap:9px;min-width:0}
+.evv-dot{width:12px;height:12px;border-radius:50%;flex:none}
+.evv-body{display:flex;flex-direction:column;gap:12px}
+.evv-line{display:flex;gap:11px;align-items:flex-start;font-size:14px}
+.evv-line .ic{width:17px;height:17px;flex:none;color:var(--faint);margin-top:2px}
+.evv-line .lv{min-width:0;word-break:break-word;white-space:pre-wrap;line-height:1.5}
+.evv-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700}
 
 @media(max-width:640px){ .split{grid-template-columns:1fr} .kpi .val{font-size:24px} .hero .val{font-size:31px} .tab span.t{display:none} .tab{min-width:0} }
 </style>
@@ -371,7 +382,12 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       </div>
       <div class="split" style="margin-top:16px">
         <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Bezahlt vs. offen je Plattform</h2><span class="hint">voll = bezahlt · heller = offen</span></div><div class="chart-box sm"><canvas id="c-ov-offen"></canvas></div></div>
-        <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Umsatzbeitrag (Monat)</h2><span class="hint">MRR + realisierte Umsätze</span></div><div class="chart-box sm"><canvas id="c-ov-mix"></canvas></div></div>
+        <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Jahresumsatz je Plattform</h2><span class="hint">realisiert · inkl. offen</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><div class="chart-box sm" style="height:170px"><canvas id="c-ov-real"></canvas></div><div style="text-align:center;font-size:12px;color:var(--dim);margin-top:4px">Realisiert · <b id="c-ov-real-sum" style="color:var(--ink)">—</b></div></div>
+            <div><div class="chart-box sm" style="height:170px"><canvas id="c-ov-total"></canvas></div><div style="text-align:center;font-size:12px;color:var(--dim);margin-top:4px">inkl. offen · <b id="c-ov-total-sum" style="color:var(--ink)">—</b></div></div>
+          </div>
+        </div>
       </div>
       <div class="card hoverable" style="margin-top:16px">
         <div class="sec-title" style="margin:0 0 8px"><h2><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>Nächste Termine</h2><button class="btn sm" data-goto="kalender">Kalender öffnen →</button></div>
@@ -399,9 +415,9 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       <div class="sec-title"><h2>Gebühren pro Restaurant</h2><span class="hint">Bar = du verrechnest · Online = automatisch</span></div>
       <div class="card tbl-card">
         <table>
-          <thead><tr><th>Restaurant</th><th class="num">Best. (bar/online)</th><th class="num">Bar offen €</th><th class="num">Bar verrechnet €</th><th class="num">Online €</th><th style="width:150px"></th></tr></thead>
-          <tbody id="tb-kochdu"><tr><td colspan="6" class="empty">Verbindet gerade mit kochdu …</td></tr></tbody>
-          <tfoot><tr><td>Gesamt</td><td class="num" id="kf-best">—</td><td class="num money" id="kf-baroffen" style="color:var(--amber)">—</td><td class="num money" id="kf-barpaid" style="color:var(--green)">—</td><td class="num money" id="kf-online" style="color:var(--teal)">—</td><td></td></tr></tfoot>
+          <thead><tr><th>Restaurant</th><th class="num">Best. (bar/online)</th><th class="num">Bar offen €</th><th class="num">Bar verrechnet €</th><th class="num">Online €</th><th>Letzte Abrechnung</th><th style="width:160px"></th></tr></thead>
+          <tbody id="tb-kochdu"><tr><td colspan="7" class="empty">Verbindet gerade mit kochdu …</td></tr></tbody>
+          <tfoot><tr><td>Gesamt</td><td class="num" id="kf-best">—</td><td class="num money" id="kf-baroffen" style="color:var(--amber)">—</td><td class="num money" id="kf-barpaid" style="color:var(--green)">—</td><td class="num money" id="kf-online" style="color:var(--teal)">—</td><td></td><td></td></tr></tfoot>
         </table>
       </div>
       <div class="card hoverable" style="margin-top:14px"><div class="sec-title" style="margin:0 0 8px"><h2>Bar-Gebühren je Restaurant</h2><span class="hint">gelb = offen · grün = verrechnet</span></div><div class="chart-box"><canvas id="c-kochdu"></canvas></div></div>
@@ -579,6 +595,21 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   </div>
 </div>
 
+<div class="overlay" id="evview">
+  <div class="modal" style="max-width:440px">
+    <div class="evv-head">
+      <div class="evv-titlewrap"><span class="evv-dot" id="evv-dot"></span><h3 id="evv-title" style="margin:0"></h3></div>
+      <button class="btn icon" id="evv-edit" title="Bearbeiten">✎</button>
+    </div>
+    <div id="evv-body" class="evv-body"></div>
+    <div class="row">
+      <button class="btn danger" id="evv-del" style="margin-right:auto">🗑 Löschen</button>
+      <button class="btn ghost" id="evv-close">Schließen</button>
+      <button class="btn primary" id="evv-edit2">✎ Bearbeiten</button>
+    </div>
+  </div>
+</div>
+
 
 <script>
 (function(){
@@ -728,14 +759,15 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   function tblKochdu(){
     var tb=document.getElementById("tb-kochdu"); if(!tb)return; tb.innerHTML="";
     var live=(state.kochdu.live||[]);
-    if(!state.kochdu.statsAt){ tb.innerHTML='<tr><td colspan="6" class="empty">Noch keine Live-Daten — verbindet gerade mit kochdu.</td></tr>'; return; }
-    if(!live.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Keine aktiven Restaurants mit Umsätzen im Zeitraum.</td></tr>'; return; }
+    if(!state.kochdu.statsAt){ tb.innerHTML='<tr><td colspan="7" class="empty">Noch keine Live-Daten — verbindet gerade mit kochdu.</td></tr>'; return; }
+    if(!live.length){ tb.innerHTML='<tr><td colspan="7" class="empty">Keine aktiven Restaurants mit Umsätzen im Zeitraum.</td></tr>'; return; }
     live.forEach(function(r){
       var barOffen=(+r.barOpenCents||0)/100, barPaid=(+r.barSettledCents||0)/100, online=(+r.onlineProvisionCents||0)/100;
       var pct=(r.provisionRatePct!=null)?(" · "+r.provisionRatePct+" %"):"";
       var settleBtn = barOffen>0.005
         ? '<button class="btn sm primary" data-ksettle="'+esc(r.id)+'" data-amt="'+Math.round(barOffen*100)+'">✓ '+eur(barOffen)+' verrechnet</button>'
         : (barPaid>0.005?'<button class="btn sm" data-kunsettle="'+esc(r.id)+'">↺ Rückgängig</button>':'<span class="pill grey">—</span>');
+      var last=r.lastSettledAt?('<span title="'+esc(new Date(r.lastSettledAt).toLocaleString("de-AT"))+'">'+new Date(r.lastSettledAt).toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+'</span>'):'<span class="hint">noch nie</span>';
       var tr=document.createElement("tr");
       tr.innerHTML=
         '<td><b>'+esc(r.name||"—")+'</b><span class="hint" style="font-size:11px">'+pct+'</span></td>'+
@@ -743,6 +775,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         '<td class="num money" style="color:'+(barOffen>0.005?"var(--amber)":"var(--faint)")+'">'+eur(barOffen)+'</td>'+
         '<td class="num money" style="color:var(--green)">'+eur(barPaid)+'</td>'+
         '<td class="num money" style="color:var(--teal)">'+eur(online)+'</td>'+
+        '<td style="font-size:12.5px;color:var(--dim)">'+last+'</td>'+
         '<td class="num">'+settleBtn+'</td>';
       tb.appendChild(tr);
     });
@@ -877,7 +910,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     (state.blitzdings.upcoming||[]).forEach(function(b){ if(!b.eventDate)return; var d=new Date(b.eventDate+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte("blitzdings");
       items.push({date:d,ds:b.eventDate,title:b.package||"Buchung",meta:[b.customerName,b.location].filter(Boolean).join(" · "),kind:"bd",amount:(b.totalCents||0)/100,pay:b.paymentStatus,color:s.color,bg:s.bg,spn:s.name}); });
     (state.calendar.events||[]).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte(ev.sparte);
-      items.push({date:d,ds:ev.date,title:ev.title||"Termin",time:ev.time||"",meta:[ev.location,ev.notes].filter(Boolean).join(" · "),kind:"evt",color:s.color,bg:s.bg,spn:s.name}); });
+      items.push({date:d,ds:ev.date,title:ev.title||"Termin",time:ev.time||"",meta:[ev.location,ev.notes].filter(Boolean).join(" · "),kind:"evt",id:ev.id,color:s.color,bg:s.bg,spn:s.name}); });
     items.sort(function(a,b){return (a.date-b.date)|| ((a.time||"99")<(b.time||"99")?-1:1);});
     items=items.slice(0,6);
     if(!items.length){ host.innerHTML='<div class="mempty" style="padding:22px">Keine anstehenden Termine.</div>'; return; }
@@ -889,7 +922,8 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       var dstyle=' style="background:'+(x.bg||"#fbf1dc")+';color:'+(x.color||"#9a6400")+'"';
       var when=esc(wd)+', '+x.date.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+(x.time?(' · '+esc(x.time)+' Uhr'):'');
       var spn=x.spn?('<span class="chip" style="background:'+x.bg+';color:'+x.color+';border-color:transparent;font-size:11px">'+esc(x.spn)+'</span>'):'';
-      return '<div class="bd-card" style="margin-bottom:8px;padding:11px 13px">'+
+      var clickAttr=(x.kind==="evt"&&x.id)?(' data-ovevt="'+esc(x.id)+'" style="margin-bottom:8px;padding:11px 13px;cursor:pointer"'):' style="margin-bottom:8px;padding:11px 13px"';
+      return '<div class="bd-card"'+clickAttr+'>'+
         '<div class="bd-date"'+dstyle+'><div class="d">'+day+'</div><div class="m">'+esc(mon)+'</div></div>'+
         '<div class="bd-main"><div class="bd-title" style="font-size:14px">'+esc(x.title)+' '+spn+'</div>'+
           '<div class="bd-meta"><span>'+when+'</span>'+(x.meta?'<span>'+esc(x.meta)+'</span>':'')+'</div></div>'+
@@ -1099,7 +1133,16 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         {label:"Bezahlt",data:[c.kochdu.barPaid+c.kochdu.online,kantPaid,c.blitzdings.past,c.valuero.paid],backgroundColor:["#8b5cf6","#3a8acd","#e0930a","#12b76a"],borderRadius:5,maxBarThickness:26,stack:"s"},
         {label:"Offen",data:[c.kochdu.barOffen,0,c.blitzdings.up,c.valuero.offen],backgroundColor:["#cbbdf9","#a9cfec","#f2cf90","#8fe3ba"],borderRadius:5,maxBarThickness:26,stack:"s"}
       ]},options:baseOpts({indexAxis:"y",plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return (x.datasetIndex===0?"Bezahlt: ":"Offen: ")+eur(x.raw);}}}},scales:{x:{stacked:true,ticks:{maxTicksLimit:5,callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},y:{stacked:true,grid:{display:false}}}})});
-      mkChart("c-ov-mix",{type:"doughnut",data:{labels:["Kantineur MRR","Blitzdings (realisiert)","kochdu Gebühren"],datasets:[{data:[c.kantineur.mrr,c.blitzdings.past,c.kochdu.sum],backgroundColor:[C.teal,C.gold,C.violet],borderWidth:0}]},options:baseOpts({cutout:"64%",plugins:{tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}})});
+      var kPaid=c.kochdu.barPaid+c.kochdu.online, kOpen=c.kochdu.barOffen;
+      var labels4=["kochdu","Kantineur","Blitzdings","VALUERO"];
+      var cols4=["#8b5cf6","#3a8acd","#e0930a","#12b76a"];
+      var realData=[kPaid, kantPaid, c.blitzdings.past, c.valuero.paid];
+      var totData=[kPaid+kOpen, kantPaid, c.blitzdings.past+c.blitzdings.up, c.valuero.paid+c.valuero.offen];
+      var realSum=realData.reduce(function(a,b){return a+b;},0), totSum=totData.reduce(function(a,b){return a+b;},0);
+      setTxt("c-ov-real-sum", eur(realSum)); setTxt("c-ov-total-sum", eur(totSum));
+      var ringOpts=baseOpts({cutout:"62%",plugins:{legend:{position:"bottom",labels:{font:{size:11},usePointStyle:true,boxWidth:7,padding:8}},tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}});
+      mkChart("c-ov-real",{type:"doughnut",data:{labels:labels4,datasets:[{data:realData,backgroundColor:cols4,borderWidth:0}]},options:ringOpts});
+      mkChart("c-ov-total",{type:"doughnut",data:{labels:labels4,datasets:[{data:totData,backgroundColor:cols4,borderWidth:0}]},options:ringOpts});
     } else if(tab==="kochdu"){
       var kl=(state.kochdu.live||[]);
       var labels=kl.map(function(x){return x.name||"—";});
@@ -1204,9 +1247,31 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     grid.innerHTML=cells;
     var note=document.getElementById("cal-outlook-note");
     if(note) note.textContent=state.calendar.outlookAt
-      ? ("Outlook-Termine zuletzt synchronisiert: "+new Date(state.calendar.outlookAt).toLocaleString("de-AT")+" · "+(state.calendar.events||[]).length+" Termine")
-      : "Tipp: Tag anklicken für neuen Termin. Blitzdings-Termine, VALUERO-Gebühren und fällige To-Dos erscheinen automatisch.";
+      ? ("Outlook-Termine zuletzt synchronisiert: "+new Date(state.calendar.outlookAt).toLocaleString("de-AT"))
+      : "";
   }
+  // ---- Termin-Detailansicht ----
+  var evViewId=null;
+  function openEventView(ev){
+    evViewId=ev.id; var s=sparte(ev.sparte);
+    document.getElementById("evv-dot").style.background=s.color;
+    document.getElementById("evv-title").textContent=ev.title||"Termin";
+    var d=ev.date?new Date(ev.date+"T00:00:00"):null;
+    var dateStr=d?d.toLocaleDateString("de-AT",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}):(ev.date||"");
+    var timeStr=ev.time?(ev.time+(ev.endTime?" – "+ev.endTime:"")+" Uhr"):"ganztägig";
+    function line(icon,val){ return '<div class="evv-line"><span class="ic">'+icon+'</span><div class="lv">'+val+'</div></div>'; }
+    var body='';
+    body+=line("📅", esc(dateStr));
+    body+=line("🕑", esc(timeStr));
+    body+='<div class="evv-line"><span class="ic">🏷️</span><div class="lv"><span class="evv-chip" style="background:'+s.bg+';color:'+s.color+'">'+esc(s.name)+'</span></div></div>';
+    if(ev.location) body+=line("📍", esc(ev.location));
+    if(ev.notes) body+=line("📝", esc(ev.notes));
+    document.getElementById("evv-body").innerHTML=body;
+    document.getElementById("evview").classList.add("show");
+  }
+  function closeEventView(){ document.getElementById("evview").classList.remove("show"); evViewId=null; }
+  function editFromView(){ var ev=(state.calendar.events||[]).filter(function(x){return x.id===evViewId;})[0]; closeEventView(); if(ev)openEventModal(ev); }
+  function deleteFromView(){ if(!evViewId)return; state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evViewId;}); save(); closeEventView(); renderCalendar(); renderOverviewUpcoming(); }
   // ---- Termin-Editor (Modal) ----
   var evEditId=null;
   function renderSpartePicker(sel){
@@ -1478,7 +1543,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var ks=e.target.closest("[data-ksettle]");
     if(ks){ var id=ks.getAttribute("data-ksettle"); var amt=+ks.getAttribute("data-amt")||0;
       var r=(state.kochdu.live||[]).filter(function(x){return x.id===id;})[0];
-      if(r){ r.barSettledCents=(+r.barSettledCents||0)+(+r.barOpenCents||0); r.barOpenCents=0; kochduRecalcTotals(); save(); tblKochdu(); renderKPIs(); drawCharts(activeTab); }
+      if(r){ r.barSettledCents=(+r.barSettledCents||0)+(+r.barOpenCents||0); r.barOpenCents=0; r.lastSettledAt=new Date().toISOString(); kochduRecalcTotals(); save(); tblKochdu(); renderKPIs(); drawCharts(activeTab); }
       kochduSettleServer({action:"settle",restaurantId:id,amountCents:amt});
       return;
     }
@@ -1513,9 +1578,15 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   var calGrid=document.getElementById("cal-grid");
   if(calGrid) calGrid.addEventListener("click",function(e){
     var chip=e.target.closest("[data-evtid]");
-    if(chip){ var id=chip.getAttribute("data-evtid"); var ev=(state.calendar.events||[]).filter(function(x){return x.id===id;})[0]; if(ev)openEventModal(ev); return; }
+    if(chip){ var id=chip.getAttribute("data-evtid"); var ev=(state.calendar.events||[]).filter(function(x){return x.id===id;})[0]; if(ev)openEventView(ev); return; }
     var cell=e.target.closest(".cal-cell"); if(cell&&cell.getAttribute("data-calday")) openEventModal(null, cell.getAttribute("data-calday"));
   });
+  var evvEdit=document.getElementById("evv-edit"); if(evvEdit) evvEdit.addEventListener("click",editFromView);
+  var evvEdit2=document.getElementById("evv-edit2"); if(evvEdit2) evvEdit2.addEventListener("click",editFromView);
+  var evvDel=document.getElementById("evv-del"); if(evvDel) evvDel.addEventListener("click",deleteFromView);
+  var evvClose=document.getElementById("evv-close"); if(evvClose) evvClose.addEventListener("click",closeEventView);
+  var ovUp=document.getElementById("ov-upcoming"); if(ovUp) ovUp.addEventListener("click",function(e){ var c=e.target.closest("[data-ovevt]"); if(!c)return; var ev=(state.calendar.events||[]).filter(function(x){return x.id===c.getAttribute("data-ovevt");})[0]; if(ev)openEventView(ev); });
+  var evvOv=document.getElementById("evview"); if(evvOv) evvOv.addEventListener("click",function(e){ if(e.target===this)closeEventView(); });
   // Sparte-Auswahl im Termin-Editor
   var spHost=document.getElementById("ev-sparte");
   if(spHost) spHost.addEventListener("click",function(e){ var o=e.target.closest(".sparte-opt"); if(!o)return; renderSpartePicker(o.getAttribute("data-k")); });
