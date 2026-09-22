@@ -126,9 +126,10 @@ async function getJSON(url) {
   try { const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) return null; return await r.json(); }
   catch (e) { return null; } finally { clearTimeout(t); }
 }
-async function kantineurStats() {
+function yearParam(year) { return year ? "&year=" + encodeURIComponent(year) : ""; }
+async function kantineurStats(year) {
   if (!KANTINEUR.token) return null;
-  const d = await getJSON(KANTINEUR.url + "?token=" + encodeURIComponent(KANTINEUR.token));
+  const d = await getJSON(KANTINEUR.url + "?token=" + encodeURIComponent(KANTINEUR.token) + yearParam(year));
   if (!d || d.error) return null;
   return {
     fetchedAt: d.fetchedAt,
@@ -146,10 +147,18 @@ async function mailSnapshot() {
   if (!d || d.error) return null;
   return d;
 }
-async function blitzdingsStats() {
+async function blitzdingsStats(year) {
   if (!BLITZ.token) return null;
-  const d = await getJSON(BLITZ.url + "?token=" + encodeURIComponent(BLITZ.token));
+  const d = await getJSON(BLITZ.url + "?token=" + encodeURIComponent(BLITZ.token) + yearParam(year));
   if (!d || d.error) return null;
+  return d;
+}
+// Kalender-Termine (Outlook/CalDAV) über die Mail-API, falls dort ein CalDAV-Server konfiguriert ist.
+async function calendarEvents() {
+  if (!MAIL.url || !MAIL.token) return null;
+  const calUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/calendar") + "?token=" + encodeURIComponent(MAIL.token);
+  const d = await getJSON(calUrl);
+  if (!d || d.error || !Array.isArray(d.events)) return null;
   return d;
 }
 function replaceConst(html, name, obj) {
@@ -163,24 +172,27 @@ function injectAdmin(html, stampISO) {
     '<button onclick="location.reload()" style="border:none;background:linear-gradient(135deg,#2f6bff,#7c4dff);color:#fff;border-radius:9px;padding:7px 12px;font:inherit;cursor:pointer">↻ Aktualisieren</button>' +
     '<a href="/admin/logout" style="color:#6b7686;text-decoration:none">Abmelden</a></div>';
   const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action";' +
+    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay";' +
+    'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
     'try{var st=' + JSON.stringify(stampISO || null) + ';var el=document.getElementById("fsd-stamp");if(el)el.textContent=st?new Date(st).toLocaleString("de-AT"):"—";}catch(e){}' +
     'var KEY="fsd_seen_unread";' +
     'function chime(){try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;var ac=window.__fsdAC||(window.__fsdAC=new AC());if(ac.state==="suspended")ac.resume();var t=ac.currentTime;[880,1174.7].forEach(function(f,i){var o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.value=f;o.connect(g);g.connect(ac.destination);var s=t+i*0.16;g.gain.setValueAtTime(0.0001,s);g.gain.exponentialRampToValueAtTime(0.25,s+0.02);g.gain.exponentialRampToValueAtTime(0.0001,s+0.35);o.start(s);o.stop(s+0.4);});}catch(e){}}' +
     'window.addEventListener("click",function o(){try{var AC=window.AudioContext||window.webkitAudioContext;if(AC){window.__fsdAC=window.__fsdAC||new AC();if(window.__fsdAC.resume)window.__fsdAC.resume();}}catch(e){}},{once:true});' +
     'function unread(m){return((m&&m.messages)||[]).filter(function(x){return !x.read&&!x.deleted;}).map(function(x){return x.id;});}' +
-    'function poll(){fetch("/admin/api/all",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return;' +
+    'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return;' +
       'if(d.mail){var ids=unread(d.mail);var seen=null;try{seen=JSON.parse(localStorage.getItem(KEY));}catch(e){}if(Array.isArray(seen)){var fresh=ids.filter(function(id){return seen.indexOf(id)<0;});if(fresh.length){chime();var b=document.getElementById("fsd-new");if(b){b.style.display="";b.textContent=fresh.length+" neue Mail"+(fresh.length>1?"s":"");setTimeout(function(){b.style.display="none";},9000);}}}localStorage.setItem(KEY,JSON.stringify(ids));}' +
       'if(window.__fsdApplyLive)window.__fsdApplyLive(d);' +
       'try{var st=(d.mail&&d.mail.fetchedAt)||(d.kantineur&&d.kantineur.fetchedAt);var el=document.getElementById("fsd-stamp");if(el&&st)el.textContent=new Date(st).toLocaleString("de-AT");}catch(e){}' +
     '}).catch(function(){});}' +
+    'window.__fsdPoll=poll;' +
     'setInterval(poll,30000);setTimeout(poll,600);' +
     '})();</script>';
   return html.replace("</body>", bar + script + "</body>");
 }
 async function renderAdminDashboard() {
   let html = ADMIN_HTML; let stamp = null;
-  const [k, m, b] = await Promise.all([kantineurStats(), mailSnapshot(), blitzdingsStats()]);
+  const year = new Date().getFullYear();
+  const [k, m, b] = await Promise.all([kantineurStats(year), mailSnapshot(), blitzdingsStats(year)]);
   if (k) { html = replaceConst(html, "KANTINEUR_STATS", k); stamp = k.fetchedAt; }
   if (b) { html = replaceConst(html, "BLITZDINGS_STATS", b); stamp = b.fetchedAt || stamp; }
   if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
@@ -230,8 +242,38 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 200, html, TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
   if (p === "/admin/api/all") {
-    const [k, m, b] = await Promise.all([kantineurStats(), mailSnapshot(), blitzdingsStats()]);
-    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
+    const [k, m, b, cal] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents()]);
+    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/blitz-pay" && req.method === "POST") {
+    if (!BLITZ.token) return send(res, 503, JSON.stringify({ error: "blitz_not_configured" }), TYPES[".json"]);
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on("end", async () => {
+      let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
+      try {
+        const r = await fetch(BLITZ.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: BLITZ.token, id: payload.id, paid: !!payload.paid }) });
+        const txt = await r.text();
+        return send(res, r.status, txt, TYPES[".json"]);
+      } catch (e) { return send(res, 502, JSON.stringify({ error: "blitz_pay_failed" }), TYPES[".json"]); }
+    });
+    return;
+  }
+  if (p === "/admin/api/mail-send" && req.method === "POST") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 2000000) req.destroy(); });
+    req.on("end", async () => {
+      let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
+      const sendUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/send");
+      try {
+        const r = await fetch(sendUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)) });
+        const txt = await r.text();
+        return send(res, r.status, txt, TYPES[".json"]);
+      } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_send_failed" }), TYPES[".json"]); }
+    });
+    return;
   }
   if (p === "/admin/api/mail-action" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
