@@ -47,6 +47,42 @@ body.priv .money,body.priv .val,body.priv .qsum,body.priv .bd-amount,body.priv .
 body.priv .chart-box{filter:blur(10px)}
 #hdr-eye.on{color:var(--accent);border-color:#cdd6e6}
 
+/* Dunkelmodus */
+html,body{transition:background .35s ease,color .35s ease}
+body.dark{ color-scheme: dark;
+  --bg1:#0d131f; --bg2:#131b2b; --card:#1a2233; --ink:#e9eef7; --dim:#98a4ba; --faint:#68738a; --line:#2a3446;
+  --shadow:0 14px 38px -20px rgba(0,0,0,.6); --shadow-hover:0 24px 48px -22px rgba(0,0,0,.72);
+}
+body.dark .yearsel,body.dark .btn{background:#1a2233}
+body.dark .btn:hover{border-color:#3a465e;background:#232e44}
+body.dark #hdr-eye.on{border-color:#3a465e}
+body.dark .card.hoverable:hover{border-color:#3a465e}
+body.dark input.cell,body.dark select.cell,body.dark #c-to,body.dark #c-subj{background:#222c42!important;color:var(--ink)}
+body.dark input.cell:focus,body.dark select.cell:focus{background:#1a2233}
+body.dark input.cell.w-name{background:#25314c}
+body.dark tbody tr:hover{background:#202a3e}
+body.dark .mrow:hover,body.dark .mrow2:hover{background:#202a3e}
+body.dark .mrow.sel,body.dark .mrow2.sel,body.dark .mrow2.picked{background:#26324d}
+body.dark .mrow2.unread{background:#1d2740}
+body.dark .att,body.dark .chip,body.dark .c-toolbar,body.dark .foot-note code{background:#222c42}
+body.dark .att:hover{background:#26324d}
+body.dark .c-toolbar button:hover,body.dark .fbtn:hover,body.dark .ctxitem:hover{background:#2b3750}
+body.dark .fbtn.active{background:#20325a;color:var(--accent)}
+body.dark .c-editor,body.dark .modal textarea{background:#161d2c;color:var(--ink)}
+body.dark .ctxmenu,body.dark .modal{background:#1a2233}
+body.dark .cal-cell{background:#1a2233}
+body.dark .cal-cell.out{background:#131b2b}
+body.dark .foot-note{background:#1a2233}
+body.dark .prog .bar{background:#2a3446}
+body.dark .switch .track{background:#3a465e}
+body.dark .titem .tdue{background:#222c42}
+body.dark .mbody{color:#cdd6e6}
+body.dark .mbody blockquote,body.dark .c-editor blockquote{border-left-color:#2a3446;color:var(--dim)}
+body.dark .tabs{background:linear-gradient(135deg,rgba(30,40,62,.85),rgba(38,32,60,.85));border:1px solid rgba(255,255,255,.08);box-shadow:0 12px 34px -20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+body.dark .tab-ind{background:linear-gradient(180deg,rgba(70,86,120,.55),rgba(50,62,92,.4));border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 24px -10px rgba(0,0,0,.55),inset 0 1px 1.5px rgba(255,255,255,.16)}
+body.dark .tab-ind::before{background:linear-gradient(120deg,rgba(255,255,255,0) 32%,rgba(255,255,255,.14) 50%,rgba(255,255,255,0) 68%)}
+body.dark .modal textarea{border-color:#2a3446}
+
 /* tabs — Apple Liquid Glass */
 .tabs{position:relative;display:flex;gap:4px;padding:6px;border-radius:17px;margin-bottom:20px;overflow:hidden;
   background:linear-gradient(135deg,rgba(231,237,250,.85),rgba(238,234,251,.85));
@@ -371,6 +407,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       <label class="yearsel"><span>Jahr</span><select id="year-sel"></select></label>
       <button class="btn icon" id="hdr-refresh" title="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg></button>
       <button class="btn icon" id="hdr-eye" title="Beträge verbergen"></button>
+      <button class="btn icon" id="hdr-theme" title="Dunkelmodus"></button>
       <a class="btn icon" id="hdr-logout" title="Abmelden" href="/admin/logout" style="display:none;text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
     </div>
   </header>
@@ -1708,6 +1745,21 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   applyPriv(privOn);
   var hdrE=document.getElementById("hdr-eye");
   if(hdrE) hdrE.addEventListener("click",function(){ privOn=!privOn; try{localStorage.setItem("fsc_priv",privOn?"1":"0");}catch(e){} applyPriv(privOn); });
+
+  // Dunkelmodus
+  var SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  var MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>';
+  function applyTheme(on){
+    if(document.body)document.body.classList.toggle("dark",!!on);
+    var t=document.getElementById("hdr-theme");
+    if(t){ t.innerHTML=on?SUN:MOON; t.classList.toggle("on",!!on); t.title=on?"Hellmodus":"Dunkelmodus"; }
+    try{ if(window.Chart){ Chart.defaults.color=on?"#aab4c8":"#666"; Chart.defaults.borderColor=on?"rgba(255,255,255,.08)":"rgba(0,0,0,.1)"; } }catch(e){}
+    try{ if(typeof drawCharts==="function") drawCharts(); }catch(e){}
+  }
+  var themeOn=false; try{ themeOn=localStorage.getItem("fsc_theme")==="dark"; }catch(e){}
+  applyTheme(themeOn);
+  var hdrT=document.getElementById("hdr-theme");
+  if(hdrT) hdrT.addEventListener("click",function(){ themeOn=!themeOn; try{localStorage.setItem("fsc_theme",themeOn?"dark":"light");}catch(e){} applyTheme(themeOn); });
 
   // init
   renderAll();
