@@ -121,7 +121,7 @@ function parseCookies(req) {
 function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
 
 async function getJSON(url) {
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 20000);
   try { const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) return null; return await r.json(); }
   catch (e) { return null; } finally { clearTimeout(t); }
 }
