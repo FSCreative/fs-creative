@@ -223,6 +223,18 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 .qhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .qtitle{font-size:15px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .qsum{font-size:12.5px;font-weight:600;color:var(--dim)}
+/* blitzdings termine */
+.bd-card{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;margin-bottom:10px}
+.bd-date{flex:none;width:60px;text-align:center;background:#fbf1dc;color:var(--gold);border-radius:12px;padding:8px 4px}
+.bd-date .d{font-size:20px;font-weight:800;line-height:1.05}
+.bd-date .m{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.bd-main{flex:1;min-width:0}
+.bd-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bd-meta{font-size:12.5px;color:var(--dim);margin-top:4px;display:flex;flex-wrap:wrap;gap:3px 14px}
+.bd-meta .ic{width:14px;height:14px;vertical-align:-2px;margin-right:3px}
+.bd-extras{font-size:12px;color:var(--faint);margin-top:6px}
+.bd-right{flex:none;text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.bd-amount{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
 
 /* modal */
 .overlay{position:fixed;inset:0;background:rgba(12,18,32,.5);backdrop-filter:blur(3px);display:none;place-items:center;padding:20px;z-index:50}
@@ -353,20 +365,19 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 
     <!-- BLITZDINGS -->
     <section class="panel" id="p-blitzdings">
+      <div class="mactions" style="margin:2px 0 12px;align-items:center">
+        <a class="btn sm primary" href="https://blitzdings.co.at" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> Blitzdings öffnen</a>
+        <span class="hint" id="bd-stats-updated"></span>
+      </div>
       <div class="grid kpis">
-        <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/><path d="M12 7v5l3 2"/></svg></div><div class="lbl">Vergangene Buchungen</div></div><div class="val" id="bd-cnt-past">—</div></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div><div class="lbl">Anstehende Buchungen</div></div><div class="val" id="bd-cnt-up">—</div></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Umsatz vergangen</div></div><div class="val green" id="bd-past">—</div><div class="sub">realisiert</div></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Umsatz anstehend</div></div><div class="val gold" id="bd-up">—</div><div class="sub">Pipeline</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bezahlte Umsätze</div></div><div class="val green" id="bd-paid">—</div><div class="sub" id="bd-paid-cnt">—</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg></div><div class="lbl">Offene Umsätze</div></div><div class="val amber" id="bd-open">—</div><div class="sub" id="bd-open-cnt">—</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div><div class="lbl">Anstehende Termine</div></div><div class="val" id="bd-upcount">—</div><div class="sub">ab heute</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></div><div class="lbl">Diesen Monat bezahlt</div></div><div class="val" id="bd-month">—</div><div class="sub">seit Monatsanfang</div></div>
       </div>
-      <div class="sec-title"><h2>Buchungen</h2><button class="btn sm" data-add="blitzdings.bookings">+ Buchung</button></div>
-      <div class="card tbl-card">
-        <table>
-          <thead><tr><th style="width:140px">Datum</th><th>Event / Kunde</th><th class="num">Betrag €</th><th style="width:140px">Status</th><th style="width:44px"></th></tr></thead>
-          <tbody id="tb-blitzdings"></tbody>
-        </table>
-      </div>
-      <div class="card hoverable" style="margin-top:14px"><div class="sec-title" style="margin:0 0 8px"><h2>Umsatz nach Monat</h2><span class="hint">nach Datum gruppiert</span></div><div class="chart-box"><canvas id="c-blitzdings"></canvas></div></div>
+      <div class="sec-title"><h2>Nächste Termine</h2><span class="hint">Ort · Paket · Details — „Bezahlt“ stellst du in Blitzdings um</span></div>
+      <div id="bd-upcoming"></div>
+      <div class="card hoverable" style="margin-top:14px;max-width:440px"><div class="sec-title" style="margin:0 0 8px"><h2>Bezahlt vs. offen</h2></div><div class="chart-box sm"><canvas id="c-blitzdings"></canvas></div></div>
     </section>
 
     <!-- VALUERO -->
@@ -440,12 +451,15 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   // Kantineur-Kennzahlen aus /api/stats (bei jedem Abruf hier neu eingebettet).
   var KANTINEUR_STATS={fetchedAt:"2026-09-22T09:52:30.272Z",revenueGrossCents:0,revenueNetCents:0,thisMonthGrossCents:0,mrrCents:0,subscribers:{active:1,paying:0,sponsored:1,byPlan:{KANTINEUR:{active:0,paying:0,sponsored:0,mrrCents:0},MAGAZINEUR:{active:1,paying:0,sponsored:1,mrrCents:0}}},canteens:{total:1,byStatus:{ACTIVE:1}}};
 
+  // Blitzdings-Kennzahlen aus /api/stats (bei jedem Abruf hier neu eingebettet).
+  var BLITZDINGS_STATS={fetchedAt:"2026-09-22T12:15:36.017Z",revenue:{paidCents:742678,openCents:489099,refundedCents:0,thisMonthPaidCents:83390},bookings:{total:36,paidCount:26,openCount:10,upcomingCount:14,byStatus:{CONFIRMED:36},byPayment:{PAID:26,UNPAID:10}},upcoming:[]};
+
   var DEFAULTS={
     meta:{updatedAt:null},
     mail:{account:"simon@fs-creative.at",lastFetch:null,folders:[],messages:[],pending:[]},
     kochdu:{downloads:0,bestellungen:0,restaurants:[{name:"Beispiel-Restaurant",bestellungen:0,bar:0,online:0,bezahlt:false}]},
     kantineur:{downloads:0,preisKantineur:9,preisMagazineur:19,aboKantineur:0,aboMagazineur:0,eingenommenGesamt:0},
-    blitzdings:{bookings:[{date:"",title:"Beispiel-Event",betrag:0,status:"anstehend"}]},
+    blitzdings:{bookings:[],statsAt:null,paidCents:0,openCents:0,refundedCents:0,thisMonthPaidCents:0,upcomingCount:0,paidCount:0,openCount:0,upcoming:[]},
     valuero:{fees:[{date:"2026-01-15",client:"Antonhaus — Beispielbuchung",betrag:0,bezahlt:false},{date:"2026-01-20",client:"Schoki (Alpinappart Wachter)",betrag:0,bezahlt:false}]}
   };
   function clone(o){ return JSON.parse(JSON.stringify(o)); }
@@ -490,6 +504,15 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       s.kantineur.canteensByStatus=KANTINEUR_STATS.canteens.byStatus||{};
       s.kantineur.statsAt=KANTINEUR_STATS.fetchedAt;
     }
+    // Blitzdings-Stats übernehmen (API ist Quelle der Wahrheit)
+    if(!s.blitzdings) s.blitzdings={};
+    if(BLITZDINGS_STATS.fetchedAt && (!s.blitzdings.statsAt || BLITZDINGS_STATS.fetchedAt>s.blitzdings.statsAt)){
+      var br=BLITZDINGS_STATS.revenue||{}, bb=BLITZDINGS_STATS.bookings||{};
+      s.blitzdings.paidCents=br.paidCents||0; s.blitzdings.openCents=br.openCents||0; s.blitzdings.refundedCents=br.refundedCents||0; s.blitzdings.thisMonthPaidCents=br.thisMonthPaidCents||0;
+      s.blitzdings.paidCount=bb.paidCount||0; s.blitzdings.openCount=bb.openCount||0; s.blitzdings.upcomingCount=bb.upcomingCount||0;
+      s.blitzdings.upcoming=BLITZDINGS_STATS.upcoming||[];
+      s.blitzdings.statsAt=BLITZDINGS_STATS.fetchedAt;
+    }
     return s;
   }
   var state=load();
@@ -507,13 +530,14 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var ka=state.kantineur;
     var umK=(+ka.aboKantineur||0)*(+ka.preisKantineur||0), umM=(+ka.aboMagazineur||0)*(+ka.preisMagazineur||0);
     var mrrEff=(ka.statsAt&&ka.mrrCents!=null)?((+ka.mrrCents||0)/100):(umK+umM);
-    var b=(state.blitzdings.bookings||[]); var past=0,up=0,cntP=0,cntU=0;
-    b.forEach(function(x){var v=+x.betrag||0;if(x.status==="vergangen"){past+=v;cntP++;}else{up+=v;cntU++;}});
+    var bl=state.blitzdings||{}; var past,up,cntP,cntU,bmonth=0,bupcount=0;
+    if(bl.statsAt){ past=(bl.paidCents||0)/100; up=(bl.openCents||0)/100; cntP=bl.paidCount||0; cntU=bl.openCount||0; bmonth=(bl.thisMonthPaidCents||0)/100; bupcount=bl.upcomingCount||0; }
+    else { var b=(bl.bookings||[]); past=0;up=0;cntP=0;cntU=0; b.forEach(function(x){var v=+x.betrag||0;if(x.status==="vergangen"){past+=v;cntP++;}else{up+=v;cntU++;}}); bupcount=cntU; }
     var v=(state.valuero.fees||[]); var vOffen=0,vPaid=0,vTot=0;
     v.forEach(function(x){var g=+x.betrag||0;vTot+=g;if(x.bezahlt)vPaid+=g;else vOffen+=g;});
     return {kochdu:{bar:bar,online:online,sum:bar+online,best:best,barOffen:barOffen,barPaid:barPaid},
       kantineur:{umK:umK,umM:umM,mrr:mrrEff,listMrr:umK+umM,aboTotal:(+ka.aboKantineur||0)+(+ka.aboMagazineur||0)},
-      blitzdings:{past:past,up:up,cntP:cntP,cntU:cntU},
+      blitzdings:{past:past,up:up,cntP:cntP,cntU:cntU,month:bmonth,upcount:bupcount},
       valuero:{offen:vOffen,paid:vPaid,total:vTot}};
   }
 
@@ -547,8 +571,8 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     });
   }
   function tblBlitz(){
-    var tb=document.getElementById("tb-blitzdings"); tb.innerHTML="";
-    if(!state.blitzdings.bookings.length){ tb.innerHTML='<tr><td colspan="5" class="empty">Noch keine Buchungen.</td></tr>'; return; }
+    var tb=document.getElementById("tb-blitzdings"); if(!tb)return; tb.innerHTML="";
+    if(!(state.blitzdings.bookings||[]).length){ tb.innerHTML='<tr><td colspan="5" class="empty">Noch keine Buchungen.</td></tr>'; return; }
     state.blitzdings.bookings.forEach(function(x,i){
       var tr=document.createElement("tr");
       tr.innerHTML=
@@ -753,6 +777,31 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var l=document.getElementById(lblId); if(l) l.textContent="Bezahlt-Quote "+pct+"% · "+eur(paid)+" von "+eur(total);
   }
 
+  function renderBlitzUpcoming(){
+    var host=document.getElementById("bd-upcoming"); if(!host)return;
+    var ups=state.blitzdings.upcoming||[];
+    if(!ups.length){ host.innerHTML='<div class="card"><div class="empty">'+(state.blitzdings.statsAt?"Keine anstehenden Termine.":"Noch keine Live-Daten — verbindet gerade.")+'</div></div>'; return; }
+    host.innerHTML=ups.map(function(b){
+      var d=b.eventDate?new Date(b.eventDate):null;
+      var day=d?d.getDate():"–"; var mon=d?d.toLocaleDateString("de-AT",{month:"short"}):"";
+      var range=(b.eventEndDate&&b.eventEndDate!==b.eventDate)?(" – "+new Date(b.eventEndDate).toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"})):"";
+      var pay=b.paymentStatus==="PAID"?'<span class="pill green">✓ Bezahlt</span>':(b.paymentStatus==="REFUNDED"?'<span class="pill grey">Erstattet</span>':'<span class="pill amber">● Offen</span>');
+      var extras=(b.extras&&b.extras.length)?('<div class="bd-extras">+ '+b.extras.map(function(e){return esc(e.name);}).join(", ")+'</div>'):'';
+      return '<div class="card bd-card">'+
+        '<div class="bd-date"><div class="d">'+day+'</div><div class="m">'+esc(mon)+'</div></div>'+
+        '<div class="bd-main">'+
+          '<div class="bd-title">'+esc(b.package||"Buchung")+(b.reference?' <span class="chip">'+esc(b.reference)+'</span>':'')+'</div>'+
+          '<div class="bd-meta">'+
+            '<span>'+esc(b.customerName||"—")+'</span>'+
+            (b.location?'<span>📍 '+esc(b.location)+'</span>':'')+
+            (b.customerPhone?'<span>☎ '+esc(b.customerPhone)+'</span>':'')+
+            '<span>'+(d?d.toLocaleDateString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"}):"")+range+'</span>'+
+          '</div>'+extras+
+        '</div>'+
+        '<div class="bd-right"><div class="bd-amount">'+eur((b.totalCents||0)/100)+'</div>'+pay+'</div>'+
+      '</div>';
+    }).join("");
+  }
   function renderKPIs(){
     var c=comp();
     var kochPaid=c.kochdu.barPaid + c.kochdu.online;   // Bar bezahlt + Online (bereits verrechnet)
@@ -794,10 +843,14 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var bs=state.kantineur.canteensByStatus||{}; setTxt("ka-canteens-sub", (bs.ACTIVE||0)+" aktiv · "+(bs.TRIAL||0)+" Testphase");
     setTxt("ka-stats-updated", state.kantineur.statsAt?("Stand: "+new Date(state.kantineur.statsAt).toLocaleString("de-AT")):"");
     // blitzdings
-    setCount("bd-cnt-past", c.blitzdings.cntP);
-    setCount("bd-cnt-up", c.blitzdings.cntU);
-    setMoney("bd-past", c.blitzdings.past);
-    setMoney("bd-up", c.blitzdings.up);
+    setMoney("bd-paid", c.blitzdings.past);
+    setTxt("bd-paid-cnt", c.blitzdings.cntP+" bezahlte Buchungen");
+    setMoney("bd-open", c.blitzdings.up);
+    setTxt("bd-open-cnt", c.blitzdings.cntU+" offen");
+    setCount("bd-upcount", c.blitzdings.upcount);
+    setMoney("bd-month", c.blitzdings.month);
+    setTxt("bd-stats-updated", state.blitzdings.statsAt?("Stand: "+new Date(state.blitzdings.statsAt).toLocaleString("de-AT")):"");
+    renderBlitzUpcoming();
     // valuero
     setMoney("v-offen", c.valuero.offen);
     setMoney("v-paid", c.valuero.paid);
@@ -825,9 +878,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     } else if(tab==="kantineur"){
       mkChart("c-kantineur",{type:"doughnut",data:{labels:["Kantineur","Magazineur"],datasets:[{data:[+state.kantineur.aboKantineur||0,+state.kantineur.aboMagazineur||0],backgroundColor:[C.teal,C.violet],borderWidth:0}]},options:baseOpts({cutout:"62%"})});
     } else if(tab==="blitzdings"){
-      var byMonth={}; (state.blitzdings.bookings||[]).forEach(function(x){var key=(x.date&&x.date.length>=7)?x.date.slice(0,7):"o. Datum"; byMonth[key]=(byMonth[key]||0)+(+x.betrag||0);});
-      var keys=Object.keys(byMonth).sort();
-      mkChart("c-blitzdings",{type:"bar",data:{labels:keys,datasets:[{label:"Umsatz",data:keys.map(function(k){return byMonth[k];}),backgroundColor:C.gold,borderRadius:8,maxBarThickness:48}]},options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return eur(x.raw);}}}},scales:{y:{ticks:{callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},x:{grid:{display:false}}}})});
+      mkChart("c-blitzdings",{type:"doughnut",data:{labels:["Bezahlt","Offen"],datasets:[{data:[c.blitzdings.past,c.blitzdings.up],backgroundColor:[C.green,C.amber],borderWidth:0}]},options:baseOpts({cutout:"64%",plugins:{tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}})});
     } else if(tab==="valuero"){
       mkChart("c-valuero",{type:"doughnut",data:{labels:["Bezahlt","Offen"],datasets:[{data:[c.valuero.paid,c.valuero.offen],backgroundColor:[C.green,C.amber],borderWidth:0}]},options:baseOpts({cutout:"64%",plugins:{tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}})});
     }
@@ -944,6 +995,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       var sig="";
       if(d.mail&&Array.isArray(d.mail.messages)) sig=d.mail.messages.length+":"+d.mail.messages.map(function(m){return m.id+(m.read?"1":"0")+(m.starred?"1":"0");}).join(",");
       if(d.kantineur){ var kc=d.kantineur; sig+="|K"+(kc.mrrCents||0)+"-"+(kc.revenueGrossCents||0)+"-"+((kc.canteens&&kc.canteens.total)||0)+"-"+((kc.subscribers&&kc.subscribers.active)||0); }
+      if(d.blitzdings){ var bz0=d.blitzdings; sig+="|B"+((bz0.revenue&&bz0.revenue.paidCents)||0)+"-"+((bz0.revenue&&bz0.revenue.openCents)||0)+"-"+((bz0.upcoming&&bz0.upcoming.length)||0); }
       if(sig && sig===window.__fsdSig) return false;
       window.__fsdSig=sig;
       if(d.kantineur){ var s=d.kantineur; var sub=s.subscribers||{byPlan:{}}; var bp=sub.byPlan||{}; var planN=function(x){return (x&&typeof x==="object")?(x.active||0):(+x||0);};
@@ -951,6 +1003,10 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         state.kantineur.aboActive=sub.active||0; state.kantineur.aboPaying=sub.paying||0; state.kantineur.aboSponsored=sub.sponsored||0;
         state.kantineur.mrrCents=s.mrrCents||0; state.kantineur.eingenommenGesamt=(s.revenueGrossCents||0)/100; state.kantineur.thisMonthGross=(s.thisMonthGrossCents||0)/100;
         state.kantineur.canteensTotal=(s.canteens&&s.canteens.total)||0; state.kantineur.canteensByStatus=(s.canteens&&s.canteens.byStatus)||{}; state.kantineur.statsAt=s.fetchedAt; }
+      if(d.blitzdings){ var bz=d.blitzdings, br=bz.revenue||{}, bb=bz.bookings||{};
+        state.blitzdings.paidCents=br.paidCents||0; state.blitzdings.openCents=br.openCents||0; state.blitzdings.refundedCents=br.refundedCents||0; state.blitzdings.thisMonthPaidCents=br.thisMonthPaidCents||0;
+        state.blitzdings.paidCount=bb.paidCount||0; state.blitzdings.openCount=bb.openCount||0; state.blitzdings.upcomingCount=bb.upcomingCount||0;
+        state.blitzdings.upcoming=bz.upcoming||[]; state.blitzdings.statsAt=bz.fetchedAt; }
       if(d.mail&&Array.isArray(d.mail.messages)){
         var prev={}; (state.mail.messages||[]).forEach(function(m){prev[m.id]=m;});
         state.mail.folders=Array.isArray(d.mail.folders)?d.mail.folders:state.mail.folders;

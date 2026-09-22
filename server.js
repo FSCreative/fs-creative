@@ -100,6 +100,7 @@ const ADMIN_PW = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SECRET = process.env.ADMIN_AUTH_SECRET || "bitte-ADMIN_AUTH_SECRET-setzen";
 const KANTINEUR = { url: process.env.KANTINEUR_STATS_URL || "https://kantineur.at/api/stats", token: process.env.KANTINEUR_STATS_TOKEN || "" };
 const MAIL = { url: process.env.MAIL_API_URL || "", token: process.env.MAIL_API_TOKEN || "" };
+const BLITZ = { url: process.env.BLITZDINGS_STATS_URL || "https://blitzdings.co.at/api/stats", token: process.env.BLITZDINGS_STATS_TOKEN || "" };
 let ADMIN_HTML = "";
 try { ADMIN_HTML = fs.readFileSync(path.join(ROOT, "admin-dashboard.html"), "utf8"); } catch (e) { ADMIN_HTML = "<!doctype html><p>admin-dashboard.html fehlt.</p>"; }
 
@@ -145,6 +146,12 @@ async function mailSnapshot() {
   if (!d || d.error) return null;
   return d;
 }
+async function blitzdingsStats() {
+  if (!BLITZ.token) return null;
+  const d = await getJSON(BLITZ.url + "?token=" + encodeURIComponent(BLITZ.token));
+  if (!d || d.error) return null;
+  return d;
+}
 function replaceConst(html, name, obj) {
   const re = new RegExp("var " + name + "=\\{[\\s\\S]*?\\};");
   return html.replace(re, "var " + name + "=" + JSON.stringify(obj) + ";");
@@ -173,8 +180,9 @@ function injectAdmin(html, stampISO) {
 }
 async function renderAdminDashboard() {
   let html = ADMIN_HTML; let stamp = null;
-  const [k, m] = await Promise.all([kantineurStats(), mailSnapshot()]);
+  const [k, m, b] = await Promise.all([kantineurStats(), mailSnapshot(), blitzdingsStats()]);
   if (k) { html = replaceConst(html, "KANTINEUR_STATS", k); stamp = k.fetchedAt; }
+  if (b) { html = replaceConst(html, "BLITZDINGS_STATS", b); stamp = b.fetchedAt || stamp; }
   if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
   return injectAdmin(html, stamp);
 }
@@ -222,8 +230,8 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 200, html, TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
   if (p === "/admin/api/all") {
-    const [k, m] = await Promise.all([kantineurStats(), mailSnapshot()]);
-    return send(res, 200, JSON.stringify({ kantineur: k, mail: m }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const [k, m, b] = await Promise.all([kantineurStats(), mailSnapshot(), blitzdingsStats()]);
+    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/mail-action" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
