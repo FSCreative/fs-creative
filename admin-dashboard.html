@@ -293,6 +293,21 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 .cal-legend span{display:inline-flex;align-items:center;gap:6px}
 .cal-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
 @media(max-width:640px){ .cal-cell{min-height:64px} .cev{font-size:10px} }
+.cal-cell{cursor:pointer}
+.cev[data-evtid]{cursor:pointer}
+.cev .cev-t{opacity:.7;font-weight:700;margin-right:3px}
+
+/* event editor */
+.evform{display:flex;flex-direction:column;gap:11px;margin-bottom:6px}
+.evrow{display:flex;flex-direction:column;gap:5px}
+.evrow>span{font-size:12px;font-weight:700;color:var(--dim)}
+.evrow>span em{font-weight:500;color:var(--faint);font-style:normal}
+.evrow2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.sparte-pick{display:flex;gap:7px;flex-wrap:wrap}
+.sparte-opt{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--dim);transition:border-color .15s,background .15s}
+.sparte-opt i{width:11px;height:11px;border-radius:50%;flex:none}
+.sparte-opt.sel{color:var(--ink);border-color:currentColor}
+.sparte-opt.sel[data-k]{box-shadow:0 0 0 3px rgba(47,107,255,.08)}
 
 @media(max-width:640px){ .split{grid-template-columns:1fr} .kpi .val{font-size:24px} .hero .val{font-size:31px} .tab span.t{display:none} .tab{min-width:0} }
 </style>
@@ -538,6 +553,28 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       <button class="btn" id="c-copy">Text kopieren</button>
       <button class="btn" id="c-web">Webmail öffnen</button>
       <button class="btn primary" id="c-send">Senden</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="evoverlay">
+  <div class="modal" style="max-width:460px">
+    <h3 id="ev-title">Neuer Termin</h3>
+    <div class="evform">
+      <label class="evrow"><span>Titel</span><input class="cell" id="ev-t" placeholder="z. B. Kundentermin Fotobox"></label>
+      <div class="evrow"><span>Sparte</span><div class="sparte-pick" id="ev-sparte"></div></div>
+      <label class="evrow"><span>Datum</span><input class="cell" type="date" id="ev-date"></label>
+      <div class="evrow2">
+        <label class="evrow"><span>Von</span><input class="cell" type="time" id="ev-time"></label>
+        <label class="evrow"><span>Bis <em>(optional)</em></span><input class="cell" type="time" id="ev-end"></label>
+      </div>
+      <label class="evrow"><span>Ort <em>(optional)</em></span><input class="cell" id="ev-loc" placeholder="Adresse / Ort"></label>
+      <label class="evrow"><span>Notizen / Infos</span><textarea class="cell" id="ev-notes" style="min-height:80px;resize:vertical;font-family:inherit" placeholder="Alle wichtigen Infos zum Termin …"></textarea></label>
+    </div>
+    <div class="row">
+      <button class="btn danger" id="ev-del" style="margin-right:auto;display:none">🗑 Löschen</button>
+      <button class="btn ghost" id="ev-cancel">Abbrechen</button>
+      <button class="btn primary" id="ev-save">Speichern</button>
     </div>
   </div>
 </div>
@@ -837,11 +874,11 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var host=document.getElementById("ov-upcoming"); if(!host)return;
     var today=new Date(); today.setHours(0,0,0,0);
     var items=[];
-    (state.blitzdings.upcoming||[]).forEach(function(b){ if(!b.eventDate)return; var d=new Date(b.eventDate+"T00:00:00"); if(isNaN(d)||d<today)return;
-      items.push({date:d,ds:b.eventDate,title:b.package||"Buchung",meta:[b.customerName,b.location].filter(Boolean).join(" · "),kind:"bd",amount:(b.totalCents||0)/100,pay:b.paymentStatus}); });
-    (state.calendar.events||[]).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return;
-      items.push({date:d,ds:ev.date,title:ev.title||"Termin",meta:ev.source==="outlook"?"Outlook":"Termin",kind:"evt"}); });
-    items.sort(function(a,b){return a.date-b.date;});
+    (state.blitzdings.upcoming||[]).forEach(function(b){ if(!b.eventDate)return; var d=new Date(b.eventDate+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte("blitzdings");
+      items.push({date:d,ds:b.eventDate,title:b.package||"Buchung",meta:[b.customerName,b.location].filter(Boolean).join(" · "),kind:"bd",amount:(b.totalCents||0)/100,pay:b.paymentStatus,color:s.color,bg:s.bg,spn:s.name}); });
+    (state.calendar.events||[]).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte(ev.sparte);
+      items.push({date:d,ds:ev.date,title:ev.title||"Termin",time:ev.time||"",meta:[ev.location,ev.notes].filter(Boolean).join(" · "),kind:"evt",color:s.color,bg:s.bg,spn:s.name}); });
+    items.sort(function(a,b){return (a.date-b.date)|| ((a.time||"99")<(b.time||"99")?-1:1);});
     items=items.slice(0,6);
     if(!items.length){ host.innerHTML='<div class="mempty" style="padding:22px">Keine anstehenden Termine.</div>'; return; }
     host.innerHTML=items.map(function(x){
@@ -849,12 +886,13 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       var wd=x.date.toLocaleDateString("de-AT",{weekday:"short"});
       var pay=x.kind==="bd"?(x.pay==="PAID"?'<span class="pill green">✓ Bezahlt</span>':'<span class="pill amber">● Offen</span>'):'';
       var amt=x.amount?('<div class="bd-amount" style="font-size:14px">'+eur(x.amount)+'</div>'):'';
-      var dcls=x.kind==="bd"?"bd-date":"bd-date";
-      var dstyle=x.kind==="evt"?' style="background:#f0eaff;color:#6b3ff2"':'';
+      var dstyle=' style="background:'+(x.bg||"#fbf1dc")+';color:'+(x.color||"#9a6400")+'"';
+      var when=esc(wd)+', '+x.date.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+(x.time?(' · '+esc(x.time)+' Uhr'):'');
+      var spn=x.spn?('<span class="chip" style="background:'+x.bg+';color:'+x.color+';border-color:transparent;font-size:11px">'+esc(x.spn)+'</span>'):'';
       return '<div class="bd-card" style="margin-bottom:8px;padding:11px 13px">'+
-        '<div class="'+dcls+'"'+dstyle+'><div class="d">'+day+'</div><div class="m">'+esc(mon)+'</div></div>'+
-        '<div class="bd-main"><div class="bd-title" style="font-size:14px">'+esc(x.title)+'</div>'+
-          '<div class="bd-meta"><span>'+esc(wd)+', '+x.date.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+'</span>'+(x.meta?'<span>'+esc(x.meta)+'</span>':'')+'</div></div>'+
+        '<div class="bd-date"'+dstyle+'><div class="d">'+day+'</div><div class="m">'+esc(mon)+'</div></div>'+
+        '<div class="bd-main"><div class="bd-title" style="font-size:14px">'+esc(x.title)+' '+spn+'</div>'+
+          '<div class="bd-meta"><span>'+when+'</span>'+(x.meta?'<span>'+esc(x.meta)+'</span>':'')+'</div></div>'+
         '<div class="bd-right">'+amt+pay+'</div></div>';
     }).join("");
   }
@@ -1122,14 +1160,24 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   /* ---------------- KALENDER ---------------- */
   var calCur=new Date(); calCur.setDate(1);
   var DOW=["Mo","Di","Mi","Do","Fr","Sa","So"];
+  // Unternehmenssparten + Farben (Blau = FS Creative allgemein)
+  var SPARTEN=[
+    {k:"fsc",name:"FS Creative",color:"#2f6bff",bg:"#e8f0ff"},
+    {k:"kochdu",name:"kochdu",color:"#8b5cf6",bg:"#f0eaff"},
+    {k:"kantineur",name:"Kantineur",color:"#3a8acd",bg:"#e6f0f9"},
+    {k:"blitzdings",name:"Blitzdings",color:"#e0930a",bg:"#fbf1dc"},
+    {k:"valuero",name:"VALUERO",color:"#12b76a",bg:"#e3f7ee"}
+  ];
+  function sparte(k){ for(var i=0;i<SPARTEN.length;i++){ if(SPARTEN[i].k===k)return SPARTEN[i]; } return SPARTEN[0]; }
   function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
   function calEvents(){
-    var ev={};  // "YYYY-MM-DD" -> [{cls,label}]
-    function push(date,cls,label){ if(!date)return; var k=String(date).slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(k))return; (ev[k]=ev[k]||[]).push({cls:cls,label:label}); }
-    (state.blitzdings.upcoming||[]).forEach(function(b){ push(b.eventDate,"bd",(b.package||"Termin")+(b.customerName?" · "+b.customerName:"")); });
-    (state.calendar.events||[]).forEach(function(e){ push(e.date,"evt",e.title||"Termin"); });
-    (state.todos||[]).forEach(function(t){ if(t.due&&!t.done) push(t.due,"todo","☑ "+(t.text||"")); });
-    (state.valuero.fees||[]).forEach(function(f){ if(f.date&&!f.bezahlt) push(f.date,"val","€ "+(f.client||"Gebühr")); });
+    var ev={};  // "YYYY-MM-DD" -> [{cls,label,id,editable,time,color,bg}]
+    function push(o){ if(!o.date)return; var k=String(o.date).slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(k))return; (ev[k]=ev[k]||[]).push(o); }
+    (state.blitzdings.upcoming||[]).forEach(function(b){ var s=sparte("blitzdings"); push({date:b.eventDate,cls:"bd",label:(b.package||"Termin")+(b.customerName?" · "+b.customerName:""),color:s.color,bg:s.bg}); });
+    (state.calendar.events||[]).forEach(function(e){ var s=sparte(e.sparte); push({date:e.date,cls:"evt",label:e.title||"Termin",id:e.id,editable:true,time:e.time||"",color:s.color,bg:s.bg}); });
+    (state.todos||[]).forEach(function(t){ if(t.due&&!t.done) push({date:t.due,cls:"todo",label:"☑ "+(t.text||"")}); });
+    (state.valuero.fees||[]).forEach(function(f){ if(f.date&&!f.bezahlt){ var s=sparte("valuero"); push({date:f.date,cls:"val",label:"€ "+(f.client||"Gebühr"),color:s.color,bg:s.bg}); } });
+    Object.keys(ev).forEach(function(k){ ev[k].sort(function(a,b){ return (a.time||"99")<(b.time||"99")?-1:1; }); });
     return ev;
   }
   function renderCalendar(){
@@ -1145,16 +1193,53 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     for(var i=0;i<42;i++){
       var d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i);
       var k=ymd(d); var out=d.getMonth()!==mo; var list=ev[k]||[];
-      var evh=list.slice(0,3).map(function(e){return '<div class="cev '+e.cls+'" title="'+esc(e.label)+'">'+esc(e.label)+'</div>';}).join("");
+      var evh=list.slice(0,3).map(function(e){
+        var st=e.color?(' style="background:'+e.bg+';color:'+e.color+'"'):'';
+        var tt=(e.time?e.time+' ':'')+e.label;
+        return '<div class="cev '+e.cls+'"'+(e.editable?' data-evtid="'+esc(e.id)+'"':'')+st+' title="'+esc(tt)+'">'+(e.time?'<span class="cev-t">'+esc(e.time)+'</span>':'')+esc(e.label)+'</div>';
+      }).join("");
       if(list.length>3) evh+='<div class="cev more">+'+(list.length-3)+' mehr</div>';
-      cells+='<div class="cal-cell'+(out?" out":"")+(k===todayK?" today":"")+'"><div class="dn">'+d.getDate()+'</div>'+evh+'</div>';
+      cells+='<div class="cal-cell'+(out?" out":"")+(k===todayK?" today":"")+'" data-calday="'+k+'"><div class="dn">'+d.getDate()+'</div>'+evh+'</div>';
     }
     grid.innerHTML=cells;
     var note=document.getElementById("cal-outlook-note");
     if(note) note.textContent=state.calendar.outlookAt
       ? ("Outlook-Termine zuletzt synchronisiert: "+new Date(state.calendar.outlookAt).toLocaleString("de-AT")+" · "+(state.calendar.events||[]).length+" Termine")
-      : "Tipp: Blitzdings-Termine, VALUERO-Gebühren und fällige To-Dos erscheinen automatisch. Eigene Termine mit „+ Termin“.";
+      : "Tipp: Tag anklicken für neuen Termin. Blitzdings-Termine, VALUERO-Gebühren und fällige To-Dos erscheinen automatisch.";
   }
+  // ---- Termin-Editor (Modal) ----
+  var evEditId=null;
+  function renderSpartePicker(sel){
+    var host=document.getElementById("ev-sparte"); if(!host)return;
+    host.innerHTML=SPARTEN.map(function(s){ return '<span class="sparte-opt'+(s.k===sel?" sel":"")+'" data-k="'+s.k+'" style="'+(s.k===sel?"color:"+s.color+";border-color:"+s.color:"")+'"><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>'; }).join("");
+  }
+  function openEventModal(ev,dateStr){
+    evEditId=ev?ev.id:null;
+    document.getElementById("ev-title").textContent=ev?"Termin bearbeiten":"Neuer Termin";
+    document.getElementById("ev-t").value=ev?(ev.title||""):"";
+    document.getElementById("ev-date").value=ev?(ev.date||""):(dateStr||ymd(new Date()));
+    document.getElementById("ev-time").value=ev?(ev.time||""):"";
+    document.getElementById("ev-end").value=ev?(ev.endTime||""):"";
+    document.getElementById("ev-loc").value=ev?(ev.location||""):"";
+    document.getElementById("ev-notes").value=ev?(ev.notes||""):"";
+    renderSpartePicker(ev?(ev.sparte||"fsc"):"fsc");
+    document.getElementById("ev-del").style.display=ev?"":"none";
+    document.getElementById("evoverlay").classList.add("show");
+    setTimeout(function(){ var t=document.getElementById("ev-t"); if(t)t.focus(); },30);
+  }
+  function closeEventModal(){ document.getElementById("evoverlay").classList.remove("show"); evEditId=null; }
+  function selectedSparte(){ var el=document.querySelector("#ev-sparte .sparte-opt.sel"); return el?el.getAttribute("data-k"):"fsc"; }
+  function saveEvent(){
+    var title=(document.getElementById("ev-t").value||"").trim();
+    var date=document.getElementById("ev-date").value;
+    if(!title){ alert("Bitte einen Titel eingeben."); return; }
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ alert("Bitte ein gültiges Datum wählen."); return; }
+    var obj={title:title,date:date,time:document.getElementById("ev-time").value||"",endTime:document.getElementById("ev-end").value||"",location:(document.getElementById("ev-loc").value||"").trim(),notes:(document.getElementById("ev-notes").value||"").trim(),sparte:selectedSparte(),source:"manual"};
+    if(evEditId){ var ex=(state.calendar.events||[]).filter(function(x){return x.id===evEditId;})[0]; if(ex)Object.assign(ex,obj); }
+    else { obj.id=uid(); state.calendar.events.push(obj); }
+    save(); closeEventModal(); renderCalendar(); renderOverviewUpcoming();
+  }
+  function deleteEvent(){ if(!evEditId)return; state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evEditId;}); save(); closeEventModal(); renderCalendar(); renderOverviewUpcoming(); }
 
   // ---- render ----
   var activeTab="overview";
@@ -1421,11 +1506,23 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   var cn=document.getElementById("cal-next"); if(cn) cn.addEventListener("click",function(){ calCur.setMonth(calCur.getMonth()+1); renderCalendar(); });
   var ct=document.getElementById("cal-today"); if(ct) ct.addEventListener("click",function(){ calCur=new Date(); calCur.setDate(1); renderCalendar(); });
   var ca=document.getElementById("cal-add"); if(ca) ca.addEventListener("click",function(){
-    var t=prompt("Titel des Termins:"); if(!t)return;
-    var def=ymd(new Date(calCur.getFullYear(),calCur.getMonth(),Math.min(new Date().getDate(),28)));
-    var d=prompt("Datum (JJJJ-MM-TT):",def); if(!d||!/^\d{4}-\d{2}-\d{2}$/.test(d)){ if(d)alert("Ungültiges Datum."); return; }
-    state.calendar.events.push({id:uid(),title:t,date:d,source:"manual"}); save(); renderCalendar();
+    var now=new Date(); var day=(calCur.getMonth()===now.getMonth()&&calCur.getFullYear()===now.getFullYear())?now.getDate():1;
+    openEventModal(null, ymd(new Date(calCur.getFullYear(),calCur.getMonth(),day)));
   });
+  // Kalender: Tag anklicken = neuer Termin; Termin anklicken = bearbeiten
+  var calGrid=document.getElementById("cal-grid");
+  if(calGrid) calGrid.addEventListener("click",function(e){
+    var chip=e.target.closest("[data-evtid]");
+    if(chip){ var id=chip.getAttribute("data-evtid"); var ev=(state.calendar.events||[]).filter(function(x){return x.id===id;})[0]; if(ev)openEventModal(ev); return; }
+    var cell=e.target.closest(".cal-cell"); if(cell&&cell.getAttribute("data-calday")) openEventModal(null, cell.getAttribute("data-calday"));
+  });
+  // Sparte-Auswahl im Termin-Editor
+  var spHost=document.getElementById("ev-sparte");
+  if(spHost) spHost.addEventListener("click",function(e){ var o=e.target.closest(".sparte-opt"); if(!o)return; renderSpartePicker(o.getAttribute("data-k")); });
+  var evSave=document.getElementById("ev-save"); if(evSave) evSave.addEventListener("click",saveEvent);
+  var evCancel=document.getElementById("ev-cancel"); if(evCancel) evCancel.addEventListener("click",closeEventModal);
+  var evDel=document.getElementById("ev-del"); if(evDel) evDel.addEventListener("click",deleteEvent);
+  var evOv=document.getElementById("evoverlay"); if(evOv) evOv.addEventListener("click",function(e){ if(e.target===this)closeEventModal(); });
 
   // Jahresauswahl befüllen (Standard = aktuelles Jahr; gilt für alle Zahlen außer Postfach)
   (function(){ var sel=document.getElementById("year-sel"); if(!sel)return; var ny=new Date().getFullYear(); var maxY=Math.max(ny,2026); var h="";
