@@ -492,11 +492,10 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bereits bezahlt</div></div><div class="val green" id="v-paid">—</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Gebühren gesamt</div></div><div class="val" id="v-total">—</div></div>
       </div>
-      <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="v-prog-lbl">Bezahlt-Quote —</span><div class="bar"><div class="fill" id="v-prog-fill"></div></div></div></div>
-      <div class="sec-title"><h2>Buchungsgebühren nach Quartal</h2><button class="btn sm primary" data-add="valuero.fees">+ Gebühr</button></div>
-      <p class="hint" style="margin:0 2px 12px;font-size:12.5px;color:var(--faint)">Jede Buchung erzeugt eine Gebühr. Sammle sie über das Quartal und klicke dann „Quartal abrechnen“, um alle auf einmal als bezahlt zu markieren.</p>
-      <div id="valuero-quarters"></div>
-      <div class="card hoverable" style="margin-top:14px;max-width:440px"><div class="sec-title" style="margin:0 0 8px"><h2>Bezahlt vs. offen</h2></div><div class="chart-box sm"><canvas id="c-valuero"></canvas></div></div>
+      <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="v-prog-lbl">Verrechnet-Quote —</span><div class="bar"><div class="fill" id="v-prog-fill"></div></div></div></div>
+      <div class="sec-title"><h2>Gebühren je Objekt</h2><span class="hint">Zeile anklicken für Monatsaufstellung · „Verrechnet" stellst du selbst</span></div>
+      <div id="valuero-objects"></div>
+      <div class="card hoverable" style="margin-top:14px;max-width:440px"><div class="sec-title" style="margin:0 0 8px"><h2>Verrechnet vs. offen</h2></div><div class="chart-box sm"><canvas id="c-valuero"></canvas></div></div>
     </section>
 
     <!-- POSTFACH -->
@@ -650,13 +649,16 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   // kochdu-Kennzahlen aus /api/stats (pro Restaurant Bar-/Online-Gebühren; bei jedem Abruf neu eingebettet).
   var KOCHDU_STATS={fetchedAt:null,year:null,restaurants:[],totals:{barProvisionCents:0,barSettledCents:0,barOpenCents:0,onlineProvisionCents:0,barOrders:0,onlineOrders:0}};
 
+  // VALUERO-Gebühren je Objekt (Antonhaus, Alpinappart); bei jedem Abruf neu eingebettet.
+  var VALUERO_STATS={fetchedAt:null,objects:[]};
+
   var DEFAULTS={
     meta:{updatedAt:null},
     mail:{account:"simon@fs-creative.at",lastFetch:null,folders:[],messages:[],pending:[]},
     kochdu:{downloads:0,bestellungen:0,restaurants:[{name:"Beispiel-Restaurant",bestellungen:0,bar:0,online:0,bezahlt:false}],statsAt:null,live:[],totals:null},
     kantineur:{downloads:0,preisKantineur:9,preisMagazineur:19,aboKantineur:0,aboMagazineur:0,eingenommenGesamt:0},
     blitzdings:{bookings:[],statsAt:null,paidCents:0,openCents:0,refundedCents:0,thisMonthPaidCents:0,upcomingCount:0,paidCount:0,openCount:0,upcoming:[]},
-    valuero:{fees:[{date:"2026-01-15",client:"Antonhaus — Beispielbuchung",betrag:0,bezahlt:false},{date:"2026-01-20",client:"Schoki (Alpinappart Wachter)",betrag:0,bezahlt:false}]},
+    valuero:{fees:[],statsAt:null,live:[],settled:{antonhaus:[{amountCents:34754,at:"2026-07-30T00:00:00.000Z"}],alpinappart:[]}},
     todos:[],
     calendar:{events:[],outlookAt:null}
   };
@@ -719,6 +721,13 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       s.kochdu.statsAt=KOCHDU_STATS.fetchedAt;
     }
     if(!Array.isArray(s.kochdu.live)) s.kochdu.live=[];
+    // VALUERO-Stats übernehmen (Gebühren je Objekt aus den Property-APIs)
+    if(!s.valuero) s.valuero={};
+    if(!s.valuero.settled||typeof s.valuero.settled!=="object") s.valuero.settled={antonhaus:[{amountCents:34754,at:"2026-07-30T00:00:00.000Z"}],alpinappart:[]};
+    if(!Array.isArray(s.valuero.settled.antonhaus)) s.valuero.settled.antonhaus=[];
+    if(!Array.isArray(s.valuero.settled.alpinappart)) s.valuero.settled.alpinappart=[];
+    if(VALUERO_STATS.fetchedAt){ s.valuero.live=Array.isArray(VALUERO_STATS.objects)?VALUERO_STATS.objects:[]; s.valuero.statsAt=VALUERO_STATS.fetchedAt; }
+    if(!Array.isArray(s.valuero.live)) s.valuero.live=[];
     if(!Array.isArray(s.todos)) s.todos=[];
     if(!s.calendar||typeof s.calendar!=="object") s.calendar={events:[],outlookAt:null};
     if(!Array.isArray(s.calendar.events)) s.calendar.events=[];
@@ -749,8 +758,11 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var bl=state.blitzdings||{}; var past,up,cntP,cntU,bmonth=0,bupcount=0;
     if(bl.statsAt){ past=(bl.paidCents||0)/100; up=(bl.openCents||0)/100; cntP=bl.paidCount||0; cntU=bl.openCount||0; bmonth=(bl.thisMonthPaidCents||0)/100; bupcount=bl.upcomingCount||0; }
     else { var b=(bl.bookings||[]); past=0;up=0;cntP=0;cntU=0; b.forEach(function(x){var v=+x.betrag||0;if(x.status==="vergangen"){past+=v;cntP++;}else{up+=v;cntU++;}}); bupcount=cntU; }
-    var v=(state.valuero.fees||[]).filter(function(x){return feeYear(x)===curYear();}); var vOffen=0,vPaid=0,vTot=0;
-    v.forEach(function(x){var g=+x.betrag||0;vTot+=g;if(x.bezahlt)vPaid+=g;else vOffen+=g;});
+    var vOffen=0,vPaid=0,vTot=0;
+    (state.valuero.live||[]).forEach(function(o){ vTot+=(+o.provisionCents||0)/100; });
+    var vst=state.valuero.settled||{};
+    ["antonhaus","alpinappart"].forEach(function(k){ (vst[k]||[]).forEach(function(s2){ if(String(s2.at||"").slice(0,4)===String(curYear())) vPaid+=(+s2.amountCents||0)/100; }); });
+    vOffen=Math.max(0,vTot-vPaid);
     return {kochdu:{bar:bar,online:online,sum:bar+online,best:best,barOffen:barOffen,barPaid:barPaid},
       kantineur:{umK:umK,umM:umM,mrr:mrrEff,listMrr:umK+umM,aboTotal:(+ka.aboKantineur||0)+(+ka.aboMagazineur||0)},
       blitzdings:{past:past,up:up,cntP:cntP,cntU:cntU,month:bmonth,upcount:bupcount},
@@ -808,43 +820,38 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       tb.appendChild(tr);
     });
   }
-  function feeQuarter(f){
-    if(f.date&&f.date.length>=7){ var y=+f.date.slice(0,4),mo=+f.date.slice(5,7),q=Math.floor((mo-1)/3)+1; return {key:y+"-Q"+q,label:"Q"+q+" "+y,order:y*10+q}; }
-    return {key:"none",label:"Ohne Datum",order:-1};
+  // ---- VALUERO: Gebühren je Objekt (live) ----
+  var valueroOpen={}; // key -> Monatsaufstellung aufgeklappt?
+  function valSettledCents(key){ var arr=((state.valuero.settled||{})[key])||[]; var c=0; arr.forEach(function(s){ if(String(s.at||"").slice(0,4)===String(curYear())) c+=(+s.amountCents||0); }); return c; }
+  function valLastAt(key){ var arr=((state.valuero.settled||{})[key])||[]; var last=null; arr.forEach(function(s){ if(String(s.at||"").slice(0,4)===String(curYear())){ if(!last||s.at>last) last=s.at; } }); return last; }
+  function renderValueroObjects(){
+    var host=document.getElementById("valuero-objects"); if(!host)return;
+    if(!state.valuero.statsAt){ host.innerHTML='<div class="card"><div class="empty">Verbindet gerade mit Antonhaus & Alpinappart …</div></div>'; return; }
+    var live=(state.valuero.live||[]);
+    if(!live.length){ host.innerHTML='<div class="card"><div class="empty">Keine Gebühren im Zeitraum.</div></div>'; return; }
+    host.innerHTML=live.map(function(o){
+      var provision=(+o.provisionCents||0)/100;
+      var settled=valSettledCents(o.key)/100, open=Math.max(0,provision-settled);
+      var last=valLastAt(o.key);
+      var opened=!!valueroOpen[o.key];
+      var settleBtn = open>0.005
+        ? '<button class="btn sm primary" data-vsettle="'+esc(o.key)+'" data-amt="'+Math.round(open*100)+'">✓ '+eur(open)+' verrechnet</button>'
+        : (settled>0.005?'<button class="btn sm" data-vunsettle="'+esc(o.key)+'">↺ Rückgängig</button>':'<span class="pill grey">—</span>');
+      var months=(o.months||[]).map(function(m){
+        return '<tr><td>'+esc(m.month)+'</td><td class="num">'+(+m.bookings||0)+'</td><td class="num money" style="color:var(--green)">'+eur((+m.provisionCents||0)/100)+'</td></tr>';
+      }).join("");
+      return '<div class="card qcard">'+
+        '<div class="qhead" data-vtoggle="'+esc(o.key)+'" style="cursor:pointer">'+
+          '<div class="qtitle">'+esc(o.name)+' <span class="chip" style="background:#e3f7ee;color:#0a8a4f;border-color:transparent;font-size:11px">'+esc(o.ratesLabel||"")+'</span>'+
+            '<span class="qsum">offen '+eur(open)+' · verrechnet '+eur(settled)+' · gesamt '+eur(provision)+(last?' · letzte '+new Date(last).toLocaleDateString("de-AT"):"")+'</span></div>'+
+          '<div style="display:flex;gap:8px;align-items:center">'+settleBtn+'<span style="color:var(--faint);transition:transform .2s;display:inline-block;transform:rotate('+(opened?"90":"0")+'deg)">›</span></div>'+
+        '</div>'+
+        (opened?('<div class="tbl-card" style="padding:0;margin-top:10px"><table style="min-width:0"><thead><tr><th>Buchungsmonat</th><th class="num">Buchungen</th><th class="num">Gebühr €</th></tr></thead><tbody>'+(months||'<tr><td colspan="3" class="empty">Keine Buchungen im Jahr.</td></tr>')+'</tbody></table></div>'):'')+
+      '</div>';
+    }).join("");
   }
-  function valueroGroups(){
-    var map={};
-    (state.valuero.fees||[]).forEach(function(f,idx){ if(feeYear(f)!==curYear())return; var q=feeQuarter(f); if(!map[q.key])map[q.key]={key:q.key,label:q.label,order:q.order,items:[]}; map[q.key].items.push({f:f,idx:idx}); });
-    return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return b.order-a.order;});
-  }
-  function renderValueroQuarters(){
-    var host=document.getElementById("valuero-quarters"); if(!host)return; host.innerHTML="";
-    if(!(state.valuero.fees||[]).length){ host.innerHTML='<div class="card"><div class="empty">Noch keine Gebühren — mit „+ Gebühr“ anlegen (später per API).</div></div>'; return; }
-    valueroGroups().forEach(function(g){
-      var offen=0,tot=0,allPaid=true;
-      g.items.forEach(function(o){var b=+o.f.betrag||0;tot+=b;if(o.f.bezahlt){}else{offen+=b;allPaid=false;}});
-      var rows=g.items.map(function(o){var i=o.idx,f=o.f;return (
-        '<tr>'+
-        '<td><input class="cell" type="date" data-arr="valuero.fees" data-i="'+i+'" data-f="date" value="'+esc(f.date||"")+'"></td>'+
-        '<td><input class="cell w-name" data-arr="valuero.fees" data-i="'+i+'" data-f="client" value="'+esc(f.client||"")+'"></td>'+
-        '<td class="num"><input class="cell num" type="number" min="0" step="0.01" data-arr="valuero.fees" data-i="'+i+'" data-f="betrag" value="'+(f.betrag||0)+'"></td>'+
-        '<td style="text-align:center">'+toggle("valuero.fees",i,f.bezahlt)+'</td>'+
-        '<td>'+statusPill(f.bezahlt)+'</td>'+
-        '<td class="num"><button class="btn sm danger" data-del="valuero.fees" data-i="'+i+'">✕</button></td>'+
-        '</tr>'); }).join("");
-      var action = allPaid
-        ? '<span class="pill green">✓ abgerechnet</span><button class="btn sm" data-qsettle="'+g.key+'" data-mode="open">↺ als offen</button>'
-        : '<button class="btn sm primary" data-qsettle="'+g.key+'" data-mode="pay">✓ Quartal abrechnen</button>';
-      var card=document.createElement("div"); card.className="card qcard";
-      card.innerHTML=
-        '<div class="qhead"><div class="qtitle">'+g.label+' <span class="qsum" id="qsum-'+g.key+'">offen '+eur(offen)+' · gesamt '+eur(tot)+'</span></div><div style="display:flex;gap:8px;align-items:center">'+action+'</div></div>'+
-        '<div class="tbl-card" style="padding:0;margin-top:10px"><table><thead><tr><th style="width:150px">Datum</th><th>Buchung / Kunde</th><th class="num">Gebühr €</th><th style="width:80px;text-align:center">Bezahlt</th><th style="width:110px">Status</th><th style="width:44px"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-      host.appendChild(card);
-    });
-  }
-  function updateValueroTotals(){
-    valueroGroups().forEach(function(g){ var offen=0,tot=0; g.items.forEach(function(o){var b=+o.f.betrag||0;tot+=b;if(!o.f.bezahlt)offen+=b;}); var el=document.getElementById("qsum-"+g.key); if(el)el.textContent="offen "+eur(offen)+" · gesamt "+eur(tot); });
-  }
+  function renderValueroQuarters(){ renderValueroObjects(); }
+  function updateValueroTotals(){ renderValueroObjects(); }
 
   function fillKV(){ document.querySelectorAll("[data-kv]").forEach(function(el){var v=getPath(el.getAttribute("data-kv"));el.value=(v==null?0:v);}); }
 
@@ -1482,6 +1489,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       if(d.blitzdings){ var bz0=d.blitzdings; sig+="|B"+((bz0.revenue&&bz0.revenue.paidCents)||0)+"-"+((bz0.revenue&&bz0.revenue.openCents)||0)+"-"+((bz0.upcoming&&bz0.upcoming.length)||0); }
       if(d.calendar&&Array.isArray(d.calendar.events)) sig+="|C"+d.calendar.events.length+"-"+(d.calendar.fetchedAt||"");
       if(d.kochdu&&d.kochdu.totals){ var kt2=d.kochdu.totals; sig+="|D"+(kt2.barOpenCents||0)+"-"+(kt2.barSettledCents||0)+"-"+(kt2.onlineProvisionCents||0)+"-"+((d.kochdu.restaurants&&d.kochdu.restaurants.length)||0); }
+      if(d.valuero&&Array.isArray(d.valuero.objects)) sig+="|V"+d.valuero.objects.map(function(o){return o.key+(o.provisionCents||0)+"m"+((o.months&&o.months.length)||0);}).join(",");
       if(sig && sig===window.__fsdSig) return false;
       window.__fsdSig=sig;
       if(d.kantineur){ var s=d.kantineur; var sub=s.subscribers||{byPlan:{}}; var bp=sub.byPlan||{}; var planN=function(x){return (x&&typeof x==="object")?(x.active||0):(+x||0);};
@@ -1502,6 +1510,9 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
         state.kochdu.totals=d.kochdu.totals; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
       }
+      if(d.valuero&&Array.isArray(d.valuero.objects)){
+        state.valuero.live=d.valuero.objects; state.valuero.statsAt=d.valuero.fetchedAt||new Date().toISOString();
+      }
       if(d.calendar&&Array.isArray(d.calendar.events)){
         // Outlook/CalDAV-Termine ersetzen die zuvor importierten; manuell angelegte bleiben erhalten.
         var manual=(state.calendar.events||[]).filter(function(e){return e.source==="manual";});
@@ -1509,7 +1520,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         state.calendar.events=manual.concat(imported);
         state.calendar.outlookAt=d.calendar.fetchedAt||new Date().toISOString();
       }
-      save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); renderOverviewTodos(); tblKochdu(); drawCharts(activeTab);
+      save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); renderOverviewTodos(); tblKochdu(); renderValueroObjects(); drawCharts(activeTab);
       return true;
     }catch(e){ return false; }
   };
@@ -1565,6 +1576,21 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       save(); renderKPIs(); renderBlitzUpcoming(); drawCharts(activeTab);
     }
     blitzPayServer(bid,paid);
+  });
+
+  // VALUERO: Objekt aufklappen (Monatsaufstellung) + Gebühren als verrechnet buchen (lokal)
+  document.body.addEventListener("click",function(e){
+    var vt=e.target.closest("[data-vtoggle]");
+    if(vt&&!e.target.closest("[data-vsettle],[data-vunsettle]")){ var k=vt.getAttribute("data-vtoggle"); valueroOpen[k]=!valueroOpen[k]; renderValueroObjects(); return; }
+    var vs=e.target.closest("[data-vsettle]");
+    if(vs){ var key=vs.getAttribute("data-vsettle"); var amt=+vs.getAttribute("data-amt")||0; if(amt<=0)return;
+      if(!state.valuero.settled) state.valuero.settled={}; if(!Array.isArray(state.valuero.settled[key])) state.valuero.settled[key]=[];
+      state.valuero.settled[key].push({amountCents:amt,at:new Date().toISOString()}); save(); renderValueroObjects(); renderKPIs(); drawCharts(activeTab); return; }
+    var vu=e.target.closest("[data-vunsettle]");
+    if(vu){ var key2=vu.getAttribute("data-vunsettle"); var arr=(state.valuero.settled&&state.valuero.settled[key2])||[];
+      // letzte Verrechnung dieses Jahres entfernen
+      for(var i=arr.length-1;i>=0;i--){ if(String(arr[i].at||"").slice(0,4)===String(curYear())){ arr.splice(i,1); break; } }
+      save(); renderValueroObjects(); renderKPIs(); drawCharts(activeTab); return; }
   });
 
   // kochdu: Bar-Gebühren eines Restaurants als „verrechnet" buchen (schreibt nach kochdu zurück)

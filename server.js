@@ -102,6 +102,9 @@ const KANTINEUR = { url: process.env.KANTINEUR_STATS_URL || "https://kantineur.a
 const MAIL = { url: process.env.MAIL_API_URL || "", token: process.env.MAIL_API_TOKEN || "" };
 const BLITZ = { url: process.env.BLITZDINGS_STATS_URL || "https://blitzdings.co.at/api/stats", token: process.env.BLITZDINGS_STATS_TOKEN || "" };
 const KOCHDU = { url: process.env.KOCHDU_STATS_URL || "https://kochdu.at/api/stats", token: process.env.KOCHDU_STATS_TOKEN || "" };
+// VALUERO: Gebühren pro Objekt (Antonhaus über valuero-stats, Alpinappart über /api/fees).
+const ANTONHAUS = { url: process.env.ANTONHAUS_STATS_URL || "https://antonhaus.at/api/valuero-stats", token: process.env.ANTONHAUS_STATS_TOKEN || "" };
+const ALPINAPPART = { url: process.env.ALPINAPPART_FEES_URL || "https://www.alpinappart.at/api/fees", key: process.env.ALPINAPPART_FEES_KEY || "" };
 let ADMIN_HTML = "";
 try { ADMIN_HTML = fs.readFileSync(path.join(ROOT, "admin-dashboard.html"), "utf8"); } catch (e) { ADMIN_HTML = "<!doctype html><p>admin-dashboard.html fehlt.</p>"; }
 
@@ -160,6 +163,34 @@ async function kochduStats(year) {
   if (!d || d.error) return null;
   return d;
 }
+// VALUERO: beide Objekte abrufen und zu einem einheitlichen Format zusammenführen.
+async function valueroStats(year) {
+  const objects = [];
+  // Antonhaus (valuero-stats: provisionCents + months[{month,provisionCents,bookings}])
+  if (ANTONHAUS.token) {
+    const d = await getJSON(ANTONHAUS.url + "?token=" + encodeURIComponent(ANTONHAUS.token) + yearParam(year));
+    if (d && d.ok) {
+      objects.push({
+        key: "antonhaus", name: "Antonhaus", ratesLabel: "5 % Website",
+        provisionCents: d.provisionCents || 0, feeBookings: d.feeBookings || 0,
+        months: (d.months || []).map(m => ({ month: m.month, provisionCents: m.provisionCents || 0, bookings: m.bookings || 0 })),
+      });
+    }
+  }
+  // Alpinappart (/api/fees: totals.fees + byMonth[{month,count,revenue,fees}])
+  if (ALPINAPPART.key) {
+    const d = await getJSON(ALPINAPPART.url + "?key=" + encodeURIComponent(ALPINAPPART.key) + (year ? "&year=" + encodeURIComponent(year) : ""));
+    if (d && d.totals) {
+      objects.push({
+        key: "alpinappart", name: "Alpinappart", ratesLabel: "5 % Website · 2,5 % Booking",
+        provisionCents: Math.round((d.totals.fees || 0) * 100), feeBookings: d.totals.count || 0,
+        months: (d.byMonth || []).map(m => ({ month: m.month, provisionCents: Math.round((m.fees || 0) * 100), bookings: m.count || 0 })),
+      });
+    }
+  }
+  if (!objects.length) return null;
+  return { fetchedAt: new Date().toISOString(), objects };
+}
 // Kalender-Termine (Outlook/CalDAV) über die Mail-API, falls dort ein CalDAV-Server konfiguriert ist.
 async function calendarEvents() {
   if (!MAIL.url || !MAIL.token) return null;
@@ -185,10 +216,11 @@ function injectAdmin(html, stampISO) {
 async function renderAdminDashboard() {
   let html = ADMIN_HTML; let stamp = null;
   const year = new Date().getFullYear();
-  const [k, m, b, ko] = await Promise.all([kantineurStats(year), mailSnapshot(), blitzdingsStats(year), kochduStats(year)]);
+  const [k, m, b, ko, va] = await Promise.all([kantineurStats(year), mailSnapshot(), blitzdingsStats(year), kochduStats(year), valueroStats(year)]);
   if (k) { html = replaceConst(html, "KANTINEUR_STATS", k); stamp = k.fetchedAt; }
   if (b) { html = replaceConst(html, "BLITZDINGS_STATS", b); stamp = b.fetchedAt || stamp; }
   if (ko) { html = replaceConst(html, "KOCHDU_STATS", ko); stamp = ko.fetchedAt || stamp; }
+  if (va) { html = replaceConst(html, "VALUERO_STATS", va); stamp = va.fetchedAt || stamp; }
   if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
   return injectAdmin(html, stamp);
 }
@@ -237,8 +269,8 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
-    const [k, m, b, cal, ko] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr)]);
-    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const [k, m, b, cal, ko, va] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr)]);
+    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/kochdu-settle" && req.method === "POST") {
     if (!KOCHDU.token) return send(res, 503, JSON.stringify({ error: "kochdu_not_configured" }), TYPES[".json"]);
