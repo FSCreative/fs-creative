@@ -39,12 +39,26 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-conte
 .btn.danger{color:var(--red);border-color:#f6cdc9}
 .btn.icon{width:36px;height:36px;padding:0;justify-content:center}
 
-/* tabs */
-.tabs{position:relative;display:flex;gap:4px;background:#fff;padding:6px;border-radius:15px;border:1px solid var(--line);margin-bottom:20px;box-shadow:var(--shadow);overflow:hidden}
-.tab{position:relative;z-index:2;flex:1;min-width:96px;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;border-radius:10px;font-size:13.5px;font-weight:600;color:var(--dim);cursor:pointer;border:none;background:transparent;transition:color .25s}
-.tab svg{width:16px;height:16px;opacity:.9}
-.tab.active{color:#fff}
-.tab-ind{position:absolute;z-index:1;top:6px;bottom:6px;left:0;width:0;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));transition:transform .32s cubic-bezier(.34,1.2,.4,1),width .32s cubic-bezier(.34,1.2,.4,1);box-shadow:0 8px 20px -10px rgba(47,107,255,.8)}
+/* tabs — Apple Liquid Glass */
+.tabs{position:relative;display:flex;gap:4px;padding:6px;border-radius:17px;margin-bottom:20px;overflow:hidden;
+  background:linear-gradient(135deg,rgba(231,237,250,.85),rgba(238,234,251,.85));
+  -webkit-backdrop-filter:blur(10px) saturate(1.3);backdrop-filter:blur(10px) saturate(1.3);
+  border:1px solid rgba(255,255,255,.6);
+  box-shadow:0 12px 34px -20px rgba(15,23,42,.32), inset 0 1px 0 rgba(255,255,255,.7)}
+.tab{position:relative;z-index:2;flex:1;min-width:96px;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;border-radius:12px;font-size:13.5px;font-weight:600;color:var(--dim);cursor:pointer;border:none;background:transparent;transition:color .3s ease,transform .3s ease}
+.tab svg{width:16px;height:16px;opacity:.9;transition:transform .3s cubic-bezier(.34,1.5,.4,1)}
+.tab.active{color:var(--accent);font-weight:700}
+.tab.active svg{transform:scale(1.08)}
+.tab-ind{position:absolute;z-index:1;top:6px;bottom:6px;left:0;width:0;border-radius:12px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(255,255,255,.62));
+  -webkit-backdrop-filter:blur(16px) saturate(1.9);backdrop-filter:blur(16px) saturate(1.9);
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 10px 24px -10px rgba(31,45,90,.30), 0 2px 6px -2px rgba(31,45,90,.16), inset 0 1px 1.5px rgba(255,255,255,.95), inset 0 -10px 14px -10px rgba(120,140,200,.22);
+  transition:transform .52s cubic-bezier(.34,1.56,.42,1), width .52s cubic-bezier(.34,1.56,.42,1)}
+.tab-ind::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(120deg,rgba(255,255,255,0) 32%,rgba(255,255,255,.6) 50%,rgba(255,255,255,0) 68%);opacity:.75}
+.tab-ind::after{content:"";position:absolute;left:14%;right:14%;bottom:3px;height:38%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(47,107,255,.16),transparent 70%);filter:blur(3px)}
 
 /* panels */
 section.panel{display:none}
@@ -382,12 +396,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       </div>
       <div class="split" style="margin-top:16px">
         <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Bezahlt vs. offen je Plattform</h2><span class="hint">voll = bezahlt · heller = offen</span></div><div class="chart-box sm"><canvas id="c-ov-offen"></canvas></div></div>
-        <div class="card hoverable"><div class="sec-title" style="margin:0 0 10px"><h2>Jahresumsatz je Plattform</h2><span class="hint">realisiert · inkl. offen</span></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div><div class="chart-box sm" style="height:170px"><canvas id="c-ov-real"></canvas></div><div style="text-align:center;font-size:12px;color:var(--dim);margin-top:4px">Realisiert · <b id="c-ov-real-sum" style="color:var(--ink)">—</b></div></div>
-            <div><div class="chart-box sm" style="height:170px"><canvas id="c-ov-total"></canvas></div><div style="text-align:center;font-size:12px;color:var(--dim);margin-top:4px">inkl. offen · <b id="c-ov-total-sum" style="color:var(--ink)">—</b></div></div>
-          </div>
-        </div>
+        <div class="card hoverable"><div class="sec-title" style="margin:0 0 8px"><h2>Offene To-Dos</h2><button class="btn sm" data-goto="todo">Alle öffnen →</button></div><div class="tlist" id="ov-todos" style="max-height:270px;overflow:auto"></div></div>
       </div>
       <div class="card hoverable" style="margin-top:16px">
         <div class="sec-title" style="margin:0 0 8px"><h2><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>Nächste Termine</h2><button class="btn sm" data-goto="kalender">Kalender öffnen →</button></div>
@@ -930,6 +939,19 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         '<div class="bd-right">'+amt+pay+'</div></div>';
     }).join("");
   }
+  function renderOverviewTodos(){
+    var host=document.getElementById("ov-todos"); if(!host)return;
+    var list=(state.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ var ad=a.due||"9999",bd=b.due||"9999"; if(ad!==bd)return ad<bd?-1:1; return (a.created||0)-(b.created||0); }).slice(0,8);
+    if(!list.length){ host.innerHTML='<div class="mempty" style="padding:24px">Keine offenen Aufgaben 🎉</div>'; return; }
+    host.innerHTML=list.map(function(t){
+      var dm=dueMeta(t.due);
+      return '<div class="titem" data-tid="'+esc(t.id)+'">'+
+        '<div class="tcheck" data-tcheck="'+esc(t.id)+'"></div>'+
+        '<div class="ttext">'+esc(t.text)+'</div>'+
+        (dm?'<span class="tdue '+dm.cls+'">'+esc(dm.lbl)+'</span>':'')+
+      '</div>';
+    }).join("");
+  }
   function renderOverviewMail(){
     var host=document.getElementById("ov-mail-list"); if(!host)return;
     var msgs=(state.mail.messages||[]).filter(function(m){return !isHidden(m);}).sort(function(a,b){return (new Date(b.date))-(new Date(a.date));}).slice(0,5);
@@ -1133,16 +1155,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         {label:"Bezahlt",data:[c.kochdu.barPaid+c.kochdu.online,kantPaid,c.blitzdings.past,c.valuero.paid],backgroundColor:["#8b5cf6","#3a8acd","#e0930a","#12b76a"],borderRadius:5,maxBarThickness:26,stack:"s"},
         {label:"Offen",data:[c.kochdu.barOffen,0,c.blitzdings.up,c.valuero.offen],backgroundColor:["#cbbdf9","#a9cfec","#f2cf90","#8fe3ba"],borderRadius:5,maxBarThickness:26,stack:"s"}
       ]},options:baseOpts({indexAxis:"y",plugins:{legend:{display:false},tooltip:{callbacks:{label:function(x){return (x.datasetIndex===0?"Bezahlt: ":"Offen: ")+eur(x.raw);}}}},scales:{x:{stacked:true,ticks:{maxTicksLimit:5,callback:function(v){return eur(v);}},grid:{color:"#eef1f7"}},y:{stacked:true,grid:{display:false}}}})});
-      var kPaid=c.kochdu.barPaid+c.kochdu.online, kOpen=c.kochdu.barOffen;
-      var labels4=["kochdu","Kantineur","Blitzdings","VALUERO"];
-      var cols4=["#8b5cf6","#3a8acd","#e0930a","#12b76a"];
-      var realData=[kPaid, kantPaid, c.blitzdings.past, c.valuero.paid];
-      var totData=[kPaid+kOpen, kantPaid, c.blitzdings.past+c.blitzdings.up, c.valuero.paid+c.valuero.offen];
-      var realSum=realData.reduce(function(a,b){return a+b;},0), totSum=totData.reduce(function(a,b){return a+b;},0);
-      setTxt("c-ov-real-sum", eur(realSum)); setTxt("c-ov-total-sum", eur(totSum));
-      var ringOpts=baseOpts({cutout:"62%",plugins:{legend:{position:"bottom",labels:{font:{size:11},usePointStyle:true,boxWidth:7,padding:8}},tooltip:{callbacks:{label:function(x){return x.label+": "+eur(x.raw);}}}}});
-      mkChart("c-ov-real",{type:"doughnut",data:{labels:labels4,datasets:[{data:realData,backgroundColor:cols4,borderWidth:0}]},options:ringOpts});
-      mkChart("c-ov-total",{type:"doughnut",data:{labels:labels4,datasets:[{data:totData,backgroundColor:cols4,borderWidth:0}]},options:ringOpts});
+      renderOverviewTodos();
     } else if(tab==="kochdu"){
       var kl=(state.kochdu.live||[]);
       var labels=kl.map(function(x){return x.name||"—";});
@@ -1197,7 +1210,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var ti=document.getElementById("todo-text"), di=document.getElementById("todo-due");
     var txt=(ti.value||"").trim(); if(!txt)return;
     state.todos.push({id:uid(),text:txt,due:di.value||"",done:false,created:Date.now()});
-    ti.value=""; di.value=""; save(); renderTodos(); renderCalendar(); ti.focus();
+    ti.value=""; di.value=""; save(); renderTodos(); renderCalendar(); renderOverviewTodos(); ti.focus();
   }
 
   /* ---------------- KALENDER ---------------- */
@@ -1309,7 +1322,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   // ---- render ----
   var activeTab="overview";
   function renderTables(){ tblKochdu(); tblBlitz(); renderValueroQuarters(); }
-  function renderAll(){ fillKV(); renderTables(); renderKPIs(); renderUpdated(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); drawCharts(activeTab); }
+  function renderAll(){ fillKV(); renderTables(); renderKPIs(); renderUpdated(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); renderOverviewTodos(); drawCharts(activeTab); }
   function softUpdate(){ renderKPIs(); refreshRows(); updateValueroTotals(); drawCharts(activeTab); }
   function refreshRows(){
     document.querySelectorAll("#tb-kochdu tr").forEach(function(tr,i){var x=state.kochdu.restaurants[i];if(!x)return;var cell=tr.children[5];if(cell)cell.innerHTML=statusPill(x.bezahlt);});
@@ -1474,7 +1487,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         state.calendar.events=manual.concat(imported);
         state.calendar.outlookAt=d.calendar.fetchedAt||new Date().toISOString();
       }
-      save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); tblKochdu(); drawCharts(activeTab);
+      save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); renderOverviewTodos(); tblKochdu(); drawCharts(activeTab);
       return true;
     }catch(e){ return false; }
   };
@@ -1561,9 +1574,9 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
   var tText=document.getElementById("todo-text"); if(tText) tText.addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); addTodo(); } });
   document.body.addEventListener("click",function(e){
     var chk=e.target.closest("[data-tcheck]");
-    if(chk){ var id=chk.getAttribute("data-tcheck"); var t=(state.todos||[]).filter(function(x){return x.id===id;})[0]; if(t){ t.done=!t.done; save(); renderTodos(); renderCalendar(); } return; }
+    if(chk){ var id=chk.getAttribute("data-tcheck"); var t=(state.todos||[]).filter(function(x){return x.id===id;})[0]; if(t){ t.done=!t.done; save(); renderTodos(); renderCalendar(); renderOverviewTodos(); } return; }
     var del=e.target.closest("[data-tdel]");
-    if(del){ var did=del.getAttribute("data-tdel"); state.todos=(state.todos||[]).filter(function(x){return x.id!==did;}); save(); renderTodos(); renderCalendar(); return; }
+    if(del){ var did=del.getAttribute("data-tdel"); state.todos=(state.todos||[]).filter(function(x){return x.id!==did;}); save(); renderTodos(); renderCalendar(); renderOverviewTodos(); return; }
   });
 
   // ---- Kalender-Events ----
