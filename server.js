@@ -121,7 +121,7 @@ function parseCookies(req) {
 function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
 
 async function getJSON(url) {
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 20000);
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
   try { const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) return null; return await r.json(); }
   catch (e) { return null; } finally { clearTimeout(t); }
 }
@@ -162,8 +162,12 @@ function injectAdmin(html, stampISO) {
     'function chime(){try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;var ac=window.__fsdAC||(window.__fsdAC=new AC());if(ac.state==="suspended")ac.resume();var t=ac.currentTime;[880,1174.7].forEach(function(f,i){var o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.value=f;o.connect(g);g.connect(ac.destination);var s=t+i*0.16;g.gain.setValueAtTime(0.0001,s);g.gain.exponentialRampToValueAtTime(0.25,s+0.02);g.gain.exponentialRampToValueAtTime(0.0001,s+0.35);o.start(s);o.stop(s+0.4);});}catch(e){}}' +
     'window.addEventListener("click",function o(){try{var AC=window.AudioContext||window.webkitAudioContext;if(AC){window.__fsdAC=window.__fsdAC||new AC();if(window.__fsdAC.resume)window.__fsdAC.resume();}}catch(e){}},{once:true});' +
     'function unread(m){return((m&&m.messages)||[]).filter(function(x){return !x.read&&!x.deleted;}).map(function(x){return x.id;});}' +
-    'function poll(){fetch("/admin/api/all",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d||!d.mail)return;var ids=unread(d.mail);var seen=null;try{seen=JSON.parse(localStorage.getItem(KEY));}catch(e){}if(!Array.isArray(seen)){localStorage.setItem(KEY,JSON.stringify(ids));return;}var fresh=ids.filter(function(id){return seen.indexOf(id)<0;});localStorage.setItem(KEY,JSON.stringify(ids));if(fresh.length){chime();var b=document.getElementById("fsd-new");if(b){b.style.display="";b.textContent=fresh.length+" neue Mail"+(fresh.length>1?"s":"");}setTimeout(function(){location.reload();},2500);}}).catch(function(){});}' +
-    'setInterval(poll,60000);setTimeout(poll,3000);' +
+    'function poll(){fetch("/admin/api/all",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return;' +
+      'if(d.mail){var ids=unread(d.mail);var seen=null;try{seen=JSON.parse(localStorage.getItem(KEY));}catch(e){}if(Array.isArray(seen)){var fresh=ids.filter(function(id){return seen.indexOf(id)<0;});if(fresh.length){chime();var b=document.getElementById("fsd-new");if(b){b.style.display="";b.textContent=fresh.length+" neue Mail"+(fresh.length>1?"s":"");setTimeout(function(){b.style.display="none";},9000);}}}localStorage.setItem(KEY,JSON.stringify(ids));}' +
+      'if(window.__fsdApplyLive)window.__fsdApplyLive(d);' +
+      'try{var st=(d.mail&&d.mail.fetchedAt)||(d.kantineur&&d.kantineur.fetchedAt);var el=document.getElementById("fsd-stamp");if(el&&st)el.textContent=new Date(st).toLocaleString("de-AT");}catch(e){}' +
+    '}).catch(function(){});}' +
+    'setInterval(poll,30000);setTimeout(poll,600);' +
     '})();</script>';
   return html.replace("</body>", bar + script + "</body>");
 }
