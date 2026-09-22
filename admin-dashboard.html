@@ -41,6 +41,11 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-conte
 .btn.icon svg{width:17px;height:17px}
 #hdr-refresh.spin svg{animation:fspin .8s cubic-bezier(.4,.1,.3,1)}
 @keyframes fspin{to{transform:rotate(360deg)}}
+/* Privatsphäre: Einnahmen/Beträge verbergen */
+.money,.val,.qsum,.bd-amount,.att-sz,.prog .plabel,.kpi input.ghost,#ov-offen-all,#ov-koch-offen,#ov-bd-offen,#ov-val-offen,#ov-paid-all,#ov-koch-paid,#ov-bd-paid,#ov-val-paid,.chart-box{transition:filter .45s cubic-bezier(.4,0,.2,1)}
+body.priv .money,body.priv .val,body.priv .qsum,body.priv .bd-amount,body.priv .att-sz,body.priv .prog .plabel,body.priv .kpi input.ghost,body.priv #ov-offen-all,body.priv #ov-koch-offen,body.priv #ov-bd-offen,body.priv #ov-val-offen,body.priv #ov-paid-all,body.priv #ov-koch-paid,body.priv #ov-bd-paid,body.priv #ov-val-paid{filter:blur(9px);pointer-events:none;user-select:none}
+body.priv .chart-box{filter:blur(10px)}
+#hdr-eye.on{color:var(--accent);border-color:#cdd6e6}
 
 /* tabs — Apple Liquid Glass */
 .tabs{position:relative;display:flex;gap:4px;padding:6px;border-radius:17px;margin-bottom:20px;overflow:hidden;
@@ -236,6 +241,18 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 .mbody blockquote{margin:8px 0;padding:2px 0 2px 12px;border-left:3px solid #e3e8f2;color:#6b7686}
 .mbody table{max-width:100%}
 .mactions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+/* attachments */
+.atts{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.atts-h{font-size:12px;font-weight:700;color:var(--dim);margin-bottom:8px}
+.atts-list{display:flex;flex-wrap:wrap;gap:8px}
+.att{display:inline-flex;align-items:center;gap:8px;background:#f4f7fc;border:1px solid var(--line);border-radius:11px;padding:8px 11px;font-size:12.5px;color:var(--ink);text-decoration:none;max-width:260px;transition:border-color .15s,background .15s}
+.att:hover{border-color:var(--accent);background:#eef4ff}
+.att .att-ic{font-size:15px;flex:none}
+.att .att-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.att .att-sz{color:var(--faint);flex:none;font-variant-numeric:tabular-nums}
+.att .att-dl{color:var(--accent);flex:none;font-weight:700}
+.att.att-off{opacity:.7;cursor:default}
+.mrow2 .clip{color:var(--faint);font-size:12px;flex:none}
 .mempty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
 @media(max-width:980px){.mbox{grid-template-columns:1fr}.mrow .who{width:auto;min-width:0}.mlistwrap,.mreadwrap{max-height:none}.mreadwrap{position:static}}
 
@@ -353,6 +370,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     <div class="actions">
       <label class="yearsel"><span>Jahr</span><select id="year-sel"></select></label>
       <button class="btn icon" id="hdr-refresh" title="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg></button>
+      <button class="btn icon" id="hdr-eye" title="Beträge verbergen"></button>
       <a class="btn icon" id="hdr-logout" title="Abmelden" href="/admin/logout" style="display:none;text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
     </div>
   </header>
@@ -681,7 +699,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       var prev={}; s.mail.messages.forEach(function(m){prev[m.id]=m;});
       s.mail.messages=(MAIL_SNAPSHOT.messages||[]).map(function(m){var p=prev[m.id]||{};
         return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",
-          read:("read" in p)?!!p.read:!!m.read, starred:("starred" in p)?!!p.starred:!!m.starred, deleted:!!p.deleted, trashedAt:p.trashedAt||null};});
+          read:("read" in p)?!!p.read:!!m.read, starred:("starred" in p)?!!p.starred:!!m.starred, deleted:!!p.deleted, trashedAt:p.trashedAt||null, attachments:Array.isArray(m.attachments)?m.attachments:[]};});
       if(Array.isArray(MAIL_SNAPSHOT.folders)) s.mail.folders=MAIL_SNAPSHOT.folders;
       s.mail.lastFetch=MAIL_SNAPSHOT.fetchedAt; s.mail.account=MAIL_SNAPSHOT.account||s.mail.account;
     }
@@ -919,7 +937,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       chk+
       '<div class="av" style="background:'+avColor(m.fromName||m.from)+'">'+esc(initials(m))+'</div>'+
       '<div class="mmain">'+
-        '<div class="l1"><span class="who">'+who+'</span>'+star+'<span class="when">'+when+'</span></div>'+
+        '<div class="l1"><span class="who">'+who+'</span>'+((m.attachments&&m.attachments.length)?'<span class="clip" title="'+m.attachments.length+' Anhang">📎</span>':'')+star+'<span class="when">'+when+'</span></div>'+
         '<div class="subj">'+subj+'</div>'+
         (m.preview?'<div class="pre">'+esc(m.preview)+'</div>':'')+
       '</div></div>';
@@ -1016,7 +1034,20 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         '<div class="re">'+(m.from?esc(m.from)+' · ':'')+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'</div></div></div>'+
       '<h2 class="rsubj">'+esc(m.subject||"(kein Betreff)")+'</h2>'+
       '<div class="mbody'+(m.bodyHtml?'':' plain')+'">'+(m.bodyHtml?(m.body||""):esc(m.body||m.preview||""))+'</div>'+
+      renderAttachments(m)+
       (m.body||m.preview?'':'<div class="mempty" style="padding:20px 0;text-align:left">Kein Textinhalt im Snapshot. Für die vollständige Nachricht in Webmail öffnen.<br><button class="btn sm" style="margin-top:10px" data-mact="webmail">In Webmail öffnen</button></div>');
+  }
+  function fmtBytes(n){ n=+n||0; if(n<1024)return n+" B"; if(n<1048576)return (n/1024).toFixed(0)+" KB"; return (n/1048576).toFixed(1)+" MB"; }
+  function attIcon(ct){ ct=String(ct||"").toLowerCase(); if(ct.indexOf("pdf")>-1)return "📄"; if(ct.indexOf("image")>-1)return "🖼️"; if(ct.indexOf("zip")>-1||ct.indexOf("compress")>-1)return "🗜️"; if(ct.indexOf("word")>-1||ct.indexOf("document")>-1)return "📝"; if(ct.indexOf("sheet")>-1||ct.indexOf("excel")>-1||ct.indexOf("csv")>-1)return "📊"; return "📎"; }
+  function renderAttachments(m){
+    var atts=(m&&m.attachments)||[]; if(!atts.length)return "";
+    var hosted=window.__FSD_HOSTED&&window.__FSD_MAIL_ATTACH;
+    var chips=atts.map(function(a){
+      var label='<span class="att-ic">'+attIcon(a.contentType)+'</span><span class="att-name">'+esc(a.filename||"Anhang")+'</span><span class="att-sz">'+fmtBytes(a.size)+'</span>';
+      if(hosted){ var href=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0); return '<a class="att" href="'+href+'" download="'+esc(a.filename||"anhang")+'" target="_blank" rel="noopener">'+label+'<span class="att-dl">⬇</span></a>'; }
+      return '<span class="att att-off" title="Download nur im Live-Dashboard">'+label+'</span>';
+    }).join("");
+    return '<div class="atts"><div class="atts-h">📎 '+atts.length+' Anhang'+(atts.length>1?"änge":"")+'</div><div class="atts-list">'+chips+'</div></div>';
   }
   function renderMailAll(){
     var acc=document.getElementById("mail-account"); if(acc)acc.textContent="Postfach — "+(state.mail.account||"");
@@ -1505,7 +1536,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
         var prev={}; (state.mail.messages||[]).forEach(function(m){prev[m.id]=m;});
         state.mail.folders=Array.isArray(d.mail.folders)?d.mail.folders:state.mail.folders;
         state.mail.account=d.mail.account||state.mail.account; state.mail.lastFetch=d.mail.fetchedAt||state.mail.lastFetch;
-        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null};}); }
+        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[]};}); }
       if(d.kochdu&&d.kochdu.totals){
         state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
         state.kochdu.totals=d.kochdu.totals; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
@@ -1669,6 +1700,14 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     if(window.__FSD_HOSTED&&window.__fsdPoll){ window.__fsdPoll(); } else { renderAll(); }
     setTimeout(function(){ b.classList.remove("spin"); },800); });
   if(window.__FSD_HOSTED){ var hdrL=document.getElementById("hdr-logout"); if(hdrL){ hdrL.style.display=""; if(window.__FSD_LOGOUT)hdrL.setAttribute("href",window.__FSD_LOGOUT); } }
+  // Privatsphäre-Auge: Beträge blurren (durchgestrichenes Auge = verborgen)
+  var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 5.1A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a15.6 15.6 0 0 1-3.4 4M6.6 6.6A15.6 15.6 0 0 0 2 12s3.5 7 10 7a9.5 9.5 0 0 0 4.4-1.05"/><path d="M14.1 14.1A3 3 0 1 1 9.9 9.9"/><path d="m2 2 20 20"/></svg>';
+  function applyPriv(on){ if(document.body)document.body.classList.toggle("priv",!!on); var e=document.getElementById("hdr-eye"); if(e){ e.innerHTML=on?EYE_OFF:EYE_ON; e.classList.toggle("on",!!on); e.title=on?"Beträge einblenden":"Beträge verbergen"; } }
+  var privOn=false; try{ privOn=localStorage.getItem("fsc_priv")==="1"; }catch(e){}
+  applyPriv(privOn);
+  var hdrE=document.getElementById("hdr-eye");
+  if(hdrE) hdrE.addEventListener("click",function(){ privOn=!privOn; try{localStorage.setItem("fsc_priv",privOn?"1":"0");}catch(e){} applyPriv(privOn); });
 
   // init
   renderAll();

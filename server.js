@@ -205,7 +205,7 @@ function replaceConst(html, name, obj) {
 }
 function injectAdmin(html, stampISO) {
   const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_LOGOUT="/admin/logout";' +
+    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_MAIL_ATTACH="/admin/api/mail-attachment"; window.__FSD_LOGOUT="/admin/logout";' +
     'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
     'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
     'window.__fsdPoll=poll;' +
@@ -299,6 +299,26 @@ async function handleAdmin(req, res, u, p) {
       } catch (e) { return send(res, 502, JSON.stringify({ error: "blitz_pay_failed" }), TYPES[".json"]); }
     });
     return;
+  }
+  if (p === "/admin/api/mail-attachment" && req.method === "GET") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, "mail_not_configured");
+    const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") +
+      "?token=" + encodeURIComponent(MAIL.token) +
+      "&folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") +
+      "&uid=" + encodeURIComponent(u.searchParams.get("uid") || "") +
+      "&index=" + encodeURIComponent(u.searchParams.get("index") || "0");
+    try {
+      const r = await fetch(attUrl);
+      if (!r.ok) return send(res, r.status, "attachment_error");
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.writeHead(200, {
+        "Content-Type": r.headers.get("content-type") || "application/octet-stream",
+        "Content-Disposition": r.headers.get("content-disposition") || "attachment",
+        "Content-Length": buf.length,
+        "Cache-Control": "no-store",
+      });
+      return res.end(buf);
+    } catch (e) { return send(res, 502, "attachment_failed"); }
   }
   if (p === "/admin/api/mail-send" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
