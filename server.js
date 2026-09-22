@@ -173,28 +173,14 @@ function replaceConst(html, name, obj) {
   return html.replace(re, "var " + name + "=" + JSON.stringify(obj) + ";");
 }
 function injectAdmin(html, stampISO) {
-  const bar = '<div id="fsd-bar" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #e9edf5;border-radius:12px;padding:8px 12px;box-shadow:0 12px 30px -16px rgba(15,23,42,.4);font:600 12.5px -apple-system,Segoe UI,Roboto,sans-serif;color:#6b7686">' +
-    '<span id="fsd-new" style="display:none;background:#f04438;color:#fff;border-radius:8px;padding:3px 8px"></span>' +
-    '<span>Live-Stand: <span id="fsd-stamp">—</span></span>' +
-    '<button onclick="location.reload()" style="border:none;background:linear-gradient(135deg,#2f6bff,#7c4dff);color:#fff;border-radius:9px;padding:7px 12px;font:inherit;cursor:pointer">↻ Aktualisieren</button>' +
-    '<a href="/admin/logout" style="color:#6b7686;text-decoration:none">Abmelden</a></div>';
   const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle";' +
+    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_LOGOUT="/admin/logout";' +
     'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
-    'try{var st=' + JSON.stringify(stampISO || null) + ';var el=document.getElementById("fsd-stamp");if(el)el.textContent=st?new Date(st).toLocaleString("de-AT"):"—";}catch(e){}' +
-    'var KEY="fsd_seen_unread";' +
-    'function chime(){try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;var ac=window.__fsdAC||(window.__fsdAC=new AC());if(ac.state==="suspended")ac.resume();var t=ac.currentTime;[880,1174.7].forEach(function(f,i){var o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.value=f;o.connect(g);g.connect(ac.destination);var s=t+i*0.16;g.gain.setValueAtTime(0.0001,s);g.gain.exponentialRampToValueAtTime(0.25,s+0.02);g.gain.exponentialRampToValueAtTime(0.0001,s+0.35);o.start(s);o.stop(s+0.4);});}catch(e){}}' +
-    'window.addEventListener("click",function o(){try{var AC=window.AudioContext||window.webkitAudioContext;if(AC){window.__fsdAC=window.__fsdAC||new AC();if(window.__fsdAC.resume)window.__fsdAC.resume();}}catch(e){}},{once:true});' +
-    'function unread(m){return((m&&m.messages)||[]).filter(function(x){return !x.read&&!x.deleted;}).map(function(x){return x.id;});}' +
-    'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return;' +
-      'if(d.mail){var ids=unread(d.mail);var seen=null;try{seen=JSON.parse(localStorage.getItem(KEY));}catch(e){}if(Array.isArray(seen)){var fresh=ids.filter(function(id){return seen.indexOf(id)<0;});if(fresh.length){chime();var b=document.getElementById("fsd-new");if(b){b.style.display="";b.textContent=fresh.length+" neue Mail"+(fresh.length>1?"s":"");setTimeout(function(){b.style.display="none";},9000);}}}localStorage.setItem(KEY,JSON.stringify(ids));}' +
-      'if(window.__fsdApplyLive)window.__fsdApplyLive(d);' +
-      'try{var st=(d.mail&&d.mail.fetchedAt)||(d.kantineur&&d.kantineur.fetchedAt);var el=document.getElementById("fsd-stamp");if(el&&st)el.textContent=new Date(st).toLocaleString("de-AT");}catch(e){}' +
-    '}).catch(function(){});}' +
+    'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
     'window.__fsdPoll=poll;' +
     'setInterval(poll,30000);setTimeout(poll,600);' +
     '})();</script>';
-  return html.replace("</body>", bar + script + "</body>");
+  return html.replace("</body>", script + "</body>");
 }
 async function renderAdminDashboard() {
   let html = ADMIN_HTML; let stamp = null;

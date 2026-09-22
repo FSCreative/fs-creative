@@ -37,7 +37,10 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-conte
 .btn.ghost{background:transparent}
 .btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
 .btn.danger{color:var(--red);border-color:#f6cdc9}
-.btn.icon{width:36px;height:36px;padding:0;justify-content:center}
+.btn.icon{width:38px;height:38px;padding:0;justify-content:center}
+.btn.icon svg{width:17px;height:17px}
+#hdr-refresh.spin svg{animation:fspin .8s cubic-bezier(.4,.1,.3,1)}
+@keyframes fspin{to{transform:rotate(360deg)}}
 
 /* tabs — Apple Liquid Glass */
 .tabs{position:relative;display:flex;gap:4px;padding:6px;border-radius:17px;margin-bottom:20px;overflow:hidden;
@@ -349,15 +352,17 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     </div>
     <div class="actions">
       <label class="yearsel"><span>Jahr</span><select id="year-sel"></select></label>
+      <button class="btn icon" id="hdr-refresh" title="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg></button>
+      <a class="btn icon" id="hdr-logout" title="Abmelden" href="/admin/logout" style="display:none;text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
     </div>
   </header>
 
   <nav class="tabs" id="tabs">
     <span class="tab-ind" id="tabInd"></span>
     <button class="tab active" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg><span class="t">Übersicht</span></button>
-    <button class="tab" data-tab="kochdu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6v6a5 5 0 0 0 10 0V6"/></svg><span class="t">kochdu</span></button>
+    <button class="tab" data-tab="kochdu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6v6a5 5 0 0 0 10 0V6"/></svg><span class="t">kochdu</span><span class="badge" id="kochdu-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="kantineur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 8l16 8"/></svg><span class="t">Kantineur</span></button>
-    <button class="tab" data-tab="blitzdings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg><span class="t">Blitzdings</span></button>
+    <button class="tab" data-tab="blitzdings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg><span class="t">Blitzdings</span><span class="badge" id="blitz-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="valuero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5v14"/><path d="M2 9h17a3 3 0 0 1 3 3v7"/><path d="M2 16h20"/><path d="M6 9v7"/></svg><span class="t">VALUERO</span></button>
     <button class="tab" data-tab="postfach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="t">Postfach</span><span class="badge" id="mail-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="kalender"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg><span class="t">Kalender</span></button>
@@ -919,7 +924,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     (state.blitzdings.upcoming||[]).forEach(function(b){ if(!b.eventDate)return; var d=new Date(b.eventDate+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte("blitzdings");
       items.push({date:d,ds:b.eventDate,title:b.package||"Buchung",meta:[b.customerName,b.location].filter(Boolean).join(" · "),kind:"bd",amount:(b.totalCents||0)/100,pay:b.paymentStatus,color:s.color,bg:s.bg,spn:s.name}); });
     (state.calendar.events||[]).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte(ev.sparte);
-      items.push({date:d,ds:ev.date,title:ev.title||"Termin",time:ev.time||"",meta:[ev.location,ev.notes].filter(Boolean).join(" · "),kind:"evt",id:ev.id,color:s.color,bg:s.bg,spn:s.name}); });
+      items.push({date:d,ds:ev.date,title:ev.title||"Termin",time:ev.time||"",meta:"",kind:"evt",id:ev.id,color:s.color,bg:s.bg,spn:s.name}); });
     items.sort(function(a,b){return (a.date-b.date)|| ((a.time||"99")<(b.time||"99")?-1:1);});
     items=items.slice(0,6);
     if(!items.length){ host.innerHTML='<div class="mempty" style="padding:22px">Keine anstehenden Termine.</div>'; return; }
@@ -965,6 +970,21 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
       starred:live.filter(function(m){return m.starred;}).length,
       trash:a.filter(function(m){return isTrashed(m);}).length}; }
   function renderMailBadge(){ var c=mailCounts(); var b=document.getElementById("mail-badge"); if(b){ if(c.unread>0){b.style.display="";b.textContent=c.unread;}else b.style.display="none"; } }
+  // Neue-Buchungen-Zähler je Plattform (wie beim Postfach). Baseline in localStorage.
+  var SEENK="fsc_seen_counts_v1";
+  function seenCounts(){ try{return JSON.parse(localStorage.getItem(SEENK))||{};}catch(e){return {};} }
+  function saveSeen(o){ try{localStorage.setItem(SEENK,JSON.stringify(o));}catch(e){} }
+  function curCounts(){ var kt=state.kochdu.totals||{}; return { kochdu:(+kt.barOrders||0)+(+kt.onlineOrders||0), blitz:(+state.blitzdings.paidCount||0)+(+state.blitzdings.openCount||0) }; }
+  function setTabBadge(id,n){ var b=document.getElementById(id); if(!b)return; if(n>0){b.style.display="";b.textContent=n;}else b.style.display="none"; }
+  function updateBookingBadges(){
+    var seen=seenCounts(), cur=curCounts(), changed=false;
+    if(seen.kochdu==null){ seen.kochdu=cur.kochdu; changed=true; }
+    if(seen.blitz==null){ seen.blitz=cur.blitz; changed=true; }
+    if(changed) saveSeen(seen);
+    setTabBadge("kochdu-badge", Math.max(0, cur.kochdu-(seen.kochdu||0)));
+    setTabBadge("blitz-badge", Math.max(0, cur.blitz-(seen.blitz||0)));
+  }
+  function clearBookingBadge(name){ var seen=seenCounts(), cur=curCounts(); if(name==="kochdu")seen.kochdu=cur.kochdu; else if(name==="blitzdings")seen.blitz=cur.blitz; else return; saveSeen(seen); updateBookingBadges(); }
   function renderMailList(){
     var host=document.getElementById("mail-list"); if(!host)return;
     var msgs=mailView();
@@ -1138,6 +1158,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     setMoney("v-paid", c.valuero.paid);
     setMoney("v-total", c.valuero.total);
     setProg("v-prog-fill","v-prog-lbl", c.valuero.paid, c.valuero.total);
+    updateBookingBadges();
   }
 
   // ---- charts ----
@@ -1333,7 +1354,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     var wrap=document.getElementById("tabs"); var ind=document.getElementById("tabInd");
     var act=wrap.querySelector(".tab.active"); if(!act)return;
     ind.style.width=act.offsetWidth+"px";
-    ind.style.transform="translateX("+(act.offsetLeft-6)+"px)";
+    ind.style.transform="translateX("+act.offsetLeft+"px)";
   }
 
   // ---- events ----
@@ -1347,6 +1368,7 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     if(name==="postfach") renderMailAll();
     else if(name==="todo") renderTodos();
     else if(name==="kalender") renderCalendar();
+    if(name==="kochdu"||name==="blitzdings") clearBookingBadge(name);
   }
   document.getElementById("tabs").addEventListener("click",function(e){
     var b=e.target.closest(".tab"); if(!b)return; selectTab(b.getAttribute("data-tab"));
@@ -1614,6 +1636,13 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
     sel.innerHTML=h; sel.value=String(curYear());
     sel.addEventListener("change",function(){ window.__fsdYear=+this.value; renderAll(); moveIndicator(); if(window.__fsdPoll)window.__fsdPoll(); });
   })();
+
+  // Aktualisieren + Abmelden im Header
+  var hdrR=document.getElementById("hdr-refresh");
+  if(hdrR) hdrR.addEventListener("click",function(){ var b=this; b.classList.add("spin");
+    if(window.__FSD_HOSTED&&window.__fsdPoll){ window.__fsdPoll(); } else { renderAll(); }
+    setTimeout(function(){ b.classList.remove("spin"); },800); });
+  if(window.__FSD_HOSTED){ var hdrL=document.getElementById("hdr-logout"); if(hdrL){ hdrL.style.display=""; if(window.__FSD_LOGOUT)hdrL.setAttribute("href",window.__FSD_LOGOUT); } }
 
   // init
   renderAll();
