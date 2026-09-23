@@ -1121,6 +1121,7 @@ body.dark .titem:hover{background:#202a3e}
         '<button class="btn sm" data-mact="star">'+(m.starred?"★ Markierung entf.":"☆ Markieren")+'</button>'+
         '<button class="btn sm" data-mact="reply">Antworten</button>'+
         '<button class="btn sm" data-mact="forward">Weiterleiten</button>'+
+        '<button class="btn sm" data-mact="todo">☑ Als To-Do</button>'+
         '<button class="btn sm danger" data-mact="trash">🗑 In Papierkorb</button>';
     host.innerHTML=
       '<div class="mactions">'+acts+'</div>'+
@@ -1393,6 +1394,18 @@ body.dark .titem:hover{background:#202a3e}
     setTimeout(function(){ var el=document.getElementById("tde-text"); if(el)el.focus(); },30);
   }
   function closeTodoEdit(){ document.getElementById("tdedit").classList.remove("show"); tdEditId=null; }
+  // Aus einer E-Mail eine Aufgabe machen (Betreff -> Aufgabe, Absender + Text -> Notizen)
+  function todoFromMail(m){
+    if(!m)return;
+    var who=m.fromName||m.from||"";
+    var when=m.date?new Date(m.date).toLocaleString("de-AT"):"";
+    var bodyTxt="";
+    if(m.bodyHtml){ var tmp=document.createElement("div"); tmp.innerHTML=m.body||""; bodyTxt=(tmp.innerText||tmp.textContent||"").trim(); }
+    else bodyTxt=(m.body||m.preview||"").trim();
+    if(bodyTxt.length>1500) bodyTxt=bodyTxt.slice(0,1500)+" …";
+    var notes="📧 Aus E-Mail\nVon: "+who+(m.from?" <"+m.from+">":"")+(when?"\nDatum: "+when:"")+(bodyTxt?"\n\n"+bodyTxt:"");
+    openTodoEdit({text:(m.subject||"(kein Betreff)"), due:"", notes:notes, done:false});
+  }
   function saveTodoEdit(){
     var txt=(document.getElementById("tde-text").value||"").trim(); if(!txt){ alert("Bitte einen Text eingeben."); return; }
     var obj={text:txt,due:document.getElementById("tde-due").value||"",notes:(document.getElementById("tde-notes").value||"").trim(),done:document.getElementById("tde-done").checked};
@@ -1593,6 +1606,7 @@ body.dark .titem:hover{background:#202a3e}
     var act=e.target.closest("[data-mact]"); if(act){ var m=findMsg(mailUI.sel); if(!m)return; var a=act.getAttribute("data-mact");
       if(a==="reply"){ openCompose("Antworten",m.from||"","Re: "+(m.subject||""),quoteHtml(m,"reply")); return; }
       if(a==="forward"){ openCompose("Weiterleiten","","Fwd: "+(m.subject||""),quoteHtml(m,"fwd")); return; }
+      if(a==="todo"){ todoFromMail(m); return; }
       if(a==="webmail"){ openWebmail(); return; }
       if(a==="trash"){ trashMessages([m.id]); return; }
       if(a==="restore"){ m.deleted=false; m.trashedAt=null; pushPending("restore",m.id,{folder:m.folder}); save(); renderMailAll(); return; }
@@ -1707,6 +1721,7 @@ body.dark .titem:hover{background:#202a3e}
         {sep:true},
         {label:"Antworten",act:function(){openCompose("Antworten",m.from||"","Re: "+(m.subject||""),quoteHtml(m,"reply"));}},
         {label:"Weiterleiten",act:function(){openCompose("Weiterleiten","","Fwd: "+(m.subject||""),quoteHtml(m,"fwd"));}},
+        {label:"☑ Als To-Do",act:function(){todoFromMail(m);}},
         {sep:true},
         {label:mailUI.selected[id]?"Abwählen":"Auswählen",act:function(){ if(mailUI.selected[id])delete mailUI.selected[id]; else mailUI.selected[id]=true; renderMailAll(); }},
         {label:isTrashed(m)?"↺ Wiederherstellen":"🗑 In Papierkorb",danger:!isTrashed(m),act:function(){ if(isTrashed(m)){m.deleted=false;m.trashedAt=null;pushPending("restore",id,{folder:m.folder});save();renderMailAll();} else trashMessages([id]); }}
