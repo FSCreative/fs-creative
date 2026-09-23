@@ -9,6 +9,8 @@ const crypto = require("crypto");
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
+// Build-Kennung: ändert sich bei jedem Deploy -> Client erkennt neue Version und lädt sich einmal neu.
+const BUILD = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || String(Date.now());
 
 // Persistenter Speicher (Railway-Volume unter /data, sonst ROOT als Fallback).
 const DATA_DIR = (() => { try { fs.mkdirSync("/data", { recursive: true }); return "/data"; } catch (e) { return ROOT; } })();
@@ -218,6 +220,9 @@ function injectAdmin(html, stampISO) {
     'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
     'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
     'window.__fsdPoll=poll;' +
+    'window.__FSD_BUILD=' + JSON.stringify(BUILD) + ';' +
+    'function vchk(){fetch("/admin/api/version",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.build&&window.__FSD_BUILD&&d.build!==window.__FSD_BUILD){location.replace("/admin?v="+encodeURIComponent(d.build));}}).catch(function(){});}' +
+    'window.__fsdVchk=vchk;setInterval(vchk,30000);setTimeout(vchk,2000);' +
     'setInterval(poll,30000);setTimeout(poll,600);' +
     '})();</script>';
   return html.replace("</body>", script + "</body>");
@@ -308,6 +313,9 @@ async function handleAdmin(req, res, u, p) {
       } catch (e) { return send(res, 502, JSON.stringify({ error: "blitz_pay_failed" }), TYPES[".json"]); }
     });
     return;
+  }
+  if (p === "/admin/api/version") {
+    return send(res, 200, JSON.stringify({ build: BUILD }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });
