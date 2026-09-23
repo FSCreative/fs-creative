@@ -1753,6 +1753,9 @@ body.dark .titem:hover{background:#202a3e}
         state.calendar.events=manual.concat(imported);
         state.calendar.outlookAt=d.calendar.fetchedAt||new Date().toISOString();
       }
+      // To-Dos/Termine vom Server übernehmen (zuverlässiger als der Einmal-Load) — lokale, noch nicht gesyncte Änderungen bleiben geschützt.
+      if(todosReady && Array.isArray(d.todos)){ var ts=JSON.stringify(d.todos); var tdirty=(todoSig()!==lastTodoSig && lastTodoSig!==null); if(ts!==lastTodoSig && !tdirty){ state.todos=d.todos; lastTodoSig=ts; } }
+      if(eventsReady && Array.isArray(d.manualEvents)){ var sm2=d.manualEvents.map(function(e){ e.source="manual"; return e; }); var es=JSON.stringify(sm2); var edirty=(evtSig()!==lastEvtSig && lastEvtSig!==null); if(es!==lastEvtSig && !edirty){ var imp2=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); state.calendar.events=sm2.concat(imp2); lastEvtSig=evtSig(); } }
       save(); renderKPIs(); renderMailAll(); renderTodos(); renderCalendar(); renderOverviewUpcoming(); renderOverviewTodos(); tblKochdu(); renderValueroObjects(); drawCharts(activeTab);
       return true;
     }catch(e){ return false; }

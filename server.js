@@ -279,7 +279,7 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
     const [k, m, b, cal, ko, va] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr)]);
-    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va }), TYPES[".json"], { "Cache-Control": "no-store" });
+    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va, todos: readTodos(), manualEvents: readEvents() }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/kochdu-settle" && req.method === "POST") {
     if (!KOCHDU.token) return send(res, 503, JSON.stringify({ error: "kochdu_not_configured" }), TYPES[".json"]);
