@@ -318,6 +318,8 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const arr = Array.isArray(payload.todos) ? payload.todos : [];
+      // Schutz: nicht-leeren Bestand nie mit leerer Liste überschreiben (verhindert Datenverlust durch alt/leer geladene Tabs).
+      if (arr.length === 0 && !payload.force) { const cur = readTodos(); if (cur.length > 0) return send(res, 200, JSON.stringify({ ok: true, skipped: "empty_guard", count: cur.length }), TYPES[".json"]); }
       const ok = writeTodos(arr);
       return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: arr.length }), TYPES[".json"]);
     });
@@ -332,6 +334,7 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const arr = Array.isArray(payload.events) ? payload.events : [];
+      if (arr.length === 0 && !payload.force) { const cur = readEvents(); if (cur.length > 0) return send(res, 200, JSON.stringify({ ok: true, skipped: "empty_guard", count: cur.length }), TYPES[".json"]); }
       const ok = writeEvents(arr);
       return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: arr.length }), TYPES[".json"]);
     });
