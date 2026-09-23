@@ -499,9 +499,9 @@ body.dark .titem:hover{background:#202a3e}
       <div class="sec-title" style="margin-top:20px"><h2>App-Statistiken</h2><span class="hint">Installationen = registrierte Geräte (Push) · echte Store-Downloads nur in App Store / Play Console</span></div>
       <div class="grid kpis">
         <div class="card kpi big hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="lbl">Registrierte User</div></div><div class="val" id="k-users">—</div><div class="sub" id="k-users-sub">inkl. Desktop</div></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5a1 1 0 1 0 0-.01"/><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div><div class="lbl">Installationen Apple</div></div><div class="val" id="k-dl-apple">—</div><div class="sub">iOS-Geräte</div></div>
-        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 6h6"/></svg></div><div class="lbl">Installationen Android</div></div><div class="val" id="k-dl-android">—</div><div class="sub">Android-Geräte</div></div>
-        <div class="card kpi big hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></div><div class="lbl">Installationen gesamt</div></div><div class="val" id="k-dl-total">—</div><div class="sub" id="k-dl-total-sub">alle Geräte</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5a1 1 0 1 0 0-.01"/><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div><div class="lbl">App-Nutzer iOS</div></div><div class="val" id="k-dl-apple">—</div><div class="sub">zuletzt per iOS-App</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 6h6"/></svg></div><div class="lbl">App-Nutzer Android</div></div><div class="val" id="k-dl-android">—</div><div class="sub">zuletzt per Android-App</div></div>
+        <div class="card kpi big hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5a1 1 0 1 0 0-.01"/><rect x="7" y="2" width="10" height="20" rx="2"/></svg></div><div class="lbl">App-Nutzer gesamt</div></div><div class="val" id="k-dl-total">—</div><div class="sub" id="k-dl-total-sub">iOS + Android</div></div>
       </div>
       <div class="sec-title"><h2>Gebühren pro Restaurant</h2><span class="hint">Bar = du verrechnest · Online = automatisch</span></div>
       <div class="card tbl-card">
@@ -1330,12 +1330,12 @@ body.dark .titem:hover{background:#202a3e}
     setMoney("kf-online", c.kochdu.online);
     setProg("k-prog-fill","k-prog-lbl", c.kochdu.barPaid, c.kochdu.bar);
     // kochdu App-Statistiken (nutzer-Block vom kochdu /api/stats)
-    var ka=state.kochdu.app||{}; var g=ka.geraete||{};
+    var ka=state.kochdu.app||{};
     setCount("k-users", +ka.kunden||0);
-    setTxt("k-users-sub", "iOS "+num(+ka.apple||0)+" · Android "+num(+ka.android||0)+" · Web "+num(+ka.web||0)+(ka.gesamt!=null?" · inkl. Team "+num(+ka.gesamt||0):""));
-    setCount("k-dl-apple", +g.apple||0);
-    setCount("k-dl-android", +g.android||0);
-    setCount("k-dl-total", (+g.apple||0)+(+g.android||0));
+    setTxt("k-users-sub", "davon Web/Desktop "+num(+ka.web||0)+(ka.gesamt!=null?" · inkl. Team "+num(+ka.gesamt||0):""));
+    setCount("k-dl-apple", +ka.apple||0);
+    setCount("k-dl-android", +ka.android||0);
+    setCount("k-dl-total", (+ka.apple||0)+(+ka.android||0));
     setTxt("k-stats-updated", state.kochdu.statsAt?("Stand: "+new Date(state.kochdu.statsAt).toLocaleString("de-AT")):"");
     // kantineur
     setCount("ka-total", c.kantineur.aboTotal);
