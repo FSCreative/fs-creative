@@ -779,7 +779,7 @@ body.dark .titem:hover{background:#202a3e}
     if(MAIL_SNAPSHOT.fetchedAt && (!s.mail.lastFetch || MAIL_SNAPSHOT.fetchedAt>s.mail.lastFetch)){
       var prev={}; s.mail.messages.forEach(function(m){prev[m.id]=m;});
       s.mail.messages=(MAIL_SNAPSHOT.messages||[]).map(function(m){var p=prev[m.id]||{};
-        return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",
+        return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",
           read:("read" in p)?!!p.read:!!m.read, starred:("starred" in p)?!!p.starred:!!m.starred, deleted:!!p.deleted, trashedAt:p.trashedAt||null, attachments:Array.isArray(m.attachments)?m.attachments:[]};});
       if(Array.isArray(MAIL_SNAPSHOT.folders)) s.mail.folders=MAIL_SNAPSHOT.folders;
       s.mail.lastFetch=MAIL_SNAPSHOT.fetchedAt; s.mail.account=MAIL_SNAPSHOT.account||s.mail.account;
@@ -992,19 +992,22 @@ body.dark .titem:hover{background:#202a3e}
   function mailSorted(){ return mailAll().slice().sort(function(a,b){return (new Date(b.date))-(new Date(a.date));}); }
   var TRASHRX=/trash|papierkorb|deleted|gelösch|geloesch/i;
   var SPAMRX=/junk|spam/i;
+  var SENTRX=/sent|gesendet|ausgang|outbox/i;
   function isTrashed(m){ return !!m.deleted || TRASHRX.test(m.folder||""); }        // lokal gelöscht ODER im Server-Papierkorb
-  function isHidden(m){ return isTrashed(m) || SPAMRX.test(m.folder||""); }          // aus Posteingang/Neueste/Ungelesen ausblenden
+  function isSent(m){ return !m.deleted && SENTRX.test(m.folder||""); }              // im Gesendet-Ordner
+  function isHidden(m){ return isTrashed(m) || SPAMRX.test(m.folder||"") || isSent(m); } // aus Posteingang/Neueste/Ungelesen ausblenden
   function pushPending(op,id,extra){ if(!Array.isArray(state.mail.pending))state.mail.pending=[]; state.mail.pending.push(Object.assign({op:op,id:id,ts:new Date().toISOString()},extra||{})); }
   function folderName(path){ var meta=(state.mail.folders||[]).filter(function(f){return f.path===path;})[0]; if(meta&&meta.name)return meta.name; return String(path).split(/[\/.]/).pop(); }
   function customFolders(){
     var map={};
-    (state.mail.messages||[]).forEach(function(m){ if(m.deleted)return; var f=m.folder||"INBOX"; if(f==="INBOX"||TRASHRX.test(f))return; if(!map[f])map[f]={path:f,unread:0}; if(!m.read)map[f].unread++; });
-    (state.mail.folders||[]).forEach(function(fo){ if(fo.path==="INBOX"||TRASHRX.test(fo.path))return; if(!map[fo.path])map[fo.path]={path:fo.path,unread:fo.unread||0}; });
+    (state.mail.messages||[]).forEach(function(m){ if(m.deleted)return; var f=m.folder||"INBOX"; if(f==="INBOX"||TRASHRX.test(f)||SENTRX.test(f))return; if(!map[f])map[f]={path:f,unread:0}; if(!m.read)map[f].unread++; });
+    (state.mail.folders||[]).forEach(function(fo){ if(fo.path==="INBOX"||TRASHRX.test(fo.path)||SENTRX.test(fo.path))return; if(!map[fo.path])map[fo.path]={path:fo.path,unread:fo.unread||0}; });
     return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return folderName(a.path).localeCompare(folderName(b.path));});
   }
   function mailView(){
     var a=(state.mail.messages||[]).slice(); var f=mailUI.folder||"inbox"; var list;
     if(f==="trash") list=a.filter(function(m){return isTrashed(m);});
+    else if(f==="sent") list=a.filter(function(m){return isSent(m);});
     else if(f.indexOf("f:")===0){ var p=f.slice(2); list=a.filter(function(m){return (m.folder||"INBOX")===p && !m.deleted;}); }
     else { a=a.filter(function(m){return !isHidden(m);});
       if(f==="unread") list=a.filter(function(m){return !m.read;});
@@ -1018,7 +1021,7 @@ body.dark .titem:hover{background:#202a3e}
     var host=document.getElementById("mail-folders"); if(!host)return;
     var c=mailCounts();
     function fb(key,label,cnt,cls){ return '<button class="fbtn'+(cls?" "+cls:"")+(mailUI.folder===key?" active":"")+'" data-folder="'+key+'">'+label+' <span class="cnt">'+(cnt||0)+'</span></button>'; }
-    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("trash","Papierkorb",c.trash,"trash");
+    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("sent","Gesendet",c.sent)+fb("trash","Papierkorb",c.trash,"trash");
     var cf=customFolders();
     if(cf.length){ h+='<div class="fdiv">Ordner</div>'; cf.forEach(function(f){ h+=fb("f:"+f.path,esc(folderName(f.path)),f.unread); }); }
     host.innerHTML=h;
@@ -1030,7 +1033,9 @@ body.dark .titem:hover{background:#202a3e}
     var p=s.replace(/[",]/g,"").split(/\s+/).filter(Boolean);
     return (((p[0]||"?").charAt(0))+((p[1]||"").charAt(0))).toUpperCase(); }
   function mailRow(m,compact){
-    var who=esc(m.fromName||m.from||"—");
+    var sent=isSent(m);
+    var idobj=sent?{fromName:m.toName,from:m.to}:m;
+    var who=esc(sent?("An: "+(m.toName||m.to||"—")):(m.fromName||m.from||"—"));
     var subj=esc(m.subject||"(kein Betreff)");
     var when=fmtMailDate(m.date);
     var star='<span class="star'+(m.starred?" on":"")+'" data-star="'+esc(m.id)+'" title="Markieren">'+(m.starred?"★":"☆")+'</span>';
@@ -1043,7 +1048,7 @@ body.dark .titem:hover{background:#202a3e}
     var chk='<label class="mcheck" title="Auswählen"><input type="checkbox" data-selid="'+esc(m.id)+'"'+(mailUI.selected[m.id]?" checked":"")+'></label>';
     return '<div class="mrow2'+(m.read?"":" unread")+(mailUI.sel===m.id?" sel":"")+(mailUI.selected[m.id]?" picked":"")+(isTrashed(m)?" trashed":"")+'" data-mid="'+esc(m.id)+'">'+
       chk+
-      '<div class="av" style="background:'+avColor(m.fromName||m.from)+'">'+esc(initials(m))+'</div>'+
+      '<div class="av" style="background:'+avColor(idobj.fromName||idobj.from)+'">'+esc(initials(idobj))+'</div>'+
       '<div class="mmain">'+
         '<div class="l1"><span class="who">'+who+'</span>'+((m.attachments&&m.attachments.length)?'<span class="clip" title="'+m.attachments.length+' Anhang">📎</span>':'')+star+'<span class="when">'+when+'</span></div>'+
         '<div class="subj">'+subj+'</div>'+
@@ -1101,6 +1106,7 @@ body.dark .titem:hover{background:#202a3e}
       inboxUnread:live.filter(function(m){return (m.folder||"INBOX")==="INBOX"&&!m.read;}).length,
       unread:live.filter(function(m){return !m.read;}).length,
       starred:live.filter(function(m){return m.starred;}).length,
+      sent:a.filter(function(m){return isSent(m);}).length,
       trash:a.filter(function(m){return isTrashed(m);}).length}; }
   function renderMailBadge(){ var c=mailCounts(); var b=document.getElementById("mail-badge"); if(b){ if(c.unread>0){b.style.display="";b.textContent=c.unread;}else b.style.display="none"; } }
   // Neue-Buchungen-Zähler je Plattform (wie beim Postfach). Baseline in localStorage.
@@ -1141,9 +1147,9 @@ body.dark .titem:hover{background:#202a3e}
         '<button class="btn sm danger" data-mact="trash">🗑 In Papierkorb</button>';
     host.innerHTML=
       '<div class="mactions">'+acts+'</div>'+
-      '<div class="mread-head2"><div class="av lg" style="background:'+avColor(m.fromName||m.from)+'">'+esc(initials(m))+'</div>'+
-        '<div><div class="rn">'+esc(m.fromName||m.from||"—")+'</div>'+
-        '<div class="re">'+(m.from?esc(m.from)+' · ':'')+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'</div></div></div>'+
+      '<div class="mread-head2"><div class="av lg" style="background:'+avColor(isSent(m)?(m.toName||m.to):(m.fromName||m.from))+'">'+esc(initials(isSent(m)?{fromName:m.toName,from:m.to}:m))+'</div>'+
+        '<div><div class="rn">'+(isSent(m)?"An: ":"")+esc((isSent(m)?(m.toName||m.to):(m.fromName||m.from))||"—")+'</div>'+
+        '<div class="re">'+((isSent(m)?m.to:m.from)?esc(isSent(m)?m.to:m.from)+' · ':'')+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'</div></div></div>'+
       '<h2 class="rsubj">'+esc(m.subject||"(kein Betreff)")+'</h2>'+
       '<div class="mbody'+(m.bodyHtml?'':' plain')+'">'+(m.bodyHtml?(m.body||""):esc(m.body||m.preview||""))+'</div>'+
       renderAttachments(m)+
@@ -1708,7 +1714,7 @@ body.dark .titem:hover{background:#202a3e}
         var prev={}; (state.mail.messages||[]).forEach(function(m){prev[m.id]=m;});
         state.mail.folders=Array.isArray(d.mail.folders)?d.mail.folders:state.mail.folders;
         state.mail.account=d.mail.account||state.mail.account; state.mail.lastFetch=d.mail.fetchedAt||state.mail.lastFetch;
-        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[]};}); }
+        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[]};}); }
       if(d.kochdu&&d.kochdu.totals){
         state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
         state.kochdu.totals=d.kochdu.totals; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
