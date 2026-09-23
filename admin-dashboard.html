@@ -42,8 +42,8 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-conte
 #hdr-refresh.spin svg{animation:fspin .8s cubic-bezier(.4,.1,.3,1)}
 @keyframes fspin{to{transform:rotate(360deg)}}
 /* Privatsphäre: Einnahmen/Beträge verbergen */
-.money,.val,.qsum,.bd-amount,.att-sz,.prog .plabel,.kpi input.ghost,#ov-offen-all,#ov-koch-offen,#ov-bd-offen,#ov-val-offen,#ov-kant-mrr,.chart-box{filter:blur(0);transition:filter .4s ease-out}
-body.priv .money,body.priv .val,body.priv .qsum,body.priv .bd-amount,body.priv .att-sz,body.priv .prog .plabel,body.priv .kpi input.ghost,body.priv #ov-offen-all,body.priv #ov-koch-offen,body.priv #ov-bd-offen,body.priv #ov-val-offen,body.priv #ov-kant-mrr{filter:blur(9px);pointer-events:none;user-select:none}
+.money,.val,.qsum,.bd-amount,.att-sz,.prog .plabel,.kpi input.ghost,#ov-offen-all,#ov-koch-offen,#ov-bd-offen,#ov-val-offen,#ov-val-refund-amt,#ov-kant-mrr,.chart-box{filter:blur(0);transition:filter .4s ease-out}
+body.priv .money,body.priv .val,body.priv .qsum,body.priv .bd-amount,body.priv .att-sz,body.priv .prog .plabel,body.priv .kpi input.ghost,body.priv #ov-offen-all,body.priv #ov-koch-offen,body.priv #ov-bd-offen,body.priv #ov-val-offen,body.priv #ov-val-refund-amt,body.priv #ov-kant-mrr,body.priv .val-refund b{filter:blur(9px);pointer-events:none;user-select:none}
 body.priv .chart-box{filter:blur(10px)}
 #hdr-eye.on{color:var(--accent);border-color:#cdd6e6}
 
@@ -81,6 +81,9 @@ body.dark .mbody.plain{color:#cdd6e6}
 body.dark .mbody:not(.plain){background:#fff;color:#1a1a1a;border-radius:10px;padding:12px 14px}
 body.dark .mbody:not(.plain) a{color:#2f6bff}
 body.dark .mbody.plain blockquote,body.dark .c-editor blockquote{border-left-color:#2a3446;color:var(--dim)}
+.val-refund{margin-top:10px;background:#fdecea;border:1px solid #f6cdc9;color:#8a2a20;border-radius:11px;padding:9px 12px;font-size:12.5px;font-weight:600;line-height:1.5}
+body.dark .val-refund{background:#3a1d1d;border-color:#5a2a2a;color:#ffb4a8}
+.qcard.has-refund{border-color:var(--red)}
 body.dark .tabs{background:linear-gradient(135deg,rgba(30,40,62,.85),rgba(38,32,60,.85));border:1px solid rgba(255,255,255,.08);box-shadow:0 12px 34px -20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
 body.dark .tab-ind{background:linear-gradient(180deg,rgba(70,86,120,.55),rgba(50,62,92,.4));border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 24px -10px rgba(0,0,0,.55),inset 0 1px 1.5px rgba(255,255,255,.16)}
 body.dark .tab-ind::before{background:linear-gradient(120deg,rgba(255,255,255,0) 32%,rgba(255,255,255,.14) 50%,rgba(255,255,255,0) 68%)}
@@ -460,6 +463,7 @@ body.dark .titem:hover{background:#202a3e}
           <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5v14"/><path d="M2 9h17a3 3 0 0 1 3 3v7"/><path d="M2 16h20"/><path d="M6 9v7"/></svg></div><div class="lbl">VALUERO</div></div>
           <div class="val" id="ov-val-paid">—</div>
           <div class="sub">Noch offen: <b><span id="ov-val-offen">—</span></b></div>
+          <div class="sub" id="ov-val-refund" style="display:none;color:var(--red);font-weight:700">⚠ Zu erstatten: <span id="ov-val-refund-amt">—</span></div>
         </div>
       </div>
       <div class="split" style="margin-top:16px">
@@ -554,6 +558,7 @@ body.dark .titem:hover{background:#202a3e}
         <div class="card kpi big hoverable"><div class="top"><div class="ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg></div><div class="lbl">Offene Gebühren</div></div><div class="val amber" id="v-offen">—</div><div class="sub">noch nicht bezahlt</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><div class="lbl">Bereits bezahlt</div></div><div class="val green" id="v-paid">—</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic grey"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Gebühren gesamt</div></div><div class="val" id="v-total">—</div></div>
+        <div class="card kpi big hoverable" id="v-refund-card" style="display:none;border-color:var(--red)"><div class="top"><div class="ic" style="background:#fdecea;color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2-9.5L3 7"/></svg></div><div class="lbl">Zu erstatten</div></div><div class="val" style="color:var(--red)" id="v-refund">—</div><div class="sub">bereits verrechnet, danach storniert</div></div>
       </div>
       <div class="card hoverable" style="margin-top:14px"><div class="prog"><span class="plabel" id="v-prog-lbl">Verrechnet-Quote —</span><div class="bar"><div class="fill" id="v-prog-fill"></div></div></div></div>
       <div class="sec-title"><h2>Gebühren je Objekt</h2><span class="hint">Zeile anklicken für Monatsaufstellung · „Verrechnet" stellst du selbst</span></div>
@@ -872,15 +877,19 @@ body.dark .titem:hover{background:#202a3e}
     var bl=state.blitzdings||{}; var past,up,cntP,cntU,bmonth=0,bupcount=0;
     if(bl.statsAt){ past=(bl.paidCents||0)/100; up=(bl.openCents||0)/100; cntP=bl.paidCount||0; cntU=bl.openCount||0; bmonth=(bl.thisMonthPaidCents||0)/100; bupcount=bl.upcomingCount||0; }
     else { var b=(bl.bookings||[]); past=0;up=0;cntP=0;cntU=0; b.forEach(function(x){var v=+x.betrag||0;if(x.status==="vergangen"){past+=v;cntP++;}else{up+=v;cntU++;}}); bupcount=cntU; }
-    var vOffen=0,vPaid=0,vTot=0;
-    (state.valuero.live||[]).forEach(function(o){ vTot+=(+o.provisionCents||0)/100; });
+    var vOffen=0,vPaid=0,vTot=0,vRefund=0;
     var vst=state.valuero.settled||{};
-    ["antonhaus","alpinappart"].forEach(function(k){ (vst[k]||[]).forEach(function(s2){ if(String(s2.at||"").slice(0,4)===String(curYear())) vPaid+=(+s2.amountCents||0)/100; }); });
-    vOffen=Math.max(0,vTot-vPaid);
+    var vProv={}; (state.valuero.live||[]).forEach(function(o){ var p=(+o.provisionCents||0)/100; vProv[o.key]=(vProv[o.key]||0)+p; vTot+=p; });
+    // Erstattung/Offen pro Objekt getrennt: verrechnet > Provision (z. B. nach Storno) = zu erstatten
+    var vKeys={}; Object.keys(vProv).forEach(function(k){vKeys[k]=1;}); Object.keys(vst).forEach(function(k){vKeys[k]=1;});
+    Object.keys(vKeys).forEach(function(k){
+      var s=0; (vst[k]||[]).forEach(function(s2){ if(String(s2.at||"").slice(0,4)===String(curYear())) s+=(+s2.amountCents||0)/100; });
+      vPaid+=s; var prov=vProv[k]||0; vOffen+=Math.max(0,prov-s); vRefund+=Math.max(0,s-prov);
+    });
     return {kochdu:{bar:bar,online:online,sum:bar+online,best:best,barOffen:barOffen,barPaid:barPaid},
       kantineur:{umK:umK,umM:umM,mrr:mrrEff,listMrr:umK+umM,aboTotal:(+ka.aboKantineur||0)+(+ka.aboMagazineur||0)},
       blitzdings:{past:past,up:up,cntP:cntP,cntU:cntU,month:bmonth,upcount:bupcount},
-      valuero:{offen:vOffen,paid:vPaid,total:vTot}};
+      valuero:{offen:vOffen,paid:vPaid,total:vTot,refund:vRefund}};
   }
 
   // ---- animated setters ----
@@ -946,6 +955,7 @@ body.dark .titem:hover{background:#202a3e}
     host.innerHTML=live.map(function(o){
       var provision=(+o.provisionCents||0)/100;
       var settled=valSettledCents(o.key)/100, open=Math.max(0,provision-settled);
+      var refund=Math.max(0,settled-provision);
       var last=valLastAt(o.key);
       var opened=!!valueroOpen[o.key];
       var settleBtn = open>0.005
@@ -954,12 +964,14 @@ body.dark .titem:hover{background:#202a3e}
       var months=(o.months||[]).map(function(m){
         return '<tr><td>'+esc(m.month)+'</td><td class="num">'+(+m.bookings||0)+'</td><td class="num money" style="color:var(--green)">'+eur((+m.provisionCents||0)/100)+'</td></tr>';
       }).join("");
-      return '<div class="card qcard">'+
+      var refundBar = refund>0.005 ? '<div class="val-refund">⚠ Zu erstatten: <b>'+eur(refund)+'</b> — mehr verrechnet als aktuelle Gebühr (Storno nach Abrechnung). Mit „Rückgängig" korrigieren.</div>' : '';
+      return '<div class="card qcard'+(refund>0.005?' has-refund':'')+'">'+
         '<div class="qhead" data-vtoggle="'+esc(o.key)+'" style="cursor:pointer">'+
           '<div class="qtitle">'+esc(o.name)+' <span class="chip" style="background:#e3f7ee;color:#0a8a4f;border-color:transparent;font-size:11px">'+esc(o.ratesLabel||"")+'</span>'+
-            '<span class="qsum">offen '+eur(open)+' · verrechnet '+eur(settled)+' · gesamt '+eur(provision)+(last?' · letzte '+new Date(last).toLocaleDateString("de-AT"):"")+'</span></div>'+
+            '<span class="qsum">offen '+eur(open)+' · verrechnet '+eur(settled)+' · gesamt '+eur(provision)+(refund>0.005?' · <span style="color:var(--red);font-weight:700">erstatten '+eur(refund)+'</span>':'')+(last?' · letzte '+new Date(last).toLocaleDateString("de-AT"):"")+'</span></div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+settleBtn+'<span style="color:var(--faint);transition:transform .2s;display:inline-block;transform:rotate('+(opened?"90":"0")+'deg)">›</span></div>'+
         '</div>'+
+        refundBar+
         (opened?('<div class="tbl-card" style="padding:0;margin-top:10px"><table style="min-width:0"><thead><tr><th>Buchungsmonat</th><th class="num">Buchungen</th><th class="num">Gebühr €</th></tr></thead><tbody>'+(months||'<tr><td colspan="3" class="empty">Keine Buchungen im Jahr.</td></tr>')+'</tbody></table></div>'):'')+
       '</div>';
     }).join("");
@@ -1248,6 +1260,7 @@ body.dark .titem:hover{background:#202a3e}
     setMoney("ov-kant-paid", kantPaid);     setMoney("ov-kant-mrr", c.kantineur.mrr);
     setMoney("ov-bd-paid", c.blitzdings.past); setMoney("ov-bd-offen", c.blitzdings.up);
     setMoney("ov-val-paid", c.valuero.paid); setMoney("ov-val-offen", c.valuero.offen);
+    var ovr=document.getElementById("ov-val-refund"); if(ovr){ ovr.style.display=(c.valuero.refund>0.005)?"":"none"; setTxt("ov-val-refund-amt", eur(c.valuero.refund||0)); }
     // kochdu (Live-Daten)
     setMoney("k-baroffen", c.kochdu.barOffen);
     setMoney("k-barpaid", c.kochdu.barPaid);
@@ -1295,6 +1308,8 @@ body.dark .titem:hover{background:#202a3e}
     setMoney("v-offen", c.valuero.offen);
     setMoney("v-paid", c.valuero.paid);
     setMoney("v-total", c.valuero.total);
+    setMoney("v-refund", c.valuero.refund||0);
+    var vrc=document.getElementById("v-refund-card"); if(vrc) vrc.style.display=(c.valuero.refund>0.005)?"":"none";
     setProg("v-prog-fill","v-prog-lbl", c.valuero.paid, c.valuero.total);
     updateBookingBadges();
   }
