@@ -830,7 +830,7 @@ body.dark .titem:hover{background:#202a3e}
     if(KOCHDU_STATS.fetchedAt && (!s.kochdu.statsAt || KOCHDU_STATS.fetchedAt>s.kochdu.statsAt)){
       s.kochdu.live=Array.isArray(KOCHDU_STATS.restaurants)?KOCHDU_STATS.restaurants:[];
       s.kochdu.totals=KOCHDU_STATS.totals||null;
-      s.kochdu.app=KOCHDU_STATS.app||s.kochdu.app||null;
+      s.kochdu.app=KOCHDU_STATS.nutzer||s.kochdu.app||null;
       s.kochdu.statsAt=KOCHDU_STATS.fetchedAt;
     }
     if(!Array.isArray(s.kochdu.live)) s.kochdu.live=[];
@@ -1329,13 +1329,13 @@ body.dark .titem:hover{background:#202a3e}
     setMoney("kf-barpaid", c.kochdu.barPaid);
     setMoney("kf-online", c.kochdu.online);
     setProg("k-prog-fill","k-prog-lbl", c.kochdu.barPaid, c.kochdu.bar);
-    // kochdu App-Statistiken
-    var ka=state.kochdu.app||{}; var pu=ka.platformUsers||{}; var dv=ka.devices||{};
-    setCount("k-users", +ka.usersTotal||0);
-    setTxt("k-users-sub", (ka.usersVerified!=null?(num(+ka.usersVerified||0)+" verifiziert · "):"")+"iOS "+num(+pu.apple||0)+" · Android "+num(+pu.android||0)+" · Web "+num(+pu.web||0));
-    setCount("k-dl-apple", +dv.apple||0);
-    setCount("k-dl-android", +dv.android||0);
-    setCount("k-dl-total", (dv.total!=null?+dv.total:((+dv.apple||0)+(+dv.android||0)))||0);
+    // kochdu App-Statistiken (nutzer-Block vom kochdu /api/stats)
+    var ka=state.kochdu.app||{}; var g=ka.geraete||{};
+    setCount("k-users", +ka.kunden||0);
+    setTxt("k-users-sub", "iOS "+num(+ka.apple||0)+" · Android "+num(+ka.android||0)+" · Web "+num(+ka.web||0)+(ka.gesamt!=null?" · inkl. Team "+num(+ka.gesamt||0):""));
+    setCount("k-dl-apple", +g.apple||0);
+    setCount("k-dl-android", +g.android||0);
+    setCount("k-dl-total", (+g.apple||0)+(+g.android||0));
     setTxt("k-stats-updated", state.kochdu.statsAt?("Stand: "+new Date(state.kochdu.statsAt).toLocaleString("de-AT")):"");
     // kantineur
     setCount("ka-total", c.kantineur.aboTotal);
@@ -1781,7 +1781,7 @@ body.dark .titem:hover{background:#202a3e}
         state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[]};}); }
       if(d.kochdu&&d.kochdu.totals){
         state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
-        state.kochdu.totals=d.kochdu.totals; if(d.kochdu.app)state.kochdu.app=d.kochdu.app; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
+        state.kochdu.totals=d.kochdu.totals; if(d.kochdu.nutzer)state.kochdu.app=d.kochdu.nutzer; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
       }
       if(d.valuero&&Array.isArray(d.valuero.objects)){
         state.valuero.live=d.valuero.objects; state.valuero.statsAt=d.valuero.fetchedAt||new Date().toISOString();
