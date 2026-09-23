@@ -429,6 +429,7 @@ body.dark .titem:hover{background:#202a3e}
   <nav class="tabs" id="tabs">
     <span class="tab-ind" id="tabInd"></span>
     <button class="tab active" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg><span class="t">Übersicht</span></button>
+    <button class="tab" data-tab="fscreative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg><span class="t">FS Creative</span></button>
     <button class="tab" data-tab="kochdu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6v6a5 5 0 0 0 10 0V6"/></svg><span class="t">kochdu</span><span class="badge" id="kochdu-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="kantineur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 8l16 8"/></svg><span class="t">Kantineur</span></button>
     <button class="tab" data-tab="blitzdings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg><span class="t">Blitzdings</span><span class="badge" id="blitz-badge" style="display:none">0</span></button>
@@ -484,6 +485,27 @@ body.dark .titem:hover{background:#202a3e}
     </section>
 
     <!-- KOCHDU -->
+    <!-- FS CREATIVE (Website-Status + Cloudflare-Insights) -->
+    <section class="panel" id="p-fscreative">
+      <div class="mactions" style="margin:2px 0 12px;align-items:center">
+        <button class="btn sm primary" id="fsc-refresh"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg> Aktualisieren</button>
+        <span class="hint" id="fsc-updated"></span>
+      </div>
+      <div class="grid kpis">
+        <div class="card kpi big hero h-blue hoverable"><div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg></div><div class="lbl">Websites online</div></div><div class="val" id="fsc-online">—</div><div class="sub" id="fsc-online-sub">von —</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></div><div class="lbl">Requests (7 Tage)</div></div><div class="val" id="fsc-req">—</div><div class="sub">über alle Sites</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="lbl">Besucher (7 T, ~)</div></div><div class="val" id="fsc-vis">—</div><div class="sub">Cloudflare-Schätzung</div></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic" style="background:#fdecea;color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="lbl">Bedrohungen geblockt</div></div><div class="val" id="fsc-threats">—</div><div class="sub">letzte 7 Tage</div></div>
+      </div>
+      <div class="sec-title"><h2>Aktive Websites</h2><span class="hint">Status per Live-Ping · Insights aus Cloudflare (7 Tage)</span></div>
+      <div class="card tbl-card">
+        <table>
+          <thead><tr><th style="width:16px"></th><th>Domain</th><th class="num">Antwort</th><th class="num">Requests 7T</th><th class="num">Bedroh. 7T</th><th></th></tr></thead>
+          <tbody id="tb-sites"><tr><td colspan="6" class="empty">Lade Cloudflare-Daten …</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel" id="p-kochdu">
       <div class="mactions" style="margin:2px 0 12px;align-items:center">
         <a class="btn sm primary" href="https://www.kochdu.at/admin" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg> kochdu-Admin öffnen</a>
@@ -1639,11 +1661,41 @@ body.dark .titem:hover{background:#202a3e}
     if(name==="postfach") renderMailAll();
     else if(name==="todo") renderTodos();
     else if(name==="kalender") renderCalendar();
+    else if(name==="fscreative") loadSites(false);
     if(name==="kochdu"||name==="blitzdings"||name==="valuero") clearBookingBadge(name);
+  }
+  // ---- FS Creative: Website-Status + Cloudflare-Insights ----
+  var sitesData=null, sitesLoading=false;
+  function loadSites(force){
+    if(!window.__FSD_HOSTED||!window.__FSD_SITES) return;
+    if(sitesData && !force) { renderSites(); return; }
+    if(sitesLoading) return; sitesLoading=true;
+    var tb=document.getElementById("tb-sites"); if(tb&&!sitesData) tb.innerHTML='<tr><td colspan="6" class="empty">Lade Cloudflare-Daten … (kann ein paar Sekunden dauern)</td></tr>';
+    fetch(window.__FSD_SITES,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){ sitesLoading=false; sitesData=d||{configured:false,sites:[],totals:{}}; renderSites(); }).catch(function(){ sitesLoading=false; var t=document.getElementById("tb-sites"); if(t)t.innerHTML='<tr><td colspan="6" class="empty">Konnte Daten nicht laden.</td></tr>'; });
+  }
+  function renderSites(){
+    var d=sitesData||{}; var tot=d.totals||{}; var sites=d.sites||[];
+    if(d.configured===false){
+      setTxt("fsc-online","—"); setTxt("fsc-online-sub","Cloudflare-Token noch nicht gesetzt");
+      var tb0=document.getElementById("tb-sites"); if(tb0)tb0.innerHTML='<tr><td colspan="6" class="empty">Cloudflare ist noch nicht verbunden (CF_API_TOKEN fehlt).</td></tr>';
+      return;
+    }
+    setCount("fsc-online", +tot.online||0); setTxt("fsc-online-sub", "von "+num(+tot.sites||0)+" Websites");
+    setCount("fsc-req", +tot.requests7d||0); setCount("fsc-vis", +tot.uniques7d||0); setCount("fsc-threats", +tot.threats7d||0);
+    var upd=document.getElementById("fsc-updated"); if(upd)upd.textContent=d.fetchedAt?("Stand: "+new Date(d.fetchedAt).toLocaleString("de-AT")):"";
+    var tb=document.getElementById("tb-sites"); if(!tb)return;
+    if(!sites.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Keine aktiven Zonen gefunden.</td></tr>'; return; }
+    tb.innerHTML=sites.map(function(s){
+      var dot='<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+(s.up?"var(--green)":"var(--red)")+'"></span>';
+      var ms=s.up?(s.ms+" ms"):"offline";
+      var open='<a class="btn sm" href="https://'+esc(s.name)+'" target="_blank" rel="noopener">öffnen ↗</a>';
+      return '<tr'+(s.up?"":' style="background:rgba(240,68,56,.06)"')+'><td>'+dot+'</td><td style="font-weight:600">'+esc(s.name)+'</td><td class="num'+(s.up?"":' ')+'" style="color:'+(s.up?"var(--dim)":"var(--red)")+'">'+esc(ms)+'</td><td class="num">'+num(+s.requests7d||0)+'</td><td class="num"'+((+s.threats7d)>0?' style="color:var(--amber);font-weight:700"':'')+'>'+num(+s.threats7d||0)+'</td><td class="num">'+open+'</td></tr>';
+    }).join("");
   }
   document.getElementById("tabs").addEventListener("click",function(e){
     var b=e.target.closest(".tab"); if(!b)return; selectTab(b.getAttribute("data-tab"));
   });
+  var fscR=document.getElementById("fsc-refresh"); if(fscR) fscR.addEventListener("click",function(){ loadSites(true); });
   window.addEventListener("resize",function(){ moveIndicator(); });
 
   document.body.addEventListener("input",function(e){

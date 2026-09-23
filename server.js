@@ -116,6 +116,8 @@ const KOCHDU = { url: process.env.KOCHDU_STATS_URL || "https://kochdu.at/api/sta
 // VALUERO: Gebühren pro Objekt (Antonhaus über valuero-stats, Alpinappart über /api/fees).
 const ANTONHAUS = { url: process.env.ANTONHAUS_STATS_URL || "https://antonhaus.at/api/valuero-stats", token: process.env.ANTONHAUS_STATS_TOKEN || "" };
 const ALPINAPPART = { url: process.env.ALPINAPPART_FEES_URL || "https://www.alpinappart.at/api/fees", key: process.env.ALPINAPPART_FEES_KEY || "" };
+// Cloudflare: Zonen (= aktive Websites) + Insights
+const CF = { token: process.env.CF_API_TOKEN || "" };
 let ADMIN_HTML = "";
 try { ADMIN_HTML = fs.readFileSync(path.join(ROOT, "admin-dashboard.html"), "utf8"); } catch (e) { ADMIN_HTML = "<!doctype html><p>admin-dashboard.html fehlt.</p>"; }
 
@@ -210,13 +212,59 @@ async function calendarEvents() {
   if (!d || d.error || !Array.isArray(d.events)) return null;
   return d;
 }
+// ── Cloudflare: aktive Websites (Zonen) + Status + Insights ──
+let SITES_CACHE = { at: 0, data: null };
+async function cfGet(pathq) {
+  if (!CF.token) return null;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000);
+  try { const r = await fetch("https://api.cloudflare.com/client/v4" + pathq, { headers: { Authorization: "Bearer " + CF.token }, signal: ctrl.signal }); return await r.json(); }
+  catch (e) { return null; } finally { clearTimeout(t); }
+}
+async function cfGraphQL(query, variables) {
+  if (!CF.token) return null;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
+  try { const r = await fetch("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { Authorization: "Bearer " + CF.token, "Content-Type": "application/json" }, body: JSON.stringify({ query, variables }), signal: ctrl.signal }); return await r.json(); }
+  catch (e) { return null; } finally { clearTimeout(t); }
+}
+async function pingSite(host) {
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 7000); const t0 = Date.now();
+  try {
+    let r = await fetch("https://" + host + "/", { method: "HEAD", redirect: "follow", signal: ctrl.signal });
+    if (r.status === 405 || r.status === 501) r = await fetch("https://" + host + "/", { method: "GET", redirect: "follow", signal: ctrl.signal });
+    return { up: r.status < 500, status: r.status, ms: Date.now() - t0 };
+  } catch (e) { return { up: false, status: 0, ms: Date.now() - t0 }; } finally { clearTimeout(t); }
+}
+async function sitesSnapshot() {
+  if (!CF.token) return { fetchedAt: new Date().toISOString(), configured: false, totals: {}, sites: [] };
+  if (SITES_CACHE.data && (Date.now() - SITES_CACHE.at) < 5 * 60 * 1000) return SITES_CACHE.data;
+  const zj = await cfGet("/zones?status=active&per_page=200");
+  if (!zj || !zj.success || !Array.isArray(zj.result)) return SITES_CACHE.data || { fetchedAt: new Date().toISOString(), configured: true, error: "cf_zones_failed", totals: {}, sites: [] };
+  const zones = zj.result.map(z => ({ id: z.id, name: z.name }));
+  const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const until = new Date().toISOString().slice(0, 10);
+  const perZone = {};
+  const gq = 'query($zt:String!,$s:String!,$u:String!){viewer{zones(filter:{zoneTag:$zt}){httpRequests1dGroups(limit:10,filter:{date_geq:$s,date_leq:$u}){sum{requests threats bytes}uniq{uniques}}}}}';
+  await Promise.all(zones.map(async z => {
+    let requests = 0, threats = 0, bytes = 0, uniques = 0;
+    const gj = await cfGraphQL(gq, { zt: z.id, s: since, u: until });
+    try { (gj.data.viewer.zones[0].httpRequests1dGroups || []).forEach(g => { requests += g.sum.requests || 0; threats += g.sum.threats || 0; bytes += g.sum.bytes || 0; uniques += (g.uniq && g.uniq.uniques) || 0; }); } catch (e) {}
+    perZone[z.id] = { requests, threats, bytes, uniques };
+  }));
+  const pings = await Promise.all(zones.map(z => pingSite(z.name)));
+  const sites = zones.map((z, i) => ({ name: z.name, up: pings[i].up, status: pings[i].status, ms: pings[i].ms, requests7d: perZone[z.id].requests, threats7d: perZone[z.id].threats, uniques7d: perZone[z.id].uniques }))
+    .sort((a, b) => (a.up === b.up ? a.name.localeCompare(b.name) : (a.up ? 1 : -1)));
+  const totals = sites.reduce((t, s) => { t.sites++; if (s.up) t.online++; t.requests7d += s.requests7d; t.threats7d += s.threats7d; t.uniques7d += s.uniques7d; t.bytes7d += (perZone[zones.find(z => z.name === s.name).id].bytes) || 0; return t; }, { sites: 0, online: 0, requests7d: 0, threats7d: 0, uniques7d: 0, bytes7d: 0 });
+  const data = { fetchedAt: new Date().toISOString(), configured: true, totals, sites };
+  SITES_CACHE = { at: Date.now(), data };
+  return data;
+}
 function replaceConst(html, name, obj) {
   const re = new RegExp("var " + name + "=\\{[\\s\\S]*?\\};");
   return html.replace(re, "var " + name + "=" + JSON.stringify(obj) + ";");
 }
 function injectAdmin(html, stampISO) {
   const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_MAIL_ATTACH="/admin/api/mail-attachment"; window.__FSD_TODOS="/admin/api/todos"; window.__FSD_EVENTS="/admin/api/events"; window.__FSD_LOGOUT="/admin/logout";' +
+    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_MAIL_ATTACH="/admin/api/mail-attachment"; window.__FSD_TODOS="/admin/api/todos"; window.__FSD_EVENTS="/admin/api/events"; window.__FSD_SITES="/admin/api/sites"; window.__FSD_LOGOUT="/admin/logout";' +
     'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
     'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
     'window.__fsdPoll=poll;' +
@@ -316,6 +364,10 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/version") {
     return send(res, 200, JSON.stringify({ build: BUILD }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/sites") {
+    try { const s = await sitesSnapshot(); return send(res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });
