@@ -841,20 +841,28 @@ body.dark .titem:hover{background:#202a3e}
   function storableState(){ var c=Object.assign({},state); if(state.mail){ c.mail=Object.assign({},state.mail,{messages:[]}); } return c; }
   function save(){ state.meta.updatedAt=new Date().toISOString(); try{localStorage.setItem(KEY,JSON.stringify(storableState()));}catch(e){} renderUpdated(); syncTodos(); syncEvents(); }
   // To-Dos serverseitig sichern (gerätewechselsicher, überlebt Cache-Löschung)
-  var todosReady=false, todoSyncT=null;
-  function syncTodos(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS||!todosReady) return; clearTimeout(todoSyncT); todoSyncT=setTimeout(function(){ try{ fetch(window.__FSD_TODOS,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({todos:state.todos||[]})}).catch(function(){}); }catch(e){} },600); }
+  // WICHTIG: nur bei ECHTER Änderung hochladen (Signatur-Abgleich), sonst überschreibt ein leer geladener Tab
+  // bei jedem Poll den Server. lastTodoSig = zuletzt bekannter Serverstand.
+  var todosReady=false, todoSyncT=null, lastTodoSig=null;
+  function todoSig(){ return JSON.stringify(state.todos||[]); }
+  function syncTodos(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS||!todosReady) return; if(todoSig()===lastTodoSig) return; clearTimeout(todoSyncT); todoSyncT=setTimeout(function(){ var body=todoSig(); try{ fetch(window.__FSD_TODOS,{method:"POST",headers:{"Content-Type":"application/json"},body:'{"todos":'+body+'}'}).then(function(r){ if(r&&r.ok) lastTodoSig=body; }).catch(function(){}); }catch(e){} },600); }
   function loadTodosFromServer(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS){ todosReady=true; return; }
     fetch(window.__FSD_TODOS,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-      if(d&&Array.isArray(d.todos)&&d.todos.length){ state.todos=d.todos; }
+      var srv=(d&&Array.isArray(d.todos))?d.todos:[];
+      if(srv.length){ state.todos=srv; lastTodoSig=todoSig(); }   // Server hat Daten -> übernehmen, kein Rück-Post
+      else { lastTodoSig=JSON.stringify([]); }                    // Server leer -> lokale (falls vorhanden) werden per syncTodos hochgeschoben
       todosReady=true; save(); renderTodos(); renderOverviewTodos(); renderCalendar(); renderKPIs();
     }).catch(function(){ todosReady=true; }); }
   // Manuelle Termine serverseitig sichern (Outlook-Termine kommen live und werden nicht gespeichert)
-  var eventsReady=false, evSyncT=null;
+  var eventsReady=false, evSyncT=null, lastEvtSig=null;
   function manualEvents(){ return (state.calendar.events||[]).filter(function(e){return e.source==="manual";}); }
-  function syncEvents(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS||!eventsReady) return; clearTimeout(evSyncT); evSyncT=setTimeout(function(){ try{ fetch(window.__FSD_EVENTS,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({events:manualEvents()})}).catch(function(){}); }catch(e){} },600); }
+  function evtSig(){ return JSON.stringify(manualEvents()); }
+  function syncEvents(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS||!eventsReady) return; if(evtSig()===lastEvtSig) return; clearTimeout(evSyncT); evSyncT=setTimeout(function(){ var body=evtSig(); try{ fetch(window.__FSD_EVENTS,{method:"POST",headers:{"Content-Type":"application/json"},body:'{"events":'+body+'}'}).then(function(r){ if(r&&r.ok) lastEvtSig=body; }).catch(function(){}); }catch(e){} },600); }
   function loadEventsFromServer(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS){ eventsReady=true; return; }
     fetch(window.__FSD_EVENTS,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-      if(d&&Array.isArray(d.events)&&d.events.length){ var imported=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); var srv=d.events.map(function(e){ e.source="manual"; return e; }); state.calendar.events=srv.concat(imported); }
+      var srv=(d&&Array.isArray(d.events))?d.events:[];
+      if(srv.length){ var imported=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); var s=srv.map(function(e){ e.source="manual"; return e; }); state.calendar.events=s.concat(imported); lastEvtSig=evtSig(); }
+      else { lastEvtSig=JSON.stringify([]); }
       eventsReady=true; save(); renderCalendar(); renderOverviewUpcoming();
     }).catch(function(){ eventsReady=true; }); }
   function renderUpdated(){ var el=document.getElementById("updated"); if(!state.meta.updatedAt){el.textContent="Zuletzt aktualisiert: —";return;} var d=new Date(state.meta.updatedAt); el.textContent="Zuletzt aktualisiert: "+d.toLocaleDateString("de-AT")+" "+d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
