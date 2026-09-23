@@ -76,8 +76,11 @@ body.dark .foot-note{background:#1a2233}
 body.dark .prog .bar{background:#2a3446}
 body.dark .switch .track{background:#3a465e}
 body.dark .titem .tdue{background:#222c42}
-body.dark .mbody{color:#cdd6e6}
-body.dark .mbody blockquote,body.dark .c-editor blockquote{border-left-color:#2a3446;color:var(--dim)}
+body.dark .mbody.plain{color:#cdd6e6}
+/* HTML-Mails bringen eigene (oft schwarze) Farben mit -> im Dark auf hellem "Papier" rendern, damit lesbar */
+body.dark .mbody:not(.plain){background:#fff;color:#1a1a1a;border-radius:10px;padding:12px 14px}
+body.dark .mbody:not(.plain) a{color:#2f6bff}
+body.dark .mbody.plain blockquote,body.dark .c-editor blockquote{border-left-color:#2a3446;color:var(--dim)}
 body.dark .tabs{background:linear-gradient(135deg,rgba(30,40,62,.85),rgba(38,32,60,.85));border:1px solid rgba(255,255,255,.08);box-shadow:0 12px 34px -20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
 body.dark .tab-ind{background:linear-gradient(180deg,rgba(70,86,120,.55),rgba(50,62,92,.4));border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 24px -10px rgba(0,0,0,.55),inset 0 1px 1.5px rgba(255,255,255,.16)}
 body.dark .tab-ind::before{background:linear-gradient(120deg,rgba(255,255,255,0) 32%,rgba(255,255,255,.14) 50%,rgba(255,255,255,0) 68%)}
@@ -1122,6 +1125,7 @@ body.dark .titem:hover{background:#202a3e}
         '<button class="btn sm" data-mact="reply">Antworten</button>'+
         '<button class="btn sm" data-mact="forward">Weiterleiten</button>'+
         '<button class="btn sm" data-mact="todo">☑ Als To-Do</button>'+
+        '<button class="btn sm" data-mact="termin">📅 Als Termin</button>'+
         '<button class="btn sm danger" data-mact="trash">🗑 In Papierkorb</button>';
     host.innerHTML=
       '<div class="mactions">'+acts+'</div>'+
@@ -1394,17 +1398,26 @@ body.dark .titem:hover{background:#202a3e}
     setTimeout(function(){ var el=document.getElementById("tde-text"); if(el)el.focus(); },30);
   }
   function closeTodoEdit(){ document.getElementById("tdedit").classList.remove("show"); tdEditId=null; }
-  // Aus einer E-Mail eine Aufgabe machen (Betreff -> Aufgabe, Absender + Text -> Notizen)
-  function todoFromMail(m){
-    if(!m)return;
+  // Gemeinsame Notiz aus einer E-Mail (Absender + Datum + Klartext)
+  function mailNotes(m){
     var who=m.fromName||m.from||"";
     var when=m.date?new Date(m.date).toLocaleString("de-AT"):"";
     var bodyTxt="";
     if(m.bodyHtml){ var tmp=document.createElement("div"); tmp.innerHTML=m.body||""; bodyTxt=(tmp.innerText||tmp.textContent||"").trim(); }
     else bodyTxt=(m.body||m.preview||"").trim();
     if(bodyTxt.length>1500) bodyTxt=bodyTxt.slice(0,1500)+" …";
-    var notes="📧 Aus E-Mail\nVon: "+who+(m.from?" <"+m.from+">":"")+(when?"\nDatum: "+when:"")+(bodyTxt?"\n\n"+bodyTxt:"");
-    openTodoEdit({text:(m.subject||"(kein Betreff)"), due:"", notes:notes, done:false});
+    return "📧 Aus E-Mail\nVon: "+who+(m.from?" <"+m.from+">":"")+(when?"\nDatum: "+when:"")+(bodyTxt?"\n\n"+bodyTxt:"");
+  }
+  // Aus einer E-Mail eine Aufgabe machen (Betreff -> Aufgabe, Absender + Text -> Notizen)
+  function todoFromMail(m){
+    if(!m)return;
+    openTodoEdit({text:(m.subject||"(kein Betreff)"), due:"", notes:mailNotes(m), done:false});
+  }
+  // Aus einer E-Mail einen Termin machen (Betreff -> Titel, Absender + Text -> Notizen)
+  function eventFromMail(m){
+    if(!m)return;
+    var dateStr=""; if(m.date){ var d=new Date(m.date); if(!isNaN(d.getTime())) dateStr=ymd(d); }
+    openEventModal({title:(m.subject||"(kein Betreff)"), notes:mailNotes(m), date:dateStr||ymd(new Date()), time:"", endTime:"", location:"", sparte:"fsc", source:"manual"});
   }
   function saveTodoEdit(){
     var txt=(document.getElementById("tde-text").value||"").trim(); if(!txt){ alert("Bitte einen Text eingeben."); return; }
@@ -1502,7 +1515,7 @@ body.dark .titem:hover{background:#202a3e}
     document.getElementById("ev-loc").value=ev?(ev.location||""):"";
     document.getElementById("ev-notes").value=ev?(ev.notes||""):"";
     renderSpartePicker(ev?(ev.sparte||"fsc"):"fsc");
-    document.getElementById("ev-del").style.display=ev?"":"none";
+    document.getElementById("ev-del").style.display=(ev&&ev.id)?"":"none";
     document.getElementById("evoverlay").classList.add("show");
     setTimeout(function(){ var t=document.getElementById("ev-t"); if(t)t.focus(); },30);
   }
@@ -1607,6 +1620,7 @@ body.dark .titem:hover{background:#202a3e}
       if(a==="reply"){ openCompose("Antworten",m.from||"","Re: "+(m.subject||""),quoteHtml(m,"reply")); return; }
       if(a==="forward"){ openCompose("Weiterleiten","","Fwd: "+(m.subject||""),quoteHtml(m,"fwd")); return; }
       if(a==="todo"){ todoFromMail(m); return; }
+      if(a==="termin"){ eventFromMail(m); return; }
       if(a==="webmail"){ openWebmail(); return; }
       if(a==="trash"){ trashMessages([m.id]); return; }
       if(a==="restore"){ m.deleted=false; m.trashedAt=null; pushPending("restore",m.id,{folder:m.folder}); save(); renderMailAll(); return; }
@@ -1722,6 +1736,7 @@ body.dark .titem:hover{background:#202a3e}
         {label:"Antworten",act:function(){openCompose("Antworten",m.from||"","Re: "+(m.subject||""),quoteHtml(m,"reply"));}},
         {label:"Weiterleiten",act:function(){openCompose("Weiterleiten","","Fwd: "+(m.subject||""),quoteHtml(m,"fwd"));}},
         {label:"☑ Als To-Do",act:function(){todoFromMail(m);}},
+        {label:"📅 Als Termin",act:function(){eventFromMail(m);}},
         {sep:true},
         {label:mailUI.selected[id]?"Abwählen":"Auswählen",act:function(){ if(mailUI.selected[id])delete mailUI.selected[id]; else mailUI.selected[id]=true; renderMailAll(); }},
         {label:isTrashed(m)?"↺ Wiederherstellen":"🗑 In Papierkorb",danger:!isTrashed(m),act:function(){ if(isTrashed(m)){m.deleted=false;m.trashedAt=null;pushPending("restore",id,{folder:m.folder});save();renderMailAll();} else trashMessages([id]); }}
