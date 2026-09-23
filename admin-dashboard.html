@@ -251,6 +251,8 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 .mcheck{flex:none;display:flex;align-items:center;cursor:pointer}
 .mcheck input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
 .mbulk{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;background:#eef4ff;border:1px solid #d5e2ff;border-radius:12px;margin-bottom:10px;font-size:13px;font-weight:600;color:var(--accent)}
+.mlist-tools{padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:2}
+body.dark .mbulk{background:#20325a;border-color:#2b4570}
 .av{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;text-transform:uppercase;box-shadow:0 4px 10px -5px rgba(15,23,42,.5)}
 .av.lg{width:48px;height:48px;font-size:17px;border-radius:14px}
 .mmain{flex:1;min-width:0}
@@ -995,19 +997,21 @@ body.dark .titem:hover{background:#202a3e}
   var SENTRX=/sent|gesendet|ausgang|outbox/i;
   function isTrashed(m){ return !!m.deleted || TRASHRX.test(m.folder||""); }        // lokal gelöscht ODER im Server-Papierkorb
   function isSent(m){ return !m.deleted && SENTRX.test(m.folder||""); }              // im Gesendet-Ordner
-  function isHidden(m){ return isTrashed(m) || SPAMRX.test(m.folder||"") || isSent(m); } // aus Posteingang/Neueste/Ungelesen ausblenden
+  function isSpam(m){ return !m.deleted && SPAMRX.test(m.folder||""); }              // im Spam-/Junk-Ordner
+  function isHidden(m){ return isTrashed(m) || isSpam(m) || isSent(m); }             // aus Posteingang/Neueste/Ungelesen ausblenden
   function pushPending(op,id,extra){ if(!Array.isArray(state.mail.pending))state.mail.pending=[]; state.mail.pending.push(Object.assign({op:op,id:id,ts:new Date().toISOString()},extra||{})); }
   function folderName(path){ var meta=(state.mail.folders||[]).filter(function(f){return f.path===path;})[0]; if(meta&&meta.name)return meta.name; return String(path).split(/[\/.]/).pop(); }
   function customFolders(){
     var map={};
-    (state.mail.messages||[]).forEach(function(m){ if(m.deleted)return; var f=m.folder||"INBOX"; if(f==="INBOX"||TRASHRX.test(f)||SENTRX.test(f))return; if(!map[f])map[f]={path:f,unread:0}; if(!m.read)map[f].unread++; });
-    (state.mail.folders||[]).forEach(function(fo){ if(fo.path==="INBOX"||TRASHRX.test(fo.path)||SENTRX.test(fo.path))return; if(!map[fo.path])map[fo.path]={path:fo.path,unread:fo.unread||0}; });
+    (state.mail.messages||[]).forEach(function(m){ if(m.deleted)return; var f=m.folder||"INBOX"; if(f==="INBOX"||TRASHRX.test(f)||SENTRX.test(f)||SPAMRX.test(f))return; if(!map[f])map[f]={path:f,unread:0}; if(!m.read)map[f].unread++; });
+    (state.mail.folders||[]).forEach(function(fo){ if(fo.path==="INBOX"||TRASHRX.test(fo.path)||SENTRX.test(fo.path)||SPAMRX.test(fo.path))return; if(!map[fo.path])map[fo.path]={path:fo.path,unread:fo.unread||0}; });
     return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return folderName(a.path).localeCompare(folderName(b.path));});
   }
   function mailView(){
     var a=(state.mail.messages||[]).slice(); var f=mailUI.folder||"inbox"; var list;
     if(f==="trash") list=a.filter(function(m){return isTrashed(m);});
     else if(f==="sent") list=a.filter(function(m){return isSent(m);});
+    else if(f==="spam") list=a.filter(function(m){return isSpam(m);});
     else if(f.indexOf("f:")===0){ var p=f.slice(2); list=a.filter(function(m){return (m.folder||"INBOX")===p && !m.deleted;}); }
     else { a=a.filter(function(m){return !isHidden(m);});
       if(f==="unread") list=a.filter(function(m){return !m.read;});
@@ -1021,7 +1025,7 @@ body.dark .titem:hover{background:#202a3e}
     var host=document.getElementById("mail-folders"); if(!host)return;
     var c=mailCounts();
     function fb(key,label,cnt,cls){ return '<button class="fbtn'+(cls?" "+cls:"")+(mailUI.folder===key?" active":"")+'" data-folder="'+key+'">'+label+' <span class="cnt">'+(cnt||0)+'</span></button>'; }
-    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("sent","Gesendet",c.sent)+fb("trash","Papierkorb",c.trash,"trash");
+    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("sent","Gesendet",c.sent)+fb("spam","Spam",c.spam)+fb("trash","Papierkorb",c.trash,"trash");
     var cf=customFolders();
     if(cf.length){ h+='<div class="fdiv">Ordner</div>'; cf.forEach(function(f){ h+=fb("f:"+f.path,esc(folderName(f.path)),f.unread); }); }
     host.innerHTML=h;
@@ -1107,6 +1111,7 @@ body.dark .titem:hover{background:#202a3e}
       unread:live.filter(function(m){return !m.read;}).length,
       starred:live.filter(function(m){return m.starred;}).length,
       sent:a.filter(function(m){return isSent(m);}).length,
+      spam:a.filter(function(m){return isSpam(m);}).length,
       trash:a.filter(function(m){return isTrashed(m);}).length}; }
   function renderMailBadge(){ var c=mailCounts(); var b=document.getElementById("mail-badge"); if(b){ if(c.unread>0){b.style.display="";b.textContent=c.unread;}else b.style.display="none"; } }
   // Neue-Buchungen-Zähler je Plattform (wie beim Postfach). Baseline in localStorage.
@@ -1129,7 +1134,17 @@ body.dark .titem:hover{background:#202a3e}
   function renderMailList(){
     var host=document.getElementById("mail-list"); if(!host)return;
     var msgs=mailView();
-    host.innerHTML=msgs.length?msgs.map(function(m){return mailRow(m,false);}).join(""):'<div class="mempty">Keine Nachrichten in dieser Ansicht.</div>';
+    var head=(mailUI.folder==="trash"&&msgs.length)?'<div class="mlist-tools"><button class="btn sm danger" id="empty-trash">🗑 Papierkorb leeren ('+msgs.length+')</button></div>':"";
+    host.innerHTML=head+(msgs.length?msgs.map(function(m){return mailRow(m,false);}).join(""):'<div class="mempty">Keine Nachrichten in dieser Ansicht.</div>');
+  }
+  function emptyTrash(){
+    var ids=(state.mail.messages||[]).filter(function(m){return isTrashed(m);}).map(function(m){return m.id;});
+    if(!ids.length)return;
+    if(!confirm("Papierkorb wirklich leeren? "+ids.length+" Nachricht(en) werden endgültig gelöscht.")) return;
+    mailActionServer("trash",ids); // im Papierkorb-Ordner = endgültiges Löschen (Expunge)
+    state.mail.messages=(state.mail.messages||[]).filter(function(m){return !isTrashed(m);});
+    mailUI.sel=null; ids.forEach(function(id){delete mailUI.selected[id];});
+    save(); renderMailAll();
   }
   function renderMailRead(){
     var host=document.getElementById("mail-read"); if(!host)return;
@@ -1628,6 +1643,7 @@ body.dark .titem:hover{background:#202a3e}
     var goto=e.target.closest("[data-goto]"); if(goto){ selectTab(goto.getAttribute("data-goto")); return; }
     var fb=e.target.closest(".fbtn"); if(fb){ mailUI.folder=fb.getAttribute("data-folder"); renderMailAll(); return; }
     if(e.target&&e.target.matches&&e.target.matches("input[data-selid]")){ var cid=e.target.getAttribute("data-selid"); if(e.target.checked)mailUI.selected[cid]=true; else delete mailUI.selected[cid]; var rr=e.target.closest(".mrow2"); if(rr)rr.classList.toggle("picked",e.target.checked); renderBulk(); return; }
+    if(e.target.closest("#empty-trash")){ emptyTrash(); return; }
     var bulk=e.target.closest("[data-bulk]"); if(bulk){ var bop=bulk.getAttribute("data-bulk"); var ids=selectedIds();
       if(bop==="clear"){ mailUI.selected={}; renderMailAll(); }
       else if(!ids.length){ /* nichts ausgewählt */ }
