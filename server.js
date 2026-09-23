@@ -363,7 +363,7 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/mail-send" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     let body = "";
-    req.on("data", c => { body += c; if (body.length > 2000000) req.destroy(); });
+    req.on("data", c => { body += c; if (body.length > 30000000) req.destroy(); });
     req.on("end", async () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const sendUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/send");

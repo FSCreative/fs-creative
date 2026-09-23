@@ -647,8 +647,11 @@ body.dark .titem:hover{background:#202a3e}
       <button type="button" data-cmd="removeFormat" title="Formatierung entfernen">✕ Format</button>
     </div>
     <div id="c-body" class="c-editor" contenteditable="true"></div>
+    <input type="file" id="c-file" multiple style="display:none">
+    <div id="c-atts" class="atts-list" style="margin-top:10px"></div>
     <div class="row">
       <button class="btn ghost" id="c-close">Schließen</button>
+      <button class="btn" id="c-attach">📎 Anhang</button>
       <button class="btn" id="c-copy">Text kopieren</button>
       <button class="btn" id="c-web">Webmail öffnen</button>
       <button class="btn primary" id="c-send">Senden</button>
@@ -1221,11 +1224,26 @@ body.dark .titem:hover{background:#202a3e}
     mailActionServer(read?"seen":"unseen",ids);
     save(); renderMailAll();
   }
+  // Anhänge im Verfassen-Fenster
+  var composeAtts=[];
+  function renderComposeAtts(){
+    var host=document.getElementById("c-atts"); if(!host)return;
+    host.innerHTML=composeAtts.map(function(a,i){ return '<span class="att"><span class="att-ic">'+attIcon(a.contentType)+'</span><span class="att-name">'+esc(a.filename)+'</span><span class="att-sz">'+fmtBytes(a.size)+'</span><button class="att-x" data-cattdel="'+i+'" title="Entfernen" style="border:none;background:transparent;cursor:pointer;color:var(--red);font-weight:700;margin-left:2px">✕</button></span>'; }).join("");
+  }
+  function addComposeFiles(files){
+    Array.prototype.forEach.call(files||[],function(f){
+      if(f.size>15000000){ alert('„'+f.name+'" ist zu groß (max. 15 MB pro Datei).'); return; }
+      var reader=new FileReader();
+      reader.onload=function(){ var res=String(reader.result||""); var b64=res.indexOf(",")>-1?res.slice(res.indexOf(",")+1):res; composeAtts.push({filename:f.name,contentType:f.type||"application/octet-stream",size:f.size,content:b64}); renderComposeAtts(); };
+      reader.readAsDataURL(f);
+    });
+  }
   function openCompose(title,to,subj,bodyHtml){
     document.getElementById("c-title").textContent=title;
     document.getElementById("c-to").value=to||"";
     document.getElementById("c-subj").value=subj||"";
     document.getElementById("c-body").innerHTML=bodyHtml||"";
+    composeAtts=[]; renderComposeAtts(); var cf=document.getElementById("c-file"); if(cf)cf.value="";
     var note=document.getElementById("c-note");
     if(note) note.textContent=window.__FSD_HOSTED&&window.__FSD_MAIL_SEND?"Formatierte Mail schreiben und direkt aus dem Dashboard senden.":"Formatierte Mail schreiben, dann „Text kopieren“ und in Webmail einfügen.";
     var sendBtn=document.getElementById("c-send");
@@ -1695,6 +1713,12 @@ body.dark .titem:hover{background:#202a3e}
     if(cmd==="createLink"){ var url=prompt("Link-Adresse (URL):","https://"); if(url) document.execCommand("createLink",false,url); }
     else document.execCommand(cmd,false,null);
   });
+  // Anhänge: Button -> Datei-Dialog; Auswahl einlesen; Chips entfernen
+  var cAttachBtn=document.getElementById("c-attach"); var cFile=document.getElementById("c-file");
+  if(cAttachBtn&&cFile) cAttachBtn.addEventListener("click",function(){ cFile.click(); });
+  if(cFile) cFile.addEventListener("change",function(){ addComposeFiles(cFile.files); cFile.value=""; });
+  var cAtts=document.getElementById("c-atts");
+  if(cAtts) cAtts.addEventListener("click",function(e){ var x=e.target.closest("[data-cattdel]"); if(!x)return; composeAtts.splice(+x.getAttribute("data-cattdel"),1); renderComposeAtts(); });
   // Senden (nur gehostet): POST an /admin/api/mail-send
   var csend=document.getElementById("c-send");
   if(csend) csend.addEventListener("click",function(){
@@ -1705,7 +1729,7 @@ body.dark .titem:hover{background:#202a3e}
     var text=(document.getElementById("c-body").innerText||"").trim();
     if(!to){ alert("Bitte eine Empfängeradresse eingeben."); return; }
     var btn=this; btn.disabled=true; var old=btn.textContent; btn.textContent="Senden …";
-    fetch(window.__FSD_MAIL_SEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:to,subject:subj,html:html,text:text})})
+    fetch(window.__FSD_MAIL_SEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:to,subject:subj,html:html,text:text,attachments:composeAtts})})
       .then(function(r){return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok&&j&&j.ok!==false,j:j};});})
       .then(function(res){ if(res.ok){ btn.textContent="Gesendet ✓"; setTimeout(function(){ document.getElementById("coverlay").classList.remove("show"); btn.textContent=old; btn.disabled=false; },900); }
         else { btn.textContent=old; btn.disabled=false; alert("Senden fehlgeschlagen"+(res.j&&res.j.detail?": "+res.j.detail:".")); } })
