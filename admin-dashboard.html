@@ -854,7 +854,7 @@ body.dark .titem:hover{background:#202a3e}
   function syncEvents(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS||!eventsReady) return; clearTimeout(evSyncT); evSyncT=setTimeout(function(){ try{ fetch(window.__FSD_EVENTS,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({events:manualEvents()})}).catch(function(){}); }catch(e){} },600); }
   function loadEventsFromServer(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS){ eventsReady=true; return; }
     fetch(window.__FSD_EVENTS,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-      if(d&&Array.isArray(d.events)){ var imported=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); var srv=d.events.map(function(e){ e.source="manual"; return e; }); state.calendar.events=srv.concat(imported); }
+      if(d&&Array.isArray(d.events)&&d.events.length){ var imported=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); var srv=d.events.map(function(e){ e.source="manual"; return e; }); state.calendar.events=srv.concat(imported); }
       eventsReady=true; save(); renderCalendar(); renderOverviewUpcoming();
     }).catch(function(){ eventsReady=true; }); }
   function renderUpdated(){ var el=document.getElementById("updated"); if(!state.meta.updatedAt){el.textContent="Zuletzt aktualisiert: —";return;} var d=new Date(state.meta.updatedAt); el.textContent="Zuletzt aktualisiert: "+d.toLocaleDateString("de-AT")+" "+d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
