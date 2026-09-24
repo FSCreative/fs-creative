@@ -280,7 +280,7 @@ async function sitesSnapshot(force) {
   return (await refreshSites()) || SITES_CACHE.data || { fetchedAt: new Date().toISOString(), configured: true, error: "load_failed", totals: {}, sites: [] };
 }
 // Hintergrund: beim Start vorwärmen, danach alle 5 Min (nur solange die Admin in der letzten Stunde benutzt wurde)
-setTimeout(() => { refreshSites(); }, 3000);
+setTimeout(() => { refreshSites(); }, 25000);   // erst nach dem Umschalten auf den neuen Container (sonst meldet sich die eigene Seite als offline)
 setInterval(() => { if (Date.now() - ADMIN_SEEN < 60 * 60 * 1000) refreshSites(); }, 5 * 60 * 1000);
 
 // ── Railway: alle Projekte mit Services, Deploy-Status und Domains ──
