@@ -208,7 +208,7 @@ async function mailSnapshot() {
       const r = await fetch(MAIL.url + "?token=" + encodeURIComponent(MAIL.token), { headers, signal: ctrl.signal });
       if (r.status === 304 && MAIL_SNAP.data) { MAIL_SNAP.at = Date.now(); return MAIL_SNAP.data; }
       if (!r.ok) return MAIL_SNAP.data;
-      const d = await r.json(); if (!d || d.error) return MAIL_SNAP.data;
+      const d = await r.json(); if (!d || d.error || d.warming) return MAIL_SNAP.data;
       MAIL_SNAP.data = d; MAIL_SNAP.etag = r.headers.get("etag") || d.etag || ""; MAIL_SNAP.at = Date.now();
       return d;
     } catch (e) { return MAIL_SNAP.data; } finally { clearTimeout(t); MAIL_SNAP.p = null; }
