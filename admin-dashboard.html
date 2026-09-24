@@ -1249,8 +1249,12 @@ body.dark .titem:hover{background:#202a3e}
   // bei jedem Poll den Server. lastTodoSig = zuletzt bekannter Serverstand.
   var todosReady=false, todoSyncT=null, lastTodoSig=null;
   function todoSig(){ return JSON.stringify(state.todos||[]); }
-  function syncTodos(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS||!todosReady) return; if(todoSig()===lastTodoSig) return; clearTimeout(todoSyncT); todoSyncT=setTimeout(function(){ var body=todoSig(); try{ fetch(window.__FSD_TODOS,{method:"POST",headers:{"Content-Type":"application/json"},body:'{"todos":'+body+'}'}).then(function(r){ if(r&&r.ok) lastTodoSig=body; }).catch(function(){}); }catch(e){} },600); }
+  function syncTodos(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS||!todosReady) return; if(todoSig()===lastTodoSig) return; clearTimeout(todoSyncT); todoSyncT=setTimeout(function(){ var body=todoSig(); var base=lastTodoSig; try{ fetch(window.__FSD_TODOS,{method:"POST",headers:{"Content-Type":"application/json"},body:'{"todos":'+body+',"base":'+(base||"null")+'}'}).then(function(r){ return r&&r.ok?r.json():null; }).then(function(d){ if(!d||!Array.isArray(d.todos)) return; var ms=JSON.stringify(d.todos);
+      if(todoSig()===body){ lastTodoSig=ms; if(ms!==body){ state.todos=d.todos; try{localStorage.setItem(KEY,JSON.stringify(storableState()));}catch(e){} renderTodos(); renderOverviewTodos(); renderCalendar(); } }
+      else { lastTodoSig=body; syncTodos(); }   // während des Sendens weiter geändert -> erneut abgleichen
+    }).catch(function(){}); }catch(e){} },500); }
   function loadTodosFromServer(){ if(!window.__FSD_HOSTED||!window.__FSD_TODOS){ todosReady=true; return; }
+    if(Array.isArray(window.__FSD_TODOS_DATA)&&!todosReady){ var emb=window.__FSD_TODOS_DATA; window.__FSD_TODOS_DATA=null; if(emb.length){ state.todos=emb; } lastTodoSig=JSON.stringify(emb); todosReady=true; try{localStorage.setItem(KEY,JSON.stringify(storableState()));}catch(e){} renderTodos(); renderOverviewTodos(); renderCalendar(); if(!emb.length) syncTodos(); return; }
     fetch(window.__FSD_TODOS,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
       var srv=(d&&Array.isArray(d.todos))?d.todos:[];
       if(srv.length){ state.todos=srv; lastTodoSig=todoSig(); }   // Server hat Daten -> übernehmen, kein Rück-Post
@@ -1261,8 +1265,12 @@ body.dark .titem:hover{background:#202a3e}
   var eventsReady=false, evSyncT=null, lastEvtSig=null;
   function manualEvents(){ return (state.calendar.events||[]).filter(function(e){return e.source==="manual";}); }
   function evtSig(){ return JSON.stringify(manualEvents()); }
-  function syncEvents(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS||!eventsReady) return; if(evtSig()===lastEvtSig) return; clearTimeout(evSyncT); evSyncT=setTimeout(function(){ var body=evtSig(); try{ fetch(window.__FSD_EVENTS,{method:"POST",headers:{"Content-Type":"application/json"},body:'{"events":'+body+'}'}).then(function(r){ if(r&&r.ok) lastEvtSig=body; }).catch(function(){}); }catch(e){} },600); }
+  function syncEvents(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS||!eventsReady) return; if(evtSig()===lastEvtSig) return; clearTimeout(evSyncT); evSyncT=setTimeout(function(){ var body=evtSig(); var base=lastEvtSig; try{ fetch(window.__FSD_EVENTS,{method:"POST",headers:{"Content-Type":"application/json"},body:'{"events":'+body+',"base":'+(base||"null")+'}'}).then(function(r){ return r&&r.ok?r.json():null; }).then(function(d){ if(!d||!Array.isArray(d.events)) return; var sm=d.events.map(function(e){ e.source="manual"; return e; }); var ms=JSON.stringify(sm);
+      if(evtSig()===body){ lastEvtSig=ms; if(ms!==body){ var imp=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); state.calendar.events=sm.concat(imp); try{localStorage.setItem(KEY,JSON.stringify(storableState()));}catch(e){} renderCalendar(); renderOverviewUpcoming(); } }
+      else { lastEvtSig=body; syncEvents(); }
+    }).catch(function(){}); }catch(e){} },500); }
   function loadEventsFromServer(){ if(!window.__FSD_HOSTED||!window.__FSD_EVENTS){ eventsReady=true; return; }
+    if(Array.isArray(window.__FSD_EVENTS_DATA)&&!eventsReady){ var emb=window.__FSD_EVENTS_DATA.map(function(e){ e.source="manual"; return e; }); window.__FSD_EVENTS_DATA=null; if(emb.length){ var imp0=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); state.calendar.events=emb.concat(imp0); } lastEvtSig=JSON.stringify(emb); eventsReady=true; try{localStorage.setItem(KEY,JSON.stringify(storableState()));}catch(e){} renderCalendar(); renderOverviewUpcoming(); if(!emb.length) syncEvents(); return; }
     fetch(window.__FSD_EVENTS,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){
       var srv=(d&&Array.isArray(d.events))?d.events:[];
       if(srv.length){ var imported=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); var s=srv.map(function(e){ e.source="manual"; return e; }); state.calendar.events=s.concat(imported); lastEvtSig=evtSig(); }
@@ -2994,6 +3002,8 @@ body.dark .titem:hover{background:#202a3e}
   });
   buildPageHeads(); renderOverviewHead(); setInterval(renderOverviewHead,60000);
 
+  document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible"){ try{ if(window.__fsdVchk) window.__fsdVchk(); if(window.__fsdPoll) window.__fsdPoll(); }catch(e){} } });
+  window.addEventListener("focus",function(){ try{ if(window.__fsdPoll) window.__fsdPoll(); }catch(e){} });
   // init
   renderAll();
   moveIndicator();

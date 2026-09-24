@@ -18,6 +18,24 @@ const TODOS_FILE = path.join(DATA_DIR, "todos.json");
 function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 function writeTodos(arr) { try { fs.writeFileSync(TODOS_FILE, JSON.stringify(Array.isArray(arr) ? arr : [])); return true; } catch (e) { return false; } }
 const EVENTS_FILE = path.join(DATA_DIR, "events.json");
+// 3-Wege-Merge (per id): Server-Stand S, Basis B (was der Client zuletzt vom Server kannte), Client-Stand C.
+// Verhindert, dass ein Gerät Änderungen eines anderen Geräts überschreibt.
+function merge3(S, B, C) {
+  S = Array.isArray(S) ? S : []; C = Array.isArray(C) ? C : [];
+  const byId = a => { const m = new Map(); a.forEach(x => { if (x && x.id != null) m.set(String(x.id), x); }); return m; };
+  const sm = byId(S), cm = byId(C);
+  if (!Array.isArray(B)) { const out = S.slice(); C.forEach(x => { if (x && x.id != null && !sm.has(String(x.id))) out.push(x); }); return out; }
+  const bm = byId(B); const out = [];
+  S.forEach(sv => {
+    if (!sv || sv.id == null) { out.push(sv); return; }
+    const id = String(sv.id), b = bm.get(id), c = cm.get(id);
+    if (b && !c) return;                                                        // am Client gelöscht
+    if (c && (!b || JSON.stringify(c) !== JSON.stringify(b))) { out.push(c); return; } // am Client geändert
+    out.push(sv);                                                               // unverändert -> Server-Stand
+  });
+  C.forEach(c => { if (c && c.id != null && !sm.has(String(c.id)) && !bm.has(String(c.id))) out.push(c); }); // am Client neu
+  return out;
+}
 function readEvents() { try { const a = JSON.parse(fs.readFileSync(EVENTS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 function writeEvents(arr) { try { fs.writeFileSync(EVENTS_FILE, JSON.stringify(Array.isArray(arr) ? arr : [])); return true; } catch (e) { return false; } }
 
@@ -356,6 +374,7 @@ async function renderAdminDashboard() {
   if (va) { html = replaceConst(html, "VALUERO_STATS", va); stamp = va.fetchedAt || stamp; }
   if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
   ADMIN_SEEN = Date.now();
+  html = html.replace("</head>", () => '<script>window.__FSD_TODOS_DATA=' + JSON.stringify(readTodos()).replace(/</g, "\\u003c") + ';window.__FSD_EVENTS_DATA=' + JSON.stringify(readEvents()).replace(/</g, "\\u003c") + ';</script></head>');
   if (SITES_CACHE.data) html = html.replace("</head>", () => '<script>window.__FSD_SITES_DATA=' + JSON.stringify(SITES_CACHE.data).replace(/</g, "\\u003c") + ';</script></head>');
   else refreshSites();
   return injectAdmin(html, stamp);
@@ -452,10 +471,12 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const arr = Array.isArray(payload.todos) ? payload.todos : [];
-      // Schutz: nicht-leeren Bestand nie mit leerer Liste überschreiben (verhindert Datenverlust durch alt/leer geladene Tabs).
-      if (arr.length === 0 && !payload.force) { const cur = readTodos(); if (cur.length > 0) return send(res, 200, JSON.stringify({ ok: true, skipped: "empty_guard", count: cur.length }), TYPES[".json"]); }
-      const ok = writeTodos(arr);
-      return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: arr.length }), TYPES[".json"]);
+      const cur = readTodos();
+      const merged = payload.force ? arr : merge3(cur, Array.isArray(payload.base) ? payload.base : null, arr);
+      // Schutz: nicht-leeren Bestand nie mit leerer Liste überschreiben (außer force).
+      if (merged.length === 0 && cur.length > 0 && !payload.force && !Array.isArray(payload.base)) return send(res, 200, JSON.stringify({ ok: true, skipped: "empty_guard", todos: cur }), TYPES[".json"]);
+      const ok = writeTodos(merged);
+      return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: merged.length, todos: merged }), TYPES[".json"]);
     });
     return;
   }
@@ -468,9 +489,11 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const arr = Array.isArray(payload.events) ? payload.events : [];
-      if (arr.length === 0 && !payload.force) { const cur = readEvents(); if (cur.length > 0) return send(res, 200, JSON.stringify({ ok: true, skipped: "empty_guard", count: cur.length }), TYPES[".json"]); }
-      const ok = writeEvents(arr);
-      return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: arr.length }), TYPES[".json"]);
+      const cur = readEvents();
+      const merged = payload.force ? arr : merge3(cur, Array.isArray(payload.base) ? payload.base : null, arr);
+      if (merged.length === 0 && cur.length > 0 && !payload.force && !Array.isArray(payload.base)) return send(res, 200, JSON.stringify({ ok: true, skipped: "empty_guard", events: cur }), TYPES[".json"]);
+      const ok = writeEvents(merged);
+      return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: merged.length, events: merged }), TYPES[".json"]);
     });
     return;
   }
