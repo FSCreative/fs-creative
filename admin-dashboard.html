@@ -1382,7 +1382,7 @@ body.dark .titem:hover{background:#202a3e}
   function printMail(m){
     var w=window.open("","_blank"); if(!w){ alert("Pop-up blockiert – bitte erlauben."); return; }
     var body=m.bodyHtml?(m.body||""):('<div style="white-space:pre-wrap">'+esc(m.body||m.preview||"")+'</div>');
-    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(m.subject||"Mail")+'</title><style>body{font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:30px auto;padding:0 20px}h1{font-size:20px}.meta{color:#555;font-size:12.5px;border-bottom:1px solid #ddd;padding-bottom:10px;margin-bottom:16px}</style></head><body><h1>'+esc(m.subject||"(kein Betreff)")+'</h1><div class="meta">Von: '+esc((m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+">")+'<br>An: '+esc(m.to||"")+'<br>Datum: '+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'</div>'+body+'</body></html>');
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(m.subject||"Mail")+'</title><style>body{font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:30px auto;padding:0 20px}h1{font-size:20px}.meta{color:#555;font-size:12.5px;border-bottom:1px solid #ddd;padding-bottom:10px;margin-bottom:16px}</style></head><body><h1>'+esc(m.subject||"(kein Betreff)")+'</h1><div class="meta">Von: '+esc((m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+">")+'<br>An: '+esc(m.to||"")+'<br>Datum: '+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'</div>'+body+'</'+'body></'+'html>');
     w.document.close(); setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} },350);
   }
   // Löschen mit Rückgängig (Server-Aktion wird 6 s verzögert)
