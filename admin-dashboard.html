@@ -279,6 +279,12 @@ body.dark .mbulk{background:#20325a;border-color:#2b4570}
 .fbtn.active{background:#e8f0ff;color:var(--accent)}
 .fbtn .cnt{font-size:11px;color:var(--faint);font-weight:700}
 .fbtn.trash.active{background:#fdecea;color:var(--red)}
+.fbtn.warn .cnt{background:var(--red);color:#fff}
+.obst{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
+.obst.sending{background:#e8efff;color:#2f6bff}.obst.failed{background:#fdecea;color:var(--red)}
+.obspin{display:inline-block;width:9px;height:9px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:obspin .7s linear infinite;margin-right:4px;vertical-align:-1px}@keyframes obspin{to{transform:rotate(360deg)}}
+#mtoast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);background:#1f2433;color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:9999}
+#mtoast.show{opacity:1;transform:translate(-50%,0)}#mtoast.err{background:#c0392b}
 .fdiv{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;padding:12px 11px 5px}
 .mreadhead{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:12px}
 .mreadhead .s{font-size:17px;font-weight:700;letter-spacing:-.01em}
@@ -1043,6 +1049,32 @@ body.dark .titem:hover{background:#202a3e}
   function isSent(m){ return !m.deleted && SENTRX.test(m.folder||""); }              // im Gesendet-Ordner
   function isSpam(m){ return !m.deleted && SPAMRX.test(m.folder||""); }              // im Spam-/Junk-Ordner
   function isHidden(m){ return isTrashed(m) || isSpam(m) || isSent(m); }             // aus Posteingang/Neueste/Ungelesen ausblenden
+  // ---- Postausgang: Mails werden sofort eingereiht und im Hintergrund versendet ----
+  var OUTBOX=[]; var obSeq=0;
+  function obItems(){ return OUTBOX.map(function(o){ return {id:"ob_"+o.oid,outbox:true,ob:o,to:o.to,toName:"",subject:o.subject,preview:o.preview,date:o.date,read:true,starred:false,attachments:[]}; }); }
+  function sentFolderPath(){ var f=(state.mail.folders||[]).filter(function(x){return SENTRX.test(x.path)&&!/outbox|ausgang/i.test(x.path);})[0]; return f?f.path:"Sent"; }
+  function mailToast(msg,err){ var t=document.getElementById("mtoast"); if(!t){ t=document.createElement("div"); t.id="mtoast"; document.body.appendChild(t); }
+    t.textContent=msg; t.classList.toggle("err",!!err); t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove("show");},err?5000:2600); }
+  function outboxSend(o){
+    o.status="sending"; o.error=""; renderMailAll();
+    fetch(window.__FSD_MAIL_SEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:o.to,subject:o.subject,html:o.html,text:o.text,attachments:o.attachments})})
+      .then(function(r){return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok&&j&&j.ok!==false,j:j};});})
+      .then(function(res){
+        if(!res.ok){ throw new Error((res.j&&(res.j.detail||res.j.error))||"Unbekannter Fehler"); }
+        OUTBOX=OUTBOX.filter(function(x){return x!==o;});
+        if(!Array.isArray(state.mail.messages)) state.mail.messages=[];
+        state.mail.messages.push({id:"local_"+o.oid,local:true,localAt:Date.now(),folder:sentFolderPath(),uid:null,fromName:"",from:"",toName:"",to:o.to,subject:o.subject,preview:o.preview,body:o.html,bodyHtml:true,date:new Date().toISOString(),read:true,starred:false,deleted:false,attachments:[]});
+        if(mailUI.sel==="ob_"+o.oid) mailUI.sel="local_"+o.oid;
+        mailToast("✓ Gesendet an "+o.to); renderMailAll();
+      })
+      .catch(function(err){ o.status="failed"; o.error=String(err&&err.message||err); mailToast("Senden fehlgeschlagen – liegt im Postausgang",true); renderMailAll(); });
+  }
+  function queueMail(to,subject,html,text,atts){
+    var o={oid:(++obSeq)+"_"+Date.now(),to:to,subject:subject,html:html,text:text,attachments:atts||[],preview:String(text||"").replace(/\s+/g," ").trim().slice(0,180),date:new Date().toISOString(),status:"sending",error:""};
+    OUTBOX.push(o); mailToast("Wird gesendet …"); outboxSend(o); return o;
+  }
+  function findOb(id){ return OUTBOX.filter(function(o){return "ob_"+o.oid===id;})[0]; }
+  window.addEventListener("beforeunload",function(e){ if(OUTBOX.some(function(o){return o.status==="sending";})){ e.preventDefault(); e.returnValue="Es wird noch eine Mail gesendet."; return e.returnValue; } });
   function pushPending(op,id,extra){ if(!Array.isArray(state.mail.pending))state.mail.pending=[]; state.mail.pending.push(Object.assign({op:op,id:id,ts:new Date().toISOString()},extra||{})); }
   function folderName(path){ var meta=(state.mail.folders||[]).filter(function(f){return f.path===path;})[0]; if(meta&&meta.name)return meta.name; return String(path).split(/[\/.]/).pop(); }
   function customFolders(){
@@ -1053,7 +1085,8 @@ body.dark .titem:hover{background:#202a3e}
   }
   function mailView(){
     var a=(state.mail.messages||[]).slice(); var f=mailUI.folder||"inbox"; var list;
-    if(f==="trash") list=a.filter(function(m){return isTrashed(m);});
+    if(f==="outbox") list=obItems();
+    else if(f==="trash") list=a.filter(function(m){return isTrashed(m);});
     else if(f==="sent") list=a.filter(function(m){return isSent(m);});
     else if(f==="spam") list=a.filter(function(m){return isSpam(m);});
     else if(f.indexOf("f:")===0){ var p=f.slice(2); list=a.filter(function(m){return (m.folder||"INBOX")===p && !m.deleted;}); }
@@ -1069,7 +1102,7 @@ body.dark .titem:hover{background:#202a3e}
     var host=document.getElementById("mail-folders"); if(!host)return;
     var c=mailCounts();
     function fb(key,label,cnt,cls){ return '<button class="fbtn'+(cls?" "+cls:"")+(mailUI.folder===key?" active":"")+'" data-folder="'+key+'">'+label+' <span class="cnt">'+(cnt||0)+'</span></button>'; }
-    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("sent","Gesendet",c.sent)+fb("spam","Spam",c.spam)+fb("trash","Papierkorb",c.trash,"trash");
+    var h=fb("inbox","Posteingang",c.inboxUnread)+fb("unread","Ungelesen",c.unread)+fb("starred","Markiert",c.starred)+fb("outbox","Postausgang",OUTBOX.length,OUTBOX.some(function(o){return o.status==="failed";})?"warn":"")+fb("sent","Gesendet",c.sent)+fb("spam","Spam",c.spam)+fb("trash","Papierkorb",c.trash,"trash");
     var cf=customFolders();
     if(cf.length){ h+='<div class="fdiv">Ordner</div>'; cf.forEach(function(f){ h+=fb("f:"+f.path,esc(folderName(f.path)),f.unread); }); }
     host.innerHTML=h;
@@ -1081,10 +1114,11 @@ body.dark .titem:hover{background:#202a3e}
     var p=s.replace(/[",]/g,"").split(/\s+/).filter(Boolean);
     return (((p[0]||"?").charAt(0))+((p[1]||"").charAt(0))).toUpperCase(); }
   function mailRow(m,compact){
-    var sent=isSent(m);
+    var sent=isSent(m)||!!m.outbox;
     var idobj=sent?{fromName:m.toName,from:m.to}:m;
     var who=esc(sent?("An: "+(m.toName||m.to||"—")):(m.fromName||m.from||"—"));
     var subj=esc(m.subject||"(kein Betreff)");
+    if(m.outbox) who+=(m.ob.status==="failed"?'<span class="obst failed">Fehlgeschlagen</span>':'<span class="obst sending"><span class="obspin"></span>Wird gesendet</span>');
     var when=fmtMailDate(m.date);
     var star='<span class="star'+(m.starred?" on":"")+'" data-star="'+esc(m.id)+'" title="Markieren">'+(m.starred?"★":"☆")+'</span>';
     if(compact){
@@ -1093,7 +1127,7 @@ body.dark .titem:hover{background:#202a3e}
         '<span class="dot'+(m.read?" read":"")+'"></span><span class="who">'+who+'</span>'+
         '<span class="subj">'+subj+pre+'</span>'+star+'<span class="when">'+when+'</span></div>';
     }
-    var chk='<label class="mcheck" title="Auswählen"><input type="checkbox" data-selid="'+esc(m.id)+'"'+(mailUI.selected[m.id]?" checked":"")+'></label>';
+    var chk=m.outbox?'<span class="mcheck"></span>':'<label class="mcheck" title="Auswählen"><input type="checkbox" data-selid="'+esc(m.id)+'"'+(mailUI.selected[m.id]?" checked":"")+'></label>';
     return '<div class="mrow2'+(m.read?"":" unread")+(mailUI.sel===m.id?" sel":"")+(mailUI.selected[m.id]?" picked":"")+(isTrashed(m)?" trashed":"")+'" data-mid="'+esc(m.id)+'">'+
       chk+
       '<div class="av" style="background:'+avColor(idobj.fromName||idobj.from)+'">'+esc(initials(idobj))+'</div>'+
@@ -1192,6 +1226,16 @@ body.dark .titem:hover{background:#202a3e}
   }
   function renderMailRead(){
     var host=document.getElementById("mail-read"); if(!host)return;
+    var ob=findOb(mailUI.sel);
+    if(ob){
+      host.innerHTML='<div class="mactions">'+(ob.status==="failed"?'<button class="btn sm" data-oact="retry">↻ Erneut senden</button>':'')+
+        '<button class="btn sm" data-oact="edit">✎ Bearbeiten</button><button class="btn sm danger" data-oact="discard">Verwerfen</button></div>'+
+        '<div class="mread-head2"><div class="av lg" style="background:'+avColor(ob.to)+'">'+esc(initials({from:ob.to}))+'</div>'+
+        '<div><div class="rn">An: '+esc(ob.to)+'</div><div class="re">'+(ob.status==="failed"?'<span class="obst failed" style="margin:0">Fehlgeschlagen: '+esc(ob.error)+'</span>':'<span class="obst sending" style="margin:0"><span class="obspin"></span>Wird gesendet …</span>')+'</div></div></div>'+
+        '<h2 class="rsubj">'+esc(ob.subject||"(kein Betreff)")+'</h2><div class="mbody">'+(ob.html||"")+'</div>'+
+        (ob.attachments.length?'<div class="atts"><div class="atts-h">📎 '+ob.attachments.length+' Anhang'+(ob.attachments.length>1?"änge":"")+'</div><div class="atts-list">'+ob.attachments.map(function(a){return '<span class="att"><span class="att-ic">'+attIcon(a.contentType)+'</span><span class="att-name">'+esc(a.filename)+'</span><span class="att-sz">'+fmtBytes(a.size)+'</span></span>';}).join("")+'</div></div>':'');
+      return;
+    }
     var m=(state.mail.messages||[]).filter(function(x){return x.id===mailUI.sel;})[0];
     if(!m){ host.innerHTML='<div class="mempty">Wähle links eine Nachricht aus, um sie zu lesen.</div>'; return; }
     var acts = isTrashed(m)
@@ -1749,6 +1793,11 @@ body.dark .titem:hover{background:#202a3e}
       return; }
     var star=e.target.closest("[data-star]"); if(star){ var ms=findMsg(star.getAttribute("data-star")); if(ms){ms.starred=!ms.starred;save();renderMailAll();} return; }
     var row=e.target.closest(".mrow, .mrow2"); if(row&&row.getAttribute("data-mid")){ mailUI.sel=row.getAttribute("data-mid"); var mm=findMsg(mailUI.sel); if(mm&&!mm.read){ mm.read=true; mailActionServer("seen",[mm.id]); } save(); selectTab("postfach"); renderMailAll(); return; }
+    var oact=e.target.closest("[data-oact]"); if(oact){ var o=findOb(mailUI.sel); if(!o)return; var oa=oact.getAttribute("data-oact");
+      if(oa==="retry"){ outboxSend(o); return; }
+      if(oa==="discard"){ if(o.status==="sending"&&!confirm("Die Mail wird gerade gesendet. Trotzdem aus dem Postausgang entfernen?"))return; OUTBOX=OUTBOX.filter(function(x){return x!==o;}); mailUI.sel=null; renderMailAll(); return; }
+      if(oa==="edit"){ if(o.status==="sending"){ alert("Die Mail wird gerade gesendet – bitte kurz warten."); return; } OUTBOX=OUTBOX.filter(function(x){return x!==o;}); mailUI.sel=null; openCompose("Neue Nachricht",o.to,o.subject,o.html); composeAtts=o.attachments.slice(); renderComposeAtts(); renderMailAll(); return; }
+      return; }
     var act=e.target.closest("[data-mact]"); if(act){ var m=findMsg(mailUI.sel); if(!m)return; var a=act.getAttribute("data-mact");
       if(a==="reply"){ openCompose("Antworten",m.from||"","Re: "+(m.subject||""),quoteHtml(m,"reply")); return; }
       if(a==="forward"){ openCompose("Weiterleiten","","Fwd: "+(m.subject||""),quoteHtml(m,"fwd")); return; }
@@ -1798,12 +1847,9 @@ body.dark .titem:hover{background:#202a3e}
     var html=document.getElementById("c-body").innerHTML;
     var text=(document.getElementById("c-body").innerText||"").trim();
     if(!to){ alert("Bitte eine Empfängeradresse eingeben."); return; }
-    var btn=this; btn.disabled=true; var old=btn.textContent; btn.textContent="Senden …";
-    fetch(window.__FSD_MAIL_SEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:to,subject:subj,html:html,text:text,attachments:composeAtts})})
-      .then(function(r){return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok&&j&&j.ok!==false,j:j};});})
-      .then(function(res){ if(res.ok){ btn.textContent="Gesendet ✓"; setTimeout(function(){ document.getElementById("coverlay").classList.remove("show"); btn.textContent=old; btn.disabled=false; },900); }
-        else { btn.textContent=old; btn.disabled=false; alert("Senden fehlgeschlagen"+(res.j&&res.j.detail?": "+res.j.detail:".")); } })
-      .catch(function(err){ btn.textContent=old; btn.disabled=false; alert("Senden fehlgeschlagen: "+err); });
+    // Sofort schließen, im Postausgang einreihen und im Hintergrund senden
+    queueMail(to,subj,html,text,composeAtts.slice());
+    composeAtts=[]; document.getElementById("coverlay").classList.remove("show");
   });
 
   // ---- Live-Hydration (gehostete Version ruft /admin/api/all und übergibt hierher) ----
@@ -1832,7 +1878,8 @@ body.dark .titem:hover{background:#202a3e}
         var prev={}; (state.mail.messages||[]).forEach(function(m){prev[m.id]=m;});
         state.mail.folders=Array.isArray(d.mail.folders)?d.mail.folders:state.mail.folders;
         state.mail.account=d.mail.account||state.mail.account; state.mail.lastFetch=d.mail.fetchedAt||state.mail.lastFetch;
-        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[]};}); }
+        var keepLocal=(state.mail.messages||[]).filter(function(m){ return m.local && (Date.now()-(m.localAt||0))<600000 && !d.mail.messages.some(function(x){ return SENTRX.test(x.folder||"") && (x.subject||"")===(m.subject||"") && (x.to||"").toLowerCase()===(m.to||"").toLowerCase(); }); });
+        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[]};}).concat(keepLocal); }
       if(d.kochdu&&d.kochdu.totals){
         state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
         state.kochdu.totals=d.kochdu.totals; if(d.kochdu.nutzer)state.kochdu.app=d.kochdu.nutzer; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
