@@ -234,33 +234,104 @@ async function pingSite(host) {
     return { up: r.status < 500, status: r.status, ms: Date.now() - t0 };
   } catch (e) { return { up: false, status: 0, ms: Date.now() - t0 }; } finally { clearTimeout(t); }
 }
-async function sitesSnapshot() {
-  if (!CF.token) return { fetchedAt: new Date().toISOString(), configured: false, totals: {}, sites: [] };
-  if (SITES_CACHE.data && (Date.now() - SITES_CACHE.at) < 5 * 60 * 1000) return SITES_CACHE.data;
+// Schnell: EIN GraphQL-Request für alle Zonen, Pings parallel, Ergebnis im Hintergrund frisch halten.
+let SITES_BUSY = null, ADMIN_SEEN = Date.now();
+async function buildSitesSnapshot() {
   const zj = await cfGet("/zones?status=active&per_page=200");
   if (!zj || !zj.success || !Array.isArray(zj.result)) return SITES_CACHE.data || { fetchedAt: new Date().toISOString(), configured: true, error: "cf_zones_failed", totals: {}, sites: [] };
   const zones = zj.result.map(z => ({ id: z.id, name: z.name }));
   const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const until = new Date().toISOString().slice(0, 10);
-  const perZone = {};
-  const gq = 'query($zt:String!,$s:String!,$u:String!){viewer{zones(filter:{zoneTag:$zt}){httpRequests1dGroups(limit:10,filter:{date_geq:$s,date_leq:$u}){sum{requests threats bytes}uniq{uniques}}}}}';
-  await Promise.all(zones.map(async z => {
-    let requests = 0, threats = 0, bytes = 0, uniques = 0;
-    const gj = await cfGraphQL(gq, { zt: z.id, s: since, u: until });
-    try { (gj.data.viewer.zones[0].httpRequests1dGroups || []).forEach(g => { requests += g.sum.requests || 0; threats += g.sum.threats || 0; bytes += g.sum.bytes || 0; uniques += (g.uniq && g.uniq.uniques) || 0; }); } catch (e) {}
-    perZone[z.id] = { requests, threats, bytes, uniques };
-  }));
-  const pings = await Promise.all(zones.map(z => pingSite(z.name)));
-  const sites = zones.map((z, i) => ({ name: z.name, up: pings[i].up, status: pings[i].status, ms: pings[i].ms, requests7d: perZone[z.id].requests, threats7d: perZone[z.id].threats, uniques7d: perZone[z.id].uniques }))
+  const perZone = {}; zones.forEach(z => { perZone[z.id] = { requests: 0, threats: 0, bytes: 0, uniques: 0 }; });
+  const gqAll = 'query($tags:[String!],$s:String!,$u:String!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequests1dGroups(limit:10,filter:{date_geq:$s,date_leq:$u}){sum{requests threats bytes}uniq{uniques}}}}}';
+  const gqOne = 'query($zt:String!,$s:String!,$u:String!){viewer{zones(filter:{zoneTag:$zt}){zoneTag httpRequests1dGroups(limit:10,filter:{date_geq:$s,date_leq:$u}){sum{requests threats bytes}uniq{uniques}}}}}';
+  function eat(zs) { (zs || []).forEach(zz => { const pz = perZone[zz.zoneTag]; if (!pz) return; (zz.httpRequests1dGroups || []).forEach(g => { pz.requests += g.sum.requests || 0; pz.threats += g.sum.threats || 0; pz.bytes += g.sum.bytes || 0; pz.uniques += (g.uniq && g.uniq.uniques) || 0; }); }); }
+  const [gj, pings] = await Promise.all([
+    cfGraphQL(gqAll, { tags: zones.map(z => z.id), s: since, u: until }),
+    Promise.all(zones.map(z => pingSite(z.name)))
+  ]);
+  let ok = false;
+  try { if (gj && gj.data && gj.data.viewer && Array.isArray(gj.data.viewer.zones) && gj.data.viewer.zones.length) { eat(gj.data.viewer.zones); ok = true; } } catch (e) {}
+  if (!ok) { // Fallback: einzeln (älteres Verhalten)
+    await Promise.all(zones.map(async z => { const g1 = await cfGraphQL(gqOne, { zt: z.id, s: since, u: until }); try { eat(g1.data.viewer.zones); } catch (e) {} }));
+  }
+  const sites = zones.map((z, i) => ({ name: z.name, up: pings[i].up, status: pings[i].status, ms: pings[i].ms, requests7d: perZone[z.id].requests, threats7d: perZone[z.id].threats, uniques7d: perZone[z.id].uniques, bytes7d: perZone[z.id].bytes }))
     .sort((a, b) => (a.up === b.up ? a.name.localeCompare(b.name) : (a.up ? 1 : -1)));
-  const totals = sites.reduce((t, s) => { t.sites++; if (s.up) t.online++; t.requests7d += s.requests7d; t.threats7d += s.threats7d; t.uniques7d += s.uniques7d; t.bytes7d += (perZone[zones.find(z => z.name === s.name).id].bytes) || 0; return t; }, { sites: 0, online: 0, requests7d: 0, threats7d: 0, uniques7d: 0, bytes7d: 0 });
-  const data = { fetchedAt: new Date().toISOString(), configured: true, totals, sites };
-  SITES_CACHE = { at: Date.now(), data };
-  return data;
+  const totals = sites.reduce((t, s) => { t.sites++; if (s.up) t.online++; t.requests7d += s.requests7d; t.threats7d += s.threats7d; t.uniques7d += s.uniques7d; t.bytes7d += s.bytes7d || 0; return t; }, { sites: 0, online: 0, requests7d: 0, threats7d: 0, uniques7d: 0, bytes7d: 0 });
+  let railway = null; try { railway = await railwaySnapshot(); } catch (e) { railway = { configured: !!RW.token, error: String(e && e.message || e), projects: [] }; }
+  return { fetchedAt: new Date().toISOString(), configured: true, totals, sites, railway };
+}
+function refreshSites() {
+  if (!CF.token && !RW.token) return Promise.resolve(null);
+  if (SITES_BUSY) return SITES_BUSY;
+  SITES_BUSY = (CF.token ? buildSitesSnapshot() : (async () => ({ fetchedAt: new Date().toISOString(), configured: false, totals: {}, sites: [], railway: await railwaySnapshot().catch(() => null) }))())
+    .then(d => { if (d) SITES_CACHE = { at: Date.now(), data: d }; return d; })
+    .catch(() => SITES_CACHE.data)
+    .finally(() => { SITES_BUSY = null; });
+  return SITES_BUSY;
+}
+async function sitesSnapshot(force) {
+  ADMIN_SEEN = Date.now();
+  if (!CF.token && !RW.token) return { fetchedAt: new Date().toISOString(), configured: false, totals: {}, sites: [], railway: { configured: false, projects: [] } };
+  if (SITES_CACHE.data && !force) {
+    if ((Date.now() - SITES_CACHE.at) > 2 * 60 * 1000) refreshSites();   // veraltet: sofort alten Stand liefern, im Hintergrund neu holen
+    return SITES_CACHE.data;
+  }
+  return (await refreshSites()) || SITES_CACHE.data || { fetchedAt: new Date().toISOString(), configured: true, error: "load_failed", totals: {}, sites: [] };
+}
+// Hintergrund: beim Start vorwärmen, danach alle 5 Min (nur solange die Admin in der letzten Stunde benutzt wurde)
+setTimeout(() => { refreshSites(); }, 3000);
+setInterval(() => { if (Date.now() - ADMIN_SEEN < 60 * 60 * 1000) refreshSites(); }, 5 * 60 * 1000);
+
+// ── Railway: alle Projekte mit Services, Deploy-Status und Domains ──
+const RW = { token: process.env.RAILWAY_API_TOKEN || "", workspace: process.env.RAILWAY_WORKSPACE_ID || "1e0fd4ca-38db-4393-9b78-9e418fca8445" };
+async function rwGQL(query, variables) {
+  if (!RW.token) return null;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch("https://backboard.railway.com/graphql/v2", { method: "POST", headers: { Authorization: "Bearer " + RW.token, "Content-Type": "application/json" }, body: JSON.stringify({ query, variables }), signal: ctrl.signal });
+    return await r.json();
+  } catch (e) { return { errors: [{ message: String(e && e.message || e) }] }; } finally { clearTimeout(t); }
+}
+const RW_PROJ_FIELDS = 'id name description updatedAt environments{edges{node{id name serviceInstances{edges{node{serviceId serviceName source{repo image} latestDeployment{id status createdAt} domains{serviceDomains{domain} customDomains{domain}}}}}}}}';
+const RW_PROJ_FIELDS_LITE = 'id name description updatedAt environments{edges{node{id name serviceInstances{edges{node{serviceId serviceName latestDeployment{id status createdAt}}}}}}}';
+async function railwaySnapshot() {
+  if (!RW.token) return { configured: false, projects: [] };
+  let list = null, err = null;
+  for (const fields of [RW_PROJ_FIELDS, RW_PROJ_FIELDS_LITE]) {
+    const q = 'query($w:String){projects(workspaceId:$w,first:100){edges{node{' + fields + '}}}}';
+    let j = await rwGQL(q, { w: RW.workspace || null });
+    if (!(j && j.data && j.data.projects)) j = await rwGQL('query{projects(first:100){edges{node{' + fields + '}}}}', {});
+    if (j && j.data && j.data.projects) { list = j.data.projects.edges.map(e => e.node); break; }
+    err = (j && j.errors && j.errors[0] && j.errors[0].message) || "railway_failed";
+  }
+  if (!list) return { configured: true, error: err, projects: [] };
+  const rank = { FAILED: 5, CRASHED: 5, BUILDING: 3, DEPLOYING: 3, INITIALIZING: 3, QUEUED: 3, WAITING: 3, SLEEPING: 1, SUCCESS: 0, REMOVED: 0, SKIPPED: 0 };
+  const projects = list.map(p => {
+    const envs = (p.environments && p.environments.edges || []).map(e => e.node);
+    const env = envs.find(e => e.name === "production") || envs[0] || { serviceInstances: { edges: [] } };
+    const services = (env.serviceInstances && env.serviceInstances.edges || []).map(e => e.node).map(si => {
+      const d = si.latestDeployment || {};
+      const doms = si.domains || {};
+      return { id: si.serviceId, name: si.serviceName, status: d.status || "NONE", deployedAt: d.createdAt || null,
+        db: !!(si.source && si.source.image && /postgres|mysql|redis|mongo/i.test(si.source.image)) || /postgres|mysql|redis|mongo/i.test(si.serviceName || ""),
+        repo: (si.source && si.source.repo) || "",
+        customDomains: (doms.customDomains || []).map(x => x.domain), railwayDomains: (doms.serviceDomains || []).map(x => x.domain) };
+    });
+    let worst = "SUCCESS", lastDeploy = null;
+    services.forEach(sv => { if ((rank[sv.status] || 0) > (rank[worst] || 0)) worst = sv.status; if (sv.deployedAt && (!lastDeploy || sv.deployedAt > lastDeploy)) lastDeploy = sv.deployedAt; });
+    if (!services.length) worst = "EMPTY";
+    const domains = []; services.forEach(sv => sv.customDomains.forEach(d => { if (domains.indexOf(d) < 0) domains.push(d); }));
+    const rdomains = []; services.forEach(sv => sv.railwayDomains.forEach(d => { if (rdomains.indexOf(d) < 0) rdomains.push(d); }));
+    return { id: p.id, name: p.name, status: worst, lastDeploy, envId: env.id || null, services, domains, railwayDomains: rdomains };
+  }).sort((a, b) => (b.lastDeploy || "").localeCompare(a.lastDeploy || ""));
+  const totals = projects.reduce((t, p) => { t.projects++; t.services += p.services.length; if (p.status === "FAILED" || p.status === "CRASHED") t.failed++; else if (["BUILDING", "DEPLOYING", "INITIALIZING", "QUEUED", "WAITING"].indexOf(p.status) > -1) t.deploying++; else if (p.status === "SUCCESS") t.ok++; return t; }, { projects: 0, services: 0, ok: 0, failed: 0, deploying: 0 });
+  return { configured: true, fetchedAt: new Date().toISOString(), totals, projects };
 }
 function replaceConst(html, name, obj) {
   const re = new RegExp("var " + name + "=\\{[\\s\\S]*?\\};");
-  return html.replace(re, "var " + name + "=" + JSON.stringify(obj) + ";");
+  const js = JSON.stringify(obj).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+  return html.replace(re, () => "var " + name + "=" + js + ";");
 }
 function injectAdmin(html, stampISO) {
   const script = '<script>(function(){' +
@@ -284,6 +355,9 @@ async function renderAdminDashboard() {
   if (ko) { html = replaceConst(html, "KOCHDU_STATS", ko); stamp = ko.fetchedAt || stamp; }
   if (va) { html = replaceConst(html, "VALUERO_STATS", va); stamp = va.fetchedAt || stamp; }
   if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
+  ADMIN_SEEN = Date.now();
+  if (SITES_CACHE.data) html = html.replace("</head>", () => '<script>window.__FSD_SITES_DATA=' + JSON.stringify(SITES_CACHE.data).replace(/</g, "\\u003c") + ';</script></head>');
+  else refreshSites();
   return injectAdmin(html, stamp);
 }
 function adminLoginPage(err) {
@@ -366,7 +440,7 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 200, JSON.stringify({ build: BUILD }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/sites") {
-    try { const s = await sitesSnapshot(); return send(res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/todos" && req.method === "GET") {

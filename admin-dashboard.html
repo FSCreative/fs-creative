@@ -407,6 +407,30 @@ body.dark #cmdk .it.on,body.dark #cmdk .it .ii{background:#26324d}
 .hdr-k{display:inline-flex;align-items:center;gap:8px;min-width:0;width:auto!important;padding:0 12px!important;color:var(--dim)}
 .hdr-k .kbd{margin:0}
 
+
+/* FS Creative: Railway + Cloudflare */
+.fsc-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:22px 2px 0}
+.fsc-tools .msearch input{width:300px}
+.fsc-chips{display:flex;gap:6px;flex-wrap:wrap}
+.rwst{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.rwst i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.rwst.ok{background:#e3f7ee;color:#0a8a4f}.rwst.err{background:#fdecea;color:var(--red)}.rwst.run{background:#e8f0ff;color:var(--accent)}.rwst.run i{animation:pulse 1.2s ease infinite}.rwst.idle{background:#f0f3f9;color:var(--dim)}
+@keyframes pulse{50%{opacity:.3}}
+.btn.spin svg{animation:obspin .8s linear infinite}
+.rwname{font-weight:700}
+.rwname small{display:block;font-weight:500;color:var(--faint);font-size:11.5px;margin-top:1px}
+.dchip{display:inline-flex;align-items:center;gap:5px;font-size:12px;border:1px solid var(--line);border-radius:8px;padding:2px 7px;margin:2px 4px 2px 0;color:var(--ink);text-decoration:none;white-space:nowrap}
+.dchip:hover{border-color:var(--accent);color:var(--accent)}
+.dchip .cf{font-size:10px;font-weight:800;color:#f38020;background:#fff3e8;border-radius:5px;padding:0 4px}
+.dchip .dot{width:7px;height:7px;border-radius:50%}
+.svchip{display:inline-block;font-size:11px;font-weight:600;color:var(--dim);background:#f0f3f9;border-radius:6px;padding:1px 7px;margin:2px 3px 2px 0;white-space:nowrap}
+.svchip.bad{background:#fdecea;color:var(--red)}
+.svchip.db{background:#eef3fc;color:var(--accent)}
+.rwbadge{display:inline-block;font-size:11.5px;font-weight:700;color:#6b3ff2;background:#f0eaff;border-radius:6px;padding:1px 8px;text-decoration:none}
+.rwbadge:hover{filter:brightness(.95)}
+body.dark .rwst.ok{background:#12352a}body.dark .rwst.err{background:#3a1d1d}body.dark .rwst.run{background:#1d2b4d}body.dark .rwst.idle,body.dark .svchip{background:#222c42}
+body.dark .dchip .cf{background:#3a2a18}body.dark .rwbadge{background:#2a2350;color:#b9a4ff}
+
 /* ===== Postfach v2 ===== */
 
 
@@ -781,12 +805,22 @@ body.dark .titem:hover{background:#202a3e}
         <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></div><div class="lbl">Requests (7 Tage)</div></div><div class="val" id="fsc-req">—</div><div class="sub">über alle Sites</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="lbl">Besucher (7 T, ~)</div></div><div class="val" id="fsc-vis">—</div><div class="sub">Cloudflare-Schätzung</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic" style="background:#fdecea;color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div class="lbl">Bedrohungen geblockt</div></div><div class="val" id="fsc-threats">—</div><div class="sub">letzte 7 Tage</div></div>
+        <div class="card kpi hoverable" data-goto-rw="1"><div class="top"><div class="ic violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/></svg></div><div class="lbl">Railway-Projekte</div></div><div class="val" id="fsc-rw">—</div><div class="sub" id="fsc-rw-sub">—</div></div>
       </div>
-      <div class="sec-title"><h2>Aktive Websites</h2><span class="hint">Status per Live-Ping · Insights aus Cloudflare (7 Tage)</span></div>
+      <div class="fsc-tools"><div class="msearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="fsc-search" placeholder="Projekt oder Domain filtern …" autocomplete="off"></div>
+        <div class="fsc-chips" id="fsc-chips"></div></div>
+      <div class="sec-title"><h2>Railway-Projekte</h2><span class="hint" id="rw-hint">Deploy-Status, Services &amp; Domains · verknüpft mit Cloudflare</span></div>
       <div class="card tbl-card">
         <table>
-          <thead><tr><th style="width:16px"></th><th>Domain</th><th class="num">Antwort</th><th class="num">Requests 7T</th><th class="num">Bedroh. 7T</th><th></th></tr></thead>
-          <tbody id="tb-sites"><tr><td colspan="6" class="empty">Lade Cloudflare-Daten …</td></tr></tbody>
+          <thead><tr><th style="width:16px"></th><th>Projekt</th><th>Domains</th><th>Services</th><th class="num">Letztes Deploy</th><th></th></tr></thead>
+          <tbody id="tb-rw"><tr><td colspan="6" class="empty">Lade Railway-Daten …</td></tr></tbody>
+        </table>
+      </div>
+      <div class="sec-title"><h2>Cloudflare-Websites</h2><span class="hint">Status per Live-Ping · Insights aus Cloudflare (7 Tage)</span></div>
+      <div class="card tbl-card">
+        <table>
+          <thead><tr><th style="width:16px"></th><th>Domain</th><th>Railway</th><th class="num">Antwort</th><th class="num">Requests 7T</th><th class="num">Bedroh. 7T</th><th></th></tr></thead>
+          <tbody id="tb-sites"><tr><td colspan="7" class="empty">Lade Cloudflare-Daten …</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -2284,34 +2318,97 @@ body.dark .titem:hover{background:#202a3e}
   var sitesData=null, sitesLoading=false;
   function loadSites(force){
     if(!window.__FSD_HOSTED||!window.__FSD_SITES) return;
-    if(sitesData && !force) { renderSites(); return; }
-    if(sitesLoading) return; sitesLoading=true;
-    var tb=document.getElementById("tb-sites"); if(tb&&!sitesData) tb.innerHTML='<tr><td colspan="6" class="empty">Lade Cloudflare-Daten … (kann ein paar Sekunden dauern)</td></tr>';
-    fetch(window.__FSD_SITES,{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){ sitesLoading=false; sitesData=d||{configured:false,sites:[],totals:{}}; renderSites(); }).catch(function(){ sitesLoading=false; var t=document.getElementById("tb-sites"); if(t)t.innerHTML='<tr><td colspan="6" class="empty">Konnte Daten nicht laden.</td></tr>'; });
+    if(!sitesData && window.__FSD_SITES_DATA){ sitesData=window.__FSD_SITES_DATA; }
+    if(sitesData) renderSites();
+    if(sitesLoading) return;
+    if(sitesData && !force && sitesData.__loadedAt && (Date.now()-sitesData.__loadedAt)<60000) return;
+    sitesLoading=true;
+    var btn=document.getElementById("fsc-refresh"); if(btn&&force) btn.classList.add("spin");
+    var tb=document.getElementById("tb-sites"); if(tb&&!sitesData) tb.innerHTML='<tr><td colspan="7" class="empty">Lade Cloudflare-Daten …</td></tr>';
+    fetch(window.__FSD_SITES+(force?"?force=1":""),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){ sitesLoading=false; if(btn)btn.classList.remove("spin"); if(d){ d.__loadedAt=Date.now(); sitesData=d; } else if(!sitesData) sitesData={configured:false,sites:[],totals:{}}; renderSites(); if(force) try{ mailToast("Websites & Projekte aktualisiert"); }catch(e){} }).catch(function(){ sitesLoading=false; if(btn)btn.classList.remove("spin"); if(!sitesData){ var t=document.getElementById("tb-sites"); if(t)t.innerHTML='<tr><td colspan="7" class="empty">Konnte Daten nicht laden.</td></tr>'; } });
   }
+  var fscUI={q:"",f:"all"};
+  function zoneFor(domain,sites){ domain=String(domain||"").toLowerCase(); var best=null; (sites||[]).forEach(function(z){ var n=z.name.toLowerCase(); if(domain===n||domain.slice(-(n.length+1))==="."+n){ if(!best||n.length>best.name.length) best=z; } }); return best; }
+  function rwStatus(st){
+    if(st==="SUCCESS") return '<span class="rwst ok"><i></i>Online</span>';
+    if(st==="FAILED"||st==="CRASHED") return '<span class="rwst err"><i></i>'+(st==="CRASHED"?"Abgestürzt":"Fehler")+'</span>';
+    if(["BUILDING","DEPLOYING","INITIALIZING","QUEUED","WAITING"].indexOf(st)>-1) return '<span class="rwst run"><i></i>Deploy läuft</span>';
+    if(st==="SLEEPING") return '<span class="rwst idle"><i></i>Schläft</span>';
+    if(st==="EMPTY") return '<span class="rwst idle"><i></i>Leer</span>';
+    return '<span class="rwst idle"><i></i>Kein Deploy</span>';
+  }
+  function relAgo(iso){ if(!iso)return "—"; var s2=(Date.now()-new Date(iso).getTime())/1000; if(s2<3600)return "vor "+Math.max(1,Math.round(s2/60))+" Min."; if(s2<86400)return "vor "+Math.round(s2/3600)+" Std."; var d=Math.round(s2/86400); if(d<45)return "vor "+d+(d===1?" Tag":" Tagen"); return new Date(iso).toLocaleDateString("de-AT"); }
   function renderSites(){
-    var d=sitesData||{}; var tot=d.totals||{}; var sites=d.sites||[];
-    if(d.configured===false){
-      setTxt("fsc-online","—"); setTxt("fsc-online-sub","Cloudflare-Token noch nicht gesetzt");
-      var tb0=document.getElementById("tb-sites"); if(tb0)tb0.innerHTML='<tr><td colspan="6" class="empty">Cloudflare ist noch nicht verbunden (CF_API_TOKEN fehlt).</td></tr>';
-      return;
+    var d=sitesData||{}; var tot=d.totals||{}; var sites=d.sites||[]; var rw=d.railway||{configured:false,projects:[]};
+    var projects=rw.projects||[];
+    var q=(fscUI.q||"").toLowerCase();
+    // Zuordnung Zone -> Projekt
+    var zoneProj={};
+    projects.forEach(function(p){ (p.domains||[]).forEach(function(dm){ var z=zoneFor(dm,sites); if(z) zoneProj[z.name]=p; }); });
+    // KPIs
+    if(d.configured===false){ setTxt("fsc-online","—"); setTxt("fsc-online-sub","Cloudflare-Token noch nicht gesetzt"); }
+    else { setCount("fsc-online", +tot.online||0); setTxt("fsc-online-sub", "von "+num(+tot.sites||0)+" Websites"); setCount("fsc-req", +tot.requests7d||0); setCount("fsc-vis", +tot.uniques7d||0); setCount("fsc-threats", +tot.threats7d||0); }
+    var rt=rw.totals||{};
+    if(rw.configured){ setTxt("fsc-rw", num(+rt.projects||projects.length)); setTxt("fsc-rw-sub", num(+rt.services||0)+" Services"+((+rt.failed)?" · "+rt.failed+" mit Fehler":" · alles grün")+((+rt.deploying)?" · "+rt.deploying+" im Deploy":"")); var sub=document.getElementById("fsc-rw-sub"); if(sub) sub.style.color=(+rt.failed)?"var(--red)":""; }
+    else { setTxt("fsc-rw","—"); setTxt("fsc-rw-sub","Railway-Token fehlt"); }
+    var upd=document.getElementById("fsc-updated"); if(upd)upd.textContent=d.fetchedAt?("Stand: "+new Date(d.fetchedAt).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})+" · "+relAgo(d.fetchedAt)):"";
+    // Filter-Chips
+    var ch=document.getElementById("fsc-chips");
+    if(ch){ var nErr=projects.filter(function(p){return p.status==="FAILED"||p.status==="CRASHED";}).length + sites.filter(function(x){return !x.up;}).length;
+      var nNoCf=projects.filter(function(p){ return (p.domains||[]).length && !(p.domains||[]).some(function(dm){return zoneFor(dm,sites);}); }).length;
+      var nNoRw=sites.filter(function(x){return !zoneProj[x.name];}).length;
+      function c(k,l,n){ return '<button class="mchip'+(fscUI.f===k?" on":"")+'" data-fscf="'+k+'">'+l+(n!=null?' <span class="n">'+n+'</span>':'')+'</button>'; }
+      ch.innerHTML=c("all","Alle")+c("err","Probleme",nErr)+c("linked","Verknüpft")+c("nocf","Ohne Cloudflare",nNoCf)+c("norw","Nur Cloudflare",nNoRw); }
+    function hit(txt){ return !q || String(txt||"").toLowerCase().indexOf(q)>-1; }
+    // Railway-Tabelle
+    var tr=document.getElementById("tb-rw");
+    if(tr){
+      if(!rw.configured){ tr.innerHTML='<tr><td colspan="6" class="empty">Railway ist noch nicht verbunden – es fehlt die Variable <b>RAILWAY_API_TOKEN</b> im Service „fs-creative“.</td></tr>'; }
+      else if(rw.error&&!projects.length){ tr.innerHTML='<tr><td colspan="6" class="empty">Railway-Fehler: '+esc(rw.error)+'</td></tr>'; }
+      else {
+        var list=projects.filter(function(p){
+          var hay=p.name+" "+(p.domains||[]).join(" ")+" "+(p.services||[]).map(function(x){return x.name;}).join(" ");
+          if(!hit(hay)) return false;
+          var linked=(p.domains||[]).some(function(dm){return zoneFor(dm,sites);});
+          if(fscUI.f==="err") return p.status==="FAILED"||p.status==="CRASHED"||(p.domains||[]).some(function(dm){ var z=zoneFor(dm,sites); return z&&!z.up; });
+          if(fscUI.f==="linked") return linked;
+          if(fscUI.f==="nocf") return (p.domains||[]).length&&!linked;
+          if(fscUI.f==="norw") return false;
+          return true; });
+        tr.innerHTML=list.length?list.map(function(p){
+          var doms=(p.domains||[]).map(function(dm){ var z=zoneFor(dm,sites); return '<a class="dchip" href="https://'+esc(dm)+'" target="_blank" rel="noopener" title="'+(z?(z.up?("online · "+z.ms+" ms · "+num(z.requests7d)+" Requests/7T"):"offline"):"nicht in Cloudflare")+'">'+(z?'<span class="dot" style="background:'+(z.up?"var(--green)":"var(--red)")+'"></span>':'')+esc(dm)+(z?'<span class="cf">CF</span>':'')+'</a>'; }).join("");
+          if(!doms&&p.railwayDomains&&p.railwayDomains.length) doms='<a class="dchip" href="https://'+esc(p.railwayDomains[0])+'" target="_blank" rel="noopener" style="color:var(--faint)">'+esc(p.railwayDomains[0])+'</a>';
+          var svs=(p.services||[]).map(function(x){ var bad=x.status==="FAILED"||x.status==="CRASHED"; return '<span class="svchip'+(bad?" bad":(x.db?" db":""))+'" title="'+esc(x.status)+'">'+esc(x.name)+'</span>'; }).join("");
+          var link='<a class="btn sm" href="https://railway.com/project/'+esc(p.id)+(p.envId?'?environmentId='+esc(p.envId):'')+'" target="_blank" rel="noopener">Railway ↗</a>';
+          return '<tr'+((p.status==="FAILED"||p.status==="CRASHED")?' style="background:rgba(240,68,56,.06)"':'')+'><td><span title="'+esc(p.status)+'" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+((p.status==="SUCCESS")?"var(--green)":(p.status==="FAILED"||p.status==="CRASHED")?"var(--red)":(["BUILDING","DEPLOYING","INITIALIZING","QUEUED","WAITING"].indexOf(p.status)>-1)?"var(--accent)":"#b8c1d1")+'"></span></td><td><div class="rwname">'+esc(p.name)+'<small>'+rwStatus(p.status)+'</small></div></td><td>'+(doms||'<span style="color:var(--faint)">—</span>')+'</td><td>'+(svs||'<span style="color:var(--faint)">—</span>')+'</td><td class="num" style="color:var(--dim);white-space:nowrap">'+esc(relAgo(p.lastDeploy))+'</td><td class="num">'+link+'</td></tr>';
+        }).join(""):'<tr><td colspan="6" class="empty">Keine Projekte in dieser Ansicht.</td></tr>';
+      }
+      var rh=document.getElementById("rw-hint"); if(rh&&rw.configured) rh.textContent=projects.length+" Projekte · "+(+rt.services||0)+" Services · Deploy-Status aus Railway, Domains mit Cloudflare abgeglichen";
     }
-    setCount("fsc-online", +tot.online||0); setTxt("fsc-online-sub", "von "+num(+tot.sites||0)+" Websites");
-    setCount("fsc-req", +tot.requests7d||0); setCount("fsc-vis", +tot.uniques7d||0); setCount("fsc-threats", +tot.threats7d||0);
-    var upd=document.getElementById("fsc-updated"); if(upd)upd.textContent=d.fetchedAt?("Stand: "+new Date(d.fetchedAt).toLocaleString("de-AT")):"";
+    // Cloudflare-Tabelle
     var tb=document.getElementById("tb-sites"); if(!tb)return;
-    if(!sites.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Keine aktiven Zonen gefunden.</td></tr>'; return; }
-    tb.innerHTML=sites.map(function(s){
-      var dot='<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+(s.up?"var(--green)":"var(--red)")+'"></span>';
-      var ms=s.up?(s.ms+" ms"):"offline";
-      var open='<a class="btn sm" href="https://'+esc(s.name)+'" target="_blank" rel="noopener">öffnen ↗</a>';
-      return '<tr'+(s.up?"":' style="background:rgba(240,68,56,.06)"')+'><td>'+dot+'</td><td style="font-weight:600">'+esc(s.name)+'</td><td class="num'+(s.up?"":' ')+'" style="color:'+(s.up?"var(--dim)":"var(--red)")+'">'+esc(ms)+'</td><td class="num">'+num(+s.requests7d||0)+'</td><td class="num"'+((+s.threats7d)>0?' style="color:var(--amber);font-weight:700"':'')+'>'+num(+s.threats7d||0)+'</td><td class="num">'+open+'</td></tr>';
+    if(d.configured===false){ tb.innerHTML='<tr><td colspan="7" class="empty">Cloudflare ist noch nicht verbunden (CF_API_TOKEN fehlt).</td></tr>'; return; }
+    var sl=sites.filter(function(x){ var p=zoneProj[x.name];
+      if(!hit(x.name+" "+(p?p.name:""))) return false;
+      if(fscUI.f==="err") return !x.up; if(fscUI.f==="linked") return !!p; if(fscUI.f==="norw") return !p; if(fscUI.f==="nocf") return false; return true; });
+    if(!sl.length){ tb.innerHTML='<tr><td colspan="7" class="empty">'+(sites.length?"Keine Websites in dieser Ansicht.":"Keine aktiven Zonen gefunden.")+'</td></tr>'; return; }
+    tb.innerHTML=sl.map(function(x){
+      var p=zoneProj[x.name];
+      var dot='<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+(x.up?"var(--green)":"var(--red)")+'"></span>';
+      var ms=x.up?(x.ms+" ms"):"offline";
+      var open='<a class="btn sm" href="https://'+esc(x.name)+'" target="_blank" rel="noopener">öffnen ↗</a>';
+      var rwb=p?'<a class="rwbadge" href="https://railway.com/project/'+esc(p.id)+'" target="_blank" rel="noopener" title="'+esc(p.status)+'">'+esc(p.name)+'</a>':'<span style="color:var(--faint)">—</span>';
+      return '<tr'+(x.up?"":' style="background:rgba(240,68,56,.06)"')+'><td>'+dot+'</td><td style="font-weight:600">'+esc(x.name)+'</td><td>'+rwb+'</td><td class="num" style="color:'+(x.up?"var(--dim)":"var(--red)")+'">'+esc(ms)+'</td><td class="num">'+num(+x.requests7d||0)+'</td><td class="num"'+((+x.threats7d)>0?' style="color:var(--amber);font-weight:700"':'')+'>'+num(+x.threats7d||0)+'</td><td class="num">'+open+'</td></tr>';
     }).join("");
   }
   document.getElementById("tabs").addEventListener("click",function(e){
     var b=e.target.closest(".tab"); if(!b)return; selectTab(b.getAttribute("data-tab"));
   });
   var fscR=document.getElementById("fsc-refresh"); if(fscR) fscR.addEventListener("click",function(){ loadSites(true); });
+  var fscS=document.getElementById("fsc-search"); if(fscS) fscS.addEventListener("input",function(){ fscUI.q=this.value.trim(); renderSites(); });
+  document.addEventListener("click",function(e){ var c=e.target.closest&&e.target.closest("[data-fscf]"); if(c){ var f=c.getAttribute("data-fscf"); fscUI.f=(fscUI.f===f?"all":f); renderSites(); } });
+  // Beim Laden sofort mit eingebetteten Daten vorbereiten (kein Warten beim Tab-Wechsel)
+  setTimeout(function(){ if(window.__FSD_SITES_DATA&&!sitesData){ sitesData=window.__FSD_SITES_DATA; try{ renderSites(); }catch(e){} } else if(!window.__FSD_SITES_DATA) loadSites(false); },800);
   window.addEventListener("resize",function(){ moveIndicator(); });
 
   document.body.addEventListener("input",function(e){
