@@ -2991,28 +2991,6 @@ body.dark .titem:hover{background:#202a3e}
     if(e.target.id==="todo-toggle-done"){ todoUI.hideDone=!todoUI.hideDone; try{ localStorage.setItem("fsc_todo_hidedone",todoUI.hideDone?"1":"0"); }catch(x){} renderTodos(); return; }
     if(e.target.id==="todo-clear-done"){ var n=(state.todos||[]).filter(function(t){return t.done;}).length; if(!n){ mailToast("Keine erledigten Aufgaben"); return; } if(!confirm(n+" erledigte Aufgabe(n) endgültig löschen?"))return; state.todos=state.todos.filter(function(t){return !t.done;}); save(); renderTodos(); renderCalendar(); renderOverviewTodos(); mailToast(n+" erledigte Aufgabe(n) gelöscht"); return; }
   });
-  // Zahlen sanft hochzählen, wenn sich ein KPI-Wert ändert
-  (function(){
-    if(!window.MutationObserver) return;
-    var busy=false;
-    function parseNum(t){ var m=String(t).match(/-?[\d.]+(,\d+)?/); if(!m)return null; var raw=m[0]; var dec=(raw.split(",")[1]||"").length; var n=parseFloat(raw.replace(/\./g,"").replace(",",".")); if(isNaN(n))return null; return {n:n,dec:dec,pre:String(t).slice(0,m.index),post:String(t).slice(m.index+raw.length)}; }
-    function fmt(n,dec){ var neg=n<0; n=Math.abs(n); var p=n.toFixed(dec).split("."); p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,"."); return (neg?"-":"")+p[0]+(dec?","+p[1]:""); }
-    function animate(el,from,to){
-      if(el.__anim) cancelAnimationFrame(el.__anim);
-      var t0=null, dur=650;
-      function step(ts){ if(!t0)t0=ts; var p=Math.min(1,(ts-t0)/dur); var e2=1-Math.pow(1-p,3); var v=from.n+(to.n-from.n)*e2;
-        if(p<1){ el.__mine=to.pre+fmt(v,to.dec)+to.post; el.textContent=el.__mine; el.__anim=requestAnimationFrame(step); } else { el.__mine=el.__final; el.textContent=el.__final; el.__anim=null; } }
-      el.__anim=requestAnimationFrame(step);
-    }
-    var mo=new MutationObserver(function(muts){
-      if(busy) return;
-      muts.forEach(function(mu){ var el=mu.target.nodeType===3?mu.target.parentNode:mu.target; if(!el||!el.classList||!el.classList.contains("val")) return;
-        var txt=el.textContent; if(txt===el.__final||txt===el.__mine) return; var prev=el.__final; el.__final=txt;
-        var a=parseNum(prev==null||prev==="—"?"0":prev), b=parseNum(txt); if(!a||!b||a.n===b.n||document.body.classList.contains("priv")) return;
-        animate(el,a,b); });
-    });
-    document.querySelectorAll(".kpi .val").forEach(function(el){ el.__final=el.textContent; mo.observe(el,{childList:true,characterData:true,subtree:true}); });
-  })();
   buildPageHeads(); renderOverviewHead(); setInterval(renderOverviewHead,60000);
 
   // init
