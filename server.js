@@ -110,6 +110,16 @@ function renderIndex(baseHtml, route) {
   return { html: html, status: known ? 200 : 404 };
 }
 
+const zlib = require("zlib");
+function sendGz(req, res, status, body, type, headers) {
+  const ae = String(req.headers["accept-encoding"] || "");
+  if (/\bgzip\b/.test(ae) && body && body.length > 1024) {
+    const gz = zlib.gzipSync(Buffer.isBuffer(body) ? body : Buffer.from(String(body)), { level: 6 });
+    res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8", "Content-Encoding": "gzip", "Vary": "Accept-Encoding" }, headers || {}));
+    return res.end(gz);
+  }
+  return send(res, status, body, type, headers);
+}
 function send(res, status, body, type, headers) {
   res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8" }, headers || {}));
   res.end(body);
@@ -156,10 +166,19 @@ function parseCookies(req) {
 }
 function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
 
+// Kurzzeit-Cache (25 s): mehrere offene Tabs/Polls lösen nicht jeweils eigene Abrufe bei den Plattformen aus.
+const JSON_MEMO = new Map();
 async function getJSON(url) {
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 9000);
-  try { const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) return null; return await r.json(); }
-  catch (e) { return null; } finally { clearTimeout(t); }
+  const hit = JSON_MEMO.get(url);
+  if (hit && Date.now() - hit.at < 25000) return hit.p;
+  const p = (async () => {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 9000);
+    try { const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) return null; return await r.json(); }
+    catch (e) { return null; } finally { clearTimeout(t); }
+  })();
+  JSON_MEMO.set(url, { at: Date.now(), p });
+  if (JSON_MEMO.size > 200) { const now = Date.now(); for (const [k, v] of JSON_MEMO) if (now - v.at > 60000) JSON_MEMO.delete(k); }
+  return p;
 }
 function yearParam(year) { return year ? "&year=" + encodeURIComponent(year) : ""; }
 async function kantineurStats(year) {
@@ -176,12 +195,40 @@ async function kantineurStats(year) {
     canteens: d.canteens || { total: 0, byStatus: {} },
   };
 }
+// Mail-Snapshot mit ETag: unverändert -> 304 (fast kein Traffic). Max. alle 20 s ein Abruf.
+let MAIL_SNAP = { at: 0, etag: "", data: null, p: null };
 async function mailSnapshot() {
   if (!MAIL.url || !MAIL.token) return null;
-  const d = await getJSON(MAIL.url + "?token=" + encodeURIComponent(MAIL.token));
-  if (!d || d.error) return null;
-  return d;
+  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 20000) return MAIL_SNAP.data;
+  if (MAIL_SNAP.p) return MAIL_SNAP.p;
+  MAIL_SNAP.p = (async () => {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const headers = MAIL_SNAP.etag && MAIL_SNAP.data ? { "If-None-Match": MAIL_SNAP.etag } : {};
+      const r = await fetch(MAIL.url + "?token=" + encodeURIComponent(MAIL.token), { headers, signal: ctrl.signal });
+      if (r.status === 304 && MAIL_SNAP.data) { MAIL_SNAP.at = Date.now(); return MAIL_SNAP.data; }
+      if (!r.ok) return MAIL_SNAP.data;
+      const d = await r.json(); if (!d || d.error) return MAIL_SNAP.data;
+      MAIL_SNAP.data = d; MAIL_SNAP.etag = r.headers.get("etag") || d.etag || ""; MAIL_SNAP.at = Date.now();
+      return d;
+    } catch (e) { return MAIL_SNAP.data; } finally { clearTimeout(t); MAIL_SNAP.p = null; }
+  })();
+  return MAIL_SNAP.p;
 }
+// Privates Railway-Netz nutzen (kostenlos, schneller) statt über das öffentliche Internet.
+(async () => {
+  if (!MAIL.url || /railway\.internal/.test(MAIL.url)) return;
+  const internal = process.env.MAIL_API_INTERNAL || "http://mail-api.railway.internal:8080/api/mails";
+  for (let i = 0; i < 5; i++) {
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
+      const r = await fetch(internal.replace(/\/api\/mails.*$/, "/api/health"), { signal: ctrl.signal }); clearTimeout(t);
+      if (r.ok) { console.log("mail-api via privates Netz:", internal); MAIL.url = internal; return; }
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  console.log("mail-api: privates Netz nicht erreichbar, nutze öffentliche URL");
+})();
 async function blitzdingsStats(year) {
   if (!BLITZ.token) return null;
   const d = await getJSON(BLITZ.url + "?token=" + encodeURIComponent(BLITZ.token) + yearParam(year));
@@ -420,12 +467,12 @@ async function handleAdmin(req, res, u, p) {
 
   if (p === "/admin" || p === "/admin/") {
     const html = await renderAdminDashboard();
-    return send(res, 200, html, TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
+    return sendGz(req, res, 200, html, TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
     const [k, m, b, cal, ko, va] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr)]);
-    return send(res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va, todos: readTodos(), manualEvents: readEvents() }), TYPES[".json"], { "Cache-Control": "no-store" });
+    return sendGz(req, res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va, todos: readTodos(), manualEvents: readEvents() }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/kochdu-settle" && req.method === "POST") {
     if (!KOCHDU.token) return send(res, 503, JSON.stringify({ error: "kochdu_not_configured" }), TYPES[".json"]);
@@ -459,7 +506,7 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 200, JSON.stringify({ build: BUILD }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/sites") {
-    try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
