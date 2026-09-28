@@ -1397,7 +1397,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     meta:{updatedAt:null},
     mail:{account:"simon@fs-creative.at",lastFetch:null,folders:[],messages:[],pending:[]},
     kochdu:{downloads:0,bestellungen:0,restaurants:[{name:"Beispiel-Restaurant",bestellungen:0,bar:0,online:0,bezahlt:false}],statsAt:null,live:[],totals:null},
-    kantineur:{downloads:0,preisKantineur:9,preisMagazineur:19,aboKantineur:0,aboMagazineur:0,eingenommenGesamt:0},
+    kantineur:{downloads:0,preisKantineur:9,preisMagazineur:14.9,aboKantineur:0,aboMagazineur:0,eingenommenGesamt:0},
     blitzdings:{bookings:[],statsAt:null,paidCents:0,openCents:0,refundedCents:0,thisMonthPaidCents:0,upcomingCount:0,paidCount:0,openCount:0,upcoming:[]},
     valuero:{fees:[],statsAt:null,live:[],settled:{antonhaus:[{amountCents:34754,at:"2026-07-30T00:00:00.000Z"}],alpinappart:[]}},
     todos:[],
@@ -1428,6 +1428,8 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     }
     // Kantineur-Stats übernehmen (API ist Quelle der Wahrheit für Abos, Umsatz, Kantinen)
     if(!s.kantineur) s.kantineur={};
+    // Aktuelle Tarife laut kantineur.at/preise (inkl. 20 % USt) – nicht editierbar, daher immer überschreiben
+    s.kantineur.preisKantineur=9; s.kantineur.preisMagazineur=14.9;
     if(KANTINEUR_STATS.fetchedAt && (!s.kantineur.statsAt || KANTINEUR_STATS.fetchedAt>s.kantineur.statsAt)){
       var sub=KANTINEUR_STATS.subscribers||{byPlan:{}};
       var bp=sub.byPlan||{};
