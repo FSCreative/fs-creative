@@ -432,6 +432,40 @@ body.dark #cmdk .it.on,body.dark #cmdk .it .ii{background:#26324d}
 body.dark .rwst.ok{background:#12352a}body.dark .rwst.err{background:#3a1d1d}body.dark .rwst.run{background:#1d2b4d}body.dark .rwst.idle,body.dark .svchip{background:#222c42}
 body.dark .dchip .cf{background:#3a2a18}body.dark .rwbadge{background:#2a2350;color:#b9a4ff}
 
+/* ===== Einstellungen ===== */
+.modal.setmodal{max-width:640px;padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:90vh}
+.set-scroll{overflow:auto;padding:6px 20px 20px}
+.set-sec{margin-top:14px}
+.set-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:6px}
+.set-p{font-size:12.5px;color:var(--dim);margin:0 0 10px}
+.acard{border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:10px;background:var(--card)}
+.acard .ah{display:flex;align-items:center;gap:10px}
+.acard .adot{width:10px;height:10px;border-radius:50%;background:var(--ac);flex:none}
+.acard .an{flex:1;min-width:0}
+.acard .an b{display:block;font-size:14px}
+.acard .an span{display:block;font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ast{font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.ast.ok{background:#e3f7ee;color:#0a8a4f}.ast.miss{background:#fef3e2;color:#9a6400}.ast.err{background:#fdecea;color:var(--red)}.ast.wait{background:#e8f0ff;color:var(--accent)}
+.acard .af{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+.acard .pw{flex:1;min-width:220px;position:relative}
+.acard .pw input,.acard .lg input{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 38px 9px 11px;font:inherit;font-size:13.5px;background:var(--card);color:var(--ink);outline:none}
+.acard .pw input:focus,.acard .lg input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,107,255,.12)}
+.acard .pw .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:transparent;cursor:pointer;color:var(--faint);width:28px;height:28px;border-radius:7px}
+.acard .pw .eye:hover{color:var(--accent)}
+.acard .lg{margin-top:8px;display:none}
+.acard.showlg .lg{display:block}
+.acard .ahint{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5}
+.acard .ahint a{color:var(--accent)}
+.acard .amore{border:none;background:transparent;color:var(--accent);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:0;margin-top:6px}
+.acard .amsg{font-size:12.5px;font-weight:600;margin-top:8px}
+.acard .amsg.ok{color:#0a8a4f}.acard .amsg.err{color:var(--red)}
+.set-int{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.set-int div{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.set-int i{width:8px;height:8px;border-radius:50%;flex:none}
+body.dark .ast.ok{background:#12352a}body.dark .ast.miss{background:#3a2e14}body.dark .ast.err{background:#3a1d1d}body.dark .ast.wait{background:#1d2b4d}
+body.dark .acard .pw input,body.dark .acard .lg input{background:#161d2c}
+@media(max-width:560px){.set-int{grid-template-columns:1fr}}
+
 /* ===== Postfach: mehrere Konten ===== */
 .accsw{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .accbtn{display:flex;align-items:center;gap:9px;width:100%;border:none;background:transparent;border-radius:10px;padding:7px 10px;font:inherit;text-align:left;cursor:pointer;color:var(--dim);transition:background .12s}
@@ -747,6 +781,7 @@ body.dark .titem:hover{background:#202a3e}
       <label class="yearsel"><span>Jahr</span><select id="year-sel"></select></label>
       <button class="btn icon" id="hdr-refresh" title="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg></button>
       <button class="btn icon" id="hdr-eye" title="Beträge verbergen"></button>
+      <button class="btn icon" id="hdr-settings" title="Einstellungen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
       <button class="btn icon hdr-k" id="hdr-cmdk" title="Suchen & Springen (⌘K)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="kbd">⌘K</span></button>
       <button class="btn icon" id="hdr-theme" title="Dunkelmodus"></button>
       <a class="btn icon" id="hdr-logout" title="Abmelden" href="/admin/logout" style="display:none;text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></a>
@@ -1050,6 +1085,23 @@ body.dark .titem:hover{background:#202a3e}
       <button class="btn" id="c-draft">Entwurf</button>
       <button class="btn" id="c-attach">📎 Anhang</button>
       <button class="btn primary" id="c-send">Senden <span class="kbd">⌘↵</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="setoverlay">
+  <div class="modal setmodal">
+    <div class="c-head"><h3>Einstellungen</h3><button class="c-x" id="set-close" title="Schließen (Esc)">✕</button></div>
+    <div class="set-scroll">
+      <div class="set-sec">
+        <div class="set-h">E-Mail-Konten</div>
+        <p class="set-p">Passwort eintragen und auf „Prüfen &amp; speichern“ klicken. Die Anmeldung wird zuerst getestet, dann wird das Passwort sicher beim Mail-Dienst hinterlegt (nicht im Browser gespeichert).</p>
+        <div id="set-accounts"><div class="mempty">Lade …</div></div>
+      </div>
+      <div class="set-sec">
+        <div class="set-h">Verbindungen</div>
+        <div id="set-integrations" class="set-int"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -2576,6 +2628,7 @@ body.dark .titem:hover{background:#202a3e}
     var t=e.target; if(!t||!t.closest) return;
     var inMail=t.closest("#p-postfach"); if(!inMail) return;
     function stop(){ e.stopPropagation(); e.preventDefault(); }
+    var warnB=t.closest(".awarn"); if(warnB){ stop(); openSettings(); return; }
     var accB=t.closest("[data-acct]"); if(accB){ stop(); var na=accB.getAttribute("data-acct"); if(na!==mailUI.acct){ mailUI.acct=na; mailUI.selected={}; mailUI.sel=null; if(mailUI.folder.indexOf("f:")===0) mailUI.folder="inbox"; } renderMailAll(); var lw0=document.getElementById("mail-listwrap"); if(lw0) lw0.scrollTop=0; return; }
     var chipB=t.closest("[data-mfilter]"); if(chipB){ stop(); mailUI.filter=chipB.getAttribute("data-mfilter"); renderMailList(); return; }
     var bx=t.closest("[data-bulkx]"); if(bx){ stop(); var op=bx.getAttribute("data-bulkx"); var ids=selectedIds();
@@ -3008,6 +3061,7 @@ body.dark .titem:hover{background:#202a3e}
       {t:"Neue Mail schreiben",s:"C im Postfach",ic:CHIC.mail,run:function(){ selectTab("postfach"); openCompose("Neue Nachricht","","",""); }},
       {t:"Neues To-Do",s:"Aufgabe anlegen",ic:CHIC.todo,run:function(){ selectTab("todo"); setTimeout(function(){ var i=document.getElementById("todo-text"); if(i)i.focus(); },60); }},
       {t:"Neuer Termin",s:"Im Kalender",ic:CHIC.cal,run:function(){ selectTab("kalender"); var b=document.getElementById("cal-add")||document.querySelector("#p-kalender .btn.primary"); if(b) b.click(); }},
+      {t:"Einstellungen & E-Mail-Konten",s:"Passwörter, Verbindungen",ic:CHIC.mail,run:function(){ openSettings(); }},
       {t:"Dunkel-/Hellmodus umschalten",s:"Darstellung",ic:CHIC.euro,run:function(){ var b=document.getElementById("hdr-theme"); if(b)b.click(); }},
       {t:"Beträge ein-/ausblenden",s:"Privatsphäre",ic:CHIC.euro,run:function(){ var b=document.getElementById("hdr-eye"); if(b)b.click(); }},
       {t:"Alles aktualisieren",s:"Live-Daten neu laden",ic:CHIC.euro,run:function(){ try{ if(window.__fsdPoll) window.__fsdPoll(); }catch(e){} try{ mailToast("Wird aktualisiert …"); }catch(e){} }}
@@ -3054,6 +3108,67 @@ body.dark .titem:hover{background:#202a3e}
     if(e.target.id==="todo-toggle-done"){ todoUI.hideDone=!todoUI.hideDone; try{ localStorage.setItem("fsc_todo_hidedone",todoUI.hideDone?"1":"0"); }catch(x){} renderTodos(); return; }
     if(e.target.id==="todo-clear-done"){ var n=(state.todos||[]).filter(function(t){return t.done;}).length; if(!n){ mailToast("Keine erledigten Aufgaben"); return; } if(!confirm(n+" erledigte Aufgabe(n) endgültig löschen?"))return; state.todos=state.todos.filter(function(t){return !t.done;}); save(); renderTodos(); renderCalendar(); renderOverviewTodos(); mailToast(n+" erledigte Aufgabe(n) gelöscht"); return; }
   });
+
+  // ===== Einstellungen (Zahnrad oben neben dem Auge) =====
+  var setOv=document.getElementById("setoverlay"), setPoll=null, setData=null, setMsgs={};
+  function setStatus(a){
+    if(setMsgs[a.key]&&setMsgs[a.key].restarting&&a.ok!==true) return '<span class="ast wait">Wird verbunden …</span>';
+    if(a.configured===false) return '<span class="ast miss">Passwort fehlt</span>';
+    if(a.ok===true) return '<span class="ast ok">✓ Verbunden</span>';
+    if(a.ok===false) return '<span class="ast err">Anmeldung fehlgeschlagen</span>';
+    return '<span class="ast wait">Wird geprüft …</span>';
+  }
+  function renderSettings(){
+    var d=setData||{}; var accs=(d.accounts&&d.accounts.length)?d.accounts:mailAccounts();
+    var host=document.getElementById("set-accounts");
+    if(host){
+      host.innerHTML=accs.map(function(a){
+        var hint=a.google?('Google-Konto: <b>App-Passwort</b> verwenden, nicht das normale Passwort. Erstellen unter <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a> (als '+esc(a.user)+' angemeldet; dafür muss die Bestätigung in zwei Schritten aktiv sein).'):(a.primary?'Das Passwort deines World4You-Postfachs.':'Passwort des Postfachs.');
+        var m=setMsgs[a.key]||{};
+        return '<div class="acard'+(a.customLogin||m.showLogin?' showlg':'')+'" data-akey="'+esc(a.key)+'" style="--ac:'+accColor(a.key)+'">'+
+          '<div class="ah"><span class="adot"></span><div class="an"><b>'+esc(a.label)+'</b><span>'+esc(a.user||"")+'</span></div>'+setStatus(a)+'</div>'+
+          '<div class="af"><div class="pw"><input type="password" autocomplete="new-password" spellcheck="false" placeholder="'+(a.configured===false?(a.google?"App-Passwort eintragen":"Passwort eintragen"):"Neues Passwort (leer = unverändert)")+'" data-apw="'+esc(a.key)+'"><button class="eye" type="button" data-apweye="'+esc(a.key)+'" title="Anzeigen">👁</button></div>'+
+          '<button class="btn primary" data-asave="'+esc(a.key)+'"'+(d.canSave===false?' disabled title="Railway-Token fehlt"':'')+'>Prüfen &amp; speichern</button></div>'+
+          (a.primary?'':'<div class="lg"><input type="text" autocomplete="off" spellcheck="false" placeholder="Anmeldename, falls abweichend (z. B. Hauptadresse bei Alias)" data-alogin="'+esc(a.key)+'" value="'+esc(a.customLogin||"")+'"></div>'+(a.customLogin||m.showLogin?'':'<button class="amore" data-amore="'+esc(a.key)+'">Anmeldename weicht von der Adresse ab?</button>'))+
+          '<div class="ahint">'+hint+'</div>'+
+          (m.text?'<div class="amsg '+(m.ok?"ok":"err")+'">'+esc(m.text)+'</div>':'')+
+        '</div>';
+      }).join("");
+    }
+    var ih=document.getElementById("set-integrations");
+    if(ih) ih.innerHTML=(d.integrations||[]).map(function(x){ return '<div><i style="background:'+(x.ok?"var(--green)":"#c5ccd8")+'"></i>'+esc(x.label)+'<span style="margin-left:auto;color:var(--faint);font-size:12px">'+(x.ok?"verbunden":"nicht eingerichtet")+'</span></div>'; }).join("")||'<div class="mempty" style="grid-column:1/-1">—</div>';
+  }
+  function loadSettings(){
+    if(!window.__FSD_HOSTED) { renderSettings(); return; }
+    fetch("/admin/api/settings",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){ if(!d)return;
+      setData=d; if(Array.isArray(d.accounts)&&d.accounts.length){ state.mail.accounts=d.accounts; }
+      // Neustart abgeschlossen?
+      Object.keys(setMsgs).forEach(function(k){ var a=(d.accounts||[]).filter(function(x){return x.key===k;})[0]; var m=setMsgs[k]; if(m&&m.restarting&&a&&a.ok===true){ m.restarting=false; m.ok=true; m.text="✓ Verbunden – die Mails werden jetzt geladen."; try{ if(window.__fsdPoll) window.__fsdPoll(); }catch(e){} } else if(m&&m.restarting&&a&&a.ok===false&&a.configured!==false&&m.since&&Date.now()-m.since>60000){ m.restarting=false; m.ok=false; m.text="Anmeldung nach dem Neustart fehlgeschlagen – Passwort bitte prüfen."; } });
+      renderSettings(); if(activeTab==="postfach") renderMailAll(); }).catch(function(){});
+  }
+  function openSettings(){ setOv.classList.add("show"); renderSettings(); loadSettings(); clearInterval(setPoll); setPoll=setInterval(function(){ if(setOv.classList.contains("show")) loadSettings(); else clearInterval(setPoll); },8000); }
+  function closeSettings(){ setOv.classList.remove("show"); clearInterval(setPoll); document.querySelectorAll("#set-accounts input[type=password]").forEach(function(i){ i.value=""; }); }
+  document.getElementById("hdr-settings").addEventListener("click",openSettings);
+  document.getElementById("set-close").addEventListener("click",closeSettings);
+  setOv.addEventListener("mousedown",function(e){ if(e.target===setOv) closeSettings(); });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&setOv.classList.contains("show")){ e.preventDefault(); e.stopImmediatePropagation(); closeSettings(); } },true);
+  setOv.addEventListener("click",function(e){
+    var eye=e.target.closest("[data-apweye]"); if(eye){ var inp=setOv.querySelector('[data-apw="'+eye.getAttribute("data-apweye")+'"]'); if(inp){ inp.type=inp.type==="password"?"text":"password"; inp.focus(); } return; }
+    var more=e.target.closest("[data-amore]"); if(more){ var k0=more.getAttribute("data-amore"); setMsgs[k0]=Object.assign(setMsgs[k0]||{},{showLogin:true}); var card=more.closest(".acard"); if(card){ card.classList.add("showlg"); more.remove(); var li=card.querySelector("[data-alogin]"); if(li) li.focus(); } return; }
+    var sv=e.target.closest("[data-asave]"); if(!sv) return;
+    var key=sv.getAttribute("data-asave"); var pwEl=setOv.querySelector('[data-apw="'+key+'"]'); var lgEl=setOv.querySelector('[data-alogin="'+key+'"]');
+    var pw=(pwEl&&pwEl.value||"").trim(); if(!pw){ if(pwEl) pwEl.focus(); return; }
+    sv.disabled=true; sv.textContent="Wird geprüft …";
+    fetch("/admin/api/settings/mail-account",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:key,pass:pw,login:lgEl?lgEl.value.trim():""})})
+      .then(function(r){ return r.json().catch(function(){return {ok:false,error:"http_"+r.status};}); })
+      .then(function(j){
+        if(j.ok){ setMsgs[key]={ok:true,restarting:true,since:Date.now(),text:"Anmeldung erfolgreich ✓ – gespeichert. Der Mail-Dienst startet neu (ca. 1–2 Minuten), danach erscheinen die Mails im Postfach."}; if(pwEl) pwEl.value=""; }
+        else { var t=j.error==="login_failed"?"Anmeldung abgelehnt – Passwort stimmt nicht. Bei Google bitte ein App-Passwort verwenden.":(j.error==="connect_failed"?"Server nicht erreichbar"+(j.detail?": "+j.detail:""):(j.error==="railway_token_missing"?"Speichern nicht möglich: Railway-Token fehlt.":"Fehler: "+(j.detail||j.error||"unbekannt"))); setMsgs[key]={ok:false,text:t,showLogin:(setMsgs[key]||{}).showLogin}; }
+        renderSettings();
+      })
+      .catch(function(err){ setMsgs[key]={ok:false,text:"Fehler: "+err}; renderSettings(); });
+  });
+  setOv.addEventListener("keydown",function(e){ if(e.key==="Enter"&&e.target.matches&&e.target.matches("[data-apw],[data-alogin]")){ e.preventDefault(); var k=e.target.getAttribute("data-apw")||e.target.getAttribute("data-alogin"); var b=setOv.querySelector('[data-asave="'+k+'"]'); if(b) b.click(); } });
   buildPageHeads(); renderOverviewHead(); setInterval(renderOverviewHead,60000);
 
   document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible"){ try{ if(window.__fsdVchk) window.__fsdVchk(); if(window.__fsdPoll) window.__fsdPoll(); }catch(e){} } });

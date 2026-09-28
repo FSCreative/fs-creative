@@ -502,6 +502,56 @@ async function handleAdmin(req, res, u, p) {
     });
     return;
   }
+  // ---- Einstellungen: Status der Verbindungen + Mail-Passwörter setzen ----
+  if (p === "/admin/api/settings" && req.method === "GET") {
+    let accounts = [];
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 6000);
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/health"), { signal: ctrl.signal }); clearTimeout(t);
+      const j = await r.json(); accounts = Array.isArray(j.accounts) ? j.accounts : [];
+    } catch (e) {}
+    const integrations = [
+      { key: "mail", label: "Postfach (Mail-Dienst)", ok: !!(MAIL.url && MAIL.token) },
+      { key: "cloudflare", label: "Cloudflare", ok: !!CF.token },
+      { key: "railway", label: "Railway", ok: !!RW.token },
+      { key: "kochdu", label: "kochdu", ok: !!KOCHDU.token },
+      { key: "kantineur", label: "Kantineur", ok: !!KANTINEUR.token },
+      { key: "blitzdings", label: "Blitzdings", ok: !!BLITZ.token },
+      { key: "valuero", label: "VALUERO (Antonhaus / Alpinappart)", ok: !!(ANTONHAUS.token || ALPINAPPART.key) },
+    ];
+    return send(res, 200, JSON.stringify({ accounts, integrations, canSave: !!RW.token }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/settings/mail-account" && req.method === "POST") {
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on("end", async () => {
+      let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ ok: false, error: "bad_json" }), TYPES[".json"]); }
+      const key = String(payload.key || ""), pass = String(payload.pass || "").replace(/\s+/g, ""), login = String(payload.login || "").trim();
+      if (!key || !pass) return send(res, 400, JSON.stringify({ ok: false, error: "missing" }), TYPES[".json"]);
+      if (!RW.token) return send(res, 503, JSON.stringify({ ok: false, error: "railway_token_missing" }), TYPES[".json"]);
+      const base = MAIL.url.replace(/\/api\/mails.*$/, "");
+      try {
+        // 1) Konto-Infos (welche Variable) vom Mail-Dienst
+        const h = await (await fetch(base + "/api/health")).json();
+        const acc = (h.accounts || []).find(a => a.key === key);
+        if (!acc || !acc.env) return send(res, 404, JSON.stringify({ ok: false, error: "unknown_account" }), TYPES[".json"]);
+        // 2) Zugangsdaten testen (Anmeldung am Postfach)
+        const tr = await fetch(base + "/api/test-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, key, pass, login: login || undefined }) });
+        const tj = await tr.json().catch(() => ({}));
+        if (!tj.ok && !payload.force) return send(res, 200, JSON.stringify({ ok: false, error: tj.error || "test_failed", detail: tj.detail || "" }), TYPES[".json"]);
+        // 3) In Railway als Variable des Mail-Dienstes speichern -> Dienst startet mit neuen Zugangsdaten neu
+        const vars = {}; vars[acc.env + "_PASS"] = pass;
+        if (login && acc.env !== "IMAP") vars[acc.env + "_LOGIN"] = login;
+        const q = "mutation($input: VariableCollectionUpsertInput!){ variableCollectionUpsert(input:$input) }";
+        const input = { projectId: process.env.RAILWAY_PROJECT_ID || "5ab009b1-4a14-436e-9c60-f06d94e68f6b", environmentId: process.env.RAILWAY_ENVIRONMENT_ID || "43bc9c87-f97f-4d1b-8294-abdf1e48e552", serviceId: process.env.MAIL_API_SERVICE_ID || "3fb095c5-f0b7-4143-941d-d79bc9d163c4", variables: vars };
+        const rj = await rwGQL(q, { input });
+        if (!rj || rj.errors) return send(res, 500, JSON.stringify({ ok: false, error: "save_failed", detail: (rj && rj.errors && rj.errors[0] && rj.errors[0].message) || "" }), TYPES[".json"]);
+        MAIL_SNAP.at = 0;
+        return send(res, 200, JSON.stringify({ ok: true, tested: !!tj.ok, restarting: true }), TYPES[".json"]);
+      } catch (e) { return send(res, 500, JSON.stringify({ ok: false, error: "failed", detail: String(e && e.message || e).slice(0, 160) }), TYPES[".json"]); }
+    });
+    return;
+  }
   if (p === "/admin/api/version") {
     return send(res, 200, JSON.stringify({ build: BUILD }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
