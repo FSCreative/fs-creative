@@ -533,12 +533,13 @@ body.dark #c-fromrow select option{background:#1a2233}
 .fbtn.dropok{background:#e8f0ff;outline:2px dashed var(--accent);outline-offset:-2px}
 .mlistwrap{max-height:78vh;overflow:auto;position:relative}
 .mchips{position:sticky;top:0;z-index:3;background:var(--card);display:flex;align-items:center;gap:5px;padding:10px 10px 9px;border-bottom:1px solid var(--line);flex-wrap:nowrap;overflow:hidden;height:47px}
-.mchip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 10px;font:inherit;font-size:12px;font-weight:700;color:var(--dim);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.mchips{overflow-x:auto;scrollbar-width:none}.mchips::-webkit-scrollbar{display:none}
+.mchip{white-space:nowrap;flex:none;border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 9px;font:inherit;font-size:12px;font-weight:700;color:var(--dim);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
 .mchip:hover{border-color:#cdd6e6;color:var(--ink)}
 .mchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .mchip .n{opacity:.8;font-weight:800}
 .mchips .sp{flex:1}
-.mchips .mc-all{border:none;background:transparent;color:var(--faint);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:7px}
+.mchips .mc-all{white-space:nowrap;flex:none;border:none;background:transparent;color:var(--faint);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:7px}
 .mchips .mc-all:hover{color:var(--accent);background:#f2f6ff}
 .mgrp{position:sticky;top:47px;z-index:2;background:linear-gradient(var(--card),var(--card));font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);padding:9px 14px 5px;border-bottom:1px solid var(--line)}
 .mrow2{position:relative;align-items:flex-start;padding:11px 12px 11px 14px;gap:11px}
@@ -1851,11 +1852,11 @@ body.dark .titem:hover{background:#202a3e}
     if(chipsHost){
       var base=(function(){ var keep=mailUI.filter, keepS=mailUI.search; mailUI.filter="all"; var all=mailView(); mailUI.filter=keep; return all; })();
       var nU=base.filter(function(m){return !m.read;}).length, nS=base.filter(function(m){return m.starred;}).length, nA=base.filter(function(m){return m.attachments&&m.attachments.length;}).length, nO=base.filter(function(m){ var rs=replyState(m); return !m.outbox&&!m.draftLocal&&!isSent(m)&&!(rs&&rs.ans); }).length;
-      function chip(k,l,n){ return '<button class="mchip'+((mailUI.filter||"all")===k?" on":"")+'" data-mfilter="'+k+'">'+l+(n!=null?' <span class="n">'+n+'</span>':'')+'</button>'; }
+      function chip(k,l,n,tt){ return '<button class="mchip'+((mailUI.filter||"all")===k?" on":"")+'" data-mfilter="'+k+'"'+(tt?' title="'+tt+'"':'')+'>'+l+(n!=null?' <span class="n">'+n+'</span>':'')+'</button>'; }
       var tools='';
       if(mailUI.folder==="trash"&&msgs.length) tools='<button class="mc-all" id="empty-trash" style="color:var(--red)">Papierkorb leeren</button>';
       else if(mailUI.folder==="spam"&&msgs.length) tools='<button class="mc-all" data-mx="spamclear" style="color:var(--red)">Spam leeren</button>';
-      chipsHost.innerHTML=chip("all","Alle")+chip("unread","Ungelesen",nU)+chip("star","★",nS)+chip("att","📎",nA)+(mailUI.folder==="sent"||mailUI.folder==="outbox"||mailUI.folder==="drafts"?"":chip("open","↩ Unbeantwortet",nO))+'<span class="sp"></span>'+tools+(msgs.length?'<button class="mc-all" data-bulkx="all" title="Alle auswählen">'+msgs.length+' ✓</button>':'');
+      chipsHost.innerHTML=chip("all","Alle")+chip("unread","Ungelesen",nU)+chip("star","★",nS)+chip("att","📎",nA)+(mailUI.folder==="sent"||mailUI.folder==="outbox"||mailUI.folder==="drafts"?"":chip("open","↩ Offen",nO,"Noch nicht beantwortet"))+'<span class="sp"></span>'+tools+(msgs.length?'<button class="mc-all" data-bulkx="all" title="Alle auswählen">'+msgs.length+' ✓</button>':'');
     }
     if(!msgs.length){
       var f=mailUI.folder, e={ic:"inbox",t:"Alles erledigt",d:"Keine Nachrichten in dieser Ansicht."};

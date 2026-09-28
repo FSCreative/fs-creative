@@ -1076,6 +1076,9 @@ const server = http.createServer((req, res) => {
 
 if (require.main === module) {
   server.listen(PORT, () => { console.log("FS Creative running on port " + PORT); });
+  // Sauber beenden, wenn Railway beim Deploy den alten Container stoppt (sonst „Deployment crashed“-Mail)
+  function shutdown() { try { server.close(); } catch (e) {} setTimeout(() => process.exit(0), 500).unref(); }
+  process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
 }
 
 module.exports = { renderIndex, ROUTE_META, NOINDEX_ROUTES };
