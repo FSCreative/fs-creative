@@ -308,6 +308,11 @@ body.dark .mbulk{background:#20325a;border-color:#2b4570}
 .att .att-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .att .att-sz{color:var(--faint);flex:none;font-variant-numeric:tabular-nums}
 .att .att-dl{color:var(--accent);flex:none;font-weight:700}
+.attw{display:inline-flex;align-items:stretch;max-width:300px}
+.attw .att{border-top-right-radius:0;border-bottom-right-radius:0;border-right:none;min-width:0}
+.att-dlb{display:inline-grid;place-items:center;width:34px;flex:none;border:1px solid var(--line);border-radius:0 11px 11px 0;background:#f4f7fc;color:var(--dim);text-decoration:none;font-weight:700;transition:all .15s}
+.att-dlb:hover{color:var(--accent);border-color:var(--accent);background:#eef4ff}
+body.dark .att-dlb{background:#222c42}body.dark .att-dlb:hover{background:#26324d}
 .att.att-off{opacity:.7;cursor:default}
 .mrow2 .clip{color:var(--faint);font-size:12px;flex:none}
 .mempty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
@@ -1892,7 +1897,7 @@ body.dark .titem:hover{background:#202a3e}
     var hosted=window.__FSD_HOSTED&&window.__FSD_MAIL_ATTACH;
     var chips=atts.map(function(a){
       var label='<span class="att-ic">'+attIcon(a.contentType)+'</span><span class="att-name">'+esc(a.filename||"Anhang")+'</span><span class="att-sz">'+fmtBytes(a.size)+'</span>';
-      if(hosted){ var href=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOfMsg(m)); return '<a class="att" href="'+href+'" download="'+esc(a.filename||"anhang")+'" target="_blank" rel="noopener">'+label+'<span class="att-dl">⬇</span></a>'; }
+      if(hosted){ var href=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOfMsg(m)); return '<span class="attw"><a class="att" href="'+href+'&inline=1" target="_blank" rel="noopener" title="Im Browser öffnen">'+label+'<span class="att-dl">↗</span></a><a class="att-dlb" href="'+href+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen">⬇</a></span>'; }
       return '<span class="att att-off" title="Download nur im Live-Dashboard">'+label+'</span>';
     }).join("");
     return '<div class="atts"><div class="atts-h">📎 '+atts.length+' Anhang'+(atts.length>1?"änge":"")+'</div><div class="atts-list">'+chips+'</div></div>';

@@ -606,12 +606,29 @@ async function handleAdmin(req, res, u, p) {
       const r = await fetch(attUrl);
       if (!r.ok) return send(res, r.status, "attachment_error");
       const buf = Buffer.from(await r.arrayBuffer());
-      res.writeHead(200, {
-        "Content-Type": r.headers.get("content-type") || "application/octet-stream",
-        "Content-Disposition": r.headers.get("content-disposition") || "attachment",
+      // Dateiname aus der Antwort des Mail-Dienstes
+      const cd = r.headers.get("content-disposition") || "";
+      let fname = "anhang";
+      const m5987 = cd.match(/filename\*=UTF-8''([^;]+)/i), mPlain = cd.match(/filename="([^"]*)"/i);
+      try { if (m5987) fname = decodeURIComponent(m5987[1]); else if (mPlain) fname = mPlain[1]; } catch (e) { if (mPlain) fname = mPlain[1]; }
+      // Typ bestimmen (oft kommt nur application/octet-stream) -> anhand der Endung
+      const EXT = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", heic: "image/heic", svg: "image/svg+xml", txt: "text/plain; charset=utf-8", csv: "text/plain; charset=utf-8", log: "text/plain; charset=utf-8", ics: "text/plain; charset=utf-8", mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", mp4: "video/mp4", mov: "video/quicktime", html: "text/html", htm: "text/html", eml: "text/plain; charset=utf-8", json: "text/plain; charset=utf-8", xml: "text/plain; charset=utf-8" };
+      let ctype = (r.headers.get("content-type") || "application/octet-stream").toLowerCase();
+      const ext = (fname.split(".").pop() || "").toLowerCase();
+      if ((/octet-stream|binary|unknown/.test(ctype) || !ctype) && EXT[ext]) ctype = EXT[ext];
+      const wantDl = u.searchParams.get("dl") === "1";
+      const ascii = fname.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "_");
+      const headers = {
+        "Content-Type": ctype,
+        "Content-Disposition": (wantDl ? "attachment" : "inline") + '; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(fname),
         "Content-Length": buf.length,
-        "Cache-Control": "no-store",
-      });
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      };
+      // Sicherheit: aktive Inhalte (HTML, SVG, …) aus Mails nie mit Admin-Rechten ausführen
+      const safeInline = /^(application\/pdf|image\/(png|jpeg|gif|webp|bmp|heic)|text\/plain|audio\/|video\/)/.test(ctype);
+      if (!safeInline) headers["Content-Security-Policy"] = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'";
+      res.writeHead(200, headers);
       return res.end(buf);
     } catch (e) { return send(res, 502, "attachment_failed"); }
   }
