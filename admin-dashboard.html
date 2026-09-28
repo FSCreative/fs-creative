@@ -856,6 +856,15 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
 .evv-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700}
 
 @media(max-width:640px){ .split{grid-template-columns:1fr} .kpi .val{font-size:24px} .hero .val{font-size:31px} .tab span.t{display:none} .tab{min-width:0} }
+/* ===================== Tab-Menü: nie überlappen ===================== */
+.tabs{overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1 0 auto;min-width:0;padding:10px 12px}
+@media(max-width:1240px) and (min-width:761px){
+  .tab{padding:10px 11px;gap:6px}
+  .tab:not(.active) .t{display:none}
+  .tab .badge{margin-left:2px}
+}
 /* ===================== MOBIL (≤ 760px) ===================== */
 .mnav,.msheet,.msheet-bg,.mfolderpill,.mfold-bg{display:none}
 .cdots{display:none;gap:3px;justify-content:center;flex-wrap:wrap;max-width:100%;min-height:6px}
@@ -2821,6 +2830,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     var act=wrap.querySelector(".tab.active"); if(!act)return;
     ind.style.width=act.offsetWidth+"px";
     ind.style.transform="translateX("+act.offsetLeft+"px)";
+    if(wrap.scrollWidth>wrap.clientWidth+2){ var l=act.offsetLeft, r=l+act.offsetWidth; if(l<wrap.scrollLeft) wrap.scrollLeft=l-8; else if(r>wrap.scrollLeft+wrap.clientWidth) wrap.scrollLeft=r-wrap.clientWidth+8; }
   }
 
   // ---- events ----
@@ -3765,6 +3775,8 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
 
   // ===================== MOBIL: Menü unten, „Mehr“-Blatt, Postfach, Kalender =====================
   (function(){
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(t){ var l=t.querySelector(".t"); if(l&&!t.title) t.title=l.textContent; });
+    window.addEventListener("resize",function(){ try{ moveIndicator(); }catch(e){} });
     var MAIN=[["overview","Übersicht"],["postfach","Postfach"],["kalender","Kalender"],["todo","To-Dos"]];
     var OTHER=[["finanzen","Finanzen"],["blitzdings","Blitzdings"],["kochdu","kochdu"],["valuero","VALUERO"],["kantineur","Kantineur"],["fscreative","FS Creative"]];
     var MORE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>';
