@@ -120,6 +120,30 @@ function sendGz(req, res, status, body, type, headers) {
   }
   return send(res, status, body, type, headers);
 }
+// ---- ZIP (ohne Abhängigkeiten, "stored" – Anhänge sind meist schon komprimiert) ----
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(buf) { if (typeof zlib.crc32 === "function") return zlib.crc32(buf) >>> 0; let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) {
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [], central = []; let offset = 0;
+  for (const f of files) {
+    const name = Buffer.from(f.name, "utf8"); const data = f.data; const crc = crc32(data);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6); lh.writeUInt16LE(0, 8);
+    lh.writeUInt16LE(dosTime, 10); lh.writeUInt16LE(dosDate, 12); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22);
+    lh.writeUInt16LE(name.length, 26); lh.writeUInt16LE(0, 28);
+    parts.push(lh, name, data);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(0, 10);
+    ch.writeUInt16LE(dosTime, 12); ch.writeUInt16LE(dosDate, 14); ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24);
+    ch.writeUInt16LE(name.length, 28); ch.writeUInt16LE(0, 30); ch.writeUInt16LE(0, 32); ch.writeUInt16LE(0, 34); ch.writeUInt16LE(0, 36); ch.writeUInt32LE(0, 38); ch.writeUInt32LE(offset, 42);
+    central.push(ch, name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(cdSize, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat(parts.concat(central, [end]));
+}
 function send(res, status, body, type, headers) {
   res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8" }, headers || {}));
   res.end(body);
@@ -909,6 +933,34 @@ async function handleAdmin(req, res, u, p) {
       return send(res, ok ? 200 : 500, JSON.stringify({ ok: ok, count: merged.length, events: merged }), TYPES[".json"]);
     });
     return;
+  }
+  // Alle Anhänge einer Mail als ZIP
+  if (p === "/admin/api/mail-attachments-zip" && req.method === "GET") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, "mail_not_configured");
+    let items = []; try { items = JSON.parse(u.searchParams.get("atts") || "[]"); } catch (e) {}
+    items = (Array.isArray(items) ? items : []).slice(0, 40);
+    if (!items.length) return send(res, 400, "no_attachments");
+    const base = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?token=" + encodeURIComponent(MAIL.token) +
+      "&folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") + "&uid=" + encodeURIComponent(u.searchParams.get("uid") || "") +
+      "&account=" + encodeURIComponent(u.searchParams.get("account") || "");
+    try {
+      const files = []; const used = {};
+      for (const it of items) {
+        const r = await fetch(base + "&index=" + encodeURIComponent(String(it.index)));
+        if (!r.ok) continue;
+        const data = Buffer.from(await r.arrayBuffer());
+        let name = String(it.filename || "anhang").replace(/[\\/:*?"<>|\r\n]/g, "_").slice(0, 150) || "anhang";
+        if (used[name.toLowerCase()]) { const dot = name.lastIndexOf("."); let n = 2, cand; do { cand = dot > 0 ? name.slice(0, dot) + " (" + n + ")" + name.slice(dot) : name + " (" + n + ")"; n++; } while (used[cand.toLowerCase()]); name = cand; }
+        used[name.toLowerCase()] = 1;
+        files.push({ name, data });
+      }
+      if (!files.length) return send(res, 502, "attachments_failed");
+      const zip = makeZip(files);
+      const zname = (String(u.searchParams.get("name") || "Anhaenge").replace(/^(re|aw|fwd?|wg)\s*:\s*/gi, "").replace(/[\\/:*?"<>|\r\n]/g, "_").trim().slice(0, 80) || "Anhaenge") + ".zip";
+      const ascii = zname.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "_");
+      res.writeHead(200, { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + encodeURIComponent(zname), "Content-Length": zip.length, "Cache-Control": "private, no-store" });
+      return res.end(zip);
+    } catch (e) { return send(res, 502, "zip_failed"); }
   }
   if (p === "/admin/api/mail-attachment" && req.method === "GET") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, "mail_not_configured");

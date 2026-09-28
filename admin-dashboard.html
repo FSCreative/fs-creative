@@ -308,6 +308,10 @@ body.dark .mbulk{background:#20325a;border-color:#2b4570}
 .att .att-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .att .att-sz{color:var(--faint);flex:none;font-variant-numeric:tabular-nums}
 .att .att-dl{color:var(--accent);flex:none;font-weight:700}
+.atts-h{display:flex;align-items:center;gap:10px}
+.att-all{margin-left:auto;font-size:12px;font-weight:700;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:9px;padding:4px 10px;transition:all .15s}
+.att-all:hover{border-color:var(--accent);background:#eef4ff}
+body.dark .att-all:hover{background:#26324d}
 .attw{display:inline-flex;align-items:stretch;max-width:300px}
 .attw .att{border-top-right-radius:0;border-bottom-right-radius:0;border-right:none;min-width:0}
 .att-dlb{display:inline-grid;place-items:center;width:34px;flex:none;border:1px solid var(--line);border-radius:0 11px 11px 0;background:#f4f7fc;color:var(--dim);text-decoration:none;font-weight:700;transition:all .15s}
@@ -1915,7 +1919,10 @@ body.dark .titem:hover{background:#202a3e}
       if(hosted){ var href=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOfMsg(m)); return '<span class="attw"><a class="att" href="'+href+'&inline=1" target="_blank" rel="noopener" title="Im Browser öffnen">'+label+'<span class="att-dl">↗</span></a><a class="att-dlb" href="'+href+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen">⬇</a></span>'; }
       return '<span class="att att-off" title="Download nur im Live-Dashboard">'+label+'</span>';
     }).join("");
-    return '<div class="atts"><div class="atts-h">📎 '+atts.length+' Anhang'+(atts.length>1?"änge":"")+'</div><div class="atts-list">'+chips+'</div></div>';
+    var zipBtn="";
+    if(hosted&&atts.length>1){ var zurl="/admin/api/mail-attachments-zip?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&account="+encodeURIComponent(accOfMsg(m))+"&name="+encodeURIComponent(m.subject||"Anhaenge")+"&atts="+encodeURIComponent(JSON.stringify(atts.map(function(a){return {index:a.index,filename:a.filename};})));
+      zipBtn='<a class="att-all" href="'+zurl+'" download title="Alle Anhänge als ZIP-Datei herunterladen">⬇ Alle herunterladen (ZIP)</a>'; }
+    return '<div class="atts"><div class="atts-h">📎 '+atts.length+' Anhang'+(atts.length>1?"änge":"")+zipBtn+'</div><div class="atts-list">'+chips+'</div></div>';
   }
   function renderMailAll(){
     var cc0=mailCounts(); var acc=document.getElementById("mail-account"); if(acc)acc.innerHTML="Postfach"+(cc0.inboxUnread?' <span class="mh-cnt">'+cc0.inboxUnread+' neu</span>':'');
