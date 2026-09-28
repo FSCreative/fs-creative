@@ -312,7 +312,57 @@ body.dark .mbulk{background:#20325a;border-color:#2b4570}
 .att-all{margin-left:auto;font-size:12px;font-weight:700;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:9px;padding:4px 10px;transition:all .15s}
 .att-all:hover{border-color:var(--accent);background:#eef4ff}
 body.dark .att-all:hover{background:#26324d}
-.attw{display:inline-flex;align-items:stretch;max-width:300px}
+.attw{display:inline-flex;align-items:stretch;max-width:340px}
+.attw .att-dlb:not(:last-child){border-radius:0;border-right:none}
+.att-sev{font-size:13px}.att-sev.done{color:var(--green)}
+/* ===== Finanzen ===== */
+.val.red{color:var(--red)} .ic.red{background:#fdecea;color:var(--red)}
+.fin-chart{margin-top:14px}
+.fin-bars{display:grid;grid-template-columns:repeat(12,1fr);gap:8px;height:170px;align-items:end}
+.fin-bars .fb{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px;min-width:0}
+.fin-bars .fbb{width:100%;max-width:44px;border-radius:8px 8px 3px 3px;background:linear-gradient(180deg,#2f6bff,#12b76a);transition:height .5s ease}
+.fin-bars .fb.fut .fbb{background:#e6ebf4}
+.fin-bars .fbv{font-size:10.5px;font-weight:700;color:var(--dim);white-space:nowrap}
+.fin-bars .fbl{font-size:11px;color:var(--faint);font-weight:600}
+.fin-tools{display:flex;align-items:center;gap:10px;padding:8px 6px 10px;flex-wrap:wrap}
+.fin-chips{display:flex;gap:5px;flex-wrap:wrap;flex:1}
+.fin-q{max-width:260px;flex:1;min-width:160px}
+.fin-tbl table{min-width:760px}
+.fin-tbl tr.fin-over td{background:#fff7f6}
+body.dark .fin-tbl tr.fin-over td{background:#2a1f24}
+.fin-ref{font-size:11.5px;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fin-acts{display:inline-flex;gap:5px;justify-content:flex-end}
+.fin-acts .btn.icon{width:30px;height:30px;padding:0;display:inline-grid;place-items:center;text-decoration:none}
+.fin-todo{display:flex;align-items:center;gap:12px;padding:10px 6px;border-bottom:1px solid var(--line)}
+.fin-todo:last-child{border-bottom:none}
+.ft-ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;font-size:16px}
+.ft-m{flex:1;min-width:0}.ft-t{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fin-accs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.fin-acc{cursor:pointer;padding:14px 16px;transition:border-color .15s,transform .15s}
+.fin-acc:hover{transform:translateY(-1px)}
+.fin-acc.on{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,107,255,.12)}
+.fa-n{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fa-t{font-size:11.5px;color:var(--faint);margin-top:2px}
+.fa-b{font-size:19px;font-weight:800;margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.fin-txs{margin-top:12px}
+.fin-tx{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--line)}
+.fin-tx:last-child{border-bottom:none}
+.ftx-d{width:44px;flex:none;font-size:12px;color:var(--faint);font-weight:700;font-variant-numeric:tabular-nums}
+.ftx-m{flex:1;min-width:0}.ftx-n{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ftx-m .hint{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.ftx-a{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
+.fi-row{display:grid;grid-template-columns:1fr 64px 110px 78px 34px;gap:6px;margin-bottom:8px;align-items:center}
+.fi-row .fi-text{grid-column:1/-1;font-size:12.5px}
+.fi-row .fi-del{width:34px;height:34px;padding:0}
+.bk-src{display:flex;flex-direction:column;gap:6px}
+.bk-opt{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:11px;cursor:pointer;font-size:13px;line-height:1.45}
+.bk-opt:has(input:checked){border-color:var(--accent);background:#f4f7ff}
+body.dark .bk-opt:has(input:checked){background:#1f2a42}
+.bk-opt input[type=radio]{margin-top:3px}
+.bk-opt select{margin-top:4px;max-width:100%}
+.cev.inv{background:#e3f7ee;color:#0a8a4f}
+.cev[data-fincal]{cursor:pointer}
+@media(max-width:640px){ .fin-bars{gap:3px;height:140px} .fin-bars .fbv{display:none} .fi-row{grid-template-columns:1fr 54px 90px 70px 34px} }
 .attw .att{border-top-right-radius:0;border-bottom-right-radius:0;border-right:none;min-width:0}
 .att-dlb{display:inline-grid;place-items:center;width:34px;flex:none;border:1px solid var(--line);border-radius:0 11px 11px 0;background:#f4f7fc;color:var(--dim);text-decoration:none;font-weight:700;transition:all .15s}
 .att-dlb:hover{color:var(--accent);border-color:var(--accent);background:#eef4ff}
@@ -836,6 +886,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     <button class="tab" data-tab="kantineur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 8l16 8"/></svg><span class="t">Kantineur</span></button>
     <button class="tab" data-tab="blitzdings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg><span class="t">Blitzdings</span><span class="badge" id="blitz-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="valuero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5v14"/><path d="M2 9h17a3 3 0 0 1 3 3v7"/><path d="M2 16h20"/><path d="M6 9v7"/></svg><span class="t">VALUERO</span><span class="badge" id="valuero-badge" style="display:none">0</span></button>
+    <button class="tab" data-tab="finanzen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/></svg><span class="t">Finanzen</span><span class="badge" id="fin-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="postfach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="t">Postfach</span><span class="badge" id="mail-badge" style="display:none">0</span></button>
     <button class="tab" data-tab="kalender"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg><span class="t">Kalender</span></button>
     <button class="tab" data-tab="todo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg><span class="t">To-Do</span><span class="badge" id="todo-badge" style="display:none">0</span></button>
@@ -1010,6 +1061,17 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       <div class="card hoverable" style="margin-top:14px;max-width:440px"><div class="sec-title" style="margin:0 0 8px"><h2>Verrechnet vs. offen</h2></div><div class="chart-box sm"><canvas id="c-valuero"></canvas></div></div>
     </section>
 
+    <!-- FINANZEN (sevDesk) -->
+    <section class="panel" id="p-finanzen">
+      <div class="mactions" style="margin:2px 0 12px;align-items:center">
+        <button class="btn sm" id="fin-refresh" title="Neu laden">↻ Aktualisieren</button>
+        <button class="btn sm" id="fin-new">+ Neue Rechnung</button>
+        <a class="btn sm" href="https://my.sevdesk.de/" target="_blank" rel="noopener">sevDesk öffnen ↗</a>
+        <span class="hint" id="fin-updated"></span>
+      </div>
+      <div id="fin-body"></div>
+    </section>
+
     <!-- POSTFACH -->
     <section class="panel" id="p-postfach">
       <div class="mhead">
@@ -1063,6 +1125,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
           <span><i style="background:#2f6bff"></i>To-Dos (fällig)</span>
           <span><i style="background:#12b76a"></i>VALUERO-Gebühren</span>
           <span><i style="background:#e0457b"></i>Privat (iCloud, mit iPhone synchron)</span>
+          <span><i style="background:#0a8a4f;outline:2px solid #fdecea"></i>Rechnungen fällig (sevDesk)</span>
         </div>
         <p class="hint" id="cal-outlook-note" style="margin:14px 2px 0;font-size:12px;color:var(--faint)"></p>
       </div>
@@ -1197,6 +1260,49 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   </div>
 </div>
 
+<div class="overlay" id="invoverlay">
+  <div class="modal" style="max-width:640px">
+    <h3 id="fi-title">Neue Rechnung</h3>
+    <p class="hint" style="margin:0 0 12px;font-size:12.5px">Wird in sevDesk als <b>Entwurf</b> angelegt – dort prüfen, Nummer vergeben und versenden.</p>
+    <div class="evform">
+      <div class="evrow2"><label class="evrow"><span>Kunde</span><input class="cell" id="fi-contact" list="fi-contacts" autocomplete="off" placeholder="Name oder Firma (bestehender sevDesk-Kontakt oder neu)"></label>
+        <label class="evrow"><span>E-Mail <em>(optional)</em></span><input class="cell" id="fi-email" type="email" placeholder="für neuen Kontakt"></label></div>
+      <datalist id="fi-contacts"></datalist>
+      <label class="evrow"><span>Rechnungsadresse <em>(optional)</em></span><textarea class="cell" id="fi-address" rows="2" style="resize:vertical;font-family:inherit" placeholder="Name&#10;Straße&#10;PLZ Ort"></textarea></label>
+      <div class="evrow2"><label class="evrow"><span>Rechnungsdatum</span><input class="cell" type="date" id="fi-date"></label><label class="evrow"><span>Leistungsdatum</span><input class="cell" type="date" id="fi-delivery"></label></div>
+      <label class="evrow"><span>Kopftext <em>(optional)</em></span><input class="cell" id="fi-head" placeholder="z. B. Vielen Dank für Ihren Auftrag."></label>
+      <div class="evrow"><span>Positionen <em>(Preise brutto)</em></span><div id="fi-items"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><button class="btn sm" id="fi-add">+ Position</button><span class="hint" id="fi-sum" style="font-size:12.5px"></span></div></div>
+    </div>
+    <div class="hint" id="fi-msg" style="color:var(--red);min-height:18px;margin-top:8px;font-size:12.5px"></div>
+    <div class="row"><button class="btn ghost" id="fi-cancel">Abbrechen</button><button class="btn primary" id="fi-save">Entwurf in sevDesk anlegen</button></div>
+  </div>
+</div>
+<div class="overlay" id="bookoverlay">
+  <div class="modal" style="max-width:520px">
+    <h3>Zahlungseingang erfassen</h3>
+    <p class="hint" id="bk-info" style="margin:0 0 12px;font-size:13px"></p>
+    <div class="evform">
+      <div class="evrow2"><label class="evrow"><span>Betrag</span><input class="cell" type="number" step="0.01" id="bk-amount"></label><label class="evrow"><span>Datum</span><input class="cell" type="date" id="bk-date"></label></div>
+      <div class="evrow"><span>Zahlung</span><div id="bk-src" class="bk-src"></div></div>
+    </div>
+    <div class="hint" id="bk-msg" style="color:var(--red);min-height:18px;margin-top:8px;font-size:12.5px"></div>
+    <div class="row"><button class="btn ghost" id="bk-cancel">Abbrechen</button><button class="btn primary" id="bk-save">In sevDesk als bezahlt buchen</button></div>
+  </div>
+</div>
+<div class="overlay" id="voucheroverlay">
+  <div class="modal" style="max-width:500px">
+    <h3>Beleg an sevDesk</h3>
+    <p class="hint" style="margin:0 0 10px;font-size:12.5px"><span id="vo-file" style="font-weight:700;color:var(--ink)"></span><br>Wird als <b>Beleg-Entwurf</b> mit Datei angelegt – in sevDesk nur noch prüfen.</p>
+    <div class="evform">
+      <label class="evrow"><span>Lieferant</span><input class="cell" id="vo-supplier"></label>
+      <div class="evrow2"><label class="evrow"><span>Belegdatum</span><input class="cell" type="date" id="vo-date"></label><label class="evrow"><span>Betrag brutto</span><input class="cell" type="number" step="0.01" id="vo-gross" placeholder="0,00"></label></div>
+      <div class="evrow2"><label class="evrow"><span>USt</span><select class="cell" id="vo-tax"><option value="20">20 %</option><option value="13">13 %</option><option value="10">10 %</option><option value="0">0 % / keine</option></select></label><label class="evrow"><span>Kategorie</span><select class="cell" id="vo-cat"></select></label></div>
+      <label class="evrow"><span>Beschreibung</span><input class="cell" id="vo-desc"></label>
+    </div>
+    <div class="hint" id="vo-msg" style="min-height:18px;margin-top:8px;font-size:12.5px"></div>
+    <div class="row"><button class="btn ghost" id="vo-cancel">Abbrechen</button><button class="btn primary" id="vo-save">Als Beleg-Entwurf anlegen</button></div>
+  </div>
+</div>
 <div class="overlay" id="dayview">
   <div class="modal" style="max-width:480px">
     <div class="evv-head">
@@ -1974,7 +2080,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     var hosted=window.__FSD_HOSTED&&window.__FSD_MAIL_ATTACH;
     var chips=atts.map(function(a){
       var label='<span class="att-ic">'+attIcon(a.contentType)+'</span><span class="att-name">'+esc(a.filename||"Anhang")+'</span><span class="att-sz">'+fmtBytes(a.size)+'</span>';
-      if(hosted){ var href=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOfMsg(m)); return '<span class="attw"><a class="att" href="'+href+'&inline=1" target="_blank" rel="noopener" title="Im Browser öffnen">'+label+'<span class="att-dl">↗</span></a><a class="att-dlb" href="'+href+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen">⬇</a></span>'; }
+      if(hosted){ var href=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOfMsg(m)); return '<span class="attw"><a class="att" href="'+href+'&inline=1" target="_blank" rel="noopener" title="Im Browser öffnen">'+label+'<span class="att-dl">↗</span></a><a class="att-dlb" href="'+href+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen">⬇</a>'+(/\.(pdf|png|jpe?g|xml)$/i.test(a.filename||"")||/pdf|image\/(png|jpe?g)|xml/i.test(a.contentType||"")?(function(){ var vs=voucherSent(m,a); return '<a class="att-dlb att-sev'+(vs?" done":"")+'" href="#" data-sevatt="'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg an sevDesk gesendet – erneut senden":"Als Beleg an sevDesk senden")+'">'+(vs?"✓":"🧾")+'</a>'; })():'')+'</span>'; }
       return '<span class="att att-off" title="Download nur im Live-Dashboard">'+label+'</span>';
     }).join("");
     var zipBtn="";
@@ -2148,6 +2254,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
           '</div>'+extras+
         '</div>'+
         '<div class="bd-right"><div class="bd-amount">'+eur((b.totalCents||0)/100)+'</div>'+pay+
+          (function(){ if(typeof FIN==="undefined"||!FIN||!(FIN.data&&FIN.data.invoices)||!(+b.totalCents>0)) return ''; var hi=finInvForBooking(b); return hi?('<a class="pill grey" style="text-decoration:none" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(hi.id)+'" target="_blank" rel="noopener" title="Rechnung ansehen">🧾 '+esc(hi.nr||"Entwurf")+'</a>'):('<button class="btn sm" data-fininv-bd="'+esc(b.id)+'" title="Rechnungsentwurf in sevDesk anlegen">🧾 Rechnung</button>'); })()+
           '<button class="btn sm'+(b.paymentStatus==="PAID"?"":" primary")+'" data-bdpay="'+esc(b.id)+'" data-paid="'+(b.paymentStatus==="PAID"?"0":"1")+'">'+(b.paymentStatus==="PAID"?"↺ Auf offen":"✓ Als bezahlt")+'</button>'+
         '</div>'+
       '</div>';
@@ -2397,6 +2504,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     allCalEvents().forEach(function(e){ var s=sparte(e.sparte); push({date:e.date,cls:"evt",label:(e.source==="icloud"?"🔒 ":"")+(e.title||"Termin"),id:e.id,editable:true,time:e.time||"",end:e.endTime||"",loc:e.location||"",sp:s.name,color:s.color,bg:s.bg}); });
     (state.todos||[]).forEach(function(t){ if(t.due&&!t.done) push({date:t.due,cls:"todo",label:"☑ "+(t.text||""),todoId:t.id,sp:"To-Do",color:"#2f6bff",bg:"#e8f0ff"}); });
     (state.valuero.fees||[]).forEach(function(f){ if(f.date&&!f.bezahlt){ var s=sparte("valuero"); push({date:f.date,cls:"val",label:"€ "+(f.client||"Gebühr"),color:s.color,bg:s.bg,sp:"VALUERO · offene Gebühr"}); } });
+    try{ finOpen().forEach(function(i){ if(!i.due) return; push({date:i.due,cls:"inv",label:"€ "+(i.nr||"Rechnung")+" · "+(i.contact||""),finNr:i.nr||"",sp:(i.overdue?"Überfällig":"Rechnung fällig")+" · offen "+eur(i.open),color:i.overdue?"#d92d20":"#0a8a4f",bg:i.overdue?"#fdecea":"#e3f7ee"}); }); }catch(e){}
     Object.keys(ev).forEach(function(k){ ev[k].sort(function(a,b){ return (a.time||"99")<(b.time||"99")?-1:1; }); });
     return ev;
   }
@@ -2416,7 +2524,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       var evh=list.slice(0,3).map(function(e){
         var st=e.color?(' style="background:'+e.bg+';color:'+e.color+'"'):'';
         var tt=(e.time?e.time+' ':'')+e.label;
-        return '<div class="cev '+e.cls+'"'+(e.editable?' data-evtid="'+esc(e.id)+'"':'')+(e.todoId?' data-todoid="'+esc(e.todoId)+'"':'')+st+' title="'+esc(tt)+'">'+(e.time?'<span class="cev-t">'+esc(e.time)+'</span>':'')+esc(e.label)+'</div>';
+        return '<div class="cev '+e.cls+'"'+(e.editable?' data-evtid="'+esc(e.id)+'"':'')+(e.todoId?' data-todoid="'+esc(e.todoId)+'"':'')+(e.finNr!=null?' data-fincal="'+esc(e.finNr)+'"':'')+st+' title="'+esc(tt)+'">'+(e.time?'<span class="cev-t">'+esc(e.time)+'</span>':'')+esc(e.label)+'</div>';
       }).join("");
       if(list.length>3) evh+='<button type="button" class="cev more" data-dayview="'+k+'" title="Alle '+list.length+' Einträge anzeigen">+'+(list.length-3)+' mehr</button>';
       cells+='<div class="cal-cell'+(out?" out":"")+(k===todayK?" today":"")+'" data-calday="'+k+'"><div class="dn">'+d.getDate()+'</div>'+evh+'</div>';
@@ -2435,7 +2543,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     document.getElementById("dv-title").textContent=d.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
     document.getElementById("dv-sub").textContent=list.length+(list.length===1?" Eintrag":" Einträge");
     document.getElementById("dv-list").innerHTML=list.length?list.map(function(e){
-      var click=e.editable?' data-dvevt="'+esc(e.id)+'"':(e.todoId?' data-dvtodo="'+esc(e.todoId)+'"':'');
+      var click=e.editable?' data-dvevt="'+esc(e.id)+'"':(e.todoId?' data-dvtodo="'+esc(e.todoId)+'"':(e.finNr!=null?' data-fincal="'+esc(e.finNr)+'"':''));
       var time=e.time?('<b>'+esc(e.time)+'</b>'+(e.end?'<small>'+esc(e.end)+'</small>':'')):'<small>ganztägig</small>';
       var sub=[e.sp||"",e.loc||""].filter(Boolean).map(esc).join(" · ");
       return '<div class="dv-item'+(click?" click":"")+'"'+click+'>'+
@@ -2566,6 +2674,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     else if(name==="todo") renderTodos();
     else if(name==="kalender") renderCalendar();
     else if(name==="fscreative") loadSites(false);
+    else if(name==="finanzen"){ renderFinanzen(); finLoad(false); }
     if(name==="kochdu"||name==="blitzdings"||name==="valuero") clearBookingBadge(name);
   }
   // ---- FS Creative: Website-Status + Cloudflare-Insights ----
@@ -3081,6 +3190,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     if(more){ e.stopPropagation(); openDayView(more.getAttribute("data-dayview")); return; }
     var chip=e.target.closest("[data-evtid]");
     if(chip){ var ev=findCalEvent(chip.getAttribute("data-evtid")); if(ev)openEventView(ev); return; }
+    var fchip=e.target.closest("[data-fincal]"); if(fchip){ FIN.q=fchip.getAttribute("data-fincal"); FIN.filter="all"; selectTab("finanzen"); window.scrollTo({top:0,behavior:"smooth"}); return; }
     var tchip=e.target.closest("[data-todoid]");
     if(tchip){ var td=(state.todos||[]).filter(function(x){return String(x.id)===tchip.getAttribute("data-todoid");})[0]; if(td){ openTodoView(td); return; } }
     var cell=e.target.closest(".cal-cell"); if(cell&&cell.getAttribute("data-calday")) openEventModal(null, cell.getAttribute("data-calday"));
@@ -3096,6 +3206,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     if(e.target===this||e.target.closest("#dv-close")||e.target.closest("#dv-x")){ closeDayView(); return; }
     if(e.target.closest("#dv-add")){ var k=dayViewK; closeDayView(); openEventModal(null,k); return; }
     var it=e.target.closest("[data-dvevt]"); if(it){ var ev=findCalEvent(it.getAttribute("data-dvevt")); if(ev){ closeDayView(); openEventView(ev); } return; }
+    var fc2=e.target.closest("[data-fincal]"); if(fc2){ closeDayView(); FIN.q=fc2.getAttribute("data-fincal"); FIN.filter="all"; selectTab("finanzen"); return; }
     var tt=e.target.closest("[data-dvtodo]"); if(tt){ var td=(state.todos||[]).filter(function(x){return String(x.id)===tt.getAttribute("data-dvtodo");})[0]; if(td){ closeDayView(); openTodoView(td); } }
   });
   document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&dayViewK){ closeDayView(); } });
@@ -3152,6 +3263,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     kantineur:{t:"Kantineur",s:"Abos, Umsatz & Kantinen",c1:"#0ea5b7",c2:"#12b76a"},
     blitzdings:{t:"Blitzdings",s:"Fotobox-Buchungen & Zahlungen",c1:"#f79009",c2:"#e0590a"},
     valuero:{t:"VALUERO",s:"Vermittlungsgebühren je Objekt",c1:"#12b76a",c2:"#0a8a4f"},
+    finanzen:{t:"Finanzen",s:"sevDesk · Rechnungen, offene Posten, Bank & Belege",c1:"#0a8a4f",c2:"#2f6bff"},
     kalender:{t:"Kalender",s:"Termine, Buchungen & Fälligkeiten",c1:"#2f6bff",c2:"#7c4dff"},
     todo:{t:"To-Dos",s:"Aufgaben im Blick behalten",c1:"#7c4dff",c2:"#2f6bff"}
   };
@@ -3196,10 +3308,293 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     var chips='<button class="ochip" data-goto="postfach">'+CHIC.mail+'Mails <span class="n">'+mc+' neu</span></button>'+
       '<button class="ochip'+(over?" warn":"")+'" data-goto="todo">'+CHIC.todo+'To-Dos <span class="n">'+open.length+(over?" · "+over+" überfällig":"")+'</span></button>'+
       (nx?'<button class="ochip" data-goto="kalender">'+CHIC.cal+esc(nxs.length>48?nxs.slice(0,46)+"…":nxs)+'</button>':'');
+    try{ var fo=finOpen(), fov=finOverdue(); if(fo.length){ var fs=fov.reduce(function(s,i){return s+i.open;},0), fsa=fo.reduce(function(s,i){return s+i.open;},0);
+      chips+='<button class="ochip'+(fov.length?" warn":"")+'" data-goto="finanzen">'+CHIC.euro+(fov.length?(fov.length+" Rechnung"+(fov.length===1?"":"en")+' überfällig <span class="n">'+eur(fs)+'</span>'):('Offene Rechnungen <span class="n">'+eur(fsa)+'</span>'))+'</button>'; } }catch(e){}
     h.innerHTML='<div class="og">'+gr+', Simon</div><div class="od">'+now.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"})+'</div><div class="ochips">'+chips+'</div>';
   }
   (function(){ var __rou=renderOverviewUpcoming; renderOverviewUpcoming=function(){ var r=__rou.apply(this,arguments); try{ renderOverviewHead(); }catch(e){} return r; }; })();
   (function(){ var __rmb=renderMailBadge; renderMailBadge=function(){ var r=__rmb.apply(this,arguments); try{ renderOverviewHead(); }catch(e){} return r; }; })();
+  // ================= FINANZEN (sevDesk) =================
+  var FIN={data:null,loading:false,meta:null,metaLoading:false,filter:"open",q:"",show:40,txAcc:"all"};
+  var SEVURL="https://my.sevdesk.de";
+  try{ var fc=JSON.parse(localStorage.getItem("fsc_sev_v1")||"null"); if(fc&&fc.invoices){ fc.__at=0; FIN.data=fc; } }catch(e){}
+  var INVST={100:["Entwurf","grey"],200:["Offen","amber"],750:["Teilbezahlt","amber"],1000:["Bezahlt","green"],50:["Deaktiviert","grey"]};
+  var INVTYPE={RE:"Rechnung",SR:"Storno",TR:"Teilrechnung",AR:"Abschlag",ER:"Schlussrechnung",WKR:"Abo",MA:"Mahnung"};
+  function finInvLink(inv){ return SEVURL+"/fi/detail/type/"+encodeURIComponent(inv.type||"RE")+"/id/"+encodeURIComponent(inv.id); }
+  function finDays(iso){ if(!iso)return null; var t=new Date(); t.setHours(0,0,0,0); return Math.round((new Date(iso+"T00:00:00")-t)/86400000); }
+  function finFmtDate(iso){ return iso?new Date(iso+"T00:00:00").toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"}):"—"; }
+  function finInvoices(){ return (FIN.data&&FIN.data.invoices)||[]; }
+  function finOpen(){ return finInvoices().filter(function(i){ return i.open>0.005; }); }
+  function finOverdue(){ return finOpen().filter(function(i){ return i.overdue; }); }
+  function finLoad(force){
+    if(!window.__FSD_HOSTED) return;
+    if(FIN.loading) return;
+    if(FIN.data&&FIN.data.__at&&!force&&(Date.now()-FIN.data.__at)<60000){ renderFinanzen(); return; }
+    FIN.loading=true; var btn=document.getElementById("fin-refresh"); if(btn&&force) btn.classList.add("spin");
+    fetch("/admin/api/sevdesk"+(force?"?force=1":""),{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      FIN.loading=false; if(btn) btn.classList.remove("spin");
+      if(d&&d.invoices){ d.__at=Date.now(); FIN.data=d; try{ localStorage.setItem("fsc_sev_v1",JSON.stringify(d)); }catch(e){} }
+      else if(d){ FIN.data=FIN.data&&FIN.data.invoices?FIN.data:d; FIN.err=d.error||"Keine Verbindung"; }
+      finAfter();
+    }).catch(function(){ FIN.loading=false; if(btn) btn.classList.remove("spin"); finAfter(); });
+  }
+  function finMeta(cb){
+    if(FIN.meta&&(Date.now()-FIN.meta.__at)<20*60000){ if(cb)cb(FIN.meta); return; }
+    if(FIN.metaLoading){ setTimeout(function(){ finMeta(cb); },400); return; }
+    FIN.metaLoading=true;
+    fetch("/admin/api/sevdesk/meta",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){ FIN.metaLoading=false; if(d&&d.accountingTypes){ d.__at=Date.now(); FIN.meta=d; } if(cb)cb(FIN.meta||{accountingTypes:[],contacts:[]}); })
+      .catch(function(){ FIN.metaLoading=false; if(cb)cb(FIN.meta||{accountingTypes:[],contacts:[]}); });
+  }
+  function finAfter(){
+    setTabBadge("fin-badge",finOverdue().length);
+    if(activeTab==="finanzen") renderFinanzen();
+    if(activeTab==="kalender") renderCalendar();
+    if(activeTab==="blitzdings") renderBlitzUpcoming();
+    try{ renderOverviewHead(); }catch(e){}
+  }
+  function finInvForBooking(b){
+    if(!b) return null; var ref=String(b.reference||"").toLowerCase();
+    var list=finInvoices(); var hit=null;
+    if(ref) hit=list.filter(function(i){ return (i.ref||"").toLowerCase().indexOf(ref)>-1 && i.type!=="SR"; })[0];
+    if(!hit&&b.customerName){ var n=String(b.customerName).toLowerCase(), amt=(+b.totalCents||0)/100, day=String(b.eventDate||"").slice(0,10);
+      hit=list.filter(function(i){ return i.type!=="SR" && String(i.contact||"").toLowerCase()===n && (Math.abs(i.gross-amt)<0.02 || (day&&(i.date===day||i.delivery===day))); })[0]; }
+    return hit||null;
+  }
+  function finPill(inv){ var s=INVST[inv.status]||["?","grey"]; if(inv.overdue) return '<span class="pill" style="background:#fdecea;color:var(--red)">Überfällig</span>'; return '<span class="pill '+s[1]+'">'+s[0]+'</span>'; }
+  function renderFinanzen(){
+    var host=document.getElementById("fin-body"); if(!host) return;
+    var up=document.getElementById("fin-updated");
+    var d=FIN.data;
+    if(!d||!d.invoices){ host.innerHTML='<div class="card"><div class="empty">'+(FIN.err?("sevDesk nicht erreichbar: "+esc(FIN.err)):"Verbinde mit sevDesk …")+'</div></div>'; if(up) up.textContent=""; return; }
+    if(up) up.textContent="sevDesk · aktualisiert "+(relTime(d.fetchedAt)||new Date(d.fetchedAt).toLocaleString("de-AT"))+(FIN.loading?" · lädt …":"");
+    var inv=d.invoices, yr=String(curYear());
+    var open=finOpen(), over=finOverdue(), drafts=inv.filter(function(i){return i.status===100;});
+    var sum=function(a,f){ return a.reduce(function(s,x){ return s+(+x[f]||0); },0); };
+    var yrInv=inv.filter(function(i){ return (i.status===200||i.status===750||i.status===1000) && String(i.date||"").slice(0,4)===yr; });
+    var bankSum=(d.accounts||[]).reduce(function(s,a){ return s+(a.balance==null?0:a.balance); },0);
+    var kpi=function(ic,cls,lbl,val,sub,go){ return '<div class="card kpi hoverable'+(go?' fin-go" data-fingo="'+go+'" style="cursor:pointer':'')+'"><div class="top"><div class="ic '+cls+'">'+ic+'</div><div class="lbl">'+lbl+'</div></div><div class="val '+cls+'">'+val+'</div><div class="sub">'+sub+'</div></div>'; };
+    var IC={clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg>',
+      warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+      up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+      bank:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 10h16M5 6l7-3 7 3M6 10v8M10 10v8M14 10v8M18 10v8"/></svg>'};
+    var kpis='<div class="grid kpis">'+
+      kpi(IC.clock,"amber","Offene Forderungen",eur(sum(open,"open")),open.length+" Rechnung"+(open.length===1?"":"en")+(drafts.length?" · "+drafts.length+" Entwurf"+(drafts.length===1?"":"e"):""),"open")+
+      kpi(IC.warn,over.length?"red":"green","Überfällig",eur(sum(over,"open")),over.length?(over.length+" Rechnung"+(over.length===1?"":"en")+" – nachfassen"):"alles im Zeitplan","over")+
+      kpi(IC.up,"accent","Umsatz "+yr+" (netto)",eur(sum(yrInv,"net")),"brutto "+eur(sum(yrInv,"gross"))+" · "+yrInv.length+" Rechnungen","all")+
+      kpi(IC.bank,"grey","Bank laut sevDesk",eur(bankSum),(d.accounts||[]).length+" Konten"+(d.unassigned?" · "+d.unassigned+" Umsätze offen":""),"bank")+
+    '</div>';
+    // Umsatz je Monat (netto)
+    var months=[]; for(var mi=0;mi<12;mi++) months.push(0);
+    yrInv.forEach(function(i){ var m=parseInt(String(i.date).slice(5,7),10)-1; if(m>=0&&m<12) months[m]+=i.net; });
+    var mx=Math.max.apply(null,months.concat([1])); var nowM=(String(new Date().getFullYear())===yr)?new Date().getMonth():11;
+    var MN=["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+    var chart='<div class="card hoverable fin-chart"><div class="sec-title" style="margin:0 0 10px"><h2>Umsatz '+yr+' je Monat</h2><span class="hint">netto · Rechnungen ohne Entwürfe</span></div><div class="fin-bars">'+months.map(function(v,i){ return '<div class="fb'+(i>nowM?" fut":"")+'" title="'+MN[i]+': '+eur(v)+'"><div class="fbv">'+(v>0?(v>=1000?(Math.round(v/100)/10).toString().replace(".",",")+"k":Math.round(v)):"")+'</div><div class="fbb" style="height:'+Math.max(2,Math.round(v/mx*100))+'%"></div><div class="fbl">'+MN[i]+'</div></div>'; }).join("")+'</div></div>';
+    // Rechnungsliste
+    var f=FIN.filter, q=(FIN.q||"").toLowerCase();
+    var list=inv.filter(function(i){
+      if(f==="open") return i.open>0.005; if(f==="over") return i.overdue; if(f==="draft") return i.status===100; if(f==="paid") return i.status===1000; return true; });
+    if(q) list=list.filter(function(i){ return (i.nr+" "+i.contact+" "+i.ref+" "+i.header).toLowerCase().indexOf(q)>-1; });
+    if(f==="open"||f==="over") list=list.slice().sort(function(a,b){ return String(a.due||"").localeCompare(String(b.due||"")); });
+    var chip=function(k,l,n){ return '<button class="mchip'+(f===k?" on":"")+'" data-finf="'+k+'">'+l+(n!=null?' <span class="n">'+n+'</span>':'')+'</button>'; };
+    var rows=list.slice(0,FIN.show).map(function(i){
+      var dd=finDays(i.due), dueTxt=i.open>0.005&&dd!=null?(dd<0?'<span style="color:var(--red);font-weight:700">'+(-dd)+' Tag'+(dd===-1?"":"e")+' drüber</span>':(dd===0?'<b>heute</b>':'in '+dd+' Tag'+(dd===1?"":"en"))):finFmtDate(i.due);
+      var acts='<a class="btn sm icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener" title="PDF ansehen">👁</a>'+
+        (i.open>0.005?'<button class="btn sm primary" data-finbook="'+esc(i.id)+'" title="Zahlungseingang erfassen">✓ Bezahlt</button>':'')+
+        '<a class="btn sm icon" href="'+finInvLink(i)+'" target="_blank" rel="noopener" title="In sevDesk öffnen">↗</a>';
+      return '<tr class="'+(i.overdue?"fin-over":"")+'"><td><b>'+esc(i.nr||"Entwurf")+'</b>'+(i.type&&i.type!=="RE"?' <span class="chip" style="font-size:10.5px;padding:2px 7px">'+esc(INVTYPE[i.type]||i.type)+'</span>':'')+'</td>'+
+        '<td><div style="font-weight:600">'+esc(i.contact||"—")+'</div>'+(i.ref?'<div class="hint fin-ref">'+esc(i.ref)+'</div>':'')+'</td>'+
+        '<td>'+finFmtDate(i.date)+'</td><td>'+dueTxt+'</td>'+
+        '<td class="num money">'+eur(i.gross)+'</td><td class="num money" style="color:'+(i.open>0.005?"var(--amber)":"var(--faint)")+'">'+(i.open>0.005?eur(i.open):"—")+'</td>'+
+        '<td>'+finPill(i)+'</td><td class="num"><div class="fin-acts">'+acts+'</div></td></tr>';
+    }).join("");
+    var more=list.length>FIN.show?'<div style="text-align:center;padding:10px"><button class="btn sm" data-finmore="1">Weitere '+Math.min(40,list.length-FIN.show)+' anzeigen ('+(list.length-FIN.show)+' übrig)</button></div>':'';
+    var tbl='<div class="sec-title"><h2>Rechnungen</h2><span class="hint">Klick auf 👁 zeigt das PDF · ✓ erfasst den Zahlungseingang in sevDesk</span></div>'+
+      '<div class="card tbl-card fin-tbl"><div class="fin-tools"><div class="fin-chips">'+chip("open","Offen",open.length)+chip("over","Überfällig",over.length)+chip("draft","Entwürfe",drafts.length)+chip("paid","Bezahlt")+chip("all","Alle",inv.length)+'</div>'+
+      '<input class="cell fin-q" id="fin-q" placeholder="Suchen: Nr., Kunde, Buchung …" value="'+esc(FIN.q||"")+'"></div>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Datum</th><th>Fällig</th><th class="num">Betrag</th><th class="num">Offen</th><th>Status</th><th class="num"></th></tr></thead><tbody>'+
+      (rows||'<tr><td colspan="8" class="empty">'+(f==="over"?"Keine überfälligen Rechnungen 🎉":"Keine Rechnungen in dieser Ansicht.")+'</td></tr>')+'</tbody></table></div>'+more+'</div>';
+    // Zu verrechnen
+    var todo=[];
+    (state.blitzdings.upcoming||[]).forEach(function(b){ if(!(+b.totalCents>0)) return; var hit=finInvForBooking(b);
+      todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#fbf1dc;color:#b86e00">⚡</span><div class="ft-m"><div class="ft-t">Blitzdings · '+esc(b.package||"Buchung")+' · '+esc(b.customerName||"")+'</div><div class="hint">'+(b.eventDate?new Date(b.eventDate).toLocaleDateString("de-AT"):"")+(b.reference?' · '+esc(b.reference):'')+' · '+eur((+b.totalCents||0)/100)+'</div></div>'+
+        (hit?('<span class="pill '+(hit.status===1000?"green":"grey")+'">'+esc(hit.nr||"Entwurf")+' · '+esc((INVST[hit.status]||["?"])[0])+'</span><a class="btn sm icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(hit.id)+'" target="_blank" rel="noopener" title="PDF">👁</a>')
+            :('<button class="btn sm primary" data-fininv-bd="'+esc(b.id)+'">Rechnung erstellen</button>'))+'</div>'); });
+    (state.valuero.live||[]).forEach(function(o){ var prov=(+o.provisionCents||0)/100, settled=valSettledCents(o.key)/100, opn=Math.max(0,prov-settled); if(opn<0.005) return;
+      todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#e3f7ee;color:#0a8a4f">🛏</span><div class="ft-m"><div class="ft-t">VALUERO · '+esc(o.name||o.key)+'</div><div class="hint">offene Vermittlungsgebühren '+yr+' · '+eur(opn)+'</div></div><button class="btn sm primary" data-fininv-val="'+esc(o.key)+'">Rechnung erstellen</button></div>'); });
+    var todoHtml='<div class="sec-title"><h2>Zu verrechnen</h2><span class="hint">Blitzdings-Buchungen ohne Rechnung &amp; offene VALUERO-Gebühren</span></div><div class="card">'+(todo.length?todo.join(""):'<div class="empty">Alles verrechnet 👍</div>')+'</div>';
+    // Bank
+    var accs=(d.accounts||[]);
+    var accHtml=accs.map(function(a){ var neg=a.balance!=null&&a.balance<0; return '<div class="card fin-acc'+(FIN.txAcc===a.id?" on":"")+'" data-finacc="'+esc(a.id)+'"><div class="fa-n">'+esc(a.name)+(a.isDefault?' <span class="chip" style="font-size:10px;padding:1px 6px">Standard</span>':'')+'</div><div class="fa-t">'+esc(a.type==="online"?"Bankkonto (verbunden)":a.type==="register"?"Kasse":a.type==="offline"?"Konto (manuell)":a.type)+'</div><div class="fa-b" style="color:'+(neg?"var(--red)":"var(--ink)")+'">'+(a.balance==null?"—":eur(a.balance))+'</div></div>'; }).join("");
+    var tx=(d.transactions||[]).filter(function(t){ return FIN.txAcc==="all"||t.accountId===FIN.txAcc; }).slice(0,30);
+    var accName={}; accs.forEach(function(a){ accName[a.id]=a.name; });
+    var txHtml=tx.map(function(t){ return '<div class="fin-tx"><span class="ftx-d">'+(t.date?new Date(t.date+"T00:00:00").toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"}):"")+'</span><div class="ftx-m"><div class="ftx-n">'+esc(t.name||t.purpose||"Umsatz")+'</div><div class="hint">'+esc(t.name?t.purpose:"")+(FIN.txAcc==="all"&&accName[t.accountId]?' · '+esc(accName[t.accountId]):'')+'</div></div>'+(t.status===100?'<span class="pill amber" title="In sevDesk noch keinem Beleg/keiner Rechnung zugeordnet">offen</span>':'')+'<span class="ftx-a" style="color:'+(t.amount<0?"var(--red)":"var(--green)")+'">'+(t.amount>0?"+":"")+eur(t.amount)+'</span></div>'; }).join("");
+    var v=d.vouchers||{};
+    var bank='<div class="sec-title"><h2>Bank &amp; Konten</h2><span class="hint">Saldo laut sevDesk'+(d.unassigned?' · '+d.unassigned+' Umsätze noch nicht zugeordnet':'')+'</span></div>'+
+      '<div class="fin-accs"><div class="card fin-acc'+(FIN.txAcc==="all"?" on":"")+'" data-finacc="all"><div class="fa-n">Alle Konten</div><div class="fa-t">Summe</div><div class="fa-b">'+eur(bankSum)+'</div></div>'+accHtml+'</div>'+
+      '<div class="card fin-txs"><div class="sec-title" style="margin:0 0 6px"><h2 style="font-size:14px">Letzte Umsätze</h2><span class="hint">Belege: '+(v.drafts||0)+' Entwurf'+((v.drafts||0)===1?"":"e")+' · '+(v.open||0)+' offene Ausgaben ('+eur(v.openSum||0)+')</span></div>'+(txHtml||'<div class="empty">Keine Umsätze.</div>')+'</div>';
+    host.innerHTML=kpis+chart+tbl+todoHtml+bank;
+  }
+  // ---- Rechnungsentwurf ----
+  var INVCTX=null;
+  function finInvRow(it){ it=it||{}; return '<div class="fi-row"><input class="cell fi-name" placeholder="Bezeichnung" value="'+esc(it.name||"")+'"><input class="cell fi-qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" title="Menge"><input class="cell fi-price" type="number" step="0.01" placeholder="Preis brutto" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" title="Einzelpreis brutto"><select class="cell fi-tax" title="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+((it.taxRate!=null?+it.taxRate:20)===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button class="btn sm icon fi-del" title="Position entfernen">✕</button><input class="cell fi-text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"></div>'; }
+  function finInvSum(){ var g=0,n=0; document.querySelectorAll("#fi-items .fi-row").forEach(function(r){ var q=parseFloat(r.querySelector(".fi-qty").value)||0, p=parseFloat(r.querySelector(".fi-price").value)||0, t=parseFloat(r.querySelector(".fi-tax").value)||0; g+=q*p; n+=q*p/(1+t/100); }); var el=document.getElementById("fi-sum"); if(el) el.innerHTML='Summe brutto <b>'+eur(g)+'</b> · netto '+eur(n); }
+  function openInvoiceModal(pre){
+    INVCTX=pre||{}; var ov=document.getElementById("invoverlay"); if(!ov) return;
+    var today=new Date().toISOString().slice(0,10);
+    document.getElementById("fi-title").textContent=pre&&pre.title?pre.title:"Neue Rechnung";
+    document.getElementById("fi-contact").value=pre.contactName||"";
+    document.getElementById("fi-email").value=pre.email||"";
+    document.getElementById("fi-address").value=pre.address||"";
+    document.getElementById("fi-date").value=pre.invoiceDate||today;
+    document.getElementById("fi-delivery").value=pre.deliveryDate||today;
+    document.getElementById("fi-head").value=pre.headText||"";
+    document.getElementById("fi-items").innerHTML=(pre.items&&pre.items.length?pre.items:[{}]).map(finInvRow).join("");
+    document.getElementById("fi-msg").textContent=""; document.getElementById("fi-save").disabled=false;
+    finInvSum(); ov.classList.add("show");
+    finMeta(function(m){ var dl=document.getElementById("fi-contacts"); if(dl) dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
+    setTimeout(function(){ var c=document.getElementById("fi-contact"); if(c&&!c.value) c.focus(); },50);
+  }
+  function saveInvoiceDraft(){
+    var items=[]; document.querySelectorAll("#fi-items .fi-row").forEach(function(r){ var nm=r.querySelector(".fi-name").value.trim(), pr=r.querySelector(".fi-price").value; if(!nm||pr==="") return; items.push({name:nm,text:r.querySelector(".fi-text").value.trim(),qty:parseFloat(r.querySelector(".fi-qty").value)||1,priceGross:parseFloat(pr),taxRate:parseFloat(r.querySelector(".fi-tax").value)}); });
+    var contact=document.getElementById("fi-contact").value.trim(); var msg=document.getElementById("fi-msg");
+    if(!contact){ msg.textContent="Bitte einen Kunden angeben."; return; } if(!items.length){ msg.textContent="Bitte mindestens eine Position mit Preis angeben."; return; }
+    var body={contactName:contact,email:document.getElementById("fi-email").value.trim(),address:document.getElementById("fi-address").value.trim()||contact,invoiceDate:document.getElementById("fi-date").value,deliveryDate:document.getElementById("fi-delivery").value,headText:document.getElementById("fi-head").value.trim(),items:items};
+    var btn=document.getElementById("fi-save"); btn.disabled=true; msg.textContent="Lege Entwurf in sevDesk an …";
+    fetch("/admin/api/sevdesk/invoice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(j){
+      btn.disabled=false;
+      if(!j||!j.ok){ msg.textContent="Fehler: "+((j&&j.error)||"unbekannt"); return; }
+      document.getElementById("invoverlay").classList.remove("show");
+      var link=SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id);
+      var after=INVCTX&&INVCTX.after; INVCTX=null;
+      mailToast("✓ Rechnungsentwurf "+(j.nr||"")+" in sevDesk angelegt",false,"In sevDesk öffnen",function(){ window.open(link,"_blank","noopener"); });
+      if(after) after(j);
+      finLoad(true);
+    }).catch(function(e){ btn.disabled=false; msg.textContent="Fehler: "+String(e&&e.message||e); });
+  }
+  function invoiceFromBooking(id){
+    var b=(state.blitzdings.upcoming||[]).filter(function(x){ return String(x.id)===String(id); })[0]; if(!b) return;
+    var day=String(b.eventDate||"").slice(0,10);
+    var extras=(b.extras||[]).map(function(e){ return e.name; }).filter(Boolean).join(", ");
+    openInvoiceModal({title:"Rechnung · Blitzdings-Buchung",contactName:b.customerName||"",address:b.customerName||"",deliveryDate:day||undefined,
+      headText:(b.reference?"Buchung "+b.reference+" – ":"")+"vielen Dank für Ihre Buchung bei Blitzdings.",
+      items:[{name:"Blitzdings "+(b.package||"Fotobox"),text:[day?("Event am "+new Date(day+"T00:00:00").toLocaleDateString("de-AT")):"",b.location?("Ort: "+b.location):"",extras?("inkl. "+extras):""].filter(Boolean).join(" · "),qty:1,priceGross:Math.round(+b.totalCents||0)/100,taxRate:20}]});
+  }
+  function invoiceFromValuero(key){
+    var o=(state.valuero.live||[]).filter(function(x){ return x.key===key; })[0]; if(!o) return;
+    var prov=(+o.provisionCents||0)/100, settled=valSettledCents(o.key)/100, opn=Math.round(Math.max(0,prov-settled)*100)/100;
+    openInvoiceModal({title:"Rechnung · VALUERO-Gebühren",contactName:o.name||"",address:o.name||"",headText:"Vermittlungsgebühren VALUERO "+curYear()+".",
+      items:[{name:"VALUERO Vermittlungsgebühren "+curYear(),text:(o.ratesLabel?o.ratesLabel+" · ":"")+"lt. Buchungsaufstellung",qty:1,priceGross:opn,taxRate:20}],
+      after:function(){ if(confirm("Die "+eur(opn)+" für „"+(o.name||key)+"“ jetzt auch im Dashboard als verrechnet markieren?")){ if(!state.valuero.settled) state.valuero.settled={}; if(!Array.isArray(state.valuero.settled[key])) state.valuero.settled[key]=[]; state.valuero.settled[key].push({amountCents:Math.round(opn*100),at:new Date().toISOString()}); save(); renderValueroObjects(); renderKPIs(); renderFinanzen(); } }});
+  }
+  // ---- Zahlungseingang ----
+  var BOOKINV=null;
+  function openBookModal(id){
+    var inv=finInvoices().filter(function(i){ return i.id===String(id); })[0]; if(!inv) return; BOOKINV=inv;
+    var d=FIN.data||{}; var ov=document.getElementById("bookoverlay");
+    document.getElementById("bk-info").innerHTML='<b>'+esc(inv.nr||"Entwurf")+'</b> · '+esc(inv.contact||"")+' · offen <b>'+eur(inv.open)+'</b>';
+    document.getElementById("bk-amount").value=inv.open.toFixed(2);
+    document.getElementById("bk-date").value=new Date().toISOString().slice(0,10);
+    var nm=String(inv.contact||"").toLowerCase().split(/\s+/).filter(function(w){return w.length>3;});
+    var sugg=(d.transactions||[]).filter(function(t){ return t.amount>0 && t.status===100 && (Math.abs(t.amount-inv.open)<0.011 || nm.some(function(w){ return (t.name+" "+t.purpose).toLowerCase().indexOf(w)>-1; }) || (inv.nr&&(t.purpose||"").indexOf(inv.nr)>-1)); }).slice(0,6);
+    var accName={}; (d.accounts||[]).forEach(function(a){ accName[a.id]=a.name; });
+    var opts=sugg.map(function(t,i){ return '<label class="bk-opt"><input type="radio" name="bk-src" value="tx:'+esc(t.id)+'"'+(i===0?" checked":"")+'><span><b>'+eur(t.amount)+'</b> · '+esc(t.name||"")+' · '+(t.date?new Date(t.date+"T00:00:00").toLocaleDateString("de-AT"):"")+'<br><span class="hint">'+esc(t.purpose||"")+' · '+esc(accName[t.accountId]||"")+'</span></span></label>'; }).join("");
+    var accs=(d.accounts||[]);
+    var defAcc=(accs.filter(function(a){return a.type==="register";})[0]||accs.filter(function(a){return a.isDefault;})[0]||accs[0]||{}).id;
+    opts+='<label class="bk-opt"><input type="radio" name="bk-src" value="acc"'+(sugg.length?"":" checked")+'><span>Ohne Bankumsatz buchen auf <select class="cell" id="bk-acc">'+accs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===defAcc?" selected":"")+'>'+esc(a.name)+'</option>'; }).join("")+'</select><br><span class="hint">z. B. bei Barzahlung → Kasse. Ist das Geld schon am Konto, besser den Umsatz oben wählen.</span></span></label>';
+    document.getElementById("bk-src").innerHTML=(sugg.length?'<div class="hint" style="margin-bottom:6px">Passende Zahlungseingänge:</div>':'<div class="hint" style="margin-bottom:6px">Kein passender Zahlungseingang gefunden.</div>')+opts;
+    document.getElementById("bk-msg").textContent=""; document.getElementById("bk-save").disabled=false;
+    ov.classList.add("show");
+  }
+  function saveBooking(){
+    if(!BOOKINV) return; var msg=document.getElementById("bk-msg");
+    var src=(document.querySelector('input[name="bk-src"]:checked')||{}).value||"acc";
+    var body={id:BOOKINV.id,amount:parseFloat(document.getElementById("bk-amount").value),date:document.getElementById("bk-date").value};
+    if(src.indexOf("tx:")===0){ var tid=src.slice(3); var t=((FIN.data||{}).transactions||[]).filter(function(x){return x.id===tid;})[0]; body.transactionId=tid; body.accountId=t&&t.accountId; }
+    else body.accountId=(document.getElementById("bk-acc")||{}).value;
+    if(!(body.amount>0)){ msg.textContent="Bitte einen Betrag angeben."; return; }
+    var btn=document.getElementById("bk-save"); btn.disabled=true; msg.textContent="Buche in sevDesk …";
+    fetch("/admin/api/sevdesk/book",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(j){
+      btn.disabled=false; if(!j||!j.ok){ msg.textContent="Fehler: "+((j&&j.error)||"unbekannt"); return; }
+      document.getElementById("bookoverlay").classList.remove("show");
+      var inv=BOOKINV; inv.paid+=body.amount; inv.open=Math.max(0,Math.round((inv.gross-inv.paid)*100)/100); if(inv.open<0.005){ inv.status=1000; inv.overdue=false; } else inv.status=750;
+      BOOKINV=null; mailToast("✓ Zahlung für "+(inv.nr||"Rechnung")+" in sevDesk erfasst"); finAfter(); finLoad(true);
+    }).catch(function(e){ btn.disabled=false; msg.textContent="Fehler: "+String(e&&e.message||e); });
+  }
+  // ---- Beleg aus dem Postfach ----
+  var VOUCTX=null;
+  function guessAmount(m){
+    var txt=String((m&&(m.bodyHtml?String(m.body||"").replace(/<[^>]+>/g," "):m.body))||m&&m.preview||"").replace(/&nbsp;/g," ");
+    var re=/(gesamt(?:betrag|summe)?|rechnungsbetrag|endbetrag|summe|total|zu zahlen|betrag)[^0-9€]{0,40}(?:€|eur)?\s*([0-9]{1,3}(?:[.\s][0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})/gi, mm, best=null;
+    while((mm=re.exec(txt))){ var v=parseFloat(mm[2].replace(/[.\s](?=[0-9]{3}(?:[,.]|$))/g,"").replace(",",".")); if(v>0) best=v; }
+    return best;
+  }
+  function openVoucherModal(m,att){
+    if(!m||!att) return; VOUCTX={m:m,att:att};
+    document.getElementById("vo-file").textContent="📎 "+(att.filename||"Anhang");
+    document.getElementById("vo-supplier").value=m.fromName||m.from||"";
+    document.getElementById("vo-date").value=m.date?new Date(m.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
+    document.getElementById("vo-desc").value=String(m.subject||"").slice(0,200);
+    var g=guessAmount(m); document.getElementById("vo-gross").value=g?g.toFixed(2):"";
+    document.getElementById("vo-tax").value="20";
+    document.getElementById("vo-msg").textContent=g?"Betrag aus der Mail übernommen – bitte kurz prüfen.":"";
+    document.getElementById("vo-save").disabled=false;
+    var sel=document.getElementById("vo-cat"); sel.innerHTML='<option value="">Kategorien werden geladen …</option>';
+    document.getElementById("voucheroverlay").classList.add("show");
+    finMeta(function(meta){
+      var ts=meta.accountingTypes||[]; var last=""; try{ last=localStorage.getItem("fsc_sev_cat")||""; }catch(e){}
+      var used=ts.filter(function(t){return t.used>0;}), rest=ts.filter(function(t){return !(t.used>0);});
+      sel.innerHTML='<option value="">Kategorie wählen …</option>'+(used.length?'<optgroup label="Häufig verwendet">'+used.map(function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>'; }).join("")+'</optgroup>':'')+'<optgroup label="Alle Kategorien">'+rest.map(function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>'; }).join("")+'</optgroup>';
+      if(last&&ts.some(function(t){return t.id===last;})) sel.value=last;
+    });
+    setTimeout(function(){ var gi=document.getElementById("vo-gross"); if(gi&&!gi.value) gi.focus(); },60);
+  }
+  function saveVoucher(){
+    if(!VOUCTX) return; var m=VOUCTX.m, a=VOUCTX.att; var msg=document.getElementById("vo-msg");
+    var body={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:accOfMsg(m),filename:a.filename},supplierName:document.getElementById("vo-supplier").value.trim(),date:document.getElementById("vo-date").value,description:document.getElementById("vo-desc").value.trim(),gross:parseFloat(document.getElementById("vo-gross").value),taxRate:parseFloat(document.getElementById("vo-tax").value),accountingTypeId:document.getElementById("vo-cat").value};
+    if(!(body.gross>0)){ msg.textContent="Bitte den Rechnungsbetrag (brutto) eingeben."; return; }
+    if(!body.accountingTypeId){ msg.textContent="Bitte eine Kategorie wählen."; return; }
+    try{ localStorage.setItem("fsc_sev_cat",body.accountingTypeId); }catch(e){}
+    var btn=document.getElementById("vo-save"); btn.disabled=true; msg.textContent="Lade Beleg zu sevDesk hoch …";
+    fetch("/admin/api/sevdesk/voucher",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(j){
+      btn.disabled=false; if(!j||!j.ok){ msg.textContent="Fehler: "+((j&&j.error)||"unbekannt"); return; }
+      document.getElementById("voucheroverlay").classList.remove("show");
+      try{ var sk=JSON.parse(localStorage.getItem("fsc_sev_sent")||"{}"); sk[m.id+"#"+(a.index||0)]={id:j.id,at:Date.now()}; localStorage.setItem("fsc_sev_sent",JSON.stringify(sk)); }catch(e){}
+      VOUCTX=null; mailToast("✓ Beleg als Entwurf in sevDesk angelegt",false,"sevDesk öffnen",function(){ window.open(SEVURL,"_blank","noopener"); });
+      if(activeTab==="postfach") renderMailRead(); finLoad(true);
+    }).catch(function(e){ btn.disabled=false; msg.textContent="Fehler: "+String(e&&e.message||e); });
+  }
+  function voucherSent(m,a){ try{ var sk=JSON.parse(localStorage.getItem("fsc_sev_sent")||"{}"); return sk[m.id+"#"+(a.index||0)]||null; }catch(e){ return null; } }
+  // Events
+  document.body.addEventListener("click",function(e){
+    var t=e.target;
+    var ff=t.closest("[data-finf]"); if(ff){ FIN.filter=ff.getAttribute("data-finf"); FIN.show=40; renderFinanzen(); return; }
+    var fg=t.closest("[data-fingo]"); if(fg){ var k=fg.getAttribute("data-fingo"); if(k==="bank"){ var bk=document.querySelector(".fin-accs"); if(bk) bk.scrollIntoView({behavior:"smooth",block:"center"}); } else { FIN.filter=k; FIN.show=40; renderFinanzen(); var tb=document.querySelector(".fin-tbl"); if(tb) tb.scrollIntoView({behavior:"smooth",block:"start"}); } return; }
+    var fm=t.closest("[data-finmore]"); if(fm){ FIN.show+=40; renderFinanzen(); return; }
+    var fb=t.closest("[data-finbook]"); if(fb){ openBookModal(fb.getAttribute("data-finbook")); return; }
+    var fa=t.closest("[data-finacc]"); if(fa){ FIN.txAcc=fa.getAttribute("data-finacc"); renderFinanzen(); return; }
+    var ib=t.closest("[data-fininv-bd]"); if(ib){ invoiceFromBooking(ib.getAttribute("data-fininv-bd")); return; }
+    var iv=t.closest("[data-fininv-val]"); if(iv){ invoiceFromValuero(iv.getAttribute("data-fininv-val")); return; }
+    var sv=t.closest("[data-sevatt]"); if(sv){ e.preventDefault(); var mm=findMsg(mailUI.sel); if(!mm) return; var idx=sv.getAttribute("data-sevatt"); var at=(mm.attachments||[]).filter(function(x){ return String(x.index||0)===idx; })[0]; openVoucherModal(mm,at); return; }
+    if(t.closest("#fin-refresh")){ finLoad(true); return; }
+    if(t.closest("#fin-new")){ openInvoiceModal({}); return; }
+    // Modals
+    if(t.id==="invoverlay"||t.closest("#fi-cancel")){ document.getElementById("invoverlay").classList.remove("show"); return; }
+    if(t.closest("#fi-add")){ var box=document.getElementById("fi-items"); box.insertAdjacentHTML("beforeend",finInvRow({})); finInvSum(); return; }
+    var del=t.closest(".fi-del"); if(del){ var rows=document.querySelectorAll("#fi-items .fi-row"); if(rows.length>1){ del.closest(".fi-row").remove(); finInvSum(); } return; }
+    if(t.closest("#fi-save")){ saveInvoiceDraft(); return; }
+    if(t.id==="bookoverlay"||t.closest("#bk-cancel")){ document.getElementById("bookoverlay").classList.remove("show"); return; }
+    if(t.closest("#bk-save")){ saveBooking(); return; }
+    if(t.id==="voucheroverlay"||t.closest("#vo-cancel")){ document.getElementById("voucheroverlay").classList.remove("show"); return; }
+    if(t.closest("#vo-save")){ saveVoucher(); return; }
+  });
+  document.body.addEventListener("input",function(e){
+    if(e.target.closest&&e.target.closest("#fi-items")) finInvSum();
+    if(e.target.id==="fin-q"){ FIN.q=e.target.value; FIN.show=40; var pos=e.target.selectionStart; renderFinanzen(); var q=document.getElementById("fin-q"); if(q){ q.focus(); try{ q.setSelectionRange(pos,pos); }catch(er){} } }
+  });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ ["invoverlay","bookoverlay","voucheroverlay"].forEach(function(id){ var o=document.getElementById(id); if(o&&o.classList.contains("show")) o.classList.remove("show"); }); } });
+  setTimeout(function(){ finLoad(false); },1500);
+  setInterval(function(){ if(document.visibilityState==="visible") finLoad(false); },5*60000);
+
   // Befehlspalette (⌘K / Strg+K)
   var cmdk=document.createElement("div"); cmdk.id="cmdk";
   cmdk.innerHTML='<div class="box"><div class="in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="cmdk-in" placeholder="Seite, Aktion, Mail, To-Do oder Termin suchen …" autocomplete="off"></div><div class="res" id="cmdk-res"></div><div class="foot"><span><span class="kbd">↑</span><span class="kbd">↓</span> wählen</span><span><span class="kbd">↵</span> öffnen</span><span><span class="kbd">Esc</span> schließen</span></div></div>';
@@ -3209,10 +3604,12 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   function cmdBuild(q){
     q=(q||"").toLowerCase().trim(); var out=[];
     function m(txt){ return !q || String(txt||"").toLowerCase().indexOf(q)>-1; }
-    var tabs=[["overview","Übersicht"],["fscreative","FS Creative"],["kochdu","kochdu"],["kantineur","Kantineur"],["blitzdings","Blitzdings"],["valuero","VALUERO"],["postfach","Postfach"],["kalender","Kalender"],["todo","To-Dos"]];
+    var tabs=[["overview","Übersicht"],["fscreative","FS Creative"],["kochdu","kochdu"],["kantineur","Kantineur"],["blitzdings","Blitzdings"],["valuero","VALUERO"],["finanzen","Finanzen"],["postfach","Postfach"],["kalender","Kalender"],["todo","To-Dos"]];
     tabs.forEach(function(t){ if(m(t[1])) out.push({g:"Seiten",ic:tabIcon(t[0]),t:t[1],s:"Seite öffnen",run:function(){ selectTab(t[0]); window.scrollTo({top:0,behavior:"smooth"}); }}); });
     var acts=[
       {t:"Neue Mail schreiben",s:"C im Postfach",ic:CHIC.mail,run:function(){ selectTab("postfach"); openCompose("Neue Nachricht","","",""); }},
+      {t:"Neue Rechnung (sevDesk)",s:"Entwurf anlegen",ic:CHIC.euro,run:function(){ selectTab("finanzen"); openInvoiceModal({}); }},
+      {t:"Offene Rechnungen",s:"Finanzen",ic:CHIC.euro,run:function(){ FIN.filter="open"; selectTab("finanzen"); }},
       {t:"Neues To-Do",s:"Aufgabe anlegen",ic:CHIC.todo,run:function(){ selectTab("todo"); setTimeout(function(){ var i=document.getElementById("todo-text"); if(i)i.focus(); },60); }},
       {t:"Neuer Termin",s:"Im Kalender",ic:CHIC.cal,run:function(){ selectTab("kalender"); var b=document.getElementById("cal-add")||document.querySelector("#p-kalender .btn.primary"); if(b) b.click(); }},
       {t:"Einstellungen & E-Mail-Konten",s:"Passwörter, Verbindungen",ic:CHIC.mail,run:function(){ openSettings(); }},

@@ -776,6 +776,156 @@ async function sev(method, path, opts) {
   } finally { clearTimeout(t); }
 }
 
+const SEV_USER = process.env.SEVDESK_USER_ID || "837373";   // Simon Felder (Ansprechpartner auf Rechnungen)
+const SEV_COUNTRY_AT = 3;                                     // StaticCountry Österreich
+function sevNum(v) { const n = parseFloat(v); return isFinite(n) ? n : 0; }
+function sevDay(v) { return v ? String(v).slice(0, 10) : null; }
+function sevName(c) { if (!c) return ""; return String(c.name || [c.surename, c.familyname].filter(Boolean).join(" ") || "").trim(); }
+function sevDateDE(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : iso; }
+function viennaToday() { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date()); }
+let SEV_CACHE = { at: 0, data: null, p: null };
+let SEV_META = { at: 0, data: null };
+async function sevBuild() {
+  const today = viennaToday();
+  const [ver, inv, cas, tx, vou] = await Promise.all([
+    sev("GET", "/Tools/bookkeepingSystemVersion").catch(() => null),
+    sev("GET", "/Invoice", { query: { limit: 1000, embed: "contact" }, timeout: 40000 }),
+    sev("GET", "/CheckAccount", { query: { limit: 100 } }),
+    sev("GET", "/CheckAccountTransaction", { query: { limit: 300 } }).catch(() => ({ objects: [] })),
+    sev("GET", "/Voucher", { query: { limit: 300 } }).catch(() => ({ objects: [] })),
+  ]);
+  const invoices = (inv && inv.objects || []).filter(o => o.invoiceType !== "MA").map(o => {
+    const date = sevDay(o.invoiceDate), gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount), status = parseInt(o.status, 10) || 0;
+    let due = null;
+    if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
+    const open = (status === 200 || status === 750) ? Math.max(0, Math.round((gross - paid) * 100) / 100) : 0;
+    return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, date, due, delivery: sevDay(o.deliveryDate),
+      contact: sevName(o.contact), contactId: o.contact && o.contact.id ? String(o.contact.id) : "", header: o.header || "",
+      ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
+      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate,
+      overdue: open > 0.005 && !!due && due < today };
+  }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
+  const accountsRaw = (cas && cas.objects || []).filter(a => String(a.status) !== "0");
+  const balances = await Promise.all(accountsRaw.map(a => sev("GET", "/CheckAccount/" + a.id + "/getBalanceAtDate", { query: { date: today } }).then(j => sevNum(j && j.objects)).catch(() => null)));
+  const accounts = accountsRaw.map((a, i) => ({ id: String(a.id), name: a.name || "Konto", type: a.type || "", importType: a.importType || "", isDefault: String(a.defaultAccount) === "1", balance: balances[i] }));
+  const txAll = (tx && tx.objects || []).map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const vouchers = (vou && vou.objects || []).map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), supplier: v.supplierName || "", desc: v.description || "" }));
+  return { configured: true, source: SEV.src, version: ver && ver.objects && ver.objects.version || null, fetchedAt: new Date().toISOString(), today,
+    invoices: invoices.slice(0, 600), accounts, transactions: txAll.slice(0, 120),
+    unassigned: txAll.filter(t => t.status === 100).length,
+    vouchers: { drafts: vouchers.filter(v => v.status === 50).length, open: vouchers.filter(v => v.status === 100 && v.cd === "C").length,
+      openSum: Math.round(vouchers.filter(v => v.status === 100 && v.cd === "C").reduce((s, v) => s + Math.max(0, v.gross - v.paid), 0) * 100) / 100,
+      recent: vouchers.sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 12) } };
+}
+async function sevSnapshot(force) {
+  const fresh = SEV_CACHE.data && (Date.now() - SEV_CACHE.at < 3 * 60 * 1000);
+  if (fresh && !force) return SEV_CACHE.data;
+  if (!SEV_CACHE.p) { const pr = sevBuild().then(d => { SEV_CACHE = { at: Date.now(), data: d, p: null }; return d; }).catch(e => { SEV_CACHE.p = null; console.error("sevdesk snapshot:", e && e.message); throw e; }); pr.catch(() => {}); SEV_CACHE.p = pr; }
+  if (SEV_CACHE.data && !force) return SEV_CACHE.data;            // alte Daten sofort, neue im Hintergrund
+  return SEV_CACHE.p;
+}
+async function sevMeta(force) {
+  if (SEV_META.data && !force && Date.now() - SEV_META.at < 30 * 60 * 1000) return SEV_META.data;
+  const [at, pos, ct] = await Promise.all([
+    sev("GET", "/AccountingType", { query: { limit: 1000 } }),
+    sev("GET", "/VoucherPos", { query: { limit: 300, embed: "accountingType" } }).catch(() => ({ objects: [] })),
+    sev("GET", "/Contact", { query: { limit: 1000, depth: 1 } }).catch(() => ({ objects: [] })),
+  ]);
+  const used = {};
+  (pos && pos.objects || []).forEach(p => { const a = p.accountingType; if (a && a.id) used[a.id] = (used[a.id] || 0) + 1; });
+  const skip = /^(rev|E|EQUITYIN|EQUITYOUT|TAX|VAT|VATIMPORT|VATINT|VATPAY)$/;
+  const types = (at && at.objects || []).filter(a => String(a.active) !== "0" && String(a.hidden) !== "1" && String(a.status) === "100" && !skip.test(String(a.type || "")))
+    .map(a => ({ id: String(a.id), name: a.name, used: used[a.id] || 0 }))
+    .sort((a, b) => (b.used - a.used) || a.name.localeCompare(b.name, "de"));
+  const contacts = (ct && ct.objects || []).map(c => ({ id: String(c.id), name: sevName(c), cat: c.category && c.category.id ? String(c.category.id) : "" })).filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name, "de"));
+  SEV_META = { at: Date.now(), data: { accountingTypes: types, contacts } };
+  return SEV_META.data;
+}
+function sevNet(gross, rate) { return Math.round(gross / (1 + (rate || 0) / 100) * 100) / 100; }
+async function sevFindOrCreateContact(name, email) {
+  const meta = await sevMeta().catch(() => ({ contacts: [] }));
+  const hit = (meta.contacts || []).find(c => c.name.toLowerCase() === String(name).trim().toLowerCase());
+  if (hit) return hit.id;
+  const cj = await sev("POST", "/Contact", { body: { name: String(name).trim(), category: { id: 3, objectName: "Category" }, status: 1000 } });
+  const id = String(cj && cj.objects && cj.objects.id || "");
+  if (!id) throw new Error("contact_create_failed");
+  if (email && /@/.test(email)) sev("POST", "/CommunicationWay", { body: { contact: { id, objectName: "Contact" }, type: "EMAIL", value: String(email).trim(), key: { id: 2, objectName: "CommunicationWayKey" }, main: true } }).catch(() => {});
+  SEV_META.at = 0;
+  return id;
+}
+async function sevCreateInvoice(pl) {
+  const items = (Array.isArray(pl.items) ? pl.items : []).filter(i => i && String(i.name || "").trim() && isFinite(parseFloat(i.priceGross)));
+  if (!items.length) throw new Error("keine_positionen");
+  const name = String(pl.contactName || "").trim(); if (!name && !pl.contactId) throw new Error("kein_kunde");
+  const contactId = pl.contactId ? String(pl.contactId) : await sevFindOrCreateContact(name, pl.email);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(pl.invoiceDate || "") ? pl.invoiceDate : viennaToday();
+  const delivery = /^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDate || "") ? pl.deliveryDate : date;
+  const rate0 = parseFloat(items[0].taxRate); const taxRate = isFinite(rate0) ? rate0 : 20;
+  const body = {
+    invoice: { objectName: "Invoice", mapAll: true, invoiceDate: sevDateDE(date), deliveryDate: sevDateDE(delivery), header: String(pl.header || "Rechnung").slice(0, 200),
+      headText: String(pl.headText || ""), footText: String(pl.footText || "Zahlbar innerhalb von 14 Tagen ohne Abzug."), timeToPay: parseInt(pl.timeToPay, 10) || 14,
+      address: String(pl.address || name), addressCountry: { id: SEV_COUNTRY_AT, objectName: "StaticCountry" },
+      contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
+      discount: 0, status: 100, taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", invoiceType: "RE", currency: "EUR", showNet: "1", smallSettlement: 0 },
+    invoicePosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
+      return { objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),
+    invoicePosDelete: null, takeDefaultAddress: false,
+  };
+  const j = await sev("POST", "/Invoice/Factory/saveInvoice", { body, timeout: 40000 });
+  const invo = j && j.objects && (j.objects.invoice || j.objects) || {};
+  SEV_CACHE.at = 0;
+  return { id: String(invo.id || ""), nr: invo.invoiceNumber || "", gross: sevNum(invo.sumGross) };
+}
+async function sevBook(pl) {
+  const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("keine_rechnung");
+  const amount = Math.round(parseFloat(pl.amount) * 100) / 100; if (!(amount > 0)) throw new Error("kein_betrag");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(pl.date || "") ? pl.date : viennaToday();
+  const body = { amount, date: Math.floor(Date.parse(day + "T12:00:00Z") / 1000), type: "N", createFeed: true };
+  if (pl.transactionId) {
+    const snap = SEV_CACHE.data; const t = snap && (snap.transactions || []).find(x => x.id === String(pl.transactionId));
+    body.checkAccountTransaction = { id: String(pl.transactionId), objectName: "CheckAccountTransaction" };
+    body.checkAccount = { id: String(pl.accountId || (t && t.accountId) || ""), objectName: "CheckAccount" };
+  } else {
+    body.checkAccount = { id: String(pl.accountId || ""), objectName: "CheckAccount" };
+  }
+  if (!body.checkAccount.id) throw new Error("kein_konto");
+  const j = await sev("PUT", "/Invoice/" + id + "/bookAmount", { body });
+  SEV_CACHE.at = 0;
+  return j && j.objects || true;
+}
+async function sevVoucherFromMail(pl) {
+  const m = pl.mail || {};
+  if (!MAIL.url || !MAIL.token) throw new Error("mail_not_configured");
+  const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?token=" + encodeURIComponent(MAIL.token) + "&folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || "0") + "&account=" + encodeURIComponent(m.account || "");
+  const r = await fetch(attUrl); if (!r.ok) throw new Error("anhang_nicht_geladen");
+  const buf = Buffer.from(await r.arrayBuffer());
+  const cd = r.headers.get("content-disposition") || ""; let fname = String(m.filename || "beleg.pdf");
+  const m5987 = cd.match(/filename\*=UTF-8''([^;]+)/i), mPlain = cd.match(/filename="([^"]*)"/i);
+  try { if (m5987) fname = decodeURIComponent(m5987[1]); else if (mPlain) fname = mPlain[1]; } catch (e) {}
+  const ext = (fname.split(".").pop() || "").toLowerCase();
+  const ctype = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", xml: "application/xml" }[ext] || (r.headers.get("content-type") || "application/octet-stream");
+  const fd = new FormData(); fd.append("file", new Blob([buf], { type: ctype }), fname);
+  const up = await sev("POST", "/Voucher/Factory/uploadTempFile", { form: fd, timeout: 60000 });
+  const tmp = up && up.objects && (up.objects.filename || (up.objects[0] && up.objects[0].filename));
+  if (!tmp) throw new Error("upload_fehlgeschlagen");
+  const gross = Math.round(parseFloat(pl.gross) * 100) / 100; if (!(gross > 0)) throw new Error("kein_betrag");
+  const rate = isFinite(parseFloat(pl.taxRate)) ? parseFloat(pl.taxRate) : 20;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(pl.date || "") ? pl.date : viennaToday();
+  const at = String(pl.accountingTypeId || "").replace(/\D/g, ""); if (!at) throw new Error("keine_kategorie");
+  const body = {
+    voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(day), supplierName: String(pl.supplierName || "").slice(0, 200), description: String(pl.description || "").slice(0, 250),
+      status: 50, taxType: "default", creditDebit: "C", voucherType: "VOU", currency: "EUR" },
+    voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: rate, net: false, sumGross: gross, sumNet: sevNet(gross, rate), comment: String(pl.description || "").slice(0, 250) }],
+    voucherPosDelete: null, filename: tmp,
+  };
+  const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
+  const v = j && j.objects && (j.objects.voucher || j.objects) || {};
+  SEV_CACHE.at = 0;
+  return { id: String(v.id || ""), filename: fname };
+}
+function sevBody(req, max) { return new Promise((resolve, reject) => { let b = ""; req.on("data", c => { b += c; if (b.length > (max || 200000)) { req.destroy(); reject(new Error("too_large")); } }); req.on("end", () => { try { resolve(JSON.parse(b || "{}")); } catch (e) { reject(new Error("bad_json")); } }); }); }
+
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
     if (adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin" });
@@ -815,6 +965,38 @@ async function handleAdmin(req, res, u, p) {
     let version = null, err = SEV.err || "";
     if (k) { try { const v = await sev("GET", "/Tools/bookkeepingSystemVersion"); version = v && v.objects && v.objects.version; } catch (e) { err = String(e.message || e).slice(0, 200); } }
     return send(res, 200, JSON.stringify({ configured: !!k, source: SEV.src, version, error: err }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/sevdesk" && req.method === "GET") {
+    try { const d = await sevSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ configured: e.status !== 503, error: String(e.message || e).slice(0, 200) }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+  }
+  if (p === "/admin/api/sevdesk/meta" && req.method === "GET") {
+    try { const d = await sevMeta(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/sevdesk/pdf" && req.method === "GET") {
+    const id = String(u.searchParams.get("id") || "").replace(/\D/g, "");
+    if (!id) return send(res, 400, "missing id");
+    try {
+      const j = await sev("GET", "/Invoice/" + id + "/getPdf", { query: { download: "true", preventSendBy: "true" }, timeout: 40000 });
+      const o = j && j.objects || {};
+      if (!o.content) return send(res, 404, "pdf_not_found");
+      const buf = Buffer.from(String(o.content), o.base64encoded === false ? "binary" : "base64");
+      const fname = String(o.filename || ("Rechnung-" + id + ".pdf")).replace(/[^\w.\- ]/g, "_");
+      return send(res, 200, buf, "application/pdf", { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+    } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
+  }
+  if (p === "/admin/api/sevdesk/invoice" && req.method === "POST") {
+    try { const pl = await sevBody(req); const r = await sevCreateInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/sevdesk/book" && req.method === "POST") {
+    try { const pl = await sevBody(req); await sevBook(pl); return send(res, 200, JSON.stringify({ ok: true }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/sevdesk/voucher" && req.method === "POST") {
+    try { const pl = await sevBody(req); const r = await sevVoucherFromMail(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/sevdesk/raw" && req.method === "GET") {
     const path = String(u.searchParams.get("path") || "");
@@ -868,6 +1050,7 @@ async function handleAdmin(req, res, u, p) {
       { key: "blitzdings", label: "Blitzdings", ok: !!BLITZ.token },
       { key: "valuero", label: "VALUERO (Antonhaus / Alpinappart)", ok: !!(ANTONHAUS.token || ALPINAPPART.key) },
     ];
+    integrations.push({ key: "sevdesk", label: "sevDesk (Buchhaltung)" + (SEV.src === "kochdu" ? " – Schlüssel von kochdu" : ""), ok: !!(SEV.key || await sevKey().catch(() => "")) });
     const ic = icloudCfg();
     integrations.push({ key: "icloud", label: "Privater Kalender (iCloud)", ok: !!(ic.user && ic.pass && ic.calUrl) });
     return send(res, 200, JSON.stringify({ accounts, integrations, canSave: !!RW.token, icloud: { configured: !!(ic.user && ic.pass && ic.calUrl), user: ic.user, calName: ic.calName, calColor: ic.calColor } }), TYPES[".json"], { "Cache-Control": "no-store" });
