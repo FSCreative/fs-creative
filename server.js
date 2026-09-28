@@ -767,6 +767,12 @@ async function sev(method, path, opts) {
   else if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
   try {
     const r = await fetch(url, { method, headers, body, signal: ctrl.signal });
+    if (opts.binary && r.ok) {
+      const ct = r.headers.get("content-type") || "";
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (/json/i.test(ct)) { let jj = null; try { jj = JSON.parse(buf.toString("utf8")); } catch (e) {} return { json: jj, type: ct }; }
+      return { buf, type: ct, disposition: r.headers.get("content-disposition") || "" };
+    }
     const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) {}
     if (!r.ok) {
       const er = j && j.error; const msg = (er && (er.message || (typeof er === "string" ? er : ""))) || (j && j.message) || txt.slice(0, 300) || ("HTTP " + r.status);
@@ -978,11 +984,13 @@ async function handleAdmin(req, res, u, p) {
     const id = String(u.searchParams.get("id") || "").replace(/\D/g, "");
     if (!id) return send(res, 400, "missing id");
     try {
-      const j = await sev("GET", "/Invoice/" + id + "/getPdf", { query: { download: "true", preventSendBy: "true" }, timeout: 40000 });
-      const o = j && j.objects || {};
-      if (!o.content) return send(res, 404, "pdf_not_found");
-      const buf = Buffer.from(String(o.content), o.base64encoded === false ? "binary" : "base64");
-      const fname = String(o.filename || ("Rechnung-" + id + ".pdf")).replace(/[^\w.\- ]/g, "_");
+      const rr = await sev("GET", "/Invoice/" + id + "/getPdf", { query: { download: "true", preventSendBy: "true" }, timeout: 40000, binary: true });
+      let buf = null, fname = "";
+      if (rr.buf && rr.buf.length > 4) { buf = rr.buf; const mf = String(rr.disposition || "").match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i); fname = mf ? decodeURIComponent(mf[1]) : ""; }
+      else { const o = (rr.json && rr.json.objects) || {}; if (o.content) { buf = Buffer.from(String(o.content), o.base64encoded === false ? "binary" : "base64"); fname = o.filename || ""; } }
+      if (!buf) return send(res, 404, "PDF nicht gefunden", "text/plain; charset=utf-8");
+      const inv = SEV_CACHE.data && (SEV_CACHE.data.invoices || []).find(x => x.id === id);
+      fname = String(fname || ((inv && inv.nr) ? inv.nr + ".pdf" : "Rechnung-" + id + ".pdf")).replace(/[^\w.\- ]/g, "_");
       return send(res, 200, buf, "application/pdf", { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
     } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
   }

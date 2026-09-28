@@ -336,7 +336,7 @@ body.dark .fin-tbl tr.fin-over td{background:#2a1f24}
 .fin-todo{display:flex;align-items:center;gap:12px;padding:10px 6px;border-bottom:1px solid var(--line)}
 .fin-todo:last-child{border-bottom:none}
 .ft-ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;font-size:16px}
-.ft-m{flex:1;min-width:0}.ft-t{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ft-m{flex:1;min-width:0}.ft-m .hint{font-size:12px;color:var(--faint)}.ft-t{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fin-accs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
 .fin-acc{cursor:pointer;padding:14px 16px;transition:border-color .15s,transform .15s}
 .fin-acc:hover{transform:translateY(-1px)}
@@ -351,6 +351,7 @@ body.dark .fin-tbl tr.fin-over td{background:#2a1f24}
 .ftx-m{flex:1;min-width:0}.ftx-n{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ftx-m .hint{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .ftx-a{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
+#invoverlay .modal,#bookoverlay .modal,#voucheroverlay .modal{max-height:92vh;overflow:auto}
 .fi-row{display:grid;grid-template-columns:1fr 64px 110px 78px 34px;gap:6px;margin-bottom:8px;align-items:center}
 .fi-row .fi-text{grid-column:1/-1;font-size:12.5px}
 .fi-row .fi-del{width:34px;height:34px;padding:0}
@@ -1268,7 +1269,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       <div class="evrow2"><label class="evrow"><span>Kunde</span><input class="cell" id="fi-contact" list="fi-contacts" autocomplete="off" placeholder="Name oder Firma (bestehender sevDesk-Kontakt oder neu)"></label>
         <label class="evrow"><span>E-Mail <em>(optional)</em></span><input class="cell" id="fi-email" type="email" placeholder="für neuen Kontakt"></label></div>
       <datalist id="fi-contacts"></datalist>
-      <label class="evrow"><span>Rechnungsadresse <em>(optional)</em></span><textarea class="cell" id="fi-address" rows="2" style="resize:vertical;font-family:inherit" placeholder="Name&#10;Straße&#10;PLZ Ort"></textarea></label>
+      <label class="evrow"><span>Rechnungsadresse <em>(optional)</em></span><textarea class="cell" id="fi-address" rows="2" style="resize:vertical;font-family:inherit;height:62px;min-height:62px" placeholder="Name&#10;Straße&#10;PLZ Ort"></textarea></label>
       <div class="evrow2"><label class="evrow"><span>Rechnungsdatum</span><input class="cell" type="date" id="fi-date"></label><label class="evrow"><span>Leistungsdatum</span><input class="cell" type="date" id="fi-delivery"></label></div>
       <label class="evrow"><span>Kopftext <em>(optional)</em></span><input class="cell" id="fi-head" placeholder="z. B. Vielen Dank für Ihren Auftrag."></label>
       <div class="evrow"><span>Positionen <em>(Preise brutto)</em></span><div id="fi-items"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><button class="btn sm" id="fi-add">+ Position</button><span class="hint" id="fi-sum" style="font-size:12.5px"></span></div></div>
@@ -3414,22 +3415,23 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       '<div style="overflow-x:auto"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Datum</th><th>Fällig</th><th class="num">Betrag</th><th class="num">Offen</th><th>Status</th><th class="num"></th></tr></thead><tbody>'+
       (rows||'<tr><td colspan="8" class="empty">'+(f==="over"?"Keine überfälligen Rechnungen 🎉":"Keine Rechnungen in dieser Ansicht.")+'</td></tr>')+'</tbody></table></div>'+more+'</div>';
     // Zu verrechnen
-    var todo=[];
-    (state.blitzdings.upcoming||[]).forEach(function(b){ if(!(+b.totalCents>0)) return; var hit=finInvForBooking(b);
+    var todo=[], billed=0;
+    (state.blitzdings.upcoming||[]).forEach(function(b){ if(!(+b.totalCents>0)) return; var hit=finInvForBooking(b); if(hit){ billed++; return; }
       todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#fbf1dc;color:#b86e00">⚡</span><div class="ft-m"><div class="ft-t">Blitzdings · '+esc(b.package||"Buchung")+' · '+esc(b.customerName||"")+'</div><div class="hint">'+(b.eventDate?new Date(b.eventDate).toLocaleDateString("de-AT"):"")+(b.reference?' · '+esc(b.reference):'')+' · '+eur((+b.totalCents||0)/100)+'</div></div>'+
         (hit?('<span class="pill '+(hit.status===1000?"green":"grey")+'">'+esc(hit.nr||"Entwurf")+' · '+esc((INVST[hit.status]||["?"])[0])+'</span><a class="btn sm icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(hit.id)+'" target="_blank" rel="noopener" title="PDF">👁</a>')
             :('<button class="btn sm primary" data-fininv-bd="'+esc(b.id)+'">Rechnung erstellen</button>'))+'</div>'); });
     (state.valuero.live||[]).forEach(function(o){ var prov=(+o.provisionCents||0)/100, settled=valSettledCents(o.key)/100, opn=Math.max(0,prov-settled); if(opn<0.005) return;
       todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#e3f7ee;color:#0a8a4f">🛏</span><div class="ft-m"><div class="ft-t">VALUERO · '+esc(o.name||o.key)+'</div><div class="hint">offene Vermittlungsgebühren '+yr+' · '+eur(opn)+'</div></div><button class="btn sm primary" data-fininv-val="'+esc(o.key)+'">Rechnung erstellen</button></div>'); });
-    var todoHtml='<div class="sec-title"><h2>Zu verrechnen</h2><span class="hint">Blitzdings-Buchungen ohne Rechnung &amp; offene VALUERO-Gebühren</span></div><div class="card">'+(todo.length?todo.join(""):'<div class="empty">Alles verrechnet 👍</div>')+'</div>';
+    var todoHtml='<div class="sec-title"><h2>Zu verrechnen</h2><span class="hint">Blitzdings-Buchungen ohne Rechnung &amp; offene VALUERO-Gebühren'+(billed?' · '+billed+' Buchung'+(billed===1?"":"en")+' bereits verrechnet':'')+'</span></div><div class="card">'+(todo.length?todo.join(""):'<div class="empty">Alles verrechnet 👍</div>')+'</div>';
     // Bank
     var accs=(d.accounts||[]);
     var accHtml=accs.map(function(a){ var neg=a.balance!=null&&a.balance<0; return '<div class="card fin-acc'+(FIN.txAcc===a.id?" on":"")+'" data-finacc="'+esc(a.id)+'"><div class="fa-n">'+esc(a.name)+(a.isDefault?' <span class="chip" style="font-size:10px;padding:1px 6px">Standard</span>':'')+'</div><div class="fa-t">'+esc(a.type==="online"?"Bankkonto (verbunden)":a.type==="register"?"Kasse":a.type==="offline"?"Konto (manuell)":a.type)+'</div><div class="fa-b" style="color:'+(neg?"var(--red)":"var(--ink)")+'">'+(a.balance==null?"—":eur(a.balance))+'</div></div>'; }).join("");
     var tx=(d.transactions||[]).filter(function(t){ return FIN.txAcc==="all"||t.accountId===FIN.txAcc; }).slice(0,30);
     var accName={}; accs.forEach(function(a){ accName[a.id]=a.name; });
-    var txHtml=tx.map(function(t){ return '<div class="fin-tx"><span class="ftx-d">'+(t.date?new Date(t.date+"T00:00:00").toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"}):"")+'</span><div class="ftx-m"><div class="ftx-n">'+esc(t.name||t.purpose||"Umsatz")+'</div><div class="hint">'+esc(t.name?t.purpose:"")+(FIN.txAcc==="all"&&accName[t.accountId]?' · '+esc(accName[t.accountId]):'')+'</div></div>'+(t.status===100?'<span class="pill amber" title="In sevDesk noch keinem Beleg/keiner Rechnung zugeordnet">offen</span>':'')+'<span class="ftx-a" style="color:'+(t.amount<0?"var(--red)":"var(--green)")+'">'+(t.amount>0?"+":"")+eur(t.amount)+'</span></div>'; }).join("");
+    var txHtml=tx.map(function(t){ return '<div class="fin-tx"><span class="ftx-d">'+(t.date?new Date(t.date+"T00:00:00").toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"}):"")+'</span><div class="ftx-m"><div class="ftx-n">'+esc(t.name||t.purpose||"Umsatz")+'</div><div class="hint">'+esc([t.name?t.purpose:"",FIN.txAcc==="all"?accName[t.accountId]||"":""].filter(Boolean).join(" · "))+'</div></div>'+(t.status===100?'<span class="pill amber" title="In sevDesk noch keinem Beleg/keiner Rechnung zugeordnet">offen</span>':'')+'<span class="ftx-a" style="color:'+(t.amount<0?"var(--red)":"var(--green)")+'">'+(t.amount>0?"+":"")+eur(t.amount)+'</span></div>'; }).join("");
     var v=d.vouchers||{};
     var bank='<div class="sec-title"><h2>Bank &amp; Konten</h2><span class="hint">Saldo laut sevDesk'+(d.unassigned?' · '+d.unassigned+' Umsätze noch nicht zugeordnet':'')+'</span></div>'+
+      ((d.accounts||[]).some(function(a){ return a.balance!=null&&a.balance<-1000&&a.type!=="register"; })?'<p class="hint" style="margin:-4px 2px 10px;font-size:12px">Stimmt ein Saldo nicht mit der Bank überein, fehlt in sevDesk meist der Anfangssaldo des Kontos (Bank → Konto bearbeiten).</p>':'')+
       '<div class="fin-accs"><div class="card fin-acc'+(FIN.txAcc==="all"?" on":"")+'" data-finacc="all"><div class="fa-n">Alle Konten</div><div class="fa-t">Summe</div><div class="fa-b">'+eur(bankSum)+'</div></div>'+accHtml+'</div>'+
       '<div class="card fin-txs"><div class="sec-title" style="margin:0 0 6px"><h2 style="font-size:14px">Letzte Umsätze</h2><span class="hint">Belege: '+(v.drafts||0)+' Entwurf'+((v.drafts||0)===1?"":"e")+' · '+(v.open||0)+' offene Ausgaben ('+eur(v.openSum||0)+')</span></div>'+(txHtml||'<div class="empty">Keine Umsätze.</div>')+'</div>';
     host.innerHTML=kpis+chart+tbl+todoHtml+bank;
@@ -3494,8 +3496,13 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     document.getElementById("bk-info").innerHTML='<b>'+esc(inv.nr||"Entwurf")+'</b> · '+esc(inv.contact||"")+' · offen <b>'+eur(inv.open)+'</b>';
     document.getElementById("bk-amount").value=inv.open.toFixed(2);
     document.getElementById("bk-date").value=new Date().toISOString().slice(0,10);
-    var nm=String(inv.contact||"").toLowerCase().split(/\s+/).filter(function(w){return w.length>3;});
-    var sugg=(d.transactions||[]).filter(function(t){ return t.amount>0 && t.status===100 && (Math.abs(t.amount-inv.open)<0.011 || nm.some(function(w){ return (t.name+" "+t.purpose).toLowerCase().indexOf(w)>-1; }) || (inv.nr&&(t.purpose||"").indexOf(inv.nr)>-1)); }).slice(0,6);
+    var norm=function(x){ return String(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""); };
+    var STOP={gmbh:1,gesmbh:1,"co.":1,kg:1,og:1,"e.u.":1,"e.v.":1,und:1,der:1,die:1,das:1,verein:1,gemeinde:0,hotel:1,haus:1,team:1,firma:1,ltd:1,"s.a.":1,inc:1};
+    var nm=norm(inv.contact).split(/[\s,\/&-]+/).filter(function(w){ return w.length>3&&!STOP[w]; });
+    var nrNum=String(inv.nr||"").replace(/\D/g,"");
+    var sugg=(d.transactions||[]).filter(function(t){ if(!(t.amount>0&&t.status===100)) return false; var hay=norm(t.name+" "+t.purpose);
+      return Math.abs(t.amount-inv.open)<0.011 || (nrNum.length>=3&&hay.indexOf(nrNum)>-1) || (nm.length&&nm.some(function(w){ return hay.indexOf(w)>-1; })); })
+      .sort(function(a,b){ return (Math.abs(a.amount-inv.open)<0.011?0:1)-(Math.abs(b.amount-inv.open)<0.011?0:1); }).slice(0,6);
     var accName={}; (d.accounts||[]).forEach(function(a){ accName[a.id]=a.name; });
     var opts=sugg.map(function(t,i){ return '<label class="bk-opt"><input type="radio" name="bk-src" value="tx:'+esc(t.id)+'"'+(i===0?" checked":"")+'><span><b>'+eur(t.amount)+'</b> · '+esc(t.name||"")+' · '+(t.date?new Date(t.date+"T00:00:00").toLocaleDateString("de-AT"):"")+'<br><span class="hint">'+esc(t.purpose||"")+' · '+esc(accName[t.accountId]||"")+'</span></span></label>'; }).join("");
     var accs=(d.accounts||[]);
@@ -3524,7 +3531,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   var VOUCTX=null;
   function guessAmount(m){
     var txt=String((m&&(m.bodyHtml?String(m.body||"").replace(/<[^>]+>/g," "):m.body))||m&&m.preview||"").replace(/&nbsp;/g," ");
-    var re=/(gesamt(?:betrag|summe)?|rechnungsbetrag|endbetrag|summe|total|zu zahlen|betrag)[^0-9€]{0,40}(?:€|eur)?\s*([0-9]{1,3}(?:[.\s][0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})/gi, mm, best=null;
+    var re=/(gesamt(?:betrag|summe)?|rechnungsbetrag|endbetrag|summe|total|zu zahlen|betrag|amount paid|amount due|paid)[^0-9€$]{0,40}(?:€|eur|\$|usd)?\s*([0-9]{1,3}(?:[.\s][0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})/gi, mm, best=null;
     while((mm=re.exec(txt))){ var v=parseFloat(mm[2].replace(/[.\s](?=[0-9]{3}(?:[,.]|$))/g,"").replace(",",".")); if(v>0) best=v; }
     return best;
   }
