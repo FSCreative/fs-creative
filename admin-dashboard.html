@@ -757,7 +757,24 @@ body.dark .titem:hover{background:#202a3e}
 .cev.todo{background:#e8f0ff;color:var(--accent)}
 .cev.val{background:#e3f7ee;color:#0a8a4f}
 .cev.evt{background:#f0eaff;color:#6b3ff2}
-.cev.more{background:transparent;color:var(--faint);font-weight:700}
+.cev.more{background:transparent;color:var(--faint);font-weight:700;border:none;font-family:inherit;text-align:left;width:100%;cursor:pointer;border-radius:6px}
+.cev.more:hover{background:#eef3ff;color:var(--accent)}
+body.dark .cev.more:hover{background:#26324d}
+.dv-sub{font-size:12.5px;color:var(--faint);margin-top:3px;font-weight:600}
+.dv-list{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;margin:4px -4px 14px;padding:0 4px}
+.dv-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.dv-item.click{cursor:pointer;transition:background .12s,border-color .12s,transform .12s}
+.dv-item.click:hover{background:#f4f7ff;border-color:#cfdcff;transform:translateX(2px)}
+body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
+.dv-time{width:46px;flex:none;display:flex;flex-direction:column;font-size:13px;line-height:1.25;color:var(--ink)}
+.dv-time small{font-size:11px;color:var(--faint);font-weight:600}
+.dv-bar{width:4px;align-self:stretch;border-radius:4px;flex:none}
+.dv-main{flex:1;min-width:0}
+.dv-lbl{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dv-subl{font-size:12px;color:var(--faint);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dv-go{color:var(--faint);font-size:20px;line-height:1;flex:none}
+.dv-empty{padding:18px;text-align:center;color:var(--faint);font-size:13px}
+.cev[data-todoid]{cursor:pointer}
 .cal-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--dim)}
 .cal-legend span{display:inline-flex;align-items:center;gap:6px}
 .cal-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
@@ -1176,6 +1193,20 @@ body.dark .titem:hover{background:#202a3e}
       <button class="btn danger" id="ev-del" style="margin-right:auto;display:none">🗑 Löschen</button>
       <button class="btn ghost" id="ev-cancel">Abbrechen</button>
       <button class="btn primary" id="ev-save">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="dayview">
+  <div class="modal" style="max-width:480px">
+    <div class="evv-head">
+      <div style="min-width:0"><h3 id="dv-title" style="margin:0"></h3><div id="dv-sub" class="dv-sub"></div></div>
+      <button class="btn icon" id="dv-x" title="Schließen">✕</button>
+    </div>
+    <div id="dv-list" class="dv-list"></div>
+    <div class="row">
+      <button class="btn ghost" id="dv-close" style="margin-right:auto">Schließen</button>
+      <button class="btn primary" id="dv-add">+ Termin an diesem Tag</button>
     </div>
   </div>
 </div>
@@ -2362,10 +2393,10 @@ body.dark .titem:hover{background:#202a3e}
   function calEvents(){
     var ev={};  // "YYYY-MM-DD" -> [{cls,label,id,editable,time,color,bg}]
     function push(o){ if(!o.date)return; var k=String(o.date).slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(k))return; (ev[k]=ev[k]||[]).push(o); }
-    (state.blitzdings.upcoming||[]).forEach(function(b){ var s=sparte("blitzdings"); push({date:b.eventDate,cls:"bd",label:(b.package||"Termin")+(b.customerName?" · "+b.customerName:""),color:s.color,bg:s.bg}); });
-    allCalEvents().forEach(function(e){ var s=sparte(e.sparte); push({date:e.date,cls:"evt",label:(e.source==="icloud"?"🔒 ":"")+(e.title||"Termin"),id:e.id,editable:true,time:e.time||"",color:s.color,bg:s.bg}); });
-    (state.todos||[]).forEach(function(t){ if(t.due&&!t.done) push({date:t.due,cls:"todo",label:"☑ "+(t.text||"")}); });
-    (state.valuero.fees||[]).forEach(function(f){ if(f.date&&!f.bezahlt){ var s=sparte("valuero"); push({date:f.date,cls:"val",label:"€ "+(f.client||"Gebühr"),color:s.color,bg:s.bg}); } });
+    (state.blitzdings.upcoming||[]).forEach(function(b){ var s=sparte("blitzdings"); push({date:b.eventDate,cls:"bd",label:(b.package||"Termin")+(b.customerName?" · "+b.customerName:""),color:s.color,bg:s.bg,sp:"Blitzdings-Buchung",loc:b.location||b.eventLocation||""}); });
+    allCalEvents().forEach(function(e){ var s=sparte(e.sparte); push({date:e.date,cls:"evt",label:(e.source==="icloud"?"🔒 ":"")+(e.title||"Termin"),id:e.id,editable:true,time:e.time||"",end:e.endTime||"",loc:e.location||"",sp:s.name,color:s.color,bg:s.bg}); });
+    (state.todos||[]).forEach(function(t){ if(t.due&&!t.done) push({date:t.due,cls:"todo",label:"☑ "+(t.text||""),todoId:t.id,sp:"To-Do",color:"#2f6bff",bg:"#e8f0ff"}); });
+    (state.valuero.fees||[]).forEach(function(f){ if(f.date&&!f.bezahlt){ var s=sparte("valuero"); push({date:f.date,cls:"val",label:"€ "+(f.client||"Gebühr"),color:s.color,bg:s.bg,sp:"VALUERO · offene Gebühr"}); } });
     Object.keys(ev).forEach(function(k){ ev[k].sort(function(a,b){ return (a.time||"99")<(b.time||"99")?-1:1; }); });
     return ev;
   }
@@ -2385,9 +2416,9 @@ body.dark .titem:hover{background:#202a3e}
       var evh=list.slice(0,3).map(function(e){
         var st=e.color?(' style="background:'+e.bg+';color:'+e.color+'"'):'';
         var tt=(e.time?e.time+' ':'')+e.label;
-        return '<div class="cev '+e.cls+'"'+(e.editable?' data-evtid="'+esc(e.id)+'"':'')+st+' title="'+esc(tt)+'">'+(e.time?'<span class="cev-t">'+esc(e.time)+'</span>':'')+esc(e.label)+'</div>';
+        return '<div class="cev '+e.cls+'"'+(e.editable?' data-evtid="'+esc(e.id)+'"':'')+(e.todoId?' data-todoid="'+esc(e.todoId)+'"':'')+st+' title="'+esc(tt)+'">'+(e.time?'<span class="cev-t">'+esc(e.time)+'</span>':'')+esc(e.label)+'</div>';
       }).join("");
-      if(list.length>3) evh+='<div class="cev more">+'+(list.length-3)+' mehr</div>';
+      if(list.length>3) evh+='<button type="button" class="cev more" data-dayview="'+k+'" title="Alle '+list.length+' Einträge anzeigen">+'+(list.length-3)+' mehr</button>';
       cells+='<div class="cal-cell'+(out?" out":"")+(k===todayK?" today":"")+'" data-calday="'+k+'"><div class="dn">'+d.getDate()+'</div>'+evh+'</div>';
     }
     grid.innerHTML=cells;
@@ -2396,6 +2427,25 @@ body.dark .titem:hover{background:#202a3e}
       ? ("Outlook-Termine zuletzt synchronisiert: "+new Date(state.calendar.outlookAt).toLocaleString("de-AT"))
       : "";
   }
+  // ---- Tagesansicht (alle Termine eines Tages) ----
+  var dayViewK=null;
+  function openDayView(k){
+    dayViewK=k; var list=(calEvents()[k]||[]);
+    var d=new Date(k+"T00:00:00");
+    document.getElementById("dv-title").textContent=d.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    document.getElementById("dv-sub").textContent=list.length+(list.length===1?" Eintrag":" Einträge");
+    document.getElementById("dv-list").innerHTML=list.length?list.map(function(e){
+      var click=e.editable?' data-dvevt="'+esc(e.id)+'"':(e.todoId?' data-dvtodo="'+esc(e.todoId)+'"':'');
+      var time=e.time?('<b>'+esc(e.time)+'</b>'+(e.end?'<small>'+esc(e.end)+'</small>':'')):'<small>ganztägig</small>';
+      var sub=[e.sp||"",e.loc||""].filter(Boolean).map(esc).join(" · ");
+      return '<div class="dv-item'+(click?" click":"")+'"'+click+'>'+
+        '<span class="dv-time">'+time+'</span><span class="dv-bar" style="background:'+(e.color||"var(--accent)")+'"></span>'+
+        '<div class="dv-main"><div class="dv-lbl">'+esc(e.label)+'</div>'+(sub?'<div class="dv-subl">'+sub+'</div>':'')+'</div>'+
+        (click?'<span class="dv-go">›</span>':'')+'</div>';
+    }).join(""):'<div class="dv-empty">Keine Einträge an diesem Tag.</div>';
+    document.getElementById("dayview").classList.add("show");
+  }
+  function closeDayView(){ var o=document.getElementById("dayview"); if(o) o.classList.remove("show"); dayViewK=null; }
   // ---- Termin-Detailansicht ----
   var evViewId=null;
   function openEventView(ev){
@@ -3027,8 +3077,12 @@ body.dark .titem:hover{background:#202a3e}
   // Kalender: Tag anklicken = neuer Termin; Termin anklicken = bearbeiten
   var calGrid=document.getElementById("cal-grid");
   if(calGrid) calGrid.addEventListener("click",function(e){
+    var more=e.target.closest("[data-dayview]");
+    if(more){ e.stopPropagation(); openDayView(more.getAttribute("data-dayview")); return; }
     var chip=e.target.closest("[data-evtid]");
     if(chip){ var ev=findCalEvent(chip.getAttribute("data-evtid")); if(ev)openEventView(ev); return; }
+    var tchip=e.target.closest("[data-todoid]");
+    if(tchip){ var td=(state.todos||[]).filter(function(x){return String(x.id)===tchip.getAttribute("data-todoid");})[0]; if(td){ openTodoView(td); return; } }
     var cell=e.target.closest(".cal-cell"); if(cell&&cell.getAttribute("data-calday")) openEventModal(null, cell.getAttribute("data-calday"));
   });
   var evvEdit=document.getElementById("evv-edit"); if(evvEdit) evvEdit.addEventListener("click",editFromView);
@@ -3037,6 +3091,14 @@ body.dark .titem:hover{background:#202a3e}
   var evvClose=document.getElementById("evv-close"); if(evvClose) evvClose.addEventListener("click",closeEventView);
   var ovUp=document.getElementById("ov-upcoming"); if(ovUp) ovUp.addEventListener("click",function(e){ var c=e.target.closest("[data-ovevt]"); if(!c)return; var ev=findCalEvent(c.getAttribute("data-ovevt")); if(ev)openEventView(ev); });
   var evvOv=document.getElementById("evview"); if(evvOv) evvOv.addEventListener("click",function(e){ if(e.target===this)closeEventView(); });
+  var dvOv=document.getElementById("dayview");
+  if(dvOv) dvOv.addEventListener("click",function(e){
+    if(e.target===this||e.target.closest("#dv-close")||e.target.closest("#dv-x")){ closeDayView(); return; }
+    if(e.target.closest("#dv-add")){ var k=dayViewK; closeDayView(); openEventModal(null,k); return; }
+    var it=e.target.closest("[data-dvevt]"); if(it){ var ev=findCalEvent(it.getAttribute("data-dvevt")); if(ev){ closeDayView(); openEventView(ev); } return; }
+    var tt=e.target.closest("[data-dvtodo]"); if(tt){ var td=(state.todos||[]).filter(function(x){return String(x.id)===tt.getAttribute("data-dvtodo");})[0]; if(td){ closeDayView(); openTodoView(td); } }
+  });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&dayViewK){ closeDayView(); } });
   // Sparte-Auswahl im Termin-Editor
   var spHost=document.getElementById("ev-sparte");
   if(spHost) spHost.addEventListener("click",function(e){ var o=e.target.closest(".sparte-opt"); if(!o)return; renderSpartePicker(o.getAttribute("data-k")); });
