@@ -738,6 +738,44 @@ ${err ? '<div class="err">' + err + "</div>" : ""}
 <input type="password" name="password" placeholder="Passwort" autofocus autocomplete="current-password"><button type="submit">Anmelden</button></form></body></html>`;
 }
 
+// ── sevDesk (Buchhaltung): Rechnungen, Bank, Belege ──
+const SEV = { key: (process.env.SEVDESK_API_KEY || "").trim(), src: process.env.SEVDESK_API_KEY ? "env" : "", base: "https://my.sevdesk.de/api/v1", triedAt: 0, err: "" };
+const SEV_SRC = { projectId: process.env.SEVDESK_KEY_PROJECT || "36a3e698-1684-4614-b235-63e62972d798", environmentId: process.env.SEVDESK_KEY_ENV || "7f4f6052-8af5-4a68-90b9-192b619ecfb9", serviceId: process.env.SEVDESK_KEY_SERVICE || "5f35ca1f-63e3-4ed5-9cac-ad2d7108c585" };
+// Schlüssel: eigene Variable, sonst einmalig vom kochdu-Dienst (gleiches sevDesk-Konto) übernehmen
+async function sevKey() {
+  if (SEV.key) return SEV.key;
+  if (!RW.token || Date.now() - SEV.triedAt < 2 * 60 * 1000) return "";
+  SEV.triedAt = Date.now();
+  const j = await rwGQL("query($p:String!,$e:String!,$s:String){ variables(projectId:$p, environmentId:$e, serviceId:$s) }", { p: SEV_SRC.projectId, e: SEV_SRC.environmentId, s: SEV_SRC.serviceId });
+  const k = j && j.data && j.data.variables && j.data.variables.SEVDESK_API_KEY;
+  if (!k) { SEV.err = (j && j.errors && j.errors[0] && j.errors[0].message) || "key_not_found"; return ""; }
+  SEV.key = String(k).trim(); SEV.src = "kochdu"; SEV.err = "";
+  const own = { projectId: process.env.RAILWAY_PROJECT_ID || "5ab009b1-4a14-436e-9c60-f06d94e68f6b", environmentId: process.env.RAILWAY_ENVIRONMENT_ID || "43bc9c87-f97f-4d1b-8294-abdf1e48e552", serviceId: process.env.RAILWAY_SERVICE_ID || "77edb043-6467-417d-941b-8366cefec1b6" };
+  rwGQL("mutation($input: VariableCollectionUpsertInput!){ variableCollectionUpsert(input:$input) }", { input: Object.assign({}, own, { variables: { SEVDESK_API_KEY: SEV.key }, skipDeploys: true }) })
+    .then(r => { if (r && r.errors) console.error("sevdesk key persist:", r.errors[0] && r.errors[0].message); else console.log("sevdesk key persisted"); }).catch(() => {});
+  return SEV.key;
+}
+async function sev(method, path, opts) {
+  opts = opts || {};
+  const key = await sevKey(); if (!key) { const e = new Error("sevdesk_not_configured"); e.status = 503; throw e; }
+  const qs = opts.query ? new URLSearchParams(opts.query).toString() : "";
+  const url = SEV.base + path + (qs ? (path.indexOf("?") > -1 ? "&" : "?") + qs : "");
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), opts.timeout || 25000);
+  const headers = { Authorization: key, Accept: "application/json" };
+  let body;
+  if (opts.form) body = opts.form;
+  else if (opts.body !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.body); }
+  try {
+    const r = await fetch(url, { method, headers, body, signal: ctrl.signal });
+    const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) {}
+    if (!r.ok) {
+      const er = j && j.error; const msg = (er && (er.message || (typeof er === "string" ? er : ""))) || (j && j.message) || txt.slice(0, 300) || ("HTTP " + r.status);
+      const e = new Error(String(msg)); e.status = r.status; throw e;
+    }
+    return j;
+  } finally { clearTimeout(t); }
+}
+
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
     if (adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin" });
@@ -770,6 +808,20 @@ async function handleAdmin(req, res, u, p) {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
     const [k, m, b, cal, ko, va, pc] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr), privateCalQuick().catch(() => null)]);
     return sendGz(req, res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va, todos: readTodos(), manualEvents: readEvents(), privateCal: pc }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  // ---- sevDesk: Status + (nur Admin) Lese-Zugriff zum Prüfen ----
+  if (p === "/admin/api/sevdesk/status" && req.method === "GET") {
+    const k = await sevKey().catch(() => "");
+    let version = null, err = SEV.err || "";
+    if (k) { try { const v = await sev("GET", "/Tools/bookkeepingSystemVersion"); version = v && v.objects && v.objects.version; } catch (e) { err = String(e.message || e).slice(0, 200); } }
+    return send(res, 200, JSON.stringify({ configured: !!k, source: SEV.src, version, error: err }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/sevdesk/raw" && req.method === "GET") {
+    const path = String(u.searchParams.get("path") || "");
+    if (!/^\/[A-Za-z][A-Za-z0-9\/_]*$/.test(path)) return send(res, 400, JSON.stringify({ error: "bad_path" }), TYPES[".json"]);
+    const q = {}; u.searchParams.forEach((v, k) => { if (k !== "path") q[k] = v; });
+    try { const j = await sev("GET", path, { query: q }); return send(res, 200, JSON.stringify(j), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, e.status || 500, JSON.stringify({ error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/kochdu-settle" && req.method === "POST") {
     if (!KOCHDU.token) return send(res, 503, JSON.stringify({ error: "kochdu_not_configured" }), TYPES[".json"]);
