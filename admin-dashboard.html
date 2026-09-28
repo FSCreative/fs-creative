@@ -947,7 +947,9 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   .mbulk{position:sticky;top:6px;z-index:6;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
   .mbulk::-webkit-scrollbar{display:none}
   .mbulk .btn{flex:none}
-  .mlistwrap{border-radius:18px;overflow:hidden!important}
+  #p-postfach .mbox{grid-template-columns:minmax(0,1fr)!important}
+  .mlistwrap,.mreadwrap{min-width:0;width:100%}
+  .mlistwrap{border-radius:18px;overflow:clip!important;max-height:none!important}
   .mchips{top:0}
   .mrow2{padding:12px 12px;position:relative;touch-action:pan-y;background:var(--card)}
   .mrow2 .mqa{display:none}
@@ -955,7 +957,8 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   .mrow2.swiping::after{content:attr(data-swl);position:absolute;top:0;bottom:0;width:130px;display:flex;align-items:center;font-weight:800;font-size:13px;color:#fff}
   .mrow2.swiping[data-sw="del"]::after{left:100%;background:var(--red);padding-left:18px}
   .mrow2.swiping[data-sw="read"]::after{right:100%;background:var(--accent);justify-content:flex-end;padding-right:18px}
-  .mlist{overflow-x:hidden}
+  .mlist{overflow-x:clip}
+  .mchips{border-radius:18px 18px 0 0}
   /* Lesen */
   .mreadwrap{overflow:visible!important;max-height:none!important;border-radius:18px}
   .rtool{position:sticky;top:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;border-radius:18px 18px 0 0;padding:8px;gap:2px;-webkit-overflow-scrolling:touch}
