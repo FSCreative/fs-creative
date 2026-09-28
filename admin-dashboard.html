@@ -471,6 +471,15 @@ body.dark .ast.ok{background:#12352a}body.dark .ast.miss{background:#3a2e14}body
 body.dark .acard .pw input,body.dark .acard .lg input{background:#161d2c}
 @media(max-width:560px){.set-int{grid-template-columns:1fr}}
 
+.icl{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.icl-o{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:13.5px}
+.icl-o:hover{border-color:#e0457b}
+.icl-o i{width:10px;height:10px;border-radius:50%;flex:none}
+.icl-o span{flex:1;font-weight:600}
+.icl-o em{font-style:normal;font-size:11px;font-weight:700;color:var(--dim);background:#f0f3f9;border-radius:6px;padding:1px 7px}
+.icl-o.ro{opacity:.55;cursor:not-allowed}
+body.dark .icl-o em{background:#222c42}
+
 /* ===== Postfach: mehrere Konten ===== */
 .accsw{display:flex;flex-direction:column;gap:2px;margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .accbtn{display:flex;align-items:center;gap:9px;width:100%;border:none;background:transparent;border-radius:10px;padding:7px 10px;font:inherit;text-align:left;cursor:pointer;color:var(--dim);transition:background .12s}
@@ -1027,6 +1036,7 @@ body.dark .titem:hover{background:#202a3e}
           <span><i style="background:#8b5cf6"></i>Eigene Termine</span>
           <span><i style="background:#2f6bff"></i>To-Dos (fällig)</span>
           <span><i style="background:#12b76a"></i>VALUERO-Gebühren</span>
+          <span><i style="background:#e0457b"></i>Privat (iCloud, mit iPhone synchron)</span>
         </div>
         <p class="hint" id="cal-outlook-note" style="margin:14px 2px 0;font-size:12px;color:var(--faint)"></p>
       </div>
@@ -1102,6 +1112,11 @@ body.dark .titem:hover{background:#202a3e}
         <div class="set-h">E-Mail-Konten</div>
         <p class="set-p">Passwort eintragen und auf „Prüfen &amp; speichern“ klicken. Die Anmeldung wird zuerst getestet, dann wird das Passwort sicher beim Mail-Dienst hinterlegt (nicht im Browser gespeichert).</p>
         <div id="set-accounts"><div class="mempty">Lade …</div></div>
+      </div>
+      <div class="set-sec">
+        <div class="set-h">Privater Kalender (iCloud)</div>
+        <p class="set-p">Verbindet den Dashboard-Kalender mit einem iCloud-Kalender – z. B. dem mit deiner Lebensgefährtin geteilten. Termine mit der Sparte „Privat“ landen dort und erscheinen auf allen iPhones; Änderungen am iPhone siehst du hier.</p>
+        <div id="set-icloud"></div>
       </div>
       <div class="set-sec">
         <div class="set-h">Verbindungen</div>
@@ -1734,7 +1749,7 @@ body.dark .titem:hover{background:#202a3e}
     var items=[];
     (state.blitzdings.upcoming||[]).forEach(function(b){ if(!b.eventDate)return; var d=new Date(b.eventDate+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte("blitzdings");
       items.push({date:d,ds:b.eventDate,title:b.package||"Buchung",meta:[b.customerName,b.location].filter(Boolean).join(" · "),kind:"bd",amount:(b.totalCents||0)/100,pay:b.paymentStatus,color:s.color,bg:s.bg,spn:s.name}); });
-    (state.calendar.events||[]).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte(ev.sparte);
+    allCalEvents().forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T00:00:00"); if(isNaN(d)||d<today)return; var s=sparte(ev.sparte);
       items.push({date:d,ds:ev.date,title:ev.title||"Termin",time:ev.time||"",meta:"",kind:"evt",id:ev.id,color:s.color,bg:s.bg,spn:s.name}); });
     items.sort(function(a,b){return (a.date-b.date)|| ((a.time||"99")<(b.time||"99")?-1:1);});
     items=items.slice(0,6);
@@ -2303,15 +2318,18 @@ body.dark .titem:hover{background:#202a3e}
     {k:"kochdu",name:"kochdu",color:"#8b5cf6",bg:"#f0eaff"},
     {k:"kantineur",name:"Kantineur",color:"#3a8acd",bg:"#e6f0f9"},
     {k:"blitzdings",name:"Blitzdings",color:"#e0930a",bg:"#fbf1dc"},
-    {k:"valuero",name:"VALUERO",color:"#12b76a",bg:"#e3f7ee"}
+    {k:"valuero",name:"VALUERO",color:"#12b76a",bg:"#e3f7ee"},
+    {k:"privat",name:"Privat",color:"#e0457b",bg:"#fde7ef"}
   ];
   function sparte(k){ for(var i=0;i<SPARTEN.length;i++){ if(SPARTEN[i].k===k)return SPARTEN[i]; } return SPARTEN[0]; }
+  function allCalEvents(){ return (state.calendar.events||[]).concat(state.calendar.privateEvents||[]); }
+  function findCalEvent(id){ return allCalEvents().filter(function(x){return x.id===id;})[0]; }
   function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
   function calEvents(){
     var ev={};  // "YYYY-MM-DD" -> [{cls,label,id,editable,time,color,bg}]
     function push(o){ if(!o.date)return; var k=String(o.date).slice(0,10); if(!/^\d{4}-\d{2}-\d{2}$/.test(k))return; (ev[k]=ev[k]||[]).push(o); }
     (state.blitzdings.upcoming||[]).forEach(function(b){ var s=sparte("blitzdings"); push({date:b.eventDate,cls:"bd",label:(b.package||"Termin")+(b.customerName?" · "+b.customerName:""),color:s.color,bg:s.bg}); });
-    (state.calendar.events||[]).forEach(function(e){ var s=sparte(e.sparte); push({date:e.date,cls:"evt",label:e.title||"Termin",id:e.id,editable:true,time:e.time||"",color:s.color,bg:s.bg}); });
+    allCalEvents().forEach(function(e){ var s=sparte(e.sparte); push({date:e.date,cls:"evt",label:(e.source==="icloud"?"🔒 ":"")+(e.title||"Termin"),id:e.id,editable:true,time:e.time||"",color:s.color,bg:s.bg}); });
     (state.todos||[]).forEach(function(t){ if(t.due&&!t.done) push({date:t.due,cls:"todo",label:"☑ "+(t.text||"")}); });
     (state.valuero.fees||[]).forEach(function(f){ if(f.date&&!f.bezahlt){ var s=sparte("valuero"); push({date:f.date,cls:"val",label:"€ "+(f.client||"Gebühr"),color:s.color,bg:s.bg}); } });
     Object.keys(ev).forEach(function(k){ ev[k].sort(function(a,b){ return (a.time||"99")<(b.time||"99")?-1:1; }); });
@@ -2360,12 +2378,15 @@ body.dark .titem:hover{background:#202a3e}
     body+='<div class="evv-line"><span class="ic">🏷️</span><div class="lv"><span class="evv-chip" style="background:'+s.bg+';color:'+s.color+'">'+esc(s.name)+'</span></div></div>';
     if(ev.location) body+=line("📍", esc(ev.location));
     if(ev.notes) body+=line("📝", esc(ev.notes));
+    var isPriv=ev.source==="icloud", ro=isPriv&&ev.recurring;
+    if(isPriv) body+=line("🔒", 'Privat · iCloud-Kalender „'+esc((state.calendar.icloud&&state.calendar.icloud.calName)||"privat")+'“ – ändert sich auch am iPhone'+(ro?'<br><span style="color:var(--faint)">Serientermin – bitte am iPhone bearbeiten.</span>':''));
+    ["evv-edit","evv-edit2","evv-del"].forEach(function(id){ var b=document.getElementById(id); if(b) b.style.display=ro?"none":""; });
     document.getElementById("evv-body").innerHTML=body;
     document.getElementById("evview").classList.add("show");
   }
   function closeEventView(){ document.getElementById("evview").classList.remove("show"); evViewId=null; }
-  function editFromView(){ var ev=(state.calendar.events||[]).filter(function(x){return x.id===evViewId;})[0]; closeEventView(); if(ev)openEventModal(ev); }
-  function deleteFromView(){ if(!evViewId)return; state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evViewId;}); save(); closeEventView(); renderCalendar(); renderOverviewUpcoming(); }
+  function editFromView(){ var ev=findCalEvent(evViewId); closeEventView(); if(ev)openEventModal(ev); }
+  function deleteFromView(){ if(!evViewId)return; var pv=findCalEvent(evViewId); if(pv&&pv.source==="icloud"){ if(!confirm("Privaten Termin „"+(pv.title||"")+"“ löschen? Er verschwindet auch am iPhone."))return; closeEventView(); privateOp("delete",{href:pv.href,etag:pv.etag,recurring:pv.recurring},"Termin gelöscht"); return; } state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evViewId;}); save(); closeEventView(); renderCalendar(); renderOverviewUpcoming(); }
   // ---- Termin-Editor (Modal) ----
   var evEditId=null;
   function renderSpartePicker(sel){
@@ -2394,11 +2415,42 @@ body.dark .titem:hover{background:#202a3e}
     if(!title){ alert("Bitte einen Titel eingeben."); return; }
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ alert("Bitte ein gültiges Datum wählen."); return; }
     var obj={title:title,date:date,time:document.getElementById("ev-time").value||"",endTime:document.getElementById("ev-end").value||"",location:(document.getElementById("ev-loc").value||"").trim(),notes:(document.getElementById("ev-notes").value||"").trim(),sparte:selectedSparte(),source:"manual"};
+    var old=evEditId?findCalEvent(evEditId):null; var wasPriv=!!(old&&old.source==="icloud");
+    if(obj.sparte==="privat"||wasPriv){
+      if(!(state.calendar.icloud&&state.calendar.icloud.configured)){ if(confirm("Der private iCloud-Kalender ist noch nicht verbunden. Jetzt in den Einstellungen verbinden?")){ closeEventModal(); openSettings(); } return; }
+      if(wasPriv&&old.recurring){ alert("Serientermine bitte direkt am iPhone ändern."); return; }
+      var btn=document.getElementById("ev-save"); if(btn){ btn.disabled=true; btn.textContent="Speichert …"; }
+      var done=function(){ if(btn){ btn.disabled=false; btn.textContent="Speichern"; } };
+      if(obj.sparte==="privat"&&wasPriv){ privateOp("update",{href:old.href,etag:old.etag,uid:old.uid,event:obj},"Privater Termin aktualisiert – auch am iPhone",function(ok){ done(); if(ok) closeEventModal(); }); return; }
+      if(obj.sparte==="privat"){ privateOp("create",{event:obj},"Privater Termin angelegt – erscheint auch am iPhone",function(ok){ done(); if(!ok)return; if(evEditId){ state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evEditId;}); save(); } closeEventModal(); renderCalendar(); renderOverviewUpcoming(); }); return; }
+      // privat -> geschäftlich: lokal anlegen, aus iCloud entfernen
+      privateOp("delete",{href:old.href,etag:old.etag},"Termin aus dem privaten Kalender in „"+sparte(obj.sparte).name+"“ verschoben",function(ok){ done(); if(!ok)return; obj.id=uid(); state.calendar.events.push(obj); save(); closeEventModal(); renderCalendar(); renderOverviewUpcoming(); });
+      return;
+    }
     if(evEditId){ var ex=(state.calendar.events||[]).filter(function(x){return x.id===evEditId;})[0]; if(ex)Object.assign(ex,obj); }
     else { obj.id=uid(); state.calendar.events.push(obj); }
     save(); closeEventModal(); renderCalendar(); renderOverviewUpcoming();
   }
-  function deleteEvent(){ if(!evEditId)return; state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evEditId;}); save(); closeEventModal(); renderCalendar(); renderOverviewUpcoming(); }
+  function privateOp(op,payload,okMsg,cb){
+    payload=Object.assign({op:op},payload||{});
+    fetch("/admin/api/private-cal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+      .then(function(r){ return r.json().catch(function(){return {ok:false,error:"http_"+r.status};}); })
+      .then(function(j){
+        if(j.ok){ if(j.privateCal) applyPrivateCal(j.privateCal); try{ mailToast(okMsg||"Gespeichert"); }catch(e){} if(cb)cb(true); return; }
+        var e=j.error||""; var t=/recurring/.test(e)?"Serientermine bitte direkt am iPhone ändern.":(/changed_elsewhere/.test(e)?"Der Termin wurde inzwischen am iPhone geändert – bitte kurz neu laden.":(/not_configured/.test(e)?"Privater Kalender ist nicht verbunden (Einstellungen).":(/403|forbidden/i.test(e)?"Keine Schreibrechte für diesen geteilten Kalender.":"Speichern im iCloud-Kalender fehlgeschlagen ("+e+")")));
+        try{ mailToast(t,true); }catch(x){ alert(t); } if(cb)cb(false);
+      })
+      .catch(function(err){ try{ mailToast("iCloud nicht erreichbar: "+err,true); }catch(x){} if(cb)cb(false); });
+  }
+  function applyPrivateCal(pc){
+    if(!pc) return;
+    state.calendar.icloud={configured:!!pc.configured,calName:pc.calName||"",calColor:pc.calColor||"",error:pc.error||"",fetchedAt:pc.fetchedAt||""};
+    if(Array.isArray(pc.events)) state.calendar.privateEvents=pc.events;
+    renderCalendar(); renderOverviewUpcoming(); try{ renderOverviewHead(); }catch(e){}
+  }
+  function deleteEvent(){ if(!evEditId)return; var pv=findCalEvent(evEditId);
+    if(pv&&pv.source==="icloud"){ if(pv.recurring){ alert("Serientermine bitte direkt am iPhone löschen."); return; } if(!confirm("Privaten Termin löschen? Er verschwindet auch am iPhone."))return; closeEventModal(); privateOp("delete",{href:pv.href,etag:pv.etag},"Termin gelöscht"); return; }
+    state.calendar.events=(state.calendar.events||[]).filter(function(x){return x.id!==evEditId;}); save(); closeEventModal(); renderCalendar(); renderOverviewUpcoming(); }
 
   // ---- render ----
   var activeTab="overview";
@@ -2804,6 +2856,7 @@ body.dark .titem:hover{background:#202a3e}
         state.calendar.events=manual.concat(imported);
         state.calendar.outlookAt=d.calendar.fetchedAt||new Date().toISOString();
       }
+      if(d.privateCal) applyPrivateCal(d.privateCal);
       // To-Dos/Termine vom Server übernehmen (zuverlässiger als der Einmal-Load) — lokale, noch nicht gesyncte Änderungen bleiben geschützt.
       if(todosReady && Array.isArray(d.todos)){ var ts=JSON.stringify(d.todos); var tdirty=(todoSig()!==lastTodoSig && lastTodoSig!==null); if(ts!==lastTodoSig && !tdirty){ state.todos=d.todos; lastTodoSig=ts; } }
       if(eventsReady && Array.isArray(d.manualEvents)){ var sm2=d.manualEvents.map(function(e){ e.source="manual"; return e; }); var es=JSON.stringify(sm2); var edirty=(evtSig()!==lastEvtSig && lastEvtSig!==null); if(es!==lastEvtSig && !edirty){ var imp2=(state.calendar.events||[]).filter(function(e){return e.source!=="manual";}); state.calendar.events=sm2.concat(imp2); lastEvtSig=evtSig(); } }
@@ -2941,14 +2994,14 @@ body.dark .titem:hover{background:#202a3e}
   var calGrid=document.getElementById("cal-grid");
   if(calGrid) calGrid.addEventListener("click",function(e){
     var chip=e.target.closest("[data-evtid]");
-    if(chip){ var id=chip.getAttribute("data-evtid"); var ev=(state.calendar.events||[]).filter(function(x){return x.id===id;})[0]; if(ev)openEventView(ev); return; }
+    if(chip){ var ev=findCalEvent(chip.getAttribute("data-evtid")); if(ev)openEventView(ev); return; }
     var cell=e.target.closest(".cal-cell"); if(cell&&cell.getAttribute("data-calday")) openEventModal(null, cell.getAttribute("data-calday"));
   });
   var evvEdit=document.getElementById("evv-edit"); if(evvEdit) evvEdit.addEventListener("click",editFromView);
   var evvEdit2=document.getElementById("evv-edit2"); if(evvEdit2) evvEdit2.addEventListener("click",editFromView);
   var evvDel=document.getElementById("evv-del"); if(evvDel) evvDel.addEventListener("click",deleteFromView);
   var evvClose=document.getElementById("evv-close"); if(evvClose) evvClose.addEventListener("click",closeEventView);
-  var ovUp=document.getElementById("ov-upcoming"); if(ovUp) ovUp.addEventListener("click",function(e){ var c=e.target.closest("[data-ovevt]"); if(!c)return; var ev=(state.calendar.events||[]).filter(function(x){return x.id===c.getAttribute("data-ovevt");})[0]; if(ev)openEventView(ev); });
+  var ovUp=document.getElementById("ov-upcoming"); if(ovUp) ovUp.addEventListener("click",function(e){ var c=e.target.closest("[data-ovevt]"); if(!c)return; var ev=findCalEvent(c.getAttribute("data-ovevt")); if(ev)openEventView(ev); });
   var evvOv=document.getElementById("evview"); if(evvOv) evvOv.addEventListener("click",function(e){ if(e.target===this)closeEventView(); });
   // Sparte-Auswahl im Termin-Editor
   var spHost=document.getElementById("ev-sparte");
@@ -3040,7 +3093,7 @@ body.dark .titem:hover{background:#202a3e}
     var open=(state.todos||[]).filter(function(t){return !t.done;});
     var over=open.filter(function(t){ if(!t.due)return false; var d=new Date(t.due+"T00:00:00"); return d<today; }).length;
     var nx=null;
-    (state.calendar.events||[]).concat((state.blitzdings.upcoming||[]).map(function(b){return {date:b.eventDate,title:b.package||"Buchung",time:""};})).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T"+(ev.time||"00:00")); if(isNaN(d))return; var dd=new Date(ev.date+"T00:00:00"); if(dd<today)return; if(!nx||d<nx.d) nx={d:d,t:ev.title||"Termin",time:ev.time||"",date:ev.date}; });
+    allCalEvents().concat((state.blitzdings.upcoming||[]).map(function(b){return {date:b.eventDate,title:b.package||"Buchung",time:""};})).forEach(function(ev){ if(!ev.date)return; var d=new Date(ev.date+"T"+(ev.time||"00:00")); if(isNaN(d))return; var dd=new Date(ev.date+"T00:00:00"); if(dd<today)return; if(!nx||d<nx.d) nx={d:d,t:ev.title||"Termin",time:ev.time||"",date:ev.date}; });
     var nxs="";
     if(nx){ var diff=Math.round((new Date(nx.date+"T00:00:00")-today)/86400000); nxs=(diff===0?"heute":diff===1?"morgen":"in "+diff+" Tagen")+(nx.time?" "+nx.time:"")+": "+nx.t; }
     var c=null; try{ c=comp(); }catch(e){}
@@ -3077,7 +3130,7 @@ body.dark .titem:hover{background:#202a3e}
         out.push({g:"Mails",ic:CHIC.mail,t:x.subject||"(kein Betreff)",s:(x.fromName||x.from||""),run:function(){ selectTab("postfach"); mailUI.folder=isTrashed(x)?"trash":isSent(x)?"sent":isSpam(x)?"spam":((x.folder||"INBOX")==="INBOX"?"inbox":"f:"+x.folder); openMsg(x.id); }}); });
       (state.todos||[]).filter(function(t){ return m((t.text||"")+" "+(t.notes||"")); }).slice(0,5).forEach(function(t){
         out.push({g:"To-Dos",ic:CHIC.todo,t:t.text,s:t.done?"erledigt":(t.due?("fällig "+t.due.split("-").reverse().join(".")):"offen"),run:function(){ selectTab("todo"); try{ openTodoView(t); }catch(e){} }}); });
-      (state.calendar.events||[]).filter(function(ev){ return m((ev.title||"")+" "+(ev.location||"")); }).slice(0,5).forEach(function(ev){
+      allCalEvents().filter(function(ev){ return m((ev.title||"")+" "+(ev.location||"")); }).slice(0,5).forEach(function(ev){
         out.push({g:"Termine",ic:CHIC.cal,t:ev.title||"Termin",s:(ev.date||"").split("-").reverse().join(".")+(ev.time?" · "+ev.time:""),run:function(){ selectTab("kalender"); }}); });
     }
     return out;
@@ -3140,9 +3193,48 @@ body.dark .titem:hover{background:#202a3e}
         '</div>';
       }).join("");
     }
+    renderIcloudSettings();
     var ih=document.getElementById("set-integrations");
     if(ih) ih.innerHTML=(d.integrations||[]).map(function(x){ return '<div><i style="background:'+(x.ok?"var(--green)":"#c5ccd8")+'"></i>'+esc(x.label)+'<span style="margin-left:auto;color:var(--faint);font-size:12px">'+(x.ok?"verbunden":"nicht eingerichtet")+'</span></div>'; }).join("")||'<div class="mempty" style="grid-column:1/-1">—</div>';
   }
+  var icUI={step:"idle",user:"",pass:"",cals:[],sel:"",msg:"",ok:false,busy:false};
+  function renderIcloudSettings(){
+    var host=document.getElementById("set-icloud"); if(!host) return;
+    var st=(setData&&setData.icloud)||{}; var h="";
+    if(st.configured&&icUI.step==="idle"){
+      h+='<div class="acard" style="--ac:#e0457b"><div class="ah"><span class="adot"></span><div class="an"><b>'+esc(st.calName||"Kalender")+'</b><span>'+esc(st.user||"")+'</span></div><span class="ast ok">✓ Verbunden</span></div>'+
+        '<div class="af"><button class="btn" data-ic="change">Anderen Kalender wählen</button><button class="btn ghost danger" data-ic="disconnect">Trennen</button></div>'+
+        (icUI.msg?'<div class="amsg '+(icUI.ok?"ok":"err")+'">'+esc(icUI.msg)+'</div>':'')+'</div>';
+    } else if(icUI.step==="pick"){
+      h+='<div class="acard" style="--ac:#e0457b"><div class="ah"><span class="adot"></span><div class="an"><b>Kalender auswählen</b><span>'+esc(icUI.user)+'</span></div></div><div class="icl">'+
+        (icUI.cals.length?icUI.cals.map(function(c){ return '<label class="icl-o'+(c.writable?"":" ro")+'"><input type="radio" name="icl" value="'+esc(c.url)+'"'+(icUI.sel===c.url?" checked":"")+(c.writable?"":" disabled")+'><i style="background:'+esc(c.color||"#e0457b")+'"></i><span>'+esc(c.name)+'</span>'+(c.shared?'<em>geteilt</em>':'')+(c.writable?'':'<em>nur lesen</em>')+'</label>'; }).join(""):'<div class="mempty">Keine Termin-Kalender gefunden.</div>')+
+        '</div><div class="af"><button class="btn ghost" data-ic="back">Zurück</button><button class="btn primary" data-ic="save"'+(icUI.busy?" disabled":"")+'>'+(icUI.busy?"Speichert …":"Speichern")+'</button></div>'+
+        (icUI.msg?'<div class="amsg '+(icUI.ok?"ok":"err")+'">'+esc(icUI.msg)+'</div>':'')+'</div>';
+    } else {
+      h+='<div class="acard" style="--ac:#e0457b"><div class="af" style="margin-top:0"><div class="pw" style="min-width:200px"><input type="email" autocomplete="off" spellcheck="false" placeholder="Apple-ID (E-Mail)" id="ic-user" value="'+esc(icUI.user||st.user||"")+'"></div></div>'+
+        '<div class="af"><div class="pw"><input type="password" autocomplete="new-password" spellcheck="false" placeholder="App-spezifisches Passwort (xxxx-xxxx-xxxx-xxxx)" id="ic-pass"><button class="eye" type="button" data-ic="eye" title="Anzeigen">👁</button></div><button class="btn primary" data-ic="discover"'+(icUI.busy?" disabled":"")+'>'+(icUI.busy?"Verbinde …":"Verbinden")+'</button></div>'+
+        '<div class="ahint">Mit der Apple-ID anmelden, über die du den geteilten Kalender am iPhone siehst. Das <b>App-spezifische Passwort</b> erstellst du unter <a href="https://account.apple.com/account/manage" target="_blank" rel="noopener">account.apple.com</a> → Anmeldung und Sicherheit → App-spezifische Passwörter. Dein normales Apple-Passwort funktioniert hier nicht.</div>'+
+        (st.configured?'<button class="amore" data-ic="cancel">Abbrechen</button>':'')+
+        (icUI.msg?'<div class="amsg '+(icUI.ok?"ok":"err")+'">'+esc(icUI.msg)+'</div>':'')+'</div>';
+    }
+    host.innerHTML=h;
+  }
+  function icPost(body,cb){ icUI.busy=true; renderIcloudSettings();
+    fetch("/admin/api/settings/icloud",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return {ok:false,error:"http_"+r.status};});}).then(function(j){ icUI.busy=false; cb(j); renderIcloudSettings(); }).catch(function(e){ icUI.busy=false; cb({ok:false,error:String(e)}); renderIcloudSettings(); }); }
+  document.getElementById("setoverlay").addEventListener("click",function(e){
+    var b=e.target.closest("[data-ic]"); if(!b) return; var a=b.getAttribute("data-ic");
+    if(a==="eye"){ var pi=document.getElementById("ic-pass"); if(pi){ pi.type=pi.type==="password"?"text":"password"; } return; }
+    if(a==="change"){ icUI={step:"form",user:(setData&&setData.icloud&&setData.icloud.user)||"",pass:"",cals:[],sel:"",msg:"",ok:false,busy:false}; renderIcloudSettings(); return; }
+    if(a==="cancel"||a==="back"){ icUI.step=a==="back"?"form":"idle"; icUI.msg=""; renderIcloudSettings(); return; }
+    if(a==="disconnect"){ if(!confirm("Privaten Kalender trennen? Die Termine bleiben in iCloud erhalten, erscheinen aber nicht mehr im Dashboard."))return; icPost({action:"disconnect"},function(j){ if(j.ok){ state.calendar.privateEvents=[]; state.calendar.icloud={configured:false}; renderCalendar(); renderOverviewUpcoming(); icUI.msg="Getrennt."; icUI.ok=true; loadSettings(); } }); return; }
+    if(a==="discover"){ var uEl=document.getElementById("ic-user"), pEl=document.getElementById("ic-pass"); var u=(uEl&&uEl.value||"").trim(), p=(pEl&&pEl.value||"").trim(); if(!u||!p){ icUI.msg="Bitte Apple-ID und App-spezifisches Passwort eintragen."; icUI.ok=false; renderIcloudSettings(); return; }
+      icUI.user=u; icUI.pass=p; icUI.msg="";
+      icPost({action:"discover",user:u,pass:p},function(j){ if(j.ok){ icUI.step="pick"; icUI.cals=j.calendars||[]; var w=icUI.cals.filter(function(c){return c.writable;}); var sh=w.filter(function(c){return c.shared;}); icUI.sel=(sh[0]||w[0]||{}).url||""; icUI.msg=""; } else { icUI.pass=""; icUI.ok=false; icUI.msg=j.error==="login_failed"?"Anmeldung abgelehnt – bitte ein App-spezifisches Passwort verwenden (nicht das normale Apple-Passwort).":("Verbindung fehlgeschlagen"+(j.detail?": "+j.detail:"")); } }); return; }
+    if(a==="save"){ var r=document.querySelector('#set-icloud input[name=icl]:checked'); if(!r){ icUI.msg="Bitte einen Kalender wählen."; icUI.ok=false; renderIcloudSettings(); return; }
+      icUI.sel=r.value;
+      icPost({action:"save",user:icUI.user,pass:icUI.pass,calUrl:r.value},function(j){ if(j.ok){ icUI={step:"idle",user:"",pass:"",cals:[],sel:"",msg:"✓ Verbunden mit „"+(j.calName||"")+"“ – private Termine erscheinen jetzt im Kalender.",ok:true,busy:false}; if(j.privateCal) applyPrivateCal(j.privateCal); loadSettings(); } else { icUI.ok=false; icUI.msg="Speichern fehlgeschlagen"+(j.detail?": "+j.detail:(j.error?" ("+j.error+")":"")); } }); return; }
+  });
+  document.getElementById("setoverlay").addEventListener("change",function(e){ if(e.target&&e.target.name==="icl") icUI.sel=e.target.value; });
   function loadSettings(){
     if(!window.__FSD_HOSTED) { renderSettings(); return; }
     fetch("/admin/api/settings",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){ if(!d)return;

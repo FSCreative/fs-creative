@@ -269,6 +269,279 @@ async function valueroStats(year) {
   if (!objects.length) return null;
   return { fetchedAt: new Date().toISOString(), objects };
 }
+// ── Privater Kalender: iCloud (CalDAV) – lesen & schreiben, in beide Richtungen ──
+// Zugangsdaten (Apple-ID + App-spezifisches Passwort + gewählter Kalender) liegen im Volume unter /data/icloud.json
+// (oder per ENV: ICLOUD_USER / ICLOUD_PASS / ICLOUD_CAL_URL / ICLOUD_CAL_NAME).
+const ICLOUD_FILE = path.join(DATA_DIR, "icloud.json");
+function icloudCfg() {
+  let c = {};
+  try { c = JSON.parse(fs.readFileSync(ICLOUD_FILE, "utf8")) || {}; } catch (e) {}
+  return {
+    user: c.user || process.env.ICLOUD_USER || "",
+    pass: c.pass || process.env.ICLOUD_PASS || "",
+    calUrl: c.calUrl || process.env.ICLOUD_CAL_URL || "",
+    calName: c.calName || process.env.ICLOUD_CAL_NAME || "",
+    calColor: c.calColor || "",
+  };
+}
+function icloudSave(c) { try { fs.writeFileSync(ICLOUD_FILE, JSON.stringify(c), { mode: 0o600 }); return true; } catch (e) { return false; } }
+function icloudClear() { try { fs.unlinkSync(ICLOUD_FILE); } catch (e) {} }
+
+async function dav(method, url, { user, pass, body, depth, headers } = {}) {
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const h = Object.assign({ Authorization: "Basic " + Buffer.from(user + ":" + pass).toString("base64") }, headers || {});
+    if (body && !h["Content-Type"]) h["Content-Type"] = "application/xml; charset=utf-8";
+    if (depth != null) h.Depth = String(depth);
+    const r = await fetch(url, { method, headers: h, body, signal: ctrl.signal, redirect: "follow" });
+    const text = await r.text();
+    return { status: r.status, text, etag: r.headers.get("etag") || "", url: r.url || url };
+  } finally { clearTimeout(t); }
+}
+function xmlTag(block, name) { const m = block.match(new RegExp("<(?:[\\w-]+:)?" + name + "\\b[^>]*>([\\s\\S]*?)</(?:[\\w-]+:)?" + name + ">", "i")); return m ? m[1] : ""; }
+function xmlHref(block, name) { const inner = xmlTag(block, name); const m = inner.match(/<(?:[\w-]+:)?href[^>]*>([^<]+)</i); return m ? m[1].trim() : ""; }
+function xmlResponses(text) { return text.split(/<(?:[\w-]+:)?response[\s>]/i).slice(1); }
+function xmlUnesc(s) { return String(s || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#13;/g, "\r").replace(/&#10;/g, "\n").replace(/&amp;/g, "&"); }
+function absUrl(base, href) { try { return new URL(href, base).toString(); } catch (e) { return href; } }
+
+async function icloudDiscover(user, pass) {
+  const root = "https://caldav.icloud.com/";
+  const r1 = await dav("PROPFIND", root, { user, pass, depth: 0, body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>' });
+  if (r1.status === 401 || r1.status === 403) { const e = new Error("login_failed"); e.code = "login_failed"; throw e; }
+  const principal = xmlHref(r1.text, "current-user-principal");
+  if (!principal) throw new Error("principal_not_found (" + r1.status + ")");
+  const pUrl = absUrl(r1.url || root, principal);
+  const r2 = await dav("PROPFIND", pUrl, { user, pass, depth: 0, body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-home-set/></d:prop></d:propfind>' });
+  const home = xmlHref(r2.text, "calendar-home-set");
+  if (!home) throw new Error("calendar_home_not_found (" + r2.status + ")");
+  const hUrl = absUrl(r2.url || pUrl, home);
+  const r3 = await dav("PROPFIND", hUrl, { user, pass, depth: 1, body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/"><d:prop><d:displayname/><d:resourcetype/><c:supported-calendar-component-set/><a:calendar-color/><d:current-user-privilege-set/></d:prop></d:propfind>' });
+  const cals = [];
+  for (const blk of xmlResponses(r3.text)) {
+    const href = (blk.match(/<(?:[\w-]+:)?href[^>]*>([^<]+)</i) || [])[1];
+    const rt = xmlTag(blk, "resourcetype");
+    if (!href || !/calendar/i.test(rt)) continue;
+    const comps = xmlTag(blk, "supported-calendar-component-set");
+    if (comps && !/VEVENT/i.test(comps)) continue;       // nur Termin-Kalender (keine Erinnerungen)
+    const priv = xmlTag(blk, "current-user-privilege-set");
+    const writable = !priv || /<(?:[\w-]+:)?(write|write-content|all)\s*\/?>/i.test(priv);
+    cals.push({ url: absUrl(hUrl, href.trim()), name: xmlUnesc(xmlTag(blk, "displayname")).trim() || "Kalender", color: (xmlTag(blk, "calendar-color").trim() || "").slice(0, 7), writable, shared: /shared/i.test(rt) });
+  }
+  return cals;
+}
+
+// ---- ICS lesen ----
+function icsUnfold(s) { return String(s || "").replace(/\r?\n[ \t]/g, ""); }
+function icsUnesc(s) { return String(s || "").replace(/\\n/gi, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\"); }
+function icsEsc(s) { return String(s || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;"); }
+function icsProps(block) {
+  const props = {};
+  block.split(/\r?\n/).forEach(line => {
+    const m = line.match(/^([A-Z0-9-]+)((?:;[^:]*)?):(.*)$/i); if (!m) return;
+    const name = m[1].toUpperCase(); const params = {};
+    (m[2] || "").split(";").filter(Boolean).forEach(p => { const i = p.indexOf("="); if (i > 0) params[p.slice(0, i).toUpperCase()] = p.slice(i + 1).replace(/^"|"$/g, ""); });
+    (props[name] = props[name] || []).push({ value: m[3], params });
+  });
+  return props;
+}
+const TZ = "Europe/Vienna";
+function viennaParts(d) {
+  const f = new Intl.DateTimeFormat("de-AT", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+  const o = {}; f.formatToParts(d).forEach(p => { o[p.type] = p.value; });
+  return { date: o.year + "-" + o.month + "-" + o.day, time: (o.hour === "24" ? "00" : o.hour) + ":" + o.minute };
+}
+// Wiener Ortszeit -> UTC-Date
+function viennaToUtc(dateStr, timeStr) {
+  const [y, mo, d] = dateStr.split("-").map(Number); const [h, mi] = (timeStr || "00:00").split(":").map(Number);
+  let guess = new Date(Date.UTC(y, mo - 1, d, h, mi));
+  for (let i = 0; i < 2; i++) { const p = viennaParts(guess); const shown = Date.UTC(+p.date.slice(0, 4), +p.date.slice(5, 7) - 1, +p.date.slice(8, 10), +p.time.slice(0, 2), +p.time.slice(3, 5)); guess = new Date(guess.getTime() - (shown - Date.UTC(y, mo - 1, d, h, mi))); }
+  return guess;
+}
+function icsParseDate(p) {
+  if (!p) return null;
+  const v = p.value.trim();
+  const m = v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/);
+  if (!m) return null;
+  const date = m[1] + "-" + m[2] + "-" + m[3];
+  if (!m[4] || (p.params.VALUE || "").toUpperCase() === "DATE") return { date, time: "", allDay: true, ms: Date.UTC(+m[1], +m[2] - 1, +m[3]) };
+  if (m[7]) { const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0))); const vp = viennaParts(d); return { date: vp.date, time: vp.time, allDay: false, ms: d.getTime() }; }
+  // TZID oder "floating": Wanduhrzeit übernehmen (bei TZID=Europe/Vienna exakt)
+  return { date, time: m[4] + ":" + m[5], allDay: false, ms: viennaToUtc(date, m[4] + ":" + m[5]).getTime() };
+}
+function addDaysStr(s, n) { const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function expandRRule(rrule, start, fromMs, toMs, exdates) {
+  // einfache Serien: DAILY / WEEKLY (inkl. BYDAY) / MONTHLY / YEARLY mit INTERVAL, COUNT, UNTIL
+  const r = {}; rrule.split(";").forEach(kv => { const [k, v] = kv.split("="); r[(k || "").toUpperCase()] = v; });
+  const freq = r.FREQ, interval = Math.max(1, +r.INTERVAL || 1), count = r.COUNT ? +r.COUNT : null;
+  let until = null; if (r.UNTIL) { const u = icsParseDate({ value: r.UNTIL, params: {} }); if (u) until = u.date; }
+  const out = []; let n = 0; const days = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+  const byday = r.BYDAY ? r.BYDAY.split(",").map(x => x.replace(/^[+-]?\d+/, "")) : null;
+  const fromStr = new Date(fromMs).toISOString().slice(0, 10), toStr = new Date(toMs).toISOString().slice(0, 10);
+  let cur = start.date, guard = 0;
+  while (guard++ < 3000) {
+    if (until && cur > until) break; if (cur > toStr) break;
+    let cands = [cur];
+    if (freq === "WEEKLY" && byday) { const d0 = new Date(cur + "T00:00:00Z"); const monday = addDaysStr(cur, -((d0.getUTCDay() + 6) % 7)); cands = byday.map(bd => addDaysStr(monday, (days.indexOf(bd) + 6) % 7)).sort(); }
+    for (const c of cands) {
+      if (c < start.date) continue; if (until && c > until) continue;
+      n++; if (count && n > count) return out;
+      if (c >= fromStr && c <= toStr && !exdates.has(c)) out.push(c);
+    }
+    if (freq === "DAILY") cur = addDaysStr(cur, interval);
+    else if (freq === "WEEKLY") cur = addDaysStr(cur, 7 * interval);
+    else if (freq === "MONTHLY") { const d = new Date(cur + "T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() + interval); cur = d.toISOString().slice(0, 10); }
+    else if (freq === "YEARLY") { const d = new Date(cur + "T00:00:00Z"); d.setUTCFullYear(d.getUTCFullYear() + interval); cur = d.toISOString().slice(0, 10); }
+    else break;
+  }
+  return out;
+}
+function icsToEvents(ics, href, etag, fromMs, toMs) {
+  const text = icsUnfold(ics);
+  const blocks = text.split(/BEGIN:VEVENT/i).slice(1).map(b => b.split(/END:VEVENT/i)[0]);
+  const masters = [], overrides = [];
+  blocks.forEach(b => { const p = icsProps(b); (p["RECURRENCE-ID"] ? overrides : masters).push(p); });
+  const out = [];
+  const mk = (p, date, time, endTime, allDay, recurring, occ) => {
+    const uidv = (p.UID && p.UID[0].value) || href;
+    return {
+      id: "ic_" + crypto.createHash("md5").update(uidv + "|" + (occ || date)).digest("hex").slice(0, 14),
+      uid: uidv, href, etag, source: "icloud", sparte: "privat",
+      title: icsUnesc((p.SUMMARY && p.SUMMARY[0].value) || "Termin"),
+      date, time: allDay ? "" : time, endTime: allDay ? "" : (endTime || ""), allDay: !!allDay,
+      location: icsUnesc((p.LOCATION && p.LOCATION[0].value) || ""), notes: icsUnesc((p.DESCRIPTION && p.DESCRIPTION[0].value) || ""),
+      recurring: !!recurring,
+    };
+  };
+  for (const p of masters) {
+    if (p.STATUS && /CANCELLED/i.test(p.STATUS[0].value)) continue;
+    const s = icsParseDate(p.DTSTART && p.DTSTART[0]); if (!s) continue;
+    let e = icsParseDate(p.DTEND && p.DTEND[0]);
+    const durMin = e ? Math.round((e.ms - s.ms) / 60000) : 60;
+    const endTimeOf = startTime => { if (s.allDay || !startTime) return ""; const [h, m] = startTime.split(":").map(Number); const t = h * 60 + m + durMin; return (t >= 24 * 60) ? "" : (String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0")); };
+    if (p.RRULE) {
+      const ex = new Set(); (p.EXDATE || []).forEach(x => x.value.split(",").forEach(v => { const d = icsParseDate({ value: v, params: x.params }); if (d) ex.add(d.date); }));
+      overrides.filter(o => o.UID && p.UID && o.UID[0].value === p.UID[0].value).forEach(o => { const rid = icsParseDate(o["RECURRENCE-ID"][0]); if (rid) ex.add(rid.date); });
+      expandRRule(p.RRULE[0].value, s, fromMs, toMs, ex).forEach(d => out.push(mk(p, d, s.time, endTimeOf(s.time), s.allDay, true, d)));
+    } else {
+      out.push(mk(p, s.date, s.time, e && !s.allDay ? (e.date === s.date ? e.time : "") : "", s.allDay, false));
+      // mehrtägige Ganztags-Termine: jeden Tag anzeigen
+      if (s.allDay && e && e.date > addDaysStr(s.date, 1)) { let d = addDaysStr(s.date, 1), g = 0; while (d < e.date && g++ < 60) { out.push(mk(p, d, "", "", true, false, d)); d = addDaysStr(d, 1); } }
+    }
+  }
+  for (const o of overrides) {
+    if (o.STATUS && /CANCELLED/i.test(o.STATUS[0].value)) continue;
+    const s = icsParseDate(o.DTSTART && o.DTSTART[0]); if (!s) continue; const e = icsParseDate(o.DTEND && o.DTEND[0]);
+    const ms = s.ms; if (ms < fromMs - 864e5 || ms > toMs) continue;
+    out.push(mk(o, s.date, s.time, e && e.date === s.date ? e.time : "", s.allDay, true, s.date));
+  }
+  return out;
+}
+function icsDt(d) { return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); }
+function buildVevent(ev, uid) {
+  const lines = ["BEGIN:VEVENT", "UID:" + uid, "DTSTAMP:" + icsDt(new Date()), "LAST-MODIFIED:" + icsDt(new Date())];
+  if (!ev.time) {
+    lines.push("DTSTART;VALUE=DATE:" + ev.date.replace(/-/g, ""), "DTEND;VALUE=DATE:" + addDaysStr(ev.date, 1).replace(/-/g, ""));
+  } else {
+    const st = viennaToUtc(ev.date, ev.time);
+    let en = ev.endTime && ev.endTime > ev.time ? viennaToUtc(ev.date, ev.endTime) : new Date(st.getTime() + 3600000);
+    lines.push("DTSTART:" + icsDt(st), "DTEND:" + icsDt(en));
+  }
+  lines.push("SUMMARY:" + icsEsc(ev.title || "Termin"));
+  if (ev.location) lines.push("LOCATION:" + icsEsc(ev.location));
+  if (ev.notes) lines.push("DESCRIPTION:" + icsEsc(ev.notes));
+  lines.push("END:VEVENT");
+  return lines;
+}
+function buildIcs(ev, uid) {
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//FS Creative//Dashboard//DE", "CALSCALE:GREGORIAN"].concat(buildVevent(ev, uid), ["END:VCALENDAR"]).join("\r\n") + "\r\n";
+}
+
+let PRIV_CACHE = { at: 0, data: null, p: null };
+async function privateCalendar(force) {
+  const c = icloudCfg();
+  if (!c.user || !c.pass || !c.calUrl) return { configured: false, events: [] };
+  if (!force && PRIV_CACHE.data && Date.now() - PRIV_CACHE.at < 45000) return PRIV_CACHE.data;
+  if (PRIV_CACHE.p) return PRIV_CACHE.p;
+  PRIV_CACHE.p = (async () => {
+    const now = Date.now(), fromMs = now - 62 * 864e5, toMs = now + 400 * 864e5;
+    const f = d => icsDt(new Date(d));
+    const body = '<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="' + f(fromMs) + '" end="' + f(toMs) + '"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>';
+    try {
+      const r = await dav("REPORT", c.calUrl, { user: c.user, pass: c.pass, depth: 1, body });
+      if (r.status === 401 || r.status === 403) return { configured: true, calName: c.calName, error: "login_failed", events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
+      if (r.status >= 400) return { configured: true, calName: c.calName, error: "http_" + r.status, events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
+      const events = [];
+      for (const blk of xmlResponses(r.text)) {
+        const href = ((blk.match(/<(?:[\w-]+:)?href[^>]*>([^<]+)</i) || [])[1] || "").trim();
+        const etag = xmlUnesc(xmlTag(blk, "getetag")).trim();
+        const data = xmlUnesc(xmlTag(blk, "calendar-data"));
+        if (!data) continue;
+        icsToEvents(data, absUrl(c.calUrl, href), etag, fromMs, toMs).forEach(e => events.push(e));
+      }
+      const out = { configured: true, calName: c.calName, calColor: c.calColor, user: c.user, fetchedAt: new Date().toISOString(), events };
+      PRIV_CACHE = { at: Date.now(), data: out, p: null };
+      return out;
+    } catch (e) {
+      return { configured: true, calName: c.calName, error: String(e && e.message || e).slice(0, 160), events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
+    } finally { PRIV_CACHE.p = null; }
+  })();
+  return PRIV_CACHE.p;
+}
+async function privateCalWrite(op, payload) {
+  const c = icloudCfg();
+  if (!c.user || !c.pass || !c.calUrl) throw new Error("not_configured");
+  const ev = payload.event || {};
+  if (op === "create") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ev.date || "")) throw new Error("bad_date");
+    const uid = crypto.randomUUID().toUpperCase();
+    const url = c.calUrl.replace(/\/?$/, "/") + uid + ".ics";
+    const r = await dav("PUT", url, { user: c.user, pass: c.pass, body: buildIcs(ev, uid), headers: { "Content-Type": "text/calendar; charset=utf-8", "If-None-Match": "*" } });
+    if (r.status >= 300) throw new Error("create_failed_" + r.status);
+  } else if (op === "update") {
+    const href = String(payload.href || ""); if (!href.startsWith("https://")) throw new Error("bad_href");
+    const g = await dav("GET", href, { user: c.user, pass: c.pass });
+    if (g.status >= 300) throw new Error("load_failed_" + g.status);
+    if (/RRULE:/i.test(g.text)) throw new Error("recurring_readonly");
+    // bestehende Termin-Daten (z. B. Erinnerungen) behalten, nur die bearbeiteten Felder ersetzen
+    const unf = icsUnfold(g.text).split(/\r?\n/);
+    const out = []; let inEv = false, depth = 0, uid = payload.uid || "";
+    for (const line of unf) {
+      if (/^BEGIN:VEVENT/i.test(line)) { inEv = true; depth = 0; out.push("__VEVENT__"); continue; }
+      if (inEv) {
+        if (/^BEGIN:/i.test(line)) depth++;
+        if (/^END:VEVENT/i.test(line) && depth === 0) { inEv = false; continue; }
+        if (/^END:/i.test(line)) { depth--; out.push(line); continue; }
+        if (depth === 0) {
+          if (/^UID:/i.test(line)) { uid = line.slice(4); continue; }
+          if (/^(DTSTART|DTEND|DURATION|SUMMARY|LOCATION|DESCRIPTION|DTSTAMP|LAST-MODIFIED)[;:]/i.test(line)) continue;
+          if (/^SEQUENCE:/i.test(line)) { out.push("SEQUENCE:" + ((+line.slice(9) || 0) + 1)); continue; }
+        }
+        out.push(line); continue;
+      }
+      out.push(line);
+    }
+    const vev = buildVevent(ev, uid || crypto.randomUUID());
+    // VALARMs usw. (in out zwischen __VEVENT__ und dem nächsten Block) hinter die neuen Felder hängen
+    const idx = out.indexOf("__VEVENT__");
+    const rest = [];
+    let j = idx + 1; while (j < out.length && !/^END:VCALENDAR/i.test(out[j]) && !/^BEGIN:VEVENT/i.test(out[j])) { rest.push(out[j]); j++; }
+    const merged = out.slice(0, idx).concat(vev.slice(0, -1), rest.filter(l => l !== "__VEVENT__"), ["END:VEVENT"], out.slice(j));
+    const r = await dav("PUT", href, { user: c.user, pass: c.pass, body: merged.join("\r\n") + "\r\n", headers: { "Content-Type": "text/calendar; charset=utf-8", "If-Match": g.etag || payload.etag || "*" } });
+    if (r.status >= 300) throw new Error(r.status === 412 ? "changed_elsewhere" : "update_failed_" + r.status);
+  } else if (op === "delete") {
+    const href = String(payload.href || ""); if (!href.startsWith("https://")) throw new Error("bad_href");
+    if (payload.recurring) throw new Error("recurring_readonly");
+    const r = await dav("DELETE", href, { user: c.user, pass: c.pass, headers: payload.etag ? { "If-Match": payload.etag } : {} });
+    if (r.status >= 300 && r.status !== 404) throw new Error(r.status === 412 ? "changed_elsewhere" : "delete_failed_" + r.status);
+  } else throw new Error("bad_op");
+  return privateCalendar(true);
+}
+
+function privateCalQuick() {
+  const c = icloudCfg(); if (!c.user || !c.pass || !c.calUrl) return Promise.resolve({ configured: false, events: [] });
+  if (PRIV_CACHE.data) { if (Date.now() - PRIV_CACHE.at > 45000) privateCalendar(false).catch(() => {}); return Promise.resolve(PRIV_CACHE.data); }
+  return Promise.race([privateCalendar(false), new Promise(r => setTimeout(() => r(null), 7000))]);
+}
 // Kalender-Termine (Outlook/CalDAV) über die Mail-API, falls dort ein CalDAV-Server konfiguriert ist.
 async function calendarEvents() {
   if (!MAIL.url || !MAIL.token) return null;
@@ -471,8 +744,8 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
-    const [k, m, b, cal, ko, va] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr)]);
-    return sendGz(req, res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va, todos: readTodos(), manualEvents: readEvents() }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const [k, m, b, cal, ko, va, pc] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr), privateCalQuick().catch(() => null)]);
+    return sendGz(req, res, 200, JSON.stringify({ kantineur: k, mail: m, blitzdings: b, calendar: cal, kochdu: ko, valuero: va, todos: readTodos(), manualEvents: readEvents(), privateCal: pc }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/kochdu-settle" && req.method === "POST") {
     if (!KOCHDU.token) return send(res, 503, JSON.stringify({ error: "kochdu_not_configured" }), TYPES[".json"]);
@@ -519,7 +792,50 @@ async function handleAdmin(req, res, u, p) {
       { key: "blitzdings", label: "Blitzdings", ok: !!BLITZ.token },
       { key: "valuero", label: "VALUERO (Antonhaus / Alpinappart)", ok: !!(ANTONHAUS.token || ALPINAPPART.key) },
     ];
-    return send(res, 200, JSON.stringify({ accounts, integrations, canSave: !!RW.token }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const ic = icloudCfg();
+    integrations.push({ key: "icloud", label: "Privater Kalender (iCloud)", ok: !!(ic.user && ic.pass && ic.calUrl) });
+    return send(res, 200, JSON.stringify({ accounts, integrations, canSave: !!RW.token, icloud: { configured: !!(ic.user && ic.pass && ic.calUrl), user: ic.user, calName: ic.calName, calColor: ic.calColor } }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  // ---- Privater iCloud-Kalender ----
+  if (p === "/admin/api/private-cal" && req.method === "GET") {
+    try { const d = await privateCalendar(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/private-cal" && req.method === "POST") {
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 100000) req.destroy(); });
+    req.on("end", async () => {
+      let pl; try { pl = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ ok: false, error: "bad_json" }), TYPES[".json"]); }
+      try { const d = await privateCalWrite(String(pl.op || ""), pl); return send(res, 200, JSON.stringify({ ok: true, privateCal: d }), TYPES[".json"]); }
+      catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e && e.message || e) }), TYPES[".json"]); }
+    });
+    return;
+  }
+  if (p === "/admin/api/settings/icloud" && req.method === "POST") {
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+    req.on("end", async () => {
+      let pl; try { pl = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ ok: false, error: "bad_json" }), TYPES[".json"]); }
+      const action = String(pl.action || "discover");
+      if (action === "disconnect") { icloudClear(); PRIV_CACHE = { at: 0, data: null, p: null }; return send(res, 200, JSON.stringify({ ok: true }), TYPES[".json"]); }
+      const cur = icloudCfg();
+      const user = String(pl.user || cur.user || "").trim(), pass = String(pl.pass || "").replace(/\s+/g, "") || cur.pass;
+      if (!user || !pass) return send(res, 400, JSON.stringify({ ok: false, error: "missing" }), TYPES[".json"]);
+      try {
+        const cals = await icloudDiscover(user, pass);
+        if (action === "discover") return send(res, 200, JSON.stringify({ ok: true, calendars: cals.map(c => ({ url: c.url, name: c.name, color: c.color, writable: c.writable, shared: c.shared })) }), TYPES[".json"]);
+        const pick = cals.find(c => c.url === pl.calUrl);
+        if (!pick) return send(res, 400, JSON.stringify({ ok: false, error: "calendar_not_found" }), TYPES[".json"]);
+        if (!icloudSave({ user, pass, calUrl: pick.url, calName: pick.name, calColor: pick.color })) return send(res, 500, JSON.stringify({ ok: false, error: "save_failed" }), TYPES[".json"]);
+        PRIV_CACHE = { at: 0, data: null, p: null };
+        const d = await privateCalendar(true);
+        return send(res, 200, JSON.stringify({ ok: true, calName: pick.name, privateCal: d }), TYPES[".json"]);
+      } catch (e) {
+        const msg = String(e && e.message || e);
+        return send(res, 200, JSON.stringify({ ok: false, error: /login_failed/.test(msg) ? "login_failed" : "failed", detail: msg.slice(0, 160) }), TYPES[".json"]);
+      }
+    });
+    return;
   }
   if (p === "/admin/api/settings/mail-account" && req.method === "POST") {
     let body = "";
