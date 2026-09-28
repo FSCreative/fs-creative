@@ -556,6 +556,10 @@ body.dark #c-fromrow select option{background:#1a2233}
 .mrow2 .l2 .subj{flex:1;min-width:0;margin-top:0}
 .mrow2 .ics{display:flex;align-items:center;gap:4px;flex:none;color:var(--faint)}
 .mrow2 .ics svg{width:13px;height:13px}
+.mrow2 .ics .mrep{color:#1f9d6b;display:inline-flex}
+.mrow2 .ics .mrep.fw{color:#5b7cfa}
+.rtag.rans{color:#1f9d6b;background:#e6f6ef}
+body.dark .rtag.rans{background:#16392c;color:#4fd1a0}
 .mrow2 .star{font-size:14px}
 .mrow2 .star:not(.on){display:none}
 .mrow2:hover .star:not(.on){display:inline}
@@ -1279,7 +1283,7 @@ body.dark .titem:hover{background:#202a3e}
       var prev={}; s.mail.messages.forEach(function(m){prev[m.id]=m;});
       s.mail.messages=(MAIL_SNAPSHOT.messages||[]).map(function(m){var p=prev[m.id]||{};
         return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",
-          read:("read" in p)?!!p.read:!!m.read, starred:("starred" in p)?!!p.starred:!!m.starred, deleted:!!p.deleted, trashedAt:p.trashedAt||null, attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",account:m.account||""};});
+          read:("read" in p)?!!p.read:!!m.read, starred:("starred" in p)?!!p.starred:!!m.starred, deleted:!!p.deleted, trashedAt:p.trashedAt||null, attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!(m.answered||p.answered),forwarded:!!(m.forwarded||p.forwarded),answeredAt:p.answeredAt||null,account:m.account||""};});
       if(Array.isArray(MAIL_SNAPSHOT.folders)) s.mail.folders=MAIL_SNAPSHOT.folders;
       s.mail.lastFetch=MAIL_SNAPSHOT.fetchedAt; s.mail.account=MAIL_SNAPSHOT.account||s.mail.account; if(Array.isArray(MAIL_SNAPSHOT.accounts)) s.mail.accounts=MAIL_SNAPSHOT.accounts;
     }
@@ -1523,13 +1527,14 @@ body.dark .titem:hover{background:#202a3e}
     t.classList.toggle("err",!!err); t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove("show");},actLabel?6000:(err?5000:2600)); }
   function outboxSend(o){
     o.status="sending"; o.error=""; renderMailAll();
-    fetch(window.__FSD_MAIL_SEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({account:o.account||undefined,to:o.to,cc:o.cc||undefined,bcc:o.bcc||undefined,inReplyTo:o.inReplyTo||undefined,subject:o.subject,html:o.html,text:o.text,attachments:o.attachments})})
+    fetch(window.__FSD_MAIL_SEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({account:o.account||undefined,to:o.to,cc:o.cc||undefined,bcc:o.bcc||undefined,inReplyTo:o.inReplyTo||undefined,source:o.source||undefined,subject:o.subject,html:o.html,text:o.text,attachments:o.attachments})})
       .then(function(r){return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok&&j&&j.ok!==false,j:j};});})
       .then(function(res){
         if(!res.ok){ throw new Error((res.j&&(res.j.detail||res.j.error))||"Unbekannter Fehler"); }
         OUTBOX=OUTBOX.filter(function(x){return x!==o;});
         if(!Array.isArray(state.mail.messages)) state.mail.messages=[];
-        state.mail.messages.push({id:"local_"+o.oid,local:true,localAt:Date.now(),account:o.account||primaryAcct(),folder:sentFolderPath(o.account||primaryAcct()),uid:null,fromName:"",from:"",toName:"",to:o.to,subject:o.subject,preview:o.preview,body:o.html,bodyHtml:true,date:new Date().toISOString(),read:true,starred:false,deleted:false,attachments:[]});
+        state.mail.messages.push({id:"local_"+o.oid,local:true,localAt:Date.now(),account:o.account||primaryAcct(),folder:sentFolderPath(o.account||primaryAcct()),uid:null,fromName:"",from:"",toName:"",to:o.to,subject:o.subject,preview:o.preview,body:o.html,bodyHtml:true,date:new Date().toISOString(),read:true,starred:false,deleted:false,attachments:[],inReplyTo:o.inReplyTo||""});
+        markReplied(o.source);
         if(mailUI.sel==="ob_"+o.oid) mailUI.sel="local_"+o.oid;
         mailToast("✓ Gesendet an "+o.to); renderMailAll();
       })
@@ -1537,9 +1542,23 @@ body.dark .titem:hover{background:#202a3e}
   }
   function queueMail(to,subject,html,text,atts,extra){
     extra=extra||{};
-    var o={oid:(++obSeq)+"_"+Date.now(),account:extra.account||"",cc:extra.cc||"",bcc:extra.bcc||"",inReplyTo:extra.inReplyTo||"",to:to,subject:subject,html:html,text:text,attachments:atts||[],preview:String(text||"").replace(/\s+/g," ").trim().slice(0,180),date:new Date().toISOString(),status:"sending",error:""};
+    var o={oid:(++obSeq)+"_"+Date.now(),account:extra.account||"",cc:extra.cc||"",bcc:extra.bcc||"",inReplyTo:extra.inReplyTo||"",source:extra.source||null,to:to,subject:subject,html:html,text:text,attachments:atts||[],preview:String(text||"").replace(/\s+/g," ").trim().slice(0,180),date:new Date().toISOString(),status:"sending",error:""};
     OUTBOX.push(o); mailToast("Wird gesendet …"); outboxSend(o); return o;
   }
+  // ---- Beantwortet / Weitergeleitet ----
+  function msgKey(x){ x=String(x||"").trim().toLowerCase(); var mm=x.match(/<[^>]+>/); return mm?mm[0]:x; }
+  function srcOf(m,kind){ return m&&m.uid!=null&&!m.local?{folder:m.folder||"INBOX",uid:m.uid,account:accOfMsg(m),kind:kind||"reply",id:m.id}:(m?{id:m.id,kind:kind||"reply"}:null); }
+  function markReplied(src){ if(!src)return; var m=(state.mail.messages||[]).filter(function(x){return x.id===src.id;})[0]; if(!m)return;
+    if(src.kind==="fwd") m.forwarded=true; else { m.answered=true; m.answeredAt=new Date().toISOString(); } try{ save(); }catch(e){} }
+  var RIDX=null, RIDX_K="";
+  function replyIdx(){ var a=state.mail.messages||[]; var k=a.length+"|"+(state.mail.lastFetch||"");
+    if(RIDX&&RIDX_K===k) return RIDX; RIDX={}; RIDX_K=k;
+    a.forEach(function(x){ if(x.deleted||!x.inReplyTo||!isSent(x)) return; var key=msgKey(x.inReplyTo); var cur=RIDX[key]; if(!cur||new Date(x.date)>new Date(cur.date)) RIDX[key]=x; });
+    return RIDX; }
+  function replyState(m){ if(!m||m.outbox||m.draftLocal||isSent(m)) return null;
+    var r=m.messageId?replyIdx()[msgKey(m.messageId)]:null;
+    var ans=!!(r||m.answered), fwd=!!m.forwarded; if(!ans&&!fwd) return null;
+    return {ans:ans,fwd:fwd,date:r?r.date:(m.answeredAt||null),sid:r?r.id:null}; }
   function findOb(id){ return OUTBOX.filter(function(o){return "ob_"+o.oid===id;})[0]; }
 
   // ---- Postfach v2: Icons, Entwürfe, Signatur, Kontakte ----
@@ -1620,12 +1639,12 @@ body.dark .titem:hover{background:#202a3e}
   }
   function replyMail(m,kind){
     if(!m)return;
-    if(kind==="fwd"){ openCompose("Weiterleiten","","Fwd: "+stripRe(m.subject),quoteHtml(m,"fwd"),{account:accOfMsg(m)}); return; }
+    if(kind==="fwd"){ openCompose("Weiterleiten","","Fwd: "+stripRe(m.subject),quoteHtml(m,"fwd"),{account:accOfMsg(m),source:srcOf(m,"fwd")}); return; }
     var mine=myAddrs(); var me="\u0000";
     var to=isSent(m)?(m.to||""):(m.replyTo||m.from||"");
     var cc="";
     if(kind==="all"){ var others=[].concat(m.toList||[],m.ccList||[]).map(function(a){return a.address;}).filter(function(a){ return a && !mine[a.toLowerCase()] && a.toLowerCase()!==to.toLowerCase(); }); cc=uniqArr(others).join(", "); }
-    openCompose(kind==="all"?"Allen antworten":"Antworten",to,"Re: "+stripRe(m.subject),quoteHtml(m,"reply"),{cc:cc,inReplyTo:m.messageId||"",account:accOfMsg(m)});
+    openCompose(kind==="all"?"Allen antworten":"Antworten",to,"Re: "+stripRe(m.subject),quoteHtml(m,"reply"),{cc:cc,inReplyTo:m.messageId||"",account:accOfMsg(m),source:srcOf(m,"reply")});
   }
   function printMail(m){
     var w=window.open("","_blank"); if(!w){ alert("Pop-up blockiert – bitte erlauben."); return; }
@@ -1681,6 +1700,7 @@ body.dark .titem:hover{background:#202a3e}
     if(flt==="unread") list=list.filter(function(m){return !m.read;});
     else if(flt==="star") list=list.filter(function(m){return m.starred;});
     else if(flt==="att") list=list.filter(function(m){return m.attachments&&m.attachments.length;});
+    else if(flt==="open") list=list.filter(function(m){ var rs=replyState(m); return !m.outbox&&!m.draftLocal&&!isSent(m)&&!(rs&&rs.ans); });
     if(mailUI.search){ var q=mailUI.search.toLowerCase(); list=list.filter(function(m){return ((m.fromName||"")+" "+(m.from||"")+" "+(m.to||"")+" "+(m.toName||"")+" "+(m.subject||"")+" "+(m.preview||"")+" "+(m.body||"")).toLowerCase().indexOf(q)>-1;}); }
     return list.sort(function(x,y){return (new Date(y.date))-(new Date(x.date));});
   }
@@ -1729,6 +1749,9 @@ body.dark .titem:hover{background:#202a3e}
         '<span class="subj">'+subj+pre+'</span>'+star+'<span class="when">'+when+'</span></div>';
     }
     var ic2='';
+    var rs=replyState(m);
+    if(rs&&rs.ans) ic2+='<span class="mrep" title="Beantwortet'+(rs.date?" am "+esc(new Date(rs.date).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})):"")+'">'+ic("reply")+'</span>';
+    if(rs&&rs.fwd) ic2+='<span class="mrep fw" title="Weitergeleitet">'+ic("forward")+'</span>';
     if(m.attachments&&m.attachments.length) ic2+='<span title="'+m.attachments.length+' Anhang">'+ic("clip")+'</span>';
     var fl=(mailUI.folder!=="inbox"&&mailUI.folder.indexOf("f:")!==0&&!m.outbox&&!m.draftLocal&&(m.folder||"INBOX")!=="INBOX"&&!isSent(m)&&!isTrashed(m)&&!isSpam(m))?'<span class="mfold">'+esc(folderName(m.folder))+'</span>':'';
     var st='<span class="star'+(m.starred?" on":"")+'" data-star="'+esc(m.id)+'" title="Markieren (S)">'+(m.starred?"★":"☆")+'</span>';
@@ -1827,12 +1850,12 @@ body.dark .titem:hover{background:#202a3e}
     var chipsHost=document.getElementById("mail-chips");
     if(chipsHost){
       var base=(function(){ var keep=mailUI.filter, keepS=mailUI.search; mailUI.filter="all"; var all=mailView(); mailUI.filter=keep; return all; })();
-      var nU=base.filter(function(m){return !m.read;}).length, nS=base.filter(function(m){return m.starred;}).length, nA=base.filter(function(m){return m.attachments&&m.attachments.length;}).length;
+      var nU=base.filter(function(m){return !m.read;}).length, nS=base.filter(function(m){return m.starred;}).length, nA=base.filter(function(m){return m.attachments&&m.attachments.length;}).length, nO=base.filter(function(m){ var rs=replyState(m); return !m.outbox&&!m.draftLocal&&!isSent(m)&&!(rs&&rs.ans); }).length;
       function chip(k,l,n){ return '<button class="mchip'+((mailUI.filter||"all")===k?" on":"")+'" data-mfilter="'+k+'">'+l+(n!=null?' <span class="n">'+n+'</span>':'')+'</button>'; }
       var tools='';
       if(mailUI.folder==="trash"&&msgs.length) tools='<button class="mc-all" id="empty-trash" style="color:var(--red)">Papierkorb leeren</button>';
       else if(mailUI.folder==="spam"&&msgs.length) tools='<button class="mc-all" data-mx="spamclear" style="color:var(--red)">Spam leeren</button>';
-      chipsHost.innerHTML=chip("all","Alle")+chip("unread","Ungelesen",nU)+chip("star","★",nS)+chip("att","📎",nA)+'<span class="sp"></span>'+tools+(msgs.length?'<button class="mc-all" data-bulkx="all" title="Alle auswählen">'+msgs.length+' ✓</button>':'');
+      chipsHost.innerHTML=chip("all","Alle")+chip("unread","Ungelesen",nU)+chip("star","★",nS)+chip("att","📎",nA)+(mailUI.folder==="sent"||mailUI.folder==="outbox"||mailUI.folder==="drafts"?"":chip("open","↩ Unbeantwortet",nO))+'<span class="sp"></span>'+tools+(msgs.length?'<button class="mc-all" data-bulkx="all" title="Alle auswählen">'+msgs.length+' ✓</button>':'');
     }
     if(!msgs.length){
       var f=mailUI.folder, e={ic:"inbox",t:"Alles erledigt",d:"Keine Nachrichten in dieser Ansicht."};
@@ -1894,6 +1917,9 @@ body.dark .titem:hover{background:#202a3e}
     var ccs=(m.ccList||[]).map(function(x){return esc(x.name||x.address);});
     var toLine=sent?('von '+esc(state.mail.account||"")):((tos.length?'an '+tos.join(", "):'')+(ccs.length?' · cc '+ccs.join(", "):''));
     var tags=(multiAcc()?'<span class="rtag" style="color:'+accColor(accOfMsg(m))+'">● '+esc(accInfo(accOfMsg(m)).label)+'</span>':'')+'<span class="rtag">'+esc((m.folder||"INBOX")==="INBOX"?"Posteingang":folderName(m.folder,accOfMsg(m)))+'</span>'+(m.starred?'<span class="rtag" style="color:var(--gold)">★ Markiert</span>':'')+(m.attachments&&m.attachments.length?'<span class="rtag">📎 '+m.attachments.length+'</span>':'');
+    var rsR=replyState(m);
+    if(rsR&&rsR.ans) tags+='<span class="rtag rans"'+(rsR.sid?' data-rel="'+esc(rsR.sid)+'" title="Gesendete Antwort öffnen" style="cursor:pointer"':'')+'>↩ Beantwortet'+(rsR.date?' · '+esc(fmtMailDate(rsR.date)):'')+'</span>';
+    if(rsR&&rsR.fwd) tags+='<span class="rtag rans">↪ Weitergeleitet</span>';
     var rel=[];
     if(addr){ var la=addr.toLowerCase(); rel=(state.mail.messages||[]).filter(function(x){ return x.id!==m.id && !x.deleted && ((x.from||"").toLowerCase()===la || (isSent(x)&&(x.to||"").toLowerCase()===la)); }).sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,5); }
     var qr=(!trashed&&!sent&&!dbox&&(m.replyTo||m.from))?('<div class="qreply"><textarea id="qr-text" placeholder="Schnell antworten an '+esc(m.fromName||m.from)+' …"></textarea><div class="qbar"><span class="qh"><span class="kbd">⌘</span><span class="kbd">↵</span> senden · Signatur &amp; Zitat werden angehängt</span><button class="btn sm ghost" data-mx="reply">Erweitert</button><button class="btn sm primary" data-mx="qrsend">Senden</button></div></div>'):'';
@@ -2000,7 +2026,7 @@ body.dark .titem:hover{background:#202a3e}
     var html=opts.raw?(bodyHtml||""):('<div><br></div>'+(sigOn?sigBlock(composeAcct()):'')+(bodyHtml||""));
     document.getElementById("c-body").innerHTML=html;
     composeAtts=(opts.atts||[]).slice(); renderComposeAtts(); var cf=document.getElementById("c-file"); if(cf)cf.value="";
-    composeCtx={inReplyTo:opts.inReplyTo||"",draftId:opts.draftId||null,account:composeAcct()};
+    composeCtx={inReplyTo:opts.inReplyTo||"",source:opts.source||null,draftId:opts.draftId||null,account:composeAcct()};
     var hosted=!!(window.__FSD_HOSTED&&window.__FSD_MAIL_SEND);
     var note=document.getElementById("c-note");
     if(note){ note.textContent=hosted?"":"Formatierte Mail schreiben, dann „Text kopieren“ und in Webmail einfügen."; note.style.display=hosted?"none":""; }
@@ -2021,7 +2047,7 @@ body.dark .titem:hover{background:#202a3e}
   function saveDraftNow(silent){
     var d=composeData(); var a=loadDrafts();
     var id=composeCtx.draftId||("d"+Date.now().toString(36)); composeCtx.draftId=id;
-    d.id=id; d.date=new Date().toISOString(); d.inReplyTo=composeCtx.inReplyTo||""; d.title=document.getElementById("c-title").textContent;
+    d.id=id; d.date=new Date().toISOString(); d.inReplyTo=composeCtx.inReplyTo||""; d.source=composeCtx.source||null; d.title=document.getElementById("c-title").textContent;
     a=a.filter(function(x){return x.id!==id;}); a.unshift(d); saveDrafts(a);
     composeCtx.initial=composeSig();
     var sv=document.getElementById("c-saved"); if(sv) sv.textContent="Entwurf gespeichert "+new Date().toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
@@ -2036,7 +2062,7 @@ body.dark .titem:hover{background:#202a3e}
     ov.classList.remove("show");
     if(activeTab==="postfach") renderMailAll();
   }
-  function openDraft(d){ if(!d)return; openCompose(d.title||"Entwurf",d.to,d.subject,d.html,{raw:true,cc:d.cc,bcc:d.bcc,inReplyTo:d.inReplyTo,draftId:d.id,account:d.account}); }
+  function openDraft(d){ if(!d)return; openCompose(d.title||"Entwurf",d.to,d.subject,d.html,{raw:true,cc:d.cc,bcc:d.bcc,inReplyTo:d.inReplyTo,source:d.source||null,draftId:d.id,account:d.account}); }
   function doSend(){
     if(!(window.__FSD_HOSTED&&window.__FSD_MAIL_SEND)){ openWebmail(); return; }
     var d=composeData();
@@ -2045,7 +2071,7 @@ body.dark .titem:hover{background:#202a3e}
     if(bad.length&&!confirm("Diese Adresse sieht ungültig aus: "+bad.join(", ")+"\nTrotzdem senden?")) return;
     if(!d.subject&&!confirm("Ohne Betreff senden?")) return;
     if(/anhang|anbei|attach/i.test(d.text.split(/Am .* schrieb/)[0])&&!composeAtts.length&&!confirm("Im Text steht „Anhang/anbei“, aber es ist keine Datei angehängt.\nTrotzdem senden?")) return;
-    queueMail(d.to,d.subject,d.html,d.text,composeAtts.slice(),{cc:d.cc,bcc:d.bcc,inReplyTo:composeCtx.inReplyTo,account:d.account});
+    queueMail(d.to,d.subject,d.html,d.text,composeAtts.slice(),{cc:d.cc,bcc:d.bcc,inReplyTo:composeCtx.inReplyTo,source:composeCtx.source,account:d.account});
     deleteDraft(composeCtx.draftId);
     composeAtts=[]; composeCtx.initial=composeSig();
     document.getElementById("coverlay").classList.remove("show");
@@ -2736,7 +2762,7 @@ body.dark .titem:hover{background:#202a3e}
     var ta=document.getElementById("qr-text"); if(!ta) return; var txt=(ta.value||"").trim(); if(!txt){ ta.focus(); return; }
     var html='<div>'+esc(txt).replace(/\n/g,"<br>")+'</div>'+(getSig(accOfMsg(m)).on?sigBlock(accOfMsg(m)):'')+quoteHtml(m,"reply");
     var to=m.replyTo||m.from;
-    queueMail(to,"Re: "+stripRe(m.subject),html,txt,[],{inReplyTo:m.messageId||"",account:accOfMsg(m)});
+    queueMail(to,"Re: "+stripRe(m.subject),html,txt,[],{inReplyTo:m.messageId||"",account:accOfMsg(m),source:srcOf(m,"reply")});
     ta.value="";
   }
   // Suche: Leeren-Button
@@ -2848,7 +2874,7 @@ body.dark .titem:hover{background:#202a3e}
         state.mail.folders=Array.isArray(d.mail.folders)?d.mail.folders:state.mail.folders;
         state.mail.account=d.mail.account||state.mail.account; if(Array.isArray(d.mail.accounts)) state.mail.accounts=d.mail.accounts; state.mail.lastFetch=d.mail.fetchedAt||state.mail.lastFetch;
         var keepLocal=(state.mail.messages||[]).filter(function(m){ return m.local && (Date.now()-(m.localAt||0))<600000 && !d.mail.messages.some(function(x){ return SENTRX.test(x.folder||"") && (x.subject||"")===(m.subject||"") && (x.to||"").toLowerCase()===(m.to||"").toLowerCase(); }); });
-        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",account:m.account||""};}).concat(keepLocal); }
+        state.mail.messages=d.mail.messages.map(function(m){var p=prev[m.id]||{}; return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:("read" in p)?!!p.read:!!m.read,starred:("starred" in p)?!!p.starred:!!m.starred,deleted:!!p.deleted,trashedAt:p.trashedAt||null,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!(m.answered||p.answered),forwarded:!!(m.forwarded||p.forwarded),answeredAt:p.answeredAt||null,account:m.account||""};}).concat(keepLocal); }
       if(d.kochdu&&d.kochdu.totals){
         state.kochdu.live=Array.isArray(d.kochdu.restaurants)?d.kochdu.restaurants:[];
         state.kochdu.totals=d.kochdu.totals; if(d.kochdu.nutzer)state.kochdu.app=d.kochdu.nutzer; state.kochdu.statsAt=d.kochdu.fetchedAt||new Date().toISOString();
