@@ -550,7 +550,8 @@ async function handleAdmin(req, res, u, p) {
       "?token=" + encodeURIComponent(MAIL.token) +
       "&folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") +
       "&uid=" + encodeURIComponent(u.searchParams.get("uid") || "") +
-      "&index=" + encodeURIComponent(u.searchParams.get("index") || "0");
+      "&index=" + encodeURIComponent(u.searchParams.get("index") || "0") +
+      "&account=" + encodeURIComponent(u.searchParams.get("account") || "");
     try {
       const r = await fetch(attUrl);
       if (!r.ok) return send(res, r.status, "attachment_error");
