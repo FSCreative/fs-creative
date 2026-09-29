@@ -41,7 +41,7 @@ header.nav{position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav-h);d
 .nav-links a.active{color:var(--text);background:var(--surface-2)}
 .nav-links a.nav-cta{color:#fff;background:var(--accent);padding:8px 18px}
 .nav-links a.nav-cta:hover{background:var(--accent-2)}
-.nav-toggle{position:absolute;opacity:0;pointer-events:none}
+.nav-toggle{position:absolute;opacity:0;pointer-events:none;display:none}
 .burger{display:none;width:40px;height:40px;border:none;background:var(--surface-2);border-radius:11px;cursor:pointer;flex-direction:column;gap:5px;align-items:center;justify-content:center}
 .burger span{width:18px;height:2px;background:var(--text);border-radius:2px;transition:.3s var(--ease)}
 
@@ -129,7 +129,9 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
   .nav-links{position:absolute;top:calc(100% + 10px);right:0;flex-direction:column;align-items:stretch;gap:2px;
     background:rgba(17,17,24,.98);border:1px solid var(--border);border-radius:16px;padding:10px;min-width:210px;
     display:none;box-shadow:0 20px 50px rgba(0,0,0,.5)}
-  .nav-toggle:checked ~ .nav-links{display:flex}
+  .nav-toggle{display:block;width:40px;height:40px;top:10px;right:20px}
+  .nav-toggle:checked ~ .nav .nav-links{display:flex}
+  .nav-toggle:focus-visible ~ .nav .burger{outline:2px solid var(--accent);outline-offset:2px}
   .nav-links a{padding:11px 14px}
   .nav-links a.nav-cta{text-align:center;margin-top:4px}
   .grid,.steps,.rel-grid,.foot-grid{grid-template-columns:1fr}
@@ -164,3 +166,10 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
   .rel-card .rc-cat{font-size:10px}
   .rel-card .rc-arrow{margin-top:auto;font-size:12px}
 }
+
+/* ---------- Barrierefreiheit & Anfrage-CTAs ---------- */
+.skip{position:absolute;left:12px;top:-60px;z-index:300;background:var(--accent);color:#fff;padding:10px 16px;border-radius:10px;font-weight:600;transition:top .2s}
+.skip:focus{top:12px}
+a:focus-visible,summary:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.cta .cta-btns{justify-content:center;margin-top:0}
+.cta .cta-note{font-size:14px;color:var(--text-faint);margin:-12px auto 24px}
