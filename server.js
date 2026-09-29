@@ -61,19 +61,29 @@ const TYPES = {
 const ORIGIN = "https://www.fs-creative.at";
 
 const ROUTE_META = {
-  "/": ["FS Creative — Digitale Projekte aus dem Montafon", "FS Creative ist eine Kreativ- und Digitalagentur aus Gaschurn im Montafon. Eigene Plattformen & Services: Blitzdings, VALUERO, kochdu und Kantineur."],
+  "/": ["Webdesign Montafon & Vorarlberg | FS Creative", "Webdesign aus dem Montafon: FS Creative baut schnelle Websites, Online-Shops & Buchungsplattformen für Betriebe in Vorarlberg & Tirol. Gratis Entwurf anfragen."],
   "/blitzdings": ["Blitzdings — Fotobox & 360°-Videobooth | FS Creative", "Blitzdings: Fotobox und 360°-Videobooth für Events im Montafon und ganz Vorarlberg. Jetzt Verfügbarkeit prüfen und buchen."],
   "/valuero": ["VALUERO — Tourismusplattform & Hosting im Montafon | FS Creative", "VALUERO ist die Tourismusplattform für das Hochmontafon — plus Hosting-Service für Ferienwohnungen: Website, Buchungsportal und Marketing."],
   "/kochdu": ["kochdu — Essen bestellen im Montafon | FS Creative", "kochdu ist die Bestell- und Lieferplattform für Restaurants im Montafon. Auch für Gastronomen: einfach anmelden und mitmachen."],
   "/kantineur": ["Kantineur — Kantinen-Kasse für Vereinsheime | FS Creative", "Kantineur: die digitale Strichliste für Vereinsheime, Feuerwehrhäuser und Firmenküchen in Österreich. SB-Kasse am Tablet, Abrechnung am Handy. 14 Tage frei testen."],
   "/referenzen": ["Referenzen — Websites & Plattformen | FS Creative", "Referenzen von FS Creative: Websites und Plattformen aus dem Montafon — Blitzdings, VALUERO, kochdu, La Taverna, Ortsfeuerwehr Gaschurn, Spenglerei Flöry u. v. m."],
   "/ueber-uns": ["Über uns — FS Creative aus dem Montafon", "Lerne FS Creative kennen: Kreativ- und Digitalagentur aus Gaschurn im Montafon, gegründet von Simon Felder."],
-  "/kontakt": ["Kontakt — FS Creative", "Kontaktiere FS Creative aus Gaschurn im Montafon für dein nächstes digitales Projekt."],
+  "/kontakt": ["Kontakt & Gratis-Entwurf anfragen | FS Creative", "Projekt anfragen bei FS Creative aus Gaschurn: kurzes Formular ausfüllen, Antwort in 1–2 Werktagen und auf Wunsch ein kostenloser, unverbindlicher Entwurf."],
   "/datenschutz": ["Datenschutzerklärung — FS Creative", "Datenschutzerklärung von FS Creative: keine Cookies, kein Tracking, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen."],
   "/impressum": ["Impressum — FS Creative", "Impressum von FS Creative (Simon Leonhard Felder), Dorfstraße 3/1, 6793 Gaschurn. Offenlegung gemäß § 5 ECG und § 25 Mediengesetz."],
 };
 
 const NOINDEX_ROUTES = { "/empfehlungen": true, "/paketshop": true };
+
+// Öffentlich ausgeliefert werden nur Website-Dateien — nie Server-Code, Admin-Vorlage oder Projektdateien.
+const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".webp": 1, ".gif": 1, ".svg": 1, ".ico": 1, ".pdf": 1, ".woff2": 1, ".txt": 1, ".xml": 1, ".webmanifest": 1 };
+const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "package.json": 1, "package-lock.json": 1 };
+function isPublicFile(filePath) {
+  const rel = path.relative(ROOT, filePath);
+  if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".")) return false;
+  if (PRIVATE_FILES[rel.normalize("NFC")]) return false;
+  return !!PUBLIC_EXT[path.extname(rel).toLowerCase()];
+}
 
 function esc(s) {
   return String(s)
@@ -148,11 +158,15 @@ function send(res, status, body, type, headers) {
   res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8" }, headers || {}));
   res.end(body);
 }
-function serveFile(res, filePath) {
+const COMPRESSIBLE = { ".html": 1, ".css": 1, ".js": 1, ".json": 1, ".svg": 1, ".xml": 1, ".txt": 1, ".webmanifest": 1 };
+function serveFile(req, res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   fs.readFile(filePath, (e, data) => {
     if (e) return send(res, 500, "Server error");
-    send(res, 200, data, TYPES[ext] || "application/octet-stream");
+    // HTML immer frisch prüfen; Bilder, Fonts und CSS dürfen im Browser zwischengespeichert werden.
+    const cache = ext === ".html" ? "no-cache" : (ext === ".css" ? "public, max-age=86400" : (COMPRESSIBLE[ext] ? "public, max-age=3600" : "public, max-age=604800"));
+    if (COMPRESSIBLE[ext]) return sendGz(req, res, 200, data, TYPES[ext], { "Cache-Control": cache });
+    send(res, 200, data, TYPES[ext] || "application/octet-stream", { "Cache-Control": cache });
   });
 }
 
@@ -1142,6 +1156,9 @@ async function handleAdmin(req, res, u, p) {
     try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
+  if (p === "/admin/api/leads" && req.method === "GET") {
+    return send(res, 200, JSON.stringify({ leads: readLeads().reverse() }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
   if (p === "/admin/api/todos" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
@@ -1276,10 +1293,89 @@ async function handleAdmin(req, res, u, p) {
   return send(res, 404, "Not found");
 }
 
+// ===========================================================================
+// ANFRAGE-FORMULAR  POST /api/anfrage  (öffentlich)
+// Speichert jede Anfrage (leads.json), legt eine Aufgabe im Admin an und schickt eine Mail.
+// ===========================================================================
+const LEADS_FILE = path.join(DATA_DIR, "leads.json");
+const LEAD_TO = process.env.LEAD_MAIL_TO || "simon@fs-creative.at";
+const LEAD_TOPICS = ["Website", "Online-Shop", "Buchungssystem / Plattform", "SEO & Sichtbarkeit", "Grafik & Branding", "Druck", "Fotobox / Event", "Betreuung & Hosting", "Etwas anderes"];
+const LEAD_HITS = new Map();
+function readLeads() { try { const a = JSON.parse(fs.readFileSync(LEADS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function leadRateLimited(ip) {
+  const now = Date.now(), hour = 3600000;
+  const hits = (LEAD_HITS.get(ip) || []).filter(t => now - t < hour);
+  hits.push(now); LEAD_HITS.set(ip, hits);
+  if (LEAD_HITS.size > 5000) LEAD_HITS.clear();
+  return hits.length > 5;
+}
+function clip(v, n) { return String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n); }
+function handleAnfrage(req, res) {
+  const json = (status, obj) => send(res, status, JSON.stringify(obj), TYPES[".json"], { "Cache-Control": "no-store" });
+  let body = "";
+  req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
+  req.on("end", async () => {
+    let d; try { d = JSON.parse(body || "{}"); } catch (e) { return json(400, { error: "bad_json" }); }
+    // Spam-Schutz: verstecktes Feld muss leer bleiben, Formular darf nicht in unter 3 s abgeschickt werden.
+    const age = Date.now() - Number(d.t || 0);
+    if (d.website || !(age > 3000)) return json(200, { ok: true });
+    const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+    if (leadRateLimited(ip)) return json(429, { error: "too_many" });
+
+    const lead = {
+      id: "lead_" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex"),
+      created: new Date().toISOString(),
+      name: clip(d.name, 120),
+      email: clip(d.email, 160),
+      phone: clip(d.phone, 60),
+      company: clip(d.company, 160),
+      topic: LEAD_TOPICS.indexOf(d.topic) >= 0 ? d.topic : "Etwas anderes",
+      entwurf: !!d.entwurf,
+      message: clip(d.message, 5000),
+      source: clip(d.source, 200),
+    };
+    if (!lead.name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email) || !d.consent) return json(400, { error: "invalid" });
+
+    const leads = readLeads(); leads.push(lead);
+    let stored = false;
+    try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
+    const todos = readTodos();
+    todos.push({ id: lead.id, text: "📩 Anfrage: " + lead.name + " – " + lead.topic + (lead.entwurf ? " (Gratis-Entwurf)" : "") + " · " + lead.email + (lead.phone ? " · " + lead.phone : ""), due: "", done: false, created: Date.now() });
+    writeTodos(todos);
+
+    let mailed = false;
+    if (MAIL.url && MAIL.token) {
+      const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);
+      const text = rows.map(r => r[0] + ": " + r[1]).join("\n") + "\n\n" + lead.message;
+      const html = "<table cellpadding=\"4\">" + rows.map(r => "<tr><td><b>" + esc(r[0]) + "</b></td><td>" + esc(r[1]) + "</td></tr>").join("") + "</table><p style=\"white-space:pre-wrap\">" + esc(lead.message) + "</p>";
+      try {
+        const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
+        const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+          body: JSON.stringify({ token: MAIL.token, to: LEAD_TO, replyTo: lead.email, subject: "Neue Anfrage: " + lead.topic + " – " + lead.name, text, html }),
+        });
+        clearTimeout(t); mailed = r.ok;
+      } catch (e) {}
+    }
+    if (!stored && !mailed) return json(500, { error: "not_saved" });
+    return json(200, { ok: true });
+  });
+}
+
 const server = http.createServer((req, res) => {
   try {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
+
+    // Eine Adresse für Google: fs-creative.at -> www.fs-creative.at
+    if (String(req.headers.host || "").toLowerCase().split(":")[0] === "fs-creative.at") {
+      return send(res, 301, "", "text/plain", { Location: ORIGIN + (req.url || "/") });
+    }
+
+    if (p === "/api/anfrage") {
+      if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
+      return void handleAnfrage(req, res);
+    }
 
     // Admin-Bereich zuerst und isoliert — Rest der Website bleibt unberührt.
     if (p === "/admin" || p.indexOf("/admin/") === 0) {
@@ -1303,14 +1399,14 @@ const server = http.createServer((req, res) => {
 
     let found = null;
     for (const q of candidates) {
-      try { if (fs.statSync(q).isFile()) { found = q; break; } } catch (e) {}
+      try { if (fs.statSync(q).isFile() && isPublicFile(q)) { found = q; break; } } catch (e) {}
     }
-    if (found) return serveFile(res, found);
+    if (found) return serveFile(req, res, found);
 
     fs.readFile(path.join(ROOT, "index.html"), "utf8", (e, data) => {
       if (e) return send(res, 404, "Not found");
       const out = renderIndex(data, urlPath);
-      send(res, out.status, out.html, TYPES[".html"]);
+      sendGz(req, res, out.status, out.html, TYPES[".html"], { "Cache-Control": "no-cache" });
     });
   } catch (e) {
     send(res, 500, "Server error");
