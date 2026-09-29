@@ -1367,8 +1367,8 @@ const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
 
-    // Eine Adresse für Google: fs-creative.at -> www.fs-creative.at
-    if (String(req.headers.host || "").toLowerCase().split(":")[0] === "fs-creative.at") {
+    // Eine Adresse für Google: fs-creative.at -> www.fs-creative.at (Admin ausgenommen, sonst gilt das Login-Cookie nicht mehr)
+    if (String(req.headers.host || "").toLowerCase().split(":")[0] === "fs-creative.at" && p !== "/admin" && p.indexOf("/admin/") !== 0) {
       return send(res, 301, "", "text/plain", { Location: ORIGIN + (req.url || "/") });
     }
 
