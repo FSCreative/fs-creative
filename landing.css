@@ -173,3 +173,6 @@ footer.foot{border-top:1px solid var(--border);background:var(--bg-soft);padding
 a:focus-visible,summary:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .cta .cta-btns{justify-content:center;margin-top:0}
 .cta .cta-note{font-size:14px;color:var(--text-faint);margin:-12px auto 24px}
+.region-links{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0;margin-top:14px}
+.region-links a{display:inline-block;font-size:14px;color:var(--text-dim);border:1px solid var(--border-2);border-radius:999px;padding:7px 14px}
+.region-links a:hover{color:var(--text);border-color:var(--accent)}

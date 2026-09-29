@@ -61,14 +61,14 @@ const TYPES = {
 const ORIGIN = "https://www.fs-creative.at";
 
 const ROUTE_META = {
-  "/": ["FS Creative — Digitale Projekte aus dem Montafon", "FS Creative ist eine Kreativ- und Digitalagentur aus Gaschurn im Montafon. Eigene Plattformen & Services: Blitzdings, VALUERO, kochdu und Kantineur."],
+  "/": ["Webdesign Montafon & Vorarlberg | FS Creative", "Webdesign aus dem Montafon: FS Creative baut schnelle Websites, Online-Shops & Buchungsplattformen für Betriebe in Vorarlberg & Tirol. Gratis Entwurf anfragen."],
   "/blitzdings": ["Blitzdings — Fotobox & 360°-Videobooth | FS Creative", "Blitzdings: Fotobox und 360°-Videobooth für Events im Montafon und ganz Vorarlberg. Jetzt Verfügbarkeit prüfen und buchen."],
   "/valuero": ["VALUERO — Tourismusplattform & Hosting im Montafon | FS Creative", "VALUERO ist die Tourismusplattform für das Hochmontafon — plus Hosting-Service für Ferienwohnungen: Website, Buchungsportal und Marketing."],
   "/kochdu": ["kochdu — Essen bestellen im Montafon | FS Creative", "kochdu ist die Bestell- und Lieferplattform für Restaurants im Montafon. Auch für Gastronomen: einfach anmelden und mitmachen."],
   "/kantineur": ["Kantineur — Kantinen-Kasse für Vereinsheime | FS Creative", "Kantineur: die digitale Strichliste für Vereinsheime, Feuerwehrhäuser und Firmenküchen in Österreich. SB-Kasse am Tablet, Abrechnung am Handy. 14 Tage frei testen."],
   "/referenzen": ["Referenzen — Websites & Plattformen | FS Creative", "Referenzen von FS Creative: Websites und Plattformen aus dem Montafon — Blitzdings, VALUERO, kochdu, La Taverna, Ortsfeuerwehr Gaschurn, Spenglerei Flöry u. v. m."],
   "/ueber-uns": ["Über uns — FS Creative aus dem Montafon", "Lerne FS Creative kennen: Kreativ- und Digitalagentur aus Gaschurn im Montafon, gegründet von Simon Felder."],
-  "/kontakt": ["Kontakt — FS Creative", "Kontaktiere FS Creative aus Gaschurn im Montafon für dein nächstes digitales Projekt."],
+  "/kontakt": ["Kontakt & Gratis-Entwurf anfragen | FS Creative", "Projekt anfragen bei FS Creative aus Gaschurn: kurzes Formular ausfüllen, Antwort in 1–2 Werktagen und auf Wunsch ein kostenloser, unverbindlicher Entwurf."],
   "/datenschutz": ["Datenschutzerklärung — FS Creative", "Datenschutzerklärung von FS Creative: keine Cookies, kein Tracking, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen."],
   "/impressum": ["Impressum — FS Creative", "Impressum von FS Creative (Simon Leonhard Felder), Dorfstraße 3/1, 6793 Gaschurn. Offenlegung gemäß § 5 ECG und § 25 Mediengesetz."],
 };
@@ -158,11 +158,15 @@ function send(res, status, body, type, headers) {
   res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8" }, headers || {}));
   res.end(body);
 }
-function serveFile(res, filePath) {
+const COMPRESSIBLE = { ".html": 1, ".css": 1, ".js": 1, ".json": 1, ".svg": 1, ".xml": 1, ".txt": 1, ".webmanifest": 1 };
+function serveFile(req, res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   fs.readFile(filePath, (e, data) => {
     if (e) return send(res, 500, "Server error");
-    send(res, 200, data, TYPES[ext] || "application/octet-stream");
+    // HTML immer frisch prüfen; Bilder, Fonts und CSS dürfen im Browser zwischengespeichert werden.
+    const cache = ext === ".html" ? "no-cache" : (ext === ".css" ? "public, max-age=86400" : (COMPRESSIBLE[ext] ? "public, max-age=3600" : "public, max-age=604800"));
+    if (COMPRESSIBLE[ext]) return sendGz(req, res, 200, data, TYPES[ext], { "Cache-Control": cache });
+    send(res, 200, data, TYPES[ext] || "application/octet-stream", { "Cache-Control": cache });
   });
 }
 
@@ -1363,6 +1367,11 @@ const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
 
+    // Eine Adresse für Google: fs-creative.at -> www.fs-creative.at
+    if (String(req.headers.host || "").toLowerCase().split(":")[0] === "fs-creative.at") {
+      return send(res, 301, "", "text/plain", { Location: ORIGIN + (req.url || "/") });
+    }
+
     if (p === "/api/anfrage") {
       if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
       return void handleAnfrage(req, res);
@@ -1392,12 +1401,12 @@ const server = http.createServer((req, res) => {
     for (const q of candidates) {
       try { if (fs.statSync(q).isFile() && isPublicFile(q)) { found = q; break; } } catch (e) {}
     }
-    if (found) return serveFile(res, found);
+    if (found) return serveFile(req, res, found);
 
     fs.readFile(path.join(ROOT, "index.html"), "utf8", (e, data) => {
       if (e) return send(res, 404, "Not found");
       const out = renderIndex(data, urlPath);
-      send(res, out.status, out.html, TYPES[".html"]);
+      sendGz(req, res, out.status, out.html, TYPES[".html"], { "Cache-Control": "no-cache" });
     });
   } catch (e) {
     send(res, 500, "Server error");
