@@ -884,8 +884,12 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
 .brow.inactive td:not(:nth-child(3)):not(:last-child){opacity:.5}
 .bsite{display:flex;gap:10px;align-items:center;min-width:170px}
 .bsite b{display:block;font-size:13.5px}
-.bsite a{font-size:11.5px;color:var(--faint);text-decoration:none}
-.bsite a:hover{color:var(--accent)}
+.bsite a.bsurl,.own-card a.bsurl{display:block;font-size:11.5px;color:var(--faint);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bsurl em{font-style:normal;opacity:.75}
+.bsurl.none{display:block;font-size:11.5px;color:var(--faint)}
+a.bslink{color:inherit;text-decoration:none}
+a.bslink:hover b{color:var(--accent);text-decoration:underline}
+.bsite a.bsurl:hover,.own-card a.bsurl:hover{color:var(--accent)}
 .bdot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
 .bcust{min-width:150px;width:100%}
 .bqty{width:46px;margin-top:4px;padding:3px 5px!important;text-align:center}
@@ -3924,10 +3928,12 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
     var used={}, list=[];
     projects.forEach(function(p){ var doms=p.domains||[]; if(!(p.services||[]).length&&!doms.length) return;
       var zs=doms.map(function(dm){ return zoneFor(dm,zones); }).filter(Boolean); zs.forEach(function(z){ used[z.name]=1; });
-      list.push({key:"rw:"+p.id,name:p.name,domain:doms[0]||"",domains:doms,up:zs.length?zs[0].up:null,status:p.status,rwId:p.id}); });
-    zones.forEach(function(z){ if(used[z.name]) return; list.push({key:"cf:"+z.name,name:z.name,domain:z.name,domains:[z.name],up:z.up,status:null}); });
+      var rd=(p.railwayDomains||[])[0]||"";
+      list.push({key:"rw:"+p.id,name:p.name,domain:doms[0]||"",domains:doms,url:doms[0]?"https://"+doms[0]:(rd?"https://"+rd:""),rwDomain:rd,up:zs.length?zs[0].up:null,status:p.status,rwId:p.id}); });
+    zones.forEach(function(z){ if(used[z.name]) return; list.push({key:"cf:"+z.name,name:z.name,domain:z.name,domains:[z.name],url:"https://"+z.name,up:z.up,status:null}); });
     return list.sort(function(a,b){ return a.name.localeCompare(b.name,"de"); });
   }
+  function siteLink(s,inner){ return s.url?'<a class="bslink" href="'+esc(s.url)+'" target="_blank" rel="noopener" title="Website öffnen">'+inner+'</a>':inner; }
   function siteCfg(s){ var d=billData(); var c=(d&&d.sites&&d.sites[s.key])||{}; return {active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:(c.own!=null)?!!c.own:OWN_DEFAULT.test(s.name)}; }
   function perPeriod(price,per,period){ price=+price||0; return per==="year"?price*period/12:price*period; }
   function siteLines(s,c){ var P=billPrices(), n=+P.period||12, L=[];
@@ -3963,7 +3969,7 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
       var chk=function(f,t){ return '<td class="c"><input type="checkbox" data-bf="'+f+'"'+(c[f]?" checked":"")+' title="'+t+'"></td>'; };
       var state2=!c.active?'<span class="hint">inaktiv</span>':(c.billedUntil&&!isDue?'<span class="bok">verrechnet bis '+fmtDE(c.billedUntil)+'</span>':'<span class="bdue">'+(c.billedUntil?"fällig seit "+fmtDE(dAdd(c.billedUntil,1)):"noch nie verrechnet")+'</span>');
       return '<tr class="brow'+(c.active?"":" inactive")+'" data-bkey="'+esc(s.key)+'">'+
-        '<td><div class="bsite">'+dot+'<div><b>'+esc(s.name)+'</b>'+(s.domain&&s.domain!==s.name?'<a href="https://'+esc(s.domain)+'" target="_blank" rel="noopener">'+esc(s.domain)+'</a>':'')+'</div></div></td>'+
+        '<td><div class="bsite">'+dot+'<div>'+siteLink(s,'<b>'+esc(s.name)+'</b>')+(s.url?'<a class="bsurl" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+(s.domain?"":" <em>(Railway)</em>")+' ↗</a>':'<span class="bsurl none">ohne Domain</span>')+'</div></div></td>'+
         '<td><input class="cell bcust" data-bf="customer" list="bill-contacts" value="'+esc(c.customer)+'" placeholder="'+esc(s.name)+'"></td>'+
         chk("active","Wird verrechnet")+chk("domain","Domain")+chk("hosting","Hosting")+
         '<td class="c"><input type="checkbox" data-bf="mail"'+(c.mail?" checked":"")+' title="E-Mail">'+(c.mail?'<input class="cell bqty" type="number" min="1" data-bf="mailQty" value="'+c.mailQty+'" title="Anzahl Postfächer">':'')+'</td>'+
@@ -3975,7 +3981,7 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
           '<button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="1" title="Zu „Eigene Projekte“ verschieben">⤓</button></div></td></tr>';
     }).join(""):'<tr><td colspan="10" class="empty">Keine Kundenprojekte'+(q?" für diese Suche":"")+'.</td></tr>';
     var oh=document.getElementById("own-projects");
-    if(oh) oh.innerHTML=own.length?own.map(function(x){ var s=x.s; return '<div class="own-card"><span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'"></span><div class="oc-m"><b>'+esc(s.name)+'</b><span>'+esc(s.domain||"ohne Domain")+'</span></div><button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="0" title="Als Kundenprojekt führen">⤒</button></div>'; }).join(""):'<div class="hint" style="padding:6px">Keine eigenen Projekte markiert.</div>';
+    if(oh) oh.innerHTML=own.length?own.map(function(x){ var s=x.s; return '<div class="own-card"><span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'"></span><div class="oc-m">'+siteLink(s,'<b>'+esc(s.name)+'</b>')+(s.url?'<a class="bsurl" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+' ↗</a>':'<span>ohne Domain</span>')+'</div><button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="0" title="Als Kundenprojekt führen">⤒</button></div>'; }).join(""):'<div class="hint" style="padding:6px">Keine eigenen Projekte markiert.</div>';
     var dl=document.getElementById("bill-contacts");
     if(dl&&!dl.childNodes.length&&typeof finMeta==="function") finMeta(function(m){ dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
   }
