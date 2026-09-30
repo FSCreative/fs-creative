@@ -856,6 +856,55 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
 .evv-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700}
 
 @media(max-width:640px){ .split{grid-template-columns:1fr} .kpi .val{font-size:24px} .hero .val{font-size:31px} .tab span.t{display:none} .tab{min-width:0} }
+/* ===================== Abrechnung ===================== */
+.bill-head{display:flex;align-items:center;gap:10px}
+.bill-warn{background:#fff7e6;border:1px solid #f6d7a0;color:#8a5a00;border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:12px}
+.bill-warn a{color:inherit;font-weight:700}
+body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
+.bill-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.bill-kpis .bk{padding:14px 16px}
+.bill-kpis .lbl{font-size:12px;font-weight:700;color:var(--dim)}
+.bill-kpis .v{font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
+.bill-kpis .v.green{color:var(--green)} .bill-kpis .v.amber{color:var(--amber)}
+.bill-kpis .s{font-size:12px;color:var(--faint);margin-top:2px}
+.bill-tbl{min-width:1080px}
+.bill-tbl td{vertical-align:middle}
+.bill-tbl th.c,.bill-tbl td.c{text-align:center;width:62px}
+.bill-tbl input[type=checkbox]{width:19px;height:19px;accent-color:var(--accent);cursor:pointer;vertical-align:middle}
+.brow.inactive td:not(:nth-child(3)):not(:last-child){opacity:.5}
+.bsite{display:flex;gap:10px;align-items:center;min-width:170px}
+.bsite b{display:block;font-size:13.5px}
+.bsite a{font-size:11.5px;color:var(--faint);text-decoration:none}
+.bsite a:hover{color:var(--accent)}
+.bdot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.bcust{min-width:150px;width:100%}
+.bqty{width:46px;margin-top:4px;padding:3px 5px!important;text-align:center}
+.bextra{display:flex;gap:5px}
+.bextra input[type=number]{width:82px}
+.bextra input:not([type]){width:110px}
+.lastinv{font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lastinv a{font-weight:700;color:var(--accent);text-decoration:none}
+.lastinv .pill{font-size:10.5px;padding:2px 8px}
+.bdue{font-size:12px;font-weight:700;color:var(--amber)}
+.bok{font-size:12px;font-weight:600;color:var(--green)}
+.bact{display:inline-flex;gap:5px;justify-content:flex-end}
+.bact .btn.icon{width:30px;height:30px;padding:0;display:inline-grid;place-items:center}
+.bact .btn[disabled]{opacity:.45;cursor:not-allowed}
+.qinv{display:block;margin-top:4px}
+.own-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.own-card{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.own-card .oc-m{flex:1;min-width:0}
+.own-card b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.own-card span{font-size:11.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.own-card .btn.icon{width:30px;height:30px;padding:0}
+.fsc-tech{margin-top:22px;border:1px solid var(--line);border-radius:16px;background:var(--card);padding:4px 14px 12px}
+.fsc-tech>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:12px 2px;font-size:14px}
+.fsc-tech>summary::-webkit-details-marker{display:none}
+.fsc-tech>summary::before{content:"›";font-size:18px;color:var(--faint);transition:transform .2s;display:inline-block}
+.fsc-tech[open]>summary::before{transform:rotate(90deg)}
+.bp-grid{display:grid;grid-template-columns:70px 1fr 100px 90px;gap:8px;align-items:center}
+.bp-grid .bp-h{font-size:11px;font-weight:800;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+@media(max-width:760px){ .bill-kpis{grid-template-columns:1fr} .bp-grid{grid-template-columns:1fr 1fr} .bp-grid .bp-h{display:none} .bp-grid b{grid-column:1/-1;margin-top:6px} .bill-head{flex-wrap:wrap} }
 /* ===================== Tab-Menü: nie überlappen ===================== */
 .tabs{overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
@@ -1106,6 +1155,19 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       </div>
       <div class="fsc-tools"><div class="msearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="fsc-search" placeholder="Projekt oder Domain filtern …" autocomplete="off"></div>
         <div class="fsc-chips" id="fsc-chips"></div></div>
+      <div class="sec-title"><h2>Kunden-Websites &amp; Abrechnung</h2><div class="bill-head"><span class="hint" id="bill-hint"></span><button class="btn sm" id="bill-prices-btn">⚙ Preise</button></div></div>
+      <div class="bill-warn" id="bill-noprice" style="display:none">Noch keine Preise hinterlegt – <a href="#" data-open-prices="1">jetzt Preise für Domain, Hosting und E-Mail festlegen</a>.</div>
+      <div class="bill-kpis" id="bill-kpis"></div>
+      <div class="card tbl-card">
+        <table class="bill-tbl">
+          <thead><tr><th>Website</th><th>Kunde (sevDesk)</th><th class="c">Aktiv</th><th class="c">Domain</th><th class="c">Hosting</th><th class="c">Mail</th><th>Freier Betrag</th><th class="num">Summe</th><th>Letzte Abrechnung</th><th></th></tr></thead>
+          <tbody id="tb-bill"><tr><td colspan="10" class="empty">Lade …</td></tr></tbody>
+        </table>
+      </div>
+      <datalist id="bill-contacts"></datalist>
+      <div class="sec-title"><h2>Eigene Projekte</h2><span class="hint">werden nicht verrechnet · mit ⤒ zu den Kunden verschieben</span></div>
+      <div class="own-grid" id="own-projects"></div>
+      <details class="fsc-tech" id="fsc-tech"><summary><b>Technik: Railway &amp; Cloudflare</b><span class="hint">Deploy-Status, Services, Antwortzeiten &amp; Zugriffe</span></summary>
       <div class="sec-title"><h2>Railway-Projekte</h2><span class="hint" id="rw-hint">Deploy-Status, Services &amp; Domains · verknüpft mit Cloudflare</span></div>
       <div class="card tbl-card">
         <table>
@@ -1120,6 +1182,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
           <tbody id="tb-sites"><tr><td colspan="7" class="empty">Lade Cloudflare-Daten …</td></tr></tbody>
         </table>
       </div>
+      </details>
     </section>
 
     <section class="panel" id="p-kochdu">
@@ -1159,7 +1222,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
         <span class="hint" id="ka-stats-updated"></span>
       </div>
       <div class="grid kpis">
-        <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div><div class="lbl">Downloads</div></div><input class="ghost tnum" type="number" min="0" data-kv="kantineur.downloads"></div>
+        <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div><div class="lbl">Umsatz diesen Monat</div></div><div class="val green" id="ka-month">—</div><div class="sub">automatisch aus Kantineur</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg></div><div class="lbl">Aktive Abos (gesamt)</div></div><div class="val" id="ka-total">—</div><div class="sub" id="ka-total-sub"></div></div>
         <div class="card kpi big hoverable"><div class="top"><div class="ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></div><div class="lbl">Umsatz / Monat (MRR)</div></div><div class="val green" id="ka-mrr">—</div><div class="sub" id="ka-mrr-sub">—</div></div>
         <div class="card kpi hoverable"><div class="top"><div class="ic teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Bereits eingenommen (gesamt)</div></div><div class="val green" id="ka-earned">—</div><div class="sub" id="ka-earned-sub">fließt in Gesamt-Einnahmen ein</div></div>
@@ -1414,6 +1477,27 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   </div>
 </div>
 
+<div class="overlay" id="billoverlay">
+  <div class="modal" style="max-width:600px">
+    <h3>Preise &amp; Abrechnung</h3>
+    <p class="hint" style="margin:0 0 14px;font-size:12.5px">Gilt für alle Kunden-Websites. Pro Website hakst du an, was verrechnet wird – der freie Betrag kommt pro Abrechnung dazu.</p>
+    <div class="bp-grid">
+      <span class="bp-h">Leistung</span><span class="bp-h">Bezeichnung auf der Rechnung</span><span class="bp-h">Preis €</span><span class="bp-h">je</span>
+      <b>Domain</b><input class="cell" id="bp-domainLabel" placeholder="Domain"><input class="cell" id="bp-domain" type="number" step="0.01" min="0" placeholder="0,00"><select class="cell" id="bp-domainPer"><option value="year">Jahr</option><option value="month">Monat</option></select>
+      <b>Hosting</b><input class="cell" id="bp-hostingLabel" placeholder="Hosting &amp; Wartung"><input class="cell" id="bp-hosting" type="number" step="0.01" min="0" placeholder="0,00"><select class="cell" id="bp-hostingPer"><option value="month">Monat</option><option value="year">Jahr</option></select>
+      <b>E-Mail</b><input class="cell" id="bp-mailLabel" placeholder="E-Mail-Postfach"><input class="cell" id="bp-mail" type="number" step="0.01" min="0" placeholder="0,00"><select class="cell" id="bp-mailPer"><option value="month">Monat</option><option value="year">Jahr</option></select>
+    </div>
+    <div class="evform" style="margin-top:14px">
+      <div class="evrow2">
+        <label class="evrow"><span>Abrechnungszeitraum</span><select class="cell" id="bp-period"><option value="12">jährlich</option><option value="6">halbjährlich</option><option value="3">quartalsweise</option><option value="1">monatlich</option></select></label>
+        <label class="evrow"><span>Preise sind</span><select class="cell" id="bp-gross"><option value="1">brutto (inkl. USt)</option><option value="0">netto (zzgl. USt)</option></select></label>
+      </div>
+      <label class="evrow" style="max-width:200px"><span>USt-Satz %</span><input class="cell" id="bp-tax" type="number" step="1" min="0"></label>
+    </div>
+    <div class="hint" id="bp-msg" style="min-height:18px;margin-top:8px;font-size:12.5px"></div>
+    <div class="row"><button class="btn ghost" id="bp-cancel">Abbrechen</button><button class="btn primary" id="bp-save">Speichern</button></div>
+  </div>
+</div>
 <div class="overlay" id="invoverlay">
   <div class="modal" style="max-width:640px">
     <h3 id="fi-title">Neue Rechnung</h3>
@@ -1728,9 +1812,10 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       var barOffen=(+r.barOpenCents||0)/100, barPaid=(+r.barSettledCents||0)/100, online=(+r.onlineProvisionCents||0)/100;
       var pct=(r.provisionRatePct!=null)?(" · "+r.provisionRatePct+" %"):"";
       var settleBtn = barOffen>0.005
-        ? '<button class="btn sm primary" data-ksettle="'+esc(r.id)+'" data-amt="'+Math.round(barOffen*100)+'">✓ '+eur(barOffen)+' verrechnet</button>'
+        ? '<button class="btn sm primary" data-kbill="'+esc(r.id)+'" title="Rechnung in sevDesk anlegen und als verrechnet markieren">Verrechnen · '+eur(barOffen)+'</button>'
         : (barPaid>0.005?'<button class="btn sm" data-kunsettle="'+esc(r.id)+'">↺ Rückgängig</button>':'<span class="pill grey">—</span>');
-      var last=r.lastSettledAt?('<span title="'+esc(new Date(r.lastSettledAt).toLocaleString("de-AT"))+'">'+new Date(r.lastSettledAt).toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+'</span>'):'<span class="hint">noch nie</span>';
+      var kli=(typeof lastInv==="function")?lastInv("kochdu:"+r.id):null;
+      var last=kli?invInfo(kli):(r.lastSettledAt?('<span title="'+esc(new Date(r.lastSettledAt).toLocaleString("de-AT"))+'">'+new Date(r.lastSettledAt).toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"})+' <span class="hint">(ohne Rechnung)</span></span>'):'<span class="hint">noch nie</span>');
       var tr=document.createElement("tr");
       tr.innerHTML=
         '<td><b>'+esc(r.name||"—")+'</b><span class="hint" style="font-size:11px">'+pct+'</span></td>'+
@@ -1773,7 +1858,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       var last=valLastAt(o.key);
       var opened=!!valueroOpen[o.key];
       var settleBtn = open>0.005
-        ? '<button class="btn sm primary" data-vsettle="'+esc(o.key)+'" data-amt="'+Math.round(open*100)+'">✓ '+eur(open)+' verrechnet</button>'
+        ? '<button class="btn sm primary" data-fininv-val="'+esc(o.key)+'" title="Rechnung in sevDesk anlegen und als verrechnet markieren">Verrechnen · '+eur(open)+'</button>'
         : (settled>0.005?'<button class="btn sm" data-vunsettle="'+esc(o.key)+'">↺ Rückgängig</button>':'<span class="pill grey">—</span>');
       var months=(o.months||[]).map(function(m){
         return '<tr><td>'+esc(m.month)+'</td><td class="num">'+(+m.bookings||0)+'</td><td class="num money" style="color:var(--green)">'+eur((+m.provisionCents||0)/100)+'</td></tr>';
@@ -1782,7 +1867,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       return '<div class="card qcard'+(refund>0.005?' has-refund':'')+'">'+
         '<div class="qhead" data-vtoggle="'+esc(o.key)+'" style="cursor:pointer">'+
           '<div class="qtitle">'+esc(o.name)+' <span class="chip" style="background:#e3f7ee;color:#0a8a4f;border-color:transparent;font-size:11px">'+esc(o.ratesLabel||"")+'</span>'+
-            '<span class="qsum">offen '+eur(open)+' · verrechnet '+eur(settled)+' · gesamt '+eur(provision)+(refund>0.005?' · <span style="color:var(--red);font-weight:700">erstatten '+eur(refund)+'</span>':'')+(last?' · letzte '+new Date(last).toLocaleDateString("de-AT"):"")+'</span></div>'+
+            '<span class="qsum">offen '+eur(open)+' · verrechnet '+eur(settled)+' · gesamt '+eur(provision)+(refund>0.005?' · <span style="color:var(--red);font-weight:700">erstatten '+eur(refund)+'</span>':'')+(last?' · letzte '+new Date(last).toLocaleDateString("de-AT"):"")+'</span>'+((typeof lastInv==="function"&&lastInv("valuero:"+o.key))?'<span class="qinv">Letzte Rechnung: '+invInfo(lastInv("valuero:"+o.key))+'</span>':'')+'</div>'+
           '<div style="display:flex;gap:8px;align-items:center">'+settleBtn+'<span style="color:var(--faint);transition:transform .2s;display:inline-block;transform:rotate('+(opened?"90":"0")+'deg)">›</span></div>'+
         '</div>'+
         refundBar+
@@ -2465,7 +2550,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     setCount("ka-pay-sum", (pk.paying||0)+(pm.paying||0));
     setMoney("ka-um-sum", c.kantineur.mrr);
     setMoney("ka-earned", (+state.kantineur.eingenommenGesamt||0));
-    var thisM=(+state.kantineur.thisMonthGross||0); setTxt("ka-earned-sub", thisM?("davon diesen Monat: "+eur(thisM)):"fließt in Gesamt-Einnahmen ein");
+    var thisM=(+state.kantineur.thisMonthGross||0); setMoney("ka-month", thisM); setTxt("ka-earned-sub", "fließt in Gesamt-Einnahmen ein");
     setCount("ka-canteens", (+state.kantineur.canteensTotal||0));
     var bs=state.kantineur.canteensByStatus||{}; setTxt("ka-canteens-sub", (bs.ACTIVE||0)+" aktiv · "+(bs.TRIAL||0)+" Testphase");
     setTxt("ka-stats-updated", state.kantineur.statsAt?("Stand: "+new Date(state.kantineur.statsAt).toLocaleString("de-AT")):"");
@@ -2845,7 +2930,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
     if(name==="postfach") renderMailAll();
     else if(name==="todo") renderTodos();
     else if(name==="kalender") renderCalendar();
-    else if(name==="fscreative") loadSites(false);
+    else if(name==="fscreative"){ loadSites(false); billLoad(); try{ renderBilling(); }catch(e){} }
     else if(name==="finanzen"){ renderFinanzen(); finLoad(false); }
     if(name==="kochdu"||name==="blitzdings"||name==="valuero") clearBookingBadge(name);
   }
@@ -2874,6 +2959,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   }
   function relAgo(iso){ if(!iso)return "—"; var s2=(Date.now()-new Date(iso).getTime())/1000; if(s2<3600)return "vor "+Math.max(1,Math.round(s2/60))+" Min."; if(s2<86400)return "vor "+Math.round(s2/3600)+" Std."; var d=Math.round(s2/86400); if(d<45)return "vor "+d+(d===1?" Tag":" Tagen"); return new Date(iso).toLocaleDateString("de-AT"); }
   function renderSites(){
+    try{ renderBilling(); }catch(e){}
     var d=sitesData||{}; var tot=d.totals||{}; var sites=d.sites||[]; var rw=d.railway||{configured:false,projects:[]};
     var projects=rw.projects||[];
     var q=(fscUI.q||"").toLowerCase();
@@ -3291,7 +3377,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   // VALUERO: Objekt aufklappen (Monatsaufstellung) + Gebühren als verrechnet buchen (lokal)
   document.body.addEventListener("click",function(e){
     var vt=e.target.closest("[data-vtoggle]");
-    if(vt&&!e.target.closest("[data-vsettle],[data-vunsettle]")){ var k=vt.getAttribute("data-vtoggle"); valueroOpen[k]=!valueroOpen[k]; renderValueroObjects(); return; }
+    if(vt&&!e.target.closest("[data-vsettle],[data-vunsettle],[data-fininv-val],.lastinv a")){ var k=vt.getAttribute("data-vtoggle"); valueroOpen[k]=!valueroOpen[k]; renderValueroObjects(); return; }
     var vs=e.target.closest("[data-vsettle]");
     if(vs){ var key=vs.getAttribute("data-vsettle"); var amt=+vs.getAttribute("data-amt")||0; if(amt<=0)return;
       if(!state.valuero.settled) state.valuero.settled={}; if(!Array.isArray(state.valuero.settled[key])) state.valuero.settled[key]=[];
@@ -3593,7 +3679,11 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
             :('<button class="btn sm primary" data-fininv-bd="'+esc(b.id)+'">Rechnung erstellen</button>'))+'</div>'); });
     (state.valuero.live||[]).forEach(function(o){ var prov=(+o.provisionCents||0)/100, settled=valSettledCents(o.key)/100, opn=Math.max(0,prov-settled); if(opn<0.005) return;
       todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#e3f7ee;color:#0a8a4f">🛏</span><div class="ft-m"><div class="ft-t">VALUERO · '+esc(o.name||o.key)+'</div><div class="hint">offene Vermittlungsgebühren '+yr+' · '+eur(opn)+'</div></div><button class="btn sm primary" data-fininv-val="'+esc(o.key)+'">Rechnung erstellen</button></div>'); });
-    var todoHtml='<div class="sec-title"><h2>Zu verrechnen</h2><span class="hint">Blitzdings-Buchungen ohne Rechnung &amp; offene VALUERO-Gebühren'+(billed?' · '+billed+' Buchung'+(billed===1?"":"en")+' bereits verrechnet':'')+'</span></div><div class="card">'+(todo.length?todo.join(""):'<div class="empty">Alles verrechnet 👍</div>')+'</div>';
+    (state.kochdu.live||[]).forEach(function(r){ var o=(+r.barOpenCents||0)/100; if(o<0.005) return;
+      todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#f0eaff;color:#7c4dff">🍽</span><div class="ft-m"><div class="ft-t">kochdu · '+esc(r.name||"Restaurant")+'</div><div class="hint">offene Bar-Gebühren · '+eur(o)+'</div></div><button class="btn sm primary" data-kbill="'+esc(r.id)+'">Rechnung erstellen</button></div>'); });
+    try{ billSites().forEach(function(s){ var c=siteCfg(s); if(c.own||!siteDue(c)) return; var sm=siteSum(s,c); if(sm<=0) return;
+      todo.push('<div class="fin-todo"><span class="ft-ic" style="background:#e8f0ff;color:#2f6bff">🌐</span><div class="ft-m"><div class="ft-t">Website · '+esc(s.name)+'</div><div class="hint">'+esc(c.customer||s.domain||"")+' · '+eur(sm)+' pro '+(PERLBL[+billPrices().period||12]||"Zeitraum")+'</div></div><button class="btn sm primary" data-bbill="'+esc(s.key)+'">Rechnung erstellen</button></div>'); }); }catch(e){}
+    var todoHtml='<div class="sec-title"><h2>Zu verrechnen</h2><span class="hint">Blitzdings ohne Rechnung, kochdu, VALUERO &amp; fällige Websites'+(billed?' · '+billed+' Buchung'+(billed===1?"":"en")+' bereits verrechnet':'')+'</span></div><div class="card">'+(todo.length?todo.join(""):'<div class="empty">Alles verrechnet 👍</div>')+'</div>';
     // Bank
     var accs=(d.accounts||[]);
     var accHtml=accs.map(function(a){ var neg=a.balance!=null&&a.balance<0; return '<div class="card fin-acc'+(FIN.txAcc===a.id?" on":"")+'" data-finacc="'+esc(a.id)+'"><div class="fa-n">'+esc(a.name)+(a.isDefault?' <span class="chip" style="font-size:10px;padding:1px 6px">Standard</span>':'')+'</div><div class="fa-t">'+esc(a.type==="online"?"Bankkonto (verbunden)":a.type==="register"?"Kasse":a.type==="offline"?"Konto (manuell)":a.type)+'</div><div class="fa-b" style="color:'+(neg?"var(--red)":"var(--ink)")+'">'+(a.balance==null?"—":eur(a.balance))+'</div></div>'; }).join("");
@@ -3640,7 +3730,7 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
       var link=SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id);
       var after=INVCTX&&INVCTX.after; INVCTX=null;
       mailToast("✓ Rechnungsentwurf "+(j.nr||"")+" in sevDesk angelegt",false,"In sevDesk öffnen",function(){ window.open(link,"_blank","noopener"); });
-      if(after) after(j);
+      if(after) after(j,body);
       finLoad(true);
     }).catch(function(e){ btn.disabled=false; msg.textContent="Fehler: "+String(e&&e.message||e); });
   }
@@ -3655,9 +3745,11 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   function invoiceFromValuero(key){
     var o=(state.valuero.live||[]).filter(function(x){ return x.key===key; })[0]; if(!o) return;
     var prov=(+o.provisionCents||0)/100, settled=valSettledCents(o.key)/100, opn=Math.round(Math.max(0,prov-settled)*100)/100;
+    if(!(FIN.data&&FIN.data.invoices)){ if(opn>0&&confirm("sevDesk ist gerade nicht erreichbar. Nur als verrechnet markieren (ohne Rechnung)?")){ if(!state.valuero.settled) state.valuero.settled={}; if(!Array.isArray(state.valuero.settled[key])) state.valuero.settled[key]=[]; state.valuero.settled[key].push({amountCents:Math.round(opn*100),at:new Date().toISOString()}); save(); renderValueroObjects(); renderKPIs(); } return; }
     openInvoiceModal({title:"Rechnung · VALUERO-Gebühren",contactName:o.name||"",address:o.name||"",headText:"Vermittlungsgebühren VALUERO "+curYear()+".",
       items:[{name:"VALUERO Vermittlungsgebühren "+curYear(),text:(o.ratesLabel?o.ratesLabel+" · ":"")+"lt. Buchungsaufstellung",qty:1,priceGross:opn,taxRate:20}],
-      after:function(){ if(confirm("Die "+eur(opn)+" für „"+(o.name||key)+"“ jetzt auch im Dashboard als verrechnet markieren?")){ if(!state.valuero.settled) state.valuero.settled={}; if(!Array.isArray(state.valuero.settled[key])) state.valuero.settled[key]=[]; state.valuero.settled[key].push({amountCents:Math.round(opn*100),at:new Date().toISOString()}); save(); renderValueroObjects(); renderKPIs(); renderFinanzen(); } }});
+      after:function(j){ if(!state.valuero.settled) state.valuero.settled={}; if(!Array.isArray(state.valuero.settled[key])) state.valuero.settled[key]=[]; state.valuero.settled[key].push({amountCents:Math.round(opn*100),at:new Date().toISOString(),invoiceId:j&&j.id}); save(); renderValueroObjects(); renderKPIs(); renderFinanzen();
+        if(typeof billPost==="function"&&j) billPost({op:"invoice",key:"valuero:"+key,invoice:{id:j.id,nr:j.nr,gross:j.gross,label:o.name||key}}); }});
   }
   // ---- Zahlungseingang ----
   var BOOKINV=null;
@@ -3772,6 +3864,152 @@ body.dark .dv-item.click:hover{background:#1f2a42;border-color:#33456b}
   document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ ["invoverlay","bookoverlay","voucheroverlay"].forEach(function(id){ var o=document.getElementById(id); if(o&&o.classList.contains("show")) o.classList.remove("show"); }); } });
   setTimeout(function(){ finLoad(false); },1500);
   setInterval(function(){ if(document.visibilityState==="visible") finLoad(false); },5*60000);
+
+  // ================= ABRECHNUNG (FS Creative Websites, kochdu, VALUERO) =================
+  window.__BILL=window.__BILL||null;
+  var OWN_DEFAULT=/^(fs creative|blitzdings|valuero|kochdu|der-kantineur|buchhaltung|blitzbooth zentrale|fs-creative-mail-api|fs-dashboard|gallant-gentleness|noble-flow)$/i;
+  var PERLBL={1:"Monat",3:"Quartal",6:"Halbjahr",12:"Jahr"};
+  function billData(){ return window.__BILL; }
+  function billPrices(){ return (billData()&&billData().prices)||{domain:0,domainPer:"year",hosting:0,hostingPer:"month",mail:0,mailPer:"month",period:12,taxRate:20,gross:true,domainLabel:"Domain",hostingLabel:"Hosting & Wartung",mailLabel:"E-Mail"}; }
+  function billLoad(){ if(!window.__FSD_HOSTED) return; fetch("/admin/api/billing",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){ if(d&&d.prices){ window.__BILL=d; billAfter(); } }).catch(function(){}); }
+  function billPost(body,cb){
+    return fetch("/admin/api/billing",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(j){
+      if(j&&j.ok){ window.__BILL=j.billing; billAfter(); } else mailToast("Speichern fehlgeschlagen"+(j&&j.error?": "+j.error:""),true);
+      if(cb) cb(j); return j; }).catch(function(){ mailToast("Speichern fehlgeschlagen – keine Verbindung",true); });
+  }
+  function billAfter(){ try{ if(activeTab==="fscreative") renderBilling(); if(activeTab==="kochdu") tblKochdu(); if(activeTab==="valuero") renderValueroObjects(); if(activeTab==="finanzen") renderFinanzen(); }catch(e){} }
+  function lastInv(key){ var d=billData(); var a=(d&&d.invoices&&d.invoices[key])||[]; return a[a.length-1]||null; }
+  function dAdd(iso,days){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+days); return ymd(d); }
+  function mAdd(iso,months){ var d=new Date(iso+"T12:00:00"); var day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+months); var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); d.setDate(Math.min(day,last)); return ymd(d); }
+  function fmtDE(iso){ return iso?new Date(String(iso).slice(0,10)+"T12:00:00").toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric"}):"—"; }
+  function invInfo(inv){
+    if(!inv) return '<span class="hint">noch nie</span>';
+    var fi=(typeof FIN!=="undefined"&&FIN&&FIN.data&&FIN.data.invoices||[]).filter(function(i){return i.id===inv.id;})[0];
+    var nr=(fi&&fi.nr)||inv.nr||"Entwurf";
+    var pill=fi?finPill(fi):'<span class="pill grey">in sevDesk</span>';
+    return '<div class="lastinv"><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(inv.id)+'" target="_blank" rel="noopener" title="Rechnung ansehen">'+esc(nr)+'</a> · '+fmtDE(inv.date)+' · '+eur(inv.gross)+' '+pill+'</div>';
+  }
+  // ---- Websites aus Railway + Cloudflare ----
+  function billSites(){
+    var d=sitesData||window.__FSD_SITES_DATA||{}; var rw=d.railway||{}; var projects=rw.projects||[]; var zones=d.sites||[];
+    var used={}, list=[];
+    projects.forEach(function(p){ var doms=p.domains||[]; if(!(p.services||[]).length&&!doms.length) return;
+      var zs=doms.map(function(dm){ return zoneFor(dm,zones); }).filter(Boolean); zs.forEach(function(z){ used[z.name]=1; });
+      list.push({key:"rw:"+p.id,name:p.name,domain:doms[0]||"",domains:doms,up:zs.length?zs[0].up:null,status:p.status,rwId:p.id}); });
+    zones.forEach(function(z){ if(used[z.name]) return; list.push({key:"cf:"+z.name,name:z.name,domain:z.name,domains:[z.name],up:z.up,status:null}); });
+    return list.sort(function(a,b){ return a.name.localeCompare(b.name,"de"); });
+  }
+  function siteCfg(s){ var d=billData(); var c=(d&&d.sites&&d.sites[s.key])||{}; return {active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:(c.own!=null)?!!c.own:OWN_DEFAULT.test(s.name)}; }
+  function perPeriod(price,per,period){ price=+price||0; return per==="year"?price*period/12:price*period; }
+  function siteLines(s,c){ var P=billPrices(), n=+P.period||12, L=[];
+    if(c.domain) L.push({name:(P.domainLabel||"Domain")+(s.domain?" "+s.domain:""),amount:perPeriod(P.domain,P.domainPer,n)});
+    if(c.hosting) L.push({name:(P.hostingLabel||"Hosting")+(s.domain?" "+s.domain:""),amount:perPeriod(P.hosting,P.hostingPer,n)});
+    if(c.mail) L.push({name:(P.mailLabel||"E-Mail")+(c.mailQty>1?" ("+c.mailQty+" Postfächer)":""),amount:perPeriod(P.mail,P.mailPer,n)*(c.mailQty||1)});
+    if(c.extra>0) L.push({name:c.extraLabel||"Zusatzleistung",amount:c.extra});
+    return L.map(function(l){ l.amount=Math.round(l.amount*100)/100; return l; }); }
+  function siteSum(s,c){ return siteLines(s,c).reduce(function(a,l){ return a+l.amount; },0); }
+  function siteDue(c){ if(!c.active) return false; return !c.billedUntil||c.billedUntil<ymd(new Date()); }
+  function renderBilling(){
+    var tb=document.getElementById("tb-bill"); if(!tb) return;
+    var P=billPrices(), n=+P.period||12, q=(fscUI.q||"").toLowerCase();
+    var all=billSites().map(function(s){ return {s:s,c:siteCfg(s)}; });
+    if(!all.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Lade Websites aus Railway und Cloudflare …</td></tr>'; }
+    var cust=all.filter(function(x){ return !x.c.own && (!q||(x.s.name+" "+x.s.domains.join(" ")+" "+x.c.customer).toLowerCase().indexOf(q)>-1); });
+    var own=all.filter(function(x){ return x.c.own; });
+    // Kennzahlen
+    var act=all.filter(function(x){ return !x.c.own&&x.c.active; });
+    var perYear=act.reduce(function(a,x){ return a+siteSum(x.s,x.c)*12/n; },0);
+    var due=act.filter(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; });
+    var dueSum=due.reduce(function(a,x){ return a+siteSum(x.s,x.c); },0);
+    var noPrice=!(+P.domain||+P.hosting||+P.mail);
+    var kp=document.getElementById("bill-kpis");
+    if(kp) kp.innerHTML='<div class="card bk"><div class="lbl">Aktive Kunden-Websites</div><div class="v">'+act.length+'</div><div class="s">von '+all.filter(function(x){return !x.c.own;}).length+' Kundenprojekten</div></div>'+
+      '<div class="card bk"><div class="lbl">Wiederkehrend</div><div class="v green">'+eur(perYear)+'</div><div class="s">pro Jahr · '+(P.gross?"brutto":"netto")+'</div></div>'+
+      '<div class="card bk'+(due.length?" warn":"")+'"><div class="lbl">Jetzt zu verrechnen</div><div class="v'+(due.length?" amber":"")+'">'+eur(dueSum)+'</div><div class="s">'+due.length+' Website'+(due.length===1?"":"s")+' fällig</div></div>';
+    var hint=document.getElementById("bill-hint"); if(hint) hint.textContent="Abrechnung pro "+(PERLBL[n]||n+" Monate")+" · Preise "+(P.gross?"brutto":"netto");
+    var warn=document.getElementById("bill-noprice"); if(warn) warn.style.display=noPrice?"":"none";
+    if(all.length) tb.innerHTML=cust.length?cust.map(function(x){
+      var s=x.s,c=x.c,sum=siteSum(s,c),li=lastInv("site:"+s.key),isDue=siteDue(c);
+      var dot='<span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'" title="'+(s.up===false?"offline":(s.up?"online":"ohne Cloudflare"))+'"></span>';
+      var chk=function(f,t){ return '<td class="c"><input type="checkbox" data-bf="'+f+'"'+(c[f]?" checked":"")+' title="'+t+'"></td>'; };
+      var state2=!c.active?'<span class="hint">inaktiv</span>':(c.billedUntil&&!isDue?'<span class="bok">verrechnet bis '+fmtDE(c.billedUntil)+'</span>':'<span class="bdue">'+(c.billedUntil?"fällig seit "+fmtDE(dAdd(c.billedUntil,1)):"noch nie verrechnet")+'</span>');
+      return '<tr class="brow'+(c.active?"":" inactive")+'" data-bkey="'+esc(s.key)+'">'+
+        '<td><div class="bsite">'+dot+'<div><b>'+esc(s.name)+'</b>'+(s.domain&&s.domain!==s.name?'<a href="https://'+esc(s.domain)+'" target="_blank" rel="noopener">'+esc(s.domain)+'</a>':'')+'</div></div></td>'+
+        '<td><input class="cell bcust" data-bf="customer" list="bill-contacts" value="'+esc(c.customer)+'" placeholder="'+esc(s.name)+'"></td>'+
+        chk("active","Wird verrechnet")+chk("domain","Domain")+chk("hosting","Hosting")+
+        '<td class="c"><input type="checkbox" data-bf="mail"'+(c.mail?" checked":"")+' title="E-Mail">'+(c.mail?'<input class="cell bqty" type="number" min="1" data-bf="mailQty" value="'+c.mailQty+'" title="Anzahl Postfächer">':'')+'</td>'+
+        '<td><div class="bextra"><input class="cell" type="number" step="0.01" min="0" data-bf="extra" value="'+(c.extra||"")+'" placeholder="0,00" title="Freier Betrag pro Abrechnung"><input class="cell" data-bf="extraLabel" value="'+esc(c.extraLabel)+'" placeholder="wofür?"></div></td>'+
+        '<td class="num"><b>'+eur(sum)+'</b><div class="hint">pro '+(PERLBL[n]||n+" Mon.")+'</div></td>'+
+        '<td>'+invInfo(li)+'<div>'+state2+'</div></td>'+
+        '<td class="num"><div class="bact"><button class="btn sm'+(c.active&&sum>0&&isDue?" primary":"")+'" data-bbill="'+esc(s.key)+'"'+(c.active&&sum>0?"":" disabled")+'>Verrechnen</button>'+
+          (li?'<button class="btn sm icon" data-bunbill="'+esc(s.key)+'" title="Letzte Abrechnung zurücknehmen (Rechnung in sevDesk bleibt bestehen)">↺</button>':'')+
+          '<button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="1" title="Zu „Eigene Projekte“ verschieben">⤓</button></div></td></tr>';
+    }).join(""):'<tr><td colspan="10" class="empty">Keine Kundenprojekte'+(q?" für diese Suche":"")+'.</td></tr>';
+    var oh=document.getElementById("own-projects");
+    if(oh) oh.innerHTML=own.length?own.map(function(x){ var s=x.s; return '<div class="own-card"><span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'"></span><div class="oc-m"><b>'+esc(s.name)+'</b><span>'+esc(s.domain||"ohne Domain")+'</span></div><button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="0" title="Als Kundenprojekt führen">⤒</button></div>'; }).join(""):'<div class="hint" style="padding:6px">Keine eigenen Projekte markiert.</div>';
+    var dl=document.getElementById("bill-contacts");
+    if(dl&&!dl.childNodes.length&&typeof finMeta==="function") finMeta(function(m){ dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
+  }
+  function billSetSite(key,patch){ var d=billData(); if(d){ d.sites=d.sites||{}; d.sites[key]=Object.assign({},d.sites[key]||{},patch); } renderBilling(); billPost({op:"site",key:key,patch:patch}); }
+  function billSite(key){
+    var s=billSites().filter(function(x){ return x.key===key; })[0]; if(!s) return;
+    var c=siteCfg(s), P=billPrices(), n=+P.period||12, lines=siteLines(s,c);
+    if(!lines.length){ mailToast("Für diese Website ist nichts zum Verrechnen angehakt",true); return; }
+    var from=c.billedUntil?dAdd(c.billedUntil,1):ymd(new Date()), to=dAdd(mAdd(from,n),-1);
+    var tax=+P.taxRate; if(!isFinite(tax)) tax=20;
+    var span=fmtDE(from)+" – "+fmtDE(to);
+    openInvoiceModal({title:"Rechnung · "+s.name,contactName:c.customer||s.name,address:c.customer||s.name,deliveryDate:from,
+      headText:"Leistungen für "+(s.domain||s.name)+" im Zeitraum "+span+".",
+      items:lines.map(function(l){ return {name:l.name,text:"Zeitraum "+span,qty:1,priceGross:Math.round((P.gross?l.amount:l.amount*(1+tax/100))*100)/100,taxRate:tax}; }),
+      after:function(j,body){ var go=function(){ billPost({op:"invoice",key:"site:"+key,invoice:{id:j.id,nr:j.nr,gross:j.gross,from:from,to:to,label:s.name}}); };
+        if(body&&body.contactName&&!c.customer) billPost({op:"site",key:key,patch:{customer:body.contactName}},go); else go(); }});
+  }
+  // ---- kochdu ----
+  function kochduSettle(id,amtCents){
+    var r=(state.kochdu.live||[]).filter(function(x){return x.id===id;})[0];
+    if(r){ r.barSettledCents=(+r.barSettledCents||0)+(+r.barOpenCents||0); r.barOpenCents=0; r.lastSettledAt=new Date().toISOString(); kochduRecalcTotals(); save(); tblKochdu(); renderKPIs(); drawCharts(activeTab); }
+    kochduSettleServer({action:"settle",restaurantId:id,amountCents:amtCents});
+  }
+  function billKochdu(id){
+    var r=(state.kochdu.live||[]).filter(function(x){return x.id===id;})[0]; if(!r) return;
+    var amt=Math.round(+r.barOpenCents||0)/100; if(amt<=0) return;
+    var sevOk=typeof FIN!=="undefined"&&FIN&&FIN.data&&FIN.data.invoices;
+    if(!sevOk){ if(confirm("sevDesk ist gerade nicht erreichbar. Nur als verrechnet markieren (ohne Rechnung)?")) kochduSettle(id,Math.round(amt*100)); return; }
+    var since=r.lastSettledAt?fmtDE(r.lastSettledAt):"", today=fmtDE(ymd(new Date()));
+    openInvoiceModal({title:"Rechnung · kochdu · "+r.name,contactName:r.name,address:r.name,
+      headText:"kochdu-Gebühren für Bestellungen mit Barzahlung"+(since?" seit "+since:"")+" bis "+today+".",
+      items:[{name:"kochdu Vermittlungsgebühren (Barzahlungen)",text:(+r.barOrders||0)+" Bar-Bestellungen"+(since?" seit "+since:"")+" bis "+today,qty:1,priceGross:amt,taxRate:20}],
+      after:function(j){ kochduSettle(id,Math.round(amt*100)); billPost({op:"invoice",key:"kochdu:"+id,invoice:{id:j.id,nr:j.nr,gross:j.gross,label:r.name}}); }});
+  }
+  // ---- Preise-Einstellungen ----
+  function openPrices(){
+    var P=billPrices(), ov=document.getElementById("billoverlay"); if(!ov) return;
+    ["domain","hosting","mail"].forEach(function(k){ document.getElementById("bp-"+k).value=P[k]||""; document.getElementById("bp-"+k+"Per").value=P[k+"Per"]||"month"; document.getElementById("bp-"+k+"Label").value=P[k+"Label"]||""; });
+    document.getElementById("bp-period").value=String(P.period||12); document.getElementById("bp-gross").value=P.gross?"1":"0"; document.getElementById("bp-tax").value=(P.taxRate!=null?P.taxRate:20);
+    document.getElementById("bp-msg").textContent=""; ov.classList.add("show");
+  }
+  function savePrices(){
+    var pr={}; ["domain","hosting","mail"].forEach(function(k){ pr[k]=document.getElementById("bp-"+k).value; pr[k+"Per"]=document.getElementById("bp-"+k+"Per").value; pr[k+"Label"]=document.getElementById("bp-"+k+"Label").value.trim(); });
+    pr.period=document.getElementById("bp-period").value; pr.gross=document.getElementById("bp-gross").value==="1"; pr.taxRate=document.getElementById("bp-tax").value;
+    document.getElementById("bp-msg").textContent="Speichere …";
+    billPost({op:"prices",prices:pr},function(j){ if(j&&j.ok){ document.getElementById("billoverlay").classList.remove("show"); mailToast("✓ Preise gespeichert"); } else document.getElementById("bp-msg").textContent="Fehler beim Speichern"; });
+  }
+  // ---- Events ----
+  document.body.addEventListener("change",function(e){
+    var el=e.target; var f=el.getAttribute&&el.getAttribute("data-bf"); if(!f) return; var row=el.closest("[data-bkey]"); if(!row) return;
+    var patch={}; patch[f]=el.type==="checkbox"?el.checked:el.value; billSetSite(row.getAttribute("data-bkey"),patch);
+  });
+  document.body.addEventListener("click",function(e){
+    var t=e.target;
+    var bb=t.closest("[data-bbill]"); if(bb){ billSite(bb.getAttribute("data-bbill")); return; }
+    var bo=t.closest("[data-bown]"); if(bo){ billSetSite(bo.getAttribute("data-bown"),{own:bo.getAttribute("data-v")==="1"}); return; }
+    var bu=t.closest("[data-bunbill]"); if(bu){ if(!confirm("Letzte Abrechnung dieser Website zurücknehmen? Die Rechnung in sevDesk bleibt bestehen – bitte dort bei Bedarf löschen oder stornieren.")) return; billPost({op:"unbill",key:"site:"+bu.getAttribute("data-bunbill")}); return; }
+    var kb=t.closest("[data-kbill]"); if(kb){ billKochdu(kb.getAttribute("data-kbill")); return; }
+    if(t.closest("#bill-prices-btn")||t.closest("[data-open-prices]")){ openPrices(); return; }
+    if(t.id==="billoverlay"||t.closest("#bp-cancel")){ document.getElementById("billoverlay").classList.remove("show"); return; }
+    if(t.closest("#bp-save")){ savePrices(); return; }
+  });
+  setTimeout(billLoad,1200);
 
   // ===================== MOBIL: Menü unten, „Mehr“-Blatt, Postfach, Kalender =====================
   (function(){
