@@ -946,6 +946,51 @@ async function sevVoucherFromMail(pl) {
 }
 function sevBody(req, max) { return new Promise((resolve, reject) => { let b = ""; req.on("data", c => { b += c; if (b.length > (max || 200000)) { req.destroy(); reject(new Error("too_large")); } }); req.on("end", () => { try { resolve(JSON.parse(b || "{}")); } catch (e) { reject(new Error("bad_json")); } }); }); }
 
+// ── Abrechnung: Preise, Website-Einstellungen, letzte Rechnungen (FS Creative, kochdu, VALUERO) ──
+const BILLING_FILE = path.join(DATA_DIR, "billing.json");
+function readBilling() {
+  let o = {}; try { o = JSON.parse(fs.readFileSync(BILLING_FILE, "utf8")) || {}; } catch (e) { o = {}; }
+  o.prices = Object.assign({ domain: 0, domainPer: "year", hosting: 0, hostingPer: "month", mail: 0, mailPer: "month", period: 12, taxRate: 20, gross: true,
+    domainLabel: "Domain", hostingLabel: "Hosting & Wartung", mailLabel: "E-Mail" }, o.prices || {});
+  o.sites = (o.sites && typeof o.sites === "object") ? o.sites : {};
+  o.invoices = (o.invoices && typeof o.invoices === "object") ? o.invoices : {};
+  return o;
+}
+function writeBilling(o) { try { o.updatedAt = new Date().toISOString(); fs.writeFileSync(BILLING_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
+function billingOp(pl) {
+  const o = readBilling(); const op = String(pl.op || "");
+  const cleanKey = k => String(k || "").slice(0, 200);
+  if (op === "prices" && pl.prices && typeof pl.prices === "object") {
+    const P = pl.prices, num = v => { const n = parseFloat(v); return isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
+    ["domain", "hosting", "mail", "taxRate"].forEach(k => { if (k in P) o.prices[k] = num(P[k]); });
+    ["domainPer", "hostingPer", "mailPer"].forEach(k => { if (k in P) o.prices[k] = P[k] === "year" ? "year" : "month"; });
+    if ("period" in P) { const n = parseInt(P.period, 10); o.prices.period = [1, 3, 6, 12].indexOf(n) > -1 ? n : 12; }
+    if ("gross" in P) o.prices.gross = !!P.gross;
+    ["domainLabel", "hostingLabel", "mailLabel"].forEach(k => { if (k in P) o.prices[k] = String(P[k] || "").slice(0, 80); });
+  } else if (op === "site" && pl.key && pl.patch && typeof pl.patch === "object") {
+    const k = cleanKey(pl.key), cur = o.sites[k] || {}, P = pl.patch;
+    ["active", "domain", "hosting", "mail", "own"].forEach(f => { if (f in P) cur[f] = (P[f] === null ? undefined : !!P[f]); });
+    if ("extra" in P) { const n = parseFloat(P.extra); cur.extra = isFinite(n) ? Math.round(n * 100) / 100 : 0; }
+    if ("mailQty" in P) { const n = parseInt(P.mailQty, 10); cur.mailQty = n > 0 ? Math.min(n, 999) : 1; }
+    ["extraLabel", "customer", "note"].forEach(f => { if (f in P) cur[f] = String(P[f] || "").slice(0, 200); });
+    if ("billedUntil" in P) cur.billedUntil = /^\d{4}-\d{2}-\d{2}$/.test(P.billedUntil || "") ? P.billedUntil : null;
+    o.sites[k] = cur;
+  } else if (op === "invoice" && pl.key && pl.invoice && typeof pl.invoice === "object") {
+    const k = cleanKey(pl.key), I = pl.invoice;
+    const inv = { id: String(I.id || ""), nr: String(I.nr || ""), date: String(I.date || new Date().toISOString().slice(0, 10)), gross: Math.round((parseFloat(I.gross) || 0) * 100) / 100,
+      from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200) };
+    const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
+    if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
+  } else if (op === "unbill" && pl.key) {
+    const k = cleanKey(pl.key); const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : [];
+    const gone = arr.pop(); o.invoices[k] = arr;
+    if (k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; const prev = arr[arr.length - 1]; s.billedUntil = prev && prev.to ? prev.to : null; o.sites[k.slice(5)] = s; }
+    if (!gone) throw new Error("nichts_zum_zuruecknehmen");
+  } else throw new Error("bad_op");
+  if (!writeBilling(o)) throw new Error("save_failed");
+  return o;
+}
+
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
     if (adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin" });
@@ -1158,6 +1203,14 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/leads" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ leads: readLeads().reverse() }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  // ---- Abrechnung (Preise, Website-Einstellungen, letzte Rechnungen) ----
+  if (p === "/admin/api/billing" && req.method === "GET") {
+    return send(res, 200, JSON.stringify(readBilling()), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/billing" && req.method === "POST") {
+    try { const pl = await sevBody(req, 100000); const o = billingOp(pl); return send(res, 200, JSON.stringify({ ok: true, billing: o }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });
