@@ -1134,7 +1134,7 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
           <div class="sub">Noch offen: <b><span id="ov-val-offen">—</span></b></div>
           <div class="sub" id="ov-val-refund" style="display:none;color:var(--red);font-weight:700">⚠ Zu erstatten: <span id="ov-val-refund-amt">—</span></div>
         </div>
-        <div class="card kpi hero h-cyan hoverable" data-goto="finanzen" style="cursor:pointer" title="Rechnungen von FS Creative laut sevDesk (ohne Blitzdings, kochdu und VALUERO)">
+        <div class="card kpi hero h-cyan hoverable" data-goto="fscreative" style="cursor:pointer" title="Website-Abrechnungen (Domain, Hosting, Mail) – bezahlt laut sevDesk">
           <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg></div><div class="lbl">FS Creative</div></div>
           <div class="val" id="ov-fsc-paid">—</div>
           <div class="sub">Noch offen: <b><span id="ov-fsc-offen">—</span></b></div>
@@ -2516,17 +2516,16 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
       '</div>';
     }).join("");
   }
-  // FS Creative: Agentur-Rechnungen des Jahres aus sevDesk (ohne Blitzdings, kochdu, VALUERO)
+  // FS Creative: nur Website-Abrechnungen (Domain, Hosting, Mail, freier Betrag) aus dem Abrechnungs-Bereich
   function fscRevenue(){
-    var r={ok:false,paid:0,open:0};
-    if(typeof FIN==="undefined"||!FIN||!FIN.data||!FIN.data.invoices) return r;
-    var yr=String(curYear()), skip={};
-    var b=window.__BILL; if(b&&b.invoices) Object.keys(b.invoices).forEach(function(k){ if(/^(kochdu|valuero):/.test(k)) (b.invoices[k]||[]).forEach(function(i){ skip[i.id]=1; }); });
-    FIN.data.invoices.forEach(function(i){
-      if(String(i.date||"").slice(0,4)!==yr||i.status===100||i.status===50||skip[i.id]) return;
-      if(/blitzdings|buchung bd-|kochdu|valuero|vermittlungsgeb/i.test((i.ref||"")+" "+(i.header||""))) return;
-      r.paid+=(+i.paid||0); r.open+=(+i.open||0); });
-    r.ok=true; r.paid=Math.round(r.paid*100)/100; r.open=Math.round(r.open*100)/100; return r;
+    var r={ok:true,paid:0,open:0}, b=window.__BILL, yr=String(curYear());
+    if(!b||!b.invoices) return r;
+    var fi=(typeof FIN!=="undefined"&&FIN&&FIN.data&&FIN.data.invoices)||[], byId={}; fi.forEach(function(i){ byId[i.id]=i; });
+    Object.keys(b.invoices).forEach(function(k){ if(k.indexOf("site:")!==0) return;
+      (b.invoices[k]||[]).forEach(function(inv){ if(String(inv.date||"").slice(0,4)!==yr) return; var x=byId[inv.id];
+        if(x){ if(x.status===100||x.status===50) { r.open+=+inv.gross||0; return; } r.paid+=(+x.paid||0); r.open+=(+x.open||0); }
+        else r.open+=(+inv.gross||0); }); });
+    r.paid=Math.round(r.paid*100)/100; r.open=Math.round(r.open*100)/100; return r;
   }
   function renderKPIs(){
     var c=comp();
@@ -3907,7 +3906,7 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
       if(j&&j.ok){ window.__BILL=j.billing; billAfter(); } else mailToast("Speichern fehlgeschlagen"+(j&&j.error?": "+j.error:""),true);
       if(cb) cb(j); return j; }).catch(function(){ mailToast("Speichern fehlgeschlagen – keine Verbindung",true); });
   }
-  function billAfter(){ try{ if(activeTab==="fscreative") renderBilling(); if(activeTab==="kochdu") tblKochdu(); if(activeTab==="valuero") renderValueroObjects(); if(activeTab==="finanzen") renderFinanzen(); }catch(e){} }
+  function billAfter(){ try{ renderKPIs(); }catch(e){} try{ if(activeTab==="fscreative") renderBilling(); if(activeTab==="kochdu") tblKochdu(); if(activeTab==="valuero") renderValueroObjects(); if(activeTab==="finanzen") renderFinanzen(); }catch(e){} }
   function lastInv(key){ var d=billData(); var a=(d&&d.invoices&&d.invoices[key])||[]; return a[a.length-1]||null; }
   function dAdd(iso,days){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+days); return ymd(d); }
   function mAdd(iso,months){ var d=new Date(iso+"T12:00:00"); var day=d.getDate(); d.setDate(1); d.setMonth(d.getMonth()+months); var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); d.setDate(Math.min(day,last)); return ymd(d); }
