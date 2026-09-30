@@ -43,7 +43,7 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-conte
 @keyframes fspin{to{transform:rotate(360deg)}}
 /* Privatsphäre: Einnahmen/Beträge verbergen */
 .money,.val,.qsum,.bd-amount,.att-sz,.prog .plabel,.kpi input.ghost,#ov-offen-all,#ov-koch-offen,#ov-bd-offen,#ov-val-offen,#ov-val-refund-amt,#ov-kant-mrr,.chart-box{filter:blur(0);transition:filter .4s ease-out}
-body.priv .money,body.priv .val,body.priv .qsum,body.priv .bd-amount,body.priv .att-sz,body.priv .prog .plabel,body.priv .kpi input.ghost,body.priv #ov-offen-all,body.priv #ov-koch-offen,body.priv #ov-bd-offen,body.priv #ov-val-offen,body.priv #ov-val-refund-amt,body.priv #ov-kant-mrr,body.priv .val-refund b{filter:blur(9px);pointer-events:none;user-select:none}
+body.priv .money,body.priv .val,body.priv .qsum,body.priv .bd-amount,body.priv .att-sz,body.priv .prog .plabel,body.priv .kpi input.ghost,body.priv #ov-offen-all,body.priv #ov-koch-offen,body.priv #ov-bd-offen,body.priv #ov-val-offen,body.priv #ov-val-refund-amt,body.priv #ov-kant-mrr,body.priv #ov-fsc-offen,body.priv .val-refund b{filter:blur(9px);pointer-events:none;user-select:none}
 body.priv .chart-box{filter:blur(10px)}
 body.priv #k-users,body.priv #k-users-sub,body.priv #k-dl-apple,body.priv #k-dl-android,body.priv #k-dl-total{filter:none!important}
 #hdr-eye.on{color:var(--accent);border-color:#cdd6e6}
@@ -208,6 +208,16 @@ input.cell.w-name{background:#eef2fb;font-weight:600}
 .hero.h-gold::after{background:radial-gradient(circle,rgba(224,160,32,.58),transparent 70%)}
 .hero.h-gold .ic{background:rgba(224,160,32,.34)}
 .hero.h-green{background:linear-gradient(135deg,#0f2030,#11402c)}
+.hero.h-cyan{background:linear-gradient(135deg,#0f1e33,#0e3a4a)}
+.hero.h-cyan::after{background:radial-gradient(circle,rgba(14,165,233,.55),transparent 70%)}
+.hero.h-cyan .ic{background:rgba(14,165,233,.3)}
+@media(min-width:761px){
+  #ov-kpis{grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+  #ov-kpis .kpi{padding:16px 16px 14px;min-width:0}
+  #ov-kpis .val{font-size:clamp(17px,1.75vw,27px);white-space:nowrap}
+  #ov-kpis .sub{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #ov-kpis .lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
 .hero.h-green::after{background:radial-gradient(circle,rgba(26,190,110,.58),transparent 70%)}
 .hero.h-green .ic{background:rgba(26,190,110,.32)}
 
@@ -1097,7 +1107,7 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
   <main>
     <!-- OVERVIEW -->
     <section class="panel active" id="p-overview">
-      <div class="grid kpis">
+      <div class="grid kpis" id="ov-kpis">
         <div class="card kpi hero h-blue hoverable">
           <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="lbl">Gesamt</div></div>
           <div class="val" id="ov-paid-all">—</div>
@@ -1123,6 +1133,11 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
           <div class="val" id="ov-val-paid">—</div>
           <div class="sub">Noch offen: <b><span id="ov-val-offen">—</span></b></div>
           <div class="sub" id="ov-val-refund" style="display:none;color:var(--red);font-weight:700">⚠ Zu erstatten: <span id="ov-val-refund-amt">—</span></div>
+        </div>
+        <div class="card kpi hero h-cyan hoverable" data-goto="finanzen" style="cursor:pointer" title="Rechnungen von FS Creative laut sevDesk (ohne Blitzdings, kochdu und VALUERO)">
+          <div class="top"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg></div><div class="lbl">FS Creative</div></div>
+          <div class="val" id="ov-fsc-paid">—</div>
+          <div class="sub">Noch offen: <b><span id="ov-fsc-offen">—</span></b></div>
         </div>
       </div>
       <div class="split" style="margin-top:16px">
@@ -2501,12 +2516,26 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
       '</div>';
     }).join("");
   }
+  // FS Creative: Agentur-Rechnungen des Jahres aus sevDesk (ohne Blitzdings, kochdu, VALUERO)
+  function fscRevenue(){
+    var r={ok:false,paid:0,open:0};
+    if(typeof FIN==="undefined"||!FIN||!FIN.data||!FIN.data.invoices) return r;
+    var yr=String(curYear()), skip={};
+    var b=window.__BILL; if(b&&b.invoices) Object.keys(b.invoices).forEach(function(k){ if(/^(kochdu|valuero):/.test(k)) (b.invoices[k]||[]).forEach(function(i){ skip[i.id]=1; }); });
+    FIN.data.invoices.forEach(function(i){
+      if(String(i.date||"").slice(0,4)!==yr||i.status===100||i.status===50||skip[i.id]) return;
+      if(/blitzdings|buchung bd-|kochdu|valuero|vermittlungsgeb/i.test((i.ref||"")+" "+(i.header||""))) return;
+      r.paid+=(+i.paid||0); r.open+=(+i.open||0); });
+    r.ok=true; r.paid=Math.round(r.paid*100)/100; r.open=Math.round(r.open*100)/100; return r;
+  }
   function renderKPIs(){
     var c=comp();
     var kochPaid=c.kochdu.barPaid + c.kochdu.online;   // Bar bezahlt + Online (bereits verrechnet)
     var kantPaid=(+state.kantineur.eingenommenGesamt||0);
-    var paidAll=kochPaid + kantPaid + c.blitzdings.past + c.valuero.paid;
-    var offenAll=c.kochdu.barOffen + c.blitzdings.up + c.valuero.offen;
+    var fsc=fscRevenue();
+    var paidAll=kochPaid + kantPaid + c.blitzdings.past + c.valuero.paid + fsc.paid;
+    var offenAll=c.kochdu.barOffen + c.blitzdings.up + c.valuero.offen + fsc.open;
+    if(fsc.ok){ setMoney("ov-fsc-paid", fsc.paid); setMoney("ov-fsc-offen", fsc.open); }
     setMoney("ov-paid-all", paidAll);       setMoney("ov-offen-all", offenAll);
     setMoney("ov-koch-paid", kochPaid);     setMoney("ov-koch-offen", c.kochdu.barOffen);
     setMoney("ov-kant-paid", kantPaid);     setMoney("ov-kant-mrr", c.kantineur.mrr);
@@ -3605,6 +3634,7 @@ body.dark .bill-warn{background:#2c2413;border-color:#5a4520;color:#f0c46e}
   }
   function finAfter(){
     setTabBadge("fin-badge",finOverdue().length);
+    try{ renderKPIs(); }catch(e){}
     if(activeTab==="finanzen") renderFinanzen();
     if(activeTab==="kalender") renderCalendar();
     if(activeTab==="blitzdings") renderBlitzUpcoming();
