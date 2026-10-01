@@ -26,6 +26,7 @@ function propHtml(p,i,j){
   var d=p.data||{}, done=p.done, body, btn;
   if(p.kind==="todo"){ body='<b>To-Do:</b> '+esc(d.text)+(d.due?' <span class="muted">fällig '+esc(F.de(d.due))+'</span>':''); btn="Anlegen"; }
   else if(p.kind==="event"){ body='<b>Termin:</b> '+esc(d.title)+' <span class="muted">'+esc(F.de(d.date))+(d.time?" "+esc(d.time)+(d.endTime?"–"+esc(d.endTime):""):"")+(d.location?" · "+esc(d.location):"")+'</span>'; btn="Anlegen"; }
+  else if(p.kind==="invoice"){ body='<b>Rechnung:</b> '+esc(String(d.text||"aus Anfrage/Mail").slice(0,300)); btn="Rechnungsdialog öffnen"; }
   else { body='<b>Mail an '+esc(d.to||"?")+':</b> '+esc(d.subject||"")+'<div class="kich-mail">'+esc(String(d.text||"").slice(0,600))+(String(d.text||"").length>600?" …":"")+'</div>'; btn="Im Mail-Editor öffnen"; }
   return '<div class="kich-prop">'+body+'<div class="row">'+(done?'<span class="tag ok">'+esc(done)+'</span>':'<button type="button" class="btn primary" data-act="kiprop:'+i+'|'+j+'">'+btn+'</button><button type="button" class="btn" data-act="kipropx:'+i+'|'+j+'">Verwerfen</button>')+'</div></div>';
 }
@@ -123,6 +124,7 @@ F.action("kiprop",function(v){
       .catch(function(){ F.toast("Termine konnten nicht geladen werden.",true); });
     return;
   }
+  if(p.kind==="invoice"){ if(!K.invoiceFromProposal) return; toggle(false); K.invoiceFromProposal(d); ok("Dialog geöffnet"); return; }
   if(p.kind==="mail"){
     var M=F.M||{}, m=d.mailId&&M.find?M.find(d.mailId):null;
     F.compose({title:m?"Antworten":"Neue Mail",to:d.to||(m&&(m.replyTo||m.from))||"",subject:d.subject||(m?"Re: "+String(m.subject||"").replace(/^(re|aw)\s*:\s*/i,""):""),text:d.text,inReplyTo:m&&m.messageId||undefined,account:m&&M.accOf?M.accOf(m):undefined});

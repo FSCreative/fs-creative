@@ -11,7 +11,7 @@ var INVCTX=null;
 F.openInvoice=function(pre){
   pre=pre||{}; INVCTX=pre; var today=F.D?F.D.today:F.ymd();
   F.modal('<form data-form="invoice" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(pre.title||"Neue Rechnung")+'</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Wird als <b>Entwurf</b> in sevDesk angelegt. Prüfen und versenden machst du in sevDesk.</p>'+
+    '<p class="muted" style="margin:0">Wird als <b>Entwurf</b> in sevDesk angelegt. Prüfen und versenden machst du in sevDesk.</p>'+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
     '<div class="grid2"><label class="fl">Kunde<input class="f" name="contact" list="invContacts" required value="'+esc(pre.contactName||"")+'"></label><label class="fl">E-Mail (für neue Kunden)<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label>'+
     '<label class="fl">Rechnungsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Leistungsdatum<input class="f" name="delivery" type="date" value="'+esc(pre.deliveryDate||today)+'"></label></div>'+
     '<label class="fl">Adresse<textarea class="f" name="address" rows="2" placeholder="Name, Straße, PLZ Ort">'+esc(pre.address||pre.contactName||"")+'</textarea></label>'+
@@ -32,6 +32,7 @@ F.form("invoice",function(form){
   if(!contact){ err.textContent="Bitte einen Kunden angeben."; return; }
   if(!items.length){ err.textContent="Bitte mindestens eine Position mit Bezeichnung und Preis angeben."; return; }
   var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),items:items};
+  if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });   /* z. B. von der KI (Reverse Charge, Fußtext) */
   btn.disabled=true; err.textContent=""; btn.textContent="Lege Entwurf an …";
   F.api("/admin/api/sevdesk/invoice",{body:body}).then(function(j){
     if(!j||!j.ok){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
