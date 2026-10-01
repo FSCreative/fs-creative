@@ -15,7 +15,7 @@ function load(force){
   return loadP;
 }
 F.steuerData=function(){ return ST&&ST.data?ST.data:null; };
-var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon","vies"];
+var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon","vies","ruleMap","supMap","u1"];
 function apply(j){ if(j) KEYS.forEach(function(k){ if(j[k]!==undefined) ST[k]=j[k]; }); }
 function post(body,msg){ return F.api("/admin/api/steuer",{body:body}).then(function(j){ if(j&&j.ok){ apply(j); if(msg) F.toast(msg); F.render(); } else F.toast("Speichern fehlgeschlagen: "+((j&&j.error)||""),true); return j; }); }
 var r2=S.r2;
@@ -50,7 +50,7 @@ function docsList(arr,opts){
   if(!arr.length) return '<div class="empty">Keine Belege.</div>';
   var sb=0, stx=0; arr.forEach(function(x){ sb+=x.base||0; stx+=x.tax||0; });
   return '<div class="scroll"><table class="st-docs"><tbody>'+arr.map(function(x){ var d=x.doc, kind=x.kind, out=kind==="out"||kind==="vin", manual=kind==="manual", opt=out?S.OUT_OPTS:S.IN_OPTS, cur=docCfg(d.id).kz||"auto";
-    return '<tr><td class="nowrap num">'+deShort(x.date||d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b><div class="sub">'+esc([x.why,d.taxRule?("sevDesk: "+(S.TAXRULE_TXT[d.taxRule]||("Regel "+d.taxRule))):"",x.info||""].filter(Boolean).join(" · "))+'</div></td>'+
+    return '<tr><td class="nowrap num">'+deShort(x.date||d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b><div class="sub">'+esc([x.why,d.taxRule?("sevDesk: "+S.ruleTxt(d.taxRule)):"",x.info||""].filter(Boolean).join(" · "))+'</div></td>'+
       '<td class="r">'+(x.base!=null?money(x.base):'')+(x.tax?'<div class="sub">Steuer '+eur(x.tax)+'</div>':'')+'</td>'+
       (manual||opts.noSelect?'<td></td>':'<td><select class="f" data-stdoc="'+esc(d.id)+'" aria-label="Einordnung">'+opt.map(function(o){ return '<option value="'+o[0]+'"'+(cur===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select></td>')+
       (kind==="out"&&!/^cn/.test(d.id)?'<td class="r"><a class="btn icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(d.id)+'" target="_blank" rel="noopener" aria-label="PDF">↗</a></td>':'<td></td>')+'</tr>'; }).join("")+
@@ -80,7 +80,7 @@ function renderUva(){
     return '<button class="chip pchip '+st+'" data-act="uvap:'+p.key+'" aria-pressed="'+(p.key===cur.key)+'">'+lbl+(d&&d.doneAt?" ✓":"")+'</button>'; }).join("");
   var dz=r2(r.zahllast-ctl.zahllast);
   var mm=S.mismatches(ST.data,ST,cur.from,cur.to);
-  return settingsBar()+
+  return settingsBar()+rulesPanel(cur)+
     '<section class="panel"><div class="panel-h"><div><h2>UVA '+esc(cur.label)+'</h2><div class="muted">Zeitraum '+de(cur.from)+' – '+de(cur.to)+' · Sollbesteuerung (nach Leistungsdatum, Vorsteuer nach Belegdatum)</div></div><div class="chips">'+chips+'</div></div>'+
     '<div class="panel-b uva-top"><div><div class="k">'+(r.zahllast>=0?"Zahllast (KZ 095)":"Gutschrift (KZ 095)")+'</div><div class="v num money">'+eur(Math.abs(r.zahllast))+'</div><div class="s">Kontrolle aus sevDesk-Summen: '+eur(ctl.zahllast)+(Math.abs(dz)>0.01?' · <b class="'+(Math.abs(dz)>5?"bad-t":"")+'">Abweichung '+eur(dz)+'</b> <button class="link" data-act="stctl">Warum?</button>':' · stimmt überein')+'</div></div>'+
       '<div><div class="k">Fällig</div><div class="v num">'+de(due)+'</div><div class="s">Abgabe und Zahlung'+(due<today&&!(done&&done.doneAt)?' · <b class="bad-t">überfällig</b>':'')+'</div></div>'+
@@ -90,24 +90,70 @@ function renderUva(){
     kzTable(r,F.UI.stOpen.allkz)+
     '<div class="panel-b row wrap"><button class="link" data-act="stdocs:allkz">'+(F.UI.stOpen.allkz?"Nur befüllte Kennzahlen":"Alle Kennzahlen des Formulars zeigen")+'</button>'+
       (r.corr.length?'<span class="muted small">Negative Werte umgebucht: '+r.corr.map(function(c){ return "KZ "+c.kz+" "+eur(c.amount)+(c.to!=="0"?" → KZ "+c.to:" → 0"); }).join(", ")+' (nur 063, 067 und 090 dürfen negativ sein).</span>':'')+'</div>'+
-    '</section>'+
-    euPanel(cur)+recvPanel(cur,r)+dauerPanel(cur,r)+otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+fonPanel(cur,r,zmr,done)+zmPanel(cur,r,zmr)+
+    ((r.K["029"]||{}).base?'<div class="panel-b muted small">KZ 029 (10 %): z. B. Zeitschriften und Bücher (Anlage 1 Z 33 UStG). Druckwerke, die überwiegend Werbezwecken dienen, sind ausgenommen (20 %).</div>':'')+'</section>'+
+    euPanel(cur,zmr)+zeroPanel(cur)+igePanel(cur)+recvPanel(cur,r)+dauerPanel(cur,r)+otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+fonPanel(cur,r,zmr,done)+zmPanel(cur,r,zmr)+
     '<section class="panel"><div class="panel-b muted small"><b>Hinweise:</b> '+esc(duty)+' Sollbesteuerung: die Umsatzsteuer entsteht mit Ablauf des Monats, in dem die Leistung erbracht wurde (Leistungsdatum, sonst Rechnungsdatum; § 19 Abs. 2 Z 1 lit. a UStG – wird die Rechnung erst später gelegt, verschiebt sich das um höchstens einen Monat). Anzahlungen werden bei Zahlungseingang versteuert (Mindest-Istbesteuerung). Stornos und Gutschriften mindern im Monat ihrer Ausstellung; Skonti (aus dem Zahlbetrag) und als uneinbringlich markierte Forderungen werden im Monat der Zahlung bzw. des Ausfalls automatisch berichtigt (§ 16 UStG) – nicht zusätzlich manuell erfassen. Reverse Charge (Google, Meta, Railway, Cloudflare …) zählt im Monat der Leistung: KZ 057 und gleich hohe Vorsteuer KZ 066. Ausländische Umsatzsteuer (z. B. 19 % DE) ist keine österreichische Vorsteuer. '+
       (prevGross&&prevGross<=S.C.kleinunternehmer?'Vorjahresumsatz brutto '+eur(prevGross)+' – unter der Kleinunternehmergrenze von 55.000 € brutto: Befreiung wäre möglich (Verzicht/Regelbesteuerung bindet 5 Jahre).':'Kleinunternehmergrenze: 55.000 € brutto (ab 2025) – du bist regelbesteuert.')+'</div></section>';
 }
 /* ---------- EU & Ausland ---------- */
-var EU_ROWS=[["igLeistung","Dienstleistungen an EU-Unternehmer (Reverse Charge beim Kunden) → ZM, nicht in KZ 000"],["igLieferung","ig. Lieferungen (Ware) → KZ 017 + ZM"],["dreieck","Dreiecksgeschäfte → ZM mit Kennzeichen"],["igErwerb","ig. Erwerbe (Ware aus der EU) → KZ 070 ff., Vorsteuer KZ 065"],["rcEU","Leistungen von EU-Unternehmern (Google, Meta, Adobe, Hetzner …) → KZ 057/066"],["rcDritt","Leistungen aus dem Drittland (Railway, Cloudflare …) → KZ 057/066"],["fxEU","ausländische EU-USt auf Rechnungen (nicht abziehbar) – Steuerbetrag"],["ausfuhr","Ausfuhrlieferungen → KZ 011"],["drittland","Leistungen an Kunden im Drittland – nicht steuerbar"],["b2cEU","Leistungen an Privatkunden in anderen EU-Staaten (österr. USt)"],["oss","One-Stop-Shop (gehört in die OSS-Erklärung)"]];
-function euPanel(cur){
-  var e=S.euSummary(ST.data,ST,cur), rows=EU_ROWS.filter(function(x){ return e[x[0]]; });
-  var uids=e.zmRows.filter(function(z){ return z.uid; });
-  return '<section class="panel"><div class="panel-h"><h2>EU & Ausland</h2><span class="muted">automatisch erkannt über Steuerregel, UID-Präfix, Kontaktland und bekannte Anbieter</span></div>'+
-    (rows.length?'<div class="scroll"><table><tbody>'+rows.map(function(x){ var k="eu_"+x[0], n=(e.docs[x[0]]||[]).length;
-      return '<tr><td>'+esc(x[1])+'</td><td class="r">'+money(e[x[0]])+'</td><td class="r">'+(n?'<button class="link" data-act="stdocs:'+k+'">'+n+' Beleg'+(n===1?"":"e")+'</button>':'')+'</td></tr>'+(F.UI.stOpen[k]?'<tr class="sub-row"><td colspan="3">'+docsList((e.docs[x[0]]||[]).map(function(d){ return {doc:d.doc,kind:/^(igErwerb|rcEU|rcDritt|fxEU)$/.test(x[0])?"in":"out",base:d.base}; }))+'</td></tr>':''); }).join("")+'</tbody></table></div>':'<div class="panel-b muted">Keine EU- oder Auslandsumsätze in diesem Zeitraum.</div>')+
-    (e.ossWarn?'<div class="notice" style="margin:0 18px 14px"><span><b>OSS-Schwelle überschritten:</b> Leistungen an Privatkunden in anderen EU-Staaten '+esc(cur.from.slice(0,4))+' gesamt '+eur(e.b2cEUJahr)+' (Schwelle 10.000 €). Ab Überschreiten gilt die USt des Kundenlandes – Abrechnung über den One-Stop-Shop (FinanzOnline) oder Registrierung im jeweiligen Land.</span></div>':(e.b2cEUJahr?'<div class="panel-b muted small">B2C-Umsätze in andere EU-Staaten '+esc(cur.from.slice(0,4))+': '+eur(e.b2cEUJahr)+' von 10.000 € OSS-Schwelle.</div>':''))+
+var EU_ROWS=[
+  ["igLieferung","Innergemeinschaftliche Lieferungen (Ware an EU-Unternehmer)","KZ 000 + 017 · ZM Lieferung","017"],
+  ["igLeistung","Innergemeinschaftliche sonstige Leistungen (B2B, Reverse Charge beim Kunden)","nur ZM (nicht in KZ 000)",""],
+  ["dreieck","Dreiecksgeschäfte (als Mittelunternehmer)","nur ZM mit Kennzeichen",""],
+  ["igErwerb","Innergemeinschaftliche Erwerbe (Waren aus der EU)","KZ 070 / 072 · Vorsteuer KZ 065","070"],
+  ["rcEU","Leistungen von EU-Unternehmern (Google, Meta, Adobe, Hetzner …)","KZ 057 / 066 (Reverse Charge)","057"],
+  ["rcDritt","Leistungen aus dem Drittland (Railway, Cloudflare, Anthropic …)","KZ 057 / 066 (Reverse Charge)","057"],
+  ["ausfuhr","Ausfuhrlieferungen (Ware ins Drittland)","KZ 000 + 011","011"],
+  ["drittland","Leistungen an Kunden im Drittland (z. B. CH, LI)","nicht steuerbar – keine KZ",""],
+  ["b2cEU","Leistungen an Privatkunden in anderen EU-Staaten","österr. USt in KZ 022 (OSS-Schwelle beachten)",""],
+  ["oss","One-Stop-Shop","OSS-Erklärung, nicht U30",""],
+  ["fxEU","Ausländische EU-USt auf Eingangsrechnungen (Steuerbetrag)","keine Vorsteuer – Erstattungsverfahren",""]];
+function euPanel(cur,zmr){
+  var e=S.euSummary(ST.data,ST,cur), uids=e.zmRows.filter(function(z){ return z.uid; }), y=cur.from.slice(0,4);
+  return '<section class="panel"><div class="panel-h"><h2>EU & Ausland</h2><span class="muted">ZM '+esc(cur.label)+': <b class="num">'+eur(e.zmSum)+'</b> · erkannt über Steuerregel, UID, Rechnungsadresse/-text und bekannte Anbieter</span></div>'+
+    '<div class="scroll"><table class="kz"><thead><tr><th>Bereich</th><th>U30 / ZM</th><th class="r">Bemessungsgrundlage</th><th></th></tr></thead><tbody>'+EU_ROWS.map(function(x){ var k="eu_"+x[0], n=(e.docs[x[0]]||[]).length, v=e[x[0]]||0;
+      return '<tr'+(v?'':' class="muted"')+'><td>'+esc(x[1])+'</td><td class="small">'+esc(x[2])+'</td><td class="r">'+money(v)+'</td><td class="r">'+(n?'<button class="link" data-act="stdocs:'+k+'">'+n+' Beleg'+(n===1?"":"e")+'</button>':'')+'</td></tr>'+(F.UI.stOpen[k]&&n?'<tr class="sub-row"><td colspan="4">'+docsList((e.docs[x[0]]||[]).map(function(d){ return {doc:d.doc,kind:/^(igErwerb|rcEU|rcDritt|fxEU)$/.test(x[0])?"in":"out",base:d.base}; }))+'</td></tr>':''); }).join("")+
+    '<tr class="grp"><td>Summe Zusammenfassende Meldung</td><td class="small">'+e.zmRows.length+' Zeile'+(e.zmRows.length===1?"":"n")+'</td><td class="r">'+money(e.zmSum)+'</td><td></td></tr></tbody></table></div>'+
+    (e.ossWarn?'<div class="notice" style="margin:0 18px 14px"><span><b>OSS-Schwelle überschritten:</b> Leistungen an Privatkunden in anderen EU-Staaten '+esc(y)+' gesamt '+eur(e.b2cEUJahr)+' (Schwelle 10.000 €, zählt nur elektronische Leistungen und Fernverkäufe). Ab Überschreiten gilt dafür die USt des Kundenlandes – Abrechnung über den One-Stop-Shop.</span></div>':(e.b2cEUJahr?'<div class="panel-b muted small">B2C-Umsätze in andere EU-Staaten '+esc(y)+': '+eur(e.b2cEUJahr)+' von 10.000 € OSS-Schwelle.</div>':''))+
     (uids.length?'<div class="panel-b"><div class="sec-t">UID-Nummern der EU-Kunden</div><div class="row wrap">'+uids.map(function(z){ var vs=(ST.vies||{})[z.uid];
-      return '<span class="tag '+(!z.valid.ok?"bad":(vs?(vs.valid?"ok":"bad"):"grey"))+'" title="'+esc(z.valid.ok?(vs?(vs.valid?"gültig laut VIES"+(vs.name?": "+vs.name:""):"laut VIES ungültig"):"Format korrekt – noch nicht bei VIES geprüft"):z.valid.why)+'">'+esc(z.uid)+'</span>'+(z.valid.ok?'<button class="link small" data-act="vies:'+esc(z.uid)+'">'+(vs?"neu prüfen":"VIES prüfen")+'</button>':''); }).join(" ")+'</div><div class="muted small">Die UID-Prüfung (Stufe 2 mit Name) ist für steuerfreie Leistungen an EU-Unternehmer Sorgfaltspflicht. VIES-Abfrage nur auf Klick, Ergebnis wird 7 Tage gespeichert.</div></div>':'')+
+      return '<span class="tag '+(!z.valid.ok?"bad":(vs?(vs.valid?"ok":"bad"):"grey"))+'" title="'+esc(z.valid.ok?(vs?(vs.valid?"gültig laut VIES"+(vs.name?": "+vs.name:""):"laut VIES ungültig"):"Format korrekt – noch nicht bei VIES geprüft"):z.valid.why)+'">'+esc(z.uid)+'</span>'+(z.valid.ok?'<button class="link small" data-act="vies:'+esc(z.uid)+'">'+(vs?"neu prüfen":"VIES prüfen")+'</button>':''); }).join(" ")+'</div><div class="muted small">Die UID-Prüfung (Stufe 2 mit Name) gehört bei steuerfreien Leistungen an EU-Unternehmer zur Sorgfaltspflicht.</div></div>':'')+
     '</section>';
 }
+/* ---------- Ausgangsrechnungen ohne USt: zuordnen (Override je Rechnung, inkl. UID/Land) ---------- */
+var ZERO_OPTS=[["auto","automatisch"],["017","ig. Lieferung (Ware) – KZ 017 + ZM"],["zm","ig. sonstige Leistung (B2B) – nur ZM"],["zmd","Dreiecksgeschäft – ZM mit Kennzeichen"],["011","Ausfuhr (Ware ins Drittland) – KZ 011"],["ns","nicht steuerbar (Leistungsort Ausland, z. B. CH/LI)"],["020","steuerfrei im Inland – KZ 020 (Grund angeben)"],["016","Kleinunternehmer – KZ 016"],["sonst","Kleinbetrag/sonstiges – nicht in UVA/ZM"],["ignore","nicht berücksichtigen"]];
+function zeroPanel(cur){
+  var z=S.zeroRated(ST.data,ST,cur), open=z.filter(function(x){ return !x.sure; }), show=F.UI.stOpen.zeroAll?z:open;
+  if(!z.length) return "";
+  return '<section class="panel"><div class="panel-h"><h2>Ausgangsrechnungen ohne USt – bitte zuordnen</h2><span class="muted">'+(open.length?'<b class="bad-t">'+open.length+' nicht eindeutig</b>':'alle eindeutig')+' · '+z.length+' Rechnung'+(z.length===1?"":"en")+' mit 0 % · <button class="link" data-act="stdocs:zeroAll">'+(F.UI.stOpen.zeroAll?"nur unklare":"alle zeigen")+'</button></span></div>'+
+    (show.length?'<div class="scroll"><table><tbody>'+show.map(function(x){ var d=x.doc, c=docCfg(d.id), cur0=c.kz||"auto";
+      return '<tr><td class="nowrap num">'+deShort(d.delivery||d.date)+'</td><td><b>'+esc(docName(d,"out"))+'</b> '+money(x.net)+'<div class="sub">'+esc(x.why)+(x.rule?' · sevDesk-Regel: '+esc(x.rule):'')+'</div></td>'+
+        '<td class="st-acfg"><select class="f" data-stdoc="'+esc(d.id)+'" aria-label="Einordnung">'+ZERO_OPTS.map(function(o){ return '<option value="'+o[0]+'"'+(cur0===o[0]?" selected":"")+'>'+esc(o[0]==="auto"?"automatisch: "+x.klasse:o[1])+'</option>'; }).join("")+'</select>'+
+        '<input class="f" style="width:150px" placeholder="UID" data-stap="'+esc(d.id)+':uid" value="'+esc(c.uid||x.uid||"")+'" aria-label="UID des Kunden">'+
+        '<input class="f" style="width:56px" placeholder="Land" maxlength="2" data-stap="'+esc(d.id)+':land" value="'+esc(c.land||x.land||"")+'" aria-label="Land (ISO)">'+
+        (cur0==="020"?'<input class="f" style="width:200px" placeholder="Grund der Steuerbefreiung" data-stap="'+esc(d.id)+':grund" value="'+esc(c.grund||"")+'">':'')+'</td></tr>'; }).join("")+'</tbody></table></div>':'<div class="panel-b muted">Alle Rechnungen ohne USt sind eindeutig zugeordnet.</div>')+
+    '<div class="panel-b muted small">Die Zuordnung wird im Cockpit gespeichert und in UVA, ZM und U1 übernommen. Für die ZM braucht jede ig. Lieferung/Leistung die UID des Kunden; ig. Lieferung = Ware (KZ 017), Webdesign/Grafik/Hosting an EU-Firmen = sonstige Leistung (nur ZM).</div></section>';
+}
+/* ---------- in sevDesk als ig. Erwerb gebucht: Ware oder Dienstleistung? (je Lieferant) ---------- */
+function igePanel(cur){
+  var g=S.igeReview(ST.data,ST,cur); if(!g.length) return "";
+  return '<section class="panel"><div class="panel-h"><h2>Als „Innergemeinschaftlicher Erwerb“ gebucht</h2><span class="muted">ig. Erwerb gibt es nur für Waren – EU-Dienstleistungen sind Reverse Charge (KZ 057/066)</span></div><div class="scroll"><table><tbody>'+
+    g.map(function(x){ var m=(ST.supMap||{})[x.key]||""; return '<tr><td><b>'+esc(x.supplier||"Lieferant")+'</b> '+money(x.net)+'<div class="sub">'+esc(x.why)+' · '+x.docs.length+' Beleg'+(x.docs.length===1?"":"e")+'</div></td><td>'+(x.sure?'':'<span class="tag warn">unklar</span> ')+'<select class="f" data-stsup="'+esc(x.key)+'" aria-label="Ware oder Dienstleistung"><option value="">automatisch ('+(x.klasse==="rc"?"Dienstleistung":"Ware")+')</option><option value="rc"'+(m==="rc"?" selected":"")+'>Dienstleistung → KZ 057/066</option><option value="ige"'+(m==="ige"?" selected":"")+'>Ware → KZ 070/072/065</option></select></td></tr>'; }).join("")+'</tbody></table></div>'+
+    '<div class="panel-b muted small">Die Zuordnung gilt für alle Belege dieses Lieferanten. Die Zahllast ändert sich dadurch nicht (beides 20 % Steuer und Vorsteuer), die Kennzahlen aber schon.</div></section>';
+}
+F.listen("change","[data-stsup]",function(el){ post({op:"supMap",key:el.getAttribute("data-stsup"),cls:el.value},"Für diesen Lieferanten gespeichert"); });
+/* ---------- Steuerregeln des sevDesk-Kontos: erkannte Bedeutung, Anzahl, Zuordnung Regel → Klasse ---------- */
+var CLS_TXT={inl:"steuerpflichtig (Inland)",igl:"ig. Lieferung (017 + ZM)",zm:"ig. sonstige Leistung (ZM)",zmd:"Dreiecksgeschäft (ZM)","011":"Ausfuhr (011)",nsout:"nicht steuerbar",rcout:"Reverse Charge (Leistender)","020":"steuerfrei (020)","016":"Kleinunternehmer (016)",oss:"OSS",
+  "060":"Vorsteuer (060)",rc:"Reverse Charge mit VSt (057/066)",rcnv:"Reverse Charge ohne VSt (057)",ige:"ig. Erwerb (070/072/065)",ige3:"ig. Erwerb Dreieck (077)",ige0:"steuerfreier ig. Erwerb (071)",eust:"Einfuhr-USt (061)",none:"keine Vorsteuer"};
+function rulesPanel(cur){
+  var d=S.ruleDiagnosis(ST.data,ST,cur.from.slice(0,4)), unk=d.filter(function(x){ return x.unknown&&(x.used||!x.fromDocs); }), used=d.filter(function(x){ return x.used; }).length;
+  if(!d.length) return '<section class="panel"><div class="panel-b muted small">Steuerregeln deines sevDesk-Kontos konnten nicht abgerufen werden (ReceiptGuidance) – es gilt die Standard-Zuordnung laut sevDesk-Doku.</div></section>';
+  var sel=function(x,side){ var list=side==="in"?S.RULE_IN_CLASSES:S.RULE_OUT_CLASSES, cur0=x.map&&x.map[side]||""; return '<select class="f" data-strule="'+esc(x.id)+':'+side+'" aria-label="Klasse"><option value="">'+esc(x[side]?"automatisch: "+(CLS_TXT[x[side]]||x[side]):"– zuordnen –")+'</option>'+list.map(function(c){ return '<option value="'+c+'"'+(cur0===c?" selected":"")+'>'+esc(CLS_TXT[c]||c)+'</option>'; }).join("")+'</select>'; };
+  return '<section class="panel"><div class="panel-b"><button class="link" data-act="stdocs:rules" aria-expanded="'+!!F.UI.stOpen.rules+'">'+(unk.length?'<span class="tag bad">⚠ '+unk.length+' unbekannt</span> ':'<span class="tag ok">✓</span> ')+'Steuerregeln deines sevDesk-Kontos ('+d.length+', davon '+used+' in '+esc(cur.from.slice(0,4))+' verwendet)</button>'+
+    (F.UI.stOpen.rules?'<div class="scroll"><table><thead><tr><th>ID</th><th>Regel</th><th class="r">Belege '+esc(cur.from.slice(0,4))+'</th><th>Ausgangsrechnungen</th><th>Eingangsbelege</th></tr></thead><tbody>'+d.map(function(x){ var rev=/REVENUE/.test(x.side), exp=/EXPENSE/.test(x.side), both=!rev&&!exp;
+      return '<tr'+(x.unknown?' class="bad-row"':'')+'><td class="num">'+esc(x.id)+'</td><td>'+esc(x.description||x.name||(x.fromDocs?"(nur in Belegen, nicht im Konto gefunden)":""))+(x.unknown?' <span class="tag bad">unbekannt</span>':'')+'<div class="sub">'+esc([x.name,x.side,(x.rates||[]).join(", "),x.outSrc!=="unbekannt"?x.outSrc:x.inSrc].filter(Boolean).join(" · "))+'</div></td><td class="r num">'+(x.nOut+x.nIn||"")+'</td>'+
+        '<td>'+(rev||both||x.nOut?sel(x,"out"):'')+'</td><td>'+(exp||both||x.nIn?sel(x,"in"):'')+'</td></tr>'; }).join("")+'</tbody></table></div><div class="muted small">Die Bedeutung kommt aus dem Text der Regel in deinem Konto; eine Zuordnung hier gilt für alle Belege mit dieser Regel.</div>':'')+'</div></section>';
+}
+F.listen("change","[data-strule]",function(el){ var a=el.getAttribute("data-strule").split(":"); post({op:"ruleMap",id:a[0],side:a[1],cls:el.value},"Regel zugeordnet – gilt für alle Belege"); });
 F.action("vies",function(uid){ F.toast("Frage VIES …"); F.api("/admin/api/steuer/vies?uid="+encodeURIComponent(uid)).then(function(j){ if(j&&j.ok){ ST.vies=ST.vies||{}; ST.vies[j.uid]=j; F.toast(j.valid?"UID gültig"+(j.name?": "+j.name:""):"UID laut VIES ungültig"+(j.why?" ("+j.why+")":""),!j.valid); F.render(); } else F.toast((j&&j.error)||"VIES-Fehler",true); }); });
 /* ---------- Forderungen: Skonto/Kürzungen und Ausfälle (Sollbesteuerung, § 16 UStG) ---------- */
 function recvPanel(cur,r){
@@ -131,16 +177,12 @@ function dauerPanel(cur,r){
     (er.length?'<div class="panel-b"><div class="sec-t">Endrechnungen</div><table><tbody>'+er.map(function(d){ var e=pt.er[d.id], c=docCfg(d.id); return '<tr><td><b>'+esc(docName(d,"out"))+'</b><div class="sub">Gesamtentgelt '+eur(e.F)+' − versteuerte Anzahlungen/Teilrechnungen '+eur(e.D)+' = jetzt '+eur(e.rest)+' netto'+(e.list.length?' · zugeordnet: '+esc(e.list.map(function(x){ return x.nr||x.id; }).join(", ")):' · keine Anzahlung gefunden')+'</div></td><td class="nowrap"><select class="f" data-stap="'+esc(d.id)+':erMode" aria-label="Summe der Endrechnung"><option value="">automatisch ('+(e.mode==="rest"?"Restbetrag":"Gesamtentgelt")+')</option><option value="rest"'+(c.erMode==="rest"?" selected":"")+'>Summe = Restbetrag</option><option value="voll"'+(c.erMode==="voll"?" selected":"")+'>Summe = Gesamtentgelt</option></select></td></tr>'; }).join("")+'</tbody></table></div>':'')+
     ((r.info||[]).length?'<div class="panel-b muted small">'+r.info.map(function(x){ return esc(docName(x.doc,"out")+": "+x.why); }).join("<br>")+'</div>':'')+'</section>';
 }
-function rulesDiag(){
-  var d=S.ruleDiagnosis(ST.data); if(!d.length) return '<div class="panel-b muted small">Steuerregeln deines sevDesk-Kontos konnten nicht abgerufen werden (ReceiptGuidance) – es gilt die Standard-Zuordnung laut sevDesk-Doku.</div>';
-  var bad=d.filter(function(x){ return !x.ok; }).length;
-  return '<div class="panel-b"><button class="link" data-act="stdocs:rules">Steuerregeln deines sevDesk-Kontos ('+d.length+(bad?', <b class="bad-t">'+bad+' weichen ab</b>':', Zuordnung bestätigt')+')</button>'+(F.UI.stOpen.rules?'<table><tbody>'+d.map(function(x){ return '<tr><td class="num">'+esc(x.id)+'</td><td>'+esc(x.description||x.name)+'<div class="sub">'+esc(x.name+" · "+(x.side||"")+" · "+(x.rates||[]).join(", "))+'</div></td><td>'+esc(x.erkannt||"–")+'</td><td>'+(x.ok?'<span class="tag ok">passt</span>':'<span class="tag bad">Annahme '+esc(x.annahme)+'</span>')+'</td></tr>'; }).join("")+'</tbody></table>':'')+'</div>';
-}
 function otherPanel(r){
   var o=r.other, parts=[];
   if(o.fx.length) parts.push(['fx','Ausländische Umsatzsteuer – nicht als Vorsteuer abziehbar',o.fx,'Diese Steuer holst du nur über das Erstattungsverfahren des jeweiligen Landes zurück (FinanzOnline → Vorsteuererstattung, bis 30.09. des Folgejahres) – besser: Anbieter bitten, mit deiner UID ohne USt (Reverse Charge) abzurechnen.']);
   if(o.ns.length) parts.push(['ns','Nicht steuerbar (Leistungsort Ausland) – weder in KZ 000 noch in der ZM',o.ns,'']);
   if(o.oss.length) parts.push(['oss','One-Stop-Shop – gehört in die OSS-Erklärung, nicht in die UVA',o.oss,'']);
+  if(o.sonst&&o.sonst.length) parts.push(['sonst','Kleinbeträge/sonstiges – bewusst nicht in UVA und ZM',o.sonst,'']);
   if(o.none.length) parts.push(['none','Belege mit Steuer, aber ohne Vorsteuerabzug',o.none,'z. B. Pkw, privat oder in sevDesk als „nicht vorsteuerabziehbar“ gebucht.']);
   if(!parts.length) return "";
   return '<section class="panel"><div class="panel-h"><h2>Nicht in den Kennzahlen</h2><span class="muted">bewusst ausgeklammert – zum Nachprüfen</span></div>'+parts.map(function(p){ var k="o_"+p[0];
@@ -160,9 +202,10 @@ F.action("stmandel",function(kz){ post({op:"manual",key:F.UI.uvaKey,kz:kz,base:0
 F.action("stctl",function(){
   var cur=periodByKey(F.UI.uvaKey), r=S.computeUva(ST.data,ST,cur), c=S.controlCheck(ST.data,ST,cur);
   F.modal('<div class="row-between"><h2 style="font-size:19px">Kontrollrechnung '+esc(cur.label)+'</h2>'+F.btnClose()+'</div><dl class="facts">'+
-    '<dt>USt laut sevDesk-Rechnungen ('+c.nOut+', Kopfsummen)</dt><dd class="num money">'+eur(c.ust)+'</dd><dt>− Vorsteuer laut sevDesk-Belegen mit österr. USt ('+c.nIn+')</dt><dd class="num money">'+eur(c.vst)+'</dd><dt><b>= erwartete Zahllast</b></dt><dd class="num money"><b>'+eur(c.zahllast)+'</b></dd>'+
+    '<dt>USt laut sevDesk (Rechnungsdatum, '+c.nOut+' Rechnungen)</dt><dd class="num money">'+eur(c.ust)+'</dd><dt>− abziehbare Vorsteuer laut sevDesk-Steuerregel (Belegdatum, '+c.nIn+')</dt><dd class="num money">'+eur(c.vst)+'</dd><dt><b>= erwartete Zahllast</b></dt><dd class="num money"><b>'+eur(c.zahllast)+'</b></dd>'+
     '<dt>Berechnete Zahllast (KZ 095)</dt><dd class="num money">'+eur(r.zahllast)+'</dd>'+(r.minder.length?'<dt>davon Entgeltsminderungen/Ausfälle (in beiden Rechnungen berücksichtigt)</dt><dd class="num money">'+eur(-r.minder.reduce(function(a,m){ return a+m.amount; },0))+' brutto</dd>':'')+'</dl>'+
-    '<p class="muted small">Die Kontrolle summiert nur die Steuerbeträge aus den Belegköpfen. Unterschiede entstehen durch: Reverse Charge (057/066 heben sich auf), manuelle Kennzahlen, Rundung (das Finanzamt rechnet 20 % der Bemessungsgrundlage'+(r.roundDiff.length?': '+r.roundDiff.map(function(x){ return "KZ "+x.kz+" Belege "+eur(x.doc)+" / berechnet "+eur(x.calc); }).join(", "):'')+'), ausländische USt, Cockpit-Einordnungen oder nicht eingeordnete Belege ('+r.review.length+').</p>',"narrow");
+    (c.diffs.length?'<div class="sec-t">Zeitliche/inhaltliche Abweichungen ('+c.diffs.length+')</div><div class="scroll" style="max-height:40vh"><table><tbody>'+c.diffs.map(function(x){ return '<tr><td><b>'+esc(docName(x.doc,x.kind))+'</b><div class="sub">'+esc(x.why)+' · sevDesk '+deShort(x.sev)+' / U30 '+esc(String(x.uva||"").split(", ").map(deShort).join(", "))+'</div></td><td class="r">'+money(x.tax)+'</td></tr>'; }).join("")+'</tbody></table></div>':'')+
+    '<p class="muted small">So rechnet die sevDesk-USt-Auswertung: Reverse Charge und ig. Erwerb sind dort steuerneutral und nicht ausgewiesen (in der U30 heben sich 057/066 bzw. 072/065 auf). Weitere Unterschiede entstehen durch: Reverse Charge (057/066 heben sich auf), manuelle Kennzahlen, Rundung (das Finanzamt rechnet 20 % der Bemessungsgrundlage'+(r.roundDiff.length?': '+r.roundDiff.map(function(x){ return "KZ "+x.kz+" Belege "+eur(x.doc)+" / berechnet "+eur(x.calc); }).join(", "):'')+'), ausländische USt, Cockpit-Einordnungen oder nicht eingeordnete Belege ('+r.review.length+').</p>',"narrow");
 });
 F.action("uvap",function(k){ F.UI.uvaKey=k; F.render(); });
 // „UVA vorbereiten“: sevDesk frisch laden, Einordnung/Abgleich/Kontrolle prüfen und den Datenstrom serverseitig erzeugen – in einem Schritt
@@ -206,7 +249,7 @@ function syncPanel(cur,r,mm){
         match.map(function(t){ return '<button class="btn primary" data-act="ustpay:'+t.id+'">Zahlung '+eur(t.amount)+' vom '+de(t.date)+' als USt-Vorauszahlung in sevDesk buchen</button>'; }).join("")+
         (!match.length&&other.length?'<span class="muted small">Finanzamt-Buchungen nach Zeitraumende: '+other.map(function(t){ return eur(t.amount)+' am '+deShort(t.date)+' <button class="link" data-act="ustpay:'+t.id+'">buchen</button>'; }).join(" · ")+'</span>':'')+
         (!tx.length?'<span class="muted small">Noch keine Zahlung an das Finanzamt in sevDesk gefunden.</span>':''))+'</div>'+
-    rulesDiag()+'<div class="panel-b muted small">Änderungen in sevDesk passieren nur nach deiner Bestätigung und nie bei festgeschriebenen Belegen. „Als RC übernehmen“ ändert nur die Einordnung im Cockpit.</div></section>';
+    '<div class="panel-b muted small">Änderungen in sevDesk passieren nur nach deiner Bestätigung und nie bei festgeschriebenen Belegen. „Als RC übernehmen“ ändert nur die Einordnung im Cockpit.</div></section>';
 }
 F.action("stkz",function(v){ var a=v.split(":"); post({op:"doc",id:a[0],patch:{kz:a[1]}},a[1]==="rc"?"Als Reverse Charge übernommen":"Gespeichert"); });
 F.action("sevfix",function(i){ var cur=periodByKey(F.UI.uvaKey), m=S.mismatches(ST.data,ST,cur.from,cur.to)[+i]; if(!m) return;
@@ -264,9 +307,14 @@ F.form("fonsend",function(f){
 /* ---------- ZM ---------- */
 function zmPanel(cur,r,zmr){
   if(!zmr.length) return "";
-  return '<section class="panel"><div class="panel-h"><h2>Zusammenfassende Meldung (ZM)</h2><span class="muted">Leistungen an EU-Unternehmer – nach Leistungszeitraum, Abgabe bis '+de(F.ymd(new Date(cur.year,cur.endMonth+1,0)))+'</span></div><div class="scroll"><table><thead><tr><th>Kunde</th><th>UID</th><th>Art</th><th class="r">Bemessungsgrundlage</th></tr></thead><tbody>'+
-    zmr.map(function(z){ return '<tr><td>'+esc(z.kunde)+'<div class="sub">'+esc(z.docs.map(function(d){ return d.nr; }).join(", "))+'</div></td><td>'+(z.uid?esc(z.uid)+(z.valid.ok?'':' <span class="tag bad">'+esc(z.valid.why)+'</span>'):'<span class="tag bad">UID fehlt</span>')+'</td><td>'+(z.dreieck?"Dreiecksgeschäft":z.kind==="S"?"sonstige Leistung":"Warenlieferung")+'</td><td class="r">'+money(z.net)+'</td></tr>'; }).join("")+'</tbody></table></div>'+
-    '<div class="panel-b muted small">Die ZM kennt nur ganze Euro. Die UID muss beim Kunden in sevDesk hinterlegt sein.</div></section>';
+  var by={}; zmr.forEach(function(z){ var k=z.uid||("?"+z.kunde); var x=by[k]=by[k]||{uid:z.uid,kunde:z.kunde,valid:z.valid,L:0,S:0,D:0,docs:[]}; x[z.dreieck?"D":z.kind]+=z.net; x.docs=x.docs.concat(z.docs); });
+  var rows=Object.keys(by).map(function(k){ return by[k]; }), miss=rows.filter(function(x){ return !x.uid||!x.valid.ok; }).length;
+  return '<section class="panel"><div class="panel-h"><h2>Zusammenfassende Meldung (ZM)</h2><span class="muted">nach Leistungszeitraum, Abgabe bis '+de(F.ymd(new Date(cur.year,cur.endMonth+1,0)))+'</span></div>'+
+    (miss?'<div class="notice" style="margin:0 18px 14px"><span><b>'+miss+' Kunde'+(miss===1?"":"n")+' ohne gültige UID</b> – ohne UID ist keine ZM-Meldung möglich und die Steuerfreiheit gefährdet. UID in sevDesk beim Kunden oder oben in der Zuordnung eintragen.</span></div>':'')+
+    '<div class="scroll"><table><thead><tr><th>Kunde</th><th>UID</th><th class="r">Lieferungen</th><th class="r">sonstige Leistungen</th><th class="r">Dreieck</th></tr></thead><tbody>'+
+    rows.map(function(z){ return '<tr><td>'+esc(z.kunde)+'<div class="sub">'+esc(z.docs.map(function(d){ return d.nr; }).filter(Boolean).join(", "))+'</div></td><td>'+(z.uid?esc(z.uid)+(z.valid.ok?'':' <span class="tag bad">'+esc(z.valid.why)+'</span>'):'<span class="tag bad">UID fehlt</span>')+'</td><td class="r">'+(z.L?money(z.L):'')+'</td><td class="r">'+(z.S?money(z.S):'')+'</td><td class="r">'+(z.D?money(z.D):'')+'</td></tr>'; }).join("")+
+    '<tr class="grp"><td>Summe</td><td></td><td class="r">'+money(rows.reduce(function(a,z){ return a+z.L; },0))+'</td><td class="r">'+money(rows.reduce(function(a,z){ return a+z.S; },0))+'</td><td class="r">'+money(rows.reduce(function(a,z){ return a+z.D; },0))+'</td></tr></tbody></table></div>'+
+    '<div class="panel-b muted small">Die ZM kennt nur ganze Euro. Abgabe bis Ende des Folgemonats nach dem Meldezeitraum (Art. 21 Abs. 3 UStG).</div></section>';
 }
 
 /* ---------- Einstellungen ---------- */
