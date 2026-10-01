@@ -126,6 +126,23 @@ function sec(title,right,body){ return '<section class="panel"><div class="panel
 function loadBill(){ return F.api("/admin/api/billing").then(function(b){ if(b&&b.invoices){ BILL=b; } return BILL; }).catch(function(){ return BILL; }); }
 F.onData(function(){ loadBill().then(function(){ if(F.current==="plat") F.render(); }); });
 
+/* ---------- Ausstehende Änderungen ----------
+   Der Server puffert Plattform-Daten bis zu 25 s. Damit eine gerade gespeicherte Änderung (verrechnet, bezahlt …)
+   nach dem Neuladen nicht kurz wieder "zurückspringt", wird sie bis zu 45 s lokal über die Serverdaten gelegt. */
+var PEND=[];
+function pend(kind,id,val){ PEND=PEND.filter(function(x){ return !(x.kind===kind&&x.id===String(id)); }); PEND.push({kind:kind,id:String(id),val:val,exp:Date.now()+45000}); applyPend(F.D); }
+function applyPend(d){
+  if(!d||!d.platforms) return; var now=Date.now(); PEND=PEND.filter(function(x){ return x.exp>now; });
+  PEND.forEach(function(x){
+    if(x.kind==="kochdu"&&d.platforms.kochdu){ var ko=d.platforms.kochdu, r=(ko.restaurants||[]).find(function(y){return String(y.id)===x.id;}); if(!r) return; var t=ko.totals=ko.totals||{};
+      if(x.val==="settle"&&+r.barOpenCents>0){ var o=+r.barOpenCents; r.barSettledCents=(+r.barSettledCents||0)+o; r.barOpenCents=0; r.lastSettledAt=new Date().toISOString(); t.barOpenCents=Math.max(0,(+t.barOpenCents||0)-o); t.barSettledCents=(+t.barSettledCents||0)+o;
+        var it=(d.abgleich.items||[]).find(function(y){return y.key==="kochdu:"+x.id;}); if(it){ it.unbilled=0; it.action=null; } }
+      if(x.val==="unsettle"&&+r.barSettledCents>0){ var sc=+r.barSettledCents; r.barOpenCents=(+r.barOpenCents||0)+sc; r.barSettledCents=0; t.barOpenCents=(+t.barOpenCents||0)+sc; t.barSettledCents=Math.max(0,(+t.barSettledCents||0)-sc); } }
+    if(x.kind==="blitz"&&d.platforms.blitzdings){ var b=(d.platforms.blitzdings.upcoming||[]).find(function(y){return String(y.id)===x.id;}); if(b) bzApply(b,x.val,d); }
+  });
+}
+F.onData(applyPend);
+
 /* ---------- "Neue Buchungen seit dem letzten Besuch" (gleiche Basis wie im klassischen Dashboard) ---------- */
 var SEENK="fsc_seen_counts_v1";
 function curCounts(){
@@ -255,7 +272,7 @@ function kochduSettleOnly(r){
   F.api("/admin/api/kochdu-settle",{body:{action:"settle",restaurantId:r.id,amountCents:cents}}).then(function(j){
     delete BUSY["k"+r.id];
     if(!okRes(j)){ F.toast("kochdu hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"),true); F.render(); return; }
-    F.toast(r.name+" als verrechnet markiert (ohne Rechnung)"); F.load(true);
+    pend("kochdu",r.id,"settle"); F.toast(r.name+" als verrechnet markiert (ohne Rechnung)"); F.load(true);
   }).catch(function(){ delete BUSY["k"+r.id]; F.toast("Keine Verbindung zum Server",true); F.render(); });
 }
 F.action("plkbill",function(id){
@@ -265,6 +282,7 @@ F.action("plkbill",function(id){
   var pre=it&&it.action?JSON.parse(JSON.stringify(it.action)):{title:"Rechnung · kochdu · "+(r.name||""),contactName:r.name||"",headText:"kochdu-Gebühren für Bestellungen mit Barzahlung bis "+de(F.D.today)+".",
     items:[{name:"kochdu Vermittlungsgebühren (Barzahlungen)",text:(+r.barOrders||0)+" Bar-Bestellungen bis "+de(F.D.today),qty:1,priceGross:amt,taxRate:20}],
     after:{billing:{key:"kochdu:"+r.id,label:r.name||""},kochduSettle:{restaurantId:r.id,amountCents:Math.round(+r.barOpenCents||0)}}};
+  pre.onDone=function(){ if(pre.after&&pre.after.kochduSettle) pend("kochdu",r.id,"settle"); loadBill(); };
   F.openInvoice(pre);
 });
 /* Rückgängig: kochdu-Stand zurücksetzen und – falls die letzte Abrechnung zu dieser Verrechnung gehört – den Rechnungs-Eintrag entfernen */
@@ -278,6 +296,7 @@ F.action("plkundo",function(id){
       BUSY["k"+r.id]=1; F.render();
       F.api("/admin/api/kochdu-settle",{body:{action:"unsettle",restaurantId:r.id}}).then(function(j){
         if(!okRes(j)) throw new Error((j&&j.error)||"kochdu hat abgelehnt");
+        pend("kochdu",r.id,"unsettle");
         return belongs?F.api("/admin/api/billing",{body:{op:"unbill",key:"kochdu:"+r.id}}).then(function(b){ return {unbilled:okRes(b)}; }):{unbilled:false};
       }).then(function(res){
         delete BUSY["k"+r.id];
@@ -359,14 +378,14 @@ function vBlitz(){
     '<p class="pl-note">'+esc(stamp(bz.fetchedAt))+'</p>';
 }
 function bzBooking(id){ return ((P().blitzdings||{}).upcoming||[]).find(function(b){ return String(b.id)===String(id); }); }
-function bzApply(b,paid){
-  var bz=P().blitzdings, r=bz.revenue=bz.revenue||{}, bk=bz.bookings=bz.bookings||{}, amt=+b.totalCents||0, was=b.paymentStatus==="PAID";
+function bzApply(b,paid,d){
+  var bz=((d||F.D).platforms).blitzdings, r=bz.revenue=bz.revenue||{}, bk=bz.bookings=bz.bookings||{}, amt=+b.totalCents||0, was=b.paymentStatus==="PAID";
   if(was===paid) return;
   b.paymentStatus=paid?"PAID":"UNPAID";
   var s=paid?1:-1;
   r.paidCents=Math.max(0,(+r.paidCents||0)+s*amt); r.openCents=Math.max(0,(+r.openCents||0)-s*amt);
   bk.paidCount=Math.max(0,(+bk.paidCount||0)+s); bk.openCount=Math.max(0,(+bk.openCount||0)-s);
-  var mk=F.D.today.slice(0,7); if(paid&&String(b.eventDate||"").slice(0,7)<=mk) r.thisMonthPaidCents=(+r.thisMonthPaidCents||0)+amt;
+  var mk=(d||F.D).today.slice(0,7); if(paid&&String(b.eventDate||"").slice(0,7)<=mk) r.thisMonthPaidCents=(+r.thisMonthPaidCents||0)+amt;
 }
 function bzSetPaid(id,paid,quiet){
   var b=bzBooking(id); if(!b) return;
@@ -375,6 +394,7 @@ function bzSetPaid(id,paid,quiet){
   F.api("/admin/api/blitz-pay",{body:{id:b.id,paid:paid}}).then(function(j){
     delete BUSY["b"+id];
     if(!okRes(j)) throw new Error((j&&j.error)||"abgelehnt");
+    pend("blitz",id,paid);
     if(!quiet) F.toast((b.customerName||"Buchung")+(paid?" als bezahlt markiert":" wieder auf offen"),false,"Rückgängig",function(){ bzSetPaid(id,!paid,true); });
     F.render(); setTimeout(function(){ F.load(true); },1500);
   }).catch(function(e){
