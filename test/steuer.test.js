@@ -223,7 +223,7 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
   // (5) Teilrechnung (Q2 nach Soll) + ER mit Gesamtentgelt
   const tr = inv({ type: "TR", net: 1000, tax: 200, date: "2026-04-10", delivery: "2026-04-10", contactId: "77", contact: "Hotel Muster" }), e5 = ER({ net: 3000, tax: 600 });
   t("Teilrechnung Q2 1.000 + Endrechnung (Gesamtentgelt 3.000) Q3 2.000", () => { const raw = { invoices: [tr, e5], vouchers: [] }; near(kz(U(raw, 2), "022"), 1000); near(kz(U(raw, 3), "022"), 2000); });
-  t("Kontrollrechnung folgt derselben ER-Logik (Q3 USt 400)", () => near(S.controlCheck({ invoices: [a2, e2], vouchers: [] }, s, Q(2026, 3)).ust, 400));
+  t("Kontrollrechnung wie sevDesk (Rechnungsdatum): Q3 USt 600, Abweichung zur U30 (400) als Endrechnung erklärt", () => { const c = S.controlCheck({ invoices: [a2, e2], vouchers: [] }, s, Q(2026, 3)); near(c.ust, 600); assert.ok(c.diffs.some(d => d.doc === e2 && /Endrechnung/.test(d.why))); });
   t("ER über Cockpit auf 'voll' gestellt überschreibt die Erkennung", () => { const s2 = st0(); s2.docs[e1.id] = { erMode: "voll" }; near(kz(S.computeUva({ invoices: [a1, e1], vouchers: [] }, s2, Q(2026, 3)), "022"), 1000); });
 
   // Vorsteuer: Leistung + Rechnung (§ 12 Abs 1 Z 1)
@@ -276,6 +276,91 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
   t("Gewinnfreibetrag nicht für Pkw (§ 10 Abs 4); Öko-IFB E-Pkw 22 % von 33.333,33 = 7.333,33", () => {
     const jj = S.computeJab({ invoices: [inv({ net: 200000, date: "2026-02-01", status: 1000, paid: 240000, payDate: "2026-02-10" })], vouchers: [ep, vb], creditNotes: [] }, s, 2026);
     near(jj.gfbInvest, 0); near(jj.K5["9345"], -7333.33); });
+}
+
+/* ===================== (l) EU-Ausgangsrechnungen: ig. Lieferung, ig. Leistung, Dreieck, Override ===================== */
+{
+  const RULES_AT = [
+    { id: "3", name: "INNERGEM_LIEF", description: "Steuerfreie innergemeinschaftliche Lieferungen", side: "REVENUE" },
+    { id: "40", name: "IG_SONST_LEIST", description: "Innergemeinschaftliche sonstige Leistung (Übergang der Steuerschuld)", side: "REVENUE" },
+    { id: "104", name: "USTPFL_UMS", description: "Umsatzsteuerpflichtige Umsätze", side: "REVENUE" },
+    { id: "106", name: "SONDER_X", description: "Zauberregel Muster", side: "REVENUE" } ];
+  const s = st0();
+  const igl = inv({ net: 2000, tax: 0, rate: 0, taxRule: "3", uid: "DE123456789", country: "DE", date: "2026-08-03", delivery: "2026-08-03" });
+  const txt = inv({ net: 800, tax: 0, rate: 0, taxRule: "104", uid: "", country: "AT", date: "2026-08-05", delivery: "2026-08-05",
+    addrText: "Muster GmbH\nHauptstraße 1\n80331 München\nDeutschland", texts: "Steuerfreie innergemeinschaftliche Lieferung gem. Art. 7 UStG. USt-IdNr. Kunde: DE 987 654 321 – unsere UID ATU12345678" });
+  const leer = inv({ net: 300, tax: 0, rate: 0, taxRule: "104", uid: "", country: "AT", date: "2026-08-07", delivery: "2026-08-07" });
+  const leist = inv({ net: 1500, tax: 0, rate: 0, taxRule: "40", uid: "FR12345678901", country: "FR", date: "2026-09-01", delivery: "2026-09-01" });
+  const drei = inv({ net: 400, tax: 0, rate: 0, taxRule: "104", uid: "IT12345678901", country: "IT", date: "2026-09-02", delivery: "2026-09-02" });
+  const unk = inv({ net: 90, tax: 0, rate: 0, taxRule: "106", country: "AT", date: "2026-09-03", delivery: "2026-09-03" });
+  s.docs[drei.id] = { kz: "zmd" };
+  const RAWEU = { invoices: [igl, txt, leer, leist, drei, unk], vouchers: [], creditNotes: [], taxRules: RULES_AT };
+  const r = S.computeUva(RAWEU, s, Q(2026, 3)), z = S.zmRows(r);
+  t("ig. Lieferung über Regeltext (Regel 3) → KZ 000/017 2.000 + ZM Lieferung", () => { assert.ok((r.docs["017"] || []).some(x => x.doc === igl)); assert.ok(z.some(x => x.uid === "DE123456789" && x.kind === "L" && Math.abs(x.net - 2000) < 0.01)); });
+  t("ohne Regel/UID: Land aus Rechnungsadresse, UID aus Text (eigene ATU ignoriert), Hinweis 'ig. Lieferung' → 017, aber unsicher", () => {
+    const oi = S.outInfo(txt, s); assert.strictEqual(oi.uid, "DE987654321"); assert.strictEqual(oi.cc, "DE"); assert.ok((r.docs["017"] || []).some(x => x.doc === txt));
+    const zr = S.zeroRated(RAWEU, s, Q(2026, 3)); assert.ok(zr.some(x => x.doc === txt && !x.sure && x.klasse === "017")); });
+  t("KZ 017 = 2.800, KZ 000 = 2.800 (ig. Leistung/Dreieck nicht in 000)", () => { near(kz(r, "017"), 2800); near(kz(r, "000"), 2800); });
+  t("ig. sonstige Leistung (Regel 40 per Text) → nur ZM 'S' 1.500, nicht in 000", () => assert.ok(z.some(x => x.uid === "FR12345678901" && x.kind === "S" && Math.abs(x.net - 1500) < 0.01)));
+  t("Dreiecksgeschäft (Override) → ZM mit Kennzeichen", () => assert.ok(z.some(x => x.uid === "IT12345678901" && x.dreieck)));
+  t("0 % ohne Land/UID → in 'bitte zuordnen' und in review; nach Override 017 + UID/Land → KZ 017 + ZM", () => {
+    assert.ok(r.review.some(x => x.doc === leer)); assert.ok(S.zeroRated(RAWEU, s, Q(2026, 3)).some(x => x.doc === leer && !x.sure));
+    const s2 = JSON.parse(JSON.stringify(s)); s2.docs[leer.id] = { kz: "017", uid: "NL123456789B01", land: "NL" };
+    const r2 = S.computeUva(RAWEU, s2, Q(2026, 3)); near(kz(r2, "017"), 3100); assert.ok(S.zmRows(r2).some(x => x.uid === "NL123456789B01" && x.kind === "L"));
+    assert.ok(S.zeroRated(RAWEU, s2, Q(2026, 3)).some(x => x.doc === leer && x.sure && x.manual)); });
+  t("unbekannte Regel → Diagnose warnt; Zuordnung Regel→Klasse (nsout) gilt für alle Belege der Regel", () => {
+    const d = S.ruleDiagnosis(RAWEU, s, 2026), u = d.find(x => x.id === "106"); assert.ok(u.unknown); assert.strictEqual(u.nOut, 1);
+    assert.strictEqual(d.find(x => x.id === "3").out, "igl"); assert.strictEqual(d.find(x => x.id === "104").out, "inl");
+    const s3 = JSON.parse(JSON.stringify(s)); s3.ruleMap = { "106": { out: "nsout" } }; const r3 = S.computeUva(RAWEU, s3, Q(2026, 3));
+    assert.ok(r3.other.ns.some(x => x.doc === unk)); assert.ok(!S.ruleDiagnosis(RAWEU, s3, 2026).find(x => x.id === "106").unknown); });
+  t("Adress-/Länder-Erkennung: Schweiz, Liechtenstein (FL-PLZ), D-PLZ", () => { assert.strictEqual(S.addrCountry("X AG\nBahnhofstr. 1\n8001 Zürich\nSchweiz"), "CH"); assert.strictEqual(S.addrCountry("Y Anstalt\nFL-9490 Vaduz"), "LI"); assert.strictEqual(S.addrCountry("Z GmbH\nD-88131 Lindau"), "DE"); });
+}
+
+/* ===================== (m) Eingangsseite: Regeln mit österreichischen Namen/abweichenden IDs, ig. Erwerb vs. Dienstleistung ===================== */
+{
+  const RULES_IN = [
+    { id: "201", name: "VORST_ABZ", description: "Vorsteuerabziehbare Aufwendungen", side: "EXPENSE" },
+    { id: "202", name: "RC_LEIST", description: "Reverse Charge – Steuerschuld des Leistungsempfängers (§ 19 Abs. 1 UStG)", side: "EXPENSE" },
+    { id: "203", name: "IG_ERWERB", description: "Innergemeinschaftlicher Erwerb", side: "EXPENSE" },
+    { id: "204", name: "KEIN_VST", description: "Nicht vorsteuerabziehbare Aufwendungen", side: "EXPENSE" } ];
+  const s = st0();
+  const at = vou({ net: 100, tax: 20, taxRule: "201", date: "2026-07-02" }), rc = vou({ net: 50, taxRule: "202", date: "2026-07-03", supplier: "Some Cloud Inc", supplierCountry: "US" });
+  const goog = vou({ net: 300, taxRule: "203", date: "2026-07-04", supplier: "Google Ireland Ltd", cat: "Werbung" }), hw = vou({ net: 1000, taxRule: "203", date: "2026-07-05", supplier: "Technik Händler GmbH", supplierUid: "DE111111111", cat: "Hardware" });
+  const unk = vou({ net: 200, taxRule: "203", date: "2026-07-06", supplier: "Muster BV", supplierUid: "NL123456789B01", cat: "Sonstiges" }), nv = vou({ net: 40, taxRule: "204", date: "2026-07-07", cat: "Versicherung" });
+  const RAWIN = { invoices: [], vouchers: [at, rc, goog, hw, unk, nv], creditNotes: [], taxRules: RULES_IN };
+  const r = S.computeUva(RAWIN, s, Q(2026, 3));
+  // 057: 50 + 300 (Google als RC) = 350 → 70 · 070/072: 1.000 + 200 (unklar → Ware) = 1.200 → 240 · 060: 20
+  t("Regeln mit abweichenden IDs per Text: 201→060, 202→RC, 204→keine VSt", () => { near(kz(r, "060", "tax"), 20); assert.ok((r.docs["057"] || []).some(x => x.doc === rc)); assert.ok(!(r.docs["060"] || []).some(x => x.doc === nv)); });
+  t("als ig. Erwerb gebuchte Google-Werbung → Reverse Charge 057/066 (nicht 070); Hardware → ig. Erwerb", () => { near(kz(r, "057"), 350); near(kz(r, "066", "tax"), 70); near(kz(r, "070"), 1200); near(kz(r, "072", "tax"), 240); near(kz(r, "065", "tax"), 240); });
+  t("unklarer ig. Erwerb in der Zuordnungsliste; Zuordnung je Lieferant (supMap rc) verschiebt nach 057", () => {
+    const rv = S.igeReview(RAWIN, s, Q(2026, 3)); assert.ok(rv.some(x => x.supplier === "Muster BV" && !x.sure));
+    const s2 = st0(); s2.supMap = { "muster bv": "rc" }; const r2 = S.computeUva(RAWIN, s2, Q(2026, 3)); near(kz(r2, "057"), 550); near(kz(r2, "070"), 1000); });
+}
+
+/* ===================== (n) Kalibrierung: sevDesk-USt-Auswertung des Inhabers (ein Quartal) ===================== */
+{
+  const s = st0();
+  const inv20a = inv({ net: 10000, tax: 2000, date: "2026-07-10", delivery: "2026-07-10" }), inv20b = inv({ net: 9897.10, tax: 1979.41, date: "2026-08-10", delivery: "2026-08-10" });
+  const inv10 = inv({ net: 1813, tax: 181.30, rate: 10, date: "2026-08-20", delivery: "2026-08-20" });
+  const inv0de = inv({ net: 600, tax: 0, rate: 0, taxRule: "1", uid: "DE123456789", country: "DE", date: "2026-09-01", delivery: "2026-09-01" });
+  const inv0ch = inv({ net: 235.07, tax: 0, rate: 0, taxRule: "1", country: "CH", date: "2026-09-02", delivery: "2026-09-02" });
+  const einNs = vou({ cd: "D", net: -38.80, tax: 0, rate: 0, taxRule: "17", date: "2026-09-03", cat: "Erlöse nicht steuerbar" });
+  const v20 = vou({ net: 3413.06, tax: 682.60, date: "2026-07-15" }), v0 = vou({ net: 565.48, taxRule: "10", date: "2026-07-16" });
+  const g = vou({ net: 2000, taxRule: "8", date: "2026-07-20", supplier: "Google Ireland Ltd", cat: "Werbung" }), ad = vou({ net: 913.50, taxRule: "8", date: "2026-08-20", supplier: "Adobe Systems Software Ireland Ltd", cat: "Software" });
+  const hw = vou({ net: 1000, taxRule: "8", date: "2026-08-21", supplier: "Technik Händler GmbH", supplierUid: "DE111111111", cat: "Hardware" });
+  const rw = vou({ net: 1473.18, taxRule: "12", date: "2026-09-10", supplier: "Railway Corporation" });
+  const vers = vou({ net: 496.05, taxRule: "10", date: "2026-09-11", cat: "Versicherungen" }), nicht = vou({ net: 11.63, taxRule: "10", date: "2026-09-12", cat: "Bankspesen" });
+  const RAWK = { invoices: [inv20a, inv20b, inv10, inv0de, inv0ch], vouchers: [einNs, v20, v0, g, ad, hw, rw, vers, nicht], creditNotes: [] };
+  const r = S.computeUva(RAWK, s, Q(2026, 3)), c = S.controlCheck(RAWK, s, Q(2026, 3));
+  /* sevDesk: USt 3.979,41 + 181,30 = 4.160,71 − VSt 682,60 = 3.478,11.
+     U30: 000 = 19.897,10 + 1.813 = 21.710,10 (0 %-ZM 600 und CH 235,07 sowie nicht steuerbar −38,80 nicht in 000)
+     022 = 19.897,10 → 3.979,42 (FA rechnet aus der BMG) · 029 = 1.813 → 181,30
+     057 = 2.000 + 913,50 + 1.473,18 = 4.386,68 → 877,34 = 066 · 070/072 = 1.000 → 200 = 065 · 060 = 682,60
+     Zahllast = 3.979,42 + 181,30 + 877,34 + 200 − 682,60 − 877,34 − 200 = 3.478,12 (sevDesk 3.478,11; 1 Cent Rundung) */
+  t("Kalibrierung: KZ 000 21.710,10, 022 19.897,10/3.979,42, 029 1.813/181,30", () => { near(kz(r, "000"), 21710.10); near(kz(r, "022"), 19897.10); near(kz(r, "022", "tax"), 3979.42); near(kz(r, "029"), 1813); near(kz(r, "029", "tax"), 181.30); });
+  t("Kalibrierung: 057 4.386,68/877,34 = 066; ig. Erwerb nur Hardware 070/072 1.000 → 200 = 065; 060 682,60", () => { near(kz(r, "057"), 4386.68); near(kz(r, "057", "tax"), 877.34); near(kz(r, "066", "tax"), 877.34); near(kz(r, "070"), 1000); near(kz(r, "072", "tax"), 200); near(kz(r, "065", "tax"), 200); near(kz(r, "060", "tax"), 682.60); });
+  t("Kalibrierung: Zahllast U30 3.478,12 ≈ sevDesk 3.478,11 (±0,01); Kontrollrechnung exakt 4.160,71 − 682,60 = 3.478,11", () => { near(r.zahllast, 3478.11, "U30", 0.011); near(c.ust, 4160.71); near(c.vst, 682.60); near(c.zahllast, 3478.11); });
+  t("Kalibrierung: 0 %-Umsätze → ZM DE 600, CH nicht steuerbar", () => { assert.ok(S.zmRows(r).some(x => x.uid === "DE123456789" && Math.abs(x.net - 600) < 0.01)); assert.ok(r.other.ns.some(x => x.doc === inv0ch)); });
 }
 
 /* ===================== (g) XML gegen BMF-XSD ===================== */
