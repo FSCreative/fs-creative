@@ -991,6 +991,44 @@ function billingOp(pl) {
   return o;
 }
 
+// ── Railway: echte Kosten je Projekt (letzte 30 Tage, Listenpreise) ──
+let RWCOST = { at: 0, data: null, p: null };
+let FXRATE = { at: 0, eur: 0.86 };
+async function usdEur() {
+  if (Date.now() - FXRATE.at < 12 * 3600 * 1000) return FXRATE.eur;
+  try { const r = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR"); const j = await r.json(); const v = j && j.rates && j.rates.EUR; if (v > 0.5 && v < 1.5) FXRATE = { at: Date.now(), eur: v }; else FXRATE.at = Date.now(); } catch (e) { FXRATE.at = Date.now(); }
+  return FXRATE.eur;
+}
+async function railwayCostsBuild() {
+  if (!RW.token) return { configured: false, projects: {} };
+  const end = new Date(), start = new Date(Date.now() - 30 * 86400000);
+  const M = ["CPU_USAGE", "MEMORY_USAGE_GB", "NETWORK_TX_GB", "DISK_USAGE_GB", "BACKUP_USAGE_GB"];
+  const q = "query($w:String!,$m:[MetricMeasurement!]!,$g:[MetricTag!],$s:DateTime,$e:DateTime){ usage(workspaceId:$w, measurements:$m, groupBy:$g, startDate:$s, endDate:$e, includeDeleted:true){ measurement value tags { projectId } } }";
+  const j = await rwGQL(q, { w: RW.workspace, m: M, g: ["PROJECT_ID"], s: start.toISOString(), e: end.toISOString() });
+  if (!j || j.errors || !j.data) return { configured: true, error: (j && j.errors && j.errors[0] && j.errors[0].message) || "railway_failed", projects: {} };
+  // Railway-Listenpreise (30-Tage-Monat = 43.200 Minuten)
+  const PRICE = { CPU_USAGE: 20 / 43200, MEMORY_USAGE_GB: 10 / 43200, NETWORK_TX_GB: 0.05, DISK_USAGE_GB: 0.15 / 43200, BACKUP_USAGE_GB: 0.15 / 43200 };
+  const KEY = { CPU_USAGE: "cpu", MEMORY_USAGE_GB: "ram", NETWORK_TX_GB: "egress", DISK_USAGE_GB: "disk", BACKUP_USAGE_GB: "backup" };
+  const projects = {};
+  (j.data.usage || []).forEach(u => {
+    const pid = u.tags && u.tags.projectId; if (!pid) return;
+    const p = projects[pid] || (projects[pid] = { usd: 0, parts: {} });
+    const usd = (+u.value || 0) * (PRICE[u.measurement] || 0);
+    p.parts[KEY[u.measurement] || u.measurement] = Math.round(((p.parts[KEY[u.measurement]] || 0) + usd) * 10000) / 10000;
+    p.usd += usd;
+  });
+  const fx = await usdEur();
+  let total = 0;
+  Object.keys(projects).forEach(k => { const p = projects[k]; p.usd = Math.round(p.usd * 100) / 100; p.eur = Math.round(p.usd * fx * 100) / 100; total += p.usd; });
+  return { configured: true, fetchedAt: new Date().toISOString(), days: 30, fx, totalUsd: Math.round(total * 100) / 100, totalEur: Math.round(total * fx * 100) / 100, projects };
+}
+async function railwayCosts(force) {
+  if (RWCOST.data && !force && Date.now() - RWCOST.at < 30 * 60 * 1000) return RWCOST.data;
+  if (!RWCOST.p) { const pr = railwayCostsBuild().then(d => { RWCOST = { at: Date.now(), data: d, p: null }; return d; }).catch(e => { RWCOST.p = null; throw e; }); pr.catch(() => {}); RWCOST.p = pr; }
+  if (RWCOST.data && !force) return RWCOST.data;
+  return RWCOST.p;
+}
+
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
     if (adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin" });
@@ -1211,6 +1249,10 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/billing" && req.method === "POST") {
     try { const pl = await sevBody(req, 100000); const o = billingOp(pl); return send(res, 200, JSON.stringify({ ok: true, billing: o }), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/railway-costs" && req.method === "GET") {
+    try { const d = await railwayCosts(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ configured: true, error: String(e.message || e).slice(0, 200), projects: {} }), TYPES[".json"]); }
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });
