@@ -81,22 +81,27 @@ function ruleTextClass(t,side){
   if(/(innergemeinschaftliche[rnms]?|ig\.?|innergem) ?erwerb|erwerbsteuer/.test(t)) return {in:/steuerfrei|art\.? ?6 abs\.? ?2/.test(t)?"ige0":"ige"};
   if(/(innergemeinschaftliche[rn]?|ig\.?|innergem) ?lieferung|art\.? ?7 |art\.? ?6 abs\.? ?1/.test(t)) return {out:"igl"};
   if(/(innergemeinschaftliche[rn]?|ig\.?|innergem) ?(sonstige )?(dienst)?leistung|sonstige leistung.*(eu|gemeinschaft|unternehmer)|§ ?3a|art\.? ?196|eu.?(dienst)?leistung/.test(t)) return onlyIn?{in:"rc"}:{out:"zm"};
-  if(/reverse charge|13b|steuerschuldnerschaft|übergang der steuerschuld|leistungsempf(ä|ae)nger|§ ?19( abs\.? ?1)?\b/.test(t)){
+  if(/revers(e|ed)? ?charge|13b|steuerschuldnerschaft|übergang der steuerschuld|leistungsempf(ä|ae)nger|§ ?19( abs\.? ?1)?\b/.test(t)){
     if(/ohne vorsteuer|nicht abzieh/.test(t)) return {in:"rcnv"};
     if(/mit vorsteuer|vorsteuerabzug/.test(t)||onlyIn) return {in:"rc"};
     return onlyOut?{out:"rcout"}:{in:"rc",out:"rcout"};
   }
-  if(/nicht vorsteuerabzieh|ohne vorsteuerabzug|nicht abziehbar|keine vorsteuer/.test(t)) return {in:"none"};
+  if(/nicht vorsteuerabzieh|ohne vorsteuerabzug|nicht abziehbar|keine vorsteuer|versicherung|steuer nicht ausgewiesen|ohne (ust|umsatzsteuer|mwst)/.test(t)) return {in:"none"};
   if(/vorsteuer/.test(t)) return {in:"060"};
   if(/nicht im inland steuerbar|nicht steuerbar|nicht stb|leistungsort (im )?ausland|drittland/.test(t)) return {out:"nsout"};
   if(/ausfuhr|export/.test(t)) return {out:"011"};
   if(/nicht erhoben|kleinunternehmer|§ ?6 abs\.? ?1 z(iffer)? ?27/.test(t)) return onlyIn?{in:"none"}:{out:"016"};
   if(/steuerfrei|unecht befreit|§ ?6\b/.test(t)) return onlyIn?{in:"none"}:{out:"020"};
   if(/umsatzsteuerpflichtig|steuerpflichtig|ust ?pfl|normalsteuersatz|inland/.test(t)) return {out:"inl"};
+  // sevDesk-Standardsätze („Mit 20 % Mehrwertsteuer“): Inland mit Satz; „Mit 0 %“ sagt nichts über den Grund → je Beleg automatisch
+  var mr=t.match(/(mit )?(\d+(,\d)?) ?% ?(mehrwertsteuer|mwst|ust|umsatzsteuer|vorsteuer)?/); if(mr&&(mr[1]||mr[4])) return parseFloat(mr[2].replace(",","."))>0?{in:"060",out:"inl"}:{auto:true};
   return {};
 }
+// Schlüssel der Steuer-Einordnung eines Belegs: Update 2.0 taxRule-ID, Update 1.0 (taxType "custom") TaxSet als "ts<ID>"
+function ruleKey(d){ return d&&d.taxRule?String(d.taxRule):(d&&d.taxSet?"ts"+String(d.taxSet):""); }
 function setRules(raw,st){ RULES={}; if(st) RULEMAP=st.ruleMap||{};
-  (raw&&raw.taxRules||[]).forEach(function(r){ var c=ruleTextClass((r.description||"")+" "+(r.name||""),r.side); RULES[String(r.id)]={in:c.in||null,out:c.out||null,txt:r.description||r.name||"",side:r.side||"",known:!!(c.in||c.out)}; }); }
+  (raw&&raw.taxSets||[]).forEach(function(t){ var id="ts"+t.id, nm=String(t.name||""), c=ruleTextClass(nm,""); RULES[id]={in:c.in||null,out:c.out||null,txt:nm?nm+" (TaxSet)":"TaxSet "+t.id,side:"",known:!!(c.in||c.out||c.auto),auto:!!c.auto,taxSet:true,rate:t.rate}; });
+  (raw&&raw.taxRules||[]).forEach(function(r){ var c=ruleTextClass((r.description||"")+" "+(r.name||""),r.side); RULES[String(r.id)]={in:c.in||null,out:c.out||null,txt:r.description||r.name||"",side:r.side||"",known:!!(c.in||c.out||c.auto),auto:!!c.auto}; }); }
 function ruleSrc(id,side){ id=String(id||""); var m=RULEMAP[id], r=RULES&&RULES[id], d=side==="in"?RULE_IN_DEFAULT:RULE_OUT_DEFAULT;
   if(m&&m[side]) return {c:m[side],src:"Zuordnung im Cockpit"};
   if(r&&r[side]) return {c:r[side],src:"Text der Regel in deinem sevDesk-Konto"};
@@ -108,12 +113,13 @@ function ruleTxt(id){ var r=RULES&&RULES[String(id)]; return (r&&r.txt)||TAXRULE
 // Diagnose: alle Regeln des Kontos (und alle in Belegen verwendeten) mit erkannter Klasse, Quelle und Anzahl im Jahr
 function ruleDiagnosis(raw,st,year){ setRules(raw,st); var y=year?String(year):"", ids={}, cnt={};
   (raw.taxRules||[]).forEach(function(r){ ids[String(r.id)]=r; });
-  function c(d,side){ var id=String(d.taxRule||""); if(!id) return; if(!ids[id]) ids[id]={id:id,name:"",description:"",side:"",rates:[],fromDocs:true}; if(y&&String(d.date||"").slice(0,4)!==y) return; var x=cnt[id]=cnt[id]||{out:0,in:0}; x[side]++; }
+  (raw.taxSets||[]).forEach(function(t){ ids["ts"+t.id]={id:"ts"+t.id,name:"TaxSet "+t.id,description:t.name||"",side:"",rates:t.rate!=null?[t.rate+" %"]:[],taxSet:true}; });
+  function c(d,side){ var id=ruleKey(d); if(!id) return; if(!ids[id]) ids[id]={id:id,name:"",description:"",side:"",rates:[],fromDocs:true}; if(y&&String(d.date||"").slice(0,4)!==y) return; var x=cnt[id]=cnt[id]||{out:0,in:0}; x[side]++; }
   (raw.invoices||[]).forEach(function(d){ if(d.status>=200&&d.type!=="WKR"&&d.type!=="MA") c(d,"out"); }); (raw.creditNotes||[]).forEach(function(d){ c(d,"out"); });
   (raw.vouchers||[]).forEach(function(d){ if(d.status>=100&&d.type!=="RV") c(d,d.cd==="D"?"out":"in"); });
-  return Object.keys(ids).sort(function(a,b){ return +a-+b; }).map(function(id){ var r=ids[id], si=ruleSrc(id,"in"), so=ruleSrc(id,"out"), n=cnt[id]||{out:0,in:0}, ass=RULE_IN_DEFAULT[id]||RULE_OUT_DEFAULT[id]||"", R=RULES[id]||{};
-    var got=(R.in||R.out||""), unknown=!(si.c||so.c)||(!!RULES[id]&&!R.known&&!(RULEMAP[id]&&(RULEMAP[id].in||RULEMAP[id].out)));
-    return {id:id,name:r.name||"",description:r.description||"",side:r.side||"",rates:r.rates||[],fromDocs:!!r.fromDocs,in:si.c,inSrc:si.src,out:so.c,outSrc:so.src,nIn:n.in,nOut:n.out,map:RULEMAP[id]||null,
+  return Object.keys(ids).sort(function(a,b){ var ta=/^ts/.test(a), tb=/^ts/.test(b); return ta!==tb?(ta?1:-1):(+a.replace("ts","")-+b.replace("ts","")); }).map(function(id){ var r=ids[id], si=ruleSrc(id,"in"), so=ruleSrc(id,"out"), n=cnt[id]||{out:0,in:0}, ass=RULE_IN_DEFAULT[id]||RULE_OUT_DEFAULT[id]||"", R=RULES[id]||{};
+    var got=(R.in||R.out||(R.auto?"auto":"")), unknown=(!(si.c||so.c)&&!R.auto)||(!!RULES[id]&&!R.known&&!(RULEMAP[id]&&(RULEMAP[id].in||RULEMAP[id].out)));
+    return {id:id,taxSet:!!r.taxSet||/^ts/.test(id),name:r.name||"",description:r.description||"",side:r.side||"",rates:r.rates||[],fromDocs:!!r.fromDocs,in:si.c,inSrc:si.src,out:so.c,outSrc:so.src,nIn:n.in,nOut:n.out,map:RULEMAP[id]||null,
       erkannt:got,annahme:ass,unknown:unknown,used:n.in+n.out>0,ok:!unknown&&(!ass||!got||ass===got||(ass==="zm"&&got==="igl"))}; }); }  // 19 % (Jungholz/Mittelberg) wird bewusst nicht automatisch als AT gewertet – meist deutsche USt
 
 /* ---------- Belege normalisieren ---------- */
@@ -141,7 +147,16 @@ function monthEnd(ym){ var y=+ym.slice(0,4), m=+ym.slice(5,7); return new Date(D
 function nextYm(ym){ var y=+ym.slice(0,4), m=+ym.slice(5,7)+1; if(m>12){ y++; m=1; } return y+"-"+String(m).padStart(2,"0"); }
 // Leistungszeitraum (deliveryDate … deliveryDateUntil): eine Dauerleistung ohne vereinbarte Teilleistungen ist mit dem Ende des
 // Zeitraums ausgeführt (UStR 2000 Rz 2601 ff., Teilleistungen Rz 2610) → maßgeblich ist das Ende des Leistungszeitraums.
-function leistEnd(d){ return d.deliveryUntil&&d.deliveryUntil>=(d.delivery||"")?d.deliveryUntil:(d.delivery||d.date); }
+// Kurze Abrechnungsperioden (≤ 35 Tage: Monatsabos, Telefon, SaaS, Wartung je Monat) sind Teilleistungen der Abrechnungsperiode
+// → maßgeblich ist ihr Beginn (in sevDesk meist = Belegdatum). „Ende des Zeitraums“ nur für längere, nicht teilbare Zeiträume.
+var SHORT_DAYS=35;
+function isShortPeriod(d){ return !!(d&&d.delivery&&d.deliveryUntil&&d.deliveryUntil>d.delivery&&dayNo(d.deliveryUntil)-dayNo(d.delivery)<=SHORT_DAYS); }
+function leistEnd(d){ if(isShortPeriod(d)) return d.delivery; return d.deliveryUntil&&d.deliveryUntil>=(d.delivery||"")?d.deliveryUntil:(d.delivery||d.date); }
+// Voranmeldungszeitraum eines Datums, „abgeschlossen“ = als erledigt markiert/eingereicht oder Abgabefrist (15. des zweitfolgenden Monats) vorbei
+function periodKeyOf(st,date){ var y=date.slice(0,4), m=+date.slice(5,7); return (st&&st.settings&&st.settings.zeitraum)==="monat"?y+"-M"+String(m).padStart(2,"0"):y+"-Q"+Math.ceil(m/3); }
+function periodDue(key){ var p=periodOfKey(key); if(!p) return ""; var y=+p.to.slice(0,4), m=+p.to.slice(5,7)+2; if(m>12){ y++; m-=12; } return y+"-"+String(m).padStart(2,"0")+"-15"; }
+function periodClosed(st,key){ var today=(st&&st.today)||new Date().toISOString().slice(0,10), u=st&&st.uva&&st.uva[key]; return !!(u&&u.doneAt)||periodDue(key)<today; }
+function firstOpenFrom(st,date){ var p=periodOfKey(periodKeyOf(st,date)); for(var i=0;i<36&&p;i++){ var k=periodKeyOf(st,p.from); if(!periodClosed(st,k)) return {key:k,from:p.from}; p=periodOfKey(periodKeyOf(st,ymdAdd(p.to,1))); } return null; }
 function shiftSoll(l,d){ if(!d||!l||d.slice(0,7)<=l.slice(0,7)) return l; var lim=monthEnd(nextYm(l.slice(0,7))); return d<lim?d:lim; }
 function sollDate(inv){ var l=leistEnd(inv); if(!inv.delivery&&!inv.deliveryUntil) return l; return shiftSoll(l,inv.date); }
 // Steuerzeitpunkte einer Ausgangsrechnung (RE/TR/ER): Anteile {share,date,why}
@@ -158,7 +173,13 @@ function sollParts(inv,st,total){
     return out;
   }
   var pre=0;
-  if(g>0) payments(inv).forEach(function(pm){ if(pm.amount<=0||!pm.date||pm.date>=le||pm.date.slice(0,7)>=soll.slice(0,7)) return; var sh=Math.min(pm.amount/g,total-pre); if(sh<=1e-9) return; pre+=sh; out.push({share:sh,date:pm.date,why:"vor Ausführung der Leistung vereinnahmt – Mindest-Istbesteuerung (§ 19 Abs. 2 Z 1 lit. a)",pre:true}); });
+  var klein=!(st&&st.settings&&st.settings.kleineAnz===false);
+  if(g>0) payments(inv).forEach(function(pm){ if(pm.amount<=0||!pm.date||pm.date>=le||pm.date.slice(0,7)>=soll.slice(0,7)) return;
+    if(klein&&dayNo(le)-dayNo(pm.date)<31) return;          // kleine Vorauszahlung (< 1 Monat vor Leistung) → mit der Rechnung (Einstellung)
+    var sh=Math.min(pm.amount/g,total-pre); if(sh<=1e-9) return; pre+=sh;
+    var d=pm.date, why="vor Ausführung der Leistung vereinnahmt – Mindest-Istbesteuerung (§ 19 Abs. 2 Z 1 lit. a)", pk=periodKeyOf(st,d);
+    if(periodClosed(st,pk)){ var fo=firstOpenFrom(st,d); if(fo){ d=fo.from>soll?soll:fo.from; why="Nachholung aus "+pk.replace("-Q"," Q").replace("-M"," Monat ")+" – Anzahlung vor Rechnung (Zeitraum bereits abgegeben)"; } }
+    out.push({share:sh,date:d,why:why,pre:true}); });
   if(total-pre>1e-9) out.push({share:total-pre,date:soll,why:null});
   return out;
 }
@@ -179,7 +200,7 @@ function catNoNonBiz(l){ if(l.cat) return false; var n=parseInt(l.catNo,10); if(
 function nonBiz(l){ return /^(TAX|VAT|VATPAY|VATIMPORT|VATINT|EQUITYIN|EQUITYOUT)$/i.test(l.catType||"")||NONBIZ.test(l.cat||"")||catNoNonBiz(l)||l.sup==="fa"; }
 
 /* ---------- Einordnung ---------- */
-var OUT_OPTS=[["auto","automatisch"],["inl","Inland steuerpflichtig (Satz laut Rechnung)"],["ns","nicht steuerbar (Leistungsort Ausland) – nicht in 000"],["zm","Dienstleistung an EU-Unternehmer – nur ZM, nicht in 000"],["zmd","Dreiecksgeschäft (Mittelunternehmer) – ZM mit Kennzeichen"],["017","ig. Lieferung (Ware an EU-Unternehmer) – KZ 017 + ZM"],["011","Ausfuhrlieferung (Ware ins Drittland) – KZ 011"],["020","sonstige steuerfreie Umsätze – KZ 020"],["021","Reverse Charge im Inland (z. B. Bauleistung) – KZ 000/021"],["016","Kleinunternehmer – KZ 016"],["oss","One-Stop-Shop – nicht in der UVA"],["sonst","Kleinbetrag/sonstiges – nicht in UVA und ZM"],["ignore","nicht berücksichtigen"]];
+var OUT_OPTS=[["auto","automatisch"],["inl","Inland steuerpflichtig (Satz laut Rechnung)"],["ns","nicht steuerbar (Leistungsort Ausland) – nicht in 000"],["zm","Dienstleistung an EU-Unternehmer – nur ZM, nicht in 000"],["zmd","Dreiecksgeschäft (Mittelunternehmer) – ZM mit Kennzeichen"],["017","ig. Lieferung (Ware an EU-Unternehmer) – KZ 017 + ZM"],["011","Ausfuhrlieferung (Ware ins Drittland) – KZ 011"],["020","sonstige steuerfreie Umsätze – KZ 020"],["021","Reverse Charge im Inland (z. B. Bauleistung) – KZ 000/021"],["016","Kleinunternehmer – KZ 016"],["oss","One-Stop-Shop – nicht in der UVA"],["sonst","Kleinbetrag/sonstiges – nicht in UVA und ZM"],["dlp","durchlaufender Posten (nicht steuerbar)"],["nach20","0 % war falsch – 20 % aus dem Betrag herausrechnen (KZ 022)"],["ignore","nicht berücksichtigen"]];
 var IN_OPTS=[["auto","automatisch"],["060","österr. Vorsteuer laut Beleg – KZ 060"],["rc","Reverse Charge mit Vorsteuer – KZ 057/066"],["rcnv","Reverse Charge ohne Vorsteuer – nur KZ 057"],["ige","ig. Erwerb Ware aus der EU – KZ 070/072/065"],["ige3","ig. Erwerb im Dreiecksgeschäft – KZ 070/077 (gilt als besteuert)"],["ige0","steuerfreier ig. Erwerb – KZ 070/071"],["eust","Einfuhrumsatzsteuer – KZ 061"],["fx","ausländische USt – keine Vorsteuer (Erstattungsverfahren)"],["none","keine Vorsteuer (z. B. Pkw, privat, Versicherung)"],["ignore","nicht berücksichtigen"]];
 var RATE_KZ={"20":"022","13":"006","10":"029","4.9":"124","19":"037"};
 var IGE_KZ={"20":"072","13":"008","10":"073","4.9":"125","19":"088"};
@@ -188,14 +209,15 @@ var TAXRULE_TXT={"1":"steuerpflichtig","2":"Ausfuhr","3":"ig. Lieferung","4":"st
 // Ausgangsrechnung (oder Einnahmebeleg): Klasse je Position, mit Begründung
 function outWhy(doc,line,st){
   var cfg=docCfg(st,doc.id), o=cfg.kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o==="inl"?(line.rate>0?"inl":"pruefen"):o,why:"im Cockpit manuell eingeordnet"+(o==="020"&&cfg.grund?" ("+cfg.grund+")":""),sure:true};
-  var r=String(doc.taxRule||""), oi=outInfo(doc,st), cc=oi.cc, eu=isEU(cc)&&cc!=="AT", hasUid=!!oi.uid, sem=r?ruleOut(r):"", t=docText(doc);
+  var r=ruleKey(doc), oi=outInfo(doc,st), cc=oi.cc, eu=isEU(cc)&&cc!=="AT", hasUid=!!oi.uid, sem=r?ruleOut(r):"", t=docText(doc);
   var lief=RX_LIEF.test(t), drei=RX_DREI.test(t), rc=RX_RC.test(t), igK=drei?"zmd":(lief?"017":"zm"), igT=drei?"Dreiecksgeschäft":(lief?"ig. Lieferung":"ig. sonstige Leistung");
   var land=cc?" (Kunde "+cc+(oi.ccSrc?" laut "+oi.ccSrc:"")+(hasUid?", UID "+oi.uid+(oi.uidSrc!=="Kontakt"?" aus "+oi.uidSrc:""):", keine UID")+")":"";
   if(sem==="inl"||(!r&&(doc.taxType==="default"||doc.taxType==="custom"||!doc.taxType))){
     if(line.rate>0) return {c:"inl",why:"steuerpflichtig mit "+line.rate+" %"+land,sure:true};
     if(eu&&(hasUid||rc)) return {c:igK,why:"0 % an EU-Kunden"+(rc?" mit Hinweis im Rechnungstext":"")+" → "+igT+(hasUid?"":" – UID fehlt")+land,sure:oi.uidSrc==="Kontakt"&&!lief&&!drei};
     if(cc&&!isEU(cc)) return {c:"ns",why:"0 % an Kunden im Drittland → nicht steuerbar (Leistungsort Ausland)"+land,sure:oi.ccSrc==="Kontakt"||oi.ccSrc==="UID"};
-    return {c:"pruefen",why:"0 % bei steuerpflichtiger Regel – Land/UID unklar"+land,sure:false};
+    if(cc==="AT"&&(hasUid||oi.ccSrc==="UID")) return {c:"pruefen",at:true,why:"0 % an österreichischen Unternehmer – nur korrekt bei steuerfreier Leistung/durchlaufendem Posten, sonst 20 % nachversteuern"+land,sure:false};
+    return {c:"pruefen",at:cc==="AT",why:(cc==="AT"?"0 % an Kunden in Österreich – steuerfrei, durchlaufender Posten oder 20 % nachversteuern?":"0 % bei steuerpflichtiger Regel – Land/UID unklar")+land,sure:false};
   }
   if(sem==="011") return {c:"011",why:"Ausfuhr laut sevDesk-Steuerregel",sure:true};
   if(sem==="igl") return {c:"017",why:"ig. Lieferung laut sevDesk-Steuerregel → KZ 017 + ZM (Lieferung)"+land,sure:true};
@@ -221,7 +243,7 @@ function inWhy(v,line,st){
     if(!ac.epkw) return {c:"none",why:"Pkw/Kombi: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG)"};
     var gr=Math.abs(num(v.gross)); if(gr>80000) return {c:"none",why:"E-Pkw über 80.000 € brutto: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2a UStG)"};
   }
-  var r=String(v.taxRule||""), cc=supplierCountry(v), foreign=!!cc&&cc!=="AT", tax=Math.abs(line.tax)>0.004, sem=r?ruleIn(r):"";
+  var r=ruleKey(v), cc=supplierCountry(v), foreign=!!cc&&cc!=="AT", tax=Math.abs(line.tax)>0.004, sem=r?ruleIn(r):"";
   var src=uidCountry(v.supplierUid)?"UID":(cc&&cc!==String(v.supplierCountry||"").toUpperCase()?"bekannter Anbieter":"Kontaktadresse"), land=cc?" (Lieferant "+cc+" laut "+src+")":"";
   if(sem==="ige"||(!r&&v.taxType==="eu")){ var w=igeOrService(v,line,st); return w.c==="rc"?{c:"rc",why:"in sevDesk als ig. Erwerb gebucht – für die UVA als Reverse-Charge-Leistung behandelt (§ 19 Abs. 1 UStG, KZ 057/066): "+w.why+land,sure:w.sure}:{c:"ige",why:"ig. Erwerb (Ware) laut sevDesk"+(w.why?": "+w.why:"")+land,sure:w.sure}; }
   if(sem==="none"||(!r&&v.taxType==="ss")) return {c:"none",why:"nicht vorsteuerabziehbar laut sevDesk"};
@@ -358,7 +380,8 @@ function computeUva(raw,st,p){
     else if(c==="zm"){ zm.push({doc:doc,uid:outInfo(doc,st).uid,net:net,date:pt.date,kind:"S"}); }
     else if(c==="zmd"){ zm.push({doc:doc,uid:outInfo(doc,st).uid,net:net,date:pt.date,kind:"L",dreieck:true}); }
     else if(c==="ns"){ other.ns.push({doc:doc,kind:kind,base:r2(net),date:pt.date}); }
-    else if(c==="sonst"){ (other.sonst=other.sonst||[]).push({doc:doc,kind:kind,base:r2(net),date:pt.date}); }
+    else if(c==="sonst"||c==="dlp"){ (other.sonst=other.sonst||[]).push({doc:doc,kind:kind,base:r2(net),date:pt.date,why:c==="dlp"?"durchlaufender Posten (nicht steuerbar)":""}); }
+    else if(c==="nach20"){ var b20=net/1.2; add("000",b20,0,doc,kind,pt.date,"0 % irrtümlich – 20 % aus dem Betrag herausgerechnet"); add("022",b20,net-b20,doc,kind,pt.date,"0 % irrtümlich – 20 % aus dem Betrag herausgerechnet"); }
     else if(c==="oss"){ other.oss.push({doc:doc,kind:kind,base:r2(net),tax:r2(tax),date:pt.date}); }
     else review.push({doc:doc,kind:kind,why:"0 % ohne passende Steuerregel – bitte einordnen"});
   }
@@ -685,10 +708,10 @@ function zeroRated(raw,st,p){ setRules(raw,st); var out=[];
     var d=leistEnd(inv); if(!inP(d,p)&&!inP(inv.date,p)) return;
     var w=null; ls.forEach(function(l){ if(l.rate>0) return; var x=outWhy(inv,l,st); if(!w||!x.sure) w=x; }); if(!w) return;
     var oi=outInfo(inv,st), cfg=docCfg(st,inv.id);
-    out.push({doc:inv,net:r2(ls.filter(function(l){ return !(l.rate>0); }).reduce(function(a,l){ return a+l.net; },0)),klasse:w.c,why:w.why,sure:!!w.sure,manual:!!(cfg.kz&&cfg.kz!=="auto"),uid:oi.uid,uidSrc:oi.uidSrc,land:oi.cc,landSrc:oi.ccSrc,rule:inv.taxRule?ruleTxt(inv.taxRule):""}); });
+    out.push({doc:inv,net:r2(ls.filter(function(l){ return !(l.rate>0); }).reduce(function(a,l){ return a+l.net; },0)),klasse:w.c,why:w.why,sure:!!w.sure,manual:!!(cfg.kz&&cfg.kz!=="auto"),at:!!w.at,uid:oi.uid,uidSrc:oi.uidSrc,land:oi.cc,landSrc:oi.ccSrc,rule:ruleKey(inv)?ruleTxt(ruleKey(inv)):""}); });
   return out; }
 function igeReview(raw,st,p){ setRules(raw,st); var by={};
-  (raw.vouchers||[]).forEach(function(v){ if(v.cd!=="C"||skipVou(v,st)||!inP(v.date,p)) return; lines(v).forEach(function(l){ var r=String(v.taxRule||""); if(nonBiz(l)||!(r?ruleIn(r)==="ige":v.taxType==="eu")||(docCfg(st,v.id).kz&&docCfg(st,v.id).kz!=="auto")) return;
+  (raw.vouchers||[]).forEach(function(v){ if(v.cd!=="C"||skipVou(v,st)||!inP(v.date,p)) return; lines(v).forEach(function(l){ var r=ruleKey(v); if(nonBiz(l)||!(r?ruleIn(r)==="ige":v.taxType==="eu")||(docCfg(st,v.id).kz&&docCfg(st,v.id).kz!=="auto")) return;
     var w=igeOrService(v,l,st), k=supKey(v), x=by[k]=by[k]||{key:k,supplier:v.supplier||"",klasse:w.c,why:w.why,sure:w.sure,net:0,docs:[]}; x.net+=l.net; if(x.docs.indexOf(v)<0) x.docs.push(v); if(!w.sure) x.sure=false; }); });
   return Object.keys(by).map(function(k){ by[k].net=r2(by[k].net); return by[k]; }); }
 
@@ -702,7 +725,7 @@ function suggestRule(v,c){
     if(ids.length){ if(want==="rc"&&ids.length>1){ var e=ids.filter(function(id){ return /\beu\b|abs\. ?1\b/i.test(RULES[id].txt); }); var ne=ids.filter(function(id){ return e.indexOf(id)<0; }); return (eu?e[0]:ne[0])||ids[0]; } return ids[0]; } }
   if(c==="rc") return eu?"14":"12"; if(c==="rcnv") return "13"; if(c==="ige") return "8"; if(c==="060") return "9"; if(c==="none"||c==="fx") return "10"; return "";
 }
-function sevClassOf(v,l){ var r=String(v.taxRule||""), sem=r?ruleIn(r):""; if(sem==="ige"||sem==="none"||sem==="rc"||sem==="rcnv") return sem; if(sem==="060"||!r) return Math.abs(l.tax)>0.004?"060":"none"; return ""; }
+function sevClassOf(v,l){ var r=ruleKey(v), sem=r?ruleIn(r):""; if(sem==="ige"||sem==="none"||sem==="rc"||sem==="rcnv") return sem; if(sem==="060"||!r) return Math.abs(l.tax)>0.004?"060":"none"; return ""; }
 function mismatches(raw,st,from,to){
   setRules(raw,st); var out=[];
   (raw.vouchers||[]).forEach(function(v){
@@ -717,7 +740,7 @@ function mismatches(raw,st,from,to){
       else if(sev&&mine!==sev&&!(mine==="none"&&sev==="none")){
         var rule=suggestRule(v,mine), allZero=ls.every(function(x){ return Math.abs(x.tax)<0.005&&!x.rate; });
         var canRule=!!rule&&!!v.taxRule&&(rule==="9"||rule==="8"||allZero);
-        out.push({doc:v,kind:"in",type:ov&&ov!=="auto"?"override":"rule",t:(ov&&ov!=="auto"?"Cockpit-Einordnung weicht von sevDesk ab":"Steuerregel passt nicht")+": sevDesk "+(ruleTxt(v.taxRule)||v.taxType||"–")+" → Cockpit "+(IN_OPTS.filter(function(o){ return o[0]===mine; })[0]||[,mine])[1]+(cc?" (Lieferant "+cc+")":""),rule:rule,fixable:canRule&&!v.enshrined,enshrined:!!v.enshrined});
+        out.push({doc:v,kind:"in",type:ov&&ov!=="auto"?"override":"rule",t:(ov&&ov!=="auto"?"Cockpit-Einordnung weicht von sevDesk ab":"Steuerregel passt nicht")+": sevDesk "+(ruleKey(v)?ruleTxt(ruleKey(v)):(v.taxType||"–"))+" → Cockpit "+(IN_OPTS.filter(function(o){ return o[0]===mine; })[0]||[,mine])[1]+(cc?" (Lieferant "+cc+")":""),rule:rule,fixable:canRule&&!v.enshrined,enshrined:!!v.enshrined});
       }
     });
   });
@@ -730,7 +753,7 @@ function mismatches(raw,st,from,to){
       else if(!uv.ok) out.push({doc:inv,kind:"out",type:"uid",t:"UID „"+eu0+"“ ungültig: "+uv.why,fixable:false});
       if(!inv.delivery) out.push({doc:inv,kind:"out",type:"delivery",t:"Kein Leistungsdatum – ZM-Zeitraum wird nach Rechnungsdatum bestimmt",fixable:false});
     }
-    var ov=docCfg(st,inv.id).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – sevDesk-Steuerregel: "+(ruleTxt(inv.taxRule)||inv.taxType||"–"),fixable:false});
+    var ov=docCfg(st,inv.id).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – sevDesk-Steuerregel: "+(ruleKey(inv)?ruleTxt(ruleKey(inv)):(inv.taxType||"–")),fixable:false});
     if(cl.indexOf("pruefen")>-1) out.push({doc:inv,kind:"out",type:"rule",t:"0 % bei steuerpflichtiger Steuerregel – Steuerregel oder Satz in sevDesk prüfen",fixable:false});
   });
   return out;
@@ -774,11 +797,11 @@ function explainDoc(raw,st,id){
   var out=!!inv||(v&&v.cd==="D"), kz={inl:"000 + Satz-KZ",ns:"–",zm:"ZM",zmd:"ZM (Dreieck)","017":"000 + 017","011":"000 + 011","020":"000 + 020","021":"000 + 021","016":"000 + 016",oss:"OSS","060":"060",rc:"057 + 066",rcnv:"057",ige:"070 + 072/073/008 + 065",ige3:"070 + 077",ige0:"070 + 071",eust:"061",fx:"–",none:"–",pruefen:"–"};
   var ls=lines(d).map(function(l){ var w=out?outWhy(d,l,st):inWhy(d,l,st); return {rate:l.rate,net:r2(l.net),tax:r2(l.tax),cat:l.cat,klasse:w.c,kennzahlen:kz[w.c]||"",begruendung:w.why,nichtBetrieblich:nonBiz(l)}; });
   return {id:id,art:out?"Ausgang":"Eingang",nr:d.nr||"",partner:d.contact||d.supplier||"",datum:d.date,leistungsdatum:d.delivery||null,netto:d.net,steuer:d.tax,brutto:d.gross,
-    sevDeskRegel:d.taxRule?{id:d.taxRule,text:ruleTxt(d.taxRule)}:null,land:out?customerCountry(d,st):supplierCountry(d),uid:out?outInfo(d,st).uid:(d.supplierUid||""),override:docCfg(st,id).kz||null,
+    sevDeskRegel:ruleKey(d)?{id:ruleKey(d),text:ruleTxt(ruleKey(d))}:null,land:out?customerCountry(d,st):supplierCountry(d),uid:out?outInfo(d,st).uid:(d.supplierUid||""),override:docCfg(st,id).kz||null,
     positionen:ls,optionen:(out?OUT_OPTS:IN_OPTS).map(function(o){ return o[0]; })};
 }
 
-return {VERSION:7,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
+return {VERSION:9,isShortPeriod:isShortPeriod,periodClosed:periodClosed,periodDue:periodDue,ruleKey:ruleKey,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
   OUT_OPTS:OUT_OPTS,IN_OPTS:IN_OPTS,UVA_ROWS:UVA_ROWS,MANUAL_KZ:MANUAL_KZ,BASE_KZ:BASE_KZ,TAX_KZ:TAX_KZ,TAXRULE_TXT:TAXRULE_TXT,E1A:E1A,
   computeUva:computeUva,uvaKzMap:uvaKzMap,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
   revenueNet:revenueNet,revenueGross:revenueGross,controlCheck:controlCheck,plausibility:plausibility,mismatches:mismatches,docCfg:docCfg,

@@ -196,7 +196,7 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
 {
   const host = (o) => inv(Object.assign({ net: 1200, tax: 240, date: "2026-01-05", delivery: "2026-01-01", deliveryUntil: "2026-12-31" }, o));
   const h1 = host(), h2 = host({ status: 1000, paid: 1440, payDate: "2026-02-10" }), h3 = host();
-  const s = st0(); s.docs[h3.id] = { teil: true };
+  const s = st0(); s.docs[h3.id] = { teil: true }; s.today = "2026-01-02";   // keine Vorperiode abgeschlossen
   const U = (raw, q) => S.computeUva(raw, s, Q(2026, q));
   t("Jahres-Hosting 01–12/2026, unbezahlt: Steuerschuld erst mit Ende des Zeitraums (Q4), nicht Q1", () => { near(kz(U({ invoices: [h1], vouchers: [] }, 1), "022"), 0); near(kz(U({ invoices: [h1], vouchers: [] }, 4), "022"), 1200); near(kz(U({ invoices: [h1], vouchers: [] }, 4), "022", "tax"), 240); });
   t("Jahres-Hosting im Februar bezahlt: Mindest-Istbesteuerung Q1 1.200/240, Q4 nichts mehr", () => { near(kz(U({ invoices: [h2], vouchers: [] }, 1), "022"), 1200); near(kz(U({ invoices: [h2], vouchers: [] }, 4), "022"), 0); });
@@ -368,6 +368,38 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
   t("U1: Kleinunternehmer ≤ 55.000 € ohne Steuer → keine Pflicht (§ 21 Abs 6)", () => { const sk = st0(); const k = inv({ net: 30000, tax: 0, rate: 0, taxRule: "11", date: "2026-03-01", delivery: "2026-03-01" }); assert.ok(!S.computeU1({ invoices: [k], vouchers: [] }, sk, 2026).pflicht); });
   t("periodOfKey: Monat Februar und Quartal", () => { assert.strictEqual(S.periodOfKey("2026-M02").to, "2026-02-28"); assert.strictEqual(S.periodOfKey("2026-Q4").from, "2026-10-01"); });
   t("Kalibrierung: 0 %-Umsätze → ZM DE 600, CH nicht steuerbar", () => { assert.ok(S.zmRows(r).some(x => x.uid === "DE123456789" && Math.abs(x.net - 600) < 0.01)); assert.ok(r.other.ns.some(x => x.doc === inv0ch)); });
+}
+
+/* ===================== (o) Live-Konstellation Q3 2026: TaxSets statt taxRules, 30-Tage-Abos, Status 100, Anzahlung vor Rechnung, AT-Kunde 0 % ===================== */
+{
+  const TS = [{ id: "126031", name: "Reversed Charge" }, { id: "126032", name: "Innergemeinschaftlicher Erwerb" }, { id: "126033", name: "Versicherungen" }, { id: "126034", name: "" }];
+  const cv = o => vou(Object.assign({ taxRule: "", taxType: "custom", status: 100 }, o));
+  const adobe = cv({ net: 59.99, taxSet: "126031", date: "2026-09-17", delivery: "2026-09-17", deliveryUntil: "2026-10-16", supplier: "Adobe Systems Software Ireland Ltd" });
+  const anth = cv({ net: 180, taxSet: "126031", date: "2026-08-05", delivery: "2026-08-05", deliveryUntil: "2026-09-04", supplier: "Anthropic, PBC" });
+  const wix = cv({ net: 20, taxSet: "126032", date: "2026-07-10", supplier: "Wix.com Ltd", cat: "Software" });
+  const vers = cv({ net: 100, taxSet: "126033", date: "2026-07-12", cat: "Versicherung" }), unk = cv({ net: 10, taxSet: "126034", date: "2026-07-13", supplier: "Unbekannt GmbH" });
+  const a1 = vou({ taxRule: "", taxType: "default", status: 100, net: 100, tax: 20, date: "2026-09-28", delivery: "2026-09-28", deliveryUntil: "2026-10-27", supplier: "A1 Telekom Austria AG" });
+  const re1203 = inv({ nr: "RE-1203", taxRule: "", net: 1000, tax: 200, date: "2026-07-08", delivery: "2026-07-08", status: 1000, paid: 1200, pays: [{ date: "2026-06-25", amount: 1200 }] });
+  const re1200 = inv({ nr: "RE-1200b", taxRule: "", net: 500, tax: 100, date: "2026-08-20", delivery: "2026-08-20", status: 1000, paid: 600, pays: [{ date: "2026-06-24", amount: 600 }] });
+  const tav = inv({ nr: "RE-1210", taxRule: "", contact: "La Taverna VIII", uid: "ATU61300844", country: "AT", net: 835.07, tax: 0, rate: 0, date: "2026-08-02", delivery: "2026-08-02" });
+  const RAWL = { invoices: [re1203, re1200, tav], vouchers: [adobe, anth, wix, vers, unk, a1], creditNotes: [], taxRules: [], taxSets: TS };
+  const s = st0(); s.today = "2026-10-01"; s.uva = { "2026-Q2": { doneAt: "2026-07-20", summary: { zahllast: 500 } } };
+  const r = S.computeUva(RAWL, s, Q(2026, 3)), r2 = S.computeUva(RAWL, s, Q(2026, 2));
+  /* Hand-Rechnung Q3: RC 59,99 + 180 + 20 (Wix: als ig. Erwerb gebucht, Software → RC) = 259,99 → 12,00 + 36,00 + 4,00 = 52,00 (057 = 066)
+     060: A1 20 (Abo 28.09.–27.10. = Teilleistung ab Beginn, unbezahlt laut sevDesk egal) · 022: 1.000 (RE-1203, Vorauszahlung 13 Tage → mit Rechnung)
+     + 500 (RE-1200b, Vorauszahlung 24.06., Q2 bereits abgegeben → Nachholung Q3) = 1.500 → 300 · Zahllast 300 + 52 − 52 − 20 = 280 */
+  t("Live: TaxSets per Name klassifiziert (Reversed Charge → RC, ig. Erwerb, Versicherungen → keine VSt), unbenanntes TaxSet → bitte zuordnen", () => {
+    const d = S.ruleDiagnosis(RAWL, s, 2026), f = id => d.find(x => x.id === id);
+    assert.strictEqual(f("ts126031").in, "rc"); assert.strictEqual(f("ts126032").in, "ige"); assert.strictEqual(f("ts126033").in, "none"); assert.ok(f("ts126034").unknown); assert.strictEqual(f("ts126031").nIn, 2); });
+  t("Live: 30-Tage-Abos mit Status 100 → RC in Q3: 057 259,99 / 52,00 = 066", () => { near(kz(r, "057"), 259.99); near(kz(r, "057", "tax"), 52); near(kz(r, "066", "tax"), 52); });
+  t("Live: A1-Rechnung 28.09. (Periode bis 27.10., unbezahlt) → Vorsteuer Q3 = 20", () => near(kz(r, "060", "tax"), 20));
+  t("Live: Anzahlung vor Rechnung, Q2 abgegeben → RE-1203 und RE-1200b in Q3 (022 = 1.500), nichts in Q2", () => { near(kz(r, "022"), 1500); near(kz(r2, "022"), 0); assert.ok((r.docs["022"] || []).some(x => x.doc === re1200 && /Nachholung/.test(x.why))); });
+  t("Live: Einstellung 'kleine Vorauszahlungen im Zahlungsmonat' → RE-1203 ebenfalls als Nachholung in Q3", () => { const s2 = JSON.parse(JSON.stringify(s)); s2.settings = { kleineAnz: false }; const rr = S.computeUva(RAWL, s2, Q(2026, 3)); near(kz(rr, "022"), 1500); assert.ok((rr.docs["022"] || []).some(x => x.doc === re1203 && /Nachholung/.test(x.why))); });
+  t("Live: Q2 noch offen (heute 2026-07-01) → strenge Anzahlung RE-1200b in Q2", () => { const s3 = st0(); s3.today = "2026-07-01"; near(kz(S.computeUva(RAWL, s3, Q(2026, 2)), "022"), 500); });
+  t("Live: La Taverna (AT-UID, 0 %) → keine ig. Lieferung, 'bitte zuordnen' mit Inlandshinweis; Q3 ohne KZ 017/ZM", () => {
+    const z = S.zeroRated(RAWL, s, Q(2026, 3)).find(x => x.doc === tav); assert.ok(z && z.at && !z.sure && /österreichischen Unternehmer/.test(z.why)); near(kz(r, "017"), 0); assert.strictEqual(r.zm.length, 0); });
+  t("Live: Zahllast Q3 = 280; '0 % war falsch' → 835,07 brutto = 695,89 netto + 139,18 USt in 022", () => {
+    near(r.zahllast, 280); const s4 = JSON.parse(JSON.stringify(s)); s4.docs[tav.id] = { kz: "nach20" }; const r4 = S.computeUva(RAWL, s4, Q(2026, 3)); near(kz(r4, "022"), 2195.89); near(r4.zahllast, 280 + 139.18); });
 }
 
 /* ===================== (g) XML gegen BMF-XSD ===================== */
