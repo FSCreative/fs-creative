@@ -900,12 +900,19 @@ async function sevVoucherFromMail(pl) {
   const rate = isFinite(parseFloat(pl.taxRate)) ? parseFloat(pl.taxRate) : 20;
   const day = /^\d{4}-\d{2}-\d{2}$/.test(pl.date || "") ? pl.date : viennaToday();
   const at = String(pl.accountingTypeId || "").replace(/\D/g, ""); if (!at) throw new Error("keine_kategorie");
+  // Optional (KI-Vorbefüllung): je Steuersatz eine Position, Steuerregel nach sevDesk Update 2.0, Leistungszeitraum
+  const posIn = (Array.isArray(pl.positions) ? pl.positions : []).filter(x => x && parseFloat(x.gross) > 0).slice(0, 10);
+  const pos = posIn.length ? posIn.map(x => { const r = isFinite(parseFloat(x.taxRate)) ? parseFloat(x.taxRate) : rate, g = Math.round(parseFloat(x.gross) * 100) / 100; return { r, g }; }) : [{ r: rate, g: gross }];
+  const rule = ["8", "9", "10", "12", "13", "14"].indexOf(String(pl.taxRule || "")) > -1 ? String(pl.taxRule) : "";
   const body = {
     voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(day), supplierName: String(pl.supplierName || "").slice(0, 200), description: String(pl.description || "").slice(0, 250),
       status: 50, taxType: "default", creditDebit: "C", voucherType: "VOU", currency: "EUR" },
-    voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: rate, net: false, sumGross: gross, sumNet: sevNet(gross, rate), comment: String(pl.description || "").slice(0, 250) }],
+    voucherPosSave: pos.map(x => ({ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: x.r, net: false, sumGross: x.g, sumNet: sevNet(x.g, x.r), comment: String(pl.description || "").slice(0, 250) })),
     voucherPosDelete: null, filename: tmp,
   };
+  if (rule) { body.voucher.taxRule = { id: rule, objectName: "TaxRule" }; delete body.voucher.taxType; }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDate || "")) body.voucher.deliveryDate = sevDateDE(pl.deliveryDate);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDateUntil || "") && pl.deliveryDateUntil !== pl.deliveryDate) body.voucher.deliveryDateUntil = sevDateDE(pl.deliveryDateUntil);
   const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
   const v = j && j.objects && (j.objects.voucher || j.objects) || {};
   SEV_CACHE.at = 0;
@@ -1793,6 +1800,8 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 302, "", "text/plain", { "Set-Cookie": "fsadmin=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure", Location: "/admin/login" });
   }
   if (!adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin/login" });
+  // KI-Funktionen (Claude) – eigenes Modul ki.js
+  if (p.indexOf("/admin/api/ki/") === 0) return KI.handle(req, res, u, p);
 
   if (p === "/admin" || p === "/admin/") {
     return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
@@ -1910,6 +1919,7 @@ async function handleAdmin(req, res, u, p) {
       { key: "valuero", label: "VALUERO (Antonhaus / Alpinappart)", ok: !!(ANTONHAUS.token || ALPINAPPART.key) },
     ];
     integrations.push({ key: "sevdesk", label: "sevDesk (Buchhaltung)" + (SEV.src === "kochdu" ? " – Schlüssel von kochdu" : ""), ok: !!(SEV.key || await sevKey().catch(() => "")) });
+    integrations.push({ key: "ki", label: "KI (Claude von Anthropic)", ok: KI.configured() });
     const ic = icloudCfg();
     integrations.push({ key: "icloud", label: "Privater Kalender (iCloud)", ok: !!(ic.user && ic.pass && ic.calUrl) });
     return send(res, 200, JSON.stringify({ accounts, integrations, canSave: !!RW.token, icloud: { configured: !!(ic.user && ic.pass && ic.calUrl), user: ic.user, calName: ic.calName, calColor: ic.calColor } }), TYPES[".json"], { "Cache-Control": "no-store" });
@@ -2269,6 +2279,10 @@ function handleAnfrage(req, res) {
     return json(200, { ok: true });
   });
 }
+
+// ── KI (Claude über die Anthropic API): Logik in ki.js, hier nur die Anbindung an vorhandene Daten ──
+const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos, readLeads, cockpitData, mailSnapshot, sevMeta,
+  steuerRaw: f => steuerRaw(f), readSteuer: () => readSteuer(), background: require.main === module });
 
 const server = http.createServer((req, res) => {
   try {
