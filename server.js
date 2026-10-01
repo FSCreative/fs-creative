@@ -781,7 +781,7 @@ async function sevBuild() {
     sev("GET", "/CheckAccountTransaction", { query: { limit: 300 } }).catch(() => ({ objects: [] })),
     sev("GET", "/Voucher", { query: { limit: 300 } }).catch(() => ({ objects: [] })),
   ]);
-  const invoices = (inv && inv.objects || []).filter(o => o.invoiceType !== "MA").map(o => {
+  const invoices = (inv && inv.objects || []).filter(o => o.invoiceType !== "MA" && o.invoiceType !== "WKR").map(o => {   // WKR = Vorlage für wiederkehrende Rechnungen, keine Forderung
     const date = sevDay(o.invoiceDate), gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount), status = parseInt(o.status, 10) || 0;
     let due = null;
     if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
@@ -1362,7 +1362,7 @@ function readSteuer() {
 }
 function writeSteuer(o) { try { fs.writeFileSync(STEUER_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
 // Für den Browser: Archiv ohne XML (das gibt es einzeln)
-function steuerPublic(o) { return { settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
+function steuerPublic(o) { return { vies: o.vies || {}, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
 // Alle Seiten laden; doppelte Objekte (z. B. wenn offset ignoriert wird) werden entfernt und gezählt
 async function sevAll(pathq, query, max, stats) {
   const out = []; const seen = new Set(); const lim = 1000; let dupes = 0;
@@ -1393,7 +1393,7 @@ async function steuerRaw(force) {
   if (STEUER_CACHE.p) return STEUER_CACHE.p;
   STEUER_CACHE.p = (async () => {
     const dupes = {};
-    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr] = await Promise.all([
+    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr, guide] = await Promise.all([
       sevAll("/Invoice", { embed: "contact,addressCountry" }, 6000, dupes), sevAll("/InvoicePos", {}, 20000, dupes),
       sevAll("/Voucher", { embed: "supplier" }, 6000, dupes), sevAll("/VoucherPos", { embed: "accountingType" }, 20000, dupes),
       sevAll("/CreditNote", { embed: "contact" }, 3000, dupes).catch(() => []), sevAll("/CreditNotePos", {}, 6000, dupes).catch(() => []),
@@ -1401,6 +1401,7 @@ async function steuerRaw(force) {
       // Zahlungszuordnungen (für Teilzahlungen je Zahlungsdatum) – nicht in der offiziellen Doku, daher optional
       sevAll("/CheckAccountTransactionLog", {}, 20000, dupes).catch(() => []),
       sevAll("/ContactAddress", { embed: "country" }, 6000, dupes).catch(() => []),   // Land der Kunden/Lieferanten (für RC/ZM)
+      sev("GET", "/ReceiptGuidance/forAllAccounts", { timeout: 40000 }).catch(() => null),  // Steuerregeln des Kontos (Diagnose)
     ]);
     const ctry = {}; addr.forEach(a => { const cid = a.contact && a.contact.id, c = a.country && (a.country.code || ""); if (cid && c && !ctry[cid]) ctry[cid] = String(c).toUpperCase(); });
     const posBy = sevPosLines(ipos, "invoice"), vposBy = sevPosLines(vpos, "voucher"), cnBy = sevPosLines(cnpos, "creditNote");
@@ -1429,27 +1430,34 @@ async function steuerRaw(force) {
     const cutoff = new Date(Date.now() - 500 * 864e5).toISOString().slice(0, 10);
     const transactions = tx.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
       .filter(t => t.amount < 0 && (t.date || "") >= cutoff && /finanzamt|abgabenkonto|bmf|steuer|\bust\b|umsatzsteuer|\bfa\b/i.test(t.name + " " + t.purpose));
-    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
+    // Steuerregeln (id, Name, Beschreibung, Seite) aus der ReceiptGuidance – damit die Zuordnung zum österreichischen Konto geprüft werden kann
+    const trBy = {}; ((guide && guide.objects) || []).forEach(g => { const side = (g.allowedReceiptTypes || []).join("/"); (g.allowedTaxRules || []).forEach(r => { if (r == null || r.id == null) return; const k = String(r.id); const x = trBy[k] = trBy[k] || { id: k, name: r.name || "", description: r.description || "", rates: [], side: "" };
+      (r.taxRates || []).forEach(t => { if (x.rates.indexOf(t) < 0) x.rates.push(t); }); if (side && x.side.indexOf(side) < 0) x.side = (x.side ? x.side + "/" : "") + side; }); });
+    const taxRules = Object.keys(trBy).map(k => trBy[k]).sort((a, b) => +a.id - +b.id);
+    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, taxRules, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
     STEUER_CACHE = { at: Date.now(), data: d, p: null };
     return d;
   })().catch(e => { STEUER_CACHE.p = null; throw e; });
   return STEUER_CACHE.p;
 }
-const STEUER_KZ_OK = /^(auto|inl|ns|zm|017|011|020|021|016|oss|060|rc|rcnv|ige|eust|fx|none|ignore)$/;
+const STEUER_KZ_OK = /^(auto|inl|ns|zm|zmd|017|011|020|021|016|oss|060|rc|rcnv|ige|ige3|ige0|eust|fx|none|ignore)$/;
 function steuerOp(pl) {
   const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
   const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
-  if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4); }
+  if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
+    // Betriebsdaten für die E1a im Datenstrom JAHR_ERKL
+    if ("betriebAdr" in P) o.settings.betriebAdr = String(P.betriebAdr || "").slice(0, 60); if ("betriebPlz" in P) o.settings.betriebPlz = String(P.betriebPlz || "").replace(/[^0-9A-Z]/gi, "").slice(0, 10); if ("betriebOrt" in P) o.settings.betriebOrt = String(P.betriebOrt || "").slice(0, 40);
+    if ("brkz" in P) o.settings.brkz = String(P.brkz || "").replace(/\D/g, "").slice(0, 3); if ("einkunftsart" in P) o.settings.einkunftsart = P.einkunftsart === "SA" ? "SA" : "GW"; }
   else if (op === "mapping") { const m = pl.mapping || {}; Object.keys(m).forEach(k => { const v = String(m[k] || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12); if (v) o.mapping[String(k).slice(0, 120)] = v; else delete o.mapping[String(k).slice(0, 120)]; }); }
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
     if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
-    ["asset", "ignore", "pkw", "epkw", "used"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
     if ("nd" in P) { const n = parseInt(P.nd, 10); cur.nd = n > 0 && n < 60 ? n : undefined; }
     if ("method" in P) cur.method = P.method === "deg" ? "deg" : undefined;
     if ("degRate" in P) { const n = n2(P.degRate); cur.degRate = n > 0 && n <= 30 ? n : undefined; }
     if ("benefit" in P) cur.benefit = /^(gfb|ifb10|ifb15|ifb20|ifb22)$/.test(P.benefit) ? (P.benefit === "ifb20" ? "ifb10" : P.benefit === "ifb22" ? "ifb15" : P.benefit) : undefined;
-    ["abgang", "start"].forEach(f => { if (f in P) cur[f] = /^\d{4}-\d{2}-\d{2}$/.test(P[f] || "") ? P[f] : undefined; });
+    ["abgang", "start", "ausfall"].forEach(f => { if (f in P) cur[f] = /^\d{4}-\d{2}-\d{2}$/.test(P[f] || "") ? P[f] : undefined; });
     o.docs[id] = JSON.parse(JSON.stringify(cur));
   }
   else if (op === "manual" && key) {   // manuelle UVA-Kennzahl je Zeitraum
@@ -1460,8 +1468,10 @@ function steuerOp(pl) {
   }
   else if (op === "jabinput" && /^\d{4}$/.test(String(pl.year || ""))) {
     const cur = o.jabInput[pl.year] = o.jabInput[pl.year] || {}; const P = pl.patch || {};
-    const nums = ["e9050", "e9060", "e9090", "mobiliar", "oeffi", "svs", "sonstAufw", "kfzPrivat", "k9290", "wertpapiere", "verlustvortrag", "andereEinkuenfte", "kirchenbeitrag", "spenden", "vorauszahlungen", "kinder", "kinder18"];
-    Object.keys(P).forEach(k => { if (nums.indexOf(k) > -1) cur[k] = n2(P[k]); else if (k === "ap") cur.ap = /^(klein|gross)$/.test(P.ap) ? P.ap : ""; else if (/^(avab|aeab|faboHalb|pausch6|gfbVerzicht)$/.test(k)) cur[k] = !!P[k]; });
+    const nums = ["e9050", "e9060", "e9090", "mobiliar", "oeffi", "svs", "sonstAufw", "kfzPrivat", "k9290", "wertpapiere", "verlustvortrag", "andereEinkuenfte", "kirchenbeitrag", "spenden", "vorauszahlungen", "partnerEinkommen"];
+    Object.keys(P).forEach(k => { if (nums.indexOf(k) > -1) cur[k] = n2(P[k]); else if (k === "ap") cur.ap = /^(klein|gross)$/.test(P.ap) ? P.ap : ""; else if (/^(avab|aeab|pausch6|gfbVerzicht|kmbBeide)$/.test(k)) cur[k] = !!P[k];
+      else if (k === "kids") cur.kids = (Array.isArray(P.kids) ? P.kids : []).slice(0, 20).map(x => ({ name: String(x.name || "Kind").slice(0, 40), rel: /^(gemeinsam|partnerin|eigen)$/.test(x.rel) ? x.rel : "gemeinsam", fb: /^(partnerin|simon|ex|andere)$/.test(x.fb) ? x.fb : "partnerin",
+        share: [0, 50, 100].indexOf(+x.share) > -1 ? +x.share : 0, birth: /^\d{4}-\d{2}-\d{2}$/.test(x.birth || "") ? x.birth : "", months: Math.max(0, Math.min(12, parseInt(x.months, 10) >= 0 ? parseInt(x.months, 10) : 12)), unterhalt: !!x.unterhalt, note: String(x.note || "").slice(0, 160) })); });
   }
   else if (op === "trips" && /^\d{4}$/.test(String(pl.year || ""))) {
     const arr = (Array.isArray(pl.trips) ? pl.trips : []).slice(0, 1000).map(t => ({ date: /^\d{4}-\d{2}-\d{2}$/.test(t.date || "") ? t.date : "", route: String(t.route || "").slice(0, 120), purpose: String(t.purpose || "").slice(0, 160), km: Math.max(0, n2(t.km)), hours: Math.max(0, n2(t.hours)), nights: Math.max(0, parseInt(t.nights, 10) || 0) }));
@@ -1524,6 +1534,63 @@ function fonZmXml(nr, paket, d) {
   const inhalt = [].concat.apply([], d.zeilen.map(z => { const a = ["    <ZM>", "      <UID_MS>" + fonEsc(fonAscii(z.uid).toUpperCase()) + "</UID_MS>", '      <SUM_BGL type="kz">' + Math.round(z.betrag) + "</SUM_BGL>"]; if (z.dreieck) a.push("      <DREIECK>J</DREIECK>"); if (z.sonstigeLeistung) a.push("      <SOLEI>J</SOLEI>"); a.push("    </ZM>"); return a; }));
   return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), 1), '  <ERKLAERUNG art="U13">', "    <SATZNR>1</SATZNR>", fonAllg("U13", d.von, d.bis, nr, d.kundeninfo)].concat(inhalt, ["  </ERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
 }
+// ── Jahreserklärung (Anbringen JAHR_ERKL): E1 mit Beilage E1a (Block EINZELUNTERNEHMER) und U1.
+// Struktur nach BMF_XSD_Jahreserklaerungen_2025.xsd (Stand 21.11.2025) und BMF_Allgemeines_Jahreserklaerung_2025.pdf.
+// Reihenfolge laut xs:sequence des (gemeinsamen) Elements ALLGEMEIN im XSD – weicht von der Beispiel-XML ab (WJ_A/WJ_E vor GWAUSTN)
+const JE_ALLG = ["ADR_BETR", "PLZ_BETR", "ORT_BETR", "STAAT_BETR", "BRKZ", "KLEIN_MU", "KZ9027", "KZ9055", "KZ9028", "MIBETR", "GWA41", "GWA5", "GWA43", "GWA171", "GWAGAST", "GWADROG", "GWAKP", "GWAHV", "GWASP", "GWASONST", "FF_OPT", "WRFF_OPT", "WJ_A", "WJ_E", "KLPAUSCH", "GWAUSTB", "GWAUSTN"];
+const JE_ERTR = ["9040", "9050", "9060", "9070", "9080", "9090", "9093"];
+const JE_AUFW = ["9100", "9110", "9120", "9130", "9134", "9135", "9140", "9142", "9150", "9160", "9165", "9170", "9180", "9190", "9200", "9210", "9275", "9215", "9216", "9217", "9220", "9258", "9225", "9243", "9244", "9245", "9246", "9206", "9207", "9208", "9209", "9261", "9279", "9262", "9339", "9230", "9233", "9259", "9237", "9249"];
+const JE_GV = ["9276", "9277", "9344", "9345", "9337", "9338", "9240", "9269", "9268", "9273", "9274", "9260", "9270", "9280", "9317", "9322", "9325", "9257", "9283", "9305", "9289", "9285", "9316", "9326", "9010", "9242", "9247", "9290", "9221", "GRUNDFB", "9227", "9229", "9234", "9020", "9021", "9030"];
+const JE_U1_VERST = ["022", "124", "029", "006", "037", "052", "007", "056", "057", "048", "044", "032"], JE_U1_IGEV = ["072", "125", "073", "008", "088", "076", "077"];
+const JE_U1_VST = ["060", "084", "085", "086", "078", "068", "079", "061", "083", "065", "066", "082", "087", "089", "064", "062", "063", "067", "090"];
+function fonJahrXml(nr, paket, d) {
+  const y = String(d.year), j = d.jab, set = d.settings, e = " ";
+  const kz = (k, v, t) => (v != null && Math.round(v * 100) !== 0) || d.immer && d.immer.indexOf(k) > -1 ? e.repeat(t) + "<KZ" + k + ' type="kz">' + fonZahl(v || 0) + "</KZ" + k + ">" : null;
+  const allg = { ADR_BETR: fonEsc(fonAscii(set.betriebAdr || "")), PLZ_BETR: set.betriebPlz, ORT_BETR: fonEsc(fonAscii(set.betriebOrt || "")), STAAT_BETR: "A", BRKZ: set.brkz, GWA43: "J", GWAUSTN: "J", WJ_A: y + "-01-01", WJ_E: y + "-12-31" };
+  const allgZ = JE_ALLG.filter(k => allg[k]).map(k => "          <" + k + (/^WJ_/.test(k) ? ' type="datum"' : "") + ">" + allg[k] + "</" + k + ">");
+  const ertr = { "9040": j.ertr["9040"], "9050": j.ertr["9050"], "9060": j.ertr["9060"], "9090": j.ertr["9090"] };
+  const ertrZ = JE_ERTR.map(k => (k === "9040" || k === "9050") ? e.repeat(10) + "<KZ" + k + ' type="kz">' + fonZahl(ertr[k] || 0) + "</KZ" + k + ">" : kz(k, ertr[k], 10)).filter(Boolean);
+  const aufwZ = JE_AUFW.map(k => kz(k, j.E[k], 10)).filter(Boolean);
+  const gv = Object.assign({}, j.K5, { "9221": j.grund, "9227": j.g9227, "9229": j.g9229 });
+  const gvZ = JE_GV.map(k => k === "GRUNDFB" ? (j.inp.gfbVerzicht ? "          <GRUNDFB>J</GRUNDFB>" : null) : kz(k, gv[k], 10)).filter(Boolean);
+  const art = set.einkunftsart === "SA" ? "EINKUENFTE_SELBST_ARBEIT" : "EINKUENFTE_GEWERBEBETRIEB";
+  const est = j.est, allgE1 = ["      <ANBRINGEN>E1</ANBRINGEN>", "      <ZR>" + y + "</ZR>", "      <FASTNR>" + nr + "</FASTNR>", "      <KUNDENINFO>" + fonEsc(fonAscii("FS Cockpit JAB " + y)) + "</KUNDENINFO>"];
+  if (j.inp.avab && est.avab) allgE1.push("      <AVAB>J</AVAB>"); if (j.inp.aeab && est.avab) allgE1.push("      <AEAB>J</AEAB>");
+  if (j.inp.kmbBeide && est.kmb) allgE1.push("      <KMB_PART>J</KMB_PART>");
+  const e1 = ['      <ERKLAERUNG art="E1">', "        <SATZNR>1</SATZNR>", "        <ALLGEMEINE_DATEN>"].concat(allgE1.map(x => "  " + x), ["        </ALLGEMEINE_DATEN>", "        <BETRIEBLICHE_EINKUNFTSARTEN>", "          <" + art + ">", "            <EINZELUNTERNEHMER>",
+    "              <ALLGEMEIN>"], allgZ.map(x => "      " + x), ["              </ALLGEMEIN>", "              <ERTRAEGE_EINNAHMEN>"], ertrZ.map(x => "      " + x), ["              </ERTRAEGE_EINNAHMEN>"],
+    aufwZ.length ? ["              <AUFWENDUNGEN_AUSGABEN>"].concat(aufwZ.map(x => "      " + x), ["              </AUFWENDUNGEN_AUSGABEN>"]) : [],
+    gvZ.length ? ["              <GEWINN_VERLUST>"].concat(gvZ.map(x => "      " + x), ["              </GEWINN_VERLUST>"]) : [],
+    ["            </EINZELUNTERNEHMER>", "          </" + art + ">", "        </BETRIEBLICHE_EINKUNFTSARTEN>"],
+    num462(j.inp.verlustvortrag) ? ["        <SONDERAUSGABEN_VERLUSTABZUG>", '          <KZ462 type="kz">' + fonZahl(j.inp.verlustvortrag) + "</KZ462>", "        </SONDERAUSGABEN_VERLUSTABZUG>"] : [], ["      </ERKLAERUNG>"]);
+  const w = Object.assign({ "000": 0 }, d.u1), take = (list, t) => list.filter(k => k === "000" ? true : Math.round((w[k] || 0) * 100) !== 0).map(k => e.repeat(t) + "<KZ" + k + ' type="kz">' + fonZahl(w[k] || 0) + "</KZ" + k + ">");
+  const frei = take(["011", "012", "015", "017", "018", "019", "016"], 12), nach = take(["020"], 12), vst = set.vst && nach.length ? ["            <VST>" + fonEsc(set.vst) + "</VST>"] : [];
+  const verst = take(JE_U1_VERST.filter(k => +y >= 2026 || k !== "124"), 12), ige = take(["070", "071"].filter(k => k in w), 10), igeV = take(JE_U1_IGEV.filter(k => +y >= 2026 || k !== "125"), 12), vor = take(JE_U1_VST, 10);
+  const u1 = ['      <ERKLAERUNG art="U1">', "        <SATZNR>2</SATZNR>", "        <ALLGEMEINE_DATEN>", "          <ANBRINGEN>U1</ANBRINGEN>", "          <ZR>" + y + "</ZR>", "          <FASTNR>" + nr + "</FASTNR>", "          <KUNDENINFO>" + fonEsc(fonAscii("FS Cockpit U1 " + y)) + "</KUNDENINFO>", "        </ALLGEMEINE_DATEN>",
+    "        <LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH>"].concat(take(["000", "001", "021"], 10), frei.length || nach.length ? ["          <STEUERFREI>"].concat(frei, vst, nach, ["          </STEUERFREI>"]) : [], verst.length ? ["          <VERSTEUERT>"].concat(verst, ["          </VERSTEUERT>"]) : [], ["        </LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH>"],
+    ige.length || igeV.length ? ["        <INNERGEMEINSCHAFTLICHE_ERWERBE>"].concat(ige, igeV.length ? ["          <VERSTEUERT_IGE>"].concat(igeV, ["          </VERSTEUERT_IGE>"]) : [], ["        </INNERGEMEINSCHAFTLICHE_ERWERBE>"]) : [],
+    vor.length ? ["        <VORSTEUER>"].concat(vor, ["        </VORSTEUER>"]) : [], ["      </ERKLAERUNG>"]);
+  return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), 2), '  <JAHRESERKLAERUNG art="JAHR_ERKL">'].concat(e1.map(x => x.replace(/^  /, "    ")), u1.map(x => x.replace(/^  /, "    ")), ["  </JAHRESERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
+}
+function num462(v) { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : 0; }
+// Prüfungen Jahreserklärung (Auszug aus BMF_Pruefungen_Jahreserklaerungen_2025.pdf, E1a/U1) – nur das, was hier befüllt wird
+function fonPruefeJahr(d) {
+  const b = [], s = d.settings, y = +d.year, heute = d.heute || new Date();
+  if (!fonFastnr(s.steuernummer)) b.push({ art: "fehler", text: "Ohne neunstellige Steuernummer geht keine Übermittlung." });
+  if (y >= heute.getFullYear()) b.push({ art: "fehler", code: "zeitraum-laeuft", text: "Das Jahr " + y + " ist noch nicht abgeschlossen." });
+  if (!d.schema) b.push({ art: "fehler", text: "Für " + y + " ist im Cockpit kein BMF-Schema hinterlegt (vorhanden: 2025). Sobald das BMF das Schema " + y + " veröffentlicht, muss der Datenstrom angepasst werden." });
+  if (!s.betriebAdr) b.push({ art: "fehler", text: "E1a: Betriebsanschrift fehlt (Feld „Anschrift“)." });
+  if (!/^\d{4}$/.test(s.betriebPlz || "")) b.push({ art: "fehler", text: "E1a: österreichische Postleitzahl des Betriebs fehlt." });
+  if (!s.betriebOrt) b.push({ art: "fehler", text: "E1a: Ort des Betriebs fehlt." });
+  if (!/^\d{3}$/.test(s.brkz || "")) b.push({ art: "fehler", text: "E1a: Branchenkennzahl (3-stellig, laut E2/ÖNACE) fehlt – für Grafikdesign z. B. 741, Werbung 731." });
+  if (d.u1["124"] && y < 2026) b.push({ art: "fehler", text: "KZ 124 gibt es erst ab 2026." });
+  if (d.u1["020"] && !/^[0-9][0-9a-zA-Z]{1,3}$/.test(s.vst || "")) b.push({ art: "fehler", text: "U1: Zu KZ 020 gehört der Ziffernschlüssel der Steuerbefreiung (2–4 Zeichen, z. B. 9a)." });
+  Object.keys(d.u1).forEach(k => { if (!FON_NEG_OK.has(k) && d.u1[k] < 0) b.push({ art: "fehler", text: "U1: Kennzahl " + k + " ist negativ." }); });
+  if (d.jab.inp.ap === "gross" && d.jab.inp.andereEinkuenfte > 11000) b.push({ art: "hinweis", text: "Großes Arbeitsplatzpauschale nur ohne andere Einkünfte über 11.000 € (aus einer Tätigkeit mit eigenem Arbeitsplatz)." });
+  if (d.jab.est.faboMax > 0) b.push({ art: "hinweis", text: "Familienbonus Plus: die Beilage L 1k (Block KIND_AUSBILDUNG_BEHINDERUNG) wird nicht mitgeschickt – bitte in FinanzOnline ergänzen." });
+  b.push({ art: "hinweis", text: "Kirchenbeitrag, Spenden und SVS-Daten werden vom Finanzamt automatisch übernommen und hier nicht übermittelt." });
+  return b;
+}
 // Prüfungen vor der Übermittlung (nach "Prüfungen UVA ab 07/2026" und dem Schema). fehler = hält an, hinweis = nur Info.
 function fonPruefeU30(d) {
   const b = [], w = d.kennzahlen, heute = d.heute || new Date(), ende = new Date(d.bis + "T00:00:00");
@@ -1549,7 +1616,7 @@ function fonPruefeZm(d) {
   if (!d.zeilen.length) b.push({ art: "fehler", text: "Keine ZM-pflichtigen Umsätze in diesem Zeitraum." });
   d.zeilen.forEach(z => {
     if (!z.uid) b.push({ art: "fehler", text: z.kunde + " hat keine UID – ohne UID lässt sich der Umsatz nicht melden (und ist auch nicht steuerfrei)." });
-    else if (!/^[A-Z]{2}[0-9A-Z]{2,13}$/.test(z.uid)) b.push({ art: "fehler", text: "Die UID „" + z.uid + "“ (" + z.kunde + ") hat kein gültiges Format." });
+    else if (!STEUER_CALC.uidValid(z.uid).ok) b.push({ art: "fehler", text: "Die UID „" + z.uid + "“ (" + z.kunde + ") ist ungültig: " + STEUER_CALC.uidValid(z.uid).why + "." });
     else if (z.uid.indexOf("AT") === 0) b.push({ art: "fehler", text: z.kunde + " hat eine österreichische UID – Inlandsumsätze gehören nicht in die ZM." });
     if (z.betrag < 0) b.push({ art: "hinweis", text: z.kunde + " steht mit einem negativen Betrag da. Berichtigungen: die ganze Meldung des Zeitraums neu schicken." });
   });
@@ -1588,7 +1655,17 @@ async function fonUebermitteln(z, pin, art, modus, daten) {
   }
 }
 // Entwurf aus den aktuellen sevDesk-Daten (serverseitig berechnet)
+const FON_JAHR_SCHEMA = { 2025: true };   // veröffentlichte BMF-Schemata „Jahreserklärungen“, gegen die der Builder geprüft ist
 async function fonEntwurf(art, key, paket, fresh) {
+  if (art === "JAHR_ERKL") {
+    const year = String(key || "").slice(0, 4); if (!/^\d{4}$/.test(year)) throw new Error("Unbekanntes Jahr.");
+    const o = readSteuer(), raw = await steuerRaw(!!fresh), nr = fonFastnr(o.settings.steuernummer);
+    const j = STEUER_CALC.computeJab(raw, o, year), u1 = STEUER_CALC.uvaKzMap(j.u1);
+    const d = { year, jab: j, u1, settings: o.settings, schema: !!FON_JAHR_SCHEMA[year] };
+    const befunde = fonPruefeJahr(d);
+    if (j.u1.review.length) befunde.push({ art: "fehler", text: j.u1.review.length + " Beleg(e) des Jahres sind nicht eingeordnet (U1)." });
+    return { art, p: { key: year, label: "Jahreserklärung " + year }, kennzahlen: { gewinn: j.steuerGewinn, u1: u1 }, zahllast: j.u1.zahllast, befunde, xml: nr ? fonJahrXml(nr, paket, d) : "" };
+  }
   const p = steuerPeriod(key); if (!p) throw new Error("Unbekannter Zeitraum.");
   const o = readSteuer(), raw = await steuerRaw(!!fresh), nr = fonFastnr(o.settings.steuernummer);
   const r = STEUER_CALC.computeUva(raw, o, p), von = p.from.slice(0, 7), bis = p.to.slice(0, 7), info = "FS Cockpit " + p.label;
@@ -1599,12 +1676,12 @@ async function fonEntwurf(art, key, paket, fresh) {
     return { art, p, kennzahlen, zahllast: r.zahllast, befunde, xml: nr ? fonU30Xml(nr, paket, { von, bis, kundeninfo: info, kennzahlen, vst: o.settings.vst }) : "" };
   }
   const rows = STEUER_CALC.zmRows(r);
-  const zeilen = rows.filter(x => x.uid && Math.round(x.net) !== 0).map(x => ({ uid: x.uid, betrag: x.net, sonstigeLeistung: x.kind === "S" }));
+  const zeilen = rows.filter(x => x.uid && Math.round(x.net) !== 0).map(x => ({ uid: x.uid, betrag: x.net, sonstigeLeistung: x.kind === "S", dreieck: !!x.dreieck }));
   const befunde = fonPruefeZm({ steuernummer: o.settings.steuernummer, bis: p.to, zeilen: rows.map(x => ({ uid: x.uid, kunde: x.kunde, betrag: x.net })) });
   return { art, p, kennzahlen: { zeilen: zeilen.length, summe: Math.round(rows.reduce((a, x) => a + x.net, 0) * 100) / 100 }, befunde, xml: nr ? fonZmXml(nr, paket, { von, bis, kundeninfo: info, zeilen }) : "" };
 }
 async function fonSenden(pl, modus) {
-  const art = pl.art === "U13" ? "U13" : "U30", key = String(pl.key || "");
+  const art = pl.art === "U13" ? "U13" : pl.art === "JAHR_ERKL" ? "JAHR_ERKL" : "U30", key = String(pl.key || "");
   if (modus === "P" && String(pl.bestaetigung || "").trim().toLowerCase() !== "abgeben") throw new Error("Zum verbindlichen Abgeben bitte „abgeben“ eintippen.");
   const z = fonZugang(); if (z.fehlt) throw new Error(z.fehlt);
   const pin = String(pl.pin || "").trim() || String(process.env.FON_PIN || "").trim(); if (!pin) throw new Error("Ohne das PIN des Webservice-Benutzers geht keine Übermittlung.");
@@ -1620,9 +1697,23 @@ async function fonSenden(pl, modus) {
   const o = readSteuer();
   o.fon.archive.unshift({ at: new Date().toISOString(), art, key, label: e.p.label, modus, paket, rc, msg: String(msg).slice(0, 2000), status, kennzahlen: e.kennzahlen, zahllast: e.zahllast, xml: e.xml });
   o.fon.archive = o.fon.archive.slice(0, 120);
+  if (rc === 0 && modus === "P" && art === "JAHR_ERKL") o.jab[key] = Object.assign({}, o.jab[key] || {}, { doneAt: new Date().toISOString(), summary: { gewinn: e.kennzahlen.gewinn, u1Zahllast: e.zahllast }, fon: { paket, at: new Date().toISOString() } });
   if (rc === 0 && modus === "P" && art === "U30") o.uva[key] = Object.assign({}, o.uva[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, kz: e.kennzahlen }, fon: { paket, at: new Date().toISOString() } });
   writeSteuer(o);
   return { ok: rc === 0, rc, msg, status, paket, steuer: steuerPublic(o) };
+}
+
+// ── VIES-UID-Abfrage (öffentliche REST-API der EU-Kommission), Cache in steuer.json ──
+const VIES_URL = process.env.VIES_URL || "https://ec.europa.eu/taxation_customs/vies/rest-api/ms";
+async function viesCheck(uidRaw) {
+  const v = STEUER_CALC.uidValid(uidRaw); if (!v.ok) return { uid: v.uid || uidRaw, valid: false, format: false, why: v.why };
+  const o = readSteuer(); o.vies = o.vies || {}; const hit = o.vies[v.uid];
+  if (hit && Date.now() - Date.parse(hit.at) < 7 * 864e5) return Object.assign({ cached: true }, hit);
+  const cc = v.uid.slice(0, 2) === "GR" ? "EL" : v.uid.slice(0, 2), nr = v.uid.slice(2);
+  let j = null; try { const r = await fetch(VIES_URL + "/" + cc + "/vat/" + encodeURIComponent(nr), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15000) }); j = await r.json(); } catch (e) { throw new Error("VIES ist gerade nicht erreichbar."); }
+  const res = { uid: v.uid, valid: !!(j && (j.isValid || j.valid)), format: true, name: String((j && j.name) || "").slice(0, 120), address: String((j && j.address) || "").replace(/\s+/g, " ").slice(0, 200), at: new Date().toISOString(), why: j && j.userError && j.userError !== "VALID" ? String(j.userError) : "" };
+  const o2 = readSteuer(); o2.vies = o2.vies || {}; o2.vies[v.uid] = res; const ks = Object.keys(o2.vies); if (ks.length > 500) delete o2.vies[ks[0]]; writeSteuer(o2);
+  return res;
 }
 
 // ── sevDesk-Abgleich: Schreibzugriffe nur auf ausdrücklichen Klick mit Bestätigung, nie für festgeschriebene Belege ──
@@ -1630,7 +1721,8 @@ const SEV_RULES_EXPENSE = ["8", "9", "10", "12", "13", "14"];
 async function sevFixTaxRule(pl) {
   if (pl.confirm !== true) throw new Error("bestaetigung_fehlt");
   const id = String(pl.id || "").replace(/\D/g, ""), rule = String(pl.taxRule || "");
-  if (!id || SEV_RULES_EXPENSE.indexOf(rule) < 0) throw new Error("ungueltig");
+  const known = (STEUER_CACHE.data && STEUER_CACHE.data.taxRules || []).filter(r => /EXPENSE/i.test(r.side || "")).map(r => String(r.id));
+  if (!id || (known.length ? known : SEV_RULES_EXPENSE).indexOf(rule) < 0) throw new Error("ungueltig");
   const j = await sev("GET", "/Voucher/" + id); const v = j && j.objects && (Array.isArray(j.objects) ? j.objects[0] : j.objects);
   if (!v) throw new Error("Beleg nicht gefunden.");
   if (v.enshrined) throw new Error("Der Beleg ist in sevDesk festgeschrieben und kann nicht geändert werden.");
@@ -1934,9 +2026,19 @@ async function handleAdmin(req, res, u, p) {
     try { const pl = await sevBody(req, 20000); const r = p.endsWith("sevfix") ? await sevFixTaxRule(pl) : p.endsWith("sevtag") ? await sevTagUva(pl) : await sevUstPayment(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
+  // UID-Prüfung über VIES (EU-Kommission, nur lesend, Ergebnis 7 Tage gespeichert)
+  if (p === "/admin/api/steuer/vies" && req.method === "GET") {
+    try { const r = await viesCheck(String(u.searchParams.get("uid") || "")); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  // Schnittstelle für KI-Vorschläge: aktuelle Einordnung eines Belegs mit Begründung (nur lesend)
+  if (p === "/admin/api/steuer/explain" && req.method === "GET") {
+    try { const raw = await steuerRaw(false); const x = STEUER_CALC.explainDoc(raw, readSteuer(), String(u.searchParams.get("id") || "")); return send(res, x ? 200 : 404, JSON.stringify(x ? Object.assign({ ok: true }, x) : { ok: false, error: "nicht_gefunden" }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
   // FinanzOnline: XML-Vorschau, Prüfung (T) und verbindliche Abgabe (P). PIN nur im Request-Body, wird nicht gespeichert.
   if (p === "/admin/api/fon/xml" && req.method === "POST") {
-    try { const pl = await sevBody(req, 20000); const e = await fonEntwurf(pl.art === "U13" ? "U13" : "U30", String(pl.key || ""), 999999999, pl.fresh === true); return send(res, 200, JSON.stringify({ ok: true, art: e.art, xml: e.xml, befunde: e.befunde, kennzahlen: e.kennzahlen, zahllast: e.zahllast }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const pl = await sevBody(req, 20000); const e = await fonEntwurf(pl.art === "U13" ? "U13" : pl.art === "JAHR_ERKL" ? "JAHR_ERKL" : "U30", String(pl.key || ""), 999999999, pl.fresh === true); return send(res, 200, JSON.stringify({ ok: true, art: e.art, xml: e.xml, befunde: e.befunde, kennzahlen: e.kennzahlen, zahllast: e.zahllast }), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/fon/archiv" && req.method === "GET") {
