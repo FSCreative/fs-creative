@@ -104,7 +104,10 @@ function siteLines(s,c){ var P=prices(), n=+P.period||12, L=[];
   return L.map(function(l){ l.amount=Math.round(l.amount*100)/100; return l; });
 }
 function siteSum(s,c){ return siteLines(s,c).reduce(function(a,l){ return a+l.amount; },0); }
-function siteDue(c){ return c.active&&(!c.billedUntil||c.billedUntil<F.D.today); }
+/* Stichtag 1.1. (Standard): jährlich je Kalenderjahr verrechnet, fällig erst ab 1.1.; nie verrechnete Websites nur im Jänner fällig */
+function yearly(){ var P=prices(); return (+P.period||12)===12&&P.yearStart!==false; }
+function nextBill(c){ return c.billedUntil?ymdAdd(c.billedUntil,1):(yearly()?(F.D.today.slice(5,7)==="01"?F.D.today.slice(0,4):String(+F.D.today.slice(0,4)+1))+"-01-01":F.D.today); }
+function siteDue(c){ if(!c.active) return false; var t=F.D.today; if(!yearly()) return !c.billedUntil||c.billedUntil<t; return c.billedUntil?c.billedUntil<t:t.slice(5,7)==="01"; }
 function invRecs(key){ return (B&&B.invoices&&B.invoices["site:"+key])||[]; }
 function lastInv(key){ var a=invRecs(key); return a[a.length-1]||null; }
 function sevInv(id){ return id&&F.D.sev?F.D.sev.invoices.find(function(i){ return i.id===id; }):null; }
@@ -122,6 +125,7 @@ function invInfo(rec){
 function stateTag(c){
   if(!c.active) return '<span class="tag grey">wird nicht verrechnet</span>';
   if(c.billedUntil&&!siteDue(c)) return '<span class="tag ok">verrechnet bis '+de(c.billedUntil)+'</span>';
+  if(!siteDue(c)) return '<span class="tag grey">nächste Rechnung '+de(nextBill(c))+'</span>';
   return '<span class="tag warn">'+(c.billedUntil?"fällig seit "+de(ymdAdd(c.billedUntil,1)):"noch nie verrechnet")+'</span>';
 }
 /* FS Creative-Umsatz (wie Übersicht im klassischen Dashboard): Website-Rechnungen des Jahres, bezahlt/offen laut sevDesk */
@@ -427,7 +431,7 @@ function billSite(key){
   var s=siteBy(key); if(!s||!B) return;
   var c=cfg(s), P=prices(), n=+P.period||12, lines=siteLines(s,c);
   if(!lines.length){ F.toast("Für diese Website ist nichts zum Verrechnen angehakt",true); return; }
-  var from=c.billedUntil?ymdAdd(c.billedUntil,1):F.D.today, to=ymdAdd(ymdAddM(from,n),-1);
+  var from=c.billedUntil?ymdAdd(c.billedUntil,1):(yearly()?F.D.today.slice(0,4)+"-01-01":F.D.today), to=yearly()?from.slice(0,4)+"-12-31":ymdAdd(ymdAddM(from,n),-1);
   var tax=+P.taxRate; if(!isFinite(tax)) tax=20;
   var span=de(from)+" – "+de(to);
   var go=function(){ F.closeDrawer(); F.openInvoice({title:"Rechnung · "+s.name,contactName:c.customer||s.name,address:c.customer||s.name,deliveryDate:from,
@@ -449,11 +453,12 @@ function openPrices(){
     '<div class="grid2"><label class="fl">Abrechnungszeitraum<select class="f" name="period">'+[["12","jährlich"],["6","halbjährlich"],["3","quartalsweise"],["1","monatlich"]].map(function(o){ return '<option value="'+o[0]+'"'+(String(P.period||12)===o[0]?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label>'+
     '<label class="fl">Preise sind<select class="f" name="gross"><option value="1"'+(P.gross?" selected":"")+'>brutto (inkl. USt)</option><option value="0"'+(P.gross?"":" selected")+'>netto (zzgl. USt)</option></select></label>'+
     '<label class="fl">USt-Satz %<input class="f num" name="taxRate" type="number" step="1" min="0" value="'+esc(P.taxRate!=null?P.taxRate:20)+'"></label></div>'+
+    '<label class="row small" style="gap:8px"><input type="checkbox" name="yearStart"'+(P.yearStart!==false?" checked":"")+'> Bei jährlicher Abrechnung immer am <b>1.1.</b> für das Kalenderjahr verrechnen (vorher nicht als „zu verrechnen“ zählen)</label>'+
     '<div class="foot"><span class="err" id="wpErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Speichern</button></span></div></form>',"wide");
 }
 F.form("wprices",function(f){
   var pr={}; ["domain","hosting","mail"].forEach(function(k){ pr[k]=f[k].value; pr[k+"Per"]=f[k+"Per"].value; pr[k+"Label"]=f[k+"Label"].value.trim(); });
-  pr.period=f.period.value; pr.gross=f.gross.value==="1"; pr.taxRate=f.taxRate.value;
+  pr.period=f.period.value; pr.gross=f.gross.value==="1"; pr.taxRate=f.taxRate.value; pr.yearStart=!!f.yearStart.checked;
   var err=document.getElementById("wpErr"), btn=f.querySelector("[type=submit]"); err.textContent=""; btn.disabled=true; btn.textContent="Speichere …";
   billPost({op:"prices",prices:pr}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Preise gespeichert"); } else { btn.disabled=false; btn.textContent="Speichern"; err.textContent="Fehler beim Speichern"+(j&&j.error?": "+j.error:""); } });
 });

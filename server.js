@@ -965,6 +965,7 @@ function billingOp(pl) {
     ["domainPer", "hostingPer", "mailPer"].forEach(k => { if (k in P) o.prices[k] = P[k] === "year" ? "year" : "month"; });
     if ("period" in P) { const n = parseInt(P.period, 10); o.prices.period = [1, 3, 6, 12].indexOf(n) > -1 ? n : 12; }
     if ("gross" in P) o.prices.gross = !!P.gross;
+    if ("yearStart" in P) o.prices.yearStart = !!P.yearStart;
     ["domainLabel", "hostingLabel", "mailLabel"].forEach(k => { if (k in P) o.prices[k] = String(P[k] || "").slice(0, 80); });
   } else if (op === "site" && pl.key && pl.patch && typeof pl.patch === "object") {
     const k = cleanKey(pl.key), cur = o.sites[k] || {}, P = pl.patch;
@@ -1110,9 +1111,11 @@ function abgleichBuild(ctx) {
     const c = siteCfgOf(bill, s); if (c.own || !c.active) return;
     const lines = siteLinesOf(s, c, P); const sum = round2(lines.reduce((a, l) => a + l.amount, 0)); if (sum <= 0) return;
     const links = recs("site:" + s.key).map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-    const due = !c.billedUntil || c.billedUntil < today;
     const n = +P.period || 12, tax = isFinite(+P.taxRate) ? +P.taxRate : 20;
-    const from = c.billedUntil ? ymdAdd(c.billedUntil, 1) : today, to = ymdAdd(ymdAddMonths(from, n), -1), span = deDate(from) + " – " + deDate(to);
+    // Stichtag 1.1.: jährlich je Kalenderjahr verrechnet; fällig erst ab 1.1. (nie verrechnete nur im Jänner)
+    const yearly = n === 12 && P.yearStart !== false;
+    const due = yearly ? (c.billedUntil ? c.billedUntil < today : today.slice(5, 7) === "01") : (!c.billedUntil || c.billedUntil < today);
+    const from = c.billedUntil ? ymdAdd(c.billedUntil, 1) : (yearly ? today.slice(0, 4) + "-01-01" : today), to = yearly ? from.slice(0, 4) + "-12-31" : ymdAdd(ymdAddMonths(from, n), -1), span = deDate(from) + " – " + deDate(to);
     const st = sumState(links);
     items.push({ src: "website", key: "site:" + s.key, name: c.customer || s.name, sub: (s.domain || s.name) + " · " + (c.billedUntil ? "verrechnet bis " + deDate(c.billedUntil) : "noch nie verrechnet"),
       unbilled: due ? sum : 0, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), refund: 0, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
