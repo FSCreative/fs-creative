@@ -213,7 +213,7 @@ function statusLine(){
     if(!p||!p.configured) parts.push('<span><i class="spdot" style="--c:var(--sp-privat)"></i>Privater iCloud-Kalender nicht verbunden</span>'+(F.actions.settings?' <button type="button" class="link" data-act="settings:icloud">Verbinden</button>':''));
     else if(p.error){ var e=p.error, msg=/login_failed/.test(e)?"iCloud-Anmeldung fehlgeschlagen – bitte in den Einstellungen neu verbinden.":/^http_/.test(e)?"iCloud antwortet mit Fehler ("+e.slice(5)+").":"iCloud nicht erreichbar ("+e+")."; parts.push('<span class="bad-t">'+esc(msg)+'</span>'+(F.actions.settings?' <button type="button" class="link" data-act="settings:icloud">Einstellungen</button>':'')); }
     else parts.push('<span><i class="spdot" style="--c:var(--sp-privat)"></i>iCloud „'+esc(calName())+'“ verbunden'+(p.fetchedAt?' · Stand '+esc(F.ago(p.fetchedAt)):'')+'</span>');
-    if(CAL.outlookOk) parts.push('<span>Mail-Kalender: '+CAL.outlook.length+' Termine · synchronisiert '+esc(F.ago(CAL.outlookAt))+'</span>');
+    if(CAL.outlookOk) parts.push('<span>Mail-Kalender: '+CAL.outlook.length+(CAL.outlook.length===1?" Termin":" Termine")+' · synchronisiert '+esc(F.ago(CAL.outlookAt))+'</span>');
     else if(CAL.outlookOk===false) parts.push('<span class="muted">Mail-Kalender nicht verfügbar</span>');
     parts.push('<button type="button" class="link" data-act="calreload" style="margin-left:auto">'+(CAL.loading?"Lädt …":"Neu laden")+'</button>');
   }

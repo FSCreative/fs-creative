@@ -153,7 +153,7 @@ F.css(
 '.w-kpis .kpi{border:1px solid var(--line)}'+
 '.w-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}'+
 '.w-tools input.f{max-width:300px}'+
-'.w-row{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1.5fr) minmax(112px,.6fr) minmax(0,1.25fr) auto;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}'+
+'.w-row{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1.5fr) minmax(135px,.6fr) minmax(0,1.25fr) auto;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}'+
 '.w-row:last-child{border-bottom:0}'+
 '.w-row.hd{padding-top:9px;padding-bottom:9px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600}'+
 '.w-row.off .w-name{color:var(--ink-2)}'+
@@ -172,7 +172,7 @@ F.css(
 '.w-tg[aria-pressed="true"]{border-style:solid;border-color:var(--ink-3);background:var(--sunk);color:var(--ink)}'+
 '.w-tg.on[aria-pressed="true"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}'+
 '.w-extra{font-size:12.5px;color:var(--ink-2)}'+
-'.w-sum{text-align:right}.w-sum .muted{font-size:12px}'+
+'.w-sum{text-align:right}.w-sum .muted{font-size:12px}.w-sum .link{white-space:nowrap}'+
 '.w-inv{font-size:12.5px}.w-inv a{text-decoration:none}.w-inv a:hover{text-decoration:underline}'+
 '.w-st{display:grid;gap:4px;justify-items:start;min-width:0}'+
 '.w-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}'+
@@ -208,7 +208,7 @@ F.css(
  '.w-cd{grid-template-columns:minmax(0,1fr)}'+
  '.w-mets{display:flex;flex-wrap:wrap;gap:4px 16px}'+
  '.w-m{text-align:left}.w-m i{display:inline}'+
- '.w-tools input.f{max-width:none}'+
+ '.w-tools input.f{max-width:none}.w-hidem{display:none}'+
  '.w-pgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.w-pgrid .h{display:none}.w-pgrid b{grid-column:1/-1;margin-top:6px}.w-pgrid .lb{grid-column:1/-1}'+
 '}'+
 '@media (min-width:901px){.w-mets{display:contents}}'
@@ -223,7 +223,7 @@ function kpisTech(){
   var t=(S&&S.totals)||{}, rw=(S&&S.railway)||null, rt=(rw&&rw.totals)||{}, cfOff=S&&S.configured===false;
   var ds=F.D.sites||[], rwFail=S?(+rt.failed||0):(F.D.railwayFailed||0);
   var k=function(act,label,val,sub,cls){ return '<button class="panel kpi" data-act="'+act+'"><span class="k">'+label+'</span><span class="v num'+(cls?" "+cls:"")+'">'+val+'</span><span class="s">'+sub+'</span></button>'; };
-  return '<div class="w-kpis">'+
+  return '<div class="w-kpis'+(U.tab==="bill"?" w-hidem":"")+'">'+
     k("wtab:cf","Websites online",S?(cfOff?"—":num(t.online)):num(ds.filter(function(s){return s.up;}).length),S?(cfOff?"Cloudflare-Token fehlt":"von "+num(t.sites)+" Websites"):"lade Cloudflare …",S&&!cfOff&&t.online<t.sites?"warn-t":"")+
     k("wtab:cf","Requests (7 Tage)",S&&!cfOff?num(t.requests7d):"—","über alle Sites")+
     k("wtab:cf","Besucher (7 T, ~)",S&&!cfOff?num(t.uniques7d):"—","Cloudflare-Schätzung")+
@@ -249,7 +249,7 @@ function vBill(){
   var rows=cust.map(function(x){
     var s=x.s, c=x.c, sum=siteSum(s,c), li=lastInv(s.key), isDue=siteDue(c), open=!!U.exp[s.key], kc=siteCosts(s), K=esc(s.key);
     var tg=function(f,l,cls){ return '<button class="w-tg'+(cls?" "+cls:"")+'" data-act="wtg:'+K+'|'+f+'" aria-pressed="'+c[f]+'" title="'+(c[f]?"abwählen":"anhaken")+'">'+l+'</button>'; };
-    return '<div class="w-row'+(c.active?"":" off")+'">'+siteName(s)+(c.customer?'<div class="w-cust">'+esc(c.customer)+'</div>':'<div class="w-cust muted">kein Kunde hinterlegt</div>')+'</div></div>'+
+    return '<div class="w-row'+(c.active?"":" off")+'">'+siteName(s)+(c.customer?'<div class="w-cust">'+esc(c.customer)+'</div>':'<div class="w-cust muted">kein Kunde hinterlegt</div>')+(/FAILED|CRASHED/.test(s.status||"")?'<span class="tag bad">Deploy fehlgeschlagen</span>':'')+'</div></div>'+
       '<div class="w-tgs">'+tg("active","Aktiv","on")+tg("domain","Domain")+tg("hosting","Hosting")+tg("mail","Mail"+(c.mail&&c.mailQty>1?" ×"+c.mailQty:""))+(c.extra>0?'<span class="w-extra">+ <span class="money">'+eur(c.extra)+'</span> '+esc(c.extraLabel||"Zusatzleistung")+'</span>':'')+'</div>'+
       '<div class="w-sum"><b class="num money">'+eur(sum)+'</b><div class="muted">pro '+(PERLBL[n]||n+" Mon.")+'</div>'+(kc.loaded||kc.domYear?'<button class="link" data-act="wexp:'+K+'" title="Echte Kosten pro Jahr (Railway + Domain)">Kosten <span class="money">'+eur(kc.year)+'</span>/J '+(open?"▴":"▾")+'</button>':'<button class="link" data-act="wexp:'+K+'">Kosten '+(open?"▴":"▾")+'</button>')+'</div>'+
       '<div class="w-st">'+invInfo(li)+stateTag(c)+'</div>'+

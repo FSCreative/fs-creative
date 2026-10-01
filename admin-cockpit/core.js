@@ -99,7 +99,7 @@ function navCount(v){ try{ return FSC.D&&v.count?v.count():0; }catch(e){ return 
 FSC.renderNav = function(){
   var cur=FSC.current;
   document.getElementById("nav").innerHTML=FSC.views.filter(function(v){return !v.hidden;}).map(function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+v.label+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("");
-  var mob=FSC.views.filter(function(v){return v.mobile;}).slice(0,4);
+  var mob=FSC.views.filter(function(v){return v.mobile;}).slice(0,5);
   var inMob=mob.some(function(v){return v.id===cur;});
   document.getElementById("tabbar").innerHTML=mob.map(function(v){ var c=navCount(v); return '<button data-go="'+v.id+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+(v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("")+
     '<button data-act="moresheet"'+(!inMob?' aria-current="page"':'')+'>'+FSC.svg("more")+'<span>Mehr</span></button>';
