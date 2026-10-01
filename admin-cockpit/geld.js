@@ -41,6 +41,7 @@ F.action("migrate",function(){
     .then(function(){ F.toast(mig.count+" VALUERO-Abrechnungen übernommen"); F.load(true); }).catch(function(){ F.toast("Übernehmen fehlgeschlagen",true); });
 });
 F.action("invoice",function(key){ var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(x&&x.action) F.openInvoice(x.action); });
+F.action("openinvoices",function(){ F.UI.geldTab="uebersicht"; F.UI.invF="open"; F.go("geld"); setTimeout(function(){ var q=document.querySelector("[data-invq]"); if(q) q.scrollIntoView({block:"center"}); },50); });
 F.action("money",function(k){ F.UI.money=k; F.render(); });
 F.action("invf",function(k){ F.UI.invF=k; F.render(); });
 F.listen("input","[data-invq]",function(el){ F.UI.invQ=el.value; clearTimeout(el._d); el._d=setTimeout(F.render,250); });
