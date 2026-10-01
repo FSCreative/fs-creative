@@ -77,7 +77,7 @@ const NOINDEX_ROUTES = { "/empfehlungen": true, "/paketshop": true };
 
 // Öffentlich ausgeliefert werden nur Website-Dateien — nie Server-Code, Admin-Vorlage oder Projektdateien.
 const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".webp": 1, ".gif": 1, ".svg": 1, ".ico": 1, ".pdf": 1, ".woff2": 1, ".txt": 1, ".xml": 1, ".webmanifest": 1 };
-const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "package.json": 1, "package-lock.json": 1 };
+const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "admin-cockpit.html": 1, "package.json": 1, "package-lock.json": 1 };
 function isPublicFile(filePath) {
   const rel = path.relative(ROOT, filePath);
   if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".")) return false;
@@ -956,7 +956,7 @@ function readBilling() {
   o.invoices = (o.invoices && typeof o.invoices === "object") ? o.invoices : {};
   return o;
 }
-function writeBilling(o) { try { o.updatedAt = new Date().toISOString(); fs.writeFileSync(BILLING_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
+function writeBilling(o) { try { if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; o.updatedAt = new Date().toISOString(); fs.writeFileSync(BILLING_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
 function billingOp(pl) {
   const o = readBilling(); const op = String(pl.op || "");
   const cleanKey = k => String(k || "").slice(0, 200);
@@ -1027,6 +1027,224 @@ async function railwayCosts(force) {
   if (!RWCOST.p) { const pr = railwayCostsBuild().then(d => { RWCOST = { at: Date.now(), data: d, p: null }; return d; }).catch(e => { RWCOST.p = null; throw e; }); pr.catch(() => {}); RWCOST.p = pr; }
   if (RWCOST.data && !force) return RWCOST.data;
   return RWCOST.p;
+}
+
+// ===========================================================================
+// COCKPIT  /admin/neu  — bündelt alle Quellen + Abgleich Plattformen ↔ sevDesk
+// ===========================================================================
+const OWN_DEFAULT_RX = /^(fs creative|blitzdings|valuero|kochdu|der-kantineur|buchhaltung|blitzbooth zentrale|fs-creative-mail-api|fs-dashboard|gallant-gentleness|noble-flow)$/i;
+// world4you, reguläre Preise inkl. 20 % USt pro Jahr (wie im klassischen Dashboard)
+const W4Y = { "at": 36, "co.at": 36, "or.at": 36, "com": 24, "ch": 14.04, "net": 24, "org": 17.04, "eu": 19.92 };
+const LEAD_STAGES = ["anfrage", "entwurf", "angebot", "auftrag", "live", "verloren"];
+function withTimeout(p, ms, fallback) { return Promise.race([Promise.resolve(p).catch(() => fallback), new Promise(r => setTimeout(() => r(fallback), ms))]); }
+function round2(n) { return Math.round((+n || 0) * 100) / 100; }
+function ymdAdd(iso, days) { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
+function ymdAddMonths(iso, months) { const d = new Date(iso + "T12:00:00Z"); const day = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + months); const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(day, last)); return d.toISOString().slice(0, 10); }
+function deDate(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; }
+function zoneFor(domain, zones) { domain = String(domain || "").toLowerCase(); let best = null; (zones || []).forEach(z => { const n = String(z.name || "").toLowerCase(); if (domain === n || domain.slice(-(n.length + 1)) === "." + n) { if (!best || n.length > best.name.length) best = z; } }); return best; }
+function regDomainsOf(domains) {
+  const seen = {}, out = [];
+  (domains || []).forEach(d => { d = String(d || "").toLowerCase().replace(/^www\./, ""); if (!d || /\.up\.railway\.app$/.test(d)) return; const parts = d.split("."); const n = /\.(co|or|gv|ac)\.at$/.test(d) ? 3 : 2; const reg = parts.slice(-n).join("."); if (seen[reg]) return; seen[reg] = 1; const tld = parts.slice(-(n - 1)).join("."); out.push({ name: reg, tld, year: W4Y[tld] != null ? W4Y[tld] : null }); });
+  return out;
+}
+// Gleiche Website-Liste wie im klassischen Dashboard (Railway-Projekte + Cloudflare-Zonen ohne Projekt)
+function cockpitSites(snap) {
+  const rw = (snap && snap.railway) || {}, projects = rw.projects || [], zones = (snap && snap.sites) || [];
+  const used = {}, list = [];
+  projects.forEach(p => {
+    const doms = p.domains || []; if (!(p.services || []).length && !doms.length) return;
+    const zs = doms.map(dm => zoneFor(dm, zones)).filter(Boolean); zs.forEach(z => { used[z.name] = 1; });
+    const rd = (p.railwayDomains || [])[0] || "";
+    list.push({ key: "rw:" + p.id, name: p.name, domain: doms[0] || "", domains: doms, url: doms[0] ? "https://" + doms[0] : (rd ? "https://" + rd : ""), up: zs.length ? zs[0].up : null, status: p.status, rwId: p.id, lastDeploy: p.lastDeploy || null, requests7d: zs.reduce((a, z) => a + (z.requests7d || 0), 0) });
+  });
+  zones.forEach(z => { if (used[z.name]) return; list.push({ key: "cf:" + z.name, name: z.name, domain: z.name, domains: [z.name], url: "https://" + z.name, up: z.up, status: null, rwId: null, requests7d: z.requests7d || 0 }); });
+  return list.sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+function siteCfgOf(bill, s) { const c = (bill.sites && bill.sites[s.key]) || {}; return { active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name) }; }
+function perPeriodOf(price, per, period) { price = +price || 0; return per === "year" ? price * period / 12 : price * period; }
+function siteLinesOf(s, c, P) {
+  const n = +P.period || 12, L = [];
+  if (c.domain) L.push({ name: (P.domainLabel || "Domain") + (s.domain ? " " + s.domain : ""), amount: perPeriodOf(P.domain, P.domainPer, n) });
+  if (c.hosting) L.push({ name: (P.hostingLabel || "Hosting") + (s.domain ? " " + s.domain : ""), amount: perPeriodOf(P.hosting, P.hostingPer, n) });
+  if (c.mail) L.push({ name: (P.mailLabel || "E-Mail") + (c.mailQty > 1 ? " (" + c.mailQty + " Postfächer)" : ""), amount: perPeriodOf(P.mail, P.mailPer, n) * (c.mailQty || 1) });
+  if (c.extra > 0) L.push({ name: c.extraLabel || "Zusatzleistung", amount: c.extra });
+  return L.map(l => ({ name: l.name, amount: round2(l.amount) }));
+}
+const INV_LABEL = { 100: "Entwurf", 200: "Offen", 750: "Teilbezahlt", 1000: "Bezahlt", 50: "Deaktiviert" };
+// Status einer gespeicherten Rechnung mit dem echten Stand in sevDesk verbinden
+function invLink(rec, sevById, oldest) {
+  if (!rec) return null;
+  if (!rec.id) return { id: "", nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "manuell", label: "ohne Rechnung", paid: 0, open: 0 };
+  const s = sevById[rec.id];
+  // Nur als "fehlt" melden, wenn die Rechnung im geladenen sevDesk-Zeitraum liegen müsste (ältere werden nicht geladen)
+  if (!s && oldest && String(rec.date || "") < oldest) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "alt", label: "älter, nicht geprüft", paid: 0, open: 0 };
+  // Gerade angelegt: sevDesk-Stand wird im Hintergrund nachgeladen
+  if (!s && String(rec.date || "") >= ymdAdd(viennaToday(), -2)) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "neu", label: "wird synchronisiert", paid: 0, open: +rec.gross || 0 };
+  if (!s) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "fehlt", label: "nicht in sevDesk", paid: 0, open: 0 };
+  const state = s.overdue ? "ueberfaellig" : s.status === 1000 ? "bezahlt" : s.status === 100 ? "entwurf" : (s.status === 200 || s.status === 750) ? "offen" : "sonst";
+  return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: s.paid, open: s.open, state, label: s.overdue ? "überfällig" : (INV_LABEL[s.status] || "?"), due: s.due };
+}
+function sumState(links) { return links.reduce((t, l) => { if (!l) return t; t.invoiced += +l.gross || 0; t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
+
+function abgleichBuild(ctx) {
+  const { year, today, sev, bill, sitesSnap, kochdu, valuero, blitz, kantineur } = ctx;
+  const sevInv = (sev && sev.invoices) || [];
+  const sevById = {}; sevInv.forEach(i => { sevById[i.id] = i; });
+  const oldest = sevInv.length >= 600 ? sevInv.reduce((m, i) => (i.date && (!m || i.date < m) ? i.date : m), "") : "";
+  const link = (r) => invLink(r, sevById, oldest);
+  const linked = {};      // sevDesk-IDs, die einer Quelle zugeordnet sind
+  const items = [];
+  const P = bill.prices || {};
+  const recs = key => (bill.invoices && bill.invoices[key]) || [];
+  // 1) Websites (Hosting/Domain/Mail)
+  cockpitSites(sitesSnap).forEach(s => {
+    const c = siteCfgOf(bill, s); if (c.own || !c.active) return;
+    const lines = siteLinesOf(s, c, P); const sum = round2(lines.reduce((a, l) => a + l.amount, 0)); if (sum <= 0) return;
+    const links = recs("site:" + s.key).map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+    const due = !c.billedUntil || c.billedUntil < today;
+    const n = +P.period || 12, tax = isFinite(+P.taxRate) ? +P.taxRate : 20;
+    const from = c.billedUntil ? ymdAdd(c.billedUntil, 1) : today, to = ymdAdd(ymdAddMonths(from, n), -1), span = deDate(from) + " – " + deDate(to);
+    const st = sumState(links);
+    items.push({ src: "website", key: "site:" + s.key, name: c.customer || s.name, sub: (s.domain || s.name) + " · " + (c.billedUntil ? "verrechnet bis " + deDate(c.billedUntil) : "noch nie verrechnet"),
+      unbilled: due ? sum : 0, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), refund: 0, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+      action: due ? { kind: "site", title: "Rechnung · " + s.name, contactName: c.customer || s.name, deliveryDate: from, headText: "Leistungen für " + (s.domain || s.name) + " im Zeitraum " + span + ".",
+        items: lines.map(l => ({ name: l.name, text: "Zeitraum " + span, qty: 1, priceGross: round2(P.gross ? l.amount : l.amount * (1 + tax / 100)), taxRate: tax })),
+        after: { billing: { key: "site:" + s.key, from, to, label: s.name }, siteCustomer: c.customer ? null : s.key } } : null });
+  });
+  // 2) kochdu: Bar-Gebühren je Restaurant (Online-Provisionen werden automatisch einbehalten)
+  ((kochdu && kochdu.restaurants) || []).forEach(r => {
+    const open = round2((+r.barOpenCents || 0) / 100), settled = round2((+r.barSettledCents || 0) / 100), online = round2((+r.onlineProvisionCents || 0) / 100);
+    const links = recs("kochdu:" + r.id).map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+    if (open < 0.005 && settled < 0.005 && !links.length && online < 0.005) return;
+    const st = sumState(links);
+    const since = r.lastSettledAt ? deDate(String(r.lastSettledAt).slice(0, 10)) : "", todayDE = deDate(today);
+    items.push({ src: "kochdu", key: "kochdu:" + r.id, name: r.name || "Restaurant", sub: (+r.barOrders || 0) + " Bar-Bestellungen · Online-Provision " + online.toFixed(2).replace(".", ",") + " € (automatisch)",
+      unbilled: open, invoiced: round2(Math.max(st.invoiced, settled)), paid: round2(st.paid), open: round2(st.open), refund: 0, settledWithoutInvoice: round2(Math.max(0, settled - st.invoiced)), last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+      action: open > 0.005 ? { kind: "kochdu", title: "Rechnung · kochdu · " + (r.name || ""), contactName: r.name || "", headText: "kochdu-Gebühren für Bestellungen mit Barzahlung" + (since ? " seit " + since : "") + " bis " + todayDE + ".",
+        items: [{ name: "kochdu Vermittlungsgebühren (Barzahlungen)", text: (+r.barOrders || 0) + " Bar-Bestellungen" + (since ? " seit " + since : "") + " bis " + todayDE, qty: 1, priceGross: open, taxRate: 20 }],
+        after: { billing: { key: "kochdu:" + r.id, label: r.name || "" }, kochduSettle: { restaurantId: r.id, amountCents: Math.round(open * 100) } } } : null });
+  });
+  // 3) VALUERO: Vermittlungsgebühren je Objekt (Stand serverseitig aus der Abrechnung)
+  ((valuero && valuero.objects) || []).forEach(o => {
+    const prov = round2((+o.provisionCents || 0) / 100);
+    const all = recs("valuero:" + o.key).filter(x => String(x.date || "").slice(0, 4) === String(year));
+    const links = all.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+    const billedSum = round2(all.reduce((a, x) => a + (+x.gross || 0), 0));
+    const st = sumState(links.filter(l => l.state !== "manuell"));
+    const open = round2(Math.max(0, prov - billedSum)), refund = round2(Math.max(0, billedSum - prov));
+    items.push({ src: "valuero", key: "valuero:" + o.key, name: o.name, sub: (o.ratesLabel || "") + " · " + (+o.feeBookings || 0) + " Buchungen " + year,
+      unbilled: open, invoiced: billedSum, paid: round2(st.paid), open: round2(st.open), refund, accrued: prov, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+      action: open > 0.005 ? { kind: "valuero", title: "Rechnung · VALUERO-Gebühren", contactName: o.name || "", headText: "Vermittlungsgebühren VALUERO " + year + ".",
+        items: [{ name: "VALUERO Vermittlungsgebühren " + year, text: (o.ratesLabel ? o.ratesLabel + " · " : "") + "lt. Buchungsaufstellung", qty: 1, priceGross: open, taxRate: 20 }],
+        after: { billing: { key: "valuero:" + o.key, label: o.name || o.key } } } : null });
+  });
+  // 4) Blitzdings: jede Buchung braucht eine Rechnung (Abgleich über Buchungsnummer bzw. Kunde + Betrag/Datum)
+  ((blitz && blitz.upcoming) || []).forEach(b => {
+    const amt = round2((+b.totalCents || 0) / 100); if (!(amt > 0)) return;
+    const ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
+    let hit = ref ? sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR") : null;
+    if (!hit && cust) hit = sevInv.find(i => i.type !== "SR" && String(i.contact || "").toLowerCase() === cust && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))));
+    const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : null; if (link) linked[hit.id] = 1;
+    const paidOnPlatform = b.paymentStatus === "PAID";
+    const extras = (b.extras || []).map(e => e && e.name).filter(Boolean).join(", ");
+    items.push({ src: "blitzdings", key: "blitz:" + b.id, name: (b.customerName || "Buchung") + (b.package ? " · " + b.package : ""), sub: (day ? deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · bezahlt laut Blitzdings" : " · Zahlung offen laut Blitzdings"),
+      unbilled: link ? 0 : amt, invoiced: link ? link.gross : 0, paid: link && link.state === "bezahlt" ? link.gross : 0, open: link ? link.open : 0, refund: 0, paidOnPlatform, last: link, invoices: link ? [link] : [],
+      action: link ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: b.customerName || "", deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
+        items: [{ name: "Blitzdings " + (b.package || "Fotobox"), text: [day ? "Event am " + deDate(day) : "", b.location ? "Ort: " + b.location : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: amt, taxRate: 20 }], after: {} } });
+  });
+  // 5) Kantineur: Abos laufen automatisch über die Plattform
+  if (kantineur) items.push({ src: "kantineur", key: "kantineur", name: "Kantineur-Abos", sub: ((kantineur.subscribers && kantineur.subscribers.paying) || 0) + " zahlende Kantinen · MRR " + ((kantineur.mrrCents || 0) / 100).toFixed(2).replace(".", ",") + " €",
+    unbilled: 0, invoiced: round2((kantineur.revenueGrossCents || 0) / 100), paid: round2((kantineur.revenueGrossCents || 0) / 100), open: 0, refund: 0, auto: true, last: null, invoices: [], action: null });
+  // 6) Offene sevDesk-Rechnungen ohne Zuordnung
+  const unlinked = sevInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
+  const totals = items.reduce((t, x) => { t.unbilled += x.unbilled || 0; t.open += x.open || 0; t.refund += x.refund || 0; if (x.unbilled > 0.005) t.unbilledCount++; if (x.invoices.some(l => l && l.state === "fehlt")) t.missing++; return t; }, { unbilled: 0, open: 0, refund: 0, unbilledCount: 0, missing: 0 });
+  ["unbilled", "open", "refund"].forEach(k => { totals[k] = round2(totals[k]); });
+  return { items, unlinked, totals };
+}
+
+function sevSummary(sev, year, today) {
+  if (!sev || !sev.invoices) return null;
+  const inv = sev.invoices, yr = String(year);
+  const counted = inv.filter(i => (i.status === 200 || i.status === 750 || i.status === 1000) && String(i.date || "").slice(0, 4) === yr);
+  const byMonth = new Array(12).fill(0); counted.forEach(i => { const m = parseInt(String(i.date).slice(5, 7), 10) - 1; if (m >= 0 && m < 12) byMonth[m] += i.gross; });
+  const open = inv.filter(i => i.open > 0.005), overdue = open.filter(i => i.overdue);
+  return { fetchedAt: sev.fetchedAt, revenueYear: round2(counted.reduce((a, i) => a + i.gross, 0)), byMonth: byMonth.map(round2),
+    openSum: round2(open.reduce((a, i) => a + i.open, 0)), openCount: open.length, overdueSum: round2(overdue.reduce((a, i) => a + i.open, 0)), overdueCount: overdue.length,
+    drafts: inv.filter(i => i.status === 100).length, invoices: inv.slice(0, 160), accounts: sev.accounts || [], unassigned: sev.unassigned || 0, vouchers: sev.vouchers || {}, transactions: (sev.transactions || []).slice(0, 25) };
+}
+
+async function cockpitBuild(year) {
+  const today = viennaToday();
+  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc] = await Promise.all([
+    withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
+    withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
+    withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null),
+  ]);
+  const bill = readBilling();
+  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, blitz: b, kantineur: k });
+  const P = bill.prices || {};
+  const sites = cockpitSites(sitesSnap).map(s => {
+    const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
+    const doms = regDomainsOf(s.domains), domYear = doms.reduce((a, d) => a + (d.year || 0), 0);
+    const incomeYear = c.active && !c.own ? round2(siteLinesOf(s, c, P).reduce((a, l) => a + l.amount, 0) * 12 / (+P.period || 12)) : 0;
+    const costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear);
+    return Object.assign({}, s, { own: c.own, active: c.active, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), incomeYear, costYear, result: round2(incomeYear - costYear) });
+  });
+  const msgs = mail && Array.isArray(mail.messages) ? mail.messages : [];
+  const events = [].concat(
+    (cal && cal.events || []).map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || e.start || "").slice(0, 10), time: e.time || "", source: "kalender" })),
+    (pc && pc.events || []).map(e => ({ id: e.id, title: e.title, date: e.date, time: e.time, endTime: e.endTime, location: e.location, source: "icloud" })),
+    readEvents().map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || "").slice(0, 10), time: e.time || "", source: "manuell", sparte: e.sparte || "" }))
+  ).filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= ymdAdd(today, -1) && e.date <= ymdAdd(today, 60)).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  return {
+    fetchedAt: new Date().toISOString(), year, today,
+    leads: readLeads().slice().reverse(),
+    sev: sevSummary(sev, year, today), sevConfigured: !!(SEV.key || SEV_SRC.projectId),
+    abgleich,
+    platforms: {
+      kochdu: ko ? { totals: ko.totals || {}, restaurants: ko.restaurants || [], nutzer: ko.nutzer || null, fetchedAt: ko.fetchedAt } : null,
+      blitzdings: b ? { revenue: b.revenue || {}, bookings: b.bookings || {}, upcoming: b.upcoming || [], fetchedAt: b.fetchedAt } : null,
+      kantineur: k, valuero: va,
+    },
+    sites, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
+    mail: { accounts: (mail && mail.accounts) || [], fetchedAt: mail && mail.fetchedAt, messages: msgs.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 200) },
+    events, todos: readTodos(),
+  };
+}
+let COCKPIT_MEMO = { at: 0, key: "", data: null, p: null };
+async function cockpitData(year, force) {
+  const key = String(year);
+  if (!force && COCKPIT_MEMO.data && COCKPIT_MEMO.key === key && Date.now() - COCKPIT_MEMO.at < 15000) return COCKPIT_MEMO.data;
+  if (COCKPIT_MEMO.p && COCKPIT_MEMO.key === key) return COCKPIT_MEMO.p;
+  COCKPIT_MEMO.key = key;
+  COCKPIT_MEMO.p = cockpitBuild(year).then(d => { COCKPIT_MEMO = { at: Date.now(), key, data: d, p: null }; return d; }).catch(e => { COCKPIT_MEMO.p = null; throw e; });
+  return COCKPIT_MEMO.p;
+}
+// Lead bearbeiten: Phase, geschätzter Wert, Notizen (Daten bleiben in leads.json)
+function leadOp(pl) {
+  const leads = readLeads();
+  if (pl.op === "create") {
+    const l = { id: "lead_" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex"), created: new Date().toISOString(), name: clip(pl.name, 120), email: clip(pl.email, 160), phone: clip(pl.phone, 60), company: clip(pl.company, 160), topic: clip(pl.topic, 80) || "Website", entwurf: false, message: clip(pl.message, 5000), source: "manuell", stage: "anfrage" };
+    if (!l.name && !l.company) throw new Error("name_fehlt");
+    leads.push(l);
+  } else if (pl.op === "update") {
+    const l = leads.find(x => x.id === pl.id); if (!l) throw new Error("lead_unbekannt");
+    const P = pl.patch || {};
+    if ("stage" in P) { if (LEAD_STAGES.indexOf(P.stage) < 0) throw new Error("bad_stage"); l.stage = P.stage; l.history = (l.history || []).concat([{ at: new Date().toISOString(), stage: P.stage }]).slice(-30); }
+    if ("value" in P) { const n = parseFloat(P.value); l.value = isFinite(n) && n >= 0 ? round2(n) : 0; }
+    if ("notes" in P) l.notes = clip(P.notes, 5000);
+    ["name", "company", "email", "phone", "topic"].forEach(f => { if (f in P) l[f] = clip(P[f], 160); });
+    l.updated = new Date().toISOString();
+  } else throw new Error("bad_op");
+  fs.writeFileSync(LEADS_FILE, JSON.stringify(leads));
+  COCKPIT_MEMO.at = 0;
+  return leads.slice().reverse();
+}
+let COCKPIT_HTML = null;
+function cockpitHtml() {
+  if (COCKPIT_HTML && process.env.NODE_ENV === "production") return COCKPIT_HTML;
+  try { COCKPIT_HTML = fs.readFileSync(path.join(ROOT, "admin-cockpit.html"), "utf8"); } catch (e) { COCKPIT_HTML = "<!doctype html><p>admin-cockpit.html fehlt.</p>"; }
+  return COCKPIT_HTML;
 }
 
 async function handleAdmin(req, res, u, p) {
@@ -1238,6 +1456,18 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/sites") {
     try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/neu" || p === "/admin/neu/") {
+    return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
+  }
+  if (p === "/admin/api/cockpit" && req.method === "GET") {
+    const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "").slice(0, 4) || String(new Date().getFullYear());
+    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1"); ADMIN_SEEN = Date.now(); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/leads" && req.method === "POST") {
+    try { const pl = await sevBody(req, 100000); return send(res, 200, JSON.stringify({ ok: true, leads: leadOp(pl) }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ leads: readLeads().reverse() }), TYPES[".json"], { "Cache-Control": "no-store" });

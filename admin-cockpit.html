@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#f3f4f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121714" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png">
+<title>FS Cockpit</title>
+<style>
+/* Layout: Seitenleiste (Desktop) bzw. Tab-Leiste unten (Handy); "Heute" als priorisierte Liste; Abgleich als Tabelle je Quelle. */
+:root{
+  --ground:#f3f4f1; --panel:#ffffff; --sunk:#e9ebe6; --ink:#1b2420; --ink-2:#56605a; --ink-3:#7d867f; --line:#dcdfd8;
+  --glow:#e8a33a; --glow-ink:#7a4a05; --glow-soft:#fbefd9;
+  --ok:#2f8a5b; --ok-soft:#e1f1e8; --warn:#b7791f; --warn-soft:#f8ecd5; --bad:#c2412d; --bad-soft:#f8e1dc; --info:#2c6e8f; --info-soft:#dfedf3;
+  --f-display:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI",Roboto,sans-serif;
+  --f-body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --f-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --r:14px; --r-sm:9px; color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --ground:#121714; --panel:#1a211d; --sunk:#232b26; --ink:#e8ece8; --ink-2:#a9b2ac; --ink-3:#7f8983; --line:#2c3530;
+  --glow:#f0b452; --glow-ink:#ffd796; --glow-soft:#3a2c14;
+  --ok:#5fc38b; --ok-soft:#173226; --warn:#e6b155; --warn-soft:#3a2d14; --bad:#ef7a64; --bad-soft:#3c1d17; --info:#6db6d8; --info-soft:#16303b; color-scheme:dark }}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:inherit}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--glow);outline-offset:2px;border-radius:6px}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:-.02em;margin:0;text-wrap:balance}
+
+.app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100%}
+.rail{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:3px;padding:22px 14px;border-right:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:10px;padding:0 10px 18px;font-family:var(--f-display);font-weight:700;font-size:18px}
+.brand img{width:30px;height:30px;border-radius:50%;background:#1b2420;padding:4px}
+.nav-btn{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border:0;background:none;border-radius:var(--r-sm);color:var(--ink-2);font-weight:500;text-align:left}
+.nav-btn svg{width:18px;height:18px;flex:none}
+.nav-btn:hover{background:var(--sunk);color:var(--ink)}
+.nav-btn[aria-current="page"]{background:var(--ink);color:var(--ground)}
+.count{margin-left:auto;font-family:var(--f-mono);font-size:12px;padding:1px 7px;border-radius:99px;background:var(--glow);color:#2a1a00}
+.rail-foot{margin-top:auto;display:grid;gap:6px;padding:0 4px;font-size:13px}
+.rail-foot a,.rail-foot button{display:flex;align-items:center;gap:8px;color:var(--ink-2);text-decoration:none;border:0;background:none;padding:6px;border-radius:8px;text-align:left}
+.rail-foot a:hover,.rail-foot button:hover{background:var(--sunk);color:var(--ink)}
+.rail-foot select{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 8px}
+.stamp{font-size:12px;color:var(--ink-3);padding:0 6px}
+
+main{padding-block:28px 110px;padding-inline:clamp(16px,4vw,44px);min-width:0}
+.view{max-width:1180px;margin:0 auto;display:grid;gap:22px}
+.view>*{min-width:0}
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.head h1{font-size:clamp(26px,3.6vw,38px);line-height:1.08}
+.head p{margin:6px 0 0;color:var(--ink-2)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.panel-h h2{font-size:17px}
+.panel-b{padding:14px 18px}
+.muted{color:var(--ink-3);font-size:13px}
+.small{font-size:13px}
+.link{border:0;background:none;color:var(--ink-2);font-size:13px;font-weight:600;padding:4px 0;text-decoration:none}
+.link:hover{color:var(--ink)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);padding:6px 12px;border-radius:99px;font-size:13px;font-weight:600;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--ink-3)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.btn.glow{background:var(--glow);border-color:var(--glow);color:#2a1a00}
+.btn svg{width:15px;height:15px}
+.tag{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.tag.bad{background:var(--bad-soft);color:var(--bad)} .tag.warn{background:var(--warn-soft);color:var(--warn)} .tag.info{background:var(--info-soft);color:var(--info)} .tag.glow{background:var(--glow-soft);color:var(--glow-ink)} .tag.ok{background:var(--ok-soft);color:var(--ok)} .tag.grey{background:var(--sunk);color:var(--ink-2)}
+.empty{padding:22px 18px;color:var(--ink-3);text-align:center}
+.notice{padding:12px 16px;border-radius:var(--r);background:var(--warn-soft);color:var(--ink);display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+input.f,select.f,textarea.f{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 11px;width:100%;min-width:0}
+textarea.f{resize:vertical}
+label.fl{display:grid;gap:5px;font-size:13px;color:var(--ink-2)}
+
+/* Tagesleiste */
+.day{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.day > button{background:var(--panel);padding:14px 18px;display:grid;gap:2px;border:0;text-align:left}
+.day > button:hover{background:var(--sunk)}
+.k{font-size:12px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.v{font-family:var(--f-display);font-size:26px;font-weight:700;line-height:1.15}
+.s{font-size:12.5px;color:var(--ink-2)}
+
+/* Liste "Heute" */
+.feed{list-style:none;margin:0;padding:0}
+.item{display:grid;grid-template-columns:4px 36px minmax(0,1fr) auto;gap:14px;align-items:center;padding:13px 18px 13px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.sev{align-self:stretch;border-radius:0 4px 4px 0}
+.sev.bad{background:var(--bad)} .sev.warn{background:var(--warn)} .sev.info{background:var(--info)} .sev.glow{background:var(--glow)} .sev.ok{background:var(--ok)}
+.ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--sunk);color:var(--ink-2)}
+.ico svg{width:18px;height:18px}
+.item .t{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.item .t .tag{margin-right:6px;vertical-align:1px}
+.item .d{font-size:13px;color:var(--ink-2);min-width:0;overflow-wrap:anywhere}
+.acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.more{display:block;width:100%;border:0;border-top:1px solid var(--line);background:none;padding:10px;color:var(--ink-2);font-weight:600;font-size:13px}
+
+.two{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:22px;align-items:start}
+.stack{display:grid;gap:22px;min-width:0}
+.agenda{list-style:none;margin:0;padding:4px 18px 12px}
+.agenda li{display:grid;grid-template-columns:54px minmax(0,1fr);gap:12px;padding:9px 0;border-bottom:1px dashed var(--line)}
+.agenda li:last-child{border-bottom:0}
+.agenda .time{font-family:var(--f-mono);font-size:13px;color:var(--ink-2);padding-top:1px}
+.dayhead{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:12px 18px 0}
+.todo{display:flex;gap:10px;align-items:flex-start;padding:8px 18px}
+.todo input{margin-top:4px;width:17px;height:17px;accent-color:var(--ok);flex:none}
+.todo .due{font-size:12px;color:var(--ink-3)}
+.todo .due.late{color:var(--bad);font-weight:600}
+.todo-add{display:flex;gap:8px;padding:10px 18px 14px}
+
+/* Pipeline */
+.pipe{display:grid;grid-template-columns:repeat(5,minmax(210px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.col{background:var(--sunk);border-radius:var(--r);padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.col-h{display:flex;justify-content:space-between;align-items:baseline;padding:4px 6px 6px;font-weight:600;font-size:13.5px}
+.col-h .num{color:var(--ink-3);font-size:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 12px;display:grid;gap:5px;text-align:left;width:100%}
+.card:hover{border-color:var(--ink-3)}
+.card .n{font-weight:600;overflow-wrap:anywhere}
+.card .m{font-size:12.5px;color:var(--ink-2);display:flex;justify-content:space-between;gap:8px}
+.card .x{font-size:12px;color:var(--ink-3)}
+
+/* Geld */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{padding:16px 18px;display:grid;gap:4px}
+.chart{padding:8px 18px 14px}
+.chart svg{width:100%;height:auto;display:block}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:4px 11px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+td .sub{font-size:12.5px;color:var(--ink-3)}
+tr.grp td{background:var(--sunk);font-weight:700;font-size:13px;padding:8px 14px}
+.invs{display:flex;flex-direction:column;gap:3px;font-size:12.5px}
+.invs a{text-decoration:none}
+.invs a:hover{text-decoration:underline}
+.bar{height:8px;border-radius:99px;background:var(--sunk);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--ink)}
+.accs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;padding:14px 18px}
+.acc{border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+
+/* Websites */
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ink-3);margin-right:8px;vertical-align:1px}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
+.pos{color:var(--ok)} .neg{color:var(--bad)}
+
+/* Plattformen */
+.plats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.plat{padding:18px;display:grid;gap:10px;align-content:start}
+.plat-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.facts{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;font-size:14px;margin:0}
+.facts dt{color:var(--ink-2)} .facts dd{margin:0;text-align:right}
+
+/* Postfach */
+.mailgrid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:16px;align-items:start}
+.mlist{max-height:calc(100vh - 220px);overflow-y:auto}
+.mrow{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;padding:11px 14px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;width:100%}
+.mrow:hover{background:var(--sunk)}
+.mrow[aria-current="true"]{background:var(--glow-soft)}
+.mrow .from{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .sub{font-size:13px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow.read .from{font-weight:500;color:var(--ink-2)}
+.udot{width:8px;height:8px;border-radius:50%;background:var(--glow);margin-top:7px}
+.mrow.read .udot{background:transparent}
+.mview{padding:18px;display:grid;gap:12px;min-width:0}
+.mview iframe{width:100%;min-height:420px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.mbody{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px}
+.atts{display:flex;flex-wrap:wrap;gap:6px}
+
+/* Drawer + Dialoge */
+.scrim{position:fixed;inset:0;background:rgba(10,14,12,.4);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(500px,100%);background:var(--panel);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .25s ease;z-index:50;overflow-y:auto;padding:calc(20px + env(safe-area-inset-top,0px)) 22px calc(28px + env(safe-area-inset-bottom,0px));display:grid;gap:16px;align-content:start}
+.drawer.on{transform:none}
+.drawer h2{font-size:24px}
+.stages{display:flex;gap:4px}
+.stages button{flex:1;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--sunk);font-size:11.5px;font-weight:600;color:var(--ink-2);padding:0 2px}
+.stages button.on{background:var(--glow);border-color:var(--glow);color:#2a1a00}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:7px 12px;font-size:14px;margin:0}
+.kv dt{color:var(--ink-3)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.sec-t{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:600;margin-bottom:6px}
+.modal{position:fixed;inset:0;display:grid;place-items:center;z-index:70;padding:16px;background:rgba(10,14,12,.45)}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:min(720px,100%);max-height:calc(100vh - 32px);overflow-y:auto;padding:20px;display:grid;gap:14px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.irow{display:grid;grid-template-columns:minmax(0,2.2fr) 70px 110px 80px 34px;gap:6px;align-items:start}
+.irow .t2{grid-column:1/-1}
+.dialog .foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
+.err{color:var(--bad);font-size:13.5px}
+.toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--ink);color:var(--ground);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;opacity:0;transition:.2s;z-index:90;pointer-events:none;max-width:calc(100% - 32px)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.bad{background:var(--bad);color:#fff}
+.loading{display:grid;place-items:center;min-height:50vh;color:var(--ink-3)}
+
+.tabbar{display:none}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{display:none}
+  main{padding-block:16px 112px}
+  .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--panel);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+  .tabbar button{flex:1;border:0;background:none;display:grid;justify-items:center;gap:2px;font-size:10.5px;font-weight:600;color:var(--ink-3);padding:4px 0;position:relative}
+  .tabbar svg{width:22px;height:22px}
+  .tabbar button[aria-current="page"]{color:var(--ink)}
+  .tabbar .count{position:absolute;top:0;left:calc(50% + 6px);margin:0;font-size:10px;padding:0 5px}
+  .two,.mailgrid{grid-template-columns:minmax(0,1fr)}
+  .day{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .plats,.grid2{grid-template-columns:minmax(0,1fr)}
+  .item{grid-template-columns:4px 32px minmax(0,1fr);row-gap:8px}
+  .item .acts{grid-column:3;justify-content:flex-start}
+  .mlist{max-height:none}
+  .irow{grid-template-columns:minmax(0,1fr) 60px 96px;}
+  .irow select{grid-column:1/3} .irow .del{grid-column:3}
+  .hide-m{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="Hauptnavigation">
+    <div class="brand"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="">FS Cockpit</div>
+    <nav id="nav"></nav>
+    <div class="rail-foot">
+      <label class="stamp" for="year">Jahr</label>
+      <select id="year" aria-label="Jahr"></select>
+      <button id="refresh" type="button"><span aria-hidden="true">↻</span> Aktualisieren</button>
+      <a href="/admin">Klassisches Dashboard</a>
+      <a href="/admin/logout">Abmelden</a>
+      <span class="stamp" id="stamp"></span>
+    </div>
+  </aside>
+  <main id="main"><div class="loading">Lade deine Daten …</div></main>
+</div>
+<nav class="tabbar" id="tabbar" aria-label="Navigation"></nav>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div id="modalHost"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+"use strict";
+/* ---------- Hilfen ---------- */
+var I={
+  heute:'<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
+  kunden:'<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 4.8a3.2 3.2 0 0 1 0 6.4M18 13.8c1.9.7 3 2.6 3 5.2"/>',
+  geld:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/>',
+  post:'<rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="m4 7.5 8 5.6 8-5.6"/>',
+  kal:'<rect x="3.5" y="5" width="17" height="15" rx="2.4"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',
+  web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/>',
+  plat:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>',
+  lead:'<path d="M4 4h16v12H8l-4 4z"/><path d="M8 9h8M8 12h5"/>',
+  euro:'<path d="M17 6.5A6.5 6.5 0 1 0 17 17.5"/><path d="M4 10h9M4 14h9"/>',
+  alert:'<path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17v.01"/>',
+  check:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  bank:'<path d="M3 10h18L12 4zM5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
+  close:'<path d="M6 6l12 12M18 6 6 18"/>'
+};
+function svg(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+I[k]+'</svg>'; }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function eur(n){ return (+n||0).toLocaleString("de-AT",{style:"currency",currency:"EUR"}); }
+function eur0(n){ return (+n||0).toLocaleString("de-AT",{style:"currency",currency:"EUR",maximumFractionDigits:0}); }
+function de(iso){ var m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"."+m[2]+"."+m[1]:""; }
+function deShort(iso){ var m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"."+m[2]+".":""; }
+function ago(iso){ var t=Date.parse(iso); if(!t) return ""; var s=(Date.now()-t)/1000; if(s<90) return "gerade eben"; if(s<3600) return "vor "+Math.round(s/60)+" Min."; if(s<86400) return "vor "+Math.round(s/3600)+" Std."; var d=Math.round(s/86400); return d===1?"gestern":"vor "+d+" Tagen"; }
+function dayLabel(iso,today){ if(iso===today) return "Heute"; var t=new Date(today+"T12:00:00"); t.setDate(t.getDate()+1); if(iso===t.toISOString().slice(0,10)) return "Morgen"; var d=new Date(iso+"T12:00:00"); return d.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"}); }
+function ls(k,v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem(k)||"null"); localStorage.setItem(k,JSON.stringify(v)); }catch(e){ return null; } }
+var SEVURL="https://my.sevdesk.de";
+var STAGES=[["anfrage","Anfrage"],["entwurf","Entwurf"],["angebot","Angebot"],["auftrag","Auftrag"],["live","Live"]];
+var SRC={website:"Websites",kochdu:"kochdu",valuero:"VALUERO",blitzdings:"Blitzdings",kantineur:"Kantineur"};
+
+var D=null, current="heute", year=String(new Date().getFullYear()), loadErr="", busy=false;
+var UI={money:"zu", mailSel:null, mailFilter:"inbox", leadSel:null, feedAll:false, invQ:""};
+try{ var h=location.hash.slice(1); if(h) current=h; }catch(e){}
+
+function api(path,opts){
+  opts=opts||{};
+  return fetch(path,{method:opts.method||"GET",headers:opts.body?{"Content-Type":"application/json"}:{},body:opts.body?JSON.stringify(opts.body):undefined,cache:"no-store",credentials:"same-origin"})
+    .then(function(r){ if(r.status===401||r.redirected&&/\/admin\/login/.test(r.url)){ location.href="/admin/login"; throw new Error("login"); } return r.json(); });
+}
+var tt; function toast(msg,bad){ var t=document.getElementById("toast"); t.textContent=msg; t.className="toast on"+(bad?" bad":""); clearTimeout(tt); tt=setTimeout(function(){ t.className="toast"; },bad?4200:2200); }
+
+function load(force){
+  if(busy) return; busy=true;
+  return api("/admin/api/cockpit?year="+year+(force?"&force=1":"")).then(function(d){
+    busy=false; if(d&&d.error){ loadErr=d.error; } else { D=d; loadErr=""; }
+    render();
+  }).catch(function(e){ busy=false; if(String(e.message)!=="login"){ loadErr="Keine Verbindung zum Server."; render(); } });
+}
+
+/* ---------- Navigation ---------- */
+var VIEWS=[["heute","Heute","heute"],["kunden","Kunden & Leads","kunden"],["geld","Geld & Abgleich","geld"],["post","Postfach","post"],["kal","Kalender & To-Dos","kal"],["web","Websites","web"],["plat","Plattformen","plat"]];
+if(!VIEWS.some(function(v){return v[0]===current;})) current="heute";
+function unreadMails(){ return D?D.mail.messages.filter(function(m){ return !m.read && isInbox(m); }):[]; }
+function isInbox(m){ return /^inbox$/i.test(m.folder||"INBOX"); }
+function newLeads(){ return D?D.leads.filter(function(l){ return (l.stage||"anfrage")==="anfrage"; }):[]; }
+function navCount(id){ if(!D) return 0; if(id==="heute") return feedItems().length; if(id==="kunden") return newLeads().length; if(id==="post") return unreadMails().length; if(id==="geld") return D.abgleich.totals.unbilledCount||0; return 0; }
+function renderNav(){
+  document.getElementById("nav").innerHTML=VIEWS.map(function(v){ var c=navCount(v[0]); return '<button class="nav-btn" data-go="'+v[0]+'"'+(v[0]===current?' aria-current="page"':'')+'>'+svg(v[2])+'<span>'+v[1]+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("");
+  var mob=["heute","kunden","geld","post","kal"];
+  document.getElementById("tabbar").innerHTML=VIEWS.filter(function(v){return mob.indexOf(v[0])>-1;}).map(function(v){ var c=navCount(v[0]); return '<button data-go="'+v[0]+'"'+(v[0]===current?' aria-current="page"':'')+'>'+svg(v[2])+'<span>'+v[1].split(" ")[0]+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("");
+  var st=document.getElementById("stamp"); if(st) st.textContent=D?"Stand "+new Date(D.fetchedAt).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):"";
+}
+function head(t,sub,right){ return '<div class="head"><div><h1>'+t+'</h1>'+(sub?'<p>'+sub+'</p>':'')+'</div>'+(right||'')+'</div>'; }
+
+/* ---------- HEUTE ---------- */
+var SNOOZE_KEY="fsc_cockpit_snooze";
+function snoozed(){ var s=ls(SNOOZE_KEY)||{}; var t=D?D.today:""; return s.day===t?(s.ids||{}):{}; }
+function snooze(id){ var t=D.today, s=ls(SNOOZE_KEY)||{}; if(s.day!==t) s={day:t,ids:{}}; s.ids[id]=1; ls(SNOOZE_KEY,s); render(); }
+function feedItems(){
+  if(!D) return [];
+  var out=[], today=D.today, sz=snoozed();
+  newLeads().forEach(function(l){ out.push({id:"lead:"+l.id,rank:1,sev:"glow",icon:"lead",tag:["glow","Neue Anfrage"],t:(l.company?l.company+" · ":"")+l.name,d:(l.topic||"Anfrage")+(l.entwurf?" · möchte einen Gratis-Entwurf":"")+(l.source?" · über "+l.source:"")+" · "+ago(l.created),
+    acts:[["Kundenakte","lead:"+l.id],["Antworten","replylead:"+l.id,"primary"]]}); });
+  var sev=D.sev;
+  if(sev) sev.invoices.filter(function(i){return i.overdue&&i.open>0.005;}).forEach(function(i){ out.push({id:"inv:"+i.id,rank:2,sev:"bad",icon:"euro",tag:["bad","Überfällig"],t:(i.contact||"Kunde")+" · "+(i.nr||"Entwurf"),d:eur(i.open)+" offen · fällig seit "+de(i.due),
+    acts:[["PDF","pdf:"+i.id],["Zahlung erfassen","book:"+i.id,"primary"]]}); });
+  (D.sites||[]).forEach(function(s){ if(s.own&&!s.active&&s.up!==false&&!/FAILED|CRASHED/.test(s.status||"")) return;
+    if(/FAILED|CRASHED/.test(s.status||"")) out.push({id:"rw:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Deploy"],t:"Deploy fehlgeschlagen: "+s.name,d:"Railway · letzter Versuch "+(s.lastDeploy?ago(s.lastDeploy):""),acts:[["Websites","go:web"]]});
+    else if(s.up===false) out.push({id:"down:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Offline"],t:s.name+" ist nicht erreichbar",d:s.domain||"",acts:s.url?[["Öffnen","url:"+s.url]]:[]});
+  });
+  D.abgleich.items.forEach(function(x){
+    if(x.unbilled>0.005&&x.action) out.push({id:"bill:"+x.key,rank:3,sev:"warn",icon:"euro",tag:["warn","Zu verrechnen"],t:SRC[x.src]+" · "+x.name,d:eur(x.unbilled)+" · "+x.sub,acts:[["Rechnung erstellen","invoice:"+x.key,"primary"]]});
+    if(x.refund>0.005) out.push({id:"refund:"+x.key,rank:3,sev:"bad",icon:"euro",tag:["bad","Zu viel verrechnet"],t:SRC[x.src]+" · "+x.name,d:eur(x.refund)+" mehr verrechnet als aktuell angefallen (Storno?)",acts:[["Abgleich","go:geld"]]});
+    (x.invoices||[]).forEach(function(l){ if(l&&l.state==="fehlt") out.push({id:"miss:"+x.key+l.id,rank:3,sev:"warn",icon:"alert",tag:["warn","Abgleich"],t:"Rechnung "+(l.nr||l.id)+" fehlt in sevDesk",d:SRC[x.src]+" · "+x.name+" · gelöscht oder storniert?",acts:[["Abgleich","go:geld"]]}); });
+  });
+  unreadMails().filter(function(m){ return !m.answered && (Date.now()-Date.parse(m.date||0))<14*864e5; }).slice(0,8).forEach(function(m){
+    out.push({id:"mail:"+m.id,rank:4,sev:"info",icon:"post",tag:["info","Mail"],t:(m.fromName||m.from||"")+": „"+(m.subject||"(kein Betreff)")+"“",d:ago(m.date)+" · ungelesen",acts:[["Lesen","mail:"+m.id,"primary"]]}); });
+  (D.todos||[]).filter(function(t){ return !t.done && t.due && t.due<=today; }).forEach(function(t){ out.push({id:"todo:"+t.id,rank:t.due<today?2:4,sev:t.due<today?"bad":"ok",icon:"check",tag:[t.due<today?"bad":"ok",t.due<today?"Überfällig":"Heute"],t:t.text||"Aufgabe",d:"To-Do · fällig "+de(t.due),acts:[["Erledigt","tododone:"+t.id]]}); });
+  if(sev&&sev.unassigned) out.push({id:"bank",rank:5,sev:"info",icon:"bank",tag:["info","Bank"],t:sev.unassigned+" Bankumsätze noch nicht zugeordnet",d:"In sevDesk einer Rechnung oder einem Beleg zuordnen",acts:[["sevDesk öffnen","url:"+SEVURL+"/#/bank"]]});
+  return out.filter(function(f){ return !sz[f.id]; }).sort(function(a,b){ return a.rank-b.rank; });
+}
+function vHeute(){
+  var f=feedItems(), today=D.today, h=new Date().getHours();
+  var greet=h<11?"Guten Morgen":h<17?"Hallo":"Guten Abend";
+  var shown=UI.feedAll?f:f.slice(0,12);
+  var items=shown.map(function(x){ return '<li class="item"><span class="sev '+x.sev+'"></span><span class="ico">'+svg(x.icon)+'</span><div style="min-width:0"><div class="t"><span class="tag '+x.tag[0]+'">'+esc(x.tag[1])+'</span>'+esc(x.t)+'</div><div class="d">'+esc(x.d)+'</div></div><div class="acts">'+x.acts.map(function(a){ return '<button class="btn '+(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+'<button class="btn" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">✕</button></div></li>'; }).join("");
+  var ab=D.abgleich.totals, sev=D.sev, online=(D.sites||[]).filter(function(s){return !s.own&&s.active;}), down=(D.sites||[]).filter(function(s){return s.up===false||/FAILED|CRASHED/.test(s.status||"");});
+  var todayEv=D.events.filter(function(e){return e.date===today;});
+  var nextEv=todayEv.length?todayEv:D.events.slice(0,4);
+  var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
+  return head(greet+", Simon.",f.length?f.length+(f.length===1?" Sache braucht":" Dinge brauchen")+" dich. Das Dringendste steht oben.":"Alles erledigt. Schönen Tag im Tal.")+
+  '<div class="day">'+
+    '<button data-go="kunden"><span class="k">Neue Anfragen</span><span class="v num">'+newLeads().length+'</span><span class="s">'+D.leads.length+' Leads insgesamt</span></button>'+
+    '<button data-go="geld"><span class="k">Offen in sevDesk</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?(sev.overdueCount?eur0(sev.overdueSum)+" überfällig":"nichts überfällig"):"sevDesk lädt …")+'</span></button>'+
+    '<button data-go="geld"><span class="k">Zu verrechnen</span><span class="v num">'+eur0(ab.unbilled)+'</span><span class="s">'+ab.unbilledCount+' Posten ohne Rechnung</span></button>'+
+    '<button data-go="web"><span class="k">Websites</span><span class="v num">'+(online.length-down.filter(function(s){return !s.own;}).length)+'/'+online.length+'</span><span class="s">'+(down.length?down.length+" mit Problem":"alle erreichbar")+'</span></button>'+
+  '</div>'+
+  '<div class="two"><section class="panel"><div class="panel-h"><h2>Zu erledigen</h2><span class="muted">nach Dringlichkeit</span></div>'+
+    (items?'<ul class="feed">'+items+'</ul>':'<div class="empty">Nichts offen. 🎉</div>')+
+    (f.length>12?'<button class="more" data-toggle-feed>'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+
+  '</section><div class="stack">'+
+    '<section class="panel"><div class="panel-h"><h2>'+(todayEv.length?"Termine heute":"Nächste Termine")+'</h2><button class="link" data-go="kal">Kalender →</button></div>'+
+      (nextEv.length?'<ul class="agenda">'+nextEv.map(function(e){ return '<li><span class="time">'+(e.date===today?(e.time||"ganztags"):deShort(e.date))+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.date!==today&&e.time?e.time:"",e.location||"",e.source==="icloud"?"iCloud":""].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Termine.</div>')+'</section>'+
+    '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><span class="muted">'+openTodos.length+' offen</span></div>'+todoList(openTodos.slice(0,8))+todoAdd()+'</section>'+
+    (sev?'<section class="panel"><div class="panel-h"><h2>Umsatz '+esc(D.year)+'</h2><button class="link" data-go="geld">Geld →</button></div><div class="panel-b" style="display:grid;gap:8px"><div class="v num">'+eur0(sev.revenueYear)+'</div><div class="muted">gestellte Rechnungen laut sevDesk</div></div></section>':'')+
+  '</div></div>';
+}
+function todoList(arr){ var t=D.today; return arr.length?arr.map(function(x){ return '<label class="todo"><input type="checkbox" data-todo="'+esc(x.id)+'"'+(x.done?" checked":"")+'><span style="min-width:0;overflow-wrap:anywhere">'+esc(x.text||"")+(x.due?' <span class="due'+(x.due<t?" late":"")+'">'+(x.due<t?"überfällig · ":"")+de(x.due)+'</span>':'')+'</span></label>'; }).join(""):'<div class="empty">Keine offenen To-Dos.</div>'; }
+function todoAdd(){ return '<form class="todo-add" data-form="todo"><input class="f" name="text" placeholder="Neues To-Do …" aria-label="Neues To-Do" required><input class="f" type="date" name="due" aria-label="Fällig am" style="max-width:150px"><button class="btn primary" type="submit">+</button></form>'; }
+
+/* ---------- KUNDEN & LEADS ---------- */
+function leadValue(l){ return +l.value||0; }
+function vKunden(){
+  var cols=STAGES.map(function(s){
+    var ls2=D.leads.filter(function(l){ return (l.stage||"anfrage")===s[0]; });
+    return '<div class="col"><div class="col-h"><span>'+s[1]+'</span><span class="num">'+ls2.length+(ls2.some(leadValue)?' · '+eur0(ls2.reduce(function(a,l){return a+leadValue(l);},0)):'')+'</span></div>'+
+      (ls2.map(function(l){ return '<button class="card" data-lead="'+esc(l.id)+'"><span class="n">'+esc(l.company||l.name)+'</span><span class="m"><span>'+esc(l.topic||"")+'</span>'+(leadValue(l)?'<span class="num">'+eur0(l.value)+'</span>':'')+'</span><span class="x">'+esc((l.company?l.name+" · ":"")+ago(l.updated||l.created))+(l.entwurf&&s[0]==="anfrage"?" · Gratis-Entwurf":"")+'</span></button>'; }).join("")||'<span class="muted" style="padding:6px">Keine</span>')+'</div>';
+  }).join("");
+  var lost=D.leads.filter(function(l){return l.stage==="verloren";});
+  var bySrc={}; D.leads.forEach(function(l){ var k=l.source||"unbekannt"; bySrc[k]=(bySrc[k]||0)+1; });
+  var srcRows=Object.keys(bySrc).sort(function(a,b){return bySrc[b]-bySrc[a];}).slice(0,8), mx=srcRows.length?bySrc[srcRows[0]]:1;
+  return head("Kunden & Leads","Anfragen über das Website-Formular landen automatisch in „Anfrage“. Ein Klick öffnet die Kundenakte.",'<button class="btn primary" data-act="newlead">Neuer Lead</button>')+
+    (D.leads.length?'<div class="pipe">'+cols+'</div>':'<section class="panel"><div class="empty">Noch keine Anfragen. Sobald jemand das Formular auf fs-creative.at/kontakt ausfüllt, erscheint er hier.</div></section>')+
+    (lost.length?'<p class="muted">'+lost.length+' verlorene Leads: '+lost.map(function(l){ return '<button class="link" data-lead="'+esc(l.id)+'">'+esc(l.company||l.name)+'</button>'; }).join(", ")+'</p>':'')+
+    (srcRows.length?'<section class="panel"><div class="panel-h"><h2>Woher kommen die Anfragen?</h2><span class="muted">Seite, auf der das Formular abgeschickt wurde</span></div><div class="panel-b" style="display:grid;gap:12px">'+srcRows.map(function(k){ return '<div style="display:grid;gap:5px"><div style="display:flex;justify-content:space-between;font-size:14px"><span>'+esc(k)+'</span><span class="num">'+bySrc[k]+'</span></div><div class="bar"><i style="width:'+(bySrc[k]/mx*100)+'%"></i></div></div>'; }).join("")+'</div></section>':'');
+}
+function leadMails(l){ var e=String(l.email||"").toLowerCase(); if(!e) return []; return D.mail.messages.filter(function(m){ return String(m.from||"").toLowerCase()===e||String(m.to||"").toLowerCase().indexOf(e)>-1; }).slice(0,8); }
+function leadInvoices(l){ if(!D.sev) return []; var names=[l.company,l.name].filter(Boolean).map(function(x){return x.toLowerCase();}); return D.sev.invoices.filter(function(i){ var c=String(i.contact||"").toLowerCase(); return c&&names.some(function(n){ return c===n||c.indexOf(n)>-1||n.indexOf(c)>-1; }); }).slice(0,8); }
+function openLead(id){
+  var l=D.leads.find(function(x){return x.id===id;}); if(!l) return; UI.leadSel=id;
+  var st=l.stage||"anfrage", mails=leadMails(l), invs=leadInvoices(l);
+  openDrawer('<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div style="min-width:0"><div class="sec-t">Kundenakte</div><h2>'+esc(l.company||l.name)+'</h2><div class="muted">'+esc(l.topic||"")+' · seit '+de(l.created)+'</div></div><button class="btn" data-close aria-label="Schließen">'+svg("close")+'</button></div>'+
+    '<div><div class="sec-t">Phase</div><div class="stages">'+STAGES.map(function(s){ return '<button data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div><div style="margin-top:6px"><button class="link" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></div></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-act="replylead:'+esc(l.id)+'"'+(l.email?'':' disabled')+'>Mail schreiben</button><button class="btn" data-act="leadinvoice:'+esc(l.id)+'">Rechnung erstellen</button>'+(l.phone?'<a class="btn" href="tel:'+esc(l.phone.replace(/\s+/g,""))+'">Anrufen</a>':'')+'</div>'+
+    '<dl class="kv"><dt>Name</dt><dd>'+esc(l.name)+'</dd>'+(l.company?'<dt>Firma</dt><dd>'+esc(l.company)+'</dd>':'')+'<dt>E-Mail</dt><dd>'+esc(l.email||"—")+'</dd><dt>Telefon</dt><dd class="num">'+esc(l.phone||"—")+'</dd><dt>Gekommen über</dt><dd>'+esc(l.source||"—")+'</dd><dt>Gratis-Entwurf</dt><dd>'+(l.entwurf?"Ja, gewünscht":"Nein")+'</dd></dl>'+
+    (l.message?'<div><div class="sec-t">Nachricht</div><div class="mbody" style="background:var(--sunk);padding:12px;border-radius:10px">'+esc(l.message)+'</div></div>':'')+
+    '<form data-form="lead" style="display:grid;gap:10px"><label class="fl">Geschätzter Projektwert (€)<input class="f num" name="value" type="number" min="0" step="50" value="'+(l.value||"")+'"></label><label class="fl">Notizen<textarea class="f" name="notes" rows="4" placeholder="Was wurde besprochen, was ist der nächste Schritt?">'+esc(l.notes||"")+'</textarea></label><div><button class="btn primary" type="submit">Speichern</button></div></form>'+
+    '<div><div class="sec-t">Mails</div>'+(mails.length?mails.map(function(m){ return '<button class="link" style="display:block;text-align:left" data-act="mail:'+esc(m.id)+'">'+deShort(String(m.date).slice(0,10))+' · '+esc(m.subject||"(kein Betreff)")+'</button>'; }).join(""):'<span class="muted">Keine Mails mit '+esc(l.email||"dieser Adresse")+' im Postfach.</span>')+'</div>'+
+    '<div><div class="sec-t">Rechnungen in sevDesk</div>'+(invs.length?'<div class="invs">'+invs.map(invLine).join("")+'</div>':'<span class="muted">Noch keine.</span>')+'</div>'+
+    ((l.history||[]).length?'<div><div class="sec-t">Verlauf</div><div class="muted">'+l.history.slice().reverse().map(function(hh){ return de(hh.at)+" → "+(STAGES.find(function(s){return s[0]===hh.stage;})||[0,hh.stage])[1]; }).join("<br>")+'</div></div>':''));
+}
+function invLine(i){ var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":"offen"; return '<span><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener">'+esc(i.nr||"Entwurf")+'</a> · '+de(i.date)+' · '+eur(i.gross)+' <span class="tag '+cls+'">'+lbl+'</span></span>'; }
+function leadPost(body){ return api("/admin/api/leads",{method:"POST",body:body}).then(function(j){ if(!j.ok){ toast("Speichern fehlgeschlagen: "+(j.error||""),true); return null; } D.leads=j.leads; return j; }); }
+
+/* ---------- GELD & ABGLEICH ---------- */
+function barChart(vals){
+  var W=640,H=210,pl=46,pb=24,pt=12, mx=Math.max.apply(null,vals.concat([1])), step=Math.pow(10,Math.floor(Math.log10(mx))), top=Math.ceil(mx/step)*step, bw=(W-pl)/12, M=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+  var y=function(v){ return pt+(H-pt-pb)*(1-v/top); }, g="", cm=new Date().getMonth(), cy=String(new Date().getFullYear())===String(D.year);
+  [0,top/2,top].forEach(function(t){ g+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(t)+'" y2="'+y(t)+'" stroke="var(--line)"/><text x="'+(pl-8)+'" y="'+(y(t)+4)+'" text-anchor="end" font-size="11" fill="var(--ink-3)" font-family="ui-monospace,monospace">'+(t>=1000?(t/1000).toLocaleString("de-AT")+"k":t)+'</text>'; });
+  vals.forEach(function(v,i){ var x=pl+i*bw+bw*.2, w=bw*.6, hl=cy&&i===cm;
+    if(v>0) g+='<rect x="'+x+'" y="'+y(v)+'" width="'+w+'" height="'+(y(0)-y(v))+'" rx="4" fill="'+(hl?"var(--glow)":"var(--ink)")+'" opacity="'+(hl?1:.82)+'"><title>'+M[i]+': '+eur(v)+'</title></rect>';
+    else g+='<rect x="'+x+'" y="'+(y(0)-2)+'" width="'+w+'" height="2" fill="var(--line)"/>';
+    g+='<text x="'+(x+w/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="11" fill="var(--ink-3)">'+M[i]+'</text>'; });
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Umsatz je Monat">'+g+'</svg>';
+}
+function stateTag(l){ if(!l) return '<span class="tag grey">keine Rechnung</span>'; var m={bezahlt:"ok",offen:"warn",ueberfaellig:"bad",entwurf:"grey",fehlt:"bad",manuell:"grey",alt:"grey",neu:"info",sonst:"grey"}; return '<span class="tag '+(m[l.state]||"grey")+'">'+esc(l.label)+'</span>'; }
+function invLink(l){ if(!l) return ""; return l.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" target="_blank" rel="noopener">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"manuell"); }
+function vGeld(){
+  var sev=D.sev, ab=D.abgleich, f=UI.money;
+  var mig=valueroLegacy();
+  var rows=ab.items.filter(function(x){ if(f==="zu") return x.unbilled>0.005||x.refund>0.005; if(f==="offen") return x.open>0.005; if(f==="prob") return x.refund>0.005||(x.invoices||[]).some(function(l){return l&&(l.state==="fehlt"||l.state==="ueberfaellig");})||x.settledWithoutInvoice>0.005; return true; });
+  var groups={}; rows.forEach(function(x){ (groups[x.src]=groups[x.src]||[]).push(x); });
+  var body=Object.keys(SRC).filter(function(k){return groups[k];}).map(function(k){
+    return '<tr class="grp"><td colspan="6">'+SRC[k]+'</td></tr>'+groups[k].map(function(x){
+      var invs=(x.invoices||[]).map(function(l){ return '<span>'+invLink(l)+' · '+eur(l.gross)+' '+stateTag(l)+'</span>'; }).join("");
+      var act=x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung · '+eur(x.unbilled)+'</button>':(x.auto?'<span class="tag ok">automatisch</span>':(x.unbilled>0.005?'':'<span class="tag ok">erledigt</span>'));
+      if(x.src==="kochdu"&&x.settledWithoutInvoice>0.005) invs+='<span class="tag warn">'+eur(x.settledWithoutInvoice)+' ohne Rechnung als verrechnet markiert</span>';
+      if(x.refund>0.005) act+=' <span class="tag bad">'+eur(x.refund)+' zu viel</span>';
+      return '<tr><td><b>'+esc(x.name)+'</b><div class="sub">'+esc(x.sub)+'</div></td><td class="r num">'+(x.unbilled>0.005?'<b style="color:var(--warn)">'+eur(x.unbilled)+'</b>':'<span class="muted">—</span>')+'</td><td class="r num">'+eur(x.invoiced)+'</td><td class="r num">'+(x.open>0.005?eur(x.open):'<span class="muted">—</span>')+'</td><td><div class="invs">'+(invs||'<span class="muted">—</span>')+'</div></td><td class="r">'+act+'</td></tr>';
+    }).join("");
+  }).join("");
+  var chip=function(k,l,n){ return '<button class="chip" data-money="'+k+'" aria-pressed="'+(f===k)+'">'+l+(n!=null?' · '+n:'')+'</button>'; };
+  var cnt=function(fn){ return ab.items.filter(fn).length; };
+  var open=sev?sev.invoices.filter(function(i){return i.open>0.005;}):[];
+  var q=(UI.invQ||"").toLowerCase();
+  var invList=sev?sev.invoices.filter(function(i){ return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.ref).toLowerCase().indexOf(q)>-1; }).sort(function(a,b){ return (b.open>0)-(a.open>0)||String(b.date).localeCompare(String(a.date)); }).slice(0,q?60:25):[];
+  return head("Geld & Abgleich","sevDesk und alle Plattformen in einer Ansicht. Der Abgleich zeigt, was angefallen, verrechnet und bezahlt ist.",'<button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+
+  (D.sevConfigured&&!sev?'<div class="notice">sevDesk antwortet gerade nicht. Die Plattform-Zahlen stimmen, der Abgleich mit Rechnungen folgt beim nächsten Laden. <button class="btn" data-act="reload">Neu laden</button></div>':'')+
+  (mig.count?'<div class="notice"><span>Im klassischen Dashboard sind <b>'+mig.count+' VALUERO-Abrechnungen</b> ('+eur(mig.sum)+') nur in diesem Browser gespeichert. Übernimm sie, damit der Abgleich auf allen Geräten stimmt.</span><button class="btn primary" data-act="migrate">Übernehmen</button></div>':'')+
+  '<div class="kpis">'+
+    '<div class="panel kpi"><span class="k">Umsatz '+esc(D.year)+'</span><span class="v num">'+(sev?eur0(sev.revenueYear):"—")+'</span><span class="s">gestellte Rechnungen</span></div>'+
+    '<div class="panel kpi"><span class="k">Offen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?sev.openCount+" Rechnungen":"")+'</span></div>'+
+    '<div class="panel kpi"><span class="k">Überfällig</span><span class="v num" style="color:'+(sev&&sev.overdueSum?"var(--bad)":"inherit")+'">'+(sev?eur0(sev.overdueSum):"—")+'</span><span class="s">'+(sev?sev.overdueCount+" Rechnungen":"")+'</span></div>'+
+    '<div class="panel kpi"><span class="k">Noch nicht verrechnet</span><span class="v num" style="color:'+(ab.totals.unbilled?"var(--warn)":"inherit")+'">'+eur0(ab.totals.unbilled)+'</span><span class="s">'+ab.totals.unbilledCount+' Posten</span></div>'+
+  '</div>'+
+  '<section class="panel"><div class="panel-h"><h2>Abgleich Plattformen ↔ sevDesk</h2><div class="chips">'+chip("zu","Zu verrechnen",cnt(function(x){return x.unbilled>0.005||x.refund>0.005;}))+chip("offen","Verrechnet, noch offen",cnt(function(x){return x.open>0.005;}))+chip("prob","Auffällig",cnt(function(x){ return x.refund>0.005||(x.invoices||[]).some(function(l){return l&&(l.state==="fehlt"||l.state==="ueberfaellig");})||x.settledWithoutInvoice>0.005; }))+chip("alle","Alle",ab.items.length)+'</div></div>'+
+    '<div class="scroll"><table><thead><tr><th>Posten</th><th class="r">Nicht verrechnet</th><th class="r">Verrechnet</th><th class="r">Davon offen</th><th>Rechnungen</th><th></th></tr></thead><tbody>'+(body||'<tr><td colspan="6" class="empty">Nichts in dieser Ansicht. 👍</td></tr>')+'</tbody></table></div></section>'+
+  (ab.unlinked.length?'<section class="panel"><div class="panel-h"><h2>Offene Rechnungen ohne Plattform-Zuordnung</h2><span class="muted">z. B. Projektrechnungen</span></div><div class="scroll"><table><tbody>'+ab.unlinked.map(function(i){ return '<tr><td><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener">'+esc(i.nr||"Entwurf")+'</a><div class="sub">'+de(i.date)+'</div></td><td>'+esc(i.contact)+'</td><td class="r num">'+eur(i.open)+'</td><td>'+(i.overdue?'<span class="tag bad">überfällig</span>':'<span class="tag warn">fällig '+de(i.due)+'</span>')+'</td><td class="r"><button class="btn" data-act="book:'+esc(i.id)+'">Zahlung erfassen</button></td></tr>'; }).join("")+'</tbody></table></div></section>':'')+
+  (sev?'<div class="two"><section class="panel"><div class="panel-h"><h2>Umsatz je Monat</h2><span class="muted">laut sevDesk</span></div><div class="chart">'+barChart(sev.byMonth)+'</div></section>'+
+    '<section class="panel"><div class="panel-h"><h2>Bank</h2><a class="link" href="'+SEVURL+'/#/bank" target="_blank" rel="noopener">sevDesk →</a></div><div class="accs">'+sev.accounts.map(function(a){ return '<div class="acc"><div class="muted">'+esc(a.name)+'</div><div class="num" style="font-weight:600;font-size:18px;color:'+(a.balance<0?"var(--bad)":"inherit")+'">'+(a.balance==null?"—":eur(a.balance))+'</div></div>'; }).join("")+'</div><div class="panel-b muted" style="padding-top:0">'+(sev.unassigned?sev.unassigned+" Umsätze noch nicht zugeordnet · ":"")+((sev.vouchers&&sev.vouchers.open)||0)+' offene Ausgaben ('+eur(sev.vouchers&&sev.vouchers.openSum)+')</div></section></div>'+
+  '<section class="panel"><div class="panel-h"><h2>Rechnungen</h2><input class="f" style="max-width:280px" placeholder="Suchen: Nr., Kunde …" data-invq value="'+esc(UI.invQ)+'" aria-label="Rechnungen suchen"></div><div class="scroll"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Datum</th><th class="r">Betrag</th><th class="r">Offen</th><th>Status</th><th></th></tr></thead><tbody>'+invList.map(function(i){ return '<tr><td><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener">'+esc(i.nr||"Entwurf")+'</a></td><td>'+esc(i.contact)+(i.header&&i.header!=="Rechnung"?'<div class="sub">'+esc(i.header)+'</div>':'')+'</td><td class="num">'+deShort(i.date)+'</td><td class="r num">'+eur(i.gross)+'</td><td class="r num">'+(i.open>0.005?eur(i.open):"—")+'</td><td>'+invLine(i).replace(/^.*(<span class="tag[^>]*>[^<]*<\/span>)<\/span>$/,"$1")+'</td><td class="r">'+(i.open>0.005&&i.status!==100?'<button class="btn" data-act="book:'+esc(i.id)+'">Zahlung</button>':'')+'</td></tr>'; }).join("")+'</tbody></table></div></section>':'');
+}
+/* VALUERO-Abrechnungen, die das klassische Dashboard nur im Browser gespeichert hat */
+function valueroLegacy(){
+  var st=ls("fsc_einnahmen_dashboard_v1"), settled=st&&st.valuero&&st.valuero.settled, out=[], sum=0;
+  if(!settled||!D) return {count:0,sum:0,list:[]};
+  Object.keys(settled).forEach(function(key){ (settled[key]||[]).forEach(function(s){
+    if(!s||!(+s.amountCents>0)||String(s.at||"").slice(0,4)!==String(D.year)) return;
+    var item=D.abgleich.items.find(function(x){return x.key==="valuero:"+key;}); if(!item) return;
+    var known=(item.invoices||[]).some(function(l){ return (s.invoiceId&&l.id===String(s.invoiceId))||(Math.abs((+l.gross||0)-s.amountCents/100)<0.02&&String(l.date||"").slice(0,10)===String(s.at).slice(0,10)); });
+    if(!known&&!(s.invoiceId&&item.invoiced>=s.amountCents/100-0.02)){ out.push({key:key,s:s,name:item.name}); sum+=s.amountCents/100; }
+  }); });
+  return {count:out.length,sum:sum,list:out};
+}
+
+/* ---------- POSTFACH ---------- */
+function vPost(){
+  var all=D.mail.messages, f=UI.mailFilter;
+  var list=all.filter(function(m){ if(f==="inbox") return isInbox(m); if(f==="unread") return isInbox(m)&&!m.read; if(f==="open") return isInbox(m)&&!m.answered; if(f==="sent") return /sent|gesendet/i.test(m.folder||""); return true; });
+  var sel=all.find(function(m){return m.id===UI.mailSel;});
+  var chip=function(k,l){ return '<button class="chip" data-mailf="'+k+'" aria-pressed="'+(f===k)+'">'+l+'</button>'; };
+  return head("Postfach",D.mail.fetchedAt?"Stand "+ago(D.mail.fetchedAt)+". Ordner, Regeln und Anhänge an sevDesk weiterhin im klassischen Dashboard.":"Postfach wird geladen …",'<button class="btn primary" data-act="compose">Neue Mail</button>')+
+  '<div class="chips">'+chip("inbox","Posteingang")+chip("unread","Ungelesen")+chip("open","Unbeantwortet")+chip("sent","Gesendet")+chip("all","Alle")+'</div>'+
+  '<div class="mailgrid"><section class="panel mlist">'+(list.length?list.slice(0,120).map(function(m){ return '<button class="mrow'+(m.read?" read":"")+'" data-act="mail:'+esc(m.id)+'"'+(m.id===UI.mailSel?' aria-current="true"':'')+'><span class="udot"></span><span style="min-width:0"><div class="from">'+esc(/sent|gesendet/i.test(m.folder||"")?"An: "+(m.toName||m.to):(m.fromName||m.from))+'</div><div class="sub">'+esc(m.subject||"(kein Betreff)")+'</div></span><span class="muted num">'+esc(fmtMailDate(m.date))+'</span></button>'; }).join(""):'<div class="empty">Keine Mails.</div>')+'</section>'+
+  '<section class="panel" id="mailview">'+(sel?mailView(sel):'<div class="empty">Mail auswählen.</div>')+'</section></div>';
+}
+function fmtMailDate(iso){ var d=new Date(iso); if(isNaN(d)) return ""; var n=new Date(); if(d.toDateString()===n.toDateString()) return d.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); return d.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"}); }
+function attHref(m,a){ return "/admin/api/mail-attachment?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(m.account||""); }
+function mailView(m){
+  var atts=(m.attachments||[]);
+  return '<div class="mview"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap"><div style="min-width:0"><h2 style="font-size:20px;overflow-wrap:anywhere">'+esc(m.subject||"(kein Betreff)")+'</h2><div class="muted">'+esc((m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+">")+' · '+esc(new Date(m.date).toLocaleString("de-AT"))+'</div>'+(m.to?'<div class="muted">An: '+esc(m.to)+'</div>':'')+'</div>'+
+    '<div class="acts"><button class="btn primary" data-act="reply:'+esc(m.id)+'">Antworten</button><button class="btn" data-act="mailtodo:'+esc(m.id)+'">Als To-Do</button><button class="btn" data-act="mailunread:'+esc(m.id)+'">Ungelesen</button></div></div>'+
+    (atts.length?'<div class="atts">'+atts.map(function(a){ return '<a class="btn" href="'+attHref(m,a)+'&inline=1" target="_blank" rel="noopener">📎 '+esc(a.filename||a.name||"Anhang")+'</a>'; }).join("")+'</div>':'')+
+    (m.bodyHtml?'<iframe sandbox="" referrerpolicy="no-referrer" title="Mail-Inhalt" srcdoc="'+esc('<base target="_blank"><style>body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1b2420;margin:12px}img{max-width:100%}</style>'+(m.body||""))+'"></iframe>':'<div class="mbody">'+esc(m.body||m.preview||"")+'</div>')+'</div>';
+}
+function mailAction(op,m){ return api("/admin/api/mail-action",{method:"POST",body:{op:op,items:[{folder:m.folder||"INBOX",uid:m.uid,account:m.account||""}]}}).catch(function(){}); }
+
+/* ---------- KALENDER & TO-DOS ---------- */
+function vKal(){
+  var byDay={}; D.events.forEach(function(e){ (byDay[e.date]=byDay[e.date]||[]).push(e); });
+  var days=Object.keys(byDay).sort().slice(0,21);
+  var open=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
+  var done=(D.todos||[]).filter(function(t){return t.done;}).slice(-8).reverse();
+  return head("Kalender & To-Dos","iCloud, Dashboard-Termine und To-Dos zusammen. Die nächsten 60 Tage.")+
+  '<div class="two"><section class="panel"><div class="panel-h"><h2>Termine</h2></div>'+(days.length?days.map(function(d){ return '<div class="dayhead">'+esc(dayLabel(d,D.today))+'</div><ul class="agenda">'+byDay[d].map(function(e){ return '<li><span class="time">'+esc(e.time||"ganztags")+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.endTime?"bis "+e.endTime:"",e.location||"",{icloud:"iCloud",manuell:"Dashboard",kalender:"Kalender"}[e.source]||""].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>'; }).join(""):'<div class="empty">Keine Termine in den nächsten 60 Tagen.</div>')+
+    '<form class="panel-b" data-form="event" style="display:grid;gap:10px;border-top:1px solid var(--line)"><div class="sec-t" style="margin:0">Neuer Termin</div><input class="f" name="title" placeholder="Titel" required aria-label="Titel"><div class="grid2"><input class="f" type="date" name="date" required value="'+D.today+'" aria-label="Datum"><input class="f" type="time" name="time" aria-label="Uhrzeit"></div><input class="f" name="location" placeholder="Ort (optional)" aria-label="Ort"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select class="f" name="target" style="max-width:220px" aria-label="Kalender"><option value="icloud">iCloud-Kalender</option><option value="manuell">Nur im Dashboard</option></select><button class="btn primary" type="submit">Termin anlegen</button></div></form></section>'+
+  '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><span class="muted">'+open.length+' offen</span></div>'+todoList(open)+todoAdd()+(done.length?'<div class="dayhead">Zuletzt erledigt</div>'+todoList(done):'')+'</section></div>';
+}
+
+/* ---------- WEBSITES ---------- */
+function vWeb(){
+  var s=D.sites||[], cust=s.filter(function(x){return !x.own;}), own=s.filter(function(x){return x.own;});
+  var bad=function(x){ return x.up===false||/FAILED|CRASHED/.test(x.status||""); };
+  cust.sort(function(a,b){ return bad(b)-bad(a)||(b.active-a.active)||a.name.localeCompare(b.name,"de"); });
+  var tot=cust.filter(function(x){return x.active;}).reduce(function(t,x){ t.inc+=x.incomeYear; t.cost+=x.costYear; return t; },{inc:0,cost:0});
+  var row=function(x){ var b=bad(x); var st=b?'<span class="tag bad">'+(x.up===false?"offline":"Deploy fehlgeschlagen")+'</span>':(x.up?'<span class="tag ok">online</span>':'<span class="tag grey">'+(x.status?"Railway":"—")+'</span>');
+    return '<tr><td><span class="dot '+(b?"bad":x.up?"ok":"")+'"></span><b>'+esc(x.name)+'</b><div class="sub">'+(x.url?'<a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.url.replace(/^https:\/\//,""))+'</a>':'ohne Domain')+(x.customer?' · '+esc(x.customer):'')+'</div></td><td>'+st+'</td><td class="hide-m">'+(x.own?'<span class="muted">eigenes Projekt</span>':x.active?(x.billedUntil&&x.billedUntil>=D.today?'<span class="tag ok">bis '+de(x.billedUntil)+'</span>':'<span class="tag warn">'+(x.billedUntil?"fällig seit "+de(x.billedUntil):"noch nie verrechnet")+'</span>'):'<span class="muted">wird nicht verrechnet</span>')+'</td><td class="r num">'+(x.railwayMonth!=null?eur(x.railwayMonth):'—')+'</td><td class="r num hide-m">'+eur(x.costYear)+'</td><td class="r num hide-m">'+(x.incomeYear?eur(x.incomeYear):'—')+'</td><td class="r num '+(x.active&&!x.own?(x.result>=0?"pos":"neg"):"")+'">'+(x.active&&!x.own?eur(x.result):'—')+'</td></tr>'; };
+  var thead='<thead><tr><th>Website</th><th>Status</th><th class="hide-m">Abrechnung</th><th class="r">Railway / Monat</th><th class="r hide-m">Kosten / Jahr</th><th class="r hide-m">Einnahmen / Jahr</th><th class="r">Ergebnis / Jahr</th></tr></thead>';
+  return head("Websites",cust.filter(function(x){return x.active;}).length+" Kundenseiten werden verrechnet. Kosten = Railway (letzte 30 Tage hochgerechnet) + Domain.",'<a class="btn" href="/admin">Preise &amp; Abrechnung bearbeiten</a>')+
+  '<div class="kpis"><div class="panel kpi"><span class="k">Einnahmen / Jahr</span><span class="v num">'+eur0(tot.inc)+'</span></div><div class="panel kpi"><span class="k">Kosten / Jahr</span><span class="v num">'+eur0(tot.cost)+'</span></div><div class="panel kpi"><span class="k">Ergebnis / Jahr</span><span class="v num '+(tot.inc-tot.cost>=0?"pos":"neg")+'">'+eur0(tot.inc-tot.cost)+'</span></div><div class="panel kpi"><span class="k">Railway gesamt</span><span class="v num">'+(D.railwayCosts?eur0(D.railwayCosts.totalEur):"—")+'</span><span class="s">letzte 30 Tage</span></div></div>'+
+  '<section class="panel"><div class="panel-h"><h2>Kundenprojekte</h2></div><div class="scroll"><table>'+thead+'<tbody>'+cust.map(row).join("")+'</tbody></table></div></section>'+
+  (own.length?'<section class="panel"><div class="panel-h"><h2>Eigene Projekte</h2></div><div class="scroll"><table>'+thead+'<tbody>'+own.map(row).join("")+'</tbody></table></div></section>':'');
+}
+
+/* ---------- PLATTFORMEN ---------- */
+function vPlat(){
+  var P=D.platforms, c=function(v){ return eur((+v||0)/100); };
+  var ko=P.kochdu, bz=P.blitzdings, ka=P.kantineur, va=P.valuero;
+  var card=function(t,sub,body){ return '<section class="panel plat"><div class="plat-h"><h3>'+t+'</h3><span class="muted">'+sub+'</span></div>'+body+'</section>'; };
+  var dl=function(rows){ return '<dl class="facts">'+rows.map(function(r){ return '<dt>'+r[0]+'</dt><dd class="num">'+r[1]+'</dd>'; }).join("")+'</dl>'; };
+  return head("Plattformen","Live-Zahlen deiner eigenen Produkte für "+esc(D.year)+". Verrechnet wird im Bereich Geld & Abgleich.")+
+  '<div class="plats">'+
+   card("kochdu","Bestellplattform",ko?dl([["Restaurants",(ko.restaurants||[]).length],["Bar-Gebühren offen",c(ko.totals.barOpenCents)],["Bar-Gebühren verrechnet",c(ko.totals.barSettledCents)],["Online-Provisionen",c(ko.totals.onlineProvisionCents)]].concat(ko.nutzer&&ko.nutzer.total!=null?[["App-Nutzer",ko.nutzer.total]]:[])):'<div class="muted">Keine Verbindung zu kochdu.</div>')+
+   card("Blitzdings","Fotobox & 360°",bz?dl([["Bezahlt",c(bz.revenue.paidCents)],["Offen",c(bz.revenue.openCents)],["Diesen Monat",c(bz.revenue.thisMonthPaidCents)],["Anstehende Buchungen",(bz.upcoming||[]).length]])+((bz.upcoming||[]).length?'<div class="invs">'+bz.upcoming.slice(0,5).map(function(b){ return '<span>'+deShort(String(b.eventDate||"").slice(0,10))+' · '+esc(b.customerName||"")+' · '+esc(b.package||"")+' <span class="tag '+(b.paymentStatus==="PAID"?"ok":"warn")+'">'+(b.paymentStatus==="PAID"?"bezahlt":"offen")+'</span></span>'; }).join("")+'</div>':''):'<div class="muted">Keine Verbindung zu Blitzdings.</div>')+
+   card("Kantineur","Vereinskasse",ka?dl([["MRR",c(ka.mrrCents)],["Aktive Abos",(ka.subscribers||{}).active||0],["Zahlend",(ka.subscribers||{}).paying||0],["Kantinen",(ka.canteens||{}).total||0],["Umsatz "+esc(D.year),c(ka.revenueGrossCents)]]):'<div class="muted">Keine Verbindung zu Kantineur.</div>')+
+   card("VALUERO","Tourismus & Hosting",va?dl(va.objects.map(function(o){ return [esc(o.name)+' <span class="muted">('+(+o.feeBookings||0)+' Buchungen)</span>',c(o.provisionCents)]; })):'<div class="muted">Keine Verbindung zu den VALUERO-Objekten.</div>')+
+  '</div><p class="muted">Detail-Tabellen der Plattformen (Monate, Abo-Varianten, App-Statistiken) findest du weiterhin im <a href="/admin">klassischen Dashboard</a>.</p>';
+}
+
+/* ---------- Rechnung erstellen (sevDesk) ---------- */
+var META=null;
+function loadMeta(cb){ if(META) return cb(META); api("/admin/api/sevdesk/meta").then(function(m){ META=m||{}; cb(META); }).catch(function(){ cb({}); }); }
+function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" placeholder="Bezeichnung" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"></div>'; }
+var INVCTX=null;
+function openInvoice(pre){
+  INVCTX=pre||{};
+  var host=document.getElementById("modalHost");
+  host.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="invT"><form class="dialog" data-form="invoice"><div style="display:flex;justify-content:space-between;gap:10px"><h2 id="invT" style="font-size:20px">'+esc(pre.title||"Neue Rechnung")+'</h2><button type="button" class="btn" data-closemodal aria-label="Schließen">'+svg("close")+'</button></div>'+
+    '<p class="muted" style="margin:0">Wird als <b>Entwurf</b> in sevDesk angelegt. Prüfen und versenden machst du in sevDesk.</p>'+
+    '<div class="grid2"><label class="fl">Kunde<input class="f" name="contact" list="invContacts" required value="'+esc(pre.contactName||"")+'"></label><label class="fl">E-Mail (für neue Kunden)<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label>'+
+    '<label class="fl">Rechnungsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||D.today)+'"></label><label class="fl">Leistungsdatum<input class="f" name="delivery" type="date" value="'+esc(pre.deliveryDate||D.today)+'"></label></div>'+
+    '<label class="fl">Adresse<textarea class="f" name="address" rows="2" placeholder="Name, Straße, PLZ Ort">'+esc(pre.address||pre.contactName||"")+'</textarea></label>'+
+    '<label class="fl">Einleitungstext<textarea class="f" name="head" rows="2">'+esc(pre.headText||"")+'</textarea></label>'+
+    '<div><div class="sec-t">Positionen</div><div id="irows" style="display:grid;gap:10px">'+((pre.items&&pre.items.length?pre.items:[{}]).map(irow).join(""))+'</div><button type="button" class="link" data-addrow>+ Position</button></div>'+
+    '<div class="foot"><span id="invSum" class="num"></span><span style="display:flex;gap:8px"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">Entwurf in sevDesk anlegen</button></span></div><div class="err" id="invErr"></div><datalist id="invContacts"></datalist></form></div>';
+  invSum();
+  loadMeta(function(m){ var dl=document.getElementById("invContacts"); if(dl) dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
+  var c=host.querySelector('[name=contact]'); if(c&&!c.value) c.focus();
+}
+function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEach(function(r){ var g=function(k){ return r.querySelector('[data-i="'+k+'"]').value; }; var nm=g("name").trim(), pr=g("price"); if(!nm||pr==="") return; out.push({name:nm,text:g("text").trim(),qty:parseFloat(g("qty"))||1,priceGross:parseFloat(pr),taxRate:parseFloat(g("tax"))}); }); return out; }
+function invSum(){ var g=0; invItems().forEach(function(i){ g+=i.qty*i.priceGross; }); var el=document.getElementById("invSum"); if(el) el.textContent="Summe brutto "+eur(g); }
+function closeModal(){ document.getElementById("modalHost").innerHTML=""; }
+function saveInvoice(form){
+  var items=invItems(), err=document.getElementById("invErr"), btn=document.getElementById("invSave");
+  var contact=form.contact.value.trim();
+  if(!contact){ err.textContent="Bitte einen Kunden angeben."; return; }
+  if(!items.length){ err.textContent="Bitte mindestens eine Position mit Bezeichnung und Preis angeben."; return; }
+  var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),items:items};
+  btn.disabled=true; err.textContent=""; btn.textContent="Lege Entwurf an …";
+  api("/admin/api/sevdesk/invoice",{method:"POST",body:body}).then(function(j){
+    if(!j||!j.ok){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
+    var after=(INVCTX&&INVCTX.after)||{}, jobs=[];
+    if(after.siteCustomer) jobs.push(api("/admin/api/billing",{method:"POST",body:{op:"site",key:after.siteCustomer.replace(/^site:/,""),patch:{customer:contact}}}));
+    if(after.billing) jobs.push(api("/admin/api/billing",{method:"POST",body:{op:"invoice",key:after.billing.key,invoice:{id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label}}}));
+    if(after.kochduSettle) jobs.push(api("/admin/api/kochdu-settle",{method:"POST",body:{action:"settle",restaurantId:after.kochduSettle.restaurantId,amountCents:after.kochduSettle.amountCents}}));
+    Promise.all(jobs).catch(function(){}).then(function(){ closeModal(); toast("Rechnungsentwurf "+(j.nr||"")+" in sevDesk angelegt"); load(true); });
+  }).catch(function(){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="Keine Verbindung zum Server."; });
+}
+/* ---------- Zahlung erfassen ---------- */
+function openBook(id){
+  var i=D.sev&&D.sev.invoices.find(function(x){return x.id===id;}); if(!i) return;
+  var accs=(D.sev.accounts||[]).filter(function(a){return a.type!=="register"||true;});
+  var def=(accs.find(function(a){return a.isDefault;})||accs[0]||{}).id;
+  document.getElementById("modalHost").innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="bkT"><form class="dialog" data-form="book" data-id="'+esc(id)+'" style="max-width:460px"><h2 id="bkT" style="font-size:20px">Zahlungseingang erfassen</h2><p style="margin:0">'+esc(i.nr||"Entwurf")+' · '+esc(i.contact)+' · offen <b>'+eur(i.open)+'</b></p>'+
+    '<label class="fl">Betrag<input class="f num" name="amount" type="number" step="0.01" min="0.01" value="'+i.open.toFixed(2)+'" required></label><label class="fl">Datum<input class="f" name="date" type="date" value="'+D.today+'"></label><label class="fl">Konto<select class="f" name="account">'+accs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===def?" selected":"")+'>'+esc(a.name)+'</option>'; }).join("")+'</select></label>'+
+    '<div class="foot"><span></span><span style="display:flex;gap:8px"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">In sevDesk buchen</button></span></div><div class="err" id="bkErr"></div></form></div>';
+}
+/* ---------- Mail schreiben ---------- */
+function openCompose(pre){
+  pre=pre||{}; var accs=D.mail.accounts||[];
+  document.getElementById("modalHost").innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="cmT"><form class="dialog" data-form="mail"><div style="display:flex;justify-content:space-between;gap:10px"><h2 id="cmT" style="font-size:20px">'+esc(pre.title||"Neue Mail")+'</h2><button type="button" class="btn" data-closemodal aria-label="Schließen">'+svg("close")+'</button></div>'+
+    (accs.length>1?'<label class="fl">Von<select class="f" name="account">'+accs.filter(function(a){return a.configured!==false;}).map(function(a){ var k=a.key; return '<option value="'+esc(k)+'"'+(k===pre.account||(!pre.account&&a.primary)?" selected":"")+'>'+esc((a.label||k)+(a.user?" · "+a.user:""))+'</option>'; }).join("")+'</select></label>':'')+
+    '<label class="fl">An<input class="f" name="to" required value="'+esc(pre.to||"")+'"></label><label class="fl">Betreff<input class="f" name="subject" required value="'+esc(pre.subject||"")+'"></label><label class="fl">Nachricht<textarea class="f" name="text" rows="10">'+esc(pre.text||"")+'</textarea></label>'+
+    '<input type="hidden" name="inReplyTo" value="'+esc(pre.inReplyTo||"")+'"><div class="foot"><span class="muted">Wird über dein Postfach gesendet.</span><span style="display:flex;gap:8px"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Senden</button></span></div><div class="err" id="cmErr"></div></form></div>';
+  var t=document.querySelector('[data-form=mail] [name=text]'); if(t){ t.focus(); t.setSelectionRange(0,0); }
+}
+function quote(m){ return "\n\n\nAm "+new Date(m.date).toLocaleString("de-AT")+" schrieb "+(m.fromName||m.from)+":\n"+String(m.body&&!m.bodyHtml?m.body:(m.preview||"")).split("\n").map(function(l){return "> "+l;}).join("\n"); }
+
+/* ---------- Drawer ---------- */
+function openDrawer(html){ var d=document.getElementById("drawer"); d.innerHTML=html; d.classList.add("on"); d.setAttribute("aria-hidden","false"); document.getElementById("scrim").classList.add("on"); var c=d.querySelector("[data-close]"); if(c) c.focus(); }
+function closeDrawer(){ var d=document.getElementById("drawer"); d.classList.remove("on"); d.setAttribute("aria-hidden","true"); document.getElementById("scrim").classList.remove("on"); UI.leadSel=null; }
+
+/* ---------- Render ---------- */
+var RENDER={heute:vHeute,kunden:vKunden,geld:vGeld,post:vPost,kal:vKal,web:vWeb,plat:vPlat};
+function render(){
+  renderNav();
+  var main=document.getElementById("main");
+  if(!D){ main.innerHTML='<div class="loading">'+(loadErr?esc(loadErr)+' <button class="btn" data-act="reload">Erneut versuchen</button>':'Lade deine Daten …')+'</div>'; return; }
+  var y=window.scrollY, ae=document.activeElement, aeKey=ae&&ae.getAttribute&&(ae.getAttribute("data-invq")!=null?"invq":null);
+  try{ main.innerHTML='<div class="view">'+RENDER[current]()+'</div>'; }catch(e){ main.innerHTML='<div class="loading">Fehler beim Anzeigen: '+esc(e.message)+'</div>'; console.error(e); }
+  if(aeKey==="invq"){ var q=main.querySelector("[data-invq]"); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); } }
+  window.scrollTo(0,y);
+  if(UI.leadSel&&document.getElementById("drawer").classList.contains("on")) openLead(UI.leadSel);
+}
+function go(v){ current=v; try{ history.replaceState(null,"","#"+v); }catch(e){} closeDrawer(); render(); window.scrollTo(0,0); }
+
+/* ---------- Aktionen ---------- */
+function todosPost(next){
+  var base=D.todos.map(function(t){return Object.assign({},t);});
+  return api("/admin/api/todos",{method:"POST",body:{todos:next,base:base}}).then(function(j){ if(j&&Array.isArray(j.todos)) D.todos=j.todos; render(); });
+}
+function act(a){
+  var i=a.indexOf(":"), k=i>-1?a.slice(0,i):a, v=i>-1?a.slice(i+1):"";
+  if(k==="go") return go(v);
+  if(k==="url") return window.open(v,"_blank","noopener");
+  if(k==="reload") return load(true);
+  if(k==="lead") return openLead(v);
+  if(k==="newlead") return openNewLead();
+  if(k==="pdf") return window.open("/admin/api/sevdesk/pdf?id="+encodeURIComponent(v),"_blank","noopener");
+  if(k==="book") return openBook(v);
+  if(k==="newinvoice") return openInvoice({});
+  if(k==="invoice"){ var x=D.abgleich.items.find(function(y){return y.key===v;}); if(x&&x.action) openInvoice(x.action); return; }
+  if(k==="leadinvoice"){ var l=D.leads.find(function(y){return y.id===v;}); if(l) openInvoice({title:"Rechnung · "+(l.company||l.name),contactName:l.company||l.name,email:l.email}); return; }
+  if(k==="replylead"){ var l2=D.leads.find(function(y){return y.id===v;}); if(l2) openCompose({title:"Antwort an "+l2.name,to:l2.email,subject:"Deine Anfrage bei FS Creative"+(l2.topic?" – "+l2.topic:""),text:"Hallo "+String(l2.name||"").split(" ")[0]+",\n\nvielen Dank für deine Anfrage!\n\n\nLiebe Grüße\nSimon\n\nFS Creative · Dorfstraße 3/1 · 6793 Gaschurn · +43 664 1430620"+(l2.message?"\n\n> "+l2.message.split("\n").join("\n> "):"")}); return; }
+  if(k==="mail"){ var m=D.mail.messages.find(function(y){return y.id===v;}); if(!m) return; UI.mailSel=v; if(!m.read){ m.read=true; mailAction("seen",m); } if(current!=="post"){ go("post"); } else render(); var mv=document.getElementById("mailview"); if(mv&&window.innerWidth<900) mv.scrollIntoView({behavior:"smooth"}); return; }
+  if(k==="mailunread"){ var m2=D.mail.messages.find(function(y){return y.id===v;}); if(m2){ m2.read=false; mailAction("unseen",m2); render(); } return; }
+  if(k==="reply"){ var m3=D.mail.messages.find(function(y){return y.id===v;}); if(m3) openCompose({title:"Antworten",to:m3.replyTo||m3.from,subject:"Re: "+String(m3.subject||"").replace(/^(re|aw|fwd?|wg):\s*/i,""),text:quote(m3),inReplyTo:m3.messageId||"",account:m3.account,source:m3}); return; }
+  if(k==="mailtodo"){ var m4=D.mail.messages.find(function(y){return y.id===v;}); if(m4){ var nx=D.todos.concat([{id:"t"+Date.now().toString(36),text:"Mail: "+(m4.subject||"")+" ("+(m4.fromName||m4.from)+")",due:"",done:false,created:Date.now()}]); todosPost(nx).then(function(){ toast("Als To-Do angelegt"); }); } return; }
+  if(k==="compose") return openCompose({});
+  if(k==="tododone"){ var nx2=D.todos.map(function(t){ return t.id===v?Object.assign({},t,{done:true}):t; }); todosPost(nx2).then(function(){ toast("Erledigt"); }); return; }
+  if(k==="migrate") return migrateValuero();
+}
+function migrateValuero(){
+  var mig=valueroLegacy(); if(!mig.count) return;
+  var jobs=mig.list.map(function(e){ return api("/admin/api/billing",{method:"POST",body:{op:"invoice",key:"valuero:"+e.key,invoice:{id:e.s.invoiceId?String(e.s.invoiceId):"",nr:e.s.invoiceId?"":"manuell",gross:e.s.amountCents/100,date:String(e.s.at).slice(0,10),label:e.name+" (übernommen)"}}}); });
+  Promise.all(jobs).then(function(){ toast(mig.count+" VALUERO-Abrechnungen übernommen"); load(true); }).catch(function(){ toast("Übernehmen fehlgeschlagen",true); });
+}
+function openNewLead(){
+  document.getElementById("modalHost").innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="nlT"><form class="dialog" data-form="newlead" style="max-width:520px"><h2 id="nlT" style="font-size:20px">Neuer Lead</h2><div class="grid2"><label class="fl">Name<input class="f" name="name" required></label><label class="fl">Firma / Verein<input class="f" name="company"></label><label class="fl">E-Mail<input class="f" name="email" type="email"></label><label class="fl">Telefon<input class="f" name="phone" type="tel"></label></div><label class="fl">Thema<input class="f" name="topic" value="Website"></label><label class="fl">Notiz<textarea class="f" name="message" rows="3"></textarea></label><div class="foot"><span></span><span style="display:flex;gap:8px"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Anlegen</button></span></div></form></div>';
+  document.querySelector('[data-form=newlead] [name=name]').focus();
+}
+
+document.addEventListener("click",function(e){
+  var t=e.target;
+  var g=t.closest("[data-go]"); if(g){ go(g.getAttribute("data-go")); return; }
+  var a=t.closest("[data-act]"); if(a&&!a.disabled){ e.preventDefault(); act(a.getAttribute("data-act")); return; }
+  var ld=t.closest("[data-lead]"); if(ld){ openLead(ld.getAttribute("data-lead")); return; }
+  var st=t.closest("[data-stage]"); if(st&&UI.leadSel){ var sid=UI.leadSel, stage=st.getAttribute("data-stage"); leadPost({op:"update",id:sid,patch:{stage:stage}}).then(function(j){ if(j){ toast("Phase: "+((STAGES.find(function(s){return s[0]===stage;})||[0,"verloren"])[1])); render(); openLead(sid); } }); return; }
+  var sn=t.closest("[data-snooze]"); if(sn){ snooze(sn.getAttribute("data-snooze")); return; }
+  if(t.closest("[data-toggle-feed]")){ UI.feedAll=!UI.feedAll; render(); return; }
+  var mf=t.closest("[data-money]"); if(mf){ UI.money=mf.getAttribute("data-money"); render(); return; }
+  var mlf=t.closest("[data-mailf]"); if(mlf){ UI.mailFilter=mlf.getAttribute("data-mailf"); render(); return; }
+  if(t.closest("[data-close]")||t.id==="scrim"){ closeDrawer(); return; }
+  if(t.closest("[data-closemodal]")||t.classList.contains("modal")){ closeModal(); return; }
+  if(t.closest("[data-addrow]")){ document.getElementById("irows").insertAdjacentHTML("beforeend",irow({})); return; }
+  var dr=t.closest("[data-delrow]"); if(dr){ var rows=document.querySelectorAll("#irows .irow"); if(rows.length>1) dr.closest(".irow").remove(); invSum(); return; }
+});
+document.addEventListener("change",function(e){
+  var t=e.target;
+  if(t.matches("[data-todo]")){ var id=t.getAttribute("data-todo"), on=t.checked; todosPost(D.todos.map(function(x){ return x.id===id?Object.assign({},x,{done:on}):x; })); return; }
+  if(t.id==="year"){ year=t.value; D=null; render(); load(true); }
+});
+document.addEventListener("input",function(e){
+  var t=e.target;
+  if(t.closest("#irows")) invSum();
+  if(t.matches("[data-invq]")){ UI.invQ=t.value; clearTimeout(t._d); t._d=setTimeout(render,250); }
+});
+document.addEventListener("submit",function(e){
+  var f=e.target, kind=f.getAttribute("data-form"); if(!kind) return; e.preventDefault();
+  if(kind==="invoice") return saveInvoice(f);
+  if(kind==="todo"){ var txt=f.text.value.trim(); if(!txt) return; todosPost(D.todos.concat([{id:"t"+Date.now().toString(36),text:txt,due:f.due.value||"",done:false,created:Date.now()}])).then(function(){ toast("To-Do angelegt"); }); return; }
+  if(kind==="lead"){ var sid=UI.leadSel; leadPost({op:"update",id:sid,patch:{value:f.value.value,notes:f.notes.value}}).then(function(j){ if(j){ toast("Gespeichert"); render(); openLead(sid); } }); return; }
+  if(kind==="newlead"){ leadPost({op:"create",name:f.name.value,company:f.company.value,email:f.email.value,phone:f.phone.value,topic:f.topic.value,message:f.message.value}).then(function(j){ if(j){ closeModal(); toast("Lead angelegt"); go("kunden"); } }); return; }
+  if(kind==="book"){ var id=f.getAttribute("data-id"), err=document.getElementById("bkErr"); err.textContent="Buche …";
+    api("/admin/api/sevdesk/book",{method:"POST",body:{id:id,amount:f.amount.value,date:f.date.value,accountId:f.account.value}}).then(function(j){ if(j&&j.ok){ closeModal(); toast("Zahlung in sevDesk gebucht"); load(true); } else err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannt"); }).catch(function(){ err.textContent="Keine Verbindung."; }); return; }
+  if(kind==="mail"){ var err2=document.getElementById("cmErr"), btn=f.querySelector("[type=submit]"); btn.disabled=true; err2.textContent="";
+    var text=f.text.value, html='<div style="font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;white-space:pre-wrap">'+esc(text)+'</div>';
+    api("/admin/api/mail-send",{method:"POST",body:{account:f.account?f.account.value:undefined,to:f.to.value,subject:f.subject.value,text:text,html:html,inReplyTo:f.inReplyTo.value||undefined}}).then(function(j){
+      if(j&&j.ok!==false&&!j.error){ closeModal(); toast("Gesendet"); setTimeout(function(){ load(true); },1500); } else { btn.disabled=false; err2.textContent="Senden fehlgeschlagen: "+((j&&j.error)||"unbekannt"); } }).catch(function(){ btn.disabled=false; err2.textContent="Keine Verbindung."; }); return; }
+  if(kind==="event"){ var ev={title:f.title.value.trim(),date:f.date.value,time:f.time.value||"",location:f.location.value.trim()};
+    if(f.target.value==="icloud"){ api("/admin/api/private-cal",{method:"POST",body:{op:"create",event:ev}}).then(function(j){ if(j&&j.ok){ toast("Termin im iCloud-Kalender angelegt"); load(true); } else toast("iCloud: "+((j&&j.error)==="not_configured"?"nicht verbunden – im klassischen Dashboard unter Einstellungen einrichten":(j&&j.error)||"Fehler"),true); }); }
+    else { api("/admin/api/events").then(function(cur){ var arr=(cur&&cur.events)||[]; var nx=arr.concat([{id:"e"+Date.now().toString(36),title:ev.title,date:ev.date,time:ev.time,location:ev.location,source:"manual",sparte:"fs"}]); return api("/admin/api/events",{method:"POST",body:{events:nx,base:arr}}); }).then(function(j){ if(j&&j.ok){ toast("Termin angelegt"); load(true); } else toast("Speichern fehlgeschlagen",true); }); }
+    return; }
+});
+document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ if(document.getElementById("modalHost").innerHTML) closeModal(); else closeDrawer(); } });
+document.getElementById("refresh").addEventListener("click",function(){ load(true); toast("Aktualisiere …"); });
+(function(){ var ys=document.getElementById("year"), cy=new Date().getFullYear(), o=""; for(var y=cy;y>=cy-3;y--) o+='<option value="'+y+'">'+y+'</option>'; ys.innerHTML=o; ys.value=year; })();
+setInterval(function(){ if(!document.hidden&&!document.getElementById("modalHost").innerHTML) load(false); },60000);
+document.addEventListener("visibilitychange",function(){ if(!document.hidden&&D&&Date.now()-Date.parse(D.fetchedAt)>60000) load(false); });
+render(); load(false);
+})();
+</script>
+</body>
+</html>
