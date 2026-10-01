@@ -718,7 +718,7 @@ function injectAdmin(html, stampISO) {
     'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
     'window.__fsdPoll=poll;' +
     'window.__FSD_BUILD=' + JSON.stringify(BUILD) + ';' +
-    'function vchk(){fetch("/admin/api/version",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.build&&window.__FSD_BUILD&&d.build!==window.__FSD_BUILD){location.replace("/admin?v="+encodeURIComponent(d.build));}}).catch(function(){});}' +
+    'function vchk(){fetch("/admin/api/version",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.build&&window.__FSD_BUILD&&d.build!==window.__FSD_BUILD){location.replace("/admin/alt?v="+encodeURIComponent(d.build));}}).catch(function(){});}' +
     'window.__fsdVchk=vchk;setInterval(vchk,30000);setTimeout(vchk,2000);' +
     'setInterval(poll,30000);setTimeout(poll,600);' +
     '})();</script>';
@@ -1425,6 +1425,10 @@ async function handleAdmin(req, res, u, p) {
   if (!adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin/login" });
 
   if (p === "/admin" || p === "/admin/") {
+    return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
+  }
+  // Klassisches Dashboard (Rückfall), ersetzt durch das Cockpit unter /admin.
+  if (p === "/admin/alt" || p === "/admin/alt/") {
     const html = await renderAdminDashboard();
     return sendGz(req, res, 200, html, TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
@@ -1617,8 +1621,9 @@ async function handleAdmin(req, res, u, p) {
     if (!buf) return send(res, 404, "not found");
     return sendGz(req, res, 200, buf, TYPES[".js"], { "Cache-Control": "private, max-age=31536000, immutable", "X-Robots-Tag": "noindex" });
   }
+  // Alte Adresse des Cockpits -> /admin
   if (p === "/admin/neu" || p === "/admin/neu/") {
-    return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
+    return send(res, 301, "", "text/plain", { Location: "/admin" + (u.search || "") });
   }
   if (p === "/admin/api/cockpit" && req.method === "GET") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "").slice(0, 4) || String(new Date().getFullYear());

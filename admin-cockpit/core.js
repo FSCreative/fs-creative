@@ -141,7 +141,7 @@ FSC.action("moresheet",function(){
   var t=FSC.theme();
   FSC.modal('<div class="row-between"><h2 style="font-size:19px">Mehr</h2>'+FSC.btnClose()+'</div><div class="sheet" id="moreSheet">'+FSC.views.filter(function(v){return !v.hidden;}).map(function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'"'+(v.id===FSC.current?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+v.label+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("")+
     '<div class="sec-t" style="margin-top:10px">Darstellung</div><div class="seg">'+[["auto","Automatisch"],["light","Hell"],["dark","Dunkel"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>'+
-    '<div class="sheet-links"><button class="btn" data-act="search">Suchen</button><button class="btn" data-act="priv">Beträge ein/aus</button><button class="btn" data-act="settings">Einstellungen</button><button class="btn" data-act="reload">Aktualisieren</button><a class="btn" href="/admin">Klassisches Dashboard</a><a class="btn" href="/admin/logout">Abmelden</a></div></div>',"sheetdlg");
+    '<div class="sheet-links"><button class="btn" data-act="search">Suchen</button><button class="btn" data-act="priv">Beträge ein/aus</button><button class="btn" data-act="settings">Einstellungen</button><button class="btn" data-act="reload">Aktualisieren</button><a class="btn" href="/admin/alt">Klassisches Dashboard</a><a class="btn" href="/admin/logout">Abmelden</a></div></div>',"sheetdlg");
 });
 
 /* ---------- Zentrale Ereignisse ---------- */
