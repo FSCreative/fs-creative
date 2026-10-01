@@ -1390,13 +1390,13 @@ function readSteuer() {
   o.settings = Object.assign({ zeitraum: "quartal", steuernummer: "" }, o.settings || {});
   o.settings.besteuerung = "soll";                                   // FS Creative: Sollbesteuerung (vereinbarte Entgelte) – fix
   o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {};
-  o.uvaManual = o.uvaManual || {}; o.jabInput = o.jabInput || {}; o.trips = o.trips || {};
+  o.uvaManual = o.uvaManual || {}; o.jabInput = o.jabInput || {}; o.trips = o.trips || {}; o.ruleMap = o.ruleMap || {}; o.supMap = o.supMap || {}; o.u1 = o.u1 || {};
   o.fon = Object.assign({ nextPaket: 1, archive: [] }, o.fon || {});
   return o;
 }
 function writeSteuer(o) { try { fs.writeFileSync(STEUER_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
 // Für den Browser: Archiv ohne XML (das gibt es einzeln)
-function steuerPublic(o) { return { vies: o.vies || {}, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
+function steuerPublic(o) { return { vies: o.vies || {}, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, ruleMap: o.ruleMap, supMap: o.supMap, u1: o.u1, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
 // Alle Seiten laden; doppelte Objekte (z. B. wenn offset ignoriert wird) werden entfernt und gezählt
 async function sevAll(pathq, query, max, stats) {
   const out = []; const seen = new Set(); const lim = 1000; let dupes = 0;
@@ -1426,13 +1426,15 @@ function sevPosLines(pos, key, acc) {
     (by[id] = by[id] || []).push({ rate, net, tax, cat: at.name || "", catId: at.id ? String(at.id) : "", catType: at.type || "", catNo: String(ad.accountNumber || g.no || ""), isAsset: x.isAsset === true || x.isAsset === "1" || x.isAsset === 1 }); });
   return by;
 }
+// UID des Kontakts: vatNumber, sonst taxNumber, wenn sie wie eine EU-UID aussieht
+function sevUid(c) { c = c || {}; const v = String(c.vatNumber || "").replace(/[\s.\-]/g, "").toUpperCase(); if (v) return v; const t = String(c.taxNumber || "").replace(/[\s.\-]/g, "").toUpperCase(); return STEUER_CALC.uidValid(t).ok ? t : ""; }
 let STEUER_CACHE = { at: 0, data: null, p: null };
 async function steuerRaw(force) {
   if (!force && STEUER_CACHE.data && Date.now() - STEUER_CACHE.at < 10 * 60 * 1000) return STEUER_CACHE.data;
   if (STEUER_CACHE.p) return STEUER_CACHE.p;
   STEUER_CACHE.p = (async () => {
     const dupes = {};
-    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr, guide] = await Promise.all([
+    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr, guide, guideRev, guideExp] = await Promise.all([
       // showAll: laut sevDesk-Doku sonst nicht alle Rechnungsarten (SR/AR/TR/ER) in der Liste
       sevAll("/Invoice", { embed: "contact,addressCountry", showAll: true }, 6000, dupes), sevAll("/InvoicePos", {}, 20000, dupes),
       sevAll("/Voucher", { embed: "supplier" }, 6000, dupes),
@@ -1444,6 +1446,8 @@ async function steuerRaw(force) {
       sevAll("/CheckAccountTransactionLog", {}, 20000, dupes).catch(() => []),
       sevAll("/ContactAddress", { embed: "country" }, 6000, dupes).catch(() => []),   // Land der Kunden/Lieferanten (für RC/ZM)
       sev("GET", "/ReceiptGuidance/forAllAccounts", { timeout: 40000 }).catch(() => null),  // Steuerregeln des Kontos (Diagnose)
+      sev("GET", "/ReceiptGuidance/forRevenue", { timeout: 40000 }).catch(() => null),      // Regeln der Erlöskonten (Ausgangsrechnungen)
+      sev("GET", "/ReceiptGuidance/forExpense", { timeout: 40000 }).catch(() => null),      // Regeln der Aufwandskonten
     ]);
     const ctry = {}; addr.forEach(a => { const cid = a.contact && a.contact.id, c = a.country && (a.country.code || ""); if (cid && c && !ctry[cid]) ctry[cid] = String(c).toUpperCase(); });
     const acc = {}; ((guide && guide.objects) || []).forEach(g => { if (g && g.accountDatevId != null) acc[String(g.accountDatevId)] = { no: String(g.accountNumber || ""), name: g.accountName || "" }; });
@@ -1460,7 +1464,9 @@ async function steuerRaw(force) {
     const invoices = inv.filter(o => o.invoiceType !== "MA").map(o => {
       const c = o.contact || {}, paid = sevNum(o.paidAmount);
       return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), delivery: sevDay(o.deliveryDate), deliveryUntil: sevDay(o.deliveryDateUntil) || null, payDate: sevDay(o.payDate),
-        origin: o.origin && o.origin.id != null ? String(o.origin.id) : "", contactId: c.id != null ? String(c.id) : "", taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(c), uid: String(c.vatNumber || "").replace(/\s/g, "").toUpperCase(), country: country(o.addressCountry) || ctry[c.id] || "",
+        origin: o.origin && o.origin.id != null ? String(o.origin.id) : "", contactId: c.id != null ? String(c.id) : "",
+        // gedruckte Adresse und Texte: Land/UID/„Reverse Charge“-Hinweise erkennen, wenn Kontakt-Land oder -UID fehlen
+        addrText: String(o.address || "").slice(0, 600), taxText: String(o.taxText || "").slice(0, 200), texts: String((o.headText || "") + "\n" + (o.footText || "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 1500), taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(c), uid: sevUid(c), country: country(o.addressCountry) || ctry[c.id] || "",
         net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid, enshrined: !!o.enshrined, pays: paysFor("Invoice", o.id, paid), lines: posBy[o.id] || [] };
     });
     const vouchers = vou.map(v => { const s = v.supplier || {}, paid = sevNum(v.paidAmount);
@@ -1474,8 +1480,8 @@ async function steuerRaw(force) {
     const transactions = tx.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
       .filter(t => t.amount < 0 && (t.date || "") >= cutoff && /finanzamt|abgabenkonto|bmf|steuer|\bust\b|umsatzsteuer|\bfa\b/i.test(t.name + " " + t.purpose));
     // Steuerregeln (id, Name, Beschreibung, Seite) aus der ReceiptGuidance – damit die Zuordnung zum österreichischen Konto geprüft werden kann
-    const trBy = {}; ((guide && guide.objects) || []).forEach(g => { const side = (g.allowedReceiptTypes || []).join("/"); (g.allowedTaxRules || []).forEach(r => { if (r == null || r.id == null) return; const k = String(r.id); const x = trBy[k] = trBy[k] || { id: k, name: r.name || "", description: r.description || "", rates: [], side: "" };
-      (r.taxRates || []).forEach(t => { if (x.rates.indexOf(t) < 0) x.rates.push(t); }); if (side && x.side.indexOf(side) < 0) x.side = (x.side ? x.side + "/" : "") + side; }); });
+    const trBy = {}; [[guide, ""], [guideRev, "REVENUE"], [guideExp, "EXPENSE"]].forEach(([gd, def]) => ((gd && gd.objects) || []).forEach(g => { if (!g) return; const side = (g.allowedReceiptTypes || []).join("/") || def; (g.allowedTaxRules || []).forEach(r => { if (r == null || r.id == null) return; const k = String(r.id); const x = trBy[k] = trBy[k] || { id: k, name: r.name || "", description: r.description || "", rates: [], side: "" };
+      (r.taxRates || []).forEach(t => { if (x.rates.indexOf(t) < 0) x.rates.push(t); }); if (side && x.side.indexOf(side) < 0) x.side = (x.side ? x.side + "/" : "") + side; }); }));
     const taxRules = Object.keys(trBy).map(k => trBy[k]).sort((a, b) => +a.id - +b.id);
     const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, taxRules, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
     STEUER_CACHE = { at: Date.now(), data: d, p: null };
@@ -1483,7 +1489,7 @@ async function steuerRaw(force) {
   })().catch(e => { STEUER_CACHE.p = null; throw e; });
   return STEUER_CACHE.p;
 }
-const STEUER_KZ_OK = /^(auto|inl|ns|zm|zmd|017|011|020|021|016|oss|060|rc|rcnv|ige|ige3|ige0|eust|fx|none|ignore)$/;
+const STEUER_KZ_OK = /^(auto|inl|ns|zm|zmd|017|011|020|021|016|oss|sonst|060|rc|rcnv|ige|ige3|ige0|eust|fx|none|ignore)$/;
 function steuerOp(pl) {
   const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
   const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
@@ -1497,6 +1503,9 @@ function steuerOp(pl) {
     if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
     ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
     if ("wk" in P) cur.wk = P.wk === "ja" || P.wk === "nein" ? P.wk : undefined;           // § 19 EStG 15-Tage-Regel
+    if ("uid" in P) { const u = String(P.uid || "").replace(/[\s.\-]/g, "").toUpperCase().slice(0, 16); cur.uid = u && STEUER_CALC.uidValid(u).ok ? u : undefined; }
+    if ("land" in P) { const l = String(P.land || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2); cur.land = l.length === 2 ? l : undefined; }
+    if ("grund" in P) cur.grund = String(P.grund || "").slice(0, 120) || undefined;
     if ("erMode" in P) cur.erMode = P.erMode === "rest" || P.erMode === "voll" ? P.erMode : undefined;   // Endrechnung: Kopfsumme Rest/Gesamt
     if ("nd" in P) { const n = parseInt(P.nd, 10); cur.nd = n > 0 && n < 60 ? n : undefined; }
     if ("method" in P) cur.method = P.method === "deg" ? "deg" : undefined;
@@ -1504,6 +1513,15 @@ function steuerOp(pl) {
     if ("benefit" in P) cur.benefit = /^(gfb|ifb10|ifb15|ifb20|ifb22)$/.test(P.benefit) ? (P.benefit === "ifb20" ? "ifb10" : P.benefit === "ifb22" ? "ifb15" : P.benefit) : undefined;
     ["abgang", "start", "ausfall"].forEach(f => { if (f in P) cur[f] = /^\d{4}-\d{2}-\d{2}$/.test(P[f] || "") ? P[f] : undefined; });
     o.docs[id] = JSON.parse(JSON.stringify(cur));
+  }
+  else if (op === "ruleMap") {   // Zuordnung einer sevDesk-Steuerregel → Klasse, gilt für alle Belege mit dieser Regel
+    const id = String(pl.id || "").replace(/\D/g, "").slice(0, 10), side = pl.side === "in" ? "in" : "out", cls = String(pl.cls || "");
+    if (!id) throw new Error("ungueltig"); const ok = (side === "in" ? STEUER_CALC.RULE_IN_CLASSES : STEUER_CALC.RULE_OUT_CLASSES).indexOf(cls) > -1;
+    const cur = o.ruleMap[id] || {}; if (ok) cur[side] = cls; else delete cur[side]; if (Object.keys(cur).length) o.ruleMap[id] = cur; else delete o.ruleMap[id];
+  }
+  else if (op === "supMap") {    // ig. Erwerb gebucht: Ware (ige) oder Dienstleistung (rc) – je Lieferant
+    const k = String(pl.key || pl.supplier || "").trim().toLowerCase().replace(/\s+/g, " ").slice(0, 120), v = String(pl.cls || "");
+    if (!k) throw new Error("ungueltig"); if (v === "rc" || v === "ige") o.supMap[k] = v; else delete o.supMap[k];
   }
   else if (op === "manual" && key) {   // manuelle UVA-Kennzahl je Zeitraum
     const kz = String(pl.kz || ""); if (STEUER_CALC.MANUAL_KZ.indexOf(kz) < 0) throw new Error("kz_nicht_erlaubt");
