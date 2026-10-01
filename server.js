@@ -2442,7 +2442,7 @@ async function steuerDiag(key) {
     const sampleI = await sev("GET", "/Invoice", { query: { limit: 3, showAll: true } }).catch(() => ({}));
     (sampleI.objects || []).forEach(v => L("invoice_raw", { keys: Object.keys(v), taxRule: v.taxRule || null, taxType: v.taxType || null, invoiceType: v.invoiceType }));
     const raw = await steuerRaw(true), o = readSteuer();
-    L("meta", Object.assign({ period: p }, raw.meta.counts, { taxRules: raw.taxRules }));
+    L("meta", Object.assign({ period: p }, raw.meta.counts, { taxRules: raw.taxRules, taxSets: raw.taxSets }));
     const inP = d => { const t = d.delivery || d.date || ""; return (d.date >= p.from && d.date <= p.to) || (t >= p.from && t <= p.to); };
     const agg = {};
     const add = (side, d) => { const x = STEUER_CALC.explainDoc(raw, o, d.id); if (!x) return; (x.positionen || []).forEach(l => {
