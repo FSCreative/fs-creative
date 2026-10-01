@@ -80,7 +80,7 @@ const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".
 const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "admin-cockpit.html": 1, "package.json": 1, "package-lock.json": 1 };
 function isPublicFile(filePath) {
   const rel = path.relative(ROOT, filePath);
-  if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".")) return false;
+  if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".") || rel.split(path.sep)[0] === "admin-cockpit") return false;
   if (PRIVATE_FILES[rel.normalize("NFC")]) return false;
   return !!PUBLIC_EXT[path.extname(rel).toLowerCase()];
 }
@@ -1173,12 +1173,102 @@ function sevSummary(sev, year, today) {
     drafts: inv.filter(i => i.status === 100).length, invoices: inv.slice(0, 160), accounts: sev.accounts || [], unassigned: sev.unassigned || 0, vouchers: sev.vouchers || {}, transactions: (sev.transactions || []).slice(0, 25) };
 }
 
-async function cockpitBuild(year) {
+
+// ── Skikaiser: In-App-Käufe (Einmalkäufe) ──
+// Erwartet von der App-API (SKIKAISER_STATS_URL?token=…&year=…) entweder eine Kaufliste
+// { purchases:[{ id, date, productId, productName, priceCents, proceedsCents, platform, country, refunded }] }
+// oder fertige Summen { totals:{grossCents,proceedsCents,count}, byMonth:[{month,grossCents,proceedsCents,count}], byProduct:[{productId,name,count,grossCents,proceedsCents}] }.
+const SKIKAISER = { url: process.env.SKIKAISER_STATS_URL || "", token: process.env.SKIKAISER_STATS_TOKEN || "" };
+async function skikaiserStats(year) {
+  if (!SKIKAISER.url) return { configured: false };
+  const d = await getJSON(SKIKAISER.url + (SKIKAISER.url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(SKIKAISER.token) + yearParam(year));
+  if (!d || d.error) return { configured: true, error: (d && d.error) || "keine_antwort" };
+  const yr = String(year);
+  let byMonth = {}, byProduct = {}, byPlatform = {}, totals = { grossCents: 0, proceedsCents: 0, count: 0, refunds: 0 }, recent = [];
+  if (Array.isArray(d.purchases)) {
+    d.purchases.forEach(p => {
+      const day = String(p.date || "").slice(0, 10); if (yr && day.slice(0, 4) !== yr) return;
+      const g = +p.priceCents || 0, pr = p.proceedsCents != null ? +p.proceedsCents : Math.round(g * 0.85);
+      if (p.refunded) { totals.refunds++; return; }
+      totals.grossCents += g; totals.proceedsCents += pr; totals.count++;
+      const m = day.slice(0, 7); const bm = byMonth[m] || (byMonth[m] = { month: m, grossCents: 0, proceedsCents: 0, count: 0 }); bm.grossCents += g; bm.proceedsCents += pr; bm.count++;
+      const k = p.productId || p.productName || "?"; const bp = byProduct[k] || (byProduct[k] = { productId: k, name: p.productName || k, grossCents: 0, proceedsCents: 0, count: 0 }); bp.grossCents += g; bp.proceedsCents += pr; bp.count++;
+      const pl = p.platform || "?"; const bq = byPlatform[pl] || (byPlatform[pl] = { platform: pl, grossCents: 0, count: 0 }); bq.grossCents += g; bq.count++;
+    });
+    recent = d.purchases.filter(p => !p.refunded).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 15).map(p => ({ date: p.date, name: p.productName || p.productId, priceCents: +p.priceCents || 0, platform: p.platform || "", country: p.country || "" }));
+  } else {
+    totals = Object.assign(totals, d.totals || {});
+    (d.byMonth || []).forEach(m => { byMonth[m.month] = { month: m.month, grossCents: +m.grossCents || 0, proceedsCents: +m.proceedsCents || 0, count: +m.count || 0 }; });
+    (d.byProduct || []).forEach(p => { byProduct[p.productId || p.name] = { productId: p.productId || p.name, name: p.name || p.productId, grossCents: +p.grossCents || 0, proceedsCents: +p.proceedsCents || 0, count: +p.count || 0 }; });
+    (d.byPlatform || []).forEach(p => { byPlatform[p.platform] = p; });
+  }
+  return { configured: true, fetchedAt: d.fetchedAt || new Date().toISOString(), totals, byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)), byProduct: Object.values(byProduct).sort((a, b) => b.grossCents - a.grossCents), byPlatform: Object.values(byPlatform), recent, users: d.users || null };
+}
+
+// ── Geschätztes Monatseinkommen ──
+// Kantineur: laufende Abos (MRR, live). kochdu, VALUERO, Skikaiser: Prognose, die nur alle 14 Tage neu berechnet wird.
+const FORECAST_FILE = path.join(DATA_DIR, "forecast.json");
+function readForecast() { try { return JSON.parse(fs.readFileSync(FORECAST_FILE, "utf8")) || {}; } catch (e) { return {}; } }
+function writeForecast(o) { try { fs.writeFileSync(FORECAST_FILE, JSON.stringify(o)); } catch (e) {} }
+function kochduCumCents(ko) { const t = (ko && ko.totals) || {}; return (+t.barOpenCents || 0) + (+t.barSettledCents || 0) + (+t.onlineProvisionCents || 0); }
+// Tägliche Stände merken, damit die kochdu-Prognose auf echten Zuwächsen der letzten Wochen beruht
+function forecastSnapshot(fc, today, ko) {
+  fc.history = fc.history || {};
+  if (ko && ko.totals) fc.history[today] = Object.assign({}, fc.history[today] || {}, { kochdu: kochduCumCents(ko) });
+  const keys = Object.keys(fc.history).sort(); while (keys.length > 420) delete fc.history[keys.shift()];
+}
+function monthsBack(today, n) { const out = []; let y = +today.slice(0, 4), m = +today.slice(5, 7); for (let i = 0; i < n; i++) { m--; if (m === 0) { m = 12; y--; } out.push(y + "-" + String(m).padStart(2, "0")); } return out; }
+function valueroForecast(va, vaPrev, today) {
+  const sumMonth = (src, mk) => ((src && src.objects) || []).reduce((a, o) => a + ((o.months || []).filter(x => x.month === mk).reduce((b, x) => b + (+x.provisionCents || 0), 0)), 0);
+  const last3 = monthsBack(today, 3);                                     // die letzten drei vollen Monate
+  const cur = last3.map(mk => sumMonth(+mk.slice(0, 4) === +today.slice(0, 4) ? va : vaPrev, mk));
+  const base = cur.reduce((a, b) => a + b, 0) / 3;
+  // Saison: Verhältnis "kommender Monat" zu "letzte drei Monate" im Vorjahr (Wintersaison im Montafon)
+  const nextMk = (+today.slice(0, 4) - 1) + "-" + today.slice(5, 7);
+  const prevLast3 = last3.map(mk => (+mk.slice(0, 4) - 1) + mk.slice(4));
+  const pBase = prevLast3.reduce((a, mk) => a + sumMonth(vaPrev, mk), 0) / 3, pNext = sumMonth(vaPrev, nextMk);
+  let factor = 1, note = "Schnitt der letzten 3 Monate";
+  if (pBase > 0 && pNext > 0) { factor = Math.max(0.4, Math.min(2.5, pNext / pBase)); note = "Schnitt der letzten 3 Monate × Saisonfaktor " + factor.toFixed(2).replace(".", ",") + " aus dem Vorjahr"; }
+  return { monthly: round2(base * factor / 100), basis: note, months: last3.reverse().map((mk, i) => ({ month: mk, eur: round2(cur[2 - i] / 100) })) };
+}
+function kochduForecast(fc, ko, today) {
+  const hist = fc.history || {}, keys = Object.keys(hist).filter(k => hist[k].kochdu != null && k.slice(0, 4) === today.slice(0, 4)).sort();
+  const nowC = kochduCumCents(ko);
+  // Bevorzugt: Zuwachs der letzten ~60 Tage (mind. 21 Tage Daten), sonst Jahresschnitt
+  const from = keys.find(k => (Date.parse(today) - Date.parse(k)) / 864e5 <= 60);
+  if (from) { const days = (Date.parse(today) - Date.parse(from)) / 864e5; if (days >= 21) { const perDay = (nowC - hist[from].kochdu) / days; if (perDay >= 0) return { monthly: round2(perDay * 30.4 / 100), basis: "Zuwachs der letzten " + Math.round(days) + " Tage" }; } }
+  const start = Date.parse(today.slice(0, 4) + "-01-01"), days = Math.max(1, (Date.parse(today) - start) / 864e5 + 1);
+  return { monthly: round2(nowC / days * 30.4 / 100), basis: "Jahresschnitt " + today.slice(0, 4) + " (genauer, sobald 3 Wochen Verlauf vorliegen)" };
+}
+async function incomeForecast(ctx) {
+  const { today, year, k, ko, va, ski, sites, force } = ctx;
+  const fc = readForecast();
+  const curYear = String(year) === today.slice(0, 4);
+  if (curYear) forecastSnapshot(fc, today, ko);
+  const age = fc.computedAt ? (Date.parse(today) - Date.parse(fc.computedAt)) / 864e5 : 999;
+  if (curYear && (force || age >= 14 || !fc.sources)) {
+    const vaPrev = await withTimeout(valueroStats(String(+today.slice(0, 4) - 1)), 8000, null);
+    const sources = {};
+    if (ko && ko.totals) sources.kochdu = kochduForecast(fc, ko, today);
+    if (va && va.objects) sources.valuero = valueroForecast(va, vaPrev, today);
+    if (ski && ski.configured && ski.byMonth) { const last = monthsBack(today, 3).map(mk => (ski.byMonth.find(m => m.month === mk) || {}).proceedsCents || 0); sources.skikaiser = { monthly: round2(last.reduce((a, b) => a + b, 0) / 3 / 100), basis: "Schnitt der letzten 3 Monate (Erlös nach Store-Gebühr)" }; }
+    fc.sources = sources; fc.computedAt = today;
+  }
+  writeForecast(fc);
+  const lines = [];
+  if (k) lines.push({ key: "kantineur", label: "Kantineur", monthly: round2((k.mrrCents || 0) / 100), basis: "laufende Abos (aktuell)", live: true });
+  ["kochdu", "valuero", "skikaiser"].forEach(key => { const s = fc.sources && fc.sources[key]; if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser" }[key], live: false }, s)); });
+  const hosting = round2((sites || []).filter(s => s.active && !s.own).reduce((a, s) => a + (s.incomeYear || 0), 0) / 12);
+  if (hosting > 0) lines.push({ key: "hosting", label: "Websites (Hosting & Domains)", monthly: hosting, basis: "fixe Verträge, Jahresbetrag ÷ 12", live: true });
+  const next = fc.computedAt ? new Date(Date.parse(fc.computedAt) + 14 * 864e5).toISOString().slice(0, 10) : null;
+  return { lines, total: round2(lines.reduce((a, l) => a + l.monthly, 0)), computedAt: fc.computedAt || null, nextAt: next };
+}
+async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
-  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc] = await Promise.all([
+  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc, ski] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
-    withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null),
+    withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
   ]);
   const bill = readBilling();
   const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, blitz: b, kantineur: k });
@@ -1196,8 +1286,9 @@ async function cockpitBuild(year) {
     (pc && pc.events || []).map(e => ({ id: e.id, title: e.title, date: e.date, time: e.time, endTime: e.endTime, location: e.location, source: "icloud" })),
     readEvents().map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || "").slice(0, 10), time: e.time || "", source: "manuell", sparte: e.sparte || "" }))
   ).filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= ymdAdd(today, -1) && e.date <= ymdAdd(today, 60)).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  const income = await withTimeout(incomeForecast({ today, year, k, ko, va, ski, sites, force: forceForecast }), 10000, null);
   return {
-    fetchedAt: new Date().toISOString(), year, today,
+    fetchedAt: new Date().toISOString(), year, today, income, skikaiser: ski,
     leads: readLeads().slice().reverse(),
     sev: sevSummary(sev, year, today), sevConfigured: !!(SEV.key || SEV_SRC.projectId),
     abgleich,
@@ -1212,12 +1303,12 @@ async function cockpitBuild(year) {
   };
 }
 let COCKPIT_MEMO = { at: 0, key: "", data: null, p: null };
-async function cockpitData(year, force) {
+async function cockpitData(year, force, forceForecast) {
   const key = String(year);
-  if (!force && COCKPIT_MEMO.data && COCKPIT_MEMO.key === key && Date.now() - COCKPIT_MEMO.at < 15000) return COCKPIT_MEMO.data;
+  if (!force && !forceForecast && COCKPIT_MEMO.data && COCKPIT_MEMO.key === key && Date.now() - COCKPIT_MEMO.at < 15000) return COCKPIT_MEMO.data;
   if (COCKPIT_MEMO.p && COCKPIT_MEMO.key === key) return COCKPIT_MEMO.p;
   COCKPIT_MEMO.key = key;
-  COCKPIT_MEMO.p = cockpitBuild(year).then(d => { COCKPIT_MEMO = { at: Date.now(), key, data: d, p: null }; return d; }).catch(e => { COCKPIT_MEMO.p = null; throw e; });
+  COCKPIT_MEMO.p = cockpitBuild(year, forceForecast).then(d => { COCKPIT_MEMO = { at: Date.now(), key, data: d, p: null }; return d; }).catch(e => { COCKPIT_MEMO.p = null; throw e; });
   return COCKPIT_MEMO.p;
 }
 // Lead bearbeiten: Phase, geschätzter Wert, Notizen (Daten bleiben in leads.json)
@@ -1240,11 +1331,21 @@ function leadOp(pl) {
   COCKPIT_MEMO.at = 0;
   return leads.slice().reverse();
 }
-let COCKPIT_HTML = null;
+// Module liegen in admin-cockpit/*.js (core.js und shared.js zuerst, dann alphabetisch) und werden nur nach Login ausgeliefert.
+const COCKPIT_DIR = path.join(ROOT, "admin-cockpit");
+function cockpitModules() {
+  let files = []; try { files = fs.readdirSync(COCKPIT_DIR).filter(f => /^[a-z0-9-]+\.js$/.test(f)); } catch (e) {}
+  const first = ["core.js", "shared.js"];
+  return first.filter(f => files.indexOf(f) > -1).concat(files.filter(f => first.indexOf(f) < 0).sort());
+}
 function cockpitHtml() {
-  if (COCKPIT_HTML && process.env.NODE_ENV === "production") return COCKPIT_HTML;
-  try { COCKPIT_HTML = fs.readFileSync(path.join(ROOT, "admin-cockpit.html"), "utf8"); } catch (e) { COCKPIT_HTML = "<!doctype html><p>admin-cockpit.html fehlt.</p>"; }
-  return COCKPIT_HTML;
+  let html; try { html = fs.readFileSync(path.join(ROOT, "admin-cockpit.html"), "utf8"); } catch (e) { return "<!doctype html><p>admin-cockpit.html fehlt.</p>"; }
+  const v = encodeURIComponent(String(BUILD).slice(0, 12));
+  return html.replace("<!--MODULES-->", cockpitModules().map(f => '<script src="/admin/neu/' + f + '?v=' + v + '"></script>').join("\n"));
+}
+function cockpitModule(name) {
+  if (!/^[a-z0-9-]+\.js$/.test(name)) return null;
+  try { return fs.readFileSync(path.join(COCKPIT_DIR, name)); } catch (e) { return null; }
 }
 
 async function handleAdmin(req, res, u, p) {
@@ -1457,12 +1558,17 @@ async function handleAdmin(req, res, u, p) {
     try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: "sites_failed", detail: String(e && e.message || e) }), TYPES[".json"]); }
   }
+  if (p.indexOf("/admin/neu/") === 0 && p.length > 11) {
+    const buf = cockpitModule(p.slice(11));
+    if (!buf) return send(res, 404, "not found");
+    return sendGz(req, res, 200, buf, TYPES[".js"], { "Cache-Control": "private, max-age=31536000, immutable", "X-Robots-Tag": "noindex" });
+  }
   if (p === "/admin/neu" || p === "/admin/neu/") {
     return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
   if (p === "/admin/api/cockpit" && req.method === "GET") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "").slice(0, 4) || String(new Date().getFullYear());
-    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1"); ADMIN_SEEN = Date.now(); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1", u.searchParams.get("forecast") === "1"); ADMIN_SEEN = Date.now(); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "POST") {
