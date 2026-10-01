@@ -237,7 +237,7 @@ async function kantineurStats(year) {
 let MAIL_SNAP = { at: 0, etag: "", data: null, p: null };
 async function mailSnapshot() {
   if (!MAIL.url || !MAIL.token) return null;
-  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 20000) return MAIL_SNAP.data;
+  if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 5000) return MAIL_SNAP.data;   // kurz puffern; Nachfragen sind dank ETag/304 billig
   if (MAIL_SNAP.p) return MAIL_SNAP.p;
   MAIL_SNAP.p = (async () => {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
@@ -1708,6 +1708,15 @@ async function handleAdmin(req, res, u, p) {
   // Frühere Adresse des klassischen Dashboards -> Cockpit
   if (p === "/admin/alt" || p === "/admin/alt/") return send(res, 301, "", "text/plain", { Location: "/admin" });
 
+  // Nur das Postfach (schnell, ohne Plattform-/Kalenderabrufe). ?etag=… → {same:true}, wenn sich nichts geändert hat.
+  if (p === "/admin/api/mail" && req.method === "GET") {
+    if (u.searchParams.get("fresh") === "1") MAIL_SNAP.at = 0;
+    const m = await mailSnapshot();
+    if (!m) return send(res, 503, JSON.stringify({ error: "mail_not_available" }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const known = u.searchParams.get("etag") || "";
+    if (known && m.etag && known === m.etag) return send(res, 200, JSON.stringify({ same: true, etag: m.etag }), TYPES[".json"], { "Cache-Control": "no-store" });
+    return sendGz(req, res, 200, JSON.stringify(m), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
     const [k, m, b, cal, ko, va, pc] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr), privateCalQuick().catch(() => null)]);

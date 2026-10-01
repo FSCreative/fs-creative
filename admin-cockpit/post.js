@@ -126,9 +126,9 @@ M.setOv=function(m,fields){ Object.assign(m,fields); if(m.local) return; OV[m.id
 M.refresh=function(){ if(F.current==="post") F.render(); else F.renderNav(); (M.refreshHooks||[]).forEach(function(h){ try{ h(); }catch(e){} }); };
 M.loadFull=function(){
   if(M._lf) return M._lf; S.loading=true;
-  M._lf=F.api("/admin/api/all?year="+encodeURIComponent(F.year)).then(function(d){
-    S.loading=false; M._lf=null;
-    if(d&&d.mail&&Array.isArray(d.mail.messages)){ S.err=""; ingest(d.mail,true);
+  M._lf=F.api("/admin/api/mail?fresh=1").then(function(md){
+    var d={mail:md}; S.loading=false; M._lf=null;
+    if(md&&Array.isArray(md.messages)){ S.err=""; S.etag=md.etag||""; ingest(md,true);
       /* Der Server puffert den Abruf ~20 s: solange Verschiebungen noch nicht sichtbar sind, später erneut laden */
       if(Object.keys(OV).some(function(k){ return "folder" in OV[k]; })) M.scheduleReload(12000); }
     else S.err="Postfach konnte nicht geladen werden.";
@@ -136,6 +136,17 @@ M.loadFull=function(){
   }).catch(function(){ S.loading=false; M._lf=null; S.err="Keine Verbindung zum Server."; M.refresh(); });
   return M._lf;
 };
+/* Alle 10 s nur den ETag prüfen (billig); bei Änderung den neuen Stand übernehmen */
+var POLL_BUSY=false;
+setInterval(function(){
+  if(POLL_BUSY||document.hidden||!S.full||M._lf||UNDO.timer) return;
+  POLL_BUSY=true;
+  F.api("/admin/api/mail?etag="+encodeURIComponent(S.etag||"")).then(function(md){
+    POLL_BUSY=false;
+    if(md&&!md.same&&Array.isArray(md.messages)){ S.etag=md.etag||""; ingest(md,true); M.refresh(); }
+  }).catch(function(){ POLL_BUSY=false; });
+},10000);
+document.addEventListener("visibilitychange",function(){ if(!document.hidden&&S.full&&Date.now()-S.fullAt>10000) M.loadFull(); });
 var relT=null;
 M.scheduleReload=function(ms){ clearTimeout(relT); relT=setTimeout(function(){ M.loadFull(); },ms||4000); };
 F.onData(function(d){ if(d&&d.mail) ingest(d.mail,false); if(F.current==="post"&&Date.now()-S.fullAt>55000) setTimeout(M.loadFull,50); });
@@ -503,8 +514,24 @@ function flushUndo(){
   if(!UNDO.ids.length) return;
   var ids=UNDO.ids, its=UNDO.items; UNDO.ids=[]; UNDO.items=[];
   ids.forEach(function(id){ var m=find(id); if(m&&m.deleted) M.setOv(m,{flushed:true}); });
-  if(its.length) F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(j){ if(!j||j.ok===false||j.error) F.toast("Mailserver: Löschen fehlgeschlagen",true); }).catch(function(){ F.toast("Keine Verbindung – Löschen evtl. nicht gespeichert",true); });
+  /* Mails ohne gültige UID (z. B. gerade verschoben) nicht stillschweigend auslassen: nach dem Neuladen erneut versuchen */
+  var skipped=ids.filter(function(id){ var m=find(id); return m&&!m.local&&!its.some(function(it){ return it.uid===m.uid&&it.folder===(m.folder||"INBOX"); }); });
+  if(skipped.length) setTimeout(function(){ M.loadFull().then(function(){ var again=skipped.map(find).filter(function(m){ return m&&!TRASHRX.test(m.folder||"")&&m.uid!=null&&!pendingMove(m); }); if(again.length) sendTrash(items(again),again.map(function(m){return m.id;})); }); },2500);
+  if(its.length) sendTrash(its,ids);
   M.scheduleReload(3000);
+}
+function sendTrash(its,ids){
+  var revert=function(failed){
+    var back=ids.map(find).filter(function(m){ return m&&m.deleted&&(!failed||failed.some(function(f){ return String(f.uid)===String(m.uid)&&f.folder===(m.folder||"INBOX"); })); });
+    back.forEach(function(m){ M.setOv(m,{deleted:false,trashedAt:null,flushed:false}); if(OV[m.id]) delete OV[m.id].deleted; });
+    if(back.length){ M.changed(); F.render(); }
+    return back.length;
+  };
+  F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(j){
+    if(j&&j.ok!==false&&!j.error) return;
+    var n=revert(j&&Array.isArray(j.failed)?j.failed:null);
+    F.toast((n?(n>1?n+" Mails konnten":"Die Mail konnte"):"Mails konnten")+" am Mailserver nicht gelöscht werden – bitte nochmal versuchen",true);
+  }).catch(function(){ var n=revert(null); F.toast("Keine Verbindung zum Mailserver – "+(n?"Mail wieder eingeblendet, bitte nochmal löschen":"bitte nochmal versuchen"),true); });
 }
 M.flushUndo=flushUndo;
 function beacon(){
@@ -517,7 +544,8 @@ function beacon(){
 window.addEventListener("pagehide",beacon);
 window.addEventListener("beforeunload",beacon);
 function trashMessages(ids){
-  var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); }); if(!msgs.length) return;
+  var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); });
+  if(!msgs.length){ if(ids.some(function(id){ return !find(id); })){ F.toast("Die Mail hat sich inzwischen geändert – Liste wird aktualisiert",true); M.loadFull(); } return; }
   flushUndo();
   var mids=msgs.map(function(m){return m.id;});
   var nxt=mids.indexOf(UI.msel)>-1?neighborId(mids):UI.msel;
@@ -595,7 +623,7 @@ F.action("mspamclear",function(){ var ids=mailView().filter(function(m){ return 
 
 /* ---------- Schnellaktionen in der Liste ---------- */
 F.action("mqa",function(v,el,e){
-  var i=v.indexOf("|"), op=v.slice(0,i), m=find(v.slice(i+1)); if(!m) return;
+  var i=v.indexOf("|"), op=v.slice(0,i), m=find(v.slice(i+1)); if(!m){ F.toast("Die Mail hat sich inzwischen geändert – Liste wird aktualisiert",true); M.loadFull(); return; }
   if(op==="read") setRead([m],!m.read);
   else if(op==="trash") trashMessages([m.id]);
   else if(op==="restore") restore([m.id]);
@@ -617,7 +645,7 @@ F.action("mbulk",function(op,el){
 /* ---------- Aktionen im Lesebereich ---------- */
 M.cur=function(){ return UI.msel?find(UI.msel):null; };
 F.action("mx",function(op,el){
-  var m=M.cur(); if(!m) return;
+  var m=M.cur(); if(!m){ F.toast("Die Mail hat sich inzwischen geändert – Liste wird aktualisiert",true); M.loadFull(); return; }
   if(op==="reply") M.reply(m,"reply");
   else if(op==="replyall") M.reply(m,"all");
   else if(op==="forward") M.reply(m,"fwd");
