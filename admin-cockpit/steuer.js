@@ -244,7 +244,7 @@ F.geldTab({id:"jab",label:"JAB",order:40,sub:"Jahresabschluss: Einnahmen-Ausgabe
 F.feed(function(){
   if(!ST||!ST.data) return [];
   var out=[], today=F.D.today, cy=+today.slice(0,4);
-  [cy-1,cy].forEach(function(y){ periodsOf(y,ST.settings.zeitraum).forEach(function(p){ var due=dueOf(p); if(ST.uva[p.key]||p.to>=today) return; var days=(Date.parse(due)-Date.parse(today))/864e5; if(days>30) return;
+  [cy-1,cy].forEach(function(y){ periodsOf(y,ST.settings.zeitraum).forEach(function(p){ var due=dueOf(p); if(ST.uva[p.key]||p.to>=today) return; var days=(Date.parse(due)-Date.parse(today))/864e5; if(days>30||days<-45) return;
     out.push({id:"uva:"+p.key,rank:days<0?2:3,sev:days<0?"bad":"warn",icon:"euro",tag:[days<0?"bad":"warn","UVA"],t:"UVA "+p.label+(days<0?" ist überfällig":" fällig am "+F.de(due)),d:"Kennzahlen stehen unter Finanzen → UVA",acts:[["Öffnen","uvaopen:"+p.key,"primary"]]}); }); });
   return out;
 });

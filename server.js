@@ -1764,6 +1764,7 @@ async function handleAdmin(req, res, u, p) {
       try {
         const r = await fetch(sendUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)) });
         const txt = await r.text();
+        if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_send_failed" }), TYPES[".json"]); }
     });
@@ -1779,6 +1780,7 @@ async function handleAdmin(req, res, u, p) {
       try {
         const r = await fetch(actionUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)) });
         const txt = await r.text();
+        if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_action_failed" }), TYPES[".json"]); }
     });
