@@ -1208,14 +1208,33 @@ function valueroForecast(va, vaPrev, today) {
   if (pBase > 0 && pNext > 0) { factor = Math.max(0.4, Math.min(2.5, pNext / pBase)); note = "Schnitt der letzten 3 Monate × Saisonfaktor " + factor.toFixed(2).replace(".", ",") + " aus dem Vorjahr"; }
   return { monthly: round2(base * factor / 100), basis: note, months: last3.reverse().map((mk, i) => ({ month: mk, eur: round2(cur[2 - i] / 100) })) };
 }
+function kochduMonths(ko, n) {
+  const bm = (ko && Array.isArray(ko.byMonth) ? ko.byMonth : []).filter(m => m && /^\d{4}-\d{2}$/.test(m.month || "")).sort((a, b) => a.month.localeCompare(b.month));
+  return bm.slice(-(n || 6)).map(m => ({ month: m.month, eur: round2((+m.provisionCents || 0) / 100), orders: +m.orders || 0 }));
+}
 function kochduForecast(fc, ko, today) {
+  const months = kochduMonths(ko, 6);
+  // Bevorzugt: Provision der letzten 30 Tage direkt von kochdu (bar + online) – live, nicht eingefroren
+  const tr = ko && ko.trend;
+  if (tr && tr.last30Cents != null) {
+    const last = +tr.last30Cents || 0, prev = +tr.prev30Cents || 0;
+    let basis = "Provision der letzten 30 Tage (bar + online)";
+    if (prev > 0) { const pct = Math.round((last - prev) / prev * 100); basis += ", " + (pct >= 0 ? "+" : "") + pct + " % ggü. Vormonat"; }
+    return { monthly: round2(last / 100 * 30.4 / 30), basis, months, live: true };
+  }
   const hist = fc.history || {}, keys = Object.keys(hist).filter(k => hist[k].kochdu != null && k.slice(0, 4) === today.slice(0, 4)).sort();
   const nowC = kochduCumCents(ko);
-  // Bevorzugt: Zuwachs der letzten ~60 Tage (mind. 21 Tage Daten), sonst Jahresschnitt
+  // Sonst: Zuwachs der letzten ~60 Tage (mind. 21 Tage Daten), sonst Schnitt seit dem ersten Monat mit Provision
   const from = keys.find(k => (Date.parse(today) - Date.parse(k)) / 864e5 <= 60);
-  if (from) { const days = (Date.parse(today) - Date.parse(from)) / 864e5; if (days >= 21) { const perDay = (nowC - hist[from].kochdu) / days; if (perDay >= 0) return { monthly: round2(perDay * 30.4 / 100), basis: "Zuwachs der letzten " + Math.round(days) + " Tage" }; } }
-  const start = Date.parse(today.slice(0, 4) + "-01-01"), days = Math.max(1, (Date.parse(today) - start) / 864e5 + 1);
-  return { monthly: round2(nowC / days * 30.4 / 100), basis: "Jahresschnitt " + today.slice(0, 4) + " (genauer, sobald 3 Wochen Verlauf vorliegen)" };
+  if (from) { const days = (Date.parse(today) - Date.parse(from)) / 864e5; if (days >= 21) { const perDay = (nowC - hist[from].kochdu) / days; if (perDay >= 0) return { monthly: round2(perDay * 30.4 / 100), basis: "Zuwachs der letzten " + Math.round(days) + " Tage", months }; } }
+  // Start nicht am 1. Jänner, sondern im ersten Monat mit Provision (sonst wird die Schätzung bei Start mitten im Jahr viel zu niedrig)
+  let startIso = today.slice(0, 4) + "-01-01";
+  const firstBm = ((ko && ko.byMonth) || []).filter(m => m && (+m.provisionCents || 0) > 0 && String(m.month || "").slice(0, 4) === today.slice(0, 4)).map(m => m.month).sort()[0];
+  const firstOrder = ko && ko.trend && ko.trend.firstOrderAt ? String(ko.trend.firstOrderAt).slice(0, 10) : "";
+  if (firstBm && firstBm + "-01" > startIso) startIso = firstBm + "-01";
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(firstOrder) && firstOrder > startIso) startIso = firstOrder;
+  const days = Math.max(1, (Date.parse(today) - Date.parse(startIso)) / 864e5 + 1);
+  return { monthly: round2(nowC / days * 30.4 / 100), basis: (startIso.slice(5) === "01-01" ? "Jahresschnitt " + today.slice(0, 4) : "Schnitt seit " + startIso.slice(8, 10) + "." + startIso.slice(5, 7) + "." + startIso.slice(0, 4)) + " (genauer, sobald 3 Wochen Verlauf vorliegen)", months };
 }
 async function incomeForecast(ctx) {
   const { today, year, k, ko, va, ski, sites, force } = ctx;
@@ -1234,7 +1253,9 @@ async function incomeForecast(ctx) {
   writeForecast(fc);
   const lines = [];
   if (k) lines.push({ key: "kantineur", label: "Kantineur", monthly: round2((k.mrrCents || 0) / 100), basis: "laufende Abos (aktuell)", live: true });
-  ["kochdu", "valuero", "skikaiser"].forEach(key => { const s = fc.sources && fc.sources[key]; if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser" }[key], live: false }, s)); });
+  // kochdu mit Trend-Daten: bei jedem Aufruf live berechnen statt 14 Tage einzufrieren
+  const koLive = curYear && ko && ko.trend && ko.totals ? kochduForecast(fc, ko, today) : null;
+  ["kochdu", "valuero", "skikaiser"].forEach(key => { const s = key === "kochdu" && koLive ? koLive : (fc.sources && fc.sources[key]); if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser" }[key], live: false }, s)); });
   const hosting = round2((sites || []).filter(s => s.active && !s.own).reduce((a, s) => a + (s.incomeYear || 0), 0) / 12);
   if (hosting > 0) lines.push({ key: "hosting", label: "Websites (Hosting & Domains)", monthly: hosting, basis: "fixe Verträge, Jahresbetrag ÷ 12", live: true });
   const next = fc.computedAt ? new Date(Date.parse(fc.computedAt) + 14 * 864e5).toISOString().slice(0, 10) : null;

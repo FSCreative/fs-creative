@@ -68,19 +68,26 @@ function incomePanel(){
   var inc=F.D.income; if(!inc||!inc.lines||!inc.lines.length) return "";
   return '<section class="panel"><div class="panel-h"><h2>Geschätztes Monatseinkommen</h2><button class="link" data-act="incomeinfo">Wie gerechnet?</button></div><div class="panel-b income">'+
     '<div class="v num money">'+eur0(inc.total)+'<span class="muted" style="font-size:14px;font-weight:500"> / Monat</span></div>'+
-    inc.lines.map(function(l){ return '<div class="line"><span>'+esc(l.label)+'</span><span class="num money">'+eur0(l.monthly)+'</span><span class="muted">'+esc(l.basis)+'</span></div>'; }).join("")+
-    '<div class="muted">'+(inc.computedAt?'Prognose für kochdu und VALUERO vom '+F.de(inc.computedAt)+', nächste Neuberechnung am '+F.de(inc.nextAt)+'.':'')+'</div></div></section>';
+    inc.lines.map(function(l){ return '<div class="line"><span>'+esc(l.label)+'</span><span class="num money">'+eur0(l.monthly)+'</span><span class="muted">'+esc(l.basis)+(l.live&&l.key==="kochdu"?' · live':'')+'</span></div>'+monthsBar(l); }).join("")+
+    '<div class="muted">'+(inc.computedAt?'Prognose für VALUERO und Skikaiser vom '+F.de(inc.computedAt)+', nächste Neuberechnung am '+F.de(inc.nextAt)+'.':'')+'</div></div></section>';
+}
+/* kleiner Monatsverlauf (z. B. kochdu-Provision der letzten Monate) */
+function monthsBar(l){
+  var ms=(l.months||[]).filter(function(m){ return m&&m.month; }); if(ms.length<2) return "";
+  var max=Math.max.apply(null,ms.map(function(m){ return +m.eur||0; }))||1;
+  return '<div class="mbars" aria-label="Verlauf '+esc(l.label)+'">'+ms.map(function(m){ var h=Math.max(2,Math.round((+m.eur||0)/max*28)); var lbl=new Date(+m.month.slice(0,4),+m.month.slice(5,7)-1,1).toLocaleDateString("de-AT",{month:"short"});
+    return '<span class="mb" title="'+esc(lbl+" "+m.month.slice(0,4)+": "+F.eur(m.eur)+(m.orders!=null?" · "+m.orders+" Bestellungen":""))+'"><i style="height:'+h+'px"></i><em>'+esc(lbl)+'</em></span>'; }).join("")+'</div>';
 }
 F.action("incomeinfo",function(){
   F.modal('<div class="row-between"><h2 style="font-size:19px">So wird das Monatseinkommen geschätzt</h2>'+F.btnClose()+'</div>'+
     '<ul class="plain"><li><b>Kantineur:</b> die aktuell laufenden Abos (monatlich wiederkehrend), immer tagesaktuell.</li>'+
-    '<li><b>kochdu:</b> Zuwachs aller Gebühren (Bar und Online) der letzten bis zu 60 Tage, auf 30 Tage umgerechnet. Solange noch keine 3 Wochen Verlauf gespeichert sind: Jahresschnitt.</li>'+
+    '<li><b>kochdu:</b> Provision (bar und online) der letzten 30 Tage direkt aus kochdu, bei jedem Aufruf live; dazu die Veränderung zu den 30 Tagen davor. Falls kochdu diese Werte nicht liefert: Zuwachs der letzten bis zu 60 Tage bzw. Schnitt seit dem ersten Monat mit Provision.</li>'+
     '<li><b>VALUERO:</b> Schnitt der letzten 3 vollen Monate, angepasst mit dem Saisonverlauf aus dem Vorjahr (Winter und Sommer im Montafon).</li>'+
     '<li><b>Skikaiser:</b> Schnitt der letzten 3 Monate nach Store-Gebühr, sobald die App angebunden ist.</li>'+
     '<li><b>Websites:</b> fixe Hosting- und Domain-Verträge, Jahresbetrag ÷ 12.</li></ul>'+
-    '<p class="muted">kochdu, VALUERO und Skikaiser werden nur alle 14 Tage neu berechnet, damit die Zahl ruhig bleibt.</p><div class="foot"><span></span><button class="btn" data-act="incomerecalc">Jetzt neu berechnen</button></div>',"narrow");
+    '<p class="muted">VALUERO und Skikaiser (und kochdu ohne Live-Werte) werden nur alle 14 Tage neu berechnet, damit die Zahl ruhig bleibt.</p><div class="foot"><span></span><button class="btn" data-act="incomerecalc">Jetzt neu berechnen</button></div>',"narrow");
 });
 F.action("incomerecalc",function(){ F.closeModal(); F.api("/admin/api/cockpit?year="+F.year+"&forecast=1").then(function(d){ if(d&&d.income){ F.D=d; F.render(); F.toast("Prognose neu berechnet"); } }); });
-F.css("ul.plain{margin:0;padding-left:18px;display:grid;gap:8px} .income .v{font-size:28px}");
+F.css("ul.plain{margin:0;padding-left:18px;display:grid;gap:8px} .income .v{font-size:28px} .mbars{display:flex;gap:6px;align-items:flex-end;margin:-2px 0 6px;min-height:44px}.mbars .mb{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--ink-3)}.mbars .mb i{display:block;width:16px;border-radius:3px 3px 0 0;background:var(--glow-soft)}.mbars .mb em{font-style:normal}");
 F.action("togglefeed",function(){ F.UI.feedAll=!F.UI.feedAll; F.render(); });
 })();
