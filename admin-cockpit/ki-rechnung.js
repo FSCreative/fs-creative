@@ -33,7 +33,7 @@ F.kiInvoiceHtml=function(pre){
 function fill(inv,pre){
   F.openInvoice(Object.assign({},pre,{contactName:inv.contactName,email:inv.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
     items:inv.items.map(function(i){ return {name:i.name,text:i.text,qty:i.qty,priceGross:i.priceGross,taxRate:i.taxRate}; }),
-    taxRule:inv.taxRule||undefined,footText:inv.footText,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv}));
+    taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv}));
 }
 K.invoiceDraft=function(req,pre){
   pre=Object.assign({title:"Neue Rechnung (KI)"},pre||{}); pre.kiText=req.text||"";

@@ -32,7 +32,7 @@ F.form("invoice",function(form){
   if(!contact){ err.textContent="Bitte einen Kunden angeben."; return; }
   if(!items.length){ err.textContent="Bitte mindestens eine Position mit Bezeichnung und Preis angeben."; return; }
   var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),items:items};
-  if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });   /* z. B. von der KI (Reverse Charge, Fußtext) */
+  if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil","country","uid"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });   /* z. B. von der KI (Reverse Charge, Fußtext) */
   btn.disabled=true; err.textContent=""; btn.textContent="Lege Entwurf an …";
   F.api("/admin/api/sevdesk/invoice",{body:body}).then(function(j){
     if(!j||!j.ok){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
