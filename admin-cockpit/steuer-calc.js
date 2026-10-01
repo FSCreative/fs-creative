@@ -420,6 +420,24 @@ function zmRows(r){
   return Object.keys(by).map(function(k){ by[k].net=r2(by[k].net); return by[k]; });
 }
 
+/* ---------- U1: Umsatzsteuer-Jahreserklärung ----------
+   § 21 Abs. 4 UStG: Veranlagung nach Ablauf des Kalenderjahres, Erklärung über das ganze Jahr. Befreit nur Kleinunternehmer mit
+   Umsätzen ≤ 55.000 € und ohne zu entrichtende Steuer (§ 21 Abs. 6). Frist § 134 Abs. 1 BAO: 30.04. (Papier) bzw. 30.06.
+   (FinanzOnline) des Folgejahres; mit Steuerberater-Quote später. Jahreswerte nach Soll-Zeitpunkten über alle Monate –
+   unabhängig davon, was in den UVAs gemeldet wurde; KZ 095 der U1 minus entrichtete Vorauszahlungen = Restschuld/Gutschrift. */
+function periodOfKey(k){ var m=String(k||"").match(/^(\d{4})-(Q([1-4])|M(\d{2}))$/); if(!m) return null; var y=+m[1], a, b;
+  if(m[3]){ a=(+m[3]-1)*3+1; b=a+2; } else { a=+m[4]; b=a; } var f=y+"-"+String(a).padStart(2,"0"); return {key:k,from:f+"-01",to:monthEnd(y+"-"+String(b).padStart(2,"0"))}; }
+function computeU1(raw,st,year){
+  var y=String(year), r=computeUva(raw,st,{key:"",from:y+"-01-01",to:y+"-12-31"}), kz=uvaKzMap(r), per=[], voraus=0;
+  Object.keys(st.uva||{}).filter(function(k){ return k.slice(0,4)===y&&st.uva[k]&&st.uva[k].doneAt; }).sort().forEach(function(k){
+    var u=st.uva[k], g=num(u.summary&&u.summary.zahllast), p=periodOfKey(k), now=p?computeUva(raw,st,p).zahllast:null; voraus+=g;
+    per.push({key:k,gemeldet:r2(g),jetzt:now,diff:now==null?null:r2(now-g),fon:!!u.fon,doneAt:u.doneAt}); });
+  var umsatz=r2(((r.K["000"]||{}).base||0)), nurKU=umsatz>0&&Math.abs(umsatz-((r.K["016"]||{}).base||0))<0.01;
+  var pflicht=!(nurKU&&umsatz<=C.kleinunternehmer&&r.zahllast<=0);
+  return {year:y,r:r,kz:kz,zahllast:r.zahllast,voraus:r2(voraus),rest:r2(r.zahllast-voraus),perioden:per,diffSum:r2(per.reduce(function(a,x){ return a+(x.diff||0); },0)),
+    pflicht:pflicht,pflichtWhy:pflicht?"Regelbesteuert: U1 ist für "+y+" abzugeben (§ 21 Abs. 4 UStG).":"Kleinunternehmer mit Umsätzen bis 55.000 € und ohne Steuerschuld – keine U1-Pflicht (§ 21 Abs. 6 UStG).",
+    frist:{papier:(+y+1)+"-04-30",fon:(+y+1)+"-06-30"}}; }
+
 /* ---------- E1a / Jahresabschluss ---------- */
 var E1A=[
   ["9100","Waren, Rohstoffe, Hilfsstoffe"],["9110","Beigestelltes Personal und Fremdleistungen"],["9120","Personalaufwand (eigenes Personal)"],
@@ -760,7 +778,7 @@ function explainDoc(raw,st,id){
     positionen:ls,optionen:(out?OUT_OPTS:IN_OPTS).map(function(o){ return o[0]; })};
 }
 
-return {VERSION:6,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
+return {VERSION:7,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
   OUT_OPTS:OUT_OPTS,IN_OPTS:IN_OPTS,UVA_ROWS:UVA_ROWS,MANUAL_KZ:MANUAL_KZ,BASE_KZ:BASE_KZ,TAX_KZ:TAX_KZ,TAXRULE_TXT:TAXRULE_TXT,E1A:E1A,
   computeUva:computeUva,uvaKzMap:uvaKzMap,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
   revenueNet:revenueNet,revenueGross:revenueGross,controlCheck:controlCheck,plausibility:plausibility,mismatches:mismatches,docCfg:docCfg,

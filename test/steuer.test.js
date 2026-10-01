@@ -360,6 +360,13 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
   t("Kalibrierung: KZ 000 21.710,10, 022 19.897,10/3.979,42, 029 1.813/181,30", () => { near(kz(r, "000"), 21710.10); near(kz(r, "022"), 19897.10); near(kz(r, "022", "tax"), 3979.42); near(kz(r, "029"), 1813); near(kz(r, "029", "tax"), 181.30); });
   t("Kalibrierung: 057 4.386,68/877,34 = 066; ig. Erwerb nur Hardware 070/072 1.000 → 200 = 065; 060 682,60", () => { near(kz(r, "057"), 4386.68); near(kz(r, "057", "tax"), 877.34); near(kz(r, "066", "tax"), 877.34); near(kz(r, "070"), 1000); near(kz(r, "072", "tax"), 200); near(kz(r, "065", "tax"), 200); near(kz(r, "060", "tax"), 682.60); });
   t("Kalibrierung: Zahllast U30 3.478,12 ≈ sevDesk 3.478,11 (±0,01); Kontrollrechnung exakt 4.160,71 − 682,60 = 3.478,11", () => { near(r.zahllast, 3478.11, "U30", 0.011); near(c.ust, 4160.71); near(c.vst, 682.60); near(c.zahllast, 3478.11); });
+  // U1 2026 aus denselben Belegen; Q3-UVA mit 3.478,11 eingereicht → Restschuld 0,01 (Rundung FA vs. sevDesk)
+  const sU = st0(); sU.uva = { "2026-Q3": { doneAt: "2026-11-10", summary: { zahllast: 3478.11 }, fon: { paket: 7 } } };
+  const u1 = S.computeU1(RAWK, sU, 2026);
+  t("U1 2026: Jahres-Zahllast 3.478,12, Vorauszahlungen (KZ 095-Abzug) 3.478,11, Restschuld 0,01, Abweichung Q3 +0,01", () => { near(u1.zahllast, 3478.12); near(u1.voraus, 3478.11); near(u1.rest, 0.01); assert.strictEqual(u1.perioden.length, 1); near(u1.perioden[0].diff, 0.01); });
+  t("U1: Pflicht für Regelbesteuerte (§ 21 Abs 4), Fristen 30.04./30.06. des Folgejahres (§ 134 BAO)", () => { assert.ok(u1.pflicht); assert.strictEqual(u1.frist.papier, "2027-04-30"); assert.strictEqual(u1.frist.fon, "2027-06-30"); near(u1.kz["022"], 19897.10); near(u1.kz["017"] || 0, 0); });
+  t("U1: Kleinunternehmer ≤ 55.000 € ohne Steuer → keine Pflicht (§ 21 Abs 6)", () => { const sk = st0(); const k = inv({ net: 30000, tax: 0, rate: 0, taxRule: "11", date: "2026-03-01", delivery: "2026-03-01" }); assert.ok(!S.computeU1({ invoices: [k], vouchers: [] }, sk, 2026).pflicht); });
+  t("periodOfKey: Monat Februar und Quartal", () => { assert.strictEqual(S.periodOfKey("2026-M02").to, "2026-02-28"); assert.strictEqual(S.periodOfKey("2026-Q4").from, "2026-10-01"); });
   t("Kalibrierung: 0 %-Umsätze → ZM DE 600, CH nicht steuerbar", () => { assert.ok(S.zmRows(r).some(x => x.uid === "DE123456789" && Math.abs(x.net - 600) < 0.01)); assert.ok(r.other.ns.some(x => x.doc === inv0ch)); });
 }
 
@@ -370,7 +377,7 @@ const JE_XSD = [path.join(ROOT, "..", "bmf", "JE2025.xsd"), path.join(ROOT, "tes
 function fonModule() {
   const src = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
   const a = src.indexOf("const FON = {"), b = src.indexOf("async function fonRuf");
-  return new Function("STEUER_CALC", "process", src.slice(a, b) + "\nreturn { fonU30Xml, fonZmXml, fonJahrXml, fonPruefeU30, fonPruefeZm, fonPruefeJahr };")(S, { env: {} });
+  return new Function("STEUER_CALC", "process", src.slice(a, b) + "\nreturn { fonU30Xml, fonZmXml, fonJahrXml, fonU1Xml, fonPruefeU30, fonPruefeZm, fonPruefeJahr, fonPruefeU1 };")(S, { env: {} });
 }
 let xmllint = true; try { cp.execFileSync("xmllint", ["--version"], { stdio: "ignore" }); } catch (e) { xmllint = false; }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "steuer-xsd-"));
@@ -391,6 +398,17 @@ else {
     const xml = FON.fonJahrXml("981234567", 5, { year: "2025", jab: jj, u1: S.uvaKzMap(jj.u1), settings, erstellt: erst });
     const e = validate(xml, JE_XSD); assert.strictEqual(e, ""); });
   else console.log("HINWEIS: JE2025.xsd nicht gefunden – JAHR_ERKL-Prüfung übersprungen");
+  if (JE_XSD) {
+    const RAWU = { invoices: [inv({ net: 30000, date: "2025-05-01", delivery: "2025-05-01" }), inv({ net: 2000, tax: 0, rate: 0, taxRule: "3", uid: "DE123456789", country: "DE", date: "2025-06-01", delivery: "2025-06-01" })],
+      vouchers: [vou({ net: 300, taxRule: "14", date: "2025-03-01", supplier: "Google Ireland Ltd", cat: "Werbung" }), vou({ net: 100, tax: 20, date: "2025-04-01" })] };
+    const uu = S.computeU1(RAWU, st0(), 2025), settings = { steuernummer: "98 123/4567", vst: "" };
+    t("U1 allein (JAHR_ERKL mit einer ERKLAERUNG art=U1) gültig gegen JE2025.xsd; KZ 017 2.000", () => { near(uu.kz["017"], 2000); const e = validate(FON.fonU1Xml("981234567", 6, { year: "2025", u1: uu.kz, settings, erstellt: erst }), JE_XSD); assert.strictEqual(e, ""); });
+    t("E1/E1a ohne U1 (U1 separat eingereicht) gültig gegen JE2025.xsd", () => {
+      const s = st0(); s.jabInput = { "2025": {} }; const jj = S.computeJab(RAWU, s, 2025);
+      const xml = FON.fonJahrXml("981234567", 8, { year: "2025", jab: jj, u1: S.uvaKzMap(jj.u1), settings: { steuernummer: "98 123/4567", betriebAdr: "Dorfstraße 1", betriebPlz: "6793", betriebOrt: "Gaschurn", brkz: "731", einkunftsart: "GW" }, ohneU1: true, erstellt: erst });
+      assert.ok(!/art="U1"/.test(xml)); assert.strictEqual(validate(xml, JE_XSD), ""); });
+  }
+  t("U1 2026: ohne BMF-Schema → Hinweis 'Übermittlung ab Veröffentlichung des BMF-Schemas 2026'", () => { const b = FON.fonPruefeU1({ year: "2026", u1: {}, settings: { steuernummer: "98 123/4567" }, schema: false, heute: new Date("2027-02-01") }); assert.ok(b.some(x => x.art === "fehler" && /Veröffentlichung des BMF-Schemas 2026/.test(x.text))); });
 }
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 

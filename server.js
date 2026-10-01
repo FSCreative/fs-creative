@@ -1540,8 +1540,8 @@ function steuerOp(pl) {
     const arr = (Array.isArray(pl.trips) ? pl.trips : []).slice(0, 1000).map(t => ({ date: /^\d{4}-\d{2}-\d{2}$/.test(t.date || "") ? t.date : "", route: String(t.route || "").slice(0, 120), purpose: String(t.purpose || "").slice(0, 160), km: Math.max(0, n2(t.km)), hours: Math.max(0, n2(t.hours)), nights: Math.max(0, parseInt(t.nights, 10) || 0) }));
     if (arr.length) o.trips[pl.year] = arr; else delete o.trips[pl.year];
   }
-  else if (op === "done" && /^(uva|jab)$/.test(pl.kind) && key) { o[pl.kind][key] = Object.assign({}, o[pl.kind][key] || {}, { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? JSON.parse(JSON.stringify(pl.summary).slice(0, 20000)) : null, note: String(pl.note || "").slice(0, 500) }); }
-  else if (op === "undone" && /^(uva|jab)$/.test(pl.kind) && key) { delete o[pl.kind][key]; }
+  else if (op === "done" && /^(uva|jab|u1)$/.test(pl.kind) && key) { o[pl.kind][key] = Object.assign({}, o[pl.kind][key] || {}, { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? JSON.parse(JSON.stringify(pl.summary).slice(0, 20000)) : null, note: String(pl.note || "").slice(0, 500) }); }
+  else if (op === "undone" && /^(uva|jab|u1)$/.test(pl.kind) && key) { delete o[pl.kind][key]; }
   else throw new Error("bad_op");
   if (!writeSteuer(o)) throw new Error("save_failed");
   return o;
@@ -1626,14 +1626,37 @@ function fonJahrXml(nr, paket, d) {
     gvZ.length ? ["              <GEWINN_VERLUST>"].concat(gvZ.map(x => "      " + x), ["              </GEWINN_VERLUST>"]) : [],
     ["            </EINZELUNTERNEHMER>", "          </" + art + ">", "        </BETRIEBLICHE_EINKUNFTSARTEN>"],
     num462(j.inp.verlustvortrag) ? ["        <SONDERAUSGABEN_VERLUSTABZUG>", '          <KZ462 type="kz">' + fonZahl(j.inp.verlustvortrag) + "</KZ462>", "        </SONDERAUSGABEN_VERLUSTABZUG>"] : [], ["      </ERKLAERUNG>"]);
+  const u1 = d.ohneU1 ? [] : fonU1Block(nr, d, 2);
+  return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), u1.length ? 2 : 1), '  <JAHRESERKLAERUNG art="JAHR_ERKL">'].concat(e1.map(x => x.replace(/^  /, "    ")), u1.map(x => x.replace(/^  /, "    ")), ["  </JAHRESERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
+}
+// U1-Block (ERKLAERUNG art="U1") – allein oder zusammen mit E1/E1a im Anbringen JAHR_ERKL (JAHRESERKLAERUNG: 1–300 ERKLAERUNG)
+function fonU1Block(nr, d, satz) {
+  const y = String(d.year), set = d.settings, e = " ";
   const w = Object.assign({ "000": 0 }, d.u1), take = (list, t) => list.filter(k => k === "000" ? true : Math.round((w[k] || 0) * 100) !== 0).map(k => e.repeat(t) + "<KZ" + k + ' type="kz">' + fonZahl(w[k] || 0) + "</KZ" + k + ">");
   const frei = take(["011", "012", "015", "017", "018", "019", "016"], 12), nach = take(["020"], 12), vst = set.vst && nach.length ? ["            <VST>" + fonEsc(set.vst) + "</VST>"] : [];
   const verst = take(JE_U1_VERST.filter(k => +y >= 2026 || k !== "124"), 12), ige = take(["070", "071"].filter(k => k in w), 10), igeV = take(JE_U1_IGEV.filter(k => +y >= 2026 || k !== "125"), 12), vor = take(JE_U1_VST, 10);
-  const u1 = ['      <ERKLAERUNG art="U1">', "        <SATZNR>2</SATZNR>", "        <ALLGEMEINE_DATEN>", "          <ANBRINGEN>U1</ANBRINGEN>", "          <ZR>" + y + "</ZR>", "          <FASTNR>" + nr + "</FASTNR>", "          <KUNDENINFO>" + fonEsc(fonAscii("FS Cockpit U1 " + y)) + "</KUNDENINFO>", "        </ALLGEMEINE_DATEN>",
+  const u1 = ['      <ERKLAERUNG art="U1">', "        <SATZNR>" + satz + "</SATZNR>", "        <ALLGEMEINE_DATEN>", "          <ANBRINGEN>U1</ANBRINGEN>", "          <ZR>" + y + "</ZR>", "          <FASTNR>" + nr + "</FASTNR>", "          <KUNDENINFO>" + fonEsc(fonAscii("FS Cockpit U1 " + y)) + "</KUNDENINFO>", "        </ALLGEMEINE_DATEN>",
     "        <LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH>"].concat(take(["000", "001", "021"], 10), frei.length || nach.length ? ["          <STEUERFREI>"].concat(frei, vst, nach, ["          </STEUERFREI>"]) : [], verst.length ? ["          <VERSTEUERT>"].concat(verst, ["          </VERSTEUERT>"]) : [], ["        </LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH>"],
     ige.length || igeV.length ? ["        <INNERGEMEINSCHAFTLICHE_ERWERBE>"].concat(ige, igeV.length ? ["          <VERSTEUERT_IGE>"].concat(igeV, ["          </VERSTEUERT_IGE>"]) : [], ["        </INNERGEMEINSCHAFTLICHE_ERWERBE>"]) : [],
     vor.length ? ["        <VORSTEUER>"].concat(vor, ["        </VORSTEUER>"]) : [], ["      </ERKLAERUNG>"]);
-  return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), 2), '  <JAHRESERKLAERUNG art="JAHR_ERKL">'].concat(e1.map(x => x.replace(/^  /, "    ")), u1.map(x => x.replace(/^  /, "    ")), ["  </JAHRESERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
+  return u1;
+}
+// U1 allein als JAHR_ERKL-Datenstrom (z. B. vor der Einkommensteuererklärung)
+function fonU1Xml(nr, paket, d) {
+  const u1 = fonU1Block(nr, d, 1);
+  return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), 1), '  <JAHRESERKLAERUNG art="JAHR_ERKL">'].concat(u1.map(x => x.replace(/^  /, "    ")), ["  </JAHRESERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
+}
+function fonPruefeU1(d) {
+  const b = [], s = d.settings, y = +d.year, heute = d.heute || new Date();
+  if (!fonFastnr(s.steuernummer)) b.push({ art: "fehler", text: "Ohne neunstellige Steuernummer geht keine Übermittlung." });
+  if (y >= heute.getFullYear()) b.push({ art: "fehler", code: "zeitraum-laeuft", text: "Das Jahr " + y + " ist noch nicht abgeschlossen." });
+  if (!d.schema) b.push({ art: "fehler", code: "schema", text: "Übermittlung ab Veröffentlichung des BMF-Schemas " + y + " (üblicherweise Ende des Jahres) – bis dahin Kennzahlen-Export." });
+  if (d.u1["124"] && y < 2026) b.push({ art: "fehler", text: "KZ 124 gibt es erst ab 2026." });
+  if (d.u1["020"] && !/^[0-9][0-9a-zA-Z]{1,3}$/.test(s.vst || "")) b.push({ art: "fehler", text: "U1: Zu KZ 020 gehört der Ziffernschlüssel der Steuerbefreiung (2–4 Zeichen, z. B. 9a)." });
+  Object.keys(d.u1).forEach(k => { if (!FON_NEG_OK.has(k) && d.u1[k] < 0) b.push({ art: "fehler", text: "U1: Kennzahl " + k + " ist negativ." }); });
+  if (d.review) b.push({ art: "fehler", text: d.review + " Beleg(e) des Jahres sind nicht eingeordnet." });
+  if (d.diffSum && Math.abs(d.diffSum) > 0.01) b.push({ art: "hinweis", text: "Die eingereichten UVAs weichen insgesamt um " + d.diffSum.toFixed(2) + " € von den heutigen Werten ab – die U1 meldet den richtigen Jahreswert, die Differenz wird mit der Veranlagung ausgeglichen." });
+  return b;
 }
 function num462(v) { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : 0; }
 // Prüfungen Jahreserklärung (Auszug aus BMF_Pruefungen_Jahreserklaerungen_2025.pdf, E1a/U1) – nur das, was hier befüllt wird
@@ -1720,12 +1743,19 @@ async function fonUebermitteln(z, pin, art, modus, daten) {
 // Entwurf aus den aktuellen sevDesk-Daten (serverseitig berechnet)
 const FON_JAHR_SCHEMA = { 2025: true };   // veröffentlichte BMF-Schemata „Jahreserklärungen“, gegen die der Builder geprüft ist
 async function fonEntwurf(art, key, paket, fresh) {
+  if (art === "U1") {
+    const year = String(key || "").slice(0, 4); if (!/^\d{4}$/.test(year)) throw new Error("Unbekanntes Jahr.");
+    const o = readSteuer(), raw = await steuerRaw(!!fresh), nr = fonFastnr(o.settings.steuernummer);
+    const u = STEUER_CALC.computeU1(raw, o, year), d = { year, u1: u.kz, settings: o.settings, schema: !!FON_JAHR_SCHEMA[year], review: u.r.review.length, diffSum: u.diffSum };
+    return { art, p: { key: year, label: "U1 " + year }, kennzahlen: { u1: u.kz, voraus: u.voraus, rest: u.rest }, zahllast: u.zahllast, befunde: fonPruefeU1(d), xml: nr ? fonU1Xml(nr, paket, d) : "" };
+  }
   if (art === "JAHR_ERKL") {
     const year = String(key || "").slice(0, 4); if (!/^\d{4}$/.test(year)) throw new Error("Unbekanntes Jahr.");
     const o = readSteuer(), raw = await steuerRaw(!!fresh), nr = fonFastnr(o.settings.steuernummer);
     const j = STEUER_CALC.computeJab(raw, o, year), u1 = STEUER_CALC.uvaKzMap(j.u1);
-    const d = { year, jab: j, u1, settings: o.settings, schema: !!FON_JAHR_SCHEMA[year] };
-    const befunde = fonPruefeJahr(d);
+    const ohneU1 = !!(o.u1[year] && o.u1[year].doneAt && o.u1[year].fon);   // U1 schon separat eingereicht → nur E1/E1a
+    const d = { year, jab: j, u1, settings: o.settings, schema: !!FON_JAHR_SCHEMA[year], ohneU1 };
+    const befunde = fonPruefeJahr(d); if (ohneU1) befunde.push({ art: "hinweis", text: "Die U1 " + year + " wurde bereits separat eingereicht – dieser Datenstrom enthält nur E1 und E1a." });
     if (j.u1.review.length) befunde.push({ art: "fehler", text: j.u1.review.length + " Beleg(e) des Jahres sind nicht eingeordnet (U1)." });
     return { art, p: { key: year, label: "Jahreserklärung " + year }, kennzahlen: { gewinn: j.steuerGewinn, u1: u1 }, zahllast: j.u1.zahllast, befunde, xml: nr ? fonJahrXml(nr, paket, d) : "" };
   }
@@ -1744,7 +1774,7 @@ async function fonEntwurf(art, key, paket, fresh) {
   return { art, p, kennzahlen: { zeilen: zeilen.length, summe: Math.round(rows.reduce((a, x) => a + x.net, 0) * 100) / 100 }, befunde, xml: nr ? fonZmXml(nr, paket, { von, bis, kundeninfo: info, zeilen }) : "" };
 }
 async function fonSenden(pl, modus) {
-  const art = pl.art === "U13" ? "U13" : pl.art === "JAHR_ERKL" ? "JAHR_ERKL" : "U30", key = String(pl.key || "");
+  const art = pl.art === "U13" ? "U13" : pl.art === "JAHR_ERKL" ? "JAHR_ERKL" : pl.art === "U1" ? "U1" : "U30", key = String(pl.key || "");
   if (modus === "P" && String(pl.bestaetigung || "").trim().toLowerCase() !== "abgeben") throw new Error("Zum verbindlichen Abgeben bitte „abgeben“ eintippen.");
   const z = fonZugang(); if (z.fehlt) throw new Error(z.fehlt);
   const pin = String(pl.pin || "").trim() || String(process.env.FON_PIN || "").trim(); if (!pin) throw new Error("Ohne das PIN des Webservice-Benutzers geht keine Übermittlung.");
@@ -1755,12 +1785,13 @@ async function fonSenden(pl, modus) {
   const o0 = readSteuer(); const paket = o0.fon.nextPaket || 1; o0.fon.nextPaket = paket >= 999999998 ? 1 : paket + 1; writeSteuer(o0);
   e.xml = e.xml.replace("<PAKET_NR>999999999</PAKET_NR>", "<PAKET_NR>" + paket + "</PAKET_NR>");
   let rc = -3, msg = "";
-  try { const a = await fonUebermitteln(z, pin, art, modus, e.xml); rc = a.rc; msg = a.msg; } catch (err) { msg = String(err && err.message || "Unbekannter Fehler bei der Übermittlung."); }
+  try { const a = await fonUebermitteln(z, pin, art === "U1" ? "JAHR_ERKL" : art, modus, e.xml); rc = a.rc; msg = a.msg; } catch (err) { msg = String(err && err.message || "Unbekannter Fehler bei der Übermittlung."); }
   const status = rc === 0 ? (modus === "P" ? "eingereicht" : "geprüft") : (rc === -2 || rc === -3 ? "fehler" : "abgewiesen");
   const o = readSteuer();
   o.fon.archive.unshift({ at: new Date().toISOString(), art, key, label: e.p.label, modus, paket, rc, msg: String(msg).slice(0, 2000), status, kennzahlen: e.kennzahlen, zahllast: e.zahllast, xml: e.xml });
   o.fon.archive = o.fon.archive.slice(0, 120);
   if (rc === 0 && modus === "P" && art === "JAHR_ERKL") o.jab[key] = Object.assign({}, o.jab[key] || {}, { doneAt: new Date().toISOString(), summary: { gewinn: e.kennzahlen.gewinn, u1Zahllast: e.zahllast }, fon: { paket, at: new Date().toISOString() } });
+  if (rc === 0 && modus === "P" && art === "U1") o.u1[key] = Object.assign({}, o.u1[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, voraus: e.kennzahlen.voraus, rest: e.kennzahlen.rest, kz: e.kennzahlen.u1 }, fon: { paket, at: new Date().toISOString() } });
   if (rc === 0 && modus === "P" && art === "U30") o.uva[key] = Object.assign({}, o.uva[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, kz: e.kennzahlen }, fon: { paket, at: new Date().toISOString() } });
   writeSteuer(o);
   return { ok: rc === 0, rc, msg, status, paket, steuer: steuerPublic(o) };
@@ -2079,7 +2110,7 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/steuer" && req.method === "GET") {
     const st = steuerPublic(readSteuer()); const z = fonZugang();
-    const fonCfg = { ready: !z.fehlt, fehlt: z.fehlt || "", pinEnv: !!z.pinEnv };
+    const fonCfg = { ready: !z.fehlt, fehlt: z.fehlt || "", pinEnv: !!z.pinEnv, jahrSchema: Object.keys(FON_JAHR_SCHEMA) };
     try { const raw = await steuerRaw(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(Object.assign({ ok: true, fonCfg }, st, { data: raw })), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify(Object.assign({ ok: false, fonCfg, error: String(e && e.message || e).slice(0, 200) }, st)), TYPES[".json"]); }
   }
@@ -2104,7 +2135,7 @@ async function handleAdmin(req, res, u, p) {
   }
   // FinanzOnline: XML-Vorschau, Prüfung (T) und verbindliche Abgabe (P). PIN nur im Request-Body, wird nicht gespeichert.
   if (p === "/admin/api/fon/xml" && req.method === "POST") {
-    try { const pl = await sevBody(req, 20000); const e = await fonEntwurf(pl.art === "U13" ? "U13" : pl.art === "JAHR_ERKL" ? "JAHR_ERKL" : "U30", String(pl.key || ""), 999999999, pl.fresh === true); return send(res, 200, JSON.stringify({ ok: true, art: e.art, xml: e.xml, befunde: e.befunde, kennzahlen: e.kennzahlen, zahllast: e.zahllast }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const pl = await sevBody(req, 20000); const e = await fonEntwurf(pl.art === "U13" ? "U13" : pl.art === "JAHR_ERKL" ? "JAHR_ERKL" : pl.art === "U1" ? "U1" : "U30", String(pl.key || ""), 999999999, pl.fresh === true); return send(res, 200, JSON.stringify({ ok: true, art: e.art, xml: e.xml, befunde: e.befunde, kennzahlen: e.kennzahlen, zahllast: e.zahllast }), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/fon/archiv" && req.method === "GET") {
