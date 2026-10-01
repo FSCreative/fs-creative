@@ -60,9 +60,9 @@ F.action("stdocs",function(kz){ F.UI.stOpen[kz]=!F.UI.stOpen[kz]; F.render(); })
 F.listen("change","[data-stdoc]",function(el){ post({op:"doc",id:el.getAttribute("data-stdoc"),patch:{kz:el.value==="auto"?"":el.value}},"Einordnung gespeichert"); });
 
 /* ---------- UVA ---------- */
-function kzTable(r,showAll){
+function kzTable(r,showAll,form){
   var rows=S.UVA_ROWS.filter(function(x){ return showAll||r.K[x[0]]||x[0]==="000"; });
-  return '<div class="scroll"><table class="kz"><thead><tr><th>KZ</th><th>Bezeichnung (Formular U30)</th><th class="r">Bemessungsgrundlage</th><th class="r">Steuer</th><th></th></tr></thead><tbody>'+
+  return '<div class="scroll"><table class="kz"><thead><tr><th>KZ</th><th>Bezeichnung (Formular '+(form||"U30")+')</th><th class="r">Bemessungsgrundlage</th><th class="r">Steuer</th><th></th></tr></thead><tbody>'+
     rows.map(function(x){ var k=r.K[x[0]]||{base:0,tax:0}, n=(r.docs[x[0]]||[]).length;
       return '<tr><td><span class="kzb">'+x[0]+'</span></td><td>'+esc(x[1])+'</td><td class="r">'+(x[2]!=="tax"||(x[0]==="057"&&k.base)?money(k.base):'<span class="muted">—</span>')+'</td><td class="r">'+(x[2]!=="base"?money(k.tax):'<span class="muted">—</span>')+'</td><td class="r">'+(n?'<button class="link" data-act="stdocs:'+x[0]+'" aria-expanded="'+!!F.UI.stOpen[x[0]]+'">'+n+' Beleg'+(n===1?"":"e")+'</button>':'')+'</td></tr>'+
         (F.UI.stOpen[x[0]]&&n?'<tr class="sub-row"><td colspan="5">'+docsList(r.docs[x[0]])+'</td></tr>':''); }).join("")+
@@ -272,8 +272,8 @@ function fonPanel(cur,r,zmr,done){
     (arch.length?'<div class="sec-t" style="margin-top:14px">Übermittlungen</div><table><tbody>'+arch.map(function(a){ return '<tr><td class="nowrap">'+de(a.at)+' '+new Date(a.at).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})+'</td><td>'+a.art+' · '+(a.modus==="P"?"Abgabe":"Prüfung")+' · Paket '+a.paket+'</td><td><span class="tag '+(a.rc===0?"ok":"bad")+'">'+esc(a.status)+'</span> <span class="muted small">rc '+a.rc+' · '+esc(a.msg||"")+'</span></td><td><a class="link" href="/admin/api/fon/archiv?i='+a._i+'">XML</a></td></tr>'; }).join("")+'</tbody></table>':'')+
     '<div class="muted small" style="margin-top:8px">Das Webservice-PIN wird nur für diese eine Übermittlung verwendet und nirgends gespeichert. Das Übermittlungsprotokoll steht danach in deiner FinanzOnline-Databox.</div></div></section>';
 }
-function fonKey(art){ return art==="JAHR_ERKL"?F.UI.jabYear:F.UI.uvaKey; }
-var ART_TXT={U30:"UVA (U30)",U13:"ZM (U13)",JAHR_ERKL:"Jahreserklärung (E1 + E1a + U1)"};
+function fonKey(art){ return art==="JAHR_ERKL"?F.UI.jabYear:(art==="U1"?F.UI.u1Year:F.UI.uvaKey); }
+var ART_TXT={U30:"UVA (U30)",U13:"ZM (U13)",JAHR_ERKL:"Jahreserklärung (E1 + E1a + U1)",U1:"Umsatzsteuererklärung (U1)"};
 F.action("fonxml",function(art){
   F.api("/admin/api/fon/xml",{body:{art:art,key:fonKey(art)}}).then(function(j){
     if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; }
@@ -286,7 +286,8 @@ F.action("fondl",function(){ var x=F.UI.fonXml; if(!x) return; var a=document.cr
 function befundeHtml(b){ if(!b||!b.length) return '<div class="tag ok" style="margin-bottom:10px">Keine Beanstandungen</div>'; return '<ul class="plain" style="margin-bottom:10px">'+b.map(function(x){ return '<li><span class="tag '+(x.art==="fehler"?"bad":"warn")+'">'+(x.art==="fehler"?"Fehler":"Hinweis")+'</span> '+esc(x.text)+'</li>'; }).join("")+'</ul>'; }
 F.action("fonsend",function(v){
   var a=v.split(":"), art=a[0], modus=a[1], cfg=ST.fonCfg||{}, what, r={zahllast:0};
-  if(art==="JAHR_ERKL"){ var jj=S.computeJab(ST.data,ST,F.UI.jabYear); what="Jahreserklärung "+F.UI.jabYear+" (E1 + E1a + U1) – steuerlicher Gewinn "+eur(jj.steuerGewinn)+", U1-Zahllast "+eur(jj.u1.zahllast); }
+  if(art==="U1"){ var uu=S.computeU1(ST.data,ST,F.UI.u1Year); what="Umsatzsteuererklärung "+F.UI.u1Year+" (U1) – Jahres-"+(uu.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(uu.zahllast))+", "+(uu.rest>=0?"Restschuld ":"Gutschrift ")+eur(Math.abs(uu.rest)); }
+  else if(art==="JAHR_ERKL"){ var jj=S.computeJab(ST.data,ST,F.UI.jabYear); what="Jahreserklärung "+F.UI.jabYear+" (E1 + E1a + U1) – steuerlicher Gewinn "+eur(jj.steuerGewinn)+", U1-Zahllast "+eur(jj.u1.zahllast); }
   else { var p=periodByKey(F.UI.uvaKey); r=S.computeUva(ST.data,ST,p); what=(art==="U30"?"UVA ":"ZM ")+p.label+(art==="U30"?" – "+(r.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(r.zahllast)):""); }
   F.modal('<form data-form="fonsend" class="stackf"><input type="hidden" name="art" value="'+art+'"><input type="hidden" name="modus" value="'+modus+'"><input type="hidden" name="zl" value="'+r.zahllast+'">'+
     '<h2 style="font-size:19px">'+(modus==="P"?"Verbindlich abgeben":"Bei FinanzOnline prüfen (Test)")+'</h2><p>'+esc(what)+'</p>'+
@@ -364,7 +365,7 @@ function renderJab(){
     plausPanel(plaus)+
     '<section class="panel"><div class="panel-h"><h2>E1a – Beilage für Einzelunternehmer</h2><span class="muted">vollständige Einnahmen-Ausgaben-Rechnung · USt-Nettosystem ankreuzen</span></div><div class="scroll">'+e1a+'</div></section>'+
     inputsPanel(j,y)+catsPanel(j)+(j.notes&&j.notes.length?'<section class="panel"><div class="panel-h"><h2>Jahreswechsel: 15-Tage-Regel</h2><span class="muted">§ 19 Abs. 1 und 2 EStG – regelmäßig wiederkehrende Zahlungen</span></div><div class="panel-b small">'+j.notes.map(function(x){ return esc((x.doc.supplier||x.doc.contact||"Beleg")+": "+x.why); }).join("<br>")+'</div></section>':'')+assetsPanel(j,y)+tripsPanel(j,y)+pauschPanel(j)+kidsPanel(j,y)+estPanel(j,y)+
-    '<section class="panel"><div class="panel-h"><h2>U1 – Umsatzsteuererklärung '+esc(y)+'</h2><span class="muted">Sollbesteuerung</span></div>'+kzTable(j.u1,false)+
+    '<section class="panel"><div class="panel-h"><h2>U1 – Umsatzsteuererklärung '+esc(y)+'</h2><span class="muted">Sollbesteuerung · <button class="link" data-act="u1open:'+esc(y)+'">eigener Tab „U1 (USt-Jahr)“ mit Abgleich und Abgabe →</button></span></div>'+kzTable(j.u1,false,"U1")+
       '<div class="panel-b"><dl class="facts"><dt>Zahllast laut U1 (KZ 095)</dt><dd class="num money">'+eur(j.u1.zahllast)+'</dd><dt>Davon über '+j.doneUva+' erledigte UVA'+(j.doneUva===1?"":"s")+' bereits gemeldet</dt><dd class="num money">'+eur(j.paidUva)+'</dd><dt><b>'+(j.u1.zahllast-j.paidUva>=0?"Restschuld":"Gutschrift")+'</b></dt><dd class="num money"><b>'+eur(Math.abs(j.u1.zahllast-j.paidUva))+'</b></dd></dl></div></section>'+
     jahrFonPanel(j,y)+
     '<section class="panel"><div class="panel-b muted small"><b>So wird gerechnet:</b> Einnahmen und Ausgaben zählen im Jahr der Zahlung, jeweils netto. Nicht abziehbare Vorsteuer (Pkw, ausländische USt) ist Aufwand. Privates, Steuerzahlungen (USt, ESt), Umbuchungen und Kredittilgungen zählen nicht. Kirchenbeitrag und Spenden an begünstigte Einrichtungen werden von den Empfängern automatisch an das Finanzamt gemeldet – nicht noch einmal eintragen. Kontrollrechnung aus deinen sevDesk-Daten – vor dem Einreichen prüfen bzw. mit deinem Steuerberater abstimmen.</div></section>';
@@ -508,6 +509,42 @@ F.action("jabexport",function(y){
 });
 
 F.geldTab({id:"uva",label:"UVA",order:30,sub:"Umsatzsteuervoranmeldung (U30) und ZM – berechnen, prüfen und direkt an FinanzOnline übermitteln",render:renderUva});
+/* ---------- U1: Umsatzsteuer-Jahreserklärung (eigener Tab) ---------- */
+function renderU1(){
+  if(!ST||!ST.data) return loadingBox();
+  var cy=+F.D.today.slice(0,4), ys=[cy,cy-1,cy-2].map(String), prev=String(cy-1), prevOpen=!((((ST.u1||{})[prev])||{}).doneAt||(((ST.jab||{})[prev])||{}).doneAt), y=F.UI.u1Year||(F.D.today<=cy+"-06-30"&&prevOpen?prev:String(cy));
+  if(ys.indexOf(y)<0) ys.push(y); F.UI.u1Year=y;
+  var u=S.computeU1(ST.data,ST,y), r=u.r, done=(ST.u1||{})[y], jd=(ST.jab||{})[y], running=+y>=cy, cfg=ST.fonCfg||{}, schema=(cfg.jahrSchema||["2025"]).indexOf(y)>-1, today=F.D.today;
+  var exp=ST.settings.zeitraum==="monat"?12:4, dn=u.perioden.length, arch=((ST.fon&&ST.fon.archive)||[]).map(function(a,i){ a._i=i; return a; }).filter(function(a){ return (a.art==="U1"||a.art==="JAHR_ERKL")&&a.key===y; });
+  var chips=ys.sort().map(function(x){ return '<button class="chip pchip '+(((ST.u1||{})[x]||{}).doneAt||((ST.jab||{})[x]||{}).doneAt?"ok":(+x<cy&&today>(+x+1)+"-06-30"?"bad":"grey"))+'" data-act="u1y:'+x+'" aria-pressed="'+(x===y)+'">'+x+'</button>'; }).join("");
+  return '<section class="panel"><div class="panel-h"><div><h2>Umsatzsteuererklärung (U1) '+esc(y)+'</h2><div class="muted">Kalenderjahr '+esc(y)+' · Sollbesteuerung · alle Umsätze nach Leistungszeitpunkt, nicht nur die Summe der UVAs</div></div><div class="chips">'+chips+'</div></div>'+
+    '<div class="panel-b uva-top"><div><div class="k">'+(u.zahllast>=0?"Jahres-Zahllast":"Jahres-Gutschrift")+' (KZ 095)</div><div class="v num money">'+eur(Math.abs(u.zahllast))+'</div><div class="s">− entrichtete Vorauszahlungen '+eur(u.voraus)+' ('+dn+' von '+exp+' UVAs erledigt)</div></div>'+
+      '<div><div class="k">'+(u.rest>=0?"Restschuld":"Gutschrift")+'</div><div class="v num money">'+eur(Math.abs(u.rest))+'</div><div class="s">'+(running?'vorläufig – Jahr läuft noch':'fällig mit dem Bescheid')+'</div></div>'+
+      '<div><div class="k">Frist</div><div class="v num">'+de(u.frist.fon)+'</div><div class="s">FinanzOnline (Papier bis '+de(u.frist.papier)+'); mit Steuerberater später (Quotenregelung)</div></div></div>'+
+    '<div class="panel-b"><span class="tag '+(u.pflicht?"warn":"ok")+'">'+(u.pflicht?"abgabepflichtig":"keine Pflicht")+'</span> <span class="small">'+esc(u.pflichtWhy)+' Die U1 umfasst das ganze Jahr; Abweichungen zu den UVAs (z. B. später gebuchte Belege, Korrekturen) werden hier ausgeglichen.</span>'+(done&&done.doneAt?' <span class="tag ok">Eingereicht am '+de(done.doneAt)+(done.fon?' (Paket '+done.fon.paket+')':'')+'</span>':(jd&&jd.doneAt?' <span class="tag ok">mit der Jahreserklärung erledigt</span>':''))+'</div>'+
+    (r.review.length?'<div class="notice" style="margin:0 18px 14px"><span><b>'+r.review.length+' Beleg'+(r.review.length===1?"":"e")+'</b> des Jahres '+(r.review.length===1?"ist":"sind")+' nicht eingeordnet und fehl'+(r.review.length===1?"t":"en")+' in den Kennzahlen – bitte in der UVA des jeweiligen Zeitraums einordnen.</span></div>':'')+
+    kzTable(r,F.UI.stOpen.u1all,"U1")+'<div class="panel-b"><button class="link" data-act="stdocs:u1all">'+(F.UI.stOpen.u1all?"Nur befüllte Kennzahlen":"Alle Kennzahlen des Formulars zeigen")+'</button></div></section>'+
+    '<section class="panel"><div class="panel-h"><h2>Abgleich mit den UVAs '+esc(y)+'</h2><span class="muted">gemeldet (als erledigt markiert/eingereicht) vs. heute berechnet</span></div>'+
+    (dn?'<div class="scroll"><table><thead><tr><th>Zeitraum</th><th class="r">gemeldet</th><th class="r">heute</th><th class="r">Abweichung</th></tr></thead><tbody>'+u.perioden.map(function(x){ return '<tr><td>'+esc(x.key)+(x.fon?' <span class="tag ok">FinanzOnline</span>':'')+'</td><td class="r">'+money(x.gemeldet)+'</td><td class="r">'+(x.jetzt==null?'':money(x.jetzt))+'</td><td class="r">'+(x.diff?'<b class="'+(Math.abs(x.diff)>1?"bad-t":"")+'">'+eur(x.diff)+'</b>':'<span class="muted">–</span>')+'</td></tr>'; }).join("")+
+      '<tr class="grp"><td>Summe Vorauszahlungen</td><td class="r">'+money(u.voraus)+'</td><td class="r"></td><td class="r">'+(u.diffSum?eur(u.diffSum):'')+'</td></tr></tbody></table></div>':'<div class="panel-b muted">Noch keine UVA für '+esc(y)+' als erledigt markiert.</div>')+
+    (dn<exp&&!running?'<div class="panel-b muted small">'+(exp-dn)+' UVA-Zeiträume sind nicht als erledigt markiert – deren Vorauszahlungen fehlen oben. Die Restschuld ist dann zu hoch.</div>':'')+'</section>'+
+    '<section class="panel"><div class="panel-h"><h2>FinanzOnline – U1 '+esc(y)+'</h2><span class="muted">eigenständig (Anbringen JAHR_ERKL mit nur der U1) oder zusammen mit E1/E1a im Tab JAB</span></div>'+
+    (!schema?'<div class="notice" style="margin:0 18px 14px"><span><b>Übermittlung ab Veröffentlichung des BMF-Schemas '+esc(y)+'</b> (üblicherweise Ende des Jahres) – bis dahin Kennzahlen-Export.</span></div>':'')+
+    '<div class="panel-b row wrap"><button class="btn" data-act="u1copy:'+esc(y)+'">Kennzahlen kopieren</button><button class="btn" data-act="fonxml:U1">XML ansehen</button><button class="btn" data-act="fonsend:U1:T"'+(cfg.ready&&!running&&schema?'':' disabled')+'>Prüfen (Test)</button><button class="btn glow" data-act="fonsend:U1:P"'+(cfg.ready&&!running&&schema?'':' disabled')+'>Abgeben</button>'+
+      (running?'<span class="muted small">erst nach Jahresende</span>':'')+(!cfg.ready?'<span class="muted small">'+esc(cfg.fehlt||"")+'</span>':'')+
+      (done&&done.doneAt?'<button class="btn" data-act="u1undo:'+esc(y)+'">Zurücksetzen</button>':'<button class="btn" data-act="u1done:'+esc(y)+'"'+(running?' disabled':'')+'>Als erledigt markieren</button>')+'</div>'+
+    (arch.length?'<div class="panel-b"><table><tbody>'+arch.map(function(a){ return '<tr><td class="nowrap">'+de(a.at)+'</td><td>'+esc(ART_TXT[a.art]||a.art)+' · '+(a.modus==="P"?"Abgabe":"Prüfung")+' · Paket '+a.paket+'</td><td><span class="tag '+(a.rc===0?"ok":"bad")+'">'+esc(a.status)+'</span> <span class="muted small">'+esc(a.msg||"")+'</span></td><td><a class="link" href="/admin/api/fon/archiv?i='+a._i+'">XML</a></td></tr>'; }).join("")+'</tbody></table></div>':'')+
+    '<div class="panel-b muted small">Wird die U1 hier eingereicht, schickt der Tab JAB danach nur noch E1 und E1a. Der Datenstrom folgt dem BMF-Schema „Jahreserklärungen“ (geprüft: '+esc((cfg.jahrSchema||["2025"]).join(", "))+').</div></section>';
+}
+F.action("u1y",function(y){ F.UI.u1Year=y; F.render(); });
+F.action("u1open",function(y){ F.UI.geldTab="u1"; F.UI.u1Year=y; F.go("geld"); });
+F.action("u1done",function(y){ var u=S.computeU1(ST.data,ST,y); F.confirm("U1 "+y+" als erledigt markieren?","Erledigt",function(){ post({op:"done",kind:"u1",key:y,summary:{zahllast:u.zahllast,voraus:u.voraus,rest:u.rest,kz:u.kz}},"U1 als erledigt gespeichert"); }); });
+F.action("u1undo",function(y){ post({op:"undone",kind:"u1",key:y},"Zurückgesetzt"); });
+F.action("u1copy",function(y){ var u=S.computeU1(ST.data,ST,y), f=function(n){ return (Math.round(n*100)/100).toFixed(2).replace(".",","); }, L=["U1 "+y];
+  Object.keys(u.kz).sort().forEach(function(k){ L.push("KZ "+k+"\t"+f(u.kz[k])); }); L.push("KZ 095 Zahllast/Gutschrift\t"+f(u.zahllast)); L.push("Entrichtete Vorauszahlungen\t"+f(u.voraus)); L.push((u.rest>=0?"Restschuld":"Gutschrift")+"\t"+f(Math.abs(u.rest)));
+  var txt=L.join("\n"); try{ navigator.clipboard.writeText(txt).catch(function(){}); }catch(e){}
+  F.modal('<div class="row-between"><h2 style="font-size:19px">U1 '+esc(y)+' – Kennzahlen</h2>'+F.btnClose()+'</div><p class="muted small">In die Zwischenablage kopiert – für FinanzOnline (Formular U1) oder den Steuerberater.</p><pre class="xmlpre">'+esc(txt)+'</pre>',"wide"); });
+F.geldTab({id:"u1",label:"U1 (USt-Jahr)",order:35,sub:"Umsatzsteuer-Jahreserklärung: Jahreswerte, Abgleich mit den UVAs, Restschuld und Abgabe",render:renderU1});
 F.geldTab({id:"jab",label:"JAB",order:40,sub:"Jahresabschluss: Einnahmen-Ausgaben-Rechnung (E1a), Umsatzsteuererklärung (U1) und Einkommensteuer (E1)",render:renderJab});
 
 /* "Heute": fällige UVA, die noch nicht erledigt ist */
@@ -523,6 +560,9 @@ F.feed(function(){
   // Jahreserklärung: 30.06. des Folgejahres (FinanzOnline)
   var jy=String(cy-1), jdue=cy+"-06-30", jd=(Date.parse(jdue)-Date.parse(today))/864e5;
   if(!ST.jab[jy]&&jd<=60&&jd>=-90) out.push({id:"jab:"+jy,rank:jd<0?2:4,sev:jd<0?"bad":"warn",icon:"euro",tag:[jd<0?"bad":"warn","JAB"],t:"Jahreserklärung "+jy+(jd<0?" ist überfällig":" fällig am "+F.de(jdue)),d:"E1, E1a und U1 unter Finanzen → JAB",acts:[["Öffnen","jabopenv:"+jy,"primary"]]});
+  // U1: 30.06. des Folgejahres (FinanzOnline), sofern weder separat noch mit der Jahreserklärung erledigt
+  var ud=(ST.u1||{})[jy], udays=jd;
+  if(!(ud&&ud.doneAt)&&!(ST.jab[jy]&&ST.jab[jy].doneAt)&&udays<=75&&udays>=-120) out.push({id:"u1:"+jy,rank:udays<0?2:4,sev:udays<0?"bad":"warn",icon:"euro",tag:[udays<0?"bad":"warn","U1"],t:"Umsatzsteuererklärung (U1) "+jy+(udays<0?" ist überfällig":" fällig am "+F.de(jdue)),d:"Jahreswerte und Restschuld unter Finanzen → U1 (USt-Jahr)",acts:[["Öffnen","u1open:"+jy,"primary"]]});
   // Offene Steuer-Abweichungen im letzten abgeschlossenen Zeitraum
   var lp=periodsOf(cy,ST.settings.zeitraum).concat(periodsOf(cy-1,ST.settings.zeitraum)).filter(function(p){ return p.to<today; }).sort(function(a,b){ return a.to<b.to?1:-1; })[0];
   if(lp&&!(ST.uva[lp.key]&&ST.uva[lp.key].doneAt)){ var rr=S.computeUva(ST.data,ST,lp), mmn=S.mismatches(ST.data,ST,lp.from,lp.to).length; if(rr.review.length||mmn) out.push({id:"stcheck:"+lp.key,rank:4,sev:"warn",icon:"alert",tag:["warn","Steuer"],t:(rr.review.length?rr.review.length+" Beleg(e) nicht eingeordnet":"")+(rr.review.length&&mmn?", ":"")+(mmn?mmn+" Abweichung(en) zu sevDesk":""),d:"UVA "+lp.label+" – vor der Abgabe klären",acts:[["Öffnen","uvaopen:"+lp.key,"primary"]]}); }
