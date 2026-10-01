@@ -478,6 +478,16 @@ else {
   }
   t("U1 2026: ohne BMF-Schema → Hinweis 'Übermittlung ab Veröffentlichung des BMF-Schemas 2026'", () => { const b = FON.fonPruefeU1({ year: "2026", u1: {}, settings: { steuernummer: "98 123/4567" }, schema: false, heute: new Date("2027-02-01") }); assert.ok(b.some(x => x.art === "fehler" && /Veröffentlichung des BMF-Schemas 2026/.test(x.text))); });
 }
+// Live Q3 2026: Rechnung + Stornorechnung (sevDesk: Rechnung "bezahlt" ohne Zahlungsbetrag) – heben sich auf, kein Ausfall, kein KZ 090
+{
+  const P3 = S.periodOfKey("2026-Q3");
+  const re = inv({ net: 1250, status: 1000, paid: 0, date: "2026-08-28", delivery: "2026-08-28", contactId: "c9", contact: "Vorarlberger Illwerke" });
+  const sr = inv({ net: -1250, tax: -250, type: "SR", status: 1000, paid: 0, date: "2026-08-31", delivery: "2026-08-28", contactId: "c9", contact: "Vorarlberger Illwerke" });
+  const other = inv({ net: 1000, status: 1000, paid: 1200, payDate: "2026-08-10", date: "2026-08-01", delivery: "2026-08-01" });
+  const r = S.computeUva({ invoices: [re, sr, other], vouchers: [], creditNotes: [] }, st0(), P3), m = S.uvaKzMap(r);
+  t("Storno-Paar: KZ 022 nur die andere Rechnung (1.000), kein KZ 090", () => { near(m["022"] && m["022"].base != null ? m["022"].base : m["022"], 1000); assert.ok(!m["090"], "090 gesetzt: " + JSON.stringify(m["090"])); });
+  t("Storno-Paar: stornierte Rechnung gilt nicht als ausgebucht", () => { S.setRules({ invoices: [re, sr] }, st0()); assert.strictEqual(S.ausgebucht(re, st0()), null); });
+}
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 
 console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");

@@ -99,7 +99,15 @@ function ruleTextClass(t,side){
 }
 // Schlüssel der Steuer-Einordnung eines Belegs: Update 2.0 taxRule-ID, Update 1.0 (taxType "custom") TaxSet als "ts<ID>"
 function ruleKey(d){ return d&&d.taxRule?String(d.taxRule):(d&&d.taxSet?"ts"+String(d.taxSet):""); }
-function setRules(raw,st){ RULES={}; if(st) RULEMAP=st.ruleMap||{};
+/* Rechnungen mit Stornorechnung (SR): über origin oder gleicher Kunde + gleicher Betrag. Solche Rechnungen sind storniert, nicht ausgebucht –
+   Rechnung und Storno heben sich auf; sevDesk setzt sie auf „bezahlt“ ohne Zahlungsbetrag. */
+var STORNIERT={};
+function markStorno(raw){ STORNIERT={}; var inv=(raw&&raw.invoices)||[], used={};
+  inv.forEach(function(sr){ if(sr.type!=="SR") return;
+    var o=sr.origin&&inv.find(function(i){ return i.id===String(sr.origin)&&i.type!=="SR"; });
+    if(!o) o=inv.find(function(i){ return i.type!=="SR"&&!used[i.id]&&i.contactId&&i.contactId===sr.contactId&&Math.abs(Math.abs(num(i.gross))-Math.abs(num(sr.gross)))<0.01&&String(i.date||"")<=String(sr.date||"9999"); });
+    if(o){ STORNIERT[o.id]=sr.id; used[o.id]=1; } }); }
+function setRules(raw,st){ RULES={}; if(st) RULEMAP=st.ruleMap||{}; markStorno(raw);
   (raw&&raw.taxSets||[]).forEach(function(t){ var id="ts"+t.id, nm=String(t.name||""), c=ruleTextClass(nm,""); RULES[id]={in:c.in||null,out:c.out||null,txt:nm?nm+" (TaxSet)":"TaxSet "+t.id,side:"",known:!!(c.in||c.out||c.auto),auto:!!c.auto,taxSet:true,rate:t.rate}; });
   (raw&&raw.taxRules||[]).forEach(function(r){ var c=ruleTextClass((r.description||"")+" "+(r.name||""),r.side); RULES[String(r.id)]={in:c.in||null,out:c.out||null,txt:r.description||r.name||"",side:r.side||"",known:!!(c.in||c.out||c.auto),auto:!!c.auto}; }); }
 function ruleSrc(id,side){ id=String(id||""); var m=RULEMAP[id], r=RULES&&RULES[id], d=side==="in"?RULE_IN_DEFAULT:RULE_OUT_DEFAULT;
@@ -348,6 +356,7 @@ var MANUAL_KZ=["001","056","048","082","044","087","032","089","061","083","064"
 /* Ausgebuchte Forderung: im Cockpit mit Datum erfasst (docs[id].ausfall) oder automatisch erkannt – sevDesk liefert über die API
    kein eigenes Kennzeichen; „ausgebucht“ zeigt sich als Status bezahlt (1000) ohne Zahlungsbetrag. Abschaltbar je Rechnung (noAusfall). */
 function ausgebucht(inv,st){ var c=docCfg(st,inv.id); if(inv.type==="SR"||inv.type==="AR") return null;
+  if(STORNIERT[inv.id]&&!c.ausfall) return null;   // storniert (SR vorhanden) – kein Forderungsausfall
   if(c.ausfall) return {date:c.ausfall,auto:false};
   if(c.noAusfall||inv.status!==1000||num(inv.gross)<=0||Math.abs(num(inv.paid))>=0.005||payments(inv).length) return null;
   return {date:inv.payDate||inv.date,auto:true}; }
