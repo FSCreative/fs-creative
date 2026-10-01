@@ -2426,8 +2426,33 @@ const server = http.createServer((req, res) => {
   }
 });
 
+// Einmalige Steuer-Diagnose ins Log (nur wenn STEUER_DIAG=<Zeitraum>, z. B. 2026-Q3): liest sevDesk nur, schreibt nichts.
+async function steuerDiag(key) {
+  const L = (tag, o) => console.log("STEUER_DIAG " + tag + " " + JSON.stringify(o));
+  try {
+    const p = steuerPeriod(key); if (!p) return L("fehler", { key });
+    const sample = await sev("GET", "/Voucher", { query: { limit: 3, embed: "supplier" } }).catch(e => ({ error: String(e && e.message || e) }));
+    (sample.objects || []).forEach(v => L("voucher_raw", { keys: Object.keys(v), taxRule: v.taxRule || null, taxType: v.taxType || null, taxSet: v.taxSet || null, voucherType: v.voucherType, creditDebit: v.creditDebit }));
+    const sampleI = await sev("GET", "/Invoice", { query: { limit: 3, showAll: true } }).catch(() => ({}));
+    (sampleI.objects || []).forEach(v => L("invoice_raw", { keys: Object.keys(v), taxRule: v.taxRule || null, taxType: v.taxType || null, invoiceType: v.invoiceType }));
+    const raw = await steuerRaw(true), o = readSteuer();
+    L("meta", Object.assign({ period: p }, raw.meta.counts, { taxRules: raw.taxRules }));
+    const inP = d => { const t = d.delivery || d.date || ""; return (d.date >= p.from && d.date <= p.to) || (t >= p.from && t <= p.to); };
+    const agg = {};
+    const add = (side, d) => { const x = STEUER_CALC.explainDoc(raw, o, d.id); if (!x) return; (x.positionen || []).forEach(l => {
+      const k = side + " | regel=" + (x.sevDeskRegel ? x.sevDeskRegel.id + " " + x.sevDeskRegel.text : "–") + " | taxType=" + (d.taxType || "–") + " | satz=" + l.rate + " | klasse=" + l.klasse;
+      const a = agg[k] || (agg[k] = { n: 0, net: 0, tax: 0, bsp: [] }); a.n++; a.net = Math.round((a.net + l.net) * 100) / 100; a.tax = Math.round((a.tax + l.tax) * 100) / 100;
+      if (a.bsp.length < 4) a.bsp.push((x.partner || "") + " " + l.net + " (" + l.begruendung + ")"); }); };
+    (raw.invoices || []).filter(d => d.status >= 200 && inP(d)).forEach(d => add("AUS", d));
+    (raw.vouchers || []).filter(d => d.status >= 100 && inP(d)).forEach(d => add(d.cd === "D" ? "AUS-B" : "EIN", d));
+    Object.keys(agg).sort().forEach(k => L("gruppe", Object.assign({ k }, agg[k])));
+    const r = STEUER_CALC.computeUva(raw, o, p); L("kennzahlen", STEUER_CALC.uvaKzMap(r));
+    try { L("kontrolle", STEUER_CALC.controlCheck(raw, o, p)); } catch (e) { L("kontrolle_fehler", { e: String(e && e.message || e) }); }
+  } catch (e) { L("fehler", { e: String(e && e.message || e) }); }
+}
+
 if (require.main === module) {
-  server.listen(PORT, () => { console.log("FS Creative running on port " + PORT); });
+  server.listen(PORT, () => { console.log("FS Creative running on port " + PORT); if (process.env.STEUER_DIAG) setTimeout(() => steuerDiag(process.env.STEUER_DIAG), 15000); });
   // Sauber beenden, wenn Railway beim Deploy den alten Container stoppt (sonst „Deployment crashed“-Mail)
   function shutdown() { try { server.close(); } catch (e) {} setTimeout(() => process.exit(0), 500).unref(); }
   process.on("SIGTERM", shutdown); process.on("SIGINT", shutdown);
