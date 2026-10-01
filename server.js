@@ -206,6 +206,8 @@ function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
 
 // Kurzzeit-Cache (25 s): mehrere offene Tabs/Polls lösen nicht jeweils eigene Abrufe bei den Plattformen aus.
 const JSON_MEMO = new Map();
+// Nach Änderungen (Verrechnen, Bezahlt) die zwischengespeicherten Statistiken dieser Plattform verwerfen
+function forgetStats(baseUrl) { for (const k of Array.from(JSON_MEMO.keys())) if (k.indexOf(baseUrl) === 0) JSON_MEMO.delete(k); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
 async function getJSON(url) {
   const hit = JSON_MEMO.get(url);
   if (hit && Date.now() - hit.at < 25000) return hit.p;
@@ -1144,7 +1146,9 @@ function abgleichBuild(ctx) {
     const ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
     let hit = ref ? sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR") : null;
     if (!hit && cust) hit = sevInv.find(i => i.type !== "SR" && String(i.contact || "").toLowerCase() === cust && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))));
-    const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : null; if (link) linked[hit.id] = 1;
+    const rec = recs("blitz:" + b.id).slice(-1)[0];
+    const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : (rec ? invLink(rec, sevById, oldest) : null);
+    if (link && link.id) linked[link.id] = 1;
     const paidOnPlatform = b.paymentStatus === "PAID";
     const extras = (b.extras || []).map(e => e && e.name).filter(Boolean).join(", ");
     items.push({ src: "blitzdings", key: "blitz:" + b.id, name: (b.customerName || "Buchung") + (b.package ? " · " + b.package : ""), sub: (day ? deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · bezahlt laut Blitzdings" : " · Zahlung offen laut Blitzdings"),
@@ -1486,6 +1490,7 @@ async function handleAdmin(req, res, u, p) {
       try {
         const r = await fetch(KOCHDU.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: KOCHDU.token }, payload)) });
         const txt = await r.text();
+        if (r.ok) forgetStats(KOCHDU.url);
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "kochdu_settle_failed" }), TYPES[".json"]); }
     });
@@ -1500,6 +1505,7 @@ async function handleAdmin(req, res, u, p) {
       try {
         const r = await fetch(BLITZ.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: BLITZ.token, id: payload.id, paid: !!payload.paid }) });
         const txt = await r.text();
+        if (r.ok) forgetStats(BLITZ.url);
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "blitz_pay_failed" }), TYPES[".json"]); }
     });

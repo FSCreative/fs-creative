@@ -77,6 +77,7 @@ F.action("skcopy",function(){
   var done=function(){ F.toast("Beispiel kopiert"); };
   try{ navigator.clipboard.writeText(EXAMPLE).then(done,function(){ F.toast("Kopieren nicht möglich. Bitte markieren und kopieren.",true); }); }catch(e){ F.toast("Kopieren nicht möglich. Bitte markieren und kopieren.",true); }
 });
+F.action("skall",function(){ F.UI.skAll=!F.UI.skAll; F.render(); });
 F.action("skhelp",function(){ F.UI.skHelp=!F.UI.skHelp; F.render(); });
 
 function emptyState(){
@@ -92,7 +93,7 @@ function monthChart(byMonth,year){
   var rows=MON.map(function(_,i){ var k=year+"-"+String(i+1).padStart(2,"0"); return map[k]||{month:k,grossCents:0,proceedsCents:0,count:0}; });
   var mx=Math.max.apply(null,rows.map(function(r){return +r.grossCents||0;}).concat([1]));
   var cur=String(year)===F.D.today.slice(0,4)?+F.D.today.slice(5,7)-1:-1;
-  return '<div class="sk-chart"><div class="sk-leg"><span style="--c:var(--glow-soft)">Umsatz brutto</span><span style="--c:var(--glow)">Erlös nach Store-Gebühr</span><span class="muted" style="--c:transparent">Zahl = Käufe</span></div>'+
+  return '<div class="sk-chart"><div class="sk-leg"><span style="--c:var(--glow-soft)">Umsatz brutto</span><span style="--c:var(--glow)">Erlös nach Store-Gebühr</span><em class="muted" style="font-style:normal">Zahl über dem Balken = Käufe</em></div>'+
     '<div class="sk-cols" role="img" aria-label="Käufe je Monat">'+rows.map(function(r,i){ var g=(+r.grossCents||0)/mx*100, p=(+r.grossCents?(+r.proceedsCents||0)/(+r.grossCents)*100:0);
       return '<div class="sk-col'+(i===cur?" cur":"")+'" title="'+esc(MON[i]+": "+num(r.count)+" Käufe · "+eur(c2e(r.grossCents))+" brutto · "+eur(c2e(r.proceedsCents))+" Erlös")+'"><span class="sk-n">'+(r.count?num(r.count):"")+'</span>'+
         (g>0?'<div class="sk-g money" style="height:'+g.toFixed(2)+'%"><i style="height:'+p.toFixed(2)+'%"></i></div>':'')+'</div>'; }).join("")+'</div>'+
@@ -110,7 +111,7 @@ function overview(s){
   var plats={}; (s.byPlatform||[]).forEach(function(p){ var k=plat(p.platform); plats[k]=plats[k]||{label:k,grossCents:0,count:0}; plats[k].grossCents+=+p.grossCents||0; plats[k].count+=+p.count||0; });
   var pl=Object.keys(plats).map(function(k){return plats[k];}).sort(function(a,b){return b.grossCents-a.grossCents;});
   var tone={iOS:"info",Android:"ok"};
-  var recent=(s.recent||[]).slice(0,15);
+  var recentAll=(s.recent||[]).slice(0,15), recent=F.UI.skAll?recentAll:recentAll.slice(0,6);
   return '<div class="kpis">'+
       kpi("Umsatz brutto",'<span class="money">'+eur(gross)+'</span>',num(cnt)+" Käufe "+esc(F.D.year))+
       kpi("Erlös nach Store-Gebühr",'<span class="money">'+eur(proc)+'</span>',gross>0?"Store-Gebühr "+pct(fee)+' · <span class="money">'+eur(gross-proc)+'</span>':"Apple / Google behalten ihren Anteil",{vcls:"ok-t"})+
@@ -126,7 +127,7 @@ function overview(s){
       sec("iOS und Android",'<span class="muted">nach Umsatz</span>',pl.length&&F.platDonut?F.platDonut(pl.map(function(p){ return [p.label,c2e(p.grossCents),tone[p.label]||"glow",num(p.count)+' Käufe · <span class="money">'+eur(c2e(p.grossCents))+'</span>']; }),pl.length>1&&gross>0?pct((pl[0].grossCents/100)/gross,0)+" "+pl[0].label:pl[0].label):'<div class="empty">Keine Plattform-Angaben.</div>')+
     '</div>'+
     sec("Letzte Käufe",'<span class="muted">'+(s.fetchedAt?"Stand "+esc(new Date(s.fetchedAt).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})):"")+'</span>',recent.length?'<ul class="sk-recent">'+recent.map(function(r){
-      var d=String(r.date||""); return '<li><span class="num muted">'+esc(deShort(d.slice(0,10)))+'</span><span style="min-width:0"><span class="nm" style="display:block">'+esc(r.name||"Kauf")+'</span><span class="muted">'+esc(plat(r.platform))+(r.country?" · "+esc(r.country):"")+(d.length>10&&Date.parse(d)?" · "+esc(new Date(d).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})):"")+'</span></span>'+money(c2e(r.priceCents))+'</li>'; }).join("")+'</ul>':'<div class="empty">Noch keine Käufe in '+esc(F.D.year)+'.</div>')+
+      var d=String(r.date||""); return '<li><span class="num muted">'+esc(deShort(d.slice(0,10)))+'</span><span style="min-width:0"><span class="nm" style="display:block">'+esc(r.name||"Kauf")+'</span><span class="muted">'+esc(plat(r.platform))+(r.country?" · "+esc(r.country):"")+(d.length>10&&Date.parse(d)?" · "+esc(new Date(d).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})):"")+'</span></span>'+money(c2e(r.priceCents))+'</li>'; }).join("")+'</ul>'+(recentAll.length>6?'<div class="panel-b" style="padding-top:8px"><button type="button" class="link" data-act="skall">'+(F.UI.skAll?"Weniger anzeigen":"Alle "+recentAll.length+" anzeigen")+'</button></div>':''):'<div class="empty">Noch keine Käufe in '+esc(F.D.year)+'.</div>')+
     '<p class="pl-note">Einmalkäufe ohne Abos. Brutto = Preis inkl. USt., Erlös = Auszahlung von Apple bzw. Google. Erstattete Käufe zählen nicht zum Umsatz. <button type="button" class="link" data-act="skhelp">'+(F.UI.skHelp?"Einrichtung ausblenden":"Wie ist die Verbindung eingerichtet?")+'</button></p>'+
     (F.UI.skHelp?'<section class="panel sk-empty">'+setupHelp()+'</section>':'');
 }

@@ -34,12 +34,13 @@ F.css(
 '.pl-sub .count{margin-left:6px}'+
 '.pl-head-r{align-items:center}'+
 '.pl-tbl td.r,.pl-tbl th.r{text-align:right}'+
+'.pl-tbl .invs{align-items:flex-start}'+
 '.pl-tbl tfoot td{font-weight:700;border-top:1px solid var(--line);background:var(--sunk)}'+
 '.pl-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}'+
 '.pl-donut{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;align-items:center;padding:16px 18px}'+
 '.pl-donut svg{width:150px;height:150px;display:block}'+
 '.pl-donut ul{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:13.5px}'+
-'.pl-donut li{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:8px;align-items:center}'+
+'.pl-donut li{display:grid;grid-template-columns:12px max-content minmax(0,1fr);gap:8px;align-items:center}.pl-donut li .num{text-align:right}'+
 '.pl-donut li i{width:10px;height:10px;border-radius:3px;background:var(--c)}'+
 '.pl-bk{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:14px;align-items:start;padding:14px 18px;border-bottom:1px solid var(--line)}'+
 '.pl-bk:last-child{border-bottom:0}'+
@@ -68,7 +69,8 @@ F.css(
   '.pl-tbl tbody tr:last-child{border-bottom:0}'+
   '.pl-tbl td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 16px;text-align:right}'+
   '.pl-tbl td:first-child{text-align:left}'+
-  '.pl-tbl td[data-l]::before{content:attr(data-l);color:var(--ink-3);font-size:12.5px;text-align:left;flex:none}'+
+  '.pl-tbl td[data-l]::before{content:attr(data-l);color:var(--ink-3);font:400 12.5px var(--f-body);letter-spacing:0;text-align:left;flex:none}'+
+  '.pl-tbl td:empty{display:none}'+
   '.pl-tbl td.pl-a{justify-content:flex-end}'+
   '.pl-tbl tfoot tr{display:block}'+
   '.pl-donut{grid-template-columns:minmax(0,1fr);justify-items:center}'+
@@ -234,7 +236,7 @@ function vKochdu(){
     var acts=(ro>0.005?'<button class="btn primary" data-act="plkbill:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="'+(sevOk?"Rechnung in sevDesk anlegen und als verrechnet markieren":"sevDesk nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(ro)+'</button>':'')+
       (rp>0.005?'<button class="btn" data-act="plkundo:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="Verrechnung zurücknehmen">↺ Rückgängig</button>':'')+
       (ro<=0.005&&rp<=0.005?'<span class="muted">—</span>':'');
-    return '<tr><td><b>'+esc(r.name||"—")+'</b>'+(r.provisionRatePct!=null?' <span class="muted">· '+esc(r.provisionRatePct)+' %</span>':'')+'</td>'+
+    return '<tr><td><b>'+esc(r.name||"—")+'</b>'+(r.provisionRatePct!=null?'<div class="sub">'+esc(r.provisionRatePct)+' % Provision</div>':'')+'</td>'+
       '<td class="r num" data-l="Bestellungen bar / online">'+num(r.barOrders)+' / '+num(r.onlineOrders)+'</td>'+
       '<td class="r" data-l="Bar offen">'+money(ro,ro>0.005?"warn-t":"")+'</td>'+
       '<td class="r" data-l="Bar verrechnet">'+money(rp,"ok-t")+'</td>'+
@@ -337,7 +339,7 @@ function vKantineur(){
     '</div>'+
     sec("Kantinen nach Status",'<span class="muted">'+num((k.canteens||{}).total)+' registriert</span>',
       stRows.length?hbars(stRows.map(function(s,i){ var m=KA_STATUS[s]||[s.toLowerCase(),"grey"]; return {label:m[0].charAt(0).toUpperCase()+m[0].slice(1),right:num(cs[s])+(cs[s]===1?" Kantine":" Kantinen"),parts:[[+cs[s],{ok:"a",warn:"b",info:"c"}[m[1]]||"d",m[0]]]}; })):'<div class="empty">Keine Status-Aufteilung verfügbar.</div>')+
-    '<p class="pl-note">Kantineur rechnet die Abos selbst ab. Hier ist nichts zu verrechnen. '+esc(stamp(k.fetchedAt))+'</p>';
+    '<p class="pl-note">Kantineur rechnet die Abos selbst ab. Hier ist nichts zu verrechnen.</p>';
 }
 
 /* ---------- Blitzdings ---------- */
@@ -374,8 +376,7 @@ function vBlitz(){
       kpi("Diesen Monat bezahlt",'<span class="money">'+eur(c2e(r.thisMonthPaidCents))+'</span>',r.refundedCents?'<span class="money">'+eur(c2e(r.refundedCents))+'</span> erstattet':"seit Monatsanfang")+
     '</div>'+
     sec("Nächste Termine",'<span class="muted">„Als bezahlt“ wird direkt in Blitzdings gespeichert</span>',ups.length?list:'<div class="empty">Keine anstehenden Termine.</div>')+
-    sec("Bezahlt vs. offen",'<span class="muted">'+esc(F.D.year)+'</span>',donut([["Bezahlt",c2e(r.paidCents),"ok",'<span class="money">'+eur(c2e(r.paidCents))+'</span>'],["Offen",c2e(r.openCents),"warn",'<span class="money">'+eur(c2e(r.openCents))+'</span>']].concat(r.refundedCents?[["Erstattet",c2e(r.refundedCents),"ink-3",'<span class="money">'+eur(c2e(r.refundedCents))+'</span>']]:[]),num((+bk.paidCount||0)+(+bk.openCount||0))))+
-    '<p class="pl-note">'+esc(stamp(bz.fetchedAt))+'</p>';
+    sec("Bezahlt vs. offen",'<span class="muted">'+esc(F.D.year)+'</span>',donut([["Bezahlt",c2e(r.paidCents),"ok",'<span class="money">'+eur(c2e(r.paidCents))+'</span>'],["Offen",c2e(r.openCents),"warn",'<span class="money">'+eur(c2e(r.openCents))+'</span>']].concat(r.refundedCents?[["Erstattet",c2e(r.refundedCents),"ink-3",'<span class="money">'+eur(c2e(r.refundedCents))+'</span>']]:[]),num((+bk.paidCount||0)+(+bk.openCount||0))));
 }
 function bzBooking(id){ return ((P().blitzdings||{}).upcoming||[]).find(function(b){ return String(b.id)===String(id); }); }
 function bzApply(b,paid,d){
@@ -385,7 +386,7 @@ function bzApply(b,paid,d){
   var s=paid?1:-1;
   r.paidCents=Math.max(0,(+r.paidCents||0)+s*amt); r.openCents=Math.max(0,(+r.openCents||0)-s*amt);
   bk.paidCount=Math.max(0,(+bk.paidCount||0)+s); bk.openCount=Math.max(0,(+bk.openCount||0)-s);
-  var mk=(d||F.D).today.slice(0,7); if(paid&&String(b.eventDate||"").slice(0,7)<=mk) r.thisMonthPaidCents=(+r.thisMonthPaidCents||0)+amt;
+  r.thisMonthPaidCents=Math.max(0,(+r.thisMonthPaidCents||0)+s*amt);
 }
 function bzSetPaid(id,paid,quiet){
   var b=bzBooking(id); if(!b) return;

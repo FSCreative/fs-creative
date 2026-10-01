@@ -40,7 +40,12 @@ F.form("invoice",function(form){
     if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:{id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label}}}));
     if(after.kochduSettle) jobs.push(F.api("/admin/api/kochdu-settle",{body:{action:"settle",restaurantId:after.kochduSettle.restaurantId,amountCents:after.kochduSettle.amountCents}}));
     var cb=INVCTX&&INVCTX.onDone;
-    Promise.all(jobs).catch(function(){}).then(function(){ F.closeModal(); F.toast("Rechnungsentwurf "+(j.nr||"")+" in sevDesk angelegt",false,"In sevDesk öffnen",function(){ window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id),"_blank","noopener"); }); if(cb) cb(j); F.load(true); });
+    Promise.all(jobs.map(function(p){ return p.then(function(r){ return r&&r.ok!==false&&!r.error; }).catch(function(){ return false; }); })).then(function(res){
+      var failed=res.filter(function(x){ return !x; }).length;
+      F.closeModal();
+      if(failed) F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt, aber "+failed+" Folgeschritt(e) (als verrechnet markieren) fehlgeschlagen – bitte prüfen",true);
+      else F.toast("Rechnungsentwurf "+(j.nr||"")+" in sevDesk angelegt",false,"In sevDesk öffnen",function(){ window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id),"_blank","noopener"); });
+      if(cb) cb(j,{failed:failed}); F.load(true); });
   }).catch(function(){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="Keine Verbindung zum Server."; });
 });
 F.action("newinvoice",function(){ F.openInvoice({}); });
