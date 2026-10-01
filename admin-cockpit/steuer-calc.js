@@ -90,9 +90,14 @@ function lines(doc){
   }
   return ls;
 }
+// Sollbesteuerung (§ 19 Abs. 2 Z 1 lit. a UStG): Ablauf des Monats der Leistung; wird die Rechnung erst später ausgestellt,
+// verschiebt sich das um höchstens einen Kalendermonat → Datum im maßgeblichen Monat (Rechnungsdatum, höchstens Ende des Folgemonats)
+function monthEnd(ym){ var y=+ym.slice(0,4), m=+ym.slice(5,7); return new Date(Date.UTC(y,m,0)).toISOString().slice(0,10); }
+function nextYm(ym){ var y=+ym.slice(0,4), m=+ym.slice(5,7)+1; if(m>12){ y++; m=1; } return y+"-"+String(m).padStart(2,"0"); }
+function sollDate(inv){ var l=inv.delivery||inv.date, d=inv.date; if(!inv.delivery||!d||d.slice(0,7)<=l.slice(0,7)) return l; var lim=monthEnd(nextYm(l.slice(0,7))); return d<lim?d:lim; }
 function docCfg(st,id){ return (st.docs&&st.docs[id])||{}; }
 function skipInv(inv,st){ var c=docCfg(st,inv.id); return inv.status<200||inv.type==="MA"||inv.type==="WKR"||c.ignore||c.kz==="ignore"; }
-function skipVou(v,st){ var c=docCfg(st,v.id); return v.status<100||c.ignore||c.kz==="ignore"; }
+function skipVou(v,st){ var c=docCfg(st,v.id); return v.status<100||v.type==="RV"||c.ignore||c.kz==="ignore"; }   // RV = Vorlage wiederkehrender Beleg
 // Nicht-betriebliche Kategorien (Privat, Steuerzahlungen, Umbuchungen, Kredit) – weder Einnahme noch Ausgabe
 var NONBIZ=/privat|entnahme|einlage|umbuchung|geldtransit|transit|umsatzsteuer|vorsteuer|\bust\b|ust-|zahllast|finanzamt|einkommensteuer|\best\b|kapitalertragsteuer|darlehen|kredit(?!karte)|tilgung|kaution/i;
 function nonBiz(l){ return /^(TAX|VAT|VATPAY|VATIMPORT|VATINT|EQUITYIN|EQUITYOUT)$/i.test(l.catType||"")||NONBIZ.test(l.cat||""); }
@@ -200,11 +205,14 @@ function computeUva(raw,st,p){
     var ls=lines(inv), parts=[];
     if(inv.type==="AR"){
       var g=num(inv.gross); payments(inv).forEach(function(pm){ if(inP(pm.date,p)&&g) parts.push({share:pm.amount/g,date:pm.date,why:"Anzahlung bei Zahlungseingang"}); });
+      parts.forEach(function(pt){ ls.forEach(function(l){ revLine(inv,l,pt,"out"); }); });
+    } else if(inv.type==="SR"){
+      if(inP(inv.date,p)) ls.forEach(function(l){ revLine(inv,l,{share:1,date:inv.date,why:"Storno – Monat der Ausstellung"},"out"); });
     } else {
-      var d=inv.type==="SR"?inv.date:(inv.delivery||inv.date);
-      if(inP(d,p)) parts.push({share:1,date:d,why:inv.type==="SR"?"Storno – Monat der Ausstellung":(inv.delivery?"Leistungsdatum":"Rechnungsdatum (kein Leistungsdatum)")});
+      // ZM für ig. sonstige Leistungen: Monat der Leistung (Art. 21 Abs. 3 UStG) – ohne Verschiebung durch spätere Rechnung
+      var dS=sollDate(inv), dL=inv.delivery||inv.date, why=!inv.delivery?"Rechnungsdatum (kein Leistungsdatum)":(dS!==dL?"Rechnung nach dem Leistungsmonat – Steuerschuld um einen Monat verschoben (§ 19 Abs. 2 Z 1 lit. a)":"Leistungsdatum");
+      ls.forEach(function(l){ var zmS=outClass(inv,l,st)==="zm", d=zmS?dL:dS; if(inP(d,p)) revLine(inv,l,{share:1,date:d,why:zmS?"Leistungsdatum (ZM)":why},"out"); });
     }
-    parts.forEach(function(pt){ ls.forEach(function(l){ revLine(inv,l,pt,"out"); }); });
     // Entgeltsminderung bei Sollbesteuerung (§ 16 UStG): Skonto/Teilausfall bei bezahlter Rechnung, Forderungsausfall laut Cockpit
     var m=minderung(inv,st); if(m&&inP(m.date,p)){ ls.forEach(function(l){ revLine(inv,{rate:l.rate,net:-l.net*m.share,tax:-l.tax*m.share},{share:1,date:m.date,why:m.why},"out"); }); minder.push({doc:inv,date:m.date,share:m.share,amount:r2(m.amount),why:m.why}); }
   });
@@ -317,7 +325,8 @@ function assetInfo(v,st){
     if(deg){ var dA=bv*degRate*factor, lA=bv/rest*factor; if(y>sy&&lA>=dA){ deg=false; lin=bv/rest; afa=lA; } else afa=dA; }
     else afa=lin*factor;
     if(rest<=factor) afa=bv;                                  // letztes Jahr: Restbuchwert
-    afa=Math.min(bv,afa); var afaL=ahk?afa*base/ahk:0;
+    if(ahk<=C.gwg) afa=bv;                                    // GWG (§ 13 EStG): im Jahr der Anschaffung voll
+    afa=r2(Math.min(bv,afa)); var afaL=ahk?afa*base/ahk:0;
     plan.push({year:y,afa:r2(afa),afaLux:r2(afa-afaL),bvStart:r2(bv),kz:deg?"9134":"9130",abgang:(ay&&y===ay)?r2(bv-afa):0});
     bv-=afa; used+=factor; if(ay&&y===ay) break;
   }
@@ -391,7 +400,7 @@ function computeJab(raw,st,year){
   doneUva.forEach(function(kk){ var sm=st.uva[kk].summary; if(sm) paidUva+=num(sm.zahllast); });
   // Basispauschalierung (§ 17) als Vergleich
   var P=Y.pausch, prate=(inp.pausch6?P.rate6:P.rate)/100, umsatz=ertr["9040"]+ertr["9050"];
-  var pausch=r2(Math.min(umsatz*prate,P.limit*prate)), extra=["9100","9110","9120","9160","9165","9215","9217","9225"].reduce(function(a,z){ return a+(E[z]||0); },0);
+  var pausch=r2(Math.min(umsatz*prate,P.limit*prate)), extra=["9100","9110","9120","9165","9215","9217","9225"].reduce(function(a,z){ return a+(E[z]||0); },0);
   var pGewinn=r2(ertrSum-pausch-extra), pGrund=r2(Math.min(Math.max(0,pGewinn),C.gfbGrund)*C.gfbRate), pSteuer=r2(pGewinn-pGrund);
   var prevRev=revenueNet(raw,st,+y-1);
   var pauschVgl={rate:prate*100,pausch:pausch,extra:r2(extra),gewinn:pGewinn,gfb:pGrund,steuerGewinn:pSteuer,limit:P.limit,erlaubt:prevRev<=P.limit,prevRev:r2(prevRev),vorteil:r2(steuerGewinn-pSteuer)};
@@ -480,7 +489,7 @@ function controlCheck(raw,st,p){
   (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)) return;
     if(inv.type==="AR"){ var g=num(inv.gross); payments(inv).forEach(function(pm){ if(inP(pm.date,p)&&g){ ust+=num(inv.tax)*pm.amount/g; nOut++; } }); return; }
     var m=minderung(inv,st); if(m&&inP(m.date,p)) ust-=num(inv.tax)*m.share;   // Skonto/Ausfall (aus Zahlbetrag laut sevDesk)
-    var d=inv.type==="SR"?inv.date:(inv.delivery||inv.date); if(!inP(d,p)) return; var t=num(inv.tax); if(inv.type==="SR"&&num(inv.net)>0) t=-t; ust+=t; nOut++; });
+    var d=inv.type==="SR"?inv.date:sollDate(inv); if(!inP(d,p)) return; var t=num(inv.tax); if(inv.type==="SR"&&num(inv.net)>0) t=-t; ust+=t; nOut++; });
   (raw.creditNotes||[]).forEach(function(cn){ if(cn.status<200||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)||!inP(v.date,p)) return; var t=num(v.tax);
     if(v.cd==="D"){ ust+=t; return; } if(v.cd!=="C"||!t) return;
@@ -552,7 +561,7 @@ function euSummary(raw,st,p){
   r.other.fx.forEach(function(x){ var cc=supplierCountry(x.doc); if(isEU(cc)) { out.fxEU+=x.tax; push("fxEU",x.doc,x.tax); } });
   (r.docs["057"]||[]).forEach(function(x){ var cc=supplierCountry(x.doc); if(isEU(cc)&&cc!=="AT"){ out.rcEU+=x.base; push("rcEU",x.doc,x.base); } else { out.rcDritt+=x.base; push("rcDritt",x.doc,x.base); } });
   // B2C an Privatkunden in anderen EU-Staaten (österr. USt, keine UID) – OSS-Schwelle 10.000 € pro Jahr (Art. 3 Abs. 5 UStG)
-  function b2c(per,cb){ (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)) return; var cc=customerCountry(inv), d=inv.delivery||inv.date; if(!isEU(cc)||cc==="AT"||uidCountry(inv.uid)||!inP(d,per)) return; lines(inv).forEach(function(l){ if(l.rate>0) cb(inv,l.net); }); }); }
+  function b2c(per,cb){ (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)) return; var cc=customerCountry(inv), d=sollDate(inv); if(!isEU(cc)||cc==="AT"||uidCountry(inv.uid)||!inP(d,per)) return; lines(inv).forEach(function(l){ if(l.rate>0) cb(inv,l.net); }); }); }
   b2c(p,function(inv,n){ out.b2cEU+=n; push("b2cEU",inv,n); }); b2c({from:y+"-01-01",to:y+"-12-31"},function(inv,n){ out.b2cEUJahr+=n; });
   Object.keys(out).forEach(function(k){ if(typeof out[k]==="number") out[k]=r2(out[k]); });
   out.ossWarn=out.b2cEUJahr>C.ossSchwelle; out.zmRows=zmRows(r);

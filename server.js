@@ -1454,7 +1454,7 @@ async function steuerRaw(force) {
         net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid, enshrined: !!o.enshrined, pays: paysFor("Invoice", o.id, paid), lines: posBy[o.id] || [] };
     });
     const vouchers = vou.map(v => { const s = v.supplier || {}, paid = sevNum(v.paidAmount);
-      return { id: String(v.id), date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
+      return { id: String(v.id), type: v.voucherType || "VOU", date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
         supplier: v.supplierName || sevName(s) || "", supplierUid: String(s.vatNumber || "").replace(/\s/g, "").toUpperCase(), supplierCountry: (s.id && ctry[s.id]) || "", desc: v.description || "", net: sevNum(v.sumNet), tax: sevNum(v.sumTax), gross: sevNum(v.sumGross), paid,
         enshrined: !!v.enshrined, pays: paysFor("Voucher", v.id, paid), lines: vposBy[v.id] || [] }; });
     const creditNotes = cn.map(o => ({ id: "cn" + o.id, sevId: String(o.id), nr: o.creditNoteNumber || "", type: "GU", status: parseInt(o.status, 10) || 0, date: sevDay(o.creditNoteDate), delivery: sevDay(o.deliveryDate),
