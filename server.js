@@ -720,7 +720,7 @@ ${err ? '<div class="err">' + err + "</div>" : ""}
 }
 
 // ── sevDesk (Buchhaltung): Rechnungen, Bank, Belege ──
-const SEV = { key: (process.env.SEVDESK_API_KEY || "").trim(), src: process.env.SEVDESK_API_KEY ? "env" : "", base: "https://my.sevdesk.de/api/v1", triedAt: 0, err: "" };
+const SEV = { key: (process.env.SEVDESK_API_KEY || "").trim(), src: process.env.SEVDESK_API_KEY ? "env" : "", base: (process.env.SEVDESK_API_BASE || "https://my.sevdesk.de/api/v1").replace(/\/$/, ""), triedAt: 0, err: "" };
 const SEV_SRC = { projectId: process.env.SEVDESK_KEY_PROJECT || "36a3e698-1684-4614-b235-63e62972d798", environmentId: process.env.SEVDESK_KEY_ENV || "7f4f6052-8af5-4a68-90b9-192b619ecfb9", serviceId: process.env.SEVDESK_KEY_SERVICE || "5f35ca1f-63e3-4ed5-9cac-ad2d7108c585" };
 // Schlüssel: eigene Variable, sonst einmalig vom kochdu-Dienst (gleiches sevDesk-Konto) übernehmen
 async function sevKey() {
@@ -1347,52 +1347,336 @@ function cockpitModule(name) {
 }
 
 
-// ── Steuer: UVA (U30) und Jahresabschluss (E1a/U1) – Rohdaten aus sevDesk + gespeicherter Status ──
+// ── Steuer: UVA (U30), ZM (U13) und Jahresabschluss (E1a/U1/E1) – Rohdaten aus sevDesk + gespeicherter Status ──
+// Rechenkern liegt in admin-cockpit/steuer-calc.js und wird hier wie im Browser verwendet (gleiche Kennzahlen für FinanzOnline).
+const STEUER_CALC = require("./admin-cockpit/steuer-calc.js");
 const STEUER_FILE = path.join(DATA_DIR, "steuer.json");
-function readSteuer() { let o = {}; try { o = JSON.parse(fs.readFileSync(STEUER_FILE, "utf8")) || {}; } catch (e) {} o.settings = Object.assign({ besteuerung: "ist", zeitraum: "quartal" }, o.settings || {}); o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {}; return o; }
+function readSteuer() {
+  let o = {}; try { o = JSON.parse(fs.readFileSync(STEUER_FILE, "utf8")) || {}; } catch (e) {}
+  o.settings = Object.assign({ zeitraum: "quartal", steuernummer: "" }, o.settings || {});
+  o.settings.besteuerung = "soll";                                   // FS Creative: Sollbesteuerung (vereinbarte Entgelte) – fix
+  o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {};
+  o.uvaManual = o.uvaManual || {}; o.jabInput = o.jabInput || {}; o.trips = o.trips || {};
+  o.fon = Object.assign({ nextPaket: 1, archive: [] }, o.fon || {});
+  return o;
+}
 function writeSteuer(o) { try { fs.writeFileSync(STEUER_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
-async function sevAll(pathq, query, max) {
-  const out = []; const lim = 1000;
+// Für den Browser: Archiv ohne XML (das gibt es einzeln)
+function steuerPublic(o) { return { settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
+// Alle Seiten laden; doppelte Objekte (z. B. wenn offset ignoriert wird) werden entfernt und gezählt
+async function sevAll(pathq, query, max, stats) {
+  const out = []; const seen = new Set(); const lim = 1000; let dupes = 0;
   for (let off = 0; off < (max || 6000); off += lim) {
     const j = await sev("GET", pathq, { query: Object.assign({ limit: lim, offset: off }, query || {}), timeout: 40000 });
-    const arr = (j && j.objects) || []; out.push.apply(out, arr); if (arr.length < lim) break;
+    const arr = (j && j.objects) || []; let fresh = 0;
+    arr.forEach(o => { const id = o && o.id != null ? String(o.id) : null; if (id && seen.has(id)) { dupes++; return; } if (id) seen.add(id); out.push(o); fresh++; });
+    if (arr.length < lim || !fresh) break;
   }
+  if (stats) stats[pathq] = (stats[pathq] || 0) + dupes;
   return out;
+}
+function sevPosLines(pos, key) {
+  const by = {};
+  pos.forEach(x => { const id = x[key] && x[key].id; if (!id) return; const at = x.accountingType || {};
+    // InvoicePos liefert laut API keine sumNet/sumTax (nur price/priceNet/priceTax bzw. sum*Accounting) – daher robust lesen;
+    // der Rechenkern gleicht die Positionen ohnehin auf die Kopfsummen des Belegs ab.
+    const rate = sevNum(x.taxRate), q = x.quantity != null ? sevNum(x.quantity) : 1;
+    const pick = (...ks) => { for (const k of ks) if (x[k] != null && x[k] !== "") return sevNum(x[k]); return null; };
+    let net = pick("sumNet", "sumNetAccounting"); if (net == null) { const pn = pick("priceNet"); net = pn != null ? pn * q : (pick("price") || 0) * q; }
+    let tax = pick("sumTax", "sumTaxAccounting"); if (tax == null) { const g = pick("sumGross", "sumGrossAccounting"); tax = g != null ? g - net : Math.round(net * rate) / 100; }
+    (by[id] = by[id] || []).push({ rate, net, tax, cat: at.name || "", catId: at.id ? String(at.id) : "", catType: at.type || "" }); });
+  return by;
 }
 let STEUER_CACHE = { at: 0, data: null, p: null };
 async function steuerRaw(force) {
   if (!force && STEUER_CACHE.data && Date.now() - STEUER_CACHE.at < 10 * 60 * 1000) return STEUER_CACHE.data;
   if (STEUER_CACHE.p) return STEUER_CACHE.p;
   STEUER_CACHE.p = (async () => {
-    const [inv, ipos, vou, vpos] = await Promise.all([
-      sevAll("/Invoice", { embed: "contact" }), sevAll("/InvoicePos", {}, 20000),
-      sevAll("/Voucher", {}), sevAll("/VoucherPos", { embed: "accountingType" }, 20000),
+    const dupes = {};
+    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr] = await Promise.all([
+      sevAll("/Invoice", { embed: "contact,addressCountry" }, 6000, dupes), sevAll("/InvoicePos", {}, 20000, dupes),
+      sevAll("/Voucher", { embed: "supplier" }, 6000, dupes), sevAll("/VoucherPos", { embed: "accountingType" }, 20000, dupes),
+      sevAll("/CreditNote", { embed: "contact" }, 3000, dupes).catch(() => []), sevAll("/CreditNotePos", {}, 6000, dupes).catch(() => []),
+      sevAll("/CheckAccountTransaction", {}, 6000, dupes).catch(() => []),
+      // Zahlungszuordnungen (für Teilzahlungen je Zahlungsdatum) – nicht in der offiziellen Doku, daher optional
+      sevAll("/CheckAccountTransactionLog", {}, 20000, dupes).catch(() => []),
+      sevAll("/ContactAddress", { embed: "country" }, 6000, dupes).catch(() => []),   // Land der Kunden/Lieferanten (für RC/ZM)
     ]);
-    const posBy = {}; ipos.forEach(x => { const id = x.invoice && x.invoice.id; if (!id) return; (posBy[id] = posBy[id] || []).push({ rate: sevNum(x.taxRate), net: sevNum(x.sumNet != null ? x.sumNet : (sevNum(x.price) * sevNum(x.quantity || 1))), tax: sevNum(x.sumTax) }); });
-    const vposBy = {}; vpos.forEach(x => { const id = x.voucher && x.voucher.id; if (!id) return; const at = x.accountingType || {}; (vposBy[id] = vposBy[id] || []).push({ rate: sevNum(x.taxRate), net: sevNum(x.sumNet), tax: sevNum(x.sumTax), gross: sevNum(x.sumGross), cat: at.name || "", catId: at.id ? String(at.id) : "", catType: at.type || "" }); });
+    const ctry = {}; addr.forEach(a => { const cid = a.contact && a.contact.id, c = a.country && (a.country.code || ""); if (cid && c && !ctry[cid]) ctry[cid] = String(c).toUpperCase(); });
+    const posBy = sevPosLines(ipos, "invoice"), vposBy = sevPosLines(vpos, "voucher"), cnBy = sevPosLines(cnpos, "creditNote");
+    const txBy = {}; tx.forEach(t => { txBy[String(t.id)] = sevDay(t.valueDate || t.entryDate); });
+    const pays = {};
+    logs.forEach(l => { const ob = l.object || l.objectFrom || {}; const id = ob.id; if (!id) return; const kind = ob.objectName || "";
+      const amount = sevNum(l.ammountPayed != null ? l.ammountPayed : (l.amountPayed != null ? l.amountPayed : l.amount));
+      const t = l.checkAccountTransaction && l.checkAccountTransaction.id; const date = (t && txBy[String(t)]) || sevDay(l.bookingDate || l.create);
+      if (!amount || !date) return; (pays[kind + ":" + id] = pays[kind + ":" + id] || []).push({ date, amount }); });
+    // Zahlungen nur übernehmen, wenn sie zum bezahlten Betrag passen – sonst gilt das Zahlungsdatum aus sevDesk
+    const paysFor = (kind, id, paid) => { const a = pays[kind + ":" + id]; if (!a) return undefined; const s = a.reduce((x, p) => x + p.amount, 0); return Math.abs(Math.abs(s) - Math.abs(paid)) < 0.05 ? a.sort((x, y) => x.date.localeCompare(y.date)) : undefined; };
+    const country = o => (o && (o.code || o.translationCode) ? String(o.code || "").toUpperCase() : "");
     const invoices = inv.filter(o => o.invoiceType !== "MA").map(o => {
-      const lines = posBy[o.id] || [{ rate: sevNum(o.taxRate), net: sevNum(o.sumNet), tax: sevNum(o.sumTax) }];
-      return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), payDate: sevDay(o.payDate),
-        taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(o.contact), net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid: sevNum(o.paidAmount), lines };
+      const c = o.contact || {}, paid = sevNum(o.paidAmount);
+      return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), delivery: sevDay(o.deliveryDate), payDate: sevDay(o.payDate),
+        taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(c), uid: String(c.vatNumber || "").replace(/\s/g, "").toUpperCase(), country: country(o.addressCountry) || ctry[c.id] || "",
+        net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid, enshrined: !!o.enshrined, pays: paysFor("Invoice", o.id, paid), lines: posBy[o.id] || [] };
     });
-    const vouchers = vou.map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
-      supplier: v.supplierName || "", desc: v.description || "", net: sevNum(v.sumNet), tax: sevNum(v.sumTax), gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), lines: vposBy[v.id] || [] }));
-    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers };
+    const vouchers = vou.map(v => { const s = v.supplier || {}, paid = sevNum(v.paidAmount);
+      return { id: String(v.id), date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
+        supplier: v.supplierName || sevName(s) || "", supplierUid: String(s.vatNumber || "").replace(/\s/g, "").toUpperCase(), supplierCountry: (s.id && ctry[s.id]) || "", desc: v.description || "", net: sevNum(v.sumNet), tax: sevNum(v.sumTax), gross: sevNum(v.sumGross), paid,
+        enshrined: !!v.enshrined, pays: paysFor("Voucher", v.id, paid), lines: vposBy[v.id] || [] }; });
+    const creditNotes = cn.map(o => ({ id: "cn" + o.id, sevId: String(o.id), nr: o.creditNoteNumber || "", type: "GU", status: parseInt(o.status, 10) || 0, date: sevDay(o.creditNoteDate), delivery: sevDay(o.deliveryDate),
+      taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(o.contact), uid: String((o.contact || {}).vatNumber || "").toUpperCase(),
+      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), enshrined: !!o.enshrined, lines: cnBy[o.id] || [] }));
+    const cutoff = new Date(Date.now() - 500 * 864e5).toISOString().slice(0, 10);
+    const transactions = tx.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
+      .filter(t => t.amount < 0 && (t.date || "") >= cutoff && /finanzamt|abgabenkonto|bmf|steuer|\bust\b|umsatzsteuer|\bfa\b/i.test(t.name + " " + t.purpose));
+    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
     STEUER_CACHE = { at: Date.now(), data: d, p: null };
     return d;
   })().catch(e => { STEUER_CACHE.p = null; throw e; });
   return STEUER_CACHE.p;
 }
+const STEUER_KZ_OK = /^(auto|inl|ns|zm|017|011|020|021|016|oss|060|rc|rcnv|ige|eust|fx|none|ignore)$/;
 function steuerOp(pl) {
   const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
-  if (op === "settings") { const P = pl.settings || {}; if (P.besteuerung === "ist" || P.besteuerung === "soll") o.settings.besteuerung = P.besteuerung; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; }
+  const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
+  if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4); }
   else if (op === "mapping") { const m = pl.mapping || {}; Object.keys(m).forEach(k => { const v = String(m[k] || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12); if (v) o.mapping[String(k).slice(0, 120)] = v; else delete o.mapping[String(k).slice(0, 120)]; }); }
-  else if (op === "doc") { const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {}; if ("kz" in P) cur.kz = String(P.kz || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12) || undefined; if ("asset" in P) cur.asset = !!P.asset; if ("nd" in P) { const n = parseInt(P.nd, 10); cur.nd = n > 0 && n < 60 ? n : undefined; } if ("ignore" in P) cur.ignore = !!P.ignore; o.docs[id] = cur; }
-  else if (op === "done" && /^(uva|jab)$/.test(pl.kind) && key) { o[pl.kind][key] = { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? JSON.parse(JSON.stringify(pl.summary).slice(0, 20000)) : null, note: String(pl.note || "").slice(0, 500) }; }
+  else if (op === "doc") {
+    const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
+    if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
+    ["asset", "ignore", "pkw", "epkw", "used"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    if ("nd" in P) { const n = parseInt(P.nd, 10); cur.nd = n > 0 && n < 60 ? n : undefined; }
+    if ("method" in P) cur.method = P.method === "deg" ? "deg" : undefined;
+    if ("degRate" in P) { const n = n2(P.degRate); cur.degRate = n > 0 && n <= 30 ? n : undefined; }
+    if ("benefit" in P) cur.benefit = /^(gfb|ifb10|ifb15|ifb20|ifb22)$/.test(P.benefit) ? (P.benefit === "ifb20" ? "ifb10" : P.benefit === "ifb22" ? "ifb15" : P.benefit) : undefined;
+    ["abgang", "start"].forEach(f => { if (f in P) cur[f] = /^\d{4}-\d{2}-\d{2}$/.test(P[f] || "") ? P[f] : undefined; });
+    o.docs[id] = JSON.parse(JSON.stringify(cur));
+  }
+  else if (op === "manual" && key) {   // manuelle UVA-Kennzahl je Zeitraum
+    const kz = String(pl.kz || ""); if (STEUER_CALC.MANUAL_KZ.indexOf(kz) < 0) throw new Error("kz_nicht_erlaubt");
+    const m = o.uvaManual[key] = o.uvaManual[key] || {};
+    if (!n2(pl.base) && !n2(pl.tax)) delete m[kz]; else m[kz] = { base: n2(pl.base), tax: n2(pl.tax), note: String(pl.note || "").slice(0, 120) };
+    if (!Object.keys(m).length) delete o.uvaManual[key];
+  }
+  else if (op === "jabinput" && /^\d{4}$/.test(String(pl.year || ""))) {
+    const cur = o.jabInput[pl.year] = o.jabInput[pl.year] || {}; const P = pl.patch || {};
+    const nums = ["e9050", "e9060", "e9090", "mobiliar", "oeffi", "svs", "sonstAufw", "kfzPrivat", "k9290", "wertpapiere", "verlustvortrag", "andereEinkuenfte", "kirchenbeitrag", "spenden", "vorauszahlungen", "kinder", "kinder18"];
+    Object.keys(P).forEach(k => { if (nums.indexOf(k) > -1) cur[k] = n2(P[k]); else if (k === "ap") cur.ap = /^(klein|gross)$/.test(P.ap) ? P.ap : ""; else if (/^(avab|aeab|faboHalb|pausch6|gfbVerzicht)$/.test(k)) cur[k] = !!P[k]; });
+  }
+  else if (op === "trips" && /^\d{4}$/.test(String(pl.year || ""))) {
+    const arr = (Array.isArray(pl.trips) ? pl.trips : []).slice(0, 1000).map(t => ({ date: /^\d{4}-\d{2}-\d{2}$/.test(t.date || "") ? t.date : "", route: String(t.route || "").slice(0, 120), purpose: String(t.purpose || "").slice(0, 160), km: Math.max(0, n2(t.km)), hours: Math.max(0, n2(t.hours)), nights: Math.max(0, parseInt(t.nights, 10) || 0) }));
+    if (arr.length) o.trips[pl.year] = arr; else delete o.trips[pl.year];
+  }
+  else if (op === "done" && /^(uva|jab)$/.test(pl.kind) && key) { o[pl.kind][key] = Object.assign({}, o[pl.kind][key] || {}, { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? JSON.parse(JSON.stringify(pl.summary).slice(0, 20000)) : null, note: String(pl.note || "").slice(0, 500) }); }
   else if (op === "undone" && /^(uva|jab)$/.test(pl.kind) && key) { delete o[pl.kind][key]; }
   else throw new Error("bad_op");
   if (!writeSteuer(o)) throw new Error("save_failed");
   return o;
+}
+// Zeitraum aus Schlüssel: "2026-Q3" oder "2026-M07"
+function steuerPeriod(key) {
+  const m = String(key || "").match(/^(\d{4})-(Q([1-4])|M(0[1-9]|1[0-2]))$/); if (!m) return null;
+  const y = +m[1], from = m[3] ? (+m[3] - 1) * 3 + 1 : +m[4], to = m[3] ? +m[3] * 3 : +m[4];
+  const last = new Date(Date.UTC(y, to, 0)).getUTCDate();
+  return { key, year: y, from: y + "-" + String(from).padStart(2, "0") + "-01", to: y + "-" + String(to).padStart(2, "0") + "-" + String(last).padStart(2, "0"), label: m[3] ? m[3] + ". Quartal " + y : String(from).padStart(2, "0") + "/" + y };
+}
+
+// ── FinanzOnline: Datenstrom U30/U13 (BMF-Schema U30 ab 07/2026, ZM Stand 14.01.2025), Prüfung, Session- und FileUpload-Webservice ──
+// Portiert aus BuchDu (src/lib/fonXml.ts, fonPruefung.ts, fon.ts). Das PIN wird nur für den einen Aufruf verwendet und nirgends gespeichert oder geloggt.
+const FON = {
+  sessionUrl: process.env.FON_SESSION_URL || "https://finanzonline.bmf.gv.at/fonws/ws/session",
+  uploadUrl: process.env.FON_UPLOAD_URL || "https://finanzonline.bmf.gv.at/fon/ws/fileupload",
+  nsSession: "https://finanzonline.bmf.gv.at/fon/ws/session", nsUpload: "https://finanzonline.bmf.gv.at/fon/ws/fileupload",
+};
+const FON_LLE = ["000", "001", "021"], FON_FREI = ["011", "012", "015", "017", "018", "019", "016"], FON_VERST = ["022", "124", "029", "006", "037", "052", "007", "056", "057", "048", "044", "032"];
+const FON_IGE = ["070", "071"], FON_IGE_V = ["072", "125", "073", "008", "088", "076", "077"], FON_VST = ["060", "061", "083", "065", "066", "082", "087", "089", "064", "062", "063", "067", "090"];
+const FON_NULL_OK = new Set(["000", "070"]), FON_NEG_OK = new Set(["063", "067", "090"]);
+const FON_KZ = new Set([].concat(FON_LLE, FON_FREI, ["020"], FON_VERST, FON_IGE, FON_IGE_V, FON_VST));
+function fonAscii(t) { return String(t || "").replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss").replace(/[‐-―−]/g, "-").replace(/[‘’‚]/g, "'").replace(/[“”„]/g, '"').replace(/€/g, "EUR").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\x20-\x7e]/g, ""); }
+function fonEsc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;"); }
+function fonFastnr(raw) { const z = String(raw || "").replace(/\D/g, ""); return /^\d{9}$/.test(z) ? z : null; }
+function fonZahl(b) { const g = Math.round(b * 100) / 100; return (g === 0 ? 0 : g).toFixed(2); }
+function fonKopf(nr, paket, d, anzahl) {
+  const p = n => String(n).padStart(2, "0"); const v = new Date(d.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));
+  return ["  <INFO_DATEN>", "    <ART_IDENTIFIKATIONSBEGRIFF>FASTNR</ART_IDENTIFIKATIONSBEGRIFF>", "    <IDENTIFIKATIONSBEGRIFF>" + nr + "</IDENTIFIKATIONSBEGRIFF>", "    <PAKET_NR>" + paket + "</PAKET_NR>",
+    '    <DATUM_ERSTELLUNG type="datum">' + v.getFullYear() + "-" + p(v.getMonth() + 1) + "-" + p(v.getDate()) + "</DATUM_ERSTELLUNG>", '    <UHRZEIT_ERSTELLUNG type="uhrzeit">' + p(v.getHours()) + ":" + p(v.getMinutes()) + ":" + p(v.getSeconds()) + "</UHRZEIT_ERSTELLUNG>",
+    "    <ANZAHL_ERKLAERUNGEN>" + anzahl + "</ANZAHL_ERKLAERUNGEN>", "  </INFO_DATEN>"].join("\n");
+}
+function fonAllg(art, von, bis, nr, info) {
+  const z = ["    <ALLGEMEINE_DATEN>", "      <ANBRINGEN>" + art + "</ANBRINGEN>", '      <ZRVON type="jahrmonat">' + von + "</ZRVON>", '      <ZRBIS type="jahrmonat">' + bis + "</ZRBIS>", "      <FASTNR>" + nr + "</FASTNR>"];
+  const i = fonAscii(info).slice(0, 50).trim(); if (i) z.push("      <KUNDENINFO>" + fonEsc(i) + "</KUNDENINFO>"); z.push("    </ALLGEMEINE_DATEN>"); return z.join("\n");
+}
+function fonU30Xml(nr, paket, d) {
+  const w = Object.assign({ "000": 0 }, d.kennzahlen);
+  const nimmt = kz => FON_NULL_OK.has(kz) ? (kz in w) : Math.round((w[kz] || 0) * 100) !== 0;
+  const zeilen = (liste, e) => liste.filter(nimmt).map(kz => " ".repeat(e) + "<KZ" + kz + ' type="kz">' + fonZahl(w[kz] || 0) + "</KZ" + kz + ">");
+  const frei = zeilen(FON_FREI, 8), nach = zeilen(["020"], 8), vst = d.vst && nach.length ? ["        <VST>" + fonEsc(fonAscii(d.vst).slice(0, 4)) + "</VST>"] : [];
+  const verst = zeilen(FON_VERST, 8), ige = zeilen(FON_IGE, 6), igeV = zeilen(FON_IGE_V, 8), vor = zeilen(FON_VST, 6);
+  const igeVB = igeV.length ? ["      <VERSTEUERT_IGE>"].concat(igeV, ["      </VERSTEUERT_IGE>"]) : [];
+  return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), 1), '  <ERKLAERUNG art="U30">', "    <SATZNR>1</SATZNR>", fonAllg("U30", d.von, d.bis, nr, d.kundeninfo),
+    "    <LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH>"].concat(zeilen(FON_LLE, 6),
+    frei.length || nach.length ? ["      <STEUERFREI>"].concat(frei, vst, nach, ["      </STEUERFREI>"]) : [],
+    verst.length ? ["      <VERSTEUERT>"].concat(verst, ["      </VERSTEUERT>"]) : [], ["    </LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH>"],
+    ige.length || igeVB.length ? ["    <INNERGEMEINSCHAFTLICHE_ERWERBE>"].concat(ige, igeVB, ["    </INNERGEMEINSCHAFTLICHE_ERWERBE>"]) : [],
+    vor.length ? ["    <VORSTEUER>"].concat(vor, ["    </VORSTEUER>"]) : [], ["  </ERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
+}
+function fonZmXml(nr, paket, d) {
+  const inhalt = [].concat.apply([], d.zeilen.map(z => { const a = ["    <ZM>", "      <UID_MS>" + fonEsc(fonAscii(z.uid).toUpperCase()) + "</UID_MS>", '      <SUM_BGL type="kz">' + Math.round(z.betrag) + "</SUM_BGL>"]; if (z.dreieck) a.push("      <DREIECK>J</DREIECK>"); if (z.sonstigeLeistung) a.push("      <SOLEI>J</SOLEI>"); a.push("    </ZM>"); return a; }));
+  return ['<?xml version="1.0" encoding="UTF-8"?>', "<ERKLAERUNGS_UEBERMITTLUNG>", fonKopf(nr, paket, d.erstellt || new Date(), 1), '  <ERKLAERUNG art="U13">', "    <SATZNR>1</SATZNR>", fonAllg("U13", d.von, d.bis, nr, d.kundeninfo)].concat(inhalt, ["  </ERKLAERUNG>", "</ERKLAERUNGS_UEBERMITTLUNG>"]).join("\n");
+}
+// Prüfungen vor der Übermittlung (nach "Prüfungen UVA ab 07/2026" und dem Schema). fehler = hält an, hinweis = nur Info.
+function fonPruefeU30(d) {
+  const b = [], w = d.kennzahlen, heute = d.heute || new Date(), ende = new Date(d.bis + "T00:00:00");
+  const wert = kz => Math.round((w[kz] || 0) * 100) / 100, gesetzt = kz => wert(kz) !== 0;
+  if (!fonFastnr(d.steuernummer)) b.push({ art: "fehler", text: d.steuernummer ? "Die Steuernummer „" + d.steuernummer + "“ ergibt keine neun Ziffern (Finanzamts- und Steuernummer zusammen, z. B. 98 123/4567)." : "Ohne Steuernummer geht keine Übermittlung. Bitte oben bei FinanzOnline eintragen." });
+  if (ende >= new Date(heute.getFullYear(), heute.getMonth(), 1)) b.push({ art: "fehler", code: "zeitraum-laeuft", text: "Der Zeitraum ist noch nicht vorbei. Gemeldet wird erst, wenn der Monat oder das Quartal abgeschlossen ist." });
+  if (ende.getFullYear() < heute.getFullYear() - 5) b.push({ art: "fehler", text: "Der Zeitraum liegt mehr als fünf Jahre zurück." });
+  const fremd = Object.keys(w).filter(kz => !FON_KZ.has(kz) && kz !== "095" && gesetzt(kz)); if (fremd.length) b.push({ art: "hinweis", text: "Kennzahl " + fremd.join(", ") + " kennt das amtliche Schema nicht und wird nicht mitgeschickt." });
+  Object.keys(w).forEach(kz => { if (FON_KZ.has(kz) && !FON_NEG_OK.has(kz) && wert(kz) < 0) b.push({ art: "fehler", text: "Kennzahl " + kz + " ist negativ (" + wert(kz).toFixed(2) + "). Nur 063, 067 und 090 dürfen das." }); });
+  const ab0726 = ende >= new Date(2026, 6, 1); ["124", "125"].forEach(kz => { if (gesetzt(kz) && !ab0726) b.push({ art: "fehler", text: "Kennzahl " + kz + " gibt es erst ab dem Voranmeldungszeitraum 07/2026." }); });
+  if ((gesetzt("065") || gesetzt("071")) && !("070" in w)) b.push({ art: "fehler", text: "Zu Kennzahl 065 oder 071 gehört der Gesamtbetrag der ig. Erwerbe (070)." });
+  if (gesetzt("020") && !d.vst) b.push({ art: "fehler", text: "Kennzahl 020 verlangt den Ziffernschlüssel der Steuerbefreiung (VST) – bitte bei FinanzOnline eintragen." });
+  [["048", "082", "Bauleistungen"], ["044", "087", "Sicherungseigentum/Grundstücke"], ["032", "089", "Schrott/Abfall, Handys, Laptops etc."]].forEach(p => { if (gesetzt(p[0]) && !gesetzt(p[1])) b.push({ art: "hinweis", text: p[2] + ": Kennzahl " + p[0] + " ohne " + p[1] + " – meist ist die Vorsteuer in gleicher Höhe abziehbar." }); });
+  const frei = ["011", "012", "015", "017", "018", "019", "016", "020"].reduce((s, kz) => s + wert(kz), 0);
+  if (frei > wert("000") + 0.005) b.push({ art: "fehler", text: "Die steuerfreien Umsätze (" + frei.toFixed(2) + ") sind größer als KZ 000 (" + wert("000").toFixed(2) + ")." });
+  if (gesetzt("071") && wert("071") > wert("070") + 0.005) b.push({ art: "fehler", text: "KZ 071 ist größer als KZ 070." });
+  return b;
+}
+function fonPruefeZm(d) {
+  const b = [], heute = d.heute || new Date(), ende = new Date(d.bis + "T00:00:00");
+  if (!fonFastnr(d.steuernummer)) b.push({ art: "fehler", text: "Ohne neunstellige Steuernummer geht keine Übermittlung." });
+  if (ende >= new Date(heute.getFullYear(), heute.getMonth(), 1)) b.push({ art: "fehler", code: "zeitraum-laeuft", text: "Der Meldezeitraum ist noch nicht vorbei." });
+  if (!d.zeilen.length) b.push({ art: "fehler", text: "Keine ZM-pflichtigen Umsätze in diesem Zeitraum." });
+  d.zeilen.forEach(z => {
+    if (!z.uid) b.push({ art: "fehler", text: z.kunde + " hat keine UID – ohne UID lässt sich der Umsatz nicht melden (und ist auch nicht steuerfrei)." });
+    else if (!/^[A-Z]{2}[0-9A-Z]{2,13}$/.test(z.uid)) b.push({ art: "fehler", text: "Die UID „" + z.uid + "“ (" + z.kunde + ") hat kein gültiges Format." });
+    else if (z.uid.indexOf("AT") === 0) b.push({ art: "fehler", text: z.kunde + " hat eine österreichische UID – Inlandsumsätze gehören nicht in die ZM." });
+    if (z.betrag < 0) b.push({ art: "hinweis", text: z.kunde + " steht mit einem negativen Betrag da. Berichtigungen: die ganze Meldung des Zeitraums neu schicken." });
+  });
+  return b;
+}
+function fonRcText(rc, msg) { return ({ 0: msg || "In Ordnung.", "-1": "Die Sitzung ist abgelaufen.", "-2": "FinanzOnline ist wegen Wartungsarbeiten nicht erreichbar.", "-3": "Bei FinanzOnline ist ein technischer Fehler aufgetreten." + (msg ? " (" + msg + ")" : ""), "-4": msg || "Teilnehmernummer, Webservice-Benutzer oder PIN stimmen nicht bzw. Fehler im Datenstrom.", "-5": "Keine Berechtigung, Inhalte dieser Art zu übermitteln (Webservice-Benutzer braucht das Recht für UVA/ZM)." })[String(rc)] || msg || "FinanzOnline meldet Code " + rc + "."; }
+function fonFeld(xml, name) { const t = xml.match(new RegExp("<(?:[\\w.-]+:)?" + name + "\\b[^>]*>([\\s\\S]*?)</(?:[\\w.-]+:)?" + name + ">")); return t ? t[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&").trim() : null; }
+function fonSoap(ns, root, felder, cdata) {
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns="' + ns + '">\n  <soapenv:Header/>\n  <soapenv:Body>\n    <ns:' + root + ">\n" +
+    felder.map(f => "      <ns:" + f[0] + ">" + (cdata && f[0] === cdata ? "<![CDATA[" + f[1] + "]]>" : fonEsc(f[1])) + "</ns:" + f[0] + ">").join("\n") + "\n    </ns:" + root + ">\n  </soapenv:Body>\n</soapenv:Envelope>";
+}
+async function fonRuf(url, action, body) {
+  let r; try { r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: '"' + action + '"' }, body, signal: AbortSignal.timeout(60000) }); }
+  catch (e) { throw new Error(e && e.name === "TimeoutError" ? "FinanzOnline hat innerhalb einer Minute nicht geantwortet." : "FinanzOnline ist gerade nicht erreichbar."); }   // nie das Request-Objekt weitergeben (PIN)
+  const text = await r.text();
+  if (!r.ok && !/Envelope/.test(text)) throw new Error("FinanzOnline antwortet mit HTTP " + r.status + ".");
+  const fault = fonFeld(text, "faultstring"); if (fault) throw new Error("FinanzOnline meldet: " + fault);
+  return text;
+}
+function fonZugang() {
+  if (!process.env.FON_HERSTELLERID) return { fehlt: "Die Herstellerkennung fehlt (Railway-Variable FON_HERSTELLERID = deine UID, z. B. ATU12345678)." };
+  if (!process.env.FON_TID) return { fehlt: "Die Teilnehmer-Identifikation fehlt (Railway-Variable FON_TID)." };
+  if (!process.env.FON_BENID) return { fehlt: "Der Webservice-Benutzer fehlt (Railway-Variable FON_BENID; in FinanzOnline unter Benutzerverwaltung als Webservice-Benutzer anlegen)." };
+  return { tid: process.env.FON_TID.trim(), benid: process.env.FON_BENID.trim(), herstellerid: process.env.FON_HERSTELLERID.trim(), pinEnv: !!process.env.FON_PIN };
+}
+async function fonUebermitteln(z, pin, art, modus, daten) {
+  const an = await fonRuf(FON.sessionUrl, "login", fonSoap(FON.nsSession, "loginRequest", [["tid", z.tid], ["benid", z.benid], ["pin", pin], ["herstellerid", z.herstellerid]]));
+  const id = fonFeld(an, "id") || "", rc0 = Number(fonFeld(an, "rc") || -3);
+  if (rc0 !== 0 || !id) return { rc: rc0 === 0 ? -3 : rc0, msg: fonRcText(rc0, fonFeld(an, "msg") || "") };
+  try {
+    const up = await fonRuf(FON.uploadUrl, "upload", fonSoap(FON.nsUpload, "fileuploadRequest", [["tid", z.tid], ["benid", z.benid], ["id", id], ["art", art], ["uebermittlung", modus], ["data", daten]], "data"));
+    const rc = Number(fonFeld(up, "rc") || -3), msg = fonFeld(up, "msg") || "";
+    return { rc, msg: rc === 0 ? (msg || "In Ordnung.") : fonRcText(rc, msg) };
+  } finally {
+    try { await fonRuf(FON.sessionUrl, "logout", fonSoap(FON.nsSession, "logoutRequest", [["tid", z.tid], ["benid", z.benid], ["id", id]])); } catch (e) {}
+  }
+}
+// Entwurf aus den aktuellen sevDesk-Daten (serverseitig berechnet)
+async function fonEntwurf(art, key, paket, fresh) {
+  const p = steuerPeriod(key); if (!p) throw new Error("Unbekannter Zeitraum.");
+  const o = readSteuer(), raw = await steuerRaw(!!fresh), nr = fonFastnr(o.settings.steuernummer);
+  const r = STEUER_CALC.computeUva(raw, o, p), von = p.from.slice(0, 7), bis = p.to.slice(0, 7), info = "FS Cockpit " + p.label;
+  if (art === "U30") {
+    const kennzahlen = STEUER_CALC.uvaKzMap(r);
+    const befunde = fonPruefeU30({ steuernummer: o.settings.steuernummer, bis: p.to, kennzahlen, vst: o.settings.vst });
+    if (r.review.length) befunde.push({ art: "fehler", text: r.review.length + " Beleg(e) sind nicht eingeordnet und fehlen in den Kennzahlen. Bitte zuerst in der UVA einordnen." });
+    return { art, p, kennzahlen, zahllast: r.zahllast, befunde, xml: nr ? fonU30Xml(nr, paket, { von, bis, kundeninfo: info, kennzahlen, vst: o.settings.vst }) : "" };
+  }
+  const rows = STEUER_CALC.zmRows(r);
+  const zeilen = rows.filter(x => x.uid && Math.round(x.net) !== 0).map(x => ({ uid: x.uid, betrag: x.net, sonstigeLeistung: x.kind === "S" }));
+  const befunde = fonPruefeZm({ steuernummer: o.settings.steuernummer, bis: p.to, zeilen: rows.map(x => ({ uid: x.uid, kunde: x.kunde, betrag: x.net })) });
+  return { art, p, kennzahlen: { zeilen: zeilen.length, summe: Math.round(rows.reduce((a, x) => a + x.net, 0) * 100) / 100 }, befunde, xml: nr ? fonZmXml(nr, paket, { von, bis, kundeninfo: info, zeilen }) : "" };
+}
+async function fonSenden(pl, modus) {
+  const art = pl.art === "U13" ? "U13" : "U30", key = String(pl.key || "");
+  if (modus === "P" && String(pl.bestaetigung || "").trim().toLowerCase() !== "abgeben") throw new Error("Zum verbindlichen Abgeben bitte „abgeben“ eintippen.");
+  const z = fonZugang(); if (z.fehlt) throw new Error(z.fehlt);
+  const pin = String(pl.pin || "").trim() || String(process.env.FON_PIN || "").trim(); if (!pin) throw new Error("Ohne das PIN des Webservice-Benutzers geht keine Übermittlung.");
+  // Entwurf aus frischen sevDesk-Daten, gegen die Anzeige im Browser abgleichen, erst dann Paketnummer ziehen
+  const e = await fonEntwurf(art, key, 999999999, true);
+  if (e.befunde.some(b => b.art === "fehler")) throw new Error("So nimmt FinanzOnline das Paket nicht an: " + e.befunde.filter(b => b.art === "fehler").map(b => b.text).join(" "));
+  if (art === "U30" && pl.expectZahllast != null && Math.abs(Number(pl.expectZahllast) - e.zahllast) > 0.005) throw new Error("Die Daten in sevDesk haben sich geändert (Zahllast jetzt " + e.zahllast.toFixed(2) + " statt " + Number(pl.expectZahllast).toFixed(2) + "). Bitte neu laden und erneut prüfen.");
+  const o0 = readSteuer(); const paket = o0.fon.nextPaket || 1; o0.fon.nextPaket = paket >= 999999998 ? 1 : paket + 1; writeSteuer(o0);
+  e.xml = e.xml.replace("<PAKET_NR>999999999</PAKET_NR>", "<PAKET_NR>" + paket + "</PAKET_NR>");
+  let rc = -3, msg = "";
+  try { const a = await fonUebermitteln(z, pin, art, modus, e.xml); rc = a.rc; msg = a.msg; } catch (err) { msg = String(err && err.message || "Unbekannter Fehler bei der Übermittlung."); }
+  const status = rc === 0 ? (modus === "P" ? "eingereicht" : "geprüft") : (rc === -2 || rc === -3 ? "fehler" : "abgewiesen");
+  const o = readSteuer();
+  o.fon.archive.unshift({ at: new Date().toISOString(), art, key, label: e.p.label, modus, paket, rc, msg: String(msg).slice(0, 2000), status, kennzahlen: e.kennzahlen, zahllast: e.zahllast, xml: e.xml });
+  o.fon.archive = o.fon.archive.slice(0, 120);
+  if (rc === 0 && modus === "P" && art === "U30") o.uva[key] = Object.assign({}, o.uva[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, kz: e.kennzahlen }, fon: { paket, at: new Date().toISOString() } });
+  writeSteuer(o);
+  return { ok: rc === 0, rc, msg, status, paket, steuer: steuerPublic(o) };
+}
+
+// ── sevDesk-Abgleich: Schreibzugriffe nur auf ausdrücklichen Klick mit Bestätigung, nie für festgeschriebene Belege ──
+const SEV_RULES_EXPENSE = ["8", "9", "10", "12", "13", "14"];
+async function sevFixTaxRule(pl) {
+  if (pl.confirm !== true) throw new Error("bestaetigung_fehlt");
+  const id = String(pl.id || "").replace(/\D/g, ""), rule = String(pl.taxRule || "");
+  if (!id || SEV_RULES_EXPENSE.indexOf(rule) < 0) throw new Error("ungueltig");
+  const j = await sev("GET", "/Voucher/" + id); const v = j && j.objects && (Array.isArray(j.objects) ? j.objects[0] : j.objects);
+  if (!v) throw new Error("Beleg nicht gefunden.");
+  if (v.enshrined) throw new Error("Der Beleg ist in sevDesk festgeschrieben und kann nicht geändert werden.");
+  if (v.creditDebit !== "C") throw new Error("Nur Ausgabenbelege.");
+  if (!(v.taxRule && v.taxRule.id)) throw new Error("Dieses sevDesk-Konto verwendet noch keine Steuerregeln (Update 2.0).");
+  await sev("PUT", "/Voucher/" + id, { body: { taxRule: { id: rule, objectName: "TaxRule" } } });
+  STEUER_CACHE.at = 0;
+  return { id, taxRule: rule };
+}
+async function sevTagUva(pl) {
+  if (pl.confirm !== true) throw new Error("bestaetigung_fehlt");
+  const p = steuerPeriod(pl.key); if (!p) throw new Error("Unbekannter Zeitraum.");
+  const o = readSteuer(), raw = await steuerRaw(false), r = STEUER_CALC.computeUva(raw, o, p);
+  const name = "UVA-" + p.year + "-" + p.key.slice(5), seen = new Set(), objs = [];
+  Object.keys(r.docs).forEach(kz => r.docs[kz].forEach(x => { const d = x.doc; if (!d || /^manual/.test(d.id)) return; const on = x.kind === "in" || x.kind === "vin" ? "Voucher" : (/^cn/.test(d.id) ? "CreditNote" : "Invoice"); const sid = d.sevId || d.id; if (seen.has(on + sid)) return; seen.add(on + sid); objs.push({ id: sid, objectName: on }); }));
+  r.zm.forEach(z => { const sid = z.doc.sevId || z.doc.id; const on = /^cn/.test(z.doc.id) ? "CreditNote" : "Invoice"; if (!seen.has(on + sid)) { seen.add(on + sid); objs.push({ id: sid, objectName: on }); } });
+  let ok = 0, fail = 0;
+  for (const ob of objs.slice(0, 300)) { try { await sev("POST", "/Tag/Factory/create", { body: { name, object: { id: Number(ob.id), objectName: ob.objectName } } }); ok++; } catch (e) { fail++; } }
+  const o2 = readSteuer(); o2.uva[p.key] = Object.assign({}, o2.uva[p.key] || {}, { tagged: { name, at: new Date().toISOString(), ok, fail } }); writeSteuer(o2);
+  return { name, tagged: ok, fail, total: objs.length, steuer: steuerPublic(o2) };
+}
+// USt-Vorauszahlung als Beleg anlegen und mit der Bankbuchung verknüpfen (gleicher Weg wie Belege aus Mails: saveVoucher + bookAmount)
+async function sevUstPayment(pl) {
+  if (pl.confirm !== true) throw new Error("bestaetigung_fehlt");
+  const p = steuerPeriod(pl.key); if (!p) throw new Error("Unbekannter Zeitraum.");
+  const raw = await steuerRaw(false); const t = (raw.transactions || []).find(x => x.id === String(pl.transactionId || ""));
+  if (!t) throw new Error("Bankbuchung nicht gefunden.");
+  const amount = Math.round(Math.abs(t.amount) * 100) / 100; if (!(amount > 0)) throw new Error("kein_betrag");
+  // Eigene Abfrage: sevMeta blendet Steuer-Kategorien (VAT/VATPAY) bewusst aus
+  let at = String(pl.accountingTypeId || "").replace(/\D/g, "");
+  if (!at) { const all = await sev("GET", "/AccountingType", { query: { limit: 1000 } }).catch(() => ({ objects: [] }));
+    const hit = ((all && all.objects) || []).filter(a => String(a.active) !== "0").find(a => /umsatzsteuer.*voraus|ust.*voraus|voraus.*umsatzsteuer|zahllast|umsatzsteuer.*finanzamt/i.test(a.name || "")); at = hit ? String(hit.id) : ""; }
+  if (!at) throw new Error("In sevDesk wurde keine Buchungskategorie für die USt-Vorauszahlung gefunden. Bitte den Beleg einmal manuell anlegen.");
+  const body = {
+    voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(t.date), supplierName: "Finanzamt Österreich", description: "USt-Vorauszahlung " + p.label, status: 100, taxType: "default", creditDebit: "C", voucherType: "VOU", currency: "EUR" },
+    voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: 0, net: false, sumGross: amount, sumNet: amount, comment: "USt-Vorauszahlung " + p.label }],
+    voucherPosDelete: null,
+  };
+  const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
+  const v = j && j.objects && (j.objects.voucher || j.objects) || {}; const vid = String(v.id || ""); if (!vid) throw new Error("Beleg konnte nicht angelegt werden.");
+  let booked = false, bookErr = "";
+  try { await sev("PUT", "/Voucher/" + vid + "/bookAmount", { body: { amount, date: Math.floor(Date.parse(t.date + "T12:00:00Z") / 1000), type: "N", createFeed: true, checkAccount: { id: t.accountId, objectName: "CheckAccount" }, checkAccountTransaction: { id: t.id, objectName: "CheckAccountTransaction" } } }); booked = true; }
+  catch (e) { bookErr = String(e.message || e).slice(0, 200); }
+  STEUER_CACHE.at = 0; SEV_CACHE.at = 0;
+  const o = readSteuer(); o.uva[p.key] = Object.assign({}, o.uva[p.key] || {}, { paid: { voucherId: vid, transactionId: t.id, amount, date: t.date, booked } }); writeSteuer(o);
+  return { voucherId: vid, booked, bookErr, steuer: steuerPublic(o) };
 }
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
@@ -1627,13 +1911,33 @@ async function handleAdmin(req, res, u, p) {
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/steuer" && req.method === "GET") {
-    const st = readSteuer();
-    try { const raw = await steuerRaw(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(Object.assign({ ok: true }, st, { data: raw })), TYPES[".json"], { "Cache-Control": "no-store" }); }
-    catch (e) { return send(res, 200, JSON.stringify(Object.assign({ ok: false, error: String(e && e.message || e).slice(0, 200) }, st)), TYPES[".json"]); }
+    const st = steuerPublic(readSteuer()); const z = fonZugang();
+    const fonCfg = { ready: !z.fehlt, fehlt: z.fehlt || "", pinEnv: !!z.pinEnv };
+    try { const raw = await steuerRaw(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(Object.assign({ ok: true, fonCfg }, st, { data: raw })), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify(Object.assign({ ok: false, fonCfg, error: String(e && e.message || e).slice(0, 200) }, st)), TYPES[".json"]); }
   }
   if (p === "/admin/api/steuer" && req.method === "POST") {
-    try { const pl = await sevBody(req, 100000); const o = steuerOp(pl); return send(res, 200, JSON.stringify({ ok: true, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs }), TYPES[".json"]); }
+    try { const pl = await sevBody(req, 300000); const o = steuerOp(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, steuerPublic(o))), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  // sevDesk-Abgleich: Steuerregel korrigieren, UVA-Tags setzen, USt-Zahlung als Beleg – jeweils nur mit confirm:true aus dem Bestätigungsdialog
+  if ((p === "/admin/api/steuer/sevfix" || p === "/admin/api/steuer/sevtag" || p === "/admin/api/steuer/ustpay") && req.method === "POST") {
+    try { const pl = await sevBody(req, 20000); const r = p.endsWith("sevfix") ? await sevFixTaxRule(pl) : p.endsWith("sevtag") ? await sevTagUva(pl) : await sevUstPayment(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  // FinanzOnline: XML-Vorschau, Prüfung (T) und verbindliche Abgabe (P). PIN nur im Request-Body, wird nicht gespeichert.
+  if (p === "/admin/api/fon/xml" && req.method === "POST") {
+    try { const pl = await sevBody(req, 20000); const e = await fonEntwurf(pl.art === "U13" ? "U13" : "U30", String(pl.key || ""), 999999999, pl.fresh === true); return send(res, 200, JSON.stringify({ ok: true, art: e.art, xml: e.xml, befunde: e.befunde, kennzahlen: e.kennzahlen, zahllast: e.zahllast }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/fon/archiv" && req.method === "GET") {
+    const o = readSteuer(), i = parseInt(u.searchParams.get("i"), 10), a = o.fon.archive[i];
+    if (!a) return send(res, 404, "nicht gefunden", "text/plain");
+    return send(res, 200, a.xml || "", "application/xml; charset=utf-8", { "Content-Disposition": 'attachment; filename="' + a.art + "_" + a.key + "_" + a.paket + '.xml"', "Cache-Control": "no-store" });
+  }
+  if ((p === "/admin/api/fon/check" || p === "/admin/api/fon/submit") && req.method === "POST") {
+    try { const pl = await sevBody(req, 20000); const r = await fonSenden(pl, p.endsWith("submit") ? "P" : "T"); pl.pin = undefined; return send(res, 200, JSON.stringify(r), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 400) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ leads: readLeads().reverse() }), TYPES[".json"], { "Cache-Control": "no-store" });
