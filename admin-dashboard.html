@@ -903,6 +903,26 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
 .lastinv a{font-weight:700;color:var(--accent);text-decoration:none}
 .lastinv .pill{font-size:10.5px;padding:2px 8px}
 .bdue{font-size:12px;font-weight:700;color:var(--amber)}
+.bexp{width:22px;height:22px;flex:none;border:1px solid var(--line);background:var(--card);border-radius:7px;cursor:pointer;color:var(--dim);font-size:11px;display:grid;place-items:center;padding:0}
+.bexp:hover{border-color:var(--accent);color:var(--accent)}
+.brow.open td{border-bottom:none}
+.bcost{font-size:11px;color:var(--faint);margin-top:2px;white-space:nowrap}
+tr.bdetail td{background:#f7f9fd;padding:12px 14px 16px}
+body.dark tr.bdetail td{background:#151c2b}
+.cdet{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.cd-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.cd-card h5{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:0 0 8px}
+.cd-big{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}.cd-big span{font-size:12px;font-weight:600;color:var(--faint)}
+.cd-sub{font-size:11.5px;color:var(--faint)}
+.cd-empty{font-size:12.5px;color:var(--faint);padding:6px 0}
+.cd-parts{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.cd-parts div,.cd-row,.cd-dom{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+.cd-parts span,.cd-row span{color:var(--dim)}
+.cd-dom{padding:3px 0}.cd-dom em{font-style:normal;color:var(--faint);font-size:11px}
+.cd-row{padding:3px 0}.cd-row.tot{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;font-weight:800}
+.cd-row .pos{color:var(--green)}.cd-row .neg{color:var(--red)}
+.oc-cost{color:var(--dim)!important;font-weight:600}
+@media(max-width:900px){ .cdet{grid-template-columns:1fr} }
 .bok{font-size:12px;font-weight:600;color:var(--green)}
 .bact{display:inline-flex;gap:5px;justify-content:flex-end}
 .bact .btn.icon{width:30px;height:30px;padding:0;display:inline-grid;place-items:center}
@@ -2979,7 +2999,7 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
     if(name==="postfach") renderMailAll();
     else if(name==="todo") renderTodos();
     else if(name==="kalender") renderCalendar();
-    else if(name==="fscreative"){ loadSites(false); billLoad(); try{ renderBilling(); }catch(e){} }
+    else if(name==="fscreative"){ loadSites(false); billLoad(); rwcLoad(false); try{ renderBilling(); }catch(e){} }
     else if(name==="finanzen"){ renderFinanzen(); finLoad(false); }
     if(name==="kochdu"||name==="blitzdings"||name==="valuero") clearBookingBadge(name);
   }
@@ -3951,6 +3971,33 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
     return list.sort(function(a,b){ return a.name.localeCompare(b.name,"de"); });
   }
   function siteLink(s,inner){ return s.url?'<a class="bslink" href="'+esc(s.url)+'" target="_blank" rel="noopener" title="Website öffnen">'+inner+'</a>':inner; }
+
+  // ---- Echte Kosten je Website: Railway (letzte 30 Tage) + Domains (world4you-Preisliste) ----
+  window.__RWC=window.__RWC||null;
+  function rwcLoad(force){ if(!window.__FSD_HOSTED) return; fetch("/admin/api/railway-costs"+(force?"?force=1":""),{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){ window.__RWC=d; try{ if(activeTab==="fscreative") renderBilling(); }catch(e){} }).catch(function(){}); }
+  // world4you, reguläre Preise inkl. 20 % USt pro Jahr (1. Jahr Aktionspreis in Klammern)
+  var W4Y={"at":{y:36,p1:12},"co.at":{y:36,p1:12},"or.at":{y:36,p1:12},"com":{y:24,p1:12},"ch":{y:14.04,p1:6.96},"net":{y:24},"org":{y:17.04},"eu":{y:19.92},"info":{y:null,p1:3.96},"de":{y:null,p1:5.04}};
+  function regDomains(s){ var seen={}, out=[]; (s.domains||[]).forEach(function(d){ d=String(d||"").toLowerCase().replace(/^www\./,""); if(!d||/\.up\.railway\.app$/.test(d)) return; var parts=d.split("."); var n=(/\.(co|or|gv|ac)\.at$/.test(d))?3:2; var reg=parts.slice(-n).join("."); if(seen[reg]) return; seen[reg]=1; var tld=parts.slice(-(n-1)).join("."); var pr=W4Y[tld]||null; out.push({name:reg,tld:tld,year:pr?pr.y:null,p1:pr?pr.p1:null}); }); return out; }
+  function siteCosts(s){
+    var r=window.__RWC, p=(r&&r.projects&&s.rwId)?r.projects[s.rwId]:null, fx=(r&&r.fx)||0.86;
+    var rwMonth=p?p.eur:0, parts={}; if(p&&p.parts) Object.keys(p.parts).forEach(function(k){ parts[k]=Math.round(p.parts[k]*fx*100)/100; });
+    var doms=regDomains(s), domYear=doms.reduce(function(a,d){ return a+(d.year||0); },0);
+    return {loaded:!!(r&&r.projects), hasRw:!!s.rwId, rwMonth:rwMonth, rwYear:Math.round(rwMonth*365/30*100)/100, parts:parts, doms:doms, domYear:Math.round(domYear*100)/100, year:Math.round((rwMonth*365/30+domYear)*100)/100, fx:fx};
+  }
+  function costDetail(s,c){
+    var k=siteCosts(s), P=billPrices(), n=+P.period||12, inc=siteSum(s,c)*12/n;
+    var PL={cpu:"CPU",ram:"Arbeitsspeicher",egress:"Datenverkehr",disk:"Speicher (Volume)",backup:"Backups"};
+    var rw=!k.hasRw?'<div class="cd-empty">Kein Railway-Projekt (nur Domain/Cloudflare)</div>':(!k.loaded?'<div class="cd-empty">Lade Railway-Kosten …</div>':
+      '<div class="cd-big">'+eur(k.rwMonth)+' <span>/ Monat</span></div><div class="cd-sub">≈ '+eur(k.rwYear)+' pro Jahr · letzte 30 Tage</div>'+
+      '<div class="cd-parts">'+Object.keys(PL).filter(function(x){ return k.parts[x]>=0.005; }).map(function(x){ return '<div><span>'+PL[x]+'</span><b>'+eur(k.parts[x])+'</b></div>'; }).join("")+'</div>');
+    var dm=k.doms.length?k.doms.map(function(d){ return '<div class="cd-dom"><span><b>'+esc(d.name)+'</b> <em>.'+esc(d.tld)+'</em></span><b>'+(d.year!=null?eur(d.year)+' / Jahr':'Preis unbekannt')+'</b></div>'+(d.p1?'<div class="cd-sub" style="margin:-2px 0 6px">1. Jahr bei Neuregistrierung: '+eur(d.p1)+'</div>':''); }).join(""):'<div class="cd-empty">Keine eigene Domain</div>';
+    var res=inc-k.year;
+    var bal='<div class="cd-row"><span>Einnahmen</span><b class="pos">'+eur(inc)+'</b></div>'+
+      '<div class="cd-row"><span>Railway</span><b class="neg">− '+eur(k.rwYear)+'</b></div>'+
+      '<div class="cd-row"><span>Domain'+(k.doms.length>1?"s":"")+'</span><b class="neg">− '+eur(k.domYear)+'</b></div>'+
+      '<div class="cd-row tot"><span>Ergebnis</span><b class="'+(res>=0?"pos":"neg")+'">'+(res<0?"− ":"")+eur(Math.abs(res))+'</b></div>';
+    return '<div class="cdet"><div class="cd-card"><h5>Hosting · Railway</h5>'+rw+'</div><div class="cd-card"><h5>Domain'+(k.doms.length>1?"s":"")+' · world4you</h5>'+dm+'<div class="cd-sub" style="margin-top:6px">reguläre Preise inkl. 20 % USt</div></div><div class="cd-card"><h5>Bilanz pro Jahr</h5>'+bal+'<div class="cd-sub" style="margin-top:6px">Einnahmen '+(P.gross?"brutto":"netto")+' · Railway in € (Kurs '+String(k.fx).replace(".",",")+')</div></div></div>';
+  }
   function siteCfg(s){ var d=billData(); var c=(d&&d.sites&&d.sites[s.key])||{}; return {active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:(c.own!=null)?!!c.own:OWN_DEFAULT.test(s.name)}; }
   function perPeriod(price,per,period){ price=+price||0; return per==="year"?price*period/12:price*period; }
   function siteLines(s,c){ var P=billPrices(), n=+P.period||12, L=[];
@@ -3973,10 +4020,11 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
     var perYear=act.reduce(function(a,x){ return a+siteSum(x.s,x.c)*12/n; },0);
     var due=act.filter(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; });
     var dueSum=due.reduce(function(a,x){ return a+siteSum(x.s,x.c); },0);
+    var costAct=Math.round(act.reduce(function(a,x){ return a+siteCosts(x.s).year; },0)*100)/100;
     var noPrice=!(+P.domain||+P.hosting||+P.mail);
     var kp=document.getElementById("bill-kpis");
     if(kp) kp.innerHTML='<div class="card bk"><div class="lbl">Aktive Kunden-Websites</div><div class="v">'+act.length+'</div><div class="s">von '+all.filter(function(x){return !x.c.own;}).length+' Kundenprojekten</div></div>'+
-      '<div class="card bk"><div class="lbl">Wiederkehrend</div><div class="v green">'+eur(perYear)+'</div><div class="s">pro Jahr · '+(P.gross?"brutto":"netto")+'</div></div>'+
+      '<div class="card bk"><div class="lbl">Wiederkehrend</div><div class="v green">'+eur(perYear)+'</div><div class="s">pro Jahr · '+(P.gross?"brutto":"netto")+(costAct?' · Kosten '+eur(costAct)+' · Ergebnis '+eur(perYear-costAct):'')+'</div></div>'+
       '<div class="card bk'+(due.length?" warn":"")+'"><div class="lbl">Jetzt zu verrechnen</div><div class="v'+(due.length?" amber":"")+'">'+eur(dueSum)+'</div><div class="s">'+due.length+' Website'+(due.length===1?"":"s")+' fällig</div></div>';
     var hint=document.getElementById("bill-hint"); if(hint) hint.textContent="Abrechnung pro "+(PERLBL[n]||n+" Monate")+" · Preise "+(P.gross?"brutto":"netto");
     var warn=document.getElementById("bill-noprice"); if(warn) warn.style.display=noPrice?"":"none";
@@ -3985,20 +4033,22 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
       var dot='<span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'" title="'+(s.up===false?"offline":(s.up?"online":"ohne Cloudflare"))+'"></span>';
       var chk=function(f,t){ return '<td class="c"><input type="checkbox" data-bf="'+f+'"'+(c[f]?" checked":"")+' title="'+t+'"></td>'; };
       var state2=!c.active?'<span class="hint">inaktiv</span>':(c.billedUntil&&!isDue?'<span class="bok">verrechnet bis '+fmtDE(c.billedUntil)+'</span>':'<span class="bdue">'+(c.billedUntil?"fällig seit "+fmtDE(dAdd(c.billedUntil,1)):"noch nie verrechnet")+'</span>');
-      return '<tr class="brow'+(c.active?"":" inactive")+'" data-bkey="'+esc(s.key)+'">'+
-        '<td><div class="bsite">'+dot+'<div>'+siteLink(s,'<b>'+esc(s.name)+'</b>')+(s.url?'<a class="bsurl" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+(s.domain?"":" <em>(Railway)</em>")+' ↗</a>':'<span class="bsurl none">ohne Domain</span>')+'</div></div></td>'+
+      var open=!!(fscUI.exp&&fscUI.exp[s.key]); var kc=siteCosts(s);
+      return '<tr class="brow'+(c.active?"":" inactive")+(open?" open":"")+'" data-bkey="'+esc(s.key)+'">'+
+        '<td><div class="bsite"><button class="bexp" data-bexp="'+esc(s.key)+'" title="Kosten anzeigen">'+(open?"▾":"▸")+'</button>'+dot+'<div>'+siteLink(s,'<b>'+esc(s.name)+'</b>')+(s.url?'<a class="bsurl" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+(s.domain?"":" <em>(Railway)</em>")+' ↗</a>':'<span class="bsurl none">ohne Domain</span>')+'</div></div></td>'+
         '<td><input class="cell bcust" data-bf="customer" list="bill-contacts" value="'+esc(c.customer)+'" placeholder="'+esc(s.name)+'"></td>'+
         chk("active","Wird verrechnet")+chk("domain","Domain")+chk("hosting","Hosting")+
         '<td class="c"><input type="checkbox" data-bf="mail"'+(c.mail?" checked":"")+' title="E-Mail">'+(c.mail?'<input class="cell bqty" type="number" min="1" data-bf="mailQty" value="'+c.mailQty+'" title="Anzahl Postfächer">':'')+'</td>'+
         '<td><div class="bextra"><input class="cell" type="number" step="0.01" min="0" data-bf="extra" value="'+(c.extra||"")+'" placeholder="0,00" title="Freier Betrag pro Abrechnung"><input class="cell" data-bf="extraLabel" value="'+esc(c.extraLabel)+'" placeholder="wofür?"></div></td>'+
-        '<td class="num"><b>'+eur(sum)+'</b><div class="hint">pro '+(PERLBL[n]||n+" Mon.")+'</div></td>'+
+        '<td class="num"><b>'+eur(sum)+'</b><div class="hint">pro '+(PERLBL[n]||n+" Mon.")+'</div>'+(kc.loaded||kc.domYear?'<div class="bcost" title="Echte Kosten pro Jahr (Railway + Domain)">Kosten '+eur(kc.year)+'/J</div>':'')+'</td>'+
         '<td>'+invInfo(li)+'<div>'+state2+'</div></td>'+
         '<td class="num"><div class="bact"><button class="btn sm'+(c.active&&sum>0&&isDue?" primary":"")+'" data-bbill="'+esc(s.key)+'"'+(c.active&&sum>0?"":" disabled")+'>Verrechnen</button>'+
           (li?'<button class="btn sm icon" data-bunbill="'+esc(s.key)+'" title="Letzte Abrechnung zurücknehmen (Rechnung in sevDesk bleibt bestehen)">↺</button>':'')+
-          '<button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="1" title="Zu „Eigene Projekte“ verschieben">⤓</button></div></td></tr>';
+          '<button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="1" title="Zu „Eigene Projekte“ verschieben">⤓</button></div></td></tr>'+
+        (open?'<tr class="bdetail"><td colspan="10">'+costDetail(s,c)+'</td></tr>':'');
     }).join(""):'<tr><td colspan="10" class="empty">Keine Kundenprojekte'+(q?" für diese Suche":"")+'.</td></tr>';
     var oh=document.getElementById("own-projects");
-    if(oh) oh.innerHTML=own.length?own.map(function(x){ var s=x.s; return '<div class="own-card"><span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'"></span><div class="oc-m">'+siteLink(s,'<b>'+esc(s.name)+'</b>')+(s.url?'<a class="bsurl" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+' ↗</a>':'<span>ohne Domain</span>')+'</div><button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="0" title="Als Kundenprojekt führen">⤒</button></div>'; }).join(""):'<div class="hint" style="padding:6px">Keine eigenen Projekte markiert.</div>';
+    if(oh) oh.innerHTML=own.length?own.map(function(x){ var s=x.s; return '<div class="own-card"><span class="bdot" style="background:'+(s.up===false?"var(--red)":(s.up?"var(--green)":"#c3cad6"))+'"></span><div class="oc-m">'+siteLink(s,'<b>'+esc(s.name)+'</b>')+(s.url?'<a class="bsurl" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+' ↗</a>':'<span>ohne Domain</span>')+(function(){ var kc=siteCosts(s); return (kc.loaded&&kc.hasRw)||kc.domYear?'<span class="oc-cost">Kosten '+eur(kc.year)+' / Jahr'+(kc.hasRw&&kc.loaded?' · Railway '+eur(kc.rwMonth)+'/M':'')+'</span>':''; })()+'</div><button class="btn sm icon" data-bown="'+esc(s.key)+'" data-v="0" title="Als Kundenprojekt führen">⤒</button></div>'; }).join(""):'<div class="hint" style="padding:6px">Keine eigenen Projekte markiert.</div>';
     var dl=document.getElementById("bill-contacts");
     if(dl&&!dl.childNodes.length&&typeof finMeta==="function") finMeta(function(m){ dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
   }
@@ -4053,6 +4103,7 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
   });
   document.body.addEventListener("click",function(e){
     var t=e.target;
+    var bx=t.closest("[data-bexp]"); if(bx){ fscUI.exp=fscUI.exp||{}; var kx=bx.getAttribute("data-bexp"); fscUI.exp[kx]=!fscUI.exp[kx]; if(!window.__RWC) rwcLoad(false); renderBilling(); return; }
     var bb=t.closest("[data-bbill]"); if(bb){ billSite(bb.getAttribute("data-bbill")); return; }
     var bo=t.closest("[data-bown]"); if(bo){ billSetSite(bo.getAttribute("data-bown"),{own:bo.getAttribute("data-v")==="1"}); return; }
     var bu=t.closest("[data-bunbill]"); if(bu){ if(!confirm("Letzte Abrechnung dieser Website zurücknehmen? Die Rechnung in sevDesk bleibt bestehen – bitte dort bei Bedarf löschen oder stornieren.")) return; billPost({op:"unbill",key:"site:"+bu.getAttribute("data-bunbill")}); return; }
