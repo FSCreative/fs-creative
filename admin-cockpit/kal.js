@@ -136,7 +136,7 @@ function rerender(){ if(F.D&&F.current==="kal") F.render(); }
 /* Heute-Ansicht & Suche: F.D.events aktuell halten (gleiches Fenster wie der Server: gestern bis +60 Tage) */
 function syncD(){
   if(!F.D||!CAL.ready) return; var t=today(), a=addDays(t,-1), b=addDays(t,60);
-  F.D.events=allEvents().filter(function(e){ return e.date>=a&&e.date<=b; }).map(function(e){ return {id:e.id,title:e.title,date:e.date,time:e.time||"",endTime:e.endTime||"",location:e.location||"",sparte:e.sparte,source:e.source==="manual"?"manuell":e.source==="outlook"?"kalender":"icloud"}; })
+  F.D.events=allEvents().filter(function(e){ return e.date>=a&&e.date<=b; }).map(function(e){ return {id:e.id,title:e.title,date:e.date,time:e.time||"",endTime:e.endTime||"",location:e.location||"",sparte:e.sparte,cal:e.calName||e.cal||"",source:e.source==="manual"?"manuell":e.source==="outlook"?"kalender":"icloud"}; })
     .sort(function(x,y){ return (x.date+(x.time||"")).localeCompare(y.date+(y.time||"")); });
 }
 function allEvents(){

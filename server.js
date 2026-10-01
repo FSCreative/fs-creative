@@ -496,6 +496,16 @@ function buildIcs(ev, uid) {
 }
 
 let PRIV_CACHE = { at: 0, data: null, p: null };
+let ICAL_LIST = { at: 0, key: "", cals: null };
+async function icloudAllCals(c) {
+  const key = c.user + "|" + c.calUrl;
+  if (ICAL_LIST.cals && ICAL_LIST.key === key && Date.now() - ICAL_LIST.at < 3600000) return ICAL_LIST.cals;
+  let cals = [];
+  try { cals = (await icloudDiscover(c.user, c.pass)) || []; } catch (e) { cals = []; }
+  if (!cals.some(x => x.url === c.calUrl)) cals.unshift({ url: c.calUrl, name: c.calName, color: c.calColor });
+  ICAL_LIST = { at: Date.now(), key, cals };
+  return cals;
+}
 async function privateCalendar(force) {
   const c = icloudCfg();
   if (!c.user || !c.pass || !c.calUrl) return { configured: false, events: [] };
@@ -506,17 +516,23 @@ async function privateCalendar(force) {
     const f = d => icsDt(new Date(d));
     const body = '<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="' + f(fromMs) + '" end="' + f(toMs) + '"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>';
     try {
+      // alle Kalender des Kontos (nicht nur den gewählten) – Fehler einzelner Kalender überspringen
+      const cals = c.allCals === false ? [{ url: c.calUrl, name: c.calName, color: c.calColor }] : await icloudAllCals(c);
       const r = await dav("REPORT", c.calUrl, { user: c.user, pass: c.pass, depth: 1, body });
       if (r.status === 401 || r.status === 403) return { configured: true, calName: c.calName, error: "login_failed", events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
       if (r.status >= 400) return { configured: true, calName: c.calName, error: "http_" + r.status, events: (PRIV_CACHE.data && PRIV_CACHE.data.events) || [] };
       const events = [];
-      for (const blk of xmlResponses(r.text)) {
+      const take = (text, cal) => { for (const blk of xmlResponses(text)) {
         const href = ((blk.match(/<(?:[\w-]+:)?href[^>]*>([^<]+)</i) || [])[1] || "").trim();
         const etag = xmlUnesc(xmlTag(blk, "getetag")).trim();
         const data = xmlUnesc(xmlTag(blk, "calendar-data"));
         if (!data) continue;
-        icsToEvents(data, absUrl(c.calUrl, href), etag, fromMs, toMs).forEach(e => events.push(e));
-      }
+        icsToEvents(data, absUrl(cal.url, href), etag, fromMs, toMs).forEach(e => { e.calName = cal.name || ""; e.calColor = cal.color || ""; e.primaryCal = cal.url === c.calUrl; events.push(e); });
+      } };
+      take(r.text, { url: c.calUrl, name: c.calName, color: c.calColor });
+      const others = cals.filter(x => x.url && x.url !== c.calUrl);
+      const res2 = await Promise.all(others.map(x => dav("REPORT", x.url, { user: c.user, pass: c.pass, depth: 1, body }).then(rr => ({ rr, x })).catch(() => null)));
+      res2.forEach(o => { if (o && o.rr && o.rr.status < 400) take(o.rr.text, o.x); });
       const out = { configured: true, calName: c.calName, calColor: c.calColor, user: c.user, fetchedAt: new Date().toISOString(), events };
       PRIV_CACHE = { at: Date.now(), data: out, p: null };
       return out;
@@ -1318,7 +1334,7 @@ async function cockpitBuild(year, forceForecast) {
   const msgs = mail && Array.isArray(mail.messages) ? mail.messages : [];
   const events = [].concat(
     (cal && cal.events || []).map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || e.start || "").slice(0, 10), time: e.time || "", source: "kalender" })),
-    (pc && pc.events || []).map(e => ({ id: e.id, title: e.title, date: e.date, time: e.time, endTime: e.endTime, location: e.location, source: "icloud" })),
+    (pc && pc.events || []).map(e => ({ id: e.id, title: e.title, date: e.date, time: e.time, endTime: e.endTime, location: e.location, source: "icloud", cal: e.calName || "" })),
     readEvents().map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || "").slice(0, 10), time: e.time || "", source: "manuell", sparte: e.sparte || "" }))
   ).filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= ymdAdd(today, -1) && e.date <= ymdAdd(today, 60)).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   const income = await withTimeout(incomeForecast({ today, year, k, ko, va, ski, sites, force: forceForecast }), 10000, null);

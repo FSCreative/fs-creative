@@ -44,7 +44,10 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     var shown=UI.feedAll?f:f.slice(0,12);
     var items=shown.map(function(x){ return '<li class="item"><span class="sev '+x.sev+'"></span><span class="ico">'+F.svg(x.icon)+'</span><div style="min-width:0"><div class="t"><span class="tag '+x.tag[0]+'">'+esc(x.tag[1])+'</span>'+esc(x.t)+'</div><div class="d">'+esc(x.d)+'</div></div><div class="acts">'+x.acts.map(function(a){ return '<button class="btn '+(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+'<button class="btn icon" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">✕</button></div></li>'; }).join("");
     var ab=D.abgleich.totals, sev=D.sev, cust=(D.sites||[]).filter(function(s){return !s.own&&s.active;}), bad=cust.filter(F.siteBad);
-    var todayEv=D.events.filter(function(e){return e.date===today;}), nextEv=todayEv.length?todayEv:D.events.filter(function(e){return e.date>today;}).slice(0,4);
+    /* alle Kalender (Dashboard, Mail-Kalender, alle iCloud-Kalender) + Fotobox-Buchungen; heute + die nächsten Termine */
+    var bz=((D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[]).map(function(b){ var d=String(b.eventDate||"").slice(0,10); return {id:"bz_"+b.id,title:"Fotobox: "+(b.customerName||"Buchung")+(b.package?" · "+b.package:""),date:d,time:String(b.eventDate||"").slice(11,16).replace(/^00:00$/,""),location:b.location||"",cal:"Blitzdings"}; });
+    var allEv=D.events.concat(bz.filter(function(b){ return /^\d{4}-\d{2}-\d{2}$/.test(b.date); })).filter(function(e){ return e.date>=today; }).sort(function(a,b){ return (a.date+(a.time||"")).localeCompare(b.date+(b.time||"")); });
+    var todayEv=allEv.filter(function(e){return e.date===today;}), nextEv=allEv.slice(0,Math.max(8,todayEv.length+5));
     var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
     return F.head(greet+", Simon.",f.length?f.length+(f.length===1?" Sache braucht":" Dinge brauchen")+" dich. Das Dringendste steht oben.":"Alles erledigt. Schönen Tag im Tal.")+
     '<div class="day">'+
@@ -57,8 +60,8 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
       (items?'<ul class="feed">'+items+'</ul>':'<div class="empty">Nichts offen. 🎉</div>')+
       (f.length>12?'<button class="more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+
     '</section><div class="stack">'+
-      '<section class="panel"><div class="panel-h"><h2>'+(todayEv.length?"Termine heute":"Nächste Termine")+'</h2><button class="link" data-go="kal">Kalender →</button></div>'+
-        (nextEv.length?'<ul class="agenda">'+nextEv.map(function(e){ return '<li><span class="time">'+(e.date===today?(e.time||"ganztags"):deShort(e.date))+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.date!==today&&e.time?e.time:"",e.location||"",e.source==="icloud"?"iCloud":""].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Termine.</div>')+'</section>'+
+      '<section class="panel"><div class="panel-h"><h2>'+(todayEv.length?"Heute & nächste Termine":"Nächste Termine")+'</h2><button class="link" data-go="kal">Kalender →</button></div>'+
+        (nextEv.length?'<ul class="agenda">'+nextEv.map(function(e){ return '<li><span class="time">'+(e.date===today?(e.time||"ganztags"):deShort(e.date))+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.date!==today&&e.time?e.time:"",e.location||"",e.cal||(e.source==="icloud"?"iCloud":e.source==="kalender"?"Kalender":"")].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Termine.</div>')+'</section>'+
       '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>'+
       incomePanel()+
     '</div></div>';
