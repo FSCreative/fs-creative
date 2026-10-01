@@ -120,6 +120,7 @@ function body(){
     '<section class="set-sec" id="set-icloud"><h3>Privater Kalender (iCloud)</h3><p class="set-p">Verbindet den Kalender im Cockpit mit einem iCloud-Kalender, z. B. dem mit deiner Lebensgefährtin geteilten. Private Termine landen dort und erscheinen auf allen iPhones; Änderungen am iPhone siehst du hier.</p>'+icHtml()+'</section>'+
     '<section class="set-sec" id="set-prefs"><h3>Ansicht</h3><p class="set-p">Wird nur in diesem Browser gespeichert.</p>'+prefsHtml()+'</section>'+
     '<section class="set-sec" id="set-ski"><h3>Skikaiser</h3>'+skiHtml()+'</section>'+
+    (F.kiSettingsHtml?'<section class="set-sec" id="set-ki"><h3>KI (Claude)</h3>'+F.kiSettingsHtml()+'</section>':'')+
     '<section class="set-sec" id="set-int"><h3>Verbindungen</h3><p class="set-p">Schnittstellen, die am Server eingerichtet sind. Fehlende Zugänge werden in Railway als Variablen hinterlegt.</p>'+intHtml()+'</section>'+
     '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a></div>'+
   '</div>';

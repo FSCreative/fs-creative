@@ -183,18 +183,19 @@ function guessAmount(m){
 }
 M.guessAmount=guessAmount;
 var VOU=null;
-M.openVoucher=function(m,a){
-  if(!m||!a) return; VOU={m:m,a:a};
-  var g=guessAmount(m), day=m.date&&!isNaN(new Date(m.date))?F.ymd(new Date(m.date)):F.ymd(), vs=M.voucherSent(m,a);
-  F.modal('<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">Beleg an sevDesk</h2>'+F.btnClose()+'</div>'+
+/* pre (optional, z. B. von der KI): supplier, date, gross, taxRate, desc, cat, title, html (Zusatzinfo), extra (weitere Felder an den Server), onDone(j) */
+M.openVoucher=function(m,a,pre){
+  if(!m||!a) return; pre=pre||{}; VOU={m:m,a:a,pre:pre};
+  var g=pre.gross!=null?pre.gross:guessAmount(m), day=pre.date||(m.date&&!isNaN(new Date(m.date))?F.ymd(new Date(m.date)):F.ymd()), vs=M.voucherSent(m,a), tr=pre.taxRate!=null?+pre.taxRate:20;
+  F.modal('<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg an sevDesk")+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted" style="margin:0">Wird als <b>Beleg-Entwurf</b> in sevDesk angelegt – inkl. Datei. Prüfen und buchen machst du in sevDesk.</p>'+
     '<div class="att" style="justify-self:start"><a href="'+esc(M.attHref(m,a))+'&inline=1" target="_blank" rel="noopener" title="Anhang ansehen"><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
-    '<div class="grid2"><label class="fl">Lieferant<input class="f" name="supplier" list="mvContacts" value="'+esc(m.fromName||m.from||"")+'"></label><label class="fl">Belegdatum<input class="f" name="date" type="date" required value="'+day+'"></label>'+
-    '<label class="fl">Betrag brutto (€)<input class="f num" name="gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+(g?g.toFixed(2):"")+'"'+(g?'':' autofocus')+'></label><label class="fl">USt-Satz<select class="f" name="tax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+'</select></label></div>'+
+    '<div class="grid2"><label class="fl">Lieferant<input class="f" name="supplier" list="mvContacts" value="'+esc(pre.supplier||m.fromName||m.from||"")+'"></label><label class="fl">Belegdatum<input class="f" name="date" type="date" required value="'+day+'"></label>'+
+    '<label class="fl">Betrag brutto (€)<input class="f num" name="gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+(g?g.toFixed(2):"")+'"'+(g?'':' autofocus')+'></label><label class="fl">USt-Satz<select class="f" name="tax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===tr?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
     '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">Kategorien werden geladen …</option></select></label>'+
-    '<label class="fl">Beschreibung<input class="f" name="desc" maxlength="200" value="'+esc(String(m.subject||"").slice(0,200))+'"></label>'+
-    '<div class="err" id="mvMsg">'+(g?'<span class="muted">Betrag aus der Mail übernommen – bitte kurz prüfen.</span>':'')+'</div>'+
+    '<label class="fl">Beschreibung<input class="f" name="desc" maxlength="200" value="'+esc(String(pre.desc||m.subject||"").slice(0,200))+'"></label>'+(pre.html||"")+
+    '<div class="err" id="mvMsg">'+(g&&!pre.html?'<span class="muted">Betrag aus der Mail übernommen – bitte kurz prüfen.</span>':'')+'</div>'+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">An sevDesk senden</button></span></div><datalist id="mvContacts"></datalist></form>',"narrow");
   F.loadMeta(function(meta){
     var sel=document.querySelector('[data-form="mvoucher"] [name=cat]'); if(!sel) return;
@@ -203,13 +204,15 @@ M.openVoucher=function(m,a){
     try{ last=String(localStorage.getItem("fsc_sev_cat")||"").replace(/^"|"$/g,""); }catch(e){} /* wie im klassischen Dashboard als Klartext */
     var used=ts.filter(function(t){ return t.used>0; }), rest=ts.filter(function(t){ return !(t.used>0); }), opt=function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>'; };
     sel.innerHTML='<option value="">Kategorie wählen …</option>'+(used.length?'<optgroup label="Häufig verwendet">'+used.map(opt).join("")+'</optgroup>':'')+'<optgroup label="Alle Kategorien">'+rest.map(opt).join("")+'</optgroup>';
-    if(last&&ts.some(function(t){ return t.id===last; })) sel.value=last;
+    if(pre.cat&&ts.some(function(t){ return t.id===pre.cat; })) sel.value=pre.cat; else if(last&&ts.some(function(t){ return t.id===last; })) sel.value=last;
     var dl=document.getElementById("mvContacts"); if(dl) dl.innerHTML=(meta.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join("");
   });
 };
 F.form("mvoucher",function(f){
   if(!VOU) return; var m=VOU.m, a=VOU.a, msg=document.getElementById("mvMsg"), btn=document.getElementById("mvSave");
   var body={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf(m),filename:a.filename},supplierName:f.supplier.value.trim(),date:f.date.value,description:f.desc.value.trim(),gross:parseFloat(String(f.gross.value).replace(",",".")),taxRate:parseFloat(f.tax.value),accountingTypeId:f.cat.value};
+  var pre=VOU.pre||{}; if(pre.extra) Object.keys(pre.extra).forEach(function(k){ if(!(k in body)) body[k]=pre.extra[k]; });
+  if(body.positions){ var ps=0; body.positions.forEach(function(x){ ps+=+x.gross||0; }); if(Math.abs(ps-body.gross)>0.02) delete body.positions; }  /* Betrag geändert → eine Position mit dem gewählten Satz */
   if(!(body.gross>0)){ msg.textContent="Bitte den Rechnungsbetrag (brutto) eingeben."; f.gross.focus(); return; }
   if(!body.accountingTypeId){ msg.textContent="Bitte eine Kategorie wählen."; f.cat.focus(); return; }
   try{ localStorage.setItem("fsc_sev_cat",body.accountingTypeId); }catch(e){}
@@ -217,7 +220,7 @@ F.form("mvoucher",function(f){
   F.api("/admin/api/sevdesk/voucher",{body:body}).then(function(j){
     if(!j||!j.ok){ btn.disabled=false; msg.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
     var sk=F.ls("fsc_sev_sent")||{}; sk[m.id+"#"+(a.index||0)]={id:j.id,at:Date.now()}; F.ls("fsc_sev_sent",sk);
-    VOU=null; F.closeModal();
+    var done=VOU.pre&&VOU.pre.onDone; VOU=null; F.closeModal(); if(done) try{ done(j); }catch(e){}
     F.toast("Beleg als Entwurf in sevDesk angelegt",false,"sevDesk öffnen",function(){ window.open(F.SEVURL,"_blank","noopener"); });
     if(F.current==="post") F.render(); F.load(true);
   }).catch(function(){ btn.disabled=false; msg.textContent="Keine Verbindung zum Server."; });

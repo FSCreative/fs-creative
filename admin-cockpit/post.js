@@ -324,7 +324,7 @@ function attachmentsHtml(m){
     var href=M.attHref(m,a), vs=M.voucherSent(m,a), canV=M.isVoucherAtt(a);
     return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="Im Browser öffnen"><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
       '<a href="'+esc(href)+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen" aria-label="'+esc((a.filename||"Anhang")+" herunterladen")+'">'+ic("down")+'</a>'+
-      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg an sevDesk gesendet – erneut senden":"Als Beleg an sevDesk senden")+'" aria-label="Beleg an sevDesk">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+'</span>';
+      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg an sevDesk gesendet – erneut senden":"Als Beleg an sevDesk senden")+'" aria-label="Beleg an sevDesk">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+'</span>';
   }).join("");
   var zip="";
   if(atts.length>1){ var z="/admin/api/mail-attachments-zip?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&account="+encodeURIComponent(accOf(m))+"&name="+encodeURIComponent(m.subject||"Anhaenge")+"&atts="+encodeURIComponent(JSON.stringify(atts.map(function(a){ return {index:a.index,filename:a.filename}; })));
@@ -376,7 +376,7 @@ function readerHtml(){
     '<div class="rsender">'+av(sent?m.toName:m.fromName,sent?m.to:m.from,"lg")+
       '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an diese Adresse">&lt;'+esc(addr)+'&gt;</button>':'')+'</div><div class="rto">'+toLine+'</div></div>'+
       '<div class="rdate">'+esc(m.date?new Date(m.date).toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"")+'<span>'+esc(relTime(m.date))+'</span></div></div>'+
-    attachmentsHtml(m)+body+
+    attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+
     (m.body||m.preview?'':'<div class="notice"><span>Kein Textinhalt im Abruf. Die vollständige Nachricht findest du im Webmail.</span><button type="button" class="btn" data-act="mwebmail">In Webmail öffnen</button></div>')+
     qr+
     (rel.length?'<div class="rrel"><div class="sec-t">Weitere Mails '+(sent?"an":"von")+' '+esc(who)+'</div>'+rel.map(function(x){ return '<button type="button" class="ri" data-act="mrel:'+esc(x.id)+'">'+(isSent(x)?'<span class="muted" title="Gesendet">'+ic("sent")+'</span>':'')+'<span class="s">'+esc(x.subject||"(kein Betreff)")+'</span><span class="d">'+esc(fmtMailDate(x.date))+'</span></button>'; }).join("")+'</div>':'')+
