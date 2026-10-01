@@ -8,8 +8,15 @@ var K=F.KI=F.KI||{};
 var M=F.M=F.M||{};
 
 /* ---------- Schnittstellen ---------- */
-/* docs: Belege (Objekte mit id oder {doc:{id}}) oder IDs → Promise mit Vorschlägen [{id,taxRule,uvaClass,u30,e1a,supplierCountry,reverseCharge,confidence,reason,meta}] */
-F.steuerAiSuggest=function(docs){
+/* Andockpunkt der UVA-Ansicht (steuer.js): info = FSC_STEUER.explainDoc(raw, st, id) → Promise {klasse, begruendung, taxRule?}.
+   Übernommen wird dort erst nach Klick (nur Cockpit-Einordnung).
+   Zusätzlich für Stapel: Array von Belegen/IDs → Promise [{id,taxRule,uvaClass,u30,e1a,supplierCountry,reverseCharge,confidence,reason,meta}] */
+F.steuerAiSuggest=function(info){
+  if(info&&!Array.isArray(info)&&typeof info==="object"&&info.positionen) return K.api("klasse",{info:info}).then(function(j){
+    return {klasse:j.klasse,begruendung:(j.begruendung||"")+" (KI-Sicherheit "+K.pct(j.confidence)+")",taxRule:j.taxRule||undefined,confidence:j.confidence}; });
+  return belegBatch(info);
+};
+function belegBatch(docs){
   var ids=(docs||[]).map(function(d){ return d==null?"":typeof d==="object"?String((d.doc&&d.doc.id)||d.id||""):String(d); }).filter(Boolean);
   if(!ids.length) return Promise.resolve([]);
   return K.api("belege",{ids:ids.slice(0,160)}).then(function(j){ return j.suggestions||[]; });

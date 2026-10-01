@@ -33,7 +33,7 @@ F.onData(function(){ K.load(false).then(function(){ F.renderNav(); }); });
 
 /* ---------- Texte ---------- */
 var RULE_TXT={"8":"ig. Erwerb","9":"Vorsteuer abziehbar","10":"keine Vorsteuer","12":"RC Drittland (mit VSt)","13":"RC ohne Vorsteuer","14":"RC EU (mit VSt)"};
-var CLASS_TXT={"060":"Vorsteuer KZ 060","rc":"Reverse Charge 057/066","rcnv":"RC ohne VSt 057","ige":"ig. Erwerb 070/072/065","eust":"EUSt 061","fx":"ausl. USt – keine VSt","none":"keine Vorsteuer"};
+var CLASS_TXT={"060":"Vorsteuer KZ 060","rc":"Reverse Charge 057/066","rcnv":"RC ohne VSt 057","ige":"ig. Erwerb 070/072/065","ige3":"ig. Erwerb Dreieck 070/077","ige0":"steuerfreier ig. Erwerb 070/071","eust":"EUSt 061","fx":"ausl. USt – keine VSt","none":"keine Vorsteuer"};
 K.RULE_TXT=RULE_TXT; K.CLASS_TXT=CLASS_TXT;
 K.e1aTxt=function(code){ var E=(window.FSC_STEUER&&FSC_STEUER.E1A)||[]; for(var i=0;i<E.length;i++) if(E[i][0]===code) return code+" "+E[i][1]; return code||"–"; };
 K.periods=function(){

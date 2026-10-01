@@ -63,6 +63,7 @@ function toggle(on){
   var h=host(); if(on===undefined) on=h.hidden; h.hidden=!on; document.body.classList.toggle("kichat-on",on);
   if(on){ K.load(false).then(function(){ paint(true); }); paint(true); setTimeout(function(){ var i=document.getElementById("kiIn"); if(i) i.focus(); },30); }
 }
+K.chatSend=function(text){ toggle(true); var i=document.getElementById("kiIn"); if(i&&text){ i.value=text; send(); } };
 K.chatOpen=function(text){ toggle(true); if(text){ var i=document.getElementById("kiIn"); if(i){ i.value=text; i.focus(); } } };
 F.action("kichat",function(){ toggle(); });
 F.action("kichatnew",function(){ if(CH.ctrl) CH.ctrl.abort(); F.api("/admin/api/ki/chat-reset",{body:{sessionId:CH.sid}}).catch(function(){}); CH.sid="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); CH.items=[]; CH.busy=false; save(); paint(true); var i=document.getElementById("kiIn"); if(i) i.focus(); });
