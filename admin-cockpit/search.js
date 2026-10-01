@@ -63,7 +63,6 @@ function baseActions(){
     {label:"Darstellung: Dunkel",sub:t==="dark"?"aktiv":"",icon:"moon",act:"theme:dark",kw:"theme modus dark nacht"},
     {label:p?"Beträge einblenden":"Beträge ausblenden",sub:"Privatsphäre",icon:"eye",act:"priv:",kw:"beträge privat verbergen ein aus"},
     {label:"Alles aktualisieren",sub:"Live-Daten neu laden",icon:"refresh",act:"reload:",kw:"neu laden refresh"},
-    {label:"Klassisches Dashboard",sub:"Altes Dashboard öffnen",icon:"more",act:"_classic",kw:"alt"},
     {label:"Abmelden",sub:"",icon:"close",act:"_logout",kw:"logout"}
   ];
   return a;
@@ -126,7 +125,6 @@ function exec(act){
   if(act==="_compose"){ F.compose({}); return; }
   if(act==="_invoice"){ F.openInvoice({}); return; }
   if(act==="_todo"){ newTodo(); return; }
-  if(act==="_classic"){ location.href="/admin/alt"; return; }
   if(act==="_logout"){ location.href="/admin/logout"; return; }
   var i=act.indexOf(":"), k=i>-1?act.slice(0,i):act, v=i>-1?act.slice(i+1):"";
   if(F.actions[k]) F.actions[k](v,null,null); else if(F.views.some(function(x){ return x.id===k; })) F.go(k);

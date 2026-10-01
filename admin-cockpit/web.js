@@ -239,7 +239,9 @@ function vBill(){
   var act=custAll.filter(function(x){ return x.c.active; });
   var perYear=act.reduce(function(a,x){ return a+siteSum(x.s,x.c)*12/n; },0);
   var due=act.filter(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; }), dueSum=due.reduce(function(a,x){ return a+siteSum(x.s,x.c); },0);
-  var costAct=Math.round(act.reduce(function(a,x){ return a+siteCosts(x.s).year; },0)*100)/100;
+  /* Kosten/Jahr: aktive Kundenseiten + eigene Projekte */
+  var costOwn=Math.round(own.reduce(function(a,x){ return a+siteCosts(x.s).year; },0)*100)/100;
+  var costAct=Math.round((act.reduce(function(a,x){ return a+siteCosts(x.s).year; },0)+costOwn)*100)/100;
   var noPrice=!(+P.domain||+P.hosting||+P.mail), rev=fscRevenue();
   var bf=U.bf, cust=custAll.filter(function(x){
     if(!hit(x.s.name+" "+(x.s.domains||[]).join(" ")+" "+x.c.customer)) return false;
@@ -262,7 +264,7 @@ function vBill(){
   '<div class="w-kpis">'+
     '<button class="panel kpi" data-act="wbf:active"><span class="k">Aktive Kunden-Websites</span><span class="v num">'+act.length+'</span><span class="s">von '+custAll.length+' Kundenprojekten</span></button>'+
     '<div class="panel kpi"><span class="k">Wiederkehrend / Jahr</span><span class="v num ok-t">'+eur0(perYear)+'</span><span class="s">'+(P.gross?"brutto":"netto")+' · '+(PERLBL[n]?"Abrechnung pro "+PERLBL[n]:"alle "+n+" Monate")+'</span></div>'+
-    '<button class="panel kpi" data-act="wcosts"><span class="k">Kosten / Jahr</span><span class="v num">'+(costAct?eur0(costAct):"—")+'</span><span class="s">'+(R?'Ergebnis <span class="money '+(perYear-costAct>=0?"pos":"neg")+'">'+eur0(perYear-costAct)+'</span> · Railway + Domains':(rBusy?"rechne Railway-Kosten …":"Railway + Domains"))+'</span></button>'+
+    '<button class="panel kpi" data-act="wcosts"><span class="k">Kosten / Jahr</span><span class="v num">'+(costAct?eur0(costAct):"—")+'</span><span class="s">'+(R?'Ergebnis <span class="money '+(perYear-costAct>=0?"pos":"neg")+'">'+eur0(perYear-costAct)+'</span> · Railway + Domains'+(costOwn?' · davon eigene '+eur0(costOwn):''):(rBusy?"rechne Railway-Kosten …":"Railway + Domains, inkl. eigene Projekte"))+'</span></button>'+
     '<button class="panel kpi" data-act="wbf:due"><span class="k">Jetzt zu verrechnen</span><span class="v num'+(due.length?" warn-t":"")+'">'+eur0(dueSum)+'</span><span class="s">'+due.length+' Website'+(due.length===1?"":"s")+' fällig</span></button>'+
     '<div class="panel kpi"><span class="k">Website-Rechnungen '+esc(F.D.year)+'</span><span class="v num">'+eur0(rev.paid)+'</span><span class="s">bezahlt · offen <span class="money">'+eur0(rev.open)+'</span></span></div>'+
   '</div>'+

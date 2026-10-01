@@ -184,8 +184,6 @@ const ANTONHAUS = { url: process.env.ANTONHAUS_STATS_URL || "https://antonhaus.a
 const ALPINAPPART = { url: process.env.ALPINAPPART_FEES_URL || "https://www.alpinappart.at/api/fees", key: process.env.ALPINAPPART_FEES_KEY || "" };
 // Cloudflare: Zonen (= aktive Websites) + Insights
 const CF = { token: process.env.CF_API_TOKEN || "" };
-let ADMIN_HTML = "";
-try { ADMIN_HTML = fs.readFileSync(path.join(ROOT, "admin-dashboard.html"), "utf8"); } catch (e) { ADMIN_HTML = "<!doctype html><p>admin-dashboard.html fehlt.</p>"; }
 
 function hmac(v) { return crypto.createHmac("sha256", ADMIN_SECRET).update(v).digest("hex"); }
 function sign(v) { return v + "." + hmac(v); }
@@ -706,39 +704,6 @@ async function railwaySnapshot() {
   const totals = projects.reduce((t, p) => { t.projects++; t.services += p.services.length; if (p.status === "FAILED" || p.status === "CRASHED") t.failed++; else if (["BUILDING", "DEPLOYING", "INITIALIZING", "QUEUED", "WAITING"].indexOf(p.status) > -1) t.deploying++; else if (p.status === "SUCCESS") t.ok++; return t; }, { projects: 0, services: 0, ok: 0, failed: 0, deploying: 0 });
   return { configured: true, fetchedAt: new Date().toISOString(), totals, projects };
 }
-function replaceConst(html, name, obj) {
-  const re = new RegExp("var " + name + "=\\{[\\s\\S]*?\\};");
-  const js = JSON.stringify(obj).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-  return html.replace(re, () => "var " + name + "=" + js + ";");
-}
-function injectAdmin(html, stampISO) {
-  const script = '<script>(function(){' +
-    'window.__FSD_HOSTED=true; window.__FSD_MAIL_ACTION="/admin/api/mail-action"; window.__FSD_MAIL_SEND="/admin/api/mail-send"; window.__FSD_BLITZ_PAY="/admin/api/blitz-pay"; window.__FSD_KOCHDU_SETTLE="/admin/api/kochdu-settle"; window.__FSD_MAIL_ATTACH="/admin/api/mail-attachment"; window.__FSD_TODOS="/admin/api/todos"; window.__FSD_EVENTS="/admin/api/events"; window.__FSD_SITES="/admin/api/sites"; window.__FSD_LOGOUT="/admin/logout";' +
-    'if(!window.__fsdYear)window.__fsdYear=new Date().getFullYear();' +
-    'function poll(){fetch("/admin/api/all?year="+(window.__fsdYear||new Date().getFullYear()),{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(!d)return; if(window.__fsdApplyLive)window.__fsdApplyLive(d);}).catch(function(){});}' +
-    'window.__fsdPoll=poll;' +
-    'window.__FSD_BUILD=' + JSON.stringify(BUILD) + ';' +
-    'function vchk(){fetch("/admin/api/version",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.build&&window.__FSD_BUILD&&d.build!==window.__FSD_BUILD){location.replace("/admin/alt?v="+encodeURIComponent(d.build));}}).catch(function(){});}' +
-    'window.__fsdVchk=vchk;setInterval(vchk,30000);setTimeout(vchk,2000);' +
-    'setInterval(poll,30000);setTimeout(poll,600);' +
-    '})();</script>';
-  return html.replace("</body>", script + "</body>");
-}
-async function renderAdminDashboard() {
-  let html = ADMIN_HTML; let stamp = null;
-  const year = new Date().getFullYear();
-  const [k, m, b, ko, va] = await Promise.all([kantineurStats(year), mailSnapshot(), blitzdingsStats(year), kochduStats(year), valueroStats(year)]);
-  if (k) { html = replaceConst(html, "KANTINEUR_STATS", k); stamp = k.fetchedAt; }
-  if (b) { html = replaceConst(html, "BLITZDINGS_STATS", b); stamp = b.fetchedAt || stamp; }
-  if (ko) { html = replaceConst(html, "KOCHDU_STATS", ko); stamp = ko.fetchedAt || stamp; }
-  if (va) { html = replaceConst(html, "VALUERO_STATS", va); stamp = va.fetchedAt || stamp; }
-  if (m) { html = replaceConst(html, "MAIL_SNAPSHOT", m); stamp = m.fetchedAt || stamp; }
-  ADMIN_SEEN = Date.now();
-  html = html.replace("</head>", () => '<script>window.__FSD_TODOS_DATA=' + JSON.stringify(readTodos()).replace(/</g, "\\u003c") + ';window.__FSD_EVENTS_DATA=' + JSON.stringify(readEvents()).replace(/</g, "\\u003c") + ';</script></head>');
-  if (SITES_CACHE.data) html = html.replace("</head>", () => '<script>window.__FSD_SITES_DATA=' + JSON.stringify(SITES_CACHE.data).replace(/</g, "\\u003c") + ';</script></head>');
-  else refreshSites();
-  return injectAdmin(html, stamp);
-}
 function adminLoginPage(err) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>FS Creative Admin — Anmelden</title>
 <style>:root{color-scheme:light}body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,#eef2fb,#f7f9fd);font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f1729}
@@ -1174,7 +1139,7 @@ function sevSummary(sev, year, today) {
   const open = inv.filter(i => i.open > 0.005), overdue = open.filter(i => i.overdue);
   return { fetchedAt: sev.fetchedAt, revenueYear: round2(counted.reduce((a, i) => a + i.gross, 0)), byMonth: byMonth.map(round2),
     openSum: round2(open.reduce((a, i) => a + i.open, 0)), openCount: open.length, overdueSum: round2(overdue.reduce((a, i) => a + i.open, 0)), overdueCount: overdue.length,
-    drafts: inv.filter(i => i.status === 100).length, invoices: inv.slice(0, 160), accounts: sev.accounts || [], unassigned: sev.unassigned || 0, vouchers: sev.vouchers || {}, transactions: (sev.transactions || []).slice(0, 25) };
+    drafts: inv.filter(i => i.status === 100).length, invoices: inv.slice(0, 600), accounts: sev.accounts || [], unassigned: sev.unassigned || 0, vouchers: sev.vouchers || {}, transactions: (sev.transactions || []).slice(0, 120) };
 }
 
 
@@ -1427,11 +1392,9 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin" || p === "/admin/") {
     return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
-  // Klassisches Dashboard (Rückfall), ersetzt durch das Cockpit unter /admin.
-  if (p === "/admin/alt" || p === "/admin/alt/") {
-    const html = await renderAdminDashboard();
-    return sendGz(req, res, 200, html, TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
-  }
+  // Frühere Adresse des klassischen Dashboards -> Cockpit
+  if (p === "/admin/alt" || p === "/admin/alt/") return send(res, 301, "", "text/plain", { Location: "/admin" });
+
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());
     const [k, m, b, cal, ko, va, pc] = await Promise.all([kantineurStats(yr), mailSnapshot(), blitzdingsStats(yr), calendarEvents(), kochduStats(yr), valueroStats(yr), privateCalQuick().catch(() => null)]);

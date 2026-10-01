@@ -121,7 +121,7 @@ function body(){
     '<section class="set-sec" id="set-prefs"><h3>Ansicht</h3><p class="set-p">Wird nur in diesem Browser gespeichert.</p>'+prefsHtml()+'</section>'+
     '<section class="set-sec" id="set-ski"><h3>Skikaiser</h3>'+skiHtml()+'</section>'+
     '<section class="set-sec" id="set-int"><h3>Verbindungen</h3><p class="set-p">Schnittstellen, die am Server eingerichtet sind. Fehlende Zugänge werden in Railway als Variablen hinterlegt.</p>'+intHtml()+'</section>'+
-    '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/alt">Klassisches Dashboard</a><a class="btn" href="/admin/logout">Abmelden</a></div>'+
+    '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a></div>'+
   '</div>';
 }
 function paint(){
