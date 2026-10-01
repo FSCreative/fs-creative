@@ -50,7 +50,7 @@ function docsList(arr,opts){
   if(!arr.length) return '<div class="empty">Keine Belege.</div>';
   var sb=0, stx=0; arr.forEach(function(x){ sb+=x.base||0; stx+=x.tax||0; });
   return '<div class="scroll"><table class="st-docs"><tbody>'+arr.map(function(x){ var d=x.doc, kind=x.kind, out=kind==="out"||kind==="vin", manual=kind==="manual", opt=out?S.OUT_OPTS:S.IN_OPTS, cur=docCfg(d.id).kz||"auto";
-    return '<tr><td class="nowrap num">'+deShort(x.date||d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b><div class="sub">'+esc([x.why,d.taxRule?("sevDesk: "+S.ruleTxt(d.taxRule)):"",x.info||""].filter(Boolean).join(" · "))+'</div></td>'+
+    return '<tr><td class="nowrap num">'+deShort(x.date||d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b><div class="sub">'+esc([x.why,S.ruleKey(d)?("sevDesk: "+S.ruleTxt(S.ruleKey(d))):"",x.info||""].filter(Boolean).join(" · "))+'</div></td>'+
       '<td class="r">'+(x.base!=null?money(x.base):'')+(x.tax?'<div class="sub">Steuer '+eur(x.tax)+'</div>':'')+'</td>'+
       (manual||opts.noSelect?'<td></td>':'<td><select class="f" data-stdoc="'+esc(d.id)+'" aria-label="Einordnung">'+opt.map(function(o){ return '<option value="'+o[0]+'"'+(cur===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select></td>')+
       (kind==="out"&&!/^cn/.test(d.id)?'<td class="r"><a class="btn icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(d.id)+'" target="_blank" rel="noopener" aria-label="PDF">↗</a></td>':'<td></td>')+'</tr>'; }).join("")+
@@ -120,7 +120,7 @@ function euPanel(cur,zmr){
     '</section>';
 }
 /* ---------- Ausgangsrechnungen ohne USt: zuordnen (Override je Rechnung, inkl. UID/Land) ---------- */
-var ZERO_OPTS=[["auto","automatisch"],["017","ig. Lieferung (Ware) – KZ 017 + ZM"],["zm","ig. sonstige Leistung (B2B) – nur ZM"],["zmd","Dreiecksgeschäft – ZM mit Kennzeichen"],["011","Ausfuhr (Ware ins Drittland) – KZ 011"],["ns","nicht steuerbar (Leistungsort Ausland, z. B. CH/LI)"],["020","steuerfrei im Inland – KZ 020 (Grund angeben)"],["016","Kleinunternehmer – KZ 016"],["sonst","Kleinbetrag/sonstiges – nicht in UVA/ZM"],["ignore","nicht berücksichtigen"]];
+var ZERO_OPTS=[["auto","automatisch"],["017","ig. Lieferung (Ware) – KZ 017 + ZM"],["zm","ig. sonstige Leistung (B2B) – nur ZM"],["zmd","Dreiecksgeschäft – ZM mit Kennzeichen"],["011","Ausfuhr (Ware ins Drittland) – KZ 011"],["ns","nicht steuerbar (Leistungsort Ausland, z. B. CH/LI)"],["020","steuerfrei im Inland – KZ 020 (Grund angeben)"],["016","Kleinunternehmer – KZ 016"],["dlp","durchlaufender Posten (nicht steuerbar)"],["nach20","0 % war falsch – 20 % herausrechnen (KZ 022)"],["sonst","Kleinbetrag/sonstiges – nicht in UVA/ZM"],["ignore","nicht berücksichtigen"]];
 function zeroPanel(cur){
   var z=S.zeroRated(ST.data,ST,cur), open=z.filter(function(x){ return !x.sure; }), show=F.UI.stOpen.zeroAll?z:open;
   if(!z.length) return "";
@@ -150,7 +150,7 @@ function rulesPanel(cur){
   var sel=function(x,side){ var list=side==="in"?S.RULE_IN_CLASSES:S.RULE_OUT_CLASSES, cur0=x.map&&x.map[side]||""; return '<select class="f" data-strule="'+esc(x.id)+':'+side+'" aria-label="Klasse"><option value="">'+esc(x[side]?"automatisch: "+(CLS_TXT[x[side]]||x[side]):"– zuordnen –")+'</option>'+list.map(function(c){ return '<option value="'+c+'"'+(cur0===c?" selected":"")+'>'+esc(CLS_TXT[c]||c)+'</option>'; }).join("")+'</select>'; };
   return '<section class="panel"><div class="panel-b"><button class="link" data-act="stdocs:rules" aria-expanded="'+!!F.UI.stOpen.rules+'">'+(unk.length?'<span class="tag bad">⚠ '+unk.length+' unbekannt</span> ':'<span class="tag ok">✓</span> ')+'Steuerregeln deines sevDesk-Kontos ('+d.length+', davon '+used+' in '+esc(cur.from.slice(0,4))+' verwendet)</button>'+
     (F.UI.stOpen.rules?'<div class="scroll"><table><thead><tr><th>ID</th><th>Regel</th><th class="r">Belege '+esc(cur.from.slice(0,4))+'</th><th>Ausgangsrechnungen</th><th>Eingangsbelege</th></tr></thead><tbody>'+d.map(function(x){ var rev=/REVENUE/.test(x.side), exp=/EXPENSE/.test(x.side), both=!rev&&!exp;
-      return '<tr'+(x.unknown?' class="bad-row"':'')+'><td class="num">'+esc(x.id)+'</td><td>'+esc(x.description||x.name||(x.fromDocs?"(nur in Belegen, nicht im Konto gefunden)":""))+(x.unknown?' <span class="tag bad">unbekannt</span>':'')+'<div class="sub">'+esc([x.name,x.side,(x.rates||[]).join(", "),x.outSrc!=="unbekannt"?x.outSrc:x.inSrc].filter(Boolean).join(" · "))+'</div></td><td class="r num">'+(x.nOut+x.nIn||"")+'</td>'+
+      return '<tr'+(x.unknown?' class="bad-row"':'')+'><td class="num">'+esc(x.id)+'</td><td>'+esc(x.description||x.name||(x.fromDocs?"(nur in Belegen, nicht im Konto gefunden)":""))+(x.taxSet?' <span class="tag grey">TaxSet</span>':'')+(x.unknown?' <span class="tag bad">unbekannt – bitte zuordnen</span>':'')+'<div class="sub">'+esc([x.name,x.side,(x.rates||[]).join(", "),x.outSrc!=="unbekannt"?x.outSrc:x.inSrc].filter(Boolean).join(" · "))+'</div></td><td class="r num">'+(x.nOut+x.nIn||"")+'</td>'+
         '<td>'+(rev||both||x.nOut?sel(x,"out"):'')+'</td><td>'+(exp||both||x.nIn?sel(x,"in"):'')+'</td></tr>'; }).join("")+'</tbody></table></div><div class="muted small">Die Bedeutung kommt aus dem Text der Regel in deinem Konto; eine Zuordnung hier gilt für alle Belege mit dieser Regel.</div>':'')+'</div></section>';
 }
 F.listen("change","[data-strule]",function(el){ var a=el.getAttribute("data-strule").split(":"); post({op:"ruleMap",id:a[0],side:a[1],cls:el.value},"Regel zugeordnet – gilt für alle Belege"); });
@@ -168,7 +168,7 @@ F.listen("change","[data-stausfall]",function(el){ post({op:"doc",id:el.getAttri
 /* ---------- Dauerleistungen (Leistungszeitraum) und Endrechnungen ---------- */
 function dauerPanel(cur,r){
   var y=cur.from.slice(0,4), pt=r.partials||{er:{}}, inv=(ST.data.invoices||[]).filter(function(d){ return d.status>=200&&d.type!=="WKR"&&d.type!=="MA"; });
-  var dl=inv.filter(function(d){ return d.deliveryUntil&&d.delivery&&d.deliveryUntil>d.delivery&&(d.delivery.slice(0,4)<=y&&d.deliveryUntil.slice(0,4)>=y); });
+  var dl=inv.filter(function(d){ return d.deliveryUntil&&d.delivery&&d.deliveryUntil>d.delivery&&!S.isShortPeriod(d)&&(d.delivery.slice(0,4)<=y&&d.deliveryUntil.slice(0,4)>=y); });
   var er=inv.filter(function(d){ return d.type==="ER"&&pt.er[d.id]&&String(d.date||"").slice(0,4)===y; });
   if(!dl.length&&!er.length&&!(r.info||[]).length) return "";
   return '<section class="panel"><div class="panel-h"><h2>Leistungszeiträume, Anzahlungen und Endrechnungen</h2><span class="muted">§ 19 Abs. 2 Z 1 lit. a UStG</span></div>'+
@@ -323,6 +323,7 @@ function settingsBar(){
   var s=ST.settings;
   return '<div class="row wrap st-set"><span class="tag info" title="Fix hinterlegt">Sollbesteuerung</span>'+
     '<label class="fl inline">UVA-Zeitraum <select class="f" data-stset="zeitraum"><option value="quartal"'+(s.zeitraum==="quartal"?" selected":"")+'>Quartal</option><option value="monat"'+(s.zeitraum==="monat"?" selected":"")+'>Monat</option></select></label>'+
+    '<label class="fl inline" title="Wird eine Rechnung weniger als einen Monat vor der Leistung bezahlt, versteuert sevDesk (und die Praxis) sie mit der Rechnung. Aus: strenge Mindest-Istbesteuerung im Zahlungsmonat.">Kleine Vorauszahlungen (&lt; 1 Monat vor Leistung) <select class="f" data-stset="kleineAnz"><option value="1"'+(s.kleineAnz!==false?" selected":"")+'>nach Rechnungsdatum</option><option value="0"'+(s.kleineAnz===false?" selected":"")+'>im Zahlungsmonat</option></select></label>'+
     '<label class="fl inline">Steuernummer <input class="f" style="width:130px" data-stset="steuernummer" value="'+esc(s.steuernummer||"")+'" placeholder="98 123/4567"></label>'+
     '<button class="btn" data-act="streload">sevDesk neu laden</button><span class="muted small">'+(ST.data?"Stand "+F.ago(ST.data.fetchedAt):"")+(loadErr?' · <span class="bad-t">'+esc(loadErr)+'</span>':'')+'</span></div>';
 }
