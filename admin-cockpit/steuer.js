@@ -91,7 +91,7 @@ function renderUva(){
     '<div class="panel-b row wrap"><button class="link" data-act="stdocs:allkz">'+(F.UI.stOpen.allkz?"Nur befüllte Kennzahlen":"Alle Kennzahlen des Formulars zeigen")+'</button>'+
       (r.corr.length?'<span class="muted small">Negative Werte umgebucht: '+r.corr.map(function(c){ return "KZ "+c.kz+" "+eur(c.amount)+(c.to!=="0"?" → KZ "+c.to:" → 0"); }).join(", ")+' (nur 063, 067 und 090 dürfen negativ sein).</span>':'')+'</div>'+
     ((r.K["029"]||{}).base?'<div class="panel-b muted small">KZ 029 (10 %): z. B. Zeitschriften und Bücher (Anlage 1 Z 33 UStG). Druckwerke, die überwiegend Werbezwecken dienen, sind ausgenommen (20 %).</div>':'')+'</section>'+
-    euPanel(cur,zmr)+zeroPanel(cur)+igePanel(cur)+recvPanel(cur,r)+dauerPanel(cur,r)+otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+fonPanel(cur,r,zmr,done)+zmPanel(cur,r,zmr)+
+    euPanel(cur,zmr)+zeroPanel(cur)+cnPanel(cur)+igePanel(cur)+recvPanel(cur,r)+dauerPanel(cur,r)+otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+fonPanel(cur,r,zmr,done)+zmPanel(cur,r,zmr)+
     '<section class="panel"><div class="panel-b muted small"><b>Hinweise:</b> '+esc(duty)+' Sollbesteuerung: die Umsatzsteuer entsteht mit Ablauf des Monats, in dem die Leistung erbracht wurde (Leistungsdatum, sonst Rechnungsdatum; § 19 Abs. 2 Z 1 lit. a UStG – wird die Rechnung erst später gelegt, verschiebt sich das um höchstens einen Monat). Anzahlungen werden bei Zahlungseingang versteuert (Mindest-Istbesteuerung). Stornos und Gutschriften mindern im Monat ihrer Ausstellung; Skonti (aus dem Zahlbetrag) und als uneinbringlich markierte Forderungen werden im Monat der Zahlung bzw. des Ausfalls automatisch berichtigt (§ 16 UStG) – nicht zusätzlich manuell erfassen. Reverse Charge (Google, Meta, Railway, Cloudflare …) zählt im Monat der Leistung: KZ 057 und gleich hohe Vorsteuer KZ 066. Ausländische Umsatzsteuer (z. B. 19 % DE) ist keine österreichische Vorsteuer. '+
       (prevGross&&prevGross<=S.C.kleinunternehmer?'Vorjahresumsatz brutto '+eur(prevGross)+' – unter der Kleinunternehmergrenze von 55.000 € brutto: Befreiung wäre möglich (Verzicht/Regelbesteuerung bindet 5 Jahre).':'Kleinunternehmergrenze: 55.000 € brutto (ab 2025) – du bist regelbesteuert.')+'</div></section>';
 }
@@ -120,7 +120,7 @@ function euPanel(cur,zmr){
     '</section>';
 }
 /* ---------- Ausgangsrechnungen ohne USt: zuordnen (Override je Rechnung, inkl. UID/Land) ---------- */
-var ZERO_OPTS=[["auto","automatisch"],["017","ig. Lieferung (Ware) – KZ 017 + ZM"],["zm","ig. sonstige Leistung (B2B) – nur ZM"],["zmd","Dreiecksgeschäft – ZM mit Kennzeichen"],["011","Ausfuhr (Ware ins Drittland) – KZ 011"],["ns","nicht steuerbar (Leistungsort Ausland, z. B. CH/LI)"],["020","steuerfrei im Inland – KZ 020 (Grund angeben)"],["016","Kleinunternehmer – KZ 016"],["dlp","durchlaufender Posten (nicht steuerbar)"],["nach20","0 % war falsch – 20 % herausrechnen (KZ 022)"],["sonst","Kleinbetrag/sonstiges – nicht in UVA/ZM"],["ignore","nicht berücksichtigen"]];
+var ZERO_OPTS=[["auto","automatisch"],["017","ig. Lieferung (Ware) – KZ 017 + ZM"],["zm","ig. sonstige Leistung (B2B) – nur ZM"],["zmd","Dreiecksgeschäft – ZM mit Kennzeichen"],["011","Ausfuhr (Ware ins Drittland) – KZ 011"],["ns","nicht steuerbar (Leistungsort Ausland, z. B. CH/LI)"],["020","steuerfrei im Inland – KZ 020 (Grund angeben)"],["016","Kleinunternehmer – KZ 016"],["dlp","durchlaufender Posten (nicht steuerbar)"],["nach20","0 % war falsch – 20 % herausrechnen (KZ 022)"],["sonst","Kleinbetrag/sonstiges – nicht in UVA/ZM"],["ignore","ignorieren – ausgebucht/gelöscht (keine Steuerwirkung)"]];
 function zeroPanel(cur){
   var z=S.zeroRated(ST.data,ST,cur), open=z.filter(function(x){ return !x.sure; }), show=F.UI.stOpen.zeroAll?z:open;
   if(!z.length) return "";
@@ -130,9 +130,24 @@ function zeroPanel(cur){
         '<td class="st-acfg"><select class="f" data-stdoc="'+esc(d.id)+'" aria-label="Einordnung">'+ZERO_OPTS.map(function(o){ return '<option value="'+o[0]+'"'+(cur0===o[0]?" selected":"")+'>'+esc(o[0]==="auto"?"automatisch: "+x.klasse:o[1])+'</option>'; }).join("")+'</select>'+
         '<input class="f" style="width:150px" placeholder="UID" data-stap="'+esc(d.id)+':uid" value="'+esc(c.uid||x.uid||"")+'" aria-label="UID des Kunden">'+
         '<input class="f" style="width:56px" placeholder="Land" maxlength="2" data-stap="'+esc(d.id)+':land" value="'+esc(c.land||x.land||"")+'" aria-label="Land (ISO)">'+
-        (cur0==="020"?'<input class="f" style="width:200px" placeholder="Grund der Steuerbefreiung" data-stap="'+esc(d.id)+':grund" value="'+esc(c.grund||"")+'">':'')+'</td></tr>'; }).join("")+'</tbody></table></div>':'<div class="panel-b muted">Alle Rechnungen ohne USt sind eindeutig zugeordnet.</div>')+
+        (cur0==="020"?'<input class="f" style="width:200px" placeholder="Grund der Steuerbefreiung" data-stap="'+esc(d.id)+':grund" value="'+esc(c.grund||"")+'">':'')+
+        '<label class="small">ausgebucht am <input class="f" type="date" style="width:140px" data-stausfall="'+esc(d.id)+'" value="'+esc(c.ausfall||"")+'"></label>'+(S.ausgebucht(d,ST)&&!c.ausfall?' <span class="tag warn" title="Status bezahlt ohne Zahlungsbetrag – sevDesk kennzeichnet Ausbuchungen über die API nicht eigens">vermutlich ausgebucht</span> <label class="row small"><input type="checkbox" data-stapc="'+esc(d.id)+':noAusfall"> doch nicht</label>':'')+'</td></tr>'; }).join("")+'</tbody></table></div>':'<div class="panel-b muted">Alle Rechnungen ohne USt sind eindeutig zugeordnet.</div>')+
     '<div class="panel-b muted small">Die Zuordnung wird im Cockpit gespeichert und in UVA, ZM und U1 übernommen. Für die ZM braucht jede ig. Lieferung/Leistung die UID des Kunden; ig. Lieferung = Ware (KZ 017), Webdesign/Grafik/Hosting an EU-Firmen = sonstige Leistung (nur ZM).</div></section>';
 }
+/* ---------- Gutschriften (CreditNotes) und ignorierte Belege ---------- */
+function cnPanel(cur){
+  var y=cur.from.slice(0,4), cns=(ST.data.creditNotes||[]).filter(function(c){ return c.status>=200&&String(c.date||"").slice(0,4)===y; });
+  var ign=[].concat((ST.data.invoices||[]).map(function(d){ return {d:d,k:"out"}; }),(ST.data.creditNotes||[]).map(function(d){ return {d:d,k:"out"}; }),(ST.data.vouchers||[]).map(function(d){ return {d:d,k:d.cd==="D"?"out":"in"}; })).filter(function(x){ var c=docCfg(x.d.id); return c.kz==="ignore"||c.ignore; });
+  if(!cns.length&&!ign.length) return "";
+  var open=cns.filter(function(c){ var x=docCfg(c.id); return !(x.kz==="ignore"||x.ignore); });
+  return '<section class="panel"><div class="panel-h"><h2>Gutschriften und ignorierte Belege</h2><span class="muted">Ignorieren wirkt nur im Cockpit (UVA, ZM, U1, E1a) – in sevDesk wird nichts gelöscht</span></div>'+
+    (cns.length?'<div class="scroll"><table><tbody>'+cns.map(function(c){ var x=docCfg(c.id), ig=x.kz==="ignore"||x.ignore; return '<tr><td class="nowrap num">'+deShort(c.date)+'</td><td><b>'+esc(docName(c,"out"))+'</b> '+money(-Math.abs(c.net))+'<div class="sub">Gutschrift '+esc(y)+(ig?' · ignoriert':' · mindert USt im Monat der Ausstellung und die Einnahmen beim Abfluss')+'</div></td><td><select class="f" data-stdoc="'+esc(c.id)+'" aria-label="Gutschrift"><option value="auto"'+(ig?"":" selected")+'>berücksichtigen</option><option value="ignore"'+(ig?" selected":"")+'>ignorieren – ausgebucht/gelöscht (keine Steuerwirkung)</option></select></td></tr>'; }).join("")+'</tbody></table></div>'+
+      (open.length?'<div class="panel-b"><button class="btn" data-act="cnignall:'+esc(y)+'">Alle Gutschriften '+esc(y)+' ignorieren ('+open.length+')</button></div>':''):'')+
+    (ign.length?'<div class="panel-b"><button class="link" data-act="stdocs:ignlist">Ignoriert ('+ign.length+')</button>'+(F.UI.stOpen.ignlist?'<table><tbody>'+ign.map(function(x){ return '<tr><td class="nowrap num">'+deShort(x.d.date)+'</td><td>'+esc(docName(x.d,x.k))+'</td><td class="r">'+money(x.d.net)+'</td><td><button class="link" data-act="stunign:'+esc(x.d.id)+'">wieder berücksichtigen</button></td></tr>'; }).join("")+'</tbody></table>':'')+'</div>':'')+'</section>';
+}
+F.action("cnignall",function(y){ var ids=(ST.data.creditNotes||[]).filter(function(c){ return c.status>=200&&String(c.date||"").slice(0,4)===y; }).map(function(c){ return c.id; });
+  F.confirm("Alle "+ids.length+" Gutschriften "+y+" im Cockpit ignorieren? Sie wirken dann weder in UVA/ZM/U1 noch in der E1a. In sevDesk wird nichts gelöscht.","Ignorieren",function(){ post({op:"docsBulk",ids:ids,kz:"ignore"},"Gutschriften ignoriert"); }); });
+F.action("stunign",function(id){ post({op:"doc",id:id,patch:{kz:"",ignore:false}},"Wird wieder berücksichtigt"); });
 /* ---------- in sevDesk als ig. Erwerb gebucht: Ware oder Dienstleistung? (je Lieferant) ---------- */
 function igePanel(cur){
   var g=S.igeReview(ST.data,ST,cur); if(!g.length) return "";
@@ -230,7 +245,7 @@ F.action("uvaprep",function(k){
     });
   });
 });
-F.action("uvadone",function(k){ var p=periodByKey(k); var r=S.computeUva(ST.data,ST,p); var sum={zahllast:r.zahllast,kz:S.uvaKzMap(r)};
+F.action("uvadone",function(k){ var p=periodByKey(k); var r=S.computeUva(ST.data,ST,p); var sum={zahllast:r.zahllast,kz:S.uvaKzMap(r),docIds:S.uvaDocIds(r)};
   F.confirm("UVA "+p.label+" als erledigt markieren? ("+(r.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(r.zahllast))+")","Erledigt",function(){ post({op:"done",kind:"uva",key:k,summary:sum},"UVA als erledigt gespeichert"); }); });
 F.action("uvaundo",function(k){ F.confirm("Erledigt-Markierung für diese UVA entfernen? (In FinanzOnline Eingereichtes bleibt eingereicht.)","Zurücksetzen",function(){ post({op:"undone",kind:"uva",key:k},"Zurückgesetzt"); }); });
 
@@ -529,6 +544,7 @@ function renderU1(){
     (dn?'<div class="scroll"><table><thead><tr><th>Zeitraum</th><th class="r">gemeldet</th><th class="r">heute</th><th class="r">Abweichung</th></tr></thead><tbody>'+u.perioden.map(function(x){ return '<tr><td>'+esc(x.key)+(x.fon?' <span class="tag ok">FinanzOnline</span>':'')+'</td><td class="r">'+money(x.gemeldet)+'</td><td class="r">'+(x.jetzt==null?'':money(x.jetzt))+'</td><td class="r">'+(x.diff?'<b class="'+(Math.abs(x.diff)>1?"bad-t":"")+'">'+eur(x.diff)+'</b>':'<span class="muted">–</span>')+'</td></tr>'; }).join("")+
       '<tr class="grp"><td>Summe Vorauszahlungen</td><td class="r">'+money(u.voraus)+'</td><td class="r"></td><td class="r">'+(u.diffSum?eur(u.diffSum):'')+'</td></tr></tbody></table></div>':'<div class="panel-b muted">Noch keine UVA für '+esc(y)+' als erledigt markiert.</div>')+
     (dn<exp&&!running?'<div class="panel-b muted small">'+(exp-dn)+' UVA-Zeiträume sind nicht als erledigt markiert – deren Vorauszahlungen fehlen oben. Die Restschuld ist dann zu hoch.</div>':'')+'</section>'+
+    '<section class="panel"><div class="panel-b row wrap">'+((ST.data.creditNotes||[]).some(function(c){ var x=docCfg(c.id); return c.status>=200&&String(c.date||"").slice(0,4)===y&&!(x.kz==="ignore"||x.ignore); })?'<button class="btn" data-act="cnignall:'+esc(y)+'">Alle Gutschriften '+esc(y)+' ignorieren</button><span class="muted small">Gutschriften '+esc(y)+' wirken derzeit auf die U1 (Details im UVA-Tab).</span>':'<span class="muted small">Keine wirksamen Gutschriften '+esc(y)+'.</span>')+'</div></section>'+
     '<section class="panel"><div class="panel-h"><h2>FinanzOnline – U1 '+esc(y)+'</h2><span class="muted">eigenständig (Anbringen JAHR_ERKL mit nur der U1) oder zusammen mit E1/E1a im Tab JAB</span></div>'+
     (!schema?'<div class="notice" style="margin:0 18px 14px"><span><b>Übermittlung ab Veröffentlichung des BMF-Schemas '+esc(y)+'</b> (üblicherweise Ende des Jahres) – bis dahin Kennzahlen-Export.</span></div>':'')+
     '<div class="panel-b row wrap"><button class="btn" data-act="u1copy:'+esc(y)+'">Kennzahlen kopieren</button><button class="btn" data-act="fonxml:U1">XML ansehen</button><button class="btn" data-act="fonsend:U1:T"'+(cfg.ready&&!running&&schema?'':' disabled')+'>Prüfen (Test)</button><button class="btn glow" data-act="fonsend:U1:P"'+(cfg.ready&&!running&&schema?'':' disabled')+'>Abgeben</button>'+
