@@ -59,6 +59,7 @@ const TYPES = {
 };
 
 const ORIGIN = "https://www.fs-creative.at";
+const CANON_HOST = "www.fs-creative.at";
 
 const ROUTE_META = {
   "/": ["Webdesign Montafon & Vorarlberg | FS Creative", "Webdesign aus dem Montafon: FS Creative baut schnelle Websites, Online-Shops & Buchungsplattformen für Betriebe in Vorarlberg & Tirol. Gratis Entwurf anfragen."],
@@ -2315,9 +2316,12 @@ const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
 
-    // Eine Adresse für Google: fs-creative.at -> www.fs-creative.at (Admin ausgenommen, sonst gilt das Login-Cookie nicht mehr)
-    if (String(req.headers.host || "").toLowerCase().split(":")[0] === "fs-creative.at" && p !== "/admin" && p.indexOf("/admin/") !== 0) {
-      return send(res, 301, "", "text/plain", { Location: ORIGIN + (req.url || "/") });
+    // Nur eine Version online: alles (auch der Admin und die Railway-Adresse) läuft über www.fs-creative.at.
+    // Ausnahmen: lokale Entwicklung und Railway-intern. GET/HEAD → 301, sonst 308 (Methode bleibt erhalten).
+    const host = String(req.headers.host || "").toLowerCase().split(":")[0];
+    if (host && host !== CANON_HOST && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(host) && !/\.railway\.internal$/.test(host) && host !== "healthcheck.railway.app" && !/\.localhost$/.test(host)) {
+      const code = (req.method === "GET" || req.method === "HEAD") ? 301 : 308;
+      return send(res, code, "", "text/plain", { Location: ORIGIN + (req.url || "/"), "X-Robots-Tag": "noindex" });
     }
 
     if (p === "/api/anfrage") {
@@ -2327,6 +2331,7 @@ const server = http.createServer((req, res) => {
 
     // Admin-Bereich zuerst und isoliert — Rest der Website bleibt unberührt.
     if (p === "/admin" || p.indexOf("/admin/") === 0) {
+      res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");   // Admin nie in Suchmaschinen
       return void handleAdmin(req, res, u, p);
     }
 
