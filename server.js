@@ -1348,6 +1348,54 @@ function cockpitModule(name) {
   try { return fs.readFileSync(path.join(COCKPIT_DIR, name)); } catch (e) { return null; }
 }
 
+
+// ── Steuer: UVA (U30) und Jahresabschluss (E1a/U1) – Rohdaten aus sevDesk + gespeicherter Status ──
+const STEUER_FILE = path.join(DATA_DIR, "steuer.json");
+function readSteuer() { let o = {}; try { o = JSON.parse(fs.readFileSync(STEUER_FILE, "utf8")) || {}; } catch (e) {} o.settings = Object.assign({ besteuerung: "ist", zeitraum: "quartal" }, o.settings || {}); o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {}; return o; }
+function writeSteuer(o) { try { fs.writeFileSync(STEUER_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
+async function sevAll(pathq, query, max) {
+  const out = []; const lim = 1000;
+  for (let off = 0; off < (max || 6000); off += lim) {
+    const j = await sev("GET", pathq, { query: Object.assign({ limit: lim, offset: off }, query || {}), timeout: 40000 });
+    const arr = (j && j.objects) || []; out.push.apply(out, arr); if (arr.length < lim) break;
+  }
+  return out;
+}
+let STEUER_CACHE = { at: 0, data: null, p: null };
+async function steuerRaw(force) {
+  if (!force && STEUER_CACHE.data && Date.now() - STEUER_CACHE.at < 10 * 60 * 1000) return STEUER_CACHE.data;
+  if (STEUER_CACHE.p) return STEUER_CACHE.p;
+  STEUER_CACHE.p = (async () => {
+    const [inv, ipos, vou, vpos] = await Promise.all([
+      sevAll("/Invoice", { embed: "contact" }), sevAll("/InvoicePos", {}, 20000),
+      sevAll("/Voucher", {}), sevAll("/VoucherPos", { embed: "accountingType" }, 20000),
+    ]);
+    const posBy = {}; ipos.forEach(x => { const id = x.invoice && x.invoice.id; if (!id) return; (posBy[id] = posBy[id] || []).push({ rate: sevNum(x.taxRate), net: sevNum(x.sumNet != null ? x.sumNet : (sevNum(x.price) * sevNum(x.quantity || 1))), tax: sevNum(x.sumTax) }); });
+    const vposBy = {}; vpos.forEach(x => { const id = x.voucher && x.voucher.id; if (!id) return; const at = x.accountingType || {}; (vposBy[id] = vposBy[id] || []).push({ rate: sevNum(x.taxRate), net: sevNum(x.sumNet), tax: sevNum(x.sumTax), gross: sevNum(x.sumGross), cat: at.name || "", catId: at.id ? String(at.id) : "", catType: at.type || "" }); });
+    const invoices = inv.filter(o => o.invoiceType !== "MA").map(o => {
+      const lines = posBy[o.id] || [{ rate: sevNum(o.taxRate), net: sevNum(o.sumNet), tax: sevNum(o.sumTax) }];
+      return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), payDate: sevDay(o.payDate),
+        taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(o.contact), net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid: sevNum(o.paidAmount), lines };
+    });
+    const vouchers = vou.map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
+      supplier: v.supplierName || "", desc: v.description || "", net: sevNum(v.sumNet), tax: sevNum(v.sumTax), gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), lines: vposBy[v.id] || [] }));
+    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers };
+    STEUER_CACHE = { at: Date.now(), data: d, p: null };
+    return d;
+  })().catch(e => { STEUER_CACHE.p = null; throw e; });
+  return STEUER_CACHE.p;
+}
+function steuerOp(pl) {
+  const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
+  if (op === "settings") { const P = pl.settings || {}; if (P.besteuerung === "ist" || P.besteuerung === "soll") o.settings.besteuerung = P.besteuerung; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; }
+  else if (op === "mapping") { const m = pl.mapping || {}; Object.keys(m).forEach(k => { const v = String(m[k] || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12); if (v) o.mapping[String(k).slice(0, 120)] = v; else delete o.mapping[String(k).slice(0, 120)]; }); }
+  else if (op === "doc") { const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {}; if ("kz" in P) cur.kz = String(P.kz || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12) || undefined; if ("asset" in P) cur.asset = !!P.asset; if ("ignore" in P) cur.ignore = !!P.ignore; o.docs[id] = cur; }
+  else if (op === "done" && /^(uva|jab)$/.test(pl.kind) && key) { o[pl.kind][key] = { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? JSON.parse(JSON.stringify(pl.summary).slice(0, 20000)) : null, note: String(pl.note || "").slice(0, 500) }; }
+  else if (op === "undone" && /^(uva|jab)$/.test(pl.kind) && key) { delete o[pl.kind][key]; }
+  else throw new Error("bad_op");
+  if (!writeSteuer(o)) throw new Error("save_failed");
+  return o;
+}
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
     if (adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin" });
@@ -1573,6 +1621,15 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/leads" && req.method === "POST") {
     try { const pl = await sevBody(req, 100000); return send(res, 200, JSON.stringify({ ok: true, leads: leadOp(pl) }), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/steuer" && req.method === "GET") {
+    const st = readSteuer();
+    try { const raw = await steuerRaw(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(Object.assign({ ok: true }, st, { data: raw })), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify(Object.assign({ ok: false, error: String(e && e.message || e).slice(0, 200) }, st)), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/steuer" && req.method === "POST") {
+    try { const pl = await sevBody(req, 100000); const o = steuerOp(pl); return send(res, 200, JSON.stringify({ ok: true, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs }), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "GET") {

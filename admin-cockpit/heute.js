@@ -60,9 +60,27 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
       '<section class="panel"><div class="panel-h"><h2>'+(todayEv.length?"Termine heute":"Nächste Termine")+'</h2><button class="link" data-go="kal">Kalender →</button></div>'+
         (nextEv.length?'<ul class="agenda">'+nextEv.map(function(e){ return '<li><span class="time">'+(e.date===today?(e.time||"ganztags"):deShort(e.date))+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.date!==today&&e.time?e.time:"",e.location||"",e.source==="icloud"?"iCloud":""].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Termine.</div>')+'</section>'+
       '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>'+
-      (sev?'<section class="panel"><div class="panel-h"><h2>Umsatz '+esc(D.year)+'</h2><button class="link" data-go="geld">Geld →</button></div><div class="panel-b" style="display:grid;gap:6px"><div class="v num">'+eur0(sev.revenueYear)+'</div><div class="muted">gestellte Rechnungen laut sevDesk</div></div></section>':'')+
+      incomePanel()+
     '</div></div>';
   }
 });
+function incomePanel(){
+  var inc=F.D.income; if(!inc||!inc.lines||!inc.lines.length) return "";
+  return '<section class="panel"><div class="panel-h"><h2>Geschätztes Monatseinkommen</h2><button class="link" data-act="incomeinfo">Wie gerechnet?</button></div><div class="panel-b income">'+
+    '<div class="v num money">'+eur0(inc.total)+'<span class="muted" style="font-size:14px;font-weight:500"> / Monat</span></div>'+
+    inc.lines.map(function(l){ return '<div class="line"><span>'+esc(l.label)+'</span><span class="num money">'+eur0(l.monthly)+'</span><span class="muted">'+esc(l.basis)+'</span></div>'; }).join("")+
+    '<div class="muted">'+(inc.computedAt?'Prognose für kochdu und VALUERO vom '+F.de(inc.computedAt)+', nächste Neuberechnung am '+F.de(inc.nextAt)+'.':'')+'</div></div></section>';
+}
+F.action("incomeinfo",function(){
+  F.modal('<div class="row-between"><h2 style="font-size:19px">So wird das Monatseinkommen geschätzt</h2>'+F.btnClose()+'</div>'+
+    '<ul class="plain"><li><b>Kantineur:</b> die aktuell laufenden Abos (monatlich wiederkehrend), immer tagesaktuell.</li>'+
+    '<li><b>kochdu:</b> Zuwachs aller Gebühren (Bar und Online) der letzten bis zu 60 Tage, auf 30 Tage umgerechnet. Solange noch keine 3 Wochen Verlauf gespeichert sind: Jahresschnitt.</li>'+
+    '<li><b>VALUERO:</b> Schnitt der letzten 3 vollen Monate, angepasst mit dem Saisonverlauf aus dem Vorjahr (Winter und Sommer im Montafon).</li>'+
+    '<li><b>Skikaiser:</b> Schnitt der letzten 3 Monate nach Store-Gebühr, sobald die App angebunden ist.</li>'+
+    '<li><b>Websites:</b> fixe Hosting- und Domain-Verträge, Jahresbetrag ÷ 12.</li></ul>'+
+    '<p class="muted">kochdu, VALUERO und Skikaiser werden nur alle 14 Tage neu berechnet, damit die Zahl ruhig bleibt.</p><div class="foot"><span></span><button class="btn" data-act="incomerecalc">Jetzt neu berechnen</button></div>',"narrow");
+});
+F.action("incomerecalc",function(){ F.closeModal(); F.api("/admin/api/cockpit?year="+F.year+"&forecast=1").then(function(d){ if(d&&d.income){ F.D=d; F.render(); F.toast("Prognose neu berechnet"); } }); });
+F.css("ul.plain{margin:0;padding-left:18px;display:grid;gap:8px} .income .v{font-size:28px}");
 F.action("togglefeed",function(){ F.UI.feedAll=!F.UI.feedAll; F.render(); });
 })();
