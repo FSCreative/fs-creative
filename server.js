@@ -767,7 +767,7 @@ async function sev(method, path, opts) {
 const SEV_USER = process.env.SEVDESK_USER_ID || "837373";   // Simon Felder (Ansprechpartner auf Rechnungen)
 const SEV_COUNTRY_AT = 3;                                     // StaticCountry Österreich
 function sevNum(v) { const n = parseFloat(v); return isFinite(n) ? n : 0; }
-function sevDay(v) { return v ? String(v).slice(0, 10) : null; }
+function sevDay(v) { if (!v) return null; const t = String(v); if (/^\d{9,11}$/.test(t)) return new Date(+t * 1000 + 12 * 3600e3).toISOString().slice(0, 10); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : null; }   // ISO oder Unix-Zeitstempel
 function sevName(c) { if (!c) return ""; return String(c.name || [c.surename, c.familyname].filter(Boolean).join(" ") || "").trim(); }
 function sevDateDE(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : iso; }
 function viennaToday() { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date()); }
@@ -1409,16 +1409,21 @@ async function sevAll(pathq, query, max, stats) {
   if (stats) stats[pathq] = (stats[pathq] || 0) + dupes;
   return out;
 }
-function sevPosLines(pos, key) {
-  const by = {};
-  pos.forEach(x => { const id = x[key] && x[key].id; if (!id) return; const at = x.accountingType || {};
+// Kategorie einer Position: sevDesk Update 1.0 liefert accountingType, Update 2.0 accountDatev (Buchungskonto).
+// Name/Nummer des accountDatev kommen – falls nicht eingebettet – aus der ReceiptGuidance (accountDatevId → accountNumber/accountName).
+// Fehlt beides, erkennt der Rechenkern Steuerzahlungen/Privat/SVS über Kontonummer bzw. Lieferant (nie Abbruch).
+function sevPosLines(pos, key, acc) {
+  const by = {}; acc = acc || {};
+  pos.forEach(x => { const id = x && x[key] && x[key].id; if (!id) return; const ad = (x.accountDatev && typeof x.accountDatev === "object") ? x.accountDatev : {}, g = (ad.id != null && acc[String(ad.id)]) || {};
+    const at = Object.assign({}, x.accountingType && typeof x.accountingType === "object" ? x.accountingType : {});
+    if (!at.name) { at.name = ad.name || g.name || ""; if (!at.id && ad.id != null) at.id = "d" + ad.id; }
     // InvoicePos liefert laut API keine sumNet/sumTax (nur price/priceNet/priceTax bzw. sum*Accounting) – daher robust lesen;
     // der Rechenkern gleicht die Positionen ohnehin auf die Kopfsummen des Belegs ab.
     const rate = sevNum(x.taxRate), q = x.quantity != null ? sevNum(x.quantity) : 1;
     const pick = (...ks) => { for (const k of ks) if (x[k] != null && x[k] !== "") return sevNum(x[k]); return null; };
     let net = pick("sumNet", "sumNetAccounting"); if (net == null) { const pn = pick("priceNet"); net = pn != null ? pn * q : (pick("price") || 0) * q; }
     let tax = pick("sumTax", "sumTaxAccounting"); if (tax == null) { const g = pick("sumGross", "sumGrossAccounting"); tax = g != null ? g - net : Math.round(net * rate) / 100; }
-    (by[id] = by[id] || []).push({ rate, net, tax, cat: at.name || "", catId: at.id ? String(at.id) : "", catType: at.type || "" }); });
+    (by[id] = by[id] || []).push({ rate, net, tax, cat: at.name || "", catId: at.id ? String(at.id) : "", catType: at.type || "", catNo: String(ad.accountNumber || g.no || ""), isAsset: x.isAsset === true || x.isAsset === "1" || x.isAsset === 1 }); });
   return by;
 }
 let STEUER_CACHE = { at: 0, data: null, p: null };
@@ -1428,8 +1433,11 @@ async function steuerRaw(force) {
   STEUER_CACHE.p = (async () => {
     const dupes = {};
     const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr, guide] = await Promise.all([
-      sevAll("/Invoice", { embed: "contact,addressCountry" }, 6000, dupes), sevAll("/InvoicePos", {}, 20000, dupes),
-      sevAll("/Voucher", { embed: "supplier" }, 6000, dupes), sevAll("/VoucherPos", { embed: "accountingType" }, 20000, dupes),
+      // showAll: laut sevDesk-Doku sonst nicht alle Rechnungsarten (SR/AR/TR/ER) in der Liste
+      sevAll("/Invoice", { embed: "contact,addressCountry", showAll: true }, 6000, dupes), sevAll("/InvoicePos", {}, 20000, dupes),
+      sevAll("/Voucher", { embed: "supplier" }, 6000, dupes),
+      // Update 2.0: accountDatev; Update 1.0: accountingType – beide einbetten, bei Ablehnung der Kombination stufenweise zurückfallen
+      sevAll("/VoucherPos", { embed: "accountingType,accountDatev" }, 20000, dupes).catch(() => sevAll("/VoucherPos", { embed: "accountingType" }, 20000, dupes)).catch(() => sevAll("/VoucherPos", {}, 20000, dupes)),
       sevAll("/CreditNote", { embed: "contact" }, 3000, dupes).catch(() => []), sevAll("/CreditNotePos", {}, 6000, dupes).catch(() => []),
       sevAll("/CheckAccountTransaction", {}, 6000, dupes).catch(() => []),
       // Zahlungszuordnungen (für Teilzahlungen je Zahlungsdatum) – nicht in der offiziellen Doku, daher optional
@@ -1438,7 +1446,8 @@ async function steuerRaw(force) {
       sev("GET", "/ReceiptGuidance/forAllAccounts", { timeout: 40000 }).catch(() => null),  // Steuerregeln des Kontos (Diagnose)
     ]);
     const ctry = {}; addr.forEach(a => { const cid = a.contact && a.contact.id, c = a.country && (a.country.code || ""); if (cid && c && !ctry[cid]) ctry[cid] = String(c).toUpperCase(); });
-    const posBy = sevPosLines(ipos, "invoice"), vposBy = sevPosLines(vpos, "voucher"), cnBy = sevPosLines(cnpos, "creditNote");
+    const acc = {}; ((guide && guide.objects) || []).forEach(g => { if (g && g.accountDatevId != null) acc[String(g.accountDatevId)] = { no: String(g.accountNumber || ""), name: g.accountName || "" }; });
+    const posBy = sevPosLines(ipos, "invoice"), vposBy = sevPosLines(vpos, "voucher", acc), cnBy = sevPosLines(cnpos, "creditNote");
     const txBy = {}; tx.forEach(t => { txBy[String(t.id)] = sevDay(t.valueDate || t.entryDate); });
     const pays = {};
     logs.forEach(l => { const ob = l.object || l.objectFrom || {}; const id = ob.id; if (!id) return; const kind = ob.objectName || "";
@@ -1450,17 +1459,17 @@ async function steuerRaw(force) {
     const country = o => (o && (o.code || o.translationCode) ? String(o.code || "").toUpperCase() : "");
     const invoices = inv.filter(o => o.invoiceType !== "MA").map(o => {
       const c = o.contact || {}, paid = sevNum(o.paidAmount);
-      return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), delivery: sevDay(o.deliveryDate), payDate: sevDay(o.payDate),
-        taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(c), uid: String(c.vatNumber || "").replace(/\s/g, "").toUpperCase(), country: country(o.addressCountry) || ctry[c.id] || "",
+      return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), delivery: sevDay(o.deliveryDate), deliveryUntil: sevDay(o.deliveryDateUntil) || null, payDate: sevDay(o.payDate),
+        origin: o.origin && o.origin.id != null ? String(o.origin.id) : "", contactId: c.id != null ? String(c.id) : "", taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(c), uid: String(c.vatNumber || "").replace(/\s/g, "").toUpperCase(), country: country(o.addressCountry) || ctry[c.id] || "",
         net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid, enshrined: !!o.enshrined, pays: paysFor("Invoice", o.id, paid), lines: posBy[o.id] || [] };
     });
     const vouchers = vou.map(v => { const s = v.supplier || {}, paid = sevNum(v.paidAmount);
-      return { id: String(v.id), type: v.voucherType || "VOU", date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
+      return { id: String(v.id), type: v.voucherType || "VOU", date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), deliveryUntil: sevDay(v.deliveryDateUntil) || null, payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
         supplier: v.supplierName || sevName(s) || "", supplierUid: String(s.vatNumber || "").replace(/\s/g, "").toUpperCase(), supplierCountry: (s.id && ctry[s.id]) || "", desc: v.description || "", net: sevNum(v.sumNet), tax: sevNum(v.sumTax), gross: sevNum(v.sumGross), paid,
         enshrined: !!v.enshrined, pays: paysFor("Voucher", v.id, paid), lines: vposBy[v.id] || [] }; });
     const creditNotes = cn.map(o => ({ id: "cn" + o.id, sevId: String(o.id), nr: o.creditNoteNumber || "", type: "GU", status: parseInt(o.status, 10) || 0, date: sevDay(o.creditNoteDate), delivery: sevDay(o.deliveryDate),
       taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(o.contact), uid: String((o.contact || {}).vatNumber || "").toUpperCase(),
-      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), enshrined: !!o.enshrined, lines: cnBy[o.id] || [] }));
+      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), enshrined: !!o.enshrined, pays: pays["CreditNote:" + o.id] ? pays["CreditNote:" + o.id].slice().sort((x, y) => x.date.localeCompare(y.date)) : undefined, lines: cnBy[o.id] || [] }));
     const cutoff = new Date(Date.now() - 500 * 864e5).toISOString().slice(0, 10);
     const transactions = tx.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
       .filter(t => t.amount < 0 && (t.date || "") >= cutoff && /finanzamt|abgabenkonto|bmf|steuer|\bust\b|umsatzsteuer|\bfa\b/i.test(t.name + " " + t.purpose));
@@ -1486,7 +1495,9 @@ function steuerOp(pl) {
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
     if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
-    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    if ("wk" in P) cur.wk = P.wk === "ja" || P.wk === "nein" ? P.wk : undefined;           // § 19 EStG 15-Tage-Regel
+    if ("erMode" in P) cur.erMode = P.erMode === "rest" || P.erMode === "voll" ? P.erMode : undefined;   // Endrechnung: Kopfsumme Rest/Gesamt
     if ("nd" in P) { const n = parseInt(P.nd, 10); cur.nd = n > 0 && n < 60 ? n : undefined; }
     if ("method" in P) cur.method = P.method === "deg" ? "deg" : undefined;
     if ("degRate" in P) { const n = n2(P.degRate); cur.degRate = n > 0 && n <= 30 ? n : undefined; }
