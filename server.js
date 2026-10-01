@@ -2449,6 +2449,13 @@ async function steuerDiag(key) {
     const sampleI = await sev("GET", "/Invoice", { query: { limit: 3, showAll: true } }).catch(() => ({}));
     (sampleI.objects || []).forEach(v => L("invoice_raw", { keys: Object.keys(v), taxRule: v.taxRule || null, taxType: v.taxType || null, invoiceType: v.invoiceType }));
     const raw = await steuerRaw(true), o = readSteuer();
+    // Rohdaten 2026-04..12 zeilenweise (zum lokalen Nachrechnen), plus Cockpit-Einstellungen ohne FinanzOnline-Archiv
+    if (process.env.STEUER_DIAG_RAW === "1") {
+      const inR = d => (d.date || "") >= "2026-03-01" || (d.delivery || "") >= "2026-03-01" || (d.payDate || "") >= "2026-03-01";
+      ["invoices", "vouchers", "creditNotes"].forEach(k => (raw[k] || []).filter(inR).forEach(d => L("raw_" + k, d)));
+      L("raw_meta", { taxRules: raw.taxRules, taxSets: raw.taxSets, fetchedAt: raw.fetchedAt });
+      const oc = Object.assign({}, o); delete oc.fon; L("raw_steuer", oc);
+    }
     L("meta", Object.assign({ period: p }, raw.meta.counts, { taxRules: raw.taxRules, taxSets: raw.taxSets }));
     const inP = d => { const t = d.delivery || d.date || ""; return (d.date >= p.from && d.date <= p.to) || (t >= p.from && t <= p.to); };
     const agg = {};
