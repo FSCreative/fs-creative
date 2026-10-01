@@ -7,13 +7,15 @@ var F=window.FSC, S=window.FSC_STEUER, esc=F.esc, eur=F.eur, de=F.de, deShort=F.
 var ST=null, loading=false, loadErr="";
 F.UI.uvaKey=F.UI.uvaKey||null; F.UI.jabYear=F.UI.jabYear||null; F.UI.stOpen=F.UI.stOpen||{}; F.UI.jabOpen=F.UI.jabOpen||{};
 
+var loadP=null;
 function load(force){
-  if(loading) return; loading=true;
-  F.api("/admin/api/steuer"+(force?"?force=1":"")).then(function(j){ loading=false; if(j&&j.ok){ ST=j; loadErr=""; } else { loadErr=(j&&j.error)||"Fehler"; if(j&&j.settings){ ST=ST||j; } } if(F.current==="geld") F.render(); })
+  if(loading) return loadP; loading=true;
+  loadP=F.api("/admin/api/steuer"+(force?"?force=1":"")).then(function(j){ loading=false; if(j&&j.ok){ ST=j; loadErr=""; } else { loadErr=(j&&j.error)||"Fehler"; if(j&&j.settings){ ST=ST||j; } } if(F.current==="geld"||F.current==="heute") F.render(); return ST; })
     .catch(function(){ loading=false; loadErr="Keine Verbindung."; if(F.current==="geld") F.render(); });
+  return loadP;
 }
 F.steuerData=function(){ return ST&&ST.data?ST.data:null; };
-var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon"];
+var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon","vies"];
 function apply(j){ if(j) KEYS.forEach(function(k){ if(j[k]!==undefined) ST[k]=j[k]; }); }
 function post(body,msg){ return F.api("/admin/api/steuer",{body:body}).then(function(j){ if(j&&j.ok){ apply(j); if(msg) F.toast(msg); F.render(); } else F.toast("Speichern fehlgeschlagen: "+((j&&j.error)||""),true); return j; }); }
 var r2=S.r2;
@@ -24,6 +26,21 @@ function num(v){ var n=parseFloat(String(v==null?"":v).replace(",",".")); return
 function periodsOf(year,mode){ var out=[]; if(mode==="monat"){ for(var m=1;m<=12;m++) out.push({key:year+"-M"+String(m).padStart(2,"0"),label:new Date(year,m-1,1).toLocaleDateString("de-AT",{month:"long"})+" "+year,from:year+"-"+String(m).padStart(2,"0")+"-01",to:F.ymd(new Date(year,m,0)),endMonth:m,year:year}); } else { for(var q=1;q<=4;q++) out.push({key:year+"-Q"+q,label:q+". Quartal "+year,from:year+"-"+String(q*3-2).padStart(2,"0")+"-01",to:F.ymd(new Date(year,q*3,0)),endMonth:q*3,year:year}); } return out; }
 function dueOf(p){ return F.ymd(new Date(p.year,p.endMonth+1,15)); }       // 15. des zweitfolgenden Monats
 function periodByKey(k){ return periodsOf(+k.slice(0,4),k.indexOf("-M")>0?"monat":"quartal").find(function(x){ return x.key===k; }); }
+
+/* ---------- Andockpunkt für KI-Vorschläge ----------
+   Ist F.steuerAiSuggest(info) definiert (info = FSC_STEUER.explainDoc(...)), erscheint bei unklaren Belegen ein Button „KI-Vorschlag“.
+   Erwartete Antwort (Promise): {klasse:"rc"|"060"|… (Schlüssel aus FSC_STEUER.IN_OPTS/OUT_OPTS), begruendung:"…", taxRule?:"14"}.
+   Übernommen wird nur nach Klick des Inhabers (Cockpit-Einordnung); sevDesk wird dabei nicht geändert. */
+function aiBtn(id){ return typeof F.steuerAiSuggest==="function"?' <button class="btn" data-act="staisug:'+esc(id)+'">KI-Vorschlag</button>':""; }
+F.action("staisug",function(id){
+  var info=S.explainDoc(ST.data,ST,id); if(!info||typeof F.steuerAiSuggest!=="function") return;
+  F.toast("Frage KI …");
+  Promise.resolve(F.steuerAiSuggest(info)).then(function(sug){
+    if(!sug||!sug.klasse){ F.toast("Kein Vorschlag",true); return; }
+    var opts=info.art==="Ausgang"?S.OUT_OPTS:S.IN_OPTS, lbl=(opts.find(function(o){ return o[0]===sug.klasse; })||[,sug.klasse])[1];
+    F.modal('<div class="row-between"><h2 style="font-size:19px">KI-Vorschlag</h2>'+F.btnClose()+'</div><p><b>'+esc(info.partner)+'</b> · '+eur(info.netto)+'</p><p>Aktuell: '+esc(info.positionen.map(function(x){ return x.klasse+" – "+x.begruendung; }).join("; "))+'</p><p>Vorschlag: <b>'+esc(lbl)+'</b></p><p class="muted">'+esc(sug.begruendung||"")+'</p><div class="foot"><span></span><span class="row"><button class="btn" data-closemodal>Verwerfen</button><button class="btn primary" data-act="stkz:'+esc(id)+':'+esc(sug.klasse)+'">Übernehmen</button></span></div>',"narrow");
+  }).catch(function(e){ F.toast("KI-Vorschlag fehlgeschlagen: "+(e&&e.message||""),true); });
+});
 
 /* ---------- Belegliste (Herleitung je Kennzahl) ---------- */
 function docCfg(id){ return (ST.docs&&ST.docs[id])||{}; }
@@ -67,16 +84,45 @@ function renderUva(){
     '<section class="panel"><div class="panel-h"><div><h2>UVA '+esc(cur.label)+'</h2><div class="muted">Zeitraum '+de(cur.from)+' – '+de(cur.to)+' · Sollbesteuerung (nach Leistungsdatum, Vorsteuer nach Belegdatum)</div></div><div class="chips">'+chips+'</div></div>'+
     '<div class="panel-b uva-top"><div><div class="k">'+(r.zahllast>=0?"Zahllast (KZ 095)":"Gutschrift (KZ 095)")+'</div><div class="v num money">'+eur(Math.abs(r.zahllast))+'</div><div class="s">Kontrolle aus sevDesk-Summen: '+eur(ctl.zahllast)+(Math.abs(dz)>0.01?' · <b class="'+(Math.abs(dz)>5?"bad-t":"")+'">Abweichung '+eur(dz)+'</b> <button class="link" data-act="stctl">Warum?</button>':' · stimmt überein')+'</div></div>'+
       '<div><div class="k">Fällig</div><div class="v num">'+de(due)+'</div><div class="s">Abgabe und Zahlung'+(due<today&&!(done&&done.doneAt)?' · <b class="bad-t">überfällig</b>':'')+'</div></div>'+
-      '<div class="uva-done">'+(done&&done.doneAt?'<span class="tag ok">'+(done.fon?'Eingereicht (Paket '+done.fon.paket+')':'Erledigt')+' am '+de(done.doneAt)+'</span><button class="btn" data-act="uvaundo:'+cur.key+'">Zurücksetzen</button>':'<button class="btn" data-act="uvadone:'+cur.key+'">Als erledigt markieren</button>')+'</div></div>'+
+      '<div class="uva-done"><button class="btn glow" data-act="uvaprep:'+cur.key+'"'+(cur.to>=today?' disabled title="Zeitraum läuft noch"':'')+'>UVA vorbereiten</button>'+(done&&done.doneAt?'<span class="tag ok">'+(done.fon?'Eingereicht (Paket '+done.fon.paket+')':'Erledigt')+' am '+de(done.doneAt)+'</span><button class="btn" data-act="uvaundo:'+cur.key+'">Zurücksetzen</button>':'<button class="btn" data-act="uvadone:'+cur.key+'">Als erledigt markieren</button>')+'</div></div>'+
     (r.review.length?'<div class="notice" style="margin:0 18px 14px"><span><b>'+r.review.length+' Beleg'+(r.review.length===1?"":"e")+'</b> konnte'+(r.review.length===1?"":"n")+' nicht eindeutig eingeordnet werden und fehlen in den Kennzahlen.</span><button class="btn" data-act="stdocs:review">Einordnen</button></div>':'')+
-    (F.UI.stOpen.review&&r.review.length?'<div class="panel-b">'+docsList(r.review.map(function(x){ return {doc:x.doc,kind:x.kind,info:x.why}; }))+'</div>':'')+
+    (F.UI.stOpen.review&&r.review.length?'<div class="panel-b">'+docsList(r.review.map(function(x){ return {doc:x.doc,kind:x.kind,info:x.why}; }))+(typeof F.steuerAiSuggest==="function"?'<div class="row wrap">'+r.review.map(function(x){ return aiBtn(x.doc.id).replace("KI-Vorschlag","KI: "+esc(docName(x.doc,x.kind==="out"?"out":"in").slice(0,24))); }).join("")+'</div>':'')+'</div>':'')+
     kzTable(r,F.UI.stOpen.allkz)+
     '<div class="panel-b row wrap"><button class="link" data-act="stdocs:allkz">'+(F.UI.stOpen.allkz?"Nur befüllte Kennzahlen":"Alle Kennzahlen des Formulars zeigen")+'</button>'+
       (r.corr.length?'<span class="muted small">Negative Werte umgebucht: '+r.corr.map(function(c){ return "KZ "+c.kz+" "+eur(c.amount)+(c.to!=="0"?" → KZ "+c.to:" → 0"); }).join(", ")+' (nur 063, 067 und 090 dürfen negativ sein).</span>':'')+'</div>'+
     '</section>'+
-    otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+fonPanel(cur,r,zmr,done)+zmPanel(cur,r,zmr)+
+    euPanel(cur)+recvPanel(cur,r)+otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+fonPanel(cur,r,zmr,done)+zmPanel(cur,r,zmr)+
     '<section class="panel"><div class="panel-b muted small"><b>Hinweise:</b> '+esc(duty)+' Sollbesteuerung: die Umsatzsteuer entsteht mit Ablauf des Monats, in dem die Leistung erbracht wurde (Leistungsdatum, sonst Rechnungsdatum; § 19 Abs. 2 Z 1 lit. a UStG – wird die Rechnung erst später gelegt, verschiebt sich das um höchstens einen Monat). Anzahlungen werden bei Zahlungseingang versteuert (Mindest-Istbesteuerung). Stornos und Gutschriften mindern im Monat ihrer Ausstellung; Forderungsausfälle und Skonti bitte als manuelle Berichtigung (KZ 090) erfassen. Reverse Charge (Google, Meta, Railway, Cloudflare …) zählt im Monat der Leistung: KZ 057 und gleich hohe Vorsteuer KZ 066. Ausländische Umsatzsteuer (z. B. 19 % DE) ist keine österreichische Vorsteuer. '+
       (prevGross&&prevGross<=S.C.kleinunternehmer?'Vorjahresumsatz brutto '+eur(prevGross)+' – unter der Kleinunternehmergrenze von 55.000 € brutto: Befreiung wäre möglich (Verzicht/Regelbesteuerung bindet 5 Jahre).':'Kleinunternehmergrenze: 55.000 € brutto (ab 2025) – du bist regelbesteuert.')+'</div></section>';
+}
+/* ---------- EU & Ausland ---------- */
+var EU_ROWS=[["igLeistung","Dienstleistungen an EU-Unternehmer (Reverse Charge beim Kunden) → ZM, nicht in KZ 000"],["igLieferung","ig. Lieferungen (Ware) → KZ 017 + ZM"],["dreieck","Dreiecksgeschäfte → ZM mit Kennzeichen"],["igErwerb","ig. Erwerbe (Ware aus der EU) → KZ 070 ff., Vorsteuer KZ 065"],["rcEU","Leistungen von EU-Unternehmern (Google, Meta, Adobe, Hetzner …) → KZ 057/066"],["rcDritt","Leistungen aus dem Drittland (Railway, Cloudflare …) → KZ 057/066"],["fxEU","ausländische EU-USt auf Rechnungen (nicht abziehbar) – Steuerbetrag"],["ausfuhr","Ausfuhrlieferungen → KZ 011"],["drittland","Leistungen an Kunden im Drittland – nicht steuerbar"],["b2cEU","Leistungen an Privatkunden in anderen EU-Staaten (österr. USt)"],["oss","One-Stop-Shop (gehört in die OSS-Erklärung)"]];
+function euPanel(cur){
+  var e=S.euSummary(ST.data,ST,cur), rows=EU_ROWS.filter(function(x){ return e[x[0]]; });
+  var uids=e.zmRows.filter(function(z){ return z.uid; });
+  return '<section class="panel"><div class="panel-h"><h2>EU & Ausland</h2><span class="muted">automatisch erkannt über Steuerregel, UID-Präfix, Kontaktland und bekannte Anbieter</span></div>'+
+    (rows.length?'<div class="scroll"><table><tbody>'+rows.map(function(x){ var k="eu_"+x[0], n=(e.docs[x[0]]||[]).length;
+      return '<tr><td>'+esc(x[1])+'</td><td class="r">'+money(e[x[0]])+'</td><td class="r">'+(n?'<button class="link" data-act="stdocs:'+k+'">'+n+' Beleg'+(n===1?"":"e")+'</button>':'')+'</td></tr>'+(F.UI.stOpen[k]?'<tr class="sub-row"><td colspan="3">'+docsList((e.docs[x[0]]||[]).map(function(d){ return {doc:d.doc,kind:/^(igErwerb|rcEU|rcDritt|fxEU)$/.test(x[0])?"in":"out",base:d.base}; }))+'</td></tr>':''); }).join("")+'</tbody></table></div>':'<div class="panel-b muted">Keine EU- oder Auslandsumsätze in diesem Zeitraum.</div>')+
+    (e.ossWarn?'<div class="notice" style="margin:0 18px 14px"><span><b>OSS-Schwelle überschritten:</b> Leistungen an Privatkunden in anderen EU-Staaten '+esc(cur.from.slice(0,4))+' gesamt '+eur(e.b2cEUJahr)+' (Schwelle 10.000 €). Ab Überschreiten gilt die USt des Kundenlandes – Abrechnung über den One-Stop-Shop (FinanzOnline) oder Registrierung im jeweiligen Land.</span></div>':(e.b2cEUJahr?'<div class="panel-b muted small">B2C-Umsätze in andere EU-Staaten '+esc(cur.from.slice(0,4))+': '+eur(e.b2cEUJahr)+' von 10.000 € OSS-Schwelle.</div>':''))+
+    (uids.length?'<div class="panel-b"><div class="sec-t">UID-Nummern der EU-Kunden</div><div class="row wrap">'+uids.map(function(z){ var vs=(ST.vies||{})[z.uid];
+      return '<span class="tag '+(!z.valid.ok?"bad":(vs?(vs.valid?"ok":"bad"):"grey"))+'" title="'+esc(z.valid.ok?(vs?(vs.valid?"gültig laut VIES"+(vs.name?": "+vs.name:""):"laut VIES ungültig"):"Format korrekt – noch nicht bei VIES geprüft"):z.valid.why)+'">'+esc(z.uid)+'</span>'+(z.valid.ok?'<button class="link small" data-act="vies:'+esc(z.uid)+'">'+(vs?"neu prüfen":"VIES prüfen")+'</button>':''); }).join(" ")+'</div><div class="muted small">Die UID-Prüfung (Stufe 2 mit Name) ist für steuerfreie Leistungen an EU-Unternehmer Sorgfaltspflicht. VIES-Abfrage nur auf Klick, Ergebnis wird 7 Tage gespeichert.</div></div>':'')+
+    '</section>';
+}
+F.action("vies",function(uid){ F.toast("Frage VIES …"); F.api("/admin/api/steuer/vies?uid="+encodeURIComponent(uid)).then(function(j){ if(j&&j.ok){ ST.vies=ST.vies||{}; ST.vies[j.uid]=j; F.toast(j.valid?"UID gültig"+(j.name?": "+j.name:""):"UID laut VIES ungültig"+(j.why?" ("+j.why+")":""),!j.valid); F.render(); } else F.toast((j&&j.error)||"VIES-Fehler",true); }); });
+/* ---------- Forderungen: Skonto/Kürzungen und Ausfälle (Sollbesteuerung, § 16 UStG) ---------- */
+function recvPanel(cur,r){
+  var rc=S.receivables(ST.data,ST,F.D.today), mi=rc.minder.filter(function(x){ var d=x.doc.payDate||""; return d>=cur.from.slice(0,4)+"-01-01"; }), alt=rc.alt;
+  if(!mi.length&&!alt.length&&!r.minder.length) return "";
+  return '<section class="panel"><div class="panel-h"><h2>Entgeltsminderungen und Forderungsausfälle</h2><span class="muted">Sollbesteuerung: die USt wird im Monat der Zahlung bzw. des Ausfalls berichtigt</span></div>'+
+    (mi.length?'<div class="scroll"><table><tbody>'+mi.map(function(x){ var d=x.doc; return '<tr><td class="nowrap num">'+deShort(d.payDate)+'</td><td><b>'+esc(docName(d,"out"))+'</b><div class="sub">bezahlt '+eur(d.paid)+' von '+eur(d.gross)+' – Differenz '+eur(x.diff)+' ('+String(x.pct).replace(".",",")+' %)'+(x.pct>50?' · über 50 %: nicht automatisch':'')+'</div></td><td class="nowrap"><label class="row small"><input type="checkbox" data-stmind="'+esc(d.id)+'"'+(x.aktiv?" checked":"")+(x.pct>50?" disabled":"")+'> als Skonto/Kürzung berichtigen</label></td></tr>'; }).join("")+'</tbody></table></div>':'')+
+    (alt.length?'<div class="panel-b"><div class="sec-t">Offene Rechnungen älter als 6 Monate</div><table><tbody>'+alt.map(function(x){ var d=x.doc; return '<tr><td class="nowrap num">'+deShort(d.date)+'</td><td><b>'+esc(docName(d,"out"))+'</b><div class="sub">offen '+eur(x.open)+'</div></td><td class="nowrap"><label class="small">uneinbringlich seit <input class="f" type="date" style="width:150px" data-stausfall="'+esc(d.id)+'" value="'+esc(x.ausfall)+'"></label></td></tr>'; }).join("")+'</tbody></table><div class="muted small">Erst ausbuchen, wenn die Forderung tatsächlich uneinbringlich ist (z. B. Insolvenz, erfolglose Exekution). Wird später doch bezahlt, ist die USt wieder abzuführen – Datum dann löschen. In sevDesk die Rechnung entsprechend ausbuchen.</div></div>':'')+'</section>';
+}
+F.listen("change","[data-stmind]",function(el){ post({op:"doc",id:el.getAttribute("data-stmind"),patch:{noMinderung:!el.checked}},el.checked?"Wird als Entgeltsminderung berichtigt":"Keine Berichtigung"); });
+F.listen("change","[data-stausfall]",function(el){ post({op:"doc",id:el.getAttribute("data-stausfall"),patch:{ausfall:el.value||""}},el.value?"Als uneinbringlich erfasst":"Ausfall entfernt"); });
+function rulesDiag(){
+  var d=S.ruleDiagnosis(ST.data); if(!d.length) return '<div class="panel-b muted small">Steuerregeln deines sevDesk-Kontos konnten nicht abgerufen werden (ReceiptGuidance) – es gilt die Standard-Zuordnung laut sevDesk-Doku.</div>';
+  var bad=d.filter(function(x){ return !x.ok; }).length;
+  return '<div class="panel-b"><button class="link" data-act="stdocs:rules">Steuerregeln deines sevDesk-Kontos ('+d.length+(bad?', <b class="bad-t">'+bad+' weichen ab</b>':', Zuordnung bestätigt')+')</button>'+(F.UI.stOpen.rules?'<table><tbody>'+d.map(function(x){ return '<tr><td class="num">'+esc(x.id)+'</td><td>'+esc(x.description||x.name)+'<div class="sub">'+esc(x.name+" · "+(x.side||"")+" · "+(x.rates||[]).join(", "))+'</div></td><td>'+esc(x.erkannt||"–")+'</td><td>'+(x.ok?'<span class="tag ok">passt</span>':'<span class="tag bad">Annahme '+esc(x.annahme)+'</span>')+'</td></tr>'; }).join("")+'</tbody></table>':'')+'</div>';
 }
 function otherPanel(r){
   var o=r.other, parts=[];
@@ -103,10 +149,32 @@ F.action("stctl",function(){
   var cur=periodByKey(F.UI.uvaKey), r=S.computeUva(ST.data,ST,cur), c=S.controlCheck(ST.data,ST,cur);
   F.modal('<div class="row-between"><h2 style="font-size:19px">Kontrollrechnung '+esc(cur.label)+'</h2>'+F.btnClose()+'</div><dl class="facts">'+
     '<dt>USt laut sevDesk-Rechnungen ('+c.nOut+', Kopfsummen)</dt><dd class="num money">'+eur(c.ust)+'</dd><dt>− Vorsteuer laut sevDesk-Belegen mit österr. USt ('+c.nIn+')</dt><dd class="num money">'+eur(c.vst)+'</dd><dt><b>= erwartete Zahllast</b></dt><dd class="num money"><b>'+eur(c.zahllast)+'</b></dd>'+
-    '<dt>Berechnete Zahllast (KZ 095)</dt><dd class="num money">'+eur(r.zahllast)+'</dd></dl>'+
+    '<dt>Berechnete Zahllast (KZ 095)</dt><dd class="num money">'+eur(r.zahllast)+'</dd>'+(r.minder.length?'<dt>davon Entgeltsminderungen/Ausfälle (in beiden Rechnungen berücksichtigt)</dt><dd class="num money">'+eur(-r.minder.reduce(function(a,m){ return a+m.amount; },0))+' brutto</dd>':'')+'</dl>'+
     '<p class="muted small">Die Kontrolle summiert nur die Steuerbeträge aus den Belegköpfen. Unterschiede entstehen durch: Reverse Charge (057/066 heben sich auf), manuelle Kennzahlen, Rundung (das Finanzamt rechnet 20 % der Bemessungsgrundlage'+(r.roundDiff.length?': '+r.roundDiff.map(function(x){ return "KZ "+x.kz+" Belege "+eur(x.doc)+" / berechnet "+eur(x.calc); }).join(", "):'')+'), ausländische USt, Cockpit-Einordnungen oder nicht eingeordnete Belege ('+r.review.length+').</p>',"narrow");
 });
 F.action("uvap",function(k){ F.UI.uvaKey=k; F.render(); });
+// „UVA vorbereiten“: sevDesk frisch laden, Einordnung/Abgleich/Kontrolle prüfen und den Datenstrom serverseitig erzeugen – in einem Schritt
+F.action("uvaprep",function(k){
+  F.toast("Lade sevDesk neu und prüfe …");
+  Promise.resolve(load(true)).then(function(){
+    var p=periodByKey(k), r=S.computeUva(ST.data,ST,p), ctl=S.controlCheck(ST.data,ST,p), mm=S.mismatches(ST.data,ST,p.from,p.to), zmr=S.zmRows(r);
+    var reqs=[F.api("/admin/api/fon/xml",{body:{art:"U30",key:k}})]; if(zmr.length) reqs.push(F.api("/admin/api/fon/xml",{body:{art:"U13",key:k}}));
+    return Promise.all(reqs).then(function(x){
+      var u=x[0]||{}, z=x[1], fixable=mm.filter(function(m){ return m.fixable; }).length, dz=r2(r.zahllast-ctl.zahllast);
+      var item=function(ok,t,sub){ return '<li><span class="tag '+(ok===true?"ok":ok===false?"bad":"warn")+'">'+(ok===true?"ok":ok===false?"Fehler":"prüfen")+'</span> '+t+(sub?'<div class="muted small">'+sub+'</div>':'')+'</li>'; };
+      var errs=(u.befunde||[]).filter(function(b){ return b.art==="fehler"; }).length+((z&&z.befunde)||[]).filter(function(b){ return b.art==="fehler"; }).length;
+      F.modal('<div class="row-between"><h2 style="font-size:19px">UVA '+esc(p.label)+' – vorbereitet</h2>'+F.btnClose()+'</div><ul class="plain">'+
+        item(true,"sevDesk-Daten neu geladen ("+ST.data.invoices.length+" Rechnungen, "+ST.data.vouchers.length+" Belege)")+
+        item(!r.review.length,r.review.length?r.review.length+" Beleg(e) nicht eingeordnet":"alle Belege eingeordnet")+
+        item(mm.length?"warn":true,mm.length?mm.length+" Abweichung(en) zu sevDesk"+(fixable?", davon "+fixable+" per Klick korrigierbar":""):"keine Abweichungen zu sevDesk")+
+        item(Math.abs(dz)<=5?true:"warn","Kontrollrechnung: "+eur(ctl.zahllast)+" vs. berechnet "+eur(r.zahllast)+(Math.abs(dz)>0.01?" (Δ "+eur(dz)+")":""))+
+        item(u.ok&&!(u.befunde||[]).some(function(b){ return b.art==="fehler"; }),"Datenstrom U30 erzeugt (Zahllast "+eur(u.zahllast)+")",(u.befunde||[]).map(function(b){ return esc(b.text); }).join("<br>")||(u.error?esc(u.error):""))+
+        (z?item(z.ok&&!(z.befunde||[]).some(function(b){ return b.art==="fehler"; }),"Datenstrom ZM erzeugt ("+zmr.length+" Meldezeile(n))",(z.befunde||[]).map(function(b){ return esc(b.text); }).join("<br>")):"")+'</ul>'+
+        '<div class="foot"><span class="muted small">'+(errs?"Erst die Fehler beheben, dann prüfen.":"Bereit zur Testübermittlung.")+'</span><span class="row"><button class="btn" data-act="fonxml:U30">XML ansehen</button><button class="btn primary" data-act="fonsend:U30:T"'+(errs||!(ST.fonCfg||{}).ready?" disabled":"")+'>Prüfen (Test)</button></span></div>',"wide");
+      F.render();
+    });
+  });
+});
 F.action("uvadone",function(k){ var p=periodByKey(k); var r=S.computeUva(ST.data,ST,p); var sum={zahllast:r.zahllast,kz:S.uvaKzMap(r)};
   F.confirm("UVA "+p.label+" als erledigt markieren? ("+(r.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(r.zahllast))+")","Erledigt",function(){ post({op:"done",kind:"uva",key:k,summary:sum},"UVA als erledigt gespeichert"); }); });
 F.action("uvaundo",function(k){ F.confirm("Erledigt-Markierung für diese UVA entfernen? (In FinanzOnline Eingereichtes bleibt eingereicht.)","Zurücksetzen",function(){ post({op:"undone",kind:"uva",key:k},"Zurückgesetzt"); }); });
@@ -118,7 +186,7 @@ function syncPanel(cur,r,mm){
   var rows=mm.map(function(m,i){ var d=m.doc, out=m.kind==="out";
     return '<tr><td class="nowrap num">'+deShort(d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b><div class="sub">'+esc(m.t)+'</div>'+(m.fix?'<div class="sub">'+esc(m.fix)+'</div>':'')+'</td><td class="r">'+money(d.net)+'</td><td class="nowrap">'+
       (m.type==="rule"&&!out&&/Reverse Charge/.test(m.t)?'<button class="btn" data-act="stkz:'+d.id+':rc">Als RC übernehmen</button> <button class="btn" data-act="stkz:'+d.id+':none">Kein RC</button> ':'')+
-      (m.fixable?'<button class="btn primary" data-act="sevfix:'+i+'">In sevDesk korrigieren ('+esc(S.TAXRULE_TXT[m.rule]||m.rule)+')</button>':(m.enshrined?'<span class="tag grey">festgeschrieben</span>':''))+'</td></tr>'; }).join("");
+      aiBtn(d.id)+(m.fixable?' <button class="btn primary" data-act="sevfix:'+i+'">In sevDesk korrigieren ('+esc(S.TAXRULE_TXT[m.rule]||m.rule)+')</button>':(m.enshrined?'<span class="tag grey">festgeschrieben</span>':''))+'</td></tr>'; }).join("");
   return '<section class="panel"><div class="panel-h"><h2>Abgleich mit sevDesk</h2><span class="muted">Was im Cockpit gerechnet wird, soll auch in sevDesk so gebucht sein – und umgekehrt</span></div>'+
     (mm.length?'<div class="scroll"><table><tbody>'+rows+'</tbody></table></div>':'<div class="panel-b muted">Keine Abweichungen bei Steuerregeln, UIDs und Leistungsdaten in diesem Zeitraum.</div>')+
     '<div class="panel-b row wrap">'+(done.tagged?'<span class="tag ok">In sevDesk getaggt: '+esc(done.tagged.name)+' ('+done.tagged.ok+')</span>':'<button class="btn" data-act="sevtag:'+cur.key+'"'+(done.doneAt?'':' disabled title="Erst nach Abgabe"')+'>Belege in sevDesk taggen (UVA-'+cur.year+'-'+cur.key.slice(5)+')</button>')+
@@ -126,7 +194,7 @@ function syncPanel(cur,r,mm){
         match.map(function(t){ return '<button class="btn primary" data-act="ustpay:'+t.id+'">Zahlung '+eur(t.amount)+' vom '+de(t.date)+' als USt-Vorauszahlung in sevDesk buchen</button>'; }).join("")+
         (!match.length&&other.length?'<span class="muted small">Finanzamt-Buchungen nach Zeitraumende: '+other.map(function(t){ return eur(t.amount)+' am '+deShort(t.date)+' <button class="link" data-act="ustpay:'+t.id+'">buchen</button>'; }).join(" · ")+'</span>':'')+
         (!tx.length?'<span class="muted small">Noch keine Zahlung an das Finanzamt in sevDesk gefunden.</span>':''))+'</div>'+
-    '<div class="panel-b muted small">Änderungen in sevDesk passieren nur nach deiner Bestätigung und nie bei festgeschriebenen Belegen. „Als RC übernehmen“ ändert nur die Einordnung im Cockpit.</div></section>';
+    rulesDiag()+'<div class="panel-b muted small">Änderungen in sevDesk passieren nur nach deiner Bestätigung und nie bei festgeschriebenen Belegen. „Als RC übernehmen“ ändert nur die Einordnung im Cockpit.</div></section>';
 }
 F.action("stkz",function(v){ var a=v.split(":"); post({op:"doc",id:a[0],patch:{kz:a[1]}},a[1]==="rc"?"Als Reverse Charge übernommen":"Gespeichert"); });
 F.action("sevfix",function(i){ var cur=periodByKey(F.UI.uvaKey), m=S.mismatches(ST.data,ST,cur.from,cur.to)[+i]; if(!m) return;
@@ -149,19 +217,22 @@ function fonPanel(cur,r,zmr,done){
     (arch.length?'<div class="sec-t" style="margin-top:14px">Übermittlungen</div><table><tbody>'+arch.map(function(a){ return '<tr><td class="nowrap">'+de(a.at)+' '+new Date(a.at).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})+'</td><td>'+a.art+' · '+(a.modus==="P"?"Abgabe":"Prüfung")+' · Paket '+a.paket+'</td><td><span class="tag '+(a.rc===0?"ok":"bad")+'">'+esc(a.status)+'</span> <span class="muted small">rc '+a.rc+' · '+esc(a.msg||"")+'</span></td><td><a class="link" href="/admin/api/fon/archiv?i='+a._i+'">XML</a></td></tr>'; }).join("")+'</tbody></table>':'')+
     '<div class="muted small" style="margin-top:8px">Das Webservice-PIN wird nur für diese eine Übermittlung verwendet und nirgends gespeichert. Das Übermittlungsprotokoll steht danach in deiner FinanzOnline-Databox.</div></div></section>';
 }
+function fonKey(art){ return art==="JAHR_ERKL"?F.UI.jabYear:F.UI.uvaKey; }
+var ART_TXT={U30:"UVA (U30)",U13:"ZM (U13)",JAHR_ERKL:"Jahreserklärung (E1 + E1a + U1)"};
 F.action("fonxml",function(art){
-  F.api("/admin/api/fon/xml",{body:{art:art,key:F.UI.uvaKey}}).then(function(j){
+  F.api("/admin/api/fon/xml",{body:{art:art,key:fonKey(art)}}).then(function(j){
     if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; }
-    F.modal('<div class="row-between"><h2 style="font-size:19px">'+(art==="U30"?"UVA (U30)":"ZM (U13)")+' – Datenstrom</h2>'+F.btnClose()+'</div>'+befundeHtml(j.befunde)+
+    F.modal('<div class="row-between"><h2 style="font-size:19px">'+ART_TXT[art]+' – Datenstrom</h2>'+F.btnClose()+'</div>'+befundeHtml(j.befunde)+
       (j.xml?'<pre class="xmlpre">'+esc(j.xml)+'</pre><div class="foot"><span class="muted small">Paketnummer 999999999 = Vorschau; beim Senden wird eine echte Nummer vergeben.</span><button class="btn" data-act="fondl">Herunterladen</button></div>':'<p>Ohne Steuernummer kann kein Datenstrom erzeugt werden.</p>'),"wide");
     F.UI.fonXml={art:art,xml:j.xml};
   });
 });
-F.action("fondl",function(){ var x=F.UI.fonXml; if(!x) return; var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([x.xml],{type:"application/xml"})); a.download=x.art+"_"+F.UI.uvaKey+".xml"; document.body.appendChild(a); a.click(); a.remove(); });
+F.action("fondl",function(){ var x=F.UI.fonXml; if(!x) return; var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([x.xml],{type:"application/xml"})); a.download=x.art+"_"+fonKey(x.art)+".xml"; document.body.appendChild(a); a.click(); a.remove(); });
 function befundeHtml(b){ if(!b||!b.length) return '<div class="tag ok" style="margin-bottom:10px">Keine Beanstandungen</div>'; return '<ul class="plain" style="margin-bottom:10px">'+b.map(function(x){ return '<li><span class="tag '+(x.art==="fehler"?"bad":"warn")+'">'+(x.art==="fehler"?"Fehler":"Hinweis")+'</span> '+esc(x.text)+'</li>'; }).join("")+'</ul>'; }
 F.action("fonsend",function(v){
-  var a=v.split(":"), art=a[0], modus=a[1], p=periodByKey(F.UI.uvaKey), r=S.computeUva(ST.data,ST,p), cfg=ST.fonCfg||{};
-  var what=(art==="U30"?"UVA ":"ZM ")+p.label+(art==="U30"?" – "+(r.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(r.zahllast)):"");
+  var a=v.split(":"), art=a[0], modus=a[1], cfg=ST.fonCfg||{}, what, r={zahllast:0};
+  if(art==="JAHR_ERKL"){ var jj=S.computeJab(ST.data,ST,F.UI.jabYear); what="Jahreserklärung "+F.UI.jabYear+" (E1 + E1a + U1) – steuerlicher Gewinn "+eur(jj.steuerGewinn)+", U1-Zahllast "+eur(jj.u1.zahllast); }
+  else { var p=periodByKey(F.UI.uvaKey); r=S.computeUva(ST.data,ST,p); what=(art==="U30"?"UVA ":"ZM ")+p.label+(art==="U30"?" – "+(r.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(r.zahllast)):""); }
   F.modal('<form data-form="fonsend" class="stackf"><input type="hidden" name="art" value="'+art+'"><input type="hidden" name="modus" value="'+modus+'"><input type="hidden" name="zl" value="'+r.zahllast+'">'+
     '<h2 style="font-size:19px">'+(modus==="P"?"Verbindlich abgeben":"Bei FinanzOnline prüfen (Test)")+'</h2><p>'+esc(what)+'</p>'+
     (modus==="P"?'<p class="muted">Die Erklärung gilt damit als eingereicht. Die Kennzahlen werden vor dem Senden aus den aktuellen sevDesk-Daten neu berechnet; weichen sie ab, wird nichts gesendet.</p>':'<p class="muted">Der Datenstrom wird geprüft und verworfen – eingereicht wird nichts.</p>')+
@@ -170,7 +241,7 @@ F.action("fonsend",function(v){
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn '+(modus==="P"?"glow":"primary")+'">'+(modus==="P"?"Jetzt abgeben":"Prüfen")+'</button></span></div></form>',"narrow");
 });
 F.form("fonsend",function(f){
-  var body={art:f.art.value,key:F.UI.uvaKey,pin:f.pin.value,expectZahllast:f.art.value==="U30"?num(f.zl.value):undefined}, P=f.modus.value==="P"; if(P) body.bestaetigung=f.best.value;
+  var body={art:f.art.value,key:fonKey(f.art.value),pin:f.pin.value,expectZahllast:f.art.value==="U30"?num(f.zl.value):undefined}, P=f.modus.value==="P"; if(P) body.bestaetigung=f.best.value;
   f.pin.value=""; F.closeModal(); F.toast(P?"Übermittle an FinanzOnline …":"Prüfe bei FinanzOnline …");
   F.api(P?"/admin/api/fon/submit":"/admin/api/fon/check",{body:body}).then(function(j){ body.pin=null;
     if(j&&j.steuer) apply(j.steuer);
@@ -182,7 +253,7 @@ F.form("fonsend",function(f){
 function zmPanel(cur,r,zmr){
   if(!zmr.length) return "";
   return '<section class="panel"><div class="panel-h"><h2>Zusammenfassende Meldung (ZM)</h2><span class="muted">Leistungen an EU-Unternehmer – nach Leistungszeitraum, Abgabe bis '+de(F.ymd(new Date(cur.year,cur.endMonth+1,0)))+'</span></div><div class="scroll"><table><thead><tr><th>Kunde</th><th>UID</th><th>Art</th><th class="r">Bemessungsgrundlage</th></tr></thead><tbody>'+
-    zmr.map(function(z){ return '<tr><td>'+esc(z.kunde)+'<div class="sub">'+esc(z.docs.map(function(d){ return d.nr; }).join(", "))+'</div></td><td>'+(z.uid?esc(z.uid):'<span class="tag bad">UID fehlt</span>')+'</td><td>'+(z.kind==="S"?"sonstige Leistung":"Warenlieferung")+'</td><td class="r">'+money(z.net)+'</td></tr>'; }).join("")+'</tbody></table></div>'+
+    zmr.map(function(z){ return '<tr><td>'+esc(z.kunde)+'<div class="sub">'+esc(z.docs.map(function(d){ return d.nr; }).join(", "))+'</div></td><td>'+(z.uid?esc(z.uid)+(z.valid.ok?'':' <span class="tag bad">'+esc(z.valid.why)+'</span>'):'<span class="tag bad">UID fehlt</span>')+'</td><td>'+(z.dreieck?"Dreiecksgeschäft":z.kind==="S"?"sonstige Leistung":"Warenlieferung")+'</td><td class="r">'+money(z.net)+'</td></tr>'; }).join("")+'</tbody></table></div>'+
     '<div class="panel-b muted small">Die ZM kennt nur ganze Euro. Die UID muss beim Kunden in sevDesk hinterlegt sein.</div></section>';
 }
 
@@ -232,11 +303,11 @@ function renderJab(){
     '<div class="kpis" style="padding:14px 18px"><div class="kpi panel"><span class="k">Einnahmen netto</span><span class="v num money">'+F.eur0(j.ertrSum)+'</span></div><div class="kpi panel"><span class="k">Ausgaben netto</span><span class="v num money">'+F.eur0(j.aufw)+'</span></div><div class="kpi panel"><span class="k">Steuerlicher Gewinn</span><span class="v num money'+(j.steuerGewinn<0?" bad-t":"")+'">'+F.eur0(j.steuerGewinn)+'</span><span class="s">nach Freibeträgen</span></div><div class="kpi panel"><span class="k">ESt geschätzt</span><span class="v num money">'+F.eur0(j.est.tax)+'</span><span class="s">'+(j.est.rest>=0?"Nachzahlung ":"Gutschrift ")+F.eur0(Math.abs(j.est.rest))+'</span></div></div></section>'+
     plausPanel(plaus)+
     '<section class="panel"><div class="panel-h"><h2>E1a – Beilage für Einzelunternehmer</h2><span class="muted">vollständige Einnahmen-Ausgaben-Rechnung · USt-Nettosystem ankreuzen</span></div><div class="scroll">'+e1a+'</div></section>'+
-    inputsPanel(j,y)+catsPanel(j)+assetsPanel(j,y)+tripsPanel(j,y)+pauschPanel(j)+estPanel(j,y)+
+    inputsPanel(j,y)+catsPanel(j)+assetsPanel(j,y)+tripsPanel(j,y)+pauschPanel(j)+kidsPanel(j,y)+estPanel(j,y)+
     '<section class="panel"><div class="panel-h"><h2>U1 – Umsatzsteuererklärung '+esc(y)+'</h2><span class="muted">Sollbesteuerung</span></div>'+kzTable(j.u1,false)+
       '<div class="panel-b"><dl class="facts"><dt>Zahllast laut U1 (KZ 095)</dt><dd class="num money">'+eur(j.u1.zahllast)+'</dd><dt>Davon über '+j.doneUva+' erledigte UVA'+(j.doneUva===1?"":"s")+' bereits gemeldet</dt><dd class="num money">'+eur(j.paidUva)+'</dd><dt><b>'+(j.u1.zahllast-j.paidUva>=0?"Restschuld":"Gutschrift")+'</b></dt><dd class="num money"><b>'+eur(Math.abs(j.u1.zahllast-j.paidUva))+'</b></dd></dl></div></section>'+
-    '<section class="panel"><div class="panel-b muted small"><b>FinanzOnline:</b> Die Jahreserklärung (E1 + E1a + U1) als XML-Datenstrom („JAHR_ERKL“) folgt – das amtliche Schema dafür liegt noch nicht vor. Bis dahin: „Kennzahlen kopieren“ und in FinanzOnline eintragen. '+
-      '<b>So wird gerechnet:</b> Einnahmen und Ausgaben zählen im Jahr der Zahlung, jeweils netto. Nicht abziehbare Vorsteuer (Pkw, ausländische USt) ist Aufwand. Privates, Steuerzahlungen (USt, ESt), Umbuchungen und Kredittilgungen zählen nicht. Kirchenbeitrag und Spenden an begünstigte Einrichtungen werden von den Empfängern automatisch an das Finanzamt gemeldet – nicht noch einmal eintragen. Kontrollrechnung aus deinen sevDesk-Daten – vor dem Einreichen prüfen bzw. mit deinem Steuerberater abstimmen.</div></section>';
+    jahrFonPanel(j,y)+
+    '<section class="panel"><div class="panel-b muted small"><b>So wird gerechnet:</b> Einnahmen und Ausgaben zählen im Jahr der Zahlung, jeweils netto. Nicht abziehbare Vorsteuer (Pkw, ausländische USt) ist Aufwand. Privates, Steuerzahlungen (USt, ESt), Umbuchungen und Kredittilgungen zählen nicht. Kirchenbeitrag und Spenden an begünstigte Einrichtungen werden von den Empfängern automatisch an das Finanzamt gemeldet – nicht noch einmal eintragen. Kontrollrechnung aus deinen sevDesk-Daten – vor dem Einreichen prüfen bzw. mit deinem Steuerberater abstimmen.</div></section>';
 }
 function plausPanel(pl){
   var bad=pl.filter(function(x){ return !x.ok; }).length;
@@ -308,20 +379,52 @@ function pauschPanel(j){
     '<dt>Gewinn pauschaliert, nach Grundfreibetrag</dt><dd class="num money">'+eur(p.steuerGewinn)+'</dd><dt>Gewinn tatsächlich (oben)</dt><dd class="num money">'+eur(j.steuerGewinn)+'</dd>'+
     '<dt><b>'+(p.vorteil>0?"Pauschalierung wäre günstiger um":"Tatsächliche Rechnung ist günstiger um")+'</b></dt><dd class="num money"><b>'+eur(Math.abs(p.vorteil))+'</b> Gewinn · ESt ca. '+eur(Math.abs(p.estDiff))+'</dd></dl>'+
     jchk("pausch6","6 %-Satz (kaufmännische/technische Beratung, § 22 Z 2, schriftstellerisch, vortragend …)",j.inp.pausch6)+
-    '<div class="muted small">'+(p.erlaubt?'Voraussetzung erfüllt (Vorjahresumsatz '+eur(p.prevRev)+').':'<b class="bad-t">Nicht zulässig: Vorjahresumsatz '+eur(p.prevRev)+' über der Grenze.</b>')+' Mit Pauschalierung kein investitionsbedingter Gewinnfreibetrag und kein IFB; nach einem Wechsel zurück zur Einnahmen-Ausgaben-Rechnung ist die Pauschalierung 5 Jahre gesperrt.</div></div></section>';
+    '<div class="muted small">'+(p.erlaubt?'Voraussetzung erfüllt (Vorjahresumsatz '+eur(p.prevRev)+').':'<b class="bad-t">Nicht zulässig: Vorjahresumsatz '+eur(p.prevRev)+' über der Grenze.</b>')+' Zusätzlich möglich: Vorsteuerpauschale 1,8 % vom Umsatz (max. '+F.eur0(j.Y.pausch.vstMax)+'). Mit Pauschalierung kein investitionsbedingter Gewinnfreibetrag und kein IFB; nach einem Wechsel zurück zur Einnahmen-Ausgaben-Rechnung ist die Pauschalierung 5 Jahre gesperrt.</div></div></section>';
 }
+var REL_TXT={gemeinsam:"gemeinsames Kind",partnerin:"Kind der Partnerin",eigen:"eigenes Kind (nicht im Haushalt)"}, FB_TXT={partnerin:"Partnerin",simon:"Simon",ex:"anderer Elternteil (Ex)",andere:"andere Person"};
+function kidsPanel(j,y){
+  var e=j.est, ks=e.kids;
+  return '<section class="panel"><div class="panel-h"><h2>Kinder '+esc(y)+'</h2><span class="muted">Familienbonus Plus (Beilage L 1k), Alleinverdiener-, Kindermehr-, Unterhaltsabsetzbetrag</span></div>'+
+    (ks.length&&ks[0].kid.isDefault?'<div class="notice" style="margin:0 18px 10px"><span>Voreinstellung nach deinen Angaben: Kind 1 = Kind deiner Partnerin (Partnerin und Ex teilen 50/50), Kind 2 = gemeinsames Kind (Partnerin beansprucht 100 %) → für dich 0 €. Änderungen werden gespeichert.</span></div>':'')+
+    '<div class="scroll"><table class="st-kids"><thead><tr><th>Kind</th><th>Beziehung</th><th>Familienbeihilfe bezieht</th><th>Dein Anteil Familienbonus</th><th>Geburtsdatum</th><th>Monate</th><th class="r">Bonus voll / für dich</th><th></th></tr></thead><tbody>'+
+    ks.map(function(x,i){ var k=x.kid, sel=function(f,opts){ return '<select class="f" data-stkid="'+i+':'+f+'">'+Object.keys(opts).map(function(o){ return '<option value="'+o+'"'+(String(k[f])===o?" selected":"")+'>'+esc(opts[o])+'</option>'; }).join("")+'</select>'; };
+      return '<tr><td><input class="f" style="width:110px" data-stkid="'+i+':name" value="'+esc(k.name)+'">'+(k.note?'<div class="sub">'+esc(k.note)+'</div>':'')+'</td><td>'+sel("rel",REL_TXT)+(k.rel==="eigen"?'<label class="row small"><input type="checkbox" data-stkidc="'+i+':unterhalt"'+(k.unterhalt?" checked":"")+'> ich zahle Unterhalt</label>':'')+'</td><td>'+sel("fb",FB_TXT)+'</td><td>'+sel("share",{"0":"0 %","50":"50 %","100":"100 %"})+'</td>'+
+        '<td><input class="f" type="date" style="width:145px" data-stkid="'+i+':birth" value="'+esc(k.birth)+'"></td><td><input class="f num" style="width:56px" type="number" min="0" max="12" data-stkid="'+i+':months" value="'+k.months+'"></td>'+
+        '<td class="r">'+money(x.full)+'<div class="sub">dir: '+eur(x.simon)+(x.monthsOver18?' · '+x.monthsOver18+' Mon. ab 18':'')+'</div>'+(x.warn.length?'<div class="sub bad-t">'+esc(x.warn.join(" · "))+'</div>':'')+'</td><td><button class="btn icon" data-act="kiddel:'+i+'" aria-label="Entfernen">✕</button></td></tr>'; }).join("")+'</tbody></table></div>'+
+    '<div class="panel-b row wrap"><button class="btn" data-act="kidadd">Kind hinzufügen</button></div>'+
+    '<div class="panel-b muted small"><b>Regeln:</b> Den Familienbonus erhält die Person, die Familienbeihilfe bezieht, oder deren (Ehe-)Partner*in, sowie der unterhaltspflichtige Elternteil. Je Kind wird er zu 100 % oder 50/50 aufgeteilt; beansprucht der unterhaltspflichtige Ex-Partner seine Hälfte, bleibt im Haushalt höchstens die andere Hälfte. Ab dem Monat nach dem 18. Geburtstag beträgt er '+eur(j.Y.fabo18)+' statt '+eur(j.Y.fabo)+' jährlich. '+
+      '<b>Zur Aufteilung:</b> Der Familienbonus ist nicht erstattungsfähig – er kürzt nur Einkommensteuer, die tatsächlich anfällt (Ausnahme: Kindermehrbetrag bis '+eur(j.Y.kmb)+' je Kind bei geringer Steuer). Schöpft die Steuer der Partnerin den vollen Bonus für das gemeinsame Kind nicht aus, kann eine Aufteilung 50/50 zwischen euch die genutzte Summe erhöhen; umgekehrt bringt dir ein Anteil nur so viel, wie deine eigene Steuer hergibt.</div></section>';
+}
+function kidsArr(){ var y=F.UI.jabYear; return S.kids(S.jabInp(ST,y)).map(function(k){ return {name:k.name,rel:k.rel,fb:k.fb,share:k.share,birth:k.birth,months:k.months,unterhalt:k.unterhalt,note:k.note}; }); }
+function saveKids(ks,msg){ post({op:"jabinput",year:F.UI.jabYear,patch:{kids:ks}},msg||"Gespeichert"); }
+F.listen("change","[data-stkid]",function(el){ var a=el.getAttribute("data-stkid").split(":"), ks=kidsArr(); ks[+a[0]][a[1]]=a[1]==="share"||a[1]==="months"?+el.value:el.value; if(a[1]!=="name") ks[+a[0]].note=""; saveKids(ks); });
+F.listen("change","[data-stkidc]",function(el){ var a=el.getAttribute("data-stkidc").split(":"), ks=kidsArr(); ks[+a[0]][a[1]]=el.checked; saveKids(ks); });
+F.action("kidadd",function(){ var ks=kidsArr(); ks.push({name:"Kind "+(ks.length+1),rel:"gemeinsam",fb:"partnerin",share:0,birth:"",months:12}); saveKids(ks,"Kind hinzugefügt"); });
+F.action("kiddel",function(i){ var ks=kidsArr(); ks.splice(+i,1); saveKids(ks,"Entfernt"); });
 function estPanel(j,y){
   var e=j.est, i=j.inp;
   return '<section class="panel"><div class="panel-h"><h2>Einkommensteuer '+esc(y)+' – Schätzung (E1)</h2><span class="muted">Tarif '+esc(y)+', Familienbonus Plus, Absetzbeträge – Richtwert</span></div><div class="panel-b st-grid">'+
     jin("verlustvortrag","Offene Verluste aus Vorjahren (E1 KZ 462)",i.verlustvortrag)+jin("andereEinkuenfte","Andere Einkünfte (z. B. Dienstverhältnis, Vermietung)",i.andereEinkuenfte)+
-    jin("kinder","Kinder unter 18 (Familienbonus "+eur(j.Y.fabo)+")",i.kinder)+jin("kinder18","Kinder ab 18 mit Familienbeihilfe ("+eur(j.Y.fabo18)+")",i.kinder18)+
-    '<div class="stackf">'+jchk("faboHalb","Familienbonus mit dem anderen Elternteil teilen (50 %)",i.faboHalb)+jchk("avab","Alleinverdienerabsetzbetrag",i.avab)+jchk("aeab","Alleinerzieherabsetzbetrag",i.aeab)+'</div>'+
+    jin("partnerEinkommen","Einkünfte der Partnerin (für AVAB, Grenze "+F.eur0(e.avabGrenze)+")",i.partnerEinkommen,"Partnerin arbeitet → Alleinverdienerabsetzbetrag meist nicht möglich")+
+    '<div class="stackf">'+jchk("avab","Alleinverdienerabsetzbetrag beantragen",i.avab)+jchk("aeab","Alleinerzieherabsetzbetrag (ohne Partner*in)",i.aeab)+jchk("kmbBeide","Kindermehrbetrag: beide Partner mit Einkünften und je < 700 € Steuer",i.kmbBeide)+'</div>'+
     jin("kirchenbeitrag","Kirchenbeitrag (max. 600 €)",i.kirchenbeitrag,"wird automatisch gemeldet – nur für die Schätzung")+jin("spenden","Private Spenden",i.spenden,"wird automatisch gemeldet – nur für die Schätzung")+
     jin("vorauszahlungen","ESt-Vorauszahlungen "+esc(y),i.vorauszahlungen)+'</div>'+
+    (e.notes.length?'<div class="notice" style="margin:0 18px 10px"><span>'+esc(e.notes.join(" "))+'</span></div>':'')+
     '<div class="panel-b"><dl class="facts"><dt>Steuerlicher Gewinn'+(e.vvUsed?' − Verlustvortrag '+eur(e.vvUsed):'')+(e.kirche||e.spenden?' − Sonderausgaben':'')+' = Einkommen</dt><dd class="num money">'+eur(e.eink)+'</dd>'+
-    '<dt>Einkommensteuer laut Tarif (Grenzsteuersatz '+e.grenz+' %)</dt><dd class="num money">'+eur(e.tarif)+'</dd>'+(e.faboMax?'<dt>− Familienbonus Plus (Beilage L 1k'+(e.fabo<e.faboMax?', max. bis zur Steuer – zustehend '+eur(e.faboMax):'')+')</dt><dd class="num money">'+eur(e.fabo)+'</dd>':'')+(e.avab?'<dt>− Alleinverdiener-/Alleinerzieherabsetzbetrag</dt><dd class="num money">'+eur(e.avab)+'</dd>':'')+(e.kmb?'<dt>− Kindermehrbetrag</dt><dd class="num money">'+eur(e.kmb)+'</dd>':'')+
+    '<dt>Einkommensteuer laut Tarif (Grenzsteuersatz '+e.grenz+' %)</dt><dd class="num money">'+eur(e.tarif)+'</dd><dt>− Familienbonus Plus für dich'+(e.fabo<e.faboMax?' (max. bis zur Steuer – zustehend '+eur(e.faboMax)+')':'')+'</dt><dd class="num money">'+eur(e.fabo)+'</dd>'+(e.avab?'<dt>− Alleinverdiener-/Alleinerzieherabsetzbetrag</dt><dd class="num money">'+eur(e.avab)+'</dd>':'')+(e.kmb?'<dt>− Kindermehrbetrag</dt><dd class="num money">'+eur(e.kmb)+'</dd>':'')+(e.uab?'<dt>− Unterhaltsabsetzbetrag</dt><dd class="num money">'+eur(e.uab)+'</dd>':'')+
     '<dt><b>Einkommensteuer geschätzt</b></dt><dd class="num money"><b>'+eur(e.tax)+'</b></dd>'+(e.voraus?'<dt>− Vorauszahlungen</dt><dd class="num money">'+eur(e.voraus)+'</dd>':'')+'<dt><b>'+(e.rest>=0?"Nachzahlung":"Gutschrift")+'</b></dt><dd class="num money"><b>'+eur(Math.abs(e.rest))+'</b></dd>'+(e.vvRest?'<dt>Verbleibender Verlustvortrag</dt><dd class="num money">'+eur(e.vvRest)+'</dd>':'')+'</dl>'+
     '<div class="muted small" style="margin-top:8px">SVS-Beiträge sind als Betriebsausgabe (KZ 9225) schon im Gewinn berücksichtigt; die SVS-Nachbemessung folgt dem Bescheid. Ohne Gewähr – Absetzbeträge hängen von weiteren Voraussetzungen ab.</div></div></section>';
+}
+function jahrFonPanel(j,y){
+  var s=ST.settings, cfg=ST.fonCfg||{}, arch=((ST.fon&&ST.fon.archive)||[]).map(function(a,i){ a._i=i; return a; }).filter(function(a){ return a.art==="JAHR_ERKL"&&a.key===y; }), running=y>=String(new Date().getFullYear());
+  return '<section class="panel"><div class="panel-h"><h2>FinanzOnline – Jahreserklärung '+esc(y)+'</h2><span class="muted">E1 + E1a + U1 als ein Datenstrom (Anbringen JAHR_ERKL, BMF-Schema 2025)</span></div><div class="panel-b st-grid">'+
+    '<label class="fl">Einkunftsart<select class="f" data-stset="einkunftsart"><option value="GW"'+(s.einkunftsart!=="SA"?" selected":"")+'>Gewerbebetrieb</option><option value="SA"'+(s.einkunftsart==="SA"?" selected":"")+'>selbständige Arbeit</option></select></label>'+
+    '<label class="fl">Betriebsanschrift (Straße, Nr.)<input class="f" data-stset="betriebAdr" value="'+esc(s.betriebAdr||"")+'"></label><label class="fl">PLZ<input class="f" data-stset="betriebPlz" value="'+esc(s.betriebPlz||"")+'"></label><label class="fl">Ort<input class="f" data-stset="betriebOrt" value="'+esc(s.betriebOrt||"")+'"></label>'+
+    '<label class="fl">Branchenkennzahl (E2)<input class="f" data-stset="brkz" value="'+esc(s.brkz||"")+'" placeholder="741"><span class="muted small">741 Grafik-Design · 731 Werbung · 621 Programmierung</span></label>'+
+    '<label class="fl">Steuernummer<input class="f" data-stset="steuernummer" value="'+esc(s.steuernummer||"")+'"></label></div>'+
+    '<div class="panel-b row wrap"><button class="btn" data-act="fonxml:JAHR_ERKL">XML ansehen</button><button class="btn" data-act="fonsend:JAHR_ERKL:T"'+(cfg.ready&&!running?'':' disabled')+'>Prüfen (Test)</button><button class="btn glow" data-act="fonsend:JAHR_ERKL:P"'+(cfg.ready&&!running?'':' disabled')+'>Abgeben</button>'+(running?'<span class="muted small">erst nach Jahresende</span>':'')+(!cfg.ready?'<span class="muted small">'+esc(cfg.fehlt||"")+'</span>':'')+'</div>'+
+    (arch.length?'<div class="panel-b"><table><tbody>'+arch.map(function(a){ return '<tr><td class="nowrap">'+de(a.at)+'</td><td>'+(a.modus==="P"?"Abgabe":"Prüfung")+' · Paket '+a.paket+'</td><td><span class="tag '+(a.rc===0?"ok":"bad")+'">'+esc(a.status)+'</span> <span class="muted small">'+esc(a.msg||"")+'</span></td><td><a class="link" href="/admin/api/fon/archiv?i='+a._i+'">XML</a></td></tr>'; }).join("")+'</tbody></table></div>':'')+
+    '<div class="panel-b muted small">Für '+esc(y)+(+y===2025?' ist der Datenstrom gegen das veröffentlichte BMF-Schema geprüft.':' gibt es noch kein BMF-Schema – „Prüfen“ meldet das; bis dahin „Kennzahlen kopieren“.')+' Nicht mitgeschickt werden die Beilage L 1k (Familienbonus – bei 0 % für dich nicht nötig) sowie Sonderausgaben, die automatisch übermittelt werden.</div></section>';
 }
 F.listen("change","[data-jaby]",function(el){ F.UI.jabYear=el.value; F.render(); });
 F.action("jabdone",function(y){ var j=S.computeJab(ST.data,ST,y); F.confirm("Jahresabschluss "+y+" als erledigt markieren?","Erledigt",function(){ post({op:"done",kind:"jab",key:y,summary:{ertr:j.ertr,aufw:j.aufw,gewinn:j.gewinn,K5:j.K5,gfb:j.gfb,steuerGewinn:j.steuerGewinn,E:j.E,u1Zahllast:j.u1.zahllast,est:j.est.tax}},"Jahresabschluss als erledigt gespeichert"); }); });
@@ -338,10 +441,10 @@ F.action("jabexport",function(y){
   L.push("Steuerlicher Gewinn\t"+f(j.steuerGewinn)); L.push("");
   L.push("U1 "+y); var m=S.uvaKzMap(j.u1); Object.keys(m).sort().forEach(function(k){ L.push("KZ "+k+"\t"+f(m[k])); }); L.push("Zahllast/Gutschrift\t"+f(j.u1.zahllast)); L.push("");
   L.push("E1 "+y); L.push("Einkünfte aus Gewerbebetrieb (bzw. selbständiger Arbeit)\t"+f(j.steuerGewinn)); if(j.inp.verlustvortrag) L.push("KZ 462 Offene Verlustabzüge\t"+f(j.inp.verlustvortrag));
-  if(j.inp.kinder||j.inp.kinder18) L.push("Familienbonus Plus: Beilage L 1k je Kind ausfüllen"); if(j.inp.avab) L.push("Punkt 4.1.1 Alleinverdienerabsetzbetrag beantragen"); if(j.inp.aeab) L.push("Punkt 4.1.2 Alleinerzieherabsetzbetrag beantragen");
+  if(j.est.faboMax) L.push("Familienbonus Plus für dich "+f(j.est.faboMax)+": Beilage L 1k je Kind ausfüllen"); if(j.inp.avab) L.push("Punkt 4.1.1 Alleinverdienerabsetzbetrag beantragen"); if(j.inp.aeab) L.push("Punkt 4.1.2 Alleinerzieherabsetzbetrag beantragen");
   var txt=L.join("\n");
   try{ navigator.clipboard.writeText(txt).catch(function(){}); }catch(e){}
-  F.modal('<div class="row-between"><h2 style="font-size:19px">Kennzahlen '+esc(y)+'</h2>'+F.btnClose()+'</div><p class="muted small">In die Zwischenablage kopiert. XML-Übermittlung der Jahreserklärung (JAHR_ERKL) folgt.</p><pre class="xmlpre">'+esc(txt)+'</pre>',"wide");
+  F.modal('<div class="row-between"><h2 style="font-size:19px">Kennzahlen '+esc(y)+'</h2>'+F.btnClose()+'</div><p class="muted small">In die Zwischenablage kopiert. Direkt übermitteln: unten „FinanzOnline – Jahreserklärung“.</p><pre class="xmlpre">'+esc(txt)+'</pre>',"wide");
 });
 
 F.geldTab({id:"uva",label:"UVA",order:30,sub:"Umsatzsteuervoranmeldung (U30) und ZM – berechnen, prüfen und direkt an FinanzOnline übermitteln",render:renderUva});
@@ -353,8 +456,19 @@ F.feed(function(){
   var out=[], today=F.D.today, cy=+today.slice(0,4);
   [cy-1,cy].forEach(function(y){ periodsOf(y,ST.settings.zeitraum).forEach(function(p){ var due=dueOf(p); if((ST.uva[p.key]&&ST.uva[p.key].doneAt)||p.to>=today) return; var days=(Date.parse(due)-Date.parse(today))/864e5; if(days>30||days<-45) return;
     out.push({id:"uva:"+p.key,rank:days<0?2:3,sev:days<0?"bad":"warn",icon:"euro",tag:[days<0?"bad":"warn","UVA"],t:"UVA "+p.label+(days<0?" ist überfällig":" fällig am "+F.de(due)),d:"Kennzahlen prüfen und unter Finanzen → UVA direkt abgeben",acts:[["Öffnen","uvaopen:"+p.key,"primary"]]}); }); });
+  // ZM: Abgabe bis Ende des Folgemonats nach dem Meldezeitraum
+  [cy-1,cy].forEach(function(y){ periodsOf(y,ST.settings.zeitraum).forEach(function(p){ if(p.to>=today) return; var due=F.ymd(new Date(p.year,p.endMonth+1,0)), days=(Date.parse(due)-Date.parse(today))/864e5; if(days>20||days<-45) return;
+    var r=S.computeUva(ST.data,ST,p); if(!r.zm.length) return; var sent=((ST.fon&&ST.fon.archive)||[]).some(function(a){ return a.art==="U13"&&a.key===p.key&&a.modus==="P"&&a.rc===0; }); if(sent) return;
+    out.push({id:"zm:"+p.key,rank:days<0?2:3,sev:days<0?"bad":"warn",icon:"euro",tag:[days<0?"bad":"warn","ZM"],t:"Zusammenfassende Meldung "+p.label+(days<0?" ist überfällig":" fällig am "+F.de(due)),d:r.zm.length+" Leistung(en) an EU-Unternehmer",acts:[["Öffnen","uvaopen:"+p.key,"primary"]]}); }); });
+  // Jahreserklärung: 30.06. des Folgejahres (FinanzOnline)
+  var jy=String(cy-1), jdue=cy+"-06-30", jd=(Date.parse(jdue)-Date.parse(today))/864e5;
+  if(!ST.jab[jy]&&jd<=60&&jd>=-90) out.push({id:"jab:"+jy,rank:jd<0?2:4,sev:jd<0?"bad":"warn",icon:"euro",tag:[jd<0?"bad":"warn","JAB"],t:"Jahreserklärung "+jy+(jd<0?" ist überfällig":" fällig am "+F.de(jdue)),d:"E1, E1a und U1 unter Finanzen → JAB",acts:[["Öffnen","jabopenv:"+jy,"primary"]]});
+  // Offene Steuer-Abweichungen im letzten abgeschlossenen Zeitraum
+  var lp=periodsOf(cy,ST.settings.zeitraum).concat(periodsOf(cy-1,ST.settings.zeitraum)).filter(function(p){ return p.to<today; }).sort(function(a,b){ return a.to<b.to?1:-1; })[0];
+  if(lp&&!(ST.uva[lp.key]&&ST.uva[lp.key].doneAt)){ var rr=S.computeUva(ST.data,ST,lp), mmn=S.mismatches(ST.data,ST,lp.from,lp.to).length; if(rr.review.length||mmn) out.push({id:"stcheck:"+lp.key,rank:4,sev:"warn",icon:"alert",tag:["warn","Steuer"],t:(rr.review.length?rr.review.length+" Beleg(e) nicht eingeordnet":"")+(rr.review.length&&mmn?", ":"")+(mmn?mmn+" Abweichung(en) zu sevDesk":""),d:"UVA "+lp.label+" – vor der Abgabe klären",acts:[["Öffnen","uvaopen:"+lp.key,"primary"]]}); }
   return out;
 });
+F.action("jabopenv",function(y){ F.UI.geldTab="jab"; F.UI.jabYear=y; F.go("geld"); });
 F.action("uvaopen",function(k){ F.UI.geldTab="uva"; F.UI.uvaKey=k; F.go("geld"); });
 // Daten im Hintergrund laden, damit "Heute" die UVA-Fälligkeit zeigen kann
 setTimeout(function(){ if(!ST) load(false); },4000);
@@ -363,6 +477,6 @@ F.css(".kzb{display:inline-block;min-width:44px;text-align:center;font-family:va
   "table.kz td{vertical-align:middle}.uva-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:center}.uva-top .k{font-size:12px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}.uva-top .v{font-family:var(--f-display);font-size:26px;font-weight:700}.uva-top .s{font-size:12.5px;color:var(--ink-2)}.uva-done{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}"+
   ".st-set{gap:14px}.fl.inline{display:flex;align-items:center;gap:8px}.fl.inline .f{width:auto}.pchip.ok{border-color:var(--ok);color:var(--ok)}.pchip.bad{border-color:var(--bad);color:var(--bad)}.pchip.warn{border-color:var(--warn);color:var(--warn)}.pchip[aria-pressed=true]{background:var(--ink);color:var(--ground);border-color:var(--ink)}"+
   "tr.sub-row>td{background:var(--ground-2,rgba(127,127,127,.05));padding:6px 10px}.st-docs select.f{max-width:260px}.st-man .f{width:auto;min-width:120px}.st-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px 16px}"+
-  ".st-acfg{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;max-width:520px}.st-acfg .f{width:auto}.xmlpre{max-height:55vh;overflow:auto;font-size:12px;background:var(--ground-2,rgba(127,127,127,.08));padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all}"+
+  ".st-kids .f{width:auto;min-width:0}.st-acfg{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;max-width:520px}.st-acfg .f{width:auto}.xmlpre{max-height:55vh;overflow:auto;font-size:12px;background:var(--ground-2,rgba(127,127,127,.08));padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all}"+
   "@media(max-width:900px){.uva-top{grid-template-columns:minmax(0,1fr)}.uva-done{justify-content:flex-start}.st-docs select.f{max-width:150px}}");
 })();
