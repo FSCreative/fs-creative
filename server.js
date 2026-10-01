@@ -859,6 +859,10 @@ async function sevCreateInvoice(pl) {
       return { objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),
     invoicePosDelete: null, takeDefaultAddress: false,
   };
+  // Optional (KI-Rechnung): Steuerregel nach sevDesk Update 2.0 (z. B. Reverse Charge), Leistungszeitraum bis
+  const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
+  if (rule) { body.invoice.taxRule = { id: rule, objectName: "TaxRule" }; delete body.invoice.taxType; }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDateUntil || "") && pl.deliveryDateUntil !== delivery) body.invoice.deliveryDateUntil = sevDateDE(pl.deliveryDateUntil);
   const j = await sev("POST", "/Invoice/Factory/saveInvoice", { body, timeout: 40000 });
   const invo = j && j.objects && (j.objects.invoice || j.objects) || {};
   SEV_CACHE.at = 0;
@@ -883,15 +887,22 @@ async function sevBook(pl) {
 }
 async function sevVoucherFromMail(pl) {
   const m = pl.mail || {};
+  let buf, fname, ctypeIn = "";
+  if (pl.uploadId) {   // hochgeladene Datei (KI-Upload, liegt kurz im Arbeitsspeicher von ki.js)
+    const f = KI.uploadFile(String(pl.uploadId)); if (!f) throw new Error("Die hochgeladene Datei ist abgelaufen – bitte erneut hochladen.");
+    buf = f.buf; fname = f.fname; ctypeIn = f.ctype;
+  } else {
   if (!MAIL.url || !MAIL.token) throw new Error("mail_not_configured");
   const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?token=" + encodeURIComponent(MAIL.token) + "&folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || "0") + "&account=" + encodeURIComponent(m.account || "");
   const r = await fetch(attUrl); if (!r.ok) throw new Error("anhang_nicht_geladen");
-  const buf = Buffer.from(await r.arrayBuffer());
-  const cd = r.headers.get("content-disposition") || ""; let fname = String(m.filename || "beleg.pdf");
+  buf = Buffer.from(await r.arrayBuffer());
+  const cd = r.headers.get("content-disposition") || ""; fname = String(m.filename || "beleg.pdf");
   const m5987 = cd.match(/filename\*=UTF-8''([^;]+)/i), mPlain = cd.match(/filename="([^"]*)"/i);
   try { if (m5987) fname = decodeURIComponent(m5987[1]); else if (mPlain) fname = mPlain[1]; } catch (e) {}
+  ctypeIn = r.headers.get("content-type") || "";
+  }
   const ext = (fname.split(".").pop() || "").toLowerCase();
-  const ctype = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", xml: "application/xml" }[ext] || (r.headers.get("content-type") || "application/octet-stream");
+  const ctype = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", xml: "application/xml" }[ext] || (ctypeIn || "application/octet-stream");
   const fd = new FormData(); fd.append("file", new Blob([buf], { type: ctype }), fname);
   const up = await sev("POST", "/Voucher/Factory/uploadTempFile", { form: fd, timeout: 60000 });
   const tmp = up && up.objects && (up.objects.filename || (up.objects[0] && up.objects[0].filename));
@@ -2283,7 +2294,7 @@ function handleAnfrage(req, res) {
 }
 
 // ── KI (Claude über die Anthropic API): Logik in ki.js, hier nur die Anbindung an vorhandene Daten ──
-const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos, readLeads, cockpitData, mailSnapshot, sevMeta,
+const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos, readLeads, cockpitData, mailSnapshot, sevMeta, readBilling,
   steuerRaw: f => steuerRaw(f), readSteuer: () => readSteuer(), background: require.main === module });
 
 const server = http.createServer((req, res) => {
