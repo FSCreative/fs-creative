@@ -1434,7 +1434,7 @@ async function steuerRaw(force) {
   if (STEUER_CACHE.p) return STEUER_CACHE.p;
   STEUER_CACHE.p = (async () => {
     const dupes = {};
-    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr, guide, guideRev, guideExp] = await Promise.all([
+    const [inv, ipos, vou, vpos, cn, cnpos, tx, logs, addr, guide, guideRev, guideExp, tsets] = await Promise.all([
       // showAll: laut sevDesk-Doku sonst nicht alle Rechnungsarten (SR/AR/TR/ER) in der Liste
       sevAll("/Invoice", { embed: "contact,addressCountry", showAll: true }, 6000, dupes), sevAll("/InvoicePos", {}, 20000, dupes),
       sevAll("/Voucher", { embed: "supplier" }, 6000, dupes),
@@ -1448,9 +1448,14 @@ async function steuerRaw(force) {
       sev("GET", "/ReceiptGuidance/forAllAccounts", { timeout: 40000 }).catch(() => null),  // Steuerregeln des Kontos (Diagnose)
       sev("GET", "/ReceiptGuidance/forRevenue", { timeout: 40000 }).catch(() => null),      // Regeln der Erlöskonten (Ausgangsrechnungen)
       sev("GET", "/ReceiptGuidance/forExpense", { timeout: 40000 }).catch(() => null),      // Regeln der Aufwandskonten
+      // Update-1.0-Konten (taxType "custom" + taxSet): eigene Steuersätze/-kategorien – nicht in der offiziellen Doku, daher optional
+      sev("GET", "/TaxSet", { query: { limit: 1000 }, timeout: 40000 }).catch(() => null),
     ]);
     const ctry = {}; addr.forEach(a => { const cid = a.contact && a.contact.id, c = a.country && (a.country.code || ""); if (cid && c && !ctry[cid]) ctry[cid] = String(c).toUpperCase(); });
     const acc = {}; ((guide && guide.objects) || []).forEach(g => { if (g && g.accountDatevId != null) acc[String(g.accountDatevId)] = { no: String(g.accountNumber || ""), name: g.accountName || "" }; });
+    // TaxSets (Name/Satz) – fehlt der Abruf, wenigstens die IDs aus den Belegen und den taxText der Rechnungen übernehmen
+    const tsBy = {}; ((tsets && tsets.objects) || []).forEach(t => { if (t && t.id != null) tsBy[String(t.id)] = { id: String(t.id), name: String(t.text || t.name || t.displayText || "").slice(0, 120), rate: t.taxRate != null ? sevNum(t.taxRate) : null }; });
+    const tsSeen = (o, txt) => { const id = o && o.taxSet && o.taxSet.id != null ? String(o.taxSet.id) : ""; if (!id) return ""; const x = tsBy[id] = tsBy[id] || { id, name: "", rate: null }; if (!x.name && o.taxSet.text) x.name = String(o.taxSet.text).slice(0, 120); if (!x.name && txt) x.name = String(txt).slice(0, 120); return id; };
     const posBy = sevPosLines(ipos, "invoice"), vposBy = sevPosLines(vpos, "voucher", acc), cnBy = sevPosLines(cnpos, "creditNote");
     const txBy = {}; tx.forEach(t => { txBy[String(t.id)] = sevDay(t.valueDate || t.entryDate); });
     const pays = {};
@@ -1464,16 +1469,16 @@ async function steuerRaw(force) {
     const invoices = inv.filter(o => o.invoiceType !== "MA").map(o => {
       const c = o.contact || {}, paid = sevNum(o.paidAmount);
       return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status: parseInt(o.status, 10) || 0, date: sevDay(o.invoiceDate), delivery: sevDay(o.deliveryDate), deliveryUntil: sevDay(o.deliveryDateUntil) || null, payDate: sevDay(o.payDate),
-        origin: o.origin && o.origin.id != null ? String(o.origin.id) : "", contactId: c.id != null ? String(c.id) : "",
+        taxSet: tsSeen(o, o.taxText), origin: o.origin && o.origin.id != null ? String(o.origin.id) : "", contactId: c.id != null ? String(c.id) : "",
         // gedruckte Adresse und Texte: Land/UID/„Reverse Charge“-Hinweise erkennen, wenn Kontakt-Land oder -UID fehlen
         addrText: String(o.address || "").slice(0, 600), taxText: String(o.taxText || "").slice(0, 200), texts: String((o.headText || "") + "\n" + (o.footText || "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 1500), taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(c), uid: sevUid(c), country: country(o.addressCountry) || ctry[c.id] || "",
         net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), paid, enshrined: !!o.enshrined, pays: paysFor("Invoice", o.id, paid), lines: posBy[o.id] || [] };
     });
     const vouchers = vou.map(v => { const s = v.supplier || {}, paid = sevNum(v.paidAmount);
-      return { id: String(v.id), type: v.voucherType || "VOU", date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), deliveryUntil: sevDay(v.deliveryDateUntil) || null, payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "",
+      return { id: String(v.id), type: v.voucherType || "VOU", date: sevDay(v.voucherDate), delivery: sevDay(v.deliveryDate), deliveryUntil: sevDay(v.deliveryDateUntil) || null, payDate: sevDay(v.payDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, taxType: v.taxType || "default", taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "", taxSet: tsSeen(v, ""),
         supplier: v.supplierName || sevName(s) || "", supplierUid: String(s.vatNumber || "").replace(/\s/g, "").toUpperCase(), supplierCountry: (s.id && ctry[s.id]) || "", desc: v.description || "", net: sevNum(v.sumNet), tax: sevNum(v.sumTax), gross: sevNum(v.sumGross), paid,
         enshrined: !!v.enshrined, pays: paysFor("Voucher", v.id, paid), lines: vposBy[v.id] || [] }; });
-    const creditNotes = cn.map(o => ({ id: "cn" + o.id, sevId: String(o.id), nr: o.creditNoteNumber || "", type: "GU", status: parseInt(o.status, 10) || 0, date: sevDay(o.creditNoteDate), delivery: sevDay(o.deliveryDate),
+    const creditNotes = cn.map(o => ({ id: "cn" + o.id, sevId: String(o.id), nr: o.creditNoteNumber || "", type: "GU", taxSet: tsSeen(o, o.taxText), status: parseInt(o.status, 10) || 0, date: sevDay(o.creditNoteDate), delivery: sevDay(o.deliveryDate),
       taxType: o.taxType || "default", taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", contact: sevName(o.contact), uid: String((o.contact || {}).vatNumber || "").toUpperCase(),
       net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), enshrined: !!o.enshrined, pays: pays["CreditNote:" + o.id] ? pays["CreditNote:" + o.id].slice().sort((x, y) => x.date.localeCompare(y.date)) : undefined, lines: cnBy[o.id] || [] }));
     const cutoff = new Date(Date.now() - 500 * 864e5).toISOString().slice(0, 10);
@@ -1483,20 +1488,21 @@ async function steuerRaw(force) {
     const trBy = {}; [[guide, ""], [guideRev, "REVENUE"], [guideExp, "EXPENSE"]].forEach(([gd, def]) => ((gd && gd.objects) || []).forEach(g => { if (!g) return; const side = (g.allowedReceiptTypes || []).join("/") || def; (g.allowedTaxRules || []).forEach(r => { if (r == null || r.id == null) return; const k = String(r.id); const x = trBy[k] = trBy[k] || { id: k, name: r.name || "", description: r.description || "", rates: [], side: "" };
       (r.taxRates || []).forEach(t => { if (x.rates.indexOf(t) < 0) x.rates.push(t); }); if (side && x.side.indexOf(side) < 0) x.side = (x.side ? x.side + "/" : "") + side; }); }));
     const taxRules = Object.keys(trBy).map(k => trBy[k]).sort((a, b) => +a.id - +b.id);
-    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, taxRules, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
+    const taxSets = Object.keys(tsBy).map(k => tsBy[k]);
+    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, taxRules, taxSets, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
     STEUER_CACHE = { at: Date.now(), data: d, p: null };
     return d;
   })().catch(e => { STEUER_CACHE.p = null; throw e; });
   return STEUER_CACHE.p;
 }
-const STEUER_KZ_OK = /^(auto|inl|ns|zm|zmd|017|011|020|021|016|oss|sonst|060|rc|rcnv|ige|ige3|ige0|eust|fx|none|ignore)$/;
+const STEUER_KZ_OK = /^(auto|inl|ns|zm|zmd|017|011|020|021|016|oss|sonst|dlp|nach20|060|rc|rcnv|ige|ige3|ige0|eust|fx|none|ignore)$/;
 function steuerOp(pl) {
   const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
   const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
   if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
     // Betriebsdaten für die E1a im Datenstrom JAHR_ERKL
     if ("betriebAdr" in P) o.settings.betriebAdr = String(P.betriebAdr || "").slice(0, 60); if ("betriebPlz" in P) o.settings.betriebPlz = String(P.betriebPlz || "").replace(/[^0-9A-Z]/gi, "").slice(0, 10); if ("betriebOrt" in P) o.settings.betriebOrt = String(P.betriebOrt || "").slice(0, 40);
-    if ("brkz" in P) o.settings.brkz = String(P.brkz || "").replace(/\D/g, "").slice(0, 3); if ("einkunftsart" in P) o.settings.einkunftsart = P.einkunftsart === "SA" ? "SA" : "GW"; }
+    if ("kleineAnz" in P) o.settings.kleineAnz = P.kleineAnz === false || P.kleineAnz === "0" ? false : undefined; if ("brkz" in P) o.settings.brkz = String(P.brkz || "").replace(/\D/g, "").slice(0, 3); if ("einkunftsart" in P) o.settings.einkunftsart = P.einkunftsart === "SA" ? "SA" : "GW"; }
   else if (op === "mapping") { const m = pl.mapping || {}; Object.keys(m).forEach(k => { const v = String(m[k] || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12); if (v) o.mapping[String(k).slice(0, 120)] = v; else delete o.mapping[String(k).slice(0, 120)]; }); }
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
@@ -1515,7 +1521,7 @@ function steuerOp(pl) {
     o.docs[id] = JSON.parse(JSON.stringify(cur));
   }
   else if (op === "ruleMap") {   // Zuordnung einer sevDesk-Steuerregel → Klasse, gilt für alle Belege mit dieser Regel
-    const id = String(pl.id || "").replace(/\D/g, "").slice(0, 10), side = pl.side === "in" ? "in" : "out", cls = String(pl.cls || "");
+    const id = String(pl.id || "").replace(/[^0-9ts]/g, "").slice(0, 12), side = pl.side === "in" ? "in" : "out", cls = String(pl.cls || "");
     if (!id) throw new Error("ungueltig"); const ok = (side === "in" ? STEUER_CALC.RULE_IN_CLASSES : STEUER_CALC.RULE_OUT_CLASSES).indexOf(cls) > -1;
     const cur = o.ruleMap[id] || {}; if (ok) cur[side] = cls; else delete cur[side]; if (Object.keys(cur).length) o.ruleMap[id] = cur; else delete o.ruleMap[id];
   }
