@@ -2475,6 +2475,10 @@ async function steuerDiag(key) {
       if (!(/erwerb|reverse|revers/i.test(regel) || ls.some(l => /^(ige|ige3|ige0|rc|rcnv)$/.test(l.klasse)))) return;
       L("beleg", { datum: d.date, lieferant: d.supplier, beschreibung: (d.desc || "").slice(0, 60), netto: d.net, regel, uid: d.supplierUid || "", land: x.land || "", pos: ls.map(l => l.cat + " " + l.net + " → " + l.klasse) }); });
     const r = STEUER_CALC.computeUva(raw, o, p); L("kennzahlen", STEUER_CALC.uvaKzMap(r));
+    // je Ausgangsrechnung mit Datum/Leistung in Q3: eigener Beitrag zu 000/022/029 – nur Abweichungen vom Netto loggen
+    (raw.invoices || []).filter(d => inP(d) && d.status >= 200 && d.type !== "MA").forEach(d => { const one = STEUER_CALC.computeUva(Object.assign({}, raw, { invoices: [d], vouchers: [], creditNotes: [] }), o, p), m = STEUER_CALC.uvaKzMap(one);
+      const got = (m["022"] || 0) + (m["029"] || 0) + (m["017"] || 0) + (m["011"] || 0), want = d.lines.filter(l => l.rate > 0).reduce((a, l) => a + l.net, 0);
+      if (Math.abs(got - want) > 0.05) L("abw_rechnung", { nr: d.nr, typ: d.type, status: d.status, datum: d.date, leistung: d.delivery, bis: d.deliveryUntil, bezahlt: d.payDate, paid: d.paid, brutto: d.gross, netto: d.net, kz: m, erwartet: Math.round(want * 100) / 100, kunde: d.contact }); });
     L("rv_vorlagen", (raw.vouchers || []).filter(d => d.type === "RV" && inP(d)).map(d => ({ datum: d.date, lieferant: d.supplier, netto: d.net, steuer: d.tax })));
     try { L("plausi", STEUER_CALC.plausibility(raw, o, p)); } catch (e) {}
     try { L("kontrolle", STEUER_CALC.controlCheck(raw, o, p)); } catch (e) { L("kontrolle_fehler", { e: String(e && e.message || e) }); }
