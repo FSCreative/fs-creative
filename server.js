@@ -2465,6 +2465,8 @@ async function steuerDiag(key) {
       if (!(/erwerb|reverse|revers/i.test(regel) || ls.some(l => /^(ige|ige3|ige0|rc|rcnv)$/.test(l.klasse)))) return;
       L("beleg", { datum: d.date, lieferant: d.supplier, beschreibung: (d.desc || "").slice(0, 60), netto: d.net, regel, uid: d.supplierUid || "", land: x.land || "", pos: ls.map(l => l.cat + " " + l.net + " → " + l.klasse) }); });
     const r = STEUER_CALC.computeUva(raw, o, p); L("kennzahlen", STEUER_CALC.uvaKzMap(r));
+    L("rv_vorlagen", (raw.vouchers || []).filter(d => d.type === "RV" && inP(d)).map(d => ({ datum: d.date, lieferant: d.supplier, netto: d.net, steuer: d.tax })));
+    try { L("plausi", STEUER_CALC.plausibility(raw, o, p)); } catch (e) {}
     try { L("kontrolle", STEUER_CALC.controlCheck(raw, o, p)); } catch (e) { L("kontrolle_fehler", { e: String(e && e.message || e) }); }
   } catch (e) { L("fehler", { e: String(e && e.message || e) }); }
 }
