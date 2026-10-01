@@ -96,9 +96,9 @@ function settingsHtml(){
 }
 function vKi(){
   var s=K.st;
-  return F.head("KI",costLine(),'<button type="button" class="btn primary" data-act="kichat">'+F.svg("spark")+' Assistent öffnen <span style="opacity:.7;font-size:12px">⌘J</span></button>')+
+  return F.head("KI",costLine(),'<button type="button" class="btn" data-act="newinvoice">Rechnung mit KI</button><button type="button" class="btn primary" data-act="kichat">'+F.svg("spark")+' Assistent öffnen <span style="opacity:.7;font-size:12px">⌘J</span></button>')+
     (s&&!s.configured?K.notSetHtml():'')+
-    '<div class="kistack">'+queueHtml()+(K.belegeHtml?K.belegeHtml():'')+(K.uvaHtml?K.uvaHtml():'')+leadsHtml()+settingsHtml()+'</div>';
+    '<div class="kistack">'+(K.uploadPanelHtml?K.uploadPanelHtml():'')+queueHtml()+(K.belegeHtml?K.belegeHtml():'')+(K.uvaHtml?K.uvaHtml():'')+leadsHtml()+settingsHtml()+'</div>';
 }
 F.view({id:"ki",label:"KI",short:"KI",icon:"spark",order:80,count:function(){ return K.st&&K.st.configured?(K.st.queue||0):0; },render:vKi,after:function(){ if(!K.st||Date.now()-stAt>60000) K.load(true).then(K.rerender); if(K.queue==null&&!K.ui.busy.q){ K.ui.busy.q=1; K.loadQueue(); } }});
 

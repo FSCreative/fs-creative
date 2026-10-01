@@ -93,8 +93,10 @@ F.action("kiuva",function(v){
 /* ---------- Belege aus Mail-Anhängen ---------- */
 var SEVVER=null;
 function sevVersion(){ if(SEVVER) return SEVVER; SEVVER=F.api("/admin/api/sevdesk/status").then(function(j){ return String((j&&j.version)||""); }).catch(function(){ SEVVER=null; return ""; }); return SEVVER; }
-K.openVoucherWith=function(m,a,x,onDone){
-  if(!M.openVoucher) return;
+/* opt (optional): {dupes:[…], href:"Link zur Datei", extra:{uploadId:…}} */
+K.dupesHtml=function(d){ if(!d||!d.length) return ""; return '<div class="kidupe"><b>Mögliche Dublette:</b> '+d.map(function(x){ return esc(x.src)+': '+esc(x.supplier||"")+(x.date?" · "+esc(F.de(x.date)):"")+(x.gross?" · "+F.eur(x.gross):"")+(x.desc?" · "+esc(x.desc):""); }).join("<br>")+'</div>'; };
+K.openVoucherWith=function(m,a,x,onDone,opt){
+  if(!M.openVoucher) return; opt=opt||{};
   sevVersion().then(function(ver){
     var lines=(x.lines||[]).filter(function(l){ return l.gross>0; }), eur=!x.currency||x.currency==="EUR";
     var info='<div class="kibox"><div class="row-between"><b>'+F.svg("spark")+' Von der KI ausgelesen</b>'+K.conf(x.confidence)+'</div>'+
@@ -104,15 +106,15 @@ K.openVoucherWith=function(m,a,x,onDone){
       (lines.length>1?'<div class="muted">Steuersätze: '+lines.map(function(l){ return l.rate+" %: "+F.eur(l.gross); }).join(" · ")+' (werden als eigene Positionen angelegt)</div>':'')+
       (!eur?'<div class="bad-t">Rechnung in '+esc(x.currency)+' ('+esc(String(x.gross))+' '+esc(x.currency)+') – bitte den Euro-Betrag laut Kontoauszug eintragen.</div>':'')+
       (x.isInvoice===false?'<div class="bad-t">Laut KI ist das vermutlich keine Rechnung.</div>':'')+
-      (x.notes?'<div class="muted">'+esc(x.notes)+'</div>':'')+
+      (x.notes?'<div class="muted">'+esc(x.notes)+'</div>':'')+K.dupesHtml(opt.dupes)+
       (/^2/.test(ver)?'':'<div class="muted">Steuerregel bitte in sevDesk prüfen (Konto ohne Steuerregeln/Update 2.0).</div>')+'</div>';
-    var extra={};
+    var extra=Object.assign({},opt.extra||{});
     if(lines.length>1&&eur) extra.positions=lines.map(function(l){ return {gross:l.gross,taxRate:l.rate}; });
     if(/^2/.test(ver)) extra.taxRule=x.taxRule;
     if(x.deliveryFrom){ extra.deliveryDate=x.deliveryFrom; if(x.deliveryTo) extra.deliveryDateUntil=x.deliveryTo; }
     var rate=lines.length===1?lines[0].rate:(x.tax>0?20:0);
     M.openVoucher(m,a,{title:"Beleg an sevDesk (KI)",supplier:x.supplier,date:x.invoiceDate||undefined,gross:eur&&x.gross>0?x.gross:null,taxRate:[20,13,10,0].indexOf(rate)>-1?rate:20,
-      desc:(x.description||m.subject||"")+(x.invoiceNumber&&String(x.description||"").indexOf(x.invoiceNumber)<0?" · Nr. "+x.invoiceNumber:""),cat:x.accountingTypeId||"",html:info,extra:extra,onDone:onDone});
+      desc:(x.description||m.subject||"")+(x.invoiceNumber&&String(x.description||"").indexOf(x.invoiceNumber)<0?" · Nr. "+x.invoiceNumber:""),cat:x.accountingTypeId||"",html:info,extra:extra,onDone:onDone,href:opt.href});
   });
 };
 M.kiVoucherBtn=function(m,a){ return '<button type="button" class="kiatt" data-act="mvki:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Als Beleg erfassen (KI liest Betrag, Steuer, Lieferant aus)" aria-label="Als Beleg erfassen (KI)">'+F.svg("spark")+'</button>'; };
@@ -122,11 +124,12 @@ F.action("mvki",function(v){
   if(!K.ready()){ K.load(true).then(function(){ if(!K.ready()) F.toast(K.NOT_SET,true); else F.actions.mvki(v); }); return; }
   F.toast("KI liest den Beleg „"+(a.filename||"Anhang")+"“ …");
   K.api("beleg-extract",{mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf?M.accOf(m):(m.account||""),filename:a.filename},subject:m.subject,from:m.from,fromName:m.fromName,date:m.date})
-    .then(function(j){ K.openVoucherWith(m,a,j.beleg); K.load(true); }).catch(K.fail);
+    .then(function(j){ K.openVoucherWith(m,a,j.beleg,null,{dupes:j.dupes}); K.load(true); }).catch(K.fail);
 });
 
 F.css([
 ".kireason{font-size:13.5px;color:var(--ink-2)}",
+".kidupe{border-left:3px solid var(--bad);padding:4px 8px;background:var(--bad-soft);border-radius:6px;font-size:13px}",
 ".kibox{border:1px solid var(--line);border-radius:11px;padding:10px 12px;display:grid;gap:6px;background:var(--sunk)}",
 ".kibox svg,.kiatt svg{width:14px;height:14px;vertical-align:-2px}",
 ".att .kiatt{border:0;background:none;padding:0 8px;color:var(--info)}"

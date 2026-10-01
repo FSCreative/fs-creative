@@ -189,7 +189,7 @@ M.openVoucher=function(m,a,pre){
   var g=pre.gross!=null?pre.gross:guessAmount(m), day=pre.date||(m.date&&!isNaN(new Date(m.date))?F.ymd(new Date(m.date)):F.ymd()), vs=M.voucherSent(m,a), tr=pre.taxRate!=null?+pre.taxRate:20;
   F.modal('<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg an sevDesk")+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted" style="margin:0">Wird als <b>Beleg-Entwurf</b> in sevDesk angelegt – inkl. Datei. Prüfen und buchen machst du in sevDesk.</p>'+
-    '<div class="att" style="justify-self:start"><a href="'+esc(M.attHref(m,a))+'&inline=1" target="_blank" rel="noopener" title="Anhang ansehen"><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
+    '<div class="att" style="justify-self:start"><a href="'+esc(pre.href||(M.attHref(m,a)+"&inline=1"))+'" target="_blank" rel="noopener" title="Anhang ansehen"><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
     '<div class="grid2"><label class="fl">Lieferant<input class="f" name="supplier" list="mvContacts" value="'+esc(pre.supplier||m.fromName||m.from||"")+'"></label><label class="fl">Belegdatum<input class="f" name="date" type="date" required value="'+day+'"></label>'+
     '<label class="fl">Betrag brutto (€)<input class="f num" name="gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+(g?g.toFixed(2):"")+'"'+(g?'':' autofocus')+'></label><label class="fl">USt-Satz<select class="f" name="tax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===tr?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
@@ -244,7 +244,7 @@ F.action("voucher",function(){
     '<p class="muted" style="margin:0">Wähle einen Anhang aus deinem Postfach. Er wird mit Betrag und Kategorie als Beleg-Entwurf an sevDesk gesendet.</p>'+
     '<input class="f" id="mvQ" type="search" placeholder="Absender, Betreff oder Dateiname …" aria-label="Mails durchsuchen" autocomplete="off">'+
     '<div id="mvList" class="vlist">'+pickList()+'</div>'+
-    '<div class="foot"><a class="link" href="'+esc(F.SEVURL)+'" target="_blank" rel="noopener">Beleg ohne Mail direkt in sevDesk hochladen ↗</a><button type="button" class="btn" data-closemodal>Schließen</button></div></div>',"wide");
+    '<div class="foot"><span class="row wrap">'+(F.KI&&F.KI.openUpload?'<button type="button" class="btn primary" data-act="kiupload">Datei/Foto hochladen (KI)</button>':'')+'<a class="link" href="'+esc(F.SEVURL)+'" target="_blank" rel="noopener">Direkt in sevDesk hochladen ↗</a></span><button type="button" class="btn" data-closemodal>Schließen</button></div></div>',"wide");
   if(!M.store.full) M.loadFull();
 });
 F.listen("input","#mvQ",function(el){ PICK.q=el.value; renderPick(); });
