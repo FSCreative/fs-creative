@@ -192,6 +192,92 @@ t("Familienbonus: Standard-Kinder → 0 € für Simon", () => { const e = S.est
 t("Familienbonus bei 50 % je Kind = 1.000,08", () => { const e = S.estimateESt(40000, { kids: [{ name: "K", share: 50, fb: "partnerin", rel: "gemeinsam" }] }, 2026); near(e.fabo, 1000.08); });
 t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near(S.estimateESt(40000, { avab: true, partnerEinkommen: 7411 }, 2026).avab, 828); near(S.estimateESt(40000, { avab: true, partnerEinkommen: 7412 }, 2026).avab, 0); });
 
+/* ===================== (h) Dauerleistungen, Mindest-Istbesteuerung, AR/TR/ER (§ 19 Abs 2 Z 1 lit a UStG, UStR Rz 2601 ff.) ===================== */
+{
+  const host = (o) => inv(Object.assign({ net: 1200, tax: 240, date: "2026-01-05", delivery: "2026-01-01", deliveryUntil: "2026-12-31" }, o));
+  const h1 = host(), h2 = host({ status: 1000, paid: 1440, payDate: "2026-02-10" }), h3 = host();
+  const s = st0(); s.docs[h3.id] = { teil: true };
+  const U = (raw, q) => S.computeUva(raw, s, Q(2026, q));
+  t("Jahres-Hosting 01–12/2026, unbezahlt: Steuerschuld erst mit Ende des Zeitraums (Q4), nicht Q1", () => { near(kz(U({ invoices: [h1], vouchers: [] }, 1), "022"), 0); near(kz(U({ invoices: [h1], vouchers: [] }, 4), "022"), 1200); near(kz(U({ invoices: [h1], vouchers: [] }, 4), "022", "tax"), 240); });
+  t("Jahres-Hosting im Februar bezahlt: Mindest-Istbesteuerung Q1 1.200/240, Q4 nichts mehr", () => { near(kz(U({ invoices: [h2], vouchers: [] }, 1), "022"), 1200); near(kz(U({ invoices: [h2], vouchers: [] }, 4), "022"), 0); });
+  // 365 Tage: Q1 = 90 Tage → 1.200 × 90/365 = 295,89; Q3 = 92 Tage → 302,47
+  t("Teilleistungen vereinbart: monatlich anteilig nach Tagen (Q1 295,89 / Q3 302,47)", () => { near(kz(U({ invoices: [h3], vouchers: [] }, 1), "022"), 295.89, "Q1", 0.01); near(kz(U({ invoices: [h3], vouchers: [] }, 3), "022"), 302.47, "Q3", 0.01); });
+  const fb = inv({ net: 500, tax: 100, date: "2026-05-10", delivery: "2026-08-15", status: 750, paid: 120, pays: [{ date: "2026-05-12", amount: 120 }] });
+  t("Fotobox-Buchung: Anzahlung 120 brutto im Mai → Q2 100 netto; Rest 400 im Monat der Veranstaltung (Q3)", () => { near(kz(U({ invoices: [fb], vouchers: [] }, 2), "022"), 100); near(kz(U({ invoices: [fb], vouchers: [] }, 3), "022"), 400); });
+
+  const AR = (o) => inv(Object.assign({ type: "AR", net: 1000, tax: 200, date: "2026-03-01", contactId: "77", contact: "Hotel Muster" }, o));
+  const ER = (o) => inv(Object.assign({ type: "ER", date: "2026-07-20", delivery: "2026-07-15", contactId: "77", contact: "Hotel Muster" }, o));
+  // (1) Kopfsumme = Restbetrag (Positionen 3.000 − Anzahlung 1.000 = 2.000)
+  const a1 = AR({ status: 1000, paid: 1200, payDate: "2026-03-10" }), e1 = ER({ net: 2000, tax: 400, lines: [{ rate: 20, net: 3000, tax: 600 }] });
+  t("ER Restbetrag: Anzahlung Q1 1.000, Endrechnung Q3 2.000 → gesamt 3.000, keine Doppelversteuerung", () => {
+    const raw = { invoices: [a1, e1], vouchers: [] }; near(kz(U(raw, 1), "022"), 1000); near(kz(U(raw, 3), "022"), 2000); assert.strictEqual(S.partials(raw, s).er[e1.id].mode, "rest"); });
+  // (2) Kopfsumme = Gesamtentgelt 3.000, Anzahlung bezahlt → ER nur 2.000
+  const a2 = AR({ status: 1000, paid: 1200, payDate: "2026-03-10" }), e2 = ER({ net: 3000, tax: 600 });
+  t("ER Gesamtentgelt: Q3 nur 3.000 − 1.000 versteuerte Anzahlung = 2.000 (USt 400)", () => { const raw = { invoices: [a2, e2], vouchers: [] }; near(kz(U(raw, 3), "022"), 2000); near(kz(U(raw, 3), "022", "tax"), 400); });
+  // (3) Anzahlung erst nach der Endrechnung bezahlt → ER versteuert alles, die Zahlung im Oktober nicht nochmal
+  const a3 = AR({ status: 1000, paid: 1200, payDate: "2026-10-05" }), e3 = ER({ net: 3000, tax: 600 });
+  t("ER Gesamtentgelt, Anzahlung unbezahlt bis zur ER: Q3 3.000, Q4 0 (Zahlung nach ER nicht erneut)", () => { const raw = { invoices: [a3, e3], vouchers: [] }; near(kz(U(raw, 3), "022"), 3000); near(kz(U(raw, 4), "022"), 0); assert.ok(U(raw, 4).info.length === 1); });
+  // (4) Restbetrag-ER, Anzahlung nie bezahlt → ER muss auch den Anzahlungsteil versteuern (Soll): 2.000 + 1.000
+  const a4 = AR({}), e4 = ER({ net: 2000, tax: 400, lines: [{ rate: 20, net: 3000, tax: 600 }, { rate: 20, net: -1000, tax: -200 }] });
+  t("ER Restbetrag (Abzugsposition), Anzahlung unbezahlt: Q3 3.000", () => { const raw = { invoices: [a4, e4], vouchers: [] }; near(kz(U(raw, 3), "022"), 3000); });
+  // (5) Teilrechnung (Q2 nach Soll) + ER mit Gesamtentgelt
+  const tr = inv({ type: "TR", net: 1000, tax: 200, date: "2026-04-10", delivery: "2026-04-10", contactId: "77", contact: "Hotel Muster" }), e5 = ER({ net: 3000, tax: 600 });
+  t("Teilrechnung Q2 1.000 + Endrechnung (Gesamtentgelt 3.000) Q3 2.000", () => { const raw = { invoices: [tr, e5], vouchers: [] }; near(kz(U(raw, 2), "022"), 1000); near(kz(U(raw, 3), "022"), 2000); });
+  t("Kontrollrechnung folgt derselben ER-Logik (Q3 USt 400)", () => near(S.controlCheck({ invoices: [a2, e2], vouchers: [] }, s, Q(2026, 3)).ust, 400));
+  t("ER über Cockpit auf 'voll' gestellt überschreibt die Erkennung", () => { const s2 = st0(); s2.docs[e1.id] = { erMode: "voll" }; near(kz(S.computeUva({ invoices: [a1, e1], vouchers: [] }, s2, Q(2026, 3)), "022"), 1000); });
+
+  // Vorsteuer: Leistung + Rechnung (§ 12 Abs 1 Z 1)
+  const vo = vou({ net: 100, tax: 20, date: "2026-09-25", delivery: "2026-10-01", deliveryUntil: "2026-10-31" }), vp = vou({ net: 100, tax: 20, date: "2026-09-25", delivery: "2026-10-01", deliveryUntil: "2026-10-31", status: 1000, paid: 120, payDate: "2026-09-28" });
+  t("Vorsteuer Oktober-Abo, Rechnung 25.09., unbezahlt → Q4; im September bezahlt → Q3 (Anzahlung)", () => { near(kz(U({ invoices: [], vouchers: [vo] }, 3), "060", "tax"), 0); near(kz(U({ invoices: [], vouchers: [vo] }, 4), "060", "tax"), 20); near(kz(U({ invoices: [], vouchers: [vp] }, 3), "060", "tax"), 20); });
+}
+
+/* ===================== (i) sevDesk Update 2.0: Konto statt Kategorie, Lieferant als Rückfall ===================== */
+{
+  const fa1 = vou({ net: 900, date: "2026-08-14", status: 1000, paid: 900, payDate: "2026-08-14", cat: "", catNo: "3520", supplier: "Abgabenkonto" });
+  fa1.lines[0].catNo = "3520"; fa1.lines[0].cat = "";
+  const fa2 = vou({ net: 1500, date: "2026-08-14", status: 1000, paid: 1500, payDate: "2026-08-14", cat: "", supplier: "Finanzamt Österreich" }); fa2.lines[0].cat = "";
+  const sv = vou({ net: 1100, date: "2026-08-31", status: 1000, paid: 1100, payDate: "2026-08-31", cat: "", supplier: "SVS Sozialversicherung der Selbständigen" }); sv.lines[0].cat = "";
+  const sw = vou({ net: 50, tax: 10, date: "2026-08-02", status: 1000, paid: 60, payDate: "2026-08-02", cat: "Software" }); sw.lines[0].catNo = "3520";   // Name hat Vorrang vor Nummer
+  const raw = { invoices: [inv({ net: 10000, date: "2026-02-01", status: 1000, paid: 12000, payDate: "2026-02-10" })], vouchers: [fa1, fa2, sv, sw], creditNotes: [] };
+  const jj = S.computeJab(raw, st0(), 2026);
+  t("ohne Kategorie: EKR-Konto 3520 und Lieferant Finanzamt → keine Betriebsausgabe; SVS (Lieferant) → 9225 = 1.100", () => { near(jj.E["9225"], 1100); near(jj.E["9230"], 50); near(Object.keys(jj.E).reduce((a, k) => a + jj.E[k], 0), 1150); });
+  t("Finanzamt-Zahlung ohne Kategorie nicht in der UVA (keine Vorsteuer)", () => near(kz(S.computeUva(raw, st0(), Q(2026, 3)), "060", "tax"), 10));
+}
+
+/* ===================== (j) E1a: Gutschriften, 15-Tage-Regel, Verlustvortrag ===================== */
+{
+  const gu = { id: "cn9", nr: "GU-9", type: "GU", status: 1000, date: "2026-06-01", taxRule: "1", contact: "Kunde Y", net: 100, tax: 20, gross: 120, lines: [{ rate: 20, net: 100, tax: 20 }] };
+  t("Gutschrift an Kunden (bezahlt) mindert die Einnahmen: 1.000 − 100 = 900", () => near(S.computeJab({ invoices: [inv({ net: 1000, date: "2026-03-01", status: 1000, paid: 1200, payDate: "2026-03-05" })], vouchers: [], creditNotes: [gu] }, st0(), 2026).ertr["9040"], 900));
+  const svsDez = vou({ net: 1000, date: "2026-12-31", status: 1000, paid: 1000, payDate: "2027-01-10", supplier: "SVS", cat: "SVS Beiträge" });
+  const miete = vou({ net: 500, date: "2027-01-01", delivery: "2027-01-01", deliveryUntil: "2027-01-31", status: 1000, paid: 500, payDate: "2026-12-28", cat: "Miete Büro" });
+  const abo = vou({ net: 30, tax: 6, date: "2026-12-31", status: 1000, paid: 36, payDate: "2027-01-05", cat: "Software" });
+  const abo2 = vou({ net: 30, tax: 6, date: "2026-12-31", status: 1000, paid: 36, payDate: "2027-01-05", cat: "Software" });
+  const s = st0(); s.docs[abo2.id] = { wk: "ja" };
+  const raw = { invoices: [], vouchers: [svsDez, miete, abo, abo2], creditNotes: [] };
+  const j26 = S.computeJab(raw, s, 2026), j27 = S.computeJab(raw, s, 2027);
+  t("15-Tage-Regel: SVS Dez. 2026, bezahlt 10.01.2027 → 2026; Jänner-Miete bezahlt 28.12.2026 → 2027", () => { near(j26.E["9225"], 1000); near(j27.E["9225"] || 0, 0); near(j26.E["9180"] || 0, 0); near(j27.E["9180"], 500); });
+  t("15-Tage-Regel: Software nur mit Kennzeichen 'wiederkehrend' (30 → 2026), sonst Abfluss 2027", () => { near(j26.E["9230"], 30); near(j27.E["9230"], 30); });
+  t("Verlustvortrag max. 75 % des Gesamtbetrags (§ 2 Abs 2b): 40.000 / VV 50.000 → 30.000 verrechnet, 20.000 Rest", () => { const e = S.estimateESt(40000, { verlustvortrag: 50000 }, 2026); near(e.vvUsed, 30000); near(e.vvRest, 20000); near(e.eink, 10000); near(e.tax, 0); });
+  t("Verlustvortrag kleiner als 75 %-Grenze voll: VV 10.000 bei 40.000 → 30.000 Einkommen", () => near(S.estimateESt(40000, { verlustvortrag: 10000 }, 2026).eink, 30000));
+}
+
+/* ===================== (k) Pkw: Vorsteuer und Luxustangente ===================== */
+{
+  const s = st0();
+  const ep = vou({ net: 40000, tax: 8000, date: "2026-03-01", status: 1000, paid: 48000, payDate: "2026-03-01", cat: "Fahrzeug" }); s.docs[ep.id] = { asset: true, pkw: true, epkw: true, nd: 8, benefit: "ifb15" };
+  const vb = vou({ net: 30000, tax: 6000, date: "2026-03-01", status: 1000, paid: 36000, payDate: "2026-03-01", cat: "Fahrzeug" }); s.docs[vb.id] = { asset: true, pkw: true, nd: 8, benefit: "gfb" };
+  const lux = vou({ net: 50000, tax: 10000, date: "2026-03-01", status: 1000, paid: 60000, payDate: "2026-03-01", cat: "Fahrzeug" }); s.docs[lux.id] = { asset: true, pkw: true, nd: 8 };
+  const us = vou({ net: 6000, tax: 1200, date: "2026-03-01", cat: "Hardware" }); s.docs[us.id] = { asset: true, nd: 5, method: "deg", used: true };
+  t("E-Pkw 48.000 brutto: Vorsteuer 8.000 abziehbar (≤ 80.000), Hinweis Eigenverbrauch über 40.000", () => { near(kz(S.computeUva({ invoices: [], vouchers: [ep] }, s, Q(2026, 1)), "060", "tax"), 8000); assert.ok(/Eigenverbrauch/.test(S.assetInfo(ep, s).note)); });
+  t("E-Pkw: Luxustangente netto 33.333,33 → AfA 5.000, davon 833,33 nicht abzugsfähig (KZ 9260)", () => { const a = S.assetInfo(ep, s); near(a.plan[0].afa, 5000); near(a.plan[0].afaLux, 833.33); });
+  t("Verbrenner-Pkw: keine Vorsteuer, AHK brutto 36.000, AfA 4.500 ohne Luxustangente", () => { near(kz(S.computeUva({ invoices: [], vouchers: [vb] }, s, Q(2026, 1)), "060", "tax"), 0); const a = S.assetInfo(vb, s); near(a.ahk, 36000); near(a.plan[0].afa, 4500); near(a.plan[0].afaLux, 0); });
+  t("Pkw 60.000 brutto: AfA 7.500, Luxustangente-Anteil 2.500", () => { const a = S.assetInfo(lux, s); near(a.plan[0].afa, 7500); near(a.plan[0].afaLux, 2500); });
+  t("Gebrauchtes Wirtschaftsgut: keine degressive AfA (§ 7 Abs 1a) → linear 1.200", () => { const a = S.assetInfo(us, s); assert.strictEqual(a.method, "lin"); near(a.plan[0].afa, 1200); });
+  t("Gewinnfreibetrag nicht für Pkw (§ 10 Abs 4); Öko-IFB E-Pkw 22 % von 33.333,33 = 7.333,33", () => {
+    const jj = S.computeJab({ invoices: [inv({ net: 200000, date: "2026-02-01", status: 1000, paid: 240000, payDate: "2026-02-10" })], vouchers: [ep, vb], creditNotes: [] }, s, 2026);
+    near(jj.gfbInvest, 0); near(jj.K5["9345"], -7333.33); });
+}
+
 /* ===================== (g) XML gegen BMF-XSD ===================== */
 const ROOT = path.join(__dirname, "..");
 const SCHEMA = [path.join(ROOT, "..", "buchhaltung", "tests", "schema"), path.join(ROOT, "test", "schema")].find(d => fs.existsSync(path.join(d, "U30.xsd")));
