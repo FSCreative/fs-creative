@@ -1496,6 +1496,8 @@ async function steuerRaw(force) {
   return STEUER_CACHE.p;
 }
 const STEUER_KZ_OK = /^(auto|inl|ns|zm|zmd|017|011|020|021|016|oss|sonst|dlp|nach20|060|rc|rcnv|ige|ige3|ige0|eust|fx|none|ignore)$/;
+// Zusammenfassung einer erledigten UVA/JAB/U1 (inkl. Belegliste für „bereits gemeldet“) – begrenzt, nie abgeschnittenes JSON
+function steuerSummary(x) { const o = JSON.parse(JSON.stringify(x)); if (Array.isArray(o.docIds)) o.docIds = o.docIds.map(String).filter(id => /^[\w-]{1,40}$/.test(id)).slice(0, 5000); const t = JSON.stringify(o); return t.length > 200000 ? Object.assign(o, { docIds: undefined }) : o; }
 function steuerOp(pl) {
   const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
   const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
@@ -1507,7 +1509,7 @@ function steuerOp(pl) {
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
     if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
-    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil", "noAusfall"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
     if ("wk" in P) cur.wk = P.wk === "ja" || P.wk === "nein" ? P.wk : undefined;           // § 19 EStG 15-Tage-Regel
     if ("uid" in P) { const u = String(P.uid || "").replace(/[\s.\-]/g, "").toUpperCase().slice(0, 16); cur.uid = u && STEUER_CALC.uidValid(u).ok ? u : undefined; }
     if ("land" in P) { const l = String(P.land || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2); cur.land = l.length === 2 ? l : undefined; }
@@ -1519,6 +1521,11 @@ function steuerOp(pl) {
     if ("benefit" in P) cur.benefit = /^(gfb|ifb10|ifb15|ifb20|ifb22)$/.test(P.benefit) ? (P.benefit === "ifb20" ? "ifb10" : P.benefit === "ifb22" ? "ifb15" : P.benefit) : undefined;
     ["abgang", "start", "ausfall"].forEach(f => { if (f in P) cur[f] = /^\d{4}-\d{2}-\d{2}$/.test(P[f] || "") ? P[f] : undefined; });
     o.docs[id] = JSON.parse(JSON.stringify(cur));
+  }
+  else if (op === "docsBulk") {  // mehrere Belege gleich einordnen (z. B. alle Gutschriften ignorieren) – nur Cockpit, nichts in sevDesk
+    const ids = (Array.isArray(pl.ids) ? pl.ids : []).map(x => String(x).slice(0, 40)).slice(0, 2000), v = String(pl.kz || "");
+    if (!ids.length || !(v === "ignore" || v === "")) throw new Error("ungueltig");
+    ids.forEach(id => { const cur = o.docs[id] || {}; cur.kz = v || undefined; o.docs[id] = JSON.parse(JSON.stringify(cur)); });
   }
   else if (op === "ruleMap") {   // Zuordnung einer sevDesk-Steuerregel → Klasse, gilt für alle Belege mit dieser Regel
     const id = String(pl.id || "").replace(/[^0-9ts]/g, "").slice(0, 12), side = pl.side === "in" ? "in" : "out", cls = String(pl.cls || "");
@@ -1546,7 +1553,7 @@ function steuerOp(pl) {
     const arr = (Array.isArray(pl.trips) ? pl.trips : []).slice(0, 1000).map(t => ({ date: /^\d{4}-\d{2}-\d{2}$/.test(t.date || "") ? t.date : "", route: String(t.route || "").slice(0, 120), purpose: String(t.purpose || "").slice(0, 160), km: Math.max(0, n2(t.km)), hours: Math.max(0, n2(t.hours)), nights: Math.max(0, parseInt(t.nights, 10) || 0) }));
     if (arr.length) o.trips[pl.year] = arr; else delete o.trips[pl.year];
   }
-  else if (op === "done" && /^(uva|jab|u1)$/.test(pl.kind) && key) { o[pl.kind][key] = Object.assign({}, o[pl.kind][key] || {}, { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? JSON.parse(JSON.stringify(pl.summary).slice(0, 20000)) : null, note: String(pl.note || "").slice(0, 500) }); }
+  else if (op === "done" && /^(uva|jab|u1)$/.test(pl.kind) && key) { o[pl.kind][key] = Object.assign({}, o[pl.kind][key] || {}, { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? steuerSummary(pl.summary) : null, note: String(pl.note || "").slice(0, 500) }); }
   else if (op === "undone" && /^(uva|jab|u1)$/.test(pl.kind) && key) { delete o[pl.kind][key]; }
   else throw new Error("bad_op");
   if (!writeSteuer(o)) throw new Error("save_failed");
@@ -1772,7 +1779,7 @@ async function fonEntwurf(art, key, paket, fresh) {
     const kennzahlen = STEUER_CALC.uvaKzMap(r);
     const befunde = fonPruefeU30({ steuernummer: o.settings.steuernummer, bis: p.to, kennzahlen, vst: o.settings.vst });
     if (r.review.length) befunde.push({ art: "fehler", text: r.review.length + " Beleg(e) sind nicht eingeordnet und fehlen in den Kennzahlen. Bitte zuerst in der UVA einordnen." });
-    return { art, p, kennzahlen, zahllast: r.zahllast, befunde, xml: nr ? fonU30Xml(nr, paket, { von, bis, kundeninfo: info, kennzahlen, vst: o.settings.vst }) : "" };
+    return { art, p, kennzahlen, zahllast: r.zahllast, docIds: STEUER_CALC.uvaDocIds(r), befunde, xml: nr ? fonU30Xml(nr, paket, { von, bis, kundeninfo: info, kennzahlen, vst: o.settings.vst }) : "" };
   }
   const rows = STEUER_CALC.zmRows(r);
   const zeilen = rows.filter(x => x.uid && Math.round(x.net) !== 0).map(x => ({ uid: x.uid, betrag: x.net, sonstigeLeistung: x.kind === "S", dreieck: !!x.dreieck }));
@@ -1798,7 +1805,7 @@ async function fonSenden(pl, modus) {
   o.fon.archive = o.fon.archive.slice(0, 120);
   if (rc === 0 && modus === "P" && art === "JAHR_ERKL") o.jab[key] = Object.assign({}, o.jab[key] || {}, { doneAt: new Date().toISOString(), summary: { gewinn: e.kennzahlen.gewinn, u1Zahllast: e.zahllast }, fon: { paket, at: new Date().toISOString() } });
   if (rc === 0 && modus === "P" && art === "U1") o.u1[key] = Object.assign({}, o.u1[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, voraus: e.kennzahlen.voraus, rest: e.kennzahlen.rest, kz: e.kennzahlen.u1 }, fon: { paket, at: new Date().toISOString() } });
-  if (rc === 0 && modus === "P" && art === "U30") o.uva[key] = Object.assign({}, o.uva[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, kz: e.kennzahlen }, fon: { paket, at: new Date().toISOString() } });
+  if (rc === 0 && modus === "P" && art === "U30") o.uva[key] = Object.assign({}, o.uva[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, kz: e.kennzahlen, docIds: e.docIds || [] }, fon: { paket, at: new Date().toISOString() } });
   writeSteuer(o);
   return { ok: rc === 0, rc, msg, status, paket, steuer: steuerPublic(o) };
 }
