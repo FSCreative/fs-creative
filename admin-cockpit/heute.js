@@ -44,7 +44,7 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     var shown=UI.feedAll?f:f.slice(0,12);
     var items=shown.map(function(x){ return '<li class="item"><span class="sev '+x.sev+'"></span><span class="ico">'+F.svg(x.icon)+'</span><div style="min-width:0"><div class="t"><span class="tag '+x.tag[0]+'">'+esc(x.tag[1])+'</span>'+esc(x.t)+'</div><div class="d">'+esc(x.d)+'</div></div><div class="acts">'+x.acts.map(function(a){ return '<button class="btn '+(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+'<button class="btn icon" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">✕</button></div></li>'; }).join("");
     var ab=D.abgleich.totals, sev=D.sev, cust=(D.sites||[]).filter(function(s){return !s.own&&s.active;}), bad=cust.filter(F.siteBad);
-    var todayEv=D.events.filter(function(e){return e.date===today;}), nextEv=todayEv.length?todayEv:D.events.slice(0,4);
+    var todayEv=D.events.filter(function(e){return e.date===today;}), nextEv=todayEv.length?todayEv:D.events.filter(function(e){return e.date>today;}).slice(0,4);
     var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
     return F.head(greet+", Simon.",f.length?f.length+(f.length===1?" Sache braucht":" Dinge brauchen")+" dich. Das Dringendste steht oben.":"Alles erledigt. Schönen Tag im Tal.")+
     '<div class="day">'+
