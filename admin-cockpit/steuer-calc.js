@@ -86,7 +86,7 @@ function ruleTextClass(t,side){
     if(/mit vorsteuer|vorsteuerabzug/.test(t)||onlyIn) return {in:"rc"};
     return onlyOut?{out:"rcout"}:{in:"rc",out:"rcout"};
   }
-  if(/nicht vorsteuerabzieh|ohne vorsteuerabzug|nicht abziehbar|keine vorsteuer|versicherung|steuer nicht ausgewiesen|ohne (ust|umsatzsteuer|mwst)/.test(t)) return {in:"none"};
+  if(/nicht vorsteuerabzieh|ohne vorsteuerabzug|nicht abziehbar|keine vorsteuer|nicht absetzbar|ausw(ä|ae|a)rtige steuer|ausl(ä|ae)ndische steuer|versicherung|steuer nicht ausgewiesen|ohne (ust|umsatzsteuer|mwst)/.test(t)) return {in:"none"};
   if(/vorsteuer/.test(t)) return {in:"060"};
   if(/nicht im inland steuerbar|nicht steuerbar|nicht stb|leistungsort (im )?ausland|drittland/.test(t)) return {out:"nsout"};
   if(/ausfuhr|export/.test(t)) return {out:"011"};
@@ -164,7 +164,19 @@ function sollDate(inv){ var l=leistEnd(inv); if(!inv.delivery&&!inv.deliveryUnti
 //  - Mindest-Istbesteuerung (§ 19 Abs. 2 Z 1 lit. a letzter Satz UStG): vor Ausführung der Leistung vereinnahmte Beträge
 //    im Monat der Vereinnahmung, der Rest im Soll-Monat
 function dayNo(iso){ return Date.UTC(+iso.slice(0,4),+iso.slice(5,7)-1,+iso.slice(8,10))/864e5; }
+// Bereits gemeldet? Zeiträume, die über das Cockpit abgegeben wurden, tragen die Belegliste (summary.docIds); für alle anderen
+// abgeschlossenen Zeiträume (vor dem Cockpit, mit sevDesk-Werten gemeldet) gilt: enthalten ist, was nach Rechnungsdatum hineinfiel.
+function hasDocList(st,k){ var u=st&&st.uva&&st.uva[k]; return !!(u&&u.doneAt&&u.summary&&Array.isArray(u.summary.docIds)); }
+function reportedIn(st,inv){ if(!st||!inv.date) return null; var ks=Object.keys(st.uva||{});
+  for(var i=0;i<ks.length;i++){ var k=ks[i]; if(hasDocList(st,k)&&st.uva[k].summary.docIds.indexOf(inv.id)>-1){ var p=periodOfKey(k); if(p) return {key:k,date:inv.date>=p.from&&inv.date<=p.to?inv.date:p.to,how:"laut Cockpit-Abgabe"}; } }
+  var k0=periodKeyOf(st,inv.date); if(periodClosed(st,k0)&&!hasDocList(st,k0)) return {key:k0,date:inv.date,how:"nach Rechnungsdatum, wie in sevDesk"}; return null; }
 function sollParts(inv,st,total){
+  var out0=sollParts0(inv,st,total), rep=reportedIn(st,inv), tt=total==null?1:total;
+  if(rep&&!docCfg(st,inv.id).teil) return [{share:tt,date:rep.date,why:"bereits mit der UVA "+rep.key.replace("-"," ")+" gemeldet ("+rep.how+")"}];
+  // nicht gemeldete Anteile, deren Zeitraum schon abgeschlossen ist → im ersten offenen Zeitraum nachholen
+  return out0.map(function(pt){ var pk=periodKeyOf(st,pt.date); if(!st||!periodClosed(st,pk)) return pt; var fo=firstOpenFrom(st,pt.date); if(!fo) return pt;
+    return {share:pt.share,date:fo.from,why:"Nachholung aus "+pk.replace("-Q"," Q").replace("-M"," Monat ")+(pt.pre?" – Anzahlung vor Rechnung":" – Leistungszeitpunkt in bereits abgegebenem Zeitraum")+" (dort nicht gemeldet)",pre:pt.pre}; }); }
+function sollParts0(inv,st,total){
   total=total==null?1:total; var g=num(inv.gross), soll=sollDate(inv), le=leistEnd(inv), c=docCfg(st,inv.id), out=[];
   if(c.teil&&inv.delivery&&inv.deliveryUntil&&inv.deliveryUntil>inv.delivery){
     var a=dayNo(inv.delivery), b=dayNo(inv.deliveryUntil), days=b-a+1, ym=inv.delivery.slice(0,7);
@@ -177,15 +189,17 @@ function sollParts(inv,st,total){
   if(g>0) payments(inv).forEach(function(pm){ if(pm.amount<=0||!pm.date||pm.date>=le||pm.date.slice(0,7)>=soll.slice(0,7)) return;
     if(klein&&dayNo(le)-dayNo(pm.date)<31) return;          // kleine Vorauszahlung (< 1 Monat vor Leistung) → mit der Rechnung (Einstellung)
     var sh=Math.min(pm.amount/g,total-pre); if(sh<=1e-9) return; pre+=sh;
-    var d=pm.date, why="vor Ausführung der Leistung vereinnahmt – Mindest-Istbesteuerung (§ 19 Abs. 2 Z 1 lit. a)", pk=periodKeyOf(st,d);
-    if(periodClosed(st,pk)){ var fo=firstOpenFrom(st,d); if(fo){ d=fo.from>soll?soll:fo.from; why="Nachholung aus "+pk.replace("-Q"," Q").replace("-M"," Monat ")+" – Anzahlung vor Rechnung (Zeitraum bereits abgegeben)"; } }
-    out.push({share:sh,date:d,why:why,pre:true}); });
+    out.push({share:sh,date:pm.date,why:"vor Ausführung der Leistung vereinnahmt – Mindest-Istbesteuerung (§ 19 Abs. 2 Z 1 lit. a)",pre:true}); });
   if(total-pre>1e-9) out.push({share:total-pre,date:soll,why:null});
   return out;
 }
 // Vorsteuer (§ 12 Abs. 1 Z 1 UStG): Leistung ausgeführt (bzw. Anzahlung geleistet) UND Rechnung vorhanden →
 // frühestens Rechnungsdatum, spätestens Ende des Leistungszeitraums bzw. früherer Zahlung
-function vstDate(v){ var d=v.date||"", le=leistEnd(v)||d, pm=payments(v).filter(function(p){ return p.amount>0&&p.date; }).map(function(p){ return p.date; }).sort()[0], t=pm&&pm<le?pm:le; return t>d?t:d; }
+// Reverse Charge (§ 19 Abs. 2 Z 1 lit. b UStG): Ablauf des Monats der Leistung. Abos/Werbe-Abrechnungen werden mit dem Beleg
+// abgerechnet → Belegmonat; liegt der Leistungsbeginn vor dem Beleg (Rechnung kommt nach der Leistung), dessen Monat.
+function rcDate(v){ var d=v.date||"", s0=v.delivery||""; return s0&&d&&s0<d?s0:(d||s0); }
+// Vorsteuer: bei längeren Zeiträumen (Jahresabo, im Voraus abgerechnet) Belegdatum; sonst Leistungsbeginn bzw. frühere Zahlung
+function vstDate(v){ var d=v.date||""; if(v.deliveryUntil&&v.delivery&&!isShortPeriod(v)&&v.deliveryUntil>v.delivery) return d; var le=leistEnd(v)||d, pm=payments(v).filter(function(p){ return p.amount>0&&p.date; }).map(function(p){ return p.date; }).sort()[0], t=pm&&pm<le?pm:le; return t>d?t:d; }
 function docCfg(st,id){ return (st.docs&&st.docs[id])||{}; }
 function skipInv(inv,st){ var c=docCfg(st,inv.id); return inv.status<200||inv.type==="MA"||inv.type==="WKR"||c.ignore||c.kz==="ignore"; }
 function skipVou(v,st){ var c=docCfg(st,v.id); return v.status<100||v.type==="RV"||c.ignore||c.kz==="ignore"; }   // RV = Vorlage wiederkehrender Beleg
@@ -209,6 +223,7 @@ var TAXRULE_TXT={"1":"steuerpflichtig","2":"Ausfuhr","3":"ig. Lieferung","4":"st
 // Ausgangsrechnung (oder Einnahmebeleg): Klasse je Position, mit Begründung
 function outWhy(doc,line,st){
   var cfg=docCfg(st,doc.id), o=cfg.kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o==="inl"?(line.rate>0?"inl":"pruefen"):o,why:"im Cockpit manuell eingeordnet"+(o==="020"&&cfg.grund?" ("+cfg.grund+")":""),sure:true};
+  if(!(line.rate>0)&&doc.status&&ausgebucht(doc,st)) return {c:"sonst",why:"0 %-Rechnung ausgebucht (Forderungsausfall) – ohne USt-Folge",sure:true,ausg:true};
   var r=ruleKey(doc), oi=outInfo(doc,st), cc=oi.cc, eu=isEU(cc)&&cc!=="AT", hasUid=!!oi.uid, sem=r?ruleOut(r):"", t=docText(doc);
   var lief=RX_LIEF.test(t), drei=RX_DREI.test(t), rc=RX_RC.test(t), igK=drei?"zmd":(lief?"017":"zm"), igT=drei?"Dreiecksgeschäft":(lief?"ig. Lieferung":"ig. sonstige Leistung");
   var land=cc?" (Kunde "+cc+(oi.ccSrc?" laut "+oi.ccSrc:"")+(hasUid?", UID "+oi.uid+(oi.uidSrc!=="Kontakt"?" aus "+oi.uidSrc:""):", keine UID")+")":"";
@@ -330,10 +345,16 @@ var UVA_ROWS=[
 var MANUAL_KZ=["001","056","048","082","044","087","032","089","061","083","064","062","063","067","090","071","012","015","018","019"];
 
 // Entgeltsminderung: bezahlte Rechnung mit Zahlbetrag < Brutto (Skonto, Teilausfall) bzw. im Cockpit als uneinbringlich markiert
+/* Ausgebuchte Forderung: im Cockpit mit Datum erfasst (docs[id].ausfall) oder automatisch erkannt – sevDesk liefert über die API
+   kein eigenes Kennzeichen; „ausgebucht“ zeigt sich als Status bezahlt (1000) ohne Zahlungsbetrag. Abschaltbar je Rechnung (noAusfall). */
+function ausgebucht(inv,st){ var c=docCfg(st,inv.id); if(inv.type==="SR"||inv.type==="AR") return null;
+  if(c.ausfall) return {date:c.ausfall,auto:false};
+  if(c.noAusfall||inv.status!==1000||num(inv.gross)<=0||Math.abs(num(inv.paid))>=0.005||payments(inv).length) return null;
+  return {date:inv.payDate||inv.date,auto:true}; }
 function minderung(inv,st){
   if(inv.type==="SR"||inv.type==="AR"||inv.type==="ER") return null; var c=docCfg(st,inv.id), g=num(inv.gross), paid=num(inv.paid);
   if(g<=0) return null;
-  if(c.ausfall){ var open=g-paid; if(open>0.01) return {date:c.ausfall,share:open/g,amount:open,why:"Forderungsausfall (uneinbringlich) – Berichtigung § 16 Abs. 3 UStG"}; return null; }
+  var au=ausgebucht(inv,st); if(au){ var open=g-paid; if(open>0.01&&Math.abs(num(inv.tax))>0.004) return {date:au.date,share:open/g,amount:open,auto:au.auto,why:(au.auto?"ausgebucht laut sevDesk (bezahlt ohne Zahlung)":"Forderungsausfall (uneinbringlich)")+" – Berichtigung § 16 Abs. 3 UStG"}; return null; }
   if(c.noMinderung||inv.status!==1000||paid<0.005) return null;
   var diff=g-paid; if(diff<0.02||diff/g>0.5) return null;   // > 50 % Differenz: eher Teilzahlung/Gutschrift – nicht automatisch
   var d=inv.payDate||(inv.pays&&inv.pays.length?inv.pays[inv.pays.length-1].date:""); if(!d) return null;
@@ -365,7 +386,7 @@ function computeUva(raw,st,p){
         sp.forEach(function(pt){ if(inP(pt.date,p)) revLine(inv,l,{share:pt.share,date:pt.date,why:pt.why||why},"out"); }); });
     }
     // Entgeltsminderung bei Sollbesteuerung (§ 16 UStG): Skonto/Teilausfall bei bezahlter Rechnung, Forderungsausfall laut Cockpit
-    var m=minderung(inv,st); if(m&&inP(m.date,p)){ ls.forEach(function(l){ revLine(inv,{rate:l.rate,net:-l.net*m.share,tax:-l.tax*m.share},{share:1,date:m.date,why:m.why},"out"); }); minder.push({doc:inv,date:m.date,share:m.share,amount:r2(m.amount),why:m.why}); }
+    var m=minderung(inv,st); if(m&&inP(m.date,p)){ ls.forEach(function(l){ revLine(inv,{rate:l.rate,net:-l.net*m.share,tax:-l.tax*m.share},{share:1,date:m.date,why:m.why},"out"); }); minder.push({doc:inv,date:m.date,share:m.share,amount:r2(m.amount),why:m.why,auto:!!m.auto}); }
   });
   (raw.creditNotes||[]).forEach(function(cn){
     if(cn.status<200||docCfg(st,cn.id).ignore||docCfg(st,cn.id).kz==="ignore") return;
@@ -396,7 +417,7 @@ function computeUva(raw,st,p){
     ls.forEach(function(l){
       if(nonBiz(l)&&docCfg(st,v.id).kz!=="060") return;
       var c=inClass(v,l,st);
-      if(c==="rc"||c==="rcnv"){ var d1=leistEnd(v); if(!inP(d1,p)) return; var t=r2(l.net*0.2); add("057",l.net,t,v,"in",d1,"Reverse Charge: Monat der Leistung"); if(c==="rc") add("066",0,t,v,"in",d1,"Vorsteuer aus Reverse Charge"); }
+      if(c==="rc"||c==="rcnv"){ var d1=rcDate(v); if(!inP(d1,p)) return; var t=r2(l.net*0.2); add("057",l.net,t,v,"in",d1,"Reverse Charge: Monat der Leistung"); if(c==="rc") add("066",0,t,v,"in",d1,"Vorsteuer aus Reverse Charge"); }
       else if(c==="ige"){ if(!inP(v.date,p)) return; var rate=l.rate>0&&IGE_KZ[String(l.rate)]?l.rate:20, t2=r2(l.net*rate/100); add("070",l.net,0,v,"in",v.date,"ig. Erwerb"); add(IGE_KZ[String(rate)],l.net,t2,v,"in",v.date,"ig. Erwerb"); add("065",0,t2,v,"in",v.date,"Vorsteuer ig. Erwerb"); }
       else if(c==="ige3"||c==="ige0"){ if(!inP(v.date,p)) return; add("070",l.net,0,v,"in",v.date,c==="ige3"?"Dreiecksgeschäft":"steuerfreier ig. Erwerb"); add(c==="ige3"?"077":"071",l.net,0,v,"in",v.date,c==="ige3"?"Erwerb gilt als besteuert (Art. 25 Abs. 2)":"steuerfrei (Art. 6 Abs. 2)"); }
       else if(c==="060"){ var dv=vstDate(v); if(!inP(dv,p)) return; add("060",0,l.tax,v,"in",dv,dv===v.date?"Belegdatum (Rechnung liegt vor, Leistung erbracht)":"Leistung erst "+dv+" ausgeführt bzw. bezahlt (§ 12 Abs. 1 Z 1 UStG)"); }
@@ -670,6 +691,8 @@ function plausibility(raw,st,year){
   out.push({id:"sr",ok:true,t:"Stornorechnungen "+y,a:sr.length,hint:sr.filter(function(i){ return num(i.net)>0; }).length+" mit positiver Summe (werden negativ gerechnet), "+sr.filter(function(i){ return num(i.net)<0; }).length+" bereits negativ (bleiben so)."});
   var zeroPaid=(raw.invoices||[]).filter(function(i){ return i.status===1000&&num(i.paid)<0.005&&num(i.gross)>0&&String(i.date||"").slice(0,4)===y&&!skipInv(i,st); });
   out.push({id:"zeropaid",ok:!zeroPaid.length,t:"Als bezahlt markiert, aber ohne Zahlungsbetrag",a:zeroPaid.length,docs:zeroPaid.slice(0,30),hint:"Zählen in der E1a nicht als Einnahme (kein Zufluss). Falls doch bezahlt: Zahlung in sevDesk zuordnen."});
+  var rv=(raw.vouchers||[]).filter(function(v){ return v.type==="RV"&&v.status>=100&&String(v.date||"").slice(0,4)===y; });
+  out.push({id:"rv",ok:!rv.length,t:"Wiederkehrende Belege (sevDesk-Typ RV) – als Vorlage nicht mitgerechnet",a:rv.length+" · "+r2(rv.reduce(function(a,v){ return a+num(v.tax); },0)).toFixed(2).replace(".",",")+" € Steuer",docs:rv.slice(0,30),hint:"Falls sevDesk diese Belege in der USt-Auswertung zählt (keine eigenen Einzelbelege je Monat), bitte melden – dann sind sie echte Buchungen."});
   var drafts=(raw.vouchers||[]).filter(function(v){ return v.status===50&&String(v.date||"").slice(0,4)===y; }).length+(raw.invoices||[]).filter(function(i){ return i.status===100&&String(i.date||"").slice(0,4)===y; }).length;
   out.push({id:"drafts",ok:!drafts,t:"Entwürfe in sevDesk (nicht mitgerechnet)",a:drafts,hint:drafts?"Entwürfe zählen nicht – in sevDesk fertigstellen, falls sie in den Zeitraum gehören.":"keine"});
   var nb=0, nbSum=0; (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)||String(v.date||"").slice(0,4)!==y) return; lines(v).forEach(function(l){ if(nonBiz(l)){ nb++; nbSum+=l.net+l.tax; } }); });
@@ -691,7 +714,7 @@ function controlCheck(raw,st,p){
     else if(inv.type==="SR") uv.push(inv.date); else sollParts(inv,st,1).forEach(function(pt){ uv.push(pt.date); });
     var inU=uv.some(function(d){ return inP(d,p); });
     if(Math.abs(t)>0.004&&(inS!==inU||(inS&&uv.some(function(d){ return !inP(d,p); }))||(inv.type==="ER"&&inS))) diffs.push({doc:inv,kind:"out",tax:r2(t),sev:inv.date,uva:uv.join(", "),why:inv.type==="AR"?"Anzahlung: U30 im Monat der Zahlung":(inv.type==="ER"?"Endrechnung: U30 nur Gesamtentgelt abzüglich versteuerter Anzahlungen":"U30 nach Leistungsdatum/Soll-Zeitpunkt, sevDesk nach Rechnungsdatum")}); });
-  (raw.creditNotes||[]).forEach(function(cn){ if(cn.status<200||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
+  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn.id); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v);
     if(v.cd==="D"){ if(inP(v.date,p)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax; }); return; }
     if(v.cd!=="C") return; var t=0; ls.forEach(function(l){ if(!nonBiz(l)&&sevClassOf(v,l)==="060"&&atRate(l.rate)) t+=l.tax; }); if(Math.abs(t)<0.005) return;
@@ -754,6 +777,7 @@ function mismatches(raw,st,from,to){
       if(!inv.delivery) out.push({doc:inv,kind:"out",type:"delivery",t:"Kein Leistungsdatum – ZM-Zeitraum wird nach Rechnungsdatum bestimmt",fixable:false});
     }
     var ov=docCfg(st,inv.id).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – sevDesk-Steuerregel: "+(ruleKey(inv)?ruleTxt(ruleKey(inv)):(inv.taxType||"–")),fixable:false});
+    if(Math.abs(num(inv.tax))>0.004&&/§ ?6 abs\.? ?1 z(iffer)?\.? ?27|kleinunternehmer/i.test(docText(inv))) out.push({doc:inv,kind:"out",type:"ku",t:"Rechnungstext Kleinunternehmer, aber USt ausgewiesen (§ 11 Abs. 12 UStG: die ausgewiesene Steuer wird geschuldet) – Rechnungstext korrigieren",fixable:false});
     if(cl.indexOf("pruefen")>-1) out.push({doc:inv,kind:"out",type:"rule",t:"0 % bei steuerpflichtiger Steuerregel – Steuerregel oder Satz in sevDesk prüfen",fixable:false});
   });
   return out;
@@ -801,7 +825,8 @@ function explainDoc(raw,st,id){
     positionen:ls,optionen:(out?OUT_OPTS:IN_OPTS).map(function(o){ return o[0]; })};
 }
 
-return {VERSION:9,isShortPeriod:isShortPeriod,periodClosed:periodClosed,periodDue:periodDue,ruleKey:ruleKey,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
+function uvaDocIds(r){ var ids={}; Object.keys(r.docs||{}).forEach(function(k){ r.docs[k].forEach(function(x){ if(x.doc&&x.doc.id&&!/^manual-/.test(x.doc.id)) ids[x.doc.id]=1; }); }); (r.zm||[]).forEach(function(z){ if(z.doc&&z.doc.id) ids[z.doc.id]=1; }); return Object.keys(ids); }
+return {VERSION:10,uvaDocIds:uvaDocIds,ausgebucht:ausgebucht,reportedIn:reportedIn,rcDate:rcDate,isShortPeriod:isShortPeriod,periodClosed:periodClosed,periodDue:periodDue,ruleKey:ruleKey,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
   OUT_OPTS:OUT_OPTS,IN_OPTS:IN_OPTS,UVA_ROWS:UVA_ROWS,MANUAL_KZ:MANUAL_KZ,BASE_KZ:BASE_KZ,TAX_KZ:TAX_KZ,TAXRULE_TXT:TAXRULE_TXT,E1A:E1A,
   computeUva:computeUva,uvaKzMap:uvaKzMap,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
   revenueNet:revenueNet,revenueGross:revenueGross,controlCheck:controlCheck,plausibility:plausibility,mismatches:mismatches,docCfg:docCfg,

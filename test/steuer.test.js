@@ -24,7 +24,8 @@ function vou(o) {
   return Object.assign({ id: "v" + (++n), date: "2026-07-01", delivery: null, payDate: null, status: 100, cd: "C", taxType: "default", taxRule: "9", supplier: "Lieferant " + n, supplierUid: "", supplierCountry: "AT", desc: "", net, tax, gross: Math.round((net + tax) * 100) / 100, paid: 0, enshrined: false, pays: undefined,
     lines: [{ rate: o.rate == null ? (net ? Math.round(tax / net * 1000) / 10 : 0) : o.rate, net, tax, cat: o.cat || "Software", catId: "", catType: o.catType || "" }] }, o);
 }
-const st0 = () => ({ docs: {}, uvaManual: {}, mapping: {}, jabInput: {}, uva: {}, trips: {}, settings: {} });
+// today fest: kein Voranmeldungszeitraum 2026 ist abgeschlossen (Nachhol-/Bereits-gemeldet-Logik nur in eigenen Tests)
+const st0 = () => ({ docs: {}, uvaManual: {}, mapping: {}, jabInput: {}, uva: {}, trips: {}, settings: {}, today: "2026-01-01" });
 const Q = (y, q) => ({ key: y + "-Q" + q, from: y + "-" + String(q * 3 - 2).padStart(2, "0") + "-01", to: y + "-" + String(q * 3).padStart(2, "0") + "-" + (q === 1 || q === 4 ? "31" : "30") });
 
 /* ===================== (a)–(d) UVA Q3 2026 ===================== */
@@ -400,6 +401,41 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
     const z = S.zeroRated(RAWL, s, Q(2026, 3)).find(x => x.doc === tav); assert.ok(z && z.at && !z.sure && /österreichischen Unternehmer/.test(z.why)); near(kz(r, "017"), 0); assert.strictEqual(r.zm.length, 0); });
   t("Live: Zahllast Q3 = 280; '0 % war falsch' → 835,07 brutto = 695,89 netto + 139,18 USt in 022", () => {
     near(r.zahllast, 280); const s4 = JSON.parse(JSON.stringify(s)); s4.docs[tav.id] = { kz: "nach20" }; const r4 = S.computeUva(RAWL, s4, Q(2026, 3)); near(kz(r4, "022"), 2195.89); near(r4.zahllast, 280 + 139.18); });
+}
+
+/* ===================== (p) Live-Runde 2: RC-Zeitpunkt, bereits gemeldet, Ausbuchung, Gutschriften ignorieren ===================== */
+{
+  const TS = [{ id: "126029", name: "Innergemeinschaftlicher Erwerb" }, { id: "126030", name: "Reversed Charge" }, { id: "126031", name: "Versicherungen" }, { id: "126032", name: "Steuer nicht ausgewiesen" }, { id: "126039", name: "Auswertige Steuern - nicht Absetzbar" }];
+  const cv = o => vou(Object.assign({ taxRule: "", taxType: "custom", status: 100 }, o));
+  const adobeJahr = cv({ net: 65.54, taxSet: "126030", date: "2026-07-15", delivery: "2026-07-15", deliveryUntil: "2027-07-14", supplier: "Adobe Systems Software Ireland Ltd" });   // Jahresabo, monatlich abgerechnet
+  const meta = cv({ net: 105, taxSet: "126030", date: "2026-07-17", delivery: "2026-07-03", deliveryUntil: "2026-07-16", supplier: "Meta Platforms Ireland Ltd" });
+  const nachLeistung = cv({ net: 50, taxSet: "126030", date: "2026-10-02", delivery: "2026-09-30", supplier: "WeTransfer B.V." });                 // Leistung Sept., Beleg Okt. → Sept.
+  const fremd = cv({ net: 100, tax: 21, rate: 21, taxSet: "126039", date: "2026-08-03", supplier: "Hotel Brüssel" });
+  const jahrVst = vou({ taxRule: "", net: 100, tax: 20, status: 100, date: "2026-08-01", delivery: "2026-08-01", deliveryUntil: "2027-07-31", supplier: "Software GmbH" });
+  const re1146 = inv({ nr: "RE-1146", taxRule: "", net: 266.67, tax: 53.33, date: "2026-04-01", delivery: "2026-04-01", deliveryUntil: "2028-03-31", status: 1000, paid: 320, pays: [{ date: "2026-04-10", amount: 320 }], texts: "USt. befreit gem. § 6 Abs 1 Z 27 UStG" });
+  const re1199 = inv({ nr: "RE-1199", taxRule: "", net: 400, tax: 80, date: "2026-12-31", delivery: "2026-12-31", status: 1000, paid: 480, pays: [{ date: "2026-06-24", amount: 480 }] });
+  const tav = inv({ nr: "RE-1210", taxRule: "", contact: "La Taverna VIII", uid: "ATU61300844", country: "AT", net: 835.07, tax: 0, rate: 0, date: "2026-08-02", delivery: "2026-08-02", status: 1000, paid: 0, payDate: "2026-09-30" });
+  const ausg20 = inv({ nr: "RE-1220", taxRule: "", net: 100, tax: 20, date: "2026-07-05", delivery: "2026-07-05", status: 1000, paid: 0, payDate: "2026-08-10" });
+  const gu = { id: "cn7", nr: "GU-7", type: "GU", status: 200, date: "2026-08-15", taxRule: "", contact: "Kunde Z", net: 100, tax: 20, gross: 120, lines: [{ rate: 20, net: 100, tax: 20 }] };
+  const RAW2 = { invoices: [re1146, re1199, tav, ausg20], vouchers: [adobeJahr, meta, nachLeistung, fremd, jahrVst], creditNotes: [gu], taxRules: [], taxSets: TS };
+  const s = st0(); s.today = "2026-10-01"; s.uva = { "2026-Q2": { doneAt: "2026-08-10", summary: { zahllast: 1000 } } };
+  const r = S.computeUva(RAW2, s, Q(2026, 3)), r2 = S.computeUva(RAW2, s, Q(2026, 2));
+  /* Q3 RC (Belegmonat bzw. früherer Leistungsmonat): 65,54 + 105 + 50 (Leistung 30.09.) = 220,54 → 13,11 + 21,00 + 10,00 = 44,11
+     060: Jahreslizenz 20 (Belegdatum, nicht Ende 2027) · fremde 21 % „nicht absetzbar“ → keine Vorsteuer
+     022: RE-1199 (Vorauszahlung 24.06., Q2 abgegeben, dort nicht gemeldet) 400 + RE-1220 100 − 100 (ausgebucht 10.08.) − GU 100 = 300; RE-1146 bleibt in Q2 */
+  t("Runde 2: RC nach Belegmonat (Jahresabo, Werbe-Abrechnung) bzw. Leistungsmonat davor → 057 220,54 / 44,11 = 066", () => { near(kz(r, "057"), 220.54); near(kz(r, "057", "tax"), 44.11); near(kz(r, "066", "tax"), 44.11); });
+  t("Runde 2: Jahreslizenz unbezahlt → Vorsteuer im Belegmonat (Q3 060 = 20); 'Auswertige Steuern – nicht Absetzbar' ohne Vorsteuer", () => { near(kz(r, "060", "tax"), 20); assert.ok(r.other.none.some(x => x.doc === fremd)); });
+  t("Runde 2: RE-1146 (Rechnung 01.04., Q2 nach sevDesk-Datum gemeldet) nicht in Q3 nachgeholt, sondern in Q2", () => { assert.ok(!(r.docs["022"] || []).some(x => x.doc === re1146)); assert.ok((r2.docs["022"] || []).some(x => x.doc === re1146 && /bereits mit der UVA/.test(x.why))); });
+  t("Runde 2: RE-1199 (Rechnung 31.12., bezahlt 24.06.) als Nachholung in Q3", () => assert.ok((r.docs["022"] || []).some(x => x.doc === re1199 && /Nachholung/.test(x.why))));
+  t("Runde 2: KZ 022 Q3 = 300 (inkl. Ausbuchung RE-1220 und Gutschrift)", () => near(kz(r, "022"), 300));
+  t("Runde 2: Q2 über das Cockpit mit Belegliste abgegeben → was nicht in der Liste war, wird nachgeholt", () => {
+    const z = inv({ nr: "RE-Z", taxRule: "", net: 200, tax: 40, date: "2026-06-28", delivery: "2026-07-03" }), s3 = st0(); s3.today = "2026-10-01"; s3.uva = { "2026-Q2": { doneAt: "2026-08-10", summary: { zahllast: 0, docIds: ["xyz"] } } };
+    assert.ok((S.computeUva({ invoices: [z], vouchers: [] }, s3, Q(2026, 3)).docs["022"] || []).some(x => x.doc === z));
+    const s4 = JSON.parse(JSON.stringify(s3)); delete s4.uva["2026-Q2"].summary.docIds; near(kz(S.computeUva({ invoices: [z], vouchers: [] }, s4, Q(2026, 2)), "022"), 200); });
+  t("Runde 2: Warnung Kleinunternehmer-Text mit ausgewiesener USt (§ 11 Abs 12)", () => assert.ok(S.mismatches(RAW2, s, "2026-04-01", "2026-04-30").some(m => m.doc === re1146 && m.type === "ku")));
+  t("Runde 2: ausgebuchte 0-%-Rechnung (bezahlt ohne Zahlung) → keine Prüfung, keine USt-Folge", () => { assert.ok(!r.review.some(x => x.doc === tav)); assert.ok(S.ausgebucht(tav, s).auto); assert.ok((r.other.sonst || []).some(x => x.doc === tav)); assert.ok(r.minder.some(m => m.doc === ausg20 && m.auto)); });
+  t("Runde 2: Gutschrift ignorieren → keine Wirkung in UVA (022 400) und E1a", () => { const s5 = JSON.parse(JSON.stringify(s)); s5.docs[gu.id] = { kz: "ignore" }; near(kz(S.computeUva(RAW2, s5, Q(2026, 3)), "022"), 400);
+    const gp = Object.assign({}, gu, { status: 1000 }), raw = { invoices: [], vouchers: [], creditNotes: [gp] }; near(S.computeJab(raw, st0(), 2026).ertr["9040"], -100); const s6 = st0(); s6.docs[gp.id] = { kz: "ignore" }; near(S.computeJab(raw, s6, 2026).ertr["9040"], 0); });
 }
 
 /* ===================== (g) XML gegen BMF-XSD ===================== */
