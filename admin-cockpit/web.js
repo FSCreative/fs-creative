@@ -12,7 +12,10 @@ var DEFP={domain:0,domainPer:"year",hosting:0,hostingPer:"month",mail:0,mailPer:
 var W4P={exchange5:{l:"Exchange 5 GB",m:7,box:1},exchange10:{l:"Exchange 10 GB",m:10,box:1},exchange15:{l:"Exchange 15 GB",m:13.5,box:1},mailgrow:{l:"E-Mail Grow",m:4,box:1},go:{l:"Webhosting Go",m:4},grow:{l:"Webhosting Grow",m:7},business:{l:"Webhosting Business",m:12}};
 var W4D=[[/^of gaschurn$/i,["exchange5"]],[/^lerch fleischhandel$/i,["exchange5"]],[/bergfreunde/i,["go"]],[/^fl(ö|oe)ry/i,["go"]]];
 function w4yDef(name){ var m=W4D.find(function(d){ return d[0].test(String(name||"")); }); return m?m[1].slice():[]; }
-function w4yLines(c){ return (c.w4y||[]).filter(function(k){return W4P[k];}).map(function(k){ var p=W4P[k], q=p.box?(c.w4yQty||1):1; return {k:k,l:p.l+(p.box&&q>1?" × "+q:""),year:Math.round(p.m*q*12*100)/100}; }); }
+/* Partnerrabatt world4you (wie am Server W4Y_RABATT): 5 % auf Domains, 10 % auf Mail-Pakete; Webhosting ohne Rabatt */
+var W4R={domain:0.05,mail:0.10};
+function w4pMonth(k){ var p=W4P[k]; return p?Math.round(p.m*(p.box?1-W4R.mail:1)*100)/100:0; }
+function w4yLines(c){ return (c.w4y||[]).filter(function(k){return W4P[k];}).map(function(k){ var p=W4P[k], q=p.box?(c.w4yQty||1):1; return {k:k,l:p.l+(p.box&&q>1?" × "+q:""),year:Math.round(w4pMonth(k)*q*12*100)/100}; }); }
 var W4Y={"at":{y:36,p1:12},"co.at":{y:36,p1:12},"or.at":{y:36,p1:12},"com":{y:24,p1:12},"ch":{y:14.04,p1:6.96},"net":{y:24},"org":{y:17.04},"eu":{y:19.92},"info":{y:null,p1:3.96},"de":{y:null,p1:5.04}};
 var DEPLOYING=["BUILDING","DEPLOYING","INITIALIZING","QUEUED","WAITING"];
 var siteBad=function(s){ return F.siteBad?F.siteBad(s):(s.up===false||/FAILED|CRASHED/.test(s.status||"")); };
@@ -132,7 +135,7 @@ function fscRevenue(){
 }
 
 /* ---------- Echte Kosten: Railway (letzte 30 Tage) + Domains (world4you) ---------- */
-function regDomains(s){ var seen={}, out=[]; (s.domains||[]).forEach(function(d){ d=String(d||"").toLowerCase().replace(/^www\./,""); if(!d||/\.up\.railway\.app$/.test(d)) return; var parts=d.split("."), n=/\.(co|or|gv|ac)\.at$/.test(d)?3:2, reg=parts.slice(-n).join("."); if(seen[reg]) return; seen[reg]=1; var tld=parts.slice(-(n-1)).join("."), pr=W4Y[tld]||null; out.push({name:reg,tld:tld,year:pr?pr.y:null,p1:pr?pr.p1:null}); }); return out; }
+function regDomains(s){ var seen={}, out=[]; (s.domains||[]).forEach(function(d){ d=String(d||"").toLowerCase().replace(/^www\./,""); if(!d||/\.up\.railway\.app$/.test(d)) return; var parts=d.split("."), n=/\.(co|or|gv|ac)\.at$/.test(d)?3:2, reg=parts.slice(-n).join("."); if(seen[reg]) return; seen[reg]=1; var tld=parts.slice(-(n-1)).join("."), pr=W4Y[tld]||null, rb=function(v){ return v!=null?Math.round(v*(1-W4R.domain)*100)/100:null; }; out.push({name:reg,tld:tld,year:pr?rb(pr.y):null,p1:pr?rb(pr.p1):null}); }); return out; }
 function siteCosts(s){
   var p=(R&&R.projects&&s.rwId)?R.projects[s.rwId]:null, fx=(R&&R.fx)||(F.D.railwayCosts&&F.D.railwayCosts.fx)||0.86;
   var rwMonth=p?(+p.eur||0):(!R&&s.railwayMonth!=null?s.railwayMonth:0), parts={};
@@ -143,12 +146,12 @@ function siteCosts(s){
 }
 function w4Card(s,c,k){
   var K=esc(s.key), sel=c.w4y||[];
-  var opts=Object.keys(W4P).map(function(x){ var on=sel.indexOf(x)>-1; return '<label class="w-line" style="cursor:pointer"><span><input type="checkbox" data-w4y="'+K+'" value="'+x+'"'+(on?" checked":"")+'> '+esc(W4P[x].l)+'</span><span class="num muted money">'+eur(W4P[x].m)+' / Mon.'+(W4P[x].box?' je Postfach':'')+'</span></label>'; }).join("");
+  var opts=Object.keys(W4P).map(function(x){ var on=sel.indexOf(x)>-1; return '<label class="w-line" style="cursor:pointer"><span><input type="checkbox" data-w4y="'+K+'" value="'+x+'"'+(on?" checked":"")+'> '+esc(W4P[x].l)+'</span><span class="num muted money">'+eur(w4pMonth(x))+' / Mon.'+(W4P[x].box?' je Postfach':'')+'</span></label>'; }).join("");
   var box=sel.some(function(x){ return W4P[x]&&W4P[x].box; });
   return '<div class="w-card"><h3>Hosting/Mail · world4you</h3>'+(k.w4Year?'<div class="w-big num money">'+eur(k.w4Year)+' <span class="muted">/ Jahr</span></div>':'<div class="muted">Kein world4you-Paket</div>')+
     '<details'+(sel.length?'':' open')+'><summary class="muted" style="cursor:pointer">Pakete wählen</summary>'+opts+
     (box?'<label class="w-line"><span>Postfächer</span><input class="f num" type="number" min="1" max="99" style="max-width:80px" data-w4yqty="'+K+'" value="'+(c.w4yQty||1)+'"></label>':'')+'</details>'+
-    '<div class="muted">12 Monate Laufzeit, inkl. 20 % USt</div></div>';
+    '<div class="muted">12 Monate Laufzeit, inkl. 20 % USt, Mail-Pakete abzüglich 10 % Partnerrabatt</div></div>';
 }
 function costDetail(s,c){
   var k=siteCosts(s), P=prices(), n=+P.period||12, inc=siteSum(s,c)*12/n, res=inc-k.year;
@@ -160,7 +163,7 @@ function costDetail(s,c){
   var bal='<div class="w-line"><span>Einnahmen</span><b class="num pos money">'+eur(inc)+'</b></div><div class="w-line"><span>Railway</span><b class="num neg money">− '+eur(k.rwYear)+'</b></div><div class="w-line"><span>Domain'+(k.doms.length>1?"s":"")+'</span><b class="num neg money">− '+eur(k.domYear)+'</b></div>'+
     (k.w4Year?'<div class="w-line"><span>world4you Hosting/Mail</span><b class="num neg money">− '+eur(k.w4Year)+'</b></div>':'')+
     '<div class="w-line tot"><span>Ergebnis</span><b class="num money '+(res>=0?"pos":"neg")+'">'+(res<0?"− ":"")+eur(Math.abs(res))+'</b></div>';
-  return '<div class="w-cd"><div class="w-card"><h3>Hosting · Railway</h3>'+rw+'</div><div class="w-card"><h3>Domain'+(k.doms.length>1?"s":"")+' · world4you</h3>'+dm+'<div class="muted">reguläre Preise inkl. 20 % USt</div></div>'+w4Card(s,c,k)+'<div class="w-card"><h3>Bilanz pro Jahr</h3>'+bal+'<div class="muted">Einnahmen '+(P.gross?"brutto":"netto")+' · Railway in € (Kurs '+String(k.fx).replace(".",",")+')</div></div></div>';
+  return '<div class="w-cd"><div class="w-card"><h3>Hosting · Railway</h3>'+rw+'</div><div class="w-card"><h3>Domain'+(k.doms.length>1?"s":"")+' · world4you</h3>'+dm+'<div class="muted">reguläre Preise inkl. 20 % USt, abzüglich 5 % Partnerrabatt</div></div>'+w4Card(s,c,k)+'<div class="w-card"><h3>Bilanz pro Jahr</h3>'+bal+'<div class="muted">Einnahmen '+(P.gross?"brutto":"netto")+' · Railway in € (Kurs '+String(k.fx).replace(".",",")+')</div></div></div>';
 }
 
 /* ---------- Ansicht ---------- */

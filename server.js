@@ -1015,7 +1015,9 @@ const W4Y_PKG = { exchange5: 7, exchange10: 10, exchange15: 13.5, mailgrow: 4, g
 // Voreinstellung je Website (bis in der Abrechnung etwas anderes gewählt wird)
 const W4Y_DEFAULTS = [[/^of gaschurn$/i, ["exchange5"]], [/^lerch fleischhandel$/i, ["exchange5"]], [/bergfreunde/i, ["go"]], [/^fl(ö|oe)ry/i, ["go"]]];
 function w4yDefault(name) { const m = W4Y_DEFAULTS.find(d => d[0].test(String(name || ""))); return m ? m[1].slice() : []; }
-function w4yYear(c) { return round2((c.w4y || []).reduce((a, k) => a + (W4Y_PKG[k] || 0) * (/^exchange|^mail/.test(k) ? (c.w4yQty || 1) : 1), 0) * 12); }
+// Partnerrabatt world4you: 5 % auf Domains, 10 % auf Mail-Pakete (Exchange, E-Mail); Webhosting ohne Rabatt
+const W4Y_RABATT = { domain: 0.05, mail: 0.10 };
+function w4yYear(c) { return round2((c.w4y || []).reduce((a, k) => { const mail = /^exchange|^mail/.test(k); return a + (W4Y_PKG[k] || 0) * (mail ? (c.w4yQty || 1) * (1 - W4Y_RABATT.mail) : 1); }, 0) * 12); }
 const W4Y = { "at": 36, "co.at": 36, "or.at": 36, "com": 24, "ch": 14.04, "net": 24, "org": 17.04, "eu": 19.92 };
 const LEAD_STAGES = ["anfrage", "entwurf", "angebot", "auftrag", "live", "verloren"];
 function withTimeout(p, ms, fallback) { return Promise.race([Promise.resolve(p).catch(() => fallback), new Promise(r => setTimeout(() => r(fallback), ms))]); }
@@ -1026,7 +1028,7 @@ function deDate(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2
 function zoneFor(domain, zones) { domain = String(domain || "").toLowerCase(); let best = null; (zones || []).forEach(z => { const n = String(z.name || "").toLowerCase(); if (domain === n || domain.slice(-(n.length + 1)) === "." + n) { if (!best || n.length > best.name.length) best = z; } }); return best; }
 function regDomainsOf(domains) {
   const seen = {}, out = [];
-  (domains || []).forEach(d => { d = String(d || "").toLowerCase().replace(/^www\./, ""); if (!d || /\.up\.railway\.app$/.test(d)) return; const parts = d.split("."); const n = /\.(co|or|gv|ac)\.at$/.test(d) ? 3 : 2; const reg = parts.slice(-n).join("."); if (seen[reg]) return; seen[reg] = 1; const tld = parts.slice(-(n - 1)).join("."); out.push({ name: reg, tld, year: W4Y[tld] != null ? W4Y[tld] : null }); });
+  (domains || []).forEach(d => { d = String(d || "").toLowerCase().replace(/^www\./, ""); if (!d || /\.up\.railway\.app$/.test(d)) return; const parts = d.split("."); const n = /\.(co|or|gv|ac)\.at$/.test(d) ? 3 : 2; const reg = parts.slice(-n).join("."); if (seen[reg]) return; seen[reg] = 1; const tld = parts.slice(-(n - 1)).join("."); out.push({ name: reg, tld, year: W4Y[tld] != null ? round2(W4Y[tld] * (1 - W4Y_RABATT.domain)) : null }); });
   return out;
 }
 // Gleiche Website-Liste wie im klassischen Dashboard (Railway-Projekte + Cloudflare-Zonen ohne Projekt)
