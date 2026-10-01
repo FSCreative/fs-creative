@@ -2495,6 +2495,16 @@ async function steuerDiag(key) {
     (raw.invoices || []).filter(d => inP(d) && d.status >= 200 && d.type !== "MA").forEach(d => { const one = STEUER_CALC.computeUva(Object.assign({}, raw, { invoices: [d], vouchers: [], creditNotes: [] }), o, p), m = STEUER_CALC.uvaKzMap(one);
       const got = (m["022"] || 0) + (m["029"] || 0) + (m["017"] || 0) + (m["011"] || 0), want = d.lines.filter(l => l.rate > 0).reduce((a, l) => a + l.net, 0);
       if (Math.abs(got - want) > 0.05) L("abw_rechnung", { nr: d.nr, typ: d.type, status: d.status, datum: d.date, leistung: d.delivery, bis: d.deliveryUntil, bezahlt: d.payDate, paid: d.paid, brutto: d.gross, netto: d.net, kz: m, erwartet: Math.round(want * 100) / 100, kunde: d.contact }); });
+    // Welche Logik nutzt die sevDesk-Auswertung? Summen nach Rechnungsdatum / Leistungsdatum / Zahlungsdatum (Ziel: 20 % netto 19.897,10; VSt 682,60)
+    { const inQ = x => x && x >= p.from && x <= p.to, sum = (arr) => Math.round(arr.reduce((a, d) => a + d.lines.filter(l => l.rate === 20).reduce((b, l) => b + l.net, 0), 0) * 100) / 100;
+      const I = (raw.invoices || []).filter(d => d.type !== "MA" && d.type !== "WKR" && d.status >= 200);
+      const V = (raw.vouchers || []).filter(d => d.type !== "RV" && d.status >= 100 && d.cd !== "D");
+      const vst = (arr) => Math.round(arr.reduce((a, d) => a + d.lines.reduce((b, l) => b + (l.rate > 0 ? l.tax : 0), 0), 0) * 100) / 100;
+      L("varianten", {
+        re_nachRechnungsdatum: sum(I.filter(d => inQ(d.date))), re_nachLeistung: sum(I.filter(d => inQ(d.delivery || d.date))), re_nachZahlung: sum(I.filter(d => inQ(d.payDate))),
+        re_rechnungsdatum_nurBezahlt: sum(I.filter(d => inQ(d.date) && d.status === 1000)), re_rechnungsdatum_status: I.filter(d => inQ(d.date)).reduce((o, d) => { o[d.status] = (o[d.status] || 0) + 1; return o; }, {}),
+        vst_nachBelegdatum: vst(V.filter(d => inQ(d.date))), vst_nachZahlung: vst(V.filter(d => inQ(d.payDate))), vst_belegdatum_inklEntwurf: vst((raw.vouchers || []).filter(d => d.type !== "RV" && d.cd !== "D" && inQ(d.date))),
+        vst_belegdatum_inklRV: vst((raw.vouchers || []).filter(d => d.status >= 100 && d.cd !== "D" && inQ(d.date))) }); }
     L("rv_vorlagen", (raw.vouchers || []).filter(d => d.type === "RV" && inP(d)).map(d => ({ datum: d.date, lieferant: d.supplier, netto: d.net, steuer: d.tax })));
     try { L("plausi", STEUER_CALC.plausibility(raw, o, p)); } catch (e) {}
     try { L("kontrolle", STEUER_CALC.controlCheck(raw, o, p)); } catch (e) { L("kontrolle_fehler", { e: String(e && e.message || e) }); }
