@@ -1992,7 +1992,7 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
   function loadDrafts(){ try{ var a=JSON.parse(localStorage.getItem(DRAFTK)); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
   function saveDrafts(a){ try{ localStorage.setItem(DRAFTK,JSON.stringify(a.slice(0,60))); }catch(e){} }
   function draftItems(){ return loadDrafts().map(function(d){ return {id:"dr_"+d.id,draftLocal:true,dr:d,to:d.to,toName:"",subject:d.subject,preview:String(d.text||"").replace(/\s+/g," ").trim().slice(0,160),date:d.date,read:true,starred:false,attachments:[]}; }); }
-  var SIG_DEFAULT='Liebe Grüße<br><b>Simon Felder</b><br>FS Creative · <a href="https://fs-creative.at">fs-creative.at</a>';
+  var SIG_DEFAULT='Liebe Grüße<table cellpadding="0" cellspacing="0" border="0" style="margin-top:14px;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif"><tr><td style="padding:0 16px 0 0;vertical-align:top"><a href="https://www.fs-creative.at" style="text-decoration:none"><img src="https://www.fs-creative.at/logos/signatur.png" width="60" height="60" alt="FS Creative" style="display:block;width:60px;height:60px;border:0;border-radius:14px"></a></td><td style="padding:0 0 0 16px;border-left:2px solid #e3e9f5;vertical-align:top;line-height:1.45"><div style="font-size:16px;font-weight:700;color:#0f172a;letter-spacing:-.01em">Simon Felder</div><div style="font-size:13px;font-weight:600;color:#2f6bff;margin-bottom:7px">FS Creative · Webdesign &amp; Digitalagentur</div><div style="font-size:12.5px;color:#475569"><a href="tel:+436641430620" style="color:#475569;text-decoration:none">+43 664 1430620</a> &nbsp;·&nbsp; <a href="mailto:simon@fs-creative.at" style="color:#475569;text-decoration:none">simon@fs-creative.at</a></div><div style="font-size:12.5px;color:#475569"><a href="https://www.fs-creative.at" style="color:#2f6bff;text-decoration:none;font-weight:600">fs-creative.at</a> &nbsp;·&nbsp; Dorfstraße 3/1, 6793 Gaschurn</div></td></tr><tr><td colspan="2" style="padding-top:10px;font-size:11px;color:#94a3b8"><a href="https://blitzdings.co.at" style="color:#94a3b8;text-decoration:none">Blitzdings</a> &nbsp;·&nbsp; <a href="https://valuero.at" style="color:#94a3b8;text-decoration:none">VALUERO</a> &nbsp;·&nbsp; <a href="https://kochdu.at" style="color:#94a3b8;text-decoration:none">kochdu</a> &nbsp;·&nbsp; <a href="https://kantineur.at" style="color:#94a3b8;text-decoration:none">Kantineur</a></td></tr></table>';
   function sigKey(acc){ return (!acc||acc===primaryAcct())?SIGK:(SIGK+"_"+acc); }
   function getSig(acc){ try{ var o=JSON.parse(localStorage.getItem(sigKey(acc))); if(o&&typeof o.html==="string") return o; }catch(e){} var prim=(!acc||acc===primaryAcct()); return {on:true,html:prim?SIG_DEFAULT:('Liebe Grüße<br><b>Simon Felder</b><br>'+esc(accInfo(acc).label||""))}; }
   function setSig(o,acc){ try{ localStorage.setItem(sigKey(acc),JSON.stringify(o)); }catch(e){} }
@@ -2037,7 +2037,7 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
   }
   function replyMail(m,kind){
     if(!m)return;
-    if(kind==="fwd"){ openCompose("Weiterleiten","","Fwd: "+stripRe(m.subject),quoteHtml(m,"fwd"),{account:accOfMsg(m),source:srcOf(m,"fwd")}); return; }
+    if(kind==="fwd"){ openCompose("Weiterleiten","","Fwd: "+stripRe(m.subject),quoteHtml(m,"fwd"),{account:accOfMsg(m),source:srcOf(m,"fwd")}); loadFwdAtts(m); return; }
     var mine=myAddrs(); var me="\u0000";
     var to=isSent(m)?(m.to||""):(m.replyTo||m.from||"");
     var cc="";
@@ -2391,9 +2391,21 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
   }
   // Anhänge im Verfassen-Fenster
   var composeAtts=[];
+  function loadFwdAtts(m){
+    var atts=(m&&m.attachments)||[]; if(!atts.length||!window.__FSD_MAIL_ATTACH) return;
+    atts.forEach(function(a){
+      var ph={filename:a.filename||"anhang",contentType:a.contentType||"application/octet-stream",size:a.size||0,content:null,loading:true}; composeAtts.push(ph);
+      var url=window.__FSD_MAIL_ATTACH+"?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&index="+encodeURIComponent(a.index||0)+"&account="+encodeURIComponent(accOfMsg(m))+"&dl=1";
+      fetch(url).then(function(r){ if(!r.ok) throw new Error("http"); return r.blob(); })
+        .then(function(b){ return new Promise(function(res,rej){ var fr=new FileReader(); fr.onload=function(){ var x=String(fr.result||""); res({b64:x.slice(x.indexOf(",")+1),size:b.size}); }; fr.onerror=rej; fr.readAsDataURL(b); }); })
+        .then(function(o){ ph.content=o.b64; ph.size=ph.size||o.size; ph.loading=false; renderComposeAtts(); })
+        .catch(function(){ ph.loading=false; ph.failed=true; renderComposeAtts(); });
+    });
+    renderComposeAtts();
+  }
   function renderComposeAtts(){
     var host=document.getElementById("c-atts"); if(!host)return;
-    host.innerHTML=composeAtts.map(function(a,i){ return '<span class="att"><span class="att-ic">'+attIcon(a.contentType)+'</span><span class="att-name">'+esc(a.filename)+'</span><span class="att-sz">'+fmtBytes(a.size)+'</span><button class="att-x" data-cattdel="'+i+'" title="Entfernen" style="border:none;background:transparent;cursor:pointer;color:var(--red);font-weight:700;margin-left:2px">✕</button></span>'; }).join("");
+    host.innerHTML=composeAtts.map(function(a,i){ return '<span class="att"'+(a.failed?' style="border-color:var(--red);color:var(--red)" title="Anhang konnte nicht geladen werden"':'')+'><span class="att-ic">'+(a.loading?'⏳':attIcon(a.contentType))+'</span><span class="att-name">'+esc(a.filename)+'</span><span class="att-sz">'+(a.loading?'lädt …':(a.failed?'Fehler':fmtBytes(a.size)))+'</span><button class="att-x" data-cattdel="'+i+'" title="Entfernen" style="border:none;background:transparent;cursor:pointer;color:var(--red);font-weight:700;margin-left:2px">✕</button></span>'; }).join("");
   }
   function addComposeFiles(files){
     Array.prototype.forEach.call(files||[],function(f){
@@ -2469,7 +2481,9 @@ a.bslink:hover b{color:var(--accent);text-decoration:underline}
     if(bad.length&&!confirm("Diese Adresse sieht ungültig aus: "+bad.join(", ")+"\nTrotzdem senden?")) return;
     if(!d.subject&&!confirm("Ohne Betreff senden?")) return;
     if(/anhang|anbei|attach/i.test(d.text.split(/Am .* schrieb/)[0])&&!composeAtts.length&&!confirm("Im Text steht „Anhang/anbei“, aber es ist keine Datei angehängt.\nTrotzdem senden?")) return;
-    queueMail(d.to,d.subject,d.html,d.text,composeAtts.slice(),{cc:d.cc,bcc:d.bcc,inReplyTo:composeCtx.inReplyTo,source:composeCtx.source,account:d.account});
+    if(composeAtts.some(function(a){return a.loading;})){ alert("Die Anhänge werden noch geladen – bitte einen Moment warten."); return; }
+    if(composeAtts.some(function(a){return a.failed;})&&!confirm("Ein Anhang konnte nicht geladen werden und wird nicht mitgeschickt. Trotzdem senden?")) return;
+    queueMail(d.to,d.subject,d.html,d.text,composeAtts.filter(function(a){return a.content;}).map(function(a){ return {filename:a.filename,contentType:a.contentType,size:a.size,content:a.content}; }),{cc:d.cc,bcc:d.bcc,inReplyTo:composeCtx.inReplyTo,source:composeCtx.source,account:d.account});
     deleteDraft(composeCtx.draftId);
     composeAtts=[]; composeCtx.initial=composeSig();
     document.getElementById("coverlay").classList.remove("show");
