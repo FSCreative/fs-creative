@@ -147,7 +147,8 @@ function renderPrognose(){
   var chartVals=cur.map(function(v,i){ if(i<mNow) return v; var r=restMonths.find(function(x){return x.m===i;}); return i===mNow?v+(r?r.v:0):(r?r.v:0); });
   // Ausgaben/Gewinn: aus der Steuer-Ansicht (lädt Belege), falls schon geladen
   var st=F.steuerData&&F.steuerData();
-  var costIst=0; if(st){ st.vouchers.forEach(function(v){ if(v.cd==="C"&&v.status>=100&&String(v.date||"").slice(0,4)===String(yr)) costIst+=v.net; }); }
+  // ohne Privates, Steuerzahlungen (USt/ESt) und Umbuchungen – die sind keine Betriebsausgaben
+  var SC=window.FSC_STEUER, costIst=0; if(st){ st.vouchers.forEach(function(v){ if(v.cd==="C"&&v.status>=100&&String(v.date||"").slice(0,4)===String(yr)) costIst+=SC?SC.lines(v).reduce(function(a,l){ return a+(SC.nonBiz(l)?0:l.net); },0):v.net; }); }
   var costTotal=costIst>0?costIst/((mNow+dayFrac)/12):0;
   return '<div class="kpis">'+
     '<div class="panel kpi"><span class="k">Prognose Umsatz '+yr+'</span><span class="v num money">'+eur0(total)+'</span><span class="s">brutto, alle Quellen</span></div>'+
