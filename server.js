@@ -2452,6 +2452,11 @@ async function steuerDiag(key) {
     (raw.invoices || []).filter(d => d.status >= 200 && inP(d)).forEach(d => add("AUS", d));
     (raw.vouchers || []).filter(d => d.status >= 100 && inP(d)).forEach(d => add(d.cd === "D" ? "AUS-B" : "EIN", d));
     Object.keys(agg).sort().forEach(k => L("gruppe", Object.assign({ k }, agg[k])));
+    // Einzelliste: alle Eingangsbelege mit 0 % bzw. ig. Erwerb / Reverse Charge (Lieferant, Kategorie, Einordnung)
+    (raw.vouchers || []).filter(d => d.status >= 100 && d.cd !== "D" && inP(d)).forEach(d => { const x = STEUER_CALC.explainDoc(raw, o, d.id); if (!x) return;
+      const regel = x.sevDeskRegel ? x.sevDeskRegel.text : ""; const ls = x.positionen || [];
+      if (!(/erwerb|reverse|revers/i.test(regel) || ls.some(l => /^(ige|ige3|ige0|rc|rcnv)$/.test(l.klasse)))) return;
+      L("beleg", { datum: d.date, lieferant: d.supplier, beschreibung: (d.desc || "").slice(0, 60), netto: d.net, regel, uid: d.supplierUid || "", land: x.land || "", pos: ls.map(l => l.cat + " " + l.net + " → " + l.klasse) }); });
     const r = STEUER_CALC.computeUva(raw, o, p); L("kennzahlen", STEUER_CALC.uvaKzMap(r));
     try { L("kontrolle", STEUER_CALC.controlCheck(raw, o, p)); } catch (e) { L("kontrolle_fehler", { e: String(e && e.message || e) }); }
   } catch (e) { L("fehler", { e: String(e && e.message || e) }); }
