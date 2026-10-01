@@ -184,10 +184,39 @@ function guessAmount(m){
 M.guessAmount=guessAmount;
 var VOU=null;
 /* pre (optional, z. B. von der KI): supplier, date, gross, taxRate, desc, cat, title, html (Zusatzinfo), extra (weitere Felder an den Server), onDone(j) */
+/* ---------- Vorschau des Belegs neben dem Formular (zoombar) ---------- */
+var MVZ={z:1,kind:""};
+function prevKind(a){ var ct=String(a.contentType||"").toLowerCase(), fn=String(a.filename||"").toLowerCase();
+  if(/pdf/.test(ct)||/\.pdf$/.test(fn)) return "pdf";
+  if((/^image\/(png|jpe?g|gif|webp|bmp)/.test(ct))||/\.(png|jpe?g|gif|webp|bmp)$/.test(fn)) return "img";
+  return ""; }
+function prevHtml(kind,href){
+  var tb='<div class="mvtb"><button type="button" class="btn icon" data-act="mvz:out" title="Verkleinern" aria-label="Verkleinern">−</button><span class="num muted" id="mvZl">'+(kind==="img"?"Einpassen":"")+'</span><button type="button" class="btn icon" data-act="mvz:in" title="Vergrößern" aria-label="Vergrößern">+</button><button type="button" class="btn" data-act="mvz:fit">Einpassen</button><span style="flex:1"></span><a class="btn" href="'+esc(href)+'" target="_blank" rel="noopener">In neuem Tab ↗</a></div>';
+  if(kind==="pdf") return '<div class="mvprev">'+tb+'<div class="mvscroll"><iframe id="mvPdf" title="Beleg-Vorschau" src="'+esc(href)+'#zoom=page-width&amp;toolbar=1"></iframe></div></div>';
+  return '<div class="mvprev">'+tb+'<div class="mvscroll" id="mvScroll"><img id="mvImg" alt="Beleg-Vorschau" src="'+esc(href)+'" draggable="false"></div><div class="muted small">Strg/⌘ + Mausrad zum Zoomen, ziehen zum Verschieben, Doppelklick = 100 %.</div></div>';
+}
+function mvZoom(z){
+  MVZ.z=Math.max(0.25,Math.min(6,z));
+  var lbl=document.getElementById("mvZl");
+  if(MVZ.kind==="img"){ var im=document.getElementById("mvImg"); if(!im) return; if(MVZ.z===1){ im.style.width="100%"; im.style.maxWidth="100%"; if(lbl) lbl.textContent="Einpassen"; } else { im.style.maxWidth="none"; im.style.width=Math.round(MVZ.z*100)+"%"; if(lbl) lbl.textContent=Math.round(MVZ.z*100)+" %"; } }
+  else if(MVZ.kind==="pdf"){ var fr=document.getElementById("mvPdf"); if(!fr) return; var base=fr.getAttribute("src").split("#")[0].replace(/&pz=\d+$/,""); /* eigener Parameter erzwingt Neuladen – nur den #zoom zu ändern ignorieren manche PDF-Viewer */
+    fr.setAttribute("src",base+"&pz="+Math.round(MVZ.z*100)+"#zoom="+(MVZ.z===1?"page-width":Math.round(MVZ.z*100))+"&toolbar=1"); if(lbl) lbl.textContent=MVZ.z===1?"":Math.round(MVZ.z*100)+" %"; }
+}
+F.action("mvz",function(v){ if(v==="in") mvZoom(MVZ.z*1.25); else if(v==="out") mvZoom(MVZ.z/1.25); else mvZoom(1); });
+function wirePreview(){
+  var sc=document.getElementById("mvScroll"), im=document.getElementById("mvImg"); if(!sc||!im) return;
+  sc.addEventListener("wheel",function(e){ if(!(e.ctrlKey||e.metaKey)) return; e.preventDefault(); mvZoom(MVZ.z*(e.deltaY<0?1.12:1/1.12)); },{passive:false});
+  im.addEventListener("dblclick",function(){ mvZoom(MVZ.z===1?2:1); });
+  var drag=null;
+  sc.addEventListener("pointerdown",function(e){ if(MVZ.z===1) return; drag={x:e.clientX,y:e.clientY,l:sc.scrollLeft,t:sc.scrollTop}; sc.setPointerCapture(e.pointerId); sc.classList.add("grab"); });
+  sc.addEventListener("pointermove",function(e){ if(!drag) return; sc.scrollLeft=drag.l-(e.clientX-drag.x); sc.scrollTop=drag.t-(e.clientY-drag.y); });
+  var up=function(){ drag=null; sc.classList.remove("grab"); }; sc.addEventListener("pointerup",up); sc.addEventListener("pointercancel",up);
+}
 M.openVoucher=function(m,a,pre){
   if(!m||!a) return; pre=pre||{}; VOU={m:m,a:a,pre:pre};
+  var pvHref=pre.href||(M.attHref(m,a)+"&inline=1"), pvKind=prevKind(a); MVZ={z:1,kind:pvKind};
   var g=pre.gross!=null?pre.gross:guessAmount(m), day=pre.date||(m.date&&!isNaN(new Date(m.date))?F.ymd(new Date(m.date)):F.ymd()), vs=M.voucherSent(m,a), tr=pre.taxRate!=null?+pre.taxRate:20;
-  F.modal('<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg an sevDesk")+'</h2>'+F.btnClose()+'</div>'+
+  F.modal((pvKind?'<div class="mvwrap">'+prevHtml(pvKind,pvHref):'')+'<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg an sevDesk")+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted" style="margin:0">Wird als <b>Beleg-Entwurf</b> in sevDesk angelegt – inkl. Datei. Prüfen und buchen machst du in sevDesk.</p>'+
     '<div class="att" style="justify-self:start"><a href="'+esc(pre.href||(M.attHref(m,a)+"&inline=1"))+'" target="_blank" rel="noopener" title="Anhang ansehen"><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
@@ -196,7 +225,8 @@ M.openVoucher=function(m,a,pre){
     '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">Kategorien werden geladen …</option></select></label>'+
     '<label class="fl">Beschreibung<input class="f" name="desc" maxlength="200" value="'+esc(String(pre.desc||m.subject||"").slice(0,200))+'"></label>'+(pre.html||"")+
     '<div class="err" id="mvMsg">'+(g&&!pre.html?'<span class="muted">Betrag aus der Mail übernommen – bitte kurz prüfen.</span>':'')+'</div>'+
-    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">An sevDesk senden</button></span></div><datalist id="mvContacts"></datalist></form>',"narrow");
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">An sevDesk senden</button></span></div><datalist id="mvContacts"></datalist></form>'+(pvKind?'</div>':''),pvKind?"xwide":"narrow");
+  if(pvKind==="img") wirePreview();
   F.loadMeta(function(meta){
     var sel=document.querySelector('[data-form="mvoucher"] [name=cat]'); if(!sel) return;
     if(meta&&meta.error){ sel.innerHTML='<option value="">Kategorien nicht verfügbar</option>'; document.getElementById("mvMsg").textContent="sevDesk: "+meta.error; return; }
@@ -251,6 +281,16 @@ F.listen("input","#mvQ",function(el){ PICK.q=el.value; renderPick(); });
 F.action("mvpick",function(v){ var i=v.indexOf("|"), m=M.find(v.slice(0,i)), idx=+v.slice(i+1); if(!m) return; var a=(m.attachments||[]).filter(function(x){ return (x.index||0)===idx; })[0]; if(a) M.openVoucher(m,a); });
 
 F.css([
+'.dialog.xwide{width:min(1240px,100%)}',
+'.mvwrap{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(330px,1fr);gap:20px;align-items:start}',
+'.mvprev{display:flex;flex-direction:column;gap:8px;min-width:0}',
+'.mvtb{display:flex;align-items:center;gap:6px}',
+'.mvtb .num{min-width:72px;text-align:center}',
+'.mvscroll{height:min(74vh,880px);overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--bg-2,rgba(127,127,127,.08));touch-action:pan-x pan-y pinch-zoom}',
+'.mvscroll.grab{cursor:grabbing}',
+'.mvscroll img{display:block;width:100%;max-width:100%;height:auto;margin:0 auto;user-select:none;cursor:zoom-in}',
+'.mvscroll iframe{width:100%;height:100%;border:0;display:block;background:#fff}',
+'@media (max-width:860px){.mvwrap{grid-template-columns:1fr}.mvscroll{height:46vh}}',
 ".mctx{position:fixed;z-index:85;min-width:210px;max-width:calc(100vw - 12px);background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:0 12px 32px rgba(0,0,0,.2);padding:4px;display:grid}",
 ".mctx[hidden]{display:none}",
 ".mctx button{border:0;background:none;text-align:left;padding:8px 11px;border-radius:7px;font-size:13.5px;color:var(--ink)}",
