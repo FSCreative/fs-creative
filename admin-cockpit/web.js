@@ -8,6 +8,11 @@ var OWN_RX=/^(fs creative|blitzdings|valuero|kochdu|der-kantineur|buchhaltung|bl
 var PERLBL={1:"Monat",3:"Quartal",6:"Halbjahr",12:"Jahr"};
 var DEFP={domain:0,domainPer:"year",hosting:0,hostingPer:"month",mail:0,mailPer:"month",period:12,taxRate:20,gross:true,domainLabel:"Domain",hostingLabel:"Hosting & Wartung",mailLabel:"E-Mail"};
 /* world4you, reguläre Preise inkl. 20 % USt pro Jahr (p1 = Aktionspreis im 1. Jahr) */
+/* world4you-Pakete pro Monat inkl. 20 % USt; Exchange/Mail je Postfach. Voreinstellungen wie am Server (W4Y_DEFAULTS). */
+var W4P={exchange5:{l:"Exchange 5 GB",m:7,box:1},exchange10:{l:"Exchange 10 GB",m:10,box:1},exchange15:{l:"Exchange 15 GB",m:13.5,box:1},mailgrow:{l:"E-Mail Grow",m:4,box:1},go:{l:"Webhosting Go",m:4},grow:{l:"Webhosting Grow",m:7},business:{l:"Webhosting Business",m:12}};
+var W4D=[[/^of gaschurn$/i,["exchange5"]],[/^lerch fleischhandel$/i,["exchange5"]],[/bergfreunde/i,["go"]],[/^fl(ö|oe)ry/i,["go"]]];
+function w4yDef(name){ var m=W4D.find(function(d){ return d[0].test(String(name||"")); }); return m?m[1].slice():[]; }
+function w4yLines(c){ return (c.w4y||[]).filter(function(k){return W4P[k];}).map(function(k){ var p=W4P[k], q=p.box?(c.w4yQty||1):1; return {k:k,l:p.l+(p.box&&q>1?" × "+q:""),year:Math.round(p.m*q*12*100)/100}; }); }
 var W4Y={"at":{y:36,p1:12},"co.at":{y:36,p1:12},"or.at":{y:36,p1:12},"com":{y:24,p1:12},"ch":{y:14.04,p1:6.96},"net":{y:24},"org":{y:17.04},"eu":{y:19.92},"info":{y:null,p1:3.96},"de":{y:null,p1:5.04}};
 var DEPLOYING=["BUILDING","DEPLOYING","INITIALIZING","QUEUED","WAITING"];
 var siteBad=function(s){ return F.siteBad?F.siteBad(s):(s.up===false||/FAILED|CRASHED/.test(s.status||"")); };
@@ -84,8 +89,8 @@ function siteBy(key){ return sitesAll().find(function(s){ return s.key===key; })
 function prices(){ return Object.assign({},DEFP,(B&&B.prices)||{}); }
 function cfg(s){
   var c=(B&&B.sites&&B.sites[s.key])||{};
-  if(!B) return {active:!!s.active,domain:false,hosting:false,mail:false,mailQty:1,extra:0,extraLabel:"",customer:s.customer||"",billedUntil:s.billedUntil||null,own:s.own!=null?!!s.own:OWN_RX.test(s.name)};
-  return {active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:c.own!=null?!!c.own:OWN_RX.test(s.name)};
+  if(!B) return {active:!!s.active,domain:false,hosting:false,mail:false,mailQty:1,extra:0,extraLabel:"",customer:s.customer||"",billedUntil:s.billedUntil||null,own:s.own!=null?!!s.own:OWN_RX.test(s.name),w4y:s.w4y||w4yDef(s.name),w4yQty:s.w4yQty||1};
+  return {active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:c.own!=null?!!c.own:OWN_RX.test(s.name),w4y:Array.isArray(c.w4y)?c.w4y:w4yDef(s.name),w4yQty:+c.w4yQty||1};
 }
 function perPeriod(price,per,period){ price=+price||0; return per==="year"?price*period/12:price*period; }
 function siteLines(s,c){ var P=prices(), n=+P.period||12, L=[];
@@ -133,7 +138,17 @@ function siteCosts(s){
   var rwMonth=p?(+p.eur||0):(!R&&s.railwayMonth!=null?s.railwayMonth:0), parts={};
   if(p&&p.parts) Object.keys(p.parts).forEach(function(k){ parts[k]=Math.round(p.parts[k]*fx*100)/100; });
   var doms=regDomains(s), domYear=doms.reduce(function(a,d){ return a+(d.year||0); },0);
-  return {loaded:!!(R&&R.projects)||s.railwayMonth!=null, detail:!!(R&&R.projects), hasRw:!!s.rwId, rwMonth:rwMonth, rwYear:Math.round(rwMonth*365/30*100)/100, parts:parts, doms:doms, domYear:Math.round(domYear*100)/100, year:Math.round((rwMonth*365/30+domYear)*100)/100, fx:fx};
+  var w4=w4yLines(cfg(s)), w4Year=Math.round(w4.reduce(function(a,l){ return a+l.year; },0)*100)/100;
+  return {loaded:!!(R&&R.projects)||s.railwayMonth!=null||w4Year>0, detail:!!(R&&R.projects), hasRw:!!s.rwId, rwMonth:rwMonth, rwYear:Math.round(rwMonth*365/30*100)/100, parts:parts, doms:doms, domYear:Math.round(domYear*100)/100, w4:w4, w4Year:w4Year, year:Math.round((rwMonth*365/30+domYear+w4Year)*100)/100, fx:fx};
+}
+function w4Card(s,c,k){
+  var K=esc(s.key), sel=c.w4y||[];
+  var opts=Object.keys(W4P).map(function(x){ var on=sel.indexOf(x)>-1; return '<label class="w-line" style="cursor:pointer"><span><input type="checkbox" data-w4y="'+K+'" value="'+x+'"'+(on?" checked":"")+'> '+esc(W4P[x].l)+'</span><span class="num muted money">'+eur(W4P[x].m)+' / Mon.'+(W4P[x].box?' je Postfach':'')+'</span></label>'; }).join("");
+  var box=sel.some(function(x){ return W4P[x]&&W4P[x].box; });
+  return '<div class="w-card"><h3>Hosting/Mail · world4you</h3>'+(k.w4Year?'<div class="w-big num money">'+eur(k.w4Year)+' <span class="muted">/ Jahr</span></div>':'<div class="muted">Kein world4you-Paket</div>')+
+    '<details'+(sel.length?'':' open')+'><summary class="muted" style="cursor:pointer">Pakete wählen</summary>'+opts+
+    (box?'<label class="w-line"><span>Postfächer</span><input class="f num" type="number" min="1" max="99" style="max-width:80px" data-w4yqty="'+K+'" value="'+(c.w4yQty||1)+'"></label>':'')+'</details>'+
+    '<div class="muted">12 Monate Laufzeit, inkl. 20 % USt</div></div>';
 }
 function costDetail(s,c){
   var k=siteCosts(s), P=prices(), n=+P.period||12, inc=siteSum(s,c)*12/n, res=inc-k.year;
@@ -143,8 +158,9 @@ function costDetail(s,c){
     Object.keys(PL).filter(function(x){ return k.parts[x]>=0.005; }).map(function(x){ return '<div class="w-line"><span>'+PL[x]+'</span><b class="num money">'+eur(k.parts[x])+'</b></div>'; }).join(""));
   var dm=k.doms.length?k.doms.map(function(d){ return '<div class="w-line"><span><b>'+esc(d.name)+'</b> <span class="muted">.'+esc(d.tld)+'</span></span><b class="num money">'+(d.year!=null?eur(d.year)+' / Jahr':'Preis unbekannt')+'</b></div>'+(d.p1?'<div class="muted">1. Jahr bei Neuregistrierung: '+eur(d.p1)+'</div>':''); }).join(""):'<div class="muted">Keine eigene Domain</div>';
   var bal='<div class="w-line"><span>Einnahmen</span><b class="num pos money">'+eur(inc)+'</b></div><div class="w-line"><span>Railway</span><b class="num neg money">− '+eur(k.rwYear)+'</b></div><div class="w-line"><span>Domain'+(k.doms.length>1?"s":"")+'</span><b class="num neg money">− '+eur(k.domYear)+'</b></div>'+
+    (k.w4Year?'<div class="w-line"><span>world4you Hosting/Mail</span><b class="num neg money">− '+eur(k.w4Year)+'</b></div>':'')+
     '<div class="w-line tot"><span>Ergebnis</span><b class="num money '+(res>=0?"pos":"neg")+'">'+(res<0?"− ":"")+eur(Math.abs(res))+'</b></div>';
-  return '<div class="w-cd"><div class="w-card"><h3>Hosting · Railway</h3>'+rw+'</div><div class="w-card"><h3>Domain'+(k.doms.length>1?"s":"")+' · world4you</h3>'+dm+'<div class="muted">reguläre Preise inkl. 20 % USt</div></div><div class="w-card"><h3>Bilanz pro Jahr</h3>'+bal+'<div class="muted">Einnahmen '+(P.gross?"brutto":"netto")+' · Railway in € (Kurs '+String(k.fx).replace(".",",")+')</div></div></div>';
+  return '<div class="w-cd"><div class="w-card"><h3>Hosting · Railway</h3>'+rw+'</div><div class="w-card"><h3>Domain'+(k.doms.length>1?"s":"")+' · world4you</h3>'+dm+'<div class="muted">reguläre Preise inkl. 20 % USt</div></div>'+w4Card(s,c,k)+'<div class="w-card"><h3>Bilanz pro Jahr</h3>'+bal+'<div class="muted">Einnahmen '+(P.gross?"brutto":"netto")+' · Railway in € (Kurs '+String(k.fx).replace(".",",")+')</div></div></div>';
 }
 
 /* ---------- Ansicht ---------- */
@@ -445,6 +461,9 @@ F.action("wf",function(k){ U.f=U.f===k?"all":k; F.render(); });
 F.action("wbf",function(k){ if(U.tab!=="bill") U.tab="bill"; U.bf=U.bf===k?"all":k; F.render(); });
 F.action("wrefresh",function(){ loadSites(true); F.render(); });
 F.action("wcosts",function(){ loadCosts(true); });
+F.listen("change","[data-w4y]",function(el){ var key=el.getAttribute("data-w4y"), site=sitesAll().find(function(x){return x.key===key;}); if(!site) return;
+  var cur=cfg(site).w4y.slice(), i=cur.indexOf(el.value); if(el.checked&&i<0) cur.push(el.value); if(!el.checked&&i>-1) cur.splice(i,1); setSite(key,{w4y:cur}); });
+F.listen("change","[data-w4yqty]",function(el){ var v=parseInt(el.value,10); setSite(el.getAttribute("data-w4yqty"),{w4yQty:v>0?v:1}); });
 F.action("wbillreload",function(){ loadBilling(); F.render(); });
 F.action("wprices",function(){ if(!B){ loadBilling(); F.toast("Abrechnung wird geladen – bitte gleich nochmal",true); return; } openPrices(); });
 F.action("wsite",function(key){ openSite(key); });

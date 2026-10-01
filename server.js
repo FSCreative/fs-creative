@@ -939,6 +939,8 @@ function billingOp(pl) {
     ["active", "domain", "hosting", "mail", "own"].forEach(f => { if (f in P) cur[f] = (P[f] === null ? undefined : !!P[f]); });
     if ("extra" in P) { const n = parseFloat(P.extra); cur.extra = isFinite(n) ? Math.round(n * 100) / 100 : 0; }
     if ("mailQty" in P) { const n = parseInt(P.mailQty, 10); cur.mailQty = n > 0 ? Math.min(n, 999) : 1; }
+    if ("w4y" in P) cur.w4y = Array.isArray(P.w4y) ? P.w4y.filter(x => Object.prototype.hasOwnProperty.call(W4Y_PKG, x)).slice(0, 5) : undefined;
+    if ("w4yQty" in P) { const n = parseInt(P.w4yQty, 10); cur.w4yQty = n > 0 ? Math.min(n, 99) : 1; }
     ["extraLabel", "customer", "note"].forEach(f => { if (f in P) cur[f] = String(P[f] || "").slice(0, 200); });
     if ("billedUntil" in P) cur.billedUntil = /^\d{4}-\d{2}-\d{2}$/.test(P.billedUntil || "") ? P.billedUntil : null;
     o.sites[k] = cur;
@@ -1001,6 +1003,12 @@ async function railwayCosts(force) {
 // ===========================================================================
 const OWN_DEFAULT_RX = /^(fs creative|blitzdings|valuero|kochdu|der-kantineur|buchhaltung|blitzbooth zentrale|fs-creative-mail-api|fs-dashboard|gallant-gentleness|noble-flow)$/i;
 // world4you, reguläre Preise inkl. 20 % USt pro Jahr (wie im klassischen Dashboard)
+// world4you-Pakete pro Monat inkl. 20 % USt (12 Monate Laufzeit); Exchange je Postfach
+const W4Y_PKG = { exchange5: 7, exchange10: 10, exchange15: 13.5, mailgrow: 4, go: 4, grow: 7, business: 12 };
+// Voreinstellung je Website (bis in der Abrechnung etwas anderes gewählt wird)
+const W4Y_DEFAULTS = [[/^of gaschurn$/i, ["exchange5"]], [/^lerch fleischhandel$/i, ["exchange5"]], [/bergfreunde/i, ["go"]], [/^fl(ö|oe)ry/i, ["go"]]];
+function w4yDefault(name) { const m = W4Y_DEFAULTS.find(d => d[0].test(String(name || ""))); return m ? m[1].slice() : []; }
+function w4yYear(c) { return round2((c.w4y || []).reduce((a, k) => a + (W4Y_PKG[k] || 0) * (/^exchange|^mail/.test(k) ? (c.w4yQty || 1) : 1), 0) * 12); }
 const W4Y = { "at": 36, "co.at": 36, "or.at": 36, "com": 24, "ch": 14.04, "net": 24, "org": 17.04, "eu": 19.92 };
 const LEAD_STAGES = ["anfrage", "entwurf", "angebot", "auftrag", "live", "verloren"];
 function withTimeout(p, ms, fallback) { return Promise.race([Promise.resolve(p).catch(() => fallback), new Promise(r => setTimeout(() => r(fallback), ms))]); }
@@ -1027,7 +1035,7 @@ function cockpitSites(snap) {
   zones.forEach(z => { if (used[z.name]) return; list.push({ key: "cf:" + z.name, name: z.name, domain: z.name, domains: [z.name], url: "https://" + z.name, up: z.up, status: null, rwId: null, requests7d: z.requests7d || 0 }); });
   return list.sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
-function siteCfgOf(bill, s) { const c = (bill.sites && bill.sites[s.key]) || {}; return { active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name) }; }
+function siteCfgOf(bill, s) { const c = (bill.sites && bill.sites[s.key]) || {}; return { active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name), w4y: Array.isArray(c.w4y) ? c.w4y : w4yDefault(s.name), w4yQty: +c.w4yQty || 1 }; }
 function perPeriodOf(price, per, period) { price = +price || 0; return per === "year" ? price * period / 12 : price * period; }
 function siteLinesOf(s, c, P) {
   const n = +P.period || 12, L = [];
@@ -1246,8 +1254,8 @@ async function cockpitBuild(year, forceForecast) {
     const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
     const doms = regDomainsOf(s.domains), domYear = doms.reduce((a, d) => a + (d.year || 0), 0);
     const incomeYear = c.active && !c.own ? round2(siteLinesOf(s, c, P).reduce((a, l) => a + l.amount, 0) * 12 / (+P.period || 12)) : 0;
-    const costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear);
-    return Object.assign({}, s, { own: c.own, active: c.active, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), incomeYear, costYear, result: round2(incomeYear - costYear) });
+    const w4yY = w4yYear(c), costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear + w4yY);
+    return Object.assign({}, s, { own: c.own, active: c.active, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), w4y: c.w4y, w4yQty: c.w4yQty, w4yYear: w4yY, incomeYear, costYear, result: round2(incomeYear - costYear) });
   });
   const msgs = mail && Array.isArray(mail.messages) ? mail.messages : [];
   const events = [].concat(
