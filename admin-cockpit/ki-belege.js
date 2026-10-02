@@ -119,8 +119,8 @@ K.openVoucherWith=function(m,a,x,onDone,opt){
 };
 M.kiVoucherBtn=function(m,a){ return '<button type="button" class="kiatt" data-act="mvki:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Als Beleg erfassen (KI liest Betrag, Steuer, Lieferant aus)" aria-label="Als Beleg erfassen (KI)">'+F.svg("spark")+'</button>'; };
 F.action("mvki",function(v){
-  var i=v.indexOf("|"), m=M.find&&M.find(v.slice(0,i)), idx=+v.slice(i+1); if(!m) return;
-  var a=(m.attachments||[]).filter(function(x){ return (x.index||0)===idx; })[0]; if(!a) return;
+  var i=v.indexOf("|"), m=M.find&&M.find(v.slice(0,i)), idx=String(v.slice(i+1)); if(!m) return;
+  var a=(m.attachments||[]).filter(function(x){ return String(x.index||0)===idx; })[0]; if(!a){ F.toast("Anhang nicht gefunden – Postfach wird neu geladen",true); if(M.loadFull) M.loadFull(); return; }
   if(!K.ready()){ K.load(true).then(function(){ if(!K.ready()) F.toast(K.NOT_SET,true); else F.actions.mvki(v); }); return; }
   F.toast("KI liest den Beleg „"+(a.filename||"Anhang")+"“ …");
   K.api("beleg-extract",{mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf?M.accOf(m):(m.account||""),filename:a.filename},subject:m.subject,from:m.from,fromName:m.fromName,date:m.date})

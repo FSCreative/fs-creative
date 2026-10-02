@@ -278,7 +278,7 @@ F.action("voucher",function(){
   if(!M.store.full) M.loadFull();
 });
 F.listen("input","#mvQ",function(el){ PICK.q=el.value; renderPick(); });
-F.action("mvpick",function(v){ var i=v.indexOf("|"), m=M.find(v.slice(0,i)), idx=+v.slice(i+1); if(!m) return; var a=(m.attachments||[]).filter(function(x){ return (x.index||0)===idx; })[0]; if(a) M.openVoucher(m,a); });
+F.action("mvpick",function(v){ var i=v.indexOf("|"), m=M.find(v.slice(0,i)), idx=String(v.slice(i+1)); if(!m) return; var a=(m.attachments||[]).filter(function(x){ return String(x.index||0)===idx; })[0]; if(a) M.openVoucher(m,a); });
 
 F.css([
 '.dialog.xwide{width:min(1240px,100%)}',

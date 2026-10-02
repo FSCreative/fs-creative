@@ -664,7 +664,7 @@ F.action("mx",function(op,el){
   else if(op==="editdraft") M.editServerDraft(m);
   else if(op==="qrsend") M.quickReply(m);
 });
-F.action("mvoucher",function(v){ var i=v.indexOf("|"), m=find(v.slice(0,i)); if(!m) return; var idx=+v.slice(i+1); var a=(m.attachments||[]).filter(function(x){ return (x.index||0)===idx; })[0]; if(a) M.openVoucher(m,a); });
+F.action("mvoucher",function(v){ var i=v.indexOf("|"), m=find(v.slice(0,i)); if(!m) return; var idx=String(v.slice(i+1)); var a=(m.attachments||[]).filter(function(x){ return String(x.index||0)===idx; })[0]; if(a) M.openVoucher(m,a); else { F.toast("Anhang nicht gefunden – Postfach wird neu geladen",true); M.loadFull(); } });
 /* Kompatibilität mit älteren Aufrufen */
 F.action("reply",function(id){ var m=find(id); if(m) M.reply(m,"reply"); });
 F.action("mailtodo",function(id){ var m=find(id); if(m) M.todoFromMail(m); });
