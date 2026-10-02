@@ -98,7 +98,7 @@ F.blitzKal=function(){
   var head='<div class="bk-nav"><button class="btn icon" data-act="bkm:-1" aria-label="Vormonat">‹</button><h3>'+esc(monthLabel(S.month))+'</h3><button class="btn icon" data-act="bkm:1" aria-label="Nächster Monat">›</button>'+
     '<button class="btn" data-act="bkm:0">Heute</button><span style="flex:1"></span>'+
     (S.loading?'<span class="muted">Lade …</span>':'')+
-    '<button class="btn primary" data-act="bknew:">+ Buchung anlegen</button></div>';
+    '<button class="btn" data-act="bkblock:">Sperre anlegen</button><button class="btn primary" data-act="bknew:">+ Buchung anlegen</button></div>';
   var body;
   if(S.err&&!S.data) body='<div class="empty">Kalender nicht ladbar: '+esc(S.err)+(S.err==="unauthorized"?' – Token in Blitzdings (COCKPIT_TOKEN/STATS_TOKEN) prüfen.':'')+' <button class="btn" data-act="bkm:r">Erneut</button></div>';
   else if(!S.data) body='<div class="empty">Lade Verfügbarkeit …</div>';
@@ -146,16 +146,24 @@ F.listen("keydown","[data-bkday]",function(el,e){ if(e.key==="Enter"||e.key===" 
 
 /* ---------- Sperren ---------- */
 F.action("bkblock",function(iso){
-  F.modal('<form data-form="bkblock" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+de(iso)+' sperren</h2>'+F.btnClose()+'</div>'+
-    '<input type="hidden" name="date" value="'+esc(iso)+'"><label class="fl">Box<select class="f" name="type"><option value="">Alle Boxen</option>'+types().map(function(x){ return '<option value="'+x+'">'+esc(TYPE_LABEL[x]||x)+'</option>'; }).join("")+'</select></label>'+
+  iso=iso||today(); F.closeModal();
+  F.modal('<form data-form="bkblock" class="stackf"><div class="row-between"><h2 style="font-size:19px">Sperre anlegen</h2>'+F.btnClose()+'</div>'+
+    '<div class="grid2"><label class="fl">Von<input class="f" type="date" name="date" required value="'+esc(iso)+'"></label><label class="fl">Bis<input class="f" type="date" name="until" value="'+esc(iso)+'"></label></div>'+
+    '<label class="fl">Box<select class="f" name="type"><option value="">Alle Boxen</option>'+types().map(function(x){ return '<option value="'+x+'">'+esc(TYPE_LABEL[x]||x)+'</option>'; }).join("")+'</select></label>'+
     '<label class="fl">Grund (optional)<input class="f" name="reason" placeholder="z. B. Urlaub, Wartung"></label><div class="err" id="bkbErr"></div>'+
     '<div class="foot"><span class="muted">Gesperrte Tage sind online nicht buchbar.</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Sperren</button></span></div></form>',"narrow");
 });
 F.form("bkblock",function(f){
-  var btn=f.querySelector("[type=submit]"); btn.disabled=true;
-  F.api("/admin/api/blitz/block",{body:{date:f.date.value,type:f.type.value,reason:f.reason.value.trim()}}).then(function(j){
-    if(!j||j.ok===false){ btn.disabled=false; document.getElementById("bkbErr").textContent="Nicht gespeichert: "+((j&&j.error)||"Fehler"); return; }
-    F.closeModal(); F.toast(de(f.date.value)+" in Blitzdings gesperrt"); refreshAll();
+  var btn=f.querySelector("[type=submit]"), err=document.getElementById("bkbErr"), from=f.date.value, to=f.until.value||from;
+  if(!from){ err.textContent="Bitte ein Datum wählen."; return; } if(to<from){ err.textContent="„Bis“ liegt vor „Von“."; return; }
+  var days=[]; for(var d=from; d<=to&&days.length<=366; d=addDays(d,1)) days.push(d);
+  if(days.length>366){ err.textContent="Höchstens ein Jahr auf einmal."; return; }
+  btn.disabled=true; err.textContent="Sperre "+days.length+" Tag"+(days.length>1?"e":"")+" …";
+  var ok=0, fail=[], body=function(dd){ return {date:dd,type:f.type.value,reason:f.reason.value.trim()}; };
+  /* Tag für Tag (Blitzdings speichert Sperren je Tag) */
+  days.reduce(function(pr,dd){ return pr.then(function(){ return F.api("/admin/api/blitz/block",{body:body(dd)}).then(function(j){ if(j&&j.ok!==false) ok++; else fail.push(dd); }).catch(function(){ fail.push(dd); }); }); },Promise.resolve()).then(function(){
+    if(fail.length&&!ok){ btn.disabled=false; err.textContent="Nicht gespeichert – Blitzdings nicht erreichbar."; return; }
+    F.closeModal(); F.toast((days.length>1?de(from)+" – "+de(to):de(from))+" in Blitzdings gesperrt"+(fail.length?" ("+fail.length+" Tag(e) fehlgeschlagen)":""),!!fail.length); refreshAll();
   });
 });
 F.action("bkunblock",function(id){
