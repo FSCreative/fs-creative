@@ -62,11 +62,19 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     '</section><div class="stack">'+
       '<section class="panel"><div class="panel-h"><h2>'+(todayEv.length?"Heute & nächste Termine":"Nächste Termine")+'</h2><button class="link" data-go="kal">Kalender →</button></div>'+
         (nextEv.length?'<ul class="agenda">'+nextEv.map(function(e){ return '<li><span class="time">'+(e.date===today?(e.time||"ganztags"):deShort(e.date))+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.date!==today&&e.time?e.time:"",e.location||"",e.cal||(e.source==="icloud"?"iCloud":e.source==="kalender"?"Kalender":"")].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Termine.</div>')+'</section>'+
+      mailPanel()+
       '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>'+
       incomePanel()+
     '</div></div>';
   }
 });
+/* Neueste Mails (Posteingang aller Konten), ungelesene fett; Klick öffnet die Mail im Postfach */
+function mailPanel(){
+  var all=((F.D.mail&&F.D.mail.messages)||[]).filter(function(m){ return F.isInbox(m)&&!m.deleted; }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,6);
+  var unread=F.unreadMails().length;
+  return '<section class="panel"><div class="panel-h"><h2>Neueste Mails'+(unread?' <span class="tag info">'+unread+' ungelesen</span>':'')+'</h2><button class="link" data-go="post">Postfach →</button></div>'+
+    (all.length?'<ul class="agenda">'+all.map(function(m){ return '<li class="hmail" data-act="mail:'+esc(m.id)+'" role="button" tabindex="0" style="cursor:pointer"><span class="time">'+esc(F.ago(m.date))+'</span><div style="min-width:0"><div style="font-weight:'+(m.read?500:700)+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(m.fromName||m.from||"")+'</div><div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(m.subject||"(kein Betreff)")+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Mails.</div>')+'</section>';
+}
 function incomePanel(){
   var inc=F.D.income; if(!inc||!inc.lines||!inc.lines.length) return "";
   return '<section class="panel"><div class="panel-h"><h2>Geschätztes Monatseinkommen</h2><button class="link" data-act="incomeinfo">Wie gerechnet?</button></div><div class="panel-b income">'+
