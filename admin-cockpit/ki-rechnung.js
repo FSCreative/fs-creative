@@ -8,10 +8,10 @@ var K=F.KI=F.KI||{};
 var PRE=null, BUSY=false;
 var CASE={inland:"Inland (österr. USt)",eu_rc:"EU-Unternehmer – Reverse Charge",drittland:"Drittland – nicht steuerbar"};
 
-function sources(){
+function sources(sel){
   var D=F.D||{}, o=['<option value="">— oder Quelle wählen —</option>'];
   var ls=(D.leads||[]).filter(function(l){ return l.stage!=="verloren"; }).slice(0,15);
-  if(ls.length) o.push('<optgroup label="Anfragen">'+ls.map(function(l){ return '<option value="lead:'+esc(l.id)+'">'+esc((l.company||l.name)+" – "+(l.topic||""))+'</option>'; }).join("")+'</optgroup>');
+  if(ls.length) o.push('<optgroup label="Anfragen">'+ls.map(function(l){ return '<option value="lead:'+esc(l.id)+'"'+(sel&&sel===l.id?" selected":"")+'>'+esc((l.company||l.name)+" – "+(l.topic||""))+'</option>'; }).join("")+'</optgroup>');
   var M=F.M||{}, ms=((M.store&&M.store.messages&&M.store.messages.length?M.store.messages:(D.mail&&D.mail.messages))||[]).filter(function(m){ return !m.deleted&&!(M.isSent&&M.isSent(m))&&!(M.isSpam&&M.isSpam(m)); })
     .slice().sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,25);
   if(ms.length) o.push('<optgroup label="Mails">'+ms.map(function(m){ return '<option value="mail:'+esc(m.id)+'">'+esc((m.fromName||m.from||"")+" – "+(m.subject||"").slice(0,50))+'</option>'; }).join("")+'</optgroup>');
@@ -25,18 +25,20 @@ F.kiInvoiceHtml=function(pre){
     '<div class="muted"><b>Fußtext:</b> '+esc(k.footText).replace(/\n/g,"<br>")+'</div>'+(k.notes?'<div class="bad-t" style="font-size:13px">'+esc(k.notes)+'</div>':'')+
     '<div class="muted">Preise im Dialog sind brutto (aus netto umgerechnet). Steuerregel und Fußtext werden mit angelegt.</div></div>';
   out+='<details class="kiinv"'+(k?'':' open')+'><summary>'+F.svg("spark")+' Mit KI ausfüllen</summary><div class="stackf" style="gap:8px;margin-top:8px">'+
-    '<textarea class="f" id="kiInvText" rows="3" placeholder="z. B. Rechnung an Lerch: Website-Relaunch 2.400 € netto, Hosting 12 Monate">'+esc(PRE.kiText||"")+'</textarea>'+
-    '<div class="row wrap"><select class="f" id="kiInvSrc" style="flex:1;min-width:200px">'+sources()+'</select><button type="button" class="btn primary" data-act="kiinvfill"'+(BUSY?" disabled":"")+'>'+(BUSY?"KI füllt aus …":"Ausfüllen")+'</button></div>'+
+    '<textarea class="f" id="kiInvText" rows="3" placeholder="'+(PRE.kind==="offer"?"z. B. Angebot für Lerch: Website-Relaunch 2.400 € netto, optional Hosting 12 Monate":"z. B. Rechnung an Lerch: Website-Relaunch 2.400 € netto, Hosting 12 Monate")+'">'+esc(PRE.kiText||"")+'</textarea>'+
+    '<div class="row wrap"><select class="f" id="kiInvSrc" style="flex:1;min-width:200px">'+sources(PRE.after&&PRE.after.leadId)+'</select><button type="button" class="btn primary" data-act="kiinvfill"'+(BUSY?" disabled":"")+'>'+(BUSY?"KI füllt aus …":"Ausfüllen")+'</button></div>'+
     '<div class="err" id="kiInvErr"></div></div></details>';
   return out;
 };
 function fill(inv,pre){
   F.openInvoice(Object.assign({},pre,{contactName:inv.contactName,email:inv.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
     items:inv.items.map(function(i){ return {name:i.name,text:i.text,qty:i.qty,priceGross:i.priceGross,taxRate:i.taxRate}; }),
-    taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv}));
+    taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv},
+    pre.kind==="offer"?{validUntil:inv.validUntil||undefined,header:inv.header||pre.header}:{}));
 }
 K.invoiceDraft=function(req,pre){
-  pre=Object.assign({title:"Neue Rechnung (KI)"},pre||{}); pre.kiText=req.text||"";
+  pre=Object.assign({title:pre&&pre.kind==="offer"?"Neues Angebot (KI)":"Neue Rechnung (KI)"},pre||{}); pre.kiText=req.text||"";
+  if(pre.kind==="offer") req.kind="offer";   /* KI schreibt ein Angebot statt einer Rechnung */
   BUSY=true;
   return K.api("rechnung",req).then(function(j){ BUSY=false; K.load(true); if(!j.invoice.items.length) throw new Error("Die KI hat keine Positionen gefunden – bitte genauer beschreiben."); fill(j.invoice,pre); return j.invoice; })
     .catch(function(e){ BUSY=false; throw e; });
@@ -45,7 +47,7 @@ F.action("kiinvfill",function(){
   var t=document.getElementById("kiInvText"), s=document.getElementById("kiInvSrc"), err=document.getElementById("kiInvErr");
   var req={text:(t&&t.value||"").trim()}, v=s&&s.value||"";
   if(/^lead:/.test(v)) req.leadId=v.slice(5); if(/^mail:/.test(v)) req.mailId=v.slice(5);
-  if(!req.text&&!req.leadId&&!req.mailId){ err.textContent="Bitte beschreiben, was verrechnet wird, oder eine Mail/Anfrage wählen."; return; }
+  if(!req.text&&!req.leadId&&!req.mailId){ err.textContent=PRE&&PRE.kind==="offer"?"Bitte beschreiben, was angeboten wird, oder eine Mail/Anfrage wählen.":"Bitte beschreiben, was verrechnet wird, oder eine Mail/Anfrage wählen."; return; }
   if(K.st&&!K.st.configured){ err.textContent=K.NOT_SET; return; }
   var b=document.querySelector('[data-act="kiinvfill"]'); if(b){ b.disabled=true; b.textContent="KI füllt aus …"; } err.textContent="";
   var keep=Object.assign({},PRE); delete keep.kiInfo;

@@ -8,16 +8,20 @@ var META=null;
 F.loadMeta=function(cb,force){ if(META&&!force) return cb(META); F.api("/admin/api/sevdesk/meta"+(force?"?force=1":"")).then(function(m){ META=m||{}; cb(META); }).catch(function(){ cb({}); }); };
 function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" placeholder="Bezeichnung" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"></div>'; }
 var INVCTX=null;
+F.addDays=function(iso,n){ var d=new Date(String(iso).slice(0,10)+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
+/* Rechnungsdialog; mit pre.kind==="offer" derselbe Dialog als „Neues Angebot“ (Gültig bis, Betreff, → /admin/api/sevdesk/offer) */
 F.openInvoice=function(pre){
-  pre=pre||{}; INVCTX=pre; var today=F.D?F.D.today:F.ymd();
-  F.modal('<form data-form="invoice" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(pre.title||"Neue Rechnung")+'</h2>'+F.btnClose()+'</div>'+
+  pre=pre||{}; INVCTX=pre; var today=F.D?F.D.today:F.ymd(), offer=pre.kind==="offer";
+  F.modal('<form data-form="invoice" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(pre.title||(offer?"Neues Angebot":"Neue Rechnung"))+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted" style="margin:0">Wird als <b>Entwurf</b> in sevDesk angelegt. Prüfen und versenden machst du in sevDesk.</p>'+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
     '<div class="grid2"><label class="fl">Kunde<input class="f" name="contact" list="invContacts" required value="'+esc(pre.contactName||"")+'"></label><label class="fl">E-Mail (für neue Kunden)<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label>'+
-    '<label class="fl">Rechnungsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Leistungsdatum<input class="f" name="delivery" type="date" value="'+esc(pre.deliveryDate||today)+'"></label></div>'+
+    (offer?'<label class="fl">Angebotsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Gültig bis<input class="f" name="valid" type="date" value="'+esc(pre.validUntil||F.addDays(pre.invoiceDate||today,30))+'"></label></div>'+
+      '<label class="fl">Betreff<input class="f" name="header" value="'+esc(pre.header||"Angebot")+'"></label>'
+    :'<label class="fl">Rechnungsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Leistungsdatum<input class="f" name="delivery" type="date" value="'+esc(pre.deliveryDate||today)+'"></label></div>')+
     '<label class="fl">Adresse<textarea class="f" name="address" rows="2" placeholder="Name, Straße, PLZ Ort">'+esc(pre.address||pre.contactName||"")+'</textarea></label>'+
     '<label class="fl">Einleitungstext<textarea class="f" name="head" rows="2">'+esc(pre.headText||"")+'</textarea></label>'+
     '<div><div class="sec-t">Positionen</div><div id="irows" style="display:grid;gap:10px">'+((pre.items&&pre.items.length?pre.items:[{}]).map(irow).join(""))+'</div><button type="button" class="link" data-addrow>+ Position</button></div>'+
-    '<div class="foot"><span id="invSum" class="num"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">Entwurf in sevDesk anlegen</button></span></div><div class="err" id="invErr"></div><datalist id="invContacts"></datalist></form>',"wide");
+    '<div class="foot"><span id="invSum" class="num"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">'+(offer?"Angebot als Entwurf anlegen":"Entwurf in sevDesk anlegen")+'</button></span></div><div class="err" id="invErr"></div><datalist id="invContacts"></datalist></form>',"wide");
   invSum();
   F.loadMeta(function(m){ var dl=document.getElementById("invContacts"); if(dl) dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
 };
@@ -31,6 +35,7 @@ F.form("invoice",function(form){
   var items=invItems(), err=document.getElementById("invErr"), btn=document.getElementById("invSave"), contact=form.contact.value.trim();
   if(!contact){ err.textContent="Bitte einen Kunden angeben."; return; }
   if(!items.length){ err.textContent="Bitte mindestens eine Position mit Bezeichnung und Preis angeben."; return; }
+  if(INVCTX&&INVCTX.kind==="offer") return saveOffer(form,items,contact,err,btn);
   var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),items:items};
   if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil","country","uid"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });   /* z. B. von der KI (Reverse Charge, Fußtext) */
   btn.disabled=true; err.textContent=""; btn.textContent="Lege Entwurf an …";
@@ -49,6 +54,27 @@ F.form("invoice",function(form){
       if(cb) cb(j,{failed:failed}); F.load(true); });
   }).catch(function(){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="Keine Verbindung zum Server."; });
 });
+/* Angebot anlegen (gleicher Dialog). Danach optional Lead in Phase „Angebot“ schieben (nur vorwärts). */
+function saveOffer(form,items,contact,err,btn){
+  var ctx=INVCTX||{}, body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,orderDate:form.date.value,validUntil:form.valid.value,header:form.header.value.trim()||"Angebot",headText:form.head.value.trim(),items:items};
+  ["taxRule","footText","country","uid"].forEach(function(k){ if(ctx[k]) body[k]=ctx[k]; });
+  var lbl="Angebot als Entwurf anlegen"; btn.disabled=true; err.textContent=""; btn.textContent="Lege Angebot an …";
+  F.api("/admin/api/sevdesk/offer",{body:body}).then(function(j){
+    if(!j||!j.ok){ btn.disabled=false; btn.textContent=lbl; err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
+    var lid=ctx.after&&ctx.after.leadId, l=lid&&F.D&&(F.D.leads||[]).find(function(x){ return x.id===lid; });
+    var order=["anfrage","entwurf","angebot","auftrag","live"], move=l&&order.indexOf(l.stage||"anfrage")<order.indexOf("angebot");
+    var patch=move?{stage:"angebot"}:null;
+    if(l&&!(+l.value>0)){ var net=items.reduce(function(s,i){ return s+i.qty*i.priceGross/(1+(i.taxRate||0)/100); },0); patch=Object.assign(patch||{},{value:Math.round(net)}); }
+    var job=patch?F.api("/admin/api/leads",{body:{op:"update",id:lid,patch:patch}}).then(function(r){ if(r&&r.ok) F.D.leads=r.leads; return r&&r.ok; }).catch(function(){ return false; }):Promise.resolve(true);
+    job.then(function(ok){
+      F.closeModal();
+      if(!ok) F.toast("Angebot "+(j.nr||"")+" angelegt, aber die Phase des Leads konnte nicht gesetzt werden",true);
+      else F.toast("Angebot "+(j.nr||"")+" als Entwurf in sevDesk angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",function(){ window.open("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(j.id),"_blank","noopener"); });
+      if(ctx.onDone) ctx.onDone(j);
+      if(F.offersLoad) F.offersLoad(true); F.render();
+    });
+  }).catch(function(){ btn.disabled=false; btn.textContent=lbl; err.textContent="Keine Verbindung zum Server."; });
+}
 F.action("newinvoice",function(){ F.openInvoice({}); });
 F.action("pdf",function(id){ window.open("/admin/api/sevdesk/pdf?id="+encodeURIComponent(id),"_blank","noopener"); });
 

@@ -934,6 +934,133 @@ async function sevBook(pl) {
   SEV_CACHE.at = 0;
   return j && j.objects || true;
 }
+// ── sevDesk-Angebote (Order, orderType "AN"): Liste, PDF, Entwurf anlegen, Status, in Rechnung umwandeln ──
+// Status laut sevDesk-API: 100 Entwurf, 200 versendet, 300 abgelehnt, 500 angenommen, 750 teilweise berechnet, 1000 berechnet.
+// Die API kennt kein Feld „gültig bis“: es steht im Fußtext („gültig bis TT.MM.JJJJ“), sonst Angebotsdatum + 30 Tage (geschätzt).
+const OFFER_VALID_DAYS = 30;
+const OFFER_STATUS = { 100: "Entwurf", 200: "versendet", 300: "abgelehnt", 500: "angenommen", 750: "teilweise berechnet", 1000: "berechnet" };
+let OFFERS_CACHE = { at: 0, data: null, p: null };
+function addDays(iso, n) { const d = new Date(String(iso).slice(0, 10) + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function offerValidFromText(t) {
+  const m = String(t || "").replace(/<[^>]+>/g, " ").match(/g(?:ü|ue)ltig\s+bis(?:\s+(?:zum|einschlie(?:ß|ss)lich))?\s*:?\s*(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/i);
+  return m ? m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0") : "";
+}
+async function sevOffersBuild() {
+  const today = viennaToday();
+  const since = Math.floor(Date.parse(addDays(today, -730) + "T00:00:00Z") / 1000);
+  const [orders, pos] = await Promise.all([
+    sevAll("/Order", { orderType: "AN", embed: "contact", startDate: since }, 4000),
+    sevAll("/OrderPos", {}, 8000).catch(() => []),
+  ]);
+  const posBy = {};
+  pos.forEach(x => { const oid = x && x.order && x.order.id; if (oid == null) return; (posBy[String(oid)] = posBy[String(oid)] || []).push(x); });
+  const offers = orders.filter(o => !o.orderType || o.orderType === "AN").map(o => {
+    const dm = String(o.orderDate || "").match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    const id = String(o.id), date = dm ? dm[3] + "-" + dm[2].padStart(2, "0") + "-" + dm[1].padStart(2, "0") : sevDay(o.orderDate), status = parseInt(o.status, 10) || 0;
+    const txtValid = offerValidFromText(o.footText) || offerValidFromText(o.headText);
+    const validUntil = txtValid || (date ? addDays(date, OFFER_VALID_DAYS) : null);
+    const lines = (posBy[id] || []).slice().sort((a, b) => (parseInt(a.positionNumber, 10) || 0) - (parseInt(b.positionNumber, 10) || 0))
+      .map(x => ({ name: String(x.name || "").slice(0, 120), qty: x.quantity != null ? sevNum(x.quantity) : 1, net: Math.round(sevNum(x.priceNet != null ? x.priceNet : x.price) * (x.quantity != null ? sevNum(x.quantity) : 1) * 100) / 100, taxRate: sevNum(x.taxRate) }));
+    const c = o.contact || {};
+    const open = status === 100 || status === 200;
+    return { id, nr: o.orderNumber || "", status, statusLabel: OFFER_STATUS[status] || String(status), date, validUntil, validEst: !txtValid,
+      overdue: open && !!validUntil && validUntil < today, sent: !!o.sendDate, contact: sevName(c), contactId: c.id ? String(c.id) : "",
+      header: String(o.header || "").slice(0, 200), ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
+      address: String(o.address || "").slice(0, 400), net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross),
+      lines: lines.slice(0, 12), posCount: lines.length };
+  }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
+  return { ok: true, fetchedAt: new Date().toISOString(), today, offers };
+}
+async function sevOffers(force) {
+  if (OFFERS_CACHE.data && !force && Date.now() - OFFERS_CACHE.at < 2 * 60 * 1000) return OFFERS_CACHE.data;
+  if (!OFFERS_CACHE.p) { const pr = sevOffersBuild().then(d => { OFFERS_CACHE = { at: Date.now(), data: d, p: null }; return d; }).catch(e => { OFFERS_CACHE.p = null; throw e; }); pr.catch(() => {}); OFFERS_CACHE.p = pr; }
+  return OFFERS_CACHE.p;
+}
+// Nächste Angebotsnummer: sevDesk-Nummernkreis (SevSequence), sonst aus den vorhandenen Angeboten hochzählen
+async function sevNextOfferNumber() {
+  try {
+    const j = await sev("GET", "/SevSequence/Factory/getByType", { query: { objectType: "Order", type: "AN" } });
+    const o = j && j.objects && (Array.isArray(j.objects) ? j.objects[0] : j.objects);
+    const next = o && o.nextSequence != null ? String(o.nextSequence) : "";
+    if (next) {
+      if (/^\d+$/.test(next) && o.format && /\[%NUMBER\]/.test(o.format)) {
+        const d = viennaToday();
+        return String(o.format).replace("[%NUMBER]", next).replace(/\[%YEAR\]/g, d.slice(0, 4)).replace(/\[%SHORTYEAR\]/g, d.slice(2, 4)).replace(/\[%MONTH\]/g, d.slice(5, 7)).replace(/\[%DAY\]/g, d.slice(8, 10));
+      }
+      return next;
+    }
+  } catch (e) {}
+  try {
+    const d = await sevOffers(false); let best = null;
+    (d.offers || []).forEach(x => { const m = String(x.nr || "").match(/^(.*?)(\d+)$/); if (m && (!best || parseInt(m[2], 10) > parseInt(best[2], 10))) best = m; });
+    if (best) return best[1] + String(parseInt(best[2], 10) + 1).padStart(best[2].length, "0");
+  } catch (e) {}
+  return "AN-" + viennaToday().replace(/-/g, "") + "-" + String(Date.now()).slice(-4);
+}
+async function sevCreateOffer(pl) {
+  const items = (Array.isArray(pl.items) ? pl.items : []).filter(i => i && String(i.name || "").trim() && isFinite(parseFloat(i.priceGross)));
+  if (!items.length) throw new Error("keine_positionen");
+  const name = String(pl.contactName || "").trim(); if (!name && !pl.contactId) throw new Error("kein_kunde");
+  const contactId = pl.contactId ? String(pl.contactId) : await sevFindOrCreateContact(name, pl.email, pl.uid);
+  const countryId = await sevCountryId(pl.country);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(pl.orderDate || "") ? pl.orderDate : viennaToday();
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(pl.validUntil || "") && pl.validUntil >= date ? pl.validUntil : addDays(date, OFFER_VALID_DAYS);
+  const rate0 = parseFloat(items[0].taxRate); const taxRate = isFinite(rate0) ? rate0 : 20;
+  let foot = String(pl.footText || "").trim();
+  if (!offerValidFromText(foot)) foot = "Dieses Angebot ist gültig bis " + sevDateDE(valid) + "." + (foot ? "\n" + foot : "");
+  const nr = String(pl.orderNumber || "").trim().slice(0, 60) || await sevNextOfferNumber();
+  const body = {
+    order: { objectName: "Order", mapAll: true, orderNumber: nr, orderDate: sevDateDE(date), status: 100, orderType: "AN", version: 0,
+      header: String(pl.header || ("Angebot " + nr)).slice(0, 200), headText: String(pl.headText || ""), footText: foot,
+      address: String(pl.address || name), addressCountry: { id: countryId, objectName: "StaticCountry" },
+      contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
+      taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false },
+    orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
+      return { objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),
+    orderPosDelete: null,
+  };
+  const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
+  if (rule) { body.order.taxRule = { id: rule, objectName: "TaxRule" }; delete body.order.taxType; }
+  if (pl.reference) body.order.customerInternalNote = String(pl.reference).slice(0, 200);
+  const j = await sev("POST", "/Order/Factory/saveOrder", { body, timeout: 40000 });
+  const o = j && j.objects && (j.objects.order || j.objects) || {};
+  OFFERS_CACHE.at = 0;
+  return { id: String(o.id || ""), nr: o.orderNumber || nr, gross: sevNum(o.sumGross), validUntil: valid };
+}
+// Status ändern (nur auf ausdrücklichen Klick, confirm:true): 200 = als versendet markieren, 300 = abgelehnt, 500 = angenommen
+async function sevOfferStatus(pl) {
+  if (pl.confirm !== true) throw new Error("Bestätigung fehlt");
+  const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("kein_angebot");
+  const status = parseInt(pl.status, 10); if ([200, 300, 500].indexOf(status) < 0) throw new Error("ungültiger Status");
+  const cur = OFFERS_CACHE.data && (OFFERS_CACHE.data.offers || []).find(x => x.id === id);
+  if (cur && (cur.status === 750 || cur.status === 1000)) throw new Error("Das Angebot ist schon (teilweise) berechnet.");
+  // Entwurf → versendet: über sendBy (sevDesk verlangt dafür eine Versandart), sonst Status direkt setzen
+  if (status === 200 && (!cur || cur.status === 100)) await sev("PUT", "/Order/" + id + "/sendBy", { body: { sendType: "VPDF", sendDraft: false } });
+  else await sev("PUT", "/Order/" + id, { body: { status } });
+  OFFERS_CACHE.at = 0;
+  return { id, status };
+}
+// Angebot → Rechnung (Entwurf) über /Invoice/Factory/createInvoiceFromOrder (ganze Summe als Schlussrechnung)
+async function sevOfferToInvoice(pl) {
+  if (pl.confirm !== true) throw new Error("Bestätigung fehlt");
+  const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("kein_angebot");
+  const j = await sev("POST", "/Invoice/Factory/createInvoiceFromOrder", { body: { order: { id: Number(id), objectName: "Order" } }, timeout: 40000 });
+  const inv = j && j.objects && (Array.isArray(j.objects) ? j.objects[0] : (j.objects.invoice || j.objects)) || {};
+  OFFERS_CACHE.at = 0; SEV_CACHE.at = 0;
+  return { id: String(inv.id || ""), nr: inv.invoiceNumber || "", gross: sevNum(inv.sumGross) };
+}
+// PDF aus sevDesk (Rechnung oder Angebot) inline ausliefern; preventSendBy: Abruf markiert den Beleg nicht als versendet
+async function sevPdfSend(res, apiPath, fallbackName, dl) {
+  try {
+    const rr = await sev("GET", apiPath, { query: { download: "true", preventSendBy: "true" }, timeout: 40000, binary: true });
+    let buf = null, fname = "";
+    if (rr.buf && rr.buf.length > 4) { buf = rr.buf; const mf = String(rr.disposition || "").match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i); fname = mf ? decodeURIComponent(mf[1]) : ""; }
+    else { const o = (rr.json && rr.json.objects) || {}; if (o.content) { buf = Buffer.from(String(o.content), o.base64encoded === false ? "binary" : "base64"); fname = o.filename || ""; } }
+    if (!buf) return send(res, 404, "PDF nicht gefunden", "text/plain; charset=utf-8");
+    fname = String(fname || fallbackName).replace(/[^\w.\- ]/g, "_");
+    return send(res, 200, buf, "application/pdf", { "Content-Disposition": (dl ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+  } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
+}
 async function sevVoucherFromMail(pl) {
   const m = pl.mail || {};
   let buf, fname, ctypeIn = "";
@@ -1979,16 +2106,23 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/sevdesk/pdf" && req.method === "GET") {
     const id = String(u.searchParams.get("id") || "").replace(/\D/g, "");
     if (!id) return send(res, 400, "missing id");
-    try {
-      const rr = await sev("GET", "/Invoice/" + id + "/getPdf", { query: { download: "true", preventSendBy: "true" }, timeout: 40000, binary: true });
-      let buf = null, fname = "";
-      if (rr.buf && rr.buf.length > 4) { buf = rr.buf; const mf = String(rr.disposition || "").match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i); fname = mf ? decodeURIComponent(mf[1]) : ""; }
-      else { const o = (rr.json && rr.json.objects) || {}; if (o.content) { buf = Buffer.from(String(o.content), o.base64encoded === false ? "binary" : "base64"); fname = o.filename || ""; } }
-      if (!buf) return send(res, 404, "PDF nicht gefunden", "text/plain; charset=utf-8");
-      const inv = SEV_CACHE.data && (SEV_CACHE.data.invoices || []).find(x => x.id === id);
-      fname = String(fname || ((inv && inv.nr) ? inv.nr + ".pdf" : "Rechnung-" + id + ".pdf")).replace(/[^\w.\- ]/g, "_");
-      return send(res, 200, buf, "application/pdf", { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
-    } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
+    const inv = SEV_CACHE.data && (SEV_CACHE.data.invoices || []).find(x => x.id === id);
+    return sevPdfSend(res, "/Invoice/" + id + "/getPdf", (inv && inv.nr) ? inv.nr + ".pdf" : "Rechnung-" + id + ".pdf", u.searchParams.get("dl") === "1");
+  }
+  // ---- sevDesk-Angebote (Kunden & Leads) ----
+  if (p === "/admin/api/sevdesk/offers" && req.method === "GET") {
+    try { const d = await sevOffers(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, configured: e.status !== 503, error: String(e.message || e).slice(0, 200) }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+  }
+  if (p === "/admin/api/sevdesk/offer-pdf" && req.method === "GET") {
+    const id = String(u.searchParams.get("id") || "").replace(/\D/g, "");
+    if (!id) return send(res, 400, "missing id");
+    const o = OFFERS_CACHE.data && (OFFERS_CACHE.data.offers || []).find(x => x.id === id);
+    return sevPdfSend(res, "/Order/" + id + "/getPdf", (o && o.nr) ? o.nr + ".pdf" : "Angebot-" + id + ".pdf", u.searchParams.get("dl") === "1");
+  }
+  if ((p === "/admin/api/sevdesk/offer" || p === "/admin/api/sevdesk/offer-status" || p === "/admin/api/sevdesk/offer-invoice") && req.method === "POST") {
+    try { const pl = await sevBody(req); const r = p.endsWith("/offer") ? await sevCreateOffer(pl) : p.endsWith("status") ? await sevOfferStatus(pl) : await sevOfferToInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/sevdesk/invoice" && req.method === "POST") {
     try { const pl = await sevBody(req); const r = await sevCreateInvoice(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
