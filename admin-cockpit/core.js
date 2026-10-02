@@ -109,21 +109,32 @@ FSC.renderNav = function(){
 FSC.scrollSnap=function(root){ var out={}, seen={}; Array.prototype.forEach.call(root.querySelectorAll("*"),function(el){ if(!(el.scrollTop>0||el.scrollLeft>0)) return; var k=el.tagName+"."+(el.className||"")+(el.id?"#"+el.id:""), n=seen[k]=(seen[k]||0)+1; out[k+"@"+n]=[el.scrollTop,el.scrollLeft]; }); return out; };
 FSC.scrollRestore=function(root,snap){ if(!snap) return; var keys=Object.keys(snap); if(!keys.length) return; var seen={};
   Array.prototype.forEach.call(root.querySelectorAll("*"),function(el){ var k=el.tagName+"."+(el.className||"")+(el.id?"#"+el.id:""), n=seen[k]=(seen[k]||0)+1, v=snap[k+"@"+n]; if(v){ el.scrollTop=v[0]; el.scrollLeft=v[1]; } }); };
+FSC._scrollAt=0; window.addEventListener("scroll",function(){ FSC._scrollAt=Date.now(); },{passive:true});
+document.addEventListener("touchmove",function(){ FSC._scrollAt=Date.now(); },{passive:true});
+/* Eigene Aktionen (Klick, Taste, Eingabe) nie verzögern – nur automatische Aktualisierungen warten aufs Scroll-Ende */
+FSC._userAt=0; ["click","keydown","input","change","submit"].forEach(function(t){ document.addEventListener(t,function(){ FSC._userAt=Date.now(); },true); });
 FSC.render = function(){
   FSC.renderNav();
   var main=document.getElementById("main");
   if(!FSC.D){ main.innerHTML='<div class="loading">'+(FSC.loadErr?FSC.esc(FSC.loadErr)+' <button class="btn" data-act="reload">Erneut versuchen</button>':'Lade deine Daten …')+'</div>'; return; }
   var v=FSC.views.find(function(x){return x.id===FSC.current;})||FSC.views[0];
   var ae=document.activeElement, keep=ae&&ae.getAttribute&&ae.getAttribute("data-keepfocus"), selS=keep&&ae.selectionStart;
-  var y=window.scrollY, inner=FSC.scrollSnap(main), samev=FSC._lastView===v.id; FSC._lastView=v.id;
-  try{ main.innerHTML='<div class="view view-'+v.id+'">'+v.render()+'</div>'; if(v.after) v.after(); }
-  catch(e){ main.innerHTML='<div class="loading">Fehler beim Anzeigen: '+FSC.esc(e.message)+'</div>'; console.error(e); }
+  var y=window.scrollY, samev=FSC._lastView===v.id;
+  /* Während gescrollt wird nicht neu aufbauen (bricht Scrollen ab, v. a. iPhone/Trackpad) – kurz danach nachholen */
+  if(samev&&Date.now()-FSC._scrollAt<900&&!FSC._forceRender&&Date.now()-FSC._userAt>1500){ clearTimeout(FSC._deferT); FSC._deferT=setTimeout(FSC.render,950); return; }
+  FSC._forceRender=false;
+  var html; try{ html='<div class="view view-'+v.id+'">'+v.render()+'</div>'; }catch(e){ html='<div class="loading">Fehler beim Anzeigen: '+FSC.esc(e.message)+'</div>'; console.error(e); }
+  /* Unveränderter Inhalt: DOM nicht anfassen (keine Sprünge, Eingaben bleiben) */
+  if(samev&&html===FSC._lastHtml&&main.firstChild){ if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh(); return; }
+  FSC._lastView=v.id; FSC._lastHtml=html;
+  var inner=FSC.scrollSnap(main);
+  main.innerHTML=html; try{ if(v.after) v.after(); }catch(e){ console.error(e); }
   if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){ q.focus({preventScroll:true}); try{ q.setSelectionRange(selS,selS); }catch(e){} } }
   if(samev) FSC.scrollRestore(main,inner);
   window.scrollTo(0,y);
   if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh();
 };
-FSC.go = function(id){ FSC.current=id; try{ history.replaceState(null,"","#"+id); }catch(e){} FSC.closeDrawer(); FSC.closeModal(); FSC.render(); window.scrollTo(0,0); };
+FSC.go = function(id){ FSC._forceRender=true; FSC.current=id; try{ history.replaceState(null,"","#"+id); }catch(e){} FSC.closeDrawer(); FSC.closeModal(); FSC.render(); window.scrollTo(0,0); };
 
 /* ---------- Drawer & Dialoge ---------- */
 FSC.openDrawer = function(html,refresh){ var d=document.getElementById("drawer"); d.innerHTML=html; d.classList.add("on"); d.setAttribute("aria-hidden","false"); document.getElementById("scrim").classList.add("on"); FSC.drawerRefresh=refresh||null; var c=d.querySelector("[data-close]"); if(c) c.focus(); };

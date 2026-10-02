@@ -259,6 +259,7 @@ function vKochdu(){
       rs.length?'<table class="pl-tbl"><thead><tr><th>Restaurant</th><th class="r">Best. bar / online</th><th class="r">Bar offen</th><th class="r">Bar verrechnet</th><th class="r">Online</th><th>Letzte Abrechnung</th><th></th></tr></thead><tbody>'+body+'</tbody>'+
         '<tfoot><tr><td>Gesamt</td><td class="r num" data-l="Bestellungen">'+num(bo)+' / '+num(oo)+'</td><td class="r" data-l="Bar offen">'+money(open,"warn-t")+'</td><td class="r" data-l="Bar verrechnet">'+money(settled,"ok-t")+'</td><td class="r" data-l="Online">'+money(online)+'</td><td></td><td></td></tr></tfoot></table>'
         :'<div class="empty">Keine aktiven Restaurants mit Umsätzen im Zeitraum.</div>')+
+    lastOrdersSec(ko)+
     (chartRows.length?sec("Bar-Gebühren je Restaurant","",hbars(chartRows,[["Verrechnet","ok"],["Offen","warn"]])):'')+
     sec("App-Statistiken",'<span class="muted">Installationen = registrierte Geräte (Push) · Store-Downloads nur in App Store / Play Console</span>',
       hasApp?'<div class="panel-b"><div class="kpis">'+
@@ -267,6 +268,14 @@ function vKochdu(){
         kpi("App-Nutzer Android",n.android!=null?num(n.android):"—","registrierte Geräte",{cls:"pl-nopriv"})+
         kpi("App-Nutzer gesamt",(n.apple!=null||n.android!=null)?num(appTotal):"—","iOS + Android",{cls:"pl-nopriv"})+
       '</div></div>':'<div class="empty">kochdu liefert noch keine App-Statistik.</div>');
+}
+/* Letzte 5 Bestellungen über alle Restaurants */
+var KO_ST={PENDING:["neu","info"],ACCEPTED:["angenommen","info"],PREPARING:["in Zubereitung","info"],READY:["fertig","ok"],OUT_FOR_DELIVERY:["unterwegs","info"],DELIVERED:["geliefert","ok"],COMPLETED:["abgeschlossen","ok"],PICKED_UP:["abgeholt","ok"],REJECTED:["abgelehnt","bad"],CANCELLED:["storniert","bad"],DECLINED:["abgelehnt","bad"]};
+function lastOrdersSec(ko){
+  var lo=ko.lastOrders||[];
+  if(!lo.length) return sec("Letzte Bestellungen","",'<div class="empty">Noch keine Daten – kochdu liefert die letzten Bestellungen nach dem nächsten Update.</div>');
+  return sec("Letzte Bestellungen",'<span class="muted">alle Restaurants</span>','<div class="scroll"><table><tbody>'+lo.map(function(o){ var st=KO_ST[o.status]||[String(o.status||"").toLowerCase(),"grey"];
+    return '<tr><td class="nowrap num muted">'+esc(o.at?new Date(o.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"")+'</td><td><b>'+esc(o.restaurant)+'</b><div class="sub">#'+esc(o.nr)+(o.customer?' · '+esc(o.customer):'')+(o.type?' · '+esc(o.type==="DELIVERY"?"Lieferung":o.type==="PICKUP"?"Abholung":o.type==="DINE_IN"?"vor Ort":o.type.toLowerCase()):'')+'</div></td><td><span class="tag '+st[1]+'">'+esc(st[0])+'</span></td><td class="nowrap">'+esc(o.payment==="cash"?"bar":o.payment?"online":"")+'</td><td class="r num money">'+eur(c2e(o.totalCents))+'</td></tr>'; }).join("")+'</tbody></table></div>');
 }
 function kochduRest(id){ return ((P().kochdu||{}).restaurants||[]).find(function(r){ return String(r.id)===String(id); }); }
 function kochduSettleOnly(r){

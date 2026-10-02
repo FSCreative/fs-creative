@@ -1490,7 +1490,7 @@ async function cockpitBuild(year, forceForecast) {
     sev: sevSummary(sev, year, today), sevConfigured: !!(SEV.key || SEV_SRC.projectId),
     abgleich,
     platforms: {
-      kochdu: ko ? { totals: ko.totals || {}, restaurants: ko.restaurants || [], nutzer: ko.nutzer || null, fetchedAt: ko.fetchedAt } : null,
+      kochdu: ko ? { totals: ko.totals || {}, restaurants: ko.restaurants || [], nutzer: ko.nutzer || null, lastOrders: ko.lastOrders || [], fetchedAt: ko.fetchedAt } : null,
       blitzdings: b ? { revenue: b.revenue || {}, bookings: b.bookings || {}, upcoming: b.upcoming || [], fetchedAt: b.fetchedAt } : null,
       kantineur: k, valuero: va,
     },
