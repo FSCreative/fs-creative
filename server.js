@@ -274,6 +274,25 @@ async function blitzdingsStats(year) {
   if (!d || d.error) return null;
   return d;
 }
+// Blitzdings-Cockpit-API (Verfügbarkeit, Katalog, Buchung anlegen). Basis aus BLITZDINGS_STATS_URL abgeleitet
+// (…/api/stats → …/api/cockpit) oder explizit BLITZDINGS_COCKPIT_URL; Token BLITZDINGS_COCKPIT_TOKEN, sonst der Stats-Token.
+const BLITZ_COCKPIT = {
+  base: (process.env.BLITZDINGS_COCKPIT_URL || BLITZ.url.replace(/\/api\/stats\/?(\?.*)?$/, "/api/cockpit")).replace(/\/+$/, ""),
+  token: process.env.BLITZDINGS_COCKPIT_TOKEN || BLITZ.token,
+};
+let BLITZ_CATALOG = { at: 0, data: null };
+async function blitzCockpit(method, pathQ, body) {
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), method === "GET" ? 10000 : 30000);
+  try {
+    const r = await fetch(BLITZ_COCKPIT.base + pathQ, { method, signal: ctrl.signal,
+      headers: Object.assign({ "x-api-token": BLITZ_COCKPIT.token, Accept: "application/json" }, body ? { "Content-Type": "application/json" } : {}),
+      body: body ? JSON.stringify(body) : undefined });
+    let j = null; try { j = await r.json(); } catch (e) { j = { ok: false, error: "HTTP " + r.status }; }
+    if (j && typeof j === "object" && !r.ok && j.ok === undefined) j.ok = false;
+    return { status: r.status, json: j };
+  } catch (e) { return { status: 502, json: { ok: false, error: e && e.name === "AbortError" ? "blitz_timeout" : "blitz_unreachable" } }; }
+  finally { clearTimeout(t); }
+}
 async function kochduStats(year) {
   if (!KOCHDU.token) return null;
   const d = await getJSON(KOCHDU.url + "?token=" + encodeURIComponent(KOCHDU.token) + yearParam(year));
@@ -2019,6 +2038,40 @@ async function handleAdmin(req, res, u, p) {
       } catch (e) { return send(res, 502, JSON.stringify({ error: "blitz_pay_failed" }), TYPES[".json"]); }
     });
     return;
+  }
+  // ---- Blitzdings: Verfügbarkeitskalender + Buchung anlegen (Proxy, Token bleibt am Server) ----
+  if (p.indexOf("/admin/api/blitz/") === 0) {
+    if (!BLITZ_COCKPIT.token) return send(res, 503, JSON.stringify({ ok: false, error: "blitz_not_configured" }), TYPES[".json"]);
+    const J = (r) => send(res, r.status, JSON.stringify(r.json), TYPES[".json"], { "Cache-Control": "no-store" });
+    const isoQ = (k) => { const v = String(u.searchParams.get(k) || ""); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ""; };
+    if (p === "/admin/api/blitz/availability" && req.method === "GET") {
+      const from = isoQ("from"), to = isoQ("to");
+      if (!from || !to) return send(res, 400, JSON.stringify({ ok: false, error: "from/to fehlen" }), TYPES[".json"]);
+      return J(await blitzCockpit("GET", "/availability?from=" + from + "&to=" + to));
+    }
+    if (p === "/admin/api/blitz/catalog" && req.method === "GET") {
+      if (BLITZ_CATALOG.data && u.searchParams.get("force") !== "1" && Date.now() - BLITZ_CATALOG.at < 300000) return send(res, 200, JSON.stringify(BLITZ_CATALOG.data), TYPES[".json"], { "Cache-Control": "no-store" });
+      const r = await blitzCockpit("GET", "/catalog");
+      if (r.status === 200 && r.json && r.json.ok) BLITZ_CATALOG = { at: Date.now(), data: r.json };
+      return J(r);
+    }
+    if (req.method !== "POST") return send(res, 405, JSON.stringify({ ok: false, error: "method" }), TYPES[".json"]);
+    let pl; try { pl = await sevBody(req, 50000); } catch (e) { return send(res, 400, JSON.stringify({ ok: false, error: String(e.message || e) }), TYPES[".json"]); }
+    let r;
+    if (p === "/admin/api/blitz/bookings") r = await blitzCockpit("POST", "/bookings", pl);
+    else if (p === "/admin/api/blitz/booking-status") {
+      const id = String(pl.id || ""); if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_id" }), TYPES[".json"]);
+      r = await blitzCockpit("PATCH", "/bookings/" + encodeURIComponent(id), { status: pl.status || undefined, paymentStatus: pl.paymentStatus || undefined, allowOverlap: !!pl.allowOverlap });
+    }
+    else if (p === "/admin/api/blitz/block") r = await blitzCockpit("POST", "/blocked", { date: pl.date, type: pl.type || null, reason: pl.reason || "" });
+    else if (p === "/admin/api/blitz/unblock") {
+      const id = String(pl.id || ""); if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_id" }), TYPES[".json"]);
+      r = await blitzCockpit("DELETE", "/blocked?id=" + encodeURIComponent(id));
+    }
+    else return send(res, 404, JSON.stringify({ ok: false, error: "not_found" }), TYPES[".json"]);
+    // Neue/geänderte Buchung: Stats-Cache (Nächste Termine, Heute, Kalender) sofort verwerfen.
+    if (r.status < 300) forgetStats(BLITZ.url);
+    return J(r);
   }
   // ---- Einstellungen: Status der Verbindungen + Mail-Passwörter setzen ----
   if (p === "/admin/api/settings" && req.method === "GET") {

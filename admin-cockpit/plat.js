@@ -346,7 +346,8 @@ function vKantineur(){
 function bzPayTag(b){ return b.paymentStatus==="PAID"?'<span class="tag ok">bezahlt</span>':b.paymentStatus==="REFUNDED"?'<span class="tag grey">erstattet</span>':'<span class="tag warn">offen</span>'; }
 function vBlitz(){
   var bz=P().blitzdings;
-  if(!bz) return '<div class="panel empty">Keine Verbindung zu Blitzdings. Prüfe BLITZDINGS_STATS_URL und BLITZDINGS_STATS_TOKEN in Railway.</div>';
+  var kal=F.blitzKal?F.blitzKal():"";   /* Verfügbarkeitskalender + Buchung anlegen (blitz-kal.js) */
+  if(!bz) return '<div class="panel empty">Keine Verbindung zu Blitzdings. Prüfe BLITZDINGS_STATS_URL und BLITZDINGS_STATS_TOKEN in Railway.</div>'+kal;
   var r=bz.revenue||{}, bk=bz.bookings||{}, ups=(bz.upcoming||[]).slice().sort(function(a,b){ return String(a.eventDate||"").localeCompare(String(b.eventDate||"")); });
   var sevOk=!!F.D.sev;
   var list=ups.map(function(b){
@@ -374,7 +375,7 @@ function vBlitz(){
       kpi("Offen",'<span class="money">'+eur(c2e(r.openCents))+'</span>',num(bk.openCount)+" offen",{vcls:r.openCents>0?"warn-t":""})+
       kpi("Anstehende Termine",num(bk.upcomingCount!=null?bk.upcomingCount:ups.length),"ab heute")+
       kpi("Diesen Monat bezahlt",'<span class="money">'+eur(c2e(r.thisMonthPaidCents))+'</span>',r.refundedCents?'<span class="money">'+eur(c2e(r.refundedCents))+'</span> erstattet':"seit Monatsanfang")+
-    '</div>'+
+    '</div>'+kal+
     sec("Nächste Termine",'<span class="muted">„Als bezahlt“ wird direkt in Blitzdings gespeichert</span>',ups.length?list:'<div class="empty">Keine anstehenden Termine.</div>')+
     sec("Bezahlt vs. offen",'<span class="muted">'+esc(F.D.year)+'</span>',donut([["Bezahlt",c2e(r.paidCents),"ok",'<span class="money">'+eur(c2e(r.paidCents))+'</span>'],["Offen",c2e(r.openCents),"warn",'<span class="money">'+eur(c2e(r.openCents))+'</span>']].concat(r.refundedCents?[["Erstattet",c2e(r.refundedCents),"ink-3",'<span class="money">'+eur(c2e(r.refundedCents))+'</span>']]:[]),num((+bk.paidCount||0)+(+bk.openCount||0))));
 }
@@ -494,14 +495,14 @@ function vPlat(){
   var subnav='<nav class="subnav pl-sub" aria-label="Plattformen">'+TABS.map(function(t){ var n=nc[TAB2SEEN[t[0]]]; return '<button type="button" data-act="pltab:'+t[0]+'" aria-current="'+(t[0]===tab)+'">'+t[1]+(n?'<span class="count">'+n+'</span>':'')+'</button>'; }).join("")+'</nav>';
   var src={kochdu:p.kochdu,kantineur:p.kantineur,blitz:p.blitzdings,valuero:p.valuero}[tab];
   var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"?'<button class="btn" data-go="geld">Abgleich</button>':'');
-  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung über sevDesk.",ski:"App mit In-App-Käufen (Einmalkäufe)."};
+  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung über sevDesk.",ski:"App mit In-App-Käufen (Einmalkäufe)."};
   var body=tab==="kochdu"?vKochdu():tab==="kantineur"?vKantineur():tab==="blitz"?vBlitz():tab==="valuero"?vValuero():tab==="ski"?(F.skikaiserView?F.skikaiserView():'<div class="panel empty">Skikaiser-Modul fehlt.</div>'):vUeb();
   return F.head("Plattformen",subs[tab]+(src&&src.fetchedAt?' <span class="muted">· '+esc(stamp(src.fetchedAt))+'</span>':''),right?'<div class="row wrap pl-head-r">'+right+'</div>':'')+subnav+body;
 }
 F.view({id:"plat",label:"Plattformen",short:"Plattf.",icon:"plat",order:70,
   count:function(){ var n=newCounts(); return (n.kochdu||0)+(n.blitz||0)+(n.valuero||0); },
   render:vPlat,
-  after:function(){ var k=TAB2SEEN[F.UI.plat]; if(k&&clearSeen(k)) setTimeout(F.renderNav,0); if(!BILL) loadBill().then(function(b){ if(b&&F.current==="plat") F.render(); }); }
+  after:function(){ var k=TAB2SEEN[F.UI.plat]; if(k&&clearSeen(k)) setTimeout(F.renderNav,0); if(F.UI.plat==="blitz"&&F.blitzKalAfter) F.blitzKalAfter(); if(!BILL) loadBill().then(function(b){ if(b&&F.current==="plat") F.render(); }); }
 });
 
 /* Schnellsuche: Restaurants, Buchungen, Objekte */
