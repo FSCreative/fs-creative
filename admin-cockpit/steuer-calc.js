@@ -177,7 +177,10 @@ function dayNo(iso){ return Date.UTC(+iso.slice(0,4),+iso.slice(5,7)-1,+iso.slic
 function hasDocList(st,k){ var u=st&&st.uva&&st.uva[k]; return !!(u&&u.doneAt&&u.summary&&Array.isArray(u.summary.docIds)); }
 function reportedIn(st,inv){ if(!st||!inv.date) return null; var ks=Object.keys(st.uva||{});
   for(var i=0;i<ks.length;i++){ var k=ks[i]; if(hasDocList(st,k)&&st.uva[k].summary.docIds.indexOf(inv.id)>-1){ var p=periodOfKey(k); if(p) return {key:k,date:inv.date>=p.from&&inv.date<=p.to?inv.date:p.to,how:"laut Cockpit-Abgabe"}; } }
-  var k0=periodKeyOf(st,inv.date); if(periodClosed(st,k0)&&!hasDocList(st,k0)) return {key:k0,date:inv.date,how:"nach Rechnungsdatum, wie in sevDesk"}; return null; }
+  /* Ohne Cockpit-Abgabe (z. B. aus sevDesk gemeldet): sevDesk-Sollauswertung zählt eine Rechnung im Zeitraum des früheren
+     Datums von Rechnung und Zahlung (Anzahlung vor Rechnung) – live für Q2/Q3 2026 geprüft (RE-1199/1200/1203). */
+  var pd=inv.type==="SR"?"":(inv.payDate||""), d0=pd&&pd<inv.date&&num(inv.paid)>0.004?pd:inv.date;
+  var k0=periodKeyOf(st,d0); if(periodClosed(st,k0)&&!hasDocList(st,k0)) return {key:k0,date:d0,how:d0===inv.date?"nach Rechnungsdatum, wie in sevDesk":"nach Zahlungseingang vor Rechnungsdatum, wie in sevDesk"}; return null; }
 function sollParts(inv,st,total){
   var out0=sollParts0(inv,st,total), rep=reportedIn(st,inv), tt=total==null?1:total;
   if(rep&&!docCfg(st,inv.id).teil) return [{share:tt,date:rep.date,why:"bereits mit der UVA "+rep.key.replace("-"," ")+" gemeldet ("+rep.how+")"}];

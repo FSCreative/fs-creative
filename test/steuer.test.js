@@ -488,6 +488,13 @@ else {
   t("Storno-Paar: KZ 022 nur die andere Rechnung (1.000), kein KZ 090", () => { near(m["022"] && m["022"].base != null ? m["022"].base : m["022"], 1000); assert.ok(!m["090"], "090 gesetzt: " + JSON.stringify(m["090"])); });
   t("Storno-Paar: stornierte Rechnung gilt nicht als ausgebucht", () => { S.setRules({ invoices: [re, sr] }, st0()); assert.strictEqual(S.ausgebucht(re, st0()), null); });
 }
+// Live: RE-1199 (Rechnung 31.12., bezahlt 24.06.) – sevDesk hat sie in der abgegebenen Q2-UVA gezählt → in Q3 NICHT nachholen
+{
+  const P3 = S.periodOfKey("2026-Q3"), s = st0(); s.today = "2026-10-02"; s.uva = { "2026-Q2": { done: true, doneAt: "2026-08-10" } };
+  const re = inv({ net: 246.66, tax: 49.34, status: 1000, paid: 296, payDate: "2026-06-24", date: "2026-12-31", delivery: "2026-12-31" });
+  const r = S.computeUva({ invoices: [re], vouchers: [], creditNotes: [] }, s, P3), m = S.uvaKzMap(r);
+  t("Anzahlung vor Rechnung, in sevDesk-Q2 gemeldet → nicht in Q3", () => { assert.ok(!m["022"] || Math.abs(+(m["022"].base != null ? m["022"].base : m["022"])) < 0.01, JSON.stringify(m)); });
+}
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 
 console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
