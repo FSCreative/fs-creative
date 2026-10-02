@@ -105,16 +105,21 @@ FSC.renderNav = function(){
     '<button data-act="moresheet"'+(!inMob?' aria-current="page"':'')+'>'+FSC.svg("more")+'<span>Mehr</span></button>';
   var st=document.getElementById("stamp"); if(st) st.textContent=FSC.D?"Stand "+new Date(FSC.D.fetchedAt).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):"";
 };
+/* Scrollpositionen innerer Bereiche (Mailliste, Tabellen, Lesebereich …) über ein Neuzeichnen hinweg behalten */
+FSC.scrollSnap=function(root){ var out={}, seen={}; Array.prototype.forEach.call(root.querySelectorAll("*"),function(el){ if(!(el.scrollTop>0||el.scrollLeft>0)) return; var k=el.tagName+"."+(el.className||"")+(el.id?"#"+el.id:""), n=seen[k]=(seen[k]||0)+1; out[k+"@"+n]=[el.scrollTop,el.scrollLeft]; }); return out; };
+FSC.scrollRestore=function(root,snap){ if(!snap) return; var keys=Object.keys(snap); if(!keys.length) return; var seen={};
+  Array.prototype.forEach.call(root.querySelectorAll("*"),function(el){ var k=el.tagName+"."+(el.className||"")+(el.id?"#"+el.id:""), n=seen[k]=(seen[k]||0)+1, v=snap[k+"@"+n]; if(v){ el.scrollTop=v[0]; el.scrollLeft=v[1]; } }); };
 FSC.render = function(){
   FSC.renderNav();
   var main=document.getElementById("main");
   if(!FSC.D){ main.innerHTML='<div class="loading">'+(FSC.loadErr?FSC.esc(FSC.loadErr)+' <button class="btn" data-act="reload">Erneut versuchen</button>':'Lade deine Daten …')+'</div>'; return; }
   var v=FSC.views.find(function(x){return x.id===FSC.current;})||FSC.views[0];
   var ae=document.activeElement, keep=ae&&ae.getAttribute&&ae.getAttribute("data-keepfocus"), selS=keep&&ae.selectionStart;
-  var y=window.scrollY;
+  var y=window.scrollY, inner=FSC.scrollSnap(main), samev=FSC._lastView===v.id; FSC._lastView=v.id;
   try{ main.innerHTML='<div class="view view-'+v.id+'">'+v.render()+'</div>'; if(v.after) v.after(); }
   catch(e){ main.innerHTML='<div class="loading">Fehler beim Anzeigen: '+FSC.esc(e.message)+'</div>'; console.error(e); }
-  if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){ q.focus(); try{ q.setSelectionRange(selS,selS); }catch(e){} } }
+  if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){ q.focus({preventScroll:true}); try{ q.setSelectionRange(selS,selS); }catch(e){} } }
+  if(samev) FSC.scrollRestore(main,inner);
   window.scrollTo(0,y);
   if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh();
 };

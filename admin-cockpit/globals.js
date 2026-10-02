@@ -24,7 +24,8 @@ function busyUI(){
   var a=document.activeElement; if(a&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA")&&a.value) return true;
   return false;
 }
-function reloadNow(){ location.reload(); }
+/* Neu laden, danach an derselben Stelle weiter (Ansicht + Scrollposition) */
+function reloadNow(){ try{ sessionStorage.setItem("fsc_restore",JSON.stringify({h:location.hash,y:window.scrollY,t:Date.now()})); }catch(e){} location.reload(); }
 function announce(){
   var rf=document.querySelector(".rail-foot");
   if(rf&&!document.getElementById("rfNew")){
@@ -43,7 +44,8 @@ function vcheck(fromVisible){
     if(short(d.build)===short(BUILD)) return;
     if(!fresh){ fresh=true; toasted=0; }
     /* Beim Zurückkommen ins Fenster still neu laden, wenn gerade nichts offen ist (wie im klassischen Dashboard) */
-    if(fromVisible&&!busyUI()){ reloadNow(); return; }
+    /* nur still neu laden, wenn oben auf der Seite und nichts offen ist – sonst Hinweis statt Sprung nach oben */
+    if(fromVisible&&!busyUI()&&window.scrollY<80){ reloadNow(); return; }
     announce();
   }).catch(function(){});
 }
@@ -57,7 +59,11 @@ function title(){
   var n=0; try{ n=F.D&&F.unreadMails?F.unreadMails().length:0; }catch(e){}
   var t=(n?"("+n+") ":"")+BASE_TITLE; if(document.title!==t) document.title=t;
 }
-var origRender=F.render; F.render=function(){ var r=origRender.apply(this,arguments); title(); return r; };
+var RESTORE=null; try{ RESTORE=JSON.parse(sessionStorage.getItem("fsc_restore")||"null"); sessionStorage.removeItem("fsc_restore"); }catch(e){}
+if(RESTORE&&(Date.now()-RESTORE.t>60000||RESTORE.h!==location.hash)) RESTORE=null;
+var origRender=F.render; F.render=function(){ var r=origRender.apply(this,arguments); title();
+  if(RESTORE&&F.D){ var y=RESTORE.y; RESTORE=null; setTimeout(function(){ window.scrollTo(0,y); },0); }
+  return r; };
 F.onData(function(){ setTimeout(title,0); });
 
 /* ---------- Seitenleiste: Beträge ausblenden + Einstellungen ---------- */
