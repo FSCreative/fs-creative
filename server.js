@@ -2603,6 +2603,17 @@ const server = http.createServer((req, res) => {
       return send(res, code, "", "text/plain", { Location: ORIGIN + (req.url || "/"), "X-Robots-Tag": "noindex" });
     }
 
+    // Alte Fotobox-Seiten (früher auf dieser Domain) -> neue Blitzdings-Website. 301 = dauerhaft, damit Google die Treffer umzieht.
+    const OLD_FOTOBOX = {
+      "/fotobox/fotobox-ausleihen-vorarlberg": "https://www.blitzdings.co.at/pakete",
+      "/fotobox/blitzdings-premium": "https://www.blitzdings.co.at/boxen",
+      "/service-page/360-blitzdings-premium": "https://www.blitzdings.co.at/buchen?paket=videobooth-360"
+    };
+    const oldKey = p.length > 1 ? p.replace(/\/+$/, "").toLowerCase() : p;
+    if ((req.method === "GET" || req.method === "HEAD") && OLD_FOTOBOX[oldKey]) {
+      return send(res, 301, "", "text/plain", { Location: OLD_FOTOBOX[oldKey] });
+    }
+
     if (p === "/api/anfrage") {
       if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
       return void handleAnfrage(req, res);
