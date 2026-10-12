@@ -1383,8 +1383,44 @@ async function skikaiserStats(year) {
     feedback: d.feedback || null, fehler: Array.isArray(d.fehler) ? d.fehler : null, namen: d.namen || null, laeufe: d.laeufe || null, rangliste: d.rangliste || null, config: d.config || null };
 }
 
+// ── Hüttengaudi: Idle-Game (iOS) – Edelweiß-Pakete, Nutzung, Fortschritt, Ereignisse, Feedback, Fehler und Fernsteuerung der App ──
+// App-Backend: HuettengaudiUnity/Tools/backend/server.ts. HUETTENGAUDI_STATS_URL = https://<backend>/v1/stats, HUETTENGAUDI_STATS_TOKEN = dessen STATS_TOKEN.
+// Käufe kommen im selben Format wie bei Skikaiser ({purchases:[…]}) und werden genauso zusammengefasst (totals/byMonth/byProduct/byPlatform/recent).
+const HUETTENGAUDI = { url: process.env.HUETTENGAUDI_STATS_URL || "", token: process.env.HUETTENGAUDI_STATS_TOKEN || "" };
+function appKaufSummen(d, year) {
+  const yr = String(year);
+  let byMonth = {}, byProduct = {}, byPlatform = {}, totals = { grossCents: 0, proceedsCents: 0, count: 0, refunds: 0 }, recent = [];
+  if (Array.isArray(d.purchases)) {
+    d.purchases.forEach(p => {
+      const day = String(p.date || "").slice(0, 10); if (yr && day.slice(0, 4) !== yr) return;
+      const g = +p.priceCents || 0, pr = p.proceedsCents != null ? +p.proceedsCents : Math.round(g * 0.85);
+      if (p.refunded) { totals.refunds++; return; }
+      totals.grossCents += g; totals.proceedsCents += pr; totals.count++;
+      const m = day.slice(0, 7); const bm = byMonth[m] || (byMonth[m] = { month: m, grossCents: 0, proceedsCents: 0, count: 0 }); bm.grossCents += g; bm.proceedsCents += pr; bm.count++;
+      const k = p.productId || p.productName || "?"; const bp = byProduct[k] || (byProduct[k] = { productId: k, name: p.productName || k, grossCents: 0, proceedsCents: 0, count: 0 }); bp.grossCents += g; bp.proceedsCents += pr; bp.count++;
+      const pl = p.platform || "?"; const bq = byPlatform[pl] || (byPlatform[pl] = { platform: pl, grossCents: 0, count: 0 }); bq.grossCents += g; bq.count++;
+    });
+    recent = d.purchases.filter(p => !p.refunded).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 15).map(p => ({ date: p.date, name: p.productName || p.productId, priceCents: +p.priceCents || 0, platform: p.platform || "", country: p.country || "" }));
+  } else {
+    totals = Object.assign(totals, d.totals || {});
+    (d.byMonth || []).forEach(m => { byMonth[m.month] = { month: m.month, grossCents: +m.grossCents || 0, proceedsCents: +m.proceedsCents || 0, count: +m.count || 0 }; });
+    (d.byProduct || []).forEach(p => { byProduct[p.productId || p.name] = { productId: p.productId || p.name, name: p.name || p.productId, grossCents: +p.grossCents || 0, proceedsCents: +p.proceedsCents || 0, count: +p.count || 0 }; });
+    (d.byPlatform || []).forEach(p => { byPlatform[p.platform] = p; });
+  }
+  return { totals, byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)), byProduct: Object.values(byProduct).sort((a, b) => b.grossCents - a.grossCents), byPlatform: Object.values(byPlatform), recent };
+}
+async function huettengaudiStats(year) {
+  if (!HUETTENGAUDI.url) return { configured: false };
+  const d = await getJSON(HUETTENGAUDI.url + (HUETTENGAUDI.url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(HUETTENGAUDI.token) + yearParam(year));
+  if (!d || d.error) return { configured: true, error: (d && d.error) || "keine_antwort" };
+  // Backend liefert zusätzlich Nutzung, Fortschritt (Welten/Stufen), Ereignisse, Feedback, Fehler und die aktuelle Fernsteuerung (config)
+  return Object.assign({ configured: true, fetchedAt: d.fetchedAt || new Date().toISOString() }, appKaufSummen(d, year), {
+    users: d.users || null, fortschritt: d.fortschritt || null, ereignisse: d.ereignisse || null, feedback: Array.isArray(d.feedback) ? d.feedback : null,
+    fehler: Array.isArray(d.fehler) ? d.fehler : null, zaehler: d.zaehler || null, config: d.config || null, configGeaendert: d.configGeaendert || null });
+}
+
 // ── Geschätztes Monatseinkommen ──
-// Kantineur: laufende Abos (MRR, live). kochdu, VALUERO, Skikaiser: Prognose, die nur alle 14 Tage neu berechnet wird.
+// Kantineur: laufende Abos (MRR, live). kochdu, VALUERO, Skikaiser, Hüttengaudi: Prognose, die nur alle 14 Tage neu berechnet wird.
 const FORECAST_FILE = path.join(DATA_DIR, "forecast.json");
 function readForecast() { try { return JSON.parse(fs.readFileSync(FORECAST_FILE, "utf8")) || {}; } catch (e) { return {}; } }
 function writeForecast(o) { try { fs.writeFileSync(FORECAST_FILE, JSON.stringify(o)); } catch (e) {} }
@@ -1438,7 +1474,7 @@ function kochduForecast(fc, ko, today) {
   return { monthly: round2(nowC / days * 30.4 / 100), basis: (startIso.slice(5) === "01-01" ? "Jahresschnitt " + today.slice(0, 4) : "Schnitt seit " + startIso.slice(8, 10) + "." + startIso.slice(5, 7) + "." + startIso.slice(0, 4)) + " (genauer, sobald 3 Wochen Verlauf vorliegen)", months };
 }
 async function incomeForecast(ctx) {
-  const { today, year, k, ko, va, ski, sites, force } = ctx;
+  const { today, year, k, ko, va, ski, hg, sites, force } = ctx;
   const fc = readForecast();
   const curYear = String(year) === today.slice(0, 4);
   if (curYear) forecastSnapshot(fc, today, ko);
@@ -1449,6 +1485,7 @@ async function incomeForecast(ctx) {
     if (ko && ko.totals) sources.kochdu = kochduForecast(fc, ko, today);
     if (va && va.objects) sources.valuero = valueroForecast(va, vaPrev, today);
     if (ski && ski.configured && ski.byMonth) { const last = monthsBack(today, 3).map(mk => (ski.byMonth.find(m => m.month === mk) || {}).proceedsCents || 0); sources.skikaiser = { monthly: round2(last.reduce((a, b) => a + b, 0) / 3 / 100), basis: "Schnitt der letzten 3 Monate (Erlös nach Store-Gebühr)" }; }
+    if (hg && hg.configured && hg.byMonth) { const last = monthsBack(today, 3).map(mk => (hg.byMonth.find(m => m.month === mk) || {}).proceedsCents || 0); sources.huettengaudi = { monthly: round2(last.reduce((a, b) => a + b, 0) / 3 / 100), basis: "Schnitt der letzten 3 Monate (Erlös nach Store-Gebühr)" }; }
     fc.sources = sources; fc.computedAt = today;
   }
   writeForecast(fc);
@@ -1456,7 +1493,7 @@ async function incomeForecast(ctx) {
   if (k) lines.push({ key: "kantineur", label: "Kantineur", monthly: round2((k.mrrCents || 0) / 100), basis: "laufende Abos (aktuell)", live: true });
   // kochdu mit Trend-Daten: bei jedem Aufruf live berechnen statt 14 Tage einzufrieren
   const koLive = curYear && ko && ko.trend && ko.totals ? kochduForecast(fc, ko, today) : null;
-  ["kochdu", "valuero", "skikaiser"].forEach(key => { const s = key === "kochdu" && koLive ? koLive : (fc.sources && fc.sources[key]); if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser" }[key], live: false }, s)); });
+  ["kochdu", "valuero", "skikaiser", "huettengaudi"].forEach(key => { const s = key === "kochdu" && koLive ? koLive : (fc.sources && fc.sources[key]); if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser", huettengaudi: "Hüttengaudi" }[key], live: false }, s)); });
   const hosting = round2((sites || []).filter(s => s.active && !s.own).reduce((a, s) => a + (s.incomeYear || 0), 0) / 12);
   if (hosting > 0) lines.push({ key: "hosting", label: "Websites (Hosting & Domains)", monthly: hosting, basis: "fixe Verträge, Jahresbetrag ÷ 12", live: true });
   const next = fc.computedAt ? new Date(Date.parse(fc.computedAt) + 14 * 864e5).toISOString().slice(0, 10) : null;
@@ -1464,10 +1501,11 @@ async function incomeForecast(ctx) {
 }
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
-  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc, ski] = await Promise.all([
+  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc, ski, hg] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
     withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
+    withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }),
   ]);
   const bill = readBilling();
   const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, blitz: b, kantineur: k });
@@ -1485,9 +1523,9 @@ async function cockpitBuild(year, forceForecast) {
     (pc && pc.events || []).map(e => ({ id: e.id, title: e.title, date: e.date, time: e.time, endTime: e.endTime, location: e.location, source: "icloud", cal: e.calName || "" })),
     readEvents().map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || "").slice(0, 10), time: e.time || "", source: "manuell", sparte: e.sparte || "" }))
   ).filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= ymdAdd(today, -1) && e.date <= ymdAdd(today, 60)).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
-  const income = await withTimeout(incomeForecast({ today, year, k, ko, va, ski, sites, force: forceForecast }), 10000, null);
+  const income = await withTimeout(incomeForecast({ today, year, k, ko, va, ski, hg, sites, force: forceForecast }), 10000, null);
   return {
-    fetchedAt: new Date().toISOString(), year, today, income, skikaiser: ski,
+    fetchedAt: new Date().toISOString(), year, today, income, skikaiser: ski, huettengaudi: hg,
     leads: readLeads().slice().reverse(),
     sev: sevSummary(sev, year, today), sevConfigured: !!(SEV.key || SEV_SRC.projectId),
     abgleich,
@@ -2105,6 +2143,20 @@ async function handleAdmin(req, res, u, p) {
       const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify({ id: +b.id, erledigt: b.erledigt !== false }) });
       const j = await r.json().catch(() => ({})); forgetStats(SKIKAISER.url);
       return send(res, 200, JSON.stringify({ ok: !!(r.ok && j.ok) }), TYPES[".json"]);
+    } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  // Hüttengaudi: Feedback erledigt, Fehler behoben, Fernsteuerung (config) und Testdaten löschen – leitet an das App-Backend weiter, Token bleibt am Server
+  if (/^\/admin\/api\/huettengaudi\/(feedback|fehler|config|aufraeumen)$/.test(p) && req.method === "POST") {
+    try {
+      if (!HUETTENGAUDI.url) return send(res, 200, JSON.stringify({ ok: false, error: "nicht_eingerichtet" }), TYPES[".json"]);
+      const was = p.slice("/admin/api/huettengaudi/".length);
+      const b = await sevBody(req, was === "config" ? 8000 : 2000);
+      const body = was === "feedback" ? { id: +b.id, erledigt: b.erledigt !== false } : was === "fehler" ? { hash: String(b.hash || ""), behoben: b.behoben !== false } : was === "config" ? (b && typeof b === "object" ? b : {}) : {};
+      const url = HUETTENGAUDI.url.replace(/\/stats\/?(\?.*)?$/, "/stats/" + was);
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 15000);
+      let r; try { r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": HUETTENGAUDI.token }, body: JSON.stringify(body), signal: ctrl.signal }); } finally { clearTimeout(t); }
+      const j = await r.json().catch(() => ({})); forgetStats(HUETTENGAUDI.url);
+      return send(res, 200, JSON.stringify(Object.assign({}, j && typeof j === "object" ? j : {}, { ok: !!(r.ok && j && j.ok), error: r.ok ? undefined : (j && j.fehler) || "HTTP " + r.status })), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/all") {

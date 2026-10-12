@@ -1,11 +1,11 @@
-/* Ansicht "Plattformen": Überblick, kochdu, Kantineur, Blitzdings, VALUERO, Skikaiser (eigene Datei skikaiser.js).
+/* Ansicht "Plattformen": Überblick, kochdu, Kantineur, Blitzdings, VALUERO, Skikaiser (eigene Datei skikaiser.js), Hüttengaudi (huettengaudi.js).
    Verrechnen läuft über die gemeinsamen Flows: Rechnung via F.openInvoice (pre.after: billing / kochduSettle),
    Rückgängig über /admin/api/kochdu-settle bzw. /admin/api/billing {op:"unbill"}. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, deShort=F.deShort;
 
-var TABS=[["ueb","Überblick"],["kochdu","kochdu"],["kantineur","Kantineur"],["blitz","Blitzdings"],["valuero","VALUERO"],["ski","Skikaiser"]];
+var TABS=[["ueb","Überblick"],["kochdu","kochdu"],["kantineur","Kantineur"],["blitz","Blitzdings"],["valuero","VALUERO"],["ski","Skikaiser"],["hg","Hüttengaudi"]];
 F.UI.plat=F.UI.plat||F.ls("fsc_plat_tab")||"ueb";
 if(!TABS.some(function(t){return t[0]===F.UI.plat;})) F.UI.plat="ueb";
 F.UI.platOpen=F.UI.platOpen||{};          // VALUERO: aufgeklappte Monatsaufstellungen
@@ -189,6 +189,7 @@ function sums(){
   if(p.blitzdings){ var r=p.blitzdings.revenue||{}; out.push({id:"blitz",label:"Blitzdings",paid:c2e(r.paidCents),open:c2e(r.openCents),note:"laut Blitzdings"}); }
   if(p.valuero){ var v=items("valuero"); out.push({id:"valuero",label:"VALUERO",paid:v.reduce(function(a,x){return a+(+x.invoiced||0);},0),open:v.reduce(function(a,x){return a+(+x.unbilled||0);},0),refund:v.reduce(function(a,x){return a+(+x.refund||0);},0),note:"verrechnet "+F.D.year}); }
   var ski=F.D.skikaiser; if(ski&&ski.configured&&ski.totals) out.push({id:"ski",label:"Skikaiser",paid:c2e(ski.totals.proceedsCents),open:0,note:"Erlös nach Store-Gebühr"});
+  var hg=F.D.huettengaudi; if(hg&&hg.configured&&hg.totals) out.push({id:"hg",label:"Hüttengaudi",paid:c2e(hg.totals.proceedsCents),open:0,note:"Erlös nach Store-Gebühr"});
   return out;
 }
 
@@ -197,7 +198,7 @@ function vUeb(){
   var p=P(), s=sums(), fsc=fscRevenue(), nc=newCounts();
   var paidAll=s.reduce(function(a,x){return a+x.paid;},0)+(fsc?fsc.paid:0), openAll=s.reduce(function(a,x){return a+x.open;},0)+(fsc?fsc.open:0);
   var refund=(s.find(function(x){return x.id==="valuero";})||{}).refund||0;
-  var ka=p.kantineur, ski=F.D.skikaiser;
+  var ka=p.kantineur, ski=F.D.skikaiser, hg=F.D.huettengaudi;
   var card=function(id,title,sub,figs,extra){ return '<button class="panel pl-card" data-act="pltab:'+id+'"><div class="pl-t"><h3>'+title+'</h3><span class="muted">'+sub+'</span></div><dl class="pl-fig">'+figs.map(function(f){ return '<dt>'+f[0]+'</dt><dd'+(f[2]?' class="'+f[2]+'"':'')+'>'+f[1]+'</dd>'; }).join("")+'</dl>'+(extra||"")+'</button>'; };
   var off=function(n){ return '<div class="muted">Keine Verbindung zu '+n+'.</div>'; };
   var badge=function(k){ return nc[k]?'<span class="tag glow">'+nc[k]+' neu</span>':''; };
@@ -208,8 +209,9 @@ function vUeb(){
     (bz?card("blitz","Blitzdings",'Fotobox &amp; 360° '+badge("blitz"),[["Bezahlt",money(c2e(br.paidCents))],["Offen",money(c2e(br.openCents),br.openCents>0?"warn-t":"")],["Anstehend",num((bz.bookings||{}).upcomingCount!=null?bz.bookings.upcomingCount:(bz.upcoming||[]).length)]]):'<div class="panel pl-card"><h3>Blitzdings</h3>'+off("Blitzdings")+'</div>')+
     (p.valuero?card("valuero","VALUERO",'Tourismus &amp; Hosting '+badge("valuero"),[["Verrechnet "+esc(F.D.year),money(va.reduce(function(a,x){return a+x.invoiced;},0))],["Offen",money(va.reduce(function(a,x){return a+x.unbilled;},0),"warn-t")]].concat(refund>0.005?[["Zu erstatten",money(refund,"bad-t")]]:[])):'<div class="panel pl-card"><h3>VALUERO</h3>'+off("den VALUERO-Objekten")+'</div>')+
     (fsc?'<button class="panel pl-card" data-go="web"><div class="pl-t"><h3>FS Creative</h3><span class="muted">Websites</span></div><dl class="pl-fig"><dt>Bezahlt</dt><dd>'+money(fsc.paid)+'</dd><dt>Offen</dt><dd>'+money(fsc.open,fsc.open>0.005?"warn-t":"")+'</dd></dl><span class="pl-note">Hosting, Domains &amp; Mail '+esc(F.D.year)+'</span></button>':'')+
-    (ski&&ski.configured&&ski.totals?card("ski","Skikaiser","In-App-Käufe",[["Erlös",money(c2e(ski.totals.proceedsCents))],["Käufe",num(ski.totals.count)]]):card("ski","Skikaiser","In-App-Käufe",[],'<span class="pl-note">'+(ski&&ski.configured?"Statistik antwortet gerade nicht.":"Noch nicht verbunden. Hier steht, was die App liefern muss.")+'</span>'));
-  var rows=s.filter(function(x){return x.id!=="ski";}).map(function(x){ return {label:x.label,right:'<span class="money">'+eur0(x.paid)+' bezahlt'+(x.open>0.005?' · '+eur0(x.open)+' offen':'')+'</span>',parts:[[x.paid,"a","Bezahlt "+eur(x.paid)],[x.open,"b","Offen "+eur(x.open)]]}; });
+    (ski&&ski.configured&&ski.totals?card("ski","Skikaiser","In-App-Käufe",[["Erlös",money(c2e(ski.totals.proceedsCents))],["Käufe",num(ski.totals.count)]]):card("ski","Skikaiser","In-App-Käufe",[],'<span class="pl-note">'+(ski&&ski.configured?"Statistik antwortet gerade nicht.":"Noch nicht verbunden. Hier steht, was die App liefern muss.")+'</span>'))+
+    (hg&&hg.configured&&hg.totals?card("hg","Hüttengaudi","Edelweiß-Pakete",[["Erlös",money(c2e(hg.totals.proceedsCents))],["Käufe",num(hg.totals.count)]].concat(hg.users?[["Aktiv 7 Tage",num(hg.users.aktiv7)]]:[])):card("hg","Hüttengaudi","Edelweiß-Pakete",[],'<span class="pl-note">'+(hg&&hg.configured?"Statistik antwortet gerade nicht.":"Noch nicht verbunden. Hier steht, was die App liefern muss.")+'</span>'));
+  var rows=s.filter(function(x){return x.id!=="ski"&&x.id!=="hg";}).map(function(x){ return {label:x.label,right:'<span class="money">'+eur0(x.paid)+' bezahlt'+(x.open>0.005?' · '+eur0(x.open)+' offen':'')+'</span>',parts:[[x.paid,"a","Bezahlt "+eur(x.paid)],[x.open,"b","Offen "+eur(x.open)]]}; });
   return '<div class="kpis">'+
       kpi("Bezahlt gesamt",'<span class="money">'+eur0(paidAll)+'</span>',"alle Plattformen"+(fsc?" + Websites":"")+" · "+esc(F.D.year))+
       kpi("Offen gesamt",'<span class="money">'+eur0(openAll)+'</span>',"noch nicht bezahlt bzw. verrechnet",{vcls:openAll>0.005?"warn-t":""})+
@@ -503,9 +505,9 @@ function vPlat(){
   var tab=F.UI.plat, nc=newCounts(), p=P();
   var subnav='<nav class="subnav pl-sub" aria-label="Plattformen">'+TABS.map(function(t){ var n=nc[TAB2SEEN[t[0]]]; return '<button type="button" data-act="pltab:'+t[0]+'" aria-current="'+(t[0]===tab)+'">'+t[1]+(n?'<span class="count">'+n+'</span>':'')+'</button>'; }).join("")+'</nav>';
   var src={kochdu:p.kochdu,kantineur:p.kantineur,blitz:p.blitzdings,valuero:p.valuero}[tab];
-  var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"?'<button class="btn" data-go="geld">Abgleich</button>':'');
-  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung über sevDesk.",ski:"App mit In-App-Käufen (Einmalkäufe)."};
-  var body=tab==="kochdu"?vKochdu():tab==="kantineur"?vKantineur():tab==="blitz"?vBlitz():tab==="valuero"?vValuero():tab==="ski"?(F.skikaiserView?F.skikaiserView():'<div class="panel empty">Skikaiser-Modul fehlt.</div>'):vUeb();
+  var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"&&tab!=="hg"?'<button class="btn" data-go="geld">Abgleich</button>':'');
+  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung über sevDesk.",ski:"App mit In-App-Käufen (Einmalkäufe).",hg:"Idle-Game für iOS · Edelweiß-Pakete, Nutzung, Fortschritt und Steuerung der App."};
+  var body=tab==="kochdu"?vKochdu():tab==="kantineur"?vKantineur():tab==="blitz"?vBlitz():tab==="valuero"?vValuero():tab==="ski"?(F.skikaiserView?F.skikaiserView():'<div class="panel empty">Skikaiser-Modul fehlt.</div>'):tab==="hg"?(F.huettengaudiView?F.huettengaudiView():'<div class="panel empty">Hüttengaudi-Modul fehlt.</div>'):vUeb();
   return F.head("Plattformen",subs[tab]+(src&&src.fetchedAt?' <span class="muted">· '+esc(stamp(src.fetchedAt))+'</span>':''),right?'<div class="row wrap pl-head-r">'+right+'</div>':'')+subnav+body;
 }
 F.view({id:"plat",label:"Plattformen",short:"Plattf.",icon:"plat",order:70,
@@ -521,6 +523,7 @@ F.searcher(function(q){
   ((p.blitzdings||{}).upcoming||[]).forEach(function(b){ if((String(b.customerName||"")+" "+(b.reference||"")+" "+(b.package||"")+" "+(b.location||"")).toLowerCase().indexOf(q)>-1) out.push({group:"Plattformen",label:"Blitzdings · "+(b.customerName||"Buchung"),sub:de(String(b.eventDate||"").slice(0,10))+" · "+(b.package||"")+" · "+eur(c2e(b.totalCents)),act:"pltab:blitz~"+b.id}); });
   ((p.valuero||{}).objects||[]).forEach(function(o){ if(String(o.name||"").toLowerCase().indexOf(q)>-1) out.push({group:"Plattformen",label:"VALUERO · "+o.name,sub:num(o.feeBookings)+" Buchungen",act:"pltab:valuero~"+o.key}); });
   [["kochdu","kochdu"],["kantineur","Kantineur"],["blitzdings","Blitzdings","blitz"],["valuero","VALUERO"],["skikaiser","Skikaiser","ski"]].forEach(function(t){ if(t[0].indexOf(q)===0) out.push({group:"Plattformen",label:t[1],sub:"Plattform öffnen",act:"pltab:"+(t[2]||t[0])}); });
+  if(["hüttengaudi","huettengaudi","huttengaudi"].some(function(n){ return n.indexOf(q)===0; })) out.push({group:"Plattformen",label:"Hüttengaudi",sub:"Plattform öffnen",act:"pltab:hg"});
   return out.slice(0,8);
 });
 })();
