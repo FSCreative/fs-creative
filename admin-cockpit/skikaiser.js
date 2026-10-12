@@ -215,7 +215,17 @@ function tabZahlen(s){
   var ls=(s.laeufe&&s.laeufe.byStrecke)||[];
   var st=ls.length?sec("Beliebteste Strecken",'<span class="muted">gespielte Läufe '+esc(F.D.year)+'</span>','<table class="sk-tbl"><thead><tr><th>Strecke</th><th class="r">Läufe</th><th class="r">im Ziel</th></tr></thead><tbody>'+
       ls.slice(0,12).map(function(r){ return '<tr><td>'+esc(r.name||r.strecke)+'</td><td class="r">'+num(r.anzahl)+'</td><td class="r">'+(r.anzahl?Math.round(r.ziel/r.anzahl*100)+" %":"–")+'</td></tr>'; }).join("")+'</tbody></table>'):'';
-  return '<div class="two">'+dl+(st||sec("Beliebteste Strecken","",'<div class="empty">Noch keine Läufe.</div>'))+'</div>'+overview(s);
+  return '<div class="two">'+dl+(st||sec("Beliebteste Strecken","",'<div class="empty">Noch keine Läufe.</div>'))+'</div>'+leistung(s)+overview(s);
+}
+/* Wie flüssig läuft das Spiel? Bildrate je Gerätemodell der letzten 30 Tage (App meldet sie mit jedem Lauf, ab Build 39) */
+function leistung(s){
+  var l=s.leistung||[]; if(!l.length) return sec("Wie flüssig läuft es?",'<span class="muted">letzte 30 Tage</span>','<div class="empty">Noch keine Messungen – die App meldet die Bildrate ab Build 39 mit jedem Lauf.</div>');
+  function farbe(f){ return f>=55?"ok":f>=45?"info":"bad"; }
+  var stufen=["volle Grafik","ohne Umgebungsschatten","Schatten kürzer","Auflösung 70 %","Auflösung 62 %","ohne Kantenglättung"];
+  return sec("Wie flüssig läuft es?",'<span class="muted">Bilder pro Sekunde je Gerät · letzte 30 Tage · Ziel 60</span>',
+    '<p class="sk-hint">Ø = Durchschnitt im Rennen, „ruckelt“ = die langsamsten 5 % der Bilder. Die App senkt die Grafik selbst, wenn es zu langsam wird – „Grafik“ zeigt, wie weit sie im Schnitt heruntergehen musste.</p>'+
+    '<table class="sk-tbl"><thead><tr><th>Gerät</th><th class="r">Läufe</th><th class="r">Ø fps</th><th class="r">ruckelt</th><th>Grafik</th></tr></thead><tbody>'+
+    l.map(function(r){ var st=Math.round(r.stufe); return '<tr><td>'+esc(r.name||r.modell)+'</td><td class="r">'+num(r.laeufe)+'</td><td class="r"><span class="pill '+farbe(r.fps)+'">'+esc(r.fps)+'</span></td><td class="r">'+esc(r.tief)+'</td><td>'+esc(stufen[Math.min(st,stufen.length-1)]||"")+'</td></tr>'; }).join("")+'</tbody></table>');
 }
 function tabRang(s){
   var r=s.rangliste||{}, beste=(r.beste||[]).filter(function(z){ return z.platz===1; });

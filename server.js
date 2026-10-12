@@ -1414,7 +1414,7 @@ async function skikaiserStats(year) {
   }
   // Skikaiser-Backend liefert zusätzlich Nutzung (Downloads je System, aktive Spieler), Feedback, Fehler/Abstürze, Ranglisten-Namen und gespielte Läufe
   return { configured: true, fetchedAt: d.fetchedAt || new Date().toISOString(), totals, byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)), byProduct: Object.values(byProduct).sort((a, b) => b.grossCents - a.grossCents), byPlatform: Object.values(byPlatform), recent, users: d.users || null,
-    feedback: d.feedback || null, fehler: Array.isArray(d.fehler) ? d.fehler : null, namen: d.namen || null, laeufe: d.laeufe || null, rangliste: d.rangliste || null, config: d.config || null };
+    feedback: d.feedback || null, fehler: Array.isArray(d.fehler) ? d.fehler : null, namen: d.namen || null, laeufe: d.laeufe || null, rangliste: d.rangliste || null, config: d.config || null, leistung: Array.isArray(d.leistung) ? d.leistung : null };
 }
 
 // ── Hüttengaudi: Idle-Game (iOS) – Edelweiß-Pakete, Nutzung, Fortschritt, Ereignisse, Feedback, Fehler und Fernsteuerung der App ──
