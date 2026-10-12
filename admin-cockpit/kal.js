@@ -250,7 +250,7 @@ function openDayView(k){
   if(!isoOk(k)) return; var list=calItems()[k]||[];
   F.modal('<div class="row-between"><div><h2 style="font-size:20px">'+esc(longDate(k))+'</h2><div class="muted">'+(list.length?list.length+(list.length===1?" Eintrag":" Einträge"):"Keine Einträge")+'</div></div>'+F.btnClose()+'</div>'+
     (list.length?'<div class="kdvlist">'+list.map(dvItem).join("")+'</div>':'<div class="empty">Keine Einträge an diesem Tag.</div>')+
-    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button><button type="button" class="btn primary" data-act="newevent:'+k+'">+ Termin an diesem Tag</button></span></div>',"narrow");
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button><button type="button" class="btn primary" data-act="newevent:'+k+'">+ Termin an diesem Tag</button></span></div>',"narrow ksheet");
 }
 
 /* ---------- Termin: Details ---------- */
@@ -266,7 +266,7 @@ function openEventView(id){
     '<dt>Bereich</dt><dd><span class="tag grey" style="background:color-mix(in srgb,var(--sp-'+sp+') 16%,var(--panel));color:var(--ink)">'+esc(spName(sp))+'</span></dd>'+
     (e.location?'<dt>Ort</dt><dd>'+esc(e.location)+'</dd>':'')+(e.notes?'<dt>Notizen</dt><dd class="pre">'+esc(e.notes)+'</dd>':'')+
     '<dt>Kalender</dt><dd>'+src+'</dd></dl>'+
-    '<div class="foot"><span>'+(ro?'':'<button type="button" class="btn danger" data-act="eventdel:'+esc(e.id)+'">Löschen</button>')+'</span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button>'+(ro?'':'<button type="button" class="btn primary" data-act="eventedit:'+esc(e.id)+'">Bearbeiten</button>')+'</span></div>',"narrow");
+    '<div class="foot"><span>'+(ro?'':'<button type="button" class="btn danger" data-act="eventdel:'+esc(e.id)+'">Löschen</button>')+'</span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button>'+(ro?'':'<button type="button" class="btn primary" data-act="eventedit:'+esc(e.id)+'">Bearbeiten</button>')+'</span></div>',"narrow ksheet");
 }
 F.openEventView=openEventView;
 F.action("eventview",openEventView);
@@ -431,7 +431,7 @@ function openTodoView(id){
     '<dt>Fällig</dt><dd>'+(t.due?esc(longDate(t.due))+(m&&!t.done?' · <span class="tag '+m.cls+'">'+esc(m.lbl)+'</span>':''):'<span class="muted">ohne Datum</span>')+'</dd>'+
     '<dt>Notizen</dt><dd class="pre">'+(t.notes?esc(t.notes):'<span class="muted">Keine Infos hinterlegt</span>')+'</dd>'+
     (t.created>1e11?'<dt>Angelegt</dt><dd>'+esc(new Date(t.created).toLocaleDateString("de-AT"))+'</dd>':'')+'</dl>'+
-    '<div class="foot"><button type="button" class="btn danger" data-act="tododel:'+esc(t.id)+'">Löschen</button><span class="row wrap"><button type="button" class="btn" data-act="todotoggle:'+esc(t.id)+'">'+(t.done?"Wieder öffnen":"Erledigt")+'</button><button type="button" class="btn primary" data-act="todoedit:'+esc(t.id)+'">Bearbeiten</button></span></div>',"narrow");
+    '<div class="foot"><button type="button" class="btn danger" data-act="tododel:'+esc(t.id)+'">Löschen</button><span class="row wrap"><button type="button" class="btn" data-act="todotoggle:'+esc(t.id)+'">'+(t.done?"Wieder öffnen":"Erledigt")+'</button><button type="button" class="btn primary" data-act="todoedit:'+esc(t.id)+'">Bearbeiten</button></span></div>',"narrow ksheet");
 }
 F.openTodoView=openTodoView;
 F.action("todoview",openTodoView);
@@ -446,7 +446,7 @@ function openTodoEdit(t){
     '<label class="fl">Notizen (optional)<textarea class="f" name="notes" rows="5">'+esc(t.notes||"")+'</textarea></label>'+
     '<label class="row" style="font-size:14px"><input type="checkbox" name="done"'+(t.done?" checked":"")+' style="width:18px;height:18px;accent-color:var(--ok)"> Erledigt</label>'+
     '<div class="err" id="ktdErr" role="alert"></div>'+
-    '<div class="foot"><span>'+(ex?'<button type="button" class="btn danger" data-act="tododel:'+esc(ex.id)+'">Löschen</button>':'')+'</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Speichern</button></span></div></form>',"narrow");
+    '<div class="foot"><span>'+(ex?'<button type="button" class="btn danger" data-act="tododel:'+esc(ex.id)+'">Löschen</button>':'')+'</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Speichern</button></span></div></form>',"narrow ksheet");
 }
 F.openTodoEdit=openTodoEdit;
 F.action("todoedit",function(id){ openTodoEdit({id:id}); });
@@ -466,6 +466,7 @@ F.action("kaltab",function(v){ UI.kalTab=v==="todo"?"todo":"kal"; F.ls("fsc_cock
 F.view({id:"kal",label:"Kalender & To-Dos",short:"Kalender",icon:"kal",order:50,mobile:true,
   count:function(){ return todoStats().open.length; },
   render:function(){
+    if(isMobile()&&F.kalMobile) return F.kalMobile();
     var s=todoStats(), tab=UI.kalTab, t=today();
     var evToday=allEvents().filter(function(e){ return e.date===t; }).length;
     var sub=tab==="todo"?(s.open.length?s.open.length+" offen"+(s.over.length?" · "+s.over.length+" überfällig":"")+(s.tod.length?" · "+s.tod.length+" heute fällig":""):"Alles erledigt.")
@@ -475,8 +476,12 @@ F.view({id:"kal",label:"Kalender & To-Dos",short:"Kalender",icon:"kal",order:50,
       (tab!=="todo"&&s.over.length?'<button type="button" class="tag bad" style="border:0" data-act="kaltab:todo">'+s.over.length+(s.over.length===1?" To-Do überfällig":" To-Dos überfällig")+'</button>':'')+'</div>'+
       (tab==="todo"?vTodo():vCal());
   },
-  after:function(){ if(UI.kalTab!=="todo") loadCal(false); }
+  after:function(){ if(UI.kalTab!=="todo") loadCal(false); if(isMobile()&&F.kalMobileAfter) F.kalMobileAfter(); }
 });
+/* Für die Handy-Ansicht (kalm.js) */
+F.kalApi={calItems:calItems,allEvents:allEvents,today:today,addDays:addDays,diffDays:diffDays,longDate:longDate,isoOk:isoOk,isMobile:isMobile,openEventEdit:openEventEdit,openDayView:openDayView,
+  todoStats:todoStats,todos:todos,findTodo:findTodo,patchTodo:patchTodo,okJ:okJ,grp:grp,dueMeta:dueMeta,loadCal:loadCal,CAL:CAL,statusLine:statusLine,vCal:vCal,SPARTEN:SPARTEN,spName:spName,delTodo:delTodo,curMonth:curMonth,selDay:selDay};
+F.kalVTodo=vTodo;
 
 /* ---------- Heute: Hinweis bei iCloud-Problemen (Termine und fällige To-Dos zeigt heute.js selbst) ---------- */
 F.feed(function(){
