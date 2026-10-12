@@ -1380,7 +1380,7 @@ async function skikaiserStats(year) {
   }
   // Skikaiser-Backend liefert zusätzlich Nutzung (Downloads je System, aktive Spieler), Feedback, Fehler/Abstürze, Ranglisten-Namen und gespielte Läufe
   return { configured: true, fetchedAt: d.fetchedAt || new Date().toISOString(), totals, byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)), byProduct: Object.values(byProduct).sort((a, b) => b.grossCents - a.grossCents), byPlatform: Object.values(byPlatform), recent, users: d.users || null,
-    feedback: d.feedback || null, fehler: Array.isArray(d.fehler) ? d.fehler : null, namen: d.namen || null, laeufe: d.laeufe || null };
+    feedback: d.feedback || null, fehler: Array.isArray(d.fehler) ? d.fehler : null, namen: d.namen || null, laeufe: d.laeufe || null, rangliste: d.rangliste || null, config: d.config || null };
 }
 
 // ── Geschätztes Monatseinkommen ──
@@ -2084,6 +2084,18 @@ async function handleAdmin(req, res, u, p) {
     const known = u.searchParams.get("etag") || "";
     if (known && m.etag && known === m.etag) return send(res, 200, JSON.stringify({ same: true, etag: m.etag }), TYPES[".json"], { "Cache-Control": "no-store" });
     return sendGz(req, res, 200, JSON.stringify(m), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  // Skikaiser-Steuerung (Namen, App-Einstellungen, Rangliste, Fehler): leitet an POST <App-Backend>/v1/stats/<was> weiter, Token bleibt am Server
+  if (p === "/admin/api/skikaiser/steuer" && req.method === "POST") {
+    try {
+      if (!SKIKAISER.url) return send(res, 200, JSON.stringify({ ok: false, error: "nicht_eingerichtet" }), TYPES[".json"]);
+      const b = await sevBody(req, 8000); const was = String(b.was || "");
+      if (["namen", "config", "zeit", "zeiten-zuruecksetzen", "aufraeumen", "fehler", "feedback"].indexOf(was) < 0) return send(res, 200, JSON.stringify({ ok: false, error: "aktion" }), TYPES[".json"]);
+      const url = SKIKAISER.url.replace(/\/stats\/?(\?.*)?$/, "/stats/" + was);
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify(b.daten || {}) });
+      const j = await r.json().catch(() => ({})); forgetStats(SKIKAISER.url);
+      return send(res, 200, JSON.stringify(Object.assign({}, j, { ok: !!(r.ok && j.ok) })), TYPES[".json"]);
+    } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   // Skikaiser: Feedback als erledigt markieren (leitet an das App-Backend weiter, Token bleibt am Server)
   if (p === "/admin/api/skikaiser/feedback" && req.method === "POST") {
