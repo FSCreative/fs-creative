@@ -223,7 +223,7 @@ function leistung(s){
   function farbe(f){ return f>=55?"ok":f>=45?"info":"bad"; }
   var stufen=["volle Grafik","ohne Umgebungsschatten","Schatten kürzer","Auflösung 70 %","Auflösung 62 %","ohne Kantenglättung"];
   return sec("Wie flüssig läuft es?",'<span class="muted">Bilder pro Sekunde je Gerät · letzte 30 Tage · Ziel 60</span>',
-    '<p class="sk-hint">Ø = Durchschnitt im Rennen, „ruckelt“ = die langsamsten 5 % der Bilder. Die App senkt die Grafik selbst, wenn es zu langsam wird – „Grafik“ zeigt, wie weit sie im Schnitt heruntergehen musste.</p>'+
+    '<p class="sk-hint" style="padding:12px 18px 4px;margin:0">Ø = Durchschnitt im Rennen, „ruckelt“ = die langsamsten 5 % der Bilder. Die App senkt die Grafik selbst, wenn es zu langsam wird – „Grafik“ zeigt, wie weit sie im Schnitt heruntergehen musste.</p>'+
     '<table class="sk-tbl"><thead><tr><th>Gerät</th><th class="r">Läufe</th><th class="r">Ø fps</th><th class="r">ruckelt</th><th>Grafik</th></tr></thead><tbody>'+
     l.map(function(r){ var st=Math.round(r.stufe); return '<tr><td>'+esc(r.name||r.modell)+'</td><td class="r">'+num(r.laeufe)+'</td><td class="r"><span class="pill '+farbe(r.fps)+'">'+esc(r.fps)+'</span></td><td class="r">'+esc(r.tief)+'</td><td>'+esc(stufen[Math.min(st,stufen.length-1)]||"")+'</td></tr>'; }).join("")+'</tbody></table>');
 }
