@@ -285,9 +285,51 @@ function tabEinst(s){
     karte("Gas geben","„Gas geben“ verdoppelt die Einnahmen für ein paar Minuten. Danach heißt es warten – oder ein Video ansehen. Mit dem Bonus Turbo-Gas hält es dreimal so lang.",
       '<div class="row2">'+eingabe("hgGasMin","Dauer in Minuten (1 bis 60)",c.gasMinuten,{typ:"number",zahl:[1,60,1]})+eingabe("hgGasPause","Pause in Stunden (0 bis 48)",c.gasPauseStunden,{typ:"number",zahl:[0,48,1]})+'</div>')+
     '<div><button type="button" class="btn primary" data-act="hgcfg">Speichern</button></div>'+
-  '</div>'+
+  '</div>'+werbeVideo(s,c)+
   sec("Vor dem Verkaufsstart",'','<div class="sk-card"><p>Während der Testphase wurden Käufe aus der Sandbox und Spielstände von Testgeräten gespeichert. In den Zahlen zählen sie nicht mit. Vor dem Start im App Store kannst du sie endgültig entfernen.</p><div class="sk-foot" style="padding:0"><button type="button" class="btn" data-act="hgclean">Testdaten löschen</button></div></div>');
 }
+/* Werbe-Video für „Gas geben“: liegt im Railway-Bucket des App-Backends; die App lädt das aktuelle beim Start bzw. alle 10 Minuten herunter.
+   Hochladen geht sofort (eigener Knopf, nicht über „Speichern“); Fortschritt und Vorschau laufen in einem Fenster, das die Hintergrund-Aktualisierung nicht stört. */
+var VIDEO_MAX=80*1024*1024;
+function mb(n){ return ((+n||0)/1048576).toLocaleString("de-AT",{maximumFractionDigits:1})+" MB"; }
+function werbeVideo(s,c){
+  var w=s.werbung;
+  var info=w?'<p><b>'+esc(w.name||"Video")+'</b> · '+esc(mb(w.groesse))+' · hochgeladen '+esc(ago(w.hochgeladen))+'</p>':'<p><b>Noch kein Video hochgeladen.</b> Bis dahin zeigt das Spiel einen kurzen Platzhalter.</p>';
+  var knoepfe='<label class="btn primary" for="hgVidDatei" style="cursor:pointer">'+(w?"Anderes Video hochladen":"Video hochladen")+'</label><input type="file" id="hgVidDatei" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" hidden>'+
+    (w?'<button type="button" class="btn" data-act="hgvidan">Ansehen</button><button type="button" class="btn" data-act="hgvidweg">Entfernen</button>':'');
+  return sec("Werbe-Video",'<span class="muted">läuft bei „Gas geben“</span>','<div class="sk-card"><p>Wer nicht warten will, bis „Gas geben“ wieder bereit ist, schaut dieses Video bis zum Ende und darf sofort wieder Gas geben. MP4 oder MOV, am besten 15 bis 30 Sekunden, höchstens 80 MB.</p>'+
+    info+'<div class="sk-foot" style="padding:0">'+knoepfe+'</div>'+
+    (s.speicher===false?'<p class="bad-t">Im App-Backend ist kein Speicher eingerichtet (S3_BUCKET) – Hochladen geht noch nicht.</p>':'')+
+    (c&&c.video===false?'<p>Hinweis: Das Video-Angebot ist unter „Angebote im Spiel“ gerade ausgeschaltet.</p>':'')+'</div>');
+}
+function videoHochladen(el){
+  var f=el.files&&el.files[0]; el.value=""; if(!f) return;
+  if(f.size>VIDEO_MAX){ F.toast("Das Video ist zu groß ("+mb(f.size)+", höchstens 80 MB)",true); return; }
+  if(!/\.(mp4|mov|m4v)$/i.test(f.name)&&!/^video\/(mp4|quicktime|x-m4v)$/.test(f.type)){ F.toast("Bitte ein Video als MP4 oder MOV",true); return; }
+  F.modal('<h2 style="font-size:19px">Video wird hochgeladen</h2><p class="muted">'+esc(f.name)+' · '+esc(mb(f.size))+'</p><progress id="hgUpBar" max="100" value="0" style="width:100%;height:14px"></progress><p id="hgUpTxt" class="muted" style="margin-top:6px">0 %</p>');
+  var x=new XMLHttpRequest();
+  x.open("POST","/admin/api/huettengaudi/werbung?name="+encodeURIComponent(f.name));
+  x.setRequestHeader("Content-Type",f.type||"video/mp4");
+  x.upload.onprogress=function(e){ if(!e.lengthComputable) return; var p=Math.round(e.loaded/e.total*100), b=document.getElementById("hgUpBar"), t=document.getElementById("hgUpTxt"); if(b) b.value=p; if(t) t.textContent=p<100?p+" %":"Wird gespeichert …"; };
+  x.onload=function(){ var j={}; try{ j=JSON.parse(x.responseText); }catch(e){} F.closeModal();
+    if(x.status===200&&j.ok){ F.toast("Video hochgeladen – die Spieler bekommen es beim nächsten Start, spätestens nach 10 Minuten"); F.load(true); }
+    else F.toast("Hochladen hat nicht geklappt: "+(j.error||("HTTP "+x.status)),true); };
+  x.onerror=function(){ F.closeModal(); F.toast("Hochladen hat nicht geklappt – Verbindung unterbrochen",true); };
+  x.send(f);
+}
+F.listen("change","#hgVidDatei",videoHochladen);
+F.action("hgvidan",function(){
+  var w=HG()&&HG().werbung; if(!w||!w.url){ F.toast("Kein Video vorhanden",true); return; }
+  F.modal('<div class="row-between"><h2 style="font-size:19px">'+esc(w.name||"Werbe-Video")+'</h2>'+F.btnClose()+'</div><video src="'+esc(w.url)+'" controls autoplay playsinline style="display:block;width:100%;max-height:70vh;margin-top:10px;border-radius:10px;background:#000"></video>');
+});
+F.action("hgvidweg",function(){
+  F.confirm("Werbe-Video entfernen? Die Spieler sehen dann wieder den Platzhalter.","Entfernen",function(){
+    F.api("/admin/api/huettengaudi/werbung-loeschen",{body:{}}).then(function(j){
+      if(!(j&&j.ok)){ F.toast("Hat nicht geklappt: "+((j&&(j.fehler||j.error))||"keine Antwort"),true); return; }
+      var s=HG(); if(s) s.werbung=null; F.toast("Werbe-Video entfernt"); F.render(); F.load(true);
+    }).catch(function(){ F.toast("Hüttengaudi-Server nicht erreichbar",true); });
+  },true);
+});
 function merk(el){ var d=F.UI.hgEdit=F.UI.hgEdit||{}; d[el.id]=el.type==="checkbox"?el.checked:el.value; }
 F.listen("input","#hgEinst [data-hgf]",merk);
 F.listen("change","#hgEinst [data-hgf]",merk);

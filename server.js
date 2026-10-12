@@ -1416,7 +1416,10 @@ async function huettengaudiStats(year) {
   // Backend liefert zusätzlich Nutzung, Fortschritt (Welten/Stufen), Ereignisse, Feedback, Fehler und die aktuelle Fernsteuerung (config)
   return Object.assign({ configured: true, fetchedAt: d.fetchedAt || new Date().toISOString() }, appKaufSummen(d, year), {
     users: d.users || null, fortschritt: d.fortschritt || null, ereignisse: d.ereignisse || null, feedback: Array.isArray(d.feedback) ? d.feedback : null,
-    fehler: Array.isArray(d.fehler) ? d.fehler : null, zaehler: d.zaehler || null, config: d.config || null, configGeaendert: d.configGeaendert || null });
+    fehler: Array.isArray(d.fehler) ? d.fehler : null, zaehler: d.zaehler || null, config: d.config || null, configGeaendert: d.configGeaendert || null,
+    // Werbe-Video: öffentliche Adresse des Backends (leitet auf einen kurz gültigen Bucket-Link weiter) – für die Vorschau im Cockpit
+    werbung: d.werbung && d.werbung.id ? Object.assign({}, d.werbung, { url: HUETTENGAUDI.url.replace(/\/v1\/stats.*$/, "") + "/v1/werbung/" + encodeURIComponent(d.werbung.id) }) : null,
+    speicher: d.speicher !== false });
 }
 
 // ── Geschätztes Monatseinkommen ──
@@ -2145,8 +2148,24 @@ async function handleAdmin(req, res, u, p) {
       return send(res, 200, JSON.stringify({ ok: !!(r.ok && j.ok) }), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
-  // Hüttengaudi: Feedback erledigt, Fehler behoben, Fernsteuerung (config) und Testdaten löschen – leitet an das App-Backend weiter, Token bleibt am Server
-  if (/^\/admin\/api\/huettengaudi\/(feedback|fehler|config|aufraeumen)$/.test(p) && req.method === "POST") {
+  // Hüttengaudi: Werbe-Video hochladen (Körper = Datei, bis 80 MB) – wird ans App-Backend durchgereicht, das es im Railway-Bucket ablegt
+  if (p === "/admin/api/huettengaudi/werbung" && req.method === "POST") {
+    try {
+      if (!HUETTENGAUDI.url) return send(res, 200, JSON.stringify({ ok: false, error: "nicht_eingerichtet" }), TYPES[".json"]);
+      const MAX = 80 * 1024 * 1024;
+      if (+(req.headers["content-length"] || 0) > MAX) { req.resume(); return send(res, 200, JSON.stringify({ ok: false, error: "Video zu groß (höchstens 80 MB)" }), TYPES[".json"]); }
+      const teile = []; let n = 0;
+      await new Promise((ok, fail) => { req.on("data", c => { n += c.length; if (n > MAX) { req.destroy(); fail(new Error("Video zu groß (höchstens 80 MB)")); } else teile.push(c); }); req.on("end", ok); req.on("error", fail); });
+      const name = String(u.searchParams.get("name") || "").slice(0, 120);
+      const url = HUETTENGAUDI.url.replace(/\/stats\/?(\?.*)?$/, "/stats/werbung") + "?name=" + encodeURIComponent(name);
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 120000);
+      let r; try { r = await fetch(url, { method: "POST", headers: { "content-type": String(req.headers["content-type"] || "application/octet-stream"), "x-api-token": HUETTENGAUDI.token }, body: Buffer.concat(teile), signal: ctrl.signal }); } finally { clearTimeout(t); }
+      const j = await r.json().catch(() => ({})); forgetStats(HUETTENGAUDI.url);
+      return send(res, 200, JSON.stringify({ ok: !!(r.ok && j && j.ok), werbung: j && j.werbung, error: r.ok ? undefined : (j && j.fehler) || "HTTP " + r.status }), TYPES[".json"]);
+    } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  // Hüttengaudi: Feedback erledigt, Fehler behoben, Fernsteuerung (config), Testdaten löschen, Werbe-Video entfernen – leitet an das App-Backend weiter, Token bleibt am Server
+  if (/^\/admin\/api\/huettengaudi\/(feedback|fehler|config|aufraeumen|werbung-loeschen)$/.test(p) && req.method === "POST") {
     try {
       if (!HUETTENGAUDI.url) return send(res, 200, JSON.stringify({ ok: false, error: "nicht_eingerichtet" }), TYPES[".json"]);
       const was = p.slice("/admin/api/huettengaudi/".length);
