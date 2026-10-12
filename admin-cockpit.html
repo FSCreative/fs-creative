@@ -13,23 +13,26 @@
 <style>
 /* Layout: Seitenleiste (Desktop) bzw. Tab-Leiste unten (Handy); "Heute" als priorisierte Liste; Abgleich als Tabelle je Quelle. */
 :root{
-  --ground:#f3f4f1; --panel:#ffffff; --sunk:#e9ebe6; --ink:#1b2420; --ink-2:#56605a; --ink-3:#7d867f; --line:#dcdfd8;
-  --glow:#e8a33a; --glow-ink:#7a4a05; --glow-soft:#fbefd9;
-  --ok:#2f8a5b; --ok-soft:#e1f1e8; --warn:#b7791f; --warn-soft:#f8ecd5; --bad:#c2412d; --bad-soft:#f8e1dc; --info:#2c6e8f; --info-soft:#dfedf3;
+  --ground:#f5f5f5; --panel:#ffffff; --sunk:#f0f0f0; --ink:#242424; --ink-2:#5c5c5c; --ink-3:#8a8a8a; --line:#e0e0e0;
+  --glow:#0f6cbd; --glow-ink:#0c3b5e; --glow-soft:#ebf3fc; --on-glow:#ffffff; --sel:#cfe4fa;
+  --ok:#107c10; --ok-soft:#dff6dd; --warn:#a35c00; --warn-soft:#fff4ce; --bad:#c4314b; --bad-soft:#fde7e9; --info:#0f6cbd; --info-soft:#ebf3fc;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 1.6px 3.6px rgba(0,0,0,.08);
   --f-display:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI",Roboto,sans-serif;
   --f-body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --f-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --r:14px; --r-sm:9px; color-scheme:light;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --ground:#121714; --panel:#1a211d; --sunk:#232b26; --ink:#e8ece8; --ink-2:#a9b2ac; --ink-3:#7f8983; --line:#2c3530;
-  --glow:#f0b452; --glow-ink:#ffd796; --glow-soft:#3a2c14;
-  --ok:#5fc38b; --ok-soft:#173226; --warn:#e6b155; --warn-soft:#3a2d14; --bad:#ef7a64; --bad-soft:#3c1d17; --info:#6db6d8; --info-soft:#16303b; color-scheme:dark;
+  --ground:#1b1b1b; --panel:#262626; --sunk:#2e2e2e; --ink:#f0f0f0; --ink-2:#c4c4c4; --ink-3:#999999; --line:#3a3a3a;
+  --glow:#479ef5; --glow-ink:#b4d6fa; --glow-soft:#0e2a47; --on-glow:#0a1a2a; --sel:#0e3a63;
+  --ok:#54b054; --ok-soft:#0f2e0f; --warn:#f7c04a; --warn-soft:#3a2d0a; --bad:#f1707b; --bad-soft:#3f1c21; --info:#479ef5; --info-soft:#0e2a47;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 1.6px 3.6px rgba(0,0,0,.3); color-scheme:dark;
 }}
 :root[data-theme="dark"]{
-  --ground:#121714; --panel:#1a211d; --sunk:#232b26; --ink:#e8ece8; --ink-2:#a9b2ac; --ink-3:#7f8983; --line:#2c3530;
-  --glow:#f0b452; --glow-ink:#ffd796; --glow-soft:#3a2c14;
-  --ok:#5fc38b; --ok-soft:#173226; --warn:#e6b155; --warn-soft:#3a2d14; --bad:#ef7a64; --bad-soft:#3c1d17; --info:#6db6d8; --info-soft:#16303b; color-scheme:dark;
+  --ground:#1b1b1b; --panel:#262626; --sunk:#2e2e2e; --ink:#f0f0f0; --ink-2:#c4c4c4; --ink-3:#999999; --line:#3a3a3a;
+  --glow:#479ef5; --glow-ink:#b4d6fa; --glow-soft:#0e2a47; --on-glow:#0a1a2a; --sel:#0e3a63;
+  --ok:#54b054; --ok-soft:#0f2e0f; --warn:#f7c04a; --warn-soft:#3a2d0a; --bad:#f1707b; --bad-soft:#3f1c21; --info:#479ef5; --info-soft:#0e2a47;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 1.6px 3.6px rgba(0,0,0,.3); color-scheme:dark;
 }
 :root[data-theme="light"]{ color-scheme:light; }
 *{box-sizing:border-box}
@@ -51,7 +54,7 @@ h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:-.02em;marg
 .nav-btn svg{width:18px;height:18px;flex:none}
 .nav-btn:hover{background:var(--sunk);color:var(--ink)}
 .nav-btn[aria-current="page"]{background:var(--ink);color:var(--ground)}
-.count{margin-left:auto;font-family:var(--f-mono);font-size:12px;padding:1px 7px;border-radius:99px;background:var(--glow);color:#2a1a00}
+.count{margin-left:auto;font-family:var(--f-mono);font-size:12px;padding:1px 7px;border-radius:99px;background:var(--glow);color:var(--on-glow)}
 .rail-foot{margin-top:auto;display:grid;gap:6px;padding:0 4px;font-size:13px}
 .rail-foot a,.rail-foot button{display:flex;align-items:center;gap:8px;color:var(--ink-2);text-decoration:none;border:0;background:none;padding:6px;border-radius:8px;text-align:left}
 .rail-foot a:hover,.rail-foot button:hover{background:var(--sunk);color:var(--ink)}
@@ -76,7 +79,7 @@ main{padding-block:28px 110px;padding-inline:clamp(16px,4vw,44px);min-width:0}
 .btn:hover{border-color:var(--ink-3)}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.primary{background:var(--ink);color:var(--ground);border-color:var(--ink)}
-.btn.glow{background:var(--glow);border-color:var(--glow);color:#2a1a00}
+.btn.glow{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}
 .btn svg{width:15px;height:15px}
 .tag{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap}
 .tag.bad{background:var(--bad-soft);color:var(--bad)} .tag.warn{background:var(--warn-soft);color:var(--warn)} .tag.info{background:var(--info-soft);color:var(--info)} .tag.glow{background:var(--glow-soft);color:var(--glow-ink)} .tag.ok{background:var(--ok-soft);color:var(--ok)} .tag.grey{background:var(--sunk);color:var(--ink-2)}
@@ -194,7 +197,7 @@ tr.grp td{background:var(--sunk);font-weight:700;font-size:13px;padding:8px 14px
 .drawer h2{font-size:24px}
 .stages{display:flex;gap:4px}
 .stages button{flex:1;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--sunk);font-size:11.5px;font-weight:600;color:var(--ink-2);padding:0 2px}
-.stages button.on{background:var(--glow);border-color:var(--glow);color:#2a1a00}
+.stages button.on{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}
 .kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:7px 12px;font-size:14px;margin:0}
 .kv dt{color:var(--ink-3)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .sec-t{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:600;margin-bottom:6px}
@@ -271,23 +274,93 @@ button.kpi:hover{border-color:var(--ink-3)}
 .income .line .muted{grid-column:1/-1;font-size:12px}
 body.priv .money,body.priv .num.v,body.priv .kpi .v,body.priv .day .v,body.priv td.r.num,body.priv .chart svg rect{filter:blur(7px)}
 .rail-foot .seg{margin:0 6px}
+
+/* ===== Outlook-Look (Fluent): Kopfleiste, schmale App-Leiste, blaue Akzente, eckigere Bedienelemente ===== */
+body{font-size:14px}
+.topbar{position:sticky;top:0;z-index:35;display:grid;grid-template-columns:minmax(200px,1fr) minmax(0,640px) minmax(200px,1fr);align-items:center;gap:16px;height:48px;padding:0 12px 0 14px;background:var(--glow);color:#fff}
+:root[data-theme="dark"] .topbar{background:#0a0a0a}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .topbar{background:#0a0a0a} }
+.tb-brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-size:16px;min-width:0}
+.tb-brand img{width:28px;height:28px;border-radius:7px}
+.tb-search{display:flex;align-items:center;gap:10px;height:32px;border:0;border-radius:6px;background:rgba(255,255,255,.92);color:#424242;padding:0 12px;font-size:13.5px;text-align:left;width:100%}
+.tb-search svg{width:16px;height:16px;flex:none;color:var(--glow)}
+.tb-search span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-search kbd{font:600 11px var(--f-mono);color:#707070;border:1px solid #d0d0d0;border-radius:4px;padding:0 5px}
+.tb-search:hover{background:#fff}
+:root[data-theme="dark"] .tb-search{background:#2b2b2b;color:#c8c8c8}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tb-search{background:#2b2b2b;color:#c8c8c8} }
+.tb-right{display:flex;align-items:center;gap:6px;justify-content:flex-end;min-width:0}
+.tb-right .stamp{color:rgba(255,255,255,.75);font-size:12px;padding:0 6px;white-space:nowrap}
+.tb-i{width:34px;height:34px;border:0;border-radius:6px;background:none;color:#fff;display:grid;place-items:center}
+.tb-i svg{width:18px;height:18px}.tb-i:hover{background:rgba(255,255,255,.16)}
+.tb-sel{height:30px;border:1px solid rgba(255,255,255,.35);border-radius:6px;background:transparent;color:#fff;padding:0 6px;font-size:13px}
+.tb-sel option{color:#242424}
+.tb-av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--glow);font-weight:700;font-size:12.5px;text-decoration:none;margin-left:4px}
+:root[data-theme="dark"] .tb-av{background:var(--glow);color:#0a1a2a}
+.app{grid-template-columns:72px minmax(0,1fr);min-height:calc(100% - 48px)}
+.rail{top:48px;height:calc(100vh - 48px);padding:8px 4px;gap:2px;align-items:stretch;background:var(--ground);border-right:1px solid var(--line)}
+.rail #nav{display:grid;gap:2px}
+.rail .nav-btn{position:relative;display:grid;justify-items:center;gap:3px;padding:9px 2px 7px;border-radius:6px;color:var(--ink-2);font-size:10.5px;font-weight:600;text-align:center;line-height:1.15}
+.rail .nav-btn svg{width:22px;height:22px}
+.rail .nav-btn .nl{display:none}
+.rail .nav-btn:hover{background:var(--sunk);color:var(--ink)}
+.rail .nav-btn[aria-current="page"]{background:var(--panel);color:var(--glow);box-shadow:var(--shadow)}
+.rail .nav-btn[aria-current="page"]:before{content:"";position:absolute;left:-4px;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--glow)}
+.rail .nav-btn .count{position:absolute;top:3px;left:calc(50% + 6px);margin:0;font-size:10px;padding:0 5px;line-height:16px;min-width:16px;text-align:center}
+.count{background:var(--glow);color:var(--on-glow)}
+main{padding-block:20px 80px}
+.view{max-width:1400px;gap:16px}
+.head{align-items:center;padding-bottom:2px}
+.head h1{font-size:24px;letter-spacing:-.01em}
+.head p{margin:2px 0 0;font-size:13px;color:var(--ink-3)}
+.panel{border-radius:8px;border-color:transparent;box-shadow:var(--shadow)}
+.panel-h h2{font-size:15px}
+.btn{border-radius:4px;padding:5px 12px;font-weight:600;font-size:13px;min-height:32px}
+.btn.primary{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:hover{background:var(--sunk);border-color:var(--line)}
+.btn.primary:hover{background:var(--glow)}
+.btn.icon{min-height:32px}
+.chip,.subnav button{border-radius:4px}
+.chip[aria-pressed="true"],.subnav button[aria-current="true"],.seg button[aria-pressed="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:var(--glow)}
+.subnav{gap:4px;border-bottom:1px solid var(--line);padding-bottom:0}
+.subnav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--ink-2)}
+.subnav button:hover{color:var(--ink);background:var(--sunk)}
+.subnav button[aria-current="true"]{background:none;border-color:var(--glow);color:var(--ink)}
+input.f,select.f,textarea.f{border-radius:4px}
+:focus-visible{outline-color:var(--glow)}
+.kpi{gap:2px}
+.tag{border-radius:4px}
+.dialog{border-radius:8px;box-shadow:0 25.6px 57.6px rgba(0,0,0,.22),0 4.8px 14.4px rgba(0,0,0,.18);border:0}
+.drawer{box-shadow:-8px 0 24px rgba(0,0,0,.12);border-left:0}
+.toast{border-radius:6px}
+@media (max-width:900px){
+  .topbar{display:none}
+  .app{min-height:100%}
+  .panel{border-color:var(--line);box-shadow:none}
+  .subnav{border-bottom:0}
+  .subnav button{border:1px solid var(--line);border-radius:99px;padding:6px 14px}
+  .subnav button[aria-current="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:var(--glow)}
+  .btn{border-radius:99px}
+  main{padding-block:16px 112px}
+}
 </style>
 </head>
 <body>
+<header class="topbar" aria-label="Kopfleiste">
+  <div class="tb-brand"><img src="/logos/cockpit-favicon.png" alt=""><b>FS Cockpit</b></div>
+  <button id="searchBtn" class="tb-search" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>Suchen – Mails, Kunden, Rechnungen, Termine …</span><kbd>⌘K</kbd></button>
+  <div class="tb-right">
+    <span class="stamp" id="stamp"></span>
+    <button id="refresh" class="tb-i" type="button" title="Aktualisieren" aria-label="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    <select id="year" class="tb-sel" aria-label="Jahr" title="Jahr"></select>
+    <select id="themeSel" class="tb-sel" aria-label="Darstellung" title="Darstellung"><option value="auto">Wie System</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
+    <a href="/admin/logout" class="tb-av" title="Abmelden (Simon Felder)">SF</a>
+  </div>
+</header>
 <div class="app">
   <aside class="rail" aria-label="Hauptnavigation">
-    <div class="brand"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="">FS Cockpit</div>
     <nav id="nav"></nav>
-    <div class="rail-foot">
-      <button id="searchBtn" type="button"><span aria-hidden="true">⌕</span> Suchen <span class="muted" style="margin-left:auto">⌘K</span></button>
-      <label class="stamp" for="year">Jahr</label>
-      <select id="year" aria-label="Jahr"></select>
-      <label class="stamp" for="themeSel">Darstellung</label>
-      <select id="themeSel" aria-label="Darstellung"><option value="auto">Wie System</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
-      <button id="refresh" type="button"><span aria-hidden="true">↻</span> Aktualisieren</button>
-      <a href="/admin/logout">Abmelden</a>
-      <span class="stamp" id="stamp"></span>
-    </div>
   </aside>
   <main id="main"><div class="loading">Lade deine Daten …</div></main>
 </div>

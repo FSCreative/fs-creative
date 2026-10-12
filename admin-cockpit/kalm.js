@@ -18,7 +18,7 @@ F.css(
   '.kmapp .mapp-t b{font-size:21px;text-transform:capitalize}'+
   '.kmtoday{position:relative;width:40px;height:40px;border-radius:50%;border:0;background:var(--sunk);color:var(--ink);display:grid;place-items:center;flex:none}'+
   '.kmtoday svg{width:22px;height:22px}.kmtoday b{position:absolute;top:15px;left:0;right:0;font:700 10px/1 var(--f-mono);text-align:center}'+
-  '.kmbadge{position:absolute;top:-2px;right:-2px;min-width:17px;height:17px;border-radius:99px;background:var(--glow);color:#2a1a00;font:700 10px/17px var(--f-mono);padding:0 4px;text-align:center}'+
+  '.kmbadge{position:absolute;top:-2px;right:-2px;min-width:17px;height:17px;border-radius:99px;background:var(--glow);color:var(--on-glow);font:700 10px/17px var(--f-mono);padding:0 4px;text-align:center}'+
   /* Wochenleiste */
   '.kmhead{position:sticky;top:0;z-index:20;margin-inline:calc(-1*clamp(16px,4vw,44px));background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);border-bottom:1px solid var(--line)}'+'.kmhead .mapp{position:static;margin:0;background:none;backdrop-filter:none;-webkit-backdrop-filter:none}'+'.kmstrip{display:block;touch-action:pan-y}'+
   '.kmdows,.kmweek,.kmgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:0 6px}'+

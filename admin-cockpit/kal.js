@@ -33,7 +33,7 @@ F.css(
 '.kcell.out{background:color-mix(in srgb,var(--sunk) 50%,var(--panel))}.kcell.out .kdn{color:var(--ink-3)}'+
 '.kdn{align-self:flex-start;border:0;background:none;font:600 13px/1.2 var(--f-mono);padding:3px 7px;border-radius:99px;color:var(--ink-2)}'+
 '.kdn:hover{background:var(--line)}'+
-'.kcell.today .kdn{background:var(--glow);color:#2a1a00}'+
+'.kcell.today .kdn{background:var(--glow);color:var(--on-glow)}'+
 '.kc{display:block;width:100%;min-width:0;border:0;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 15%,var(--panel));color:var(--ink);border-radius:5px;padding:1px 5px;font-size:12px;line-height:1.5;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
 '.kc:hover{background:color-mix(in srgb,var(--c) 26%,var(--panel))}'+
 '.kc .kt{font-family:var(--f-mono);font-size:11px;color:var(--ink-2);margin-right:4px}'+
@@ -237,6 +237,7 @@ document.addEventListener("keydown",function(e){
   if(F.current!=="kal"||UI.kalTab==="todo"||F.modalOpen()||e.metaKey||e.ctrlKey||e.altKey) return;
   var c=document.getElementById("cmdk"); if(c&&c.classList.contains("on")) return;
   var tg=e.target; if(tg&&(/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName)||tg.isContentEditable)) return;
+  if(F.kalDeskShift&&(e.key==="ArrowLeft"||e.key==="ArrowRight")){ e.preventDefault(); if(F.kalDeskShift(e.key==="ArrowLeft"?-1:1)) return; }
   if(e.key==="ArrowLeft"){ e.preventDefault(); shiftMonth(-1); } else if(e.key==="ArrowRight"){ e.preventDefault(); shiftMonth(1); }
   else if(e.key==="t"||e.key==="T"){ shiftMonth(0); } else if(e.key==="n"||e.key==="N"){ e.preventDefault(); openEventEdit(null,isMobile()?selDay():""); }
 });
@@ -474,7 +475,7 @@ F.view({id:"kal",label:"Kalender & To-Dos",short:"Kalender",icon:"kal",order:50,
     return F.head("Kalender & To-Dos",esc(sub),'<button class="btn" data-act="newtodo">+ To-Do</button><button class="btn primary" data-act="newevent:">+ Termin</button>')+
       '<div class="kal-top"><nav class="subnav" aria-label="Kalender oder To-Dos"><button type="button" data-act="kaltab:kal" aria-current="'+(tab!=="todo")+'">Kalender</button><button type="button" data-act="kaltab:todo" aria-current="'+(tab==="todo")+'">To-Dos<span class="cnt">'+s.open.length+'</span></button></nav>'+
       (tab!=="todo"&&s.over.length?'<button type="button" class="tag bad" style="border:0" data-act="kaltab:todo">'+s.over.length+(s.over.length===1?" To-Do überfällig":" To-Dos überfällig")+'</button>':'')+'</div>'+
-      (tab==="todo"?vTodo():vCal());
+      (tab==="todo"?vTodo():(F.kalDesk?F.kalDesk():vCal()));
   },
   after:function(){ if(UI.kalTab!=="todo") loadCal(false); if(isMobile()&&F.kalMobileAfter) F.kalMobileAfter(); }
 });

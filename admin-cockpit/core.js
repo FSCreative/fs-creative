@@ -98,7 +98,8 @@ FSC.feedItems = function(){
 function navCount(v){ try{ return FSC.D&&v.count?v.count():0; }catch(e){ return 0; } }
 FSC.renderNav = function(){
   var cur=FSC.current;
-  document.getElementById("nav").innerHTML=FSC.views.filter(function(v){return !v.hidden;}).map(function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+v.label+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("");
+  var RL={post:"E-Mail",web:"Websites",plat:"Plattformen",kunden:"Kunden",kal:"Kalender"};
+  document.getElementById("nav").innerHTML=FSC.views.filter(function(v){return !v.hidden;}).map(function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'" title="'+v.label+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+(RL[v.id]||v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("");
   var mob=FSC.views.filter(function(v){return v.mobile;}).slice(0,5);
   var inMob=mob.some(function(v){return v.id===cur;});
   document.getElementById("tabbar").innerHTML=mob.map(function(v){ var c=navCount(v); return '<button data-go="'+v.id+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+(v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("")+

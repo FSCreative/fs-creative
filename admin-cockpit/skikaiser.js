@@ -26,7 +26,7 @@ F.css(
 '.sk-empty p{margin:0;color:var(--ink-2);max-width:68ch}'+
 '.sk-steps{list-style:none;margin:0;padding:0;display:grid;gap:16px;counter-reset:sk}'+
 '.sk-steps>li{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;counter-increment:sk}'+
-'.sk-steps>li::before{content:counter(sk);width:28px;height:28px;border-radius:50%;background:var(--glow);color:#2a1a00;display:grid;place-items:center;font-weight:700;font-size:14px}'+
+'.sk-steps>li::before{content:counter(sk);width:28px;height:28px;border-radius:50%;background:var(--glow);color:var(--on-glow);display:grid;place-items:center;font-weight:700;font-size:14px}'+
 '.sk-steps h3{font-size:16px;margin-bottom:4px}'+
 '.sk-code{margin:8px 0 0;padding:12px 14px;background:var(--sunk);border:1px solid var(--line);border-radius:10px;font:12.5px/1.55 var(--f-mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}'+
 '.sk-vars{display:grid;gap:8px;margin-top:8px}'+

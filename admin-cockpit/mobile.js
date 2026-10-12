@@ -107,7 +107,7 @@ F.css(
   '.mtile .mt-i svg{width:24px;height:24px}'+
   '.mtile[aria-current="page"] .mt-i{background:var(--m-blue,#0f6cbd);color:#fff}'+
   '.mtile .mt-l{font-size:12px;font-weight:600;text-align:center;line-height:1.2}'+
-  '.mtile .mt-c{position:absolute;top:-4px;right:-6px;min-width:19px;height:19px;border-radius:99px;background:var(--glow);color:#2a1a00;font:700 11px/19px var(--f-mono);padding:0 5px}'+
+  '.mtile .mt-c{position:absolute;top:-4px;right:-6px;min-width:19px;height:19px;border-radius:99px;background:var(--glow);color:var(--on-glow);font:700 11px/19px var(--f-mono);padding:0 5px}'+
   '.mquick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin-top:4px}'+
   '.mquick button,.mquick a{border:0;background:none;color:var(--ink-2);display:grid;justify-items:center;gap:5px;padding:8px 0;font:inherit;font-size:10.5px;overflow-wrap:anywhere;text-align:center;font-weight:600;text-decoration:none;border-radius:12px}'+
   '.mquick svg{width:22px;height:22px}.mquick button:active,.mquick a:active{background:var(--sunk)}'+
