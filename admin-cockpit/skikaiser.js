@@ -34,32 +34,6 @@ F.css(
 '.sk-var code{font:600 13px var(--f-mono);overflow-wrap:anywhere}'+
 '.sk-fields{margin:8px 0 0;padding-left:18px;color:var(--ink-2);font-size:13.5px;display:grid;gap:3px}'+
 '.sk-fields code{font:12.5px var(--f-mono);color:var(--ink)}'+
-'.sk-list{list-style:none;margin:0;padding:0}'+
-'.sk-list>li{padding:12px 18px;border-bottom:1px solid var(--line);display:grid;gap:6px}'+
-'.sk-list>li:last-child{border-bottom:0}'+
-'.sk-list>li.done{opacity:.55}'+
-'.sk-list .h{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}'+
-'.sk-list .h .link{margin-left:auto}'+
-'.sk-list p{margin:0;font-size:14.5px;white-space:pre-wrap;overflow-wrap:anywhere}'+
-'.sk-list details summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:14px;list-style:none}'+
-'.sk-list details summary::-webkit-details-marker{display:none}'+
-'.sk-list details b{overflow-wrap:anywhere}'+
-'.sk-names{list-style:none;margin:0;padding:0}'+
-'.sk-names li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:14px}'+
-'.sk-names li:last-child{border-bottom:0}'+
-'.sk-mini{display:flex;gap:18px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--ink-2)}'+
-'.sk-mini b{font:700 18px var(--f-mono);color:var(--ink);margin-right:4px}'+
-'.sk-foot{padding:10px 18px;font-size:13px}'+
-'.sk-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'+
-'.sk-act .btn{padding:4px 10px;font-size:12.5px}'+
-'.sk-names li.sk-n4{grid-template-columns:minmax(0,1fr) auto auto auto}'+
-'.sk-form{padding:14px 18px;display:grid;gap:12px}'+
-'.sk-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}'+
-'.sk-form .chk{display:flex;gap:8px;align-items:center;font-size:14px}'+
-'.sk-tbl{width:100%;border-collapse:collapse;font-size:13.5px}'+
-'.sk-tbl td,.sk-tbl th{padding:7px 18px;border-bottom:1px solid var(--line);text-align:left}'+
-'.sk-tbl td.r,.sk-tbl th.r{text-align:right;font-family:var(--f-mono)}'+
-'@media (max-width:900px){.sk-form .row2{grid-template-columns:1fr}.sk-tbl td,.sk-tbl th{padding:7px 12px}}'+
 '@media (max-width:900px){.sk-cols{gap:3px;height:160px}.sk-lab{gap:3px;font-size:10.5px}.sk-n{font-size:9.5px}.sk-var{grid-template-columns:minmax(0,1fr)}.sk-recent li{grid-template-columns:46px minmax(0,1fr) auto;padding:10px 14px}}'
 );
 
@@ -158,130 +132,136 @@ function overview(s){
     (F.UI.skHelp?'<section class="panel sk-empty">'+setupHelp()+'</section>':'');
 }
 
-/* ---------- 12.10.: Nutzung, Feedback, Abstürze, Namen, Läufe (Skikaiser-Backend /v1/stats) ---------- */
+/* ---------- 12.10. Skikaiser als Dreh- und Angelpunkt (Simon: „mach's einfacher, verständlicher“) ----------
+   Oben vier Kennzahlen, darunter vier Reiter: Zu erledigen (eine Liste: Feedback, neue Namen, Abstürze) · Zahlen · Rangliste · Einstellungen.
+   Daten und Aktionen kommen vom Skikaiser-Server (SKIKAISER_STATS_URL); Aktionen laufen über /admin/api/skikaiser/steuer (Token bleibt am Server). */
+F.css(
+'.sk-seg{margin:0 0 14px;max-width:760px}'+
+'.sk-hint{margin:0 0 12px;color:var(--ink-2);font-size:14px;max-width:80ch}'+
+'.sk-todo{list-style:none;margin:0;padding:0}'+
+'.sk-todo>li{display:grid;grid-template-columns:170px minmax(0,1fr) auto;gap:6px 16px;align-items:start;padding:14px 18px;border-bottom:1px solid var(--line)}'+
+'.sk-todo>li:last-child{border-bottom:0}'+
+'.sk-todo .sk-t{display:grid;gap:2px;font-size:13.5px}'+
+'.sk-todo .sk-c{display:grid;gap:4px;min-width:0;font-size:13px}'+
+'.sk-todo .sk-c p{margin:0;font-size:15px;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}'+
+'.sk-todo .sk-b{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}'+
+'.sk-todo details summary{cursor:pointer;font-size:12.5px}'+
+'.sk-cards{display:grid;gap:14px}'+
+'.sk-card{padding:16px 18px;display:grid;gap:10px}'+
+'.sk-card h3{font-size:16px;margin:0}'+
+'.sk-card p{margin:0;color:var(--ink-2);font-size:13.5px}'+
+'.sk-card .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}'+
+'.sk-card .chk{display:flex;gap:10px;align-items:center;font-size:14.5px;font-weight:600}'+
+'.sk-card .chk input{width:18px;height:18px}'+
+'.sk-tbl{width:100%;border-collapse:collapse;font-size:14px}'+
+'.sk-tbl td,.sk-tbl th{padding:9px 18px;border-bottom:1px solid var(--line);text-align:left}'+
+'.sk-tbl th{font-size:12px;color:var(--ink-3);font-weight:600}'+
+'.sk-tbl td.r,.sk-tbl th.r{text-align:right}'+
+'.sk-tbl td.z{font-family:var(--f-mono);text-align:right}'+
+'.sk-foot{padding:12px 18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:13px}'+
+'@media (max-width:900px){.sk-todo>li{grid-template-columns:minmax(0,1fr)}.sk-todo .sk-b{justify-content:flex-start}.sk-card .row2{grid-template-columns:1fr}.sk-tbl td,.sk-tbl th{padding:8px 12px}}'
+);
 function ago(iso){ var t=Date.parse(iso||""); if(!t) return ""; var m=Math.round((Date.now()-t)/60000); if(m<60) return "vor "+Math.max(1,m)+" Min."; var h=Math.round(m/60); if(h<36) return "vor "+h+" Std."; return deShort(String(iso).slice(0,10)); }
-function nutzung(s){
-  var u=s.users; if(!u||!u.byPlatform) return "";
-  var ios=0, and=0; u.byPlatform.forEach(function(p){ if(p.platform==="ios") ios=+p.installs||0; else if(p.platform==="android") and=+p.installs||0; });
-  var a=u.aktiv||{}, n=u.neu||{}, tot=+u.total||0;
-  var html='<div class="kpis">'+
-    kpi("Downloads",num(tot),"iOS "+num(ios)+" · Android "+num(and))+
-    kpi("Neue Spieler",num(n.woche),"7 Tage · heute "+num(n.heute)+" · 30 Tage "+num(n.monat))+
-    kpi("Aktive Spieler",num(a.woche),"7 Tage · heute "+num(a.heute)+" · 30 Tage "+num(a.monat))+
-    kpi("Spielstarts",num(u.starts),tot?"Ø "+(Math.round((+u.starts||0)/tot*10)/10).toLocaleString("de-AT")+" je Gerät":"noch keine")+
-  '</div>';
-  var map={}; (u.installsByMonth||[]).forEach(function(m){ map[m.month]=m; });
-  var cur=String(F.D.year)===F.D.today.slice(0,4)?+F.D.today.slice(5,7):12;
-  var rows=MON.slice(0,cur).map(function(m,i){ var k=F.D.year+"-"+String(i+1).padStart(2,"0"), x=map[k]||{}; var a1=+x.ios||0, a2=+x.android||0; return {label:m,parts:[[a1,"info","iOS "+num(a1)],[a2,"ok","Android "+num(a2)]],right:num(a1+a2)}; });
-  var bars=F.platHbars?F.platHbars(rows,[["iOS","info"],["Android","ok"]]):"";
-  var dn=F.platDonut&&tot?F.platDonut([["iOS",ios,"info",num(ios)],["Android",and,"ok",num(and)]],pct(ios/Math.max(1,ios+and),0)+" iOS"):'<div class="empty">Noch keine Downloads.</div>';
-  var ver=(u.versionen||[]).map(function(v){ return '<li><span class="nm">'+esc(v.version||"?")+'</span><span class="muted">'+esc(plat(v.plattform))+'</span><span class="num">'+num(v.anzahl)+'</span></li>'; }).join("");
-  return html+'<div class="two">'+sec("Downloads je Monat",'<span class="muted">'+esc(F.D.year)+' · erster Start je Gerät</span>','<div class="panel-b">'+bars+'</div>')+
-    sec("Downloads je System",'<span class="muted">alle Geräte</span>','<div class="panel-b">'+dn+'</div>'+(ver?'<div class="sk-foot muted">Versionen aktiver Geräte (30 Tage)</div><ul class="sk-names">'+ver+'</ul>':''))+'</div>';
-}
-var ART={lob:["Lob","ok"],fehler:["Fehler","bad"],idee:["Idee","info"],sonstiges:["Sonstiges","grey"]};
-function feedbackPanel(s){
-  var f=s.feedback; if(!f) return "";
-  var li=f.liste||[], offen=li.filter(function(x){return !x.erledigt;}), zeig=F.UI.skFbAll?li:offen.slice(0,12);
-  var body=zeig.length?'<ul class="sk-list">'+zeig.map(function(x){ var a=ART[x.art]||ART.sonstiges;
-      return '<li'+(x.erledigt?' class="done"':'')+'><div class="h"><span class="tag '+a[1]+'">'+a[0]+'</span><span class="muted">'+esc(ago(x.date))+' · '+esc(plat(x.platform))+(x.modell?' · '+esc(x.modell):'')+(x.version?' · v'+esc(x.version):'')+(x.sprache?' · '+esc(String(x.sprache).toUpperCase()):'')+'</span>'+
-        (x.erledigt?'<span class="tag grey">erledigt</span>':'<button type="button" class="link" data-act="skfb:'+esc(x.id)+'">Erledigt</button>')+'</div><p>'+esc(x.text)+'</p></li>'; }).join("")+'</ul>'
-    :'<div class="empty">'+(li.length?"Alles erledigt.":"Noch kein Feedback.")+'</div>';
-  var foot=li.length>offen.length||offen.length>12?'<div class="sk-foot"><button type="button" class="link" data-act="skfball">'+(F.UI.skFbAll?"Nur offene zeigen":"Alle "+li.length+" zeigen (auch erledigte)")+'</button></div>':'';
-  return sec("Feedback aus dem Spiel",'<span class="muted">'+num(f.offen)+' offen · '+num(f.gesamt)+' gesamt</span>',body+foot);
-}
-function fehlerPanel(s){
-  var alle=s.fehler; if(!alle) return "";
-  var l=F.UI.skErrFix?alle:alle.filter(function(x){ return !x.behoben; });
-  var zeig=F.UI.skErrAll?l:l.slice(0,8);
-  var body=zeig.length?'<ul class="sk-list">'+zeig.map(function(x){ var ab=x.art==="abbruch";
-      return '<li><details><summary><span class="tag '+(ab?"warn":"bad")+'">'+(ab?"Abbruch":"Fehler")+'</span><b>'+esc(x.meldung)+'</b><span class="muted">'+num(x.anzahl)+'× · '+num(x.spieler)+' Spieler · '+esc(ago(x.zuletzt))+(x.versionen?' · v'+esc(x.versionen):'')+'</span></summary>'+
-        '<div class="muted" style="margin-top:6px">'+esc([plat(x.platform),x.modell,x.os,x.szene?("Szene "+x.szene):""].filter(Boolean).join(" · "))+' · zuerst '+esc(ago(x.erstmals))+'</div>'+(x.stack?'<pre class="sk-code">'+esc(x.stack)+'</pre>':'')+
-        '<div class="sk-act" style="margin-top:8px">'+(x.behoben?'<span class="tag ok">behoben'+(x.behobenVersion?' in v'+esc(x.behobenVersion):'')+'</span><button type="button" class="btn" data-act="skerr:'+esc(x.hash)+'|0">Wieder öffnen</button>':'<button type="button" class="btn" data-act="skerr:'+esc(x.hash)+'|1">Behoben</button><span class="muted">kommt er in einer neueren Version wieder, ist er wieder offen</span>')+'</div></details></li>'; }).join("")+'</ul>'
-    :'<div class="empty">'+(alle.length?"Alle Fehler sind behoben.":"Keine Abstürze oder Fehler gemeldet.")+'</div>';
-  var nFix=alle.length-alle.filter(function(x){ return !x.behoben; }).length;
-  var foot='<div class="sk-foot">'+(l.length>8?'<button type="button" class="link" data-act="skerrall">'+(F.UI.skErrAll?"Weniger anzeigen":"Alle "+l.length+" anzeigen")+'</button> · ':'')+(nFix?'<button type="button" class="link" data-act="skerrfix">'+(F.UI.skErrFix?"Behobene ausblenden":nFix+" behobene zeigen")+'</button>':'')+'</div>';
-  return sec("Abstürze und Fehler",'<span class="muted">'+num(alle.length-nFix)+' offen · Abbruch = App unerwartet beendet</span>',body+foot);
-}
-function namenPanel(s){
-  var n=s.namen; if(!n) return "";
-  var tone={neu:"info","geprüft":"ok",gesperrt:"bad",Verdacht:"warn"};
-  var mini='<div class="sk-mini"><span><b>'+num(n.gesamt)+'</b>vergeben</span><span><b>'+num(n.ungeprueft)+'</b>ungeprüft</span><span><b>'+num(n.verdacht)+'</b>Verdacht</span><span><b>'+num(n.gesperrt)+'</b>gesperrt</span></div>';
-  function knoepfe(r){
-    if(!r.id) return '';
-    if(r.status==="gesperrt") return '<span class="sk-act"><button type="button" class="btn" data-act="sknam:'+esc(r.id)+'|entsperren">Entsperren</button></span>';
-    return '<span class="sk-act">'+(r.status!=="geprüft"?'<button type="button" class="btn" data-act="sknam:'+esc(r.id)+'|ok">OK</button>':'')+'<button type="button" class="btn" data-act="sknam:'+esc(r.id)+'|sperren">Sperren</button></span>';
-  }
-  function zeile(r){ return '<li class="sk-n4"><span class="nm"><b>'+esc(r.name)+'</b>'+(r.verdacht?' <span class="muted">('+esc(r.verdacht)+')</span>':'')+'</span><span class="muted">'+esc(r.land||"")+' · '+esc(ago(r.datum))+'</span><span class="tag '+(tone[r.status]||"grey")+'">'+esc(r.status)+'</span>'+knoepfe(r)+'</li>'; }
-  var offen=n.offen||[];
-  var pruef=offen.length?'<div class="sk-foot"><b>Zu prüfen ('+num(offen.length)+')</b></div><ul class="sk-names">'+offen.slice(0,30).map(zeile).join("")+'</ul>':'<div class="sk-foot muted">Keine Namen zu prüfen.</div>';
-  var l=(n.neueste||[]).slice(0,F.UI.skNamAll?40:10);
-  var list=pruef+'<div class="sk-foot"><b>Zuletzt gewählt</b></div>'+(l.length?'<ul class="sk-names">'+l.map(zeile).join("")+'</ul>':'<div class="empty">Noch keine Namen gewählt.</div>');
-  var foot='<div class="sk-foot">'+((n.neueste||[]).length>10?'<button type="button" class="link" data-act="sknamall">'+(F.UI.skNamAll?"Weniger anzeigen":"Mehr anzeigen")+'</button> · ':'')+(n.pruefseite?'<a href="'+esc(n.pruefseite)+'" target="_blank" rel="noopener">Prüfseite öffnen</a> <span class="muted">(mit deinem Admin-Token, ?t=…)</span>':'')+'</div>';
-  return sec("Ranglisten-Namen",'<span class="muted">neueste zuerst</span>',mini+list+foot);
-}
-function laeufePanel(s){
-  var l=s.laeufe; if(!l||!l.byStrecke) return "";
-  var rows=l.byStrecke.slice(0,12).map(function(r){ return {label:r.name||r.strecke,parts:[[+r.ziel||0,"ok","Ziel "+num(r.ziel)],[+r.dsq||0,"warn","Disqualifiziert "+num(r.dsq)],[+r.dnf||0,"bad","Sturz "+num(r.dnf)]],right:num(r.anzahl)}; });
-  var st=(l.byStufe||[]).map(function(x){ return esc(x.stufe)+" "+num(x.anzahl); }).join(" · ");
-  var body=rows.length&&F.platHbars?'<div class="panel-b">'+F.platHbars(rows,[["Ziel","ok"],["DSQ","warn"],["Sturz","bad"]])+'</div>'+(st?'<div class="sk-foot muted">Schwierigkeit: '+st+'</div>':''):'<div class="empty">Noch keine Läufe in '+esc(F.D.year)+'.</div>';
-  return sec("Gespielte Strecken",'<span class="muted">'+num(l.gesamt)+' Läufe '+esc(F.D.year)+'</span>',body);
-}
 function zeitFmt(ms){ var t=(+ms||0)/1000, m=Math.floor(t/60), r=t-m*60; return (m?m+":"+(r<10?"0":""):"")+r.toFixed(2).replace(".",","); }
-function steuerungPanel(s){
-  var c=s.config; if(!c) return "";
-  var a=c.ankuendigung||{};
-  var f='<div class="sk-form">'+
-    '<label class="chk"><input type="checkbox" id="skAnkAn"'+(a.aktiv?" checked":"")+'> Ankündigung im Hauptmenü der App zeigen</label>'+
-    '<div class="row2"><label class="fl">Text Deutsch<input class="f" type="text" id="skAnkDe" maxlength="280" value="'+esc(a.de||"")+'" placeholder="z. B. Neu: Saalbach und St. Anton!"></label>'+
-    '<label class="fl">Text Englisch<input class="f" type="text" id="skAnkEn" maxlength="280" value="'+esc(a.en||"")+'" placeholder="optional, sonst Deutsch"></label></div>'+
-    '<div class="row2"><label class="fl">Mindestversion (ältere Apps müssen aktualisieren)<input class="f" type="text" id="skMinV" maxlength="20" value="'+esc(c.mindestVersion||"")+'" placeholder="leer = aus, z. B. 1.0.1"></label>'+
-    '<label class="fl">App-Store-Link (Knopf „Aktualisieren“)<input class="f" type="url" id="skStore" maxlength="200" value="'+esc(c.storeUrl||"")+'" placeholder="https://apps.apple.com/app/id…"></label></div>'+
-    '<label class="chk"><input type="checkbox" id="skRlAn"'+(c.ranglisteAktiv!==false?" checked":"")+'> Online-Rangliste aktiv (aus: App zeigt „pausiert“, Zeiten werden später gemeldet)</label>'+
-    '<div class="sk-act"><button type="button" class="btn" data-act="skcfg">Speichern</button><span class="muted">wirkt beim nächsten App-Start bzw. nach spätestens einer Minute</span></div>'+
-  '</div>';
-  return sec("App-Steuerung",'<span class="muted">Ankündigung · Mindestversion · Rangliste</span>',f);
+function geraet(x){ return [plat(x.platform)==="iOS"?"iPhone":plat(x.platform), x.modell, x.version?"Version "+x.version:""].filter(Boolean).join(" · "); }
+var ART={lob:"Lob",fehler:"Fehler gemeldet",idee:"Idee",sonstiges:"Nachricht"};
+var ORT={Streif:"Kitzbühel",Gaschurn:"Montafon",Grasjoch:"Montafon (Snowboardcross)",BadKleinkirchheim:"Bad Kleinkirchheim",StAnton:"St. Anton",Boot:"Hauptmenü",Training:"Training"};
+function ort(sz){ return ORT[sz]||sz||""; }
+
+/* Alles, was Simon sich anschauen sollte – neueste zuerst */
+function aufgaben(s){
+  var out=[];
+  ((s.feedback&&s.feedback.liste)||[]).forEach(function(x){ if(!x.erledigt) out.push({art:"fb",datum:x.date,x:x}); });
+  ((s.namen&&s.namen.offen)||[]).forEach(function(x){ out.push({art:"name",datum:x.datum,x:x}); });
+  (s.fehler||[]).forEach(function(x){ if(!x.behoben) out.push({art:"crash",datum:x.zuletzt,x:x}); });
+  return out.sort(function(a,b){ return String(b.datum).localeCompare(String(a.datum)); });
 }
-function ranglistePanel(s){
-  var r=s.rangliste; if(!r) return "";
-  var beste=r.beste||[], neu=(r.neueste||[]).slice(0,F.UI.skZtAll?40:10);
-  function loesch(z){ return '<button type="button" class="btn" data-act="skzeit:'+esc(z.spieler)+'|'+esc(z.strecke)+'|'+esc(z.stufeNr)+'" title="Diese Zeit löschen">Löschen</button>'; }
-  var tb=beste.length?'<table class="sk-tbl"><thead><tr><th>Strecke · Stufe</th><th>Platz</th><th>Name</th><th class="r">Zeit</th><th></th></tr></thead><tbody>'+beste.map(function(z){ return '<tr><td>'+(z.platz===1?'<b>'+esc(z.streckenName)+'</b> · '+esc(z.stufe):'')+'</td><td>'+esc(z.platz)+'.</td><td>'+esc(z.name)+'</td><td class="r">'+zeitFmt(z.zeitMs)+'</td><td>'+loesch(z)+'</td></tr>'; }).join("")+'</tbody></table>':'<div class="empty">Noch keine Zeiten.</div>';
-  var nl=neu.length?'<table class="sk-tbl"><tbody>'+neu.map(function(z){ return '<tr><td>'+esc(ago(z.datum))+'</td><td>'+esc(z.name)+'</td><td>'+esc(z.streckenName)+' · '+esc(z.stufe)+'</td><td class="r">'+zeitFmt(z.zeitMs)+'</td><td>'+loesch(z)+'</td></tr>'; }).join("")+'</tbody></table>':'';
-  var foot='<div class="sk-foot sk-act">'+((r.neueste||[]).length>10?'<button type="button" class="link" data-act="skztall">'+(F.UI.skZtAll?"Weniger anzeigen":"Mehr neue Zeiten")+'</button>':'')+
-    '<button type="button" class="btn" data-act="skauf">Testdaten aufräumen</button><button type="button" class="btn" data-act="skreset">Alle Zeiten löschen (vor dem Start)</button></div>';
-  return sec("Online-Rangliste",'<span class="muted">'+num(r.zeiten)+' Zeiten · '+num(r.spieler)+' Spieler</span>','<div class="sk-mini"><span>Schnellste je Strecke und Stufe – auffällige Zeiten hier löschen</span></div>'+tb+(nl?'<div class="sk-foot"><b>Neueste Zeiten</b></div>'+nl:'')+foot);
+function kennzahlen(s,offen){
+  var u=s.users||{}, a=u.aktiv||{}, t=s.totals||{}, ios=0, and=0;
+  (u.byPlatform||[]).forEach(function(p){ if(p.platform==="ios") ios=+p.installs||0; else if(p.platform==="android") and=+p.installs||0; });
+  return '<div class="kpis">'+
+    kpi("Downloads",num(+u.total||0),"iPhone "+num(ios)+" · Android "+num(and))+
+    kpi("Aktive Spieler",num(a.woche),"letzte 7 Tage · heute "+num(a.heute))+
+    kpi("Erlös "+esc(F.D.year),'<span class="money">'+eur(c2e(t.proceedsCents))+'</span>',num(t.count)+" Käufe, nach Store-Gebühr",{vcls:"ok-t"})+
+    kpi("Zu erledigen",num(offen),offen?"im ersten Reiter":"alles erledigt",{vcls:offen?"warn-t":""})+
+  '</div>';
+}
+function reiter(akt,offen){
+  var T=[["todo","Zu erledigen"+(offen?" ("+offen+")":"")],["zahlen","Zahlen"],["rang","Rangliste"],["einst","Einstellungen"]];
+  return '<div class="seg sk-seg">'+T.map(function(t){ return '<button type="button" data-act="sktab:'+t[0]+'" aria-pressed="'+(t[0]===akt)+'">'+t[1]+'</button>'; }).join("")+'</div>';
+}
+function zeile(titel,wann,inhalt,knoepfe){ return '<li><div class="sk-t"><b>'+titel+'</b><span class="muted">'+wann+'</span></div><div class="sk-c">'+inhalt+'</div><div class="sk-b">'+knoepfe+'</div></li>'; }
+function tabTodo(s,liste){
+  var hint='<p class="sk-hint">Feedback aus dem Spiel, neue Spielernamen für die Rangliste und Abstürze. Einmal erledigt, verschwindet der Eintrag.</p>';
+  if(!liste.length) return hint+'<section class="panel"><div class="empty">Nichts zu tun – alles erledigt.</div></section>';
+  var z=liste.slice(0,F.UI.skAlle?300:30).map(function(a){
+    var x=a.x;
+    if(a.art==="fb") return zeile("Feedback",esc(ART[x.art]||"Nachricht")+" · "+ago(a.datum),'<p>'+esc(x.text)+'</p><span class="muted">'+esc(geraet(x))+'</span>','<button type="button" class="btn primary" data-act="skfb:'+esc(x.id)+'">Erledigt</button>');
+    if(a.art==="name") return zeile("Neuer Spielername",ago(a.datum),'<p><b>'+esc(x.name)+'</b> · '+esc(x.land)+'</p><span class="muted">'+(x.verdacht?'Bitte genau ansehen: '+esc(x.verdacht):'Erscheint so in der Online-Rangliste.')+'</span>',
+      '<button type="button" class="btn primary" data-act="sknam:'+esc(x.id)+'|ok">Passt</button><button type="button" class="btn" data-act="sknam:'+esc(x.id)+'|sperren">Sperren</button>');
+    var ab=x.art==="abbruch";
+    return zeile(ab?"Absturz":"Programmfehler",ago(a.datum),'<p>'+(ab?"Die App wurde unerwartet beendet.":esc(String(x.meldung||"").split(":")[0]))+'</p><span class="muted">'+num(x.anzahl)+'-mal bei '+num(x.spieler)+(x.spieler===1?" Spieler":" Spielern")+(x.szene?" · "+esc(ort(x.szene)):"")+(x.versionen?" · Version "+esc(x.versionen):"")+'</span>'+
+      '<details><summary class="muted">Technische Details</summary><pre class="sk-code">'+esc((x.meldung||"")+(x.stack?"\n"+x.stack:"")+"\n"+[x.modell,x.os].filter(Boolean).join(" · "))+'</pre></details>',
+      '<button type="button" class="btn primary" data-act="skerr:'+esc(x.hash)+'|1" title="Taucht der Fehler in einer neueren Version wieder auf, kommt er zurück in die Liste.">Behoben</button>');
+  }).join("");
+  return hint+'<section class="panel"><ul class="sk-todo">'+z+'</ul>'+(liste.length>30?'<div class="sk-foot"><button type="button" class="link" data-act="skalle">'+(F.UI.skAlle?"Weniger anzeigen":"Alle "+liste.length+" anzeigen")+'</button></div>':'')+'</section>';
+}
+function tabZahlen(s){
+  var u=s.users||{}, map={}; (u.installsByMonth||[]).forEach(function(m){ map[m.month]=m; });
+  var cur=String(F.D.year)===F.D.today.slice(0,4)?+F.D.today.slice(5,7):12;
+  var rows=MON.slice(0,cur).map(function(m,i){ var x=map[F.D.year+"-"+String(i+1).padStart(2,"0")]||{}, a1=+x.ios||0, a2=+x.android||0; return {label:m,n:a1+a2,parts:[[a1,"info","iPhone "+num(a1)],[a2,"ok","Android "+num(a2)]],right:num(a1+a2)}; });
+  var erst=0; while(erst<rows.length&&!rows[erst].n) erst++; rows=rows.slice(erst);   /* erst ab dem ersten Download */
+  var dl=sec("Downloads je Monat",'<span class="muted">neue Geräte</span>',rows.length?'<div class="panel-b">'+(F.platHbars?F.platHbars(rows,[["iPhone","info"],["Android","ok"]]):"")+'</div>':'<div class="empty">Noch keine Downloads.</div>');
+  var ls=(s.laeufe&&s.laeufe.byStrecke)||[];
+  var st=ls.length?sec("Beliebteste Strecken",'<span class="muted">gespielte Läufe '+esc(F.D.year)+'</span>','<table class="sk-tbl"><thead><tr><th>Strecke</th><th class="r">Läufe</th><th class="r">im Ziel</th></tr></thead><tbody>'+
+      ls.slice(0,12).map(function(r){ return '<tr><td>'+esc(r.name||r.strecke)+'</td><td class="r">'+num(r.anzahl)+'</td><td class="r">'+(r.anzahl?Math.round(r.ziel/r.anzahl*100)+" %":"–")+'</td></tr>'; }).join("")+'</tbody></table>'):'';
+  return '<div class="two">'+dl+(st||sec("Beliebteste Strecken","",'<div class="empty">Noch keine Läufe.</div>'))+'</div>'+overview(s);
+}
+function tabRang(s){
+  var r=s.rangliste||{}, beste=(r.beste||[]).filter(function(z){ return z.platz===1; });
+  var hint='<p class="sk-hint">Die schnellste Zeit je Strecke und Schwierigkeit. Sieht eine Zeit unmöglich aus (Schummeln), löschst du sie hier.</p>';
+  var tb=beste.length?'<table class="sk-tbl"><thead><tr><th>Strecke</th><th>Schwierigkeit</th><th>Spieler</th><th class="r">Zeit</th><th></th></tr></thead><tbody>'+beste.map(function(z){ return '<tr><td>'+esc(z.streckenName)+'</td><td>'+esc(z.stufe)+'</td><td>'+esc(z.name)+'</td><td class="z">'+zeitFmt(z.zeitMs)+'</td><td class="r"><button type="button" class="btn" data-act="skzeit:'+esc(z.spieler)+'|'+esc(z.strecke)+'|'+esc(z.stufeNr)+'">Löschen</button></td></tr>'; }).join("")+'</tbody></table>':'<div class="empty">Noch keine Zeiten in der Online-Rangliste.</div>';
+  var gesp=((s.namen&&s.namen.neueste)||[]).filter(function(n){ return n.status==="gesperrt"; });
+  var gs=gesp.length?sec("Gesperrte Namen",'','<table class="sk-tbl"><tbody>'+gesp.map(function(n){ return '<tr><td><b>'+esc(n.name)+'</b></td><td>'+esc(n.land)+'</td><td class="r"><button type="button" class="btn" data-act="sknam:'+esc(n.id)+'|entsperren">Doch erlauben</button></td></tr>'; }).join("")+'</tbody></table>'):'';
+  var start=sec("Vor dem Verkaufsstart",'','<div class="sk-card"><p>Während der Testphase sind Zeiten von Testern in der Rangliste gelandet. Vor dem Start im App Store kannst du sie entfernen.</p><div class="sk-foot" style="padding:0"><button type="button" class="btn" data-act="skauf">Nur Testdaten löschen</button><button type="button" class="btn" data-act="skreset">Alle Zeiten löschen</button></div></div>');
+  return hint+kpiZeile([["Spieler mit Namen",num(s.namen&&s.namen.gesamt)],["Zeiten",num(r.zeiten)]])+sec("Schnellste Zeiten",'',tb)+gs+start;
+}
+function kpiZeile(l){ return '<div class="kpis">'+l.map(function(x){ return kpi(x[0],x[1],""); }).join("")+'</div>'; }
+function tabEinst(s){
+  var c=s.config||{}, a=c.ankuendigung||{};
+  return '<p class="sk-hint">Was du hier speicherst, sehen die Spieler beim nächsten Öffnen der App.</p><div class="sk-cards">'+
+    '<section class="panel sk-card"><h3>Nachricht an alle Spieler</h3><p>Erscheint oben im Hauptmenü der App, z. B. „Neue Strecke: Saalbach!“.</p>'+
+      '<label class="chk"><input type="checkbox" id="skAnkAn"'+(a.aktiv?" checked":"")+'> Nachricht anzeigen</label>'+
+      '<div class="row2"><label class="fl">Text (Deutsch)<input class="f" type="text" id="skAnkDe" maxlength="140" value="'+esc(a.de||"")+'"></label><label class="fl">Text (Englisch, optional)<input class="f" type="text" id="skAnkEn" maxlength="140" value="'+esc(a.en||"")+'"></label></div></section>'+
+    '<section class="panel sk-card"><h3>Update erzwingen</h3><p>Wer eine ältere Version hat, kann erst nach dem Update weiterspielen. Leer lassen = aus.</p>'+
+      '<div class="row2"><label class="fl">Mindestens Version<input class="f" type="text" id="skMinV" maxlength="20" placeholder="z. B. 1.0.1" value="'+esc(c.mindestVersion||"")+'"></label><label class="fl">Link zum App Store<input class="f" type="url" id="skStore" maxlength="200" placeholder="https://apps.apple.com/app/…" value="'+esc(c.storeUrl||"")+'"></label></div></section>'+
+    '<section class="panel sk-card"><h3>Online-Rangliste</h3><p>Ausgeschaltet zeigt die App „pausiert“; Zeiten gehen nicht verloren und werden später eingetragen.</p>'+
+      '<label class="chk"><input type="checkbox" id="skRlAn"'+(c.ranglisteAktiv!==false?" checked":"")+'> Online-Rangliste eingeschaltet</label></section>'+
+    '<div><button type="button" class="btn primary" data-act="skcfg">Speichern</button></div>'+
+  '</div>';
 }
 function steuer(was,daten,ok,el){
   if(el) el.disabled=true;
   return F.api("/admin/api/skikaiser/steuer",{body:{was:was,daten:daten||{}}}).then(function(j){
     if(j&&j.ok){ F.toast(ok||"Gespeichert"); F.load(true); }
-    else { if(el) el.disabled=false; F.toast("Fehler: "+((j&&j.error)||"keine Antwort"),true); }
+    else { if(el) el.disabled=false; F.toast("Hat nicht geklappt: "+((j&&j.error)||"keine Antwort"),true); }
     return j;
-  }).catch(function(){ if(el) el.disabled=false; F.toast("Keine Verbindung zum Skikaiser-Server",true); });
+  }).catch(function(){ if(el) el.disabled=false; F.toast("Skikaiser-Server nicht erreichbar",true); });
 }
-F.action("sknam",function(arg,el){ var p=String(arg).split("|"); steuer("namen",{id:p[0],aktion:p[1]},{ok:"Name freigegeben",sperren:"Name gesperrt – Spieler muss einen neuen wählen",entsperren:"Name entsperrt"}[p[1]],el); });
-F.action("skerr",function(arg,el){ var p=String(arg).split("|"); steuer("fehler",{hash:p[0],behoben:p[1]==="1"},p[1]==="1"?"Als behoben markiert":"Wieder offen",el); });
+F.action("sktab",function(t){ F.UI.skTab=t; F.ls&&F.ls("fsc_sk_tab",t); F.render(); });
+F.action("skalle",function(){ F.UI.skAlle=!F.UI.skAlle; F.render(); });
+F.action("skfb",function(id,el){ steuer("feedback",{id:+id,erledigt:true},"Erledigt",el); });
+F.action("sknam",function(arg,el){ var p=String(arg).split("|"); steuer("namen",{id:p[0],aktion:p[1]},{ok:"Name freigegeben",sperren:"Name gesperrt – der Spieler wählt einen neuen",entsperren:"Name wieder erlaubt"}[p[1]],el); });
+F.action("skerr",function(arg,el){ var p=String(arg).split("|"); steuer("fehler",{hash:p[0],behoben:p[1]==="1"},"Als behoben markiert",el); });
 F.action("skzeit",function(arg,el){ var p=String(arg).split("|"); if(!window.confirm("Diese Zeit aus der Online-Rangliste löschen?")) return; steuer("zeit",{spieler:p[0],strecke:p[1],stufe:+p[2]},"Zeit gelöscht",el); });
 F.action("skauf",function(arg,el){ steuer("aufraeumen",{},"Testdaten gelöscht",el); });
-F.action("skreset",function(arg,el){ if(!window.confirm("Wirklich ALLE Zeiten der Online-Rangliste löschen? Das lässt sich nicht rückgängig machen.")||!window.confirm("Sicher? Alle Bestzeiten aller Spieler verschwinden aus der Rangliste.")) return; steuer("zeiten-zuruecksetzen",{bestaetigung:"ALLE ZEITEN LOESCHEN"},"Alle Zeiten gelöscht",el); });
+F.action("skreset",function(arg,el){ if(!window.confirm("Wirklich ALLE Zeiten der Online-Rangliste löschen? Das lässt sich nicht rückgängig machen.")) return; steuer("zeiten-zuruecksetzen",{bestaetigung:"ALLE ZEITEN LOESCHEN"},"Alle Zeiten gelöscht",el); });
 F.action("skcfg",function(arg,el){
   function v(id){ var e=document.getElementById(id); return e?e.value.trim():""; } function c(id){ var e=document.getElementById(id); return !!(e&&e.checked); }
-  var mv=v("skMinV"); if(mv&&!/^[0-9.]+$/.test(mv)){ F.toast("Mindestversion nur mit Ziffern und Punkten, z. B. 1.0.1",true); return; }
-  steuer("config",{ankuendigung:{aktiv:c("skAnkAn"),de:v("skAnkDe"),en:v("skAnkEn")},mindestVersion:mv,storeUrl:v("skStore"),ranglisteAktiv:c("skRlAn")},"App-Steuerung gespeichert",el);
+  var mv=v("skMinV"); if(mv&&!/^[0-9.]+$/.test(mv)){ F.toast("Version bitte nur mit Ziffern und Punkten, z. B. 1.0.1",true); return; }
+  if(c("skAnkAn")&&!v("skAnkDe")){ F.toast("Bitte einen Text für die Nachricht eingeben",true); return; }
+  steuer("config",{ankuendigung:{aktiv:c("skAnkAn"),de:v("skAnkDe"),en:v("skAnkEn")},mindestVersion:mv,storeUrl:v("skStore"),ranglisteAktiv:c("skRlAn")},"Gespeichert – gilt beim nächsten App-Start",el);
 });
-F.action("skerrfix",function(){ F.UI.skErrFix=!F.UI.skErrFix; F.render(); });
-F.action("skztall",function(){ F.UI.skZtAll=!F.UI.skZtAll; F.render(); });
-F.action("skfb",function(id,el){
-  if(el) el.disabled=true;
-  F.api("/admin/api/skikaiser/feedback",{body:{id:+id,erledigt:true}}).then(function(j){
-    if(j&&j.ok){ var f=F.D.skikaiser&&F.D.skikaiser.feedback; if(f){ (f.liste||[]).forEach(function(x){ if(+x.id===+id) x.erledigt=true; }); f.offen=Math.max(0,(+f.offen||1)-1); } F.toast("Als erledigt markiert"); F.render(); }
-    else { if(el) el.disabled=false; F.toast("Konnte nicht gespeichert werden",true); }
-  }).catch(function(){ if(el) el.disabled=false; F.toast("Konnte nicht gespeichert werden",true); });
-});
-F.action("skfball",function(){ F.UI.skFbAll=!F.UI.skFbAll; F.render(); });
-F.action("skerrall",function(){ F.UI.skErrAll=!F.UI.skErrAll; F.render(); });
-F.action("sknamall",function(){ F.UI.skNamAll=!F.UI.skNamAll; F.render(); });
 
 F.skikaiserView=function(){
   var s=F.D.skikaiser;
@@ -291,6 +271,9 @@ F.skikaiserView=function(){
     return '<div class="notice"><span><b>Skikaiser ist eingerichtet, liefert aber gerade keine Daten.</b> '+esc(why)+'</span><button class="btn" data-act="reload">Neu laden</button></div>'+
       '<section class="panel sk-empty"><h2>So muss der Endpunkt antworten</h2>'+setupHelp()+'</section>';
   }
-  return steuerungPanel(s)+nutzung(s)+overview(s)+'<div class="two">'+feedbackPanel(s)+fehlerPanel(s)+'</div>'+'<div class="two">'+namenPanel(s)+laeufePanel(s)+'</div>'+ranglistePanel(s);
+  if(!F.UI.skTab) F.UI.skTab=(F.ls&&F.ls("fsc_sk_tab"))||"todo";
+  var liste=aufgaben(s), tab=F.UI.skTab;
+  var body=tab==="zahlen"?tabZahlen(s):tab==="rang"?tabRang(s):tab==="einst"?tabEinst(s):tabTodo(s,liste);
+  return kennzahlen(s,liste.length)+reiter(tab,liste.length)+body;
 };
 })();
