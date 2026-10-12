@@ -300,13 +300,13 @@ function fortschritt(s){
 
 /* ---------- Ereignisse der letzten 30 Tage ---------- */
 var EV={gas:["Gas geben","glow"],video:["Videos angesehen","info"],video_abbruch:["Videos abgebrochen","warn"],zeitsprung:["Zeitsprünge","ok"],welt_wechsel:["Weltwechsel","bad"],
-  welt_fertig:["Welten fertig","ok"],perk:["Boni gekauft","glow"],shop_offen:["Shop geöffnet","grey"],kauf_abbruch:["Kauf abgebrochen","warn"]};
+  welt_fertig:["Welten fertig","ok"],perk:["Boni gekauft","glow"],shop_offen:["Shop geöffnet","grey"],kauf_abbruch:["Kauf abgebrochen","warn"],kauf_fehler:["Kauf fehlgeschlagen","bad"]};
 var EV_CHART=["gas","video","zeitsprung","welt_wechsel"];
 function ereignisse(s){
   var e=s.ereignisse; if(!e) return "";
   var sum={}; (e.summen||[]).forEach(function(x){ sum[x.art]=+x.anzahl||0; });
   var vid=sum.video||0, vab=sum.video_abbruch||0;
-  var mini='<div class="hg-mini">'+["gas","video","zeitsprung","welt_wechsel","welt_fertig","perk","shop_offen","kauf_abbruch"].map(function(k){ return '<span><b>'+num(sum[k])+'</b>'+esc(EV[k][0])+(k==="video"&&vid+vab?' <span class="muted">('+pct(vid/(vid+vab),0)+' bis zum Ende)</span>':'')+'</span>'; }).join("")+'</div>';
+  var mini='<div class="hg-mini">'+["gas","video","zeitsprung","welt_wechsel","welt_fertig","perk","shop_offen","kauf_abbruch","kauf_fehler"].map(function(k){ return '<span><b>'+num(sum[k])+'</b>'+esc(EV[k][0])+(k==="video"&&vid+vab?' <span class="muted">('+pct(vid/(vid+vab),0)+' bis zum Ende)</span>':'')+'</span>'; }).join("")+'</div>';
   var tag={}; (e.tage||[]).forEach(function(x){ (tag[x.tag]=tag[x.tag]||{})[x.art]=+x.anzahl||0; });
   var heute=Date.parse(F.D.today+"T12:00:00Z"), tage=[]; for(var i=29;i>=0;i--) tage.push(new Date(heute-i*864e5).toISOString().slice(0,10));
   var mx=Math.max.apply(null,tage.map(function(d){ var t=tag[d]||{}; return EV_CHART.reduce(function(a,k){ return a+(t[k]||0); },0); }).concat([1]));
