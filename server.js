@@ -1378,7 +1378,9 @@ async function skikaiserStats(year) {
     (d.byProduct || []).forEach(p => { byProduct[p.productId || p.name] = { productId: p.productId || p.name, name: p.name || p.productId, grossCents: +p.grossCents || 0, proceedsCents: +p.proceedsCents || 0, count: +p.count || 0 }; });
     (d.byPlatform || []).forEach(p => { byPlatform[p.platform] = p; });
   }
-  return { configured: true, fetchedAt: d.fetchedAt || new Date().toISOString(), totals, byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)), byProduct: Object.values(byProduct).sort((a, b) => b.grossCents - a.grossCents), byPlatform: Object.values(byPlatform), recent, users: d.users || null };
+  // Skikaiser-Backend liefert zusätzlich Nutzung (Downloads je System, aktive Spieler), Feedback, Fehler/Abstürze, Ranglisten-Namen und gespielte Läufe
+  return { configured: true, fetchedAt: d.fetchedAt || new Date().toISOString(), totals, byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)), byProduct: Object.values(byProduct).sort((a, b) => b.grossCents - a.grossCents), byPlatform: Object.values(byPlatform), recent, users: d.users || null,
+    feedback: d.feedback || null, fehler: Array.isArray(d.fehler) ? d.fehler : null, namen: d.namen || null, laeufe: d.laeufe || null };
 }
 
 // ── Geschätztes Monatseinkommen ──
@@ -2082,6 +2084,16 @@ async function handleAdmin(req, res, u, p) {
     const known = u.searchParams.get("etag") || "";
     if (known && m.etag && known === m.etag) return send(res, 200, JSON.stringify({ same: true, etag: m.etag }), TYPES[".json"], { "Cache-Control": "no-store" });
     return sendGz(req, res, 200, JSON.stringify(m), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  // Skikaiser: Feedback als erledigt markieren (leitet an das App-Backend weiter, Token bleibt am Server)
+  if (p === "/admin/api/skikaiser/feedback" && req.method === "POST") {
+    try {
+      if (!SKIKAISER.url) return send(res, 200, JSON.stringify({ ok: false, error: "nicht_eingerichtet" }), TYPES[".json"]);
+      const b = await sevBody(req, 2000); const url = SKIKAISER.url.replace(/\/stats\/?(\?.*)?$/, "/stats/feedback");
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify({ id: +b.id, erledigt: b.erledigt !== false }) });
+      const j = await r.json().catch(() => ({})); forgetStats(SKIKAISER.url);
+      return send(res, 200, JSON.stringify({ ok: !!(r.ok && j.ok) }), TYPES[".json"]);
+    } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/all") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "") || String(new Date().getFullYear());

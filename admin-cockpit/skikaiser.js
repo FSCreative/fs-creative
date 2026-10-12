@@ -34,6 +34,22 @@ F.css(
 '.sk-var code{font:600 13px var(--f-mono);overflow-wrap:anywhere}'+
 '.sk-fields{margin:8px 0 0;padding-left:18px;color:var(--ink-2);font-size:13.5px;display:grid;gap:3px}'+
 '.sk-fields code{font:12.5px var(--f-mono);color:var(--ink)}'+
+'.sk-list{list-style:none;margin:0;padding:0}'+
+'.sk-list>li{padding:12px 18px;border-bottom:1px solid var(--line);display:grid;gap:6px}'+
+'.sk-list>li:last-child{border-bottom:0}'+
+'.sk-list>li.done{opacity:.55}'+
+'.sk-list .h{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}'+
+'.sk-list .h .link{margin-left:auto}'+
+'.sk-list p{margin:0;font-size:14.5px;white-space:pre-wrap;overflow-wrap:anywhere}'+
+'.sk-list details summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:14px;list-style:none}'+
+'.sk-list details summary::-webkit-details-marker{display:none}'+
+'.sk-list details b{overflow-wrap:anywhere}'+
+'.sk-names{list-style:none;margin:0;padding:0}'+
+'.sk-names li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);font-size:14px}'+
+'.sk-names li:last-child{border-bottom:0}'+
+'.sk-mini{display:flex;gap:18px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--ink-2)}'+
+'.sk-mini b{font:700 18px var(--f-mono);color:var(--ink);margin-right:4px}'+
+'.sk-foot{padding:10px 18px;font-size:13px}'+
 '@media (max-width:900px){.sk-cols{gap:3px;height:160px}.sk-lab{gap:3px;font-size:10.5px}.sk-n{font-size:9.5px}.sk-var{grid-template-columns:minmax(0,1fr)}.sk-recent li{grid-template-columns:46px minmax(0,1fr) auto;padding:10px 14px}}'
 );
 
@@ -132,6 +148,75 @@ function overview(s){
     (F.UI.skHelp?'<section class="panel sk-empty">'+setupHelp()+'</section>':'');
 }
 
+/* ---------- 12.10.: Nutzung, Feedback, Abstürze, Namen, Läufe (Skikaiser-Backend /v1/stats) ---------- */
+function ago(iso){ var t=Date.parse(iso||""); if(!t) return ""; var m=Math.round((Date.now()-t)/60000); if(m<60) return "vor "+Math.max(1,m)+" Min."; var h=Math.round(m/60); if(h<36) return "vor "+h+" Std."; return deShort(String(iso).slice(0,10)); }
+function nutzung(s){
+  var u=s.users; if(!u||!u.byPlatform) return "";
+  var ios=0, and=0; u.byPlatform.forEach(function(p){ if(p.platform==="ios") ios=+p.installs||0; else if(p.platform==="android") and=+p.installs||0; });
+  var a=u.aktiv||{}, n=u.neu||{}, tot=+u.total||0;
+  var html='<div class="kpis">'+
+    kpi("Downloads",num(tot),"iOS "+num(ios)+" · Android "+num(and))+
+    kpi("Neue Spieler",num(n.woche),"7 Tage · heute "+num(n.heute)+" · 30 Tage "+num(n.monat))+
+    kpi("Aktive Spieler",num(a.woche),"7 Tage · heute "+num(a.heute)+" · 30 Tage "+num(a.monat))+
+    kpi("Spielstarts",num(u.starts),tot?"Ø "+(Math.round((+u.starts||0)/tot*10)/10).toLocaleString("de-AT")+" je Gerät":"noch keine")+
+  '</div>';
+  var map={}; (u.installsByMonth||[]).forEach(function(m){ map[m.month]=m; });
+  var cur=String(F.D.year)===F.D.today.slice(0,4)?+F.D.today.slice(5,7):12;
+  var rows=MON.slice(0,cur).map(function(m,i){ var k=F.D.year+"-"+String(i+1).padStart(2,"0"), x=map[k]||{}; var a1=+x.ios||0, a2=+x.android||0; return {label:m,parts:[[a1,"info","iOS "+num(a1)],[a2,"ok","Android "+num(a2)]],right:num(a1+a2)}; });
+  var bars=F.platHbars?F.platHbars(rows,[["iOS","info"],["Android","ok"]]):"";
+  var dn=F.platDonut&&tot?F.platDonut([["iOS",ios,"info",num(ios)],["Android",and,"ok",num(and)]],pct(ios/Math.max(1,ios+and),0)+" iOS"):'<div class="empty">Noch keine Downloads.</div>';
+  var ver=(u.versionen||[]).map(function(v){ return '<li><span class="nm">'+esc(v.version||"?")+'</span><span class="muted">'+esc(plat(v.plattform))+'</span><span class="num">'+num(v.anzahl)+'</span></li>'; }).join("");
+  return html+'<div class="two">'+sec("Downloads je Monat",'<span class="muted">'+esc(F.D.year)+' · erster Start je Gerät</span>','<div class="panel-b">'+bars+'</div>')+
+    sec("Downloads je System",'<span class="muted">alle Geräte</span>','<div class="panel-b">'+dn+'</div>'+(ver?'<div class="sk-foot muted">Versionen aktiver Geräte (30 Tage)</div><ul class="sk-names">'+ver+'</ul>':''))+'</div>';
+}
+var ART={lob:["Lob","ok"],fehler:["Fehler","bad"],idee:["Idee","info"],sonstiges:["Sonstiges","grey"]};
+function feedbackPanel(s){
+  var f=s.feedback; if(!f) return "";
+  var li=f.liste||[], offen=li.filter(function(x){return !x.erledigt;}), zeig=F.UI.skFbAll?li:offen.slice(0,12);
+  var body=zeig.length?'<ul class="sk-list">'+zeig.map(function(x){ var a=ART[x.art]||ART.sonstiges;
+      return '<li'+(x.erledigt?' class="done"':'')+'><div class="h"><span class="tag '+a[1]+'">'+a[0]+'</span><span class="muted">'+esc(ago(x.date))+' · '+esc(plat(x.platform))+(x.modell?' · '+esc(x.modell):'')+(x.version?' · v'+esc(x.version):'')+(x.sprache?' · '+esc(String(x.sprache).toUpperCase()):'')+'</span>'+
+        (x.erledigt?'<span class="tag grey">erledigt</span>':'<button type="button" class="link" data-act="skfb:'+esc(x.id)+'">Erledigt</button>')+'</div><p>'+esc(x.text)+'</p></li>'; }).join("")+'</ul>'
+    :'<div class="empty">'+(li.length?"Alles erledigt.":"Noch kein Feedback.")+'</div>';
+  var foot=li.length>offen.length||offen.length>12?'<div class="sk-foot"><button type="button" class="link" data-act="skfball">'+(F.UI.skFbAll?"Nur offene zeigen":"Alle "+li.length+" zeigen (auch erledigte)")+'</button></div>':'';
+  return sec("Feedback aus dem Spiel",'<span class="muted">'+num(f.offen)+' offen · '+num(f.gesamt)+' gesamt</span>',body+foot);
+}
+function fehlerPanel(s){
+  var l=s.fehler; if(!l) return "";
+  var zeig=F.UI.skErrAll?l:l.slice(0,8);
+  var body=zeig.length?'<ul class="sk-list">'+zeig.map(function(x){ var ab=x.art==="abbruch";
+      return '<li><details><summary><span class="tag '+(ab?"warn":"bad")+'">'+(ab?"Abbruch":"Fehler")+'</span><b>'+esc(x.meldung)+'</b><span class="muted">'+num(x.anzahl)+'× · '+num(x.spieler)+' Spieler · '+esc(ago(x.zuletzt))+(x.versionen?' · v'+esc(x.versionen):'')+'</span></summary>'+
+        '<div class="muted" style="margin-top:6px">'+esc([plat(x.platform),x.modell,x.os,x.szene?("Szene "+x.szene):""].filter(Boolean).join(" · "))+' · zuerst '+esc(ago(x.erstmals))+'</div>'+(x.stack?'<pre class="sk-code">'+esc(x.stack)+'</pre>':'')+'</details></li>'; }).join("")+'</ul>'
+    :'<div class="empty">Keine Abstürze oder Fehler gemeldet.</div>';
+  var foot=l.length>8?'<div class="sk-foot"><button type="button" class="link" data-act="skerrall">'+(F.UI.skErrAll?"Weniger anzeigen":"Alle "+l.length+" anzeigen")+'</button></div>':'';
+  return sec("Abstürze und Fehler",'<span class="muted">'+num(l.length)+' verschiedene · Abbruch = App unerwartet beendet</span>',body+foot);
+}
+function namenPanel(s){
+  var n=s.namen; if(!n) return "";
+  var tone={neu:"info","geprüft":"ok",gesperrt:"bad",Verdacht:"warn"};
+  var mini='<div class="sk-mini"><span><b>'+num(n.gesamt)+'</b>vergeben</span><span><b>'+num(n.ungeprueft)+'</b>ungeprüft</span><span><b>'+num(n.verdacht)+'</b>Verdacht</span><span><b>'+num(n.gesperrt)+'</b>gesperrt</span></div>';
+  var l=(n.neueste||[]).slice(0,F.UI.skNamAll?40:10);
+  var list=l.length?'<ul class="sk-names">'+l.map(function(r){ return '<li><span class="nm"><b>'+esc(r.name)+'</b></span><span class="muted">'+esc(r.land||"")+' · '+esc(ago(r.datum))+'</span><span class="tag '+(tone[r.status]||"grey")+'">'+esc(r.status)+'</span></li>'; }).join("")+'</ul>':'<div class="empty">Noch keine Namen gewählt.</div>';
+  var foot='<div class="sk-foot">'+((n.neueste||[]).length>10?'<button type="button" class="link" data-act="sknamall">'+(F.UI.skNamAll?"Weniger anzeigen":"Mehr anzeigen")+'</button> · ':'')+(n.pruefseite?'<a href="'+esc(n.pruefseite)+'" target="_blank" rel="noopener">Prüfseite öffnen</a> <span class="muted">(mit deinem Admin-Token, ?t=…)</span>':'')+'</div>';
+  return sec("Ranglisten-Namen",'<span class="muted">neueste zuerst</span>',mini+list+foot);
+}
+function laeufePanel(s){
+  var l=s.laeufe; if(!l||!l.byStrecke) return "";
+  var rows=l.byStrecke.slice(0,12).map(function(r){ return {label:r.name||r.strecke,parts:[[+r.ziel||0,"ok","Ziel "+num(r.ziel)],[+r.dsq||0,"warn","Disqualifiziert "+num(r.dsq)],[+r.dnf||0,"bad","Sturz "+num(r.dnf)]],right:num(r.anzahl)}; });
+  var st=(l.byStufe||[]).map(function(x){ return esc(x.stufe)+" "+num(x.anzahl); }).join(" · ");
+  var body=rows.length&&F.platHbars?'<div class="panel-b">'+F.platHbars(rows,[["Ziel","ok"],["DSQ","warn"],["Sturz","bad"]])+'</div>'+(st?'<div class="sk-foot muted">Schwierigkeit: '+st+'</div>':''):'<div class="empty">Noch keine Läufe in '+esc(F.D.year)+'.</div>';
+  return sec("Gespielte Strecken",'<span class="muted">'+num(l.gesamt)+' Läufe '+esc(F.D.year)+'</span>',body);
+}
+F.action("skfb",function(id,el){
+  if(el) el.disabled=true;
+  F.api("/admin/api/skikaiser/feedback",{body:{id:+id,erledigt:true}}).then(function(j){
+    if(j&&j.ok){ var f=F.D.skikaiser&&F.D.skikaiser.feedback; if(f){ (f.liste||[]).forEach(function(x){ if(+x.id===+id) x.erledigt=true; }); f.offen=Math.max(0,(+f.offen||1)-1); } F.toast("Als erledigt markiert"); F.render(); }
+    else { if(el) el.disabled=false; F.toast("Konnte nicht gespeichert werden",true); }
+  }).catch(function(){ if(el) el.disabled=false; F.toast("Konnte nicht gespeichert werden",true); });
+});
+F.action("skfball",function(){ F.UI.skFbAll=!F.UI.skFbAll; F.render(); });
+F.action("skerrall",function(){ F.UI.skErrAll=!F.UI.skErrAll; F.render(); });
+F.action("sknamall",function(){ F.UI.skNamAll=!F.UI.skNamAll; F.render(); });
+
 F.skikaiserView=function(){
   var s=F.D.skikaiser;
   if(!s||!s.configured) return emptyState();
@@ -140,6 +225,6 @@ F.skikaiserView=function(){
     return '<div class="notice"><span><b>Skikaiser ist eingerichtet, liefert aber gerade keine Daten.</b> '+esc(why)+'</span><button class="btn" data-act="reload">Neu laden</button></div>'+
       '<section class="panel sk-empty"><h2>So muss der Endpunkt antworten</h2>'+setupHelp()+'</section>';
   }
-  return overview(s);
+  return nutzung(s)+overview(s)+'<div class="two">'+feedbackPanel(s)+fehlerPanel(s)+'</div>'+'<div class="two">'+namenPanel(s)+laeufePanel(s)+'</div>';
 };
 })();
