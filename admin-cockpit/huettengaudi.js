@@ -1,5 +1,7 @@
 /* Plattformen › Hüttengaudi: Idle-Game (iOS) mit Edelweiß-Paketen – Statistik und Steuerung der App, aufgebaut wie Skikaiser.
-   Oben vier Kennzahlen, darunter drei Reiter: Zu erledigen (Feedback und Programmfehler) · Zahlen · Einstellungen.
+   Oben vier Kennzahlen, darunter drei Reiter: Zu erledigen (Feedback, Abstürze, Programmfehler) · Zahlen · Einstellungen.
+   Die App selbst ist wie Skikaiser aufgebaut (Telemetrie.cs): Feedback-Fenster, anonyme Statistik zum Abschalten, Absturz-Erkennung,
+   Käufe und Feedback warten offline, Datenschutz im Spiel, Nachricht in der Laufschrift, „Update erzwingen“ sperrt bis zum Update.
    Daten: F.D.huettengaudi (server.js huettengaudiStats) – {configured:false} solange HUETTENGAUDI_STATS_URL fehlt.
    Aktionen: POST /admin/api/huettengaudi/feedback|fehler|config|aufraeumen (server.js leitet mit Token an das App-Backend weiter, der Browser sieht es nie).
    Gestaltung: nutzt die Klassen aus skikaiser.js (sk-…), damit beide Apps gleich aussehen; hier steht nur, was Hüttengaudi zusätzlich braucht (hg-…). */
@@ -59,9 +61,9 @@ function setupHelp(){
       hgVar("HUETTENGAUDI_STATS_URL","Adresse des Statistik-Endpunkts ohne Token, also <code>https://&lt;backend&gt;/v1/stats</code>")+
       hgVar("HUETTENGAUDI_STATS_TOKEN","Dasselbe Token wie <code>STATS_TOKEN</code> im Backend. Es bleibt am Server, der Browser sieht es nie.")+'</div></div></li>'+
     '<li><div><h3>Was du dann siehst und steuerst</h3><ul class="sk-fields">'+
-      '<li>Feedback und Programmfehler aus dem Spiel zum Abhaken</li>'+
+      '<li>Feedback, Abstürze und Programmfehler aus dem Spiel zum Abhaken</li>'+
       '<li>Downloads, aktive Spieler, Käufe der Edelweiß-Pakete, wie weit die Spieler kommen und was sie im Spiel tun</li>'+
-      '<li>Einstellungen: Nachricht an alle Spieler, Wartungshinweis, Update erzwingen, Einnahmen-Aktion, Pakete und Video an/aus, „Gas geben“</li>'+
+      '<li>Einstellungen: Nachricht an alle Spieler, Update erzwingen, Einnahmen-Aktion, Pakete und Video an/aus, „Gas geben“</li>'+
     '</ul></div></li>'+
   '</ol>';
 }
@@ -94,7 +96,6 @@ function reiter(akt,offen){
 /* Notschalter, die Geld kosten, wenn man sie vergisst – oben sichtbar halten */
 function hinweis(s){
   var c=s.config, l=[]; if(!c) return "";
-  if(c.wartung&&c.wartung.aktiv) l.push("der Wartungshinweis ist an");
   if(c.pakete===false) l.push("die Edelweiß-Pakete sind ausgeblendet");
   if(c.video===false) l.push("das Video-Angebot ist aus");
   if(!l.length) return "";
@@ -120,14 +121,14 @@ function technik(x){
 }
 function zeile(titel,wann,inhalt,knoepfe){ return '<li><div class="sk-t"><b>'+titel+'</b><span class="muted">'+wann+'</span></div><div class="sk-c">'+inhalt+'</div><div class="sk-b">'+knoepfe+'</div></li>'; }
 function tabTodo(s,liste){
-  var hint='<p class="sk-hint">Feedback aus dem Spiel und Programmfehler, die bei Spielern aufgetreten sind. Einmal erledigt, verschwindet der Eintrag.</p>';
+  var hint='<p class="sk-hint">Feedback aus dem Spiel, Abstürze und Programmfehler. Einmal erledigt, verschwindet der Eintrag.</p>';
   if(!liste.length) return hint+'<section class="panel"><div class="empty">Nichts zu tun – alles erledigt.</div></section>';
   var z=liste.slice(0,F.UI.hgAlle?300:30).map(function(a){
     var x=a.x;
     if(a.art==="fb") return zeile("Feedback",esc(ART[x.art]||"Nachricht")+" · "+esc(ago(a.datum)),'<p>'+esc(x.text)+'</p><span class="muted">'+esc(geraet(x))+'</span>',
       '<button type="button" class="btn primary" data-act="hgfb:'+esc(x.id)+'">Erledigt</button>');
-    var vs=String(x.versionen||"").trim().split(/\s+/).filter(Boolean);
-    return zeile("Programmfehler",esc(ago(a.datum)),'<p>'+esc(fehlerText(x))+'</p><span class="muted">'+num(x.anzahl)+'-mal bei '+num(x.spieler)+(+x.spieler===1?" Spieler":" Spielern")+(x.szene?" · "+esc(ort(x.szene)):"")+(vs.length?" · Version "+esc(vs.join(", ")):"")+'</span>'+
+    var vs=String(x.versionen||"").trim().split(/\s+/).filter(Boolean), ab=x.art==="abbruch";
+    return zeile(ab?"Absturz":"Programmfehler",esc(ago(a.datum)),'<p>'+(ab?"Die App wurde unerwartet beendet.":esc(fehlerText(x)))+'</p><span class="muted">'+num(x.anzahl)+'-mal bei '+num(x.spieler)+(+x.spieler===1?" Spieler":" Spielern")+(x.szene?" · "+esc(ort(x.szene)):"")+(vs.length?" · Version "+esc(vs.join(", ")):"")+'</span>'+
       '<details><summary class="muted">Technische Details</summary><pre class="sk-code">'+esc(technik(x))+'</pre></details>',
       '<button type="button" class="btn primary" data-act="hgerr:'+esc(x.hash)+'" title="Taucht der Fehler in einer neueren Version wieder auf, kommt er zurück in die Liste.">Behoben</button>');
   }).join("");
@@ -199,13 +200,8 @@ function ereignisse(s){
     if(k==="video"&&sum.video_abbruch) det.push(num(sum.video_abbruch)+"-mal vorher abgebrochen");
     (e.werte||[]).filter(function(x){ return x.art===k&&x.wert!==""&&x.wert!=null; }).slice(0,4).forEach(function(x){ det.push(wertName(k,String(x.wert))+" "+num(x.anzahl)); });
     return '<tr><td>'+esc(d[1])+(det.length?'<div class="sub">'+esc(det.join(" · "))+'</div>':'')+'</td><td class="r'+(k==="kauf_fehler"&&n?" bad-t":"")+'">'+num(n)+'</td></tr>'; }).join("");
-  return sec("Was die Spieler tun",'<span class="muted">letzte 30 Tage</span>','<table class="sk-tbl"><tbody>'+rows+'</tbody></table>');
-}
-function boni(s){
-  var fs=s.fortschritt||{}, basis=+fs.spieler||0, pk=(fs.perks||[]).slice().sort(function(a,b){ return (+b.anzahl||0)-(+a.anzahl||0); });
-  return sec("Beliebteste Boni",'<span class="muted">mit Edelweiß gekauft</span>',pk.length?'<table class="sk-tbl"><thead><tr><th>Bonus</th><th class="r">Spieler</th><th class="r">Anteil</th></tr></thead><tbody>'+
-    pk.map(function(x){ return '<tr><td>'+esc(x.name&&x.name!==x.perk?x.name:(PERK[x.perk]||x.perk))+'</td><td class="r">'+num(x.anzahl)+'</td><td class="r">'+(basis?pct(Math.min(1,(+x.anzahl||0)/basis),0):"–")+'</td></tr>'; }).join("")+'</tbody></table>'
-    :'<div class="empty">Noch keine Boni gekauft.</div>');
+  return sec("Was die Spieler tun",'<span class="muted">letzte 30 Tage</span>','<table class="sk-tbl"><tbody>'+rows+'</tbody></table>'+
+    '<div class="sk-foot muted">Spieler können die anonyme Statistik in den Einstellungen der App abschalten – Käufe und Feedback kommen trotzdem an.</div>');
 }
 function monthChart(byMonth,year){
   var map={}; (byMonth||[]).forEach(function(m){ map[m.month]=m; });
@@ -245,7 +241,7 @@ function kaeufe(s){
     (F.UI.hgHelp?'<section class="panel sk-empty">'+setupHelp()+'</section>':'');
 }
 function tabZahlen(s){
-  return '<div class="two">'+downloads(s)+fortschritt(s)+'</div>'+'<div class="two">'+ereignisse(s)+boni(s)+'</div>'+kaeufe(s);
+  return '<div class="two">'+downloads(s)+fortschritt(s)+'</div>'+ereignisse(s)+kaeufe(s);
 }
 F.action("hgall",function(){ F.UI.hgAll=!F.UI.hgAll; F.render(); });
 F.action("hghelp",function(){ F.UI.hgHelp=!F.UI.hgHelp; F.render(); });
@@ -272,14 +268,12 @@ function tabEinst(s){
   var c=s.config, g=s.configGeaendert?ago(s.configGeaendert):"";
   var hint='<p class="sk-hint">Was du hier speicherst, sehen die Spieler beim nächsten Start der App, spätestens nach etwa 10 Minuten.'+(g?' Zuletzt geändert '+(/^vor/.test(g)?"":"am ")+esc(g):'')+'</p>';
   if(!c) return hint+'<section class="panel"><div class="empty">Die Einstellungen der App wurden nicht mitgeliefert. Bitte neu laden.</div></section>';
-  var an=c.ankuendigung||{}, wa=c.wartung||{}, a=c.aktion||{}, st=aktionStatus(a);
+  var an=c.ankuendigung||{}, a=c.aktion||{}, st=aktionStatus(a);
   var vers=((s.users&&s.users.versionen)||[]).filter(function(v){ return v.version&&v.version!=="?"; }).slice(0,4);
   return hint+'<div class="sk-cards" id="hgEinst">'+
-    karte("Nachricht an alle Spieler","Erscheint einmal als Fenster „Neuigkeiten“ im Spiel, z. B. „Neue Welt ab Freitag!“.",
+    karte("Nachricht an alle Spieler","Erscheint einmal als Fenster „Neuigkeiten“ und läuft danach oben im Spiel als Laufschrift mit, z. B. „Neue Welt ab Freitag!“.",
       chk("hgAnkAn",an.aktiv,"Nachricht anzeigen")+eingabe("hgAnkText","Text",an.text,{area:1,max:300,ph:"z. B. Neue Welt ab Freitag!"}))+
-    karte("Wartungshinweis","Erscheint einmal als Fenster „Hinweis“, z. B. vor einer Wartung oder wenn gerade etwas nicht funktioniert.",
-      chk("hgWartAn",wa.aktiv,"Hinweis anzeigen")+eingabe("hgWartText","Text",wa.text,{area:1,max:300,ph:"z. B. Heute ab 22 Uhr kurze Wartung."}))+
-    karte("Update erzwingen","Wer eine ältere Version hat, bekommt alle 30 Minuten den Hinweis, im App Store zu aktualisieren. Leer lassen = aus.",
+    karte("Update erzwingen","Wer eine ältere Version hat, kann erst nach dem Update weiterspielen (der Spielstand bleibt). Leer lassen = aus.",
       '<div class="row2">'+eingabe("hgMinV","Mindestens Version",c.mindestVersion&&c.mindestVersion!=="0.0.0"?c.mindestVersion:"",{max:20,ph:"z. B. 1.0.3"})+eingabe("hgStore","Link zum App Store",c.storeUrl,{typ:"url",max:300,ph:"https://apps.apple.com/app/…"})+'</div>'+
       (vers.length?'<p>Gerade im Einsatz (letzte 30 Tage): '+vers.map(function(v){ return esc(v.version)+" bei "+num(v.anzahl)+(+v.anzahl===1?" Gerät":" Geräten"); }).join(" · ")+'</p>':''))+
     karte("Einnahmen-Aktion","Solange die Aktion läuft, verdienen alle Spieler mehr. Der Titel läuft im Spiel als Laufschrift mit, z. B. „Hüttengaudi-Wochenende · Einnahmen ×2“.",
@@ -297,13 +291,12 @@ function tabEinst(s){
 function merk(el){ var d=F.UI.hgEdit=F.UI.hgEdit||{}; d[el.id]=el.type==="checkbox"?el.checked:el.value; }
 F.listen("input","#hgEinst [data-hgf]",merk);
 F.listen("change","#hgEinst [data-hgf]",merk);
-function vergleich(c){ c=c||{}; var a=c.aktion||{}, an=c.ankuendigung||{}, wa=c.wartung||{}, bis=Date.parse(a.bis||"");
-  return JSON.stringify([!!an.aktiv,an.text||"",!!wa.aktiv,wa.text||"",c.mindestVersion||"0.0.0",c.storeUrl||"",!!a.aktiv,a.titel||"",+a.faktor||1,bis?Math.floor(bis/60000):null,c.pakete!==false,c.video!==false,+c.gasPauseStunden,+c.gasMinuten]); }
+function vergleich(c){ c=c||{}; var a=c.aktion||{}, an=c.ankuendigung||{}, bis=Date.parse(a.bis||"");
+  return JSON.stringify([!!an.aktiv,an.text||"",c.mindestVersion||"0.0.0",c.storeUrl||"",!!a.aktiv,a.titel||"",+a.faktor||1,bis?Math.floor(bis/60000):null,c.pakete!==false,c.video!==false,+c.gasPauseStunden,+c.gasMinuten]); }
 function pruefen(c){
   var a=c.aktion;
   if(c.ankuendigung.aktiv&&!c.ankuendigung.text) return "Bitte einen Text für die Nachricht eingeben";
-  if(c.wartung.aktiv&&!c.wartung.text) return "Bitte einen Text für den Wartungshinweis eingeben";
-  if(c.ankuendigung.text.length>300||c.wartung.text.length>300||a.titel.length>300) return "Texte bitte höchstens 300 Zeichen";
+  if(c.ankuendigung.text.length>300||a.titel.length>300) return "Texte bitte höchstens 300 Zeichen";
   if(!/^\d{1,4}(\.\d{1,4}){0,3}$/.test(c.mindestVersion)) return "Version bitte nur mit Ziffern und Punkten, z. B. 1.0.3";
   if(c.storeUrl&&!/^(https:\/\/|itms-apps:\/\/)[^\s"'<>\\]+$/.test(c.storeUrl)) return "Der Link zum App Store muss mit https:// beginnen";
   if(!(a.faktor>=1&&a.faktor<=3)) return "Einnahmen mal: bitte eine Zahl von 1 bis 3, z. B. 2";
@@ -319,7 +312,7 @@ F.action("hgcfg",function(arg,el){
   var bisV=v("hgAktBis"), bis=null; if(bisV){ var t=new Date(bisV); if(isNaN(t)){ F.toast("Das Ende der Aktion ist kein gültiges Datum",true); return; } bis=t.toISOString(); }
   var aktiv=c("hgAktAn"), faktor=parseFloat(v("hgAktFaktor").replace(",","."));
   if(!aktiv&&!(faktor>=1&&faktor<=3)) faktor=1;
-  var neu={ankuendigung:{aktiv:c("hgAnkAn"),text:v("hgAnkText")},wartung:{aktiv:c("hgWartAn"),text:v("hgWartText")},mindestVersion:v("hgMinV")||"0.0.0",storeUrl:v("hgStore"),
+  var neu={ankuendigung:{aktiv:c("hgAnkAn"),text:v("hgAnkText")},mindestVersion:v("hgMinV")||"0.0.0",storeUrl:v("hgStore"),
     aktion:{aktiv:aktiv,titel:v("hgAktTitel"),faktor:Math.round(faktor*100)/100,bis:bis},pakete:c("hgPakete"),video:c("hgVideo"),gasPauseStunden:Number(v("hgGasPause")),gasMinuten:Number(v("hgGasMin"))};
   var f=pruefen(neu); if(f){ F.toast(f,true); return; }
   if(vergleich(s.config)===vergleich(neu)){ F.UI.hgEdit={}; F.toast("Keine Änderungen"); return; }
