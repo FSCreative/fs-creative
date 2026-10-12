@@ -91,18 +91,67 @@ document.addEventListener("keydown",function(e){
   else if(k==="t"){ e.preventDefault(); M.todoFromMail(m); }
 });
 
-/* ---------- Wischen am Handy: links = löschen/wiederherstellen, rechts = gelesen umschalten ---------- */
-var SW=null;
-document.addEventListener("touchstart",function(e){ var row=e.target.closest&&e.target.closest(".mrow2"); if(!row||e.touches.length!==1||e.target.closest("[data-act]")) { SW=null; return; } SW={row:row,x:e.touches[0].clientX,y:e.touches[0].clientY,dx:0,lock:null}; },{passive:true});
-document.addEventListener("touchmove",function(e){ if(!SW) return; var dx=e.touches[0].clientX-SW.x, dy=e.touches[0].clientY-SW.y;
-  if(SW.lock===null&&(Math.abs(dx)>8||Math.abs(dy)>8)) SW.lock=Math.abs(dx)>Math.abs(dy)*1.3?"x":"y";
-  if(SW.lock!=="x") return; SW.dx=dx; SW.row.style.transition="none"; SW.row.style.transform="translateX("+Math.max(-120,Math.min(120,dx))+"px)";
-  SW.row.classList.toggle("sw-l",dx<-70); SW.row.classList.toggle("sw-r",dx>70); },{passive:true});
-document.addEventListener("touchend",function(){ if(!SW) return; var s=SW; SW=null; s.row.style.transition=""; s.row.style.transform=""; s.row.classList.remove("sw-l","sw-r");
-  if(s.lock!=="x") return; var m=M.find(s.row.getAttribute("data-mid")); if(!m||m.outbox||m.draftLocal) return;
-  if(s.dx<-70){ if(M.isTrashed(m)) M.restore([m.id]); else M.trash([m.id]); }
-  else if(s.dx>70){ M.setRead([m],!m.read); F.toast(m.read?"Als gelesen markiert":"Als ungelesen markiert"); } });
-document.addEventListener("touchcancel",function(){ if(SW){ SW.row.style.transform=""; SW.row.classList.remove("sw-l","sw-r"); SW=null; } });
+/* ---------- Handy-Gesten (wie Outlook): wischen links = löschen, rechts = gelesen; lange drücken = auswählen;
+   oben herunterziehen = aktualisieren; in der Lese-Ansicht vom linken Rand wischen = zurück ---------- */
+var SW=null, TH=0.38;
+function mob(){ return window.innerWidth<=900; }
+function vib(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(e){} }
+function holdRender(){ F._scrollAt=Date.now(); }
+function swWrap(row,m){
+  var w=document.createElement("div"); w.className="msw";
+  var tr=M.isTrashed(m);
+  w.innerHTML='<div class="msw-bg r">'+M.ic(m.read?"mail":"mailopen")+'<span>'+(m.read?"Ungelesen":"Gelesen")+'</span></div><div class="msw-bg l"><span>'+(tr?"Wiederherstellen":"Löschen")+'</span>'+M.ic(tr?"restore":"trash")+'</div>';
+  row.parentNode.insertBefore(w,row); w.appendChild(row); return w;
+}
+function swUnwrap(s){ if(!s.wrap||!s.wrap.parentNode) return; s.wrap.parentNode.insertBefore(s.row,s.wrap); s.wrap.remove(); s.wrap=null; }
+document.addEventListener("touchstart",function(e){
+  if(!mob()||e.touches.length!==1) { SW=null; return; }
+  var t=e.touches[0], row=e.target.closest&&e.target.closest(".mrow2");
+  var rd=e.target.closest&&e.target.closest(".mread");
+  if(rd&&t.clientX<28&&F.UI.msel){ SW={kind:"back",el:rd,x:t.clientX,y:t.clientY,dx:0,lock:null}; return; }
+  if(!row){ var ls=e.target.closest&&e.target.closest(".mlistp"); SW=ls&&window.scrollY<=0&&!F.UI.msel?{kind:"ptr",x:t.clientX,y:t.clientY,dy:0,lock:null}:null; return; }
+  if(e.target.closest(".star")){ SW=null; return; }
+  var id=row.getAttribute("data-mid"), m=M.find(id);
+  SW={kind:"row",row:row,id:id,m:m,x:t.clientX,y:t.clientY,dx:0,lock:null,w:row.offsetWidth,t0:Date.now(),go:false};
+  if(m&&!m.outbox&&!m.draftLocal) SW.hold=setTimeout(function(){ if(SW&&SW.row===row&&SW.lock===null){ SW.held=true; F._swHeldAt=Date.now(); vib(); F._forceRender=true; M.togglePick(id); } },430);
+},{passive:true});
+document.addEventListener("touchmove",function(e){
+  if(!SW) return; var t=e.touches[0], dx=t.clientX-SW.x, dy=t.clientY-SW.y;
+  if(SW.lock===null&&(Math.abs(dx)>8||Math.abs(dy)>8)){ SW.lock=Math.abs(dx)>Math.abs(dy)*1.2?"x":"y"; clearTimeout(SW.hold); }
+  if(SW.kind==="ptr"){
+    if(SW.lock!=="y"||dy<=0||window.scrollY>0) return; SW.dy=dy; holdRender();
+    var p=document.querySelector(".mptr"); if(!p) return; var h=Math.min(70,dy*0.5); p.style.transition="none"; p.style.height=h+"px"; p.classList.toggle("ready",h>=56); return;
+  }
+  if(SW.kind==="back"){ if(SW.lock!=="x"||dx<0) return; SW.dx=dx; holdRender(); SW.el.style.transition="none"; SW.el.style.transform="translateX("+dx+"px)"; SW.el.style.opacity=String(Math.max(.4,1-dx/600)); return; }
+  if(SW.lock!=="x"||!SW.m||SW.m.outbox||SW.m.draftLocal||M.selectedIds().length) return;
+  holdRender();
+  if(!SW.wrap) SW.wrap=swWrap(SW.row,SW.m);
+  SW.dx=dx; var r=SW.row; r.style.transition="none"; r.style.transform="translateX("+dx+"px)";
+  var go=Math.abs(dx)>SW.w*TH, bg=SW.wrap.querySelector(dx<0?".msw-bg.l":".msw-bg.r"), other=SW.wrap.querySelector(dx<0?".msw-bg.r":".msw-bg.l");
+  bg.style.visibility="visible"; other.style.visibility="hidden"; bg.classList.toggle("go",go);
+  if(go!==SW.go){ SW.go=go; if(go) vib(); }
+},{passive:true});
+function swEnd(){
+  if(!SW) return; var s=SW; SW=null; clearTimeout(s.hold);
+  if(s.kind==="ptr"){ var p=document.querySelector(".mptr"); if(!p) return; p.style.transition=""; if(p.classList.contains("ready")){ p.classList.remove("ready"); p.classList.add("spin"); p.style.height="48px"; M.loadFull().then(function(){ var q=document.querySelector(".mptr"); if(q){ q.classList.remove("spin"); q.style.height="0"; } }); } else p.style.height="0"; return; }
+  if(s.kind==="back"){ s.el.style.transition="transform .2s ease,opacity .2s ease"; if(s.dx>90){ s.el.style.transform="translateX(100%)"; s.el.style.opacity="0"; setTimeout(function(){ F.actions.mback(); },180); } else { s.el.style.transform=""; s.el.style.opacity=""; } return; }
+  if(s.held){ swUnwrap(s); return; }
+  if(!s.wrap){ return; }
+  var r=s.row, m=s.m, w=s.wrap;
+  r.style.transition="transform .25s cubic-bezier(.2,.8,.2,1)";
+  if(Math.abs(s.dx)<=s.w*TH||!m){ r.style.transform=""; setTimeout(function(){ swUnwrap(s); },260); return; }
+  if(s.dx>0){   /* gelesen umschalten: zurückfedern */
+    r.style.transform=""; setTimeout(function(){ swUnwrap(s); F._forceRender=true; M.setRead([m],!m.read); },230); return;
+  }
+  /* löschen: rausfliegen, Zeile zuklappen, dann löschen (mit Rückgängig) */
+  r.style.transform="translateX(-110%)";
+  setTimeout(function(){ w.style.height=w.offsetHeight+"px"; void w.offsetHeight; w.classList.add("out"); w.style.height="0"; w.style.opacity="0"; },200);
+  setTimeout(function(){ F._forceRender=true; if(M.isTrashed(m)) M.restore([m.id]); else M.trash([m.id]); },430);
+}
+document.addEventListener("touchend",swEnd,{passive:true});
+document.addEventListener("touchcancel",function(){ if(!SW) return; if(SW.kind==="row"){ SW.lock=null; SW.dx=0; } swEnd(); },{passive:true});
+/* nach langem Drücken keinen Klick (Öffnen) auslösen */
+document.addEventListener("click",function(e){ if(F._swHeldAt&&Date.now()-F._swHeldAt<600){ e.stopPropagation(); e.preventDefault(); } },true);
 
 /* ---------- Drucken: druckbare Ansicht in neuem Tab (Mail-HTML gesäubert, Skripte per CSP gesperrt) ---------- */
 M.print=function(m){
