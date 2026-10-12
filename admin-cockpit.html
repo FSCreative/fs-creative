@@ -105,6 +105,8 @@ label.fl{display:grid;gap:5px;font-size:13px;color:var(--ink-2)}
 .item .t{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .item .t .tag{margin-right:6px;vertical-align:1px}
 .item .d{font-size:13px;color:var(--ink-2);min-width:0;overflow-wrap:anywhere}
+.item .acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+@media (max-width:1280px){.item{grid-template-columns:4px 36px minmax(0,1fr);row-gap:8px}.item .acts{grid-column:3;justify-content:flex-start}}
 .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .more{display:block;width:100%;border:0;border-top:1px solid var(--line);background:none;padding:10px;color:var(--ink-2);font-weight:600;font-size:13px}
 

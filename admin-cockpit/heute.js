@@ -14,7 +14,7 @@ F.feed(function(){
   var D=F.D, out=[], today=D.today;
   F.newLeads().forEach(function(l){ out.push({id:"lead:"+l.id,rank:1,sev:"glow",icon:"lead",tag:["glow","Neue Anfrage"],t:(l.company?l.company+" · ":"")+l.name,d:(l.topic||"Anfrage")+(l.entwurf?" · möchte einen Gratis-Entwurf":"")+(l.source?" · über "+l.source:"")+" · "+F.ago(l.created),acts:[["Kundenakte","lead:"+l.id],["Antworten","replylead:"+l.id,"primary"]]}); });
   var sev=D.sev;
-  if(sev) sev.invoices.filter(function(i){return i.overdue&&i.open>0.005;}).forEach(function(i){ out.push({id:"inv:"+i.id,rank:2,sev:"bad",icon:"euro",tag:["bad","Überfällig"],t:(i.contact||"Kunde")+" · "+(i.nr||"Entwurf"),d:eur(i.open)+" offen · fällig seit "+de(i.due),acts:[["PDF","pdf:"+i.id],["Zahlung erfassen","book:"+i.id,"primary"]]}); });
+  if(sev) sev.invoices.filter(function(i){return i.overdue&&i.open>0.005;}).forEach(function(i){ out.push({id:"inv:"+i.id,rank:2,sev:"bad",icon:"euro",tag:["bad","Überfällig"],t:(i.contact||"Kunde")+" · "+(i.nr||"Entwurf"),d:eur(i.open)+" offen · fällig seit "+de(i.due),acts:[["Details","sdinv:"+i.id],["Mahnen","sdremind:"+i.id],["Zahlung erfassen","book:"+i.id,"primary"]]}); });
   (D.sites||[]).forEach(function(s){
     if(/FAILED|CRASHED/.test(s.status||"")) out.push({id:"rw:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Deploy"],t:"Deploy fehlgeschlagen: "+s.name,d:"Railway · letzter Versuch "+(s.lastDeploy?F.ago(s.lastDeploy):""),acts:[["Websites","go:web"]]});
     else if(s.up===false&&(s.active||!s.own)) out.push({id:"down:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Offline"],t:s.name+" ist nicht erreichbar",d:s.domain||"",acts:s.url?[["Öffnen","url:"+s.url]]:[]});
@@ -26,7 +26,7 @@ F.feed(function(){
   });
   F.unreadMails().filter(function(m){ return !m.answered && (Date.now()-Date.parse(m.date||0))<14*864e5; }).slice(0,8).forEach(function(m){ out.push({id:"mail:"+m.id,rank:4,sev:"info",icon:"post",tag:["info","Mail"],t:(m.fromName||m.from||"")+": „"+(m.subject||"(kein Betreff)")+"“",d:F.ago(m.date)+" · ungelesen",acts:[["Lesen","mail:"+m.id,"primary"]]}); });
   (D.todos||[]).filter(function(t){ return !t.done && t.due && t.due<=today; }).forEach(function(t){ out.push({id:"todo:"+t.id,rank:t.due<today?2:4,sev:t.due<today?"bad":"ok",icon:"check",tag:[t.due<today?"bad":"ok",t.due<today?"Überfällig":"Heute"],t:t.text||"Aufgabe",d:"To-Do · fällig "+de(t.due),acts:[["Erledigt","tododone:"+t.id]]}); });
-  if(sev&&sev.unassigned) out.push({id:"bank",rank:5,sev:"info",icon:"bank",tag:["info","Bank"],t:sev.unassigned+" Bankumsätze noch nicht zugeordnet",d:"Einer Rechnung oder einem Beleg zuordnen",acts:[["Ansehen","go:geld"]]});
+  /* Bankumsätze & Entwürfe: Feed kommt aus sevdesk.js */
   return out;
 });
 

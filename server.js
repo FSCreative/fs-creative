@@ -293,6 +293,17 @@ async function blitzCockpit(method, pathQ, body) {
   } catch (e) { return { status: 502, json: { ok: false, error: e && e.name === "AbortError" ? "blitz_timeout" : "blitz_unreachable" } }; }
   finally { clearTimeout(t); }
 }
+// Alle Blitzdings-Buchungen eines Jahres (inkl. vergangener, mit Status und der von Blitzdings angelegten sevDesk-Rechnung) für den Abgleich
+let BLITZ_YEAR = { at: 0, key: "", data: null };
+async function blitzYearBookings(year) {
+  if (!BLITZ_COCKPIT.token || !BLITZ_COCKPIT.base) return null;
+  const y = String(year);
+  if (BLITZ_YEAR.data && BLITZ_YEAR.key === y && Date.now() - BLITZ_YEAR.at < 3 * 60 * 1000) return BLITZ_YEAR.data;
+  const r = await blitzCockpit("GET", "/availability?from=" + y + "-01-01&to=" + y + "-12-31");
+  if (r.status !== 200 || !r.json || !r.json.ok || !Array.isArray(r.json.bookings)) return null;
+  BLITZ_YEAR = { at: Date.now(), key: y, data: r.json.bookings };
+  return BLITZ_YEAR.data;
+}
 async function kochduStats(year) {
   if (!KOCHDU.token) return null;
   const d = await getJSON(KOCHDU.url + "?token=" + encodeURIComponent(KOCHDU.token) + yearParam(year));
@@ -911,7 +922,9 @@ async function sevCreateInvoice(pl) {
   // Optional (KI-Rechnung): Steuerregel nach sevDesk Update 2.0 (z. B. Reverse Charge), Leistungszeitraum bis
   const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
   if (rule) { body.invoice.taxRule = { id: rule, objectName: "TaxRule" }; delete body.invoice.taxType; }
+  else if (pl.taxType === "custom" && /^\d+$/.test(String(pl.taxSet || ""))) { body.invoice.taxType = "custom"; body.invoice.taxSet = { id: String(pl.taxSet), objectName: "TaxSet" }; }   // Update 1.0: eigene Steuerregel (z. B. Reverse Charge) beim Bearbeiten erhalten
   if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDateUntil || "") && pl.deliveryDateUntil !== delivery) body.invoice.deliveryDateUntil = sevDateDE(pl.deliveryDateUntil);
+  if (pl.id) await SEV_OPS.invoiceUpdateBody(pl, body);   // Entwurf bearbeiten: gleiche Rechnung, Positionen ersetzen
   const j = await sev("POST", "/Invoice/Factory/saveInvoice", { body, timeout: 40000 });
   const invo = j && j.objects && (j.objects.invoice || j.objects) || {};
   SEV_CACHE.at = 0;
@@ -1106,6 +1119,8 @@ async function sevVoucherFromMail(pl) {
   return { id: String(v.id || ""), filename: fname };
 }
 function sevBody(req, max) { return new Promise((resolve, reject) => { let b = ""; req.on("data", c => { b += c; if (b.length > (max || 200000)) { req.destroy(); reject(new Error("too_large")); } }); req.on("end", () => { try { resolve(JSON.parse(b || "{}")); } catch (e) { reject(new Error("bad_json")); } }); }); }
+const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook,
+  snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
 
 // ── Abrechnung: Preise, Website-Einstellungen, letzte Rechnungen (FS Creative, kochdu, VALUERO) ──
 const BILLING_FILE = path.join(DATA_DIR, "billing.json");
@@ -1145,6 +1160,11 @@ function billingOp(pl) {
       from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200) };
     const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
     if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
+  } else if (op === "ignore" && pl.key) {        // Posten in „Zu verrechnen“ ausblenden, bis der Betrag wieder steigt
+    o.ignore = (o.ignore && typeof o.ignore === "object") ? o.ignore : {};
+    o.ignore[cleanKey(pl.key)] = { amount: Math.round((parseFloat(pl.amount) || 0) * 100) / 100, at: new Date().toISOString(), note: String(pl.note || "").slice(0, 200) };
+  } else if (op === "unignore" && pl.key) {
+    if (o.ignore) delete o.ignore[cleanKey(pl.key)];
   } else if (op === "unbill" && pl.key) {
     const k = cleanKey(pl.key); const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : [];
     const gone = arr.pop(); o.invoices[k] = arr;
@@ -1259,7 +1279,7 @@ function invLink(rec, sevById, oldest) {
 function sumState(links) { return links.reduce((t, l) => { if (!l) return t; t.invoiced += +l.gross || 0; t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
 
 function abgleichBuild(ctx) {
-  const { year, today, sev, bill, sitesSnap, kochdu, valuero, blitz, kantineur } = ctx;
+  const { year, today, sev, bill, sitesSnap, kochdu, valuero, blitz, blitzAll, kantineur } = ctx;
   const sevInv = (sev && sev.invoices) || [];
   const sevById = {}; sevInv.forEach(i => { sevById[i.id] = i; });
   const oldest = sevInv.length >= 600 ? sevInv.reduce((m, i) => (i.date && (!m || i.date < m) ? i.date : m), "") : "";
@@ -1312,25 +1332,39 @@ function abgleichBuild(ctx) {
         items: [{ name: "VALUERO Vermittlungsgebühren " + year, text: (o.ratesLabel ? o.ratesLabel + " · " : "") + "lt. Buchungsaufstellung", qty: 1, priceGross: open, taxRate: 20 }],
         after: { billing: { key: "valuero:" + o.key, label: o.name || o.key } } } : null });
   });
-  // 4) Blitzdings: jede Buchung braucht eine Rechnung (Abgleich über Buchungsnummer bzw. Kunde + Betrag/Datum)
-  ((blitz && blitz.upcoming) || []).forEach(b => {
+  // 4) Blitzdings: jede bestätigte Buchung braucht eine Rechnung. Blitzdings legt sie bei Online-Zahlung/Firmenkunden selbst an
+  //    (sevdeskInvoiceId), sonst Abgleich über Buchungsnummer bzw. Kunde + Betrag/Datum. „Zu verrechnen“ erst ab 14 Tage vor dem Event;
+  //    offene Anfragen (PENDING, unbezahlt) und stornierte Buchungen zählen nicht.
+  const blitzList = Array.isArray(blitzAll) ? blitzAll : ((blitz && blitz.upcoming) || []);
+  const soon = ymdAdd(today, 14);
+  blitzList.forEach(b => {
     const amt = round2((+b.totalCents || 0) / 100); if (!(amt > 0)) return;
-    const ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
-    let hit = ref ? sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR") : null;
-    if (!hit && cust) hit = sevInv.find(i => i.type !== "SR" && String(i.contact || "").toLowerCase() === cust && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))));
+    if (b.status === "CANCELLED" || b.paymentStatus === "REFUNDED") return;
+    if (b.status === "PENDING" && b.paymentStatus !== "PAID") return;
+    const ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
+    let hit = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
+    if (!hit && ref) hit = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR");
+    if (!hit && (cust || comp)) hit = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
     const rec = recs("blitz:" + b.id).slice(-1)[0];
-    const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : (rec ? invLink(rec, sevById, oldest) : null);
+    const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : (b.sevdeskInvoiceId ? invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: day, gross: amt }, sevById, oldest) : (rec ? invLink(rec, sevById, oldest) : null));
     if (link && link.id) linked[link.id] = 1;
+    const due = !!day && day <= soon;
+    if (!link && !due) return;                                  // Event noch weit weg: noch nichts zu tun
     const paidOnPlatform = b.paymentStatus === "PAID";
     const extras = (b.extras || []).map(e => e && e.name).filter(Boolean).join(", ");
-    items.push({ src: "blitzdings", key: "blitz:" + b.id, name: (b.customerName || "Buchung") + (b.package ? " · " + b.package : ""), sub: (day ? deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · bezahlt laut Blitzdings" : " · Zahlung offen laut Blitzdings"),
-      unbilled: link ? 0 : amt, invoiced: link ? link.gross : 0, paid: link && link.state === "bezahlt" ? link.gross : 0, open: link ? link.open : 0, refund: 0, paidOnPlatform, last: link, invoices: link ? [link] : [],
-      action: link ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: b.customerName || "", deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
-        items: [{ name: "Blitzdings " + (b.package || "Fotobox"), text: [day ? "Event am " + deDate(day) : "", b.location ? "Ort: " + b.location : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: amt, taxRate: 20 }], after: {} } });
+    const pkg = typeof b.package === "string" ? b.package : (b.package && b.package.name) || "";
+    const who = b.companyName || b.customerName || "Buchung";
+    items.push({ src: "blitzdings", key: "blitz:" + b.id, name: who + (pkg ? " · " + pkg : ""), sub: (day ? (day < today ? "Event war am " : "Event am ") + deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · online bezahlt" : ""),
+      unbilled: link ? 0 : amt, invoiced: link ? link.gross : 0, paid: link && link.state === "bezahlt" ? link.gross : 0, open: link ? link.open : 0, refund: 0, paidOnPlatform, last: link, invoices: link ? [link] : [], date: day,
+      action: link ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
+        items: [{ name: "Blitzdings " + (pkg || "Fotobox"), text: [day ? "Event am " + deDate(day) : "", (b.eventLocation || b.location) ? "Ort: " + (b.eventLocation || b.location) : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: amt, taxRate: 20 }], after: { billing: { key: "blitz:" + b.id, label: who } } } });
   });
   // 5) Kantineur: Abos laufen automatisch über die Plattform
   if (kantineur) items.push({ src: "kantineur", key: "kantineur", name: "Kantineur-Abos", sub: ((kantineur.subscribers && kantineur.subscribers.paying) || 0) + " zahlende Kantinen · MRR " + ((kantineur.mrrCents || 0) / 100).toFixed(2).replace(".", ",") + " €",
     unbilled: 0, invoiced: round2((kantineur.revenueGrossCents || 0) / 100), paid: round2((kantineur.revenueGrossCents || 0) / 100), open: 0, refund: 0, auto: true, last: null, invoices: [], action: null });
+  // Ausgeblendete Posten (bis der offene Betrag wieder steigt)
+  const ign = bill.ignore || {};
+  items.forEach(x => { const g = ign[x.key]; if (g && x.unbilled > 0.005 && x.unbilled <= (+g.amount || 0) + 0.01) { x.ignored = { amount: x.unbilled, at: g.at, note: g.note || "" }; x.unbilled = 0; x.action = null; } });
   // 6) Offene sevDesk-Rechnungen ohne Zuordnung
   const unlinked = sevInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
   const totals = items.reduce((t, x) => { t.unbilled += x.unbilled || 0; t.open += x.open || 0; t.refund += x.refund || 0; if (x.unbilled > 0.005) t.unbilledCount++; if (x.invoices.some(l => l && l.state === "fehlt")) t.missing++; return t; }, { unbilled: 0, open: 0, refund: 0, unbilledCount: 0, missing: 0 });
@@ -1504,14 +1538,14 @@ async function incomeForecast(ctx) {
 }
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
-  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc, ski, hg] = await Promise.all([
+  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc, ski, hg, bya] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
     withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
-    withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }),
+    withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }), withTimeout(blitzYearBookings(year), 9000, null),
   ]);
   const bill = readBilling();
-  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, blitz: b, kantineur: k });
+  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, blitz: b, blitzAll: bya, kantineur: k });
   const P = bill.prices || {};
   const sites = cockpitSites(sitesSnap).map(s => {
     const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
@@ -2230,6 +2264,29 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/sevdesk/voucher" && req.method === "POST") {
     try { const pl = await sevBody(req); const r = await sevVoucherFromMail(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  // ---- sevDesk im Cockpit: Rechnung abschließen, Bank, Belege, Kontakte, Artikel ----
+  if (p.indexOf("/admin/api/sev/") === 0) {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    const force = u.searchParams.get("force") === "1";
+    try {
+      if (p === "/admin/api/sev/invoice" && req.method === "GET") { const d = await SEV_OPS.invoiceDetail(u.searchParams.get("id")); return J(200, Object.assign({ ok: true, mail: SEV_OPS.mailDefaults(d, u.searchParams.get("kind") || "", u.searchParams.get("ref") || "") }, d)); }
+      if (p === "/admin/api/sev/invoice-op" && req.method === "POST") return J(200, Object.assign({ ok: true }, await SEV_OPS.invoiceOp(await sevBody(req))));
+      if (p === "/admin/api/sev/bank" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.bankOpen(force)), TYPES[".json"], { "Cache-Control": "no-store" });
+      if (p === "/admin/api/sev/bank-op" && req.method === "POST") return J(200, await SEV_OPS.bankOp(await sevBody(req)));
+      if (p === "/admin/api/sev/vouchers" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.vouchers(u.searchParams.get("year"), force)), TYPES[".json"], { "Cache-Control": "no-store" });
+      if (p === "/admin/api/sev/voucher-op" && req.method === "POST") return J(200, await SEV_OPS.voucherOp(await sevBody(req)));
+      if (p === "/admin/api/sev/voucher-doc" && req.method === "GET") {
+        const d = await SEV_OPS.voucherDoc(u.searchParams.get("id"));
+        const nm = String(d.name || "Beleg").replace(/[^\w.\- ]/g, "_");
+        return send(res, 200, d.buf, d.type, { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + nm + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+      }
+      if (p === "/admin/api/sev/contacts" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.contacts(force)), TYPES[".json"], { "Cache-Control": "no-store" });
+      if (p === "/admin/api/sev/contact" && req.method === "POST") return J(200, await SEV_OPS.contactSave(await sevBody(req)));
+      if (p === "/admin/api/sev/parts" && req.method === "GET") return J(200, await SEV_OPS.parts(force));
+      if (p === "/admin/api/sev/part" && req.method === "POST") return J(200, await SEV_OPS.partSave(await sevBody(req)));
+    } catch (e) { return J(200, { ok: false, configured: e.status !== 503, error: String(e.message || e).slice(0, 300) }); }
+    return J(404, { ok: false, error: "not_found" });
   }
   if (p === "/admin/api/sevdesk/raw" && req.method === "GET") {
     const path = String(u.searchParams.get("path") || "");

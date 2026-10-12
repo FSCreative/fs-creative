@@ -4,7 +4,7 @@
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, deShort=F.deShort;
 F.UI.money=F.UI.money||"zu"; F.UI.invQ=F.UI.invQ||""; F.UI.invF=F.UI.invF||"open"; F.UI.geldTab=F.UI.geldTab||"uebersicht";
 /* Unterpunkte von "Finanzen": weitere Module melden sich mit F.geldTab({id,label,order,render}) an */
-F.geldTabs=[{id:"uebersicht",label:"Übersicht & Abgleich",order:10},{id:"prognose",label:"Jahresprognose",order:20}];
+F.geldTabs=[{id:"uebersicht",label:"Übersicht",order:10},{id:"prognose",label:"Jahresprognose",order:20}];
 F.geldTab=function(t){ F.geldTabs.push(t); F.geldTabs.sort(function(a,b){ return a.order-b.order; }); };
 F.action("geldtab",function(k){ F.UI.geldTab=k; F.render(); window.scrollTo(0,0); });
 function subnav(){ return '<div class="subnav" role="tablist">'+F.geldTabs.map(function(t){ return '<button role="tab" data-act="geldtab:'+t.id+'" aria-current="'+(F.UI.geldTab===t.id)+'">'+esc(t.label)+'</button>'; }).join("")+'</div>'; }
@@ -41,13 +41,13 @@ F.action("migrate",function(){
     .then(function(){ F.toast(mig.count+" VALUERO-Abrechnungen übernommen"); F.load(true); }).catch(function(){ F.toast("Übernehmen fehlgeschlagen",true); });
 });
 F.action("invoice",function(key){ var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(x&&x.action) F.openInvoice(x.action); });
-F.action("openinvoices",function(){ F.UI.geldTab="uebersicht"; F.UI.invF="open"; F.go("geld"); setTimeout(function(){ var q=document.querySelector("[data-invq]"); if(q) q.scrollIntoView({block:"center"}); },50); });
+F.action("openinvoices",function(){ F.UI.geldTab="rechnungen"; F.UI.rgF="open"; F.go("geld"); });
 F.action("money",function(k){ F.UI.money=k; F.render(); });
 F.action("invf",function(k){ F.UI.invF=k; F.UI.invMore=0; F.render(); });
 F.action("invmore",function(){ F.UI.invMore=(F.UI.invMore||0)+40; F.render(); });
 F.action("txacc",function(id){ F.UI.txAcc=id; F.render(); });
 F.listen("input","[data-invq]",function(el){ F.UI.invQ=el.value; clearTimeout(el._d); el._d=setTimeout(F.render,250); });
-F.searcher(function(q){ return F.D.sev?F.D.sev.invoices.filter(function(i){ return (i.nr+" "+i.contact+" "+(i.header||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(i){ return {group:"Rechnungen",label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.gross)+(i.open>0.005?" · offen "+eur(i.open):" · bezahlt"),act:"pdf:"+i.id}; }):[]; });
+F.searcher(function(q){ return F.D.sev?F.D.sev.invoices.filter(function(i){ return (i.nr+" "+i.contact+" "+(i.header||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(i){ return {group:"Rechnungen",label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.gross)+(i.open>0.005?" · offen "+eur(i.open):" · bezahlt"),act:"sdinv:"+i.id}; }):[]; });
 
 F.view({id:"geld",label:"Finanzen",short:"Finanzen",icon:"geld",order:30,mobile:true,
   count:function(){ return F.D.abgleich.totals.unbilledCount||0; },
@@ -57,46 +57,86 @@ F.view({id:"geld",label:"Finanzen",short:"Finanzen",icon:"geld",order:30,mobile:
     return renderUebersicht();
   }
 });
-function renderUebersicht(){ return (function(){
-    var D=F.D, sev=D.sev, ab=D.abgleich, f=F.UI.money, SRC=F.SRC, mig=valueroLegacy();
-    var rows=ab.items.filter(function(x){ if(f==="zu") return x.unbilled>0.005||x.refund>0.005; if(f==="offen") return x.open>0.005; if(f==="prob") return problem(x); return true; });
-    var groups={}; rows.forEach(function(x){ (groups[x.src]=groups[x.src]||[]).push(x); });
-    var body=Object.keys(SRC).filter(function(k){return groups[k];}).map(function(k){
-      return '<tr class="grp"><td colspan="6">'+SRC[k]+'</td></tr>'+groups[k].map(function(x){
-        var invs=(x.invoices||[]).map(function(l){ return '<span>'+invLink(l)+' · '+eur(l.gross)+' '+stateTag(l)+'</span>'; }).join("");
-        var act=x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung · '+eur(x.unbilled)+'</button>':(x.auto?'<span class="tag ok">automatisch</span>':(x.unbilled>0.005?'':'<span class="tag ok">erledigt</span>'));
-        if(x.src==="kochdu"&&x.settledWithoutInvoice>0.005) invs+='<span class="tag warn">'+eur(x.settledWithoutInvoice)+' ohne Rechnung als verrechnet markiert</span>';
-        if(x.refund>0.005) act+=' <span class="tag bad">'+eur(x.refund)+' zu viel</span>';
-        return '<tr><td><b>'+esc(x.name)+'</b><div class="sub">'+esc(x.sub)+'</div></td><td class="r num">'+(x.unbilled>0.005?'<b class="warn-t">'+eur(x.unbilled)+'</b>':'<span class="muted">—</span>')+'</td><td class="r num">'+eur(x.invoiced)+'</td><td class="r num">'+(x.open>0.005?eur(x.open):'<span class="muted">—</span>')+'</td><td><div class="invs">'+(invs||'<span class="muted">—</span>')+'</div></td><td class="r">'+act+'</td></tr>';
-      }).join("");
+F.css(
+'.todo{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}'+
+'.todo button{display:grid;gap:4px;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:16px 18px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel);transition:transform .12s ease,box-shadow .12s ease}'+
+'.todo button:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.08)}'+
+'.todo .n{font-size:28px;font-weight:750;font-family:var(--f-mono,ui-monospace,monospace);letter-spacing:-.02em}'+
+'.todo .l{font-weight:650}.todo .h{font-size:13px;color:var(--ink-3)}'+
+'.todo .warn{border-color:var(--warn);background:var(--warn-soft)}.todo .bad{border-color:var(--bad);background:var(--bad-soft)}.todo .info{border-color:var(--info);background:var(--info-soft)}'+
+'.todo-ok{padding:18px;border-radius:var(--r);background:var(--ok-soft,#e6f4ea);font-weight:650}'+
+'.bill{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:14px}'+
+'.bill .c{border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:8px;background:var(--panel)}'+
+'.bill .c .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}'+
+'.bill .c .amt{font-size:22px;font-weight:750;font-family:var(--f-mono,ui-monospace,monospace)}'+
+'.bill .c .nm{font-weight:650}.bill .c .sb{font-size:13px;color:var(--ink-3)}'+
+'.bill .c .ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}'+
+'details.abg>summary{cursor:pointer;padding:14px 18px;font-weight:650;list-style:none;display:flex;justify-content:space-between;align-items:center}'+
+'details.abg>summary::-webkit-details-marker{display:none}details.abg>summary:after{content:"▾";color:var(--ink-3)}details.abg[open]>summary:after{content:"▴"}'
+);
+F.action("sdign",function(key){
+  var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(!x) return;
+  F.confirm("„"+x.name+"“ ("+eur(x.unbilled)+") ausblenden? Der Posten taucht wieder auf, sobald mehr zu verrechnen ist.","Ausblenden",function(){
+    F.api("/admin/api/billing",{body:{op:"ignore",key:key,amount:x.unbilled}}).then(function(j){ if(j&&j.ok===false){ F.toast("Nicht gespeichert",true); return; } F.toast("Ausgeblendet",false,"Rückgängig",function(){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.load(true); }); }); F.load(true); });
+  });
+});
+F.action("sdunign",function(key){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.toast("Wieder eingeblendet"); F.load(true); }); });
+F.action("sdshowign",function(){ F.UI.showIgn=!F.UI.showIgn; F.render(); });
+F.action("sdzu",function(){ var el=document.getElementById("zuVerrechnen"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); });
+function renderUebersicht(){
+  var D=F.D, sev=D.sev, ab=D.abgleich, f=F.UI.money, SRC=F.SRC, mig=valueroLegacy();
+  var zu=ab.items.filter(function(x){ return x.unbilled>0.005||x.refund>0.005; }).sort(function(a,b){ return (b.unbilled||0)-(a.unbilled||0); });
+  var ign=ab.items.filter(function(x){ return x.ignored; });
+  var drafts=sev?sev.invoices.filter(function(i){return i.status===100;}):[], over=sev?sev.invoices.filter(function(i){return i.overdue;}):[];
+  var vdr=sev&&sev.vouchers?sev.vouchers.drafts||0:0, unass=sev?sev.unassigned||0:0;
+  var tiles=[];
+  if(zu.length) tiles.push('<button class="warn" data-act="sdzu"><span class="n">'+eur0(ab.totals.unbilled)+'</span><span class="l">Zu verrechnen</span><span class="h">'+zu.length+' Posten ohne Rechnung</span></button>');
+  if(over.length) tiles.push('<button class="bad" data-act="sdtab:rechnungen|over"><span class="n">'+over.length+'</span><span class="l">Überfällig</span><span class="h">'+eur0(over.reduce(function(s,i){return s+i.open;},0))+' – erinnern oder mahnen</span></button>');
+  if(drafts.length) tiles.push('<button class="info" data-act="sdtab:rechnungen|draft"><span class="n">'+drafts.length+'</span><span class="l">Entwürfe senden</span><span class="h">'+eur0(drafts.reduce(function(s,i){return s+i.gross;},0))+' warten auf Versand</span></button>');
+  if(unass) tiles.push('<button class="info" data-act="sdtab:bank"><span class="n">'+unass+'</span><span class="l">Bankumsätze zuordnen</span><span class="h">mit Vorschlägen</span></button>');
+  if(vdr) tiles.push('<button data-act="sdtab:belege|draft"><span class="n">'+vdr+'</span><span class="l">Beleg-Entwürfe</span><span class="h">prüfen & fertig markieren</span></button>');
+  var bal=sev?sev.accounts.reduce(function(s,a){return s+(+a.balance||0);},0):null;
+  var cm=String(new Date().getFullYear())===String(D.year)?new Date().getMonth():-1;
+  var card=function(x){
+    var tag={website:"Website",kochdu:"kochdu",valuero:"VALUERO",blitzdings:"Blitzdings",kantineur:"Kantineur"}[x.src]||x.src;
+    return '<div class="c"><div class="top"><span class="tag grey">'+esc(tag)+'</span>'+(x.refund>0.005?'<span class="tag bad">'+eur(x.refund)+' zu viel verrechnet</span>':'')+'</div>'+
+      '<div><div class="nm">'+esc(x.name)+'</div><div class="sb">'+esc(x.sub)+'</div></div>'+
+      (x.unbilled>0.005?'<div class="amt">'+eur(x.unbilled)+'</div>':'')+
+      '<div class="ac">'+(x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
+  };
+  // Detail-Abgleich (eingeklappt)
+  var rows=ab.items.filter(function(x){ if(f==="zu") return x.unbilled>0.005||x.refund>0.005; if(f==="offen") return x.open>0.005; if(f==="prob") return problem(x); return true; });
+  var groups={}; rows.forEach(function(x){ (groups[x.src]=groups[x.src]||[]).push(x); });
+  var body=Object.keys(SRC).filter(function(k){return groups[k];}).map(function(k){
+    return '<tr class="grp"><td colspan="5">'+SRC[k]+'</td></tr>'+groups[k].map(function(x){
+      var invs=(x.invoices||[]).map(function(l){ return '<span>'+(l&&l.id?'<a href="#" data-act="sdinv:'+esc(l.id)+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l&&l.nr||"manuell"))+' · '+eur(l.gross)+' '+stateTag(l)+'</span>'; }).join("");
+      if(x.src==="kochdu"&&x.settledWithoutInvoice>0.005) invs+='<span class="tag warn">'+eur(x.settledWithoutInvoice)+' ohne Rechnung als verrechnet markiert</span>';
+      if(x.ignored) invs+='<span class="tag grey">'+eur(x.ignored.amount)+' ausgeblendet</span>';
+      return '<tr><td><b>'+esc(x.name)+'</b><div class="sub">'+esc(x.sub)+'</div></td><td class="r num">'+(x.unbilled>0.005?'<b class="warn-t">'+eur(x.unbilled)+'</b>':'<span class="muted">—</span>')+'</td><td class="r num">'+eur(x.invoiced)+'</td><td class="r num">'+(x.open>0.005?eur(x.open):'<span class="muted">—</span>')+'</td><td><div class="invs">'+(invs||'<span class="muted">—</span>')+'</div></td></tr>';
     }).join("");
-    var chip=function(k,l,n,a){ return '<button class="chip" data-act="'+(a||"money")+':'+k+'" aria-pressed="'+((a?F.UI.invF:f)===k)+'">'+l+(n!=null?' · '+n:'')+'</button>'; };
-    var cnt=function(fn){ return ab.items.filter(fn).length; };
-    var q=(F.UI.invQ||"").toLowerCase(), invF=F.UI.invF;
-    var invAll=sev?sev.invoices:[];
-    var invList=invAll.filter(function(i){ if(invF==="open"&&!(i.open>0.005&&i.status!==100)) return false; if(invF==="over"&&!i.overdue) return false; if(invF==="draft"&&i.status!==100) return false; if(invF==="paid"&&i.status!==1000) return false; return !q||(i.nr+" "+i.contact+" "+(i.header||"")+" "+(i.ref||"")).toLowerCase().indexOf(q)>-1; }); var invLim=(q?80:40)+(F.UI.invMore||0), invMoreN=Math.max(0,invList.length-invLim); invList=invList.slice(0,invLim);
-    var cm=String(new Date().getFullYear())===String(D.year)?new Date().getMonth():-1;
-    return F.head("Finanzen","sevDesk und alle Plattformen in einer Ansicht. Der Abgleich zeigt, was angefallen, verrechnet und bezahlt ist.",'<button class="btn" data-act="voucher">Beleg erfassen</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+subnav()+
+  }).join("");
+  var chip=function(k,l,n){ return '<button class="chip" data-act="money:'+k+'" aria-pressed="'+(f===k)+'">'+l+(n!=null?' · '+n:'')+'</button>'; };
+  var cnt=function(fn){ return ab.items.filter(fn).length; };
+  return F.head("Finanzen","Was ansteht, auf einen Blick. Rechnungen, Bank, Belege und Kontakte findest du in den Reitern darunter.",'<button class="btn" data-act="voucher">Beleg erfassen</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+subnav()+
     (D.sevConfigured&&!sev?'<div class="notice">sevDesk antwortet gerade nicht. Die Plattform-Zahlen stimmen, der Abgleich mit Rechnungen folgt beim nächsten Laden. <button class="btn" data-act="reload">Neu laden</button></div>':'')+
-    (mig.count?'<div class="notice"><span>Aus dem früheren Dashboard sind <b>'+mig.count+' VALUERO-Abrechnungen</b> ('+eur(mig.sum)+') noch nicht am Server gespeichert. Übernimm sie, damit der Abgleich auf allen Geräten stimmt.</span><button class="btn primary" data-act="migrate">Übernehmen</button></div>':'')+
+    (mig.count?'<div class="notice"><span>Aus dem früheren Dashboard sind <b>'+mig.count+' VALUERO-Abrechnungen</b> ('+eur(mig.sum)+') noch nicht am Server gespeichert.</span><button class="btn primary" data-act="migrate">Übernehmen</button></div>':'')+
+    '<section><div class="sec-t">Zu tun</div>'+(tiles.length?'<div class="todo">'+tiles.join("")+'</div>':'<div class="todo-ok">Alles erledigt 🎉 Nichts zu verrechnen, keine Entwürfe, nichts überfällig.</div>')+'</section>'+
     '<div class="kpis">'+
-      '<div class="panel kpi"><span class="k">Umsatz '+esc(D.year)+'</span><span class="v num">'+(sev?eur0(sev.revenueYear):"—")+'</span><span class="s">gestellte Rechnungen</span></div>'+
-      '<button class="panel kpi" data-act="invf:open"><span class="k">Offen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?sev.openCount+" Rechnungen":"")+'</span></button>'+
-      '<button class="panel kpi" data-act="invf:over"><span class="k">Überfällig</span><span class="v num'+(sev&&sev.overdueSum?" bad-t":"")+'">'+(sev?eur0(sev.overdueSum):"—")+'</span><span class="s">'+(sev?sev.overdueCount+" Rechnungen":"")+'</span></button>'+
-      '<button class="panel kpi" data-act="money:zu"><span class="k">Noch nicht verrechnet</span><span class="v num'+(ab.totals.unbilled?" warn-t":"")+'">'+eur0(ab.totals.unbilled)+'</span><span class="s">'+ab.totals.unbilledCount+' Posten</span></button>'+
+      '<div class="panel kpi"><span class="k">Umsatz '+esc(D.year)+'</span><span class="v num">'+(sev?eur0(sev.revenueYear):"—")+'</span><span class="s">gestellte Rechnungen, brutto</span></div>'+
+      '<button class="panel kpi" data-act="sdtab:rechnungen|open"><span class="k">Offen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?sev.openCount+" Rechnungen":"")+'</span></button>'+
+      '<button class="panel kpi" data-act="sdtab:rechnungen|over"><span class="k">Überfällig</span><span class="v num'+(sev&&sev.overdueSum?" bad-t":"")+'">'+(sev?eur0(sev.overdueSum):"—")+'</span><span class="s">'+(sev?sev.overdueCount+" Rechnungen":"")+'</span></button>'+
+      '<button class="panel kpi" data-act="sdtab:bank"><span class="k">Bank</span><span class="v num'+(bal!=null&&bal<0?" bad-t":"")+'">'+(bal==null?"—":eur0(bal))+'</span><span class="s">'+(sev?sev.accounts.length+" Konten laut sevDesk":"")+'</span></button>'+
     '</div>'+
-    '<section class="panel"><div class="panel-h"><h2>Abgleich Plattformen ↔ sevDesk</h2><div class="chips">'+chip("zu","Zu verrechnen",cnt(function(x){return x.unbilled>0.005||x.refund>0.005;}))+chip("offen","Verrechnet, noch offen",cnt(function(x){return x.open>0.005;}))+chip("prob","Auffällig",cnt(problem))+chip("alle","Alle",ab.items.length)+'</div></div>'+
-      '<div class="scroll"><table><thead><tr><th>Posten</th><th class="r">Nicht verrechnet</th><th class="r">Verrechnet</th><th class="r">Davon offen</th><th>Rechnungen</th><th></th></tr></thead><tbody>'+(body||'<tr><td colspan="6" class="empty">Nichts in dieser Ansicht. 👍</td></tr>')+'</tbody></table></div></section>'+
-    (ab.unlinked.length?'<section class="panel"><div class="panel-h"><h2>Offene Rechnungen ohne Plattform-Zuordnung</h2><span class="muted">z. B. Projektrechnungen</span></div><div class="scroll"><table><tbody>'+ab.unlinked.map(function(i){ return '<tr><td><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener">'+esc(i.nr||"Entwurf")+'</a><div class="sub">'+de(i.date)+'</div></td><td>'+esc(i.contact)+'</td><td class="r num">'+eur(i.open)+'</td><td>'+(i.overdue?'<span class="tag bad">überfällig</span>':'<span class="tag warn">fällig '+de(i.due)+'</span>')+'</td><td class="r"><button class="btn" data-act="book:'+esc(i.id)+'">Zahlung erfassen</button></td></tr>'; }).join("")+'</tbody></table></div></section>':'')+
-    (sev?'<div class="two"><section class="panel"><div class="panel-h"><h2>Umsatz je Monat</h2><span class="muted">laut sevDesk</span></div><div class="chart">'+F.barChart(sev.byMonth,{highlight:cm,label:"Umsatz je Monat"})+'</div></section>'+
-      '<section class="panel"><div class="panel-h"><h2>Bank</h2><span class="muted">Saldo laut sevDesk</span></div><div class="accs">'+[{id:"all",name:"Alle Konten",balance:sev.accounts.reduce(function(s,a){return s+(+a.balance||0);},0)}].concat(sev.accounts).map(function(a){ var on=(F.UI.txAcc||"all")===String(a.id); return '<button class="acc" data-act="txacc:'+esc(a.id)+'" aria-pressed="'+on+'" style="text-align:left;cursor:pointer;font:inherit;color:inherit;background:none;border:1px solid '+(on?'var(--accent,#2f6bff)':'transparent')+';border-radius:10px;padding:6px 8px"><div class="muted">'+esc(a.name)+(a.isDefault?' · Standard':'')+'</div><div class="num big'+(a.balance<0?" bad-t":"")+'">'+(a.balance==null?"—":eur(a.balance))+'</div></button>'; }).join("")+'</div>'+
-        (sev.accounts.some(function(a){ return a.balance!=null&&a.balance<-1000&&a.type!=="register"; })?'<div class="panel-b muted" style="padding-top:0">Stimmt ein Saldo nicht mit der Bank überein, fehlt in sevDesk meist der Anfangssaldo des Kontos (Bank → Konto bearbeiten).</div>':'')+
-        '<div class="panel-b muted" style="padding-top:0">'+(sev.unassigned?sev.unassigned+" Umsätze noch nicht zugeordnet · ":"")+((sev.vouchers&&sev.vouchers.drafts)||0)+' Beleg-Entwürfe · '+((sev.vouchers&&sev.vouchers.open)||0)+' offene Ausgaben ('+eur(sev.vouchers&&sev.vouchers.openSum)+')</div>'+
-        ((sev.transactions||[]).length?'<div class="txs">'+sev.transactions.filter(function(t){ var a=F.UI.txAcc||"all"; return a==="all"||String(t.accountId)===a; }).slice(0,30).map(function(t){ return '<div class="tx"><span class="num muted">'+deShort(t.date)+'</span><span class="tx-m"><b>'+esc(t.name||t.purpose||"Umsatz")+'</b><span class="muted">'+esc(t.name?t.purpose:"")+'</span></span>'+(t.status===100?'<span class="tag warn">offen</span>':'')+'<span class="num '+(t.amount<0?"bad-t":"ok-t")+'">'+(t.amount>0?"+":"")+eur(t.amount)+'</span></div>'; }).join("")+'</div>':'')+'</section></div>'+
-    '<section class="panel"><div class="panel-h"><h2>Rechnungen</h2><div class="row wrap"><div class="chips">'+chip("open","Offen",null,"invf")+chip("over","Überfällig",null,"invf")+chip("draft","Entwürfe",null,"invf")+chip("paid","Bezahlt",null,"invf")+chip("all","Alle",null,"invf")+'</div><input class="f" style="max-width:240px" placeholder="Suchen: Nr., Kunde …" data-invq data-keepfocus="invq" value="'+esc(F.UI.invQ)+'" aria-label="Rechnungen suchen"></div></div>'+
-      '<div class="scroll"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Datum</th><th>Fällig</th><th class="r">Betrag</th><th class="r">Offen</th><th>Status</th><th></th></tr></thead><tbody>'+(invList.map(function(i){ var st=F.invLine(i).match(/<span class="tag[^>]*>[^<]*<\/span>/); return '<tr><td><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener">'+esc(i.nr||"Entwurf")+'</a></td><td>'+esc(i.contact)+(i.header&&i.header!=="Rechnung"?'<div class="sub">'+esc(i.header)+'</div>':'')+'</td><td class="num">'+deShort(i.date)+'</td><td class="num">'+deShort(i.due)+'</td><td class="r num">'+eur(i.gross)+'</td><td class="r num">'+(i.open>0.005?eur(i.open):"—")+'</td><td>'+(st?st[0]:"")+'</td><td class="r nowrap">'+(i.open>0.005&&i.status!==100?'<button class="btn" data-act="book:'+esc(i.id)+'">Zahlung</button> ':'')+'<a class="btn icon" href="'+F.SEVURL+'/fi/detail/type/RE/id/'+encodeURIComponent(i.id)+'" target="_blank" rel="noopener" title="In sevDesk öffnen" aria-label="In sevDesk öffnen">↗</a></td></tr>'; }).join("")||'<tr><td colspan="8" class="empty">Keine Rechnungen in dieser Ansicht.</td></tr>')+'</tbody></table></div>'+(invMoreN?'<button class="more" data-act="invmore">Weitere '+Math.min(40,invMoreN)+' laden ('+invMoreN+' übrig)</button>':'')+'</section>':'');
-  })();
+    '<section class="panel" id="zuVerrechnen"><div class="panel-h"><h2>Zu verrechnen</h2><span class="muted">'+(zu.length?eur(ab.totals.unbilled)+' · '+zu.length+' Posten':'')+'</span></div>'+
+      (zu.length?'<div class="bill">'+zu.map(card).join("")+'</div>':'<div class="sd-empty"><b>Nichts offen 🎉</b>Alle Leistungen sind verrechnet.</div>')+
+      (ign.length?'<div style="padding:0 16px 14px"><button class="link" data-act="sdshowign">'+(F.UI.showIgn?"Ausgeblendete verbergen":ign.length+" ausgeblendet · anzeigen")+'</button>'+(F.UI.showIgn?'<div class="sd-list panel" style="margin-top:8px">'+ign.map(function(x){ return '<div class="sd-row" style="cursor:default"><div><div class="t">'+esc(x.name)+'</div><div class="s">'+eur(x.ignored.amount)+' · ausgeblendet am '+de(String(x.ignored.at||"").slice(0,10))+'</div></div><div class="r"><button class="btn" data-act="sdunign:'+esc(x.key)+'">Wieder einblenden</button></div></div>'; }).join("")+'</div>':'')+'</div>':'')+
+    '</section>'+
+    (sev?'<section class="panel"><div class="panel-h"><h2>Umsatz je Monat</h2><span class="muted">laut sevDesk</span></div><div class="chart">'+F.barChart(sev.byMonth,{highlight:cm,label:"Umsatz je Monat"})+'</div></section>':'')+
+    '<details class="panel abg"'+(F.UI.abgOpen?" open":"")+' data-abg><summary>Abgleich je Plattform<span class="muted" style="margin-left:auto;margin-right:10px;font-weight:500">angefallen ↔ verrechnet ↔ bezahlt</span></summary>'+
+      '<div class="sd-tools"><div class="chips">'+chip("zu","Zu verrechnen",cnt(function(x){return x.unbilled>0.005||x.refund>0.005;}))+chip("offen","Verrechnet, noch offen",cnt(function(x){return x.open>0.005;}))+chip("prob","Auffällig",cnt(problem))+chip("alle","Alle",ab.items.length)+'</div></div>'+
+      '<div class="scroll"><table><thead><tr><th>Posten</th><th class="r">Nicht verrechnet</th><th class="r">Verrechnet</th><th class="r">Davon offen</th><th>Rechnungen</th></tr></thead><tbody>'+(body||'<tr><td colspan="5" class="empty">Nichts in dieser Ansicht. 👍</td></tr>')+'</tbody></table></div></details>';
 }
+F.listen("click","[data-abg] > summary",function(el){ F.UI.abgOpen=!el.parentNode.open; });
 
 /* ---------- Jahresprognose ---------- */
 // Logik: Ist (gestellte Rechnungen laut sevDesk bis heute) + Rest des Jahres.

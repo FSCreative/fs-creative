@@ -6,14 +6,14 @@ var F=window.FSC, esc=F.esc, eur=F.eur;
 /* ---------- Rechnung erstellen (Entwurf in sevDesk) ---------- */
 var META=null;
 F.loadMeta=function(cb,force){ if(META&&!force) return cb(META); F.api("/admin/api/sevdesk/meta"+(force?"?force=1":"")).then(function(m){ META=m||{}; cb(META); }).catch(function(){ cb({}); }); };
-function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" placeholder="Bezeichnung" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"></div>'; }
-var INVCTX=null;
+function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" list="invParts" placeholder="Bezeichnung oder Artikel" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"></div>'; }
+var INVCTX=null, PARTS=[];
 F.addDays=function(iso,n){ var d=new Date(String(iso).slice(0,10)+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
 /* Rechnungsdialog; mit pre.kind==="offer" derselbe Dialog als „Neues Angebot“ (Gültig bis, Betreff, → /admin/api/sevdesk/offer) */
 F.openInvoice=function(pre){
   pre=pre||{}; INVCTX=pre; var today=F.D?F.D.today:F.ymd(), offer=pre.kind==="offer";
   F.modal('<form data-form="invoice" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(pre.title||(offer?"Neues Angebot":"Neue Rechnung"))+'</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Wird als <b>Entwurf</b> in sevDesk angelegt. Prüfen und versenden machst du in sevDesk.</p>'+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
+    '<p class="muted" style="margin:0">'+(pre.id?'Du bearbeitest einen Entwurf. Die Positionen werden ersetzt.':'Wird als <b>Entwurf</b> in sevDesk angelegt. Danach kannst du ihn direkt hier ansehen und per Mail senden.')+'</p>'+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
     '<div class="grid2"><label class="fl">Kunde<input class="f" name="contact" list="invContacts" required value="'+esc(pre.contactName||"")+'"></label><label class="fl">E-Mail (für neue Kunden)<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label>'+
     (offer?'<label class="fl">Angebotsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Gültig bis<input class="f" name="valid" type="date" value="'+esc(pre.validUntil||F.addDays(pre.invoiceDate||today,30))+'"></label></div>'+
       '<label class="fl">Betreff<input class="f" name="header" value="'+esc(pre.header||"Angebot")+'"></label>'
@@ -21,14 +21,22 @@ F.openInvoice=function(pre){
     '<label class="fl">Adresse<textarea class="f" name="address" rows="2" placeholder="Name, Straße, PLZ Ort">'+esc(pre.address||pre.contactName||"")+'</textarea></label>'+
     '<label class="fl">Einleitungstext<textarea class="f" name="head" rows="2">'+esc(pre.headText||"")+'</textarea></label>'+
     '<div><div class="sec-t">Positionen</div><div id="irows" style="display:grid;gap:10px">'+((pre.items&&pre.items.length?pre.items:[{}]).map(irow).join(""))+'</div><button type="button" class="link" data-addrow>+ Position</button></div>'+
-    '<div class="foot"><span id="invSum" class="num"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">'+(offer?"Angebot als Entwurf anlegen":"Entwurf in sevDesk anlegen")+'</button></span></div><div class="err" id="invErr"></div><datalist id="invContacts"></datalist></form>',"wide");
+    '<div class="foot"><span id="invSum" class="num"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">'+(offer?"Angebot als Entwurf anlegen":pre.id?"Änderungen speichern":"Entwurf in sevDesk anlegen")+'</button></span></div><div class="err" id="invErr"></div><datalist id="invContacts"></datalist><datalist id="invParts"></datalist></form>',"wide");
   invSum();
+  if(F.sevParts) F.sevParts(function(ps){ PARTS=ps||[]; var dl=document.getElementById("invParts"); if(dl) dl.innerHTML=PARTS.filter(function(p){return p.active;}).map(function(p){ return '<option value="'+esc(p.name)+'">'+esc(F.eur(p.priceGross))+'</option>'; }).join(""); });
   F.loadMeta(function(m){ var dl=document.getElementById("invContacts"); if(dl) dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join(""); });
 };
 function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEach(function(r){ var g=function(k){ return r.querySelector('[data-i="'+k+'"]').value; }; var nm=g("name").trim(), pr=g("price"); if(!nm||pr==="") return; out.push({name:nm,text:g("text").trim(),qty:parseFloat(g("qty"))||1,priceGross:parseFloat(pr),taxRate:parseFloat(g("tax"))}); }); return out; }
 function invSum(){ var g=0; invItems().forEach(function(i){ g+=i.qty*i.priceGross; }); var el=document.getElementById("invSum"); if(el) el.textContent="Summe brutto "+eur(g); }
 F.listen("input","#irows",invSum);
 F.listen("change","#irows",invSum);
+/* Artikel gewählt → Preis, USt und Text übernehmen */
+F.listen("change",'#irows [data-i="name"]',function(el){
+  var p=PARTS.find(function(x){ return x.name===el.value; }); if(!p) return;
+  var r=el.closest(".irow"), pr=r.querySelector('[data-i="price"]'), tx=r.querySelector('[data-i="text"]'), tax=r.querySelector('[data-i="tax"]');
+  if(pr&&!pr.value) pr.value=p.priceGross; if(tx&&!tx.value&&p.text) tx.value=p.text; if(tax) tax.value=String(p.taxRate);
+  invSum();
+});
 F.listen("click","[data-addrow]",function(){ document.getElementById("irows").insertAdjacentHTML("beforeend",irow({})); });
 F.listen("click","[data-delrow]",function(el){ if(document.querySelectorAll("#irows .irow").length>1) el.closest(".irow").remove(); invSum(); });
 F.form("invoice",function(form){
@@ -37,10 +45,12 @@ F.form("invoice",function(form){
   if(!items.length){ err.textContent="Bitte mindestens eine Position mit Bezeichnung und Preis angeben."; return; }
   if(INVCTX&&INVCTX.kind==="offer") return saveOffer(form,items,contact,err,btn);
   var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),items:items};
-  if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil","country","uid"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });   /* z. B. von der KI (Reverse Charge, Fußtext) */
-  btn.disabled=true; err.textContent=""; btn.textContent="Lege Entwurf an …";
+  if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil","country","uid","taxType","taxSet","id"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });
+  if(INVCTX&&INVCTX.contactId&&INVCTX.contactName===contact) body.contactId=INVCTX.contactId;
+  var editing=!!body.id, lblSave=editing?"Änderungen speichern":"Entwurf in sevDesk anlegen";   /* z. B. von der KI (Reverse Charge, Fußtext) */
+  btn.disabled=true; err.textContent=""; btn.textContent=editing?"Speichere …":"Lege Entwurf an …";
   F.api("/admin/api/sevdesk/invoice",{body:body}).then(function(j){
-    if(!j||!j.ok){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
+    if(!j||!j.ok){ btn.disabled=false; btn.textContent=lblSave; err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannter Fehler"); return; }
     var after=(INVCTX&&INVCTX.after)||{}, jobs=[];
     if(after.siteCustomer) jobs.push(F.api("/admin/api/billing",{body:{op:"site",key:after.siteCustomer.replace(/^site:/,""),patch:{customer:contact}}}));
     if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:{id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label}}}));
@@ -50,9 +60,10 @@ F.form("invoice",function(form){
       var failed=res.filter(function(x){ return !x; }).length;
       F.closeModal();
       if(failed) F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt, aber "+failed+" Folgeschritt(e) (als verrechnet markieren) fehlgeschlagen – bitte prüfen",true);
-      else F.toast("Rechnungsentwurf "+(j.nr||"")+" in sevDesk angelegt",false,"In sevDesk öffnen",function(){ window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id),"_blank","noopener"); });
+      else if(editing) F.toast("Entwurf gespeichert");
+      else F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt",false,"Öffnen & senden",function(){ if(F.sevOpenInvoice) F.sevOpenInvoice(j.id); else window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id),"_blank","noopener"); });
       if(cb) cb(j,{failed:failed}); F.load(true); });
-  }).catch(function(){ btn.disabled=false; btn.textContent="Entwurf in sevDesk anlegen"; err.textContent="Keine Verbindung zum Server."; });
+  }).catch(function(){ btn.disabled=false; btn.textContent=lblSave; err.textContent="Keine Verbindung zum Server."; });
 });
 /* Angebot anlegen (gleicher Dialog). Danach optional Lead in Phase „Angebot“ schieben (nur vorwärts). */
 function saveOffer(form,items,contact,err,btn){
