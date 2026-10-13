@@ -334,6 +334,35 @@ input.f,select.f,textarea.f{border-radius:4px}
 .dialog{border-radius:8px;box-shadow:0 25.6px 57.6px rgba(0,0,0,.22),0 4.8px 14.4px rgba(0,0,0,.18);border:0}
 .drawer{box-shadow:-8px 0 24px rgba(0,0,0,.12);border-left:0}
 .toast{border-radius:6px}
+/* Werkzeuge in der Kopfleiste (KI, Beträge, Einstellungen, neue Version – werden von globals.js/ki-chat.js eingesetzt) */
+.topbar .tb-right.rail-foot{display:flex;margin:0;padding:0;gap:8px;font-size:13px}
+.topbar .rail-foot .rf-ic{width:34px;height:34px;padding:0;border:0;border-radius:6px;background:none;color:#fff;display:grid;place-items:center}
+.topbar .rail-foot .rf-ic:hover{background:rgba(255,255,255,.16);color:#fff}
+.topbar .rail-foot .rf-ic span{display:none}
+.topbar .rail-foot .rf-ic svg{width:18px;height:18px}
+.topbar .rail-foot .rf-ic[aria-pressed="true"]{background:rgba(255,255,255,.22)}
+.topbar .rail-foot .rf-new{width:auto;display:flex;gap:6px;padding:0 12px;background:#fff;color:var(--glow);font-weight:700;border-radius:99px}
+.topbar .rail-foot .rf-new span{display:inline}
+.topbar .rail-foot .rf-new:hover{background:#fff;color:var(--glow)}
+.topbar .rail-foot .tb-i{display:grid;place-items:center;width:34px;height:34px;padding:0;color:#fff;border-radius:6px}
+.topbar .rail-foot .tb-i:hover{background:rgba(255,255,255,.16);color:#fff}
+.topbar .rail-foot a.tb-av{display:grid;place-items:center;padding:0;color:var(--glow);background:#fff;border-radius:50%}
+.topbar .rail-foot a.tb-av:hover{background:#fff;color:var(--glow)}
+:root[data-theme="dark"] .topbar .rail-foot a.tb-av{background:var(--glow);color:#0a1a2a}
+.topbar .rail-foot select.tb-sel{border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;border-radius:6px;padding:0 6px}
+/* Postfach und Kalender füllen am PC den ganzen Bildschirm */
+@media (min-width:901px){
+  main:has(>.view-post),main:has(>.view-kal .kd){height:calc(100vh - 48px);display:flex;flex-direction:column;padding-block:14px 14px;padding-inline:18px}
+  main>.view-post,main>.view-kal:has(.kd){flex:1;min-height:0;max-width:none;width:100%;display:flex;flex-direction:column;gap:12px}
+  .view-post>.mbox{flex:1;min-height:0;align-items:stretch}
+  .view-post .mfold,.view-post .mlistp,.view-post .mread{position:static!important;max-height:none!important;height:100%;min-height:0}
+  .view-post .mfold{overflow-y:auto}
+  .view-post .mframe{height:max(420px,calc(100vh - 420px))}
+  .view-kal>.kd{flex:1;min-height:0;align-items:stretch}
+  .view-kal .kd-side{position:static;overflow-y:auto}
+  .view-kal .kd-main{display:flex;flex-direction:column;min-height:0;overflow:auto}
+  .view-kal .kw-scroll{flex:1;max-height:none;min-height:0}
+}
 @media (max-width:900px){
   .topbar{display:none}
   .app{min-height:100%;grid-template-columns:minmax(0,1fr)}
@@ -350,7 +379,7 @@ input.f,select.f,textarea.f{border-radius:4px}
 <header class="topbar" aria-label="Kopfleiste">
   <div class="tb-brand"><img src="/logos/cockpit-favicon.png" alt=""><b>FS Cockpit</b></div>
   <button id="searchBtn" class="tb-search" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>Suchen – Mails, Kunden, Rechnungen, Termine …</span><kbd>⌘K</kbd></button>
-  <div class="tb-right">
+  <div class="tb-right rail-foot">
     <span class="stamp" id="stamp"></span>
     <button id="refresh" class="tb-i" type="button" title="Aktualisieren" aria-label="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
     <select id="year" class="tb-sel" aria-label="Jahr" title="Jahr"></select>

@@ -76,7 +76,7 @@ function rail(){
   var rf=document.querySelector(".rail-foot"); if(!rf||document.getElementById("rfPriv")) return;
   var ref=document.getElementById("refresh")||null;
   var p=document.createElement("button"); p.type="button"; p.id="rfPriv"; p.className="rf-ic"; p.setAttribute("data-act","priv"); p.title="Beträge verdecken, z. B. beim Bildschirm teilen";
-  var s=document.createElement("button"); s.type="button"; s.id="rfSet"; s.className="rf-ic"; s.setAttribute("data-act","settings"); s.innerHTML=F.svg("gear")+'<span>Einstellungen</span>';
+  var s=document.createElement("button"); s.type="button"; s.id="rfSet"; s.className="rf-ic"; s.setAttribute("data-act","settings"); s.title="Einstellungen"; s.innerHTML=F.svg("gear")+'<span>Einstellungen</span>';
   rf.insertBefore(p,ref); rf.insertBefore(s,ref);
   privLabel();
 }

@@ -135,7 +135,7 @@ F.action("kiprop",function(v){
 /* ---------- Seitenleiste ---------- */
 function rail(){
   var rf=document.querySelector(".rail-foot"); if(!rf||document.getElementById("rfKi")) return;
-  var b=document.createElement("button"); b.type="button"; b.id="rfKi"; b.className="rf-ic"; b.setAttribute("data-act","kichat"); b.innerHTML=F.svg("spark")+'<span>KI-Assistent</span><span class="muted" style="margin-left:auto">⌘J</span>';
+  var b=document.createElement("button"); b.type="button"; b.id="rfKi"; b.className="rf-ic"; b.setAttribute("data-act","kichat"); b.title="KI-Assistent (⌘J)"; b.innerHTML=F.svg("spark")+'<span>KI-Assistent</span><span class="muted" style="margin-left:auto">⌘J</span>';
   rf.insertBefore(b,rf.firstChild);
 }
 if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",rail); else rail();
