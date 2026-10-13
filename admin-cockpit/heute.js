@@ -30,7 +30,7 @@ F.feed(function(){
   return out;
 });
 
-F.todoList=function(arr){ var t=F.D.today; return arr.length?arr.map(function(x){ return '<div class="todo"><input type="checkbox" data-todo="'+esc(x.id)+'"'+(x.done?" checked":"")+' aria-label="Erledigt"><button type="button" class="todo-t" data-act="todoedit:'+esc(x.id)+'">'+esc(x.text||"")+(x.due?' <span class="due'+(!x.done&&x.due<t?" late":"")+'">'+(!x.done&&x.due<t?"überfällig · ":"")+de(x.due)+'</span>':'')+(x.notes?' <span class="due">· Notiz</span>':'')+'</button></div>'; }).join(""):'<div class="empty">Keine offenen To-Dos.</div>'; };
+F.todoList=function(arr){ var t=F.D.today; return arr.length?arr.map(function(x){ return '<div class="tdrow"><input type="checkbox" data-todo="'+esc(x.id)+'"'+(x.done?" checked":"")+' aria-label="Erledigt"><button type="button" class="todo-t" data-act="todoedit:'+esc(x.id)+'">'+esc(x.text||"")+(x.due?' <span class="due'+(!x.done&&x.due<t?" late":"")+'">'+(!x.done&&x.due<t?"überfällig · ":"")+de(x.due)+'</span>':'')+(x.notes?' <span class="due">· Notiz</span>':'')+'</button></div>'; }).join(""):'<div class="empty">Keine offenen To-Dos.</div>'; };
 F.todoAdd=function(){ return '<form class="todo-add" data-form="todo"><input class="f" name="text" placeholder="Neues To-Do …" aria-label="Neues To-Do" required><input class="f" type="date" name="due" aria-label="Fällig am" style="max-width:150px"><button class="btn primary" type="submit" aria-label="To-Do anlegen">+</button></form>'; };
 F.form("todo",function(f){ var txt=f.text.value.trim(); if(!txt) return; F.addTodo({text:txt,due:f.due.value||""}).then(function(){ F.toast("To-Do angelegt"); }); });
 F.listen("change","[data-todo]",function(el){ var id=el.getAttribute("data-todo"), on=el.checked; F.todosPost(F.D.todos.map(function(x){ return x.id===id?Object.assign({},x,{done:on,doneAt:on?Date.now():null}):x; })).then(function(){ if(on) F.toast("Erledigt",false,"Rückgängig",function(){ F.todosPost(F.D.todos.map(function(x){ return x.id===id?Object.assign({},x,{done:false}):x; })); }); }); });
@@ -49,23 +49,32 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     var allEv=D.events.concat(bz.filter(function(b){ return /^\d{4}-\d{2}-\d{2}$/.test(b.date); })).filter(function(e){ return e.date>=today; }).sort(function(a,b){ return (a.date+(a.time||"")).localeCompare(b.date+(b.time||"")); });
     var todayEv=allEv.filter(function(e){return e.date===today;}), nextEv=allEv.slice(0,Math.max(8,todayEv.length+5));
     var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
-    return F.head(greet+", Simon.",f.length?f.length+(f.length===1?" Sache braucht":" Dinge brauchen")+" dich. Das Dringendste steht oben.":"Alles erledigt. Schönen Tag im Tal.")+
+    var dateLine=new Date().toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    /* Termine nach Tagen gruppieren: Heute, Morgen, dann Wochentag + Datum */
+    var dayName=function(d){ if(d===today) return "Heute"; var t1=new Date(today+"T12:00:00"); t1.setDate(t1.getDate()+1); if(d===F.ymd(t1)) return "Morgen"; return new Date(d+"T12:00:00").toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"numeric"}); };
+    var grp=[], lastD=null; nextEv.forEach(function(e){ if(e.date!==lastD){ grp.push({d:e.date,list:[]}); lastD=e.date; } grp[grp.length-1].list.push(e); });
+    if(!todayEv.length) grp.unshift({d:today,list:[]});
+    var agenda=grp.map(function(g){ return '<div class="hday"><div class="hday-h'+(g.d===today?" today":"")+'">'+esc(dayName(g.d))+'</div>'+
+      (g.list.length?g.list.map(function(e){ return '<div class="hev"><span class="ht">'+esc(e.time||"ganztags")+'</span><span class="hb"></span><div style="min-width:0"><b>'+esc(e.title)+'</b>'+((e.location||e.cal)?'<small>'+esc([e.location||"",e.cal||""].filter(Boolean).join(" · "))+'</small>':'')+'</div></div>'; }).join(""):'<div class="hnone">Keine Termine</div>')+'</div>'; }).join("");
+    return F.head(greet+", Simon.",esc(dateLine)+(f.length?" · "+f.length+(f.length===1?" Sache offen":" Sachen offen"):" · alles erledigt"),
+      '<button class="btn" data-act="compose">Neue Mail</button><button class="btn" data-act="newevent:">Neuer Termin</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+
     '<div class="day">'+
       '<button data-go="kunden"><span class="k">Neue Anfragen</span><span class="v num">'+F.newLeads().length+'</span><span class="s">'+D.leads.length+' Leads insgesamt</span></button>'+
       '<button data-go="geld"><span class="k">Offen in sevDesk</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?(sev.overdueCount?eur0(sev.overdueSum)+" überfällig":"nichts überfällig"):"sevDesk lädt …")+'</span></button>'+
       '<button data-go="geld"><span class="k">Zu verrechnen</span><span class="v num">'+eur0(ab.unbilled)+'</span><span class="s">'+ab.unbilledCount+' Posten ohne Rechnung</span></button>'+
       '<button data-go="web"><span class="k">Websites</span><span class="v num">'+(cust.length-bad.length)+'/'+cust.length+'</span><span class="s">'+(bad.length?bad.length+" mit Problem":"alle erreichbar")+'</span></button>'+
     '</div>'+
-    '<div class="two"><section class="panel"><div class="panel-h"><h2>Zu erledigen</h2><span class="muted">nach Dringlichkeit</span></div>'+
-      (items?'<ul class="feed">'+items+'</ul>':'<div class="empty">Nichts offen. 🎉</div>')+
-      (f.length>12?'<button class="more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+
-    '</section><div class="stack">'+
-      '<section class="panel"><div class="panel-h"><h2>'+(todayEv.length?"Heute & nächste Termine":"Nächste Termine")+'</h2><button class="link" data-go="kal">Kalender →</button></div>'+
-        (nextEv.length?'<ul class="agenda">'+nextEv.map(function(e){ return '<li><span class="time">'+(e.date===today?(e.time||"ganztags"):deShort(e.date))+'</span><div><div style="font-weight:600">'+esc(e.title)+'</div><div class="muted">'+esc([e.date!==today&&e.time?e.time:"",e.location||"",e.cal||(e.source==="icloud"?"iCloud":e.source==="kalender"?"Kalender":"")].filter(Boolean).join(" · "))+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Termine.</div>')+'</section>'+
-      mailPanel()+
-      '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>'+
-      incomePanel()+
-    '</div></div>';
+    '<div class="hgrid">'+
+      '<section class="panel hcol-todo"><div class="panel-h"><h2>Zu erledigen</h2><span class="muted">'+(f.length?f.length+" offen":"")+'</span></div>'+
+        (items?'<ul class="feed">'+items+'</ul>':'<div class="empty">Nichts offen. 🎉</div>')+
+        (f.length>12?'<button class="more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+
+      '</section>'+
+      '<div class="stack">'+
+        '<section class="panel"><div class="panel-h"><h2>Mein Tag</h2><button class="link" data-go="kal">Kalender →</button></div><div class="hagenda">'+agenda+'</div></section>'+
+        '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>'+
+      '</div>'+
+      '<div class="stack">'+mailPanel()+incomePanel()+'</div>'+
+    '</div>';
   }
 });
 /* Neueste Mails (Posteingang aller Konten), ungelesene fett; Klick öffnet die Mail im Postfach */
@@ -73,7 +82,7 @@ function mailPanel(){
   var all=((F.D.mail&&F.D.mail.messages)||[]).filter(function(m){ return F.isInbox(m)&&!m.deleted; }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,6);
   var unread=F.unreadMails().length;
   return '<section class="panel"><div class="panel-h"><h2>Neueste Mails'+(unread?' <span class="tag info">'+unread+' ungelesen</span>':'')+'</h2><button class="link" data-go="post">Postfach →</button></div>'+
-    (all.length?'<ul class="agenda">'+all.map(function(m){ return '<li class="hmail" data-act="mail:'+esc(m.id)+'" role="button" tabindex="0" style="cursor:pointer"><span class="time">'+esc(F.ago(m.date))+'</span><div style="min-width:0"><div style="font-weight:'+(m.read?500:700)+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(m.fromName||m.from||"")+'</div><div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(m.subject||"(kein Betreff)")+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Mails.</div>')+'</section>';
+    (all.length?'<ul class="agenda">'+all.map(function(m){ return '<li class="hmail'+(m.read?"":" unread")+'" data-act="mail:'+esc(m.id)+'" role="button" tabindex="0" style="cursor:pointer"><span class="time">'+esc(F.M&&F.M.fmtMailDate?F.M.fmtMailDate(m.date):F.ago(m.date))+'</span><div style="min-width:0"><div style="font-weight:'+(m.read?500:700)+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(m.fromName||m.from||"")+'</div><div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(m.subject||"(kein Betreff)")+'</div></div></li>'; }).join("")+'</ul>':'<div class="empty">Keine Mails.</div>')+'</section>';
 }
 function incomePanel(){
   var inc=F.D.income; if(!inc||!inc.lines||!inc.lines.length) return "";
@@ -99,6 +108,37 @@ F.action("incomeinfo",function(){
     '<p class="muted">VALUERO und Skikaiser (und kochdu ohne Live-Werte) werden nur alle 14 Tage neu berechnet, damit die Zahl ruhig bleibt.</p><div class="foot"><span></span><button class="btn" data-act="incomerecalc">Jetzt neu berechnen</button></div>',"narrow");
 });
 F.action("incomerecalc",function(){ F.closeModal(); F.api("/admin/api/cockpit?year="+F.year+"&forecast=1").then(function(d){ if(d&&d.income){ F.D=d; F.render(); F.toast("Prognose neu berechnet"); } }); });
-F.css("ul.plain{margin:0;padding-left:18px;display:grid;gap:8px} .income .v{font-size:28px} .mbars{display:flex;gap:6px;align-items:flex-end;margin:-2px 0 6px;min-height:44px}.mbars .mb{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--ink-3)}.mbars .mb i{display:block;width:16px;border-radius:3px 3px 0 0;background:var(--glow-soft)}.mbars .mb em{font-style:normal}");
+F.css(
+".hgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}"+
+"@media (max-width:1280px){.hgrid{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}.hgrid>.stack:last-child{grid-column:2}}"+
+"@media (max-width:900px){.hgrid{grid-template-columns:minmax(0,1fr)}.hgrid>.stack:last-child{grid-column:auto}}"+
+".hagenda{padding:0 16px 12px;display:grid;gap:10px}"+
+".hday-h{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:capitalize;margin:4px 0 4px}.hday-h.today{color:var(--glow)}"+
+".hev{display:grid;grid-template-columns:62px 3px minmax(0,1fr);gap:10px;padding:5px 0;align-items:stretch}"+
+".hev .ht{font:600 12.5px/1.4 var(--f-mono);color:var(--ink-2)}.hev .hb{border-radius:2px;background:var(--glow)}"+
+".hev b{display:block;font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hev small{display:block;color:var(--ink-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+".hnone{font-size:13px;color:var(--ink-3);padding:2px 0 4px}"+
+".tdrow{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;align-items:center;padding:8px 16px;border-top:1px solid var(--line)}"+
+".tdrow input{width:16px;height:16px;margin:0;accent-color:var(--glow)}"+
+".tdrow .todo-t{border:0;background:none;padding:0;text-align:left;font:inherit;font-size:13.5px;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+".tdrow .due{font-size:12px;color:var(--ink-3)}.tdrow .due.late{color:var(--bad)}"+
+".hmail{grid-template-columns:52px minmax(0,1fr)!important}.hmail .time{white-space:nowrap;font-size:12px}.hmail.unread{box-shadow:inset 3px 0 0 var(--glow);margin-left:-16px;padding-left:16px!important}"+
+"@media (min-width:901px){"+
+  ".view-heute .head h1{font-size:26px}"+
+  ".view-heute .day{border:0;box-shadow:var(--shadow);border-radius:8px}"+
+  ".view-heute .day button{padding:12px 16px}.view-heute .day .v{font-size:22px}"+
+  ".view-heute .feed .item{grid-template-columns:8px minmax(0,1fr) auto!important;gap:12px;padding:10px 16px!important;row-gap:0}"+
+  ".view-heute .feed .item .ico{display:none}"+
+  ".view-heute .feed .item .sev{width:8px;height:8px;border-radius:50%;align-self:start;margin-top:7px}"+
+  ".view-heute .feed .item .t{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
+  ".view-heute .feed .item .t .tag{font-size:10.5px;padding:1px 6px;margin-right:6px;background:var(--sunk);color:var(--ink-2)}"+
+  ".view-heute .feed .item .d{font-size:12.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
+  ".view-heute .feed .item .acts{grid-column:auto!important;flex-wrap:nowrap;gap:4px;align-self:center}"+
+  ".view-heute .feed .item .acts .btn{min-height:28px;padding:3px 10px;font-size:12.5px;display:none}"+
+  ".view-heute .feed .item .acts .btn.primary{display:inline-flex;background:none;color:var(--glow);border-color:transparent}"+
+  ".view-heute .feed .item:hover .acts .btn{display:inline-flex}.view-heute .feed .item:hover .acts .btn.primary{background:var(--glow);color:var(--on-glow)}"+
+  ".view-heute .feed .item:hover{background:var(--sunk)}"+
+"}"+
+"ul.plain{margin:0;padding-left:18px;display:grid;gap:8px} .income .v{font-size:28px} .mbars{display:flex;gap:6px;align-items:flex-end;margin:-2px 0 6px;min-height:44px}.mbars .mb{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--ink-3)}.mbars .mb i{display:block;width:16px;border-radius:3px 3px 0 0;background:var(--glow-soft)}.mbars .mb em{font-style:normal}");
 F.action("togglefeed",function(){ F.UI.feedAll=!F.UI.feedAll; F.render(); });
 })();
