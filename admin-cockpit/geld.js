@@ -80,6 +80,16 @@ F.action("sdign",function(key){
     F.api("/admin/api/billing",{body:{op:"ignore",key:key,amount:x.unbilled}}).then(function(j){ if(j&&j.ok===false){ F.toast("Nicht gespeichert",true); return; } F.toast("Ausgeblendet",false,"Rückgängig",function(){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.load(true); }); }); F.load(true); });
   });
 });
+/* Bereits bezahlte Buchung (bar/Überweisung/online): Rechnung anlegen → als versendet markieren → Zahlung verbuchen */
+F.action("sdpaidinv",function(key){
+  var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(!x||!x.action) return;
+  var accs=(F.D.sev&&F.D.sev.accounts)||[];
+  var pre=Object.assign({},x.action,{title:"Bezahlte Rechnung · "+(x.action.contactName||""),invoiceDate:x.date||undefined});
+  pre.after=Object.assign({},pre.after||{},{paid:{amount:x.unbilled,date:x.date||F.D.today}});
+  pre.paidNote='Diese Buchung ist bereits bezahlt. Die Rechnung wird angelegt, als versendet markiert und die Zahlung auf dem gewählten Konto verbucht. <b>Vorher prüfen:</b> Ist sie schon als Blitzdings-Einnahme-Beleg (SI-2026…) erfasst? Dann stattdessen „Ausblenden“ – sonst wäre der Umsatz doppelt.';
+  pre.paidAccounts=accs;
+  F.openInvoice(pre);
+});
 F.action("sdunign",function(key){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.toast("Wieder eingeblendet"); F.load(true); }); });
 F.action("sdshowign",function(){ F.UI.showIgn=!F.UI.showIgn; F.render(); });
 F.action("sdzu",function(){ var el=document.getElementById("zuVerrechnen"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); });
@@ -102,7 +112,7 @@ function renderUebersicht(){
     return '<div class="c"><div class="top"><span class="tag grey">'+esc(tag)+'</span>'+(x.refund>0.005?'<span class="tag bad">'+eur(x.refund)+' zu viel verrechnet</span>':'')+'</div>'+
       '<div><div class="nm">'+esc(x.name)+'</div><div class="sb">'+esc(x.sub)+'</div></div>'+
       (x.unbilled>0.005?'<div class="amt">'+eur(x.unbilled)+'</div>':'')+
-      '<div class="ac">'+(x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005?'<button class="btn" data-act="sdassign:'+esc(x.key)+'" title="Einer bestehenden (Sammel-)Rechnung zuordnen">Zuordnen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
+      '<div class="ac">'+(x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005&&x.paidOnPlatform?'<button class="btn" data-act="sdpaidinv:'+esc(x.key)+'" title="Rechnung anlegen und gleich als bezahlt verbuchen">Bezahlte Rechnung</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005?'<button class="btn" data-act="sdassign:'+esc(x.key)+'" title="Einer bestehenden (Sammel-)Rechnung zuordnen">Zuordnen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
   };
   // Detail-Abgleich (eingeklappt)
   var rows=ab.items.filter(function(x){ if(f==="zu") return x.unbilled>0.005||x.refund>0.005; if(f==="offen") return x.open>0.005; if(f==="prob") return problem(x); return true; });
