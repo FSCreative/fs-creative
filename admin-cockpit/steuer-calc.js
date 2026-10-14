@@ -196,7 +196,7 @@ function sollParts0(inv,st,total){
     return out;
   }
   var pre=0;
-  var klein=!(st&&st.settings&&st.settings.kleineAnz===false);
+  var klein=!!(st&&st.settings&&st.settings.kleineAnz===true);   // § 19 Abs. 2 Z 1 lit. a kennt keine Bagatellgrenze – nur auf ausdrücklichen Wunsch
   if(g>0) payments(inv).forEach(function(pm){ if(pm.amount<=0||!pm.date||pm.date>=le||pm.date.slice(0,7)>=soll.slice(0,7)) return;
     if(klein&&dayNo(le)-dayNo(pm.date)<31) return;          // kleine Vorauszahlung (< 1 Monat vor Leistung) → mit der Rechnung (Einstellung)
     var sh=Math.min(pm.amount/g,total-pre); if(sh<=1e-9) return; pre+=sh;
@@ -226,7 +226,7 @@ function nonBiz(l){ return /^(TAX|VAT|VATPAY|VATIMPORT|VATINT|EQUITYIN|EQUITYOUT
 
 /* ---------- Einordnung ---------- */
 var OUT_OPTS=[["auto","automatisch"],["inl","Inland steuerpflichtig (Satz laut Rechnung)"],["ns","nicht steuerbar (Leistungsort Ausland) – nicht in 000"],["zm","Dienstleistung an EU-Unternehmer – nur ZM, nicht in 000"],["zmd","Dreiecksgeschäft (Mittelunternehmer) – ZM mit Kennzeichen"],["017","ig. Lieferung (Ware an EU-Unternehmer) – KZ 017 + ZM"],["011","Ausfuhrlieferung (Ware ins Drittland) – KZ 011"],["020","sonstige steuerfreie Umsätze – KZ 020"],["021","Reverse Charge im Inland (z. B. Bauleistung) – KZ 000/021"],["016","Kleinunternehmer – KZ 016"],["oss","One-Stop-Shop – nicht in der UVA"],["sonst","Kleinbetrag/sonstiges – nicht in UVA und ZM"],["dlp","durchlaufender Posten (nicht steuerbar)"],["nach20","0 % war falsch – 20 % aus dem Betrag herausrechnen (KZ 022)"],["ignore","nicht berücksichtigen"]];
-var IN_OPTS=[["auto","automatisch"],["060","österr. Vorsteuer laut Beleg – KZ 060"],["rc","Reverse Charge mit Vorsteuer – KZ 057/066"],["rcnv","Reverse Charge ohne Vorsteuer – nur KZ 057"],["ige","ig. Erwerb Ware aus der EU – KZ 070/072/065"],["ige3","ig. Erwerb im Dreiecksgeschäft – KZ 070/077 (gilt als besteuert)"],["ige0","steuerfreier ig. Erwerb – KZ 070/071"],["eust","Einfuhrumsatzsteuer – KZ 061"],["fx","ausländische USt – keine Vorsteuer (Erstattungsverfahren)"],["none","keine Vorsteuer (z. B. Pkw, privat, Versicherung)"],["ignore","nicht berücksichtigen"]];
+var IN_OPTS=[["auto","automatisch"],["060","österr. Vorsteuer laut Beleg – KZ 060"],["rc","Reverse Charge mit Vorsteuer – KZ 057/066"],["rcnv","Reverse Charge ohne Vorsteuer – nur KZ 057"],["ige","ig. Erwerb Ware aus der EU – KZ 070/072/065"],["ige3","ig. Erwerb im Dreiecksgeschäft – nur KZ 077 (gilt als besteuert)"],["ige0","steuerfreier ig. Erwerb – KZ 070/071"],["eust","Einfuhrumsatzsteuer – KZ 061"],["fx","ausländische USt – keine Vorsteuer (Erstattungsverfahren)"],["none","keine Vorsteuer (z. B. Pkw, privat, Versicherung)"],["ignore","nicht berücksichtigen"]];
 var RATE_KZ={"20":"022","13":"006","10":"029","4.9":"124","19":"037"};
 var IGE_KZ={"20":"072","13":"008","10":"073","4.9":"125","19":"088"};
 var TAXRULE_TXT={"1":"steuerpflichtig","2":"Ausfuhr","3":"ig. Lieferung","4":"steuerfrei","5":"Reverse Charge","8":"ig. Erwerb","9":"Vorsteuer abziehbar","10":"keine Vorsteuer","11":"Kleinunternehmer","12":"RC mit Vorsteuer (Drittland)","13":"RC ohne Vorsteuer","14":"RC mit Vorsteuer (EU)","17":"nicht im Inland steuerbar","18":"OSS Waren","19":"OSS elektron.","20":"OSS sonstige","21":"Reverse Charge"};
@@ -234,10 +234,10 @@ var TAXRULE_TXT={"1":"steuerpflichtig","2":"Ausfuhr","3":"ig. Lieferung","4":"st
 // Ausgangsrechnung (oder Einnahmebeleg): Klasse je Position, mit Begründung
 function outWhy(doc,line,st){
   var cfg=docCfg(st,doc.id), o=cfg.kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o==="inl"?(line.rate>0?"inl":"pruefen"):o,why:"im Cockpit manuell eingeordnet"+(o==="020"&&cfg.grund?" ("+cfg.grund+")":""),sure:true};
-  if(!(line.rate>0)&&doc.status&&ausgebucht(doc,st)) return {c:"sonst",why:"0 %-Rechnung ausgebucht (Forderungsausfall) – ohne USt-Folge",sure:true,ausg:true};
+  // Forderungsausfall berichtigt nur die Steuer (§ 16 Abs. 3) – 0-%-Umsätze bleiben in KZ 017/011 bzw. der ZM gemeldet
   var r=ruleKey(doc), oi=outInfo(doc,st), cc=oi.cc, eu=isEU(cc)&&cc!=="AT", hasUid=!!oi.uid, sem=r?ruleOut(r):"", t=docText(doc);
   // Mahngebühren / Verzugszinsen = Schadenersatz → nicht umsatzsteuerbar, weder in KZ 000 noch in der ZM (Betriebseinnahme bleibt)
-  if(!(line.rate>0)&&/mahngeb(ü|ue)hr|mahnspesen|verzugszins|schadenersatz/i.test(t+" "+(doc.desc||""))) return {c:"sonst",why:"Mahngebühr/Verzugszinsen = Schadenersatz – nicht umsatzsteuerbar, nicht in UVA und ZM",sure:true};
+  if(!(line.rate>0)&&(doc.type==="MA"||(doc.cd==="D"&&/mahngeb(ü|ue)hr|mahnspesen|verzugszins|schadenersatz/i.test(String(doc.desc||"")+" "+String(line.cat||""))))) return {c:"sonst",why:"Mahngebühr/Verzugszinsen = Schadenersatz – nicht umsatzsteuerbar, nicht in UVA und ZM",sure:true};
   var lief=RX_LIEF.test(t), drei=RX_DREI.test(t), rc=RX_RC.test(t), igK=drei?"zmd":(lief?"017":"zm"), igT=drei?"Dreiecksgeschäft":(lief?"ig. Lieferung":"ig. sonstige Leistung");
   var land=cc?" (Kunde "+cc+(oi.ccSrc?" laut "+oi.ccSrc:"")+(hasUid?", UID "+oi.uid+(oi.uidSrc!=="Kontakt"?" aus "+oi.uidSrc:""):", keine UID")+")":"";
   if(sem==="inl"||(!r&&(doc.taxType==="default"||doc.taxType==="custom"||!doc.taxType))){
@@ -271,6 +271,8 @@ function inWhy(v,line,st){
     if(!ac.epkw) return {c:"none",why:"Pkw/Kombi: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG)"};
     var gr=Math.abs(num(v.gross)); if(gr>80000) return {c:"none",why:"E-Pkw über 80.000 € brutto: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2a UStG)"};
   }
+  if(!ac.asset&&Math.abs(line.tax)>0.004&&atRate(line.rate)&&hasPkw(st)&&!(st.settings&&st.settings.kfzVst)&&(catKz(st,line)==="9170"||/kfz|pkw|fahrzeug|treibstoff|benzin|diesel|tank|wagenpflege|autowasch|vignette|maut|parken/i.test(String(line.cat||""))))
+    return {c:"none",why:"laufende Kosten Pkw/Kombi: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – USt ist Aufwand. Fiskal-Lkw/E-Pkw: in den UVA-Einstellungen freischalten",sure:true};
   var r=ruleKey(v), cc=supplierCountry(v), foreign=!!cc&&cc!=="AT", tax=Math.abs(line.tax)>0.004, sem=r?ruleIn(r):"";
   var src=uidCountry(v.supplierUid)?"UID":(cc&&cc!==String(v.supplierCountry||"").toUpperCase()?"bekannter Anbieter":"Kontaktadresse"), land=cc?" (Lieferant "+cc+" laut "+src+")":"";
   if(sem==="ige"||(!r&&v.taxType==="eu")){ var w=igeOrService(v,line,st); return w.c==="rc"?{c:"rc",why:"in sevDesk als ig. Erwerb gebucht – für die UVA als Reverse-Charge-Leistung behandelt (§ 19 Abs. 1 UStG, KZ 057/066): "+w.why+land,sure:w.sure}:{c:"ige",why:"ig. Erwerb (Ware) laut sevDesk"+(w.why?": "+w.why:"")+land,sure:w.sure}; }
@@ -282,6 +284,8 @@ function inWhy(v,line,st){
   return {c:"none",why:"keine USt ausgewiesen, inländischer Lieferant"};
 }
 function inClass(v,line,st){ return inWhy(v,line,st).c; }
+// Betriebsfahrzeug ist ein Pkw/Kombi (Anlage mit Pkw-Häkchen, kein E-Pkw) → laufende Kfz-Kosten ohne Vorsteuer
+function hasPkw(st){ var d=st&&st.docs; if(!d) return false; for(var k in d){ var c=d[k]; if(c&&c.asset&&c.pkw&&!c.epkw&&!c.abgang) return true; } return false; }
 /* ig. Erwerb (Art. 1 UStG) gibt es nur für WAREN. sevDesk-Konten buchen EU-Dienstleistungen (Google, Meta, Adobe …) oft auch als
    „Innergemeinschaftlicher Erwerb“ – das sind sonstige Leistungen mit Reverse Charge (§ 3a Abs. 6, § 19 Abs. 1 UStG → KZ 057/066).
    Reihenfolge: Zuordnung je Lieferant im Cockpit (st.supMap) → Anlagegut/Warenkategorie → bekannter Dienstleister/Dienstleistungskategorie → unklar (Ware, prüfen). */
@@ -409,7 +413,7 @@ function computeUva(raw,st,p){
   });
   function revLine(doc,l,pt,kind){
     var net=l.net*pt.share, tax=l.tax*pt.share, c=outClass(doc,l,st);
-    if(c==="inl"){ var kz=RATE_KZ[String(l.rate)]; if(!kz){ review.push({doc:doc,kind:kind,why:"Steuersatz "+l.rate+" % passt zu keiner Kennzahl"}); return; } add("000",net,0,doc,kind,pt.date,pt.why); add(kz,net,tax,doc,kind,pt.date,pt.why); }
+    if(c==="inl"){ var kz=RATE_KZ[String(l.rate)]; if(String(l.rate)==="19"&&!(st.settings&&st.settings.jungholz)) kz=null; if(String(l.rate)==="4.9"&&String(pt.date||"")<"2026-07-01") kz=null; if(!kz){ review.push({doc:doc,kind:kind,why:"Steuersatz "+l.rate+" % passt zu keiner Kennzahl"}); return; } add("000",net,0,doc,kind,pt.date,pt.why); add(kz,net,tax,doc,kind,pt.date,pt.why); }
     else if(c==="011"||c==="017"||c==="020"||c==="016"){ add("000",net,0,doc,kind,pt.date,pt.why); add(c,net,0,doc,kind,pt.date,pt.why); if(c==="017") zm.push({doc:doc,uid:outInfo(doc,st).uid,net:net,date:pt.date,kind:"L"}); }
     else if(c==="021"){ add("000",net,0,doc,kind,pt.date,pt.why); add("021",net,0,doc,kind,pt.date,pt.why); }
     else if(c==="zm"){ zm.push({doc:doc,uid:outInfo(doc,st).uid,net:net,date:pt.date,kind:"S"}); }
@@ -431,9 +435,10 @@ function computeUva(raw,st,p){
     ls.forEach(function(l){
       if(nonBiz(l)&&docCfg(st,v.id).kz!=="060") return;
       var c=inClass(v,l,st);
-      if(c==="rc"||c==="rcnv"){ var d1=rcDate(v); if(!inP(d1,p)) return; var t=r2(l.net*0.2); add("057",l.net,t,v,"in",d1,"Reverse Charge: Monat der Leistung"); if(c==="rc") add("066",0,t,v,"in",d1,"Vorsteuer aus Reverse Charge"); }
-      else if(c==="ige"){ if(!inP(v.date,p)) return; var rate=l.rate>0&&IGE_KZ[String(l.rate)]?l.rate:20, t2=r2(l.net*rate/100); add("070",l.net,0,v,"in",v.date,"ig. Erwerb"); add(IGE_KZ[String(rate)],l.net,t2,v,"in",v.date,"ig. Erwerb"); add("065",0,t2,v,"in",v.date,"Vorsteuer ig. Erwerb"); }
-      else if(c==="ige3"||c==="ige0"){ if(!inP(v.date,p)) return; add("070",l.net,0,v,"in",v.date,c==="ige3"?"Dreiecksgeschäft":"steuerfreier ig. Erwerb"); add(c==="ige3"?"077":"071",l.net,0,v,"in",v.date,c==="ige3"?"Erwerb gilt als besteuert (Art. 25 Abs. 2)":"steuerfrei (Art. 6 Abs. 2)"); }
+      if(c==="rc"||c==="rcnv"){ var d1=rcDate(v); if(!inP(d1,p)) return; var rcr=num(docCfg(st,v.id).rcRate), t=r2(l.net*(rcr===10||rcr===13?rcr:20)/100); add("057",l.net,t,v,"in",d1,"Reverse Charge: Monat der Leistung"); if(c==="rc") add("066",0,t,v,"in",d1,"Vorsteuer aus Reverse Charge"); }
+      else if(c==="ige"){ if(!inP(v.date,p)) return; var igr=num(docCfg(st,v.id).igeRate), rate=IGE_KZ[String(igr)]&&igr!==19?igr:20, t2=r2(l.net*rate/100);   // österr. Satz, nie der Satz der Lieferantenrechnung (Art. 1, § 10 UStG)
+        if(Math.abs(l.tax)>0.004) info.push({doc:v,why:"ig. Erwerb mit ausgewiesener ausländischer USt ("+l.rate+" %) – diese ist keine Vorsteuer (Erstattungsverfahren), Lieferant um Rechnung ohne USt bitten"}); add("070",l.net,0,v,"in",v.date,"ig. Erwerb"); add(IGE_KZ[String(rate)],l.net,t2,v,"in",v.date,"ig. Erwerb"); add("065",0,t2,v,"in",v.date,"Vorsteuer ig. Erwerb"); }
+      else if(c==="ige3"||c==="ige0"){ if(!inP(v.date,p)) return; if(c==="ige0") add("070",l.net,0,v,"in",v.date,"steuerfreier ig. Erwerb"); /* Dreieck: nur KZ 077, nicht 070 (U 1a Anm. 24) */ add(c==="ige3"?"077":"071",l.net,0,v,"in",v.date,c==="ige3"?"Erwerb gilt als besteuert (Art. 25 Abs. 2)":"steuerfrei (Art. 6 Abs. 2)"); }
       else if(c==="060"){ var dv=vstDate(v); if(!inP(dv,p)) return; add("060",0,l.tax,v,"in",dv,dv===v.date?"Belegdatum (Rechnung liegt vor, Leistung erbracht)":"Leistung erst "+dv+" ausgeführt bzw. bezahlt (§ 12 Abs. 1 Z 1 UStG)"); }
       else if(c==="eust"){ if(!inP(v.date,p)) return; add("061",0,l.tax||0,v,"in",v.date,"Einfuhrumsatzsteuer"); }
       else if(c==="fx"){ if(inP(v.date,p)) other.fx.push({doc:v,kind:"in",base:r2(l.net),tax:r2(l.tax),rate:l.rate,date:v.date}); }
@@ -629,7 +634,7 @@ function computeJab(raw,st,year){
   assets.forEach(function(x){ var a=x.a; if(a.sy!==+y) return; var b=a.benefit;
     // § 10 Abs. 3/4 EStG: ND ≥ 4 Jahre, nicht gebraucht, keine GWG, keine Pkw/Kombi
     if(b==="gfb"&&a.nd>=4&&!a.gwg&&!a.pkw&&!docCfg(st,a.doc.id).used) gfbInvest+=a.ahk;
-    if(/^ifb/.test(b)&&a.ifbOk){ var base=Math.min(a.pkw?a.luxBase:a.ahk,Math.max(0,C.ifbMax-ifbBase));   // E-Pkw: nur angemessene AK ifbBase+=base;
+    if(/^ifb/.test(b)&&a.ifbOk){ var base=Math.min(a.pkw?a.luxBase:a.ahk,Math.max(0,C.ifbMax-ifbBase));   ifbBase+=base;   // E-Pkw: nur angemessene AK; max. 1 Mio. € AK je Wirtschaftsjahr
       var oeko=b==="ifb15"||b==="ifb22", erh=a.ifbErhoeht; var kz=oeko?(erh?"9345":"9277"):(erh?"9344":"9276"); var rate=oeko?(erh?0.22:0.15):(erh?0.20:0.10);
       ifb[kz]+=base*rate; x.ifb={kz:kz,amount:r2(base*rate)}; } });
   Object.keys(ifb).forEach(function(z){ if(ifb[z]) K5[z]=-r2(ifb[z]); });
@@ -853,7 +858,7 @@ function explainDoc(raw,st,id){
   setRules(raw,st); id=String(id);
   var inv=(raw.invoices||[]).concat(raw.creditNotes||[]).find(function(d){ return d.id===id; }), v=(raw.vouchers||[]).find(function(d){ return d.id===id; }), d=inv||v;
   if(!d) return null;
-  var out=!!inv||(v&&v.cd==="D"), kz={inl:"000 + Satz-KZ",ns:"–",zm:"ZM",zmd:"ZM (Dreieck)","017":"000 + 017","011":"000 + 011","020":"000 + 020","021":"000 + 021","016":"000 + 016",oss:"OSS","060":"060",rc:"057 + 066",rcnv:"057",ige:"070 + 072/073/008 + 065",ige3:"070 + 077",ige0:"070 + 071",eust:"061",fx:"–",none:"–",pruefen:"–"};
+  var out=!!inv||(v&&v.cd==="D"), kz={inl:"000 + Satz-KZ",ns:"–",zm:"ZM",zmd:"ZM (Dreieck)","017":"000 + 017","011":"000 + 011","020":"000 + 020","021":"000 + 021","016":"000 + 016",oss:"OSS","060":"060",rc:"057 + 066",rcnv:"057",ige:"070 + 072/073/008 + 065",ige3:"077",ige0:"070 + 071",eust:"061",fx:"–",none:"–",pruefen:"–"};
   var ls=lines(d).map(function(l){ var w=out?outWhy(d,l,st):inWhy(d,l,st); return {rate:l.rate,net:r2(l.net),tax:r2(l.tax),cat:l.cat,klasse:w.c,kennzahlen:kz[w.c]||"",begruendung:w.why,nichtBetrieblich:nonBiz(l)}; });
   return {id:id,art:out?"Ausgang":"Eingang",nr:d.nr||"",partner:d.contact||d.supplier||"",datum:d.date,leistungsdatum:d.delivery||null,netto:d.net,steuer:d.tax,brutto:d.gross,
     sevDeskRegel:ruleKey(d)?{id:ruleKey(d),text:ruleTxt(ruleKey(d))}:null,land:out?customerCountry(d,st):supplierCountry(d),uid:out?outInfo(d,st).uid:(d.supplierUid||""),override:docCfg(st,id).kz||null,

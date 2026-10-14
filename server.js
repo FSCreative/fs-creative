@@ -1835,7 +1835,9 @@ function steuerOp(pl) {
   if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
     // Betriebsdaten für die E1a im Datenstrom JAHR_ERKL
     if ("betriebAdr" in P) o.settings.betriebAdr = String(P.betriebAdr || "").slice(0, 60); if ("betriebPlz" in P) o.settings.betriebPlz = String(P.betriebPlz || "").replace(/[^0-9A-Z]/gi, "").slice(0, 10); if ("betriebOrt" in P) o.settings.betriebOrt = String(P.betriebOrt || "").slice(0, 40);
-    if ("kleineAnz" in P) o.settings.kleineAnz = P.kleineAnz === false || P.kleineAnz === "0" ? false : undefined; if ("brkz" in P) o.settings.brkz = String(P.brkz || "").replace(/\D/g, "").slice(0, 3); if ("einkunftsart" in P) o.settings.einkunftsart = P.einkunftsart === "SA" ? "SA" : "GW"; }
+    if ("kleineAnz" in P) o.settings.kleineAnz = P.kleineAnz === true || P.kleineAnz === "1" ? true : undefined;   // Standard: Gesetz (keine Bagatellgrenze)
+    if ("kfzVst" in P) o.settings.kfzVst = P.kfzVst === true || P.kfzVst === "1" ? true : undefined;
+    if ("jungholz" in P) o.settings.jungholz = P.jungholz === true || P.jungholz === "1" ? true : undefined; if ("brkz" in P) o.settings.brkz = String(P.brkz || "").replace(/\D/g, "").slice(0, 3); if ("einkunftsart" in P) o.settings.einkunftsart = P.einkunftsart === "SA" ? "SA" : "GW"; }
   else if (op === "mapping") { const m = pl.mapping || {}; Object.keys(m).forEach(k => { const v = String(m[k] || "").replace(/[^0-9a-z_-]/gi, "").slice(0, 12); if (v) o.mapping[String(k).slice(0, 120)] = v; else delete o.mapping[String(k).slice(0, 120)]; }); }
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
@@ -2019,7 +2021,8 @@ function fonPruefeJahr(d) {
   if (d.u1["124"] && y < 2026) b.push({ art: "fehler", text: "KZ 124 gibt es erst ab 2026." });
   if (d.u1["020"] && !/^[0-9][0-9a-zA-Z]{1,3}$/.test(s.vst || "")) b.push({ art: "fehler", text: "U1: Zu KZ 020 gehört der Ziffernschlüssel der Steuerbefreiung (2–4 Zeichen, z. B. 9a)." });
   Object.keys(d.u1).forEach(k => { if (!FON_NEG_OK.has(k) && d.u1[k] < 0) b.push({ art: "fehler", text: "U1: Kennzahl " + k + " ist negativ." }); });
-  if (d.jab.inp.ap === "gross" && d.jab.inp.andereEinkuenfte > 11000) b.push({ art: "hinweis", text: "Großes Arbeitsplatzpauschale nur ohne andere Einkünfte über 11.000 € (aus einer Tätigkeit mit eigenem Arbeitsplatz)." });
+  const apGrenze = (STEUER_CALC.YEARS && STEUER_CALC.YEARS[d.jab.year] && STEUER_CALC.YEARS[d.jab.year].tarif[0][0]) || 13308;
+  if (d.jab.inp.ap === "gross" && d.jab.inp.andereEinkuenfte > apGrenze) b.push({ art: "hinweis", text: "Großes Arbeitsplatzpauschale nur ohne andere Einkünfte über " + apGrenze.toLocaleString("de-AT") + " € (aus einer Tätigkeit mit eigenem Arbeitsplatz)." });
   if (d.jab.est.faboMax > 0) b.push({ art: "hinweis", text: "Familienbonus Plus: die Beilage L 1k (Block KIND_AUSBILDUNG_BEHINDERUNG) wird nicht mitgeschickt – bitte in FinanzOnline ergänzen." });
   b.push({ art: "hinweis", text: "Kirchenbeitrag, Spenden und SVS-Daten werden vom Finanzamt automatisch übernommen und hier nicht übermittelt." });
   return b;

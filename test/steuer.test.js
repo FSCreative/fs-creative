@@ -396,7 +396,7 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
   t("Live: A1-Rechnung 28.09. (Periode bis 27.10., unbezahlt) → Vorsteuer Q3 = 20", () => near(kz(r, "060", "tax"), 20));
   t("Live: Anzahlung vor Rechnung, Q2 abgegeben → RE-1203 und RE-1200b in Q3 (022 = 1.500), nichts in Q2", () => { near(kz(r, "022"), 1500); near(kz(r2, "022"), 0); assert.ok((r.docs["022"] || []).some(x => x.doc === re1200 && /Nachholung/.test(x.why))); });
   t("Live: Einstellung 'kleine Vorauszahlungen im Zahlungsmonat' → RE-1203 ebenfalls als Nachholung in Q3", () => { const s2 = JSON.parse(JSON.stringify(s)); s2.settings = { kleineAnz: false }; const rr = S.computeUva(RAWL, s2, Q(2026, 3)); near(kz(rr, "022"), 1500); assert.ok((rr.docs["022"] || []).some(x => x.doc === re1203 && /Nachholung/.test(x.why))); });
-  t("Live: Q2 noch offen (heute 2026-07-01) → strenge Anzahlung RE-1200b in Q2", () => { const s3 = st0(); s3.today = "2026-07-01"; near(kz(S.computeUva(RAWL, s3, Q(2026, 2)), "022"), 500); });
+  t("Live: Q2 noch offen, Bagatell-Einstellung bewusst an → RE-1200b in Q2", () => { const s3 = st0(); s3.today = "2026-07-01"; s3.settings = Object.assign({}, s3.settings, { kleineAnz: true }); near(kz(S.computeUva(RAWL, s3, Q(2026, 2)), "022"), 500); });
   t("Live: La Taverna (AT-UID, 0 %) → keine ig. Lieferung, 'bitte zuordnen' mit Inlandshinweis; Q3 ohne KZ 017/ZM", () => {
     const z = S.zeroRated(RAWL, s, Q(2026, 3)).find(x => x.doc === tav); assert.ok(z && z.at && !z.sure && /österreichischen Unternehmer/.test(z.why)); near(kz(r, "017"), 0); assert.strictEqual(r.zm.length, 0); });
   t("Live: Zahllast Q3 = 280; '0 % war falsch' → 835,07 brutto = 695,89 netto + 139,18 USt in 022", () => {
@@ -433,7 +433,7 @@ t("AVAB 2026 zwei Kinder 828 € nur wenn Partnerin ≤ 7.411 €", () => { near
     assert.ok((S.computeUva({ invoices: [z], vouchers: [] }, s3, Q(2026, 3)).docs["022"] || []).some(x => x.doc === z));
     const s4 = JSON.parse(JSON.stringify(s3)); delete s4.uva["2026-Q2"].summary.docIds; near(kz(S.computeUva({ invoices: [z], vouchers: [] }, s4, Q(2026, 2)), "022"), 200); });
   t("Runde 2: Warnung Kleinunternehmer-Text mit ausgewiesener USt (§ 11 Abs 12)", () => assert.ok(S.mismatches(RAW2, s, "2026-04-01", "2026-04-30").some(m => m.doc === re1146 && m.type === "ku")));
-  t("Runde 2: ausgebuchte 0-%-Rechnung (bezahlt ohne Zahlung) → keine Prüfung, keine USt-Folge", () => { assert.ok(!r.review.some(x => x.doc === tav)); assert.ok(S.ausgebucht(tav, s).auto); assert.ok((r.other.sonst || []).some(x => x.doc === tav)); assert.ok(r.minder.some(m => m.doc === ausg20 && m.auto)); });
+  t("Runde 2: ausgebuchte 0-%-Rechnung (bezahlt ohne Zahlung) bleibt gemeldet bzw. zu prüfen (§ 16 Abs. 3 berichtigt nur die Steuer)", () => { assert.ok(S.ausgebucht(tav, s).auto); assert.ok(!(r.other.sonst || []).some(x => x.doc === tav)); assert.ok(r.minder.some(m => m.doc === ausg20 && m.auto)); });
   t("Runde 2: Gutschrift ignorieren → keine Wirkung in UVA (022 400) und E1a", () => { const s5 = JSON.parse(JSON.stringify(s)); s5.docs[gu.id] = { kz: "ignore" }; near(kz(S.computeUva(RAW2, s5, Q(2026, 3)), "022"), 400);
     const gp = Object.assign({}, gu, { status: 1000 }), raw = { invoices: [], vouchers: [], creditNotes: [gp] }; near(S.computeJab(raw, st0(), 2026).ertr["9040"], -100); const s6 = st0(); s6.docs[gp.id] = { kz: "ignore" }; near(S.computeJab(raw, s6, 2026).ertr["9040"], 0); });
 }
