@@ -1172,10 +1172,6 @@ const FIN_BANK = require("./fin-bank.js");
 const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
   mailSend: async (m) => {
     if (!MAIL.url || !MAIL.token) throw new Error("Mailserver nicht eingerichtet");
-// Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway)
-const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL });
-const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
-setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
     const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, m)) });
     const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
   } });
@@ -3044,6 +3040,10 @@ const server = http.createServer((req, res) => {
     send(res, 500, "Server error");
   }
 });
+// Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway)
+const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL });
+const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
+setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
 
 // Einmalige Steuer-Diagnose ins Log (nur wenn STEUER_DIAG=<Zeitraum>, z. B. 2026-Q3): liest sevDesk nur, schreibt nichts.
 async function steuerDiag(key) {
