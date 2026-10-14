@@ -8,11 +8,13 @@ var F=window.FSC;
 var CV_URL="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js";
 function workerSrc(){ return "var CV_URL="+JSON.stringify(CV_URL)+";\n("+function(){
   var cvReady=null;
-  function loadCv(){ if(cvReady) return cvReady; cvReady=new Promise(function(res){ try{ self.importScripts(CV_URL); }catch(e){ return res(null); }
-    var cv=self.cv; if(!cv) return res(null);
-    if(typeof cv.then==="function") cv.then(function(m){ self.cv=m; res(m); });
-    else if(cv.Mat) res(cv); else cv.onRuntimeInitialized=function(){ res(self.cv); };
-    setTimeout(function(){ res(self.cv&&self.cv.Mat?self.cv:null); },30000); }); return cvReady; }
+  // Achtung: das OpenCV-Modul hat selbst ein .then – nie direkt als Promise-Ergebnis übergeben (sonst wartet es ewig) → in {cv} verpacken
+  function loadCv(){ if(cvReady) return cvReady; cvReady=new Promise(function(res){ try{ self.importScripts(CV_URL); }catch(e){ return res({cv:null}); }
+    var cv=self.cv; if(!cv) return res({cv:null});
+    if(cv.Mat) return res({cv:cv});
+    if(typeof cv.then==="function") cv.then(function(m){ self.cvM=m; res({cv:m}); });
+    else cv.onRuntimeInitialized=function(){ res({cv:self.cv}); };
+    setTimeout(function(){ res({cv:self.cvM||null}); },30000); }); return cvReady; }
   function order(p){ var s=p.map(function(q){ return q.x+q.y; }), d=p.map(function(q){ return q.y-q.x; });
     return [p[s.indexOf(Math.min.apply(null,s))],p[d.indexOf(Math.min.apply(null,d))],p[s.indexOf(Math.max.apply(null,s))],p[d.indexOf(Math.max.apply(null,d))]]; }
   function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
@@ -47,7 +49,7 @@ function workerSrc(){ return "var CV_URL="+JSON.stringify(CV_URL)+";\n("+functio
     return d.buffer;
   }
   self.onmessage=function(ev){ var m=ev.data;
-    (m.crop?loadCv():Promise.resolve(null)).then(function(cv){ var W=m.w, H=m.h, buf=m.buf, cropped=false;
+    (m.crop?loadCv():Promise.resolve({cv:null})).then(function(box){ var cv=box&&box.cv&&box.cv.Mat?box.cv:null, W=m.w, H=m.h, buf=m.buf, cropped=false;
       if(cv){ try{ var c=cropWarp(cv,W,H,buf); if(c){ W=c.w; H=c.h; buf=c.buf; cropped=true; } }catch(e){} }
       var out=filter(W,H,buf); self.postMessage({id:m.id,w:W,h:H,buf:out,cropped:cropped},[out]); })
     .catch(function(e){ self.postMessage({id:m.id,error:String(e&&e.message||e)}); }); };
