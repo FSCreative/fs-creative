@@ -375,14 +375,18 @@ function renderBelege(){
     }).join("")||'<div class="sd-empty">Keine Belege in dieser Ansicht.</div>')+'</div>'+
     (more?'<button class="more" data-act="sdvmore">Weitere '+Math.min(60,more)+' anzeigen ('+more+' übrig)</button>':'')+'</section>';
 }
-function vouById(id){ var d=S.vou[vouYear()]; return d&&d.vouchers&&d.vouchers.find(function(v){return v.id===id;}); }
+function vouById(id){ var hit=null; Object.keys(S.vou||{}).forEach(function(y){ var d=S.vou[y]; if(!hit&&d&&d.vouchers) hit=d.vouchers.find(function(v){return v.id===id;})||null; }); return hit; }
+/* Beleg nicht im geladenen Jahr (z. B. gerade per Regel angelegt oder anderes Jahr): Jahre frisch nachladen, dann öffnen */
+function findVouThen(id,cb){ var v=vouById(id); if(v) return cb(v); F.toast("Lade Beleg …");
+  var cy=new Date().getFullYear(), ys=[vouYear(),String(cy),String(cy-1),String(cy-2)].filter(function(y,i,a){ return a.indexOf(y)===i; }), i=0;
+  (function next(){ if(i>=ys.length){ F.toast("Beleg nicht gefunden",true); return; } var y=ys[i++]; F.api("/admin/api/sev/vouchers?year="+y+"&force=1").then(function(j){ if(j&&j.ok){ S.vou[y]=j; var h=j.vouchers.find(function(x){ return x.id===id; }); if(h) return cb(h); } next(); }); })(); }
 function vrow(p,cats){ p=p||{}; var r=p.taxRate!=null?+p.taxRate:20;
   return '<div class="sd-vrow"><select class="f" data-v="cat" aria-label="Kategorie"><option value="">— Kategorie —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'"'+(String(c.id)===String(p.accountingTypeId)?" selected":"")+'>'+esc(c.name)+'</option>'; }).join("")+(p.accountingTypeId&&!cats.some(function(c){return String(c.id)===String(p.accountingTypeId);})?'<option value="'+esc(p.accountingTypeId)+'" selected>'+esc(p.category||"Kategorie "+p.accountingTypeId)+'</option>':'')+'</select>'+
     '<select class="f" data-v="tax" aria-label="USt">'+[20,13,10,0].map(function(x){ return '<option value="'+x+'"'+(x===r?" selected":"")+'>'+x+' %</option>'; }).join("")+'</select>'+
     '<input class="f num" data-v="gross" type="number" step="0.01" min="0" placeholder="brutto €" value="'+(p.gross!=null?esc(p.gross):"")+'" aria-label="Brutto">'+
     '<input class="f cm" data-v="comment" placeholder="Notiz" value="'+esc(p.comment||"")+'"><button type="button" class="btn icon" data-vdel aria-label="Position entfernen">✕</button></div>'; }
 function openVou(id){
-  var v=vouById(id); if(!v) return;
+  var v=vouById(id); if(!v) return findVouThen(id,function(){ openVou(id); });
   F.loadMeta(function(m){
     var cats=m.accountingTypes||[], draft=v.status===50, open=v.status===100||v.status===750, paid=v.status===1000, locked=v.enshrined||v.status>=750;
     var acts=[];
