@@ -87,7 +87,8 @@ module.exports = function (D) {
     const res = { org: org.name || tk.key, accounts: [], added: 0, fees: 0, payouts: 0, linked: 0 };
     for (const b of balances.filter(b => (b.currency || "EUR") === "EUR")) {
       let acc = L.all("CheckAccount").find(a => a.mollieBalance === b.id);
-      if (!acc) acc = (await L.request("POST", "/CheckAccount", { body: { name: "Mollie – " + (org.name || "Konto"), type: "online", importType: "MOLLIE", currency: "EUR", status: "100", defaultAccount: "0", mollieBalance: b.id } })).objects;
+      const label = /^MOLLIE_ORG_TOKEN_\w+$/.test(tk.key) ? tk.key.replace(/^MOLLIE_ORG_TOKEN_/, "").toLowerCase().replace(/(^|_)(\w)/g, (m, a, c) => (a ? " " : "") + c.toUpperCase()) : (org.name || "Konto");
+      if (!acc) acc = (await L.request("POST", "/CheckAccount", { body: { name: "Mollie – " + label, type: "online", importType: "MOLLIE", currency: "EUR", status: "100", defaultAccount: "0", mollieBalance: b.id } })).objects;
       const have = new Set(L.all("CheckAccountTransaction").filter(x => x.mollieId).map(x => x.mollieId));
       const txs = (await pages(tk.token, "/balances/" + b.id + "/transactions?limit=250", since)).reverse();
       for (const t of txs) {
@@ -113,7 +114,8 @@ module.exports = function (D) {
         }
         have.add(t.id);
       }
-      res.accounts.push({ id: String(acc.id), name: acc.name, balance: amt(b.availableAmount) + amt(b.pendingAmount) });
+      acc.mollieApiBalance = r2(amt(b.availableAmount) + amt(b.pendingAmount)); acc.mollieApiPending = r2(amt(b.pendingAmount)); acc.mollieApiAt = new Date().toISOString(); await L.save("CheckAccount", acc);
+      res.accounts.push({ id: String(acc.id), name: acc.name, balance: acc.mollieApiBalance });
     }
     return res;
   }
@@ -130,6 +132,27 @@ module.exports = function (D) {
       STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked, rematched }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
   }
+  // Abgleich je Mollie-Konto: eingenommen (brutto), Gebühren, netto, ausbezahlt (mit/ohne Bankumsatz), noch bei Mollie, Kontrolle gegen Mollie-Saldo
+  function summary(from, to) {
+    const out = [];
+    for (const acc of L.all("CheckAccount").filter(a => a.mollieBalance)) {
+      const txs = L.all("CheckAccountTransaction").filter(t => t.checkAccount && String(t.checkAccount.id) === String(acc.id));
+      const inP = t => (!from || day(t.valueDate) >= from) && (!to || day(t.valueDate) <= to);
+      const pays = txs.filter(t => t.mollieType === "payment" && inP(t)), refunds = txs.filter(t => /refund|chargeback/.test(t.mollieType || "") && inP(t)), prov = txs.filter(t => t.mollieType === "application-fee" && inP(t));
+      const otherFees = txs.filter(t => t.mollieFee && inP(t)), payouts = txs.filter(t => /outgoing-transfer/.test(t.mollieType || "") && inP(t));
+      const sum = (a, f) => r2(a.reduce((x, t) => x + f(t), 0));
+      const gross = sum(pays, t => +t.mollieGross || +t.amount), fees = r2(sum(pays, t => +t.mollieFeeAmt || 0) + Math.abs(sum(otherFees, t => +t.amount)));
+      const paid = sum(payouts, t => -(+t.amount)), linked = payouts.filter(t => t.transitWith), notLinked = payouts.filter(t => !t.transitWith && +t.amount < 0);
+      const bookBal = r2(txs.reduce((x, t) => x + (+t.amount || 0), 0));
+      out.push({ id: String(acc.id), name: acc.name, gross, fees, refunds: Math.abs(sum(refunds, t => +t.amount)), provisions: sum(prov, t => +t.amount), net: r2(gross - fees),
+        payouts: paid, payoutsLinked: sum(linked, t => -(+t.amount)), payoutsMissing: notLinked.map(t => ({ id: String(t.id), date: day(t.valueDate), amount: -(+t.amount) })),
+        stillAtMollie: bookBal, mollieBalance: acc.mollieApiBalance != null ? acc.mollieApiBalance : null, pending: acc.mollieApiPending || 0, balanceAt: acc.mollieApiAt || null,
+        diff: acc.mollieApiBalance != null ? r2(bookBal - acc.mollieApiBalance) : null,
+        unmatched: pays.filter(t => String(t.status) === "100").map(t => ({ id: String(t.id), date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.mollieDesc || t.paymtPurpose || "").slice(0, 80), gross: +t.mollieGross || +t.amount, fee: +t.mollieFeeAmt || 0 })),
+        countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length });
+    }
+    return out;
+  }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, relink, linkFees, rematch, autoMatch };
+  return { sync, status, relink, linkFees, rematch, autoMatch, summary };
 };

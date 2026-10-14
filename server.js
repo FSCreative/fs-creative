@@ -2422,7 +2422,7 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/fin/mollie") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
-      if (req.method === "GET") return J(200, Object.assign({ ok: true, local: FIN_STATE.local }, FIN_MOLLIE.status()));
+      if (req.method === "GET") { const y = u.searchParams.get("year"); return J(200, Object.assign({ ok: true, local: FIN_STATE.local, summary: FIN_STATE.local ? (await FIN_LOCAL.load(), FIN_MOLLIE.summary(y ? y + "-01-01" : null, y ? y + "-12-31" : null)) : [] }, FIN_MOLLIE.status())); }
       if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung (Finanzen → Firma & Einstellungen) verfügbar" });
       const pl = await sevBody(req, 2000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
       const r = await FIN_MOLLIE.sync({ since: /^\d{4}-\d{2}-\d{2}$/.test(pl.since || "") ? pl.since : undefined }); r.rules = await FIN_RULES.run().catch(() => ({ done: 0 })); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
