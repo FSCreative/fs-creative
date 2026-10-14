@@ -1837,7 +1837,10 @@ function steuerOp(pl) {
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
     if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
-    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil", "noAusfall"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil", "noAusfall", "assetChecked"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    if ("ahk" in P) { const n = n2(P.ahk); cur.ahk = n > 0 && n < 1e7 ? Math.round(n * 100) / 100 : undefined; }
+    if ("label" in P) cur.label = String(P.label || "").slice(0, 80) || undefined;
+    if ("sevAsset" in P) cur.sevAsset = String(P.sevAsset || "").slice(0, 20) || undefined;
     if ("wk" in P) cur.wk = P.wk === "ja" || P.wk === "nein" ? P.wk : undefined;           // § 19 EStG 15-Tage-Regel
     if ("uid" in P) { const u = String(P.uid || "").replace(/[\s.\-]/g, "").toUpperCase().slice(0, 16); cur.uid = u && STEUER_CALC.uidValid(u).ok ? u : undefined; }
     if ("land" in P) { const l = String(P.land || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2); cur.land = l.length === 2 ? l : undefined; }
