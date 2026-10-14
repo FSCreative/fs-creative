@@ -2766,7 +2766,10 @@ async function handleAdmin(req, res, u, p) {
       if (p === "/admin/api/sev/voucher-op" && req.method === "POST") return J(200, await SEV_OPS.voucherOp(await sevBody(req)));
       if (p === "/admin/api/sev/voucher-doc" && req.method === "GET") {
         const d = await SEV_OPS.voucherDoc(u.searchParams.get("id"));
-        const nm = String(d.name || "Beleg").replace(/[^\w.\- ]/g, "_");
+        // Dateityp aus den ersten Bytes (übernommene Dateien kamen teils als „octet-stream“ ohne Endung → iPhone konnte sie nicht anzeigen)
+        const sniff = b => { const h = b.slice(0, 12); if (h.slice(0, 4).toString() === "%PDF") return ["application/pdf", ".pdf"]; if (h[0] === 0x89 && h.slice(1, 4).toString() === "PNG") return ["image/png", ".png"]; if (h[0] === 0xff && h[1] === 0xd8) return ["image/jpeg", ".jpg"]; if (h.slice(0, 4).toString() === "GIF8") return ["image/gif", ".gif"]; if (h.slice(0, 4).toString() === "RIFF" && h.slice(8, 12).toString() === "WEBP") return ["image/webp", ".webp"]; if (h.slice(4, 12).toString().indexOf("ftyphei") === 0 || /ftyp(heic|heix|mif1)/.test(h.slice(4, 12).toString())) return ["image/heic", ".heic"]; return null; };
+        const sn = sniff(d.buf); if (sn && (!d.type || /octet-stream|binary/i.test(d.type))) d.type = sn[0];
+        let nm = String(d.name || "Beleg").replace(/[^\w.\- ]/g, "_"); if (sn && !/\.[a-z0-9]{2,5}$/i.test(nm)) nm += sn[1];
         return send(res, 200, d.buf, d.type, { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + nm + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
       }
       if (p === "/admin/api/sev/transactions" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.transactions(force)), TYPES[".json"], { "Cache-Control": "no-store" });
