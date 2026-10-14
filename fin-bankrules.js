@@ -25,6 +25,7 @@ module.exports = function (D) {
   async function applyOne(r, t) {
     const a = r.act || {}, amt = +t.amount || 0;
     if (a.type === "privat") { t.status = "300"; t.privat = amt < 0 ? "Entnahme" : "Einlage"; t.ruleId = r.id; await L.save("CheckAccountTransaction", t); return "privat"; }
+    if (a.type === "done") { t.status = "350"; t.ruleId = r.id; t.doneNote = r.name; await L.save("CheckAccountTransaction", t); return "erledigt"; }   // z. B. 0-€-Abschlussbuchung der Bank: nur Info, nichts zu buchen
     if (a.type === "transit") { t.status = "400"; t.transitWith = "regel:" + r.id; t.ruleId = r.id; await L.save("CheckAccountTransaction", t); return "transit"; }
     if (a.type === "beleg") {
       const rate = [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, gross = Math.abs(amt);
@@ -51,7 +52,7 @@ module.exports = function (D) {
     const c = r.cond || {}, a = r.act || {}, n = v => v === "" || v == null || !isFinite(+v) ? "" : r2(Math.abs(+v));
     return { id: r.id || ("b" + Date.now().toString(36)), name: String(r.name || "Regel").slice(0, 80), active: r.active !== false,
       cond: { name: String(c.name || "").slice(0, 300), purpose: String(c.purpose || "").slice(0, 300), dir: ["in", "out"].indexOf(c.dir) > -1 ? c.dir : "", min: n(c.min), max: n(c.max), account: String(c.account || "").slice(0, 40) },
-      act: { type: ["privat", "transit", "beleg"].indexOf(a.type) > -1 ? a.type : "", category: String(a.category || "").slice(0, 40), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, supplier: String(a.supplier || "").slice(0, 120), desc: String(a.desc || "").slice(0, 120) },
+      act: { type: ["privat", "transit", "beleg", "done"].indexOf(a.type) > -1 ? a.type : "", category: String(a.category || "").slice(0, 40), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, supplier: String(a.supplier || "").slice(0, 120), desc: String(a.desc || "").slice(0, 120) },
       hits: +r.hits || 0, lastHit: r.lastHit || null };
   }
   async function handle(pl) {
