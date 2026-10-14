@@ -38,7 +38,7 @@ var NAV=[
   {id:"dash",label:"Übersicht",icon:"dash"},
   {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
-  {id:"vou",label:"Belege",icon:"vou"},
+  {id:"vou",label:"Belege",icon:"vou",sub:[["vou","Alle"],["rvou","Wiederkehrend"]]},
   {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"]]},
   {id:"steuer",label:"Steuern",icon:"tax",sub:[["steuer","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Gewinn & Jahreserklärung"],["anlagen","Anlagen & Abschreibungen"],["prognose","Prognose"]]},
   {sep:"Verwalten"},
@@ -324,7 +324,7 @@ function ebankBox(){
   return ss.map(function(x){ var days=x.validUntil?Math.round((Date.parse(x.validUntil)-Date.now())/864e5):null;
     return '<section class="fsd-card mo"><div class="row-between"><div class="fsd-ctitle" style="margin:0">'+esc(x.bank)+' <span class="muted" style="font-size:12px;font-weight:400">'+(days!=null?(days>0?"Freigabe noch "+days+" Tage":"Freigabe abgelaufen"):"")+(EB.at?" · zuletzt abgerufen "+de(EB.at.slice(0,10))+" "+EB.at.slice(11,16):" · täglich automatisch")+'</span></div>'+
       ((days!=null&&days<14)?'<button class="btn primary" data-act="febconnect">Freigabe erneuern</button>':'<button class="btn sm" data-act="febdisc:'+esc(x.bank)+'">Trennen</button>')+'</div>'+
-      x.accounts.map(function(a){ var d=a.diff; return '<div class="mo-row"><span><b>'+esc(a.name)+'</b></span><span class="muted">'+esc(a.iban||"")+'</span><b class="num">'+(a.balance!=null?eur(a.balance):"—")+'</b>'+(d==null?'<span class="fsd-pill grey">noch nicht abgerufen</span>':Math.abs(d)<0.02?'<span class="fsd-pill paid">Saldo stimmt</span>':'<span class="fsd-pill due">Abweichung '+eur(d)+'</span>')+'</div>'; }).join("")+
+      x.accounts.map(function(a){ var d=a.diff; return '<div class="mo-acc"><span><b>'+esc(a.name)+'</b></span><span class="muted">'+esc(a.iban||"")+'</span><b class="num">'+(a.balance!=null?eur(a.balance):"—")+'</b>'+(d==null?'<span class="fsd-pill grey">noch nicht abgerufen</span>':Math.abs(d)<0.02?'<span class="fsd-pill paid">Saldo stimmt</span>':'<span class="fsd-pill due">Abweichung '+eur(d)+'</span>')+'</div>'; }).join("")+
       (EB.error?'<div class="notice" style="margin-top:8px">'+esc(EB.error)+'</div>':'')+'</section>'; }).join("");
 }
 F.action("febconnect",function(){ F.toast("Öffne George-Freigabe …"); F.api("/admin/api/fin/ebank",{body:{op:"start"}}).then(function(j){ if(!j||!j.ok||!j.url){ F.toast((j&&j.error)||"Verbinden fehlgeschlagen",true); return; } location.href=j.url; }); });
@@ -423,6 +423,32 @@ function pageWkr(){
   return head("Wiederkehrende Rechnungen","Anlegen: Rechnung öffnen → Mehr → „Als wiederkehrend anlegen“. Fällige Rechnungen entstehen automatisch (stündliche Prüfung).","")+
     '<section class="fsd-card flush"><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Kunde</th><th>Intervall</th><th>Nächste</th><th>Versand</th><th class="r">Betrag (brutto)</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7" class="empty">Noch keine wiederkehrenden Rechnungen.</td></tr>')+'</tbody></table></div></section>';
 }
+
+/* ---------- Wiederkehrende Belege (Vorlagen, z. B. Versicherung, Abos): automatisch am Fälligkeitstag als Beleg angelegt ---------- */
+var RV=null;
+function rvLoad(){ if(C.busy.rv) return; C.busy.rv=1; F.api("/admin/api/fin/rv").then(function(j){ C.busy.rv=0; RV=j||{ok:false}; F.render(); }); }
+function rvPost(body,msg){ body.confirm=true; F.api("/admin/api/fin/rv",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } RV=j; F.closeModal&&F.closeModal(); F.toast(msg+(j.made?" · "+j.made+" fällige Belege angelegt":"")); if(j.made) F.load(true); F.render(); }); }
+var RVST={active:["paid","Aktiv"],paused:["grey","Pausiert"],stale:["draft","In sevDesk pausiert"],ended:["grey","Beendet"]};
+function pageRv(){
+  if(!RV){ rvLoad(); return head("Wiederkehrende Belege","")+'<div class="sd-empty">Lade …</div>'; }
+  if(!RV.ok) return head("Wiederkehrende Belege","")+'<div class="notice">'+esc(RV.error||"Nicht verfügbar")+'</div>';
+  var it=RV.items||[], act=it.filter(function(x){ return x.state==="active"; }), perMonth=act.reduce(function(a,x){ var m=/^(\d+)M$/.exec(x.interval), d=/^(\d+)D$/.exec(x.interval); return a+(x.credit?-1:1)*x.gross/(m?+m[1]:d?(+d[1]/30.4):1); },0);
+  var rows=it.map(function(x){ var st=RVST[x.state]||["grey",x.state];
+    return '<tr><td class="rv-st">'+pill(st[0],st[1])+'</td><td><b>'+esc(x.supplier)+'</b><div class="sub">'+esc(x.description||x.categories.join(", "))+(x.description&&x.categories.length?' · '+esc(x.categories.join(", ")):'')+'</div></td><td class="m">'+esc(ivName(x.interval)||"–")+'</td><td class="m num">'+(x.state==="active"?de(x.next):'–')+(x.end?'<div class="sub">bis '+de(x.end)+'</div>':'')+'</td><td class="m num">'+(x.last?de(x.last):'–')+(x.made?'<div class="sub">'+x.made+'× im Cockpit</div>':'')+'</td><td class="r num nowrap '+(x.credit?"ok-t":"")+'">'+eur(x.gross)+'</td>'+
+      '<td class="r"><span class="fsd-btns" style="justify-content:flex-end"><button class="btn sm" data-act="rvedit:'+esc(x.id)+'">Bearbeiten</button>'+(x.state==="active"?'<button class="btn sm" data-act="rvpause:'+esc(x.id)+'">Pausieren</button>':'<button class="btn sm" data-act="rvresume:'+esc(x.id)+'">Aktivieren</button>')+'<button class="btn sm" data-act="rvdel:'+esc(x.id)+'">Löschen</button></span></td></tr>'; }).join("");
+  return head("Wiederkehrende Belege","Fixkosten wie Versicherungen oder Abos: am Fälligkeitstag entsteht automatisch der Beleg (stündliche Prüfung) – zuordnen zur Abbuchung wie gewohnt.","")+
+    '<section class="fsd-card mo"><div class="mo-flow"><div class="mo-k"><span>Aktive Vorlagen</span><b class="num">'+act.length+'</b></div><em>·</em><div class="mo-k"><span>Fixkosten pro Monat (brutto)</span><b class="num">'+eur(perMonth)+'</b></div><em>·</em><div class="mo-k"><span>Nächster Beleg</span><b class="num">'+(act.length?de(act.map(function(x){return x.next;}).sort()[0]):"–")+'</b></div></div></section>'+
+    '<section class="fsd-card flush"><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Lieferant / Beschreibung</th><th>Intervall</th><th>Nächster</th><th>Zuletzt</th><th class="r">Betrag (brutto)</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7" class="empty">Keine wiederkehrenden Belege.</td></tr>')+'</tbody></table></div></section>';
+}
+F.action("rvedit",function(id){ var x=(RV.items||[]).find(function(i){ return i.id===id; }); if(!x) return;
+  F.modal('<form data-form="rvsave" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(x.supplier)+'</h2>'+F.btnClose()+'</div><p class="muted" style="margin:0">'+esc(x.description||"")+' · '+eur(x.gross)+' brutto</p>'+
+    '<div class="grid2"><label class="fl">Intervall<select class="f" name="interval">'+IVL.map(function(i){ return '<option value="'+i[0]+'"'+(x.interval===i[0]?" selected":"")+'>'+i[1]+'</option>'; }).join("")+'</select></label><label class="fl">Nächster Beleg am<input class="f" type="date" name="next" value="'+esc(x.next||"")+'" required></label></div>'+
+    '<label class="fl">Endet am (optional)<input class="f" type="date" name="end" value="'+esc(x.end||"")+'"></label><p class="muted small" style="margin:0">Speichern aktiviert die Vorlage. Liegt der Termin in der Vergangenheit, werden die fehlenden Belege sofort angelegt.</p>'+
+    '<div class="fsd-btns" style="justify-content:flex-end"><button type="submit" class="btn primary">Speichern</button></div></form>',"narrow"); });
+F.form("rvsave",function(f){ rvPost({op:"save",id:f.getAttribute("data-id"),interval:f.interval.value,next:f.next.value,end:f.end.value},"Gespeichert"); });
+F.action("rvpause",function(id){ rvPost({op:"pause",id:id},"Pausiert"); });
+F.action("rvresume",function(id){ F.confirm("Vorlage wieder aktivieren? Der nächste Termin wird auf das nächste Fälligkeitsdatum ab heute gesetzt.","Aktivieren",function(){ rvPost({op:"resume",id:id},"Aktiviert"); }); });
+F.action("rvdel",function(id){ F.confirm("Vorlage entfernen? Bereits angelegte Belege bleiben.","Entfernen",function(){ rvPost({op:"delete",id:id},"Entfernt"); },true); });
 
 /* ---------- Kassenbuch: unveränderbar, Korrektur per Gegenbuchung, nie negativ ---------- */
 var KB=null;
@@ -532,6 +558,7 @@ function content(){
   if(p==="bank") return pageBank("bank");
   if(p==="kasse") return pageKasse();
   if(p==="wkr") return pageWkr();
+  if(p==="rvou") return pageRv();
   if(p==="open") return pageBank("open");
   if(p==="orders"){ return head("Angebote","",'<button class="btn primary" data-act="newoffer">Angebot erstellen</button>')+(F.offersPanelHtml?F.offersPanelHtml():'<div class="sd-empty">Angebote findest du unter Kunden & Leads.</div>'); }
   if(p==="ct"){ F.UI.stT="kontakte"; return pageTab("stamm"); }
@@ -544,7 +571,7 @@ function content(){
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["kasse","Kasse"],["steuer","Steuern"],["anlagen","Abschreibungen"],["orders","Angebote"],["cn","Gutschriften"],["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Einstellungen"]];
+var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["rvou","Wiederk. Belege"],["bank","Bank"],["kasse","Kasse"],["steuer","Steuern"],["anlagen","Abschreibungen"],["orders","Angebote"],["cn","Gutschriften"],["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Einstellungen"]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="open") g="bank"; if(g==="uva"||g==="u1"||g==="jab"||g==="prognose") g="steuer";
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+'</button>'; }).join("")+'</nav>'; }
 function scanInput(cls,label){ return '<label class="'+cls+'">'+ic("cam")+(label?'<span>'+label+'</span>':'')+'<input type="file" class="fsd-scan" accept="image/*,application/pdf" capture="environment" multiple hidden></label>'; }
@@ -749,7 +776,7 @@ F.css(
 '.md-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}.md-row{display:grid;grid-template-columns:150px minmax(0,1fr) 20px;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--sd-line);background:none;padding:10px 4px;cursor:pointer;font:inherit;color:var(--sd-ink)}.md-row span{font-size:13px;color:var(--sd-mut2)}.md-row b{font-weight:500;font-size:14px;word-break:break-word}.md-row i{color:var(--sd-mut);opacity:0;display:grid}.md-row i svg{width:15px;height:15px}.md-row:hover{background:var(--sd-hov)}.md-row:hover i{opacity:1}'+
 '.md-edit{display:grid;grid-template-columns:150px 200px minmax(0,1fr) auto;gap:8px;align-items:center}@media (max-width:700px){.md-row{grid-template-columns:110px minmax(0,1fr) 18px}.md-row i{opacity:1}.md-edit{grid-template-columns:1fr 1fr}}'+
 '.mo-flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:12px}.mo-flow em{font-style:normal;color:var(--sd-mut);font-size:18px}.mo-k{display:grid;gap:1px}.mo-k span{font-size:12px;color:var(--sd-mut2)}.mo-k b{font-size:17px;font-weight:600}.mo-k i{font-style:normal;font-size:11.5px;color:var(--sd-mut2)}'+
-'.mo-prof{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12.5px;color:var(--sd-ink2)}.mo-prof i{font-style:normal}.mo-open{margin-top:10px}.mo-open summary{cursor:pointer;font-size:13.5px}.mo-row{display:grid;grid-template-columns:70px minmax(0,1fr) 90px 100px auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--sd-line);font-size:13px}.mo-row i{font-style:normal;color:var(--sd-mut2)}'+
+'.mo-prof{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12.5px;color:var(--sd-ink2)}.mo-prof i{font-style:normal}.mo-open{margin-top:10px}.mo-open summary{cursor:pointer;font-size:13.5px}.mo-row{display:grid;grid-template-columns:70px minmax(0,1fr) 90px 100px auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--sd-line);font-size:13px}.mo-row i{font-style:normal;color:var(--sd-mut2)}.mo-acc{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:8px 0;border-top:1px solid var(--sd-line);font-size:13px}.mo-acc .fsd-pill,.mo .fsd-pill{white-space:nowrap;flex:none}.mo-acc .num{text-align:right}@media(max-width:700px){.mo-acc{grid-template-columns:1fr auto}.mo-acc>span.muted{grid-column:1/-1;order:3;font-size:12px}}.rv-st{white-space:nowrap}'+
 '.pt-wrap{margin-bottom:4px}.pt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.pt{display:grid;gap:4px;text-align:left;cursor:pointer;font:inherit;color:var(--sd-ink);padding:14px 16px}.pt:hover{border-color:var(--sd-line2);background:#fcfcfd}.pt-h{display:flex;justify-content:space-between;align-items:center}.pt-h b{font-size:14px;font-weight:600}.pt-h span{color:var(--sd-mut)}.pt-h svg{width:16px;height:16px}'+
 '.pt-big{font-size:22px;font-weight:650;letter-spacing:-.3px;margin-top:4px}.pt-big small{font-size:12px;font-weight:500;color:var(--sd-mut2);margin-left:2px}.pt-bl{font-size:11.5px;color:var(--sd-mut2);margin-bottom:6px}.pt-rows{display:grid;gap:3px;border-top:1px solid var(--sd-line);padding-top:6px}.pt-rows div{display:flex;justify-content:space-between;gap:8px;font-size:12.5px}.pt-rows span{color:var(--sd-mut2)}.pt-rows b{font-weight:500}.pt-mo{font-size:11.5px;color:var(--sd-ink2);background:var(--sd-side);border-radius:6px;padding:4px 8px;margin-top:6px}'+
 '.fsm .pt-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.fsm .pt{background:#fff;border:1px solid rgba(6,3,20,.08);border-radius:14px;padding:12px}.fsm .pt-big{font-size:18px}.fsm .pt-rows div{font-size:11.5px}'+

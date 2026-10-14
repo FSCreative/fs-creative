@@ -436,7 +436,7 @@ module.exports = function (D) {
     const made = [];
     for (const rv of all("Voucher").filter(v => String(v.voucherType) === "RV" && v.recurringInterval && v.recurringNextVoucher)) {
       let next = dayOf(rv.recurringNextVoucher), end = dayOf(rv.recurringEndDate), guard = 0;
-      if (!next || next < addIso(set.rvSince, "P0Y0M0W7D", -1)) continue;
+      if (rv.rvPaused || !next || (next < addIso(set.rvSince, "P0Y0M0W7D", -1) && !rv.rvActive)) continue;
       while (next <= t && (!end || next <= end) && guard++ < 24) {
         const v = Object.assign({}, rv, { id: newId("Voucher"), voucherType: "VOU", status: "100", voucherDate: iso(next), deliveryDate: iso(next), paidAmount: "0", payDate: null, enshrined: null, document: null, recurringInterval: null, recurringNextVoucher: null, recurringStartDate: null, recurringEndDate: null, recurringLastVoucher: null, fromRecurring: String(rv.id) });
         for (const p of positionsOf("Voucher", rv.id)) await save("VoucherPos", Object.assign({}, p, { id: newId("VoucherPos"), voucher: ref("Voucher", v.id) }));
@@ -656,5 +656,5 @@ module.exports = function (D) {
     const paired = dry ? 0 : await pairTransfers();
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
+  return { request, load, get, all, positionsOf, save, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
 };

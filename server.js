@@ -2380,6 +2380,44 @@ async function handleAdmin(req, res, u, p) {
   }
   // ---- sevDesk im Cockpit: Rechnung abschließen, Bank, Belege, Kontakte, Artikel ----
   // Weitere sevDesk-Funktionen der eigenen Buchhaltung: Gutschrift (Minderleistung), Kassenbuch, Abschlag/Schlussrechnung, wiederkehrende Rechnungen
+  // Wiederkehrende Belege (Vorlagen „RV“ aus sevDesk oder eigene): Liste, Intervall/Termin/Ende ändern, pausieren, löschen
+  if (p === "/admin/api/fin/rv") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung verfügbar" });
+      await FIN_LOCAL.load(); const L = FIN_LOCAL, d10 = v => String(v || "").slice(0, 10), today = new Date().toISOString().slice(0, 10);
+      const set = L.get("FinSetting", "1") || {}, since = set.rvSince || today;
+      const ivKey = iso => { const m = String(iso || "").match(/P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?/) || []; const mo = (+m[1] || 0) * 12 + (+m[2] || 0), dd = (+m[3] || 0) * 7 + (+m[4] || 0); return mo ? mo + "M" : dd ? dd + "D" : ""; };
+      const ivIso = k => { const m = String(k).match(/^(\d+)([MD])$/); if (!m) return null; return m[2] === "M" ? "P0Y" + m[1] + "M0W0D" : "P0Y0M0W" + m[1] + "D"; };
+      const view = rv => {
+        const pos = L.positionsOf("Voucher", rv.id), sup = rv.supplier && L.get("Contact", rv.supplier.id), next = d10(rv.recurringNextVoucher), end = d10(rv.recurringEndDate);
+        const cats = [...new Set(pos.map(x => { const a = x.accountingType && L.get("AccountingType", x.accountingType.id); return a && a.name; }).filter(Boolean))];
+        const made = L.all("Voucher").filter(v => String(v.fromRecurring || "") === String(rv.id)).length;
+        const state = rv.rvPaused ? "paused" : end && next > end ? "ended" : !next ? "ended" : next < FIN_LOCAL.addIso(since, "P0Y0M0W7D", -1) && !rv.rvActive ? "stale" : "active";
+        return { id: String(rv.id), supplier: (sup && (sup.name || [sup.surename, sup.familyname].filter(Boolean).join(" "))) || rv.supplierName || "—", description: rv.description || "", categories: cats,
+          gross: Math.round(pos.reduce((a, x) => a + (+x.sumGross || 0), 0) * 100) / 100, interval: ivKey(rv.recurringInterval), next, end, last: d10(rv.recurringLastVoucher), start: d10(rv.recurringStartDate), state, made, credit: rv.creditDebit === "D" };
+      };
+      const list = () => L.all("Voucher").filter(v => String(v.voucherType) === "RV" && !v.rvDeleted).map(view).sort((a, b) => (a.state === "active" ? 0 : 1) - (b.state === "active" ? 0 : 1) || String(a.next).localeCompare(String(b.next)));
+      if (req.method === "GET") return J(200, { ok: true, items: list(), since });
+      const pl = await sevBody(req, 4000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const rv = L.get("Voucher", pl.id); if (!rv || String(rv.voucherType) !== "RV" || rv.rvDeleted) return J(404, { ok: false, error: "Vorlage nicht gefunden" });
+      if (pl.op === "pause") { rv.rvPaused = true; rv.rvActive = false; }
+      else if (pl.op === "resume" || pl.op === "save") {
+        if (pl.op === "save") {
+          const iv = ivIso(pl.interval); if (!iv) return J(400, { ok: false, error: "Intervall ungültig" }); rv.recurringInterval = iv;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(pl.next || "")) return J(400, { ok: false, error: "Bitte das nächste Datum angeben" });
+          rv.recurringNextVoucher = pl.next + "T00:00:00+02:00"; rv.recurringEndDate = /^\d{4}-\d{2}-\d{2}$/.test(pl.end || "") ? pl.end + "T00:00:00+02:00" : null;
+        } else { let n = d10(rv.recurringNextVoucher) || today; let g = 0; while (n < today && g++ < 400) n = FIN_LOCAL.addIso(n, rv.recurringInterval || "P0Y1M0W0D", 1); rv.recurringNextVoucher = n + "T00:00:00+02:00"; }
+        rv.rvPaused = false; rv.rvActive = true;
+      }
+      else if (pl.op === "delete") { rv.rvDeleted = true; rv.rvPaused = true; rv.rvActive = false; }
+      else return J(400, { ok: false, error: "unbekannte Aktion" });
+      await L.save("Voucher", rv);
+      const made = pl.op === "pause" || pl.op === "delete" ? [] : await FIN_LOCAL.recurringVoucherRun();
+      if (made.length) { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }
+      return J(200, { ok: true, items: list(), made: made.length });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (/^\/admin\/api\/fin\/(creditnote|cash|partial|final|recurring)$/.test(p)) {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
