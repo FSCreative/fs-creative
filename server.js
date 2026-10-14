@@ -2479,6 +2479,7 @@ async function handleAdmin(req, res, u, p) {
       if (pl.op === "banks") return J(200, { ok: true, banks: await FIN_EBANK.banks(pl.country) });
       if (pl.op === "start") return J(200, Object.assign({ ok: true }, await FIN_EBANK.start({ bank: String(pl.bank || "").slice(0, 120) || undefined, country: String(pl.country || "AT").slice(0, 2), psu: pl.psu, redirect: ORIGIN + "/admin/api/fin/ebank/callback" })));
       if (pl.op === "disconnect") return J(200, Object.assign({ ok: true }, await FIN_EBANK.disconnect(String(pl.bank || ""))));
+      if (pl.op === "rename") { const nm = String(pl.name || "").trim().slice(0, 60); if (!nm) return J(400, { ok: false, error: "Name fehlt" }); await FIN_LOCAL.request("PUT", "/CheckAccount/" + encodeURIComponent(String(pl.id || "")), { body: { name: nm } }); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return J(200, { ok: true }); }
       if (pl.op === "check") return J(200, { ok: true, result: await FIN_EBANK.check(/^\d{4}-\d{2}-\d{2}$/.test(pl.from || "") ? pl.from : new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10)) });
       if (pl.op === "sync" && pl.confirm === true) { const r = await FIN_EBANK.sync(); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return J(200, { ok: true, result: r }); }
       return J(400, { ok: false, error: "unbekannte Aktion" });

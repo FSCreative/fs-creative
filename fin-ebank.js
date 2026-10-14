@@ -113,7 +113,7 @@ module.exports = function (D) {
   async function status() {
     const c = cfg(); await meta();
     return { configured: !!(c.app && c.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error,
-      sessions: (META.sessions || []).map(s => ({ bank: s.bank, validUntil: s.validUntil, accounts: s.accounts.map(a => { const acc = L.get("CheckAccount", a.accountId) || {}; return { name: acc.name || a.name, iban: a.iban, balance: acc.ebankBalance, diff: acc.ebankDiff, at: acc.ebankAt }; }) })) };
+      sessions: (META.sessions || []).map(s => ({ bank: s.bank, validUntil: s.validUntil, accounts: s.accounts.map(a => { const acc = L.get("CheckAccount", a.accountId) || {}; return { id: a.accountId, name: acc.name || a.name, iban: a.iban, balance: acc.ebankBalance, diff: acc.ebankDiff, at: acc.ebankAt }; }) })) };
   }
   return { banks, start, finish, sync, check, disconnect, status };
 };
