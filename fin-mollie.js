@@ -7,7 +7,7 @@
 module.exports = function (D) {
   const { L } = D;                                   // FIN_LOCAL
   const BASE = "https://api.mollie.com/v2";
-  const r2 = n => Math.round((+n || 0) * 100) / 100, s2 = n => r2(n).toFixed(2);
+  const r2 = n => Math.round((+n || 0) * 100) / 100, s2 = n => r2(n).toFixed(2), low = v => String(v == null ? "" : v).toLowerCase();
   const iso = d => d + "T00:00:00+02:00", day = v => String(v || "").slice(0, 10);
   let STATE = { at: null, running: false, last: null, error: "" };
   function tokens() {
@@ -52,6 +52,24 @@ module.exports = function (D) {
     }
     return n;
   }
+  // Zahlung → Rechnung: 1) Mollie-ID im Rechnungstext (Kantineur: „Mollie tr_…“), 2) Buchungs-/Bestellnummer aus den Metadaten,
+  // 3) eindeutige offene Rechnung mit gleichem Bruttobetrag (±0,01) und passendem Namen. Gebühr → Zahlungsgebühr an der Rechnung.
+  async function autoMatch(tx) {
+    const gross = +tx.mollieGross || +tx.amount; if (!(gross > 0)) return false;
+    const inv = L.all("Invoice").filter(i => ["200", "750"].indexOf(String(i.status)) > -1 && !i.cancelled && ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) > -1);
+    const txt = i => low([i.invoiceNumber, i.header, i.headText, i.footText, i.customerInternalNote, i.address].join(" "));
+    const pid = low(tx.molliePayment), meta = tx.mollieMeta && typeof tx.mollieMeta === "object" ? Object.keys(tx.mollieMeta).map(k => low(tx.mollieMeta[k])).filter(v => v && v.length >= 5 && !/^(true|false|null)$/.test(v)) : [];
+    const openOf = i => r2((+i.sumGross || 0) - (+i.paidAmount || 0));
+    let hit = pid ? inv.filter(i => txt(i).indexOf(pid) > -1) : [];
+    if (hit.length !== 1 && meta.length) hit = inv.filter(i => meta.some(v => txt(i).indexOf(v) > -1));
+    if (hit.length !== 1) { const nm = low(tx.payeePayerName).split(/\s+/).filter(w => w.length > 2); hit = inv.filter(i => Math.abs(openOf(i) - gross) < 0.011).filter(i => { const c = i.contact && L.get("Contact", i.contact.id); const cn = low((c && (c.name || [c.surename, c.familyname].join(" "))) + " " + i.address); return !nm.length || nm.some(w => cn.indexOf(w) > -1); }); }
+    if (hit.length !== 1) return false;
+    const i = hit[0]; if (Math.abs(openOf(i) - gross) > 0.011) return false;   // nur volle Zahlung automatisch
+    await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: Math.abs(+tx.amount), date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
+    return true;
+  }
+  // offene Mollie-Zahlungen nachträglich zuordnen (z. B. Rechnung erst später erstellt)
+  async function rematch() { let n = 0; for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "payment" && String(x.status) === "100")) if (await autoMatch(tx)) n++; return n; }
   // Auszahlung ↔ Bankumsatz: gleicher Betrag, Bank-Datum 0–7 Tage nach der Auszahlung, nicht schon vergeben
   async function linkPayout(molTx, amount, d) {
     const cands = L.all("CheckAccountTransaction").filter(x => !x.mollieId && !x.transitWith && String(x.status) === "100" && Math.abs((+x.amount || 0) - amount) < 0.005 && x.checkAccount && String(x.checkAccount.id) !== String(molTx.checkAccount.id))
@@ -81,9 +99,10 @@ module.exports = function (D) {
         const meta = pay && pay.metadata ? JSON.stringify(pay.metadata).slice(0, 200) : "";
         const prof = pay && profiles[pay.profileId] ? profiles[pay.profileId] + ": " : "";
         if (type === "payment") {
-          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(init), payeePayerName: name, paymtPurpose: (prof + (pay ? pay.description || "" : "Zahlung") + (meta ? " · " + meta : "") + " · " + pid).trim(), mollieId: t.id, mollieType: type, molliePayment: pid });
-          res.added++;
-          if (Math.abs(ded) > 0.004) { await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(ded), payeePayerName: "Mollie B.V.", paymtPurpose: "Mollie-Gebühr zu " + pid, mollieId: t.id + ":fee", mollieType: "fee", mollieFee: true }); res.fees++; }
+          // netto wie ausbezahlt; Gebühr am Umsatz gemerkt → bei der Zuordnung zur Rechnung als Zahlungsgebühr an die Rechnung gehängt
+          const tx = await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: name, paymtPurpose: (prof + (pay ? pay.description || "" : "Zahlung") + (meta ? " · " + meta : "") + " · " + pid + (Math.abs(ded) > 0.004 ? " · brutto " + s2(init) + ", Gebühr " + s2(Math.abs(ded)) : "")).trim(), mollieId: t.id, mollieType: type, molliePayment: pid, mollieGross: s2(init), mollieFeeAmt: s2(Math.abs(ded)), mollieMeta: pay && pay.metadata ? pay.metadata : null, mollieDesc: pay ? pay.description || "" : "" });
+          res.added++; if (Math.abs(ded) > 0.004) res.fees++;
+          if (await autoMatch(tx)) res.matched = (res.matched || 0) + 1;
         } else if (type === "outgoing-transfer" || type === "outgoing-transfer-reversal") {
           const tx = await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: "Auszahlung Bank", paymtPurpose: "Mollie-Auszahlung (Geldtransit) " + ctxId(t.context, /stl_\w+/), mollieId: t.id, mollieType: type });
           res.payouts++; if (res0 < 0 && await linkPayout(tx, -res0, d)) res.linked++;
@@ -107,10 +126,10 @@ module.exports = function (D) {
       await L.load();
       const since = (opt && opt.since) || new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
       const out = []; for (const tk of tks) out.push(await syncOrg(tk, since).catch(e => ({ org: tk.key, error: e.message })));
-      const relinked = await relink(), feesLinked = await linkFees();
-      STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked }; STATE.at = STATE.last.at; return STATE.last;
+      const relinked = await relink(), feesLinked = await linkFees(), rematched = await rematch();
+      STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked, rematched }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
   }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, relink, linkFees };
+  return { sync, status, relink, linkFees, rematch, autoMatch };
 };

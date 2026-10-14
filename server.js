@@ -800,7 +800,7 @@ function finApiAuth(req) {
   const got = String(req.headers["authorization"] || req.headers["x-api-token"] || "").replace(/^Bearer\s+/i, "").trim();
   if (!got) return "";
   const ok = (exp, who) => { exp = String(exp || "").trim(); if (!exp || exp.length !== got.length) return ""; return crypto.timingSafeEqual(Buffer.from(exp), Buffer.from(got)) ? who : ""; };
-  return ok(process.env.BLITZDINGS_COCKPIT_TOKEN, "blitzdings") || ok(BLITZ.token, "blitzdings") || ok(KOCHDU.token, "kochdu") || "";
+  return ok(process.env.BLITZDINGS_COCKPIT_TOKEN, "blitzdings") || ok(BLITZ.token, "blitzdings") || ok(KOCHDU.token, "kochdu") || ok(KANTINEUR.token, "kantineur") || "";
 }
 function formNested(str) {   // a[b]=1&c=2 → {a:{b:"1"},c:"2"}
   const out = {};

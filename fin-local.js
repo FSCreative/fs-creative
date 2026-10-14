@@ -205,12 +205,14 @@ module.exports = function (D) {
     if (t === "Invoice" && +o.dunningFeeOpen > 0) { const openAmt = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)); feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(amt - openAmt))); if (b.feeAmount != null) feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(+b.feeAmount)), amt); }
     if (feePart > 0) { await bookFee(o, feePart, tx, day); amt = r2(amt - feePart); if (amt <= 0.004) { await save(t, o); return { objects: {} }; } }
     // Differenzgrund bei Zahlung < offener Betrag (wie sevDesk bookAmount.type): N Teilzahlung · CB Skonto · MTC Kosten des Zahlungsverkehrs
-    const dtype = String(b.type || "N").toUpperCase(), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
+    const mFee = tx && tx.mollieFeeAmt ? Math.abs(+tx.mollieFeeAmt) : 0;
+    const dtype0 = String(b.type || "").toUpperCase(), open00 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0));
+    const dtype = dtype0 && dtype0 !== "N" ? dtype0 : (t === "Invoice" && mFee > 0 && Math.abs(r2(open00 - amt) - mFee) < 0.05 ? "MTC" : (dtype0 || "N")), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
     let logAmt = amt, paid = r2((+o.paidAmount || 0) + amt);
     const gross = Math.abs(+o.sumGross || 0);
     if (t === "Invoice" && diff > 0.004 && dtype === "MTC") {
       // Bankspesen: Rechnung gilt als voll bezahlt, die Differenz ist Aufwand (0 %, keine Vorsteuer) – eigener Ausgabe-Beleg am selben Umsatz
-      await bookCost(o, diff, tx, day); paid = r2(paid + diff); logAmt = r2(amt + diff);
+      await bookCost(o, diff, tx, day, mFee ? "Mollie B.V." : "Bank"); paid = r2(paid + diff); logAmt = r2(amt + diff);
     }
     o.paidAmount = s2(paid); o.payDate = iso(day);
     o.status = paid >= gross - 0.005 ? "1000" : "750";
@@ -288,10 +290,10 @@ module.exports = function (D) {
   }
 
   // ── Kosten des Zahlungsverkehrs (Differenzgrund MTC): Ausgabe 0 % ohne Vorsteuer, über denselben Bankumsatz ──
-  async function bookCost(inv, amt, tx, day) {
+  async function bookCost(inv, amt, tx, day, supplier) {
     const at = all("AccountingType").find(x => /geldverkehr|bankspesen|nebenkosten des geld/i.test(String(x.name || "")));
     const v = { id: newId("Voucher"), status: "1000", creditDebit: "C", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt), sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00",
-      supplierName: "Bank", description: "Kosten des Zahlungsverkehrs zu Rechnung " + (inv.invoiceNumber || "") + " – ohne Vorsteuer", taxText: "keine Vorsteuer", origin: ref("Invoice", inv.id) };
+      supplierName: supplier || "Bank", description: (supplier && /mollie/i.test(supplier) ? "Mollie-Zahlungsgebühr zu Rechnung " : "Kosten des Zahlungsverkehrs zu Rechnung ") + (inv.invoiceNumber || "") + " – ohne Vorsteuer", taxText: "keine Vorsteuer", origin: ref("Invoice", inv.id) };
     const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Nebenkosten des Geldverkehrs" };
     if (at) p.accountingType = ref("AccountingType", at.id);
     await save("VoucherPos", p); await save("Voucher", v);
