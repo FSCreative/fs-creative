@@ -28,6 +28,8 @@ module.exports = function (D) {
       const r = await fin.db().query("select type, id, data from fin_obj");
       Object.keys(C).forEach(k => delete C[k]);
       r.rows.forEach(x => { (C[x.type] = C[x.type] || new Map()).set(String(x.id), x.data); });
+      // Kunden mit Fremdnummer (z. B. „KANT-…“ von früheren Plattform-Anlagen) einmalig in den Kundennummernkreis übernehmen
+      for (const c of all("Contact").filter(c => c.customerNumber && !/^\d+$/.test(String(c.customerNumber))).sort((a, b) => String(a.create || "").localeCompare(String(b.create || "")))) { c.externalNumber = c.externalNumber || String(c.customerNumber); c.customerNumber = await nextCustomerNumber(); await save("Contact", c); }
       return true;
     })().catch(e => { loaded = null; throw e; });
     return loaded;
@@ -529,7 +531,19 @@ module.exports = function (D) {
   }
 
   // ── Generisches Anlegen/Ändern (Kontakte, Adressen, Kommunikation, Artikel, Umsätze …) ──
-  async function create(t, body) { const o = Object.assign({ id: newId(t) }, stripMeta(body || {})); await save(t, o); return { objects: o }; }
+  // Kundennummer wie in sevDesk: fortlaufend aus dem übernommenen Nummernkreis (nie doppelt), wenn keine numerische mitkommt
+  async function nextCustomerNumber() {
+    const seq = seqFor("Contact", "contact"); let mx = 1000;
+    all("Contact").forEach(c => { const n = /^\d+$/.test(String(c.customerNumber || "")) ? +c.customerNumber : 0; if (n > mx) mx = n; });
+    const n = Math.max(mx + 1, seq && +seq.nextSequence || 0);
+    if (seq) { seq.nextSequence = String(n + 1); await save("SevSequence", seq); }
+    return String(n);
+  }
+  async function create(t, body) {
+    const o = Object.assign({ id: newId(t) }, stripMeta(body || {}));
+    if (t === "Contact" && !/^\d+$/.test(String(o.customerNumber || ""))) { if (o.customerNumber) o.externalNumber = String(o.customerNumber); o.customerNumber = await nextCustomerNumber(); }
+    await save(t, o); return { objects: o };
+  }
   async function update(t, id, body) {
     const o = need(t, id);
     if (t === "CheckAccountTransaction" && o.cashLocked && Object.keys(body || {}).some(k => k !== "status")) throw err(400, "Kassenbuchungen sind unveränderbar – Korrektur nur per Gegenbuchung");
@@ -556,7 +570,7 @@ module.exports = function (D) {
       if (String(q.useNextNumber) !== "true") { const seq = seqFor("Invoice", t); if (seq) { seq.nextSequence = String((+seq.nextSequence || 1) - 1); await save("SevSequence", seq); } }
       return { objects: nr };
     }
-    if (p === "/Contact/Factory/getNextCustomerNumber") { let mx = 1000; all("Contact").forEach(c => { const n = parseInt(c.customerNumber, 10); if (n > mx) mx = n; }); return { objects: String(mx + 1) }; }
+    if (p === "/Contact/Factory/getNextCustomerNumber") { const seq = seqFor("Contact", "contact"); let mx = 1000; all("Contact").forEach(c => { const n = /^\d+$/.test(String(c.customerNumber || "")) ? +c.customerNumber : 0; if (n > mx) mx = n; }); return { objects: String(Math.max(mx + 1, seq && +seq.nextSequence || 0)) }; }
     if (method === "GET" && T === "CheckAccount" && act === "getBalanceAtDate") {
       const d = dayOf(q.date) || today();
       const bal = all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === id && (dayOf(x.valueDate) || "") <= d).reduce((a, x) => a + (+x.amount || 0), 0);
