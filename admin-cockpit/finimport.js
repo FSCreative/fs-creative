@@ -31,7 +31,7 @@ function modePanel(){
     (local?'<p style="margin:0">Das Cockpit arbeitet mit deinen eigenen Daten: Rechnungen, Angebote, Belege, Bank und Steuer laufen ohne sevDesk. Neue Rechnungen bekommen fortlaufende Nummern und ein eigenes PDF.</p><div><button class="btn" data-act="finmode:0">Zurück zu sevDesk (nur für Notfälle)</button></div>':
     '<p style="margin:0">Schaltet das Cockpit auf die übernommenen Daten um. Ab dann wird <b>nichts mehr in sevDesk</b> angelegt oder geändert. sevDesk bleibt unverändert bestehen, bis du es kündigst.</p>'+
     '<ul class="plain">'+chk.map(function(c){ return '<li>'+(c[0]?"✅":"⬜️")+' '+c[1]+'</li>'; }).join("")+'</ul>'+
-    '<div><button class="btn primary" data-act="finmode:1"'+(chk.every(function(c){return c[0];})?"":" disabled")+'>Eigene Buchhaltung verwenden</button></div>')+
+    '<div><button class="btn primary" data-act="finmode:1"'+(chk.every(function(c){return c[0];})&&!ST.switching?"":" disabled")+'>'+(ST.switching?"Gleiche ab …":"Eigene Buchhaltung verwenden")+'</button></div>')+
     '</div></section>';
 }
 function render(){
@@ -56,10 +56,16 @@ F.action("finimp",function(){
   });
 });
 F.form("finfirm",function(f){ var b={}; FIRM.forEach(function(x){ b[x[0]]=f[x[0]].value.trim(); }); F.api("/admin/api/fin/firm",{body:b}).then(function(j){ if(j&&j.ok){ ST.m.firm=j.firm; F.toast("Firmendaten gespeichert"); F.render(); } else F.toast((j&&j.error)||"Fehler",true); }); });
+function setMode(on){ return F.api("/admin/api/fin/mode",{body:{confirm:true,local:on}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } ST.m.local=j.local; F.toast(j.local?"Eigene Buchhaltung aktiv – sevDesk wird nicht mehr verwendet":"sevDesk aktiv"); if(F.sevRefresh) F.sevRefresh(); else F.load(true); }); }
 F.action("finmode",function(v){
   var on=v==="1";
-  F.confirm(on?"Auf eigene Buchhaltung umschalten? Ab jetzt wird nichts mehr in sevDesk angelegt oder geändert.":"Zurück zu sevDesk? Was du inzwischen im Cockpit angelegt hast, ist dann nicht in sevDesk.",on?"Umschalten":"Zurück zu sevDesk",function(){
-    F.api("/admin/api/fin/mode",{body:{confirm:true,local:on}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } ST.m.local=j.local; F.toast(j.local?"Eigene Buchhaltung aktiv":"sevDesk aktiv"); if(F.sevRefresh) F.sevRefresh(); else F.load(true); });
+  F.confirm(on?"Auf eigene Buchhaltung umschalten? Vorher wird alles noch einmal mit sevDesk abgeglichen (ca. 1–2 Minuten). Danach wird nichts mehr in sevDesk angelegt oder geändert.":"Zurück zu sevDesk? Was du inzwischen im Cockpit angelegt hast, ist dann nicht in sevDesk.",on?"Abgleichen & umschalten":"Zurück zu sevDesk",function(){
+    if(!on){ setMode(false); return; }
+    ST.switching=true; F.toast("Letzter Abgleich mit sevDesk läuft …");
+    F.api("/admin/api/fin/import",{body:{confirm:true}}).then(function(){
+      (function poll(){ F.api("/admin/api/fin/import").then(function(j){ ST.d=j; F.render(); if(j&&j.job&&j.job.running){ setTimeout(poll,2500); return; } ST.switching=false;
+        if(j&&j.job&&j.job.phase==="Fertig") setMode(true); else F.toast("Abgleich nicht vollständig – bitte Hinweise prüfen",true); }); })();
+    });
   },!on);
 });
 F.geldTab({id:"umstieg",label:"Umstieg",order:90,sub:"Übernahme aus sevDesk, Firmendaten und Umschalten auf die eigene Buchhaltung.",render:function(){ return render()+firmPanel()+cmpPanel()+modePanel(); }});
