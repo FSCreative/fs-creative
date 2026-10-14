@@ -335,5 +335,23 @@ module.exports = function (D) {
     if (!id && !act) { const arr = sortById(filterList(T, q)).map(o => embed(o, q)); return { objects: page(arr, q), total: arr.length }; }
     throw err(400, "Nicht unterstützt: GET " + p);
   }
-  return { request, load, get, all, positionsOf, save };
+  // ── Kontoauszug-Import (George usw.) ──
+  async function importBank(accId, items, hashFn, dry) {
+    await load(); accId = String(accId);
+    if (!get("CheckAccount", accId)) throw err(400, "Konto nicht gefunden");
+    const mine = all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === accId);
+    const seen = new Set(mine.map(x => x.importHash).filter(Boolean));
+    const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const dupOld = t => mine.some(x => dayOf(x.valueDate) === t.date && Math.abs((+x.amount || 0) - t.amount) < 0.005 && (!t.name || !x.payeePayerName || norm(x.payeePayerName).slice(0, 8) === norm(t.name).slice(0, 8) || norm(x.paymtPurpose).indexOf(norm(t.purpose).slice(0, 16)) > -1));
+    let added = 0, dup = 0; const fresh = [];
+    for (const t of items) {
+      const h = hashFn(accId, t);
+      if (seen.has(h) || dupOld(t)) { dup++; continue; }
+      seen.add(h); fresh.push(t);
+      if (!dry) { await save("CheckAccountTransaction", { id: newId("CheckAccountTransaction"), valueDate: iso(t.date), entryDate: iso(t.bookDate || t.date), amount: s2(t.amount), payeePayerName: t.name || "", payeePayerAcctNo: t.iban || "", paymtPurpose: t.purpose || "", checkAccount: ref("CheckAccount", accId), status: "100", importHash: h, importRef: t.ref || "" }); }
+      added++;
+    }
+    return { total: items.length, added, dup, sample: fresh.slice(0, 5) };
+  }
+  return { request, load, get, all, positionsOf, save, importBank };
 };

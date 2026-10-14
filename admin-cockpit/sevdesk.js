@@ -210,7 +210,7 @@ function renderBank(){
       '<div class="panel kpi"><span class="k">Mit Vorschlag</span><span class="v num">'+withSug+'</span><span class="s">ein Klick genügt</span></div>'+
       sevA.slice(0,2).map(function(x){ return '<div class="panel kpi"><span class="k">'+esc(x.name)+'</span><span class="v num'+(x.balance<0?" bad-t":"")+'">'+(x.balance==null?"—":eur0(x.balance))+'</span><span class="s">Saldo laut sevDesk</span></div>'; }).join("")+
     '</div>'+
-    '<section class="panel"><div class="sd-tools"><div class="chips">'+chip("sdbkacc","all",a,"Alle Konten",S.bank.transactions.length)+Object.keys(accs).map(function(k){ return chip("sdbkacc",k,a,esc(accs[k]),S.bank.transactions.filter(function(t){return t.accountId===k;}).length); }).join("")+'</div><button class="btn" data-act="sdbankreload">Aktualisieren</button></div>'+
+    '<section class="panel"><div class="sd-tools"><div class="chips">'+chip("sdbkacc","all",a,"Alle Konten",S.bank.transactions.length)+Object.keys(accs).map(function(k){ return chip("sdbkacc",k,a,esc(accs[k]),S.bank.transactions.filter(function(t){return t.accountId===k;}).length); }).join("")+'</div><span class="row" style="gap:6px"><button class="btn" data-act="sdbkimp">Kontoauszug importieren</button><button class="btn" data-act="sdbankreload">Aktualisieren</button></span></div>'+
     (list.length?list.map(txHtml).join(""):'<div class="sd-empty"><b>Alles zugeordnet 🎉</b>Keine offenen Bankumsätze.</div>')+'</section>';
 }
 function txHtml(t){
@@ -264,6 +264,37 @@ F.action("sdbknew",function(id){
 F.form("sdbknew",function(f){
   var id=f.getAttribute("data-id"); if(!f.cat.value){ document.getElementById("sdBkErr").textContent="Bitte eine Kategorie wählen."; return; }
   F.closeModal(); bankDo(id,{op:"newVoucher",accountingTypeId:f.cat.value,taxRate:f.tax.value,supplierName:f.supplier.value,description:f.desc.value},"Gebucht");
+});
+
+/* Kontoauszug aus George (CAMT.053 / CSV / JSON) einlesen */
+F.action("sdbkimp",function(){
+  var accs=(F.D.sev&&F.D.sev.accounts)||[], def=(accs.find(function(x){return x.isDefault;})||accs[0]||{}).id;
+  F.modal('<form data-form="sdbkimp" class="stackf"><div class="row-between"><h2 style="font-size:20px">Kontoauszug importieren</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted" style="margin:0">In George: Konto öffnen → Umsätze → <b>Exportieren</b> → Format <b>CAMT.053 (XML)</b> oder CSV. Bereits vorhandene Umsätze werden automatisch übersprungen.</p>'+
+    '<label class="fl">Konto<select class="f" name="acc">'+accs.map(function(x){ return '<option value="'+esc(x.id)+'"'+(x.id===def?" selected":"")+'>'+esc(x.name)+'</option>'; }).join("")+'</select></label>'+
+    '<label class="fl">Datei<input class="f" type="file" name="file" accept=".xml,.csv,.txt,.json" required></label>'+
+    '<div id="bkImpInfo" class="muted"></div>'+
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="bkImpGo" disabled>Importieren</button></span></div><div class="err" id="bkImpErr"></div></form>',"wide");
+});
+var BKIMP=null;
+function bkPreview(f){
+  var file=f.file.files[0], info=document.getElementById("bkImpInfo"), go=document.getElementById("bkImpGo"), er=document.getElementById("bkImpErr"); if(!file) return;
+  info.textContent="Lese Datei …"; go.disabled=true; er.textContent="";
+  file.text().then(function(txt){ BKIMP={content:txt,filename:file.name};
+    return F.api("/admin/api/fin/bank-import",{body:{preview:true,accountId:f.acc.value,content:txt,filename:file.name}}); }).then(function(j){
+    if(!j||!j.ok){ info.textContent=""; er.textContent=(j&&j.error)||"Fehler"; return; }
+    info.innerHTML='<b>'+j.total+'</b> Umsätze erkannt ('+esc(j.format)+') · <b>'+j.added+' neu</b> · '+j.dup+' schon vorhanden'+(j.sample&&j.sample.length?'<br>'+j.sample.map(function(t){ return esc(F.deShort(t.date)+" · "+(t.name||t.purpose||"").slice(0,40)+" · "+F.eur(t.amount)); }).join("<br>"):'');
+    go.disabled=!j.added; go.textContent=j.added?j.added+" Umsätze importieren":"Nichts Neues";
+    if(!j.local) info.innerHTML+='<div class="notice" style="margin-top:8px">Noch im sevDesk-Modus: Die Umsätze werden in der eigenen Buchhaltung gespeichert und erscheinen hier nach dem Umschalten (Finanzen › Umstieg).</div>';
+  }).catch(function(){ info.textContent=""; er.textContent="Datei konnte nicht gelesen werden."; });
+}
+F.listen("change",'form[data-form="sdbkimp"] [name=file],form[data-form="sdbkimp"] [name=acc]',function(el){ bkPreview(el.form); });
+F.form("sdbkimp",function(f){
+  if(!BKIMP) return; var go=document.getElementById("bkImpGo"); go.disabled=true; go.textContent="Importiere …";
+  F.api("/admin/api/fin/bank-import",{body:{confirm:true,accountId:f.acc.value,content:BKIMP.content,filename:BKIMP.filename}}).then(function(j){
+    if(!j||!j.ok){ document.getElementById("bkImpErr").textContent=(j&&j.error)||"Fehler"; go.disabled=false; return; }
+    F.closeModal(); F.toast(j.added+" Umsätze importiert"+(j.dup?" · "+j.dup+" übersprungen":"")); S.bank=null; F.load(true); F.render();
+  });
 });
 
 /* ================= Belege ================= */

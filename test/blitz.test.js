@@ -14,7 +14,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-blitz-"));
-  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "ki.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
+  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "ki.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   fs.mkdirSync(path.join(dir, "admin-cockpit"));
   fs.readdirSync(path.join(ROOT, "admin-cockpit")).forEach((f) => fs.copyFileSync(path.join(ROOT, "admin-cockpit", f), path.join(dir, "admin-cockpit", f)));
   return dir;

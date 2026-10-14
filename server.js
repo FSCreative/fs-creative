@@ -1127,6 +1127,7 @@ const FIN = require("./fin.js")({ sev: sevRemote, sevAll });
 // Eigene Buchhaltung: Firmendaten (für PDF/Fußzeile) und Betriebsart („local“ = ohne sevDesk, alle Anfragen gehen an fin-local.js)
 const FIN_STATE = { local: false, firm: null };
 const FIN_PDF = require("./fin-pdf.js")({ firm: () => FIN_STATE.firm });
+const FIN_BANK = require("./fin-bank.js");
 const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
   mailSend: async (m) => {
     if (!MAIL.url || !MAIL.token) throw new Error("Mailserver nicht eingerichtet");
@@ -2294,12 +2295,23 @@ async function handleAdmin(req, res, u, p) {
       return J(200, { ok: true, local: FIN_STATE.local });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  if (p === "/admin/api/fin/bank-import" && req.method === "POST") {   // Kontoauszug (CAMT/CSV/JSON) einlesen; preview:true = nur prüfen
+    try {
+      const pl = await sevBody(req, 15000000);
+      const parsed = FIN_BANK.parse(pl.content || "", pl.filename || "");
+      if (!parsed.items.length) return send(res, 200, JSON.stringify({ ok: false, error: "In der Datei wurden keine Umsätze erkannt (" + parsed.format + "). Bitte CAMT.053 (XML) oder CSV aus George exportieren." }), TYPES[".json"]);
+      if (!pl.preview && pl.confirm !== true) return send(res, 400, JSON.stringify({ ok: false, error: "Bestätigung fehlt" }), TYPES[".json"]);
+      const r = await FIN_LOCAL.importBank(pl.accountId, parsed.items, FIN_BANK.hash, !!pl.preview);
+      if (!pl.preview) { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
+      return send(res, 200, JSON.stringify(Object.assign({ ok: true, format: parsed.format, preview: !!pl.preview, local: FIN_STATE.local }, r)), TYPES[".json"]);
+    } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
   if (p === "/admin/api/fin/compare" && req.method === "GET") {   // Gegenprobe: gleiche Kennzahlen aus sevDesk und aus den eigenen Daten
     try {
       await FIN_LOCAL.load(true);
       const today = viennaToday(), yr = today.slice(0, 4);
       const pull = async (get, all) => {
-        const inv = await all("/Invoice"), vou = await all("/Voucher"), tx = await all("/CheckAccountTransaction"), acc = (await get("/CheckAccount", { limit: 100 })).objects || [];
+        const inv = await all("/Invoice"), vou = await all("/Voucher"), tx = await all("/CheckAccountTransaction"), acc = ((await get("/CheckAccount", { limit: 100 })).objects || []).slice().sort((a, b) => (+a.id) - (+b.id));
         const st = o => parseInt(o.status, 10) || 0, g = o => +o.sumGross || 0;
         const open = inv.filter(o => o.invoiceType !== "MA" && o.invoiceType !== "WKR" && (st(o) === 200 || st(o) === 750)).reduce((a, o) => a + Math.max(0, g(o) - (+o.paidAmount || 0)), 0);
         const rev = inv.filter(o => (st(o) >= 200) && String(o.invoiceDate || "").slice(0, 4) === yr && o.invoiceType !== "MA").reduce((a, o) => a + (o.invoiceType === "SR" ? -Math.abs(g(o)) : g(o)), 0);
