@@ -254,6 +254,19 @@ async function mailSnapshot() {
   })();
   return MAIL_SNAP.p;
 }
+// Mail-Regeln (Outlook-artig): laufen alle 2 Minuten für neue Mails im Posteingang
+const MAIL_RULES = require("./mail-rules.js")({
+  getMeta: k => process.env.DATABASE_URL ? FIN.init().then(() => FIN.getMeta(k)) : Promise.resolve(null),
+  setMeta: (k, v) => process.env.DATABASE_URL ? FIN.init().then(() => FIN.setMeta(k, v)) : Promise.resolve(),
+  snapshot: () => { MAIL_SNAP.at = 0; return mailSnapshot(); },
+  action: async (op, items, target) => {
+    if (!items || !items.length) return;
+    const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/action"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, op, items, target }) });
+    if (!r.ok) throw new Error("Mailserver " + r.status);
+    MAIL_SNAP.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+  },
+});
+setInterval(() => { if (MAIL.url && MAIL.token) MAIL_RULES.tick(); }, 2 * 60 * 1000);
 // Privates Railway-Netz nutzen (kostenlos, schneller) statt über das öffentliche Internet.
 (async () => {
   if (!MAIL.url || /railway\.internal/.test(MAIL.url)) return;
@@ -2851,6 +2864,14 @@ async function handleAdmin(req, res, u, p) {
       } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_send_failed" }), TYPES[".json"]); }
     });
     return;
+  }
+  if (p === "/admin/api/mail-rules") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (req.method === "GET") return J(200, Object.assign({ ok: true }, await MAIL_RULES.list()));
+      const pl = await sevBody(req, 60000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      return J(200, Object.assign({ ok: true }, await MAIL_RULES.handle(pl)));
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
   if (p === "/admin/api/mail-action" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);

@@ -405,7 +405,7 @@ function vPost(){
   if(UI.msel&&!find(UI.msel)&&!(M.findOb&&M.findOb(UI.msel))) UI.msel=null;
   var list=mailView(), c=counts();
   return F.head("Postfach"+(c.inboxUnread?' <span class="tag glow hnew">'+c.inboxUnread+' neu</span>':''),subLine(),
-    '<button type="button" class="btn icon" data-act="mrefresh" title="Aktualisieren" aria-label="Postfach aktualisieren">'+ic("refresh")+'</button><button type="button" class="btn icon hide-m" data-act="mkeys" title="Tastenkürzel (?)" aria-label="Tastenkürzel">'+ic("keys")+'</button><button type="button" class="btn icon" data-act="mwebmail" title="In Webmail öffnen" aria-label="In Webmail öffnen">'+ic("ext")+'</button><button type="button" class="btn primary" data-act="compose">'+ic("edit")+' Neue Mail</button>')+
+    '<button type="button" class="btn icon" data-act="mrefresh" title="Aktualisieren" aria-label="Postfach aktualisieren">'+ic("refresh")+'</button><button type="button" class="btn" data-act="mailrules" title="Regeln: Mails automatisch sortieren">Regeln</button><button type="button" class="btn icon hide-m" data-act="mkeys" title="Tastenkürzel (?)" aria-label="Tastenkürzel">'+ic("keys")+'</button><button type="button" class="btn icon" data-act="mwebmail" title="In Webmail öffnen" aria-label="In Webmail öffnen">'+ic("ext")+'</button><button type="button" class="btn primary" data-act="compose">'+ic("edit")+' Neue Mail</button>')+
   '<div class="mtools"><button type="button" class="btn fpill" data-act="mfoldsheet" aria-haspopup="dialog">'+ic("folder")+' '+esc(curFolderLabel())+(multiAcc()&&UI.macct!=="all"?" · "+esc(accInfo(UI.macct).label):"")+' '+ic("chev")+'</button>'+
     '<div class="msearch">'+F.svg("search")+'<input class="f" id="msearch" data-keepfocus="msearch" type="search" placeholder="Mails durchsuchen … (Taste /)" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'">'+(UI.mq?'<button type="button" class="x" data-act="msearchx" aria-label="Suche leeren">'+F.svg("close")+'</button>':'')+'</div></div>'+
   bulkHtml()+mobileBar(c)+
@@ -483,7 +483,7 @@ F.action("mrel",function(id){ M.open(id,{fromOutside:!find(id)||M.folderKeyOf(fi
 F.action("msettings",function(k){ if(F.actions.settings) F.actions.settings(k||"mail"); else F.toast("Konten richtest du in den Einstellungen ein."); });
 F.action("mwebmail",function(){ window.open("https://webmail.world4you.com","_blank","noopener"); });
 F.action("mrefresh",function(){ F.toast("Postfach wird aktualisiert …"); M.loadFull().then(function(){ if(!S.err) F.toast("Postfach aktualisiert"); else F.toast(S.err,true); }); });
-F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">Ordner</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel()+'</nav>',"sheetdlg"); });
+F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">Ordner</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel()+'</nav><button type="button" class="btn" style="width:100%;margin-top:12px" data-act="mailrules">Regeln – Mails automatisch sortieren</button>',"sheetdlg"); });
 F.action("mmailto",function(addr){ F.compose({to:addr}); });
 F.action("msrch",function(){ UI.msrch=!UI.msrch; if(UI.msrch) UI.msrchFocus=true; F.render(); });
 F.action("msrchx",function(){ UI.msrch=false; UI.mq=""; F.render(); });
