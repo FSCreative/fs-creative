@@ -205,7 +205,7 @@ module.exports = function (D) {
     if (t === "Invoice" && +o.dunningFeeOpen > 0) { const openAmt = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)); feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(amt - openAmt))); if (b.feeAmount != null) feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(+b.feeAmount)), amt); }
     if (feePart > 0) { await bookFee(o, feePart, tx, day); amt = r2(amt - feePart); if (amt <= 0.004) { await save(t, o); return { objects: {} }; } }
     // Differenzgrund bei Zahlung < offener Betrag (wie sevDesk bookAmount.type): N Teilzahlung · CB Skonto · MTC Kosten des Zahlungsverkehrs
-    const mFee = tx && tx.mollieFeeAmt ? Math.abs(+tx.mollieFeeAmt) : 0;
+    const mFee = tx && (tx.mollieFeeAmt || tx.feeAmt) ? Math.abs(+(tx.mollieFeeAmt || tx.feeAmt)) : 0;
     const dtype0 = String(b.type || "").toUpperCase(), open00 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0));
     const incomeDoc = t === "Invoice" || (t === "Voucher" && String(o.creditDebit) === "D");
     const dtype = dtype0 && dtype0 !== "N" ? dtype0 : (incomeDoc && mFee > 0 && Math.abs(r2(open00 - amt) - mFee) < 0.05 ? "MTC" : (dtype0 || "N")), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
@@ -213,7 +213,7 @@ module.exports = function (D) {
     const gross = Math.abs(+o.sumGross || 0);
     if (incomeDoc && diff > 0.004 && dtype === "MTC") {
       // Bankspesen: Rechnung gilt als voll bezahlt, die Differenz ist Aufwand (0 %, keine Vorsteuer) – eigener Ausgabe-Beleg am selben Umsatz
-      await bookCost(o, diff, tx, day, mFee ? "Mollie B.V." : "Bank"); paid = r2(paid + diff); logAmt = r2(amt + diff);
+      await bookCost(o, diff, tx, day, mFee ? (tx.feeBy || "Mollie B.V.") : "Bank"); paid = r2(paid + diff); logAmt = r2(amt + diff);
     }
     o.paidAmount = s2(paid); o.payDate = iso(day);
     o.status = paid >= gross - 0.005 ? "1000" : "750";
@@ -294,7 +294,7 @@ module.exports = function (D) {
   async function bookCost(inv, amt, tx, day, supplier) {
     const at = all("AccountingType").find(x => /geldverkehr|bankspesen|nebenkosten des geld/i.test(String(x.name || "")));
     const v = { id: newId("Voucher"), status: "1000", creditDebit: "C", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt), sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00",
-      supplierName: supplier || "Bank", description: (supplier && /mollie/i.test(supplier) ? "Mollie-Zahlungsgebühr zu Rechnung " : "Kosten des Zahlungsverkehrs zu Rechnung ") + (inv.invoiceNumber || "") + " – ohne Vorsteuer", taxText: "keine Vorsteuer", origin: ref("Invoice", inv.id) };
+      supplierName: supplier || "Bank", description: (supplier && /mollie|paypal/i.test(supplier) ? supplier.replace(/ B\.V\./, "") + "-Zahlungsgebühr zu Rechnung " : "Kosten des Zahlungsverkehrs zu Rechnung ") + (inv.invoiceNumber || "") + " – ohne Vorsteuer", taxText: "keine Vorsteuer", origin: ref("Invoice", inv.id) };
     const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Nebenkosten des Geldverkehrs" };
     if (at) p.accountingType = ref("AccountingType", at.id);
     await save("VoucherPos", p); await save("Voucher", v);
@@ -604,6 +604,18 @@ module.exports = function (D) {
     if (!id && !act) { const arr = sortById(filterList(T, q)).map(o => embed(o, q)); return { objects: page(arr, q), total: arr.length }; }
     throw err(400, "Nicht unterstützt: GET " + p);
   }
+  // Geldtransit zwischen eigenen Konten (PayPal → Bank, Bank → Kasse …): gleicher Betrag, Gegenbuchung 0–7 Tage später, Text deutet auf Übertrag
+  async function pairTransfers() {
+    let n = 0; const open = all("CheckAccountTransaction").filter(x => String(x.status) === "100" && !x.transitWith && !x.cashLocked);
+    const out = open.filter(x => +x.amount < 0 && /auszahlung auf (ihr )?bankkonto|abbuchung auf bankkonto|withdrawal|transfer to bank|überweisung auf bankkonto|paypal/i.test(String(x.paymtPurpose) + " " + String(x.payeePayerName)));
+    for (const a of out) {
+      const amt = -(+a.amount), d = dayOf(a.valueDate);
+      const b = open.find(x => x !== a && !x.transitWith && Math.abs((+x.amount || 0) - amt) < 0.005 && String((x.checkAccount || {}).id) !== String((a.checkAccount || {}).id) && (() => { const dd = (Date.parse(dayOf(x.valueDate)) - Date.parse(d)) / 864e5; return dd >= -1 && dd <= 7; })() && /paypal|übertrag|umbuchung|auszahlung/i.test(String(x.payeePayerName) + " " + String(x.paymtPurpose)));
+      if (!b) continue;
+      a.status = "400"; a.transitWith = String(b.id); b.status = "400"; b.transitWith = String(a.id); await save("CheckAccountTransaction", a); await save("CheckAccountTransaction", b); n++;
+    }
+    return n;
+  }
   // ── Kontoauszug-Import (George usw.) ──
   async function importBank(accId, items, hashFn, dry) {
     await load(); accId = String(accId);
@@ -617,10 +629,11 @@ module.exports = function (D) {
       const h = hashFn(accId, t);
       if (seen.has(h) || dupOld(t)) { dup++; continue; }
       seen.add(h); fresh.push(t);
-      if (!dry) { await save("CheckAccountTransaction", { id: newId("CheckAccountTransaction"), valueDate: iso(t.date), entryDate: iso(t.bookDate || t.date), amount: s2(t.amount), payeePayerName: t.name || "", payeePayerAcctNo: t.iban || "", paymtPurpose: t.purpose || "", checkAccount: ref("CheckAccount", accId), status: "100", importHash: h, importRef: t.ref || "" }); }
+      if (!dry) { await save("CheckAccountTransaction", { id: newId("CheckAccountTransaction"), valueDate: iso(t.date), entryDate: iso(t.bookDate || t.date), amount: s2(t.amount), payeePayerName: t.name || "", payeePayerAcctNo: t.iban || "", paymtPurpose: t.purpose || "", checkAccount: ref("CheckAccount", accId), status: "100", importHash: h, importRef: t.ref || "" , feeAmt: t.fee ? String(Math.round(t.fee * 100) / 100) : undefined, grossAmt: t.gross ? String(t.gross) : undefined, feeBy: t.feeBy || undefined}); }
       added++;
     }
-    return { total: items.length, added, dup, sample: fresh.slice(0, 5) };
+    const paired = dry ? 0 : await pairTransfers();
+    return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
   return { request, load, get, all, positionsOf, save, importBank, recurringRun, cashBalance, isCash };
 };

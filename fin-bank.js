@@ -37,8 +37,28 @@ function splitCsv(text) {
   const row = l => { const out = []; let cur = "", q = false; for (let i = 0; i < l.length; i++) { const c = l[i]; if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (c === sep && !q) { out.push(cur); cur = ""; } else cur += c; } out.push(cur); return out.map(x => x.trim()); };
   return lines.map(row);
 }
+// PayPal-Aktivitätenbericht (CSV): Brutto/Gebühr/Netto je Zeile → Zahlung brutto + Gebühr als eigener Umsatz (wie Mollie)
+function parsePaypal(rows) {
+  const h = rows[0].map(x => x.toLowerCase().replace(/^\ufeff/, "").trim());
+  const col = (...rx) => h.findIndex(x => rx.some(r => r.test(x)));
+  const cD = col(/^datum$/, /^date$/), cN = col(/^name$/), cB = col(/^brutto$/, /^gross$/), cF = col(/^geb(ü|ue)hr$/, /^fee$/), cT = col(/^beschreibung$/, /^typ$/, /^type$/, /^description$/), cS = col(/^status$/), cI = col(/transaktionscode|transaction id/), cH = col(/^hinweis$/, /^note$/, /betreff|subject|artikelbezeichnung|item title/), cC = col(/^w(ä|ae)hrung$/, /^currency$/), cE = col(/absender e-mail|from email/);
+  const out = [];
+  rows.slice(1).forEach(r => {
+    if (cS > -1 && r[cS] && !/abgeschlossen|completed|gutgeschrieben|cleared/i.test(r[cS])) return;
+    if (cC > -1 && r[cC] && String(r[cC]).toUpperCase() !== "EUR") return;
+    const date = day(r[cD]); const gross = num(r[cB]), fee = cF > -1 ? num(r[cF]) : 0; if (!date || !isFinite(gross)) return;
+    const purpose = [r[cT], r[cH]].filter(Boolean).join(" · "), ref = cI > -1 ? r[cI] : "";
+    const nm = (cN > -1 ? r[cN] : "") || (cE > -1 ? r[cE] : ""), f = isFinite(fee) ? fee : 0;
+    // Eingang: netto wie gutgeschrieben, Gebühr am Umsatz gemerkt → beim Zuordnen als Zahlungsgebühr an die Rechnung
+    if (gross > 0) out.push({ date, bookDate: date, amount: Math.round((gross + f) * 100) / 100, gross, fee: Math.abs(f), feeBy: "PayPal", name: nm, iban: "", purpose: purpose + (Math.abs(f) > 0.004 ? " · brutto " + gross.toFixed(2) + ", Gebühr " + Math.abs(f).toFixed(2) : ""), ref });
+    else if (gross) { out.push({ date, bookDate: date, amount: gross, name: nm, iban: "", purpose, ref }); if (Math.abs(f) > 0.004) out.push({ date, bookDate: date, amount: f, name: "PayPal", iban: "", purpose: "PayPal-Gebühr" + (ref ? " zu " + ref : ""), ref: ref ? ref + ":fee" : "" }); }
+  });
+  return out;
+}
 function parseCsv(text) {
   const rows = splitCsv(text); if (rows.length < 2) return [];
+  const h0 = rows[0].map(x => x.toLowerCase().replace(/^\ufeff/, "").trim());
+  if (h0.some(x => /^brutto$|^gross$/.test(x)) && h0.some(x => /^geb(ü|ue)hr$|^fee$/.test(x))) return parsePaypal(rows);
   const h = rows[0].map(x => x.toLowerCase());
   const col = (...rx) => h.findIndex(x => rx.some(r => r.test(x)));
   const cDate = col(/valuta/, /^datum$/, /buchungsdatum/, /date/), cBook = col(/buchungsdatum/, /booking/), cAmt = col(/^betrag/, /amount/, /^umsatz/);
@@ -65,7 +85,7 @@ function parse(text, filename) {
   const s = String(text || "").trim();
   if (/^<\?xml|<Document[\s>]/.test(s) || /\.xml$/i.test(filename || "")) return { format: "CAMT", items: parseCamt(s) };
   if (/^[\[{]/.test(s)) return { format: "JSON", items: parseJson(s) };
-  return { format: "CSV", items: parseCsv(s) };
+  const items = parseCsv(s); return { format: /(^|[;,\t"])(brutto|gross)([;,\t"]|$)/i.test(s.split(/\r?\n/)[0] || "") ? "PayPal-CSV" : "CSV", items };
 }
 function hash(accId, t) { return crypto.createHash("sha1").update([accId, t.date, t.amount.toFixed(2), (t.ref || ""), (t.purpose || "").slice(0, 120), (t.name || "").slice(0, 60)].join("|")).digest("hex").slice(0, 24); }
 module.exports = { parse, hash };

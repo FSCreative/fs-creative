@@ -30,21 +30,22 @@ function prep(file){
   if(/pdf|xml/.test(file.type)||/\.(pdf|xml)$/i.test(file.name)) return readAsDataURL(file).then(function(d){ return {name:file.name,mime:file.type||"application/pdf",data:d}; });
   return Promise.reject(new Error("Dateityp nicht unterstützt (PDF, JPG, PNG, HEIC oder XML-Rechnung)."));
 }
-function addFiles(list,auto){
-  Array.prototype.slice.call(list||[]).slice(0,30).forEach(function(f){ UQ.push({key:"u"+(++seq),file:f,name:f.name,size:f.size,status:"warte",auto:!!auto}); });
+function addFiles(list,auto,scan){
+  Array.prototype.slice.call(list||[]).slice(0,30).forEach(function(f){ UQ.push({key:"u"+(++seq),file:f,name:f.name,size:f.size,status:"warte",auto:!!auto,scan:!!scan&&/^image\//.test(f.type||"image/")&&!/\.pdf$/i.test(f.name||"")}); });
   paint(); next();
 }
 function next(){
   if(busy) return; var it=UQ.filter(function(x){ return x.status==="warte"; })[0]; if(!it) return;
   if(K.st&&!K.st.configured){ UQ.forEach(function(x){ if(x.status==="warte"){ x.status="fehler"; x.err=K.NOT_SET; } }); paint(); return; }
-  busy=true; it.status="lese"; paint();
-  prep(it.file).then(function(p){ return K.api("beleg-upload",{filename:p.name,mime:p.mime,data:p.data}); })
+  busy=true; it.status=it.scan?"scanne":"lese"; paint();
+  var p0=it.scan&&F.scanDoc?F.scanDoc(it.file).then(function(r){ it.cropped=r.cropped; it.status="lese"; paint(); return r; }).catch(function(){ return prep(it.file); }):prep(it.file);
+  p0.then(function(p){ return K.api("beleg-upload",{filename:p.name,mime:p.mime,data:p.data}); })
     .then(function(j){ it.status="bereit"; it.res=j; it.file=null; if(it.auto&&!UQ.some(function(y){ return y.status==="warte"; })) setTimeout(function(){ F.closeModal&&F.closeModal(); F.actions.kiupopen(it.key); },150); })
     .catch(function(e){ it.status="fehler"; it.err=(e&&e.message)||"Fehler"; it.file=null; })
     .then(function(){ busy=false; paint(); K.load(true); next(); });
 }
 function itemHtml(it){
-  var x=it.res&&it.res.beleg, st={warte:["grey","wartet"],lese:["info","KI liest …"],bereit:["ok","bereit"],fehler:["bad","Fehler"],erledigt:["ok","gespeichert"]}[it.status];
+  var x=it.res&&it.res.beleg, st={warte:["grey","wartet"],scanne:["info","Scanne & schneide zu …"],lese:["info","KI liest …"],bereit:["ok","bereit"],fehler:["bad","Fehler"],erledigt:["ok","gespeichert"]}[it.status];
   return '<div class="kirow"><div class="kimain"><b>'+esc(x&&x.supplier||it.name)+'</b> <span class="muted">'+esc(it.name)+' · '+Math.max(1,Math.round(it.size/1024))+' KB</span>'+
     (x?'<div class="kitags"><span class="tag grey">'+esc(F.de(x.invoiceDate)||"ohne Datum")+'</span>'+(x.invoiceNumber?'<span class="tag grey">Nr. '+esc(x.invoiceNumber)+'</span>':'')+K.conf(x.confidence)+(it.res.dupes&&it.res.dupes.length?'<span class="tag bad">mögliche Dublette</span>':'')+'</div>':'')+
     (it.err?'<div class="bad-t" style="font-size:13px">'+esc(it.err)+'</div>':'')+'</div>'+
@@ -65,11 +66,11 @@ function bodyHtml(){
 }
 function paint(){ var r=document.getElementById("kiUp"); if(r) r.outerHTML=bodyHtml(); if(F.current==="ki") F.render(); }
 /* Handy-Scan: Kamera-Foto(s) direkt einlesen; ist die KI fertig, öffnet sich der Prüfdialog von selbst */
-K.scan=function(files){ addFiles(files,true); K.openUpload(); };
+K.scan=function(files){ addFiles(files,true,true); K.openUpload(); };
 K.openUpload=function(){ K.load(false); F.modal(bodyHtml(),"wide"); };
 K.uploadPanelHtml=function(){ return K.panel("ki-upload","Beleg hochladen","Ohne Mail: Datei ablegen oder am Handy fotografieren","",dropHtml()+(UQ.length?'<div class="kilist">'+UQ.map(itemHtml).join("")+'</div>':'')); };
 F.action("kiupload",function(){ K.openUpload(); });
-F.listen("change","#kiFiles,#kiCam",function(el){ addFiles(el.files); el.value=""; });
+F.listen("change","#kiFiles,#kiCam",function(el){ addFiles(el.files,false,el.id==="kiCam"); el.value=""; });
 F.listen("dragover","#kiDrop",function(el,e){ e.preventDefault(); el.classList.add("on"); });
 F.listen("drop","#kiDrop",function(el,e){ e.preventDefault(); el.classList.remove("on"); if(e.dataTransfer&&e.dataTransfer.files) addFiles(e.dataTransfer.files); });
 F.listen("keydown","#kiDrop",function(el,e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); var i=el.querySelector("#kiFiles"); if(i) i.click(); } });
