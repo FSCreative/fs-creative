@@ -2294,6 +2294,27 @@ async function handleAdmin(req, res, u, p) {
       return J(200, { ok: true, local: FIN_STATE.local });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  if (p === "/admin/api/fin/compare" && req.method === "GET") {   // Gegenprobe: gleiche Kennzahlen aus sevDesk und aus den eigenen Daten
+    try {
+      await FIN_LOCAL.load(true);
+      const today = viennaToday(), yr = today.slice(0, 4);
+      const pull = async (get, all) => {
+        const inv = await all("/Invoice"), vou = await all("/Voucher"), tx = await all("/CheckAccountTransaction"), acc = (await get("/CheckAccount", { limit: 100 })).objects || [];
+        const st = o => parseInt(o.status, 10) || 0, g = o => +o.sumGross || 0;
+        const open = inv.filter(o => o.invoiceType !== "MA" && o.invoiceType !== "WKR" && (st(o) === 200 || st(o) === 750)).reduce((a, o) => a + Math.max(0, g(o) - (+o.paidAmount || 0)), 0);
+        const rev = inv.filter(o => (st(o) >= 200) && String(o.invoiceDate || "").slice(0, 4) === yr && o.invoiceType !== "MA").reduce((a, o) => a + (o.invoiceType === "SR" ? -Math.abs(g(o)) : g(o)), 0);
+        const out = [["Rechnungen (Anzahl)", inv.length], ["Offene Rechnungen (Summe)", open.toFixed(2)], ["Umsatz " + yr + " brutto", rev.toFixed(2)], ["Belege (Anzahl)", vou.length],
+          ["Belege " + yr + " brutto", vou.filter(o => String(o.voucherDate || "").slice(0, 4) === yr && st(o) >= 100).reduce((a, o) => a + g(o), 0).toFixed(2)], ["Bankumsätze (Anzahl)", tx.length], ["Bankumsätze offen", tx.filter(o => st(o) === 100).length]];
+        for (const a of acc) { const b = await get("/CheckAccount/" + a.id + "/getBalanceAtDate", { date: today }); out.push(["Saldo " + (a.name || a.id), (+((b && b.objects) || 0)).toFixed(2)]); }
+        return out;
+      };
+      const remote = await pull((pth, q) => sevRemote("GET", pth, { query: q }), (pth) => sevAll(pth, {}, 200000));
+      const L = (pth, q) => FIN_LOCAL.request("GET", pth, { query: q });
+      const local = await pull(L, async (pth) => { const r = await L(pth, { limit: 1000000 }); return r.objects || []; });
+      const rows = remote.map((r, i) => ({ label: r[0], remote: String(r[1]), local: String(local[i] ? local[i][1] : "—"), ok: local[i] && String(local[i][1]) === String(r[1]) }));
+      return send(res, 200, JSON.stringify({ ok: true, rows }), TYPES[".json"], { "Cache-Control": "no-store" });
+    } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
   if (p.indexOf("/admin/api/fin/") === 0) return FIN.handle(req, res, u, p, send, (r) => sevBody(r, 20000));
   if (p.indexOf("/admin/api/sev/") === 0) {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });

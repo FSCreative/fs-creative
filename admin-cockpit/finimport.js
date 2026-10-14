@@ -7,7 +7,7 @@ var LBL={Contact:"Kontakte",ContactAddress:"Adressen",CommunicationWay:"E-Mail/T
 function load(){ F.api("/admin/api/fin/import").then(function(j){ ST.d=j; F.render(); clearTimeout(ST.t); if(j&&j.job&&j.job.running) ST.t=setTimeout(load,2500); }); }
 function loadMode(){ F.api("/admin/api/fin/mode").then(function(j){ ST.m=j||{}; F.render(); }); F.api("/admin/api/fin/obj?type=SevClient").then(function(j){ ST.sc=(j&&j.objects&&j.objects[0])||{}; F.render(); }); }
 var FIRM=[["name","Firma"],["owner","Inhaber"],["street","Straße"],["zip","PLZ"],["city","Ort"],["country","Land"],["phone","Telefon"],["email","E-Mail"],["web","Website"],["bank","Bank"],["iban","IBAN"],["bic","BIC"],["uid","UID-Nummer"],["taxNumber","Steuernummer"],["court","Firmenbuch/Gericht"],["contactPerson","Ansprechpartner"]];
-function firmDefaults(){ var c=ST.sc||{}; return {name:c.name||"FS Creative",owner:[c.ceoName].filter(Boolean).join(" ")||"Simon Felder",street:c.addressStreet||"",zip:c.addressZip||"",city:c.addressCity||"",country:"Österreich",phone:c.phoneNumber||"",email:c.email||"",web:c.website||"",bank:c.bankName||"",iban:c.bankIban||c.bankAccountNumber||"",bic:c.bankBic||"",uid:c.vatNumber||"",taxNumber:c.taxNumber||"",court:c.districtCourt||"",contactPerson:"Simon Felder"}; }
+function firmDefaults(){ var c=ST.sc||{}; var ib=String(c.bankIban||"").replace(/\s+/g,"").replace(/(.{4})/g,"$1 ").trim(); return {name:c.name||"FS Creative",owner:c.ceoName||"Simon Felder",street:c.addressStreet||"",zip:c.addressZip||"",city:c.addressCity||"",country:"Österreich",phone:c.contactPhone||"",email:"office@fs-creative.at",web:c.website||"",bank:c.bank||"",iban:ib,bic:c.bankBic||"",uid:c.vatNumber||"",taxNumber:c.taxNumber||"",court:c.districtCourt||"",contactPerson:c.ceoName||"Simon Felder"}; }
 function firmPanel(){
   if(!ST.m){ loadMode(); return ""; }
   var f=ST.m.firm||firmDefaults();
@@ -16,6 +16,13 @@ function firmPanel(){
     '<div class="grid2">'+FIRM.map(function(x){ return '<label class="fl">'+x[1]+'<input class="f" name="'+x[0]+'" value="'+F.esc(f[x[0]]||"")+'"></label>'; }).join("")+'</div>'+
     '<div class="foot"><span></span><button class="btn primary" type="submit">Firmendaten speichern</button></div></form></section>';
 }
+function cmpPanel(){
+  var c=ST.cmp;
+  var rows=c&&c.rows?c.rows.map(function(r){ return '<tr><td>'+F.esc(r.label)+'</td><td class="r num">'+F.esc(r.remote)+'</td><td class="r num">'+F.esc(r.local)+'</td><td>'+(r.ok?'<span class="tag ok">gleich</span>':'<span class="tag bad">abweichend</span>')+'</td></tr>'; }).join(""):"";
+  return '<section class="panel"><div class="panel-h"><h2>Gegenprobe sevDesk ↔ eigene Buchhaltung</h2><button class="btn" data-act="fincmp"'+(ST.cmpBusy?" disabled":"")+'>'+(ST.cmpBusy?"rechnet …":"Jetzt vergleichen")+'</button></div>'+
+    (rows?'<div class="scroll"><table><thead><tr><th>Kennzahl</th><th class="r">sevDesk</th><th class="r">Eigene Daten</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="sd-empty">Vergleicht Rechnungen, offene Beträge, Umsätze, Kontostände, offene Bankumsätze und Belege.</div>')+'</section>';
+}
+F.action("fincmp",function(){ ST.cmpBusy=true; F.render(); F.api("/admin/api/fin/compare").then(function(j){ ST.cmpBusy=false; ST.cmp=j; F.render(); if(!j||!j.ok) F.toast((j&&j.error)||"Fehler",true); }); });
 function modePanel(){
   if(!ST.m) return "";
   var d=ST.d||{}, done=d.last&&!(d.job&&d.job.running), local=!!ST.m.local;
@@ -55,5 +62,5 @@ F.action("finmode",function(v){
     F.api("/admin/api/fin/mode",{body:{confirm:true,local:on}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } ST.m.local=j.local; F.toast(j.local?"Eigene Buchhaltung aktiv":"sevDesk aktiv"); if(F.sevRefresh) F.sevRefresh(); else F.load(true); });
   },!on);
 });
-F.geldTab({id:"umstieg",label:"Umstieg",order:90,sub:"Übernahme aus sevDesk, Firmendaten und Umschalten auf die eigene Buchhaltung.",render:function(){ return render()+firmPanel()+modePanel(); }});
+F.geldTab({id:"umstieg",label:"Umstieg",order:90,sub:"Übernahme aus sevDesk, Firmendaten und Umschalten auf die eigene Buchhaltung.",render:function(){ return render()+firmPanel()+cmpPanel()+modePanel(); }});
 })();
