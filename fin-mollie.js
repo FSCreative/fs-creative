@@ -108,9 +108,11 @@ module.exports = function (D) {
     for (const b of balances.filter(b => (b.currency || "EUR") === "EUR")) {
       let acc = L.all("CheckAccount").find(a => a.mollieBalance === b.id);
       const label = /^MOLLIE_ORG_TOKEN_\w+$/.test(tk.key) ? tk.key.replace(/^MOLLIE_ORG_TOKEN_/, "").toLowerCase().replace(/(^|_)(\w)/g, (m, a, c) => (a ? " " : "") + c.toUpperCase()) : (org.name || "Konto");
-      if (!acc) acc = (await L.request("POST", "/CheckAccount", { body: { name: "Mollie – " + label, type: "online", importType: "MOLLIE", currency: "EUR", status: "100", defaultAccount: "0", mollieBalance: b.id } })).objects;
+      if (!acc) acc = (await L.request("POST", "/CheckAccount", { body: { mollieSince: new Date().toISOString().slice(0, 10), name: "Mollie – " + label, type: "online", importType: "MOLLIE", currency: "EUR", status: "100", defaultAccount: "0", mollieBalance: b.id } })).objects;
       const have = new Set(L.all("CheckAccountTransaction").filter(x => x.mollieId).map(x => x.mollieId));
-      const txs = (await pages(tk.token, "/balances/" + b.id + "/transactions?limit=250", since)).reverse();
+      // Buchhaltung je Mollie-Konto erst ab dem Umstieg: Älteres ist über sevDesk bereits verbucht (sonst doppelte Einnahmen)
+      const accSince = acc.mollieSince && acc.mollieSince > since ? acc.mollieSince : since;
+      const txs = (await pages(tk.token, "/balances/" + b.id + "/transactions?limit=250", accSince)).reverse().filter(t => day(t.createdAt) >= accSince);
       for (const t of txs) {
         if (have.has(t.id)) continue;
         const d = day(t.createdAt), type = String(t.type || ""), res0 = amt(t.resultAmount), init = t.initialAmount ? amt(t.initialAmount) : res0, ded = t.deductions ? amt(t.deductions) : r2(res0 - init);
@@ -134,7 +136,14 @@ module.exports = function (D) {
         }
         have.add(t.id);
       }
-      acc.mollieApiBalance = r2(amt(b.availableAmount) + amt(b.pendingAmount)); acc.mollieApiPending = r2(amt(b.pendingAmount)); acc.mollieApiAt = new Date().toISOString(); await L.save("CheckAccount", acc);
+      // Anfangsbestand: was beim Umstieg schon bei Mollie lag (einmalig, ohne Buchungswirkung – bereits über sevDesk erfasst)
+      const apiBal = r2(amt(b.availableAmount) + amt(b.pendingAmount));
+      if (!L.all("CheckAccountTransaction").some(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id) && x.mollieType === "opening")) {
+        const booked = r2(L.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id)).reduce((a, x) => a + (+x.amount || 0), 0));
+        const open = r2(apiBal - booked);
+        if (Math.abs(open) > 0.004) await newTx(acc.id, { valueDate: iso(acc.mollieSince || day(new Date().toISOString())), entryDate: iso(acc.mollieSince || day(new Date().toISOString())), amount: s2(open), payeePayerName: "Mollie", paymtPurpose: "Anfangsbestand beim Umstieg (bereits über sevDesk verbucht)", mollieId: "opening:" + b.id, mollieType: "opening", status: "400", transitWith: "opening" });
+      }
+      acc.mollieApiBalance = apiBal; acc.mollieApiPending = r2(amt(b.pendingAmount)); acc.mollieApiAt = new Date().toISOString(); await L.save("CheckAccount", acc);
       res.accounts.push({ id: String(acc.id), name: acc.name, balance: acc.mollieApiBalance });
     }
     return res;
