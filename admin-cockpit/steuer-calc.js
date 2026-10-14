@@ -513,10 +513,28 @@ var KW=[[/wareneinkauf|material|waren|rohstoff/i,"9100"],[/fremdleist|subunterne
 function defaultKz(cat){ if(NONBIZ.test(cat||"")) return "none"; for(var i=0;i<KW.length;i++){ if(KW[i][0].test(cat||"")) return KW[i][1]; } return "9230"; }
 function catKz(st,l){ var cat=l.cat||"(ohne Kategorie)"; if(st.mapping&&st.mapping[cat]) return st.mapping[cat]; if(/^(TAX|VAT|VATPAY|VATIMPORT|VATINT|EQUITYIN|EQUITYOUT)$/i.test(l.catType||"")||catNoNonBiz(l)||l.sup==="fa") return "none"; if(l.sup==="svs") return "9225"; return defaultKz(cat); }
 
+// Abschreibung je Monat (Anzeige wie sevDesk): Jahres-AfA laut Plan gleichmäßig auf die Monate verteilt, in denen die Anlage
+// im Jahr genutzt wird (Anschaffungsjahr ab Anschaffungsmonat, Abgangsjahr bis Abgangsmonat). Summe je Jahr = Steuerwert.
+function afaMonths(a){
+  var out={}; if(!a||!a.plan) return out; var sm=+String(a.start).slice(5,7)||1, ab=a.abgang||"", am=ab?+ab.slice(5,7):12, ay=ab?+ab.slice(0,4):0;
+  var rate=a.method==="lin"&&a.nd?a.ahk/(a.nd*12):0, last=a.plan.length-1;
+  a.plan.forEach(function(p,ix){ var m0=p.year===a.sy?sm:1, m1=(ay&&p.year===ay)?am:12; if(m1<m0) m1=m0;
+    if(ix===last&&ix>0&&!(ay&&p.year===ay)&&rate>0) m1=Math.min(12,Math.max(1,Math.round(p.afa/rate)));   // letztes Jahr: Rest mit normalem Monatsbetrag
+    var n=m1-m0+1, each=Math.floor(p.afa/n*100)/100, rest=r2(p.afa-each*n);
+    for(var m=m0;m<=m1;m++){ var k=p.year+"-"+String(m).padStart(2,"0"); out[k]=r2((out[k]||0)+each+(m===m1?rest:0)); } });
+  return out;
+}
+function afaByMonth(raw,st,year){
+  var y=String(year), mon={}, list=[];
+  (raw.vouchers||[]).forEach(function(v){ var a=assetInfo(v,st); if(!a) return; var m=afaMonths(a), any=false;
+    Object.keys(m).forEach(function(k){ if(k.slice(0,4)===y){ mon[k]=r2((mon[k]||0)+m[k]); any=true; } }); if(any) list.push({doc:v,a:a,months:m}); });
+  return {months:mon,assets:list,total:r2(Object.keys(mon).reduce(function(s,k){ return s+mon[k]; },0))};
+}
 // Anlagegut: AfA-Plan (Halbjahresregel, linear oder degressiv mit Wechsel auf linear, Pkw mind. 8 Jahre, Luxustangente)
+function assetSplit(v,ls){ ls=ls||lines(v); var a=ls.filter(function(l){ return l.isAsset; }); return a.length&&a.length<ls.length?{asset:a,rest:ls.filter(function(l){ return !l.isAsset; })}:{asset:ls,rest:[]}; }
 function assetInfo(v,st){
   var c=docCfg(st,v.id); if(!c.asset) return null;
-  var ls=lines(v), ahk=0; ls.forEach(function(l){ var cl=inClass(v,l,st); ahk+=l.net+((cl==="none"||cl==="fx"||cl==="rcnv")?l.tax:0)+(cl==="rcnv"?l.net*0.2:0); });
+  var ls=assetSplit(v).asset, ahk=0; ls.forEach(function(l){ var cl=inClass(v,l,st); ahk+=l.net+((cl==="none"||cl==="fx"||cl==="rcnv")?l.tax:0)+(cl==="rcnv"?l.net*0.2:0); });
   ahk=r2(Math.abs(ahk)); if(num(c.ahk)>0) ahk=r2(num(c.ahk));   // eigener Anlagenwert (z. B. nur ein Teil des Belegs ist die Anlage)
   // Pkw: mind. 8 Jahre (§ 8 Abs. 6 Z 1 EStG); gebrauchter Pkw: Restnutzungsdauer = 8 Jahre minus Zeit seit Erstzulassung (EStR Rz 3240)
   var pkw=!!c.pkw, epkw=!!c.epkw, nd=Math.max(1,parseInt(c.nd,10)||3); if(pkw&&!c.used&&nd<C.pkwMinNd) nd=C.pkwMinNd;
@@ -576,7 +594,9 @@ function computeJab(raw,st,year){
     var reg=isRegular(v,st,ls);
     if(v.cd==="D"){ payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=pm.amount/g; ls.forEach(function(l){ if(nonBiz(l)) return; var kz=catKz(st,l), n=l.net*sh; if(kz==="9090"||kz==="9060"){ other[kz]=(other[kz]||0)+n; } else { rev+=n; revDocs.push({doc:v,net:r2(n),date:pm.date,src:pm.src}); } }); }); return; }
     if(v.cd!=="C") return;
-    if(cfg.asset){ var a=assetInfo(v,st); if(a){ var pl=a.plan.find(function(x){ return x.year===+y; }); if(pl){ addE(pl.kz,pl.afa); if(pl.afaLux) other.lux=(other.lux||0)+pl.afaLux; if(pl.abgang) addE("9210",pl.abgang); } assets.push({a:a,cur:pl||null}); } return; }
+    if(cfg.asset){ var a=assetInfo(v,st); if(a){ var pl=a.plan.find(function(x){ return x.year===+y; }); if(pl){ addE(pl.kz,pl.afa); if(pl.afaLux) other.lux=(other.lux||0)+pl.afaLux; if(pl.abgang) addE("9210",pl.abgang); } assets.push({a:a,cur:pl||null}); }
+      // nur die Anlagen-Positionen laufen über die AfA – übrige Positionen im selben Beleg (z. B. Zinsen, Versand) bleiben Ausgaben
+      ls=assetSplit(v,ls).rest; if(!ls.length) return; }
     payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=pm.amount/g; if(String(pm.date).slice(0,4)!==y) notes.push({doc:v,why:"§ 19 EStG 15-Tage-Regel: Zahlung "+pm.date+" zählt wirtschaftlich zu "+y});
       ls.forEach(function(l){ var cat=l.cat||"(ohne Kategorie)", kz=catKz(st,l), cl=inClass(v,l,st), n=l.net*sh;
         if(cl==="none"||cl==="fx") n+=l.tax*sh;                 // nicht abziehbare Vorsteuer (Pkw, ausländische USt) ist Aufwand
@@ -843,7 +863,7 @@ function explainDoc(raw,st,id){
 function uvaDocIds(r){ var ids={}; Object.keys(r.docs||{}).forEach(function(k){ r.docs[k].forEach(function(x){ if(x.doc&&x.doc.id&&!/^manual-/.test(x.doc.id)) ids[x.doc.id]=1; }); }); (r.zm||[]).forEach(function(z){ if(z.doc&&z.doc.id) ids[z.doc.id]=1; }); return Object.keys(ids); }
 return {VERSION:10,uvaDocIds:uvaDocIds,ausgebucht:ausgebucht,reportedIn:reportedIn,rcDate:rcDate,isShortPeriod:isShortPeriod,periodClosed:periodClosed,periodDue:periodDue,ruleKey:ruleKey,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
   OUT_OPTS:OUT_OPTS,IN_OPTS:IN_OPTS,UVA_ROWS:UVA_ROWS,MANUAL_KZ:MANUAL_KZ,BASE_KZ:BASE_KZ,TAX_KZ:TAX_KZ,TAXRULE_TXT:TAXRULE_TXT,E1A:E1A,
-  computeUva:computeUva,uvaKzMap:uvaKzMap,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
+  computeUva:computeUva,uvaKzMap:uvaKzMap,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,afaMonths:afaMonths,afaByMonth:afaByMonth,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
   revenueNet:revenueNet,revenueGross:revenueGross,controlCheck:controlCheck,plausibility:plausibility,mismatches:mismatches,docCfg:docCfg,
   outWhy:outWhy,inWhy:inWhy,uidValid:uidValid,ruleDiagnosis:ruleDiagnosis,ruleTxt:ruleTxt,setRules:setRules,receivables:receivables,euSummary:euSummary,explainDoc:explainDoc,minderung:minderung,kids:kids,faboKids:faboKids,jabInp:jabInp};
 });

@@ -15,6 +15,10 @@ function load(force){
   return loadP;
 }
 F.steuerData=function(){ return ST&&ST.data?ST.data:null; };
+F.steuerLoad=function(){ if(!ST&&!loading) load(false); };
+/* Abschreibung je Monat und IDs der Anlage-Belege (für Übersicht/Diagramm: Kauf nicht als Aufwand, dafür AfA) */
+F.afaByMonth=function(year){ return ST&&ST.data?S.afaByMonth(ST.data,ST,year):null; };
+F.assetDocIds=function(){ var o={}; if(ST&&ST.docs) Object.keys(ST.docs).forEach(function(k){ var c=ST.docs[k]; if(c&&c.asset) o[k]=c.ahk>0?+c.ahk:true; }); return o; };
 var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon","vies","ruleMap","supMap","u1"];
 function apply(j){ if(j) KEYS.forEach(function(k){ if(j[k]!==undefined) ST[k]=j[k]; }); }
 function post(body,msg){ return F.api("/admin/api/steuer",{body:body}).then(function(j){ if(j&&j.ok){ apply(j); if(msg) F.toast(msg); F.render(); } else F.toast("Speichern fehlgeschlagen: "+((j&&j.error)||""),true); return j; }); }
@@ -574,7 +578,12 @@ var RX_NOANL=/waren|material|miete|pacht|leasing|versicherung|lohn|gehalt|honora
 var RX_ANL=/anlage|ausstattung|ger(ä|ae)te|maschine|fahrzeug|pkw|kfz-kauf|edv|hardware|computer|laptop|kamera|drucker|einrichtung|m(ö|oe)bel/i;
 function renderAnlagen(){
   if(!ST||!ST.data) return loadingBox();
-  var y=+F.D.year, C0=S.C||{gwg:1000}, gwg=C0.gwg||1000;
+  var y=+(F.UI.anlYear||F.D.year), C0=S.C||{gwg:1000}, gwg=C0.gwg||1000, ym=F.D.today.slice(0,7);
+  var AM=S.afaByMonth(ST.data,ST,y), MN=["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"], mx=Math.max.apply(null,[1].concat(Object.keys(AM.months).map(function(k){ return AM.months[k]; })));
+  var monthsHtml='<section class="panel"><div class="panel-h"><div><h2>Abschreibung je Monat '+y+'</h2><div class="muted">So verteilt sich die Jahres-Abschreibung auf die Monate – vergangene Monate dunkel, kommende hell.</div></div><div class="row"><button class="btn" data-act="anly:'+(y-1)+'">‹ '+(y-1)+'</button><button class="btn" data-act="anly:'+(y+1)+'">'+(y+1)+' ›</button></div></div>'+
+    '<div class="panel-b"><div class="st-mon">'+MN.map(function(n,i){ var k=y+"-"+String(i+1).padStart(2,"0"), v=AM.months[k]||0, fut=k>ym; return '<div class="st-m'+(fut?" fut":"")+'" title="'+n+' '+y+': '+eur(v)+'"><div class="st-mb"><i style="height:'+(v/mx*100)+'%"></i></div><b class="num">'+(v?eur(v).replace(/,\d\d$/,""):"–")+'</b><span>'+n+'</span></div>'; }).join("")+'</div>'+
+    '<div class="row-between small" style="margin-top:10px"><span class="muted">bis heute '+eur(Object.keys(AM.months).filter(function(k){ return k<=ym; }).reduce(function(a,k){ return a+AM.months[k]; },0))+' · noch kommend '+eur(Object.keys(AM.months).filter(function(k){ return k>ym; }).reduce(function(a,k){ return a+AM.months[k]; },0))+'</span><b>Summe '+y+': '+eur(AM.total)+'</b></div></div>'+
+    '<div class="scroll"><table class="st-plan"><thead><tr><th>Anlage</th>'+MN.map(function(n){ return '<th class="r">'+n+'</th>'; }).join("")+'<th class="r">'+y+'</th></tr></thead><tbody>'+AM.assets.map(function(x){ var c=docCfg(x.doc.id); var tot=0; return '<tr><td>'+esc(c.label||x.doc.desc||x.doc.supplier||"Anlage")+'</td>'+MN.map(function(n,i){ var v=x.months[y+"-"+String(i+1).padStart(2,"0")]||0; tot+=v; return '<td class="r num small">'+(v?eur(v).replace(/^€\s?/,""):"")+'</td>'; }).join("")+'<td class="r num"><b>'+eur(tot)+'</b></td></tr>'; }).join("")+'</tbody></table></div></section>';
   var vs=(ST.data.vouchers||[]).filter(function(v){ return v.status>=100&&v.cd!=="D"; });
   var assets=vs.map(function(v){ var a=S.assetInfo(v,ST); return a?{v:v,a:a,cur:a.plan.find(function(p){ return p.year===y; })||null,bvEnd:r2(a.plan.filter(function(p){ return p.year<=y; }).reduce(function(b,p){ return b-p.afa-(p.abgang||0); },a.ahk))}:null; }).filter(Boolean)
     .sort(function(a,b){ return String(b.a.start).localeCompare(String(a.a.start)); });
@@ -589,7 +598,7 @@ function renderAnlagen(){
   var open=F.UI.anlOpen||{};
   var rows=active.concat(assets.filter(function(x){ return active.indexOf(x)<0; })).map(function(x){
     var a=x.a, d=x.v, c=docCfg(d.id), pct=a.ahk?Math.max(0,Math.min(100,100-x.bvEnd/a.ahk*100)):100, done=x.bvEnd<=0.004;
-    var plan=open[d.id]?'<tr class="sub-row"><td colspan="7"><div class="st-anl-det"><table class="st-plan"><thead><tr><th>Jahr</th><th class="r">Buchwert 1.1.</th><th class="r">Abschreibung</th><th class="r">Buchwert 31.12.</th></tr></thead><tbody>'+a.plan.map(function(p){ return '<tr'+(p.year===y?' class="cur"':'')+'><td>'+p.year+(p.kz==="9134"?' <span class="muted small">degressiv</span>':'')+'</td><td class="r num">'+eur(p.bvStart)+'</td><td class="r num">'+eur(p.afa)+(p.abgang?'<div class="sub">Abgang '+eur(p.abgang)+'</div>':'')+'</td><td class="r num">'+eur(Math.max(0,p.bvStart-p.afa-(p.abgang||0)))+'</td></tr>'; }).join("")+'</tbody></table>'+
+    var plan=open[d.id]?'<tr class="sub-row"><td colspan="7"><div class="st-anl-det"><table class="st-plan"><thead><tr><th>Jahr</th><th class="r">Buchwert 1.1.</th><th class="r">Abschreibung</th><th class="r">Buchwert 31.12.</th></tr></thead><tbody>'+a.plan.map(function(p){ return '<tr'+(p.year===y?' class="cur"':'')+'><td>'+p.year+(p.kz==="9134"?' <span class="muted small">degressiv</span>':'')+'</td><td class="r num">'+eur(p.bvStart)+'</td><td class="r num">'+eur(p.afa)+'<div class="sub">'+(function(){ var m=S.afaMonths(a), ks=Object.keys(m).filter(function(k){ return k.slice(0,4)===String(p.year); }); return ks.length?ks.length+" Mon. à "+eur(m[ks[0]]):""; })()+'</div>'+(p.abgang?'<div class="sub">Abgang '+eur(p.abgang)+'</div>':'')+'</td><td class="r num">'+eur(Math.max(0,p.bvStart-p.afa-(p.abgang||0)))+'</td></tr>'; }).join("")+'</tbody></table>'+
       '<div class="st-acfg2"><label class="fl">Nutzungsdauer (Jahre)<input class="f num" type="number" min="1" max="50" data-stap="'+esc(d.id)+':nd" value="'+a.nd+'"></label>'+
       '<label class="fl">Methode<select class="f" data-stap="'+esc(d.id)+':method"><option value="">linear</option><option value="deg"'+(c.method==="deg"?" selected":"")+'>degressiv (max. 30 %)</option></select></label>'+
       '<label class="fl">Begünstigung<select class="f" data-stap="'+esc(d.id)+':benefit"><option value="">keine</option><option value="gfb"'+(c.benefit==="gfb"?" selected":"")+'>Gewinnfreibetrag</option><option value="ifb10"'+(c.benefit==="ifb10"?" selected":"")+'>Investitionsfreibetrag</option><option value="ifb15"'+(c.benefit==="ifb15"?" selected":"")+'>Öko-Investitionsfreibetrag</option></select></label>'+
@@ -605,7 +614,7 @@ function renderAnlagen(){
   return '<div class="st-ov">'+
     '<div class="st-tiles">'+kpi("Abschreibung "+y,eur(afaY),"mindert deinen Gewinn "+y)+kpi("Restbuchwert Ende "+y,eur(bvSum),active.length+" Anlage"+(active.length===1?"":"n")+" im Einsatz")+kpi("Angeschafft "+y,eur(buyY),"als Anlage erfasst")+'</div>'+
     (cand.length?'<section class="panel"><div class="panel-h"><div><h2>Zu prüfen: '+cand.length+' größere Anschaffung'+(cand.length===1?"":"en")+'</h2><div class="muted">Über 1.000 € netto (oder typische Anlagen) – Anlage mit Abschreibung über mehrere Jahre oder sofort als Ausgabe?</div></div></div><div class="scroll"><table><tbody>'+candRows+'</tbody></table></div></section>':'')+
-    '<section class="panel"><div class="panel-h"><div><h2>Anlagenverzeichnis</h2><div class="muted">Klick auf eine Zeile zeigt den Abschreibungsplan und die Einstellungen.</div></div></div><div class="scroll"><table class="st-anlt"><thead><tr><th>Anlage</th><th class="r">Anschaffung (netto)</th><th>Dauer</th><th class="r">AfA '+y+'</th><th class="r">Buchwert 31.12.</th><th>Fortschritt</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7" class="empty">Noch keine Anlagen erfasst.</td></tr>')+'</tbody></table></div></section>'+
+    monthsHtml+'<section class="panel"><div class="panel-h"><div><h2>Anlagenverzeichnis</h2><div class="muted">Klick auf eine Zeile zeigt den Abschreibungsplan und die Einstellungen.</div></div></div><div class="scroll"><table class="st-anlt"><thead><tr><th>Anlage</th><th class="r">Anschaffung (netto)</th><th>Dauer</th><th class="r">AfA '+y+'</th><th class="r">Buchwert 31.12.</th><th>Fortschritt</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7" class="empty">Noch keine Anlagen erfasst.</td></tr>')+'</tbody></table></div></section>'+
     '<section class="panel"><details><summary class="panel-b" style="cursor:pointer"><b>Abschreibung – kurz erklärt</b></summary><div class="panel-b small" style="display:grid;gap:8px">'+
       '<div><b>Wann Anlage?</b> Dinge, die du länger als ein Jahr nutzt und die mehr als 1.000 € netto kosten (Computer, Kamera, Möbel, Fahrzeug …). Sie werden über die Nutzungsdauer verteilt als Ausgabe abgesetzt.</div>'+
       '<div><b>Bis 1.000 € (GWG):</b> sofort im Jahr der Anschaffung voll absetzbar.</div>'+
@@ -614,6 +623,7 @@ function renderAnlagen(){
       '<div><b>Degressiv:</b> bis 30 % vom Restwert pro Jahr – mehr Abschreibung am Anfang. Nicht für gebrauchte Güter und Pkw (außer Elektro).</div>'+
       '<div><b>Verkauf/Ausscheiden:</b> Datum eintragen – der Restbuchwert wird dann als Ausgabe (Abgang) berücksichtigt.</div></div></details></section></div>';
 }
+F.action("anly",function(y){ F.UI.anlYear=+y; F.render(); });
 F.action("anlopen",function(id){ F.UI.anlOpen=F.UI.anlOpen||{}; F.UI.anlOpen[id]=!F.UI.anlOpen[id]; F.render(); });
 F.action("anlyes",function(v){ var p=v.split("|"), id=p[0], nd=+p[1]||5, pkw=p[2]==="1"; F.UI.anlOpen=F.UI.anlOpen||{}; F.UI.anlOpen[id]=true; post({op:"doc",id:id,patch:{asset:true,nd:nd,pkw:pkw,assetChecked:true}},"Als Anlage erfasst ("+nd+" Jahre) – Plan unten im Verzeichnis"); });
 /* Vorschlag Nutzungsdauer nach Art (AfA-Praxis Österreich): Pkw mind. 8, Möbel 10, EDV 3, sonst 5 Jahre */
@@ -626,7 +636,8 @@ function guessNd(v){ var t=((v.lines||[]).map(function(l){ return l.cat||""; }).
 F.action("anlnochk",function(id){ post({op:"doc",id:id,patch:{asset:false,assetChecked:true}},"Bleibt Sofortaufwand"); });
 F.action("anlno",function(id){ post({op:"doc",id:id,patch:{asset:false,assetChecked:true}},"Wieder Sofortaufwand"); });
 F.geldTab({id:"anlagen",label:"Anlagen & Abschreibungen",order:42,sub:"Anlagenverzeichnis mit Abschreibungsplan nach österreichischem Recht",render:renderAnlagen});
-F.css('.st-more-h{display:flex;gap:12px;align-items:baseline;width:100%;border:0;background:none;text-align:left;cursor:pointer;font:inherit;color:var(--ink)}.st-more-h:hover b{color:var(--glow)}'+
+F.css('.st-mon{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:6px}.st-m{display:grid;gap:3px;justify-items:center;font-size:11px}.st-mb{height:90px;width:100%;max-width:34px;background:var(--sunk);border-radius:5px;display:flex;align-items:flex-end;overflow:hidden}.st-mb i{display:block;width:100%;background:#f5a524}.st-m.fut .st-mb i{opacity:.4}.st-m b{font-size:11px;font-weight:600}.st-m span{color:var(--ink-3)}'+
+  '.st-more-h{display:flex;gap:12px;align-items:baseline;width:100%;border:0;background:none;text-align:left;cursor:pointer;font:inherit;color:var(--ink)}.st-more-h:hover b{color:var(--glow)}'+
   '.st-anl{cursor:pointer}.st-anl:hover td{background:var(--ground)}.st-anl.done{opacity:.6}.st-prog{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}.st-prog i{display:block;height:100%;background:var(--ok)}'+
   '.st-anl-det{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:18px;padding:6px 4px}.st-plan{width:100%}.st-plan td,.st-plan th{padding:5px 8px}.st-plan tr.cur td{background:var(--glow-soft);font-weight:600}'+
   '.st-acfg2{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}@media (max-width:1100px){.st-anl-det,.st-acfg2{grid-template-columns:minmax(0,1fr)}}');
