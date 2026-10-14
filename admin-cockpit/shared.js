@@ -96,18 +96,19 @@ F.openBook=function(id,txId){
   var i=F.D&&F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;}); if(!i) return;
   var accs=F.D.sev.accounts||[], def=(accs.find(function(a){return a.isDefault;})||accs[0]||{}).id;
   var txs=(F.D.sev.transactions||[]).filter(function(t){ return t.status===100&&t.amount>0; });
-  F.modal('<form data-form="book" data-id="'+esc(id)+'" class="stackf"><h2 style="font-size:20px">Zahlungseingang erfassen</h2><p style="margin:0">'+esc(i.nr||"Entwurf")+' · '+esc(i.contact)+' · offen <b>'+eur(i.open)+'</b></p>'+
-    '<label class="fl">Betrag<input class="f num" name="amount" type="number" step="0.01" min="0.01" value="'+i.open.toFixed(2)+'" required></label><label class="fl">Datum<input class="f" name="date" type="date" value="'+F.D.today+'"></label>'+
+  F.modal('<form data-form="book" data-id="'+esc(id)+'" class="stackf"><h2 style="font-size:20px">Zahlungseingang erfassen</h2><p style="margin:0">'+esc(i.nr||"Entwurf")+' · '+esc(i.contact)+' · offen <b>'+eur(i.open)+'</b>'+(i.feeOpen>0?' + Mahngebühr <b>'+eur(i.feeOpen)+'</b>':'')+'</p>'+
+    (i.feeOpen>0?'<p class="muted" style="margin:0;font-size:13px">Was über den offenen Rechnungsbetrag hinausgeht, wird als Mahngebühr gebucht – eigener Einnahme-Beleg, nicht umsatzsteuerbar (Schadenersatz).</p>':'')+
+    '<label class="fl">Betrag<input class="f num" name="amount" type="number" step="0.01" min="0.01" value="'+(i.open+(i.feeOpen||0)).toFixed(2)+'" required></label><label class="fl">Datum<input class="f" name="date" type="date" value="'+F.D.today+'"></label>'+
     (txs.length?'<label class="fl">Bankumsatz zuordnen (optional)<select class="f" name="tx"><option value="">— ohne Bankumsatz —</option>'+txs.map(function(t){ return '<option value="'+esc(t.id)+'" data-acc="'+esc(t.accountId)+'"'+(t.id===txId?" selected":"")+'>'+F.deShort(t.date)+' · '+eur(t.amount)+' · '+esc((t.name||t.purpose||"").slice(0,50))+'</option>'; }).join("")+'</select></label>':'')+
     '<label class="fl">Konto<select class="f" name="account">'+accs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===def?" selected":"")+'>'+esc(a.name)+'</option>'; }).join("")+'</select></label>'+
-    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">In sevDesk buchen</button></span></div><div class="err" id="bkErr"></div></form>',"narrow");
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Zahlung buchen</button></span></div><div class="err" id="bkErr"></div></form>',"narrow");
 };
 F.action("book",function(id){ F.openBook(id); });
 F.form("book",function(f){
   var id=f.getAttribute("data-id"), err=document.getElementById("bkErr"); err.textContent="Buche …";
   var body={id:id,amount:f.amount.value,date:f.date.value,accountId:f.account.value};
   if(f.tx&&f.tx.value){ body.transactionId=f.tx.value; body.accountId=f.tx.selectedOptions[0].getAttribute("data-acc")||body.accountId; }
-  F.api("/admin/api/sevdesk/book",{body:body}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Zahlung in sevDesk gebucht"); F.load(true); } else err.textContent="sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannt"); }).catch(function(){ err.textContent="Keine Verbindung."; });
+  F.api("/admin/api/sevdesk/book",{body:body}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Zahlung gebucht"); F.load(true); } else err.textContent="Nicht gebucht: "+((j&&j.error)||"unbekannt"); }).catch(function(){ err.textContent="Keine Verbindung."; });
 });
 
 /* ---------- Einfache Mail (das Postfach-Modul ersetzt F.compose durch die volle Version) ---------- */

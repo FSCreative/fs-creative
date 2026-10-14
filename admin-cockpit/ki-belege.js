@@ -113,7 +113,7 @@ K.openVoucherWith=function(m,a,x,onDone,opt){
     if(/^2/.test(ver)) extra.taxRule=x.taxRule;
     if(x.deliveryFrom){ extra.deliveryDate=x.deliveryFrom; if(x.deliveryTo) extra.deliveryDateUntil=x.deliveryTo; }
     var rate=lines.length===1?lines[0].rate:(x.tax>0?20:0);
-    M.openVoucher(m,a,{title:"Beleg an sevDesk (KI)",supplier:x.supplier,date:x.invoiceDate||undefined,gross:eur&&x.gross>0?x.gross:null,taxRate:[20,13,10,0].indexOf(rate)>-1?rate:20,
+    M.openVoucher(m,a,{title:"Beleg prüfen (KI)",supplier:x.supplier,date:x.invoiceDate||undefined,gross:eur&&x.gross>0?x.gross:null,taxRate:[20,13,10,0].indexOf(rate)>-1?rate:20,
       desc:(x.description||m.subject||"")+(x.invoiceNumber&&String(x.description||"").indexOf(x.invoiceNumber)<0?" · Nr. "+x.invoiceNumber:""),cat:x.accountingTypeId||"",html:info,extra:extra,onDone:onDone,href:opt.href});
   });
 };

@@ -30,8 +30,8 @@ function prep(file){
   if(/pdf|xml/.test(file.type)||/\.(pdf|xml)$/i.test(file.name)) return readAsDataURL(file).then(function(d){ return {name:file.name,mime:file.type||"application/pdf",data:d}; });
   return Promise.reject(new Error("Dateityp nicht unterstützt (PDF, JPG, PNG, HEIC oder XML-Rechnung)."));
 }
-function addFiles(list){
-  Array.prototype.slice.call(list||[]).slice(0,30).forEach(function(f){ UQ.push({key:"u"+(++seq),file:f,name:f.name,size:f.size,status:"warte"}); });
+function addFiles(list,auto){
+  Array.prototype.slice.call(list||[]).slice(0,30).forEach(function(f){ UQ.push({key:"u"+(++seq),file:f,name:f.name,size:f.size,status:"warte",auto:!!auto}); });
   paint(); next();
 }
 function next(){
@@ -39,17 +39,17 @@ function next(){
   if(K.st&&!K.st.configured){ UQ.forEach(function(x){ if(x.status==="warte"){ x.status="fehler"; x.err=K.NOT_SET; } }); paint(); return; }
   busy=true; it.status="lese"; paint();
   prep(it.file).then(function(p){ return K.api("beleg-upload",{filename:p.name,mime:p.mime,data:p.data}); })
-    .then(function(j){ it.status="bereit"; it.res=j; it.file=null; })
+    .then(function(j){ it.status="bereit"; it.res=j; it.file=null; if(it.auto&&!UQ.some(function(y){ return y.status==="warte"; })) setTimeout(function(){ F.closeModal&&F.closeModal(); F.actions.kiupopen(it.key); },150); })
     .catch(function(e){ it.status="fehler"; it.err=(e&&e.message)||"Fehler"; it.file=null; })
     .then(function(){ busy=false; paint(); K.load(true); next(); });
 }
 function itemHtml(it){
-  var x=it.res&&it.res.beleg, st={warte:["grey","wartet"],lese:["info","KI liest …"],bereit:["ok","bereit"],fehler:["bad","Fehler"],erledigt:["ok","an sevDesk gesendet"]}[it.status];
+  var x=it.res&&it.res.beleg, st={warte:["grey","wartet"],lese:["info","KI liest …"],bereit:["ok","bereit"],fehler:["bad","Fehler"],erledigt:["ok","gespeichert"]}[it.status];
   return '<div class="kirow"><div class="kimain"><b>'+esc(x&&x.supplier||it.name)+'</b> <span class="muted">'+esc(it.name)+' · '+Math.max(1,Math.round(it.size/1024))+' KB</span>'+
     (x?'<div class="kitags"><span class="tag grey">'+esc(F.de(x.invoiceDate)||"ohne Datum")+'</span>'+(x.invoiceNumber?'<span class="tag grey">Nr. '+esc(x.invoiceNumber)+'</span>':'')+K.conf(x.confidence)+(it.res.dupes&&it.res.dupes.length?'<span class="tag bad">mögliche Dublette</span>':'')+'</div>':'')+
     (it.err?'<div class="bad-t" style="font-size:13px">'+esc(it.err)+'</div>':'')+'</div>'+
     '<div class="kiamt num money">'+(x&&x.gross?F.eur(x.gross):'')+'</div><div class="row wrap"><span class="tag '+st[0]+'">'+st[1]+'</span>'+
-    (it.status==="bereit"?'<button type="button" class="btn primary" data-act="kiupopen:'+it.key+'">Prüfen &amp; an sevDesk</button>':'')+
+    (it.status==="bereit"?'<button type="button" class="btn primary" data-act="kiupopen:'+it.key+'">Prüfen &amp; speichern</button>':'')+
     (it.status!=="lese"?'<button type="button" class="btn icon" data-act="kiupdrop:'+it.key+'" title="Entfernen" aria-label="Entfernen">✕</button>':'')+'</div></div>';
 }
 function dropHtml(){
@@ -59,11 +59,13 @@ function dropHtml(){
 }
 function bodyHtml(){
   return '<div class="stackf" id="kiUp"><div class="row-between"><h2 style="font-size:19px">Beleg hochladen (KI)</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Claude liest Lieferant, Datum, Beträge und Steuer aus. Danach prüfst du im Beleg-Dialog und schickst ihn als Entwurf (mit Datei) an sevDesk.</p>'+
+    '<p class="muted" style="margin:0">Claude liest Lieferant, Datum, Beträge und Steuer aus. Danach prüfst du im Beleg-Dialog und speicherst ihn als Entwurf (mit Datei) in der Buchhaltung.</p>'+
     (K.st&&!K.st.configured?K.notSetHtml():'')+dropHtml()+(UQ.length?'<div class="kilist">'+UQ.map(itemHtml).join("")+'</div>':'')+
     '<div class="foot"><span class="muted">'+(UQ.filter(function(x){ return x.status==="bereit"; }).length?'Noch nicht gesendete Belege bleiben hier, bis du sie öffnest (3 Std.).':'')+'</span><button type="button" class="btn" data-closemodal>Schließen</button></div></div>';
 }
 function paint(){ var r=document.getElementById("kiUp"); if(r) r.outerHTML=bodyHtml(); if(F.current==="ki") F.render(); }
+/* Handy-Scan: Kamera-Foto(s) direkt einlesen; ist die KI fertig, öffnet sich der Prüfdialog von selbst */
+K.scan=function(files){ addFiles(files,true); K.openUpload(); };
 K.openUpload=function(){ K.load(false); F.modal(bodyHtml(),"wide"); };
 K.uploadPanelHtml=function(){ return K.panel("ki-upload","Beleg hochladen","Ohne Mail: Datei ablegen oder am Handy fotografieren","",dropHtml()+(UQ.length?'<div class="kilist">'+UQ.map(itemHtml).join("")+'</div>':'')); };
 F.action("kiupload",function(){ K.openUpload(); });

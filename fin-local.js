@@ -163,7 +163,7 @@ module.exports = function (D) {
     return { objects: { id: o.id } };
   }
   async function bookAmount(t, id, b) {
-    const o = need(t, id), amt = r2(b.amount); if (!(amt > 0)) throw err(400, "Betrag fehlt");
+    const o = need(t, id); let amt = r2(b.amount); if (!(amt > 0)) throw err(400, "Betrag fehlt");
     const day = dayOf(b.date) || today();
     let tx = b.checkAccountTransaction && b.checkAccountTransaction.id ? get("CheckAccountTransaction", b.checkAccountTransaction.id) : null;
     const accId = b.checkAccount && b.checkAccount.id ? String(b.checkAccount.id) : (tx && tx.checkAccount ? String(tx.checkAccount.id) : "");
@@ -172,6 +172,10 @@ module.exports = function (D) {
       tx = { id: newId("CheckAccountTransaction"), valueDate: iso(day), entryDate: iso(day), amount: s2(sign * amt), paymtPurpose: (o.invoiceNumber || o.description || o.supplierName || "Zahlung"), payeePayerName: t === "Voucher" ? (o.supplierName || "") : "", checkAccount: ref("CheckAccount", accId), status: "200" };
     } else tx.status = "200";
     await save("CheckAccountTransaction", tx);
+    // Zahlung zu einer gemahnten Rechnung: was über den offenen Betrag hinausgeht, deckt zuerst die Mahngebühr (eigener Einnahme-Beleg, 0 %)
+    let feePart = 0;
+    if (t === "Invoice" && +o.dunningFeeOpen > 0) { const openAmt = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)); feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(amt - openAmt))); if (b.feeAmount != null) feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(+b.feeAmount)), amt); }
+    if (feePart > 0) { await bookFee(o, feePart, tx, day); amt = r2(amt - feePart); if (amt <= 0.004) { await save(t, o); return { objects: {} }; } }
     const paid = r2((+o.paidAmount || 0) + amt), gross = Math.abs(+o.sumGross || 0);
     o.paidAmount = s2(paid); o.payDate = iso(day);
     o.status = paid >= gross - 0.005 ? "1000" : "750";
@@ -198,16 +202,48 @@ module.exports = function (D) {
     o.status = "1000"; o.cancelled = true; o.paidAmount = o.sumGross; await save("Invoice", o);
     return { objects: sr };
   }
-  async function createReminder(id) {
+  // Mahnung (MA): offener Betrag + optional Mahngebühr. Mahngebühren/Verzugszinsen sind in Österreich Schadenersatz →
+  // nicht umsatzsteuerbar (0 %, nicht in der UVA), aber Betriebseinnahme. Die Gebühr wird an der Rechnung vermerkt und beim
+  // Zahlungseingang als eigener Einnahme-Beleg verbucht (siehe bookAmount).
+  const DUN_TITLE = l => l <= 1 ? "Zahlungserinnerung" : l === 2 ? "1. Mahnung" : l === 3 ? "2. Mahnung" : "Letzte Mahnung";
+  async function createReminder(id, opt) {
+    opt = opt || {};
     const o = need("Invoice", id);
+    if (String(o.invoiceType) !== "RE" && String(o.invoiceType) !== "AR") throw err(400, "Nur Rechnungen können gemahnt werden");
+    if (!(+o.status === 200 || +o.status === 750)) throw err(400, "Rechnung ist nicht offen");
     const lvl = (+o.dunningLevel || 0) + 1, open = r2((+o.sumGross || 0) - (+o.paidAmount || 0));
+    const fee = Math.max(0, r2(+opt.dunningFee || 0)), prevFees = r2(+o.dunningFeeOpen || 0), days = Math.max(1, parseInt(opt.timeToPay, 10) || 7);
+    const title = DUN_TITLE(lvl);
     const ma = { id: newId("Invoice"), invoiceType: "MA", status: "100", invoiceNumber: await nextNumber("Invoice", "MA", "invoiceNumber", "MA-"), invoiceDate: iso(today()), contact: o.contact, address: o.address, addressCountry: o.addressCountry, contactPerson: o.contactPerson,
-      header: lvl + ". Zahlungserinnerung zu Rechnung " + (o.invoiceNumber || ""), headText: "Leider konnten wir zu der unten genannten Rechnung noch keinen Zahlungseingang feststellen. Wir bitten Sie, den offenen Betrag innerhalb der nächsten 7 Tage zu überweisen.",
-      footText: "Sollten Sie die Zahlung bereits veranlasst haben, betrachten Sie dieses Schreiben bitte als gegenstandslos.", timeToPay: "7", origin: ref("Invoice", o.id), dunningLevel: String(lvl), taxRate: "0", taxType: o.taxType, currency: "EUR", paidAmount: "0" };
-    const p = { id: newId("InvoicePos"), invoice: ref("Invoice", ma.id), positionNumber: "0", name: "Offener Betrag Rechnung " + (o.invoiceNumber || ""), text: "vom " + (dayOf(o.invoiceDate) || "").split("-").reverse().join("."), quantity: "1", price: s2(open), taxRate: "0", unity: ref("Unity", 1) };
-    posSums(p); await save("InvoicePos", p); docSums(ma, [p]); await save("Invoice", ma);
-    o.dunningLevel = String(lvl); o.reminderDeadline = iso(today()); await save("Invoice", o);
+      header: title + " zu Rechnung " + (o.invoiceNumber || ""), headText: lvl <= 1 ? "Sicher haben Sie es nur übersehen: Zu der unten genannten Rechnung konnten wir noch keinen Zahlungseingang feststellen. Wir bitten Sie, den offenen Betrag innerhalb von " + days + " Tagen zu überweisen." : "Leider konnten wir zu der unten genannten Rechnung trotz Zahlungserinnerung noch keinen Zahlungseingang feststellen. Wir bitten Sie, den offenen Betrag" + (fee + prevFees > 0 ? " zuzüglich Mahngebühr" : "") + " innerhalb von " + days + " Tagen zu überweisen.",
+      footText: "Sollten Sie die Zahlung bereits veranlasst haben, betrachten Sie dieses Schreiben bitte als gegenstandslos." + (fee + prevFees > 0 ? " Mahngebühren sind als Schadenersatz nicht umsatzsteuerbar." : ""), timeToPay: String(days), origin: ref("Invoice", o.id), dunningLevel: String(lvl), dunningFee: s2(fee), taxRate: "0", taxType: o.taxType, currency: "EUR", paidAmount: "0", taxText: "Mahngebühr nicht umsatzsteuerbar (Schadenersatz)" };
+    const ps = [{ id: newId("InvoicePos"), invoice: ref("Invoice", ma.id), positionNumber: "0", name: "Offener Betrag Rechnung " + (o.invoiceNumber || ""), text: "vom " + (dayOf(o.invoiceDate) || "").split("-").reverse().join("."), quantity: "1", price: s2(open), taxRate: "0", unity: ref("Unity", 1) }];
+    if (prevFees > 0) ps.push({ id: newId("InvoicePos"), invoice: ref("Invoice", ma.id), positionNumber: "1", name: "Mahngebühren aus früheren Mahnungen", text: "nicht umsatzsteuerbar (Schadenersatz)", quantity: "1", price: s2(prevFees), taxRate: "0", unity: ref("Unity", 1) });
+    if (fee > 0) ps.push({ id: newId("InvoicePos"), invoice: ref("Invoice", ma.id), positionNumber: "2", name: "Mahngebühr (" + title + ")", text: "nicht umsatzsteuerbar (Schadenersatz)", quantity: "1", price: s2(fee), taxRate: "0", unity: ref("Unity", 1) });
+    for (const p of ps) { posSums(p); await save("InvoicePos", p); }
+    docSums(ma, ps); await save("Invoice", ma);
+    o.dunningLevel = String(lvl); o.reminderDeadline = iso(addDays(today(), days)); o.dunningFeeOpen = s2(prevFees + fee); await save("Invoice", o);
     return { objects: ma };
+  }
+  function addDays(d, n) { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+  // Einnahme-Beleg für eine bezahlte Mahngebühr (0 %, nicht steuerbar) – verknüpft mit demselben Bankumsatz
+  function feeAccountingType() {
+    const ats = all("AccountingType"), rx = [/mahn/i, /schadenersatz/i, /sonstige (betriebliche )?ertr/i, /sonstige erl/i, /ertr/i, /erl[öo]s/i];
+    for (const r of rx) { const a = ats.find(x => r.test(String(x.name || ""))); if (a) return a; }
+    return null;
+  }
+  async function bookFee(inv, amt, tx, day) {
+    const c = inv.contact && get("Contact", inv.contact.id), at = feeAccountingType();
+    const v = { id: newId("Voucher"), status: "1000", creditDebit: "D", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt),
+      supplierName: (c && (c.name || [c.surename, c.familyname].filter(Boolean).join(" "))) || "", description: "Mahngebühr zu Rechnung " + (inv.invoiceNumber || "") + " – Schadenersatz, nicht umsatzsteuerbar",
+      taxType: "noteu", taxText: "nicht umsatzsteuerbar (Schadenersatz)", origin: ref("Invoice", inv.id), dunningFee: true };
+    const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Mahngebühr (Schadenersatz) – nicht umsatzsteuerbar" };
+    if (at) p.accountingType = ref("AccountingType", at.id);
+    await save("VoucherPos", p);
+    v.sumNet = s2(amt); v.sumGross = s2(amt); v.sumTax = "0.00"; await save("Voucher", v);
+    await save("CheckAccountTransactionLog", { id: newId("CheckAccountTransactionLog"), object: ref("Voucher", v.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: "1000" });
+    inv.dunningFeeOpen = s2(Math.max(0, r2((+inv.dunningFeeOpen || 0) - amt))); inv.dunningFeePaid = s2(r2((+inv.dunningFeePaid || 0) + amt));
+    return v;
   }
   async function invoiceFromOrder(body) {
     const od = need("Order", body.order && body.order.id);
@@ -322,7 +358,7 @@ module.exports = function (D) {
     // Schreiben
     if (method !== "GET") {
       if (p === "/Invoice/Factory/saveInvoice") return saveInvoice(b || {});
-      if (p === "/Invoice/Factory/createInvoiceReminder") return createReminder((b && b.invoice && b.invoice.id) || q["invoice[id]"]);
+      if (p === "/Invoice/Factory/createInvoiceReminder") return createReminder((b && b.invoice && b.invoice.id) || q["invoice[id]"], { dunningFee: b && b.dunningFee, timeToPay: b && b.timeToPay });
       if (p === "/Invoice/Factory/createInvoiceFromOrder") return invoiceFromOrder(b || {});
       if (p === "/Order/Factory/saveOrder") return saveOrder(b || {});
       if (p === "/CreditNote/Factory/saveCreditNote") return saveCreditNote(b || {});

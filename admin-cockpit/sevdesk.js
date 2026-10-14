@@ -167,15 +167,25 @@ F.action("sdsent",function(id){
     '<div class="sd-acts">'+[["VM","Per Mail (selbst)"],["VP","Per Post"],["VPR","Ausgedruckt übergeben"],["VPDF","PDF heruntergeladen"]].map(function(t){ return '<button class="btn" data-act="sdsentdo:'+esc(id)+'|'+t[0]+'">'+t[1]+'</button>'; }).join("")+'</div></div>',"narrow");
 });
 F.action("sdsentdo",function(v){ var p=v.split("|"); F.closeModal(); post("/admin/api/sev/invoice-op",{op:"sent",id:p[0],sendType:p[1]}).then(function(j){ if(!j||!j.ok) return fail(j); F.toast("Als versendet markiert"); afterOp(p[0]); }).catch(function(){ fail(); }); });
+/* Mahnung mit Mahnstufe, Mahngebühr und neuer Frist. Gebühr = Schadenersatz → 0 %, nicht in der UVA, Betriebseinnahme bei Zahlung */
+var DUN_T=["Zahlungserinnerung","1. Mahnung","2. Mahnung","Letzte Mahnung"], DUN_FEE=[0,10,15,20];
 F.action("sdremind",function(id){
-  var i=F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;})||S.det[id]||{};
-  F.confirm("Mahnung zu "+(i.nr||"der Rechnung")+" ("+eur(i.open||i.gross||0)+") in sevDesk erstellen? Danach kannst du sie direkt per Mail senden.","Mahnung erstellen",function(){
-    post("/admin/api/sev/invoice-op",{op:"reminder",id:id}).then(function(j){ if(!j||!j.ok) return fail(j); F.toast("Mahnung "+(j.reminder.nr||"")+" erstellt"); F.load(true); sendDialog(j.reminder.id,"reminder",i.nr); }).catch(function(){ fail(); });
-  });
+  var i=F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;})||S.det[id]||{}, lvl=Math.min(3,(i.dunning||i.dunningLevel||0)), saved=F.ls("fsc_dunfee")||DUN_FEE;
+  F.modal('<form data-form="sdremind" data-id="'+esc(id)+'" data-nr="'+esc(i.nr||"")+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+DUN_T[lvl]+' erstellen</h2>'+F.btnClose()+'</div>'+
+    '<p style="margin:0">'+esc(i.nr||"")+' · '+esc((i.contact&&i.contact.name)||i.contact||"")+' · offen <b>'+eur(i.open||0)+'</b>'+(i.feeOpen>0?' · bisherige Mahngebühren '+eur(i.feeOpen):'')+'</p>'+
+    '<div class="grid2"><label class="fl">Mahngebühr (€)<input class="f num" name="fee" type="number" step="0.01" min="0" value="'+(+saved[lvl]||0).toFixed(2)+'"></label><label class="fl">Neue Zahlungsfrist (Tage)<input class="f num" name="days" type="number" min="1" value="'+(lvl?10:7)+'"></label></div>'+
+    '<p class="muted" style="margin:0;font-size:13px">Mahngebühren sind Schadenersatz: ohne Umsatzsteuer, nicht in der UVA. Bei Zahlung wird die Gebühr als eigene Einnahme gebucht (E/A-Rechnung).</p>'+
+    '<div class="foot"><span class="err" id="sdRemErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Erstellen &amp; senden</button></span></div></form>',"narrow");
+});
+F.form("sdremind",function(f){
+  var id=f.getAttribute("data-id"), nr=f.getAttribute("data-nr"), err=document.getElementById("sdRemErr"), btn=f.querySelector("[type=submit]");
+  var i=F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;})||{}, lvl=Math.min(3,(i.dunning||0)), saved=(F.ls("fsc_dunfee")||DUN_FEE).slice(); saved[lvl]=+f.fee.value||0; F.ls("fsc_dunfee",saved);
+  btn.disabled=true; err.textContent="";
+  post("/admin/api/sev/invoice-op",{op:"reminder",id:id,fee:f.fee.value,days:f.days.value}).then(function(j){ if(!j||!j.ok){ btn.disabled=false; err.textContent=(j&&j.error)||"Fehler"; return; } F.closeModal(); F.toast("Mahnung "+(j.reminder.nr||"")+" erstellt"); F.load(true); sendDialog(j.reminder.id,"reminder",nr); }).catch(function(){ btn.disabled=false; err.textContent="Keine Verbindung."; });
 });
 F.action("sdcancel",function(id){
   var i=S.det[id]||F.D.sev.invoices.find(function(x){return x.id===id;})||{};
-  F.confirm("Rechnung "+(i.nr||"")+" über "+eur(i.gross||0)+" stornieren? sevDesk erstellt eine Stornorechnung, die Rechnung gilt danach als storniert. Das lässt sich nicht rückgängig machen.","Stornieren",function(){
+  F.confirm("Rechnung "+(i.nr||"")+" über "+eur(i.gross||0)+" stornieren? Es wird eine Stornorechnung erstellt, die Rechnung gilt danach als storniert. Das lässt sich nicht rückgängig machen.","Stornieren",function(){
     post("/admin/api/sev/invoice-op",{op:"cancel",id:id}).then(function(j){ if(!j||!j.ok) return fail(j); F.toast("Storniert"+(j.storno&&j.storno.nr?" · Storno "+j.storno.nr:"")); afterOp(id); }).catch(function(){ fail(); });
   },true);
 });

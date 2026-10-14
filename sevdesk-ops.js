@@ -51,7 +51,7 @@ module.exports = function (D) {
       sent: !!o.sendDate, sendDate: sevDay(o.sendDate), sendType: o.sendType || "", enshrined: !!o.enshrined, payDate: sevDay(o.payDate),
       origin: o.origin && o.origin.id ? { id: String(o.origin.id), type: o.origin.objectName || "" } : null,
       taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", taxType: o.taxType || "", taxSet: o.taxSet && o.taxSet.id ? String(o.taxSet.id) : "",
-      dunningLevel: parseInt(o.dunningLevel, 10) || 0, reminderDeadline: sevDay(o.reminderDeadline) };
+      dunningLevel: parseInt(o.dunningLevel, 10) || 0, reminderDeadline: sevDay(o.reminderDeadline), dunningFeeOpen: sevNum(o.dunningFeeOpen), dunningFeePaid: sevNum(o.dunningFeePaid) };
   }
   // Standardtext für Rechnungs-/Mahnungsmail
   function mailDefaults(inv, kind, ref) {
@@ -81,7 +81,7 @@ module.exports = function (D) {
       const j = await sev("POST", "/Invoice/" + id + "/cancelInvoice", { timeout: 40000 });
       const s = first(j); out.storno = { id: String(s.id || ""), nr: s.invoiceNumber || "" };
     } else if (op === "reminder") {
-      const j = await sev("POST", "/Invoice/Factory/createInvoiceReminder", { query: { "invoice[id]": id, "invoice[objectName]": "Invoice" }, body: { invoice: { id: Number(id), objectName: "Invoice" } }, timeout: 40000 });
+      const j = await sev("POST", "/Invoice/Factory/createInvoiceReminder", { query: { "invoice[id]": id, "invoice[objectName]": "Invoice" }, body: { invoice: { id: Number(id), objectName: "Invoice" }, dunningFee: Math.max(0, Math.round((parseFloat(String(pl.fee || 0).replace(",", ".")) || 0) * 100) / 100), timeToPay: parseInt(pl.days, 10) || 7 }, timeout: 40000 });
       const m = first(j); out.reminder = { id: String(m.id || ""), nr: m.invoiceNumber || "" };
       if (!out.reminder.id) throw new Error("sevDesk hat keine Mahnung erstellt");
     } else if (op === "draft") {
