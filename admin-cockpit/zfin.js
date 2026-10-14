@@ -94,6 +94,8 @@ function pageDash(){
   var rev=new Array(12).fill(0), exp=new Array(12).fill(0);
   inv.forEach(function(i){ var m=+String(i.date).slice(5,7)-1; rev[m]+=(i.type==="SR"?-1:1)*Math.abs(i.net||i.gross/1.2); });
   var vd=C.vou[y], cats={};
+  // wie sevDesk „Gewinn und Verlust“: Umsatz = Rechnungen netto (ohne Stornierte) + Einnahme-Belege (Erlösminderung abziehen, durchlaufende Posten nicht)
+  if(vd&&vd.ok) vd.vouchers.forEach(function(v){ if(v.cd!=="D"||v.status<100) return; if(/durchlaufend/i.test(v.category||"")) return; var m=+String(v.date||"").slice(5,7)-1; if(m>=0) rev[m]+=(/erl(ö|oe)sminderung/i.test(v.category||"")?-1:1)*(v.net||0); });
   if(vd&&vd.ok) vd.vouchers.forEach(function(v){ if(v.cd!=="C"||v.status<100) return; var m=+String(v.date||"").slice(5,7)-1; if(m>=0) exp[m]+=v.net||0; var c=v.category||"Sonstiges"; cats[c]=(cats[c]||0)+(v.net||0); });
   var max=Math.max.apply(null,rev.concat(exp).concat([1])), H=170, W=640, bw=W/12;
   var bars=rev.map(function(r,i){ var x=i*bw+bw*.18, w=bw*.3, hr=r/max*(H-20), he=exp[i]/max*(H-20); return '<rect x="'+x+'" y="'+(H-hr)+'" width="'+w+'" height="'+hr+'" rx="3" fill="#2fb27b"><title>Erträge '+eur(r)+'</title></rect><rect x="'+(x+w+3)+'" y="'+(H-he)+'" width="'+w+'" height="'+he+'" rx="3" fill="#ef4a4a"><title>Aufwendungen '+eur(exp[i])+'</title></rect><text x="'+(i*bw+bw/2)+'" y="'+(H+14)+'" text-anchor="middle" font-size="10" fill="var(--ink-3)">'+["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"][i]+'</text>'; }).join("");
@@ -114,6 +116,11 @@ function pageDash(){
   if(sev.vouchers&&sev.vouchers.drafts) tasks.push(["vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen"]);
   return head("Übersicht","Jahr "+esc(y),'<button class="btn" data-act="voucher">Ausgabe erfassen</button><button class="btn primary" data-act="newinvoice">Rechnung schreiben</button>')+
     '<div class="fsd-grid">'+
+      (function(){ var op=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&!i.cancelled&&(i.status===200||i.status===750); }), nf=function(i){ return i.gross?i.open*(i.net/i.gross):i.open; };
+        var due=op.filter(function(i){return i.overdue;}).reduce(function(a,i){return a+nf(i);},0), notdue=op.filter(function(i){return !i.overdue;}).reduce(function(a,i){return a+nf(i);},0), tot=due+notdue||1;
+        return '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Umsatz</b><span class="muted">netto · '+esc(y)+'</span></div><div class="fsd-big">'+(vd?eur(tr):'…')+'</div><div class="fsd-bigl">Rechnungen ohne Stornierte + Einnahme-Belege</div><button type="button" class="fsd-acc" data-act="fin:inv"><span>Rechnungen</span><b>→</b></button></section>'+
+          '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Offene Forderungen</b><span class="muted">netto</span></div><div class="fsd-big">'+eur(due+notdue)+'</div><div class="fsd-bar2"><i style="width:'+(due/tot*100)+'%;background:#e5322d"></i><i style="width:'+(notdue/tot*100)+'%;background:#f5a524"></i></div>'+
+          '<div class="fsd-dl" style="margin-top:8px"><span><i style="background:#e5322d"></i>Fällige Rechnungen<b>'+eur(due)+'</b></span><span><i style="background:#f5a524"></i>Offene Rechnungen<b>'+eur(notdue)+'</b></span></div></section>'; })()+
       '<section class="fsd-card span2"><div class="fsd-ch"><b>Ertrag / Aufwand</b><span class="muted">netto · Erträge '+eur0(tr)+' · Aufwand '+eur0(te)+(vd?'':' · lädt …')+'</span></div><svg viewBox="0 0 '+W+' '+(H+20)+'" class="fsd-chart">'+bars+'</svg><div class="fsd-leg"><span><i style="background:#2fb27b"></i>Erträge</span><span><i style="background:#ef4a4a"></i>Aufwendungen</span></div></section>'+
       '<section class="fsd-card"><div class="fsd-ch"><b>Meine Aufgaben</b></div>'+(tasks.length?tasks.map(function(t){ return '<button type="button" class="fsd-task" data-act="fin:'+t[0]+'"><b>'+esc(t[1])+'</b><span>'+esc(t[2])+'</span></button>'; }).join(""):'<div class="sd-empty">Du hast keine offenen Aufgaben. 🎉</div>')+'</section>'+
       '<section class="fsd-card"><div class="fsd-ch"><b>Aufwand</b><span class="muted">nach Kategorie</span></div><div class="fsd-dn">'+donut(catArr.slice(0,6),cols,eur0(te))+'<div class="fsd-dl">'+catArr.slice(0,6).map(function(c,k){ return '<span><i style="background:'+cols[k%cols.length]+'"></i>'+esc(c[0])+'<b>'+eur0(c[1])+'</b></span>'; }).join("")+'</div></div></section>'+
@@ -396,13 +403,14 @@ F.css(
 '.fsd-card{background:#fff;border:1px solid var(--sd-line);border-radius:12px;padding:16px 18px;min-width:0}'+
 '.fsd-card.flush{padding:0;overflow:hidden}'+
 '.fsd-ch{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:12px}.fsd-ch b{font-size:14px;font-weight:600}.fsd-ch .muted{font-size:12px;color:var(--sd-mut2)}'+
-'.fsd-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.fsd-grid .span2{grid-column:span 2}.fsd-grid>.fsd-card{min-height:250px}'+
+'.fsd-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;grid-auto-flow:dense}.fsd-grid .span2{grid-column:span 2}.fsd-grid>.fsd-card{min-height:250px}'+
 '@media (min-width:1700px){.fsd-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}'+
 '.fsd-chart{width:100%;height:auto}.fsd-leg{display:flex;gap:16px;font-size:12px;color:var(--sd-ink);margin-top:8px}.fsd-leg i,.fsd-dl i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}'+
 '.fsd-dn{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;align-items:center}.fsd-donut{width:150px;height:150px}'+
 '.fsd-dl span{white-space:nowrap}.fsd-dl span>i{flex:none}.fsd-dl span{overflow:hidden;text-overflow:ellipsis}'+
 '.fsd-dl{display:grid;gap:7px;font-size:12px;color:var(--sd-ink2)}.fsd-dl span{display:flex;align-items:center;gap:4px;min-width:0}.fsd-dl b{margin-left:auto;color:var(--sd-ink);font-weight:500;white-space:nowrap}'+
 '.fsd-task{display:grid;width:100%;text-align:left;border:0;border-top:1px solid var(--sd-line);background:none;padding:10px 0;cursor:pointer;gap:2px}.fsd-task:first-of-type{border-top:0;padding-top:0}.fsd-task b{font-weight:500;font-size:14px}.fsd-task span{font-size:12px;color:var(--sd-mut2)}.fsd-task:hover b{color:#534acc}'+
+'.fsd-bar2{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--sd-line);margin-top:10px}.fsd-bar2 i{display:block;height:100%}.fsd-grid>.fsd-kpi{min-height:0}'+
 '.fsd-big{font-size:20px;font-weight:600}.fsd-bigl{font-size:11px;color:var(--sd-mut2);margin:2px 0 10px;padding-bottom:10px;border-bottom:1px solid var(--sd-line)}'+
 '.fsd-acc{display:flex;justify-content:space-between;width:100%;border:0;background:none;padding:6px 0;font-size:13px;cursor:pointer;color:var(--sd-ink)}.fsd-acc:hover span{color:#534acc}'+
 '.fsd-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;border-bottom:1px solid var(--sd-line)}'+
