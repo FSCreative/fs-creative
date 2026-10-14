@@ -2454,6 +2454,17 @@ async function handleAdmin(req, res, u, p) {
       return J(200, Object.assign({ ok: true }, r));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  // Belege ohne Datei + automatische Zuordnung von Rechnungsmails (fin-docmatch.js)
+  if (p === "/admin/api/fin/missing-docs") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung verfügbar" });
+      if (req.method === "GET") return J(200, Object.assign({ ok: true, mail: !!(MAIL.url && MAIL.token), ki: KI.docmatchReady() }, await FIN_DOCMATCH.missing(u.searchParams.get("year"))));
+      const pl = await sevBody(req, 22 * 1024 * 1024);
+      if (pl.op !== "run" && pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      return J(200, Object.assign({ ok: true }, await FIN_DOCMATCH.handle(pl)));
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (p === "/admin/api/fin/ebank/callback") {
     try { if (u.searchParams.get("error")) throw new Error(u.searchParams.get("error_description") || u.searchParams.get("error")); await FIN_EBANK.finish(u.searchParams.get("code") || "", u.searchParams.get("state") || ""); FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("Bank:", e.message));
       return send(res, 302, "", "text/plain", { Location: "/admin#bank-verbunden" }); }
@@ -3104,6 +3115,12 @@ const server = http.createServer((req, res) => {
 // Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway)
 const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL });
 const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
+// Belegdateien aus Rechnungsmails automatisch an Belege ohne Datei hängen: alle 15 Minuten (Postfach nur lesen)
+const FIN_DOCMATCH = require("./fin-docmatch.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)),
+  snapshot: () => mailSnapshot(), fetchAtt: m => KI.fetchAttachment(m), kiReady: () => KI.docmatchReady(), kiExtract: (m, info) => KI.extractForDocmatch(m, info),
+  onChange: () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } });
+function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.attached) console.log("Belegdateien:", r.attached, "automatisch zugeordnet"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
+if (require.main === module) { setTimeout(docMatchTick, 3 * 60 * 1000); setInterval(docMatchTick, 15 * 60 * 1000); }
 const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
 // George (PSD2) täglich – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.configured && st.sessions.length && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) return FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }); }).catch(e => console.error("Bank:", e.message)); }, 3600 * 1000);
