@@ -103,7 +103,9 @@ module.exports = function (D) {
   async function syncOrg(tk, since) {
     const org = await api(tk.token, "/organizations/me").catch(() => ({ name: tk.key }));
     const profiles = {}; (await pages(tk.token, "/profiles?limit=250").catch(() => [])).forEach(p => { profiles[p.id] = p.name; });
-    const balances = await pages(tk.token, "/balances?limit=250");
+    let balances;
+    try { balances = await pages(tk.token, "/balances?limit=250"); }
+    catch (e) { if (e.status === 403) throw new Error("Dieser Schlüssel ist auf ein Profil beschränkt – für Saldo und Auszahlungen braucht es einen Schlüssel für die ganze Organisation"); throw e; }
     const res = { org: org.name || tk.key, accounts: [], added: 0, fees: 0, payouts: 0, linked: 0 };
     for (const b of balances.filter(b => (b.currency || "EUR") === "EUR")) {
       let acc = L.all("CheckAccount").find(a => a.mollieBalance === b.id);
@@ -123,7 +125,7 @@ module.exports = function (D) {
         const prof = pay && profiles[pay.profileId] ? profiles[pay.profileId] + ": " : "";
         if (type === "payment") {
           // netto wie ausbezahlt; Gebühr am Umsatz gemerkt → bei der Zuordnung zur Rechnung als Zahlungsgebühr an die Rechnung gehängt
-          const tx = await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: name, paymtPurpose: (prof + (pay ? pay.description || "" : "Zahlung") + (meta ? " · " + meta : "") + " · " + pid + (Math.abs(ded) > 0.004 ? " · brutto " + s2(init) + ", Gebühr " + s2(Math.abs(ded)) : "")).trim(), mollieId: t.id, mollieType: type, molliePayment: pid, mollieGross: s2(init), mollieFeeAmt: s2(Math.abs(ded)), mollieMeta: pay && pay.metadata ? pay.metadata : null, mollieDesc: pay ? pay.description || "" : "" });
+          const tx = await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: name, paymtPurpose: (prof + (pay ? pay.description || "" : "Zahlung") + (meta ? " · " + meta : "") + " · " + pid + (Math.abs(ded) > 0.004 ? " · brutto " + s2(init) + ", Gebühr " + s2(Math.abs(ded)) : "")).trim(), mollieId: t.id, mollieType: type, molliePayment: pid, mollieGross: s2(init), mollieFeeAmt: s2(Math.abs(ded)), mollieMeta: pay && pay.metadata ? pay.metadata : null, mollieDesc: pay ? pay.description || "" : "", mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : "" });
           res.added++; if (Math.abs(ded) > 0.004) res.fees++;
           if (await autoMatch(tx)) res.matched = (res.matched || 0) + 1;
         } else if (type === "outgoing-transfer" || type === "outgoing-transfer-reversal") {
@@ -131,7 +133,7 @@ module.exports = function (D) {
           res.payouts++; if (res0 < 0 && await linkPayout(tx, -res0, d)) res.linked++;
         } else {
           const label = { refund: "Rückerstattung", chargeback: "Rückbuchung (Chargeback)", "application-fee": "Provision (Mollie Connect)", "split-payment": "Anteil Split-Zahlung", "invoice-compensation": "Mollie-Rechnung verrechnet", "balance-correction": "Korrektur", "failed-payment-fee": "Gebühr fehlgeschlagene Zahlung" }[type] || type;
-          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee" });
+          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee", mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : (type === "application-fee" ? "kochdu" : "") });
           res.added++;
         }
         have.add(t.id);
@@ -178,7 +180,9 @@ module.exports = function (D) {
         stillAtMollie: bookBal, mollieBalance: acc.mollieApiBalance != null ? acc.mollieApiBalance : null, pending: acc.mollieApiPending || 0, balanceAt: acc.mollieApiAt || null,
         diff: acc.mollieApiBalance != null ? r2(bookBal - acc.mollieApiBalance) : null,
         unmatched: pays.filter(t => String(t.status) === "100").map(t => ({ id: String(t.id), date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.mollieDesc || t.paymtPurpose || "").slice(0, 80), gross: +t.mollieGross || +t.amount, fee: +t.mollieFeeAmt || 0 })),
-        countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length });
+        countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length,
+        byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieProfile || "ohne Profil"; const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
+          if (t.mollieType === "application-fee") x.provisions = r2(x.provisions + (+t.amount || 0)); else { x.gross = r2(x.gross + (+t.mollieGross || +t.amount)); x.fees = r2(x.fees + (+t.mollieFeeAmt || 0)); x.count++; if (String(t.status) === "100") x.unmatched++; } return o; }, {})) });
     }
     return out;
   }
