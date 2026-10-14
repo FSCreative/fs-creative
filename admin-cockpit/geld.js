@@ -102,7 +102,7 @@ function renderUebersicht(){
     return '<div class="c"><div class="top"><span class="tag grey">'+esc(tag)+'</span>'+(x.refund>0.005?'<span class="tag bad">'+eur(x.refund)+' zu viel verrechnet</span>':'')+'</div>'+
       '<div><div class="nm">'+esc(x.name)+'</div><div class="sb">'+esc(x.sub)+'</div></div>'+
       (x.unbilled>0.005?'<div class="amt">'+eur(x.unbilled)+'</div>':'')+
-      '<div class="ac">'+(x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
+      '<div class="ac">'+(x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005?'<button class="btn" data-act="sdassign:'+esc(x.key)+'" title="Einer bestehenden (Sammel-)Rechnung zuordnen">Zuordnen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
   };
   // Detail-Abgleich (eingeklappt)
   var rows=ab.items.filter(function(x){ if(f==="zu") return x.unbilled>0.005||x.refund>0.005; if(f==="offen") return x.open>0.005; if(f==="prob") return problem(x); return true; });

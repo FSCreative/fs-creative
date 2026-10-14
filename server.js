@@ -1378,6 +1378,32 @@ function abgleichBuild(ctx) {
   //    offene Anfragen (PENDING, unbezahlt) und stornierte Buchungen zählen nicht.
   const blitzList = Array.isArray(blitzAll) ? blitzAll : ((blitz && blitz.upcoming) || []);
   const soon = ymdAdd(today, 14);
+  // Sammelrechnungen: mehrere Buchungen desselben Kunden, die zusammen genau eine noch freie Rechnung ergeben
+  const bnorm = x => String(x || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|mbh|ges\.?m\.?b\.?h\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const nameHit = (a, b2) => { a = bnorm(a); b2 = bnorm(b2); return a.length >= 4 && b2.length >= 4 && (a.indexOf(b2) > -1 || b2.indexOf(a) > -1); };
+  const bOk = b => (+b.totalCents || 0) > 0 && b.status !== "CANCELLED" && b.paymentStatus !== "REFUNDED" && !(b.status === "PENDING" && b.paymentStatus !== "PAID");
+  const directHit = b => {
+    const amt = round2((+b.totalCents || 0) / 100), ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
+    let h = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
+    if (!h && ref) h = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR");
+    if (!h && (cust || comp)) h = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
+    return h || null;
+  };
+  const groupInv = {};
+  (function () {
+    const taken = new Set();
+    blitzList.forEach(b => { const h = directHit(b); if (h) taken.add(String(h.id)); recs("blitz:" + b.id).forEach(r => { if (r && r.id) taken.add(String(r.id)); }); if (b.sevdeskInvoiceId) taken.add(String(b.sevdeskInvoiceId)); });
+    const pool = blitzList.filter(b => bOk(b) && !directHit(b) && !recs("blitz:" + b.id).length && !b.sevdeskInvoiceId);
+    sevInv.filter(i => (i.type === "RE" || !i.type) && !taken.has(String(i.id)) && !linked[i.id] && i.gross > 0).sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(inv => {
+      const lo = ymdAdd(String(inv.date || today), -180), hi = ymdAdd(String(inv.date || today), 45);
+      const grp = pool.filter(b => !groupInv[b.id] && (nameHit(inv.contact, b.companyName) || nameHit(inv.contact, b.customerName)) && String(b.eventDate || "").slice(0, 10) >= lo && String(b.eventDate || "").slice(0, 10) <= hi).slice(0, 16);
+      if (!grp.length) return;
+      const target = Math.round(inv.gross * 100), cents = grp.map(b => Math.round(+b.totalCents || 0));
+      let best = 0;
+      for (let m = 1; m < (1 << grp.length); m++) { let sum = 0; for (let k = 0; k < grp.length; k++) if (m & (1 << k)) sum += cents[k]; if (Math.abs(sum - target) <= 2) { best = m; break; } }
+      if (best) for (let k = 0; k < grp.length; k++) if (best & (1 << k)) groupInv[grp[k].id] = inv;
+    });
+  })();
   blitzList.forEach(b => {
     const amt = round2((+b.totalCents || 0) / 100); if (!(amt > 0)) return;
     if (b.status === "CANCELLED" || b.paymentStatus === "REFUNDED") return;
@@ -1386,6 +1412,7 @@ function abgleichBuild(ctx) {
     let hit = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
     if (!hit && ref) hit = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR");
     if (!hit && (cust || comp)) hit = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
+    const viaGroup = !hit && groupInv[b.id]; if (viaGroup) hit = groupInv[b.id];
     const rec = recs("blitz:" + b.id).slice(-1)[0];
     const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : (b.sevdeskInvoiceId ? invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: day, gross: amt }, sevById, oldest) : (rec ? invLink(rec, sevById, oldest) : null));
     if (link && link.id) linked[link.id] = 1;
@@ -1395,7 +1422,7 @@ function abgleichBuild(ctx) {
     const extras = (b.extras || []).map(e => e && e.name).filter(Boolean).join(", ");
     const pkg = typeof b.package === "string" ? b.package : (b.package && b.package.name) || "";
     const who = b.companyName || b.customerName || "Buchung";
-    items.push({ src: "blitzdings", key: "blitz:" + b.id, name: who + (pkg ? " · " + pkg : ""), sub: (day ? (day < today ? "Event war am " : "Event am ") + deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · online bezahlt" : ""),
+    items.push({ src: "blitzdings", key: "blitz:" + b.id, amount: amt, name: who + (pkg ? " · " + pkg : ""), sub: (day ? (day < today ? "Event war am " : "Event am ") + deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · online bezahlt" : "") + ((viaGroup || (rec && rec.group)) ? " · Sammelrechnung" : ""),
       unbilled: link ? 0 : amt, invoiced: link ? link.gross : 0, paid: link && link.state === "bezahlt" ? link.gross : 0, open: link ? link.open : 0, refund: 0, paidOnPlatform, last: link, invoices: link ? [link] : [], date: day,
       action: link ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
         items: [{ name: "Blitzdings " + (pkg || "Fotobox"), text: [day ? "Event am " + deDate(day) : "", (b.eventLocation || b.location) ? "Ort: " + (b.eventLocation || b.location) : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: amt, taxRate: 20 }], after: { billing: { key: "blitz:" + b.id, label: who } } } });

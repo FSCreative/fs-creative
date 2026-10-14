@@ -266,6 +266,37 @@ F.form("sdbknew",function(f){
   F.closeModal(); bankDo(id,{op:"newVoucher",accountingTypeId:f.cat.value,taxRate:f.tax.value,supplierName:f.supplier.value,description:f.desc.value},"Gebucht");
 });
 
+/* Blitzdings-Buchungen einer bestehenden Rechnung zuordnen (auch mehrere = Sammelrechnung) */
+var ASG={key:null,inv:null,q:""};
+F.action("sdassign",function(key){ ASG={key:key,inv:null,q:""}; asgStep1(); });
+function asgStep1(){
+  var it=F.D.abgleich.items.find(function(x){return x.key===ASG.key;})||{}, q=ASG.q.toLowerCase();
+  var invs=((F.D.sev&&F.D.sev.invoices)||[]).filter(function(i){ return i.type!=="SR"&&i.type!=="MA"&&(!q||(i.nr+" "+i.contact+" "+i.gross).toLowerCase().indexOf(q)>-1); }).slice(0,60);
+  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">Rechnung zuordnen</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted" style="margin:0">'+esc(it.name||"")+' · '+eur(it.unbilled||0)+' – welche Rechnung deckt diese Buchung ab?</p>'+
+    '<input class="f" placeholder="Suchen: Nr., Kunde, Betrag …" data-asgq value="'+esc(ASG.q)+'" autofocus>'+
+    '<div class="sd-pick">'+(invs.map(function(i){ return '<button type="button" data-act="sdasginv:'+esc(i.id)+'"><span>'+esc((i.nr||"Entwurf")+" · "+i.contact)+'</span><span class="muted num">'+eur(i.gross)+' · '+F.deShort(i.date)+'</span></button>'; }).join("")||'<div class="sd-empty">Keine Rechnung gefunden.</div>')+'</div></div>',"wide");
+}
+F.listen("input","[data-asgq]",function(el){ ASG.q=el.value; clearTimeout(el._t); el._t=setTimeout(function(){ var pos=el.selectionStart; asgStep1(); var n=document.querySelector("[data-asgq]"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } },200); });
+F.action("sdasginv",function(id){
+  var inv=(F.D.sev.invoices||[]).find(function(i){return i.id===id;}); if(!inv) return; ASG.inv=inv;
+  var cand=F.D.abgleich.items.filter(function(x){ return x.src==="blitzdings"&&x.unbilled>0.005; });
+  F.modal('<form data-form="sdasg" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc((inv.nr||"Entwurf")+" · "+inv.contact)+'</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted" style="margin:0">Welche Buchungen sind in dieser Rechnung (<b>'+eur(inv.gross)+'</b>) enthalten?</p>'+
+    '<div class="sd-pick" style="max-height:380px">'+cand.map(function(x){ return '<label style="display:flex;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line);cursor:pointer"><input type="checkbox" name="k" value="'+esc(x.key)+'" data-amt="'+(x.amount||x.unbilled)+'"'+(x.key===ASG.key?" checked":"")+'><span style="flex:1;min-width:0"><b>'+esc(x.name)+'</b><br><span class="muted">'+esc(x.sub)+'</span></span><span class="num">'+eur(x.amount||x.unbilled)+'</span></label>'; }).join("")+'</div>'+
+    '<div class="foot"><span id="asgSum" class="num"></span><span class="row"><button type="button" class="btn" data-act="sdassignback">Zurück</button><button class="btn primary" type="submit">Zuordnen</button></span></div></form>',"wide");
+  asgSum();
+});
+F.action("sdassignback",function(){ asgStep1(); });
+function asgSum(){ var sum=0; document.querySelectorAll('form[data-form="sdasg"] [name=k]:checked').forEach(function(c){ sum+=+c.getAttribute("data-amt")||0; }); var e=document.getElementById("asgSum"); if(e&&ASG.inv){ var d=Math.round((sum-ASG.inv.gross)*100)/100; e.innerHTML='Auswahl '+eur(sum)+' · '+(Math.abs(d)<0.02?'<span class="ok-t">passt genau</span>':'<span class="warn-t">'+(d>0?"+":"")+eur(d)+' Differenz</span>'); } }
+F.listen("change",'form[data-form="sdasg"] [name=k]',asgSum);
+F.form("sdasg",function(f){
+  var keys=Array.prototype.map.call(f.querySelectorAll("[name=k]:checked"),function(c){return c.value;}); if(!keys.length) return;
+  var inv=ASG.inv;
+  Promise.all(keys.map(function(k){ var x=F.D.abgleich.items.find(function(y){return y.key===k;})||{}; return F.api("/admin/api/billing",{body:{op:"invoice",key:k,invoice:{id:inv.id,nr:inv.nr,gross:x.amount||x.unbilled,date:inv.date,label:(x.name||"")+(keys.length>1?" (Sammelrechnung)":"")}}}); }))
+    .then(function(){ F.closeModal(); F.toast(keys.length+(keys.length===1?" Buchung":" Buchungen")+" "+(inv.nr||"")+" zugeordnet"); F.load(true); }).catch(function(){ F.toast("Nicht gespeichert",true); });
+});
+
 /* Kontoauszug aus George (CAMT.053 / CSV / JSON) einlesen */
 F.action("sdbkimp",function(){
   var accs=(F.D.sev&&F.D.sev.accounts)||[], def=(accs.find(function(x){return x.isDefault;})||accs[0]||{}).id;
