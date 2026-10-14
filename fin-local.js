@@ -218,6 +218,20 @@ module.exports = function (D) {
     return { objects: [r.objects.invoice] };
   }
 
+  // ── Gutschriften (z. B. kochdu-Auszahlungen) ──
+  async function saveCreditNote(body) {
+    const cb = Object.assign({}, body.creditNote || {});
+    let o = cb.id ? get("CreditNote", cb.id) : null; const isNew = !o;
+    o = Object.assign(o || { id: newId("CreditNote"), status: "100", currency: "EUR", paidAmount: "0" }, stripMeta(cb));
+    if (cb.creditNoteDate) o.creditNoteDate = iso(dayOf(cb.creditNoteDate)); if (!o.creditNoteDate) o.creditNoteDate = iso(today());
+    if (cb.deliveryDate) o.deliveryDate = iso(dayOf(cb.deliveryDate));
+    if (isNew && !cb.creditNoteNumber) o.creditNoteNumber = await nextNumber("CreditNote", "", "creditNoteNumber", "GU-");
+    for (const p of (body.creditNotePosDelete || [])) if (p && p.id) await del("CreditNotePos", p.id);
+    for (const p of (body.creditNotePosSave || [])) { const x = Object.assign(p.id ? (get("CreditNotePos", p.id) || {}) : { id: newId("CreditNotePos") }, stripMeta(p), { creditNote: ref("CreditNote", o.id) }); posSums(x); await save("CreditNotePos", x); }
+    docSums(o, positionsOf("CreditNote", o.id)); await save("CreditNote", o);
+    return { objects: { creditNote: o } };
+  }
+
   // ── Angebote ──
   async function saveOrder(body) {
     const od = Object.assign({}, body.order || {});
@@ -287,6 +301,11 @@ module.exports = function (D) {
     if (/^\/ReceiptGuidance\//.test(p)) return { objects: [] };
     if (p === "/StaticCountry") return { objects: [{ id: "1", code: "de", name: "Deutschland" }, { id: "3", code: "at", name: "Österreich" }, { id: "4", code: "ch", name: "Schweiz" }, { id: "10", code: "it", name: "Italien" }, { id: "15", code: "li", name: "Liechtenstein" }] };
     if (p === "/SevSequence/Factory/getByType") { const s = seqFor(String(q.objectType || ""), String(q.type || "")); return { objects: s ? [s] : [] }; }
+    if (p === "/Invoice/Factory/getNextInvoiceNumber") {
+      const t = String(q.invoiceType || "RE"), nr = await nextNumber("Invoice", t, "invoiceNumber", INV_PREFIX[t] || "RE-");
+      if (String(q.useNextNumber) !== "true") { const seq = seqFor("Invoice", t); if (seq) { seq.nextSequence = String((+seq.nextSequence || 1) - 1); await save("SevSequence", seq); } }
+      return { objects: nr };
+    }
     if (p === "/Contact/Factory/getNextCustomerNumber") { let mx = 1000; all("Contact").forEach(c => { const n = parseInt(c.customerNumber, 10); if (n > mx) mx = n; }); return { objects: String(mx + 1) }; }
     if (method === "GET" && T === "CheckAccount" && act === "getBalanceAtDate") {
       const d = dayOf(q.date) || today();
@@ -306,6 +325,7 @@ module.exports = function (D) {
       if (p === "/Invoice/Factory/createInvoiceReminder") return createReminder((b && b.invoice && b.invoice.id) || q["invoice[id]"]);
       if (p === "/Invoice/Factory/createInvoiceFromOrder") return invoiceFromOrder(b || {});
       if (p === "/Order/Factory/saveOrder") return saveOrder(b || {});
+      if (p === "/CreditNote/Factory/saveCreditNote") return saveCreditNote(b || {});
       if (p === "/Voucher/Factory/saveVoucher") return saveVoucher(b || {});
       if (p === "/Voucher/Factory/uploadTempFile") return uploadTemp(opts.form);
       if (p === "/Tag/Factory/create") { const tag = all("Tag").find(x => x.name === (b && b.name)) || (await create("Tag", { name: b && b.name })).objects; const rel = await create("TagRelation", { tag: ref("Tag", tag.id), object: b && b.object }); return { objects: rel.objects }; }

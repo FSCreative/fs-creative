@@ -783,6 +783,31 @@ async function sevKey() {
     .then(r => { if (r && r.errors) console.error("sevdesk key persist:", r.errors[0] && r.errors[0].message); else console.log("sevdesk key persisted"); }).catch(() => {});
   return SEV.key;
 }
+function finApiAuth(req) {
+  const got = String(req.headers["authorization"] || req.headers["x-api-token"] || "").replace(/^Bearer\s+/i, "").trim();
+  if (!got) return "";
+  const ok = (exp, who) => { exp = String(exp || "").trim(); if (!exp || exp.length !== got.length) return ""; return crypto.timingSafeEqual(Buffer.from(exp), Buffer.from(got)) ? who : ""; };
+  return ok(process.env.BLITZDINGS_COCKPIT_TOKEN, "blitzdings") || ok(BLITZ.token, "blitzdings") || ok(KOCHDU.token, "kochdu") || "";
+}
+function formNested(str) {   // a[b]=1&c=2 → {a:{b:"1"},c:"2"}
+  const out = {};
+  new URLSearchParams(str).forEach((v, k) => { const parts = k.replace(/\]/g, "").split("["); let cur = out; parts.forEach((pp, i) => { if (i === parts.length - 1) cur[pp] = v; else cur = cur[pp] = (cur[pp] && typeof cur[pp] === "object") ? cur[pp] : {}; }); });
+  return out;
+}
+async function finApi(req, res, u, p) {
+  const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+  const who = finApiAuth(req); if (!who) return J(401, { error: { message: "unauthorized" } });
+  let raw = ""; for await (const c of req) { raw += c; if (raw.length > 5000000) return J(413, { error: { message: "too_large" } }); }
+  const ct = String(req.headers["content-type"] || "");
+  let body; try { body = !raw ? undefined : /json/.test(ct) ? JSON.parse(raw) : /x-www-form-urlencoded/.test(ct) ? formNested(raw) : JSON.parse(raw); } catch (e) { return J(400, { error: { message: "bad_body" } }); }
+  const query = {}; u.searchParams.forEach((v, k) => { if (k !== "token") query[k] = v; });
+  const path = p.slice("/fin-api/v1".length);
+  try {
+    const r = await sev(req.method, path, { query, body });
+    if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; console.log("fin-api", who, req.method, path.replace(/\d+/g, "{id}")); }
+    return J(200, r);
+  } catch (e) { return J(e.status && e.status < 600 ? e.status : 500, { error: { message: String(e.message || e).slice(0, 300) } }); }
+}
 async function sev(method, path, opts) {
   if (FIN_STATE.local) return FIN_LOCAL.request(method, path, opts || {});
   return sevRemote(method, path, opts);
@@ -2834,6 +2859,8 @@ const server = http.createServer((req, res) => {
     }
 
     // Admin-Bereich zuerst und isoliert — Rest der Website bleibt unberührt.
+    // sevDesk-kompatible Schnittstelle der eigenen Buchhaltung für Blitzdings und kochdu (Anmeldung mit deren bestehendem Cockpit-Token)
+    if (p.indexOf("/fin-api/v1/") === 0) return finApi(req, res, u, p);
     if (p === "/admin" || p.indexOf("/admin/") === 0) {
       res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");   // Admin nie in Suchmaschinen
       return void handleAdmin(req, res, u, p);
