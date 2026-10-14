@@ -75,7 +75,7 @@ module.exports = function (D) {
             } while (ck && n < 40);
             const imp = items.length ? await L.importBank(acc.id, items, hash) : { added: 0, dup: 0, paired: 0 };
             let bal = null;
-            try { const b = await api("GET", "/accounts/" + encodeURIComponent(a.uid) + "/balances"); const bl = b.balances || [], pick = ["CLBD", "ITBD", "XPCD", "OPBD", "CLAV", "ITAV"].map(k => bl.find(x => x.balance_type === k)).find(Boolean) || bl[0]; acc.ebankBalTypes = bl.map(x => x.balance_type + " " + (x.balance_amount || {}).amount).join(", "); if (pick) bal = r2(+(pick.balance_amount || {}).amount || 0); } catch (e) {}
+            try { const b = await api("GET", "/accounts/" + encodeURIComponent(a.uid) + "/balances"); const bl = (b.balances || []).filter(x => x.credit_limit_included !== true).concat((b.balances || []).filter(x => x.credit_limit_included === true)), pick = ["CLBD", "ITBD", "XPCD", "OPBD", "CLAV", "ITAV"].map(k => bl.find(x => x.balance_type === k)).find(Boolean) || bl[0]; acc.ebankBalTypes = bl.map(x => x.balance_type + " " + (x.balance_amount || {}).amount).join(", "); if (pick) bal = r2(+(pick.balance_amount || {}).amount || 0); } catch (e) {}
             const mine = () => L.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id));
             if (bal != null && acc.ebankOpening && !mine().some(x => x.importRef === "opening")) {
               const open = r2(bal - mine().reduce((s2, x) => s2 + (+x.amount || 0), 0));
@@ -91,11 +91,29 @@ module.exports = function (D) {
       STATE.last = { at: new Date().toISOString(), accounts: res, post }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
   }
+  // Kontrolle: Bankumsätze ab einem Datum mit dem Cockpit vergleichen (nichts wird angelegt) → fehlende / nur im Cockpit
+  async function check(from) {
+    await meta(); await L.load(); const out = [];
+    for (const s of (META.sessions || [])) for (const a of s.accounts) {
+      const acc = L.get("CheckAccount", a.accountId); if (!acc) continue;
+      const bank = []; let ck = null, n = 0;
+      do { const j = await api("GET", "/accounts/" + encodeURIComponent(a.uid) + "/transactions?date_from=" + from + (ck ? "&continuation_key=" + encodeURIComponent(ck) : ""));
+        for (const t of (j.transactions || [])) { if (t.status && t.status !== "BOOK") continue; const amt = r2((t.credit_debit_indicator === "DBIT" ? -1 : 1) * Math.abs(+(t.transaction_amount || {}).amount || 0)); const party = t.credit_debit_indicator === "DBIT" ? t.creditor : t.debtor;
+          bank.push({ date: day(t.booking_date || t.value_date), value: day(t.value_date), amount: amt, name: (party && party.name) || "", purpose: [].concat(t.remittance_information || []).join(" ").slice(0, 90) }); }
+        ck = j.continuation_key || null; n++; } while (ck && n < 60);
+      const mine = L.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id) && day(x.valueDate) >= day(new Date(Date.parse(from) - 5 * 864e5).toISOString())).map(x => ({ id: x.id, date: day(x.valueDate), amount: r2(+x.amount), name: x.payeePayerName, purpose: String(x.paymtPurpose || "").slice(0, 90), used: false }));
+      const near = (a1, b1) => Math.abs(Date.parse(a1) - Date.parse(b1)) <= 5 * 864e5;
+      const missing = [];
+      for (const b of bank) { const m = mine.find(x => !x.used && Math.abs(x.amount - b.amount) < 0.005 && (near(x.date, b.date) || near(x.date, b.value))); if (m) m.used = true; else missing.push(b); }
+      out.push({ account: acc.name, bankCount: bank.length, missing, onlyCockpit: mine.filter(x => !x.used && x.date >= from && x.importRef !== "opening").slice(0, 50), bankSum: r2(bank.reduce((q, x) => q + x.amount, 0)) });
+    }
+    return out;
+  }
   async function disconnect(bank) { await meta(); const s = (META.sessions || []).find(x => x.bank === bank); if (s) { try { await api("DELETE", "/sessions/" + encodeURIComponent(s.id)); } catch (e) {} } META.sessions = (META.sessions || []).filter(x => x.bank !== bank); await saveMeta(); return {}; }
   async function status() {
     const c = cfg(); await meta();
     return { configured: !!(c.app && c.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error,
       sessions: (META.sessions || []).map(s => ({ bank: s.bank, validUntil: s.validUntil, accounts: s.accounts.map(a => { const acc = L.get("CheckAccount", a.accountId) || {}; return { name: acc.name || a.name, iban: a.iban, balance: acc.ebankBalance, diff: acc.ebankDiff, at: acc.ebankAt }; }) })) };
   }
-  return { banks, start, finish, sync, disconnect, status };
+  return { banks, start, finish, sync, check, disconnect, status };
 };
