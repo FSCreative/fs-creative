@@ -42,6 +42,7 @@ var T=[
   ["Kontoauszug importieren","In George: Konto → Umsätze → Export (CAMT/XML, CSV oder JSON) und hier „Kontoauszug importieren“. Doppelte Umsätze werden erkannt und übersprungen."],
   ["Zuordnen","Jeder Umsatz gehört zu einer Rechnung (Geld rein) oder einem Beleg (Geld raus). „Nicht zugeordnet“ zeigt, was noch fehlt – mit Vorschlägen."],
   ["Privat","Private Ausgaben/Einlagen nicht als Beleg erfassen, sondern als „privat“ markieren."],
+  ["Regeln","Unter „Regeln“ legst du fest, was mit wiederkehrenden Umsätzen automatisch passiert: z. B. „Kontoführung“ → Beleg Bankspesen 0 %, „SVS“ → Beleg Sozialversicherung, Überweisung aufs Privatkonto → privat. Sie laufen nach jedem Kontoauszug-Import und Mollie-Abruf; die oberste passende Regel gewinnt."],
   ["Mollie","Mollie ist ein eigenes Zahlungskonto: jede Kundenzahlung kommt mit dem vollen Betrag herein (→ der Rechnung zuordnen), die Mollie-Gebühr als eigene Ausgabe, kochdu-Provisionen (Connect) als Einnahme. Die Auszahlung aufs Bankkonto wird automatisch mit dem George-Umsatz als „Geldtransit“ verknüpft – sie ist kein Umsatz. Deshalb passt es, auch wenn wegen der Gebühren weniger ausbezahlt wird."]]},
  {id:"open",t:"Nicht zugeordnete Umsätze",s:"Was noch fehlt",b:[["Warum wichtig?","Erst zugeordnete Umsätze gelten als bezahlt – das braucht die E/A-Rechnung (Einnahmen/Ausgaben nach Zahlungsdatum)."]]},
  {id:"kasse",t:"Kassenbuch",s:"Bargeld richtig aufzeichnen",b:[
