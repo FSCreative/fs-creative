@@ -96,6 +96,7 @@ function leadPost(body){ return F.api("/admin/api/leads",{body:body}).then(funct
 function openLead(id){
   var l=F.D.leads.find(function(x){return x.id===id;}); if(!l) return; F.UI.leadSel=id;
   var st=l.stage||"anfrage", mails=leadMails(l), invs=leadInvoices(l), offs=leadOffers(l);
+  if(mob()){ F.openDrawer(leadSheet(l,st,mails,invs,offs),function(){ if(F.UI.leadSel) openLead(F.UI.leadSel); }); return; }
   F.openDrawer('<div class="row-between" style="align-items:flex-start"><div style="min-width:0"><div class="sec-t">Kundenakte</div><h2>'+esc(l.company||l.name)+'</h2><div class="muted">'+esc(l.topic||"")+' · seit '+de(l.created)+'</div></div><button class="btn icon" data-close aria-label="Schließen">'+F.svg("close")+'</button></div>'+
     '<div><div class="sec-t">Phase</div><div class="stages">'+STAGES.map(function(s){ return '<button data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div><div style="margin-top:6px"><button class="link" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></div></div>'+
     '<div class="row wrap"><button class="btn primary" data-act="replylead:'+esc(l.id)+'"'+(l.email?'':' disabled')+'>Mail schreiben</button><button class="btn" data-act="leadoffer:'+esc(l.id)+'">Angebot erstellen</button><button class="btn" data-act="leadinvoice:'+esc(l.id)+'">Rechnung erstellen</button>'+(l.phone?'<a class="btn" href="tel:'+esc(l.phone.replace(/\s+/g,""))+'">Anrufen</a>':'')+'<button class="btn" data-act="leadtodo:'+esc(l.id)+'">Als To-Do</button></div>'+
@@ -122,10 +123,134 @@ F.action("newlead",function(){
 F.form("newlead",function(f){ leadPost({op:"create",name:f.name.value,company:f.company.value,email:f.email.value,phone:f.phone.value,topic:f.topic.value,message:f.message.value}).then(function(j){ if(j){ F.closeModal(); F.toast("Lead angelegt"); F.go("kunden"); } }); });
 F.searcher(function(q){ return F.D.leads.filter(function(l){ return (l.name+" "+(l.company||"")+" "+(l.email||"")+" "+(l.topic||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(l){ return {group:"Kunden & Leads",label:l.company||l.name,sub:(l.topic||"")+" · "+((STAGES.find(function(s){return s[0]===(l.stage||"anfrage");})||[0,"verloren"])[1]),act:"lead:"+l.id}; }); });
 
+/* ---------- Handy (≤ 900 px): Phasen-Chips + Lead-Karten, Kundenakte als Vollbild-Blatt ---------- */
+function mob(){ return window.innerWidth<=900; }
+function mxIc(k){ return F.mxIc?F.mxIc(k):""; }
+var MSTAGES=STAGES.concat([["verloren","Verloren"]]);
+var NEXT={anfrage:"Anfrage beantworten",entwurf:"Gratis-Entwurf erstellen",angebot:"Angebot schicken / nachfassen",auftrag:"Projekt umsetzen, Rechnung stellen",live:"Betreuung & Wartung",verloren:"—"};
+function stageName(k){ return (MSTAGES.find(function(s){ return s[0]===k; })||[0,k])[1]; }
+/* nächster Schritt: letzte Zeile der Notizen, sonst offenes Angebot, sonst Hinweis je Phase */
+function nextStep(l){
+  var n=String(l.notes||"").split("\n").map(function(x){ return x.trim(); }).filter(Boolean), st=l.stage||"anfrage";
+  if(n.length) return n[n.length-1];
+  var lo=leadOffers(l).filter(offOpen)[0]; if(lo) return (lo.nr||"Angebot")+" "+(lo.overdue?"abgelaufen – nachfassen":"offen – nachfassen");
+  if(st==="anfrage"&&l.entwurf) return "Möchte einen Gratis-Entwurf";
+  return NEXT[st]||"";
+}
+function leadCard(l,showStage){
+  var st=l.stage||"anfrage", sub=[l.company&&l.name!==l.company?l.name:"",l.topic||""].filter(Boolean).join(" · "), ns=nextStep(l);
+  return '<button type="button" class="mx-lead st-'+esc(st)+'" data-act="lead:'+esc(l.id)+'"><span class="mx-lt"><b>'+esc(l.company||l.name||"—")+'</b>'+(val(l)?'<span class="num money">'+eur0(l.value)+'</span>':'')+'</span>'+
+    '<span class="mx-ls">'+(showStage?'<em class="mx-st">'+esc(stageName(st))+'</em>':'')+'<span>'+esc(sub||"—")+'</span></span>'+
+    '<span class="mx-ln"><span>'+(ns&&ns!=="—"?'<i>Nächster Schritt:</i> '+esc(ns):'')+'</span><small>'+esc(F.ago(l.updated||l.created))+'</small></span>'+mxIc("chev")+'</button>';
+}
+function mOffers(){
+  var f=F.UI.offF||"open", all=OFF.list||[];
+  var flt={open:offOpen,acc:function(o){ return o.status>=500; },rej:function(o){ return o.status===300; },all:function(){ return true; }};
+  var list=all.filter(flt[f]||flt.open), openL=all.filter(offOpen);
+  var chip=function(k,lb){ return '<button type="button" class="mx-seg" data-act="offf:'+k+'" aria-pressed="'+(f===k)+'">'+lb+' <b>'+all.filter(flt[k]).length+'</b></button>'; };
+  var row=function(o){ var l=offerLead(o), canInv=o.status===200||o.status===500||o.status===750, btn=function(act,lb,cls){ return '<button type="button" class="btn'+(cls?" "+cls:"")+'" data-act="'+act+'">'+lb+'</button>'; };
+    var desc=o.header&&!/^angebot( |$)/i.test(o.header)?o.header:(o.lines||[]).map(function(x){return x.name;}).slice(0,3).join(", ");
+    return '<div class="mx-off"><div class="mx-ot"><span class="mx-l"><b>'+esc(o.contact||"—")+'</b><span>'+esc((o.nr||"Entwurf")+" · "+deShort(o.date)+(o.validUntil?" · gültig bis "+(o.validEst?"~":"")+de(o.validUntil):"")+(desc?" · "+desc:""))+'</span></span><span class="mx-or"><b class="num money">'+eur(o.gross)+'</b>'+offTag(o)+'</span></div>'+
+      '<div class="mx-oa">'+(canInv?btn("offinv:"+esc(o.id),"In Rechnung","primary"):'')+btn("offpdf:"+esc(o.id),"PDF")+(o.status<750?btn("offstat:"+esc(o.id),"Status"):'')+(canInv?btn("offar:"+esc(o.id),"Abschlag"):'')+(o.status===750?btn("offer:"+esc(o.id),"Schlussrechnung"):'')+(l?btn("lead:"+esc(l.id),"Kundenakte"):'')+'</div></div>'; };
+  var body=OFF.list==null?'<p class="mx-empty">'+(OFF.err?'Angebote konnten nicht geladen werden: '+esc(OFF.err)+' <button type="button" class="btn" data-act="offreload">Erneut versuchen</button>':'Lade Angebote …')+'</p>':
+    (list.map(row).join("")||'<p class="mx-empty">Keine Angebote in dieser Ansicht.</p>');
+  return '<section class="mx-card flush" id="offers"><div class="mx-h"><h3>Angebote</h3><span class="mx-sum num money">'+(openL.length?openL.length+' offen · '+eur0(openL.reduce(function(s,o){return s+o.gross;},0)):'')+'</span></div>'+
+    '<div class="mx-segs">'+chip("open","Offen")+chip("acc","Angenommen")+chip("rej","Abgelehnt")+chip("all","Alle")+'</div>'+body+
+    '<button type="button" class="mx-more" data-act="newoffer">+ Neues Angebot</button></section>';
+}
+function mobileKunden(){
+  var D=F.D, f=F.UI.leadF||"aktiv";
+  var inF=function(k){ return function(l){ var st=l.stage||"anfrage"; return k==="aktiv"?st!=="verloren":st===k; }; };
+  var segs=[["aktiv","Alle aktiven"]].concat(MSTAGES).map(function(s){ var ls=D.leads.filter(inF(s[0])); return '<button type="button" class="mx-seg" data-act="leadf:'+s[0]+'" aria-pressed="'+(f===s[0])+'">'+esc(s[1])+' <b>'+ls.length+'</b></button>'; }).join("");
+  var list=D.leads.filter(inF(f)).slice().sort(function(a,b){ return String(b.updated||b.created||"").localeCompare(String(a.updated||a.created||"")); });
+  var sum=list.reduce(function(a,l){ return a+val(l); },0);
+  var bySrc={}; D.leads.forEach(function(l){ var k=l.source||"unbekannt"; bySrc[k]=(bySrc[k]||0)+1; });
+  var rows=Object.keys(bySrc).sort(function(a,b){return bySrc[b]-bySrc[a];}).slice(0,8), mx=rows.length?bySrc[rows[0]]:1;
+  return F.head("Kunden & Leads",D.leads.length+" Leads",'<button class="btn" data-act="newoffer">Neues Angebot</button><button class="btn primary" data-act="newlead">Neuer Lead</button>')+
+    '<div class="mx">'+
+    '<div class="mx-segs mx-sticky" role="toolbar" aria-label="Phase">'+segs+'</div>'+
+    (D.leads.length?'<section class="mx-card flush"><div class="mx-h"><h3>'+esc(f==="aktiv"?"Aktive Leads":stageName(f))+'</h3><span class="mx-sum num money">'+list.length+(sum?' · '+eur0(sum):'')+'</span></div>'+
+      (list.map(function(l){ return leadCard(l,f==="aktiv"); }).join("")||'<p class="mx-empty">Keine Leads in „'+esc(stageName(f))+'“.</p>')+'</section>'
+      :'<section class="mx-card"><p class="mx-empty">Noch keine Anfragen. Sobald jemand das Formular auf fs-creative.at/kontakt ausfüllt, erscheint er hier.</p></section>')+
+    (D.sevConfigured===false?'':mOffers())+
+    (rows.length?'<section class="mx-card"><div class="mx-h"><h3>Woher kommen die Anfragen?</h3></div><div class="bars">'+rows.map(function(k){ return '<div><div class="row-between small"><span>'+esc(k)+'</span><span class="num">'+bySrc[k]+'</span></div><div class="bar"><i style="width:'+(bySrc[k]/mx*100)+'%"></i></div></div>'; }).join("")+'</div></section>':'')+
+    '</div>';
+}
+F.action("leadf",function(k){ F.UI.leadF=k; F._forceRender=true; F.render(); window.scrollTo(0,0); });
+/* Kundenakte am Handy: Kopf mit Zurück, große Aktionen, Abschnitte untereinander */
+function leadSheet(l,st,mails,invs,offs){
+  var tel=l.phone?String(l.phone).replace(/[^\d+]/g,""):"";
+  return '<div class="lm">'+
+    '<div class="lm-h"><button type="button" class="lm-back" data-close aria-label="Zurück">'+mxIc("back")+'</button><div class="lm-ht"><b>'+esc(l.company||l.name)+'</b><span>'+esc([l.company&&l.name!==l.company?l.name:"",l.topic||"","seit "+de(l.created)].filter(Boolean).join(" · "))+'</span></div></div>'+
+    '<div class="lm-acts">'+
+      (tel?'<a class="lm-a" href="tel:'+esc(tel)+'">'+mxIc("phone")+'<span>Anrufen</span></a>':'<button type="button" class="lm-a" disabled>'+mxIc("phone")+'<span>Anrufen</span></button>')+
+      '<button type="button" class="lm-a pri" data-act="replylead:'+esc(l.id)+'"'+(l.email?'':' disabled')+'>'+mxIc("mail")+'<span>Mail</span></button>'+
+      '<button type="button" class="lm-a" data-act="leadoffer:'+esc(l.id)+'">'+mxIc("offer")+'<span>Angebot</span></button>'+
+      '<button type="button" class="lm-a" data-act="leadinvoice:'+esc(l.id)+'">'+mxIc("inv")+'<span>Rechnung</span></button></div>'+
+    '<section class="mx-card"><div class="mx-h"><h3>Phase</h3><button type="button" class="mx-link" data-act="leadtodo:'+esc(l.id)+'">Als To-Do</button></div><div class="lm-stages">'+STAGES.map(function(s){ return '<button type="button" data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div>'+
+      '<button type="button" class="lm-lost" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></section>'+
+    '<section class="mx-card flush"><div class="mx-h"><h3>Kontakt</h3></div>'+
+      (l.email?'<a class="mx-row" href="mailto:'+esc(l.email)+'"><span class="mx-l"><span>E-Mail</span><b>'+esc(l.email)+'</b></span><span class="mx-r">'+mxIc("chev")+'</span></a>':'')+
+      (tel?'<a class="mx-row" href="tel:'+esc(tel)+'"><span class="mx-l"><span>Telefon</span><b>'+esc(l.phone)+'</b></span><span class="mx-r">'+mxIc("chev")+'</span></a>':'')+
+      '<div class="mx-row lm-kv"><span class="mx-l"><span>Gekommen über</span><b>'+esc(l.source||"—")+'</b></span><span class="mx-r"><small>Gratis-Entwurf: '+(l.entwurf?"ja":"nein")+'</small></span></div></section>'+
+    (F.kiLeadHtml?'<div class="lm-ki">'+F.kiLeadHtml(l)+'</div>':'')+
+    (l.message?'<section class="mx-card"><div class="mx-h"><h3>Nachricht aus dem Formular</h3></div><div class="mbody quote">'+esc(l.message)+'</div></section>':'')+
+    '<section class="mx-card flush"><div class="mx-h"><h3>Mails</h3><span class="mx-sum">'+(mails.length||"")+'</span></div>'+(mails.length?mails.map(function(m){ return '<button type="button" class="mx-row" data-act="mail:'+esc(m.id)+'"><span class="mx-l"><b>'+esc(m.subject||"(kein Betreff)")+'</b><span>'+deShort(String(m.date).slice(0,10))+'</span></span><span class="mx-r">'+mxIc("chev")+'</span></button>'; }).join(""):'<p class="mx-empty">Keine Mails mit '+esc(l.email||"dieser Adresse")+' im Postfach.</p>')+'</section>'+
+    '<section class="mx-card flush"><div class="mx-h"><h3>Angebote</h3></div>'+(offs.length?offs.slice(0,8).map(function(o){ return '<a class="mx-row" href="/admin/api/sevdesk/offer-pdf?id='+encodeURIComponent(o.id)+'" target="_blank" rel="noopener"><span class="mx-l"><b>'+esc(o.nr||"Angebot")+'</b><span>'+de(o.date)+'</span></span><span class="mx-r lm-amt"><b class="num money">'+eur(o.gross)+'</b>'+offTag(o)+'</span></a>'; }).join(""):'<p class="mx-empty">'+(OFF.list==null?(OFF.err?"Angebote nicht geladen.":"Lade …"):"Noch keine.")+'</p>')+'</section>'+
+    '<section class="mx-card flush"><div class="mx-h"><h3>Rechnungen</h3></div>'+(invs.length?invs.map(function(i){ var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":i.status===750?"teilbezahlt":"offen";
+      return '<a class="mx-row" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener"><span class="mx-l"><b>'+esc(i.nr||"Entwurf")+'</b><span>'+de(i.date)+'</span></span><span class="mx-r lm-amt"><b class="num money">'+eur(i.gross)+'</b><span class="tag '+cls+'">'+lbl+'</span></span></a>'; }).join(""):'<p class="mx-empty">Noch keine.</p>')+'</section>'+
+    '<section class="mx-card"><div class="mx-h"><h3>Daten &amp; Notizen</h3></div><form data-form="leadedit" class="stackf lm-form"><label class="fl">Name<input class="f" name="name" value="'+esc(l.name||"")+'"></label><label class="fl">Firma / Verein<input class="f" name="company" value="'+esc(l.company||"")+'"></label><label class="fl">E-Mail<input class="f" name="email" type="email" value="'+esc(l.email||"")+'"></label><label class="fl">Telefon<input class="f" name="phone" type="tel" value="'+esc(l.phone||"")+'"></label><label class="fl">Thema<input class="f" name="topic" value="'+esc(l.topic||"")+'"></label><label class="fl">Projektwert (€)<input class="f num" name="value" type="number" inputmode="decimal" min="0" step="50" value="'+(l.value||"")+'"></label>'+
+      '<label class="fl">Notizen<textarea class="f" name="notes" rows="4" placeholder="Was wurde besprochen, was ist der nächste Schritt?">'+esc(l.notes||"")+'</textarea></label><button class="btn primary lm-save" type="submit">Speichern</button></form></section>'+
+    ((l.history||[]).length?'<section class="mx-card"><div class="mx-h"><h3>Verlauf</h3></div><ol class="lm-hist">'+l.history.slice().reverse().map(function(h){ return '<li><span>'+de(h.at)+'</span><b>'+esc(stageName(h.stage))+'</b></li>'; }).join("")+'</ol></section>':'')+
+  '</div>';
+}
+F.css(
+"@media (max-width:900px){"+
+  ".mx-segs{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1*clamp(16px,4vw,44px));padding:2px clamp(16px,4vw,44px) 4px}.mx-segs::-webkit-scrollbar{display:none}"+
+  ".mx-card .mx-segs{margin:0;padding:4px 16px 12px}"+
+  ".mx-seg{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:0 14px;font-size:14px;font-weight:600;color:var(--ink-2)}"+
+  ".mx-seg b{font:600 12.5px var(--f-mono);color:var(--ink-3)}"+
+  ".mx-seg[aria-pressed=\"true\"]{background:var(--ink);border-color:var(--ink);color:var(--ground)}.mx-seg[aria-pressed=\"true\"] b{color:inherit;opacity:.75}"+
+  ".mx-sticky{position:sticky;top:calc(64px + env(safe-area-inset-top,0px));z-index:6;background:var(--ground);padding-top:6px;padding-bottom:8px}"+
+  ".mx-sum{font-size:13px;color:var(--ink-3);white-space:nowrap}"+
+  ".mx-lead{position:relative;display:grid;gap:3px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;padding:12px 40px 12px 16px;min-height:76px;color:var(--ink);font:inherit;cursor:pointer}"+
+  ".mx-lead:active{background:var(--sunk)}.mx-lead>svg{position:absolute;right:12px;top:50%;width:18px;height:18px;transform:translateY(-50%);color:var(--ink-3)}"+
+  ".mx-lead.st-anfrage{box-shadow:inset 3px 0 0 var(--glow)}"+
+  ".mx-lt{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-width:0}.mx-lt b{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mx-lt .num{font-weight:600;font-size:15px;white-space:nowrap;flex:none}"+
+  ".mx-ls{display:flex;gap:8px;align-items:center;min-width:0;font-size:13px;color:var(--ink-2)}.mx-ls>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
+  ".mx-st{flex:none;font-style:normal;font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:var(--sunk);color:var(--ink-2)}.st-anfrage .mx-st{background:var(--glow-soft);color:var(--glow-ink)}.st-auftrag .mx-st,.st-live .mx-st{background:var(--ok-soft);color:var(--ok)}"+
+  ".mx-ln{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;min-width:0;font-size:13px;color:var(--ink-3)}.mx-ln>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-width:0;line-height:1.35}.mx-ln i{font-style:normal;color:var(--ink-2);font-weight:600}.mx-ln small{flex:none;font-size:12px}"+
+  /* Angebote */
+  ".mx-off{border-top:1px solid var(--line);padding:12px 16px}"+
+  ".mx-ot{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.mx-ot .mx-l>span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}"+
+  ".mx-or{display:grid;justify-items:end;gap:4px;flex:none}.mx-or b{font-weight:600;font-size:15px;white-space:nowrap}"+
+  ".mx-oa{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:10px -16px 0;padding:0 16px}.mx-oa::-webkit-scrollbar{display:none}.mx-oa .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}"+
+  /* Kundenakte als Vollbild-Blatt */
+  ".drawer:has(.lm){background:var(--ground);padding:0 0 calc(28px + env(safe-area-inset-bottom,0px));gap:0}"+
+  ".lm{display:grid;gap:12px;padding:0 12px;min-width:0}"+
+  ".lm-h{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;margin:0 -12px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}"+
+  ".lm-back{width:44px;height:44px;flex:none;border-radius:50%;border:0;background:var(--sunk);display:grid;place-items:center;color:var(--ink)}.lm-back svg{width:22px;height:22px}"+
+  ".lm-ht{display:grid;min-width:0}.lm-ht b{font-size:19px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-display)}.lm-ht span{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
+  ".lm-acts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}"+
+  ".lm-a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:70px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 75%,transparent);background:var(--panel);color:var(--ink);font-size:13px;font-weight:600;text-decoration:none;font-family:inherit;padding:6px 2px}"+
+  ".lm-a svg{width:22px;height:22px}.lm-a.pri{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}.lm-a[disabled]{opacity:.4}.lm-a:active{transform:scale(.97)}"+
+  ".lm-stages{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}"+
+  ".lm-stages button{min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--sunk);font-size:12.5px;font-weight:600;color:var(--ink-2);padding:0 2px;overflow:hidden;text-overflow:ellipsis}"+
+  ".lm-stages button.on{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}"+
+  ".lm-lost{border:0;background:none;color:var(--ink-3);font-size:14px;font-weight:600;padding:12px 0 0;min-height:40px}"+
+  ".lm a.mx-row{text-decoration:none}.lm-kv{cursor:default}.lm-amt{display:grid;justify-items:end;gap:3px}.lm-amt b{font-weight:600;font-size:15px;color:var(--ink)}"+
+  ".lm .mbody.quote{font-size:14px;max-height:220px;overflow:auto}"+
+  ".lm-ki .kibox{border-radius:14px}"+
+  ".lm-form input.f,.lm-form textarea.f{font-size:16px;min-height:46px;border-radius:12px}.lm-form label.fl{font-size:13px}"+
+  ".lm-save{justify-content:center;min-height:50px;font-size:16px;border-radius:12px}"+
+  ".mx .tag,.lm .tag{font-size:12px}"+
+  ".lm-hist{list-style:none;margin:0;padding:0}.lm-hist li{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.lm-hist li:first-child{border-top:0}.lm-hist span{color:var(--ink-3);font-size:13px}.lm-hist b{font-weight:500}"+
+"}");
 F.view({id:"kunden",label:"Kunden & Leads",short:"Kunden",icon:"kunden",order:20,mobile:true,
   count:function(){ return F.newLeads().length; },
   after:function(){ if(F.D.sevConfigured!==false&&!OFF.busy&&(!OFF.at||Date.now()-OFF.at>120000)) F.offersLoad(false); },
   render:function(){
+    if(mob()) return mobileKunden();
     var D=F.D;
     var cols=STAGES.map(function(s){
       var ls=D.leads.filter(function(l){ return (l.stage||"anfrage")===s[0]; });

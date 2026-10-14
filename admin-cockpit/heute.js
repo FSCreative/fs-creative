@@ -41,8 +41,9 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
   render:function(){
     var D=F.D, f=F.feedItems(), today=D.today, h=new Date().getHours(), UI=F.UI;
     var greet=h<11?"Guten Morgen":h<17?"Hallo":"Guten Abend";
+    if(window.innerWidth<=900) return mobileHeute();
     var shown=UI.feedAll?f:f.slice(0,12);
-    var items=shown.map(function(x){ return '<li class="item"><span class="sev '+x.sev+'"></span><span class="ico">'+F.svg(x.icon)+'</span><div style="min-width:0"><div class="t"><span class="tag '+x.tag[0]+'">'+esc(x.tag[1])+'</span>'+esc(x.t)+'</div><div class="d">'+esc(x.d)+'</div></div><div class="acts">'+x.acts.map(function(a){ return '<button class="btn '+(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+'<button class="btn icon" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">✕</button></div></li>'; }).join("");
+    var items=shown.map(feedItemHtml).join("");
     var ab=D.abgleich.totals, sev=D.sev, cust=(D.sites||[]).filter(function(s){return !s.own&&s.active;}), bad=cust.filter(F.siteBad);
     /* alle Kalender (Dashboard, Mail-Kalender, alle iCloud-Kalender) + Fotobox-Buchungen; heute + die nächsten Termine */
     var bz=((D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[]).map(function(b){ var d=String(b.eventDate||"").slice(0,10); return {id:"bz_"+b.id,title:"Fotobox: "+(b.customerName||"Buchung")+(b.package?" · "+b.package:""),date:d,time:String(b.eventDate||"").slice(11,16).replace(/^00:00$/,""),location:b.location||"",cal:"Blitzdings"}; });
@@ -77,6 +78,72 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     '</div>';
   }
 });
+function feedItemHtml(x){ return '<li class="item"><span class="sev '+x.sev+'"></span><span class="ico">'+F.svg(x.icon)+'</span><div style="min-width:0"><div class="t"><span class="tag '+x.tag[0]+'">'+esc(x.tag[1])+'</span>'+esc(x.t)+'</div><div class="d">'+esc(x.d)+'</div></div><div class="acts">'+x.acts.map(function(a){ return '<button class="btn '+(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+'<button class="btn icon" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">✕</button></div></li>'; }
+
+/* ---------- Handy (≤ 900 px): eine Spalte im Stil der Finanzen-Ansicht ---------- */
+var MXI={
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="m4 7.5 8 5.6 8-5.6"/>',
+  cal:'<rect x="3.5" y="5" width="17" height="15" rx="2.4"/><path d="M8 3v4M16 3v4M3.5 10h17M12 13v4M10 15h4"/>',
+  inv:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  chev:'<path d="m9 6 6 6-6 6"/>',
+  phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  offer:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/>',
+  todo:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  back:'<path d="m15 6-6 6 6 6"/>'
+};
+F.mxIc=function(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(MXI[k]||"")+'</svg>'; };
+var mxIc=F.mxIc;
+function mobileHeute(){
+  var D=F.D, f=F.feedItems(), today=D.today, h=new Date().getHours(), UI=F.UI;
+  var greet=h<11?"Guten Morgen":h<17?"Hallo":"Guten Abend";
+  var dateLine=new Date().toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"});
+  var ab=D.abgleich.totals, sev=D.sev, cust=(D.sites||[]).filter(function(s){return !s.own&&s.active;}), bad=cust.filter(F.siteBad), nl=F.newLeads().length;
+  /* Kennzahlen als wischbare Chips */
+  var chip=function(go,label,val,sub,cls,money){ return '<button type="button" class="mx-chip'+(cls?" "+cls:"")+'" data-go="'+go+'"><span>'+esc(label)+'</span><b class="num'+(money?" money":"")+'">'+val+'</b><i>'+sub+'</i></button>'; };
+  var chips='<div class="mx-chips" aria-label="Kennzahlen">'+
+    chip("kunden","Neue Anfragen",String(nl),esc(D.leads.length+" Leads gesamt"),nl?"glow":"")+
+    chip("geld","Offene Forderungen",sev?eur0(sev.openSum):"—",sev?(sev.overdueCount?'<em class="bad-t">'+esc(eur0(sev.overdueSum))+' überfällig</em>':"nichts überfällig"):"lädt …",sev&&sev.overdueCount?"bad":"",true)+
+    chip("geld","Zu verrechnen",eur0(ab.unbilled),esc(ab.unbilledCount+" Posten"),ab.unbilled>0.005?"warn":"",true)+
+    chip("web","Websites",(cust.length-bad.length)+"/"+cust.length,bad.length?'<em class="bad-t">'+bad.length+' mit Problem</em>':"alle erreichbar",bad.length?"bad":"")+'</div>';
+  /* Schnellaktionen */
+  var quick='<div class="mx-quick">'+
+    '<button type="button" class="mx-q" data-act="compose">'+mxIc("mail")+'<span>Neue Mail</span></button>'+
+    '<button type="button" class="mx-q" data-act="newevent:">'+mxIc("cal")+'<span>Termin</span></button>'+
+    '<button type="button" class="mx-q" data-act="newinvoice">'+mxIc("inv")+'<span>Rechnung</span></button>'+
+    '<label class="mx-q mx-q1">'+mxIc("cam")+'<span>Beleg scannen</span><input type="file" class="fsd-scan" accept="image/*,application/pdf" capture="environment" multiple hidden></label></div>';
+  /* Zu erledigen: Top 5, Rest auf Wunsch */
+  var shown=UI.feedAll?f:f.slice(0,5);
+  var todo='<section class="mx-card flush mx-feed"><div class="mx-h"><h3>Zu erledigen</h3>'+(f.length?'<span class="mx-badge">'+f.length+'</span>':'')+'</div>'+
+    (f.length?'<ul class="feed">'+shown.map(feedItemHtml).join("")+'</ul>'+(f.length>5?'<button type="button" class="mx-more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':''):'<p class="mx-empty">Nichts offen. 🎉</p>')+'</section>';
+  /* Mein Tag: heute + morgen */
+  var t1=new Date(today+"T12:00:00"); t1.setDate(t1.getDate()+1); var tomorrow=F.ymd(t1);
+  var bz=((D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[]).map(function(b){ var d=String(b.eventDate||"").slice(0,10); return {title:"Fotobox: "+(b.customerName||"Buchung")+(b.package?" · "+b.package:""),date:d,time:String(b.eventDate||"").slice(11,16).replace(/^00:00$/,""),location:b.location||"",cal:"Blitzdings"}; });
+  var evs=D.events.concat(bz).filter(function(e){ return e.date===today||e.date===tomorrow; }).sort(function(a,b){ return (a.date+(a.time||"")).localeCompare(b.date+(b.time||"")); });
+  var day=function(d,lbl){ var l=evs.filter(function(e){ return e.date===d; }); return '<div class="mx-day"><div class="mx-dh'+(d===today?" today":"")+'">'+lbl+'</div>'+(l.length?l.map(function(e){ return '<div class="mx-ev"><span class="num">'+esc(e.time||"ganztags")+'</span><i></i><div><b>'+esc(e.title)+'</b>'+((e.location||e.cal)?'<small>'+esc([e.location||"",e.cal||""].filter(Boolean).join(" · "))+'</small>':'')+'</div></div>'; }).join(""):'<div class="mx-none">Keine Termine</div>')+'</div>'; };
+  var agenda='<section class="mx-card"><div class="mx-h"><h3>Mein Tag</h3><button type="button" class="mx-link" data-go="kal">Kalender'+mxIc("chev")+'</button></div>'+day(today,"Heute")+day(tomorrow,"Morgen")+'</section>';
+  /* To-Dos */
+  var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
+  var todos='<section class="mx-card flush mx-todos"><div class="mx-h"><h3>To-Dos</h3><button type="button" class="mx-link" data-go="kal">Alle'+mxIc("chev")+'</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>';
+  /* Neueste Mails (3) */
+  var mails=((D.mail&&D.mail.messages)||[]).filter(function(m){ return F.isInbox(m)&&!m.deleted; }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,3), unread=F.unreadMails().length;
+  var mailC='<section class="mx-card flush"><div class="mx-h"><h3>Neueste Mails'+(unread?' <span class="tag info">'+unread+' ungelesen</span>':'')+'</h3><button type="button" class="mx-link" data-go="post">Postfach'+mxIc("chev")+'</button></div>'+
+    (mails.length?mails.map(function(m){ return '<button type="button" class="mx-row'+(m.read?"":" unread")+'" data-act="mail:'+esc(m.id)+'"><span class="mx-l"><b>'+esc(m.fromName||m.from||"")+'</b><span>'+esc(m.subject||"(kein Betreff)")+'</span></span><span class="mx-r"><small>'+esc(F.M&&F.M.fmtMailDate?F.M.fmtMailDate(m.date):F.ago(m.date))+'</small>'+mxIc("chev")+'</span></button>'; }).join(""):'<p class="mx-empty">Keine Mails.</p>')+'</section>';
+  /* Monatseinkommen: zugeklappt, Antippen klappt auf */
+  var inc=D.income, incC="";
+  if(inc&&inc.lines&&inc.lines.length){
+    var open=!!UI.incOpen;
+    incC='<section class="mx-card flush mx-inc"><button type="button" class="mx-row" data-act="hmincome" aria-expanded="'+open+'"><span class="mx-l"><span>Geschätztes Monatseinkommen</span><b class="num money">'+eur0(inc.total)+' <small>/ Monat</small></b></span><span class="mx-r'+(open?" up":"")+'">'+mxIc("chev")+'</span></button>'+
+      (open?'<div class="mx-incb">'+inc.lines.map(function(l){ return '<div class="mx-il"><span>'+esc(l.label)+'<small>'+esc(l.basis)+(l.live&&l.key==="kochdu"?' · live':'')+'</small></span><b class="num money">'+eur0(l.monthly)+'</b></div>'; }).join("")+'<button type="button" class="mx-more" data-act="incomeinfo">Wie gerechnet?</button></div>':'')+'</section>';
+  }
+  return F.head(greet+", Simon.",esc(dateLine)+(f.length?" · "+f.length+(f.length===1?" Sache offen":" Sachen offen"):" · alles erledigt"),"")+
+    '<div class="mx">'+quick+chips+todo+agenda+todos+mailC+incC+'</div>';
+}
+F.action("hmincome",function(){ F.UI.incOpen=!F.UI.incOpen; F._forceRender=true; F.render(); });
+/* Beim Drehen/Größenändern zwischen Handy- und Desktop-Darstellung wechseln */
+var wasMx=window.innerWidth<=900;
+window.addEventListener("resize",function(){ var m=window.innerWidth<=900; if(m!==wasMx){ wasMx=m; if(F.D&&(F.current==="heute"||F.current==="kunden")){ F._forceRender=true; F.render(); } } });
+
 /* Neueste Mails (Posteingang aller Konten), ungelesene fett; Klick öffnet die Mail im Postfach */
 function mailPanel(){
   var all=((F.D.mail&&F.D.mail.messages)||[]).filter(function(m){ return F.isInbox(m)&&!m.deleted; }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,6);
@@ -140,5 +207,58 @@ F.css(
   ".view-heute .feed .item:hover{background:var(--sunk)}"+
 "}"+
 "ul.plain{margin:0;padding-left:18px;display:grid;gap:8px} .income .v{font-size:28px} .mbars{display:flex;gap:6px;align-items:flex-end;margin:-2px 0 6px;min-height:44px}.mbars .mb{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--ink-3)}.mbars .mb i{display:block;width:16px;border-radius:3px 3px 0 0;background:var(--glow-soft)}.mbars .mb em{font-style:normal}");
+/* Handy-Darstellung „Heute“ (gemeinsame .mx-Bausteine, auch von „Kunden“ genutzt) */
+F.css(
+"@media (max-width:900px){"+
+  ".mx{display:grid;gap:12px;min-width:0}"+
+  ".mx-card{background:var(--panel);border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 75%,transparent);padding:12px 16px 14px;min-width:0}"+
+  ".mx-card.flush{padding:0;overflow:hidden}"+
+  ".mx-h{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px}.mx-card.flush .mx-h{padding:4px 16px 0}"+
+  ".mx-h h3{font-size:16px;font-weight:650;margin:0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}.mx-h h3 .tag{font-size:12px}"+
+  ".mx-badge{min-width:24px;height:24px;border-radius:99px;background:var(--glow);color:var(--on-glow);font:700 12.5px/24px var(--f-mono);text-align:center;padding:0 7px}"+
+  ".mx-link{display:inline-flex;align-items:center;gap:2px;border:0;background:none;color:var(--glow);font-size:14px;font-weight:600;padding:10px 0 10px 10px;min-height:44px}.mx-link svg{width:16px;height:16px}"+
+  ".mx-more{display:block;width:100%;border:0;border-top:1px solid var(--line);background:none;color:var(--glow);font-weight:600;font-size:15px;min-height:50px}"+
+  ".mx-empty{color:var(--ink-3);text-align:center;padding:18px 16px;margin:0;font-size:14px}"+
+  /* Schnellaktionen */
+  ".mx-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}"+
+  ".mx-q{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:70px;padding:8px 4px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 75%,transparent);background:var(--panel);color:var(--ink);font-size:12.5px;font-weight:600;line-height:1.15;text-align:center;cursor:pointer}"+
+  ".mx-q svg{width:22px;height:22px;flex:none}.mx-q:active{transform:scale(.97)}"+
+  ".mx-q1{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}"+
+  /* Kennzahlen-Chips */
+  ".mx-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 calc(-1*clamp(16px,4vw,44px));padding:0 clamp(16px,4vw,44px) 2px;scroll-padding:0 16px}.mx-chips::-webkit-scrollbar{display:none}"+
+  ".mx-chip{flex:none;display:grid;gap:1px;min-width:142px;text-align:left;background:var(--panel);border:1px solid color-mix(in srgb,var(--line) 75%,transparent);border-radius:14px;padding:10px 14px;color:var(--ink);font:inherit;cursor:pointer}"+
+  ".mx-chip>span{font-size:12.5px;color:var(--ink-3);white-space:nowrap}.mx-chip>b{font-size:20px;font-weight:650;letter-spacing:-.02em;white-space:nowrap}.mx-chip>i{font-style:normal;font-size:12px;color:var(--ink-3);white-space:nowrap}.mx-chip>i em{font-style:normal}"+
+  ".mx-chip.glow{border-color:var(--glow);background:var(--glow-soft)}.mx-chip.bad{border-color:color-mix(in srgb,var(--bad) 40%,transparent);background:var(--bad-soft)}.mx-chip.warn{border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:var(--warn-soft)}"+
+  ".mx-chip:active{transform:scale(.97)}"+
+  /* Zeilen */
+  ".mx-row{display:flex;width:100%;gap:12px;align-items:center;justify-content:space-between;text-align:left;border:0;border-top:1px solid var(--line);background:none;padding:10px 12px 10px 16px;min-height:60px;color:var(--ink);font:inherit;cursor:pointer}"+
+  ".mx-row:active{background:var(--sunk)}"+
+  ".mx-l{display:grid;min-width:0;gap:2px}.mx-l b{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mx-l>span{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
+  ".mx-r{display:flex;align-items:center;gap:4px;flex:none;color:var(--ink-3)}.mx-r small{font-size:12.5px}.mx-r>svg{width:18px;height:18px}.mx-r.up>svg{transform:rotate(90deg)}"+
+  ".mx-row:not(.unread) .mx-l b{font-weight:500}.mx-row.unread{box-shadow:inset 3px 0 0 var(--glow)}"+
+  /* Zu erledigen: Feed-Zeilen größer */
+  ".mx-feed .feed{border-top:1px solid var(--line)}.mx-feed .feed .item{min-height:62px;padding:10px 14px 10px 0!important}"+
+  ".mx-feed .item .t{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mx-feed .item .d{font-size:13px}"+
+  /* Mein Tag */
+  ".mx-day{padding:4px 0 6px}.mx-day+.mx-day{border-top:1px solid var(--line);padding-top:10px}"+
+  ".mx-dh{font-size:13px;font-weight:700;color:var(--ink-3);margin-bottom:4px}.mx-dh.today{color:var(--glow)}"+
+  ".mx-ev{display:grid;grid-template-columns:60px 3px minmax(0,1fr);gap:10px;align-items:stretch;padding:6px 0;min-height:44px}"+
+  ".mx-ev>span{font-size:13px;font-weight:600;color:var(--ink-2);padding-top:1px}.mx-ev>i{border-radius:2px;background:var(--glow)}"+
+  ".mx-ev b{display:block;font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mx-ev small{display:block;color:var(--ink-3);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+  ".mx-none{font-size:14px;color:var(--ink-3);padding:4px 0 6px}"+
+  /* To-Dos: große Häkchen + Eingabe */
+  ".mx-todos .tdrow{grid-template-columns:28px minmax(0,1fr);gap:12px;min-height:54px;padding:8px 16px}"+
+  ".mx-todos .tdrow input{width:24px;height:24px}"+
+  ".mx-todos .tdrow .todo-t{font-size:15px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;padding:6px 0;line-height:1.35}"+
+  ".mx-todos .tdrow .due{font-size:12.5px}"+
+  ".mx-todos .todo-add{display:grid;grid-template-columns:minmax(0,1fr) 54px;grid-template-areas:'t t' 'd b';gap:8px;padding:12px 16px 14px;border-top:1px solid var(--line)}"+
+  ".mx-todos .todo-add input[name=text]{grid-area:t}.mx-todos .todo-add input[name=due]{grid-area:d;max-width:none!important}.mx-todos .todo-add .btn{grid-area:b;justify-content:center;font-size:22px;border-radius:12px}"+
+  ".mx-todos .todo-add input.f{height:46px;font-size:16px;border-radius:12px}"+
+  ".mx .empty{padding:14px 16px;color:var(--ink-3);font-size:14px}"+
+  /* Monatseinkommen */
+  ".mx-inc .mx-row{border-top:0;min-height:64px}.mx-inc .mx-l>span{font-size:13px}.mx-inc .mx-l b{font-size:20px;font-weight:650}.mx-inc .mx-l b small{font:500 13px var(--f-body);color:var(--ink-3)}"+
+  ".mx-incb{border-top:1px solid var(--line)}.mx-il{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);min-height:52px}"+
+  ".mx-il span{display:grid;min-width:0;font-size:15px}.mx-il small{font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mx-il b{font-weight:600;font-size:15px;white-space:nowrap}.mx-incb .mx-more{border-top:0}"+
+"}");
 F.action("togglefeed",function(){ F.UI.feedAll=!F.UI.feedAll; F.render(); });
 })();
