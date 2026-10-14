@@ -898,37 +898,93 @@ async function sevMeta(force) {
     sev("GET", "/VoucherPos", { query: { limit: 300, embed: "accountingType" } }).catch(() => ({ objects: [] })),
     sev("GET", "/Contact", { query: { limit: 1000, depth: 1 } }).catch(() => ({ objects: [] })),
   ]);
+  // Rechnungsdialog: Bestandskunden automatisch ausfüllen (Adresse, E-Mail, UID, Kunden-Nr.)
+  const [ads, cws, ctry] = await Promise.all([
+    sevAll("/ContactAddress", {}, 8000).catch(() => []),
+    sevAll("/CommunicationWay", { type: "EMAIL" }, 12000).catch(() => []),
+    sevCountries(),
+  ]);
+  const addrBy = {}, mailBy = {};
+  ads.forEach(a => { const c = a && a.contact && a.contact.id; if (c != null && !addrBy[String(c)]) addrBy[String(c)] = a; });
+  cws.filter(w => w && w.type === "EMAIL").sort((a, b) => (String(b.main) === "1" || b.main === true ? 1 : 0) - (String(a.main) === "1" || a.main === true ? 1 : 0))
+    .forEach(w => { const c = w.contact && w.contact.id; if (c != null && !mailBy[String(c)] && w.value) mailBy[String(c)] = String(w.value); });
   const used = {};
   (pos && pos.objects || []).forEach(p => { const a = p.accountingType; if (a && a.id) used[a.id] = (used[a.id] || 0) + 1; });
   const skip = /^(rev|E|EQUITYIN|EQUITYOUT|TAX|VAT|VATIMPORT|VATINT|VATPAY)$/;
   const types = (at && at.objects || []).filter(a => String(a.active) !== "0" && String(a.hidden) !== "1" && String(a.status) === "100" && !skip.test(String(a.type || "")))
     .map(a => ({ id: String(a.id), name: a.name, used: used[a.id] || 0 }))
     .sort((a, b) => (b.used - a.used) || a.name.localeCompare(b.name, "de"));
-  const contacts = (ct && ct.objects || []).map(c => ({ id: String(c.id), name: sevName(c), cat: c.category && c.category.id ? String(c.category.id) : "" })).filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name, "de"));
+  const contacts = (ct && ct.objects || []).map(c => {
+    const id = String(c.id), a = addrBy[id], cid = a && a.country && a.country.id ? String(a.country.id) : "", co = cid && ctry.byId[cid];
+    return { id, name: sevName(c), cat: c.category && c.category.id ? String(c.category.id) : "", nr: c.customerNumber ? String(c.customerNumber) : "",
+      email: mailBy[id] || "", vat: c.vatNumber || "", street: a && a.street || "", zip: a && a.zip || "", city: a && a.city || "",
+      country: co ? co.name : "", countryCode: co ? co.code.toUpperCase() : "" };
+  }).filter(c => c.name).sort((a, b) => a.name.localeCompare(b.name, "de"));
   SEV_META = { at: Date.now(), data: { accountingTypes: types, contacts } };
   return SEV_META.data;
 }
 function sevNet(gross, rate) { return Math.round(gross / (1 + (rate || 0) / 100) * 100) / 100; }
 // sevDesk-Länder (StaticCountry) einmal laden: ISO-Code → ID; Fallback Österreich
 let SEV_COUNTRIES = null;
-async function sevCountryId(code) {
-  code = String(code || "").trim().toLowerCase();
-  if (!code || code === "at") return SEV_COUNTRY_AT;
+const COUNTRY_NAMES = { at: "Österreich", de: "Deutschland", ch: "Schweiz", it: "Italien", li: "Liechtenstein", fr: "Frankreich", nl: "Niederlande", be: "Belgien", lu: "Luxemburg", es: "Spanien", pl: "Polen", cz: "Tschechien", sk: "Slowakei", hu: "Ungarn", si: "Slowenien", hr: "Kroatien", dk: "Dänemark", se: "Schweden", gb: "Vereinigtes Königreich", us: "USA" };
+async function sevCountries() {   // { byCode: at→id, byName: österreich→code, byId: id→{code,name} }
+  if (SEV_COUNTRIES) return SEV_COUNTRIES;
+  const C = { byCode: {}, byName: {}, byId: {} };
+  Object.keys(COUNTRY_NAMES).forEach(k => { C.byName[COUNTRY_NAMES[k].toLowerCase()] = k; });
+  C.byName.austria = "at"; C.byName.germany = "de"; C.byName.switzerland = "ch"; C.byName.italy = "it";
   try {
-    if (!SEV_COUNTRIES) { const j = await sev("GET", "/StaticCountry", { query: { limit: 1000 } }); SEV_COUNTRIES = {}; (j && j.objects || []).forEach(c => { if (c && c.code) SEV_COUNTRIES[String(c.code).toLowerCase()] = String(c.id); }); }
-    return SEV_COUNTRIES[code] || SEV_COUNTRY_AT;
-  } catch (e) { return SEV_COUNTRY_AT; }
+    const j = await sev("GET", "/StaticCountry", { query: { limit: 1000 } });
+    (j && j.objects || []).forEach(c => { if (!c || !c.code) return; const code = String(c.code).toLowerCase(), nm = String(c.name || COUNTRY_NAMES[code] || code.toUpperCase());
+      C.byCode[code] = String(c.id); C.byId[String(c.id)] = { code, name: COUNTRY_NAMES[code] || nm }; if (c.name) C.byName[String(c.name).toLowerCase()] = code; if (c.nameEn) C.byName[String(c.nameEn).toLowerCase()] = code; });
+    SEV_COUNTRIES = C;
+  } catch (e) { C.byCode.at = String(SEV_COUNTRY_AT); C.byId[String(SEV_COUNTRY_AT)] = { code: "at", name: "Österreich" }; return C; }
+  return C;
 }
-async function sevFindOrCreateContact(name, email, uid) {
+function countryCode(v, C) {
+  v = String(v || "").trim().toLowerCase(); if (!v) return "at"; if (/^[a-z]{2}$/.test(v)) return v;
+  if (C && C.byName[v]) return C.byName[v];
+  return Object.keys(COUNTRY_NAMES).find(k => COUNTRY_NAMES[k].toLowerCase() === v) || "";
+}
+async function sevCountryId(v) {   // ISO-Code („DE“) oder Name („Deutschland“) → StaticCountry-ID; Fallback Österreich
+  const C = await sevCountries(); const code = countryCode(v, C);
+  if (!code || code === "at") return SEV_COUNTRY_AT;
+  return C.byCode[code] || SEV_COUNTRY_AT;
+}
+// Anschrift auf der Rechnung aus Einzelfeldern: Name / z. H. / Straße / PLZ Ort / Land (Österreich weggelassen)
+function sevAddressText(pl, name) {
+  const street = String(pl.street || "").trim(), zip = String(pl.zip || "").trim(), city = String(pl.city || "").trim();
+  if (!street && !zip && !city) return String(pl.address || name || "");
+  const land = String(pl.country || "").trim(), code = countryCode(land, SEV_COUNTRIES);
+  const landTxt = !land || code === "at" ? "" : (/^[a-z]{2}$/i.test(land) ? (COUNTRY_NAMES[land.toLowerCase()] || land.toUpperCase()) : land);
+  return [name, pl.contactPerson ? "z. H. " + String(pl.contactPerson).trim() : "", street, [zip, city].filter(Boolean).join(" "), landTxt].filter(Boolean).join("\n");
+}
+function sevAddrOf(pl) { const a = { street: String(pl.street || "").trim().slice(0, 200), zip: String(pl.zip || "").trim().slice(0, 20), city: String(pl.city || "").trim().slice(0, 100) }; return a.street || a.zip || a.city ? a : null; }
+async function sevAddContactAddress(contactId, addr, country) {
+  if (!addr) return;
+  let cat = null; try { cat = await SEV_OPS.addrCategory(); } catch (e) {}
+  const body = { contact: { id: Number(contactId) || contactId, objectName: "Contact" }, street: addr.street, zip: addr.zip, city: addr.city, country: { id: Number(await sevCountryId(country)) || SEV_COUNTRY_AT, objectName: "StaticCountry" } };
+  if (cat) body.category = { id: cat, objectName: "Category" };
+  await sev("POST", "/ContactAddress", { body }).catch(e => console.error("ContactAddress:", e && e.message));
+}
+// Bestandskunde (per ID oder exakt gleichem Namen) → nichts anlegen; fehlt dort die Adresse, wird sie ergänzt.
+// Neuer Kunde → Contact (Kategorie Kunde, Kunden-Nr. vergibt die Buchhaltung) + ContactAddress + E-Mail.
+async function sevFindOrCreateContact(name, email, uid, pl) {
+  pl = pl || {};
+  const addr = sevAddrOf(pl);
   const meta = await sevMeta().catch(() => ({ contacts: [] }));
-  const hit = (meta.contacts || []).find(c => c.name.toLowerCase() === String(name).trim().toLowerCase());
-  if (hit) return hit.id;
+  const hit = pl.contactId ? (meta.contacts || []).find(c => c.id === String(pl.contactId)) || { id: String(pl.contactId), known: false }
+    : (meta.contacts || []).find(c => c.name.toLowerCase() === String(name).trim().toLowerCase());
+  if (hit) {
+    if (addr && hit.known !== false && !hit.street && !hit.zip && !hit.city) { await sevAddContactAddress(hit.id, addr, pl.country); SEV_META.at = 0; }
+    return hit.id;
+  }
   const cbody = { name: String(name).trim(), category: { id: 3, objectName: "Category" }, status: 1000 };
   if (uid && /^[A-Z]{2}[A-Z0-9]{2,13}$/.test(String(uid).replace(/\s+/g, "").toUpperCase())) cbody.vatNumber = String(uid).replace(/\s+/g, "").toUpperCase();
   const cj = await sev("POST", "/Contact", { body: cbody });
   const id = String(cj && cj.objects && cj.objects.id || "");
   if (!id) throw new Error("contact_create_failed");
   if (email && /@/.test(email)) sev("POST", "/CommunicationWay", { body: { contact: { id, objectName: "Contact" }, type: "EMAIL", value: String(email).trim(), key: { id: 2, objectName: "CommunicationWayKey" }, main: true } }).catch(() => {});
+  if (addr) await sevAddContactAddress(id, addr, pl.country);
   SEV_META.at = 0;
   return id;
 }
@@ -936,7 +992,7 @@ async function sevCreateInvoice(pl) {
   const items = (Array.isArray(pl.items) ? pl.items : []).filter(i => i && String(i.name || "").trim() && isFinite(parseFloat(i.priceGross)));
   if (!items.length) throw new Error("keine_positionen");
   const name = String(pl.contactName || "").trim(); if (!name && !pl.contactId) throw new Error("kein_kunde");
-  const contactId = pl.contactId ? String(pl.contactId) : await sevFindOrCreateContact(name, pl.email, pl.uid);
+  const contactId = await sevFindOrCreateContact(name, pl.email, pl.uid, pl);
   const countryId = await sevCountryId(pl.country);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(pl.invoiceDate || "") ? pl.invoiceDate : viennaToday();
   const delivery = /^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDate || "") ? pl.deliveryDate : date;
@@ -944,7 +1000,7 @@ async function sevCreateInvoice(pl) {
   const body = {
     invoice: { objectName: "Invoice", mapAll: true, invoiceDate: sevDateDE(date), deliveryDate: sevDateDE(delivery), header: String(pl.header || "Rechnung").slice(0, 200),
       headText: String(pl.headText || ""), footText: String(pl.footText || "Zahlbar innerhalb von 14 Tagen ohne Abzug."), timeToPay: parseInt(pl.timeToPay, 10) || 14,
-      address: String(pl.address || name), addressCountry: { id: countryId, objectName: "StaticCountry" },
+      address: sevAddressText(pl, name), addressCountry: { id: countryId, objectName: "StaticCountry" },
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
       discount: 0, status: 100, taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", invoiceType: "RE", currency: "EUR", showNet: "1", smallSettlement: 0 },
     invoicePosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
@@ -1048,7 +1104,7 @@ async function sevCreateOffer(pl) {
   const items = (Array.isArray(pl.items) ? pl.items : []).filter(i => i && String(i.name || "").trim() && isFinite(parseFloat(i.priceGross)));
   if (!items.length) throw new Error("keine_positionen");
   const name = String(pl.contactName || "").trim(); if (!name && !pl.contactId) throw new Error("kein_kunde");
-  const contactId = pl.contactId ? String(pl.contactId) : await sevFindOrCreateContact(name, pl.email, pl.uid);
+  const contactId = await sevFindOrCreateContact(name, pl.email, pl.uid, pl);
   const countryId = await sevCountryId(pl.country);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(pl.orderDate || "") ? pl.orderDate : viennaToday();
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(pl.validUntil || "") && pl.validUntil >= date ? pl.validUntil : addDays(date, OFFER_VALID_DAYS);
@@ -1059,7 +1115,7 @@ async function sevCreateOffer(pl) {
   const body = {
     order: { objectName: "Order", mapAll: true, orderNumber: nr, orderDate: sevDateDE(date), status: 100, orderType: "AN", version: 0,
       header: String(pl.header || ("Angebot " + nr)).slice(0, 200), headText: String(pl.headText || ""), footText: foot,
-      address: String(pl.address || name), addressCountry: { id: countryId, objectName: "StaticCountry" },
+      address: sevAddressText(pl, name), addressCountry: { id: countryId, objectName: "StaticCountry" },
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
       taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false },
     orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;

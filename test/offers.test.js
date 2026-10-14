@@ -147,6 +147,29 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
     assert.ok(r.status === 200);
   });
 
+  await t("Rechnung: neuer Kunde → Contact + ContactAddress + E-Mail, Adressblock aus Einzelfeldern", async () => {
+    const n0 = mock.state.createdContacts.length;
+    const r = await post("/admin/api/sevdesk/invoice", { contactName: "Tischlerei Neu", email: "office@neu.at", street: "Bahnhofstraße 7", zip: "6780", city: "Schruns", country: "Österreich", contactPerson: "Max Neu", uid: "ATU 1234 5678", items: [{ name: "Logo", qty: 1, priceGross: 120, taxRate: 20 }] });
+    assert.strictEqual(r.j.ok, true, JSON.stringify(r.j));
+    assert.strictEqual(mock.state.createdContacts.length, n0 + 1); assert.strictEqual(mock.state.createdContacts[n0].vatNumber, "ATU12345678");
+    const ad = mock.state.log.filter((x) => x.method === "POST" && x.path === "/ContactAddress").pop();
+    assert.ok(ad, "ContactAddress angelegt"); assert.strictEqual(ad.body.street, "Bahnhofstraße 7"); assert.strictEqual(ad.body.zip, "6780"); assert.strictEqual(ad.body.city, "Schruns"); assert.strictEqual(String(ad.body.country.id), "3");
+    assert.ok(mock.state.log.some((x) => x.method === "POST" && x.path === "/CommunicationWay" && x.body.value === "office@neu.at"));
+    const l = mock.state.log.filter((x) => x.path === "/Invoice/Factory/saveInvoice").pop();
+    assert.strictEqual(l.body.invoice.address, "Tischlerei Neu\nz. H. Max Neu\nBahnhofstraße 7\n6780 Schruns");
+  });
+  await t("Rechnung: Bestandskunde (contactId / gleicher Name) → kein neuer Kontakt, Ausland im Adressblock", async () => {
+    const n0 = mock.state.createdContacts.length;
+    const r = await post("/admin/api/sevdesk/invoice", { contactName: "Hotel Silvretta", contactId: "13", street: "Hauptstr. 1", zip: "80331", city: "München", country: "Deutschland", items: [{ name: "Logo", qty: 1, priceGross: 120, taxRate: 20 }] });
+    assert.strictEqual(r.j.ok, true, JSON.stringify(r.j)); assert.strictEqual(mock.state.createdContacts.length, n0);
+    const l = mock.state.log.filter((x) => x.path === "/Invoice/Factory/saveInvoice").pop();
+    assert.strictEqual(l.body.invoice.contact.id, "13"); assert.strictEqual(String(l.body.invoice.addressCountry.id), "1");
+    assert.strictEqual(l.body.invoice.address, "Hotel Silvretta\nHauptstr. 1\n80331 München\nDeutschland");
+    const r2 = await post("/admin/api/sevdesk/invoice", { contactName: "Tischlerei Neu", address: "Tischlerei Neu\nAlt 1\n6780 Schruns", items: [{ name: "Logo", qty: 1, priceGross: 120, taxRate: 20 }] });
+    assert.strictEqual(r2.j.ok, true, JSON.stringify(r2.j)); assert.strictEqual(mock.state.createdContacts.length, n0);
+    assert.strictEqual(mock.state.log.filter((x) => x.path === "/Invoice/Factory/saveInvoice").pop().body.invoice.address, "Tischlerei Neu\nAlt 1\n6780 Schruns");
+  });
+
   // ---- optional: Browser-Rauchtest ----
   if (process.env.OFFERS_BROWSER === "1") {
     await t("Browser: Kunden & Leads ohne JS-Fehler, Angebote sichtbar, Dialog „Neues Angebot“ → saveOrder, Lead → Angebot", async () => {

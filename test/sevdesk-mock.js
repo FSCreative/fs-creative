@@ -50,6 +50,8 @@ module.exports = function createSevMock(opts) {
       if (m === "GET" && p === "/Contact") return send(res, 200, { objects: state.contacts });
       if (m === "POST" && p === "/Contact") { const id = String(700 + state.createdContacts.length); state.createdContacts.push(json); state.contacts.push(contact(id, json.name)); return send(res, 201, { objects: { id, objectName: "Contact", name: json.name } }); }
       if (m === "POST" && p === "/CommunicationWay") return send(res, 201, { objects: { id: "1" } });
+      if (m === "POST" && p === "/Invoice/Factory/saveInvoice") return send(res, 201, { objects: { invoice: { id: "8001", objectName: "Invoice", invoiceNumber: "RE-2001", sumGross: "120" }, invoicePos: [] } });
+      if (m === "POST" && p === "/ContactAddress") return send(res, 201, { objects: { id: "1", objectName: "ContactAddress" } });
       if (m === "GET" && p === "/StaticCountry") return send(res, 200, { objects: [{ id: "1", code: "de" }, { id: "3", code: "at" }, { id: "47", code: "ch" }] });
       if (m === "POST" && p === "/Order/Factory/saveOrder") {
         state.saved.push(json);
