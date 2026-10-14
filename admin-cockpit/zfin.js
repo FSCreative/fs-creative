@@ -6,6 +6,7 @@
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, UI=F.UI;
 function deShort(v){ var m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+"."+m[2]+"."+m[1].slice(2):""; }
 UI.fin=UI.fin||F.ls("fsc_fin_page")||"dash";
+if(/^invd(:|$)/.test(UI.fin)&&!UI.fin.split(":")[1]) UI.fin="inv";   // Detailseite ohne Rechnung nie wiederherstellen
 var C={tx:null,vou:{},cn:null,busy:{}};
 var IC={
   dash:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/>',
@@ -58,7 +59,7 @@ function sidebar(){
       (on&&n.sub&&n.sub.length>1&&n.id!=="orders"?'<div class="fsd-sub">'+n.sub.map(function(s){ return '<button type="button" class="'+(cur.split(":")[0]===s[0]?"on":"")+'" data-act="fin:'+s[0]+'">'+esc(s[1])+'</button>'; }).join("")+'</div>':'');
   }).join("")+'<button type="button" class="fsd-i fsd-help" data-act="help">'+ic("help")+'<span>Hilfe</span><kbd>?</kbd></button></nav>';
 }
-F.action("fin",function(p){ UI.fin=p; F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; F._forceRender=true; F.render(); window.scrollTo(0,0); });
+F.action("fin",function(p){ if(/^invd/.test(p)&&!p.split(":")[1]) p="inv"; UI.fin=p; if(!/^invd/.test(p)) F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; F._forceRender=true; F.render(); window.scrollTo(0,0); });
 
 /* Status-Pillen wie in sevDesk */
 function pill(kind,label){ return '<span class="fsd-pill '+kind+'">'+esc(label)+'</span>'; }
@@ -198,7 +199,7 @@ var DET={};
 function pageInvDetail(id){
   var d=DET[id];
   if(!d){ if(!C.busy["d"+id]){ C.busy["d"+id]=1; F.api("/admin/api/sev/invoice?id="+encodeURIComponent(id)).then(function(j){ C.busy["d"+id]=0; DET[id]=j||{ok:false}; F.render(); }); } return '<div class="sd-empty">Lade Rechnung …</div>'; }
-  if(!d.ok) return '<div class="notice">'+esc(d.error||"Rechnung nicht gefunden")+'</div>';
+  if(!d.ok) return '<div class="fsd-dhead"><button class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><h1>Rechnung</h1></div><div class="notice">Diese Rechnung wurde nicht gefunden.</div>';
   var st=d.status, draft=st===100, open=st===200||st===750, i0=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{};
   var kind=d.type==="MA"?"Mahnung":d.type==="SR"?"Stornorechnung":"Rechnung";
   var more=[];
@@ -472,7 +473,7 @@ function mInv(kind){
 }
 function mInvDetail(id){
   var d=DET[id]; if(!d){ pageInvDetail(id); return '<p class="fsm-empty">Lade Rechnung …</p>'; }
-  if(!d.ok) return '<div class="notice">'+esc(d.error||"Rechnung nicht gefunden")+'</div>';
+  if(!d.ok) return '<div class="fsm-dh"><button type="button" class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><b>Rechnung</b></div><div class="notice">Diese Rechnung wurde nicht gefunden.</div>';
   var st=d.status, i0=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{}, draft=st===100, open=st===200||st===750;
   var b=[]; if(draft){ b.push(["sdsend","Per E-Mail senden",1]); b.push(["sdedit","Bearbeiten"]); b.push(["sdsent","Als versendet markieren"]); }
   if(open){ b.push(["book","Als bezahlt markieren",1]); b.push(["sdsend","Per E-Mail senden"]); if(d.type==="RE") b.push(["sdremind","Mahnung erstellen"]); }
@@ -611,7 +612,7 @@ F.css(
 '.fsd-rows{display:grid}.fsd-rows>div{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid var(--sd-line);font-size:13px}.fsd-rows>div:last-child{border-bottom:0}.fsd-rows dt{color:var(--sd-ink2)}.fsd-rows dd{margin:0;text-align:right}.fsd-rows svg{width:12px;height:12px;vertical-align:-1px;margin-right:4px}'+
 '.fsd-ctitle{font-size:17px;font-weight:500;margin-bottom:4px}'+
 '.fsd .notice,.fsd .sd-empty{font-size:14px}'+
-'.fsm{display:block;min-height:auto;background:#f6f6f8;margin:0;padding-bottom:110px}'+
+'.fsm{display:block;min-height:calc(100vh - 60px);background:#f6f6f8;margin:0;padding-bottom:110px}'+
 '.fsm-head{padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:center}.fsm-hbtn{width:38px;height:38px;border-radius:50%;border:1px solid rgba(6,3,20,.12);background:#fff;display:grid;place-items:center;color:#100b2d}.fsm-hbtn svg{width:20px;height:20px}'+
 '.fsd-help{margin-top:auto}.fsd-help kbd{margin-left:auto;font:inherit;font-size:11px;color:var(--sd-mut);border:1px solid var(--sd-line2);border-radius:4px;padding:0 5px}'+
 '.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:#100b2d}'+
