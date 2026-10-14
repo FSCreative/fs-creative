@@ -68,6 +68,26 @@ module.exports = function (D) {
     await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: Math.abs(+tx.amount), date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
     return true;
   }
+  // Kein passender Rechnungsbeleg: nach der Wartezeit Einnahme-Beleg (20 % USt im Brutto) anlegen und zuordnen – Gebühr hängt daran.
+  // Connect-Provisionen (kochdu) sofort. Abschaltbar je Mollie-Konto (acc.mollieAutoVoucher === false).
+  function incomeCategory() { const ats = L.all("AccountingType"); return ats.find(a => /einnahmen \/ erl(ö|oe)se \/ verk(ä|ae)ufe/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)se 20|umsatzerl(ö|oe)se/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)s|einnahm/i.test(a.name || "")) || null; }
+  async function autoVouchers() {
+    let n = 0; const cat = incomeCategory(), now = Date.now();
+    for (const tx of L.all("CheckAccountTransaction").filter(x => (x.mollieType === "payment" || x.mollieType === "application-fee") && String(x.status) === "100" && +x.amount > 0)) {
+      const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
+      if (tx.mollieType === "payment" && now - Date.parse(day(tx.valueDate) + "T12:00:00Z") < 3 * 864e5) continue;   // Rechnung kann noch kommen
+      const gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
+      const prov = tx.mollieType === "application-fee";
+      const body = { voucher: { supplierName: prov ? "Mollie Connect (kochdu)" : (tx.payeePayerName || acc.name), description: (prov ? "Provision kochdu (Mollie Connect) " : "Einnahme " + acc.name.replace(/^Mollie – /, "") + " – ") + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), voucherDate: day(tx.valueDate), creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id) },
+        voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "20", sumGross: String(r2(gross)), net: "false", comment: "automatisch aus Mollie" }] };
+      try {
+        const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
+        await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +tx.amount, date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
+        n++;
+      } catch (e) { console.error("Mollie-Beleg:", e.message); }
+    }
+    return n;
+  }
   // offene Mollie-Zahlungen nachträglich zuordnen (z. B. Rechnung erst später erstellt)
   async function rematch() { let n = 0; for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "payment" && String(x.status) === "100")) if (await autoMatch(tx)) n++; return n; }
   // Auszahlung ↔ Bankumsatz: gleicher Betrag, Bank-Datum 0–7 Tage nach der Auszahlung, nicht schon vergeben
@@ -128,8 +148,8 @@ module.exports = function (D) {
       await L.load();
       const since = (opt && opt.since) || new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
       const out = []; for (const tk of tks) out.push(await syncOrg(tk, since).catch(e => ({ org: tk.key, error: e.message })));
-      const relinked = await relink(), feesLinked = await linkFees(), rematched = await rematch();
-      STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked, rematched }; STATE.at = STATE.last.at; return STATE.last;
+      const relinked = await relink(), feesLinked = await linkFees(), rematched = await rematch(), vouchers = await autoVouchers();
+      STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked, rematched, vouchers }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
   }
   // Abgleich je Mollie-Konto: eingenommen (brutto), Gebühren, netto, ausbezahlt (mit/ohne Bankumsatz), noch bei Mollie, Kontrolle gegen Mollie-Saldo
@@ -154,5 +174,5 @@ module.exports = function (D) {
     return out;
   }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, relink, linkFees, rematch, autoMatch, summary };
+  return { sync, status, relink, linkFees, rematch, autoMatch, summary, autoVouchers };
 };

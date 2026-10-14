@@ -207,10 +207,11 @@ module.exports = function (D) {
     // Differenzgrund bei Zahlung < offener Betrag (wie sevDesk bookAmount.type): N Teilzahlung · CB Skonto · MTC Kosten des Zahlungsverkehrs
     const mFee = tx && tx.mollieFeeAmt ? Math.abs(+tx.mollieFeeAmt) : 0;
     const dtype0 = String(b.type || "").toUpperCase(), open00 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0));
-    const dtype = dtype0 && dtype0 !== "N" ? dtype0 : (t === "Invoice" && mFee > 0 && Math.abs(r2(open00 - amt) - mFee) < 0.05 ? "MTC" : (dtype0 || "N")), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
+    const incomeDoc = t === "Invoice" || (t === "Voucher" && String(o.creditDebit) === "D");
+    const dtype = dtype0 && dtype0 !== "N" ? dtype0 : (incomeDoc && mFee > 0 && Math.abs(r2(open00 - amt) - mFee) < 0.05 ? "MTC" : (dtype0 || "N")), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
     let logAmt = amt, paid = r2((+o.paidAmount || 0) + amt);
     const gross = Math.abs(+o.sumGross || 0);
-    if (t === "Invoice" && diff > 0.004 && dtype === "MTC") {
+    if (incomeDoc && diff > 0.004 && dtype === "MTC") {
       // Bankspesen: Rechnung gilt als voll bezahlt, die Differenz ist Aufwand (0 %, keine Vorsteuer) – eigener Ausgabe-Beleg am selben Umsatz
       await bookCost(o, diff, tx, day, mFee ? "Mollie B.V." : "Bank"); paid = r2(paid + diff); logAmt = r2(amt + diff);
     }
