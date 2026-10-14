@@ -267,6 +267,9 @@ const MAIL_RULES = require("./mail-rules.js")({
   },
 });
 setInterval(() => { if (MAIL.url && MAIL.token) MAIL_RULES.tick(); }, 2 * 60 * 1000);
+// Push-Benachrichtigungen (Handy): neue Mails jede Minute prüfen
+const PUSH = require("./push.js")({ getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
+setInterval(() => { if (MAIL.url && MAIL.token && process.env.DATABASE_URL) PUSH.mailTick(() => mailSnapshot()).catch(e => console.error("Push-Mail:", e.message)); }, 60 * 1000);
 // Privates Railway-Netz nutzen (kostenlos, schneller) statt über das öffentliche Internet.
 (async () => {
   if (!MAIL.url || /railway\.internal/.test(MAIL.url)) return;
@@ -765,7 +768,7 @@ async function railwaySnapshot() {
   return { configured: true, fetchedAt: new Date().toISOString(), totals, projects };
 }
 function adminLoginPage(err) {
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>FS Creative Admin — Anmelden</title>
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>FS Cockpit — Anmelden</title><link rel="apple-touch-icon" href="/logos/cockpit-icon-180.png"><link rel="icon" type="image/png" href="/logos/cockpit-favicon.png"><link rel="manifest" href="/cockpit.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cockpit"><meta name="theme-color" content="#0a0a0f">
 <style>:root{color-scheme:light}body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,#eef2fb,#f7f9fd);font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f1729}
 .card{background:#fff;border:1px solid #e9edf5;border-radius:18px;padding:28px;width:320px;box-shadow:0 24px 60px -30px rgba(15,23,42,.4)}
 .logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#2f6bff,#7c4dff);display:grid;place-items:center;color:#fff;font-weight:800;margin-bottom:14px}
@@ -2404,6 +2407,20 @@ async function handleAdmin(req, res, u, p) {
   // KI-Funktionen (Claude) – eigenes Modul ki.js
   if (p.indexOf("/admin/api/ki/") === 0) return KI.handle(req, res, u, p);
 
+  if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
+  if (p === "/admin/api/push") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!process.env.DATABASE_URL) return J(200, { ok: false, error: "Datenbank fehlt" });
+      if (req.method === "GET") return J(200, Object.assign({ ok: true, publicKey: await PUSH.publicKey() }, await PUSH.status(u.searchParams.get("endpoint") || "")));
+      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
+      if (pl.op === "subscribe") return J(200, await PUSH.subscribe(pl.subscription, pl.device, topics));
+      if (pl.op === "unsubscribe") return J(200, await PUSH.unsubscribe(String(pl.endpoint || "")));
+      if (pl.op === "topics") return J(200, await PUSH.setTopics(String(pl.endpoint || ""), topics || []));
+      if (pl.op === "test") { const n = await PUSH.send(pl.topic && T.indexOf(pl.topic) > -1 ? pl.topic : "mail", { title: "FS Cockpit", body: "Benachrichtigungen funktionieren ✓", url: "/admin", tag: "test" }); return J(200, { ok: true, sent: n }); }
+      return J(400, { ok: false, error: "unbekannte Aktion" });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 200) }); }
+  }
   if (p === "/admin" || p === "/admin/") {
     return sendGz(req, res, 200, cockpitHtml(), TYPES[".html"], { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
   }
@@ -3205,6 +3222,7 @@ function handleAnfrage(req, res) {
     todos.push({ id: lead.id, text: "📩 Anfrage: " + lead.name + " – " + lead.topic + (lead.entwurf ? " (Gratis-Entwurf)" : "") + " · " + lead.email + (lead.phone ? " · " + lead.phone : ""), due: "", done: false, created: Date.now() });
     writeTodos(todos);
 
+    if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Neue Anfrage: " + lead.topic, body: lead.name + (lead.company ? " · " + lead.company : "") + " – " + String(lead.message || "").slice(0, 90), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
     let mailed = false;
     if (MAIL.url && MAIL.token) {
       const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);

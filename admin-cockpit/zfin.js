@@ -941,11 +941,12 @@ F.css(
 '.fsd-rows{display:grid}.fsd-rows>div{display:flex;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid var(--sd-line);font-size:13px}.fsd-rows>div:last-child{border-bottom:0}.fsd-rows dt{color:var(--sd-ink2)}.fsd-rows dd{margin:0;text-align:right}.fsd-rows svg{width:12px;height:12px;vertical-align:-1px;margin-right:4px}'+
 '.fsd-ctitle{font-size:17px;font-weight:500;margin-bottom:4px}'+
 '.fsd .notice,.fsd .sd-empty{font-size:14px}'+
-'.fsm{display:block;min-height:calc(100vh - 60px);background:#f6f6f8;margin:0;padding-bottom:110px}'+
+'.fsm{display:block;min-height:calc(100vh - 60px);background:#f6f6f8;margin:0;padding-bottom:110px;padding-top:env(safe-area-inset-top,0px)}'+
+'.fsm::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:#f6f6f8;z-index:6}'+
 '.fsm-head{padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:center}.fsm-hbtn{width:38px;height:38px;border-radius:50%;border:1px solid rgba(6,3,20,.12);background:#fff;display:grid;place-items:center;color:#100b2d}.fsm-hbtn svg{width:20px;height:20px}'+
 '.fsd-help{margin-top:auto}.fsd-help kbd{margin-left:auto;font:inherit;font-size:11px;color:var(--sd-mut);border:1px solid var(--sd-line2);border-radius:4px;padding:0 5px}'+
 '.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:#100b2d}'+
-'.fsm-nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px 12px;scrollbar-width:none;position:sticky;top:0;z-index:5;background:#f6f6f8}.fsm-nav::-webkit-scrollbar{display:none}'+
+'.fsm-nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px 12px;scrollbar-width:none;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:#f6f6f8}.fsm-nav::-webkit-scrollbar{display:none}'+
 '.fsm-nav button{flex:none;border:1px solid rgba(6,3,20,.12);background:#fff;border-radius:99px;padding:7px 14px;font-size:14px;font-weight:500;color:#100b2d}'+
 '.fsm-nav button[aria-current]{background:#212144;border-color:#212144;color:#fff}'+
 '.fsm-body{padding:0 12px;display:grid;gap:12px}'+
