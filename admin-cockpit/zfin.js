@@ -123,7 +123,7 @@ function pageDash(){
 function pageInv(kind){
   if(!sevOk()) return noSev();
   var parts=UI.fin.split(":"), f=parts[1]||"all", q=(UI.fq_inv||"").toLowerCase(), per=25;
-  var base=F.D.sev.invoices.filter(function(i){ return kind==="dun"?i.dunning>0:i.type!=="MA"; });
+  var base=F.D.sev.invoices.slice().sort(function(a,b){ return (+b.id||0)-(+a.id||0); }).filter(function(i){ return kind==="dun"?i.dunning>0:i.type!=="MA"; });
   var cnt={all:base.length,draft:0,open:0,due:0,paid:0,locked:0};
   base.forEach(function(i){ if(i.status===100) cnt.draft++; if(i.open>0.005&&i.status!==100) cnt.open++; if(i.overdue) cnt.due++; if(i.status===1000) cnt.paid++; if(i.enshrined) cnt.locked++; });
   var list=base.filter(function(i){ if(f==="draft"&&i.status!==100) return false; if(f==="open"&&!(i.open>0.005&&i.status!==100)) return false; if(f==="due"&&!i.overdue) return false; if(f==="paid"&&i.status!==1000) return false; if(f==="locked"&&!i.enshrined) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; });
@@ -268,6 +268,7 @@ F.css(
 '.fsd{--sd-ink:#100b2d;--sd-ink2:#5e5e74;--sd-mut:#777;--sd-mut2:#717387;--sd-line:rgba(6,3,20,.11);--sd-line2:rgba(6,3,20,.17);--sd-navy:#212144;--sd-coral:#f15a3a;--sd-hov:rgba(6,3,20,.05);--sd-bg:#fff;--sd-side:#fbf9f9;--sd-red:#a7002c;'+
   'font-family:Inter,-apple-system,system-ui,arial,sans-serif;font-size:14px;color:var(--sd-ink);display:grid;grid-template-columns:243px minmax(0,1fr);min-height:calc(100vh - 48px);background:var(--sd-bg);-webkit-font-smoothing:antialiased}'+
 '.fsd *{font-family:inherit}'+
+'body .fsd{--ground:#fbf9f9;--panel:#fff;--sunk:#f1f1f3;--ink:#100b2d;--ink-2:#5e5e74;--ink-3:#777;--line:rgba(6,3,20,.11);--glow:#212144;--glow-ink:#212144;--glow-soft:#ececf6;--on-glow:#fff;--sel:#e4e3fb;--ok:#169c56;--ok-soft:#d7f6e6;--warn:#8a6a00;--warn-soft:#fdeeb5;--bad:#e5322d;--bad-soft:#fcd9d9;--info:#534acc;--info-soft:#ecedfe;color-scheme:light}'+
 '.fsd-nav{background:var(--sd-side);border-right:1px solid var(--sd-line);padding:14px 16px;display:flex;flex-direction:column;gap:2px;position:sticky;top:48px;height:calc(100vh - 48px);overflow-y:auto}'+
 '.fsd-search{display:flex;align-items:center;gap:8px;background:rgba(6,3,20,.06);border-radius:8px;height:34px;padding:0 10px;margin:0 0 12px;border:0;color:var(--sd-ink2);font-size:14px;cursor:pointer;text-align:left}'+
 '.fsd-search svg{width:16px;height:16px}.fsd-search kbd{margin-left:auto;font:inherit;font-size:11px;color:var(--sd-mut)}'+
@@ -300,7 +301,7 @@ F.css(
 '.fsd-tabs{display:flex;gap:4px;flex-wrap:wrap}.fsd-tabs button{border:1px solid transparent;background:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:500;color:var(--sd-ink);cursor:pointer;line-height:16px}'+
 '.fsd-tabs button:hover{background:var(--sd-hov)}.fsd-tabs button[aria-pressed="true"]{background:var(--sd-line)}.fsd-tabs .n{color:var(--sd-mut);font-weight:400}'+
 '.fsd-q.f{height:32px;max-width:240px;border-radius:8px;border:1px solid var(--sd-line2);font-size:13px;padding:0 10px;background:#fff}'+
-'.fsd-t{width:100%;border-collapse:collapse}.fsd-t th{background:#fafafa;font-size:12px;text-transform:none;letter-spacing:0;color:var(--sd-ink);font-weight:500;padding:12px;border-bottom:1px solid var(--sd-line);text-align:left;white-space:nowrap;position:static}'+
+'.fsd-t{width:100%;border-collapse:collapse}body .fsd .fsd-t th{background:#fafafa!important;color:#100b2d!important;font-size:12px;text-transform:none;letter-spacing:0;color:var(--sd-ink);font-weight:500;padding:12px;border-bottom:1px solid var(--sd-line);text-align:left;white-space:nowrap;position:static}'+
 '.fsd-t td{padding:8px 12px;height:48px;border-bottom:1px solid var(--sd-line);vertical-align:middle;font-size:14px;color:var(--sd-ink);background:#fff}.fsd-t td.m{color:var(--sd-ink2)}.fsd-t .sub{font-size:14px;color:var(--sd-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}'+
 '.fsd-t tr:last-child td{border-bottom:0}.fsd-t.sm td{padding:8px 0;height:auto;font-size:13px}.fsd-t .r{text-align:right}.fsd-t .nowrap{white-space:nowrap}'+
 '.fsd-row{cursor:pointer}.fsd-row:hover td{background:#f8f8f9}'+
