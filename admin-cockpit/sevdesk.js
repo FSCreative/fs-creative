@@ -253,10 +253,12 @@ F.action("sdbkother",function(id){
   S.pick={tx:t,items:items};
   F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Rechnung":"Beleg")+' zuordnen</h2>'+F.btnClose()+'</div><p style="margin:0"><b>'+eur(t.amount)+'</b> · '+esc(t.name)+' <span class="muted">'+esc(t.purpose)+'</span></p>'+
     '<input class="f" placeholder="Suchen …" data-sdpickq autofocus><div class="sd-pick" id="sdPick">'+pickList("")+'</div>'+
-    (items.length?'':'<p class="muted" style="margin:0">Keine offenen '+(pos?"Rechnungen":"Belege")+'. Lege den Beleg zuerst an oder buche den Umsatz direkt.</p>')+'</div>',"wide");
+    (items.length?'':'<p class="muted" style="margin:0">Keine offenen '+(pos?"Rechnungen":"Belege")+'. Lege den Beleg zuerst an oder buche den Umsatz direkt.</p>')+
+    '<div class="row-between" style="border-top:1px solid var(--line);padding-top:12px;gap:12px;flex-wrap:wrap"><span class="muted small">Nichts Betriebliches? '+(pos?"Geld von dir privat aufs Geschäftskonto":"Private Ausgabe oder Geld an dich")+' – zählt nicht als Einnahme/Ausgabe, keine Steuer.</span><button type="button" class="btn" data-act="sdbkpriv:'+esc(t.id)+'">'+(pos?"Als Privateinlage markieren":"Als Privatentnahme markieren")+'</button></div></div>',"wide");
 });
 function pickList(q){ var it=S.pick.items.filter(function(x){ return !q||x.q.indexOf(q)>-1; }).slice(0,80); return it.map(function(x){ return '<button type="button" data-act="sdbkpick:'+x.kind+'|'+esc(x.id)+'"><span>'+esc(x.label)+'</span><span class="muted num">'+esc(x.sub)+'</span></button>'; }).join("")||'<div class="sd-empty">Nichts gefunden.</div>'; }
 F.listen("input","[data-sdpickq]",function(el){ var b=document.getElementById("sdPick"); if(b) b.innerHTML=pickList(el.value.toLowerCase()); });
+F.action("sdbkpriv",function(id){ var t=S.pick&&S.pick.tx; F.closeModal(); bankDo(id,{op:"privat"},t&&t.amount>0?"Als Privateinlage markiert":"Als Privatentnahme markiert"); if(F.finTxReset) F.finTxReset(); });
 F.action("sdbkpick",function(v){ var p=v.split("|"), t=S.pick.tx, it=S.pick.items.find(function(x){return x.id===p[1]&&x.kind===p[0];}); F.closeModal(); bankDo(t.id,p[0]==="invoice"?{op:"invoice",invoiceId:p[1]}:{op:"voucher",voucherId:p[1]},"Zugeordnet: "+(it?it.label:"")); });
 F.action("sdbknew",function(id){
   var t=txById(id); if(!t) return; var pos=t.amount>0;

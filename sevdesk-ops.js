@@ -150,6 +150,8 @@ module.exports = function (D) {
     need(pl);
     const txId = idOf(pl.txId); if (!txId) throw new Error("kein_umsatz");
     const t = await txById(txId);
+    // Privat zurücknehmen: nur ein als privat markierter Umsatz (Status 300) wird wieder offen
+    if (pl.op === "unprivat") { if ((parseInt(t.status, 10) || 0) !== 300) throw new Error("Dieser Umsatz ist nicht als privat markiert."); await sev("PUT", "/CheckAccountTransaction/" + txId, { body: { status: "100", privat: null } }); invalidate(); TX_CACHE.at = 0; return { ok: true, txId, op: "unprivat" }; }
     if ((parseInt(t.status, 10) || 0) !== 100) throw new Error("Dieser Umsatz ist schon zugeordnet.");
     const amount = sevNum(t.amount), day = sevDay(t.valueDate || t.entryDate) || viennaToday(), accountId = t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "";
     const op = String(pl.op || "");
@@ -161,6 +163,9 @@ module.exports = function (D) {
     } else if (op === "voucher") {
       const id = idOf(pl.voucherId); if (!id) throw new Error("kein_beleg");
       await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(amount) });
+    } else if (op === "privat") {
+      // Privatentnahme (Abgang) / Privateinlage (Eingang): kein Betriebsumsatz, keine Steuer – Umsatz gilt als erledigt
+      await sev("PUT", "/CheckAccountTransaction/" + txId, { body: { status: "300", privat: amount < 0 ? "Entnahme" : "Einlage", privatNote: String(pl.note || "").slice(0, 200) || undefined } });
     } else if (op === "newVoucher") {
       // Beleg ohne Datei direkt aus dem Umsatz (z. B. Kontoführung, Abo), dann mit dem Umsatz verbuchen
       const at = idOf(pl.accountingTypeId); if (!at) throw new Error("Bitte eine Kategorie wählen.");
