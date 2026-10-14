@@ -687,5 +687,5 @@ module.exports = function (D) {
     const paired = dry ? 0 : await pairTransfers();
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
+  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
 };

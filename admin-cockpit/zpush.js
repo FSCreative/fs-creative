@@ -11,9 +11,10 @@ function b64u(s){ var p="=".repeat((4-s.length%4)%4), b=atob((s+p).replace(/-/g,
 function reg(){ return navigator.serviceWorker.register("/admin/sw.js",{scope:"/admin/"}); }
 function device(){ var u=navigator.userAgent; return (/iPhone/.test(u)?"iPhone":/iPad/.test(u)?"iPad":/Android/.test(u)?"Android":/Mac/.test(u)?"Mac":"Browser")+(standalone?" (App)":""); }
 function current(){ return ok?reg().then(function(r){ return r.pushManager.getSubscription(); }):Promise.resolve(null); }
-function enable(topics){
-  return Notification.requestPermission().then(function(p){
-    if(p!=="granted") throw new Error(p==="denied"?"Mitteilungen sind für das Cockpit blockiert – in den iPhone-Einstellungen → Mitteilungen → Cockpit erlauben.":"Nicht erlaubt");
+function ask(){ try{ var r=Notification.requestPermission(); return r&&r.then?r:new Promise(function(res){ Notification.requestPermission(res); }); }catch(e){ return Promise.reject(e); } }
+function enable(topics,perm){
+  return (perm||ask()).then(function(p){
+    if(p!=="granted") throw new Error(p==="denied"?"Das iPhone hat Mitteilungen für das Cockpit abgelehnt. Falls „Cockpit“ unter Einstellungen → Mitteilungen fehlt: Symbol vom Home-Bildschirm löschen, in Safari neu „Zum Home-Bildschirm“ hinzufügen, von dort öffnen und hier erneut einschalten.":"Nicht erlaubt");
     return Promise.all([reg(),F.api("/admin/api/push")]); })
   .then(function(x){ var r=x[0], j=x[1]; if(!j||!j.ok) throw new Error((j&&j.error)||"Server nicht bereit");
     return r.pushManager.getSubscription().then(function(s){ return s||r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(j.publicKey)}); }); })
@@ -32,13 +33,14 @@ function sheet(){
 }
 F.action("pushcfg",sheet);
 F.form("pushcfg",function(f){ var tp=TOP.map(function(t){ return t[0]; }).filter(function(k){ return f["t_"+k].checked; }), err=document.getElementById("pushErr");
-  current().then(function(sub){ if(sub&&Notification.permission==="granted") return F.api("/admin/api/push",{body:{op:"topics",endpoint:sub.endpoint,topics:tp}}); return enable(tp); })
+  var perm=Notification.permission==="granted"?null:ask();   // sofort im Antippen fragen – sonst lehnt das iPhone ohne Nachfrage ab
+  current().then(function(sub){ if(sub&&!perm) return F.api("/admin/api/push",{body:{op:"topics",endpoint:sub.endpoint,topics:tp}}); return enable(tp,perm); })
   .then(function(j){ if(!j||j.ok===false) throw new Error((j&&j.error)||"Fehler"); F.closeModal(); F.toast("Mitteilungen gespeichert"); try{ localStorage.setItem("fsc_push_ask","done"); }catch(e){} })
   .catch(function(e){ if(err) err.textContent=e.message||String(e); }); });
 F.action("pushtest",function(){ F.api("/admin/api/push",{body:{op:"test"}}).then(function(j){ F.toast(j&&j.sent?"Test gesendet":"Kein Gerät erreicht",!(j&&j.sent)); }); });
 F.action("pushoff",function(){ current().then(function(sub){ if(!sub) return; return F.api("/admin/api/push",{body:{op:"unsubscribe",endpoint:sub.endpoint}}).then(function(){ return sub.unsubscribe(); }); }).then(function(){ F.closeModal(); F.toast("Mitteilungen aus"); }); });
 /* Einmal nachfragen: in der Home-Bildschirm-App, wenn noch nicht entschieden */
 if(ok&&standalone&&Notification.permission==="default"){ var asked=null; try{ asked=localStorage.getItem("fsc_push_ask"); }catch(e){}
-  if(!asked) setTimeout(function(){ try{ localStorage.setItem("fsc_push_ask","1"); }catch(e){} F.toast&&F.confirm&&F.confirm("Mitteilungen aufs Handy einschalten? Du bekommst eine Meldung bei neuen Mails und Anfragen.","Einschalten",function(){ enable(["mail","lead","fin"]).then(function(){ F.toast("Mitteilungen aktiv"); }).catch(function(e){ F.toast(e.message||String(e),true); }); }); },4000); }
+  if(!asked) setTimeout(function(){ try{ localStorage.setItem("fsc_push_ask","1"); }catch(e){} F.toast&&F.confirm&&F.confirm("Mitteilungen aufs Handy einschalten? Du bekommst eine Meldung bei neuen Mails und Anfragen.","Einschalten",function(){ enable(["mail","lead","fin"],ask()).then(function(){ F.toast("Mitteilungen aktiv"); }).catch(function(e){ F.toast(e.message||String(e),true); }); }); },4000); }
 if(ok&&Notification.permission==="granted") reg().catch(function(){});
 })();

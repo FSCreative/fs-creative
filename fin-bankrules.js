@@ -151,6 +151,21 @@ module.exports = function (D) {
     if (op === "delete") { RULES = RULES.filter(x => x.id !== pl.id); await save(); return {}; }
     if (op === "order") { const ids = pl.ids || []; RULES.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)); await save(); return {}; }
     if (op === "preview") { const r = pl.rule ? clean(pl.rule) : RULES.find(x => x.id === pl.id); if (!r) throw new Error("Regel nicht gefunden"); const hit = open().filter(t => matches(r, t)); return { count: hit.length, sample: hit.slice(0, 8).map(t => ({ date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.paymtPurpose || "").slice(0, 80), amount: +t.amount })) }; }
+    if (op === "undo") {   // per Regel angelegte Belege zurücknehmen: Zahlung lösen, Beleg + Positionen löschen, Umsatz wieder offen; optional Regel löschen
+      const ids = new Set([].concat(pl.id || pl.ids || []).map(String)); let n = 0, tx = 0;
+      for (const v of L.all("Voucher").filter(v => v.fromRule && ids.has(String(v.fromRule)))) {
+        if (L.isLocked && L.isLocked("Voucher", v)) continue;
+        for (const l of L.all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id))) {
+          const t = l.checkAccountTransaction && L.get("CheckAccountTransaction", l.checkAccountTransaction.id); await L.del("CheckAccountTransactionLog", l.id);
+          if (t && !L.all("CheckAccountTransactionLog").some(x => x.checkAccountTransaction && String(x.checkAccountTransaction.id) === String(t.id))) { t.status = "100"; delete t.ruleId; await L.save("CheckAccountTransaction", t); tx++; }
+        }
+        for (const p of L.positionsOf("Voucher", v.id)) await L.del("VoucherPos", p.id);
+        await L.del("Voucher", v.id); n++;
+      }
+      for (const r of RULES.filter(r => ids.has(String(r.id)))) { r.hits = 0; r.lastHit = null; }
+      if (pl.remove) RULES = RULES.filter(r => !ids.has(String(r.id)));
+      await save(); return { vouchers: n, transactions: tx };
+    }
     if (op === "apply") return await run(pl.id);
     if (op === "suggest") return suggest();
     if (op === "adopt") { const s = await handle(Object.assign({}, pl, { op: "save" })); const x = await run(s.rule.id); return Object.assign({ rule: s.rule }, x); }   // Vorschlag übernehmen: speichern + gleich anwenden
