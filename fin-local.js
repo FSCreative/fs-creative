@@ -139,7 +139,9 @@ module.exports = function (D) {
   // ── Regeln wie sevDesk (Handbuch): Fertigstellen = feste Nummer + Status offen + (Standard) automatische Festschreibung ──
   function settings() { return Object.assign({ autoEnshrine: true }, get("FinSetting", "1") || {}); }
   async function finalize(o, noSave) {
-    if (!o.invoiceNumber) o.invoiceNumber = await nextNumber("Invoice", o.invoiceType || "RE", "invoiceNumber", INV_PREFIX[o.invoiceType] || "RE-");
+    // Entwurf: vorläufige Nummer (z. B. aus sevDesk übernommen) nie behalten – immer die nächste freie Nummer, lückenlos in Versandreihenfolge
+    const taken = n => !!n && all("Invoice").some(x => String(x.id) !== String(o.id) && x.invoiceNumber === n);
+    if (!o.invoiceNumber || String(o.status) === "100" || taken(o.invoiceNumber)) { o.invoiceNumber = null; o.invoiceNumber = await nextNumber("Invoice", o.invoiceType || "RE", "invoiceNumber", INV_PREFIX[o.invoiceType] || "RE-"); }
     if (String(o.status) === "100") { o.status = "200"; o._dirty = true; }
     if (settings().autoEnshrine && String(o.invoiceType) !== "MA" && !o.enshrined) o.enshrined = nowIso();
     if (!noSave) await save("Invoice", o);
