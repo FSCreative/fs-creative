@@ -779,23 +779,11 @@ ${err ? '<div class="err">' + err + "</div>" : ""}
 <input type="password" name="password" placeholder="Passwort" autofocus autocomplete="current-password"><button type="submit">Anmelden</button></form></body></html>`;
 }
 
-// ── sevDesk (Buchhaltung): Rechnungen, Bank, Belege ──
-const SEV = { key: (process.env.SEVDESK_API_KEY || "").trim(), src: process.env.SEVDESK_API_KEY ? "env" : "", base: (process.env.SEVDESK_API_BASE || "https://my.sevdesk.de/api/v1").replace(/\/$/, ""), triedAt: 0, err: "" };
-const SEV_SRC = { projectId: process.env.SEVDESK_KEY_PROJECT || "36a3e698-1684-4614-b235-63e62972d798", environmentId: process.env.SEVDESK_KEY_ENV || "7f4f6052-8af5-4a68-90b9-192b619ecfb9", serviceId: process.env.SEVDESK_KEY_SERVICE || "5f35ca1f-63e3-4ed5-9cac-ad2d7108c585" };
-// Schlüssel: eigene Variable, sonst einmalig vom kochdu-Dienst (gleiches sevDesk-Konto) übernehmen
-async function sevKey() {
-  if (SEV.key) return SEV.key;
-  if (!RW.token || Date.now() - SEV.triedAt < 2 * 60 * 1000) return "";
-  SEV.triedAt = Date.now();
-  const j = await rwGQL("query($p:String!,$e:String!,$s:String){ variables(projectId:$p, environmentId:$e, serviceId:$s) }", { p: SEV_SRC.projectId, e: SEV_SRC.environmentId, s: SEV_SRC.serviceId });
-  const k = j && j.data && j.data.variables && j.data.variables.SEVDESK_API_KEY;
-  if (!k) { SEV.err = (j && j.errors && j.errors[0] && j.errors[0].message) || "key_not_found"; return ""; }
-  SEV.key = String(k).trim(); SEV.src = "kochdu"; SEV.err = "";
-  const own = { projectId: process.env.RAILWAY_PROJECT_ID || "5ab009b1-4a14-436e-9c60-f06d94e68f6b", environmentId: process.env.RAILWAY_ENVIRONMENT_ID || "43bc9c87-f97f-4d1b-8294-abdf1e48e552", serviceId: process.env.RAILWAY_SERVICE_ID || "77edb043-6467-417d-941b-8366cefec1b6" };
-  rwGQL("mutation($input: VariableCollectionUpsertInput!){ variableCollectionUpsert(input:$input) }", { input: Object.assign({}, own, { variables: { SEVDESK_API_KEY: SEV.key }, skipDeploys: true }) })
-    .then(r => { if (r && r.errors) console.error("sevdesk key persist:", r.errors[0] && r.errors[0].message); else console.log("sevdesk key persisted"); }).catch(() => {});
-  return SEV.key;
-}
+// ── Buchhaltung: alles läuft über die eigene Buchhaltung (fin-local.js). Die frühere sevDesk-Verbindung ist entfernt.
+// Nur die Tests hängen eine sevDesk-kompatible Attrappe an (SEVDESK_API_BASE auf 127.0.0.1) – in Betrieb nie.
+const SEV_TEST = /^http:\/\/127\.0\.0\.1[:/]/.test(process.env.SEVDESK_API_BASE || "");
+const SEV = { key: SEV_TEST ? (process.env.SEVDESK_API_KEY || "").trim() : "", src: SEV_TEST ? "test" : "", base: SEV_TEST ? process.env.SEVDESK_API_BASE.replace(/\/$/, "") : "", triedAt: 0, err: "" };
+async function sevKey() { return SEV.key; }
 function finApiAuth(req) {
   const got = String(req.headers["authorization"] || req.headers["x-api-token"] || "").replace(/^Bearer\s+/i, "").trim();
   if (!got) return "";
@@ -823,7 +811,7 @@ async function finApi(req, res, u, p) {
 }
 async function sev(method, path, opts) {
   if (FIN_STATE.local) return FIN_LOCAL.request(method, path, opts || {});
-  return sevRemote(method, path, opts);
+  return sevRemote(method, path, opts);   // nur Tests (Attrappe)
 }
 async function sevRemote(method, path, opts) {
   opts = opts || {};
@@ -1166,7 +1154,7 @@ async function sevVoucherFromMail(pl) {
 function sevBody(req, max) { return new Promise((resolve, reject) => { let b = ""; req.on("data", c => { b += c; if (b.length > (max || 200000)) { req.destroy(); reject(new Error("too_large")); } }); req.on("end", () => { try { resolve(JSON.parse(b || "{}")); } catch (e) { reject(new Error("bad_json")); } }); }); }
 const FIN = require("./fin.js")({ sev: sevRemote, sevAll });
 // Eigene Buchhaltung: Firmendaten (für PDF/Fußzeile) und Betriebsart („local“ = ohne sevDesk, alle Anfragen gehen an fin-local.js)
-const FIN_STATE = { local: false, firm: null };
+const FIN_STATE = { local: !SEV_TEST, firm: null };
 const FIN_PDF = require("./fin-pdf.js")({ firm: () => FIN_STATE.firm });
 const FIN_BANK = require("./fin-bank.js");
 const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
@@ -1175,7 +1163,7 @@ const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
     const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, m)) });
     const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
   } });
-(async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); const m = await FIN.getMeta("mode"); FIN_STATE.local = !!(m && m.local); FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
+(async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); FIN_STATE.local = !SEV_TEST; FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
 // Wiederkehrende Rechnungen: stündlich fällige Vorlagen abarbeiten; „automatisch senden“ → fertigstellen + Mail an die Kontakt-Adresse
 async function finRecurringTick() {
   if (!FIN_STATE.local) return;
@@ -1671,7 +1659,7 @@ async function cockpitBuild(year, forceForecast) {
   return {
     fetchedAt: new Date().toISOString(), year, today, income, skikaiser: ski, huettengaudi: hg,
     leads: readLeads().slice().reverse(),
-    sev: sevSummary(sev, year, today), sevConfigured: !!(SEV.key || SEV_SRC.projectId),
+    sev: sevSummary(sev, year, today), sevConfigured: true,
     abgleich,
     platforms: {
       kochdu: ko ? { totals: ko.totals || {}, restaurants: ko.restaurants || [], nutzer: ko.nutzer || null, lastOrders: ko.lastOrders || [], fetchedAt: ko.fetchedAt } : null,
@@ -2332,10 +2320,10 @@ async function handleAdmin(req, res, u, p) {
   }
   // ---- sevDesk: Status + (nur Admin) Lese-Zugriff zum Prüfen ----
   if (p === "/admin/api/sevdesk/status" && req.method === "GET") {
-    const k = await sevKey().catch(() => "");
-    let version = null, err = SEV.err || "";
+    const k = FIN_STATE.local ? "local" : await sevKey().catch(() => "");
+    let version = null, err = "";
     if (k) { try { const v = await sev("GET", "/Tools/bookkeepingSystemVersion"); version = v && v.objects && v.objects.version; } catch (e) { err = String(e.message || e).slice(0, 200); } }
-    return send(res, 200, JSON.stringify({ configured: !!k, source: SEV.src, version, error: err }), TYPES[".json"], { "Cache-Control": "no-store" });
+    return send(res, 200, JSON.stringify({ configured: !!k, source: FIN_STATE.local ? "eigene Buchhaltung" : SEV.src, version, error: err }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/sevdesk" && req.method === "GET") {
     try { const d = await sevSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
@@ -2519,14 +2507,10 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/fin/mode" || p === "/admin/api/fin/firm") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
-      if (req.method === "GET") return J(200, { ok: true, local: FIN_STATE.local, firm: FIN_STATE.firm || null, sevdeskKey: !!(SEV.key || (await sevKey().catch(() => ""))) });
+      if (req.method === "GET") return J(200, { ok: true, local: FIN_STATE.local, firm: FIN_STATE.firm || null });
       const pl = await sevBody(req, 20000);
       if (p === "/admin/api/fin/firm") { const f = {}; ["name", "owner", "street", "zip", "city", "country", "phone", "email", "web", "bank", "iban", "bic", "uid", "taxNumber", "court", "contactPerson"].forEach(k => { f[k] = String(pl[k] || "").slice(0, 200); }); await FIN.setMeta("firm", f); FIN_STATE.firm = f; return J(200, { ok: true, firm: f }); }
-      if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
-      await FIN.setMeta("mode", { local: !!pl.local, at: new Date().toISOString() }); FIN_STATE.local = !!pl.local;
-      if (FIN_STATE.local) await FIN_LOCAL.load(true);
-      SEV_CACHE.at = 0; SEV_META.at = 0; OFFERS_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
-      return J(200, { ok: true, local: FIN_STATE.local });
+      return J(410, { ok: false, error: "Umschalten gibt es nicht mehr – die Buchhaltung läuft nur noch im Cockpit" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
   if (p === "/admin/api/fin/bank-import" && req.method === "POST") {   // Kontoauszug (CAMT/CSV/JSON) einlesen; preview:true = nur prüfen
@@ -2541,7 +2525,7 @@ async function handleAdmin(req, res, u, p) {
       return send(res, 200, JSON.stringify(Object.assign({ ok: true, format: parsed.format, preview: !!pl.preview, local: FIN_STATE.local }, r)), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
-  if (p === "/admin/api/fin/compare" && req.method === "GET") {   // Gegenprobe: gleiche Kennzahlen aus sevDesk und aus den eigenen Daten
+  if (p === "/admin/api/fin/compare" && req.method === "GET" && !FIN_STATE.local) {   // Gegenprobe: gleiche Kennzahlen aus sevDesk und aus den eigenen Daten
     try {
       await FIN_LOCAL.load(true);
       const today = viennaToday(), yr = today.slice(0, 4);
@@ -2675,7 +2659,7 @@ async function handleAdmin(req, res, u, p) {
       { key: "blitzdings", label: "Blitzdings", ok: !!BLITZ.token },
       { key: "valuero", label: "VALUERO (Antonhaus / Alpinappart)", ok: !!(ANTONHAUS.token || ALPINAPPART.key) },
     ];
-    integrations.push({ key: "sevdesk", label: "sevDesk (Buchhaltung)" + (SEV.src === "kochdu" ? " – Schlüssel von kochdu" : ""), ok: !!(SEV.key || await sevKey().catch(() => "")) });
+    integrations.push({ key: "buchhaltung", label: "Buchhaltung (eigene, im Cockpit)", ok: FIN_STATE.local });
     integrations.push({ key: "ki", label: "KI (Claude von Anthropic)", ok: KI.configured() });
     const ic = icloudCfg();
     integrations.push({ key: "icloud", label: "Privater Kalender (iCloud)", ok: !!(ic.user && ic.pass && ic.calUrl) });

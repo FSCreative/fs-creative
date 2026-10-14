@@ -150,6 +150,7 @@ module.exports = function (D) {
     const J = (code, o) => send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store" });
     try {
       if (p === "/admin/api/fin/import" && req.method === "GET") return J(200, await status());
+      if (p === "/admin/api/fin/import" && req.method === "POST" && !D.importAllowed) return J(410, { ok: false, error: "Die sevDesk-Verbindung ist entfernt – es gibt nichts mehr zu übernehmen." });
       if (p === "/admin/api/fin/import" && req.method === "POST") {
         const pl = await body(req); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
         importAll({ noFiles: !!pl.noFiles }).catch(e => log(e.message));
