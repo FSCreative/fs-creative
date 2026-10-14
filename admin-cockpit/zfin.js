@@ -24,6 +24,8 @@ var IC={
   mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
   cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/>',
   left:'<path d="m15 18-6-6 6-6"/>', right:'<path d="m9 18 6-6-6-6"/>',
+  id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14 10h4M14 14h3"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
   help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/>',
   cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
@@ -43,6 +45,7 @@ var NAV=[
   {id:"prod",label:"Produkte",icon:"prod"},
   {id:"abgl",label:"Plattformen verrechnen",icon:"sync"},
   {id:"lock",label:"Festschreiben",icon:"lock"},
+  {id:"mydata",label:"Meine Daten",icon:"id"},
   {id:"umstieg",label:"Firma & Einstellungen",icon:"set"}
 ];
 function groupOf(p){ for(var i=0;i<NAV.length;i++){ var n=NAV[i]; if(n.id===p) return n.id; if(n.sub&&n.sub.some(function(s){return s[0]===p;})) return n.id; } return p; }
@@ -379,6 +382,36 @@ function pageKasse(){
 F.form("kbopen",function(f){ F.confirm("Kasse „"+f.name.value+"“ mit Anfangsbestand "+F.eur(+f.amount.value||0)+" anlegen? Der Anfangsbestand ist danach nicht mehr änderbar.","Anlegen",function(){ F.api("/admin/api/fin/cash",{body:{confirm:true,op:"open",name:f.name.value,amount:f.amount.value,date:f.date.value}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } KB=null; F.load(true); F.render(); }); }); });
 F.form("kbbook",function(f){ var acc=f.getAttribute("data-acc"); F.api("/admin/api/fin/cash",{body:{confirm:true,op:"book",accountId:acc,dir:f.dir.value,date:f.date.value,amount:f.amount.value,text:f.text.value,name:f.name.value}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } KB=null; C.tx=null; F.toast("Gebucht"); F.render(); }); });
 F.action("kbrev",function(v){ var p=v.split("|"); F.confirm("Diese Kassenbuchung per Gegenbuchung (mit heutigem Datum) stornieren?","Stornieren",function(){ F.api("/admin/api/fin/cash",{body:{confirm:true,op:"reverse",accountId:p[0],id:p[1]}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } KB=null; C.tx=null; F.render(); }); },true); });
+
+/* ---------- Meine Daten: Firmen-, Steuer-, Bank- und Kontaktdaten zum Kopieren ---------- */
+var MD=null, MDE=false;
+function mdDefaults(f){ f=f||{}; var ad=[f.street||"Dorfstraße 3/Top 1",[f.zip||"6793",f.city||"Gaschurn"].join(" "),"Vorarlberg",f.country||"Österreich"].join(", ");
+  return [["Firma","Firmenname","Simon Leonhard Felder"],["Firma","Freie Bezeichnung",f.name||"FS Creative"],["Firma","Inhaber",f.owner||"Simon Leonhard Felder"],["Firma","Anschrift",ad],["Firma","Branche (SIC)","7311-0000 – Werbeagenturen"],
+    ["Steuer & Register","UID-Nummer",f.uid||"ATU82622967"],["Steuer & Register","Steuernummer",f.taxNumber||"98159/4260"],["Steuer & Register","D-U-N-S® Nummer","30-108-8847"],["Steuer & Register","Gerichtsstand",f.court||"BG Bludenz"],
+    ["Bank","Bank",f.bank||"Sparkasse Bludenz"],["Bank","IBAN",f.iban||"AT09 2060 7032 0137 9702"],["Bank","BIC",f.bic||"SSBLAT21XXX"],["Bank","Kontoinhaber",f.owner||"Simon Leonhard Felder"],
+    ["Kontakt","Telefon","0664/1430620"],["Kontakt","Telefon international","+43 664 1430620"],["Kontakt","E-Mail","simon@fs-creative.at"],["Kontakt","E-Mail Büro",f.email||"office@fs-creative.at"],["Kontakt","Website",f.web||"www.fs-creative.at"]]
+    .map(function(r){ return {g:r[0],l:r[1],v:r[2]}; }); }
+function mdLoad(){ if(C.busy.md) return; C.busy.md=1; F.api("/admin/api/mydata").then(function(j){ C.busy.md=0; MD=j&&j.ok?(j.rows&&j.rows.length?j.rows:mdDefaults(j.firm)):{err:(j&&j.error)||"Fehler"}; F.render(); }); }
+function pageMyData(){
+  if(!MD){ mdLoad(); return head("Meine Daten","")+'<div class="sd-empty">Lade …</div>'; }
+  if(MD.err) return head("Meine Daten","")+'<div class="notice">'+esc(MD.err)+'</div>';
+  var groups=[]; MD.forEach(function(r,i){ var g=groups.find(function(x){ return x.g===r.g; }); if(!g){ g={g:r.g,rows:[]}; groups.push(g); } g.rows.push({r:r,i:i}); });
+  var body=MDE?'<section class="fsd-card"><div class="md-edit">'+MD.map(function(r,i){ return '<input class="f" data-md="'+i+':g" value="'+esc(r.g)+'" placeholder="Gruppe"><input class="f" data-md="'+i+':l" value="'+esc(r.l)+'" placeholder="Bezeichnung"><input class="f" data-md="'+i+':v" value="'+esc(r.v)+'" placeholder="Wert"><button class="btn sm" data-act="mddel:'+i+'" aria-label="Entfernen">✕</button>'; }).join("")+'</div><div class="fsd-btns" style="margin-top:12px"><button class="btn" data-act="mdadd">Zeile hinzufügen</button></div></section>':
+    '<div class="md-grid">'+groups.map(function(g){ return '<section class="fsd-card"><div class="row-between" style="margin-bottom:6px"><div class="fsd-ctitle" style="margin:0">'+esc(g.g)+'</div><button class="btn sm" data-act="mdcopyg:'+esc(g.g)+'">Gruppe kopieren</button></div>'+
+      g.rows.map(function(x){ return '<button type="button" class="md-row" data-act="mdcopy:'+x.i+'" title="Klicken zum Kopieren"><span>'+esc(x.r.l)+'</span><b>'+esc(x.r.v)+'</b><i>'+ic("copy")+'</i></button>'; }).join("")+'</section>'; }).join("")+'</div>';
+  return head("Meine Daten","Alles zum Nachschlagen – Klick auf eine Zeile kopiert den Wert.",MDE?'<button class="btn" data-act="mdcancel">Abbrechen</button><button class="btn primary" data-act="mdsave">Speichern</button>':'<button class="btn" data-act="mdedit">Bearbeiten</button><button class="btn primary" data-act="mdcopyall">Alles kopieren</button>')+body;
+}
+function mdCopy(txt,msg){ var ok=function(){ F.toast(msg||"Kopiert"); }; if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok,function(){ mdFallback(txt); ok(); }); else { mdFallback(txt); ok(); } }
+function mdFallback(t){ var a=document.createElement("textarea"); a.value=t; a.style.position="fixed"; a.style.opacity="0"; document.body.appendChild(a); a.select(); try{ document.execCommand("copy"); }catch(e){} a.remove(); }
+F.action("mdcopy",function(i){ var r=MD[+i]; if(r) mdCopy(r.v,r.l+" kopiert"); });
+F.action("mdcopyg",function(g){ mdCopy(MD.filter(function(r){ return r.g===g; }).map(function(r){ return r.l+": "+r.v; }).join("\n"),g+" kopiert"); });
+F.action("mdcopyall",function(){ var out=[], last=null; MD.forEach(function(r){ if(r.g!==last){ if(last!==null) out.push(""); out.push(r.g); last=r.g; } out.push(r.l+": "+r.v); }); mdCopy(out.join("\n"),"Alle Daten kopiert"); });
+F.action("mdedit",function(){ MDE=true; MD=MD.map(function(r){ return {g:r.g,l:r.l,v:r.v}; }); F.render(); });
+F.action("mdcancel",function(){ MDE=false; MD=null; F.render(); });
+F.action("mdadd",function(){ MD.push({g:(MD[MD.length-1]||{}).g||"Sonstiges",l:"",v:""}); F.render(); });
+F.action("mddel",function(i){ MD.splice(+i,1); F.render(); });
+F.listen("input","[data-md]",function(el){ var a=el.getAttribute("data-md").split(":"); MD[+a[0]][a[1]]=el.value; });
+F.action("mdsave",function(){ F.api("/admin/api/mydata",{body:{confirm:true,rows:MD}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Nicht gespeichert",true); return; } MD=j.rows; MDE=false; F.toast("Gespeichert"); F.render(); }); });
 /* ---------- Ansicht registrieren: ersetzt „Finanzen“ ---------- */
 function pageTab(id){ var t=(F.geldTabs||[]).find(function(x){return x.id===id;}); if(!t) return '<div class="sd-empty">Nicht verfügbar.</div>'; var prev=UI.geldTab; UI.geldTab=id; try{ return head(t.label,t.sub||"","")+t.render(); } finally { UI.geldTab=prev; } }
 function pageAbgl(){ var prev=UI.geldTab; UI.geldTab="uebersicht"; try{ var v=F.views.find(function(x){return x.id==="geld";}); return F._geldOrig?F._geldOrig.call(v):""; } finally { UI.geldTab=prev; } }
@@ -401,10 +434,11 @@ function content(){
   if(p==="uva"||p==="u1"||p==="jab"||p==="prognose"||p==="umstieg"||p==="anlagen") return p==="prognose"?head("Jahresprognose","")+(F.renderPrognose?F.renderPrognose():pageTab("prognose")):pageTab(p);
   if(p==="abgl") return pageAbgl();
   if(p==="lock") return pageLock();
+  if(p==="mydata") return pageMyData();
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["kasse","Kasse"],["steuer","Steuern"],["anlagen","Abschreibungen"],["orders","Angebote"],["cn","Gutschriften"],["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen"],["lock","Festschreiben"],["umstieg","Einstellungen"]];
+var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["kasse","Kasse"],["steuer","Steuern"],["anlagen","Abschreibungen"],["orders","Angebote"],["cn","Gutschriften"],["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Einstellungen"]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="open") g="bank"; if(g==="uva"||g==="u1"||g==="jab"||g==="prognose") g="steuer";
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+'</button>'; }).join("")+'</nav>'; }
 function scanInput(cls,label){ return '<label class="'+cls+'">'+ic("cam")+(label?'<span>'+label+'</span>':'')+'<input type="file" class="fsd-scan" accept="image/*,application/pdf" capture="environment" multiple hidden></label>'; }
@@ -580,7 +614,7 @@ F.css(
 '.fsm{display:block;min-height:auto;background:#f6f6f8;margin:0;padding-bottom:110px}'+
 '.fsm-head{padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:center}.fsm-hbtn{width:38px;height:38px;border-radius:50%;border:1px solid rgba(6,3,20,.12);background:#fff;display:grid;place-items:center;color:#100b2d}.fsm-hbtn svg{width:20px;height:20px}'+
 '.fsd-help{margin-top:auto}.fsd-help kbd{margin-left:auto;font:inherit;font-size:11px;color:var(--sd-mut);border:1px solid var(--sd-line2);border-radius:4px;padding:0 5px}'+
-'.fsm-head{padding:14px 16px 4px.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:#100b2d}'+
+'.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:#100b2d}'+
 '.fsm-nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px 12px;scrollbar-width:none;position:sticky;top:0;z-index:5;background:#f6f6f8}.fsm-nav::-webkit-scrollbar{display:none}'+
 '.fsm-nav button{flex:none;border:1px solid rgba(6,3,20,.12);background:#fff;border-radius:99px;padding:7px 14px;font-size:14px;font-weight:500;color:#100b2d}'+
 '.fsm-nav button[aria-current]{background:#212144;border-color:#212144;color:#fff}'+
@@ -606,6 +640,8 @@ F.css(
 '.fsm-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}body .fsm-acts .btn{justify-content:center;height:46px}body .fsm-acts .btn.primary{grid-column:1/-1}'+
 '.fsm-pos{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid rgba(6,3,20,.07);font-size:14px}.fsm-pos:last-child{border-bottom:0}.fsm-pos i{color:#717387;font-style:normal}'+
 '.fsm .fsd-pager{border-top:1px solid rgba(6,3,20,.07)}.fsm-wide{overflow-x:auto}.fsm .fsd-head h1{font-size:20px}'+
+'.md-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}.md-row{display:grid;grid-template-columns:150px minmax(0,1fr) 20px;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--sd-line);background:none;padding:10px 4px;cursor:pointer;font:inherit;color:var(--sd-ink)}.md-row span{font-size:13px;color:var(--sd-mut2)}.md-row b{font-weight:500;font-size:14px;word-break:break-word}.md-row i{color:var(--sd-mut);opacity:0;display:grid}.md-row i svg{width:15px;height:15px}.md-row:hover{background:var(--sd-hov)}.md-row:hover i{opacity:1}'+
+'.md-edit{display:grid;grid-template-columns:150px 200px minmax(0,1fr) auto;gap:8px;align-items:center}@media (max-width:700px){.md-row{grid-template-columns:110px minmax(0,1fr) 18px}.md-row i{opacity:1}.md-edit{grid-template-columns:1fr 1fr}}'+
 '@media (max-width:1250px){.kbgrid{grid-template-columns:1fr 1fr!important}.fsd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fsd-detail{grid-template-columns:minmax(0,1fr)}.fsd-side{position:static}}'+
 '@media (max-width:1100px){.fsd{grid-template-columns:200px minmax(0,1fr)}.fsd-vou{grid-template-columns:minmax(0,1fr)}.fsd-cats{position:static;max-height:240px}}'
 );

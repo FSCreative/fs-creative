@@ -2386,6 +2386,18 @@ async function handleAdmin(req, res, u, p) {
       const o = r.objects; return J(200, { ok: true, result: Array.isArray(o) ? o.map(x => x && { id: String(x.id), nr: x.invoiceNumber || "" }) : (o && { id: String(o.id), nr: o.invoiceNumber || o.creditNoteNumber || "", type: o.invoiceType || "" }) });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  // Meine Daten: alle Firmen-/Steuer-/Bankdaten zum Nachschlagen und Kopieren (Liste aus Gruppe, Bezeichnung, Wert)
+  if (p === "/admin/api/mydata") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!process.env.DATABASE_URL) return J(200, { ok: false, error: "Keine Datenbank" });
+      await FIN.init();
+      if (req.method === "GET") return J(200, { ok: true, rows: (await FIN.getMeta("mydata")) || null, firm: FIN_STATE.firm || null });
+      const pl = await sevBody(req, 60000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const rows = (Array.isArray(pl.rows) ? pl.rows : []).slice(0, 120).map(r => ({ g: String(r.g || "").slice(0, 40), l: String(r.l || "").slice(0, 80), v: String(r.v || "").slice(0, 500) })).filter(r => r.l || r.v);
+      await FIN.setMeta("mydata", rows); return J(200, { ok: true, rows });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (p === "/admin/api/fin/mollie") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
