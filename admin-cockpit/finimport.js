@@ -68,5 +68,5 @@ F.action("finmode",function(v){
     });
   },!on);
 });
-F.geldTab({id:"umstieg",label:"Umstieg",order:90,sub:"Übernahme aus sevDesk, Firmendaten und Umschalten auf die eigene Buchhaltung.",render:function(){ return render()+firmPanel()+cmpPanel()+modePanel(); }});
+(F.geldTab||function(t){ (F._pendTabs=F._pendTabs||[]).push(t); })({id:"umstieg",label:"Umstieg",order:90,sub:"Übernahme aus sevDesk, Firmendaten und Umschalten auf die eigene Buchhaltung.",render:function(){ return render()+firmPanel()+cmpPanel()+modePanel(); }});
 })();

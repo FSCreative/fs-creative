@@ -6,6 +6,7 @@ F.UI.money=F.UI.money||"zu"; F.UI.invQ=F.UI.invQ||""; F.UI.invF=F.UI.invF||"open
 /* Unterpunkte von "Finanzen": weitere Module melden sich mit F.geldTab({id,label,order,render}) an */
 F.geldTabs=[{id:"uebersicht",label:"Übersicht",order:10},{id:"prognose",label:"Jahresprognose",order:20}];
 F.geldTab=function(t){ F.geldTabs.push(t); F.geldTabs.sort(function(a,b){ return a.order-b.order; }); };
+(F._pendTabs||[]).forEach(F.geldTab); F._pendTabs=[];   // Module, die vor geld.js geladen werden (z. B. finimport.js)
 F.action("geldtab",function(k){ F.UI.geldTab=k; F.render(); window.scrollTo(0,0); });
 function subnav(){ return '<div class="subnav" role="tablist">'+F.geldTabs.map(function(t){ return '<button role="tab" data-act="geldtab:'+t.id+'" aria-current="'+(F.UI.geldTab===t.id)+'">'+esc(t.label)+'</button>'; }).join("")+'</div>'; }
 
