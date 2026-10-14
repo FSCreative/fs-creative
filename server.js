@@ -1159,6 +1159,9 @@ const FIN_BANK = require("./fin-bank.js");
 const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
   mailSend: async (m) => {
     if (!MAIL.url || !MAIL.token) throw new Error("Mailserver nicht eingerichtet");
+// Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway)
+const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL });
+setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
     const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, m)) });
     const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
   } });
@@ -2380,6 +2383,16 @@ async function handleAdmin(req, res, u, p) {
       const o = r.objects; return J(200, { ok: true, result: Array.isArray(o) ? o.map(x => x && { id: String(x.id), nr: x.invoiceNumber || "" }) : (o && { id: String(o.id), nr: o.invoiceNumber || o.creditNoteNumber || "", type: o.invoiceType || "" }) });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  if (p === "/admin/api/fin/mollie") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (req.method === "GET") return J(200, Object.assign({ ok: true, local: FIN_STATE.local }, FIN_MOLLIE.status()));
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung (Finanzen → Firma & Einstellungen) verfügbar" });
+      const pl = await sevBody(req, 2000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const r = await FIN_MOLLIE.sync({ since: /^\d{4}-\d{2}-\d{2}$/.test(pl.since || "") ? pl.since : undefined }); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+      return J(200, { ok: true, result: r });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   // Festschreiben wie sevDesk: Zeitraum + Dokumentarten (nicht umkehrbar) und Einstellung „automatisch bei Fertigstellung“
   if (p === "/admin/api/fin/enshrine" || p === "/admin/api/fin/settings") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
@@ -2411,6 +2424,7 @@ async function handleAdmin(req, res, u, p) {
       if (!parsed.items.length) return send(res, 200, JSON.stringify({ ok: false, error: "In der Datei wurden keine Umsätze erkannt (" + parsed.format + "). Bitte CAMT.053 (XML) oder CSV aus George exportieren." }), TYPES[".json"]);
       if (!pl.preview && pl.confirm !== true) return send(res, 400, JSON.stringify({ ok: false, error: "Bestätigung fehlt" }), TYPES[".json"]);
       const r = await FIN_LOCAL.importBank(pl.accountId, parsed.items, FIN_BANK.hash, !!pl.preview);
+      if (!pl.preview && FIN_STATE.local) r.mollieLinked = await FIN_MOLLIE.relink().catch(() => 0);   // Mollie-Auszahlungen mit neuen Bankumsätzen verknüpfen
       if (!pl.preview) { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
       return send(res, 200, JSON.stringify(Object.assign({ ok: true, format: parsed.format, preview: !!pl.preview, local: FIN_STATE.local }, r)), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }

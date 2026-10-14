@@ -41,7 +41,8 @@ var T=[
  {id:"bank",t:"Bank & Kasse",s:"Kontoumsätze importieren und zuordnen",b:[
   ["Kontoauszug importieren","In George: Konto → Umsätze → Export (CAMT/XML, CSV oder JSON) und hier „Kontoauszug importieren“. Doppelte Umsätze werden erkannt und übersprungen."],
   ["Zuordnen","Jeder Umsatz gehört zu einer Rechnung (Geld rein) oder einem Beleg (Geld raus). „Nicht zugeordnet“ zeigt, was noch fehlt – mit Vorschlägen."],
-  ["Privat","Private Ausgaben/Einlagen nicht als Beleg erfassen, sondern als „privat“ markieren."]]},
+  ["Privat","Private Ausgaben/Einlagen nicht als Beleg erfassen, sondern als „privat“ markieren."],
+  ["Mollie","Mollie ist ein eigenes Zahlungskonto: jede Kundenzahlung kommt mit dem vollen Betrag herein (→ der Rechnung zuordnen), die Mollie-Gebühr als eigene Ausgabe, kochdu-Provisionen (Connect) als Einnahme. Die Auszahlung aufs Bankkonto wird automatisch mit dem George-Umsatz als „Geldtransit“ verknüpft – sie ist kein Umsatz. Deshalb passt es, auch wenn wegen der Gebühren weniger ausbezahlt wird."]]},
  {id:"open",t:"Nicht zugeordnete Umsätze",s:"Was noch fehlt",b:[["Warum wichtig?","Erst zugeordnete Umsätze gelten als bezahlt – das braucht die E/A-Rechnung (Einnahmen/Ausgaben nach Zahlungsdatum)."]]},
  {id:"kasse",t:"Kassenbuch",s:"Bargeld richtig aufzeichnen",b:[
   ["Regeln","Jede Kassenbuchung ist sofort unveränderbar. Fehler korrigierst du mit „Stornieren“ – das bucht eine Gegenbuchung mit heutigem Datum. Der Kassenstand darf nie unter 0 fallen."],
@@ -73,6 +74,7 @@ var T=[
  {id:"umstieg",t:"Firma & Einstellungen",s:"Firmendaten und Umstieg",b:[["Firmendaten","Erscheinen auf Rechnungen (Adresse, UID, Bank). Bitte vollständig halten."],["Eigene Buchhaltung","Hier schaltest du von sevDesk auf die eigene Buchhaltung um – alle Daten wurden übernommen."]]}
 ];
 var G=[
+ ["Geldtransit","Geld wandert zwischen deinen eigenen Konten (z. B. Mollie → Bank). Kein Umsatz und keine Ausgabe."],
  ["Netto / Brutto","Netto = ohne Umsatzsteuer, brutto = inklusive. Für deinen Gewinn zählt netto; die USt reichst du nur durch."],
  ["Umsatzsteuer (USt)","Die 20 % (10 %, 13 %) auf deinen Rechnungen. Gehört dem Finanzamt."],
  ["Vorsteuer","Die USt auf deinen Einkäufen. Wird von der Umsatzsteuer abgezogen."],

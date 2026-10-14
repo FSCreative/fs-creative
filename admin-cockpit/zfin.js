@@ -236,18 +236,22 @@ F.action("fvcat",function(k){ UI.fvcat=k; UI.fpg=0; F.render(); });
 /* ---------- Bank: Konten-Tabelle wie sevDesk ---------- */
 function txLoad(force){ if(C.busy.tx) return; C.busy.tx=1; F.api("/admin/api/sev/transactions"+(force?"?force=1":"")).then(function(j){ C.busy.tx=0; C.tx=j||{ok:false}; F.render(); }); }
 F.action("ftxreload",function(){ C.tx=null; txLoad(true); });
+var MO=null;
+F.action("fmollie",function(){ F.toast("Rufe Mollie ab …"); F.api("/admin/api/fin/mollie",{body:{confirm:true}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Mollie-Abruf fehlgeschlagen",true); return; } MO=null; C.tx=null; var o=(j.result.orgs||[]).reduce(function(a,x){ a.n+=x.added||0; a.f+=x.fees||0; a.p+=x.linked||0; if(x.error) a.e.push(x.org+": "+x.error); return a; },{n:0,f:0,p:0,e:[]}); F.toast(o.e.length?o.e.join(" · "):(o.n+" Zahlungen, "+o.f+" Gebühren, "+(o.p+(j.result.relinked||0))+" Auszahlungen mit der Bank verknüpft"),!!o.e.length); F.load(true); }); });
 function pageBank(mode){
   if(!C.tx){ txLoad(); return head("Konten","")+'<div class="sd-empty">Lade Bankumsätze …</div>'; }
   if(!C.tx.ok) return head("Konten","")+noSev();
   var parts=UI.fin.split(":"), acc=mode==="kasse"?(((C.tx.accounts||[]).find(function(a){return /kasse|register/i.test(a.name+" "+a.type);})||{}).id||"none"):(parts[1]||"all"), q=(UI.fq_tx||"").toLowerCase(), per=50, pg=UI.fpg||0;
   var accs=C.tx.accounts||[];
   var list=C.tx.transactions.filter(function(t){ if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
-  var stp=function(t){ return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):t.status===350?pill("paid","Automatisch"):pill("paid","Gebucht"); };
+  var stp=function(t){ if(t.transit) return pill("grey","Geldtransit"); return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):t.status===350?pill("paid","Automatisch"):pill("paid","Gebucht"); };
   var rows=list.slice(pg*per,(pg+1)*per).map(function(t){ var lk=t.links.map(function(l){ return l.type==="Invoice"?'<a href="#" data-act="fin:invd:'+esc(l.id)+'">'+esc(l.nr)+'</a>':'<a href="#" data-act="sdvou:'+esc(l.id)+'">Beleg</a>'; }).join(", ");
     return '<tr><td>'+stp(t)+'</td><td><b>'+esc(t.name||"—")+'</b><div class="sub">'+esc(t.purpose)+'</div></td><td class="num">'+deShort(t.date)+'</td><td class="r num '+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</td><td>'+(lk||(t.status===100?'<button class="btn" data-act="ftxassign:'+esc(t.id)+'">Zuordnen</button>':'<span class="muted">—</span>'))+'</td></tr>'; }).join("");
   var title=mode==="kasse"?"Kassenbuch":mode==="open"?"Unvollständig":"Alle Konten";
   var accTabs=mode==="kasse"?"":tabs("fin:"+(mode==="open"?"open":"bank"),acc,[["all","Alle"]].concat(accs.map(function(a){ return [a.id,a.name]; })));
-  return head(title,mode==="open"?list.length+" Umsätze ohne Zuordnung":"",'<button class="btn" data-act="sdbkimp">Kontoauszug importieren</button><button class="btn" data-act="ftxreload">Aktualisieren</button>')+
+  if(!MO&&!C.busy.mo){ C.busy.mo=1; F.api("/admin/api/fin/mollie").then(function(j){ C.busy.mo=0; MO=j||{ok:false}; F.render(); }); }
+  var moBox=MO&&MO.ok&&!MO.configured&&mode==="bank"?'<section class="fsd-card"><div class="fsd-ctitle">Mollie verbinden</div><p class="muted" style="font-size:13px;margin:6px 0 0">Damit Mollie-Zahlungen (Blitzdings) und Connect-Provisionen (kochdu) automatisch hereinkommen: in Mollie unter <b>Entwickler → Organisations-Zugangstoken</b> ein Token mit Leserechten (balances, payments, profiles, organizations, settlements) erstellen und in Railway als Variable <b>MOLLIE_ORG_TOKEN</b> eintragen (zweite Organisation: MOLLIE_ORG_TOKEN_2). Danach erscheint hier „Mollie abrufen“.</p></section>':'';
+  return head(title,mode==="open"?list.length+" Umsätze ohne Zuordnung":(MO&&MO.at?"Mollie zuletzt abgerufen: "+de(MO.at.slice(0,10))+" "+MO.at.slice(11,16):""),(MO&&MO.configured?'<button class="btn" data-act="fmollie">Mollie abrufen</button>':'')+'<button class="btn" data-act="sdbkimp">Kontoauszug importieren</button><button class="btn" data-act="ftxreload">Aktualisieren</button>')+moBox+
     '<section class="fsd-card flush"><div class="fsd-bar">'+accTabs+search("tx","Name, Verwendungszweck, Betrag …")+'</div><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Name / Verwendungszweck</th><th>Buchungstag</th><th class="r">Betrag</th><th>Verknüpfungen</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">Keine Umsätze.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section>';
 }
 /* Offenen Umsatz zuordnen: vorhandene Bank-Zuordnung (Vorschläge) verwenden */

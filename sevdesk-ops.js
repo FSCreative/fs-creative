@@ -380,7 +380,7 @@ module.exports = function (D) {
     const links = {};
     logs.forEach(l => { const t = l.checkAccountTransaction && l.checkAccountTransaction.id, o = l.object || {}; if (!t || !o.id) return; (links[String(t)] = links[String(t)] || []).push({ type: o.objectName, id: String(o.id), nr: o.objectName === "Invoice" ? (invNr[o.id] || "Rechnung") : "Beleg", amount: sevNum(l.amountPaid) }); });
     const list = txs.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), book: sevDay(t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || "").replace(/\s+/g, " ").trim().slice(0, 300), status: parseInt(t.status, 10) || 0,
-      accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "", links: links[String(t.id)] || [] }))
+      accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "", links: links[String(t.id)] || [], transit: !!t.transitWith, mollie: t.mollieType || "" }))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (+b.id - +a.id));
     TX_CACHE = { at: Date.now(), data: { ok: true, transactions: list, accounts: (snap && snap.accounts) || [] } };
     return TX_CACHE.data;
