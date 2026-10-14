@@ -1,4 +1,4 @@
-/* sevDesk im Cockpit: Rechnungen (Detail, senden, mahnen, stornieren, Entwurf bearbeiten), Bank zuordnen, Belege, Kontakte & Artikel.
+/* Buchhaltung im Cockpit (Dateiname historisch): Rechnungen (Detail, senden, mahnen, stornieren, Entwurf bearbeiten), Bank zuordnen, Belege, Kontakte & Artikel.
    Unterpunkte von „Finanzen“. Alles Schreibende läuft über /admin/api/sev/* mit confirm:true. */
 (function(){
 "use strict";
@@ -40,11 +40,11 @@ function load(key,url,cb){
   if(S.busy[key]) return; S.busy[key]=1;
   F.api(url).then(function(j){ S.busy[key]=0; cb(j||{ok:false,error:"keine Antwort"}); F.render(); }).catch(function(){ S.busy[key]=0; cb({ok:false,error:"Keine Verbindung"}); F.render(); });
 }
-function loading(t){ return '<div class="sd-empty">'+esc(t||"Lade aus sevDesk …")+'</div>'; }
-function errBox(j,act){ return '<div class="notice"><span>sevDesk: '+esc((j&&j.error)||"Fehler")+'</span><button class="btn" data-act="'+act+'">Erneut laden</button></div>'; }
+function loading(t){ return '<div class="sd-empty">'+esc(t||"Lade …")+'</div>'; }
+function errBox(j,act){ return '<div class="notice"><span>'+esc((j&&j.error)||"Fehler")+'</span><button class="btn" data-act="'+act+'">Erneut laden</button></div>'; }
 function chip(act,k,cur,label,n){ return '<button class="chip" data-act="'+act+':'+k+'" aria-pressed="'+(cur===k)+'">'+label+(n!=null?' · '+n:'')+'</button>'; }
 function post(url,body){ body.confirm=true; return F.api(url,{body:body}); }
-function fail(j){ F.toast("sevDesk: "+((j&&j.error)||"Fehler"),true); }
+function fail(j){ F.toast((j&&j.error)||"Fehler",true); }
 function refreshAll(){ S.bank=null; S.vou={}; F.load(true); }
 F.sevRefresh=refreshAll;
 
@@ -73,7 +73,7 @@ F.action("sdrgf",function(k){ F.UI.rgF=k; F.UI.rgMore=0; F.render(); });
 F.action("sdrgmore",function(){ F.UI.rgMore=(F.UI.rgMore||0)+50; F.render(); });
 F.listen("input","[data-rgq]",function(el){ F.UI.rgQ=el.value; clearTimeout(el._d); el._d=setTimeout(F.render,250); });
 function renderRechnungen(){
-  var sev=F.D.sev; if(!sev) return '<div class="notice">sevDesk antwortet gerade nicht. <button class="btn" data-act="reload">Neu laden</button></div>';
+  var sev=F.D.sev; if(!sev) return '<div class="notice">Die Buchhaltungsdaten konnten gerade nicht geladen werden. <button class="btn" data-act="reload">Neu laden</button></div>';
   var inv=sev.invoices.filter(function(i){ return i.type!=="SR"; }), q=(F.UI.rgQ||"").toLowerCase(), f=F.UI.rgF;
   var cnt={todo:0,draft:0,open:0,over:0,paid:0};
   inv.forEach(function(i){ if(i.status===100) cnt.draft++; if(i.open>0.005&&i.status!==100) cnt.open++; if(i.overdue) cnt.over++; if(i.status===1000) cnt.paid++; if(i.status===100||i.overdue||(i.status===200&&!i.sent)) cnt.todo++; });
@@ -118,7 +118,6 @@ function invHtml(i){
   if(open){ acts.push('<button class="btn primary" data-act="book:'+esc(i.id)+'">Zahlung erfassen</button>'); acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">Erneut senden</button>'); if(i.type==="RE") acts.push('<button class="btn" data-act="sdremind:'+esc(i.id)+'">Mahnung erstellen</button>'); if(!(i.paid>0)&&!i.enshrined) acts.push('<button class="btn" data-act="sddraft:'+esc(i.id)+'">Zurück auf Entwurf</button>'); }
   if(st===1000) acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">Per E-Mail senden</button>');
   acts.push('<a class="btn" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'&dl=1">PDF laden</a>');
-  acts.push('<a class="btn" href="'+F.SEVURL+'/fi/detail/type/'+esc(i.type||"RE")+'/id/'+encodeURIComponent(i.id)+'" target="_blank" rel="noopener">In sevDesk ↗</a>');
   if((open||st===1000)&&i.type==="RE") acts.push('<button class="btn danger" data-act="sdcancel:'+esc(i.id)+'" style="margin-left:auto">Stornieren</button>');
   var pos='<table class="sd-pos"><thead><tr><th>Position</th><th class="r">Menge</th><th class="r">Einzel brutto</th><th class="r">USt</th><th class="r">Summe</th></tr></thead><tbody>'+
     (i.positions.map(function(p){ return '<tr><td><b>'+esc(p.name)+'</b>'+(p.text?'<div class="muted">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.priceGross)+'</td><td class="r num">'+esc(p.taxRate)+' %</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("")||'<tr><td colspan="5" class="muted">Keine Positionen</td></tr>')+
@@ -144,7 +143,7 @@ function sendDialog(id,kind,ref){
     S.det[id]=i;
     var to=(i.emails[0]&&i.emails[0].value)||"";
     F.modal('<form data-form="sdsend" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(i.type==="MA"?"Mahnung":"Rechnung")+' '+esc(i.nr||"")+' senden</h2>'+F.btnClose()+'</div>'+
-      '<p class="muted" style="margin:0">sevDesk verschickt die Mail mit dem PDF im Anhang von deinem sevDesk-Absender'+(i.status===100?'. Der Entwurf bekommt damit seine Rechnungsnummer und ist danach <b>nicht mehr änderbar</b>.':'.')+'</p>'+
+      '<p class="muted" style="margin:0">Die Mail geht mit dem PDF im Anhang von deiner Absenderadresse raus'+(i.status===100?'. Der Entwurf bekommt damit seine Rechnungsnummer und ist danach <b>nicht mehr änderbar</b>.':'.')+'</p>'+
       '<label class="fl">An<input class="f" name="to" type="text" list="sdMails" required value="'+esc(to)+'" placeholder="kunde@beispiel.at"></label><datalist id="sdMails">'+i.emails.map(function(m){ return '<option value="'+esc(m.value)+'">'; }).join("")+'</datalist>'+
       '<label class="fl">Betreff<input class="f" name="subject" required value="'+esc(i.mail.subject)+'"></label>'+
       '<label class="fl">Nachricht<textarea class="f" name="text" rows="9" required>'+esc(i.mail.text)+'</textarea></label>'+
@@ -157,7 +156,7 @@ F.form("sdsend",function(f){
   var id=f.getAttribute("data-id"), err=document.getElementById("sdSendErr"), btn=f.querySelector("[type=submit]");
   btn.disabled=true; btn.textContent="Sende …"; err.textContent="";
   post("/admin/api/sev/invoice-op",{op:"send",id:id,toEmail:f.to.value,subject:f.subject.value,text:f.text.value,copy:f.copy.checked}).then(function(j){
-    if(!j||!j.ok){ btn.disabled=false; btn.textContent="Jetzt senden"; err.textContent="sevDesk: "+((j&&j.error)||"Fehler"); return; }
+    if(!j||!j.ok){ btn.disabled=false; btn.textContent="Jetzt senden"; err.textContent=(j&&j.error)||"Fehler"; return; }
     F.closeModal(); F.toast("Gesendet an "+(j.sentTo||f.to.value)); afterOp(id);
   }).catch(function(){ btn.disabled=false; btn.textContent="Jetzt senden"; err.textContent="Keine Verbindung."; });
 });
@@ -209,7 +208,7 @@ F.action("sdbankreload",function(){ S.bank=null; loadBank(true); F.render(); });
 F.action("sdbkacc",function(k){ F.UI.bkAcc=k; F.render(); });
 function txById(id){ return S.bank&&S.bank.transactions.find(function(t){ return t.id===id; }); }
 function renderBank(){
-  if(!S.bank){ loadBank(); return loading("Lade offene Bankumsätze aus sevDesk …"); }
+  if(!S.bank){ loadBank(); return loading("Lade offene Bankumsätze …"); }
   if(!S.bank.ok) return errBox(S.bank,"sdbankreload");
   var accs={}; S.bank.transactions.forEach(function(t){ accs[t.accountId]=t.account||"Konto"; });
   var a=F.UI.bkAcc, list=S.bank.transactions.filter(function(t){ return a==="all"||t.accountId===a; });
@@ -218,7 +217,7 @@ function renderBank(){
   return '<div class="kpis">'+
       '<div class="panel kpi"><span class="k">Nicht zugeordnet</span><span class="v num">'+S.bank.transactions.length+'</span><span class="s">Bankumsätze</span></div>'+
       '<div class="panel kpi"><span class="k">Mit Vorschlag</span><span class="v num">'+withSug+'</span><span class="s">ein Klick genügt</span></div>'+
-      sevA.slice(0,2).map(function(x){ return '<div class="panel kpi"><span class="k">'+esc(x.name)+'</span><span class="v num'+(x.balance<0?" bad-t":"")+'">'+(x.balance==null?"—":eur0(x.balance))+'</span><span class="s">Saldo laut sevDesk</span></div>'; }).join("")+
+      sevA.slice(0,2).map(function(x){ return '<div class="panel kpi"><span class="k">'+esc(x.name)+'</span><span class="v num'+(x.balance<0?" bad-t":"")+'">'+(x.balance==null?"—":eur0(x.balance))+'</span><span class="s">Saldo</span></div>'; }).join("")+
     '</div>'+
     '<section class="panel"><div class="sd-tools"><div class="chips">'+chip("sdbkacc","all",a,"Alle Konten",S.bank.transactions.length)+Object.keys(accs).map(function(k){ return chip("sdbkacc",k,a,esc(accs[k]),S.bank.transactions.filter(function(t){return t.accountId===k;}).length); }).join("")+'</div><span class="row" style="gap:6px"><button class="btn" data-act="sdbkimp">Kontoauszug importieren</button><button class="btn" data-act="sdbankreload">Aktualisieren</button></span></div>'+
     (list.length?list.map(txHtml).join(""):'<div class="sd-empty"><b>Alles zugeordnet 🎉</b>Keine offenen Bankumsätze.</div>')+'</section>';
@@ -265,7 +264,7 @@ F.action("sdbknew",function(id){
   F.loadMeta(function(m){
     var cats=(m.accountingTypes||[]);
     F.modal('<form data-form="sdbknew" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Einnahme":"Ausgabe")+' ohne Beleg-Datei buchen</h2>'+F.btnClose()+'</div>'+
-      '<p class="muted" style="margin:0">Für Kontoführung, Abos, Bankspesen u. Ä.: legt in sevDesk einen Beleg an und verbucht ihn mit diesem Umsatz. Die Rechnungsdatei kannst du später in sevDesk anhängen.</p>'+
+      '<p class="muted" style="margin:0">Für Kontoführung, Abos, Bankspesen u. Ä.: legt einen Beleg an und verbucht ihn mit diesem Umsatz. Die Rechnungsdatei kannst du später beim Beleg anhängen.</p>'+
       '<p style="margin:0"><b class="'+(pos?"ok-t":"bad-t")+'">'+eur(t.amount)+'</b> · '+de(t.date)+'</p>'+
       '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+'</select></label></div>'+
       '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">— wählen —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>'+
@@ -328,7 +327,6 @@ function bkPreview(f){
     if(!j||!j.ok){ info.textContent=""; er.textContent=(j&&j.error)||"Fehler"; return; }
     info.innerHTML='<b>'+j.total+'</b> Umsätze erkannt ('+esc(j.format)+') · <b>'+j.added+' neu</b> · '+j.dup+' schon vorhanden'+(j.sample&&j.sample.length?'<br>'+j.sample.map(function(t){ return esc(F.deShort(t.date)+" · "+(t.name||t.purpose||"").slice(0,40)+" · "+F.eur(t.amount)); }).join("<br>"):'');
     go.disabled=!j.added; go.textContent=j.added?j.added+" Umsätze importieren":"Nichts Neues";
-    if(!j.local) info.innerHTML+='<div class="notice" style="margin-top:8px">Noch im sevDesk-Modus: Die Umsätze werden in der eigenen Buchhaltung gespeichert und erscheinen hier nach dem Umschalten (Finanzen › Umstieg).</div>';
   }).catch(function(){ info.textContent=""; er.textContent="Datei konnte nicht gelesen werden."; });
 }
 F.listen("change",'form[data-form="sdbkimp"] [name=file],form[data-form="sdbkimp"] [name=acc]',function(el){ bkPreview(el.form); });
@@ -350,7 +348,7 @@ F.listen("input","[data-vq]",function(el){ F.UI.vQ=el.value; clearTimeout(el._d)
 function vTag(v){ var m={50:["grey","Entwurf"],100:["warn","offen"],750:["warn","teilbezahlt"],1000:["ok","bezahlt"]}[v.status]||["grey",v.statusLabel]; return '<span class="tag '+m[0]+'">'+m[1]+'</span>'; }
 function renderBelege(){
   var y=vouYear(), d=S.vou[y];
-  if(!d){ loadVou(); return loading("Lade Belege "+y+" aus sevDesk …"); }
+  if(!d){ loadVou(); return loading("Lade Belege "+y+" …"); }
   if(!d.ok) return errBox(d,"sdvoureload");
   var all=d.vouchers, f=F.UI.vF, q=(F.UI.vQ||"").toLowerCase();
   var cnt={draft:0,open:0,nodoc:0,inc:0};
@@ -395,17 +393,16 @@ function openVou(id){
     if(open&&!(v.paid>0)) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|draft">Zurück auf Entwurf</button>');
     if(paid) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|reopen">Zahlung lösen</button>');
     if(v.hasDoc) acts.push('<a class="btn" href="/admin/api/sev/voucher-doc?id='+encodeURIComponent(id)+'&dl=1">Datei laden</a>');
-    acts.push('<a class="btn" href="'+F.SEVURL+'/ex/detail/id/'+encodeURIComponent(id)+'" target="_blank" rel="noopener">In sevDesk ↗</a>');
     var d=document.getElementById("drawer"); d.classList.add("xl");
     F.openDrawer(drawerHead(v.cd==="D"?"Einnahme-Beleg":"Beleg",(v.supplier||"Beleg")+" · "+eur(v.gross),'<div class="row" style="gap:8px;margin-top:6px">'+vTag(v)+(v.enshrined?'<span class="tag grey">festgeschrieben</span>':'')+'</div>')+
       '<div class="sd-acts" style="margin-bottom:14px">'+acts.join("")+'</div>'+
       '<div class="sd-split"><form data-form="sdvou" data-id="'+esc(id)+'" class="stackf" style="min-width:0">'+
-        (locked?'<div class="notice" style="background:var(--sunk)">'+(v.enshrined?"Festgeschrieben – in sevDesk nicht mehr änderbar.":"Bezahlt – zum Ändern zuerst „Zahlung lösen“.")+'</div>':'')+
+        (locked?'<div class="notice" style="background:var(--sunk)">'+(v.enshrined?"Festgeschrieben – nicht mehr änderbar.":"Bezahlt – zum Ändern zuerst „Zahlung lösen“.")+'</div>':'')+
         '<div class="grid2"><label class="fl">Belegdatum<input class="f" name="date" type="date" value="'+esc(v.date||"")+'"'+(locked?" disabled":"")+'></label><label class="fl">Lieferant<input class="f" name="supplier" value="'+esc(v.supplier)+'"'+(locked?" disabled":"")+'></label></div>'+
         '<label class="fl">Beschreibung<input class="f" name="desc" value="'+esc(v.desc)+'"'+(locked?" disabled":"")+'></label>'+
         '<div><div class="sec-t">Positionen</div><div id="vrows" style="display:grid;gap:8px">'+(v.positions.length?v.positions:[{}]).map(function(p){ return vrow(p,cats); }).join("")+'</div>'+(locked?'':'<button type="button" class="link" data-vadd>+ Position</button>')+'</div>'+
         '<div class="foot"><span class="num muted" id="vSum">'+eur(v.gross)+'</span>'+(locked?'':'<button class="btn primary" type="submit">Speichern</button>')+'</div><div class="err" id="vErr"></div>'+
-      '</form><div style="min-width:0"><div class="sec-t">Belegdatei</div>'+(v.hasDoc?'<iframe class="sd-pdf" title="Beleg" src="/admin/api/sev/voucher-doc?id='+encodeURIComponent(id)+'"></iframe>':'<div class="sd-empty" style="border:1px dashed var(--line);border-radius:12px">Keine Datei hinterlegt.<br><span class="muted">In sevDesk anhängen oder neu über „+ Beleg“ erfassen.</span></div>')+'</div></div>');
+      '</form><div style="min-width:0"><div class="sec-t">Belegdatei</div>'+(v.hasDoc?'<iframe class="sd-pdf" title="Beleg" src="/admin/api/sev/voucher-doc?id='+encodeURIComponent(id)+'"></iframe>':'<div class="sd-empty" style="border:1px dashed var(--line);border-radius:12px">Keine Datei hinterlegt.<br><span class="muted">Über „Bearbeiten“ anhängen oder neu über „+ Beleg“ erfassen.</span></div>')+'</div></div>');
     if(locked) document.querySelectorAll("#vrows input,#vrows select,#vrows button").forEach(function(x){ x.disabled=true; });
     S.vcats=cats;
   });
@@ -422,7 +419,7 @@ F.form("sdvou",function(f){
   var btn=f.querySelector("[type=submit]"); btn.disabled=true; btn.textContent="Speichere …"; err.textContent="";
   post("/admin/api/sev/voucher-op",{op:"update",id:id,date:f.date.value,supplier:f.supplier.value,desc:f.desc.value,positions:pos}).then(function(j){
     btn.disabled=false; btn.textContent="Speichern";
-    if(!j||!j.ok){ err.textContent="sevDesk: "+((j&&j.error)||"Fehler"); return; }
+    if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; }
     F.toast("Beleg gespeichert"); reloadVouThen(id);
   }).catch(function(){ btn.disabled=false; btn.textContent="Speichern"; err.textContent="Keine Verbindung."; });
 });
@@ -441,7 +438,7 @@ F.action("sdvpay",function(id){
 });
 F.form("sdvpay",function(f){
   var id=f.getAttribute("data-id"), err=document.getElementById("vpErr"); err.textContent="Buche …";
-  post("/admin/api/sev/voucher-op",{op:"pay",id:id,amount:f.amount.value,date:f.date.value,accountId:f.account.value}).then(function(j){ if(!j||!j.ok){ err.textContent="sevDesk: "+((j&&j.error)||"Fehler"); return; } F.closeModal(); F.toast("Zahlung gebucht"); reloadVouThen(id); }).catch(function(){ err.textContent="Keine Verbindung."; });
+  post("/admin/api/sev/voucher-op",{op:"pay",id:id,amount:f.amount.value,date:f.date.value,accountId:f.account.value}).then(function(j){ if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; } F.closeModal(); F.toast("Zahlung gebucht"); reloadVouThen(id); }).catch(function(){ err.textContent="Keine Verbindung."; });
 });
 
 /* ================= Kontakte & Artikel ================= */
@@ -460,7 +457,7 @@ function renderStamm(){
   return tabs+(t==="artikel"?renderParts():renderContacts());
 }
 function renderContacts(){
-  if(!S.ct){ loadCt(); return loading("Lade Kontakte aus sevDesk …"); }
+  if(!S.ct){ loadCt(); return loading("Lade Kontakte …"); }
   if(!S.ct.ok) return errBox(S.ct,"sdctreload");
   var q=(F.UI.ctQ||"").toLowerCase(), f=F.UI.ctF;
   var list=S.ct.contacts.filter(function(c){
@@ -498,7 +495,7 @@ F.form("sdct",function(f){
   post("/admin/api/sev/contact",{id:id,person:!!(c&&c.person),name:f.name.value,cat:f.cat.value,timeToPay:f.ttp.value,email:f.email.value,emailCur:c&&c.email,phone:f.phone.value,phoneCur:c&&c.phone,vat:f.vat.value,note:f.note.value,
     address:{id:c&&c.address&&c.address.id,street:f.street.value,zip:f.zip.value,city:f.city.value,country:c&&c.address&&c.address.country}}).then(function(j){
     btn.disabled=false;
-    if(!j||!j.ok){ err.textContent="sevDesk: "+((j&&j.error)||"Fehler"); return; }
+    if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; }
     F.toast(id?"Kontakt gespeichert":"Kontakt angelegt"); F.closeDrawer(); S.ct=null; loadCt(true);
   }).catch(function(){ btn.disabled=false; err.textContent="Keine Verbindung."; });
 });
@@ -508,7 +505,7 @@ F.action("sdctoffer",function(id){ F.closeDrawer(); F.openInvoice(Object.assign(
 F.action("sdctmail",function(id){ var c=S.ct.contacts.find(function(x){return x.id===id;}); F.closeDrawer(); F.compose({to:c.email.value}); });
 
 function renderParts(){
-  if(!S.parts){ loadParts(); return loading("Lade Artikel aus sevDesk …"); }
+  if(!S.parts){ loadParts(); return loading("Lade Artikel …"); }
   if(!S.parts.ok) return errBox(S.parts,"sdptreload");
   var q=(F.UI.ptQ||"").toLowerCase(), list=S.parts.parts.filter(function(p){ return !q||(p.name+" "+p.nr+" "+p.text).toLowerCase().indexOf(q)>-1; });
   return '<section class="panel"><div class="sd-tools"><span class="muted">Artikel erscheinen beim Schreiben einer Rechnung oder eines Angebots als Vorschlag – Preis und Text werden übernommen.</span>'+
@@ -529,16 +526,16 @@ F.action("sdpt",function(id){
 F.form("sdpt",function(f){
   var id=f.getAttribute("data-id"), err=document.getElementById("ptErr");
   post("/admin/api/sev/part",{id:id,name:f.name.value,nr:f.nr.value,text:f.text.value,priceGross:f.price.value,taxRate:f.tax.value,active:f.active.checked}).then(function(j){
-    if(!j||!j.ok){ err.textContent="sevDesk: "+((j&&j.error)||"Fehler"); return; }
+    if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; }
     F.closeModal(); F.toast("Artikel gespeichert"); S.parts=null; loadParts(true);
   }).catch(function(){ err.textContent="Keine Verbindung."; });
 });
 
 /* ================= Registrierung ================= */
-F.geldTab({id:"rechnungen",label:"Rechnungen",order:12,sub:"Alle Rechnungen aus sevDesk: senden, Zahlung erfassen, mahnen, stornieren. Klick auf eine Rechnung öffnet die Details mit PDF.",render:renderRechnungen});
+F.geldTab({id:"rechnungen",label:"Rechnungen",order:12,sub:"Alle Rechnungen: senden, Zahlung erfassen, mahnen, stornieren. Klick auf eine Rechnung öffnet die Details mit PDF.",render:renderRechnungen});
 F.geldTab({id:"bank",label:"Bank",order:14,sub:"Offene Bankumsätze mit passenden Rechnungen und Belegen zuordnen – meistens mit einem Klick.",render:renderBank});
 F.geldTab({id:"belege",label:"Belege",order:16,sub:"Ausgaben und Einnahme-Belege des Jahres: ansehen, korrigieren, Zahlung erfassen.",render:renderBelege});
-F.geldTab({id:"stamm",label:"Kontakte & Artikel",order:18,sub:"Kunden, Lieferanten und deine Standard-Leistungen in sevDesk.",render:renderStamm});
+F.geldTab({id:"stamm",label:"Kontakte & Artikel",order:18,sub:"Kunden, Lieferanten und deine Standard-Leistungen.",render:renderStamm});
 F.action("sdtab",function(v){ var p=v.split("|"); F.UI.geldTab=p[0]; if(p[0]==="rechnungen"&&p[1]) F.UI.rgF=p[1]; if(p[0]==="belege"&&p[1]) F.UI.vF=p[1]; F.go("geld"); });
 F.onData(function(){ var y=vouYear(); if(S.vou[y]&&Date.now()-Date.parse(S.vou[y].fetchedAt||0)>5*60000) delete S.vou[y]; });
 
@@ -550,13 +547,13 @@ F.searcher(function(q){
 });
 F.action("sdctgo",function(id){ F.UI.geldTab="stamm"; F.UI.stT="kontakte"; F.go("geld"); setTimeout(function(){ F.actions.sdct(id); },50); });
 
-/* „Heute“: was in sevDesk ansteht */
+/* „Heute“: was in der Buchhaltung ansteht */
 F.feed(function(){
   var sev=F.D&&F.D.sev, out=[]; if(!sev) return out;
   var drafts=sev.invoices.filter(function(i){ return i.status===100; });
   if(drafts.length) out.push({id:"sd-drafts-"+drafts.length,rank:3,sev:"info",icon:"euro",tag:["info","Rechnungen"],t:drafts.length+(drafts.length===1?" Rechnungsentwurf":" Rechnungsentwürfe")+" noch nicht versendet",d:drafts.slice(0,3).map(function(i){ return i.contact+" "+eur(i.gross); }).join(" · "),acts:[["Ansehen","sdtab:rechnungen|draft","primary"]]});
   if(sev.unassigned) out.push({id:"sd-bank-"+sev.unassigned,rank:5,sev:"info",icon:"bank",tag:["info","Bank"],t:sev.unassigned+" Bankumsätze nicht zugeordnet",d:"Vorschläge stehen bereit – meist ein Klick je Umsatz.",acts:[["Zuordnen","sdtab:bank","primary"]]});
-  var vd=sev.vouchers&&sev.vouchers.drafts; if(vd) out.push({id:"sd-vd-"+vd,rank:6,sev:"info",icon:"euro",tag:["info","Belege"],t:vd+(vd===1?" Beleg-Entwurf":" Beleg-Entwürfe")+" in sevDesk",d:"Prüfen und als fertig markieren.",acts:[["Ansehen","sdtab:belege|draft"]]});
+  var vd=sev.vouchers&&sev.vouchers.drafts; if(vd) out.push({id:"sd-vd-"+vd,rank:6,sev:"info",icon:"euro",tag:["info","Belege"],t:vd+(vd===1?" Beleg-Entwurf":" Beleg-Entwürfe"),d:"Prüfen und als fertig markieren.",acts:[["Ansehen","sdtab:belege|draft"]]});
   return out;
 });
 })();

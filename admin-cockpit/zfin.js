@@ -1,6 +1,6 @@
-/* Finanzen im Aufbau von sevDesk: eigene Navigation links (Übersicht, Aufträge, Rechnungen, Belege, Bank, Steuern, Verwalten),
-   Tabellen wie in sevDesk, Rechnung als eigene Seite mit PDF links und Details rechts.
-   Nutzt die vorhandenen Aktionen (senden, Zahlung, Mahnung, Storno, Beleg, Bank-Zuordnung …) und Unterseiten (UVA, U1, JAB, Prognose, Umstieg). */
+/* Finanzen (eigene Buchhaltung): eigene Navigation links (Übersicht, Aufträge, Rechnungen, Belege, Bank, Steuern, Verwalten),
+   Tabellen, Rechnung als eigene Seite mit PDF links und Details rechts.
+   Nutzt die vorhandenen Aktionen (senden, Zahlung, Mahnung, Storno, Beleg, Bank-Zuordnung …) und Unterseiten (UVA, U1, JAB, Prognose, Firma & Einstellungen). */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, UI=F.UI;
@@ -33,7 +33,7 @@ var IC={
   tag:'<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>'
 };
 function ic(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(IC[k]||"")+'</svg>'; }
-/* Navigation wie in sevDesk */
+/* Navigation */
 var NAV=[
   {id:"dash",label:"Übersicht",icon:"dash"},
   {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
@@ -61,7 +61,7 @@ function sidebar(){
 }
 F.action("fin",function(p){ if(/^invd/.test(p)&&!p.split(":")[1]) p="inv"; UI.fin=p; if(!/^invd/.test(p)) F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; F._forceRender=true; F.render(); window.scrollTo(0,0); });
 
-/* Status-Pillen wie in sevDesk */
+/* Status-Pillen */
 function pill(kind,label){ return '<span class="fsd-pill '+kind+'">'+esc(label)+'</span>'; }
 function invPill(i){
   if(i.cancelled) return pill("grey","Storniert");
@@ -90,7 +90,7 @@ F.listen("input","[data-fq]",function(el){ UI["fq_"+el.getAttribute("data-fq")]=
 function sevOk(){ return !!(F.D&&F.D.sev); }
 function noSev(){ return '<div class="notice">Die Buchhaltung antwortet gerade nicht. <button class="btn" data-act="reload">Neu laden</button></div>'; }
 
-/* ---------- Übersicht (Dashboard wie sevDesk) ---------- */
+/* ---------- Übersicht (Dashboard) ---------- */
 function vouLoad(){ var y=String(F.D.year); if(C.vou[y]||C.busy["v"+y]) return; C.busy["v"+y]=1;
   var fail=function(){ C.busy["v"+y]=0; C.vouErr=(C.vouErr||0)+1; if(C.vouErr<6) setTimeout(function(){ vouLoad(); },C.vouErr*4000); else { C.vou[y]={ok:false}; F.render(); } };
   F.api("/admin/api/sev/vouchers?year="+y).then(function(j){ if(!j||!j.ok) return fail(); C.busy["v"+y]=0; C.vouErr=0; C.vou[y]=j; F.render(); }).catch(fail); }
@@ -149,9 +149,9 @@ function pageDash(){
   var rev=new Array(12).fill(0), exp=new Array(12).fill(0);
   inv.forEach(function(i){ var m=+String(i.date).slice(5,7)-1; rev[m]+=(i.type==="SR"?-1:1)*Math.abs(i.net||i.gross/1.2); });
   var vd=C.vou[y], cats={};
-  // wie sevDesk „Gewinn und Verlust“: Umsatz = Rechnungen netto (ohne Stornierte) + Einnahme-Belege (Erlösminderung abziehen, durchlaufende Posten nicht)
+  // „Gewinn und Verlust“: Umsatz = Rechnungen netto (ohne Stornierte) + Einnahme-Belege (Erlösminderung abziehen, durchlaufende Posten nicht)
   if(vd&&vd.ok) vd.vouchers.forEach(function(v){ if(v.cd!=="D"||v.status<100||v.type==="RV") return; if(/durchlaufend/i.test(v.category||"")) return; var m=+String(v.date||"").slice(5,7)-1; if(m>=0) rev[m]+=(/erl(ö|oe)sminderung/i.test(v.category||"")?-1:1)*(v.net||0); });
-  // Aufwand wie sevDesk: Anlagen-Käufe nicht als Ausgabe (sie kommen über die Abschreibung), Geldtransit/Privat nie
+  // Aufwand: Anlagen-Käufe nicht als Ausgabe (sie kommen über die Abschreibung), Geldtransit/Privat nie
   if(F.steuerLoad) F.steuerLoad();
   var AID=F.assetDocIds?F.assetDocIds():{}, AF=F.afaByMonth?F.afaByMonth(+y):null, afa=new Array(12).fill(0);
   if(AF) Object.keys(AF.months).forEach(function(k){ afa[+k.slice(5,7)-1]+=AF.months[k]; });
@@ -286,7 +286,7 @@ function pageVou(){
 }
 F.action("fvcat",function(k){ UI.fvcat=k; UI.fpg=0; F.render(); });
 
-/* ---------- Bank: Konten-Tabelle wie sevDesk ---------- */
+/* ---------- Bank: Konten-Tabelle ---------- */
 function txLoad(force){ if(C.busy.tx) return; C.busy.tx=1; F.api("/admin/api/sev/transactions"+(force?"?force=1":"")).then(function(j){ C.busy.tx=0; C.tx=j||{ok:false}; F.render(); }); }
 F.action("ftxreload",function(){ C.tx=null; txLoad(true); });
 var MO=null;
@@ -366,7 +366,7 @@ F.action("ftxassign",function(id){ var st=F.sevState; if(st&&st.bank&&st.bank.ok
   F.toast("Lade Vorschläge …"); F.api("/admin/api/sev/bank").then(function(j){ if(st) st.bank=j; if(j&&j.ok&&j.transactions.some(function(t){return t.id===id;})) F.actions.sdbkother(id); else F.toast("Umsatz ist nicht mehr offen",true); }); });
 
 
-/* ---------- Festschreiben (wie sevDesk: Einstellungen → System → Festschreiben) ---------- */
+/* ---------- Festschreiben ---------- */
 var LK=null;
 function lkLoad(){ if(C.busy.lk) return; C.busy.lk=1; F.api("/admin/api/fin/settings").then(function(j){ C.busy.lk=0; LK=j||{ok:false}; F.render(); }); }
 function pageLock(){
@@ -378,7 +378,7 @@ function pageLock(){
     '<section class="fsd-card"><div class="fsd-ctitle">Noch nicht festgeschrieben</div><dl class="fsd-rows" style="margin:0">'+T.map(function(t){ var o=LK.open[t[0]]||{}; return '<div><dt>'+t[1]+'</dt><dd>'+(o.count||0)+(o.oldest?' <span class="muted">seit '+de(o.oldest)+'</span>':'')+'</dd></div>'; }).join("")+'</dl></section>'+
     '<form class="fsd-card" data-form="finlock"><div class="fsd-ctitle">Zeitraum festschreiben</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:12px 0"><label class="fl">Von<input class="f" type="date" name="from" value="'+y+'-01-01"></label><label class="fl">Bis<input class="f" type="date" name="to" value="'+lastMonthEnd()+'"></label></div>'+
     '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px">'+T.map(function(t){ return '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="t" value="'+t[0]+'" checked> '+t[1]+'</label>'; }).join("")+'</div>'+
-    '<p class="muted" style="font-size:12.5px">Entwürfe werden nicht festgeschrieben. Später im Zeitraum erfasste Dokumente musst du erneut festschreiben (wie bei sevDesk). Empfehlung: monatlich, spätestens mit der UVA.</p><div style="display:flex;justify-content:flex-end"><button class="btn primary" type="submit">Festschreiben …</button></div></form>';
+    '<p class="muted" style="font-size:12.5px">Entwürfe werden nicht festgeschrieben. Später im Zeitraum erfasste Dokumente musst du erneut festschreiben. Empfehlung: monatlich, spätestens mit der UVA.</p><div style="display:flex;justify-content:flex-end"><button class="btn primary" type="submit">Festschreiben …</button></div></form>';
 }
 function lastMonthEnd(){ var d=new Date(F.D.today+"T12:00:00"); d.setDate(0); return d.toISOString().slice(0,10); }
 F.listen("change","[data-lkauto]",function(el){ F.api("/admin/api/fin/settings",{body:{confirm:true,autoEnshrine:el.checked}}).then(function(j){ if(j&&j.ok){ F.toast(el.checked?"Automatisches Festschreiben an":"Automatisches Festschreiben aus"); LK=null; F.render(); } else F.toast((j&&j.error)||"Fehler",true); }); });
@@ -438,7 +438,7 @@ function pageWkr(){
 var RV=null;
 function rvLoad(){ if(C.busy.rv) return; C.busy.rv=1; F.api("/admin/api/fin/rv").then(function(j){ C.busy.rv=0; RV=j||{ok:false}; F.render(); }); }
 function rvPost(body,msg){ body.confirm=true; F.api("/admin/api/fin/rv",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } RV=j; F.closeModal&&F.closeModal(); F.toast(msg+(j.made?" · "+j.made+" fällige Belege angelegt":"")); if(j.made) F.load(true); F.render(); }); }
-var RVST={active:["paid","Aktiv"],paused:["grey","Pausiert"],stale:["draft","In sevDesk pausiert"],ended:["grey","Beendet"]};
+var RVST={active:["paid","Aktiv"],paused:["grey","Pausiert"],stale:["draft","Pausiert (übernommen)"],ended:["grey","Beendet"]};
 function pageRv(){
   if(!RV){ rvLoad(); return head("Wiederkehrende Belege","")+'<div class="sd-empty">Lade …</div>'; }
   if(!RV.ok) return head("Wiederkehrende Belege","")+'<div class="notice">'+esc(RV.error||"Nicht verfügbar")+'</div>';
@@ -674,7 +674,7 @@ if(gv){
 /* nach Aktionen Detail neu laden */
 var _load=F.load; F.load=function(force){ if(force){ DET={}; C.tx=null; C.cn=null; C.vou={}; KB=null; WK=null; } return _load.apply(this,arguments); };
 
-/* Aussehen 1:1 nach sevDesk (Inter, Farben, Maße aus dem Original abgenommen) */
+/* Aussehen der Finanzen (Inter, Farben, Maße) */
 (function(){ if(document.getElementById("fsd-font")) return; var l=document.createElement("link"); l.id="fsd-font"; l.rel="stylesheet"; l.href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"; document.head.appendChild(l); })();
 F.css(
 'main:has(>.view-geld .fsd),main:has(.fsd){padding:0!important;max-width:none!important}'+

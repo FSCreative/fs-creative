@@ -179,14 +179,14 @@ function showBooking(b,fresh){
   var range=de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):"");
   var rows=[["Termin",range],["Paket",b.package.name],["Status",(ST_LABEL[b.status]||b.status)+(b.blocking?"":" (belegt keine Box)")],["Zahlung",(b.paymentStatus==="PAID"?"bezahlt":b.paymentStatus==="REFUNDED"?"erstattet":"offen")+(b.paymentMethod==="INVOICE"?" · auf Rechnung":" · online")],
     ["Betrag",eur(c2e(b.totalCents))],["Kunde",b.customerName+(b.companyName?" ("+b.companyName+")":"")],["E-Mail",b.customerEmail],["Telefon",b.customerPhone],["Ort",b.eventLocation],["Adresse",addr(b)],
-    ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],["sevDesk",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":""]].filter(function(r){ return r[1]; });
+    ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],["Rechnung",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":""]].filter(function(r){ return r[1]; });
   var canInv=!!F.D.sev&&!b.sevdeskInvoiceId&&+b.totalCents>0;
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+(fresh?"Buchung angelegt · ":"")+esc(b.customerName)+'</h2>'+F.btnClose()+'</div>'+
     (fresh?'<p class="muted" style="margin:6px 0 0">Gespeichert in Blitzdings ('+esc(b.reference)+'). Steht damit im Blitzdings-Admin, im Google-Kalender von Blitzdings, hier im Kalender und unter Heute.</p>':'')+
     '<dl class="bk-dl" style="margin:12px 0">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; }).join("")+'</dl>'+
     '<div class="sec-t">Weiter eintragen (optional)</div><div class="row wrap" style="gap:8px">'+
       '<button class="btn" data-act="bkical:'+esc(b.id)+'">In iCloud-Kalender eintragen</button>'+
-      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(b.sevdeskInvoiceId?"Blitzdings hat bereits eine Rechnung erstellt":"sevDesk ist gerade nicht erreichbar")+'"')+'>Rechnung in sevDesk vorbereiten</button>'+
+      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(b.sevdeskInvoiceId?"Blitzdings hat bereits eine Rechnung erstellt":"Buchhaltung ist gerade nicht erreichbar")+'"')+'>Rechnung vorbereiten</button>'+
       '<button class="btn" data-act="bkinv:'+esc(b.id)+'~dep"'+(canInv?'':' disabled')+'>Anzahlung 50 % vorbereiten</button>'+
     '</div>'+
     '<div class="foot"><span class="row">'+(b.status!=="CANCELLED"?'<button class="btn danger" data-act="bkcancel:'+esc(b.id)+'">Stornieren</button>':'<button class="btn" data-act="bkrestore:'+esc(b.id)+'">Storno aufheben</button>')+
@@ -217,10 +217,10 @@ F.action("bkical",function(id,el){
   }).catch(function(){ if(el) el.disabled=false; F.toast("Keine Verbindung",true); });
 });
 
-/* Rechnung/Anzahlung: bestehender Entwurfs-Flow (sevDesk, Abrechnungs-Historie wie „Rechnung“ bei Nächste Termine) */
+/* Rechnung/Anzahlung: bestehender Entwurfs-Flow (Abrechnungs-Historie wie „Rechnung“ bei Nächste Termine) */
 F.action("bkinv",function(v){
   var x=String(v).split("~"), b=bookingById(x[0])||LAST[x[0]]; if(!b) return;
-  if(!F.D.sev){ F.toast("sevDesk ist gerade nicht erreichbar",true); return; }
+  if(!F.D.sev){ F.toast("Buchhaltung ist gerade nicht erreichbar",true); return; }
   var dep=x[1]==="dep", txt=[de(b.eventDate)?"Event am "+de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):""):"",b.eventLocation?"Ort: "+b.eventLocation:""].filter(Boolean).join(" · ");
   var items;
   if(dep) items=[{name:"Anzahlung 50 % – Blitzdings "+b.package.name,text:"Buchung "+b.reference+(txt?" · "+txt:""),qty:1,priceGross:Math.round(b.totalCents/2)/100,taxRate:20}];
@@ -263,7 +263,7 @@ function renderForm(cat,pre){
     '<label class="fl">Zahlung<select class="f" name="pay"><option value="INVOICE_UNPAID">Auf Rechnung – offen</option><option value="INVOICE_PAID">Bereits bezahlt (bar/Überweisung)</option></select></label>'+
     '<label class="fl">Mail an Kunden<select class="f" name="customerMail"><option value="confirmation">Buchungsbestätigung (wie online)</option><option value="offer">Angebot mit Annahme-Link</option><option value="none">Keine Mail</option></select></label></div>'+
     '<label class="chk"><input type="checkbox" name="notifyAdmin"> Interne Info-Mail an Blitzdings</label>'+
-    '<label class="chk"><input type="checkbox" name="sevdeskInvoice"> Rechnung sofort über Blitzdings in sevDesk festschreiben (wie Online-Firmenbuchung; braucht Adresse)</label>'+
+    '<label class="chk"><input type="checkbox" name="sevdeskInvoice"> Rechnung sofort fertigstellen (Buchhaltung, wie Online-Firmenbuchung; braucht Adresse)</label>'+
     '<label class="chk" id="bkOvl" hidden><input type="checkbox" name="allowOverlap"> Trotzdem anlegen (Doppelbelegung bewusst zulassen)</label>'+
     '<div class="err" id="bkErr"></div>'+
     '<div class="foot"><span>Gesamt <span class="bk-price" id="bkSum">–</span> <span class="muted" id="bkSumSub"></span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="bkSave">In Blitzdings buchen</button></span></div></form>',"wide");
@@ -313,7 +313,7 @@ F.form("bkbook",function(f){
   if(v("customerName").length<2) miss.push("Name");
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v("customerEmail"))) miss.push("E-Mail");
   if(f.customerType.value==="COMPANY"&&(!v("companyName")||!v("vatId"))) miss.push("Firmenname und UID");
-  if(f.sevdeskInvoice.checked&&(!v("billingStreet")||!v("billingZip")||!v("billingCity"))) miss.push("Adresse (für sevDesk-Rechnung)");
+  if(f.sevdeskInvoice.checked&&(!v("billingStreet")||!v("billingZip")||!v("billingCity"))) miss.push("Adresse (für die Rechnung)");
   if(miss.length){ err.textContent="Bitte ausfüllen: "+miss.join(", "); return; }
   var pay=f.pay.value.split("_");
   var body={packageSlug:v("packageSlug"),eventDate:v("eventDate"),eventEndDate:v("eventEndDate"),eventTime:v("eventTime"),eventLocation:v("eventLocation"),

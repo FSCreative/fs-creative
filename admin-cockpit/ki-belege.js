@@ -1,6 +1,6 @@
-/* KI (Claude) – Belege & Steuer: KI-Prüfung unklarer sevDesk-Belege (Steuerregel, U30, E1a), Belege aus Mail-Anhängen auslesen,
+/* KI (Claude) – Belege & Steuer: KI-Prüfung unklarer Belege (Steuerregel, U30, E1a), Belege aus Mail-Anhängen auslesen,
    KI-Check vor der UVA-Abgabe. Schnittstellen für andere Module: FSC.steuerAiSuggest(docs), FSC.kiUvaCheck(key).
-   Schreibzugriffe nur per Klick: Cockpit-Einordnung über /admin/api/steuer, sevDesk-Steuerregel über /admin/api/steuer/sevfix (mit Bestätigung). */
+   Schreibzugriffe nur per Klick: Cockpit-Einordnung über /admin/api/steuer, Beleg-Steuerregel über /admin/api/steuer/sevfix (mit Bestätigung). */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc;
@@ -29,12 +29,12 @@ function belegRow(s){
   if(s.error) return '<div class="kirow"><div class="kimain"><b>'+esc(m.supplier||s.id)+'</b><div class="muted">'+esc(s.error)+'</div></div></div>';
   var diffRule=m.taxRule&&s.taxRule!==m.taxRule, diffClass=s.uvaClass!==(m.override||m.cockpit), diffE1a=s.e1a!==m.e1aNow;
   var acts=[];
-  if(diffClass) acts.push('<button type="button" class="btn primary" data-act="kibtake:'+esc(s.id)+'" title="Einordnung im Cockpit speichern (ändert sevDesk nicht)">Übernehmen</button>');
-  if(diffE1a&&m.cats&&m.cats.length===1) acts.push('<button type="button" class="btn" data-act="kibe1a:'+esc(s.id)+'" title="Gilt für alle Belege dieser sevDesk-Kategorie">E1a für „'+esc(m.cats[0])+'“</button>');
-  if(diffRule&&m.fixable) acts.push('<button type="button" class="btn" data-act="kibsev:'+esc(s.id)+'">In sevDesk ändern …</button>');
+  if(diffClass) acts.push('<button type="button" class="btn primary" data-act="kibtake:'+esc(s.id)+'" title="Nur die UVA/E1a-Einordnung speichern (ändert den Beleg nicht)">Übernehmen</button>');
+  if(diffE1a&&m.cats&&m.cats.length===1) acts.push('<button type="button" class="btn" data-act="kibe1a:'+esc(s.id)+'" title="Gilt für alle Belege dieser Kategorie">E1a für „'+esc(m.cats[0])+'“</button>');
+  if(diffRule&&m.fixable) acts.push('<button type="button" class="btn" data-act="kibsev:'+esc(s.id)+'">Steuerregel ändern …</button>');
   if(!diffRule&&!diffClass&&!diffE1a) acts.push('<span class="tag ok">passt</span>');
   return '<div class="kirow"><div class="kimain"><b>'+esc(m.supplier||"—")+'</b> <span class="muted">'+esc(F.de(m.date))+(m.desc?" · "+esc(m.desc):"")+'</span>'+
-    '<div class="muted">Jetzt: sevDesk '+esc(m.taxRuleTxt||"–")+' · Cockpit '+esc(K.CLASS_TXT[m.override||m.cockpit]||m.cockpit||"–")+' · E1a '+esc(m.e1aNow||"–")+(m.enshrined?' · <span class="bad-t">festgeschrieben</span>':'')+'</div>'+
+    '<div class="muted">Jetzt: Beleg '+esc(m.taxRuleTxt||"–")+' · Cockpit '+esc(K.CLASS_TXT[m.override||m.cockpit]||m.cockpit||"–")+' · E1a '+esc(m.e1aNow||"–")+(m.enshrined?' · <span class="bad-t">festgeschrieben</span>':'')+'</div>'+
     '<div class="kitags"><span class="tag '+(diffRule?"warn":"grey")+'">'+esc(s.taxRule+" "+(K.RULE_TXT[s.taxRule]||""))+'</span><span class="tag '+(diffClass?"warn":"grey")+'">'+esc(K.CLASS_TXT[s.uvaClass]||s.uvaClass)+'</span><span class="tag grey">U30 '+esc((s.u30||[]).join(", "))+'</span><span class="tag '+(diffE1a?"warn":"grey")+'" title="'+esc(K.e1aTxt(s.e1a))+'">E1a '+esc(s.e1a)+'</span>'+(s.supplierCountry?'<span class="tag grey">'+esc(s.supplierCountry)+'</span>':'')+K.conf(s.confidence)+'</div>'+
     '<div class="kireason">'+esc(s.reason)+'</div></div><div class="kiamt num money">'+F.eur(m.gross)+'</div><div class="row wrap">'+(done?'<span class="tag ok">'+esc(done)+'</span>':acts.join(""))+'</div></div>';
 }
@@ -47,8 +47,8 @@ K.belegeHtml=function(){
   else if(!U.belege) inner='<div class="empty">Prüft Belege mit ausländischem Lieferanten, ohne Steuerregel, mit Abweichung zum Cockpit oder ohne E1a-Zuordnung und schlägt Steuerregel, U30-Kennzahlen und E1a-Kategorie vor.</div>';
   else if(!U.belege.list.length) inner='<div class="empty">'+esc(U.belege.note||"Keine unklaren Belege.")+'</div>';
   else { var list=U.belege.list.slice().sort(function(a,b){ return (a.confidence||0)-(b.confidence||0); });
-    inner='<p class="muted kip-sub">'+list.length+' Belege'+(U.belege.label?' · '+esc(U.belege.label):'')+'. „Übernehmen“ speichert die Einordnung nur im Cockpit (UVA/E1a-Berechnung); sevDesk wird erst mit „In sevDesk ändern“ und Bestätigung geändert.</p><div class="kilist">'+list.map(belegRow).join("")+'</div>'; }
-  return K.panel("ki-belege","KI-Prüfung Belege","Steuerregel (sevDesk 2.0), U30-Kennzahlen, E1a-Kategorie",right,inner);
+    inner='<p class="muted kip-sub">'+list.length+' Belege'+(U.belege.label?' · '+esc(U.belege.label):'')+'. „Übernehmen“ speichert nur die Einordnung (UVA/E1a-Berechnung); die Steuerregel des Belegs ändert sich erst mit „Steuerregel ändern“ und Bestätigung.</p><div class="kilist">'+list.map(belegRow).join("")+'</div>'; }
+  return K.panel("ki-belege","KI-Prüfung Belege","Steuerregel, U30-Kennzahlen, E1a-Kategorie",right,inner);
 };
 F.listen("change","#kiBelegeP",function(el){ K.ui.belegeP=el.value; });
 F.action("kibelege",function(v){
@@ -64,8 +64,8 @@ F.action("kibtake",function(id){ var s=sugOf(id); if(!s) return;
 F.action("kibe1a",function(id){ var s=sugOf(id); if(!s||!s.meta||!s.meta.cats||s.meta.cats.length!==1) return; var cat=s.meta.cats[0], mp={}; mp[cat]=s.e1a;
   F.confirm("E1a-Kennzahl "+K.e1aTxt(s.e1a)+" für alle Belege der Kategorie „"+cat+"“ verwenden?","Zuordnen",function(){ steuerPost({op:"mapping",mapping:mp}).then(function(){ K.ui.open["b"+id]="E1a zugeordnet"; F.toast("Kategorie zugeordnet"); K.rerender(); }).catch(K.fail); }); });
 F.action("kibsev",function(id){ var s=sugOf(id); if(!s) return; var m=s.meta||{};
-  F.confirm("Steuerregel in sevDesk ändern: „"+(m.supplier||"Beleg")+"“ von „"+(m.taxRuleTxt||m.taxRule)+"“ auf „"+s.taxRule+" "+(K.RULE_TXT[s.taxRule]||"")+"“?","In sevDesk ändern",function(){
-    F.api("/admin/api/steuer/sevfix",{body:{id:id,taxRule:s.taxRule,confirm:true}}).then(function(j){ if(j&&j.ok){ K.ui.open["b"+id]="in sevDesk geändert"; F.toast("Steuerregel in sevDesk geändert"); K.rerender(); } else F.toast("sevDesk: "+((j&&j.error)||"abgelehnt"),true); }).catch(function(){ F.toast("Keine Verbindung zum Server.",true); });
+  F.confirm("Steuerregel des Belegs ändern: „"+(m.supplier||"Beleg")+"“ von „"+(m.taxRuleTxt||m.taxRule)+"“ auf „"+s.taxRule+" "+(K.RULE_TXT[s.taxRule]||"")+"“?","Steuerregel ändern",function(){
+    F.api("/admin/api/steuer/sevfix",{body:{id:id,taxRule:s.taxRule,confirm:true}}).then(function(j){ if(j&&j.ok){ K.ui.open["b"+id]="Steuerregel geändert"; F.toast("Steuerregel geändert"); K.rerender(); } else F.toast((j&&j.error)||"abgelehnt",true); }).catch(function(){ F.toast("Keine Verbindung zum Server.",true); });
   }); });
 
 /* ---------- KI-Check vor UVA-Abgabe ---------- */
@@ -107,7 +107,7 @@ K.openVoucherWith=function(m,a,x,onDone,opt){
       (!eur?'<div class="bad-t">Rechnung in '+esc(x.currency)+' ('+esc(String(x.gross))+' '+esc(x.currency)+') – bitte den Euro-Betrag laut Kontoauszug eintragen.</div>':'')+
       (x.isInvoice===false?'<div class="bad-t">Laut KI ist das vermutlich keine Rechnung.</div>':'')+
       (x.notes?'<div class="muted">'+esc(x.notes)+'</div>':'')+K.dupesHtml(opt.dupes)+
-      (/^2/.test(ver)?'':'<div class="muted">Steuerregel bitte in sevDesk prüfen (Konto ohne Steuerregeln/Update 2.0).</div>')+'</div>';
+      (/^2/.test(ver)?'':'<div class="muted">Steuerregel bitte beim Beleg prüfen.</div>')+'</div>';
     var extra=Object.assign({},opt.extra||{});
     if(lines.length>1&&eur) extra.positions=lines.map(function(l){ return {gross:l.gross,taxRate:l.rate}; });
     if(/^2/.test(ver)) extra.taxRule=x.taxRule;

@@ -1,6 +1,6 @@
 /* KI (Claude) – Ausgangsrechnung vorbereiten: Feld „Mit KI ausfüllen“ im Rechnungsdialog (shared.js ruft F.kiInvoiceHtml auf).
    Freitext oder Kundenmail/Anfrage → Kunde, Positionen (netto → brutto für den Dialog), Leistungszeitraum, Steuerfall (AT 20 %, EU-B2B Reverse Charge,
-   Drittland nicht steuerbar), Zahlungsziel, Kopf-/Fußtext. Angelegt wird wie bisher erst mit „Entwurf in sevDesk anlegen“. */
+   Drittland nicht steuerbar), Zahlungsziel, Kopf-/Fußtext. Angelegt wird wie bisher erst mit „Entwurf anlegen“. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc;
@@ -21,7 +21,7 @@ F.kiInvoiceHtml=function(pre){
   PRE=pre||{};
   var k=PRE.kiInfo, out="";
   if(k) out+='<div class="kibox"><div class="row-between"><b>'+F.svg("spark")+' Von der KI vorbereitet</b>'+K.conf(k.confidence)+'</div>'+
-    '<div class="kitags"><span class="tag '+(k.existing?"ok":"warn")+'">'+(k.existing?"Kunde in sevDesk vorhanden":"neuer Kunde – wird in sevDesk angelegt")+'</span><span class="tag '+(k.taxCase==="inland"?"grey":"info")+'">'+esc(CASE[k.taxCase]||k.taxCase)+'</span>'+(k.uid?'<span class="tag grey">UID '+esc(k.uid)+'</span>':'')+(k.deliveryDateUntil?'<span class="tag grey">Leistung bis '+esc(F.de(k.deliveryDateUntil))+'</span>':'')+'</div>'+
+    '<div class="kitags"><span class="tag '+(k.existing?"ok":"warn")+'">'+(k.existing?"Kunde vorhanden":"neuer Kunde – wird als Kontakt angelegt")+'</span><span class="tag '+(k.taxCase==="inland"?"grey":"info")+'">'+esc(CASE[k.taxCase]||k.taxCase)+'</span>'+(k.uid?'<span class="tag grey">UID '+esc(k.uid)+'</span>':'')+(k.deliveryDateUntil?'<span class="tag grey">Leistung bis '+esc(F.de(k.deliveryDateUntil))+'</span>':'')+'</div>'+
     '<div class="muted"><b>Fußtext:</b> '+esc(k.footText).replace(/\n/g,"<br>")+'</div>'+(k.notes?'<div class="bad-t" style="font-size:13px">'+esc(k.notes)+'</div>':'')+
     '<div class="muted">Preise im Dialog sind brutto (aus netto umgerechnet). Steuerregel und Fußtext werden mit angelegt.</div></div>';
   out+='<details class="kiinv"'+(k?'':' open')+'><summary>'+F.svg("spark")+' Mit KI ausfüllen</summary><div class="stackf" style="gap:8px;margin-top:8px">'+

@@ -9,7 +9,7 @@ F.invLine=function(i){ var cls=i.overdue?"bad":i.status===1000?"ok":i.status===1
 function leadMails(l){ var e=String(l.email||"").toLowerCase(); if(!e) return []; return F.D.mail.messages.filter(function(m){ return String(m.from||"").toLowerCase()===e||String(m.to||"").toLowerCase().indexOf(e)>-1; }).slice(0,8); }
 function leadInvoices(l){ if(!F.D.sev) return []; var names=[l.company,l.name].filter(Boolean).map(function(x){return x.toLowerCase();}); return F.D.sev.invoices.filter(function(i){ var c=String(i.contact||"").toLowerCase(); return c&&names.some(function(n){ return c===n||c.indexOf(n)>-1||n.indexOf(c)>-1; }); }).slice(0,8); }
 
-/* ---------- Angebote aus sevDesk (Order, Typ AN) ---------- */
+/* ---------- Angebote (Order, Typ AN) ---------- */
 var OFF=F.OFF={list:null,err:"",at:0,busy:false};
 var OSTAT={100:["Entwurf","grey"],200:["versendet","info"],300:["abgelehnt","bad"],500:["angenommen","ok"],750:["teilw. berechnet","ok"],1000:["berechnet","ok"]};
 function offOpen(o){ return o.status===100||o.status===200; }
@@ -39,21 +39,20 @@ function offersPanel(){
   var flt={open:offOpen,acc:function(o){ return o.status>=500; },rej:function(o){ return o.status===300; },all:function(){ return true; }};
   var list=all.filter(flt[f]||flt.open), openL=all.filter(offOpen);
   var chip=function(k,lb){ return '<button class="chip" data-act="offf:'+k+'" aria-pressed="'+(f===k)+'">'+lb+' · '+all.filter(flt[k]).length+'</button>'; };
-  var body=OFF.list==null?'<div class="empty">'+(OFF.err?'Angebote konnten nicht geladen werden: '+esc(OFF.err)+' <button class="btn" data-act="offreload">Erneut versuchen</button>':'Lade Angebote aus sevDesk …')+'</div>':
+  var body=OFF.list==null?'<div class="empty">'+(OFF.err?'Angebote konnten nicht geladen werden: '+esc(OFF.err)+' <button class="btn" data-act="offreload">Erneut versuchen</button>':'Lade Angebote …')+'</div>':
     '<div class="scroll"><table><thead><tr><th>Nr.</th><th>Kunde</th><th>Datum</th><th>Gültig bis</th><th class="r">Betrag</th><th>Status</th><th></th></tr></thead><tbody>'+
     (list.map(offerRow).join("")||'<tr><td colspan="7" class="empty">Keine Angebote in dieser Ansicht.</td></tr>')+'</tbody></table></div>';
-  return '<section class="panel" id="offers"><div class="panel-h"><h2>Angebote <span class="muted" style="font-weight:500;font-size:14px">aus sevDesk'+(openL.length?' · '+openL.length+' offen · '+eur0(openL.reduce(function(s,o){return s+o.gross;},0)):'')+'</span></h2><div class="row wrap"><div class="chips">'+chip("open","Offen")+chip("acc","Angenommen")+chip("rej","Abgelehnt")+chip("all","Alle")+'</div><button class="btn primary" data-act="newoffer">Neues Angebot</button></div></div>'+body+'</section>';
+  return '<section class="panel" id="offers"><div class="panel-h"><h2>Angebote <span class="muted" style="font-weight:500;font-size:14px">'+(openL.length?openL.length+' offen · '+eur0(openL.reduce(function(s,o){return s+o.gross;},0)):'')+'</span></h2><div class="row wrap"><div class="chips">'+chip("open","Offen")+chip("acc","Angenommen")+chip("rej","Abgelehnt")+chip("all","Alle")+'</div><button class="btn primary" data-act="newoffer">Neues Angebot</button></div></div>'+body+'</section>';
 }
 F.action("offf",function(k,el){ var fromPipe=el&&el.closest&&el.closest(".pipe"); F.UI.offF=k; F.render(); var s=fromPipe&&document.getElementById("offers"); if(s&&s.scrollIntoView) s.scrollIntoView({behavior:"smooth",block:"start"}); });
 F.action("offreload",function(){ OFF.list=null; OFF.err=""; F.render(); F.offersLoad(true); });
 F.action("offpdf",function(id){ window.open("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(id),"_blank","noopener"); });
-F.action("offsev",function(id){ window.open(F.SEVURL+"/om/detail/type/AN/id/"+encodeURIComponent(id),"_blank","noopener"); });
 function offById(id){ return (OFF.list||[]).find(function(o){ return o.id===id; }); }
-function offPost(path,body,okMsg){ return F.api(path,{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j||!j.ok){ F.toast("sevDesk hat abgelehnt: "+((j&&j.error)||"unbekannt"),true); return null; } F.toast(okMsg); F.offersLoad(true); return j; }).catch(function(){ F.toast("Keine Verbindung zum Server.",true); return null; }); }
+function offPost(path,body,okMsg){ return F.api(path,{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j||!j.ok){ F.toast("Abgelehnt: "+((j&&j.error)||"unbekannt"),true); return null; } F.toast(okMsg); F.offersLoad(true); return j; }).catch(function(){ F.toast("Keine Verbindung zum Server.",true); return null; }); }
 F.action("offstat",function(id){
   var o=offById(id); if(!o) return;
   var opts=[[200,"Versendet / offen"],[500,"Angenommen"],[300,"Abgelehnt"]].filter(function(x){ return x[0]!==o.status; });
-  F.modal('<h2 style="font-size:19px">Status von '+esc(o.nr||"Angebot")+' ändern</h2><p class="muted" style="margin:0">'+esc(o.contact)+' · '+eur(o.gross)+' · jetzt: '+esc((OSTAT[o.status]||[o.status])[0])+'</p><p class="muted">Wird sofort in sevDesk gespeichert.'+(o.status===100?' „Versendet“ markiert den Entwurf als per PDF versendet (es wird keine Mail verschickt).':'')+'</p>'+
+  F.modal('<h2 style="font-size:19px">Status von '+esc(o.nr||"Angebot")+' ändern</h2><p class="muted" style="margin:0">'+esc(o.contact)+' · '+eur(o.gross)+' · jetzt: '+esc((OSTAT[o.status]||[o.status])[0])+'</p><p class="muted">Wird sofort gespeichert.'+(o.status===100?' „Versendet“ markiert den Entwurf als per PDF versendet (es wird keine Mail verschickt).':'')+'</p>'+
     '<div class="foot"><span></span><span class="row wrap">'+opts.map(function(x){ return '<button type="button" class="btn'+(x[0]===500?" primary":x[0]===300?" danger":"")+'" data-act="offsetstat:'+esc(id)+'|'+x[0]+'">'+x[1]+'</button>'; }).join("")+'<button type="button" class="btn" data-closemodal>Abbrechen</button></span></div>',"narrow");
 });
 F.action("offsetstat",function(v){
@@ -63,7 +62,7 @@ F.action("offsetstat",function(v){
     if(l&&order.indexOf(l.stage||"anfrage")<order.indexOf("auftrag")) F.toast("Angebot angenommen",false,"Lead → Auftrag",function(){ leadPost({op:"update",id:l.id,patch:{stage:"auftrag"}}).then(function(r){ if(r){ F.toast((l.company||l.name)+" ist jetzt in „Auftrag“"); F.render(); } }); });
   });
 });
-/* Abschlags- und Schlussrechnung (wie sevDesk: Abschläge aus dem Angebot, Schlussrechnung erst wenn alle Abschläge bezahlt) */
+/* Abschlags- und Schlussrechnung (Abschläge aus dem Angebot, Schlussrechnung erst wenn alle Abschläge bezahlt) */
 F.action("offar",function(id){
   var o=offById(id); if(!o) return;
   F.modal('<form data-form="offar" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">Abschlagsrechnung zu '+esc(o.nr||"Angebot")+'</h2>'+F.btnClose()+'</div><p style="margin:0">'+esc(o.contact||"")+' · Angebot '+eur(o.gross)+' brutto</p>'+
@@ -105,8 +104,8 @@ function openLead(id){
     '<dl class="kv"><dt>Gekommen über</dt><dd>'+esc(l.source||"—")+'</dd><dt>Gratis-Entwurf</dt><dd>'+(l.entwurf?"Ja, gewünscht":"Nein")+'</dd></dl>'+
     (l.message?'<div><div class="sec-t">Nachricht aus dem Formular</div><div class="mbody quote">'+esc(l.message)+'</div></div>':'')+
     '<div><div class="sec-t">Mails</div>'+(mails.length?mails.map(function(m){ return '<button class="link" style="display:block;text-align:left" data-act="mail:'+esc(m.id)+'">'+deShort(String(m.date).slice(0,10))+' · '+esc(m.subject||"(kein Betreff)")+'</button>'; }).join(""):'<span class="muted">Keine Mails mit '+esc(l.email||"dieser Adresse")+' im Postfach.</span>')+'</div>'+
-    '<div><div class="sec-t">Angebote in sevDesk</div>'+(offs.length?'<div class="invs">'+offs.slice(0,8).map(F.offerLine).join("")+'</div>':'<span class="muted">'+(OFF.list==null?(OFF.err?"Angebote nicht geladen.":"Lade …"):"Noch keine.")+'</span>')+'</div>'+
-    '<div><div class="sec-t">Rechnungen in sevDesk</div>'+(invs.length?'<div class="invs">'+invs.map(F.invLine).join("")+'</div>':'<span class="muted">Noch keine.</span>')+'</div>'+
+    '<div><div class="sec-t">Angebote</div>'+(offs.length?'<div class="invs">'+offs.slice(0,8).map(F.offerLine).join("")+'</div>':'<span class="muted">'+(OFF.list==null?(OFF.err?"Angebote nicht geladen.":"Lade …"):"Noch keine.")+'</span>')+'</div>'+
+    '<div><div class="sec-t">Rechnungen</div>'+(invs.length?'<div class="invs">'+invs.map(F.invLine).join("")+'</div>':'<span class="muted">Noch keine.</span>')+'</div>'+
     ((l.history||[]).length?'<div><div class="sec-t">Verlauf</div><div class="muted">'+l.history.slice().reverse().map(function(h){ return de(h.at)+" → "+((STAGES.find(function(s){return s[0]===h.stage;})||[0,h.stage])[1]); }).join("<br>")+'</div></div>':''),
     function(){ if(F.UI.leadSel) openLead(F.UI.leadSel); });
 }
@@ -132,7 +131,7 @@ F.view({id:"kunden",label:"Kunden & Leads",short:"Kunden",icon:"kunden",order:20
       var ls=D.leads.filter(function(l){ return (l.stage||"anfrage")===s[0]; });
       var oo=s[0]==="angebot"&&OFF.list?OFF.list.filter(offOpen):[];
       return '<div class="col"><div class="col-h"><span>'+s[1]+'</span><span class="num">'+ls.length+(ls.some(val)?' · '+eur0(ls.reduce(function(a,l){return a+val(l);},0)):'')+'</span></div>'+
-        (oo.length?'<button class="link small" data-act="offf:open" style="padding:0 6px 4px;text-align:left">'+oo.length+' offene Angebote in sevDesk · '+eur0(oo.reduce(function(a,o){return a+o.gross;},0))+'</button>':'')+
+        (oo.length?'<button class="link small" data-act="offf:open" style="padding:0 6px 4px;text-align:left">'+oo.length+' offene Angebote · '+eur0(oo.reduce(function(a,o){return a+o.gross;},0))+'</button>':'')+
         (ls.map(function(l){ return '<button class="card" data-act="lead:'+esc(l.id)+'"><span class="n">'+esc(l.company||l.name)+'</span><span class="m"><span>'+esc(l.topic||"")+'</span>'+(val(l)?'<span class="num">'+eur0(l.value)+'</span>':'')+'</span><span class="x">'+esc((l.company?l.name+" · ":"")+F.ago(l.updated||l.created))+(l.entwurf&&s[0]==="anfrage"?" · Gratis-Entwurf":"")+'</span>'+(function(){ var lo=leadOffers(l).filter(offOpen)[0]; return lo?'<span class="x">'+esc(lo.nr||"Angebot")+' · '+eur0(lo.gross)+(lo.overdue?' · abgelaufen':'')+'</span>':''; })()+'</button>'; }).join("")||'<span class="muted" style="padding:6px">Keine</span>')+'</div>';
     }).join("");
     var lost=D.leads.filter(function(l){return l.stage==="verloren";});

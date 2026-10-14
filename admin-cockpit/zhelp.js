@@ -6,7 +6,7 @@ var F=window.FSC, esc=F.esc, UI=F.UI;
 /* Themen: id = Seite (UI.fin), t = Titel, s = Kurzbeschreibung, b = Absätze/Listen ([“Überschrift”, “Text”]) */
 var T=[
  {id:"dash",t:"Übersicht",s:"Deine Zahlen auf einen Blick",b:[
-  ["Umsatz","Netto (ohne Umsatzsteuer) – so wie in sevDesk: alle fertigen Rechnungen des Jahres ohne stornierte, plus Einnahme-Belege. Klein darunter steht der Brutto-Betrag (inkl. USt)."],
+  ["Umsatz","Netto (ohne Umsatzsteuer): alle fertigen Rechnungen des Jahres ohne stornierte, plus Einnahme-Belege. Klein darunter steht der Brutto-Betrag (inkl. USt)."],
   ["Offene Forderungen","Was Kunden dir noch schulden, netto. Rot = Zahlungsziel überschritten (fällig), gelb = noch nicht fällig."],
   ["Meine Aufgaben","Alles, was du noch tun solltest: Entwürfe versenden, überfällige Rechnungen mahnen, Bankumsätze zuordnen, Beleg-Entwürfe abschließen. Ein Klick führt direkt hin."],
   ["Ertrag / Aufwand","Grün = Einnahmen, rot = Ausgaben je Monat (netto, nach Rechnungs- bzw. Belegdatum)."]]},
@@ -75,7 +75,7 @@ var T=[
  {id:"abgl",t:"Plattformen verrechnen",s:"Blitzdings, kochdu & Co.",b:[["Was ist das?","Buchungen und Provisionen aus deinen Plattformen, für die noch keine Rechnung existiert. „Rechnung erstellen“, „Zuordnen“ (Sammelrechnung) oder „Ausblenden“, wenn nichts zu verrechnen ist."]]},
  {id:"mydata",t:"Meine Daten",s:"UID, Steuernummer, IBAN, D-U-N-S …",b:[["Kopieren","Klick auf eine Zeile kopiert den Wert, „Gruppe kopieren“ z. B. alle Bankdaten auf einmal, „Alles kopieren“ den ganzen Block."],["Ändern","„Bearbeiten“: Werte ändern, Zeilen hinzufügen oder entfernen, eigene Gruppen anlegen (z. B. Versicherungsnummern)."]]},
  {id:"lock",t:"Festschreiben",s:"Unveränderbarkeit (gesetzliche Pflicht)",b:[["Warum?","Buchhaltung muss unveränderbar sein (BAO/GoBD). Rechnungen werden beim Versand automatisch festgeschrieben. Belege und Zahlungen schreibst du hier je Zeitraum fest – am besten monatlich oder mit jeder UVA."]]},
- {id:"umstieg",t:"Firma & Einstellungen",s:"Firmendaten und Umstieg",b:[["Firmendaten","Erscheinen auf Rechnungen (Adresse, UID, Bank). Bitte vollständig halten."],["Eigene Buchhaltung","Hier schaltest du von sevDesk auf die eigene Buchhaltung um – alle Daten wurden übernommen."]]}
+ {id:"umstieg",t:"Firma & Einstellungen",s:"Firmendaten",b:[["Firmendaten","Erscheinen auf Rechnungen, Mahnungen und Angeboten (Adresse, UID, Bank). Bitte vollständig halten."],["Eigene Buchhaltung","Rechnungen, Angebote, Belege, Bank und Steuer laufen vollständig im Cockpit. Die Daten aus früheren Jahren wurden einmalig übernommen."]]}
 ];
 var G=[
  ["Geldtransit","Geld wandert zwischen deinen eigenen Konten (z. B. Mollie → Bank). Kein Umsatz und keine Ausgabe."],

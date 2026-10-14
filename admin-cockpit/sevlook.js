@@ -1,4 +1,4 @@
-/* Finanzen im sevDesk-Look: Navy-Schrift, Indigo als Hauptfarbe, Koralle für Warnungen, warmes Off-White, Karten mit feinem Rahmen.
+/* Finanzen-Look: Navy-Schrift, Indigo als Hauptfarbe, Koralle für Warnungen, warmes Off-White, Karten mit feinem Rahmen.
    Gilt nur, solange „Finanzen“ offen ist (body[data-view="geld"]) – inkl. Dialoge und Seitenleiste, die von dort geöffnet werden. */
 (function(){
 "use strict";
@@ -22,7 +22,6 @@ F.css(
   S+'{background:var(--ground)}'+
   /* Kopf */
   M+' .head h1{font-weight:700;letter-spacing:-.02em;color:var(--ink)}'+
-  M+' .head h1:after{content:"sevdesk";display:inline-block;margin-left:10px;vertical-align:5px;font:700 11px/1 var(--f-body);letter-spacing:.02em;color:#fff;background:var(--m-red);border-radius:5px;padding:4px 7px}'+
   M+' .head p{color:var(--ink-2)}'+
   /* Karten */
   M+' .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:none}'+
@@ -37,7 +36,7 @@ F.css(
   M+' .btn,'+S+' #drawer .btn,'+S+' #modalHost .btn{border-radius:8px;border-color:#e1e1e3;font-weight:600}'+
   M+' .btn.primary,'+S+' #drawer .btn.primary,'+S+' #modalHost .btn.primary{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}'+
   M+' .btn.danger,'+S+' #drawer .btn.danger,'+S+' #modalHost .btn.danger{background:var(--bad);border-color:var(--bad);color:#fff}'+
-  /* Reiter wie in sevDesk */
+  /* Reiter */
   M+' .subnav{border-bottom:1px solid var(--line);gap:2px}'+
   M+' .subnav button{font-weight:600;color:var(--ink-2);border-bottom:2px solid transparent;padding:10px 14px}'+
   M+' .subnav button[aria-current="true"]{color:var(--glow);border-color:var(--glow);background:none}'+
@@ -68,6 +67,6 @@ F.css(
   S+' .sd-hero .big{color:var(--ink)}'+
   S+' .sd-steps span.on{background:var(--glow-soft);color:var(--glow-ink)}'+
   /* Handy */
-  '@media (max-width:900px){'+M+' .head h1:after{display:none}'+M+' .mh-t b:after{content:"sevdesk";display:inline-block;margin-left:8px;vertical-align:3px;font:700 10px/1 var(--f-body);color:#fff;background:var(--m-red);border-radius:4px;padding:3px 6px}}'
+  ''
 );
 })();

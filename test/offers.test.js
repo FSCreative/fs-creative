@@ -168,11 +168,11 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
         assert.ok(!/AN-1004/.test(txt), "abgelehnte nicht unter Offen");
         await page.click('[data-act="offf:rej"]'); assert.ok(/AN-1004/.test(await page.textContent("#offers")));
         await page.click('[data-act="offf:all"]'); assert.ok(/AN-1003/.test(await page.textContent("#offers")));
-        assert.ok(/offene Angebote in sevDesk/.test(await page.textContent(".pipe")), "Summe in Spalte Angebot");
+        assert.ok(/offene Angebote/.test(await page.textContent(".pipe")), "Summe in Spalte Angebot");
         // Kundenakte → Angebote + „Angebot erstellen“
         await page.click('[data-act="lead:' + lid + '"]');
         await page.waitForSelector("#drawer.on");
-        assert.ok(/Angebote in sevDesk/.test(await page.textContent("#drawer")) && /AN-1005/.test(await page.textContent("#drawer")));
+        assert.ok(/Angebote/.test(await page.textContent("#drawer")) && /AN-1005/.test(await page.textContent("#drawer")));
         await page.click('[data-act="leadoffer:' + lid + '"]');
         await page.waitForSelector('form[data-form="invoice"] input[name="valid"]');
         assert.ok(/Angebot · Bäckerei Lerch/.test(await page.textContent("#modalHost h2")));

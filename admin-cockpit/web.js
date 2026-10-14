@@ -113,7 +113,7 @@ function lastInv(key){ var a=invRecs(key); return a[a.length-1]||null; }
 function sevInv(id){ return id&&F.D.sev?F.D.sev.invoices.find(function(i){ return i.id===id; }):null; }
 function invTag(rec){
   if(!rec.id) return '<span class="tag grey">ohne Rechnung</span>';
-  var i=sevInv(rec.id); if(!i) return '<span class="tag grey">in sevDesk</span>';
+  var i=sevInv(rec.id); if(!i) return '<span class="tag grey">in der Buchhaltung</span>';
   var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":i.status===750?"teilbezahlt":i.status===50?"deaktiviert":"offen";
   return '<span class="tag '+cls+'">'+lbl+'</span>';
 }
@@ -128,7 +128,7 @@ function stateTag(c){
   if(!siteDue(c)) return '<span class="tag grey">nächste Rechnung '+de(nextBill(c))+'</span>';
   return '<span class="tag warn">'+(c.billedUntil?"fällig seit "+de(ymdAdd(c.billedUntil,1)):"noch nie verrechnet")+'</span>';
 }
-/* FS Creative-Umsatz (wie Übersicht im klassischen Dashboard): Website-Rechnungen des Jahres, bezahlt/offen laut sevDesk */
+/* FS Creative-Umsatz (wie Übersicht im klassischen Dashboard): Website-Rechnungen des Jahres, bezahlt/offen laut Buchhaltung */
 function fscRevenue(){
   var r={paid:0,open:0,count:0}, yr=String(F.D.year); if(!B||!B.invoices) return r;
   Object.keys(B.invoices).forEach(function(k){ if(k.indexOf("site:")!==0) return;
@@ -278,8 +278,8 @@ function vBill(){
       '<div class="w-tgs">'+tg("active","Aktiv","on")+tg("domain","Domain")+tg("hosting","Hosting")+tg("mail","Mail"+(c.mail&&c.mailQty>1?" ×"+c.mailQty:""))+(c.extra>0?'<span class="w-extra">+ <span class="money">'+eur(c.extra)+'</span> '+esc(c.extraLabel||"Zusatzleistung")+'</span>':'')+'</div>'+
       '<div class="w-sum"><b class="num money">'+eur(sum)+'</b><div class="muted">pro '+(PERLBL[n]||n+" Mon.")+'</div>'+(kc.loaded||kc.domYear?'<button class="link" data-act="wexp:'+K+'" title="Echte Kosten pro Jahr (Railway + Domain)">Kosten <span class="money">'+eur(kc.year)+'</span>/J '+(open?"▴":"▾")+'</button>':'<button class="link" data-act="wexp:'+K+'">Kosten '+(open?"▴":"▾")+'</button>')+'</div>'+
       '<div class="w-st">'+invInfo(li)+stateTag(c)+'</div>'+
-      '<div class="w-acts"><button class="btn'+(c.active&&sum>0&&isDue?" primary":"")+'" data-act="wbill:'+K+'"'+(c.active&&sum>0?"":" disabled")+' title="'+(c.active?(sum>0?"Rechnungsentwurf in sevDesk anlegen":"Nichts zum Verrechnen angehakt"):"Website ist nicht aktiv")+'">Verrechnen</button>'+
-        (li?'<button class="btn icon" data-act="wunbill:'+K+'" title="Letzte Abrechnung zurücknehmen (Rechnung in sevDesk bleibt bestehen)" aria-label="Letzte Abrechnung zurücknehmen">↺</button>':'')+
+      '<div class="w-acts"><button class="btn'+(c.active&&sum>0&&isDue?" primary":"")+'" data-act="wbill:'+K+'"'+(c.active&&sum>0?"":" disabled")+' title="'+(c.active?(sum>0?"Rechnungsentwurf anlegen":"Nichts zum Verrechnen angehakt"):"Website ist nicht aktiv")+'">Verrechnen</button>'+
+        (li?'<button class="btn icon" data-act="wunbill:'+K+'" title="Letzte Abrechnung zurücknehmen (Rechnung bleibt bestehen)" aria-label="Letzte Abrechnung zurücknehmen">↺</button>':'')+
         '<button class="btn icon" data-act="wsite:'+K+'" title="Bearbeiten" aria-label="Bearbeiten">'+F.svg("gear")+'</button></div></div>'+
       (open?'<div class="w-det">'+costDetail(s,c)+'</div>':'');
   }).join("");
@@ -385,7 +385,7 @@ function drawerHtml(){
   return head+
     '<div class="w-sec" data-wdkey="'+K+'"><div class="row wrap">'+stateTag(c)+'</div>'+
       '<div class="row wrap"><button class="btn'+(c.active&&sum>0?" primary":"")+'" data-act="wbill:'+K+'"'+(c.active&&sum>0?"":" disabled")+'>Verrechnen · <span class="money">'+eur(sum)+'</span></button>'+(li?'<button class="btn" data-act="wunbill:'+K+'">↺ Letzte zurücknehmen</button>':'')+'</div>'+
-      '<label class="fl">Kunde (sevDesk)<input class="f" data-wf="customer" list="wContacts" value="'+esc(c.customer)+'" placeholder="'+esc(s.name)+'" autocomplete="off"></label><datalist id="wContacts"></datalist>'+
+      '<label class="fl">Kunde (Kontakt)<input class="f" data-wf="customer" list="wContacts" value="'+esc(c.customer)+'" placeholder="'+esc(s.name)+'" autocomplete="off"></label><datalist id="wContacts"></datalist>'+
       '<div><div class="sec-t">Was wird verrechnet?</div>'+
         opt("active","Aktiv – wird verrechnet","")+
         opt("domain",esc(P.domainLabel||"Domain"),per("domain"))+
@@ -483,7 +483,7 @@ F.action("wown",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), v
   setSite(key,{own:v}).then(function(j){ if(j&&j.ok) F.toast((s?s.name+": ":"")+(v?"zu „Eigene Projekte“ verschoben":"wieder bei den Kunden-Websites"),false,"Rückgängig",function(){ setSite(key,{own:!v}); }); }); });
 F.action("wunbill",function(key){
   var rec=lastInv(key), s=siteBy(key); if(!rec) return;
-  F.confirm("Letzte Abrechnung von „"+(s?s.name:key)+"“ ("+(rec.nr||"Entwurf")+", "+eur(rec.gross)+") zurücknehmen? Die Rechnung in sevDesk bleibt bestehen – bitte dort bei Bedarf löschen oder stornieren.","Zurücknehmen",function(){
+  F.confirm("Letzte Abrechnung von „"+(s?s.name:key)+"“ ("+(rec.nr||"Entwurf")+", "+eur(rec.gross)+") zurücknehmen? Die Rechnung bleibt bestehen – bei Bedarf unter Finanzen › Rechnungen stornieren.","Zurücknehmen",function(){
     billPost({op:"unbill",key:"site:"+key}).then(function(j){ if(j&&j.ok) F.toast("Abrechnung zurückgenommen",false,"Rückgängig",function(){ billPost({op:"invoice",key:"site:"+key,invoice:rec}).then(function(k){ if(k&&k.ok) F.toast("Abrechnung wiederhergestellt"); }); }); });
   },true);
 });

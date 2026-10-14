@@ -112,8 +112,8 @@ function setRules(raw,st){ RULES={}; if(st) RULEMAP=st.ruleMap||{}; markStorno(r
   (raw&&raw.taxRules||[]).forEach(function(r){ var c=ruleTextClass((r.description||"")+" "+(r.name||""),r.side); RULES[String(r.id)]={in:c.in||null,out:c.out||null,txt:r.description||r.name||"",side:r.side||"",known:!!(c.in||c.out||c.auto),auto:!!c.auto}; }); }
 function ruleSrc(id,side){ id=String(id||""); var m=RULEMAP[id], r=RULES&&RULES[id], d=side==="in"?RULE_IN_DEFAULT:RULE_OUT_DEFAULT;
   if(m&&m[side]) return {c:m[side],src:"Zuordnung im Cockpit"};
-  if(r&&r[side]) return {c:r[side],src:"Text der Regel in deinem sevDesk-Konto"};
-  if(d[id]) return {c:d[id],src:r?"Standard-ID (Text nicht erkannt)":"Standard-ID laut sevDesk-Doku"};
+  if(r&&r[side]) return {c:r[side],src:"Text der Steuerregel"};
+  if(d[id]) return {c:d[id],src:r?"Standard-ID (Text nicht erkannt)":"Standard-ID der Steuerregel"};
   return {c:"",src:"unbekannt"}; }
 function ruleIn(id){ return ruleSrc(id,"in").c; }
 function ruleOut(id){ return ruleSrc(id,"out").c; }
@@ -180,7 +180,7 @@ function reportedIn(st,inv){ if(!st||!inv.date) return null; var ks=Object.keys(
   /* Ohne Cockpit-Abgabe (z. B. aus sevDesk gemeldet): sevDesk-Sollauswertung zählt eine Rechnung im Zeitraum des früheren
      Datums von Rechnung und Zahlung (Anzahlung vor Rechnung) – live für Q2/Q3 2026 geprüft (RE-1199/1200/1203). */
   var pd=inv.type==="SR"?"":(inv.payDate||""), d0=pd&&pd<inv.date&&num(inv.paid)>0.004?pd:inv.date;
-  var k0=periodKeyOf(st,d0); if(periodClosed(st,k0)&&!hasDocList(st,k0)) return {key:k0,date:d0,how:d0===inv.date?"nach Rechnungsdatum, wie in sevDesk":"nach Zahlungseingang vor Rechnungsdatum, wie in sevDesk"}; return null; }
+  var k0=periodKeyOf(st,d0); if(periodClosed(st,k0)&&!hasDocList(st,k0)) return {key:k0,date:d0,how:d0===inv.date?"nach Rechnungsdatum, wie bisher":"nach Zahlungseingang vor Rechnungsdatum, wie bisher"}; return null; }
 function sollParts(inv,st,total){
   var out0=sollParts0(inv,st,total), rep=reportedIn(st,inv), tt=total==null?1:total;
   if(rep&&!docCfg(st,inv.id).teil) return [{share:tt,date:rep.date,why:"bereits mit der UVA "+rep.key.replace("-"," ")+" gemeldet ("+rep.how+")"}];
@@ -247,19 +247,19 @@ function outWhy(doc,line,st){
     if(cc==="AT"&&(hasUid||oi.ccSrc==="UID")) return {c:"pruefen",at:true,why:"0 % an österreichischen Unternehmer – nur korrekt bei steuerfreier Leistung/durchlaufendem Posten, sonst 20 % nachversteuern"+land,sure:false};
     return {c:"pruefen",at:cc==="AT",why:(cc==="AT"?"0 % an Kunden in Österreich – steuerfrei, durchlaufender Posten oder 20 % nachversteuern?":"0 % bei steuerpflichtiger Regel – Land/UID unklar")+land,sure:false};
   }
-  if(sem==="011") return {c:"011",why:"Ausfuhr laut sevDesk-Steuerregel",sure:true};
-  if(sem==="igl") return {c:"017",why:"ig. Lieferung laut sevDesk-Steuerregel → KZ 017 + ZM (Lieferung)"+land,sure:true};
-  if(sem==="zm") return {c:drei?"zmd":"zm",why:"ig. sonstige Leistung laut sevDesk-Steuerregel → nur ZM"+land,sure:true};
-  if(sem==="zmd") return {c:"zmd",why:"Dreiecksgeschäft laut sevDesk-Steuerregel → ZM mit Kennzeichen"+land,sure:true};
-  if(sem==="020") return {c:"020",why:"steuerfrei laut sevDesk-Steuerregel",sure:true};
+  if(sem==="011") return {c:"011",why:"Ausfuhr laut Steuerregel",sure:true};
+  if(sem==="igl") return {c:"017",why:"ig. Lieferung laut Steuerregel → KZ 017 + ZM (Lieferung)"+land,sure:true};
+  if(sem==="zm") return {c:drei?"zmd":"zm",why:"ig. sonstige Leistung laut Steuerregel → nur ZM"+land,sure:true};
+  if(sem==="zmd") return {c:"zmd",why:"Dreiecksgeschäft laut Steuerregel → ZM mit Kennzeichen"+land,sure:true};
+  if(sem==="020") return {c:"020",why:"steuerfrei laut Steuerregel",sure:true};
   if(sem==="rcout") return eu?{c:igK==="017"?"017":igK==="zmd"?"zmd":"zm",why:"Reverse Charge an EU-Unternehmer → "+igT+land,sure:hasUid}:(cc==="AT"?{c:"021",why:"Reverse Charge im Inland → KZ 021",sure:true}:{c:"ns",why:"Reverse Charge an Drittland-Kunden → nicht steuerbar"+land,sure:!!cc});
   if(sem==="nsout") return eu&&hasUid?{c:"zm",why:"nicht im Inland steuerbar, EU-Unternehmer → ZM"+land,sure:true}:{c:"ns",why:"nicht im Inland steuerbar"+land,sure:!eu};
-  if(sem==="016") return {c:"016",why:"Kleinunternehmer laut sevDesk",sure:true};
-  if(sem==="oss") return {c:"oss",why:"One-Stop-Shop laut sevDesk",sure:true};
-  if(!r&&doc.taxType==="eu") return {c:igK,why:"Steuerart EU (sevDesk 1.0) → "+igT+land,sure:hasUid};
-  if(!r&&doc.taxType==="noteu") return {c:"ns",why:"Steuerart Drittland (sevDesk 1.0)",sure:true};
-  if(!r&&doc.taxType==="ss") return {c:"016",why:"Steuerart Kleinunternehmer (sevDesk 1.0)",sure:true};
-  return line.rate>0?{c:"inl",why:"Steuersatz "+line.rate+" % (Steuerregel "+r+" unbekannt)",sure:true}:{c:"pruefen",why:"unbekannte Steuerregel "+r+" („"+ruleTxt(r)+"“) – Regel unter „Steuerregeln deines sevDesk-Kontos“ zuordnen",sure:false};
+  if(sem==="016") return {c:"016",why:"Kleinunternehmer laut Steuerregel",sure:true};
+  if(sem==="oss") return {c:"oss",why:"One-Stop-Shop laut Steuerregel",sure:true};
+  if(!r&&doc.taxType==="eu") return {c:igK,why:"Steuerart EU (alte Steuerart) → "+igT+land,sure:hasUid};
+  if(!r&&doc.taxType==="noteu") return {c:"ns",why:"Steuerart Drittland (alte Steuerart)",sure:true};
+  if(!r&&doc.taxType==="ss") return {c:"016",why:"Steuerart Kleinunternehmer (alte Steuerart)",sure:true};
+  return line.rate>0?{c:"inl",why:"Steuersatz "+line.rate+" % (Steuerregel "+r+" unbekannt)",sure:true}:{c:"pruefen",why:"unbekannte Steuerregel "+r+" („"+ruleTxt(r)+"“) – Regel unter „Steuerregeln“ zuordnen",sure:false};
 }
 function outClass(doc,line,st){ return outWhy(doc,line,st).c; }
 function atRate(rate){ return AT_RATES.indexOf(Math.round(rate*10)/10)>-1; }
@@ -275,10 +275,10 @@ function inWhy(v,line,st){
     return {c:"none",why:"laufende Kosten Pkw/Kombi: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – USt ist Aufwand. Fiskal-Lkw/E-Pkw: in den UVA-Einstellungen freischalten",sure:true};
   var r=ruleKey(v), cc=supplierCountry(v), foreign=!!cc&&cc!=="AT", tax=Math.abs(line.tax)>0.004, sem=r?ruleIn(r):"";
   var src=uidCountry(v.supplierUid)?"UID":(cc&&cc!==String(v.supplierCountry||"").toUpperCase()?"bekannter Anbieter":"Kontaktadresse"), land=cc?" (Lieferant "+cc+" laut "+src+")":"";
-  if(sem==="ige"||(!r&&v.taxType==="eu")){ var w=igeOrService(v,line,st); return w.c==="rc"?{c:"rc",why:"in sevDesk als ig. Erwerb gebucht – für die UVA als Reverse-Charge-Leistung behandelt (§ 19 Abs. 1 UStG, KZ 057/066): "+w.why+land,sure:w.sure}:{c:"ige",why:"ig. Erwerb (Ware) laut sevDesk"+(w.why?": "+w.why:"")+land,sure:w.sure}; }
-  if(sem==="none"||(!r&&v.taxType==="ss")) return {c:"none",why:"nicht vorsteuerabziehbar laut sevDesk"};
-  if(sem==="rc"||(!r&&v.taxType==="noteu")) return {c:"rc",why:"Reverse Charge mit Vorsteuer laut sevDesk"+land};
-  if(sem==="rcnv") return {c:"rcnv",why:"Reverse Charge ohne Vorsteuer laut sevDesk"+land};
+  if(sem==="ige"||(!r&&v.taxType==="eu")){ var w=igeOrService(v,line,st); return w.c==="rc"?{c:"rc",why:"als ig. Erwerb gebucht – für die UVA als Reverse-Charge-Leistung behandelt (§ 19 Abs. 1 UStG, KZ 057/066): "+w.why+land,sure:w.sure}:{c:"ige",why:"ig. Erwerb (Ware) laut Steuerregel"+(w.why?": "+w.why:"")+land,sure:w.sure}; }
+  if(sem==="none"||(!r&&v.taxType==="ss")) return {c:"none",why:"nicht vorsteuerabziehbar laut Steuerregel"};
+  if(sem==="rc"||(!r&&v.taxType==="noteu")) return {c:"rc",why:"Reverse Charge mit Vorsteuer laut Steuerregel"+land};
+  if(sem==="rcnv") return {c:"rcnv",why:"Reverse Charge ohne Vorsteuer laut Steuerregel"+land};
   if(tax){ if(!atRate(line.rate)) return {c:"fx",why:line.rate+" % ist kein österreichischer Steuersatz → ausländische USt"+land}; return {c:"060",why:"österreichische USt "+line.rate+" % ausgewiesen"+(foreign?" – Lieferant aber "+cc+", bitte prüfen":"")}; }
   if(foreign) return {c:"rc",why:"ausländischer Leister ohne USt → Reverse Charge (Art. 3a, § 19 Abs. 1 UStG)"+land};
   return {c:"none",why:"keine USt ausgewiesen, inländischer Lieferant"};
@@ -372,7 +372,7 @@ function ausgebucht(inv,st){ var c=docCfg(st,inv.id); if(inv.type==="SR"||inv.ty
 function minderung(inv,st){
   if(inv.type==="SR"||inv.type==="AR"||inv.type==="ER") return null; var c=docCfg(st,inv.id), g=num(inv.gross), paid=num(inv.paid);
   if(g<=0) return null;
-  var au=ausgebucht(inv,st); if(au){ var open=g-paid; if(open>0.01&&Math.abs(num(inv.tax))>0.004) return {date:au.date,share:open/g,amount:open,auto:au.auto,why:(au.auto?"ausgebucht laut sevDesk (bezahlt ohne Zahlung)":"Forderungsausfall (uneinbringlich)")+" – Berichtigung § 16 Abs. 3 UStG"}; return null; }
+  var au=ausgebucht(inv,st); if(au){ var open=g-paid; if(open>0.01&&Math.abs(num(inv.tax))>0.004) return {date:au.date,share:open/g,amount:open,auto:au.auto,why:(au.auto?"ausgebucht (bezahlt ohne Zahlung)":"Forderungsausfall (uneinbringlich)")+" – Berichtigung § 16 Abs. 3 UStG"}; return null; }
   if(c.noMinderung||inv.status!==1000||paid<0.005) return null;
   var diff=g-paid; if(diff<0.02||diff/g>0.5) return null;   // > 50 % Differenz: eher Teilzahlung/Gutschrift – nicht automatisch
   var d=inv.payDate||(inv.pays&&inv.pays.length?inv.pays[inv.pays.length-1].date:""); if(!d) return null;
@@ -722,19 +722,19 @@ function plausibility(raw,st,year){
   var uvaRev=r2(((u.K["000"]||{}).base||0)+u.zm.reduce(function(a,z){ return a+z.net; },0)+u.other.ns.reduce(function(a,z){ return a+z.base; },0)+u.other.oss.reduce(function(a,z){ return a+z.base; },0)+u.corr.filter(function(c){ return c.kz==="000"; }).reduce(function(a,c){ return a+c.amount; },0));
   var dRev=0; (raw.vouchers||[]).forEach(function(v){ if(v.cd!=="D"||skipVou(v,st)||String(v.delivery||v.date||"").slice(0,4)!==y) return; lines(v).forEach(function(l){ if(!nonBiz(l)) dRev+=l.net; }); });
   var sevRev=r2(revenueNet(raw,st,y)+dRev), diff=r2(uvaRev-sevRev);
-  out.push({id:"rev",ok:!sevRev||Math.abs(diff)<=Math.max(1,Math.abs(sevRev)*0.01),t:"Erlöse "+y+" laut UVA-Rechnung vs. sevDesk-Rechnungen",a:uvaRev,b:sevRev,d:diff,hint:"Unterschiede entstehen durch Leistungsdatum im Vor-/Folgejahr, Anzahlungen oder nicht eingeordnete Belege ("+u.review.length+")."});
+  out.push({id:"rev",ok:!sevRev||Math.abs(diff)<=Math.max(1,Math.abs(sevRev)*0.01),t:"Erlöse "+y+" laut UVA-Rechnung vs. Rechnungen (Rechnungsdatum)",a:uvaRev,b:sevRev,d:diff,hint:"Unterschiede entstehen durch Leistungsdatum im Vor-/Folgejahr, Anzahlungen oder nicht eingeordnete Belege ("+u.review.length+")."});
   var dupe=raw.meta&&raw.meta.dupes||{}; var dn=Object.keys(dupe).reduce(function(a,kk){ return a+(dupe[kk]||0); },0);
-  out.push({id:"dupe",ok:!dn,t:"Doppelte Belege aus sevDesk (Paginierung)",a:dn,hint:dn?"Es kamen Belege mehrfach – sie wurden entfernt.":"keine"});
+  out.push({id:"dupe",ok:!dn,t:"Doppelte Belege",a:dn,hint:dn?"Es kamen Belege mehrfach – sie wurden entfernt.":"keine"});
   var scaled=[]; (raw.invoices||[]).concat(raw.vouchers||[]).forEach(function(d){ if(String(d.date||"").slice(0,4)!==y) return; if(lines(d).some(function(l){ return l.scaled; })) scaled.push(d); });
   out.push({id:"pos",ok:!scaled.length,t:"Positionen weichen von der Belegsumme ab (Brutto/Netto, Rabatt)",a:scaled.length,docs:scaled.slice(0,30),hint:"Gerechnet wird mit der Kopfsumme des Belegs; Positionen nur für die Aufteilung nach Steuersatz."});
   var sr=(raw.invoices||[]).filter(function(i){ return i.type==="SR"&&String(i.date||"").slice(0,4)===y; });
   out.push({id:"sr",ok:true,t:"Stornorechnungen "+y,a:sr.length,hint:sr.filter(function(i){ return num(i.net)>0; }).length+" mit positiver Summe (werden negativ gerechnet), "+sr.filter(function(i){ return num(i.net)<0; }).length+" bereits negativ (bleiben so)."});
   var zeroPaid=(raw.invoices||[]).filter(function(i){ return i.status===1000&&num(i.paid)<0.005&&num(i.gross)>0&&String(i.date||"").slice(0,4)===y&&!skipInv(i,st); });
-  out.push({id:"zeropaid",ok:!zeroPaid.length,t:"Als bezahlt markiert, aber ohne Zahlungsbetrag",a:zeroPaid.length,docs:zeroPaid.slice(0,30),hint:"Zählen in der E1a nicht als Einnahme (kein Zufluss). Falls doch bezahlt: Zahlung in sevDesk zuordnen."});
+  out.push({id:"zeropaid",ok:!zeroPaid.length,t:"Als bezahlt markiert, aber ohne Zahlungsbetrag",a:zeroPaid.length,docs:zeroPaid.slice(0,30),hint:"Zählen in der E1a nicht als Einnahme (kein Zufluss). Falls doch bezahlt: Zahlung zuordnen."});
   var rv=(raw.vouchers||[]).filter(function(v){ return v.type==="RV"&&v.status>=100&&String(v.date||"").slice(0,4)===y; });
-  out.push({id:"rv",ok:!rv.length,t:"Wiederkehrende Belege (sevDesk-Typ RV) – als Vorlage nicht mitgerechnet",a:rv.length+" · "+r2(rv.reduce(function(a,v){ return a+num(v.tax); },0)).toFixed(2).replace(".",",")+" € Steuer",docs:rv.slice(0,30),hint:"Falls sevDesk diese Belege in der USt-Auswertung zählt (keine eigenen Einzelbelege je Monat), bitte melden – dann sind sie echte Buchungen."});
+  out.push({id:"rv",ok:!rv.length,t:"Wiederkehrende Belege (Typ RV) – als Vorlage nicht mitgerechnet",a:rv.length+" · "+r2(rv.reduce(function(a,v){ return a+num(v.tax); },0)).toFixed(2).replace(".",",")+" € Steuer",docs:rv.slice(0,30),hint:"Falls das keine Vorlagen, sondern echte Buchungen sind (keine eigenen Einzelbelege je Monat), bitte melden."});
   var drafts=(raw.vouchers||[]).filter(function(v){ return v.status===50&&String(v.date||"").slice(0,4)===y; }).length+(raw.invoices||[]).filter(function(i){ return i.status===100&&String(i.date||"").slice(0,4)===y; }).length;
-  out.push({id:"drafts",ok:!drafts,t:"Entwürfe in sevDesk (nicht mitgerechnet)",a:drafts,hint:drafts?"Entwürfe zählen nicht – in sevDesk fertigstellen, falls sie in den Zeitraum gehören.":"keine"});
+  out.push({id:"drafts",ok:!drafts,t:"Entwürfe (nicht mitgerechnet)",a:drafts,hint:drafts?"Entwürfe zählen nicht – fertigstellen, falls sie in den Zeitraum gehören.":"keine"});
   var nb=0, nbSum=0; (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)||String(v.date||"").slice(0,4)!==y) return; lines(v).forEach(function(l){ if(nonBiz(l)){ nb++; nbSum+=l.net+l.tax; } }); });
   out.push({id:"nonbiz",ok:true,t:"Privat, Steuerzahlungen, Umbuchungen ausgeschlossen",a:nb+" Pos. · "+r2(nbSum).toFixed(2).replace(".",",")+" €",hint:"Positionen mit Kategorien wie Privatentnahme, USt-Vorauszahlung, Einkommensteuer, Darlehen zählen weder als Einnahme noch als Ausgabe."});
   if(u.roundDiff.length) out.push({id:"round",ok:Math.max.apply(null,u.roundDiff.map(function(x){ return Math.abs(x.calc-x.doc); }))<1,t:"USt laut Rechnungen vs. USt aus Bemessungsgrundlage",a:u.roundDiff.map(function(x){ return "KZ "+x.kz+": "+x.doc.toFixed(2)+" / "+x.calc.toFixed(2); }).join(", "),hint:"Das Finanzamt rechnet die Steuer aus der Bemessungsgrundlage. Größere Differenzen deuten auf falsch erfasste Steuersätze hin."});
@@ -753,7 +753,7 @@ function controlCheck(raw,st,p){
     var uv=[]; if(inv.type==="AR"){ var lk=PT.ar[inv.id]; payments(inv).forEach(function(pm){ if(!(lk&&pm.date>lk.cut)) uv.push(pm.date); }); }
     else if(inv.type==="SR") uv.push(inv.date); else sollParts(inv,st,1).forEach(function(pt){ uv.push(pt.date); });
     var inU=uv.some(function(d){ return inP(d,p); });
-    if(Math.abs(t)>0.004&&(inS!==inU||(inS&&uv.some(function(d){ return !inP(d,p); }))||(inv.type==="ER"&&inS))) diffs.push({doc:inv,kind:"out",tax:r2(t),sev:inv.date,uva:uv.join(", "),why:inv.type==="AR"?"Anzahlung: U30 im Monat der Zahlung":(inv.type==="ER"?"Endrechnung: U30 nur Gesamtentgelt abzüglich versteuerter Anzahlungen":"U30 nach Leistungsdatum/Soll-Zeitpunkt, sevDesk nach Rechnungsdatum")}); });
+    if(Math.abs(t)>0.004&&(inS!==inU||(inS&&uv.some(function(d){ return !inP(d,p); }))||(inv.type==="ER"&&inS))) diffs.push({doc:inv,kind:"out",tax:r2(t),sev:inv.date,uva:uv.join(", "),why:inv.type==="AR"?"Anzahlung: U30 im Monat der Zahlung":(inv.type==="ER"?"Endrechnung: U30 nur Gesamtentgelt abzüglich versteuerter Anzahlungen":"U30 nach Leistungsdatum/Soll-Zeitpunkt, Kontrollrechnung nach Rechnungsdatum")}); });
   (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn.id); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v);
     if(v.cd==="D"){ if(inP(v.date,p)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax; }); return; }
@@ -798,12 +798,12 @@ function mismatches(raw,st,from,to){
       if(nonBiz(l)) return;
       var mine=inClass(v,l,st), sev=sevClassOf(v,l), ov=docCfg(st,v.id).kz;
       var key=mine+"|"+sev; if(seen[key]) return; seen[key]=1;
-      if(mine==="060"&&catKz(st,l)==="9170"&&!docCfg(st,v.id).epkw&&!seen.pkw){ seen.pkw=1; out.push({doc:v,kind:"in",type:"pkw",t:"Kfz-Kosten mit Vorsteuer: bei Pkw/Kombi kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – ausgenommen E-Pkw (CO2 0), Fiskal-Lkw/Klein-Lkw laut BMF-Liste, Kleinbusse",fix:"In sevDesk als 'nicht vorsteuerabziehbar' buchen, falls Pkw.",rule:"",fixable:false}); }
-      if(mine==="fx") out.push({doc:v,kind:"in",type:"fx",t:"Ausländische USt ("+l.rate+" %) – in Österreich nicht als Vorsteuer abziehbar",fix:"In sevDesk als 'nicht vorsteuerabziehbar' buchen; Rückholung nur über das Erstattungsverfahren des Landes.",rule:"",fixable:false});
+      if(mine==="060"&&catKz(st,l)==="9170"&&!docCfg(st,v.id).epkw&&!seen.pkw){ seen.pkw=1; out.push({doc:v,kind:"in",type:"pkw",t:"Kfz-Kosten mit Vorsteuer: bei Pkw/Kombi kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – ausgenommen E-Pkw (CO2 0), Fiskal-Lkw/Klein-Lkw laut BMF-Liste, Kleinbusse",fix:"Als 'nicht vorsteuerabziehbar' buchen, falls Pkw.",rule:"",fixable:false}); }
+      if(mine==="fx") out.push({doc:v,kind:"in",type:"fx",t:"Ausländische USt ("+l.rate+" %) – in Österreich nicht als Vorsteuer abziehbar",fix:"Als 'nicht vorsteuerabziehbar' buchen; Rückholung nur über das Erstattungsverfahren des Landes.",rule:"",fixable:false});
       else if(sev&&mine!==sev&&!(mine==="none"&&sev==="none")){
         var rule=suggestRule(v,mine), allZero=ls.every(function(x){ return Math.abs(x.tax)<0.005&&!x.rate; });
         var canRule=!!rule&&!!v.taxRule&&(rule==="9"||rule==="8"||allZero);
-        out.push({doc:v,kind:"in",type:ov&&ov!=="auto"?"override":"rule",t:(ov&&ov!=="auto"?"Cockpit-Einordnung weicht von sevDesk ab":"Steuerregel passt nicht")+": sevDesk "+(ruleKey(v)?ruleTxt(ruleKey(v)):(v.taxType||"–"))+" → Cockpit "+(IN_OPTS.filter(function(o){ return o[0]===mine; })[0]||[,mine])[1]+(cc?" (Lieferant "+cc+")":""),rule:rule,fixable:canRule&&!v.enshrined,enshrined:!!v.enshrined});
+        out.push({doc:v,kind:"in",type:ov&&ov!=="auto"?"override":"rule",t:(ov&&ov!=="auto"?"Einordnung weicht von der Steuerregel ab":"Steuerregel passt nicht")+": Steuerregel "+(ruleKey(v)?ruleTxt(ruleKey(v)):(v.taxType||"–"))+" → Einordnung "+(IN_OPTS.filter(function(o){ return o[0]===mine; })[0]||[,mine])[1]+(cc?" (Lieferant "+cc+")":""),rule:rule,fixable:canRule&&!v.enshrined,enshrined:!!v.enshrined});
       }
     });
   });
@@ -816,9 +816,9 @@ function mismatches(raw,st,from,to){
       else if(!uv.ok) out.push({doc:inv,kind:"out",type:"uid",t:"UID „"+eu0+"“ ungültig: "+uv.why,fixable:false});
       if(!inv.delivery) out.push({doc:inv,kind:"out",type:"delivery",t:"Kein Leistungsdatum – ZM-Zeitraum wird nach Rechnungsdatum bestimmt",fixable:false});
     }
-    var ov=docCfg(st,inv.id).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – sevDesk-Steuerregel: "+(ruleKey(inv)?ruleTxt(ruleKey(inv)):(inv.taxType||"–")),fixable:false});
+    var ov=docCfg(st,inv.id).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – Steuerregel: "+(ruleKey(inv)?ruleTxt(ruleKey(inv)):(inv.taxType||"–")),fixable:false});
     if(Math.abs(num(inv.tax))>0.004&&/§ ?6 abs\.? ?1 z(iffer)?\.? ?27|kleinunternehmer/i.test(docText(inv))) out.push({doc:inv,kind:"out",type:"ku",t:"Rechnungstext Kleinunternehmer, aber USt ausgewiesen (§ 11 Abs. 12 UStG: die ausgewiesene Steuer wird geschuldet) – Rechnungstext korrigieren",fixable:false});
-    if(cl.indexOf("pruefen")>-1) out.push({doc:inv,kind:"out",type:"rule",t:"0 % bei steuerpflichtiger Steuerregel – Steuerregel oder Satz in sevDesk prüfen",fixable:false});
+    if(cl.indexOf("pruefen")>-1) out.push({doc:inv,kind:"out",type:"rule",t:"0 % bei steuerpflichtiger Steuerregel – Steuerregel oder Satz prüfen",fixable:false});
   });
   return out;
 }

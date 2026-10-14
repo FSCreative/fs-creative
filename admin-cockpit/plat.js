@@ -235,7 +235,7 @@ function vKochdu(){
   var body=rs.map(function(r){
     var ro=c2e(r.barOpenCents), rp=c2e(r.barSettledCents), ron=c2e(r.onlineProvisionCents), it=item("kochdu:"+r.id);
     var last=it&&it.last?invLine(it.last):(r.lastSettledAt?'<span>'+de(String(r.lastSettledAt).slice(0,10))+' <span class="tag grey">ohne Rechnung</span></span>':'<span class="muted">noch nie</span>');
-    var acts=(ro>0.005?'<button class="btn primary" data-act="plkbill:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="'+(sevOk?"Rechnung in sevDesk anlegen und als verrechnet markieren":"sevDesk nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(ro)+'</button>':'')+
+    var acts=(ro>0.005?'<button class="btn primary" data-act="plkbill:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="'+(sevOk?"Rechnung anlegen und als verrechnet markieren":"Buchhaltung nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(ro)+'</button>':'')+
       (rp>0.005?'<button class="btn" data-act="plkundo:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="Verrechnung zurücknehmen">↺ Rückgängig</button>':'')+
       (ro<=0.005&&rp<=0.005?'<span class="muted">—</span>':'');
     return '<tr><td><b>'+esc(r.name||"—")+'</b>'+(r.provisionRatePct!=null?'<div class="sub">'+esc(r.provisionRatePct)+' % Provision</div>':'')+'</td>'+
@@ -249,7 +249,7 @@ function vKochdu(){
   var appTotal=(+n.apple||0)+(+n.android||0), kunden=n.kunden!=null?n.kunden:n.total;
   var hasApp=ko.nutzer&&(kunden!=null||n.apple!=null||n.android!=null);
   var chartRows=rs.filter(function(r){ return (+r.barOpenCents||0)+(+r.barSettledCents||0)>0; }).map(function(r){ var a=c2e(r.barSettledCents), b=c2e(r.barOpenCents); return {label:r.name||"—",right:'<span class="money">'+eur0(a)+' verrechnet'+(b>0.005?' · '+eur0(b)+' offen':'')+'</span>',parts:[[a,"a","Verrechnet "+eur(a)],[b,"b","Offen "+eur(b)]]}; });
-  return (sevOk?'':'<div class="notice"><span>sevDesk antwortet gerade nicht. „Verrechnen“ markiert dann nur als verrechnet, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
+  return (sevOk?'':'<div class="notice"><span>Die Buchhaltung antwortet gerade nicht. „Verrechnen“ markiert dann nur als verrechnet, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
     '<div class="kpis">'+
       kpi("Bestellungen",num((+bo||0)+(+oo||0)),num(bo)+" bar · "+num(oo)+" online")+
       kpi("Bar-Gebühren offen",'<span class="money">'+eur(open)+'</span>',"verrechnest du selbst",{vcls:open>0.005?"warn-t":""})+
@@ -290,7 +290,7 @@ function kochduSettleOnly(r){
 }
 F.action("plkbill",function(id){
   var r=kochduRest(id); if(!r||!(+r.barOpenCents>0)) return;
-  if(!F.D.sev){ F.confirm("sevDesk ist gerade nicht erreichbar. "+r.name+" nur als verrechnet markieren (ohne Rechnung)?","Nur markieren",function(){ kochduSettleOnly(r); }); return; }
+  if(!F.D.sev){ F.confirm("Die Buchhaltung ist gerade nicht erreichbar. "+r.name+" nur als verrechnet markieren (ohne Rechnung)?","Nur markieren",function(){ kochduSettleOnly(r); }); return; }
   var it=item("kochdu:"+r.id), amt=c2e(r.barOpenCents);
   var pre=it&&it.action?JSON.parse(JSON.stringify(it.action)):{title:"Rechnung · kochdu · "+(r.name||""),contactName:r.name||"",headText:"kochdu-Gebühren für Bestellungen mit Barzahlung bis "+de(F.D.today)+".",
     items:[{name:"kochdu Vermittlungsgebühren (Barzahlungen)",text:(+r.barOrders||0)+" Bar-Bestellungen bis "+de(F.D.today),qty:1,priceGross:amt,taxRate:20}],
@@ -304,7 +304,7 @@ F.action("plkundo",function(id){
   loadBill().then(function(){
     var recs=billRecs("kochdu:"+r.id), last=recs[recs.length-1], sd=String(r.lastSettledAt||"").slice(0,10);
     var belongs=!!(last&&sd&&Math.abs(Date.parse(String(last.date).slice(0,10))-Date.parse(sd))<=864e5*1.01);
-    var txt="Verrechnung für "+(r.name||"Restaurant")+" zurücknehmen? Die Bar-Gebühren gelten in kochdu dann wieder als offen."+(belongs?" Die zugehörige Rechnung "+(last.nr||"")+" wird aus der Abrechnungs-Historie entfernt – in sevDesk musst du sie selbst stornieren oder löschen.":"");
+    var txt="Verrechnung für "+(r.name||"Restaurant")+" zurücknehmen? Die Bar-Gebühren gelten in kochdu dann wieder als offen."+(belongs?" Die zugehörige Rechnung "+(last.nr||"")+" wird aus der Abrechnungs-Historie entfernt – stornieren musst du sie selbst unter Finanzen › Rechnungen.":"");
     F.confirm(txt,"Zurücknehmen",function(){
       BUSY["k"+r.id]=1; F.render();
       F.api("/admin/api/kochdu-settle",{body:{action:"unsettle",restaurantId:r.id}}).then(function(j){
@@ -314,7 +314,7 @@ F.action("plkundo",function(id){
       }).then(function(res){
         delete BUSY["k"+r.id];
         if(belongs&&!res.unbilled) F.toast("kochdu zurückgesetzt, aber der Rechnungs-Eintrag konnte nicht entfernt werden",true);
-        else F.toast("Verrechnung zurückgenommen"+(belongs&&last.id?" – Rechnung "+(last.nr||"")+" in sevDesk prüfen":""),false,belongs&&last.id?"In sevDesk öffnen":null,belongs&&last.id?function(){ window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(last.id),"_blank","noopener"); }:null);
+        else F.toast("Verrechnung zurückgenommen"+(belongs&&last.id?" – Rechnung "+(last.nr||"")+" prüfen":""),false,belongs&&last.id&&F.sevOpenInvoice?"Rechnung öffnen":null,belongs&&last.id&&F.sevOpenInvoice?function(){ F.sevOpenInvoice(last.id); }:null);
         F.load(true);
       }).catch(function(e){ delete BUSY["k"+r.id]; F.toast("Rückgängig fehlgeschlagen: "+(e&&e.message||"keine Verbindung"),true); F.render(); });
     },true);
@@ -377,7 +377,7 @@ function vBlitz(){
       '</div>'+
       '<div class="pl-right"><span class="pl-amt money">'+eur(c2e(b.totalCents))+'</span>'+bzPayTag(b)+
         '<div class="pl-acts">'+inv+
-          (canInv?'<button class="btn" data-act="plbinv:'+esc(b.id)+'"'+(sevOk?'':' disabled title="sevDesk ist gerade nicht erreichbar"')+'>Rechnung</button>':'')+
+          (canInv?'<button class="btn" data-act="plbinv:'+esc(b.id)+'"'+(sevOk?'':' disabled title="Buchhaltung ist gerade nicht erreichbar"')+'>Rechnung</button>':'')+
           '<button class="btn'+(paid?"":" primary")+'" data-act="plbpay:'+esc(b.id)+'"'+(BUSY["b"+b.id]?" disabled":"")+'>'+(paid?"↺ Auf offen":"Als bezahlt")+'</button>'+
         '</div></div></div>';
   }).join("");
@@ -418,7 +418,7 @@ function bzSetPaid(id,paid,quiet){
 F.action("plbpay",function(id){ var b=bzBooking(id); if(b) bzSetPaid(id,b.paymentStatus!=="PAID"); });
 F.action("plbinv",function(id){
   var b=bzBooking(id); if(!b) return;
-  if(!F.D.sev){ F.toast("sevDesk ist gerade nicht erreichbar",true); return; }
+  if(!F.D.sev){ F.toast("Buchhaltung ist gerade nicht erreichbar",true); return; }
   var it=item("blitz:"+b.id), day=String(b.eventDate||"").slice(0,10), extras=(b.extras||[]).map(function(e){return e&&e.name;}).filter(Boolean).join(", ");
   var pre=it&&it.action?JSON.parse(JSON.stringify(it.action)):{title:"Rechnung · Blitzdings-Buchung",contactName:b.customerName||"",deliveryDate:day||undefined,headText:(b.reference?"Buchung "+b.reference+" – ":"")+"vielen Dank für Ihre Buchung bei Blitzdings.",
     items:[{name:"Blitzdings "+(b.package||"Fotobox"),text:[day?"Event am "+de(day):"",b.location?"Ort: "+b.location:"",extras?"inkl. "+extras:""].filter(Boolean).join(" · "),qty:1,priceGross:c2e(b.totalCents),taxRate:20}]};
@@ -445,7 +445,7 @@ function vValuero(){
         '<span class="muted">offen '+money(open)+' · verrechnet '+money(settled)+' · gesamt '+money(prov)+(refund>0.005?' · <b class="bad-t">erstatten '+money(refund)+'</b>':'')+' · '+num(o.feeBookings)+' Buchungen</span>'+
         (it.last?'<span class="invs">Letzte Rechnung: '+invLine(it.last)+'</span>':'')+
       '</button><div class="pl-acts">'+
-        (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(BUSY["v"+o.key]?" disabled":"")+' title="'+(sevOk?"Rechnung in sevDesk anlegen":"sevDesk nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(open)+'</button>':'')+
+        (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(BUSY["v"+o.key]?" disabled":"")+' title="'+(sevOk?"Rechnung anlegen":"Buchhaltung nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(open)+'</button>':'')+
         (settled>0.005?'<button class="btn" data-act="plvundo:'+esc(o.key)+'"'+(BUSY["v"+o.key]?" disabled":"")+'>↺ Rückgängig</button>':'')+
       '</div></div>'+
       (refund>0.005?'<div class="pl-refund">Zu erstatten: <b class="money">'+eur(refund)+'</b>. Es wurde mehr verrechnet als aktuell an Gebühren angefallen ist (Storno nach der Abrechnung). Mit „Rückgängig“ die letzte Abrechnung zurücknehmen und neu verrechnen.</div>':'')+
@@ -454,7 +454,7 @@ function vValuero(){
         '</tbody></table></div>':'')+
     '</div>';
   }).join("");
-  return (sevOk?'':'<div class="notice"><span>sevDesk antwortet gerade nicht. „Verrechnen“ vermerkt dann nur den Betrag, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
+  return (sevOk?'':'<div class="notice"><span>Die Buchhaltung antwortet gerade nicht. „Verrechnen“ vermerkt dann nur den Betrag, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
     '<div class="kpis">'+
       kpi("Offene Gebühren",'<span class="money">'+eur(tOpen)+'</span>',"noch nicht verrechnet",{vcls:tOpen>0.005?"warn-t":""})+
       kpi("Verrechnet "+esc(F.D.year),'<span class="money">'+eur(tPaid)+'</span>',"laut Abrechnungs-Historie",{vcls:"ok-t"})+
@@ -470,7 +470,7 @@ F.action("plvtog",function(k){ F.UI.platOpen[k]=!F.UI.platOpen[k]; F.render(); }
 F.action("plvbill",function(key){
   var o=vaObj(key), it=item("valuero:"+key); if(!o) return;
   var open=it?+it.unbilled||0:c2e(o.provisionCents); if(!(open>0.005)) return;
-  if(!F.D.sev){ F.confirm("sevDesk ist gerade nicht erreichbar. "+eur(open)+" für "+o.name+" nur als verrechnet vermerken (ohne Rechnung)?","Nur vermerken",function(){
+  if(!F.D.sev){ F.confirm("Die Buchhaltung ist gerade nicht erreichbar. "+eur(open)+" für "+o.name+" nur als verrechnet vermerken (ohne Rechnung)?","Nur vermerken",function(){
       BUSY["v"+key]=1; F.render();
       F.api("/admin/api/billing",{body:{op:"invoice",key:"valuero:"+key,invoice:{id:"",nr:"",gross:open,date:F.D.today,label:(o.name||key)+" (ohne Rechnung)"}}}).then(function(j){
         delete BUSY["v"+key]; if(!okRes(j)){ F.toast("Speichern fehlgeschlagen",true); F.render(); return; } F.toast(o.name+" als verrechnet vermerkt"); F.load(true);
@@ -486,12 +486,12 @@ F.action("plvundo",function(key){
     var recs=billRecs("valuero:"+key), last=recs[recs.length-1];
     if(!last){ F.toast("Keine Abrechnung zum Zurücknehmen gefunden",true); return; }
     if(String(last.date||"").slice(0,4)!==String(F.D.year)){ F.toast("Die letzte Abrechnung stammt aus "+String(last.date||"").slice(0,4)+". Wechsle dorthin, um sie zurückzunehmen.",true); return; }
-    F.confirm("Letzte Abrechnung für "+o.name+" ("+(last.nr||"ohne Rechnung")+", "+eur(last.gross)+" vom "+de(last.date)+") zurücknehmen?"+(last.id?" In sevDesk musst du die Rechnung selbst stornieren oder löschen.":""),"Zurücknehmen",function(){
+    F.confirm("Letzte Abrechnung für "+o.name+" ("+(last.nr||"ohne Rechnung")+", "+eur(last.gross)+" vom "+de(last.date)+") zurücknehmen?"+(last.id?" Die Rechnung musst du selbst unter Finanzen › Rechnungen stornieren.":""),"Zurücknehmen",function(){
       BUSY["v"+key]=1; F.render();
       F.api("/admin/api/billing",{body:{op:"unbill",key:"valuero:"+key}}).then(function(j){
         delete BUSY["v"+key];
         if(!okRes(j)){ F.toast("Rückgängig fehlgeschlagen: "+((j&&j.error)||"unbekannt"),true); F.render(); return; }
-        F.toast("Abrechnung zurückgenommen",false,last.id?"In sevDesk öffnen":null,last.id?function(){ window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(last.id),"_blank","noopener"); }:null);
+        F.toast("Abrechnung zurückgenommen",false,last.id&&F.sevOpenInvoice?"Rechnung öffnen":null,last.id&&F.sevOpenInvoice?function(){ F.sevOpenInvoice(last.id); }:null);
         F.load(true);
       }).catch(function(){ delete BUSY["v"+key]; F.toast("Keine Verbindung zum Server",true); F.render(); });
     },true);
@@ -506,7 +506,7 @@ function vPlat(){
   var subnav='<nav class="subnav pl-sub" aria-label="Plattformen">'+TABS.map(function(t){ var n=nc[TAB2SEEN[t[0]]]; return '<button type="button" data-act="pltab:'+t[0]+'" aria-current="'+(t[0]===tab)+'">'+t[1]+(n?'<span class="count">'+n+'</span>':'')+'</button>'; }).join("")+'</nav>';
   var src={kochdu:p.kochdu,kantineur:p.kantineur,blitz:p.blitzdings,valuero:p.valuero}[tab];
   var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"&&tab!=="hg"?'<button class="btn" data-go="geld">Abgleich</button>':'');
-  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung über sevDesk.",ski:"App mit In-App-Käufen (Einmalkäufe).",hg:"Idle-Game für iOS mit Edelweiß-Paketen (Einmalkäufe)."};
+  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung per Rechnung.",ski:"App mit In-App-Käufen (Einmalkäufe).",hg:"Idle-Game für iOS mit Edelweiß-Paketen (Einmalkäufe)."};
   var body=tab==="kochdu"?vKochdu():tab==="kantineur"?vKantineur():tab==="blitz"?vBlitz():tab==="valuero"?vValuero():tab==="ski"?(F.skikaiserView?F.skikaiserView():'<div class="panel empty">Skikaiser-Modul fehlt.</div>'):tab==="hg"?(F.huettengaudiView?F.huettengaudiView():'<div class="panel empty">Hüttengaudi-Modul fehlt.</div>'):vUeb();
   return F.head("Plattformen",subs[tab]+(src&&src.fetchedAt?' <span class="muted">· '+esc(stamp(src.fetchedAt))+'</span>':''),right?'<div class="row wrap pl-head-r">'+right+'</div>':'')+subnav+body;
 }

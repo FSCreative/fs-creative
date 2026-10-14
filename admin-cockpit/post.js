@@ -324,7 +324,7 @@ function attachmentsHtml(m){
     var href=M.attHref(m,a), vs=M.voucherSent(m,a), canV=M.isVoucherAtt(a);
     return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="Im Browser öffnen"><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
       '<a href="'+esc(href)+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen" aria-label="'+esc((a.filename||"Anhang")+" herunterladen")+'">'+ic("down")+'</a>'+
-      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg an sevDesk gesendet – erneut senden":"Als Beleg an sevDesk senden")+'" aria-label="Beleg an sevDesk">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+'</span>';
+      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+'</span>';
   }).join("");
   var zip="";
   if(atts.length>1){ var z="/admin/api/mail-attachments-zip?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&account="+encodeURIComponent(accOf(m))+"&name="+encodeURIComponent(m.subject||"Anhaenge")+"&atts="+encodeURIComponent(JSON.stringify(atts.map(function(a){ return {index:a.index,filename:a.filename}; })));

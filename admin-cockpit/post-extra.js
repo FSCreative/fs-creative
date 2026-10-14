@@ -1,5 +1,5 @@
 /* Postfach – Extras: Kontextmenü (Rechtsklick), Tastenkürzel + Hilfe, Wischen am Handy, Drucken,
-   „Als To-Do“, „Als Termin“, Beleg an sevDesk aus einem Mail-Anhang (auch über „Beleg erfassen“ in Geld). */
+   „Als To-Do“, „Als Termin“, Beleg aus einem Mail-Anhang (auch über „Beleg erfassen“ in Geld). */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, UI=F.UI;
@@ -223,7 +223,7 @@ F.form("mevent",function(f){
   }).then(function(j){ if(j&&j.ok!==false&&Array.isArray(j.events)) done("Termin angelegt"); else fail("Speichern fehlgeschlagen."); }).catch(function(){ fail("Termine konnten nicht geladen werden – bitte erneut versuchen."); });
 });
 
-/* ---------- Beleg an sevDesk ---------- */
+/* ---------- Beleg erfassen ---------- */
 function guessAmount(m){
   var txt=String((m&&(m.bodyHtml?String(m.body||"").replace(/<[^>]+>/g," "):m.body))||(m&&m.preview)||"").replace(/&nbsp;/g," ");
   var re=/(gesamt(?:betrag|summe)?|rechnungsbetrag|endbetrag|summe|total|zu zahlen|betrag|amount paid|amount due|paid)[^0-9€$]{0,40}(?:€|eur|\$|usd)?\s*([0-9]{1,3}(?:[.\s][0-9]{3})*,[0-9]{2}|[0-9]+[.,][0-9]{2})/gi, mm, best=null;
@@ -265,7 +265,7 @@ M.openVoucher=function(m,a,pre){
   if(!m||!a) return; pre=pre||{}; VOU={m:m,a:a,pre:pre};
   var pvHref=pre.href||(M.attHref(m,a)+"&inline=1"), pvKind=prevKind(a); MVZ={z:1,kind:pvKind};
   var g=pre.gross!=null?pre.gross:guessAmount(m), day=pre.date||(m.date&&!isNaN(new Date(m.date))?F.ymd(new Date(m.date)):F.ymd()), vs=M.voucherSent(m,a), tr=pre.taxRate!=null?+pre.taxRate:20;
-  F.modal((pvKind?'<div class="mvwrap">'+prevHtml(pvKind,pvHref):'')+'<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg an sevDesk")+'</h2>'+F.btnClose()+'</div>'+
+  F.modal((pvKind?'<div class="mvwrap">'+prevHtml(pvKind,pvHref):'')+'<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg erfassen")+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted" style="margin:0">Wird als <b>Beleg-Entwurf</b> in deiner Buchhaltung angelegt – inkl. Datei. Unter Finanzen → Belege kannst du ihn prüfen und abschließen.</p>'+
     '<div class="att" style="justify-self:start"><a href="'+esc(pre.href||(M.attHref(m,a)+"&inline=1"))+'" target="_blank" rel="noopener" title="Anhang ansehen"><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
@@ -274,7 +274,7 @@ M.openVoucher=function(m,a,pre){
     '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">Kategorien werden geladen …</option></select></label>'+
     '<label class="fl">Beschreibung<input class="f" name="desc" maxlength="200" value="'+esc(String(pre.desc||m.subject||"").slice(0,200))+'"></label>'+(pre.html||"")+
     '<div class="err" id="mvMsg">'+(g&&!pre.html?'<span class="muted">Betrag aus der Mail übernommen – bitte kurz prüfen.</span>':'')+'</div>'+
-    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">An sevDesk senden</button></span></div><datalist id="mvContacts"></datalist></form>'+(pvKind?'</div>':''),pvKind?"xwide":"narrow");
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">Beleg speichern</button></span></div><datalist id="mvContacts"></datalist></form>'+(pvKind?'</div>':''),pvKind?"xwide":"narrow");
   if(pvKind==="img") wirePreview();
   F.loadMeta(function(meta){
     var sel=document.querySelector('[data-form="mvoucher"] [name=cat]'); if(!sel) return;
@@ -313,7 +313,7 @@ function pickList(){
     .filter(function(m){ return !q||((m.subject||"")+" "+(m.fromName||"")+" "+(m.from||"")+" "+(m.attachments||[]).map(function(a){return a.filename;}).join(" ")).toLowerCase().indexOf(q)>-1; })
     .sort(function(a,b){ return new Date(b.date)-new Date(a.date); }).slice(0,40);
   if(!rows.length) return '<div class="empty">'+(M.store.loading||!M.store.full?"Postfach wird geladen …":(q?"Keine passenden Mails.":"Keine Mails mit PDF- oder Bild-Anhängen."))+'</div>';
-  return rows.map(function(m){ return '<div class="vpick"><div class="vm"><b>'+esc(m.fromName||m.from||"—")+'</b><span class="muted">'+esc(M.fmtMailDate(m.date))+'</span></div><div class="vs">'+esc(m.subject||"(kein Betreff)")+'</div><div class="attl">'+(m.attachments||[]).filter(M.isVoucherAtt).map(function(a){ var vs=M.voucherSent(m,a); return '<button type="button" class="btn'+(vs?"":" primary")+'" data-act="mvpick:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Schon an sevDesk gesendet":"Als Beleg erfassen")+'">'+(vs?M.ic("check")+" ":"")+esc(a.filename||"Anhang")+'</button>'; }).join("")+'</div></div>'; }).join("");
+  return rows.map(function(m){ return '<div class="vpick"><div class="vm"><b>'+esc(m.fromName||m.from||"—")+'</b><span class="muted">'+esc(M.fmtMailDate(m.date))+'</span></div><div class="vs">'+esc(m.subject||"(kein Betreff)")+'</div><div class="attl">'+(m.attachments||[]).filter(M.isVoucherAtt).map(function(a){ var vs=M.voucherSent(m,a); return '<button type="button" class="btn'+(vs?"":" primary")+'" data-act="mvpick:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Schon als Beleg erfasst":"Als Beleg erfassen")+'">'+(vs?M.ic("check")+" ":"")+esc(a.filename||"Anhang")+'</button>'; }).join("")+'</div></div>'; }).join("");
 }
 function renderPick(){ var l=document.getElementById("mvList"); if(l) l.innerHTML=pickList(); }
 (M.refreshHooks=M.refreshHooks||[]).push(renderPick);
@@ -323,7 +323,7 @@ F.action("voucher",function(){
     '<p class="muted" style="margin:0">Wähle einen Anhang aus deinem Postfach. Er wird mit Betrag und Kategorie als Beleg-Entwurf gespeichert.</p>'+
     '<input class="f" id="mvQ" type="search" placeholder="Absender, Betreff oder Dateiname …" aria-label="Mails durchsuchen" autocomplete="off">'+
     '<div id="mvList" class="vlist">'+pickList()+'</div>'+
-    '<div class="foot"><span class="row wrap">'+(F.KI&&F.KI.openUpload?'<button type="button" class="btn primary" data-act="kiupload">Datei/Foto hochladen (KI)</button>':'')+'<a class="link" href="'+esc(F.SEVURL)+'" target="_blank" rel="noopener">Direkt in sevDesk hochladen ↗</a></span><button type="button" class="btn" data-closemodal>Schließen</button></div></div>',"wide");
+    '<div class="foot"><span class="row wrap">'+(F.KI&&F.KI.openUpload?'<button type="button" class="btn primary" data-act="kiupload">Datei/Foto hochladen (KI)</button>':'')+'</span><button type="button" class="btn" data-closemodal>Schließen</button></div></div>',"wide");
   if(!M.store.full) M.loadFull();
 });
 F.listen("input","#mvQ",function(el){ PICK.q=el.value; renderPick(); });

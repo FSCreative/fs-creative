@@ -35,7 +35,6 @@ FSC.ymd = function(d){ d=d||new Date(); return d.getFullYear()+"-"+String(d.getM
 FSC.ago = function(iso){ var t=Date.parse(iso); if(!t) return ""; var s=(Date.now()-t)/1000; if(s<90) return "gerade eben"; if(s<3600) return "vor "+Math.round(s/60)+" Min."; if(s<86400) return "vor "+Math.round(s/3600)+" Std."; var d=Math.round(s/86400); return d===1?"gestern":"vor "+d+" Tagen"; };
 FSC.dayLabel = function(iso,today){ if(iso===today) return "Heute"; var t=new Date(today+"T12:00:00"); t.setDate(t.getDate()+1); if(iso===FSC.ymd(t)) return "Morgen"; var d=new Date(iso+"T12:00:00"); return d.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"}); };
 FSC.ls = function(k,v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem(k)||"null"); localStorage.setItem(k,JSON.stringify(v)); }catch(e){ return null; } };
-FSC.SEVURL = "https://my.sevdesk.de";
 FSC.api = function(path,opts){
   opts=opts||{};
   return fetch(path,{method:opts.method||(opts.body?"POST":"GET"),headers:opts.body?{"Content-Type":"application/json"}:{},body:opts.body?JSON.stringify(opts.body):undefined,cache:"no-store",credentials:"same-origin"})

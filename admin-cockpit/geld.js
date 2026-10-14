@@ -1,4 +1,4 @@
-/* Ansicht "Geld & Abgleich": sevDesk-Kennzahlen, Abgleich Plattformen ↔ sevDesk, Rechnungen, Bank. */
+/* Ansicht "Geld & Abgleich": Kennzahlen der Buchhaltung, Abgleich Plattformen ↔ Rechnungen, Rechnungen, Bank. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, deShort=F.deShort;
@@ -129,20 +129,20 @@ function renderUebersicht(){
   var chip=function(k,l,n){ return '<button class="chip" data-act="money:'+k+'" aria-pressed="'+(f===k)+'">'+l+(n!=null?' · '+n:'')+'</button>'; };
   var cnt=function(fn){ return ab.items.filter(fn).length; };
   return F.head("Finanzen","Was ansteht, auf einen Blick. Rechnungen, Bank, Belege und Kontakte findest du in den Reitern darunter.",'<button class="btn" data-act="voucher">Beleg erfassen</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+subnav()+
-    (D.sevConfigured&&!sev?'<div class="notice">sevDesk antwortet gerade nicht. Die Plattform-Zahlen stimmen, der Abgleich mit Rechnungen folgt beim nächsten Laden. <button class="btn" data-act="reload">Neu laden</button></div>':'')+
+    (D.sevConfigured&&!sev?'<div class="notice">Die Buchhaltungsdaten konnten gerade nicht geladen werden. Die Plattform-Zahlen stimmen, der Abgleich mit Rechnungen folgt beim nächsten Laden. <button class="btn" data-act="reload">Neu laden</button></div>':'')+
     (mig.count?'<div class="notice"><span>Aus dem früheren Dashboard sind <b>'+mig.count+' VALUERO-Abrechnungen</b> ('+eur(mig.sum)+') noch nicht am Server gespeichert.</span><button class="btn primary" data-act="migrate">Übernehmen</button></div>':'')+
     '<section><div class="sec-t">Zu tun</div>'+(tiles.length?'<div class="todo">'+tiles.join("")+'</div>':'<div class="todo-ok">Alles erledigt 🎉 Nichts zu verrechnen, keine Entwürfe, nichts überfällig.</div>')+'</section>'+
     '<div class="kpis">'+
       '<div class="panel kpi"><span class="k">Umsatz '+esc(D.year)+'</span><span class="v num">'+(sev?eur0(sev.revenueYear):"—")+'</span><span class="s">gestellte Rechnungen, brutto</span></div>'+
       '<button class="panel kpi" data-act="sdtab:rechnungen|open"><span class="k">Offen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?sev.openCount+" Rechnungen":"")+'</span></button>'+
       '<button class="panel kpi" data-act="sdtab:rechnungen|over"><span class="k">Überfällig</span><span class="v num'+(sev&&sev.overdueSum?" bad-t":"")+'">'+(sev?eur0(sev.overdueSum):"—")+'</span><span class="s">'+(sev?sev.overdueCount+" Rechnungen":"")+'</span></button>'+
-      '<button class="panel kpi" data-act="sdtab:bank"><span class="k">Bank</span><span class="v num'+(bal!=null&&bal<0?" bad-t":"")+'">'+(bal==null?"—":eur0(bal))+'</span><span class="s">'+(sev?sev.accounts.length+" Konten laut sevDesk":"")+'</span></button>'+
+      '<button class="panel kpi" data-act="sdtab:bank"><span class="k">Bank</span><span class="v num'+(bal!=null&&bal<0?" bad-t":"")+'">'+(bal==null?"—":eur0(bal))+'</span><span class="s">'+(sev?sev.accounts.length+" Konten":"")+'</span></button>'+
     '</div>'+
     '<section class="panel" id="zuVerrechnen"><div class="panel-h"><h2>Zu verrechnen</h2><span class="muted">'+(zu.length?eur(ab.totals.unbilled)+' · '+zu.length+' Posten':'')+'</span></div>'+
       (zu.length?'<div class="bill">'+zu.map(card).join("")+'</div>':'<div class="sd-empty"><b>Nichts offen 🎉</b>Alle Leistungen sind verrechnet.</div>')+
       (ign.length?'<div style="padding:0 16px 14px"><button class="link" data-act="sdshowign">'+(F.UI.showIgn?"Ausgeblendete verbergen":ign.length+" ausgeblendet · anzeigen")+'</button>'+(F.UI.showIgn?'<div class="sd-list panel" style="margin-top:8px">'+ign.map(function(x){ return '<div class="sd-row" style="cursor:default"><div><div class="t">'+esc(x.name)+'</div><div class="s">'+eur(x.ignored.amount)+' · ausgeblendet am '+de(String(x.ignored.at||"").slice(0,10))+'</div></div><div class="r"><button class="btn" data-act="sdunign:'+esc(x.key)+'">Wieder einblenden</button></div></div>'; }).join("")+'</div>':'')+'</div>':'')+
     '</section>'+
-    (sev?'<section class="panel"><div class="panel-h"><h2>Umsatz je Monat</h2><span class="muted">laut sevDesk</span></div><div class="chart">'+F.barChart(sev.byMonth,{highlight:cm,label:"Umsatz je Monat"})+'</div></section>':'')+
+    (sev?'<section class="panel"><div class="panel-h"><h2>Umsatz je Monat</h2><span class="muted">laut Rechnungen</span></div><div class="chart">'+F.barChart(sev.byMonth,{highlight:cm,label:"Umsatz je Monat"})+'</div></section>':'')+
     '<details class="panel abg"'+(F.UI.abgOpen?" open":"")+' data-abg><summary>Abgleich je Plattform<span class="muted" style="margin-left:auto;margin-right:10px;font-weight:500">angefallen ↔ verrechnet ↔ bezahlt</span></summary>'+
       '<div class="sd-tools"><div class="chips">'+chip("zu","Zu verrechnen",cnt(function(x){return x.unbilled>0.005||x.refund>0.005;}))+chip("offen","Verrechnet, noch offen",cnt(function(x){return x.open>0.005;}))+chip("prob","Auffällig",cnt(problem))+chip("alle","Alle",ab.items.length)+'</div></div>'+
       '<div class="scroll"><table><thead><tr><th>Posten</th><th class="r">Nicht verrechnet</th><th class="r">Verrechnet</th><th class="r">Davon offen</th><th>Rechnungen</th></tr></thead><tbody>'+(body||'<tr><td colspan="5" class="empty">Nichts in dieser Ansicht. 👍</td></tr>')+'</tbody></table></div></details>';
@@ -150,16 +150,16 @@ function renderUebersicht(){
 F.listen("click","[data-abg] > summary",function(el){ F.UI.abgOpen=!el.parentNode.open; });
 
 /* ---------- Jahresprognose ---------- */
-// Logik: Ist (gestellte Rechnungen laut sevDesk bis heute) + Rest des Jahres.
+// Logik: Ist (gestellte Rechnungen bis heute) + Rest des Jahres.
 // Rest je Monat = aktuelles Monatstempo (Schnitt der letzten 3 vollen Monate); hat das Vorjahr mind. 8 Monate mit Umsatz,
 // zur Hälfte gemischt mit dem Vorjahreswert dieses Monats × Wachstumsfaktor (Ist heuer ÷ Vorjahr im gleichen Zeitraum).
-// Dazu kommen Plattform-Einnahmen, die nicht über sevDesk-Rechnungen laufen (Kantineur-Abos, kochdu-Online-Provisionen),
+// Dazu kommen Plattform-Einnahmen, die nicht über eigene Rechnungen laufen (Kantineur-Abos, kochdu-Online-Provisionen),
 // und bereits angefallene, aber noch nicht verrechnete Beträge aus dem Abgleich.
 function monthSums(invs,year){ var m=new Array(12).fill(0); invs.forEach(function(i){ if((i.status===200||i.status===750||i.status===1000)&&String(i.date||"").slice(0,4)===String(year)){ var k=parseInt(String(i.date).slice(5,7),10)-1; m[k]+=i.type==="SR"?-Math.abs(i.gross):i.gross; } }); return m; }
 F.renderPrognose=function(){ return renderPrognose(); };
 function renderPrognose(){
   var D=F.D, sev=D.sev, yr=+D.year, now=new Date(), cy=now.getFullYear();
-  if(!sev) return '<div class="notice">sevDesk antwortet gerade nicht – die Prognose braucht die Rechnungsdaten.</div>';
+  if(!sev) return '<div class="notice">Die Rechnungsdaten konnten gerade nicht geladen werden – die Prognose braucht sie.</div>';
   if(yr!==cy) return '<section class="panel"><div class="empty">Die Prognose gibt es für das laufende Jahr. Wähle links '+cy+' als Jahr.</div></section>';
   var cur=monthSums(sev.invoices,yr), prev=monthSums(sev.invoices,yr-1), mNow=now.getMonth();
   var dayFrac=now.getDate()/new Date(cy,mNow+1,0).getDate();
@@ -189,8 +189,8 @@ function renderPrognose(){
   var kochOnlineRest=mNow+dayFrac>0?kochOnlineYtd/(mNow+dayFrac)*remFrac:0;
   var unbilled=D.abgleich.totals.unbilled||0;
   var rows=[
-    ["Rechnungen laut sevDesk",ist,rest,"Ist bis heute + Hochrechnung: "+method],
-    ["Kantineur-Abos",kantYtd,kantMon*remFrac,"läuft über die Plattform, nicht über sevDesk-Rechnungen"],
+    ["Rechnungen",ist,rest,"Ist bis heute + Hochrechnung: "+method],
+    ["Kantineur-Abos",kantYtd,kantMon*remFrac,"läuft über die Plattform, nicht über eigene Rechnungen"],
     ["kochdu Online-Provisionen",kochOnlineYtd,kochOnlineRest,"automatisch einbehalten, hochgerechnet"],
     ["Angefallen, noch nicht verrechnet",0,unbilled,"aus dem Abgleich – kommt mit den nächsten Rechnungen"]
   ].filter(function(r){ return r[1]>0.5||r[2]>0.5; });
@@ -206,13 +206,13 @@ function renderPrognose(){
     '<div class="panel kpi"><span class="k">Prognose Umsatz '+yr+'</span><span class="v num money">'+eur0(total)+'</span><span class="s">brutto, alle Quellen</span></div>'+
     '<div class="panel kpi"><span class="k">Davon schon da</span><span class="v num money">'+eur0(tIst)+'</span><span class="s">'+Math.round(tIst/Math.max(1,total)*100)+' % der Prognose</span></div>'+
     '<div class="panel kpi"><span class="k">Noch erwartet</span><span class="v num money">'+eur0(tRest)+'</span><span class="s">bis 31.12.</span></div>'+
-    '<div class="panel kpi"><span class="k">Vorjahr '+(yr-1)+'</span><span class="v num money">'+(prevTotal?eur0(prevTotal):"—")+'</span><span class="s">'+(prevTotal?((total-prevTotal>=0?"+":"")+Math.round((total/prevTotal-1)*100)+" % erwartet"):"keine Vorjahresdaten in sevDesk")+'</span></div>'+
+    '<div class="panel kpi"><span class="k">Vorjahr '+(yr-1)+'</span><span class="v num money">'+(prevTotal?eur0(prevTotal):"—")+'</span><span class="s">'+(prevTotal?((total-prevTotal>=0?"+":"")+Math.round((total/prevTotal-1)*100)+" % erwartet"):"keine Vorjahresdaten")+'</span></div>'+
   '</div>'+
-  '<section class="panel"><div class="panel-h"><h2>Verlauf '+yr+'</h2><span class="muted">dunkel = Ist, hell = Prognose (sevDesk-Rechnungen)</span></div><div class="chart">'+progChart(cur,chartVals,mNow)+'</div></section>'+
+  '<section class="panel"><div class="panel-h"><h2>Verlauf '+yr+'</h2><span class="muted">dunkel = Ist, hell = Prognose (Rechnungen)</span></div><div class="chart">'+progChart(cur,chartVals,mNow)+'</div></section>'+
   '<section class="panel"><div class="panel-h"><h2>So setzt sich die Prognose zusammen</h2></div><div class="scroll"><table><thead><tr><th>Quelle</th><th class="r">Ist bis heute</th><th class="r">Erwartet bis Jahresende</th><th class="r">Summe</th></tr></thead><tbody>'+
     rows.map(function(r){ return '<tr><td><b>'+esc(r[0])+'</b><div class="sub">'+esc(r[3])+'</div></td><td class="r num money">'+eur0(r[1])+'</td><td class="r num money">'+eur0(r[2])+'</td><td class="r num money"><b>'+eur0(r[1]+r[2])+'</b></td></tr>'; }).join("")+
     '<tr class="grp"><td>Gesamt</td><td class="r num money">'+eur0(tIst)+'</td><td class="r num money">'+eur0(tRest)+'</td><td class="r num money">'+eur0(total)+'</td></tr></tbody></table></div></section>'+
-  (costIst>0?'<section class="panel"><div class="panel-h"><h2>Ausgaben und Gewinn (grob)</h2><span class="muted">netto, Belege laut sevDesk, linear hochgerechnet</span></div><div class="panel-b"><dl class="facts"><dt>Ausgaben bis heute</dt><dd class="num money">'+eur0(costIst)+'</dd><dt>Ausgaben-Prognose Jahr</dt><dd class="num money">'+eur0(costTotal)+'</dd><dt>Umsatz-Prognose netto (÷ 1,2)</dt><dd class="num money">'+eur0(total/1.2)+'</dd><dt><b>Gewinn-Prognose vor Steuern</b></dt><dd class="num money"><b>'+eur0(total/1.2-costTotal)+'</b></dd></dl><p class="muted" style="margin:10px 0 0">Grobe Schätzung. Genaue Zahlen nach Kategorien findest du unter JAB.</p></div></section>':'<p class="muted">Ausgaben und Gewinn erscheinen hier, sobald du einmal den Unterpunkt UVA oder JAB geöffnet hast (dort werden die Belege aus sevDesk geladen).</p>');
+  (costIst>0?'<section class="panel"><div class="panel-h"><h2>Ausgaben und Gewinn (grob)</h2><span class="muted">netto, laut Belegen, linear hochgerechnet</span></div><div class="panel-b"><dl class="facts"><dt>Ausgaben bis heute</dt><dd class="num money">'+eur0(costIst)+'</dd><dt>Ausgaben-Prognose Jahr</dt><dd class="num money">'+eur0(costTotal)+'</dd><dt>Umsatz-Prognose netto (÷ 1,2)</dt><dd class="num money">'+eur0(total/1.2)+'</dd><dt><b>Gewinn-Prognose vor Steuern</b></dt><dd class="num money"><b>'+eur0(total/1.2-costTotal)+'</b></dd></dl><p class="muted" style="margin:10px 0 0">Grobe Schätzung. Genaue Zahlen nach Kategorien findest du unter JAB.</p></div></section>':'<p class="muted">Ausgaben und Gewinn erscheinen hier, sobald du einmal den Unterpunkt UVA oder JAB geöffnet hast (dort werden die Belege geladen).</p>');
 }
 function progChart(cur,vals,mNow){
   var W=640,H=210,pl=46,pb=24,pt=12, mx=Math.max.apply(null,vals.concat([1])), step=Math.pow(10,Math.floor(Math.log10(mx))), top=Math.ceil(mx/step)*step, bw=(W-pl)/12, M=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];

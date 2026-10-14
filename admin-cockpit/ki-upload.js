@@ -1,6 +1,6 @@
 /* KI (Claude) – Beleg hochladen ohne Mail: Drag & Drop, Dateiauswahl oder Foto mit der Handykamera.
-   Mehrere Dateien → Warteschlange; Claude liest jede Datei aus, danach der vorbefüllte Dialog „Beleg an sevDesk“.
-   An sevDesk geht der Beleg (Entwurf inkl. Originaldatei) erst mit Klick. Einstieg: Finanzen → „Beleg erfassen“ und Ansicht „KI“. */
+   Mehrere Dateien → Warteschlange; Claude liest jede Datei aus, danach der vorbefüllte Dialog „Beleg erfassen“.
+   Gespeichert wird der Beleg (Entwurf inkl. Originaldatei) erst mit Klick. Einstieg: Finanzen → „Beleg erfassen“ und Ansicht „KI“. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc;

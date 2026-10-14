@@ -58,14 +58,14 @@ K.panel=panel;
 function queueHtml(){
   var s=K.st, q=K.queue||[];
   var right='<button type="button" class="btn" data-act="kiscan"'+(K.ui.busy.scan?" disabled":"")+'>'+(K.ui.busy.scan?"Prüfe Postfach …":"Postfach jetzt prüfen")+'</button>';
-  var sub="Rechnungsmails bekannter Absender werden alle 15 Minuten ausgelesen und hier vorbereitet. An sevDesk geht nur, was du freigibst.";
+  var sub="Rechnungsmails bekannter Absender werden alle 15 Minuten ausgelesen und hier vorbereitet. Als Beleg gespeichert wird nur, was du freigibst.";
   var inner;
   if(!s||!s.configured) inner=K.notSetHtml();
   else if(!q.length) inner='<div class="empty">Keine vorbereiteten Belege.'+(s.scan&&s.scan.at?' Letzte Prüfung '+esc(F.ago(new Date(s.scan.at).toISOString()))+(s.scan.err?' – '+esc(s.scan.err):'')+'.':'')+'</div>';
   else inner='<div class="kilist">'+q.map(function(it){ var x=it.x||{};
     return '<div class="kirow"><div class="kimain"><b>'+esc(x.supplier||it.mail.fromName||it.mail.from)+'</b> <span class="muted">'+esc(F.de(x.invoiceDate)||"")+(x.invoiceNumber?" · Nr. "+esc(x.invoiceNumber):"")+'</span><div class="muted">'+esc(it.att.filename)+' · '+esc(it.mail.subject||"")+'</div>'+
       '<div class="kitags"><span class="tag grey">'+esc(RULE_TXT[x.taxRule]||x.taxRule)+'</span><span class="tag grey">E1a '+esc(x.e1a)+'</span>'+(x.accountingTypeName?'<span class="tag grey">'+esc(x.accountingTypeName)+'</span>':'')+K.conf(x.confidence)+(x.currency&&x.currency!=="EUR"?'<span class="tag warn">'+esc(x.currency)+'</span>':'')+'</div>'+(x.notes?'<div class="muted">'+esc(x.notes)+'</div>':'')+'</div>'+
-      '<div class="kiamt num money">'+F.eur(x.gross)+'</div><div class="row wrap"><button type="button" class="btn primary" data-act="kiqopen:'+esc(it.key)+'">Prüfen &amp; an sevDesk</button><button type="button" class="btn" data-act="kiqdrop:'+esc(it.key)+'">Verwerfen</button></div></div>'; }).join("")+'</div>';
+      '<div class="kiamt num money">'+F.eur(x.gross)+'</div><div class="row wrap"><button type="button" class="btn primary" data-act="kiqopen:'+esc(it.key)+'">Prüfen &amp; erfassen</button><button type="button" class="btn" data-act="kiqdrop:'+esc(it.key)+'">Verwerfen</button></div></div>'; }).join("")+'</div>';
   return panel("ki-queue","Vorbereitete Belege","",right,'<p class="muted kip-sub">'+sub+'</p>'+inner);
 }
 function leadsHtml(){
@@ -147,7 +147,7 @@ F.kiSettingsHtml=function(){
 F.feed(function(){
   var s=K.st; if(!s||!s.configured) return [];
   var out=[];
-  if(s.queue) out.push({id:"ki-queue-"+s.queue,rank:4,sev:"info",icon:"spark",tag:["info","KI"],t:s.queue+(s.queue===1?" Beleg":" Belege")+" aus Mails vorbereitet",d:"Von der KI ausgelesen – kurz prüfen und als Entwurf an sevDesk senden.",acts:[["Ansehen","go:ki","primary"]]});
+  if(s.queue) out.push({id:"ki-queue-"+s.queue,rank:4,sev:"info",icon:"spark",tag:["info","KI"],t:s.queue+(s.queue===1?" Beleg":" Belege")+" aus Mails vorbereitet",d:"Von der KI ausgelesen – kurz prüfen und als Beleg-Entwurf speichern.",acts:[["Ansehen","go:ki","primary"]]});
   if(s.overLimit) out.push({id:"ki-limit-"+s.month,rank:6,sev:"warn",icon:"spark",tag:["warn","KI"],t:"KI-Monatslimit erreicht",d:"Assistent und Mail-Funktionen sind bis Monatsende pausiert; Belege und Steuer laufen weiter.",acts:[["Kosten","go:ki"]]});
   return out;
 });
