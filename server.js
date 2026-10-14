@@ -1417,7 +1417,7 @@ function abgleichBuild(ctx) {
     const amt = round2((+b.totalCents || 0) / 100), ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
     let h = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
     if (!h && ref) h = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR");
-    if (!h && (cust || comp)) h = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
+    if (!h && (cust || comp)) h = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || Math.abs((+i.net || 0) - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
     return h || null;
   };
   const groupInv = {};
@@ -1425,14 +1425,21 @@ function abgleichBuild(ctx) {
     const taken = new Set();
     blitzList.forEach(b => { const h = directHit(b); if (h) taken.add(String(h.id)); recs("blitz:" + b.id).forEach(r => { if (r && r.id) taken.add(String(r.id)); }); if (b.sevdeskInvoiceId) taken.add(String(b.sevdeskInvoiceId)); });
     const pool = blitzList.filter(b => bOk(b) && !directHit(b) && !recs("blitz:" + b.id).length && !b.sevdeskInvoiceId);
-    sevInv.filter(i => (i.type === "RE" || !i.type) && !taken.has(String(i.id)) && !linked[i.id] && i.gross > 0).sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(inv => {
+    sevInv.filter(i => (i.type === "RE" || !i.type) && !i.cancelled && !taken.has(String(i.id)) && !linked[i.id] && i.gross > 0).sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(inv => {
       const lo = ymdAdd(String(inv.date || today), -180), hi = ymdAdd(String(inv.date || today), 45);
-      const grp = pool.filter(b => !groupInv[b.id] && (nameHit(inv.contact, b.companyName) || nameHit(inv.contact, b.customerName)) && String(b.eventDate || "").slice(0, 10) >= lo && String(b.eventDate || "").slice(0, 10) <= hi).slice(0, 16);
-      if (!grp.length) return;
-      const target = Math.round(inv.gross * 100), cents = grp.map(b => Math.round(+b.totalCents || 0));
-      let best = 0;
-      for (let m = 1; m < (1 << grp.length); m++) { let sum = 0; for (let k = 0; k < grp.length; k++) if (m & (1 << k)) sum += cents[k]; if (Math.abs(sum - target) <= 2) { best = m; break; } }
-      if (best) for (let k = 0; k < grp.length; k++) if (best & (1 << k)) groupInv[grp[k].id] = inv;
+      const inWin = b => !groupInv[b.id] && String(b.eventDate || "").slice(0, 10) >= lo && String(b.eventDate || "").slice(0, 10) <= hi;
+      // Kandidaten: 1) Kunde der Rechnung = Firma/Name der Buchung, 2) sonst je Buchungskunde (z. B. „WM-Roadshow“ für Montafon Tourismus) – dann mind. 2 Buchungen
+      const groups = [pool.filter(b => inWin(b) && (nameHit(inv.contact, b.companyName) || nameHit(inv.contact, b.customerName)))];
+      const byCust = {}; pool.filter(inWin).forEach(b => { const k = String(b.companyName || b.customerName || "").trim().toLowerCase(); if (k) (byCust[k] = byCust[k] || []).push(b); });
+      Object.keys(byCust).forEach(k => { if (byCust[k].length >= 2) groups.push(byCust[k]); });
+      // Business-Buchungen stehen bei Blitzdings netto → gegen Brutto UND Netto der Rechnung prüfen
+      const targets = [Math.round(inv.gross * 100), Math.round((+inv.net || 0) * 100)].filter(t => t > 0);
+      for (let gi = 0; gi < groups.length; gi++) {
+        const grp = groups[gi].slice(0, 16); if (!grp.length || (gi > 0 && grp.length < 2)) continue;
+        const cents = grp.map(b => Math.round(+b.totalCents || 0)); let best = 0;
+        for (let m = 1; m < (1 << grp.length) && !best; m++) { let sum = 0, cnt = 0; for (let k = 0; k < grp.length; k++) if (m & (1 << k)) { sum += cents[k]; cnt++; } if ((gi === 0 || cnt >= 2) && targets.some(t => Math.abs(sum - t) <= 2)) best = m; }
+        if (best) { for (let k = 0; k < grp.length; k++) if (best & (1 << k)) groupInv[grp[k].id] = inv; break; }
+      }
     });
   })();
   blitzList.forEach(b => {
