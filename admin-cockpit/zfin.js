@@ -125,6 +125,22 @@ function finChart(rev,exp,afa,y){
 function chShow(i,el){ var t=document.getElementById("fchTip"); if(t) t.innerHTML=chTip(i); document.querySelectorAll(".fch-m.on").forEach(function(x){ x.classList.remove("on"); }); if(el) el.classList.add("on"); }
 document.addEventListener("mouseover",function(e){ var g=e.target&&e.target.closest&&e.target.closest(".fch-m"); if(g) chShow(+g.getAttribute("data-chm"),g); });
 F.action("chm",function(v,el){ chShow(+v,el); });
+
+/* Plattform-Kacheln (Blitzdings, kochdu, Kantineur, Skikaiser, Hüttengaudi): Umsatz groß, Kennzahlen darunter, Mollie-Stand */
+function platTiles(){
+  var P=(F.D&&F.D.platforms)||{}, c=function(v){ return eur0((+v||0)/100); }, out=[];
+  var moOf=function(rx){ var m=MO&&MO.summary&&MO.summary.find(function(x){ return rx.test(x.name); }); return m?'<div class="pt-mo">Mollie: '+eur0(m.stillAtMollie)+' offen · '+eur0(m.payouts)+' ausbezahlt'+(m.diff!=null&&Math.abs(m.diff)>0.02?' · <b class="bad-t">Abweichung</b>':'')+'</div>':''; };
+  var tile=function(key,name,big,bigl,rows,mo){ return '<button type="button" class="fsd-card pt" data-act="platgo:'+key+'"><div class="pt-h"><b>'+name+'</b><span>'+ic("right")+'</span></div><div class="pt-big">'+big+'</div><div class="pt-bl">'+bigl+'</div><div class="pt-rows">'+rows.map(function(r){ return '<div><span>'+r[0]+'</span><b>'+r[1]+'</b></div>'; }).join("")+'</div>'+(mo||"")+'</button>'; };
+  var b=P.blitzdings; if(b&&b.revenue) out.push(tile("blitzdings","Blitzdings",c(b.revenue.paidCents),"bezahlt (brutto)",[["offen",c(b.revenue.openCents)],["diesen Monat",c(b.revenue.thisMonthPaidCents)],["Buchungen",((b.bookings||{}).total||0)+" · "+((b.bookings||{}).upcomingCount||0)+" kommend"]],moOf(/blitz/i)));
+  var k=P.kochdu; if(k&&k.totals){ var t=k.totals; out.push(tile("kochdu","kochdu",c((+t.onlineProvisionCents||0)+(+t.barProvisionCents||0)),"Provisionen gesamt",[["online / bar",c(t.onlineProvisionCents)+" / "+c(t.barProvisionCents)],["Bar noch offen",c(t.barOpenCents)],["Bestellungen",((+t.onlineOrders||0)+(+t.barOrders||0))+" · "+((k.restaurants||[]).length)+" Lokale"],["Nutzer",(k.nutzer&&k.nutzer.gesamt)||0]],moOf(/koch/i))); }
+  var q=P.kantineur; if(q&&q.canteens) out.push(tile("kantineur","Kantineur",c(q.mrrCents)+"<small>/Monat</small>","wiederkehrend (MRR)",[["Umsatz bisher",c(q.revenueGrossCents)],["Kantinen aktiv",(q.canteens.byStatus&&q.canteens.byStatus.ACTIVE)||q.canteens.total||0],["zahlend / gesponsert",((q.subscribers||{}).paying||0)+" / "+((q.subscribers||{}).sponsored||0)]],moOf(/kantin/i)));
+  var game=function(key,name,d){ if(!d||!d.configured) return; var t=d.totals||{}, u=d.users||{}; out.push(tile(key,name,c(t.proceedsCents),"Erlöse (nach Store-Gebühr)",[["Käufe",(t.count||0)+(t.refunds?" · "+t.refunds+" erstattet":"")],["Spieler",(u.total!=null?u.total:u.gesamt)||0],["aktiv 30 Tage",(u.aktiv&&u.aktiv.monat!=null?u.aktiv.monat:u.aktiv30)||0]])); };
+  game("skikaiser","Skikaiser",F.D&&F.D.skikaiser); game("huettengaudi","Hüttengaudi",F.D&&F.D.huettengaudi);
+  if(!out.length) return "";
+  if(!MO&&!C.busy.mo){ C.busy.mo=1; F.api("/admin/api/fin/mollie?year="+F.D.year).then(function(j){ C.busy.mo=0; MO=j||{ok:false}; F.render(); }); }
+  return '<div class="pt-wrap"><div class="fsd-ch" style="margin:4px 2px 8px"><b>Plattformen</b><span class="muted">'+esc(String(F.D.year))+' · live</span></div><div class="pt-grid">'+out.join("")+'</div></div>';
+}
+F.action("platgo",function(k){ var t={blitzdings:"blitz",kochdu:"kochdu",kantineur:"kantineur",skikaiser:"ski",huettengaudi:"hg"}[k]||"ueb"; F.UI.plat=t; F.ls("fsc_plat_tab",t); F.go("plat"); window.scrollTo(0,0); });
 function pageDash(){
   if(!sevOk()) return noSev();
   var sev=F.D.sev, y=String(F.D.year); vouLoad();
@@ -160,7 +176,7 @@ function pageDash(){
   if(sev.unassigned) tasks.push(["open",sev.unassigned+" Bankumsätze","noch nicht zugeordnet"]);
   if(sev.vouchers&&sev.vouchers.drafts) tasks.push(["vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen"]);
   return head("Übersicht","Jahr "+esc(y),'<button class="btn" data-act="voucher">Ausgabe erfassen</button><button class="btn primary" data-act="newinvoice">Rechnung schreiben</button>')+
-    '<div class="fsd-grid">'+
+    platTiles()+'<div class="fsd-grid">'+
       (function(){ var op=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&!i.cancelled&&(i.status===200||i.status===750); }), nf=function(i){ return i.gross?i.open*(i.net/i.gross):i.open; };
         var due=op.filter(function(i){return i.overdue;}).reduce(function(a,i){return a+nf(i);},0), notdue=op.filter(function(i){return !i.overdue;}).reduce(function(a,i){return a+nf(i);},0), tot=due+notdue||1;
         return '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Umsatz</b><span class="muted">netto · '+esc(y)+'</span></div><div class="fsd-big">'+(vd&&vd.ok?eur(tr):'…')+'</div><div class="fsd-bigl">'+(vd&&vd.ok?'brutto '+eur(trG)+' · ':'')+'Rechnungen ohne Stornierte + Einnahme-Belege</div><button type="button" class="fsd-acc" data-act="fin:inv"><span>Rechnungen</span><b>→</b></button></section>'+
@@ -507,7 +523,7 @@ function mDash(){
   var od=sev.invoices.filter(function(i){return i.overdue&&!i.cancelled;}), op=sev.invoices.filter(function(i){return i.open>0.005&&i.status!==100&&!i.cancelled&&i.type!=="SR";}), dr=sev.invoices.filter(function(i){return i.status===100;});
   var tile=function(act,lbl,val,sub,cls){ return '<button type="button" class="fsm-tile'+(cls?" "+cls:"")+'" data-act="'+act+'"><span>'+lbl+'</span><b>'+val+'</b><i>'+sub+'</i></button>'; };
   var nt=function(l){ return l.reduce(function(a,i){ return a+(i.gross?i.open*i.net/i.gross:i.open); },0); }, gt=function(l){ return l.reduce(function(a,i){return a+i.open;},0); };
-  return '<section class="fsm-scan">'+scanInput("fsm-scanbtn","Beleg scannen")+'<p>Foto mit der Kamera – die KI liest Lieferant, Datum und Betrag aus.</p><div class="fsm-scan2"><button type="button" class="btn" data-act="kiupload">Datei hochladen</button><button type="button" class="btn" data-act="newinvoice">Rechnung schreiben</button></div></section>'+
+  return platTiles()+'<section class="fsm-scan">'+scanInput("fsm-scanbtn","Beleg scannen")+'<p>Foto mit der Kamera – die KI liest Lieferant, Datum und Betrag aus.</p><div class="fsm-scan2"><button type="button" class="btn" data-act="kiupload">Datei hochladen</button><button type="button" class="btn" data-act="newinvoice">Rechnung schreiben</button></div></section>'+
     '<div class="fsm-tiles">'+tile("fin:inv:open","Offen (netto)",eur0(nt(op)),"brutto "+eur0(gt(op))+" · "+op.length+" Rechn.")+tile("fin:inv:due","Überfällig (netto)",eur0(nt(od)),"brutto "+eur0(gt(od))+" · "+od.length+" Rechn.",od.length?"bad":"")+
       tile("fin:bank","Kontostand",eur0(bal),accs.length+" Konten")+tile("fin:abgl","Zu verrechnen",eur0(ab.unbilled||0),(ab.unbilledCount||0)+" Posten")+'</div>'+
     '<section class="fsm-card"><h3>Zu erledigen</h3>'+
@@ -701,6 +717,9 @@ F.css(
 '.md-edit{display:grid;grid-template-columns:150px 200px minmax(0,1fr) auto;gap:8px;align-items:center}@media (max-width:700px){.md-row{grid-template-columns:110px minmax(0,1fr) 18px}.md-row i{opacity:1}.md-edit{grid-template-columns:1fr 1fr}}'+
 '.mo-flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:12px}.mo-flow em{font-style:normal;color:var(--sd-mut);font-size:18px}.mo-k{display:grid;gap:1px}.mo-k span{font-size:12px;color:var(--sd-mut2)}.mo-k b{font-size:17px;font-weight:600}.mo-k i{font-style:normal;font-size:11.5px;color:var(--sd-mut2)}'+
 '.mo-open{margin-top:10px}.mo-open summary{cursor:pointer;font-size:13.5px}.mo-row{display:grid;grid-template-columns:70px minmax(0,1fr) 90px 100px auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--sd-line);font-size:13px}.mo-row i{font-style:normal;color:var(--sd-mut2)}'+
+'.pt-wrap{margin-bottom:4px}.pt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.pt{display:grid;gap:4px;text-align:left;cursor:pointer;font:inherit;color:var(--sd-ink);padding:14px 16px}.pt:hover{border-color:var(--sd-line2);background:#fcfcfd}.pt-h{display:flex;justify-content:space-between;align-items:center}.pt-h b{font-size:14px;font-weight:600}.pt-h span{color:var(--sd-mut)}.pt-h svg{width:16px;height:16px}'+
+'.pt-big{font-size:22px;font-weight:650;letter-spacing:-.3px;margin-top:4px}.pt-big small{font-size:12px;font-weight:500;color:var(--sd-mut2);margin-left:2px}.pt-bl{font-size:11.5px;color:var(--sd-mut2);margin-bottom:6px}.pt-rows{display:grid;gap:3px;border-top:1px solid var(--sd-line);padding-top:6px}.pt-rows div{display:flex;justify-content:space-between;gap:8px;font-size:12.5px}.pt-rows span{color:var(--sd-mut2)}.pt-rows b{font-weight:500}.pt-mo{font-size:11.5px;color:var(--sd-ink2);background:var(--sd-side);border-radius:6px;padding:4px 8px;margin-top:6px}'+
+'.fsm .pt-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.fsm .pt{background:#fff;border:1px solid rgba(6,3,20,.08);border-radius:14px;padding:12px}.fsm .pt-big{font-size:18px}.fsm .pt-rows div{font-size:11.5px}'+
 '@media (max-width:1250px){.kbgrid{grid-template-columns:1fr 1fr!important}.fsd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fsd-detail{grid-template-columns:minmax(0,1fr)}.fsd-side{position:static}}'+
 '@media (max-width:1100px){.fsd{grid-template-columns:200px minmax(0,1fr)}.fsd-vou{grid-template-columns:minmax(0,1fr)}.fsd-cats{position:static;max-height:240px}}'
 );
