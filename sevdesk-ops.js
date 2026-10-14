@@ -390,5 +390,6 @@ module.exports = function (D) {
     const [cn, ct] = await Promise.all([sevAll("/CreditNote", { embed: "contact" }, 20000).catch(() => []), Promise.resolve(null)]);
     return { ok: true, creditNotes: cn.map(o => ({ id: String(o.id), nr: o.creditNoteNumber || "", date: sevDay(o.creditNoteDate), status: parseInt(o.status, 10) || 0, contact: sevName(o.contact), gross: sevNum(o.sumGross), net: sevNum(o.sumNet), header: o.header || "" })).sort((a, b) => String(b.date).localeCompare(String(a.date))) };
   }
-  return { invoiceDetail, invoiceOp, invoiceUpdateBody, mailDefaults, bankOpen, bankOp, vouchers, voucherDoc, voucherOp, contacts, contactSave, parts, partSave, transactions, creditNotes };
+  function resetCaches() { TX_CACHE = { at: 0, data: null }; VOU_CACHE = { at: 0, key: null, data: null }; }
+  return { resetCaches, invoiceDetail, invoiceOp, invoiceUpdateBody, mailDefaults, bankOpen, bankOp, vouchers, voucherDoc, voucherOp, contacts, contactSave, parts, partSave, transactions, creditNotes };
 };

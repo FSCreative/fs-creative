@@ -965,7 +965,8 @@ async function sevBook(pl) {
   const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("keine_rechnung");
   const amount = Math.round(parseFloat(pl.amount) * 100) / 100; if (!(amount > 0)) throw new Error("kein_betrag");
   const day = /^\d{4}-\d{2}-\d{2}$/.test(pl.date || "") ? pl.date : viennaToday();
-  const body = { amount, date: Math.floor(Date.parse(day + "T12:00:00Z") / 1000), type: "N", createFeed: true };
+  const dt = { skonto: "CB", spesen: "MTC" }[String(pl.diffType || "")] || "N";
+  const body = { amount, date: Math.floor(Date.parse(day + "T12:00:00Z") / 1000), type: dt, createFeed: true };
   if (pl.transactionId) {
     const snap = SEV_CACHE.data; const t = snap && (snap.transactions || []).find(x => x.id === String(pl.transactionId));
     body.checkAccountTransaction = { id: String(pl.transactionId), objectName: "CheckAccountTransaction" };
@@ -1162,6 +1163,21 @@ const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
     const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
   } });
 (async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); const m = await FIN.getMeta("mode"); FIN_STATE.local = !!(m && m.local); FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
+// Wiederkehrende Rechnungen: stündlich fällige Vorlagen abarbeiten; „automatisch senden“ → fertigstellen + Mail an die Kontakt-Adresse
+async function finRecurringTick() {
+  if (!FIN_STATE.local) return;
+  try {
+    const made = await FIN_LOCAL.recurringRun();
+    for (const m of made) {
+      if (!(m.template.recur && m.template.recur.autoSend)) continue;
+      try { const d = await SEV_OPS.invoiceDetail(m.invoice.id); const to = (d.emails || []).map(e => e.value).filter(Boolean)[0]; if (!to) { console.log("Wiederkehrend: keine E-Mail für", d.contact && d.contact.name); continue; }
+        const md = SEV_OPS.mailDefaults(d, "", ""); await SEV_OPS.invoiceOp({ confirm: true, op: "send", id: m.invoice.id, toEmail: to, subject: md.subject, text: md.text }); console.log("Wiederkehrend: Rechnung gesendet an", to.replace(/^[^@]+/, "…")); }
+      catch (e) { console.error("Wiederkehrend senden:", e.message); }
+    }
+    if (made.length) { SEV_CACHE.at = 0; console.log("Wiederkehrend:", made.length, "Rechnung(en) erstellt"); }
+  } catch (e) { console.error("Wiederkehrend:", e.message); }
+}
+setTimeout(finRecurringTick, 60 * 1000); setInterval(finRecurringTick, 60 * 60 * 1000);
 const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook,
   snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
 
@@ -2336,6 +2352,31 @@ async function handleAdmin(req, res, u, p) {
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   // ---- sevDesk im Cockpit: Rechnung abschließen, Bank, Belege, Kontakte, Artikel ----
+  // Weitere sevDesk-Funktionen der eigenen Buchhaltung: Gutschrift (Minderleistung), Kassenbuch, Abschlag/Schlussrechnung, wiederkehrende Rechnungen
+  if (/^\/admin\/api\/fin\/(creditnote|cash|partial|final|recurring)$/.test(p)) {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung (Finanzen → Umstieg) verfügbar" });
+      await FIN_LOCAL.load();
+      const kind = p.split("/").pop(), day = s => String(s || "").slice(0, 10);
+      if (req.method === "GET" && kind === "cash") {
+        const accs = FIN_LOCAL.all("CheckAccount").filter(a => FIN_LOCAL.isCash(a.id) && String(a.status) !== "0");
+        return J(200, { ok: true, accounts: accs.map(a => { const tx = FIN_LOCAL.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(a.id)).sort((x, y) => day(x.valueDate).localeCompare(day(y.valueDate)) || (+x.id - +y.id));
+          let bal = 0; const logs = FIN_LOCAL.all("CheckAccountTransactionLog");
+          return { id: String(a.id), name: a.name, balance: FIN_LOCAL.cashBalance(a.id), rows: tx.map(x => { bal = Math.round((bal + (+x.amount || 0)) * 100) / 100; const lk = logs.filter(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(x.id)).map(l => ({ type: l.object && l.object.objectName, id: l.object && String(l.object.id) }));
+            return { id: String(x.id), date: day(x.valueDate), amount: +x.amount || 0, text: x.paymtPurpose || "", name: x.payeePayerName || "", balance: bal, status: +x.status || 0, kind: x.cashKind || "", reversedBy: x.reversedBy || "", reverses: x.reverses || "", links: lk }; }).reverse() }; }) });
+      }
+      if (req.method === "GET" && kind === "recurring") {
+        const list = FIN_LOCAL.all("Invoice").filter(i => String(i.invoiceType) === "WKR").map(w => { const c = w.contact && FIN_LOCAL.get("Contact", w.contact.id); return { id: String(w.id), contact: c ? (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : "", header: w.header || "", net: +w.sumNet || 0, gross: +w.sumGross || 0, recur: w.recur || null, positions: FIN_LOCAL.positionsOf("Invoice", w.id).map(x => x.name).slice(0, 4) }; });
+        return J(200, { ok: true, templates: list });
+      }
+      const pl = await sevBody(req, 40000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const path = { creditnote: "/Fin/creditNoteFromInvoice", cash: "/Fin/cash", partial: "/Fin/partialFromOrder", final: "/Fin/finalFromOrder", recurring: "/Fin/recurring" }[kind];
+      const r = await FIN_LOCAL.request("POST", path, { body: pl });
+      SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+      const o = r.objects; return J(200, { ok: true, result: Array.isArray(o) ? o.map(x => x && { id: String(x.id), nr: x.invoiceNumber || "" }) : (o && { id: String(o.id), nr: o.invoiceNumber || o.creditNoteNumber || "", type: o.invoiceType || "" }) });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   // Festschreiben wie sevDesk: Zeitraum + Dokumentarten (nicht umkehrbar) und Einstellung „automatisch bei Fertigstellung“
   if (p === "/admin/api/fin/enshrine" || p === "/admin/api/fin/settings") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });

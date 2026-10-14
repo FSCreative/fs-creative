@@ -33,7 +33,7 @@ function ic(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 var NAV=[
   {id:"dash",label:"Übersicht",icon:"dash"},
   {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
-  {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["dun","Mahnungen"],["cn","Gutschriften"]]},
+  {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou"},
   {id:"bank",label:"Bank",icon:"bank",sub:[["bank","Konten"],["kasse","Kassenbuch"],["open","Unvollständig"]]},
   {id:"uva",label:"Steuern",icon:"tax",sub:[["uva","UVA"],["u1","U1 (USt-Jahr)"],["jab","E/A-Rechnung"],["prognose","Prognose"]]},
@@ -160,6 +160,8 @@ function pageInvDetail(id){
   if(open||st===1000){ more.push(["sdsend:"+id,"Per E-Mail senden"]); }
   if(open&&d.type==="RE"){ more.push(["sdremind:"+id,"Mahnung erstellen"]); if(st===200&&!(d.paid>0)&&!d.enshrined) more.push(["sddraft:"+id,"Zurück auf Entwurf"]); }
   if(st===200&&d.type==="RE"&&!i0.cancelled) more.push(["sdcancel:"+id,"Stornieren"]);
+  if((st===750||st===1000)&&!i0.cancelled&&d.type!=="SR"&&d.type!=="MA") more.push(["fincn:"+id,"Gutschrift"]);
+  if(d.type==="RE"&&st>=200&&!i0.cancelled) more.push(["finwkr:"+id,"Wiederkehrend"]);
   var main=draft?'<button class="btn primary" data-act="sdsend:'+esc(id)+'">Per E-Mail senden</button>':(open?'<button class="btn primary" data-act="book:'+esc(id)+'">Als bezahlt markieren</button>':'');
   var pos=(d.positions||[]).map(function(p){ return '<tr><td>'+esc(p.name)+(p.text?'<div class="sub">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("");
   var ids=(F.D.sev.invoices||[]).map(function(x){return x.id;}), ix=ids.indexOf(id), prev=ix>0?ids[ix-1]:"", next=ix>-1&&ix<ids.length-1?ids[ix+1]:"";
@@ -185,6 +187,8 @@ F.action("finmore",function(id,el){
   if(open||st===1000) acts.push(["Per E-Mail senden","sdsend"]);
   if(open&&d.type==="RE"){ acts.push(["Mahnung erstellen","sdremind"]); if(st===200&&!(d.paid>0)&&!d.enshrined) acts.push(["Zurück auf Entwurf","sddraft"]); }
   var i1=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{};
+  if((st===750||st===1000)&&!i1.cancelled&&d.type!=="SR"&&d.type!=="MA") acts.push(["Gutschrift (Minderleistung)","fincn"]);
+  if(d.type==="RE"&&st>=200&&!i1.cancelled) acts.push(["Als wiederkehrend anlegen","finwkr"]);
   if(st===200&&d.type==="RE"&&!i1.cancelled) acts.push(["Stornieren","sdcancel",1]);
   var r=el.getBoundingClientRect();
   if(F.M&&F.M.ctx) F.M.ctx(r.left,r.bottom+4,acts.map(function(a){ return {label:a[0],danger:!!a[2],act:function(){ delete DET[id]; F.actions[a[1]](id); }}; }));
@@ -262,6 +266,72 @@ F.form("finlock",function(f){
     F.api("/admin/api/fin/enshrine",{body:{confirm:true,from:f.from.value,to:f.to.value,types:types}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } var r=j.result||{}, n=Object.keys(r).reduce(function(a,k){return a+r[k];},0); F.toast(n+" Dokumente festgeschrieben"); LK=null; F.load(true); });
   },true);
 });
+
+/* ---------- Gutschrift „Minderleistung“ (nur zu bezahlten/teilbezahlten Rechnungen, sonst Storno) ---------- */
+F.action("fincn",function(id){
+  var go=function(d){ if(!d||!d.ok){ F.toast("Rechnung nicht geladen",true); return; }
+    F.modal('<form data-form="fincn" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">Gutschrift zu '+esc(d.nr||"")+'</h2>'+F.btnClose()+'</div>'+
+      '<p class="muted" style="margin:0;font-size:13px">Minderleistung/Teilstorno einer bezahlten Rechnung: Menge oder Preis anpassen, nicht betroffene Positionen auf 0 setzen. Erlös und USt werden im Monat der Gutschrift gemindert.</p>'+
+      '<div class="scroll"><table class="fsd-t sm" style="min-width:420px"><thead><tr><th>Position</th><th class="r">Menge</th><th class="r">Preis netto</th><th class="r">USt</th></tr></thead><tbody>'+(d.positions||[]).map(function(p,k){ return '<tr><td>'+esc(p.name)+'<input type="hidden" name="n'+k+'" value="'+esc(p.name)+'"><input type="hidden" name="t'+k+'" value="'+p.taxRate+'"></td><td class="r"><input class="f num" style="width:80px" name="q'+k+'" type="number" step="0.01" value="0"></td><td class="r"><input class="f num" style="width:110px" name="p'+k+'" type="number" step="0.01" value="'+p.priceNet.toFixed(2)+'"></td><td class="r">'+p.taxRate+' %</td></tr>'; }).join("")+'</tbody></table></div>'+
+      '<label class="fl">Grund / Text<input class="f" name="reason" value="Gutschrift wegen Minderleistung zu Rechnung '+esc(d.nr||"")+'"></label><label class="fl">Datum<input class="f" type="date" name="date" value="'+F.D.today+'"></label>'+
+      '<div class="foot"><span class="err" id="cnErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Gutschrift erstellen</button></span></div></form>',"wide"); };
+  if(DET[id]) go(DET[id]); else F.api("/admin/api/sev/invoice?id="+encodeURIComponent(id)).then(function(j){ DET[id]=j; go(j); });
+});
+F.form("fincn",function(f){
+  var id=f.getAttribute("data-id"), d=DET[id]||{}, pos=[];
+  (d.positions||[]).forEach(function(p,k){ var q=+f["q"+k].value||0, pr=+f["p"+k].value||0; if(q&&pr) pos.push({name:f["n"+k].value,quantity:q,price:pr,taxRate:+f["t"+k].value||0}); });
+  if(!pos.length){ document.getElementById("cnErr").textContent="Bitte bei mindestens einer Position eine Menge eintragen."; return; }
+  F.api("/admin/api/fin/creditnote",{body:{confirm:true,invoiceId:id,positions:pos,reason:f.reason.value,date:f.date.value}}).then(function(j){ if(!j||!j.ok){ document.getElementById("cnErr").textContent=(j&&j.error)||"Fehler"; return; } F.closeModal(); C.cn=null; F.toast("Gutschrift "+(j.result.nr||"")+" erstellt"); F.actions.fin("cn"); });
+});
+
+/* ---------- Wiederkehrende Rechnungen ---------- */
+var WK=null, IVL=[["7D","wöchentlich"],["14D","alle 2 Wochen"],["1M","monatlich"],["2M","alle 2 Monate"],["3M","vierteljährlich"],["6M","halbjährlich"],["12M","jährlich"],["24M","alle 2 Jahre"],["36M","alle 3 Jahre"]];
+function ivName(k){ var x=IVL.find(function(i){return i[0]===k;}); return x?x[1]:k; }
+function wkrForm(t,fromId){ var r=(t&&t.recur)||{}, nd=function(){ var x=new Date(F.D.today+"T12:00:00"); x.setMonth(x.getMonth()+1); x.setDate(1); return x.toISOString().slice(0,10); };
+  return '<form data-form="finwkr" data-id="'+esc(t?t.id:"")+'" data-from="'+esc(fromId||"")+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+(t?"Wiederkehrende Rechnung bearbeiten":"Als wiederkehrende Rechnung anlegen")+'</h2>'+F.btnClose()+'</div>'+
+    '<div class="grid2"><label class="fl">Intervall<select class="f" name="interval">'+IVL.map(function(i){ return '<option value="'+i[0]+'"'+((r.interval||"1M")===i[0]?" selected":"")+'>'+i[1]+'</option>'; }).join("")+'</select></label><label class="fl">Nächste Rechnung am<input class="f" type="date" name="start" value="'+(r.next||nd())+'" required></label></div>'+
+    '<div class="grid2"><label class="fl">Enddatum (optional)<input class="f" type="date" name="end" value="'+(r.end||"")+'"></label><label class="fl">Abrechnung<select class="f" name="advance"><option value="1"'+(r.advance!==false?" selected":"")+'>im Voraus (Zeitraum ab Rechnungsdatum)</option><option value="0"'+(r.advance===false?" selected":"")+'>nachträglich (zurückliegender Zeitraum)</option></select></label></div>'+
+    '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="autoSend"'+(r.autoSend?" checked":"")+'> automatisch fertigstellen und per E-Mail an den Kunden senden (sonst Entwurf zum Prüfen)</label>'+
+    '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active"'+(r.active!==false?" checked":"")+'> aktiv</label>'+
+    '<div class="foot"><span class="err" id="wkErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Speichern</button></span></div></form>'; }
+F.action("finwkr",function(id){ F.modal(wkrForm(null,id),"narrow"); });
+F.action("finwkredit",function(id){ var t=WK&&WK.templates.find(function(x){return x.id===id;}); if(t) F.modal(wkrForm(t),"narrow"); });
+F.form("finwkr",function(f){
+  var body={confirm:true,interval:f.interval.value,start:f.start.value,end:f.end.value,advance:f.advance.value,autoSend:f.autoSend.checked,active:f.active.checked};
+  if(f.getAttribute("data-id")) body.id=f.getAttribute("data-id"); else body.fromId=f.getAttribute("data-from");
+  F.api("/admin/api/fin/recurring",{body:body}).then(function(j){ if(!j||!j.ok){ document.getElementById("wkErr").textContent=(j&&j.error)||"Fehler"; return; } F.closeModal(); WK=null; F.toast("Wiederkehrende Rechnung gespeichert"); F.actions.fin("wkr"); });
+});
+F.action("finwkrrun",function(id){ F.confirm("Jetzt sofort eine Rechnung aus dieser Vorlage erstellen (als Entwurf)? Der nächste Termin verschiebt sich um ein Intervall.","Jetzt erstellen",function(){ F.api("/admin/api/fin/recurring",{body:{confirm:true,op:"run",id:id}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } WK=null; F.load(true); F.toast("Rechnungsentwurf erstellt"); if(j.result&&j.result[0]) F.actions.fin("invd:"+j.result[0].id); }); }); });
+F.action("finwkrdel",function(id){ F.confirm("Vorlage löschen? Bereits erstellte Rechnungen bleiben.","Löschen",function(){ F.api("/admin/api/fin/recurring",{body:{confirm:true,op:"delete",id:id}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } WK=null; F.render(); }); },true); });
+function pageWkr(){
+  if(!WK){ if(!C.busy.wk){ C.busy.wk=1; F.api("/admin/api/fin/recurring").then(function(j){ C.busy.wk=0; WK=j||{ok:false}; F.render(); }); } return head("Wiederkehrende Rechnungen","")+'<div class="sd-empty">Lade …</div>'; }
+  if(!WK.ok) return head("Wiederkehrende Rechnungen","")+'<div class="notice">'+esc(WK.error||"Nicht verfügbar")+'</div>';
+  var rows=WK.templates.map(function(t){ var r=t.recur; return '<tr><td>'+(r?(r.active?pill("paid","Aktiv"):pill("grey","Pausiert")):pill("draft","aus sevDesk"))+'</td><td><div>'+esc(t.contact||"—")+'</div><div class="sub">'+esc(t.positions.join(", ")||t.header)+'</div></td><td class="m">'+(r?esc(ivName(r.interval))+(r.advance===false?" · nachträglich":""):"– – –")+'</td><td class="m">'+(r&&r.active?de(r.next):"–")+(r&&r.end?'<div class="sub">bis '+de(r.end)+'</div>':'')+'</td><td class="m">'+(r&&r.autoSend?"automatisch":"Entwurf")+'</td><td class="r nowrap">'+eur(t.gross)+'</td>'+
+    '<td class="r"><span class="fsd-btns" style="justify-content:flex-end"><button class="btn sm" data-act="finwkredit:'+esc(t.id)+'">Bearbeiten</button>'+(r?'<button class="btn sm" data-act="finwkrrun:'+esc(t.id)+'">Jetzt erstellen</button>':'')+'<button class="btn sm" data-act="finwkrdel:'+esc(t.id)+'">Löschen</button></span></td></tr>'; }).join("");
+  return head("Wiederkehrende Rechnungen","Anlegen: Rechnung öffnen → Mehr → „Als wiederkehrend anlegen“. Fällige Rechnungen entstehen automatisch (stündliche Prüfung).","")+
+    '<section class="fsd-card flush"><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Kunde</th><th>Intervall</th><th>Nächste</th><th>Versand</th><th class="r">Betrag (brutto)</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7" class="empty">Noch keine wiederkehrenden Rechnungen.</td></tr>')+'</tbody></table></div></section>';
+}
+
+/* ---------- Kassenbuch: unveränderbar, Korrektur per Gegenbuchung, nie negativ ---------- */
+var KB=null;
+function kbLoad(){ if(C.busy.kb) return; C.busy.kb=1; F.api("/admin/api/fin/cash").then(function(j){ C.busy.kb=0; KB=j||{ok:false}; F.render(); }); }
+function pageKasse(){
+  if(!KB){ kbLoad(); return head("Kassenbuch","")+'<div class="sd-empty">Lade …</div>'; }
+  if(!KB.ok) return head("Kassenbuch","")+'<div class="notice">'+esc(KB.error||"Nicht verfügbar")+'</div>';
+  var a=KB.accounts[0];
+  if(!a) return head("Kassenbuch","Für Barzahlungen: jede Buchung ist sofort unveränderbar, Korrekturen nur per Gegenbuchung.")+
+    '<form class="fsd-card" data-form="kbopen" style="max-width:520px"><div class="fsd-ctitle">Kasse anlegen</div><div class="grid2" style="margin:12px 0"><label class="fl">Name<input class="f" name="name" value="Kasse"></label><label class="fl">Anfangsbestand (€)<input class="f num" name="amount" type="number" step="0.01" min="0" value="0"></label></div><label class="fl">Stichtag<input class="f" type="date" name="date" value="'+F.D.today+'"></label><p class="muted" style="font-size:12.5px">Der Anfangsbestand ist nach dem Anlegen nicht mehr änderbar.</p><div style="display:flex;justify-content:flex-end"><button class="btn primary" type="submit">Kasse anlegen</button></div></form>';
+  var rows=a.rows.map(function(r){ var lk=r.links.map(function(l){ return l.type==="Invoice"?'<a href="#" data-act="fin:invd:'+esc(l.id)+'">Rechnung</a>':'<a href="#" data-act="sdvou:'+esc(l.id)+'">Beleg</a>'; }).join(", ");
+    return '<tr'+(r.reversedBy?' style="opacity:.55"':'')+'><td class="m">'+de(r.date)+'</td><td><div>'+esc(r.text||"—")+'</div>'+(r.name?'<div class="sub">'+esc(r.name)+'</div>':'')+'</td><td class="r nowrap '+(r.amount<0?"bad-t":"ok-t")+'">'+eur(r.amount)+'</td><td class="r nowrap">'+eur(r.balance)+'</td><td>'+(r.kind==="start"?'<span class="m">Anfangsbestand</span>':r.reversedBy?'<span class="m">storniert</span>':r.reverses?'<span class="m">Gegenbuchung</span>':(lk||(r.status===100?'<button class="btn sm" data-act="ftxassign:'+esc(r.id)+'">Zuordnen</button>':'')))+'</td><td class="r">'+(!r.kind&&!r.reversedBy&&!r.reverses&&!r.links.length?'<button class="btn sm" data-act="kbrev:'+esc(a.id)+'|'+esc(r.id)+'">Stornieren</button>':'')+'</td></tr>'; }).join("");
+  return head("Kassenbuch",esc(a.name)+' · Bestand <b>'+eur(a.balance)+'</b>','')+
+    '<form class="fsd-card" data-form="kbbook" data-acc="'+esc(a.id)+'"><div class="fsd-ctitle">Neue Kassenbuchung</div><div style="display:grid;grid-template-columns:140px 150px 140px minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:end;margin-top:10px" class="kbgrid">'+
+      '<label class="fl">Art<select class="f" name="dir"><option value="in">Einnahme</option><option value="out">Ausgabe</option></select></label><label class="fl">Datum<input class="f" type="date" name="date" value="'+F.D.today+'" max="'+F.D.today+'"></label><label class="fl">Betrag (€)<input class="f num" name="amount" type="number" step="0.01" min="0.01" required></label><label class="fl">Text<input class="f" name="text" required placeholder="z. B. Barverkauf, Tankquittung"></label><label class="fl">Name (optional)<input class="f" name="name"></label><button class="btn primary" type="submit">Buchen</button></div>'+
+      '<p class="muted" style="font-size:12.5px;margin:8px 0 0">Kassenbuchungen sind sofort festgeschrieben. Danach mit „Zuordnen“ einem Beleg oder einer Rechnung zuweisen. Der Bestand kann nie negativ werden.</p></form>'+
+    '<section class="fsd-card flush"><div class="scroll"><table class="fsd-t"><thead><tr><th>Datum</th><th>Text</th><th class="r">Betrag</th><th class="r">Bestand</th><th>Verknüpfung</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="6" class="empty">Noch keine Buchungen.</td></tr>')+'</tbody></table></div></section>';
+}
+F.form("kbopen",function(f){ F.confirm("Kasse „"+f.name.value+"“ mit Anfangsbestand "+F.eur(+f.amount.value||0)+" anlegen? Der Anfangsbestand ist danach nicht mehr änderbar.","Anlegen",function(){ F.api("/admin/api/fin/cash",{body:{confirm:true,op:"open",name:f.name.value,amount:f.amount.value,date:f.date.value}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } KB=null; F.load(true); F.render(); }); }); });
+F.form("kbbook",function(f){ var acc=f.getAttribute("data-acc"); F.api("/admin/api/fin/cash",{body:{confirm:true,op:"book",accountId:acc,dir:f.dir.value,date:f.date.value,amount:f.amount.value,text:f.text.value,name:f.name.value}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } KB=null; C.tx=null; F.toast("Gebucht"); F.render(); }); });
+F.action("kbrev",function(v){ var p=v.split("|"); F.confirm("Diese Kassenbuchung per Gegenbuchung (mit heutigem Datum) stornieren?","Stornieren",function(){ F.api("/admin/api/fin/cash",{body:{confirm:true,op:"reverse",accountId:p[0],id:p[1]}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } KB=null; C.tx=null; F.render(); }); },true); });
 /* ---------- Ansicht registrieren: ersetzt „Finanzen“ ---------- */
 function pageTab(id){ var t=(F.geldTabs||[]).find(function(x){return x.id===id;}); if(!t) return '<div class="sd-empty">Nicht verfügbar.</div>'; var prev=UI.geldTab; UI.geldTab=id; try{ return head(t.label,t.sub||"","")+t.render(); } finally { UI.geldTab=prev; } }
 function pageAbgl(){ var prev=UI.geldTab; UI.geldTab="uebersicht"; try{ var v=F.views.find(function(x){return x.id==="geld";}); return F._geldOrig?F._geldOrig.call(v):""; } finally { UI.geldTab=prev; } }
@@ -274,7 +344,8 @@ function content(){
   if(p==="cn") return pageCn();
   if(p==="vou") return pageVou();
   if(p==="bank") return pageBank("bank");
-  if(p==="kasse") return pageBank("kasse");
+  if(p==="kasse") return pageKasse();
+  if(p==="wkr") return pageWkr();
   if(p==="open") return pageBank("open");
   if(p==="orders"){ return head("Angebote","",'<button class="btn primary" data-act="newoffer">Angebot erstellen</button>')+(F.offersPanelHtml?F.offersPanelHtml():'<div class="sd-empty">Angebote findest du unter Kunden & Leads.</div>'); }
   if(p==="ct"){ F.UI.stT="kontakte"; return pageTab("stamm"); }
@@ -324,6 +395,7 @@ function mInvDetail(id){
   if(open){ b.push(["book","Als bezahlt markieren",1]); b.push(["sdsend","Per E-Mail senden"]); if(d.type==="RE") b.push(["sdremind","Mahnung erstellen"]); }
   if(st===1000) b.push(["sdsend","Per E-Mail senden"]);
   if(st===200&&d.type==="RE"&&!i0.cancelled) b.push(["sdcancel","Stornieren"]);
+  if((st===750||st===1000)&&!i0.cancelled&&d.type!=="SR"&&d.type!=="MA") b.push(["fincn","Gutschrift"]);
   var row=function(k,v){ return '<div><dt>'+k+'</dt><dd>'+v+'</dd></div>'; };
   return '<div class="fsm-dh"><button type="button" class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><b>'+esc(d.nr||"Entwurf")+'</b></div>'+
     '<section class="fsm-card"><div class="fsm-top"><div><b>'+esc(d.contact.name||"")+'</b><span>'+de(d.date)+'</span></div>'+invPill(Object.assign({},i0,{status:st}))+'</div><div class="fsm-amt">'+eur(d.gross)+'</div>'+(d.open>0.005&&d.paid>0?'<div class="fsm-sub">davon offen '+eur(d.open)+'</div>':'')+'</section>'+
@@ -358,7 +430,7 @@ function mBank(mode){
 function mobile(){
   var p=UI.fin.split(":")[0], id=UI.fin.split(":")[1], body;
   if(p==="dash") body=mDash(); else if(p==="inv") body=mInv("inv"); else if(p==="dun") body=mInv("dun"); else if(p==="invd") body=mInvDetail(id);
-  else if(p==="vou") body=mVou(); else if(p==="bank"||p==="kasse") body=mBank("bank"); else if(p==="open") body=mBank("open");
+  else if(p==="vou") body=mVou(); else if(p==="bank") body=mBank("bank"); else if(p==="open") body=mBank("open");
   else body='<div class="fsm-wide">'+content()+'</div>';
   return '<div class="fsd fsm">'+(p==="invd"?"":'<div class="fsm-head"><h1>Finanzen</h1></div>'+mNav())+'<div class="fsm-body">'+body+'</div></div>';
 }
@@ -371,7 +443,7 @@ if(gv){
   };
 }
 /* nach Aktionen Detail neu laden */
-var _load=F.load; F.load=function(force){ if(force){ DET={}; C.tx=null; C.cn=null; C.vou={}; } return _load.apply(this,arguments); };
+var _load=F.load; F.load=function(force){ if(force){ DET={}; C.tx=null; C.cn=null; C.vou={}; KB=null; WK=null; } return _load.apply(this,arguments); };
 
 /* Aussehen 1:1 nach sevDesk (Inter, Farben, Maße aus dem Original abgenommen) */
 (function(){ if(document.getElementById("fsd-font")) return; var l=document.createElement("link"); l.id="fsd-font"; l.rel="stylesheet"; l.href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"; document.head.appendChild(l); })();
@@ -476,7 +548,7 @@ F.css(
 '.fsm-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}body .fsm-acts .btn{justify-content:center;height:46px}body .fsm-acts .btn.primary{grid-column:1/-1}'+
 '.fsm-pos{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid rgba(6,3,20,.07);font-size:14px}.fsm-pos:last-child{border-bottom:0}.fsm-pos i{color:#717387;font-style:normal}'+
 '.fsm .fsd-pager{border-top:1px solid rgba(6,3,20,.07)}.fsm-wide{overflow-x:auto}.fsm .fsd-head h1{font-size:20px}'+
-'@media (max-width:1250px){.fsd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fsd-detail{grid-template-columns:minmax(0,1fr)}.fsd-side{position:static}}'+
+'@media (max-width:1250px){.kbgrid{grid-template-columns:1fr 1fr!important}.fsd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fsd-detail{grid-template-columns:minmax(0,1fr)}.fsd-side{position:static}}'+
 '@media (max-width:1100px){.fsd{grid-template-columns:200px minmax(0,1fr)}.fsd-vou{grid-template-columns:minmax(0,1fr)}.fsd-cats{position:static;max-height:240px}}'
 );
 })();

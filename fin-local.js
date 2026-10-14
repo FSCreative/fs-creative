@@ -193,7 +193,8 @@ module.exports = function (D) {
     let tx = b.checkAccountTransaction && b.checkAccountTransaction.id ? get("CheckAccountTransaction", b.checkAccountTransaction.id) : null;
     const accId = b.checkAccount && b.checkAccount.id ? String(b.checkAccount.id) : (tx && tx.checkAccount ? String(tx.checkAccount.id) : "");
     if (!tx) {   // Zahlung ohne Bankumsatz (bar, Kasse, PayPal …): Umsatz auf dem gewählten Konto anlegen
-      const sign = t === "Voucher" && String(o.creditDebit) === "C" ? -1 : 1;
+      const sign = (t === "Voucher" && String(o.creditDebit) === "C") || t === "CreditNote" ? -1 : 1;
+      if (accId && isCash(accId)) { await cashGuard(accId, iso(day), sign * amt); }
       tx = { id: newId("CheckAccountTransaction"), valueDate: iso(day), entryDate: iso(day), amount: s2(sign * amt), paymtPurpose: (o.invoiceNumber || o.description || o.supplierName || "Zahlung"), payeePayerName: t === "Voucher" ? (o.supplierName || "") : "", checkAccount: ref("CheckAccount", accId), status: "200" };
     } else tx.status = "200";
     await save("CheckAccountTransaction", tx);
@@ -201,12 +202,21 @@ module.exports = function (D) {
     let feePart = 0;
     if (t === "Invoice" && +o.dunningFeeOpen > 0) { const openAmt = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)); feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(amt - openAmt))); if (b.feeAmount != null) feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(+b.feeAmount)), amt); }
     if (feePart > 0) { await bookFee(o, feePart, tx, day); amt = r2(amt - feePart); if (amt <= 0.004) { await save(t, o); return { objects: {} }; } }
-    const paid = r2((+o.paidAmount || 0) + amt), gross = Math.abs(+o.sumGross || 0);
+    // Differenzgrund bei Zahlung < offener Betrag (wie sevDesk bookAmount.type): N Teilzahlung · CB Skonto · MTC Kosten des Zahlungsverkehrs
+    const dtype = String(b.type || "N").toUpperCase(), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
+    let logAmt = amt, paid = r2((+o.paidAmount || 0) + amt);
+    const gross = Math.abs(+o.sumGross || 0);
+    if (t === "Invoice" && diff > 0.004 && dtype === "MTC") {
+      // Bankspesen: Rechnung gilt als voll bezahlt, die Differenz ist Aufwand (0 %, keine Vorsteuer) – eigener Ausgabe-Beleg am selben Umsatz
+      await bookCost(o, diff, tx, day); paid = r2(paid + diff); logAmt = r2(amt + diff);
+    }
     o.paidAmount = s2(paid); o.payDate = iso(day);
     o.status = paid >= gross - 0.005 ? "1000" : "750";
+    // Skonto: Rechnung ist erledigt; der Unterschied ist eine Entgeltsminderung zum Steuersatz der Rechnung (Monat der Zahlung)
+    if (t === "Invoice" && diff > 0.004 && dtype === "CB") { o.status = "1000"; o.skontoAmount = s2(r2((+o.skontoAmount || 0) + diff)); }
     await save(t, o);
     if (t === "Invoice" && o.status === "1000") for (const m of all("Invoice").filter(x => String(x.invoiceType) === "MA" && x.origin && String(x.origin.id) === String(o.id) && String(x.status) !== "1000")) { m.status = "1000"; m.payDate = iso(day); await save("Invoice", m); }
-    const log = { id: newId("CheckAccountTransactionLog"), object: ref(t, o.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: o.status };
+    const log = { id: newId("CheckAccountTransactionLog"), object: ref(t, o.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(logAmt), bookingDate: iso(day), fromStatus: "100", toStatus: o.status };
     await save("CheckAccountTransactionLog", log);
     return { objects: log };
   }
@@ -273,6 +283,153 @@ module.exports = function (D) {
     await save("CheckAccountTransactionLog", { id: newId("CheckAccountTransactionLog"), object: ref("Voucher", v.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: "1000" });
     inv.dunningFeeOpen = s2(Math.max(0, r2((+inv.dunningFeeOpen || 0) - amt))); inv.dunningFeePaid = s2(r2((+inv.dunningFeePaid || 0) + amt));
     return v;
+  }
+
+  // ── Kosten des Zahlungsverkehrs (Differenzgrund MTC): Ausgabe 0 % ohne Vorsteuer, über denselben Bankumsatz ──
+  async function bookCost(inv, amt, tx, day) {
+    const at = all("AccountingType").find(x => /geldverkehr|bankspesen|nebenkosten des geld/i.test(String(x.name || "")));
+    const v = { id: newId("Voucher"), status: "1000", creditDebit: "C", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt), sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00",
+      supplierName: "Bank", description: "Kosten des Zahlungsverkehrs zu Rechnung " + (inv.invoiceNumber || "") + " – ohne Vorsteuer", taxText: "keine Vorsteuer", origin: ref("Invoice", inv.id) };
+    const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Nebenkosten des Geldverkehrs" };
+    if (at) p.accountingType = ref("AccountingType", at.id);
+    await save("VoucherPos", p); await save("Voucher", v);
+    await save("CheckAccountTransactionLog", { id: newId("CheckAccountTransactionLog"), object: ref("Voucher", v.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(-amt), bookingDate: iso(day), fromStatus: "100", toStatus: "1000" });
+    return v;
+  }
+
+  // ── Gutschrift „Minderleistung“ zu einer bezahlten/teilbezahlten Rechnung (sevDesk: nur dann, sonst Storno) ──
+  async function creditNoteFromInvoice(invId, b) {
+    const o = need("Invoice", invId);
+    if (["RE", "ER", "AR", "TR"].indexOf(String(o.invoiceType)) < 0) throw err(400, "Nur zu Rechnungen möglich");
+    if (["750", "1000"].indexOf(String(o.status)) < 0 || o.cancelled) throw err(400, "Gutschrift nur zu bezahlten oder teilbezahlten Rechnungen – offene Rechnungen bitte stornieren");
+    const pos = (b.positions || []).map(p => ({ name: String(p.name || "Minderleistung").slice(0, 200), text: String(p.text || ""), quantity: String(+p.quantity || 0), price: s2(+p.price || 0), taxRate: String(+p.taxRate || 0) })).filter(p => +p.quantity && +p.price);
+    if (!pos.length) throw err(400, "Keine Positionen");
+    const already = all("CreditNote").filter(c => c.refSrcInvoice && String(c.refSrcInvoice.id) === String(o.id)).reduce((a, c) => a + (+c.sumGross || 0), 0);
+    const sum = pos.reduce((a, p) => a + (+p.quantity) * (+p.price) * (1 + (+p.taxRate) / 100), 0);
+    if (r2(already + sum) > r2(+o.sumGross || 0) + 0.01) throw err(400, "Gutschriften wären höher als die Rechnung");
+    const day = dayOf(b.date) || today();
+    const cn = { id: newId("CreditNote"), status: "200", currency: "EUR", paidAmount: "0", creditNoteDate: iso(day), deliveryDate: o.deliveryDate || o.invoiceDate, contact: o.contact, address: o.address, addressCountry: o.addressCountry, contactPerson: o.contactPerson,
+      creditNoteNumber: await nextNumber("CreditNote", "", "creditNoteNumber", "GU-"), header: "Gutschrift zu Rechnung " + (o.invoiceNumber || ""), headText: String(b.reason || "Wir schreiben Ihnen folgende Beträge zu Rechnung " + (o.invoiceNumber || "") + " gut:"),
+      footText: "Der Betrag wird Ihnen erstattet bzw. mit offenen Forderungen verrechnet.", taxType: o.taxType, taxRule: o.taxRule, taxSet: o.taxSet, taxText: o.taxText, bookingCategory: "UNDERACHIEVEMENT", refSrcInvoice: ref("Invoice", o.id), creditNoteCategory: "UNDERACHIEVEMENT" };
+    if (settings().autoEnshrine) cn.enshrined = nowIso();
+    for (const [k, p] of pos.entries()) { const x = Object.assign({ id: newId("CreditNotePos"), creditNote: ref("CreditNote", cn.id), positionNumber: String(k), unity: ref("Unity", 1) }, p); posSums(x); await save("CreditNotePos", x); }
+    docSums(cn, positionsOf("CreditNote", cn.id)); await save("CreditNote", cn);
+    return { objects: cn };
+  }
+
+  // ── Kassenbuch: jede Buchung sofort unveränderbar, Korrektur nur per Gegenbuchung mit Tagesdatum, kein negativer Bestand ──
+  function isCash(accId) { const a = get("CheckAccount", accId); return !!a && /register|kasse/i.test(String(a.type || "") + " " + String(a.cash || "")); }
+  function cashBalance(accId, untilDay) { return r2(all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(accId) && (!untilDay || (dayOf(x.valueDate) || "") <= untilDay)).reduce((a, x) => a + (+x.amount || 0), 0)); }
+  async function cashGuard(accId, isoDay, amount) {
+    // Bestand darf an keinem Tag ab der Buchung negativ werden
+    const d = dayOf(isoDay), days = all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(accId)).map(x => dayOf(x.valueDate)).filter(x => x && x >= d);
+    for (const k of [d].concat(days)) if (cashBalance(accId, k) + amount < -0.004) throw err(400, "Kassenbestand würde am " + k.split("-").reverse().join(".") + " negativ – Kassenbuch darf nie unter 0 fallen");
+  }
+  async function cashOp(b) {
+    const op = String(b.op || "");
+    if (op === "open") {
+      if (all("CheckAccount").some(a => isCash(a.id) && String(a.status) !== "0")) throw err(400, "Es gibt bereits eine Kasse");
+      const day = dayOf(b.date) || today(), start = r2(+b.amount || 0); if (start < 0) throw err(400, "Anfangsbestand darf nicht negativ sein");
+      const acc = { id: newId("CheckAccount"), name: String(b.name || "Kasse").slice(0, 60), type: "register", cash: "register", currency: "EUR", status: "100", defaultAccount: "0", importType: null };
+      await save("CheckAccount", acc);
+      if (start > 0) await save("CheckAccountTransaction", { id: newId("CheckAccountTransaction"), valueDate: iso(day), entryDate: iso(day), amount: s2(start), paymtPurpose: "Anfangsbestand", payeePayerName: "", checkAccount: ref("CheckAccount", acc.id), status: "400", cashLocked: nowIso(), cashKind: "start" });
+      return { objects: acc };
+    }
+    const accId = String(b.accountId || ""); if (!isCash(accId)) throw err(400, "Keine Kasse");
+    if (op === "book") {
+      const day = dayOf(b.date) || today(); if (day > today()) throw err(400, "Kassenbuchungen nicht in der Zukunft");
+      const amt = r2(Math.abs(+b.amount || 0)) * (String(b.dir) === "out" ? -1 : 1); if (!amt) throw err(400, "Betrag fehlt");
+      await cashGuard(accId, iso(day), amt);
+      const tx = { id: newId("CheckAccountTransaction"), valueDate: iso(day), entryDate: iso(today()), amount: s2(amt), paymtPurpose: String(b.text || "").slice(0, 300), payeePayerName: String(b.name || "").slice(0, 120), checkAccount: ref("CheckAccount", accId), status: "100", cashLocked: nowIso() };
+      await save("CheckAccountTransaction", tx); return { objects: tx };
+    }
+    if (op === "reverse") {
+      const t0 = need("CheckAccountTransaction", b.id); if (!t0.checkAccount || String(t0.checkAccount.id) !== accId) throw err(400, "Falsche Kasse");
+      if (t0.reversedBy || t0.reverses) throw err(400, "Bereits storniert bzw. selbst eine Gegenbuchung");
+      if (all("CheckAccountTransactionLog").some(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(t0.id))) throw err(400, "Mit Beleg/Rechnung verknüpft – zuerst dort die Zahlung lösen");
+      const amt = r2(-(+t0.amount || 0)); await cashGuard(accId, iso(today()), amt);
+      const tx = { id: newId("CheckAccountTransaction"), valueDate: iso(today()), entryDate: iso(today()), amount: s2(amt), paymtPurpose: "Storno/Gegenbuchung zu Kassenbuchung vom " + (dayOf(t0.valueDate) || "").split("-").reverse().join(".") + ": " + (t0.paymtPurpose || ""), payeePayerName: t0.payeePayerName || "", checkAccount: ref("CheckAccount", accId), status: "400", cashLocked: nowIso(), reverses: String(t0.id) };
+      await save("CheckAccountTransaction", tx); t0.reversedBy = String(tx.id); t0.status = "400"; await save("CheckAccountTransaction", t0); return { objects: tx };
+    }
+    throw err(400, "unbekannte Kassen-Aktion");
+  }
+
+  // ── Abschlags- und Schlussrechnung aus einem Angebot/Auftrag ──
+  function ordersInv(orderId) { return all("Invoice").filter(i => i.origin && String(i.origin.id) === String(orderId) && String(i.origin.objectName || "Order") === "Order"); }
+  async function partialFromOrder(orderId, b) {
+    const od = need("Order", orderId);
+    if (ordersInv(orderId).some(i => String(i.invoiceType) === "ER" || (String(i.invoiceType) === "RE" && !i.cancelled))) throw err(400, "Zum Angebot gibt es bereits eine Schluss-/Gesamtrechnung");
+    const pos = positionsOf("Order", od.id); if (!pos.length) throw err(400, "Angebot hat keine Positionen");
+    const net = pos.reduce((a, p) => a + (+p.sumNet || 0), 0); if (!(net > 0)) throw err(400, "Angebotssumme fehlt");
+    let f = +b.percent > 0 ? (+b.percent) / 100 : (+b.amount > 0 ? (+b.amount) / (+od.sumGross || net) : 0);
+    if (!(f > 0 && f <= 1)) throw err(400, "Prozent oder Betrag angeben");
+    const ars = ordersInv(orderId).filter(i => String(i.invoiceType) === "AR" && !i.cancelled), sofar = ars.reduce((a, i) => a + (+i.sumNet || 0), 0);
+    if (sofar + net * f > net + 0.01) throw err(400, "Abschläge wären höher als das Angebot");
+    const byRate = {}; pos.forEach(p => { const r = String(+p.taxRate || 0); byRate[r] = (byRate[r] || 0) + (+p.sumNet || 0); });
+    const nr = ars.length + 1, pct = Math.round(f * 1000) / 10;
+    const body = { invoice: { contact: od.contact, address: od.address, addressCountry: od.addressCountry, contactPerson: od.contactPerson, invoiceType: "AR", status: "100", header: nr + ". Abschlagsrechnung zu " + (od.orderNumber || "Angebot"),
+      headText: "Vereinbarungsgemäß stellen wir Ihnen die " + nr + ". Abschlagszahlung (" + String(pct).replace(".", ",") + " %) für das Angebot " + (od.orderNumber || "") + " in Rechnung:", footText: "Die Abschlagszahlung wird mit der Schlussrechnung verrechnet. Zahlbar innerhalb von 14 Tagen.", timeToPay: "14",
+      taxType: od.taxType, taxSet: od.taxSet, taxRule: od.taxRule, taxText: od.taxText, origin: ref("Order", od.id), deliveryDate: iso(today()) },
+      invoicePosSave: Object.keys(byRate).map((r, k) => ({ name: "Abschlag " + String(pct).replace(".", ",") + " % auf " + (od.orderNumber || "Angebot") + (Object.keys(byRate).length > 1 ? " (" + r + " %)" : ""), quantity: 1, price: s2(byRate[r] * f), taxRate: r, positionNumber: String(k), unity: ref("Unity", 1) })) };
+    const res = await saveInvoice(body);
+    od.status = "750"; await save("Order", od);
+    return { objects: res.objects.invoice };
+  }
+  async function finalFromOrder(orderId, b) {
+    const od = need("Order", orderId);
+    const linked = ordersInv(orderId), ars = linked.filter(i => (String(i.invoiceType) === "AR" || String(i.invoiceType) === "TR") && !i.cancelled);
+    if (linked.some(i => String(i.invoiceType) === "ER" && !i.cancelled)) throw err(400, "Schlussrechnung gibt es bereits");
+    if (!ars.length) throw err(400, "Keine Abschlagsrechnungen – bitte normale Rechnung aus dem Angebot erstellen");
+    const unpaid = ars.filter(i => String(i.invoiceType) === "AR" && String(i.status) !== "1000"); if (unpaid.length) throw err(400, "Schlussrechnung erst, wenn alle Abschläge bezahlt sind (" + unpaid.map(i => i.invoiceNumber || "Entwurf").join(", ") + ")");
+    const day = today(); const late = ars.find(i => (dayOf(i.invoiceDate) || "") > day); if (late) throw err(400, "Datum der Schlussrechnung liegt vor einer Abschlagsrechnung");
+    const save0 = positionsOf("Order", od.id).map((p, k) => ({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part }));
+    let k = save0.length;
+    for (const a of ars) for (const p of positionsOf("Invoice", a.id)) save0.push({ name: "abzüglich " + (String(a.invoiceType) === "TR" ? "Teilrechnung " : "Abschlagsrechnung ") + (a.invoiceNumber || "") + " vom " + (dayOf(a.invoiceDate) || "").split("-").reverse().join("."), quantity: "1", price: s2(-(+p.sumNet || 0)), taxRate: p.taxRate, positionNumber: String(k++), unity: ref("Unity", 1) });
+    const res = await saveInvoice({ invoice: { contact: od.contact, address: od.address, addressCountry: od.addressCountry, contactPerson: od.contactPerson, invoiceType: "ER", status: "100", header: "Schlussrechnung zu " + (od.orderNumber || "Angebot"),
+      headText: "Für die vereinbarten Leistungen laut " + (od.orderNumber || "Angebot") + " stellen wir Ihnen abzüglich der geleisteten Abschlagszahlungen in Rechnung:", footText: "Zahlbar innerhalb von 14 Tagen ohne Abzug.", timeToPay: "14",
+      taxType: od.taxType, taxSet: od.taxSet, taxRule: od.taxRule, taxText: od.taxText, origin: ref("Order", od.id), deliveryDate: iso(dayOf(b && b.deliveryDate) || day) }, invoicePosSave: save0 });
+    od.status = "1000"; await save("Order", od);
+    return { objects: res.objects.invoice };
+  }
+
+  // ── Wiederkehrende Rechnungen: Vorlage (Typ WKR) mit Intervall; erzeugt zum Termin eine normale Rechnung ──
+  const IV = { "7D": [0, 0, 7], "14D": [0, 0, 14], "1M": [0, 1, 0], "2M": [0, 2, 0], "3M": [0, 3, 0], "6M": [0, 6, 0], "12M": [1, 0, 0], "24M": [2, 0, 0], "36M": [3, 0, 0], "48M": [4, 0, 0], "60M": [5, 0, 0] };
+  function addIv(d, iv, k) { const [y, m, dd] = IV[iv] || IV["1M"]; const x = new Date(d + "T12:00:00Z"); const day = x.getUTCDate(); x.setUTCDate(1); x.setUTCFullYear(x.getUTCFullYear() + y * (k || 1)); x.setUTCMonth(x.getUTCMonth() + m * (k || 1)); const last = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate(); x.setUTCDate(Math.min(day, last)); x.setUTCDate(x.getUTCDate() + dd * (k || 1)); return x.toISOString().slice(0, 10); }
+  async function recurringSave(b) {
+    let w;
+    if (b.id) { w = need("Invoice", b.id); if (String(w.invoiceType) !== "WKR") throw err(400, "Keine Vorlage"); }
+    else {
+      const src = need("Invoice", b.fromId);
+      w = Object.assign({}, src, { id: newId("Invoice"), invoiceType: "WKR", status: "100", invoiceNumber: null, paidAmount: "0", payDate: null, sendDate: null, sendType: null, enshrined: null, cancelled: null, origin: ref("Invoice", src.id), dunningLevel: null, dunningFeeOpen: null, header: String(src.header || "Rechnung").replace(/Nr\.?\s*\S+/, "").trim() || "Rechnung" });
+      for (const [k, p] of positionsOf("Invoice", src.id).entries()) { const x = Object.assign({}, p, { id: newId("InvoicePos"), invoice: ref("Invoice", w.id), positionNumber: String(k) }); await save("InvoicePos", x); }
+    }
+    const iv = IV[b.interval] ? b.interval : ((w.recur && w.recur.interval) || "1M"), start = dayOf(b.start) || (w.recur && w.recur.next) || today();
+    w.recur = Object.assign({}, w.recur || {}, { interval: iv, next: start, end: dayOf(b.end) || null, autoSend: !!b.autoSend, active: b.active !== false, advance: String(b.advance) === "1" || b.advance === true, periodText: b.periodText !== false });
+    await save("Invoice", w); return { objects: w };
+  }
+  async function recurringCreate(w, forDay) {
+    const d = forDay || w.recur.next || today(), iv = w.recur.interval;
+    // Leistungszeitraum: im Voraus = [d, nächster Termin − 1], nachträglich = [voriger Termin, d − 1]
+    const prevD = addIv(d, iv, -1), nextD = addIv(d, iv, 1), minus1 = x => { const y = new Date(x + "T12:00:00Z"); y.setUTCDate(y.getUTCDate() - 1); return y.toISOString().slice(0, 10); };
+    const from = w.recur.advance ? d : prevD, until = w.recur.advance ? minus1(nextD) : minus1(d), fmt = x => x.split("-").reverse().join(".");
+    const body = { invoice: { contact: w.contact, address: w.address, addressCountry: w.addressCountry, contactPerson: w.contactPerson, invoiceType: "RE", status: "100", header: w.header || "Rechnung", headText: (w.headText || "") + (w.recur.periodText !== false ? "<br>Leistungszeitraum: " + fmt(from) + " – " + fmt(until) : ""), footText: w.footText, timeToPay: w.timeToPay || "14",
+      taxType: w.taxType, taxSet: w.taxSet, taxRule: w.taxRule, taxText: w.taxText, invoiceDate: iso(d), deliveryDate: iso(from), deliveryDateUntil: iso(until), origin: ref("Invoice", w.id), showNet: w.showNet },
+      invoicePosSave: positionsOf("Invoice", w.id).map((p, k) => ({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part })) };
+    const r = (await saveInvoice(body)).objects.invoice;
+    w.recur.last = d; w.recur.lastInvoice = String(r.id); w.recur.next = addIv(d, iv, 1);
+    if (w.recur.end && w.recur.next > w.recur.end) w.recur.active = false;
+    await save("Invoice", w);
+    return r;
+  }
+  // fällige Vorlagen abarbeiten (Server ruft das regelmäßig auf) → Liste der neuen Rechnungen
+  async function recurringRun(onlyId) {
+    await load(); const out = [], t = today();
+    for (const w of all("Invoice").filter(x => String(x.invoiceType) === "WKR" && x.recur && (onlyId ? String(x.id) === String(onlyId) : x.recur.active))) {
+      let guard = 0;
+      if (onlyId) { out.push({ template: w, invoice: await recurringCreate(w) }); continue; }
+      while (w.recur.active && w.recur.next && w.recur.next <= t && guard++ < 24) out.push({ template: w, invoice: await recurringCreate(w) });
+    }
+    return out;
   }
   async function invoiceFromOrder(body) {
     const od = need("Order", body.order && body.order.id);
@@ -349,6 +506,7 @@ module.exports = function (D) {
   async function create(t, body) { const o = Object.assign({ id: newId(t) }, stripMeta(body || {})); await save(t, o); return { objects: o }; }
   async function update(t, id, body) {
     const o = need(t, id);
+    if (t === "CheckAccountTransaction" && o.cashLocked && Object.keys(body || {}).some(k => k !== "status")) throw err(400, "Kassenbuchungen sind unveränderbar – Korrektur nur per Gegenbuchung");
     if (["Invoice", "Voucher", "CreditNote"].indexOf(t) > -1 && isLocked(t, o) && Object.keys(body || {}).some(k => ["status", "dunningLevel", "reminderDeadline"].indexOf(k) < 0)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung");
     Object.assign(o, stripMeta(body || {})); delete o.id; o.id = String(id);
     if (t === "Order" && body && body.status != null) o.status = String(body.status);
@@ -389,6 +547,13 @@ module.exports = function (D) {
     if (method !== "GET") {
       if (p === "/Invoice/Factory/saveInvoice") return saveInvoice(b || {});
       if (p === "/Fin/enshrinePeriod") return enshrinePeriod(b || {});
+      if (p === "/Fin/creditNoteFromInvoice") return creditNoteFromInvoice(b && b.invoiceId, b || {});
+      if (p === "/Fin/cash") return cashOp(b || {});
+      if (p === "/Fin/partialFromOrder") return partialFromOrder(b && b.orderId, b || {});
+      if (p === "/Fin/finalFromOrder") return finalFromOrder(b && b.orderId, b || {});
+      if (p === "/Fin/recurring") { if (b && b.op === "delete") { const w = need("Invoice", b.id); if (String(w.invoiceType) !== "WKR") throw err(400, "Keine Vorlage"); for (const x of positionsOf("Invoice", w.id)) await del("InvoicePos", x.id); await del("Invoice", w.id); return { objects: [null] }; }
+        if (b && b.op === "run") { const r = await recurringRun(b.id); return { objects: r.map(x => x.invoice) }; }
+        return recurringSave(b || {}); }
       if (p === "/Fin/settings") { const cur = get("FinSetting", "1") || { id: "1" }; Object.assign(cur, { autoEnshrine: !(b && b.autoEnshrine === false) }); await save("FinSetting", cur); return { objects: settings() }; }
       if (p === "/Invoice/Factory/createInvoiceReminder") return createReminder((b && b.invoice && b.invoice.id) || q["invoice[id]"], { dunningFee: b && b.dunningFee, timeToPay: b && b.timeToPay });
       if (p === "/Invoice/Factory/createInvoiceFromOrder") return invoiceFromOrder(b || {});
@@ -412,6 +577,11 @@ module.exports = function (D) {
         if (act === "resetToOpen") return resetToOpen("Voucher", id);
         if (act === "enshrine") { const o = need("Voucher", id); if (+o.status < 100) throw err(400, "Entwürfe können nicht festgeschrieben werden"); if (!o.enshrined) { o.enshrined = nowIso(); await save("Voucher", o); } return { objects: o }; }
       }
+      if (T === "CreditNote" && id) {
+        if (act === "bookAmount") return bookAmount("CreditNote", id, b || {});
+        if (act === "sendBy") { const o = need("CreditNote", id); if (String(o.status) === "100") o.status = "200"; o.sendDate = nowIso(); o.sendType = (b && b.sendType) || "VPDF"; await save("CreditNote", o); return { objects: o }; }
+        if (act === "enshrine") { const o = need("CreditNote", id); if (+o.status < 200) throw err(400, "Entwürfe können nicht festgeschrieben werden"); if (!o.enshrined) { o.enshrined = nowIso(); await save("CreditNote", o); } return { objects: o }; }
+      }
       if (T === "Order" && id && act === "sendBy") { const o = need("Order", id); if (String(o.status) === "100") o.status = "200"; o.sendDate = nowIso(); o.sendType = (b && b.sendType) || "VPDF"; await save("Order", o); return { objects: o }; }
       if (method === "POST" && !id && !act) return create(T, b);
       if (method === "PUT" && id && !act) return update(T, id, b);
@@ -419,6 +589,8 @@ module.exports = function (D) {
         if (["Invoice", "Voucher", "CreditNote", "CheckAccountTransaction"].indexOf(T) > -1 && isLocked(T, o)) throw err(400, "Festgeschrieben – kann nicht gelöscht werden");
         if ((T === "Invoice" || T === "CreditNote") && String(o.status) !== "100") throw err(400, "Nur Entwürfe können gelöscht werden – versendete Rechnungen bitte stornieren");
         if (T === "CheckAccountTransaction" && String(o.status) !== "100") throw err(400, "Verknüpfte Umsätze können nicht gelöscht werden");
+        if (T === "CheckAccountTransaction" && o.cashLocked) throw err(400, "Kassenbuchungen können nicht gelöscht werden – Korrektur per Gegenbuchung");
+        if (T === "CheckAccount" && isCash(id) && all("CheckAccountTransaction").some(x => x.checkAccount && String(x.checkAccount.id) === String(id))) throw err(400, "Kasse mit Buchungen kann nicht gelöscht werden");
         await del(T, id); return { objects: [null] }; }
       throw err(400, "Nicht unterstützt: " + method + " " + p);
     }
@@ -445,5 +617,5 @@ module.exports = function (D) {
     }
     return { total: items.length, added, dup, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, importBank };
+  return { request, load, get, all, positionsOf, save, importBank, recurringRun, cashBalance, isCash };
 };

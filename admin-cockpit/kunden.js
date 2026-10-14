@@ -30,7 +30,7 @@ function offerRow(o){
     '<td>'+(l?'<button class="link" data-act="lead:'+esc(l.id)+'">'+esc(o.contact)+'</button>':esc(o.contact||"—"))+((o.header&&!/^angebot( |$)/i.test(o.header))||o.lines&&o.lines.length?'<div class="sub">'+esc(o.header&&!/^angebot( |$)/i.test(o.header)?o.header:o.lines.map(function(x){return x.name;}).slice(0,3).join(", "))+'</div>':'')+'</td>'+
     '<td class="num">'+deShort(o.date)+'</td><td class="num'+(o.overdue?' bad-t':'')+'" title="'+(o.validEst?'geschätzt: Angebotsdatum + 30 Tage':'laut Angebotstext')+'">'+(o.validUntil?(o.validEst?'~':'')+de(o.validUntil):'—')+'</td>'+
     '<td class="r num">'+eur(o.gross)+'<div class="sub">netto '+eur(o.net)+'</div></td><td>'+offTag(o)+'</td>'+
-    '<td class="r"><span class="row" style="justify-content:flex-end;gap:4px;flex-wrap:wrap"><button class="btn" data-act="offpdf:'+esc(o.id)+'">PDF</button><button class="btn" data-act="offsev:'+esc(o.id)+'" title="In sevDesk öffnen">sevDesk</button>'+
+    '<td class="r"><span class="row" style="justify-content:flex-end;gap:4px;flex-wrap:wrap"><button class="btn" data-act="offpdf:'+esc(o.id)+'">PDF</button>'+(canInv?'<button class="btn" data-act="offar:'+esc(o.id)+'" title="Abschlagsrechnung (Anzahlung) erstellen">Abschlag</button>':'')+(o.status===750?'<button class="btn" data-act="offer:'+esc(o.id)+'" title="Schlussrechnung abzüglich der bezahlten Abschläge">Schlussrechnung</button>':'')+
       (o.status<750?'<button class="btn" data-act="offstat:'+esc(o.id)+'">Status</button>':'')+(canInv?'<button class="btn" data-act="offinv:'+esc(o.id)+'">In Rechnung</button>':'')+'</span></td></tr>';
 }
 F.offersPanelHtml=function(){ if(!OFF.list&&!OFF.busy&&!OFF.err) F.offersLoad(false); return offersPanel(); };
@@ -63,10 +63,26 @@ F.action("offsetstat",function(v){
     if(l&&order.indexOf(l.stage||"anfrage")<order.indexOf("auftrag")) F.toast("Angebot angenommen",false,"Lead → Auftrag",function(){ leadPost({op:"update",id:l.id,patch:{stage:"auftrag"}}).then(function(r){ if(r){ F.toast((l.company||l.name)+" ist jetzt in „Auftrag“"); F.render(); } }); });
   });
 });
+/* Abschlags- und Schlussrechnung (wie sevDesk: Abschläge aus dem Angebot, Schlussrechnung erst wenn alle Abschläge bezahlt) */
+F.action("offar",function(id){
+  var o=offById(id); if(!o) return;
+  F.modal('<form data-form="offar" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">Abschlagsrechnung zu '+esc(o.nr||"Angebot")+'</h2>'+F.btnClose()+'</div><p style="margin:0">'+esc(o.contact||"")+' · Angebot '+eur(o.gross)+' brutto</p>'+
+    '<div class="grid2"><label class="fl">Prozent<input class="f num" name="percent" type="number" step="0.1" min="0" max="100" value="50"></label><label class="fl">oder Betrag brutto (€)<input class="f num" name="amount" type="number" step="0.01" min="0" placeholder="leer = Prozent"></label></div>'+
+    '<p class="muted" style="margin:0;font-size:13px">USt auf Anzahlungen ist mit Zahlungseingang fällig (Mindest-Istbesteuerung) – das berücksichtigt die UVA automatisch. Die Schlussrechnung zieht alle bezahlten Abschläge ab.</p>'+
+    '<div class="foot"><span class="err" id="offArErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Entwurf erstellen</button></span></div></form>',"narrow");
+});
+F.form("offar",function(f){ var id=f.getAttribute("data-id"), amt=+f.amount.value||0, pct=amt?0:(+f.percent.value||0), err=document.getElementById("offArErr");
+  F.api("/admin/api/fin/partial",{body:{confirm:true,orderId:id,percent:pct,amount:amt}}).then(function(j){ if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; } F.closeModal(); F.toast("Abschlagsrechnung als Entwurf angelegt"); F.offersLoad(true); F.load(true); F.UI.fin="invd:"+j.result.id; F.go("geld"); }); });
+F.action("offer",function(id){
+  var o=offById(id); if(!o) return;
+  F.confirm("Schlussrechnung zu "+(o.nr||"dem Angebot")+" erstellen? Alle Positionen des Angebots, abzüglich der bezahlten Abschlagsrechnungen.","Schlussrechnung erstellen",function(){
+    F.api("/admin/api/fin/final",{body:{confirm:true,orderId:id}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Schlussrechnung als Entwurf angelegt"); F.offersLoad(true); F.load(true); F.UI.fin="invd:"+j.result.id; F.go("geld"); });
+  });
+});
 F.action("offinv",function(id){
   var o=offById(id); if(!o) return;
-  F.confirm("Aus "+(o.nr||"dem Angebot")+" ("+eur(o.gross)+") eine Rechnung als Entwurf in sevDesk erstellen?","Rechnung erstellen",function(){
-    offPost("/admin/api/sevdesk/offer-invoice",{id:id},"Rechnungsentwurf aus "+(o.nr||"Angebot")+" angelegt").then(function(j){ if(j){ F.load(true); if(j.id) F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt",false,"In sevDesk öffnen",function(){ window.open(F.SEVURL+"/fi/detail/type/RE/id/"+encodeURIComponent(j.id),"_blank","noopener"); }); } });
+  F.confirm("Aus "+(o.nr||"dem Angebot")+" ("+eur(o.gross)+") eine Rechnung als Entwurf erstellen?","Rechnung erstellen",function(){
+    offPost("/admin/api/sevdesk/offer-invoice",{id:id},"Rechnungsentwurf aus "+(o.nr||"Angebot")+" angelegt").then(function(j){ if(j){ F.load(true); if(j.id) F.toast("Rechnungsentwurf angelegt",false,"Öffnen",function(){ F.UI.fin="invd:"+j.id; F.go("geld"); }); } });
   });
 });
 F.openOffer=function(pre){ F.openInvoice(Object.assign({kind:"offer",title:"Neues Angebot",header:"Angebot"},pre||{})); };
