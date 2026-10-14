@@ -784,6 +784,10 @@ async function sevKey() {
   return SEV.key;
 }
 async function sev(method, path, opts) {
+  if (FIN_STATE.local) return FIN_LOCAL.request(method, path, opts || {});
+  return sevRemote(method, path, opts);
+}
+async function sevRemote(method, path, opts) {
   opts = opts || {};
   const key = await sevKey(); if (!key) { const e = new Error("sevdesk_not_configured"); e.status = 503; throw e; }
   const qs = opts.query ? new URLSearchParams(opts.query).toString() : "";
@@ -1119,7 +1123,17 @@ async function sevVoucherFromMail(pl) {
   return { id: String(v.id || ""), filename: fname };
 }
 function sevBody(req, max) { return new Promise((resolve, reject) => { let b = ""; req.on("data", c => { b += c; if (b.length > (max || 200000)) { req.destroy(); reject(new Error("too_large")); } }); req.on("end", () => { try { resolve(JSON.parse(b || "{}")); } catch (e) { reject(new Error("bad_json")); } }); }); }
-const FIN = require("./fin.js")({ sev, sevAll });
+const FIN = require("./fin.js")({ sev: sevRemote, sevAll });
+// Eigene Buchhaltung: Firmendaten (für PDF/Fußzeile) und Betriebsart („local“ = ohne sevDesk, alle Anfragen gehen an fin-local.js)
+const FIN_STATE = { local: false, firm: null };
+const FIN_PDF = require("./fin-pdf.js")({ firm: () => FIN_STATE.firm });
+const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
+  mailSend: async (m) => {
+    if (!MAIL.url || !MAIL.token) throw new Error("Mailserver nicht eingerichtet");
+    const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, m)) });
+    const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
+  } });
+(async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); const m = await FIN.getMeta("mode"); FIN_STATE.local = !!(m && m.local); FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
 const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook,
   snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
 
@@ -2267,6 +2281,19 @@ async function handleAdmin(req, res, u, p) {
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   // ---- sevDesk im Cockpit: Rechnung abschließen, Bank, Belege, Kontakte, Artikel ----
+  if (p === "/admin/api/fin/mode" || p === "/admin/api/fin/firm") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (req.method === "GET") return J(200, { ok: true, local: FIN_STATE.local, firm: FIN_STATE.firm || null, sevdeskKey: !!(SEV.key || (await sevKey().catch(() => ""))) });
+      const pl = await sevBody(req, 20000);
+      if (p === "/admin/api/fin/firm") { const f = {}; ["name", "owner", "street", "zip", "city", "country", "phone", "email", "web", "bank", "iban", "bic", "uid", "taxNumber", "court", "contactPerson"].forEach(k => { f[k] = String(pl[k] || "").slice(0, 200); }); await FIN.setMeta("firm", f); FIN_STATE.firm = f; return J(200, { ok: true, firm: f }); }
+      if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      await FIN.setMeta("mode", { local: !!pl.local, at: new Date().toISOString() }); FIN_STATE.local = !!pl.local;
+      if (FIN_STATE.local) await FIN_LOCAL.load(true);
+      SEV_CACHE.at = 0; SEV_META.at = 0; OFFERS_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+      return J(200, { ok: true, local: FIN_STATE.local });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (p.indexOf("/admin/api/fin/") === 0) return FIN.handle(req, res, u, p, send, (r) => sevBody(r, 20000));
   if (p.indexOf("/admin/api/sev/") === 0) {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });

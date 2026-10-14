@@ -66,7 +66,7 @@ module.exports = function (D) {
     ["Invoice", {}], ["InvoicePos", {}], ["CreditNote", {}], ["CreditNotePos", {}], ["Order", {}], ["OrderPos", {}],
     ["Voucher", {}], ["VoucherPos", {}],
     ["CheckAccount", {}], ["CheckAccountTransaction", {}], ["CheckAccountTransactionLog", {}],
-    ["DocumentFolder", {}], ["Document", {}], ["SevSequence", {}],
+    ["DocumentFolder", {}], ["Document", {}], ["SevSequence", {}], ["SevClient", {}],
   ];
   const JOB = { running: false, phase: "", done: 0, total: 0, counts: {}, files: { ok: 0, fail: 0, skip: 0 }, errors: [], startedAt: null, finishedAt: null, docPath: null };
   function log(msg) { JOB.errors.push(String(msg).slice(0, 300)); if (JOB.errors.length > 200) JOB.errors.shift(); console.log("fin-import:", msg); }
@@ -78,7 +78,14 @@ module.exports = function (D) {
     try {
       for (const [type, q] of ENTITIES) {
         JOB.phase = "Lade " + type;
-        try { const arr = await sevAll("/" + type, q, 200000); JOB.counts[type] = await putObjs(type, arr); }
+        try {
+          let arr = await sevAll("/" + type, q, 200000);
+          if (type === "Order") {   // sevDesk liefert ohne Typ nicht alle Angebote/Aufträge/Lieferscheine – je Typ nachladen
+            const seen = new Set(arr.map(o => String(o.id)));
+            for (const ot of ["AN", "AB", "LI"]) { try { (await sevAll("/Order", { orderType: ot }, 200000)).forEach(o => { if (!seen.has(String(o.id))) { seen.add(String(o.id)); arr.push(o); } }); } catch (e) {} }
+          }
+          JOB.counts[type] = await putObjs(type, arr);
+        }
         catch (e) { JOB.counts[type] = "–"; log(type + ": " + (e.status || "") + " " + (e.message || e)); }
         JOB.done++;
       }
@@ -148,6 +155,11 @@ module.exports = function (D) {
         importAll({ noFiles: !!pl.noFiles }).catch(e => log(e.message));
         return J(200, { ok: true, started: true });
       }
+      if (p === "/admin/api/fin/obj" && req.method === "GET") {   // Einsicht in übernommene Rohdaten (nur Admin)
+        await init(); const t = u.searchParams.get("type") || "", id = u.searchParams.get("id"), qq = u.searchParams.get("q") || "";
+        const r = id ? await db().query("select data from fin_obj where type=$1 and id=$2", [t, id]) : await db().query("select data from fin_obj where type=$1 and ($2 = '' or data::text ilike '%' || $2 || '%') order by updated_at desc limit 5", [t, qq]);
+        return J(200, { ok: true, objects: r.rows.map(x => x.data) });
+      }
       if (p === "/admin/api/fin/file" && req.method === "GET") {
         const f = await getFile(u.searchParams.get("kind") || "pdf", u.searchParams.get("type") || "Invoice", u.searchParams.get("id") || "");
         if (!f) return send(res, 404, "Datei nicht vorhanden", "text/plain; charset=utf-8");
@@ -157,5 +169,5 @@ module.exports = function (D) {
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
     return J(404, { ok: false, error: "not_found" });
   }
-  return { init, handle, status, db, getFile, putObjs, setMeta, getMeta };
+  return { init, handle, status, db, getFile, putFileRaw: putFile, putObjs, setMeta, getMeta };
 };
