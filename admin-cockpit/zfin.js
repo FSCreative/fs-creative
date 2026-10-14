@@ -86,7 +86,9 @@ function sevOk(){ return !!(F.D&&F.D.sev); }
 function noSev(){ return '<div class="notice">Die Buchhaltung antwortet gerade nicht. <button class="btn" data-act="reload">Neu laden</button></div>'; }
 
 /* ---------- Übersicht (Dashboard wie sevDesk) ---------- */
-function vouLoad(){ var y=String(F.D.year); if(C.vou[y]||C.busy["v"+y]) return; C.busy["v"+y]=1; F.api("/admin/api/sev/vouchers?year="+y).then(function(j){ C.busy["v"+y]=0; C.vou[y]=j||{ok:false}; F.render(); }); }
+function vouLoad(){ var y=String(F.D.year); if(C.vou[y]||C.busy["v"+y]) return; C.busy["v"+y]=1;
+  var fail=function(){ C.busy["v"+y]=0; C.vouErr=(C.vouErr||0)+1; if(C.vouErr<6) setTimeout(function(){ vouLoad(); },C.vouErr*4000); else { C.vou[y]={ok:false}; F.render(); } };
+  F.api("/admin/api/sev/vouchers?year="+y).then(function(j){ if(!j||!j.ok) return fail(); C.busy["v"+y]=0; C.vouErr=0; C.vou[y]=j; F.render(); }).catch(fail); }
 function pageDash(){
   if(!sevOk()) return noSev();
   var sev=F.D.sev, y=String(F.D.year); vouLoad();
