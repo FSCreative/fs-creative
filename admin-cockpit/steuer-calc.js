@@ -518,7 +518,8 @@ function assetInfo(v,st){
   var c=docCfg(st,v.id); if(!c.asset) return null;
   var ls=lines(v), ahk=0; ls.forEach(function(l){ var cl=inClass(v,l,st); ahk+=l.net+((cl==="none"||cl==="fx"||cl==="rcnv")?l.tax:0)+(cl==="rcnv"?l.net*0.2:0); });
   ahk=r2(Math.abs(ahk)); if(num(c.ahk)>0) ahk=r2(num(c.ahk));   // eigener Anlagenwert (z. B. nur ein Teil des Belegs ist die Anlage)
-  var pkw=!!c.pkw, epkw=!!c.epkw, nd=Math.max(1,parseInt(c.nd,10)||3); if(pkw&&nd<C.pkwMinNd) nd=C.pkwMinNd;
+  // Pkw: mind. 8 Jahre (§ 8 Abs. 6 Z 1 EStG); gebrauchter Pkw: Restnutzungsdauer = 8 Jahre minus Zeit seit Erstzulassung (EStR Rz 3240)
+  var pkw=!!c.pkw, epkw=!!c.epkw, nd=Math.max(1,parseInt(c.nd,10)||3); if(pkw&&!c.used&&nd<C.pkwMinNd) nd=C.pkwMinNd;
   var start=c.start||v.date||"", sy=+start.slice(0,4), half=+start.slice(5,7)>6;
   var method=c.method==="deg"&&(!pkw||epkw)&&!c.used?"deg":"lin", degRate=Math.min(C.degMax,Math.max(1,num(c.degRate)||C.degMax))/100;
   var abg=c.abgang||"", ay=abg?+abg.slice(0,4):0, aHalf1=abg?(+abg.slice(5,7)<=6):false;
