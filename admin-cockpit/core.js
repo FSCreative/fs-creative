@@ -127,7 +127,7 @@ FSC.render = function(){
   var html; try{ html='<div class="view view-'+v.id+'">'+v.render()+'</div>'; }catch(e){ html='<div class="loading">Fehler beim Anzeigen: '+FSC.esc(e.message)+'</div>'; console.error(e); }
   /* Unveränderter Inhalt: DOM nicht anfassen (keine Sprünge, Eingaben bleiben) */
   if(samev&&html===FSC._lastHtml&&main.firstChild){ if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh(); return; }
-  FSC._lastView=v.id; FSC._lastHtml=html;
+  FSC._lastView=v.id; FSC._lastHtml=html; document.body.setAttribute("data-view",v.id);
   var inner=FSC.scrollSnap(main);
   main.innerHTML=html; try{ if(v.after) v.after(); }catch(e){ console.error(e); }
   if(keep){ var q=main.querySelector('[data-keepfocus="'+keep+'"]'); if(q){ q.focus({preventScroll:true}); try{ q.setSelectionRange(selS,selS); }catch(e){} } }
