@@ -956,6 +956,7 @@ async function sevCreateInvoice(pl) {
   if (rule) { body.invoice.taxRule = { id: rule, objectName: "TaxRule" }; delete body.invoice.taxType; }
   else if (pl.taxType === "custom" && /^\d+$/.test(String(pl.taxSet || ""))) { body.invoice.taxType = "custom"; body.invoice.taxSet = { id: String(pl.taxSet), objectName: "TaxSet" }; }   // Update 1.0: eigene Steuerregel (z. B. Reverse Charge) beim Bearbeiten erhalten
   if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDateUntil || "") && pl.deliveryDateUntil !== delivery) body.invoice.deliveryDateUntil = sevDateDE(pl.deliveryDateUntil);
+  body.invoice.reference = String(pl.reference || "").trim().slice(0, 60);   // eigene Referenz (rechts oben auf dem PDF), leer = automatisch
   if (pl.id) await SEV_OPS.invoiceUpdateBody(pl, body);   // Entwurf bearbeiten: gleiche Rechnung, Positionen ersetzen
   const j = await sev("POST", "/Invoice/Factory/saveInvoice", { body, timeout: 40000 });
   const invo = j && j.objects && (j.objects.invoice || j.objects) || {};

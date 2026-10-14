@@ -196,7 +196,7 @@ F.action("sddraft",function(id){
 F.action("sdedit",function(id){
   var i=S.det[id]; if(!i) return;
   F.closeDrawer();
-  var pre={id:i.id,title:"Entwurf bearbeiten · "+(i.contact.name||""),contactName:i.contact.name,contactId:i.contact.id,email:"",address:i.address,invoiceDate:i.date,deliveryDate:i.delivery,deliveryDateUntil:i.deliveryUntil||"",headText:String(i.headText||"").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g,""),footText:i.footText,timeToPay:String(i.timeToPay||""),
+  var pre={id:i.id,title:"Entwurf bearbeiten · "+(i.contact.name||""),contactName:i.contact.name,contactId:i.contact.id,email:"",address:i.address,invoiceDate:i.date,deliveryDate:i.delivery,deliveryDateUntil:i.deliveryUntil||"",reference:i.reference||"",headText:String(i.headText||"").replace(/<br\s*\/?>/gi,"\n").replace(/<[^>]+>/g,""),footText:i.footText,timeToPay:String(i.timeToPay||""),
     items:i.positions.map(function(p){ return {name:p.name,text:p.text,qty:p.qty,priceGross:p.priceGross,taxRate:p.taxRate}; }),onDone:function(){ setTimeout(function(){ openInv(id); },400); }};
   if(i.taxRule) pre.taxRule=i.taxRule; if(i.taxType==="custom"&&i.taxSet){ pre.taxType="custom"; pre.taxSet=i.taxSet; }
   F.openInvoice(pre);

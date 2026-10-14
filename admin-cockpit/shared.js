@@ -19,6 +19,7 @@ F.openInvoice=function(pre){
     (offer?'<label class="fl">Angebotsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Gültig bis<input class="f" name="valid" type="date" value="'+esc(pre.validUntil||F.addDays(pre.invoiceDate||today,30))+'"></label></div>'+
       '<label class="fl">Betreff<input class="f" name="header" value="'+esc(pre.header||"Angebot")+'"></label>'
     :'<label class="fl">Rechnungsdatum<input class="f" name="date" type="date" value="'+esc(pre.invoiceDate||today)+'"></label><label class="fl">Leistungsdatum<input class="f" name="delivery" type="date" value="'+esc(pre.deliveryDate||today)+'"></label></div>')+
+    (offer?'':'<label class="fl">Referenz <span class="muted small">(optional – steht rechts oben unter der Rechnungsnummer, z. B. Bestell- oder Projektnummer; leer = automatisch)</span><input class="f" name="reference" maxlength="60" value="'+esc(pre.reference||"")+'"></label>')+
     '<label class="fl">Adresse<textarea class="f" name="address" rows="2" placeholder="Name, Straße, PLZ Ort">'+esc(pre.address||pre.contactName||"")+'</textarea></label>'+
     '<label class="fl">Einleitungstext<textarea class="f" name="head" rows="2">'+esc(pre.headText||"")+'</textarea></label>'+
     '<div><div class="sec-t">Positionen</div><div id="irows" style="display:grid;gap:10px">'+((pre.items&&pre.items.length?pre.items:[{}]).map(irow).join(""))+'</div><button type="button" class="link" data-addrow>+ Position</button></div>'+
@@ -45,7 +46,7 @@ F.form("invoice",function(form){
   if(!contact){ err.textContent="Bitte einen Kunden angeben."; return; }
   if(!items.length){ err.textContent="Bitte mindestens eine Position mit Bezeichnung und Preis angeben."; return; }
   if(INVCTX&&INVCTX.kind==="offer") return saveOffer(form,items,contact,err,btn);
-  var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),items:items};
+  var body={contactName:contact,email:form.email.value.trim(),address:form.address.value.trim()||contact,invoiceDate:form.date.value,deliveryDate:form.delivery.value,headText:form.head.value.trim(),reference:form.reference?form.reference.value.trim():"",items:items};
   if(INVCTX) ["taxRule","footText","timeToPay","deliveryDateUntil","country","uid","taxType","taxSet","id"].forEach(function(k){ if(INVCTX[k]) body[k]=INVCTX[k]; });
   if(INVCTX&&INVCTX.contactId&&INVCTX.contactName===contact) body.contactId=INVCTX.contactId;
   var editing=!!body.id, lblSave=editing?"Änderungen speichern":"Entwurf anlegen";   /* z. B. von der KI (Reverse Charge, Fußtext) */

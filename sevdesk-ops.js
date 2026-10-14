@@ -44,7 +44,7 @@ module.exports = function (D) {
     let due = null; if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
     const gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount);
     return { id, nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, statusLabel: INV_STATUS[status] || String(status),
-      date, delivery: sevDay(o.deliveryDate), deliveryUntil: sevDay(o.deliveryDateUntil), due, timeToPay: parseInt(o.timeToPay, 10) || 0,
+      date, delivery: sevDay(o.deliveryDate), deliveryUntil: sevDay(o.deliveryDateUntil), reference: o.reference || "", due, timeToPay: parseInt(o.timeToPay, 10) || 0,
       header: o.header || "", headText: String(o.headText || ""), footText: String(o.footText || ""), address: String(o.address || ""),
       contact: { id: contactId, name: sevName(c) }, emails, positions,
       net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open: (status === 200 || status === 750) ? Math.max(0, r2(gross - paid)) : 0,
