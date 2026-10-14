@@ -2334,6 +2334,17 @@ async function handleAdmin(req, res, u, p) {
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   // ---- sevDesk im Cockpit: Rechnung abschließen, Bank, Belege, Kontakte, Artikel ----
+  // Festschreiben wie sevDesk: Zeitraum + Dokumentarten (nicht umkehrbar) und Einstellung „automatisch bei Fertigstellung“
+  if (p === "/admin/api/fin/enshrine" || p === "/admin/api/fin/settings") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung (Umstieg) verfügbar" });
+      if (req.method === "GET") { const st = FIN_LOCAL.get("FinSetting", "1") || {}; const open = {}; [["Invoice", "invoiceDate", 200], ["Voucher", "voucherDate", 100], ["CreditNote", "creditNoteDate", 200], ["CheckAccountTransaction", "valueDate", 200]].forEach(([t, f, m]) => { const l = FIN_LOCAL.all(t).filter(o => !o.enshrined && (+o.status || 0) >= m); open[t] = { count: l.length, oldest: l.map(o => String(o[f] || "").slice(0, 10)).filter(Boolean).sort()[0] || null }; }); return J(200, { ok: true, autoEnshrine: st.autoEnshrine !== false, open }); }
+      const pl = await sevBody(req, 20000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const r = p === "/admin/api/fin/settings" ? await FIN_LOCAL.request("POST", "/Fin/settings", { body: { autoEnshrine: pl.autoEnshrine !== false } }) : await FIN_LOCAL.request("POST", "/Fin/enshrinePeriod", { body: { from: pl.from, to: pl.to, types: pl.types } });
+      SEV_CACHE.at = 0; return J(200, { ok: true, result: r.objects });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (p === "/admin/api/fin/mode" || p === "/admin/api/fin/firm") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {

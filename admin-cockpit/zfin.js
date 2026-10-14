@@ -41,6 +41,7 @@ var NAV=[
   {id:"ct",label:"Kontakte",icon:"ct"},
   {id:"prod",label:"Produkte",icon:"prod"},
   {id:"abgl",label:"Abgleich Plattformen",icon:"sync"},
+  {id:"lock",label:"Festschreiben",icon:"lock"},
   {id:"umstieg",label:"Umstieg & Firma",icon:"set"}
 ];
 function groupOf(p){ for(var i=0;i<NAV.length;i++){ var n=NAV[i]; if(n.id===p) return n.id; if(n.sub&&n.sub.some(function(s){return s[0]===p;})) return n.id; } return p; }
@@ -150,8 +151,8 @@ function pageInvDetail(id){
   var more=[];
   if(draft){ more.push(["sdedit:"+id,"Bearbeiten"]); more.push(["sdsent:"+id,"Als versendet markieren"]); }
   if(open||st===1000){ more.push(["sdsend:"+id,"Per E-Mail senden"]); }
-  if(open&&d.type==="RE"){ more.push(["sdremind:"+id,"Mahnung erstellen"]); if(!(d.paid>0)&&!d.enshrined) more.push(["sddraft:"+id,"Zurück auf Entwurf"]); }
-  if((open||st===1000)&&d.type==="RE") more.push(["sdcancel:"+id,"Stornieren"]);
+  if(open&&d.type==="RE"){ more.push(["sdremind:"+id,"Mahnung erstellen"]); if(st===200&&!(d.paid>0)&&!d.enshrined) more.push(["sddraft:"+id,"Zurück auf Entwurf"]); }
+  if(st===200&&d.type==="RE"&&!i0.cancelled) more.push(["sdcancel:"+id,"Stornieren"]);
   var main=draft?'<button class="btn primary" data-act="sdsend:'+esc(id)+'">Per E-Mail senden</button>':(open?'<button class="btn primary" data-act="book:'+esc(id)+'">Als bezahlt markieren</button>':'');
   var pos=(d.positions||[]).map(function(p){ return '<tr><td>'+esc(p.name)+(p.text?'<div class="sub">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("");
   var ids=(F.D.sev.invoices||[]).map(function(x){return x.id;}), ix=ids.indexOf(id), prev=ix>0?ids[ix-1]:"", next=ix>-1&&ix<ids.length-1?ids[ix+1]:"";
@@ -175,8 +176,9 @@ F.action("finmore",function(id,el){
   var st=d.status, draft=st===100, open=st===200||st===750;
   if(draft){ acts.push(["Bearbeiten","sdedit"]); acts.push(["Als versendet markieren","sdsent"]); }
   if(open||st===1000) acts.push(["Per E-Mail senden","sdsend"]);
-  if(open&&d.type==="RE"){ acts.push(["Mahnung erstellen","sdremind"]); if(!(d.paid>0)&&!d.enshrined) acts.push(["Zurück auf Entwurf","sddraft"]); }
-  if((open||st===1000)&&d.type==="RE") acts.push(["Stornieren","sdcancel",1]);
+  if(open&&d.type==="RE"){ acts.push(["Mahnung erstellen","sdremind"]); if(st===200&&!(d.paid>0)&&!d.enshrined) acts.push(["Zurück auf Entwurf","sddraft"]); }
+  var i1=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{};
+  if(st===200&&d.type==="RE"&&!i1.cancelled) acts.push(["Stornieren","sdcancel",1]);
   var r=el.getBoundingClientRect();
   if(F.M&&F.M.ctx) F.M.ctx(r.left,r.bottom+4,acts.map(function(a){ return {label:a[0],danger:!!a[2],act:function(){ delete DET[id]; F.actions[a[1]](id); }}; }));
 });
@@ -230,6 +232,29 @@ function pageBank(mode){
 F.action("ftxassign",function(id){ var st=F.sevState; if(st&&st.bank&&st.bank.ok&&st.bank.transactions.some(function(t){return t.id===id;})){ F.actions.sdbkother(id); return; }
   F.toast("Lade Vorschläge …"); F.api("/admin/api/sev/bank").then(function(j){ if(st) st.bank=j; if(j&&j.ok&&j.transactions.some(function(t){return t.id===id;})) F.actions.sdbkother(id); else F.toast("Umsatz ist nicht mehr offen",true); }); });
 
+
+/* ---------- Festschreiben (wie sevDesk: Einstellungen → System → Festschreiben) ---------- */
+var LK=null;
+function lkLoad(){ if(C.busy.lk) return; C.busy.lk=1; F.api("/admin/api/fin/settings").then(function(j){ C.busy.lk=0; LK=j||{ok:false}; F.render(); }); }
+function pageLock(){
+  if(!LK){ lkLoad(); return head("Festschreiben","")+'<div class="sd-empty">Lade …</div>'; }
+  if(!LK.ok) return head("Festschreiben","")+'<div class="notice">'+esc(LK.error||"Nicht verfügbar")+'</div>';
+  var y=String(F.D.year), T=[["Invoice","Rechnungen"],["Voucher","Belege"],["CreditNote","Gutschriften"],["CheckAccountTransaction","Zahlungen"]];
+  return head("Festschreiben","Festgeschriebene Dokumente können nicht mehr geändert oder gelöscht werden – Korrektur nur per Storno, Gutschrift oder Gegenbuchung. Nicht umkehrbar.")+
+    '<section class="fsd-card"><div class="fsd-ctitle">Automatisch</div><label style="display:flex;gap:10px;align-items:center;font-size:14px;margin-top:8px"><input type="checkbox" data-lkauto="1"'+(LK.autoEnshrine?" checked":"")+'> Rechnungen bei Fertigstellung (Versand, Download, „als versendet“) automatisch festschreiben</label><p class="muted" style="font-size:12.5px;margin:8px 0 0">Empfohlen (GoBD/BAO). Gilt nur für Ausgangsrechnungen – Belege, Gutschriften und Zahlungen schreibst du unten je Zeitraum fest.</p></section>'+
+    '<section class="fsd-card"><div class="fsd-ctitle">Noch nicht festgeschrieben</div><dl class="fsd-rows" style="margin:0">'+T.map(function(t){ var o=LK.open[t[0]]||{}; return '<div><dt>'+t[1]+'</dt><dd>'+(o.count||0)+(o.oldest?' <span class="muted">seit '+de(o.oldest)+'</span>':'')+'</dd></div>'; }).join("")+'</dl></section>'+
+    '<form class="fsd-card" data-form="finlock"><div class="fsd-ctitle">Zeitraum festschreiben</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:12px 0"><label class="fl">Von<input class="f" type="date" name="from" value="'+y+'-01-01"></label><label class="fl">Bis<input class="f" type="date" name="to" value="'+lastMonthEnd()+'"></label></div>'+
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px">'+T.map(function(t){ return '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="t" value="'+t[0]+'" checked> '+t[1]+'</label>'; }).join("")+'</div>'+
+    '<p class="muted" style="font-size:12.5px">Entwürfe werden nicht festgeschrieben. Später im Zeitraum erfasste Dokumente musst du erneut festschreiben (wie bei sevDesk). Empfehlung: monatlich, spätestens mit der UVA.</p><div style="display:flex;justify-content:flex-end"><button class="btn primary" type="submit">Festschreiben …</button></div></form>';
+}
+function lastMonthEnd(){ var d=new Date(F.D.today+"T12:00:00"); d.setDate(0); return d.toISOString().slice(0,10); }
+F.listen("change","[data-lkauto]",function(el){ F.api("/admin/api/fin/settings",{body:{confirm:true,autoEnshrine:el.checked}}).then(function(j){ if(j&&j.ok){ F.toast(el.checked?"Automatisches Festschreiben an":"Automatisches Festschreiben aus"); LK=null; F.render(); } else F.toast((j&&j.error)||"Fehler",true); }); });
+F.form("finlock",function(f){
+  var types=[].slice.call(f.querySelectorAll('input[name=t]:checked')).map(function(x){return x.value;}); if(!types.length){ F.toast("Bitte Dokumentart wählen",true); return; }
+  F.confirm("Alle fertigen Dokumente vom "+de(f.from.value)+" bis "+de(f.to.value)+" festschreiben? Das lässt sich nicht rückgängig machen.","Festschreiben",function(){
+    F.api("/admin/api/fin/enshrine",{body:{confirm:true,from:f.from.value,to:f.to.value,types:types}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } var r=j.result||{}, n=Object.keys(r).reduce(function(a,k){return a+r[k];},0); F.toast(n+" Dokumente festgeschrieben"); LK=null; F.load(true); });
+  },true);
+});
 /* ---------- Ansicht registrieren: ersetzt „Finanzen“ ---------- */
 function pageTab(id){ var t=(F.geldTabs||[]).find(function(x){return x.id===id;}); if(!t) return '<div class="sd-empty">Nicht verfügbar.</div>'; var prev=UI.geldTab; UI.geldTab=id; try{ return head(t.label,t.sub||"","")+t.render(); } finally { UI.geldTab=prev; } }
 function pageAbgl(){ var prev=UI.geldTab; UI.geldTab="uebersicht"; try{ var v=F.views.find(function(x){return x.id==="geld";}); return F._geldOrig?F._geldOrig.call(v):""; } finally { UI.geldTab=prev; } }
@@ -249,10 +274,11 @@ function content(){
   if(p==="prod"){ F.UI.stT="artikel"; return pageTab("stamm"); }
   if(p==="uva"||p==="u1"||p==="jab"||p==="prognose"||p==="umstieg") return p==="prognose"?head("Jahresprognose","")+(F.renderPrognose?F.renderPrognose():pageTab("prognose")):pageTab(p);
   if(p==="abgl") return pageAbgl();
+  if(p==="lock") return pageLock();
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["orders","Angebote"],["uva","Steuern"],["ct","Kontakte"],["prod","Produkte"],["cn","Gutschriften"],["abgl","Abgleich"],["umstieg","Umstieg"]];
+var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["orders","Angebote"],["uva","Steuern"],["ct","Kontakte"],["prod","Produkte"],["cn","Gutschriften"],["abgl","Abgleich"],["lock","Festschreiben"],["umstieg","Umstieg"]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="kasse"||g==="open") g="bank"; if(g==="u1"||g==="jab"||g==="prognose") g="uva";
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+'</button>'; }).join("")+'</nav>'; }
 function scanInput(cls,label){ return '<label class="'+cls+'">'+ic("cam")+(label?'<span>'+label+'</span>':'')+'<input type="file" class="fsd-scan" accept="image/*,application/pdf" capture="environment" multiple hidden></label>'; }
@@ -290,7 +316,7 @@ function mInvDetail(id){
   var b=[]; if(draft){ b.push(["sdsend","Per E-Mail senden",1]); b.push(["sdedit","Bearbeiten"]); b.push(["sdsent","Als versendet markieren"]); }
   if(open){ b.push(["book","Als bezahlt markieren",1]); b.push(["sdsend","Per E-Mail senden"]); if(d.type==="RE") b.push(["sdremind","Mahnung erstellen"]); }
   if(st===1000) b.push(["sdsend","Per E-Mail senden"]);
-  if((open||st===1000)&&d.type==="RE") b.push(["sdcancel","Stornieren"]);
+  if(st===200&&d.type==="RE"&&!i0.cancelled) b.push(["sdcancel","Stornieren"]);
   var row=function(k,v){ return '<div><dt>'+k+'</dt><dd>'+v+'</dd></div>'; };
   return '<div class="fsm-dh"><button type="button" class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><b>'+esc(d.nr||"Entwurf")+'</b></div>'+
     '<section class="fsm-card"><div class="fsm-top"><div><b>'+esc(d.contact.name||"")+'</b><span>'+de(d.date)+'</span></div>'+invPill(Object.assign({},i0,{status:st}))+'</div><div class="fsm-amt">'+eur(d.gross)+'</div>'+(d.open>0.005&&d.paid>0?'<div class="fsm-sub">davon offen '+eur(d.open)+'</div>':'')+'</section>'+

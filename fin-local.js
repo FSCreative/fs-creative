@@ -122,7 +122,8 @@ module.exports = function (D) {
     o = Object.assign(o || { id: newId("Invoice"), status: "100", paidAmount: "0", currency: "EUR", invoiceType: "RE" }, stripMeta(inv));
     if (inv.invoiceDate) o.invoiceDate = iso(dayOf(inv.invoiceDate)); if (inv.deliveryDate) o.deliveryDate = iso(dayOf(inv.deliveryDate)); if (inv.deliveryDateUntil) o.deliveryDateUntil = iso(dayOf(inv.deliveryDateUntil));
     if (!o.invoiceDate) o.invoiceDate = iso(today());
-    if (isNew && !o.invoiceNumber) o.invoiceNumber = await nextNumber("Invoice", o.invoiceType || "RE", "invoiceNumber", INV_PREFIX[o.invoiceType] || "RE-");
+    // wie sevDesk: Entwürfe haben noch keine feste Nummer – vergeben wird sie erst beim Fertigstellen (Versand/Download), in Versandreihenfolge
+    if (isNew && String(o.status) !== "100" && !o.invoiceNumber) await finalize(o, true);
     // Positionen
     (body.invoicePosDelete || []).forEach(p => { if (p && p.id) { const x = get("InvoicePos", p.id); if (x) { C.InvoicePos.delete(String(p.id)); fin.db().query("delete from fin_obj where type='InvoicePos' and id=$1", [String(p.id)]).catch(() => {}); } } });
     const saved = [];
@@ -135,10 +136,34 @@ module.exports = function (D) {
     return { objects: { invoice: o, invoicePos: saved } };
   }
   function stripMeta(x) { const c = Object.assign({}, x); delete c.mapAll; delete c.objectName; delete c.create; delete c.update; return c; }
+  // ── Regeln wie sevDesk (Handbuch): Fertigstellen = feste Nummer + Status offen + (Standard) automatische Festschreibung ──
+  function settings() { return Object.assign({ autoEnshrine: true }, get("FinSetting", "1") || {}); }
+  async function finalize(o, noSave) {
+    if (!o.invoiceNumber) o.invoiceNumber = await nextNumber("Invoice", o.invoiceType || "RE", "invoiceNumber", INV_PREFIX[o.invoiceType] || "RE-");
+    if (String(o.status) === "100") { o.status = "200"; o._dirty = true; }
+    if (settings().autoEnshrine && String(o.invoiceType) !== "MA" && !o.enshrined) o.enshrined = nowIso();
+    if (!noSave) await save("Invoice", o);
+    return o;
+  }
+  // Zeitraum festschreiben (Einstellungen → Festschreiben): Rechnungen ≥ 200, Belege ≥ 100, Gutschriften ≥ 200, Zahlungen ≥ 200 – nicht umkehrbar
+  async function enshrinePeriod(b) {
+    const from = dayOf(b.from), to = dayOf(b.to); if (!from || !to || from > to) throw err(400, "Zeitraum fehlt");
+    const types = Array.isArray(b.types) && b.types.length ? b.types : ["Invoice", "Voucher", "CreditNote", "CheckAccountTransaction"];
+    const DATE = { Invoice: "invoiceDate", Voucher: "voucherDate", CreditNote: "creditNoteDate", CheckAccountTransaction: "valueDate" }, MIN = { Invoice: 200, Voucher: 100, CreditNote: 200, CheckAccountTransaction: 200 };
+    const n = {}, stamp = nowIso();
+    for (const t of types) { if (!DATE[t]) continue; n[t] = 0;
+      for (const o of all(t)) { const d = dayOf(o[DATE[t]]); if (!d || d < from || d > to || o.enshrined || (+o.status || 0) < MIN[t]) continue; o.enshrined = stamp; await save(t, o); n[t]++; } }
+    return { objects: n };
+  }
+  function isLocked(t, o) {
+    if (o.enshrined) return true;
+    // Zahlung zu einer festgeschriebenen Transaktion sperrt das Dokument ebenfalls
+    return all("CheckAccountTransactionLog").some(l => l.object && l.object.objectName === t && String(l.object.id) === String(o.id) && l.checkAccountTransaction && (get("CheckAccountTransaction", l.checkAccountTransaction.id) || {}).enshrined);
+  }
   async function invoiceSendBy(id, b) {
     const o = need("Invoice", id);
     if (b && b.sendDraft) return { objects: o };
-    if (String(o.status) === "100") o.status = "200";
+    await finalize(o, true);
     o.sendDate = nowIso(); o.sendType = (b && b.sendType) || "VPDF";
     await save("Invoice", o); return { objects: o };
   }
@@ -150,12 +175,12 @@ module.exports = function (D) {
     const buf = await renderPdf(t, o, positionsOf(t, id), { get, all });
     const name = (o.invoiceNumber || o.orderNumber || o.creditNoteNumber || t) + ".pdf";
     // nur abgeschlossene Dokumente als unveränderliches PDF ablegen
-    if (String(o.status) !== "100") await fin.putFileRaw("pdf", t, id, { buf, type: "application/pdf", name });
+    if (String(o.status) !== "100") { await fin.putFileRaw("pdf", t, id, { buf, type: "application/pdf", name }); if (o._dirty) { delete o._dirty; await save(t, o); } }
     return { buf, type: "application/pdf", name };
   }
   async function invoiceSendMail(id, b) {
     const o = need("Invoice", id);
-    if (String(o.status) === "100") { o.status = "200"; await save("Invoice", o); }
+    if (String(o.status) === "100") await finalize(o);
     const pdf = await pdfOf("Invoice", id);
     await mailSend({ to: b.toEmail, cc: b.ccEmail || undefined, bcc: b.bccEmail || undefined, subject: b.subject, html: b.text, copy: !!b.copy,
       attachments: [{ filename: pdf.name, content: pdf.buf.toString("base64"), contentType: "application/pdf" }] });
@@ -180,22 +205,26 @@ module.exports = function (D) {
     o.paidAmount = s2(paid); o.payDate = iso(day);
     o.status = paid >= gross - 0.005 ? "1000" : "750";
     await save(t, o);
+    if (t === "Invoice" && o.status === "1000") for (const m of all("Invoice").filter(x => String(x.invoiceType) === "MA" && x.origin && String(x.origin.id) === String(o.id) && String(x.status) !== "1000")) { m.status = "1000"; m.payDate = iso(day); await save("Invoice", m); }
     const log = { id: newId("CheckAccountTransactionLog"), object: ref(t, o.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: o.status };
     await save("CheckAccountTransactionLog", log);
     return { objects: log };
   }
   async function resetToOpen(t, id) {
-    const o = need(t, id); if (o.enshrined) throw err(400, "Festgeschrieben");
+    const o = need(t, id); if (isLocked(t, o)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung");
     for (const l of all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === t && String(l.object.id) === String(id))) {
       const tx = l.checkAccountTransaction && get("CheckAccountTransaction", l.checkAccountTransaction.id); if (tx) { tx.status = "100"; await save("CheckAccountTransaction", tx); }
       await del("CheckAccountTransactionLog", l.id);
     }
     o.paidAmount = "0"; o.payDate = null; o.status = t === "Voucher" ? "100" : "200"; await save(t, o); return { objects: o };
   }
-  async function resetToDraft(t, id) { const o = need(t, id); if (o.enshrined) throw err(400, "Festgeschrieben"); if (+o.paidAmount > 0) throw err(400, "Bereits bezahlt"); o.status = t === "Voucher" ? "50" : "100"; await save(t, o); return { objects: o }; }
+  async function resetToDraft(t, id) { const o = need(t, id); if (isLocked(t, o)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung"); if (+o.paidAmount > 0) throw err(400, "Bereits bezahlt – zuerst die Zahlung lösen");
+    if (t === "Invoice" && String(o.status) !== "200") throw err(400, "Nur offene Rechnungen können auf Entwurf gesetzt werden"); o.status = t === "Voucher" ? "50" : "100"; await save(t, o); return { objects: o }; }
   async function cancelInvoice(id) {
     const o = need("Invoice", id); if (String(o.invoiceType) === "SR") throw err(400, "Stornorechnung kann nicht storniert werden");
-    const sr = Object.assign({}, o, { id: newId("Invoice"), invoiceType: "SR", invoiceNumber: await nextNumber("Invoice", "RE", "invoiceNumber", "RE-"), invoiceDate: iso(today()), status: "1000", origin: ref("Invoice", o.id), header: "Stornorechnung zu " + (o.invoiceNumber || ""), sendDate: null, enshrined: null });
+    if (o.cancelled) throw err(400, "Bereits storniert");
+    if (String(o.status) !== "200") throw err(400, String(o.status) === "100" ? "Entwürfe werden nicht storniert, sondern gelöscht" : "Bezahlte oder teilbezahlte Rechnungen werden per Gutschrift (Minderleistung) korrigiert, nicht storniert");
+    const sr = Object.assign({}, o, { id: newId("Invoice"), invoiceType: "SR", invoiceNumber: await nextNumber("Invoice", "RE", "invoiceNumber", "RE-"), invoiceDate: iso(today()), status: "1000", origin: ref("Invoice", o.id), header: "Stornorechnung zu " + (o.invoiceNumber || ""), sendDate: null, enshrined: settings().autoEnshrine ? nowIso() : null });
     for (const p of positionsOf("Invoice", id)) { const x = Object.assign({}, p, { id: newId("InvoicePos"), invoice: ref("Invoice", sr.id), quantity: String(-(+p.quantity || 0)) }); posSums(x); await save("InvoicePos", x); }
     docSums(sr, positionsOf("Invoice", sr.id)); sr.paidAmount = sr.sumGross; sr.payDate = iso(today());
     await save("Invoice", sr);
@@ -285,6 +314,7 @@ module.exports = function (D) {
   async function saveVoucher(body) {
     const vb = Object.assign({}, body.voucher || {});
     let o = vb.id ? get("Voucher", vb.id) : null;
+    if (o && isLocked("Voucher", o)) throw err(400, "Festgeschrieben – Korrektur nur per Gegenbeleg (Generalumkehr)");
     o = Object.assign(o || { id: newId("Voucher"), status: "50", paidAmount: "0", currency: "EUR", creditDebit: "C", voucherType: "VOU" }, stripMeta(vb));
     if (vb.voucherDate) o.voucherDate = iso(dayOf(vb.voucherDate)); if (vb.deliveryDate) o.deliveryDate = iso(dayOf(vb.deliveryDate)); if (vb.deliveryDateUntil) o.deliveryDateUntil = iso(dayOf(vb.deliveryDateUntil));
     if (!o.voucherDate) o.voucherDate = iso(today());
@@ -319,7 +349,7 @@ module.exports = function (D) {
   async function create(t, body) { const o = Object.assign({ id: newId(t) }, stripMeta(body || {})); await save(t, o); return { objects: o }; }
   async function update(t, id, body) {
     const o = need(t, id);
-    if ((t === "Invoice" || t === "Voucher") && o.enshrined && Object.keys(body || {}).some(k => k !== "status")) throw err(400, "Festgeschrieben");
+    if (["Invoice", "Voucher", "CreditNote"].indexOf(t) > -1 && isLocked(t, o) && Object.keys(body || {}).some(k => ["status", "dunningLevel", "reminderDeadline"].indexOf(k) < 0)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung");
     Object.assign(o, stripMeta(body || {})); delete o.id; o.id = String(id);
     if (t === "Order" && body && body.status != null) o.status = String(body.status);
     await save(t, o); return { objects: o };
@@ -358,6 +388,8 @@ module.exports = function (D) {
     // Schreiben
     if (method !== "GET") {
       if (p === "/Invoice/Factory/saveInvoice") return saveInvoice(b || {});
+      if (p === "/Fin/enshrinePeriod") return enshrinePeriod(b || {});
+      if (p === "/Fin/settings") { const cur = get("FinSetting", "1") || { id: "1" }; Object.assign(cur, { autoEnshrine: !(b && b.autoEnshrine === false) }); await save("FinSetting", cur); return { objects: settings() }; }
       if (p === "/Invoice/Factory/createInvoiceReminder") return createReminder((b && b.invoice && b.invoice.id) || q["invoice[id]"], { dunningFee: b && b.dunningFee, timeToPay: b && b.timeToPay });
       if (p === "/Invoice/Factory/createInvoiceFromOrder") return invoiceFromOrder(b || {});
       if (p === "/Order/Factory/saveOrder") return saveOrder(b || {});
@@ -372,18 +404,22 @@ module.exports = function (D) {
         if (act === "cancelInvoice") return cancelInvoice(id);
         if (act === "resetToDraft") return resetToDraft("Invoice", id);
         if (act === "resetToOpen") return resetToOpen("Invoice", id);
-        if (act === "enshrine") { const o = need("Invoice", id); o.enshrined = nowIso(); await save("Invoice", o); return { objects: o }; }
+        if (act === "enshrine") { const o = need("Invoice", id); if (+o.status < 200) throw err(400, "Entwürfe können nicht festgeschrieben werden"); if (!o.enshrined) { o.enshrined = nowIso(); await save("Invoice", o); } return { objects: o }; }
       }
       if (T === "Voucher" && id) {
         if (act === "bookAmount") return bookAmount("Voucher", id, b || {});
         if (act === "resetToDraft") return resetToDraft("Voucher", id);
         if (act === "resetToOpen") return resetToOpen("Voucher", id);
-        if (act === "enshrine") { const o = need("Voucher", id); o.enshrined = nowIso(); await save("Voucher", o); return { objects: o }; }
+        if (act === "enshrine") { const o = need("Voucher", id); if (+o.status < 100) throw err(400, "Entwürfe können nicht festgeschrieben werden"); if (!o.enshrined) { o.enshrined = nowIso(); await save("Voucher", o); } return { objects: o }; }
       }
       if (T === "Order" && id && act === "sendBy") { const o = need("Order", id); if (String(o.status) === "100") o.status = "200"; o.sendDate = nowIso(); o.sendType = (b && b.sendType) || "VPDF"; await save("Order", o); return { objects: o }; }
       if (method === "POST" && !id && !act) return create(T, b);
       if (method === "PUT" && id && !act) return update(T, id, b);
-      if (method === "DELETE" && id && !act) { need(T, id); await del(T, id); return { objects: [null] }; }
+      if (method === "DELETE" && id && !act) { const o = need(T, id);
+        if (["Invoice", "Voucher", "CreditNote", "CheckAccountTransaction"].indexOf(T) > -1 && isLocked(T, o)) throw err(400, "Festgeschrieben – kann nicht gelöscht werden");
+        if ((T === "Invoice" || T === "CreditNote") && String(o.status) !== "100") throw err(400, "Nur Entwürfe können gelöscht werden – versendete Rechnungen bitte stornieren");
+        if (T === "CheckAccountTransaction" && String(o.status) !== "100") throw err(400, "Verknüpfte Umsätze können nicht gelöscht werden");
+        await del(T, id); return { objects: [null] }; }
       throw err(400, "Nicht unterstützt: " + method + " " + p);
     }
     // Lesen

@@ -18,7 +18,7 @@ module.exports = function (D) {
     const W = doc.page.width, L = 56, R = W - 56;
     const isOrder = type === "Order", it = String(o.invoiceType || "RE");
     const kind = isOrder ? ({ AN: "Angebot", AB: "Auftragsbestätigung", LI: "Lieferschein" }[o.orderType] || "Angebot") : it === "MA" ? "Zahlungserinnerung" : it === "SR" ? "Stornorechnung" : it === "AR" ? "Abschlagsrechnung" : type === "CreditNote" ? "Gutschrift" : "Rechnung";
-    const nr = o.invoiceNumber || o.orderNumber || o.creditNoteNumber || "";
+    const nr = o.invoiceNumber || o.orderNumber || o.creditNoteNumber || (String(o.status) === "100" ? "Entwurf" : "");
     const contact = o.contact && ctx.get("Contact", o.contact.id);
     // Fußzeile auf jeder Seite
     const footer = () => {
