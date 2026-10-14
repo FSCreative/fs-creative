@@ -177,7 +177,7 @@ module.exports = function (D) {
       if (!v.id) throw new Error("Beleg konnte nicht angelegt werden");
       await sev("PUT", "/Voucher/" + v.id + "/bookAmount", { body: bookBody(amount) });
     } else throw new Error("unbekannte Aktion");
-    invalidate(); VOU_CACHE.at = 0;
+    invalidate(); VOU_CACHE.at = 0; TX_CACHE.at = 0;
     return { ok: true, txId, op };
   }
 
@@ -371,5 +371,24 @@ module.exports = function (D) {
     return { ok: true };
   }
 
-  return { invoiceDetail, invoiceOp, invoiceUpdateBody, mailDefaults, bankOpen, bankOp, vouchers, voucherDoc, voucherOp, contacts, contactSave, parts, partSave };
+  // ── Alle Bankumsätze mit Verknüpfungen (für die Konten-Tabelle wie in sevDesk) ──
+  let TX_CACHE = { at: 0, data: null };
+  async function transactions(force) {
+    if (!force && TX_CACHE.data && Date.now() - TX_CACHE.at < 2 * 60 * 1000) return TX_CACHE.data;
+    const [txs, logs, snap] = await Promise.all([sevAll("/CheckAccountTransaction", {}, 50000), sevAll("/CheckAccountTransactionLog", {}, 50000).catch(() => []), snapshot(false).catch(() => null)]);
+    const invNr = {}; ((snap && snap.invoices) || []).forEach(i => { invNr[i.id] = i.nr || "Entwurf"; });
+    const links = {};
+    logs.forEach(l => { const t = l.checkAccountTransaction && l.checkAccountTransaction.id, o = l.object || {}; if (!t || !o.id) return; (links[String(t)] = links[String(t)] || []).push({ type: o.objectName, id: String(o.id), nr: o.objectName === "Invoice" ? (invNr[o.id] || "Rechnung") : "Beleg", amount: sevNum(l.amountPaid) }); });
+    const list = txs.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), book: sevDay(t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || "").replace(/\s+/g, " ").trim().slice(0, 300), status: parseInt(t.status, 10) || 0,
+      accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "", links: links[String(t.id)] || [] }))
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (+b.id - +a.id));
+    TX_CACHE = { at: Date.now(), data: { ok: true, transactions: list, accounts: (snap && snap.accounts) || [] } };
+    return TX_CACHE.data;
+  }
+  // Gutschriften (CreditNote)
+  async function creditNotes() {
+    const [cn, ct] = await Promise.all([sevAll("/CreditNote", { embed: "contact" }, 20000).catch(() => []), Promise.resolve(null)]);
+    return { ok: true, creditNotes: cn.map(o => ({ id: String(o.id), nr: o.creditNoteNumber || "", date: sevDay(o.creditNoteDate), status: parseInt(o.status, 10) || 0, contact: sevName(o.contact), gross: sevNum(o.sumGross), net: sevNum(o.sumNet), header: o.header || "" })).sort((a, b) => String(b.date).localeCompare(String(a.date))) };
+  }
+  return { invoiceDetail, invoiceOp, invoiceUpdateBody, mailDefaults, bankOpen, bankOp, vouchers, voucherDoc, voucherOp, contacts, contactSave, parts, partSave, transactions, creditNotes };
 };

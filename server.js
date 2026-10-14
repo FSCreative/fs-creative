@@ -865,7 +865,7 @@ async function sevBuild() {
     return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, date, due, delivery: sevDay(o.deliveryDate),
       contact: sevName(o.contact), contactId: o.contact && o.contact.id ? String(o.contact.id) : "", header: o.header || "",
       ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
-      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate,
+      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0,
       overdue: open > 0.005 && !!due && due < today };
   }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
   const accountsRaw = (cas && cas.objects || []).filter(a => String(a.status) !== "0");
@@ -2395,6 +2395,8 @@ async function handleAdmin(req, res, u, p) {
         const nm = String(d.name || "Beleg").replace(/[^\w.\- ]/g, "_");
         return send(res, 200, d.buf, d.type, { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + nm + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
       }
+      if (p === "/admin/api/sev/transactions" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.transactions(force)), TYPES[".json"], { "Cache-Control": "no-store" });
+      if (p === "/admin/api/sev/creditnotes" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.creditNotes()), TYPES[".json"], { "Cache-Control": "no-store" });
       if (p === "/admin/api/sev/contacts" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.contacts(force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (p === "/admin/api/sev/contact" && req.method === "POST") return J(200, await SEV_OPS.contactSave(await sevBody(req)));
       if (p === "/admin/api/sev/parts" && req.method === "GET") return J(200, await SEV_OPS.parts(force));

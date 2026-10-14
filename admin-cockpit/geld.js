@@ -155,6 +155,7 @@ F.listen("click","[data-abg] > summary",function(el){ F.UI.abgOpen=!el.parentNod
 // Dazu kommen Plattform-Einnahmen, die nicht über sevDesk-Rechnungen laufen (Kantineur-Abos, kochdu-Online-Provisionen),
 // und bereits angefallene, aber noch nicht verrechnete Beträge aus dem Abgleich.
 function monthSums(invs,year){ var m=new Array(12).fill(0); invs.forEach(function(i){ if((i.status===200||i.status===750||i.status===1000)&&String(i.date||"").slice(0,4)===String(year)){ var k=parseInt(String(i.date).slice(5,7),10)-1; m[k]+=i.type==="SR"?-Math.abs(i.gross):i.gross; } }); return m; }
+F.renderPrognose=function(){ return renderPrognose(); };
 function renderPrognose(){
   var D=F.D, sev=D.sev, yr=+D.year, now=new Date(), cy=now.getFullYear();
   if(!sev) return '<div class="notice">sevDesk antwortet gerade nicht – die Prognose braucht die Rechnungsdaten.</div>';

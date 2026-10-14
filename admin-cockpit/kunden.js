@@ -15,7 +15,7 @@ var OSTAT={100:["Entwurf","grey"],200:["versendet","info"],300:["abgelehnt","bad
 function offOpen(o){ return o.status===100||o.status===200; }
 F.offersLoad=function(force){
   if(OFF.busy) return Promise.resolve(); OFF.busy=true;
-  return F.api("/admin/api/sevdesk/offers"+(force?"?force=1":"")).then(function(j){ OFF.busy=false; OFF.at=Date.now(); if(j&&j.ok&&Array.isArray(j.offers)){ OFF.list=j.offers; OFF.err=""; } else OFF.err=(j&&j.error)||"Fehler"; if(F.current==="kunden") F.render(); })
+  return F.api("/admin/api/sevdesk/offers"+(force?"?force=1":"")).then(function(j){ OFF.busy=false; OFF.at=Date.now(); if(j&&j.ok&&Array.isArray(j.offers)){ OFF.list=j.offers; OFF.err=""; } else OFF.err=(j&&j.error)||"Fehler"; if(F.current==="kunden"||F.current==="geld") F.render(); })
     .catch(function(){ OFF.busy=false; OFF.at=Date.now(); OFF.err="Keine Verbindung zum Server."; if(F.current==="kunden") F.render(); });
 };
 /* Zuordnung Angebot ↔ Lead über Kontaktname (Firma oder Name), wie bei den Rechnungen */
@@ -33,6 +33,7 @@ function offerRow(o){
     '<td class="r"><span class="row" style="justify-content:flex-end;gap:4px;flex-wrap:wrap"><button class="btn" data-act="offpdf:'+esc(o.id)+'">PDF</button><button class="btn" data-act="offsev:'+esc(o.id)+'" title="In sevDesk öffnen">sevDesk</button>'+
       (o.status<750?'<button class="btn" data-act="offstat:'+esc(o.id)+'">Status</button>':'')+(canInv?'<button class="btn" data-act="offinv:'+esc(o.id)+'">In Rechnung</button>':'')+'</span></td></tr>';
 }
+F.offersPanelHtml=function(){ if(!OFF.list&&!OFF.busy&&!OFF.err) F.offersLoad(false); return offersPanel(); };
 function offersPanel(){
   var f=F.UI.offF||"open", all=OFF.list||[];
   var flt={open:offOpen,acc:function(o){ return o.status>=500; },rej:function(o){ return o.status===300; },all:function(){ return true; }};
