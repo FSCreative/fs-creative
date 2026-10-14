@@ -582,7 +582,7 @@ function renderAnlagen(){
   var cand=vs.filter(function(v){ var c=docCfg(v.id); if(c.asset||c.assetChecked) return false; var n=Math.abs(v.net||0), cs=(v.lines||[]).map(function(l){ return l.cat||""; }).join(" ");
       if(String(v.date||"").slice(0,4)<String(y-1)) return false;                       // ältere Jahre sind abgeschlossen
       if(!(v.lines||[]).some(function(l){ return l.isAsset; })&&RX_NOANL.test(cs)) return false;   // Ware, Miete, Werbung … sind nie Anlagen
-      return n>gwg||(v.lines||[]).some(function(l){ return l.isAsset; })||(n>400&&RX_ANL.test(cs+" "+(v.desc||""))); })
+      return n>gwg; })   // bis 1.000 € (GWG) ist Anlage oder Sofortaufwand steuerlich gleich – nicht nachfragen
     .sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); }).slice(0,60);
   var afaY=r2(assets.reduce(function(a,x){ return a+(x.cur?x.cur.afa:0); },0)), bvSum=r2(active.reduce(function(a,x){ return a+Math.max(0,x.bvEnd); },0)), buyY=r2(assets.filter(function(x){ return x.a.sy===y; }).reduce(function(a,x){ return a+x.a.ahk; },0));
   var kpi=function(l,v,s){ return '<section class="panel st-tile"><div class="panel-b"><div class="k">'+l+'</div><div class="v num money">'+v+'</div><div class="muted small">'+s+'</div></div></section>'; };
@@ -597,7 +597,7 @@ function renderAnlagen(){
       '<div class="row wrap small" style="align-self:end;gap:12px"><label class="row"><input type="checkbox" data-stapc="'+esc(d.id)+':pkw"'+(c.pkw?" checked":"")+'> Pkw</label>'+(c.pkw?'<label class="row"><input type="checkbox" data-stapc="'+esc(d.id)+':epkw"'+(c.epkw?" checked":"")+'> Elektro</label>':'')+'<label class="row"><input type="checkbox" data-stapc="'+esc(d.id)+':used"'+(c.used?" checked":"")+'> gebraucht</label><button class="link" data-act="anlno:'+esc(d.id)+'">doch keine Anlage (Sofortaufwand)</button></div></div>'+
       (a.note?'<div class="notice" style="margin-top:8px">'+esc(a.note)+'</div>':'')+(a.benefit&&/^ifb/.test(a.benefit)&&!a.ifbOk?'<div class="notice" style="margin-top:8px">Investitionsfreibetrag hier nicht zulässig (Nutzungsdauer unter 4 Jahren, GWG, gebraucht oder Pkw).</div>':'')+'</div></td></tr>':'';
     return '<tr class="st-anl'+(done?" done":"")+'" data-act="anlopen:'+esc(d.id)+'"><td><b>'+esc(d.desc||d.supplier||"Anlage")+'</b><div class="sub">'+esc(d.supplier||"")+' · '+deShort(a.start)+(a.gwg?' · GWG':'')+'</div></td><td class="r num">'+eur(a.ahk)+'</td><td>'+a.nd+' J.'+(a.method==="deg"?' deg.':'')+(a.half?'<div class="sub">½ im 1. Jahr</div>':'')+'</td><td class="r num">'+(x.cur?eur(x.cur.afa):'–')+'</td><td class="r num">'+eur(Math.max(0,x.bvEnd))+'</td><td style="width:140px"><div class="st-prog"><i style="width:'+pct+'%"></i></div><div class="sub">'+(done?"abgeschrieben":Math.round(pct)+" % abgeschrieben")+'</div></td><td class="r">'+(open[d.id]?"▴":"▾")+'</td></tr>'+plan; }).join("");
-  var candRows=cand.map(function(v){ return '<tr><td>'+deShort(v.date)+'</td><td><b>'+esc(v.supplier||"Beleg")+'</b><div class="sub">'+esc(v.desc||"")+((v.lines||[])[0]&&v.lines[0].cat?' · '+esc(v.lines[0].cat):'')+'</div></td><td class="r num">'+eur(v.net)+'</td><td class="r"><span class="row" style="justify-content:flex-end;gap:6px"><button class="btn primary" data-act="anlyes:'+esc(v.id)+'">Als Anlage abschreiben</button><button class="btn" data-act="anlnochk:'+esc(v.id)+'">Sofortaufwand</button></span></td></tr>'; }).join("");
+  var candRows=cand.map(function(v){ var g=guessNd(v); return '<tr><td>'+deShort(v.date)+'</td><td><b>'+esc(v.supplier||"Beleg")+'</b><div class="sub">'+esc(v.desc||"")+((v.lines||[])[0]&&v.lines[0].cat?' · '+esc(v.lines[0].cat):'')+'</div></td><td class="r num">'+eur(v.net)+'</td><td class="r"><span class="row" style="justify-content:flex-end;gap:6px"><button class="btn primary" data-act="anlyes:'+esc(v.id)+'|'+g.nd+'|'+(g.pkw?1:0)+'" title="'+esc(g.why)+'">Als Anlage ('+g.nd+' Jahre)</button><button class="btn" data-act="anlnochk:'+esc(v.id)+'">Sofortaufwand</button></span></td></tr>'; }).join("");
   return '<div class="st-ov">'+
     '<div class="st-tiles">'+kpi("Abschreibung "+y,eur(afaY),"mindert deinen Gewinn "+y)+kpi("Restbuchwert Ende "+y,eur(bvSum),active.length+" Anlage"+(active.length===1?"":"n")+" im Einsatz")+kpi("Angeschafft "+y,eur(buyY),"als Anlage erfasst")+'</div>'+
     (cand.length?'<section class="panel"><div class="panel-h"><div><h2>Zu prüfen: '+cand.length+' größere Anschaffung'+(cand.length===1?"":"en")+'</h2><div class="muted">Über 1.000 € netto (oder typische Anlagen) – Anlage mit Abschreibung über mehrere Jahre oder sofort als Ausgabe?</div></div></div><div class="scroll"><table><tbody>'+candRows+'</tbody></table></div></section>':'')+
@@ -611,7 +611,14 @@ function renderAnlagen(){
       '<div><b>Verkauf/Ausscheiden:</b> Datum eintragen – der Restbuchwert wird dann als Ausgabe (Abgang) berücksichtigt.</div></div></details></section></div>';
 }
 F.action("anlopen",function(id){ F.UI.anlOpen=F.UI.anlOpen||{}; F.UI.anlOpen[id]=!F.UI.anlOpen[id]; F.render(); });
-F.action("anlyes",function(id){ F.UI.anlOpen=F.UI.anlOpen||{}; F.UI.anlOpen[id]=true; post({op:"doc",id:id,patch:{asset:true,nd:3,assetChecked:true}},"Als Anlage erfasst – Nutzungsdauer bitte prüfen"); });
+F.action("anlyes",function(v){ var p=v.split("|"), id=p[0], nd=+p[1]||5, pkw=p[2]==="1"; F.UI.anlOpen=F.UI.anlOpen||{}; F.UI.anlOpen[id]=true; post({op:"doc",id:id,patch:{asset:true,nd:nd,pkw:pkw,assetChecked:true}},"Als Anlage erfasst ("+nd+" Jahre) – Plan unten im Verzeichnis"); });
+/* Vorschlag Nutzungsdauer nach Art (AfA-Praxis Österreich): Pkw mind. 8, Möbel 10, EDV 3, sonst 5 Jahre */
+function guessNd(v){ var t=((v.lines||[]).map(function(l){ return l.cat||""; }).join(" ")+" "+(v.supplier||"")+" "+(v.desc||"")).toLowerCase();
+  if(/automobil|kfz|pkw|fahrzeug|auto|kaufvertrag/.test(t)) return {nd:8,pkw:/automobil|pkw|auto/.test(t),why:"Fahrzeug: Pkw mindestens 8 Jahre"};
+  if(/m(ö|oe)bel|einricht|inhofer|ikea|b(ü|ue)rostuhl/.test(t)) return {nd:10,why:"Möbel/Einrichtung: üblich 10 Jahre"};
+  if(/computer|laptop|notebook|macbook|apple|hardware|edv|server|monitor|ico innovative/.test(t)) return {nd:3,why:"EDV/Computer: üblich 3 Jahre"};
+  if(/handy|smartphone|iphone/.test(t)) return {nd:3,why:"Handy: 2–3 Jahre"};
+  return {nd:5,why:"Technik/Ausstattung: üblich 5 Jahre"}; }
 F.action("anlnochk",function(id){ post({op:"doc",id:id,patch:{asset:false,assetChecked:true}},"Bleibt Sofortaufwand"); });
 F.action("anlno",function(id){ post({op:"doc",id:id,patch:{asset:false,assetChecked:true}},"Wieder Sofortaufwand"); });
 F.geldTab({id:"anlagen",label:"Anlagen & Abschreibungen",order:42,sub:"Anlagenverzeichnis mit Abschreibungsplan nach österreichischem Recht",render:renderAnlagen});
