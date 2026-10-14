@@ -66,7 +66,7 @@ module.exports = function (D) {
               for (const t of (j.transactions || [])) {
                 if (t.status && t.status !== "BOOK") continue;                                       // nur gebuchte, keine vorgemerkten
                 const amt = +(t.transaction_amount || {}).amount || 0; if (!amt) continue;
-                const out = t.credit_debit_indicator === "DBIT", sign = out ? -1 : 1, d = day(t.value_date || t.booking_date); if (!d || d < acc.ebankSince) continue;
+                const out = t.credit_debit_indicator === "DBIT", sign = out ? -1 : 1, d = day(t.value_date || t.booking_date), bd = day(t.booking_date) || d; if (!d || (bd < acc.ebankSince && d < acc.ebankSince)) continue;
                 const party = out ? t.creditor : t.debtor, pacc = out ? t.creditor_account : t.debtor_account;
                 const purpose = [].concat(t.remittance_information || []).join(" ").replace(/\s+/g, " ").trim() || String(t.bank_transaction_code && t.bank_transaction_code.description || "");
                 items.push({ date: d, bookDate: day(t.booking_date) || d, amount: r2(sign * Math.abs(amt)), name: (party && party.name) || "", iban: (pacc && pacc.iban) || "", purpose, ref: t.entry_reference || t.transaction_id || "" });
@@ -75,7 +75,7 @@ module.exports = function (D) {
             } while (ck && n < 40);
             const imp = items.length ? await L.importBank(acc.id, items, hash) : { added: 0, dup: 0, paired: 0 };
             let bal = null;
-            try { const b = await api("GET", "/accounts/" + encodeURIComponent(a.uid) + "/balances"); const pick = (b.balances || []).find(x => /CLBD|ITBD|XPCD|ITAV/.test(x.balance_type || "")) || (b.balances || [])[0]; if (pick) bal = r2(+(pick.balance_amount || {}).amount || 0); } catch (e) {}
+            try { const b = await api("GET", "/accounts/" + encodeURIComponent(a.uid) + "/balances"); const bl = b.balances || [], pick = ["CLBD", "ITBD", "XPCD", "OPBD", "CLAV", "ITAV"].map(k => bl.find(x => x.balance_type === k)).find(Boolean) || bl[0]; acc.ebankBalTypes = bl.map(x => x.balance_type + " " + (x.balance_amount || {}).amount).join(", "); if (pick) bal = r2(+(pick.balance_amount || {}).amount || 0); } catch (e) {}
             const mine = () => L.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id));
             if (bal != null && acc.ebankOpening && !mine().some(x => x.importRef === "opening")) {
               const open = r2(bal - mine().reduce((s2, x) => s2 + (+x.amount || 0), 0));
