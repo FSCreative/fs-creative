@@ -24,6 +24,7 @@ var IC={
   mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
   cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 10v4M18 10v4"/>',
   left:'<path d="m15 18-6-6 6-6"/>', right:'<path d="m9 18 6-6-6-6"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/>',
   cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   tag:'<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>'
@@ -36,7 +37,7 @@ var NAV=[
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou"},
   {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"]]},
-  {id:"steuer",label:"Steuern",icon:"tax",sub:[["steuer","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Gewinn & Jahreserklärung"],["prognose","Prognose"]]},
+  {id:"steuer",label:"Steuern",icon:"tax",sub:[["steuer","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Gewinn & Jahreserklärung"],["anlagen","Anlagen & Abschreibungen"],["prognose","Prognose"]]},
   {sep:"Verwalten"},
   {id:"ct",label:"Kontakte",icon:"ct"},
   {id:"prod",label:"Produkte",icon:"prod"},
@@ -52,7 +53,7 @@ function sidebar(){
     var on=g===n.id;
     return '<button type="button" class="fsd-i'+(on?" on":"")+'" data-act="fin:'+n.id+'">'+ic(n.icon)+'<span>'+esc(n.label)+'</span></button>'+
       (on&&n.sub&&n.sub.length>1&&n.id!=="orders"?'<div class="fsd-sub">'+n.sub.map(function(s){ return '<button type="button" class="'+(cur.split(":")[0]===s[0]?"on":"")+'" data-act="fin:'+s[0]+'">'+esc(s[1])+'</button>'; }).join("")+'</div>':'');
-  }).join("")+'</nav>';
+  }).join("")+'<button type="button" class="fsd-i fsd-help" data-act="help">'+ic("help")+'<span>Hilfe</span><kbd>?</kbd></button></nav>';
 }
 F.action("fin",function(p){ UI.fin=p; F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; F._forceRender=true; F.render(); window.scrollTo(0,0); });
 
@@ -355,14 +356,14 @@ function content(){
   if(p==="ct"){ F.UI.stT="kontakte"; return pageTab("stamm"); }
   if(p==="prod"){ F.UI.stT="artikel"; return pageTab("stamm"); }
   if(p==="steuer") return head("Steuern "+esc(String(F.D.year)),"Was steht an, was ist schon bezahlt, was kommt noch.","")+(F.steuerOverview?F.steuerOverview():"");
-  if(p==="uva"||p==="u1"||p==="jab"||p==="prognose"||p==="umstieg") return p==="prognose"?head("Jahresprognose","")+(F.renderPrognose?F.renderPrognose():pageTab("prognose")):pageTab(p);
+  if(p==="uva"||p==="u1"||p==="jab"||p==="prognose"||p==="umstieg"||p==="anlagen") return p==="prognose"?head("Jahresprognose","")+(F.renderPrognose?F.renderPrognose():pageTab("prognose")):pageTab(p);
   if(p==="abgl") return pageAbgl();
   if(p==="lock") return pageLock();
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["orders","Angebote"],["steuer","Steuern"],["ct","Kontakte"],["prod","Produkte"],["cn","Gutschriften"],["abgl","Abgleich"],["lock","Festschreiben"],["umstieg","Umstieg"]];
-function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="kasse"||g==="open") g="bank"; if(g==="uva"||g==="u1"||g==="jab"||g==="prognose") g="steuer";
+var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["kasse","Kasse"],["steuer","Steuern"],["anlagen","Abschreibungen"],["orders","Angebote"],["cn","Gutschriften"],["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen"],["lock","Festschreiben"],["umstieg","Einstellungen"]];
+function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="open") g="bank"; if(g==="uva"||g==="u1"||g==="jab"||g==="prognose") g="steuer";
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+'</button>'; }).join("")+'</nav>'; }
 function scanInput(cls,label){ return '<label class="'+cls+'">'+ic("cam")+(label?'<span>'+label+'</span>':'')+'<input type="file" class="fsd-scan" accept="image/*,application/pdf" capture="environment" multiple hidden></label>'; }
 F.listen("change",".fsd-scan",function(el){ var fs=el.files; if(fs&&fs.length){ if(F.KI&&F.KI.scan) F.KI.scan(fs); else F.toast("Beleg-Scan ist gerade nicht verfügbar",true); } el.value=""; });
@@ -438,7 +439,7 @@ function mobile(){
   if(p==="dash") body=mDash(); else if(p==="inv") body=mInv("inv"); else if(p==="dun") body=mInv("dun"); else if(p==="invd") body=mInvDetail(id);
   else if(p==="vou") body=mVou(); else if(p==="bank") body=mBank("bank"); else if(p==="open") body=mBank("open");
   else body='<div class="fsm-wide">'+content()+'</div>';
-  return '<div class="fsd fsm">'+(p==="invd"?"":'<div class="fsm-head"><h1>Finanzen</h1></div>'+mNav())+'<div class="fsm-body">'+body+'</div></div>';
+  return '<div class="fsd fsm">'+(p==="invd"?"":'<div class="fsm-head"><h1>Finanzen</h1><button type="button" class="fsm-hbtn" data-act="help" aria-label="Hilfe">'+ic("help")+'</button></div>'+mNav())+'<div class="fsm-body">'+body+'</div></div>';
 }
 var gv=F.views.find(function(x){return x.id==="geld";});
 if(gv){
@@ -531,7 +532,9 @@ F.css(
 '.fsd-ctitle{font-size:17px;font-weight:500;margin-bottom:4px}'+
 '.fsd .notice,.fsd .sd-empty{font-size:14px}'+
 '.fsm{display:block;min-height:auto;background:#f6f6f8;margin:0;padding-bottom:110px}'+
-'.fsm-head{padding:14px 16px 4px}.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:#100b2d}'+
+'.fsm-head{padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:center}.fsm-hbtn{width:38px;height:38px;border-radius:50%;border:1px solid rgba(6,3,20,.12);background:#fff;display:grid;place-items:center;color:#100b2d}.fsm-hbtn svg{width:20px;height:20px}'+
+'.fsd-help{margin-top:auto}.fsd-help kbd{margin-left:auto;font:inherit;font-size:11px;color:var(--sd-mut);border:1px solid var(--sd-line2);border-radius:4px;padding:0 5px}'+
+'.fsm-head{padding:14px 16px 4px.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:#100b2d}'+
 '.fsm-nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px 12px;scrollbar-width:none;position:sticky;top:0;z-index:5;background:#f6f6f8}.fsm-nav::-webkit-scrollbar{display:none}'+
 '.fsm-nav button{flex:none;border:1px solid rgba(6,3,20,.12);background:#fff;border-radius:99px;padding:7px 14px;font-size:14px;font-weight:500;color:#100b2d}'+
 '.fsm-nav button[aria-current]{background:#212144;border-color:#212144;color:#fff}'+
