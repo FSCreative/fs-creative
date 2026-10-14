@@ -23,6 +23,7 @@ const FEATURES = {
   belege:    { label: "KI-Prüfung Belege (Steuerregel, U30, E1a)", essential: true },
   mailbeleg: { label: "Belege aus Mail-Anhängen auslesen", essential: true },
   autoscan:  { label: "Automatik: Rechnungsmails bekannter Absender vorbereiten", essential: false },
+  docmatch:  { label: "Belegdateien aus Rechnungsmails automatisch an Belege ohne Datei hängen", essential: false },
   assistant: { label: "Cockpit-Assistent (Chat, ⌘J)", essential: false },
   mail:      { label: "Mail-Assistent (Zusammenfassung, Antwortvorschlag)", essential: false },
   leads:     { label: "Anfragen einschätzen (Priorität, Budget, nächster Schritt)", essential: false },
@@ -745,5 +746,7 @@ module.exports = function createKi(deps) {
       return deps.send(res, 404, "Not found");
     } catch (e) { return fail(res, e); }
   }
-  return { handle, configured, status, uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
+  // Für fin-docmatch.js: Anhang laden (nur lesen) und Beleg auslesen (gecacht je Mail-Anhang)
+  function docmatchReady() { return configured() && featureOn("docmatch") && featureOn("mailbeleg") && !overLimit(); }
+  return { handle, configured, status, fetchAttachment, docmatchReady, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
 };

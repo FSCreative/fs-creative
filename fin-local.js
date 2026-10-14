@@ -499,7 +499,14 @@ module.exports = function (D) {
   async function saveVoucher(body) {
     const vb = Object.assign({}, body.voucher || {});
     let o = vb.id ? get("Voucher", vb.id) : null;
-    if (o && isLocked("Voucher", o)) throw err(400, "Festgeschrieben – Korrektur nur per Gegenbeleg (Generalumkehr)");
+    if (o && isLocked("Voucher", o)) {
+      // Festgeschrieben: nur die Belegdatei darf nachgereicht werden (keine Positionen, keine Beträge, keine anderen Felder)
+      const onlyFile = body.filename && TMP.has(body.filename) && !(body.voucherPosSave || []).length && !(body.voucherPosDelete || []).length && Object.keys(vb).every(k => ["id", "objectName", "mapAll"].indexOf(k) > -1);
+      if (!onlyFile) throw err(400, "Festgeschrieben – Korrektur nur per Gegenbeleg (Generalumkehr)");
+      const f = TMP.get(body.filename); TMP.delete(body.filename);
+      await attachDoc(o.id, f, { upload: true, filename: f.name, at: nowIso() });
+      return { objects: { voucher: o } };
+    }
     o = Object.assign(o || { id: newId("Voucher"), status: "50", paidAmount: "0", currency: "EUR", creditDebit: "C", voucherType: "VOU" }, stripMeta(vb));
     if (vb.voucherDate) o.voucherDate = iso(dayOf(vb.voucherDate)); if (vb.deliveryDate) o.deliveryDate = iso(dayOf(vb.deliveryDate)); if (vb.deliveryDateUntil) o.deliveryDateUntil = iso(dayOf(vb.deliveryDateUntil));
     if (!o.voucherDate) o.voucherDate = iso(today());
@@ -520,6 +527,16 @@ module.exports = function (D) {
     }
     await save("Voucher", o);
     return { objects: { voucher: o } };
+  }
+  // Belegdatei an einen bestehenden Beleg hängen. Auch bei festgeschriebenen Belegen erlaubt (Beleg nachreichen ändert keine
+  // Beträge) – geändert werden nur document/docSource, die Datei liegt wie importierte Belegdateien in fin_file (doc/Voucher).
+  async function attachDoc(vid, f, src) {
+    await load(); const o = need("Voucher", vid);
+    if (!f || !f.buf || !f.buf.length) throw err(400, "Datei fehlt");
+    const docId = newId("Document"); await save("Document", { id: docId, filename: f.name || "beleg", mimeType: f.type || "application/octet-stream", object: ref("Voucher", o.id) });
+    await fin.putFileRaw("doc", "Voucher", o.id, f);
+    o.document = ref("Document", docId); o.docSource = src || null; await save("Voucher", o);
+    return o;
   }
   async function uploadTemp(form) {
     const file = form && form.get ? form.get("file") : null; if (!file) throw err(400, "Datei fehlt");
@@ -547,7 +564,7 @@ module.exports = function (D) {
   async function update(t, id, body) {
     const o = need(t, id);
     if (t === "CheckAccountTransaction" && o.cashLocked && Object.keys(body || {}).some(k => k !== "status")) throw err(400, "Kassenbuchungen sind unveränderbar – Korrektur nur per Gegenbuchung");
-    if (["Invoice", "Voucher", "CreditNote"].indexOf(t) > -1 && isLocked(t, o) && Object.keys(body || {}).some(k => ["status", "dunningLevel", "reminderDeadline"].indexOf(k) < 0)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung");
+    if (["Invoice", "Voucher", "CreditNote"].indexOf(t) > -1 && isLocked(t, o) && Object.keys(body || {}).some(k => ["status", "dunningLevel", "reminderDeadline"].concat(t === "Voucher" ? ["document", "docSource"] : []).indexOf(k) < 0)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung");
     Object.assign(o, stripMeta(body || {})); delete o.id; o.id = String(id);
     if (t === "Order" && body && body.status != null) o.status = String(body.status);
     await save(t, o); return { objects: o };
@@ -670,5 +687,5 @@ module.exports = function (D) {
     const paired = dry ? 0 : await pairTransfers();
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
+  return { request, load, get, all, positionsOf, save, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
 };
