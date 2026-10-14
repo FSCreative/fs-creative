@@ -539,6 +539,14 @@ M.menuPos=menuPos;
 
 /* ---------- Papierkorb mit Rückgängig ---------- */
 var UNDO={timer:null,items:[],ids:[]};
+/* Löschungen, die noch nicht beim Mailserver sind, im Gerät merken – am Handy wird die App oft weggewischt, bevor gesendet ist */
+var PKEY="fsc_mail_pend";
+function pendSave(){ var cur=F.ls(PKEY)||[]; UNDO.items.forEach(function(it){ if(!cur.some(function(x){ return x.uid===it.uid&&x.folder===it.folder&&x.account===it.account; })) cur.push(Object.assign({at:Date.now()},it)); }); F.ls(PKEY,cur.slice(-300)); }
+function pendDrop(its){ var cur=(F.ls(PKEY)||[]).filter(function(x){ return !its.some(function(it){ return it.uid===x.uid&&it.folder===x.folder&&it.account===x.account; }); }); F.ls(PKEY,cur); }
+function pendResend(){ var cur=(F.ls(PKEY)||[]).filter(function(x){ return Date.now()-(x.at||0)<3*864e5; }); if(!cur.length){ F.ls(PKEY,[]); return; }
+  var its=cur.map(function(x){ return {folder:x.folder,uid:x.uid,account:x.account}; });
+  F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(j){ if(j&&(j.ok!==false&&!j.error||j.error==="action_partly_failed")){ pendDrop(its); M.scheduleReload(1500); } }).catch(function(){}); }
+setTimeout(pendResend,2500);
 function flushUndo(){
   if(UNDO.timer){ clearTimeout(UNDO.timer); UNDO.timer=null; }
   if(!UNDO.ids.length) return;
@@ -558,7 +566,7 @@ function sendTrash(its,ids){
     return back.length;
   };
   F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(j){
-    if(j&&j.ok!==false&&!j.error) return;
+    if(j&&j.ok!==false&&!j.error){ pendDrop(its); return; }
     var n=revert(j&&Array.isArray(j.failed)?j.failed:null);
     F.toast((n?(n>1?n+" Mails konnten":"Die Mail konnte"):"Mails konnten")+" am Mailserver nicht gelöscht werden – bitte nochmal versuchen",true);
   }).catch(function(){ var n=revert(null); F.toast("Keine Verbindung zum Mailserver – "+(n?"Mail wieder eingeblendet, bitte nochmal löschen":"bitte nochmal versuchen"),true); });
@@ -572,6 +580,7 @@ function beacon(){
   try{ fetch("/admin/api/mail-action",{method:"POST",headers:{"Content-Type":"application/json"},body:payload,keepalive:true,credentials:"same-origin"}); }catch(e){}
 }
 window.addEventListener("pagehide",beacon);
+document.addEventListener("visibilitychange",function(){ if(document.hidden&&UNDO.items.length) flushUndo(); });   // App weggewischt/gesperrt: sofort senden (Handy)
 window.addEventListener("beforeunload",beacon);
 function trashMessages(ids){
   var msgs=ids.map(find).filter(function(m){ return m&&!isTrashed(m); });
@@ -583,11 +592,11 @@ function trashMessages(ids){
   msgs.forEach(function(m){ M.setOv(m,{deleted:true,trashedAt:now,flushed:false}); delete UI.mpick[m.id]; });
   var locals=msgs.filter(function(m){ return m.local; });
   if(locals.length){ M.local=M.local.filter(function(l){ return locals.indexOf(l)<0; }); S.messages=S.messages.filter(function(m){ return locals.indexOf(m)<0; }); }
-  UNDO.ids=mids; UNDO.items=items(msgs); UNDO.timer=setTimeout(flushUndo,6000);
+  UNDO.ids=mids; UNDO.items=items(msgs); pendSave(); UNDO.timer=setTimeout(flushUndo,window.innerWidth<=900?4000:6000);
   UI.msel=nxt; M.changed(); F.render();
   F.toast((msgs.length>1?msgs.length+" Nachrichten":"Nachricht")+" gelöscht",false,"Rückgängig",function(){
     if(UNDO.timer){ clearTimeout(UNDO.timer); UNDO.timer=null; }
-    var back=UNDO.ids.length?UNDO.ids:[]; UNDO.ids=[]; UNDO.items=[];
+    var back=UNDO.ids.length?UNDO.ids:[]; pendDrop(UNDO.items); UNDO.ids=[]; UNDO.items=[];
     if(!back.length){ F.toast("Schon an den Server übertragen – im Papierkorb wiederherstellen",true); return; }
     back.forEach(function(id){ var m=find(id); if(m){ M.setOv(m,{deleted:false,trashedAt:null}); delete OV[id].deleted; } });
     if(back.length===1) UI.msel=back[0];
