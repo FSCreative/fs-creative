@@ -157,7 +157,7 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/fin/obj" && req.method === "GET") {   // Einsicht in übernommene Rohdaten (nur Admin)
         await init(); const t = u.searchParams.get("type") || "", id = u.searchParams.get("id"), qq = u.searchParams.get("q") || "";
-        const r = id ? await db().query("select data from fin_obj where type=$1 and id=$2", [t, id]) : await db().query("select data from fin_obj where type=$1 and ($2 = '' or data::text ilike '%' || $2 || '%') order by updated_at desc limit 5", [t, qq]);
+        const r = id ? await db().query("select data from fin_obj where type=$1 and id=$2", [t, id]) : await db().query("select data from fin_obj where type=$1 and ($2 = '' or data::text ilike '%' || $2 || '%') order by updated_at desc limit $3", [t, qq, Math.min(500, Math.max(1, parseInt(u.searchParams.get("limit") || "5", 10) || 5))]);
         return J(200, { ok: true, objects: r.rows.map(x => x.data) });
       }
       if (p === "/admin/api/fin/file" && req.method === "GET") {

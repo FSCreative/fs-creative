@@ -426,6 +426,27 @@ module.exports = function (D) {
     await save("Invoice", w);
     return r;
   }
+  // ── Wiederkehrende Belege (sevDesk-Vorlagen Typ „RV“, Intervall ISO z. B. P0Y1M): zum Termin echten Beleg (offen) anlegen ──
+  function addIso(d, iso, k) { const m = String(iso || "P0Y1M").match(/P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?/) || []; const x = new Date(d + "T12:00:00Z"), day0 = x.getUTCDate(), y = +(m[1] || 0), mo = +(m[2] || 0), w = +(m[3] || 0), dd = +(m[4] || 0);
+    if (y || mo) { x.setUTCDate(1); x.setUTCFullYear(x.getUTCFullYear() + y * k); x.setUTCMonth(x.getUTCMonth() + mo * k); const last = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate(); x.setUTCDate(Math.min(day0, last)); }
+    x.setUTCDate(x.getUTCDate() + (w * 7 + dd) * k); return x.toISOString().slice(0, 10); }
+  async function recurringVoucherRun() {
+    await load(); const t = today(), set = get("FinSetting", "1") || { id: "1" };
+    if (!set.rvSince) { set.rvSince = t; await save("FinSetting", set); }   // ab Umstieg; ältere, längst fällige Vorlagen waren in sevDesk pausiert
+    const made = [];
+    for (const rv of all("Voucher").filter(v => String(v.voucherType) === "RV" && v.recurringInterval && v.recurringNextVoucher)) {
+      let next = dayOf(rv.recurringNextVoucher), end = dayOf(rv.recurringEndDate), guard = 0;
+      if (!next || next < addIso(set.rvSince, "P0Y0M0W7D", -1)) continue;
+      while (next <= t && (!end || next <= end) && guard++ < 24) {
+        const v = Object.assign({}, rv, { id: newId("Voucher"), voucherType: "VOU", status: "100", voucherDate: iso(next), deliveryDate: iso(next), paidAmount: "0", payDate: null, enshrined: null, document: null, recurringInterval: null, recurringNextVoucher: null, recurringStartDate: null, recurringEndDate: null, recurringLastVoucher: null, fromRecurring: String(rv.id) });
+        for (const p of positionsOf("Voucher", rv.id)) await save("VoucherPos", Object.assign({}, p, { id: newId("VoucherPos"), voucher: ref("Voucher", v.id) }));
+        await save("Voucher", v); made.push(v);
+        rv.recurringLastVoucher = iso(next); next = addIso(next, rv.recurringInterval, 1); rv.recurringNextVoucher = iso(next);
+      }
+      await save("Voucher", rv);
+    }
+    return made;
+  }
   // fällige Vorlagen abarbeiten (Server ruft das regelmäßig auf) → Liste der neuen Rechnungen
   async function recurringRun(onlyId) {
     await load(); const out = [], t = today();
@@ -635,5 +656,5 @@ module.exports = function (D) {
     const paired = dry ? 0 : await pairTransfers();
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, importBank, recurringRun, cashBalance, isCash };
+  return { request, load, get, all, positionsOf, save, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
 };

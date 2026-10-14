@@ -1180,6 +1180,7 @@ const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
 async function finRecurringTick() {
   if (!FIN_STATE.local) return;
   try {
+    const rvMade = await FIN_LOCAL.recurringVoucherRun().catch(e => { console.error("Wiederkehrende Belege:", e.message); return []; }); if (rvMade.length) console.log("Wiederkehrende Belege:", rvMade.length, "angelegt");
     const made = await FIN_LOCAL.recurringRun();
     for (const m of made) {
       if (!(m.template.recur && m.template.recur.autoSend)) continue;
