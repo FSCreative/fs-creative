@@ -29,6 +29,10 @@ function num(v){ var n=parseFloat(String(v==null?"":v).replace(",",".")); return
 /* ---------- Zeiträume ---------- */
 function periodsOf(year,mode){ var out=[]; if(mode==="monat"){ for(var m=1;m<=12;m++) out.push({key:year+"-M"+String(m).padStart(2,"0"),label:new Date(year,m-1,1).toLocaleDateString("de-AT",{month:"long"})+" "+year,from:year+"-"+String(m).padStart(2,"0")+"-01",to:F.ymd(new Date(year,m,0)),endMonth:m,year:year}); } else { for(var q=1;q<=4;q++) out.push({key:year+"-Q"+q,label:q+". Quartal "+year,from:year+"-"+String(q*3-2).padStart(2,"0")+"-01",to:F.ymd(new Date(year,q*3,0)),endMonth:q*3,year:year}); } return out; }
 function dueOf(p){ return F.ymd(new Date(p.year,p.endMonth+1,15)); }       // 15. des zweitfolgenden Monats
+/* Abgegebene UVA mit Zahllast, die noch nicht bezahlt ist (offener Posten bis zur Zahlung) */
+function uvaZl(d){ var z=d&&d.summary&&d.summary.zahllast!=null?d.summary.zahllast:(d&&d.filed?d.filed.zahllast:null); return z==null?null:+z; }
+F.uvaOpen=function(){ if(!ST||!ST.uva) return []; return Object.keys(ST.uva).sort().map(function(k){ var d=ST.uva[k], z=uvaZl(d), p=periodByKey(k); if(!p||!d||!d.doneAt||d.paid||!(z>0.005)) return null;
+  return {key:k,label:p.label,short:(k.indexOf("-Q")>0?"Q"+k.slice(-1):k.slice(-2))+"/"+k.slice(0,4),amount:z,due:dueOf(p)}; }).filter(Boolean); };
 function periodByKey(k){ return periodsOf(+k.slice(0,4),k.indexOf("-M")>0?"monat":"quartal").find(function(x){ return x.key===k; }); }
 
 /* ---------- Andockpunkt für KI-Vorschläge ----------
@@ -88,7 +92,8 @@ function renderUva(){
   return '<section class="panel"><div class="panel-h"><div><h2>UVA '+esc(cur.label)+'</h2><div class="muted">Zeitraum '+de(cur.from)+' – '+de(cur.to)+' · Sollbesteuerung (nach Leistungsdatum, Vorsteuer nach Belegdatum)</div></div><div class="chips">'+chips+'</div></div>'+
     '<div class="panel-b uva-top"><div><div class="k">'+(r.zahllast>=0?"Zahllast (KZ 095)":"Gutschrift (KZ 095)")+'</div><div class="v num money">'+eur(Math.abs(r.zahllast))+'</div><div class="s">Kontrolle aus den Belegsummen: '+eur(ctl.zahllast)+(Math.abs(dz)>0.01?' · <b class="'+(Math.abs(dz)>5?"bad-t":"")+'">Abweichung '+eur(dz)+'</b> <button class="link" data-act="stctl">Warum?</button>':' · stimmt überein')+'</div></div>'+
       '<div><div class="k">Fällig</div><div class="v num">'+de(due)+'</div><div class="s">Abgabe und Zahlung'+(due<today&&!(done&&done.doneAt)?' · <b class="bad-t">überfällig</b>':'')+'</div></div>'+
-      '<div class="uva-done"><button class="btn glow" data-act="uvaprep:'+cur.key+'"'+(cur.to>=today?' disabled title="Zeitraum läuft noch"':'')+'>UVA vorbereiten</button>'+(done&&done.doneAt?'<span class="tag ok">'+(done.fon?'Eingereicht (Paket '+done.fon.paket+')':'Erledigt')+' am '+de(done.doneAt)+'</span><button class="btn" data-act="uvaundo:'+cur.key+'">Zurücksetzen</button>':'<button class="btn" data-act="uvadone:'+cur.key+'">Als erledigt markieren</button>')+'</div></div>'+
+      '<div class="uva-done"><button class="btn glow" data-act="uvaprep:'+cur.key+'"'+(cur.to>=today?' disabled title="Zeitraum läuft noch"':'')+'>UVA vorbereiten</button>'+(done&&done.doneAt?'<span class="tag ok">'+(done.fon?'Eingereicht (Paket '+done.fon.paket+')':'Erledigt')+' am '+de(done.doneAt)+'</span><button class="btn" data-act="uvaundo:'+cur.key+'">Zurücksetzen</button>':'<button class="btn primary" data-act="uvaclose:'+cur.key+'"'+(cur.to>=today?' disabled':'')+'>UVA abgegeben – Quartal abschließen</button><button class="link" data-act="uvadone:'+cur.key+'">nur als erledigt markieren</button>')+'</div></div>'+
+    closeBar(cur,done,r,due)+
     (r.review.length?'<div class="notice" style="margin:0 18px 14px"><span><b>'+r.review.length+' Beleg'+(r.review.length===1?"":"e")+'</b> konnte'+(r.review.length===1?"":"n")+' nicht eindeutig eingeordnet werden und fehlen in den Kennzahlen.</span><button class="btn" data-act="stdocs:review">Einordnen</button></div>':'')+
     (F.UI.stOpen.review&&r.review.length?'<div class="panel-b">'+docsList(r.review.map(function(x){ return {doc:x.doc,kind:x.kind,info:x.why}; }))+(typeof F.steuerAiSuggest==="function"?'<div class="row wrap">'+r.review.map(function(x){ return aiBtn(x.doc.id).replace("KI-Vorschlag","KI: "+esc(docName(x.doc,x.kind==="out"?"out":"in").slice(0,24))); }).join("")+'</div>':'')+'</div>':'')+
     kzTable(r,F.UI.stOpen.allkz)+
@@ -252,6 +257,16 @@ F.action("uvaprep",function(k){
     });
   });
 });
+/* UVA-Abschluss: Abgabe vermerken + Zeitraum festschreiben + Zahllast als offener Posten bis zur Zahlung */
+function closeBar(cur,done,r,due){ if(!done||(!done.doneAt&&!done.locked)) return '';
+  var z=uvaZl(done); if(z==null) z=r.zahllast; var out=[];
+  out.push(done.locked?'<span class="tag grey">festgeschrieben am '+de(done.locked.at)+'</span>':'<span class="tag warn">Quartal noch nicht festgeschrieben</span><button class="btn" data-act="uvaclose:'+cur.key+'">Quartal abschließen (festschreiben)</button>');
+  if(done.doneAt&&z>0.005) out.push(done.paid?'<span class="tag ok">Zahllast bezahlt'+(done.paid.date?' am '+de(done.paid.date):' (bestätigt)')+'</span>':'<span class="tag '+(due<F.D.today?"bad":"warn")+'">Zahllast '+eur(z)+' offen – fällig '+de(due)+'</span><button class="btn" data-act="uvapaid:'+cur.key+'">Als bezahlt markieren</button>');
+  return '<div class="panel-b row wrap" style="padding-top:0">'+out.join("")+'</div>'; }
+F.action("uvaclose",function(k){ var p=periodByKey(k), r=S.computeUva(ST.data,ST,p), d=ST.uva[k]||{}, sum={zahllast:r.zahllast,kz:S.uvaKzMap(r),docIds:S.uvaDocIds(r)}, z=d.doneAt&&uvaZl(d)!=null?uvaZl(d):r.zahllast;
+  F.confirm((d.doneAt?"":"UVA "+p.label+" als abgegeben vermerken ("+(z>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(z))+") und ")+"alle Rechnungen, Belege, Gutschriften und Zahlungen vom "+de(p.from)+" bis "+de(p.to)+" festschreiben? Das lässt sich nicht rückgängig machen – danach sind Korrekturen nur noch per Storno, Gutschrift oder Gegenbuchung möglich."+(z>0.005?" Die Zahllast bleibt als offener Posten (fällig "+de(dueOf(p))+"), bis die Zahlung ans Finanzamt erkannt oder als bezahlt markiert ist.":""),"Quartal abschließen",function(){
+    F.api("/admin/api/steuer/close",{body:{confirm:true,key:k,summary:sum}}).then(function(j){ if(j&&j.ok){ apply(j.steuer); var c=(j.locked&&j.locked.counts)||{}, n=Object.keys(c).reduce(function(a,x){ return a+c[x]; },0); F.toast(p.label+" abgeschlossen – "+n+" Dokumente festgeschrieben"); F.load&&F.load(true); F.render(); } else F.toast((j&&j.error)||"Fehler",true); }); },true); });
+F.action("uvapaid",function(k){ var p=periodByKey(k); F.confirm("USt-Zahllast "+p.label+" als bezahlt markieren? (Ohne Bankzuordnung – besser: Zahlung unter „Abgleich“ als USt-Vorauszahlung buchen.)","Bezahlt",function(){ post({op:"uvapaid",key:k,date:F.D.today},"Als bezahlt markiert"); }); });
 F.action("uvadone",function(k){ var p=periodByKey(k); var r=S.computeUva(ST.data,ST,p); var sum={zahllast:r.zahllast,kz:S.uvaKzMap(r),docIds:S.uvaDocIds(r)};
   F.confirm("UVA "+p.label+" als erledigt markieren? ("+(r.zahllast>=0?"Zahllast ":"Gutschrift ")+eur(Math.abs(r.zahllast))+")","Erledigt",function(){ post({op:"done",kind:"uva",key:k,summary:sum},"UVA als erledigt gespeichert"); }); });
 F.action("uvaundo",function(k){ F.confirm("Erledigt-Markierung für diese UVA entfernen? (In FinanzOnline Eingereichtes bleibt eingereicht.)","Zurücksetzen",function(){ post({op:"undone",kind:"uva",key:k},"Zurückgesetzt"); }); });
@@ -267,7 +282,7 @@ function syncPanel(cur,r,mm){
   return '<section class="panel"><div class="panel-h"><h2>Abgleich Steuerregel ↔ Einordnung</h2><span class="muted">Was in der UVA gerechnet wird, soll auch beim Beleg so gebucht sein – und umgekehrt</span></div>'+
     (mm.length?'<div class="scroll"><table><tbody>'+rows+'</tbody></table></div>':'<div class="panel-b muted">Keine Abweichungen bei Steuerregeln, UIDs und Leistungsdaten in diesem Zeitraum.</div>')+
     '<div class="panel-b row wrap">'+(done.tagged?'<span class="tag ok">Getaggt: '+esc(done.tagged.name)+' ('+done.tagged.ok+')</span>':'<button class="btn" data-act="sevtag:'+cur.key+'"'+(done.doneAt?'':' disabled title="Erst nach Abgabe"')+'>Belege taggen (UVA-'+cur.year+'-'+cur.key.slice(5)+')</button>')+
-      (done.paid?'<span class="tag ok">USt-Zahlung '+eur(done.paid.amount)+' am '+de(done.paid.date)+(done.paid.booked?' verbucht':' angelegt (Zuordnung offen)')+'</span>':
+      (done.paid?'<span class="tag ok">'+(done.paid.manual?'USt-Zahlung als bezahlt bestätigt'+(done.paid.date?' am '+de(done.paid.date):''):'USt-Zahlung '+eur(done.paid.amount)+' am '+de(done.paid.date)+(done.paid.booked?' verbucht':' angelegt (Zuordnung offen)'))+'</span>':
         match.map(function(t){ return '<button class="btn primary" data-act="ustpay:'+t.id+'">Zahlung '+eur(t.amount)+' vom '+de(t.date)+' als USt-Vorauszahlung buchen</button>'; }).join("")+
         (!match.length&&other.length?'<span class="muted small">Finanzamt-Buchungen nach Zeitraumende: '+other.map(function(t){ return eur(t.amount)+' am '+deShort(t.date)+' <button class="link" data-act="ustpay:'+t.id+'">buchen</button>'; }).join(" · ")+'</span>':'')+
         (!tx.length?'<span class="muted small">Noch keine Zahlung an das Finanzamt gefunden.</span>':''))+'</div>'+
@@ -543,9 +558,11 @@ function renderOverview(){
     var st=done?["ok","abgegeben am "+de(d.doneAt)]:running?(started?["grey","läuft noch – Stand heute"]:["grey","noch nicht begonnen"]):(due<today?["bad","überfällig seit "+de(due)]:["warn","abgeben & zahlen bis "+de(due)]);
     var lbl=monthly?new Date(p.year,p.endMonth-1,1).toLocaleDateString("de-AT",{month:"long"}):p.key.slice(-1)+". Quartal";
     var amt=r?(r.zahllast>=0?'<b>'+eur(r.zahllast)+'</b><div class="sub">zu zahlen</div>':'<b class="ok-t">'+eur(-r.zahllast)+'</b><div class="sub">Gutschrift</div>'):'<span class="muted">–</span>';
-    var todo=r&&!done&&r.review.length?' <span class="tag warn">'+r.review.length+' Beleg'+(r.review.length===1?"":"e")+' unklar</span>':'';
-    return '<tr><td><b>'+esc(lbl)+'</b><div class="sub">'+deShort(p.from)+' – '+deShort(p.to)+'</div></td><td><span class="tag '+st[0]+'">'+esc(st[1])+'</span>'+todo+'</td><td class="r">'+amt+'</td><td class="r">'+(started?go("stgo:uva:"+p.key,done?"Ansehen":(running?"Ansehen":"Prüfen & abgeben"),!done&&!running?"primary":""):"")+'</td></tr>';
+    var todo=r&&!done&&r.review.length?' <span class="tag warn">'+r.review.length+' Beleg'+(r.review.length===1?"":"e")+' unklar</span>':'', zl=done?uvaZl(d):null;
+    if(done){ if(zl==null&&r) zl=r.zahllast; todo+=zl>0.005?(d.paid?' <span class="tag ok">bezahlt</span>':' <span class="tag '+(due<today?"bad":"warn")+'">Zahllast offen bis '+deShort(due)+'</span>'):''; todo+=d.locked?'':' <span class="tag grey">nicht festgeschrieben</span>'; }
+    return '<tr><td><b>'+esc(lbl)+'</b><div class="sub">'+deShort(p.from)+' – '+deShort(p.to)+'</div></td><td><span class="tag '+st[0]+'">'+esc(st[1])+'</span>'+todo+'</td><td class="r">'+amt+'</td><td class="r">'+(started?go("stgo:uva:"+p.key,done?(d.locked?"Ansehen":"Abschließen"):(running?"Ansehen":"Prüfen & abgeben"),!done&&!running?"primary":""):"")+'</td></tr>';
   }).join("");
+  var opn=F.uvaOpen(), openBox=opn.length?'<div class="panel-b">'+opn.map(function(o){ return '<div class="notice" style="margin:0 0 8px"><span><b>USt-Zahllast '+esc(o.short)+': '+eur(o.amount)+'</b> – '+(o.due<today?'<b class="bad-t">überfällig seit '+de(o.due)+'</b>':'fällig '+de(o.due))+'. Bleibt offen, bis die Zahlung ans Finanzamt erkannt wird.</span>'+go("stgo:uva:"+o.key,"Ansehen")+'</div>'; }).join("")+'</div>':'';
   // 2) Jahr auf einen Blick
   var u=S.computeU1(ST.data,ST,y), j=S.computeJab(ST.data,ST,y), est=j.est||{};
   var tile=function(title,big,lines,act,hint){ return '<section class="panel st-tile"><div class="panel-b"><div class="k">'+title+'</div><div class="v num money">'+big+'</div>'+lines.map(function(l){ return '<div class="row-between small"><span class="muted">'+l[0]+'</span><b class="num">'+l[1]+'</b></div>'; }).join("")+(hint?'<p class="muted small" style="margin:8px 0 0">'+hint+'</p>':'')+(act?'<div style="margin-top:10px">'+act+'</div>':'')+'</div></section>'; };
@@ -565,7 +582,7 @@ function renderOverview(){
     '<div><b>Gewinn (E/A-Rechnung):</b> Einnahmen minus Ausgaben nach Zahlungsdatum. Größere Anschaffungen (über 1.000 €) werden über die Nutzungsdauer abgeschrieben (Halbjahresregel).</div>'+
     '<div><b>Einkommensteuer:</b> auf den Gewinn nach dem Steuertarif; Vorauszahlungen werden angerechnet. Alles hier ist ein Richtwert – maßgeblich ist der Bescheid.</div></div></details></section>';
   return '<div class="st-ov">'+
-    '<section class="panel"><div class="panel-h"><div><h2>Umsatzsteuer-Voranmeldungen '+esc(y)+'</h2><div class="muted">'+(monthly?"monatlich":"vierteljährlich")+' · Abgabe und Zahlung jeweils bis zum 15. des zweitfolgenden Monats</div></div>'+go("stgo:uva:","Einstellungen & Details")+'</div><div class="scroll"><table><tbody>'+uvaRows+'</tbody></table></div></section>'+
+    '<section class="panel"><div class="panel-h"><div><h2>Umsatzsteuer-Voranmeldungen '+esc(y)+'</h2><div class="muted">'+(monthly?"monatlich":"vierteljährlich")+' · Abgabe und Zahlung jeweils bis zum 15. des zweitfolgenden Monats</div></div>'+go("stgo:uva:","Einstellungen & Details")+'</div>'+openBox+'<div class="scroll"><table><tbody>'+uvaRows+'</tbody></table></div></section>'+
     '<div class="st-tiles">'+ustT+gewT+estT+'</div>'+jahr+glossar+'</div>';
 }
 F.steuerOverview=renderOverview;

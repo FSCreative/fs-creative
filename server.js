@@ -1181,6 +1181,67 @@ async function finRecurringTick() {
   } catch (e) { console.error("Wiederkehrend:", e.message); }
 }
 setTimeout(finRecurringTick, 60 * 1000); setInterval(finRecurringTick, 60 * 60 * 1000);
+// Einmal täglich ab 08:00 (Wien): Mahnlauf (Vorschläge bzw. automatisch senden) und Abgleich USt-Zahlungen ans Finanzamt
+async function finDailyTick() {
+  if (!FIN_STATE.local) return;
+  const h = +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }).format(new Date()); if (h < 8) return;
+  try { const st = await dunState(), today = viennaToday(); if (st.lastRun === today) return; st.lastRun = today; await FIN.setMeta("dunning", st);
+    await FIN_LOCAL.load(); const pr = dunProposals(st); st.lastCount = pr.length;
+    if (st.settings.enabled && st.settings.mode === "auto") { const r = await dunSend(st, pr.filter(x => !x.hint)); console.log("Mahnlauf:", r.filter(x => x.ok).length, "gesendet,", r.filter(x => !x.ok).length, "Fehler"); }
+    else if (st.settings.enabled && pr.length) console.log("Mahnlauf:", pr.length, "Mahnungen zur Freigabe");
+    await FIN.setMeta("dunning", Object.assign(await dunState(), { lastRun: today, lastCount: st.lastCount }));
+  } catch (e) { console.error("Mahnlauf:", e.message); }
+  try { const n = await uvaAutoPay(); if (n) console.log("UVA:", n, "Zahlung(en) ans Finanzamt zugeordnet"); } catch (e) { console.error("UVA-Zahlungen:", e.message); }
+}
+setTimeout(finDailyTick, 90 * 1000); setInterval(finDailyTick, 60 * 60 * 1000);
+// ── Automatischer Mahnlauf: überfällige Rechnungen bekommen nach X Tagen die nächste Stufe; Simon gibt frei (oder „automatisch senden“) ──
+// Gebühren je Stufe, kumulativ (jede Stufe kommt zu den offenen Gebühren dazu): Firmen (UID oder Firmenkontakt) 0/10/30 € (= 40 €), Privat 0/5/5 €.
+// Firmen: Pauschale bis 40 € nach § 458 UGB; Privat nur angemessene tatsächliche Kosten (§ 1333 ABGB). Mahngebühren = Schadenersatz → 0 %, nicht in der UVA.
+const DUN_DEF = { enabled: false, mode: "suggest", days: [7, 14, 14], ttp: [7, 10, 7], b2bFees: [0, 10, 30], b2cFees: [0, 5, 5] };
+const DUN_T = ["Zahlungserinnerung", "1. Mahnung", "2. Mahnung"];
+async function dunState() { const m = (await FIN.getMeta("dunning").catch(() => null)) || {}; m.settings = Object.assign({}, DUN_DEF, m.settings || {}); m.skip = m.skip || {}; m.log = m.log || []; return m; }
+function dunB2B(c) { return !!c && (!!String(c.vatNumber || "").trim() || (!!String(c.name || "").trim() && !c.surename && !c.familyname)); }
+function dunProposals(st) {
+  const S = st.settings, today = viennaToday(), inv = FIN_LOCAL.all("Invoice"), out = [], r2 = n => Math.round((+n || 0) * 100) / 100;
+  const txIn = FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0);
+  const mails = FIN_LOCAL.all("CommunicationWay").filter(c => String(c.type || "").toUpperCase() === "EMAIL" && /@/.test(c.value || ""));
+  for (const o of inv) {
+    if (String(o.invoiceType) !== "RE" || !(+o.status === 200 || +o.status === 750) || o.cancelled || o.noDunning) continue;
+    const open = r2((+o.sumGross || 0) - (+o.paidAmount || 0)), day = sevDay(o.invoiceDate); if (open < 1 || !day) continue;
+    const mas = inv.filter(x => String(x.invoiceType) === "MA" && x.origin && String(x.origin.id) === String(o.id));
+    if (mas.some(x => String(x.status) === "100")) continue;   // Mahnung erstellt, aber noch nicht versendet
+    const lvl = Math.max(+o.dunningLevel || 0, ...mas.map(x => +x.dunningLevel || 0)) + 1; if (lvl > 3) continue;
+    if ((+st.skip[o.id] || 0) >= lvl) continue;
+    const due = addDaysIso(day, parseInt(o.timeToPay, 10) || 0), last = mas.map(x => sevDay(x.invoiceDate)).filter(Boolean).sort().pop();
+    const from = lvl === 1 || !last ? due : last, ripe = addDaysIso(from, +S.days[lvl - 1] || 0); if (ripe > today) continue;
+    const c = o.contact && FIN_LOCAL.get("Contact", o.contact.id), b2b = dunB2B(c);
+    const fee = +((b2b ? S.b2bFees : S.b2cFees) || [])[lvl - 1] || 0;
+    const em = c ? mails.filter(m => m.contact && String(m.contact.id) === String(c.id)).sort((a, b) => (String(b.main) === "1" || b.main === true ? 1 : 0) - (String(a.main) === "1" || a.main === true ? 1 : 0))[0] : null;
+    const pay = txIn.find(t => Math.abs(+t.amount - open) < 0.01 && (sevDay(t.valueDate) || "") >= day);
+    out.push({ id: String(o.id), nr: o.invoiceNumber || "", contact: sevName(c), b2b, email: em ? String(em.value).trim() : "", open, feeOpen: r2(o.dunningFeeOpen), level: lvl, title: DUN_T[lvl - 1], fee: r2(fee),
+      ttp: +S.ttp[lvl - 1] || 7, due, overdueDays: Math.round((Date.parse(today) - Date.parse(due)) / 864e5), hint: pay ? "Möglicher Zahlungseingang " + (+pay.amount).toFixed(2).replace(".", ",") + " € am " + (sevDay(pay.valueDate) || "") + " – erst Bank prüfen" : (!em ? "Keine E-Mail-Adresse beim Kontakt" : "") });
+  }
+  return out.sort((a, b) => b.overdueDays - a.overdueDays);
+}
+async function dunSend(st, list) {
+  const res = [], eur = n => (+n || 0).toFixed(2).replace(".", ",") + " €";
+  for (const p of list) {
+    try {
+      if (!p.email) throw new Error("Keine E-Mail-Adresse beim Kontakt");
+      const r = await SEV_OPS.invoiceOp({ confirm: true, op: "reminder", id: p.id, fee: p.fee, days: p.ttp });
+      const fees = Math.round(((+p.feeOpen || 0) + (+p.fee || 0)) * 100) / 100;
+      const subject = p.title + " zu Rechnung " + p.nr + " · FS Creative";
+      const text = "Guten Tag " + (p.contact || "") + ",\n\n" + (p.level === 1 ? "sicher haben Sie es nur übersehen: Die Rechnung " + p.nr + " ist noch offen (" + eur(p.open) + ")." : "leider ist die Rechnung " + p.nr + " trotz unserer Erinnerung noch offen (" + eur(p.open) + (fees > 0 ? " zzgl. " + eur(fees) + " Mahnspesen" : "") + ").") +
+        " Die " + p.title + " finden Sie im Anhang – bitte überweisen Sie den Betrag innerhalb von " + p.ttp + " Tagen.\n\nFalls Sie bereits bezahlt haben, betrachten Sie diese Nachricht bitte als gegenstandslos.\n\nFreundliche Grüße\nSimon Felder\nFS Creative";
+      await SEV_OPS.invoiceOp({ confirm: true, op: "send", id: r.reminder.id, toEmail: p.email, subject, text });
+      res.push({ id: p.id, ok: true, nr: r.reminder.nr });
+      st.log.unshift({ at: new Date().toISOString(), id: p.id, nr: p.nr, ma: r.reminder.nr, level: p.level, fee: p.fee, to: p.email.replace(/^[^@]+/, "…") });
+    } catch (e) { res.push({ id: p.id, ok: false, error: String(e.message || e).slice(0, 200) }); }
+  }
+  st.log = st.log.slice(0, 60); await FIN.setMeta("dunning", st);
+  SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+  return res;
+}
 const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook,
   snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
 
@@ -1730,6 +1791,10 @@ function readSteuer() {
   o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {};
   o.uvaManual = o.uvaManual || {}; o.jabInput = o.jabInput || {}; o.trips = o.trips || {}; o.ruleMap = o.ruleMap || {}; o.supMap = o.supMap || {}; o.u1 = o.u1 || {};
   o.fon = Object.assign({ nextPaket: 1, archive: [] }, o.fon || {});
+  // Einmalig: UVA Q1 + Q2 2026 sind laut Simon abgegeben und bezahlt (Datum unbekannt) – nicht festschreiben (Kfz-VSt-Korrektur mit Steuerberater offen)
+  if (!o.migr || !o.migr.uva2026h1) { o.migr = Object.assign({}, o.migr, { uva2026h1: new Date().toISOString() });
+    [["2026-Q1", "2026-05-15"], ["2026-Q2", "2026-08-15"]].forEach(([k, d]) => { if (o.uva[k]) return; o.uva[k] = { doneAt: d + "T12:00:00.000Z", migrated: true, note: "abgegeben (Übernahme)", paid: { manual: true, date: null } }; });
+    writeSteuer(o); }
   return o;
 }
 function writeSteuer(o) { try { fs.writeFileSync(STEUER_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
@@ -1821,7 +1886,7 @@ async function steuerRaw(force) {
       net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross: sevNum(o.sumGross), enshrined: !!o.enshrined, pays: pays["CreditNote:" + o.id] ? pays["CreditNote:" + o.id].slice().sort((x, y) => x.date.localeCompare(y.date)) : undefined, lines: cnBy[o.id] || [] }));
     const cutoff = new Date(Date.now() - 500 * 864e5).toISOString().slice(0, 10);
     const transactions = tx.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
-      .filter(t => t.amount < 0 && (t.date || "") >= cutoff && /finanzamt|abgabenkonto|bmf|steuer|\bust\b|umsatzsteuer|\bfa\b/i.test(t.name + " " + t.purpose));
+      .filter(t => t.amount < 0 && (t.date || "") >= cutoff && /finanzamt|abgabenkonto|bmf|steuer|\bust\b|\buva\b|umsatzsteuer|\bfa\b|\b\d{2}[- ]?\d{3}\/\d{4}\b/i.test(t.name + " " + t.purpose));
     // Steuerregeln (id, Name, Beschreibung, Seite) aus der ReceiptGuidance – damit die Zuordnung zum österreichischen Konto geprüft werden kann
     const trBy = {}; [[guide, ""], [guideRev, "REVENUE"], [guideExp, "EXPENSE"]].forEach(([gd, def]) => ((gd && gd.objects) || []).forEach(g => { if (!g) return; const side = (g.allowedReceiptTypes || []).join("/") || def; (g.allowedTaxRules || []).forEach(r => { if (r == null || r.id == null) return; const k = String(r.id); const x = trBy[k] = trBy[k] || { id: k, name: r.name || "", description: r.description || "", rates: [], side: "" };
       (r.taxRates || []).forEach(t => { if (x.rates.indexOf(t) < 0) x.rates.push(t); }); if (side && x.side.indexOf(side) < 0) x.side = (x.side ? x.side + "/" : "") + side; }); }));
@@ -1897,7 +1962,8 @@ function steuerOp(pl) {
     if (arr.length) o.trips[pl.year] = arr; else delete o.trips[pl.year];
   }
   else if (op === "done" && /^(uva|jab|u1)$/.test(pl.kind) && key) { o[pl.kind][key] = Object.assign({}, o[pl.kind][key] || {}, { doneAt: new Date().toISOString(), summary: pl.summary && typeof pl.summary === "object" ? steuerSummary(pl.summary) : null, note: String(pl.note || "").slice(0, 500) }); }
-  else if (op === "undone" && /^(uva|jab|u1)$/.test(pl.kind) && key) { delete o[pl.kind][key]; }
+  else if (op === "undone" && /^(uva|jab|u1)$/.test(pl.kind) && key) { const k0 = o[pl.kind][key] || {}; delete o[pl.kind][key]; if (k0.locked || k0.paid) o[pl.kind][key] = { locked: k0.locked, paid: k0.paid }; }   // Festschreibung/Zahlung bleiben
+  else if (op === "uvapaid" && key) { const e = o.uva[key] = o.uva[key] || {}; e.paid = pl.paid === false ? undefined : Object.assign({ manual: true, date: /^\d{4}-\d{2}-\d{2}$/.test(pl.date || "") ? pl.date : null }, n2(pl.amount) ? { amount: n2(pl.amount) } : {}); }
   else throw new Error("bad_op");
   if (!writeSteuer(o)) throw new Error("save_failed");
   return o;
@@ -2151,7 +2217,9 @@ async function fonSenden(pl, modus) {
   if (rc === 0 && modus === "P" && art === "U1") o.u1[key] = Object.assign({}, o.u1[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, voraus: e.kennzahlen.voraus, rest: e.kennzahlen.rest, kz: e.kennzahlen.u1 }, fon: { paket, at: new Date().toISOString() } });
   if (rc === 0 && modus === "P" && art === "U30") o.uva[key] = Object.assign({}, o.uva[key] || {}, { doneAt: new Date().toISOString(), summary: { zahllast: e.zahllast, kz: e.kennzahlen, docIds: e.docIds || [] }, fon: { paket, at: new Date().toISOString() } });
   writeSteuer(o);
-  return { ok: rc === 0, rc, msg, status, paket, steuer: steuerPublic(o) };
+  // UVA verbindlich abgegeben → Quartal automatisch festschreiben (UVA-Abschluss in einem Schritt)
+  let locked = null; if (rc === 0 && modus === "P" && art === "U30" && FIN_STATE.local) { try { locked = (await uvaClose({ key, summary: { zahllast: e.zahllast } })).locked; } catch (err) { console.error("UVA-Abschluss:", err.message); } }
+  return { ok: rc === 0, rc, msg, status, paket, locked, steuer: steuerPublic(readSteuer()) };
 }
 
 // ── VIES-UID-Abfrage (öffentliche REST-API der EU-Kommission), Cache in steuer.json ──
@@ -2221,6 +2289,39 @@ async function sevUstPayment(pl) {
   const o = readSteuer(); o.uva[p.key] = Object.assign({}, o.uva[p.key] || {}, { paid: { voucherId: vid, transactionId: t.id, amount, date: t.date, booked } }); writeSteuer(o);
   return { voucherId: vid, booked, bookErr, steuer: steuerPublic(o) };
 }
+// UVA-Abschluss in einem Schritt: Abgabe vermerken (Datum + Zahllast/Gutschrift), Zeitraum in allen Dokumentarten festschreiben
+async function uvaClose(pl) {
+  const p = steuerPeriod(pl.key); if (!p) throw new Error("Unbekannter Zeitraum.");
+  if (!FIN_STATE.local) throw new Error("Festschreiben gibt es nur mit der eigenen Buchhaltung.");
+  if (p.to >= viennaToday()) throw new Error("Der Zeitraum läuft noch.");
+  await FIN_LOCAL.load();
+  const r = await FIN_LOCAL.request("POST", "/Fin/enshrinePeriod", { body: { from: p.from, to: p.to } });
+  const o = readSteuer(), now = new Date().toISOString(), e = o.uva[p.key] = Object.assign({}, o.uva[p.key] || {});
+  const sum = pl.summary && typeof pl.summary === "object" ? steuerSummary(pl.summary) : null;
+  if (!e.doneAt) { e.doneAt = now; if (sum) e.summary = sum; }
+  if (!e.summary && sum) e.summary = sum;
+  const zl = e.summary && isFinite(+e.summary.zahllast) ? Math.round(+e.summary.zahllast * 100) / 100 : null;
+  e.filed = e.filed || { at: e.doneAt, zahllast: zl };
+  e.locked = { at: now, counts: r.objects || {} };
+  writeSteuer(o); STEUER_CACHE.at = 0; SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+  return { locked: e.locked, steuer: steuerPublic(o) };
+}
+function uvaDue(key) { const p = steuerPeriod(key); if (!p) return null; const m = +p.to.slice(5, 7) + 2, y = p.year + (m > 12 ? 1 : 0); return y + "-" + String((m - 1) % 12 + 1).padStart(2, "0") + "-15"; }
+// Täglich: Zahlung ans Finanzamt (Betrag = Zahllast ± 1 €, nach Zeitraumende, Umsatz noch offen) → als USt-Vorauszahlung buchen = bezahlt
+async function uvaAutoPay() {
+  const o = readSteuer(), keys = Object.keys(o.uva).filter(k => { const e = o.uva[k]; return e && e.doneAt && !e.paid && e.summary && +e.summary.zahllast > 0.005; });
+  if (!keys.length) return 0;
+  const raw = await steuerRaw(true); let n = 0; const used = new Set();
+  for (const k of keys.sort()) {
+    const p = steuerPeriod(k), zl = +o.uva[k].summary.zahllast, due = uvaDue(k); if (!p) continue;
+    const t = (raw.transactions || []).filter(x => x.status === 100 && !used.has(x.id) && x.date > p.to && x.date <= addDaysIso(due, 90) && Math.abs(Math.abs(x.amount) - zl) <= 1)
+      .sort((a, b) => Math.abs(Math.abs(a.amount) - zl) - Math.abs(Math.abs(b.amount) - zl))[0];
+    if (!t) continue; used.add(t.id);
+    try { await sevUstPayment({ confirm: true, key: k, transactionId: t.id }); n++; console.log("UVA", k, "Zahlung erkannt:", t.amount, t.date); } catch (e) { console.error("UVA-Zahlung", k + ":", e.message); }
+  }
+  return n;
+}
+function addDaysIso(d, n) { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
 async function handleAdmin(req, res, u, p) {
   if (p === "/admin/login" && req.method === "GET") {
     if (adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin" });
@@ -2492,6 +2593,27 @@ async function handleAdmin(req, res, u, p) {
       const pl = await sevBody(req, 2000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
       const r = await FIN_MOLLIE.sync({ since: /^\d{4}-\d{2}-\d{2}$/.test(pl.since || "") ? pl.since : undefined }); r.rules = await FIN_RULES.run().catch(() => ({ done: 0 })); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
       return J(200, { ok: true, result: r });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
+  if (p === "/admin/api/fin/dunning") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung verfügbar" });
+      await FIN_LOCAL.load(); const st = await dunState();
+      const view = () => ({ ok: true, settings: st.settings, proposals: dunProposals(st), log: st.log.slice(0, 20), lastRun: st.lastRun || null });
+      if (req.method === "GET") return J(200, view());
+      const pl = await sevBody(req, 20000), op = String(pl.op || "");
+      if (op === "settings") { const P = pl.settings || {}, S = st.settings, n = (v, d, mx) => { const x = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(x) ? Math.max(0, Math.min(mx, Math.round(x * 100) / 100)) : d; };
+        if ("enabled" in P) S.enabled = !!P.enabled; if (P.mode === "auto" || P.mode === "suggest") S.mode = P.mode;
+        if (Array.isArray(P.days)) S.days = [0, 1, 2].map(i => Math.round(n(P.days[i], S.days[i], 365))); if (Array.isArray(P.ttp)) S.ttp = [0, 1, 2].map(i => Math.max(1, Math.round(n(P.ttp[i], S.ttp[i], 90))));
+        ["b2bFees", "b2cFees"].forEach(k => { if (Array.isArray(P[k])) S[k] = [0, 1, 2].map(i => n(P[k][i], S[k][i], 200)); });
+        await FIN.setMeta("dunning", st); return J(200, view()); }
+      if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      if (op === "skip") { const pr = dunProposals(st).find(x => x.id === String(pl.id)); if (pr) st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); return J(200, view()); }
+      if (op === "nodunning") { const o = FIN_LOCAL.get("Invoice", String(pl.id)); if (!o) throw new Error("Rechnung nicht gefunden"); o.noDunning = pl.on !== false; await FIN_LOCAL.save("Invoice", o); SEV_CACHE.at = 0; return J(200, view()); }
+      if (op === "approve" || op === "approveAll") { const pr = dunProposals(st), ids = op === "approve" ? [String(pl.id)] : (Array.isArray(pl.ids) ? pl.ids.map(String) : pr.filter(x => !x.hint).map(x => x.id));
+        const r = await dunSend(st, pr.filter(x => ids.indexOf(x.id) > -1)); return J(200, Object.assign(view(), { result: r })); }
+      return J(400, { ok: false, error: "unbekannte Aktion" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
   // Festschreiben wie sevDesk: Zeitraum + Dokumentarten (nicht umkehrbar) und Einstellung „automatisch bei Fertigstellung“
@@ -2776,6 +2898,11 @@ async function handleAdmin(req, res, u, p) {
   // sevDesk-Abgleich: Steuerregel korrigieren, UVA-Tags setzen, USt-Zahlung als Beleg – jeweils nur mit confirm:true aus dem Bestätigungsdialog
   if ((p === "/admin/api/steuer/sevfix" || p === "/admin/api/steuer/sevtag" || p === "/admin/api/steuer/ustpay") && req.method === "POST") {
     try { const pl = await sevBody(req, 20000); const r = p.endsWith("sevfix") ? await sevFixTaxRule(pl) : p.endsWith("sevtag") ? await sevTagUva(pl) : await sevUstPayment(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
+  }
+  // UVA-Abschluss: abgegeben vermerken + Zeitraum festschreiben (nicht umkehrbar) – Zahllast bleibt als offener Posten bis zur Zahlung
+  if (p === "/admin/api/steuer/close" && req.method === "POST") {
+    try { const pl = await sevBody(req, 300000); if (pl.confirm !== true) throw new Error("Bestätigung fehlt"); const r = await uvaClose(pl); return send(res, 200, JSON.stringify(Object.assign({ ok: true }, r)), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   // UID-Prüfung über VIES (EU-Kommission, nur lesend, Ergebnis 7 Tage gespeichert)
