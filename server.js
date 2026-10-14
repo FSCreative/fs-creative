@@ -868,6 +868,8 @@ async function sevBuild() {
       net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
       overdue: open > 0.005 && !!due && due < today };
   }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
+  // Storno: sevDesk setzt beim Original kein „storniert“ – erkennbar an der Stornorechnung (SR) mit origin = Original
+  { const srOf = {}; invoices.forEach(i => { if (i.type === "SR" && i.origin) srOf[i.origin] = i.nr || true; }); invoices.forEach(i => { if (i.type !== "SR" && srOf[i.id]) { i.cancelled = true; i.stornoNr = srOf[i.id] === true ? "" : srOf[i.id]; i.overdue = false; } }); }
   const accountsRaw = (cas && cas.objects || []).filter(a => String(a.status) !== "0");
   const balances = await Promise.all(accountsRaw.map(a => sev("GET", "/CheckAccount/" + a.id + "/getBalanceAtDate", { query: { date: today } }).then(j => sevNum(j && j.objects)).catch(() => null)));
   const accounts = accountsRaw.map((a, i) => ({ id: String(a.id), name: a.name || "Konto", type: a.type || "", importType: a.importType || "", isDefault: String(a.defaultAccount) === "1", balance: balances[i] }));

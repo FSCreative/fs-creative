@@ -90,7 +90,7 @@ function vouLoad(){ var y=String(F.D.year); if(C.vou[y]||C.busy["v"+y]) return; 
 function pageDash(){
   if(!sevOk()) return noSev();
   var sev=F.D.sev, y=String(F.D.year); vouLoad();
-  var inv=sev.invoices.filter(function(i){ return i.type!=="MA"&&(i.status>=200)&&String(i.date||"").slice(0,4)===y; });
+  var inv=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&!i.cancelled&&(i.status>=200)&&String(i.date||"").slice(0,4)===y; });
   var rev=new Array(12).fill(0), exp=new Array(12).fill(0);
   inv.forEach(function(i){ var m=+String(i.date).slice(5,7)-1; rev[m]+=(i.type==="SR"?-1:1)*Math.abs(i.net||i.gross/1.2); });
   var vd=C.vou[y], cats={};
@@ -102,7 +102,7 @@ function pageDash(){
   var donut=function(parts,colors,center){ var tot=parts.reduce(function(a,p){return a+Math.max(0,p[1]);},0)||1, acc=0, R=46, Cc=2*Math.PI*R;
     return '<svg viewBox="0 0 120 120" class="fsd-donut"><circle cx="60" cy="60" r="'+R+'" fill="none" stroke="var(--sunk)" stroke-width="16"/>'+parts.map(function(p,k){ var f=Math.max(0,p[1])/tot, s='<circle cx="60" cy="60" r="'+R+'" fill="none" stroke="'+colors[k%colors.length]+'" stroke-width="16" stroke-dasharray="'+(f*Cc)+' '+Cc+'" stroke-dashoffset="'+(-acc*Cc)+'" transform="rotate(-90 60 60)"><title>'+esc(p[0])+': '+eur(p[1])+'</title></circle>'; acc+=f; return s; }).join("")+'<text x="60" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">'+center+'</text></svg>'; };
   var cols=["#e5322d","#f58b7c","#f9b8ae","#c0362c","#fbd3cc","#8f1f1a","#d9d9de"];
-  var invAll=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&String(i.date||"").slice(0,4)===y&&i.status>=200; });
+  var invAll=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&!i.cancelled&&String(i.date||"").slice(0,4)===y&&i.status>=200; });
   var paid=invAll.filter(function(i){return i.status===1000;}).reduce(function(a,i){return a+i.gross;},0), open=invAll.filter(function(i){return i.open>0.005&&!i.overdue;}).reduce(function(a,i){return a+i.open;},0), over=invAll.filter(function(i){return i.overdue;}).reduce(function(a,i){return a+i.open;},0);
   var accs=sev.accounts||[], bal=accs.reduce(function(a,x){return a+(+x.balance||0);},0);
   var ab=F.D.abgleich.totals;
