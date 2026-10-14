@@ -2506,7 +2506,7 @@ async function handleAdmin(req, res, u, p) {
       await FIN_LOCAL.load();
       if (req.method === "GET") return J(200, Object.assign({ ok: true }, await FIN_RULES.list()));
       const pl = await sevBody(req, 60000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
-      const r = await FIN_RULES.handle(pl); if (pl.op === "apply" || pl.op === "runall") { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }
+      const r = await FIN_RULES.handle(pl); if (pl.op === "apply" || pl.op === "runall" || pl.op === "adopt") { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }
       return J(200, Object.assign({ ok: true }, r));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }

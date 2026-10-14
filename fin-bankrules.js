@@ -2,10 +2,41 @@
 // Bankregeln (wie sevDesk „Regeln“): offene Bankumsätze automatisch verarbeiten, wenn Name/Verwendungszweck/Betrag/Konto passen.
 // Aktionen: privat (Entnahme/Einlage), Geldtransit (eigene Konten) oder Beleg anlegen (Kategorie + Steuersatz) und gleich zuordnen.
 // Läuft nach Kontoauszug-Import und Mollie-Abruf sowie per „Jetzt anwenden“ – nur offene, nicht zugeordnete Umsätze.
+// Reverse Charge (act.rc): ausländische Leistung, Rechnung mit 0 % (UID hinterlegt) → Beleg mit Steuerregel 12 (Drittland) bzw. 14 (EU)
+// = „Reverse Charge mit Vorsteuer“ – steuer-calc.js meldet das als KZ 057 (20 % Steuerschuld § 19 Abs. 1) und KZ 066 (gleiche Vorsteuer).
+const CALC = require("./admin-cockpit/steuer-calc.js");
+// ISO-3166-Zifferncode am Ende von Kartenumsätzen (Erste/George: „… SAN FRANCISCO 94104 840 SPESEN: 1,79 KURS: 1,128“)
+const NUM_CC = { "040": "AT", "840": "US", "372": "IE", "276": "DE", "528": "NL", "442": "LU", "826": "GB", "756": "CH", "250": "FR", "380": "IT", "724": "ES", "203": "CZ", "752": "SE", "208": "DK", "056": "BE", "616": "PL", "036": "AU", "124": "CA", "620": "PT", "246": "FI", "470": "MT", "196": "CY" };
+// bekannte Anbieter → Lieferantenname für den Beleg (Kartenumsätze haben nur den gekürzten Händlernamen)
+const KNOWN = [[/railway/i, "Railway Corporation"], [/github/i, "GitHub, Inc."], [/anthropic|claude/i, "Anthropic, PBC"], [/google/i, "Google Ireland Ltd."], [/facebk|facebook|meta ?platf/i, "Meta Platforms Ireland Ltd."], [/adobe/i, "Adobe Systems Software Ireland Ltd."], [/apple\.com|apple/i, "Apple Distribution International Ltd."], [/\bunity\b/i, "Unity Technologies"], [/beds24/i, "Beds24"], [/world4you/i, "World4You Internet Services GmbH"], [/openai|chatgpt/i, "OpenAI"], [/cloudflare/i, "Cloudflare, Inc."], [/figma/i, "Figma, Inc."], [/canva/i, "Canva Pty Ltd"], [/spotify/i, "Spotify AB"]];
 module.exports = function (D) {
   const { L, getMeta, setMeta } = D;
   let RULES = null;
   const low = s => String(s || "").toLowerCase(), day = v => String(v || "").slice(0, 10), r2 = n => Math.round((+n || 0) * 100) / 100;
+  const num = s => +String(s || "").replace(/\.(?=\d{3}\b)/g, "").replace(",", ".") || 0;
+  // Kartenumsatz zerlegen: „E-COMM 105,82 USD K1 01.10. 04:17 RAILWAY SAN FRANCISCO 94104 840 SPESEN: 1,79 KURS: 1,128“
+  function card(p) {
+    p = String(p || "").replace(/\s+/g, " ").trim(); const m = p.match(/\b\d{2}\.\d{2}\.?\s+\d{1,2}:\d{2}\s+(.+)$/); if (!m) return null;
+    const toks = m[1].replace(/\s+(SPESEN|KURS|ENTGELT)\b.*$/i, "").trim().split(" "); let numCc = "";
+    while (toks.length > 1 && /^\d+$/.test(toks[toks.length - 1])) { const x = toks.pop(); if (!numCc && x.length === 3 && NUM_CC[x]) numCc = x; }
+    const zi = toks.findIndex((x, i) => i > 0 && /^\d{3,}$/.test(x)); if (zi > 0) toks.length = zi;   // Händler endet vor der PLZ („SHELL 6700 BLUDENZ“)
+    const text = toks.join(" "), h = p.match(/\s([A-Z]{2,3})\s+K\d\b/), cur = h && h[1].length === 3 ? h[1] : "", sp = p.match(/SPESEN:?\s*(\d+(?:[.,]\d{1,2})?)/i);
+    let w = toks.map(x => x.replace(/^[*,.\-]+|[*,.\-]+$/g, "")).filter(Boolean); if (!w.length) return null;
+    const key = low(w[0].length < 4 && w[1] ? w[0] + " " + w[1] : w[0]);
+    return { merchant: text.slice(0, 22).trim(), key, cc: (h && h[1].length === 2 ? h[1] : "") || NUM_CC[numCc] || "", cur: cur === "EUR" ? "" : cur, spesen: sp ? num(sp[1]) : 0 };
+  }
+  const legal = s => String(s || "").replace(/\s+/g, " ").trim().replace(/[ ,]+(gmbh( & co\.? kg)?|ag|kg|og|e\.?\s?u\.?|ltd\.?|limited|inc\.?|llc|b\.?v\.?|s\.?a\.?|se|plc|pbc|corp(oration)?\.?|co\.?)$/i, "").trim();
+  // Händler-Schlüssel eines Umsatzes: bei Kartenzahlung aus dem Zweck, sonst Name des Zahlungsempfängers
+  function merchantOf(t) {
+    const c = card(t.paymtPurpose); if (c) return { key: "k:" + c.key, kw: c.key, field: "purpose", label: c.merchant, card: c };
+    const n = legal(t.payeePayerName); if (n.length < 3) return null;
+    return { key: "n:" + low(n), kw: low(n), field: "name", label: n, card: null };
+  }
+  const knownName = s => { const k = KNOWN.find(x => x[0].test(s || "")); return k ? k[1] : ""; };
+  const titleCase = s => String(s || "").toLowerCase().replace(/(^|[\s\-*])([a-zäöü])/g, (m, a, b) => a + b.toUpperCase());
+  // Land des Leisters: Kartenumsatz (Länderkürzel/ISO-Code), sonst bekannter Anbieter (steuer-calc FOREIGN)
+  function countryOf(t, supplier) { const c = card(t.paymtPurpose); return (c && c.cc) || CALC.supplierCountry({ supplier: supplier || t.payeePayerName || "" }) || ""; }
+  function feeCategory(fallback) { const a = L.get("AccountingType", "74"); if (a) return "74"; const x = L.all("AccountingType").find(y => /kartengeb|kontof(ü|ue)hrung|bankspesen|bankgeb|geldverkehr/i.test(String(y.name || ""))); return x ? String(x.id) : String(fallback || ""); }
   async function load() { if (!RULES) RULES = (await getMeta("bankRules").catch(() => null)) || []; return RULES; }
   async function save() { await setMeta("bankRules", RULES); }
   const terms = s => String(s || "").split(/[;,\n]/).map(x => x.trim().toLowerCase()).filter(Boolean);
@@ -13,7 +44,7 @@ module.exports = function (D) {
     const c = r.cond || {}, amt = +t.amount || 0; let any = false;
     const has = (f, hay) => { const x = terms(f); if (!x.length) return true; any = true; return x.some(k => hay.indexOf(k) > -1); };
     if (!has(c.name, low(t.payeePayerName))) return false;
-    if (!has(c.purpose, low(t.paymtPurpose))) return false;
+    if (!has(c.purpose, low(t.paymtPurpose).replace(/\s+/g, " "))) return false;
     if (c.dir === "in" && amt <= 0) return false; if (c.dir === "out" && amt >= 0) return false;
     if (c.min !== "" && c.min != null && Math.abs(amt) < +c.min - 0.004) return false;
     if (c.max !== "" && c.max != null && Math.abs(amt) > +c.max + 0.004) return false;
@@ -28,11 +59,24 @@ module.exports = function (D) {
     if (a.type === "done") { t.status = "350"; t.ruleId = r.id; t.doneNote = r.name; await L.save("CheckAccountTransaction", t); return "erledigt"; }   // z. B. 0-€-Abschlussbuchung der Bank: nur Info, nichts zu buchen
     if (a.type === "transit") { t.status = "400"; t.transitWith = "regel:" + r.id; t.ruleId = r.id; await L.save("CheckAccountTransaction", t); return "transit"; }
     if (a.type === "beleg") {
-      const rate = [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, gross = Math.abs(amt);
-      const body = { voucher: { supplierName: a.supplier || t.payeePayerName || "", description: (a.desc || "") + (a.desc ? " – " : "") + (t.paymtPurpose || "").slice(0, 120), voucherDate: day(t.valueDate), creditDebit: amt < 0 ? "C" : "D", status: "100", voucherType: "VOU", taxType: "default", fromRule: r.id },
-        voucherPosSave: [{ accountingType: a.category ? { id: String(a.category), objectName: "AccountingType" } : undefined, taxRate: String(rate), sumGross: String(gross), net: "false", comment: "per Regel „" + r.name + "“" }] };
+      const rc = !!a.rc && amt < 0, rate = rc ? 0 : ([0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20), gross = r2(Math.abs(amt)), c = card(t.paymtPurpose), d = day(t.valueDate);
+      // Fremdwährungsspesen der Bank (Kartenzahlung „SPESEN: 1,79“): eigener Beleg 0 % ohne Reverse Charge, Rest ist die Leistung
+      const fee = amt < 0 && c && c.spesen > 0 && c.spesen < gross ? r2(c.spesen) : 0, main = r2(gross - fee);
+      const supplier = a.supplier || knownName((c && c.merchant) + " " + (t.payeePayerName || "")) || legal(t.payeePayerName) || (c ? titleCase(c.merchant) : "");
+      const cc = rc ? countryOf(t, supplier) : "", eu = !!cc && cc !== "AT" && CALC.isEU(cc), purpose = String(t.paymtPurpose || "").replace(/\s+/g, " ").trim();
+      const body = { voucher: { supplierName: supplier, description: (a.desc || "") + (a.desc ? " – " : "") + purpose.slice(0, 160), voucherDate: d, creditDebit: amt < 0 ? "C" : "D", status: "100", voucherType: "VOU", taxType: "default", fromRule: r.id },
+        voucherPosSave: [{ accountingType: a.category ? { id: String(a.category), objectName: "AccountingType" } : undefined, taxRate: String(rate), sumGross: String(main), net: "false", comment: "per Regel „" + r.name + "“" + (rc ? " · Reverse Charge 20 % (§ 19 Abs. 1 UStG)" : "") }] };
+      // Steuerregel 12 = RC mit Vorsteuer (Drittland), 14 = RC mit Vorsteuer (EU) → UVA KZ 057 + KZ 066 (steuer-calc RULE_IN_DEFAULT)
+      if (rc) Object.assign(body.voucher, { taxRule: { id: eu ? "14" : "12", objectName: "TaxRule" }, reverseCharge: true, rcCountry: cc, taxText: "Reverse Charge – Steuerschuld geht auf den Leistungsempfänger über (§ 19 Abs. 1 UStG), 20 %" });
       const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
-      await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: gross, date: day(t.valueDate), checkAccountTransaction: { id: String(t.id) } } });
+      await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: main, date: d, checkAccountTransaction: { id: String(t.id) } } });
+      if (fee) {
+        const acc = t.checkAccount && L.get("CheckAccount", t.checkAccount.id), cat = feeCategory(a.category);
+        const fb = { voucher: { supplierName: (acc && acc.name) || "Bank", description: "Fremdwährungsspesen Karte – " + purpose.slice(0, 160), voucherDate: d, creditDebit: "C", status: "100", voucherType: "VOU", taxType: "default", fromRule: r.id },
+          voucherPosSave: [{ accountingType: cat ? { id: cat, objectName: "AccountingType" } : undefined, taxRate: "0", sumGross: String(fee), net: "false", comment: "Kartengebühr laut Umsatz (SPESEN) – steuerfreie Bankleistung, keine Vorsteuer" }] };
+        const fv = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body: fb })).objects.voucher;
+        await L.request("PUT", "/Voucher/" + fv.id + "/bookAmount", { body: { amount: fee, date: d, checkAccountTransaction: { id: String(t.id) } } });
+      }
       return "beleg";
     }
     return "";
@@ -52,8 +96,48 @@ module.exports = function (D) {
     const c = r.cond || {}, a = r.act || {}, n = v => v === "" || v == null || !isFinite(+v) ? "" : r2(Math.abs(+v));
     return { id: r.id || ("b" + Date.now().toString(36)), name: String(r.name || "Regel").slice(0, 80), active: r.active !== false,
       cond: { name: String(c.name || "").slice(0, 300), purpose: String(c.purpose || "").slice(0, 300), dir: ["in", "out"].indexOf(c.dir) > -1 ? c.dir : "", min: n(c.min), max: n(c.max), account: String(c.account || "").slice(0, 40) },
-      act: { type: ["privat", "transit", "beleg", "done"].indexOf(a.type) > -1 ? a.type : "", category: String(a.category || "").slice(0, 40), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, supplier: String(a.supplier || "").slice(0, 120), desc: String(a.desc || "").slice(0, 120) },
+      act: { type: ["privat", "transit", "beleg", "done"].indexOf(a.type) > -1 ? a.type : "", category: String(a.category || "").slice(0, 40), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, supplier: String(a.supplier || "").slice(0, 120), desc: String(a.desc || "").slice(0, 120), rc: a.type === "beleg" && (a.rc === true || a.rc === "true" || a.rc === 1) },
       hits: +r.hits || 0, lastHit: r.lastHit || null };
+  }
+  // Regel-Vorschläge: offene Umsätze nach Händler gruppieren und nachsehen, wie derselbe Händler früher gebucht wurde
+  const isRcVoucher = v => !!v && (v.reverseCharge === true || ["12", "13", "14"].indexOf(String(v.taxRule && v.taxRule.id != null ? v.taxRule.id : v.taxRule || "")) > -1);
+  function history() {
+    const by = {};
+    for (const l of L.all("CheckAccountTransactionLog")) {
+      if (!l.object || l.object.objectName !== "Voucher" || !l.checkAccountTransaction) continue;
+      const t = L.get("CheckAccountTransaction", l.checkAccountTransaction.id), v = L.get("Voucher", l.object.id); if (!t || !v) continue;
+      const m = merchantOf(t); if (!m) continue;
+      const p = L.positionsOf("Voucher", v.id).filter(x => x.accountingType && x.accountingType.id).sort((x, y) => Math.abs(+y.sumGross || 0) - Math.abs(+x.sumGross || 0))[0]; if (!p) continue;   // größte Position (nicht die Spesen)
+      const h = { date: day(t.valueDate), category: String(p.accountingType.id), rate: +p.taxRate || 0, supplier: v.supplierName || "", rc: isRcVoucher(v), voucherId: String(v.id), dir: +t.amount < 0 ? "out" : "in" };
+      const o = by[m.key]; if (!o || h.date > o.date) by[m.key] = h;
+    }
+    return by;
+  }
+  function suggest() {
+    const act = (RULES || []).filter(r => r.active), hist = history(), groups = {};
+    for (const t of open()) {
+      if (act.some(r => matches(r, t))) continue;   // schon von einer Regel erfasst
+      const m = merchantOf(t); if (!m) continue; const amt = +t.amount || 0; if (!amt) continue;
+      const k = m.key + (amt < 0 ? ":out" : ":in"), g = groups[k] = groups[k] || { m, dir: amt < 0 ? "out" : "in", tx: [] }; g.tx.push(t);
+    }
+    const cats = {}; L.all("AccountingType").forEach(a => { cats[String(a.id)] = a.name || ""; });
+    const out = Object.keys(groups).map(k => {
+      const g = groups[k], m = g.m, t0 = g.tx[0], h = hist[m.key] && hist[m.key].dir === g.dir ? hist[m.key] : null;
+      const supplier = (h && h.supplier) || knownName(m.label + " " + (t0.payeePayerName || "")) || (m.card ? titleCase(m.card.merchant) : m.label);
+      const cc = (m.card && m.card.cc) || CALC.supplierCountry({ supplier }) || "", fx = !!(m.card && m.card.cur);
+      const foreign = g.dir === "out" && ((!!cc && cc !== "AT") || fx);
+      // RC: früher als RC gebucht, oder ausländischer Leister und früher 0 % bzw. noch nie gebucht
+      const rc = g.dir === "out" && (h ? (h.rc || (h.rate === 0 && foreign)) : foreign);
+      const why = rc ? (h && h.rc ? "früher als Reverse Charge gebucht" : (cc && cc !== "AT" ? "Leister " + cc : "Zahlung in " + m.card.cur) + " – ausländische Leistung mit 0 %") : "";
+      const name = titleCase(m.kw).slice(0, 60);
+      return { key: k, label: m.label, count: g.tx.length, sum: r2(g.tx.reduce((a, t) => a + (+t.amount || 0), 0)), cc, rc, why, prev: h ? { date: h.date, category: h.category, catName: cats[h.category] || "", rate: h.rate, supplier: h.supplier, rc: h.rc } : null,
+        rule: { name: name + (rc ? " (Reverse Charge)" : ""), active: true, cond: { name: m.field === "name" ? m.kw : "", purpose: m.field === "purpose" ? m.kw : "", dir: g.dir, min: "", max: "", account: "" },
+          act: { type: "beleg", category: h ? h.category : "", rate: rc ? 0 : (h ? h.rate : 20), rc, supplier, desc: "" } },
+        catName: h ? cats[h.category] || "" : "",
+        sample: g.tx.slice(0, 5).map(t => ({ date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.paymtPurpose || "").slice(0, 90), amount: +t.amount })) };
+    });
+    out.sort((a, b) => b.count - a.count || Math.abs(b.sum) - Math.abs(a.sum));
+    return { suggestions: out.slice(0, 40), open: open().length };
   }
   async function handle(pl) {
     await load(); const op = String(pl.op || "");
@@ -68,6 +152,8 @@ module.exports = function (D) {
     if (op === "order") { const ids = pl.ids || []; RULES.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)); await save(); return {}; }
     if (op === "preview") { const r = pl.rule ? clean(pl.rule) : RULES.find(x => x.id === pl.id); if (!r) throw new Error("Regel nicht gefunden"); const hit = open().filter(t => matches(r, t)); return { count: hit.length, sample: hit.slice(0, 8).map(t => ({ date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.paymtPurpose || "").slice(0, 80), amount: +t.amount })) }; }
     if (op === "apply") return await run(pl.id);
+    if (op === "suggest") return suggest();
+    if (op === "adopt") { const s = await handle(Object.assign({}, pl, { op: "save" })); const x = await run(s.rule.id); return Object.assign({ rule: s.rule }, x); }   // Vorschlag übernehmen: speichern + gleich anwenden
     if (op === "runall") return await run();
     throw new Error("unbekannte Aktion");
   }

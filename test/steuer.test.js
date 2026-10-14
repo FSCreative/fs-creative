@@ -495,6 +495,23 @@ else {
   const r = S.computeUva({ invoices: [re], vouchers: [], creditNotes: [] }, s, P3), m = S.uvaKzMap(r);
   t("Anzahlung vor Rechnung, in sevDesk-Q2 gemeldet → nicht in Q3", () => { assert.ok(!m["022"] || Math.abs(+(m["022"].base != null ? m["022"].base : m["022"])) < 0.01, JSON.stringify(m)); });
 }
+// Bankregel mit Reverse Charge (fin-bankrules.js act.rc): Beleg 0 % mit Steuerregel 12 (Drittland) bzw. 14 (EU) – Lieferant ohne UID/Land,
+// Name aus dem Kartenumsatz unbekannt. § 19 Abs. 1 UStG: 20 % von 100 → KZ 057 100/20 und dieselbe Vorsteuer KZ 066 20, Zahllast unverändert.
+{
+  const P3 = Q(2026, 3), base = inv({ net: 1000, tax: 200, date: "2026-07-10", delivery: "2026-07-10" });
+  const rcUs = vou({ net: 100, tax: 0, rate: 0, date: "2026-08-03", taxRule: "12", supplier: "Kartenzahlung XY Ltd", supplierCountry: "", cat: "Software", fromRule: "b1" });
+  const rcEu = vou({ net: 100, tax: 0, rate: 0, date: "2026-08-04", taxRule: "14", supplier: "Kartenzahlung XY Ltd", supplierCountry: "", cat: "Software" });
+  const ohne = vou({ net: 100, tax: 0, rate: 0, date: "2026-08-03", taxRule: "", taxType: "default", supplier: "Kartenzahlung XY Ltd", supplierCountry: "", cat: "Software" });
+  const U0 = S.computeUva({ invoices: [base], vouchers: [], creditNotes: [] }, st0(), P3);
+  const U1 = S.computeUva({ invoices: [base], vouchers: [rcUs], creditNotes: [] }, st0(), P3);
+  const U2 = S.computeUva({ invoices: [base], vouchers: [rcEu], creditNotes: [] }, st0(), P3);
+  const U3 = S.computeUva({ invoices: [base], vouchers: [ohne], creditNotes: [] }, st0(), P3);
+  t("RC-Bankregel (US-Leistung, Regel 12): KZ 057 100/20, KZ 066 20", () => { near(kz(U1, "057"), 100); near(kz(U1, "057", "tax"), 20); near(kz(U1, "066", "tax"), 20); });
+  t("RC-Bankregel: Zahllast unverändert (RC neutral)", () => { near(U1.zahllast, U0.zahllast, "Zahllast"); near(U1.ust - U0.ust, 20, "USt +20"); near(U1.vst - U0.vst, 20, "VSt +20"); });
+  t("RC-Bankregel (EU-Leistung, Regel 14): KZ 057/066, nicht 070/072 (kein ig. Erwerb)", () => { near(kz(U2, "057"), 100); near(kz(U2, "066", "tax"), 20); near(kz(U2, "070"), 0); near(kz(U2, "072", "tax"), 0); });
+  t("RC-Bankregel: Kennzahlen-Map 057/066", () => { const m = S.uvaKzMap(U1); near(m["057"], 20); near(m["066"], 20); });
+  t("ohne RC-Kennzeichen: 0 %-Beleg eines unbekannten Lieferanten ist kein Reverse Charge", () => { near(kz(U3, "057"), 0); near(kz(U3, "066", "tax"), 0); });
+}
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 
 console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
