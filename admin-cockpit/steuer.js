@@ -524,7 +524,49 @@ F.action("jabexport",function(y){
   F.modal('<div class="row-between"><h2 style="font-size:19px">Kennzahlen '+esc(y)+'</h2>'+F.btnClose()+'</div><p class="muted small">In die Zwischenablage kopiert. Direkt übermitteln: unten „FinanzOnline – Jahreserklärung“.</p><pre class="xmlpre">'+esc(txt)+'</pre>',"wide");
 });
 
-F.geldTab({id:"uva",label:"UVA",order:30,sub:"Umsatzsteuervoranmeldung (U30) und ZM – berechnen, prüfen und direkt an FinanzOnline übermitteln",render:renderUva});
+/* ---------- Steuer-Übersicht: was steht an, was ist bezahlt, was kommt noch – in Alltagssprache ---------- */
+function renderOverview(){
+  if(!ST||!ST.data) return loadingBox();
+  var y=String(F.D.year), cy=F.D.today.slice(0,4), today=F.D.today, set=ST.settings, ps=periodsOf(+y,set.zeitraum), monthly=set.zeitraum==="monat";
+  var go=function(act,label,cls){ return '<button class="btn'+(cls?" "+cls:"")+'" data-act="'+act+'">'+label+'</button>'; };
+  // 1) UVA-Zeiträume als Zeitleiste
+  var uvaRows=ps.map(function(p){
+    var d=ST.uva[p.key], due=dueOf(p), done=d&&d.doneAt, running=p.to>=today, started=p.from<=today, r=started?S.computeUva(ST.data,ST,p):null;
+    var st=done?["ok","abgegeben am "+de(d.doneAt)]:running?(started?["grey","läuft noch – Stand heute"]:["grey","noch nicht begonnen"]):(due<today?["bad","überfällig seit "+de(due)]:["warn","abgeben & zahlen bis "+de(due)]);
+    var lbl=monthly?new Date(p.year,p.endMonth-1,1).toLocaleDateString("de-AT",{month:"long"}):p.key.slice(-1)+". Quartal";
+    var amt=r?(r.zahllast>=0?'<b>'+eur(r.zahllast)+'</b><div class="sub">zu zahlen</div>':'<b class="ok-t">'+eur(-r.zahllast)+'</b><div class="sub">Gutschrift</div>'):'<span class="muted">–</span>';
+    var todo=r&&!done&&r.review.length?' <span class="tag warn">'+r.review.length+' Beleg'+(r.review.length===1?"":"e")+' unklar</span>':'';
+    return '<tr><td><b>'+esc(lbl)+'</b><div class="sub">'+deShort(p.from)+' – '+deShort(p.to)+'</div></td><td><span class="tag '+st[0]+'">'+esc(st[1])+'</span>'+todo+'</td><td class="r">'+amt+'</td><td class="r">'+(started?go("stgo:uva:"+p.key,done?"Ansehen":(running?"Ansehen":"Prüfen & abgeben"),!done&&!running?"primary":""):"")+'</td></tr>';
+  }).join("");
+  // 2) Jahr auf einen Blick
+  var u=S.computeU1(ST.data,ST,y), j=S.computeJab(ST.data,ST,y), est=j.est||{};
+  var tile=function(title,big,lines,act,hint){ return '<section class="panel st-tile"><div class="panel-b"><div class="k">'+title+'</div><div class="v num money">'+big+'</div>'+lines.map(function(l){ return '<div class="row-between small"><span class="muted">'+l[0]+'</span><b class="num">'+l[1]+'</b></div>'; }).join("")+(hint?'<p class="muted small" style="margin:8px 0 0">'+hint+'</p>':'')+(act?'<div style="margin-top:10px">'+act+'</div>':'')+'</div></section>'; };
+  var ustT=tile("Umsatzsteuer "+y+(y===cy?" (bisher)":""),eur(u.zahllast),[["Umsatzsteuer aus deinen Rechnungen",eur(u.r.ust)],["− Vorsteuer aus deinen Belegen",eur(u.r.vst)],["schon per UVA bezahlt",eur(u.voraus)],[u.rest>=0?"noch offen":"zu viel bezahlt",eur(Math.abs(u.rest))]],go("stgo:u1:"+y,"Umsatzsteuer-Jahr"),"Die Umsatzsteuer zahlst du nur durch – sie gehört dem Finanzamt.");
+  var gewT=tile("Gewinn "+y+(y===cy?" (bisher)":""),eur(j.gewinn),[["Einnahmen (bezahlt)",eur(j.ertrSum!=null?j.ertrSum:j.rev)],["− Ausgaben inkl. Abschreibung",eur(j.aufw)],["− Gewinnfreibetrag",eur(j.gfb||0)],["= steuerpflichtiger Gewinn",eur(j.steuerGewinn)]],go("stgo:jab:"+y,"Einnahmen-Ausgaben-Rechnung"),"Gerechnet nach Zahlungseingang/-ausgang (E/A-Rechnung).");
+  var estT=tile("Einkommensteuer "+y+" (Schätzung)",eur(est.tax||0),[["schon vorausbezahlt",eur(est.voraus||0)],[(est.rest||0)>=0?"voraussichtlich Nachzahlung":"voraussichtlich Gutschrift",eur(Math.abs(est.rest||0))]],go("fin:prognose","Prognose fürs ganze Jahr"),"Richtwert auf Basis des bisherigen Gewinns – Vorauszahlungen und Daten unter Gewinn & Jahreserklärung pflegen.");
+  // 3) Jahreserklärung Vorjahr
+  var py=String(+cy-1), pd=(ST.jab||{})[py], pu=(ST.u1||{})[py], jdue=cy+"-06-30", jdone=(pd&&pd.doneAt)||(pu&&pu.doneAt);
+  var pj=S.computeJab(ST.data,ST,py), checks=(pj.checks||[]).filter(function(c){ return c&&c.doc; });
+  var jahr='<section class="panel"><div class="panel-h"><div><h2>Jahreserklärung '+py+'</h2><div class="muted">Umsatzsteuer (U1), Einnahmen-Ausgaben-Rechnung (E1a) und Einkommensteuer (E1) – über FinanzOnline bis '+de(jdue)+(F.D.today>jdue&&!jdone?' · <b class="bad-t">Frist vorbei</b>':'')+'</div></div><div class="row">'+(jdone?'<span class="tag ok">erledigt</span>':'<span class="tag '+(F.D.today>jdue?"bad":"warn")+'">offen</span>')+'</div></div>'+
+    '<div class="panel-b st-steps">'+[["1","Umsatzsteuer-Jahr prüfen","stgo:u1:"+py,pu&&pu.doneAt],["2","Gewinn (E/A-Rechnung) prüfen","stgo:jab:"+py,pd&&pd.doneAt],["3","Erklärungen an FinanzOnline senden","stgo:jab:"+py,jdone]].map(function(x){ return '<button type="button" class="st-step'+(x[3]?" done":"")+'" data-act="'+x[2]+'"><span class="n">'+(x[3]?"✓":x[0])+'</span><span>'+x[1]+'</span></button>'; }).join("")+'</div>'+
+    (checks.length&&!jdone?'<div class="panel-b"><div class="notice"><span>'+checks.length+' größere Anschaffung'+(checks.length===1?"":"en")+' prüfen (Anlage mit Abschreibung oder sofort Aufwand?), z. B. '+esc((checks[0].doc.supplier||"Beleg")+" "+eur(checks[0].net))+'</span>'+go("stgo:jab:"+py,"Ansehen")+'</div></div>':'')+'</section>';
+  var glossar='<section class="panel"><details><summary class="panel-b" style="cursor:pointer"><b>So rechnet das Cockpit – kurz erklärt</b></summary><div class="panel-b small" style="display:grid;gap:8px">'+
+    '<div><b>UVA (Umsatzsteuer-Voranmeldung):</b> '+(monthly?"jeden Monat":"jedes Quartal")+' meldest du ans Finanzamt, wie viel Umsatzsteuer du kassiert und wie viel Vorsteuer du bezahlt hast. Die Differenz (Zahllast) ist am 15. des zweitfolgenden Monats fällig.</div>'+
+    '<div><b>Sollbesteuerung:</b> Umsatzsteuer zählt im Monat der Leistung – egal, wann der Kunde zahlt. Ausnahme: Anzahlungen erst bei Zahlungseingang.</div>'+
+    '<div><b>Vorsteuer:</b> die Umsatzsteuer auf deinen Einkäufen – bekommst du vom Finanzamt zurück bzw. wird abgezogen. Bei EU-/Auslandsrechnungen ohne USt (Google, Meta …) rechnet das Cockpit die Steuer selbst dazu und zieht sie gleich wieder ab (Reverse Charge, Ergebnis 0).</div>'+
+    '<div><b>Gewinn (E/A-Rechnung):</b> Einnahmen minus Ausgaben nach Zahlungsdatum. Größere Anschaffungen (über 1.000 €) werden über die Nutzungsdauer abgeschrieben (Halbjahresregel).</div>'+
+    '<div><b>Einkommensteuer:</b> auf den Gewinn nach dem Steuertarif; Vorauszahlungen werden angerechnet. Alles hier ist ein Richtwert – maßgeblich ist der Bescheid.</div></div></details></section>';
+  return '<div class="st-ov">'+
+    '<section class="panel"><div class="panel-h"><div><h2>Umsatzsteuer-Voranmeldungen '+esc(y)+'</h2><div class="muted">'+(monthly?"monatlich":"vierteljährlich")+' · Abgabe und Zahlung jeweils bis zum 15. des zweitfolgenden Monats</div></div>'+go("stgo:uva:","Einstellungen & Details")+'</div><div class="scroll"><table><tbody>'+uvaRows+'</tbody></table></div></section>'+
+    '<div class="st-tiles">'+ustT+gewT+estT+'</div>'+jahr+glossar+'</div>';
+}
+F.steuerOverview=renderOverview;
+F.action("stgo",function(v){ var p=v.split(":"), k=p[0], x=p.slice(1).join(":"); if(k==="uva"){ if(x) F.UI.uvaKey=x; F.actions.fin("uva"); } else if(k==="u1"){ F.UI.u1Year=x; F.actions.fin("u1"); } else if(k==="jab"){ F.UI.jabYear=x; F.actions.fin("jab"); } });
+F.css('.st-ov{display:grid;gap:16px}.st-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.st-tile{margin:0}.st-tile .k{font-size:13px;color:var(--ink-2);font-weight:600}.st-tile .v{font-size:26px;font-weight:650;margin:4px 0 10px}.st-tile .row-between{padding:4px 0;border-top:1px solid var(--line)}'+
+  '.st-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.st-step{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px;text-align:left;cursor:pointer;font:inherit;color:var(--ink)}.st-step .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--sunk);font-weight:700;flex:none}.st-step.done .n{background:var(--ok-soft);color:var(--ok)}.st-step:hover{border-color:var(--glow)}'+
+  '@media (max-width:1100px){.st-tiles,.st-steps{grid-template-columns:minmax(0,1fr)}}');
+F.geldTab({id:"steuer",label:"Steuer-Übersicht",order:29,sub:"Was steht an, was ist bezahlt, was kommt noch",render:renderOverview});
+F.geldTab({id:"uva",label:"Umsatzsteuer-Voranmeldung (UVA)",order:30,sub:"Umsatzsteuervoranmeldung (U30) und ZM – berechnen, prüfen und direkt an FinanzOnline übermitteln",render:renderUva});
 /* ---------- U1: Umsatzsteuer-Jahreserklärung (eigener Tab) ---------- */
 function renderU1(){
   if(!ST||!ST.data) return loadingBox();
@@ -561,8 +603,8 @@ F.action("u1copy",function(y){ var u=S.computeU1(ST.data,ST,y), f=function(n){ r
   Object.keys(u.kz).sort().forEach(function(k){ L.push("KZ "+k+"\t"+f(u.kz[k])); }); L.push("KZ 095 Zahllast/Gutschrift\t"+f(u.zahllast)); L.push("Entrichtete Vorauszahlungen\t"+f(u.voraus)); L.push((u.rest>=0?"Restschuld":"Gutschrift")+"\t"+f(Math.abs(u.rest)));
   var txt=L.join("\n"); try{ navigator.clipboard.writeText(txt).catch(function(){}); }catch(e){}
   F.modal('<div class="row-between"><h2 style="font-size:19px">U1 '+esc(y)+' – Kennzahlen</h2>'+F.btnClose()+'</div><p class="muted small">In die Zwischenablage kopiert – für FinanzOnline (Formular U1) oder den Steuerberater.</p><pre class="xmlpre">'+esc(txt)+'</pre>',"wide"); });
-F.geldTab({id:"u1",label:"U1 (USt-Jahr)",order:35,sub:"Umsatzsteuer-Jahreserklärung: Jahreswerte, Abgleich mit den UVAs, Restschuld und Abgabe",render:renderU1});
-F.geldTab({id:"jab",label:"JAB",order:40,sub:"Jahresabschluss: Einnahmen-Ausgaben-Rechnung (E1a), Umsatzsteuererklärung (U1) und Einkommensteuer (E1)",render:renderJab});
+F.geldTab({id:"u1",label:"Umsatzsteuer-Jahreserklärung (U1)",order:35,sub:"Umsatzsteuer-Jahreserklärung: Jahreswerte, Abgleich mit den UVAs, Restschuld und Abgabe",render:renderU1});
+F.geldTab({id:"jab",label:"Gewinn & Jahreserklärung",order:40,sub:"Jahresabschluss: Einnahmen-Ausgaben-Rechnung (E1a), Umsatzsteuererklärung (U1) und Einkommensteuer (E1)",render:renderJab});
 
 /* "Heute": fällige UVA, die noch nicht erledigt ist */
 F.feed(function(){

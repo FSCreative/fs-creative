@@ -35,14 +35,14 @@ var NAV=[
   {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou"},
-  {id:"bank",label:"Bank",icon:"bank",sub:[["bank","Konten"],["kasse","Kassenbuch"],["open","Unvollständig"]]},
-  {id:"uva",label:"Steuern",icon:"tax",sub:[["uva","UVA"],["u1","U1 (USt-Jahr)"],["jab","E/A-Rechnung"],["prognose","Prognose"]]},
+  {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"]]},
+  {id:"steuer",label:"Steuern",icon:"tax",sub:[["steuer","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Gewinn & Jahreserklärung"],["prognose","Prognose"]]},
   {sep:"Verwalten"},
   {id:"ct",label:"Kontakte",icon:"ct"},
   {id:"prod",label:"Produkte",icon:"prod"},
-  {id:"abgl",label:"Abgleich Plattformen",icon:"sync"},
+  {id:"abgl",label:"Plattformen verrechnen",icon:"sync"},
   {id:"lock",label:"Festschreiben",icon:"lock"},
-  {id:"umstieg",label:"Umstieg & Firma",icon:"set"}
+  {id:"umstieg",label:"Firma & Einstellungen",icon:"set"}
 ];
 function groupOf(p){ for(var i=0;i<NAV.length;i++){ var n=NAV[i]; if(n.id===p) return n.id; if(n.sub&&n.sub.some(function(s){return s[0]===p;})) return n.id; } return p; }
 function sidebar(){
@@ -102,6 +102,8 @@ function pageDash(){
   var max=Math.max.apply(null,rev.concat(exp).concat([1])), H=170, W=640, bw=W/12;
   var bars=rev.map(function(r,i){ var x=i*bw+bw*.18, w=bw*.3, hr=r/max*(H-20), he=exp[i]/max*(H-20); return '<rect x="'+x+'" y="'+(H-hr)+'" width="'+w+'" height="'+hr+'" rx="3" fill="#2fb27b"><title>Erträge '+eur(r)+'</title></rect><rect x="'+(x+w+3)+'" y="'+(H-he)+'" width="'+w+'" height="'+he+'" rx="3" fill="#ef4a4a"><title>Aufwendungen '+eur(exp[i])+'</title></rect><text x="'+(i*bw+bw/2)+'" y="'+(H+14)+'" text-anchor="middle" font-size="10" fill="var(--ink-3)">'+["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"][i]+'</text>'; }).join("");
   var tr=rev.reduce(function(a,b){return a+b;},0), te=exp.reduce(function(a,b){return a+b;},0);
+  var trG=inv.reduce(function(a,i){ return a+(+i.gross||0); },0);
+  if(vd&&vd.ok) vd.vouchers.forEach(function(v){ if(v.cd!=="D"||v.status<100||/durchlaufend/i.test(v.category||"")) return; trG+=(/erl(ö|oe)sminderung/i.test(v.category||"")?-1:1)*(v.gross||0); });
   var catArr=Object.keys(cats).map(function(k){return [k,cats[k]];}).sort(function(a,b){return b[1]-a[1];});
   var donut=function(parts,colors,center){ var tot=parts.reduce(function(a,p){return a+Math.max(0,p[1]);},0)||1, acc=0, R=46, Cc=2*Math.PI*R;
     return '<svg viewBox="0 0 120 120" class="fsd-donut"><circle cx="60" cy="60" r="'+R+'" fill="none" stroke="var(--sunk)" stroke-width="16"/>'+parts.map(function(p,k){ var f=Math.max(0,p[1])/tot, s='<circle cx="60" cy="60" r="'+R+'" fill="none" stroke="'+colors[k%colors.length]+'" stroke-width="16" stroke-dasharray="'+(f*Cc)+' '+Cc+'" stroke-dashoffset="'+(-acc*Cc)+'" transform="rotate(-90 60 60)"><title>'+esc(p[0])+': '+eur(p[1])+'</title></circle>'; acc+=f; return s; }).join("")+'<text x="60" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">'+center+'</text></svg>'; };
@@ -120,8 +122,8 @@ function pageDash(){
     '<div class="fsd-grid">'+
       (function(){ var op=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&!i.cancelled&&(i.status===200||i.status===750); }), nf=function(i){ return i.gross?i.open*(i.net/i.gross):i.open; };
         var due=op.filter(function(i){return i.overdue;}).reduce(function(a,i){return a+nf(i);},0), notdue=op.filter(function(i){return !i.overdue;}).reduce(function(a,i){return a+nf(i);},0), tot=due+notdue||1;
-        return '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Umsatz</b><span class="muted">netto · '+esc(y)+'</span></div><div class="fsd-big">'+(vd&&vd.ok?eur(tr):'…')+'</div><div class="fsd-bigl">Rechnungen ohne Stornierte + Einnahme-Belege</div><button type="button" class="fsd-acc" data-act="fin:inv"><span>Rechnungen</span><b>→</b></button></section>'+
-          '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Offene Forderungen</b><span class="muted">netto</span></div><div class="fsd-big">'+eur(due+notdue)+'</div><div class="fsd-bar2"><i style="width:'+(due/tot*100)+'%;background:#e5322d"></i><i style="width:'+(notdue/tot*100)+'%;background:#f5a524"></i></div>'+
+        return '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Umsatz</b><span class="muted">netto · '+esc(y)+'</span></div><div class="fsd-big">'+(vd&&vd.ok?eur(tr):'…')+'</div><div class="fsd-bigl">'+(vd&&vd.ok?'brutto '+eur(trG)+' · ':'')+'Rechnungen ohne Stornierte + Einnahme-Belege</div><button type="button" class="fsd-acc" data-act="fin:inv"><span>Rechnungen</span><b>→</b></button></section>'+
+          '<section class="fsd-card fsd-kpi"><div class="fsd-ch"><b>Offene Forderungen</b><span class="muted">netto</span></div><div class="fsd-big">'+eur(due+notdue)+'</div><div class="muted" style="font-size:12px">brutto '+eur(op.reduce(function(a,i){return a+i.open;},0))+'</div><div class="fsd-bar2"><i style="width:'+(due/tot*100)+'%;background:#e5322d"></i><i style="width:'+(notdue/tot*100)+'%;background:#f5a524"></i></div>'+
           '<div class="fsd-dl" style="margin-top:8px"><span><i style="background:#e5322d"></i>Fällige Rechnungen<b>'+eur(due)+'</b></span><span><i style="background:#f5a524"></i>Offene Rechnungen<b>'+eur(notdue)+'</b></span></div></section>'; })()+
       '<section class="fsd-card span2"><div class="fsd-ch"><b>Ertrag / Aufwand</b><span class="muted">netto · Erträge '+eur0(tr)+' · Aufwand '+eur0(te)+(vd?'':' · lädt …')+'</span></div><svg viewBox="0 0 '+W+' '+(H+20)+'" class="fsd-chart">'+bars+'</svg><div class="fsd-leg"><span><i style="background:#2fb27b"></i>Erträge</span><span><i style="background:#ef4a4a"></i>Aufwendungen</span></div></section>'+
       '<section class="fsd-card"><div class="fsd-ch"><b>Meine Aufgaben</b></div>'+(tasks.length?tasks.map(function(t){ return '<button type="button" class="fsd-task" data-act="fin:'+t[0]+'"><b>'+esc(t[1])+'</b><span>'+esc(t[2])+'</span></button>'; }).join(""):'<div class="sd-empty">Du hast keine offenen Aufgaben. 🎉</div>')+'</section>'+
@@ -352,14 +354,15 @@ function content(){
   if(p==="orders"){ return head("Angebote","",'<button class="btn primary" data-act="newoffer">Angebot erstellen</button>')+(F.offersPanelHtml?F.offersPanelHtml():'<div class="sd-empty">Angebote findest du unter Kunden & Leads.</div>'); }
   if(p==="ct"){ F.UI.stT="kontakte"; return pageTab("stamm"); }
   if(p==="prod"){ F.UI.stT="artikel"; return pageTab("stamm"); }
+  if(p==="steuer") return head("Steuern "+esc(String(F.D.year)),"Was steht an, was ist schon bezahlt, was kommt noch.","")+(F.steuerOverview?F.steuerOverview():"");
   if(p==="uva"||p==="u1"||p==="jab"||p==="prognose"||p==="umstieg") return p==="prognose"?head("Jahresprognose","")+(F.renderPrognose?F.renderPrognose():pageTab("prognose")):pageTab(p);
   if(p==="abgl") return pageAbgl();
   if(p==="lock") return pageLock();
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["orders","Angebote"],["uva","Steuern"],["ct","Kontakte"],["prod","Produkte"],["cn","Gutschriften"],["abgl","Abgleich"],["lock","Festschreiben"],["umstieg","Umstieg"]];
-function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="kasse"||g==="open") g="bank"; if(g==="u1"||g==="jab"||g==="prognose") g="uva";
+var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["orders","Angebote"],["steuer","Steuern"],["ct","Kontakte"],["prod","Produkte"],["cn","Gutschriften"],["abgl","Abgleich"],["lock","Festschreiben"],["umstieg","Umstieg"]];
+function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd"||g==="dun") g="inv"; if(g==="kasse"||g==="open") g="bank"; if(g==="uva"||g==="u1"||g==="jab"||g==="prognose") g="steuer";
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+'</button>'; }).join("")+'</nav>'; }
 function scanInput(cls,label){ return '<label class="'+cls+'">'+ic("cam")+(label?'<span>'+label+'</span>':'')+'<input type="file" class="fsd-scan" accept="image/*,application/pdf" capture="environment" multiple hidden></label>'; }
 F.listen("change",".fsd-scan",function(el){ var fs=el.files; if(fs&&fs.length){ if(F.KI&&F.KI.scan) F.KI.scan(fs); else F.toast("Beleg-Scan ist gerade nicht verfügbar",true); } el.value=""; });
@@ -367,10 +370,11 @@ function mRow(act,title,sub,amt,right){ return '<button type="button" class="fsm
 function mDash(){
   if(!sevOk()) return noSev();
   var sev=F.D.sev, ab=F.D.abgleich.totals, accs=sev.accounts||[], bal=accs.reduce(function(a,x){return a+(+x.balance||0);},0);
-  var od=sev.invoices.filter(function(i){return i.overdue;}), op=sev.invoices.filter(function(i){return i.open>0.005&&i.status!==100;}), dr=sev.invoices.filter(function(i){return i.status===100;});
+  var od=sev.invoices.filter(function(i){return i.overdue&&!i.cancelled;}), op=sev.invoices.filter(function(i){return i.open>0.005&&i.status!==100&&!i.cancelled&&i.type!=="SR";}), dr=sev.invoices.filter(function(i){return i.status===100;});
   var tile=function(act,lbl,val,sub,cls){ return '<button type="button" class="fsm-tile'+(cls?" "+cls:"")+'" data-act="'+act+'"><span>'+lbl+'</span><b>'+val+'</b><i>'+sub+'</i></button>'; };
+  var nt=function(l){ return l.reduce(function(a,i){ return a+(i.gross?i.open*i.net/i.gross:i.open); },0); }, gt=function(l){ return l.reduce(function(a,i){return a+i.open;},0); };
   return '<section class="fsm-scan">'+scanInput("fsm-scanbtn","Beleg scannen")+'<p>Foto mit der Kamera – die KI liest Lieferant, Datum und Betrag aus.</p><div class="fsm-scan2"><button type="button" class="btn" data-act="kiupload">Datei hochladen</button><button type="button" class="btn" data-act="newinvoice">Rechnung schreiben</button></div></section>'+
-    '<div class="fsm-tiles">'+tile("fin:inv:open","Offen",eur0(op.reduce(function(a,i){return a+i.open;},0)),op.length+" Rechnungen")+tile("fin:inv:due","Überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0)),od.length+" Rechnungen",od.length?"bad":"")+
+    '<div class="fsm-tiles">'+tile("fin:inv:open","Offen (netto)",eur0(nt(op)),"brutto "+eur0(gt(op))+" · "+op.length+" Rechn.")+tile("fin:inv:due","Überfällig (netto)",eur0(nt(od)),"brutto "+eur0(gt(od))+" · "+od.length+" Rechn.",od.length?"bad":"")+
       tile("fin:bank","Kontostand",eur0(bal),accs.length+" Konten")+tile("fin:abgl","Zu verrechnen",eur0(ab.unbilled||0),(ab.unbilledCount||0)+" Posten")+'</div>'+
     '<section class="fsm-card"><h3>Zu erledigen</h3>'+
       [dr.length?mRow("fin:inv:draft",dr.length+" Rechnungsentwürfe","noch nicht versendet","",""):"",
@@ -439,7 +443,10 @@ function mobile(){
 var gv=F.views.find(function(x){return x.id==="geld";});
 if(gv){
   F._geldOrig=gv.render;
+  // alte Sprungziele (F.UI.geldTab aus Heute, Suche, Steuer-Hinweisen …) auf die neuen Seiten abbilden
+  var GT={rechnungen:"inv",bank:"open",belege:"vou",stamm:"ct",uva:"uva",u1:"u1",jab:"jab",prognose:"prognose",umstieg:"umstieg",steuer:"steuer"};
   gv.render=function(){
+    if(UI.geldTab&&UI.geldTab!=="__z"){ var m=GT[UI.geldTab]; if(m){ UI.fin=m+(m==="inv"&&UI.rgF&&UI.rgF!=="todo"&&UI.rgF!=="all"?":"+({open:"open",overdue:"due",draft:"draft"}[UI.rgF]||"all"):""); } UI.geldTab="__z"; }
     if(window.innerWidth<=900) return mobile();
     return '<div class="fsd">'+sidebar()+'<div class="fsd-main">'+content()+'</div></div>';
   };
