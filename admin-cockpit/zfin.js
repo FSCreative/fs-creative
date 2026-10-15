@@ -45,7 +45,6 @@ var NAV=[
   {sep:"Verwalten"},
   {id:"ct",label:"Kontakte",icon:"ct"},
   {id:"prod",label:"Produkte",icon:"prod"},
-  {id:"abgl",label:"Plattformen verrechnen",icon:"sync"},
   {id:"lock",label:"Festschreiben",icon:"lock"},
   {id:"mydata",label:"Meine Daten",icon:"id"},
   {id:"umstieg",label:"Firma & Einstellungen",icon:"set"}
@@ -64,13 +63,15 @@ F.action("fin",function(p){ if(/^invd/.test(p)&&!p.split(":")[1]) p="inv"; UI.fi
 
 /* Status-Pillen */
 function pill(kind,label){ return '<span class="fsd-pill '+kind+'">'+esc(label)+'</span>'; }
+/* teilbezahlt: Status 750 oder schon ein Teil eingegangen (offen < brutto) */
+function isPart(i){ return !i.cancelled&&i.type!=="SR"&&i.status!==100&&i.status!==1000&&i.open>0.005&&(i.status===750||i.open<Math.abs(+i.gross||0)-0.005); }
 function invPill(i){
   if(i.cancelled) return pill("grey","Storniert");
   if(i.type==="SR") return pill("grey","Storno");
   if(i.status===100) return pill("draft","Entwurf");
   if(i.status===1000) return pill("paid","Bezahlt");
+  if(isPart(i)) return pill(i.overdue?"due":"part",i.overdue?"Teilbezahlt · fällig":"Teilbezahlt");
   if(i.overdue) return pill("due","Fällig");
-  if(i.status===750) return pill("open","Teilbezahlt");
   return pill("open","Offen");
 }
 function relDue(i){
@@ -187,7 +188,6 @@ function pageDash(){
   var accs=sev.accounts||[], bal=accs.reduce(function(a,x){return a+(+x.balance||0);},0);
   var ab=F.D.abgleich.totals;
   var tasks=[];
-  if(ab.unbilled>0.005) tasks.push(['abgl',eur0(ab.unbilled)+" zu verrechnen",ab.unbilledCount+" Posten ohne Rechnung"]);
   var drafts=sev.invoices.filter(function(i){return i.status===100;}); if(drafts.length) tasks.push(["inv:draft",drafts.length+" Rechnungsentwürfe","noch nicht versendet"]);
   var od=sev.invoices.filter(function(i){return i.overdue;}); if(od.length) tasks.push(["inv:due",od.length+" überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0))+" offen"]);
   if(sev.unassigned) tasks.push(["open",sev.unassigned+" Bankumsätze","noch nicht zugeordnet"]);
@@ -215,17 +215,17 @@ function pageInv(kind){
   if(!sevOk()) return noSev();
   var parts=UI.fin.split(":"), f=parts[1]||"all", q=(UI.fq_inv||"").toLowerCase(), per=25;
   var base=F.D.sev.invoices.slice().sort(function(a,b){ return (+b.id||0)-(+a.id||0); }).filter(function(i){ return kind==="dun"?i.dunning>0:i.type!=="MA"; });
-  var cnt={all:base.length,draft:0,open:0,due:0,paid:0,locked:0};
-  base.forEach(function(i){ if(i.status===100) cnt.draft++; if(i.open>0.005&&i.status!==100) cnt.open++; if(i.overdue) cnt.due++; if(i.status===1000) cnt.paid++; if(i.enshrined) cnt.locked++; });
-  var list=base.filter(function(i){ if(f==="draft"&&i.status!==100) return false; if(f==="open"&&!(i.open>0.005&&i.status!==100)) return false; if(f==="due"&&!i.overdue) return false; if(f==="paid"&&i.status!==1000) return false; if(f==="locked"&&!i.enshrined) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; });
+  var cnt={all:base.length,draft:0,open:0,part:0,due:0,paid:0,locked:0};
+  base.forEach(function(i){ if(i.status===100) cnt.draft++; if(i.open>0.005&&i.status!==100) cnt.open++; if(isPart(i)) cnt.part++; if(i.overdue) cnt.due++; if(i.status===1000) cnt.paid++; if(i.enshrined) cnt.locked++; });
+  var list=base.filter(function(i){ if(f==="draft"&&i.status!==100) return false; if(f==="open"&&!(i.open>0.005&&i.status!==100)) return false; if(f==="part"&&!isPart(i)) return false; if(f==="due"&&!i.overdue) return false; if(f==="paid"&&i.status!==1000) return false; if(f==="locked"&&!i.enshrined) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; });
   var openSum=base.reduce(function(a,i){ return a+(i.status!==100?i.open:0); },0), pg=UI.fpg||0;
   var rows=list.slice(pg*per,(pg+1)*per).map(function(i){
     var sub=i.type==="SR"?(i.header||"Stornorechnung"):(i.header&&!/^rechnung$/i.test(i.header)?i.header:("Rechnung "+(i.nr||"")));
     var icons='<span class="fsd-ic">'+(i.status===100?'<button type="button" title="Per E-Mail senden" data-act="sdsend:'+esc(i.id)+'">'+ic("mail")+'</button>':(i.open>0.005?'<button type="button" title="Zahlung erfassen" data-act="book:'+esc(i.id)+'">'+ic("cash")+'</button>':''))+'<button type="button" title="Herunterladen" data-act="fdl:'+esc(i.id)+'">'+ic("dl")+'</button></span>';
-    return '<tr class="fsd-row" data-act="fin:invd:'+esc(i.id)+'"><td>'+invPill(i)+'</td><td>'+relDue(i)+'</td><td class="nowrap m">'+(i.status===100?'– – –':(i.enshrined?'<span class="fsd-lock" title="Festgeschrieben">'+ic("lock")+'</span>':'')+esc(i.nr||"–"))+'</td><td><div>'+esc(i.contact||"—")+'</div><div class="sub">'+esc(sub)+'</div></td><td class="m">'+deShort(i.date)+'</td><td class="r nowrap">'+eur(i.type==="SR"?-Math.abs(i.gross):i.gross)+'</td><td class="r nowrap">'+eur(i.status===100?i.gross:i.open)+'</td><td class="r">'+icons+'</td></tr>';
+    return '<tr class="fsd-row" data-act="fin:invd:'+esc(i.id)+'"><td>'+invPill(i)+'</td><td>'+relDue(i)+'</td><td class="nowrap m">'+(i.status===100?'– – –':(i.enshrined?'<span class="fsd-lock" title="Festgeschrieben">'+ic("lock")+'</span>':'')+esc(i.nr||"–"))+'</td><td><div>'+esc(i.contact||"—")+'</div><div class="sub">'+esc(sub)+'</div></td><td class="m">'+deShort(i.date)+'</td><td class="r nowrap">'+eur(i.type==="SR"?-Math.abs(i.gross):i.gross)+'</td><td class="r nowrap">'+eur(i.status===100?i.gross:i.open)+(isPart(i)?'<div class="sub">bezahlt '+eur(Math.abs(+i.gross||0)-i.open)+'</div>':'')+'</td><td class="r">'+icons+'</td></tr>';
   }).join("");
   return head(kind==="dun"?"Mahnungen":"Rechnungen",'Offene Rechnungen: '+eur(openSum),'<button class="btn primary" data-act="newinvoice">Rechnung schreiben</button>')+(kind==="dun"?dunCard():'')+
-    '<section class="fsd-card flush"><div class="fsd-bar">'+tabs("fin:"+(kind==="dun"?"dun":"inv"),f,[["all","Alle"],["draft","Entwurf"],["open","Offen"],["due","Fällig"],["locked","Festgeschrieben"],["paid","Bezahlt"]])+search("inv","Suchen …")+'</div>'+
+    '<section class="fsd-card flush"><div class="fsd-bar">'+tabs("fin:"+(kind==="dun"?"dun":"inv"),f,[["all","Alle"],["draft","Entwurf"],["open","Offen"],["part","Teilbezahlt"],["due","Fällig"],["locked","Festgeschrieben"],["paid","Bezahlt"]])+search("inv","Suchen …")+'</div>'+
     '<div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Fälligkeit</th><th>Rechnungsnr.</th><th>Kunde</th><th>Datum</th><th class="r">Betrag (brutto)</th><th class="r">Offen (brutto)</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="8" class="empty">Keine Rechnungen in dieser Ansicht.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section>';
 }
 /* Rechnung als eigene Seite */
@@ -691,7 +691,7 @@ function content(){
 var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["steuer","Steuern"]];
 var MMORE=[["Rechnungen & Belege",[["wkr","Wiederkehrende Rechnungen"],["rvou","Wiederkehrende Belege"],["dun","Mahnungen"],["cn","Gutschriften"],["orders","Angebote"]]],
   ["Bank & Steuern",[["open","Nicht zugeordnet"],["kasse","Kassenbuch"],["uva","Voranmeldung (UVA)"],["anlagen","Abschreibungen"],["jab","Jahreserklärung"]]],
-  ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen verrechnen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
+  ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; if(g==="u1"||g==="prognose") g="steuer";
   var main=MNAV.some(function(n){ return n[0]===g; }), more=null; MMORE.forEach(function(sec){ sec[1].forEach(function(x){ if(x[0]===g) more=x[1]; }); });
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+(n[0]==="review"&&F.reviewCount&&F.reviewCount()?' ('+F.reviewCount()+')':'')+'</button>'; }).join("")+
@@ -713,7 +713,7 @@ function mDash(){
      od.length?mRow("fin:inv:due",od.length+" Rechnungen überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0))+" offen – erinnern oder mahnen","",ic("right")):"",
      sev.unassigned?mRow("fin:open",sev.unassigned+" Bankumsätze zuordnen","Rechnung, Beleg oder privat","",ic("right")):"",
      sev.vouchers&&sev.vouchers.drafts?mRow("fin:vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen","",ic("right")):"",
-     ab.unbilled>0.005?mRow("fin:abgl",eur0(ab.unbilled)+" zu verrechnen",(ab.unbilledCount||0)+" Posten ohne Rechnung","",ic("right")):""].join("")+
+     ""].join("")+
      extraTasks().filter(function(t){ return t[0]!=="review"; }).map(function(t){ return mRow(t[3]||"fin:"+t[0],t[1],esc(t[2]),"",ic("right")); }).join("");
   var P=(F.D&&F.D.platforms)||{}, c=function(v){ return eur0((+v||0)/100); }, plat=[];
   if(P.blitzdings&&P.blitzdings.revenue) plat.push(mRow("platgo:blitzdings","Blitzdings",((P.blitzdings.bookings||{}).upcomingCount||0)+" Buchungen kommend · offen "+c(P.blitzdings.revenue.openCents),c(P.blitzdings.revenue.paidCents),"<span class='fsm-s'>bezahlt</span>"));
@@ -733,7 +733,7 @@ function mDash(){
 }
 function mInvRow(i){ return mRow("fin:invd:"+esc(i.id),i.contact,esc(i.nr||"Entwurf")+" · "+deShort(i.date)+" · "+relDue(i),eur(i.type==="SR"?-Math.abs(i.gross):i.gross),invPill(i)); }
 /* Handy-Listen: Kennzahlen als Filter-Chips, große Suche, nach Monat gruppiert mit fixierten Monatsköpfen */
-function mChips(list){ return '<div class="fsm-chips">'+list.map(function(c){ return c.act?'<button type="button" class="fsm-chip'+(c.on?" on":"")+(c.cls?" "+c.cls:"")+'" data-act="'+c.act+'"'+(c.on?' aria-pressed="true"':'')+'><span>'+esc(c.label)+'</span><b>'+c.val+'</b>'+(c.sub?'<i>'+c.sub+'</i>':'')+'</button>':'<div class="fsm-chip static'+(c.cls?" "+c.cls:"")+'"><span>'+esc(c.label)+'</span><b>'+c.val+'</b>'+(c.sub?'<i>'+c.sub+'</i>':'')+'</div>'; }).join("")+'</div>'; }
+function mChips(list){ return '<div class="fsm-chips">'+list.filter(Boolean).map(function(c){ return c.act?'<button type="button" class="fsm-chip'+(c.on?" on":"")+(c.cls?" "+c.cls:"")+'" data-act="'+c.act+'"'+(c.on?' aria-pressed="true"':'')+'><span>'+esc(c.label)+'</span><b>'+c.val+'</b>'+(c.sub?'<i>'+c.sub+'</i>':'')+'</button>':'<div class="fsm-chip static'+(c.cls?" "+c.cls:"")+'"><span>'+esc(c.label)+'</span><b>'+c.val+'</b>'+(c.sub?'<i>'+c.sub+'</i>':'')+'</div>'; }).join("")+'</div>'; }
 function mSearch(key,ph){ return '<label class="fsm-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'+search(key,ph)+'</label>'; }
 function mMonth(d){ var m=String(d||"").match(/^(\d{4})-(\d{2})/); return m?m[1]+"-"+m[2]:""; }
 function mMonthName(k){ return k?MNL[+k.slice(5,7)-1]+" "+k.slice(0,4):"Ohne Datum"; }
@@ -745,20 +745,21 @@ function mGrouped(full,page,dateOf,sumOf,rowFn,fmt){
   return out;
 }
 function mSum(l,f){ return l.reduce(function(a,x){ return a+(+f(x)||0); },0); }
-function mInvRowL(i){ var sub=esc(i.nr||"Entwurf")+" · "+deShort(i.date)+(i.status===100||i.status===1000||i.cancelled||i.type==="SR"?"":" · "+relDue(i))+(i.open>0.005&&i.status===750?" · offen "+eur(i.open):"");
+function mInvRowL(i){ var sub=esc(i.nr||"Entwurf")+" · "+deShort(i.date)+(i.status===100||i.status===1000||i.cancelled||i.type==="SR"?"":" · "+relDue(i))+(isPart(i)?" · bezahlt "+eur(Math.abs(+i.gross||0)-i.open)+", offen "+eur(i.open):"");
   return mRow("fin:invd:"+esc(i.id),i.contact,sub,eur(i.type==="SR"?-Math.abs(i.gross):i.gross),invPill(i),"lx"); }
 function mInv(kind){
   if(!sevOk()) return noSev();
   var f=UI.fin.split(":")[1]||"all", q=(UI.fq_inv||"").toLowerCase(), per=30, pg=UI.fpg||0, pre="fin:"+(kind==="dun"?"dun":"inv")+":";
   var base=F.D.sev.invoices.filter(function(i){ return kind==="dun"?i.dunning>0:i.type!=="MA"; });
-  var isOpen=function(i){ return i.open>0.005&&i.status!==100; }, F0={draft:function(i){return i.status===100;},open:isOpen,due:function(i){return !!i.overdue;},paid:function(i){return i.status===1000;},locked:function(i){return !!i.enshrined;}};
-  var by=function(k){ return base.filter(F0[k]); }, od=by("due"), op=by("open"), dr=by("draft"), pd=by("paid");
+  var isOpen=function(i){ return i.open>0.005&&i.status!==100; }, F0={draft:function(i){return i.status===100;},open:isOpen,part:isPart,due:function(i){return !!i.overdue;},paid:function(i){return i.status===1000;},locked:function(i){return !!i.enshrined;}};
+  var by=function(k){ return base.filter(F0[k]); }, od=by("due"), op=by("open"), dr=by("draft"), pd=by("paid"), pt=by("part");
   var list=base.filter(function(i){ if(F0[f]&&!F0[f](i)) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; })
     .sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||""))||((+b.id||0)-(+a.id||0)); });
   var tg=function(k){ return pre+(f===k?"all":k); };
   var chips=mChips([
     {label:"Offen",val:eur0(mSum(op,function(i){return i.open;})),sub:op.length+" Rechnung"+(op.length===1?"":"en"),act:tg("open"),on:f==="open"},
     {label:"Überfällig",val:eur0(mSum(od,function(i){return i.open;})),sub:od.length+" Rechnung"+(od.length===1?"":"en"),act:tg("due"),on:f==="due",cls:od.length?"bad":""},
+    pt.length?{label:"Teilbezahlt",val:eur0(mSum(pt,function(i){return i.open;})),sub:pt.length+" Rechnung"+(pt.length===1?"":"en")+" · offen",act:tg("part"),on:f==="part"}:null,
     {label:"Entwürfe",val:String(dr.length),sub:eur0(mSum(dr,function(i){return i.gross;})),act:tg("draft"),on:f==="draft"},
     {label:"Bezahlt",val:String(pd.length),sub:eur0(mSum(pd,function(i){return i.gross;})),act:tg("paid"),on:f==="paid"},
     {label:"Alle",val:String(base.length),sub:"Rechnungen",act:pre+"all",on:f==="all"}]);
@@ -937,6 +938,7 @@ F.css(
 '.fsd-pill:before{content:"";width:5px;height:5px;border-radius:50%;box-sizing:border-box}'+
 '.fsd-pill.open{background:#fdeeb5}.fsd-pill.open:before{border:1.5px solid #8a6a00;width:7px;height:7px}'+
 '.fsd-pill.due{background:#fcd9d9}.fsd-pill.due:before{border:1.5px solid var(--sd-red);width:7px;height:7px}'+
+'.fsd-pill.part{background:#dcefff}.fsd-pill.part:before{width:8px;height:8px;border:1.5px solid #1f6fb2;background:linear-gradient(90deg,#1f6fb2 50%,transparent 50%)}'+
 '.fsd-pill.paid{background:#d7f6e6}.fsd-pill.paid:before{background:#14a05c;width:6px;height:6px}'+
 '.fsd-pill.draft{background:#e4e3fb}.fsd-pill.draft:before{background:#534acc}'+
 '.fsd-pill.grey{background:rgba(6,3,20,.06);color:var(--sd-mut)}.fsd-pill.grey:before{display:none}'+
