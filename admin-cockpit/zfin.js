@@ -121,7 +121,7 @@ function finChart(rev,exp,afa,y){
     if(!fut) pts.push((x0+bw/2)+','+yv(res[i]));
   }
   var line=pts.length>1?'<polyline points="'+pts.join(" ")+'" fill="none" stroke="#534acc" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" pointer-events="none"/>'+pts.map(function(p){ var q=p.split(","); return '<circle cx="'+q[0]+'" cy="'+q[1]+'" r="3" fill="#fff" stroke="#534acc" stroke-width="2" pointer-events="none"/>'; }).join(""):'';
-  return {svg:'<svg viewBox="0 0 '+W+' '+H+'" class="fsd-chart fch-svg" role="img" aria-label="Ertrag und Aufwand je Monat">'+g+b+line+'</svg>',tip:chTip(curI>=0?curI:11)};
+  return {svg:'<svg viewBox="0 0 '+W+' '+H+'" class="fsd-chart fch-svg" role="img" aria-label="Ertrag und Aufwand je Monat">'+g+b+'</svg>',tip:chTip(curI>=0?curI:11)};
 }
 function chShow(i,el){ var t=document.getElementById("fchTip"); if(t) t.innerHTML=chTip(i); document.querySelectorAll(".fch-m.on").forEach(function(x){ x.classList.remove("on"); }); if(el) el.classList.add("on"); }
 document.addEventListener("mouseover",function(e){ var g=e.target&&e.target.closest&&e.target.closest(".fch-m"); if(g) chShow(+g.getAttribute("data-chm"),g); });

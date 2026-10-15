@@ -46,7 +46,10 @@ module.exports = function (D) {
       source: String(p.source || "").slice(0, 120), payload: p.payload || {} };
     if (cur) { const before = JSON.stringify(cur); Object.assign(cur, clean); if (JSON.stringify(cur) !== before) await persist(); return false; }
     const it = Object.assign({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), createdAt: nowIso() }, clean);
-    ST.items.push(it); await persist(); notifySoon(it);
+    ST.items.push(it); await persist();
+    // Geldtransit zwischen eigenen Konten (Mollie/PayPal/Bank) bucht das Cockpit selbst – aber nur, wenn die Zuordnung eindeutig ist (vom Nutzer so gewünscht)
+    if (p.autoAccept && (p.kind === "mollie-payout" || p.kind === "transfer")) { try { await accept(it.id); it.auto = true; ST.log = (ST.log || []).concat([{ at: nowIso(), kind: it.kind, title: it.title, amount: it.amount, auto: true }]).slice(-500); await persist(); return true; } catch (e) { console.error("Geldtransit automatisch:", e.message); } }
+    notifySoon(it);
     return true;
   }
   const txOpen = id => { const t = L.get("CheckAccountTransaction", id); return !!t && String(t.status) === "100" && !t.transitWith; };

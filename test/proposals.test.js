@@ -78,11 +78,17 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     const r = await R.handle({ op: "apply", id: "r2" }); assert.strictEqual(r.done, 1);
     assert.strictEqual(L.get("CheckAccountTransaction", "103").status, "300");
   });
-  await t("Geldtransit beim Import: nur Vorschlag, accept verknüpft", async () => {
-    const h = (a, x) => a + ":" + x.date + ":" + x.amount;
+  await t("Geldtransit beim Import: eindeutig → automatisch gebucht, mehrdeutig → nur Vorschlag", async () => {
+    const h = (a, x) => a + ":" + x.date + ":" + x.amount + ":" + x.purpose;
     await L.importBank("2", [{ date: "2026-10-05", amount: -150, name: "PayPal", purpose: "Abbuchung auf Bankkonto" }], h);
     const r = await L.importBank("1", [{ date: "2026-10-06", amount: 150, name: "PayPal Europe", purpose: "Übertrag PayPal" }], h);
     assert.strictEqual(r.paired, 1);
+    assert.strictEqual((await P.list()).filter(x => x.kind === "transfer").length, 0);   // eindeutig → schon gebucht
+    const pair = L.all("CheckAccountTransaction").filter(x => Math.abs(Math.abs(+x.amount) - 150) < 0.01);
+    pair.forEach(x => { assert.strictEqual(x.status, "400"); assert.ok(x.transitWith); });
+    // zwei gleich hohe Gegenbuchungen → nicht eindeutig → Vorschlag, erst accept bucht
+    await L.importBank("2", [{ date: "2026-10-10", amount: -80, name: "PayPal", purpose: "Abbuchung auf Bankkonto" }], h);
+    await L.importBank("1", [{ date: "2026-10-11", amount: 80, name: "PayPal Europe", purpose: "Übertrag PayPal A" }, { date: "2026-10-12", amount: 80, name: "PayPal Europe", purpose: "Übertrag PayPal B" }], h);
     const tr = (await P.list()).filter(x => x.kind === "transfer"); assert.strictEqual(tr.length, 1);
     tr[0].txIds.forEach(id => assert.strictEqual(L.get("CheckAccountTransaction", id).status, "100"));
     await P.accept(tr[0].id);

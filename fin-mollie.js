@@ -135,8 +135,11 @@ module.exports = function (D) {
       .map(x => ({ x, dd: (Date.parse(day(x.valueDate)) - Date.parse(d)) / 864e5 })).filter(c => c.dd >= -1 && c.dd <= 7)
       .sort((a, b) => (/mollie/i.test(b.x.payeePayerName + " " + b.x.paymtPurpose) - /mollie/i.test(a.x.payeePayerName + " " + a.x.paymtPurpose)) || Math.abs(a.dd) - Math.abs(b.dd));
     const c = cands[0]; if (!c) return false;
+    // eindeutig: genau ein passender Bankumsatz und kein anderer offener Mollie-Auszahlungsbetrag gleicher Höhe im Zeitfenster
+    const twins = L.all("CheckAccountTransaction").filter(x => x !== molTx && x.mollieId && /outgoing-transfer/.test(x.mollieType || "") && !x.transitWith && String(x.status) === "100" && Math.abs(-(+x.amount || 0) - amount) < 0.005 && Math.abs((Date.parse(day(x.valueDate)) - Date.parse(d)) / 864e5) <= 8);
+    const unique = cands.length === 1 && !twins.length;
     const acc = L.get("CheckAccount", c.x.checkAccount.id), macc = L.get("CheckAccount", molTx.checkAccount.id);
-    const ok = await prop.add({ kind: "mollie-payout", key: "mpay:" + molTx.id + ":" + c.x.id, txIds: [String(molTx.id), String(c.x.id)], txId: String(c.x.id), amount: r2(amount), date: day(c.x.valueDate), title: "Mollie-Auszahlung ↔ Bankumsatz als Geldtransit verknüpfen", detail: ((macc && macc.name) || "Mollie") + " " + d + " → " + ((acc && acc.name) || "Bank") + " " + day(c.x.valueDate) + " · " + (c.x.payeePayerName || "") + " " + String(c.x.paymtPurpose || "").slice(0, 80), source: "Mollie-Abruf", payload: { molTxId: String(molTx.id), bankTxId: String(c.x.id) } });
+    const ok = await prop.add({ autoAccept: unique, kind: "mollie-payout", key: "mpay:" + molTx.id + ":" + c.x.id, txIds: [String(molTx.id), String(c.x.id)], txId: String(c.x.id), amount: r2(amount), date: day(c.x.valueDate), title: "Mollie-Auszahlung ↔ Bankumsatz als Geldtransit verknüpfen", detail: ((macc && macc.name) || "Mollie") + " " + d + " → " + ((acc && acc.name) || "Bank") + " " + day(c.x.valueDate) + " · " + (c.x.payeePayerName || "") + " " + String(c.x.paymtPurpose || "").slice(0, 80), source: "Mollie-Abruf", payload: { molTxId: String(molTx.id), bankTxId: String(c.x.id) } });
     busy.add(String(molTx.id)); busy.add(String(c.x.id));
     return ok;
   }
