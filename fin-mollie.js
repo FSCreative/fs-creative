@@ -103,7 +103,7 @@ module.exports = function (D) {
   // Mollie-Connect-Provisionen ab 10/2026: fs-order legt je Monat die Sammelrechnung „kochdu Online-Provisionen MM/JJJJ (Mollie Connect)“
   // als Entwurf an (je Lokal eine Position, brutto = von Mollie einbehaltene Provision). Nach Monatsende wird sie hier fertiggestellt und
   // JEDE Provision (application fee) des Monats automatisch daran gebucht (vom Nutzer so gewünscht). Bis 09/2026: alte Sammelrechnung „kochdu Provisionen“ (RE-1260 für 09/2026).
-  const ONLINE_FROM = "2026-10";
+  const ONLINE_FROM = "2026-09";   // 09/2026: RE-1260 per Gutschrift storniert, ersetzt durch „kochdu Online-Provisionen 09/2026“
   const todayIso = () => (typeof D.today === "function" ? D.today() : new Date().toISOString().slice(0, 10));   // Tests: fester Stichtag
   const monthEnd = m => new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10);
   const mmOf = m => m.slice(5, 7) + "/" + m.slice(0, 4);

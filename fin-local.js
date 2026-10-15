@@ -329,6 +329,28 @@ module.exports = function (D) {
     return { objects: cn };
   }
 
+  // Storno per Gutschrift: Rechnung ist durch ihre Gutschriften vollständig ausgeglichen → als storniert/verrechnet abschließen.
+  // Zahlungen, die an der Rechnung hingen, werden gelöst (Umsatz wieder offen, z. B. für den richtigen Beleg) – auch bei
+  // festgeschriebener Rechnung, weil die Rechnung selbst unverändert bleibt; jede gelöste Zuordnung wird protokolliert.
+  async function settleCredited(invId, b) {
+    const o = need("Invoice", invId);
+    if (["RE", "ER", "AR", "TR"].indexOf(String(o.invoiceType)) < 0) throw err(400, "Nur zu Rechnungen möglich");
+    if (o.cancelled) throw err(400, "Bereits storniert");
+    const cns = all("CreditNote").filter(c => c.refSrcInvoice && String(c.refSrcInvoice.id) === String(o.id));
+    const credited = r2(cns.reduce((a, c) => a + (+c.sumGross || 0), 0));
+    if (Math.abs(credited - r2(+o.sumGross || 0)) > 0.01) throw err(400, "Gutschriften (" + s2(credited) + ") decken die Rechnung (" + s2(+o.sumGross || 0) + ") nicht vollständig");
+    const day = today(), freed = [];
+    for (const l of all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === "Invoice" && String(l.object.id) === String(o.id))) {
+      const tx = l.checkAccountTransaction && get("CheckAccountTransaction", l.checkAccountTransaction.id);
+      if (tx && !all("CheckAccountTransactionLog").some(x => x.id !== l.id && x.checkAccountTransaction && String(x.checkAccountTransaction.id) === String(tx.id))) { tx.status = "100"; await save("CheckAccountTransaction", tx); }
+      await save("PaymentUnlink", { id: newId("PaymentUnlink"), at: nowIso(), reason: String(b.reason || "Storno per Gutschrift").slice(0, 200), invoice: ref("Invoice", o.id), log: l });
+      await del("CheckAccountTransactionLog", l.id); freed.push({ txId: tx ? String(tx.id) : "", amount: +l.amountPaid || 0 });
+    }
+    for (const c of cns) { c.status = "1000"; c.paidAmount = c.sumGross; c.payDate = c.payDate || iso(day); await save("CreditNote", c); }
+    o.paidAmount = "0"; o.status = "1000"; o.cancelled = true; o.cancelledBy = cns.map(c => c.creditNoteNumber).join(", "); o.payDate = iso(day);
+    await save("Invoice", o);
+    return { objects: { id: o.id, invoiceNumber: o.invoiceNumber, freed } };
+  }
   // ── Kassenbuch: jede Buchung sofort unveränderbar, Korrektur nur per Gegenbuchung mit Tagesdatum, kein negativer Bestand ──
   function isCash(accId) { const a = get("CheckAccount", accId); return !!a && /register|kasse/i.test(String(a.type || "") + " " + String(a.cash || "")); }
   function cashBalance(accId, untilDay) { return r2(all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(accId) && (!untilDay || (dayOf(x.valueDate) || "") <= untilDay)).reduce((a, x) => a + (+x.amount || 0), 0)); }
@@ -620,7 +642,7 @@ module.exports = function (D) {
     if (method !== "GET") {
       if (p === "/Invoice/Factory/saveInvoice") return saveInvoice(b || {});
       if (p === "/Fin/enshrinePeriod") return enshrinePeriod(b || {});
-      if (p === "/Fin/creditNoteFromInvoice") return creditNoteFromInvoice(b && b.invoiceId, b || {});
+      if (p === "/Fin/creditNoteFromInvoice") return b && b.op === "settle" ? settleCredited(b.invoiceId, b) : creditNoteFromInvoice(b && b.invoiceId, b || {});
       if (p === "/Fin/cash") return cashOp(b || {});
       if (p === "/Fin/partialFromOrder") return partialFromOrder(b && b.orderId, b || {});
       if (p === "/Fin/finalFromOrder") return finalFromOrder(b && b.orderId, b || {});
