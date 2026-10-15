@@ -1224,33 +1224,43 @@ const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
     const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
   } });
 (async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); FIN_STATE.local = !SEV_TEST; FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
-// Wiederkehrende Rechnungen: stündlich fällige Vorlagen abarbeiten; „automatisch senden“ → fertigstellen + Mail an die Kontakt-Adresse
+// Wiederkehrende Rechnungen/Belege: stündlich fällige Vorlagen abarbeiten – es entstehen nur ENTWÜRFE. Versand („automatisch senden“)
+// bzw. „Fertig erfasst“ bei Belegen passiert erst nach Bestätigung unter „Zur Prüfung“ (fin-proposals.js).
+async function proposeRecurringVouchers(made) {
+  for (const v of made || []) { const pos = FIN_LOCAL.positionsOf("Voucher", v.id)[0], at = pos && pos.accountingType && FIN_LOCAL.get("AccountingType", pos.accountingType.id);
+    await FIN_PROP.add({ kind: "recurring-voucher", key: "rvou:" + v.id, voucherId: String(v.id), amount: (String(v.creditDebit) === "D" ? 1 : -1) * Math.abs(+v.sumGross || 0), date: String(v.voucherDate || "").slice(0, 10), title: "Wiederkehrender Beleg: " + (v.supplierName || "Beleg") + " als fertig erfasst übernehmen", detail: (v.description || "").slice(0, 160) + (at ? " · " + at.name : ""), source: "Wiederkehrende Belege", payload: { voucherId: String(v.id) } }).catch(e => console.error("Vorschlag Beleg:", e.message)); }
+}
 async function finRecurringTick() {
   if (!FIN_STATE.local) return;
   try {
-    const rvMade = await FIN_LOCAL.recurringVoucherRun().catch(e => { console.error("Wiederkehrende Belege:", e.message); return []; }); if (rvMade.length) console.log("Wiederkehrende Belege:", rvMade.length, "angelegt");
+    const rvMade = await FIN_LOCAL.recurringVoucherRun().catch(e => { console.error("Wiederkehrende Belege:", e.message); return []; }); if (rvMade.length) { console.log("Wiederkehrende Belege:", rvMade.length, "Entwürfe angelegt"); await proposeRecurringVouchers(rvMade); }
     const made = await FIN_LOCAL.recurringRun();
     for (const m of made) {
       if (!(m.template.recur && m.template.recur.autoSend)) continue;
-      try { const d = await SEV_OPS.invoiceDetail(m.invoice.id); const to = (d.emails || []).map(e => e.value).filter(Boolean)[0]; if (!to) { console.log("Wiederkehrend: keine E-Mail für", d.contact && d.contact.name); continue; }
-        const md = SEV_OPS.mailDefaults(d, "", ""); await SEV_OPS.invoiceOp({ confirm: true, op: "send", id: m.invoice.id, toEmail: to, subject: md.subject, text: md.text }); console.log("Wiederkehrend: Rechnung gesendet an", to.replace(/^[^@]+/, "…")); }
-      catch (e) { console.error("Wiederkehrend senden:", e.message); }
+      const inv = m.invoice || {}, c = inv.contact && FIN_LOCAL.get("Contact", inv.contact.id);
+      await FIN_PROP.add({ kind: "recurring-invoice", key: "rinv:" + inv.id, invoiceId: String(inv.id), amount: +inv.sumGross || 0, date: String(inv.invoiceDate || "").slice(0, 10), title: "Wiederkehrende Rechnung fertigstellen und senden" + (c ? " · " + (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : ""), detail: String(inv.header || "Rechnung") + " · Vorlage " + m.template.id, source: "Wiederkehrende Rechnungen", payload: { invoiceId: String(inv.id) } }).catch(e => console.error("Vorschlag Rechnung:", e.message));
     }
-    if (made.length) { SEV_CACHE.at = 0; console.log("Wiederkehrend:", made.length, "Rechnung(en) erstellt"); }
+    if (made.length) { SEV_CACHE.at = 0; console.log("Wiederkehrend:", made.length, "Rechnungsentwürfe erstellt"); }
   } catch (e) { console.error("Wiederkehrend:", e.message); }
 }
+// Wiederkehrende Rechnung senden (= früher automatischer Versand) – nur nach Bestätigung
+async function recurringInvoiceSend(invoiceId) {
+  const d = await SEV_OPS.invoiceDetail(invoiceId); const to = (d.emails || []).map(e => e.value).filter(Boolean)[0];
+  if (!to) throw new Error("Keine E-Mail-Adresse beim Kontakt – Rechnung bitte manuell senden");
+  const md = SEV_OPS.mailDefaults(d, "", ""); await SEV_OPS.invoiceOp({ confirm: true, op: "send", id: invoiceId, toEmail: to, subject: md.subject, text: md.text });
+  SEV_CACHE.at = 0; return { to: to.replace(/^[^@]+/, "…") };
+}
 setTimeout(finRecurringTick, 60 * 1000); setInterval(finRecurringTick, 60 * 60 * 1000);
-// Einmal täglich ab 08:00 (Wien): Mahnlauf (Vorschläge bzw. automatisch senden) und Abgleich USt-Zahlungen ans Finanzamt
+// Einmal täglich ab 08:00 (Wien): Mahnlauf (nur Vorschläge – gesendet wird nach Freigabe) und Abgleich USt-Zahlungen ans Finanzamt (Vorschlag)
 async function finDailyTick() {
   if (!FIN_STATE.local) return;
   const h = +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }).format(new Date()); if (h < 8) return;
   try { const st = await dunState(), today = viennaToday(); if (st.lastRun === today) return; st.lastRun = today; await FIN.setMeta("dunning", st);
     await FIN_LOCAL.load(); const pr = dunProposals(st); st.lastCount = pr.length;
-    if (st.settings.enabled && st.settings.mode === "auto") { const r = await dunSend(st, pr.filter(x => !x.hint)); console.log("Mahnlauf:", r.filter(x => x.ok).length, "gesendet,", r.filter(x => !x.ok).length, "Fehler"); }
-    else if (st.settings.enabled && pr.length) console.log("Mahnlauf:", pr.length, "Mahnungen zur Freigabe");
+    if (st.settings.enabled && pr.length) console.log("Mahnlauf:", pr.length, "Mahnungen zur Freigabe");   // nie automatisch senden
     await FIN.setMeta("dunning", Object.assign(await dunState(), { lastRun: today, lastCount: st.lastCount }));
   } catch (e) { console.error("Mahnlauf:", e.message); }
-  try { const n = await uvaAutoPay(); if (n) console.log("UVA:", n, "Zahlung(en) ans Finanzamt zugeordnet"); } catch (e) { console.error("UVA-Zahlungen:", e.message); }
+  try { const n = await uvaAutoPay(); if (n) console.log("UVA:", n, "Zahlung(en) ans Finanzamt zur Prüfung vorgeschlagen"); } catch (e) { console.error("UVA-Zahlungen:", e.message); }
 }
 setTimeout(finDailyTick, 90 * 1000); setInterval(finDailyTick, 60 * 60 * 1000);
 // ── Automatischer Mahnlauf: überfällige Rechnungen bekommen nach X Tagen die nächste Stufe; Simon gibt frei (oder „automatisch senden“) ──
@@ -1258,7 +1268,7 @@ setTimeout(finDailyTick, 90 * 1000); setInterval(finDailyTick, 60 * 60 * 1000);
 // Firmen: Pauschale bis 40 € nach § 458 UGB; Privat nur angemessene tatsächliche Kosten (§ 1333 ABGB). Mahngebühren = Schadenersatz → 0 %, nicht in der UVA.
 const DUN_DEF = { enabled: false, mode: "suggest", days: [7, 14, 14], ttp: [7, 10, 7], b2bFees: [0, 10, 30], b2cFees: [0, 5, 5] };
 const DUN_T = ["Zahlungserinnerung", "1. Mahnung", "2. Mahnung"];
-async function dunState() { const m = (await FIN.getMeta("dunning").catch(() => null)) || {}; m.settings = Object.assign({}, DUN_DEF, m.settings || {}); m.skip = m.skip || {}; m.log = m.log || []; return m; }
+async function dunState() { const m = (await FIN.getMeta("dunning").catch(() => null)) || {}; m.settings = Object.assign({}, DUN_DEF, m.settings || {}); m.settings.mode = "suggest"; m.skip = m.skip || {}; m.log = m.log || []; return m; }
 function dunB2B(c) { return !!c && (!!String(c.vatNumber || "").trim() || (!!String(c.name || "").trim() && !c.surename && !c.familyname)); }
 function dunProposals(st) {
   const S = st.settings, today = viennaToday(), inv = FIN_LOCAL.all("Invoice"), out = [], r2 = n => Math.round((+n || 0) * 100) / 100;
@@ -2366,7 +2376,8 @@ async function uvaClose(pl) {
   return { locked: e.locked, steuer: steuerPublic(o) };
 }
 function uvaDue(key) { const p = steuerPeriod(key); if (!p) return null; const m = +p.to.slice(5, 7) + 2, y = p.year + (m > 12 ? 1 : 0); return y + "-" + String((m - 1) % 12 + 1).padStart(2, "0") + "-15"; }
-// Täglich: Zahlung ans Finanzamt (Betrag = Zahllast ± 1 €, nach Zeitraumende, Umsatz noch offen) → als USt-Vorauszahlung buchen = bezahlt
+// Täglich: Zahlung ans Finanzamt (Betrag = Zahllast ± 1 €, nach Zeitraumende, Umsatz noch offen) → Vorschlag „als USt-Vorauszahlung buchen“
+// (bestätigt → sevUstPayment, wie früher automatisch)
 async function uvaAutoPay() {
   const o = readSteuer(), keys = Object.keys(o.uva).filter(k => { const e = o.uva[k]; return e && e.doneAt && !e.paid && e.summary && +e.summary.zahllast > 0.005; });
   if (!keys.length) return 0;
@@ -2376,7 +2387,7 @@ async function uvaAutoPay() {
     const t = (raw.transactions || []).filter(x => x.status === 100 && !used.has(x.id) && x.date > p.to && x.date <= addDaysIso(due, 90) && Math.abs(Math.abs(x.amount) - zl) <= 1)
       .sort((a, b) => Math.abs(Math.abs(a.amount) - zl) - Math.abs(Math.abs(b.amount) - zl))[0];
     if (!t) continue; used.add(t.id);
-    try { await sevUstPayment({ confirm: true, key: k, transactionId: t.id }); n++; console.log("UVA", k, "Zahlung erkannt:", t.amount, t.date); } catch (e) { console.error("UVA-Zahlung", k + ":", e.message); }
+    try { if (await FIN_PROP.add({ kind: "uva-payment", key: "uva:" + k + ":" + t.id, txId: String(t.id), amount: t.amount, date: t.date, title: "USt-Zahlung " + k + " (Zahllast " + zl.toFixed(2).replace(".", ",") + " €) als USt-Vorauszahlung buchen", detail: (t.name || "") + " · " + String(t.purpose || "").slice(0, 120), source: "UVA-Abgleich", payload: { key: k, transactionId: String(t.id) } })) { n++; console.log("UVA", k, "Zahlung erkannt (Vorschlag):", t.amount, t.date); } } catch (e) { console.error("UVA-Zahlung", k + ":", e.message); }
   }
   return n;
 }
@@ -2577,6 +2588,7 @@ async function handleAdmin(req, res, u, p) {
       else return J(400, { ok: false, error: "unbekannte Aktion" });
       await L.save("Voucher", rv);
       const made = pl.op === "pause" || pl.op === "delete" ? [] : await FIN_LOCAL.recurringVoucherRun();
+      await proposeRecurringVouchers(made);   // fällige Belege entstehen als Entwurf → „Zur Prüfung“
       if (made.length) { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }
       return J(200, { ok: true, items: list(), made: made.length });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
@@ -2615,6 +2627,35 @@ async function handleAdmin(req, res, u, p) {
       const pl = await sevBody(req, 60000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
       const rows = (Array.isArray(pl.rows) ? pl.rows : []).slice(0, 120).map(r => ({ g: String(r.g || "").slice(0, 40), l: String(r.l || "").slice(0, 80), v: String(r.v || "").slice(0, 500) })).filter(r => r.l || r.v);
       await FIN.setMeta("mydata", rows); return J(200, { ok: true, rows });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
+  // „Zur Prüfung“: Vorschläge statt automatischer Buchungen (fin-proposals.js) – Liste, bestätigen, ablehnen, alle bestätigen
+  if (p === "/admin/api/fin/proposals") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: true, items: [], groups: [], count: 0, log: [] });
+      await FIN_LOCAL.load();
+      if (req.method === "GET") return J(200, Object.assign({ ok: true }, await FIN_PROP.view()));
+      const pl = await sevBody(req, 20000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const op = String(pl.op || ""); let r;
+      if (op === "accept") r = { result: await FIN_PROP.accept(String(pl.id || "")) };
+      else if (op === "reject") r = { result: await FIN_PROP.reject(String(pl.id || "")) };
+      else if (op === "acceptAll") r = { results: await FIN_PROP.acceptAll(pl.kind ? String(pl.kind) : "") };
+      else if (op === "like") r = { result: await FIN_RULES.likeApply(String(pl.txId || ""), pl.act || {}) };   // „Beleg wie zuletzt“ – Klick beim Öffnen eines Umsatzes
+      else return J(400, { ok: false, error: "unbekannte Aktion" });
+      SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+      return J(200, Object.assign({ ok: true }, r, await FIN_PROP.view()));
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
+  // Vorschlag beim Öffnen: ?tx=ID (offener Umsatz) oder ?voucher=ID (unbezahlter Beleg) → Kandidaten mit Begründung
+  if (p === "/admin/api/fin/suggest" && req.method === "GET") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: true, candidates: [] });
+      const tx = u.searchParams.get("tx"), vo = u.searchParams.get("voucher");
+      if (tx) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestTx(tx)));
+      if (vo) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestVoucher(vo)));
+      return J(400, { ok: false, error: "tx oder voucher fehlt" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
   if (p === "/admin/api/fin/bankrules") {
@@ -2703,7 +2744,7 @@ async function handleAdmin(req, res, u, p) {
       if (req.method === "GET") return J(200, view());
       const pl = await sevBody(req, 20000), op = String(pl.op || "");
       if (op === "settings") { const P = pl.settings || {}, S = st.settings, n = (v, d, mx) => { const x = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(x) ? Math.max(0, Math.min(mx, Math.round(x * 100) / 100)) : d; };
-        if ("enabled" in P) S.enabled = !!P.enabled; if (P.mode === "auto" || P.mode === "suggest") S.mode = P.mode;
+        if ("enabled" in P) S.enabled = !!P.enabled; S.mode = "suggest";   // „automatisch senden“ gibt es nicht mehr – immer Freigabe
         if (Array.isArray(P.days)) S.days = [0, 1, 2].map(i => Math.round(n(P.days[i], S.days[i], 365))); if (Array.isArray(P.ttp)) S.ttp = [0, 1, 2].map(i => Math.max(1, Math.round(n(P.ttp[i], S.ttp[i], 90))));
         ["b2bFees", "b2cFees"].forEach(k => { if (Array.isArray(P[k])) S[k] = [0, 1, 2].map(i => n(P[k][i], S[k][i], 200)); });
         await FIN.setMeta("dunning", st); return J(200, view()); }
@@ -3331,21 +3372,39 @@ const server = http.createServer((req, res) => {
     send(res, 500, "Server error");
   }
 });
-// Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway)
-const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL });
-const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
+// „Zur Prüfung“: automatische Läufe legen nur Vorschläge ab, gebucht wird erst nach Bestätigung (Push-Thema „fin“ bei neuen Vorschlägen)
+const FIN_PROP = require("./fin-proposals.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), rules: () => FIN_RULES,
+  notify: async (fresh, total) => { if (!process.env.DATABASE_URL || !fresh.length) return; await PUSH.send("fin", { title: "Zur Prüfung: " + (fresh.length === 1 ? "1 neuer Vorschlag" : fresh.length + " neue Vorschläge"), body: fresh.slice(0, 3).map(x => x.title).join(" · ") + (total > fresh.length ? " (insgesamt " + total + " offen)" : ""), url: "/admin?fin=review#geld", tag: "fin-proposals" }); } });
+FIN_LOCAL.setProposer(FIN_PROP);
+// Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway) – Abruf importiert nur, Zuordnungen sind Vorschläge
+const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL, P: () => FIN_PROP });
+const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, P: () => FIN_PROP, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
 // Belegdateien aus Rechnungsmails automatisch an Belege ohne Datei hängen: alle 15 Minuten (Postfach nur lesen)
-const FIN_DOCMATCH = require("./fin-docmatch.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)),
+const FIN_DOCMATCH = require("./fin-docmatch.js")({ L: FIN_LOCAL, P: () => FIN_PROP, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)),
   snapshot: () => mailSnapshot(), fetchAtt: m => KI.fetchAttachment(m), kiReady: () => KI.docmatchReady(), kiExtract: (m, info) => KI.extractForDocmatch(m, info),
   onChange: () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } });
-function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.attached) console.log("Belegdateien:", r.attached, "automatisch zugeordnet"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
+function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.proposed) console.log("Belegdateien:", r.proposed, "Zuordnung(en) zur Prüfung vorgeschlagen"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
 if (require.main === module) { setTimeout(docMatchTick, 3 * 60 * 1000); setInterval(docMatchTick, 15 * 60 * 1000); }
 const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
 // George (PSD2) täglich – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.configured && st.sessions.length && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) return FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }); }).catch(e => console.error("Bank:", e.message)); }, 3600 * 1000);
 const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
+// Ausführung bestätigter Vorschläge: jeweils genau die Funktion, die früher automatisch lief
+FIN_PROP.register("rule", { exec: it => FIN_RULES.acceptProposal(it.payload) });
+["mollie-match", "mollie-fee", "mollie-payout", "mollie-income"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
+FIN_PROP.register("transfer", { exec: it => FIN_LOCAL.pairApply(it.payload.aId, it.payload.bId) });
+FIN_PROP.register("docmatch", { exec: it => FIN_DOCMATCH.handle({ op: "attach", confirm: true, voucherId: it.payload.voucherId, mailRef: it.payload.key }), valid: it => FIN_DOCMATCH.stillValid(it.payload) });
+FIN_PROP.register("uva-payment", { exec: it => sevUstPayment({ confirm: true, key: it.payload.key, transactionId: it.payload.transactionId }), valid: it => { const e = readSteuer().uva[it.payload.key]; return !!e && !e.paid; } });
+FIN_PROP.register("recurring-voucher", { exec: it => SEV_OPS.voucherOp({ confirm: true, op: "open", id: it.payload.voucherId }), valid: it => { const v = FIN_LOCAL.get("Voucher", it.payload.voucherId); return !!v && String(v.status) === "50"; } });
+FIN_PROP.register("recurring-invoice", { exec: it => recurringInvoiceSend(it.payload.invoiceId), valid: it => { const i = FIN_LOCAL.get("Invoice", it.payload.invoiceId); return !!i && String(i.status) === "100" && !i.sendDate; } });
+// Mahnungen zur Freigabe erscheinen ebenfalls unter „Zur Prüfung“ (virtuell aus dem Mahnlauf; Bestätigen = senden, Ablehnen = Stufe überspringen)
+FIN_PROP.register("dunning", {
+  list: async () => { const st = await dunState(); if (!st.settings.enabled) return []; return dunProposals(st).map(x => ({ id: "dun:" + x.id, key: "dun:" + x.id + ":" + x.level, invoiceId: x.id, amount: x.open, date: x.due, title: x.title + " zu " + x.nr + " · " + (x.contact || "—"), detail: x.overdueDays + " Tage überfällig" + (x.fee > 0 ? " · Mahngebühr " + x.fee.toFixed(2).replace(".", ",") + " €" : "") + (x.email ? " · an " + x.email : "") + (x.hint ? " · " + x.hint : ""), source: "Mahnlauf", hint: x.hint || "" })); },
+  exec: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (!pr) throw new Error("Mahnung ist nicht mehr fällig"); const r = await dunSend(st, [pr]); if (!r[0] || !r[0].ok) throw new Error((r[0] && r[0].error) || "Senden fehlgeschlagen"); return r[0]; },
+  reject: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (pr) { st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); } } });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);
+// Mollie alle 6 Std.: importiert nur die Saldo-Bewegungen; Zuordnungen/Gebühren/Auszahlungen/Einnahme-Belege → „Zur Prüfung“ (nie selbst gebucht)
 setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
 
 // Einmalige Steuer-Diagnose ins Log (nur wenn STEUER_DIAG=<Zeitraum>, z. B. 2026-Q3): liest sevDesk nur, schreibt nichts.

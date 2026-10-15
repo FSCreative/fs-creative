@@ -2,11 +2,13 @@
 // Belegdateien automatisch zuordnen: Rechnungsmails (PDF/Bild im Anhang) der letzten 60 Tage werden ausgelesen (KI, sonst
 // einfache Heuristik aus Absender + Beträgen im Mailtext) und an passende Belege OHNE Datei gehängt (z. B. aus Bankregeln).
 // Passend = gleicher Bruttobetrag (±0,02 €; Fremdwährung umgerechnet ±3 %), Belegdatum −10/+20 Tage zum Rechnungsdatum,
-// Lieferant/Absender ähnlich. Nur ein eindeutiger Treffer wird automatisch angehängt, sonst nur Vorschlag.
+// Lieferant/Absender ähnlich. Ein eindeutiger Treffer wird als Vorschlag „Zur Prüfung“ abgelegt (fin-proposals.js) – angehängt wird
+// erst nach Bestätigung (handle op "attach"); mehrdeutige Treffer erscheinen nur in der Liste „Belege ohne Datei“.
 // Postfach wird nur gelesen (Anhang laden), nie verändert. Ausgelesene Mails liegen in fin_meta „docMatch“ und werden bei
 // jedem Lauf erneut gegen die Belege geprüft (der Beleg aus dem Bankumsatz entsteht oft erst Tage nach der Mail).
 module.exports = function (D) {
   const { L, getMeta, setMeta, snapshot, fetchAtt, kiReady, kiExtract, onChange } = D;
+  const P = () => (typeof D.P === "function" ? D.P() : D.P) || null;   // Vorschläge (fin-proposals.js)
   const DAYS = 60, KEEP_DAYS = 75;
   const r2 = n => Math.round((+n || 0) * 100) / 100;
   const day = v => { const t = String(v || ""); let m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if (m) return m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0"); m = t.match(/^(\d{4}-\d{2}-\d{2})/); if (m) return m[1]; const p = Date.parse(t); return isFinite(p) ? new Date(p).toISOString().slice(0, 10) : ""; };
@@ -122,8 +124,9 @@ module.exports = function (D) {
     ST.log.push({ at: new Date().toISOString(), voucherId: String(vid), key: it.key, subject: it.mail.subject, from: it.mail.from, auto: !!auto });
   }
 
-  // Automatisch anhängen: Beleg hat genau einen Mail-Kandidaten mit Lieferant-Treffer und dieser Mail-Anhang genau einen Beleg
+  // Vorschlagen: Beleg hat genau einen Mail-Kandidaten mit Lieferant-Treffer und dieser Mail-Anhang genau einen Beleg
   async function matchAll() {
+    const prop = P(); if (!prop) return 0;
     const vouchers = L.all("Voucher").filter(noDoc); if (!vouchers.length) return 0;
     const items = Object.values(ST.items).filter(it => it.x && !it.usedBy);
     const byVou = {}, cands = {};
@@ -134,7 +137,8 @@ module.exports = function (D) {
       let its = byVou[vid];
       if (its.length > 1) { const mids = new Set(its.map(i => i.mail.id + "|" + i.mail.uid)); if (mids.size > 1) continue; its = its.slice().sort((a, b) => invName(a) - invName(b) || (a.mail.index || 0) - (b.mail.index || 0)); }   // gleiche Mail: Rechnung vor Quittung
       const v = L.get("Voucher", vid); if (!v || !noDoc(v)) continue;
-      try { await attachFromMail(vid, its[0], true); n++; } catch (e) { its[0].err = String(e.message || e).slice(0, 160); }
+      const it = its[0], x = it.x || {};
+      try { if (await prop.add({ kind: "docmatch", key: "doc:" + vid + ":" + it.key, voucherId: String(vid), amount: -r2(Math.abs(+v.sumGross || 0)) * (String(v.creditDebit) === "D" ? -1 : 1), date: day(v.voucherDate), title: "Belegdatei aus Mail anhängen: " + (v.supplierName || "Beleg"), detail: "„" + (it.mail.subject || it.mail.filename || "Anhang") + "“ von " + (it.mail.fromName || it.mail.from || "") + " (" + day(it.mail.date) + ") · " + (it.mail.filename || "") + (x.gross ? " · " + (x.currency && x.currency !== "EUR" ? x.currency + " " + x.gross : x.gross.toFixed(2).replace(".", ",") + " €") : ""), source: "Rechnungsmails", payload: { voucherId: String(vid), key: it.key, mail: { account: it.mail.account, folder: it.mail.folder, uid: it.mail.uid, index: it.mail.index, filename: it.mail.filename } } })) n++; } catch (e) { it.err = String(e.message || e).slice(0, 160); }
     }
     return n;
   }
@@ -170,8 +174,8 @@ module.exports = function (D) {
         }
         if (!pending) { seen.add(msgId(m)); ST.seen.push(msgId(m)); }
       }
-      const attached = await matchAll();
-      LAST = { at: new Date().toISOString(), scanned, extracted, attached, err: "", ki };
+      const proposed = await matchAll();
+      LAST = { at: new Date().toISOString(), scanned, extracted, attached: 0, proposed, err: "", ki };
       await persist();
       return LAST;
     } catch (e) { LAST = Object.assign({}, LAST, { at: new Date().toISOString(), err: String(e.message || e).slice(0, 200) }); return LAST; }
@@ -229,5 +233,7 @@ module.exports = function (D) {
     }
     throw new Error("unbekannte Aktion");
   }
-  return { run, missing, handle, status: () => LAST, _test: { amountsIn, heuristic, similar, candidates, domainLabel, looksLikeInvoice, isDocAtt, setState: s => { ST = s; } } };
+  // Vorschlag noch gültig? (Beleg ohne Datei, Mail-Anhang noch bekannt und nicht anderweitig verwendet)
+  async function stillValid(pl) { await state(); const v = L.get("Voucher", pl.voucherId), it = ST.items[pl.key]; return !!v && noDoc(v) && !!it && (!it.usedBy || it.usedBy === String(pl.voucherId)); }
+  return { run, missing, handle, stillValid, status: () => LAST, _test: { amountsIn, heuristic, similar, candidates, domainLabel, looksLikeInvoice, isDocAtt, setState: s => { ST = s; } } };
 };

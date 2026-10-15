@@ -428,7 +428,8 @@ module.exports = function (D) {
     await save("Invoice", w);
     return r;
   }
-  // ── Wiederkehrende Belege (sevDesk-Vorlagen Typ „RV“, Intervall ISO z. B. P0Y1M): zum Termin echten Beleg (offen) anlegen ──
+  // ── Wiederkehrende Belege (sevDesk-Vorlagen Typ „RV“, Intervall ISO z. B. P0Y1M): zum Termin einen ENTWURF (Status 50) anlegen –
+  //    „Fertig erfasst“ (offen) wird er erst nach Bestätigung („Zur Prüfung“ bzw. im Beleg) ──
   function addIso(d, iso, k) { const m = String(iso || "P0Y1M").match(/P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?/) || []; const x = new Date(d + "T12:00:00Z"), day0 = x.getUTCDate(), y = +(m[1] || 0), mo = +(m[2] || 0), w = +(m[3] || 0), dd = +(m[4] || 0);
     if (y || mo) { x.setUTCDate(1); x.setUTCFullYear(x.getUTCFullYear() + y * k); x.setUTCMonth(x.getUTCMonth() + mo * k); const last = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate(); x.setUTCDate(Math.min(day0, last)); }
     x.setUTCDate(x.getUTCDate() + (w * 7 + dd) * k); return x.toISOString().slice(0, 10); }
@@ -440,7 +441,7 @@ module.exports = function (D) {
       let next = dayOf(rv.recurringNextVoucher), end = dayOf(rv.recurringEndDate), guard = 0;
       if (rv.rvPaused || !next || (next < addIso(set.rvSince, "P0Y0M0W7D", -1) && !rv.rvActive)) continue;
       while (next <= t && (!end || next <= end) && guard++ < 24) {
-        const v = Object.assign({}, rv, { id: newId("Voucher"), voucherType: "VOU", status: "100", voucherDate: iso(next), deliveryDate: iso(next), paidAmount: "0", payDate: null, enshrined: null, document: null, recurringInterval: null, recurringNextVoucher: null, recurringStartDate: null, recurringEndDate: null, recurringLastVoucher: null, fromRecurring: String(rv.id) });
+        const v = Object.assign({}, rv, { id: newId("Voucher"), voucherType: "VOU", status: "50", voucherDate: iso(next), deliveryDate: iso(next), paidAmount: "0", payDate: null, enshrined: null, document: null, recurringInterval: null, recurringNextVoucher: null, recurringStartDate: null, recurringEndDate: null, recurringLastVoucher: null, fromRecurring: String(rv.id) });
         for (const p of positionsOf("Voucher", rv.id)) await save("VoucherPos", Object.assign({}, p, { id: newId("VoucherPos"), voucher: ref("Voucher", v.id) }));
         await save("Voucher", v); made.push(v);
         rv.recurringLastVoucher = iso(next); next = addIso(next, rv.recurringInterval, 1); rv.recurringNextVoucher = iso(next);
@@ -656,17 +657,31 @@ module.exports = function (D) {
     if (!id && !act) { const arr = sortById(filterList(T, q)).map(o => embed(o, q)); return { objects: page(arr, q), total: arr.length }; }
     throw err(400, "Nicht unterstützt: GET " + p);
   }
-  // Geldtransit zwischen eigenen Konten (PayPal → Bank, Bank → Kasse …): gleicher Betrag, Gegenbuchung 0–7 Tage später, Text deutet auf Übertrag
+  // Geldtransit zwischen eigenen Konten (PayPal → Bank, Bank → Kasse …): gleicher Betrag, Gegenbuchung 0–7 Tage später, Text deutet auf Übertrag.
+  // Wird nur erkannt und als Vorschlag „Zur Prüfung“ abgelegt (fin-proposals.js) – verknüpft wird erst nach Bestätigung (pairApply).
+  let PROP = null;
+  function setProposer(p) { PROP = p; }
   async function pairTransfers() {
-    let n = 0; const open = all("CheckAccountTransaction").filter(x => String(x.status) === "100" && !x.transitWith && !x.cashLocked);
+    if (!PROP) return 0;
+    const busy = await PROP.busyTx("transfer");
+    let n = 0; const open = all("CheckAccountTransaction").filter(x => String(x.status) === "100" && !x.transitWith && !x.cashLocked && !busy.has(String(x.id)));
     const out = open.filter(x => +x.amount < 0 && /auszahlung auf (ihr )?bankkonto|abbuchung auf bankkonto|withdrawal|transfer to bank|überweisung auf bankkonto|paypal/i.test(String(x.paymtPurpose) + " " + String(x.payeePayerName)));
     for (const a of out) {
+      if (open.indexOf(a) < 0) continue;
       const amt = -(+a.amount), d = dayOf(a.valueDate);
       const b = open.find(x => x !== a && !x.transitWith && Math.abs((+x.amount || 0) - amt) < 0.005 && String((x.checkAccount || {}).id) !== String((a.checkAccount || {}).id) && (() => { const dd = (Date.parse(dayOf(x.valueDate)) - Date.parse(d)) / 864e5; return dd >= -1 && dd <= 7; })() && /paypal|übertrag|umbuchung|auszahlung/i.test(String(x.payeePayerName) + " " + String(x.paymtPurpose)));
       if (!b) continue;
-      a.status = "400"; a.transitWith = String(b.id); b.status = "400"; b.transitWith = String(a.id); await save("CheckAccountTransaction", a); await save("CheckAccountTransaction", b); n++;
+      const an = (get("CheckAccount", (a.checkAccount || {}).id) || {}).name || "Konto", bn = (get("CheckAccount", (b.checkAccount || {}).id) || {}).name || "Konto";
+      if (await PROP.add({ kind: "transfer", key: "transfer:" + a.id + ":" + b.id, txIds: [String(a.id), String(b.id)], txId: String(a.id), amount: r2(amt), date: d, title: "Geldtransit " + an + " → " + bn, detail: an + " " + d + ": " + String(a.payeePayerName || a.paymtPurpose || "").slice(0, 60) + " · " + bn + " " + dayOf(b.valueDate) + ": " + String(b.payeePayerName || b.paymtPurpose || "").slice(0, 60), source: "Kontoauszug-Import", payload: { aId: String(a.id), bId: String(b.id) } })) n++;
+      open.splice(open.indexOf(b), 1);
     }
     return n;
+  }
+  async function pairApply(aId, bId) {
+    await load(); const a = get("CheckAccountTransaction", aId), b = get("CheckAccountTransaction", bId);
+    if (!a || !b || String(a.status) !== "100" || String(b.status) !== "100" || a.transitWith || b.transitWith) throw err(400, "Einer der Umsätze ist nicht mehr offen");
+    a.status = "400"; a.transitWith = String(b.id); b.status = "400"; b.transitWith = String(a.id); await save("CheckAccountTransaction", a); await save("CheckAccountTransaction", b);
+    return true;
   }
   // ── Kontoauszug-Import (George usw.) ──
   async function importBank(accId, items, hashFn, dry) {
@@ -687,5 +702,5 @@ module.exports = function (D) {
     const paired = dry ? 0 : await pairTransfers();
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash };
+  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply };
 };

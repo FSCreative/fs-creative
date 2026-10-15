@@ -36,6 +36,7 @@ function ic(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 /* Navigation */
 var NAV=[
   {id:"dash",label:"Übersicht",icon:"dash"},
+  {id:"review",label:"Zur Prüfung",icon:"tag"},   /* Vorschläge statt automatischer Buchungen (zreview.js) */
   {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou",sub:[["vou","Alle"],["rvou","Wiederkehrend"]]},
@@ -55,7 +56,7 @@ function sidebar(){
   return '<nav class="fsd-nav" aria-label="Finanzen"><button type="button" class="fsd-search" data-act="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Suchen<kbd>⌘K</kbd></button>'+NAV.map(function(n){
     if(n.sep) return '<div class="fsd-sep">'+esc(n.sep)+'</div>';
     var on=g===n.id;
-    return '<button type="button" class="fsd-i'+(on?" on":"")+'" data-act="fin:'+n.id+'">'+ic(n.icon)+'<span>'+esc(n.label)+'</span></button>'+
+    return '<button type="button" class="fsd-i'+(on?" on":"")+'" data-act="fin:'+n.id+'">'+ic(n.icon)+'<span>'+esc(n.label)+(n.id==="review"&&F.reviewCount&&F.reviewCount()?' <b class="rv-cnt">'+F.reviewCount()+'</b>':'')+'</span></button>'+
       (on&&n.sub&&n.sub.length>1&&n.id!=="orders"?'<div class="fsd-sub">'+n.sub.map(function(s){ return '<button type="button" class="'+(cur.split(":")[0]===s[0]?"on":"")+'" data-act="fin:'+s[0]+'">'+esc(s[1])+'</button>'; }).join("")+'</div>':'');
   }).join("")+'<button type="button" class="fsd-i fsd-help" data-act="help">'+ic("help")+'<span>Hilfe</span><kbd>?</kbd></button></nav>';
 }
@@ -191,7 +192,7 @@ function pageDash(){
   var od=sev.invoices.filter(function(i){return i.overdue;}); if(od.length) tasks.push(["inv:due",od.length+" überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0))+" offen"]);
   if(sev.unassigned) tasks.push(["open",sev.unassigned+" Bankumsätze","noch nicht zugeordnet"]);
   if(sev.vouchers&&sev.vouchers.drafts) tasks.push(["vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen"]);
-  extraTasks().forEach(function(t){ tasks.push(t); });
+  extraTasks().forEach(function(t){ if(t[0]==="review") tasks.unshift(t); else tasks.push(t); });
   return head("Übersicht","Jahr "+esc(y),'<button class="btn" data-act="voucher">Ausgabe erfassen</button><button class="btn primary" data-act="newinvoice">Rechnung schreiben</button>')+
     platTiles()+'<div class="fsd-grid">'+
       (function(){ var op=sev.invoices.filter(function(i){ return i.type!=="MA"&&i.type!=="SR"&&!i.cancelled&&(i.status===200||i.status===750); }), nf=function(i){ return i.gross?i.open*(i.net/i.gross):i.open; };
@@ -315,7 +316,7 @@ function mdocPanel(q){
   if(!d||d.busy) return '<div class="sd-empty">Lade Belege ohne Datei …</div>';
   if(d.err) return '<div class="notice">'+esc(d.err)+'</div>';
   var list=(d.vouchers||[]).filter(function(v){ return !q||(v.supplier+" "+v.desc+" "+v.category+" "+v.gross).toLowerCase().indexOf(q)>-1; });
-  var l=d.last||{}, info=(d.mail?'Rechnungsmails werden alle 15 Minuten geprüft'+(d.ki?' (KI liest die Anhänge)':' (ohne KI: Absender + Beträge im Mailtext)')+(l.at?' · zuletzt '+esc(String(l.at).slice(11,16))+' Uhr'+(l.attached?', '+l.attached+' zugeordnet':''):''):'Kein Postfach verbunden – nur manuelles Hochladen');
+  var l=d.last||{}, info=(d.mail?'Rechnungsmails werden alle 15 Minuten geprüft'+(d.ki?' (KI liest die Anhänge)':' (ohne KI: Absender + Beträge im Mailtext)')+(l.at?' · zuletzt '+esc(String(l.at).slice(11,16))+' Uhr'+(l.proposed?', '+l.proposed+' zur Prüfung vorgeschlagen':''):''):'Kein Postfach verbunden – nur manuelles Hochladen');
   var rows=list.map(function(v){
     var sg=(v.suggestions||[]).map(function(s,i){ return '<div class="fmd-s"><button type="button" class="btn sm" data-act="fmdatt:'+esc(v.id)+'~'+i+'" title="'+esc((s.fromName||s.from)+" · "+deShort(s.date)+(s.gross?" · "+(s.currency&&s.currency!=="EUR"?s.currency+" "+s.gross:eur(s.gross)):"")+(s.invoiceNumber?" · Nr. "+s.invoiceNumber:""))+'">aus Mail: '+esc((s.subject||s.filename||"Anhang").slice(0,60))+' anhängen</button><a class="link small" href="'+esc(mdAttHref(s))+'&inline=1" target="_blank" rel="noopener">ansehen</a>'+(s.sim?'':'<span class="m small">nur Betrag</span>')+'</div>'; }).join("");
     return '<div class="fmd-row"><div class="fmd-l"><b>'+esc(v.supplier||"—")+'</b><span>'+deShort(v.date)+(v.category?' · '+esc(v.category):'')+(v.desc?' · '+esc(v.desc.slice(0,80)):'')+(v.enshrined?' · festgeschrieben':'')+'</span>'+sg+'</div>'+
@@ -324,7 +325,7 @@ function mdocPanel(q){
   return '<div class="fmd-head"><span>'+info+'</span><button type="button" class="btn sm" data-act="fmdrun">Mails jetzt prüfen</button></div>'+(rows||'<p class="sd-empty">Alle Belege haben eine Datei.</p>');
 }
 function mdocDone(j,msg){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast(msg); MDOC=null; delete C.vou[String(F.D.year)]; F.render(); }
-F.action("fmdrun",function(){ F.toast("Prüfe Rechnungsmails …"); F.api("/admin/api/fin/missing-docs",{body:{op:"run"}}).then(function(j){ var r=(j&&j.result)||{}; mdocDone(j,r.busy?"Prüfung läuft bereits":r.err?"Fehler: "+r.err:(r.scanned||0)+" Rechnungsmails geprüft · "+(r.attached||0)+" Dateien zugeordnet"); }); });
+F.action("fmdrun",function(){ F.toast("Prüfe Rechnungsmails …"); F.api("/admin/api/fin/missing-docs",{body:{op:"run"}}).then(function(j){ var r=(j&&j.result)||{}; mdocDone(j,r.busy?"Prüfung läuft bereits":r.err?"Fehler: "+r.err:(r.scanned||0)+" Rechnungsmails geprüft · "+(r.proposed||0)+" Zuordnungen unter „Zur Prüfung“"); }); });
 F.action("fmdatt",function(a){ var p=String(a).split("~"), v=MDOC&&(MDOC.vouchers||[]).find(function(x){ return x.id===p[0]; }), s=v&&v.suggestions[+p[1]]; if(!s) return;
   F.confirm("Anhang „"+(s.filename||"")+"“ aus der Mail „"+(s.subject||"")+"“ an den Beleg "+(v.supplier||"")+" ("+eur(v.gross)+") hängen?","Anhängen",function(){ F.api("/admin/api/fin/missing-docs",{body:{confirm:true,op:"attach",voucherId:v.id,mailRef:{key:s.key}}}).then(function(j){ mdocDone(j,"Belegdatei angehängt"); }); }); });
 F.listen("change","[data-fmdup]",function(el){ var f=el.files&&el.files[0], id=el.getAttribute("data-fmdup"); if(!f) return; if(f.size>15*1024*1024){ F.toast("Die Datei ist größer als 15 MB",true); return; }
@@ -346,7 +347,7 @@ function mollieCard(m){
     (m.unmatched.length?'<details class="mo-open"><summary><b>'+m.unmatched.length+' Zahlung'+(m.unmatched.length===1?"":"en")+' noch keiner Rechnung zugeordnet</b> <span class="muted">('+eur(m.unmatched.reduce(function(a,x){ return a+x.gross; },0))+' brutto)</span></summary>'+m.unmatched.slice(0,30).map(function(x){ return '<div class="mo-row"><span>'+deShort(x.date)+'</span><span>'+esc(x.name||"")+' <i>'+esc(x.purpose||"")+'</i></span><b class="num">'+eur(x.gross)+'</b><span class="muted">Gebühr '+eur(x.fee)+'</span><button class="btn sm" data-act="ftxassign:'+esc(x.id)+'">Zuordnen</button></div>'; }).join("")+'</details>':'<div class="muted small" style="margin-top:6px">Alle Zahlungen einer Rechnung zugeordnet.</div>')+
     (m.payoutsMissing.length?'<div class="notice" style="margin-top:8px">Auszahlungen ohne Bankumsatz: '+m.payoutsMissing.map(function(x){ return deShort(x.date)+" "+eur(x.amount); }).join(", ")+' – Kontoauszug aus George importieren, dann werden sie automatisch verknüpft.</div>':'')+'</section>';
 }
-F.action("fmollie",function(){ F.toast("Rufe Mollie ab …"); F.api("/admin/api/fin/mollie",{body:{confirm:true}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Mollie-Abruf fehlgeschlagen",true); return; } MO=null; C.tx=null; var o=(j.result.orgs||[]).reduce(function(a,x){ a.n+=x.added||0; a.f+=x.fees||0; a.p+=x.linked||0; if(x.error) a.e.push(x.org+": "+x.error); return a; },{n:0,f:0,p:0,e:[]}); F.toast(o.e.length?o.e.join(" · "):(o.n+" Zahlungen, "+o.f+" Gebühren, "+(o.p+(j.result.relinked||0))+" Auszahlungen mit der Bank verknüpft"),!!o.e.length); F.load(true); }); });
+F.action("fmollie",function(){ F.toast("Rufe Mollie ab …"); F.api("/admin/api/fin/mollie",{body:{confirm:true}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Mollie-Abruf fehlgeschlagen",true); return; } MO=null; C.tx=null; var o=(j.result.orgs||[]).reduce(function(a,x){ a.n+=x.added||0; a.f+=x.fees||0; a.p+=x.linked||0; if(x.error) a.e.push(x.org+": "+x.error); return a; },{n:0,f:0,p:0,e:[]}); F.toast(o.e.length?o.e.join(" · "):(o.n+" Zahlungen, "+o.f+" Gebühren abgerufen – Zuordnungen liegen unter „Zur Prüfung“"),!!o.e.length); if(F.reviewReset) F.reviewReset(); F.load(true); }); });
 /* PayPal direkt (nur lesend): täglicher Abruf am Server, hier Status, Saldo-Kontrolle und manueller Abruf */
 var PP=null;
 function paypalBox(){
@@ -417,7 +418,8 @@ function dnPost(b,msg){ return F.api("/admin/api/fin/dunning",{body:b}).then(fun
   if(r.length){ F.toast(bad.length?(r.length-bad.length)+" gesendet, "+bad.length+" fehlgeschlagen: "+bad[0].error:(r.length===1?"Mahnung gesendet":r.length+" Mahnungen gesendet"),!!bad.length); F.load(true); } else if(msg) F.toast(msg); F.render(); }); }
 /* Aufgaben für Übersicht (Desktop + Handy): Mahnungen zur Freigabe, offene USt-Zahllast */
 function extraTasks(){ var t=[]; if(!DN) dnLoad();
-  if(DN&&DN.ok&&DN.settings.enabled&&DN.settings.mode!=="auto"&&(DN.proposals||[]).length){ var n=DN.proposals.length; t.push(["dun",n+(n===1?" Mahnung":" Mahnungen")+" zur Freigabe","Mahnlauf – mit einem Klick senden"]); }
+  var rc=F.reviewCount?F.reviewCount():0; if(rc) t.push(["review",rc+(rc===1?" Vorschlag":" Vorschläge")+" zur Prüfung","Zuordnungen bestätigen oder ablehnen – nichts wird automatisch gebucht"]);
+  if(!rc&&DN&&DN.ok&&DN.settings.enabled&&(DN.proposals||[]).length){ var n=DN.proposals.length; t.push(["dun",n+(n===1?" Mahnung":" Mahnungen")+" zur Freigabe","Mahnlauf – mit einem Klick senden"]); }
   (F.uvaOpen?F.uvaOpen():[]).forEach(function(u){ t.push(["uva","USt-Zahllast "+u.short+" · "+eur0(u.amount),(u.due<F.D.today?"überfällig seit ":"fällig ")+de(u.due)+" – bis zur Zahlung offen","stgo:uva:"+u.key]); });
   return t; }
 function dunCard(){
@@ -428,11 +430,11 @@ function dunCard(){
     '<span class="dn-acts"><button class="btn primary" data-act="dnok:'+esc(p.id)+'"'+(p.email?'':' disabled')+'>Senden</button><button class="btn" data-act="fin:invd:'+esc(p.id)+'">Ansehen</button><button class="btn" data-act="dnskip:'+esc(p.id)+'" title="Diese Stufe nicht senden">Überspringen</button><button class="btn" data-act="dnnever:'+esc(p.id)+'" title="Diese Rechnung nie automatisch mahnen">Nie mahnen</button></span></div>'; }).join("");
   var st='<details class="dn-set"'+(S.enabled?'':' open')+'><summary>Einstellungen</summary><form data-form="dnset" class="stackf" style="margin-top:10px">'+
     '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="enabled"'+(S.enabled?' checked':'')+'> Mahnlauf aktiv (täglich ab 8 Uhr)</label>'+
-    '<label class="fl">Ablauf<select class="f" name="mode"><option value="suggest"'+(S.mode!=="auto"?' selected':'')+'>Vorschlagen – ich gebe frei</option><option value="auto"'+(S.mode==="auto"?' selected':'')+'>Automatisch senden</option></select></label>'+
+    '<p class="muted" style="font-size:12.5px;margin:0">Ablauf: Mahnungen werden nur vorgeschlagen (auch unter „Zur Prüfung“) – gesendet wird erst nach deiner Freigabe.</p>'+
     '<div style="overflow-x:auto"><table class="dn-t"><thead><tr><th></th><th>Tage</th><th>Zahlungsfrist</th><th>Gebühr Firma</th><th>Gebühr privat</th></tr></thead><tbody>'+["Zahlungserinnerung","1. Mahnung","2. Mahnung"].map(function(l,i){ return '<tr><td><b>'+l+'</b><div class="muted" style="font-size:12px">'+(i?'Tage nach der vorigen Stufe':'Tage nach Fälligkeit')+'</div></td><td><input class="f num" name="d'+i+'" type="number" min="0" value="'+(+S.days[i]||0)+'"></td><td><input class="f num" name="t'+i+'" type="number" min="1" value="'+(+S.ttp[i]||7)+'"></td><td>'+fee("b2bFees",i)+'</td><td>'+fee("b2cFees",i)+'</td></tr>'; }).join("")+'</tbody></table></div>'+
     '<p class="muted" style="font-size:12.5px;margin:0">Gebühren je Stufe kommen zu bereits offenen Mahngebühren dazu. Firmen: Pauschale bis 40 € nach § 458 UGB; darüber nur tatsächliche Kosten. Privat: nur angemessene tatsächliche Kosten (§ 1333 ABGB). Mahngebühren sind Schadenersatz – ohne USt, nicht in der UVA. „Firma“ = Kontakt mit UID oder Firmenname.</p>'+
     '<div style="display:flex;justify-content:flex-end"><button class="btn primary" type="submit">Speichern</button></div></form></details>';
-  return '<section class="fsd-card"><div class="fsd-ch"><b>Mahnlauf</b><span class="muted">'+(S.enabled?(S.mode==="auto"?"sendet automatisch":"schlägt vor – du gibst frei"):"aus")+(DN.lastRun?' · zuletzt '+de(DN.lastRun):'')+'</span></div>'+
+  return '<section class="fsd-card"><div class="fsd-ch"><b>Mahnlauf</b><span class="muted">'+(S.enabled?"schlägt vor – du gibst frei":"aus")+(DN.lastRun?' · zuletzt '+de(DN.lastRun):'')+'</span></div>'+
     (pr.length?'<div class="row-between" style="margin:6px 0 8px"><span>'+pr.length+(pr.length===1?" Rechnung":" Rechnungen")+' reif für die nächste Stufe</span>'+(ok.length?'<button class="btn primary" data-act="dnall">Alle senden ('+ok.length+')</button>':'')+'</div>'+rows:'<div class="sd-empty">Keine Rechnung ist reif für eine Erinnerung oder Mahnung.</div>')+
     ((DN.log||[]).length?'<details class="dn-set"><summary>Zuletzt gesendet</summary>'+DN.log.slice(0,10).map(function(l){ return '<div class="muted" style="font-size:12.5px;padding:3px 0">'+de(l.at.slice(0,10))+' · '+esc(l.ma||"")+' zu '+esc(l.nr)+' · Stufe '+l.level+(l.fee?' · '+eur(l.fee):'')+' · '+esc(l.to||"")+'</div>'; }).join("")+'</details>':'')+st+'</section>';
 }
@@ -492,7 +494,7 @@ function wkrForm(t,fromId){ var r=(t&&t.recur)||{}, nd=function(){ var x=new Dat
   return '<form data-form="finwkr" data-id="'+esc(t?t.id:"")+'" data-from="'+esc(fromId||"")+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+(t?"Wiederkehrende Rechnung bearbeiten":"Als wiederkehrende Rechnung anlegen")+'</h2>'+F.btnClose()+'</div>'+
     '<div class="grid2"><label class="fl">Intervall<select class="f" name="interval">'+IVL.map(function(i){ return '<option value="'+i[0]+'"'+((r.interval||"1M")===i[0]?" selected":"")+'>'+i[1]+'</option>'; }).join("")+'</select></label><label class="fl">Nächste Rechnung am<input class="f" type="date" name="start" value="'+(r.next||nd())+'" required></label></div>'+
     '<div class="grid2"><label class="fl">Enddatum (optional)<input class="f" type="date" name="end" value="'+(r.end||"")+'"></label><label class="fl">Abrechnung<select class="f" name="advance"><option value="1"'+(r.advance!==false?" selected":"")+'>im Voraus (Zeitraum ab Rechnungsdatum)</option><option value="0"'+(r.advance===false?" selected":"")+'>nachträglich (zurückliegender Zeitraum)</option></select></label></div>'+
-    '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="autoSend"'+(r.autoSend?" checked":"")+'> automatisch fertigstellen und per E-Mail an den Kunden senden (sonst Entwurf zum Prüfen)</label>'+
+    '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="autoSend"'+(r.autoSend?" checked":"")+'> Versand an den Kunden vorschlagen (unter „Zur Prüfung“ bestätigen – sonst nur Entwurf)</label>'+
     '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active"'+(r.active!==false?" checked":"")+'> aktiv</label>'+
     '<div class="foot"><span class="err" id="wkErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Speichern</button></span></div></form>'; }
 F.action("finwkr",function(id){ F.modal(wkrForm(null,id),"narrow"); });
@@ -507,7 +509,7 @@ F.action("finwkrdel",function(id){ F.confirm("Vorlage löschen? Bereits erstellt
 function pageWkr(){
   if(!WK){ if(!C.busy.wk){ C.busy.wk=1; F.api("/admin/api/fin/recurring").then(function(j){ C.busy.wk=0; WK=j||{ok:false}; F.render(); }); } return head("Wiederkehrende Rechnungen","")+'<div class="sd-empty">Lade …</div>'; }
   if(!WK.ok) return head("Wiederkehrende Rechnungen","")+'<div class="notice">'+esc(WK.error||"Nicht verfügbar")+'</div>';
-  var rows=WK.templates.map(function(t){ var r=t.recur; return '<tr><td>'+(r?(r.active?pill("paid","Aktiv"):pill("grey","Pausiert")):pill("draft","aus sevDesk"))+'</td><td><div>'+esc(t.contact||"—")+'</div><div class="sub">'+esc(t.positions.join(", ")||t.header)+'</div></td><td class="m">'+(r?esc(ivName(r.interval))+(r.advance===false?" · nachträglich":""):"– – –")+'</td><td class="m">'+(r&&r.active?de(r.next):"–")+(r&&r.end?'<div class="sub">bis '+de(r.end)+'</div>':'')+'</td><td class="m">'+(r&&r.autoSend?"automatisch":"Entwurf")+'</td><td class="r nowrap">'+eur(t.gross)+'</td>'+
+  var rows=WK.templates.map(function(t){ var r=t.recur; return '<tr><td>'+(r?(r.active?pill("paid","Aktiv"):pill("grey","Pausiert")):pill("draft","aus sevDesk"))+'</td><td><div>'+esc(t.contact||"—")+'</div><div class="sub">'+esc(t.positions.join(", ")||t.header)+'</div></td><td class="m">'+(r?esc(ivName(r.interval))+(r.advance===false?" · nachträglich":""):"– – –")+'</td><td class="m">'+(r&&r.active?de(r.next):"–")+(r&&r.end?'<div class="sub">bis '+de(r.end)+'</div>':'')+'</td><td class="m">'+(r&&r.autoSend?"Versand vorschlagen":"Entwurf")+'</td><td class="r nowrap">'+eur(t.gross)+'</td>'+
     '<td class="r"><span class="fsd-btns" style="justify-content:flex-end"><button class="btn sm" data-act="finwkredit:'+esc(t.id)+'">Bearbeiten</button>'+(r?'<button class="btn sm" data-act="finwkrrun:'+esc(t.id)+'">Jetzt erstellen</button>':'')+'<button class="btn sm" data-act="finwkrdel:'+esc(t.id)+'">Löschen</button></span></td></tr>'; }).join("");
   return head("Wiederkehrende Rechnungen","Anlegen: Rechnung öffnen → Mehr → „Als wiederkehrend anlegen“. Fällige Rechnungen entstehen automatisch (stündliche Prüfung).","")+
     '<section class="fsd-card flush"><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Kunde</th><th>Intervall</th><th>Nächste</th><th>Versand</th><th class="r">Betrag (brutto)</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="7" class="empty">Noch keine wiederkehrenden Rechnungen.</td></tr>')+'</tbody></table></div></section>';
@@ -650,6 +652,7 @@ function pageAbgl(){ var prev=UI.geldTab; UI.geldTab="uebersicht"; try{ var v=F.
 function content(){
   var p=UI.fin.split(":")[0], id=UI.fin.split(":")[1];
   if(p==="dash") return pageDash();
+  if(p==="review") return F.reviewPage?F.reviewPage():'';
   if(p==="inv") return pageInv("inv");
   if(p==="dun") return pageInv("dun");
   if(p==="invd") return pageInvDetail(id);
@@ -671,13 +674,13 @@ function content(){
   return pageDash();
 }
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
-var MNAV=[["dash","Übersicht"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["steuer","Steuern"]];
+var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["steuer","Steuern"]];
 var MMORE=[["Rechnungen & Belege",[["wkr","Wiederkehrende Rechnungen"],["rvou","Wiederkehrende Belege"],["dun","Mahnungen"],["cn","Gutschriften"],["orders","Angebote"]]],
   ["Bank & Steuern",[["open","Nicht zugeordnet"],["kasse","Kassenbuch"],["uva","Voranmeldung (UVA)"],["anlagen","Abschreibungen"],["jab","Jahreserklärung"]]],
   ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen verrechnen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; if(g==="u1"||g==="prognose") g="steuer";
   var main=MNAV.some(function(n){ return n[0]===g; }), more=null; MMORE.forEach(function(sec){ sec[1].forEach(function(x){ if(x[0]===g) more=x[1]; }); });
-  return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+'</button>'; }).join("")+
+  return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+(n[0]==="review"&&F.reviewCount&&F.reviewCount()?' ('+F.reviewCount()+')':'')+'</button>'; }).join("")+
     '<button type="button" data-act="fmore"'+(!main&&more?' aria-current="page"':'')+'>'+esc(!main&&more?more:"Mehr")+' ▾</button></nav>'; }
 F.action("fmore",function(){ F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:19px">Finanzen</h2>'+F.btnClose()+'</div>'+MMORE.map(function(sec){ return '<div class="fsm-msec"><div class="sec-t">'+esc(sec[0])+'</div><div class="fsm-mgrid">'+sec[1].map(function(x){ return '<button type="button" class="fsm-mbtn" data-act="fmgo:'+x[0]+'">'+esc(x[1])+'</button>'; }).join("")+'</div></div>'; }).join("")+'</div>',"narrow"); });
 F.action("fmgo",function(k){ F.closeModal(); F.actions.fin(k); });
@@ -691,12 +694,13 @@ function mDash(){
   var nt=function(l){ return l.reduce(function(a,i){ return a+(i.gross?i.open*i.net/i.gross:i.open); },0); };
   var fg=yearFig(), res=fg.tr-fg.te, mx=Math.max.apply(null,fg.rev.concat(fg.exp.map(function(v,k){ return v+fg.afa[k]; })).concat([1])), cm=new Date().getFullYear()===+fg.y?new Date().getMonth():11;
   var bars=fg.rev.map(function(v,k){ var e=fg.exp[k]+fg.afa[k]; return '<div class="fsm-bar'+(k>cm?" fut":"")+'" title="'+"JFMAMJJASOND"[k]+'"><i style="height:'+Math.round(v/mx*100)+'%"></i><u style="height:'+Math.round(e/mx*100)+'%"></u><span>'+"JFMAMJJASOND"[k]+'</span></div>'; }).join("");
-  var todo=[dr.length?mRow("fin:inv:draft",dr.length+" Rechnungsentwürfe","noch nicht versendet","",ic("right")):"",
+  var rcN=F.reviewCount?F.reviewCount():0;
+  var todo=[rcN?mRow("fin:review",rcN+(rcN===1?" Vorschlag":" Vorschläge")+" zur Prüfung","bestätigen oder ablehnen – nichts wird automatisch gebucht","",ic("right"),"rv-hot"):"",dr.length?mRow("fin:inv:draft",dr.length+" Rechnungsentwürfe","noch nicht versendet","",ic("right")):"",
      od.length?mRow("fin:inv:due",od.length+" Rechnungen überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0))+" offen – erinnern oder mahnen","",ic("right")):"",
      sev.unassigned?mRow("fin:open",sev.unassigned+" Bankumsätze zuordnen","Rechnung, Beleg oder privat","",ic("right")):"",
      sev.vouchers&&sev.vouchers.drafts?mRow("fin:vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen","",ic("right")):"",
      ab.unbilled>0.005?mRow("fin:abgl",eur0(ab.unbilled)+" zu verrechnen",(ab.unbilledCount||0)+" Posten ohne Rechnung","",ic("right")):""].join("")+
-     extraTasks().map(function(t){ return mRow(t[3]||"fin:"+t[0],t[1],esc(t[2]),"",ic("right")); }).join("");
+     extraTasks().filter(function(t){ return t[0]!=="review"; }).map(function(t){ return mRow(t[3]||"fin:"+t[0],t[1],esc(t[2]),"",ic("right")); }).join("");
   var P=(F.D&&F.D.platforms)||{}, c=function(v){ return eur0((+v||0)/100); }, plat=[];
   if(P.blitzdings&&P.blitzdings.revenue) plat.push(mRow("platgo:blitzdings","Blitzdings",((P.blitzdings.bookings||{}).upcomingCount||0)+" Buchungen kommend · offen "+c(P.blitzdings.revenue.openCents),c(P.blitzdings.revenue.paidCents),"<span class='fsm-s'>bezahlt</span>"));
   if(P.kochdu&&P.kochdu.totals){ var t=P.kochdu.totals; plat.push(mRow("platgo:kochdu","kochdu","Provisionen · bar offen "+c(t.barOpenCents),c((+t.onlineProvisionCents||0)+(+t.barProvisionCents||0)),"<span class='fsm-s'>gesamt</span>")); }
@@ -840,7 +844,7 @@ function mBank(mode){
 }
 function mobile(){
   var p=UI.fin.split(":")[0], id=UI.fin.split(":")[1], body;
-  if(p==="dash") body=mDash(); else if(p==="inv") body=mInv("inv"); else if(p==="dun") body=mInv("dun"); else if(p==="invd") body=mInvDetail(id);
+  if(p==="dash") body=mDash(); else if(p==="review") body=F.reviewPage?F.reviewPage(true):''; else if(p==="inv") body=mInv("inv"); else if(p==="dun") body=mInv("dun"); else if(p==="invd") body=mInvDetail(id);
   else if(p==="vou") body=mVou(); else if(p==="bank") body=mBank("bank"); else if(p==="open") body=mBank("open");
   else body='<div class="fsm-wide">'+content()+'</div>';
   return '<div class="fsd fsm">'+(p==="invd"?"":'<div class="fsm-head"><h1>Finanzen</h1><button type="button" class="fsm-hbtn" data-act="help" aria-label="Hilfe">'+ic("help")+'</button></div>'+mNav())+'<div class="fsm-body">'+body+'</div></div>';
