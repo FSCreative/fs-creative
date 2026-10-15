@@ -2632,6 +2632,16 @@ async function handleAdmin(req, res, u, p) {
         return J(200, { ok: true, templates: list });
       }
       const pl = await sevBody(req, 40000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      // Gutschrift als ENTWURF mit freien Positionen (z. B. Auszahlungsbeleg Fremdgeld an ein Lokal abzüglich Gebühren) – Bruttopreise cent-genau
+      if (kind === "creditnote" && pl.op === "draft") {
+        const name = String(pl.contactName || "").trim(), c = FIN_LOCAL.all("Contact").find(x => String(x.id) === String(pl.contactId || "") || (name && String(x.name || "").trim() === name));
+        if (!c) return J(200, { ok: false, error: "Kontakt nicht gefunden" });
+        const pos = (Array.isArray(pl.positions) ? pl.positions : []).slice(0, 40).map((x, k) => ({ positionNumber: String(k), name: String(x.name || "").slice(0, 200), text: String(x.text || "").slice(0, 2000), quantity: "1", unity: { id: "1", objectName: "Unity" }, priceGross: String(Math.round((+x.priceGross || 0) * 100) / 100), taxRate: String(+x.taxRate || 0), grossPricing: true })).filter(x => x.name && +x.priceGross);
+        if (!pos.length) return J(200, { ok: false, error: "Keine Positionen" });
+        const r = await FIN_LOCAL.request("POST", "/CreditNote/Factory/saveCreditNote", { body: { creditNote: { status: "100", contact: { id: String(c.id), objectName: "Contact" }, creditNoteDate: day(pl.date) || undefined, deliveryDate: day(pl.from) || undefined, deliveryDateUntil: day(pl.to) || undefined, header: String(pl.header || "Gutschrift").slice(0, 200), headText: String(pl.headText || ""), footText: String(pl.footText || ""), taxType: "default", bookingCategory: "PROVISION" }, creditNotePosSave: pos } });
+        SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+        const o = r.objects && r.objects.creditNote; return J(200, { ok: true, result: o && { id: String(o.id), nr: o.creditNoteNumber || "", gross: +o.sumGross } });
+      }
       const path = { creditnote: "/Fin/creditNoteFromInvoice", cash: "/Fin/cash", partial: "/Fin/partialFromOrder", final: "/Fin/finalFromOrder", recurring: "/Fin/recurring" }[kind];
       const r = await FIN_LOCAL.request("POST", path, { body: pl });
       SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
