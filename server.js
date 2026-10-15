@@ -3515,7 +3515,7 @@ async function vmCompute() {
     const lim = new Date(Date.now() - 730 * 864e5).toISOString().slice(0, 10);
     for (const v of FIN_LOCAL.all("Voucher").filter(v => String(v.voucherType || "VOU") === "VOU" && ["100", "750"].indexOf(String(v.status)) > -1 && String(v.voucherDate || "").slice(0, 10) >= lim && Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0) > 0.005)) {
       if (++vmN % 15 === 0) await new Promise(r => setImmediate(r));   // Server zwischendurch atmen lassen
-      let r; try { r = await FIN_PROP.suggestVoucher(v.id); } catch (e) { continue; }
+      let r; try { r = await FIN_PROP.suggestVoucher(v.id, { bare: true }); } catch (e) { continue; }
       const c = (r.candidates || []).find(x => x.type === "tx" && x.score >= 60); if (!c || skip[v.id + ":" + c.id]) continue;
       if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, v, c, open: r.voucher.open };
     }
@@ -3530,7 +3530,7 @@ async function imCompute() {
   await FIN_LOCAL.load(); const best = {}; let n = 0;
   for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.mollieType && !t.cashLocked)) {
     if (++n % 15 === 0) await new Promise(r => setImmediate(r));
-    let r; try { r = await FIN_PROP.suggestTx(t.id); } catch (e) { continue; }
+    let r; try { r = await FIN_PROP.suggestTx(t.id, { bare: true }); } catch (e) { continue; }
     const c = (r.candidates || []).find(x => x.type === "invoice" && x.score >= 60); if (!c) continue;
     if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, t, c };
   }

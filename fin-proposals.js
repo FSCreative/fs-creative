@@ -173,11 +173,12 @@ module.exports = function (D) {
     const closes = Math.abs(A - open) <= 0.02; if (!closes && Math.abs(A - sig.typ) > sig.typ * 0.02 + 0.005) return null;
     return { score: closes ? 80 : 75, why: ["Rate wie bisher (" + (sig.n + 1) + ". Rate)"].concat(closes ? ["schließt den Beleg ab (Restbetrag)"] : ["Teilzahlung " + eu(A) + " von offen " + eu(open)]) };
   }
-  async function suggestTx(txId) {
+  // o.bare: ohne bestehende Vorschläge (Hintergrund-Abgleich – sonst ruft jeder Umsatz/Beleg die komplette Vorschlagsliste neu auf)
+  async function suggestTx(txId, o) {
     await L.load(); const t = L.get("CheckAccountTransaction", txId); if (!t) throw new Error("Umsatz nicht gefunden");
     const amt = +t.amount || 0, A = Math.abs(amt), hay = (t.payeePayerName || "") + " " + (t.paymtPurpose || ""), hayNum = hay.toLowerCase().replace(/[^a-z0-9]/g, ""), td = day(t.valueDate), out = [];
     if (String(t.status) !== "100") return { tx: { id: String(t.id), status: +t.status }, candidates: [] };
-    (await forTx(txId)).forEach(p => out.push(propCand(p)));
+    if (!(o && o.bare)) (await forTx(txId)).forEach(p => out.push(propCand(p)));
     if (amt > 0) for (const i of L.all("Invoice").filter(i => ["200", "750"].indexOf(String(i.status)) > -1 && !i.cancelled && ["MA", "WKR", "SR"].indexOf(String(i.invoiceType)) < 0)) {
       const open = r2((+i.sumGross || 0) - (+i.paidAmount || 0)); if (!(open > 0.005)) continue;
       const c = i.contact && L.get("Contact", i.contact.id), cn = contactName(c), nr = String(i.invoiceNumber || "").toLowerCase().replace(/[^a-z0-9]/g, ""), why = []; let s = 0;
@@ -234,11 +235,11 @@ module.exports = function (D) {
     }
     return out;
   }
-  async function suggestVoucher(vid) {
+  async function suggestVoucher(vid, o) {
     await L.load(); const v = L.get("Voucher", vid); if (!v) throw new Error("Beleg nicht gefunden");
     if (String(v.voucherType || "VOU") !== "VOU") return { voucher: { id: String(v.id), open: 0, date: day(v.voucherDate), supplier: v.supplierName || "" }, candidates: [] };   // Vorlagen (RV) sind keine echten Belege
     const open = r2(Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0)), out = [], vd = day(v.voucherDate), credit = String(v.creditDebit || "C") === "C";
-    (await forVoucher(vid)).forEach(p => out.push(propCand(p)));
+    if (!(o && o.bare)) (await forVoucher(vid)).forEach(p => out.push(propCand(p)));
     if (open > 0.005 && ["100", "750"].indexOf(String(v.status)) > -1) (await txCandidates({ amount: open, date: vd, name: v.supplierName, desc: v.description, credit, voucherId: v.id, sig: +v.paidAmount > 0 ? instalmentSig(v) : null })).forEach(c => out.push(c));
     out.sort((a, b) => b.score - a.score);
     return { voucher: { id: String(v.id), open, date: vd, supplier: v.supplierName || "" }, candidates: out.slice(0, 5) };
