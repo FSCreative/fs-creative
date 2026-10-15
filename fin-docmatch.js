@@ -242,7 +242,8 @@ module.exports = function (D) {
     await L.load(); await state();
     const vid = String(pl.voucherId || "").replace(/\D/g, ""); const v = vid && L.get("Voucher", vid);
     if (!v) throw new Error("Beleg nicht gefunden");
-    if (v.document && v.document.id) throw new Error("Dieser Beleg hat bereits eine Datei");
+    // Datei ersetzen nur ausdrücklich per Upload (z. B. Bestellbestätigung → echte Rechnung nachgereicht)
+    if (v.document && v.document.id && !(op === "upload" && pl.replace === true)) throw new Error("Dieser Beleg hat bereits eine Datei");
     if (op === "attach") {
       const r = pl.mailRef || {}; let it = typeof r === "string" ? ST.items[r] : (r.key && ST.items[r.key]);
       if (!it) {   // direkt aus einer Mail (Ordner/UID/Anhang)
