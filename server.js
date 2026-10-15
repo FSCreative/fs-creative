@@ -3399,6 +3399,23 @@ FIN_PROP.register("uva-payment", { exec: it => sevUstPayment({ confirm: true, ke
 FIN_PROP.register("recurring-voucher", { exec: it => SEV_OPS.voucherOp({ confirm: true, op: "open", id: it.payload.voucherId }), valid: it => { const v = FIN_LOCAL.get("Voucher", it.payload.voucherId); return !!v && String(v.status) === "50"; } });
 FIN_PROP.register("recurring-invoice", { exec: it => recurringInvoiceSend(it.payload.invoiceId), valid: it => { const i = FIN_LOCAL.get("Invoice", it.payload.invoiceId); return !!i && String(i.status) === "100" && !i.sendDate; } });
 // Mahnungen zur Freigabe erscheinen ebenfalls unter „Zur Prüfung“ (virtuell aus dem Mahnlauf; Bestätigen = senden, Ablehnen = Stufe überspringen)
+// Offene Belege ↔ passende Bankbuchung: immer frisch berechnet (virtuell), nur gute Treffer (Betrag + Datum, meist auch Name), jede Buchung nur beim besten Beleg
+FIN_PROP.register("voucher-match", {
+  label: "Beleg ↔ Bankbuchung verbinden",
+  list: async () => {
+    if (!FIN_STATE.local) return [];
+    await FIN_LOCAL.load(); const skip = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {}, best = {};
+    const lim = new Date(Date.now() - 730 * 864e5).toISOString().slice(0, 10);
+    for (const v of FIN_LOCAL.all("Voucher").filter(v => String(v.voucherType || "VOU") === "VOU" && ["100", "750"].indexOf(String(v.status)) > -1 && String(v.voucherDate || "").slice(0, 10) >= lim && Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0) > 0.005)) {
+      let r; try { r = await FIN_PROP.suggestVoucher(v.id); } catch (e) { continue; }
+      const c = (r.candidates || []).find(x => x.type === "tx" && x.score >= 60); if (!c || skip[v.id + ":" + c.id]) continue;
+      if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, v, c, open: r.voucher.open };
+    }
+    return Object.values(best).map(b => ({ id: "vm:" + b.v.id + ":" + b.c.id, key: "vm:" + b.v.id + ":" + b.c.id, voucherId: String(b.v.id), txId: String(b.c.id), amount: b.open, date: String(b.v.voucherDate || "").slice(0, 10),
+      title: "Beleg „" + (b.v.supplierName || "ohne Lieferant") + "“ ↔ " + b.c.label, detail: (b.v.description ? String(b.v.description).slice(0, 80) + " · " : "") + b.c.sub + (b.c.why ? " · " + [].concat(b.c.why).join(", ") : ""), source: "Abgleich" }));
+  },
+  exec: async it => SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "voucher", voucherId: it.voucherId }),
+  reject: async it => { const s = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {}; s[it.voucherId + ":" + it.txId] = new Date().toISOString(); await FIN.setMeta("vmatchSkip", s); } });
 FIN_PROP.register("dunning", {
   list: async () => { const st = await dunState(); if (!st.settings.enabled) return []; return dunProposals(st).map(x => ({ id: "dun:" + x.id, key: "dun:" + x.id + ":" + x.level, invoiceId: x.id, amount: x.open, date: x.due, title: x.title + " zu " + x.nr + " · " + (x.contact || "—"), detail: x.overdueDays + " Tage überfällig" + (x.fee > 0 ? " · Mahngebühr " + x.fee.toFixed(2).replace(".", ",") + " €" : "") + (x.email ? " · an " + x.email : "") + (x.hint ? " · " + x.hint : ""), source: "Mahnlauf", hint: x.hint || "" })); },
   exec: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (!pr) throw new Error("Mahnung ist nicht mehr fällig"); const r = await dunSend(st, [pr]); if (!r[0] || !r[0].ok) throw new Error((r[0] && r[0].error) || "Senden fehlgeschlagen"); return r[0]; },
