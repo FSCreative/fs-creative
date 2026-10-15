@@ -211,21 +211,24 @@ module.exports = function (D) {
   // Gemeinsame Bewertung für suggestVoucher (bestehender Beleg) und suggestFor (Beleg wird gerade erfasst, noch ohne ID).
   async function txCandidates(o) {
     const open = r2(o.amount), vd = day(o.date), credit = o.credit !== false, out = [];
-    if (!(open > 0.005)) return out;
+    if (!(open > 0.005) && !(o.byName && o.name)) return out;
     const busy = await busyTx(), R = D.rules && D.rules();
     for (const t of L.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && !t.transitWith && !t.cashLocked && (+t.amount < 0) === credit)) {
-      const A = Math.abs(+t.amount || 0), c = R && R.card ? R.card(t.paymtPurpose) : null, fx = !!(c && c.cur), why = []; let s = 0;
+      const A = Math.abs(+t.amount || 0), c = R && R.card ? R.card(t.paymtPurpose) : null, fx = !!(c && c.cur), why = []; let s = 0, byN = false;
       const im = sigMatch(o.sig, t, open);
       if (im) { s = im.score; im.why.forEach(w => why.push(w)); }
       else if (Math.abs(A - open) <= 0.02) { s += 45; why.push("gleicher Betrag"); }
       else if (fx && Math.abs(A - open) <= open * 0.03 + 0.02) { s += 30; why.push("Betrag ±3 % (Kartenzahlung in " + c.cur + ")"); }
       else if (c && c.spesen && Math.abs(A - c.spesen - open) <= 0.02) { s += 40; why.push("Betrag ohne Bankspesen gleich"); }
+      // Beleg wird erfasst: auch Umsätze desselben Unternehmens mit anderem Betrag zeigen (Teilzahlung, Fremdwährung, Sammelabbuchung) – nie vorausgewählt
+      else if (o.byName && nameCheck(o.name, counterparty(t, R)) === "match") { byN = true; s += 10; why.push(open > 0.005 ? "Betrag weicht ab" : "nach Name gefunden"); }
       else continue;
       if (!im) {
         if (vd) { const d = ddays(t.valueDate, vd); if (d < -7 || d > 30) continue;
           s += d >= 0 && d <= 10 ? 15 : 8; why.push(d === 0 ? "gleiches Datum" : "Umsatz " + Math.abs(d) + " Tage " + (d > 0 ? "nach" : "vor") + " dem Beleg"); }
         const nc = nameCheck(o.name, counterparty(t, R)); if (nc === "mismatch") continue;   // z. B. Beleg „A1“ ↔ Kartenzahlung „WORLD4YOU“
         if (nc === "match") { s += 30; why.push("Name passt"); } else { s = Math.min(s, NOCAP); why.push("Buchungstext ohne Namen – nur Betrag/Datum"); }
+        if (byN) s = Math.min(s, 50);
       }
       if (busy.has(String(t.id))) { s -= 15; why.push("steckt schon in einem anderen Vorschlag"); }
       const acc = t.checkAccount && L.get("CheckAccount", t.checkAccount.id);
@@ -250,9 +253,9 @@ module.exports = function (D) {
     o = o || {}; await L.load();
     const amount = r2(Math.abs(parseFloat(String(o.amount == null ? "" : o.amount).replace(",", ".")) || 0)), date = /^\d{4}-\d{2}-\d{2}/.test(String(o.date || "")) ? day(o.date) : "";
     const credit = !(o.credit === false || o.credit === "D" || o.cd === "D"), name = String(o.name || "").slice(0, 200), desc = String(o.desc || "").slice(0, 250);
-    const out = await txCandidates({ amount, date, name, desc, credit });
+    const out = await txCandidates({ amount, date, name, desc, credit, byName: true });
     out.sort((a, b) => b.score - a.score);
-    return { query: { amount, date, name, credit }, candidates: out.slice(0, 5) };
+    return { query: { amount, date, name, credit }, candidates: out.slice(0, 8) };
   }
   return { register, add, list, view, accept, reject, acceptAll, busyTx, forTx, forVoucher, suggestTx, suggestVoucher, suggestFor, KIND_LABEL, _state: () => ST };
 };

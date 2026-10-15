@@ -2705,7 +2705,7 @@ async function handleAdmin(req, res, u, p) {
       if (vo) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestVoucher(vo)));
       // Beleg wird gerade erfasst (Scan/Upload, noch ohne ID): ?amount=…&date=YYYY-MM-DD&name=…&cd=C|D → passende offene Umsätze
       const am = u.searchParams.get("amount");
-      if (am != null && am !== "") return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestFor({ amount: am, date: u.searchParams.get("date") || "", name: u.searchParams.get("name") || "", desc: u.searchParams.get("desc") || "", cd: (u.searchParams.get("cd") || "C").toUpperCase() })));
+      if ((am != null && am !== "") || u.searchParams.get("name")) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestFor({ amount: am, date: u.searchParams.get("date") || "", name: u.searchParams.get("name") || "", desc: u.searchParams.get("desc") || "", cd: (u.searchParams.get("cd") || "C").toUpperCase() })));
       return J(400, { ok: false, error: "tx, voucher oder amount fehlt" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
@@ -3232,6 +3232,8 @@ async function handleAdmin(req, res, u, p) {
       let ctype = (r.headers.get("content-type") || "application/octet-stream").toLowerCase();
       const ext = (fname.split(".").pop() || "").toLowerCase();
       if ((/octet-stream|binary|unknown/.test(ctype) || !ctype) && EXT[ext]) ctype = EXT[ext];
+      // ohne passende Endung: am Inhalt erkennen – sonst lädt die Vorschau (iframe) die Datei herunter statt sie zu zeigen
+      if (/octet-stream|binary|unknown/.test(ctype) || !ctype) { const h = buf.slice(0, 12); ctype = h.slice(0, 4).toString("latin1") === "%PDF" ? "application/pdf" : h[0] === 0x89 && h.slice(1, 4).toString("latin1") === "PNG" ? "image/png" : h[0] === 0xff && h[1] === 0xd8 ? "image/jpeg" : h.slice(0, 4).toString("latin1") === "RIFF" && h.slice(8, 12).toString("latin1") === "WEBP" ? "image/webp" : ctype || "application/octet-stream"; }
       const wantDl = u.searchParams.get("dl") === "1";
       const ascii = fname.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "_");
       const headers = {

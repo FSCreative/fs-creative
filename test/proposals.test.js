@@ -124,7 +124,10 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     assert.strictEqual(L.get("CheckAccountTransaction", "102").status, "100", "nur Vorschlag – Umsatz bleibt offen");
     const sv = await P.suggestVoucher("500"), cv = s.candidates[0], vv = sv.candidates.find(x => x.id === "102");
     assert.strictEqual(vv.score, cv.score, "gleiche Bewertung wie suggestVoucher");
-    assert.strictEqual((await P.suggestFor({ amount: 12.34, date: "2026-10-01", name: "Spotify AB" })).candidates.length, 0, "anderer Betrag");
+    const ab = (await P.suggestFor({ amount: 12.34, date: "2026-10-01", name: "Spotify AB" })).candidates;   // anderer Betrag, gleiches Unternehmen → gezeigt, aber nie vorausgewählt
+    assert.ok(ab.length >= 1 && ab.every(x => x.score < 60 && x.reasons.indexOf("Betrag weicht ab") > -1), "anderer Betrag: nur nach Name, unter 60");
+    assert.strictEqual((await P.suggestFor({ amount: 12.34, date: "2026-10-01", name: "Unbekannt GmbH" })).candidates.length, 0, "anderer Betrag und anderer Name");
+    assert.ok((await P.suggestFor({ amount: "", date: "2026-10-01", name: "Spotify AB" })).candidates.length >= 1, "ohne Betrag nach Name");
     assert.strictEqual((await P.suggestFor({ amount: 9.9, date: "2026-12-20", name: "Spotify AB" })).candidates.length, 0, "Datum zu weit weg");
     assert.strictEqual((await P.suggestFor({ amount: 9.9, date: "2026-10-01", cd: "D" })).candidates.length, 0, "Einnahme statt Ausgabe");
     assert.strictEqual((await P.suggestFor({ amount: 9.9, date: "2026-10-01", name: "Unbekannt" })).candidates.length, 0, "anderer Name im Buchungstext → kein Kandidat");

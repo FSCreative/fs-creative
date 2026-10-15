@@ -111,7 +111,14 @@ F.action("kiscan",function(){
   K.api("queue",{op:"scan"}).then(function(j){ K.ui.busy.scan=0; K.queue=j.queue||[]; F.toast(j.scan&&j.scan.found?j.scan.found+" neue Belege vorbereitet":"Keine neuen Rechnungsmails gefunden"+(j.scan&&j.scan.err?" ("+j.scan.err+")":"")); K.load(true).then(K.rerender); })
     .catch(function(e){ K.ui.busy.scan=0; K.fail(e); K.rerender(); });
 });
-F.action("kiqdrop",function(key){ K.api("queue",{op:"dismiss",key:key}).then(function(j){ K.queue=j.queue||[]; if(K.st) K.st.queue=K.queue.length; F.toast("Verworfen"); K.rerender(); F.renderNav(); }).catch(K.fail); });
+/* Verwerfen: Eintrag weg und die Mail dazu in den Papierkorb (nur wenn aus dieser Mail kein anderer Beleg mehr wartet) */
+F.action("kiqdrop",function(key){
+  var it=(K.queue||[]).filter(function(q){ return q.key===key; })[0];
+  K.api("queue",{op:"dismiss",key:key}).then(function(j){ K.queue=j.queue||[]; if(K.st) K.st.queue=K.queue.length;
+    var m=it&&it.mail, more=m&&K.queue.some(function(q){ return q.mail&&q.mail.id===m.id; }), M=F.M, its=m&&!more&&M&&M.items?M.items([{id:m.id,account:m.account,folder:m.folder,uid:m.uid}]):[];
+    if(its.length) F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(r){ F.toast(r&&r.ok===false?"Verworfen – Mail konnte nicht in den Papierkorb":"Verworfen – Mail im Papierkorb"); if(M.scheduleReload) M.scheduleReload(1500); }).catch(function(){ F.toast("Verworfen – Mail konnte nicht in den Papierkorb",true); });
+    else F.toast("Verworfen");
+    K.rerender(); F.renderNav(); }).catch(K.fail); });
 F.action("kiqopen",function(key){
   var it=(K.queue||[]).filter(function(q){ return q.key===key; })[0]; if(!it) return;
   if(!F.M||!F.M.openVoucher){ F.toast("Postfach-Modul nicht geladen.",true); return; }
