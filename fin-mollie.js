@@ -116,11 +116,20 @@ module.exports = function (D) {
     if (dr) { try { await L.request("PUT", "/Invoice/" + dr.id + "/sendBy", { body: { sendType: "VPDF" } }); console.log("Online-Provisionsrechnung fertiggestellt:", mmOf(m)); } catch (e) { console.error("Online-Provisionsrechnung " + mmOf(m) + ":", e.message); } }
     return onlineInvoice(m);
   }
+  // Mollie zieht die Connect-Provision oft erst Wochen nach der Zahlung ab → Monat der BESTELLUNG (aus kochdu: Zahlungsnummer → Bestelldatum),
+  // nur wenn die Zahlung dort unbekannt ist, der Buchungsmonat bei Mollie
+  let CONNECT = { at: 0, map: {} };
+  async function loadConnect() {
+    if (typeof D.connectPayments !== "function" || Date.now() - CONNECT.at < 20 * 60e3) return;
+    try { const l = await D.connectPayments(); if (Array.isArray(l) && l.length) { const map = {}; l.forEach(x => { if (x && x.id && x.at) map[String(x.id)] = new Date(new Date(x.at).getTime() + 2 * 3600e3).toISOString().slice(0, 7); }); CONNECT = { at: Date.now(), map }; } }
+    catch (e) { console.error("kochdu Connect-Zahlungen:", e.message); }
+  }
+  const feeMonth = tx => { const m = String(tx.paymtPurpose || tx.mollieDesc || "").match(/\btr_[A-Za-z0-9]+/); return (m && CONNECT.map[m[0]]) || day(tx.valueDate).slice(0, 7); };
   // abgeschlossene Monate ab ONLINE_FROM: Mollie-Provisionen (Summe inkl. negativer Korrekturen) gegen die Sammelrechnung
   function onlineCheck() {
     const today = todayIso(), by = {};
     for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee")) {
-      const m = day(tx.valueDate).slice(0, 7); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
+      const m = feeMonth(tx); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
       const x = by[m] = by[m] || { month: m, mm: mmOf(m), fees: 0, count: 0, open: 0 }; x.fees = r2(x.fees + (+tx.amount || 0)); x.count++; if (String(tx.status) === "100") x.open++;
     }
     return Object.values(by).sort((a, b) => a.month.localeCompare(b.month)).map(x => { const i = onlineInvoice(x.month);
@@ -131,9 +140,9 @@ module.exports = function (D) {
       : Math.abs(x.diff) >= 0.01 ? "Differenz Online-Provisionen " + x.mm + ": " + eu(x.diff) + " (Mollie " + eu(x.fees) + " · Rechnung " + (x.invoiceNumber || "") + " " + eu(x.gross) + ") – z. B. Rückerstattungen oder Bestellungen um Mitternacht; die Provisionen sind trotzdem der Rechnung zugeordnet." : null).filter(Boolean);
   }
   async function onlineProvisions(prop) {
-    let n = 0; const today = todayIso(), byM = {};
+    let n = 0; const today = todayIso(), byM = {}; await loadConnect();
     for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0)) {
-      const m = day(tx.valueDate).slice(0, 7); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
+      const m = feeMonth(tx); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
       (byM[m] = byM[m] || []).push(tx);
     }
     for (const m of Object.keys(byM).sort()) {

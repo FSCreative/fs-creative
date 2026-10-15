@@ -3430,7 +3430,9 @@ const FIN_PROP = require("./fin-proposals.js")({ L: FIN_LOCAL, getMeta: k => FIN
   notify: async (fresh, total) => { if (!process.env.DATABASE_URL || !fresh.length) return; await PUSH.send("fin", { title: "Zur Prüfung: " + (fresh.length === 1 ? "1 neuer Vorschlag" : fresh.length + " neue Vorschläge"), body: fresh.slice(0, 3).map(x => x.title).join(" · ") + (total > fresh.length ? " (insgesamt " + total + " offen)" : ""), url: "/admin?fin=review#geld", tag: "fin-proposals" }); } });
 FIN_LOCAL.setProposer(FIN_PROP);
 // Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway) – Abruf importiert nur, Zuordnungen sind Vorschläge
-const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL, P: () => FIN_PROP });
+const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL, P: () => FIN_PROP,
+  // kochdu: Mollie-Connect-Zahlungen mit Bestelldatum (Provision → Bestellmonat)
+  connectPayments: async () => { if (!KOCHDU.token) return []; const r = await fetch(KOCHDU.url + (KOCHDU.url.indexOf("?") > -1 ? "&" : "?") + "connect=1", { headers: { "x-api-token": KOCHDU.token }, signal: AbortSignal.timeout(20000) }); const j = await r.json().catch(() => ({})); return r.ok && j && Array.isArray(j.payments) ? j.payments : []; } });
 const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, P: () => FIN_PROP, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
 // Belegdateien aus Rechnungsmails automatisch an Belege ohne Datei hängen: alle 15 Minuten (Postfach nur lesen)
 const FIN_DOCMATCH = require("./fin-docmatch.js")({ L: FIN_LOCAL, P: () => FIN_PROP, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)),
