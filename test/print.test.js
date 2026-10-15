@@ -97,7 +97,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   // ── 2) eingerichtet (alles gegen Attrappen) ──
   srv = await startServer(dir, { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", MOLLIE_PRINT_API_KEY: "test_mollie_print", PRINT_MOLLIE_BASE: mbase + "/mollie",
     VIES_URL: mbase + "/vies", MAIL_API_URL: mbase + "/mail/api/mails", MAIL_API_TOKEN: "mt", SEVDESK_API_KEY: "sev-test-key", SEVDESK_API_BASE: "http://127.0.0.1:" + sport + "/api/v1",
-    PRINT_MARKUP_PCT: "35", PRINT_MIN_MARGIN_EUR: "8", PRINT_PUBLIC_URL: "https://www.fs-creative.at" });
+    PRINT_MARKUP_PCT: "35", PRINT_MIN_MARGIN_EUR: "8", PRINT_PUBLIC_URL: "https://www.fs-creative.at", PRINT_CMS_BASE: mbase + "/cms", PRINT_IMPORT_DELAY_MS: "0" });
   const B = srv.base;
   const H = { "content-type": "application/json", "x-print-shop": "1" };
   const post = async (p, body, headers) => { const r = await fetch(B + p, { method: "POST", headers: Object.assign({}, H, headers || {}), body: JSON.stringify(body) }); return { status: r.status, j: await r.json().catch(() => null) }; };
@@ -110,7 +110,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Katalog: kuratierte Produkte, nur freigegebene Eigenschaften, Auflagen-Stufen, deutschsprachige Anfrage", async () => {
     cat = await (await fetch(B + "/print/api/catalog")).json();
     assert.strictEqual(cat.ready, true, JSON.stringify(cat));
-    assert.deepStrictEqual(cat.products.map(p => p.key), ["visitenkarten", "flyer", "plakate", "folder", "aufkleber", "rollups"]);
+    assert.deepStrictEqual(cat.products.filter(p => p.group === "paper-print").map(p => p.key), ["visitenkarten", "flyer", "plakate", "folder"]);
+    assert.deepStrictEqual(cat.products.map(p => p.key), ["visitenkarten", "flyer", "plakate", "folder", "rollups", "pvc-banner", "aufkleber", "kugelschreiber", "tshirt-basic"], "nur kuratierte (einmalig freigeschaltet), nach Print.com-Hauptgruppe");
+    // Print.com-CMS: echte Bilder, Namen der Gruppen
+    const fl = cat.products.find(p => p.key === "flyer"); assert.ok(/^https:\/\/images\.ctfassets\.net\/.+\?fm=webp&w=600$/.test(fl.img), fl.img); assert.deepStrictEqual([fl.cat.mainName, fl.cat.subName], ["Papier & Druck", "Flyer, Faltblätter & Plakate"]);
+    assert.strictEqual(cat.groups[0].name, "Papier & Druck"); assert.ok(cat.groups[0].subs.some(x => x.slug === "cards-envelopes"));
+    assert.deepStrictEqual(cat.products.find(p => p.key === "pvc-banner").cat.main, "outdoor-advertising", "kuratierte Zuordnung vor Print.com (materials-samples)");
     const bc = cat.products[0];
     assert.deepStrictEqual(bc.props.map(p => p.slug), ["size", "material", "printtype", "finish"], "printingmethod/clean_cut nicht sichtbar");
     assert.deepStrictEqual(bc.tiers, [100, 250, 500, 1000, 2500]); assert.strictEqual(bc.fixed.printingmethod, "digital"); assert.strictEqual(bc.bleed, 2);
@@ -300,6 +305,118 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(r.status, 200); assert.ok(/\/print\?entwurf=f[a-f0-9]{24}&t=[a-f0-9]{40}$/.test(r.j.url));
     const d = await (await fetch(B + "/print/api/draft/" + r.j.id + "?t=" + r.j.token)).json(); assert.strictEqual(d.draft.design.pages[0].objects[0].text, "Hallo");
     assert.strictEqual((await fetch(B + "/print/api/draft/" + r.j.id + "?t=0")).status, 404);
+  });
+  // ── Ausschlussregeln, Vorauswahl, neue Produktarten, Sortiment ──
+  const lastPrice = sku => { const l = M.log.filter(x => x.method === "POST" && x.path === "/pc/products/" + sku + "/price"); return l[l.length - 1]; };
+  await t("Ausschlüsse (wie live, Plakate): Vorauswahl gültig, A2 + 170 g matt → Druck/Veredelung bleiben wählbar (Druckverfahren automatisch digital), 1/0 Pantone → nicht lieferbar", async () => {
+    const pl = cat.products.find(p => p.key === "plakate");
+    assert.strictEqual(pl.defaults.size, "a2"); assert.notStrictEqual(pl.defaults.material, "90gr_bankpost", "A2 + 90 g ist ausgeschlossen");
+    assert.ok(!pl.props.find(p => p.slug === "size").options.some(o => o.slug === "custom"), "„custom“ ohne Maße ausgeblendet");
+    assert.deepStrictEqual(pl.props.find(p => p.slug === "size").options.map(o => o.slug), ["a2", "a1"], "Größen klein → groß");
+    assert.deepStrictEqual(pl.props.find(p => p.slug === "material").options.map(o => o.slug), ["90gr_bankpost", "135gr_mc", "170gr_silk_mc"], "Papier leicht → schwer");
+    const d = await post("/print/api/price", { product: "plakate", copies: 1 }); assert.strictEqual(d.status, 200, JSON.stringify(d.j));
+    for (const pt of ["40", "44"]) for (const fin of ["none", "gloss_laminate"]) {
+      const r = await post("/print/api/price", { product: "plakate", copies: 1, sel: { size: "a2", material: "170gr_silk_mc", printtype: pt, finish: fin } });
+      if (pt === "44" && fin === "gloss_laminate") { assert.strictEqual(r.status, 400); continue; }
+      assert.strictEqual(r.status, 200, pt + "/" + fin + " " + JSON.stringify(r.j)); assert.strictEqual(lastPrice("posters").body.options.printingmethod, "digital");
+    }
+    const x = await post("/print/api/price", { product: "plakate", copies: 1, sel: { size: "a2", material: "170gr_silk_mc", printtype: "10", finish: "none" } });
+    assert.strictEqual(x.status, 400); assert.ok(/nicht lieferbar/.test(x.j.error));
+    const y = await post("/print/api/price", { product: "plakate", copies: 1, sel: { size: "a1", material: "135gr_mc", printtype: "10", finish: "none" } });
+    assert.strictEqual(y.status, 200, "1/0 auf 135 g → automatisch Offset"); assert.strictEqual(lastPrice("posters").body.options.printingmethod, "offset");
+  });
+  await t("Vorauswahl: jedes kuratierte Flachprodukt hat mit Standardauswahl einen Preis und ein Format (Designer erreichbar)", async () => {
+    for (const p of cat.products.filter(x => x.kind === "flat")) {
+      const r = await post("/print/api/price", { product: p.key, sel: p.defaults, copies: p.tiers[0] }); assert.strictEqual(r.status, 200, p.key + " " + JSON.stringify(r.j));
+      assert.ok(r.j.size && r.j.size.w > 0, p.key + " Format"); assert.strictEqual(p.designer, true);
+    }
+    const ro = cat.products.find(p => p.key === "rollups"); assert.strictEqual(ro.group, "outdoor-advertising"); assert.deepStrictEqual([ro.props[0].options[0].w, ro.props[0].options[0].h], [850, 2000]);
+  });
+  await t("Banner: freie Größe → size custom + width/height in mm, Konfektion an allen Seiten gleich; 20 cm bzw. zu groß → 400", async () => {
+    const pv = cat.products.find(p => p.key === "pvc-banner"); assert.strictEqual(pv.kind, "banner"); assert.strictEqual(pv.bleed, 40);
+    const ko = pv.props.find(p => p.slug === "konfektion"); assert.deepStrictEqual(ko.options.map(o => o.slug), ["trimmed", "hemmed", "hem_eyelets_50", "hem_eyelets_30"], "nur vorhandene, kuratierte Konfektionen");
+    const r = await post("/print/api/price", { product: "pvc-banner", copies: 1, sel: { konfektion: "hem_eyelets_50" }, custom: { w: 200, h: 100 } }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const o = lastPrice("pvc-510").body.options;
+    assert.deepStrictEqual([o.size, o.width, o.height, o.all_sides_equal_finish, o.finish_left, o.finish_right, o.finish_top, o.finish_bottom, o.copies, o.printtype], ["custom", 2000, 1000, "yes", "hem_eyelets_50", "hem_eyelets_50", "hem_eyelets_50", "hem_eyelets_50", 1, "40"]);
+    assert.ok(!("konfektion" in o)); assert.deepStrictEqual(r.j.size, { w: 2000, h: 1000 }); assert.ok(r.j.labels.some(l => l[1] === "200 × 100 cm"));
+    assert.strictEqual((await post("/print/api/price", { product: "pvc-banner", copies: 1, custom: { w: 20, h: 100 } })).status, 400);
+    assert.strictEqual((await post("/print/api/price", { product: "pvc-banner", copies: 1, custom: { w: 400, h: 400 } })).status, 400, "max. 500 × 300 cm");
+    const up = await upload(await pdfOf(2080, 1080, 1), "banner.pdf", { product: "pvc-banner", copies: 1, sel: { konfektion: "hem_eyelets_50" }, custom: { w: 200, h: 100 } });
+    assert.strictEqual(up.status, 200, JSON.stringify(up.j)); assert.ok(up.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text)), JSON.stringify(up.j.checks));
+  });
+  await t("Werbeartikel: Druckfläche aus printing_size, Farbe immer gesendet, Preis 0 → Fehler", async () => {
+    const pen = cat.products.find(p => p.key === "kugelschreiber"); assert.strictEqual(pen.kind, "promo"); assert.strictEqual(pen.designer, false);
+    const r = await post("/print/api/price", { product: "kugelschreiber", copies: 150 }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const o = lastPrice("pen-apollo-hardcolor").body.options; assert.strictEqual(o.color, "blue"); assert.strictEqual(o.printtype, "40"); assert.strictEqual(o.printingmethod, "digital_uv");
+    assert.deepStrictEqual(r.j.positions[0].area, [70, 6]);
+    M.price.salesPrice = 0; { const z = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" } }); assert.strictEqual(z.status, 502); assert.ok(/keinen Preis/.test(z.j.error)); } M.price.salesPrice = 20;
+  });
+  await t("Textil: Größen-Mix → copies = Summe, Logos je Position als mehrseitige PDF, Bestellung mit variants und Seitenzuordnung", async () => {
+    const ts = cat.products.find(p => p.key === "tshirt-basic"); assert.strictEqual(ts.kind, "textile"); assert.deepStrictEqual(ts.positions.map(p => p.slug), ["positions_chest", "positions_front", "positions_back", "positions_sleeve_left"]);
+    assert.deepStrictEqual(ts.methods.map(m => m.key), ["transfer", "screen1"]);
+    const TX = { product: "tshirt-basic", sel: { color_textile: "black_tshirt_fotl_original" }, textile: { method: "transfer", positions: ["positions_back", "positions_chest"], sizes: { m: 10, l: 5 } } };
+    const r = await post("/print/api/price", TX); assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.copies, 15);
+    const o = lastPrice("t-shirt-budget-5").body.options;
+    assert.deepStrictEqual([o.copies, o.textile_sizes, o.color_textile, o.positions_chest, o.positions_back, o.printingmethod, o.printtype, o.individually_sealed, o.size], [15, "m", "black_tshirt_fotl_original", "transfer", "transfer", "heat_transfer", "variable", "no", "t_shirt_nul_price"]);
+    assert.ok(!("positions_front" in o) && !("variants" in lastPrice("t-shirt-budget-5").body));
+    assert.strictEqual((await post("/print/api/price", Object.assign({}, TX, { textile: { method: "screen1", positions: ["positions_chest"], sizes: { m: 10 } } }))).status, 400, "Siebdruck ab 25");
+    assert.strictEqual((await post("/print/api/price", Object.assign({}, TX, { textile: { method: "transfer", positions: [], sizes: { m: 1 } } }))).status, 400, "mind. 1 Position");
+    assert.strictEqual((await post("/print/api/price", Object.assign({}, TX, { textile: { method: "transfer", positions: ["positions_chest"], sizes: { xxxl: 1 } } }))).status, 400);
+    const lc = Object.assign({}, TX, { logo: "positions_chest" }), lb = Object.assign({}, TX, { logo: "positions_back" });
+    const l1 = await upload(png(1200, 1200, [200, 0, 0]), "brust.png", lc), l2 = await upload(png(1500, 1000, [0, 0, 200]), "ruecken.png", lb);
+    assert.strictEqual(l1.status, 200, JSON.stringify(l1.j)); assert.strictEqual(l1.j.kind, "logo"); assert.strictEqual(l1.j.blocked, false);
+    assert.strictEqual((await upload(png(100, 100, [0, 0, 0]), "mini.png", lc)).j.blocked, true, "zu kleines Logo");
+    const mg = await post("/print/api/logos", Object.assign({}, TX, { logos: { positions_chest: { fileId: l1.j.fileId, token: l1.j.token }, positions_back: { fileId: l2.j.fileId, token: l2.j.token } } }));
+    assert.strictEqual(mg.status, 200, JSON.stringify(mg.j)); assert.strictEqual(mg.j.pages, 2); assert.deepStrictEqual(mg.j.pageMap.map(p => p.pos), ["positions_chest", "positions_back"], "feste Reihenfolge");
+    const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + mg.j.fileId + "?t=" + mg.j.token + "&pdf=1")).arrayBuffer()).toString("latin1");
+    const boxes = (pdf.match(/\/MediaBox\s*\[[^\]]+\]/g) || []).map(b => b.match(/[\d.]+/g).map(Number).slice(2).map(mm)); assert.deepStrictEqual(boxes, [[100, 100], [280, 380]]);
+    const firm = Object.assign({}, cust, { type: "company", company: "Testfirma GmbH", uid: "ATU12345678" });
+    const pr = await post("/print/api/price", Object.assign({}, TX, { customerType: "company", uid: "ATU12345678" }));
+    const od = await post("/print/api/order", Object.assign({}, TX, { fileId: mg.j.fileId, fileToken: mg.j.token, customer: firm, payment: "invoice", acceptTerms: true, acceptFagg: true, acceptProof: true, expectedGross: pr.j.price.gross }));
+    assert.strictEqual(od.status, 200, JSON.stringify(od.j));
+    const d = await admin("/admin/api/print/order?id=" + od.j.orderId); assert.deepStrictEqual(d.order.variants, [{ textile_sizes: "m", color_textile: "black_tshirt_fotl_original", copies: 10 }, { textile_sizes: "l", color_textile: "black_tshirt_fotl_original", copies: 5 }]);
+    assert.strictEqual(d.order.pageMap.length, 2); assert.strictEqual(d.order.textile.sizes.length, 2);
+    const n0 = M.orders.length; const pl = await admin("/admin/api/print/op", { op: "place", id: od.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl));
+    const it = M.orders[n0].items[0]; assert.strictEqual(it.options.copies, 15); assert.strictEqual(it.variants.length, 2); assert.strictEqual(it.variants[1].copies, 5); assert.strictEqual(it.shipments[0].copies, 15);
+    assert.ok(/S1 Brust links, S2 Rücken/.test(it.customerReference), it.customerReference);
+    assert.strictEqual((await fetch(B + new URL(it.fileUrl).pathname)).status, 200);
+  });
+  await t("Sortiment: Print.com-Kategorien (Import im Hintergrund), Haupt-/Untergruppe freischalten + Einzel-Ausnahme, allgemeines Produkt mit freier Menge und eigener Größe", async () => {
+    await admin("/admin/api/print/sortiment", { op: "import" });
+    let st; for (let i = 0; i < 100; i++) { st = await admin("/admin/api/print/sortiment"); if (!st.job.running && st.imported) break; await new Promise(r => setTimeout(r, 100)); }
+    assert.strictEqual(st.ok, true); assert.strictEqual(st.job.running, false); assert.ok(st.job.total >= 10, JSON.stringify(st.job));
+    const it = sku => st.items.find(x => x.sku === sku) || {};
+    assert.deepStrictEqual([it("notepads").main, it("notepads").sub, it("t-shirt-budget-5").sub], ["paper-print", "office-print", "clothing"], "aus den Produktdetails (category)");
+    assert.deepStrictEqual(["beachflags", "mentos-rolls", "aluminium-signs", "cardboard-boxes", "umbrellas", "socks", "tablecloths", "pvc-510"].map(x => it(x).main),
+      ["outdoor-advertising", "gifts-merchandise-promotional", "indoor-interior", "packaging-bags", "gifts-merchandise-promotional", "clothing-textile", "other", "outdoor-advertising"], "ohne Print.com-Kategorie: Stichwort-Ersatz");
+    assert.ok(!st.items.some(x => x.sku === "inactive-thing")); assert.ok(/ctfassets/.test(it("flyers").img));
+    const pp = st.tree.find(m => m.slug === "paper-print"); assert.strictEqual(pp.name, "Papier & Druck"); assert.ok(pp.subs.some(x => x.slug === "office-print" && x.name === "Drucksachen für das Büro" && x.total === 1));
+    const keys = async () => (await (await fetch(B + "/print/api/catalog")).json()).products.map(p => p.key);
+    assert.ok(!(await keys()).includes("notepads"), "Standard: aus");
+    await admin("/admin/api/print/sortiment", { op: "cat", cat: "paper-print", on: true });
+    const c1 = await (await fetch(B + "/print/api/catalog")).json(); const np = c1.products.find(p => p.key === "notepads"); assert.ok(np && np.lazy && np.cat.subName === "Drucksachen für das Büro", JSON.stringify(np));
+    await admin("/admin/api/print/sortiment", { op: "cat", cat: "office-print", on: false }); assert.ok(!(await keys()).includes("notepads"), "Untergruppe aus schlägt Hauptgruppe");
+    await admin("/admin/api/print/sortiment", { op: "cat", cat: "office-print", on: null }); assert.ok((await keys()).includes("notepads"));
+    await admin("/admin/api/print/sortiment", { op: "set", sku: "notepads", on: false }); assert.ok(!(await keys()).includes("notepads"), "einzeln aus schlägt Kategorie");
+    await admin("/admin/api/print/sortiment", { op: "cat", cat: "paper-print", on: false }); await admin("/admin/api/print/sortiment", { op: "set", sku: "notepads", on: true });
+    assert.ok((await keys()).includes("notepads"), "einzeln an ohne Kategorie"); assert.ok(!(await keys()).includes("socks"));
+    const pd = await (await fetch(B + "/print/api/product?key=notepads")).json(); assert.strictEqual(pd.ok, true, JSON.stringify(pd));
+    assert.strictEqual(pd.product.kind, "flat"); assert.deepStrictEqual(pd.product.props.map(p => p.slug), ["sheets", "size"], "propertyGroups-Reihenfolge, versteckte/Bild-Eigenschaften nicht");
+    assert.strictEqual(pd.product.props[0].options.find(o => o.slug === "50").desc, "50 Blatt je Block");
+    assert.deepStrictEqual(pd.product.props[1].options.map(o => o.slug), ["a6", "a5", "custom"]); assert.deepStrictEqual(pd.product.tiers, [25, 50, 100, 250, 500]);
+    assert.deepStrictEqual(pd.product.custom, { minW: 50, minH: 50, maxW: 210, maxH: 297, unit: "mm" });
+    const r = await post("/print/api/price", { product: "notepads", copies: 50 }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    assert.deepStrictEqual(r.j.size, { w: 105, h: 148 }, "A6 kleinstes Format zuerst"); let o = lastPrice("notepads").body.options; assert.deepStrictEqual([o.material, o.printingmethod, o.glue], ["90gr_offset", "digital", "top"]);
+    assert.strictEqual((await post("/print/api/price", { product: "notepads", copies: 37 })).status, 200, "freie Menge im Schritt");
+    assert.strictEqual((await post("/print/api/price", { product: "notepads", copies: 500 })).status, 200); assert.strictEqual(lastPrice("notepads").body.options.printingmethod, "offset", "Druckverfahren passend zur Menge");
+    assert.strictEqual((await post("/print/api/price", { product: "notepads", copies: 120 })).status, 400, "120 liegt in keinem Bereich");
+    const cu = await post("/print/api/price", { product: "notepads", copies: 50, sel: { size: "custom" }, custom: { w: 100, h: 200 } }); assert.strictEqual(cu.status, 200, JSON.stringify(cu.j));
+    o = lastPrice("notepads").body.options; assert.deepStrictEqual([o.size, o.width, o.height], ["custom", 100, 200]); assert.deepStrictEqual(cu.j.size, { w: 100, h: 200 });
+    assert.strictEqual((await post("/print/api/price", { product: "notepads", copies: 50, sel: { size: "custom" }, custom: { w: 300, h: 300 } })).status, 400, "größer als customSizes");
+    assert.strictEqual((await fetch(B + "/print/api/product?key=socks")).status, 404, "nicht freigeschaltet");
+    await admin("/admin/api/print/sortiment", { op: "override", sku: "umbrellas", cat: "clothing-textile/clothing" }); assert.strictEqual((await admin("/admin/api/print/sortiment")).items.find(x => x.sku === "umbrellas").sub, "clothing");
+    const pv = await admin("/admin/api/print/sortiment", { op: "preview", sku: "notepads" }); assert.strictEqual(pv.ok, true, JSON.stringify(pv)); assert.ok(pv.gross > 0);
+    const ps = await admin("/admin/api/print/sortiment", { op: "preview", sku: "t-shirt-budget-5" }); assert.strictEqual(ps.ok, true, JSON.stringify(ps));
   });
   await t("Shop-AGB /print/agb: Firmendaten, FAGG-Hinweis, Stand", async () => {
     const r = await fetch(B + "/print/agb"); assert.strictEqual(r.status, 200); const h = await r.text();

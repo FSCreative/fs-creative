@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
+<script>try{if(localStorage.getItem('fsc-theme')==='light')document.documentElement.className+=' light';}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Druck online bestellen — Visitenkarten, Flyer, Plakate selbst gestalten | FS Creative</title>
 <meta name="description" content="Visitenkarten, Flyer, Plakate, Folder, Aufkleber und Roll-ups online gestalten oder Druckdatei hochladen, Preis sofort sehen und bestellen. Persönlich geprüft von FS Creative aus dem Montafon." />
@@ -18,11 +19,30 @@
 <meta property="og:image" content="https://www.fs-creative.at/og-image.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" type="image/png" href="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" />
-<link rel="stylesheet" href="/landing.css?v=4" />
-<link rel="stylesheet" href="/print/print.css?v=1" />
+<link rel="stylesheet" href="/landing.css?v=6" />
+<link rel="stylesheet" href="/print/print.css?v=2" />
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Start", "item": "https://www.fs-creative.at/"}, {"@type": "ListItem", "position": 2, "name": "Druck & Print", "item": "https://www.fs-creative.at/druck"}, {"@type": "ListItem", "position": 3, "name": "Online bestellen", "item": "https://www.fs-creative.at/print"}]}</script>
 </head>
 <body class="print-page">
+<div class="pullchain hint" id="pullchain" aria-hidden="true" title="Zieh an der Kette – Licht an/aus">
+  <svg width="130" height="540" viewBox="0 0 130 540" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="pcKnobGrad" cx="38%" cy="32%" r="72%">
+        <stop offset="0%" stop-color="#f4f6fa"/>
+        <stop offset="55%" stop-color="#c4c9d3"/>
+        <stop offset="100%" stop-color="#878d9a"/>
+      </radialGradient>
+    </defs>
+    <circle class="pc-mount" cx="65" cy="2" r="5"/>
+    <g id="pcBeads"></g>
+    <g id="pcKnobGroup">
+      <circle class="pc-knob-ring" r="11"/>
+      <circle class="pc-knob" r="8.5"/>
+      <circle class="pc-knob-nub" cx="0" cy="9" r="3.1"/>
+      <circle class="pc-knob-hit" r="22"/>
+    </g>
+  </svg>
+</div>
 <a class="skip" href="#main">Zum Inhalt springen</a>
 <div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
 
@@ -37,6 +57,7 @@
       <a href="/blitzdings">Blitzdings</a>
       <a href="/valuero">VALUERO</a>
       <a href="/referenzen">Referenzen</a>
+      <button type="button" class="theme-btn" data-theme-toggle aria-label="Licht an/aus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>Licht an/aus</button>
       <a href="/kontakt" class="nav-cta">Kontakt</a>
     </nav>
   </div>
@@ -78,7 +99,7 @@
         <div class="step"><h3>Produkt &amp; Ausführung</h3><p>Format, Papier, Auflage und Lieferzeit wählen – der Preis inkl. Versand steht sofort da.</p></div>
         <div class="step"><h3>Gestalten oder hochladen</h3><p>Mit Vorlagen im Designer gestalten oder deine druckfertige PDF hochladen. Beschnitt und Auflösung prüfen wir automatisch.</p></div>
         <div class="step"><h3>Bezahlen</h3><p>Sicher online bezahlen – Firmen mit UID auch auf Rechnung.</p></div>
-        <div class="step"><h3>Persönlich geprüft</h3><p>Wir sehen uns jede Datei an, bevor sie in Produktion geht. Geliefert wird nach Österreich und Deutschland.</p></div>
+        <div class="step"><h3>Persönlich geprüft</h3><p>Wir sehen uns jede Datei an, bevor sie in Produktion geht. Geliefert wird innerhalb Österreichs.</p></div>
       </div>
     </section>
 
@@ -87,7 +108,7 @@
       <div class="faq">
         <details><summary>Was bedeutet Beschnitt und Sicherheitsabstand?</summary><p>Damit nach dem Schneiden kein weißer Rand bleibt, laufen Hintergründe 2–3 mm über das Endformat hinaus (Beschnitt). Wichtige Texte sollten ein paar Millimeter Abstand zum Rand halten (Sicherheitsabstand). Im Designer siehst du beides als Hilfslinien.</p></details>
         <details><summary>Welche Dateien kann ich hochladen?</summary><p>Am besten eine druckfertige PDF im Endformat plus Beschnitt. JPG und PNG gehen auch – für scharfen Druck mit mindestens 300 dpi in Druckgröße. Maximal 50 MB.</p></details>
-        <details><summary>Wie schnell wird geliefert?</summary><p>Das voraussichtliche Lieferdatum siehst du direkt beim Preis. Produziert wird bei unserem Druckpartner, versendet nach Österreich und Deutschland.</p></details>
+        <details><summary>Wie schnell wird geliefert?</summary><p>Das voraussichtliche Lieferdatum siehst du direkt beim Preis. Produziert wird bei unserem Druckpartner, versendet innerhalb Österreichs.</p></details>
         <details><summary>Kann ich auf Rechnung bestellen?</summary><p>Ja, als Firma mit gültiger UID-Nummer. Die Bestellung geben wir dann nach kurzer Prüfung frei.</p></details>
         <details><summary>Kann ich die Bestellung widerrufen?</summary><p>Da Drucksachen nach deinen Vorgaben angefertigt werden, besteht kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG). Deine gesetzlichen Gewährleistungsrechte bleiben selbstverständlich bestehen. Details in unseren <a href="/print/agb">AGB</a>.</p></details>
       </div>
@@ -123,6 +144,105 @@
     </div>
   </div>
 </footer>
-<script src="/print/app.js?v=1" defer></script>
+<script>
+window.fscToggleTheme=function(){var el=document.documentElement;el.classList.add('theming');var light=el.classList.toggle('light');try{localStorage.setItem('fsc-theme',light?'light':'dark');}catch(_){}setTimeout(function(){el.classList.remove('theming');},650);};
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-theme-toggle]');if(b){e.preventDefault();window.fscToggleTheme();}});
+</script>
+<script>
+/* Pull-chain light switch — verlet-physics chain, drag to pull. Desktop only. */
+(function(){
+  var wrap = document.getElementById('pullchain'); if(!wrap) return;
+  var mm = window.matchMedia;
+  if(mm && (mm('(hover:none)').matches || mm('(max-width:900px)').matches)) return;
+
+  var svg = wrap.querySelector('svg'),
+      beadsG = document.getElementById('pcBeads'),
+      knobG = document.getElementById('pcKnobGroup'),
+      hit = wrap.querySelector('.pc-knob-hit');
+
+  var AX = 65, AY = 2, N = 16, SEG = 10.5, GRAV = 0.72, DAMP = 0.985, ITER = 16, TRIGGER = 64;
+  var restY = AY + (N - 1) * SEG;
+  var reduce = mm && mm('(prefers-reduced-motion:reduce)').matches;
+
+  var P = [];
+  for(var i = 0; i < N; i++) P.push({ x: AX, y: AY + i * SEG, ox: AX, oy: AY + i * SEG });
+
+  var beads = [];
+  for(var i = 1; i < N - 1; i++){
+    var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('class', 'pc-bead');
+    c.setAttribute('r', (i >= N - 3 ? 3.3 : 3.0));
+    beadsG.appendChild(c); beads.push(c);
+  }
+
+  var dragging = false, armed = false, moved = 0, autoUntil = 0, target = { x: AX, y: restY };
+  function nowms(){ return window.performance && performance.now ? performance.now() : Date.now(); }
+  function toSvg(e){ var r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+  function toggle(){ window.fscToggleTheme(); }
+  function _unused(){
+    var el = document.documentElement;
+    el.classList.add('theming');
+    var light = el.classList.toggle('light');
+    try { localStorage.setItem('fsc-theme', light ? 'light' : 'dark'); } catch(_){}
+    setTimeout(function(){ el.classList.remove('theming'); }, 650);
+  }
+
+  hit.addEventListener('pointerdown', function(e){
+    e.preventDefault();
+    dragging = true; armed = true; moved = 0;
+    wrap.classList.add('dragging'); wrap.classList.remove('hint');
+    var p = toSvg(e); target.x = p.x; target.y = p.y;
+    try { hit.setPointerCapture(e.pointerId); } catch(_){}
+  });
+  window.addEventListener('pointermove', function(e){
+    if(!dragging) return;
+    var p = toSvg(e);
+    moved += Math.abs(p.x - target.x) + Math.abs(p.y - target.y);
+    target.x = Math.max(AX - 72, Math.min(AX + 72, p.x));
+    target.y = Math.max(AY + 32, Math.min(AY + 340, p.y));
+    if(armed && (target.y - restY) > TRIGGER){ armed = false; toggle(); }
+  });
+  window.addEventListener('pointerup', function(){
+    if(!dragging) return;
+    dragging = false; wrap.classList.remove('dragging');
+    if(moved < 7 && armed){ autoUntil = nowms() + 150; } else { armed = false; }
+  });
+
+  function step(now){
+    var pulling = dragging || now < autoUntil;
+    if(now < autoUntil){ target.x = AX; target.y = restY + TRIGGER + 24; }
+    for(var i = 1; i < N; i++){
+      if(i === N - 1 && pulling) continue;
+      var p = P[i];
+      var vx = (p.x - p.ox) * DAMP, vy = (p.y - p.oy) * DAMP;
+      p.ox = p.x; p.oy = p.y; p.x += vx; p.y += vy + GRAV;
+    }
+    for(var k = 0; k < ITER; k++){
+      P[0].x = AX; P[0].y = AY;
+      if(pulling){ P[N-1].x = target.x; P[N-1].y = target.y; }
+      for(var i = 0; i < N - 1; i++){
+        var a = P[i], b = P[i+1];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        var d = Math.sqrt(dx*dx + dy*dy) || 1e-4;
+        var diff = (SEG - d) / d * 0.5;
+        var ox = dx * diff, oy = dy * diff;
+        if(i !== 0){ a.x -= ox; a.y -= oy; }
+        if(!(i + 1 === N - 1 && pulling)){ b.x += ox; b.y += oy; }
+      }
+    }
+    if(armed && (P[N-1].y - restY) > TRIGGER){ armed = false; toggle(); }
+    for(var i = 1; i < N - 1; i++){
+      beads[i-1].setAttribute('cx', P[i].x.toFixed(2));
+      beads[i-1].setAttribute('cy', P[i].y.toFixed(2));
+    }
+    knobG.setAttribute('transform', 'translate(' + P[N-1].x.toFixed(2) + ',' + P[N-1].y.toFixed(2) + ')');
+    requestAnimationFrame(step);
+  }
+  if(!reduce){ setTimeout(function(){ P[8].x += 11; P[10].x += 6; }, 700); }
+  requestAnimationFrame(step);
+})();
+</script>
+<script src="/print/app.js?v=2" defer></script>
 </body>
 </html>

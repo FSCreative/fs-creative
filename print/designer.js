@@ -600,7 +600,7 @@
         '<div class="foot"><button class="ps-btn" data-a="m:back">Weiter bearbeiten</button><button class="ps-btn primary" data-a="m:pdf">' + (errs.length ? "Trotzdem Druck-PDF erstellen" : "Druck-PDF erstellen") + "</button></div>", function (a) {
           if (a !== "pdf") return;
           busy("Druck-PDF wird erstellt …");
-          var o = D.o, body = { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, pages: res.map(function (r) { return r.svg; }), warnings: warns.filter(function (x) { return x.level === "warn" && !/dpi/.test(x.text); }).map(function (x) { return x.text; }).slice(0, 10) };
+          var o = D.o, body = { product: o.product.key, sel: o.sel, copies: o.copies, urgency: o.urgency, custom: o.custom, pages: res.map(function (r) { return r.svg; }), warnings: warns.filter(function (x) { return x.level === "warn" && !/dpi/.test(x.text); }).map(function (x) { return x.text; }).slice(0, 10) };
           fetch("/print/api/design", { method: "POST", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" }, body: JSON.stringify(body) }).then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status }; }); }).then(function (j) {
             busy(false);
             if (!j.ok) { toast(j.error || "PDF konnte nicht erstellt werden", true); return; }

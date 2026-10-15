@@ -20,21 +20,104 @@ const PLZ = { AT: /^\d{4}$/, DE: /^\d{5}$/ };
 const MAX_UPLOAD = 50 * 1024 * 1024;
 const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", uid: "ATU82622967", email: "office@fs-creative.at", phone: "+43 664 1430620" };
 
-// Kuratierte Auswahl: welche Print.com-Produkte, welche Eigenschaften der Kunde sieht, welche Auflagen angeboten werden.
-const CURATED = [
-  { key: "visitenkarten", title: "Visitenkarten", icon: "💼", desc: "Der erste Eindruck zum Mitnehmen – ein- oder beidseitig.", skus: ["businesscards", "business-cards", "visitekaartjes"], rx: /business ?cards?|visitenkart|visitekaart/i,
-    expose: ["size", "material", "printtype", "finish", "corners"], tiers: [100, 250, 500, 1000, 2500], designer: true, safe: 3 },
-  { key: "flyer", title: "Flyer", icon: "📄", desc: "Angebote, Events und Infos – von A6 bis A4.", skus: ["flyers", "flyer"], rx: /^flyers?$|^flyer/i,
-    expose: ["size", "material", "printtype", "finish"], tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3 },
-  { key: "plakate", title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
-    expose: ["size", "material", "printtype", "finish"], tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5 },
-  { key: "folder", title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
-    expose: ["size", "material", "printtype", "finish", "folding", "fold"], tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // TODO: mit echtem Print.com-Workfile prüfen, ob „size“ das offene Format ist
-  { key: "aufkleber", title: "Aufkleber", icon: "🏷️", desc: "Sticker und Etiketten in vielen Formen.", skus: ["stickers", "sticker"], rx: /stickers?|aufkleber/i,
-    expose: ["size", "material", "printtype", "finish", "shape", "cutting"], tiers: [50, 100, 250, 500, 1000], designer: true, safe: 3 },
-  { key: "rollups", title: "Roll-ups", icon: "🪧", desc: "Mobile Werbesysteme für Messe, Empfang und Events.", skus: ["rollupbanners", "roll-up-banners", "rollups", "roll-up-banner", "rollup-banners"], rx: /roll-?ups?/i,
-    expose: ["size", "material", "printtype"], tiers: [1, 2, 3, 5, 10], designer: true, safe: 10 },
+// Kategorien = Print.com-Produktbaum (Hauptgruppe/Untergruppe als Slug, Namen aus dem Print.com-CMS). Ohne Angabe von Print.com: Stichwort-Regeln als Ersatz.
+const PAPER = "paper-print", BANNER = "outdoor-advertising", INDOOR = "indoor-interior", STICK = "stickers-tapes", BAGS = "packaging-bags", PROMO = "gifts-merchandise-promotional", TEX = "clothing-textile", MATS = "materials-samples", OTHER = "other";
+const MAIN_DE = { [PAPER]: "Papier & Druck", [BANNER]: "Außenwerbung", [INDOOR]: "Innenwerbung & Interieur", [STICK]: "Aufkleber & Klebebänder", [BAGS]: "Taschen & Verpackungen", [PROMO]: "Werbeartikel & Geschenke", [TEX]: "Bekleidung & Textil", [MATS]: "Materialien & Muster", [OTHER]: "Sonstiges" };
+const GROUP_ICON = { [PAPER]: "📄", [BANNER]: "🏁", [INDOOR]: "🪧", [STICK]: "🏷️", [BAGS]: "👜", [PROMO]: "🎁", [TEX]: "👕", [MATS]: "🧪", [OTHER]: "📦" };
+// Ersatz-Einteilung (sku + Titel, deutsch/englisch), nur wenn Print.com keine Kategorie liefert: erste passende Regel gewinnt – zum Erweitern Wörter ergänzen.
+// Reihenfolge ist wichtig: „Textilrahmen“ vor Textil, „Tote Bag (Canvas)“ vor Leinwand, „Posterhalter“ vor Poster.
+const CAT_RULES = [
+  [PROMO, /mentos|gumm(y|ies|i)|fruchtgummi|chocolat|schoko|cookie|keks|candy|candies|bonbon|lolli|sweets|\btea\b|\btee\b|coffee|kaffee|olive|smoothie|hone[yi]|honig|jelly|snack|popcorn|\bmints?\b|kaugummi|chewing|lebensmittel|\bfood\b/],
+  [BANNER, /banner|\bmesh\b|roll ?ups?|roller|display|beach ?flag|\bflags?\b|fahne|textile ?frame|textilrahmen|backdrop|backwall|pavement|kundenstopper|stopper|poster ?holder|posterhalter|\bfence|bauzaun|\btents?\b|zelt|counter|theke|messe|exhibition|spanntuch|a ?frame|sandwich ?board|parasol/],
+  [TEX, /t ?shirt|tshirt|\bpolos?\b|hoodie|sweater|sweatshirt|pullover|jacket|jacke|\bcaps?\b|beanie|m(ü|u)tze|apron|sch(ü|u)rze|\bscarf|\bschal\b|\bbaby|romper|strampler|\bsocks?\b|socken|towel|handtuch|badelaken|bademantel|textile|\btextil|\bshirts?\b|\bvests?\b|weste|bandana|bodywarmer/],
+  [BAGS, /\bbags?\b|tasche|beutel|\btotes?\b|backpack|rucksack|\bbox(es)?\b|schachtel|karton|carton|mailer|versand|packaging|verpackung|ribbon|geschenkband|\bgifts?\b|geschenk|pouch|wrapping|packpapier/],
+  [STICK, /sticker|aufkleber|\blabels?\b|etikett|\btape\b|klebeband/],
+  [PROMO, /\bpens?\b|kugelschreiber|\bstift|pencil|lighter|feuerzeug|cricket|lanyard|subyard|schl(ü|u)sselband|key ?ring|schl(ü|u)sselanh|keychain|\bmugs?\b|tasse|becher|\bcups?\b|bottle|flasche|umbrella|schirm|\busb\b|powerbank|notebook|notizbuch|balloon|ballon|stress|sunglass|sonnenbrille|frisbee|coaster|untersetzer|mouse ?pad|mauspad|\bbuttons?\b|\bpins?\b|badge|opener|ice ?scraper|eiskratzer|\bphone|sticky|haftnotiz|werbeartikel|promotional|puzzle|\bgames?\b|\btoys?\b/],
+  [INDOOR, /\bsigns?\b|schild|dibond|\balu|forex|acryl|plexi|canvas|leinwand|wallpaper|tapete|\bfloor|fu(ß|ss)boden|\bwindow|fenster|\bwall|wand|magnet|\bphoto|\bfoto|\bframes?\b|rahmen|\bdeko|decoration|\bglass?\b|\bglas\b|\bwood|\bholz/],
+  [PAPER, /flyer|folder|leaflet|business ?cards?|visitenkart|poster|plakat|brochure|brosch|magazine|magazin|letterhead|briefpapier|envelope|kuvert|umschlag|postcard|postkarte|\bcards?\b|karte|notepad|notizblock|\bblock|calendar|kalender|booklet|\bmenu|speisekarte|ticket|placemat|tischset|\bbooks?\b|\bbuch|invitation|einladung|certificate|urkunde|\bpaper|papier|door ?hanger|bookmark|lesezeichen|stempel|\bstamps?\b|\bprints?\b|\bdruck/],
 ];
+// Bild-URL (nur images.ctfassets.net), als WebP verkleinert
+const IMG = (p, w) => p ? "https://images.ctfassets.net/" + p + (/\.svg$/i.test(p) ? "" : "?fm=webp&w=" + (w || 800)) : "";
+function categoryOf(sku, single, plural) { const t = (String(sku || "") + " " + String(single || "") + " " + String(plural || "")).toLowerCase().replace(/[-_]+/g, " "); const r = CAT_RULES.find(x => x[1].test(t)); return r ? r[0] : OTHER; }
+const slugN = v => String(v || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+// Print.com-CMS (öffentliches JSON der Reseller-App): Bilder, Namen, Beschreibungen, Produktbaum – gekürzt auf das Nötige (nicht die ganzen ~10 MB speichern)
+function cmsTrim(j, keepSkus) {
+  j = j || {};
+  const A = ref => { const id = ref && (ref.id || ref); const a = id && j.asset && j.asset[id]; const f = a && String(a.file || ""); return f && /^\/\/images\.ctfassets\.net\/[\w\-./%]+$/i.test(f) ? f.slice(23) : ""; };   // Pfad ohne „//images.ctfassets.net/“ (spart Platz)
+  const names = {}; Object.values(j.productGroup || {}).forEach(g => { if (g && g.slug) names[slugN(g.slug)] = String(g.name || "").trim(); });
+  const pg = id => (j.productGroup || {})[id];
+  const menu = Object.values(j.menu || {}).find(m => m && /product groups international/i.test(m.name || "")) || Object.values(j.menu || {}).find(m => m && (m.items || []).some(it => pg(it.id) && slugN(pg(it.id).slug) === PAPER));
+  const mains = ((menu && menu.items) || []).map(it => pg(it.id)).filter(Boolean).map(g => ({ slug: slugN(g.slug), name: String(g.name || "").trim(), img: A(g.imageThumbnail || g.groupImage),
+    subs: (g.products || []).filter(x => x.type === "productGroup").map(x => pg(x.id)).filter(Boolean).map(s => ({ slug: slugN(s.slug), name: String(s.name || "").trim(), img: A(s.imageThumbnail || s.groupImage) })) }));
+  const products = {};
+  Object.values(j.product || {}).forEach(p => { if (!p || !p.sku || (keepSkus && !keepSkus.has(String(p.sku)))) return;
+    products[p.sku] = { n: String(p.productName || "").trim().slice(0, 120), i: A(p.image || p.icon), g: (p.images || []).map(A).filter(Boolean).slice(0, 6), d: String(p.description || "").trim().slice(0, 600), s: String(p.subtitle || p.summary || "").trim().slice(0, 200) }; });
+  const options = {};
+  Object.values(j.option || {}).forEach(o => { if (!o || !o.slug || !o.property || o.property === "summary_image") return; const u = A(o.icon); if (u) options[o.property + "|" + o.slug] = u; });
+  const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), d: String(x.description || "").replace(/\s+/g, " ").trim().slice(0, 240), i: A(x.image) })).filter(x => x.d || x.i);
+  return { mains, names, products, options, info };
+}
+
+// Kuratierte Auswahl: welche Print.com-Produkte, welche Eigenschaften der Kunde sieht, welche Auflagen angeboten werden – liegt über der allgemeinen Produkt-Logik
+// (jedes andere im Cockpit freigeschaltete Print.com-Produkt läuft automatisch, siehe genericCfg).
+// Felder: group (Kategorie), kind ("flat" Standard | "banner" freie Größe | "textile" | "promo"), designer (Standard: flat/banner ja), expose (Eigenschaften für den Kunden
+// oder "auto"), only/skipOpts (Optionen einschränken), fixedOpts (feste Werte, falls die Option existiert), optLabels/titles (deutsche Bezeichnungen), tiers (Auflagen),
+// dims (Endformat in mm, falls nicht aus der Größe lesbar), printArea (Druckfläche in mm), areaProp (Eigenschaft mit der Druckfläche), bleed (falls Print.com keinen liefert), dpi (Zielauflösung), prefer (Vorauswahl).
+const KONF_DE = { trimmed: "Zuschnitt (ohne Saum)", hemmed: "Gesäumt", hem_eyelet_corner: "Gesäumt, Ösen an den Ecken", hem_eyelets_50: "Gesäumt, Ösen alle 50 cm", hem_eyelets_30: "Gesäumt, Ösen alle 30 cm", sleeve_5cm: "Tunnelsaum 5 cm" };
+const TEX_OPTS = { group: TEX, kind: "textile", expose: ["color_textile"], titles: { color_textile: "Farbe" }, fixedOpts: { printtype: "variable", individually_sealed: "no" }, designer: false };
+const CURATED = [
+  { key: "visitenkarten", group: PAPER, title: "Visitenkarten", icon: "💼", desc: "Der erste Eindruck zum Mitnehmen – ein- oder beidseitig.", skus: ["businesscards", "business-cards", "visitekaartjes"], rx: /business ?cards?|visitenkart|visitekaart/i,
+    expose: ["size", "material", "printtype", "finish", "corners"], tiers: [100, 250, 500, 1000, 2500], designer: true, safe: 3, prefer: { size: ["85x55", "85_x_55", "85_x_55_mm"] } },
+  { key: "flyer", group: PAPER, title: "Flyer", icon: "📄", desc: "Angebote, Events und Infos – von A6 bis A4.", skus: ["flyers", "flyer"], rx: /^flyers?$|^flyer/i,
+    expose: ["size", "material", "printtype", "finish"], tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3, prefer: { size: ["a5", "a6", "dl", "din_lang"] } },
+  { key: "plakate", group: PAPER, title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
+    expose: ["size", "material", "printtype", "finish"], tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } },
+  { key: "folder", group: PAPER, title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
+    expose: ["size", "material", "printtype", "finish", "folding", "fold"], tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // TODO: mit echtem Print.com-Workfile prüfen, ob „size“ das offene Format ist
+  { key: "aufkleber", group: PAPER, title: "Aufkleber", icon: "🏷️", desc: "Sticker und Etiketten in vielen Formen.", skus: ["stickers", "sticker"], rx: /stickers?|aufkleber/i,
+    expose: ["size", "material", "printtype", "finish", "shape", "cutting"], tiers: [50, 100, 250, 500, 1000], designer: true, safe: 3 },
+  // Roll-ups: echte SKU „roller-banners“ (nicht „cardboard-roller-banners“ / „table-roll-up-banner“); Größe „banner_85_x_200“ = 85 × 200 cm
+  { key: "rollups", group: BANNER, title: "Roll-ups", icon: "🪧", desc: "Mobile Werbesysteme für Messe, Empfang und Events.", skus: ["roller-banners", "rollupbanners", "roll-up-banners", "rollups", "roll-up-banner", "rollup-banners"], rx: /^(roller|roll ?-?ups?) ?-?banners?$/i,
+    expose: ["size", "roll_up_banners", "material", "printtype"], titles: { roll_up_banners: "System" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 10, bleed: 10, dpi: 150, prefer: { size: ["banner_85_x_200"], roll_up_banners: ["basic", "budget"], printtype: ["40"] },
+    optLabels: { roll_up_banners: { none: "Nur Druck (ohne System)", budget: "Budget", basic: "Basic", premium: "Premium", luxe: "Luxe", black_basic: "Basic schwarz", premium_black: "Premium schwarz", black_deluxe: "Deluxe schwarz", xxl: "XXL", double_deluxe: "Double Deluxe (beidseitig)" } } },
+  // Banner in Wunschgröße: size "custom" + width/height in mm (live geprüft), Konfektion rundum gleich (all_sides_equal_finish)
+  { key: "pvc-banner", group: BANNER, cat: BANNER + "/banners-outdoor", kind: "banner", title: "PVC-Banner (Frontlit)", icon: "🏁", desc: "Wetterfestes Werbebanner in Wunschgröße – für Zaun, Fassade und Events.", skus: ["pvc-510"],
+    expose: ["material"], fixedOpts: { printtype: "40", all_sides_equal_finish: "yes" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100, custom: [300, 5000, 3000], prefer: { konfektion: ["hem_eyelets_50"] } },
+  { key: "mesh-banner", group: BANNER, cat: BANNER + "/banners-outdoor", kind: "banner", title: "Mesh-Banner (winddurchlässig)", icon: "🌬️", desc: "Gitterbanner für Gerüste, Zäune und windige Standorte – in Wunschgröße.", skus: ["mesh"],
+    expose: ["material"], fixedOpts: { printtype: "40", all_sides_equal_finish: "yes" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100, custom: [300, 5000, 3000], prefer: { konfektion: ["hem_eyelets_50"] } },
+  // Bauzaun: Größe „banner_site_fences“ ohne Maße im Slug → 3410 × 1730 mm (Standard-Bauzaunfeld; vor Livegang mit Print.com-Vorlage prüfen)
+  { key: "bauzaun", group: BANNER, title: "Bauzaun-Banner", icon: "🚧", desc: "Werbung am Bauzaun – passend für Standard-Bauzaunfelder.", skus: ["construction-fence-banners"],
+    expose: ["material", "finish_all_around"], titles: { material: "Material", finish_all_around: "Konfektion" }, only: { material: ["280gr_mesh_b1", "pes_outdoor", "510gr_pvc"], finish_all_around: ["eyelets_30", "hem_eyelets_30"] },
+    optLabels: { material: { "280gr_mesh_b1": "Mesh (winddurchlässig, B1)", pes_outdoor: "Textil (PES outdoor)", "510gr_pvc": "PVC 510 g" }, finish_all_around: { eyelets_30: "Ösen alle 30 cm", hem_eyelets_30: "Gesäumt, Ösen alle 30 cm" } },
+    fixedOpts: { printtype: "40" }, dims: [3410, 1730], tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100 },
+  // Textil: Logodruck, Größen-Mix über variants, keine Gestaltung im Designer
+  Object.assign({ key: "tshirt-basic", title: "T-Shirt Basic (Fruit of the Loom)", icon: "👕", desc: "Klassisches Baumwoll-Shirt mit deinem Logo – schon ab 1 Stück.", skus: ["t-shirt-budget-5"] }, TEX_OPTS),
+  Object.assign({ key: "tshirt-bio", title: "T-Shirt Bio (Stanley/Stella)", icon: "🌱", desc: "Hochwertiges Bio-Baumwoll-Shirt mit deinem Logo.", skus: ["t-shirt-premium-4"] }, TEX_OPTS),
+  Object.assign({ key: "hoodie-bio", title: "Hoodie Bio (Stanley/Stella)", icon: "🧥", desc: "Kuscheliger Bio-Hoodie für Team, Verein und Merch.", skus: ["hoodie-premium-8"] }, TEX_OPTS),
+  Object.assign({ key: "polo", title: "Poloshirt", icon: "👔", desc: "Poloshirt mit Logo – gedruckt oder gestickt.", skus: ["polo-budget-6"] }, TEX_OPTS),
+  // Werbeartikel: Logo-Upload, Logo mittig auf der Druckfläche
+  { key: "kugelschreiber", group: PROMO, kind: "promo", title: "Kugelschreiber", icon: "🖊️", desc: "Kugelschreiber mit vollfarbigem Logo-Druck.", skus: ["pen-apollo-hardcolor"], expose: ["color"], titles: { color: "Farbe" },
+    fixedOpts: { printtype: "40", printingmethod: "digital_uv" }, tiers: [50, 150, 500, 2500], areaProp: "printing_size", printArea: [70, 6] },
+  { key: "feuerzeug", group: PROMO, kind: "promo", title: "Feuerzeug", icon: "🔥", desc: "Cricket-Feuerzeuge mit deinem Logo.", skus: ["cricket-original"], expose: ["color"], titles: { color: "Farbe" },
+    optLabels: { color: { yellow_pms_102c: "Gelb", red_pms_192c: "Rot", blue_pms_2118c: "Blau", "440002_15_black": "Schwarz" } }, fixedOpts: { printtype: "40", printingmethod: "digital_uv" }, tiers: [100, 250, 500, 1000], areaProp: "size", printArea: [60, 15] },
+  { key: "schluesselband", group: PROMO, kind: "promo", title: "Schlüsselband", icon: "🔑", desc: "Lanyards mit vollflächigem Druck für Events und Team.", skus: ["subyard-standard"], expose: ["size"], titles: { size: "Breite" },
+    optLabels: { size: { "15_x_430_mm": "15 mm", "20_x_430_mm": "20 mm" } }, fixedOpts: { printtype: "40", printingmethod: "sublimation" }, tiers: [50, 100, 250, 500], areaProp: "size", printArea: [20, 430] },
+  { key: "baumwolltasche", group: PROMO, kind: "promo", title: "Baumwolltasche", icon: "👜", desc: "Robuste Stofftasche mit deinem Logo im Siebdruck.", skus: ["canvas-tote-bags"], expose: ["color_material", "print_position", "printtype"],
+    titles: { color_material: "Farbe", print_position: "Druck auf", printtype: "Farben" }, skipOpts: { printtype: ["00"] }, fixedOpts: { printingmethod: "screen_printing" }, tiers: [50, 100, 250, 500], printArea: [250, 300], prefer: { printtype: ["10"] },
+    optLabels: { color_material: { canvas_natural: "Natur", canvas_black: "Schwarz" }, print_position: { front: "Vorderseite", front_and_back_same_print: "Vorder- und Rückseite (gleiches Motiv)" } } },
+  { key: "tasse", group: PROMO, kind: "promo", title: "Tasse mit Logo", icon: "☕", desc: "Keramiktasse mit Rundum-Druck – auch als Einzelstück.", skus: ["mugs"], expose: "auto", fixedOpts: { printtype: "40", printingmethod: "sublimation" }, tiers: [1, 2, 6, 12, 24, 36, 48, 72, 144], printArea: [200, 90] },
+  { key: "fruchtgummi", group: PROMO, kind: "promo", title: "Fruchtgummi (Werbetütchen)", icon: "🍬", desc: "Vegane Fruchtgummis im bedruckten Werbetütchen.", skus: ["fruit-gummy-vegan-bears"], expose: "auto", fixedOpts: { printtype: "40" }, tiers: [500, 1000, 1500, 2000], areaProp: "size", printArea: [85, 60] },
+  { key: "luftballons", group: PROMO, kind: "promo", title: "Luftballons", icon: "🎈", desc: "Bedruckte Luftballons in vielen Farben.", skus: ["balloons"], expose: ["size", "color", "printtype"], titles: { size: "Ballon", color: "Farbe", printtype: "Druck" }, only: { printtype: ["10", "11"] },
+    optLabels: { size: { balloon: "Luftballon (Standard)", heart_balloon: "Herzballon", big_balloon_60: "Riesenballon 60 cm", big_balloon_90: "Riesenballon 90 cm" }, printtype: { "10": "1-farbig, einseitig", "11": "1-farbig, beidseitig" } },
+    fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
+];
+// Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
+const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
+const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
+  { key: "embroidery", label: "Stick (nur Brust)", pm: "embroidering", val: "embroidery", min: 1, only: /^positions_chest/ }];
+const HIDDEN_PROPS = /^(copies|urgency|hidden|summary_image.*|brezo_article|product_weight|weight|article_number.*)$/;
+const DEF_TIERS = { flat: [100, 250, 500, 1000, 2500], banner: [1, 2, 3, 5, 10], promo: [50, 100, 250, 500, 1000], textile: [] };
+const NICE_TIERS = [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 const URGENCY_DE = { standard: "Standard", quick: "Schnell", urgent: "Express" };
 const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420], a4: [210, 297], a5: [148, 210], a6: [105, 148], a7: [74, 105], dl: [99, 210], din_lang: [99, 210] };
 // Status im Shop (nicht Print.com): Reihenfolge = Ablauf
@@ -117,27 +200,50 @@ module.exports = function (D) {
   };
 
   // ───────────────────────── Einstellungen ─────────────────────────
+  // Sortiment: enabled[sku] (true/false, fehlt = Kategorie entscheidet), catEnabled[Kategorie] (ganze Kategorie an), catOverride[sku] (Kategorie von Hand),
+  // seeded[sku] (kuratierte Produkte einmalig freigeschaltet – spätere Entscheidungen im Cockpit werden nie überschrieben). products[key]: Aufschlag/Mindestmarge/SKU/Optionen.
   let SETTINGS = null;
+  const objOf = x => x && typeof x === "object" && !Array.isArray(x) ? x : {};
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { autoSend: s.autoSend === true, open: s.open !== false, products: s.products && typeof s.products === "object" ? s.products : {} };
+    SETTINGS = { autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
     return SETTINGS;
   }
+  const SKU_RX = /^[a-z0-9_-]{1,80}$/i;
   async function saveSettings(pl) {
     const s = await settings();
     if (pl.autoSend !== undefined) s.autoSend = pl.autoSend === true;
     if (pl.open !== undefined) s.open = pl.open !== false;
     if (pl.products && typeof pl.products === "object") {
-      CURATED.forEach(c => {
-        const x = pl.products[c.key]; if (!x || typeof x !== "object") return;
-        const cur = s.products[c.key] = s.products[c.key] || {};
+      Object.keys(pl.products).slice(0, 2000).forEach(key => {
+        const c = CURATED.find(x => x.key === key); if (!c && !SKU_RX.test(key)) return;   // kuratierter Schlüssel oder Print.com-SKU (allgemeine Produkte)
+        const x = pl.products[key]; if (!x || typeof x !== "object") return;
+        const cur = s.products[key] = s.products[key] || {};
         if (x.enabled !== undefined) cur.enabled = x.enabled !== false;
-        if (x.sku !== undefined) cur.sku = /^[a-z0-9_-]{0,80}$/i.test(String(x.sku || "")) ? String(x.sku || "") : cur.sku || "";
+        if (x.sku !== undefined && c) cur.sku = /^[a-z0-9_-]{0,80}$/i.test(String(x.sku || "")) ? String(x.sku || "") : cur.sku || "";
         ["markupPct", "minMarginEur"].forEach(k => { if (x[k] === undefined) return; const n = parseFloat(String(x[k]).replace(",", ".")); cur[k] = x[k] === null || x[k] === "" || !isFinite(n) ? null : Math.max(0, Math.min(k === "markupPct" ? 500 : 1000, n)); });
         if (x.allow && typeof x.allow === "object") { cur.allow = {}; Object.keys(x.allow).slice(0, 20).forEach(prop => { if (!/^[a-z0-9_-]{1,60}$/i.test(prop) || !Array.isArray(x.allow[prop])) return; const v = x.allow[prop].map(String).filter(o => /^[a-z0-9_.-]{1,80}$/i.test(o)).slice(0, 80); if (v.length) cur.allow[prop] = v; }); }
       });
     }
+    await store.setMeta("print_settings", s); SETTINGS = s; return s;
+  }
+  // Sichtbar im Shop: einzeln an ODER (Kategorie an UND nicht einzeln aus); Untergruppe (an/aus) vor Hauptgruppe; kuratierte zusätzlich über products[key].enabled abschaltbar
+  function shown(s, sku, key, cat) {
+    const ov = (key && s.products[key]) || {}; if (ov.enabled === false) return false;
+    const e = s.enabled[sku]; if (e === true) return true; if (e === false) return false;
+    cat = cat || {}; if (cat.sub && (s.catEnabled[cat.sub] === true || s.catEnabled[cat.sub] === false)) return s.catEnabled[cat.sub];
+    return s.catEnabled[cat.main] === true;
+  }
+  const CAT_RX = /^[a-z0-9-]{1,80}(\/[a-z0-9-]{1,80})?$/;
+  async function sortimentOp(b) {
+    const s = await settings(), op = String(b.op || ""), sku = String(b.sku || ""), cat = String(b.cat || "");
+    if (op === "set") { if (!SKU_RX.test(sku)) throw new Error("SKU ungültig"); if (b.on === true || b.on === false) s.enabled[sku] = b.on; else delete s.enabled[sku];
+      if (b.on === true) CURATED.forEach(c => { const ov = s.products[c.key]; if (ov && ov.enabled === false && CAT && (CAT.products || []).some(p => p.key === c.key && p.sku === sku)) delete ov.enabled; }); }
+    else if (op === "cat") { if (!/^[a-z0-9-]{1,80}$/.test(cat)) throw new Error("Kategorie unbekannt"); if (b.on === true || b.on === false) s.catEnabled[cat] = b.on; else delete s.catEnabled[cat]; }
+    else if (op === "catAll") { if (!/^[a-z0-9-]{1,80}$/.test(cat)) throw new Error("Kategorie unbekannt"); const all = await catalogAll(); ((all && all.items) || []).forEach(it => { const c = catOf(it.sku, s, it.auto); if (c.main === cat || c.sub === cat) s.enabled[it.sku] = b.on === true; }); }
+    else if (op === "override") { if (!SKU_RX.test(sku)) throw new Error("SKU ungültig"); if (CAT_RX.test(cat)) s.catOverride[sku] = cat; else delete s.catOverride[sku]; }
+    else throw new Error("unbekannte Aktion");
     await store.setMeta("print_settings", s); SETTINGS = s; return s;
   }
 
@@ -157,49 +263,242 @@ module.exports = function (D) {
   const firstOf = j => (j && Array.isArray(j.results) ? j.results[0] : j) || {};
 
   // ── Katalog (täglich neu) ──
-  let CAT = null, catLoading = null;
+  let CAT = null, catLoading = null, ALL = null;
+  const PD_CACHE = new Map();   // allgemeine (nicht kuratierte) Produkte: Details erst beim Öffnen laden, 24 h merken
   function dimsOf(o) {
     const w = parseFloat(String(o.width || "").replace(",", ".")), h = parseFloat(String(o.height || "").replace(",", "."));
     if (w > 0 && h > 0 && w < 5000 && h < 5000) return [w, h];
-    const t = (String(o.slug || "") + " " + String(o.name || "")).toLowerCase();
-    const m = t.match(/(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?/);
-    if (m) { const f = m[3] === "cm" ? 10 : m[3] === "m" ? 1000 : 1; return [parseFloat(m[1].replace(",", ".")) * f, parseFloat(m[2].replace(",", ".")) * f]; }
-    const a = t.match(/\b(a[0-7]|dl|din_lang)\b/); if (a) return A_SIZES[a[1]].slice();
+    const slug = String(o.slug || "").toLowerCase(), t = (slug + " " + String(o.name || "")).toLowerCase().replace(/_/g, " ");
+    const m = t.match(/(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m\b)?/);
+    // „banner_85_x_200“ (Roll-ups) ohne Einheit = cm
+    if (m) { const f = m[3] === "cm" || (!m[3] && /^banner_\d/.test(slug)) ? 10 : m[3] === "m" ? 1000 : 1; return [parseFloat(m[1].replace(",", ".")) * f, parseFloat(m[2].replace(",", ".")) * f]; }
+    const a = t.match(/\b(a[0-7]|dl|din lang)\b/); if (a) return A_SIZES[a[1].replace(" ", "_")].slice();
     return null;
   }
+  const fmtDims = d => d[0] >= 100 && d[1] >= 100 && d[0] % 10 === 0 && d[1] % 10 === 0 ? d[0] / 10 + " × " + d[1] / 10 + " cm" : d[0] + " × " + d[1] + " mm";
+  const ptLabel = v => { const m = String(v).match(/^(\d)(\d)$/); if (!m) return null; if (m[1] === "0") return "ohne Druck"; return m[2] === "0" ? (m[1] === "4" ? "4-farbig (CMYK)" : m[1] + "-farbig") : m[1] + "/" + m[2] + "-farbig (beidseitig)"; };
+  const weightOf = o => { const m = (String(o.slug) + " " + String(o.name || "")).match(/(\d{2,4})\s*(gr|g\b|g\/m|gsm)/i); return m ? +m[1] : 0; };
+  const coated = o => /bilderdruck|gloss|glänz|matt|silk|satin|(^|_)mc(_|$)/i.test(String(o.slug) + " " + String(o.name || "")) ? 1 : 0;
+  // Größen klein → groß, Papiere leicht → schwer (ohne Angabe ans Ende, sonst Reihenfolge von Print.com)
+  function sortOpts(slug, opts) {
+    const by = f => opts.map((o, i) => [o, i]).sort((a, b) => f(a[0]) - f(b[0]) || a[1] - b[1]).map(x => x[0]);
+    if (opts.some(o => o.w && o.h)) return by(o => o.w && o.h ? o.w * o.h : 1e12);
+    if (/^(material|paper)/.test(slug) && opts.some(weightOf)) return by(o => weightOf(o) || 1e9);
+    return opts;
+  }
+  function autoKind(by, pd) {
+    if (by.textile_sizes) return "textile";
+    const so = by.size && Array.isArray(by.size.options) ? by.size.options : [];
+    if (so.some(o => o && String(o.slug) === "custom") && !so.some(o => { const d = o && String(o.slug) !== "custom" && dimsOf(o); return d && Math.max(d[0], d[1]) < 1000; })) return "banner";   // nur freie Größe bzw. nur Großformate
+    if (by.printing_size || (pd.bleed !== undefined && +pd.bleed === 0 && !so.some(o => o && dimsOf(o)))) return "promo";
+    return "flat";
+  }
+  // Ausschlussregeln von Print.com: Liste von Regeln, jede Regel = Liste von Bedingungen {property, options}; eine Regel schließt eine Auswahl nur aus,
+  // wenn ALLE Bedingungen zutreffen (Wert der Eigenschaft ∈ options). Nicht gesetzte Eigenschaften treffen nie zu. alias: finish_left … → „konfektion“.
+  function hitRules(excludes, cur, alias) {
+    return (excludes || []).some(r => r.length > 0 && r.every(x => { const v = cur[x.property] != null ? cur[x.property] : alias && alias[x.property] ? cur[alias[x.property]] : null; return v != null && x.options.indexOf(String(v)) > -1; }));
+  }
+  // Erste gültige Ergänzung: vars = [[slug, [Optionen in Wunsch-Reihenfolge]], …] (Tiefensuche, bricht ab, sobald eine Regel vollständig zutrifft)
+  function solveSel(vars, base, excludes, alias) {
+    const cur = Object.assign({}, base); vars = vars.filter(v => base[v[0]] == null && v[1].length);
+    if (hitRules(excludes, cur, alias)) return null;
+    let steps = 0;
+    const go = i => { if (i >= vars.length) return true; for (const o of vars[i][1]) { if (++steps > 20000) return false; cur[vars[i][0]] = o; if (!hitRules(excludes, cur, alias) && go(i + 1)) return true; } delete cur[vars[i][0]]; return false; };
+    return go(0) ? cur : null;
+  }
+  const qtyIn = (r, n) => r.ranges.some(g => n >= g.min && n <= g.max && (n - g.min) % g.step === 0);
+  const aliasOf = prod => { const a = {}; prod.props.forEach(pr => (pr.sets || []).forEach(x => { a[x] = pr.slug; })); return a; };
   function parseProduct(c, sku, pd) {
-    const props = Array.isArray(pd && pd.properties) ? pd.properties : [];
+    pd = pd || {};
+    const props = Array.isArray(pd.properties) ? pd.properties : [];
     const by = {}; props.forEach(p => { if (p && p.slug) by[p.slug] = p; });
-    const avail = (by.copies && Array.isArray(by.copies.options) ? by.copies.options : []).map(o => parseInt(o.slug != null ? o.slug : o.name, 10)).filter(n => n > 0).sort((a, b) => a - b);
-    let tiers = c.tiers.filter(t => !avail.length || avail.indexOf(t) > -1); if (!tiers.length) tiers = Array.from(new Set(avail)).slice(0, 8);
+    const kind = c.kind || (c.generic ? autoKind(by, pd) : "flat");
+    // Auflagen-Bereiche (rangeSets, je Druckverfahren): freie Menge in Schritten, summary = Schnellauswahl
+    const qty = (by.copies && Array.isArray(by.copies.rangeSets) ? by.copies.rangeSets : []).filter(r => r && typeof r === "object").slice(0, 10).map(r => ({ pm: r.printingmethod ? String(r.printingmethod) : null,
+      summary: (Array.isArray(r.summary) ? r.summary : []).map(Number).filter(n => n > 0 && n <= 1e6),
+      ranges: (Array.isArray(r.options) ? r.options : []).map(o => ({ min: +o.min, max: +o.max, step: +o.steps > 0 ? +o.steps : 1 })).filter(g => g.min > 0 && g.max >= g.min) })).filter(r => r.ranges.length);
+    const qtyAny = n => qty.some(r => qtyIn(r, n));
+    let avail = (by.copies && Array.isArray(by.copies.options) ? by.copies.options : []).map(o => parseInt(o.slug != null ? o.slug : o.name, 10)).filter(n => n > 0).sort((a, b) => a - b);
+    if (!avail.length && qty.length) avail = Array.from(new Set([].concat.apply([], qty.map(r => r.summary)))).filter(qtyAny).sort((a, b) => a - b);
+    // Auflagen: kuratiert (soweit bei Print.com vorhanden); allgemein aus den Print.com-Auflagen (runde Werte), sonst Standard je Art
+    let tiers = c.generic && avail.length ? [] : (c.tiers || DEF_TIERS[kind] || DEF_TIERS.flat).filter(t => qty.length ? qtyAny(t) : !avail.length || avail.indexOf(t) > -1);
+    if (!tiers.length) { const nice = avail.filter(n => NICE_TIERS.indexOf(n) > -1); tiers = Array.from(new Set(nice.length >= 3 || !qty.length ? (nice.length ? nice : avail) : avail)).slice(0, 10); }
+    if (kind === "textile") tiers = []; else if (!tiers.length) throw new Error("keine Auflagen");
     const urgency = (by.urgency && Array.isArray(by.urgency.options) && by.urgency.options.length ? by.urgency.options : [{ slug: "standard" }]).map(o => ({ slug: String(o.slug), name: URGENCY_DE[o.slug] || o.name || o.slug })).filter(o => /^(standard|quick|urgent)$/.test(o.slug));
-    const fixed = {}, exposed = [];
+    const L = c.optLabels || {}, T = c.titles || {}, only = c.only || {}, skip = c.skipOpts || {}, fo = c.fixedOpts || {}, autoExp = c.expose === "auto", expose = autoExp ? [] : (c.expose || []);
+    const areaProp = c.areaProp !== undefined ? c.areaProp : kind === "promo" ? (by.printing_size ? "printing_size" : "size") : null;
+    const manual = kind === "textile" ? /^(positions_|textile_sizes$|printingmethod$)/ : kind === "banner" ? /^(size|width|height)$/ : null;
+    const fixed = {}, auto = {}, exposed = [], areas = {};
+    // Reihenfolge/Sichtbarkeit wie in der Print.com-App: propertyGroups (Spalte „hidden“/„summary“ = nicht anzeigen), viewMode.reseller "hidden"
+    const pOrder = [], pHidden = {};
+    (Array.isArray(pd.propertyGroups) ? pd.propertyGroups : []).forEach(g => { const cw = String((g && ((g.columnWidth && g.columnWidth.reseller) || (g.viewMode && g.viewMode.reseller))) || ""); ((g && g.properties) || []).forEach(x => { const sl = x && typeof x === "object" ? x.slug : x; if (!sl) return; pOrder.push(String(sl)); if (/hidden|summary/.test(cw)) pHidden[sl] = 1; }); });
+    // freie Größe (Option „custom“ mit customSizes in mm): Banner kuratiert in cm, sonst mm
+    const cuOpt = by.size && (by.size.options || []).find(o => o && String(o.slug) === "custom"), cs = cuOpt && cuOpt.customSizes;
+    const custom = c.custom ? { minW: c.custom[0], minH: c.custom[0], maxW: c.custom[1], maxH: c.custom[2], unit: "cm" }
+      : cs && +cs.maxWidth > 0 && +cs.maxHeight > 0 ? { minW: +cs.minWidth || 10, minH: +cs.minHeight || 10, maxW: +cs.maxWidth, maxH: +cs.maxHeight, unit: kind === "banner" ? "cm" : "mm" } : kind === "banner" ? { minW: 300, minH: 300, maxW: 5000, maxH: 3000, unit: "cm" } : null;
+    const optExtra = (slug, o) => { const x = {}; const inf = cmsInfo(sku, String(o.slug)); const d = String(o.description || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || (inf && inf.d) || ""; if (d) x.desc = d.slice(0, 220);
+      const ic = cmsOptImg(slug, String(o.slug)) || (inf && inf.i) || ""; if (ic) x.img = IMG(ic, 160);
+      const hex = JSON.stringify(o.enrichments || "").match(/#[0-9a-f]{6}\b/i); if (hex) x.color = hex[0];
+      if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
+      return x; };
+    const optOut = (slug, o) => { const d = slug === "size" || slug === areaProp ? (dimsOf(o) || (slug === "size" && c.dims ? c.dims.slice() : null)) : null;
+      const nm = (L[slug] && L[slug][o.slug]) || (kind === "promo" && slug === "printtype" && ptLabel(o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
+      return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
-      if (!p || !p.slug || p.slug === "copies" || p.slug === "urgency" || p.locked) return;
-      const opts = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null);
-      if (c.expose.indexOf(p.slug) > -1 && opts.length) exposed.push({ slug: p.slug, title: p.title || p.slug, options: opts.slice(0, 60).map(o => { const d = p.slug === "size" ? dimsOf(o) : null; return { slug: String(o.slug), name: String(o.name || o.slug), w: d ? d[0] : null, h: d ? d[1] : null }; }) });
-      else if (p.required && opts.length) fixed[p.slug] = String((opts.find(o => !o.nullable) || opts[0]).slug);
+      if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || p.locked) return;
+      let opts = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null);
+      if (areaProp && p.slug === areaProp) opts.forEach(o => { const d = dimsOf(o); if (d) areas[String(o.slug)] = d; });
+      if (manual && manual.test(p.slug)) return;
+      if (kind !== "banner" && p.slug === "size" && !custom) opts = opts.filter(o => String(o.slug) !== "custom");   // „custom“ ohne erlaubte Maße ausblenden
+      if (only[p.slug]) { const f = opts.filter(o => only[p.slug].indexOf(String(o.slug)) > -1); if (f.length) opts = f; }
+      if (skip[p.slug]) { const f = opts.filter(o => skip[p.slug].indexOf(String(o.slug)) < 0); if (f.length) opts = f; }
+      if (!opts.length) return;
+      const hidden = pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden");
+      const want = autoExp ? opts.length > 1 && !hidden && fo[p.slug] === undefined && !/^(finish_(left|right|top|bottom)|printingmethod)$/.test(p.slug) : expose.indexOf(p.slug) > -1;   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
+      const parentOf = Array.isArray(p.parentOptions) ? p.parentOptions.map(x => x && typeof x === "object" ? x.slug : x).filter(x => x != null).map(String).slice(0, 50) : [];
+      if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, 120).map(o => optOut(p.slug, o))) }, parentOf.length ? { parent: parentOf } : {}));
+      else if (fo[p.slug] !== undefined && opts.some(o => String(o.slug) === String(fo[p.slug]))) fixed[p.slug] = String(fo[p.slug]);
+      else if (p.required) {   // Pflicht-Eigenschaft ohne Auswahl im Shop: passende Option wird je Auswahl so gewählt, dass keine Ausschlussregel greift
+        const o = opts.filter(x => !x.nullable).concat(opts.filter(x => x.nullable)).map(x => String(x.slug));
+        fixed[p.slug] = o[0]; if (o.length > 1) auto[p.slug] = o.slice(0, 40);
+      }
     });
-    exposed.sort((a, b) => c.expose.indexOf(a.slug) - c.expose.indexOf(b.slug));
-    const excludes = (Array.isArray(pd.excludes) ? pd.excludes : []).filter(Array.isArray).slice(0, 400).map(rule => rule.filter(x => x && x.property && Array.isArray(x.options)).map(x => ({ property: String(x.property), options: x.options.map(String) }))).filter(r => r.length);
-    return { key: c.key, title: c.title, icon: c.icon, desc: c.desc, designer: c.designer, safe: c.safe, sku: String(sku), bleed: +pd.bleed > 0 && +pd.bleed < 30 ? +pd.bleed : 2, props: exposed, tiers, urgency, fixed, excludes };
+    if (!autoExp) exposed.sort((a, b) => expose.indexOf(a.slug) - expose.indexOf(b.slug));
+    else if (pOrder.length) { const ix = x => { const i = pOrder.indexOf(x.slug); return i < 0 ? 999 : i; }; exposed.sort((a, b) => ix(a) - ix(b)); }
+    if (kind === "banner") {
+      if (!cuOpt) throw new Error("keine freie Größe (size: custom)");
+      const fin = by.finish_left, have = fin && Array.isArray(fin.options) ? fin.options.map(o => String(o.slug)) : [];
+      const ko = Object.keys(KONF_DE).filter(k => have.indexOf(k) > -1);
+      if (ko.length) {   // EINE Auswahl „Konfektion“ setzt alle vier Seiten gleich
+        const sets = ["finish_left", "finish_right", "finish_top", "finish_bottom"].filter(x => by[x]);
+        exposed.push({ slug: "konfektion", title: "Konfektion", options: ko.map(k => ({ slug: k, name: KONF_DE[k], w: null, h: null })), sets });
+        sets.forEach(x => { delete fixed[x]; delete auto[x]; });
+        if (!fixed.all_sides_equal_finish && by.all_sides_equal_finish && (by.all_sides_equal_finish.options || []).some(o => o && o.slug === "yes")) { fixed.all_sides_equal_finish = "yes"; delete auto.all_sides_equal_finish; }
+      }
+    }
+    let sizes = null, positions = null, methods = null, maxCopies = null;
+    if (kind === "textile") {
+      sizes = ((by.textile_sizes && by.textile_sizes.options) || []).filter(o => o && o.slug != null).map(o => ({ slug: String(o.slug), name: (L.textile_sizes && L.textile_sizes[o.slug]) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : String(o.slug).replace(/^unisex_/, "").toUpperCase()) }));
+      positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: x[2].slice(), opts: by[x[0]].options.map(o => String(o.slug)) }));
+      const pm = by.printingmethod && Array.isArray(by.printingmethod.options) ? by.printingmethod.options.map(o => String(o.slug)) : null;
+      methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);
+      if (!sizes.length || !methods.length) throw new Error("Textil-Eigenschaften (Größen/Druckpositionen) fehlen");
+      maxCopies = avail.length ? avail[avail.length - 1] : 2500;
+    }
+    // Endformat bei fester Größe: aus der Option (width/height bzw. Slug/Name), sonst kuratierte Maße, sonst Druckfläche
+    let dims = null;
+    if (kind === "flat" && !exposed.some(x => x.slug === "size")) {
+      const so = by.size && (by.size.options || []).find(o => o && String(o.slug) === fixed.size);
+      dims = (so && dimsOf(so)) || (c.dims ? c.dims.slice() : null) || ((by.printing_size && (by.printing_size.options || []).map(o => o && dimsOf(o)).filter(Boolean)[0]) || null);
+    }
+    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : kind === "flat" || kind === "banner", safe: c.safe || 3, sku: String(sku),
+      bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" ? 100 : 300),
+      props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
+      cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
+    prod.excludes = (Array.isArray(pd.excludes) ? pd.excludes : []).filter(Array.isArray).slice(0, 600).map(rule => rule.filter(x => x && x.property && Array.isArray(x.options)).map(x => ({ property: String(x.property), options: x.options.map(o => String(o && typeof o === "object" ? o.slug : o)) }))).filter(r => r.length);
+    // Vorauswahl: bevorzugte Optionen zuerst (kuratiert bzw. Papier 115–170 g Bilderdruck), dann die erste Kombination ohne Ausschluss
+    const pref = c.prefer || {}, paper = c.paper !== undefined ? c.paper : kind === "flat" ? [115, 170] : null;
+    const order = pr => { const o = pr.options.map(x => x.slug); const p = (pref[pr.slug] || (pr.slug === "printtype" ? ["40", "44"] : [])).filter(x => o.indexOf(x) > -1); let rest = o.filter(x => p.indexOf(x) < 0);
+      if (!pref[pr.slug] && paper && /^(material|paper)/.test(pr.slug)) { const good = pr.options.filter(x => { const g = weightOf(x); return g >= paper[0] && g <= paper[1]; }).sort((a, b) => coated(b) - coated(a) || weightOf(a) - weightOf(b)).map(x => x.slug); rest = good.concat(rest.filter(x => good.indexOf(x) < 0)); }
+      return p.concat(rest); };
+    const base = {}; Object.keys(fixed).forEach(k => { if (!auto[k]) base[k] = fixed[k]; });
+    const sol = solveSel(exposed.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => [k, auto[k]])), base, prod.excludes, aliasOf(prod));
+    exposed.forEach(pr => { prod.defaults[pr.slug] = sol && sol[pr.slug] != null ? sol[pr.slug] : order(pr)[0]; });
+    return prod;
+  }
+  const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, wir prüfen jede Datei.", group: g.main, expose: "auto", safe: 3, generic: true });
+  // ── Print.com-CMS (Bilder, Namen, Beschreibungen, Produktbaum), täglich ──
+  let CMS = null, cmsLoading = null;
+  const cmsBase = () => String(process.env.PRINT_CMS_BASE || "https://app.print.com/reseller").replace(/\/+$/, "");
+  async function cmsRefresh() {
+    const get = async (u, t) => { const r = await fetch(u, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(t) }); if (!r.ok) throw new Error("CMS HTTP " + r.status); return r.json(); };
+    const idx = await get(cmsBase() + "/index.json", 15000);
+    const de = (Array.isArray(idx) ? idx : []).find(x => x && x.langCode === "de");
+    if (!de || !/^[\w.-]{1,120}\.json$/.test(String(de.fileName || ""))) throw new Error("CMS: keine deutsche Datei");
+    const t = cmsTrim(await get(cmsBase() + "/" + de.fileName, 90000));
+    if (!t.mains.length && !Object.keys(t.products).length) throw new Error("CMS: leer");
+    CMS = Object.assign({ at: nowIso(), file: de.fileName }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
+    return CMS;
+  }
+  async function cms(force) {
+    if (!CMS) CMS = await store.getMeta("print_cms").catch(() => null);
+    if (force || !CMS || !CMS.at || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {
+      if (!cmsLoading) cmsLoading = cmsRefresh().catch(e => { log("CMS:", e.message); return CMS; }).finally(() => { cmsLoading = null; });
+      if (force || !CMS) return cmsLoading;
+    }
+    return CMS;
+  }
+  const cmsProd = sku => (CMS && CMS.products && CMS.products[sku]) || null;
+  const cmsOptImg = (prop, slug) => (CMS && CMS.options && CMS.options[prop + "|" + slug]) || "";
+  const cmsInfo = (sku, slug) => { const l = (CMS && CMS.info) || []; return l.find(x => x.s.indexOf(slug) > -1 && (!x.p.length || x.p.indexOf(sku) > -1)) || null; };
+  const groupName = slug => (CMS && CMS.names && CMS.names[slug]) || MAIN_DE[slug] || slug;
+  function mainsList() {
+    const m = CMS && CMS.mains && CMS.mains.length ? CMS.mains : Object.keys(MAIN_DE).filter(k => k !== OTHER).map(k => ({ slug: k, name: MAIN_DE[k], img: "", subs: [] }));
+    return m.concat(m.some(x => x.slug === OTHER) ? [] : [{ slug: OTHER, name: MAIN_DE[OTHER], img: "", subs: [] }]);
+  }
+  // ── Sortiment-Import: Kategorie & Eckdaten je SKU aus den Produktdetails (gedrosselt im Hintergrund, Ergebnis in print_skus) ──
+  let SKUS = null; const JOB = { running: false, done: 0, total: 0, errors: 0, started: null, at: null };
+  async function skus() { if (!SKUS) SKUS = (await store.getMeta("print_skus").catch(() => null)) || { at: null, items: {} }; if (!SKUS.items) SKUS.items = {}; return SKUS; }
+  function summaryOf(pd) {
+    const by = {}; (Array.isArray(pd && pd.properties) ? pd.properties : []).forEach(p => { if (p && p.slug) by[p.slug] = p; });
+    const so = by.size && Array.isArray(by.size.options) ? by.size.options : [];
+    const c = (Array.isArray(pd && pd.category) ? pd.category : []).map(slugN).filter(Boolean).slice(0, 2);
+    const cp = (by.copies && Array.isArray(by.copies.options) ? by.copies.options : []).map(o => parseInt(o && o.slug, 10)).filter(n => n > 0);
+    const rs = by.copies && Array.isArray(by.copies.rangeSets) ? by.copies.rangeSets : [];
+    const mins = cp.concat([].concat.apply([], rs.map(r => (r && r.options || []).map(o => +o.min).filter(n => n > 0))));
+    return { c, k: autoKind(by, pd || {}), cu: so.some(o => o && o.slug === "custom"), m: mins.length ? Math.min.apply(null, mins) : null, at: nowIso() };
+  }
+  async function importAll(force) {
+    if (JOB.running || !cfg().pcKey) return JOB;
+    const all = await catalogAll(); const S0 = await skus(); if (!all) return JOB;
+    const todo = all.items.filter(it => force || !S0.items[it.sku] || !S0.items[it.sku].at || Date.now() - Date.parse(S0.items[it.sku].at) > 7 * 864e5);
+    Object.assign(JOB, { running: true, done: 0, total: todo.length, errors: 0, started: nowIso() });
+    const dv = parseInt(process.env.PRINT_IMPORT_DELAY_MS, 10), delay = isFinite(dv) && dv >= 0 ? dv : 800;   // 4 parallel × 800 ms ≈ 5 Anfragen/s
+    let i = 0, saved = Date.now();
+    const worker = async () => {
+      while (i < todo.length) {
+        const it = todo[i++];
+        try { S0.items[it.sku] = summaryOf(await pcApi("GET", "/products/" + encodeURIComponent(it.sku) + "?view=reseller")); } catch (e) { JOB.errors++; }
+        JOB.done++;
+        if (Date.now() - saved > 15000) { saved = Date.now(); await store.setMeta("print_skus", S0).catch(() => {}); }
+        if (delay) await new Promise(r => setTimeout(r, delay));
+      }
+    };
+    Promise.all([worker(), worker(), worker(), worker()]).then(async () => { S0.at = nowIso(); await store.setMeta("print_skus", S0).catch(e => log("Sortiment speichern:", e.message)); })
+      .catch(e => log("Sortiment-Import:", e.message)).finally(() => { JOB.running = false; JOB.at = nowIso(); });
+    return JOB;
+  }
+  // Kategorie einer SKU: Hand-Zuordnung (Cockpit) → Print.com-Kategorie → Stichwort-Ersatz
+  function catOf(sku, s, auto, own) {
+    const o = s && s.catOverride[sku]; if (o) { const x = o.split("/"); return { main: x[0], sub: x[1] || "" }; }
+    if (own && own.main) return own;
+    const x = SKUS && SKUS.items[sku]; if (x && x.c && x.c[0]) return { main: x.c[0], sub: x.c[1] || "" };
+    return { main: auto || OTHER, sub: "" };
   }
   async function catalogRefresh() {
     const s = await settings();
     const list = await pcApi("GET", "/products");
     const items = (Array.isArray(list) ? list : (list && (list.items || list.results)) || []).filter(p => p && p.sku && p.active !== false);
+    await cms(false);
+    // ganzes Sortiment (für Cockpit „Sortiment“ und allgemeine Produkte)
+    ALL = { at: nowIso(), items: items.filter(p => SKU_RX.test(String(p.sku))).map(p => ({ sku: String(p.sku), title: clip(p.titlePlural || p.titleSingle || p.title || p.sku, 120), single: clip(p.titleSingle || "", 120), auto: categoryOf(p.sku, p.titleSingle, p.titlePlural) })) };
+    await store.setMeta("print_catalog_all", ALL); PD_CACHE.clear();
     const out = { at: nowIso(), products: [], errors: [] };
     for (const c of CURATED) {
       const ov = s.products[c.key] || {};
       let sku = ov.sku || "";
-      if (!sku) { const ex = items.find(p => c.skus.indexOf(String(p.sku).toLowerCase()) > -1); sku = ex ? ex.sku : ((items.find(p => c.rx.test(p.sku) || c.rx.test(p.titlePlural || "") || c.rx.test(p.titleSingle || "")) || {}).sku || ""); }
+      if (!sku) { const ex = items.find(p => c.skus.indexOf(String(p.sku).toLowerCase()) > -1); sku = ex ? ex.sku : (c.rx && (items.find(p => c.rx.test(p.sku) || c.rx.test(p.titlePlural || "") || c.rx.test(p.titleSingle || "")) || {}).sku) || ""; }
       if (!sku) { out.errors.push(c.title + ": kein passendes Print.com-Produkt gefunden"); continue; }
       try { out.products.push(parseProduct(c, sku, await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller"))); }
       catch (e) { out.errors.push(c.title + " (" + sku + "): " + e.message); }
     }
     if (!out.products.length && CAT && CAT.products && CAT.products.length) { CAT.errors = out.errors; return CAT; }   // Ausfall: alten Stand behalten
+    // kuratierte Produkte einmalig freischalten (danach entscheidet nur noch das Cockpit)
+    let seed = false; out.products.forEach(p => { if (!s.seeded[p.sku]) { s.seeded[p.sku] = true; if (s.enabled[p.sku] === undefined) s.enabled[p.sku] = true; seed = true; } });
+    if (seed) await store.setMeta("print_settings", s);
     await store.setMeta("print_catalog", out); CAT = out; PRICE_CACHE.clear();
     if (out.errors.length) log("Katalog:", out.errors.join(" · "));
+    if (process.env.PRINT_IMPORT !== "0") importAll(false).catch(e => log("Sortiment-Import:", e.message));
     return out;
   }
   async function catalog(force) {
@@ -212,42 +511,153 @@ module.exports = function (D) {
     }
     return CAT;
   }
-  function productOf(cat, key, s) {
-    const p = cat && (cat.products || []).find(x => x.key === key); if (!p) return null;
-    const ov = (s && s.products[key]) || {}; if (ov.enabled === false) return null;
-    const allow = ov.allow || {};
+  async function catalogAll(force) {
+    if (!cfg().pcKey) return null;
+    if (!ALL) ALL = await store.getMeta("print_catalog_all").catch(() => null);
+    await skus(); if (!CMS) await cms(false);
+    if (force || !ALL || !ALL.items) await catalog(true);
+    else await catalog(false);
+    return ALL;
+  }
+  function withAllow(p, s) {
+    const allow = ((s && s.products[p.key]) || {}).allow || {};
     const props = p.props.map(pr => { const a = allow[pr.slug]; const opts = a && a.length ? pr.options.filter(o => a.indexOf(o.slug) > -1) : pr.options; return Object.assign({}, pr, { options: opts.length ? opts : pr.options }); });
     return Object.assign({}, p, { props });
   }
-  function publicCatalog(cat, s) {
-    return (cat && cat.products || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(p => ({ key: p.key, title: p.title, icon: p.icon, desc: p.desc, designer: p.designer, bleed: p.bleed, safe: p.safe, props: p.props, tiers: p.tiers, urgency: p.urgency, fixed: p.fixed, excludes: p.excludes }));
+  function productOf(cat, key, s, any) {
+    const p = cat && (cat.products || []).find(x => x.key === key); if (!p) return null;
+    const g = catOf(p.sku, s, p.group || OTHER, p.cat);
+    if (!any && !shown(s, p.sku, p.key, g)) return null;
+    return Object.assign(withAllow(p, s), { group: g.main, cat: g });
   }
-  const excluded = (excludes, sel) => (excludes || []).some(rule => rule.every(x => sel[x.property] != null && x.options.indexOf(String(sel[x.property])) > -1));
+  // Produkt für Shop/Preis/Bestellung: kuratiert (Schlüssel) oder allgemein (Print.com-SKU, nur wenn im Cockpit freigeschaltet; any = Cockpit-Vorschau)
+  async function findProduct(key, s, any) {
+    key = String(key || ""); s = s || await settings();
+    const cat = await catalog(false);
+    const cp = cat && (cat.products || []).find(x => x.key === key || (any && x.sku === key));
+    if (cp) return productOf(cat, cp.key, s, any);
+    if (!SKU_RX.test(key)) return null;
+    const all = await catalogAll(); const it = all && (all.items || []).find(x => x.sku === key); if (!it) return null;
+    let hit = PD_CACHE.get(key);
+    const g0 = catOf(it.sku, s, it.auto, hit && hit.p.cat); if (!any && !shown(s, it.sku, it.sku, g0)) return null;
+    if (!hit || Date.now() - hit.at > 24 * 3600e3) {
+      let pd; try { pd = await pcApi("GET", "/products/" + encodeURIComponent(key) + "?view=reseller"); } catch (e) { log("Produkt " + key + ":", e.message); throw Object.assign(new Error("Produkt ist gerade nicht verfügbar"), { status: 502 }); }
+      let p; try { p = parseProduct(genericCfg(it, g0), key, pd); } catch (e) { log("Produkt " + key + ":", e.message); throw Object.assign(new Error("Dieses Produkt kann gerade nicht online bestellt werden"), { status: 400 }); }
+      if (PD_CACHE.size > 300) PD_CACHE.clear();
+      hit = { at: Date.now(), p }; PD_CACHE.set(key, hit);
+    }
+    const g = catOf(it.sku, s, it.auto, hit.p.cat);
+    return Object.assign(withAllow(hit.p, s), { group: g.main, cat: g });
+  }
+  // Kurzbeschreibung für die Karte: Untertitel bzw. erste Zeile der Print.com-Beschreibung
+  const shortDesc = (cp, fb) => { const t = cp && (cp.s || String(cp.d || "").split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(t || fb || "", 140); };
+  const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
+  const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
+    return { key: p.key, title: p.generic && cp && cp.n ? cp.n : p.title, icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
+      images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cp.d, 600) : "", summary: cp ? clip(cp.s, 200) : "",
+      kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
+      excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+  // Shop-Katalog: nur freigeschaltete Produkte (allgemeine nur als Karte, Details beim Öffnen), gruppiert nach Print.com-Hauptgruppe/Untergruppe
+  function publicCatalog(cat, s, all) {
+    const cur = ((cat && cat.products) || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(pubProd);
+    const skuSet = new Set(((cat && cat.products) || []).map(p => p.sku));
+    const gen = ((all && all.items) || []).filter(it => !skuSet.has(it.sku)).map(it => [it, catOf(it.sku, s, it.auto)]).filter(x => shown(s, x[0].sku, x[0].sku, x[1]))
+      .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: (cp && cp.n) || x[0].title, icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", lazy: true }; });
+    const order = mainsList().map(m => m.slug), ix = g => { const i = order.indexOf(g); return i < 0 ? 900 : i; };
+    return cur.concat(gen).map((p, i) => [p, i]).sort((a, b) => ix(a[0].group) - ix(b[0].group) || a[1] - b[1]).map(x => x[0]);
+  }
+  // Gruppen für den Shop: nur mit sichtbaren Produkten, Untergruppen in Print.com-Reihenfolge
+  function publicGroups(products) {
+    const used = {}; products.forEach(p => { used[p.cat.main] = used[p.cat.main] || {}; if (p.cat.sub) used[p.cat.main][p.cat.sub] = 1; });
+    const ms = mainsList(), out = ms.filter(m => used[m.slug]).map(m => ({ slug: m.slug, name: m.name, img: m.img ? IMG(m.img, 400) : "", subs: m.subs.filter(x => used[m.slug][x.slug]).map(x => ({ slug: x.slug, name: x.name })).concat(Object.keys(used[m.slug]).filter(k => !m.subs.some(x => x.slug === k)).map(k => ({ slug: k, name: groupName(k) }))) }));
+    Object.keys(used).filter(k => !ms.some(m => m.slug === k)).forEach(k => out.push({ slug: k, name: groupName(k), img: "", subs: Object.keys(used[k]).map(x => ({ slug: x, name: groupName(x) })) }));
+    return out;
+  }
   function sidesOf(sel) { const t = String(sel.printtype || ""); const m = t.match(/^(\d)(\d)$/); return m && m[2] !== "0" ? 2 : 1; }
   function sizeOf(prod, sel) {
     const sp = prod.props.find(x => x.slug === "size"); const o = sp && sp.options.find(x => x.slug === sel.size);
     if (o && o.w && o.h) return { w: o.w, h: o.h };
+    if (prod.dims) return { w: prod.dims[0], h: prod.dims[1] };
     const d = dimsOf({ slug: sel.size || prod.fixed.size || "" }); return d ? { w: d[0], h: d[1] } : null;
   }
-  // Auswahl prüfen: nur angebotene Optionen, sonst Fehler (nie stillschweigend etwas anderes bestellen)
+  function areaOf(prod, all) {
+    const a = prod.areas || {}, k = prod.areaProp && all[prod.areaProp], ks = Object.keys(a);
+    const v = (k && a[k]) || (ks.length === 1 ? a[ks[0]] : null) || prod.printArea || [100, 100];
+    return { w: v[0], h: v[1] };
+  }
+  // feste + gewählte Werte, dazu die Pflicht-Eigenschaften ohne Auswahl so ergänzen, dass keine Ausschlussregel greift
+  function resolveSel(prod, sel, extra, only) {
+    const base = {}; Object.keys(prod.fixed).forEach(k => { if (!prod.auto || !prod.auto[k]) base[k] = prod.fixed[k]; });
+    prod.props.forEach(pr => { if (sel[pr.slug] != null) base[pr.slug] = sel[pr.slug]; }); Object.assign(base, extra || {});
+    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]);   // only: z. B. Druckverfahren passend zur Auflage
+    let all = solveSel(vars, base, prod.excludes, aliasOf(prod)); const excl = !all;
+    if (!all) all = Object.assign({}, prod.fixed, base);
+    prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });
+    return { all, excluded: excl };
+  }
+  const bad = m => Object.assign(new Error(m), { status: 400 });
+  // Auswahl prüfen: nur angebotene Optionen, sonst Fehler (nie stillschweigend etwas anderes bestellen). Unsere Ausschlussregeln blockieren nicht –
+  // maßgeblich ist Print.com (Preisabfrage); „excluded“ wird nur für eine verständliche Fehlermeldung gemerkt.
   function normalizeSel(prod, input) {
     input = input || {};
-    const sel = {};
+    const kind = prod.kind || "flat", sel = {}, extra = {}, more = [];
     for (const pr of prod.props) {
       const v = input.sel && input.sel[pr.slug] != null ? String(input.sel[pr.slug]) : null;
-      if (v == null) sel[pr.slug] = pr.options[0].slug;
+      if (v == null) { const d = prod.defaults && prod.defaults[pr.slug]; sel[pr.slug] = d != null && pr.options.some(o => o.slug === d) ? d : pr.options[0].slug; }
       else if (pr.options.some(o => o.slug === v)) sel[pr.slug] = v;
-      else throw Object.assign(new Error("Ungültige Option für " + pr.title), { status: 400 });
+      else throw bad("Ungültige Option für " + pr.title);
     }
-    const copies = parseInt(input.copies, 10);
-    if (prod.tiers.indexOf(copies) < 0) throw Object.assign(new Error("Ungültige Auflage"), { status: 400 });
-    const urgency = String(input.urgency || prod.urgency[0] && prod.urgency[0].slug || "standard");
-    if (prod.urgency.length && !prod.urgency.some(u => u.slug === urgency)) throw Object.assign(new Error("Ungültige Lieferzeit"), { status: 400 });
-    const all = Object.assign({}, prod.fixed, sel);
-    if (excluded(prod.excludes, all)) throw Object.assign(new Error("Diese Kombination ist leider nicht lieferbar"), { status: 400 });
+    let copies, size = null, positions = null, fileSel = sel, tex = null, fmt = null;
+    if (kind === "textile") {
+      const t = objOf(input.textile);
+      const m = prod.methods.find(x => x.key === String(t.method || prod.methods[0].key)); if (!m) throw bad("Ungültige Druckart");
+      const want = Array.isArray(t.positions) ? t.positions.map(String) : [];
+      if (want.some(p => m.positions.indexOf(p) < 0)) throw bad("Diese Druckposition ist mit der gewählten Druckart nicht möglich");
+      positions = prod.positions.filter(p => want.indexOf(p.slug) > -1).map(p => ({ slug: p.slug, title: p.title, area: p.area }));
+      if (!positions.length) throw bad("Bitte mindestens eine Druckposition wählen");
+      const sz = objOf(t.sizes);
+      if (Object.keys(sz).some(k => !prod.sizes.some(x => x.slug === k))) throw bad("Ungültige Größe");
+      const list = prod.sizes.map(x => ({ slug: x.slug, name: x.name, n: Math.max(0, Math.min(100000, parseInt(sz[x.slug], 10) || 0)) })).filter(x => x.n > 0);
+      copies = list.reduce((a, x) => a + x.n, 0);
+      if (!copies) throw bad("Bitte die Stückzahl je Größe eingeben");
+      if (copies < m.min) throw bad(m.label.replace(/ \(.*$/, "") + " ist ab " + m.min + " Stück möglich");
+      if (copies > prod.maxCopies) throw bad("Maximal " + prod.maxCopies + " Stück pro Bestellung");
+      if (m.pm) extra.printingmethod = m.pm; positions.forEach(p => { extra[p.slug] = m.val; }); extra.textile_sizes = list[0].slug;   // Preis hängt nicht von der Größe ab
+      sel.druck = m.key; sel.positionen = positions.map(p => p.slug); sel.groessen = list.map(x => x.slug + ":" + x.n).join(",");
+      fileSel = { pos: positions.map(p => p.slug) };
+      tex = { method: m.key, methodLabel: m.label, positions: positions.map((p, i) => ({ slug: p.slug, title: p.title, area: p.area, page: i + 1 })), sizes: list };
+      more.push(["Druck", m.label], ["Druckpositionen", positions.map(p => p.title).join(", ")], ["Größen", list.map(x => x.name + " × " + x.n).join(", ")]);
+    } else {
+      copies = parseInt(input.copies, 10);
+      if (!(copies > 0 && copies <= 1e6)) throw bad("Ungültige Auflage");
+      if (prod.qty && prod.qty.length) { if (!prod.qty.some(r => qtyIn(r, copies))) throw bad("Diese Auflage ist nicht möglich – bitte eine der vorgeschlagenen Mengen bzw. einen passenden Schritt wählen"); }
+      else if (prod.tiers.indexOf(copies) < 0) throw bad("Ungültige Auflage");
+    }
+    if (prod.custom && (kind === "banner" || sel.size === "custom")) {   // freie Größe: Eingabe in cm (Banner) bzw. mm, an Print.com immer mm
+      const cu = objOf(input.custom), C = prod.custom, f = C.unit === "cm" ? 10 : 1, u = v => C.unit === "cm" ? v / 10 + " cm" : v + " mm";
+      const w = Math.round(parseFloat(String(cu.w).replace(",", ".")) * f), h = Math.round(parseFloat(String(cu.h).replace(",", ".")) * f);
+      if (!(w > 0 && h > 0)) throw bad("Bitte Breite und Höhe in " + C.unit + " angeben");
+      const ok = (a, b) => a >= C.minW && a <= C.maxW && b >= C.minH && b <= C.maxH;
+      if (!ok(w, h) && !ok(h, w)) throw bad("Eigenes Format: mindestens " + u(C.minW) + " × " + u(C.minH) + ", höchstens " + u(C.maxW) + " × " + u(C.maxH));
+      sel.custom = w / f + "x" + h / f; extra.size = "custom"; extra.width = w; extra.height = h; size = { w, h }; fmt = ["Format", (C.unit === "cm" ? w / 10 + " × " + h / 10 + " cm" : w + " × " + h + " mm")];
+    }
+    const urgency = String(input.urgency || (prod.urgency[0] && prod.urgency[0].slug) || "standard");
+    if (prod.urgency.length && !prod.urgency.some(u => u.slug === urgency)) throw bad("Ungültige Lieferzeit");
+    // Auflagen-Bereiche je Druckverfahren: nur Verfahren zulassen, die diese Menge drucken
+    let pmOnly = null;
+    if (prod.qty && prod.qty.length && prod.qty.some(x => x.pm) && !prod.qty.some(x => !x.pm && qtyIn(x, copies))) pmOnly = { printingmethod: prod.qty.filter(x => x.pm && qtyIn(x, copies)).map(x => x.pm) };
+    const r = resolveSel(prod, sel, extra, pmOnly), all = r.all; let excl = r.excluded;
+    if (pmOnly && all.printingmethod != null && pmOnly.printingmethod.indexOf(String(all.printingmethod)) < 0) throw bad("Diese Auflage ist mit dem gewählten Druckverfahren nicht möglich");
+    let variants = null;
+    if (tex) {   // Textil: Größen-Mix als variants (je Größe gleiche Farbe), jede Größe gegen die Ausschlussregeln prüfen
+      variants = tex.sizes.map(x => Object.assign({ textile_sizes: x.slug }, all.color_textile != null ? { color_textile: all.color_textile } : {}, { copies: x.n }));
+      if (variants.some(v => hitRules(prod.excludes, Object.assign({}, all, { textile_sizes: v.textile_sizes })))) excl = true;
+    }
+    if (kind === "promo") { const a = areaOf(prod, all); positions = [{ slug: "area", title: "Druckfläche", area: [a.w, a.h] }]; fileSel = { pos: ["area"], area: [a.w, a.h] }; more.push(["Druckfläche", a.w + " × " + a.h + " mm"]); }
     const pcOpts = Object.assign({}, all, { copies }); if (prod.urgency.length) pcOpts.urgency = urgency;
-    const labels = prod.props.map(pr => [pr.title, (pr.options.find(o => o.slug === sel[pr.slug]) || {}).name || sel[pr.slug]]);
-    return { sel, copies, urgency, pcOpts, labels, sides: sidesOf(all), size: sizeOf(prod, all) };
+    const labels = (fmt ? [fmt] : []).concat(prod.props.map(pr => [pr.title, (pr.options.find(o => o.slug === sel[pr.slug]) || {}).name || sel[pr.slug]]), more);
+    if (kind === "flat" && !size) size = sizeOf(prod, all);
+    return { sel, fileSel, copies, urgency, pcOpts, labels, sides: positions ? positions.length : sidesOf(all), size, variants, positions, textile: tex, excluded: excl, kind };
   }
 
   // ── Steuer ──
@@ -271,10 +681,12 @@ module.exports = function (D) {
   async function purchase(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < 30 * 60e3) return hit.v;
-    const pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 });
+    // Print.com ist maßgeblich: lehnt Print.com ab (oder Preis 0) und greift eine Ausschlussregel → „nicht lieferbar“
+    let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }); }
+    catch (e) { if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
     const P = pr && pr.prices || {};
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
-    if (!(productPrice > 0)) throw Object.assign(new Error("Für diese Auswahl gibt es gerade keinen Preis"), { status: 502 });
+    if (!(productPrice > 0)) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
     const sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 });
     let poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
     const same = poss.filter(x => !x.urgency || x.urgency === n.urgency); if (same.length) poss = same;
@@ -418,7 +830,7 @@ module.exports = function (D) {
     return { buf: Buffer.concat(chunks), warns, images };
   }
   async function preflightStart(meta, buf) {
-    const c = cfg(); if (!c.preflight || !c.pcKey) return null;
+    const c = cfg(); if (!c.preflight || !c.pcKey || !meta.size) return null;
     const fd = new FormData();
     fd.append("document", new Blob([JSON.stringify({ bleed: { left: meta.bleed, right: meta.bleed, top: meta.bleed, bottom: meta.bleed }, profile: "GWG_SheetCmyk_2015 CMYK + RGB", template: [{ width: meta.size.w, height: meta.size.h }] })], { type: "application/json" }));
     fd.append("file", new Blob([buf], { type: "application/pdf" }), "druck.pdf");
@@ -445,16 +857,32 @@ module.exports = function (D) {
     await store.putFile(meta, pdf);
     return meta;
   }
-  async function targetOf(input) {
-    const cat = await catalog(false), s = await settings();
-    const prod = productOf(cat, String(input.product || ""), s); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
+  async function targetOf(input, loose) {
+    const prod = await findProduct(input.product); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
     const n = normalizeSel(prod, input);
-    if (!n.size) throw Object.assign(new Error("Format unbekannt – bitte Gestaltung anfragen"), { status: 400 });
-    return { prod, n, target: { product: prod.key, sel: n.sel, size: n.size, bleed: prod.bleed, sides: n.sides } };
+    if (!n.size && !loose) throw Object.assign(new Error("Format unbekannt – bitte Druckdatei hochladen oder Gestaltung anfragen"), { status: 400 });
+    return { prod, n, target: { product: prod.key, sel: n.fileSel, size: n.size, bleed: prod.bleed, sides: n.sides } };
+  }
+  const isLogo = prod => prod.kind === "textile" || prod.kind === "promo";
+  // Upload-Konfiguration vorab prüfen (bevor die Datei gelesen wird)
+  async function uploadTarget(input) {
+    const prod = await findProduct(input.product); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
+    if (!isLogo(prod)) return targetOf(input, true);
+    // Logo je Druckposition: Textil – Position aus dem Produkt; Werbeartikel – Druckfläche der aktuellen Auswahl
+    if (prod.kind === "textile") { const p = (prod.positions || []).find(x => x.slug === String(input.logo || "")); if (!p) throw bad("Druckposition fehlt"); return { prod, pos: { slug: p.slug, title: p.title, area: p.area } }; }
+    const n = normalizeSel(prod, input); return { prod, pos: n.positions[0] };
   }
   async function handleUpload(buf, name, input) {
-    const { target } = await targetOf(input);
+    const t0 = await uploadTarget(input);
+    if (t0.pos) return handleLogo(buf, name, t0.prod, t0.pos);
+    const { prod, target } = t0;
     const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, JPG oder PNG möglich"), { status: 415 });
+    if (!target.size) {   // Produkt ohne lesbares Endformat (allgemeines Print.com-Produkt): Datei annehmen, Format prüfen wir vor dem Druck
+      if (type !== "pdf") throw Object.assign(new Error("Für dieses Produkt bitte eine druckfertige PDF hochladen"), { status: 400 });
+      const info = pdfInfo(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
+      target.pages = info.pages;
+      return newFile("upload", name, buf, target, [{ level: "warn", text: "Format wird vor dem Druck geprüft – wir melden uns, falls etwas nicht passt." + (info.media ? " Seitengröße der Datei: " + info.media.w + " × " + info.media.h + " mm." : "") }], { original: "pdf" });
+    }
     if (type === "pdf") {
       const info = pdfInfo(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
       target.pages = info.pages;
@@ -465,10 +893,11 @@ module.exports = function (D) {
     const W = target.size.w + 2 * target.bleed, H = target.size.h + 2 * target.bleed;
     const rot = (dm.w > dm.h) !== (W > H) && Math.abs(W - H) > 1;
     const dpi = Math.round(Math.min((rot ? dm.h : dm.w) / (W / 25.4), (rot ? dm.w : dm.h) / (H / 25.4)));
+    const D0 = prod.dpi || 300, f = D0 / 300;   // Großformat (Banner) braucht weniger dpi
     const checks = [];
-    if (dpi >= 300) checks.push({ level: "ok", text: "Auflösung " + dpi + " dpi – passt." });
-    else if (dpi >= 150) checks.push({ level: "warn", text: "Auflösung nur " + dpi + " dpi (empfohlen 300 dpi). Der Druck kann leicht unscharf wirken." });
-    else if (dpi >= 72) checks.push({ level: "warn", text: "Auflösung sehr gering (" + dpi + " dpi). Der Druck wird sichtbar unscharf – besser eine größere Datei verwenden." });
+    if (dpi >= D0) checks.push({ level: "ok", text: "Auflösung " + dpi + " dpi – passt." });
+    else if (dpi >= Math.round(150 * f)) checks.push({ level: "warn", text: "Auflösung nur " + dpi + " dpi (empfohlen " + D0 + " dpi). Der Druck kann leicht unscharf wirken." });
+    else if (dpi >= Math.round(72 * f)) checks.push({ level: "warn", text: "Auflösung sehr gering (" + dpi + " dpi). Der Druck wird sichtbar unscharf – besser eine größere Datei verwenden." });
     else checks.push({ level: "error", text: "Auflösung viel zu gering (" + dpi + " dpi) für " + W + " × " + H + " mm." });
     if (rot) checks.push({ level: "error", text: "Bild ist " + (dm.w > dm.h ? "quer" : "hoch") + ", das Format aber " + (W > H ? "quer" : "hoch") + " – bitte passend drehen." });
     const ar = (dm.w / dm.h) / (W / H); if (!rot && Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild wird mittig auf " + W + " × " + H + " mm zugeschnitten." });
@@ -478,8 +907,72 @@ module.exports = function (D) {
     target.pages = target.sides;
     return newFile("upload", String(name || "bild").replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, target, checks, { original: type, px: dm, dpi });
   }
+  // Logo (Textil/Werbeartikel): Original wird gespeichert und geprüft; zusammengeführt wird erst in mergeLogos (eine PDF-Seite je Position)
+  async function handleLogo(buf, name, prod, pos) {
+    const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, PNG oder JPG möglich"), { status: 415 });
+    const A = pos.area, checks = [], extra = { original: type, pos: pos.slug, area: A };
+    if (type === "pdf") {
+      const info = pdfInfo(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
+      if (info.pages && info.pages > 1) checks.push({ level: "error", text: "Die PDF hat " + info.pages + " Seiten – bitte nur das Logo (1 Seite) hochladen." });
+      if (info.media && fits(info.media, A[0], A[1], 1)) checks.push({ level: "ok", text: "Vektor-PDF in Größe der Druckfläche (" + A[0] + " × " + A[1] + " mm) – ideal." });
+      else checks.push({ level: "warn", text: "Seitengröße " + (info.media ? info.media.w + " × " + info.media.h + " mm" : "unbekannt") + " – wir platzieren das Logo vor dem Druck passend in der Druckfläche (max. " + A[0] + " × " + A[1] + " mm)." });
+      extra.pages = info.pages || 1;
+    } else {
+      const dm = imgDims(buf, type); if (!dm || !dm.w || !dm.h) throw bad("Bild konnte nicht gelesen werden");
+      if (dm.w * dm.h > 100e6) throw bad("Bild ist zu groß (max. 100 Megapixel)");
+      const short = Math.min(dm.w, dm.h); extra.px = dm;
+      if (short >= 1000) checks.push({ level: "ok", text: "Auflösung " + dm.w + " × " + dm.h + " px – passt." });
+      else if (short >= 300) checks.push({ level: "warn", text: "Logo nur " + dm.w + " × " + dm.h + " px – empfohlen sind mindestens 1000 px an der kurzen Seite oder eine Vektor-PDF." });
+      else checks.push({ level: "error", text: "Logo viel zu klein (" + dm.w + " × " + dm.h + " px) – bitte mindestens 1000 px an der kurzen Seite oder eine Vektor-PDF." });
+      const alpha = type === "png" && (buf[25] === 4 || buf[25] === 6 || buf.indexOf("tRNS", 33, "latin1") > -1);
+      if (!alpha) checks.push({ level: "warn", text: (type === "jpg" ? "JPG" : "PNG") + " ohne transparenten Hintergrund – der Hintergrund wird mitgedruckt. Empfohlen: PNG mit transparentem Hintergrund." });
+    }
+    checks.push({ level: "ok", text: pos.title + ": Logo wird mittig in der Druckfläche platziert (max. " + A[0] + " × " + A[1] + " mm, Platzierung ca. wie gezeigt). Wir prüfen jede Datei vor dem Druck." });
+    const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "logo", name: clip(name, 120) || "logo", bytes: buf.length, createdAt: nowIso(), product: prod.key, sel: { pos: pos.slug }, size: null, bleed: 0, sides: 1, pages: 1, checks, orderId: null, sha256: crypto.createHash("sha256").update(buf).digest("hex") };
+    Object.assign(meta, extra);
+    await store.putFile(meta, buf);
+    return meta;
+  }
+  // Logos → EINE PDF (Print.com nimmt nur eine Datei pro Position im Auftrag): Seite je Druckposition in fester Reihenfolge, Seite = maximale Druckfläche, Logo mittig.
+  // Vektor-PDFs können ohne PDF-Bibliothek nicht eingebettet werden → nur bei genau einer Position (dann wird die PDF direkt verwendet).
+  async function mergeLogos(input) {
+    const { prod, n } = await targetOf(input, true);
+    if (!isLogo(prod)) throw bad("Nur für Textil und Werbeartikel");
+    const given = objOf(input.logos), metas = [];
+    for (const p of n.positions) {
+      const g = objOf(given[p.slug]); const fm = await store.fileMeta(String(g.fileId || ""));
+      if (!fm || !sigOk("file", fm.id, g.token) || fm.kind !== "logo" || fm.product !== prod.key || fm.pos !== p.slug) throw bad("Bitte für „" + p.title + "“ ein Logo hochladen");
+      if (fm.orderId) throw Object.assign(new Error("Dieses Logo gehört schon zu einer Bestellung – bitte erneut hochladen"), { status: 409 });
+      metas.push([p, fm]);
+    }
+    const checks = [];
+    metas.forEach(x => (x[1].checks || []).forEach(c => checks.push({ level: c.level, text: (n.positions.length > 1 ? x[0].title + ": " : "") + c.text.replace(new RegExp("^" + x[0].title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ": "), "") })));
+    const pageMap = n.positions.map((p, i) => ({ page: i + 1, pos: p.slug, title: p.title, area: p.area }));
+    let pdf;
+    if (metas.some(x => x[1].original === "pdf")) {
+      if (metas.length > 1) throw bad("Bei mehreren Druckpositionen bitte die Logos als PNG oder JPG hochladen (Vektor-PDF nur bei einer Position) – oder die Vektordatei nach der Bestellung per Mail schicken.");
+      pdf = await store.fileData(metas[0][1].id);
+    } else {
+      const PDFDocument = require("pdfkit");
+      const doc = new PDFDocument({ autoFirstPage: false, margin: 0, info: { Title: "Logos", Producer: "FS Creative Druckshop" } });
+      const chunks = []; doc.on("data", c => chunks.push(c)); const done = new Promise((res, rej) => { doc.on("end", res); doc.on("error", rej); });
+      try {
+        for (const x of metas) {
+          const W = x[0].area[0] * MM_PT, H = x[0].area[1] * MM_PT, img = await store.fileData(x[1].id);
+          doc.addPage({ size: [W, H], margin: 0 }); doc.page.dictionary.data.TrimBox = [0, 0, W, H];
+          doc.image(Buffer.from(img), 0, 0, { fit: [W, H], align: "center", valign: "center" });
+        }
+        doc.end(); await done;
+      } catch (e) { log("Logo-PDF:", e.message); throw bad("Logo konnte nicht verarbeitet werden"); }
+      pdf = Buffer.concat(chunks);
+    }
+    checks.unshift({ level: "ok", text: "Logo-PDF erstellt: " + pageMap.map(p => "Seite " + p.page + " = " + p.title + " (" + p.area[0] + " × " + p.area[1] + " mm)").join(", ") + "." });
+    const target = { product: prod.key, sel: n.fileSel, size: null, bleed: 0, sides: n.positions.length, pages: n.positions.length };
+    return newFile("logos", "logos.pdf", pdf, target, checks, { pageMap, logos: metas.map(x => x[1].id) });
+  }
   async function handleDesign(input) {
-    const { target } = await targetOf(input);
+    const { prod, target } = await targetOf(input);
+    if (!prod.designer) throw bad("Für dieses Produkt bitte eine Datei hochladen");
     const pages = Array.isArray(input.pages) ? input.pages : [];
     if (pages.length !== target.sides) throw Object.assign(new Error("Anzahl der Seiten passt nicht (" + target.sides + " benötigt)"), { status: 400 });
     const clean = pages.map(svgSafe);
@@ -489,9 +982,10 @@ module.exports = function (D) {
     const info = pdfInfo(r.buf);
     if (!fits(info.media, W, H, 0.2) || info.pages !== clean.length) { log("Designer-PDF Größe falsch", JSON.stringify(info), W, H); throw Object.assign(new Error("PDF-Größe stimmt nicht – bitte erneut versuchen"), { status: 500 }); }
     const checks = [{ level: "ok", text: "Druck-PDF erstellt: " + W + " × " + H + " mm (Endformat " + target.size.w + " × " + target.size.h + " mm + " + target.bleed + " mm Beschnitt), " + clean.length + " Seite(n), Schriften eingebettet, Farben in CMYK." }];
-    const low = r.images.filter(x => x.dpi < 250);
-    low.forEach(x => checks.push({ level: x.dpi < 100 ? "error" : "warn", text: "Bild auf Seite " + x.page + " hat bei " + x.mm[0] + " × " + x.mm[1] + " mm nur " + x.dpi + " dpi (empfohlen ≥ 300, mindestens 250)." + (x.dpi < 100 ? " Bitte größeres Bild verwenden oder kleiner platzieren." : " Der Druck kann unscharf wirken.") }));
-    if (r.images.length && !low.length) checks.push({ level: "ok", text: r.images.length + " Bild(er) mit ausreichender Auflösung (≥ 250 dpi)." });
+    const f = (prod.dpi || 300) / 300, lo = Math.round(250 * f), min = Math.round(100 * f);   // Großformat: Schwellen anteilig
+    const low = r.images.filter(x => x.dpi < lo);
+    low.forEach(x => checks.push({ level: x.dpi < min ? "error" : "warn", text: "Bild auf Seite " + x.page + " hat bei " + x.mm[0] + " × " + x.mm[1] + " mm nur " + x.dpi + " dpi (empfohlen ≥ " + (prod.dpi || 300) + ", mindestens " + lo + ")." + (x.dpi < min ? " Bitte größeres Bild verwenden oder kleiner platzieren." : " Der Druck kann unscharf wirken.") }));
+    if (r.images.length && !low.length) checks.push({ level: "ok", text: r.images.length + " Bild(er) mit ausreichender Auflösung (≥ " + lo + " dpi)." });
     (Array.isArray(input.warnings) ? input.warnings : []).slice(0, 10).forEach(w => checks.push({ level: "warn", text: clip(w, 200) }));
     target.pages = clean.length;
     return newFile("design", "gestaltung.pdf", r.buf, target, checks, { svgWarns: r.warns.length, images: r.images.slice(0, 30) });
@@ -554,14 +1048,15 @@ module.exports = function (D) {
   async function createOrder(input) {
     const cat = await catalog(false), s = await settings();
     if (!cat || !s.open) throw Object.assign(new Error("Der Shop ist gerade nicht verfügbar"), { status: 503 });
-    const prod = productOf(cat, String(input.product || ""), s); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
+    const prod = await findProduct(input.product, s); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
     const n = normalizeSel(prod, input);
     if (input.acceptTerms !== true || input.acceptFagg !== true || input.acceptProof !== true) throw Object.assign(new Error("Bitte AGB, den Hinweis zum Rücktrittsrecht und die geprüften Druckdaten bestätigen"), { status: 400 });
     const cust = validCustomer(input.customer);
     const fm = await store.fileMeta(String(input.fileId || ""));
     if (!fm || !sigOk("file", fm.id, input.fileToken)) throw Object.assign(new Error("Druckdatei nicht gefunden – bitte erneut hochladen"), { status: 400 });
     if (fm.orderId) throw Object.assign(new Error("Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen"), { status: 409 });
-    if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.sel)) throw Object.assign(new Error("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten"), { status: 409 });
+    if (fm.kind === "logo" || (fm.kind === "logos") !== isLogo(prod)) throw Object.assign(new Error("Bitte die Logos erneut hochladen"), { status: 400 });
+    if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.fileSel)) throw Object.assign(new Error("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten"), { status: 409 });
     if ((fm.checks || []).some(c => c.level === "error")) throw Object.assign(new Error("Die Druckdatei hat noch Fehler – bitte korrigieren"), { status: 400 });
     let uidRes = null;
     if (cust.type === "company" && cust.uid) { uidRes = await uidCheck(cust.uid); cust.uidValid = !!uidRes.valid; if (uidRes.uid) cust.uid = uidRes.uid; }
@@ -573,13 +1068,15 @@ module.exports = function (D) {
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };
     const id = "P" + Date.now().toString(36).toUpperCase() + rnd(6);
     const o = { id, nr: "D-" + today().slice(2).replace(/-/g, "") + "-" + rnd(4), createdAt: nowIso(), status: method === "invoice" ? "invoice_requested" : "pending_payment",
-      product: { key: prod.key, title: prod.title, sku: prod.sku }, sel: n.sel, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
+      product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
+      custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
       fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
     hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ")");
     fm.orderId = id; await store.putFile(fm); await store.putOrder(o);
+    for (const lid of fm.logos || []) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = id; await store.putFile(lm); } }
     if (method === "mollie") {
       try { const url = await createPayment(o); hist(o, "Mollie-Zahlung " + o.payment.mollieId + " erstellt"); await store.putOrder(o); return { order: o, checkoutUrl: url }; }
       catch (e) { fm.orderId = null; await store.putFile(fm); o.status = "payment_failed"; hist(o, "Zahlung konnte nicht gestartet werden: " + e.message); await store.putOrder(o); throw Object.assign(new Error("Zahlung konnte nicht gestartet werden – bitte später erneut versuchen"), { status: 502 }); }
@@ -628,6 +1125,8 @@ module.exports = function (D) {
     if (s.autoSend && o.status === "paid") { try { await placeOrder(o.id, "automatisch (Einstellung)"); } catch (e) { log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
+  // Referenz am Artikel: Bestellnummer + Seitenzuordnung der Logo-PDF (z. B. „S1 Brust links, S2 Rücken“)
+  const itemRef = o => Array.isArray(o.pageMap) && o.pageMap.length ? clip(o.nr + " · " + o.pageMap.map(p => "S" + p.page + " " + p.title).join(", "), 120) : o.nr;
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
   async function placeOrder(id, by) {
     if (LOCK.has(id)) throw new Error("Wird gerade gesendet");
@@ -640,8 +1139,10 @@ module.exports = function (D) {
       const addr = { companyName: c.company || undefined, firstName: c.firstName, lastName: c.lastName, fullstreet: c.street, postcode: c.zip, city: c.city, country: c.country, telephone: c.phone, email: c.email };
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
         billingAddress: billingFs(),
-        items: [{ sku: o.product.sku, customerReference: o.nr, options: o.pcOptions, fileUrl: base + "/print-files/" + fm.id + "/" + sig("pcfile", fm.id) + ".pdf", fileOptions: { isProduction: true }, approveDesign: true,
-          senderAddress: Object.assign({}, billingFs(), { vatNr: undefined }), shipments: [{ address: addr, copies: o.copies }] }] };
+        items: [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
+          // Textil: Größen-Mix als variants im Artikel (Variantenstruktur laut Doku, vor Livegang mit Testbestellung prüfen)
+          Array.isArray(o.variants) && o.variants.length ? { variants: o.variants } : {}, { fileUrl: base + "/print-files/" + fm.id + "/" + sig("pcfile", fm.id) + ".pdf", fileOptions: { isProduction: true }, approveDesign: true,
+          senderAddress: Object.assign({}, billingFs(), { vatNr: undefined }), shipments: [{ address: addr, copies: o.copies }] })] };
       let j;
       try { j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
       catch (e) { o.status = "problem"; o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
@@ -827,15 +1328,22 @@ module.exports = function (D) {
       if (p === "/print/api/catalog" && req.method === "GET") {
         const c = cfg(), s = await settings();
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
-        const cat = await catalog(false);
-        const products = publicCatalog(cat, s);
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products, fonts: FONTS, agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        const cat = await catalog(false), all = await catalogAll().catch(() => null);
+        const products = publicCatalog(cat, s, all);
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products, groups: publicGroups(products), fonts: FONTS, agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+      }
+      // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
+      if (p === "/print/api/product" && req.method === "GET") {
+        if (!cfg().pcKey) return J(res, 503, { ok: false, error: "Der Shop wird gerade eingerichtet" });
+        if (limited("product", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
+        const prod = await findProduct(u.searchParams.get("key")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
+        return J(res, 200, { ok: true, product: pubProd(prod) });
       }
       m = p.match(/^\/print\/api\/file\/(f[a-f0-9]{24})$/);
       if (m && req.method === "GET") {
         if (!sigOk("file", m[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
         let fm = await store.fileMeta(m[1]); if (!fm) return J(res, 404, { ok: false, error: "not_found" });
-        if (u.searchParams.get("pdf") === "1") { const buf = await store.fileData(fm.id); return D.send(res, 200, buf, "application/pdf", { "Content-Disposition": 'inline; filename="druckdaten.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" }); }
+        if (u.searchParams.get("pdf") === "1") { const buf = await store.fileData(fm.id); return D.send(res, 200, buf, fm.kind === "logo" && fm.original !== "pdf" ? (fm.original === "png" ? "image/png" : "image/jpeg") : "application/pdf", { "Content-Disposition": 'inline; filename="druckdaten.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" }); }
         fm = await preflightPoll(fm);
         return J(res, 200, Object.assign({ ok: true }, fileView(fm)));
       }
@@ -868,13 +1376,13 @@ module.exports = function (D) {
       if (p === "/print/api/price") {
         if (limited("price", ip, 240, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
         const b = await readJson(req, 20000);
-        const cat = await catalog(false), s = await settings(); const prod = productOf(cat, String(b.product || ""), s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
+        const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
         const n = normalizeSel(prod, b);
         const country = String(b.country || "AT").toUpperCase(), zip = String(b.zip || "").trim();
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
-        return J(res, 200, { ok: true, price: publicPrice(q), sides: n.sides, size: n.size, bleed: prod.bleed });
+        return J(res, 200, { ok: true, price: publicPrice(q), sides: n.sides, size: n.size, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
       }
       if (p === "/print/api/uid") {
         if (limited("uid", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
@@ -886,10 +1394,15 @@ module.exports = function (D) {
         let input; try { input = JSON.parse(decodeURIComponent(String(req.headers["x-print-config"] || ""))); } catch (e) { input = null; }
         if (!input || typeof input !== "object") { req.resume(); return J(res, 400, { ok: false, error: "Konfiguration fehlt" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druck")), 120).replace(/[\\/:*?"<>|]/g, "_");
-        await targetOf(input).catch(e => { req.resume(); throw e; });
+        await uploadTarget(input).catch(e => { req.resume(); throw e; });
         const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
         const meta = await handleUpload(buf, name, input);
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
+      if (p === "/print/api/logos") {
+        if (limited("upload", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const meta = await mergeLogos(await readJson(req, 40000));
+        return J(res, 200, Object.assign({ ok: true }, fileView(meta), { pageMap: meta.pageMap }));
       }
       if (p === "/print/api/design") {
         if (limited("upload", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
@@ -900,7 +1413,7 @@ module.exports = function (D) {
       if (p === "/print/api/draft") {
         if (limited("draft", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Entwürfe – bitte später erneut" });
         const b = await readJson(req, 25 * 1024 * 1024);
-        const data = JSON.stringify({ product: clip(b.product, 40), sel: b.sel && typeof b.sel === "object" ? b.sel : {}, copies: b.copies, urgency: clip(b.urgency, 20), design: b.design });
+        const data = JSON.stringify({ product: clip(b.product, 80), sel: b.sel && typeof b.sel === "object" ? b.sel : {}, copies: b.copies, urgency: clip(b.urgency, 20), custom: objOf(b.custom), design: b.design });
         if (data.length > 25 * 1024 * 1024) return J(res, 413, { ok: false, error: "Entwurf zu groß" });
         const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "draft", name: "entwurf.json", bytes: data.length, createdAt: nowIso(), orderId: null };
         await store.putFile(meta, Buffer.from(data, "utf8"));
@@ -933,8 +1446,31 @@ module.exports = function (D) {
     const orders = await store.listOrders();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
     return { ok: true, live: live(), configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: c.markup, minMarginEur: c.minMargin },
-      settings: s, catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
-      curated: CURATED.map(x => ({ key: x.key, title: x.title })), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
+      settings: s, catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
+      curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
+  }
+  async function sortimentState() {
+    const s = await settings(), all = await catalogAll().catch(() => null), cat = CAT;
+    const cur = {}; ((cat && cat.products) || []).forEach(p => { cur[p.sku] = p; });
+    const items = ((all && all.items) || []).map(it => { const cp = cur[it.sku], g = cp ? catOf(it.sku, s, cp.group, cp.cat) : catOf(it.sku, s, it.auto), c = cmsProd(it.sku), sm = SKUS && SKUS.items[it.sku];
+      return { sku: it.sku, title: cp ? cp.title : (c && c.n) || it.title, pc: it.title, img: c && c.i ? IMG(c.i, 120) : "", main: g.main, sub: g.sub || "", override: s.catOverride[it.sku] || "", on: shown(s, it.sku, cp ? cp.key : it.sku, g),
+        set: s.enabled[it.sku] === true || s.enabled[it.sku] === false ? s.enabled[it.sku] : null, curated: cp ? cp.key : "", kind: cp ? cp.kind : sm ? sm.k : "", custom: !!(sm && sm.cu), min: sm ? sm.m : null }; });
+    const en = k => s.catEnabled[k] === true || s.catEnabled[k] === false ? s.catEnabled[k] : null;
+    const count = l => ({ total: l.length, on: l.filter(x => x.on).length });
+    const ms = mainsList().slice(); items.forEach(x => { if (!ms.some(m => m.slug === x.main)) ms.push({ slug: x.main, name: groupName(x.main), img: "", subs: [] }); });
+    const tree = ms.map(m => { const l = items.filter(x => x.main === m.slug); const subs = m.subs.slice(); l.forEach(x => { if (x.sub && !subs.some(y => y.slug === x.sub)) subs.push({ slug: x.sub, name: groupName(x.sub) }); });
+      return Object.assign({ slug: m.slug, name: m.name, img: m.img ? IMG(m.img, 120) : "", en: en(m.slug) }, count(l), { subs: subs.map(y => Object.assign({ slug: y.slug, name: y.name, en: en(y.slug) }, count(l.filter(x => x.sub === y.slug)))).filter(y => y.total) }); }).filter(m => m.total);
+    return { ok: true, at: all && all.at, cmsAt: CMS && CMS.at, job: JOB, imported: SKUS ? Object.keys(SKUS.items).length : 0, tree, items };
+  }
+  // Vorschau-Preis im Cockpit (kleinste Auflage, Standard-Auswahl) – nur lesend
+  async function previewPrice(sku) {
+    try {
+      const prod = await findProduct(sku, null, true); if (!prod) return { ok: false, error: "Produkt nicht gefunden" };
+      const m = prod.methods && prod.methods[0];
+      const input = { copies: prod.tiers[0], custom: { w: 100, h: 100 }, textile: m ? { method: m.key, positions: [m.positions[0]], sizes: { [prod.sizes[0].slug]: m.min } } : null };
+      const n = normalizeSel(prod, input), q = await quote(prod, n, "AT", "", {});
+      return { ok: true, sku, kind: prod.kind, copies: n.copies, labels: n.labels, gross: q.gross, net: q.net, purchase: q.purchase.total, margin: q.margin };
+    } catch (e) { return { ok: false, error: String(e.message || e).slice(0, 300) }; }
   }
   async function handleAdmin(req, res, u, p) {
     try {
@@ -952,6 +1488,8 @@ module.exports = function (D) {
         const list = await pcApi("GET", "/products"); const items = Array.isArray(list) ? list : (list && (list.items || list.results)) || [];
         return J(res, 200, { ok: true, count: items.length, products: items.map(x => ({ sku: x.sku, title: x.titleSingle || x.titlePlural || x.title || "", plural: x.titlePlural || "", active: x.active, category: x.category || x.categoryName || "" })) });
       }
+      // Sortiment: alle Print.com-Produkte mit Kategorie und Freischaltung
+      if (p === "/admin/api/print/sortiment" && req.method === "GET") return J(res, 200, await sortimentState());
       if (p === "/admin/api/print/file" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); const buf = o && await store.fileData(o.fileId);
         if (!buf) return D.send(res, 404, "Datei nicht gefunden");
@@ -965,6 +1503,12 @@ module.exports = function (D) {
         try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", Object.assign({ sku, options: b.options || {}, deliveryPromise: 0 }, Array.isArray(b.variants) ? { variants: b.variants } : {})); return J(res, 200, { ok: true, price: pr }); }
         catch (e) { return J(res, 200, { ok: false, error: e.message, detail: e.detail || null }); }
       }
+      if (p === "/admin/api/print/sortiment") {
+        if (b.op === "refresh") { await cms(true); await catalogAll(true); await importAll(b.full === true); return J(res, 200, await sortimentState()); }
+        if (b.op === "import") { await importAll(b.full === true); return J(res, 200, await sortimentState()); }
+        if (b.op === "preview") return J(res, 200, await previewPrice(String(b.sku || "")));
+        await sortimentOp(b); PRICE_CACHE.clear(); return J(res, 200, await sortimentState());
+      }
       if (p === "/admin/api/print/settings") { const s = await saveSettings(b); PRICE_CACHE.clear(); return J(res, 200, { ok: true, settings: s }); }
       if (p === "/admin/api/print/catalog") { const cat = await catalog(true); return J(res, 200, { ok: true, at: cat && cat.at, errors: (cat && cat.errors) || [], count: cat && cat.products ? cat.products.length : 0 }); }
       if (p === "/admin/api/print/op") {
@@ -976,7 +1520,7 @@ module.exports = function (D) {
         if (op === "pollAll") return J(res, 200, { ok: true, polled: await pollAll() });
         if (op === "requote") {
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
-          const cat = await catalog(false), prod = cat && (cat.products || []).find(x => x.key === o.product.key);
+          const prod = await findProduct(o.product.key, null, true);
           if (!prod) throw new Error("Produkt nicht mehr im Katalog");
           PRICE_CACHE.clear(); const buy = await purchase(Object.assign({}, prod, { sku: o.product.sku }), { pcOpts: o.pcOptions, urgency: o.urgency }, o.customer.country, o.customer.zip);
           o.price.liveCheck = { at: nowIso(), total: buy.total, product: buy.product, shipping: buy.shipping, margin: r2(o.price.net - buy.total) }; hist(o, "Einkaufspreis neu geprüft: " + eur(buy.total)); await store.putOrder(o);
@@ -993,5 +1537,5 @@ module.exports = function (D) {
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
   async function proposalValid(orderId) { const o = await store.getOrder(orderId); return !!o && !!REVIEW[o.status]; }
 
-  return { live, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION } };
+  return { live, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
