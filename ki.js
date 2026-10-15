@@ -195,6 +195,10 @@ module.exports = function createKi(deps) {
     return { key, year: y, from: y + "-" + String(from).padStart(2, "0") + "-01", to: y + "-" + String(to).padStart(2, "0") + "-" + String(last).padStart(2, "0"), label: m[3] ? m[3] + ". Quartal " + y : String(from).padStart(2, "0") + "/" + y };
   }
   function currentQuarter() { const t = deps.viennaToday(); return t.slice(0, 4) + "-Q" + (Math.floor((+t.slice(5, 7) - 1) / 3) + 1); }
+  // Fahrzeug laut Steuer-Einstellung: Fiskal-Lkw/Kleinbus bzw. E-Auto → Kfz-Vorsteuer abziehbar (sonst Pkw-Regel)
+  const PKW_RULE = "Pkw/Kombi (auch Treibstoff, Service, Leasing): kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) → Regel 10/none; Ausnahmen: E-Pkw mit CO2 0 (Vorsteuer bis 40.000 € brutto voll, über 80.000 € keine), Fiskal-Lkw/Klein-Lkw laut BMF-Liste.";
+  const FISKAL_RULE = "Firmenfahrzeug: Kleinbus (Fiskal-Lkw laut BMF-Liste) – Kfz-Kosten (Treibstoff, Service, Reparatur, Reifen, Versicherung mit USt, Vignette, Parken) sind VOLL vorsteuerabzugsberechtigt → Regel 9/060. Nicht als „kein Vorsteuerabzug“ markieren und keinen Hinweis auf fehlenden Vorsteuerabzug geben.";
+  function kfz(sys) { const st = steuerState(); return st && st.settings && st.settings.kfzVst ? String(sys).replace(PKW_RULE, FISKAL_RULE) : sys; }
   function steuerState() { try { return deps.readSteuer(); } catch (e) { return { mapping: {}, docs: {}, uva: {}, uvaManual: {} }; } }
 
   // ════════════════════════════════════════════════════════════════════
@@ -251,7 +255,7 @@ module.exports = function createKi(deps) {
     });
     for (let i = 0; i < todo.length; i += 40) {
       const batch = todo.slice(i, i + 40);
-      const msg = await claude("belege", { system: BELEG_SYSTEM, system2: rulesText(rules), effort: "low", maxTokens: 16000, schema: beleg_schema(ruleIds),
+      const msg = await claude("belege", { system: kfz(BELEG_SYSTEM), system2: rulesText(rules), effort: "low", maxTokens: 16000, schema: beleg_schema(ruleIds),
         messages: [{ role: "user", content: "<belege>\n" + batch.map(b => JSON.stringify(b.inp)).join("\n") + "\n</belege>\nBitte für jeden der " + batch.length + " Belege einen Vorschlag liefern (id unverändert übernehmen)." }] });
       const res = jsonOf(msg), got = {};
       (res.suggestions || []).forEach(s => { got[String(s.id)] = s; });
@@ -280,7 +284,7 @@ module.exports = function createKi(deps) {
     if (hit) return Object.assign({ cached: true }, hit.r);
     let rules = []; try { const raw = await deps.steuerRaw(false); rules = (raw.taxRules || []).filter(r => out ? !/EXPENSE/i.test(r.side || "") : /EXPENSE/i.test(r.side || "")).map(r => ({ id: String(r.id), txt: String(r.description || r.name || "").slice(0, 160) })); } catch (e) {}
     const ruleIds = rules.length ? rules.map(r => r.id) : Object.keys(CALC.TAXRULE_TXT);
-    const msg = await claude("belege", { system: KLASSE_SYSTEM, effort: "low", maxTokens: 6000, schema: obj({ klasse: en(opts.map(o => o[0])), begruendung: S.str, taxRule: en([""].concat(ruleIds)), confidence: S.num }),
+    const msg = await claude("belege", { system: kfz(KLASSE_SYSTEM), effort: "low", maxTokens: 6000, schema: obj({ klasse: en(opts.map(o => o[0])), begruendung: S.str, taxRule: en([""].concat(ruleIds)), confidence: S.num }),
       messages: [{ role: "user", content: "Optionen für klasse:\n" + opts.map(o => "- " + o[0] + ": " + o[1]).join("\n") + "\n" + (rules.length ? "Steuerregeln des sevDesk-Kontos:\n" + rules.map(r => "- " + r.id + ": " + r.txt).join("\n") + "\n" : "") + "<beleg>\n" + JSON.stringify(inp) + "\n</beleg>" }] });
     const x = jsonOf(msg), r = { klasse: x.klasse, begruendung: clip(x.begruendung, 600), taxRule: ruleIds.indexOf(String(x.taxRule)) > -1 ? String(x.taxRule) : "", confidence: Math.max(0, Math.min(1, +x.confidence || 0)) };
     C.klasse[h] = { at: Date.now(), r }; saveCache();
@@ -337,7 +341,7 @@ module.exports = function createKi(deps) {
     const ctx = head + "\n" +
       "sevDesk-Buchungskategorien (id: Name, die häufigsten zuerst):\n" + (types.length ? types.map(t => t.id + ": " + t.name).join("\n") : "(keine Liste verfügbar – accountingTypeId leer lassen)") +
       "\n\nBitte den Beleg vollständig auslesen.";
-    const msg = await claude(feature, { system: EXTRACT_SYSTEM, effort: "low", maxTokens: 8000, schema: EXTRACT_SCHEMA, messages: [{ role: "user", content: [block, { type: "text", text: ctx }] }] });
+    const msg = await claude(feature, { system: kfz(EXTRACT_SYSTEM), effort: "low", maxTokens: 8000, schema: EXTRACT_SCHEMA, messages: [{ role: "user", content: [block, { type: "text", text: ctx }] }] });
     const x = jsonOf(msg);
     const typeIds = new Set(types.map(t => t.id));
     const clean = { isInvoice: x.isInvoice !== false, supplier: clip(x.supplier, 200), supplierUid: clip(x.supplierUid, 30).replace(/\s/g, "").toUpperCase(), supplierCountry: clip(x.supplierCountry, 2).toUpperCase(), invoiceNumber: clip(x.invoiceNumber, 80),
@@ -676,7 +680,7 @@ module.exports = function createKi(deps) {
     };
     const C = cache(), h = hash(inp), hit = C.uva[key];
     if (hit && hit.h === h && !force) return Object.assign({ cached: true, at: hit.at, kennzahlen: inp.kennzahlen, zahllast: inp.zahllast, label: p.label }, hit.r);
-    const msg = await claude("uva", { system: UVA_SYSTEM, effort: "high", maxTokens: 32000, schema: UVA_SCHEMA, messages: [{ role: "user", content: "<uva>\n" + JSON.stringify(inp) + "\n</uva>\nBitte prüfen." }] });
+    const msg = await claude("uva", { system: kfz(UVA_SYSTEM), effort: "high", maxTokens: 32000, schema: UVA_SCHEMA, messages: [{ role: "user", content: "<uva>\n" + JSON.stringify(inp) + "\n</uva>\nBitte prüfen." }] });
     const x = jsonOf(msg), out = { verdict: x.verdict, summary: clip(x.summary, 1500), findings: (x.findings || []).slice(0, 30).map(f => ({ severity: f.severity, title: clip(f.title, 200), detail: clip(f.detail, 1200), kz: clip(f.kz, 20), docIds: (f.docIds || []).slice(0, 20).map(d => clip(d, 40)) })) };
     C.uva[key] = { h, at: Date.now(), r: out }; saveCache();
     return Object.assign({ cached: false, at: Date.now(), kennzahlen: inp.kennzahlen, zahllast: inp.zahllast, label: p.label }, out);
