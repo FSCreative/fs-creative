@@ -17,7 +17,7 @@ module.exports = function (D) {
     if (v == null || v === "") return null;
     const t = String(v);
     let m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if (m) return m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0");
-    if (/^\d{9,11}$/.test(t)) return new Date(+t * 1000 + 12 * 3600e3).toISOString().slice(0, 10);
+    if (/^\d{9,11}$/.test(t)) return new Date(+t * 1000 + 3 * 3600e3).toISOString().slice(0, 10);   // Unix (Mitternacht Wien bzw. 12 Uhr UTC) → Kalendertag; +12 Std. verschob 12-Uhr-Werte auf den Folgetag
     m = t.match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null;
   }
   function err(status, msg) { const e = new Error(msg); e.status = status; return e; }
