@@ -256,7 +256,7 @@ F.action("sdbkother",function(id){
     (F.sugBox?F.sugBox("tx",t.id):'')+   /* Vorschlag oben (zreview.js) – nur mit „Übernehmen“ */
     '<input class="f" placeholder="Suchen …" data-sdpickq autofocus><div class="sd-pick" id="sdPick">'+pickList("")+'</div>'+
     (items.length?'':'<p class="muted" style="margin:0">Keine offenen '+(pos?"Rechnungen":"Belege")+'. Lege den Beleg zuerst an oder buche den Umsatz direkt.</p>')+
-    '<div class="row-between" style="border-top:1px solid var(--line);padding-top:12px;gap:12px;flex-wrap:wrap"><span class="muted small">Nichts Betriebliches? '+(pos?"Geld von dir privat aufs Geschäftskonto":"Private Ausgabe oder Geld an dich")+' – zählt nicht als Einnahme/Ausgabe, keine Steuer.</span><button type="button" class="btn" data-act="sdbkpriv:'+esc(t.id)+'">'+(pos?"Als Privateinlage markieren":"Als Privatentnahme markieren")+'</button></div></div>',"wide");
+    '<div class="row-between" style="border-top:1px solid var(--line);padding-top:12px;gap:12px;flex-wrap:wrap"><span class="muted small">Nichts Betriebliches? '+(pos?"Geld von dir privat aufs Geschäftskonto":"Private Ausgabe oder Geld an dich")+' – zählt nicht als Einnahme/Ausgabe, keine Steuer.</span><span class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn" data-act="sdbkpriv:'+esc(t.id)+'">'+(pos?"Als Privateinlage markieren":"Als Privatentnahme markieren")+'</button><button type="button" class="btn primary" data-act="sdbknew:'+esc(t.id)+'">Neue Buchung anlegen</button></span></div></div>',"wide");
 });
 function pickList(q){ var it=S.pick.items.filter(function(x){ return !q||x.q.indexOf(q)>-1; }).slice(0,80); return it.map(function(x){ return '<button type="button" data-act="sdbkpick:'+x.kind+'|'+esc(x.id)+'"><span>'+esc(x.label)+'</span><span class="muted num">'+esc(x.sub)+'</span></button>'; }).join("")||'<div class="sd-empty">Nichts gefunden.</div>'; }
 F.listen("input","[data-sdpickq]",function(el){ var b=document.getElementById("sdPick"); if(b) b.innerHTML=pickList(el.value.toLowerCase()); });
@@ -266,18 +266,36 @@ F.action("sdbknew",function(id){
   var t=txById(id); if(!t) return; var pos=t.amount>0;
   F.loadMeta(function(m){
     var cats=(m.accountingTypes||[]);
-    F.modal('<form data-form="sdbknew" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Einnahme":"Ausgabe")+' ohne Beleg-Datei buchen</h2>'+F.btnClose()+'</div>'+
-      '<p class="muted" style="margin:0">Für Kontoführung, Abos, Bankspesen u. Ä.: legt einen Beleg an und verbucht ihn mit diesem Umsatz. Die Rechnungsdatei kannst du später beim Beleg anhängen.</p>'+
+    F.modal('<form data-form="sdbknew" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Einnahme":"Ausgabe")+' buchen</h2>'+F.btnClose()+'</div>'+
+      '<p class="muted" style="margin:0">Legt einen Beleg an und verbucht ihn gleich mit diesem Umsatz – mit Rechnungsdatei oder ohne (z. B. Kontoführung, Bankspesen; die Datei kannst du später anhängen).</p>'+
       '<p style="margin:0"><b class="'+(pos?"ok-t":"bad-t")+'">'+eur(t.amount)+'</b> · '+de(t.date)+'</p>'+
-      '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+'</select></label></div>'+
+      '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+(pos?'':'<option value="rc14">Reverse Charge EU</option><option value="rc12">Reverse Charge Drittland</option>')+'</select></label></div>'+
       '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">— wählen —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>'+
       '<label class="fl">Beschreibung<input class="f" name="desc" value="'+esc(t.purpose.slice(0,200))+'"></label>'+
-      '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Buchen</button></span></div><div class="err" id="sdBkErr"></div></form>',"wide");
+      '<label class="fl">Rechnung / Beleg (optional)<input class="f" type="file" name="file" accept="application/pdf,image/png,image/jpeg,image/webp"></label>'+
+      '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="sdBkGo">Buchen</button></span></div><div class="err" id="sdBkErr"></div></form>',"wide");
   });
 });
 F.form("sdbknew",function(f){
   var id=f.getAttribute("data-id"); if(!f.cat.value){ document.getElementById("sdBkErr").textContent="Bitte eine Kategorie wählen."; return; }
-  F.closeModal(); bankDo(id,{op:"newVoucher",accountingTypeId:f.cat.value,taxRate:f.tax.value,supplierName:f.supplier.value,description:f.desc.value},"Gebucht");
+  var file=f.file&&f.file.files&&f.file.files[0], t=txById(id), rc=/^rc(\d+)$/.exec(f.tax.value), rate=rc?0:parseFloat(f.tax.value), rule=rc?rc[1]:"";
+  if(!file||!t){ F.closeModal(); bankDo(id,{op:"newVoucher",accountingTypeId:f.cat.value,taxRate:rate,taxRule:rule,supplierName:f.supplier.value,description:f.desc.value},"Gebucht"); return; }
+  /* mit Datei: hochladen → Beleg mit Datei anlegen und gleich mit dem Umsatz verbinden */
+  var err=document.getElementById("sdBkErr"), btn=document.getElementById("sdBkGo"); if(file.size>15*1024*1024){ err.textContent="Die Datei ist größer als 15 MB."; return; }
+  btn.disabled=true; err.textContent="Lade Datei hoch …";
+  var rd=new FileReader(); rd.onerror=function(){ btn.disabled=false; err.textContent="Datei konnte nicht gelesen werden."; };
+  rd.onload=function(){
+    F.api("/admin/api/ki/beleg-upload",{body:{filename:file.name,mime:file.type,data:rd.result,keep:true}}).then(function(up){
+      if(!up||!up.uploadId) throw new Error((up&&up.error)||"Upload fehlgeschlagen");
+      err.textContent="Lege Beleg an …";
+      return F.api("/admin/api/sevdesk/voucher",{body:{uploadId:up.uploadId,supplierName:f.supplier.value,date:t.date,description:f.desc.value,gross:Math.abs(t.amount),taxRate:rate,taxRule:rule||undefined,accountingTypeId:f.cat.value,creditDebit:t.amount>0?"D":"C",txId:id,confirm:true}});
+    }).then(function(j){
+      if(!j||!j.ok) throw new Error((j&&j.error)||"Beleg nicht gespeichert");
+      F.closeModal(); if(S.bank) S.bank.transactions=S.bank.transactions.filter(function(x){ return x.id!==id; }); if(F.finAfterBook) F.finAfterBook();
+      F.toast(j.booked?"Gebucht – Beleg mit Datei angelegt":"Beleg angelegt, aber nicht verbunden: "+(j.bookError||j.openError||""),!j.booked); F.render(); F.load(true);
+    }).catch(function(e){ btn.disabled=false; err.textContent=String(e&&e.message||e); });
+  };
+  rd.readAsDataURL(file);
 });
 
 /* Blitzdings-Buchungen einer bestehenden Rechnung zuordnen (auch mehrere = Sammelrechnung) */

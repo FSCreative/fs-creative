@@ -186,6 +186,8 @@ module.exports = function (D) {
         voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: rate, net: false, sumGross: g, sumNet: sevNet(g, rate), comment: String(pl.description || "").slice(0, 250) }],
         voucherPosDelete: null,
       };
+      // Reverse Charge (Leistung aus dem Ausland): 12 = Drittland, 14 = EU – Vorsteuer und Steuerschuld je 20 % (UVA KZ 066/057)
+      if (["12", "14"].indexOf(String(pl.taxRule || "")) > -1 && amount < 0) { body.voucher.taxRule = { id: String(pl.taxRule), objectName: "TaxRule" }; body.voucher.reverseCharge = true; delete body.voucher.taxType; body.voucherPosSave[0].taxRate = 0; body.voucherPosSave[0].sumNet = g; }
       const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
       const v = j && j.objects && (j.objects.voucher || j.objects) || {};
       if (!v.id) throw new Error("Beleg konnte nicht angelegt werden");
