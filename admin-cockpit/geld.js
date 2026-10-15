@@ -51,7 +51,7 @@ F.listen("input","[data-invq]",function(el){ F.UI.invQ=el.value; clearTimeout(el
 F.searcher(function(q){ return F.D.sev?F.D.sev.invoices.filter(function(i){ return (i.nr+" "+i.contact+" "+(i.header||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(i){ return {group:"Rechnungen",label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.gross)+(i.open>0.005?" · offen "+eur(i.open):" · bezahlt"),act:"sdinv:"+i.id}; }):[]; });
 
 F.view({id:"geld",label:"Finanzen",short:"Finanzen",icon:"geld",order:30,mobile:true,
-  count:function(){ return F.D.abgleich.totals.unbilledCount||0; },
+  count:function(){ return (F.reviewCount?F.reviewCount():0)+((F.D.sev&&F.D.sev.overdueCount)||0); },   // Zur Prüfung + überfällige Rechnungen (früher: Plattform-Posten ohne Rechnung)
   render:function(){
     var tab=F.geldTabs.find(function(t){return t.id===F.UI.geldTab;})||F.geldTabs[0];
     if(tab.id!=="uebersicht") return F.head("Finanzen",tab.sub||"")+subnav()+(tab.id==="prognose"?renderPrognose():tab.render());
