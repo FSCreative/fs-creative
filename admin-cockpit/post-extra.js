@@ -274,9 +274,12 @@ M.openVoucher=function(m,a,pre){
     '<label class="fl">Betrag brutto (€)<input class="f num" name="gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+(g?g.toFixed(2):"")+'"'+(g?'':' autofocus')+'></label><label class="fl">USt-Satz<select class="f" name="tax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===tr?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
     '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">Kategorien werden geladen …</option></select></label>'+
     '<label class="fl">Beschreibung<input class="f" name="desc" maxlength="200" value="'+esc(String(pre.desc||m.subject||"").slice(0,200))+'"></label>'+(pre.html||"")+
+    '<div class="fl"><span>Passende Buchung</span><select class="f" name="tx" id="mvTx"><option value="">Suche passende Buchung …</option></select>'+
+      '<label class="row small" style="gap:8px;margin-top:6px"><input type="checkbox" name="trash"'+(mvTrashPref()?" checked":"")+' style="width:18px;height:18px"> Mail nach dem Verbinden in den Papierkorb</label></div>'+
     '<div class="err" id="mvMsg">'+(g&&!pre.html?'<span class="muted">Betrag aus der Mail übernommen – bitte kurz prüfen.</span>':'')+'</div>'+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">Beleg speichern</button></span></div><datalist id="mvContacts"></datalist></form>'+(pvKind?'</div>':''),pvKind?"xwide":"narrow");
   if(pvKind==="img") wirePreview();
+  mvWireSug();
   F.loadMeta(function(meta){
     var sel=document.querySelector('[data-form="mvoucher"] [name=cat]'); if(!sel) return;
     if(meta&&meta.error){ sel.innerHTML='<option value="">Kategorien nicht verfügbar</option>'; document.getElementById("mvMsg").textContent="Buchhaltung: "+meta.error; return; }
@@ -288,6 +291,18 @@ M.openVoucher=function(m,a,pre){
     var dl=document.getElementById("mvContacts"); if(dl) dl.innerHTML=(meta.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'"></option>'; }).join("");
   });
 };
+/* Passende Bankbuchung zum Mail-Beleg (wie beim Scannen): beste Übereinstimmung vorausgewählt, verbunden wird beim Speichern */
+function mvTrashPref(){ try{ return localStorage.getItem("fsc_mv_trash")!=="0"; }catch(e){ return true; } }
+var mvSugT=null, mvSugQ="";
+function mvLoadSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; var sel=f.tx, g=parseFloat(String(f.gross.value).replace(",","."));
+  if(!(g>0)){ sel.innerHTML='<option value="">Betrag eingeben, dann wird gesucht</option>'; return; }
+  var q="amount="+encodeURIComponent(g.toFixed(2))+"&date="+encodeURIComponent(f.date.value||"")+"&name="+encodeURIComponent(f.supplier.value||"")+"&desc="+encodeURIComponent(String(f.desc.value||"").slice(0,120))+"&cd=C", my=mvSugQ=q;
+  F.api("/admin/api/fin/suggest?"+q).then(function(j){ if(my!==mvSugQ||!document.body.contains(sel)) return;
+    var cs=(j&&j.ok?(j.candidates||[]):[]).filter(function(c){ return c.type==="tx"; }).slice(0,6), top=cs[0], pick=top&&top.score>=60?top.id:"";
+    sel.innerHTML='<option value="">Nicht verbinden (nur Beleg speichern)</option>'+cs.map(function(c){ return '<option value="'+esc(c.id)+'"'+(c.id===pick?" selected":"")+'>'+esc(F.de(c.date)+" · "+(c.name||c.purpose||"Umsatz").slice(0,40)+" · "+F.eur(c.amount))+'</option>'; }).join("");
+    if(!cs.length) sel.innerHTML='<option value="">Keine passende offene Buchung gefunden</option>';
+  }).catch(function(){}); }
+function mvWireSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; ["gross","date","supplier"].forEach(function(n){ f[n].addEventListener("change",function(){ clearTimeout(mvSugT); mvSugT=setTimeout(mvLoadSug,250); }); }); mvLoadSug(); }
 F.form("mvoucher",function(f){
   if(!VOU) return; var m=VOU.m, a=VOU.a, msg=document.getElementById("mvMsg"), btn=document.getElementById("mvSave");
   var body={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf(m),filename:a.filename},supplierName:f.supplier.value.trim(),date:f.date.value,description:f.desc.value.trim(),gross:parseFloat(String(f.gross.value).replace(",",".")),taxRate:parseFloat(f.tax.value),accountingTypeId:f.cat.value};
@@ -296,12 +311,16 @@ F.form("mvoucher",function(f){
   if(!(body.gross>0)){ msg.textContent="Bitte den Rechnungsbetrag (brutto) eingeben."; f.gross.focus(); return; }
   if(!body.accountingTypeId){ msg.textContent="Bitte eine Kategorie wählen."; f.cat.focus(); return; }
   try{ localStorage.setItem("fsc_sev_cat",body.accountingTypeId); }catch(e){}
+  var txSel=f.tx&&f.tx.value, trash=!!(f.trash&&f.trash.checked); try{ localStorage.setItem("fsc_mv_trash",trash?"1":"0"); }catch(e){}
+  if(txSel){ body.txId=txSel; body.confirm=true; }
   btn.disabled=true; msg.textContent="Speichere Beleg …";
   F.api("/admin/api/sevdesk/voucher",{body:body}).then(function(j){
     if(!j||!j.ok){ btn.disabled=false; msg.textContent="Nicht gespeichert: "+((j&&j.error)||"unbekannter Fehler"); return; }
     var sk=F.ls("fsc_sev_sent")||{}; sk[m.id+"#"+(a.index||0)]={id:j.id,at:Date.now()}; F.ls("fsc_sev_sent",sk);
     var done=VOU.pre&&VOU.pre.onDone; VOU=null; F.closeModal(); if(done) try{ done(j); }catch(e){}
-    F.toast("Beleg gespeichert (offen)",false,"Belege öffnen",function(){ F.UI.fin="vou:open"; F.go("geld"); });
+    if(j.booked&&trash&&M.items){ var its=M.items([m]); if(its.length) F.api("/admin/api/mail-action",{body:{op:"trash",items:its}}).then(function(){ if(M.scheduleReload) M.scheduleReload(1500); }).catch(function(){}); }
+    if(txSel&&!j.booked) F.toast("Beleg gespeichert – Buchung nicht verbunden: "+(j.bookError||j.openError||"unbekannter Fehler"),true);
+    else F.toast(j.booked?"Beleg gespeichert und mit Buchung verbunden"+(trash?" – Mail im Papierkorb":""):"Beleg gespeichert (offen)",false,"Belege öffnen",function(){ F.UI.fin="vou:open"; F.go("geld"); });
     if(F.current==="post") F.render(); F.load(true);
   }).catch(function(){ btn.disabled=false; msg.textContent="Keine Verbindung zum Server."; });
 });
