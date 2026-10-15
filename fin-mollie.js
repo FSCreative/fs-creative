@@ -86,7 +86,7 @@ module.exports = function (D) {
   }
   async function bookMatch(pl) {
     const tx = L.get("CheckAccountTransaction", pl.txId), i = L.get("Invoice", pl.invoiceId);
-    if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen"); if (!i || ["200", "750"].indexOf(String(i.status)) < 0) throw new Error("Die Rechnung ist nicht mehr offen");
+    if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen"); if (!i || (pl.online ? ["200", "750", "1000"] : ["200", "750"]).indexOf(String(i.status)) < 0) throw new Error("Die Rechnung ist nicht mehr offen");
     await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: Math.abs(+tx.amount), date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
     return true;
   }
@@ -100,32 +100,53 @@ module.exports = function (D) {
     const dr = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && String(i.status) === "100");
     if (dr) { try { await L.request("PUT", "/Invoice/" + dr.id + "/sendBy", { body: { sendType: "VPDF" } }); console.log("Provisionsrechnung fertiggestellt:", mm); } catch (e) { console.error("Provisionsrechnung " + mm + ":", e.message); } }
   }
-  // Mollie-Connect-Provisionen ab 10/2026: nach Monatsende ein Einnahme-Beleg „kochdu Provisionen Mollie Connect MM/JJJJ“ (20 % USt inkl.)
-  // genau in Höhe der tatsächlich von Mollie gutgeschriebenen Provisionen – alle Provisionen des Monats werden automatisch daran gebucht (vom Nutzer so gewünscht).
-  // Die fs-order-Monatsrechnung „kochdu Provisionen“ enthält ab dann nur noch die übrigen (Bar-/Direkt-)Provisionen.
-  const CONNECT_BELEG_FROM = "2026-10";
-  async function connectMonthly() {
-    const today = new Date().toISOString().slice(0, 10), byM = {};
+  // Mollie-Connect-Provisionen ab 10/2026: fs-order legt je Monat die Sammelrechnung „kochdu Online-Provisionen MM/JJJJ (Mollie Connect)“
+  // als Entwurf an (je Lokal eine Position, brutto = von Mollie einbehaltene Provision). Nach Monatsende wird sie hier fertiggestellt und
+  // JEDE Provision (application fee) des Monats automatisch daran gebucht (vom Nutzer so gewünscht). Bis 09/2026: alte Sammelrechnung „kochdu Provisionen“ (RE-1260 für 09/2026).
+  const ONLINE_FROM = "2026-10";
+  const todayIso = () => (typeof D.today === "function" ? D.today() : new Date().toISOString().slice(0, 10));   // Tests: fester Stichtag
+  const monthEnd = m => new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10);
+  const mmOf = m => m.slice(5, 7) + "/" + m.slice(0, 4);
+  const onlineRe = m => new RegExp("kochdu Online-Provisionen " + m.slice(5, 7) + "\\/" + m.slice(0, 4), "i");
+  const isOnlineInv = (i, m) => onlineRe(m).test(String(i.header || "")) && !i.cancelled && String(i.invoiceType || "RE") !== "SR";
+  function onlineInvoice(m) { return L.all("Invoice").find(i => isOnlineInv(i, m) && ["200", "750", "1000"].indexOf(String(i.status)) > -1) || null; }
+  async function finalizeOnlineInvoice(m) {
+    if (todayIso() <= monthEnd(m)) return null;   // Monat noch offen
+    const dr = L.all("Invoice").find(i => isOnlineInv(i, m) && String(i.status) === "100");
+    if (dr) { try { await L.request("PUT", "/Invoice/" + dr.id + "/sendBy", { body: { sendType: "VPDF" } }); console.log("Online-Provisionsrechnung fertiggestellt:", mmOf(m)); } catch (e) { console.error("Online-Provisionsrechnung " + mmOf(m) + ":", e.message); } }
+    return onlineInvoice(m);
+  }
+  // abgeschlossene Monate ab ONLINE_FROM: Mollie-Provisionen (Summe inkl. negativer Korrekturen) gegen die Sammelrechnung
+  function onlineCheck() {
+    const today = todayIso(), by = {};
+    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee")) {
+      const m = day(tx.valueDate).slice(0, 7); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
+      const x = by[m] = by[m] || { month: m, mm: mmOf(m), fees: 0, count: 0, open: 0 }; x.fees = r2(x.fees + (+tx.amount || 0)); x.count++; if (String(tx.status) === "100") x.open++;
+    }
+    return Object.values(by).sort((a, b) => a.month.localeCompare(b.month)).map(x => { const i = onlineInvoice(x.month);
+      return Object.assign(x, { invoiceId: i ? String(i.id) : null, invoiceNumber: i ? i.invoiceNumber || "" : null, gross: i ? r2(+i.sumGross || 0) : null, diff: i ? r2(x.fees - (+i.sumGross || 0)) : null }); });
+  }
+  function onlineNotices() {
+    return onlineCheck().map(x => x.invoiceId == null ? "Online-Provisionen " + x.mm + ": " + eu(x.fees) + " von Mollie, aber noch keine Sammelrechnung „kochdu Online-Provisionen " + x.mm + "“ (fs-order Monatsabrechnung) – Zuordnung folgt, sobald sie da ist."
+      : Math.abs(x.diff) >= 0.01 ? "Differenz Online-Provisionen " + x.mm + ": " + eu(x.diff) + " (Mollie " + eu(x.fees) + " · Rechnung " + (x.invoiceNumber || "") + " " + eu(x.gross) + ") – z. B. Rückerstattungen oder Bestellungen um Mitternacht; die Provisionen sind trotzdem der Rechnung zugeordnet." : null).filter(Boolean);
+  }
+  async function onlineProvisions(prop) {
+    let n = 0; const today = todayIso(), byM = {};
     for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0)) {
-      const m = day(tx.valueDate).slice(0, 7); if (m < CONNECT_BELEG_FROM) continue;
-      const end = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10); if (today <= end) continue;   // Monat noch offen
+      const m = day(tx.valueDate).slice(0, 7); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
       (byM[m] = byM[m] || []).push(tx);
     }
-    let n = 0; const cat = incomeCategory();
     for (const m of Object.keys(byM).sort()) {
-      const txs = byM[m], sum = r2(txs.reduce((a, t) => a + (+t.amount || 0), 0)), mm = m.slice(5, 7) + "/" + m.slice(0, 4), part = L.all("Voucher").filter(v => v.connectMonth === m).length;
-      const end = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10);
-      const body = { voucher: { supplierName: "Mollie Connect (kochdu)", description: "kochdu Provisionen Mollie Connect " + mm + (part ? " – Nachtrag " + part : "") + " · " + txs.length + " Zahlungen (Eigenbeleg aus der Mollie-Abrechnung)", voucherDate: end, creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", connectMonth: m },
-        voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "20", sumGross: String(sum), net: "false", comment: "Mollie-Connect-Provisionen " + mm }] };
-      const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
-      for (const t of txs) { try { await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +t.amount, date: day(t.valueDate), checkAccountTransaction: { id: String(t.id) } } }); n++; } catch (e) { console.error("Connect-Provision " + t.id + ":", e.message); } }
-      console.log("Connect-Monatsbeleg " + mm + ":", sum, "€,", txs.length, "Provisionen");
+      const inv = await finalizeOnlineInvoice(m); if (!inv) continue;   // Sammelrechnung (noch) nicht da → nächster Abruf
+      for (const tx of byM[m]) {
+        try { if (await prop.add({ autoAccept: true, kind: "mollie-match", key: "mmatch:" + tx.id + ":" + inv.id, txId: String(tx.id), invoiceId: String(inv.id), amount: r2(+tx.amount), date: day(tx.valueDate), title: "Connect-Provision → Rechnung " + (inv.invoiceNumber || "") + " (kochdu Online-Provisionen " + mmOf(m) + ")", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(inv.id), online: true } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); }
+      }
     }
     return n;
   }
   async function autoVouchers() {
-    try { await connectMonthly(); } catch (e) { console.error("Connect-Monatsbeleg:", e.message); }
     let n = 0; const now = Date.now(), prop = P(); if (!prop) return 0;
+    try { n += await onlineProvisions(prop); } catch (e) { console.error("Online-Provisionen:", e.message); }
     for (const tx of L.all("CheckAccountTransaction").filter(x => (x.mollieType === "payment" || x.mollieType === "application-fee") && String(x.status) === "100" && +x.amount > 0)) {
       const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
       if (tx.mollieType === "payment" && now - Date.parse(day(tx.valueDate) + "T12:00:00Z") < 3 * 864e5) continue;   // Rechnung kann noch kommen
@@ -133,7 +154,7 @@ module.exports = function (D) {
       // Connect-Provision: der Beleg ist die monatliche Sammelrechnung „kochdu Provisionen MM/JJJJ“ (aus fs-order) → als Teilzahlung dieser Rechnung vorschlagen, nie eigener Einnahme-Beleg (sonst doppelt)
       if (tx.mollieType === "application-fee") {
         const d = day(tx.valueDate), mm = d.slice(5, 7) + "/" + d.slice(0, 4);
-        if (d.slice(0, 7) >= CONNECT_BELEG_FROM) continue;   // ab Oktober 2026: eigener Monatsbeleg (connectMonthly), nicht über die fs-order-Rechnung
+        if (d.slice(0, 7) >= ONLINE_FROM) continue;   // ab 10/2026: Sammelrechnung „kochdu Online-Provisionen“ (onlineProvisions), nicht mehr „kochdu Provisionen“
         await finalizeProvisionInvoice(mm, d);
         const inv = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && ["200", "750"].indexOf(String(i.status)) > -1);
         if (inv) { try { if (await prop.add({ autoAccept: true, kind: "mollie-match", key: "mmatch:" + tx.id + ":" + inv.id, txId: String(tx.id), invoiceId: String(inv.id), amount: r2(+tx.amount), date: d, title: "Connect-Provision → Rechnung " + (inv.invoiceNumber || "") + " (kochdu Provisionen " + mm + ", Teilzahlung)", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(inv.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); } }
@@ -284,6 +305,7 @@ module.exports = function (D) {
         // Fremdgeld (z. B. Bestellungen eines Lokals vor Mollie Connect): nicht Umsatz, sondern an den Betrieb weiterzuleiten
         unmatchedGroups: Object.values(pays.filter(t => String(t.status) === "100").reduce((o, t) => { const k = partyOf(t); if (!k) return o; const x = o[k] = o[k] || { party: k, count: 0, sum: 0 }; x.count++; x.sum = r2(x.sum + (+t.amount || 0)); return o; }, {})).filter(g => g.count >= 2),
         passthrough: Object.values(txs.filter(t => t.passthroughFor).reduce((o, t) => { const k = t.passthroughFor; const x = o[k] = o[k] || { party: k, count: 0, net: 0, gross: 0, from: day(t.valueDate), to: day(t.valueDate) }; x.count++; x.net = r2(x.net + (+t.amount || 0)); x.gross = r2(x.gross + (+t.mollieGross || +t.amount || 0)); if (day(t.valueDate) < x.from) x.from = day(t.valueDate); if (day(t.valueDate) > x.to) x.to = day(t.valueDate); return o; }, {})),
+        notices: prov.length ? onlineNotices() : [],
         countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length,
         byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieProfile || "ohne Profil"; const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
           if (t.mollieType === "application-fee") x.provisions = r2(x.provisions + (+t.amount || 0)); else { x.gross = r2(x.gross + (+t.mollieGross || +t.amount)); x.fees = r2(x.fees + (+t.mollieFeeAmt || 0)); x.count++; if (String(t.status) === "100") x.unmatched++; } return o; }, {})) });
@@ -300,5 +322,5 @@ module.exports = function (D) {
     return { count: n, sum };
   }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, passthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept };
+  return { sync, status, passthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept, onlineCheck, onlineNotices };
 };

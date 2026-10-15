@@ -56,7 +56,8 @@ module.exports = function (D) {
   async function valid(it) {
     const ids = (it.txIds || []).concat(it.txId && !(it.txIds || []).length ? [it.txId] : []);
     if (ids.length && !ids.every(txOpen)) return false;
-    if (it.invoiceId && it.kind === "mollie-match") { const i = L.get("Invoice", it.invoiceId); if (!i || ["200", "750"].indexOf(String(i.status)) < 0) return false; }
+    // Online-Provisionen (Sammelrechnung Mollie Connect) werden auch bei Überzahlung zugeordnet – die Differenz zeigt die Mollie-Karte
+    if (it.invoiceId && it.kind === "mollie-match") { const i = L.get("Invoice", it.invoiceId); if (!i || ((it.payload && it.payload.online) ? ["200", "750", "1000"] : ["200", "750"]).indexOf(String(i.status)) < 0) return false; }
     const h = H[it.kind]; if (h && h.valid) { try { if (!(await h.valid(it))) return false; } catch (e) { return false; } }
     return true;
   }

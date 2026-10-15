@@ -82,6 +82,11 @@ module.exports = function (D) {
   // ── Summen ──
   function posSums(p) {
     const q = +p.quantity || 0, rate = +p.taxRate || 0;
+    // Bruttopreis maßgeblich (z. B. kochdu-Provisionen: Mollie behält brutto inkl. 20 % ein): Summe brutto cent-genau, netto/USt daraus zurückgerechnet
+    if ((p.grossPricing === true || p.grossPricing === "true" || p.grossPricing === "1") && p.priceGross != null && isFinite(+p.priceGross)) {
+      const g = +p.priceGross, disc0 = +p.discount || 0, sumGross = r2(g * q * (1 - disc0 / 100)), sumNet0 = r2(sumGross / (1 + rate / 100)), net0 = r2(g / (1 + rate / 100));
+      return Object.assign(p, { grossPricing: true, price: s2(net0), priceNet: s2(net0), priceTax: s2(g - net0), priceGross: s2(g), sumNet: s2(sumNet0), sumTax: s2(sumGross - sumNet0), sumGross: s2(sumGross) });
+    }
     let net = p.price != null ? +p.price : (p.priceNet != null ? +p.priceNet : 0);
     const disc = +p.discount || 0;
     const sumNet = r2(net * q * (1 - disc / 100)), sumTax = r2(sumNet * rate / 100);

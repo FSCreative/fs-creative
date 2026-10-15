@@ -198,6 +198,36 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     const v = L.get("Voucher", "702"); assert.strictEqual(+v.paidAmount, Math.round((v0 + 80.17) * 100) / 100); assert.strictEqual(String(v.status), "750", "Teilzahlung → weiter teilbezahlt");
     const s2 = await P.suggestVoucher("702"); assert.ok(s2.candidates.some(x => x.id === "722" && x.score >= 70 && /18\. Rate/.test(x.reasons.join(" "))), JSON.stringify(s2.candidates));
   });
+  // Mollie Connect ab 10/2026: Sammelrechnung „kochdu Online-Provisionen MM/JJJJ (Mollie Connect)“ aus fs-order (Entwurf, Bruttopreise)
+  // → nach Monatsende fertigstellen und jede Provision des Monats automatisch zuordnen; Differenz als Hinweis auf der Mollie-Karte
+  const feeTx = (id, amount, date) => L.save("CheckAccountTransaction", { id, checkAccount: { id: "2", objectName: "CheckAccount" }, amount: amount.toFixed(2), valueDate: date + "T00:00:00+02:00", entryDate: date + "T00:00:00+02:00", payeePayerName: "Mollie B.V.", paymtPurpose: "Provision (Mollie Connect) kochdu tr_x" + id, mollieId: "fee" + id, mollieType: "application-fee", mollieProfile: "kochdu", status: "100" });
+  await feeTx("801", 5.00, "2026-10-03"); await feeTx("802", 4.03, "2026-10-14"); await feeTx("803", 6.63, "2026-10-20"); await feeTx("804", 1.00, "2026-10-31");   // 804: nicht auf der Rechnung (z. B. Mitternacht/Rückerstattung)
+  await feeTx("805", 2.50, "2099-01-10");   // Monat noch offen
+  await L.save("Invoice", { id: "880", invoiceType: "RE", status: "200", invoiceNumber: "RE-1260", header: "kochdu Provisionen 10/2026", sumGross: "50.00", paidAmount: "0", invoiceDate: "2026-10-01T00:00:00+02:00" });   // alte Sammelrechnung (alte Form, darf nichts abbekommen)
+  await t("Online-Provisionen: Bruttopreis-Positionen ergeben cent-genau die Mollie-Summe", async () => {
+    const r = await L.request("POST", "/Invoice/Factory/saveInvoice", { body: { invoice: { header: "kochdu Online-Provisionen 10/2026 (Mollie Connect)", status: "100", invoiceType: "RE", contact: { id: "1", objectName: "Contact" } },
+      invoicePosSave: [{ name: "Online-Provisionen A – 10/2026", quantity: 1, price: 7.53, priceGross: 9.03, grossPricing: true, taxRate: 20 }, { name: "Online-Provisionen B – 10/2026", quantity: 1, price: 5.53, priceGross: 6.63, grossPricing: true, taxRate: 20 }] } });
+    const inv = r.objects.invoice; assert.strictEqual(inv.sumGross, "15.66"); assert.strictEqual(Math.round((+inv.sumNet + +inv.sumTax) * 100), 1566, inv.sumNet + " + " + inv.sumTax);
+    assert.strictEqual(String(inv.status), "100");
+  });
+  const M2 = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P, today: () => "2026-11-03" });   // Stichtag nach Monatsende
+  await t("Online-Provisionen: nach Monatsende fertiggestellt, alle Provisionen zugeordnet (auch über die Rechnungssumme), alte RE-1260 bleibt unberührt", async () => {
+    const M0 = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P, today: () => "2026-10-31" });   // Monat noch offen
+    await M0.autoVouchers();
+    assert.strictEqual(String(L.all("Invoice").find(i => /kochdu Online-Provisionen 10\/2026/.test(i.header)).status), "100", "vor Monatsende bleibt der Entwurf");
+    assert.strictEqual(L.get("CheckAccountTransaction", "801").status, "100");
+    await M2.autoVouchers();
+    const inv = L.all("Invoice").find(i => /kochdu Online-Provisionen 10\/2026/.test(i.header));
+    assert.ok(inv.invoiceNumber, "Nummer vergeben"); assert.strictEqual(String(inv.status), "1000");
+    ["801", "802", "803", "804"].forEach(id => { assert.strictEqual(L.get("CheckAccountTransaction", id).status, "200", "Provision " + id + " zugeordnet"); assert.strictEqual(logsOf(L, id)[0].object.id, String(inv.id)); });
+    assert.strictEqual(+inv.paidAmount, 16.66);
+    assert.strictEqual(L.get("CheckAccountTransaction", "805").status, "100", "laufender Monat bleibt offen");
+    assert.strictEqual(+L.get("Invoice", "880").paidAmount, 0, "alte Sammelrechnung bekommt keine 10/2026-Provisionen");
+    const n = M2.onlineNotices(); assert.strictEqual(n.length, 1, JSON.stringify(n)); assert.ok(/^Differenz Online-Provisionen 10\/2026: 1,00 €/.test(n[0]), n[0]);
+    assert.ok(!(await P.list()).some(x => x.kind === "mollie-match" && /Connect-Provision/.test(x.title)), "keine offenen Vorschläge übrig");
+    const a2 = L.get("CheckAccount", "2"); a2.mollieBalance = "bal_test"; await L.save("CheckAccount", a2);
+    assert.strictEqual((M2.summary().find(a => String(a.id) === "2") || { notices: [] }).notices.length, 1, "Hinweis auf der Mollie-Karte");
+  });
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
   fails.forEach(f => console.log(" ✗ " + f));
   process.exit(fail ? 1 : 0);
