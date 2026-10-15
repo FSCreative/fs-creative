@@ -706,9 +706,9 @@ module.exports = function (D) {
     for (const a of out) {
       if (open.indexOf(a) < 0) continue;
       const amt = -(+a.amount), d = dayOf(a.valueDate);
-      const b = open.find(x => x !== a && !x.transitWith && Math.abs((+x.amount || 0) - amt) < 0.005 && String((x.checkAccount || {}).id) !== String((a.checkAccount || {}).id) && (() => { const dd = (Date.parse(dayOf(x.valueDate)) - Date.parse(d)) / 864e5; return dd >= -1 && dd <= 7; })() && /paypal|übertrag|umbuchung|auszahlung/i.test(String(x.payeePayerName) + " " + String(x.paymtPurpose)));
+      const b = open.find(x => x !== a && !x.transitWith && Math.abs((+x.amount || 0) - amt) < 0.005 && String((x.checkAccount || {}).id) !== String((a.checkAccount || {}).id) && (() => { const dd = (Date.parse(dayOf(x.valueDate)) - Date.parse(d)) / 864e5; return dd >= -5 && dd <= 7; })() && /paypal|übertrag|umbuchung|auszahlung|bankeinzug/i.test(String(x.payeePayerName) + " " + String(x.paymtPurpose)));
       if (!b) continue;
-      const cnt = open.filter(x => x !== a && !x.transitWith && Math.abs((+x.amount || 0) - amt) < 0.005 && String((x.checkAccount || {}).id) !== String((a.checkAccount || {}).id) && (() => { const dd = (Date.parse(dayOf(x.valueDate)) - Date.parse(d)) / 864e5; return dd >= -1 && dd <= 7; })()).length;
+      const cnt = open.filter(x => x !== a && !x.transitWith && Math.abs((+x.amount || 0) - amt) < 0.005 && String((x.checkAccount || {}).id) !== String((a.checkAccount || {}).id) && (() => { const dd = (Date.parse(dayOf(x.valueDate)) - Date.parse(d)) / 864e5; return dd >= -5 && dd <= 7; })()).length;
       const an = (get("CheckAccount", (a.checkAccount || {}).id) || {}).name || "Konto", bn = (get("CheckAccount", (b.checkAccount || {}).id) || {}).name || "Konto";
       if (await PROP.add({ autoAccept: cnt === 1, kind: "transfer", key: "transfer:" + a.id + ":" + b.id, txIds: [String(a.id), String(b.id)], txId: String(a.id), amount: r2(amt), date: d, title: "Geldtransit " + an + " → " + bn, detail: an + " " + d + ": " + String(a.payeePayerName || a.paymtPurpose || "").slice(0, 60) + " · " + bn + " " + dayOf(b.valueDate) + ": " + String(b.payeePayerName || b.paymtPurpose || "").slice(0, 60), source: "Kontoauszug-Import", payload: { aId: String(a.id), bId: String(b.id) } })) n++;
       open.splice(open.indexOf(b), 1);
@@ -740,5 +740,5 @@ module.exports = function (D) {
     const paired = dry ? 0 : await pairTransfers();
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply };
+  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply, pairTransfers };
 };

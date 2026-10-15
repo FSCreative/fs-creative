@@ -26,8 +26,24 @@ function amt(x){ return x.amount==null?'':'<span class="rv-amt '+(x.amount<0?"ba
 function viewBtn(x){ var a=x.voucherId?"sdvou:"+x.voucherId:x.invoiceId?"fin:invd:"+x.invoiceId:(x.txId||(x.txIds||[])[0])?"ftxassign:"+(x.txId||x.txIds[0]):""; return a?'<button class="btn" data-act="'+esc(a)+'">Ansehen</button>':''; }
 function item(x){
   return '<div class="rv-i"><div class="rv-l"><b>'+esc(x.title||"Vorschlag")+'</b><span>'+(x.date?de(x.date)+' · ':'')+esc(x.detail||"")+'</span>'+(x.source?'<span>Quelle: '+esc(x.source)+'</span>':'')+(x.hint?'<span class="rv-err">'+esc(x.hint)+'</span>':'')+(x.error?'<span class="rv-err">Letzter Versuch: '+esc(x.error)+'</span>':'')+'</div>'+
-    '<div class="rv-r">'+amt(x)+'<button class="btn primary" data-act="rvok:'+esc(x.id)+'">Bestätigen</button><button class="btn" data-act="rvno:'+esc(x.id)+'">Ablehnen</button>'+viewBtn(x)+'</div></div>';
+    '<div class="rv-r">'+amt(x)+'<button class="btn primary" data-act="rvok:'+esc(x.id)+'">Bestätigen</button><button class="btn" data-act="rvno:'+esc(x.id)+'">Ablehnen</button>'+((x.voucherId||x.invoiceId||x.txId||(x.txIds||[]).length)?'<button class="btn" data-act="rvdet:'+esc(x.id)+'">Details</button>':viewBtn(x))+'</div></div>';
 }
+/* Details: Buchung(en) und Beleg/Rechnung nebeneinander, Beleg mit Vorschau – direkt bestätigen oder ablehnen */
+F.action("rvdet",function(id){
+  F.modal('<div class="rvd"><div class="row-between"><h2 style="font-size:20px">Details</h2>'+F.btnClose()+'</div><p class="muted">Lade …</p></div>',"wide");
+  F.api("/admin/api/fin/proposals?detail="+encodeURIComponent(id)).then(function(j){
+    var box=document.querySelector(".rvd"); if(!box) return;
+    if(!j||!j.ok){ box.innerHTML='<div class="row-between"><h2 style="font-size:20px">Details</h2>'+F.btnClose()+'</div><p class="rv-err">'+esc((j&&j.error)||"Nicht verfügbar")+'</p>'; return; }
+    var x=j.item, tx=(j.txs||[]).map(function(t){ return '<div class="rvd-c"><span class="rvd-k">Buchung · '+esc(t.account)+(t.status!==100?' · nicht mehr offen':'')+'</span><b class="'+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</b><span>'+de(t.date)+(t.name?' · '+esc(t.name):'')+'</span><span class="muted" style="word-break:break-word">'+esc(t.purpose)+'</span></div>'; }).join("");
+    var v=j.voucher, vh=v?'<div class="rvd-c"><span class="rvd-k">Beleg</span><b>'+eur(v.gross)+'</b><span>'+esc(v.supplier||"—")+(v.date?' · '+de(v.date):'')+'</span>'+(v.desc?'<span class="muted">'+esc(v.desc)+'</span>':'')+(v.positions||[]).map(function(p){ return '<span class="muted">'+esc(p.text||"Position")+' · '+eur(p.gross)+' · '+p.rate+' %</span>'; }).join("")+(v.paid>0?'<span class="muted">bereits bezahlt '+eur(v.paid)+'</span>':'')+'<span><button type="button" class="btn"'+F.docAttrs(v.doc,"Beleg "+(v.supplier||""))+'>Vollbild</button></span></div>':'';
+    var iv=j.invoice, ih=iv?'<div class="rvd-c"><span class="rvd-k">Rechnung '+esc(iv.nr)+'</span><b>'+eur(iv.gross)+'</b><span>'+esc(iv.contact||"—")+(iv.date?' · '+de(iv.date):'')+'</span>'+(iv.header?'<span class="muted">'+esc(iv.header)+'</span>':'')+(iv.paid>0?'<span class="muted">bereits bezahlt '+eur(iv.paid)+'</span>':'')+'<span><button type="button" class="btn"'+F.docAttrs(iv.pdf,"Rechnung "+iv.nr)+'>Vollbild</button></span></div>':'';
+    var prev=v?v.doc:iv?iv.pdf:"";
+    box.innerHTML='<div class="row-between"><h2 style="font-size:20px">'+esc(x.title||"Vorschlag")+'</h2>'+F.btnClose()+'</div>'+(x.detail?'<p class="muted" style="margin:0">'+esc(x.detail)+'</p>':'')+
+      '<div class="rvd-g"><div class="rvd-s">'+tx+vh+ih+'</div>'+(prev?'<iframe class="rvd-f" src="'+esc(prev)+'" title="Beleg-Vorschau"></iframe>':'')+'</div>'+
+      '<div class="foot"><span>'+amt(x)+'</span><span class="row"><button class="btn" data-act="rvno:'+esc(x.id)+'">Ablehnen</button><button class="btn primary" data-act="rvok:'+esc(x.id)+'">Bestätigen</button></span></div>';
+  });
+});
+F.css(".rvd-g{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:14px;margin-top:12px}.rvd-s{display:flex;flex-direction:column;gap:10px}.rvd-c{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line,rgba(127,127,127,.25));border-radius:12px}.rvd-k{font-size:12px;text-transform:uppercase;letter-spacing:.06em;opacity:.65}.rvd-c b{font-size:18px}.rvd-f{width:100%;min-height:60vh;border:1px solid var(--line,rgba(127,127,127,.25));border-radius:12px;background:#fff}@media(max-width:760px){.rvd-g{grid-template-columns:1fr}.rvd-f{min-height:50vh}}");
 F.reviewPage=function(mobile){
   if(!RV){ load(); return (mobile?'':'<div class="fsd-head"><div><h1>Zur Prüfung</h1></div></div>')+'<div class="sd-empty">Lade Vorschläge …</div>'; }
   if(!RV.ok) return '<div class="notice">'+esc(RV.error||"Fehler")+' <button class="btn" data-act="rvreload">Neu laden</button></div>';

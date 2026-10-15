@@ -2668,6 +2668,17 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (!FIN_STATE.local) return J(200, { ok: true, items: [], groups: [], count: 0, log: [] });
       await FIN_LOCAL.load();
+      // Details zu einem Vorschlag: Buchung(en) + Beleg/Rechnung (für die Ansicht „Details“ in Zur Prüfung)
+      if (req.method === "GET" && u.searchParams.get("detail")) {
+        const v0 = await FIN_PROP.view(), it = v0.items.find(x => x.id === String(u.searchParams.get("detail"))); if (!it) return J(200, { ok: false, error: "Vorschlag nicht mehr vorhanden" });
+        const dd = x => String(x || "").slice(0, 10), accName = id => ((FIN_LOCAL.get("CheckAccount", id) || {}).name || "Konto");
+        const txs = (it.txIds && it.txIds.length ? it.txIds : it.txId ? [it.txId] : []).map(id => FIN_LOCAL.get("CheckAccountTransaction", id)).filter(Boolean).map(t => ({ id: String(t.id), date: dd(t.valueDate), amount: +t.amount || 0, name: t.payeePayerName || "", purpose: t.paymtPurpose || "", account: accName(t.checkAccount && t.checkAccount.id), status: +t.status || 0 }));
+        const vo = it.voucherId && FIN_LOCAL.get("Voucher", it.voucherId), vp = vo ? FIN_LOCAL.positionsOf("Voucher", vo.id) : [];
+        const voucher = vo ? { id: String(vo.id), supplier: vo.supplierName || ((vo.supplier && FIN_LOCAL.get("Contact", vo.supplier.id)) || {}).name || "", date: dd(vo.voucherDate), gross: Math.abs(+vo.sumGross || 0), paid: +vo.paidAmount || 0, desc: vo.description || "", status: +vo.status || 0, positions: vp.map(x => ({ text: x.comment || x.name || "", gross: +x.sumGross || 0, rate: +x.taxRate || 0 })), doc: "/admin/api/sev/voucher-doc?id=" + encodeURIComponent(vo.id) } : null;
+        const io = it.invoiceId && FIN_LOCAL.get("Invoice", it.invoiceId);
+        const invoice = io ? { id: String(io.id), nr: io.invoiceNumber || "", contact: ((io.contact && FIN_LOCAL.get("Contact", io.contact.id)) || {}).name || "", date: dd(io.invoiceDate), gross: +io.sumGross || 0, paid: +io.paidAmount || 0, header: io.header || "", pdf: "/admin/api/sevdesk/pdf?id=" + encodeURIComponent(io.id) } : null;
+        return J(200, { ok: true, item: it, txs, voucher, invoice });
+      }
       if (req.method === "GET") return J(200, Object.assign({ ok: true }, await FIN_PROP.view()));
       const pl = await sevBody(req, 20000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
       const op = String(pl.op || ""); let r;
@@ -3501,7 +3512,7 @@ async function vmCompute() {
 // Offene Ausgangsrechnungen ↔ Zahlungseingang am Konto (Rechnungsnummer im Zweck, Betrag, Kundenname) – wie Beleg-Abgleich, im Hintergrund gerechnet
 const IM_CACHE = { at: 0, items: null, p: null };
 // „Zur Prüfung“ vorwärmen: Abgleich Belege/Rechnungen ↔ Bank regelmäßig im Hintergrund rechnen, damit das Öffnen sofort geht
-setTimeout(function warmProposals() { (FIN_STATE.local ? FIN_LOCAL.load().then(() => FIN_PROP.view()) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
+setTimeout(function warmProposals() { (FIN_STATE.local ? FIN_LOCAL.load().then(() => FIN_LOCAL.pairTransfers()).then(() => FIN_PROP.view()) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
 async function imCompute() {
   await FIN_LOCAL.load(); const best = {}; let n = 0;
   for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.mollieType && !t.cashLocked)) {
