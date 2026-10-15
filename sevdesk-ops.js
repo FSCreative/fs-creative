@@ -267,6 +267,8 @@ module.exports = function (D) {
       await sev("PUT", "/Voucher/" + id + "/resetToDraft");
     } else if (op === "reopen") {        // bezahlt → offen (Zahlung lösen)
       await sev("PUT", "/Voucher/" + id + "/resetToOpen");
+    } else if (op === "delete") {        // nur Entwürfe ohne Zahlung (z. B. doppelt erfasster Beleg)
+      await sev("DELETE", "/Voucher/" + id);
     } else if (op === "pay") {           // Zahlung ohne Bankumsatz (z. B. bar, Kreditkarte)
       const acc = idOf(pl.accountId); if (!acc) throw new Error("kein_konto");
       const amt = r2(parseFloat(pl.amount)); if (!(amt > 0)) throw new Error("kein_betrag");
