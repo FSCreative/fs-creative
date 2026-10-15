@@ -63,8 +63,14 @@
   }
   // Abhängigkeiten (parentOptions / parent): Eigenschaft bzw. Option nur zeigen, wenn ein passender Wert gewählt ist
   function selValues() { var v = {}; Object.keys(S.prod.fixed || {}).forEach(function (k) { v[S.prod.fixed[k]] = 1; }); Object.keys(S.sel).forEach(function (k) { v[S.sel[k]] = 1; }); return v; }
-  function propVisible(pr, v) { return !pr.parent || !pr.parent.length || pr.parent.some(function (x) { return v[x]; }); }
-  function optsOf(pr, v) { var l = pr.options.filter(function (o) { return !o.parent || v[o.parent]; }); return l.length ? l : pr.options; }
+  function propVisible() { return true; }
+  function optsOf(pr) { return pr.options; }
+  // Auswahl als Liste mit Gruppenüberschriften (Print.com parentOptions, z. B. „A-Formate“)
+  function selectHtml(pr, opts, dis) {
+    var opt = function (o) { return '<option value="' + esc(o.slug) + '"' + (S.sel[pr.slug] === o.slug ? " selected" : "") + (dis[o.slug] ? " disabled" : "") + ">" + esc(o.name) + "</option>"; };
+    var inner = pr.groups && pr.groups.length ? pr.groups.map(function (g) { var l = opts.filter(function (o) { return o.parent === g.slug; }); return l.length ? '<optgroup label="' + esc(g.name) + '">' + l.map(opt).join("") + "</optgroup>" : ""; }).join("") + opts.filter(function (o) { return !o.parent || !pr.groups.some(function (g) { return g.slug === o.parent; }); }).map(opt).join("") : opts.map(opt).join("");
+    return '<select class="ps-sel" data-prop="' + esc(pr.slug) + '" aria-label="' + esc(pr.title) + '">' + inner + "</select>";
+  }
   function pickProduct(key, cb) {
     var p = prodByKey(key); if (!p) return;
     if (p.lazy) { // allgemeine Produkte: Details erst jetzt laden
@@ -188,7 +194,7 @@
     var opts = optsOf(pr, v), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     var vis = opts.some(function (o) { return imgOk(o.img) || o.color; });
     var ctl = opts.length <= 6 || (vis && opts.length <= 60) ? chips("prop:" + pr.slug, opts, S.sel[pr.slug], dis)
-      : '<select class="ps-sel" data-prop="' + esc(pr.slug) + '" aria-label="' + esc(pr.title) + '">' + opts.map(function (o) { return '<option value="' + esc(o.slug) + '"' + (S.sel[pr.slug] === o.slug ? " selected" : "") + (dis[o.slug] ? " disabled" : "") + ">" + esc(o.name) + "</option>"; }).join("") + "</select>";
+      : selectHtml(pr, opts, dis);
     return '<fieldset class="ps-opt"><legend>' + esc(pr.title) + "</legend>" + ctl + (cur && cur.desc ? '<p class="ps-help">' + esc(cur.desc) + "</p>" : "") + (pr.slug === "size" && isCustom() ? customHtml() : "") + "</fieldset>";
   }
   function qtyHtml(p) {

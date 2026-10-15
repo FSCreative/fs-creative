@@ -67,15 +67,15 @@ const KONF_DE = { trimmed: "Zuschnitt (ohne Saum)", hemmed: "Gesäumt", hem_eyel
 const TEX_OPTS = { group: TEX, kind: "textile", expose: ["color_textile"], titles: { color_textile: "Farbe" }, fixedOpts: { printtype: "variable", individually_sealed: "no" }, designer: false };
 const CURATED = [
   { key: "visitenkarten", group: PAPER, title: "Visitenkarten", icon: "💼", desc: "Der erste Eindruck zum Mitnehmen – ein- oder beidseitig.", skus: ["businesscards", "business-cards", "visitekaartjes"], rx: /business ?cards?|visitenkart|visitekaart/i,
-    expose: ["size", "material", "printtype", "finish", "corners"], tiers: [100, 250, 500, 1000, 2500], designer: true, safe: 3, prefer: { size: ["85x55", "85_x_55", "85_x_55_mm"] } },
+    expose: "auto", tiers: [100, 250, 500, 1000, 2500], designer: true, safe: 3, prefer: { size: ["85x55", "85_x_55", "85_x_55_mm"] } },
   { key: "flyer", group: PAPER, title: "Flyer", icon: "📄", desc: "Angebote, Events und Infos – von A6 bis A4.", skus: ["flyers", "flyer"], rx: /^flyers?$|^flyer/i,
-    expose: ["size", "material", "printtype", "finish"], tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3, prefer: { size: ["a5", "a6", "dl", "din_lang"] } },
+    expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3, prefer: { size: ["a5", "a6", "dl", "din_lang"] } },
   { key: "plakate", group: PAPER, title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
-    expose: ["size", "material", "printtype", "finish"], tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } },
+    expose: "auto", tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } },
   { key: "folder", group: PAPER, title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
-    expose: ["size", "material", "printtype", "finish", "folding", "fold"], tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // TODO: mit echtem Print.com-Workfile prüfen, ob „size“ das offene Format ist
+    expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // TODO: mit echtem Print.com-Workfile prüfen, ob „size“ das offene Format ist
   { key: "aufkleber", group: PAPER, title: "Aufkleber", icon: "🏷️", desc: "Sticker und Etiketten in vielen Formen.", skus: ["stickers", "sticker"], rx: /stickers?|aufkleber/i,
-    expose: ["size", "material", "printtype", "finish", "shape", "cutting"], tiers: [50, 100, 250, 500, 1000], designer: true, safe: 3 },
+    expose: "auto", tiers: [50, 100, 250, 500, 1000], designer: true, safe: 3 },
   // Roll-ups: echte SKU „roller-banners“ (nicht „cardboard-roller-banners“ / „table-roll-up-banner“); Größe „banner_85_x_200“ = 85 × 200 cm
   { key: "rollups", group: BANNER, title: "Roll-ups", icon: "🪧", desc: "Mobile Werbesysteme für Messe, Empfang und Events.", skus: ["roller-banners", "rollupbanners", "roll-up-banners", "rollups", "roll-up-banner", "rollup-banners"], rx: /^(roller|roll ?-?ups?) ?-?banners?$/i,
     expose: ["size", "roll_up_banners", "material", "printtype"], titles: { roll_up_banners: "System" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 10, bleed: 10, dpi: 150, prefer: { size: ["banner_85_x_200"], roll_up_banners: ["basic", "budget"], printtype: ["40"] },
@@ -115,6 +115,8 @@ const CURATED = [
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
   { key: "embroidery", label: "Stick (nur Brust)", pm: "embroidering", val: "embroidery", min: 1, only: /^positions_chest/ }];
+// bei „alle Optionen“ nicht anbieten: braucht eigene Dateien/Stanzformen/Daten oder betrifft Verpackung & Palettenlieferung
+const AUTO_SKIP = /^(personalize|die_cut|spot_finish.*|variable_creasing_line|pallet_delivery|sealed|bundle|box_delivery|flexibleprintingmethod|delivery|standard_bundling|provide_label|designs)$/;
 const HIDDEN_PROPS = /^(copies|urgency|hidden|summary_image.*|brezo_article|product_weight|weight|article_number.*)$/;
 const DEF_TIERS = { flat: [100, 250, 500, 1000, 2500], banner: [1, 2, 3, 5, 10], promo: [50, 100, 250, 500, 1000], textile: [] };
 const NICE_TIERS = [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
@@ -354,9 +356,10 @@ module.exports = function (D) {
       if (skip[p.slug]) { const f = opts.filter(o => skip[p.slug].indexOf(String(o.slug)) < 0); if (f.length) opts = f; }
       if (!opts.length) return;
       const hidden = pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden");
-      const want = autoExp ? opts.length > 1 && !hidden && fo[p.slug] === undefined && !/^(finish_(left|right|top|bottom)|printingmethod)$/.test(p.slug) : expose.indexOf(p.slug) > -1;   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
-      const parentOf = Array.isArray(p.parentOptions) ? p.parentOptions.map(x => x && typeof x === "object" ? x.slug : x).filter(x => x != null).map(String).slice(0, 50) : [];
-      if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, 120).map(o => optOut(p.slug, o))) }, parentOf.length ? { parent: parentOf } : {}));
+      const want = autoExp ? opts.length > 1 && !hidden && fo[p.slug] === undefined && !/^(finish_(left|right|top|bottom)|printingmethod)$/.test(p.slug) && !AUTO_SKIP.test(p.slug) : expose.indexOf(p.slug) > -1;   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
+      // parentOptions sind bei Print.com Gruppenüberschriften der Optionen (z. B. „A-Formate“, „Quadrat“, Papierfamilien) – keine Bedingung
+      const grp = Array.isArray(p.parentOptions) ? p.parentOptions.filter(x => x && typeof x === "object" && x.slug != null).map(x => ({ slug: String(x.slug), name: String(x.name || x.slug) })).slice(0, 50) : [];
+      if (want) exposed.push(Object.assign({ slug: p.slug, title: T[p.slug] || p.title || p.slug, options: sortOpts(p.slug, opts.slice(0, 160).map(o => optOut(p.slug, o))) }, grp.length > 1 ? { groups: grp } : {}));
       else if (fo[p.slug] !== undefined && opts.some(o => String(o.slug) === String(fo[p.slug]))) fixed[p.slug] = String(fo[p.slug]);
       else if (p.required) {   // Pflicht-Eigenschaft ohne Auswahl im Shop: passende Option wird je Auswahl so gewählt, dass keine Ausschlussregel greift
         const o = opts.filter(x => !x.nullable).concat(opts.filter(x => x.nullable)).map(x => String(x.slug));
