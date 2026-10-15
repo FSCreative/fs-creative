@@ -1,5 +1,5 @@
 /* Website-Chat (Overlay auf www.fs-creative.at, Server chat.js): Unterhaltungen links, Verlauf rechts (Handy: Liste → Verlauf), oben Online/Offline.
-   Online bleibt, solange das Cockpit offen ist (Herzschlag alle 45 s); nach 3 Min. ohne Herzschlag automatisch offline → dann antwortet die KI.
+   Online bleibt, bis du offline schaltest (auch wenn das Cockpit am Handy im Hintergrund ist; Sicherheitsnetz 12 Std.). Push-Nachrichten zu Chats kommen nur, solange du online bist.
    KI je Unterhaltung: Auto (nur wenn du offline bist) · An (immer) · Aus. Schreibst du selbst, hört die KI auf.
    Daten: /admin/api/chat/state (?v= → {same}), …/conv?id=&read=1, …/send, …/status, …/op (ai, close, reopen, delete, lead). */
 (function(){
@@ -34,7 +34,7 @@ function load(){
     if(j.same) return;
     var prevOn=ST&&ST.online; ST=j; VER=j.ver; F.renderNav(); beat(j.online); paint();
     if(SEL&&F.current==="chat") loadThread();
-    if(prevOn===true&&j.online===false&&F.current==="chat") F.toast("Chat-Status: offline (kein Herzschlag) – die KI antwortet",true);
+    if(prevOn===true&&j.online===false&&F.current==="chat") F.toast("Chat-Status: offline – die KI antwortet",true);
   }).catch(function(){ busy=false; });
 }
 function loadThread(){
