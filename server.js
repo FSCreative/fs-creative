@@ -3519,7 +3519,8 @@ async function vmCompute() {
     for (const v of FIN_LOCAL.all("Voucher").filter(v => String(v.voucherType || "VOU") === "VOU" && ["100", "750"].indexOf(String(v.status)) > -1 && String(v.voucherDate || "").slice(0, 10) >= lim && Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0) > 0.005)) {
       if (++vmN % 15 === 0) await new Promise(r => setImmediate(r));   // Server zwischendurch atmen lassen
       VM_CACHE.run.n = vmN;
-      let r; try { r = await FIN_PROP.suggestVoucher(v.id, { bare: true }); } catch (e) { continue; }
+      let r; try { r = await FIN_PROP.suggestVoucher(v.id, { bare: true }); } catch (e) { VM_CACHE.run.err = String(e.message || e).slice(0, 200); continue; }
+      if (VM_CACHE.run.n <= 40) (VM_CACHE.run.seen = VM_CACHE.run.seen || []).push(String(v.id) + ":" + ((r.candidates || [])[0] ? r.candidates[0].type + r.candidates[0].score : "-"));
       const c = (r.candidates || []).find(x => x.type === "tx" && x.score >= 60); if (!c || skip[v.id + ":" + c.id]) continue; VM_CACHE.run.cand++;
       if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, v, c, open: r.voucher.open };
     }
