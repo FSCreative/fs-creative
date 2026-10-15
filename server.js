@@ -3228,6 +3228,13 @@ async function handleAdmin(req, res, u, p) {
       return J(200, Object.assign({ ok: true }, await MAIL_RULES.handle(pl)));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  if (p === "/admin/api/mail-mkdir" && req.method === "POST") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
+    try { const pl = await sevBody(req, 4000);
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/mkdir"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, account: String(pl.account || ""), path: String(pl.path || "") }) });
+      const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
+    } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_mkdir_failed" }), TYPES[".json"]); }
+  }
   if (p === "/admin/api/mail-action" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     let body = "";
