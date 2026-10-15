@@ -29,6 +29,18 @@ const PRODUCTS = {
     { slug: "size", title: "Format", locked: false, required: true, options: [opt("a2", "A2", { width: "420", height: "594" }), opt("a1", "A1", { width: "594", height: "841" })] },
     { slug: "material", title: "Papier", locked: false, required: true, options: [opt("150gr_mc", "150 g")] },
     copies([1, 2, 5, 10]), urgency], 3),
+  folders: product("folders", [
+    { slug: "size", title: "Format (offen)", locked: false, required: true, options: [opt("a4", "A4 quer offen", { width: "297", height: "210" })] },
+    { slug: "folding", title: "Falzart", locked: false, required: true, options: [opt("wrap", "Wickelfalz (6 Seiten)"), opt("half", "Einbruchfalz (4 Seiten)")] },
+    { slug: "printtype", title: "Druck", locked: false, required: true, options: [opt("44", "4/4")] },
+    copies([50, 100, 250]), urgency], 3),
+  stickers: product("stickers", [
+    { slug: "size", title: "Format", locked: false, required: true, options: [opt("50x50", "50 × 50 mm", { width: "50", height: "50" })] },
+    { slug: "shape", title: "Form", locked: false, required: true, options: [opt("round", "Rund"), opt("square", "Eckig")] },
+    copies([50, 100]), urgency], 2),
+  rollupbanners: product("rollupbanners", [
+    { slug: "size", title: "Format", locked: false, required: true, options: [opt("85x200", "85 × 200 cm", { width: "850", height: "2000" })] },
+    copies([1, 2, 3]), urgency], 5),
 };
 
 module.exports = function createMocks() {
@@ -45,7 +57,7 @@ module.exports = function createMocks() {
       if (p.indexOf("/pc/") === 0) {
         if (req.headers.authorization !== "PrintApiKey pc-test-key") return send(res, 401, { message: "unauthorized" });
         const q = p.slice(3);
-        if (m === "GET" && q === "/products") return send(res, 200, [{ sku: "businesscards", titleSingle: "Visitenkarte", titlePlural: "Visitenkarten", active: true }, { sku: "flyers", titleSingle: "Flyer", titlePlural: "Flyer", active: true }, { sku: "posters", titlePlural: "Posters", active: true }, { sku: "socks", titlePlural: "Socken", active: true }]);
+        if (m === "GET" && q === "/products") return send(res, 200, [{ sku: "businesscards", titleSingle: "Visitenkarte", titlePlural: "Visitenkarten", active: true }, { sku: "flyers", titleSingle: "Flyer", titlePlural: "Flyer", active: true }, { sku: "posters", titlePlural: "Posters", active: true }, { sku: "folders", titlePlural: "Folder", active: true }, { sku: "stickers", titlePlural: "Stickers", active: true }, { sku: "rollupbanners", titlePlural: "Roll-up Banner", active: true }, { sku: "socks", titlePlural: "Socken", active: true }]);
         if (m === "GET" && (mm = q.match(/^\/products\/([\w-]+)$/))) return PRODUCTS[mm[1]] ? send(res, 200, PRODUCTS[mm[1]]) : send(res, 404, { message: "not found" });
         if (m === "POST" && (mm = q.match(/^\/products\/([\w-]+)\/price$/))) { if (!PRODUCTS[mm[1]]) return send(res, 404, { message: "nope" }); return send(res, 200, { includes: {}, prices: { salesPrice: state.price.salesPrice, productPrice: state.price.salesPrice, normalPrice: state.price.salesPrice, urgencyPrice: 0, deliveryPromisePrice: 0, deliveryPromisePremiumPrice: 0, agreementPriceType: "none" } }); }
         if (m === "POST" && q === "/shipping/shipping-possibilities") return send(res, 200, { results: [{ deliveryDate: "2026-10-22", possibilities: [
@@ -55,6 +67,7 @@ module.exports = function createMocks() {
         if (m === "GET" && (mm = q.match(/^\/orders\/(\d+)$/))) return send(res, 200, { page: 1, pagesize: 1, results: [{ orderNumber: mm[1], status: state.pcOrderStatus, items: [{ status: state.pcOrderStatus }], shipments: state.pcOrderStatus === "SHIPPED" ? [{ shipmentId: 1, shipmentNumber: "S1", orderItemNumbers: ["1"], tracks: [{ id: 1, trackUrl: "https://tracking.example/abc123", reference: "abc123", addressId: "1", combined: false, shipmentId: 1 }] }] : [] }] });
         return send(res, 404, { message: "mock: unbekannt " + m + " " + q });
       }
+      if (m === "POST" && (mm = p.match(/^\/mock\/paid\/(tr_\w+)$/)) && state.payments[mm[1]]) { state.payments[mm[1]].status = "paid"; return send(res, 200, { ok: true }); }   // nur für lokale Klicktests
       if (p.indexOf("/mollie/") === 0) {
         if (req.headers.authorization !== "Bearer test_mollie_print") return send(res, 401, { title: "Unauthorized", detail: "bad key" });
         const q = p.slice(7);

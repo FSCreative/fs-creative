@@ -96,12 +96,17 @@ function setAttrValue(html, re, value) {
   return html.replace(re, function (m, p1, p2) { return p1 + value + p2; });
 }
 
+// Druckshop-Startschalter (PRINT_SHOP_LIVE=1): markierte Blöcke nur dann ausliefern
+function printLiveBlocks(html) {
+  const on = process.env.PRINT_SHOP_LIVE === "1";
+  return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "");
+}
 function renderIndex(baseHtml, route) {
   const meta = ROUTE_META[route];
   const noindex = !!NOINDEX_ROUTES[route];
   const known = !!meta || noindex;
   const url = ORIGIN + (route === "/" ? "/" : route);
-  let html = baseHtml;
+  let html = printLiveBlocks(baseHtml);
   if (meta) {
     const title = esc(meta[0]);
     const desc = esc(meta[1]);
@@ -3335,9 +3340,13 @@ const server = http.createServer((req, res) => {
     }
 
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
-    if (p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html") {
-      res.setHeader("X-Robots-Tag", p === "/print/agb" || p === "/print/agb/" ? "index, follow" : "noindex");
+    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html") {
       return void PRINT.handlePublic(req, res, u, p);
+    }
+    // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml)
+    if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/sitemap.xml")) {
+      const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : "druck.html";
+      return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found"); sendGz(req, res, 200, printLiveBlocks(data), TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); });
     }
     if (p === "/api/anfrage") {
       if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
@@ -3413,7 +3422,7 @@ FIN_PROP.register("dunning", {
   exec: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (!pr) throw new Error("Mahnung ist nicht mehr fällig"); const r = await dunSend(st, [pr]); if (!r[0] || !r[0].ok) throw new Error((r[0] && r[0].error) || "Senden fehlgeschlagen"); return r[0]; },
   reject: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (pr) { st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); } } });
 // ── Druckshop www.fs-creative.at/print (print-shop.js): Bestellungen landen „Zur Prüfung“ und unter „Druckaufträge“ – bei Print.com bestellt wird nur per Klick ──
-const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm,
+const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed,
   mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,
   uidValid: v => STEUER_CALC.uidValid(v), viesCheck: v => viesCheck(v),
   createInvoice: pl => sevCreateInvoice(pl),

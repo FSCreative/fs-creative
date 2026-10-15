@@ -28,7 +28,7 @@ const CURATED = [
   { key: "plakate", title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
     expose: ["size", "material", "printtype", "finish"], tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5 },
   { key: "folder", title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
-    expose: ["size", "material", "printtype", "finish", "folding", "fold"], tiers: [50, 100, 250, 500, 1000, 2500], designer: false, safe: 4 },
+    expose: ["size", "material", "printtype", "finish", "folding", "fold"], tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // TODO: mit echtem Print.com-Workfile prüfen, ob „size“ das offene Format ist
   { key: "aufkleber", title: "Aufkleber", icon: "🏷️", desc: "Sticker und Etiketten in vielen Formen.", skus: ["stickers", "sticker"], rx: /stickers?|aufkleber/i,
     expose: ["size", "material", "printtype", "finish", "shape", "cutting"], tiers: [50, 100, 250, 500, 1000], designer: true, safe: 3 },
   { key: "rollups", title: "Roll-ups", icon: "🪧", desc: "Mobile Werbesysteme für Messe, Empfang und Events.", skus: ["rollupbanners", "roll-up-banners", "rollups", "roll-up-banner", "rollup-banners"], rx: /roll-?ups?/i,
@@ -352,7 +352,7 @@ module.exports = function (D) {
   }
   // SVG aus dem Designer → druckfertiges PDF (Vektor; Texte in Helvetica/Times/Courier = Arial/Times New Roman/Courier New im Browser)
   function svgSafe(svg) {
-    svg = String(svg || "");
+    svg = String(svg || "").replace(/^\s*(<\?xml[^>]*>\s*)?<!DOCTYPE svg PUBLIC "-\/\/W3C\/\/DTD SVG 1\.1\/\/EN" "http:\/\/www\.w3\.org\/Graphics\/SVG\/1\.1\/DTD\/svg11\.dtd">\s*/i, "");   // Standard-Vorspann von Fabric.js
     if (!/^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(svg)) throw Object.assign(new Error("Ungültige Gestaltung"), { status: 400 });
     if (/<!DOCTYPE|<!ENTITY|<script|<foreignObject|javascript:|<iframe|<object|<embed|@import/i.test(svg)) throw Object.assign(new Error("Unzulässiger Inhalt in der Gestaltung"), { status: 400 });
     const hrefs = svg.match(/(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*')/gi) || [];
@@ -588,6 +588,12 @@ module.exports = function (D) {
   }
   // Bestellung ist verbindlich (bezahlt bzw. Rechnung gewählt): Rechnungsentwurf, Vorschlag, Push, Mails – dann ggf. automatisch senden
   async function submitted(o) {
+    await makeInvoice(o);
+    await store.putOrder(o);
+    return submittedRest(o);
+  }
+  // Rechnungs-ENTWURF in der eigenen Buchhaltung (fertiggestellt und gesendet wird erst beim Bestellen bei Print.com)
+  async function makeInvoice(o) {
     if (!o.invoice.id && D.createInvoice) {
       try {
         const c = o.customer, name = c.type === "company" ? c.company : c.firstName + " " + c.lastName;
@@ -602,7 +608,8 @@ module.exports = function (D) {
         o.invoice = { id: r.id, nr: r.nr || "", draft: true, at: nowIso() }; hist(o, "Rechnungsentwurf angelegt" + (r.nr ? " " + r.nr : ""));
       } catch (e) { o.invoice = { error: clip(e.message, 300) }; hist(o, "Rechnungsentwurf fehlgeschlagen: " + e.message); log("Rechnungsentwurf", o.nr, e.message); }
     }
-    await store.putOrder(o);
+  }
+  async function submittedRest(o) {
     if (D.propose) await D.propose({ kind: "print-order", key: "print:" + o.id, title: "Druckauftrag " + o.nr + " prüfen und bei Print.com bestellen · " + (o.customer.company || o.customer.firstName + " " + o.customer.lastName),
       detail: o.product.title + " · " + o.copies + " Stk. · " + (o.payment.method === "invoice" ? "Rechnung (Freigabe nötig)" : "bezahlt") + " · Marge " + eur(o.price.margin), amount: o.price.gross, date: today(), source: "Druckshop", payload: { orderId: o.id } }).catch(e => log("Vorschlag:", e.message));
     if (D.push) D.push("lead", { title: "Neuer Druckauftrag " + o.nr, body: o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.payment.method === "invoice" ? " · Rechnung – Freigabe nötig" : " · bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
@@ -763,7 +770,24 @@ module.exports = function (D) {
   const orderPublic = o => ({ id: o.id, nr: o.nr, status: o.status, statusText: STATUS_DE[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [], email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
+  // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
+  // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
+  const live = () => process.env.PRINT_SHOP_LIVE === "1";
+  function soonPage(res) {
+    const html = '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Bald verfügbar — FS Creative</title><link rel="stylesheet" href="/landing.css?v=4"></head><body><main id="main"><div class="wrap"><section class="lhero"><span class="eyebrow">Druck</span><h1>Bald verfügbar.</h1><p class="lead">Diese Seite ist noch nicht öffentlich. Drucksachen gestalten und drucken wir gern persönlich für dich.</p><div class="btn-row"><a class="btn primary" href="/druck">Zu Druck &amp; Print</a><a class="btn ghost" href="/kontakt?von=print&amp;thema=Druck">Anfragen</a></div></section></div></main></body></html>';
+    return D.send(res, 404, html, "text/html; charset=utf-8", { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
+  }
+  function shopPage(req, res, preview) {
+    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    if (preview) html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
+      .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
+    return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
+  }
   async function handlePublic(req, res, u, p) {
+    const open = live(), admin = !!(D.adminAuthed && D.adminAuthed(req));
+    const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
+    if (gated && !open && !admin) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
+    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, !open); }
     try {
       // Druckdatei für Print.com: nur mit Signatur und nur für echte, freigegebene Bestellungen
       let m = p.match(/^\/print-files\/(f[a-f0-9]{24})\/([a-f0-9]{40})\.pdf$/);
@@ -907,7 +931,7 @@ module.exports = function (D) {
     const c = cfg(), s = await settings();
     const orders = await store.listOrders();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
-    return { ok: true, configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: c.markup, minMarginEur: c.minMargin },
+    return { ok: true, live: live(), configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: c.markup, minMarginEur: c.minMargin },
       settings: s, catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
       curated: CURATED.map(x => ({ key: x.key, title: x.title })), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
   }
@@ -943,6 +967,7 @@ module.exports = function (D) {
           o.price.liveCheck = { at: nowIso(), total: buy.total, product: buy.product, shipping: buy.shipping, margin: r2(o.price.net - buy.total) }; hist(o, "Einkaufspreis neu geprüft: " + eur(buy.total)); await store.putOrder(o);
           return J(res, 200, { ok: true, order: o });
         }
+        if (op === "invoice") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); if (o.invoice.id) throw new Error("Rechnungsentwurf existiert schon"); o.invoice = {}; await makeInvoice(o); await store.putOrder(o); if (o.invoice.error) throw new Error(o.invoice.error); return J(res, 200, { ok: true, order: o }); }
         if (op === "note") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); o.note = clip(b.note, 2000); await store.putOrder(o); return J(res, 200, { ok: true, order: o }); }
         return J(res, 400, { ok: false, error: "unbekannte Aktion" });
       }
@@ -953,5 +978,5 @@ module.exports = function (D) {
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
   async function proposalValid(orderId) { const o = await store.getOrder(orderId); return !!o && !!REVIEW[o.status]; }
 
-  return { handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION } };
+  return { live, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION } };
 };

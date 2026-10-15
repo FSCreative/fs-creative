@@ -18,7 +18,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-"));
-  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "admin-cockpit.html", "print.html", "landing.css", "index.html"]
+  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
     .forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   const cpDir = (d) => { fs.mkdirSync(path.join(dir, d), { recursive: true }); fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => { if (e.isDirectory()) cpDir(path.join(d, e.name)); else fs.copyFileSync(path.join(ROOT, d, e.name), path.join(dir, d, e.name)); }); };
   ["admin-cockpit", "print"].forEach(cpDir);
@@ -61,7 +61,29 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   const dir = copyApp();
 
   // ── 1) ohne Print.com-Schlüssel: Seite rendert, Shop „wird eingerichtet“ ──
-  let srv = await startServer(dir, { PRINTCOM_API_KEY: undefined, MOLLIE_PRINT_API_KEY: undefined });
+  // ── 0) Startschalter: ohne PRINT_SHOP_LIVE=1 gesperrt, Admins sehen eine Vorschau ──
+  let srv = await startServer(dir, { PRINT_SHOP_LIVE: undefined, PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc" });
+  await t("gesperrt: /print, AGB und API für Besucher „Bald verfügbar“ (404, noindex); keine Links in druck.html, Startseite, Sitemap", async () => {
+    const r = await fetch(srv.base + "/print"); assert.strictEqual(r.status, 404); assert.ok(/Bald verfügbar/.test(await r.text())); assert.ok(/noindex/.test(r.headers.get("x-robots-tag")));
+    assert.strictEqual((await fetch(srv.base + "/print/agb")).status, 404);
+    assert.strictEqual((await fetch(srv.base + "/print/api/catalog")).status, 404);
+    assert.strictEqual((await fetch(srv.base + "/print/app.js")).status, 404);
+    assert.strictEqual((await fetch(srv.base + "/print.html", { redirect: "manual" })).status, 404);
+    assert.ok(!/href="\/print"/.test(await (await fetch(srv.base + "/druck")).text()), "kein Link in druck.html");
+    const home = await (await fetch(srv.base + "/")).text(); assert.ok(!/href="\/print"/.test(home) && !/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));
+    assert.ok(!/\/print</.test(await (await fetch(srv.base + "/sitemap.xml")).text()));
+    assert.strictEqual((await fetch(srv.base + "/print/mollie-webhook", { method: "POST", body: "id=tr_x" })).status, 200, "Webhook bleibt erreichbar");
+  });
+  await t("gesperrt: angemeldeter Admin sieht /print als Vorschau (Banner, noindex) und kann die API nutzen", async () => {
+    const r = await fetch(srv.base + "/print", { headers: { cookie: COOKIE } }); assert.strictEqual(r.status, 200); const h = await r.text();
+    assert.ok(/Vorschau – nicht öffentlich/.test(h) && /noindex, nofollow/.test(h));
+    const c = await (await fetch(srv.base + "/print/api/catalog", { headers: { cookie: COOKIE } })).json(); assert.strictEqual(c.ready, true);
+    assert.strictEqual((await fetch(srv.base + "/print/agb", { headers: { cookie: COOKIE } })).status, 200);
+    const st = await (await fetch(srv.base + "/admin/api/print/state", { headers: { cookie: COOKIE } })).json(); assert.strictEqual(st.live, false);
+  });
+  srv.kill();
+
+  srv = await startServer(dir, { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: undefined, MOLLIE_PRINT_API_KEY: undefined });
   await t("ohne PRINTCOM_API_KEY: /print liefert die Seite, Katalog meldet „setup“", async () => {
     const r = await fetch(srv.base + "/print"); assert.strictEqual(r.status, 200); const html = await r.text();
     assert.ok(/Shop wird gerade eingerichtet/.test(html), "Hinweistext im HTML"); assert.ok(/\/print\/app\.js/.test(html));
@@ -73,7 +95,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   srv.kill();
 
   // ── 2) eingerichtet (alles gegen Attrappen) ──
-  srv = await startServer(dir, { PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", MOLLIE_PRINT_API_KEY: "test_mollie_print", PRINT_MOLLIE_BASE: mbase + "/mollie",
+  srv = await startServer(dir, { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", MOLLIE_PRINT_API_KEY: "test_mollie_print", PRINT_MOLLIE_BASE: mbase + "/mollie",
     VIES_URL: mbase + "/vies", MAIL_API_URL: mbase + "/mail/api/mails", MAIL_API_TOKEN: "mt", SEVDESK_API_KEY: "sev-test-key", SEVDESK_API_BASE: "http://127.0.0.1:" + sport + "/api/v1",
     PRINT_MARKUP_PCT: "35", PRINT_MIN_MARGIN_EUR: "8", PRINT_PUBLIC_URL: "https://www.fs-creative.at" });
   const B = srv.base;
@@ -88,7 +110,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Katalog: kuratierte Produkte, nur freigegebene Eigenschaften, Auflagen-Stufen, deutschsprachige Anfrage", async () => {
     cat = await (await fetch(B + "/print/api/catalog")).json();
     assert.strictEqual(cat.ready, true, JSON.stringify(cat));
-    assert.deepStrictEqual(cat.products.map(p => p.key), ["visitenkarten", "flyer", "plakate"]);
+    assert.deepStrictEqual(cat.products.map(p => p.key), ["visitenkarten", "flyer", "plakate", "folder", "aufkleber", "rollups"]);
     const bc = cat.products[0];
     assert.deepStrictEqual(bc.props.map(p => p.slug), ["size", "material", "printtype", "finish"], "printingmethod/clean_cut nicht sichtbar");
     assert.deepStrictEqual(bc.tiers, [100, 250, 500, 1000, 2500]); assert.strictEqual(bc.fixed.printingmethod, "digital"); assert.strictEqual(bc.bleed, 2);
@@ -167,6 +189,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<image href="https://evil.example/x.png" width="10" height="10"/>'), svgPage()] }))).status, 400);
     assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage("<script>alert(1)</script>"), svgPage()] }))).status, 400);
     assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage()] }))).status, 400, "4/4 braucht 2 Seiten");
+    const pre = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n';
+    assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [pre + svgPage(), pre + svgPage()] }))).status, 200, "Fabric-Vorspann erlaubt");
+    assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: ['<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]>' + svgPage(), svgPage()] }))).status, 400, "eigene DOCTYPE/ENTITY abgelehnt");
   });
 
   // ── Bestellung mit Mollie ──
@@ -280,7 +305,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/ATU82622967/.test(h) && /§ 18 Abs\. 1 Z 3 FAGG/.test(h) && /Dorfstraße 3\/1/.test(h)); assert.ok(!/\{\{/.test(h)); assert.ok(/rechtlich prüfen/.test(h), "Hinweis als HTML-Kommentar");
   });
   await t("Seite /print und Sitemap", async () => {
-    const h = await (await fetch(B + "/print")).text(); assert.ok(/<title>[^<]*Druck/.test(h)); assert.ok(/\/print\/agb/.test(h));
+    const h = await (await fetch(B + "/print")).text(); assert.ok(/<title>[^<]*Druck/.test(h)); assert.ok(/\/print\/agb/.test(h)); assert.ok(!/Vorschau – nicht/.test(h));
+    assert.ok(/href="\/print"/.test(await (await fetch(B + "/druck")).text()), "Link „Jetzt online bestellen“");
+    assert.ok(/\/print<\/loc>/.test(await (await fetch(B + "/sitemap.xml")).text()));
+    const home = await (await fetch(B + "/")).text(); assert.ok(/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));
   });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }
