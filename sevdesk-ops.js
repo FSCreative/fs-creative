@@ -163,6 +163,9 @@ module.exports = function (D) {
     } else if (op === "voucher") {
       const id = idOf(pl.voucherId); if (!id) throw new Error("kein_beleg");
       await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(amount) });
+    } else if (op === "settled") {
+      // schon anderweitig verbucht (z. B. Mollie-Zahlung, deren Auszahlung in sevDesk direkt der Rechnung zugeordnet wurde): nur als erledigt markieren, keine Buchung
+      await sev("PUT", "/CheckAccountTransaction/" + txId, { body: { status: "400", transitWith: "erledigt", settledNote: String(pl.note || "bereits anderweitig verbucht").slice(0, 200) } });
     } else if (op === "privat") {
       // Privatentnahme (Abgang) / Privateinlage (Eingang): kein Betriebsumsatz, keine Steuer – Umsatz gilt als erledigt
       await sev("PUT", "/CheckAccountTransaction/" + txId, { body: { status: "300", privat: amount < 0 ? "Entnahme" : "Einlage", privatNote: String(pl.note || "").slice(0, 200) || undefined } });
