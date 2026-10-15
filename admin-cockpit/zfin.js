@@ -400,7 +400,7 @@ function pageBank(mode){
   if(!C.tx.ok) return head("Konten","")+noSev();
   var parts=UI.fin.split(":"), acc=mode==="kasse"?(((C.tx.accounts||[]).find(function(a){return /kasse|register/i.test(a.name+" "+a.type);})||{}).id||"none"):(parts[1]||"all"), q=(UI.fq_tx||"").toLowerCase(), per=50, pg=UI.fpg||0;
   var accs=C.tx.accounts||[];
-  var list=C.tx.transactions.filter(function(t){ if(noTransit()&&t.transit) return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
+  var list=C.tx.transactions.filter(function(t){ if(noTransit()&&t.transit) return false; if(t.mollie==="application-fee") return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
   var stp=function(t){ if(t.transit) return pill("grey","Geldtransit"); return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):t.status===350?pill("paid","Automatisch"):pill("paid","Gebucht"); };
   var rows=list.slice(pg*per,(pg+1)*per).map(function(t){ var lk=t.links.map(function(l){ return l.type==="Invoice"?'<a href="#" data-act="fin:invd:'+esc(l.id)+'">'+esc(l.nr)+'</a>':'<a href="#" data-act="sdvou:'+esc(l.id)+'">Beleg</a>'; }).join(", ");
     return '<tr><td>'+stp(t)+'</td><td><b>'+esc(t.name||"—")+'</b><div class="sub">'+esc(t.purpose)+'</div></td><td class="num">'+deShort(t.date)+'</td><td class="r num '+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</td><td>'+(lk||(t.status===100?'<span class="fsd-btns"><button class="btn" data-act="ftxassign:'+esc(t.id)+'">Zuordnen</button><button class="btn sm" data-act="ftxpriv:'+esc(t.id)+'" title="'+(t.amount<0?"Privatentnahme":"Privateinlage")+' – kein Betriebsumsatz">Privat</button></span>':t.status===300?'<button class="btn sm" data-act="ftxunpriv:'+esc(t.id)+'">Privat aufheben</button>':'<span class="muted">—</span>'))+'</td></tr>'; }).join("");
@@ -838,7 +838,7 @@ function mBank(mode){
   if(!C.tx.ok) return noSev();
   var acc=UI.fin.split(":")[1]||"all", q=(UI.fq_tx||"").toLowerCase(), per=40, pg=UI.fpg||0, accs=C.tx.accounts||[], all=C.tx.transactions||[], an={};
   accs.forEach(function(a){ an[a.id]=a.name; });
-  var list=all.filter(function(t){ if(noTransit()&&t.transit) return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
+  var list=all.filter(function(t){ if(noTransit()&&t.transit) return false; if(t.mollie==="application-fee") return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
   var nOpen=all.filter(function(t){ return t.status===100&&(acc==="all"||t.accountId===acc); }).length, cur=mode==="open"?"open":"bank";
   var used={}; all.forEach(function(t){ used[t.accountId]=1; });
   var chips=[{label:nOpen?"Zuzuordnen":"Alles zugeordnet",val:String(nOpen),sub:mode==="open"?"Alle zeigen":"offen zuordnen",act:"fin:"+(mode==="open"?"bank":"open")+":"+acc,on:mode==="open",cls:nOpen?"warn":""},
