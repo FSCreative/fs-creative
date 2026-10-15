@@ -199,6 +199,37 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [pre + svgPage(), pre + svgPage()] }))).status, 200, "Fabric-Vorspann erlaubt");
     assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: ['<!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]>' + svgPage(), svgPage()] }))).status, 400, "eigene DOCTYPE/ENTITY abgelehnt");
   });
+  // Ausschnitte, wie sie der Designer (Fabric.js 5.3 toSVG) für die erweiterten Funktionen erzeugt
+  const fab = {
+    grad: '<g transform="matrix(1 0 0 1 60 60)"><linearGradient id="SVGID_5" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1 0 0 1 -40 -30)" x1="0" y1="30" x2="80" y2="30"><stop offset="0%" style="stop-color:#0a84ff;"/><stop offset="50%" style="stop-color:#ffe600;"/><stop offset="100%" style="stop-color:#ffffff;"/></linearGradient>' +
+      '<rect style="stroke: none; fill: url(#SVGID_5); opacity: 1;" vector-effect="non-scaling-stroke" x="-40" y="-30" rx="6" ry="6" width="80" height="60" /></g>',
+    radial: '<g transform="matrix(1 0 0 1 300 60)"><radialGradient id="SVGID_7" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1 0 0 1 -30 -20)" cx="30" cy="20" r="30" fx="30" fy="20"><stop offset="0%" style="stop-color:#0a84ff;"/><stop offset="100%" style="stop-color:#ffffff;"/></radialGradient><ellipse style="stroke: none; fill: url(#SVGID_7);" cx="0" cy="0" rx="30" ry="20" /></g>',
+    dash: '<g transform="matrix(1.5 0 0 1.5 194 137)"><polygon style="stroke: rgb(0,0,0); stroke-width: 0.8; stroke-dasharray: 0.0067 1.33; stroke-linecap: round; fill: rgb(10,132,255);" vector-effect="non-scaling-stroke" points="0,-38 33,-19 33,19 0,38 -33,19 -33,-19 " /></g>' +
+      '<g transform="matrix(1 0 0 1 178 200)"><line style="stroke: rgb(29,29,31); stroke-width: 2; stroke-dasharray: 8 6; stroke-linecap: butt;" x1="-61.6" y1="0" x2="61.6" y2="0" /></g>',
+    icon: '<g transform="matrix(2.2 0 0 2.2 300 180)"><path style="stroke: rgb(29,29,31); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none;" transform=" translate(-11, -12)" d="M 5 4 L 8 4 L 10 9 L 7.5 10.5 C 8.57 12.67 10.33 14.43 12.5 15.5 L 14 13 L 19 15 L 19 18 C 19 19.1 18.1 20 17 20 C 9.66 19.13 3.87 13.34 3 6 C 3 4.9 3.9 4 5 4 z" /></g>',
+    curve: '<g transform="matrix(1 0 0 1 178 118)"><g style=""><g transform="matrix(0.6 -0.8 0.8 0.6 -86.4 20.56)" style=""><text xml:space="preserve" font-family="Montserrat" font-size="15.5" font-weight="bold" style="fill: rgb(29,29,31); white-space: pre;"><tspan x="-6.41" y="4.88">D</tspan></text></g>' +
+      '<g transform="matrix(1 0.02 -0.02 1 1.63 -22.31)" style=""><text xml:space="preserve" font-family="Montserrat" font-size="15.5" font-weight="bold" style="fill: rgb(29,29,31);"><tspan x="-2.55" y="4.88">I</tspan></text></g></g></g>',
+    box: '<g transform="matrix(1 0 0 1 178 30)" style=""><rect fill="#ffe600" x="-80" y="-12" width="160" height="24" rx="6" ry="6"></rect><text xml:space="preserve" font-family="Inter" font-size="14" font-weight="normal" text-decoration="underline" style="stroke: rgb(255,255,255); stroke-width: 0.6; fill: rgb(29,29,31);"><tspan x="-72" y="5">Text mit Box</tspan></text></g>',
+    masked: (img) => '<g transform="matrix(0.2 0 0 0.2 60 180)" clip-path="url(#CLIPPATH_9)"><clipPath id="CLIPPATH_9"><circle transform="matrix(1 0 0 1 0 0)" cx="0" cy="0" r="300" /></clipPath>' +
+      '<clipPath id="imageCrop_10"><rect x="-300" y="-300" width="600" height="600" /></clipPath><image clip-path="url(#imageCrop_10)" xlink:href="' + img + '" x="-300" y="-300" width="600" height="600"></image></g>',
+  };
+  await t("Designer-PDF: erweiterte Elemente (Verläufe, Maske/clipPath, gestrichelt/gepunktet, Icon-Pfad, Bogentext, Text-Box mit rx, Unterstreichung) → gültiges PDF in Endformat", async () => {
+    const img = "data:image/png;base64," + png(600, 600, [200, 120, 40]).toString("base64");
+    const all = fab.grad + fab.radial + fab.dash + fab.icon + fab.curve + fab.box + fab.masked(img);
+    const r = await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage(all), svgPage(fab.grad + fab.curve)] }));
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.pages, 2);
+    const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + r.j.fileId + "?t=" + r.j.token + "&pdf=1")).arrayBuffer());
+    const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59], "85×55 + 2×2 mm");
+    const s = pdf.toString("latin1"); assert.ok(/\/ShadingType\s+2/.test(s) && /\/ShadingType\s+3/.test(s), "linearer + radialer Verlauf als PDF-Shading");
+    // maskiertes Bild: 600 px auf 120 Einheiten = 30 mm → ca. 508 dpi (dpi-Messung auch innerhalb von Masken-Gruppen korrekt)
+    assert.ok(r.j.checks.some(c => c.level === "ok" && /ausreichender Auflösung/.test(c.text)), JSON.stringify(r.j.checks));
+    assert.ok(!r.j.checks.some(c => /dpi/.test(c.text) && c.level !== "ok"), JSON.stringify(r.j.checks));
+  });
+  await t("Designer-PDF: Verlauf/Maske mit externem Verweis wird abgelehnt", async () => {
+    assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<rect width="10" height="10" style="fill: url(https://evil.example/g.svg#a)"/>'), svgPage()] }))).status, 400);
+    assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<g clip-path="url(file:///etc/passwd#c)"><rect width="10" height="10"/></g>'), svgPage()] }))).status, 400);
+    assert.strictEqual((await post("/print/api/design", Object.assign({}, BC, { pages: [svgPage('<linearGradient id="g" xlink:href="https://evil.example/x.svg#g"/>'), svgPage()] }))).status, 400);
+  });
 
   // ── Bestellung mit Mollie ──
   const order = (extra) => Object.assign({}, BC, { fileId: design.fileId, fileToken: design.token, customer: cust, payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, expectedGross: 39.6 }, extra || {});

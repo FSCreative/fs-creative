@@ -813,9 +813,18 @@ module.exports = function (D) {
     const chunks = []; doc.on("data", c => chunks.push(c)); const done = new Promise((res, rej) => { doc.on("end", res); doc.on("error", rej); });
     const warns = [], images = [];
     // Bild-Auflösung beim Zeichnen messen: doc.image(img,0,0) zeichnet 1 px = 1 pt, die aktuelle Matrix skaliert → dpi = 72 / Skalierung
+    // Gruppen (Maske/Clip/Deckkraft) zeichnet svg-to-pdfkit in ein Form-XObject mit zurückgesetzter Matrix → äußere Matrix mitführen, sonst stimmt die dpi nicht
+    const mul = (o, i) => [o[0] * i[0] + o[2] * i[1], o[1] * i[0] + o[3] * i[1], o[0] * i[2] + o[2] * i[3], o[1] * i[2] + o[3] * i[3], o[0] * i[4] + o[2] * i[5] + o[4], o[1] * i[4] + o[3] * i[5] + o[5]];
+    const outer = [], base = () => outer.length ? outer[outer.length - 1].m : [1, 0, 0, 1, 0, 0];
+    let ctm = doc._ctm || [1, 0, 0, 1, 0, 0], prevCtm = ctm, curPage = doc.page;
+    Object.defineProperty(doc, "_ctm", { configurable: true, get: () => ctm, set: (v) => { prevCtm = ctm; ctm = v; } });
+    Object.defineProperty(doc, "page", { configurable: true, get: () => curPage, set: (v) => {
+      if (outer.length && v === outer[outer.length - 1].page) outer.pop();
+      else if (v && curPage && !v.dictionary && typeof v.write === "function") outer.push({ page: curPage, m: mul(base(), prevCtm) });
+      curPage = v; } });
     const origImage = doc.image.bind(doc);
     doc.image = function (img, x, y, opt) {
-      const m = doc._ctm || [1, 0, 0, 1, 0, 0], sx = Math.hypot(m[0], m[1]), sy = Math.hypot(m[2], m[3]);
+      const m = mul(base(), doc._ctm || [1, 0, 0, 1, 0, 0]), sx = Math.hypot(m[0], m[1]), sy = Math.hypot(m[2], m[3]);
       const iw = img && img.width, ih = img && img.height;
       if (iw && ih && !opt) images.push({ page: doc._pageCount || 0, px: [iw, ih], mm: [r2(iw * sx / MM_PT), r2(ih * sy / MM_PT)], dpi: Math.round(72 / Math.max(sx, sy)) });
       return origImage(img, x, y, opt);
