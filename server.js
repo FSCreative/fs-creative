@@ -2833,6 +2833,7 @@ async function handleAdmin(req, res, u, p) {
       if (p === "/admin/api/sev/invoice" && req.method === "GET") { const d = await SEV_OPS.invoiceDetail(u.searchParams.get("id")); return J(200, Object.assign({ ok: true, mail: SEV_OPS.mailDefaults(d, u.searchParams.get("kind") || "", u.searchParams.get("ref") || "") }, d)); }
       if (p === "/admin/api/sev/invoice-op" && req.method === "POST") return J(200, Object.assign({ ok: true }, await SEV_OPS.invoiceOp(await sevBody(req))));
       if (p === "/admin/api/sev/bank" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.bankOpen(force)), TYPES[".json"], { "Cache-Control": "no-store" });
+      if (req.method === "POST" && typeof VM_CACHE !== "undefined") VM_CACHE.at = 0;   // Beleg/Zahlung geändert → Abgleich neu
       if (p === "/admin/api/sev/bank-op" && req.method === "POST") return J(200, await SEV_OPS.bankOp(await sevBody(req)));
       if (p === "/admin/api/sev/vouchers" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.vouchers(u.searchParams.get("year"), force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (p === "/admin/api/sev/voucher-op" && req.method === "POST") return J(200, await SEV_OPS.voucherOp(await sevBody(req)));
@@ -3429,12 +3430,15 @@ FIN_PROP.register("voucher-match", {
     if (!FIN_STATE.local) return [];
     const fresh = VM_CACHE.items && Date.now() - VM_CACHE.at < 10 * 60 * 1000;
     if (!fresh && !VM_CACHE.p) VM_CACHE.p = vmCompute().then(x => { VM_CACHE.items = x; VM_CACHE.at = Date.now(); }).catch(e => console.error("Beleg-Abgleich:", e.message)).finally(() => { VM_CACHE.p = null; });
+    if (!fresh && VM_CACHE.p) await Promise.race([VM_CACHE.p, new Promise(r => setTimeout(r, 6000))]);   // kurz warten, damit frische Treffer gleich sichtbar sind
     const skip = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {};
     return (VM_CACHE.items || []).filter(x => !skip[x.voucherId + ":" + x.txId] && (FIN_LOCAL.get("CheckAccountTransaction", x.txId) || {}).status === "100");
   },
   exec: async it => { VM_CACHE.at = 0; return SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "voucher", voucherId: it.voucherId }); },
   reject: async it => { const s = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {}; s[it.voucherId + ":" + it.txId] = new Date().toISOString(); await FIN.setMeta("vmatchSkip", s); } });
 const VM_CACHE = { at: 0, items: null, p: null };
+// jede Buchungsänderung (Beleg, Zahlung, Import) → Beleg-Abgleich neu rechnen
+if (SEV_OPS && SEV_OPS.resetCaches && !SEV_OPS._vmHook) { const rc = SEV_OPS.resetCaches; SEV_OPS.resetCaches = function () { VM_CACHE.at = 0; return rc.apply(this, arguments); }; SEV_OPS._vmHook = true; }
 async function vmCompute() {
     await FIN_LOCAL.load(); const best = {}, skip = {}; let vmN = 0;
     const lim = new Date(Date.now() - 730 * 864e5).toISOString().slice(0, 10);
