@@ -2639,6 +2639,21 @@ async function handleAdmin(req, res, u, p) {
       return J(200, Object.assign({ ok: true }, await FIN_DOCMATCH.handle(pl)));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  // Korrekturbuchung auf einem Konto (z. B. doppelt importierter Umsatz): Gegenbuchung statt Löschen – nachvollziehbar, kein Einfluss auf Gewinn/Steuer
+  if (p === "/admin/api/fin/correction" && req.method === "POST") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung" });
+      const pl = await sevBody(req, 4000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      await FIN_LOCAL.load(); const ref = FIN_LOCAL.get("CheckAccountTransaction", pl.refTx); if (!ref) return J(404, { ok: false, error: "Bezugsumsatz nicht gefunden" });
+      if (ref.correctedBy) return J(400, { ok: false, error: "Schon korrigiert" });
+      const amt = -(+ref.amount || 0), day = String(ref.valueDate || "").slice(0, 10);
+      const r = await FIN_LOCAL.request("POST", "/CheckAccountTransaction", { body: { checkAccount: ref.checkAccount, status: "400", transitWith: "korrektur", valueDate: ref.valueDate, entryDate: new Date().toISOString(), amount: amt.toFixed(2), payeePayerName: "Korrektur", paymtPurpose: String(pl.reason || "Korrektur: doppelt übernommener Umsatz") + " (" + day + ", " + (+ref.amount).toFixed(2) + " €, Umsatz " + ref.id + ")", correctionOf: String(ref.id) } });
+      ref.correctedBy = String(r.objects.id); ref.correctionNote = String(pl.reason || "doppelt übernommen").slice(0, 200); await FIN_LOCAL.save("CheckAccountTransaction", ref);
+      SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+      return J(200, { ok: true, id: r.objects.id });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (p === "/admin/api/fin/ebank/callback") {
     try { if (u.searchParams.get("error")) throw new Error(u.searchParams.get("error_description") || u.searchParams.get("error")); await FIN_EBANK.finish(u.searchParams.get("code") || "", u.searchParams.get("state") || ""); FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("Bank:", e.message));
       return send(res, 302, "", "text/plain", { Location: "/admin#bank-verbunden" }); }
