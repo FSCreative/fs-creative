@@ -2720,6 +2720,8 @@ async function handleAdmin(req, res, u, p) {
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
   // Belege ohne Datei + automatische Zuordnung von Rechnungsmails (fin-docmatch.js)
+  if (p === "/admin/api/fin/railway") { const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try { if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung verfügbar" }); return J(200, { ok: true, result: req.method === "POST" ? await FIN_RAILWAY.run() : FIN_RAILWAY.status() }); } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); } }
   if (p === "/admin/api/fin/missing-docs") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
@@ -3473,6 +3475,9 @@ const FIN_RULES = require("./fin-bankrules.js")({ L: FIN_LOCAL, P: () => FIN_PRO
 const FIN_DOCMATCH = require("./fin-docmatch.js")({ L: FIN_LOCAL, P: () => FIN_PROP, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)),
   snapshot: () => mailSnapshot(), fetchAtt: m => KI.fetchAttachment(m), kiReady: () => KI.docmatchReady(), kiExtract: (m, info) => KI.extractForDocmatch(m, info),
   onChange: () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } });
+// Railway-Rechnungen (PDF) holen und als Beleg ablegen – Verbindung mit der Kartenzahlung bestätigst du in „Zur Prüfung“
+const FIN_RAILWAY = require("./fin-railway.js")({ L: FIN_LOCAL, gql: (q, v) => rwGQL(q, v), workspace: () => RW.workspace, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), onChange: () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } });
+setTimeout(function railwayInv() { (FIN_STATE.local && RW.token ? FIN_RAILWAY.run() : Promise.resolve()).catch(() => {}).finally(() => setTimeout(railwayInv, 6 * 3600e3).unref()); }, 90e3).unref();
 function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.proposed) console.log("Belegdateien:", r.proposed, "Zuordnung(en) zur Prüfung vorgeschlagen"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
 if (require.main === module) { setTimeout(docMatchTick, 3 * 60 * 1000); setInterval(docMatchTick, 15 * 60 * 1000); }
 const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
