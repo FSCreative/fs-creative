@@ -433,8 +433,17 @@ module.exports = function (D) {
   function addIso(d, iso, k) { const m = String(iso || "P0Y1M").match(/P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?/) || []; const x = new Date(d + "T12:00:00Z"), day0 = x.getUTCDate(), y = +(m[1] || 0), mo = +(m[2] || 0), w = +(m[3] || 0), dd = +(m[4] || 0);
     if (y || mo) { x.setUTCDate(1); x.setUTCFullYear(x.getUTCFullYear() + y * k); x.setUTCMonth(x.getUTCMonth() + mo * k); const last = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate(); x.setUTCDate(Math.min(day0, last)); }
     x.setUTCDate(x.getUTCDate() + (w * 7 + dd) * k); return x.toISOString().slice(0, 10); }
+  // Belegdatei der Vorlage (z. B. Versicherungspolizze, Abo-Rechnung) an jeden erzeugten Beleg hängen
+  async function copyTemplateDoc(rv, v) {
+    if (v.document || !rv.document) return false;
+    try { const r = await fin.getFile("doc", "Voucher", rv.id); if (!r || !r.data) return false;
+      await attachDoc(v.id, { buf: Buffer.isBuffer(r.data) ? r.data : Buffer.from(r.data), type: r.mime || "application/pdf", name: r.filename || "Beleg" }, { fromRecurring: String(rv.id) }); return true; }
+    catch (e) { console.error("Vorlagen-Beleg kopieren:", e.message); return false; }
+  }
   async function recurringVoucherRun() {
     await load(); const t = today(), set = get("FinSetting", "1") || { id: "1" };
+    // bereits erzeugte Belege ohne Datei nachträglich ergänzen
+    for (const v of all("Voucher").filter(v => v.fromRecurring && !v.document)) { const rv = get("Voucher", v.fromRecurring); if (rv) await copyTemplateDoc(rv, v); }
     if (!set.rvSince) { set.rvSince = t; await save("FinSetting", set); }   // ab Umstieg; ältere, längst fällige Vorlagen waren in sevDesk pausiert
     const made = [];
     for (const rv of all("Voucher").filter(v => String(v.voucherType) === "RV" && v.recurringInterval && v.recurringNextVoucher)) {
@@ -444,6 +453,7 @@ module.exports = function (D) {
         const v = Object.assign({}, rv, { id: newId("Voucher"), voucherType: "VOU", status: "50", voucherDate: iso(next), deliveryDate: iso(next), paidAmount: "0", payDate: null, enshrined: null, document: null, recurringInterval: null, recurringNextVoucher: null, recurringStartDate: null, recurringEndDate: null, recurringLastVoucher: null, fromRecurring: String(rv.id) });
         for (const p of positionsOf("Voucher", rv.id)) await save("VoucherPos", Object.assign({}, p, { id: newId("VoucherPos"), voucher: ref("Voucher", v.id) }));
         await save("Voucher", v); made.push(v);
+        await copyTemplateDoc(rv, v);
         rv.recurringLastVoucher = iso(next); next = addIso(next, rv.recurringInterval, 1); rv.recurringNextVoucher = iso(next);
       }
       await save("Voucher", rv);
