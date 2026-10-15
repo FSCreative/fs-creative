@@ -120,7 +120,7 @@ function invTag(rec){
 function invInfo(rec){
   if(!rec) return '<span class="muted">noch nie verrechnet</span>';
   var i=sevInv(rec.id), nr=(i&&i.nr)||rec.nr||"Entwurf";
-  return '<span class="w-inv">'+(rec.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(rec.id)+'" target="_blank" rel="noopener" title="Rechnung ansehen">'+esc(nr)+'</a>':esc(nr))+' · '+de(rec.date)+' · <span class="money">'+eur(rec.gross)+'</span> '+invTag(rec)+'</span>';
+  return '<span class="w-inv">'+(rec.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(rec.id)+'" target="_blank" rel="noopener" title="Rechnung ansehen" data-docview data-doctitle="Rechnung '+esc(nr)+'">'+esc(nr)+'</a>':esc(nr))+' · '+de(rec.date)+' · <span class="money">'+eur(rec.gross)+'</span> '+invTag(rec)+'</span>';
 }
 function stateTag(c){
   if(!c.active) return '<span class="tag grey">wird nicht verrechnet</span>';

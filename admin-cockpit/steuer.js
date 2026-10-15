@@ -61,7 +61,7 @@ function docsList(arr,opts){
     return '<tr><td class="nowrap num">'+deShort(x.date||d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b><div class="sub">'+esc([x.why,S.ruleKey(d)?("Steuerregel: "+S.ruleTxt(S.ruleKey(d))):"",x.info||""].filter(Boolean).join(" · "))+'</div></td>'+
       '<td class="r">'+(x.base!=null?money(x.base):'')+(x.tax?'<div class="sub">Steuer '+eur(x.tax)+'</div>':'')+'</td>'+
       (manual||opts.noSelect?'<td></td>':'<td><select class="f" data-stdoc="'+esc(d.id)+'" aria-label="Einordnung">'+opt.map(function(o){ return '<option value="'+o[0]+'"'+(cur===o[0]?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+'</select></td>')+
-      (kind==="out"&&!/^cn/.test(d.id)?'<td class="r"><a class="btn icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(d.id)+'" target="_blank" rel="noopener" aria-label="PDF">↗</a></td>':'<td></td>')+'</tr>'; }).join("")+
+      (kind==="out"&&!/^cn/.test(d.id)?'<td class="r"><a class="btn icon" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(d.id)+'" target="_blank" rel="noopener" aria-label="PDF" data-docview data-doctitle="Rechnung '+esc(d.nr||"")+'">↗</a></td>':'<td></td>')+'</tr>'; }).join("")+
     '<tr class="grp"><td></td><td>Summe ('+arr.length+' Position'+(arr.length===1?"":"en")+')</td><td class="r">'+money(sb)+(stx?'<div class="sub">Steuer '+eur(stx)+'</div>':'')+'</td><td></td><td></td></tr></tbody></table></div>';
 }
 F.action("stdocs",function(kz){ F.UI.stOpen[kz]=!F.UI.stOpen[kz]; F.render(); });

@@ -117,6 +117,7 @@ function invHtml(i){
   if(draft){ acts.push('<button class="btn primary" data-act="sdsend:'+esc(i.id)+'">Per E-Mail senden</button>'); acts.push('<button class="btn" data-act="sdedit:'+esc(i.id)+'">Bearbeiten</button>'); acts.push('<button class="btn" data-act="sdsent:'+esc(i.id)+'">Als versendet markieren</button>'); }
   if(open){ acts.push('<button class="btn primary" data-act="book:'+esc(i.id)+'">Zahlung erfassen</button>'); acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">Erneut senden</button>'); if(i.type==="RE") acts.push('<button class="btn" data-act="sdremind:'+esc(i.id)+'">Mahnung erstellen</button>'); if(!(i.paid>0)&&!i.enshrined) acts.push('<button class="btn" data-act="sddraft:'+esc(i.id)+'">Zurück auf Entwurf</button>'); }
   if(st===1000) acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">Per E-Mail senden</button>');
+  acts.push('<button type="button" class="btn"'+F.docAttrs("/admin/api/sevdesk/pdf?id="+encodeURIComponent(i.id),kind+" "+(i.nr||"Entwurf"))+'>PDF ansehen</button>');
   acts.push('<a class="btn" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'&dl=1">PDF laden</a>');
   if((open||st===1000)&&i.type==="RE") acts.push('<button class="btn danger" data-act="sdcancel:'+esc(i.id)+'" style="margin-left:auto">Stornieren</button>');
   var pos='<table class="sd-pos"><thead><tr><th>Position</th><th class="r">Menge</th><th class="r">Einzel brutto</th><th class="r">USt</th><th class="r">Summe</th></tr></thead><tbody>'+
@@ -131,7 +132,7 @@ function invHtml(i){
       '<dl class="facts"><dt>Rechnungsdatum</dt><dd>'+de(i.date)+'</dd><dt>Leistung</dt><dd>'+de(i.delivery)+(i.deliveryUntil?' – '+de(i.deliveryUntil):'')+'</dd><dt>Fällig</dt><dd>'+(i.due?de(i.due)+' ('+i.timeToPay+' Tage)':'—')+'</dd><dt>Versendet</dt><dd>'+(i.sent?de(i.sendDate)+(i.sendType?' · '+({VM:"Mail",VPR:"Druck",VP:"Post",VPDF:"PDF"}[i.sendType]||i.sendType):''):'noch nicht')+'</dd>'+(i.payDate?'<dt>Bezahlt am</dt><dd>'+de(i.payDate)+'</dd>':'')+(i.emails.length?'<dt>E-Mail</dt><dd>'+esc(i.emails[0].value)+'</dd>':'')+'</dl>'+
       (i.address?'<div><div class="sec-t">Adresse</div><div style="white-space:pre-line">'+esc(i.address)+'</div></div>':'')+
       '<div><div class="sec-t">Positionen</div>'+pos+'</div>'+
-    '</div><div style="min-width:0"><div class="sec-t">Vorschau</div><iframe class="sd-pdf" title="PDF-Vorschau" src="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'#view=FitH"></iframe></div></div>';
+    '</div><div style="min-width:0"><div class="sec-t">Vorschau</div>'+F.docEmbed("/admin/api/sevdesk/pdf?id="+encodeURIComponent(i.id),kind+" "+(i.nr||"Entwurf"),'<iframe class="sd-pdf" title="PDF-Vorschau" src="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'#view=FitH"></iframe>',"PDF ansehen")+'</div></div>';
 }
 F.action("sdinv",function(id){ openInv(id); });
 F.listen("keydown",".sd-row[data-act]",function(el,e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); el.click(); } });
@@ -392,7 +393,8 @@ function openVou(id){
     if(open&&v.open>0.005) acts.push('<button class="btn primary" data-act="sdvpay:'+esc(id)+'">Zahlung erfassen</button>');
     if(open&&!(v.paid>0)) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|draft">Zurück auf Entwurf</button>');
     if(paid) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|reopen">Zahlung lösen</button>');
-    if(v.hasDoc) acts.push('<a class="btn" href="/admin/api/sev/voucher-doc?id='+encodeURIComponent(id)+'&dl=1">Datei laden</a>');
+    var vdoc="/admin/api/sev/voucher-doc?id="+encodeURIComponent(id), vtitle="Beleg "+(v.supplier||"")+(v.date?" · "+de(v.date):"");
+    if(v.hasDoc) acts.push('<button type="button" class="btn"'+F.docAttrs(vdoc,vtitle)+'>Beleg ansehen</button>','<a class="btn" href="'+esc(vdoc)+'&dl=1">Datei laden</a>');
     var d=document.getElementById("drawer"); d.classList.add("xl");
     F.openDrawer(drawerHead(v.cd==="D"?"Einnahme-Beleg":"Beleg",(v.supplier||"Beleg")+" · "+eur(v.gross),'<div class="row" style="gap:8px;margin-top:6px">'+vTag(v)+(v.enshrined?'<span class="tag grey">festgeschrieben</span>':'')+'</div>')+
       '<div class="sd-acts" style="margin-bottom:14px">'+acts.join("")+'</div>'+
@@ -402,7 +404,7 @@ function openVou(id){
         '<label class="fl">Beschreibung<input class="f" name="desc" value="'+esc(v.desc)+'"'+(locked?" disabled":"")+'></label>'+
         '<div><div class="sec-t">Positionen</div><div id="vrows" style="display:grid;gap:8px">'+(v.positions.length?v.positions:[{}]).map(function(p){ return vrow(p,cats); }).join("")+'</div>'+(locked?'':'<button type="button" class="link" data-vadd>+ Position</button>')+'</div>'+
         '<div class="foot"><span class="num muted" id="vSum">'+eur(v.gross)+'</span>'+(locked?'':'<button class="btn primary" type="submit">Speichern</button>')+'</div><div class="err" id="vErr"></div>'+
-      '</form><div style="min-width:0"><div class="sec-t">Belegdatei</div>'+(v.hasDoc?'<iframe class="sd-pdf" title="Beleg" src="/admin/api/sev/voucher-doc?id='+encodeURIComponent(id)+'"></iframe>':'<div class="sd-empty" style="border:1px dashed var(--line);border-radius:12px">Keine Datei hinterlegt.<br><span class="muted">Über „Bearbeiten“ anhängen oder neu über „+ Beleg“ erfassen.</span></div>')+'</div></div>');
+      '</form><div style="min-width:0"><div class="sec-t">Belegdatei</div>'+(v.hasDoc?F.docEmbed(vdoc,vtitle,'<iframe class="sd-pdf" title="Beleg" src="'+esc(vdoc)+'"></iframe>'):'<div class="sd-empty" style="border:1px dashed var(--line);border-radius:12px">Keine Datei hinterlegt.<br><span class="muted">Über „Bearbeiten“ anhängen oder neu über „+ Beleg“ erfassen.</span></div>')+'</div></div>');
     if(locked) document.querySelectorAll("#vrows input,#vrows select,#vrows button").forEach(function(x){ x.disabled=true; });
     S.vcats=cats;
   });

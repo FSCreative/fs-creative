@@ -119,7 +119,7 @@ F.form("invoice",function(form){
       F.closeModal();
       if(failed) F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt, aber "+failed+" Folgeschritt(e) (als verrechnet markieren) fehlgeschlagen – bitte prüfen",true);
       else if(editing) F.toast("Entwurf gespeichert");
-      else F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt",false,"Öffnen & senden",function(){ if(F.sevOpenInvoice) F.sevOpenInvoice(j.id); else window.open("/admin/api/sevdesk/pdf?id="+encodeURIComponent(j.id),"_blank","noopener"); });
+      else F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt",false,"Öffnen & senden",function(){ if(F.sevOpenInvoice) F.sevOpenInvoice(j.id); else F.viewDoc("/admin/api/sevdesk/pdf?id="+encodeURIComponent(j.id),"Rechnung "+(j.nr||"Entwurf")); });
       if(cb) cb(j,{failed:failed}); F.load(true); });
   }).catch(function(){ btn.disabled=false; btn.textContent=lblSave; err.textContent="Keine Verbindung zum Server."; });
 });
@@ -140,14 +140,14 @@ function saveOffer(form,items,contact,err,btn){
     job.then(function(ok){
       F.closeModal();
       if(!ok) F.toast("Angebot "+(j.nr||"")+" angelegt, aber die Phase des Leads konnte nicht gesetzt werden",true);
-      else F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",function(){ window.open("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(j.id),"_blank","noopener"); });
+      else F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",function(){ F.viewDoc("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(j.id),"Angebot "+(j.nr||"")); });
       if(ctx.onDone) ctx.onDone(j);
       if(F.offersLoad) F.offersLoad(true); F.render();
     });
   }).catch(function(){ btn.disabled=false; btn.textContent=lbl; err.textContent="Keine Verbindung zum Server."; });
 }
 F.action("newinvoice",function(){ F.openInvoice({}); });
-F.action("pdf",function(id){ window.open("/admin/api/sevdesk/pdf?id="+encodeURIComponent(id),"_blank","noopener"); });
+F.action("pdf",function(id,el){ F.viewDoc("/admin/api/sevdesk/pdf?id="+encodeURIComponent(id),(el&&el.getAttribute("data-doctitle"))||"Rechnung"); });
 
 /* ---------- Zahlungseingang ---------- */
 F.openBook=function(id,txId){

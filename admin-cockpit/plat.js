@@ -100,7 +100,7 @@ F.platKpi=kpi;
 function sevTag(l){ if(!l) return ""; var m={bezahlt:"ok",offen:"warn",ueberfaellig:"bad",entwurf:"grey",fehlt:"bad",manuell:"grey",alt:"grey",neu:"info",sonst:"grey"}; return '<span class="tag '+(m[l.state]||"grey")+'">'+esc(l.label||"")+'</span>'; }
 function invLine(l){
   if(!l) return '<span class="muted">noch nie</span>';
-  var nr=l.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" target="_blank" rel="noopener">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"ohne Rechnung");
+  var nr=l.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(l.nr||"Entwurf")+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"ohne Rechnung");
   return '<span>'+nr+' · '+deShort(l.date)+' · '+money(l.gross)+' '+sevTag(l)+'</span>';
 }
 /* Waagrechte Balken (HTML, damit am Handy lesbar): rows=[{label,parts:[[wert,cls,titel]],right}] */
@@ -367,7 +367,7 @@ function vBlitz(){
     var it=item("blitz:"+b.id), recs=billRecs("blitz:"+b.id), rec=recs[recs.length-1];
     var inv="";
     if(it&&it.last) inv='<span class="invs">'+invLine(it.last)+'</span>';
-    else if(rec) inv='<span>'+(rec.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(rec.id)+'" target="_blank" rel="noopener">'+esc(rec.nr||"Entwurf")+'</a>':esc(rec.nr||"Rechnung"))+' <span class="tag info">angelegt '+deShort(rec.date)+'</span></span>';
+    else if(rec) inv='<span>'+(rec.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(rec.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(rec.nr||"Entwurf")+'">'+esc(rec.nr||"Entwurf")+'</a>':esc(rec.nr||"Rechnung"))+' <span class="tag info">angelegt '+deShort(rec.date)+'</span></span>';
     var canInv=!inv&&+b.totalCents>0;
     var paid=b.paymentStatus==="PAID";
     return '<div class="pl-bk"><div class="pl-date"><b>'+(d?d.getDate():"–")+'</b><span>'+(d?esc(d.toLocaleDateString("de-AT",{month:"short"})):"")+'</span></div>'+
