@@ -2708,7 +2708,7 @@ async function handleAdmin(req, res, u, p) {
       if (vo) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestVoucher(vo)));
       // Beleg wird gerade erfasst (Scan/Upload, noch ohne ID): ?amount=…&date=YYYY-MM-DD&name=…&cd=C|D → passende offene Umsätze
       const am = u.searchParams.get("amount");
-      if ((am != null && am !== "") || u.searchParams.get("name")) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestFor({ amount: am, date: u.searchParams.get("date") || "", name: u.searchParams.get("name") || "", desc: u.searchParams.get("desc") || "", cd: (u.searchParams.get("cd") || "C").toUpperCase() })));
+      if ((am != null && am !== "") || u.searchParams.get("name") || u.searchParams.get("fx")) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestFor({ amount: am, date: u.searchParams.get("date") || "", name: u.searchParams.get("name") || "", desc: u.searchParams.get("desc") || "", cd: (u.searchParams.get("cd") || "C").toUpperCase(), fx: u.searchParams.get("fx") || "", cur: u.searchParams.get("cur") || "" })));
       return J(400, { ok: false, error: "tx, voucher oder amount fehlt" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
@@ -3225,6 +3225,8 @@ async function handleAdmin(req, res, u, p) {
       const r = await fetch(attUrl);
       if (!r.ok) return send(res, r.status, "attachment_error");
       const buf = Buffer.from(await r.arrayBuffer());
+      // Mail inzwischen verschoben/gelöscht (UID ungültig): der Mail-Dienst liefert eine leere Datei → Hinweis statt Download
+      if (!buf.length) return send(res, 404, "Anhang nicht mehr verfügbar – die Mail wurde verschoben oder gelöscht.", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });
       // Dateiname aus der Antwort des Mail-Dienstes
       const cd = r.headers.get("content-disposition") || "";
       let fname = "anhang";

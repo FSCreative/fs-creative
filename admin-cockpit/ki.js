@@ -122,9 +122,18 @@ F.action("kiqdrop",function(key){
 F.action("kiqopen",function(key){
   var it=(K.queue||[]).filter(function(q){ return q.key===key; })[0]; if(!it) return;
   if(!F.M||!F.M.openVoucher){ F.toast("Postfach-Modul nicht geladen.",true); return; }
-  var m={id:it.mail.id,account:it.mail.account,folder:it.mail.folder,uid:it.mail.uid,subject:it.mail.subject,from:it.mail.from,fromName:it.mail.fromName,date:it.mail.date};
-  var a={index:it.att.index,filename:it.att.filename,size:it.att.size};
-  K.openVoucherWith(m,a,it.x,function(j){ K.api("queue",{op:"done",key:key,voucherId:j&&j.id}).then(function(r){ K.queue=r.queue||[]; if(K.st) K.st.queue=K.queue.length; K.rerender(); F.renderNav(); }).catch(function(){}); });
+  var m0={id:it.mail.id,account:it.mail.account,folder:it.mail.folder,uid:it.mail.uid,subject:it.mail.subject,from:it.mail.from,fromName:it.mail.fromName,date:it.mail.date};
+  var a0={index:it.att.index,filename:it.att.filename,size:it.att.size};
+  /* Mail seit dem Auslesen verschoben (Mailregel, Ordner) oder gelöscht? Aktuelle Stelle im Postfach suchen, sonst Hinweis statt leerem Download */
+  F.api("/admin/api/mail").then(function(md){
+    var all=(md&&md.messages)||[], acc=m0.account||"";
+    var same=function(x){ return (x.account||"")===acc&&String(x.uid)===String(m0.uid)&&(x.folder||"INBOX")===(m0.folder||"INBOX"); };
+    var cand=all.filter(same)[0]||all.filter(function(x){ return !x.deleted&&(x.account||"")===acc&&(x.subject||"")===(m0.subject||"")&&(x.from||"")===(m0.from||"")&&Math.abs(Date.parse(x.date||0)-Date.parse(m0.date||0))<6e4&&!/trash|papierkorb|gelösch/i.test(x.folder||""); })[0];
+    var att=cand&&((cand.attachments||[]).filter(function(x){ return x.filename===a0.filename; })[0]||(cand.attachments||[]).filter(function(x){ return String(x.index)===String(a0.index); })[0]);
+    if(!cand||!att){ F.confirm("Die Mail zu diesem Beleg ist nicht mehr im Postfach (gelöscht oder verschoben) – die Datei kann nicht geladen werden. Eintrag verwerfen?","Verwerfen",function(){ F.actions.kiqdrop(key); }); return; }
+    open(Object.assign({},m0,{id:cand.id,folder:cand.folder,uid:cand.uid,account:cand.account||acc}),{index:att.index,filename:att.filename,size:att.size});
+  }).catch(function(){ open(m0,a0); });
+  function open(m,a){ K.openVoucherWith(m,a,it.x,function(j){ K.api("queue",{op:"done",key:key,voucherId:j&&j.id}).then(function(r){ K.queue=r.queue||[]; if(K.st) K.st.queue=K.queue.length; K.rerender(); F.renderNav(); }).catch(function(){}); }); }
 });
 
 /* ---------- Anfragen ---------- */

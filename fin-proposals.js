@@ -211,13 +211,16 @@ module.exports = function (D) {
   // Gemeinsame Bewertung für suggestVoucher (bestehender Beleg) und suggestFor (Beleg wird gerade erfasst, noch ohne ID).
   async function txCandidates(o) {
     const open = r2(o.amount), vd = day(o.date), credit = o.credit !== false, out = [];
-    if (!(open > 0.005) && !(o.byName && o.name)) return out;
+    const fxAmt = r2(Math.abs(parseFloat(String(o.fx || "").replace(",", ".")) || 0)), fxCur = String(o.cur || "").toUpperCase().slice(0, 3);
+    if (!(open > 0.005) && !(o.byName && o.name) && !(fxAmt > 0)) return out;
     const busy = await busyTx(), R = D.rules && D.rules();
     for (const t of L.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && !t.transitWith && !t.cashLocked && (+t.amount < 0) === credit)) {
       const A = Math.abs(+t.amount || 0), c = R && R.card ? R.card(t.paymtPurpose) : null, fx = !!(c && c.cur), why = []; let s = 0, byN = false;
       const im = sigMatch(o.sig, t, open);
+      const fxm = fxAmt > 0 && fxCur && fxCur !== "EUR" ? String(t.paymtPurpose || "").match(/E-COMM\s+([\d.]+,\d{2})\s+([A-Z]{2,3})\b/i) : null;
       if (im) { s = im.score; im.why.forEach(w => why.push(w)); }
-      else if (Math.abs(A - open) <= 0.02) { s += 45; why.push("gleicher Betrag"); }
+      else if (fxm && fxCur.indexOf(fxm[2].toUpperCase().slice(0, 2)) === 0 && Math.abs(+fxm[1].replace(/\./g, "").replace(",", ".") - fxAmt) <= 0.01) { s += 45; why.push("gleicher Betrag in " + fxCur); }
+      else if (open > 0.005 && Math.abs(A - open) <= 0.02) { s += 45; why.push("gleicher Betrag"); }
       else if (fx && Math.abs(A - open) <= open * 0.03 + 0.02) { s += 30; why.push("Betrag ±3 % (Kartenzahlung in " + c.cur + ")"); }
       else if (c && c.spesen && Math.abs(A - c.spesen - open) <= 0.02) { s += 40; why.push("Betrag ohne Bankspesen gleich"); }
       // Beleg wird erfasst: auch Umsätze desselben Unternehmens mit anderem Betrag zeigen (Teilzahlung, Fremdwährung, Sammelabbuchung) – nie vorausgewählt
@@ -256,7 +259,7 @@ module.exports = function (D) {
     o = o || {}; await L.load();
     const amount = r2(Math.abs(parseFloat(String(o.amount == null ? "" : o.amount).replace(",", ".")) || 0)), date = /^\d{4}-\d{2}-\d{2}/.test(String(o.date || "")) ? day(o.date) : "";
     const credit = !(o.credit === false || o.credit === "D" || o.cd === "D"), name = String(o.name || "").slice(0, 200), desc = String(o.desc || "").slice(0, 250);
-    const out = await txCandidates({ amount, date, name, desc, credit, byName: true });
+    const out = await txCandidates({ amount, date, name, desc, credit, byName: true, fx: o.fx, cur: o.cur });
     out.sort((a, b) => b.score - a.score);
     return { query: { amount, date, name, credit }, candidates: out.slice(0, 8) };
   }

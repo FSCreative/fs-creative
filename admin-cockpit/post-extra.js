@@ -295,8 +295,9 @@ M.openVoucher=function(m,a,pre){
 function mvTrashPref(){ try{ return localStorage.getItem("fsc_mv_trash")!=="0"; }catch(e){ return true; } }
 var mvSugT=null, mvSugQ="";
 function mvLoadSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; var sel=f.tx, g=parseFloat(String(f.gross.value).replace(",","."));
-  if(!(g>0)&&!String(f.supplier.value||"").trim()){ sel.innerHTML='<option value="">Betrag oder Lieferant eingeben, dann wird gesucht</option>'; return; }
-  var q="amount="+encodeURIComponent(g>0?g.toFixed(2):"")+"&date="+encodeURIComponent(f.date.value||"")+"&name="+encodeURIComponent(f.supplier.value||"")+"&desc="+encodeURIComponent(String(f.desc.value||"").slice(0,120))+"&cd=C", my=mvSugQ=q;
+  var fx=VOU&&VOU.pre&&VOU.pre.fx;
+  if(!(g>0)&&!String(f.supplier.value||"").trim()&&!fx){ sel.innerHTML='<option value="">Betrag oder Lieferant eingeben, dann wird gesucht</option>'; return; }
+  var q="amount="+encodeURIComponent(g>0?g.toFixed(2):"")+"&date="+encodeURIComponent(f.date.value||"")+"&name="+encodeURIComponent(f.supplier.value||"")+"&desc="+encodeURIComponent(String(f.desc.value||"").slice(0,120))+"&cd=C"+(fx?"&fx="+encodeURIComponent(fx.amount)+"&cur="+encodeURIComponent(fx.cur||""):""), my=mvSugQ=q;
   F.api("/admin/api/fin/suggest?"+q).then(function(j){ if(my!==mvSugQ||!document.body.contains(sel)) return;
     var cs=(j&&j.ok?(j.candidates||[]):[]).filter(function(c){ return c.type==="tx"; }).slice(0,6), top=cs[0], pick=top&&top.score>=60?top.id:"";
     sel.innerHTML='<option value="">Nicht verbinden (nur Beleg speichern)</option>'+cs.map(function(c){ return '<option value="'+esc(c.id)+'"'+(c.id===pick?" selected":"")+'>'+esc(F.de(c.date)+" · "+(c.name||c.purpose||"Umsatz").slice(0,40)+" · "+F.eur(c.amount)+((c.reasons||[]).indexOf("Betrag weicht ab")>-1?" (anderer Betrag)":""))+'</option>'; }).join("");
