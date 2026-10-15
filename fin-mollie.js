@@ -100,7 +100,31 @@ module.exports = function (D) {
     const dr = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && String(i.status) === "100");
     if (dr) { try { await L.request("PUT", "/Invoice/" + dr.id + "/sendBy", { body: { sendType: "VPDF" } }); console.log("Provisionsrechnung fertiggestellt:", mm); } catch (e) { console.error("Provisionsrechnung " + mm + ":", e.message); } }
   }
+  // Mollie-Connect-Provisionen ab 10/2026: nach Monatsende ein Einnahme-Beleg „kochdu Provisionen Mollie Connect MM/JJJJ“ (20 % USt inkl.)
+  // genau in Höhe der tatsächlich von Mollie gutgeschriebenen Provisionen – alle Provisionen des Monats werden automatisch daran gebucht (vom Nutzer so gewünscht).
+  // Die fs-order-Monatsrechnung „kochdu Provisionen“ enthält ab dann nur noch die übrigen (Bar-/Direkt-)Provisionen.
+  const CONNECT_BELEG_FROM = "2026-10";
+  async function connectMonthly() {
+    const today = new Date().toISOString().slice(0, 10), byM = {};
+    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0)) {
+      const m = day(tx.valueDate).slice(0, 7); if (m < CONNECT_BELEG_FROM) continue;
+      const end = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10); if (today <= end) continue;   // Monat noch offen
+      (byM[m] = byM[m] || []).push(tx);
+    }
+    let n = 0; const cat = incomeCategory();
+    for (const m of Object.keys(byM).sort()) {
+      const txs = byM[m], sum = r2(txs.reduce((a, t) => a + (+t.amount || 0), 0)), mm = m.slice(5, 7) + "/" + m.slice(0, 4), part = L.all("Voucher").filter(v => v.connectMonth === m).length;
+      const end = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10);
+      const body = { voucher: { supplierName: "Mollie Connect (kochdu)", description: "kochdu Provisionen Mollie Connect " + mm + (part ? " – Nachtrag " + part : "") + " · " + txs.length + " Zahlungen (Eigenbeleg aus der Mollie-Abrechnung)", voucherDate: end, creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", connectMonth: m },
+        voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "20", sumGross: String(sum), net: "false", comment: "Mollie-Connect-Provisionen " + mm }] };
+      const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
+      for (const t of txs) { try { await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +t.amount, date: day(t.valueDate), checkAccountTransaction: { id: String(t.id) } } }); n++; } catch (e) { console.error("Connect-Provision " + t.id + ":", e.message); } }
+      console.log("Connect-Monatsbeleg " + mm + ":", sum, "€,", txs.length, "Provisionen");
+    }
+    return n;
+  }
   async function autoVouchers() {
+    try { await connectMonthly(); } catch (e) { console.error("Connect-Monatsbeleg:", e.message); }
     let n = 0; const now = Date.now(), prop = P(); if (!prop) return 0;
     for (const tx of L.all("CheckAccountTransaction").filter(x => (x.mollieType === "payment" || x.mollieType === "application-fee") && String(x.status) === "100" && +x.amount > 0)) {
       const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
@@ -109,6 +133,7 @@ module.exports = function (D) {
       // Connect-Provision: der Beleg ist die monatliche Sammelrechnung „kochdu Provisionen MM/JJJJ“ (aus fs-order) → als Teilzahlung dieser Rechnung vorschlagen, nie eigener Einnahme-Beleg (sonst doppelt)
       if (tx.mollieType === "application-fee") {
         const d = day(tx.valueDate), mm = d.slice(5, 7) + "/" + d.slice(0, 4);
+        if (d.slice(0, 7) >= CONNECT_BELEG_FROM) continue;   // ab Oktober 2026: eigener Monatsbeleg (connectMonthly), nicht über die fs-order-Rechnung
         await finalizeProvisionInvoice(mm, d);
         const inv = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && ["200", "750"].indexOf(String(i.status)) > -1);
         if (inv) { try { if (await prop.add({ autoAccept: true, kind: "mollie-match", key: "mmatch:" + tx.id + ":" + inv.id, txId: String(tx.id), invoiceId: String(inv.id), amount: r2(+tx.amount), date: d, title: "Connect-Provision → Rechnung " + (inv.invoiceNumber || "") + " (kochdu Provisionen " + mm + ", Teilzahlung)", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(inv.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); } }
