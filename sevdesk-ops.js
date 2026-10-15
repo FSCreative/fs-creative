@@ -114,7 +114,7 @@ module.exports = function (D) {
     const accName = {}; ((snap && snap.accounts) || []).forEach(a => { accName[a.id] = a.name; });
     const invOpen = ((snap && snap.invoices) || []).filter(i => (i.status === 200 || i.status === 750) && i.open > 0.005);
     const vouOpen = vou.map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), cd: v.creditDebit, gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), supplier: v.supplierName || (v.supplier && sevName(v.supplier)) || "", desc: v.description || "" }))
-      .map(v => Object.assign(v, { open: r2(v.gross - v.paid) })).filter(v => v.open > 0.005);
+      .map(v => Object.assign(v, { open: r2(v.gross - v.paid) })).filter(v => v.open > 0.005 && v.type !== "RV");
     const list = txs.filter(t => (parseInt(t.status, 10) || 0) === 100).map(t => {
       const amount = sevNum(t.amount), name = t.payeePayerName || "", purpose = String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim();
       const hay = (name + " " + purpose).toLowerCase(), hayNum = hay.replace(/[^a-z0-9]/g, "");
@@ -207,9 +207,9 @@ module.exports = function (D) {
     const list = vs.filter(v => String(sevDay(v.voucherDate) || "").slice(0, 4) === y).map(v => {
       const id = String(v.id), status = parseInt(v.status, 10) || 0, gross = sevNum(v.sumGross), paid = sevNum(v.paidAmount);
       const pos = (posBy[id] || []).map(p => { const a = p.accountingType || {}; const aid = a.id ? String(a.id) : ""; return { id: String(p.id), accountingTypeId: aid, category: a.name || atName[aid] || "", taxRate: sevNum(p.taxRate), gross: sevNum(p.sumGross), net: sevNum(p.sumNet), comment: String(p.comment || "") }; });
-      return { id, date: sevDay(v.voucherDate), status, statusLabel: VOU_STATUS[status] || String(status), cd: v.creditDebit || "C", type: v.voucherType || "VOU",
+      return { id, date: sevDay(v.voucherDate), status, statusLabel: String(v.voucherType || "") === "RV" ? "Vorlage (wiederkehrend)" : (VOU_STATUS[status] || String(status)), cd: v.creditDebit || "C", type: v.voucherType || "VOU",
         supplier: v.supplierName || (v.supplier && sevName(v.supplier)) || "", desc: v.description || "", gross, net: sevNum(v.sumNet), tax: sevNum(v.sumTax), paid,
-        open: status === 100 || status === 750 ? Math.max(0, r2(gross - paid)) : 0, payDate: sevDay(v.payDate), hasDoc: !!(v.document && v.document.id), docId: v.document && v.document.id ? String(v.document.id) : "", docSource: v.docSource ? { auto: !!v.docSource.auto, upload: !!v.docSource.upload, from: v.docSource.from || "", subject: v.docSource.subject || "", at: v.docSource.at || "" } : null,
+        open: (status === 100 || status === 750) && String(v.voucherType || "VOU") !== "RV" ? Math.max(0, r2(gross - paid)) : 0, payDate: sevDay(v.payDate), hasDoc: !!(v.document && v.document.id), docId: v.document && v.document.id ? String(v.document.id) : "", docSource: v.docSource ? { auto: !!v.docSource.auto, upload: !!v.docSource.upload, from: v.docSource.from || "", subject: v.docSource.subject || "", at: v.docSource.at || "" } : null,
         enshrined: !!v.enshrined, taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "", taxType: v.taxType || "", positions: pos,
         category: pos.map(p => p.category).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(", ") };
     }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
