@@ -82,7 +82,7 @@ module.exports = function (D) {
   // Rechnungsanschrift bei Print.com = FS Creative (deren Rechnung kommt per Mail an FS Creative, nie an den Kunden)
   const billingFs = () => ({ companyName: "FS Creative", firstName: "Simon", lastName: "Felder", fullstreet: process.env.PRINT_BILLING_STREET || "Dorfstraße 3/1", postcode: process.env.PRINT_BILLING_ZIP || "6793",
     city: process.env.PRINT_BILLING_CITY || "Gaschurn", country: "AT", email: process.env.PRINT_BILLING_EMAIL || "simon@fs-creative.at", telephone: process.env.PRINT_BILLING_PHONE || "+43 664 1430620",
-    vatNr: String(process.env.PRINT_BILLING_VATNR || "").replace(/\s+/g, "") || undefined });
+    vatNr: String(process.env.PRINT_BILLING_VATNR || FIRM_DEFAULT.uid || "").replace(/\s+/g, "") || undefined });
 
   // ───────────────────────── Speicher ─────────────────────────
   const useDb = () => !!(process.env.DATABASE_URL && D.fin);
