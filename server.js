@@ -2438,6 +2438,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/ki/") === 0) return KI.handle(req, res, u, p);
   // Druckaufträge (Druckshop) – Cockpit-Seite admin-cockpit/zprint.js
   if (p.indexOf("/admin/api/print/") === 0) return PRINT.handleAdmin(req, res, u, p);
+  // Website-Chat – Cockpit-Seite admin-cockpit/zchat.js, Logik in chat.js
+  if (p.indexOf("/admin/api/chat/") === 0) return CHAT.handleAdmin(req, res, u, p);
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -2445,7 +2447,7 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (!process.env.DATABASE_URL) return J(200, { ok: false, error: "Datenbank fehlt" });
       if (req.method === "GET") return J(200, Object.assign({ ok: true, publicKey: await PUSH.publicKey() }, await PUSH.status(u.searchParams.get("endpoint") || "")));
-      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
+      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin", "chat"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
       if (pl.op === "subscribe") return J(200, await PUSH.subscribe(pl.subscription, pl.device, topics));
       if (pl.op === "unsubscribe") return J(200, await PUSH.unsubscribe(String(pl.endpoint || "")));
       if (pl.op === "topics") return J(200, await PUSH.setTopics(String(pl.endpoint || ""), topics || []));
@@ -3302,6 +3304,39 @@ function leadRateLimited(ip) {
   return hits.length > 5;
 }
 function clip(v, n) { return String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n); }
+// Lead-Struktur wie beim Kontaktformular (auch für den Website-Chat, chat.js)
+function makeLead(d) {
+  return { id: "lead_" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex"), created: new Date().toISOString(), name: clip(d.name, 120), email: clip(d.email, 160), phone: clip(d.phone, 60), company: clip(d.company, 160),
+    topic: LEAD_TOPICS.indexOf(d.topic) >= 0 ? d.topic : "Etwas anderes", entwurf: !!d.entwurf, message: clip(d.message, 5000), source: clip(d.source, 200) };
+}
+// Speichert den Lead (leads.json), legt ein To-Do an; notify (Standard): Push „lead“ + Mail an LEAD_TO
+async function saveLead(lead, opt) {
+  const notify = !opt || opt.notify !== false;
+  const leads = readLeads(); leads.push(lead);
+  let stored = false;
+  try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
+  try { COCKPIT_MEMO.at = 0; } catch (e) {}
+  const todos = readTodos();
+  todos.push({ id: lead.id, text: "📩 Anfrage: " + lead.name + " – " + lead.topic + (lead.entwurf ? " (Gratis-Entwurf)" : "") + (lead.email ? " · " + lead.email : "") + (lead.phone ? " · " + lead.phone : "") + (/chat/i.test(lead.source || "") ? " · " + lead.source : ""), due: "", done: false, created: Date.now() });
+  writeTodos(todos);
+  if (!notify) return { stored, mailed: false };
+  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Neue Anfrage: " + lead.topic, body: lead.name + (lead.company ? " · " + lead.company : "") + " – " + String(lead.message || "").slice(0, 90), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
+  let mailed = false;
+  if (MAIL.url && MAIL.token) {
+    const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);
+    const text = rows.map(r => r[0] + ": " + r[1]).join("\n") + "\n\n" + lead.message;
+    const html = "<table cellpadding=\"4\">" + rows.map(r => "<tr><td><b>" + esc(r[0]) + "</b></td><td>" + esc(r[1]) + "</td></tr>").join("") + "</table><p style=\"white-space:pre-wrap\">" + esc(lead.message) + "</p>";
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+        body: JSON.stringify({ token: MAIL.token, to: LEAD_TO, replyTo: lead.email || undefined, subject: "Neue Anfrage: " + lead.topic + " – " + lead.name, text, html }),
+      });
+      clearTimeout(t); mailed = r.ok;
+    } catch (e) {}
+  }
+  return { stored, mailed };
+}
 function handleAnfrage(req, res) {
   const json = (status, obj) => send(res, status, JSON.stringify(obj), TYPES[".json"], { "Cache-Control": "no-store" });
   let body = "";
@@ -3314,42 +3349,9 @@ function handleAnfrage(req, res) {
     const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
     if (leadRateLimited(ip)) return json(429, { error: "too_many" });
 
-    const lead = {
-      id: "lead_" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex"),
-      created: new Date().toISOString(),
-      name: clip(d.name, 120),
-      email: clip(d.email, 160),
-      phone: clip(d.phone, 60),
-      company: clip(d.company, 160),
-      topic: LEAD_TOPICS.indexOf(d.topic) >= 0 ? d.topic : "Etwas anderes",
-      entwurf: !!d.entwurf,
-      message: clip(d.message, 5000),
-      source: clip(d.source, 200),
-    };
+    const lead = makeLead(d);
     if (!lead.name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email) || !d.consent) return json(400, { error: "invalid" });
-
-    const leads = readLeads(); leads.push(lead);
-    let stored = false;
-    try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
-    const todos = readTodos();
-    todos.push({ id: lead.id, text: "📩 Anfrage: " + lead.name + " – " + lead.topic + (lead.entwurf ? " (Gratis-Entwurf)" : "") + " · " + lead.email + (lead.phone ? " · " + lead.phone : ""), due: "", done: false, created: Date.now() });
-    writeTodos(todos);
-
-    if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Neue Anfrage: " + lead.topic, body: lead.name + (lead.company ? " · " + lead.company : "") + " – " + String(lead.message || "").slice(0, 90), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
-    let mailed = false;
-    if (MAIL.url && MAIL.token) {
-      const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);
-      const text = rows.map(r => r[0] + ": " + r[1]).join("\n") + "\n\n" + lead.message;
-      const html = "<table cellpadding=\"4\">" + rows.map(r => "<tr><td><b>" + esc(r[0]) + "</b></td><td>" + esc(r[1]) + "</td></tr>").join("") + "</table><p style=\"white-space:pre-wrap\">" + esc(lead.message) + "</p>";
-      try {
-        const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
-        const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
-          body: JSON.stringify({ token: MAIL.token, to: LEAD_TO, replyTo: lead.email, subject: "Neue Anfrage: " + lead.topic + " – " + lead.name, text, html }),
-        });
-        clearTimeout(t); mailed = r.ok;
-      } catch (e) {}
-    }
+    const { stored, mailed } = await saveLead(lead);
     if (!stored && !mailed) return json(500, { error: "not_saved" });
     return json(200, { ok: true });
   });
@@ -3387,11 +3389,15 @@ const server = http.createServer((req, res) => {
     if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html") {
       return void PRINT.handlePublic(req, res, u, p);
     }
+    // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
+    if (p === "/nda" || p.indexOf("/nda/") === 0 || p.indexOf("/admin/api/nda/") === 0) return void NDA.handle(req, res, u, p);
     // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml)
     if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/sitemap.xml")) {
       const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : "druck.html";
       return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found"); sendGz(req, res, 200, printLiveBlocks(data), TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); });
     }
+    // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
+    if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void CHAT.handlePublic(req, res, u, p);
     if (p === "/api/anfrage") {
       if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
       return void handleAnfrage(req, res);
@@ -3532,8 +3538,14 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   deleteInvoice: id => sev("DELETE", "/Invoice/" + String(id).replace(/\D/g, "")).then(r => { SEV_CACHE.at = 0; return r; }),
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+// ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
+const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS,
+  saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
+  push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it => PRINT.placeOrder(it.payload.orderId, "Zur Prüfung").then(o => ({ orderNumber: o.printcom.orderNumber })), valid: it => PRINT.proposalValid(it.payload.orderId) });
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
+// ── Vertraulichkeitsvereinbarungen (nda.js): Links aus dem Cockpit „Rechtliches“, online unterschreiben, PDF an beide Seiten ──
+const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m) });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);
 // Mollie alle 6 Std.: importiert nur die Saldo-Bewegungen; Zuordnungen/Gebühren/Auszahlungen/Einnahme-Belege → „Zur Prüfung“ (nie selbst gebucht)

@@ -34,6 +34,7 @@ const FEATURES = {
   uva:       { label: "KI-Check vor UVA-Abgabe", essential: true },
   upload:    { label: "Belege hochladen (Foto/PDF) und auslesen", essential: true },
   rechnung:  { label: "Rechnungen per KI vorbereiten", essential: true },
+  chat:      { label: "Website-Chat: KI antwortet, wenn du offline bist (und legt Leads an)", essential: false },
 };
 const DEFAULT_SENDERS = ["railway", "google", "adobe", "world4you", "a1.net", "a1 telekom", "magenta", "drei.at", "cloudflare", "anthropic", "openai", "apple", "microsoft", "github", "figma", "notion", "hetzner", "canva", "envato", "paypal", "rechnung", "invoice", "receipt"].join("\n");
 
@@ -764,5 +765,7 @@ module.exports = function createKi(deps) {
   }
   // Für fin-docmatch.js: Anhang laden (nur lesen) und Beleg auslesen (gecacht je Mail-Anhang)
   function docmatchReady() { return configured() && featureOn("docmatch") && featureOn("mailbeleg") && !overLimit(); }
-  return { handle, configured, status, fetchAttachment, docmatchReady, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
+  // Website-Chat (chat.js): kurze Antwort + erkannte Kontaktdaten als JSON. Kurzer Verlauf, max. ~400 Tokens, Sonnet (modelFor("chat")).
+  async function chatReply(system, state, messages, schema) { const msg = await claude("chat", { system, system2: state, messages, maxTokens: 400, effort: "low", schema }); return jsonOf(msg); }
+  return { handle, configured, status, chatReply, fetchAttachment, docmatchReady, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
 };

@@ -1,7 +1,7 @@
 "use strict";
 // Push-Benachrichtigungen fürs Handy (Web Push; iPhone ab iOS 16.4 nur als „Zum Home-Bildschirm“-App).
 // VAPID-Schlüssel werden einmalig am Server erzeugt und in der Datenbank gehalten (nie im Browser sichtbar außer dem öffentlichen Teil).
-// Abos je Gerät; Themen: mail (neue Mail im Posteingang), lead (neue Anfrage), fin (Mahnungen/Zahllast/Belege). Abgelaufene Abos (404/410) fliegen raus.
+// Abos je Gerät; Themen: mail (neue Mail im Posteingang), lead (neue Anfrage), fin (Mahnungen/Zahllast/Belege), chat (Website-Chat). Abgelaufene Abos (404/410) fliegen raus.
 let webpush = null;   // erst bei Bedarf laden
 module.exports = function (D) {
   const { getMeta, setMeta } = D;
@@ -20,7 +20,7 @@ module.exports = function (D) {
   async function subscribe(sub, device, topics) {
     await load(); if (!sub || !sub.endpoint || !sub.keys || !/^https:\/\//.test(sub.endpoint)) throw new Error("Ungültiges Abo");
     ST.subs = ST.subs.filter(s => s.endpoint !== sub.endpoint);
-    ST.subs.push({ endpoint: sub.endpoint, keys: { p256dh: String(sub.keys.p256dh || ""), auth: String(sub.keys.auth || "") }, device: String(device || "Gerät").slice(0, 80), topics: topics && topics.length ? topics : ["mail", "lead", "fin"], at: new Date().toISOString() });
+    ST.subs.push({ endpoint: sub.endpoint, keys: { p256dh: String(sub.keys.p256dh || ""), auth: String(sub.keys.auth || "") }, device: String(device || "Gerät").slice(0, 80), topics: topics && topics.length ? topics : ["mail", "lead", "fin", "chat"], at: new Date().toISOString() });
     await save(); return { ok: true, count: ST.subs.length };
   }
   async function unsubscribe(endpoint) { await load(); ST.subs = ST.subs.filter(s => s.endpoint !== endpoint); await save(); return { ok: true }; }
