@@ -2869,7 +2869,12 @@ async function handleAdmin(req, res, u, p) {
       if (p === "/admin/api/sev/invoice-op" && req.method === "POST") return J(200, Object.assign({ ok: true }, await SEV_OPS.invoiceOp(await sevBody(req))));
       if (p === "/admin/api/sev/bank" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.bankOpen(force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (req.method === "POST" && typeof VM_CACHE !== "undefined") { VM_CACHE.at = 0; if (typeof IM_CACHE !== "undefined") IM_CACHE.at = 0; }   // Beleg/Zahlung geändert → Abgleich neu
-      if (p === "/admin/api/sev/bank-op" && req.method === "POST") return J(200, await SEV_OPS.bankOp(await sevBody(req)));
+      if (p === "/admin/api/sev/bank-op" && req.method === "POST") { const pl = await sevBody(req);
+        // Geldtransit von Hand: zwei offene Umsätze (gleicher Betrag, verschiedene eigene Konten) miteinander verbinden
+        if (pl.op === "transit" && FIN_STATE.local) { if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" }); await FIN_LOCAL.load(); const a = FIN_LOCAL.get("CheckAccountTransaction", String(pl.txId || "")), b2 = FIN_LOCAL.get("CheckAccountTransaction", String(pl.withTxId || ""));
+          if (!a || !b2 || Math.abs((+a.amount || 0) + (+b2.amount || 0)) > 0.005 || String((a.checkAccount || {}).id) === String((b2.checkAccount || {}).id)) return J(200, { ok: false, error: "Umsätze passen nicht zusammen (Betrag/Konto)" });
+          await FIN_LOCAL.pairApply(a.id, b2.id); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return J(200, { ok: true }); }
+        return J(200, await SEV_OPS.bankOp(pl)); }
       if (p === "/admin/api/sev/vouchers" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.vouchers(u.searchParams.get("year"), force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (p === "/admin/api/sev/voucher-op" && req.method === "POST") return J(200, await SEV_OPS.voucherOp(await sevBody(req)));
       if (p === "/admin/api/sev/voucher-doc" && req.method === "GET") {
