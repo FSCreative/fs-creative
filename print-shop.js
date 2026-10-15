@@ -708,7 +708,8 @@ module.exports = function (D) {
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
     const buy = await purchase(prod, n, country, postcode);
     const markup = ov.markupPct != null ? +ov.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : c.minMargin;
-    const net = Math.ceil(Math.max(buy.total * (1 + markup / 100), buy.total + minM) * 10 - 1e-6) / 10;   // auf 10 Cent aufrunden
+    // Aufschlag (und ggf. Mindestmarge) nur auf das Produkt – Versand wird zum Einkaufspreis weitergegeben; auf 10 Cent aufrunden
+    const net = Math.ceil((Math.max(buy.product * (1 + markup / 100), buy.product + minM) + buy.shipping) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust), vat = r2(net * tax.rate / 100);
     return { net: r2(net), vat, gross: r2(net + vat), rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }

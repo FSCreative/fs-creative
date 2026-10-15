@@ -123,10 +123,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(cat.fonts.length >= 10 && cat.fonts.some(f => f.family === "Montserrat")); assert.ok(cat.agbVersion);
     const g = M.log.find(l => l.path === "/pc/products/businesscards"); assert.ok(g && g.lang === "de-DE" && g.auth === "PrintApiKey pc-test-key");
   });
-  await t("Preis: Einkauf (Produkt + günstigster Versand) + 35 %, mind. 8 € Marge, auf 10 Cent aufgerundet, 20 % USt", async () => {
+  await t("Preis: Produkt + 35 % (mind. 8 € Marge) + Versand zum Einkaufspreis, auf 10 Cent aufgerundet, 20 % USt", async () => {
     const r = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
-    // Einkauf 20 + 5 = 25 → ×1,35 = 33,75 (> 25 + 8) → 33,80 netto
-    assert.strictEqual(r.j.price.net, 33.8); assert.strictEqual(r.j.price.vat, 6.76); assert.strictEqual(r.j.price.gross, 40.56); assert.strictEqual(r.j.sides, 2);
+    // Produkt 20 → ×1,35 = 27, Mindestmarge 20 + 8 = 28 greift → + 5 Versand = 33,00 netto
+    assert.strictEqual(r.j.price.net, 33); assert.strictEqual(r.j.price.vat, 6.6); assert.strictEqual(r.j.price.gross, 39.6); assert.strictEqual(r.j.sides, 2);
     assert.ok(!("purchase" in r.j.price) && !("margin" in r.j.price), "Einkauf/Marge nie öffentlich");
     M.price.salesPrice = 4; M.price.shipping = 2;   // kleiner Einkauf → Mindestmarge greift: 6 + 8 = 14
     const r2 = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780" }, BC, { copies: 100 })); assert.strictEqual(r2.j.price.net, 14); assert.strictEqual(r2.j.price.rate, 20);
@@ -201,12 +201,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
 
   // ── Bestellung mit Mollie ──
-  const order = (extra) => Object.assign({}, BC, { fileId: design.fileId, fileToken: design.token, customer: cust, payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, expectedGross: 40.56 }, extra || {});
+  const order = (extra) => Object.assign({}, BC, { fileId: design.fileId, fileToken: design.token, customer: cust, payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, expectedGross: 39.6 }, extra || {});
   let o1;
   await t("Bestellung: ohne Bestätigungen → 400, geänderter Preis → 409 mit neuem Preis", async () => {
     assert.strictEqual((await post("/print/api/order", order({ acceptProof: false }))).status, 400);
     assert.strictEqual((await post("/print/api/order", order({ acceptFagg: undefined }))).status, 400);
-    const r = await post("/print/api/order", order({ expectedGross: 10 })); assert.strictEqual(r.status, 409); assert.strictEqual(r.j.price.gross, 40.56);
+    const r = await post("/print/api/order", order({ expectedGross: 10 })); assert.strictEqual(r.status, 409); assert.strictEqual(r.j.price.gross, 39.6);
     assert.strictEqual((await post("/print/api/order", order({ customer: Object.assign({}, cust, { zip: "12" }) }))).status, 400);
     assert.strictEqual((await post("/print/api/order", order({ fileToken: "x" }))).status, 400);
   });
@@ -214,7 +214,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/order", order()); assert.strictEqual(r.status, 200, JSON.stringify(r.j)); o1 = r.j;
     assert.ok(/^https:\/\/mollie\.example\/checkout\/tr_test\d+$/.test(r.j.checkoutUrl));
     const pay = M.payments[r.j.checkoutUrl.split("/").pop()];
-    assert.deepStrictEqual(pay.amount, { currency: "EUR", value: "40.56" }); assert.strictEqual(pay.metadata.orderId, r.j.orderId);
+    assert.deepStrictEqual(pay.amount, { currency: "EUR", value: "39.60" }); assert.strictEqual(pay.metadata.orderId, r.j.orderId);
     assert.strictEqual(pay.webhookUrl, "https://www.fs-creative.at/print/mollie-webhook"); assert.ok(pay.redirectUrl.indexOf("/print?bestellung=" + r.j.orderId + "&t=" + r.j.token) > 0);
     assert.strictEqual((await post("/print/api/order", order())).status, 409, "Datei gehört schon zu einer Bestellung");
     const st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "pending_payment");
@@ -231,7 +231,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(M.orders.length, 0, "nichts automatisch bei Print.com bestellt");
     const inv = sevMock.state.invoices[0]; assert.ok(inv, "Rechnungsentwurf angelegt");
     assert.strictEqual(inv.invoice.status, 100); assert.strictEqual(inv.invoice.reference, st.order.nr); assert.ok(inv.invoice.headText.indexOf("Mollie " + pid) > -1, "Mollie-ID im Rechnungstext für den Abgleich");
-    assert.strictEqual(inv.invoicePosSave[0].taxRate, 20); assert.strictEqual(inv.invoicePosSave[0].price, 33.8);
+    assert.strictEqual(inv.invoicePosSave[0].taxRate, 20); assert.strictEqual(inv.invoicePosSave[0].price, 33);
     const conf = M.mails.find(m => m.to === "maria@example.com"); assert.ok(conf && /Bestellbestätigung/.test(conf.subject)); assert.ok(/\/print\/agb/.test(conf.text) && /FAGG/.test(conf.text));
     assert.ok(M.mails.some(m => m.to === "simon@fs-creative.at" && /Druckshop/.test(m.subject)), "Info an FS Creative");
     // unbekannte Zahlung: still 200, nichts passiert
@@ -239,7 +239,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Cockpit: Bestellung zur Prüfung mit Marge, AGB-Version gespeichert; Datei nur mit Login", async () => {
     const s = await admin("/admin/api/print/state"); assert.strictEqual(s.ok, true); assert.strictEqual(s.review, 1); assert.strictEqual(s.settings.autoSend, false, "Standard: AUS");
-    const x = s.orders.find(o => o.id === o1.orderId); assert.strictEqual(x.margin, 8.8); assert.strictEqual(x.purchase, 25);
+    const x = s.orders.find(o => o.id === o1.orderId); assert.strictEqual(x.margin, 8); assert.strictEqual(x.purchase, 25);
     const d = await admin("/admin/api/print/order?id=" + o1.orderId); assert.strictEqual(d.order.consent.agbVersion, cat.agbVersion); assert.strictEqual(d.order.consent.proofConfirmed, true);
     assert.strictEqual((await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { redirect: "manual" })).status, 302);
     const f = await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE } }); assert.strictEqual(f.headers.get("content-type"), "application/pdf");
@@ -272,15 +272,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const up = await upload(await pdfOf(89, 59, 2), "firma.pdf", BC);
     const priv = await post("/print/api/order", order({ fileId: up.j.fileId, fileToken: up.j.token, payment: "invoice" })); assert.strictEqual(priv.status, 400);
     const firm = Object.assign({}, cust, { type: "company", company: "Testfirma GmbH", uid: "ATU 12345678", country: "AT", zip: "6780", city: "Schruns", street: "Bahnhofstraße 1" });
-    const pr = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780", customerType: "company", uid: "ATU12345678" }, BC)); assert.strictEqual(pr.j.price.rate, 20); assert.strictEqual(pr.j.price.gross, 40.56);
+    const pr = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780", customerType: "company", uid: "ATU12345678" }, BC)); assert.strictEqual(pr.j.price.rate, 20); assert.strictEqual(pr.j.price.gross, 39.6);
     const nPay = Object.keys(M.payments).length;
-    const r = await post("/print/api/order", order({ fileId: up.j.fileId, fileToken: up.j.token, payment: "invoice", customer: firm, expectedGross: 40.56 })); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const r = await post("/print/api/order", order({ fileId: up.j.fileId, fileToken: up.j.token, payment: "invoice", customer: firm, expectedGross: 39.6 })); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     assert.strictEqual(r.j.checkoutUrl, null); assert.strictEqual(Object.keys(M.payments).length, nPay);
     const st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "invoice_requested");
     const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(inv.invoicePosSave[0].taxRate, 20);
     assert.ok(!/innergemeinschaftliche Lieferung/.test(inv.invoice.footText || ""));
     const bad = Object.assign({}, firm, { uid: "ATU99999999" }); const up2 = await upload(await pdfOf(89, 59, 2), "firma2.pdf", BC);
-    assert.strictEqual((await post("/print/api/order", order({ fileId: up2.j.fileId, fileToken: up2.j.token, payment: "invoice", customer: bad, expectedGross: 40.56 }))).status, 400, "ungültige UID → keine Rechnung");
+    assert.strictEqual((await post("/print/api/order", order({ fileId: up2.j.fileId, fileToken: up2.j.token, payment: "invoice", customer: bad, expectedGross: 39.6 }))).status, 400, "ungültige UID → keine Rechnung");
     assert.strictEqual(M.orders.length, 1, "weiterhin keine automatische Print.com-Bestellung");
   });
   await t("Ablehnen/Erstatten: Mollie-Erstattung nur auf Klick, Rechnungsentwurf gelöscht, Kunde informiert", async () => {
@@ -289,13 +289,13 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     assert.strictEqual(M.refunds.length, 0);
     const x = await admin("/admin/api/print/op", { op: "reject", id: r.j.orderId, confirm: true, reason: "Text im Beschnitt" }); assert.strictEqual(x.ok, true, JSON.stringify(x));
-    assert.strictEqual(x.order.status, "rejected"); assert.strictEqual(M.refunds.length, 1); assert.deepStrictEqual(M.refunds[0].body.amount, { currency: "EUR", value: "40.56" });
+    assert.strictEqual(x.order.status, "rejected"); assert.strictEqual(M.refunds.length, 1); assert.deepStrictEqual(M.refunds[0].body.amount, { currency: "EUR", value: "39.60" });
     assert.ok(sevMock.state.deletedInvoices.indexOf(x.order.invoice.id) > -1);
     assert.ok(M.mails.some(m => m.to === "maria@example.com" && /nicht gedruckt/.test(m.text)));
   });
   await t("Einstellungen: automatisch senden + Produkt-Aufschlag aus dem Cockpit", async () => {
     let s = await admin("/admin/api/print/settings", { products: { visitenkarten: { markupPct: "50" } } }); assert.strictEqual(s.settings.products.visitenkarten.markupPct, 50);
-    const r = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); assert.strictEqual(r.j.price.net, 37.5);
+    const r = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); assert.strictEqual(r.j.price.net, 35);   // 20 × 1,5 = 30 + 5 Versand
     await admin("/admin/api/print/settings", { products: { visitenkarten: { markupPct: null }, flyer: { enabled: false } } });
     const c = await (await fetch(B + "/print/api/catalog")).json(); assert.ok(!c.products.some(p => p.key === "flyer"));
     await admin("/admin/api/print/settings", { products: { flyer: { enabled: true } } });
