@@ -317,7 +317,7 @@ module.exports = function (D) {
     return '<div class="bar"></div><h3>' + TITLE + '</h3><p class="v">' + SUBTITLE + " · Version " + escH(o.v) + "</p>" + sectionsFor(o).map(s => (s.h ? "<h4>" + escH(s.h) + "</h4>" : "") + s.p.map(t => '<p class="' + (/^[a-d]\) /.test(t) ? "ind" : /^[12]\. /.test(t) ? "pty" : /^(und|abgeschlossen zwischen|– im Folgenden|\(FS Creative und)/.test(t) ? "c" : "") + '">' + p(t) + "</p>").join("")).join("");
   }
   function pageOpen(o) {
-    const pre = o.pre || {}, d0 = { company: pre.company || "", name: pre.name || "", email: pre.email || "", project: pre.project || "", country: "Österreich" };
+    const pre = o.pre || {}, d0 = { email: pre.email || "", project: pre.project || "", country: "Österreich" };   // Firma/Name immer selbst eintragen
     const inp = (k, label, opt, attrs, val) => '<label data-f="' + k + '"><span><b>' + label + "</b>" + (opt ? ' <span class="opt">(optional)</span>' : "") + '</span><input type="' + (k === "email" ? "email" : k === "phone" ? "tel" : "text") + '" name="' + k + '" maxlength="' + LIM[k] + '" value="' + escH(val != null ? val : d0[k] || "") + '"' + (attrs || "") + '><span class="err" aria-live="polite"></span></label>';
     const cfg = { lim: LIM };
     return '<section class="lhero nda-hero"><span class="eyebrow">Vertraulichkeitsvereinbarung</span><h1>Vertraulich&shy;keits&shy;vereinbarung</h1><p class="lead">Lies die Vereinbarung in Ruhe, ergänze deine Angaben und unterzeichne direkt online. Danach bekommen du und FS Creative das unterschriebene PDF per E-Mail.</p></section>' +
@@ -357,11 +357,12 @@ module.exports = function (D) {
 
   // ───────────────────────── Cockpit ─────────────────────────
   const summary = o => { const s = o.signed, d = s ? s.data : {}; return { id: o.id, status: statusOf(o), statusText: STATUS_DE[statusOf(o)], url: linkOf(o), createdAt: o.createdAt, signedAt: s ? s.at : null, revokedAt: o.revokedAt || null,
-    party: s ? (d.company ? d.company + " · " + d.name : d.name) : [o.pre.company, o.pre.name].filter(Boolean).join(" · "), email: s ? d.email : o.pre.email || "", project: s ? d.project : o.pre.project || "", term: s ? d.term : "",
+    party: s ? (d.company ? d.company + " · " + d.name : d.name) : (o.pre.note || [o.pre.company, o.pre.name].filter(Boolean).join(" · ")), email: s ? d.email : o.pre.email || "", project: s ? d.project : o.pre.project || "", term: s ? d.term : "",
     penalty: o.penaltyCents ? eurTxt(o.penaltyCents) : "", hash: s ? s.hash : "", mails: (o.mails || []).slice(-5), mailed: s ? s.mailed || [] : [], v: o.v }; };
   function parsePenalty(v) { const t = String(v == null ? "" : v).replace(/[€\s]/g, ""); if (!t) return 0; const n = parseFloat(/,\d{1,2}$/.test(t) ? t.replace(/\./g, "").replace(",", ".") : t.replace(/[.,](?=\d{3}(\D|$))/g, "").replace(",", ".")); if (!isFinite(n) || n < 0 || n > 1e6) throw Object.assign(new Error("Vertragsstrafe: Betrag zwischen 0 und 1.000.000 €"), { status: 400 }); return Math.round(n * 100); }
   async function create(b) {
-    const pre = { company: clip(b.company, LIM.company), name: clip(b.name, LIM.name), email: clip(b.email, LIM.email), project: clip(b.project, LIM.project) };
+    // Name/Firma trägt die Gegenpartei selbst ein; im Cockpit nur interne Notiz (wem der Link geschickt wurde), E-Mail zum Versenden, Projekt-Vorschlag
+    const pre = { note: clip(b.note, 120), email: clip(b.email, LIM.email), project: clip(b.project, LIM.project) };
     if (pre.email && !EMAIL.test(pre.email)) throw Object.assign(new Error("E-Mail-Adresse ungültig"), { status: 400 });
     const o = { id: "n" + crypto.randomBytes(8).toString("hex"), token: crypto.randomBytes(24).toString("base64url"), v: VERSION, createdAt: nowIso(), pre, penaltyCents: parsePenalty(b.penalty), mails: [] };
     await store.put(o); return o;

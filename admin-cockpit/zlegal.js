@@ -58,8 +58,8 @@ F.action("lgreact",function(id){ op({op:"reactivate",id:id},"Link wieder aktiv")
 F.action("lgdel",function(id){ F.confirm("Diese (nicht unterschriebene) Vereinbarung endgültig löschen? Der Link funktioniert danach nicht mehr.","Löschen",function(){ op({op:"delete",id:id},"Gelöscht"); },true); });
 F.action("lgnew",function(){
   F.modal('<form data-form="lgnew" class="stackf"><div class="row-between"><h2 style="font-size:20px">Neue Vertraulichkeitsvereinbarung</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Alles optional – die Gegenpartei ergänzt ihre Daten selbst. Der Projektname ist nur ein Vorschlag, den sie ändern kann.</p>'+
-    '<div class="grid2"><label class="fl">Firma<input class="f" name="company" maxlength="120" placeholder="z. B. Muster GmbH"></label><label class="fl">Name<input class="f" name="name" maxlength="100" placeholder="Vor- und Nachname"></label>'+
+    '<p class="muted" style="margin:0">Alles optional – Name, Firma und Adresse trägt der Kunde selbst ein. Der Projektname ist nur ein Vorschlag, den er ändern kann.</p>'+
+    '<div class="grid2"><label class="fl" style="grid-column:1/-1">Interne Notiz (nur für dich)<input class="f" name="note" maxlength="120" placeholder="z. B. für Bäckerei Muster"></label>'+
     '<label class="fl">E-Mail<input class="f" name="email" type="email" maxlength="160" placeholder="name@firma.at"></label><label class="fl">Projektname<input class="f" name="project" maxlength="140" placeholder="z. B. Relaunch Website"></label></div>'+
     '<label class="fl">Vertragsstrafe pro Verstoß (€, optional)<input class="f" name="penalty" inputmode="decimal" placeholder="leer = keine Vertragsstrafe"></label>'+
     '<p class="muted" style="margin:0">Mit Betrag wird eine Vertragsstrafe-Klausel (§ 11 Abs. 2) aufgenommen. Sie unterliegt dem richterlichen Mäßigungsrecht (§ 1336 Abs. 2 ABGB) – besonders bei Verbrauchern kann ein Gericht sie herabsetzen. Ohne Betrag gelten nur die gesetzlichen Ansprüche.</p>'+
@@ -67,7 +67,7 @@ F.action("lgnew",function(){
 });
 F.form("lgnew",function(f){
   var btn=f.querySelector("[type=submit]"), err=document.getElementById("lgErr"); btn.disabled=true; err.textContent="";
-  F.api("/admin/api/nda/create",{body:{company:f.company.value,name:f.name.value,email:f.email.value,project:f.project.value,penalty:f.penalty.value}}).then(function(j){
+  F.api("/admin/api/nda/create",{body:{note:f.note.value,email:f.email.value,project:f.project.value,penalty:f.penalty.value}}).then(function(j){
     btn.disabled=false; if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; } upsert(j.item); F.render(); linkDialog(j.item); }).catch(function(){ btn.disabled=false; err.textContent="Keine Verbindung."; });
 });
 F.view({id:"legal",label:"Rechtliches",short:"Recht",icon:"legal",order:75,render:render,after:function(){ if(!ST||Date.now()-at>60000) load(); }});

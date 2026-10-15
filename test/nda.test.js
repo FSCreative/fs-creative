@@ -116,11 +116,11 @@ async function startServer(dir, env) {
   });
   let Bn, tokB;
   await t("Einladung per Mail: nur mit Bestätigung, Link im Text", async () => {
-    const j = await admin("/admin/api/nda/create", { name: "Max Beispiel", project: "", penalty: "" }); Bn = j.item; tokB = tokOf(Bn.url);
+    const j = await admin("/admin/api/nda/create", { note: "Max Beispiel", project: "", penalty: "" }); Bn = j.item; tokB = tokOf(Bn.url);
     assert.strictEqual(Bn.penalty, ""); const h = await (await fetch(B + "/nda/" + tokB)).text(); assert.ok(!/Vertragsstrafe/.test(h), "ohne Betrag keine Vertragsstrafe-Klausel"); assert.ok(!/name="project"[^>]*readonly/.test(h), "Projekt frei");
     let r = await admin("/admin/api/nda/op", { op: "mail", id: Bn.id, to: "max@example.com" }); assert.strictEqual(r._status, 400);
     const n0 = M.mails.length; r = await admin("/admin/api/nda/op", { op: "mail", id: Bn.id, to: "max@example.com", confirm: true }); assert.strictEqual(r.ok, true, JSON.stringify(r));
-    const m = M.mails[n0]; assert.strictEqual(m.to, "max@example.com"); assert.ok(m.text.indexOf(Bn.url) > -1 && m.html.indexOf(Bn.url) > -1); assert.ok(/Hallo Max Beispiel/.test(m.text));
+    const m = M.mails[n0]; assert.strictEqual(m.to, "max@example.com"); assert.ok(m.text.indexOf(Bn.url) > -1 && m.html.indexOf(Bn.url) > -1); assert.ok(/^Hallo,/.test(m.text), "ohne Namen – den trägt der Kunde selbst ein");
     assert.strictEqual(r.item.email, "max@example.com"); assert.strictEqual(r.item.mails.length, 1);
   });
   await t("Widerrufen → Link zeigt „nicht mehr aktiv“, Unterschreiben gesperrt; Reaktivieren", async () => {
