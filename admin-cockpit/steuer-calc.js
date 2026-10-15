@@ -275,13 +275,13 @@ function inWhy(v,line,st){
     return {c:"none",why:"laufende Kosten Pkw/Kombi: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – USt ist Aufwand. Fiskal-Lkw/E-Pkw: in den UVA-Einstellungen freischalten",sure:true};
   var r=ruleKey(v), cc=supplierCountry(v), foreign=!!cc&&cc!=="AT", tax=Math.abs(line.tax)>0.004, sem=r?ruleIn(r):"";
   var src=uidCountry(v.supplierUid)?"UID":(cc&&cc!==String(v.supplierCountry||"").toUpperCase()?"bekannter Anbieter":"Kontaktadresse"), land=cc?" (Lieferant "+cc+" laut "+src+")":"";
+  if(!tax&&RX_KEINE_LEISTUNG.test(String(line.cat||"")+" "+String(v.desc||""))) return {c:"none",why:"Mahn-/Verzugsgebühr oder Zinsen: keine Leistung, keine USt"+land};
   if(sem==="ige"||(!r&&v.taxType==="eu")){ var w=igeOrService(v,line,st); return w.c==="rc"?{c:"rc",why:"als ig. Erwerb gebucht – für die UVA als Reverse-Charge-Leistung behandelt (§ 19 Abs. 1 UStG, KZ 057/066): "+w.why+land,sure:w.sure}:{c:"ige",why:"ig. Erwerb (Ware) laut Steuerregel"+(w.why?": "+w.why:"")+land,sure:w.sure}; }
   if(sem==="none"||(!r&&v.taxType==="ss")) return {c:"none",why:"nicht vorsteuerabziehbar laut Steuerregel"};
   if((sem==="rc"||(!r&&v.taxType==="noteu"))&&isEU(cc)&&st&&st.supMap&&st.supMap[supKey(v)]==="ige") return {c:"ige",why:"als Reverse Charge gebucht, Lieferant liefert aber Waren → ig. Erwerb (Zuordnung für „"+(v.supplier||"")+"“)"+land,sure:true};
   if(sem==="rc"||(!r&&v.taxType==="noteu")) return {c:"rc",why:"Reverse Charge mit Vorsteuer laut Steuerregel"+land};
   if(sem==="rcnv") return {c:"rcnv",why:"Reverse Charge ohne Vorsteuer laut Steuerregel"+land};
   if(tax){ if(!atRate(line.rate)) return {c:"fx",why:line.rate+" % ist kein österreichischer Steuersatz → ausländische USt"+land}; return {c:"060",why:"österreichische USt "+line.rate+" % ausgewiesen"+(foreign?" – Lieferant aber "+cc+", bitte prüfen":"")}; }
-  if(foreign&&RX_KEINE_LEISTUNG.test(String(line.cat||"")+" "+String(v.desc||""))) return {c:"none",why:"Mahn-/Verzugsgebühr oder Zinsen: keine Leistung, keine USt"+land};
   // ohne USt aus dem Ausland: Ware aus der EU = ig. Erwerb (KZ 070/072/065), Dienstleistung = Reverse Charge (KZ 057/066),
   // Ware aus dem Drittland = Einfuhr (EUSt über Zoll/Spediteur, eigener Beleg) – die Warenrechnung selbst hat keine UVA-Kennzahl
   if(foreign){ var g=igeOrService(v,line,st);
