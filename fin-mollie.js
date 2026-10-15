@@ -148,7 +148,7 @@ module.exports = function (D) {
     if (kind === "mollie-income") return incomeVoucher(pl);
     throw new Error("unbekannter Mollie-Vorschlag");
   }
-  async function syncOrg(tk, since) {
+  async function syncOrg(tk, since, opt) {
     const org = await api(tk.token, "/organizations/me").catch(() => ({ name: tk.key }));
     const profiles = {}; (await pages(tk.token, "/profiles?limit=250").catch(() => [])).forEach(p => { profiles[p.id] = p.name; });
     let balances;
@@ -159,6 +159,16 @@ module.exports = function (D) {
       let acc = L.all("CheckAccount").find(a => a.mollieBalance === b.id);
       const label = /^MOLLIE_ORG_TOKEN_\w+$/.test(tk.key) ? tk.key.replace(/^MOLLIE_ORG_TOKEN_/, "").toLowerCase().replace(/(^|_)(\w)/g, (m, a, c) => (a ? " " : "") + c.toUpperCase()) : (org.name || "Konto");
       if (!acc) acc = (await L.request("POST", "/CheckAccount", { body: { mollieSince: new Date().toISOString().slice(0, 10), name: "Mollie – " + label, type: "online", importType: "MOLLIE", currency: "EUR", status: "100", defaultAccount: "0", mollieBalance: b.id } })).objects;
+      // Startzeitpunkt bewusst vorverlegt (opt.resetSince): Konto ab dann führen; der eben angelegte, noch unverknüpfte Anfangsbestand wird neu berechnet
+      if (opt && opt.resetSince && (!acc.mollieSince || opt.resetSince < acc.mollieSince)) {
+        acc.mollieSince = opt.resetSince;
+        for (const o of L.all("CheckAccountTransaction").filter(x => x.checkAccount && String(x.checkAccount.id) === String(acc.id) && x.mollieType === "opening" && !L.all("CheckAccountTransactionLog").some(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(x.id)))) await L.del("CheckAccountTransaction", o.id);
+        await L.save("CheckAccount", acc);
+      }
+      // Kontoname nach den Shops (Profilen), deren Zahlungen auf diesem Saldo landen
+      if (!acc.mollieNamed) { try { const sample = await api(tk.token, "/balances/" + b.id + "/transactions?limit=50"); const names = new Set();
+        for (const t of ((sample._embedded && sample._embedded[Object.keys(sample._embedded)[0]]) || []).slice(0, 25)) { const pid = ctxId(t.context, /tr_\w+/); if (!pid) continue; const py = await api(tk.token, "/payments/" + pid).catch(() => null); if (py && profiles[py.profileId]) names.add(profiles[py.profileId]); if (names.size >= 3) break; }
+        if (names.size) { acc.name = "Mollie – " + Array.from(names).join(" / "); acc.mollieNamed = true; await L.save("CheckAccount", acc); } } catch (e) {} }
       const have = new Set(L.all("CheckAccountTransaction").filter(x => x.mollieId).map(x => x.mollieId));
       // Buchhaltung je Mollie-Konto erst ab dem Umstieg: Älteres ist über sevDesk bereits verbucht (sonst doppelte Einnahmen)
       const accSince = acc.mollieSince && acc.mollieSince > since ? acc.mollieSince : since;
@@ -205,8 +215,8 @@ module.exports = function (D) {
     STATE.running = true; STATE.error = "";
     try {
       await L.load();
-      const since = (opt && opt.since) || new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
-      const out = []; for (const tk of tks) out.push(await syncOrg(tk, since).catch(e => ({ org: tk.key, error: e.message })));
+      const since = (opt && (opt.resetSince || opt.since)) || new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+      const out = []; for (const tk of tks) out.push(await syncOrg(tk, since, opt).catch(e => ({ org: tk.key, error: e.message })));
       const relinked = await relink(), feesLinked = await linkFees(), rematched = await rematch(), vouchers = await autoVouchers();
       STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked, rematched, vouchers }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
