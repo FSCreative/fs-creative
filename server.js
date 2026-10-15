@@ -3346,7 +3346,7 @@ setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.co
 const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);
-setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
+setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured && process.env.MOLLIE_AUTO_SYNC === "1") FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
 
 // Einmalige Steuer-Diagnose ins Log (nur wenn STEUER_DIAG=<Zeitraum>, z. B. 2026-Q3): liest sevDesk nur, schreibt nichts.
 async function steuerDiag(key) {
