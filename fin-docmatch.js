@@ -49,7 +49,10 @@ module.exports = function (D) {
   const BODY_RCPT = [
     { key: "meta", test: isMetaReceipt, supplier: "Meta Platforms Ireland Limited", label: "Meta-Zahlungsbeleg", nr: /(?:transaktions-?id|transaction id|zahlungs-?id|referenz(?:nummer)?)\s*[:#]?\s*([0-9A-Z-]{6,40})/i },
     { key: "beds24", test: m => /beds24/i.test(String(m.from || "") + " " + String(m.fromName || "")) && !/anmeldelink|login|passwort|password|buchung|booking|reservier/i.test(String(m.subject || "")) && /rechnungsnummer|invoice (?:no|number)|DE328454604/i.test(bodyText(m)),
-      supplier: "Beds24 GmbH", label: "Beds24-Rechnung", nr: /(?:rechnungsnummer|invoice (?:no\.?|number))\s*[:#]?\s*(B?\d{6,9})/i }];
+      supplier: "Beds24 GmbH", label: "Beds24-Rechnung", nr: /(?:rechnungsnummer|invoice (?:no\.?|number))\s*[:#]?\s*(B?\d{6,9})/i },
+    // GitHub: „[GitHub] Payment Receipt for …“ – Beleg steht im Mailtext (USD), Abgleich über den Dollarbetrag der Kartenzahlung
+    { key: "github", test: m => /github\.com/i.test(String(m.from || "")) && /payment receipt|zahlungsbeleg|receipt/i.test(String(m.subject || "")),
+      supplier: "GitHub, Inc.", label: "GitHub-Beleg", nr: /(?:transaction id|receipt (?:no\.?|number|#)|invoice (?:no\.?|number))\s*[:#]?\s*([0-9A-Z-]{6,40})/i }];
   const bodyReceipt = m => BODY_RCPT.find(r => { try { return r.test(m); } catch (e) { return false; } }) || null;
   const bodyText = m => (m.bodyHtml ? String(m.body || "").replace(/<(br|\/p|\/div|\/tr|\/h\d|\/li)[^>]*>/gi, "\n").replace(/<\/t[dh]>/gi, "  ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&euro;/g, "€").replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">") : String(m.body || m.preview || "")).replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim().slice(0, 20000);
   function receiptPdf(it) {   // einfacher, gut lesbarer PDF-Beleg aus dem Mailtext (Text 1:1, Kopf mit Absender/Datum/Betreff)
@@ -175,12 +178,13 @@ module.exports = function (D) {
         if (!(Date.parse(m.date || "") > since) || seen.has(msgId(m))) continue;
         let atts = (m.attachments || []).filter(isDocAtt);
         const br = !atts.length ? bodyReceipt(m) : null;
-        if (br) {   // Rechnung/Zahlungsbeleg im Mailtext (Meta, Beds24) → PDF aus dem Mailtext
+        if (br) {   // Rechnung/Zahlungsbeleg im Mailtext (Meta, Beds24, GitHub) → PDF aus dem Mailtext
           const mail = mailInfo(m, { index: -1, filename: br.label + "-" + day(m.date) + ".pdf" }), key = mailKey(mail);
           const it = ST.items[key] = ST.items[key] || { key, mail, tries: 0 };
           if (!it.x) { const txt = bodyText(m), x = heuristic(m), tid = txt.match(br.nr);
             x.supplier = br.supplier; if (tid) x.invoiceNumber = tid[1].slice(0, 40);
             const eur = (x.amounts || []).filter(a => a.cur === "EUR").map(a => a.v); if (eur.length) { x.gross = Math.max.apply(null, eur); x.currency = "EUR"; }
+            else { const fx = (x.amounts || []).filter(a => a.cur && a.cur !== "EUR"); if (fx.length) { x.gross = Math.max.apply(null, fx.map(a => a.v)); x.currency = fx[0].cur; } }   // z. B. GitHub in USD
             it.body = txt; it.x = x; it.at = new Date().toISOString(); scanned++; extracted++; }
           seen.add(msgId(m)); ST.seen.push(msgId(m)); continue;
         }
