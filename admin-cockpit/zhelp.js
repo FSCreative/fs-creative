@@ -21,7 +21,11 @@ var T=[
  {id:"wkr",t:"Wiederkehrende Rechnungen",s:"Monatlich, jährlich … automatisch",b:[
   ["Anlegen","Eine passende Rechnung öffnen → Mehr → „Als wiederkehrend anlegen“. Intervall, erstes Datum und ggf. Enddatum wählen."],
   ["Im Voraus / nachträglich","Im Voraus: Leistungszeitraum beginnt mit dem Rechnungsdatum (z. B. Wartung Oktober am 1.10.). Nachträglich: der vergangene Zeitraum wird abgerechnet."],
-  ["Automatisch senden","Aus: es entsteht ein Entwurf zum Prüfen (erscheint unter „Meine Aufgaben“). An: die Rechnung wird fertiggestellt und an die E-Mail-Adresse des Kunden geschickt."]]},
+  ["Versand vorschlagen","Zum Termin entsteht immer ein Entwurf. Ist „Versand vorschlagen“ an, erscheint unter Finanzen → „Zur Prüfung“ ein Vorschlag – erst mit „Bestätigen“ wird die Rechnung fertiggestellt und an den Kunden geschickt."]]},
+ {id:"review",t:"Zur Prüfung",s:"Nichts wird automatisch gebucht",b:[
+  ["Was landet hier?","Alles, was das Cockpit selbst erkennt: Bankregeln, Mollie-Zahlungen → Rechnung, Mollie-Gebühren und -Auszahlungen, Geldtransit zwischen Konten, Belegdateien aus Mails, USt-Zahlung ans Finanzamt, wiederkehrende Belege/Rechnungen und Mahnungen."],
+  ["Bestätigen / Ablehnen","„Bestätigen“ führt genau die vorgeschlagene Buchung aus. „Ablehnen“ merkt sich den Vorschlag – er kommt nicht wieder. Veraltete Vorschläge (z. B. Umsatz inzwischen zugeordnet) verschwinden von selbst."],
+  ["Vorschlag beim Öffnen","Beim Öffnen eines offenen Bankumsatzes oder eines unbezahlten Belegs steht oben der beste Kandidat mit Begründung – „Übernehmen“ ordnet mit einem Tipp zu."]]},
  {id:"dun",t:"Mahnungen",s:"Erinnern, mahnen, Mahngebühr",b:[
   ["Stufen","1. Zahlungserinnerung (freundlich, meist ohne Gebühr) → 1. Mahnung → 2. Mahnung → letzte Mahnung. Jede Stufe setzt eine neue Frist."],
   ["Mahngebühr","Ist Schadenersatz und daher nicht umsatzsteuerpflichtig: ohne USt auf der Mahnung, nicht in der UVA. Zahlt der Kunde die Gebühr mit, wird sie automatisch als eigene Einnahme gebucht."],

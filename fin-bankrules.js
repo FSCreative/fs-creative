@@ -1,7 +1,8 @@
 "use strict";
 // Bankregeln (wie sevDesk „Regeln“): offene Bankumsätze automatisch verarbeiten, wenn Name/Verwendungszweck/Betrag/Konto passen.
 // Aktionen: privat (Entnahme/Einlage), Geldtransit (eigene Konten) oder Beleg anlegen (Kategorie + Steuersatz) und gleich zuordnen.
-// Läuft nach Kontoauszug-Import und Mollie-Abruf sowie per „Jetzt anwenden“ – nur offene, nicht zugeordnete Umsätze.
+// Läuft nach Kontoauszug-Import und Mollie-Abruf – dann wird NUR vorgeschlagen („Zur Prüfung“, fin-proposals.js), gebucht wird erst
+// nach Bestätigung. Sofort angewendet wird nur auf Klick („Jetzt anwenden“ / „Übernehmen“ im Regel-Dialog). Nur offene, nicht zugeordnete Umsätze.
 // Reverse Charge (act.rc): ausländische Leistung, Rechnung mit 0 % (UID hinterlegt) → Beleg mit Steuerregel 12 (Drittland) bzw. 14 (EU)
 // = „Reverse Charge mit Vorsteuer“ – steuer-calc.js meldet das als KZ 057 (20 % Steuerschuld § 19 Abs. 1) und KZ 066 (gleiche Vorsteuer).
 const CALC = require("./admin-cockpit/steuer-calc.js");
@@ -11,6 +12,7 @@ const NUM_CC = { "040": "AT", "840": "US", "372": "IE", "276": "DE", "528": "NL"
 const KNOWN = [[/railway/i, "Railway Corporation"], [/github/i, "GitHub, Inc."], [/anthropic|claude/i, "Anthropic, PBC"], [/google/i, "Google Ireland Ltd."], [/facebk|facebook|meta ?platf/i, "Meta Platforms Ireland Ltd."], [/adobe/i, "Adobe Systems Software Ireland Ltd."], [/apple\.com|apple/i, "Apple Distribution International Ltd."], [/\bunity\b/i, "Unity Technologies"], [/beds24/i, "Beds24"], [/world4you/i, "World4You Internet Services GmbH"], [/openai|chatgpt/i, "OpenAI"], [/cloudflare/i, "Cloudflare, Inc."], [/figma/i, "Figma, Inc."], [/canva/i, "Canva Pty Ltd"], [/spotify/i, "Spotify AB"]];
 module.exports = function (D) {
   const { L, getMeta, setMeta } = D;
+  const P = () => (typeof D.P === "function" ? D.P() : D.P) || null;   // Vorschläge (fin-proposals.js)
   let RULES = null;
   const low = s => String(s || "").toLowerCase(), day = v => String(v || "").slice(0, 10), r2 = n => Math.round((+n || 0) * 100) / 100;
   const num = s => +String(s || "").replace(/\.(?=\d{3}\b)/g, "").replace(",", ".") || 0;
@@ -81,16 +83,54 @@ module.exports = function (D) {
     }
     return "";
   }
-  // alle aktiven Regeln auf offene Umsätze (oder eine Regel auf alle offenen) – erste passende Regel gewinnt
-  async function run(onlyId) {
-    await load(); const act = RULES.filter(r => onlyId ? r.id === onlyId : r.active); if (!act.length) return { done: 0 };
-    let done = 0; const by = {};
+  function catName(id) { const a = id && L.get("AccountingType", id); return a ? a.name || "" : ""; }
+  function actLabel(r, t) {
+    const a = r.act || {}, amt = +t.amount || 0;
+    if (a.type === "privat") return amt < 0 ? "Privatentnahme" : "Privateinlage";
+    if (a.type === "done") return "Als erledigt markieren";
+    if (a.type === "transit") return "Geldtransit (eigene Konten)";
+    if (a.type === "beleg") return "Beleg anlegen: " + (catName(a.category) || "Kategorie " + a.category) + " · " + (a.rc && amt < 0 ? "Reverse Charge" : (+a.rate || 0) + " %") + (a.supplier ? " · " + a.supplier : "");
+    return a.type || "";
+  }
+  // alle aktiven Regeln auf offene Umsätze (oder eine Regel auf alle offenen) – erste passende Regel gewinnt.
+  // Ohne opt.apply (= automatischer Lauf nach Import/Abruf) wird nichts gebucht, sondern je Umsatz ein Vorschlag angelegt.
+  async function run(onlyId, opt) {
+    await load(); const act = RULES.filter(r => onlyId ? r.id === onlyId : r.active); if (!act.length) return { done: 0, proposed: 0 };
+    const apply = !!(opt && opt.apply), prop = P();
+    let done = 0, proposed = 0; const by = {};
     for (const t of open()) {
       const r = act.find(x => matches(x, t)); if (!r) continue;
+      if (!apply) {
+        if (!prop) continue;
+        try { if (await prop.add({ kind: "rule", key: "rule:" + r.id + ":" + t.id, txId: String(t.id), title: actLabel(r, t), detail: (t.payeePayerName || "") + (t.paymtPurpose ? " · " + String(t.paymtPurpose).replace(/\s+/g, " ").slice(0, 140) : ""), amount: r2(t.amount), date: day(t.valueDate), source: "Bankregel „" + r.name + "“", payload: { ruleId: r.id, txId: String(t.id) } })) proposed++; } catch (e) { console.error("Bankregel-Vorschlag", r.name, e.message); }
+        continue;
+      }
       try { const k = await applyOne(r, t); if (k) { done++; by[k] = (by[k] || 0) + 1; r.hits = (r.hits || 0) + 1; r.lastHit = new Date().toISOString(); } } catch (e) { console.error("Bankregel", r.name, e.message); }
     }
     if (done) await save();
-    return { done, by };
+    return { done, by, proposed };
+  }
+  const isOpen = t => !!t && open().some(x => String(x.id) === String(t.id));
+  // Vorschlag bestätigen: genau das, was früher automatisch passiert ist (applyOne mit der Regel)
+  async function acceptProposal(pl) {
+    await load(); const r = RULES.find(x => x.id === pl.ruleId); if (!r) throw new Error("Die Regel gibt es nicht mehr");
+    const t = L.get("CheckAccountTransaction", pl.txId); if (!isOpen(t)) throw new Error("Der Umsatz ist nicht mehr offen");
+    const k = await applyOne(r, t); if (k) { r.hits = (r.hits || 0) + 1; r.lastHit = new Date().toISOString(); await save(); }
+    return k;
+  }
+  // „Wie zuletzt“: Beleg wie beim letzten Umsatz desselben Händlers (Kategorie, Steuersatz, Lieferant, Reverse Charge) – nur auf Klick
+  async function likeApply(txId, a) {
+    const t = L.get("CheckAccountTransaction", txId); if (!isOpen(t)) throw new Error("Der Umsatz ist nicht mehr offen");
+    if (a && a.type === "privat") return applyOne({ id: "", name: "wie zuletzt", act: { type: "privat" } }, t);
+    if (!a || !a.category) throw new Error("Kategorie fehlt");
+    return applyOne({ id: "", name: "wie zuletzt", act: { type: "beleg", category: String(a.category), rate: [0, 10, 13, 20].indexOf(+a.rate) > -1 ? +a.rate : 20, rc: !!a.rc, supplier: String(a.supplier || "").slice(0, 120), desc: "" } }, t);
+  }
+  // wie wurde derselbe Händler/Zahler früher behandelt? (letzter gebuchter Beleg + wie oft privat)
+  function likeLast(t) {
+    const m = merchantOf(t); if (!m) return null;
+    const h = history()[m.key], dir = +t.amount < 0 ? "out" : "in";
+    const priv = L.all("CheckAccountTransaction").filter(x => String(x.status) === "300" && String(x.id) !== String(t.id) && (+x.amount < 0 ? "out" : "in") === dir && (merchantOf(x) || {}).key === m.key);
+    return { key: m.key, label: m.label, prev: h && h.dir === dir ? Object.assign({ catName: catName(h.category) }, h) : null, privat: priv.length, privatLast: priv.map(x => day(x.valueDate)).sort().pop() || "" };
   }
   function clean(r) {
     const c = r.cond || {}, a = r.act || {}, n = v => v === "" || v == null || !isFinite(+v) ? "" : r2(Math.abs(+v));
@@ -166,13 +206,13 @@ module.exports = function (D) {
       if (pl.remove) RULES = RULES.filter(r => !ids.has(String(r.id)));
       await save(); return { vouchers: n, transactions: tx };
     }
-    if (op === "apply") return await run(pl.id);
+    if (op === "apply") return await run(pl.id, { apply: true });   // Klick im Regel-Dialog: sofort anwenden
     if (op === "suggest") return suggest();
-    if (op === "adopt") { const s = await handle(Object.assign({}, pl, { op: "save" })); const x = await run(s.rule.id); return Object.assign({ rule: s.rule }, x); }   // Vorschlag übernehmen: speichern + gleich anwenden
-    if (op === "runall") return await run();
+    if (op === "adopt") { const s = await handle(Object.assign({}, pl, { op: "save" })); const x = await run(s.rule.id, { apply: true }); return Object.assign({ rule: s.rule }, x); }   // Vorschlag übernehmen: speichern + gleich anwenden
+    if (op === "runall") return await run(undefined, { apply: true });
     throw new Error("unbekannte Aktion");
   }
   function categories() { return L.all("AccountingType").filter(a => String(a.status || "100") !== "0" && a.name).map(a => ({ id: String(a.id), name: a.name, type: a.type || "" })).sort((a, b) => a.name.localeCompare(b.name, "de")); }
   async function list() { await load(); return { rules: RULES, categories: categories(), accounts: L.all("CheckAccount").filter(a => String(a.status) !== "0").map(a => ({ id: String(a.id), name: a.name })) }; }
-  return { handle, list, run };
+  return { handle, list, run, acceptProposal, likeApply, likeLast, card, merchantOf, actLabel };
 };

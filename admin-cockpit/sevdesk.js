@@ -252,6 +252,7 @@ F.action("sdbkother",function(id){
     :S.bank.openVouchers.filter(function(v){return v.cd==="C";}).map(function(v){ return {kind:"voucher",id:v.id,label:(v.supplier||"Beleg")+(v.desc?" · "+v.desc:""),sub:eur(v.open)+" offen · "+deShort(v.date),q:(v.supplier+" "+v.desc+" "+v.open).toLowerCase()}; });
   S.pick={tx:t,items:items};
   F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Rechnung":"Beleg")+' zuordnen</h2>'+F.btnClose()+'</div><p style="margin:0"><b>'+eur(t.amount)+'</b> · '+esc(t.name)+' <span class="muted">'+esc(t.purpose)+'</span></p>'+
+    (F.sugBox?F.sugBox("tx",t.id):'')+   /* Vorschlag oben (zreview.js) – nur mit „Übernehmen“ */
     '<input class="f" placeholder="Suchen …" data-sdpickq autofocus><div class="sd-pick" id="sdPick">'+pickList("")+'</div>'+
     (items.length?'':'<p class="muted" style="margin:0">Keine offenen '+(pos?"Rechnungen":"Belege")+'. Lege den Beleg zuerst an oder buche den Umsatz direkt.</p>')+
     '<div class="row-between" style="border-top:1px solid var(--line);padding-top:12px;gap:12px;flex-wrap:wrap"><span class="muted small">Nichts Betriebliches? '+(pos?"Geld von dir privat aufs Geschäftskonto":"Private Ausgabe oder Geld an dich")+' – zählt nicht als Einnahme/Ausgabe, keine Steuer.</span><button type="button" class="btn" data-act="sdbkpriv:'+esc(t.id)+'">'+(pos?"Als Privateinlage markieren":"Als Privatentnahme markieren")+'</button></div></div>',"wide");
@@ -397,6 +398,7 @@ function openVou(id){
     if(v.hasDoc) acts.push('<button type="button" class="btn"'+F.docAttrs(vdoc,vtitle)+'>Beleg ansehen</button>','<a class="btn" href="'+esc(vdoc)+'&dl=1">Datei laden</a>');
     var d=document.getElementById("drawer"); d.classList.add("xl");
     F.openDrawer(drawerHead(v.cd==="D"?"Einnahme-Beleg":"Beleg",(v.supplier||"Beleg")+" · "+eur(v.gross),'<div class="row" style="gap:8px;margin-top:6px">'+vTag(v)+(v.enshrined?'<span class="tag grey">festgeschrieben</span>':'')+'</div>')+
+      (open&&v.open>0.005&&F.sugBox?F.sugBox("voucher",id):'')+   /* Vorschlag: passender Bankumsatz (zreview.js) */
       '<div class="sd-acts" style="margin-bottom:14px">'+acts.join("")+'</div>'+
       '<div class="sd-split"><form data-form="sdvou" data-id="'+esc(id)+'" class="stackf" style="min-width:0">'+
         (locked?'<div class="notice" style="background:var(--sunk)">'+(v.enshrined?"Festgeschrieben – nicht mehr änderbar.":"Bezahlt – zum Ändern zuerst „Zahlung lösen“.")+'</div>':'')+

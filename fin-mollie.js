@@ -4,8 +4,12 @@
 // und die Auszahlung aufs Bankkonto. Die Auszahlung wird mit dem Bankumsatz (George) als Geldtransit verknüpft – kein Umsatz.
 // Zugang: Organisations-Zugangstoken je Mollie-Organisation (Umgebungsvariablen MOLLIE_ORG_TOKEN, MOLLIE_ORG_TOKEN_2 …),
 // Rechte: balances.read, payments.read, profiles.read, organizations.read, settlements.read. Nur lesend – Mollie wird nicht verändert.
+// Der Abruf legt nur die Mollie-Bewegungen an. Zuordnungen (Zahlung → Rechnung, Gebühren → Mollie-Rechnung, Auszahlung ↔ Bankumsatz,
+// Einnahme-Belege) werden NIE selbst gebucht, sondern als Vorschlag „Zur Prüfung“ abgelegt (fin-proposals.js) – accept() bucht.
 module.exports = function (D) {
   const { L } = D;                                   // FIN_LOCAL
+  const P = () => (typeof D.P === "function" ? D.P() : D.P) || null;   // Vorschläge (fin-proposals.js)
+  const eu = n => r2(n).toFixed(2).replace(".", ",") + " €";
   const BASE = "https://api.mollie.com/v2";
   const r2 = n => Math.round((+n || 0) * 100) / 100, s2 = n => r2(n).toFixed(2), low = v => String(v == null ? "" : v).toLowerCase();
   const iso = d => d + "T00:00:00+02:00", day = v => String(v || "").slice(0, 10);
@@ -39,23 +43,30 @@ module.exports = function (D) {
     const r = await L.request("POST", "/CheckAccountTransaction", { body: Object.assign({ checkAccount: { id: String(accId), objectName: "CheckAccount" }, status: "100", payeePayerName: "", paymtPurpose: "" }, o) });
     return r.objects;
   }
-  // Gebühren eines Monats mit der Mollie-Monatsrechnung (Beleg) verknüpfen, wenn die Summe passt
+  // Gebühren eines Monats mit der Mollie-Monatsrechnung (Beleg) verknüpfen, wenn die Summe passt → Vorschlag
   async function linkFees() {
-    let n = 0; const by = {};
+    let n = 0; const by = {}, prop = P(); if (!prop) return 0;
     L.all("CheckAccountTransaction").filter(x => x.mollieFee && String(x.status) === "100").forEach(x => { const k = String(x.checkAccount.id) + "|" + day(x.valueDate).slice(0, 7); (by[k] = by[k] || []).push(x); });
     for (const k of Object.keys(by)) {
       const ym = k.split("|")[1], list = by[k], sum = r2(-list.reduce((a, x) => a + (+x.amount || 0), 0)); if (!(sum > 0)) continue;
       const nx = new Date(ym + "-15T12:00:00Z"); nx.setUTCMonth(nx.getUTCMonth() + 1); const ym2 = nx.toISOString().slice(0, 7);
       const v = L.all("Voucher").find(v => String(v.creditDebit) === "C" && /mollie/i.test(String(v.supplierName || "") + " " + String(v.description || "")) && ["100", "750"].indexOf(String(v.status)) > -1 && [ym, ym2].indexOf(day(v.voucherDate).slice(0, 7)) > -1 && Math.abs(r2((+v.sumGross || 0) - (+v.paidAmount || 0)) - sum) < 0.05);
       if (!v) continue;
-      for (const x of list) { await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: Math.abs(+x.amount), date: day(x.valueDate), checkAccountTransaction: { id: String(x.id) } } }); n++; }
+      const ids = list.map(x => String(x.id)).sort();
+      if (await prop.add({ kind: "mollie-fee", key: "mfee:" + v.id + ":" + ids.join(","), voucherId: String(v.id), txIds: ids, amount: -sum, date: day(v.voucherDate), title: "Mollie-Gebühren " + ym + " (" + list.length + " Posten) mit Mollie-Rechnung verbuchen", detail: (v.supplierName || "Mollie") + " · " + (v.description || "").slice(0, 100) + " · " + eu(sum), source: "Mollie-Abruf", payload: { voucherId: String(v.id), txIds: ids } })) n++;
     }
     return n;
   }
+  async function bookFees(pl) {
+    const v = L.get("Voucher", pl.voucherId); if (!v) throw new Error("Mollie-Rechnung nicht gefunden");
+    const list = (pl.txIds || []).map(id => L.get("CheckAccountTransaction", id)); if (list.some(x => !x || String(x.status) !== "100")) throw new Error("Ein Gebühren-Umsatz ist nicht mehr offen");
+    for (const x of list) await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: Math.abs(+x.amount), date: day(x.valueDate), checkAccountTransaction: { id: String(x.id) } } });
+    return list.length;
+  }
   // Zahlung → Rechnung: 1) Mollie-ID im Rechnungstext (Kantineur: „Mollie tr_…“), 2) Buchungs-/Bestellnummer aus den Metadaten,
   // 3) eindeutige offene Rechnung mit gleichem Bruttobetrag (±0,01) und passendem Namen. Gebühr → Zahlungsgebühr an der Rechnung.
-  async function autoMatch(tx) {
-    const gross = +tx.mollieGross || +tx.amount; if (!(gross > 0)) return false;
+  function matchOf(tx) {
+    const gross = +tx.mollieGross || +tx.amount; if (!(gross > 0)) return null;
     const inv = L.all("Invoice").filter(i => ["200", "750"].indexOf(String(i.status)) > -1 && !i.cancelled && ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) > -1);
     const txt = i => low([i.invoiceNumber, i.header, i.headText, i.footText, i.customerInternalNote, i.address].join(" "));
     const pid = low(tx.molliePayment), meta = tx.mollieMeta && typeof tx.mollieMeta === "object" ? Object.keys(tx.mollieMeta).map(k => low(tx.mollieMeta[k])).filter(v => v && v.length >= 5 && !/^(true|false|null)$/.test(v)) : [];
@@ -63,8 +74,19 @@ module.exports = function (D) {
     let hit = pid ? inv.filter(i => txt(i).indexOf(pid) > -1) : [];
     if (hit.length !== 1 && meta.length) hit = inv.filter(i => meta.some(v => txt(i).indexOf(v) > -1));
     if (hit.length !== 1) { const nm = low(tx.payeePayerName).split(/\s+/).filter(w => w.length > 2); hit = inv.filter(i => Math.abs(openOf(i) - gross) < 0.011).filter(i => { const c = i.contact && L.get("Contact", i.contact.id); const cn = low((c && (c.name || [c.surename, c.familyname].join(" "))) + " " + i.address); return !nm.length || nm.some(w => cn.indexOf(w) > -1); }); }
-    if (hit.length !== 1) return false;
-    const i = hit[0]; if (Math.abs(openOf(i) - gross) > 0.011) return false;   // nur volle Zahlung automatisch
+    if (hit.length !== 1) return null;
+    const i = hit[0]; if (Math.abs(openOf(i) - gross) > 0.011) return null;   // nur volle Zahlung wird vorgeschlagen
+    return i;
+  }
+  // gefundene Rechnung als Vorschlag ablegen (früher: sofort gebucht)
+  async function autoMatch(tx) {
+    const i = matchOf(tx), prop = P(); if (!i || !prop) return false;
+    const c = i.contact && L.get("Contact", i.contact.id), cn = c ? (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : "";
+    return prop.add({ kind: "mollie-match", key: "mmatch:" + tx.id + ":" + i.id, txId: String(tx.id), invoiceId: String(i.id), amount: r2(+tx.mollieGross || +tx.amount), date: day(tx.valueDate), title: "Mollie-Zahlung → Rechnung " + (i.invoiceNumber || i.id) + (cn ? " · " + cn : ""), detail: (tx.payeePayerName || "") + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120) + (+tx.mollieFeeAmt > 0 ? " · Gebühr " + eu(tx.mollieFeeAmt) + " wird als Zahlungsgebühr gebucht" : ""), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(i.id) } });
+  }
+  async function bookMatch(pl) {
+    const tx = L.get("CheckAccountTransaction", pl.txId), i = L.get("Invoice", pl.invoiceId);
+    if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen"); if (!i || ["200", "750"].indexOf(String(i.status)) < 0) throw new Error("Die Rechnung ist nicht mehr offen");
     await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: Math.abs(+tx.amount), date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
     return true;
   }
@@ -72,33 +94,59 @@ module.exports = function (D) {
   // Connect-Provisionen (kochdu) sofort. Abschaltbar je Mollie-Konto (acc.mollieAutoVoucher === false).
   function incomeCategory() { const ats = L.all("AccountingType"); return ats.find(a => /einnahmen \/ erl(ö|oe)se \/ verk(ä|ae)ufe/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)se 20|umsatzerl(ö|oe)se/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)s|einnahm/i.test(a.name || "")) || null; }
   async function autoVouchers() {
-    let n = 0; const cat = incomeCategory(), now = Date.now();
+    let n = 0; const now = Date.now(), prop = P(); if (!prop) return 0;
     for (const tx of L.all("CheckAccountTransaction").filter(x => (x.mollieType === "payment" || x.mollieType === "application-fee") && String(x.status) === "100" && +x.amount > 0)) {
       const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
       if (tx.mollieType === "payment" && now - Date.parse(day(tx.valueDate) + "T12:00:00Z") < 3 * 864e5) continue;   // Rechnung kann noch kommen
-      const gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
-      const prov = tx.mollieType === "application-fee";
-      const body = { voucher: { supplierName: prov ? "Mollie Connect (kochdu)" : (tx.payeePayerName || acc.name), description: (prov ? "Provision kochdu (Mollie Connect) " : "Einnahme " + acc.name.replace(/^Mollie – /, "") + " – ") + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), voucherDate: day(tx.valueDate), creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id) },
-        voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "20", sumGross: String(r2(gross)), net: "false", comment: "automatisch aus Mollie" }] };
-      try {
-        const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
-        await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +tx.amount, date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
-        n++;
-      } catch (e) { console.error("Mollie-Beleg:", e.message); }
+      if (tx.mollieType === "payment" && matchOf(tx)) continue;   // passende Rechnung → dafür gibt es den Zuordnungs-Vorschlag
+      const prov = tx.mollieType === "application-fee", gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
+      try { if (await prop.add({ kind: "mollie-income", key: "minc:" + tx.id, txId: String(tx.id), amount: r2(gross), date: day(tx.valueDate), title: prov ? "Provision kochdu (Mollie Connect) als Einnahme-Beleg buchen" : "Einnahme-Beleg 20 % anlegen (keine Rechnung gefunden)", detail: (tx.payeePayerName || acc.name) + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); }
     }
     return n;
   }
+  async function incomeVoucher(pl) {
+    const tx = L.get("CheckAccountTransaction", pl.txId); if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen");
+    const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id) || { name: "Mollie" }, cat = incomeCategory();
+    {
+      const gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
+      const prov = tx.mollieType === "application-fee";
+      const body = { voucher: { supplierName: prov ? "Mollie Connect (kochdu)" : (tx.payeePayerName || acc.name), description: (prov ? "Provision kochdu (Mollie Connect) " : "Einnahme " + acc.name.replace(/^Mollie – /, "") + " – ") + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), voucherDate: day(tx.valueDate), creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id) },
+        voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "20", sumGross: String(r2(gross)), net: "false", comment: "aus Mollie (bestätigt)" }] };
+      const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
+      await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +tx.amount, date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
+      return v.id;
+    }
+  }
   // offene Mollie-Zahlungen nachträglich zuordnen (z. B. Rechnung erst später erstellt)
   async function rematch() { let n = 0; for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "payment" && String(x.status) === "100")) if (await autoMatch(tx)) n++; return n; }
-  // Auszahlung ↔ Bankumsatz: gleicher Betrag, Bank-Datum 0–7 Tage nach der Auszahlung, nicht schon vergeben
-  async function linkPayout(molTx, amount, d) {
-    const cands = L.all("CheckAccountTransaction").filter(x => !x.mollieId && !x.transitWith && String(x.status) === "100" && Math.abs((+x.amount || 0) - amount) < 0.005 && x.checkAccount && String(x.checkAccount.id) !== String(molTx.checkAccount.id))
+  // Auszahlung ↔ Bankumsatz: gleicher Betrag, Bank-Datum 0–7 Tage nach der Auszahlung, nicht schon vergeben (auch nicht in einem offenen Vorschlag)
+  async function linkPayout(molTx, amount, d, busy) {
+    const prop = P(); if (!prop) return false;
+    if (!busy) busy = await prop.busyTx("mollie-payout");
+    if (busy.has(String(molTx.id))) return false;
+    const cands = L.all("CheckAccountTransaction").filter(x => !x.mollieId && !x.transitWith && String(x.status) === "100" && !busy.has(String(x.id)) && Math.abs((+x.amount || 0) - amount) < 0.005 && x.checkAccount && String(x.checkAccount.id) !== String(molTx.checkAccount.id))
       .map(x => ({ x, dd: (Date.parse(day(x.valueDate)) - Date.parse(d)) / 864e5 })).filter(c => c.dd >= -1 && c.dd <= 7)
       .sort((a, b) => (/mollie/i.test(b.x.payeePayerName + " " + b.x.paymtPurpose) - /mollie/i.test(a.x.payeePayerName + " " + a.x.paymtPurpose)) || Math.abs(a.dd) - Math.abs(b.dd));
     const c = cands[0]; if (!c) return false;
-    c.x.status = "400"; c.x.transitWith = String(molTx.id); c.x.paymtPurpose = (c.x.paymtPurpose || "") + " · Geldtransit Mollie"; await L.save("CheckAccountTransaction", c.x);
-    molTx.status = "400"; molTx.transitWith = String(c.x.id); await L.save("CheckAccountTransaction", molTx);
+    const acc = L.get("CheckAccount", c.x.checkAccount.id), macc = L.get("CheckAccount", molTx.checkAccount.id);
+    const ok = await prop.add({ kind: "mollie-payout", key: "mpay:" + molTx.id + ":" + c.x.id, txIds: [String(molTx.id), String(c.x.id)], txId: String(c.x.id), amount: r2(amount), date: day(c.x.valueDate), title: "Mollie-Auszahlung ↔ Bankumsatz als Geldtransit verknüpfen", detail: ((macc && macc.name) || "Mollie") + " " + d + " → " + ((acc && acc.name) || "Bank") + " " + day(c.x.valueDate) + " · " + (c.x.payeePayerName || "") + " " + String(c.x.paymtPurpose || "").slice(0, 80), source: "Mollie-Abruf", payload: { molTxId: String(molTx.id), bankTxId: String(c.x.id) } });
+    busy.add(String(molTx.id)); busy.add(String(c.x.id));
+    return ok;
+  }
+  async function bookPayout(pl) {
+    const molTx = L.get("CheckAccountTransaction", pl.molTxId), x = L.get("CheckAccountTransaction", pl.bankTxId);
+    if (!molTx || !x || String(molTx.status) !== "100" || String(x.status) !== "100" || molTx.transitWith || x.transitWith) throw new Error("Einer der Umsätze ist nicht mehr offen");
+    x.status = "400"; x.transitWith = String(molTx.id); x.paymtPurpose = (x.paymtPurpose || "") + " · Geldtransit Mollie"; await L.save("CheckAccountTransaction", x);
+    molTx.status = "400"; molTx.transitWith = String(x.id); await L.save("CheckAccountTransaction", molTx);
     return true;
+  }
+  // Vorschlag bestätigen → genau die Buchung, die früher automatisch lief
+  async function accept(kind, pl) {
+    if (kind === "mollie-match") return bookMatch(pl);
+    if (kind === "mollie-fee") return bookFees(pl);
+    if (kind === "mollie-payout") return bookPayout(pl);
+    if (kind === "mollie-income") return incomeVoucher(pl);
+    throw new Error("unbekannter Mollie-Vorschlag");
   }
   async function syncOrg(tk, since) {
     const org = await api(tk.token, "/organizations/me").catch(() => ({ name: tk.key }));
@@ -127,10 +175,10 @@ module.exports = function (D) {
           // netto wie ausbezahlt; Gebühr am Umsatz gemerkt → bei der Zuordnung zur Rechnung als Zahlungsgebühr an die Rechnung gehängt
           const tx = await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: name, paymtPurpose: (prof + (pay ? pay.description || "" : "Zahlung") + (meta ? " · " + meta : "") + " · " + pid + (Math.abs(ded) > 0.004 ? " · brutto " + s2(init) + ", Gebühr " + s2(Math.abs(ded)) : "")).trim(), mollieId: t.id, mollieType: type, molliePayment: pid, mollieGross: s2(init), mollieFeeAmt: s2(Math.abs(ded)), mollieMeta: pay && pay.metadata ? pay.metadata : null, mollieDesc: pay ? pay.description || "" : "", mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : "" });
           res.added++; if (Math.abs(ded) > 0.004) res.fees++;
-          if (await autoMatch(tx)) res.matched = (res.matched || 0) + 1;
+          if (await autoMatch(tx)) res.proposed = (res.proposed || 0) + 1;   // nur Vorschlag, gebucht wird nach Bestätigung
         } else if (type === "outgoing-transfer" || type === "outgoing-transfer-reversal") {
           const tx = await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: "Auszahlung Bank", paymtPurpose: "Mollie-Auszahlung (Geldtransit) " + ctxId(t.context, /stl_\w+/), mollieId: t.id, mollieType: type });
-          res.payouts++; if (res0 < 0 && await linkPayout(tx, -res0, d)) res.linked++;
+          res.payouts++; if (res0 < 0 && await linkPayout(tx, -res0, d)) res.linked++;   // linked = Vorschläge
         } else {
           const label = { refund: "Rückerstattung", chargeback: "Rückbuchung (Chargeback)", "application-fee": "Provision (Mollie Connect)", "split-payment": "Anteil Split-Zahlung", "invoice-compensation": "Mollie-Rechnung verrechnet", "balance-correction": "Korrektur", "failed-payment-fee": "Gebühr fehlgeschlagene Zahlung" }[type] || type;
           await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee", mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : (type === "application-fee" ? "kochdu" : "") });
@@ -151,7 +199,7 @@ module.exports = function (D) {
     return res;
   }
   // Auszahlungen, die vor dem Bankimport kamen, später nachverknüpfen
-  async function relink() { let n = 0; for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieId && /outgoing-transfer$/.test(x.mollieType || "") && !x.transitWith && +x.amount < 0)) if (await linkPayout(tx, -(+tx.amount), day(tx.valueDate))) n++; return n; }
+  async function relink() { let n = 0; const prop = P(); if (!prop) return 0; const busy = await prop.busyTx("mollie-payout"); for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieId && /outgoing-transfer$/.test(x.mollieType || "") && !x.transitWith && +x.amount < 0)) if (await linkPayout(tx, -(+tx.amount), day(tx.valueDate), busy)) n++; return n; }
   async function sync(opt) {
     if (STATE.running) return STATE.last; const tks = tokens(); if (!tks.length) throw new Error("Kein Mollie-Zugang hinterlegt (MOLLIE_ORG_TOKEN)");
     STATE.running = true; STATE.error = "";
@@ -187,5 +235,5 @@ module.exports = function (D) {
     return out;
   }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, relink, linkFees, rematch, autoMatch, summary, autoVouchers };
+  return { sync, status, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept };
 };
