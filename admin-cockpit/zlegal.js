@@ -58,7 +58,7 @@ F.action("lgreact",function(id){ op({op:"reactivate",id:id},"Link wieder aktiv")
 F.action("lgdel",function(id){ F.confirm("Diese (nicht unterschriebene) Vereinbarung endgültig löschen? Der Link funktioniert danach nicht mehr.","Löschen",function(){ op({op:"delete",id:id},"Gelöscht"); },true); });
 F.action("lgnew",function(){
   F.modal('<form data-form="lgnew" class="stackf"><div class="row-between"><h2 style="font-size:20px">Neue Vertraulichkeitsvereinbarung</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Alles optional – die Gegenpartei ergänzt ihre Daten selbst. Ein vorgegebener Projektname kann von ihr nicht geändert werden.</p>'+
+    '<p class="muted" style="margin:0">Alles optional – die Gegenpartei ergänzt ihre Daten selbst. Der Projektname ist nur ein Vorschlag, den sie ändern kann.</p>'+
     '<div class="grid2"><label class="fl">Firma<input class="f" name="company" maxlength="120" placeholder="z. B. Muster GmbH"></label><label class="fl">Name<input class="f" name="name" maxlength="100" placeholder="Vor- und Nachname"></label>'+
     '<label class="fl">E-Mail<input class="f" name="email" type="email" maxlength="160" placeholder="name@firma.at"></label><label class="fl">Projektname<input class="f" name="project" maxlength="140" placeholder="z. B. Relaunch Website"></label></div>'+
     '<label class="fl">Vertragsstrafe pro Verstoß (€, optional)<input class="f" name="penalty" inputmode="decimal" placeholder="leer = keine Vertragsstrafe"></label>'+

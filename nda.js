@@ -1,7 +1,7 @@
 "use strict";
 // Vertraulichkeitsvereinbarungen (NDA) online unterschreiben – www.fs-creative.at/nda/<token>
 // Ablauf: Cockpit „Rechtliches“ legt einen Link an (Token 192 Bit, zufällig, gespeichert) → Gegenpartei liest den Vertrag, ergänzt ihre Daten
-// (Live-Vorschau im Vertragstext), bestätigt, gibt ihren Namen ein (+ optional Unterschrift am Bildschirm) → Server prüft, speichert den
+// (Live-Vorschau im Vertragstext), bestätigt die Zustimmung und klickt „Digital unterzeichnen“ (einfache elektronische Signatur) → Server prüft, speichert den
 // unterschriebenen Stand mit Zeitstempel, gekürzter IP, User-Agent und SHA-256-Prüfwert, erzeugt das PDF und schickt es an beide Seiten.
 // Danach zeigt der Link nur noch den unterschriebenen Stand + Download (kein erneutes Unterschreiben).
 // Speicher: mit DATABASE_URL in Postgres (Tabelle nda_doc), sonst Dateien unter DATA_DIR/nda (Tests, lokal).
@@ -10,11 +10,10 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "NDA-2026-10";
+const VERSION = "NDA-2026-10.2";
 const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", country: "Österreich", uid: "ATU82622967", email: "office@fs-creative.at", phone: "+43 664 1430620" };
 // Grenzen für Eingaben (Zeichen)
-const LIM = { company: 120, name: 100, role: 80, street: 120, zip: 12, city: 80, country: 60, email: 160, phone: 40, project: 140, term: 200, sigName: 100 };
-const MAX_SIG = 400000;   // gezeichnete Unterschrift als PNG-Data-URI (≈ 300 KB)
+const LIM = { company: 120, name: 100, role: 80, street: 120, zip: 12, city: 80, country: 60, email: 160, phone: 40, project: 140, term: 200 };
 
 // ── Vertragstext (formell, neutral). Platzhalter: {{partei1}} {{partei2}} {{projekt}} {{laufzeit}} {{strafe}}; „if“ = nur mit Vertragsstrafe ──
 const TITLE = "Vertraulichkeitsvereinbarung";
@@ -71,7 +70,7 @@ const TEMPLATE = [
     "(2) Gerichtsstand für alle Streitigkeiten aus oder im Zusammenhang mit dieser Vereinbarung ist das für 6793 Gaschurn sachlich zuständige Gericht. Ist der Vertragspartner Verbraucher im Sinne des Konsumentenschutzgesetzes, gelten die gesetzlichen Gerichtsstandsregeln, insbesondere § 14 KSchG.",
     "(3) Änderungen und Ergänzungen dieser Vereinbarung sowie ein Abgehen von diesem Formerfordernis bedürfen der Schriftform; die Textform (z. B. E-Mail) genügt. Mündliche Nebenabreden bestehen nicht.",
     "(4) Sollte eine Bestimmung dieser Vereinbarung ganz oder teilweise unwirksam oder undurchführbar sein oder werden, bleibt die Wirksamkeit der übrigen Bestimmungen unberührt. An die Stelle der unwirksamen oder undurchführbaren Bestimmung tritt eine wirksame Bestimmung, die dem wirtschaftlichen Zweck der ursprünglichen Bestimmung am nächsten kommt. Gleiches gilt für allfällige Lücken.",
-    "(5) Diese Vereinbarung wird elektronisch abgeschlossen. FS Creative hat die Vereinbarung durch Bereitstellung des persönlichen Links elektronisch bestätigt; der Vertragspartner erklärt seine Zustimmung durch ausdrückliche Bestätigung und Eingabe seines vollständigen Namens sowie gegebenenfalls durch eine Unterschrift am Bildschirm (einfache elektronische Signatur). Die Parteien erkennen diese Form des Abschlusses als verbindlich an. Beide Parteien erhalten die unterzeichnete Vereinbarung als PDF-Dokument; der darin angegebene Prüfwert (SHA-256) dient dem Nachweis der Unverändertheit."] },
+    "(5) Diese Vereinbarung wird elektronisch abgeschlossen. FS Creative hat die Vereinbarung durch Bereitstellung des persönlichen Links elektronisch bestätigt; der Vertragspartner erklärt seine Zustimmung durch ausdrückliche Bestätigung und Betätigung der Schaltfläche „Digital unterzeichnen“ (einfache elektronische Signatur durch Bestätigung). Die Parteien erkennen diese Form des Abschlusses als verbindlich an. Beide Parteien erhalten die unterzeichnete Vereinbarung als PDF-Dokument; der darin angegebene Prüfwert (SHA-256) dient dem Nachweis der Unverändertheit."] },
 ];
 
 module.exports = function (D) {
@@ -164,23 +163,21 @@ module.exports = function (D) {
     if (doc.y > H - 290) doc.addPage(); else doc.moveDown(1.2);
     const y0 = doc.y, cw = (CW - 24) / 2;
     doc.font("Helvetica-Bold").fontSize(7.5).fillColor(MUTED).text("FÜR FS CREATIVE", L, y0, { width: cw, characterSpacing: 1 }).text("VERTRAGSPARTNER", L + cw + 24, y0, { width: cw, characterSpacing: 1 });
-    const sy = y0 + 16, sh = 62;
-    doc.font("Helvetica-Oblique").fontSize(15).fillColor(INK).text(pdfSafe(F.owner), L, sy + 30, { width: cw, lineBreak: false });
-    if (s.img) { try { doc.image(s.img, L + cw + 24, sy, { fit: [cw, sh], align: "left", valign: "bottom" }); } catch (e) {} } else doc.font("Helvetica-Oblique").fontSize(15).fillColor(INK).text(pdfSafe(s.sigName), L + cw + 24, sy + 30, { width: cw, lineBreak: false });
-    doc.moveTo(L, sy + sh + 4).lineTo(L + cw, sy + sh + 4).moveTo(L + cw + 24, sy + sh + 4).lineTo(R, sy + sh + 4).lineWidth(.7).strokeColor(SOFT).stroke();
-    const ty = sy + sh + 10;
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(INK).text(pdfSafe(F.name), L, ty, { width: cw });
-    doc.font("Helvetica").fontSize(8.5).fillColor(MUTED).text("elektronisch bestätigt durch " + pdfSafe(F.owner) + " am " + viennaTime(s.at) + " (Link erstellt am " + viennaDate(o.createdAt) + ")", L, doc.y + 2, { width: cw });
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(INK).text(pdfSafe(d.company ? d.company : s.sigName), L + cw + 24, ty, { width: cw });
-    doc.font("Helvetica").fontSize(8.5).fillColor(MUTED).text("elektronisch unterschrieben durch " + pdfSafe(s.sigName) + (d.role ? " (" + pdfSafe(d.role) + ")" : "") + " durch Namenseingabe" + (s.img ? " und Unterschrift am Bildschirm" : "") + " am " + viennaTime(s.at), L + cw + 24, doc.y + 2, { width: cw });
+    const ty = y0 + 18;
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(pdfSafe(F.name + " · " + F.owner), L, ty, { width: cw });
+    doc.font("Helvetica").fontSize(8.5).fillColor(MUTED).text("elektronisch bestätigt durch " + pdfSafe(F.owner) + " am " + viennaTime(s.at) + " (Link erstellt am " + viennaDate(o.createdAt) + ")", L, doc.y + 3, { width: cw });
+    const ly = doc.y;
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(pdfSafe(d.company ? d.company + " · " + s.sigName : s.sigName), L + cw + 24, ty, { width: cw });
+    doc.font("Helvetica").fontSize(8.5).fillColor(MUTED).text("digital unterzeichnet durch " + pdfSafe(s.sigName) + (d.role ? " (" + pdfSafe(d.role) + ")" : "") + " am " + viennaTime(s.at) + " über den Button „Digital unterzeichnen“", L + cw + 24, doc.y + 3, { width: cw });
+    doc.y = Math.max(doc.y, ly) + 4; doc.moveTo(L, doc.y).lineTo(R, doc.y).lineWidth(.5).strokeColor(LINE).stroke();
     // Nachweis
-    doc.x = L; doc.y = Math.max(doc.y, ty + 60) + 18;
+    doc.x = L; doc.y += 18;
     if (doc.y > H - 150) doc.addPage();
     const by = doc.y, rows = [["Dokument", TITLE + ", Version " + o.v + ", Projekt „" + d.project + "“"], ["Zeitpunkt", s.at.replace("T", " ").replace(/\.\d+Z$/, " UTC") + " · " + viennaTime(s.at) + " (Europe/Vienna)"],
-      ["IP-Adresse", s.ipTrunc + " (gekürzt)"], ["Gerät/Browser", s.ua || "–"], ["Prüfwert", "SHA-256 " + s.hash]];
+      ["Signatur", "einfache elektronische Signatur durch Bestätigung (Zustimmung + Button „Digital unterzeichnen“)"], ["IP-Adresse", s.ipTrunc + " (gekürzt)"], ["Gerät/Browser", s.ua || "–"], ["Prüfwert", "SHA-256 " + s.hash]];
     doc.rect(L, by, 3, 10).fill(YEL); doc.font("Helvetica-Bold").fontSize(7.5).fillColor(MUTED).text("NACHWEIS DES ELEKTRONISCHEN ABSCHLUSSES", L + 10, by + 1, { characterSpacing: 1 }); doc.moveDown(.6);
     rows.forEach(r => { const y = doc.y; doc.font("Helvetica").fontSize(7.8).fillColor(MUTED).text(r[0], L, y, { width: 80 }); doc.font("Helvetica").fontSize(7.8).fillColor(INK).text(pdfSafe(r[1]), L + 84, y, { width: CW - 84 }); doc.moveDown(.25); });
-    doc.font("Helvetica").fontSize(7).fillColor(MUTED).text("Der Prüfwert wird über den vollständigen Vertragstext dieser Version, die Angaben des Vertragspartners, die Unterschrift und den Zeitpunkt gebildet. Beide Parteien erhalten dieses Dokument per E-Mail.", L, doc.y + 4, { width: CW });
+    doc.font("Helvetica").fontSize(7).fillColor(MUTED).text("Der Prüfwert wird über den vollständigen Vertragstext dieser Version, die Angaben des Vertragspartners und den Zeitpunkt der Unterzeichnung gebildet. Beide Parteien erhalten dieses Dokument per E-Mail.", L, doc.y + 4, { width: CW });
     // Fußzeile auf jeder Seite: gelbe Linie, Version, Prüfwert, Seitenzahl
     const pr = doc.bufferedPageRange();
     for (let i = 0; i < pr.count; i++) { doc.switchToPage(pr.start + i); const mb = doc.page.margins.bottom; doc.page.margins.bottom = 0; const fy = H - 46;
@@ -224,10 +221,9 @@ module.exports = function (D) {
   const EMAIL = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i;
   function validate(b, o) {
     const d = {}, f = {}; b = b && typeof b === "object" ? b : {};
-    Object.keys(LIM).forEach(k => { if (k !== "sigName") d[k] = clip(b[k], LIM[k] + 1); });
-    Object.keys(LIM).forEach(k => { if (k !== "sigName" && d[k].length > LIM[k]) f[k] = "Höchstens " + LIM[k] + " Zeichen"; });
+    Object.keys(LIM).forEach(k => { d[k] = clip(b[k], LIM[k] + 1); });
+    Object.keys(LIM).forEach(k => { if (d[k].length > LIM[k]) f[k] = "Höchstens " + LIM[k] + " Zeichen"; });
     if (!d.country) d.country = "Österreich";
-    if (o.pre && o.pre.project) d.project = o.pre.project;   // von FS Creative vorgegeben – nicht änderbar
     if (d.name.length < 3 || !/\S+\s+\S+/.test(d.name)) f.name = f.name || "Bitte Vor- und Nachnamen angeben";
     if (!EMAIL.test(d.email)) f.email = f.email || "Bitte eine gültige E-Mail-Adresse angeben";
     if (!d.street) f.street = "Bitte Straße und Hausnummer angeben";
@@ -236,16 +232,8 @@ module.exports = function (D) {
     if (d.phone && !/^[0-9+()\/ .-]{4,40}$/.test(d.phone)) f.phone = "Telefonnummer prüfen";
     if (d.project.length < 2) f.project = f.project || "Bitte den Projektnamen angeben";
     if (d.term.length < 2) f.term = f.term || "Bitte die Dauer der Vertraulichkeitspflicht angeben";
-    const sigName = clip(b.sigName, LIM.sigName + 1), norm = x => x.toLowerCase().replace(/\s+/g, " ").trim();
-    if (!sigName) f.sigName = "Bitte gib zum Unterschreiben deinen vollständigen Namen ein";
-    else if (norm(sigName) !== norm(d.name)) f.sigName = "Der Name muss mit „Vor- und Nachname“ übereinstimmen";
     if (b.accept !== true) f.accept = "Bitte bestätige, dass du die Vereinbarung gelesen hast und ihr zustimmst";
-    let img = null;
-    if (b.sigImg) { const s = String(b.sigImg); const m = s.length <= MAX_SIG && s.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
-      const buf = m ? Buffer.from(m[1], "base64") : null;
-      if (!buf || buf.length < 60 || buf.readUInt32BE(0) !== 0x89504e47 || buf.toString("latin1", 12, 16) !== "IHDR" || buf.readUInt32BE(16) > 3000 || buf.readUInt32BE(20) > 1500) f.sigImg = "Die gezeichnete Unterschrift konnte nicht übernommen werden – bitte neu zeichnen oder leeren";
-      else img = buf; }
-    return { d, f, sigName, img, ok: !Object.keys(f).length };
+    return { d, f, sigName: d.name, ok: !Object.keys(f).length };   // Unterzeichner = „Vor- und Nachname“
   }
   const truncIp = ip => { ip = String(ip || "").replace(/^::ffff:/, ""); if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return ip.replace(/\.\d+$/, ".0"); if (ip.indexOf(":") > -1) return ip.split(":").slice(0, 3).join(":") + "::"; return ""; };
   const hashIp = ip => crypto.createHmac("sha256", SECRET).update(String(ip || "")).digest("hex").slice(0, 32);
@@ -262,10 +250,10 @@ module.exports = function (D) {
       if (o.signed) throw Object.assign(new Error("Diese Vereinbarung wurde bereits unterschrieben"), { status: 409 });
       const v = validate(b, o);
       if (!v.ok) throw Object.assign(new Error("Bitte prüfe die markierten Felder"), { status: 400, fields: v.f });
-      const at = nowIso(), ip = ipOf(req), text = fullText(o, v.d), imgSha = v.img ? sha(v.img) : "";
-      const hash = sha(JSON.stringify({ version: o.v, text, party2: v.d, signature: { name: v.sigName, image: imgSha }, signedAt: at }));
-      const s = { at, atVienna: viennaTime(at), data: v.d, sigName: v.sigName, sigImgSha: imgSha, drawn: !!v.img, textSha: sha(text), hash, ipTrunc: truncIp(ip) || "–", ipHash: hashIp(ip), ua: clip(req.headers["user-agent"], 300) };
-      const pdf = await renderPdf(o, v.d, Object.assign({ img: v.img }, s));
+      const at = nowIso(), ip = ipOf(req), text = fullText(o, v.d);
+      const hash = sha(JSON.stringify({ version: o.v, text, party2: v.d, signature: { name: v.sigName, method: "Bestätigung + Button „Digital unterzeichnen“" }, signedAt: at }));
+      const s = { at, atVienna: viennaTime(at), data: v.d, sigName: v.sigName, method: "button", textSha: sha(text), hash, ipTrunc: truncIp(ip) || "–", ipHash: hashIp(ip), ua: clip(req.headers["user-agent"], 300) };
+      const pdf = await renderPdf(o, v.d, s);
       o.signed = s; o.pdfBytes = pdf.length; await store.put(o, pdf);
       log("unterschrieben", o.id, "·", v.d.project);
       o.signed.mailed = await signedMails(o, pdf); await store.put(o);
@@ -312,18 +300,17 @@ module.exports = function (D) {
     '.nda-form{position:sticky;top:calc(var(--nav-h) + 14px)}@media(max-width:900px){.nda-form{position:static}}' +
     '.nda-f{display:grid;gap:12px}.nda-f2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:10px}.nda-f label{display:grid;gap:5px;font-size:13.5px;color:var(--text-dim);font-weight:500}.nda-f label b{color:var(--text);font-weight:600}.nda-f .opt{color:var(--text-faint);font-weight:400}' +
     '.nda-f input[type=text],.nda-f input[type=email],.nda-f input[type=tel]{font:inherit;font-size:15px;color:var(--text);background:var(--bg-soft);border:1px solid var(--border-2);border-radius:12px;padding:11px 13px;width:100%;transition:border-color .2s}' +
-    '.nda-f input::placeholder{color:var(--text-faint)}.nda-f input:focus{outline:none;border-color:var(--accent)}.nda-f input[readonly]{opacity:.75;cursor:not-allowed}.nda-f .err{color:#ff6b6b;font-size:12.5px;min-height:0}.nda-f .bad input{border-color:#ff6b6b}html.light .nda-f .err{color:#c62828}' +
+    '.nda-f input::placeholder{color:var(--text-faint)}.nda-f input:focus{outline:none;border-color:var(--accent)}.nda-f .err{color:#ff6b6b;font-size:12.5px;min-height:0}.nda-f .bad input{border-color:#ff6b6b}html.light .nda-f .err{color:#c62828}' +
     '.nda-note{font-size:13px;color:var(--text-dim);background:var(--surface-2);border-radius:12px;padding:10px 12px;line-height:1.5}' +
     '.nda-doc{background:#fbfaf7;color:#1f1d1e;border-radius:var(--radius);padding:34px 36px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-size:14.5px;line-height:1.62}@media(max-width:600px){.nda-doc{padding:22px 18px;font-size:14px}}' +
     '.nda-doc h3{font-size:22px;letter-spacing:-.02em;margin:0}.nda-doc .v{color:#6b6b6b;font-size:13px;margin:2px 0 18px}.nda-doc h4{font-size:15px;margin:18px 0 6px}.nda-doc p{margin:0 0 8px;text-align:justify;hyphens:auto}.nda-doc p.ind{padding-left:18px}.nda-doc p.c{text-align:left;color:#6b6b6b}.nda-doc p.pty{text-align:left;font-weight:600}' +
     '.nda-doc mark{background:#fff3a3;color:inherit;border-radius:4px;padding:0 3px}.nda-doc mark.empty{background:#ffe0e0;color:#a33}.nda-doc .bar{height:4px;background:#ffe600;border-radius:4px;margin:0 0 18px;width:64px}' +
     '.nda-sign{margin-top:18px}.nda-chk{display:flex;gap:12px;align-items:flex-start;font-size:15px;cursor:pointer}.nda-chk input{width:20px;height:20px;margin-top:2px;accent-color:var(--accent);flex:none}' +
-    '.nda-pad{position:relative;border:1px dashed var(--border-2);border-radius:14px;background:#fff;height:170px;touch-action:none;overflow:hidden}.nda-pad canvas{width:100%;height:100%;display:block;cursor:crosshair}.nda-pad span{position:absolute;left:14px;bottom:10px;color:#9a9a9a;font-size:12.5px;pointer-events:none}.nda-pad .line{position:absolute;left:14px;right:14px;bottom:34px;border-top:1px solid #ddd;pointer-events:none}' +
-    '.nda-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.nda-btn{font:inherit;cursor:pointer;border:0}.nda-btn.small{font-size:13px;padding:7px 14px;border-radius:999px;background:var(--surface-2);color:var(--text);border:1px solid var(--border-2)}' +
+    '.nda-btn{font:inherit;cursor:pointer;border:0}.nda-go{font-size:17px;font-weight:600;padding:16px 34px;box-shadow:0 10px 30px rgba(10,132,255,.35)}@media(max-width:600px){.nda-go{width:100%;justify-content:center}}' +
     '.nda-msg{border-radius:12px;padding:12px 14px;font-size:14px;background:rgba(255,80,80,.12);color:var(--text);display:none}.nda-msg.on{display:block}.nda-ok{font-size:44px;line-height:1}' +
     '.nda-kv{display:grid;grid-template-columns:minmax(110px,180px) minmax(0,1fr);gap:8px 14px;font-size:14.5px;margin:16px 0}.nda-kv span{color:var(--text-dim)}.nda-kv b{font-weight:600;overflow-wrap:anywhere}.nda-kv code{font-size:12.5px;overflow-wrap:anywhere}' +
     '.nda-priv{font-size:12.5px;color:var(--text-faint);margin-top:14px;line-height:1.55}.nda-priv a{text-decoration:underline}button.btn.primary[disabled]{opacity:.6;cursor:progress}';
-  const PRIV = '<p class="nda-priv"><b>Datenschutz:</b> Deine Angaben verwenden wir ausschließlich zum Abschluss, zur Durchführung und zum Nachweis dieser Vereinbarung (Art. 6 Abs. 1 lit. b und f DSGVO). Gespeichert werden die Formularangaben, deine Unterschrift (im PDF), der Zeitpunkt, eine gekürzte IP-Adresse und die Browser-Kennung. Die Daten werden nicht an Dritte weitergegeben (außer an unseren Mail- und Hosting-Dienstleister zur technischen Abwicklung) und so lange aufbewahrt, wie die Vereinbarung nachgewiesen werden muss. Mehr unter <a href="/datenschutz">Datenschutz</a>.</p>';
+  const PRIV = '<p class="nda-priv"><b>Datenschutz:</b> Deine Angaben verwenden wir ausschließlich zum Abschluss, zur Durchführung und zum Nachweis dieser Vereinbarung (Art. 6 Abs. 1 lit. b und f DSGVO). Gespeichert werden die Formularangaben, der Zeitpunkt der Unterzeichnung, eine gekürzte IP-Adresse und die Browser-Kennung. Die Daten werden nicht an Dritte weitergegeben (außer an unseren Mail- und Hosting-Dienstleister zur technischen Abwicklung) und so lange aufbewahrt, wie die Vereinbarung nachgewiesen werden muss. Mehr unter <a href="/datenschutz">Datenschutz</a>.</p>';
   function docHtml(o, d) {
     const v = valsOf(d), ph = { partei2: "[Angaben des Vertragspartners]", projekt: "[Projektname]", laufzeit: "[Dauer]" };
     const p = t => escH(t).replace(/\{\{(partei2|projekt|laufzeit)\}\}/g, (m, k) => '<mark data-ph="' + k + '"' + (v[k] ? "" : ' class="empty"') + ">" + escH(v[k] || ph[k]) + "</mark>");
@@ -333,24 +320,21 @@ module.exports = function (D) {
     const pre = o.pre || {}, d0 = { company: pre.company || "", name: pre.name || "", email: pre.email || "", project: pre.project || "", country: "Österreich" };
     const inp = (k, label, opt, attrs, val) => '<label data-f="' + k + '"><span><b>' + label + "</b>" + (opt ? ' <span class="opt">(optional)</span>' : "") + '</span><input type="' + (k === "email" ? "email" : k === "phone" ? "tel" : "text") + '" name="' + k + '" maxlength="' + LIM[k] + '" value="' + escH(val != null ? val : d0[k] || "") + '"' + (attrs || "") + '><span class="err" aria-live="polite"></span></label>';
     const cfg = { lim: LIM };
-    return '<section class="lhero nda-hero"><span class="eyebrow">Vertraulichkeitsvereinbarung</span><h1>Vertraulich&shy;keits&shy;vereinbarung' + (pre.project ? " für „" + escH(pre.project) + "“" : "") + '</h1><p class="lead">Lies die Vereinbarung in Ruhe, ergänze deine Angaben und unterschreibe direkt online. Danach bekommen du und FS Creative das unterschriebene PDF per E-Mail.</p></section>' +
+    return '<section class="lhero nda-hero"><span class="eyebrow">Vertraulichkeitsvereinbarung</span><h1>Vertraulich&shy;keits&shy;vereinbarung</h1><p class="lead">Lies die Vereinbarung in Ruhe, ergänze deine Angaben und unterzeichne direkt online. Danach bekommen du und FS Creative das unterschriebene PDF per E-Mail.</p></section>' +
       '<noscript><div class="nda-msg on">Zum Unterschreiben wird JavaScript benötigt. Alternativ melde dich unter <a href="mailto:office@fs-creative.at">office@fs-creative.at</a>.</div></noscript>' +
       '<form id="ndaForm" novalidate autocomplete="on"><div class="nda-grid"><div class="nda-card nda-form"><h2>1. Deine Angaben</h2><p class="sub">Der Vertragstext rechts wird beim Ausfüllen automatisch ergänzt.</p><div class="nda-f">' +
       inp("company", "Firma", true, ' autocomplete="organization"') + inp("name", "Vor- und Nachname", false, ' autocomplete="name" required') + inp("role", "Funktion", true, ' autocomplete="organization-title" placeholder="z. B. Geschäftsführer"') +
       inp("street", "Straße und Hausnummer", false, ' autocomplete="street-address" required') + '<div class="nda-f2">' + inp("zip", "PLZ", false, ' autocomplete="postal-code" inputmode="numeric" required') + inp("city", "Ort", false, ' autocomplete="address-level2" required') + "</div>" +
       inp("country", "Land", false, ' autocomplete="country-name"') + inp("email", "E-Mail", false, ' autocomplete="email" required') + inp("phone", "Telefon", true, ' autocomplete="tel"') +
-      inp("project", "Projektname", false, (pre.project ? " readonly" : "") + " required") + inp("term", "Gültigkeit / Dauer der Vertraulichkeitspflicht", false, ' placeholder="z. B. bis Go-Live des Projektes" required') +
+      inp("project", "Projektname", false, " required") + inp("term", "Gültigkeit / Dauer der Vertraulichkeitspflicht", false, ' placeholder="z. B. bis Go-Live des Projektes" required') +
       '<p class="nda-note">Die Vertraulichkeitspflicht gilt für die hier angegebene Dauer <b>und darüber hinaus noch 3 Jahre</b> nach deren Ende – für Geschäftsgeheimnisse, solange sie solche sind (siehe § 8 der Vereinbarung).</p></div></div>' +
       '<article class="nda-doc" id="ndaDoc" aria-label="Vertragstext">' + docHtml(o, d0) + "</article></div>" +
-      '<section class="nda-card nda-sign"><h2>2. Unterschreiben</h2><p class="sub">Mit deiner Bestätigung und der Eingabe deines Namens unterschreibst du die Vereinbarung elektronisch.</p><div class="nda-f">' +
+      '<section class="nda-card nda-sign"><h2>2. Digital unterzeichnen</h2><p class="sub">Mit deiner Bestätigung und dem Klick auf „Digital unterzeichnen“ unterzeichnest du die Vereinbarung elektronisch (einfache elektronische Signatur) – mit deinem oben angegebenen Namen.</p><div class="nda-f">' +
       '<label class="nda-chk" data-f="accept"><input type="checkbox" name="accept" required><span><b>Ich habe die Vereinbarung gelesen und stimme ihr zu.</b></span><span class="err"></span></label>' +
-      '<label data-f="sigName"><span><b>Unterschrift durch Eingabe des Namens</b></span><input type="text" name="sigName" maxlength="' + LIM.sigName + '" autocomplete="off" placeholder="Vor- und Nachname wie oben"><span class="err" aria-live="polite"></span></label>' +
-      '<div data-f="sigImg"><div class="nda-row" style="justify-content:space-between;margin-bottom:6px"><span style="font-size:13.5px;color:var(--text-dim);font-weight:500"><b style="color:var(--text)">Unterschrift zeichnen</b> <span class="opt" style="color:var(--text-faint)">(optional, mit Finger oder Maus)</span></span><button type="button" class="nda-btn small" id="padClear">Leeren</button></div>' +
-      '<div class="nda-pad"><canvas id="pad" aria-label="Feld zum Unterschreiben"></canvas><div class="line"></div><span>Hier unterschreiben</span></div><span class="err" style="color:#ff6b6b;font-size:12.5px"></span></div>' +
-      '<div class="nda-msg" id="ndaMsg" role="alert"></div><div class="btn-row" style="margin-top:6px"><button type="submit" class="btn primary nda-btn" id="ndaSubmit">Verbindlich unterschreiben</button></div>' + PRIV + "</div></section></form>" +
+'<div class="nda-msg" id="ndaMsg" role="alert"></div><div class="btn-row" style="margin-top:6px"><button type="submit" class="btn primary nda-btn nda-go" id="ndaSubmit">Digital unterzeichnen</button></div>' + PRIV + "</div></section></form>" +
       '<script type="application/json" id="ndaCfg">' + JSON.stringify(cfg).replace(/</g, "\\u003c") + "</script><script>" + CLIENT + "</script>";
   }
-  // Browser: Live-Vorschau (nur Textersetzung, Werte immer escaped), Unterschriftenfeld (Pointer Events = Maus + Touch), Absenden als JSON
+  // Browser: Live-Vorschau (nur Textersetzung, Werte immer escaped), Absenden als JSON
   const CLIENT = '(function(){"use strict";var C=JSON.parse(document.getElementById("ndaCfg").textContent),f=document.getElementById("ndaForm"),doc=document.getElementById("ndaDoc");' +
     'function esc(s){return String(s==null?"":s).replace(/[&<>"\']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","\'":"&#39;"}[c];});}' +
     'function val(k){var e=f.elements[k];return e?(e.type==="checkbox"?e.checked:e.value.replace(/\\s+/g," ").trim()):"";}' +
@@ -358,16 +342,11 @@ module.exports = function (D) {
     'var PH={partei2:"[Angaben des Vertragspartners]",projekt:"[Projektname]",laufzeit:"[Dauer]"};' +
     'function paint(){var v={partei2:p2(),projekt:val("project"),laufzeit:val("term")};doc.querySelectorAll("mark[data-ph]").forEach(function(m){var k=m.getAttribute("data-ph");m.textContent=v[k]||PH[k];m.className=v[k]?"":"empty";});}' +
     'var t;f.addEventListener("input",function(e){clearTimeout(t);t=setTimeout(paint,60);var l=e.target.closest("[data-f]");if(l){l.classList.remove("bad");var er=l.querySelector(".err");if(er)er.textContent="";}});paint();' +
-    'var cv=document.getElementById("pad"),ctx=cv.getContext("2d"),drawn=false,last=null;function size(){var r=cv.getBoundingClientRect(),d=Math.min(window.devicePixelRatio||1,2),img=drawn?cv.toDataURL():null;cv.width=Math.round(r.width*d);cv.height=Math.round(r.height*d);ctx.setTransform(d,0,0,d,0,0);ctx.lineWidth=2.4;ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle="#16161a";if(img){var i=new Image();i.onload=function(){ctx.drawImage(i,0,0,r.width,r.height);};i.src=img;}}size();window.addEventListener("resize",function(){clearTimeout(cv._t);cv._t=setTimeout(size,150);});' +
-    'function pt(e){var r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}cv.addEventListener("pointerdown",function(e){e.preventDefault();cv.setPointerCapture(e.pointerId);last=pt(e);ctx.beginPath();ctx.arc(last.x,last.y,1.1,0,7);ctx.fillStyle="#16161a";ctx.fill();drawn=true;});' +
-    'cv.addEventListener("pointermove",function(e){if(!last)return;e.preventDefault();var p=pt(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;});["pointerup","pointercancel","pointerleave"].forEach(function(n){cv.addEventListener(n,function(){last=null;});});' +
-    'document.getElementById("padClear").addEventListener("click",function(){ctx.clearRect(0,0,cv.width,cv.height);drawn=false;});' +
-    'function sigData(){if(!drawn)return"";var w=Math.min(cv.width,1200),h=Math.round(cv.height*w/cv.width),o=document.createElement("canvas");o.width=w;o.height=h;o.getContext("2d").drawImage(cv,0,0,w,h);var u=o.toDataURL("image/png");return u.length<390000?u:"";}' +
     'var msg=document.getElementById("ndaMsg"),btn=document.getElementById("ndaSubmit");function show(m){msg.textContent=m;msg.className="nda-msg"+(m?" on":"");}' +
-    'f.addEventListener("submit",function(e){e.preventDefault();show("");var b={};Object.keys(C.lim).forEach(function(k){b[k]=val(k);});b.accept=val("accept");b.sigImg=sigData();' +
-    'btn.disabled=true;btn.textContent="Wird unterschrieben …";fetch(location.pathname.replace(/\\/$/,"")+"/sign",{method:"POST",headers:{"Content-Type":"application/json","X-NDA":"1"},body:JSON.stringify(b),credentials:"same-origin"}).then(function(r){return r.json().catch(function(){return{ok:false,error:"Fehler "+r.status};});}).then(function(j){' +
-    'if(j&&j.ok){location.reload();return;}btn.disabled=false;btn.textContent="Verbindlich unterschreiben";show((j&&j.error)||"Unbekannter Fehler");var first=null;Object.keys((j&&j.fields)||{}).forEach(function(k){var l=f.querySelector("[data-f=\\""+k+"\\"]");if(!l)return;l.classList.add("bad");var er=l.querySelector(".err");if(er)er.textContent=j.fields[k];if(!first)first=l;});if(first)first.scrollIntoView({behavior:"smooth",block:"center"});' +
-    '}).catch(function(){btn.disabled=false;btn.textContent="Verbindlich unterschreiben";show("Keine Verbindung – bitte erneut versuchen.");});});})();';
+    'f.addEventListener("submit",function(e){e.preventDefault();show("");var b={};Object.keys(C.lim).forEach(function(k){b[k]=val(k);});b.accept=val("accept");' +
+    'btn.disabled=true;btn.textContent="Wird unterzeichnet …";fetch(location.pathname.replace(/\\/$/,"")+"/sign",{method:"POST",headers:{"Content-Type":"application/json","X-NDA":"1"},body:JSON.stringify(b),credentials:"same-origin"}).then(function(r){return r.json().catch(function(){return{ok:false,error:"Fehler "+r.status};});}).then(function(j){' +
+    'if(j&&j.ok){location.reload();return;}btn.disabled=false;btn.textContent="Digital unterzeichnen";show((j&&j.error)||"Unbekannter Fehler");var first=null;Object.keys((j&&j.fields)||{}).forEach(function(k){var l=f.querySelector("[data-f=\\""+k+"\\"]");if(!l)return;l.classList.add("bad");var er=l.querySelector(".err");if(er)er.textContent=j.fields[k];if(!first)first=l;});if(first)first.scrollIntoView({behavior:"smooth",block:"center"});' +
+    '}).catch(function(){btn.disabled=false;btn.textContent="Digital unterzeichnen";show("Keine Verbindung – bitte erneut versuchen.");});});})();';
   function pageSigned(o) {
     const s = o.signed, d = s.data, base = "/nda/" + o.token + "/pdf";
     return '<section class="lhero nda-hero"><div class="nda-ok" aria-hidden="true">✓</div><span class="eyebrow">Vertraulichkeitsvereinbarung</span><h1>Die Vereinbarung ist unterschrieben.</h1><p class="lead">Danke! ' + ((s.mailed || []).indexOf("partner") > -1 ? "Das unterschriebene PDF wurde an " + escH(d.email.replace(/^(.).*(@.*)$/, "$1…$2")) + " geschickt. Du kannst es hier jederzeit herunterladen." : "Bitte lade dir das unterschriebene PDF hier herunter und bewahre es gut auf.") + '</p>' +
@@ -379,7 +358,7 @@ module.exports = function (D) {
   // ───────────────────────── Cockpit ─────────────────────────
   const summary = o => { const s = o.signed, d = s ? s.data : {}; return { id: o.id, status: statusOf(o), statusText: STATUS_DE[statusOf(o)], url: linkOf(o), createdAt: o.createdAt, signedAt: s ? s.at : null, revokedAt: o.revokedAt || null,
     party: s ? (d.company ? d.company + " · " + d.name : d.name) : [o.pre.company, o.pre.name].filter(Boolean).join(" · "), email: s ? d.email : o.pre.email || "", project: s ? d.project : o.pre.project || "", term: s ? d.term : "",
-    penalty: o.penaltyCents ? eurTxt(o.penaltyCents) : "", hash: s ? s.hash : "", drawn: s ? !!s.drawn : false, mails: (o.mails || []).slice(-5), mailed: s ? s.mailed || [] : [], v: o.v }; };
+    penalty: o.penaltyCents ? eurTxt(o.penaltyCents) : "", hash: s ? s.hash : "", mails: (o.mails || []).slice(-5), mailed: s ? s.mailed || [] : [], v: o.v }; };
   function parsePenalty(v) { const t = String(v == null ? "" : v).replace(/[€\s]/g, ""); if (!t) return 0; const n = parseFloat(/,\d{1,2}$/.test(t) ? t.replace(/\./g, "").replace(",", ".") : t.replace(/[.,](?=\d{3}(\D|$))/g, "").replace(",", ".")); if (!isFinite(n) || n < 0 || n > 1e6) throw Object.assign(new Error("Vertragsstrafe: Betrag zwischen 0 und 1.000.000 €"), { status: 400 }); return Math.round(n * 100); }
   async function create(b) {
     const pre = { company: clip(b.company, LIM.company), name: clip(b.name, LIM.name), email: clip(b.email, LIM.email), project: clip(b.project, LIM.project) };
@@ -425,7 +404,7 @@ module.exports = function (D) {
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
         if (limited("sign", ip, 12, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const o = await store.byToken(m[1]); if (!o) return J(res, 404, { ok: false, error: "Link ungültig" });
-        const b = await readJson(req, MAX_SIG + 20000);
+        const b = await readJson(req, 20000);
         const r = await sign(o, b, req);
         return J(res, 200, { ok: true, hash: r.signed.hash, mailed: r.signed.mailed });
       }

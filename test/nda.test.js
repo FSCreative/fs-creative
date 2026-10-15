@@ -1,11 +1,11 @@
 /* Vertraulichkeitsvereinbarungen (nda.js) gegen den Mailserver-Mock (test/print-mocks.js).
    Aufruf: node test/nda.test.js   – server.js läuft in einer Temp-Kopie (Dateispeicher, ohne DATABASE_URL).
    Geprüft: Link anlegen (nur Admin), öffentliche Seite (noindex, Firmendaten, Vertragsstrafe, Platzhalter), CSRF-Schutz, Prüfung der Eingaben,
-   Unterschreiben → PDF (%PDF, Projekt + Prüfwert) + Mails an beide Seiten mit Anhang, kein zweites Unterschreiben, Einladungsmail,
+   Projektname nur Vorschlag (änderbar), „Digital unterzeichnen“ ohne Namensfeld/Zeichenfeld → PDF (%PDF, Projekt + Prüfwert) + Mails an beide Seiten mit Anhang, kein zweites Unterschreiben, Einladungsmail,
    Widerrufen/Reaktivieren, Löschen nur unsigniert, Escaping, Cockpit-Modul, Begrenzung der Versuche. */
 "use strict";
 const assert = require("assert");
-const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process"), crypto = require("crypto"), zlib = require("zlib");
+const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process"), crypto = require("crypto");
 const createMocks = require("./print-mocks.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -33,15 +33,6 @@ async function startServer(dir, env) {
   for (let i = 0; i < 80; i++) { try { await fetch(base + "/admin/login"); break; } catch (er) { await new Promise((r) => setTimeout(r, 100)); } }
   srv.base = base; return srv;
 }
-function png(w, h) {
-  const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
-  const crc = (b) => { let c = 0xFFFFFFFF; for (const x of b) c = crcT[(c ^ x) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
-  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
-  const row = Buffer.alloc(1 + w * 3, 255); for (let x = 0; x < w; x++) if (x % 7 < 2) { row[1 + x * 3] = 20; row[2 + x * 3] = 20; row[3 + x * 3] = 30; } row[0] = 0;
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(Buffer.concat(Array.from({ length: h }, () => row)))), chunk("IEND", Buffer.alloc(0))]);
-}
-
 (async () => {
   const mocks = createMocks(); const mport = await listen(mocks.server); const M = mocks.state;
   const dir = copyApp();
@@ -50,7 +41,7 @@ function png(w, h) {
   const admin = async (p, body) => { const r = await fetch(B + p, body ? { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) } : { headers: { cookie: COOKIE } }); return Object.assign(await r.json().catch(() => ({})), { _status: r.status }); };
   const sign = async (tok, body, headers) => { const r = await fetch(B + "/nda/" + tok + "/sign", { method: "POST", headers: Object.assign({ "content-type": "application/json", "x-nda": "1" }, headers || {}), body: JSON.stringify(body) }); return { status: r.status, j: await r.json().catch(() => null) }; };
   const tokOf = url => url.split("/nda/")[1];
-  const GOOD = { company: "<b>Muster</b> & Co GmbH", name: "Maria Muster", role: "Geschäftsführerin", street: "Silvrettastraße 12", zip: "6793", city: "Gaschurn", country: "Österreich", email: "maria@example.com", phone: "+43 664 1234567", term: "bis Go-Live des Projektes", sigName: "Maria Muster", accept: true };
+  const GOOD = { company: "<b>Muster</b> & Co GmbH", name: "Maria Muster", role: "Geschäftsführerin", street: "Silvrettastraße 12", zip: "6793", city: "Gaschurn", country: "Österreich", email: "maria@example.com", phone: "+43 664 1234567", term: "bis Go-Live des Projektes", accept: true };
   let A, tokA;
 
   await t("Cockpit-API nur mit Anmeldung", async () => {
@@ -62,7 +53,7 @@ function png(w, h) {
     assert.strictEqual(j.ok, true, JSON.stringify(j)); A = j.item; tokA = tokOf(A.url);
     assert.ok(/^https:\/\/www\.fs-creative\.at\/nda\/[A-Za-z0-9_-]{32}$/.test(A.url), A.url); assert.ok(Buffer.from(tokA, "base64url").length >= 16);
     assert.strictEqual(A.status, "open"); assert.strictEqual(A.penalty, "€ 5.000,00");
-    const l = await admin("/admin/api/nda/list"); assert.strictEqual(l.ok, true); assert.ok(l.items.some(x => x.id === A.id && x.statusText === "offen")); assert.strictEqual(l.version, "NDA-2026-10"); assert.strictEqual(l.mail, true);
+    const l = await admin("/admin/api/nda/list"); assert.strictEqual(l.ok, true); assert.ok(l.items.some(x => x.id === A.id && x.statusText === "offen")); assert.strictEqual(l.version, "NDA-2026-10.2"); assert.strictEqual(l.mail, true);
     const bad = await admin("/admin/api/nda/create", { penalty: "abc€" }); assert.strictEqual(bad._status, 400);
     const bad2 = await admin("/admin/api/nda/create", { email: "keine-mail" }); assert.strictEqual(bad2._status, 400);
   });
@@ -70,7 +61,9 @@ function png(w, h) {
     const r = await fetch(B + "/nda/" + tokA); assert.strictEqual(r.status, 200); const h = await r.text();
     assert.ok(/noindex/.test(r.headers.get("x-robots-tag")) && /noindex, nofollow/.test(h)); assert.strictEqual(r.headers.get("referrer-policy"), "no-referrer"); assert.strictEqual(r.headers.get("x-frame-options"), "DENY");
     assert.ok(/Simon Leonhard Felder/.test(h) && /Dorfstraße 3\/1, 6793 Gaschurn, Österreich, UID ATU82622967/.test(h));
-    assert.ok(/Projekt Alpine 2027/.test(h) && /readonly/.test(h), "Projekt vorgegeben");
+    assert.ok(/name="project"[^>]*value="Projekt Alpine 2027"/.test(h) && !/readonly/.test(h), "Projekt nur vorausgefüllt, änderbar");
+    assert.ok(/>Digital unterzeichnen</.test(h) && !/name="sigName"/.test(h) && !/<canvas/.test(h), "nur Zustimmung + Button");
+    assert.ok(/Ich habe die Vereinbarung gelesen und stimme ihr zu/.test(h) && /Betätigung der Schaltfläche „Digital unterzeichnen“/.test(h) && !/Unterschrift am Bildschirm/.test(h));
     assert.ok(/Vertragsstrafe von € 5\.000,00/.test(h)); assert.ok(/placeholder="z\. B\. bis Go-Live des Projektes"/.test(h));
     assert.ok(/außerhalb dieser Zusammenarbeit ist untersagt/.test(h) && /Dritten weder ganz noch teilweise/.test(h), "Weitergabe + Verwendung geregelt");
     assert.ok(/3 Jahre/.test(h) && /Datenschutz:/.test(h) && /§ 14 KSchG/.test(h) && /UN-Kaufrechts/.test(h));
@@ -87,27 +80,23 @@ function png(w, h) {
   });
   await t("Prüfung der Eingaben: Pflichtfelder, Name = Unterschrift, Längen, Unterschrift-Bild", async () => {
     let r = await sign(tokA, {}); assert.strictEqual(r.status, 400);
-    ["name", "email", "street", "zip", "city", "term", "sigName", "accept"].forEach(k => assert.ok(r.j.fields[k], "Feld " + k + " " + JSON.stringify(r.j.fields)));
-    assert.ok(!r.j.fields.project, "Projekt ist vorgegeben");
-    r = await sign(tokA, Object.assign({}, GOOD, { sigName: "Max Muster" })); assert.strictEqual(r.status, 400); assert.ok(/übereinstimmen/.test(r.j.fields.sigName));
+    ["name", "email", "street", "zip", "city", "project", "term", "accept"].forEach(k => assert.ok(r.j.fields[k], "Feld " + k + " " + JSON.stringify(r.j.fields)));
     r = await sign(tokA, Object.assign({}, GOOD, { term: "x".repeat(201) })); assert.strictEqual(r.status, 400); assert.ok(r.j.fields.term);
-    r = await sign(tokA, Object.assign({}, GOOD, { sigImg: "data:image/png;base64,AAAA" })); assert.strictEqual(r.status, 400); assert.ok(r.j.fields.sigImg);
     r = await sign(tokA, Object.assign({}, GOOD, { accept: "true" })); assert.strictEqual(r.status, 400); assert.ok(r.j.fields.accept);
     assert.strictEqual(M.mails.length, 0, "keine Mails bei Fehlern");
   });
   let hash;
   await t("Unterschreiben: Prüfwert, PDF (Projekt + Prüfwert), Mails mit PDF an Vertragspartner und office@", async () => {
-    const img = "data:image/png;base64," + png(300, 100).toString("base64");
-    const r = await sign(tokA, Object.assign({}, GOOD, { sigImg: img, project: "Anderes Projekt" }), { "x-forwarded-for": "203.0.113.77" });
+    const r = await sign(tokA, Object.assign({}, GOOD, { project: "Projekt Alpine 2028", sigName: "Jemand Anderer", sigImg: "data:image/png;base64,AAAA" }), { "x-forwarded-for": "203.0.113.77" });
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); hash = r.j.hash; assert.ok(/^[a-f0-9]{64}$/.test(hash)); assert.deepStrictEqual(r.j.mailed, ["partner", "office"]);
-    const p = await fetch(B + "/nda/" + tokA + "/pdf?dl=1"); assert.strictEqual(p.status, 200); assert.strictEqual(p.headers.get("content-type"), "application/pdf"); assert.ok(/attachment; filename="Vertraulichkeitsvereinbarung-Projekt-Alpine-2027\.pdf"/.test(p.headers.get("content-disposition")));
+    const p = await fetch(B + "/nda/" + tokA + "/pdf?dl=1"); assert.strictEqual(p.status, 200); assert.strictEqual(p.headers.get("content-type"), "application/pdf"); assert.ok(/attachment; filename="Vertraulichkeitsvereinbarung-Projekt-Alpine-2028\.pdf"/.test(p.headers.get("content-disposition")));
     const buf = Buffer.from(await p.arrayBuffer()), raw = buf.toString("latin1");
-    assert.strictEqual(raw.slice(0, 4), "%PDF"); assert.ok(raw.indexOf("Projekt Alpine 2027") > -1, "Projektname im PDF"); assert.ok(raw.indexOf(hash) > -1, "Prüfwert im PDF"); assert.ok(raw.indexOf("Anderes Projekt") < 0, "vorgegebenes Projekt bleibt");
-    assert.ok(/\/Subtype \/Image/.test(raw), "gezeichnete Unterschrift eingebettet");
+    assert.strictEqual(raw.slice(0, 4), "%PDF"); assert.ok(raw.indexOf("Projekt Alpine 2028") > -1, "geänderter Projektname im PDF"); assert.ok(raw.indexOf(hash) > -1, "Prüfwert im PDF"); assert.ok(raw.indexOf("Projekt Alpine 2027") < 0, "Vorschlag ersetzt");
+    assert.strictEqual((raw.match(/\/Subtype \/Image/g) || []).length, 2, "nur das Logo (Bild + Transparenzmaske), kein Unterschriftsbild");
     const toP = M.mails.find(m => m.to === "maria@example.com"), toO = M.mails.find(m => m.to === "office@fs-creative.at");
     assert.ok(toP && toO, JSON.stringify(M.mails.map(m => m.to)));
     [toP, toO].forEach(m => { assert.strictEqual(m.attachments.length, 1); assert.strictEqual(m.attachments[0].contentType, "application/pdf"); assert.strictEqual(Buffer.from(m.attachments[0].content, "base64").slice(0, 4).toString(), "%PDF"); assert.ok(m.text.indexOf(hash) > -1); });
-    assert.ok(/Projekt Alpine 2027/.test(toO.subject)); assert.strictEqual(toO.replyTo, "maria@example.com");
+    assert.ok(/Projekt Alpine 2028/.test(toO.subject)); assert.strictEqual(toO.replyTo, "maria@example.com");
     assert.ok(toP.html.indexOf("<b>Muster</b>") < 0 && toO.html.indexOf("&lt;b&gt;Muster") > -1, "Mail-HTML escaped");
   });
   await t("nach Unterschrift: Seite zeigt Status + Download, kein Formular, Eingaben escaped; gespeichert mit gekürzter IP", async () => {
@@ -115,9 +104,9 @@ function png(w, h) {
     assert.ok(/Die Vereinbarung ist unterschrieben/.test(h) && h.indexOf(hash) > -1 && /\/pdf\?dl=1/.test(h)); assert.ok(!/id="ndaForm"/.test(h));
     assert.ok(h.indexOf("<b>Muster</b>") < 0 && h.indexOf("&lt;b&gt;Muster&lt;/b&gt; &amp; Co GmbH") > -1);
     const f = JSON.parse(fs.readFileSync(path.join(dir, "nda", A.id + ".json"), "utf8"));
-    assert.strictEqual(f.signed.ipTrunc, "203.0.113.0"); assert.ok(JSON.stringify(f).indexOf("203.0.113.77") < 0, "keine volle IP"); assert.ok(!("sigImg" in f.signed), "Bild nur im PDF");
+    assert.strictEqual(f.signed.ipTrunc, "203.0.113.0"); assert.ok(JSON.stringify(f).indexOf("203.0.113.77") < 0, "keine volle IP"); assert.strictEqual(f.signed.sigName, "Maria Muster", "Unterzeichner = Vor- und Nachname"); assert.strictEqual(f.signed.method, "button"); assert.ok(!/sigImg|Jemand Anderer/.test(JSON.stringify(f)), "keine Bild-/Namensfelder übernommen");
     assert.ok(/MESZ|MEZ|GMT/.test(f.signed.atVienna) && /Z$/.test(f.signed.at));
-    const l = await admin("/admin/api/nda/list"); const it = l.items.find(x => x.id === A.id); assert.strictEqual(it.status, "signed"); assert.strictEqual(it.term, "bis Go-Live des Projektes"); assert.ok(it.drawn);
+    const l = await admin("/admin/api/nda/list"); const it = l.items.find(x => x.id === A.id); assert.strictEqual(it.status, "signed"); assert.strictEqual(it.term, "bis Go-Live des Projektes"); assert.strictEqual(it.project, "Projekt Alpine 2028");
   });
   await t("kein zweites Unterschreiben; unterschriebene nicht löschbar; Admin-PDF", async () => {
     const r = await sign(tokA, GOOD); assert.strictEqual(r.status, 409);
@@ -137,7 +126,7 @@ function png(w, h) {
   await t("Widerrufen → Link zeigt „nicht mehr aktiv“, Unterschreiben gesperrt; Reaktivieren", async () => {
     await admin("/admin/api/nda/op", { op: "revoke", id: Bn.id, confirm: true });
     let r = await fetch(B + "/nda/" + tokB); assert.strictEqual(r.status, 410); assert.ok(/nicht mehr aktiv/.test(await r.text()));
-    const s = await sign(tokB, Object.assign({}, GOOD, { project: "X Projekt", name: "Max Beispiel", sigName: "Max Beispiel" })); assert.strictEqual(s.status, 410);
+    const s = await sign(tokB, Object.assign({}, GOOD, { project: "X Projekt", name: "Max Beispiel" })); assert.strictEqual(s.status, 410);
     const l = await admin("/admin/api/nda/list"); assert.strictEqual(l.items.find(x => x.id === Bn.id).statusText, "widerrufen");
     await admin("/admin/api/nda/op", { op: "reactivate", id: Bn.id, confirm: true }); r = await fetch(B + "/nda/" + tokB); assert.strictEqual(r.status, 200);
     await admin("/admin/api/nda/op", { op: "revoke", id: A.id, confirm: true }); assert.strictEqual((await fetch(B + "/nda/" + tokA + "/pdf")).status, 410, "widerrufene: kein PDF über den Link");
