@@ -86,7 +86,7 @@ function settingsHtml(){
   var toggles=(s.features||[]).map(function(f){ return '<label class="kitog"><input type="checkbox" data-kifeat="'+esc(f.key)+'"'+(f.on?" checked":"")+'> <span>'+esc(f.label)+(f.essential?' <span class="muted">(läuft auch über dem Limit)</span>':'')+'</span></label>'; }).join("");
   var senders=K.ui.sendersDraft!=null?K.ui.sendersDraft:(s.senders||"");
   return panel("ki-set","Kosten &amp; Einstellungen","Preise Claude Opus 5.5: 4 $ / 20 $ je 1 Mio. Tokens (Eingabe/Ausgabe), Cache-Lesen 0,20 $. Euro-Beträge sind umgerechnet (≈).","",
-    '<div class="kigrid"><div><div class="sec-t">Status</div>'+(s.configured?'<div class="amsg ok">Verbunden · Modell '+esc(s.model)+'</div>':K.notSetHtml())+
+    '<div class="kigrid"><div><div class="sec-t">Status</div>'+(s.configured?'<div class="amsg ok">Verbunden · '+esc(s.modelFast?("Sonnet 5.5 für Belege, Mails, Rechnungen · Opus 5.5 für UVA-Check und Assistent"):("Modell "+s.model))+'</div>':K.notSetHtml())+
       '<div class="sec-t" style="margin-top:12px">Diesen Monat</div>'+(rows?'<table class="kitab"><thead><tr><th>Funktion</th><th>Aufrufe</th><th>Tokens ein/aus</th><th>Kosten</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="3"><b>Summe</b></td><td class="num money"><b>'+F.eur(s.cost.eur)+'</b></td></tr></tfoot></table>':'<div class="muted">Noch keine KI-Aufrufe.</div>')+
       (hist?'<div class="kitags" style="margin-top:8px">'+hist+'</div>':'')+
       '<p class="muted">Monatslimit: '+(s.limitEur?F.eur(s.limitEur)+' – darüber laufen nur noch Beleg- und Steuerfunktionen.':'keines gesetzt (optional Variable <b>KI_MONTHLY_LIMIT_EUR</b> in Railway, z. B. 30).')+'</p></div>'+
