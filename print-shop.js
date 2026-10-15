@@ -1279,8 +1279,11 @@ module.exports = function (D) {
     const html = '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Bald verfügbar — FS Creative</title><link rel="stylesheet" href="/landing.css?v=4"></head><body><main id="main"><div class="wrap"><section class="lhero"><span class="eyebrow">Druck</span><h1>Bald verfügbar.</h1><p class="lead">Diese Seite ist noch nicht öffentlich. Drucksachen gestalten und drucken wir gern persönlich für dich.</p><div class="btn-row"><a class="btn primary" href="/druck">Zu Druck &amp; Print</a><a class="btn ghost" href="/kontakt?von=print&amp;thema=Druck">Anfragen</a></div></section></div></main></body></html>';
     return D.send(res, 404, html, "text/html; charset=utf-8", { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
   }
+  const ASSET_V = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12);
   function shopPage(req, res, preview) {
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    // Shop-Dateien je Deploy neu laden (sonst bleibt bis zu 1 Std. die alte app.js/print.css im Browser-Cache)
+    html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace("</head>", '<script>window.PRINT_V="' + ASSET_V + '";</script>\n</head>');
     if (preview) html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
