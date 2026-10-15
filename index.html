@@ -550,6 +550,8 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
   .msheet-grip{width:40px;height:4px;border-radius:99px;background:var(--border-2);margin:2px auto 8px;flex:0 0 auto}
   .msheet a{padding:14px 16px;font-size:16px;border-radius:14px;color:var(--text-dim);font-weight:500}
   .msheet a.active{color:var(--text);background:var(--surface-2)}
+  .msheet-theme{display:flex;align-items:center;gap:10px;padding:14px 16px;font:inherit;font-size:16px;font-weight:500;border:0;border-radius:14px;color:var(--text-dim);background:var(--surface);cursor:pointer;text-align:left}
+  .msheet-theme svg{width:19px;height:19px}
   .msheet a.nav-cta{color:#fff;background:var(--accent);text-align:center;margin-top:6px}
   /* Tactile press feedback */
   .card,.proj-card,.ref-card,.rec-card,.btn,.pbadge{transition:transform .12s var(--ease),background .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease)}
@@ -678,6 +680,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   <a href="/kantineur" data-link>Kantineur</a>
   <a href="/referenzen" data-link>Referenzen</a>
   <a href="/ueber-uns" data-link>Über uns</a>
+  <button type="button" class="msheet-theme" data-theme-toggle><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>Licht an/aus</button>
   <a href="/kontakt" class="nav-cta" data-link>Kontakt</a>
 </div>
 <div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
@@ -1705,6 +1708,10 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
 </script>
 
 <script>
+window.fscToggleTheme=function(){var el=document.documentElement;el.classList.add('theming');var light=el.classList.toggle('light');try{localStorage.setItem('fsc-theme',light?'light':'dark');}catch(_){}setTimeout(function(){el.classList.remove('theming');},650);};
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-theme-toggle]');if(b){e.preventDefault();window.fscToggleTheme();}});
+</script>
+<script>
 /* Pull-chain light switch — verlet-physics chain, drag to pull. Desktop only. */
 (function(){
   var wrap = document.getElementById('pullchain'); if(!wrap) return;
@@ -1735,7 +1742,8 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   function nowms(){ return window.performance && performance.now ? performance.now() : Date.now(); }
   function toSvg(e){ var r = svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 
-  function toggle(){
+  function toggle(){ window.fscToggleTheme(); }
+  function _old(){
     var el = document.documentElement;
     el.classList.add('theming');
     var light = el.classList.toggle('light');

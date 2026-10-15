@@ -178,3 +178,46 @@ a:focus-visible,summary:focus-visible,.btn:focus-visible{outline:2px solid var(-
 .region-links{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0;margin-top:14px}
 .region-links a{display:inline-block;font-size:14px;color:var(--text-dim);border:1px solid var(--border-2);border-radius:999px;padding:7px 14px}
 .region-links a:hover{color:var(--text);border-color:var(--accent)}
+
+/* ---------- Heller Modus (Zugkette/Lichtschalter, gilt seitenübergreifend über localStorage „fsc-theme“) ---------- */
+html.theming, html.theming *{transition:background-color .55s ease,color .45s ease,border-color .45s ease,box-shadow .45s ease,fill .4s ease,opacity .4s ease !important}
+html.light{
+  --bg:#f5f6f9; --bg-soft:#ffffff;
+  --surface:rgba(18,20,28,.035); --surface-2:rgba(18,20,28,.06);
+  --border:rgba(18,20,28,.10); --border-2:rgba(18,20,28,.17);
+  --text:#12131a; --text-dim:#565b68; --text-faint:#878c99;
+  --chain:#7c8291;
+}
+html.light .orb{opacity:.2}
+html.light header.nav{background:rgba(255,255,255,.72)}
+html.light .tabbar{background:rgba(255,255,255,.86)}
+html.light .btn.primary{background:#14151c;color:#fff}
+html.light .btn.primary:hover{background:#2c2e3a}
+html.light .btn.ghost:hover{background:rgba(18,20,28,.06)}
+html.light .nav-links a.nav-cta{background:#14151c}
+html.light .card:hover,html.light .rel-card:hover{border-color:rgba(18,20,28,.22)}
+html.light .brand .mark img{filter:invert(1) brightness(.25)}
+html.light ::-webkit-scrollbar-track{background:#eceef1}
+html.light ::-webkit-scrollbar-thumb{background:#c3c8d1;border-color:#eceef1}
+@media(max-width:640px){ html.light .nav-links{background:rgba(255,255,255,.98);box-shadow:0 20px 50px rgba(0,0,0,.12)} }
+
+/* Zugkette (Desktop) */
+:root{--chain:#c6cad4}
+.pullchain{position:fixed;top:0;right:30px;width:130px;height:540px;z-index:350;pointer-events:none;-webkit-user-select:none;user-select:none}
+.pullchain svg{display:block;overflow:visible}
+.pc-mount{fill:var(--chain);opacity:.65}
+.pc-bead{fill:var(--chain)}
+.pc-knob{fill:url(#pcKnobGrad);stroke:rgba(0,0,0,.28);stroke-width:.5}
+.pc-knob-nub{fill:#aeb4c0}
+.pc-knob-hit{fill:transparent;pointer-events:auto;cursor:grab;touch-action:none}
+.pullchain.dragging .pc-knob-hit{cursor:grabbing}
+.pc-knob-ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0}
+.pullchain.hint .pc-knob-ring{animation:pcHint 2.1s ease-out .9s 3}
+@keyframes pcHint{0%{opacity:0;r:9}22%{opacity:.5}100%{opacity:0;r:30}}
+@media(max-width:900px),(hover:none){.pullchain{display:none!important}}
+/* Lichtschalter am Handy (im Menü) */
+.theme-btn{display:none}
+@media(max-width:900px),(hover:none){
+  .theme-btn{display:flex;align-items:center;gap:8px;font:inherit;font-size:14px;color:var(--text-dim);background:var(--surface-2);border:0;border-radius:999px;padding:8px 14px;cursor:pointer}
+  .theme-btn svg{width:17px;height:17px}
+}
