@@ -40,7 +40,7 @@ var UID_RE={AT:/^ATU\d{8}$/,BE:/^BE[01]\d{9}$/,BG:/^BG\d{9,10}$/,CY:/^CY\d{8}[A-
 function uidValid(uid){ var u=String(uid||"").replace(/[\s.\-]/g,"").toUpperCase(); if(!u) return {ok:false,why:"keine UID"}; var cc=u.slice(0,2), re=UID_RE[cc]; if(!re) return {ok:false,why:"unbekanntes Länderkürzel "+cc,uid:u}; return re.test(u)?{ok:true,uid:u,cc:cc}:{ok:false,why:"Format passt nicht zu "+cc,uid:u}; }
 function uidCountry(uid){ var m=String(uid||"").replace(/\s/g,"").toUpperCase().match(/^([A-Z]{2})[0-9A-Z]{2,13}$/); return m?(m[1]==="EL"?"GR":m[1]):""; }
 // Bekannte ausländische Anbieter (Name → Land), falls in sevDesk keine UID hinterlegt ist
-var FOREIGN=[[/google|youtube/i,"IE"],[/meta platforms|facebook|instagram/i,"IE"],[/apple/i,"IE"],[/adobe/i,"IE"],[/microsoft|linkedin|github/i,"IE"],[/anthropic/i,"IE"],[/openai|chatgpt/i,"IE"],[/spotify/i,"SE"],[/hetzner/i,"DE"],[/amazon web services|\baws\b/i,"LU"],[/railway/i,"US"],[/cloudflare/i,"US"],[/figma/i,"US"],[/notion/i,"US"],[/vercel/i,"US"],[/netlify/i,"US"],[/digitalocean/i,"US"],[/dropbox/i,"IE"],[/canva/i,"AU"],[/zoom/i,"US"],[/slack/i,"IE"],[/atlassian/i,"AU"],[/jetbrains/i,"CZ"],[/midjourney/i,"US"],[/elevenlabs/i,"US"],[/framer/i,"NL"],[/webflow/i,"US"],[/calendly/i,"US"],[/zapier/i,"US"],[/mailchimp|intuit/i,"US"],[/envato/i,"AU"],[/shutterstock/i,"US"],[/squarespace/i,"IE"],[/godaddy/i,"US"],[/namecheap/i,"US"],[/twilio|sendgrid/i,"US"],[/postmark/i,"US"],[/fly\.io/i,"US"],[/stripe/i,"IE"],[/paypal/i,"LU"],[/shopify/i,"IE"],[/hubspot/i,"IE"],[/freepik/i,"ES"],[/fontshare|monotype|myfonts/i,"US"],[/\bunity\b/i,"US"],[/beds24/i,"DE"]];
+var FOREIGN=[[/google|youtube/i,"IE"],[/meta platforms|facebook|instagram/i,"IE"],[/apple/i,"IE"],[/adobe/i,"IE"],[/microsoft|linkedin|github/i,"IE"],[/anthropic/i,"IE"],[/openai|chatgpt/i,"IE"],[/spotify/i,"SE"],[/hetzner/i,"DE"],[/amazon web services|\baws\b/i,"LU"],[/railway/i,"US"],[/cloudflare/i,"US"],[/figma/i,"US"],[/notion/i,"US"],[/vercel/i,"US"],[/netlify/i,"US"],[/digitalocean/i,"US"],[/dropbox/i,"IE"],[/canva/i,"AU"],[/zoom/i,"US"],[/slack/i,"IE"],[/atlassian/i,"AU"],[/jetbrains/i,"CZ"],[/midjourney/i,"US"],[/elevenlabs/i,"US"],[/framer/i,"NL"],[/\bwix(\.com)?\b/i,"IL"],[/webflow/i,"US"],[/calendly/i,"US"],[/zapier/i,"US"],[/mailchimp|intuit/i,"US"],[/envato/i,"AU"],[/shutterstock/i,"US"],[/squarespace/i,"IE"],[/godaddy/i,"US"],[/namecheap/i,"US"],[/twilio|sendgrid/i,"US"],[/postmark/i,"US"],[/fly\.io/i,"US"],[/stripe/i,"IE"],[/paypal/i,"LU"],[/shopify/i,"IE"],[/hubspot/i,"IE"],[/freepik/i,"ES"],[/fontshare|monotype|myfonts/i,"US"],[/\bunity\b/i,"US"],[/beds24/i,"DE"]];
 // Reihenfolge: UID-Präfix → bekannter ausländischer Anbieter → Land der Kontaktadresse (oft nur Standard "AT")
 function supplierCountry(v){ var c=uidCountry(v.supplierUid); if(c) return c; for(var i=0;i<FOREIGN.length;i++){ if(FOREIGN[i][0].test(v.supplier||"")) return FOREIGN[i][1]; } return v.supplierCountry?String(v.supplierCountry).toUpperCase():""; }
 /* Kunde einer Ausgangsrechnung: UID und Land robust bestimmen (Cockpit-Angabe → UID des Kontakts → Rechnungsadresse → UID im
@@ -277,10 +277,17 @@ function inWhy(v,line,st){
   var src=uidCountry(v.supplierUid)?"UID":(cc&&cc!==String(v.supplierCountry||"").toUpperCase()?"bekannter Anbieter":"Kontaktadresse"), land=cc?" (Lieferant "+cc+" laut "+src+")":"";
   if(sem==="ige"||(!r&&v.taxType==="eu")){ var w=igeOrService(v,line,st); return w.c==="rc"?{c:"rc",why:"als ig. Erwerb gebucht – für die UVA als Reverse-Charge-Leistung behandelt (§ 19 Abs. 1 UStG, KZ 057/066): "+w.why+land,sure:w.sure}:{c:"ige",why:"ig. Erwerb (Ware) laut Steuerregel"+(w.why?": "+w.why:"")+land,sure:w.sure}; }
   if(sem==="none"||(!r&&v.taxType==="ss")) return {c:"none",why:"nicht vorsteuerabziehbar laut Steuerregel"};
+  if((sem==="rc"||(!r&&v.taxType==="noteu"))&&isEU(cc)&&st&&st.supMap&&st.supMap[supKey(v)]==="ige") return {c:"ige",why:"als Reverse Charge gebucht, Lieferant liefert aber Waren → ig. Erwerb (Zuordnung für „"+(v.supplier||"")+"“)"+land,sure:true};
   if(sem==="rc"||(!r&&v.taxType==="noteu")) return {c:"rc",why:"Reverse Charge mit Vorsteuer laut Steuerregel"+land};
   if(sem==="rcnv") return {c:"rcnv",why:"Reverse Charge ohne Vorsteuer laut Steuerregel"+land};
   if(tax){ if(!atRate(line.rate)) return {c:"fx",why:line.rate+" % ist kein österreichischer Steuersatz → ausländische USt"+land}; return {c:"060",why:"österreichische USt "+line.rate+" % ausgewiesen"+(foreign?" – Lieferant aber "+cc+", bitte prüfen":"")}; }
-  if(foreign) return {c:"rc",why:"ausländischer Leister ohne USt → Reverse Charge (Art. 3a, § 19 Abs. 1 UStG)"+land};
+  if(foreign&&RX_KEINE_LEISTUNG.test(String(line.cat||"")+" "+String(v.desc||""))) return {c:"none",why:"Mahn-/Verzugsgebühr oder Zinsen: keine Leistung, keine USt"+land};
+  // ohne USt aus dem Ausland: Ware aus der EU = ig. Erwerb (KZ 070/072/065), Dienstleistung = Reverse Charge (KZ 057/066),
+  // Ware aus dem Drittland = Einfuhr (EUSt über Zoll/Spediteur, eigener Beleg) – die Warenrechnung selbst hat keine UVA-Kennzahl
+  if(foreign){ var g=igeOrService(v,line,st);
+    if(isEU(cc)) return g.c==="ige"?{c:"ige",why:"Ware aus der EU ohne USt → ig. Erwerb (Art. 1 UStG): "+g.why+land,sure:g.sure}:{c:"rc",why:"EU-Dienstleistung ohne USt → Reverse Charge (§ 3a Abs. 6, § 19 Abs. 1 UStG): "+g.why+land,sure:g.sure};
+    if(g.c==="ige"&&g.sure) return {c:"none",why:"Ware aus dem Drittland → Einfuhr; Einfuhrumsatzsteuer als eigener Beleg (KZ 061)"+land,sure:false};
+    return {c:"rc",why:"Leistung aus dem Drittland ohne USt → Reverse Charge (§ 19 Abs. 1 UStG)"+land,sure:g.sure}; }
   return {c:"none",why:"keine USt ausgewiesen, inländischer Lieferant"};
 }
 function inClass(v,line,st){ return inWhy(v,line,st).c; }
@@ -290,14 +297,18 @@ function hasPkw(st){ var d=st&&st.docs; if(!d) return false; for(var k in d){ va
    „Innergemeinschaftlicher Erwerb“ – das sind sonstige Leistungen mit Reverse Charge (§ 3a Abs. 6, § 19 Abs. 1 UStG → KZ 057/066).
    Reihenfolge: Zuordnung je Lieferant im Cockpit (st.supMap) → Anlagegut/Warenkategorie → bekannter Dienstleister/Dienstleistungskategorie → unklar (Ware, prüfen). */
 var RX_WARE=/(^|[\s\-])(waren?|handelsware|wareneinkauf)\b|material|rohstoff|hardware|ger(ä|ae)t|computer|laptop|notebook|monitor|kamera|objektiv|drucker|m(ö|oe)bel|zubeh(ö|oe)r|ersatzteil|fotobox|verbrauchs/i;
+var RX_KEINE_LEISTUNG=/mahn|verzug|s(ä|ae)umnis|zinsen/i;
 var RX_DIENST=/software|lizenz|abo|subscription|hosting|server|cloud|saas|api|werbung|ads|marketing|anzeige|domain|dienstleist|beratung|provision|geb(ü|ue)hr|plattform|stock|font|kurs|schulung|fortbildung|telefon|internet|e-?mail|newsletter/i;
 function supKey(v){ return String(v.supplier||"").trim().toLowerCase().replace(/\s+/g," "); }
 function igeOrService(v,line,st){
   var m=st&&st.supMap&&st.supMap[supKey(v)]; if(m==="rc"||m==="ige") return {c:m,why:"Zuordnung für Lieferant „"+(v.supplier||"")+"“",sure:true};
   var cat=String(line.cat||"")+" "+String(v.desc||""), kz=catKz(st||{},line);
-  if(docCfg(st,v.id).asset||kz==="9100"||kz==="9130"||RX_WARE.test(cat)) return {c:"ige",why:"Warenkauf ("+(line.cat||"Anlagegut")+")",sure:true};
+  // Reihenfolge: Anlagegut → bekannter Dienstleister (Meta, Google, Wix … auch wenn die Kategorie „Wareneinkauf“ heißt) → Waren-/Dienstleistungskategorie
+  if(docCfg(st,v.id).asset) return {c:"ige",why:"Warenkauf (Anlagegut)",sure:true};
   var known=FOREIGN.some(function(f){ return f[0].test(v.supplier||""); });
-  if(known||RX_DIENST.test(cat)||kz==="9200"||kz==="9190") return {c:"rc",why:known?"bekannter Dienstleister":"Dienstleistungs-Kategorie „"+(line.cat||"")+"“",sure:true};
+  if(known) return {c:"rc",why:"bekannter Dienstleister",sure:true};
+  if(kz==="9100"||kz==="9130"||RX_WARE.test(cat)) return {c:"ige",why:"Warenkauf ("+(line.cat||"Ware")+")",sure:true};
+  if(RX_DIENST.test(cat)||kz==="9200"||kz==="9190") return {c:"rc",why:"Dienstleistungs-Kategorie „"+(line.cat||"")+"“",sure:true};
   return {c:"ige",why:"Ware oder Dienstleistung? Bitte je Lieferant zuordnen",sure:false};
 }
 
