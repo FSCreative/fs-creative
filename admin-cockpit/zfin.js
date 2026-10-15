@@ -335,6 +335,8 @@ F.listen("change","[data-fmdup]",function(el){ var f=el.files&&el.files[0], id=e
 function txLoad(force){ if(C.busy.tx) return; C.busy.tx=1; F.api("/admin/api/sev/transactions"+(force?"?force=1":"")).then(function(j){ C.busy.tx=0; C.tx=j||{ok:false}; F.render(); }); }
 F.action("ftxreload",function(){ C.tx=null; txLoad(true); });
 var MO=null;
+/* nach jeder Zuordnung/Buchung: Mollie-Abgleich, Bankliste und Prüf-Liste frisch laden (sonst bleibt „Zuordnen“ stehen) */
+F.finAfterBook=function(){ MO=null; C.tx=null; if(F.reviewReset) F.reviewReset(); };
 /* Mollie-Abgleich je Konto: eingenommen → Gebühren → netto → ausbezahlt (auf der Bank?) → noch bei Mollie, Kontrolle gegen den Mollie-Saldo */
 function mollieCard(m){
   var ok=m.diff==null?null:Math.abs(m.diff)<0.02, st=function(l,v,cls,sub){ return '<div class="mo-k"><span>'+l+'</span><b class="num'+(cls?" "+cls:"")+'">'+v+'</b>'+(sub?'<i>'+sub+'</i>':'')+'</div>'; };

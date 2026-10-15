@@ -39,7 +39,7 @@ F.reviewPage=function(mobile){
   var log=(RV.log||[]).length?'<details class="'+(mobile?"fsm-card":"fsd-card")+'"><summary>Zuletzt erledigt</summary>'+RV.log.slice(0,12).map(function(l){ return '<div class="muted" style="font-size:12.5px;padding:3px 0">'+de(String(l.at).slice(0,10))+' · '+(l.rejected?"abgelehnt":"bestätigt")+' · '+esc(l.title||"")+(l.amount!=null?' · '+eur(l.amount):'')+'</div>'; }).join("")+'</details>':'';
   return head+body+log;
 };
-function done(j,msg){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); RV=null; load(); return; } RV=j; F.toast(msg); if(F.finTxReset) F.finTxReset(); F.load(true); }
+function done(j,msg){ if(F.finAfterBook) F.finAfterBook(); if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); RV=null; load(); return; } RV=j; F.toast(msg); if(F.finTxReset) F.finTxReset(); F.load(true); }
 function find(id){ return RV&&(RV.items||[]).find(function(x){ return x.id===id; }); }
 F.action("rvreload",function(){ RV=null; load(); });
 F.action("rvok",function(id){ var x=find(id); if(!x) return; F.confirm("Bestätigen: "+x.title+(x.amount!=null?" ("+eur(x.amount)+")":"")+"?","Bestätigen",function(){ F.toast("Führe aus …"); F.api("/admin/api/fin/proposals",{body:{confirm:true,op:"accept",id:id}}).then(function(j){ done(j,"Erledigt: "+x.title); }); }); });

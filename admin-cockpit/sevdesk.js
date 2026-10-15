@@ -236,6 +236,7 @@ function bankDo(txId,body,label){
   post("/admin/api/sev/bank-op",body).then(function(j){
     if(!j||!j.ok){ if(el) el.classList.remove("gone"); return fail(j); }
     if(S.bank) S.bank.transactions=S.bank.transactions.filter(function(t){ return t.id!==txId; });
+    if(F.finAfterBook) F.finAfterBook();
     F.toast(label||"Zugeordnet"); F.render(); F.load(true);
   }).catch(function(){ if(el) el.classList.remove("gone"); fail(); });
 }
