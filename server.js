@@ -2672,6 +2672,7 @@ async function handleAdmin(req, res, u, p) {
       if (!FIN_STATE.local) return J(200, { ok: true, items: [], groups: [], count: 0, log: [] });
       await FIN_LOCAL.load();
       // Details zu einem Vorschlag: Buchung(en) + Beleg/Rechnung (für die Ansicht „Details“ in Zur Prüfung)
+      if (req.method === "GET" && u.searchParams.get("debug") === "vm") return J(200, { ok: true, vm: { at: VM_CACHE.at, items: VM_CACHE.items && VM_CACHE.items.length, busy: !!VM_CACHE.p, run: VM_CACHE.run || null }, im: { at: IM_CACHE.at, items: IM_CACHE.items && IM_CACHE.items.length, busy: !!IM_CACHE.p }, now: Date.now() });
       if (req.method === "GET" && u.searchParams.get("detail")) {
         const v0 = await FIN_PROP.view(), it = v0.items.find(x => x.id === String(u.searchParams.get("detail"))); if (!it) return J(200, { ok: false, error: "Vorschlag nicht mehr vorhanden" });
         const dd = x => String(x || "").slice(0, 10), accName = id => ((FIN_LOCAL.get("CheckAccount", id) || {}).name || "Konto");
@@ -3511,12 +3512,13 @@ const VM_CACHE = { at: 0, items: null, p: null };
 // jede Buchungsänderung (Beleg, Zahlung, Import) → Beleg-Abgleich neu rechnen
 if (SEV_OPS && SEV_OPS.resetCaches && !SEV_OPS._vmHook) { const rc = SEV_OPS.resetCaches; SEV_OPS.resetCaches = function () { VM_CACHE.at = 0; return rc.apply(this, arguments); }; SEV_OPS._vmHook = true; }
 async function vmCompute() {
-    await FIN_LOCAL.load(); const best = {}, skip = {}; let vmN = 0;
+    await FIN_LOCAL.load(); const best = {}, skip = {}; let vmN = 0; VM_CACHE.run = { start: Date.now(), n: 0, cand: 0 };
     const lim = new Date(Date.now() - 730 * 864e5).toISOString().slice(0, 10);
     for (const v of FIN_LOCAL.all("Voucher").filter(v => String(v.voucherType || "VOU") === "VOU" && ["100", "750"].indexOf(String(v.status)) > -1 && String(v.voucherDate || "").slice(0, 10) >= lim && Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0) > 0.005)) {
       if (++vmN % 15 === 0) await new Promise(r => setImmediate(r));   // Server zwischendurch atmen lassen
+      VM_CACHE.run.n = vmN;
       let r; try { r = await FIN_PROP.suggestVoucher(v.id, { bare: true }); } catch (e) { continue; }
-      const c = (r.candidates || []).find(x => x.type === "tx" && x.score >= 60); if (!c || skip[v.id + ":" + c.id]) continue;
+      const c = (r.candidates || []).find(x => x.type === "tx" && x.score >= 60); if (!c || skip[v.id + ":" + c.id]) continue; VM_CACHE.run.cand++;
       if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, v, c, open: r.voucher.open };
     }
     return Object.values(best).map(b => ({ id: "vm:" + b.v.id + ":" + b.c.id, key: "vm:" + b.v.id + ":" + b.c.id, voucherId: String(b.v.id), txId: String(b.c.id), amount: b.open, date: String(b.v.voucherDate || "").slice(0, 10),
