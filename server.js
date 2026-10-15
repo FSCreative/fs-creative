@@ -1205,7 +1205,8 @@ async function sevVoucherFromMail(pl) {
   const rule = ["8", "9", "10", "12", "13", "14"].indexOf(String(pl.taxRule || "")) > -1 ? String(pl.taxRule) : "";
   const body = {
     voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(day), supplierName: String(pl.supplierName || "").slice(0, 200), description: String(pl.description || "").slice(0, 250),
-      status: 50, taxType: "default", creditDebit: "C", voucherType: "VOU", currency: "EUR" },
+      status: 50, taxType: "default", creditDebit: pl.creditDebit === "D" ? "D" : "C",   // D = Einnahme-Beleg (z. B. Provisionsgutschrift Paketshop)
+      voucherType: "VOU", currency: "EUR" },
     voucherPosSave: pos.map(x => ({ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: x.r, net: false, sumGross: x.g, sumNet: sevNet(x.g, x.r), comment: String(pl.description || "").slice(0, 250) })),
     voucherPosDelete: null, filename: tmp,
   };
