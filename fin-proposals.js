@@ -226,7 +226,9 @@ module.exports = function (D) {
       if (!im) {
         if (vd) { const d = ddays(t.valueDate, vd); if (d < -7 || d > 30) continue;
           s += d >= 0 && d <= 10 ? 15 : 8; why.push(d === 0 ? "gleiches Datum" : "Umsatz " + Math.abs(d) + " Tage " + (d > 0 ? "nach" : "vor") + " dem Beleg"); }
-        const nc = nameCheck(o.name, counterparty(t, R)); if (nc === "mismatch") continue;   // z. B. Beleg „A1“ ↔ Kartenzahlung „WORLD4YOU“
+        const refHit = (o.refs || []).some(r => String(t.paymtPurpose || "").indexOf(r) > -1);   // Amazon: Bestellnummer im Buchungstext statt Händlername
+        const nc = refHit ? "match" : nameCheck(o.name, counterparty(t, R)); if (nc === "mismatch") continue;
+        if (refHit) why.push("Bestellnummer im Buchungstext");   // z. B. Beleg „A1“ ↔ Kartenzahlung „WORLD4YOU“
         if (nc === "match") { s += 30; why.push("Name passt"); } else { s = Math.min(s, NOCAP); why.push("Buchungstext ohne Namen – nur Betrag/Datum"); }
         if (byN) s = Math.min(s, 50);
       }
@@ -243,7 +245,8 @@ module.exports = function (D) {
     if (String(v.voucherType || "VOU") !== "VOU") return { voucher: { id: String(v.id), open: 0, date: day(v.voucherDate), supplier: v.supplierName || "" }, candidates: [] };   // Vorlagen (RV) sind keine echten Belege
     const open = r2(Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0)), out = [], vd = day(v.voucherDate), credit = String(v.creditDebit || "C") === "C";
     if (!(o && o.bare)) (await forVoucher(vid)).forEach(p => out.push(propCand(p)));
-    if (open > 0.005 && ["100", "750"].indexOf(String(v.status)) > -1) (await txCandidates({ amount: open, date: vd, name: v.supplierName, desc: v.description, credit, voucherId: v.id, sig: +v.paidAmount > 0 ? instalmentSig(v) : null })).forEach(c => out.push(c));
+    const refs = [...new Set((String(v.description || "") + " " + (L.positionsOf ? L.positionsOf("Voucher", v.id) : []).map(x => x.comment || "").join(" ")).match(/\b\d{3}-\d{7}-\d{7}\b/g) || [])];
+    if (open > 0.005 && ["100", "750"].indexOf(String(v.status)) > -1) (await txCandidates({ amount: open, date: vd, name: v.supplierName, desc: v.description, refs, credit, voucherId: v.id, sig: +v.paidAmount > 0 ? instalmentSig(v) : null })).forEach(c => out.push(c));
     out.sort((a, b) => b.score - a.score);
     return { voucher: { id: String(v.id), open, date: vd, supplier: v.supplierName || "" }, candidates: out.slice(0, 5) };
   }
