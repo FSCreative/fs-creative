@@ -13,9 +13,13 @@ const CALC = require("./admin-cockpit/steuer-calc.js");
 let Anthropic = null;
 try { const m = require("@anthropic-ai/sdk"); Anthropic = m.default || m; } catch (e) { Anthropic = null; }
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-opus-5-5";            // anspruchsvoll: UVA-Check, Chat-Assistent
+const MODEL_FAST = "claude-sonnet-5-5";      // Belege, Mails, Rechnungen, Leads – gleich gut, halber Preis
+const OPUS_FEATURES = ["uva", "assistant"];
+const modelFor = f => OPUS_FEATURES.indexOf(f) > -1 ? MODEL : MODEL_FAST;
 const BETAS = ["server-side-fallback-2026-07-01"];              // Refusal-Fallback (fallbacks: "default")
-const PRICE_USD = { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 };   // je 1 Mio. Tokens (Claude Opus 5.5)
+const PRICES = { "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 }, "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 } };   // je 1 Mio. Tokens
+const PRICE_USD = PRICES["claude-opus-5-5"];
 const USD_EUR = 0.86;                                              // fixer Umrechnungskurs (Näherung, im Cockpit so beschriftet)
 const NOT_SET = "KI nicht eingerichtet – ANTHROPIC_API_KEY in Railway setzen";
 
@@ -97,11 +101,15 @@ module.exports = function createKi(deps) {
   const addDaysISO = (iso, n) => { const dt = new Date(String(iso).slice(0, 10) + "T12:00:00Z"); dt.setUTCDate(dt.getUTCDate() + n); return dt.toISOString().slice(0, 10); };
 
   // ── Kosten ──
-  function costUsd(u) { return ((u.input || 0) * PRICE_USD.input + (u.output || 0) * PRICE_USD.output + (u.cacheRead || 0) * PRICE_USD.cacheRead + (u.cacheWrite || 0) * PRICE_USD.cacheWrite) / 1e6; }
+  const priced = (u, P) => ((u.input || 0) * P.input + (u.output || 0) * P.output + (u.cacheRead || 0) * P.cacheRead + (u.cacheWrite || 0) * P.cacheWrite) / 1e6;
+  // ab der Modell-Aufteilung wird je Aufruf mit dem tatsächlichen Modellpreis summiert (usd); ältere Einträge ohne usd = Opus-Preis
+  function costUsd(u) { return u.usd != null ? u.usd + priced({ input: u.input - (u.pricedIn || 0), output: u.output - (u.pricedOut || 0), cacheRead: u.cacheRead - (u.pricedCr || 0), cacheWrite: u.cacheWrite - (u.pricedCw || 0) }, PRICE_USD) : priced(u, PRICE_USD); }
   function track(feature, u) {
     if (!u) return;
     const U = usage(), mk = monthKey(), m = U.months[mk] = U.months[mk] || {}, f = m[feature] = m[feature] || { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-    f.calls++; f.input += u.input_tokens || 0; f.output += u.output_tokens || 0; f.cacheRead += u.cache_read_input_tokens || 0; f.cacheWrite += u.cache_creation_input_tokens || 0;
+    const t = { input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 };
+    f.calls++; f.input += t.input; f.output += t.output; f.cacheRead += t.cacheRead; f.cacheWrite += t.cacheWrite;
+    f.usd = (f.usd || 0) + priced(t, PRICES[modelFor(feature)] || PRICE_USD); f.pricedIn = (f.pricedIn || 0) + t.input; f.pricedOut = (f.pricedOut || 0) + t.output; f.pricedCr = (f.pricedCr || 0) + t.cacheRead; f.pricedCw = (f.pricedCw || 0) + t.cacheWrite; f.model = modelFor(feature);
     const keys = Object.keys(U.months).sort(); while (keys.length > 24) delete U.months[keys.shift()];
     writeJson(F_USAGE, U);
   }
@@ -151,7 +159,7 @@ module.exports = function createKi(deps) {
     const c = client();
     const system = [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }];
     if (opts.system2) system.push({ type: "text", text: opts.system2 });
-    const params = { model: MODEL, max_tokens: opts.maxTokens || 8000, system, messages: opts.messages, output_config: { effort: opts.effort || "medium" }, betas: BETAS, fallbacks: "default" };
+    const params = { model: modelFor(feature), max_tokens: opts.maxTokens || 8000, system, messages: opts.messages, output_config: { effort: opts.effort || "medium" }, betas: BETAS, fallbacks: "default" };
     if (opts.schema) params.output_config.format = { type: "json_schema", schema: opts.schema };
     if (opts.tools) params.tools = opts.tools;
     if (opts.autoCache) params.cache_control = { type: "ephemeral" };
@@ -690,7 +698,7 @@ module.exports = function createKi(deps) {
   function status() {
     const mk = monthKey(), months = Object.keys(usage().months).sort().slice(-6).map(k => ({ month: k, eur: monthCost(k).eur }));
     const s = settings(), C = cache();
-    return { ok: true, configured: configured(), sdk: !!Anthropic, model: MODEL, notSetText: NOT_SET, month: mk, cost: monthCost(mk), months, limitEur: limitEur(), overLimit: overLimit(), usdEur: USD_EUR, priceUsd: PRICE_USD,
+    return { ok: true, configured: configured(), sdk: !!Anthropic, model: MODEL, modelFast: MODEL_FAST, opusFor: OPUS_FEATURES, notSetText: NOT_SET, month: mk, cost: monthCost(mk), months, limitEur: limitEur(), overLimit: overLimit(), usdEur: USD_EUR, priceUsd: PRICE_USD,
       features: Object.keys(FEATURES).map(k => ({ key: k, label: FEATURES[k].label, on: featureOn(k), essential: FEATURES[k].essential })), senders: s.senders,
       queue: C.queue.filter(q => q.status === "neu").length, scan: SCAN_LAST, leads: Object.keys(C.leads).reduce((o, k) => { o[k] = C.leads[k].r; return o; }, {}) };
   }
