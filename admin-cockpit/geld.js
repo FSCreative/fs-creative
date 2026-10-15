@@ -101,7 +101,6 @@ function renderUebersicht(){
   var drafts=sev?sev.invoices.filter(function(i){return i.status===100;}):[], over=sev?sev.invoices.filter(function(i){return i.overdue;}):[];
   var vdr=sev&&sev.vouchers?sev.vouchers.drafts||0:0, unass=sev?sev.unassigned||0:0;
   var tiles=[];
-  if(zu.length) tiles.push('<button class="warn" data-act="sdzu"><span class="n">'+eur0(ab.totals.unbilled)+'</span><span class="l">Zu verrechnen</span><span class="h">'+zu.length+' Posten ohne Rechnung</span></button>');
   if(over.length) tiles.push('<button class="bad" data-act="sdtab:rechnungen|over"><span class="n">'+over.length+'</span><span class="l">Überfällig</span><span class="h">'+eur0(over.reduce(function(s,i){return s+i.open;},0))+' – erinnern oder mahnen</span></button>');
   if(drafts.length) tiles.push('<button class="info" data-act="sdtab:rechnungen|draft"><span class="n">'+drafts.length+'</span><span class="l">Entwürfe senden</span><span class="h">'+eur0(drafts.reduce(function(s,i){return s+i.gross;},0))+' warten auf Versand</span></button>');
   if(unass) tiles.push('<button class="info" data-act="sdtab:bank"><span class="n">'+unass+'</span><span class="l">Bankumsätze zuordnen</span><span class="h">mit Vorschlägen</span></button>');
@@ -131,7 +130,7 @@ function renderUebersicht(){
   return F.head("Finanzen","Was ansteht, auf einen Blick. Rechnungen, Bank, Belege und Kontakte findest du in den Reitern darunter.",'<button class="btn" data-act="voucher">Beleg erfassen</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+subnav()+
     (D.sevConfigured&&!sev?'<div class="notice">Die Buchhaltungsdaten konnten gerade nicht geladen werden. Die Plattform-Zahlen stimmen, der Abgleich mit Rechnungen folgt beim nächsten Laden. <button class="btn" data-act="reload">Neu laden</button></div>':'')+
     (mig.count?'<div class="notice"><span>Aus dem früheren Dashboard sind <b>'+mig.count+' VALUERO-Abrechnungen</b> ('+eur(mig.sum)+') noch nicht am Server gespeichert.</span><button class="btn primary" data-act="migrate">Übernehmen</button></div>':'')+
-    '<section><div class="sec-t">Zu tun</div>'+(tiles.length?'<div class="todo">'+tiles.join("")+'</div>':'<div class="todo-ok">Alles erledigt 🎉 Nichts zu verrechnen, keine Entwürfe, nichts überfällig.</div>')+'</section>'+
+    '<section><div class="sec-t">Zu tun</div>'+(tiles.length?'<div class="todo">'+tiles.join("")+'</div>':'<div class="todo-ok">Alles erledigt 🎉 Keine Entwürfe, nichts überfällig.</div>')+'</section>'+
     '<div class="kpis">'+
       '<div class="panel kpi"><span class="k">Umsatz '+esc(D.year)+'</span><span class="v num">'+(sev?eur0(sev.revenueYear):"—")+'</span><span class="s">gestellte Rechnungen, brutto</span></div>'+
       '<button class="panel kpi" data-act="sdtab:rechnungen|open"><span class="k">Offen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?sev.openCount+" Rechnungen":"")+'</span></button>'+

@@ -19,11 +19,7 @@ F.feed(function(){
     if(/FAILED|CRASHED/.test(s.status||"")) out.push({id:"rw:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Deploy"],t:"Deploy fehlgeschlagen: "+s.name,d:"Railway · letzter Versuch "+(s.lastDeploy?F.ago(s.lastDeploy):""),acts:[["Websites","go:web"]]});
     else if(s.up===false&&(s.active||!s.own)) out.push({id:"down:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Offline"],t:s.name+" ist nicht erreichbar",d:s.domain||"",acts:s.url?[["Öffnen","url:"+s.url]]:[]});
   });
-  D.abgleich.items.forEach(function(x){
-    if(x.unbilled>0.005&&x.action) out.push({id:"bill:"+x.key,rank:3,sev:"warn",icon:"euro",tag:["warn","Zu verrechnen"],t:SRC[x.src]+" · "+x.name,d:eur(x.unbilled)+" · "+x.sub,acts:[["Rechnung erstellen","invoice:"+x.key,"primary"]]});
-    if(x.refund>0.005) out.push({id:"refund:"+x.key,rank:3,sev:"bad",icon:"euro",tag:["bad","Zu viel verrechnet"],t:SRC[x.src]+" · "+x.name,d:eur(x.refund)+" mehr verrechnet als aktuell angefallen (Storno?)",acts:[["Abgleich","go:geld"]]});
-    (x.invoices||[]).forEach(function(l){ if(l&&l.state==="fehlt") out.push({id:"miss:"+x.key+l.id,rank:3,sev:"warn",icon:"alert",tag:["warn","Abgleich"],t:"Rechnung "+(l.nr||l.id)+" fehlt in der Buchhaltung",d:SRC[x.src]+" · "+x.name+" · gelöscht oder storniert?",acts:[["Abgleich","go:geld"]]}); });
-  });
+  // Plattform-Abgleich („Zu verrechnen“) bewusst nicht mehr unter „Zu erledigen“ – kochdu & Co. rechnen automatisch ab
   F.unreadMails().filter(function(m){ return !m.answered && (Date.now()-Date.parse(m.date||0))<14*864e5; }).slice(0,8).forEach(function(m){ out.push({id:"mail:"+m.id,rank:4,sev:"info",icon:"post",tag:["info","Mail"],t:(m.fromName||m.from||"")+": „"+(m.subject||"(kein Betreff)")+"“",d:F.ago(m.date)+" · ungelesen",acts:[["Lesen","mail:"+m.id,"primary"]]}); });
   (D.todos||[]).filter(function(t){ return !t.done && t.due && t.due<=today; }).forEach(function(t){ out.push({id:"todo:"+t.id,rank:t.due<today?2:4,sev:t.due<today?"bad":"ok",icon:"check",tag:[t.due<today?"bad":"ok",t.due<today?"Überfällig":"Heute"],t:t.text||"Aufgabe",d:"To-Do · fällig "+de(t.due),acts:[["Erledigt","tododone:"+t.id]]}); });
   /* Bankumsätze & Entwürfe: Feed kommt aus sevdesk.js (Dateiname historisch) */
@@ -62,7 +58,6 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     '<div class="day">'+
       '<button data-go="kunden"><span class="k">Neue Anfragen</span><span class="v num">'+F.newLeads().length+'</span><span class="s">'+D.leads.length+' Leads insgesamt</span></button>'+
       '<button data-go="geld"><span class="k">Offene Forderungen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?(sev.overdueCount?eur0(sev.overdueSum)+" überfällig":"nichts überfällig"):"lädt …")+'</span></button>'+
-      '<button data-go="geld"><span class="k">Zu verrechnen</span><span class="v num">'+eur0(ab.unbilled)+'</span><span class="s">'+ab.unbilledCount+' Posten ohne Rechnung</span></button>'+
       '<button data-go="web"><span class="k">Websites</span><span class="v num">'+(cust.length-bad.length)+'/'+cust.length+'</span><span class="s">'+(bad.length?bad.length+" mit Problem":"alle erreichbar")+'</span></button>'+
     '</div>'+
     '<div class="hgrid">'+
@@ -104,7 +99,6 @@ function mobileHeute(){
   var chips='<div class="mx-chips" aria-label="Kennzahlen">'+
     chip("kunden","Neue Anfragen",String(nl),esc(D.leads.length+" Leads gesamt"),nl?"glow":"")+
     chip("geld","Offene Forderungen",sev?eur0(sev.openSum):"—",sev?(sev.overdueCount?'<em class="bad-t">'+esc(eur0(sev.overdueSum))+' überfällig</em>':"nichts überfällig"):"lädt …",sev&&sev.overdueCount?"bad":"",true)+
-    chip("geld","Zu verrechnen",eur0(ab.unbilled),esc(ab.unbilledCount+" Posten"),ab.unbilled>0.005?"warn":"",true)+
     chip("web","Websites",(cust.length-bad.length)+"/"+cust.length,bad.length?'<em class="bad-t">'+bad.length+' mit Problem</em>':"alle erreichbar",bad.length?"bad":"")+'</div>';
   /* Schnellaktionen */
   var quick='<div class="mx-quick">'+
