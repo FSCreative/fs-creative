@@ -23,7 +23,7 @@ module.exports = function createSevMock(opts) {
       { id: "2", order: { id: "501", objectName: "Order" }, name: "Hosting 12 Monate", quantity: "12", priceNet: "16.6667", price: "16.6667", taxRate: "20", positionNumber: "1" },
     ],
     contacts: [contact(11, "Bäckerei Lerch"), contact(12, "Verein Gaschurn"), contact(13, "Hotel Silvretta"), contact(14, "Sport Huber")],
-    saved: [], puts: [], invoicesFromOrder: [], createdContacts: [],
+    saved: [], puts: [], invoicesFromOrder: [], createdContacts: [], invoices: [], invoiceMails: [], deletedInvoices: [],
     sequence: true,
   };
   const send = (res, status, obj, headers) => { res.writeHead(status, Object.assign({ "content-type": "application/json" }, headers || {})); res.end(typeof obj === "string" ? obj : JSON.stringify(obj)); };
@@ -50,7 +50,9 @@ module.exports = function createSevMock(opts) {
       if (m === "GET" && p === "/Contact") return send(res, 200, { objects: state.contacts });
       if (m === "POST" && p === "/Contact") { const id = String(700 + state.createdContacts.length); state.createdContacts.push(json); state.contacts.push(contact(id, json.name)); return send(res, 201, { objects: { id, objectName: "Contact", name: json.name } }); }
       if (m === "POST" && p === "/CommunicationWay") return send(res, 201, { objects: { id: "1" } });
-      if (m === "POST" && p === "/Invoice/Factory/saveInvoice") return send(res, 201, { objects: { invoice: { id: "8001", objectName: "Invoice", invoiceNumber: "RE-2001", sumGross: "120" }, invoicePos: [] } });
+      if (m === "POST" && p === "/Invoice/Factory/saveInvoice") { state.invoices.push(json); const id = String(8000 + state.invoices.length); return send(res, 201, { objects: { invoice: { id, objectName: "Invoice", invoiceNumber: "RE-" + (2000 + state.invoices.length), sumGross: "120" }, invoicePos: [] } }); }
+      { const mi = p.match(/^\/Invoice\/(\d+)\/sendViaEmail$/); if (m === "POST" && mi) { state.invoiceMails.push(Object.assign({ id: mi[1] }, json)); return send(res, 201, { objects: { id: mi[1] } }); } }
+      { const mi = p.match(/^\/Invoice\/(\d+)$/); if (m === "DELETE" && mi) { state.deletedInvoices.push(mi[1]); return send(res, 200, { objects: [null] }); } }
       if (m === "POST" && p === "/ContactAddress") return send(res, 201, { objects: { id: "1", objectName: "ContactAddress" } });
       if (m === "GET" && p === "/StaticCountry") return send(res, 200, { objects: [{ id: "1", code: "de" }, { id: "3", code: "at" }, { id: "47", code: "ch" }] });
       if (m === "POST" && p === "/Order/Factory/saveOrder") {
