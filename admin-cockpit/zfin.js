@@ -107,7 +107,7 @@ function finChart(rev,exp,afa,y){
   CH={rev:rev,exp:exp,afa:afa,y:y};
   var W=720,H=230,L=52,T=10,B=26,ih=H-T-B,iw=W-L-8,bw=iw/12;
   var res=rev.map(function(r,i){ return r-exp[i]-afa[i]; }), top=niceMax(Math.max.apply(null,rev.concat(exp.map(function(e,i){ return e+afa[i]; }))));
-  var low=Math.min(0,Math.min.apply(null,res)), bot=low<0?-niceMax(-low):0, span=top-bot, yv=function(v){ return T+(top-v)/span*ih; };
+  var bot=0, span=top-bot, yv=function(v){ return T+(top-v)/span*ih; };
   var cm=+F.D.today.slice(5,7)-1, cy=+F.D.today.slice(0,4), curI=cy===y?cm:(y<cy?11:-1);
   var g='', steps=4; for(var k=0;k<=steps;k++){ var v=bot+span*k/steps, yy=yv(v); g+='<line x1="'+L+'" x2="'+(W-8)+'" y1="'+yy+'" y2="'+yy+'" stroke="var(--sd-line)" '+(Math.abs(v)<0.5?'stroke-width="1.2" stroke="var(--sd-line2)"':'stroke-dasharray="3 4"')+'/><text x="'+(L-8)+'" y="'+(yy+4)+'" text-anchor="end" font-size="11" fill="var(--sd-mut2)">'+(Math.abs(v)>=1000?(Math.round(v/100)/10).toLocaleString("de-AT")+"k":Math.round(v))+'</text>'; }
   var rb=function(x,y0,w,h){ if(h<=0.5) return ''; var r=Math.min(4,w/2,h); return 'M'+x+','+(y0+h)+'V'+(y0+r)+'Q'+x+','+y0+' '+(x+r)+','+y0+'H'+(x+w-r)+'Q'+(x+w)+','+y0+' '+(x+w)+','+(y0+r)+'V'+(y0+h)+'Z'; };

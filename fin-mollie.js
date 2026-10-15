@@ -93,6 +93,13 @@ module.exports = function (D) {
   // Kein passender Rechnungsbeleg: nach der Wartezeit Einnahme-Beleg (20 % USt im Brutto) anlegen und zuordnen – Gebühr hängt daran.
   // Connect-Provisionen (kochdu) sofort. Abschaltbar je Mollie-Konto (acc.mollieAutoVoucher === false).
   function incomeCategory() { const ats = L.all("AccountingType"); return ats.find(a => /einnahmen \/ erl(ö|oe)se \/ verk(ä|ae)ufe/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)se 20|umsatzerl(ö|oe)se/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)s|einnahm/i.test(a.name || "")) || null; }
+  // Monatsbeleg „kochdu Provisionen MM/JJJJ“ (Entwurf aus fs-order) nach Monatsende automatisch fertigstellen (Nummer + PDF) – vom Nutzer so gewünscht
+  async function finalizeProvisionInvoice(mm, d) {
+    const monthEnd = new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7), 0)).toISOString().slice(0, 10);
+    if (new Date().toISOString().slice(0, 10) <= monthEnd) return;   // Monat noch offen – Rechnung wird erst danach vollständig
+    const dr = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && String(i.status) === "100");
+    if (dr) { try { await L.request("PUT", "/Invoice/" + dr.id + "/sendBy", { body: { sendType: "VPDF" } }); console.log("Provisionsrechnung fertiggestellt:", mm); } catch (e) { console.error("Provisionsrechnung " + mm + ":", e.message); } }
+  }
   async function autoVouchers() {
     let n = 0; const now = Date.now(), prop = P(); if (!prop) return 0;
     for (const tx of L.all("CheckAccountTransaction").filter(x => (x.mollieType === "payment" || x.mollieType === "application-fee") && String(x.status) === "100" && +x.amount > 0)) {
@@ -102,8 +109,9 @@ module.exports = function (D) {
       // Connect-Provision: der Beleg ist die monatliche Sammelrechnung „kochdu Provisionen MM/JJJJ“ (aus fs-order) → als Teilzahlung dieser Rechnung vorschlagen, nie eigener Einnahme-Beleg (sonst doppelt)
       if (tx.mollieType === "application-fee") {
         const d = day(tx.valueDate), mm = d.slice(5, 7) + "/" + d.slice(0, 4);
+        await finalizeProvisionInvoice(mm, d);
         const inv = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && ["200", "750"].indexOf(String(i.status)) > -1);
-        if (inv) { try { if (await prop.add({ kind: "mollie-match", key: "mmatch:" + tx.id + ":" + inv.id, txId: String(tx.id), invoiceId: String(inv.id), amount: r2(+tx.amount), date: d, title: "Connect-Provision → Rechnung " + (inv.invoiceNumber || "") + " (kochdu Provisionen " + mm + ", Teilzahlung)", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(inv.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); } }
+        if (inv) { try { if (await prop.add({ autoAccept: true, kind: "mollie-match", key: "mmatch:" + tx.id + ":" + inv.id, txId: String(tx.id), invoiceId: String(inv.id), amount: r2(+tx.amount), date: d, title: "Connect-Provision → Rechnung " + (inv.invoiceNumber || "") + " (kochdu Provisionen " + mm + ", Teilzahlung)", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(inv.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); } }
         continue;   // Sammelrechnung noch Entwurf → erst nach dem Fertigstellen vorschlagen
       }
       const prov = tx.mollieType === "application-fee", gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
