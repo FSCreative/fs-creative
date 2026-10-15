@@ -235,9 +235,7 @@ function vKochdu(){
   var body=rs.map(function(r){
     var ro=c2e(r.barOpenCents), rp=c2e(r.barSettledCents), ron=c2e(r.onlineProvisionCents), it=item("kochdu:"+r.id);
     var last=it&&it.last?invLine(it.last):(r.lastSettledAt?'<span>'+de(String(r.lastSettledAt).slice(0,10))+' <span class="tag grey">ohne Rechnung</span></span>':'<span class="muted">noch nie</span>');
-    var acts=(ro>0.005?'<button class="btn primary" data-act="plkbill:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="'+(sevOk?"Rechnung anlegen und als verrechnet markieren":"Buchhaltung nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(ro)+'</button>':'')+
-      (rp>0.005?'<button class="btn" data-act="plkundo:'+esc(r.id)+'"'+(BUSY["k"+r.id]?" disabled":"")+' title="Verrechnung zurücknehmen">↺ Rückgängig</button>':'')+
-      (ro<=0.005&&rp<=0.005?'<span class="muted">—</span>':'');
+    var acts='<span class="muted">automatisch (monatliche Rechnung)</span>';   // Verrechnen läuft automatisch über die kochdu-Monatsabrechnung
     return '<tr><td><b>'+esc(r.name||"—")+'</b>'+(r.provisionRatePct!=null?'<div class="sub">'+esc(r.provisionRatePct)+' % Provision</div>':'')+'</td>'+
       '<td class="r num" data-l="Bestellungen bar / online">'+num(r.barOrders)+' / '+num(r.onlineOrders)+'</td>'+
       '<td class="r" data-l="Bar offen">'+money(ro,ro>0.005?"warn-t":"")+'</td>'+
@@ -445,8 +443,6 @@ function vValuero(){
         '<span class="muted">offen '+money(open)+' · verrechnet '+money(settled)+' · gesamt '+money(prov)+(refund>0.005?' · <b class="bad-t">erstatten '+money(refund)+'</b>':'')+' · '+num(o.feeBookings)+' Buchungen</span>'+
         (it.last?'<span class="invs">Letzte Rechnung: '+invLine(it.last)+'</span>':'')+
       '</button><div class="pl-acts">'+
-        (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(BUSY["v"+o.key]?" disabled":"")+' title="'+(sevOk?"Rechnung anlegen":"Buchhaltung nicht erreichbar – nur als verrechnet markieren")+'">Verrechnen · '+money(open)+'</button>':'')+
-        (settled>0.005?'<button class="btn" data-act="plvundo:'+esc(o.key)+'"'+(BUSY["v"+o.key]?" disabled":"")+'>↺ Rückgängig</button>':'')+
       '</div></div>'+
       (refund>0.005?'<div class="pl-refund">Zu erstatten: <b class="money">'+eur(refund)+'</b>. Es wurde mehr verrechnet als aktuell an Gebühren angefallen ist (Storno nach der Abrechnung). Mit „Rückgängig“ die letzte Abrechnung zurücknehmen und neu verrechnen.</div>':'')+
       (opened?'<div class="pl-months"><table class="pl-tbl"><thead><tr><th>Buchungsmonat</th><th class="r">Buchungen</th><th class="r">Gebühr</th></tr></thead><tbody>'+
