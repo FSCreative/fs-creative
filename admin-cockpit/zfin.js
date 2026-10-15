@@ -1032,4 +1032,20 @@ F.css(
 '@media (max-width:1250px){.kbgrid{grid-template-columns:1fr 1fr!important}.fsd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fsd-detail{grid-template-columns:minmax(0,1fr)}.fsd-side{position:static}}'+
 '@media (max-width:1100px){.fsd{grid-template-columns:200px minmax(0,1fr)}.fsd-vou{grid-template-columns:minmax(0,1fr)}.fsd-cats{position:static;max-height:240px}}'
 );
+/* Belege: Rechtsklick auf eine Zeile → Öffnen / Löschen (nur ohne Zahlung und nicht festgeschrieben) */
+F.listen("contextmenu",'tr.fsd-row[data-act^="sdvou:"]',function(el,e){
+  var id=el.getAttribute("data-act").slice(6), vd=C.vou&&C.vou[String(F.D.year)], v=vd&&(vd.vouchers||[]).filter(function(x){ return x.id===id; })[0]; if(!v) return;
+  if(!F.M||!F.M.ctx) return; e.preventDefault();
+  var paid=(+v.paid||0)>0.004, lock=!!v.enshrined;
+  F.M.ctx(e.clientX,e.clientY,[
+    {label:"Öffnen",act:function(){ F.actions.sdvou(id); }},
+    {sep:true},
+    {label:lock?"Festgeschrieben – nicht löschbar":paid?"Bezahlt – erst Zahlung lösen":"Beleg löschen",danger:!lock&&!paid,act:function(){
+      if(lock||paid){ F.toast(lock?"Festgeschriebene Belege werden per Gegenbuchung korrigiert, nicht gelöscht.":"Der Beleg hat schon eine Zahlung – bitte zuerst die Zuordnung lösen.",true); return; }
+      F.confirm("Beleg „"+(v.supplier||"ohne Lieferant")+"“ über "+eur(v.gross)+" vom "+de(v.date)+" löschen?","Löschen",function(){
+        F.api("/admin/api/sev/voucher-op",{body:{confirm:true,op:"delete",id:id}}).then(function(j){ if(!j||j.ok===false){ F.toast("Nicht gelöscht: "+((j&&j.error)||"Fehler"),true); return; }
+          F.toast("Beleg gelöscht"); if(vd&&vd.vouchers) vd.vouchers=vd.vouchers.filter(function(x){ return x.id!==id; }); if(F.actions.sdvoureload) F.actions.sdvoureload(); else F.render(); }).catch(function(){ F.toast("Keine Verbindung zum Server.",true); });
+      },true); }}
+  ],(v.supplier||"Beleg")+" · "+eur(v.gross));
+});
 })();
