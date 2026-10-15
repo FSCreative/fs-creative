@@ -961,7 +961,7 @@ module.exports = function (D) {
       // Einkaufspreis testen (nur lesend, keine Bestellung): beliebige SKU + Optionen
       if (p === "/admin/api/print/pcprice") {
         const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
-        try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", { sku, options: b.options || {}, deliveryPromise: 0 }); return J(res, 200, { ok: true, price: pr }); }
+        try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", Object.assign({ sku, options: b.options || {}, deliveryPromise: 0 }, Array.isArray(b.variants) ? { variants: b.variants } : {})); return J(res, 200, { ok: true, price: pr }); }
         catch (e) { return J(res, 200, { ok: false, error: e.message, detail: e.detail || null }); }
       }
       if (p === "/admin/api/print/settings") { const s = await saveSettings(b); PRICE_CACHE.clear(); return J(res, 200, { ok: true, settings: s }); }
