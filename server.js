@@ -53,6 +53,7 @@ const TYPES = {
   ".ico": "image/x-icon",
   ".pdf": "application/pdf",
   ".woff2": "font/woff2",
+  ".woff": "font/woff",
   ".txt": "text/plain; charset=utf-8",
   ".xml": "application/xml; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8",
@@ -77,7 +78,7 @@ const ROUTE_META = {
 const NOINDEX_ROUTES = { "/empfehlungen": true, "/paketshop": true };
 
 // Öffentlich ausgeliefert werden nur Website-Dateien — nie Server-Code, Admin-Vorlage oder Projektdateien.
-const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".webp": 1, ".gif": 1, ".svg": 1, ".ico": 1, ".pdf": 1, ".woff2": 1, ".txt": 1, ".xml": 1, ".webmanifest": 1 };
+const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".webp": 1, ".gif": 1, ".svg": 1, ".ico": 1, ".pdf": 1, ".woff2": 1, ".woff": 1, ".txt": 1, ".xml": 1, ".webmanifest": 1 };
 const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "admin-cockpit.html": 1, "package.json": 1, "package-lock.json": 1 };
 function isPublicFile(filePath) {
   const rel = path.relative(ROOT, filePath);
@@ -1217,12 +1218,13 @@ const FIN = require("./fin.js")({ sev: sevRemote, sevAll });
 const FIN_STATE = { local: !SEV_TEST, firm: null };
 const FIN_PDF = require("./fin-pdf.js")({ firm: () => FIN_STATE.firm });
 const FIN_BANK = require("./fin-bank.js");
-const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF,
-  mailSend: async (m) => {
-    if (!MAIL.url || !MAIL.token) throw new Error("Mailserver nicht eingerichtet");
-    const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, m)) });
-    const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
-  } });
+// Mailversand über den eigenen Mailserver (MAIL_API_URL/…/api/send) – Buchhaltung und Druckshop
+async function mailApiSend(m) {
+  if (!MAIL.url || !MAIL.token) throw new Error("Mailserver nicht eingerichtet");
+  const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/send"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, m)), signal: AbortSignal.timeout(30000) });
+  const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
+}
+const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF, mailSend: mailApiSend });
 (async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); FIN_STATE.local = !SEV_TEST; FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
 // Wiederkehrende Rechnungen/Belege: stündlich fällige Vorlagen abarbeiten – es entstehen nur ENTWÜRFE. Versand („automatisch senden“)
 // bzw. „Fertig erfasst“ bei Belegen passiert erst nach Bestätigung unter „Zur Prüfung“ (fin-proposals.js).
@@ -2417,6 +2419,8 @@ async function handleAdmin(req, res, u, p) {
   if (!adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin/login" });
   // KI-Funktionen (Claude) – eigenes Modul ki.js
   if (p.indexOf("/admin/api/ki/") === 0) return KI.handle(req, res, u, p);
+  // Druckaufträge (Druckshop) – Cockpit-Seite admin-cockpit/zprint.js
+  if (p.indexOf("/admin/api/print/") === 0) return PRINT.handleAdmin(req, res, u, p);
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -3330,6 +3334,11 @@ const server = http.createServer((req, res) => {
       return send(res, 301, "", "text/plain", { Location: OLD_FOTOBOX[oldKey] });
     }
 
+    // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
+    if (p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html") {
+      res.setHeader("X-Robots-Tag", p === "/print/agb" || p === "/print/agb/" ? "index, follow" : "noindex");
+      return void PRINT.handlePublic(req, res, u, p);
+    }
     if (p === "/api/anfrage") {
       if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
       return void handleAnfrage(req, res);
@@ -3403,6 +3412,17 @@ FIN_PROP.register("dunning", {
   list: async () => { const st = await dunState(); if (!st.settings.enabled) return []; return dunProposals(st).map(x => ({ id: "dun:" + x.id, key: "dun:" + x.id + ":" + x.level, invoiceId: x.id, amount: x.open, date: x.due, title: x.title + " zu " + x.nr + " · " + (x.contact || "—"), detail: x.overdueDays + " Tage überfällig" + (x.fee > 0 ? " · Mahngebühr " + x.fee.toFixed(2).replace(".", ",") + " €" : "") + (x.email ? " · an " + x.email : "") + (x.hint ? " · " + x.hint : ""), source: "Mahnlauf", hint: x.hint || "" })); },
   exec: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (!pr) throw new Error("Mahnung ist nicht mehr fällig"); const r = await dunSend(st, [pr]); if (!r[0] || !r[0].ok) throw new Error((r[0] && r[0].error) || "Senden fehlgeschlagen"); return r[0]; },
   reject: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (pr) { st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); } } });
+// ── Druckshop www.fs-creative.at/print (print-shop.js): Bestellungen landen „Zur Prüfung“ und unter „Druckaufträge“ – bei Print.com bestellt wird nur per Klick ──
+const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm,
+  mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,
+  uidValid: v => STEUER_CALC.uidValid(v), viesCheck: v => viesCheck(v),
+  createInvoice: pl => sevCreateInvoice(pl),
+  sendInvoice: (id, to, subject, text) => SEV_OPS.invoiceOp({ confirm: true, op: "send", id, toEmail: to, subject, text }).then(r => { SEV_CACHE.at = 0; return r; }),
+  deleteInvoice: id => sev("DELETE", "/Invoice/" + String(id).replace(/\D/g, "")).then(r => { SEV_CACHE.at = 0; return r; }),
+  propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
+  push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it => PRINT.placeOrder(it.payload.orderId, "Zur Prüfung").then(o => ({ orderNumber: o.printcom.orderNumber })), valid: it => PRINT.proposalValid(it.payload.orderId) });
+if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);
 // Mollie alle 6 Std.: importiert nur die Saldo-Bewegungen; Zuordnungen/Gebühren/Auszahlungen/Einnahme-Belege → „Zur Prüfung“ (nie selbst gebucht)
