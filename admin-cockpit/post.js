@@ -251,8 +251,8 @@ function folderPanel(){
     fb("outbox","outbox","Postausgang",ob.length,{cls:ob.some(function(o){return o.status==="failed";})?"warn":"",hot:ob.length>0})+
     fb("sent","sent","Gesendet",0)+fb("spam","spam","Spam",c.spam,{drop:"__spam"})+fb("trash","trash","Papierkorb",0,{drop:"__trash"});
   var cf=customFolders(UI.macct!=="all"?UI.macct:null);
-  if(cf.length){ var lastA=null; if(!multiAcc()||UI.macct!=="all") h+='<div class="fdiv">Ordner</div>';
-    cf.forEach(function(f){ if(multiAcc()&&UI.macct==="all"&&f.acc!==lastA){ h+='<div class="fdiv">Ordner · '+esc(accInfo(f.acc).label)+'</div>'; lastA=f.acc; }
+  if(cf.length){ var lastA=null; if(!multiAcc()||UI.macct!=="all") h+='<div class="fdiv" data-facc="'+esc(UI.macct!=="all"?UI.macct:primaryAcct())+'">Ordner</div>';
+    cf.forEach(function(f){ if(multiAcc()&&UI.macct==="all"&&f.acc!==lastA){ h+='<div class="fdiv" data-facc="'+esc(f.acc)+'">Ordner · '+esc(accInfo(f.acc).label)+'</div>'; lastA=f.acc; }
       h+=fb("f:"+f.acc+"|"+f.path,"folder",folderName(f.path,f.acc),f.unread,{hot:f.unread>0,drop:f.acc+"|"+f.path}); }); }
   return h;
 }
@@ -486,6 +486,149 @@ F.action("mwebmail",function(){ window.open("https://webmail.world4you.com","_bl
 F.action("mrefresh",function(){ F.toast("Postfach wird aktualisiert …"); M.loadFull().then(function(){ if(!S.err) F.toast("Postfach aktualisiert"); else F.toast(S.err,true); }); });
 F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">Ordner</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel()+'</nav><button type="button" class="btn" style="width:100%;margin-top:12px" data-act="mailrules">Regeln – Mails automatisch sortieren</button>',"sheetdlg"); });
 F.action("mmailto",function(addr){ F.compose({to:addr}); });
+
+/* ---------- Ordner-Kontextmenü (Rechtsklick / langes Drücken am Handy) ---------- */
+var FERR={exists:"Ein Ordner mit diesem Namen existiert bereits.",bad_name:"Ungültiger Name – bitte ohne / . * % \\ \"",name_required:"Bitte einen Namen eingeben.",name_too_long:"Name ist zu lang (max. 80 Zeichen).",
+  special_folder:"Systemordner können nicht geändert werden.",has_subfolders:"Der Ordner hat Unterordner – bitte zuerst diese löschen.",unknown_folder:"Ordner nicht gefunden – Postfach wird aktualisiert.",
+  unknown_parent:"Übergeordneter Ordner nicht gefunden.",parent_no_children:"In diesem Ordner können keine Unterordner angelegt werden.",not_trash_or_junk:"Nur Papierkorb und Spam können geleert werden.",
+  no_trash:"Kein Papierkorb gefunden.",mail_not_configured:"Postfach ist nicht verbunden.",unauthorized:"Keine Berechtigung."};
+function ferr(j){ var e=(j&&j.error)||"Fehler"; return FERR[e]||("Fehler: "+(j&&j.detail?String(j.detail).slice(0,140):e)); }
+function fmeta(acc,path){ return S.folders.filter(function(f){ return f.path===path&&(f.account||primaryAcct())===acc; })[0]||null; }
+function fdelim(acc,path){ var f=fmeta(acc,path)||fmeta(acc,"INBOX"); return (f&&f.delim)||(/^INBOX\./.test(path||"")?".":"/"); }
+function fSpecial(acc,path){ var f=fmeta(acc,path); return path==="INBOX"||!!(f&&f.special)||TRASHRX.test(path)||SENTRX.test(path)||SPAMRX.test(path)||DRAFTRX.test(path); }
+function boxOf(acc,rx,special){ var f=S.folders.filter(function(x){ return (x.account||primaryAcct())===acc&&x.special===special; })[0]||S.folders.filter(function(x){ return (x.account||primaryAcct())===acc&&rx.test(x.path); })[0]; return f?f.path:""; }
+function inFolder(acc,path){ return S.messages.filter(function(m){ return !m.local&&accOf(m)===acc&&(m.folder||"INBOX")===path; }); }
+function scopeAccs(){ return UI.macct!=="all"?[UI.macct]:accounts().map(function(a){ return a.key; }); }
+function folderApi(body){ return F.api("/admin/api/mail-folder",{body:body}).catch(function(){ return {ok:false,error:"Keine Verbindung zum Server"}; }); }
+function fdone(msg){ F.toast(msg); M.changed(); M.refresh(); M.scheduleReload(800); }
+/* Namens-Dialog (statt prompt()) */
+function nameDialog(title,okLabel,val,acc,fn){
+  F.modal('<form id="mfnForm" novalidate><h2 style="font-size:19px">'+esc(title)+'</h2><label class="fl2" style="display:block;margin-top:12px"><span class="muted" style="font-size:13px">Name</span><input id="mfnName" type="text" maxlength="80" autocomplete="off" autofocus value="'+esc(val||"")+'" style="width:100%;margin-top:4px"></label><div id="mfnErr" style="color:var(--bad);font-size:13px;min-height:18px;margin-top:6px"></div><div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary" id="mfnOk">'+esc(okLabel)+'</button></span></div></form>',"narrow");
+  var form=document.getElementById("mfnForm"), inp=document.getElementById("mfnName"), er=document.getElementById("mfnErr"), ok=document.getElementById("mfnOk");
+  if(!form) return; setTimeout(function(){ try{ inp.focus(); inp.select(); }catch(e){} },60);
+  form.addEventListener("submit",function(e){ e.preventDefault(); e.stopPropagation();
+    var n=String(inp.value||"").trim(), d=fdelim(acc,"");
+    if(!n){ er.textContent=FERR.name_required; return; }
+    if(/[\/\\.*%"]/.test(n)||n.indexOf(d)>-1||/[\x00-\x1f]/.test(n)){ er.textContent="Bitte ohne die Zeichen / . * % \\ \" – Unterordner über „Neuer Unterordner…“ anlegen."; return; }
+    if(n===(val||"")){ F.closeModal(); return; }
+    ok.disabled=true; er.textContent="";
+    fn(n,function(msg){ ok.disabled=false; er.textContent=msg; });
+  });
+}
+function fCreate(acc,parent){
+  var pname=parent?(parent==="INBOX"?"Posteingang":folderName(parent,acc)):"";
+  nameDialog(parent?"Neuer Unterordner in „"+pname+"“":"Neuer Ordner"+(multiAcc()?" · "+(accInfo(acc).label||acc):""),"Anlegen","",acc,function(name,fail){
+    folderApi({op:"create",account:acc,parent:parent||"",name:name}).then(function(j){
+      if(!j||j.ok===false||j.error) return fail(ferr(j));
+      F.closeModal(); var d=fdelim(acc,parent||"");
+      if(j.path&&!fmeta(acc,j.path)) S.folders.push({account:acc,path:j.path,name:name,special:"",delim:d,total:0,unread:0});
+      fdone("Ordner „"+name+"“ angelegt");
+    });
+  });
+}
+function fRename(acc,path){
+  var old=folderName(path,acc);
+  nameDialog("Ordner „"+old+"“ umbenennen","Umbenennen",old,acc,function(name,fail){
+    folderApi({op:"rename",account:acc,path:path,name:name}).then(function(j){
+      if(!j||j.ok===false||j.error) return fail(ferr(j));
+      F.closeModal(); var np=j.newPath||path, d=fdelim(acc,path);
+      var re=function(p){ return (p===path||p.indexOf(path+d)===0)?np+p.slice(path.length):p; };
+      S.folders.forEach(function(f){ if((f.account||primaryAcct())!==acc) return; var q=re(f.path); if(q!==f.path){ f.path=q; if(q===np) f.name=name; } });
+      S.messages.forEach(function(m){ if(accOf(m)===acc&&m.folder) m.folder=re(m.folder); });
+      if(UI.mf.indexOf("f:")===0){ var k=parseFolderKey(UI.mf); if(k.acc===acc) UI.mf="f:"+acc+"|"+re(k.path); }
+      fdone("Ordner umbenannt in „"+name+"“");
+    });
+  });
+}
+function fDelete(acc,path){
+  var nm=folderName(path,acc), n=inFolder(acc,path).length;
+  function run(force){
+    folderApi({op:"delete",account:acc,path:path,force:!!force}).then(function(j){
+      if(j&&j.error==="not_empty"&&!force){ ask(j.messages||n); return; }
+      if(!j||j.ok===false||j.error){ F.toast(ferr(j),true); if(j&&j.error==="unknown_folder") M.scheduleReload(300); return; }
+      var tp=boxOf(acc,TRASHRX,"\\Trash");
+      S.folders=S.folders.filter(function(f){ return !((f.account||primaryAcct())===acc&&f.path===path); });
+      S.messages.forEach(function(m){ if(accOf(m)===acc&&(m.folder||"INBOX")===path){ if(tp) m.folder=tp; else m.deleted=true; } });
+      if(UI.mf==="f:"+acc+"|"+path){ UI.mf="inbox"; UI.msel=null; UI.mpick={}; }
+      fdone("Ordner „"+nm+"“ gelöscht"+(j.moved?" – "+j.moved+" Mail(s) im Papierkorb":""));
+    });
+  }
+  function ask(cnt){ F.confirm("Ordner „"+nm+"“ enthält "+cnt+" Mail"+(cnt===1?"":"s")+" – in den Papierkorb verschieben und Ordner löschen?","Verschieben & löschen",function(){ run(true); },true); }
+  if(n>0) ask(n); else F.confirm("Ordner „"+nm+"“ löschen?","Löschen",function(){ run(false); },true);
+}
+function fMarkRead(list){ /* list: [{acc,path}] */
+  var left=list.length, bad=null, cnt=0;
+  if(!left) return;
+  list.forEach(function(x){ folderApi({op:"markread",account:x.acc,path:x.path}).then(function(j){
+    if(!j||j.ok===false||j.error) bad=j; else inFolder(x.acc,x.path).forEach(function(m){ if(!m.read){ m.read=true; cnt++; } });
+    S.folders.forEach(function(f){ if((f.account||primaryAcct())===x.acc&&f.path===x.path&&!bad) f.unread=0; });
+    if(--left===0){ if(bad) F.toast(ferr(bad),true); else fdone("Alle als gelesen markiert"+(cnt?" ("+cnt+")":"")); }
+  }); });
+}
+function fEmpty(kind){
+  var rx=kind==="trash"?TRASHRX:SPAMRX, sp=kind==="trash"?"\\Trash":"\\Junk", lbl=kind==="trash"?"Papierkorb":"Spam";
+  var list=scopeAccs().map(function(a){ return {acc:a,path:boxOf(a,rx,sp)}; }).filter(function(x){ return x.path; });
+  if(!list.length){ F.toast("Kein "+lbl+"-Ordner gefunden",true); return; }
+  var n=0; list.forEach(function(x){ n+=inFolder(x.acc,x.path).length; });
+  F.confirm(lbl+" leeren? "+(n?n+" Mail(s) werden":"Alle Mails darin werden")+" endgültig gelöscht – das kann nicht rückgängig gemacht werden.","Endgültig leeren",function(){
+    var left=list.length, bad=null, del=0;
+    list.forEach(function(x){ folderApi({op:"empty",account:x.acc,path:x.path}).then(function(j){
+      if(!j||j.ok===false||j.error) bad=j; else { del+=j.deleted||0; S.messages=S.messages.filter(function(m){ return !(accOf(m)===x.acc&&(m.folder||"INBOX")===x.path); }); }
+      if(--left===0){ if(bad) F.toast(ferr(bad),true); else fdone(lbl+" geleert"+(del?" ("+del+" Mails)":"")); }
+    }); });
+  },true);
+}
+/* Menü für einen Ordner-Knopf aufbauen; null = kein Menü */
+function folderMenuItems(el){
+  var act=el.getAttribute("data-act")||"", items=[];
+  if(el.classList.contains("fdiv")){ var fa=el.getAttribute("data-facc"); if(!fa) return null; return {title:multiAcc()?accInfo(fa).label:"",items:[{label:"Neuer Ordner…",act:function(){ fCreate(fa,""); }}]}; }
+  if(act.indexOf("macct:")===0){ var ak=act.slice(6); if(ak==="all") return null;
+    return {title:accInfo(ak).label||ak,items:[{label:"Neuer Ordner…",act:function(){ fCreate(ak,""); }},{label:"Posteingang: alle als gelesen markieren",act:function(){ fMarkRead([{acc:ak,path:"INBOX"}]); }}]}; }
+  if(act.indexOf("mfolder:")!==0) return null;
+  var key=act.slice(8);
+  if(key==="inbox"){
+    var accs=scopeAccs();
+    accs.forEach(function(a){ items.push({label:"Neuer Unterordner"+(accs.length>1?" · "+(accInfo(a).label||a):"")+"…",act:function(){ fCreate(a,"INBOX"); }}); });
+    items.push({sep:true},{label:"Alle als gelesen markieren",act:function(){ fMarkRead(accs.map(function(a){ return {acc:a,path:"INBOX"}; })); }});
+    return {title:"Posteingang",items:items};
+  }
+  if(key==="trash"||key==="spam"){
+    var rx=key==="trash"?TRASHRX:SPAMRX, spu=key==="trash"?"\\Trash":"\\Junk";
+    var bl=scopeAccs().map(function(a){ return {acc:a,path:boxOf(a,rx,spu)}; }).filter(function(x){ return x.path; });
+    if(key==="spam"&&bl.length) items.push({label:"Alle als gelesen markieren",act:function(){ fMarkRead(bl); }},{sep:true});
+    items.push({label:"Leeren…",danger:true,act:function(){ fEmpty(key); }});
+    return {title:key==="trash"?"Papierkorb":"Spam",items:items};
+  }
+  if(key.indexOf("f:")!==0) return null;
+  var p=parseFolderKey(key), acc=p.acc, path=p.path, special=fSpecial(acc,path);
+  items.push({label:"Neuer Unterordner…",act:function(){ fCreate(acc,path); }});
+  if(!special) items.push({label:"Umbenennen…",act:function(){ fRename(acc,path); }});
+  items.push({label:"Alle als gelesen markieren",act:function(){ fMarkRead([{acc:acc,path:path}]); }});
+  if(!special) items.push({sep:true},{label:"Löschen…",danger:true,act:function(){ fDelete(acc,path); }});
+  return {title:folderName(path,acc),items:items};
+}
+var FSEL=".mfold .fbtn,.mfold .accbtn,.mfold .fdiv";
+var lp={t:null,x:0,y:0,el:null,at:0};
+function openFolderMenu(el,x,y){ var mi=folderMenuItems(el); if(!mi||!M.ctx) return false; M.ctx(x,y,mi.items,mi.title); return true; }
+F.listen("contextmenu",FSEL,function(el,e){
+  clearTimeout(lp.t); lp.t=null;
+  if(Date.now()-lp.at<900){ e.preventDefault(); return; }   /* langes Drücken hat das Menü schon geöffnet */
+  if(openFolderMenu(el,e.clientX,e.clientY)) e.preventDefault();
+});
+F.listen("keydown",FSEL,function(el,e){ if(e.key==="ContextMenu"||(e.shiftKey&&e.key==="F10")){ var r=el.getBoundingClientRect(); if(openFolderMenu(el,r.left+30,r.top+r.height/2)) e.preventDefault(); } });
+document.addEventListener("touchstart",function(e){
+  var el=e.target&&e.target.closest&&e.target.closest(FSEL); clearTimeout(lp.t); lp.t=null; if(!el||e.touches.length!==1) return;
+  var t=e.touches[0]; lp.x=t.clientX; lp.y=t.clientY; lp.el=el;
+  lp.t=setTimeout(function(){ lp.t=null; if(openFolderMenu(el,lp.x,lp.y)){ lp.at=Date.now(); try{ if(navigator.vibrate) navigator.vibrate(12); }catch(x){} } },500);
+},{passive:true});
+document.addEventListener("touchmove",function(e){ if(!lp.t) return; var t=e.touches[0]; if(Math.abs(t.clientX-lp.x)>10||Math.abs(t.clientY-lp.y)>10){ clearTimeout(lp.t); lp.t=null; } },{passive:true});
+document.addEventListener("touchend",function(e){ if(lp.t){ clearTimeout(lp.t); lp.t=null; return; } if(Date.now()-lp.at<900&&e.cancelable) e.preventDefault(); });
+document.addEventListener("touchcancel",function(){ clearTimeout(lp.t); lp.t=null; });
+/* Klick direkt nach langem Drücken nicht als Ordnerwechsel werten (vor allen anderen Klick-Handlern) */
+window.addEventListener("click",function(e){ if(Date.now()-lp.at<900&&e.target&&e.target.closest&&e.target.closest(FSEL)){ e.preventDefault(); e.stopPropagation(); } },true);
+/* Escape schließt das Menü auch ohne Fokus darin (z. B. nach langem Drücken) – das Ordnerblatt bleibt offen */
+document.addEventListener("keydown",function(e){ if(e.key!=="Escape"||!(M.ctxOpen&&M.ctxOpen())) return; var c=document.querySelector(".mctx"); if(c&&c.contains(e.target)) return; e.stopPropagation(); document.body.click(); },true);
+M.folderMenu={create:fCreate,rename:fRename,del:fDelete,markRead:fMarkRead,empty:fEmpty};
 F.action("msrch",function(){ UI.msrch=!UI.msrch; if(UI.msrch) UI.msrchFocus=true; F.render(); });
 F.action("msrchx",function(){ UI.msrch=false; UI.mq=""; F.render(); });
 /* Handy: weitere Aktionen als Blatt von unten */
@@ -749,6 +892,7 @@ F.css([
 ".fbtn .n.hot,.accbtn .n.hot{background:var(--glow);color:var(--on-glow);border-radius:99px;padding:0 7px}",
 ".fbtn.warn{color:var(--bad)}",
 ".fbtn.dropok{outline:2px dashed var(--glow);outline-offset:-2px}",
+".mfold .fbtn,.mfold .accbtn,.mfold .fdiv{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}",
 ".fdiv{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:12px 9px 4px}",
 ".accsw{display:grid;gap:1px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--line)}",
 ".adot{width:9px;height:9px;border-radius:50%;flex:none}",
