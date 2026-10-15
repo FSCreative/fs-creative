@@ -958,6 +958,12 @@ module.exports = function (D) {
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       const b = await readJson(req, 100000);
+      // Einkaufspreis testen (nur lesend, keine Bestellung): beliebige SKU + Optionen
+      if (p === "/admin/api/print/pcprice") {
+        const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
+        try { const pr = await pcApi("POST", "/products/" + encodeURIComponent(sku) + "/price", { sku, options: b.options || {}, deliveryPromise: 0 }); return J(res, 200, { ok: true, price: pr }); }
+        catch (e) { return J(res, 200, { ok: false, error: e.message, detail: e.detail || null }); }
+      }
       if (p === "/admin/api/print/settings") { const s = await saveSettings(b); PRICE_CACHE.clear(); return J(res, 200, { ok: true, settings: s }); }
       if (p === "/admin/api/print/catalog") { const cat = await catalog(true); return J(res, 200, { ok: true, at: cat && cat.at, errors: (cat && cat.errors) || [], count: cat && cat.products ? cat.products.length : 0 }); }
       if (p === "/admin/api/print/op") {
