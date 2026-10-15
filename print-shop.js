@@ -433,7 +433,8 @@ module.exports = function (D) {
   }
   const cmsProd = sku => (CMS && CMS.products && CMS.products[sku]) || null;
   const cmsOptImg = (prop, slug) => (CMS && CMS.options && CMS.options[prop + "|" + slug]) || "";
-  const cmsInfo = (sku, slug) => { const l = (CMS && CMS.info) || []; return l.find(x => x.s.indexOf(slug) > -1 && (!x.p.length || x.p.indexOf(sku) > -1)) || null; };
+  // Info/Bild zu einer Option nur, wenn Print.com sie ausdrücklich diesem Produkt zuordnet (Slugs wie „a3“, „40“, „none“ gibt es in vielen Produkten mit anderer Bedeutung)
+  const cmsInfo = (sku, slug) => { const l = (CMS && CMS.info) || []; return l.find(x => x.s.indexOf(slug) > -1 && x.p.length && x.p.indexOf(sku) > -1) || null; };
   const groupName = slug => (CMS && CMS.names && CMS.names[slug]) || MAIN_DE[slug] || slug;
   function mainsList() {
     const m = CMS && CMS.mains && CMS.mains.length ? CMS.mains : Object.keys(MAIN_DE).filter(k => k !== OTHER).map(k => ({ slug: k, name: MAIN_DE[k], img: "", subs: [] }));
