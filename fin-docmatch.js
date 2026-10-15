@@ -33,7 +33,7 @@ module.exports = function (D) {
   // ── Mails auswählen ──
   const SKIP_FOLDER = /trash|papierkorb|junk|spam|sent|gesendet|draft|entw|outbox|ausgang/i;
   const INV_RX = /rechnung|invoice|receipt|quittung|beleg|faktura|\bbill|zahlungsbest|payment|vorschreibung|abgabe|geb(ü|ue)hr|abrechnung|kontoauszug|statement|bestellung|order confirmation|your .* (plan|subscription)|\babo\b/i;
-  const SENDERS = ["railway", "github", "google", "anthropic", "world4you", "gemeinde", "a1.net", "magenta", "drei.at", "cloudflare", "adobe", "openai", "apple", "microsoft", "figma", "notion", "hetzner", "canva", "envato", "paypal", "stripe", "paddle", "vercel", "digitalocean", "netcup", "ionos", "strato", "amazon", "aws"];
+  const SENDERS = ["railway", "github", "google", "anthropic", "world4you", "gemeinde", "a1.net", "magenta", "drei.at", "cloudflare", "adobe", "openai", "apple", "microsoft", "figma", "notion", "hetzner", "canva", "envato", "paypal", "stripe", "paddle", "vercel", "digitalocean", "netcup", "ionos", "strato", "amazon", "aws", "facebook", "meta"];
   const isDocAtt = a => { const fn = String(a.filename || "").toLowerCase(), ct = String(a.contentType || "").toLowerCase();
     if (/\.pdf$/.test(fn) || /pdf/.test(ct)) return true;
     if (/\.(png|jpe?g|webp)$/.test(fn) || /image\/(png|jpe?g|webp)/.test(ct)) return !(a.size > 0 && a.size < 20000) && !/^(image\d*|logo|icon|banner|footer|header|signature)/.test(fn);   // keine Logos/Signaturbilder
@@ -41,6 +41,20 @@ module.exports = function (D) {
   function looksLikeInvoice(m, atts) {
     const hay = ((m.from || "") + " " + (m.fromName || "") + " " + (m.subject || "") + " " + atts.map(a => a.filename || "").join(" ")).toLowerCase();
     return INV_RX.test(hay) || SENDERS.some(s => hay.indexOf(s) > -1);
+  }
+  // Meta (Facebook/Instagram-Werbung, Zahlung über Zahlungsschwelle): Zahlungsbeleg steht im Mailtext → daraus wird ein PDF-Beleg
+  const META_FROM = /facebookmail|facebook\.com|meta\.com|metamail|business\.facebook|ads\.facebook/i, META_SUBJ = /beleg|receipt|zahlung|payment|quittung|abrechnung|rechnung/i;
+  const isMetaReceipt = m => META_FROM.test(String(m.from || "") + " " + String(m.fromName || "")) && META_SUBJ.test(String(m.subject || ""));
+  const bodyText = m => (m.bodyHtml ? String(m.body || "").replace(/<(br|\/p|\/div|\/tr|\/h\d|\/li)[^>]*>/gi, "\n").replace(/<\/t[dh]>/gi, "  ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&euro;/g, "€").replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">") : String(m.body || m.preview || "")).replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim().slice(0, 20000);
+  function receiptPdf(it) {   // einfacher, gut lesbarer PDF-Beleg aus dem Mailtext (Text 1:1, Kopf mit Absender/Datum/Betreff)
+    const PDFDocument = require("pdfkit");
+    return new Promise((res, rej) => { const d = new PDFDocument({ size: "A4", margin: 50, info: { Title: it.mail.subject || "Zahlungsbeleg" } }), ch = [];
+      d.on("data", c => ch.push(c)); d.on("end", () => res(Buffer.concat(ch))); d.on("error", rej);
+      const safe = t => String(t || "").replace(/[^\x09\x0a\x0d\x20-\x7e\xa0-\xff€–—„“”‚‘’…•]/g, "");
+      d.font("Helvetica-Bold").fontSize(15).text("Zahlungsbeleg (aus E-Mail übernommen)");
+      d.moveDown(0.4).font("Helvetica").fontSize(9).fillColor("#555").text("Von: " + safe((it.mail.fromName ? it.mail.fromName + " " : "") + "<" + it.mail.from + ">")).text("Datum: " + safe(it.mail.date)).text("Betreff: " + safe(it.mail.subject));
+      d.moveDown(0.8).fillColor("#000").fontSize(10).text(safe(it.body || ""), { lineGap: 2 });
+      d.end(); });
   }
   const mailKey = mm => [mm.account || "", mm.folder || "INBOX", mm.uid || "", mm.index || 0].join("|");
   const msgId = m => String(m.id || [m.account || "", m.folder || "INBOX", m.uid].join("|"));
@@ -116,7 +130,7 @@ module.exports = function (D) {
 
   async function attach(vid, f, src) { const v = await L.attachDoc(vid, f, src); if (onChange) onChange(); return v; }
   async function attachFromMail(vid, it, auto) {
-    const att = await fetchAtt(it.mail);
+    const att = it.mail.index === -1 ? { buf: await receiptPdf(it), fname: it.mail.filename, ctype: "application/pdf" } : await fetchAtt(it.mail);
     const ext = (att.fname.split(".").pop() || "").toLowerCase();
     const type = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" }[ext] || (/^(application\/pdf|image\/)/.test(att.ctype) ? att.ctype.split(";")[0] : "application/pdf");
     await attach(vid, { buf: att.buf, type, name: att.fname }, { mailId: it.mail.id, from: it.mail.fromName ? it.mail.fromName + " <" + it.mail.from + ">" : it.mail.from, subject: it.mail.subject, mailDate: it.mail.date, filename: att.fname, account: it.mail.account, folder: it.mail.folder, uid: it.mail.uid, index: it.mail.index, auto: !!auto, at: new Date().toISOString() });
@@ -154,6 +168,15 @@ module.exports = function (D) {
         if (!m || m.uid == null || m.deleted || m.local || SKIP_FOLDER.test(m.folder || "")) continue;
         if (!(Date.parse(m.date || "") > since) || seen.has(msgId(m))) continue;
         let atts = (m.attachments || []).filter(isDocAtt);
+        if (!atts.length && isMetaReceipt(m)) {   // Meta-Zahlungsbeleg im Mailtext
+          const mail = mailInfo(m, { index: -1, filename: "Meta-Zahlungsbeleg-" + day(m.date) + ".pdf" }), key = mailKey(mail);
+          const it = ST.items[key] = ST.items[key] || { key, mail, tries: 0 };
+          if (!it.x) { const txt = bodyText(m), x = heuristic(m), tid = txt.match(/(?:transaktions-?id|transaction id|zahlungs-?id|referenz(?:nummer)?)\s*[:#]?\s*([0-9A-Z-]{6,40})/i);
+            x.supplier = "Meta Platforms Ireland Limited"; if (tid) x.invoiceNumber = tid[1].slice(0, 40);
+            const eur = (x.amounts || []).filter(a => a.cur === "EUR").map(a => a.v); if (eur.length) { x.gross = Math.max.apply(null, eur); x.currency = "EUR"; }
+            it.body = txt; it.x = x; it.at = new Date().toISOString(); scanned++; extracted++; }
+          seen.add(msgId(m)); ST.seen.push(msgId(m)); continue;
+        }
         if (!atts.length || !looksLikeInvoice(m, atts)) { seen.add(msgId(m)); ST.seen.push(msgId(m)); continue; }
         scanned++;
         if (!ki) atts = atts.slice().sort((a, b) => (/invoice|rechnung/i.test(a.filename) ? 0 : /pdf$/i.test(a.filename) ? 1 : 2) - (/invoice|rechnung/i.test(b.filename) ? 0 : /pdf$/i.test(b.filename) ? 1 : 2)).slice(0, 1);   // Heuristik: nur der wahrscheinlichste Anhang
@@ -235,5 +258,5 @@ module.exports = function (D) {
   }
   // Vorschlag noch gültig? (Beleg ohne Datei, Mail-Anhang noch bekannt und nicht anderweitig verwendet)
   async function stillValid(pl) { await state(); const v = L.get("Voucher", pl.voucherId), it = ST.items[pl.key]; return !!v && noDoc(v) && !!it && (!it.usedBy || it.usedBy === String(pl.voucherId)); }
-  return { run, missing, handle, stillValid, status: () => LAST, _test: { amountsIn, heuristic, similar, candidates, domainLabel, looksLikeInvoice, isDocAtt, setState: s => { ST = s; } } };
+  return { run, missing, handle, stillValid, status: () => LAST, _test: { isMetaReceipt, bodyText, receiptPdf, amountsIn, heuristic, similar, candidates, domainLabel, looksLikeInvoice, isDocAtt, setState: s => { ST = s; } } };
 };
