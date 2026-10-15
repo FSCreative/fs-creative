@@ -267,7 +267,7 @@ M.openVoucher=function(m,a,pre){
   var pvHref=pre.href||(M.attHref(m,a)+"&inline=1"), pvKind=prevKind(a); MVZ={z:1,kind:pvKind};
   var g=pre.gross!=null?pre.gross:guessAmount(m), day=pre.date||(m.date&&!isNaN(new Date(m.date))?F.ymd(new Date(m.date)):F.ymd()), vs=M.voucherSent(m,a), tr=pre.taxRate!=null?+pre.taxRate:20;
   F.modal((pvKind?'<div class="mvwrap">'+prevHtml(pvKind,pvHref):'')+'<form data-form="mvoucher" class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(pre.title||"Beleg erfassen")+'</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Wird als <b>Beleg-Entwurf</b> in deiner Buchhaltung angelegt – inkl. Datei. Unter Finanzen → Belege kannst du ihn prüfen und abschließen.</p>'+
+    '<p class="muted" style="margin:0">Wird als <b>offener Beleg</b> in deiner Buchhaltung angelegt – inkl. Datei. Unter Finanzen → Belege kannst du ihn prüfen und abschließen.</p>'+
     '<div class="att" style="justify-self:start"><a href="'+esc(pre.href||(M.attHref(m,a)+"&inline=1"))+'" target="_blank" rel="noopener" title="Anhang ansehen"'+(pvKind?' data-docview data-doctitle="'+esc(a.filename||"Anhang")+'"':'')+'><span class="ak">'+esc(M.attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(M.fmtBytes(a.size))+'</span></a></div>'+
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
     '<div class="grid2"><label class="fl">Lieferant<input class="f" name="supplier" list="mvContacts" value="'+esc(pre.supplier||m.fromName||m.from||"")+'"></label><label class="fl">Belegdatum<input class="f" name="date" type="date" required value="'+day+'"></label>'+
@@ -301,7 +301,7 @@ F.form("mvoucher",function(f){
     if(!j||!j.ok){ btn.disabled=false; msg.textContent="Nicht gespeichert: "+((j&&j.error)||"unbekannter Fehler"); return; }
     var sk=F.ls("fsc_sev_sent")||{}; sk[m.id+"#"+(a.index||0)]={id:j.id,at:Date.now()}; F.ls("fsc_sev_sent",sk);
     var done=VOU.pre&&VOU.pre.onDone; VOU=null; F.closeModal(); if(done) try{ done(j); }catch(e){}
-    F.toast("Beleg als Entwurf gespeichert",false,"Belege öffnen",function(){ F.UI.fin="vou:draft"; F.go("geld"); });
+    F.toast("Beleg gespeichert (offen)",false,"Belege öffnen",function(){ F.UI.fin="vou:open"; F.go("geld"); });
     if(F.current==="post") F.render(); F.load(true);
   }).catch(function(){ btn.disabled=false; msg.textContent="Keine Verbindung zum Server."; });
 });
@@ -321,7 +321,7 @@ function renderPick(){ var l=document.getElementById("mvList"); if(l) l.innerHTM
 F.action("voucher",function(){
   PICK.q="";
   F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:19px">Beleg erfassen</h2>'+F.btnClose()+'</div>'+
-    '<p class="muted" style="margin:0">Wähle einen Anhang aus deinem Postfach. Er wird mit Betrag und Kategorie als Beleg-Entwurf gespeichert.</p>'+
+    '<p class="muted" style="margin:0">Wähle einen Anhang aus deinem Postfach. Er wird mit Betrag und Kategorie als offener Beleg gespeichert.</p>'+
     '<input class="f" id="mvQ" type="search" placeholder="Absender, Betreff oder Dateiname …" aria-label="Mails durchsuchen" autocomplete="off">'+
     '<div id="mvList" class="vlist">'+pickList()+'</div>'+
     '<div class="foot"><span class="row wrap">'+(F.KI&&F.KI.openUpload?'<button type="button" class="btn primary" data-act="kiupload">Datei/Foto hochladen (KI)</button>':'')+'</span><button type="button" class="btn" data-closemodal>Schließen</button></div></div>',"wide");

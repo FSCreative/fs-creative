@@ -1212,7 +1212,7 @@ async function sevVoucherFromMail(pl) {
   const out = { id: String(v.id || ""), filename: fname };
   // Ein-Klick-Erfassung (Beleg scannen): gleich „fertig erfasst“ (offen statt Entwurf) und – nur wenn im Dialog eine Buchung
   // ausgewählt und mit Klick bestätigt wurde (confirm) – mit diesem Bankumsatz verbinden. Schlägt das fehl, bleibt der Beleg gespeichert.
-  if (out.id && (pl.open === true || pl.txId)) {
+  if (out.id && (pl.open !== false && !pl.draft || pl.txId)) {   // Belege aus Scan und Mail immer als offen anlegen (Entwurf nur auf Wunsch)
     try { await SEV_OPS.voucherOp({ confirm: true, op: "open", id: out.id }); out.opened = true; }
     catch (e) { out.openError = String(e.message || e).slice(0, 200); }
     if (out.opened && pl.txId && pl.confirm === true) {
