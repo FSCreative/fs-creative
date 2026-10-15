@@ -163,6 +163,12 @@ module.exports = function (D) {
     } else if (op === "voucher") {
       const id = idOf(pl.voucherId); if (!id) throw new Error("kein_beleg");
       await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(amount) });
+    } else if (op === "vouchers") {
+      // Sammelabbuchung (z. B. Print.com zieht mehrere Wochenrechnungen auf einmal ein): Umsatz auf mehrere Belege aufteilen – Summe der offenen Beträge muss passen
+      const ids = [...new Set((Array.isArray(pl.voucherIds) ? pl.voucherIds : []).map(idOf).filter(Boolean))].slice(0, 30); if (ids.length < 2) throw new Error("Mindestens zwei Belege angeben.");
+      const parts = []; for (const vid of ids) { const v = first(await sev("GET", "/Voucher/" + vid)); if (!v.id) throw new Error("Beleg " + vid + " nicht gefunden"); parts.push([vid, r2(Math.abs(sevNum(v.sumGross)) - sevNum(v.paidAmount))]); }
+      const sum = r2(parts.reduce((a, x) => a + x[1], 0)); if (Math.abs(sum - Math.abs(amount)) > 0.02) throw new Error("Offene Summe der Belege (" + sum.toFixed(2) + " €) passt nicht zum Umsatz (" + Math.abs(amount).toFixed(2) + " €).");
+      for (const [vid, open] of parts) if (open > 0.004) await sev("PUT", "/Voucher/" + vid + "/bookAmount", { body: bookBody(open) });
     } else if (op === "settled") {
       // schon anderweitig verbucht (z. B. Mollie-Zahlung, deren Auszahlung in sevDesk direkt der Rechnung zugeordnet wurde): nur als erledigt markieren, keine Buchung
       await sev("PUT", "/CheckAccountTransaction/" + txId, { body: { status: "400", transitWith: "erledigt", settledNote: String(pl.note || "bereits anderweitig verbucht").slice(0, 200) } });
