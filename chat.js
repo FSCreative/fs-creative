@@ -50,7 +50,7 @@ module.exports = function (D) {
   const DATA_DIR = D.DATA_DIR || __dirname;
   const TOPICS = D.leadTopics || ["Website", "Etwas anderes"];
   const intEnv = (k, d) => { const n = parseInt(process.env[k], 10); return isFinite(n) && n > 0 ? n : d; };
-  const cfg = () => ({ aiConvMax: intEnv("CHAT_AI_CONV_MAX", 15), aiDayMax: intEnv("CHAT_AI_DAILY_MAX", 200), beatTtl: intEnv("CHAT_BEAT_TTL_MS", 12 * 3600e3)   /* online bleibt, bis Simon offline schaltet – auch wenn das Handy-Cockpit im Hintergrund ist; Sicherheitsnetz 12 Std. */, msgMax: intEnv("CHAT_RATE_MSGS", 20) });
+  const cfg = () => ({ aiConvMax: intEnv("CHAT_AI_CONV_MAX", 15), aiDayMax: intEnv("CHAT_AI_DAILY_MAX", 200), beatTtl: intEnv("CHAT_BEAT_TTL_MS", 180000)   /* online nur, solange das Cockpit (am PC) offen ist – 3 Min. ohne Herzschlag = offline */, msgMax: intEnv("CHAT_RATE_MSGS", 20) });
   const nowIso = () => new Date().toISOString();
   const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date());
   const clean = (v, n) => String(v == null ? "" : v).replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/g, "").trim().slice(0, n);
@@ -252,7 +252,7 @@ module.exports = function (D) {
         if (c.closed) c.closed = false;
         const m = await addMsg(c, "v", text);
         const on = isOnline();
-        if (D.push && on) D.push("chat", { title: isNew ? "Neuer Website-Chat" + (c.name ? ": " + c.name : "") : "Chat: " + (c.name || "Besucher #" + c.no), body: text.slice(0, 160), url: "/admin#chat", tag: "chat-" + c.id }).catch(() => {});
+        if (false && D.push && on) D.push("chat", { title: isNew ? "Neuer Website-Chat" + (c.name ? ": " + c.name : "") : "Chat: " + (c.name || "Besucher #" + c.no), body: text.slice(0, 160), url: "/admin#chat", tag: "chat-" + c.id }).catch(() => {});
         maybeAi(c).catch(() => {});
         return J(res, 200, { ok: true, msg: pubMsg(m), online: on });
       }
