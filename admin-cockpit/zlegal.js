@@ -61,7 +61,7 @@ F.action("lgnew",function(){
     '<p class="muted" style="margin:0">Alles optional – Name, Firma und Adresse trägt der Kunde selbst ein. Der Projektname ist nur ein Vorschlag, den er ändern kann.</p>'+
     '<div class="grid2"><label class="fl" style="grid-column:1/-1">Interne Notiz (nur für dich)<input class="f" name="note" maxlength="120" placeholder="z. B. für Bäckerei Muster"></label>'+
     '<label class="fl">E-Mail<input class="f" name="email" type="email" maxlength="160" placeholder="name@firma.at"></label><label class="fl">Projektname<input class="f" name="project" maxlength="140" placeholder="z. B. Relaunch Website"></label></div>'+
-    '<label class="fl">Vertragsstrafe pro Verstoß (€, optional)<input class="f" name="penalty" inputmode="decimal" placeholder="leer = keine Vertragsstrafe"></label>'+
+    '<label class="fl">Vertragsstrafe pro Verstoß (€) – Vorschlag 5.000 für Firmen, bei Privatkunden leeren<input class="f" name="penalty" inputmode="decimal" value="5.000" placeholder="leer = keine Vertragsstrafe"></label>'+
     '<p class="muted" style="margin:0">Mit Betrag wird eine Vertragsstrafe-Klausel (§ 11 Abs. 2) aufgenommen. Sie unterliegt dem richterlichen Mäßigungsrecht (§ 1336 Abs. 2 ABGB) – besonders bei Verbrauchern kann ein Gericht sie herabsetzen. Ohne Betrag gelten nur die gesetzlichen Ansprüche.</p>'+
     '<div class="foot"><span class="muted">Link: www.fs-creative.at/nda/…</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Link erstellen</button></span></div><div class="err" id="lgErr"></div></form>',"wide");
 });
