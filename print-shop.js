@@ -944,6 +944,13 @@ module.exports = function (D) {
         const fm = await store.fileMeta(o.fileId);
         return J(res, 200, { ok: true, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null } : null, statusText: STATUS_DE[o.status] || o.status, autoSend: (await settings()).autoSend });
       }
+      // Print.com-Sortiment (nur lesend): alle Produkte bzw. ein Produkt mit Eigenschaften – zum Auswählen fürs Shop-Sortiment
+      if (p === "/admin/api/print/pcproducts" && req.method === "GET") {
+        const sku = String(u.searchParams.get("sku") || "");
+        if (sku) { if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" }); const pd = await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller"); return J(res, 200, { ok: true, product: { sku, bleed: pd.bleed, properties: (pd.properties || []).map(x => ({ slug: x.slug, title: x.title, required: x.required, locked: x.locked, options: (x.options || []).slice(0, 80).map(o => ({ slug: o.slug, name: o.name, width: o.width, height: o.height })) })) } }); }
+        const list = await pcApi("GET", "/products"); const items = Array.isArray(list) ? list : (list && (list.items || list.results)) || [];
+        return J(res, 200, { ok: true, count: items.length, products: items.map(x => ({ sku: x.sku, title: x.titleSingle || x.titlePlural || x.title || "", plural: x.titlePlural || "", active: x.active, category: x.category || x.categoryName || "" })) });
+      }
       if (p === "/admin/api/print/file" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); const buf = o && await store.fileData(o.fileId);
         if (!buf) return D.send(res, 404, "Datei nicht gefunden");
