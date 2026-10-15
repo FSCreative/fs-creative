@@ -193,7 +193,7 @@
     if (!propVisible(pr, v)) return "";
     var opts = optsOf(pr, v), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     var vis = opts.some(function (o) { return imgOk(o.img) || o.color; });
-    var ctl = opts.length <= 6 || (vis && opts.length <= 60) ? chips("prop:" + pr.slug, opts, S.sel[pr.slug], dis)
+    var ctl = opts.length <= 6 || (vis && opts.length <= 12) ? chips("prop:" + pr.slug, opts, S.sel[pr.slug], dis)
       : selectHtml(pr, opts, dis);
     return '<fieldset class="ps-opt"><legend>' + esc(pr.title) + "</legend>" + ctl + (cur && cur.desc ? '<p class="ps-help">' + esc(cur.desc) + "</p>" : "") + (pr.slug === "size" && isCustom() ? customHtml() : "") + "</fieldset>";
   }
