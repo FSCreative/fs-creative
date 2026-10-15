@@ -93,6 +93,7 @@ F.action("kiuva",function(v){
 /* ---------- Belege aus Mail-Anhängen ---------- */
 var SEVVER=null;
 function sevVersion(){ if(SEVVER) return SEVVER; SEVVER=F.api("/admin/api/sevdesk/status").then(function(j){ return String((j&&j.version)||""); }).catch(function(){ SEVVER=null; return ""; }); return SEVVER; }
+K.sevVersion=sevVersion;   /* auch für den Ein-Klick-Scan (ki-upload.js) */
 /* opt (optional): {dupes:[…], href:"Link zur Datei", extra:{uploadId:…}} */
 K.dupesHtml=function(d){ if(!d||!d.length) return ""; return '<div class="kidupe"><b>Mögliche Dublette:</b> '+d.map(function(x){ return esc(x.src)+': '+esc(x.supplier||"")+(x.date?" · "+esc(F.de(x.date)):"")+(x.gross?" · "+F.eur(x.gross):"")+(x.desc?" · "+esc(x.desc):""); }).join("<br>")+'</div>'; };
 K.openVoucherWith=function(m,a,x,onDone,opt){

@@ -1209,7 +1209,19 @@ async function sevVoucherFromMail(pl) {
   const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
   const v = j && j.objects && (j.objects.voucher || j.objects) || {};
   SEV_CACHE.at = 0;
-  return { id: String(v.id || ""), filename: fname };
+  const out = { id: String(v.id || ""), filename: fname };
+  // Ein-Klick-Erfassung (Beleg scannen): gleich „fertig erfasst“ (offen statt Entwurf) und – nur wenn im Dialog eine Buchung
+  // ausgewählt und mit Klick bestätigt wurde (confirm) – mit diesem Bankumsatz verbinden. Schlägt das fehl, bleibt der Beleg gespeichert.
+  if (out.id && (pl.open === true || pl.txId)) {
+    try { await SEV_OPS.voucherOp({ confirm: true, op: "open", id: out.id }); out.opened = true; }
+    catch (e) { out.openError = String(e.message || e).slice(0, 200); }
+    if (out.opened && pl.txId && pl.confirm === true) {
+      try { await SEV_OPS.bankOp({ confirm: true, op: "voucher", voucherId: out.id, txId: String(pl.txId) }); out.booked = true; }
+      catch (e) { out.bookError = String(e.message || e).slice(0, 200); }
+    }
+    SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+  }
+  return out;
 }
 function sevBody(req, max) { return new Promise((resolve, reject) => { let b = ""; req.on("data", c => { b += c; if (b.length > (max || 200000)) { req.destroy(); reject(new Error("too_large")); } }); req.on("end", () => { try { resolve(JSON.parse(b || "{}")); } catch (e) { reject(new Error("bad_json")); } }); }); }
 const FIN = require("./fin.js")({ sev: sevRemote, sevAll });
@@ -2647,7 +2659,7 @@ async function handleAdmin(req, res, u, p) {
       return J(200, Object.assign({ ok: true }, r, await FIN_PROP.view()));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
-  // Vorschlag beim Öffnen: ?tx=ID (offener Umsatz) oder ?voucher=ID (unbezahlter Beleg) → Kandidaten mit Begründung
+  // Vorschlag beim Öffnen: ?tx=ID (offener Umsatz), ?voucher=ID (unbezahlter Beleg) oder ?amount=…&date=…&name=… (Beleg vor dem Speichern) → Kandidaten mit Begründung
   if (p === "/admin/api/fin/suggest" && req.method === "GET") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
@@ -2655,7 +2667,10 @@ async function handleAdmin(req, res, u, p) {
       const tx = u.searchParams.get("tx"), vo = u.searchParams.get("voucher");
       if (tx) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestTx(tx)));
       if (vo) return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestVoucher(vo)));
-      return J(400, { ok: false, error: "tx oder voucher fehlt" });
+      // Beleg wird gerade erfasst (Scan/Upload, noch ohne ID): ?amount=…&date=YYYY-MM-DD&name=…&cd=C|D → passende offene Umsätze
+      const am = u.searchParams.get("amount");
+      if (am != null && am !== "") return J(200, Object.assign({ ok: true }, await FIN_PROP.suggestFor({ amount: am, date: u.searchParams.get("date") || "", name: u.searchParams.get("name") || "", desc: u.searchParams.get("desc") || "", cd: (u.searchParams.get("cd") || "C").toUpperCase() })));
+      return J(400, { ok: false, error: "tx, voucher oder amount fehlt" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
   if (p === "/admin/api/fin/bankrules") {

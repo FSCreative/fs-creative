@@ -118,6 +118,60 @@ module.exports = function (D) {
   const contactName = c => c ? (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : "";
   const BOP = "/admin/api/sev/bank-op", POP = "/admin/api/fin/proposals";
   function propCand(p) { return { type: "proposal", id: p.id, label: p.title, sub: (p.source ? p.source + " · " : "") + (p.detail || ""), amount: p.amount, score: 100, reasons: ["liegt schon unter „Zur Prüfung“"], do: { url: POP, body: { op: "accept", id: p.id, confirm: true } } }; }
+  // ── Buchungstext prüfen, nicht nur Betrag+Datum: Gegenpartei des Umsatzes (Kartenzahlung: Händler aus dem Zweck, sonst Name)
+  //    gegen den Lieferanten des Belegs. Anderer Name → kein Kandidat; kein verwertbarer Name → höchstens 55 (nur Vorschlag,
+  //    nie vorausgewählt und nie unter „Zur Prüfung“, das ≥ 60 verlangt); Name passt → +30.
+  const OWN = ["simon leonhard felder", "simon felder", "felder simon", "fs creative", "fs-creative", "fscreative"];
+  const GENERIC = new Set(["umsatz", "internet", "services", "service", "ser", "austria", "oesterreich", "osterreich", "international", "intl", "gmbh", "ag", "kg", "og", "eu", "ltd", "llc", "inc", "co", "corp", "pbc", "plc", "bv", "sa", "se", "ab", "the", "und", "and", "bill", "billing", "com", "www", "net", "org", "de", "at", "ie", "lu", "nl", "us", "payments", "europe", "ireland", "distribution", "limited", "holding", "group", "online", "shop", "store"]);
+  const ALIAS = [[/apple\.?com|itunes|\bapple\b/i, "apple"], [/google|\bgoog\b/i, "google"], [/\ba1\b|a1 ?telekom/i, "a1"], [/landes-? ?versicherung|vlv\b/i, "landesversicherung"], [/facebk|facebook|meta ?platf/i, "meta"], [/amzn|amazon/i, "amazon"], [/paypal/i, "paypal"], [/world4you/i, "world4you"], [/anthropic|claude\.ai/i, "anthropic"], [/openai|chatgpt/i, "openai"], [/microsoft|msft/i, "microsoft"], [/adobe/i, "adobe"]];
+  const fold = s0 => String(s0 || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  function ownNames() { let x = []; try { x = typeof D.ownNames === "function" ? D.ownNames() : (D.ownNames || []); } catch (e) {} return OWN.concat((x || []).map(fold)).filter(Boolean); }
+  function nameToks(s0) {
+    let h = fold(s0); ownNames().forEach(o => { h = h.split(o).join(" "); });
+    const al = ALIAS.filter(a => a[0].test(h)).map(a => a[1]);
+    const tk = h.split(/[^a-z0-9]+/).filter(w => w.length >= 2 && /[a-z]/.test(w) && !GENERIC.has(w) && !STOP.has(w));
+    return { toks: tk.concat(al.map(a => "=" + a)), flat: h.replace(/[^a-z0-9]/g, ""), alias: al };
+  }
+  // Gegenpartei eines Umsatzes (oder null, wenn der Text keinen verwertbaren Namen trägt)
+  function counterparty(t, R) {
+    const c = R && R.card ? R.card(t.paymtPurpose) : null;
+    const raw = c && c.merchant ? c.merchant : (t.payeePayerName || "");
+    const n = nameToks(raw); return n.toks.length ? Object.assign({ raw }, n) : null;
+  }
+  // "match" | "mismatch" | "none" (kein Name auf einer Seite → nicht entscheidbar)
+  function nameCheck(supplier, cp) {
+    if (!cp) return "none"; const v = nameToks(supplier); if (!v.toks.length) return "none";
+    if (v.alias.some(a => cp.alias.indexOf(a) > -1)) return "match";
+    const hit = (a, b) => a.toks.some(w => w[0] !== "=" && (w.length >= 4 ? b.flat.indexOf(w) > -1 : b.toks.indexOf(w) > -1));
+    return hit(v, cp) || hit(cp, v) ? "match" : "mismatch";
+  }
+  const NOCAP = 55;
+  // ── Ratenzahlung: Beleg mit ≥ 2 Zahlungen → „Signatur“ aus den verbundenen Umsätzen (gleicher Zahlungsempfänger, gemeinsame
+  //    Zweck-Wörter wie Bestellnummer „302-1174562-4811534“ oder „MacBook Rate“, typischer Betrag). Ein neuer offener Umsatz mit
+  //    derselben Signatur, Betrag ≈ Rate (±2 %) oder = Restbetrag, nach der letzten Rate und nicht über dem Rest → starker Kandidat.
+  //    Eigener Name als Empfänger ist hier in Ordnung – die Signatur stammt aus den früher bestätigten Zahlungen.
+  const flatName = s0 => fold(s0).replace(/[^a-z0-9]/g, "");
+  const purpToks = p => [...new Set(fold(p).split(/[^a-z0-9-]+/).map(w => w.replace(/^-+|-+$/g, "")).filter(w => w.length >= 3 && !/^\d{1,5}$/.test(w) && !/^\d+-\d+$/.test(w) && !GENERIC.has(w)))];
+  function logIndex() { const m = new Map(); L.all("CheckAccountTransactionLog").forEach(l => { if (!l.object || l.object.objectName !== "Voucher" || !l.checkAccountTransaction) return; const k = String(l.object.id); (m.get(k) || m.set(k, []).get(k)).push(l); }); return m; }
+  function instalmentSig(v, idx) {
+    const logs = (idx || logIndex()).get(String(v.id)) || []; if (logs.length < 2) return null;
+    const txs = logs.map(l => L.get("CheckAccountTransaction", l.checkAccountTransaction.id)).filter(Boolean); if (txs.length < 2) return null;
+    const cnt = {}; txs.forEach(t => { const n = flatName(t.payeePayerName); if (n) cnt[n] = (cnt[n] || 0) + 1; });
+    const payee = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] || ""; if (!payee || cnt[payee] * 2 < txs.length) return null;
+    let toks = purpToks(txs[0].paymtPurpose); txs.slice(1).forEach(t => { const h = purpToks(t.paymtPurpose); toks = toks.filter(w => h.indexOf(w) > -1); });
+    if (!toks.length) return null;
+    const amts = txs.map(t => Math.abs(+t.amount || 0)).sort((a, b) => a - b), typ = amts[Math.floor(amts.length / 2)];
+    const last = txs.map(t => day(t.valueDate)).sort().pop();
+    return { payee, toks, typ, last, n: logs.length };
+  }
+  function sigMatch(sig, t, open) {
+    if (!sig) return null;
+    const A = Math.abs(+t.amount || 0), n = flatName(t.payeePayerName); if (!n || !(n === sig.payee || n.indexOf(sig.payee) > -1 || sig.payee.indexOf(n) > -1)) return null;
+    const h = purpToks(t.paymtPurpose), hit = sig.toks.filter(w => h.indexOf(w) > -1).length; if (hit < Math.max(1, Math.ceil(sig.toks.length * 0.6))) return null;
+    if (!(day(t.valueDate) > sig.last) || A > open + 0.02) return null;
+    const closes = Math.abs(A - open) <= 0.02; if (!closes && Math.abs(A - sig.typ) > sig.typ * 0.02 + 0.005) return null;
+    return { score: closes ? 80 : 75, why: ["Rate wie bisher (" + (sig.n + 1) + ". Rate)"].concat(closes ? ["schließt den Beleg ab (Restbetrag)"] : ["Teilzahlung " + eu(A) + " von offen " + eu(open)]) };
+  }
   async function suggestTx(txId) {
     await L.load(); const t = L.get("CheckAccountTransaction", txId); if (!t) throw new Error("Umsatz nicht gefunden");
     const amt = +t.amount || 0, A = Math.abs(amt), hay = (t.payeePayerName || "") + " " + (t.paymtPurpose || ""), hayNum = hay.toLowerCase().replace(/[^a-z0-9]/g, ""), td = day(t.valueDate), out = [];
@@ -131,12 +185,16 @@ module.exports = function (D) {
       const ns = sim(cn, hay); if (ns) { s += Math.round(25 * ns); why.push("Name „" + cn + "“"); }
       if (s >= 30) out.push({ type: "invoice", id: String(i.id), label: "Rechnung " + (i.invoiceNumber || "Entwurf") + " · " + (cn || "—"), sub: "offen " + eu(open) + " · " + day(i.invoiceDate), amount: open, score: s, reasons: why, do: { url: BOP, body: { txId: String(t.id), op: "invoice", invoiceId: String(i.id), confirm: true } } });
     }
+    const cpT = counterparty(t, D.rules && D.rules()); let lidx = null;
     for (const v of L.all("Voucher").filter(v => ["100", "750"].indexOf(String(v.status)) > -1 && String(v.voucherType || "VOU") === "VOU" && (String(v.creditDebit) === "C") === (amt < 0))) {
       const open = r2(Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0)); if (!(open > 0.005)) continue;
       const why = []; let s = 0, d = ddays(td, v.voucherDate);
+      const im = +v.paidAmount > 0 ? sigMatch(instalmentSig(v, lidx = lidx || logIndex()), t, open) : null;
+      if (im) { out.push({ type: "voucher", id: String(v.id), label: "Beleg " + (v.supplierName || "—") + (v.description ? " · " + String(v.description).slice(0, 60) : ""), sub: "offen " + eu(open) + " · " + day(v.voucherDate), amount: open, score: im.score, reasons: im.why, do: { url: BOP, body: { txId: String(t.id), op: "voucher", voucherId: String(v.id), confirm: true } } }); continue; }
       if (Math.abs(open - A) <= 0.02) { s += 40; why.push("gleicher Betrag"); } else continue;
+      const nc = nameCheck(v.supplierName, cpT); if (nc === "mismatch") continue;   // anderer Händler/Name im Buchungstext
       if (d >= -7 && d <= 30) { s += 15; why.push(d === 0 ? "gleiches Datum" : "Beleg " + Math.abs(d) + " Tage " + (d > 0 ? "vorher" : "nachher")); } else s -= 10;
-      const ns = sim((v.supplierName || "") + " " + (v.description || ""), hay); if (ns) { s += Math.round(30 * ns); why.push("Lieferant „" + (v.supplierName || "") + "“"); }
+      if (nc === "match") { s += 30; why.push("Lieferant „" + (v.supplierName || "") + "“"); } else { s = Math.min(s, NOCAP); why.push("Buchungstext ohne Namen – nur Betrag/Datum"); }
       if (s >= 40) out.push({ type: "voucher", id: String(v.id), label: "Beleg " + (v.supplierName || "—") + (v.description ? " · " + String(v.description).slice(0, 60) : ""), sub: "offen " + eu(open) + " · " + day(v.voucherDate), amount: open, score: s, reasons: why, do: { url: BOP, body: { txId: String(t.id), op: "voucher", voucherId: String(v.id), confirm: true } } });
     }
     const R = D.rules && D.rules(), like = R && R.likeLast ? R.likeLast(t) : null;
@@ -147,28 +205,52 @@ module.exports = function (D) {
     out.sort((a, b) => b.score - a.score);
     return { tx: { id: String(t.id), amount: amt, date: td, name: t.payeePayerName || "", purpose: String(t.paymtPurpose || "").slice(0, 200) }, candidates: out.slice(0, 6) };
   }
-  async function suggestVoucher(vid) {
-    await L.load(); const v = L.get("Voucher", vid); if (!v) throw new Error("Beleg nicht gefunden");
-    const open = r2(Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0)), out = [], vd = day(v.voucherDate), credit = String(v.creditDebit || "C") === "C";
-    (await forVoucher(vid)).forEach(p => out.push(propCand(p)));
+  // Offene Umsätze, die zu einem (geplanten) Beleg passen: Betrag ±0,02 € (Karte in Fremdwährung ±3 %, ohne Bankspesen), Datum −7…+30 Tage, Name.
+  // Gemeinsame Bewertung für suggestVoucher (bestehender Beleg) und suggestFor (Beleg wird gerade erfasst, noch ohne ID).
+  async function txCandidates(o) {
+    const open = r2(o.amount), vd = day(o.date), credit = o.credit !== false, out = [];
+    if (!(open > 0.005)) return out;
     const busy = await busyTx(), R = D.rules && D.rules();
-    if (open > 0.005 && ["100", "750"].indexOf(String(v.status)) > -1) for (const t of L.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && !t.transitWith && !t.cashLocked && (+t.amount < 0) === credit)) {
+    for (const t of L.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && !t.transitWith && !t.cashLocked && (+t.amount < 0) === credit)) {
       const A = Math.abs(+t.amount || 0), c = R && R.card ? R.card(t.paymtPurpose) : null, fx = !!(c && c.cur), why = []; let s = 0;
-      if (Math.abs(A - open) <= 0.02) { s += 45; why.push("gleicher Betrag"); }
+      const im = sigMatch(o.sig, t, open);
+      if (im) { s = im.score; im.why.forEach(w => why.push(w)); }
+      else if (Math.abs(A - open) <= 0.02) { s += 45; why.push("gleicher Betrag"); }
       else if (fx && Math.abs(A - open) <= open * 0.03 + 0.02) { s += 30; why.push("Betrag ±3 % (Kartenzahlung in " + c.cur + ")"); }
       else if (c && c.spesen && Math.abs(A - c.spesen - open) <= 0.02) { s += 40; why.push("Betrag ohne Bankspesen gleich"); }
       else continue;
-      const d = ddays(t.valueDate, vd); if (d < -7 || d > 30) continue;
-      s += d >= 0 && d <= 10 ? 15 : 8; why.push(d === 0 ? "gleiches Datum" : "Umsatz " + Math.abs(d) + " Tage " + (d > 0 ? "nach" : "vor") + " dem Beleg");
-      const ns = sim(v.supplierName, (t.payeePayerName || "") + " " + (t.paymtPurpose || "")) || sim((t.payeePayerName || "") + " " + (c ? c.merchant : ""), (v.supplierName || "") + " " + (v.description || ""));
-      if (ns) { s += Math.round(30 * ns); why.push("Name passt"); }
+      if (!im) {
+        if (vd) { const d = ddays(t.valueDate, vd); if (d < -7 || d > 30) continue;
+          s += d >= 0 && d <= 10 ? 15 : 8; why.push(d === 0 ? "gleiches Datum" : "Umsatz " + Math.abs(d) + " Tage " + (d > 0 ? "nach" : "vor") + " dem Beleg"); }
+        const nc = nameCheck(o.name, counterparty(t, R)); if (nc === "mismatch") continue;   // z. B. Beleg „A1“ ↔ Kartenzahlung „WORLD4YOU“
+        if (nc === "match") { s += 30; why.push("Name passt"); } else { s = Math.min(s, NOCAP); why.push("Buchungstext ohne Namen – nur Betrag/Datum"); }
+      }
       if (busy.has(String(t.id))) { s -= 15; why.push("steckt schon in einem anderen Vorschlag"); }
       const acc = t.checkAccount && L.get("CheckAccount", t.checkAccount.id);
-      out.push({ type: "tx", id: String(t.id), label: (t.payeePayerName || "Umsatz") + " · " + eu(+t.amount), sub: day(t.valueDate) + (acc ? " · " + acc.name : "") + " · " + String(t.paymtPurpose || "").replace(/\s+/g, " ").slice(0, 90), amount: +t.amount, score: s, reasons: why,
-        do: { url: BOP, body: { txId: String(t.id), op: "voucher", voucherId: String(v.id), confirm: true } } });
+      out.push({ type: "tx", id: String(t.id), label: (t.payeePayerName || "Umsatz") + " · " + eu(+t.amount), name: t.payeePayerName || "", date: day(t.valueDate), account: acc ? acc.name : "",
+        sub: day(t.valueDate) + (acc ? " · " + acc.name : "") + " · " + String(t.paymtPurpose || "").replace(/\s+/g, " ").slice(0, 90), amount: +t.amount, score: s, reasons: why,
+        do: { url: BOP, body: { txId: String(t.id), op: "voucher", voucherId: o.voucherId != null ? String(o.voucherId) : null, confirm: true } } });
     }
+    return out;
+  }
+  async function suggestVoucher(vid) {
+    await L.load(); const v = L.get("Voucher", vid); if (!v) throw new Error("Beleg nicht gefunden");
+    if (String(v.voucherType || "VOU") !== "VOU") return { voucher: { id: String(v.id), open: 0, date: day(v.voucherDate), supplier: v.supplierName || "" }, candidates: [] };   // Vorlagen (RV) sind keine echten Belege
+    const open = r2(Math.abs(+v.sumGross || 0) - (+v.paidAmount || 0)), out = [], vd = day(v.voucherDate), credit = String(v.creditDebit || "C") === "C";
+    (await forVoucher(vid)).forEach(p => out.push(propCand(p)));
+    if (open > 0.005 && ["100", "750"].indexOf(String(v.status)) > -1) (await txCandidates({ amount: open, date: vd, name: v.supplierName, desc: v.description, credit, voucherId: v.id, sig: +v.paidAmount > 0 ? instalmentSig(v) : null })).forEach(c => out.push(c));
     out.sort((a, b) => b.score - a.score);
     return { voucher: { id: String(v.id), open, date: vd, supplier: v.supplierName || "" }, candidates: out.slice(0, 5) };
   }
-  return { register, add, list, view, accept, reject, acceptAll, busyTx, forTx, forVoucher, suggestTx, suggestVoucher, KIND_LABEL, _state: () => ST };
+  // Beleg wird gerade erfasst (Scan/Upload, noch keine ID): gleiche Bewertung wie suggestVoucher. Die Zuordnung passiert erst
+  // nach dem Speichern mit Klick (bank-op „voucher“ mit der neuen Beleg-ID) – do.body.voucherId bleibt hier leer.
+  async function suggestFor(o) {
+    o = o || {}; await L.load();
+    const amount = r2(Math.abs(parseFloat(String(o.amount == null ? "" : o.amount).replace(",", ".")) || 0)), date = /^\d{4}-\d{2}-\d{2}/.test(String(o.date || "")) ? day(o.date) : "";
+    const credit = !(o.credit === false || o.credit === "D" || o.cd === "D"), name = String(o.name || "").slice(0, 200), desc = String(o.desc || "").slice(0, 250);
+    const out = await txCandidates({ amount, date, name, desc, credit });
+    out.sort((a, b) => b.score - a.score);
+    return { query: { amount, date, name, credit }, candidates: out.slice(0, 5) };
+  }
+  return { register, add, list, view, accept, reject, acceptAll, busyTx, forTx, forVoucher, suggestTx, suggestVoucher, suggestFor, KIND_LABEL, _state: () => ST };
 };

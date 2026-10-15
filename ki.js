@@ -388,8 +388,12 @@ module.exports = function createKi(deps) {
     if (buf.length > 15 * 1024 * 1024) throw kiErr("Die Datei ist größer als 15 MB.", "too_large");
     const id = "up" + Date.now().toString(36) + crypto.randomBytes(4).toString("hex");
     const att = { buf, fname: /\.[a-z0-9]{2,4}$/i.test(fname) ? fname : fname + "." + (Object.keys(UP_TYPES).find(k => UP_TYPES[k] === ctype) || "pdf"), ctype };
-    const x = await extractAtt("upload", att, "Hochgeladene Datei „" + att.fname + "“ (ohne Mail), hochgeladen am " + deps.viennaToday() + ".");
-    UPLOADS.set(id, { buf, fname: att.fname, ctype, at: Date.now(), x }); prune();
+    // Datei immer behalten – liest die KI nicht (nicht eingerichtet, Limit, Fehler), füllt man den Beleg-Dialog selbst aus (pl.keep)
+    UPLOADS.set(id, { buf, fname: att.fname, ctype, at: Date.now(), x: null }); prune();
+    let x;
+    try { x = await extractAtt("upload", att, "Hochgeladene Datei „" + att.fname + "“ (ohne Mail), hochgeladen am " + deps.viennaToday() + "."); }
+    catch (e) { if (pl.keep !== true) { UPLOADS.delete(id); throw e; } return { uploadId: id, beleg: null, kiError: String(e.message || e).slice(0, 300), kiCode: e.kiCode || "error", filename: att.fname, dupes: [] }; }
+    const u = UPLOADS.get(id); if (u) u.x = x;
     return { uploadId: id, beleg: x, dupes: await dupesFor(x, id) };
   }
   // Automatik: Rechnungsmails bekannter Absender → vorbereitete Belege zur Freigabe (nie automatisch an sevDesk)
