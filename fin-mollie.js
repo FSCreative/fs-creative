@@ -238,12 +238,24 @@ module.exports = function (D) {
         stillAtMollie: bookBal, mollieBalance: acc.mollieApiBalance != null ? acc.mollieApiBalance : null, pending: acc.mollieApiPending || 0, balanceAt: acc.mollieApiAt || null,
         diff: acc.mollieApiBalance != null ? r2(bookBal - acc.mollieApiBalance) : null,
         unmatched: pays.filter(t => String(t.status) === "100").map(t => ({ id: String(t.id), date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.mollieDesc || t.paymtPurpose || "").slice(0, 80), gross: +t.mollieGross || +t.amount, fee: +t.mollieFeeAmt || 0 })),
+        // Fremdgeld (z. B. Bestellungen eines Lokals vor Mollie Connect): nicht Umsatz, sondern an den Betrieb weiterzuleiten
+        unmatchedGroups: Object.values(pays.filter(t => String(t.status) === "100").reduce((o, t) => { const k = partyOf(t); if (!k) return o; const x = o[k] = o[k] || { party: k, count: 0, sum: 0 }; x.count++; x.sum = r2(x.sum + (+t.amount || 0)); return o; }, {})).filter(g => g.count >= 2),
+        passthrough: Object.values(txs.filter(t => t.passthroughFor).reduce((o, t) => { const k = t.passthroughFor; const x = o[k] = o[k] || { party: k, count: 0, net: 0, gross: 0, from: day(t.valueDate), to: day(t.valueDate) }; x.count++; x.net = r2(x.net + (+t.amount || 0)); x.gross = r2(x.gross + (+t.mollieGross || +t.amount || 0)); if (day(t.valueDate) < x.from) x.from = day(t.valueDate); if (day(t.valueDate) > x.to) x.to = day(t.valueDate); return o; }, {})),
         countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length,
         byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieProfile || "ohne Profil"; const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
           if (t.mollieType === "application-fee") x.provisions = r2(x.provisions + (+t.amount || 0)); else { x.gross = r2(x.gross + (+t.mollieGross || +t.amount)); x.fees = r2(x.fees + (+t.mollieFeeAmt || 0)); x.count++; if (String(t.status) === "100") x.unmatched++; } return o; }, {})) });
     }
     return out;
   }
+  function partyOf(t) { const m = String(t.mollieDesc || "").match(/^(.+?)\s+#\w+/); return m ? m[1].trim() : ""; }
+  // Zahlungen einer Partei als Fremdgeld markieren (nur auf ausdrücklichen Klick): kein Umsatz, Umsatz gilt als erledigt
+  async function passthrough(party, accId) {
+    await L.load(); let n = 0, sum = 0;
+    for (const t of L.all("CheckAccountTransaction").filter(t => t.mollieType === "payment" && String(t.status) === "100" && partyOf(t) === party && (!accId || String(t.checkAccount && t.checkAccount.id) === String(accId)))) {
+      t.status = "400"; t.transitWith = "durchlaufend"; t.passthroughFor = party; await L.save("CheckAccountTransaction", t); n++; sum = r2(sum + (+t.amount || 0));
+    }
+    return { count: n, sum };
+  }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept };
+  return { sync, status, passthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept };
 };
