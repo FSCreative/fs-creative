@@ -1331,6 +1331,8 @@ async function dunSend(st, list) {
   return res;
 }
 const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook,
+  // Kartenzahlung ohne Zahlername: Händler aus dem Buchungstext („E-COMM 24,00 AT K1 01.10. 08:35 WORLD4YOU INTERNET“ → „World4you Internet“)
+  cardName: p => { try { const c = FIN_RULES.card(p); return c && c.merchant ? c.merchant.replace(/[*]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase().replace(/(^|[\s\-\/])([a-zäöü])/g, (m, x, y) => x + y.toUpperCase()) : ""; } catch (e) { return ""; } },
   snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
 
 // ── Abrechnung: Preise, Website-Einstellungen, letzte Rechnungen (FS Creative, kochdu, VALUERO) ──
