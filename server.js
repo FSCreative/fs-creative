@@ -3461,7 +3461,7 @@ FIN_PROP.register("voucher-match", {
     if (!FIN_STATE.local) return [];
     const fresh = VM_CACHE.items && Date.now() - VM_CACHE.at < 10 * 60 * 1000;
     if (!fresh && !VM_CACHE.p) VM_CACHE.p = vmCompute().then(x => { VM_CACHE.items = x; VM_CACHE.at = Date.now(); }).catch(e => console.error("Beleg-Abgleich:", e.message)).finally(() => { VM_CACHE.p = null; });
-    if (!fresh && VM_CACHE.p) await Promise.race([VM_CACHE.p, new Promise(r => setTimeout(r, 6000))]);   // kurz warten, damit frische Treffer gleich sichtbar sind
+    if (!fresh && VM_CACHE.p && !VM_CACHE.items) await Promise.race([VM_CACHE.p, new Promise(r => setTimeout(r, 6000))]);   // nur beim allerersten Mal warten – sonst sofort den letzten Stand zeigen, Neuberechnung läuft im Hintergrund   // kurz warten, damit frische Treffer gleich sichtbar sind
     const skip = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {};
     return (VM_CACHE.items || []).filter(x => !skip[x.voucherId + ":" + x.txId] && (FIN_LOCAL.get("CheckAccountTransaction", x.txId) || {}).status === "100");
   },
@@ -3484,6 +3484,8 @@ async function vmCompute() {
 }
 // Offene Ausgangsrechnungen ↔ Zahlungseingang am Konto (Rechnungsnummer im Zweck, Betrag, Kundenname) – wie Beleg-Abgleich, im Hintergrund gerechnet
 const IM_CACHE = { at: 0, items: null, p: null };
+// „Zur Prüfung“ vorwärmen: Abgleich Belege/Rechnungen ↔ Bank regelmäßig im Hintergrund rechnen, damit das Öffnen sofort geht
+setTimeout(function warmProposals() { (FIN_STATE.local ? FIN_LOCAL.load().then(() => FIN_PROP.view()) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
 async function imCompute() {
   await FIN_LOCAL.load(); const best = {}; let n = 0;
   for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.mollieType && !t.cashLocked)) {
@@ -3501,7 +3503,7 @@ FIN_PROP.register("invoice-match", {
     if (!FIN_STATE.local) return [];
     const fresh = IM_CACHE.items && Date.now() - IM_CACHE.at < 10 * 60 * 1000 && IM_CACHE.at > VM_CACHE.at - 1;
     if (!fresh && !IM_CACHE.p) IM_CACHE.p = imCompute().then(x => { IM_CACHE.items = x; IM_CACHE.at = Date.now(); }).catch(e => console.error("Rechnungs-Abgleich:", e.message)).finally(() => { IM_CACHE.p = null; });
-    if (!fresh && IM_CACHE.p) await Promise.race([IM_CACHE.p, new Promise(r => setTimeout(r, 6000))]);
+    if (!fresh && IM_CACHE.p && !IM_CACHE.items) await Promise.race([IM_CACHE.p, new Promise(r => setTimeout(r, 6000))]);   // nur beim allerersten Mal warten – sonst sofort den letzten Stand zeigen, Neuberechnung läuft im Hintergrund
     const skip = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {};
     return (IM_CACHE.items || []).filter(x => !skip["inv:" + x.invoiceId + ":" + x.txId] && (FIN_LOCAL.get("CheckAccountTransaction", x.txId) || {}).status === "100");
   },
