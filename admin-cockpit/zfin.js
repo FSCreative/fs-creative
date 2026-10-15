@@ -335,6 +335,10 @@ F.listen("change","[data-fmdup]",function(el){ var f=el.files&&el.files[0], id=e
 function txLoad(force){ if(C.busy.tx) return; C.busy.tx=1; F.api("/admin/api/sev/transactions"+(force?"?force=1":"")).then(function(j){ C.busy.tx=0; C.tx=j||{ok:false}; F.render(); }); }
 F.action("ftxreload",function(){ C.tx=null; txLoad(true); });
 var MO=null;
+/* Filter „Geldtransit ausblenden“ (Umbuchungen zwischen eigenen Konten, Mollie-/PayPal-Auszahlungen) – gemerkt */
+function noTransit(){ return F.ls?!!F.ls("fsc_notransit"):!!UI.noTransit; }
+function transitBtn(){ var on=noTransit(); return '<button type="button" class="btn'+(on?" primary":"")+'" data-act="ftxnotransit" aria-pressed="'+on+'">'+(on?"Geldtransit ausgeblendet":"Geldtransit ausblenden")+'</button>'; }
+F.action("ftxnotransit",function(){ var v=!noTransit(); if(F.ls) F.ls("fsc_notransit",v); UI.noTransit=v; UI.fpg=0; F.render(); });
 /* nach jeder Zuordnung/Buchung: Mollie-Abgleich, Bankliste und Prüf-Liste frisch laden (sonst bleibt „Zuordnen“ stehen) */
 F.finAfterBook=function(){ MO=null; C.tx=null; if(F.reviewReset) F.reviewReset(); };
 /* Mollie-Abgleich je Konto: eingenommen → Gebühren → netto → ausbezahlt (auf der Bank?) → noch bei Mollie, Kontrolle gegen den Mollie-Saldo */
@@ -396,7 +400,7 @@ function pageBank(mode){
   if(!C.tx.ok) return head("Konten","")+noSev();
   var parts=UI.fin.split(":"), acc=mode==="kasse"?(((C.tx.accounts||[]).find(function(a){return /kasse|register/i.test(a.name+" "+a.type);})||{}).id||"none"):(parts[1]||"all"), q=(UI.fq_tx||"").toLowerCase(), per=50, pg=UI.fpg||0;
   var accs=C.tx.accounts||[];
-  var list=C.tx.transactions.filter(function(t){ if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
+  var list=C.tx.transactions.filter(function(t){ if(noTransit()&&t.transit) return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
   var stp=function(t){ if(t.transit) return pill("grey","Geldtransit"); return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):t.status===350?pill("paid","Automatisch"):pill("paid","Gebucht"); };
   var rows=list.slice(pg*per,(pg+1)*per).map(function(t){ var lk=t.links.map(function(l){ return l.type==="Invoice"?'<a href="#" data-act="fin:invd:'+esc(l.id)+'">'+esc(l.nr)+'</a>':'<a href="#" data-act="sdvou:'+esc(l.id)+'">Beleg</a>'; }).join(", ");
     return '<tr><td>'+stp(t)+'</td><td><b>'+esc(t.name||"—")+'</b><div class="sub">'+esc(t.purpose)+'</div></td><td class="num">'+deShort(t.date)+'</td><td class="r num '+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</td><td>'+(lk||(t.status===100?'<span class="fsd-btns"><button class="btn" data-act="ftxassign:'+esc(t.id)+'">Zuordnen</button><button class="btn sm" data-act="ftxpriv:'+esc(t.id)+'" title="'+(t.amount<0?"Privatentnahme":"Privateinlage")+' – kein Betriebsumsatz">Privat</button></span>':t.status===300?'<button class="btn sm" data-act="ftxunpriv:'+esc(t.id)+'">Privat aufheben</button>':'<span class="muted">—</span>'))+'</td></tr>'; }).join("");
@@ -409,7 +413,7 @@ function pageBank(mode){
   if(mode==="bank"&&!EB&&!C.busy.eb){ C.busy.eb=1; F.api("/admin/api/fin/ebank").then(function(j){ C.busy.eb=0; EB=j||{ok:false}; F.render(); }); }
   if(mode==="bank") moSum=ebankBox()+moSum+paypalBox();
   return head(title,mode==="open"?list.length+" Umsätze ohne Zuordnung":(MO&&MO.at?"Mollie zuletzt abgerufen: "+de(MO.at.slice(0,10))+" "+MO.at.slice(11,16):""),(MO&&MO.configured?'<button class="btn" data-act="fmollie">Mollie abrufen</button>':'')+(EB&&EB.sessions&&EB.sessions.length&&mode==="bank"?'<button class="btn" data-act="febsync">George abrufen</button>':'')+(PP&&PP.configured&&mode==="bank"?'<button class="btn" data-act="fpaypal">PayPal abrufen</button>':'')+'<button class="btn" data-act="bankrules">Regeln</button><button class="btn" data-act="sdbkimp">Kontoauszug importieren</button><button class="btn" data-act="ftxreload">Aktualisieren</button>'+(EB&&EB.sessions&&EB.sessions.length&&mode==="bank"?EB.sessions.map(function(x){ return '<button class="btn" data-act="febdisc:'+esc(x.bank)+'" title="Verbindung zu '+esc(x.bank)+' trennen">George trennen</button>'; }).join(""):''))+moBox+moSum+
-    '<section class="fsd-card flush"><div class="fsd-bar">'+accTabs+search("tx","Name, Verwendungszweck, Betrag …")+'</div><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Name / Verwendungszweck</th><th>Buchungstag</th><th class="r">Betrag</th><th>Verknüpfungen</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">Keine Umsätze.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section>';
+    '<section class="fsd-card flush"><div class="fsd-bar">'+accTabs+search("tx","Name, Verwendungszweck, Betrag …")+transitBtn()+'</div><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Name / Verwendungszweck</th><th>Buchungstag</th><th class="r">Betrag</th><th>Verknüpfungen</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">Keine Umsätze.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section>';
 }
 /* Offenen Umsatz zuordnen: vorhandene Bank-Zuordnung (Vorschläge) verwenden */
 F.finTxReset=function(){ setTimeout(function(){ C.tx=null; F.render(); },1200); };
@@ -834,7 +838,7 @@ function mBank(mode){
   if(!C.tx.ok) return noSev();
   var acc=UI.fin.split(":")[1]||"all", q=(UI.fq_tx||"").toLowerCase(), per=40, pg=UI.fpg||0, accs=C.tx.accounts||[], all=C.tx.transactions||[], an={};
   accs.forEach(function(a){ an[a.id]=a.name; });
-  var list=all.filter(function(t){ if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
+  var list=all.filter(function(t){ if(noTransit()&&t.transit) return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
   var nOpen=all.filter(function(t){ return t.status===100&&(acc==="all"||t.accountId===acc); }).length, cur=mode==="open"?"open":"bank";
   var used={}; all.forEach(function(t){ used[t.accountId]=1; });
   var chips=[{label:nOpen?"Zuzuordnen":"Alles zugeordnet",val:String(nOpen),sub:mode==="open"?"Alle zeigen":"offen zuordnen",act:"fin:"+(mode==="open"?"bank":"open")+":"+acc,on:mode==="open",cls:nOpen?"warn":""},
@@ -848,7 +852,7 @@ function mBank(mode){
     else if(t.status===300) foot='<div class="fsm-txl"><button type="button" data-act="ftxunpriv:'+id+'">Privat aufheben</button></div>';
     return '<div class="fsm-tx'+(t.status===100?" open":"")+'">'+(t.status===100?'<button type="button" class="fsm-txm" data-act="ftxassign:'+id+'">'+main+'</button>':'<div class="fsm-txm">'+main+'</div>')+foot+'</div>'; };
   return mChips(chips)+
-    '<div class="fsm-filt">'+mSearch("tx","Name, Zweck, Betrag …")+'<button type="button" class="btn" data-act="bankrules">Regeln</button></div>'+
+    '<div class="fsm-filt">'+mSearch("tx","Name, Zweck, Betrag …")+'<button type="button" class="btn" data-act="bankrules">Regeln</button>'+transitBtn()+'</div>'+
     '<section class="fsm-card flush fsm-list">'+(mGrouped(list,list.slice(pg*per,(pg+1)*per),function(t){return t.date;},function(t){return t.amount;},row,function(s){ return (s>0?"+":"")+eur0(s); })||'<p class="fsm-empty">'+(mode==="open"?"Alles zugeordnet. 🎉":"Keine Umsätze.")+'</p>')+pager(list.length,per)+'</section>';
 }
 function mobile(){
