@@ -194,7 +194,7 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     assert.ok(ids.indexOf("721") > -1 && ids.indexOf("722") > -1, JSON.stringify(s.candidates)); assert.ok(!s.candidates.some(x => x.id === "723"), "anderer Zweck");
     const c = s.candidates.find(x => x.id === "721"); assert.ok(/17\. Rate/.test(c.reasons.join(" ")));
     const v0 = +L.get("Voucher", "702").paidAmount;
-    await L.request("PUT", "/Voucher/702/bookAmount", { body: { amount: 80.17, date: "2026-09-01", type: "N", checkAccount: { id: "1" }, checkAccountTransaction: { id: "721" } } }).catch(async () => { await require(path.join(ROOT, "fin-local.js")); throw new Error("bookAmount nicht erreichbar"); });
+    await L.request("PUT", "/Voucher/702/bookAmount", { body: { amount: 80.17, date: "2026-09-01", type: "N", checkAccount: { id: "1" }, checkAccountTransaction: { id: "721" } } });   // wie bank-op „voucher“: bucht den Umsatzbetrag als Teilzahlung
     const v = L.get("Voucher", "702"); assert.strictEqual(+v.paidAmount, Math.round((v0 + 80.17) * 100) / 100); assert.strictEqual(String(v.status), "750", "Teilzahlung → weiter teilbezahlt");
     const s2 = await P.suggestVoucher("702"); assert.ok(s2.candidates.some(x => x.id === "722" && x.score >= 70 && /18\. Rate/.test(x.reasons.join(" "))), JSON.stringify(s2.candidates));
   });

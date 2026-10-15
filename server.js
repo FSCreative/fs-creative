@@ -2833,7 +2833,7 @@ async function handleAdmin(req, res, u, p) {
       if (p === "/admin/api/sev/invoice" && req.method === "GET") { const d = await SEV_OPS.invoiceDetail(u.searchParams.get("id")); return J(200, Object.assign({ ok: true, mail: SEV_OPS.mailDefaults(d, u.searchParams.get("kind") || "", u.searchParams.get("ref") || "") }, d)); }
       if (p === "/admin/api/sev/invoice-op" && req.method === "POST") return J(200, Object.assign({ ok: true }, await SEV_OPS.invoiceOp(await sevBody(req))));
       if (p === "/admin/api/sev/bank" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.bankOpen(force)), TYPES[".json"], { "Cache-Control": "no-store" });
-      if (req.method === "POST" && typeof VM_CACHE !== "undefined") VM_CACHE.at = 0;   // Beleg/Zahlung geändert → Abgleich neu
+      if (req.method === "POST" && typeof VM_CACHE !== "undefined") { VM_CACHE.at = 0; if (typeof IM_CACHE !== "undefined") IM_CACHE.at = 0; }   // Beleg/Zahlung geändert → Abgleich neu
       if (p === "/admin/api/sev/bank-op" && req.method === "POST") return J(200, await SEV_OPS.bankOp(await sevBody(req)));
       if (p === "/admin/api/sev/vouchers" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.vouchers(u.searchParams.get("year"), force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (p === "/admin/api/sev/voucher-op" && req.method === "POST") return J(200, await SEV_OPS.voucherOp(await sevBody(req)));
@@ -3236,6 +3236,17 @@ async function handleAdmin(req, res, u, p) {
       const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
     } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_mkdir_failed" }), TYPES[".json"]); }
   }
+  // Ordner-Verwaltung (Rechtsklick-Menü): anlegen / umbenennen / löschen / alle gelesen / leeren
+  if (p === "/admin/api/mail-folder" && req.method === "POST") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
+    try { const pl = await sevBody(req, 4000);
+      const fwd = { token: MAIL.token, account: String(pl.account || ""), op: String(pl.op || ""), path: String(pl.path || "") };
+      if (pl.newPath != null) fwd.newPath = String(pl.newPath); if (pl.name != null) fwd.name = String(pl.name);
+      if (pl.parent != null) fwd.parent = String(pl.parent); if (pl.force === true) fwd.force = true;
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/folder"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fwd) });
+      const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
+    } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_folder_failed" }), TYPES[".json"]); }
+  }
   if (p === "/admin/api/mail-action" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     let body = "";
@@ -3451,6 +3462,31 @@ async function vmCompute() {
     return Object.values(best).map(b => ({ id: "vm:" + b.v.id + ":" + b.c.id, key: "vm:" + b.v.id + ":" + b.c.id, voucherId: String(b.v.id), txId: String(b.c.id), amount: b.open, date: String(b.v.voucherDate || "").slice(0, 10),
       title: "Beleg „" + (b.v.supplierName || "ohne Lieferant") + "“ ↔ " + b.c.label, detail: (b.v.description ? String(b.v.description).slice(0, 80) + " · " : "") + b.c.sub + (b.c.why ? " · " + [].concat(b.c.why).join(", ") : ""), source: "Abgleich" }));
 }
+// Offene Ausgangsrechnungen ↔ Zahlungseingang am Konto (Rechnungsnummer im Zweck, Betrag, Kundenname) – wie Beleg-Abgleich, im Hintergrund gerechnet
+const IM_CACHE = { at: 0, items: null, p: null };
+async function imCompute() {
+  await FIN_LOCAL.load(); const best = {}; let n = 0;
+  for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.mollieType && !t.cashLocked)) {
+    if (++n % 15 === 0) await new Promise(r => setImmediate(r));
+    let r; try { r = await FIN_PROP.suggestTx(t.id); } catch (e) { continue; }
+    const c = (r.candidates || []).find(x => x.type === "invoice" && x.score >= 60); if (!c) continue;
+    if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, t, c };
+  }
+  return Object.values(best).map(b => ({ id: "im:" + b.c.id + ":" + b.t.id, key: "im:" + b.c.id + ":" + b.t.id, invoiceId: String(b.c.id), txId: String(b.t.id), amount: +b.t.amount, date: String(b.t.valueDate || "").slice(0, 10),
+    title: b.c.label + " ↔ Zahlungseingang " + (b.t.payeePayerName || "") + " · " + (+b.t.amount).toFixed(2).replace(".", ",") + " €", detail: String(b.t.paymtPurpose || "").replace(/\s+/g, " ").slice(0, 120) + (b.c.why ? " · " + [].concat(b.c.why).join(", ") : (b.c.reason ? " · " + b.c.reason : "")), source: "Abgleich" }));
+}
+FIN_PROP.register("invoice-match", {
+  label: "Rechnung ↔ Zahlungseingang verbinden",
+  list: async () => {
+    if (!FIN_STATE.local) return [];
+    const fresh = IM_CACHE.items && Date.now() - IM_CACHE.at < 10 * 60 * 1000 && IM_CACHE.at > VM_CACHE.at - 1;
+    if (!fresh && !IM_CACHE.p) IM_CACHE.p = imCompute().then(x => { IM_CACHE.items = x; IM_CACHE.at = Date.now(); }).catch(e => console.error("Rechnungs-Abgleich:", e.message)).finally(() => { IM_CACHE.p = null; });
+    if (!fresh && IM_CACHE.p) await Promise.race([IM_CACHE.p, new Promise(r => setTimeout(r, 6000))]);
+    const skip = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {};
+    return (IM_CACHE.items || []).filter(x => !skip["inv:" + x.invoiceId + ":" + x.txId] && (FIN_LOCAL.get("CheckAccountTransaction", x.txId) || {}).status === "100");
+  },
+  exec: async it => { IM_CACHE.at = 0; VM_CACHE.at = 0; return SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "invoice", invoiceId: it.invoiceId }); },
+  reject: async it => { const s = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {}; s["inv:" + it.invoiceId + ":" + it.txId] = new Date().toISOString(); await FIN.setMeta("vmatchSkip", s); } });
 FIN_PROP.register("dunning", {
   list: async () => { const st = await dunState(); if (!st.settings.enabled) return []; return dunProposals(st).map(x => ({ id: "dun:" + x.id, key: "dun:" + x.id + ":" + x.level, invoiceId: x.id, amount: x.open, date: x.due, title: x.title + " zu " + x.nr + " · " + (x.contact || "—"), detail: x.overdueDays + " Tage überfällig" + (x.fee > 0 ? " · Mahngebühr " + x.fee.toFixed(2).replace(".", ",") + " €" : "") + (x.email ? " · an " + x.email : "") + (x.hint ? " · " + x.hint : ""), source: "Mahnlauf", hint: x.hint || "" })); },
   exec: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (!pr) throw new Error("Mahnung ist nicht mehr fällig"); const r = await dunSend(st, [pr]); if (!r[0] || !r[0].ok) throw new Error((r[0] && r[0].error) || "Senden fehlgeschlagen"); return r[0]; },
