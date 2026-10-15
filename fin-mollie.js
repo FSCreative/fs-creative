@@ -99,6 +99,13 @@ module.exports = function (D) {
       const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
       if (tx.mollieType === "payment" && now - Date.parse(day(tx.valueDate) + "T12:00:00Z") < 3 * 864e5) continue;   // Rechnung kann noch kommen
       if (tx.mollieType === "payment" && matchOf(tx)) continue;   // passende Rechnung → dafür gibt es den Zuordnungs-Vorschlag
+      // Connect-Provision: der Beleg ist die monatliche Sammelrechnung „kochdu Provisionen MM/JJJJ“ (aus fs-order) → als Teilzahlung dieser Rechnung vorschlagen, nie eigener Einnahme-Beleg (sonst doppelt)
+      if (tx.mollieType === "application-fee") {
+        const d = day(tx.valueDate), mm = d.slice(5, 7) + "/" + d.slice(0, 4);
+        const inv = L.all("Invoice").find(i => /kochdu provision/i.test(String(i.header || "")) && String(i.header || "").indexOf(mm) > -1 && ["200", "750"].indexOf(String(i.status)) > -1);
+        if (inv) { try { if (await prop.add({ kind: "mollie-match", key: "mmatch:" + tx.id + ":" + inv.id, txId: String(tx.id), invoiceId: String(inv.id), amount: r2(+tx.amount), date: d, title: "Connect-Provision → Rechnung " + (inv.invoiceNumber || "") + " (kochdu Provisionen " + mm + ", Teilzahlung)", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(inv.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); } }
+        continue;   // Sammelrechnung noch Entwurf → erst nach dem Fertigstellen vorschlagen
+      }
       const prov = tx.mollieType === "application-fee", gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
       try { if (await prop.add({ kind: "mollie-income", key: "minc:" + tx.id, txId: String(tx.id), amount: r2(gross), date: day(tx.valueDate), title: prov ? "Provision kochdu (Mollie Connect) als Einnahme-Beleg buchen" : "Einnahme-Beleg 20 % anlegen (keine Rechnung gefunden)", detail: (tx.payeePayerName || acc.name) + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); }
     }
