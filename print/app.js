@@ -67,7 +67,7 @@
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + "</div>" +
-      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand nach " + (S.customer.country === "DE" ? "Deutschland" : "Österreich") + "</p>" +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
       (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / S.copies) + "</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
@@ -92,7 +92,7 @@
   function go(n) { S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
 
   function vProducts() {
-    return '<div class="ps-panel"><h2>Was möchtest du drucken?</h2><p class="sub">Alle Preise inkl. Versand nach Österreich und Deutschland.</p><div class="ps-products">' +
+    return '<div class="ps-panel"><h2>Was möchtest du drucken?</h2><p class="sub">Alle Preise inkl. Versand innerhalb Österreichs.</p><div class="ps-products">' +
       S.cat.products.map(function (p) { return '<button type="button" class="ps-prod" data-prod="' + esc(p.key) + '" aria-pressed="' + (S.prod && S.prod.key === p.key) + '"><span class="ic" aria-hidden="true">' + esc(p.icon) + "</span><b>" + esc(p.title) + "</b><span>" + esc(p.desc) + '</span><span class="tag">' + (p.designer ? "Online gestalten oder hochladen" : "Druckdatei hochladen") + "</span></button>"; }).join("") + "</div></div>";
   }
   function chips(name, opts, cur, dis) {
@@ -134,8 +134,8 @@
   function field(id, label, val, attrs, hint) { return '<div class="ps-field"><label for="' + id + '">' + label + '</label><input id="' + id + '" name="' + id + '" value="' + esc(val || "") + '" ' + (attrs || "") + ">" + (hint || "") + "</div>"; }
   function vAddress() {
     var c = S.customer, co = S.ctype === "company";
-    var uidHint = S.uidRes ? (S.uidRes.valid ? '<span class="hint ok">✓ gültig' + (S.uidRes.name ? " – " + esc(S.uidRes.name) : "") + "</span>" : '<span class="hint bad">' + esc(S.uidRes.why || "UID ungültig") + "</span>") : '<span class="hint">Mit gültiger UID: Kauf auf Rechnung möglich, in Deutschland steuerfreie Lieferung.</span>';
-    return '<div class="ps-layout"><div class="ps-panel"><h2>Lieferadresse &amp; Kontakt</h2><p class="sub">Wir liefern nach Österreich und Deutschland. Die Rechnung geht an diese Adresse.</p><form class="ps-form" id="psAddr" novalidate autocomplete="on">' +
+    var uidHint = S.uidRes ? (S.uidRes.valid ? '<span class="hint ok">✓ gültig' + (S.uidRes.name ? " – " + esc(S.uidRes.name) : "") + "</span>" : '<span class="hint bad">' + esc(S.uidRes.why || "UID ungültig") + "</span>") : '<span class="hint">Mit gültiger UID: Kauf auf Rechnung möglich.</span>';
+    return '<div class="ps-layout"><div class="ps-panel"><h2>Lieferadresse &amp; Kontakt</h2><p class="sub">Wir liefern innerhalb Österreichs. Die Rechnung geht an diese Adresse.</p><form class="ps-form" id="psAddr" novalidate autocomplete="on">' +
       '<div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + !co + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + co + '">Firma</button></div>' +
       (co ? '<div class="ps-row2">' + field("company", "Firma *", c.company, 'autocomplete="organization" required') + '<div class="ps-field"><label for="uid">UID-Nummer</label><div class="ps-uidrow"><input id="uid" name="uid" value="' + esc(S.uid) + '" placeholder="z. B. ATU12345678" autocapitalize="characters"><button type="button" class="ps-btn small" data-act="uidcheck">Prüfen</button></div>' + uidHint + "</div></div>" : "") +
       '<div class="ps-row2">' + field("firstName", "Vorname *", c.firstName, 'autocomplete="given-name" required') + field("lastName", "Nachname *", c.lastName, 'autocomplete="family-name" required') + "</div>" +
@@ -156,7 +156,7 @@
     var p = S.price || {}, c = S.customer, co = S.ctype === "company", invOk = co && S.uidRes && S.uidRes.valid;
     if (!S.payment) S.payment = S.cat.payments.mollie ? "mollie" : (invOk ? "invoice" : "");
     if (S.payment === "invoice" && !invOk) S.payment = S.cat.payments.mollie ? "mollie" : "";
-    var rows = [["Produkt", S.prod.title + " · " + S.copies.toLocaleString("de-AT") + " Stk."]].concat(S.prod.props.map(function (pr) { return [pr.title, labelOf(pr.slug)]; }), [["Produktion", (S.prod.urgency.filter(function (u) { return u.slug === S.urgency; })[0] || {}).name || "Standard"], ["Lieferung", [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, c.country === "DE" ? "Deutschland" : "Österreich"].filter(Boolean).join(", ")]].concat(p.deliveryDate ? [["Voraussichtlich bei dir", deDate(p.deliveryDate)]] : []));
+    var rows = [["Produkt", S.prod.title + " · " + S.copies.toLocaleString("de-AT") + " Stk."]].concat(S.prod.props.map(function (pr) { return [pr.title, labelOf(pr.slug)]; }), [["Produktion", (S.prod.urgency.filter(function (u) { return u.slug === S.urgency; })[0] || {}).name || "Standard"], ["Lieferung", [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, "Österreich"].filter(Boolean).join(", ")]].concat(p.deliveryDate ? [["Voraussichtlich bei dir", deDate(p.deliveryDate)]] : []));
     var money = co ? '<div><span>Netto</span><b>' + eur(p.net) + "</b></div><div><span>" + (p.rate ? "zzgl. " + p.rate + " % USt" : "USt (steuerfreie ig. Lieferung)") + "</span><b>" + eur(p.vat) + '</b></div><div class="total"><span>Gesamt</span><b>' + eur(p.gross) + "</b></div>"
       : '<div class="total"><span>Gesamt inkl. ' + p.rate + " % USt und Versand</span><b>" + eur(p.gross) + "</b></div>";
     var thumbs = S.previews && S.previews.length ? '<div class="ps-thumbs">' + S.previews.map(function (src, i) { return '<figure><img src="' + src + '" alt="Seite ' + (i + 1) + '"><figcaption>' + (S.previews.length > 1 ? (i ? "Rückseite" : "Vorderseite") : "Endformat") + " (ohne Beschnitt)</figcaption></figure>"; }).join("") + "</div>" : "";

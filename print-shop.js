@@ -14,7 +14,8 @@ const path = require("path");
 const crypto = require("crypto");
 
 const MM_PT = 72 / 25.4;
-const COUNTRIES = { AT: "Österreich", DE: "Deutschland" };
+// nur Österreich: Print.com liefert direkt aus den NL – bei Lieferung nach DE wäre es kein ig. Erwerb in AT mehr (Dreiecksgeschäft bzw. DE-Registrierung)
+const COUNTRIES = { AT: "Österreich" };
 const PLZ = { AT: /^\d{4}$/, DE: /^\d{5}$/ };
 const MAX_UPLOAD = 50 * 1024 * 1024;
 const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", uid: "ATU82622967", email: "office@fs-creative.at", phone: "+43 664 1430620" };
@@ -287,7 +288,7 @@ module.exports = function (D) {
     return v;
   }
   async function quote(prod, n, country, postcode, cust) {
-    if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur nach Österreich und Deutschland"), { status: 400 });
+    if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
     const buy = await purchase(prod, n, country, postcode);
     const markup = ov.markupPct != null ? +ov.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : c.minMargin;
@@ -543,7 +544,7 @@ module.exports = function (D) {
     if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(x.email)) bad.push("E-Mail");
     if (!/^[+0-9 ()\/-]{6,40}$/.test(x.phone)) bad.push("Telefon");
     if (!x.street || !/\d/.test(x.street)) bad.push("Straße und Hausnummer");
-    if (!COUNTRIES[x.country]) bad.push("Land (nur AT/DE)"); else if (!PLZ[x.country].test(x.zip)) bad.push("PLZ");
+    if (!COUNTRIES[x.country]) bad.push("Land (nur Österreich)"); else if (!PLZ[x.country].test(x.zip)) bad.push("PLZ");
     if (!x.city) bad.push("Ort");
     if (x.type === "company" && !x.company) bad.push("Firmenname");
     if (x.type !== "company") { x.company = ""; x.uid = ""; }
