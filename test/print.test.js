@@ -342,6 +342,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     for (const o of r.j.orders) { const st = await (await fetch(B + "/print/api/order/" + o.id + "?t=" + o.token)).json(); assert.notStrictEqual(st.order.status, "pending_payment", o.id); assert.strictEqual(st.order.groupSize, 2); }
     const me2 = await (await fetch(B + "/print/api/account/me", { headers: { cookie: ck } })).json(); assert.strictEqual(me2.orders.length, 2);
+    assert.strictEqual(me2.bonus.company, false); assert.strictEqual(me2.bonus.revenue, 66);
+    const pf = await post("/print/api/account/profile", { type: "company", company: "Karl GmbH" }, { cookie: ck }); assert.strictEqual(pf.j.bonus.company, true); assert.strictEqual(pf.j.bonus.tier, ""); assert.strictEqual(pf.j.bonus.next.name, "Bronze"); assert.strictEqual(pf.j.bonus.next.missing, 4934);
+    const pb = await post("/print/api/price", Object.assign({ customerType: "company", __bonus: { pct: 50 } }, BC), { cookie: ck }); assert.strictEqual(pb.j.price.bonus, null, "ohne Stufe kein Rabatt, __bonus vom Client wird ignoriert");
     // Gast-Checkout mit Kontoanlage
     const u3 = await upload(await pdfOf(89, 59, 2), "k3.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [it(u3, 39.6)], createAccount: true, accountPassword: "neuespw123" }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));

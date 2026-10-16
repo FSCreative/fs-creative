@@ -126,6 +126,9 @@ const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
   ordered: "Bei Print.com bestellt", in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", rejected: "Abgelehnt", problem: "Problem bei Print.com" };
 const REVIEW = { paid: 1, invoice_requested: 1 };
+// Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
+const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
+const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
 // Shop-AGB: Version wird bei jeder Bestellung gespeichert (bei Änderung der AGB hochzählen, Datum = Stand)
 const AGB_VERSION = "2026-10-15";
 // Mitgelieferte Schriften (SIL Open Font License, latin-Teilmenge, aus @fontsource) – Browser und PDF nutzen dieselben Dateien (print/fonts/*.woff)
@@ -209,13 +212,16 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
+    SETTINGS = { markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
     return SETTINGS;
   }
   const SKU_RX = /^[a-z0-9_-]{1,80}$/i;
   async function saveSettings(pl) {
     const s = await settings();
-    if (pl.live !== undefined) s.live = pl.live === true;   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
+    if (pl.live !== undefined) s.live = pl.live === true;
+    // Marge für alle Produkte: globaler Aufschlag/Mindestmarge (null = Standard aus PRINT_MARKUP_PCT/PRINT_MIN_MARGIN_EUR); applyAll entfernt alle Einzelwerte
+    ["markupPct", "minMarginEur"].forEach(k => { if (pl[k] === undefined) return; const n = parseFloat(String(pl[k]).replace(",", ".")); s[k] = pl[k] === null || pl[k] === "" || !isFinite(n) ? null : Math.max(0, Math.min(k === "markupPct" ? 500 : 1000, n)); });
+    if (pl.applyAll === true) Object.keys(s.products).forEach(k => { delete s.products[k].markupPct; delete s.products[k].minMarginEur; });   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
     if (pl.autoSend !== undefined) s.autoSend = pl.autoSend === true;
     if (pl.open !== undefined) s.open = pl.open !== false;
     if (pl.products && typeof pl.products === "object") {
@@ -726,7 +732,7 @@ module.exports = function (D) {
   async function quote(prod, n, country, postcode, cust) {
     if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
-    const markup = ov.markupPct != null ? +ov.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : c.minMargin;
+    const markup = ov.markupPct != null ? +ov.markupPct : s.markupPct != null ? s.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : s.minMarginEur != null ? s.minMarginEur : c.minMargin;
     // Aufschlag (und ggf. Mindestmarge) nur auf das Produkt – Versand wird zum Einkaufspreis weitergegeben; auf 10 Cent aufrunden
     const netOf = b => Math.ceil((Math.max(b.product * (1 + markup / 100), b.product + minM) + b.shipping) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust);
@@ -744,10 +750,14 @@ module.exports = function (D) {
       }
     }
     if (!buy) buy = await purchase(prod, n, country, postcode);
-    const net = netOf(buy), vat = r2(net * tax.rate / 100);
-    return { methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    // Bonus (Firmenkonto): Rabatt auf den ganzen Nettopreis, auf 10 Cent abgerundet
+    const bp = cust && cust.company && +cust.bonusPct > 0 ? Math.min(20, +cust.bonusPct) : 0;
+    const disc = nt => bp ? Math.floor(nt * (1 - bp / 100) * 10 + 1e-6) / 10 : nt;
+    if (bp && methods) methods = methods.map(m => { const nt = disc(m.net); return Object.assign({}, m, { net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }); });
+    const list = netOf(buy), net = disc(list), vat = r2(net * tax.rate / 100);
+    return { methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: bp, tier: cust.bonusTier || "", listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
-  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
+  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
   // ───────────────────────── Dateien ─────────────────────────
   function sniff(buf) {
@@ -1079,6 +1089,17 @@ module.exports = function (D) {
   // Kundenkonten (print-account.js): erst bei Bedarf laden
   let ACCOUNT = null;
   const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl) }));
+  async function bonusOf(c) {
+    if (!c) return null;
+    const since = Date.now() - 365 * 864e5;
+    const l = (await store.listOrders()).filter(o => (o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)) && BONUS_COUNTS[o.status] && Date.parse(o.createdAt) >= since);
+    const revenue = r2(l.reduce((a, o) => a + (+(o.price && o.price.net) || 0), 0));
+    const company = c.type === "company";
+    let cur = null; BONUS_TIERS.forEach(t => { if (revenue >= t.from) cur = t; });
+    const nx = BONUS_TIERS.find(t => revenue < t.from) || null;
+    return { company, revenue, tier: company && cur ? cur.key : "", name: company && cur ? cur.name : "", pct: company && cur ? cur.pct : 0,
+      next: nx ? { key: nx.key, name: nx.name, from: nx.from, pct: nx.pct, missing: r2(nx.from - revenue) } : null, tiers: BONUS_TIERS, orders: l.length };
+  }
   async function ordersOfCustomer(c) {
     const l = (await store.listOrders()).filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email));
     return l.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [] }));
@@ -1120,7 +1141,7 @@ module.exports = function (D) {
     if (method === "mollie" && !cfg().mollieKey) throw Object.assign(new Error("Online-Zahlung ist noch nicht eingerichtet – bitte Rechnung wählen oder uns kontaktieren"), { status: 503 });
     const prepared = [];
     for (let i = 0; i < items.length; i++) {
-      const it = items[i] || {}, x = await prepItem(it, s, cust, method, uidRes, i, items.length);
+      const it = Object.assign({}, items[i] || {}, { __bonus: input.__bonus || null }), x = await prepItem(it, s, cust, method, uidRes, i, items.length);
       if (x.priceChanged) return { priceChanged: true, price: x.price, index: i };
       prepared.push(x);
     }
@@ -1154,7 +1175,7 @@ module.exports = function (D) {
     if (fm.kind === "logo" || (fm.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
     if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.fileSel)) throw fail("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
     if ((fm.checks || []).some(c => c.level === "error")) throw fail("Die Druckdatei hat noch Fehler – bitte korrigieren");
-    const q = await quote(prod, n, cust.country, cust.zip, cust);
+    const q = await quote(prod, n, cust.country, cust.zip, Object.assign({}, cust, cust.type === "company" && input.__bonus ? { company: true, bonusPct: input.__bonus.pct, bonusTier: input.__bonus.name } : {}));
     const exp = parseFloat(input.expectedGross);
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };
     const id = "P" + Date.now().toString(36).toUpperCase() + rnd(6);
@@ -1162,7 +1183,7 @@ module.exports = function (D) {
       product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
       custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
       fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
-      price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur },
+      price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
     return { o, fm };
@@ -1413,6 +1434,14 @@ module.exports = function (D) {
         let js = ""; try { js = fs.readFileSync(path.join(__dirname, "print", p.slice(7))); } catch (e) { return D.send(res, 404, "Not found"); }
         return D.sendGz(req, res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache" });
       }
+      if ((p === "/print/hilfe" || p === "/print/hilfe/") && (req.method === "GET" || req.method === "HEAD")) {
+        let html = "", main = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+        html = html.replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>So geht’s &amp; FAQ – Druckshop | FS Creative</title>")
+          .replace(/(<meta name="description" content=")[^"]*/, "$1So funktioniert der FS Creative Druckshop: bestellen, Online-Designer mit Vorlagen und KI-Assistent, Bonusprogramm für Firmen, Digital- oder Offsetdruck und Antworten auf häufige Fragen.")
+          .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
+          .replace('data-hilfe>', 'data-hilfe class="active">');
+        return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
+      }
       if (p === "/print/agb.html") return D.send(res, 301, "", "text/plain", { Location: "/print/agb" });
       if ((p === "/print/agb" || p === "/print/agb/") && (req.method === "GET" || req.method === "HEAD")) {
         let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print", "agb.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
@@ -1436,7 +1465,7 @@ module.exports = function (D) {
       const ip = ipOf(req);
       if (p.indexOf("/print/api/account/") === 0) {
         if (req.method === "POST" && !sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
-        return await accountMod().handle(req, res, p, ip, J, readJson, ordersOfCustomer);
+        return await accountMod().handle(req, res, p, ip, J, readJson, ordersOfCustomer, bonusOf);
       }
       if (p === "/print/api/catalog" && req.method === "GET") {
         const c = cfg(), s = await settings();
@@ -1495,6 +1524,7 @@ module.exports = function (D) {
         const n = normalizeSel(prod, b);
         const country = String(b.country || "AT").toUpperCase(), zip = String(b.zip || "").trim();
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
+        if (cust.company) { const me = await accountMod().current(req); const bo = me && me.type === "company" ? await bonusOf(me) : null; if (bo && bo.pct) { cust.bonusPct = bo.pct; cust.bonusTier = bo.name; } }
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
         return J(res, 200, { ok: true, price: publicPrice(q), sides: n.sides, size: n.size, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
@@ -1537,6 +1567,7 @@ module.exports = function (D) {
       if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
         if (limited("order", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
         const b = await readJson(req, 400000); const me = await accountMod().current(req); b.__customerId = me ? me.id : null;
+        if (me && me.type === "company") { const bo = await bonusOf(me); b.__bonus = bo && bo.pct ? { pct: bo.pct, name: bo.name } : null; } else b.__bonus = null;
         const r = await createCheckout(b);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte den Warenkorb prüfen", price: r.price, index: r.index });
         const o = r.orders[0];
@@ -1544,7 +1575,7 @@ module.exports = function (D) {
       }
       if (p === "/print/api/order") {
         if (limited("order", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
-        const b = await readJson(req, 40000); { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; }
+        const b = await readJson(req, 40000); { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; b.__bonus = null; if (me && me.type === "company") { const bo = await bonusOf(me); if (bo && bo.pct) b.__bonus = { pct: bo.pct, name: bo.name }; } }
         const r = await createOrder(b);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte prüfen und erneut bestellen", price: r.price });
         const o = r.order;
@@ -1568,7 +1599,7 @@ module.exports = function (D) {
     const c = cfg(), s = await settings();
     const orders = await store.listOrders();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
-    return { ok: true, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: c.markup, minMarginEur: c.minMargin },
+    return { ok: true, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: SETTINGS && SETTINGS.markupPct != null ? SETTINGS.markupPct : c.markup, minMarginEur: SETTINGS && SETTINGS.minMarginEur != null ? SETTINGS.minMarginEur : c.minMargin, envMarkupPct: c.markup, envMinMarginEur: c.minMargin },
       settings: s, catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
       curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
   }

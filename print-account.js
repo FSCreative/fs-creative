@@ -65,11 +65,12 @@ module.exports = function (D) {
     setPw(c, pw); profileIn(c, cust); m[email] = c; await sendCode(c, "verify"); return c;
   }
 
-  async function handle(req, res, p, ip, J, readJson, ordersOf) {
+  async function handle(req, res, p, ip, J, readJson, ordersOf, bonusOf) {
+    const full = async c => ({ ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c), bonus: bonusOf ? await bonusOf(c) : null });
     const send = (code, o, ck) => { if (ck) res.setHeader("Set-Cookie", ck); return J(res, code, o); };
     if (p === "/print/api/account/me" && req.method === "GET") {
       const c = await current(req); if (!c) return send(200, { ok: true, customer: null });
-      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) });
+      return send(200, await full(c));
     }
     if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
     if (limited("acct", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
@@ -87,7 +88,7 @@ module.exports = function (D) {
       const c = m[email]; if (!c) return J(res, 400, { ok: false, error: "Konto nicht gefunden." });
       const e = codeOk(c, b.code, "verify"); if (e) { await save(); return J(res, 400, { ok: false, error: e }); }
       c.verified = true; c.verifiedAt = nowIso(); await save();
-      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) }, cookie(c));
+      return send(200, await full(c), cookie(c));
     }
     if (p === "/print/api/account/resend") { const c = m[email]; if (c && (b.purpose === "reset" ? c.verified : !c.verified)) await sendCode(c, b.purpose === "reset" ? "reset" : "verify"); return J(res, 200, { ok: true }); }
     if (p === "/print/api/account/login") {
@@ -95,7 +96,7 @@ module.exports = function (D) {
       if (!c || !pwOk(c, b.password)) return J(res, 400, { ok: false, error: "E-Mail oder Passwort stimmt nicht." });
       if (!c.verified) { await sendCode(c, "verify"); return J(res, 200, { ok: true, needCode: true, info: "Bitte bestätige zuerst deine E-Mail-Adresse – wir haben dir einen neuen Code geschickt." }); }
       c.lastLogin = nowIso(); await save();
-      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) }, cookie(c));
+      return send(200, await full(c), cookie(c));
     }
     if (p === "/print/api/account/forgot") { const c = m[email]; if (c && c.verified) await sendCode(c, "reset"); return J(res, 200, { ok: true }); }   // keine Auskunft, ob es das Konto gibt
     if (p === "/print/api/account/reset") {
@@ -103,12 +104,12 @@ module.exports = function (D) {
       const e0 = pwBad(b.password); if (e0) return J(res, 400, { ok: false, error: e0 });
       const e = codeOk(c, b.code, "reset"); if (e) { await save(); return J(res, 400, { ok: false, error: e }); }
       setPw(c, b.password); c.verified = true; await save();
-      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) }, cookie(c));
+      return send(200, await full(c), cookie(c));
     }
     if (p === "/print/api/account/logout") return send(200, { ok: true }, clearCookie());
     // ab hier nur angemeldet
     const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
-    if (p === "/print/api/account/profile") { profileIn(c, b); if (b.newsletter !== undefined) c.newsletter = b.newsletter === true; await save(); return J(res, 200, { ok: true, customer: pub(c) }); }
+    if (p === "/print/api/account/profile") { profileIn(c, b); if (b.newsletter !== undefined) c.newsletter = b.newsletter === true; await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null }); }
     if (p === "/print/api/account/password") {
       if (!pwOk(c, b.current)) return J(res, 400, { ok: false, error: "Das aktuelle Passwort stimmt nicht." });
       const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e }); setPw(c, b.password); await save(); return J(res, 200, { ok: true });
