@@ -785,3 +785,5 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
   .ps-big-h{flex-wrap:wrap}.ps-big-h b{flex:1}.ps-big-h .ps-ddq{order:3;flex-basis:100%}
 }
 #shop h2:focus,#shop h2:focus-visible{outline:none}
+.ps-zipcity{display:grid;grid-template-columns:minmax(90px,120px) minmax(0,1fr);gap:10px}
+.ps-acct-hint{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:var(--ps-chipon);font-size:14px}
