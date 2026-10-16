@@ -693,26 +693,33 @@
     if (!mat) return [];
     var gr = function (o) { return +((String(o.name).match(/(\d{2,4})\s*g/) || [])[1] || 0); }, ob = function (sl) { return mat.options.filter(function (o) { return o.slug === sl; })[0] || {}; };
     var coated = mat.options.filter(function (o) { return /gesatineerd|silk/.test(o.slug) && gr(o) >= 90; }), g0 = gr(ob(base.material)) || 135;
-    var list = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: Object.assign({}, base) }];
-    var cheap = coated.slice().sort(function (a, b) { return gr(a) - gr(b); })[0];
-    if (cheap && cheap.slug !== base.material && gr(cheap) < g0) list.push({ id: "guenstig", name: "Günstig", icon: "€", sel: Object.assign({}, base, { material: cheap.slug }) });
-    var heavier = coated.filter(function (o) { return /silk/.test(o.slug) && gr(o) > g0; }).sort(function (a, b) { return Math.abs(gr(a) - g0 * 1.35) - Math.abs(gr(b) - g0 * 1.35); })[0];
-    var lam = fin && fin.options.filter(function (o) { return /matt/.test(o.slug) && /lamination/.test(o.slug) && (/^double/.test(o.slug) ? base.printtype === "44" : base.printtype !== "44"); })[0];
-    if (heavier || lam) list.push({ id: "premium", name: "Hochwertig", icon: "◆", sel: Object.assign({}, base, heavier ? { material: heavier.slug } : {}, lam ? { finish: lam.slug } : {}) });
-    return list.filter(function (x) { return !excluded(x.sel); }).map(function (x) {
-      x.desc = [optName("material", x.sel.material)].concat(x.sel.finish && fin ? [optName("finish", x.sel.finish)] : []).filter(function (t) { return t && !NONE_RX.test(t); }).join(" · ");
-      x.on = Object.keys(x.sel).every(function (k) { return String(S.sel[k]) === String(x.sel[k]); }); return x; });
+    var ok = function (sel) { return !excluded(sel); }, mk = function (o) { return Object.assign({}, base, o); };
+    // Günstig: Kandidaten (leichtere bzw. gleich schwere Papiere) – gewählt wird nach echtem Preis
+    var cheap = coated.filter(function (o) { return gr(o) <= g0 && o.slug !== base.material; }).sort(function (a, b) { return gr(a) - gr(b); }).slice(0, 4).map(function (o) { return mk({ material: o.slug }); }).filter(ok);
+    // Hochwertig: schwereres mattes Papier + matte Folie, sonst Rückfall-Varianten
+    var lams = fin ? fin.options.filter(function (o) { return /matt/.test(o.slug) && /lamination/.test(o.slug); }).sort(function (a, b) { return (/^double/.test(b.slug) === (base.printtype === "44")) - (/^double/.test(a.slug) === (base.printtype === "44")); }) : [];
+    var heav = coated.filter(function (o) { return /silk/.test(o.slug) && gr(o) > g0; }).sort(function (a, b) { return Math.abs(gr(a) - g0 * 1.35) - Math.abs(gr(b) - g0 * 1.35); });
+    var prem = []; heav.slice(0, 3).forEach(function (h) { lams.slice(0, 2).forEach(function (l) { prem.push(mk({ material: h.slug, finish: l.slug })); }); }); lams.slice(0, 2).forEach(function (l) { prem.push(mk({ finish: l.slug })); }); heav.slice(0, 2).forEach(function (h) { prem.push(mk({ material: h.slug })); });
+    prem = prem.filter(ok)[0];
+    return { base: mk({}), cheap: cheap, prem: prem, fin: fin };
   }
   function presetHtml(p) {
-    var l = presetsOf(p); if (l.length < 2) return "";
-    var co = S.ctype === "company", key = function (x) { return JSON.stringify([x.sel, S.copies, S.urgency, S.ctype, S.pm || "auto"]); };
-    var html = '<section class="ps-sec ps-pre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + l.map(function (x) { var pr = PRE[key(x)];
-      return '<button type="button" class="ps-preb' + (x.on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + x.on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(x.desc) + '</small><span class="pp" data-prep="' + x.id + '">' + (pr ? eur(co ? pr.net : pr.gross) : '<span class="ps-spin"></span>') + "</span>" + (x.on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + "</div>" +
-      '<p class="ps-pre-more">Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.</p></section>';
-    setTimeout(function () { l.forEach(function (x) { var k = key(x); if (PRE[k]) return; PRE[k] = null;
-      api("/print/api/price", Object.assign(cfgOf(), { sel: x.sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { if (!j.ok) { delete PRE[k]; var e0 = document.querySelector('[data-prep="' + x.id + '"]'); if (e0) e0.textContent = "–"; return; } PRE[k] = j.price; var e = document.querySelector('[data-prep="' + x.id + '"]'); if (e) e.textContent = eur(co ? j.price.net : j.price.gross); }); }); }, 0);
+    var P = presetsOf(p); if (!P || !P.base) return "";
+    var co = S.ctype === "company", key = function (sel) { return JSON.stringify([sel, S.copies, S.urgency, S.ctype, S.pm || "auto"]); }, price = function (sel) { return PRE[key(sel)]; };
+    var desc = function (sel) { return [optName("material", sel.material)].concat(sel.finish && P.fin ? [optName("finish", sel.finish)] : []).filter(function (t) { return t && !NONE_RX.test(t); }).join(" · "); };
+    var isOn = function (sel) { return Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
+    var bp = price(P.base), cheapSel = null;
+    if (bp) P.cheap.forEach(function (c) { var cp = price(c); if (cp && cp.gross < bp.gross - 0.5 && (!cheapSel || cp.gross < price(cheapSel).gross)) cheapSel = c; });
+    var l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(cheapSel ? [{ id: "guenstig", name: "Günstig", icon: "€", sel: cheapSel }] : []).concat(P.prem ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
     window.__presets = l;
-    return html;
+    var todo = [P.base].concat(P.cheap, P.prem ? [P.prem] : []).filter(function (sel) { return !(key(sel) in PRE); });
+    if (todo.length) setTimeout(function () { var left = todo.length; todo.forEach(function (sel) { var k = key(sel); PRE[k] = null;
+      api("/print/api/price", Object.assign(cfgOf(), { sel: sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { PRE[k] = j.ok ? j.price : false; }).catch(function () { PRE[k] = false; }).then(function () {
+        if (--left) return; var box = document.getElementById("psPre"); if (box && S.step === 2) box.outerHTML = presetHtml(S.prod); }); }); }, 0);
+    if (l.length < 2 && !todo.length) return "";
+    return '<section class="ps-sec ps-pre" id="psPre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + l.map(function (x) { var pr = price(x.sel), on = isOn(x.sel);
+      return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + "</div>" +
+      '<p class="ps-pre-more">Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.</p></section>';
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
