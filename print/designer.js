@@ -360,8 +360,9 @@
     else if (e.t === "qr") { o = qrObj(e.data, e.s * U, e.color); o.set({ left: X(e.x), top: X(e.y) }); o.qr = { mode: "url", url: e.data, color: e.color || "#000000" }; }
     return o;
   }
-  function applyTemplate(id, initial) {
+  function applyTemplate(id, initial, over) {
     var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: D.sides, panels: D.panels, round: D.round };
+    if (over) { ctx.texts = over.texts; ctx.pal = over.pal; }
     var pages = PrintTemplates.build(id, ctx), all = []; pages.forEach(function (p) { all = all.concat(p); });
     return loadFontsOf(all).then(function () {
       var sc = new fabric.StaticCanvas(null, { width: D.W, height: D.H });
@@ -516,7 +517,12 @@
     if (!D || !D.panel) return; var p = D.panel, h = "";
     D.root.querySelector("#pdPT").textContent = TITLES[p] || "";
     if (p === "tpl") {
-      h = '<div class="pd-sec"><h4>Vorlagen für ' + esc(D.o.product.title) + '</h4><p class="pd-muted">Alle Texte, Farben und Bilder sind anpassbar. Eine Vorlage ersetzt die aktuelle Gestaltung.</p><div class="pd-tpls" id="pdTpls">' +
+      var AI = window.PrintShop && window.PrintShop.ai;
+      h = (AI ? '<div class="pd-sec pd-ai"><h4>✨ KI-Assistent</h4><p class="pd-muted">Beschreib kurz, was du brauchst – die KI schlägt Texte, Vorlage und Farben vor. Alles bleibt danach frei anpassbar.</p>' +
+        '<textarea class="pd-in" id="pdAiQ" rows="4" maxlength="700" placeholder="z. B. Flyer für unser Sommerfest am 12. Juli ab 17 Uhr am Dorfplatz Gaschurn, Eintritt frei, Live-Musik – fröhlich und bunt">' + esc(D.aiQ || "") + '</textarea>' +
+        '<button type="button" class="ps-btn primary" data-a="ai"' + (D.aiBusy ? " disabled" : "") + ">" + (D.aiBusy ? '<span class="ps-spin"></span> Entwirft …' : "Vorschlag erstellen") + "</button>" +
+        (D.aiTip ? '<p class="pd-ai-tip"><b>Tipp:</b> ' + esc(D.aiTip) + "</p>" : "") + (D.aiErr ? '<p class="pd-ai-err">' + esc(D.aiErr) + "</p>" : "") + "</div>" : "") +
+        '<div class="pd-sec"><h4>Vorlagen für ' + esc(D.o.product.title) + '</h4><p class="pd-muted">Alle Texte, Farben und Bilder sind anpassbar. Eine Vorlage ersetzt die aktuelle Gestaltung.</p><div class="pd-tpls" id="pdTpls">' +
         PrintTemplates.list(D.o.product.key).map(function (t) { return '<button type="button" class="pd-tpl" data-tpl="' + t.id + '"><canvas width="10" height="10" data-thumb="' + t.id + '"></canvas><span>' + esc(t.name) + "</span></button>"; }).join("") +
         '</div><button type="button" class="ps-btn small" data-a="blank">Leere Seite</button></div>' + pagesHtml();
       D.P.innerHTML = h; thumbs(); return;
@@ -798,6 +804,24 @@
     }).catch(function () { busy(false); toast("Speichern fehlgeschlagen", true); });
   }
   function busy(t) { var b = D && D.root.querySelector(".pd-busy"); if (!t) { if (b) b.remove(); return; } if (!b) { b = document.createElement("div"); b.className = "pd-busy"; D.root.querySelector(".pd-stage").appendChild(b); } b.innerHTML = '<span><span class="ps-spin"></span> ' + esc(t) + "</span>"; }
+  document.addEventListener("input", function (e) { if (D && e.target && e.target.id === "pdAiQ") D.aiQ = e.target.value; });
+  // KI-Assistent: Vorschlag (Stil, Texte, Farben, Schriften) vom Server holen und als Vorlage anwenden
+  function aiRun() {
+    var ta = D.root.querySelector("#pdAiQ"), q = ta ? ta.value.trim() : ""; D.aiQ = q;
+    if (q.length < 4) { D.aiErr = "Beschreib kurz, was du gestalten möchtest."; renderPanel(); return; }
+    var run = function () {
+      D.aiBusy = true; D.aiErr = ""; renderPanel();
+      window.PrintShop.api("/print/api/ai/design", { product: D.o.product.key, brief: q, w: D.mm.w, h: D.mm.h }).then(function (j) {
+        D.aiBusy = false;
+        if (!j.ok) { D.aiErr = j.error || "Das hat nicht geklappt."; renderPanel(); return; }
+        var d = j.design || {}, texts = {}; "HSOBFAW".split("").forEach(function (k) { if (typeof d[k] === "string") texts[k] = d[k]; });
+        if (!PrintTemplates.styles[d.style]) d.style = PrintTemplates.list(D.o.product.key)[0].id;
+        applyTemplate(d.style, false, { texts: texts, pal: d.pal }).then(function () { changed(); D.aiTip = d.tip || ""; renderPanel(); toast("KI-Vorschlag übernommen – alles bleibt frei anpassbar" + (j.left != null && j.left < 0.05 ? " (heutiges KI-Kontingent fast aufgebraucht)" : "")); });
+      }).catch(function () { D.aiBusy = false; D.aiErr = "Keine Verbindung – bitte erneut versuchen."; renderPanel(); });
+    };
+    if (D.dirty) modal('<h3>KI-Vorschlag übernehmen?</h3><p class="pd-muted">Der Vorschlag ersetzt deine aktuelle Gestaltung.</p><div class="foot"><button class="ps-btn" data-a="m:no">Abbrechen</button><button class="ps-btn primary" data-a="m:yes">Übernehmen</button></div>', function (r) { if (r === "yes") run(); });
+    else run();
+  }
   function modal(html, cb, cls) {
     var m = document.createElement("div"); m.className = "pd-modal"; m.innerHTML = '<div class="pd-dlg ' + (cls || "") + '" role="dialog" aria-modal="true">' + html + "</div>"; D.root.appendChild(m);
     var f = m.querySelector(".primary") || m.querySelector("button"); if (f) f.focus();
@@ -835,6 +859,7 @@
       case "cut": D.showBleed = !D.showBleed; t.setAttribute("aria-pressed", String(!D.showBleed)); c.requestRenderAll(); break;
       case "zoomin": zoomTo(c.getZoom() * 1.25); break; case "zoomout": zoomTo(c.getZoom() / 1.25); break; case "fit": fit(); break;
       case "t": addText(v); break; case "sh": addShape(v); break;
+      case "ai": aiRun(); break;
       case "blank": modal('<h3>Leere Seite?</h3><p class="pd-muted">Alle Elemente werden entfernt.</p><div class="foot"><button class="ps-btn" data-a="m:no">Abbrechen</button><button class="ps-btn primary" data-a="m:yes">Leeren</button></div>', function (r) { if (r === "yes") { D.pages = PrintTemplates.blank({ sides: D.sides }).map(function () { return { objects: [] }; }); D.hist = D.pages.map(function () { return []; }); loadPage(0, true).then(changed); } }); break;
       case "img": if (v === "add" || v === "replace") pickFile().then(function (f) { if (!f) return; var ph = o && o.role === "ph" ? o : (v === "replace" && o && o.type === "image" ? o : null); if (v === "replace" && ph) { var pb = ph; addImage(f, { ph: pb }); } else addImage(f, { ph: ph }); });
         else if (v === "bg") pickFile().then(function (f) { if (f) { c.getObjects().filter(function (x) { return x.role === "bgimg"; }).forEach(function (x) { c.remove(x); }); addImage(f, { bg: true }); } });

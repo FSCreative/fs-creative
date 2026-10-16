@@ -553,3 +553,40 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 .ps-flegal nav{display:flex;flex-wrap:wrap;gap:6px 18px}
 @media (max-width:1100px){.ps-fgrid{grid-template-columns:repeat(3,minmax(0,1fr))}.ps-fbrand{grid-column:1/-1}}
 @media (max-width:560px){.ps-fgrid{grid-template-columns:1fr 1fr}.ps-foot-big{padding-bottom:90px}}
+/* Kategorien: Bild oben, Text darunter (lesbar) */
+.ps-catt{min-height:0;padding:0;justify-content:flex-start;color:var(--text);background:var(--ps-card)}
+.ps-catt::after{display:none}
+.ps-catt .ci{display:block;aspect-ratio:16/10;background:#fff;overflow:hidden;position:relative}
+.ps-catt .ci img{position:static;width:100%;height:100%;object-fit:cover}
+.ps-catt .ct{display:flex;flex-direction:column;gap:2px;padding:12px 14px 14px}
+.ps-catt .ct b{font-size:16px}.ps-catt .ct span{font-size:13px;color:var(--ps-tag);opacity:1}
+.ps-catt:hover{border-color:var(--ps-line2)}
+/* Designer-Vorschau auf der Startseite */
+.dv{height:auto;min-height:320px;display:flex;align-items:center}
+.dv-win{width:100%;border-radius:16px;overflow:hidden;border:1px solid var(--ps-line2);background:#1b1b22;box-shadow:0 30px 70px rgba(0,0,0,.45)}
+.dv-bar{display:flex;align-items:center;gap:6px;padding:9px 12px;background:#24242d;font-size:12px;color:#a1a1aa}.dv-bar i{width:10px;height:10px;border-radius:50%;background:#ff5f57}.dv-bar i:nth-child(2){background:#febc2e}.dv-bar i:nth-child(3){background:#28c840}.dv-bar span{margin-left:8px}
+.dv-body{position:relative;display:flex;min-height:300px}
+.dv-side{display:flex;flex-direction:column;gap:6px;padding:10px 8px;background:#202028;border-right:1px solid #ffffff14}
+.dv-side span{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:#d1d1d6;font-size:13px;font-weight:700;background:#ffffff0d}.dv-side .on{background:#0a84ff;color:#fff}
+.dv-stage{flex:1;position:relative;background:repeating-conic-gradient(#26262f 0 25%,#2b2b35 0 50%) 0 0/18px 18px;display:flex;align-items:center;justify-content:center;padding:18px}
+.dv-flyer{width:46%;aspect-ratio:148/210;background:#f4e9d8;color:#2d1e12;border-radius:3px;box-shadow:0 14px 34px rgba(0,0,0,.45);padding:7% 7%;display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden;font-family:Lato,system-ui,sans-serif;transform:rotate(-3deg);outline:1.5px dashed #ff375f88;outline-offset:-5px}
+.dv-flyer::before{content:"";position:absolute;left:0;top:7%;width:28%;height:3px;background:#d9541e;box-shadow:0 6px 0 #f2a541,0 12px 0 #d9541e}
+.dv-flyer .k{margin-top:16%;font-size:7px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.dv-flyer b{font-family:"Bebas Neue",Oswald,Impact,sans-serif;font-weight:400;font-size:clamp(26px,3.4vw,42px);line-height:.88;text-transform:uppercase;color:#2d1e12}
+.dv-flyer .s{font-size:8px;font-weight:700}
+.dv-flyer .pic{flex:1;min-height:30px;margin:6px 0;border-radius:3px;background:linear-gradient(160deg,#f2a541,#d9541e 60%,#7a2e10)}
+.dv-flyer .f{font-size:6.5px;line-height:1.35;background:#d9541e;color:#fff;margin:0 -9% -10%;padding:7px 9% 10%}
+.dv-flyer .badge{position:absolute;right:7%;top:30%;width:44px;height:44px;border-radius:50%;background:#2d1e12;color:#f4e9d8;font-size:7px;font-weight:700;display:grid;place-items:center;text-align:center;transform:rotate(12deg);line-height:1.1;padding:4px}
+.dv-card2{position:absolute;right:7%;bottom:12%;width:34%;aspect-ratio:85/55;background:#0a0a0f;border-radius:4px;box-shadow:0 14px 30px rgba(0,0,0,.5);padding:4% 4.5%;display:flex;flex-direction:column;color:#f5f5f7;transform:rotate(4deg);overflow:hidden;font-family:Inter,system-ui,sans-serif}
+.dv-card2::before{content:"";position:absolute;right:-20%;top:-35%;width:70%;aspect-ratio:1;border-radius:50%;background:radial-gradient(#0a84ff88,transparent 70%)}
+.dv-card2 .n{font-family:Poppins,Inter,sans-serif;font-weight:700;font-size:10px;position:relative}.dv-card2 .r{font-size:6px;color:#0a84ff;position:relative}
+.dv-card2 .l{width:18%;height:2px;background:#0a84ff;margin:4px 0}.dv-card2 .c{margin-top:auto;font-size:5.5px;color:#a1a1aa;line-height:1.4}
+.dv-ai{position:absolute;left:58px;bottom:12px;max-width:62%;padding:9px 11px;border-radius:12px;background:#24242de6;border:1px solid #ffffff1f;color:#f5f5f7;font-size:11px;display:flex;flex-direction:column;gap:2px;backdrop-filter:blur(6px)}
+.dv-ai span{color:#c7c7cc;font-style:italic}.dv-ai em{color:#30d158;font-style:normal;font-weight:600}
+@media (max-width:760px){.dv-ai{display:none}.dv-body{min-height:240px}}
+@font-face{font-family:"Bebas Neue";src:url(/print/fonts/bebas-neue-400.woff) format("woff");font-weight:400;font-display:swap}
+@font-face{font-family:"Poppins";src:url(/print/fonts/poppins-700.woff) format("woff");font-weight:700;font-display:swap}
+.pd-ai{background:linear-gradient(160deg,#0a84ff1f,#9d4eff14);border-radius:14px;padding:12px!important}
+.pd-ai textarea{width:100%;resize:vertical;min-height:84px;margin:6px 0 8px;font:inherit}
+.pd-ai .ps-btn{width:100%}
+.pd-ai-tip{font-size:13px;margin:10px 0 0}.pd-ai-err{font-size:13px;color:var(--ps-bad);margin:10px 0 0}

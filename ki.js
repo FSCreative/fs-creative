@@ -35,6 +35,7 @@ const FEATURES = {
   upload:    { label: "Belege hochladen (Foto/PDF) und auslesen", essential: true },
   rechnung:  { label: "Rechnungen per KI vorbereiten", essential: true },
   chat:      { label: "Website-Chat: KI antwortet, wenn du offline bist (und legt Leads an)", essential: false },
+  printdesign: { label: "Druckshop: KI-Assistent im Designer (Texte, Vorlage, Farben – Tageslimit je Kunde)", essential: false },
 };
 const DEFAULT_SENDERS = ["railway", "google", "adobe", "world4you", "a1.net", "a1 telekom", "magenta", "drei.at", "cloudflare", "anthropic", "openai", "apple", "microsoft", "github", "figma", "notion", "hetzner", "canva", "envato", "paypal", "rechnung", "invoice", "receipt"].join("\n");
 
@@ -766,6 +767,12 @@ module.exports = function createKi(deps) {
   // Für fin-docmatch.js: Anhang laden (nur lesen) und Beleg auslesen (gecacht je Mail-Anhang)
   function docmatchReady() { return configured() && featureOn("docmatch") && featureOn("mailbeleg") && !overLimit(); }
   // Website-Chat (chat.js): kurze Antwort + erkannte Kontaktdaten als JSON. Kurzer Verlauf, max. ~400 Tokens, Sonnet (modelFor("chat")).
+  // Druckshop-Designer: Gestaltungsvorschlag als JSON; liefert die tatsächlichen Kosten (EUR) für das Tageslimit je Kunde
+  async function printDesign(system, user, schema) {
+    const msg = await claude("printdesign", { system, messages: [{ role: "user", content: user }], maxTokens: 1200, effort: "low", schema });
+    const u = msg.usage || {}, usd = priced({ input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 }, PRICES[modelFor("printdesign")] || PRICE_USD);
+    return { json: jsonOf(msg), eur: usd * USD_EUR };
+  }
   async function chatReply(system, state, messages, schema) { const msg = await claude("chat", { system, system2: state, messages, maxTokens: 400, effort: "low", schema }); return jsonOf(msg); }
-  return { handle, configured, status, chatReply, fetchAttachment, docmatchReady, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
+  return { handle, configured, status, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign") && !overLimit(), fetchAttachment, docmatchReady, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
 };

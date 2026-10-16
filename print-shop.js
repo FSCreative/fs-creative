@@ -1089,6 +1089,36 @@ module.exports = function (D) {
   // Kundenkonten (print-account.js): erst bei Bedarf laden
   let ACCOUNT = null;
   const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl) }));
+  // ── KI-Assistent im Designer: Tageslimit je Kunde (Konto bzw. IP) und gesamt; Kosten werden je Aufruf exakt verbucht ──
+  const AI_STYLES = { klar: "klar, modern, weiß mit Blau", nacht: "dunkel, edel, Nachtblau mit Leuchten", elegant: "elegant, Creme mit Gold, Serifen", akzent: "seriös mit farbigem Band", bold: "plakativ, Gelb/Schwarz, große Großbuchstaben", natur: "natürlich, grün, ruhig", split: "großes Bild + Text, orange Akzente", kreise: "dunkel mit bunten Kreisen, lebendig", pastell: "sanfte Pastelltöne, freundlich", retro: "Retro 70er, Orange/Creme, Streifen", mono: "minimalistisch schwarz-weiß", business: "Business, Dunkelblau/Türkis", neon: "Neon, Nacht, Party", terracotta: "warm, Terracotta, Bild + Serifen", ozean: "frisch, Blau/Türkis, Wellen", kreide: "Kreidetafel, Gastro, dunkel mit Gelb", festlich: "festlich, Bordeaux mit Gold", sport: "sportlich, Schwarz/Rot, kräftig", frisch: "frisch, Grün/Weiß", handmade: "handgemacht, Kraftpapier, Schreibschrift", editorial: "Magazin-Stil, Rot-Akzent, Serifen", verspielt: "verspielt, Lila/Gelb, Punkte, Kinder & Feste" };
+  const aiCfg = () => ({ day: Math.max(0.05, parseFloat(String(process.env.PRINT_AI_DAY_EUR || "0.3").replace(",", ".")) || 0.3), total: Math.max(0.5, parseFloat(String(process.env.PRINT_AI_DAY_TOTAL_EUR || "5").replace(",", ".")) || 5) });
+  let AI_USE = null;
+  async function aiUse() { const d = today(); if (!AI_USE) AI_USE = (await store.getMeta("print_ai_usage").catch(() => null)) || {}; if (AI_USE.day !== d) AI_USE = { day: d, total: 0, by: {} }; return AI_USE; }
+  const aiKey = (me, ip) => me ? "k:" + me.id : "ip:" + crypto.createHash("sha256").update(String(ip) + SECRET).digest("hex").slice(0, 16);
+  async function aiLeft(key) { const u = await aiUse(), c = aiCfg(); return Math.max(0, Math.min(c.day - (u.by[key] || 0), c.total - u.total)); }
+  async function aiDesign(b, me, ip) {
+    const ki = D.ki; if (!ki || !ki.printDesignOn || !ki.printDesignOn()) throw Object.assign(new Error("Der KI-Assistent ist gerade nicht verfügbar."), { status: 503 });
+    const key = aiKey(me, ip), left = await aiLeft(key);
+    if (left < 0.02) throw Object.assign(new Error("Dein KI-Kontingent für heute ist aufgebraucht – morgen geht’s weiter. Vorlagen und alle anderen Funktionen kannst du natürlich weiter nutzen."), { status: 429 });
+    const brief = clip(b.brief, 700); if (brief.length < 4) throw Object.assign(new Error("Beschreib kurz, was du gestalten möchtest."), { status: 400 });
+    const prod = CURATED.find(x => x.key === b.product); const styles = Object.keys(AI_STYLES);
+    const fonts = FONTS.map(f => f.family);
+    const str = { type: "string" }, hex = { type: "string", pattern: "^#[0-9a-fA-F]{6}$" };
+    const schema = { type: "object", additionalProperties: false, required: ["style", "H", "S", "O", "B", "F", "A", "W", "pal", "tip"], properties: { style: { type: "string", enum: styles }, H: str, S: str, O: str, B: str, F: str, A: str, W: str,
+      pal: { type: "object", additionalProperties: false, required: ["bg", "fg", "mute", "ac", "ac2", "fh", "fb"], properties: { bg: hex, fg: hex, mute: hex, ac: hex, ac2: hex, fh: { type: "string", enum: fonts }, fb: { type: "string", enum: fonts } } }, tip: str } };
+    const system = ["Du bist Grafikdesigner:in im Online-Druckshop von FS Creative (Österreich). Du entwirfst Druckprodukte für Kund:innen: Texte (Deutsch, österreichische Schreibweise, Du-Form nur wenn passend), Stil und Farbpalette.",
+      "Felder: H = Hauptüberschrift (kurz, max. 5 Wörter), S = Unterzeile, O = Datum/Ort/Kerninfo (kurz, sonst leer), B = Fließtext (max. 40 Wörter; bei Visitenkarten/Aufklebern leer), F = Kontakt-/Fußzeile (Zeilen mit \n), A = Störer/Preis/Badge (max. 3 Wörter, sonst leer), W = Website ohne https://.",
+      "Für Visitenkarten: H = Name, S = Funktion, F = Telefon\nE-Mail\nWebsite, A = Adresse. Für Folder: B in Abschnitte mit Leerzeile trennen (Titel in erster Zeile).",
+      "Erfinde keine konkreten Telefonnummern, Adressen oder Preise, die nicht im Auftrag stehen – nutze dann klar erkennbare Platzhalter wie „+43 …“ oder „www.deine-website.at“.",
+      "Farben: druckfreundlich (CMYK-tauglich, kein Neon außer beim Stil neon), ausreichend Kontrast zwischen bg und fg (fg auf bg gut lesbar), ac = Akzent, ac2 = zweiter Akzent, mute = gedämpfte Textfarbe. Schriften nur aus der Liste.",
+      "Wähle den Stil, der am besten passt: " + styles.map(k => k + " (" + AI_STYLES[k] + ")").join(", ") + ".",
+      "tip = ein kurzer, konkreter Gestaltungstipp für genau diesen Auftrag (ein Satz).",
+      "Lehne Inhalte ab, die illegal, hetzerisch, diskriminierend oder sexuell explizit sind, oder fremde Marken/Logos imitieren – setze dann H auf „Bitte anderen Inhalt wählen“ und alle anderen Texte leer."].join("\n");
+    const user = "Produkt: " + (prod ? prod.title : clip(b.product, 60)) + (b.w && b.h ? " · Format " + Math.round(+b.w) + " × " + Math.round(+b.h) + " mm" : "") + "\nAuftrag der Kundin/des Kunden:\n" + brief;
+    let r; try { r = await ki.printDesign(system, user, schema); } catch (e) { throw Object.assign(new Error(e.kiCode === "not_configured" || e.kiCode === "disabled" ? "Der KI-Assistent ist gerade nicht verfügbar." : e.message || "KI-Fehler"), { status: 502 }); }
+    const u = await aiUse(); u.by[key] = (u.by[key] || 0) + r.eur; u.total += r.eur; u.calls = (u.calls || 0) + 1; store.setMeta("print_ai_usage", u).catch(() => {});
+    return { design: r.json, left: Math.round(Math.max(0, aiCfg().day - u.by[key]) * 100) / 100 };
+  }
   async function bonusOf(c) {
     if (!c) return null;
     const since = Date.now() - 365 * 864e5;
@@ -1472,7 +1502,7 @@ module.exports = function (D) {
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
         const cat = await catalog(false), all = await catalogAll().catch(() => null);
         const products = publicCatalog(cat, s, all);
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products, groups: publicGroups(products), fonts: FONTS, agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       if (p === "/print/api/product" && req.method === "GET") {
@@ -1528,6 +1558,11 @@ module.exports = function (D) {
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
         return J(res, 200, { ok: true, price: publicPrice(q), sides: n.sides, size: n.size, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
+      }
+      if (p === "/print/api/ai/design") {
+        if (limited("ai", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
+        const b = await readJson(req, 4000); const me = await accountMod().current(req);
+        const r = await aiDesign(b, me, ip); return J(res, 200, Object.assign({ ok: true }, r));
       }
       if (p === "/print/api/uid") {
         if (limited("uid", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });

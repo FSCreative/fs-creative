@@ -485,6 +485,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pv = await admin("/admin/api/print/sortiment", { op: "preview", sku: "notepads" }); assert.strictEqual(pv.ok, true, JSON.stringify(pv)); assert.ok(pv.gross > 0);
     const ps = await admin("/admin/api/print/sortiment", { op: "preview", sku: "t-shirt-budget-5" }); assert.strictEqual(ps.ok, true, JSON.stringify(ps));
   });
+  await t("KI-Assistent ohne ANTHROPIC_API_KEY: aus (Katalog ai=false, Endpunkt 503); /print/hilfe erreichbar", async () => {
+    assert.strictEqual(cat.ai, false);
+    const r = await post("/print/api/ai/design", { product: "flyer", brief: "Sommerfest" }); assert.strictEqual(r.status, 503, JSON.stringify(r.j));
+    const h = await (await fetch(B + "/print/hilfe")).text(); assert.ok(/So geht’s &amp; FAQ/.test(h) && /id="bonus"/.test(h) && /Platin/.test(h) && !/\/print\/app\.js/.test(h));
+  });
   await t("Shop-AGB /print/agb: Firmendaten, FAGG-Hinweis, Stand", async () => {
     const r = await fetch(B + "/print/agb"); assert.strictEqual(r.status, 200); const h = await r.text();
     assert.ok(/ATU82622967/.test(h) && /§ 18 Abs\. 1 Z 3 FAGG/.test(h) && /Dorfstraße 3\/1/.test(h)); assert.ok(!/\{\{/.test(h)); assert.ok(/rechtlich prüfen/.test(h), "Hinweis als HTML-Kommentar");
