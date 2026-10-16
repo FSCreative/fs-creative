@@ -11,6 +11,7 @@ F.css('.pr-list{display:grid}.pr-row{display:grid;grid-template-columns:minmax(0
   '@media(max-width:700px){.pr-row{grid-template-columns:minmax(0,1fr) auto}.pr-row .pr-c2{display:none}}'+
   '.pr-kv{display:grid;grid-template-columns:clamp(96px,30%,140px) minmax(0,1fr);gap:6px 12px;font-size:13.5px}.pr-kv span{color:var(--ink-3)}.pr-kv b{font-weight:600;overflow-wrap:anywhere}'+
   '.pr-pdf{width:100%;height:420px;border:1px solid var(--line);border-radius:10px;background:#fff}.pr-chk{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13px}.pr-chk li{padding:6px 10px;border-radius:8px;background:var(--sunk)}.pr-chk li.warn{background:var(--warn-soft)}.pr-chk li.error{background:var(--bad-soft)}'+
+  '.pr-cu{display:grid}.pr-cu-r{display:grid;grid-template-columns:minmax(220px,2.2fr) 110px 110px 90px minmax(240px,1.6fr) auto;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line)}.pr-vo{grid-template-columns:minmax(220px,2fr) 80px 140px 130px auto auto}.pr-cu-r .num{text-align:right}@media(max-width:900px){.pr-cu-r,.pr-vo{grid-template-columns:1fr 1fr}}'+
   '.pr-hist{font-size:12.5px;color:var(--ink-2);display:grid;gap:3px;max-height:220px;overflow:auto}.pr-acts{display:flex;gap:8px;flex-wrap:wrap}.pr-set{display:grid;gap:10px}.pr-prod{display:grid;grid-template-columns:minmax(0,1fr) 90px 90px 70px;gap:8px;align-items:center;font-size:13px}.pr-prod input.f{padding:5px 8px}'+
   '.pr-cat{border-top:1px solid var(--line)}.pr-cat:first-child{border-top:0}.pr-cat>summary{display:flex;align-items:center;gap:10px;padding:10px 4px;cursor:pointer;list-style:none}.pr-cat>summary::-webkit-details-marker{display:none}.pr-cat>summary img,.pr-noimg{width:40px;height:40px;border-radius:9px;object-fit:cover;background:var(--sunk);flex:none}.pr-cat>summary b{flex:1;min-width:0}'+
   '.pr-cat-b{display:grid;gap:10px;padding:4px 0 14px}.pr-sub{display:grid;gap:2px}.pr-sub-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0 4px;border-bottom:1px solid var(--line)}.pr-sub-h b{flex:1 1 160px;min-width:0}.pr-sub-h select{width:auto;padding:4px 8px}'+
@@ -31,9 +32,11 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
-  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit"],["done","Erledigt"],["all","Alle"],["sortiment","Sortiment"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["gutscheine","Gutscheine"],["sortiment","Sortiment"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
+  if(FILTER==="kunden") return head+stat+tabs+customers();
+  if(FILTER==="gutscheine") return head+stat+tabs+voucherView();
   var L=list();
   return head+stat+tabs+'<section class="panel">'+(L.length?'<div class="pr-list">'+L.map(row).join("")+'</div>':'<div class="empty">'+(FILTER==="review"?"Nichts zu prüfen.":"Keine Aufträge.")+'</div>')+'</section>';
 }
@@ -79,7 +82,47 @@ function detail(j){
 function openOrder(id){ CUR=id; F.api("/admin/api/print/order?id="+encodeURIComponent(id)).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.openDrawer(detail(j)); }); }
 function op(body,msg){ F.toast("Bitte warten …"); return F.api("/admin/api/print/op",{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.toast(msg); load(true); if(j.order) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); }); }
 F.action("prreload",function(){ load(true); });
-F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); });
+F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); });
+// ── Kunden: Liste, Umsatz, Bonusstufe, eigener Rabatt ──
+var CU=null, CUQ="", VO=null;
+function loadCust(){ F.api("/admin/api/print/customers").then(function(j){ CU=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",customers:[]}; F.render(); }); }
+function customers(){
+  if(!CU) return '<section class="panel"><div class="empty">Lade Kunden …</div></section>';
+  if(!CU.ok) return '<div class="notice">'+esc(CU.error)+'</div>';
+  var q=CUQ.toLowerCase(), l=CU.customers.filter(function(c){ return !q||(c.email+" "+c.name+" "+c.company+" "+c.city).toLowerCase().indexOf(q)>-1; });
+  var tot=CU.customers.length, firms=CU.customers.filter(function(c){ return c.type==="company"; }).length;
+  return '<section class="panel"><div class="panel-h"><h2>Kunden</h2><span class="muted">'+tot+' Konten · '+firms+' Firmen · Bonus: '+CU.tiers.map(function(t){ return t.name+" "+t.pct+" % ab "+eur(t.from).replace(",00",""); }).join(" · ")+'</span></div><div class="panel-b">'+
+    '<input class="f" id="prCuQ" placeholder="Suchen (Name, Firma, E-Mail, Ort)" value="'+esc(CUQ)+'" style="max-width:360px;margin-bottom:10px">'+
+    '<p class="muted small">Eigener Rabatt gilt zusätzlich zum Bonusprogramm – es zählt der höhere der beiden; Gutscheincodes kommen obendrauf.</p>'+
+    (l.length?'<div class="pr-cu"><div class="pr-cu-r muted small"><span>Kunde</span><span>Bestellungen</span><span>Umsatz lfd. Jahr</span><span>Stufe</span><span>Eigener Rabatt</span><span></span></div>'+l.map(function(c){
+      return '<div class="pr-cu-r" data-cu="'+esc(c.id)+'"><span><b>'+esc(c.company||c.name||c.email)+'</b>'+(c.type==="company"?' <span class="tag info">Firma</span>':'')+(c.verified?'':' <span class="tag warn">unbestätigt</span>')+'<br><span class="muted small">'+esc(c.email)+(c.company&&c.name?' · '+esc(c.name):'')+(c.city?' · '+esc(c.city):'')+(c.uid?' · '+esc(c.uid):'')+' · seit '+de(String(c.createdAt).slice(0,10))+'</span></span>'+
+        '<span class="num">'+c.orders+'<br><span class="muted small">gesamt '+eur(c.revenue)+'</span></span><span class="num">'+eur(c.revenue12)+'</span><span>'+(c.tier?'<span class="tag ok">'+esc(c.tier)+'</span>':'<span class="muted">–</span>')+'</span>'+
+        '<span><input class="f" data-cupct style="width:70px" value="'+(c.discountPct||"")+'" placeholder="0" aria-label="Rabatt %"> % <input class="f" data-cunote style="width:150px" value="'+esc(c.discountNote)+'" placeholder="Notiz" aria-label="Notiz"></span>'+
+        '<span><button class="btn" data-act="prcusave:'+esc(c.id)+'">Speichern</button></span></div>'; }).join("")+'</div>':'<div class="empty">'+(tot?"Keine Treffer.":"Noch keine Kundenkonten – sie entstehen bei Registrierung oder beim Checkout.")+'</div>')+'</div></section>';
+}
+F.listen("input","#prCuQ",function(el){ CUQ=el.value; var pos=el.selectionStart; F.render(); var n=document.getElementById("prCuQ"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } });
+F.action("prcusave",function(id){ var r=document.querySelector('[data-cu="'+id+'"]'); if(!r) return; F.api("/admin/api/print/customers",{body:{op:"discount",id:id,pct:r.querySelector("[data-cupct]").value,note:r.querySelector("[data-cunote]").value}}).then(function(j){ F.toast(j.ok?"Rabatt gespeichert":(j.error||"Fehler"),!j.ok); loadCust(); }); });
+// ── Gutscheincodes ──
+function loadVou(){ F.api("/admin/api/print/vouchers").then(function(j){ VO=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",vouchers:[]}; F.render(); }); }
+function voucherView(){
+  var form='<section class="panel"><div class="panel-h"><h2>Gutscheincode anlegen</h2></div><div class="panel-b"><div style="display:flex;flex-wrap:wrap;gap:10px;align-items:end">'+
+    '<label class="small">Code<br><input class="f" id="prVoC" style="width:170px;text-transform:uppercase" placeholder="WILLKOMMEN10"></label><label class="small">Rabatt %<br><input class="f" id="prVoP" style="width:80px" placeholder="10"></label>'+
+    '<label class="small">Max. Einlösungen<br><input class="f" id="prVoM" style="width:90px" placeholder="unbegrenzt"></label><label class="small">Gültig bis<br><input class="f" id="prVoU" type="date"></label>'+
+    '<label class="small"><input type="checkbox" id="prVoO" checked> nur 1× je Kunde</label><label class="small">Notiz<br><input class="f" id="prVoN" style="width:200px" placeholder="z. B. Newsletter Oktober"></label><button class="btn primary" data-act="prvosave">Anlegen</button><button class="btn" data-act="prvogen">Zufallscode</button></div>'+
+    '<p class="muted small">Prozent-Rabatt auf alle Positionen im Warenkorb (netto, inkl. Versand). Wird zusätzlich zu Bonus/Kundenrabatt abgezogen.</p></div></section>';
+  if(!VO) return form+'<section class="panel"><div class="empty">Lade …</div></section>';
+  if(!VO.ok) return form+'<div class="notice">'+esc(VO.error)+'</div>';
+  var today=new Date().toISOString().slice(0,10);
+  return form+'<section class="panel"><div class="panel-h"><h2>Gutscheine</h2><span class="muted">'+VO.vouchers.length+'</span></div>'+(VO.vouchers.length?'<div class="pr-cu">'+VO.vouchers.map(function(v){ var exp=v.until&&v.until<today, full=v.maxUses&&v.used>=v.maxUses;
+    return '<div class="pr-cu-r pr-vo"><span><b style="font-family:ui-monospace,monospace;letter-spacing:.04em">'+esc(v.code)+'</b> <span class="tag '+(v.active===false||exp||full?"grey":"ok")+'">'+(v.active===false?"pausiert":exp?"abgelaufen":full?"aufgebraucht":"aktiv")+'</span><br><span class="muted small">'+esc(v.note||"")+(v.note?" · ":"")+'angelegt '+de(String(v.createdAt).slice(0,10))+'</span></span>'+
+      '<span class="num"><b>'+String(v.pct).replace(".",",")+' %</b></span><span class="num">'+(v.used||0)+(v.maxUses?' / '+v.maxUses:'')+' eingelöst</span><span>'+(v.until?'bis '+de(v.until):'unbefristet')+(v.perCustomer?'<br><span class="muted small">1× je Kunde</span>':'')+'</span>'+
+      '<span><button class="btn" data-act="prvotog:'+esc(v.code)+'">'+(v.active===false?"Aktivieren":"Pausieren")+'</button></span><span><button class="btn" data-act="prvodel:'+esc(v.code)+'">Löschen</button></span></div>'; }).join("")+'</div>':'<div class="empty">Noch keine Gutscheine.</div>')+'</section>';
+}
+F.action("prvogen",function(){ var a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", c="FS-"; for(var i=0;i<6;i++) c+=a[Math.floor(Math.random()*a.length)]; document.getElementById("prVoC").value=c; });
+F.action("prvosave",function(){ var g=function(id){ return document.getElementById(id); };
+  F.api("/admin/api/print/vouchers",{body:{op:"save",code:g("prVoC").value,pct:g("prVoP").value,maxUses:g("prVoM").value,until:g("prVoU").value,perCustomer:g("prVoO").checked,note:g("prVoN").value}}).then(function(j){ F.toast(j.ok?"Gutschein angelegt":(j.error||"Fehler"),!j.ok); if(j.ok) loadVou(); }); });
+F.action("prvotog",function(code){ var v=(VO&&VO.vouchers||[]).find(function(x){ return x.code===code; }); if(!v) return; F.api("/admin/api/print/vouchers",{body:{op:"save",code:v.code,pct:v.pct,maxUses:v.maxUses,until:v.until,perCustomer:v.perCustomer,note:v.note,active:v.active===false}}).then(function(j){ F.toast(j.ok?"Gespeichert":(j.error||"Fehler"),!j.ok); loadVou(); }); });
+F.action("prvodel",function(code){ F.confirm("Gutschein „"+code+"“ löschen? Bereits eingelöste Bestellungen bleiben unverändert.","Löschen",function(){ F.api("/admin/api/print/vouchers",{body:{op:"delete",code:code}}).then(function(j){ F.toast(j.ok?"Gelöscht":(j.error||"Fehler"),!j.ok); loadVou(); }); },true); });
 F.action("prord",function(id){ openOrder(id); });
 F.action("prplace",function(id){ var o=(ST.orders||[]).find(function(x){ return x.id===id; })||{}; F.confirm("Jetzt bei Print.com bestellen? "+(o.nr||"")+" · "+(o.product||"")+" · Einkauf ca. "+eur(o.purchase)+". Danach wird die Rechnung fertiggestellt und an den Kunden gesendet.","Verbindlich bestellen",function(){ op({op:"place",id:id},"Bei Print.com bestellt"); }); });
 F.action("prreject",function(id){ var o=(ST.orders||[]).find(function(x){ return x.id===id; })||{};

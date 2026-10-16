@@ -63,9 +63,10 @@
   function requoteCart() {
     var seq = ++rqSeq; S.quoting = S.cart.length; S.cartErr = {};
     S.cart.forEach(function (x) {
-      api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }).then(function (j) {
+      api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }).then(function (j) {
         if (seq !== rqSeq) return; S.quoting--;
-        if (j.ok) x.price = { net: j.price.net, gross: j.price.gross, vat: j.price.vat, rate: j.price.rate, deliveryDate: j.price.deliveryDate, taxNote: j.price.taxNote }; else { x.price = null; S.cartErr[x.id] = j.error || "Preis nicht verfügbar"; }
+        if (S.voucher) { if (j.voucherErr) { S.voucherErr = j.voucherErr; S.voucherOk = ""; } else if (j.voucher) { S.voucherOk = j.voucher.code + " · " + String(j.voucher.pct).replace(".", ",") + " % Rabatt"; S.voucherErr = ""; } }
+        if (j.ok) x.price = { net: j.price.net, gross: j.price.gross, vat: j.price.vat, rate: j.price.rate, deliveryDate: j.price.deliveryDate, taxNote: j.price.taxNote, bonus: j.price.bonus || null }; else { x.price = null; S.cartErr[x.id] = j.error || "Preis nicht verfügbar"; }
         if (!S.quoting) { cartSave(true); if (S.step === 6 || S.step === 4) render(); }
       }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
     });
@@ -150,10 +151,10 @@
     if (me.type !== "company") return '<section class="ps-panel ps-bonus-acc"><h3>Bonusprogramm für Firmen</h3><p class="pd-muted">Bis zu 10 % Rabatt auf alles – für Firmenkonten ab 5.000 € Jahresumsatz. Stell dazu unten den Kundentyp auf „Firma“.</p>' + tiers + '<p><a class="ps-link" href="/print/hilfe#bonus">So funktioniert’s</a></p></section>';
     var top = b.tiers[b.tiers.length - 1], pct = Math.min(100, Math.round(b.revenue / top.from * 100));
     return '<section class="ps-panel ps-bonus-acc"><h3>Bonusprogramm</h3>' +
-      '<div class="ps-bstat"><div><span class="pd-muted">Deine Stufe</span><b class="lvl ' + esc(b.tier || "none") + '">' + (b.name ? esc(b.name) + " · " + b.pct + " % Rabatt" : "noch keine Stufe") + '</b></div><div><span class="pd-muted">Umsatz (12 Monate, netto)</span><b>' + eur(b.revenue) + "</b></div></div>" +
+      '<div class="ps-bstat"><div><span class="pd-muted">Deine Stufe</span><b class="lvl ' + esc(b.tier || "none") + '">' + (b.name ? esc(b.name) + " · " + b.pct + " % Rabatt" : "noch keine Stufe") + '</b></div><div><span class="pd-muted">Umsatz ' + b.year + ' (netto)</span><b>' + eur(b.revenue) + "</b></div></div>" +
       '<div class="ps-bbar" role="progressbar" aria-valuemin="0" aria-valuemax="' + top.from + '" aria-valuenow="' + b.revenue + '"><i style="width:' + pct + '%"></i>' + b.tiers.map(function (t) { return '<span style="left:' + (t.from / top.from * 100) + '%" title="' + esc(t.name) + '"></span>'; }).join("") + "</div>" +
       '<p class="ps-bnext">' + (b.next ? "Noch <b>" + eur(b.next.missing) + "</b> bis <b>" + esc(b.next.name) + "</b> (" + b.next.pct + " % auf alles)." : "Höchste Stufe erreicht – danke für dein Vertrauen!") + "</p>" + tiers +
-      '<p class="pd-muted" style="font-size:13px">Der Rabatt wird automatisch abgezogen, wenn du angemeldet als Firma bestellst. Zählt: bezahlte bzw. freigegebene Bestellungen der letzten 12 Monate.</p></section>';
+      '<p class="pd-muted" style="font-size:13px">Der Rabatt wird automatisch abgezogen, wenn du angemeldet als Firma bestellst. Zählt: Umsatz im Kalenderjahr. Am 31.12. sinkt die Stufe um zwei' + (b.resetTo !== undefined && b.name ? " (bei dir auf " + (b.resetTo || "keine Stufe") + ")" : "") + ' – mit neuem Umsatz steigst du wieder auf.</p></section>';
   }
   function acctDo(act, form) {
     var A = S.acct, v = {}; if (form) Array.prototype.forEach.call(form.elements, function (el) { if (el.name) v[el.name] = el.type === "checkbox" ? el.checked : el.value.trim(); });
@@ -325,7 +326,7 @@
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>";
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
-    if (p.bonus) what += '<p class="ps-bonus-tag">★ ' + esc(p.bonus.tier || "Bonus") + "-Rabatt " + p.bonus.pct + " % · du sparst " + eur(co ? p.bonus.saved : p.bonus.saved * (1 + (p.rate || 0) / 100)) + "</p>";
+    if (p.bonus) what += '<p class="ps-bonus-tag">★ ' + esc(p.bonus.tier || "Rabatt") + " (" + String(p.bonus.pct).replace(".", ",") + " %) · du sparst " + eur(co ? p.bonus.saved : p.bonus.saved * (1 + (p.rate || 0) / 100)) + "</p>";
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
@@ -614,6 +615,10 @@
       : '<div class="total"><span>Gesamt inkl. ' + (t.rate || 0) + " % USt und Versand</span><b>" + eur(t.gross) + "</b></div>";
     var items = '<ul class="ps-cart ps-cart-co">' + S.cart.map(function (x) { return "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f"><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF prüfen</a>' + (x.warn ? " · <em>Hinweise zur Datei beachten</em>" : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b>" : '<small>' + esc((S.cartErr || {})[x.id] || "…") + "</small>") + "</div></li>"; }).join("") + "</ul>";
     var addr = [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, "Österreich"].filter(Boolean).join(", ");
+    var saved = S.cart.reduce(function (a, x) { return a + (x.price && x.price.bonus ? +x.price.bonus.saved || 0 : 0); }, 0), dlab = (S.cart.filter(function (x) { return x.price && x.price.bonus; })[0] || { price: {} }).price.bonus;
+    var vch = '<div class="ps-voucher"><label for="psVoucher" class="ps-lbl">Gutscheincode</label><div class="ps-uidrow"><input id="psVoucher" value="' + esc(S.voucher || "") + '" placeholder="z. B. WILLKOMMEN10" autocapitalize="characters" autocomplete="off"><button type="button" class="ps-btn small" data-act="voucher">' + (S.voucher ? "Ändern" : "Einlösen") + "</button>" + (S.voucher ? '<button type="button" class="ps-link" data-act="voucher:clear">entfernen</button>' : "") + "</div>" +
+      (S.voucherErr ? '<span class="hint bad">' + esc(S.voucherErr) + "</span>" : S.voucherOk ? '<span class="hint ok">✓ ' + esc(S.voucherOk) + "</span>" : "") + "</div>";
+    if (saved > 0 && !S.quoting) money = '<div class="ps-save"><span>' + esc(dlab ? dlab.tier : "Rabatt") + '</span><b>− ' + eur(co ? saved : saved * (1 + (t.rate || 0) / 100)) + "</b></div>" + money;
     var acct = S.me ? '<p class="pd-muted">Die Bestellung wird in deinem Kundenkonto (' + esc(S.me.email) + ") gespeichert.</p>" :
       '<label class="ps-cb"><input type="checkbox" data-act="newacct"' + (S.newAcct ? " checked" : "") + '><span><b>Kundenkonto anlegen</b> – Bestellungen und Adresse speichern (Bestätigung per Code an ' + esc(c.email) + ")</span></label>" +
       (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort (mind. 8 Zeichen)</label><input id="psNewPw" type="password" autocomplete="new-password" value="' + esc(S.newPw || "") + '"></div>' : "");
@@ -621,7 +626,7 @@
       '<div class="ps-sum"><div><span>Lieferung an</span><b>' + esc(addr) + ' <button type="button" class="ps-link" data-go="5">ändern</button></b></div>' + (lastDel ? "<div><span>Voraussichtlich bei dir</span><b>" + esc(deDate(lastDel)) + "</b></div>" : "") + money + "</div>" +
       '<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
       '<label class="ps-radio' + (S.cat.payments.mollie ? "" : " dis") + '"><input type="radio" name="pay" value="mollie"' + (S.payment === "mollie" ? " checked" : "") + (S.cat.payments.mollie ? "" : " disabled") + '><span><b>Online bezahlen</b><small>Kreditkarte, Apple Pay, EPS, PayPal u. a. – sicher über Mollie' + (S.cat.payments.mollie ? "" : " (gerade nicht verfügbar)") + "</small></span></label>" +
-      '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label></fieldset>" + acct +
+      '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label></fieldset>" + vch + acct +
       '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format ' + (n > 1 ? "aller " + n + " Positionen " : "") + "geprüft und gebe die Daten so zum Druck frei.</span></label>" +
       '<label class="ps-cb"><input type="checkbox" data-acc="terms"' + (S.accept.terms ? " checked" : "") + '><span>Ich akzeptiere die <a href="/print/agb" target="_blank" rel="noopener">AGB</a> und habe die <a href="/datenschutz" target="_blank" rel="noopener">Datenschutzerklärung</a> gelesen.</span></label>' +
       '<label class="ps-cb"><input type="checkbox" data-acc="fagg"' + (S.accept.fagg ? " checked" : "") + '><span>Ich nehme zur Kenntnis, dass bei Waren, die nach meinen Vorgaben angefertigt bzw. bedruckt werden, <b>kein Rücktrittsrecht</b> besteht (§ 18 Abs. 1 Z 3 FAGG).</span></label>' +
@@ -673,6 +678,7 @@
     if (k === "acresend") { api("/print/api/account/resend", { email: S.acct.email, purpose: v }).then(function () { S.acct.msg = "Neuer Code ist unterwegs."; S.acct.err = ""; render(); }); return; }
     if (k === "aclogout") { api("/print/api/account/logout", {}).then(function () { S.me = null; S.orders = []; S.acct.mode = "login"; toast("Abgemeldet"); render(); }); return; }
     if (k === "acType") { S.me.type = v; render(); return; }
+    if (k === "voucher") { var vi = document.getElementById("psVoucher"); S.voucher = v === "clear" ? "" : (vi ? vi.value.trim().toUpperCase() : ""); S.voucherErr = ""; S.voucherOk = ""; requoteCart(); render(); return; }
     if (k === "newacct") { S.newAcct = !S.newAcct; render(); return; }
     if (k === "uidcheck") return uidCheck();
     if (k === "next4") return nextAddr();
@@ -805,13 +811,13 @@
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
-      createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
+      voucher: S.voucher && !S.voucherErr ? S.voucher : "", createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {
       S.busy = false;
       if (j.status === 409 && j.price) { var x = S.cart[j.index || 0]; if (x) { x.price = Object.assign({}, x.price, { gross: j.price.gross, net: j.price.net, vat: j.price.vat, rate: j.price.rate }); cartSave(true); }
         S.err = "Der Preis für „" + (x ? x.title : "eine Position") + "“ hat sich gerade geändert (neu: " + eur(S.ctype === "company" ? j.price.net : j.price.gross) + "). Bitte prüfen und erneut bestellen."; render(); return; }
       if (!j.ok) { S.err = j.error || "Bestellung fehlgeschlagen"; render(); return; }
-      S.cart = []; cartSave(); S.accept = {}; S.newPw = "";
+      S.cart = []; cartSave(); S.accept = {}; S.newPw = ""; S.voucher = ""; S.voucherOk = "";
       try { if (j.accountCreated) localStorage.setItem("fsc-print-verify", S.customer.email); } catch (e) {}
       if (j.checkoutUrl) { location.href = j.checkoutUrl; return; }
       try { history.replaceState(null, "", "/print?bestellung=" + encodeURIComponent(j.orderId) + "&t=" + encodeURIComponent(j.token)); } catch (e) {}

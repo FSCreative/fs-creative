@@ -129,6 +129,17 @@ const REVIEW = { paid: 1, invoice_requested: 1 };
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
 const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
+// Stufe je Kalenderjahr: Umsatz des Jahres ergibt eine Stufe; am 31.12. fällt die erreichte Stufe um zwei zurück (Platin → Silber, Gold → Bronze, Silber/Bronze → keine)
+function bonusCalc(orders, year) {
+  const by = {}; orders.forEach(o => { const y = +String(o.createdAt).slice(0, 4); if (y) by[y] = (by[y] || 0) + (+(o.price && o.price.net) || 0); });
+  const idxOf = rev => { let k = -1; BONUS_TIERS.forEach((t, i) => { if (rev >= t.from) k = i; }); return k; };
+  const years = Object.keys(by).map(Number).filter(y => y < year).sort(); let idx = -1, prev = null;
+  for (const y of years) { if (prev != null) for (let g = prev; g < y; g++) idx = Math.max(-1, idx - 2); idx = Math.max(idx, idxOf(by[y])); prev = y; }
+  if (prev != null) for (let g = prev; g < year; g++) idx = Math.max(-1, idx - 2);
+  const carried = idx, revenue = Math.round((by[year] || 0) * 100) / 100, cur = Math.max(carried, idxOf(revenue));
+  return { revenue, idx: cur, carried, year };
+}
+
 // Shop-AGB: Version wird bei jeder Bestellung gespeichert (bei Änderung der AGB hochzählen, Datum = Stand)
 const AGB_VERSION = "2026-10-15";
 // Mitgelieferte Schriften (SIL Open Font License, latin-Teilmenge, aus @fontsource) – Browser und PDF nutzen dieselben Dateien (print/fonts/*.woff)
@@ -750,12 +761,13 @@ module.exports = function (D) {
       }
     }
     if (!buy) buy = await purchase(prod, n, country, postcode);
-    // Bonus (Firmenkonto): Rabatt auf den ganzen Nettopreis, auf 10 Cent abgerundet
-    const bp = cust && cust.company && +cust.bonusPct > 0 ? Math.min(20, +cust.bonusPct) : 0;
-    const disc = nt => bp ? Math.floor(nt * (1 - bp / 100) * 10 + 1e-6) / 10 : nt;
+    // Rabatte (Bonusprogramm bzw. Kundenrabatt, Gutschein): auf den ganzen Nettopreis, hintereinander, auf 10 Cent abgerundet
+    const dl = (cust && Array.isArray(cust.disc) ? cust.disc : []).filter(d => d && +d.pct > 0).map(d => ({ label: String(d.label || "Rabatt").slice(0, 60), pct: Math.min(50, +d.pct) }));
+    const fac = dl.reduce((f, d) => f * (1 - d.pct / 100), 1), bp = dl.length;
+    const disc = nt => bp ? Math.floor(nt * fac * 10 + 1e-6) / 10 : nt;
     if (bp && methods) methods = methods.map(m => { const nt = disc(m.net); return Object.assign({}, m, { net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }); });
     const list = netOf(buy), net = disc(list), vat = r2(net * tax.rate / 100);
-    return { methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: bp, tier: cust.bonusTier || "", listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    return { methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
   const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
@@ -1119,17 +1131,46 @@ module.exports = function (D) {
     const u = await aiUse(); u.by[key] = (u.by[key] || 0) + r.eur; u.total += r.eur; u.calls = (u.calls || 0) + 1; store.setMeta("print_ai_usage", u).catch(() => {});
     return { design: r.json, left: Math.round(Math.max(0, aiCfg().day - u.by[key]) * 100) / 100 };
   }
-  async function bonusOf(c) {
-    if (!c) return null;
-    const since = Date.now() - 365 * 864e5;
-    const l = (await store.listOrders()).filter(o => (o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)) && BONUS_COUNTS[o.status] && Date.parse(o.createdAt) >= since);
-    const revenue = r2(l.reduce((a, o) => a + (+(o.price && o.price.net) || 0), 0));
-    const company = c.type === "company";
-    let cur = null; BONUS_TIERS.forEach(t => { if (revenue >= t.from) cur = t; });
-    const nx = BONUS_TIERS.find(t => revenue < t.from) || null;
-    return { company, revenue, tier: company && cur ? cur.key : "", name: company && cur ? cur.name : "", pct: company && cur ? cur.pct : 0,
-      next: nx ? { key: nx.key, name: nx.name, from: nx.from, pct: nx.pct, missing: r2(nx.from - revenue) } : null, tiers: BONUS_TIERS, orders: l.length };
+  // ── Rabatte: Bonusprogramm (Firmenkonto) oder eigener Kundenrabatt (der höhere gilt) + Gutscheincode ──
+  let VOUCHERS = null;
+  async function vouchers() { if (!VOUCHERS) VOUCHERS = (await store.getMeta("print_vouchers").catch(() => null)) || {}; return VOUCHERS; }
+  const vCode = c => String(c || "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 40);
+  async function voucherCheck(code, email) {
+    code = vCode(code); if (!code) return { v: null };
+    const v = (await vouchers())[code], bad = m => ({ v: null, err: m });
+    if (!v || v.active === false) return bad("Der Gutscheincode „" + code + "“ ist ungültig.");
+    if (v.until && today() > v.until) return bad("Der Gutschein „" + code + "“ ist abgelaufen.");
+    if (v.maxUses && (v.used || 0) >= v.maxUses) return bad("Der Gutschein „" + code + "“ wurde schon vollständig eingelöst.");
+    if (v.perCustomer && email && (v.usedBy || []).indexOf(String(email).toLowerCase()) > -1) return bad("Du hast den Gutschein „" + code + "“ schon eingelöst.");
+    return { v };
   }
+  async function useVoucher(code, email) {
+    const all = await vouchers(), v = all[vCode(code)]; if (!v) return;
+    v.used = (v.used || 0) + 1; if (email) v.usedBy = (v.usedBy || []).concat([String(email).toLowerCase()]).slice(-2000); v.lastUsed = nowIso();
+    await store.setMeta("print_vouchers", all);
+  }
+  async function discFor(me, isCompany, code, email) {
+    const disc = []; let base = null;
+    if (me) {
+      const bo = me.type === "company" && isCompany ? await bonusOf(me) : null;
+      if (bo && bo.pct) base = { label: bo.name + "-Bonus", pct: bo.pct };
+      if (+me.discountPct > 0 && (!base || +me.discountPct > base.pct)) base = { label: "Kundenrabatt", pct: +me.discountPct };
+    }
+    if (base) disc.push(base);
+    const vc = await voucherCheck(code, email || (me && me.email));
+    if (vc.v) disc.push({ label: "Gutschein " + vc.v.code, pct: vc.v.pct });
+    return { disc, voucher: vc.v || null, voucherErr: vc.err || "" };
+  }
+  async function bonusOf(c, all) {
+    if (!c) return null;
+    const l = (all || await store.listOrders()).filter(o => (o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)) && BONUS_COUNTS[o.status]);
+    const year = +today().slice(0, 4), b = bonusCalc(l, year), company = c.type === "company";
+    const cur = b.idx > -1 ? BONUS_TIERS[b.idx] : null, nx = BONUS_TIERS[b.idx + 1] || null;
+    return { company, revenue: b.revenue, year, carried: b.carried > -1 ? BONUS_TIERS[b.carried].name : "", tier: company && cur ? cur.key : "", name: company && cur ? cur.name : "", pct: company && cur ? cur.pct : 0,
+      next: nx ? { key: nx.key, name: nx.name, from: nx.from, pct: nx.pct, missing: r2(Math.max(0, nx.from - b.revenue)) } : null, tiers: BONUS_TIERS,
+      resetTo: cur ? (BONUS_TIERS[b.idx - 2] ? BONUS_TIERS[b.idx - 2].name : "") : "", orders: l.length };
+  }
+
   async function ordersOfCustomer(c) {
     const l = (await store.listOrders()).filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email));
     return l.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [] }));
@@ -1171,7 +1212,7 @@ module.exports = function (D) {
     if (method === "mollie" && !cfg().mollieKey) throw Object.assign(new Error("Online-Zahlung ist noch nicht eingerichtet – bitte Rechnung wählen oder uns kontaktieren"), { status: 503 });
     const prepared = [];
     for (let i = 0; i < items.length; i++) {
-      const it = Object.assign({}, items[i] || {}, { __bonus: input.__bonus || null }), x = await prepItem(it, s, cust, method, uidRes, i, items.length);
+      const it = Object.assign({}, items[i] || {}, { __disc: input.__disc || [] }), x = await prepItem(it, s, cust, method, uidRes, i, items.length);
       if (x.priceChanged) return { priceChanged: true, price: x.price, index: i };
       prepared.push(x);
     }
@@ -1205,7 +1246,7 @@ module.exports = function (D) {
     if (fm.kind === "logo" || (fm.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
     if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.fileSel)) throw fail("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
     if ((fm.checks || []).some(c => c.level === "error")) throw fail("Die Druckdatei hat noch Fehler – bitte korrigieren");
-    const q = await quote(prod, n, cust.country, cust.zip, Object.assign({}, cust, cust.type === "company" && input.__bonus ? { company: true, bonusPct: input.__bonus.pct, bonusTier: input.__bonus.name } : {}));
+    const q = await quote(prod, n, cust.country, cust.zip, Object.assign({}, cust, { disc: Array.isArray(input.__disc) ? input.__disc : [] }));
     const exp = parseFloat(input.expectedGross);
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };
     const id = "P" + Date.now().toString(36).toUpperCase() + rnd(6);
@@ -1554,10 +1595,10 @@ module.exports = function (D) {
         const n = normalizeSel(prod, b);
         const country = String(b.country || "AT").toUpperCase(), zip = String(b.zip || "").trim();
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
-        if (cust.company) { const me = await accountMod().current(req); const bo = me && me.type === "company" ? await bonusOf(me) : null; if (bo && bo.pct) { cust.bonusPct = bo.pct; cust.bonusTier = bo.name; } }
+        const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
-        return J(res, 200, { ok: true, price: publicPrice(q), sides: n.sides, size: n.size, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
+        return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, size: n.size, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
       }
       if (p === "/print/api/ai/design") {
         if (limited("ai", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
@@ -1570,7 +1611,7 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, valid: r.valid, uid: r.uid, name: r.name || "", why: r.why || "" });
       }
       if (p === "/print/api/upload") {
-        if (limited("upload", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" });
+        if (limited("upload", ip, 60, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" });
         let input; try { input = JSON.parse(decodeURIComponent(String(req.headers["x-print-config"] || ""))); } catch (e) { input = null; }
         if (!input || typeof input !== "object") { req.resume(); return J(res, 400, { ok: false, error: "Konfiguration fehlt" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druck")), 120).replace(/[\\/:*?"<>|]/g, "_");
@@ -1580,12 +1621,12 @@ module.exports = function (D) {
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/logos") {
-        if (limited("upload", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        if (limited("upload", ip, 60, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const meta = await mergeLogos(await readJson(req, 40000));
         return J(res, 200, Object.assign({ ok: true }, fileView(meta), { pageMap: meta.pageMap }));
       }
       if (p === "/print/api/design") {
-        if (limited("upload", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        if (limited("upload", ip, 60, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const b = await readJson(req, MAX_UPLOAD);
         const meta = await handleDesign(b);
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
@@ -1600,19 +1641,22 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, id: meta.id, token: sig("draft", meta.id), url: cfg().publicUrl + "/print?entwurf=" + meta.id + "&t=" + sig("draft", meta.id) });
       }
       if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
-        if (limited("order", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
+        if (limited("order", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
         const b = await readJson(req, 400000); const me = await accountMod().current(req); b.__customerId = me ? me.id : null;
-        if (me && me.type === "company") { const bo = await bonusOf(me); b.__bonus = bo && bo.pct ? { pct: bo.pct, name: bo.name } : null; } else b.__bonus = null;
+        const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email);
+        if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc;
         const r = await createCheckout(b);
+        if (!r.priceChanged && dd.voucher) await useVoucher(dd.voucher.code, b.customer && b.customer.email);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte den Warenkorb prüfen", price: r.price, index: r.index });
         const o = r.orders[0];
         return J(res, 200, { ok: true, orderId: o.id, nr: o.nr, token: sig("order", o.id), orders: r.orders.map(x => ({ id: x.id, nr: x.nr, token: sig("order", x.id) })), checkoutUrl: r.checkoutUrl || null, accountCreated: !!(r.account && r.account.created) });
       }
       if (p === "/print/api/order") {
-        if (limited("order", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
-        const b = await readJson(req, 40000); { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; b.__bonus = null; if (me && me.type === "company") { const bo = await bonusOf(me); if (bo && bo.pct) b.__bonus = { pct: bo.pct, name: bo.name }; } }
+        if (limited("order", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
+        const b = await readJson(req, 40000); { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email); if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc; b.__voucher = dd.voucher; }
         const r = await createOrder(b);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte prüfen und erneut bestellen", price: r.price });
+        if (b.__voucher) await useVoucher(b.__voucher.code, b.customer && b.customer.email);
         const o = r.order;
         return J(res, 200, { ok: true, orderId: o.id, nr: o.nr, token: sig("order", o.id), checkoutUrl: r.checkoutUrl || null });
       }
@@ -1664,6 +1708,30 @@ module.exports = function (D) {
   async function handleAdmin(req, res, u, p) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
+      if (p === "/admin/api/print/customers") {
+        const A = accountMod();
+        if (req.method === "POST") { const b = await readJson(req, 4000); if (b.op !== "discount") return J(res, 400, { ok: false, error: "op" }); const c = await A.setDiscount(String(b.id || ""), b.pct, b.note); return c ? J(res, 200, { ok: true }) : J(res, 404, { ok: false, error: "Kunde nicht gefunden" }); }
+        const list = await A.listAll(), orders = await store.listOrders();
+        const out = await Promise.all(list.map(async c => { const mine = orders.filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email)), paid = mine.filter(o => BONUS_COUNTS[o.status]);
+          const bo = await bonusOf(c, orders), rev12 = bo.revenue, tier = bo.name;
+          return { id: c.id, email: c.email, name: [c.firstName, c.lastName].filter(Boolean).join(" "), company: c.company || "", type: c.type || "private", uid: c.uid || "", phone: c.phone || "", city: [c.zip, c.city].filter(Boolean).join(" "), verified: !!c.verified, createdAt: c.createdAt, lastLogin: c.lastLogin || "",
+            orders: mine.length, revenue: r2(paid.reduce((a, o) => a + (+(o.price && o.price.net) || 0), 0)), revenue12: rev12, tier, discountPct: +c.discountPct || 0, discountNote: c.discountNote || "", newsletter: !!c.newsletter, lastOrder: mine.map(o => o.createdAt).sort().pop() || "" }; }));
+        return J(res, 200, { ok: true, customers: out.sort((a, b) => String(b.lastOrder || b.createdAt).localeCompare(String(a.lastOrder || a.createdAt))), tiers: BONUS_TIERS });
+      }
+      if (p === "/admin/api/print/vouchers") {
+        const all = await vouchers();
+        if (req.method === "POST") {
+          const b = await readJson(req, 4000), code = vCode(b.code);
+          if (!/^[A-Z0-9_-]{3,40}$/.test(code)) return J(res, 400, { ok: false, error: "Code: 3–40 Zeichen, nur Buchstaben, Ziffern, - und _" });
+          if (b.op === "delete") { delete all[code]; await store.setMeta("print_vouchers", all); return J(res, 200, { ok: true }); }
+          const pct = parseFloat(String(b.pct).replace(",", ".")); if (!(pct > 0 && pct <= 50)) return J(res, 400, { ok: false, error: "Rabatt 0,1–50 %" });
+          const until = /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || "")) ? String(b.until) : "";
+          const prev = all[code] || { code, createdAt: nowIso(), used: 0, usedBy: [] };
+          all[code] = Object.assign(prev, { pct: Math.round(pct * 10) / 10, maxUses: Math.max(0, parseInt(b.maxUses, 10) || 0), until, perCustomer: b.perCustomer !== false, active: b.active !== false, note: clip(b.note, 200) });
+          await store.setMeta("print_vouchers", all); return J(res, 200, { ok: true, voucher: all[code] });
+        }
+        return J(res, 200, { ok: true, vouchers: Object.values(all).map(v => Object.assign({}, v, { usedBy: undefined, customers: (v.usedBy || []).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+      }
       if (p === "/admin/api/print/order" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fm = await store.fileMeta(o.fileId);
@@ -1735,3 +1803,4 @@ module.exports = function (D) {
 
   return { live, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
+module.exports._bonusCalc = bonusCalc;

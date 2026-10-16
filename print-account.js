@@ -121,5 +121,8 @@ module.exports = function (D) {
     }
     return J(res, 404, { ok: false, error: "not_found" });
   }
-  return { handle, current, createFromCheckout, pub, _test: { codeOk, newCode, hash } };
+  // Cockpit: alle Kunden, eigener Rabatt je Kunde (zusätzlich zum Bonusprogramm – der höhere gilt)
+  async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "" })); }
+  async function setDiscount(id, pct, note) { const c = await byId(id); if (!c) return null; const n = parseFloat(String(pct == null ? "" : pct).replace(",", ".")); c.discountPct = isFinite(n) && n > 0 ? Math.min(50, Math.round(n * 10) / 10) : 0; c.discountNote = clip(note, 200); await save(); return c; }
+  return { handle, current, createFromCheckout, pub, listAll, setDiscount, _test: { codeOk, newCode, hash } };
 };

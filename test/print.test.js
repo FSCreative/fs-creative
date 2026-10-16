@@ -318,6 +318,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/order", order({ fileId: up2.j.fileId, fileToken: up2.j.token, payment: "invoice", customer: bad, expectedGross: 39.6 }))).status, 400, "ungültige UID → keine Rechnung");
     assert.strictEqual(M.orders.length, 1, "weiterhin keine automatische Print.com-Bestellung");
   });
+  await t("Bonusprogramm: Stufe je Kalenderjahr, am 31.12. zwei Stufen zurück", async () => {
+    const C = require(path.join(dir, "print-shop.js"))._bonusCalc; if (!C) return;
+    const o = (y, n) => ({ createdAt: y + "-06-01T10:00:00Z", price: { net: n } });
+    assert.strictEqual(C([o(2025, 26000)], 2025).idx, 3, "Platin");
+    assert.strictEqual(C([o(2025, 26000)], 2026).idx, 1, "nach Jahreswechsel Silber");
+    assert.strictEqual(C([o(2025, 26000)], 2027).idx, -1, "zwei Jahre ohne Umsatz: keine Stufe");
+    assert.strictEqual(C([o(2025, 21000), o(2026, 6000)], 2026).idx, 0, "Gold → Bronze (Übertrag), 6.000 € = Bronze");
+    assert.strictEqual(C([o(2025, 21000), o(2026, 12000)], 2026).idx, 1, "mit 12.000 € im neuen Jahr wieder Silber");
+  });
   await t("Kundenkonto: Registrierung mit Mail-Code, Login, Warenkorb, Checkout mit 2 Positionen = 1 Zahlung, Bestellungen im Profil", async () => {
     const em = "konto@example.com";
     const codeOf = () => { const m = M.mails.filter(x => x.to === em).pop(); return m && (m.subject.match(/^(\d{6})/) || [])[1]; };
@@ -345,6 +354,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(me2.bonus.company, false); assert.strictEqual(me2.bonus.revenue, 66);
     const pf = await post("/print/api/account/profile", { type: "company", company: "Karl GmbH" }, { cookie: ck }); assert.strictEqual(pf.j.bonus.company, true); assert.strictEqual(pf.j.bonus.tier, ""); assert.strictEqual(pf.j.bonus.next.name, "Bronze"); assert.strictEqual(pf.j.bonus.next.missing, 4934);
     const pb = await post("/print/api/price", Object.assign({ customerType: "company", __bonus: { pct: 50 } }, BC), { cookie: ck }); assert.strictEqual(pb.j.price.bonus, null, "ohne Stufe kein Rabatt, __bonus vom Client wird ignoriert");
+    // Gutschein + eigener Kundenrabatt (Cockpit)
+    assert.strictEqual((await admin("/admin/api/print/vouchers", { op: "save", code: "test10", pct: 10, maxUses: 1 })).ok, true);
+    let pv = await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC)); assert.strictEqual(pv.j.price.net, 29.7); assert.strictEqual(pv.j.voucher.code, "TEST10");
+    pv = await post("/print/api/price", Object.assign({ voucher: "FALSCH" }, BC)); assert.ok(/ungültig/.test(pv.j.voucherErr)); assert.strictEqual(pv.j.price.net, 33);
+    const cl = await admin("/admin/api/print/customers"); const kc = cl.customers.find(c => c.email === em); assert.ok(kc && kc.orders === 2 && kc.type === "company");
+    assert.strictEqual((await admin("/admin/api/print/customers", { op: "discount", id: kc.id, pct: 5, note: "Stammkunde" })).ok, true);
+    pv = await post("/print/api/price", Object.assign({ customerType: "company" }, BC), { cookie: ck }); assert.strictEqual(pv.j.price.net, 31.3); assert.strictEqual(pv.j.price.bonus.tier, "Kundenrabatt");
+    const u4 = await upload(await pdfOf(89, 59, 2), "k4.pdf", BC), fc = Object.assign({}, cust, { email: em, type: "company", company: "Karl GmbH" });
+    assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [it(u4, 0)] }, base, { customer: fc, voucher: "NOPE" }), { cookie: ck })).status, 400);
+    pv = await post("/print/api/price", Object.assign({ customerType: "company", voucher: "TEST10" }, BC), { cookie: ck }); const g4 = pv.j.price.gross; assert.strictEqual(pv.j.price.net, 28.2);
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u4, g4)] }, base, { customer: fc, voucher: "test10" }), { cookie: ck }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const vl = await admin("/admin/api/print/vouchers"); assert.strictEqual(vl.vouchers[0].used, 1);
+    assert.ok(/vollständig eingelöst/.test((await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC))).j.voucherErr));
     // Gast-Checkout mit Kontoanlage
     const u3 = await upload(await pdfOf(89, 59, 2), "k3.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [it(u3, 39.6)], createAccount: true, accountPassword: "neuespw123" }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));
