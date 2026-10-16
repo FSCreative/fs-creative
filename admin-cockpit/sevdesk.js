@@ -404,6 +404,8 @@ function vrow(p,cats){ p=p||{}; var r=p.taxRate!=null?+p.taxRate:20;
     '<select class="f" data-v="tax" aria-label="USt">'+[20,13,10,0].map(function(x){ return '<option value="'+x+'"'+(x===r?" selected":"")+'>'+x+' %</option>'; }).join("")+'</select>'+
     '<input class="f num" data-v="gross" type="number" step="0.01" min="0" placeholder="brutto €" value="'+(p.gross!=null?esc(p.gross):"")+'" aria-label="Brutto">'+
     '<input class="f cm" data-v="comment" placeholder="Notiz" value="'+esc(p.comment||"")+'"><button type="button" class="btn icon" data-vdel aria-label="Position entfernen">✕</button></div>'; }
+/* Belegdatei-URL mit Versionskennung (Dokument-ID): darf im Browser-Cache bleiben → Vorschau öffnet sofort */
+F.vouDocUrl=function(v){ return "/admin/api/sev/voucher-doc?id="+encodeURIComponent(v.id)+(v.docId?"&v="+encodeURIComponent(v.docId):""); };
 function openVou(id){
   var v=vouById(id); if(!v) return findVouThen(id,function(){ openVou(id); });
   F.loadMeta(function(m){
@@ -413,7 +415,7 @@ function openVou(id){
     if(open&&v.open>0.005) acts.push('<button class="btn primary" data-act="sdvpay:'+esc(id)+'">Zahlung erfassen</button>');
     if(open&&!(v.paid>0)) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|draft">Zurück auf Entwurf</button>');
     if(paid) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|reopen">Zahlung lösen</button>');
-    var vdoc="/admin/api/sev/voucher-doc?id="+encodeURIComponent(id), vtitle="Beleg "+(v.supplier||"")+(v.date?" · "+de(v.date):"");
+    var vdoc=F.vouDocUrl(v), vtitle="Beleg "+(v.supplier||"")+(v.date?" · "+de(v.date):"");
     if(v.hasDoc) acts.push('<button type="button" class="btn"'+F.docAttrs(vdoc,vtitle)+'>Beleg ansehen</button>','<a class="btn" href="'+esc(vdoc)+'&dl=1">Datei laden</a>');
     var d=document.getElementById("drawer"); d.classList.add("xl");
     F.openDrawer(drawerHead(v.cd==="D"?"Einnahme-Beleg":"Beleg",(v.supplier||"Beleg")+" · "+eur(v.gross),'<div class="row" style="gap:8px;margin-top:6px">'+vTag(v)+(v.enshrined?'<span class="tag grey">festgeschrieben</span>':'')+'</div>')+

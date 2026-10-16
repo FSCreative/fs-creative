@@ -120,7 +120,7 @@ F.viewDoc=function(url,title){
 };
 
 function load(st){
-  fetch(st.url,{credentials:"include",cache:"no-store"}).then(function(r){
+  fetch(st.url,{credentials:"include",cache:/[?&]v=/.test(st.url)?"default":"no-store"}).then(function(r){
     if(r.redirected&&/\/admin\/login/.test(r.url)) throw new Error("Sitzung abgelaufen – bitte neu anmelden.");
     if(!r.ok) return r.text().then(function(t){ throw new Error((t&&t.length<200&&!/</.test(t)?t:"Fehler beim Laden")+" (HTTP "+r.status+")"); });
     return r.arrayBuffer().then(function(buf){
@@ -293,6 +293,12 @@ window.addEventListener("click",function(e){
 },true);
 
 /* ---------- Bausteine für die Module ---------- */
+/* Schneller öffnen: PDF-Anzeige (pdf.js) im Hintergrund vorladen, Dokumente mit Versionskennung beim Überfahren vorab holen */
+setTimeout(function(){ var go=function(){ loadPdfJs().then(function(){ try{ var l=document.createElement("link"); l.rel="prefetch"; l.href=PDFJS_WORKER; document.head.appendChild(l); }catch(e){} }).catch(function(){}); };
+  if(window.requestIdleCallback) requestIdleCallback(go,{timeout:8000}); else go(); },3000);
+var PRE={};
+F.prefetchDoc=function(url){ if(!url||!/[?&]v=/.test(url)||PRE[url]) return; PRE[url]=1; try{ fetch(url,{credentials:"include",priority:"low"}).then(function(r){ return r.arrayBuffer(); }).catch(function(){ delete PRE[url]; }); }catch(e){} };
+document.addEventListener("pointerover",function(e){ var el=e.target&&e.target.closest&&e.target.closest("[data-docview],[data-prefetch-doc]"); if(el) F.prefetchDoc(el.getAttribute("data-prefetch-doc")||el.getAttribute("data-docview")); },{passive:true});
 F.docAttrs=function(url,title){ return ' data-docview="'+esc(url)+'"'+(title?' data-doctitle="'+esc(title)+'"':''); };
 F.docLink=function(url,title,label,cls){ return '<a'+(cls?' class="'+cls+'"':'')+' href="'+esc(url)+'" target="_blank" rel="noopener"'+F.docAttrs(url,title)+'>'+label+'</a>'; };
 F.docCard=function(url,title,label,sub){ return '<button type="button" class="dv-card"'+F.docAttrs(url,title)+'>'+ICON_DOC+'<span><b>'+esc(label||"Beleg ansehen")+'</b><small>'+esc(sub||title||"Antippen zum Öffnen")+'</small></span><em aria-hidden="true">›</em></button>'; };
