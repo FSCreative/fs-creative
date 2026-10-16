@@ -22,14 +22,30 @@
     natur: { name: "Natur", bg: "#eef2e6", fg: "#26352a", mute: "#5d6b5f", ac: "#5c7f4f", ac2: "#c9d8b6", fh: "Lora", hb: true, fb: "Nunito", lay: "center", leaves: true },
     split: { name: "Bild & Text", bg: "#ffffff", fg: "#1d1d1f", mute: "#6e6e73", ac: "#ff6b35", ac2: "#ffd2bf", fh: "Oswald", hb: true, fb: "Lato", lay: "split", upper: true },
     kreise: { name: "Kreise", bg: "#101820", fg: "#ffffff", mute: "#b8c2cc", ac: "#ffb703", ac2: "#fb8500", fh: "Montserrat", hb: true, fb: "Nunito", lay: "center", circles: true },
+    pastell: { name: "Pastell", bg: "#fdf1ec", fg: "#3b2f36", mute: "#8a7a80", ac: "#e07a8f", ac2: "#f6c9d0", fh: "Poppins", hb: true, fb: "Nunito", lay: "center", blobs: true },
+    retro: { name: "Retro", bg: "#f4e9d8", fg: "#2d1e12", mute: "#6b5444", ac: "#d9541e", ac2: "#f2a541", fh: "Bebas Neue", hb: false, fb: "Lato", lay: "bold", upper: true, stripes: true },
+    mono: { name: "Minimal", bg: "#ffffff", fg: "#000000", mute: "#5a5a5a", ac: "#000000", ac2: "#d9d9d9", fh: "Inter", hb: true, fb: "Inter", lay: "left" },
+    business: { name: "Business", bg: "#ffffff", fg: "#0f2742", mute: "#5b6b7f", ac: "#0f2742", ac2: "#2fb3a0", fh: "Montserrat", hb: true, fb: "Open Sans", lay: "band" },
+    neon: { name: "Neon", bg: "#0b0b1a", fg: "#ffffff", mute: "#b3b3d1", ac: "#ff2fb9", ac2: "#00e5ff", fh: "Poppins", hb: true, fb: "Inter", lay: "left", glow: true },
+    terracotta: { name: "Terracotta", bg: "#f3e6da", fg: "#3a2a20", mute: "#7d6556", ac: "#c0583a", ac2: "#e9b49a", fh: "Playfair Display", hb: true, fb: "Lato", lay: "split" },
+    ozean: { name: "Ozean", bg: "#eaf6fb", fg: "#0b3954", mute: "#4f6d7a", ac: "#087e8b", ac2: "#bfd7ea", fh: "Raleway", hb: true, fb: "Nunito", lay: "center", waves: true },
+    kreide: { name: "Kreidetafel", bg: "#22262a", fg: "#f2efe6", mute: "#bdb8ab", ac: "#e8c468", ac2: "#8fb996", fh: "Bebas Neue", hb: false, fb: "Lora", lay: "frame", upper: true },
+    festlich: { name: "Festlich", bg: "#5a0f1b", fg: "#fbf3e4", mute: "#e2cfae", ac: "#d4af37", ac2: "#8c1c2c", fh: "Playfair Display", hb: false, fb: "Lora", lay: "frame", dots: true },
+    sport: { name: "Sportlich", bg: "#111111", fg: "#ffffff", mute: "#c7c7c7", ac: "#ff3b30", ac2: "#ffd60a", fh: "Oswald", hb: true, fb: "Inter", lay: "split", upper: true },
+    frisch: { name: "Frisch", bg: "#ffffff", fg: "#1b1b1b", mute: "#5f6b62", ac: "#1f9d55", ac2: "#c7f5d3", fh: "Poppins", hb: true, fb: "Inter", lay: "left", blobs: true },
+    handmade: { name: "Handgemacht", bg: "#e8dcc4", fg: "#3b3326", mute: "#6d624f", ac: "#6b8e23", ac2: "#cbbf9c", fh: "Pacifico", hb: false, fb: "Lora", lay: "center", leaves: true },
+    editorial: { name: "Editorial", bg: "#fafafa", fg: "#141414", mute: "#6b6b6b", ac: "#e63946", ac2: "#f1faee", fh: "Merriweather", hb: true, fb: "Open Sans", lay: "band" },
+    verspielt: { name: "Verspielt", bg: "#fff8e1", fg: "#2b2b2b", mute: "#6d6d6d", ac: "#7b2ff7", ac2: "#ffcc00", fh: "Dancing Script", hb: true, fb: "Poppins", lay: "center", circles: true, dots: true },
   };
+  // dunkler Hintergrund? (für Logo-/QR-Farbe und Rückseiten)
+  function dk(hex) { var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "")); if (!m) return false; var n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, bl = n & 255; return (0.299 * r + 0.587 * g + 0.114 * bl) < 110; }
   var PER = {
-    visitenkarten: ["klar", "nacht", "elegant", "akzent", "bold", "natur", "kreise"],
-    flyer: ["klar", "split", "nacht", "bold", "elegant", "natur"],
-    plakate: ["bold", "split", "nacht", "klar", "elegant", "kreise"],
-    folder: ["klar", "nacht", "natur", "elegant", "akzent", "kreise"],
-    aufkleber: ["klar", "nacht", "bold", "natur", "elegant", "kreise"],
-    rollups: ["klar", "split", "nacht", "bold", "akzent", "natur"],
+    visitenkarten: ["klar", "nacht", "elegant", "akzent", "bold", "natur", "kreise", "mono", "business", "neon", "pastell", "kreide", "festlich", "frisch", "handmade", "editorial", "verspielt", "ozean", "retro"],
+    flyer: ["klar", "split", "nacht", "bold", "elegant", "natur", "retro", "terracotta", "sport", "neon", "pastell", "business", "kreide", "festlich", "ozean", "frisch", "handmade", "editorial", "verspielt", "kreise"],
+    plakate: ["bold", "split", "nacht", "klar", "elegant", "kreise", "retro", "sport", "neon", "terracotta", "kreide", "festlich", "pastell", "ozean", "editorial", "verspielt", "mono"],
+    folder: ["klar", "nacht", "natur", "elegant", "akzent", "kreise", "business", "kreide", "festlich", "terracotta", "ozean", "pastell", "mono", "editorial"],
+    aufkleber: ["klar", "nacht", "bold", "natur", "elegant", "kreise", "retro", "neon", "pastell", "handmade", "verspielt", "festlich", "frisch", "sport"],
+    rollups: ["klar", "split", "nacht", "bold", "akzent", "natur", "business", "sport", "neon", "terracotta", "ozean", "editorial", "frisch", "mono"],
   };
   function upper(st, s) { return st.upper ? String(s).toUpperCase() : s; }
   // grobe Höhe eines Textblocks (mm) – für das Stapeln der Elemente
@@ -42,6 +58,8 @@
 
   function build(id, ctx) {
     var st = STYLES[id] || STYLES.klar, k = ctx.product, tx = TXT[k] || TXT.flyer, sz = SIZE[k] || SIZE.flyer;
+    if (ctx.texts) { tx = Object.assign({}, tx); Object.keys(ctx.texts).forEach(function (x) { if (typeof ctx.texts[x] === "string" && "HSOBFAW".indexOf(x) > -1 && x.length === 1) tx[x] = ctx.texts[x]; }); }
+    if (ctx.pal) { st = Object.assign({}, st); ["bg", "fg", "mute", "ac", "ac2"].forEach(function (x) { if (/^#[0-9a-f]{6}$/i.test(ctx.pal[x] || "")) st[x] = ctx.pal[x]; }); if (ctx.pal.fh) st.fh = ctx.pal.fh; if (ctx.pal.fb) st.fb = ctx.pal.fb; }
     var pages = [];
     for (var side = 0; side < ctx.sides; side++) pages.push(k === "folder" ? folderPage(st, tx, sz, ctx, side) : page(st, tx, sz, ctx, side));
     return pages;
@@ -50,6 +68,10 @@
     var m = Math.min(w, h);
     if (st.glow) { els.push({ t: "circle", cx: w * 0.92, cy: h * 0.05, r: m * 0.55, fill: st.ac, opacity: strong ? 0.35 : 0.22 }); els.push({ t: "circle", cx: w * 0.05, cy: h * 1.02, r: m * 0.42, fill: st.ac2, opacity: 0.22 }); }
     if (st.circles) { els.push({ t: "circle", cx: w * 0.98, cy: h * 0.02, r: m * 0.42, fill: st.ac, opacity: 0.95 }); els.push({ t: "circle", cx: w * 0.86, cy: h * 0.2, r: m * 0.2, fill: st.ac2, opacity: 0.9 }); els.push({ t: "circle", cx: -m * 0.05, cy: h * 1.0, r: m * 0.3, fill: st.ac2, opacity: 0.55 }); }
+    if (st.blobs) { els.push({ t: "circle", cx: w * 0.95, cy: h * 0.08, r: m * 0.3, fill: st.ac2, opacity: 0.75 }); els.push({ t: "circle", cx: w * 0.06, cy: h * 0.96, r: m * 0.24, fill: st.ac2, opacity: 0.55 }); els.push({ t: "circle", cx: w * 0.82, cy: h * 0.2, r: m * 0.07, fill: st.ac, opacity: 0.5 }); }
+    if (st.waves) { els.push({ t: "circle", cx: w * 0.2, cy: h * 1.18, r: m * 0.55, fill: st.ac2, opacity: 0.9 }); els.push({ t: "circle", cx: w * 0.85, cy: h * 1.22, r: m * 0.6, fill: st.ac, opacity: 0.22 }); }
+    if (st.dots) { var ds = m * 0.022, gp = m * 0.06; for (var di = 0; di < 4; di++) for (var dj = 0; dj < 4; dj++) els.push({ t: "circle", cx: w - gp * (1.2 + di), cy: gp * (1.2 + dj), r: ds, fill: st.ac, opacity: 0.55 }); }
+    if (st.stripes) { [0, 1, 2].forEach(function (i) { els.push({ t: "rect", x: -b, y: h * 0.06 + i * m * 0.035, w: w * 0.18 + b, h: m * 0.018, fill: i === 1 ? st.ac2 : st.ac }); }); }
     if (st.leaves) { els.push({ t: "circle", cx: w * 1.0, cy: h * 1.0, r: m * 0.5, fill: st.ac2, opacity: 0.9 }); els.push({ t: "circle", cx: w * 0.9, cy: h * 1.05, r: m * 0.28, fill: st.ac, opacity: 0.35 }); }
   }
   function page(st, tx, sz, ctx, side) {
@@ -140,7 +162,7 @@
       var fH = textH(tx.F, pF, cw, 1.4, fb), avail = h - 2 * m - fH - gap, yc = m + Math.max(0, (avail - tot) / (card ? 2 : 3));
       items.forEach(function (it) {
         var ww = it.w || cw, xx = (w - ww) / 2;
-        if (it.img) els.push({ t: "img", x: it.ph ? m : w / 2 - (it.ph ? cw : mn * 0.3) / 2, y: yc, w: it.ph ? cw : mn * 0.3, h: it.hh, label: it.ph ? "Bild" : "Logo", dark: st.bg === "#101820" || st.bg === "#0a0a0f" });
+        if (it.img) els.push({ t: "img", x: it.ph ? m : w / 2 - (it.ph ? cw : mn * 0.3) / 2, y: yc, w: it.ph ? cw : mn * 0.3, h: it.hh, label: it.ph ? "Bild" : "Logo", dark: dk(st.bg) });
         else if (it.rule) els.push({ t: "rect", x: w / 2 - mn * 0.06, y: yc + it.hh * 0.4, w: mn * 0.12, h: Math.max(0.3, mn * 0.008), fill: st.ac });
         else els.push(T(xx, yc, ww, it.text, it.pt, { font: it.font, bold: it.bold, italic: it.italic, color: it.color, align: "center", lh: it.lh, ls: it.ls }));
         yc += it.hh + gap;
@@ -150,7 +172,7 @@
     }
     // „left“
     deco(st, w, h, b, els, true);
-    var yl = m, isDark = st.bg === "#0a0a0f";
+    var yl = m, isDark = dk(st.bg);
     if (tx.logo) els.push({ t: "img", x: w - m - (card ? mn * 0.26 : mn * 0.22), y: m, w: card ? mn * 0.26 : mn * 0.22, h: card ? mn * 0.16 : mn * 0.12, label: "Logo", dark: isDark });
     if (card) {
       var nh = textH(H, pH, cw * 0.7, 1.1, fh);
@@ -175,7 +197,7 @@
   }
   function backPage(st, tx, sz, ctx, els, m, cw, pH, pS, pB, pF) {
     var w = ctx.w, h = ctx.h, b = ctx.bleed, mn = Math.min(w, h), fb = st.fb, card = ctx.product === "visitenkarten";
-    var dark = st.lay === "bold" ? st.ac : (st.bg === "#ffffff" || st.bg === "#f7f3ec" || st.bg === "#eef2e6" ? st.ac : st.bg);
+    var dark = st.lay === "bold" ? st.ac : (!dk(st.bg) ? st.ac : st.bg);
     if (card) {
       els[0] = { t: "bg", fill: dark };
       deco(st, w, h, b, els);
@@ -189,7 +211,7 @@
     if (tx.B) { els.push(T(m, y, cw, tx.B, pB, { font: fb, color: st.fg, lh: 1.4 })); y += textH(tx.B, pB, cw, 1.4, fb) + m * 0.6; }
     if (tx.O) { els.push(T(m, y, cw, tx.O, pS * 0.9, { font: fb, bold: true, color: st.ac })); }
     var q = Math.max(15, mn * 0.2);
-    els.push({ t: "qr", x: w - m - q, y: h - m - q, s: q, data: "https://" + tx.W.replace(/^https?:\/\//, ""), color: st.bg === "#0a0a0f" || st.bg === "#101820" ? "#ffffff" : "#000000" });
+    els.push({ t: "qr", x: w - m - q, y: h - m - q, s: q, data: "https://" + tx.W.replace(/^https?:\/\//, ""), color: dk(st.bg) ? "#ffffff" : "#000000" });
     els.push(T(m, h - m - textH(tx.F, pF, cw - q - m, 1.4, fb), cw - q - m, tx.F, pF, { font: fb, color: st.mute, lh: 1.4 }));
     return els;
   }
@@ -208,7 +230,7 @@
       els.push({ t: "img", x: x0 + m, y: h - m - h * 0.08, w: cw * 0.45, h: h * 0.08, label: "Logo", dark: light });
       var xb = (n - 2) * pw;  // Rückseite
       els.push(T(xb + m, h - m - textH(tx.F, pF, cw, 1.45, fb) - Math.max(18, cw * 0.32) - m * 0.5, cw, tx.F, pF, { font: fb, color: st.mute, lh: 1.45 }));
-      els.push({ t: "qr", x: xb + m, y: h - m - Math.max(18, cw * 0.32), s: Math.max(18, cw * 0.32), data: "https://" + tx.W, color: st.bg === "#0a0a0f" || st.bg === "#101820" ? "#ffffff" : "#000000" });
+      els.push({ t: "qr", x: xb + m, y: h - m - Math.max(18, cw * 0.32), s: Math.max(18, cw * 0.32), data: "https://" + tx.W, color: dk(st.bg) ? "#ffffff" : "#000000" });
       els.push(T(xb + m, m, cw, tx.A, pS, { font: fh, bold: true, color: st.ac }));
       if (n > 2) { els.push(T(m, m, cw, "Willkommen", pS * 1.3, { font: fh, bold: st.hb, color: st.fg })); els.push(T(m, m + pS * 0.3528 * 2.2, cw, "Schön, dass du da bist. Bei uns kommt auf den Teller, was die Region gerade zu bieten hat – frisch, ehrlich und mit viel Liebe gekocht.", pB, { font: fb, color: st.fg, lh: 1.45 })); els.push({ t: "img", x: m, y: h * 0.5, w: cw, h: h * 0.4 - m, label: "Bild" }); }
     } else {
@@ -226,7 +248,7 @@
     return els;
   }
   window.PrintTemplates = {
-    styles: STYLES,
+    styles: STYLES, texts: TXT, isDark: dk,
     list: function (product) { return (PER[product] || PER.flyer).map(function (id) { return { id: id, name: STYLES[id].name }; }); },
     build: build,
     blank: function (ctx) { var p = []; for (var i = 0; i < ctx.sides; i++) p.push([{ t: "bg", fill: "#ffffff" }]); return p; },

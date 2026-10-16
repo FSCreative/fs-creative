@@ -537,3 +537,19 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 .ps-bnext{margin:12px 0 0}
 .ps-bonus-tag{margin:6px 0 0;color:#ffd23f;font-weight:600;font-size:14px}
 @media (max-width:900px){.ps-tiers{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Fußzeile Druckshop */
+.ps-foot-big{padding:44px 0 26px;margin-top:60px;background:linear-gradient(180deg,transparent,rgba(127,127,127,.05))}
+.ps-foot-big .wrap{display:block}
+.ps-fgrid{display:grid;grid-template-columns:1.5fr repeat(5,minmax(0,1fr));gap:28px}
+.ps-fbrand p{margin:12px 0 0;line-height:1.6;max-width:36ch}.ps-fbrand .brand{color:var(--text);font-weight:700;display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+.ps-fbrand .mark img{width:26px;height:26px}
+.ps-foot-big h3{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--text);margin:0 0 12px}
+.ps-foot-big ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ps-foot-big nav{display:block}
+.ps-fpay{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:30px;padding-top:20px;border-top:1px solid var(--ps-line)}
+.ps-fpay b{font-weight:600;font-size:12px;padding:4px 9px;border-radius:7px;border:1px solid var(--ps-line2);color:var(--text)}
+.ps-flegal{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px 20px;margin-top:16px}
+.ps-flegal nav{display:flex;flex-wrap:wrap;gap:6px 18px}
+@media (max-width:1100px){.ps-fgrid{grid-template-columns:repeat(3,minmax(0,1fr))}.ps-fbrand{grid-column:1/-1}}
+@media (max-width:560px){.ps-fgrid{grid-template-columns:1fr 1fr}.ps-foot-big{padding-bottom:90px}}
