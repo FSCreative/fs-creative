@@ -719,7 +719,7 @@ module.exports = function (D) {
       if (!ok(w, h) && !ok(h, w)) throw bad("Eigenes Format: mindestens " + u(C.minW) + " × " + u(C.minH) + ", höchstens " + u(C.maxW) + " × " + u(C.maxH));
       sel.custom = w / f + "x" + h / f; extra.size = "custom"; extra.width = w; extra.height = h; size = { w, h }; fmt = ["Format", (C.unit === "cm" ? w / 10 + " × " + h / 10 + " cm" : w + " × " + h + " mm")];
     }
-    const urgency = String(input.urgency || (prod.urgency[0] && prod.urgency[0].slug) || "standard");
+    const urgency = String(input.urgency || ((prod.urgency.find(x => x.slug === "standard") || prod.urgency[0] || {}).slug) || "standard");   // Standard vor „Schnell“ (Print.com listet „quick“ teils zuerst)
     if (prod.urgency.length && !prod.urgency.some(u => u.slug === urgency)) throw bad("Ungültige Lieferzeit");
     // Auflagen-Bereiche je Druckverfahren: nur Verfahren zulassen, die diese Menge drucken
     let pmOnly = null;

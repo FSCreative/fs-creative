@@ -208,6 +208,7 @@
       '<div class="pd-props" aria-live="polite"><div class="pd-sheet-h"><b id="pdPT"></b><button type="button" class="pd-ib" data-a="sheetclose" aria-label="Schließen">' + svgI("close") + '</button></div><div id="pdP"></div></div>' +
       '<div class="pd-mbar" role="toolbar" aria-label="Werkzeuge"><button type="button" class="pd-tool" data-tool="obj" aria-pressed="false" hidden>' + svgI("edit") + "<span>Bearbeiten</span></button>" + tools("") + "</div>";
     document.body.appendChild(root); document.body.classList.add("pd-open");
+    (function () { var mb = root.querySelector(".pd-mbar"); if (!mb) return; var upd = function () { mb.classList.toggle("at-end", mb.scrollLeft + mb.clientWidth >= mb.scrollWidth - 4); }; mb.addEventListener("scroll", upd, { passive: true }); setTimeout(upd, 50); })();   // Mobil: Verlauf rechts zeigt, dass es weitere Werkzeuge gibt
     D.root = root; D.cv = root.querySelector(".pd-cv"); D.rh = root.querySelector(".pd-rh"); D.rv = root.querySelector(".pd-rv"); D.P = root.querySelector("#pdP");
     var el = D.cv.querySelector("canvas");
     var c = D.c = new fabric.Canvas(el, { preserveObjectStacking: true, selection: !isTouch, stopContextMenu: true, enableRetinaScaling: true, uniformScaling: true, targetFindTolerance: isTouch ? 8 : 4, perPixelTargetFind: false });
