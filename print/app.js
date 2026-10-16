@@ -472,7 +472,7 @@
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
-    root.innerHTML = h; headUpdate(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
+    root.innerHTML = h; headUpdate(); if (S.step === 1 && !S.view) loadFrom([].slice.call(root.querySelectorAll(".ps-prod[data-prod]")).slice(0, 12).map(function (b) { return b.getAttribute("data-prod"); })); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
     if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<div class="mp"></div>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) renderPrice();
   }
@@ -550,7 +550,7 @@
   function cardHtml(p) {
     var tag = p.lazy ? "Druckdaten hochladen" : p.kind === "textile" || p.kind === "promo" ? "Logo hochladen" : p.designer ? "Online gestalten oder hochladen" : "Druckdaten hochladen";
     return '<button type="button" class="ps-prod' + (p.best ? " best" : "") + '" data-prod="' + esc(p.key) + '" aria-pressed="' + (!!S.prod && S.prod.key === p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + "</span>" +
-      '<span class="bd"><b>' + esc(p.title) + "</b><span>" + esc(txt(p.desc)) + '</span><span class="tag">' + tag + "</span></span></button>";
+      '<span class="bd"><b>' + esc(p.title) + "</b>" + (badDesc(p) ? "" : "<span>" + esc(txt(p.desc)) + "</span>") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + '</span><span class="tag">' + tag + "</span></span></button>";
   }
   function filtered() {
     var qq = S.q.trim().toLowerCase();
