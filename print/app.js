@@ -211,7 +211,7 @@
 
   // Verständliche Namen + Erklärungen für Fachbegriffe aus dem Print.com-Katalog
   var LBL = {
-    creasing: { t: "Rillen (sauberer Falz)", o: { yes: "Ja, rillen", no: "Nein" }, d: { yes: "Vor dem Falzen wird eine feine Rille eingeprägt – so bricht das Papier nicht und der Falz wird sauber. Empfohlen ab 170 g/m².", no: "Ohne Rille – bei dünnem Papier (bis ca. 150 g/m²) völlig ausreichend." } },
+    creasing: { t: "Rillen (sauberer Falz)", force: true, o: { yes: "Ja, rillen", no: "Nein" }, d: { yes: "Vor dem Falzen wird eine feine Rille eingeprägt – so bricht das Papier nicht und der Falz wird sauber. Empfohlen ab 170 g/m².", no: "Ohne Rille – bei dünnem Papier (bis ca. 150 g/m²) völlig ausreichend." } },
     custom_shape: { t: "Schnitt", o: { clean_cut: "Gerade geschnitten (Rechteck)", custom_shape_die_cut: "Konturgeschnitten – einzeln", custom_shape_kiss_cut: "Konturgeschnitten – auf dem Bogen" }, d: { clean_cut: "Die Aufkleber werden rechteckig zugeschnitten.", custom_shape_die_cut: "Jeder Aufkleber wird entlang deiner Form komplett ausgeschnitten und einzeln geliefert.", custom_shape_kiss_cut: "Nur der Aufkleber wird entlang der Form angeschnitten, das Trägerpapier bleibt ganz – ideal zum einfachen Abziehen, mehrere auf einem Bogen." } },
     plano_delivery: { t: "Ungefalzt liefern", o: { no: "Nein, gefalzt", yes: "Ja, flach (plano)" }, d: { yes: "Die Drucksachen kommen flach und ungefalzt – z. B. wenn du selbst falzen möchtest.", no: "Fertig gefalzt geliefert." } },
     slitting: { t: "Rückenschlitz", d: { no_slit: "Trägerpapier ohne Schlitz.", slit_center: "Ein Schlitz in der Mitte des Trägerpapiers – Aufkleber lässt sich leichter abziehen." } },
@@ -221,7 +221,7 @@
     type_glue: { t: "Klebstoff", d: { permanent: "Hält dauerhaft.", detachable: "Lässt sich rückstandsfrei wieder ablösen." } },
     shape: { t: "Form" }
   };
-  function fixLabels(list) { (list || []).forEach(function (p) { (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && !o.desc) o.desc = L.d[o.slug]; }); }); }); }
+  function fixLabels(list) { (list || []).forEach(function (p) { (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
 
   function prodByKey(k) { return (S.cat.products || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
@@ -476,11 +476,41 @@
       (S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
       '<ul class="ps-ptrust"><li>Persönlich geprüft vor dem Druck</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
-    var m = document.getElementById("psMbar"); if (m && S.prod) { var p = S.price; m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + "</b><small>" + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
+    var m = document.getElementById("psMbar"); if (m && S.prod) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + " Stk." + (szl ? " · " + szl : "");
+      m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
     var nx = document.getElementById("psNext2"); if (nx) nx.disabled = !S.price || S.priceBusy;
     var tt = document.getElementById("psTexTotal"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + " Stk.";
   }
 
+  // Mobil: Preisdetails als Bottom-Sheet (Inhalt = Preisbox)
+  function openSheet() {
+    var src = document.getElementById("psPrice"); if (!src || !src.innerHTML) return; closeSheet();
+    var sh = document.createElement("div"); sh.className = "ps-sheet"; sh.id = "psSheet";
+    sh.innerHTML = '<div class="ps-sheet-bg" data-act="psheetx"></div><div class="ps-sheet-c" role="dialog" aria-modal="true" aria-label="Preisdetails"><span class="ps-sheet-grip" aria-hidden="true"></span><button type="button" class="ps-sheet-x" data-act="psheetx" aria-label="Schließen">×</button>' + src.innerHTML + "</div>";
+    root.appendChild(sh); document.documentElement.classList.add("ps-noscroll"); var x = sh.querySelector(".ps-sheet-x"); if (x) x.focus();
+  }
+  function closeSheet() { var s0 = document.getElementById("psSheet"); if (s0) s0.remove(); document.documentElement.classList.remove("ps-noscroll"); }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && document.getElementById("psSheet")) closeSheet(); });
+  // Mobil: mitlaufende Abschnitts-Navigation in Schritt 2 (Format · Material · Optionen · Auflage)
+  function secNav() {
+    if (S.step !== 2 || S.view || window.innerWidth > 900) return;
+    var panel = root.querySelector(".ps-panel"); if (!panel) return;
+    var secs = [].slice.call(panel.querySelectorAll(".ps-sec")).filter(function (x) { return !x.classList.contains("ps-pre") && x.querySelector("h3"); }); if (secs.length < 2) return;
+    var nav = document.createElement("nav"); nav.className = "ps-secnav"; nav.setAttribute("aria-label", "Abschnitte");
+    nav.innerHTML = secs.map(function (x, i) { x.id = "psSec" + i; var t = (x.querySelector("h3").firstChild || {}).textContent || ""; return '<button type="button" data-sec="psSec' + i + '">' + esc(t.replace(/\s*·.*$/, "").trim()) + "</button>"; }).join("") + '<button type="button" data-sec="psPrice" class="pr">Preis</button>';
+    secs[0].parentNode.insertBefore(nav, secs[0].previousElementSibling && secs[0].previousElementSibling.classList.contains("ps-pre") ? secs[0].previousElementSibling : secs[0]);
+    secSpy();
+  }
+  function secSpy() {
+    var nav = root.querySelector(".ps-secnav"); if (!nav) return; var off = (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--nav-h"), 10) || 64) + nav.offsetHeight + 16, cur = null;
+    [].slice.call(nav.querySelectorAll("[data-sec]")).forEach(function (b) { var el = document.getElementById(b.getAttribute("data-sec")); if (el && el.getBoundingClientRect().top - off < 4) cur = b; });
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) cur = nav.querySelector(".pr");
+    nav.querySelectorAll("[data-sec]").forEach(function (b) { b.classList.toggle("on", b === cur); });
+    if (cur && cur !== nav.__cur) { nav.__cur = cur; var r = cur.getBoundingClientRect(), nr = nav.getBoundingClientRect(); if (r.left < nr.left || r.right > nr.right) nav.scrollTo({ left: cur.offsetLeft - 16, behavior: "smooth" }); }
+  }
+  var secRaf = 0; window.addEventListener("scroll", function () { if (!secRaf) secRaf = requestAnimationFrame(function () { secRaf = 0; secSpy(); }); }, { passive: true });
+  root.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-sec]"); if (!b) return; var el = document.getElementById(b.getAttribute("data-sec")), nav = root.querySelector(".ps-secnav"); if (!el) return;
+    var off = (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--nav-h"), 10) || 64) + (nav ? nav.offsetHeight : 0) + 10; window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - off, behavior: "smooth" }); });
   // ── Darstellung ──
   function stepsHtml() {
     return '<ol class="ps-steps" aria-label="Bestellschritte">' + STEPS.map(function (t, i) { var n = i + 1, cur = n === S.step, done = n < S.step; if ((n === 2 || n === 3) && !S.prod) done = false; if (n > 4 && !S.cart.length) done = false;
@@ -495,9 +525,9 @@
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
-    root.innerHTML = h; headUpdate(); if (S.step === 1 && !S.view) loadFrom([].slice.call(root.querySelectorAll(".ps-prod[data-prod]")).slice(0, 12).map(function (b) { return b.getAttribute("data-prod"); })); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
-    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<div class="mp"></div>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
-    if (S.step === 2) renderPrice();
+    root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll"); if (S.step === 1 && !S.view) loadFrom([].slice.call(root.querySelectorAll(".ps-prod[data-prod]")).slice(0, 12).map(function (b) { return b.getAttribute("data-prod"); })); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
+    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
+    if (S.step === 2) { renderPrice(); secNav(); }
   }
   function go(n) { S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
 
@@ -544,7 +574,7 @@
     var dsg = S.cat.products.filter(function (p) { return p.designer; }).slice(0, 4);
     return '<section class="ps-home-hero"><span class="eyebrow">FS Creative Druckshop</span><h1>Was möchtest du heute drucken?</h1>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
-      '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + esc(shortName(p)) + "</button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
+      '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
       '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></section>' +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
@@ -980,6 +1010,8 @@
     if (t.hasAttribute("data-gal")) { S.gal = +t.getAttribute("data-gal"); var gm = root.querySelector(".ps-gal .main img"), th = t.querySelector("img"); if (gm && th) gm.src = th.src.replace(/w=\d+/, "w=1000"); root.querySelectorAll("[data-gal]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === t)); }); return; }
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
+    if (k === "psheet") { openSheet(); return; }
+    if (k === "psheetx") { closeSheet(); return; }
     if (k === "next2") { if (S.price) go(3); return; }
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
     if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; render(); return; }

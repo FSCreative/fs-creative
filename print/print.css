@@ -869,3 +869,42 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-tpl.soft{margin-top:16px}
 .ps-selinfo .ps-tpl{margin:12px 0 4px}
 .ps-pfv-l .f{border-top:2px dashed #bf5af2;height:0;border-radius:0}
+
+/* Startseite: Schnellwahl mit Produktbild */
+.ps-qchips button{display:inline-flex;align-items:center;gap:8px;padding:6px 16px 6px 6px}
+.ps-qchips button img,.ps-qchips button .qi{width:30px;height:30px;border-radius:50%;object-fit:cover;background:#fff;flex:none;display:grid;place-items:center;font-size:16px}
+.ps-qchips .all{padding:9px 16px}
+@media(max-width:640px){
+  .ps-qchips{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 6px;margin-top:20px}
+  .ps-qchips button{flex-direction:column;gap:6px;padding:0;border:0;background:none;border-radius:14px;font-size:12px;line-height:1.2;text-align:center}
+  .ps-qchips button img,.ps-qchips button .qi{width:64px;height:64px;border-radius:18px;box-shadow:0 0 0 1px var(--ps-line2);font-size:28px}
+  .ps-qchips button:active img{transform:scale(.95)}
+  .ps-qchips .all{grid-column:1/-1;flex-direction:row;justify-content:center;border:1px dashed var(--ps-line2);padding:11px 16px;font-size:14px;margin-top:4px}
+}
+
+/* Mobil: Preisleiste antippbar → Preisdetails als Bottom-Sheet */
+.ps-mbar .mp{background:none;border:0;padding:4px 0;text-align:left;cursor:pointer;min-width:0;flex:1}
+.ps-mbar .mp small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-mbar .mp .up{display:inline-block;font-style:normal;font-size:14px;color:var(--accent);margin-left:4px;vertical-align:2px}
+.ps-sheet{position:fixed;inset:0;z-index:300}
+.ps-sheet-bg{position:absolute;inset:0;background:rgba(0,0,0,.55);animation:psFade .2s}
+.ps-sheet-c{position:absolute;left:0;right:0;bottom:0;max-height:86vh;overflow:auto;background:var(--bg,#0b0b10);border-radius:20px 20px 0 0;padding:22px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.4);animation:psUp .25s cubic-bezier(.22,.61,.36,1)}
+html.light .ps-sheet-c{background:#fff}
+.ps-sheet-grip{position:absolute;top:8px;left:50%;width:40px;height:4px;margin-left:-20px;border-radius:4px;background:var(--ps-line2)}
+.ps-sheet-x{position:absolute;top:10px;right:12px;width:36px;height:36px;border-radius:50%;border:0;background:var(--ps-card);font-size:22px;line-height:1;cursor:pointer}
+.ps-sheet-c h3{margin:0 0 12px;font-size:19px}
+@keyframes psUp{from{transform:translateY(40%);opacity:.4}to{transform:none;opacity:1}}
+@keyframes psFade{from{opacity:0}}
+html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
+
+/* Mobil: Abschnitts-Navigation in der Konfiguration */
+.ps-secnav{display:none}
+@media(max-width:900px){
+  .ps-secnav{display:flex;gap:6px;position:sticky;top:var(--nav-h);z-index:20;margin:4px -14px 10px;padding:8px 14px;overflow-x:auto;scrollbar-width:none;background:rgba(11,11,16,.94);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--ps-line)}
+  html.light .ps-secnav{background:rgba(255,255,255,.95)}
+  .ps-secnav::-webkit-scrollbar{display:none}
+  .ps-secnav button{flex:none;border:1px solid var(--ps-line2);background:var(--ps-card);color:var(--text-dim);border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .ps-secnav button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .ps-secnav .pr{margin-left:auto}
+}
+@media(min-width:641px) and (max-width:900px){.ps-secnav{margin-left:-22px;margin-right:-22px;padding-left:22px;padding-right:22px}}
