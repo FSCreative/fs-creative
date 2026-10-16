@@ -592,3 +592,7 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 .pd-ai-tip{font-size:13px;margin:10px 0 0}.pd-ai-err{font-size:13px;color:var(--ps-bad);margin:10px 0 0}
 .ps-voucher{margin:14px 0}.ps-voucher .ps-uidrow{max-width:460px;align-items:center}
 .ps-save b{color:var(--ps-ok)}
+.ps-ddgt{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:inherit;cursor:pointer;text-align:left;font:inherit}
+.ps-ddgt span{flex:1}.ps-ddgt small{font-weight:600;opacity:.6;font-size:11px;padding:1px 7px;border-radius:8px;background:var(--ps-card)}.ps-ddgt i{font-style:normal;width:14px;text-align:center}
+.ps-ddgt:hover{color:var(--text)}
+.ps-dds.q .ps-ddgb[hidden]{display:block}

@@ -8,7 +8,7 @@
   var root = document.getElementById("shop");
   if (!root) return;
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
-  var S = { cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
+  var S = { ddGrp: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   S.page = "home"; S.cart = cartLoad(); S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
@@ -229,7 +229,13 @@
         (info ? '<div class="ps-ddinf">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + "<p>" + esc(x.desc || "") + "</p></div>" : "") + "</div>"; };
     var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; }), groups = [];
     rest.forEach(function (x) { var g = x.group || ""; var G = groups.filter(function (y) { return y.n === g; })[0]; if (!G) { G = { n: g, l: [] }; groups.push(G); } G.l.push(x); });
-    var list = (best.length ? '<div class="ps-ddg">★ Bestseller</div>' + best.map(row).join("") : "") + groups.map(function (G) { return (G.n || best.length ? '<div class="ps-ddg">' + esc(G.n || "Alle Optionen") + "</div>" : "") + G.l.map(row).join(""); }).join("");
+    // wie bei druck.at: Bestseller immer offen, weitere Kategorien aufklappbar (offen: die mit der aktuellen Auswahl bzw. per Klick); bei Suche alles offen
+    var og = S.ddGrp[key] || (S.ddGrp[key] = {}), named = groups.some(function (G) { return G.n; }), fold = best.length > 0 || (named && groups.length > 1);
+    var list = (best.length ? '<div class="ps-ddg">★ Bestseller</div>' + best.map(row).join("") : "") + groups.map(function (G) {
+      var nm = G.n || (best.length ? "Weitere Optionen" : "Alle Optionen"), has = G.l.some(function (x) { return String(x.val) === String(cur); }), isOpen = !fold || has || og[nm];
+      if (!fold) return (G.n ? '<div class="ps-ddg">' + esc(G.n) + "</div>" : "") + G.l.map(row).join("");
+      return '<button type="button" class="ps-ddg ps-ddgt" data-ddgrp="' + esc(key) + "|" + esc(nm) + '" aria-expanded="' + !!isOpen + '"><span>' + esc(nm) + '</span><small>' + G.l.length + '</small><i aria-hidden="true">' + (isOpen ? "▾" : "▸") + "</i></button>" +
+        '<div class="ps-ddgb"' + (isOpen ? "" : " hidden") + ">" + G.l.map(row).join("") + "</div>"; }).join("");
     return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '">' + (items.length > 10 ? '<input type="search" class="ps-ddq" placeholder="Suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") + '<div class="ps-dds">' + list + "</div></div>";
   }
   function propItems(pr) {
@@ -642,8 +648,11 @@
     if (e.key === "Escape" && sg) { sg.hidden = true; }
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && S.dd) { var k = S.dd; S.dd = ""; S.ddInfo = ""; render(); var b = root.querySelector('[data-dd="' + k + '"]'); if (b) b.focus(); } });
-  document.addEventListener("click", function (e) { if (S.dd && !root.contains(e.target)) { S.dd = ""; S.ddInfo = ""; render(); } });
+  document.addEventListener("click", function (e) { if (S.dd && e.target.isConnected && !root.contains(e.target)) { S.dd = ""; S.ddInfo = ""; render(); } });   // isConnected: Klick im Shop hat neu gerendert → nicht „außerhalb“
   root.addEventListener("click", function (e) {
+    var dg = e.target.closest("[data-ddgrp]");
+    if (dg) { var gv = dg.getAttribute("data-ddgrp"), gi = gv.indexOf("|"), gk = gv.slice(0, gi), gn = gv.slice(gi + 1), G0 = S.ddGrp[gk] || (S.ddGrp[gk] = {}); G0[gn] = dg.getAttribute("aria-expanded") !== "true";
+      var sc0 = root.querySelector(".ps-dds"), st0 = sc0 ? sc0.scrollTop : 0; render(); var sc1 = root.querySelector(".ps-dds"); if (sc1) sc1.scrollTop = st0; return; }
     var dd = e.target.closest("[data-dd],[data-ddpick],[data-ddinfo]");
     if (dd) {
       if (dd.hasAttribute("data-dd")) { var k0 = dd.getAttribute("data-dd"); S.dd = S.dd === k0 ? "" : k0; S.ddInfo = ""; render(); if (S.dd) { var q0 = root.querySelector(".ps-ddq"), se = root.querySelector(".ps-ddo.sel"); if (se) se.scrollIntoView({ block: "nearest" }); if (q0 && window.innerWidth > 700) q0.focus(); } return; }
@@ -706,7 +715,7 @@
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
-    if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); return; }
+    if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
     var t = e.target;
     if (t.id === "psHomeQ") { var sg = document.getElementById("psSug"), hv = sugHtml(t.value); sg.innerHTML = hv; sg.hidden = !hv; t.parentNode.setAttribute("aria-expanded", String(!!hv)); return; }
     if (t.id === "psQ") { S.q = t.value; var g = document.getElementById("psGrid"); if (g) g.innerHTML = gridHtml(); return; }
