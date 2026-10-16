@@ -271,14 +271,42 @@
   }
   // „Deine Auswahl im Detail“: immer sichtbare Infos zu allen gewählten Optionen
   function selInfoHtml(p) {
-    var rows = p.props.map(function (pr) { var o = pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; if (!o || NONE_RX.test(String(o.name).trim())) return ""; var d = txt(o.desc), im = imgOk(o.img) ? o.img : "";
+    var rows = p.props.map(function (pr) { var o = pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; if (!o || NONE_RX.test(String(o.name).trim())) return ""; var d = txt(o.desc) || glossOf(pr, o), im = imgOk(o.img) ? o.img : "";
       return '<div class="ps-si">' + (im ? '<img src="' + esc(im) + '" alt="" loading="lazy">' : '<span class="ps-si-ic" aria-hidden="true">✓</span>') + '<div><span class="ps-si-k">' + esc(pr.title) + "</span><b>" + esc(/color/.test(pr.slug) ? colName(o.name) : o.name) + "</b>" + (d ? "<p>" + esc(d.length > 220 ? d.slice(0, 217) + " …" : d) + "</p>" : "") +
         (d.length > 220 || im ? '<button type="button" class="ps-link" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(o.slug) + '">Mehr Infos</button>' : "") + "</div></div>"; }).filter(Boolean);
     return rows.length ? '<details class="ps-selinfo" open><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div></details>" : "";
   }
+  // Eigene Infotexte, wenn Print.com keine Beschreibung liefert (Papiere, Grammaturen, Veredelungen, Großformat-Materialien)
+  var GLOSS = [
+    [/bilderdruck.*gl(ä|a)nz|gloss/i, "Gestrichenes Bilderdruckpapier mit glänzender Oberfläche: Farben wirken brillant und kontrastreich, Fotos besonders lebendig. Der Klassiker für Flyer, Plakate und Prospekte."],
+    [/bilderdruck.*matt|silk/i, "Gestrichenes Bilderdruckpapier, seidenmatt: edle, blendfreie Oberfläche, angenehme Haptik und gut beschreibbar. Ideal für Texte, Speisekarten und hochwertige Drucksachen."],
+    [/recycl|öko|oeko|eco|graspapier|gras/i, "Umweltfreundliches Papier aus Recycling- bzw. alternativen Fasern: natürliche Optik und Haptik, Farben wirken etwas matter. Für nachhaltige Marken die richtige Wahl."],
+    [/natur.?offset|offsetpapier|hvo|ungestrichen|unbeschichtet/i, "Ungestrichenes Naturpapier (Offsetpapier): saugfähig, griffig und sehr gut beschreibbar – wie gutes Briefpapier. Farben wirken etwas weicher."],
+    [/invercote|sulfatkarton|multicard|kingboard|sbs|sbd/i, "Hochwertiger, sehr steifer Sulfatkarton mit glatter, heller Oberfläche – formstabil und edel, beliebt für Karten, Verpackungen und Premium-Visitenkarten."],
+    [/kraft/i, "Naturbraunes Kraftpapier: rustikal, robust und ehrlich – perfekt für handgemachte, nachhaltige oder regionale Marken."],
+    [/linnen|leinen/i, "Papier mit feiner Leinenstruktur: fühlbar edel, klassisch-elegant – ideal für Visitenkarten und Einladungen."],
+    [/metallic|perl|pearl/i, "Papier mit schimmernder Metallic- bzw. Perlmutt-Oberfläche: wirkt luxuriös und fällt sofort auf."],
+    [/yupo|synthet|reißfest|reissfest|wasserfest|pvc.?frei/i, "Synthetisches, reiß- und wasserfestes Material: hält Regen, Fett und Knicke aus – für Outdoor, Gastronomie und Speisekarten."],
+    [/bio top|biotop/i, "Bio Top 3®: ungestrichenes, naturweißes Premium-Papier aus nachhaltiger Forstwirtschaft, sehr angenehme Haptik."],
+    [/munken|felt|tintoretto|gesso|sirio|curious|premium/i, "Premium-Feinstpapier mit besonderer Struktur bzw. Farbe – für Drucksachen, die man gern in der Hand hält."],
+    [/blueback/i, "Plakatpapier mit blauer Rückseite: blickdicht, damit beim Kleben auf alte Plakate nichts durchscheint – der Standard für Außenplakate."],
+    [/frontlit|pvc/i, "Robuste PVC-Plane (Frontlit) für Banner im Außenbereich: wetterfest, UV-beständig und reißfest."],
+    [/mesh/i, "Gitterplane (Mesh): winddurchlässig dank feiner Löcher – ideal für Gerüste, Bauzäune und windige Standorte."],
+    [/cellophan|lamination|kaschier/i, "Cellophanierung: hauchdünne Folie auf der Oberfläche – schützt vor Kratzern, Feuchtigkeit und Knicken und wertet die Optik auf (glänzend = brillant, matt = edel)."],
+    [/soft.?touch/i, "Soft-Touch-Folie: samtig-weiche, fast pfirsichhautartige Oberfläche – fühlt sich besonders hochwertig an."],
+    [/kratz|scratch/i, "Kratzfeste Folie: besonders widerstandsfähige Oberfläche für Drucksachen, die oft in die Hand genommen werden."],
+    [/uv.?lack|spot/i, "UV-Lack: glänzender Lack (vollflächig oder partiell) für einen edlen Effekt und zusätzlichen Schutz."],
+    [/^(geen|keine?|ohne|none)\b/i, "Ohne Veredelung – die günstigste Variante; der Druck liegt direkt auf dem Papier."]
+  ];
+  function glossOf(pr, o) {
+    var n = String(o.name || "") + " " + o.slug, d = "", g = n.match(/(\d{2,4})\s*g/);
+    for (var i = 0; i < GLOSS.length; i++) if (GLOSS[i][0].test(n)) { d = GLOSS[i][1]; break; }
+    if (g && pr.slug === "material") { var w = +g[1]; d = (d ? d + " " : "") + (w <= 100 ? "Mit " + w + " g/m² leicht und dünn – gut für große Auflagen, Beilagen und Handzettel." : w <= 150 ? "Mit " + w + " g/m² die klassische Flyer-Stärke: stabil genug, angenehm in der Hand." : w <= 200 ? "Mit " + w + " g/m² spürbar fester – wirkt hochwertiger, ideal für Plakate und edlere Flyer." : w <= 300 ? "Mit " + w + " g/m² ein leichter Karton – für Postkarten, Umschläge und Karten." : "Mit " + w + " g/m² ein fester Karton – typisch für Visitenkarten und hochwertige Karten."); }
+    return d;
+  }
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
-    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: o.desc || "", img: imgOk(o.img) ? o.img : "", group: gname(o) };
+    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", group: gname(o) };
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
     var bo = bestOf(pr); items.sort(function (a, b) { return a.best && b.best ? bo.indexOf(a.val) - bo.indexOf(b.val) : 0; });
@@ -550,7 +578,7 @@
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
     var best = cur && isBest(pr, cur.slug);
-    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (pr.options.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
+    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (pr.options.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
       (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + "</div>";
   }
   function sec(title, inner, extra) { return inner || extra ? '<section class="ps-sec"><h3>' + esc(title) + "</h3>" + (inner ? '<div class="ps-grid2">' + inner + "</div>" : "") + (extra || "") + "</section>" : ""; }
