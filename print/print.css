@@ -838,3 +838,6 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-preb .ck{position:absolute;right:12px;top:12px;font-size:12px;font-weight:700;color:var(--accent)}
 .ps-pre-more{margin:10px 0 0;font-size:13.5px;color:var(--text-dim)}
 @media(max-width:640px){.ps-pres{grid-template-columns:1fr}.ps-preb{display:grid;grid-template-columns:30px 1fr auto;column-gap:10px;align-items:center}.ps-preb .pi{grid-row:span 2;margin:0}.ps-preb b{grid-column:2}.ps-preb small{grid-column:2;min-height:0}.ps-preb .pp{grid-column:3;grid-row:1/span 2;margin:0;font-size:17px}.ps-preb .ck{position:static;grid-column:2}}
+.ps-modes{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important}
+.ps-mode-agency{text-decoration:none;color:inherit;border-style:dashed!important}
+.ps-nav-hint{font-size:14px;color:var(--text-dim);align-self:center}

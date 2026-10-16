@@ -754,9 +754,10 @@
         '<p class="ps-terms">Tipp: PDF im Endformat' + (b ? " plus " + b + " mm Beschnitt an jeder Seite" : "") + ', Schriften eingebettet, Bilder mit ' + (p.dpi || 300) + ' dpi. <button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Mit Vorlagen, eigenen Texten, Logo und Bildern – Beschnitt und Sicherheitsabstand werden angezeigt." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
-        '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button></div>';
+        '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button>' +
+        '<a class="ps-mode ps-mode-agency" href="/kontakt?von=print&amp;thema=Gestaltung%20' + encodeURIComponent(p.title) + '" target="_blank" rel="noopener"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></a></div>';
     }
-    return h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
+    return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button>' + (S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (S.file ? "Bitte die rot markierten Punkte korrigieren." : "Wähle oben, wie du deine Druckdaten erstellst.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
   // Schritt 3: Logos (Textil / Werbeartikel) – eine Datei je Position, danach eine gemeinsame PDF
   function vLogos() {
