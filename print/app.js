@@ -79,7 +79,10 @@
     });
   }
   function itemLine(x) { return [x.size, (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
-  function itemThumb(x) { return '<span class="ps-ci-img">' + (x.preview ? '<img src="' + esc(x.preview) + '" alt="">' : imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(x.icon || "🖨️") + "</span>") + "</span>"; }
+  function itemThumb(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
+    return '<span class="ps-ci-img">' + (x.preview || im ? '<img src="' + esc(x.preview || im) + '" alt="" loading="lazy"' + (x.preview && im ? ' data-fb="' + esc(im) + '"' : "") + ">" : '<span aria-hidden="true">' + esc(x.icon || pp.icon || "🖨️") + "</span>") + "</span>"; }
+  // Vorschaubild kaputt (z. B. abgelaufen) → Produktbild
+  document.addEventListener("error", function (e) { var t = e.target; if (t && t.tagName === "IMG" && t.closest && t.closest(".ps-ci-img")) { var fb = t.getAttribute("data-fb"); if (fb && t.src !== fb) { t.removeAttribute("data-fb"); t.src = fb; } else t.style.visibility = "hidden"; } }, true);
   function vCart() {
     var co = S.ctype === "company", t = cartTotals();
     if (!S.cart.length) return '<div class="ps-panel ps-empty"><h2>Dein Warenkorb ist leer</h2><p class="sub">Such dir ein Produkt aus, gestalte es online oder lade deine Druckdaten hoch – dein Warenkorb bleibt 30 Tage gespeichert.</p><div class="ps-nav"><span></span><button type="button" class="ps-btn primary" data-act="shop">Produkte ansehen</button></div></div>';
@@ -486,7 +489,7 @@
   function openSheet() {
     var src = document.getElementById("psPrice"); if (!src || !src.innerHTML) return; closeSheet();
     var sh = document.createElement("div"); sh.className = "ps-sheet"; sh.id = "psSheet";
-    sh.innerHTML = '<div class="ps-sheet-bg" data-act="psheetx"></div><div class="ps-sheet-c" role="dialog" aria-modal="true" aria-label="Preisdetails"><span class="ps-sheet-grip" aria-hidden="true"></span><button type="button" class="ps-sheet-x" data-act="psheetx" aria-label="Schließen">×</button>' + src.innerHTML + "</div>";
+    sh.innerHTML = '<div class="ps-sheet-bg" data-act="psheetx"></div><div class="ps-sheet-c" role="dialog" aria-modal="true" aria-label="Preisdetails"><span class="ps-sheet-grip" aria-hidden="true"></span><button type="button" class="ps-sheet-x" data-act="psheetx" aria-label="Schließen">×</button><div class="ps-price in-sheet">' + src.innerHTML + "</div></div>";
     root.appendChild(sh); document.documentElement.classList.add("ps-noscroll"); var x = sh.querySelector(".ps-sheet-x"); if (x) x.focus();
   }
   function closeSheet() { var s0 = document.getElementById("psSheet"); if (s0) s0.remove(); document.documentElement.classList.remove("ps-noscroll"); }
@@ -526,6 +529,8 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll"); if (S.step === 1 && !S.view) loadFrom([].slice.call(root.querySelectorAll(".ps-prod[data-prod]")).slice(0, 12).map(function (b) { return b.getAttribute("data-prod"); })); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
+    if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
+      m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Zur Kasse</button>'; root.appendChild(m4); }
     if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) { renderPrice(); secNav(); }
   }

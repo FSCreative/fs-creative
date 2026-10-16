@@ -908,3 +908,14 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
   .ps-secnav .pr{margin-left:auto}
 }
 @media(min-width:641px) and (max-width:900px){.ps-secnav{margin-left:-22px;margin-right:-22px;padding-left:22px;padding-right:22px}}
+.ps-price.in-sheet{position:static;background:none;border:0;padding:0}
+.ps-sheet-c .ps-pcta{width:100%;margin-top:14px}
+/* Mobil: Gestaltungs-Wege kompakt als Liste (alle drei auf einen Blick) */
+@media(max-width:640px){
+  .ps-modes{gap:10px}
+  .ps-mode{display:grid;grid-template-columns:46px 1fr 14px;column-gap:12px;row-gap:2px;align-items:center;padding:14px;min-height:0;border-radius:16px}
+  .ps-mode .ic{grid-row:1/3;grid-column:1;font-size:24px;width:46px;height:46px;display:grid;place-items:center;border-radius:13px;background:var(--ps-card);border:1px solid var(--ps-line)}
+  .ps-mode b{grid-column:2;font-size:16px}
+  .ps-mode span:not(.ic){grid-column:2;font-size:13px;line-height:1.4}
+  .ps-mode::after{content:"›";grid-column:3;grid-row:1/3;font-size:24px;color:var(--text-faint);line-height:1}
+}
