@@ -17,7 +17,8 @@ function api(path,body){
 }
 function h(tag,cls,text){ var e=d.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
 var IC='<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-11.6 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/></svg>';
-var CSS='.fscc-b{position:fixed;right:20px;bottom:calc(20px + var(--fscc-tb,0px));z-index:300;width:58px;height:58px;border-radius:50%;border:0;cursor:pointer;background:var(--accent,#0a84ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(0,0,0,.35);transition:transform .2s,box-shadow .2s;-webkit-tap-highlight-color:transparent}'+
+var CSS='.fscc-print{position:fixed;right:90px;bottom:calc(29px + var(--fscc-tb,0px));z-index:300;height:40px;display:inline-flex;align-items:center;gap:7px;padding:0 16px 0 13px;border-radius:999px;background:#ffd60a;color:#1d1d1f;font:800 13.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;letter-spacing:.08em;text-decoration:none;box-shadow:0 10px 26px rgba(0,0,0,.32);transition:transform .2s;-webkit-tap-highlight-color:transparent}.fscc-print:hover{transform:translateY(-2px)}.fscc-print:focus-visible{outline:3px solid var(--text,#fff);outline-offset:3px}.fscc-print svg{width:18px;height:18px;flex:none}'+
+'.fscc-b{position:fixed;right:20px;bottom:calc(20px + var(--fscc-tb,0px));z-index:300;width:58px;height:58px;border-radius:50%;border:0;cursor:pointer;background:var(--accent,#0a84ff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(0,0,0,.35);transition:transform .2s,box-shadow .2s;-webkit-tap-highlight-color:transparent}'+
 '.fscc-b:hover{transform:translateY(-2px) scale(1.04)}.fscc-b:focus-visible{outline:3px solid var(--text,#fff);outline-offset:3px}.fscc-b[aria-expanded=true]{transform:scale(.9);opacity:0;pointer-events:none}'+
 '.fscc-dot{position:absolute;right:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#8e8e93;border:2.5px solid var(--bg,#0a0a0f)}.fscc-dot.on{background:#30d158}'+
 '.fscc-n{position:absolute;left:-4px;top:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ff453a;color:#fff;font:700 12px/20px system-ui,-apple-system,sans-serif;text-align:center}'+
@@ -40,7 +41,7 @@ var CSS='.fscc-b{position:fixed;right:20px;bottom:calc(20px + var(--fscc-tb,0px)
 '.fscc-s{flex:none;width:42px;height:42px;border-radius:50%;border:0;background:var(--accent,#0a84ff);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center}.fscc-s:disabled{opacity:.45;cursor:default}'+
 '.fscc-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;opacity:0}.fscc-err{font-size:12.5px;color:#ff6961;padding:0 4px}'+
 'html.light .fscc-p{box-shadow:0 24px 60px rgba(18,20,28,.18)}html.light .fscc-b{box-shadow:0 10px 26px rgba(18,20,28,.25)}'+
-'@media(max-width:640px){.fscc-b{right:14px;bottom:calc(14px + var(--fscc-tb,0px));width:54px;height:54px}.fscc-p{right:0;left:0;top:0;bottom:0;width:100%;max-width:none;height:100%;height:100dvh;border-radius:0;border:0}}'+
+'@media(max-width:640px){.fscc-print{right:78px;bottom:calc(21px + var(--fscc-tb,0px));height:40px;padding:0 14px 0 11px}.fscc-b{right:14px;bottom:calc(14px + var(--fscc-tb,0px));width:54px;height:54px}.fscc-p{right:0;left:0;top:0;bottom:0;width:100%;max-width:none;height:100%;height:100dvh;border-radius:0;border:0}}'+
 '@media(prefers-reduced-motion:reduce){.fscc-b,.fscc-p{transition:none}}';
 
 /* Abstand zur mobilen Tab-Leiste (index.html und Landingpages haben unten .tabbar) */
@@ -52,7 +53,10 @@ function init(){
   btn=h("button","fscc-b"); btn.type="button"; btn.setAttribute("aria-haspopup","dialog"); btn.setAttribute("aria-expanded","false"); btn.setAttribute("aria-controls","fscc-panel"); btn.innerHTML=IC;
   dot=h("span","fscc-dot"); dot.setAttribute("aria-hidden","true"); btn.appendChild(dot); label();
   btn.addEventListener("click",function(){ toggle(true); });
-  d.body.appendChild(btn); tabbar(); W.addEventListener("resize",tabbar);
+  d.body.appendChild(btn);
+  // Knopf „PRINT“ links neben dem Chat → Online-Druckshop (nicht im Shop selbst)
+  if(!/^\/print/.test(location.pathname)){ var pr=h("a","fscc-print"); pr.href="/print"; pr.setAttribute("aria-label","Druckshop – Drucksachen online bestellen"); pr.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>PRINT'; d.body.appendChild(pr); }
+  tabbar(); W.addEventListener("resize",tabbar);
   var go=function(){ checkStatus(); }; if(W.requestIdleCallback) W.requestIdleCallback(go,{timeout:3000}); else setTimeout(go,1200);
   d.addEventListener("visibilitychange",function(){ if(!d.hidden&&isOpen) poll(); });
 }

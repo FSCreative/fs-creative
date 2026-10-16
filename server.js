@@ -3422,8 +3422,8 @@ const server = http.createServer((req, res) => {
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
     if (p === "/nda" || p.indexOf("/nda/") === 0 || p.indexOf("/admin/api/nda/") === 0) return void NDA.handle(req, res, u, p);
     // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml)
-    if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/sitemap.xml")) {
-      const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : "druck.html";
+    if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/leistungen" || p === "/leistungen.html" || p === "/sitemap.xml")) {
+      const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
       return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found"); sendGz(req, res, 200, printLiveBlocks(data), TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); });
     }
     // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
