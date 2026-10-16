@@ -257,7 +257,7 @@
     DDI[key] = items;
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
     if (items.length <= 4 && key !== "copies") return '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
-      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + "</b>" + (x.best ? '<em title="Bestseller">★</em>' : "") + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + "</button>" +
+      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + "</button>" +
         (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
     var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + '</span><i aria-hidden="true">▾</i></button>';
     if (!open) return btn;
@@ -651,10 +651,10 @@
     var sel = ddHtml("copies", "Auflage", qi, S.copies);
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
-      own = '<div class="ps-tile"><span class="ps-tl">Andere Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></div>'; }
-    var ur = p.urgency.length > 1 ? '<div class="ps-tile' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
+      own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></label>'; }
+    var ur = p.urgency.length > 1 ? '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
       ddHtml("urgency", "Produktion", p.urgency.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) + '<span class="ps-td">Bestimmt den Liefertermin rechts.</span></div>' : "";
-    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + "</div>" + own + ur + motHtml() + "</div></section>";
+    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + "</div>" + ur + motHtml() + "</div></section>";
   }
   function qtyHtml(p) {
     var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);
@@ -683,7 +683,7 @@
     var t = txt(p.about); if (!t && !p.summary) return "";
     var lines = t.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean), bul = lines.filter(function (x) { return /^[-*•]/.test(x); });
     var body = (lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return "<p>" + esc(x.replace(/[#*_]+/g, "")) + "</p>"; }).join("")) + (bul.length ? "<ul>" + bul.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : "");
-    return '<details class="ps-about"' + (bul.length && bul.length <= 6 && window.innerWidth > 760 ? " open" : "") + "><summary>Produktinfos" + (p.summary && lead(p.summary) && lead(p.summary).length < 50 ? " · " + esc(lead(p.summary)) : "") + "</summary>" + body + "</details>";
+    return '<details class="ps-about"' + (bul.length && bul.length <= 6 && window.innerWidth > 760 ? " open" : "") + "><summary>Produktinfos" + (p.summary && lead(p.summary) && lead(p.summary).length < 50 && lead(p.summary).toLowerCase() !== String(p.title).toLowerCase() ? " · " + esc(lead(p.summary)) : "") + "</summary>" + body + "</details>";
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
