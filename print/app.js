@@ -33,7 +33,7 @@
   (window.__catP ? window.__catP.catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
     document.getElementById("psLoading").hidden = true;
     if (!c || !c.ready) { document.getElementById("psSetup").hidden = false; return; }
-    S.cat = c; window.PrintShop.ai = !!c.ai;
+    S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products);
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; }
@@ -209,6 +209,20 @@
       (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln – jeweils mit Vorder- und Rückseite.</p>' : "") + "</div>";
   }
 
+  // Verständliche Namen + Erklärungen für Fachbegriffe aus dem Print.com-Katalog
+  var LBL = {
+    creasing: { t: "Rillen (sauberer Falz)", o: { yes: "Ja, rillen", no: "Nein" }, d: { yes: "Vor dem Falzen wird eine feine Rille eingeprägt – so bricht das Papier nicht und der Falz wird sauber. Empfohlen ab 170 g/m².", no: "Ohne Rille – bei dünnem Papier (bis ca. 150 g/m²) völlig ausreichend." } },
+    custom_shape: { t: "Schnitt", o: { clean_cut: "Gerade geschnitten (Rechteck)", custom_shape_die_cut: "Konturgeschnitten – einzeln", custom_shape_kiss_cut: "Konturgeschnitten – auf dem Bogen" }, d: { clean_cut: "Die Aufkleber werden rechteckig zugeschnitten.", custom_shape_die_cut: "Jeder Aufkleber wird entlang deiner Form komplett ausgeschnitten und einzeln geliefert.", custom_shape_kiss_cut: "Nur der Aufkleber wird entlang der Form angeschnitten, das Trägerpapier bleibt ganz – ideal zum einfachen Abziehen, mehrere auf einem Bogen." } },
+    plano_delivery: { t: "Ungefalzt liefern", o: { no: "Nein, gefalzt", yes: "Ja, flach (plano)" }, d: { yes: "Die Drucksachen kommen flach und ungefalzt – z. B. wenn du selbst falzen möchtest.", no: "Fertig gefalzt geliefert." } },
+    slitting: { t: "Rückenschlitz", d: { no_slit: "Trägerpapier ohne Schlitz.", slit_center: "Ein Schlitz in der Mitte des Trägerpapiers – Aufkleber lässt sich leichter abziehen." } },
+    loop_stitches: { t: "Ringösen (zum Abheften)" },
+    customer_packing_option: { t: "Verpackung" },
+    perforation: { t: "Perforation (Abreißlinie)" },
+    type_glue: { t: "Klebstoff", d: { permanent: "Hält dauerhaft.", detachable: "Lässt sich rückstandsfrei wieder ablösen." } },
+    shape: { t: "Form" }
+  };
+  function fixLabels(list) { (list || []).forEach(function (p) { (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && !o.desc) o.desc = L.d[o.slug]; }); }); }); }
+
   function prodByKey(k) { return (S.cat.products || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
   var isLogo = function () { return kind() === "textile" || kind() === "promo"; };
@@ -366,7 +380,7 @@
     var p = prodByKey(key); if (!p) return;
     if (p.lazy) { // allgemeine Produkte: Details erst jetzt laden
       toast("Produkt wird geladen …");
-      api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); S.cat.products[i] = j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
+      api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); fixLabels([j.product]); S.cat.products[i] = j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
       return;
     }
     if (!S.prod || S.prod.key !== key) {
