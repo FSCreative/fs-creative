@@ -784,3 +784,4 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
   body:has(.ps-ddl.big){overflow:hidden}
   .ps-big-h{flex-wrap:wrap}.ps-big-h b{flex:1}.ps-big-h .ps-ddq{order:3;flex-basis:100%}
 }
+#shop h2:focus,#shop h2:focus-visible{outline:none}

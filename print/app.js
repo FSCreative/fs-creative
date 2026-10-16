@@ -76,7 +76,7 @@
       }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
     });
   }
-  function itemLine(x) { return [x.size, (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/^(Format|Größe|Auflage)$/i.test(l[0]); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
+  function itemLine(x) { return [x.size, (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { return '<span class="ps-ci-img">' + (x.preview ? '<img src="' + esc(x.preview) + '" alt="">' : imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(x.icon || "🖨️") + "</span>") + "</span>"; }
   function vCart() {
     var co = S.ctype === "company", t = cartTotals();
