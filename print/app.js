@@ -28,7 +28,7 @@
 
   // ── Start ──
   var q = new URLSearchParams(location.search);
-  api("/print/api/catalog").then(function (c) {
+  (window.__catP ? window.__catP.catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
     document.getElementById("psLoading").hidden = true;
     if (!c || !c.ready) { document.getElementById("psSetup").hidden = false; return; }
     S.cat = c; window.PrintShop.ai = !!c.ai;
