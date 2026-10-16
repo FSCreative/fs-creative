@@ -376,7 +376,7 @@
       S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
-      fixSel();
+      fixSel(); S.presetBase = Object.assign({}, S.sel);
     }
     loadPrice(); if (cb) cb();
   }
@@ -685,9 +685,38 @@
     var body = (lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return "<p>" + esc(x.replace(/[#*_]+/g, "")) + "</p>"; }).join("")) + (bul.length ? "<ul>" + bul.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : "");
     return '<details class="ps-about"' + (bul.length && bul.length <= 6 && window.innerWidth > 760 ? " open" : "") + "><summary>Produktinfos" + (p.summary && lead(p.summary) && lead(p.summary).length < 50 && lead(p.summary).toLowerCase() !== String(p.title).toLowerCase() ? " · " + esc(lead(p.summary)) : "") + "</summary>" + body + "</details>";
   }
+  // ── Schnellauswahl: drei fertige Pakete (Beliebt / Günstig / Hochwertig) – ein Klick, darunter weiterhin die volle Auswahl ──
+  var PRE = {};
+  function presetsOf(p) {
+    if (kind() !== "flat" || !S.presetBase) return [];
+    var prop = function (sl) { return p.props.filter(function (x) { return x.slug === sl; })[0]; }, mat = prop("material"), fin = prop("finish"), base = S.presetBase;
+    if (!mat) return [];
+    var gr = function (o) { return +((String(o.name).match(/(\d{2,4})\s*g/) || [])[1] || 0); }, ob = function (sl) { return mat.options.filter(function (o) { return o.slug === sl; })[0] || {}; };
+    var coated = mat.options.filter(function (o) { return /gesatineerd|silk/.test(o.slug) && gr(o) >= 90; }), g0 = gr(ob(base.material)) || 135;
+    var list = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: Object.assign({}, base) }];
+    var cheap = coated.slice().sort(function (a, b) { return gr(a) - gr(b); })[0];
+    if (cheap && cheap.slug !== base.material && gr(cheap) < g0) list.push({ id: "guenstig", name: "Günstig", icon: "€", sel: Object.assign({}, base, { material: cheap.slug }) });
+    var heavier = coated.filter(function (o) { return /silk/.test(o.slug) && gr(o) > g0; }).sort(function (a, b) { return Math.abs(gr(a) - g0 * 1.35) - Math.abs(gr(b) - g0 * 1.35); })[0];
+    var lam = fin && fin.options.filter(function (o) { return /matt/.test(o.slug) && /lamination/.test(o.slug) && (/^double/.test(o.slug) ? base.printtype === "44" : base.printtype !== "44"); })[0];
+    if (heavier || lam) list.push({ id: "premium", name: "Hochwertig", icon: "◆", sel: Object.assign({}, base, heavier ? { material: heavier.slug } : {}, lam ? { finish: lam.slug } : {}) });
+    return list.filter(function (x) { return !excluded(x.sel); }).map(function (x) {
+      x.desc = [optName("material", x.sel.material)].concat(x.sel.finish && fin ? [optName("finish", x.sel.finish)] : []).filter(function (t) { return t && !NONE_RX.test(t); }).join(" · ");
+      x.on = Object.keys(x.sel).every(function (k) { return String(S.sel[k]) === String(x.sel[k]); }); return x; });
+  }
+  function presetHtml(p) {
+    var l = presetsOf(p); if (l.length < 2) return "";
+    var co = S.ctype === "company", key = function (x) { return JSON.stringify([x.sel, S.copies, S.urgency, S.ctype, S.pm || "auto"]); };
+    var html = '<section class="ps-sec ps-pre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + l.map(function (x) { var pr = PRE[key(x)];
+      return '<button type="button" class="ps-preb' + (x.on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + x.on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(x.desc) + '</small><span class="pp" data-prep="' + x.id + '">' + (pr ? eur(co ? pr.net : pr.gross) : '<span class="ps-spin"></span>') + "</span>" + (x.on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + "</div>" +
+      '<p class="ps-pre-more">Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.</p></section>';
+    setTimeout(function () { l.forEach(function (x) { var k = key(x); if (PRE[k]) return; PRE[k] = null;
+      api("/print/api/price", Object.assign(cfgOf(), { sel: x.sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { if (!j.ok) { delete PRE[k]; var e0 = document.querySelector('[data-prep="' + x.id + '"]'); if (e0) e0.textContent = "–"; return; } PRE[k] = j.price; var e = document.querySelector('[data-prep="' + x.id + '"]'); if (e) e.textContent = eur(co ? j.price.net : j.price.gross); }); }); }, 0);
+    window.__presets = l;
+    return html;
+  }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
-    var props = sectionsHtml(p), cust = "";
+    var props = presetHtml(p) + sectionsHtml(p), cust = "";
     var amount = k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" : amountHtml(p);
     var area = k === "promo" ? (function () { var a = logoPositions()[0].area; return '<p class="ps-help ps-info">Druckfläche ' + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · Wir prüfen jede Datei vor dem Druck.</p>"; })() : "";
     var ur = k === "textile" && p.urgency.length > 1 ? '<fieldset class="ps-opt"><legend>Produktion</legend>' + chips("urgency", p.urgency, S.urgency) + "</fieldset>" : "";
@@ -864,6 +893,8 @@
       if (mn.hasAttribute("data-motbal")) { motBalance(); render(); return; }
       if (mn.hasAttribute("data-moti")) { motLoad(+mn.getAttribute("data-moti")); render(); return; }
     }
+    var pb = e.target.closest("[data-preset]");
+    if (pb) { var P0 = (window.__presets || []).filter(function (x) { return x.id === pb.getAttribute("data-preset"); })[0]; if (P0) { var had = !!S.file; S.sel = Object.assign({}, S.sel, P0.sel); fixSel(); if (had) { S.file = null; S.previews = null; motReset(true); } toast("Paket „" + P0.name + "“ übernommen"); render(); loadPrice(); } return; }
     var alt = e.target.closest("[data-alt]");
     if (alt && S.alts && S.alts[+alt.getAttribute("data-alt")]) { var A = S.alts[+alt.getAttribute("data-alt")]; S.sel = Object.assign({}, A.sel); S.copies = A.copies; S.alts = null; S.priceErr = ""; if (S.file && !isLogo()) { S.file = null; S.previews = null; } toast("Übernommen: " + A.label); render(); loadPrice(); return; }
     var dc = e.target.closest("[data-ddcat]");
