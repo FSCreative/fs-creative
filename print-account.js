@@ -1,0 +1,124 @@
+"use strict";
+// Druckshop-Kundenkonten: Registrierung mit E-Mail + Passwort, Bestätigung per 6-stelligem Code (Mail), Login, Passwort vergessen (Code),
+// Profil (Rechnungs-/Lieferadresse), Warenkorb im Konto (30 Tage), letzte Bestellungen. Sitzung = signiertes Cookie (30 Tage, HttpOnly).
+// Gespeichert in print_meta „print_customers“ (eine Map, für die Größe des Shops ausreichend). Passwörter nur als scrypt-Hash.
+const crypto = require("crypto");
+
+module.exports = function (D) {
+  const { store, mail, sig, sigOk, limited, nowIso } = D;
+  const COOKIE = "ps_kunde", DAY = 864e5, SESSION_DAYS = 30, CODE_MIN = 15, CART_DAYS = 30;
+  const clip = (s, n) => String(s == null ? "" : s).replace(/[\u0000-\u001f]/g, " ").trim().slice(0, n);
+  const normMail = e => clip(e, 160).toLowerCase();
+  const mailOk = e => /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(e);
+  let CACHE = null;
+  async function all() { if (!CACHE) CACHE = (await store.getMeta("print_customers").catch(() => null)) || {}; return CACHE; }
+  async function save() { await store.setMeta("print_customers", CACHE || {}); }
+  const byId = async id => { const m = await all(); return Object.values(m).find(c => c.id === id) || null; };
+  const hash = (pw, salt) => crypto.scryptSync(String(pw), salt, 32).toString("hex");
+  function pwOk(c, pw) { if (!c || !c.pw) return false; const h = Buffer.from(hash(pw, c.pw.salt), "hex"), x = Buffer.from(c.pw.h, "hex"); return h.length === x.length && crypto.timingSafeEqual(h, x); }
+  function setPw(c, pw) { const salt = crypto.randomBytes(16).toString("hex"); c.pw = { salt, h: hash(pw, salt) }; }
+  const pwBad = pw => String(pw || "").length < 8 ? "Das Passwort braucht mindestens 8 Zeichen." : null;
+  // Code: 6 Ziffern, nur als Hash gespeichert, 15 Minuten gültig, max. 5 Versuche
+  function newCode(c, purpose) { const code = String(crypto.randomInt(0, 1e6)).padStart(6, "0"); c.code = { h: crypto.createHash("sha256").update(code + c.id).digest("hex"), purpose, exp: Date.now() + CODE_MIN * 60e3, tries: 0 }; return code; }
+  function codeOk(c, code, purpose) {
+    const k = c && c.code; if (!k || k.purpose !== purpose || Date.now() > k.exp) return "Der Code ist abgelaufen – bitte einen neuen anfordern.";
+    if (k.tries >= 5) return "Zu viele Versuche – bitte einen neuen Code anfordern.";
+    const h = crypto.createHash("sha256").update(String(code || "").replace(/\D/g, "") + c.id).digest("hex");
+    if (h !== k.h) { k.tries++; return "Der Code stimmt nicht."; }
+    c.code = null; return null;
+  }
+  async function sendCode(c, purpose) {
+    const code = newCode(c, purpose); await save();
+    const t = purpose === "reset" ? "Passwort zurücksetzen" : "E-Mail-Adresse bestätigen";
+    await mail(c.email, code + " – dein Code für den FS Creative Druckshop", t, ["Hallo" + (c.firstName ? " " + c.firstName : "") + ",",
+      purpose === "reset" ? "mit diesem Code kannst du ein neues Passwort für dein Kundenkonto im Druckshop setzen:" : "danke für deine Registrierung im FS Creative Druckshop. Bitte bestätige deine E-Mail-Adresse mit diesem Code:"],
+      [["Dein Code", code]], ["Der Code ist " + CODE_MIN + " Minuten gültig. Wenn du das nicht angefordert hast, kannst du diese Mail ignorieren."]);
+  }
+  // ── Sitzung ──
+  const cookieOf = req => { const m = String(req.headers.cookie || "").match(new RegExp("(?:^|;\\s*)" + COOKIE + "=([^;]+)")); return m ? decodeURIComponent(m[1]) : ""; };
+  async function current(req) {
+    const v = cookieOf(req), m = v.match(/^([A-Za-z0-9]{8,40})\.(\d{10,13})\.([a-f0-9]{40})$/); if (!m) return null;
+    if (+m[2] < Date.now() || !sigOk("kunde", m[1] + "." + m[2], m[3])) return null;
+    const c = await byId(m[1]); return c && c.verified ? c : null;
+  }
+  function cookie(c) { const exp = Date.now() + SESSION_DAYS * DAY, v = c.id + "." + exp + "." + sig("kunde", c.id + "." + exp);
+    return COOKIE + "=" + encodeURIComponent(v) + "; Path=/; Max-Age=" + SESSION_DAYS * 86400 + "; HttpOnly; SameSite=Lax" + (D.secure ? "; Secure" : ""); }
+  const clearCookie = () => COOKIE + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax" + (D.secure ? "; Secure" : "");
+  // ── Profil ──
+  const ADDR = ["type", "company", "uid", "firstName", "lastName", "phone", "street", "zip", "city", "country"];
+  function profileIn(c, p) { p = p || {}; ADDR.forEach(k => { if (p[k] !== undefined) c[k] = clip(p[k], k === "street" ? 120 : k === "company" ? 120 : 80); });
+    c.type = c.type === "company" ? "company" : "private"; c.country = "AT"; if (c.uid) c.uid = c.uid.replace(/[\s.\-]/g, "").toUpperCase(); }
+  const pub = c => ({ id: c.id, email: c.email, verified: !!c.verified, createdAt: c.createdAt, type: c.type || "private", company: c.company || "", uid: c.uid || "", firstName: c.firstName || "", lastName: c.lastName || "",
+    phone: c.phone || "", street: c.street || "", zip: c.zip || "", city: c.city || "", country: c.country || "AT", newsletter: !!c.newsletter });
+  // Warenkorb: Positionen mit Ausführung, Datei-Referenz (signiert) und Preis zum Zeitpunkt des Hinzufügens; nach 30 Tagen verfällt er
+  function cartClean(items) {
+    return (Array.isArray(items) ? items : []).slice(0, 30).map(x => x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) : null)
+      .filter(x => x && typeof x.product === "string" && JSON.stringify(x).length < 20000);
+  }
+  const cartOf = c => (c.cart && c.cartAt && Date.now() - Date.parse(c.cartAt) < CART_DAYS * DAY ? c.cart : []);
+  // Anlage aus dem Checkout (Häkchen „Kundenkonto anlegen“): Konto unbestätigt, Code per Mail; Bestellungen werden verknüpft
+  async function createFromCheckout(cust, pw) {
+    const m = await all(), email = normMail(cust.email); if (!mailOk(email)) return null;
+    if (m[email]) return m[email];   // gibt es schon – Bestellung wird über die E-Mail im Profil angezeigt, sobald bestätigt
+    if (pwBad(pw)) throw Object.assign(new Error(pwBad(pw)), { status: 400 });
+    const c = { id: "K" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString("hex"), email, createdAt: nowIso(), verified: false };
+    setPw(c, pw); profileIn(c, cust); m[email] = c; await sendCode(c, "verify"); return c;
+  }
+
+  async function handle(req, res, p, ip, J, readJson, ordersOf) {
+    const send = (code, o, ck) => { if (ck) res.setHeader("Set-Cookie", ck); return J(res, code, o); };
+    if (p === "/print/api/account/me" && req.method === "GET") {
+      const c = await current(req); if (!c) return send(200, { ok: true, customer: null });
+      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) });
+    }
+    if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
+    if (limited("acct", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+    const b = await readJson(req, 40000), m = await all(), email = normMail(b.email);
+    if (p === "/print/api/account/register") {
+      if (!mailOk(email)) return J(res, 400, { ok: false, error: "Bitte eine gültige E-Mail-Adresse eingeben." });
+      const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e });
+      let c = m[email];
+      if (c && c.verified) return J(res, 409, { ok: false, error: "Für diese E-Mail gibt es schon ein Konto – bitte anmelden." });
+      if (!c) c = m[email] = { id: "K" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString("hex"), email, createdAt: nowIso(), verified: false };
+      setPw(c, b.password); profileIn(c, { firstName: b.firstName, lastName: b.lastName }); c.newsletter = b.newsletter === true;
+      await sendCode(c, "verify"); return J(res, 200, { ok: true, needCode: true });
+    }
+    if (p === "/print/api/account/verify") {
+      const c = m[email]; if (!c) return J(res, 400, { ok: false, error: "Konto nicht gefunden." });
+      const e = codeOk(c, b.code, "verify"); if (e) { await save(); return J(res, 400, { ok: false, error: e }); }
+      c.verified = true; c.verifiedAt = nowIso(); await save();
+      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) }, cookie(c));
+    }
+    if (p === "/print/api/account/resend") { const c = m[email]; if (c && (b.purpose === "reset" ? c.verified : !c.verified)) await sendCode(c, b.purpose === "reset" ? "reset" : "verify"); return J(res, 200, { ok: true }); }
+    if (p === "/print/api/account/login") {
+      const c = m[email];
+      if (!c || !pwOk(c, b.password)) return J(res, 400, { ok: false, error: "E-Mail oder Passwort stimmt nicht." });
+      if (!c.verified) { await sendCode(c, "verify"); return J(res, 200, { ok: true, needCode: true, info: "Bitte bestätige zuerst deine E-Mail-Adresse – wir haben dir einen neuen Code geschickt." }); }
+      c.lastLogin = nowIso(); await save();
+      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) }, cookie(c));
+    }
+    if (p === "/print/api/account/forgot") { const c = m[email]; if (c && c.verified) await sendCode(c, "reset"); return J(res, 200, { ok: true }); }   // keine Auskunft, ob es das Konto gibt
+    if (p === "/print/api/account/reset") {
+      const c = m[email]; if (!c) return J(res, 400, { ok: false, error: "Der Code stimmt nicht." });
+      const e0 = pwBad(b.password); if (e0) return J(res, 400, { ok: false, error: e0 });
+      const e = codeOk(c, b.code, "reset"); if (e) { await save(); return J(res, 400, { ok: false, error: e }); }
+      setPw(c, b.password); c.verified = true; await save();
+      return send(200, { ok: true, customer: pub(c), cart: cartOf(c), orders: await ordersOf(c) }, cookie(c));
+    }
+    if (p === "/print/api/account/logout") return send(200, { ok: true }, clearCookie());
+    // ab hier nur angemeldet
+    const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
+    if (p === "/print/api/account/profile") { profileIn(c, b); if (b.newsletter !== undefined) c.newsletter = b.newsletter === true; await save(); return J(res, 200, { ok: true, customer: pub(c) }); }
+    if (p === "/print/api/account/password") {
+      if (!pwOk(c, b.current)) return J(res, 400, { ok: false, error: "Das aktuelle Passwort stimmt nicht." });
+      const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e }); setPw(c, b.password); await save(); return J(res, 200, { ok: true });
+    }
+    if (p === "/print/api/account/cart") { c.cart = cartClean(b.items); c.cartAt = nowIso(); await save(); return J(res, 200, { ok: true, cart: c.cart }); }
+    if (p === "/print/api/account/delete") {
+      if (!pwOk(c, b.password)) return J(res, 400, { ok: false, error: "Das Passwort stimmt nicht." });
+      delete m[c.email]; await save(); return send(200, { ok: true }, clearCookie());   // Bestellungen bleiben (Aufbewahrungspflicht), nur das Konto wird gelöscht
+    }
+    return J(res, 404, { ok: false, error: "not_found" });
+  }
+  return { handle, current, createFromCheckout, pub, _test: { codeOk, newCode, hash } };
+};

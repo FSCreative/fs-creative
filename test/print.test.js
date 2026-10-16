@@ -18,7 +18,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-"));
-  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
+  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
     .forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   const cpDir = (d) => { fs.mkdirSync(path.join(dir, d), { recursive: true }); fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => { if (e.isDirectory()) cpDir(path.join(d, e.name)); else fs.copyFileSync(path.join(ROOT, d, e.name), path.join(dir, d, e.name)); }); };
   ["admin-cockpit", "print"].forEach(cpDir);
@@ -317,6 +317,35 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const bad = Object.assign({}, firm, { uid: "ATU99999999" }); const up2 = await upload(await pdfOf(89, 59, 2), "firma2.pdf", BC);
     assert.strictEqual((await post("/print/api/order", order({ fileId: up2.j.fileId, fileToken: up2.j.token, payment: "invoice", customer: bad, expectedGross: 39.6 }))).status, 400, "ungültige UID → keine Rechnung");
     assert.strictEqual(M.orders.length, 1, "weiterhin keine automatische Print.com-Bestellung");
+  });
+  await t("Kundenkonto: Registrierung mit Mail-Code, Login, Warenkorb, Checkout mit 2 Positionen = 1 Zahlung, Bestellungen im Profil", async () => {
+    const em = "konto@example.com";
+    const codeOf = () => { const m = M.mails.filter(x => x.to === em).pop(); return m && (m.subject.match(/^(\d{6})/) || [])[1]; };
+    let r = await post("/print/api/account/register", { email: em, password: "kurz" }); assert.strictEqual(r.status, 400);
+    r = await post("/print/api/account/register", { email: em, password: "geheim1234", firstName: "Karl" }); assert.strictEqual(r.j.needCode, true); const code = codeOf(); assert.ok(code, "Code per Mail");
+    r = await post("/print/api/account/verify", { email: em, code: code === "000000" ? "111111" : "000000" }); assert.strictEqual(r.status, 400);
+    const vr = await fetch(B + "/print/api/account/verify", { method: "POST", headers: H, body: JSON.stringify({ email: em, code }) }); const vj = await vr.json(); assert.strictEqual(vj.ok, true, JSON.stringify(vj));
+    const ck = (vr.headers.get("set-cookie") || "").split(";")[0]; assert.ok(/^ps_kunde=/.test(ck));
+    const me = await (await fetch(B + "/print/api/account/me", { headers: { cookie: ck } })).json(); assert.strictEqual(me.customer.email, em); assert.strictEqual(me.customer.firstName, "Karl");
+    assert.strictEqual((await (await fetch(B + "/print/api/account/me")).json()).customer, null, "ohne Cookie nicht angemeldet");
+    r = await post("/print/api/account/cart", { items: [{ id: "a", product: "visitenkarten" }] }, { cookie: ck }); assert.strictEqual(r.j.cart.length, 1);
+    assert.strictEqual((await post("/print/api/account/login", { email: em, password: "falsch123" })).status, 400);
+    assert.strictEqual((await post("/print/api/account/login", { email: em, password: "geheim1234" })).j.customer.email, em);
+    const u1 = await upload(await pdfOf(89, 59, 2), "k1.pdf", BC), u2 = await upload(await pdfOf(89, 59, 2), "k2.pdf", BC);
+    const nPay = Object.keys(M.payments).length;
+    const it = (u, g) => Object.assign({}, BC, { fileId: u.j.fileId, fileToken: u.j.token, expectedGross: g });
+    const base = { customer: Object.assign({}, cust, { email: em }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u1, 39.6), it(u2, 10)] }, base), { cookie: ck }); assert.strictEqual(r.status, 409); assert.strictEqual(r.j.index, 1);
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u1, 39.6), it(u2, 39.6)] }, base), { cookie: ck }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    assert.strictEqual(r.j.orders.length, 2); assert.strictEqual(Object.keys(M.payments).length, nPay + 1, "eine Zahlung für den ganzen Warenkorb");
+    const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "79.20");
+    M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    for (const o of r.j.orders) { const st = await (await fetch(B + "/print/api/order/" + o.id + "?t=" + o.token)).json(); assert.notStrictEqual(st.order.status, "pending_payment", o.id); assert.strictEqual(st.order.groupSize, 2); }
+    const me2 = await (await fetch(B + "/print/api/account/me", { headers: { cookie: ck } })).json(); assert.strictEqual(me2.orders.length, 2);
+    // Gast-Checkout mit Kontoanlage
+    const u3 = await upload(await pdfOf(89, 59, 2), "k3.pdf", BC);
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u3, 39.6)], createAccount: true, accountPassword: "neuespw123" }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.accountCreated, true); assert.ok(M.mails.some(m => m.to === "gast@example.com" && /Code/.test(m.subject)));
   });
   await t("Ablehnen/Erstatten: Mollie-Erstattung nur auf Klick, Rechnungsentwurf gelöscht, Kunde informiert", async () => {
     const up = await upload(await pdfOf(89, 59, 2), "ref.pdf", BC);

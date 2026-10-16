@@ -1047,14 +1047,15 @@ module.exports = function (D) {
     if (!r.ok) throw Object.assign(new Error("Mollie: " + (j.detail || j.title || "HTTP " + r.status)), { status: r.status });
     return j;
   }
-  async function createPayment(o) {
-    const c = cfg();
-    const pay = await mollie("POST", "/payments", { amount: { currency: "EUR", value: o.price.gross.toFixed(2) }, description: "FS Creative Druck " + o.nr,
+  async function createPayment(list) {   // eine Bestellung oder alle Positionen eines Warenkorbs (gemeinsame Zahlung)
+    const c = cfg(), orders = Array.isArray(list) ? list : [list], o = orders[0], gid = orders.length > 1 ? o.groupId : null;
+    const sum = Math.round(orders.reduce((a, x) => a + x.price.gross, 0) * 100) / 100;
+    const pay = await mollie("POST", "/payments", { amount: { currency: "EUR", value: sum.toFixed(2) }, description: "FS Creative Druck " + (gid ? orders.map(x => x.nr).join(", ").slice(0, 200) : o.nr),
       redirectUrl: c.publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + sig("order", o.id), webhookUrl: c.publicUrl + "/print/mollie-webhook",
-      metadata: { orderId: o.id, nr: o.nr }, locale: "de_AT" });
-    o.payment.mollieId = String(pay.id || ""); o.payment.attempts = (o.payment.attempts || []).concat([o.payment.mollieId]).slice(-10); o.payment.status = String(pay.status || "open");
-    o.payment.checkoutUrl = pay._links && pay._links.checkout && pay._links.checkout.href || "";
-    return o.payment.checkoutUrl;
+      metadata: gid ? { orderId: o.id, groupId: gid, orderIds: orders.map(x => x.id).join(",") } : { orderId: o.id, nr: o.nr }, locale: "de_AT" });
+    const url = pay._links && pay._links.checkout && pay._links.checkout.href || "";
+    for (const x of orders) { x.payment.mollieId = String(pay.id || ""); x.payment.attempts = (x.payment.attempts || []).concat([x.payment.mollieId]).slice(-10); x.payment.status = String(pay.status || "open"); x.payment.checkoutUrl = url; }
+    return url;
   }
 
   // ───────────────────────── Mails ─────────────────────────
@@ -1075,6 +1076,14 @@ module.exports = function (D) {
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
 
+  // Kundenkonten (print-account.js): erst bei Bedarf laden
+  let ACCOUNT = null;
+  const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl) }));
+  async function ordersOfCustomer(c) {
+    const l = (await store.listOrders()).filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email));
+    return l.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [] }));
+  }
+
   // ───────────────────────── Bestellungen ─────────────────────────
   const hist = (o, what) => { o.history = (o.history || []).concat([{ at: nowIso(), what: clip(what, 300) }]).slice(-60); };
   function validCustomer(c) {
@@ -1093,24 +1102,58 @@ module.exports = function (D) {
     if (bad.length) throw Object.assign(new Error("Bitte prüfen: " + bad.join(", ")), { status: 400, fields: bad });
     return x;
   }
-  async function createOrder(input) {
+  async function createOrder(input) {   // eine Position (bisherige API /print/api/order)
+    const r = await createCheckout(Object.assign({}, input, { items: [input] }));
+    return r.priceChanged ? r : { order: r.orders[0], checkoutUrl: r.checkoutUrl, account: r.account };
+  }
+  // Warenkorb-Checkout: Kunde/Zahlung/Bestätigungen einmal prüfen, je Position eine Bestellung (Gruppe), eine gemeinsame Mollie-Zahlung
+  async function createCheckout(input) {
     const cat = await catalog(false), s = await settings();
     if (!cat || !s.open) throw Object.assign(new Error("Der Shop ist gerade nicht verfügbar"), { status: 503 });
-    const prod = await findProduct(input.product, s); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
-    const n = normalizeSel(prod, input);
+    const items = Array.isArray(input.items) ? input.items.slice(0, 30) : []; if (!items.length) throw Object.assign(new Error("Der Warenkorb ist leer"), { status: 400 });
     if (input.acceptTerms !== true || input.acceptFagg !== true || input.acceptProof !== true) throw Object.assign(new Error("Bitte AGB, den Hinweis zum Rücktrittsrecht und die geprüften Druckdaten bestätigen"), { status: 400 });
     const cust = validCustomer(input.customer);
-    const fm = await store.fileMeta(String(input.fileId || ""));
-    if (!fm || !sigOk("file", fm.id, input.fileToken)) throw Object.assign(new Error("Druckdatei nicht gefunden – bitte erneut hochladen"), { status: 400 });
-    if (fm.orderId) throw Object.assign(new Error("Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen"), { status: 409 });
-    if (fm.kind === "logo" || (fm.kind === "logos") !== isLogo(prod)) throw Object.assign(new Error("Bitte die Logos erneut hochladen"), { status: 400 });
-    if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.fileSel)) throw Object.assign(new Error("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten"), { status: 409 });
-    if ((fm.checks || []).some(c => c.level === "error")) throw Object.assign(new Error("Die Druckdatei hat noch Fehler – bitte korrigieren"), { status: 400 });
     let uidRes = null;
     if (cust.type === "company" && cust.uid) { uidRes = await uidCheck(cust.uid); cust.uidValid = !!uidRes.valid; if (uidRes.uid) cust.uid = uidRes.uid; }
     const method = input.payment === "invoice" ? "invoice" : "mollie";
     if (method === "invoice" && !(cust.type === "company" && cust.uidValid)) throw Object.assign(new Error(uidRes && uidRes.unreachable ? "Die UID kann gerade nicht geprüft werden – bitte online bezahlen oder später erneut versuchen" : "Kauf auf Rechnung nur für Firmen mit gültiger UID"), { status: 400 });
     if (method === "mollie" && !cfg().mollieKey) throw Object.assign(new Error("Online-Zahlung ist noch nicht eingerichtet – bitte Rechnung wählen oder uns kontaktieren"), { status: 503 });
+    const prepared = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] || {}, x = await prepItem(it, s, cust, method, uidRes, i, items.length);
+      if (x.priceChanged) return { priceChanged: true, price: x.price, index: i };
+      prepared.push(x);
+    }
+    // Konto: angemeldet → verknüpfen; sonst auf Wunsch gleich anlegen (Code per Mail)
+    let account = null;
+    if (input.__customerId) account = { id: input.__customerId };
+    else if (input.createAccount === true && input.accountPassword) { const c = await accountMod().createFromCheckout(cust, String(input.accountPassword)); if (c) account = { id: c.id, created: !c.verified }; }
+    const groupId = prepared.length > 1 ? "G" + Date.now().toString(36).toUpperCase() + rnd(4) : null;
+    for (const x of prepared) {
+      const o = x.o; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
+      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
+      x.fm.orderId = o.id; await store.putFile(x.fm); await store.putOrder(o);
+      for (const lid of x.fm.logos || []) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
+    }
+    const orders = prepared.map(x => x.o);
+    if (method === "mollie") {
+      try { const url = await createPayment(orders); for (const o of orders) { hist(o, "Mollie-Zahlung " + o.payment.mollieId + " erstellt"); await store.putOrder(o); } return { orders, checkoutUrl: url, groupId, account }; }
+      catch (e) { for (const x of prepared) { x.fm.orderId = null; await store.putFile(x.fm); x.o.status = "payment_failed"; hist(x.o, "Zahlung konnte nicht gestartet werden: " + e.message); await store.putOrder(x.o); } throw Object.assign(new Error("Zahlung konnte nicht gestartet werden – bitte später erneut versuchen"), { status: 502 }); }
+    }
+    for (const o of orders) await submitted(o);
+    return { orders, groupId, account };
+  }
+  async function prepItem(input, s, cust, method, uidRes, idx, total) {
+    const where = total > 1 ? "Position " + (idx + 1) + ": " : "";
+    const fail = (m, st) => Object.assign(new Error(where + m), { status: st || 400 });
+    const prod = await findProduct(input.product, s); if (!prod) throw fail("Produkt nicht verfügbar");
+    const n = normalizeSel(prod, input);
+    const fm = await store.fileMeta(String(input.fileId || ""));
+    if (!fm || !sigOk("file", fm.id, input.fileToken)) throw fail("Druckdatei nicht gefunden – bitte erneut hochladen");
+    if (fm.orderId) throw fail("Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
+    if (fm.kind === "logo" || (fm.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
+    if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.fileSel)) throw fail("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
+    if ((fm.checks || []).some(c => c.level === "error")) throw fail("Die Druckdatei hat noch Fehler – bitte korrigieren");
     const q = await quote(prod, n, cust.country, cust.zip, cust);
     const exp = parseFloat(input.expectedGross);
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };
@@ -1122,15 +1165,7 @@ module.exports = function (D) {
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
-    hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ")");
-    fm.orderId = id; await store.putFile(fm); await store.putOrder(o);
-    for (const lid of fm.logos || []) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = id; await store.putFile(lm); } }
-    if (method === "mollie") {
-      try { const url = await createPayment(o); hist(o, "Mollie-Zahlung " + o.payment.mollieId + " erstellt"); await store.putOrder(o); return { order: o, checkoutUrl: url }; }
-      catch (e) { fm.orderId = null; await store.putFile(fm); o.status = "payment_failed"; hist(o, "Zahlung konnte nicht gestartet werden: " + e.message); await store.putOrder(o); throw Object.assign(new Error("Zahlung konnte nicht gestartet werden – bitte später erneut versuchen"), { status: 502 }); }
-    }
-    await submitted(o);
-    return { order: o };
+    return { o, fm };
   }
   // Bestellung ist verbindlich (bezahlt bzw. Rechnung gewählt): Rechnungsentwurf, Vorschlag, Push, Mails – dann ggf. automatisch senden
   async function submitted(o) {
@@ -1229,7 +1264,23 @@ module.exports = function (D) {
   async function mollieWebhook(paymentId) {
     if (!/^tr_[A-Za-z0-9]{4,40}$/.test(paymentId)) return;
     const pay = await mollie("GET", "/payments/" + paymentId);
-    const oid = pay && pay.metadata && pay.metadata.orderId; const o = oid && await store.getOrder(String(oid));
+    const md = (pay && pay.metadata) || {};
+    if (md.groupId) {   // Warenkorb: eine Zahlung für mehrere Bestellungen
+      const ids = String(md.orderIds || "").split(",").filter(Boolean).slice(0, 30), orders = [];
+      for (const id of ids) { const x = await store.getOrder(id); if (x && x.groupId === md.groupId && (x.payment.attempts || [x.payment.mollieId]).indexOf(paymentId) > -1) orders.push(x); }
+      if (!orders.length) { log("Webhook: unbekannte Gruppenzahlung", paymentId); return; }
+      const st = String(pay.status || ""), sum = Math.round(orders.reduce((a, x) => a + x.price.gross, 0) * 100) / 100, amt = pay.amount && parseFloat(pay.amount.value);
+      for (const x of orders) {
+        if (st === "paid" && x.payment.status !== "paid") {
+          if (!(Math.abs(amt - sum) < 0.005) || (pay.amount && pay.amount.currency !== "EUR")) { x.payment.status = "mismatch"; hist(x, "Zahlung " + paymentId + " mit falschem Betrag " + (pay.amount && pay.amount.value)); await store.putOrder(x); continue; }
+          x.payment.status = "paid"; x.payment.mollieId = paymentId; x.payment.paidAt = String(pay.paidAt || nowIso()); x.payment.methodDetail = clip(pay.method, 40);
+          if (x.status === "pending_payment" || x.status === "payment_failed") x.status = "paid";
+          hist(x, "Zahlung eingegangen (Mollie " + paymentId + ", Warenkorb " + md.groupId + ")"); await store.putOrder(x); await submitted(x);
+        } else if (["canceled", "expired", "failed"].indexOf(st) > -1 && x.payment.status !== "paid" && paymentId === x.payment.mollieId) { x.payment.status = st; if (x.status === "pending_payment") x.status = "payment_failed"; hist(x, "Zahlung " + st); await store.putOrder(x); }
+      }
+      return;
+    }
+    const oid = md.orderId; const o = oid && await store.getOrder(String(oid));
     if (!o || (o.payment.attempts || [o.payment.mollieId]).indexOf(paymentId) < 0) { log("Webhook: unbekannte Zahlung", paymentId); return; }
     const st = String(pay.status || "");
     if (st === "paid" && o.payment.status !== "paid") {
@@ -1317,7 +1368,7 @@ module.exports = function (D) {
   }
   async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
-  const orderPublic = o => ({ id: o.id, nr: o.nr, status: o.status, statusText: STATUS_DE[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
+  const orderPublic = o => ({ id: o.id, nr: o.nr, groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_DE[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [], email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
@@ -1383,6 +1434,10 @@ module.exports = function (D) {
       }
       if (p.indexOf("/print/api/") !== 0) return D.send(res, 404, "Not found");
       const ip = ipOf(req);
+      if (p.indexOf("/print/api/account/") === 0) {
+        if (req.method === "POST" && !sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        return await accountMod().handle(req, res, p, ip, J, readJson, ordersOfCustomer);
+      }
       if (p === "/print/api/catalog" && req.method === "GET") {
         const c = cfg(), s = await settings();
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
@@ -1423,7 +1478,9 @@ module.exports = function (D) {
           if (limited("pay", ip, 10, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
           if (o.payment.method !== "mollie" || o.payment.status === "paid" || ["pending_payment", "payment_failed"].indexOf(o.status) < 0) return J(res, 400, { ok: false, error: "Für diese Bestellung ist keine Zahlung offen" });
           if (Date.now() - Date.parse(o.createdAt) > 3 * 864e5) return J(res, 400, { ok: false, error: "Die Bestellung ist zu alt – bitte neu bestellen" });
-          o.status = "pending_payment"; const url = await createPayment(o); hist(o, "Neuer Zahlungsversuch " + o.payment.mollieId); await store.putOrder(o);
+          let grp = [o];
+          if (o.groupId) { grp = (await store.listOrders()).filter(x => x.groupId === o.groupId && x.payment.method === "mollie" && x.payment.status !== "paid" && ["pending_payment", "payment_failed"].indexOf(x.status) > -1); if (!grp.length) grp = [o]; }
+          grp.forEach(x => { x.status = "pending_payment"; }); const url = await createPayment(grp); for (const x of grp) { hist(x, "Neuer Zahlungsversuch " + x.payment.mollieId); await store.putOrder(x); }
           return J(res, 200, { ok: true, checkoutUrl: url });
         }
         return J(res, 405, { ok: false, error: "method_not_allowed" });
@@ -1477,9 +1534,17 @@ module.exports = function (D) {
         await store.putFile(meta, Buffer.from(data, "utf8"));
         return J(res, 200, { ok: true, id: meta.id, token: sig("draft", meta.id), url: cfg().publicUrl + "/print?entwurf=" + meta.id + "&t=" + sig("draft", meta.id) });
       }
+      if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
+        if (limited("order", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
+        const b = await readJson(req, 400000); const me = await accountMod().current(req); b.__customerId = me ? me.id : null;
+        const r = await createCheckout(b);
+        if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte den Warenkorb prüfen", price: r.price, index: r.index });
+        const o = r.orders[0];
+        return J(res, 200, { ok: true, orderId: o.id, nr: o.nr, token: sig("order", o.id), orders: r.orders.map(x => ({ id: x.id, nr: x.nr, token: sig("order", x.id) })), checkoutUrl: r.checkoutUrl || null, accountCreated: !!(r.account && r.account.created) });
+      }
       if (p === "/print/api/order") {
         if (limited("order", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
-        const b = await readJson(req, 40000);
+        const b = await readJson(req, 40000); { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; }
         const r = await createOrder(b);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte prüfen und erneut bestellen", price: r.price });
         const o = r.order;

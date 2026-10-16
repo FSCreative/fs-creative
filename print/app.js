@@ -1,5 +1,6 @@
-/* FS Creative Druckshop – Ablauf auf /print: 1 Produkt → 2 Optionen & Menge (Live-Preis) → 3 Gestalten/Hochladen → 4 Adresse → 5 Prüfen & Bezahlen.
-   Preise kommen immer vom Server (/print/api/price), bestellt wird über /print/api/order; der Designer (/print/designer.js) wird erst in Schritt 3 geladen.
+/* FS Creative Druckshop – Ablauf auf /print: 1 Produkt → 2 Optionen & Menge (Live-Preis) → 3 Gestalten/Hochladen → 4 Warenkorb → 5 Adresse → 6 Prüfen & Bezahlen.
+   Warenkorb: localStorage (30 Tage), bei Anmeldung zusätzlich im Kundenkonto. Kundenkonto (Login, Registrierung mit Mail-Code, Profil, Bestellungen) unter /print?konto.
+   Preise kommen immer vom Server (/print/api/price), bestellt wird über /print/api/checkout (alle Positionen, eine Zahlung); der Designer (/print/designer.js) wird erst in Schritt 3 geladen.
    Produktarten (kind): flat (Drucksachen, auch eigenes Format), banner (Wunschgröße in cm), textile (Logo je Druckposition, Größen-Mix), promo (Logo auf Druckfläche).
    Produkte, Bilder und Kategorien stammen von Print.com (Sortiment im Cockpit freigeschaltet); allgemeine Produkte werden erst beim Öffnen geladen (/print/api/product). */
 (function () {
@@ -9,7 +10,8 @@
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
   var S = { cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
-  var STEPS = ["Produkt", "Ausführung", "Gestalten", "Lieferung", "Prüfen & Bezahlen"];
+  var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
+  S.cart = cartLoad(); S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }); };
   var deDate = function (iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }); };
@@ -30,9 +32,141 @@
     S.cat = c;
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
+    if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4;
     var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { S.step = 2; render(); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; document.getElementById("psSetup").hidden = false; });
+
+  loadMe();
+
+  // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
+  function cartLoad() { try { var c = JSON.parse(localStorage.getItem("fsc-print-cart") || "null"); if (c && Array.isArray(c.items) && Date.now() - (+c.at || 0) < 30 * 864e5) return c.items; } catch (e) {} return []; }
+  function cartSave(noSync) {
+    try { localStorage.setItem("fsc-print-cart", JSON.stringify({ at: Date.now(), items: S.cart })); } catch (e) { try { localStorage.setItem("fsc-print-cart", JSON.stringify({ at: Date.now(), items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) })); } catch (e2) {} }
+    if (S.me && !noSync) api("/print/api/account/cart", { items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) });
+    headUpdate();
+  }
+  function cartAdd() {
+    var pr = S.price || {}, pv = S.previews && S.previews[0];
+    var it = JSON.parse(JSON.stringify(cfgOf()));
+    Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
+      fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
+      n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
+      price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }), at: Date.now() });
+    S.cart.push(it); cartSave();
+    S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {};
+    toast("„" + it.title + "“ liegt im Warenkorb");
+  }
+  function cartTotals() { var t = { net: 0, vat: 0, gross: 0, rate: null, missing: false }; S.cart.forEach(function (x) { if (!x.price) { t.missing = true; return; } t.net += +x.price.net || 0; t.vat += +x.price.vat || 0; t.gross += +x.price.gross || 0; if (t.rate == null) t.rate = x.price.rate; });
+    ["net", "vat", "gross"].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; }); return t; }
+  var rqSeq = 0;
+  function requoteCart() {
+    var seq = ++rqSeq; S.quoting = S.cart.length; S.cartErr = {};
+    S.cart.forEach(function (x) {
+      api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }).then(function (j) {
+        if (seq !== rqSeq) return; S.quoting--;
+        if (j.ok) x.price = { net: j.price.net, gross: j.price.gross, vat: j.price.vat, rate: j.price.rate, deliveryDate: j.price.deliveryDate, taxNote: j.price.taxNote }; else { x.price = null; S.cartErr[x.id] = j.error || "Preis nicht verfügbar"; }
+        if (!S.quoting) { cartSave(true); if (S.step === 6 || S.step === 4) render(); }
+      }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
+    });
+  }
+  function itemLine(x) { return [x.size, (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/^(Format|Größe|Auflage)$/i.test(l[0]); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
+  function itemThumb(x) { return '<span class="ps-ci-img">' + (x.preview ? '<img src="' + esc(x.preview) + '" alt="">' : imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(x.icon || "🖨️") + "</span>") + "</span>"; }
+  function vCart() {
+    var co = S.ctype === "company", t = cartTotals();
+    if (!S.cart.length) return '<div class="ps-panel ps-empty"><h2>Dein Warenkorb ist leer</h2><p class="sub">Such dir ein Produkt aus, gestalte es online oder lade deine Druckdaten hoch – dein Warenkorb bleibt 30 Tage gespeichert.</p><div class="ps-nav"><span></span><button type="button" class="ps-btn primary" data-act="shop">Produkte ansehen</button></div></div>';
+    var h = '<div class="ps-layout"><div class="ps-panel"><h2>Warenkorb</h2><p class="sub">' + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · wird 30 Tage gespeichert" + (S.me ? " – auch in deinem Kundenkonto" : ' · <button type="button" class="ps-link" data-act="konto">Anmelden</button>, um ihn auf allen Geräten zu haben') + "</p><ul class=\"ps-cart\">";
+    S.cart.forEach(function (x) {
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <em>Hinweise zur Datei beachten</em>' : "") +
+        ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a></span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || "Preis folgt") + "</small>") +
+        '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
+    });
+    h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
+      '<aside class="ps-price"><h3>Summe</h3><div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
+      '<p class="note">inkl. Versand innerhalb Österreichs · Datencheck kostenlos. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p></aside></div>';
+    return h;
+  }
+
+  // ── Kundenkonto ──
+  function applyMe(j) {
+    S.me = j.customer || null; S.orders = j.orders || [];
+    if (S.me) {
+      var have = {}; S.cart.forEach(function (x) { have[x.id] = 1; }); var add = (j.cart || []).filter(function (x) { return x && x.id && !have[x.id]; });
+      if (add.length) S.cart = S.cart.concat(add);
+      var c = S.customer; ["company", "firstName", "lastName", "phone", "street", "zip", "city"].forEach(function (k) { if (!c[k] && S.me[k]) c[k] = S.me[k]; }); if (!c.email) c.email = S.me.email;
+      if (S.me.type === "company") { S.ctype = "company"; if (!S.uid) S.uid = S.me.uid || ""; }
+      cartSave(!add.length && (j.cart || []).length === S.cart.length);
+    }
+    headUpdate();
+  }
+  function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) render(); } }).catch(function () {}); }
+  function headUpdate() {
+    document.querySelectorAll("[data-acct-link]").forEach(function (a) { a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
+    document.querySelectorAll("[data-cart-n]").forEach(function (b) { b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length; });
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("[data-acct-link],[data-cart-link]"); if (!a || !S.cat) return; e.preventDefault();
+    if (a.hasAttribute("data-acct-link")) { S.view = "konto"; S.acct.err = ""; S.acct.msg = ""; render(); } else { S.view = ""; go(4); }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  function acctField(id, label, type, val, ac) { return '<div class="ps-field"><label for="ac_' + id + '">' + label + '</label><input id="ac_' + id + '" name="' + id + '" type="' + (type || "text") + '" value="' + esc(val || "") + '"' + (ac ? ' autocomplete="' + ac + '"' : "") + "></div>"; }
+  function vAccount() {
+    var A = S.acct, h = '<div class="ps-acct">';
+    var back = '<button type="button" class="ps-link" data-act="shop">← Zurück zum Shop</button>';
+    var msg = (A.msg ? '<p class="ps-ok" role="status">' + esc(A.msg) + "</p>" : "") + '<p class="ps-err" role="alert">' + esc(A.err) + "</p>";
+    if (!S.me) {
+      var m = A.mode, f = function (inner, act, btn) { return '<form class="ps-form" data-acct-form="' + act + '" novalidate>' + inner + msg + '<button type="submit" class="ps-btn primary"' + (A.busy ? " disabled" : "") + ">" + (A.busy ? '<span class="ps-spin"></span> ' : "") + btn + "</button></form>"; };
+      h += back + '<div class="ps-panel"><div class="ps-seg" role="group" aria-label="Konto"><button type="button" data-act="am:login" aria-pressed="' + (m === "login" || m === "forgot" || m === "reset") + '">Anmelden</button><button type="button" data-act="am:register" aria-pressed="' + (m === "register" || m === "code") + '">Registrieren</button></div>';
+      if (m === "login") h += "<h2>Anmelden</h2>" + f(acctField("email", "E-Mail", "email", A.email, "email") + acctField("password", "Passwort", "password", "", "current-password"), "login", "Anmelden") + '<p><button type="button" class="ps-link" data-act="am:forgot">Passwort vergessen?</button></p>';
+      else if (m === "register") h += '<h2>Kundenkonto anlegen</h2><p class="sub">Bestellungen im Blick, Adresse gespeichert, Warenkorb auf allen Geräten. Wir schicken dir einen Bestätigungscode per E-Mail.</p>' +
+        f('<div class="ps-row2">' + acctField("firstName", "Vorname", "text", "", "given-name") + acctField("lastName", "Nachname", "text", "", "family-name") + "</div>" + acctField("email", "E-Mail", "email", A.email, "email") + acctField("password", "Passwort (mind. 8 Zeichen)", "password", "", "new-password") +
+          '<label class="ps-cb"><input type="checkbox" name="newsletter"><span>Gelegentlich Angebote und Neuheiten per E-Mail erhalten (jederzeit abbestellbar)</span></label>', "register", "Konto anlegen");
+      else if (m === "code") h += '<h2>E-Mail bestätigen</h2><p class="sub">Wir haben einen 6-stelligen Code an <b>' + esc(A.email) + "</b> geschickt (15 Minuten gültig). Schau bitte auch im Spam-Ordner nach.</p>" +
+        f('<div class="ps-field"><label for="ac_code">Code</label><input id="ac_code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code"></div>', "verify", "Bestätigen") + '<p><button type="button" class="ps-link" data-act="acresend:verify">Code erneut senden</button></p>';
+      else if (m === "forgot") h += '<h2>Passwort vergessen</h2><p class="sub">Gib deine E-Mail-Adresse ein – wir schicken dir einen Code zum Zurücksetzen.</p>' + f(acctField("email", "E-Mail", "email", A.email, "email"), "forgot", "Code senden") + '<p><button type="button" class="ps-link" data-act="am:login">Zurück zur Anmeldung</button></p>';
+      else if (m === "reset") h += '<h2>Neues Passwort</h2><p class="sub">Code aus der E-Mail an <b>' + esc(A.email) + "</b> und neues Passwort eingeben.</p>" +
+        f('<div class="ps-field"><label for="ac_code">Code</label><input id="ac_code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code"></div>' + acctField("password", "Neues Passwort (mind. 8 Zeichen)", "password", "", "new-password"), "reset", "Passwort speichern") + '<p><button type="button" class="ps-link" data-act="acresend:reset">Code erneut senden</button></p>';
+      return h + "</div></div>";
+    }
+    var me = S.me, co = me.type === "company";
+    h += back + '<div class="ps-acct-hd"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><span class="pd-muted">' + esc(me.email) + '</span><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>';
+    h += '<div class="ps-acct-grid"><section class="ps-panel"><h3>Letzte Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist">' + S.orders.slice(0, 20).map(function (o) {
+      return '<li><a href="/print?bestellung=' + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(o.token) + '"><b>' + esc(o.product) + "</b><span>" + esc(o.nr) + " · " + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + " · " + (+o.copies || 0).toLocaleString("de-AT") + " Stk.</span></a><span class=\"ps-ost\">" + esc(o.statusText) + "</span><b>" + eur(o.gross) + "</b></li>"; }).join("") + "</ul>"
+      : '<p class="pd-muted">Noch keine Bestellungen.</p>') + (S.cart.length ? '<p><button type="button" class="ps-btn small" data-cart-link>Warenkorb (' + S.cart.length + ")</button></p>" : "") + "</section>";
+    h += '<section class="ps-panel"><h3>Rechnungs- &amp; Lieferadresse</h3><form class="ps-form" data-acct-form="profile" novalidate>' +
+      '<div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-act="acType:private" aria-pressed="' + !co + '">Privat</button><button type="button" data-act="acType:company" aria-pressed="' + co + '">Firma</button></div>' +
+      (co ? '<div class="ps-row2">' + acctField("company", "Firma", "text", me.company, "organization") + acctField("uid", "UID-Nummer", "text", me.uid) + "</div>" : "") +
+      '<div class="ps-row2">' + acctField("firstName", "Vorname", "text", me.firstName, "given-name") + acctField("lastName", "Nachname", "text", me.lastName, "family-name") + "</div>" +
+      acctField("street", "Straße und Hausnummer", "text", me.street, "street-address") + '<div class="ps-row2">' + acctField("zip", "PLZ", "text", me.zip, "postal-code") + acctField("city", "Ort", "text", me.city, "address-level2") + "</div>" +
+      acctField("phone", "Telefon", "tel", me.phone, "tel") + (A.form === "profile" ? msg : "") + '<button type="submit" class="ps-btn primary">Speichern</button></form></section>';
+    h += '<section class="ps-panel"><h3>Passwort ändern</h3><form class="ps-form" data-acct-form="password" novalidate>' + acctField("current", "Aktuelles Passwort", "password", "", "current-password") + acctField("password", "Neues Passwort (mind. 8 Zeichen)", "password", "", "new-password") + (A.form === "password" ? msg : "") + '<button type="submit" class="ps-btn">Passwort ändern</button></form>' +
+      '<details class="ps-del"><summary>Konto löschen</summary><form class="ps-form" data-acct-form="delete" novalidate><p class="pd-muted">Dein Konto wird gelöscht. Bestellungen bewahren wir aus steuerlichen Gründen auf.</p>' + acctField("password", "Passwort zur Bestätigung", "password", "", "current-password") + (A.form === "delete" ? msg : "") + '<button type="submit" class="ps-btn">Konto endgültig löschen</button></form></details></section></div>';
+    return h + "</div>";
+  }
+  function acctDo(act, form) {
+    var A = S.acct, v = {}; if (form) Array.prototype.forEach.call(form.elements, function (el) { if (el.name) v[el.name] = el.type === "checkbox" ? el.checked : el.value.trim(); });
+    if (v.email) A.email = v.email.toLowerCase();
+    var body = { email: A.email }, url = "/print/api/account/" + act;
+    if (act === "login") body.password = v.password;
+    else if (act === "register") Object.assign(body, { password: v.password, firstName: v.firstName, lastName: v.lastName, newsletter: !!v.newsletter });
+    else if (act === "verify") body.code = v.code;
+    else if (act === "reset") Object.assign(body, { code: v.code, password: v.password });
+    else if (act === "profile") body = Object.assign({ type: S.me.type }, v);
+    else if (act === "password") body = { current: v.current, password: v.password };
+    else if (act === "delete") body = { password: v.password };
+    A.busy = true; A.err = ""; A.msg = ""; A.form = act; render();
+    api(url, body).then(function (j) {
+      A.busy = false;
+      if (!j.ok) { A.err = j.error || "Das hat nicht geklappt."; render(); return; }
+      if (j.needCode) { A.mode = "code"; A.msg = j.info || ""; render(); return; }
+      if (act === "forgot") { A.mode = "reset"; A.msg = "Falls ein Konto existiert, ist der Code unterwegs."; render(); return; }
+      if (act === "delete") { S.me = null; S.orders = []; A.mode = "login"; A.msg = "Dein Konto wurde gelöscht."; headUpdate(); render(); return; }
+      if (act === "profile") { S.me = j.customer; A.msg = "Gespeichert."; ["company", "firstName", "lastName", "phone", "street", "zip", "city"].forEach(function (k) { S.customer[k] = S.me[k] || S.customer[k]; }); S.ctype = S.me.type; if (S.me.uid) S.uid = S.me.uid; render(); return; }
+      if (act === "password") { A.msg = "Passwort geändert."; render(); return; }
+      if (j.customer) { try { localStorage.removeItem("fsc-print-verify"); } catch (e) {} if (act === "verify" && !S.view && /bestellung=/.test(location.search)) { applyMe(j); toast("Willkommen – dein Konto ist bestätigt!"); S.view = "konto"; history.replaceState(null, "", "/print?konto"); render(); return; } applyMe(j); A.msg = ""; A.err = ""; toast(act === "verify" ? "Willkommen – dein Konto ist bestätigt!" : "Angemeldet"); render(); }
+    }).catch(function () { A.busy = false; A.err = "Keine Verbindung – bitte erneut versuchen."; render(); });
+  }
+  root.addEventListener("submit", function (e) { var f = e.target.closest("[data-acct-form]"); if (!f) return; e.preventDefault(); acctDo(f.getAttribute("data-acct-form"), f); });
 
   function prodByKey(k) { return (S.cat.products || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
@@ -185,7 +319,7 @@
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
   function renderPrice() {
-    var b = document.getElementById("psPrice"); if (b) b.innerHTML = '<h3>Dein Preis</h3>' + priceHtml(false);
+    var b = document.getElementById("psPrice"); if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + priceHtml(false);
     var m = document.getElementById("psMbar"); if (m && S.prod) { var p = S.price; m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + "</b><small>" + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
     var nx = document.getElementById("psNext2"); if (nx) nx.disabled = !S.price || S.priceBusy;
     var tt = document.getElementById("psTexTotal"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + " Stk.";
@@ -193,14 +327,17 @@
 
   // ── Darstellung ──
   function stepsHtml() {
-    return '<ol class="ps-steps" aria-label="Bestellschritte">' + STEPS.map(function (t, i) { var n = i + 1, cur = n === S.step, done = n < S.step;
+    return '<ol class="ps-steps" aria-label="Bestellschritte">' + STEPS.map(function (t, i) { var n = i + 1, cur = n === S.step, done = n < S.step || (n === 4 && S.step < 4 && S.cart.length > 0); if ((n === 2 || n === 3) && !S.prod) done = false; if (n > 4 && !S.cart.length) done = false;
       return '<li class="' + (done ? "done" : "") + '"' + (cur ? ' aria-current="step"' : "") + '><button type="button" data-go="' + n + '"' + (done ? "" : " disabled") + '><span class="n">' + (done ? "✓" : n) + '</span><span class="t">' + t + "</span></button></li>"; }).join("") + "</ol>";
   }
   function render() {
     var h = stepsHtml();
-    if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vAddress(); else h += vCheckout();
-    root.innerHTML = h;
-    if (S.step === 2 || S.step === 3 || S.step === 4) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<div class="mp"></div>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : ""); root.appendChild(mb); renderPrice(); }
+    if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
+    if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
+    if (S.step >= 5 && !S.cart.length) S.step = 4;
+    if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
+    root.innerHTML = h; headUpdate();
+    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<div class="mp"></div>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) renderPrice();
   }
   function go(n) { S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
@@ -352,7 +489,7 @@
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Mit Vorlagen, eigenen Texten, Logo und Bildern – Beschnitt und Sicherheitsabstand werden angezeigt." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
         '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button></div>';
     }
-    return h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">Weiter zur Lieferung</button></div></div>";
+    return h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   // Schritt 3: Logos (Textil / Werbeartikel) – eine Datei je Position, danach eine gemeinsame PDF
   function vLogos() {
@@ -364,7 +501,7 @@
         '<div class="ps-uperr" data-err="' + esc(x.slug) + '"></div></div>'; }).join("");
     var merged = S.file ? '<div class="ps-file"><div><b>Logo-PDF für den Druck</b><div class="pd-muted">' + (S.file.pages || pos.length) + " Seite(n) – eine je Position · " + (S.file.blocked ? '<span style="color:var(--ps-bad)">bitte korrigieren</span>' : "bereit") + '</div></div><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a></div>' + checksHtml(S.file.checks.filter(function (c) { return c.level === "error"; })) : "";
     return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird mittig in der Druckfläche platziert – wir prüfen jede Datei vor dem Druck.</p>" + '<div class="ps-logos">' + slots + "</div>" + merged +
-      '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">Weiter zur Lieferung</button></div></div>";
+      '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   function checksHtml(list) { return list && list.length ? '<ul class="ps-checks">' + list.map(function (c) { return '<li class="' + esc(c.level) + '">' + esc(c.text) + "</li>"; }).join("") + "</ul>" : ""; }
   function field(id, label, val, attrs, hint) { return '<div class="ps-field"><label for="' + id + '">' + label + '</label><input id="' + id + '" name="' + id + '" value="' + esc(val || "") + '" ' + (attrs || "") + ">" + (hint || "") + "</div>"; }
@@ -378,7 +515,7 @@
       field("street", "Straße und Hausnummer *", c.street, 'autocomplete="street-address" required') +
       '<div class="ps-row2"><div class="ps-row2">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
-      '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="3">Zurück</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Prüfung</button></div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
+      '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
   }
   function mockHtml() {
     var pv = S.previews;
@@ -389,28 +526,33 @@
     var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
     return '<div class="ps-mock' + (wall ? " wall" : "") + '" role="img" aria-label="Vorschau deiner Drucksache">' + (pv[1] && !wall ? sheet(pv[1], "back") : "") + sheet(pv[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Farben am Bildschirm können vom Druck abweichen</span></div>';
   }
+  function cartAside() {
+    var co = S.ctype === "company", t = cartTotals();
+    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + " Stk.</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
+      '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p></aside>';
+  }
   function vCheckout() {
-    var p = S.price || {}, c = S.customer, co = S.ctype === "company", invOk = co && S.uidRes && S.uidRes.valid;
+    var t = cartTotals(), c = S.customer, co = S.ctype === "company", invOk = co && S.uidRes && S.uidRes.valid, n = S.cart.length;
     if (!S.payment) S.payment = S.cat.payments.mollie ? "mollie" : (invOk ? "invoice" : "");
     if (S.payment === "invoice" && !invOk) S.payment = S.cat.payments.mollie ? "mollie" : "";
-    var n = (p.copies || totalCopies()), lab = p.labels || S.prod.props.map(function (pr) { return [pr.title, labelOf(pr.slug)]; });
-    var rows = [["Produkt", S.prod.title + " · " + (+n).toLocaleString("de-AT") + " Stk."]].concat(lab, [["Produktion", (S.prod.urgency.filter(function (u) { return u.slug === S.urgency; })[0] || {}).name || "Standard"], ["Lieferung", [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, "Österreich"].filter(Boolean).join(", ")]].concat(p.deliveryDate ? [["Voraussichtlich bei dir", deDate(p.deliveryDate)]] : []));
-    var money = co ? '<div><span>Netto</span><b>' + eur(p.net) + "</b></div><div><span>" + (p.rate ? "zzgl. " + p.rate + " % USt" : "USt (steuerfreie ig. Lieferung)") + "</span><b>" + eur(p.vat) + '</b></div><div class="total"><span>Gesamt</span><b>' + eur(p.gross) + "</b></div>"
-      : '<div class="total"><span>Gesamt inkl. ' + p.rate + " % USt und Versand</span><b>" + eur(p.gross) + "</b></div>";
-    var thumbs = S.previews && S.previews.length ? '<div class="ps-thumbs">' + S.previews.map(function (src, i) { return '<figure><img src="' + src + '" alt="Seite ' + (i + 1) + '"><figcaption>' + (S.previews.length > 1 ? (i ? "Rückseite" : "Vorderseite") : "Endformat") + " (ohne Beschnitt)</figcaption></figure>"; }).join("") + "</div>" : "";
-    return '<div class="ps-layout"><div class="ps-panel"><h2>Prüfen &amp; bestellen</h2><p class="sub">Bitte prüfe deine Druckdaten genau – gedruckt wird genau so, wie du sie freigibst.</p>' +
-      '<div class="ps-proof">' + mockHtml() + thumbs + checksHtml((S.file.checks || []).filter(function (x) { return x.level !== "ok"; })) +
-      '<div><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">Druck-PDF ansehen</a> · <button type="button" class="ps-link" data-go="3">Gestaltung ändern</button></div></div>' +
-      '<div class="ps-sum">' + rows.map(function (r) { return "<div><span>" + esc(r[0]) + "</span><b>" + esc(r[1]) + "</b></div>"; }).join("") + money + "</div>" +
+    var lastDel = S.cart.reduce(function (m, x) { var d = x.price && x.price.deliveryDate; return d && d > m ? d : m; }, "");
+    var money = S.quoting ? '<div class="total"><span><span class="ps-spin"></span> Preise werden bestätigt …</span><b></b></div>' : co ? '<div><span>Netto</span><b>' + eur(t.net) + "</b></div><div><span>" + (t.rate ? "zzgl. " + t.rate + " % USt" : "USt (steuerfreie ig. Lieferung)") + "</span><b>" + eur(t.vat) + '</b></div><div class="total"><span>Gesamt</span><b>' + eur(t.gross) + "</b></div>"
+      : '<div class="total"><span>Gesamt inkl. ' + (t.rate || 0) + " % USt und Versand</span><b>" + eur(t.gross) + "</b></div>";
+    var items = '<ul class="ps-cart ps-cart-co">' + S.cart.map(function (x) { return "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f"><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF prüfen</a>' + (x.warn ? " · <em>Hinweise zur Datei beachten</em>" : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b>" : '<small>' + esc((S.cartErr || {})[x.id] || "…") + "</small>") + "</div></li>"; }).join("") + "</ul>";
+    var addr = [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, "Österreich"].filter(Boolean).join(", ");
+    var acct = S.me ? '<p class="pd-muted">Die Bestellung wird in deinem Kundenkonto (' + esc(S.me.email) + ") gespeichert.</p>" :
+      '<label class="ps-cb"><input type="checkbox" data-act="newacct"' + (S.newAcct ? " checked" : "") + '><span><b>Kundenkonto anlegen</b> – Bestellungen und Adresse speichern (Bestätigung per Code an ' + esc(c.email) + ")</span></label>" +
+      (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort (mind. 8 Zeichen)</label><input id="psNewPw" type="password" autocomplete="new-password" value="' + esc(S.newPw || "") + '"></div>' : "");
+    return '<div class="ps-layout"><div class="ps-panel"><h2>Prüfen &amp; bestellen</h2><p class="sub">Bitte prüfe deine Druckdaten genau – gedruckt wird genau so, wie du sie freigibst.</p>' + items +
+      '<div class="ps-sum"><div><span>Lieferung an</span><b>' + esc(addr) + ' <button type="button" class="ps-link" data-go="5">ändern</button></b></div>' + (lastDel ? "<div><span>Voraussichtlich bei dir</span><b>" + esc(deDate(lastDel)) + "</b></div>" : "") + money + "</div>" +
       '<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
       '<label class="ps-radio' + (S.cat.payments.mollie ? "" : " dis") + '"><input type="radio" name="pay" value="mollie"' + (S.payment === "mollie" ? " checked" : "") + (S.cat.payments.mollie ? "" : " disabled") + '><span><b>Online bezahlen</b><small>Kreditkarte, Apple Pay, EPS, PayPal u. a. – sicher über Mollie' + (S.cat.payments.mollie ? "" : " (gerade nicht verfügbar)") + "</small></span></label>" +
-      '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (in Schritt 4 eintragen und prüfen).") + "</small></span></label></fieldset>" +
-      '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format geprüft und gebe die Daten so zum Druck frei.' + (isLogo() ? " Farben und Logo-Platzierung können leicht abweichen." : "") + '</span></label>' +
+      '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label></fieldset>" + acct +
+      '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format ' + (n > 1 ? "aller " + n + " Positionen " : "") + "geprüft und gebe die Daten so zum Druck frei.</span></label>" +
       '<label class="ps-cb"><input type="checkbox" data-acc="terms"' + (S.accept.terms ? " checked" : "") + '><span>Ich akzeptiere die <a href="/print/agb" target="_blank" rel="noopener">AGB</a> und habe die <a href="/datenschutz" target="_blank" rel="noopener">Datenschutzerklärung</a> gelesen.</span></label>' +
       '<label class="ps-cb"><input type="checkbox" data-acc="fagg"' + (S.accept.fagg ? " checked" : "") + '><span>Ich nehme zur Kenntnis, dass bei Waren, die nach meinen Vorgaben angefertigt bzw. bedruckt werden, <b>kein Rücktrittsrecht</b> besteht (§ 18 Abs. 1 Z 3 FAGG).</span></label>' +
-      '<div class="ps-err" id="psOrderErr" role="alert">' + esc(S.err) + '</div><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück</button><button type="button" class="ps-btn primary" data-act="order"' + (S.busy ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : (S.payment === "invoice" ? "Zahlungspflichtig bestellen" : "Zahlungspflichtig bestellen & bezahlen")) + "</button></div>" +
-      '<p class="ps-terms">Mit dem Klick bestellst du verbindlich. Der Vertrag kommt mit unserer Bestellbestätigung per E-Mail zustande' + (S.payment === "invoice" ? ", bei Rechnungskauf mit der Freigabe" : "") + ".</p></div>" +
-      '<aside class="ps-price" id="psPrice"><h3>Zusammenfassung</h3>' + priceHtml(true) + "</aside></div>";
+      '<div class="ps-err" id="psOrderErr" role="alert">' + esc(S.err) + '</div><div class="ps-nav"><button type="button" class="ps-btn" data-go="5">Zurück</button><button type="button" class="ps-btn primary" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + (S.busy ? '<span class="ps-spin"></span> Wird gesendet …' : (S.payment === "invoice" ? "Zahlungspflichtig bestellen" : "Zahlungspflichtig bestellen & bezahlen")) + "</button></div>" +
+      '<p class="ps-terms">Mit dem Klick bestellst du verbindlich. Der Vertrag kommt mit unserer Bestellbestätigung per E-Mail zustande' + (S.payment === "invoice" ? ", bei Rechnungskauf mit der Freigabe" : "") + ".</p></div>" + cartAside() + "</div>";
   }
 
   // ── Ereignisse ──
@@ -435,14 +577,22 @@
     if (t.hasAttribute("data-group")) { S.group = t.getAttribute("data-group"); S.sub = ""; render(); return; }
     if (t.hasAttribute("data-sub")) { S.sub = t.getAttribute("data-sub"); render(); return; }
     if (t.hasAttribute("data-gal")) { S.gal = +t.getAttribute("data-gal"); var gm = root.querySelector(".ps-gal .main img"), th = t.querySelector("img"); if (gm && th) gm.src = th.src.replace(/w=\d+/, "w=1000"); root.querySelectorAll("[data-gal]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === t)); }); return; }
-    if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; loadPrice(); render(); return; }
+    if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "next2") { if (S.price) go(3); return; }
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
     if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; render(); return; }
     if (k === "clearfile") { S.file = null; S.previews = null; S.mode = ""; render(); return; }
     if (k === "editdesign") return openDesigner();
-    if (k === "next3") { if (S.file && !S.file.blocked) go(4); return; }
+    if (k === "next3") { if (S.file && !S.file.blocked) { cartAdd(); go(4); } return; }
+    if (k === "shop") { S.view = ""; go(1); return; }
+    if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
+    if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
+    if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
+    if (k === "acresend") { api("/print/api/account/resend", { email: S.acct.email, purpose: v }).then(function () { S.acct.msg = "Neuer Code ist unterwegs."; S.acct.err = ""; render(); }); return; }
+    if (k === "aclogout") { api("/print/api/account/logout", {}).then(function () { S.me = null; S.orders = []; S.acct.mode = "login"; toast("Abgemeldet"); render(); }); return; }
+    if (k === "acType") { S.me.type = v; render(); return; }
+    if (k === "newacct") { S.newAcct = !S.newAcct; render(); return; }
     if (k === "uidcheck") return uidCheck();
     if (k === "next4") return nextAddr();
     if (k === "order") return order();
@@ -463,7 +613,7 @@
     if (t.name === "urgency") { S.urgency = t.value; loadPrice(); return; }
     if (t.matches("[data-country]")) { S.customer.country = t.value; if (S.customer.zip && !(t.value === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(S.customer.zip)) S.customer.zip = ""; loadPrice(); return; }
     if (t.id === "psFile" && t.files && t.files[0]) return uploadFile(t.files[0]);
-    if (t.id === "country" || t.id === "zip") { saveAddr(); loadPrice(); return; }
+    if (t.id === "country" || t.id === "zip") { saveAddr(); reprice(); return; }
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
@@ -546,9 +696,10 @@
     ["company", "firstName", "lastName", "street", "zip", "city", "country", "email", "phone"].forEach(function (k) { var el = f.elements[k]; if (el) S.customer[k] = el.value.trim(); });
     if (f.elements.uid) S.uid = f.elements.uid.value.replace(/[\s.\-]/g, "").toUpperCase();
   }
+  function reprice() { if (S.step >= 4) requoteCart(); else if (S.prod) loadPrice(); }
   function uidCheck() {
     saveAddr(); if (!S.uid) { toast("Bitte UID eingeben", true); return; }
-    api("/print/api/uid", { uid: S.uid }).then(function (j) { S.uidRes = j.ok ? j : { valid: false, why: j.error }; if (j.uid) S.uid = j.uid; render(); loadPrice(); });
+    api("/print/api/uid", { uid: S.uid }).then(function (j) { S.uidRes = j.ok ? j : { valid: false, why: j.error }; if (j.uid) S.uid = j.uid; render(); reprice(); });
   }
   function nextAddr() {
     saveAddr(); var c = S.customer, bad = [], f = document.getElementById("psAddr");
@@ -558,22 +709,28 @@
     var names = { firstName: "Vorname", lastName: "Nachname", street: "Straße und Hausnummer", zip: "PLZ", city: "Ort", email: "E-Mail", phone: "Telefon", company: "Firma" };
     if (bad.length) { document.getElementById("psAddrErr").textContent = "Bitte prüfen: " + bad.map(function (k) { return names[k]; }).join(", "); var first = f.elements[bad[0]]; if (first) first.focus(); return; }
     if (S.ctype === "company" && S.uid && !S.uidRes) { uidCheck(); }
-    loadPrice(); go(5);
+    requoteCart(); go(6);
   }
 
   // ── Bestellen ──
   function order() {
-    var er = document.getElementById("psOrderErr");
+    var er = document.getElementById("psOrderErr"), pw = document.getElementById("psNewPw");
+    if (pw) S.newPw = pw.value;
     if (!S.accept.proof || !S.accept.terms || !S.accept.fagg) { er.textContent = "Bitte die drei Bestätigungen anhaken."; return; }
     if (!S.payment) { er.textContent = "Bitte eine Zahlungsart wählen."; return; }
-    if (!S.price) { er.textContent = "Preis wird noch berechnet – bitte kurz warten."; return; }
+    if (S.cart.some(function (x) { return !x.price; })) { er.textContent = "Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."; return; }
+    if (!S.me && S.newAcct && String(S.newPw || "").length < 8) { er.textContent = "Das Passwort für das Kundenkonto braucht mindestens 8 Zeichen."; if (pw) pw.focus(); return; }
     S.busy = true; S.err = ""; render();
-    var body = Object.assign(cfgOf(), { fileId: S.file.fileId, fileToken: S.file.token, customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment,
-      acceptTerms: true, acceptFagg: true, acceptProof: true, expectedGross: S.price.gross });
-    api("/print/api/order", body).then(function (j) {
+    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross }; }),
+      customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
+      createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
+    api("/print/api/checkout", body).then(function (j) {
       S.busy = false;
-      if (j.status === 409 && j.price) { S.price.gross = j.price.gross; S.price.net = j.price.net; S.price.vat = j.price.vat; S.price.rate = j.price.rate; S.err = "Der Preis hat sich gerade geändert (neu: " + eur(S.ctype === "company" ? j.price.net : j.price.gross) + "). Bitte prüfen und erneut bestellen."; render(); return; }
+      if (j.status === 409 && j.price) { var x = S.cart[j.index || 0]; if (x) { x.price = Object.assign({}, x.price, { gross: j.price.gross, net: j.price.net, vat: j.price.vat, rate: j.price.rate }); cartSave(true); }
+        S.err = "Der Preis für „" + (x ? x.title : "eine Position") + "“ hat sich gerade geändert (neu: " + eur(S.ctype === "company" ? j.price.net : j.price.gross) + "). Bitte prüfen und erneut bestellen."; render(); return; }
       if (!j.ok) { S.err = j.error || "Bestellung fehlgeschlagen"; render(); return; }
+      S.cart = []; cartSave(); S.accept = {}; S.newPw = "";
+      try { if (j.accountCreated) localStorage.setItem("fsc-print-verify", S.customer.email); } catch (e) {}
       if (j.checkoutUrl) { location.href = j.checkoutUrl; return; }
       try { history.replaceState(null, "", "/print?bestellung=" + encodeURIComponent(j.orderId) + "&t=" + encodeURIComponent(j.token)); } catch (e) {}
       showStatus(j.orderId, j.token);
@@ -590,7 +747,10 @@
       else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
         (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion.") +
         " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p><p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) : "") + "</p>" + (o.tracks && o.tracks.length ? '<p><a class="ps-btn small" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen</a></p>' : "") +
-        '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a></div>';
+        (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
+        '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";
+      var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
+      if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
       root.innerHTML = '<div class="ps-panel ps-status">' + h + "</div>";
     });
   }
