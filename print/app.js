@@ -679,7 +679,7 @@
     var t = txt(p.about); if (!t && !p.summary) return "";
     var lines = t.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean), bul = lines.filter(function (x) { return /^[-*•]/.test(x); });
     var body = (lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return "<p>" + esc(x.replace(/[#*_]+/g, "")) + "</p>"; }).join("")) + (bul.length ? "<ul>" + bul.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : "");
-    return '<details class="ps-about"' + (bul.length && bul.length <= 6 ? " open" : "") + "><summary>Produktinfos" + (p.summary ? " · " + esc(txt(p.summary)) : "") + "</summary>" + body + "</details>";
+    return '<details class="ps-about"' + (bul.length && bul.length <= 6 && window.innerWidth > 760 ? " open" : "") + "><summary>Produktinfos" + (p.summary && lead(p.summary) && lead(p.summary).length < 50 ? " · " + esc(lead(p.summary)) : "") + "</summary>" + body + "</details>";
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
