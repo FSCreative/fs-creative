@@ -473,7 +473,7 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); if (S.step === 1 && !S.view) loadFrom([].slice.call(root.querySelectorAll(".ps-prod[data-prod]")).slice(0, 12).map(function (b) { return b.getAttribute("data-prod"); })); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
-    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<div class="mp"></div>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : ""); root.appendChild(mb); renderPrice(); }
+    if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<div class="mp"></div>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">Weiter</button>' : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
     if (S.step === 2) renderPrice();
   }
   function go(n) { S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
@@ -770,7 +770,7 @@
         return '<figure><img src="' + cv.toDataURL("image/png") + '" alt="Vorschau ' + (idx ? "Rückseite" : "Vorderseite") + '"><figcaption>' + (res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") : "Seite 1") + (r.b ? "" : " · ohne Beschnitt") + "</figcaption></figure>"; });
       var html = '<div class="ps-pfv-g">' + out.join("") + "</div>", wh = warns.length ? '<ul class="ps-checks">' + warns.map(function (w) { return '<li class="warn">' + esc(w) + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li class="ok">Randanalyse: keine Inhalte zu nah am Rand gefunden.</li></ul>';
       PFV[key] = { html: html, warn: wh }; var b2 = document.getElementById("psPfv"); if (b2 && b2.getAttribute("data-fid") === f.fileId) { b2.querySelector(".ps-pfv-c").innerHTML = html; document.getElementById("psPfvW").innerHTML = wh; }
-      if (warns.length && S.file === f) { f.edgeWarn = warns; }
+      if (warns.length && S.file === f) { f.edgeWarn = warns; var qb = document.querySelector(".ps-qual.ok"); if (qb) { qb.className = "ps-qual warn"; qb.innerHTML = '<i aria-hidden="true"></i><div><b>Druckbar – mit Hinweisen</b><span>Die Randanalyse hat etwas gefunden – siehe Vorschau unten. Unsicher? Wähle an der Kasse den Profi-Datencheck.</span></div>'; } }
     }).catch(function () { var b3 = document.getElementById("psPfv"); if (b3) b3.querySelector(".ps-pfv-c").innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – bitte „PDF ansehen“ nutzen.</p>'; });
   }
   function checksHtml(list) { return list && list.length ? '<ul class="ps-checks">' + list.map(function (c) { return '<li class="' + esc(c.level) + '">' + esc(c.text) + "</li>"; }).join("") + "</ul>" : ""; }
