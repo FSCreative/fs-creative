@@ -95,7 +95,7 @@
       S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
-      var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {};
+      var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {};
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel();
@@ -230,7 +230,8 @@
     var props = p.props.filter(function (pr) { return propVisible(pr); }), inS = function (l) { return props.filter(function (pr) { return l.indexOf(pr.slug) > -1; }); };
     var fmt = inS(SECT_FORMAT), mat = inS(SECT_MAT), rest = props.filter(function (pr) { return fmt.indexOf(pr) < 0 && mat.indexOf(pr) < 0; });
     var isNone = function (pr) { var d = (p.defaults || {})[pr.slug], o = pr.options.filter(function (x) { return x.slug === d; })[0]; return o && NONE_RX.test(String(o.name).trim()); };
-    var main = rest.filter(function (pr) { return !isNone(pr); }), minor = rest.filter(isNone), changed = minor.filter(function (pr) { return S.sel[pr.slug] !== (p.defaults || {})[pr.slug]; }).length;
+    var keep = function (pr) { return pr.slug === "finish" || !isNone(pr); };   // Veredelung immer sichtbar
+    var main = rest.filter(keep), minor = rest.filter(function (pr) { return !keep(pr); }), changed = minor.filter(function (pr) { return S.sel[pr.slug] !== (p.defaults || {})[pr.slug]; }).length;
     var tiles = function (l) { return l.map(tileHtml).join(""); };
     var more = minor.length ? '<details class="ps-more"' + (changed ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
     var custom = (p.kind === "banner" && p.custom) || (fmt.some(function (pr) { return pr.slug === "size"; }) && isCustom()) ? customHtml() : "";
