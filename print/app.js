@@ -584,9 +584,10 @@
   var colHex = function (o) { return o.color || COLORS[colKey(o.name)] || ""; };
   var colName = function (n) { return COLOR_DE[colKey(n)] || String(n || "").trim().replace(/_/g, " "); };
   function swatches(name, opts, cur, dis, pr) {
+    var all = opts, more = 0; if (opts.length > 14 && !(S.swAll || {})[name]) { var ci = opts.findIndex(function (o) { return String(o.slug) === String(cur); }); opts = opts.slice(0, 12); if (ci >= 12) opts.push(all[ci]); more = all.length - opts.length; }
     return '<div class="ps-sws" role="radiogroup" aria-label="' + esc(pr ? pr.title : "Farbe") + '">' + opts.map(function (o) { var hx = colHex(o), nm = colName(o.name), best = pr && isBest(pr, o.slug), lt = /^#(f|e)[0-9a-f]/i.test(hx) || /^#ff[e-f]/i.test(hx);
       var face = hx ? '<i style="background:' + esc(hx) + '"' + (lt ? ' class="lt"' : "") + "></i>" : imgOk(o.img) ? '<i class="im"><img src="' + esc(o.img) + '" alt="" loading="lazy"></i>' : "<i></i>";
-      return '<label class="ps-sw' + (/metallic|metallisch|gold|silber|perle/i.test(o.name) ? " met" : "") + '" title="' + esc(nm) + '"><input type="radio" name="' + esc(name) + '" value="' + esc(o.slug) + '"' + (String(cur) === String(o.slug) ? " checked" : "") + (dis && dis[o.slug] ? " disabled" : "") + ' aria-label="' + esc(nm) + '"><span>' + face + (best ? '<b class="st" aria-hidden="true">★</b>' : "") + "</span><small>" + esc(nm) + "</small></label>"; }).join("") + "</div>";
+      return '<label class="ps-sw' + (/metallic|metallisch|gold|silber|perle/i.test(o.name) ? " met" : "") + '" title="' + esc(nm) + '"><input type="radio" name="' + esc(name) + '" value="' + esc(o.slug) + '"' + (String(cur) === String(o.slug) ? " checked" : "") + (dis && dis[o.slug] ? " disabled" : "") + ' aria-label="' + esc(nm) + '"><span>' + face + (best ? '<b class="st" aria-hidden="true">★</b>' : "") + "</span><small>" + esc(nm) + "</small></label>"; }).join("") + (more ? '<button type="button" class="ps-swmore" data-swall="' + esc(name) + '">+' + more + " weitere Farben</button>" : "") + "</div>";
   }
   function chips(name, opts, cur, dis) {
     return '<div class="ps-chips" role="radiogroup">' + opts.map(function (o) { var vis = imgOk(o.img) ? '<img src="' + esc(o.img) + '" alt="" loading="lazy">' : o.color ? '<i class="sw" style="background:' + esc(o.color) + '"></i>' : "";
@@ -853,6 +854,7 @@
     var tsb = e.target.closest("[data-tstep]");
     if (tsb) { var tv = tsb.getAttribute("data-tstep").split("|"), cur0 = S.textile.sizes[tv[0]] || 0, nv = Math.max(0, Math.min(5000, cur0 + (+tv[1]) * (cur0 >= 50 ? 5 : 1))); if (nv) S.textile.sizes[tv[0]] = nv; else delete S.textile.sizes[tv[0]];
       var inp = root.querySelector('[data-tsize="' + tv[0] + '"]'); if (inp) { inp.value = nv || ""; inp.closest(".ps-size").classList.toggle("on", !!nv); } renderPrice(); loadPrice(); return; }
+    var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
       if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(10, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); return; }
