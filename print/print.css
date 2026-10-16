@@ -778,3 +778,9 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
   .ps-mbar{padding-right:84px}
 }
 .ps-sgo em{padding:1px 6px;font-size:10px}
+@media(max-width:640px){
+  .ps-ddl.big{z-index:400;box-shadow:0 0 0 100vmax rgba(5,6,10,.6),0 -10px 40px rgba(0,0,0,.4);max-height:84vh}
+  body:has(.ps-ddl.big) .ps-mbar,body:has(.ps-ddl.big) .fscc-b,body:has(.ps-ddl.big) .fscc-print{display:none!important}
+  body:has(.ps-ddl.big){overflow:hidden}
+  .ps-big-h{flex-wrap:wrap}.ps-big-h b{flex:1}.ps-big-h .ps-ddq{order:3;flex-basis:100%}
+}
