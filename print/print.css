@@ -858,3 +858,14 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-sgo:has(.ps-i)>button[role=radio]{padding-right:42px}
 .ps-sgo .ps-i.sm{width:26px;height:26px;right:8px;top:50%;transform:translateY(-50%);background:var(--ps-ddbg)}
 .ps-sgo.on>button[role=radio]::after{right:auto;left:auto;position:static;margin-top:2px}
+
+/* Druckvorlage (PDF) herunterladen */
+.ps-tpl{display:flex;align-items:center;gap:14px;margin:14px 0 0;padding:14px 16px;border-radius:14px;border:1px dashed var(--ps-line2);background:var(--ps-card);color:var(--text);text-decoration:none;transition:border-color .15s,background .15s}
+.ps-tpl:hover{border-color:var(--accent);background:rgba(10,132,255,.08)}
+.ps-tpl .ic{font-size:24px;flex:none}
+.ps-tpl b{display:block;font-size:15px}
+.ps-tpl small{display:block;color:var(--text-dim);font-size:12.5px;line-height:1.45;margin-top:2px}
+.ps-tpl .dl{margin-left:auto;flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700}
+.ps-tpl.soft{margin-top:16px}
+.ps-selinfo .ps-tpl{margin:12px 0 4px}
+.ps-pfv-l .f{border-top:2px dashed #bf5af2;height:0;border-radius:0}

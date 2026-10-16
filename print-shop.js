@@ -73,7 +73,7 @@ const CURATED = [
   { key: "plakate", group: PAPER, title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
     expose: "auto", tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } },
   { key: "folder", group: PAPER, title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
-    expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // TODO: mit echtem Print.com-Workfile prüfen, ob „size“ das offene Format ist
+    expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // „size“ = gefalztes Format (print.com: „gevouwen A5 = 148 × 210“), Datei = offenes Format → foldSpec()
   { key: "aufkleber", group: PAPER, title: "Aufkleber", icon: "🏷️", desc: "Sticker und Etiketten in vielen Formen.", skus: ["stickers", "sticker"], rx: /stickers?|aufkleber/i,
     expose: "auto", tiers: [50, 100, 250, 500, 1000], designer: true, safe: 3 },
   // Roll-ups: echte SKU „roller-banners“ (nicht „cardboard-roller-banners“ / „table-roll-up-banner“); Größe „banner_85_x_200“ = 85 × 200 cm
@@ -632,6 +632,32 @@ module.exports = function (D) {
     if (prod.dims) return { w: prod.dims[0], h: prod.dims[1] };
     const d = dimsOf({ slug: sel.size || prod.fixed.size || "" }); return d ? { w: d[0], h: d[1] } : null;
   }
+  // ── Falzgeometrie ──
+  // Print.com nennt bei Foldern das GEFALZTE Format (z. B. „1/3 A4 – 99 × 210 mm“ = DIN-lang-Folder aus A4); Druckdaten = offenes Format.
+  // Wickelfalz: einklappende Felder schmaler (2 mm, ab 4 Feldern 1,5 mm je Stufe), Fensterfalz: Klappen je 1 mm schmaler.
+  // x/y = Falzpositionen in mm ab linker/oberer Schnittkante, gemessen auf der Außenseite (Seite 1); Innenseite gespiegelt.
+  const FOLD_NAMES = { single: "Einbruchfalz", singlehorizontal: "Einbruchfalz oben", wikkel: "Wickelfalz", zigzag: "Zickzackfalz", luik: "Fensterfalz", cross: "Kreuzfalz" };
+  function foldSpec(slug, w, h) {
+    const m = String(slug || "").match(/^(single|singlehorizontal|wikkel|zigzag|luik|cross)_(\d+)$/); if (!m || !(w > 0 && h > 0)) return null;
+    const t = m[1], pages = +m[2], rd = v => Math.round(v * 2) / 2, name = pages + "-seitiger " + FOLD_NAMES[t];
+    const acc = ws => ws.slice(0, -1).reduce((a, x) => a.concat([rd((a.length ? a[a.length - 1] : 0) + x)]), []);
+    if (t === "cross") return { slug, name, pages, closed: { w, h }, open: { w: 2 * w, h: 2 * h }, x: [w], y: [h], out: ["Rückseite", "Titel", "Innen", "Innen"], in: ["Innen", "Innen", "Innen", "Innen"], note: "Kreuzfalz: erst quer, dann längs gefalzt – Bogen 2 × 2 Felder." };
+    if (t === "singlehorizontal") return { slug, name, pages, closed: { w, h }, open: { w, h: 2 * h }, x: [], y: [h], out: ["Rückseite (180° gedreht anlegen)", "Titel"], in: ["Innen oben", "Innen unten"], note: "Falz oben: Rückseite steht im offenen Bogen auf dem Kopf." };
+    let ws, out, inn, note = "";
+    const n = t === "single" ? 2 : t === "luik" ? (pages === 6 ? 3 : 4) : pages / 2;
+    if (t === "single" || t === "zigzag") { ws = Array(n).fill(w); out = Array(n).fill("").map((x, i) => i === n - 1 ? "Titel" : i === n - 2 && t === "single" ? "Rückseite" : "Außen " + (i + 1)); inn = Array(n).fill("").map((x, i) => "Innen " + (i + 1)); if (t === "zigzag") note = "Zickzackfalz: alle Felder gleich breit."; }
+    else if (t === "wikkel") {
+      const st = n > 3 ? 1.5 : 2, flaps = Array(n - 2).fill(0).map((x, i) => w - st * (i + 1)), full = (n * w - flaps.reduce((a, x) => a + x, 0)) / 2;
+      const inside = [full, full].concat(flaps).map(rd); ws = inside.slice().reverse();   // Außenseite = gespiegelte Innenseite
+      out = ws.map((x, i) => i === n - 1 ? "Titel" : i === n - 2 ? "Rückseite" : "Klappe (außen)"); inn = inside.map((x, i) => i < 2 ? "Innen " + (i + 1) : "Einklappseite " + (i - 1));
+      note = "Wickelfalz: einklappende Seite" + (n > 3 ? "n sind" : " ist") + " schmaler, damit sie beim Falzen nicht staucht.";
+    } else {   // Fensterfalz
+      ws = n === 3 ? [w / 2 - 1, w + 2, w / 2 - 1] : [w - 1, w + 1, w + 1, w - 1]; ws = ws.map(rd);
+      out = n === 3 ? ["Titel – rechte Hälfte", "Rückseite", "Titel – linke Hälfte"] : ["Klappe (außen)", "Rückseite", "Titel", "Klappe (außen)"]; inn = n === 3 ? ["Klappe innen", "Innen Mitte", "Klappe innen"] : ["Klappe innen", "Innen", "Innen", "Klappe innen"];
+      note = "Fensterfalz: beide Klappen falzen zur Mitte und sind je 1 mm schmaler.";
+    }
+    return { slug, name, pages, closed: { w, h }, open: { w: rd(ws.reduce((a, x) => a + x, 0)), h }, x: acc(ws), y: [], widths: ws, out, in: inn, note };
+  }
   function areaOf(prod, all) {
     const a = prod.areas || {}, k = prod.areaProp && all[prod.areaProp], ks = Object.keys(a);
     const v = (k && a[k]) || (ks.length === 1 ? a[ks[0]] : null) || prod.printArea || [100, 100];
@@ -707,8 +733,10 @@ module.exports = function (D) {
     }
     if (kind === "promo") { const a = areaOf(prod, all); positions = [{ slug: "area", title: "Druckfläche", area: [a.w, a.h] }]; fileSel = { pos: ["area"], area: [a.w, a.h] }; more.push(["Druckfläche", a.w + " × " + a.h + " mm"]); }
     const pcOpts = Object.assign({}, all, { copies }); if (prod.urgency.length) pcOpts.urgency = urgency;
-    const labels = (fmt ? [fmt] : []).concat(prod.props.map(pr => [pr.title, (pr.options.find(o => o.slug === sel[pr.slug]) || {}).name || sel[pr.slug]]), more);
     if (kind === "flat" && !size) size = sizeOf(prod, all);
+    let folds = null, closed = null;
+    if (size && all.fold) { folds = foldSpec(all.fold, size.w, size.h); if (folds) { closed = size; size = folds.open; more.push(["Format offen", size.w + " × " + size.h + " mm"]); } }
+    const labels = (fmt ? [fmt] : []).concat(prod.props.map(pr => [pr.title, (pr.options.find(o => o.slug === sel[pr.slug]) || {}).name || sel[pr.slug]]), more);
     const pmWanted = String(input.pm || "auto").replace(/[^a-z0-9_]/gi, "").slice(0, 40) || "auto";   // Druckverfahren: „auto“ = Offset wo möglich, sonst günstigstes
     // Alternativen je Druckverfahren (Digital/Offset/…): jeweils mit den Ausschlussregeln und Mengenbereichen gelöst – nur gültige Kombinationen
     let pmAlts = null;
@@ -722,7 +750,7 @@ module.exports = function (D) {
       }
       if (pmAlts.length < 2) pmAlts = null;
     }
-    return { sel, fileSel, copies, urgency, pcOpts, labels, pmWanted, pmAlts, sides: positions ? positions.length : sidesOf(all), size, variants, positions, textile: tex, excluded: excl, kind };
+    return { sel, fileSel, copies, urgency, pcOpts, labels, pmWanted, pmAlts, sides: positions ? positions.length : sidesOf(all), size, folds, closed, variants, positions, textile: tex, excluded: excl, kind };
   }
 
   // ── Steuer ──
@@ -899,6 +927,82 @@ module.exports = function (D) {
     const c = (1 - r - k) / (1 - k), m = (1 - g - k) / (1 - k), y = (1 - b - k) / (1 - k);
     return [c, m, y, k].map(v => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 10);
   }
+  // ── Druckvorlage (PDF) je Produkt/Ausführung: Datenformat, Endformat, Beschnitt, Sicherheitsabstand, Falzlinien ──
+  const TPL_CACHE = new Map();
+  async function templatePdf(prod, n) {
+    const PDFDocument = require("pdfkit");
+    const bleed = n.kind === "textile" || n.kind === "promo" ? 0 : +prod.bleed || 0, safe = +prod.safe || 3;
+    const shapeTxt = (n.labels || []).map(l => l[1]).join(" "), round = /\b(rund|kreis|oval|round|circle)/i.test(shapeTxt) && !/eckig/i.test(shapeTxt);
+    const sheets = [];
+    if (n.size) { const sd = n.folds ? 2 : Math.max(1, Math.min(2, n.sides || 1)); for (let i = 0; i < sd; i++) sheets.push({ w: n.size.w, h: n.size.h, b: bleed, title: n.folds ? (i ? "Innenseite" : "Außenseite") : sd > 1 ? (i ? "Rückseite" : "Vorderseite") : "Motiv", side: i }); }
+    else (n.positions || []).forEach(p => { if (p.area) sheets.push({ w: p.area[0], h: p.area[1], b: 0, title: "Druckfläche " + p.title, side: 0, area: true }); });
+    if (!sheets.length) throw Object.assign(new Error("Für dieses Produkt gibt es keine feste Vorlage – lade einfach dein Motiv hoch, wir prüfen es."), { status: 404 });
+    const doc = new PDFDocument({ autoFirstPage: false, margin: 0, info: { Title: "Druckvorlage " + prod.title, Author: "FS Creative", Producer: "FS Creative Druckshop", Subject: "Hilfslinien für Endformat, Beschnitt, Sicherheitsabstand und Falz" } });
+    const chunks = []; doc.on("data", c => chunks.push(c)); const done = new Promise((res, rej) => { doc.on("end", res); doc.on("error", rej); });
+    const C = { bleed: [0, 70, 25, 0], trim: [0, 100, 0, 0], safe: [80, 20, 0, 0], fold: [70, 0, 100, 0], text: [0, 0, 0, 85], muted: [0, 0, 0, 45] };
+    const mm = v => v * MM_PT, fmtMm = v => String(Math.round(v * 10) / 10).replace(".", ",");
+    for (const sh of sheets) {
+      const W = mm(sh.w + 2 * sh.b), H = mm(sh.h + 2 * sh.b), B = mm(sh.b), S = mm(safe), tw = mm(sh.w), th = mm(sh.h);
+      doc.addPage({ size: [W, H], margin: 0 });
+      doc.page.dictionary.data.TrimBox = [B, B, W - B, H - B]; doc.page.dictionary.data.BleedBox = [0, 0, W, H];
+      const lw = Math.max(0.7, Math.min(3, Math.min(W, H) / 400)), dash = Math.max(2, Math.min(W, H) / 120);
+      // Beschnittzone (wird abgeschnitten) leicht eingefärbt
+      if (B > 0) { doc.save().rect(0, 0, W, H).fillColor(C.bleed).fillOpacity(0.2).fill().restore(); doc.save(); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : doc.rect(B, B, tw, th); doc.fillColor([0, 0, 0, 0]).fill().restore(); }
+      // Endformat (Schnitt)
+      doc.save().lineWidth(lw).strokeColor(C.trim); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : doc.rect(B, B, tw, th); doc.stroke().restore();
+      // Falzlinien (Innenseite gespiegelt)
+      const f = !sh.area && n.folds, xs = f ? f.x.map(x => sh.side ? sh.w - x : x).sort((a, b) => a - b) : [], ys = f ? f.y : [], FS = 3;
+      // Sicherheitsabstand – bei Foldern je Feld (an der Falz 3 mm Abstand, damit nichts im Bruch liegt)
+      { const cx = [0].concat(xs).concat([sh.w]), cy = [0].concat(ys).concat([sh.h]);
+        doc.save().lineWidth(lw).dash(dash, { space: dash * 0.7 }).strokeColor(C.safe);
+        if (round) doc.ellipse(W / 2, H / 2, tw / 2 - S, th / 2 - S);
+        else for (let yi = 0; yi < cy.length - 1; yi++) for (let xi = 0; xi < cx.length - 1; xi++) {
+          const l = cx[xi] + (xi ? FS : safe), r = cx[xi + 1] - (xi < cx.length - 2 ? FS : safe), t = cy[yi] + (yi ? FS : safe), bo = cy[yi + 1] - (yi < cy.length - 2 ? FS : safe);
+          if (r > l && bo > t) doc.rect(B + mm(l), B + mm(t), mm(r - l), mm(bo - t)); }
+        doc.stroke().undash().restore(); }
+      const fs = Math.max(4.5, Math.min(40, Math.min(sh.w, sh.h) * 0.032 * MM_PT));
+      doc.font("Helvetica");
+      xs.forEach(x => { const X = B + mm(x); doc.save().lineWidth(lw * 1.2).dash(dash * 1.6, { space: dash }).strokeColor(C.fold).moveTo(X, 0).lineTo(X, H).stroke().undash().restore();
+        const ty = H - B - S - fs * 4; doc.save().fillColor(C.fold).fontSize(fs * 0.8).rotate(-90, { origin: [X - fs * 0.35, ty] }).text("Falz · " + fmtMm(x) + " mm", X - fs * 0.35, ty, { lineBreak: false }).restore(); });
+      ys.forEach(y => { const Y = B + mm(y); doc.save().lineWidth(lw * 1.2).dash(dash * 1.6, { space: dash }).strokeColor(C.fold).moveTo(0, Y).lineTo(W, Y).stroke().undash().restore();
+        doc.save().fillColor(C.fold).fontSize(fs * 0.8).text("Falz · " + fmtMm(y) + " mm", B + S + fs, Y - fs * 1.1, { lineBreak: false }).restore(); });
+      // Felder beschriften
+      const cutsX = [0].concat(xs).concat([sh.w]), cutsY = [0].concat(ys).concat([sh.h]);
+      const labs = f ? (sh.side ? f.in.slice() : f.out.slice()) : [];
+      const cells = []; for (let yi = 0; yi < cutsY.length - 1; yi++) for (let xi = 0; xi < cutsX.length - 1; xi++) cells.push({ x0: cutsX[xi], x1: cutsX[xi + 1], y0: cutsY[yi], y1: cutsY[yi + 1] });
+      cells.forEach((c, i) => { const lab = labs[i]; if (!lab) return; const cw = mm(c.x1 - c.x0);
+        doc.save().fillColor(C.muted).fontSize(fs * 1.5).text(lab, B + mm(c.x0), B + mm(c.y0) + S + fs * 1.2, { width: cw, align: "center" }).restore();
+        if (f.x.length && cells.length === cutsX.length - 1) doc.save().fillColor(C.muted).fontSize(fs * 0.9).text("Feldbreite " + fmtMm(c.x1 - c.x0) + " mm", B + mm(c.x0), B + mm(c.y0) + S + fs * 3.2, { width: cw, align: "center" }).restore(); });
+      // Infoblock im größten Feld
+      const big = cells.reduce((a, c) => (c.x1 - c.x0) * (c.y1 - c.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? c : a, cells[0]);
+      const bx = B + mm(big.x0) + S + fs * 0.5, bwid = Math.max(20, mm(big.x1 - big.x0) - 2 * S - fs);
+      const lines = [
+        ["b", "Druckvorlage " + prod.title + " – " + sh.title],
+        ["", sh.area ? "Druckfläche: " + fmtMm(sh.w) + " × " + fmtMm(sh.h) + " mm" : "Datenformat (Dateigröße): " + fmtMm(sh.w + 2 * sh.b) + " × " + fmtMm(sh.h + 2 * sh.b) + " mm"],
+        ["", "Endformat" + (n.folds ? " offen" : "") + ": " + fmtMm(sh.w) + " × " + fmtMm(sh.h) + " mm" + (n.closed ? " · gefalzt " + fmtMm(n.closed.w) + " × " + fmtMm(n.closed.h) + " mm" : "")],
+        sh.b ? ["", "Beschnittzugabe: " + fmtMm(sh.b) + " mm je Seite · Sicherheitsabstand: " + fmtMm(safe) + " mm"] : ["", "Sicherheitsabstand: " + fmtMm(safe) + " mm"],
+        n.folds ? ["", n.folds.name + (n.folds.note ? " – " + n.folds.note : "")] : null,
+        ["", "Hintergründe bis zur äußeren Kante ziehen, Texte und Logos innerhalb der blauen Linie halten."],
+        ["", "Diese Hilfslinien vor dem Export ausblenden bzw. löschen – PDF in Datenformat hochladen."]
+      ].filter(Boolean);
+      let size = fs; const fit = () => lines.every(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(size); return doc.heightOfString(l[1], { width: bwid }) < size * 3.6; });
+      while (size > 4 && !fit()) size -= 0.5;
+      doc.font("Helvetica"); let tot = 0; lines.forEach(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? size * 1.15 : size); tot += doc.heightOfString(l[1], { width: bwid }) + size * 0.35; });
+      let y = B + mm((big.y0 + big.y1) / 2) - tot / 2; if (labs.length) y = Math.max(y, B + mm(big.y0) + S + fs * 4.6);
+      lines.forEach(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? size * 1.15 : size).fillColor(l[0] ? C.text : C.muted); doc.text(l[1], bx, y, { width: bwid, align: "center" }); y = doc.y + size * 0.35; });
+      // Legende unten
+      const leg = [[C.bleed, "Beschnitt (wird abgeschnitten)"], [C.trim, "Endformat / Schnittkante"], [C.safe, "Sicherheitsabstand"]].concat(xs.length || ys.length ? [[C.fold, "Falzlinie"]] : []).filter((x, i) => sh.b || i);
+      const ls = Math.max(4, size * 0.85); doc.font("Helvetica").fontSize(ls);
+      const legW = leg.reduce((a, x) => a + doc.widthOfString(x[1]) + ls * 2.6, 0);
+      if (legW < tw - 2 * S) { let lx = W / 2 - legW / 2; const ly = H - B - S - ls * 2.2;
+        doc.save().roundedRect(lx - ls, ly - ls * 0.6, legW + ls, ls * 2.1, ls * 0.5).fillColor([0, 0, 0, 0]).fill().restore();
+        leg.forEach(x => { doc.save().rect(lx, ly, ls * 1.1, ls * 0.9).fillColor(x[0]).fill().restore(); doc.fillColor(C.text).text(x[1], lx + ls * 1.5, ly - ls * 0.05, { lineBreak: false }); lx += doc.widthOfString(x[1]) + ls * 2.6; }); }
+      doc.font("Helvetica").fontSize(Math.max(3.5, ls * 0.8)).fillColor(C.muted).text("fs-creative.at/print", B + S, B + S * 0.35 > B + 2 ? B + S * 0.35 : B + 2, { lineBreak: false });
+    }
+    doc.end(); await done;
+    return { pdf: Buffer.concat(chunks), sheets };
+  }
+
   async function svgPagesToPdf(pages, size, bleed) {
     const PDFDocument = require("pdfkit"), SVGtoPDF = require("svg-to-pdfkit");
     const W = (size.w + 2 * bleed) * MM_PT, H = (size.h + 2 * bleed) * MM_PT, B = bleed * MM_PT;
@@ -1625,6 +1729,17 @@ module.exports = function (D) {
         const prod = await findProduct(u.searchParams.get("key")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
         return J(res, 200, { ok: true, product: scrubPub(pubProd(prod)) });
       }
+      if (p === "/print/api/template" && req.method === "GET") {
+        if (limited("tpl", ip, 80, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
+        const prod = await findProduct(u.searchParams.get("product")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
+        let b = {}; try { b = JSON.parse(String(u.searchParams.get("c") || "{}")) || {}; } catch (e) {}
+        const inp = { sel: objOf(b.sel), custom: objOf(b.custom), copies: b.copies || (prod.tiers || [])[0] || (prod.qty && prod.qty[0] && prod.qty[0].min) || 1, textile: b.textile };
+        let n; try { n = normalizeSel(prod, inp); } catch (e) { if (prod.kind !== "textile") return J(res, 400, { ok: false, error: e.message }); n = { kind: "textile", positions: prod.positions, labels: [] }; }
+        const key = prod.key + JSON.stringify([n.size, n.folds && n.folds.slug, n.sides, n.positions && n.positions.map(x => x.slug), (n.labels || []).map(l => l[1]).join("|").slice(0, 300)]);
+        let hit = TPL_CACHE.get(key); if (!hit) { hit = await templatePdf(prod, n); TPL_CACHE.set(key, hit); if (TPL_CACHE.size > 200) TPL_CACHE.delete(TPL_CACHE.keys().next().value); }
+        const s0 = hit.sheets[0], nm = ("Druckvorlage_" + prod.title + "_" + (s0 ? Math.round(s0.w + 2 * s0.b) + "x" + Math.round(s0.h + 2 * s0.b) + "mm" : "")).replace(/[^A-Za-z0-9ÄÖÜäöüß_-]+/g, "-");
+        return D.send(res, 200, hit.pdf, "application/pdf", { "Content-Disposition": (u.searchParams.get("dl") === "1" ? "attachment" : "inline") + '; filename="' + nm.replace(/[^\x20-\x7e]/g, "_") + '.pdf"; filename*=UTF-8\'\'' + encodeURIComponent(nm) + ".pdf", "Cache-Control": "public, max-age=3600", "X-Robots-Tag": "noindex" });
+      }
       m = p.match(/^\/print\/api\/file\/(f[a-f0-9]{24})$/);
       if (m && req.method === "GET") {
         if (!sigOk("file", m[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
@@ -1671,7 +1786,7 @@ module.exports = function (D) {
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
-        return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, size: n.size, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
+        return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, size: n.size, folds: n.folds, closed: n.closed, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
       }
       if (p === "/print/api/ai/design") {
         if (limited("ai", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });

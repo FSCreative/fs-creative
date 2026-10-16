@@ -142,6 +142,12 @@
     TP.shouldCache = function () { if (this.boxBg) { this.ownCaching = false; return false; } return sc.call(this); };   // Box ragt über den Cache hinaus
   }
 
+  // Falzlinien in Arbeitsflächen-Einheiten (Seite 1 = außen, Seite 2 = innen → gespiegelt); ohne Server-Geometrie gleich breite Felder
+  function foldXs() {
+    var T = D.trim; if (D.fold) return D.fold.x.map(function (x) { return T.x + ((D.cur % 2) ? D.mm.w - x : x) * U; });
+    var a = []; if (D.panels > 1) for (var i = 1; i < D.panels; i++) a.push(T.x + T.w * i / D.panels); return a;
+  }
+  function foldYs() { return D.fold ? D.fold.y.map(function (y) { return D.trim.y + y * U; }) : []; }
   // ── Öffnen ──
   function open(opts) {
     if (D) close(true);
@@ -151,9 +157,9 @@
       fabric.Textbox.prototype.set({ editingBorderColor: "#0a84ff", cursorColor: "#0a84ff", selectionColor: "rgba(10,132,255,.25)" });
       var sz = opts.size, b = opts.bleed;
       var foldName = ((opts.labels || []).filter(function (l) { return /fold|falz/i.test(l[0]); })[0] || [])[1] || "";
-      var panels = opts.product.key === "folder" ? (/wickel|zickzack|leporello|zig|letter|wrap|z-|3|drei/i.test(foldName) ? 3 : 2) : 1;
+      var panels = opts.folds ? opts.folds.x.length + 1 : opts.product.key === "folder" ? (/wickel|zickzack|leporello|zig|letter|wrap|z-|3|drei/i.test(foldName) ? 3 : 2) : 1;
       var shape = ((opts.labels || []).filter(function (l) { return l[0] === "shape"; })[0] || [])[1] || "";
-      D = { o: opts, W: (sz.w + 2 * b) * U, H: (sz.h + 2 * b) * U, mm: sz, b: b, safe: opts.safe || 3, sides: opts.sides, panels: panels, round: /rund|round|kreis|circle/i.test(shape + " " + (opts.sel.shape || "")),
+      D = { o: opts, W: (sz.w + 2 * b) * U, H: (sz.h + 2 * b) * U, mm: sz, b: b, safe: opts.safe || 3, sides: opts.sides, panels: panels, fold: opts.folds || null, round: /rund|round|kreis|circle/i.test(shape + " " + (opts.sel.shape || "")),
         pages: [], cur: 0, hist: [], fut: [], panel: "tpl", guides: [], showGuides: true, showBleed: true, snap: true, grid: false, crop: null, imgs: {}, clip: null, dirty: false, keyH: null, loading: false };
       D.trim = { x: b * U, y: b * U, w: sz.w * U, h: sz.h * U };
       D.saferect = { x: (b + D.safe) * U, y: (b + D.safe) * U, w: (sz.w - 2 * D.safe) * U, h: (sz.h - 2 * D.safe) * U };
@@ -270,7 +276,7 @@
       ctx.beginPath(); if (D.round) ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, T.w / 2, T.h / 2, 0, 0, Math.PI * 2); else ctx.rect(T.x, T.y, T.w, T.h); ctx.stroke();
       ctx.lineWidth = 1 / z; ctx.strokeStyle = "#0a84ff"; ctx.setLineDash([6 / z, 4 / z]); ctx.beginPath();
       if (D.round) ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, S.w / 2, S.h / 2, 0, 0, Math.PI * 2); else ctx.rect(S.x, S.y, S.w, S.h); ctx.stroke();
-      if (D.panels > 1) { ctx.strokeStyle = "#30d158"; ctx.setLineDash([8 / z, 5 / z]); for (var i = 1; i < D.panels; i++) { var fx = T.x + T.w * i / D.panels; ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, D.H); ctx.stroke(); } }
+      if (D.panels > 1 || foldYs().length) { ctx.strokeStyle = "#30d158"; ctx.setLineDash([8 / z, 5 / z]); foldXs().forEach(function (fx) { ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, D.H); ctx.stroke(); }); foldYs().forEach(function (fy) { ctx.beginPath(); ctx.moveTo(0, fy); ctx.lineTo(D.W, fy); ctx.stroke(); }); }
       ctx.setLineDash([]);
     }
     if (D.crop) { var cr = D.crop.r, cw = cr.width * cr.scaleX, chh = cr.height * cr.scaleY; ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.beginPath(); ctx.rect(-D.W, -D.H, D.W * 3, D.H * 3); ctx.rect(cr.left, cr.top, cw, chh); ctx.fill("evenodd"); ctx.strokeStyle = "#ff2d92"; ctx.lineWidth = 2 / z; ctx.setLineDash([]); ctx.strokeRect(cr.left, cr.top, cw, chh); }
@@ -283,7 +289,7 @@
     var o = e.target; if (!o || (!D.snap && !D.grid)) return;
     var c = D.c, z = c.getZoom(), th = 7 / z, br = o.getBoundingRect(true, true), T = D.trim, S = D.saferect;
     var xs = [T.x, T.x + T.w / 2, T.x + T.w, S.x, S.x + S.w, 0, D.W], ys = [T.y, T.y + T.h / 2, T.y + T.h, S.y, S.y + S.h, 0, D.H];
-    if (D.panels > 1) for (var i = 1; i < D.panels; i++) xs.push(T.x + T.w * i / D.panels);
+    foldXs().forEach(function (fx) { xs.push(fx); });
     c.getObjects().forEach(function (x) { if (x === o || x.__bg || !x.visible || (o.contains && o.contains(x))) return; var b = x.getBoundingRect(true, true); xs.push(b.left, b.left + b.width / 2, b.left + b.width); ys.push(b.top, b.top + b.height / 2, b.top + b.height); });
     D.guides = [];
     var best = function (edges, cands) { var r = null; edges.forEach(function (ed) { cands.forEach(function (cd) { var d = cd - ed; if (Math.abs(d) <= th && (!r || Math.abs(d) < Math.abs(r.d))) r = { d: d, at: cd }; }); }); return r; };
@@ -715,7 +721,7 @@
     var add = function (level, text, o, fix) { out.push({ level: level, text: pg + text, idx: o ? all.indexOf(o) : -1, fix: fix || "" }); };
     var SIDE = { left: "links", top: "oben", right: "rechts", bottom: "unten" };
     if (!objs.length && (bgRect().fill === "#ffffff")) add("warn", "Die Seite ist leer – sie wird weiß gedruckt.");
-    var folds = []; if (D.panels > 1) for (var fi = 1; fi < D.panels; fi++) folds.push(T.x + T.w * fi / D.panels);
+    var folds = foldXs();
     var trimArea = T.w * T.h;
     objs.forEach(function (o) {
       var b = o.getBoundingRect(true, true), nm = nameOf(o), r = b.left + b.width, bo = b.top + b.height;

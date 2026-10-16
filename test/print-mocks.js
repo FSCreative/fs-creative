@@ -40,8 +40,8 @@ const PRODUCTS = {
     [{ property: "size", options: ["a2"] }, { property: "material", options: ["90gr_bankpost"] }],
     [{ property: "finish", options: ["gloss_laminate"] }, { property: "printtype", options: [10, 44] }]]),
   folders: product("folders", [
-    { slug: "size", title: "Format (offen)", locked: false, required: true, options: [opt("a4", "A4 quer offen", { width: "297", height: "210" })] },
-    { slug: "folding", title: "Falzart", locked: false, required: true, options: [opt("wrap", "Wickelfalz (6 Seiten)"), opt("half", "Einbruchfalz (4 Seiten)")] },
+    { slug: "size", title: "Format (gefalzt)", locked: false, required: true, options: [opt("1/3_a4", "1/3 A4 - 99 x 210 mm", { width: "99", height: "210" }), opt("a5", "A5 - 148 x 210 mm", { width: "148", height: "210" })] },
+    { slug: "fold", title: "Falzart", locked: false, required: true, options: [opt("wikkel_6", "6-seitiger Wickelfalz"), opt("single_4", "Einbruchfalz Links")] },
     { slug: "printtype", title: "Druck", locked: false, required: true, options: [opt("44", "4/4")] },
     copies([50, 100, 250]), urgency], 3),
   stickers: product("stickers", [

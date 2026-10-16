@@ -532,6 +532,25 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const u3 = await upload(await pdfOf(89, 59, 2), "m3.pdf", BC);
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 39.6, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
   });
+  await t("Folder: Größe = gefalztes Format → Datei im offenen Format mit Falzlinien; Druckvorlage als PDF je Ausführung", async () => {
+    const FO = { product: "folder", sel: { size: "1/3_a4", fold: "wikkel_6", printtype: "44" }, copies: 100, urgency: "standard" };
+    const pr = await post("/print/api/price", FO); assert.strictEqual(pr.status, 200, JSON.stringify(pr.j));
+    assert.deepStrictEqual(pr.j.size, { w: 297, h: 210 }); assert.deepStrictEqual(pr.j.closed, { w: 99, h: 210 });
+    assert.deepStrictEqual(pr.j.folds.x, [97, 197], "Außenseite: Einklappseite 97 mm, dann 100/100"); assert.deepStrictEqual(pr.j.folds.widths, [97, 100, 100]);
+    const half = await post("/print/api/price", Object.assign({}, FO, { sel: Object.assign({}, FO.sel, { size: "a5", fold: "single_4" }) }));
+    assert.deepStrictEqual(half.j.size, { w: 296, h: 210 }); assert.deepStrictEqual(half.j.folds.x, [148]);
+    const b = pr.j.bleed, r = await fetch(B + "/print/api/template?dl=1&product=folder&c=" + encodeURIComponent(JSON.stringify(FO)));
+    assert.strictEqual(r.status, 200); assert.ok(/application\/pdf/.test(r.headers.get("content-type"))); assert.ok(/attachment; filename="Druckvorlage_Folder_\d+x\d+mm\.pdf"/.test(r.headers.get("content-disposition")), r.headers.get("content-disposition"));
+    const { PDFDocument } = require(path.join(ROOT, "node_modules", "pdf-lib")); const doc = await PDFDocument.load(Buffer.from(await r.arrayBuffer()));
+    assert.strictEqual(doc.getPageCount(), 2, "Außen- und Innenseite"); const sz = doc.getPage(0).getSize();
+    assert.ok(Math.abs(sz.width - (297 + 2 * b) * 72 / 25.4) < 0.5 && Math.abs(sz.height - (210 + 2 * b) * 72 / 25.4) < 0.5, JSON.stringify(sz));
+    const tb = doc.getPage(0).getTrimBox(); assert.ok(Math.abs(tb.width - 297 * 72 / 25.4) < 0.5, "TrimBox = Endformat");
+    if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, "folder.pdf"), Buffer.from(await doc.save()));
+    const vk = await fetch(B + "/print/api/template?product=visitenkarten&c=" + encodeURIComponent(JSON.stringify(BC))); assert.strictEqual(vk.status, 200);
+    const vd = await PDFDocument.load(Buffer.from(await vk.arrayBuffer())); assert.strictEqual(vd.getPageCount(), 2, "4/4 → Vorder- und Rückseite");
+    if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, "vk.pdf"), Buffer.from(await vd.save()));
+    assert.strictEqual((await fetch(B + "/print/api/template?product=gibtsnicht")).status, 404);
+  });
   await t("KI-Assistent ohne ANTHROPIC_API_KEY: aus (Katalog ai=false, Endpunkt 503); /print/hilfe erreichbar", async () => {
     assert.strictEqual(cat.ai, false);
     const r = await post("/print/api/ai/design", { product: "flyer", brief: "Sommerfest" }); assert.strictEqual(r.status, 503, JSON.stringify(r.j));
