@@ -274,7 +274,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Cockpit: Bestellung zur Prüfung mit Marge, AGB-Version gespeichert; Datei nur mit Login", async () => {
     const s = await admin("/admin/api/print/state"); assert.strictEqual(s.ok, true); assert.strictEqual(s.review, 1); assert.strictEqual(s.settings.autoSend, false, "Standard: AUS");
-    const x = s.orders.find(o => o.id === o1.orderId); assert.strictEqual(x.margin, 8); assert.strictEqual(x.purchase, 25);
+    const x = s.orders.find(o => o.id === o1.orderId); assert.strictEqual(x.margin, 7.04, "Marge nach Zahlungsgebühr (1,8 % + 0,25 €)"); assert.strictEqual(x.purchase, 25);
     const d = await admin("/admin/api/print/order?id=" + o1.orderId); assert.strictEqual(d.order.consent.agbVersion, cat.agbVersion); assert.strictEqual(d.order.consent.proofConfirmed, true);
     assert.strictEqual((await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { redirect: "manual" })).status, 302);
     const f = await fetch(B + "/admin/api/print/file?id=" + o1.orderId, { headers: { cookie: COOKIE } }); assert.strictEqual(f.headers.get("content-type"), "application/pdf");
@@ -363,7 +363,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     pv = await post("/print/api/price", Object.assign({ customerType: "company" }, BC), { cookie: ck }); assert.strictEqual(pv.j.price.net, 31.3); assert.strictEqual(pv.j.price.bonus.tier, "Kundenrabatt");
     const u4 = await upload(await pdfOf(89, 59, 2), "k4.pdf", BC), fc = Object.assign({}, cust, { email: em, type: "company", company: "Karl GmbH" });
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [it(u4, 0)] }, base, { customer: fc, voucher: "NOPE" }), { cookie: ck })).status, 400);
-    pv = await post("/print/api/price", Object.assign({ customerType: "company", voucher: "TEST10" }, BC), { cookie: ck }); const g4 = pv.j.price.gross; assert.strictEqual(pv.j.price.net, 28.2);
+    pv = await post("/print/api/price", Object.assign({ customerType: "company", voucher: "TEST10" }, BC), { cookie: ck }); const g4 = pv.j.price.gross; assert.strictEqual(pv.j.price.net, 28.4, "Rabatt + Gutschein nie unter Mindestmarge nach Gebühr");
     r = await post("/print/api/checkout", Object.assign({ items: [it(u4, g4)] }, base, { customer: fc, voucher: "test10" }), { cookie: ck }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const vl = await admin("/admin/api/print/vouchers"); assert.strictEqual(vl.vouchers[0].used, 1);
     assert.ok(/vollständig eingelöst/.test((await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC))).j.voucherErr));
