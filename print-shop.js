@@ -51,7 +51,7 @@ function cmsTrim(j, keepSkus) {
     subs: (g.products || []).filter(x => x.type === "productGroup").map(x => pg(x.id)).filter(Boolean).map(s => ({ slug: slugN(s.slug), name: String(s.name || "").trim(), img: A(s.imageThumbnail || s.groupImage) })) }));
   const products = {};
   Object.values(j.product || {}).forEach(p => { if (!p || !p.sku || (keepSkus && !keepSkus.has(String(p.sku)))) return;
-    products[p.sku] = { n: String(p.productName || "").trim().slice(0, 120), i: A(p.image || p.icon), g: (p.images || []).map(A).filter(Boolean).slice(0, 6), d: String(p.description || "").trim().slice(0, 600), s: String(p.subtitle || p.summary || "").trim().slice(0, 200) }; });
+    products[p.sku] = { n: String(p.productName || "").trim().slice(0, 120), i: A(p.image || p.icon), g: (p.images || []).map(A).filter(Boolean).slice(0, 6), d: String(p.description || "").trim().slice(0, 600), s: String(p.subtitle || p.summary || "").trim().slice(0, 200), pp: +p.popularity || 0 }; });   // pp = Beliebtheit laut Print.com (für „Bestseller“)
   const options = {};
   Object.values(j.option || {}).forEach(o => { if (!o || !o.slug || !o.property || o.property === "summary_image") return; const u = A(o.icon); if (u) options[o.property + "|" + o.slug] = u; });
   const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), d: String(x.description || "").replace(/\s+/g, " ").trim().slice(0, 240), i: A(x.image) })).filter(x => x.d || x.i);
@@ -420,12 +420,12 @@ module.exports = function (D) {
     if (!de || !/^[\w.-]{1,120}\.json$/.test(String(de.fileName || ""))) throw new Error("CMS: keine deutsche Datei");
     const t = cmsTrim(await get(cmsBase() + "/" + de.fileName, 90000));
     if (!t.mains.length && !Object.keys(t.products).length) throw new Error("CMS: leer");
-    CMS = Object.assign({ at: nowIso(), file: de.fileName }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
+    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 2 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
     return CMS;
   }
   async function cms(force) {
     if (!CMS) CMS = await store.getMeta("print_cms").catch(() => null);
-    if (force || !CMS || !CMS.at || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {
+    if (force || !CMS || !CMS.at || CMS.v !== 2 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit
       if (!cmsLoading) cmsLoading = cmsRefresh().catch(e => { log("CMS:", e.message); return CMS; }).finally(() => { cmsLoading = null; });
       if (force || !CMS) return cmsLoading;
     }
@@ -558,7 +558,7 @@ module.exports = function (D) {
   const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, title: p.generic && cp && cp.n ? cp.n : p.title, icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
-      images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cp.d, 600) : "", summary: cp ? clip(cp.s, 200) : "",
+      pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cp.d, 600) : "", summary: cp ? clip(cp.s, 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Shop-Katalog: nur freigeschaltete Produkte (allgemeine nur als Karte, Details beim Öffnen), gruppiert nach Print.com-Hauptgruppe/Untergruppe
@@ -566,9 +566,12 @@ module.exports = function (D) {
     const cur = ((cat && cat.products) || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(pubProd);
     const skuSet = new Set(((cat && cat.products) || []).map(p => p.sku));
     const gen = ((all && all.items) || []).filter(it => !skuSet.has(it.sku)).map(it => [it, catOf(it.sku, s, it.auto)]).filter(x => shown(s, x[0].sku, x[0].sku, x[1]))
-      .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: (cp && cp.n) || x[0].title, icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", lazy: true }; });
+      .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: (cp && cp.n) || x[0].title, icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", pop: (cp && cp.pp) || 0, lazy: true }; });
     const order = mainsList().map(m => m.slug), ix = g => { const i = order.indexOf(g); return i < 0 ? 900 : i; };
-    return cur.concat(gen).map((p, i) => [p, i]).sort((a, b) => ix(a[0].group) - ix(b[0].group) || a[1] - b[1]).map(x => x[0]);
+    // Bestseller: die beliebtesten Produkte laut Print.com (Top 12, mindestens Beliebtheit 4 000); innerhalb der Gruppe zuerst
+    const all2 = cur.concat(gen), tops = all2.map(p => p.pop || 0).filter(n => n >= 4000).sort((a, b) => b - a), cut = tops.length ? tops[Math.min(11, tops.length - 1)] : Infinity;
+    all2.forEach(p => { p.best = (p.pop || 0) >= cut; });
+    return all2.map((p, i) => [p, i]).sort((a, b) => ix(a[0].group) - ix(b[0].group) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).map(x => x[0]);
   }
   // Gruppen für den Shop: nur mit sichtbaren Produkten, Untergruppen in Print.com-Reihenfolge
   function publicGroups(products) {

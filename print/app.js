@@ -65,11 +65,24 @@
   function selValues() { var v = {}; Object.keys(S.prod.fixed || {}).forEach(function (k) { v[S.prod.fixed[k]] = 1; }); Object.keys(S.sel).forEach(function (k) { v[S.sel[k]] = 1; }); return v; }
   function propVisible() { return true; }
   function optsOf(pr) { return pr.options; }
+  // ── Bestseller: Produkte laut Print.com-Beliebtheit (Katalog „best“), Optionen = die meistgewählten Standards ──
+  var BEST = { size: ["a5", "a4", "a6", "us_large", "bc", "bc_plus"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "135gr_silk_mc", "350gr_silk_mc", "350gr_gesatineerd_mc", "300gr_silk_mc"], printtype: ["44"] };
+  function isPoster() { return !!S.prod && /plakat|poster|wahlplakat/i.test(S.prod.key + " " + S.prod.title); }
+  function bestOf(pr) {
+    var l = BEST[pr.slug]; if (!l) return [];
+    if (isPoster()) l = { size: ["a2", "a1", "a3", "a0"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "115gr_blueback"], printtype: ["40"] }[pr.slug] || l;
+    return l.filter(function (x) { return pr.options.some(function (o) { return o.slug === x; }); }).slice(0, 4);
+  }
+  function isBest(pr, slug) { return bestOf(pr).indexOf(slug) > -1; }
+  function bestTiers(p) { var want = isPoster() ? [5, 10, 25] : [250, 500, 1000]; return (p.tiers || []).filter(function (n) { return want.indexOf(n) > -1; }); }
   // Auswahl als Liste mit Gruppenüberschriften (Print.com parentOptions, z. B. „A-Formate“)
   function selectHtml(pr, opts, dis) {
     var opt = function (o) { return '<option value="' + esc(o.slug) + '"' + (S.sel[pr.slug] === o.slug ? " selected" : "") + (dis[o.slug] ? " disabled" : "") + ">" + esc(o.name) + "</option>"; };
+    var top = bestOf(pr).map(function (x) { return opts.filter(function (o) { return o.slug === x; })[0]; }).filter(Boolean); opts = opts.filter(function (o) { return !isBest(pr, o.slug); });
+    var head = top.length ? '<optgroup label="★ Bestseller">' + top.map(opt).join("") + "</optgroup>" : "";
     var inner = pr.groups && pr.groups.length ? pr.groups.map(function (g) { var l = opts.filter(function (o) { return o.parent === g.slug; }); return l.length ? '<optgroup label="' + esc(g.name) + '">' + l.map(opt).join("") + "</optgroup>" : ""; }).join("") + opts.filter(function (o) { return !o.parent || !pr.groups.some(function (g) { return g.slug === o.parent; }); }).map(opt).join("") : opts.map(opt).join("");
-    return '<select class="ps-sel" data-prop="' + esc(pr.slug) + '" aria-label="' + esc(pr.title) + '">' + inner + "</select>";
+    if (head && !(pr.groups && pr.groups.length)) inner = '<optgroup label="Alle ' + esc(pr.title) + '">' + inner + "</optgroup>";
+    return '<select class="ps-sel" data-prop="' + esc(pr.slug) + '" aria-label="' + esc(pr.title) + '">' + head + inner + "</select>";
   }
   function pickProduct(key, cb) {
     var p = prodByKey(key); if (!p) return;
@@ -80,7 +93,9 @@
     }
     if (!S.prod || S.prod.key !== key) {
       S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
-      S.copies = p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {};
+      ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
+        bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
+      var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {};
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel();
@@ -128,9 +143,10 @@
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>";
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
-    return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + "</div>" +
+    return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
+      (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
-      (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>") +
+      (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>kostenlos</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>") +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
   function renderPrice() {
@@ -157,7 +173,7 @@
   // Schritt 1: Produktwahl – Hauptgruppen (Print.com), Untergruppen-Filter, Suche, echte Produktbilder
   function cardHtml(p) {
     var tag = p.lazy ? "Druckdaten hochladen" : p.kind === "textile" || p.kind === "promo" ? "Logo hochladen" : p.designer ? "Online gestalten oder hochladen" : "Druckdaten hochladen";
-    return '<button type="button" class="ps-prod" data-prod="' + esc(p.key) + '" aria-pressed="' + (!!S.prod && S.prod.key === p.key) + '"><span class="ph">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + "</span>" +
+    return '<button type="button" class="ps-prod' + (p.best ? " best" : "") + '" data-prod="' + esc(p.key) + '" aria-pressed="' + (!!S.prod && S.prod.key === p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + "</span>" +
       '<span class="bd"><b>' + esc(p.title) + "</b><span>" + esc(p.desc) + '</span><span class="tag">' + tag + "</span></span></button>";
   }
   function filtered() {
@@ -169,7 +185,9 @@
     var l = filtered(), groups = S.cat.groups || [];
     if (!l.length) return '<p class="pd-muted" style="padding:20px 0">Nichts gefunden – probier einen anderen Begriff oder <button type="button" class="ps-link" data-group="">alle Produkte</button>.</p>';
     if (S.group || S.q.trim()) return '<div class="ps-products">' + l.map(cardHtml).join("") + "</div>";
-    return groups.map(function (g) { var x = l.filter(function (p) { return (p.cat || {}).main === g.slug; }); return x.length ? '<section class="ps-grp"><h3 class="ps-grp-h">' + esc(g.name) + ' <span>' + x.length + '</span></h3><div class="ps-products">' + x.map(cardHtml).join("") + "</div></section>" : ""; }).join("");
+    var top = l.filter(function (p) { return p.best; }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); });
+    var bestSec = top.length ? '<section class="ps-grp ps-grp-best"><h3 class="ps-grp-h">★ Bestseller <span>die meistbestellten Produkte</span></h3><div class="ps-products">' + top.map(cardHtml).join("") + "</div></section>" : "";
+    return bestSec + groups.map(function (g) { var x = l.filter(function (p) { return (p.cat || {}).main === g.slug; }); return x.length ? '<section class="ps-grp"><h3 class="ps-grp-h">' + esc(g.name) + ' <span>' + x.length + '</span></h3><div class="ps-products">' + x.map(cardHtml).join("") + "</div></section>" : ""; }).join("");
   }
   function vProducts() {
     var groups = S.cat.groups || [], g = groups.filter(function (x) { return x.slug === S.group; })[0];
@@ -196,6 +214,38 @@
     var ctl = opts.length <= 6 || (vis && opts.length <= 12) ? chips("prop:" + pr.slug, opts, S.sel[pr.slug], dis)
       : selectHtml(pr, opts, dis);
     return '<fieldset class="ps-opt"><legend>' + esc(pr.title) + "</legend>" + ctl + (cur && cur.desc ? '<p class="ps-help">' + esc(cur.desc) + "</p>" : "") + (pr.slug === "size" && isCustom() ? customHtml() : "") + "</fieldset>";
+  }
+  // Ausführung wie bei druck.at: Abschnitte mit beschrifteten Auswahlkacheln (2 Spalten), seltene Optionen eingeklappt
+  var SECT_FORMAT = ["size", "shape", "custom_shape", "orientation", "roll_up_banners"], SECT_MAT = ["material", "color_material", "printtype", "print_position", "type_glue", "color", "color_textile"];
+  var NONE_RX = /^(ohne|keine?|nein|nicht|offen geliefert|none|no)\b/i;
+  function tileHtml(pr) {
+    var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
+    if (/color/.test(pr.slug) && opts.some(function (o) { return o.color || imgOk(o.img); })) return '<div class="ps-tile wide"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(cur.name) + "</b>" : "") + "</span>" + chips("prop:" + pr.slug, opts, S.sel[pr.slug], dis) + "</div>";
+    var best = cur && isBest(pr, cur.slug);
+    return '<div class="ps-tile' + (best ? " best" : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + selectHtml(pr, opts, dis) +
+      (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + "</div>";
+  }
+  function sec(title, inner, extra) { return inner ? '<section class="ps-sec"><h3>' + esc(title) + '</h3><div class="ps-grid2">' + inner + "</div>" + (extra || "") + "</section>" : ""; }
+  function sectionsHtml(p) {
+    var props = p.props.filter(function (pr) { return propVisible(pr); }), inS = function (l) { return props.filter(function (pr) { return l.indexOf(pr.slug) > -1; }); };
+    var fmt = inS(SECT_FORMAT), mat = inS(SECT_MAT), rest = props.filter(function (pr) { return fmt.indexOf(pr) < 0 && mat.indexOf(pr) < 0; });
+    var isNone = function (pr) { var d = (p.defaults || {})[pr.slug], o = pr.options.filter(function (x) { return x.slug === d; })[0]; return o && NONE_RX.test(String(o.name).trim()); };
+    var main = rest.filter(function (pr) { return !isNone(pr); }), minor = rest.filter(isNone), changed = minor.filter(function (pr) { return S.sel[pr.slug] !== (p.defaults || {})[pr.slug]; }).length;
+    var tiles = function (l) { return l.map(tileHtml).join(""); };
+    var more = minor.length ? '<details class="ps-more"' + (changed ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
+    var custom = (p.kind === "banner" && p.custom) || (fmt.some(function (pr) { return pr.slug === "size"; }) && isCustom()) ? customHtml() : "";
+    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat)) + (main.length || more ? '<section class="ps-sec"><h3>Veredelung &amp; Optionen</h3>' + (main.length ? '<div class="ps-grid2">' + tiles(main) + "</div>" : "") + more + "</section>" : "");
+  }
+  function amountHtml(p) {
+    var bt = bestTiers(p), inT = p.tiers.indexOf(S.copies) > -1;
+    var sel = '<select class="ps-sel" data-copies aria-label="Auflage">' + (inT ? "" : '<option value="' + S.copies + '" selected>' + (+S.copies).toLocaleString("de-AT") + " Stk. (eigene Menge)</option>") +
+      p.tiers.map(function (n) { return '<option value="' + n + '"' + (n === S.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + " Stk." + (bt.indexOf(n) > -1 ? "  ★ Bestseller" : "") + "</option>"; }).join("") + "</select>";
+    var own = "";
+    if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
+      own = '<div class="ps-tile"><span class="ps-tl">Andere Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></div>'; }
+    var ur = p.urgency.length > 1 ? '<div class="ps-tile' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + '</span><select class="ps-sel" data-urgency aria-label="Produktion">' +
+      p.urgency.map(function (u) { return '<option value="' + esc(u.slug) + '"' + (u.slug === S.urgency ? " selected" : "") + ">" + esc(u.name) + "</option>"; }).join("") + '</select><span class="ps-td">Bestimmt den Liefertermin rechts.</span></div>' : "";
+    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + "</div>" + own + ur + "</div></section>";
   }
   function qtyHtml(p) {
     var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);
@@ -225,11 +275,10 @@
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
-    var props = p.props.map(function (pr) { return propHtml(pr, v); }).join("");
-    var cust = k === "banner" && p.custom ? '<fieldset class="ps-opt"><legend>Größe</legend>' + customHtml() + "</fieldset>" : "";
-    var amount = k === "textile" ? textileHtml(p) : qtyHtml(p);
+    var props = sectionsHtml(p), cust = "";
+    var amount = k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" : amountHtml(p);
     var area = k === "promo" ? (function () { var a = logoPositions()[0].area; return '<p class="ps-help ps-info">Druckfläche ' + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · Wir prüfen jede Datei vor dem Druck.</p>"; })() : "";
-    var ur = p.urgency.length > 1 ? '<fieldset class="ps-opt"><legend>Produktion</legend>' + chips("urgency", p.urgency, S.urgency) + "</fieldset>" : "";
+    var ur = k === "textile" && p.urgency.length > 1 ? '<fieldset class="ps-opt"><legend>Produktion</legend>' + chips("urgency", p.urgency, S.urgency) + "</fieldset>" : "";
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-row2"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
@@ -340,8 +389,10 @@
     var t = e.target;
     if (t.name && t.name.indexOf("prop:") === 0) { setProp(t.name.slice(5), t.value); return; }
     if (t.matches("select[data-prop]")) { setProp(t.getAttribute("data-prop"), t.value); return; }
+    if (t.matches("select[data-copies]")) { S.copies = +t.value; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
+    if (t.matches("select[data-urgency]")) { S.urgency = t.value; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
-    if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; root.querySelectorAll('input[name="copies"]').forEach(function (r) { r.checked = +r.value === n; }); loadPrice(); } return; }
+    if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; render(); loadPrice(); } return; }
     if (t.id === "psW" || t.id === "psH") { S.custom[t.id === "psW" ? "w" : "h"] = t.value; if (S.file) { S.file = null; S.previews = null; toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } loadPrice(); return; }
     if (t.name === "tmethod") { var p = S.prod, m = p.methods.filter(function (x) { return x.key === t.value; })[0]; S.textile.method = t.value; S.textile.positions = S.textile.positions.filter(function (x) { return m.positions.indexOf(x) > -1; }); if (!S.textile.positions.length) S.textile.positions = [m.positions[0]]; resetLogos(); render(); loadPrice(); return; }
     if (t.name === "tpos") { var ps = S.textile.positions.filter(function (x) { return x !== t.value; }); if (t.checked) ps.push(t.value); S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return ps.indexOf(x) > -1; }); resetLogos(); loadPrice(); return; }
