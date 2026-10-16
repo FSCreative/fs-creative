@@ -1164,7 +1164,7 @@ module.exports = function (D) {
     return { design: r.json, left: Math.round(Math.max(0, aiCfg().day - u.by[key]) * 100) / 100 };
   }
   // ── Rabatte: Bonusprogramm (Firmenkonto) oder eigener Kundenrabatt (der höhere gilt) + Gutscheincode ──
-  let VOUCHERS = null;
+  let VOUCHERS = null; const FROM = new Map();
   async function vouchers() { if (!VOUCHERS) VOUCHERS = (await store.getMeta("print_vouchers").catch(() => null)) || {}; return VOUCHERS; }
   const vCode = c => String(c || "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 40);
   async function voucherCheck(code, email) {
@@ -1600,6 +1600,16 @@ module.exports = function (D) {
         return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
+      // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
+      if (p === "/print/api/from" && req.method === "GET") {
+        const keys = String(u.searchParams.get("keys") || "").split(",").map(x => x.trim()).filter(Boolean).slice(0, 12), out = {}, s0 = await settings();
+        await Promise.all(keys.map(async k => {
+          const hit = FROM.get(k); if (hit && Date.now() - hit.at < 12 * 3600e3) { out[k] = hit.v; return; }
+          try { const prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const t = (prod.tiers || [])[0];
+            const n = normalizeSel(prod, Object.assign({ copies: t }, prod.kind === "banner" && prod.custom ? { custom: { w: Math.max(prod.custom.minW, 1000) / 10, h: Math.max(prod.custom.minH, 500) / 10 } } : {}));
+            const q = await quote(prod, n, "AT", "", {}); const v = { gross: q.gross, copies: n.copies }; FROM.set(k, { at: Date.now(), v }); out[k] = v; } catch (e) {} }));
+        return J(res, 200, { ok: true, from: out });
+      }
       if (p === "/print/api/product" && req.method === "GET") {
         if (!cfg().pcKey) return J(res, 503, { ok: false, error: "Der Shop wird gerade eingerichtet" });
         if (limited("product", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
