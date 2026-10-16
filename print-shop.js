@@ -1605,9 +1605,9 @@ module.exports = function (D) {
         let sels = {}; try { sels = JSON.parse(String(u.searchParams.get("sel") || "{}")) || {}; } catch (e) {}
         const keys = String(u.searchParams.get("keys") || "").split(",").map(x => x.trim()).filter(Boolean).slice(0, 12), out = {}, s0 = await settings();
         await Promise.all(keys.map(async k => {
-          const sel = sels[k] && typeof sels[k] === "object" ? sels[k] : {}, ck = k + JSON.stringify(sel);
+          const sel = Object.assign({}, sels[k] && typeof sels[k] === "object" ? sels[k] : {}), qc = parseInt(sel.__copies, 10) || 0, ck = k + JSON.stringify(sel); delete sel.__copies;
           const hit = FROM.get(ck); if (hit && Date.now() - hit.at < 12 * 3600e3) { out[k] = hit.v; return; }
-          try { const prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const t = (prod.tiers || [])[0];
+          try { const prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const t = qc && (prod.tiers || []).indexOf(qc) > -1 ? qc : (prod.tiers || [])[0];
             const n = normalizeSel(prod, Object.assign({ copies: t, sel }, prod.kind === "banner" && prod.custom ? { custom: { w: Math.max(prod.custom.minW, 1000) / 10, h: Math.max(prod.custom.minH, 500) / 10 } } : {}));
             const q = await quote(prod, n, "AT", "", {}); const v = { gross: q.gross, copies: n.copies }; FROM.set(ck, { at: Date.now(), v }); out[k] = v; } catch (e) {} }));
         return J(res, 200, { ok: true, from: out });

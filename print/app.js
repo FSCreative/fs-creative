@@ -474,7 +474,7 @@
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
     if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(classics().concat(dailyPicks()).map(function (p) { return p.key; })); return; }
-    var h = stepsHtml();
+    var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
     if (S.step >= 5 && !S.cart.length) S.step = 4;
@@ -508,9 +508,9 @@
   var badDesc = function (p) { var d = txt(p.desc); return !d || d.toLowerCase() === String(p.title).toLowerCase() || /angebotsanfrage|nicht verfügbar|e-mail|@/i.test(d); };
   var FROMP = {};
   function loadFrom(keys) { keys = keys.filter(function (k) { return !(k in FROMP); }); if (!keys.length) return; keys.forEach(function (k) { FROMP[k] = null; });
-    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p || !p.props) return; var o = {}; p.props.forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); if (Object.keys(o).length) sels[k] = o; });
+    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p || !p.props) return; var o = {}; p.props.forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
     api("/print/api/from?keys=" + encodeURIComponent(keys.join(",")) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { if (!j.ok) return; Object.keys(j.from || {}).forEach(function (k) { FROMP[k] = j.from[k]; document.querySelectorAll('[data-from="' + k + '"]').forEach(function (el) { el.innerHTML = fromTxt(k); }); }); }).catch(function () {}); }
-  function fromTxt(k) { var f = FROMP[k]; return f ? "ab <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b> · " + (+f.copies).toLocaleString("de-AT") + " Stk." : ""; }
+  function fromTxt(k) { var f = FROMP[k]; return f ? (+f.copies).toLocaleString("de-AT") + " Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
     if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + " Stk.");
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer"); return l.slice(0, 4); }
@@ -574,7 +574,7 @@
     return bestSec + groups.map(function (g) { var x = l.filter(function (p) { return (p.cat || {}).main === g.slug; }); return x.length ? '<section class="ps-grp"><h3 class="ps-grp-h">' + esc(g.name) + ' <span>' + x.length + '</span></h3><div class="ps-products">' + x.map(cardHtml).join("") + "</div></section>" : ""; }).join("");
   }
   function vProducts() {
-    var groups = S.cat.groups || [], g = groups.filter(function (x) { return x.slug === S.group; })[0];
+    var groups = (S.cat.groups || []).filter(function (x) { return x.slug === S.group || S.cat.products.filter(function (p) { return (p.cat || {}).main === x.slug; }).length >= 5; }), g = groups.filter(function (x) { return x.slug === S.group; })[0];
     var tabs = groups.length > 1 ? '<div class="ps-tabs" role="group" aria-label="Kategorien"><button type="button" data-group="" aria-pressed="' + !S.group + '">Alle</button>' + groups.map(function (x) { return '<button type="button" data-group="' + esc(x.slug) + '" aria-pressed="' + (S.group === x.slug) + '">' + esc(x.name) + "</button>"; }).join("") + "</div>" : "";
     var subs = g && g.subs.length > 1 ? '<div class="ps-subs" role="group" aria-label="Untergruppen"><button type="button" data-sub="" aria-pressed="' + !S.sub + '">Alle</button>' + g.subs.map(function (x) { return '<button type="button" data-sub="' + esc(x.slug) + '" aria-pressed="' + (S.sub === x.slug) + '">' + esc(x.name) + "</button>"; }).join("") + "</div>" : "";
     return '<div class="ps-panel"><h2>Alle Produkte</h2><p class="sub">' + S.cat.products.length + " Produkte · alle Preise inkl. Versand innerhalb Österreichs.</p>" +
