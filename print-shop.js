@@ -950,6 +950,10 @@ module.exports = function (D) {
       if (B > 0) { doc.save().rect(0, 0, W, H).fillColor(C.bleed).fillOpacity(0.2).fill().restore(); doc.save(); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : doc.rect(B, B, tw, th); doc.fillColor([0, 0, 0, 0]).fill().restore(); }
       // Endformat (Schnitt)
       doc.save().lineWidth(lw).strokeColor(C.trim); round ? doc.ellipse(W / 2, H / 2, tw / 2, th / 2) : doc.rect(B, B, tw, th); doc.stroke().restore();
+      // Roll-up: unterer Bereich steckt in der Kassette (Druckformat 850 × 2060 bei sichtbaren 2000 mm)
+      const vis = prod.key === "rollups" && /(\d+)_x_(\d+)/.exec(String(n.sel && n.sel.size || "")), hid = vis ? sh.h - +vis[2] * 10 : 0;
+      if (hid > 0 && hid < 300) { const hy = B + th - mm(hid); doc.save().rect(B, hy, tw, mm(hid)).fillColor([0, 0, 0, 40]).fillOpacity(0.18).fill().restore();
+        doc.save().fillColor(C.text).font("Helvetica").fontSize(Math.max(6, Math.min(30, mm(hid) * 0.28))).text("ca. " + fmtMm(hid) + " mm verschwinden in der Kassette – hier nur Hintergrund, keine Texte/Logos", B + S, hy + mm(hid) * 0.32, { width: tw - 2 * S, align: "center" }).restore(); }
       // Falzlinien (Innenseite gespiegelt)
       const f = !sh.area && n.folds, xs = f ? f.x.map(x => sh.side ? sh.w - x : x).sort((a, b) => a - b) : [], ys = f ? f.y : [], FS = 3;
       // Sicherheitsabstand – bei Foldern je Feld (an der Falz 3 mm Abstand, damit nichts im Bruch liegt)
@@ -970,9 +974,12 @@ module.exports = function (D) {
       const cutsX = [0].concat(xs).concat([sh.w]), cutsY = [0].concat(ys).concat([sh.h]);
       const labs = f ? (sh.side ? f.in.slice() : f.out.slice()) : [];
       const cells = []; for (let yi = 0; yi < cutsY.length - 1; yi++) for (let xi = 0; xi < cutsX.length - 1; xi++) cells.push({ x0: cutsX[xi], x1: cutsX[xi + 1], y0: cutsY[yi], y1: cutsY[yi + 1] });
-      cells.forEach((c, i) => { const lab = labs[i]; if (!lab) return; const cw = mm(c.x1 - c.x0);
-        doc.save().fillColor(C.muted).fontSize(fs * 1.5).text(lab, B + mm(c.x0), B + mm(c.y0) + S + fs * 1.2, { width: cw, align: "center" }).restore();
-        if (f.x.length && cells.length === cutsX.length - 1) doc.save().fillColor(C.muted).fontSize(fs * 0.9).text("Feldbreite " + fmtMm(c.x1 - c.x0) + " mm", B + mm(c.x0), B + mm(c.y0) + S + fs * 3.2, { width: cw, align: "center" }).restore(); });
+      const labBottom = {};   // je Feld: Unterkante der Beschriftung (Infoblock beginnt darunter)
+      cells.forEach((c, i) => { const lab = labs[i]; if (!lab) return; const cw = mm(c.x1 - c.x0) - 2 * S, x0 = B + mm(c.x0) + S; let y = B + mm(c.y0) + S + fs * 1.2;
+        let ls = fs * 1.5; doc.font("Helvetica"); while (ls > fs * 0.8 && doc.fontSize(ls).widthOfString(lab) > cw) ls -= 0.5;
+        doc.save().fillColor(C.muted).fontSize(ls).text(lab, x0, y, { width: cw, align: "center" }).restore(); y = doc.y + fs * 0.2;
+        if (f.x.length && cells.length === cutsX.length - 1) { doc.save().fillColor(C.muted).fontSize(fs * 0.9).text("Feldbreite " + fmtMm(c.x1 - c.x0) + " mm", x0, y, { width: cw, align: "center" }).restore(); y = doc.y; }
+        labBottom[i] = y + fs; });
       // Infoblock im größten Feld
       const big = cells.reduce((a, c) => (c.x1 - c.x0) * (c.y1 - c.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? c : a, cells[0]);
       const bx = B + mm(big.x0) + S + fs * 0.5, bwid = Math.max(20, mm(big.x1 - big.x0) - 2 * S - fs);
@@ -985,10 +992,11 @@ module.exports = function (D) {
         ["", "Hintergründe bis zur äußeren Kante ziehen, Texte und Logos innerhalb der blauen Linie halten."],
         ["", "Diese Hilfslinien vor dem Export ausblenden bzw. löschen – PDF in Datenformat hochladen."]
       ].filter(Boolean);
-      let size = fs; const fit = () => lines.every(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(size); return doc.heightOfString(l[1], { width: bwid }) < size * 3.6; });
-      while (size > 4 && !fit()) size -= 0.5;
-      doc.font("Helvetica"); let tot = 0; lines.forEach(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? size * 1.15 : size); tot += doc.heightOfString(l[1], { width: bwid }) + size * 0.35; });
-      let y = B + mm((big.y0 + big.y1) / 2) - tot / 2; if (labs.length) y = Math.max(y, B + mm(big.y0) + S + fs * 4.6);
+      const bigI = cells.indexOf(big), top = labBottom[bigI] != null ? labBottom[bigI] : B + mm(big.y0) + S, bot = B + mm(big.y1) - (big.y1 >= sh.h ? S + fs * 2.6 : mm(3) + fs * 1.4);
+      const totH = sz => lines.reduce((a, l) => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? sz * 1.15 : sz); return a + doc.heightOfString(l[1], { width: bwid }) + sz * 0.35; }, 0);
+      let size = fs; const fit = () => lines.every(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(size); return doc.heightOfString(l[1], { width: bwid }) < size * 3.6; }) && totH(size) <= bot - top;
+      while (size > 3.5 && !fit()) size -= 0.25;
+      const tot = totH(size); let y = Math.max(top, (top + bot) / 2 - tot / 2);
       lines.forEach(l => { doc.font(l[0] ? "Helvetica-Bold" : "Helvetica").fontSize(l[0] ? size * 1.15 : size).fillColor(l[0] ? C.text : C.muted); doc.text(l[1], bx, y, { width: bwid, align: "center" }); y = doc.y + size * 0.35; });
       // Legende unten
       const leg = [[C.bleed, "Beschnitt (wird abgeschnitten)"], [C.trim, "Endformat / Schnittkante"], [C.safe, "Sicherheitsabstand"]].concat(xs.length || ys.length ? [[C.fold, "Falzlinie"]] : []).filter((x, i) => sh.b || i);

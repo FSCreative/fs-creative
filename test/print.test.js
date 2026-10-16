@@ -549,6 +549,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const vk = await fetch(B + "/print/api/template?product=visitenkarten&c=" + encodeURIComponent(JSON.stringify(BC))); assert.strictEqual(vk.status, 200);
     const vd = await PDFDocument.load(Buffer.from(await vk.arrayBuffer())); assert.strictEqual(vd.getPageCount(), 2, "4/4 → Vorder- und Rückseite");
     if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, "vk.pdf"), Buffer.from(await vd.save()));
+    for (const fd of ["luik_6", "cross_8"]) { const rr = await fetch(B + "/print/api/template?product=folder&c=" + encodeURIComponent(JSON.stringify(Object.assign({}, FO, { sel: Object.assign({}, FO.sel, { size: "a5", fold: fd }) })))); assert.strictEqual(rr.status, 200, fd);
+      if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, fd + ".pdf"), Buffer.from(await rr.arrayBuffer())); }
     assert.strictEqual((await fetch(B + "/print/api/template?product=gibtsnicht")).status, 404);
   });
   await t("KI-Assistent ohne ANTHROPIC_API_KEY: aus (Katalog ai=false, Endpunkt 503); /print/hilfe erreichbar", async () => {
