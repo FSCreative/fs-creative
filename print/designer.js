@@ -279,7 +279,11 @@
       ctx.beginPath(); if (D.round) ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, T.w / 2, T.h / 2, 0, 0, Math.PI * 2); else ctx.rect(T.x, T.y, T.w, T.h); ctx.stroke();
       ctx.lineWidth = 1 / z; ctx.strokeStyle = "#0a84ff"; ctx.setLineDash([6 / z, 4 / z]); ctx.beginPath();
       if (D.round) ctx.ellipse(T.x + T.w / 2, T.y + T.h / 2, S.w / 2, S.h / 2, 0, 0, Math.PI * 2); else ctx.rect(S.x, S.y, S.w, S.h); ctx.stroke();
-      if (D.panels > 1 || foldYs().length) { ctx.strokeStyle = "#30d158"; ctx.setLineDash([8 / z, 5 / z]); foldXs().forEach(function (fx) { ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, D.H); ctx.stroke(); }); foldYs().forEach(function (fy) { ctx.beginPath(); ctx.moveTo(0, fy); ctx.lineTo(D.W, fy); ctx.stroke(); }); }
+      if (D.panels > 1 || foldYs().length) { ctx.strokeStyle = "#30d158"; ctx.setLineDash([8 / z, 5 / z]); foldXs().forEach(function (fx) { ctx.beginPath(); ctx.moveTo(fx, 0); ctx.lineTo(fx, D.H); ctx.stroke(); }); foldYs().forEach(function (fy) { ctx.beginPath(); ctx.moveTo(0, fy); ctx.lineTo(D.W, fy); ctx.stroke(); });
+        // Sicherheitsabstand an der Falz (3 mm je Seite): Texte nicht in den Bruch
+        ctx.strokeStyle = "rgba(10,132,255,.45)"; ctx.setLineDash([4 / z, 4 / z]); var SR = D.saferect, fs = 3 * U;
+        foldXs().forEach(function (fx) { [fx - fs, fx + fs].forEach(function (x) { ctx.beginPath(); ctx.moveTo(x, SR.y); ctx.lineTo(x, SR.y + SR.h); ctx.stroke(); }); });
+        foldYs().forEach(function (fy) { [fy - fs, fy + fs].forEach(function (y) { ctx.beginPath(); ctx.moveTo(SR.x, y); ctx.lineTo(SR.x + SR.w, y); ctx.stroke(); }); }); }
       ctx.setLineDash([]);
     }
     if (D.crop) { var cr = D.crop.r, cw = cr.width * cr.scaleX, chh = cr.height * cr.scaleY; ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.beginPath(); ctx.rect(-D.W, -D.H, D.W * 3, D.H * 3); ctx.rect(cr.left, cr.top, cw, chh); ctx.fill("evenodd"); ctx.strokeStyle = "#ff2d92"; ctx.lineWidth = 2 / z; ctx.setLineDash([]); ctx.strokeRect(cr.left, cr.top, cw, chh); }
@@ -740,7 +744,7 @@
         var os = sides(outS), ot = sides(outT);
         if (os.length) add(ot.length ? "error" : "warn", "„" + String(o.text || (o.curve || {}).text || nm).split("\n")[0].slice(0, 30) + "“ " + (ot.length ? "ragt über die Schnittkante (" + ot.map(function (k) { return SIDE[k]; }).join(", ") + ") und wird abgeschnitten." : "liegt im Sicherheitsabstand (" + os.map(function (k) { return SIDE[k]; }).join(", ") + ") – kann beim Schneiden angeschnitten werden."), o, "safe");
         if (o.type === "textbox" && o.fontSize * (o.scaleY || 1) / U / PT < 5.5) add("warn", "Sehr kleine Schrift bei „" + String(o.text).slice(0, 24) + "“ (unter 6 pt) – im Druck schwer lesbar.", o);
-        folds.forEach(function (fx) { if (b.left < fx + 2 * U && r > fx - 2 * U) add("warn", "„" + String(o.text || nm).split("\n")[0].slice(0, 30) + "“ liegt über bzw. direkt an der Falz – Text bitte ins Feld daneben schieben.", o); });
+        folds.forEach(function (fx) { if (b.left < fx + 3 * U && r > fx - 3 * U) add("warn", "„" + String(o.text || nm).split("\n")[0].slice(0, 30) + "“ liegt über bzw. direkt an der Falz – Text bitte ins Feld daneben schieben.", o); });
         if (o.type === "textbox" && vivid(o.fill)) viv[hexOf(o.fill)] = 1;
       } else {
         var big = b.width * b.height > trimArea * 0.35, os2 = sides(outS).filter(function (k) { return !toEdge[k]; }), ot2 = sides(outT).filter(function (k) { return !toEdge[k]; });
