@@ -804,3 +804,4 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
   .ps-mcart{display:none!important}
 }
 @media(max-width:900px){body:has(.ps-ddl.big) .ps-bnav,body:has(.pd) .ps-bnav,body:has(.ps-pop) .ps-bnav{display:none}}
+@media (max-width:760px){.ps-head{grid-template-columns:92px minmax(0,1fr)}.ps-head-t h2{font-size:20px;line-height:1.2}.ps-head-t .sub{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.ps-head .ps-about{grid-column:1/-1}}

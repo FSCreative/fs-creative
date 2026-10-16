@@ -16,7 +16,9 @@
   var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }); };
   var deDate = function (iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }); };
   // Texte aus dem Print.com-CMS: HTML/Markdown/Links entfernen (teils abgeschnittene <a href=…)
-  var txt = function (v) { return String(v || "").replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, "$1").replace(/<[^>]*>?/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "").replace(/&nbsp;/g, " ").replace(/[ \t]{2,}/g, " ").trim(); };
+  var txt = function (v) { return String(v || "").replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, "$1").replace(/<[^>]*>?/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "").replace(/&nbsp;/g, " ").replace(/\*\*|__/g, "").replace(/[ \t]{2,}/g, " ").trim(); };
+  // erste Aussage einer Beschreibung (für Untertitel/Karten): keine Aufzählung, max. ~140 Zeichen
+  var lead = function (v) { var t = txt(v); if (/^\s*[-*•]/.test(t)) return ""; t = t.split(/\n| - /)[0]; return t.length > 140 ? t.slice(0, 137).replace(/\s+\S*$/, "") + " …" : t; };
   var imgOk = function (u) { return /^https:\/\/images\.ctfassets\.net\//.test(String(u || "")); };
   function api(path, body, method) {
     return fetch(path, { method: method || (body ? "POST" : "GET"), headers: body ? H : {}, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" })
@@ -512,7 +514,7 @@
   function featCard(p, big) {
     var tag = p.designer ? "Online gestalten oder Datei hochladen" : p.kind === "banner" ? "Wunschgröße in cm" : "Druckdaten hochladen";
     return '<button type="button" class="ps-feat' + (big ? " big" : "") + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="ic">' + esc(p.icon) + "</span>") + "</span>" +
-      '<span class="bd">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) ? "" : "<span>" + esc(txt(p.desc)) + "</span>") +
+      '<span class="bd">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go">' + esc(tag) + " →</span></span></button>";
   }
   function vHome() {
@@ -553,7 +555,7 @@
   function cardHtml(p) {
     var tag = p.lazy ? "Druckdaten hochladen" : p.kind === "textile" || p.kind === "promo" ? "Logo hochladen" : p.designer ? "Online gestalten oder hochladen" : "Druckdaten hochladen";
     return '<button type="button" class="ps-prod' + (p.best ? " best" : "") + '" data-prod="' + esc(p.key) + '" aria-pressed="' + (!!S.prod && S.prod.key === p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + "</span>" +
-      '<span class="bd"><b>' + esc(p.title) + "</b>" + (badDesc(p) ? "" : "<span>" + esc(txt(p.desc)) + "</span>") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + '</span><span class="tag">' + tag + "</span></span></button>";
+      '<span class="bd"><b>' + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + '</span><span class="tag">' + tag + "</span></span></button>";
   }
   function filtered() {
     var qq = S.q.trim().toLowerCase();
@@ -688,7 +690,7 @@
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-who"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
-    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2><p class="sub">' + esc(badDesc(p) ? "" : txt(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
+    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2><p class="sub">' + esc(badDesc(p) ? "" : lead(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
