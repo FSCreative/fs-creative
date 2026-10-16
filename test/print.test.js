@@ -284,7 +284,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await admin("/admin/api/print/op", { op: "place", id: o1.orderId, confirm: true }); assert.strictEqual(r.ok, true, JSON.stringify(r));
     assert.strictEqual(r.order.status, "ordered"); assert.strictEqual(r.order.printcom.orderNumber, "6000001");
     const b = M.orders[0]; assert.strictEqual(b.billingAddress.companyName, "FS Creative"); assert.strictEqual(b.billingAddress.email, "simon@fs-creative.at");
-    assert.strictEqual(b.deDuplicationId, o1.orderId); assert.strictEqual(b.items[0].sku, "businesscards"); assert.strictEqual(b.items[0].options.copies, 250); assert.strictEqual(b.items[0].options.printingmethod, "digital");
+    assert.strictEqual(b.deDuplicationId, o1.orderId); assert.strictEqual(b.items[0].sku, "businesscards"); assert.strictEqual(b.items[0].options.copies, 250); assert.strictEqual(b.items[0].options.printingmethod, "offset", "automatisch Offset, wo möglich");
     assert.strictEqual(b.items[0].fileOptions.isProduction, true); assert.strictEqual(b.items[0].approveDesign, true);
     assert.strictEqual(b.items[0].shipments[0].address.email, "maria@example.com"); assert.strictEqual(b.items[0].shipments[0].copies, 250);
     const fu = new URL(b.items[0].fileUrl); assert.strictEqual(fu.origin, "https://www.fs-creative.at");

@@ -667,7 +667,20 @@ module.exports = function (D) {
     const pcOpts = Object.assign({}, all, { copies }); if (prod.urgency.length) pcOpts.urgency = urgency;
     const labels = (fmt ? [fmt] : []).concat(prod.props.map(pr => [pr.title, (pr.options.find(o => o.slug === sel[pr.slug]) || {}).name || sel[pr.slug]]), more);
     if (kind === "flat" && !size) size = sizeOf(prod, all);
-    return { sel, fileSel, copies, urgency, pcOpts, labels, sides: positions ? positions.length : sidesOf(all), size, variants, positions, textile: tex, excluded: excl, kind };
+    const pmWanted = String(input.pm || "auto").replace(/[^a-z0-9_]/gi, "").slice(0, 40) || "auto";   // Druckverfahren: „auto“ = Offset wo möglich, sonst günstigstes
+    // Alternativen je Druckverfahren (Digital/Offset/…): jeweils mit den Ausschlussregeln und Mengenbereichen gelöst – nur gültige Kombinationen
+    let pmAlts = null;
+    if (kind !== "textile" && kind !== "promo" && prod.auto && Array.isArray(prod.auto.printingmethod) && prod.auto.printingmethod.length > 1 && !excl) {
+      pmAlts = [];
+      for (const pm of prod.auto.printingmethod.map(String)) {
+        if (pmOnly && pmOnly.printingmethod.indexOf(pm) < 0) continue;
+        const rr = resolveSel(prod, sel, extra, Object.assign({}, pmOnly || {}, { printingmethod: [pm] }));
+        if (rr.excluded || String(rr.all.printingmethod) !== pm) continue;
+        const po = Object.assign({}, rr.all, { copies }); if (prod.urgency.length) po.urgency = urgency; pmAlts.push({ pm, pcOpts: po });
+      }
+      if (pmAlts.length < 2) pmAlts = null;
+    }
+    return { sel, fileSel, copies, urgency, pcOpts, labels, pmWanted, pmAlts, sides: positions ? positions.length : sidesOf(all), size, variants, positions, textile: tex, excluded: excl, kind };
   }
 
   // ── Steuer ──
@@ -709,17 +722,32 @@ module.exports = function (D) {
     PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 2000) PRICE_CACHE.clear();
     return v;
   }
+  const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Großformatdruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
   async function quote(prod, n, country, postcode, cust) {
     if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
-    const buy = await purchase(prod, n, country, postcode);
     const markup = ov.markupPct != null ? +ov.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : c.minMargin;
     // Aufschlag (und ggf. Mindestmarge) nur auf das Produkt – Versand wird zum Einkaufspreis weitergegeben; auf 10 Cent aufrunden
-    const net = Math.ceil((Math.max(buy.product * (1 + markup / 100), buy.product + minM) + buy.shipping) * 10 - 1e-6) / 10;
-    const tax = taxFor(country, cust), vat = r2(net * tax.rate / 100);
-    return { net: r2(net), vat, gross: r2(net + vat), rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    const netOf = b => Math.ceil((Math.max(b.product * (1 + markup / 100), b.product + minM) + b.shipping) * 10 - 1e-6) / 10;
+    const tax = taxFor(country, cust);
+    // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
+    let buy, methods = null;
+    if (n.pmAlts) {
+      const tries = await Promise.all(n.pmAlts.map(a => purchase(prod, Object.assign({}, n, { pcOpts: a.pcOpts }), country, postcode).then(v => ({ pm: a.pm, pcOpts: a.pcOpts, v }), () => null)));
+      const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
+      if (ok.length) {
+        // automatisch: Offset, wo es geht (gewünscht), sonst das günstigste (z. B. kleine Auflagen → Digitaldruck)
+        const pick = (n.pmWanted && n.pmWanted !== "auto" && ok.find(x => x.pm === n.pmWanted)) || ok.find(x => x.pm === "offset") || ok[0]; buy = pick.v;
+        n.pcOpts = pick.pcOpts; n.pm = pick.pm;
+        if (n.labels && !n.labels.some(l => l[0] === "Druckverfahren")) n.labels.push(["Druckverfahren", PM_DE[pick.pm] || pick.pm]);
+        methods = ok.map(x => { const nt = netOf(x.v); return { pm: x.pm, name: PM_DE[x.pm] || x.pm, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)), deliveryDate: x.v.deliveryDate }; });
+      }
+    }
+    if (!buy) buy = await purchase(prod, n, country, postcode);
+    const net = netOf(buy), vat = r2(net * tax.rate / 100);
+    return { methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
-  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true });
+  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
   // ───────────────────────── Dateien ─────────────────────────
   function sniff(buf) {
