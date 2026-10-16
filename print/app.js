@@ -780,6 +780,19 @@
   // Vorschau der Druckdatei (pdf.js) mit Beschnitt, Endformat und Sicherheitsabstand + Randanalyse (Inhalte zu nah am Rand, fehlender Beschnitt)
   var PDFJS = null, PFV = {};
   function pdfjs() { if (PDFJS) return PDFJS; PDFJS = new Promise(function (res, rej) { var sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); }; sc.onerror = function () { PDFJS = null; rej(new Error("pdf.js")); }; document.head.appendChild(sc); }); return PDFJS; }
+  // Tiefenprüfung je Seite: effektive Bildauflösung (Platzierung aus dem Inhaltsstrom) und nicht eingebettete Schriften
+  function pdfDeep(pg) {
+    var O = window.pdfjsLib.OPS; return pg.getOperatorList().then(function (ol) {
+      var ctm = [1, 0, 0, 1, 0, 0], st = [], imgs = [], fonts = {};
+      var mul = function (m, c) { return [m[0] * c[0] + m[1] * c[2], m[0] * c[1] + m[1] * c[3], m[2] * c[0] + m[3] * c[2], m[2] * c[1] + m[3] * c[3], m[4] * c[0] + m[5] * c[2] + c[4], m[4] * c[1] + m[5] * c[3] + c[5]]; };
+      for (var i = 0; i < ol.fnArray.length; i++) { var fn = ol.fnArray[i], a = ol.argsArray[i];
+        if (fn === O.save) st.push(ctm.slice()); else if (fn === O.restore) ctm = st.pop() || [1, 0, 0, 1, 0, 0]; else if (fn === O.transform) ctm = mul(a, ctm);
+        else if (fn === O.paintImageXObject || fn === O.paintInlineImageXObject || fn === O.paintJpegXObject) { var im = null; try { im = typeof a[0] === "string" ? (pg.objs.has(a[0]) ? pg.objs.get(a[0]) : pg.commonObjs.has(a[0]) ? pg.commonObjs.get(a[0]) : null) : a[0]; } catch (e) {}
+          var wpt = Math.hypot(ctm[0], ctm[1]), hpt = Math.hypot(ctm[2], ctm[3]); if (im && im.width && wpt > 14 && hpt > 14) imgs.push(Math.round(Math.min(im.width / (wpt / 72), im.height / (hpt / 72)))); }
+        else if (fn === O.setFont) { try { var f = pg.commonObjs.get(a[0]); if (f && f.missingFile) fonts[String(f.name || "").replace(/^[A-Z]{6}\+/, "")] = 1; } catch (e) {} } }
+      return { imgs: imgs, fonts: Object.keys(fonts) };
+    });
+  }
   function pfvRender() {
     var box = document.getElementById("psPfv"); if (!box || !S.file) return; var f = S.file, key = f.fileId + (S.pfvOff ? ":0" : ":1"), c = box.querySelector(".ps-pfv-c");
     if (PFV[key]) { c.innerHTML = PFV[key].html; document.getElementById("psPfvW").innerHTML = PFV[key].warn; return; }
@@ -790,9 +803,9 @@
       return Promise.all(jobs).then(function (pages) { return Promise.all(pages.map(function (pg) {
         var v0 = pg.getViewport({ scale: 1 }), wmm = v0.width / 72 * 25.4, b = Math.abs(wmm - (trim.w + 2 * bleed)) < 2 || Math.abs(wmm - (trim.h + 2 * bleed)) < 2 ? bleed : 0;
         var sc = Math.min(2, 560 / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function () { return { cv: cv, b: b, mmW: wmm }; }); })); });
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function () { return pdfDeep(pg).catch(function () { return {}; }); }).then(function (deep) { return { cv: cv, b: b, mmW: wmm, deep: deep }; }); })); });
     }).then(function (res) {
-      var warns = [], out = res.map(function (r, idx) {
+      var warns = [], okNotes = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
         // Randanalyse: Pixel zwischen Endformat und Sicherheitslinie, die deutlich vom typischen Randton abweichen
         try { var data = x.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
@@ -809,11 +822,15 @@
           if (r.b > 0) { var wo = 0, ci = 0, tot = 0; for (var yy = Math.round(sp); yy < H - sp; yy += 5) { tot++; var o1 = px(Math.max(0, Math.round(bp * 0.4)), yy), i1 = px(Math.round(bp) + 2, yy); if (o1[0] > 245 && o1[1] > 245 && o1[2] > 245 && !(i1[0] > 245 && i1[1] > 245 && i1[2] > 245)) wo++; }
             if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden können weiße Ränder (Blitzer) entstehen."); }
         } catch (e) {}
+        var dp = r.deep || {}, lab2 = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        if (dp.imgs && dp.imgs.length) { var lo = Math.min.apply(null, dp.imgs); if (lo < 150) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen 300 dpi)."); else if (lo < 250) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße (empfohlen 300 dpi) – kann leicht unscharf wirken."); else okNotes.push(lab2 + dp.imgs.length + " Bild(er) mit ausreichender Auflösung (ab " + lo + " dpi)."); }
+        if (dp.fonts && dp.fonts.length) warns.push(lab2 + "Schrift nicht eingebettet: " + dp.fonts.slice(0, 3).join(", ") + " – beim Export „Schriften einbetten“ aktivieren oder Text in Pfade umwandeln.");
         if (!S.pfvOff) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
           x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.setLineDash([]); if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
           x.strokeStyle = "#30d158"; x.setLineDash([6, 4]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp); x.restore(); }
         return '<figure><img src="' + cv.toDataURL("image/png") + '" alt="Vorschau ' + (idx ? "Rückseite" : "Vorderseite") + '"><figcaption>' + (res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") : "Seite 1") + (r.b ? "" : " · ohne Beschnitt") + "</figcaption></figure>"; });
       var html = '<div class="ps-pfv-g">' + out.join("") + "</div>", wh = warns.length ? '<ul class="ps-checks">' + warns.map(function (w) { return '<li class="warn">' + esc(w) + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li class="ok">Randanalyse: keine Inhalte zu nah am Rand gefunden.</li></ul>';
+      if (okNotes.length) wh += '<ul class="ps-checks">' + okNotes.map(function (w) { return '<li class="ok">' + esc(w) + "</li>"; }).join("") + "</ul>";
       PFV[key] = { html: html, warn: wh }; var b2 = document.getElementById("psPfv"); if (b2 && b2.getAttribute("data-fid") === f.fileId) { b2.querySelector(".ps-pfv-c").innerHTML = html; document.getElementById("psPfvW").innerHTML = wh; }
       if (warns.length && S.file === f) { f.edgeWarn = warns; var qb = document.querySelector(".ps-qual.ok"); if (qb) { qb.className = "ps-qual warn"; qb.innerHTML = '<i aria-hidden="true"></i><div><b>Druckbar – mit Hinweisen</b><span>Die Randanalyse hat etwas gefunden – siehe Vorschau unten. Unsicher? Wähle an der Kasse den Profi-Datencheck.</span></div>'; } }
     }).catch(function () { var b3 = document.getElementById("psPfv"); if (b3) b3.querySelector(".ps-pfv-c").innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – bitte „PDF ansehen“ nutzen.</p>'; });
