@@ -301,7 +301,7 @@
   var chT = 0, asT = 0;
   function changed() {
     if (!D || D.loading || D.crop) return; D.dirty = true;
-    clearTimeout(chT); chT = setTimeout(function () { if (!D || D.loading) return; var s = JSON.stringify(snapshot()), h = D.hist[D.cur]; if (h[h.length - 1] !== s) { h.push(s); if (h.length > 60) h.shift(); D.fut[D.cur] = []; } updUndo(); if (D.panel === "layers" || D.panel === "check") renderPanel(); }, 250);
+    clearTimeout(chT); chT = setTimeout(function () { if (!D || D.loading) return; var s = JSON.stringify(snapshot()), h = D.hist[D.cur]; if (h[h.length - 1] !== s) { h.push(s); if (h.length > 60) h.shift(); D.fut[D.cur] = []; } updUndo(); checkBadge(); if (D.panel === "layers" || D.panel === "check") renderPanel(); }, 250);
     clearTimeout(asT); asT = setTimeout(autosave, 1500);
   }
   function autosave() { if (!D) return; saveCur(); try { localStorage.setItem(D.akey, JSON.stringify({ at: Date.now(), cur: D.cur, pages: D.pages })); D.asFail = false; } catch (e) { D.asFail = true; } }
@@ -318,13 +318,13 @@
       if (!D.c.getObjects().some(function (o) { return o.__bg; })) { addBg("#ffffff"); }
       if (!D.hist[i].length) D.hist[i].push(JSON.stringify(snapshot()));
       updUndo(); D.root.querySelectorAll("[data-page]").forEach(function (b) { b.setAttribute("aria-current", String(+b.getAttribute("data-page") === i)); });
-      renderPanel();
+      renderPanel(); checkBadge();
     });
   }
   function undo(redo) {
     var h = D.hist[D.cur], f = D.fut[D.cur];
     if (!redo) { if (h.length < 2) return; f.push(h.pop()); } else { if (!f.length) return; h.push(f.pop()); }
-    loadJSON(unpackJSON(JSON.parse(h[h.length - 1]))).then(function () { updUndo(); renderPanel(); clearTimeout(asT); asT = setTimeout(autosave, 1500); });
+    loadJSON(unpackJSON(JSON.parse(h[h.length - 1]))).then(function () { updUndo(); renderPanel(); checkBadge(); clearTimeout(asT); asT = setTimeout(autosave, 1500); });
   }
 
   // ── Objekte anlegen ──
@@ -710,31 +710,71 @@
 
   // ── Prüfung ──
   function issues(pageIdx) {
-    var out = [], viv = {}, c = D.c, T = D.trim, S = D.saferect, tol = 0.5 * U, objs = c.getObjects().filter(function (o) { return !o.__bg && o.visible; });
+    var out = [], viv = {}, c = D.c, T = D.trim, S = D.saferect, tol = 0.5 * U, all = c.getObjects(), objs = all.filter(function (o) { return !o.__bg && o.visible; });
     var pg = D.sides > 1 ? (D.o.product.key === "folder" ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"])[pageIdx] + ": " : "";
-    if (!objs.length && (bgRect().fill === "#ffffff")) out.push({ level: "warn", text: pg + "Die Seite ist leer – sie wird weiß gedruckt." });
+    var add = function (level, text, o, fix) { out.push({ level: level, text: pg + text, idx: o ? all.indexOf(o) : -1, fix: fix || "" }); };
+    var SIDE = { left: "links", top: "oben", right: "rechts", bottom: "unten" };
+    if (!objs.length && (bgRect().fill === "#ffffff")) add("warn", "Die Seite ist leer – sie wird weiß gedruckt.");
+    var folds = []; if (D.panels > 1) for (var fi = 1; fi < D.panels; fi++) folds.push(T.x + T.w * fi / D.panels);
+    var trimArea = T.w * T.h;
     objs.forEach(function (o) {
-      var b = o.getBoundingRect(true, true), nm = nameOf(o);
-      if (o.role === "ph") { out.push({ level: "info", text: pg + nm + " ist noch leer – Platzhalter werden nicht gedruckt." }); return; }
-      if (o.type === "textbox") {
-        if (b.left < S.x - tol || b.top < S.y - tol || b.left + b.width > S.x + S.w + tol || b.top + b.height > S.y + S.h + tol) out.push({ level: (b.left < T.x || b.top < T.y || b.left + b.width > T.x + T.w || b.top + b.height > T.y + T.h) ? "error" : "warn", text: pg + "„" + String(o.text).split("\n")[0].slice(0, 30) + "“ liegt außerhalb des Sicherheitsabstands" + ((b.left < T.x || b.top < T.y || b.left + b.width > T.x + T.w || b.top + b.height > T.y + T.h) ? " und wird angeschnitten." : " – könnte beim Schneiden zu knapp werden.") });
-        if (o.fontSize * (o.scaleY || 1) / U / PT < 5.5) out.push({ level: "warn", text: pg + "Sehr kleine Schrift bei „" + String(o.text).slice(0, 24) + "“ (unter 6 pt)." });
-        if (vivid(o.fill)) viv[hexOf(o.fill)] = 1;
+      var b = o.getBoundingRect(true, true), nm = nameOf(o), r = b.left + b.width, bo = b.top + b.height;
+      if (o.role === "ph") { add("info", nm + " ist noch leer – Platzhalter werden nicht gedruckt.", o); return; }
+      var isText = o.type === "textbox" || o.role === "curve" || (o.type === "group" && o.getObjects().some(function (x) { return x.type === "textbox" || x.type === "text"; }));
+      // ganz außerhalb des Endformats → wird nicht gedruckt
+      if (b.left >= T.x + T.w - tol || r <= T.x + tol || b.top >= T.y + T.h - tol || bo <= T.y + tol) { add("warn", nm + " liegt außerhalb des Endformats und wird nicht gedruckt.", o, "safe"); return; }
+      var outS = { left: b.left < S.x - tol, top: b.top < S.y - tol, right: r > S.x + S.w + tol, bottom: bo > S.y + S.h + tol };
+      var outT = { left: b.left < T.x - tol, top: b.top < T.y - tol, right: r > T.x + T.w + tol, bottom: bo > T.y + T.h + tol };
+      var toEdge = { left: b.left <= tol, top: b.top <= tol, right: r >= D.W - tol, bottom: bo >= D.H - tol };
+      var sides = function (m) { return Object.keys(m).filter(function (k) { return m[k]; }); };
+      if (isText) {
+        var os = sides(outS), ot = sides(outT);
+        if (os.length) add(ot.length ? "error" : "warn", "„" + String(o.text || (o.curve || {}).text || nm).split("\n")[0].slice(0, 30) + "“ " + (ot.length ? "ragt über die Schnittkante (" + ot.map(function (k) { return SIDE[k]; }).join(", ") + ") und wird abgeschnitten." : "liegt im Sicherheitsabstand (" + os.map(function (k) { return SIDE[k]; }).join(", ") + ") – kann beim Schneiden angeschnitten werden."), o, "safe");
+        if (o.type === "textbox" && o.fontSize * (o.scaleY || 1) / U / PT < 5.5) add("warn", "Sehr kleine Schrift bei „" + String(o.text).slice(0, 24) + "“ (unter 6 pt) – im Druck schwer lesbar.", o);
+        folds.forEach(function (fx) { if (b.left < fx + 2 * U && r > fx - 2 * U) add("warn", "„" + String(o.text || nm).split("\n")[0].slice(0, 30) + "“ liegt über bzw. direkt an der Falz – Text bitte ins Feld daneben schieben.", o); });
+        if (o.type === "textbox" && vivid(o.fill)) viv[hexOf(o.fill)] = 1;
+      } else {
+        var big = b.width * b.height > trimArea * 0.35, os2 = sides(outS).filter(function (k) { return !toEdge[k]; }), ot2 = sides(outT).filter(function (k) { return !toEdge[k]; });
+        if (ot2.length) add("warn", nm + " ragt über die Schnittkante (" + ot2.map(function (k) { return SIDE[k]; }).join(", ") + "), reicht aber nicht bis zum Beschnittrand – bis zum Rand ziehen (randlos) oder nach innen schieben.", o, "bleed");
+        else if (os2.length && !big && (o.role === "qr" || o.type === "image" || o.type === "group" || o.type === "path")) add("warn", nm + " liegt im Sicherheitsabstand (" + os2.map(function (k) { return SIDE[k]; }).join(", ") + ") – kann beim Schneiden angeschnitten werden.", o, "safe");
+        // endet genau an der Schnittkante → weißer Blitzer
+        var at = [["left", b.left, T.x], ["top", b.top, T.y], ["right", r, T.x + T.w], ["bottom", bo, T.y + T.h]].filter(function (e) { return Math.abs(e[1] - e[2]) < tol; }).map(function (e) { return e[0]; });
+        if (at.length) add("warn", nm + " endet genau an der Schnittkante (" + at.map(function (k) { return SIDE[k]; }).join(", ") + ") – bitte bis in den Beschnitt ziehen, sonst können weiße Blitzer entstehen.", o, "bleed");
+        if (o.fill && typeof o.fill === "string" && vivid(o.fill) && o.type !== "image") viv[hexOf(o.fill)] = 1;
       }
-      if (o.type === "image") { var dpi = dpiOf(o); if (dpi < 250) out.push({ level: dpi < 100 ? "error" : "warn", text: pg + nm + ": nur " + dpi + " dpi in Druckgröße (empfohlen ≥ 250)." }); }
-      if (o.role === "qr" && Math.min(b.width, b.height) / U < 15) out.push({ level: "warn", text: pg + "QR-Code ist kleiner als 15 mm – schwer scannbar." });
-      if ((o.strokeWidth || 0) > 0 && o.stroke && o.type !== "group" && o.strokeWidth * (o.strokeUniform ? 1 : Math.min(o.scaleX, o.scaleY)) / U < 0.1) out.push({ level: "warn", text: pg + nm + ": Linie dünner als 0,1 mm." });
-      if (o.type !== "textbox" && o.fill && typeof o.fill === "string" && vivid(o.fill) && o.type !== "image") viv[hexOf(o.fill)] = 1;
-      // endet genau an der Schnittkante → weißer Blitzer
-      [["left", b.left, T.x, 0], ["top", b.top, T.y, 0], ["right", b.left + b.width, T.x + T.w, D.W], ["bottom", b.top + b.height, T.y + T.h, D.H]].forEach(function (e) {
-        if (o.type !== "textbox" && Math.abs(e[1] - e[2]) < tol && Math.abs(e[1] - e[3]) > tol) out.push({ level: "warn", text: pg + nm + " endet genau an der Schnittkante (" + { left: "links", top: "oben", right: "rechts", bottom: "unten" }[e[0]] + ") – bitte bis in den Beschnitt ziehen, sonst können weiße Blitzer entstehen." }); });
+      if (o.type === "image" && o.role !== "bgimg") { var dpi = dpiOf(o); if (dpi < 250) add(dpi < 150 ? "error" : "warn", nm + ": nur " + dpi + " dpi in Druckgröße (empfohlen ≥ 300, mindestens 250)" + (dpi < 150 ? " – wird sichtbar unscharf." : "."), o); }
+      if (o.role === "bgimg") { var dpb = dpiOf(o); if (dpb < 150) add(dpb < 100 ? "error" : "warn", "Hintergrundbild: nur " + dpb + " dpi in Druckgröße – wirkt unscharf.", o); }
+      if (o.role === "qr" && Math.min(b.width, b.height) / U < 15) add("warn", "QR-Code ist kleiner als 15 mm – schwer scannbar.", o);
+      if ((o.strokeWidth || 0) > 0 && o.stroke && o.type !== "group" && o.strokeWidth * (o.strokeUniform ? 1 : Math.min(o.scaleX, o.scaleY)) / U < 0.1) add("warn", nm + ": Linie dünner als 0,1 mm – wird evtl. nicht sichtbar gedruckt.", o);
     });
-    if (Object.keys(viv).length) out.push({ level: "info", text: pg + "Sehr leuchtende Bildschirmfarbe" + (Object.keys(viv).length > 1 ? "n " : " ") + Object.keys(viv).join(", ") + " – im Druck (CMYK) wirk" + (Object.keys(viv).length > 1 ? "en sie" : "t sie") + " etwas matter." });
+    if (Object.keys(viv).length) add("info", "Sehr leuchtende Bildschirmfarbe" + (Object.keys(viv).length > 1 ? "n " : " ") + Object.keys(viv).join(", ") + " – im Druck (CMYK) wirk" + (Object.keys(viv).length > 1 ? "en sie" : "t sie") + " etwas matter.");
     var seen = {}; return out.filter(function (x) { if (seen[x.text]) return false; seen[x.text] = 1; return true; });
   }
+  // Ein-Klick-Korrekturen: in den Sicherheitsabstand schieben bzw. randlos bis zum Beschnittrand ziehen
+  function fixIssue(idx, kind) {
+    var c = D.c, o = c.getObjects()[idx]; if (!o) return; var S = D.saferect, T = D.trim, b = o.getBoundingRect(true, true), tol = 0.5 * U;
+    if (kind === "safe") {
+      if (b.width > S.w || b.height > S.h) { var k = Math.min(S.w / b.width, S.h / b.height) * 0.98; o.set({ scaleX: o.scaleX * k, scaleY: o.scaleY * k }); o.setCoords(); b = o.getBoundingRect(true, true); }
+      var dx = b.left < S.x ? S.x - b.left : b.left + b.width > S.x + S.w ? S.x + S.w - b.left - b.width : 0, dy = b.top < S.y ? S.y - b.top : b.top + b.height > S.y + S.h ? S.y + S.h - b.top - b.height : 0;
+      o.set({ left: o.left + dx, top: o.top + dy });
+    } else if (kind === "bleed") {
+      var L = b.left, R = b.left + b.width, Tp = b.top, Bm = b.top + b.height, nL = L, nR = R, nT = Tp, nB = Bm;
+      if (L <= T.x + tol) nL = 0; if (R >= T.x + T.w - tol) nR = D.W; if (Tp <= T.y + tol) nT = 0; if (Bm >= T.y + T.h - tol) nB = D.H;
+      var sx = (nR - nL) / b.width, sy = (nB - nT) / b.height;
+      if (o.type === "image" || o.type === "group") { var k2 = Math.max(sx, sy); o.set({ scaleX: o.scaleX * k2, scaleY: o.scaleY * k2 }); o.setCoords(); var b2 = o.getBoundingRect(true, true); o.set({ left: o.left + (nL === 0 ? -b2.left : nR === D.W ? D.W - (b2.left + b2.width) : (nL - b2.left)), top: o.top + (nT === 0 ? -b2.top : nB === D.H ? D.H - (b2.top + b2.height) : (nT - b2.top)) }); }
+      else { o.set({ scaleX: o.scaleX * sx, scaleY: o.scaleY * sy }); o.setCoords(); var b3 = o.getBoundingRect(true, true); o.set({ left: o.left + (nL - b3.left), top: o.top + (nT - b3.top) }); }
+    }
+    o.setCoords(); c.setActiveObject(o); c.requestRenderAll(); changed(); toast(kind === "safe" ? "In den Sicherheitsabstand verschoben" : "Bis zum Beschnittrand gezogen"); setTimeout(function () { setPanel("check"); }, 300);
+  }
+  // Live-Zähler am „Prüfen“-Knopf
+  function checkBadge() {
+    if (!D || !D.root) return; var l = issues(D.cur).filter(function (x) { return x.level !== "info"; }), e = l.some(function (x) { return x.level === "error"; });
+    D.root.querySelectorAll('[data-tool="check"]').forEach(function (bt) { var bd = bt.querySelector(".pd-cnt"); if (!bd) { bd = document.createElement("i"); bd.className = "pd-cnt"; bt.appendChild(bd); } bd.textContent = l.length || "✓"; bd.className = "pd-cnt " + (e ? "err" : l.length ? "warn" : "ok"); });
+  }
   function checkHtml(list) {
-    return '<div class="pd-sec"><h4>Aktuelle Seite</h4>' + (list.length ? '<ul class="ps-checks">' + list.map(function (x) { return '<li class="' + (x.level === "info" ? "warn" : x.level) + '">' + esc(x.text) + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li>Keine Auffälligkeiten – Texte im Sicherheitsabstand, Bilder ausreichend aufgelöst.</li></ul>') +
-      '<p class="pd-muted">Endformat ' + D.mm.w + " × " + D.mm.h + " mm, Datei " + (D.mm.w + 2 * D.b) + " × " + (D.mm.h + 2 * D.b) + " mm inkl. " + D.b + " mm Beschnitt. Farben werden für den Druck in CMYK umgerechnet." + (D.asFail ? " Automatisches Speichern im Browser war nicht möglich (zu groß) – nutze „Link“." : "") + "</p></div>";
+    return '<div class="pd-sec"><h4>Aktuelle Seite</h4>' + (list.length ? '<ul class="ps-checks">' + list.map(function (x) { return '<li class="' + (x.level === "info" ? "warn" : x.level) + '">' + esc(x.text) +
+      (x.idx > -1 ? '<span class="pd-fixes"><button type="button" class="ps-link" data-a="isel:' + x.idx + '">Zeigen</button>' + (x.fix === "safe" ? '<button type="button" class="ps-link" data-a="ifix:' + x.idx + ',safe">In den Sicherheitsabstand schieben</button>' : x.fix === "bleed" ? '<button type="button" class="ps-link" data-a="ifix:' + x.idx + ',bleed">Bis zum Beschnittrand ziehen</button>' : "") + "</span>" : "") + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li>Keine Auffälligkeiten – Texte im Sicherheitsabstand, Bilder ausreichend aufgelöst.</li></ul>') +
+      '<div class="pd-geo"><span><i class="t"></i>Endformat <b>' + D.mm.w + " × " + D.mm.h + ' mm</b></span><span><i class="b"></i>Beschnitt (Druckzugabe) <b>' + D.b + ' mm</b> je Seite → Datei ' + (D.mm.w + 2 * D.b) + " × " + (D.mm.h + 2 * D.b) + ' mm</span><span><i class="s"></i>Sicherheitsabstand <b>' + D.safe + ' mm</b> – Texte &amp; Logos innerhalb</span></div><p class="pd-muted">Hintergründe und randlose Bilder bis zum äußeren Rand (Beschnitt) ziehen. Farben werden für den Druck in CMYK umgerechnet.' + (D.panels > 1 ? " Falzlinien sind grün markiert – keine Texte über der Falz." : "") + (D.asFail ? " Automatisches Speichern im Browser war nicht möglich (zu groß) – nutze „Link“." : "") + "</p></div>";
   }
 
   // ── Vorschau, Export ──
@@ -860,6 +900,8 @@
       case "zoomin": zoomTo(c.getZoom() * 1.25); break; case "zoomout": zoomTo(c.getZoom() / 1.25); break; case "fit": fit(); break;
       case "t": addText(v); break; case "sh": addShape(v); break;
       case "ai": aiRun(); break;
+      case "isel": var so = D.c.getObjects()[+v]; if (so) { D.c.setActiveObject(so); D.c.requestRenderAll(); } break;
+      case "ifix": var fp = v.split(","); fixIssue(+fp[0], fp[1]); break;
       case "blank": modal('<h3>Leere Seite?</h3><p class="pd-muted">Alle Elemente werden entfernt.</p><div class="foot"><button class="ps-btn" data-a="m:no">Abbrechen</button><button class="ps-btn primary" data-a="m:yes">Leeren</button></div>', function (r) { if (r === "yes") { D.pages = PrintTemplates.blank({ sides: D.sides }).map(function () { return { objects: [] }; }); D.hist = D.pages.map(function () { return []; }); loadPage(0, true).then(changed); } }); break;
       case "img": if (v === "add" || v === "replace") pickFile().then(function (f) { if (!f) return; var ph = o && o.role === "ph" ? o : (v === "replace" && o && o.type === "image" ? o : null); if (v === "replace" && ph) { var pb = ph; addImage(f, { ph: pb }); } else addImage(f, { ph: ph }); });
         else if (v === "bg") pickFile().then(function (f) { if (f) { c.getObjects().filter(function (x) { return x.role === "bgimg"; }).forEach(function (x) { c.remove(x); }); addImage(f, { bg: true }); } });
