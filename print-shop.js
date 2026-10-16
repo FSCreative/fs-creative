@@ -1289,6 +1289,9 @@ module.exports = function (D) {
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
   const live = () => process.env.PRINT_SHOP_LIVE === "1";
+  // Ansichtsmodus (PRINT_SHOP_VIEW=1, z. B. für die Mollie-Prüfung): Shop, Preise, AGB öffentlich sichtbar – Bestellen noch gesperrt
+  const viewOnly = () => !live() && process.env.PRINT_SHOP_VIEW === "1";
+  const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an office@fs-creative.at.";
   function soonPage(res) {
     const html = '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Bald verfügbar — FS Creative</title><link rel="stylesheet" href="/landing.css?v=4"></head><body><main id="main"><div class="wrap"><section class="lhero"><span class="eyebrow">Druck</span><h1>Bald verfügbar.</h1><p class="lead">Diese Seite ist noch nicht öffentlich. Drucksachen gestalten und drucken wir gern persönlich für dich.</p><div class="btn-row"><a class="btn primary" href="/druck">Zu Druck &amp; Print</a><a class="btn ghost" href="/kontakt?von=print&amp;thema=Druck">Anfragen</a></div></section></div></main></body></html>';
     return D.send(res, 404, html, "text/html; charset=utf-8", { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
@@ -1298,15 +1301,18 @@ module.exports = function (D) {
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
     // Shop-Dateien je Deploy neu laden (sonst bleibt bis zu 1 Std. die alte app.js/print.css im Browser-Cache)
     html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace("</head>", '<script>window.PRINT_V="' + ASSET_V + '";</script>\n</head>');
-    if (preview) html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
+    if (preview === "view") html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
+      .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:calc(100vw - 32px);text-align:center">Bestellungen sind in Kürze möglich – der Druckshop startet bald</div>');
+    else if (preview) html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function handlePublic(req, res, u, p) {
-    const open = live(), admin = !!(D.adminAuthed && D.adminAuthed(req));
+    const open = live(), view = viewOnly(), admin = !!(D.adminAuthed && D.adminAuthed(req));
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
-    if (gated && !open && !admin) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
-    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, !open); }
+    if (gated && !open && !admin && !view) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
+    if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
+    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true); }
     try {
       // Druckdatei für Print.com: nur mit Signatur und nur für echte, freigegebene Bestellungen
       let m = p.match(/^\/print-files\/(f[a-f0-9]{24})\/([a-f0-9]{40})\.pdf$/);
