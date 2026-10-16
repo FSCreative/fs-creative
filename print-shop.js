@@ -126,6 +126,22 @@ const A_SIZES = { a0: [841, 1189], a1: [594, 841], a2: [420, 594], a3: [297, 420
 const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahlung fehlgeschlagen", paid: "Bezahlt – zur Prüfung", invoice_requested: "Rechnung – Freigabe nötig",
   ordered: "Bei Print.com bestellt", in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", rejected: "Abgelehnt", problem: "Problem bei Print.com" };
 const REVIEW = { paid: 1, invoice_requested: 1 };
+// Für Kund:innen: nie den Produktionspartner nennen
+const STATUS_PUB = Object.assign({}, STATUS_DE, { ordered: "In Produktion gegeben", problem: "In Klärung – wir melden uns" });
+// Texte aus dem Print.com-CMS für den Shop: fremde E-Mail-Adressen → simon@fs-creative.at, Links/Nennungen von Print.com entfernen
+const SHOP_MAIL = "simon@fs-creative.at";
+function scrubText(t) {
+  return String(t).replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, m => /fs-creative\.at$/i.test(m) ? m : SHOP_MAIL)
+    .replace(/https?:\/\/(?:[a-z0-9-]+\.)*print\.com\S*/gi, "").replace(/\bwww\.print\.com\S*/gi, "")
+    .replace(/\b(?:bei |von |über |via )?print\.com\b/gi, m => /^(bei|von|über|via) /i.test(m) ? m.split(" ")[0] + " uns" : "FS Creative")
+    .replace(/\b(?:drukwerkdeal|printdeal)\b(?:\.[a-z]{2,3})?/gi, "FS Creative");
+}
+function scrubPub(v, key) {
+  if (typeof v === "string") return /^(img|images|src|url|sku|slug|key|val|parent|icon)$/.test(key || "") || /^https:\/\/images\.ctfassets\.net\//.test(v) ? v : scrubText(v);
+  if (Array.isArray(v)) return v.map(x => scrubPub(x, key === "images" ? "images" : ""));
+  if (v && typeof v === "object") { const o = {}; Object.keys(v).forEach(k => { o[k] = scrubPub(v[k], k); }); return o; }
+  return v;
+}
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
 const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
 // Datencheck: „self“ = Kunde gibt frei (automatische Hinweise), bezahlte Aufträge gehen sofort an Print.com; „pro“ = Profi-Check gegen Aufpreis (je Warenkorb), landet in der Warteschlange
@@ -225,7 +241,7 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
+    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 5, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
     return SETTINGS;
   }
   const SKU_RX = /^[a-z0-9_-]{1,80}$/i;
@@ -234,6 +250,11 @@ module.exports = function (D) {
     if (pl.live !== undefined) s.live = pl.live === true;
     // Marge für alle Produkte: globaler Aufschlag/Mindestmarge (null = Standard aus PRINT_MARKUP_PCT/PRINT_MIN_MARGIN_EUR); applyAll entfernt alle Einzelwerte
     ["markupPct", "minMarginEur"].forEach(k => { if (pl[k] === undefined) return; const n = parseFloat(String(pl[k]).replace(",", ".")); s[k] = pl[k] === null || pl[k] === "" || !isFinite(n) ? null : Math.max(0, Math.min(k === "markupPct" ? 500 : 1000, n)); });
+    // Preisanker (Mitbewerber-Bruttopreise je Ausführung und Auflage): Ziel = Anker − Abstand, nie unter Einkauf + Mindestmarge
+    if (pl.anchors && typeof pl.anchors === "object") Object.keys(pl.anchors).slice(0, 300).forEach(k => { const a = pl.anchors[k]; if (a === null) { delete s.anchors[k]; return; } if (!Array.isArray(a)) return;
+      s.anchors[k] = a.slice(0, 40).map(x => ({ sig: Object.assign({}, x.sig || {}), tiers: Object.keys(x.tiers || {}).reduce((o, c) => { const v = parseFloat(x.tiers[c]); if (+c > 0 && v > 0) o[+c] = v; return o; }, {}), src: clip(x.src || "druck.at", 60), at: x.at || today() })).filter(x => Object.keys(x.tiers).length); });
+    if (pl.anchorGap !== undefined) { const g = parseFloat(String(pl.anchorGap).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 50) s.anchorGap = g; }
+    if (pl.minMarginPct !== undefined) { const g = parseFloat(String(pl.minMarginPct).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 100) s.minMarginPct = g; }
     if (pl.applyAll === true) Object.keys(s.products).forEach(k => { delete s.products[k].markupPct; delete s.products[k].minMarginEur; });   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
     if (pl.autoSend !== undefined) s.autoSend = pl.autoSend === true;
     if (pl.open !== undefined) s.open = pl.open !== false;
@@ -747,7 +768,14 @@ module.exports = function (D) {
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
     const markup = ov.markupPct != null ? +ov.markupPct : s.markupPct != null ? s.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : s.minMarginEur != null ? s.minMarginEur : c.minMargin;
     // Aufschlag (und ggf. Mindestmarge) nur auf das Produkt – Versand wird zum Einkaufspreis weitergegeben; auf 10 Cent aufrunden
-    const netOf = b => Math.ceil((Math.max(b.product * (1 + markup / 100), b.product + minM) + b.shipping) * 10 - 1e-6) / 10;
+    const tax0 = taxFor(country, cust), floorOf = b => (b.product + b.shipping) * (1 + (s.minMarginPct != null ? s.minMarginPct : 5) / 100);
+    // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
+    const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard") || n.kind === "banner" || n.textile) return 0;
+      const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
+      const cs = Object.keys(a.tiers).map(Number).sort((x, y) => x - y), c = +n.copies; if (!cs.length || c < cs[0] || c > cs[cs.length - 1]) return 0;
+      if (a.tiers[c]) return a.tiers[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return a.tiers[lo] + (a.tiers[hi] - a.tiers[lo]) * (c - lo) / (hi - lo); })();
+    const ancNet = ancGross ? (ancGross - (s.anchorGap != null ? s.anchorGap : 2)) / (1 + 20 / 100) : 0;   // Anker sind österreichische Bruttopreise (20 %)
+    const netOf = b => Math.ceil(Math.max(floorOf(b), ancNet || (Math.max(b.product * (1 + markup / 100), b.product + minM) + b.shipping)) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust);
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
@@ -771,7 +799,7 @@ module.exports = function (D) {
     const disc = nt => bp ? Math.floor(nt * fac * 10 + 1e-6) / 10 : nt;
     if (bp && methods) methods = methods.map(m => { const nt = disc(m.net); return Object.assign({}, m, { net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }); });
     const list = netOf(buy), net = disc(list), vat = r2(net * tax.rate / 100);
-    return { methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    return { anchor: ancGross ? r2(ancGross) : null, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, margin: r2(net - buy.total), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
   const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
@@ -917,8 +945,8 @@ module.exports = function (D) {
       const j = await pcApi("GET", "/pdf/preflight/" + encodeURIComponent(meta.preflight.id), undefined, { base: cfg().pcPlatform });
       if (j && j.status && j.status !== "PROCESSING") {
         meta.preflight = { id: meta.preflight.id, status: j.status, errors: (j.errors || []).map(x => clip(x.message, 300)).slice(0, 20), warnings: (j.warnings || []).map(x => clip(x.message, 300)).slice(0, 20), fixes: (j.fixes || []).map(x => clip(x.message, 300)).slice(0, 20), reason: clip(j.failure_reason, 300) };
-        meta.preflight.errors.forEach(t => meta.checks.push({ level: "error", text: "Print.com-Prüfung: " + t }));
-        meta.preflight.warnings.forEach(t => meta.checks.push({ level: "warn", text: "Print.com-Prüfung: " + t }));
+        meta.preflight.errors.forEach(t => meta.checks.push({ level: "error", text: "Erweiterte Prüfung: " + scrubText(t) }));
+        meta.preflight.warnings.forEach(t => meta.checks.push({ level: "warn", text: "Erweiterte Prüfung: " + scrubText(t) }));
         await store.putFile(meta);
       }
     } catch (e) { log("Preflight:", e.message); }
@@ -1470,7 +1498,7 @@ module.exports = function (D) {
   }
   async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
-  const orderPublic = o => ({ id: o.id, nr: o.nr, groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_DE[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
+  const orderPublic = o => ({ id: o.id, nr: o.nr, groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [], email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
@@ -1553,14 +1581,14 @@ module.exports = function (D) {
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
         const cat = await catalog(false), all = await catalogAll().catch(() => null);
         const products = publicCatalog(cat, s, all);
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       if (p === "/print/api/product" && req.method === "GET") {
         if (!cfg().pcKey) return J(res, 503, { ok: false, error: "Der Shop wird gerade eingerichtet" });
         if (limited("product", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
         const prod = await findProduct(u.searchParams.get("key")); if (!prod) return J(res, 404, { ok: false, error: "Produkt nicht verfügbar" });
-        return J(res, 200, { ok: true, product: pubProd(prod) });
+        return J(res, 200, { ok: true, product: scrubPub(pubProd(prod)) });
       }
       m = p.match(/^\/print\/api\/file\/(f[a-f0-9]{24})$/);
       if (m && req.method === "GET") {
