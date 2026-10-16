@@ -27,7 +27,7 @@
   function loadScript(l) { return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = l.src; if (l.sri) { s.integrity = l.sri; s.crossOrigin = "anonymous"; } s.referrerPolicy = "no-referrer"; s.onload = res; s.onerror = function () { rej(new Error("Bibliothek konnte nicht geladen werden")); }; document.head.appendChild(s); }); }
   var libsP = null;
   function libs() {
-    if (!libsP) libsP = Promise.all([window.fabric ? 1 : loadScript(LIB.fabric), window.qrcode ? 1 : loadScript(LIB.qr), window.PrintTemplates ? 1 : loadScript({ src: "/print/templates.js?v=3" })]).catch(function (e) { libsP = null; throw e; });
+    if (!libsP) libsP = Promise.all([window.fabric ? 1 : loadScript(LIB.fabric), window.qrcode ? 1 : loadScript(LIB.qr), window.PrintTemplates ? 1 : loadScript({ src: "/print/templates.js?v=" + (window.PRINT_V || "4") })]).catch(function (e) { libsP = null; throw e; });
     return libsP;
   }
   // ── Schriften (mitgeliefert, /print/fonts) ──
@@ -370,7 +370,7 @@
     return o;
   }
   function applyTemplate(id, initial, over) {
-    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: D.sides, panels: D.panels, round: D.round };
+    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: D.sides, panels: D.panels, foldX: D.fold ? D.fold.x : null, round: D.round };
     if (over) { ctx.texts = over.texts; ctx.pal = over.pal; }
     var pages = PrintTemplates.build(id, ctx), all = []; pages.forEach(function (p) { all = all.concat(p); });
     return loadFontsOf(all).then(function () {
@@ -631,7 +631,7 @@
   function syncTextArea() { var ta = D && D.root.querySelector("#pdTA"), o = D && act(); if (ta && o && o.type === "textbox" && document.activeElement !== ta) ta.value = o.text; }
   var thumbCache = {};
   function thumbs() {
-    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: 1, panels: D.panels, round: D.round };
+    var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: 1, panels: D.panels, foldX: D.fold ? D.fold.x : null, round: D.round };
     PrintTemplates.list(D.o.product.key).forEach(function (t) {
       var cv = D.P.querySelector('[data-thumb="' + t.id + '"]'); if (!cv) return; var key = t.id + JSON.stringify(ctx);
       if (thumbCache[key]) { var im = new Image(); im.src = thumbCache[key]; im.alt = ""; cv.replaceWith(im); return; }

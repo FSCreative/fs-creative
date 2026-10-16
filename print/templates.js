@@ -217,18 +217,22 @@
   }
   // Folder: Seite 1 = außen (rechts Titel, Mitte Rückseite, links Info), Seite 2 = innen (Spalten)
   function folderPage(st, tx, sz, ctx, side) {
-    var w = ctx.w, h = ctx.h, b = ctx.bleed, n = ctx.panels || 2, pw = w / n, f = Math.min(pw, h) / sz[0];
+    var w = ctx.w, h = ctx.h, b = ctx.bleed, n = ctx.panels || 2;
+    // Feldgrenzen: echte Falzpositionen (Wickelfalz: Einklappseite schmaler; Innenseite gespiegelt), sonst gleich breit
+    var C = ctx.foldX && ctx.foldX.length ? [0].concat(ctx.foldX.map(function (x) { return side ? w - x : x; }).sort(function (a2, b2) { return a2 - b2; })).concat([w]) : null;
+    if (!C) { C = [0]; for (var k = 1; k < n; k++) C.push(w * k / n); C.push(w); } n = C.length - 1;
+    var PX = function (i) { return C[i]; }, pw = Math.min.apply(null, C.slice(1).map(function (x, i) { return x - C[i]; })), f = Math.min(pw, h) / sz[0];
     var m = Math.max(ctx.safe + 2, Math.min(pw, h) * 0.09), cw = pw - 2 * m, pH = sz[1] * f, pS = sz[2] * f, pB = sz[3] * f, pF = sz[4] * f;
     var els = [{ t: "bg", fill: st.bg }], fb = st.fb, fh = st.fh, H = upper(st, tx.H);
     if (side === 0) {
-      var x0 = (n - 1) * pw;  // Titelseite = rechtes Paneel
+      var x0 = PX(n - 1);  // Titelseite = rechtes Paneel
       if (st.lay === "band" || st.lay === "bold" || st.glow || st.circles) els.push({ t: "rect", x: x0, y: -b, w: pw + b, h: h + 2 * b, fill: st.lay === "bold" ? st.bg : st.ac, opacity: st.glow || st.circles ? 0.18 : 1 });
       var light = st.lay === "band";
       els.push({ t: "img", x: x0 + m, y: m, w: cw, h: h * 0.42, label: "Bild" });
       els.push(T(x0 + m, h * 0.42 + m * 1.6, cw, H, pH, { font: fh, bold: st.hb, color: light ? "#ffffff" : st.fg, lh: 1.05 }));
       els.push(T(x0 + m, h * 0.42 + m * 1.6 + textH(H, pH, cw, 1.05, fh) + m * 0.3, cw, tx.S, pS, { font: fb, italic: st.lay === "frame", color: light ? "#e6f0ff" : st.ac, lh: 1.2 }));
       els.push({ t: "img", x: x0 + m, y: h - m - h * 0.08, w: cw * 0.45, h: h * 0.08, label: "Logo", dark: light });
-      var xb = (n - 2) * pw;  // Rückseite
+      var xb = PX(n - 2);  // Rückseite
       els.push(T(xb + m, h - m - textH(tx.F, pF, cw, 1.45, fb) - Math.max(18, cw * 0.32) - m * 0.5, cw, tx.F, pF, { font: fb, color: st.mute, lh: 1.45 }));
       els.push({ t: "qr", x: xb + m, y: h - m - Math.max(18, cw * 0.32), s: Math.max(18, cw * 0.32), data: "https://" + tx.W, color: dk(st.bg) ? "#ffffff" : "#000000" });
       els.push(T(xb + m, m, cw, tx.A, pS, { font: fh, bold: true, color: st.ac }));
@@ -236,14 +240,14 @@
     } else {
       var parts = tx.B.split("\n\n");
       for (var i = 0; i < n; i++) {
-        var xi = i * pw + m, y = m, part = parts[i] || (i === n - 1 ? "Getränke\nAlmdudler 0,33 l · 3,90 €\nMontafoner Bier 0,5 l · 4,80 €\nHauswein 1/8 l · 3,60 €" : "");
+        var xi = PX(i) + m, y = m, part = parts[i] || (i === n - 1 ? "Getränke\nAlmdudler 0,33 l · 3,90 €\nMontafoner Bier 0,5 l · 4,80 €\nHauswein 1/8 l · 3,60 €" : "");
         if (i === 0) { els.push(T(xi, y, cw, upper(st, tx.H), pS * 1.5, { font: fh, bold: st.hb, color: st.ac })); y += pS * 0.3528 * 2.6; }
         var lines = part.split("\n"); if (!lines[0]) continue;
         els.push(T(xi, y, cw, lines[0], pS, { font: fh, bold: true, color: st.fg })); y += pS * 0.3528 * 1.7;
         els.push({ t: "rect", x: xi, y: y, w: cw * 0.25, h: 0.5, fill: st.ac }); y += 3;
         els.push(T(xi, y, cw, lines.slice(1).join("\n"), pB, { font: fb, color: st.fg, lh: 1.6 }));
       }
-      els.push(T(w - pw + m, h - m - pF * 0.3528 * 1.4, cw, tx.A, pF, { font: fb, italic: true, color: st.mute }));
+      els.push(T(PX(n - 1) + m, h - m - pF * 0.3528 * 1.4, cw, tx.A, pF, { font: fb, italic: true, color: st.mute }));
     }
     return els;
   }
