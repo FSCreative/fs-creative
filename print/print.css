@@ -380,3 +380,28 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 @media(max-width:1100px){.print-page .ps-layout{grid-template-columns:minmax(0,1fr) 320px}}
 @media(max-width:900px){.print-page .ps-layout{grid-template-columns:1fr}.print-page .ps-price{position:static}}
 @media(max-width:560px){.print-page .ps-products{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* ── Eigene Auswahllisten: Bestseller, Info (ⓘ), „passt mit …“ statt ausgegraut ── */
+.ps-tile.open{z-index:30;border-color:var(--ps-focus)}
+.ps-dd{width:100%;min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-radius:10px;border:1px solid var(--ps-line);background:var(--ps-field);color:var(--text);font-size:16px;font-weight:600;text-align:left;cursor:pointer}
+.ps-dd .v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ps-dd i{font-style:normal;color:var(--text-dim);transition:transform .15s}
+.ps-dd[aria-expanded="true"] i{transform:rotate(180deg)}
+.ps-ddl{position:absolute;left:-1px;right:-1px;top:calc(100% - 6px);z-index:40;background:var(--surface,#16161e);border:1px solid var(--ps-focus);border-radius:0 0 14px 14px;box-shadow:0 22px 50px rgba(0,0,0,.45);padding:8px;max-width:calc(100vw - 24px)}
+.ps-ddq{width:100%;min-height:40px;border-radius:10px;border:1px solid var(--ps-line2);background:var(--ps-field);color:var(--text);padding:6px 10px;font-size:15px;margin-bottom:6px}
+.ps-dds{max-height:min(420px,60vh);overflow:auto;overscroll-behavior:contain}
+.ps-ddg{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint);padding:10px 8px 4px}
+.ps-ddo{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;border-radius:10px}
+.ps-ddo:hover,.ps-ddo:focus-within{background:var(--ps-card)}
+.ps-ddo.sel{background:var(--ps-chipon,rgba(10,132,255,.15))}
+.ps-ddp{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;width:100%;min-height:44px;padding:8px 10px;border:0;background:none;color:var(--text);font-size:15px;cursor:pointer}
+.ps-ddp .n{line-height:1.3}
+.ps-ddp em{font-style:normal;font-size:10.5px;font-weight:700;color:#1d1d1f;background:#ffd60a;border-radius:999px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.ps-ddp .h{font-size:12.5px;color:var(--text-faint);line-height:1.35}
+.ps-ddo.warn .h{color:#ffb340}
+.ps-ddo.off .ps-ddp{cursor:not-allowed;opacity:.5}
+.ps-i{width:30px;height:30px;margin-right:6px;border-radius:50%;border:1px solid var(--ps-line2);background:none;color:var(--text-dim);font:italic 700 14px/1 Georgia,serif;cursor:pointer;flex:none}
+.ps-i[aria-expanded="true"],.ps-i:hover{background:var(--ps-focus);border-color:var(--ps-focus);color:#fff}
+.ps-ddinf{grid-column:1/-1;display:flex;gap:12px;align-items:flex-start;padding:4px 10px 12px;font-size:13.5px;line-height:1.45;color:var(--text-dim)}
+.ps-ddinf img{width:96px;height:96px;object-fit:cover;border-radius:10px;background:#fff;flex:none}
+.ps-ddinf p{margin:0}
+@media(max-width:640px){.ps-ddl{position:fixed;left:8px;right:8px;top:auto;bottom:8px;border-radius:16px;max-height:78vh;display:flex;flex-direction:column}.ps-dds{max-height:none;flex:1}}

@@ -57,6 +57,41 @@
     var r = solve(vars.concat(autoVars()), baseOf(keep)); if (!r) return;
     p.props.forEach(function (pr) { if (r[pr.slug] != null) S.sel[pr.slug] = r[pr.slug]; });
   }
+  // Wie fixSel, aber ohne S.sel zu ändern: welche anderen Optionen müssten sich ändern, damit `slug=val` geht? (null = gar nicht möglich)
+  function resolveWith(slug, val) {
+    var p = S.prod, t = Object.assign({}, S.sel); t[slug] = val; if (!excluded(t)) return {};
+    var keep = {}; keep[slug] = val;
+    var vars = p.props.filter(function (pr) { return pr.slug !== slug; }).map(function (pr) { var c = S.sel[pr.slug]; return [pr.slug, [c].concat(pr.options.map(function (o) { return o.slug; }).filter(function (x) { return x !== c; }))]; });
+    var r = solve(vars.concat(autoVars()), baseOf(keep)); if (!r) return null;
+    var ch = {}; p.props.forEach(function (pr) { if (pr.slug !== slug && r[pr.slug] != null && r[pr.slug] !== S.sel[pr.slug]) ch[pr.slug] = r[pr.slug]; }); return ch;
+  }
+  function optName(slug, val) { var pr = S.prod.props.filter(function (x) { return x.slug === slug; })[0], o = pr && pr.options.filter(function (x) { return x.slug === val; })[0]; return o ? o.name : val; }
+  function propTitle(slug) { var pr = S.prod.props.filter(function (x) { return x.slug === slug; })[0]; return pr ? pr.title : slug; }
+  function changesText(ch) { return Object.keys(ch).map(function (k) { return propTitle(k) + " → " + optName(k, ch[k]); }).join(" · "); }
+  // Eigene Auswahlliste: Bestseller oben, Gruppen, Suche ab 10 Einträgen, ⓘ je Option, nicht passende Optionen mit „passt mit …“ statt ausgegraut
+  function ddHtml(key, title, items, cur) {
+    var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
+    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ': ' + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + '</span><i aria-hidden="true">▾</i></button>';
+    if (!open) return btn;
+    var row = function (x) { var sel = String(x.val) === String(cur), info = S.ddInfo === key + "|" + x.val;
+      return '<div class="ps-ddo' + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
+        '<button type="button" class="ps-ddp" data-ddpick="' + esc(key) + '|' + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><span class="n">' + (sel ? '<b aria-hidden="true">✓</b> ' : "") + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
+        (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
+        (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + '|' + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-expanded="' + info + '">i</button>' : "") +
+        (info ? '<div class="ps-ddinf">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + "<p>" + esc(x.desc || "") + "</p></div>" : "") + "</div>"; };
+    var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; }), groups = [];
+    rest.forEach(function (x) { var g = x.group || ""; var G = groups.filter(function (y) { return y.n === g; })[0]; if (!G) { G = { n: g, l: [] }; groups.push(G); } G.l.push(x); });
+    var list = (best.length ? '<div class="ps-ddg">★ Bestseller</div>' + best.map(row).join("") : "") + groups.map(function (G) { return (G.n || best.length ? '<div class="ps-ddg">' + esc(G.n || "Alle Optionen") + "</div>" : "") + G.l.map(row).join(""); }).join("");
+    return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '">' + (items.length > 10 ? '<input type="search" class="ps-ddq" placeholder="Suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") + '<div class="ps-dds">' + list + "</div></div>";
+  }
+  function propItems(pr) {
+    var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug;
+    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: o.desc || "", img: imgOk(o.img) ? o.img : "", group: gname(o) };
+      if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
+      return it; });
+    var bo = bestOf(pr); items.sort(function (a, b) { return a.best && b.best ? bo.indexOf(a.val) - bo.indexOf(b.val) : 0; });
+    return items;
+  }
   function disabledOf(pr) { // nie alle Optionen sperren (dann entscheidet Print.com beim Preis)
     var d = {}, n = 0; pr.options.forEach(function (o) { var t = Object.assign({}, S.sel); t[pr.slug] = o.slug; if (excluded(t)) { d[o.slug] = 1; n++; } });
     return n >= pr.options.length ? {} : d;
@@ -222,7 +257,7 @@
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return o.color || imgOk(o.img); })) return '<div class="ps-tile wide"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(cur.name) + "</b>" : "") + "</span>" + chips("prop:" + pr.slug, opts, S.sel[pr.slug], dis) + "</div>";
     var best = cur && isBest(pr, cur.slug);
-    return '<div class="ps-tile' + (best ? " best" : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + selectHtml(pr, opts, dis) +
+    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
       (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + "</div>";
   }
   function sec(title, inner, extra) { return inner ? '<section class="ps-sec"><h3>' + esc(title) + '</h3><div class="ps-grid2">' + inner + "</div>" + (extra || "") + "</section>" : ""; }
@@ -239,14 +274,14 @@
   }
   function amountHtml(p) {
     var bt = bestTiers(p), inT = p.tiers.indexOf(S.copies) > -1;
-    var sel = '<select class="ps-sel" data-copies aria-label="Auflage">' + (inT ? "" : '<option value="' + S.copies + '" selected>' + (+S.copies).toLocaleString("de-AT") + " Stk. (eigene Menge)</option>") +
-      p.tiers.map(function (n) { return '<option value="' + n + '"' + (n === S.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + " Stk." + (bt.indexOf(n) > -1 ? "  ★ Bestseller" : "") + "</option>"; }).join("") + "</select>";
+    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + " Stk. (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + " Stk.", best: bt.indexOf(n) > -1 }; }));
+    var sel = ddHtml("copies", "Auflage", qi, S.copies);
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       own = '<div class="ps-tile"><span class="ps-tl">Andere Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></div>'; }
-    var ur = p.urgency.length > 1 ? '<div class="ps-tile' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + '</span><select class="ps-sel" data-urgency aria-label="Produktion">' +
-      p.urgency.map(function (u) { return '<option value="' + esc(u.slug) + '"' + (u.slug === S.urgency ? " selected" : "") + ">" + esc(u.name) + "</option>"; }).join("") + '</select><span class="ps-td">Bestimmt den Liefertermin rechts.</span></div>' : "";
-    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + "</div>" + own + ur + "</div></section>";
+    var ur = p.urgency.length > 1 ? '<div class="ps-tile' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
+      ddHtml("urgency", "Produktion", p.urgency.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) + '<span class="ps-td">Bestimmt den Liefertermin rechts.</span></div>' : "";
+    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + "</div>" + own + ur + "</div></section>";
   }
   function qtyHtml(p) {
     var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);
@@ -366,7 +401,20 @@
   }
 
   // ── Ereignisse ──
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && S.dd) { var k = S.dd; S.dd = ""; S.ddInfo = ""; render(); var b = root.querySelector('[data-dd="' + k + '"]'); if (b) b.focus(); } });
+  document.addEventListener("click", function (e) { if (S.dd && !root.contains(e.target)) { S.dd = ""; S.ddInfo = ""; render(); } });
   root.addEventListener("click", function (e) {
+    var dd = e.target.closest("[data-dd],[data-ddpick],[data-ddinfo]");
+    if (dd) {
+      if (dd.hasAttribute("data-dd")) { var k0 = dd.getAttribute("data-dd"); S.dd = S.dd === k0 ? "" : k0; S.ddInfo = ""; render(); if (S.dd) { var q0 = root.querySelector(".ps-ddq"), se = root.querySelector(".ps-ddo.sel"); if (se) se.scrollIntoView({ block: "nearest" }); if (q0 && window.innerWidth > 700) q0.focus(); } return; }
+      if (dd.hasAttribute("data-ddinfo")) { var iv = dd.getAttribute("data-ddinfo"); S.ddInfo = S.ddInfo === iv ? "" : iv; var sc = root.querySelector(".ps-dds"), st = sc ? sc.scrollTop : 0; render(); var sc2 = root.querySelector(".ps-dds"); if (sc2) sc2.scrollTop = st; return; }
+      var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = ""; S.ddInfo = "";
+      if (key.indexOf("prop:") === 0) { var slug = key.slice(5), before = Object.assign({}, S.sel); setProp(slug, val); var ch = {}; Object.keys(S.sel).forEach(function (k) { if (k !== slug && S.sel[k] !== before[k]) ch[k] = S.sel[k]; }); if (Object.keys(ch).length) toast("Angepasst, damit es zusammenpasst: " + changesText(ch)); return; }
+      if (key === "copies") { S.copies = +val; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
+      if (key === "urgency") { S.urgency = val; render(); loadPrice(); return; }
+      return;
+    }
+    if (S.dd && !e.target.closest(".ps-ddl")) { S.dd = ""; S.ddInfo = ""; render(); }
     var t = e.target.closest("[data-go],[data-prod],[data-act],[data-ctype],[data-group],[data-sub],[data-gal]"); if (!t || t.disabled) return;
     if (t.hasAttribute("data-go")) { e.preventDefault(); go(+t.getAttribute("data-go")); return; }
     if (t.hasAttribute("data-prod")) { pickProduct(t.getAttribute("data-prod"), function () { go(2); }); return; }
@@ -407,6 +455,7 @@
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
+    if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); return; }
     var t = e.target;
     if (t.id === "psQ") { S.q = t.value; var g = document.getElementById("psGrid"); if (g) g.innerHTML = gridHtml(); return; }
     if (t.hasAttribute("data-tsize")) { var n = Math.max(0, Math.min(5000, parseInt(t.value, 10) || 0)); if (n) S.textile.sizes[t.getAttribute("data-tsize")] = n; else delete S.textile.sizes[t.getAttribute("data-tsize")]; renderPrice(); loadPrice(); return; }
