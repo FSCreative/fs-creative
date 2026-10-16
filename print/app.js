@@ -695,7 +695,7 @@
     var coated = mat.options.filter(function (o) { return /gesatineerd|silk/.test(o.slug) && gr(o) >= 90; }), g0 = gr(ob(base.material)) || 135;
     var ok = function (sel) { return !excluded(sel); }, mk = function (o) { return Object.assign({}, base, o); };
     // Günstig: Kandidaten (leichtere bzw. gleich schwere Papiere) – gewählt wird nach echtem Preis
-    var cheap = coated.filter(function (o) { return gr(o) <= g0 && o.slug !== base.material; }).sort(function (a, b) { return gr(a) - gr(b); }).slice(0, 4).map(function (o) { return mk({ material: o.slug }); }).filter(ok);
+    var cheap = [];   // bewusst kein „Günstig“-Paket: nur Beliebt und Hochwertig
     // Hochwertig: schwereres mattes Papier + matte Folie, sonst Rückfall-Varianten
     var lams = fin ? fin.options.filter(function (o) { return /matt/.test(o.slug) && /lamination/.test(o.slug); }).sort(function (a, b) { return (/^double/.test(b.slug) === (base.printtype === "44")) - (/^double/.test(a.slug) === (base.printtype === "44")); }) : [];
     var heav = coated.filter(function (o) { return /silk/.test(o.slug) && gr(o) > g0; }).sort(function (a, b) { return Math.abs(gr(a) - g0 * 1.35) - Math.abs(gr(b) - g0 * 1.35); });
@@ -710,7 +710,7 @@
     var isOn = function (sel) { return Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
     var bp = price(P.base), cheapSel = null;
     if (bp) P.cheap.forEach(function (c) { var cp = price(c); if (cp && cp.gross < bp.gross - 0.5 && (!cheapSel || cp.gross < price(cheapSel).gross)) cheapSel = c; });
-    var l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(cheapSel ? [{ id: "guenstig", name: "Günstig", icon: "€", sel: cheapSel }] : []).concat(P.prem ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
+    var l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(P.prem ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
     window.__presets = l;
     var todo = [P.base].concat(P.cheap, P.prem ? [P.prem] : []).filter(function (sel) { return !(key(sel) in PRE); });
     if (todo.length) setTimeout(function () { var left = todo.length; todo.forEach(function (sel) { var k = key(sel); PRE[k] = null;
