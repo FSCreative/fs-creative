@@ -225,22 +225,48 @@
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
     var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ': ' + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + '</span><i aria-hidden="true">▾</i></button>';
     if (!open) return btn;
-    var row = function (x) { var sel = String(x.val) === String(cur), info = S.ddInfo === key + "|" + x.val;
-      return '<div class="ps-ddo' + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
+    DDI[key] = items;
+    var zi = 0, row = function (x) { var sel = String(x.val) === String(cur), info = false; zi++;
+      return '<div class="ps-ddo' + (zi % 2 ? "" : " z") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
         '<button type="button" class="ps-ddp" data-ddpick="' + esc(key) + '|' + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><span class="n">' + (sel ? '<b aria-hidden="true">✓</b> ' : "") + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
         (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
-        (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + '|' + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-expanded="' + info + '">i</button>' : "") +
+        (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + '|' + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") +
         (info ? '<div class="ps-ddinf">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + "<p>" + esc(x.desc || "") + "</p></div>" : "") + "</div>"; };
     var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; }), groups = [];
     rest.forEach(function (x) { var g = x.group || ""; var G = groups.filter(function (y) { return y.n === g; })[0]; if (!G) { G = { n: g, l: [] }; groups.push(G); } G.l.push(x); });
     // wie bei druck.at: Bestseller immer offen, weitere Kategorien aufklappbar (offen: die mit der aktuellen Auswahl bzw. per Klick); bei Suche alles offen
     var og = S.ddGrp[key] || (S.ddGrp[key] = {}), named = groups.some(function (G) { return G.n; }), fold = best.length > 0 || (named && groups.length > 1);
     var list = (best.length ? '<div class="ps-ddg">★ Bestseller</div>' + best.map(row).join("") : "") + groups.map(function (G) {
-      var nm = G.n || (best.length ? "Weitere Optionen" : "Alle Optionen"), has = G.l.some(function (x) { return String(x.val) === String(cur); }), isOpen = !fold || has || og[nm];
+      var nm = G.n || (best.length ? "Weitere Optionen" : "Alle Optionen"), has = G.l.some(function (x) { return String(x.val) === String(cur); }), isOpen = !fold || (og._set ? !!og[nm] : has);
       if (!fold) return (G.n ? '<div class="ps-ddg">' + esc(G.n) + "</div>" : "") + G.l.map(row).join("");
       return '<button type="button" class="ps-ddg ps-ddgt" data-ddgrp="' + esc(key) + "|" + esc(nm) + '" aria-expanded="' + !!isOpen + '"><span>' + esc(nm) + '</span><small>' + G.l.length + '</small><i aria-hidden="true">' + (isOpen ? "▾" : "▸") + "</i></button>" +
         '<div class="ps-ddgb"' + (isOpen ? "" : " hidden") + ">" + G.l.map(row).join("") + "</div>"; }).join("");
     return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '">' + (items.length > 10 ? '<input type="search" class="ps-ddq" placeholder="Suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") + '<div class="ps-dds">' + list + "</div></div>";
+  }
+  // Info-Popup zu einer Option (Papier, Veredelung …): Bild, Beschreibung, „Diese Option wählen“
+  var DDI = {};
+  function infoPop(key, val) {
+    var it = (DDI[key] || []).filter(function (x) { return String(x.val) === String(val); })[0];
+    if (!it && key.indexOf("prop:") === 0 && S.prod) { var pr0 = S.prod.props.filter(function (x) { return x.slug === key.slice(5); })[0]; if (pr0) it = propItems(pr0).filter(function (x) { return String(x.val) === String(val); })[0]; }
+    if (!it) return;
+    var pr = key.indexOf("prop:") === 0 && S.prod ? S.prod.props.filter(function (x) { return x.slug === key.slice(5); })[0] : null, isCur = pr ? S.sel[pr.slug] === val : false;
+    var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", it.name);
+    m.innerHTML = '<div class="ps-pop-c">' + (it.img ? '<img src="' + esc(String(it.img).replace(/w=\d+/, "w=900")) + '" alt="">' : "") + '<div class="ps-pop-b"><span class="ps-pop-k">' + esc(pr ? pr.title : "Info") + "</span><h3>" + esc(it.name) + (it.best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</h3>" +
+      "<p>" + esc(txt(it.desc) || "Zu dieser Option gibt es keine weiteren Infos.") + "</p>" + (it.warn ? '<p class="ps-pop-w">Passt mit: ' + esc(it.warn) + "</p>" : it.off ? '<p class="ps-pop-w">Mit der aktuellen Auswahl nicht lieferbar.</p>' : "") +
+      '<div class="ps-pop-a">' + (pr && !isCur && !it.off ? '<button type="button" class="ps-btn primary" data-popsel="1">Diese Option wählen</button>' : isCur ? '<span class="ps-pop-ok">✓ Aktuell gewählt</span>' : "") + '<button type="button" class="ps-btn" data-popx="1">Schließen</button></div></div><button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
+    document.body.appendChild(m); var f = m.querySelector("[data-popsel]") || m.querySelector("[data-popx]"); if (f) f.focus();
+    var close = function () { m.remove(); document.removeEventListener("keydown", esc0); };
+    var esc0 = function (e) { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    document.addEventListener("keydown", esc0);
+    m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) { close(); return; }
+      if (e.target.closest("[data-popsel]")) { close(); var b = document.createElement("button"); b.setAttribute("data-ddpick", key + "|" + val); b.style.display = "none"; root.appendChild(b); b.click(); b.remove(); } });
+  }
+  // „Deine Auswahl im Detail“: immer sichtbare Infos zu allen gewählten Optionen
+  function selInfoHtml(p) {
+    var rows = p.props.map(function (pr) { var o = pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; if (!o || NONE_RX.test(String(o.name).trim())) return ""; var d = txt(o.desc), im = imgOk(o.img) ? o.img : "";
+      return '<div class="ps-si">' + (im ? '<img src="' + esc(im) + '" alt="" loading="lazy">' : '<span class="ps-si-ic" aria-hidden="true">✓</span>') + '<div><span class="ps-si-k">' + esc(pr.title) + "</span><b>" + esc(/color/.test(pr.slug) ? colName(o.name) : o.name) + "</b>" + (d ? "<p>" + esc(d.length > 220 ? d.slice(0, 217) + " …" : d) + "</p>" : "") +
+        (d.length > 220 || im ? '<button type="button" class="ps-link" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(o.slug) + '">Mehr Infos</button>' : "") + "</div></div>"; }).filter(Boolean);
+    return rows.length ? '<details class="ps-selinfo" open><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div></details>" : "";
   }
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug;
@@ -489,7 +515,7 @@
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
     var best = cur && isBest(pr, cur.slug);
-    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
+    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
       (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + "</div>";
   }
   function sec(title, inner, extra) { return inner || extra ? '<section class="ps-sec"><h3>' + esc(title) + "</h3>" + (inner ? '<div class="ps-grid2">' + inner + "</div>" : "") + (extra || "") + "</section>" : ""; }
@@ -503,7 +529,7 @@
     var more = minor.length ? '<details class="ps-more"' + (changed ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
     var custom = (p.kind === "banner" && p.custom) || (fmt.some(function (pr) { return pr.slug === "size"; }) && isCustom()) ? customHtml() : "";
     var pmT = pmTile();
-    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + (main.length || more ? '<section class="ps-sec"><h3>Veredelung &amp; Optionen</h3>' + (main.length ? '<div class="ps-grid2">' + tiles(main) + "</div>" : "") + more + "</section>" : "");
+    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + (main.length || more ? '<section class="ps-sec"><h3>Veredelung &amp; Optionen</h3>' + (main.length ? '<div class="ps-grid2">' + tiles(main) + "</div>" : "") + more + "</section>" : "") + selInfoHtml(p);
   }
   // Druckverfahren (Digital/Offset/…): Preise je Verfahren vom Server, günstigstes zuerst; „automatisch“ nimmt immer das günstigste
   function pmTile() {
@@ -678,12 +704,12 @@
     if (tsb) { var tv = tsb.getAttribute("data-tstep").split("|"), cur0 = S.textile.sizes[tv[0]] || 0, nv = Math.max(0, Math.min(5000, cur0 + (+tv[1]) * (cur0 >= 50 ? 5 : 1))); if (nv) S.textile.sizes[tv[0]] = nv; else delete S.textile.sizes[tv[0]];
       var inp = root.querySelector('[data-tsize="' + tv[0] + '"]'); if (inp) { inp.value = nv || ""; inp.closest(".ps-size").classList.toggle("on", !!nv); } renderPrice(); loadPrice(); return; }
     var dg = e.target.closest("[data-ddgrp]");
-    if (dg) { var gv = dg.getAttribute("data-ddgrp"), gi = gv.indexOf("|"), gk = gv.slice(0, gi), gn = gv.slice(gi + 1), G0 = S.ddGrp[gk] || (S.ddGrp[gk] = {}); G0[gn] = dg.getAttribute("aria-expanded") !== "true";
+    if (dg) { var gv = dg.getAttribute("data-ddgrp"), gi = gv.indexOf("|"), gk = gv.slice(0, gi), gn = gv.slice(gi + 1), opn = dg.getAttribute("aria-expanded") !== "true", G0 = S.ddGrp[gk] = { _set: 1 }; if (opn) G0[gn] = true;   // Akkordeon: andere schließen
       var sc0 = root.querySelector(".ps-dds"), st0 = sc0 ? sc0.scrollTop : 0; render(); var sc1 = root.querySelector(".ps-dds"); if (sc1) sc1.scrollTop = st0; return; }
     var dd = e.target.closest("[data-dd],[data-ddpick],[data-ddinfo]");
     if (dd) {
       if (dd.hasAttribute("data-dd")) { var k0 = dd.getAttribute("data-dd"); S.dd = S.dd === k0 ? "" : k0; S.ddInfo = ""; render(); if (S.dd) { var q0 = root.querySelector(".ps-ddq"), se = root.querySelector(".ps-ddo.sel"); if (se) se.scrollIntoView({ block: "nearest" }); if (q0 && window.innerWidth > 700) q0.focus(); } return; }
-      if (dd.hasAttribute("data-ddinfo")) { var iv = dd.getAttribute("data-ddinfo"); S.ddInfo = S.ddInfo === iv ? "" : iv; var sc = root.querySelector(".ps-dds"), st = sc ? sc.scrollTop : 0; render(); var sc2 = root.querySelector(".ps-dds"); if (sc2) sc2.scrollTop = st; return; }
+      if (dd.hasAttribute("data-ddinfo")) { var iv = dd.getAttribute("data-ddinfo"), ii = iv.indexOf("|"); infoPop(iv.slice(0, ii), iv.slice(ii + 1)); return; }
       var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = ""; S.ddInfo = "";
       if (key.indexOf("prop:") === 0) { var slug = key.slice(5), before = Object.assign({}, S.sel); setProp(slug, val); var ch = {}; Object.keys(S.sel).forEach(function (k) { if (k !== slug && S.sel[k] !== before[k]) ch[k] = S.sel[k]; }); if (Object.keys(ch).length) toast("Angepasst, damit es zusammenpasst: " + changesText(ch)); return; }
       if (key === "copies") { S.copies = +val; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
