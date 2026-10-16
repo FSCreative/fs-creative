@@ -145,7 +145,7 @@ function scrubPub(v, key) {
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
 const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
 // Datencheck: „self“ = Kunde gibt frei (automatische Hinweise), bezahlte Aufträge gehen sofort an Print.com; „pro“ = Profi-Check gegen Aufpreis (je Warenkorb), landet in der Warteschlange
-const PRO_CHECK_GROSS = 5;
+const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 10;
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
 // Stufe je Kalenderjahr: Umsatz des Jahres ergibt eine Stufe; am 31.12. fällt die erreichte Stufe um zwei zurück (Platin → Silber, Gold → Bronze, Silber/Bronze → keine)
 function bonusCalc(orders, year) {
@@ -1262,7 +1262,7 @@ module.exports = function (D) {
       const o = x.o; o.check = check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
       hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       x.fm.orderId = o.id; await store.putFile(x.fm); await store.putOrder(o);
-      for (const lid of x.fm.logos || []) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
+      for (const lid of (x.fm.logos || []).concat(x.fm.motifFiles || [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
     }
     const orders = prepared.map(x => x.o);
     if (method === "mollie") {
@@ -1277,19 +1277,35 @@ module.exports = function (D) {
     const fail = (m, st) => Object.assign(new Error(where + m), { status: st || 400 });
     const prod = await findProduct(input.product, s); if (!prod) throw fail("Produkt nicht verfügbar");
     const n = normalizeSel(prod, input);
-    const fm = await store.fileMeta(String(input.fileId || ""));
-    if (!fm || !sigOk("file", fm.id, input.fileToken)) throw fail("Druckdatei nicht gefunden – bitte erneut hochladen");
-    if (fm.orderId) throw fail("Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
-    if (fm.kind === "logo" || (fm.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
-    if (fm.product !== prod.key || JSON.stringify(fm.sel) !== JSON.stringify(n.fileSel)) throw fail("Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
-    if ((fm.checks || []).some(c => c.level === "error")) throw fail("Die Druckdatei hat noch Fehler – bitte korrigieren");
+    const chk = async (fid, tok, label) => {
+      const f = await store.fileMeta(String(fid || "")), w = label ? label + ": " : "";
+      if (!f || !sigOk("file", f.id, tok)) throw fail(w + "Druckdatei nicht gefunden – bitte erneut hochladen");
+      if (f.orderId) throw fail(w + "Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
+      if (f.kind === "logo" || (f.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
+      if (f.product !== prod.key || JSON.stringify(f.sel) !== JSON.stringify(n.fileSel)) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
+      if ((f.checks || []).some(c => c.level === "error")) throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren");
+      return f;
+    };
+    let fm, motifs = null;
+    // Mehrere Motive (Sortenmix): Stückzahlen je Motiv = Gesamtauflage; die Druckdateien werden zu einem PDF zusammengeführt (Motiv für Motiv), an Print.com als variants
+    if (Array.isArray(input.motifs) && input.motifs.length > 1 && (prod.kind || "flat") === "flat") {
+      const ms = input.motifs.slice(0, MAX_MOTIFS); let sum = 0; const list = [];
+      for (let i = 0; i < ms.length; i++) { const c = Math.max(1, parseInt(ms[i].copies, 10) || 0); sum += c; list.push({ fm: await chk(ms[i].fileId, ms[i].fileToken, "Motiv " + (i + 1)), copies: c }); }
+      if (sum !== n.copies) throw fail("Die Stückzahlen der Motive (" + sum + ") ergeben nicht die Gesamtauflage (" + n.copies + ")");
+      const { PDFDocument } = require("pdf-lib"); const doc = await PDFDocument.create(); const pageMap = []; let pg = 1;
+      for (let i = 0; i < list.length; i++) { const src = await PDFDocument.load(await store.fileData(list[i].fm.id)); const pages = await doc.copyPages(src, src.getPageIndices()); pages.forEach(x => doc.addPage(x));
+        pageMap.push({ page: pages.length > 1 ? pg + "–" + (pg + pages.length - 1) : String(pg), title: "Motiv " + (i + 1) + " (" + list[i].copies + " Stk.)", motif: i + 1, copies: list[i].copies }); pg += pages.length; }
+      const t0 = list[0].fm, checks = [{ level: "ok", text: list.length + " Motive zusammengeführt: " + pageMap.map(p => "Seite " + p.page + " = " + p.title).join(", ") + "." }].concat(...list.map((x, i) => (x.fm.checks || []).filter(c => c.level !== "ok").map(c => ({ level: c.level, text: "Motiv " + (i + 1) + ": " + c.text }))));
+      fm = await newFile("motifs", "motive.pdf", Buffer.from(await doc.save()), { product: t0.product, sel: t0.sel, size: t0.size, bleed: t0.bleed, sides: t0.sides, pages: pg - 1 }, checks, { pageMap, motifFiles: list.map(x => x.fm.id) });
+      motifs = list.map((x, i) => ({ motif: i + 1, copies: x.copies, fileId: x.fm.id, fileName: x.fm.name }));
+    } else fm = await chk(input.fileId, input.fileToken, "");
     const q = await quote(prod, n, cust.country, cust.zip, Object.assign({}, cust, { disc: Array.isArray(input.__disc) ? input.__disc : [] }));
     const exp = parseFloat(input.expectedGross);
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };
     const id = "P" + Date.now().toString(36).toUpperCase() + rnd(6);
     const o = { id, nr: "D-" + today().slice(2).replace(/-/g, "") + "-" + rnd(4), createdAt: nowIso(), status: method === "invoice" ? "invoice_requested" : "pending_payment",
       product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
-      custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
+      custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || (motifs ? motifs.map(m => ({ copies: m.copies })) : undefined), motifs: motifs || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
       fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],

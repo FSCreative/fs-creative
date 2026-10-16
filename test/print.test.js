@@ -521,6 +521,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "ordered", "direkt freigegeben → sofort bei Print.com"); assert.strictEqual(M.orders.length, nPc + 1);
   });
+  await t("Mehrere Motive: Stückzahlen je Motiv, PDFs zusammengeführt, variants + Seitenzuordnung", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "motive@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
+    const m1 = await upload(await pdfOf(89, 59, 2), "m1.pdf", BC), m2 = await upload(await pdfOf(89, 59, 2), "m2.pdf", BC);
+    const it = (a, b, g) => Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: g, motifs: [{ copies: a, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: b, fileId: m2.j.fileId, fileToken: m2.j.token }] });
+    assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [it(100, 100, 39.6)] }, base))).status, 400, "Summe ≠ Auflage");
+    const r = await post("/print/api/checkout", Object.assign({ items: [it(150, 100, 39.6)] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const od = await admin("/admin/api/print/order?id=" + r.j.orderId); assert.deepStrictEqual(od.order.variants, [{ copies: 150 }, { copies: 100 }]);
+    assert.strictEqual(od.order.motifs.length, 2); assert.strictEqual(od.order.pageMap[1].page, "3–4"); assert.strictEqual(od.file.pages, 4);
+    const u3 = await upload(await pdfOf(89, 59, 2), "m3.pdf", BC);
+    assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 39.6, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
+  });
   await t("KI-Assistent ohne ANTHROPIC_API_KEY: aus (Katalog ai=false, Endpunkt 503); /print/hilfe erreichbar", async () => {
     assert.strictEqual(cat.ai, false);
     const r = await post("/print/api/ai/design", { product: "flyer", brief: "Sommerfest" }); assert.strictEqual(r.status, 503, JSON.stringify(r.j));

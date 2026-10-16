@@ -55,8 +55,9 @@
       fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }), at: Date.now() });
+    if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "" }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
     S.cart.push(it); cartSave();
-    S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {};
+    S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {}; motReset();
     toast("„" + it.title + "“ liegt im Warenkorb");
   }
   var PRO_CHECK = 5;
@@ -185,6 +186,24 @@
     }).catch(function () { A.busy = false; A.err = "Keine Verbindung – bitte erneut versuchen."; render(); });
   }
   root.addEventListener("submit", function (e) { var f = e.target.closest("[data-acct-form]"); if (!f) return; e.preventDefault(); acctDo(f.getAttribute("data-acct-form"), f); });
+
+  // ── Mehrere Motive (Sortenmix): Anzahl + Stückzahl je Motiv in „Ausführung“, je Motiv eine Datei/Gestaltung in „Gestalten“ ──
+  S.mot = { n: 1, split: [], files: [], i: 0 };
+  var motOk = function () { return !!S.prod && kind() === "flat" && !isLogo() && !(S.prod.custom && kind() === "banner"); };
+  function motBalance() { var n = S.mot.n, c = +S.copies || 0, b = Math.floor(c / n), r = c - b * n; S.mot.split = []; for (var i = 0; i < n; i++) S.mot.split.push(b + (i < r ? 1 : 0)); }
+  function motReset(keepN) { var n = keepN ? S.mot.n : 1; S.mot = { n: n, split: [], files: [], i: 0 }; motBalance(); }
+  function motSum() { return S.mot.split.reduce(function (a, b) { return a + (+b || 0); }, 0); }
+  function motSave() { if (S.mot.n > 1) S.mot.files[S.mot.i] = { file: S.file, previews: S.previews, design: S.design, mode: S.mode }; }
+  function motLoad(i) { motSave(); S.mot.i = i; var f = S.mot.files[i] || {}; S.file = f.file || null; S.previews = f.previews || null; S.design = f.design || null; S.mode = f.mode || ""; }
+  function motHtml() {
+    if (!motOk()) return "";
+    var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
+    var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + '<button type="button" class="ps-mn' + (n > 5 ? " on" : "") + '" data-motn="' + (n > 5 ? n : 6) + '">' + (n > 5 ? n : "6+") + "</button>";
+    var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>Stk.</small></label>'; }).join("") +
+      '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + " Stk." + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
+    return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
+      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln – jeweils mit Vorder- und Rückseite.</p>' : "") + "</div>";
+  }
 
   function prodByKey(k) { return (S.cat.products || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
@@ -350,7 +369,7 @@
       S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
-      var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
+      S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel();
@@ -615,7 +634,7 @@
       own = '<div class="ps-tile"><span class="ps-tl">Andere Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></div>'; }
     var ur = p.urgency.length > 1 ? '<div class="ps-tile' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
       ddHtml("urgency", "Produktion", p.urgency.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) + '<span class="ps-td">Bestimmt den Liefertermin rechts.</span></div>' : "";
-    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + "</div>" + own + ur + "</div></section>";
+    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + "</div>" + own + ur + motHtml() + "</div></section>";
   }
   function qtyHtml(p) {
     var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);
@@ -663,7 +682,10 @@
   function vDesign() {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     var spec = sz ? sz.w + " × " + sz.h + " mm" + (b ? " (mit Beschnitt " + (sz.w + 2 * b) + " × " + (sz.h + 2 * b) + " mm)" : "") : "";
-    var h = '<div class="ps-panel"><h2>Gestalten oder Datei hochladen</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format prüfen wir vor dem Druck") + " · " + (sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
+    var mtabs = "";
+    if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
+      return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + " Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
+    var h = mtabs + '<div class="ps-panel"><h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format prüfen wir vor dem Druck") + " · " + (sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {
       h += '<div class="ps-file"><div><b>' + (S.file.kind === "design" ? "Deine Gestaltung" : esc(S.file.name)) + '</b><div class="pd-muted">' + (S.file.pages || "?") + " Seite(n) · " + (S.file.blocked ? "<span style=\"color:var(--ps-bad)\">bitte korrigieren</span>" : "bereit zum Druck") + '</div></div><div class="ps-row2" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (S.file.kind === "design" ? '<button type="button" class="ps-btn small" data-act="editdesign">Weiter bearbeiten</button>' : "") +
@@ -766,6 +788,12 @@
     var tsb = e.target.closest("[data-tstep]");
     if (tsb) { var tv = tsb.getAttribute("data-tstep").split("|"), cur0 = S.textile.sizes[tv[0]] || 0, nv = Math.max(0, Math.min(5000, cur0 + (+tv[1]) * (cur0 >= 50 ? 5 : 1))); if (nv) S.textile.sizes[tv[0]] = nv; else delete S.textile.sizes[tv[0]];
       var inp = root.querySelector('[data-tsize="' + tv[0] + '"]'); if (inp) { inp.value = nv || ""; inp.closest(".ps-size").classList.toggle("on", !!nv); } renderPrice(); loadPrice(); return; }
+    var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
+    if (mn) {
+      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(10, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); return; }
+      if (mn.hasAttribute("data-motbal")) { motBalance(); render(); return; }
+      if (mn.hasAttribute("data-moti")) { motLoad(+mn.getAttribute("data-moti")); render(); return; }
+    }
     var alt = e.target.closest("[data-alt]");
     if (alt && S.alts && S.alts[+alt.getAttribute("data-alt")]) { var A = S.alts[+alt.getAttribute("data-alt")]; S.sel = Object.assign({}, A.sel); S.copies = A.copies; S.alts = null; S.priceErr = ""; if (S.file && !isLogo()) { S.file = null; S.previews = null; } toast("Übernommen: " + A.label); render(); loadPrice(); return; }
     var dc = e.target.closest("[data-ddcat]");
@@ -779,7 +807,7 @@
       if (dd.hasAttribute("data-ddinfo")) { var iv = dd.getAttribute("data-ddinfo"), ii = iv.indexOf("|"); infoPop(iv.slice(0, ii), iv.slice(ii + 1)); return; }
       var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = ""; S.ddInfo = "";
       if (key.indexOf("prop:") === 0) { var slug = key.slice(5), before = Object.assign({}, S.sel); setProp(slug, val); var ch = {}; Object.keys(S.sel).forEach(function (k) { if (k !== slug && S.sel[k] !== before[k]) ch[k] = S.sel[k]; }); if (Object.keys(ch).length) toast("Angepasst, damit es zusammenpasst: " + changesText(ch)); return; }
-      if (key === "copies") { S.copies = +val; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
+      if (key === "copies") { S.copies = +val; motBalance(); var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
       if (key === "urgency") { S.urgency = val; render(); loadPrice(); return; }
       if (key === "pm") { S.pm = val; render(); loadPrice(); return; }
       return;
@@ -798,7 +826,11 @@
     if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; render(); return; }
     if (k === "clearfile") { S.file = null; S.previews = null; S.mode = ""; render(); return; }
     if (k === "editdesign") return openDesigner();
-    if (k === "next3") { if (S.file && !S.file.blocked) { cartAdd(); go(4); } return; }
+    if (k === "next3") { if (!S.file || S.file.blocked) return;
+      if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }
+        if (miss > -1) { motLoad(miss); toast("Jetzt Motiv " + (miss + 1) + " gestalten oder hochladen"); render(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+        if (motSum() !== +S.copies) { toast("Die Stückzahlen der Motive ergeben nicht die Auflage – bitte in „Ausführung“ anpassen", true); return; } }
+      cartAdd(); go(4); return; }
     if (k === "shop") { setPage(S.page === "produkte" ? "produkte" : "home"); return; }
     if (k === "searchall") { var hq = document.getElementById("psHomeQ"); S.q = hq ? hq.value.trim() : S.q; S.group = ""; S.sub = ""; setPage("produkte"); return; }
     if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
@@ -821,8 +853,9 @@
     if (t.matches("select[data-copies]")) { S.copies = +t.value; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
     if (t.matches("select[data-urgency]")) { S.urgency = t.value; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
-    if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; render(); loadPrice(); } return; }
-    if (t.id === "psW" || t.id === "psH") { S.custom[t.id === "psW" ? "w" : "h"] = t.value; if (S.file) { S.file = null; S.previews = null; toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } loadPrice(); return; }
+    if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }
+    if (t.hasAttribute("data-mots")) { S.mot.split[+t.getAttribute("data-mots")] = Math.max(1, parseInt(t.value, 10) || 1); render(); return; }
+    if (t.id === "psW" || t.id === "psH") { S.custom[t.id === "psW" ? "w" : "h"] = t.value; if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } loadPrice(); return; }
     if (t.name === "tmethod") { var p = S.prod, m = p.methods.filter(function (x) { return x.key === t.value; })[0]; S.textile.method = t.value; S.textile.positions = S.textile.positions.filter(function (x) { return m.positions.indexOf(x) > -1; }); if (!S.textile.positions.length) S.textile.positions = [m.positions[0]]; resetLogos(); render(); loadPrice(); return; }
     if (t.name === "tpos") { var ps = S.textile.positions.filter(function (x) { return x !== t.value; }); if (t.checked) ps.push(t.value); S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return ps.indexOf(x) > -1; }); resetLogos(); loadPrice(); return; }
     if (t.hasAttribute("data-logo") && t.files && t.files[0]) return uploadFile(t.files[0], t.getAttribute("data-logo"));
@@ -845,7 +878,7 @@
   function resetLogos() { var keep = {}; S.textile.positions.forEach(function (x) { if (S.logos[x]) keep[x] = S.logos[x]; }); S.logos = keep; S.file = null; }
   function setProp(slug, val) {
     var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : ""; S.sel[slug] = val; fixSel(slug);
-    if (S.file && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
+    if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
     if (isLogo() && kind() === "promo" && lk !== logoKey()) { S.logos = {}; S.file = null; }
     render(); loadPrice();
   }
@@ -889,6 +922,7 @@
     toast("Designer wird geladen …");
     loadDesigner().then(function (D) {
       return D.open({ product: S.prod, sel: S.sel, labels: S.prod.props.map(function (pr) { return [pr.slug, labelOf(pr.slug)]; }), copies: S.copies, urgency: S.urgency, custom: isCustom() ? S.custom : undefined, size: sz, bleed: (S.price && S.price.bleed) || S.prod.bleed, safe: S.prod.safe || 3, sides: sides(), fonts: S.cat.fonts, design: draft || S.design,
+        motif: S.mot.n > 1 && motOk() ? S.mot.i + 1 : 0,
         onDone: function (file, previews, design) { S.file = file; S.previews = previews; S.design = design; S.mode = "design"; render(); toast(file.blocked ? "Bitte die markierten Punkte prüfen." : "Druck-PDF erstellt ✓"); },
         onClose: function (design) { if (design) S.design = design; render(); } });
     }).catch(function (e) { toast(e.message || "Designer konnte nicht geladen werden", true); });
@@ -939,7 +973,7 @@
     if (S.cart.some(function (x) { return !x.price; })) { er.textContent = "Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."; return; }
     if (!S.me && S.newAcct && String(S.newPw || "").length < 8) { er.textContent = "Das Passwort für das Kundenkonto braucht mindestens 8 Zeichen."; if (pw) pw.focus(); return; }
     S.busy = true; S.err = ""; render();
-    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross }; }),
+    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
       check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {

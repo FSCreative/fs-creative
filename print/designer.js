@@ -157,7 +157,7 @@
         pages: [], cur: 0, hist: [], fut: [], panel: "tpl", guides: [], showGuides: true, showBleed: true, snap: true, grid: false, crop: null, imgs: {}, clip: null, dirty: false, keyH: null, loading: false };
       D.trim = { x: b * U, y: b * U, w: sz.w * U, h: sz.h * U };
       D.saferect = { x: (b + D.safe) * U, y: (b + D.safe) * U, w: (sz.w - 2 * D.safe) * U, h: (sz.h - 2 * D.safe) * U };
-      D.akey = "fsc-print-autosave:" + opts.product.key + ":" + JSON.stringify(opts.sel);
+      D.akey = "fsc-print-autosave:" + opts.product.key + ":" + JSON.stringify(opts.sel) + (opts.motif ? ":m" + opts.motif : "");
       for (var i = 0; i < D.sides; i++) { D.pages.push(null); D.hist.push([]); D.fut.push([]); }
       build();
       var start = opts.design && opts.design.pages && opts.design.pages.length === D.sides ? Promise.resolve(opts.design.pages) : null;
