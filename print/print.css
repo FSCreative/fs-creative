@@ -803,3 +803,4 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
   .ps-foot-big{padding-bottom:90px}
   .ps-mcart{display:none!important}
 }
+@media(max-width:900px){body:has(.ps-ddl.big) .ps-bnav,body:has(.pd) .ps-bnav,body:has(.ps-pop) .ps-bnav{display:none}}
