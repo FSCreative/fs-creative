@@ -52,12 +52,12 @@
     <a class="brand" href="/print"><span class="mark"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="FS Creative Logo"></span> FS Creative <span class="ps-brand-sub">Druckshop</span></a>
     <label for="navtoggle" class="burger" aria-label="Menü"><span></span><span></span><span></span></label>
     <nav class="nav-links" aria-label="Druckshop">
-      <a href="/print" class="active">Druckshop</a>
-      <a href="/druck">Druck &amp; Gestaltung</a>
+      <a href="/print" class="active">Produkte</a>
+      <a href="/print#so-gehts">So geht’s</a>
+      <a href="/print#faq">Fragen</a>
       <a href="/print/agb">AGB</a>
-      <a href="/">Zur Website</a>
       <button type="button" class="theme-btn" data-theme-toggle aria-label="Licht an/aus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>Licht an/aus</button>
-      <a href="/kontakt" class="nav-cta">Hilfe &amp; Kontakt</a>
+      <a href="/print#faq" class="nav-cta" data-chat-open>Hilfe &amp; Chat</a>
     </nav>
   </div>
 </header>
@@ -84,7 +84,7 @@
       <noscript><div class="ps-setup"><h2>JavaScript wird benötigt</h2><p>Für den Druckshop bitte JavaScript aktivieren – oder <a href="/kontakt?von=print&amp;thema=Druck">einfach anfragen</a>.</p></div></noscript>
     </section>
 
-    <section class="sect">
+    <section class="sect" id="so-gehts">
       <h2>So funktioniert’s</h2>
       <div class="steps">
         <div class="step"><h3>Produkt &amp; Ausführung</h3><p>Format, Papier, Auflage und Lieferzeit wählen – der Preis inkl. Versand steht sofort da.</p></div>
@@ -94,7 +94,17 @@
       </div>
     </section>
 
-    <section class="sect">
+    <section class="sect" id="druckverfahren">
+      <h2>Digitaldruck oder Offsetdruck?</h2>
+      <p class="lead" style="margin-bottom:18px">Wir drucken automatisch im <b>Offsetdruck, wo es möglich ist</b> – bei kleinen Auflagen (unter der Mindestmenge für Offset) stellen wir automatisch auf <b>Digitaldruck</b> um. Im Schritt „Ausführung“ siehst du bei „Druckverfahren“ beide Preise und kannst selbst wählen.</p>
+      <div class="pm-cmp">
+        <div class="pm-col"><h3>🖨️ Digitaldruck</h3><ul><li><b>Ideal für:</b> kleine Auflagen, z. B. 50–250 Stück</li><li><b>Ohne Einrichtekosten</b> – schon ab 1 Stück wirtschaftlich</li><li><b>Schneller</b> lieferbar</li><li>Sehr gute Farbqualität, kleine Farbabweichungen zwischen Auflagen möglich</li><li>Jeder Bogen kann anders sein (personalisierbar)</li></ul></div>
+        <div class="pm-col best"><h3>⚙️ Offsetdruck <span class="ps-bb">★ empfohlen</span></h3><ul><li><b>Ideal für:</b> mittlere und große Auflagen, meist ab 500 Stück</li><li><b>Deutlich günstiger pro Stück</b> – je höher die Auflage, desto größer der Unterschied</li><li><b>Sehr gleichmäßige Farben</b>, feinste Details und Verläufe</li><li>Einmalige Druckplatten – erst ab einer Mindestmenge möglich</li><li>Etwas längere Produktionszeit</li></ul></div>
+      </div>
+      <style>.pm-cmp{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.pm-col{padding:20px 22px;border-radius:var(--radius,22px);border:1px solid var(--border,rgba(255,255,255,.1));background:var(--surface)}.pm-col.best{border-color:#ffd60a66}.pm-col h3{margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pm-col ul{margin:0;padding-left:18px;display:grid;gap:6px;color:var(--text-dim)}.pm-col b{color:var(--text)}@media(max-width:760px){.pm-cmp{grid-template-columns:1fr}}</style>
+    </section>
+
+    <section class="sect" id="faq">
       <h2>Häufige Fragen</h2>
       <div class="faq">
         <details><summary>Was bedeutet Beschnitt und Sicherheitsabstand?</summary><p>Damit nach dem Schneiden kein weißer Rand bleibt, laufen Hintergründe 2–3 mm über das Endformat hinaus (Beschnitt). Wichtige Texte sollten ein paar Millimeter Abstand zum Rand halten (Sicherheitsabstand). Im Designer siehst du beides als Hilfslinien.</p></details>
@@ -212,6 +222,7 @@ document.addEventListener('click',function(e){var b=e.target.closest&&e.target.c
   requestAnimationFrame(step);
 })();
 </script>
+<script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-chat-open]");if(!a)return;var b=document.querySelector(".fscc-b");if(b){e.preventDefault();b.click();}});</script>
 <script src="/print/app.js?v=2" defer></script>
 <script src="/chat/w.js?v=1" defer></script>
 </body>
