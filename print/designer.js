@@ -135,6 +135,8 @@
   function rrect(x, l, t, w, h, r) { x.moveTo(l + r, t); x.arcTo(l + w, t, l + w, t + h, r); x.arcTo(l + w, t + h, l, t + h, r); x.arcTo(l, t + h, l, t, r); x.arcTo(l, t, l + w, t, r); x.closePath(); }
   function patchFabric() {
     var TP = fabric.Textbox.prototype; if (TP.__fsc) return; TP.__fsc = 1;
+    // fabric 5.3.0 setzt textBaseline = "alphabetical" (ungültig) → Browser-Warnung bei jedem Zeichen; korrekt ist "alphabetic"
+    var sts = fabric.Text.prototype._setTextStyles; fabric.Text.prototype._setTextStyles = function (ctx) { sts.apply(this, arguments); if (ctx) ctx.textBaseline = "alphabetic"; };
     var rb = TP._renderBackground, sb = TP._setSVGBg, sc = TP.shouldCache, f3 = function (n) { return Math.round(n * 1000) / 1000; };
     var dim = function (o) { var b = o.boxBg, p = Math.max(0, +b.p || 0), w = o.width + 2 * p, h = o.height + 2 * p; return { p: p, w: w, h: h, r: Math.max(0, Math.min(+b.r || 0, w / 2, h / 2)) }; };
     TP._renderBackground = function (ctx) { if (!this.boxBg) return rb.call(this, ctx); var d = dim(this); ctx.fillStyle = hexOf(this.boxBg.c); ctx.beginPath(); rrect(ctx, -d.w / 2, -d.h / 2, d.w, d.h, d.r); ctx.fill(); };
