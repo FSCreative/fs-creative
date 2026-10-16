@@ -728,7 +728,7 @@
   }
   // Qualitäts-Ampel aus den Prüfergebnissen
   function qualHtml(f) {
-    var c = f.checks || [], e = c.filter(function (x) { return x.level === "error"; }).length, w = c.filter(function (x) { return x.level === "warn"; }).length;
+    var c = f.checks || [], e = c.filter(function (x) { return x.level === "error"; }).length, w = c.filter(function (x) { return x.level === "warn"; }).length + ((f.edgeWarn || []).length);
     var st = e ? ["bad", "Bitte korrigieren", "Die Datei kann so nicht gedruckt werden – siehe rote Punkte."] : w ? ["warn", "Druckbar – mit Hinweisen", "Bitte die gelben Hinweise prüfen. Unsicher? Wähle an der Kasse den Profi-Datencheck."] : ["ok", "Druckfertig", "Format, Beschnitt und Auflösung passen."];
     return '<div class="ps-qual ' + st[0] + '"><i aria-hidden="true"></i><div><b>' + st[1] + "</b><span>" + st[2] + "</span></div></div>";
   }
