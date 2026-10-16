@@ -188,11 +188,11 @@
     els.push(T(m, yl, hw, H, pH, { font: fh, bold: st.hb, color: st.fg, lh: 1.02 })); yl += textH(H, pH, hw, 1.02, fh) + m * 0.25;
     els.push({ t: "rect", x: m, y: yl, w: mn * 0.12, h: Math.max(0.5, mn * 0.01), fill: st.ac }); yl += m * 0.45;
     els.push(T(m, yl, cw, tx.S, pS, { font: fb, color: st.mute, lh: 1.2 })); yl += textH(tx.S, pS, cw, 1.2, fb) + m * 0.6;
-    var fH2 = textH(tx.F, pF, cw, 1.4, fb);
-    if (tx.img) { var ih2 = Math.max(h * 0.12, (h - m - fH2 - m * 0.8) - yl - (tx.B ? textH(tx.B, pB, cw, 1.35, fb) + m * 0.6 : 0)); els.push({ t: "img", x: m, y: yl, w: cw, h: ih2, label: "Bild" }); yl += ih2 + m * 0.6; }
-    if (tx.B) els.push(T(m, yl, cw, tx.B, pB, { font: fb, color: st.fg, lh: 1.35 }));
+    var fH2 = textH(tx.F, pF, cw, 1.4, fb), badge = tx.A && ctx.product !== "rollups", r = Math.min(w, h) * 0.13, bw = badge ? cw - 2 * r - m * 0.5 : cw;   // Fließtext neben dem Störer, nie darunter
+    if (tx.img) { var ih2 = Math.max(h * 0.12, (h - m - fH2 - m * 0.8) - yl - (tx.B ? textH(tx.B, pB, bw, 1.35, fb) + m * 0.6 : 0)); els.push({ t: "img", x: m, y: yl, w: cw, h: ih2, label: "Bild" }); yl += ih2 + m * 0.6; }
+    if (tx.B) els.push(T(m, yl, bw, tx.B, pB, { font: fb, color: st.fg, lh: 1.35 }));
     els.push(T(m, h - m - fH2, cw, tx.F, pF, { font: fb, color: st.mute, lh: 1.4 }));
-    if (tx.A && ctx.product !== "rollups") { var r = Math.min(w, h) * 0.13; els.push({ t: "circle", cx: w - m - r, cy: h - m - fH2 - r * 1.3, r: r, fill: st.ac }); els.push(T(w - m - 2 * r, h - m - fH2 - r * 1.3 - pS * 0.3528 * 0.7, 2 * r, tx.A, pS * 0.8, { font: fh, bold: true, color: "#ffffff", align: "center", lh: 1.1 })); }
+    if (badge) { var by = tx.img ? yl - m * 0.6 : h - m - fH2 - r * 1.3; els.push({ t: "circle", cx: w - m - r * 0.9, cy: by, r: r, fill: st.ac }); els.push(T(w - m - r * 1.9, by - pS * 0.3528 * 0.7, 2 * r, tx.A, pS * 0.8, { font: fh, bold: true, color: "#ffffff", align: "center", lh: 1.1 })); }
     return els;
   }
   function backPage(st, tx, sz, ctx, els, m, cw, pH, pS, pB, pF) {

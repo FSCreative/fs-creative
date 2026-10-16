@@ -27,7 +27,7 @@
   function loadScript(l) { return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = l.src; if (l.sri) { s.integrity = l.sri; s.crossOrigin = "anonymous"; } s.referrerPolicy = "no-referrer"; s.onload = res; s.onerror = function () { rej(new Error("Bibliothek konnte nicht geladen werden")); }; document.head.appendChild(s); }); }
   var libsP = null;
   function libs() {
-    if (!libsP) libsP = Promise.all([window.fabric ? 1 : loadScript(LIB.fabric), window.qrcode ? 1 : loadScript(LIB.qr), window.PrintTemplates ? 1 : loadScript({ src: "/print/templates.js?v=2" })]).catch(function (e) { libsP = null; throw e; });
+    if (!libsP) libsP = Promise.all([window.fabric ? 1 : loadScript(LIB.fabric), window.qrcode ? 1 : loadScript(LIB.qr), window.PrintTemplates ? 1 : loadScript({ src: "/print/templates.js?v=3" })]).catch(function (e) { libsP = null; throw e; });
     return libsP;
   }
   // ── Schriften (mitgeliefert, /print/fonts) ──
