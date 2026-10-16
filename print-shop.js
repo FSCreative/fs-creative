@@ -128,6 +128,8 @@ const STATUS_DE = { pending_payment: "Wartet auf Zahlung", payment_failed: "Zahl
 const REVIEW = { paid: 1, invoice_requested: 1 };
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
 const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
+// Datencheck: „self“ = Kunde gibt frei (automatische Hinweise), bezahlte Aufträge gehen sofort an Print.com; „pro“ = Profi-Check gegen Aufpreis (je Warenkorb), landet in der Warteschlange
+const PRO_CHECK_GROSS = 5;
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
 // Stufe je Kalenderjahr: Umsatz des Jahres ergibt eine Stufe; am 31.12. fällt die erreichte Stufe um zwei zurück (Platin → Silber, Gold → Bronze, Silber/Bronze → keine)
 function bonusCalc(orders, year) {
@@ -1221,9 +1223,14 @@ module.exports = function (D) {
     if (input.__customerId) account = { id: input.__customerId };
     else if (input.createAccount === true && input.accountPassword) { const c = await accountMod().createFromCheckout(cust, String(input.accountPassword)); if (c) account = { id: c.id, created: !c.verified }; }
     const groupId = prepared.length > 1 ? "G" + Date.now().toString(36).toUpperCase() + rnd(4) : null;
+    const check = input.check === "pro" ? "pro" : input.check === "self" ? "self" : "review";   // ohne Angabe (alte Clients): wie bisher prüfen, ohne Aufpreis
+    if (check === "pro") {   // Aufpreis einmal je Warenkorb – auf der ersten Position (eigene Rechnungszeile)
+      const o0 = prepared[0].o, rate = o0.price.rate || 0, net = r2(PRO_CHECK_GROSS / (1 + rate / 100)), vat = r2(PRO_CHECK_GROSS - net);
+      o0.price.checkFee = { gross: PRO_CHECK_GROSS, net, vat }; o0.price.gross = r2(o0.price.gross + PRO_CHECK_GROSS); o0.price.net = r2(o0.price.net + net); o0.price.vat = r2(o0.price.vat + vat); o0.price.margin = r2(o0.price.margin + net);
+    }
     for (const x of prepared) {
-      const o = x.o; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
-      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
+      const o = x.o; o.check = check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
+      hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       x.fm.orderId = o.id; await store.putFile(x.fm); await store.putOrder(o);
       for (const lid of x.fm.logos || []) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
     }
@@ -1277,7 +1284,7 @@ module.exports = function (D) {
           headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung " + o.nr + ")." + (o.payment.method === "mollie" && o.payment.mollieId ? " Bezahlt online – Mollie " + o.payment.mollieId + "." : ""),
           footText: (o.price.taxNote ? o.price.taxNote + "\n" : "") + (o.payment.method === "mollie" ? "Der Betrag wurde bereits online bezahlt." : "Zahlbar innerhalb von 14 Tagen ohne Abzug."),
           timeToPay: o.payment.method === "mollie" ? 0 : 14, taxRule: o.price.taxCase === "igl" ? cfg().taxRuleIgl : "",
-          items: [{ name: posName, text: posText, qty: 1, priceGross: o.price.gross, taxRate: o.price.rate }] });
+          items: [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.checkFee ? [{ name: "Profi-Datencheck", text: "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []) });
         o.invoice = { id: r.id, nr: r.nr || "", draft: true, at: nowIso() }; hist(o, "Rechnungsentwurf angelegt" + (r.nr ? " " + r.nr : ""));
       } catch (e) { o.invoice = { error: clip(e.message, 300) }; hist(o, "Rechnungsentwurf fehlgeschlagen: " + e.message); log("Rechnungsentwurf", o.nr, e.message); }
     }
@@ -1288,7 +1295,7 @@ module.exports = function (D) {
     if (D.push) D.push("lead", { title: "Neuer Druckauftrag " + o.nr, body: o.product.title + " · " + o.copies + " Stk. · " + eur(o.price.gross) + (o.payment.method === "invoice" ? " · Rechnung – Freigabe nötig" : " · bezahlt"), url: "/admin#print", tag: "print-" + o.id }).catch(() => {});
     if (!o.mails.confirm) {
       o.mails.confirm = await mail(o.customer.email, "Bestellbestätigung " + o.nr + " · FS Creative Druck", "Danke für deine Bestellung!",
-        ["Hallo " + o.customer.firstName + ",", "wir haben deine Bestellung erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung bekommst du, sobald der Auftrag in Produktion geht.") + " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns."],
+        ["Hallo " + o.customer.firstName + ",", "wir haben deine Bestellung erhalten" + (o.payment.method === "mollie" ? " und die Zahlung ist eingegangen." : ". Die Rechnung bekommst du, sobald der Auftrag in Produktion geht.") + (o.check === "review" ? " Bevor gedruckt wird, schauen wir uns deine Druckdaten noch persönlich an – bei Fragen melden wir uns." : o.check === "self" ? " Du hast deine Druckdaten direkt freigegeben – wir geben den Auftrag " + (o.payment.method === "mollie" ? "sofort" : "nach der Freigabe") + " in Produktion." : " Du hast den Profi-Datencheck gewählt: Wir prüfen deine Druckdaten persönlich und melden uns bei Fragen, bevor gedruckt wird.")],
         orderRows(o), ["Den Versand bestätigen wir dir mit Sendungsverfolgung per E-Mail.",
           "Es gelten unsere AGB für den Druckshop (Stand " + deDate(AGB_VERSION) + "), die du bei der Bestellung akzeptiert hast: " + cfg().publicUrl + "/print/agb",
           "Hinweis: Da die Drucksachen nach deinen Vorgaben angefertigt werden, besteht kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG).",
@@ -1297,7 +1304,8 @@ module.exports = function (D) {
       await store.putOrder(o);
     }
     const s = await settings();
-    if (s.autoSend && o.status === "paid") { try { await placeOrder(o.id, "automatisch (Einstellung)"); } catch (e) { log("Automatisch senden", o.nr, e.message); } }
+    const direct = o.check === "self" && !(o.fileChecks || []).some(c => c.level === "error");
+    if ((s.autoSend || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
   // Referenz am Artikel: Bestellnummer + Seitenzuordnung der Logo-PDF (z. B. „S1 Brust links, S2 Rücken“)

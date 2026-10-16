@@ -507,6 +507,20 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pv = await admin("/admin/api/print/sortiment", { op: "preview", sku: "notepads" }); assert.strictEqual(pv.ok, true, JSON.stringify(pv)); assert.ok(pv.gross > 0);
     const ps = await admin("/admin/api/print/sortiment", { op: "preview", sku: "t-shirt-budget-5" }); assert.strictEqual(ps.ok, true, JSON.stringify(ps));
   });
+  await t("Datencheck: Profi (+5 €, Warteschlange, eigene Rechnungszeile) bzw. direkt freigegeben (bezahlt → sofort an Print.com)", async () => {
+    const base = { customer: Object.assign({}, cust, { email: "check@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
+    const u1 = await upload(await pdfOf(89, 59, 2), "c1.pdf", BC);
+    let r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u1.j.fileId, fileToken: u1.j.token, expectedGross: 39.6 })], check: "pro" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    let pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "44.60");
+    const nPc = M.orders.length; M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    let st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "paid"); assert.strictEqual(M.orders.length, nPc, "Profi-Check: wartet auf Prüfung");
+    const inv = sevMock.state.invoices[sevMock.state.invoices.length - 1]; assert.strictEqual(inv.invoicePosSave.length, 2); assert.ok(/Profi-Datencheck/.test(JSON.stringify(inv.invoicePosSave[1])));
+    const u2 = await upload(await pdfOf(89, 59, 2), "c2.pdf", BC);
+    r = await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: u2.j.fileId, fileToken: u2.j.token, expectedGross: 39.6 })], check: "self" }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "39.60");
+    M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
+    st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "ordered", "direkt freigegeben → sofort bei Print.com"); assert.strictEqual(M.orders.length, nPc + 1);
+  });
   await t("KI-Assistent ohne ANTHROPIC_API_KEY: aus (Katalog ai=false, Endpunkt 503); /print/hilfe erreichbar", async () => {
     assert.strictEqual(cat.ai, false);
     const r = await post("/print/api/ai/design", { product: "flyer", brief: "Sommerfest" }); assert.strictEqual(r.status, 503, JSON.stringify(r.j));
