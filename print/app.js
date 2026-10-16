@@ -107,7 +107,9 @@
   }
   function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) render(); } }).catch(function () {}); }
   function headUpdate() {
-    document.querySelectorAll("[data-acct-link]").forEach(function (a) { a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
+    document.querySelectorAll("[data-acct-link]").forEach(function (a) { var l = a.querySelector("[data-acct-label]"); if (l) l.textContent = S.me ? "Konto" : "Anmelden"; else a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
+    var cur = S.view === "konto" ? "konto" : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
+    document.querySelectorAll("[data-bn]").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-bn") === cur); });
     document.querySelectorAll("[data-cart-n]").forEach(function (b) { b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length; });
   }
   document.addEventListener("click", function (e) {
