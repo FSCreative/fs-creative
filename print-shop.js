@@ -1527,6 +1527,13 @@ module.exports = function (D) {
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       const b = await readJson(req, 100000);
+      // Preis-Aufschlüsselung wie im Shop (nur lesend): Einkauf Produkt/Versand, Aufschlag, Verkauf; optional Print.com-Optionen überschreiben (pcOverride)
+      if (p === "/admin/api/print/quote") {
+        const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
+        const n = normalizeSel(prod, b); if (b.pcOverride && typeof b.pcOverride === "object") n.pcOpts = Object.assign({}, n.pcOpts, b.pcOverride);
+        try { const q = await quote(prod, n, "AT", "", { company: false }); return J(res, 200, { ok: true, pcOpts: n.pcOpts, quote: q }); }
+        catch (e) { return J(res, 200, { ok: false, error: e.message, pcOpts: n.pcOpts }); }
+      }
       // Einkaufspreis testen (nur lesend, keine Bestellung): beliebige SKU + Optionen
       if (p === "/admin/api/print/pcprice") {
         const sku = String(b.sku || ""); if (!/^[a-z0-9_-]{1,80}$/i.test(sku)) return J(res, 400, { ok: false, error: "sku" });
