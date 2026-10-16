@@ -569,8 +569,10 @@ module.exports = function (D) {
       .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: (cp && cp.n) || x[0].title, icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", pop: (cp && cp.pp) || 0, lazy: true }; });
     const order = mainsList().map(m => m.slug), ix = g => { const i = order.indexOf(g); return i < 0 ? 900 : i; };
     // Bestseller: die beliebtesten Produkte laut Print.com (Top 12, mindestens Beliebtheit 4 000); innerhalb der Gruppe zuerst
-    const all2 = cur.concat(gen), tops = all2.map(p => p.pop || 0).filter(n => n >= 4000).sort((a, b) => b - a), cut = tops.length ? tops[Math.min(11, tops.length - 1)] : Infinity;
-    all2.forEach(p => { p.best = (p.pop || 0) >= cut; });
+    // ohne Saison-/Nischenprodukte (Print.com führt z. B. Kalender, Lesezeichen, Pläne weit oben, das sind aber keine Alltags-Bestseller)
+    const NICHE = /calendar|kalender|bookmark|lesezeichen|^maps$|plan$|election|wahlplakat/i, cand = p => (p.pop || 0) >= 4000 && !NICHE.test(p.key + " " + p.title);
+    const all2 = cur.concat(gen), tops = all2.filter(cand).map(p => p.pop).sort((a, b) => b - a), cut = tops.length ? tops[Math.min(9, tops.length - 1)] : Infinity;
+    all2.forEach(p => { p.best = cand(p) && p.pop >= cut; });
     return all2.map((p, i) => [p, i]).sort((a, b) => ix(a[0].group) - ix(b[0].group) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).map(x => x[0]);
   }
   // Gruppen für den Shop: nur mit sichtbaren Produkten, Untergruppen in Print.com-Reihenfolge
