@@ -755,8 +755,10 @@ module.exports = function (D) {
       const tries = await Promise.all(n.pmAlts.map(a => purchase(prod, Object.assign({}, n, { pcOpts: a.pcOpts }), country, postcode).then(v => ({ pm: a.pm, pcOpts: a.pcOpts, v }), () => null)));
       const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
       if (ok.length) {
-        // automatisch: Offset, wo es geht (gewünscht), sonst das günstigste (z. B. kleine Auflagen → Digitaldruck)
-        const pick = (n.pmWanted && n.pmWanted !== "auto" && ok.find(x => x.pm === n.pmWanted)) || ok.find(x => x.pm === "offset") || ok[0]; buy = pick.v;
+        // automatisch: Offset, wo er preislich passt, sonst das günstigste (z. B. kleine Auflagen → Digitaldruck)
+        // Offset nur, wenn er höchstens ~10 % über dem günstigsten Verfahren liegt (bei Kleinauflagen ist Offset oft ein Vielfaches teurer)
+        const off = ok.find(x => x.pm === "offset"), offOk = off && netOf(off.v) <= netOf(ok[0].v) * 1.1 + 0.5;
+        const pick = (n.pmWanted && n.pmWanted !== "auto" && ok.find(x => x.pm === n.pmWanted)) || (offOk ? off : ok[0]); buy = pick.v;
         n.pcOpts = pick.pcOpts; n.pm = pick.pm;
         if (n.labels && !n.labels.some(l => l[0] === "Druckverfahren")) n.labels.push(["Druckverfahren", PM_DE[pick.pm] || pick.pm]);
         methods = ok.map(x => { const nt = netOf(x.v); return { pm: x.pm, name: PM_DE[x.pm] || x.pm, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)), deliveryDate: x.v.deliveryDate }; });

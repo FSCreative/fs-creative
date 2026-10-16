@@ -678,3 +678,8 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-si-ic{width:28px;height:28px;border-radius:50%;background:var(--ps-chipon);color:var(--ps-tag);display:grid;place-items:center;flex:none;font-weight:700}
 .ps-si-k{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)}
 .ps-si b{display:block;margin:1px 0 3px}.ps-si p{margin:0 0 4px;font-size:13px;line-height:1.45;color:var(--text-dim)}
+.ps-ddl{min-width:min(380px,calc(100vw - 32px))}
+.ps-tile:nth-child(2n) .ps-ddl{left:auto;right:0}
+.ps-ddgt{text-transform:none;letter-spacing:0;font-size:14px;font-weight:600;padding:10px 12px}
+.ps-ddgt small{margin-left:auto}
+.ps-ddg:not(.ps-ddgt){text-transform:none;letter-spacing:0;font-size:13px;color:var(--ps-tag)}
