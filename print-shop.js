@@ -1561,7 +1561,7 @@ module.exports = function (D) {
       }
       if ((p === "/print/hilfe" || p === "/print/hilfe/") && (req.method === "GET" || req.method === "HEAD")) {
         let html = "", main = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); main = fs.readFileSync(path.join(__dirname, "print", "hilfe-main.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
-        html = html.replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>So geht’s &amp; FAQ – Druckshop | FS Creative</title>")
+        html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>So geht’s &amp; FAQ – Druckshop | FS Creative</title>")
           .replace(/(<meta name="description" content=")[^"]*/, "$1So funktioniert der FS Creative Druckshop: bestellen, Online-Designer mit Vorlagen und KI-Assistent, Bonusprogramm für Firmen, Digital- oder Offsetdruck und Antworten auf häufige Fragen.")
           .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
           .replace('data-hilfe>', 'data-hilfe class="active">').replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
