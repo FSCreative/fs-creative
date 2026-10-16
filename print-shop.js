@@ -209,12 +209,13 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
+    SETTINGS = { live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
     return SETTINGS;
   }
   const SKU_RX = /^[a-z0-9_-]{1,80}$/i;
   async function saveSettings(pl) {
     const s = await settings();
+    if (pl.live !== undefined) s.live = pl.live === true;   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
     if (pl.autoSend !== undefined) s.autoSend = pl.autoSend === true;
     if (pl.open !== undefined) s.open = pl.open !== false;
     if (pl.products && typeof pl.products === "object") {
@@ -1293,7 +1294,7 @@ module.exports = function (D) {
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
-  const live = () => process.env.PRINT_SHOP_LIVE === "1";
+  const live = () => process.env.PRINT_SHOP_LIVE === "1" || !!(SETTINGS && SETTINGS.live);   // Railway-Variable oder Schalter im Cockpit
   // Ansichtsmodus (PRINT_SHOP_VIEW=1, z. B. für die Mollie-Prüfung): Shop, Preise, AGB öffentlich sichtbar – Bestellen noch gesperrt
   const viewOnly = () => !live() && process.env.PRINT_SHOP_VIEW === "1";
   const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an office@fs-creative.at.";
@@ -1313,6 +1314,7 @@ module.exports = function (D) {
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function handlePublic(req, res, u, p) {
+    await settings().catch(() => null);
     const open = live(), view = viewOnly(), admin = !!(D.adminAuthed && D.adminAuthed(req));
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
     if (gated && !open && !admin && !view) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
@@ -1473,7 +1475,7 @@ module.exports = function (D) {
     const c = cfg(), s = await settings();
     const orders = await store.listOrders();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
-    return { ok: true, live: live(), configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: c.markup, minMarginEur: c.minMargin },
+    return { ok: true, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: c.markup, minMarginEur: c.minMargin },
       settings: s, catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
       curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
   }

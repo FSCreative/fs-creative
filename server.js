@@ -98,7 +98,7 @@ function setAttrValue(html, re, value) {
 
 // Druckshop-Startschalter (PRINT_SHOP_LIVE=1): markierte Blöcke nur dann ausliefern
 function printLiveBlocks(html) {
-  const on = process.env.PRINT_SHOP_LIVE === "1";
+  let on = process.env.PRINT_SHOP_LIVE === "1"; try { if (!on && PRINT && PRINT.live) on = PRINT.live(); } catch (e) {}   // auch Schalter im Cockpit
   return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "");
 }
 function renderIndex(baseHtml, route) {
@@ -2829,7 +2829,7 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (req.method === "GET") return J(200, { ok: true, local: FIN_STATE.local, firm: FIN_STATE.firm || null });
       const pl = await sevBody(req, 20000);
-      if (p === "/admin/api/fin/firm") { const f = {}; ["name", "owner", "street", "zip", "city", "country", "phone", "email", "web", "bank", "iban", "bic", "uid", "taxNumber", "court", "contactPerson"].forEach(k => { f[k] = String(pl[k] || "").slice(0, 200); }); await FIN.setMeta("firm", f); FIN_STATE.firm = f; return J(200, { ok: true, firm: f }); }
+      if (p === "/admin/api/fin/firm") { const f = {}; ["name", "owner", "street", "zip", "city", "country", "phone", "email", "web", "bank", "iban", "bic", "kochduBank", "kochduIban", "kochduBic", "uid", "taxNumber", "court", "contactPerson"].forEach(k => { f[k] = String(pl[k] || "").slice(0, 200); }); await FIN.setMeta("firm", f); FIN_STATE.firm = f; return J(200, { ok: true, firm: f }); }
       return J(410, { ok: false, error: "Umschalten gibt es nicht mehr – die Buchhaltung läuft nur noch im Cockpit" });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }

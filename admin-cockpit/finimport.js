@@ -4,7 +4,7 @@
 var F=window.FSC;
 var ST={m:null,sc:null};
 function loadMode(){ F.api("/admin/api/fin/mode").then(function(j){ ST.m=j||{}; F.render(); }); F.api("/admin/api/fin/obj?type=SevClient").then(function(j){ ST.sc=(j&&j.objects&&j.objects[0])||{}; F.render(); }); }
-var FIRM=[["name","Firma"],["owner","Inhaber"],["street","Straße"],["zip","PLZ"],["city","Ort"],["country","Land"],["phone","Telefon"],["email","E-Mail"],["web","Website"],["bank","Bank"],["iban","IBAN"],["bic","BIC"],["uid","UID-Nummer"],["taxNumber","Steuernummer"],["court","Firmenbuch/Gericht"],["contactPerson","Ansprechpartner"]];
+var FIRM=[["name","Firma"],["owner","Inhaber"],["street","Straße"],["zip","PLZ"],["city","Ort"],["country","Land"],["phone","Telefon"],["email","E-Mail"],["web","Website"],["bank","Bank"],["iban","IBAN"],["bic","BIC"],["kochduBank","kochdu-Konto: Bank"],["kochduIban","kochdu-Konto: IBAN (für kochdu-Abrechnungen)"],["kochduBic","kochdu-Konto: BIC"],["uid","UID-Nummer"],["taxNumber","Steuernummer"],["court","Firmenbuch/Gericht"],["contactPerson","Ansprechpartner"]];
 function firmDefaults(){ var c=ST.sc||{}; var ib=String(c.bankIban||"").replace(/\s+/g,"").replace(/(.{4})/g,"$1 ").trim(); return {name:c.name||"FS Creative",owner:c.ceoName||"Simon Felder",street:c.addressStreet||"",zip:c.addressZip||"",city:c.addressCity||"",country:"Österreich",phone:c.contactPhone||"",email:"office@fs-creative.at",web:c.website||"",bank:c.bank||"",iban:ib,bic:c.bankBic||"",uid:c.vatNumber||"",taxNumber:c.taxNumber||"",court:c.districtCourt||"",contactPerson:c.ceoName||"Simon Felder"}; }
 function firmPanel(){
   if(!ST.m){ loadMode(); return ""; }

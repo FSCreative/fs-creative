@@ -22,7 +22,10 @@ module.exports = function (D) {
   }
   return async function render(type, o, pos, ctx) {
     const PDFDocument = require("pdfkit");
-    const F = firm() || {};
+    const F0 = firm() || {};
+    // kochdu-Abrechnungen (Provisionen, Sammel-/Monatsrechnungen, Auszahlungsbelege) zeigen das kochdu-Konto, alle anderen das FS-Creative-Konto
+    const kochdu = /\bkoch ?du\b/i.test([o.header, o.headText, o.footText].map(x => String(x || "")).join(" ")) && !!F0.kochduIban;
+    const F = kochdu ? Object.assign({}, F0, { bank: F0.kochduBank || F0.bank, iban: F0.kochduIban, bic: F0.kochduBic || F0.bic }) : F0;
     const doc = new PDFDocument({ size: "A4", margins: { top: 50, bottom: 100, left: 56, right: 56 }, info: { Title: (o.invoiceNumber || o.orderNumber || o.creditNoteNumber || "Dokument"), Author: F.name || "FS Creative" } });
     const chunks = []; doc.on("data", c => chunks.push(c));
     const done = new Promise(r => doc.on("end", () => r(Buffer.concat(chunks))));

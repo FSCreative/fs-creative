@@ -361,3 +361,22 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 .ps-price .sum small,.ps-price .sum2 small{font-size:13px;font-weight:500;color:var(--text-dim);margin-left:8px}
 .ps-price .sum2{font-size:18px;font-weight:600;margin:2px 0 6px}
 @media (max-width:640px){.ps-grid2{grid-template-columns:minmax(0,1fr)}}
+
+/* ── Druckshop als eigene Vollbild-Seite (ohne Website-Navigation) ── */
+.print-page{--maxw:1680px}
+.print-page .wrap,.print-page .nav-inner{max-width:var(--maxw);padding-left:clamp(16px,3vw,40px);padding-right:clamp(16px,3vw,40px)}
+.print-page .lhero.ps-hero{padding:18px 0 4px}
+.print-page .lhero.ps-hero h1{font-size:clamp(28px,3.2vw,44px);max-width:none}
+.print-page .ps-layout{grid-template-columns:minmax(0,1fr) 380px;gap:28px}
+.print-page .ps-price{position:sticky;top:calc(var(--nav-h) + 16px)}
+.print-page .ps-products{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.ps-brand-sub{font-weight:500;color:var(--text-dim);margin-left:4px}
+.ps-foot{border-top:1px solid var(--ps-line);padding:18px 0 28px;margin-top:20px;font-size:13.5px;color:var(--text-dim)}
+.ps-foot .wrap{display:flex;justify-content:space-between;align-items:center;gap:12px 24px;flex-wrap:wrap}
+.ps-foot nav{display:flex;gap:6px 18px;flex-wrap:wrap}
+.ps-foot a{color:var(--text-dim)}
+.ps-foot a:hover{color:var(--text)}
+@media(min-width:1280px){.print-page .ps-grid2{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1100px){.print-page .ps-layout{grid-template-columns:minmax(0,1fr) 320px}}
+@media(max-width:900px){.print-page .ps-layout{grid-template-columns:1fr}.print-page .ps-price{position:static}}
+@media(max-width:560px){.print-page .ps-products{grid-template-columns:repeat(2,minmax(0,1fr))}}
