@@ -110,13 +110,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Katalog: kuratierte Produkte, nur freigegebene Eigenschaften, Auflagen-Stufen, deutschsprachige Anfrage", async () => {
     cat = await (await fetch(B + "/print/api/catalog")).json();
     assert.strictEqual(cat.ready, true, JSON.stringify(cat));
-    assert.deepStrictEqual(cat.products.filter(p => p.group === "paper-print").map(p => p.key), ["visitenkarten", "flyer", "plakate", "folder"]);
-    assert.deepStrictEqual(cat.products.map(p => p.key), ["visitenkarten", "flyer", "plakate", "folder", "rollups", "pvc-banner", "aufkleber", "kugelschreiber", "tshirt-basic"], "nur kuratierte (einmalig freigeschaltet), nach Print.com-Hauptgruppe");
+    // innerhalb der Hauptgruppe nach Beliebtheit laut Print.com (Flyer 55 240 > Faltblätter > Plakate > Visitenkarten), die Beliebtesten als Bestseller markiert
+    const pp = cat.products.filter(p => p.group === "paper-print");
+    assert.deepStrictEqual(pp.map(p => p.key), ["flyer", "folder", "plakate", "visitenkarten"]);
+    assert.ok(pp.every((p, i) => !i || (pp[i - 1].pop || 0) >= (p.pop || 0)), "absteigend nach Beliebtheit");
+    assert.ok(cat.products.some(p => p.best) && cat.products.find(p => p.key === "flyer").best, "Bestseller markiert");
+    assert.deepStrictEqual(cat.products.map(p => p.key).sort(), ["aufkleber", "flyer", "folder", "kugelschreiber", "plakate", "pvc-banner", "rollups", "tshirt-basic", "visitenkarten"], "nur kuratierte (einmalig freigeschaltet)");
     // Print.com-CMS: echte Bilder, Namen der Gruppen
     const fl = cat.products.find(p => p.key === "flyer"); assert.ok(/^https:\/\/images\.ctfassets\.net\/.+\?fm=webp&w=600$/.test(fl.img), fl.img); assert.deepStrictEqual([fl.cat.mainName, fl.cat.subName], ["Papier & Druck", "Flyer, Faltblätter & Plakate"]);
     assert.strictEqual(cat.groups[0].name, "Papier & Druck"); assert.ok(cat.groups[0].subs.some(x => x.slug === "cards-envelopes"));
     assert.deepStrictEqual(cat.products.find(p => p.key === "pvc-banner").cat.main, "outdoor-advertising", "kuratierte Zuordnung vor Print.com (materials-samples)");
-    const bc = cat.products[0];
+    const bc = cat.products.find(p => p.key === "visitenkarten");
     assert.deepStrictEqual(bc.props.map(p => p.slug), ["size", "material", "printtype", "finish"], "printingmethod/clean_cut nicht sichtbar");
     assert.deepStrictEqual(bc.tiers, [100, 250, 500, 1000, 2500]); assert.strictEqual(bc.fixed.printingmethod, "digital"); assert.strictEqual(bc.bleed, 2);
     assert.deepStrictEqual([bc.props[0].options[0].w, bc.props[0].options[0].h], [85, 55]);
