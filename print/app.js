@@ -8,7 +8,7 @@
   var root = document.getElementById("shop");
   if (!root) return;
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
-  var S = { ddGrp: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
+  var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   S.page = "home"; S.check = "self"; S.cart = cartLoad(); S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
@@ -221,28 +221,36 @@
   function propTitle(slug) { var pr = S.prod.props.filter(function (x) { return x.slug === slug; })[0]; return pr ? pr.title : slug; }
   function changesText(ch) { return Object.keys(ch).map(function (k) { return propTitle(k) + " → " + optName(k, ch[k]); }).join(" · "); }
   // Eigene Auswahlliste: Bestseller oben, Gruppen, Suche ab 10 Einträgen, ⓘ je Option, nicht passende Optionen mit „passt mit …“ statt ausgegraut
-  function ddHtml(key, title, items, cur) {
-    var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
-    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ': ' + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + '</span><i aria-hidden="true">▾</i></button>';
-    if (!open) return btn;
-    DDI[key] = items;
-    var zi = 0, row = function (x) { var sel = String(x.val) === String(cur), info = false; zi++;
-      return '<div class="ps-ddo' + (zi % 2 ? "" : " z") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
-        '<button type="button" class="ps-ddp" data-ddpick="' + esc(key) + '|' + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><span class="n">' + (sel ? '<b aria-hidden="true">✓</b> ' : "") + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
-        (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
-        (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + '|' + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") +
-        (info ? '<div class="ps-ddinf">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + "<p>" + esc(x.desc || "") + "</p></div>" : "") + "</div>"; };
-    var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; }), groups = [];
-    rest.forEach(function (x) { var g = x.group || ""; var G = groups.filter(function (y) { return y.n === g; })[0]; if (!G) { G = { n: g, l: [] }; groups.push(G); } G.l.push(x); });
-    // wie bei druck.at: Bestseller immer offen, weitere Kategorien aufklappbar (offen: die mit der aktuellen Auswahl bzw. per Klick); bei Suche alles offen
-    var og = S.ddGrp[key] || (S.ddGrp[key] = {}), named = groups.some(function (G) { return G.n; }), fold = best.length > 0 || (named && groups.length > 1);
-    var list = (best.length ? '<div class="ps-ddg">★ Bestseller</div>' + best.map(row).join("") : "") + groups.map(function (G) {
-      var nm = G.n || (best.length ? "Weitere Optionen" : "Alle Optionen"), has = G.l.some(function (x) { return String(x.val) === String(cur); }), isOpen = !fold || (og._set ? !!og[nm] : has);
-      if (!fold) return (G.n ? '<div class="ps-ddg">' + esc(G.n) + "</div>" : "") + G.l.map(row).join("");
-      return '<button type="button" class="ps-ddg ps-ddgt" data-ddgrp="' + esc(key) + "|" + esc(nm) + '" aria-expanded="' + !!isOpen + '"><span>' + esc(nm) + '</span><small>' + G.l.length + '</small><i aria-hidden="true">' + (isOpen ? "▾" : "▸") + "</i></button>" +
-        '<div class="ps-ddgb"' + (isOpen ? "" : " hidden") + ">" + G.l.map(row).join("") + "</div>"; }).join("");
-    return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '">' + (items.length > 10 ? '<input type="search" class="ps-ddq" placeholder="Suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") + '<div class="ps-dds">' + list + "</div></div>";
+  // Auswahl je nach Anzahl der Optionen: ≤ 4 direkt als Schaltflächen, ≤ 12 kompakte Liste, mehr = großer Auswahl-Dialog (Kategorien links, Optionen rechts, Suche)
+  function ddRow(key, x, cur, zi) {
+    var sel = String(x.val) === String(cur);
+    return '<div class="ps-ddo' + (zi % 2 ? " z" : "") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
+      '<button type="button" class="ps-ddp" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><span class="n">' + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
+      (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
+      (sel ? '<span class="ps-ddck" aria-hidden="true">✓</span>' : "") +
+      (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>";
   }
+  function ddHtml(key, title, items, cur) {
+    DDI[key] = items;
+    var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
+    if (items.length <= 4 && key !== "copies") return '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
+      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + "</b>" + (x.best ? '<em>★ Bestseller</em>' : "") + (x.warn ? '<small>passt mit: ' + esc(x.warn) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + "</button>" +
+        (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
+    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + '</span><i aria-hidden="true">▾</i></button>';
+    if (!open) return btn;
+    var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; });
+    if (items.length <= 12) { var zi = 0; return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '"><div class="ps-dds">' + best.concat(rest).map(function (x) { return ddRow(key, x, cur, zi++); }).join("") + "</div></div>"; }
+    // großer Auswahl-Dialog
+    var cats = []; if (best.length) cats.push({ n: "★ Bestseller", l: best });
+    rest.forEach(function (x) { var g = x.group || "Weitere"; var G = cats.filter(function (y) { return y.n === g; })[0]; if (!G) { G = { n: g, l: [] }; cats.push(G); } G.l.push(x); });
+    if (cats.length > 1) cats.push({ n: "Alle Optionen", l: items, all: true });
+    var curCat = S.ddCat[key]; if (!cats.some(function (C) { return C.n === curCat; })) { var hc = cats.filter(function (C) { return !C.all && C.l.some(function (x) { return String(x.val) === String(cur); }); })[0]; curCat = (hc || cats[0]).n; }
+    return btn + '<div class="ps-ddl big" role="dialog" aria-label="' + esc(title) + ' wählen"><div class="ps-big-h"><b>' + esc(title) + ' wählen</b><input type="search" class="ps-ddq" placeholder="' + esc(title) + ' suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off"><button type="button" class="ps-big-x" data-dd="' + esc(key) + '" aria-label="Schließen">×</button></div>' +
+      '<div class="ps-big-b"><nav class="ps-big-n" aria-label="Kategorien">' + cats.map(function (C) { var has = !C.all && C.l.some(function (x) { return String(x.val) === String(cur); });
+        return '<button type="button" data-ddcat="' + esc(key) + "|" + esc(C.n) + '" aria-current="' + (C.n === curCat) + '"><span>' + esc(C.n) + "</span><small>" + C.l.length + "</small>" + (has ? '<i aria-label="enthält deine Auswahl">●</i>' : "") + "</button>"; }).join("") + "</nav>" +
+      '<div class="ps-dds">' + cats.filter(function (C) { return !C.all; }).map(function (C) { var zi2 = 0; return '<div class="ps-ddgb" data-cat="' + esc(C.n) + '"' + (C.n === curCat || curCat === "Alle Optionen" ? "" : " hidden") + '><div class="ps-ddg">' + esc(C.n) + "</div>" + C.l.map(function (x) { return ddRow(key, x, cur, zi2++); }).join("") + "</div>"; }).join("") + "</div></div></div>";
+  }
+
   // Info-Popup zu einer Option (Papier, Veredelung …): Bild, Beschreibung, „Diese Option wählen“
   var DDI = {};
   function infoPop(key, val) {
@@ -269,7 +277,7 @@
     return rows.length ? '<details class="ps-selinfo" open><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div></details>" : "";
   }
   function propItems(pr) {
-    var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug;
+    var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
     var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: o.desc || "", img: imgOk(o.img) ? o.img : "", group: gname(o) };
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
@@ -350,16 +358,43 @@
         if (seq !== pSeq) return; S.priceBusy = false;
         if (j.ok) { var before = isLogo() ? logoKey() : ""; S.price = j.price; S.price.size = j.size; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
           if (isLogo() && before !== logoKey()) { S.logos = {}; S.file = null; } }
-        else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; }
+        else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
+        if (j.ok) { S.alts = null; altSeq++; }
         renderPrice();
       }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); });
     }, 220);
+  }
+  // Nicht lieferbar → naheliegende Alternativen suchen (je eine Option ändern, Nachbar-Auflagen) und mit Preis anbieten
+  var altSeq = 0;
+  function findAlts() {
+    var seq = ++altSeq, p = S.prod; if (!p || isLogo()) return; S.alts = "busy";
+    var cands = [], seen = {}, add = function (sel, copies, label, w) { var k = JSON.stringify([sel, copies]); if (seen[k]) return; seen[k] = 1; cands.push({ sel: sel, copies: copies, label: label, w: w }); };
+    var tiers = (p.tiers || []).slice().sort(function (a, b) { return Math.abs(a - S.copies) - Math.abs(b - S.copies); }).filter(function (t) { return t !== S.copies; }).slice(0, 2);
+    tiers.forEach(function (t) { add(Object.assign({}, S.sel), t, "Auflage " + t.toLocaleString("de-AT") + " Stk.", 1); });
+    p.props.forEach(function (pr) { var cur = S.sel[pr.slug], opts = pr.options.map(function (o) { return o.slug; }), i = opts.indexOf(cur);
+      bestOf(pr).concat([opts[i - 1], opts[i + 1]]).filter(function (v, k, a) { return v && v !== cur && a.indexOf(v) === k; }).slice(0, 3).forEach(function (v) {
+        var r = resolveWith(pr.slug, v); if (r === null) return; var sel = Object.assign({}, S.sel, r); sel[pr.slug] = v;
+        add(sel, S.copies, pr.title + ": " + (/color/.test(pr.slug) ? colName(optName(pr.slug, v)) : optName(pr.slug, v)) + (Object.keys(r).length ? " · " + changesText(r) : ""), 1 + Object.keys(r).length); }); });
+    cands = cands.sort(function (a, b) { return a.w - b.w; }).slice(0, 10);
+    var found = [], left = cands.length; if (!left) { S.alts = []; renderPrice(); return; }
+    cands.forEach(function (cd) {
+      api("/print/api/price", Object.assign(cfgOf(), { sel: cd.sel, copies: cd.copies, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { if (j.ok) found.push(Object.assign(cd, { price: j.price })); }).catch(function () {}).then(function () {
+        if (seq !== altSeq) return; if (--left) return;
+        S.alts = found.sort(function (a, b) { return a.w - b.w || a.price.gross - b.price.gross; }).slice(0, 4); renderPrice(); });
+    });
+  }
+  function altsHtml() {
+    if (!S.priceErr || S.priceBusy) return "";
+    if (S.alts === "busy") return '<p class="note"><span class="ps-spin"></span> Wir suchen passende Alternativen …</p>';
+    if (!S.alts || !S.alts.length) return '<p class="note">Bitte eine andere Option wählen – oder <a class="ps-link" href="#" data-chat-open>frag uns im Chat</a>, wir finden eine Lösung.</p>';
+    var co = S.ctype === "company";
+    return '<div class="ps-alts"><p class="ps-alts-h">Das geht – ähnliche Ausführungen:</p>' + S.alts.map(function (a, i) { return '<button type="button" class="ps-alt" data-alt="' + i + '"><span>' + esc(a.label) + "</span><b>" + eur(co ? a.price.net : a.price.gross) + "</b><small>Übernehmen →</small></button>"; }).join("") + "</div>";
   }
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
     var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + " Stk." + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
-    if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>";
+    if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
     if (p.bonus) what += '<p class="ps-bonus-tag">★ ' + esc(p.bonus.tier || "Rabatt") + " (" + String(p.bonus.pct).replace(".", ",") + " %) · du sparst " + eur(co ? p.bonus.saved : p.bonus.saved * (1 + (p.rate || 0) / 100)) + "</p>";
@@ -515,7 +550,7 @@
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
     var best = cur && isBest(pr, cur.slug);
-    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
+    return '<div class="ps-tile' + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (pr.options.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
       (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + "</div>";
   }
   function sec(title, inner, extra) { return inner || extra ? '<section class="ps-sec"><h3>' + esc(title) + "</h3>" + (inner ? '<div class="ps-grid2">' + inner + "</div>" : "") + (extra || "") + "</section>" : ""; }
@@ -703,6 +738,10 @@
     var tsb = e.target.closest("[data-tstep]");
     if (tsb) { var tv = tsb.getAttribute("data-tstep").split("|"), cur0 = S.textile.sizes[tv[0]] || 0, nv = Math.max(0, Math.min(5000, cur0 + (+tv[1]) * (cur0 >= 50 ? 5 : 1))); if (nv) S.textile.sizes[tv[0]] = nv; else delete S.textile.sizes[tv[0]];
       var inp = root.querySelector('[data-tsize="' + tv[0] + '"]'); if (inp) { inp.value = nv || ""; inp.closest(".ps-size").classList.toggle("on", !!nv); } renderPrice(); loadPrice(); return; }
+    var alt = e.target.closest("[data-alt]");
+    if (alt && S.alts && S.alts[+alt.getAttribute("data-alt")]) { var A = S.alts[+alt.getAttribute("data-alt")]; S.sel = Object.assign({}, A.sel); S.copies = A.copies; S.alts = null; S.priceErr = ""; if (S.file && !isLogo()) { S.file = null; S.previews = null; } toast("Übernommen: " + A.label); render(); loadPrice(); return; }
+    var dc = e.target.closest("[data-ddcat]");
+    if (dc) { var cv = dc.getAttribute("data-ddcat"), ci = cv.indexOf("|"); S.ddCat[cv.slice(0, ci)] = cv.slice(ci + 1); render(); var ds2 = root.querySelector(".ps-ddl.big .ps-dds"); if (ds2) ds2.scrollTop = 0; return; }
     var dg = e.target.closest("[data-ddgrp]");
     if (dg) { var gv = dg.getAttribute("data-ddgrp"), gi = gv.indexOf("|"), gk = gv.slice(0, gi), gn = gv.slice(gi + 1), opn = dg.getAttribute("aria-expanded") !== "true", G0 = S.ddGrp[gk] = { _set: 1 }; if (opn) G0[gn] = true;   // Akkordeon: andere schließen
       var sc0 = root.querySelector(".ps-dds"), st0 = sc0 ? sc0.scrollTop : 0; render(); var sc1 = root.querySelector(".ps-dds"); if (sc1) sc1.scrollTop = st0; return; }

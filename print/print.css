@@ -683,3 +683,41 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-ddgt{text-transform:none;letter-spacing:0;font-size:14px;font-weight:600;padding:10px 12px}
 .ps-ddgt small{margin-left:auto}
 .ps-ddg:not(.ps-ddgt){text-transform:none;letter-spacing:0;font-size:13px;color:var(--ps-tag)}
+/* ── Auswahl v3: Schaltflächen (≤4), Liste (≤12), großer Auswahl-Dialog (>12) ── */
+.ps-segs{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.ps-sgo{position:relative;display:flex}
+.ps-sgo>button[role=radio]{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:11px 36px 11px 13px;min-height:50px;border-radius:12px;border:1px solid var(--ps-line2);background:var(--ps-field);color:var(--text);cursor:pointer;font:inherit;transition:border-color .15s,background .15s}
+.ps-sgo>button[role=radio]:hover{border-color:var(--accent)}
+.ps-sgo b{font-weight:600;font-size:14.5px;line-height:1.25}
+.ps-sgo em{font-style:normal;font-size:10.5px;font-weight:700;background:#ffd60a;color:#1d1d1f;border-radius:999px;padding:1px 7px}
+.ps-sgo small{font-size:12px;color:var(--text-faint);line-height:1.3}
+.ps-sgo.on>button[role=radio]{border-color:var(--accent);background:var(--ps-chipon);box-shadow:inset 0 0 0 1px var(--accent)}
+.ps-sgo.on>button[role=radio]::after{content:"✓";position:absolute;right:12px;bottom:10px;color:var(--accent);font-weight:800}
+.ps-sgo.off>button{opacity:.45;cursor:not-allowed}
+.ps-sgo .ps-i.sm{position:absolute;right:8px;top:8px;margin:0}
+.ps-ddbs{font-style:normal;color:#ffd60a;font-size:12px}
+.ps-ddck{color:var(--accent);font-weight:800;padding:0 6px}
+.ps-ddo{grid-template-columns:minmax(0,1fr) auto auto}
+/* großer Dialog im Fluss, ganze Breite */
+.ps-tile.wide{grid-column:1/-1}
+.ps-ddl.big{position:static;margin-top:10px;min-width:0;padding:0;overflow:hidden;border-radius:16px;box-shadow:0 12px 34px rgba(0,0,0,.28)}
+.ps-big-h{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--ps-line)}
+.ps-big-h b{white-space:nowrap}
+.ps-big-h .ps-ddq{margin:0;flex:1}
+.ps-big-x{width:34px;height:34px;border-radius:50%;border:1px solid var(--ps-line2);background:none;color:inherit;font-size:20px;cursor:pointer;flex:none}
+.ps-big-b{display:grid;grid-template-columns:230px minmax(0,1fr);min-height:300px}
+.ps-big-n{display:flex;flex-direction:column;gap:2px;padding:8px;border-right:1px solid var(--ps-line);background:var(--ps-ddz);max-height:440px;overflow:auto}
+.ps-big-n button{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border:0;border-radius:10px;background:none;color:var(--text-dim);font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.ps-big-n button span{flex:1;line-height:1.25}.ps-big-n button small{font-size:11px;opacity:.7}.ps-big-n button i{font-style:normal;color:var(--accent);font-size:9px}
+.ps-big-n button:hover{background:var(--ps-ddhov);color:var(--text)}
+.ps-big-n button[aria-current="true"]{background:var(--ps-chipon);color:var(--text);font-weight:600}
+.ps-ddl.big .ps-dds{max-height:440px;padding:6px 8px}
+.ps-ddl.big .ps-ddg{position:static;border:0;padding:8px 10px 4px}
+.ps-ddl.big .ps-dds:not(.q) .ps-ddgb>.ps-ddg{display:none}
+@media(max-width:640px){.ps-ddl.big{position:fixed;inset:auto 0 0 0;max-height:88vh;display:flex;flex-direction:column;border-radius:18px 18px 0 0;z-index:200}.ps-big-b{grid-template-columns:1fr;min-height:0;flex:1;overflow:hidden;display:flex;flex-direction:column}.ps-big-n{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--ps-line);max-height:none}.ps-big-n button{white-space:nowrap;width:auto}.ps-ddl.big .ps-dds{flex:1;max-height:none}}
+/* Alternativen bei „nicht lieferbar“ */
+.ps-alts{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.ps-alts-h{margin:0 0 2px;font-weight:600;font-size:14px}
+.ps-alt{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;padding:10px 12px;border-radius:12px;border:1px solid var(--ps-line2);background:var(--ps-card);color:inherit;text-align:left;cursor:pointer;font:inherit}
+.ps-alt:hover{border-color:var(--accent)}
+.ps-alt span{font-size:13.5px;line-height:1.35}.ps-alt b{font-size:15px}.ps-alt small{grid-column:1/-1;color:var(--ps-tag);font-size:12px;font-weight:600}
