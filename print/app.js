@@ -738,16 +738,19 @@
       var warns = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
         // Randanalyse: Pixel zwischen Endformat und Sicherheitslinie, die deutlich vom typischen Randton abweichen
-        try { var data = x.getImageData(0, 0, W, H).data, band = [], inner = [], outer = [];
-          var px = function (xx, yy) { var o = (Math.round(yy) * W + Math.round(xx)) * 4; return [data[o], data[o + 1], data[o + 2]]; };
-          for (var t = 0; t < 400; t++) { var u = t / 400, sides4 = [[bp + (sp - bp) * ((t * 7) % 10) / 10, H * u], [W - bp - (sp - bp) * ((t * 3) % 10) / 10, H * u], [W * u, bp + (sp - bp) * ((t * 5) % 10) / 10], [W * u, H - bp - (sp - bp) * ((t * 9) % 10) / 10]];
-            sides4.forEach(function (q) { band.push(px(q[0], q[1])); });
-            if (r.b > 0) { outer.push(px(bp * 0.4, H * u), px(W - bp * 0.4, H * u)); inner.push(px(bp + 2, H * u), px(W - bp - 2, H * u)); } }
-          var med = [0, 1, 2].map(function (k) { var a = band.map(function (p) { return p[k]; }).sort(function (m, n2) { return m - n2; }); return a[a.length >> 1]; });
-          var off = band.filter(function (p) { return Math.abs(p[0] - med[0]) + Math.abs(p[1] - med[1]) + Math.abs(p[2] - med[2]) > 90; }).length / band.length;
-          if (off > 0.03) warns.push((res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "") + "Inhalte liegen sehr nah am Rand (im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
-          if (r.b > 0) { var wo = outer.filter(function (p) { return p[0] > 245 && p[1] > 245 && p[2] > 245; }).length / outer.length, ci = inner.filter(function (p) { return !(p[0] > 245 && p[1] > 245 && p[2] > 245); }).length / inner.length;
-            if (wo > 0.5 && ci > 0.3) warns.push((res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "") + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden können weiße Ränder (Blitzer) entstehen."); }
+        try { var data = x.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+          var px = function (xx, yy) { var o = (yy * W + xx) * 4; return [data[o], data[o + 1], data[o + 2]]; };
+          var dist = function (a, b2) { return Math.abs(a[0] - b2[0]) + Math.abs(a[1] - b2[1]) + Math.abs(a[2] - b2[2]); };
+          var b0 = Math.ceil(bp) + 1, s0 = Math.floor(sp) - 1, hit = 0, sideNames = [];
+          // je Seite: Hintergrundton = Pixel direkt an der Endformatlinie (Median), dann jede Zeile/Spalte im Sicherheitsstreifen nach abweichenden Pixeln scannen
+          [["links", function (k, d) { return [b0 + d, k]; }, H], ["rechts", function (k, d) { return [W - 1 - b0 - d, k]; }, H], ["oben", function (k, d) { return [k, b0 + d]; }, W], ["unten", function (k, d) { return [k, H - 1 - b0 - d]; }, W]].forEach(function (sd) {
+            if (s0 <= b0) return; var ref = [], k, d; for (k = 0; k < sd[2]; k += 7) ref.push(px.apply(null, sd[1](k, 0)));
+            var med = [0, 1, 2].map(function (c2) { var a = ref.map(function (p2) { return p2[c2]; }).sort(function (m, n2) { return m - n2; }); return a[a.length >> 1]; });
+            var rows = 0; for (k = Math.round(sp); k < sd[2] - Math.round(sp); k++) { for (d = 0; d <= s0 - b0; d++) { var q = sd[1](k, d); if (dist(px(q[0], q[1]), med) > 120) { rows++; break; } } }
+            if (rows / pxmm > 1.2) { hit++; sideNames.push(sd[0]); } });
+          if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
+          if (r.b > 0) { var wo = 0, ci = 0, tot = 0; for (var yy = Math.round(sp); yy < H - sp; yy += 5) { tot++; var o1 = px(Math.max(0, Math.round(bp * 0.4)), yy), i1 = px(Math.round(bp) + 2, yy); if (o1[0] > 245 && o1[1] > 245 && o1[2] > 245 && !(i1[0] > 245 && i1[1] > 245 && i1[2] > 245)) wo++; }
+            if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden können weiße Ränder (Blitzer) entstehen."); }
         } catch (e) {}
         if (!S.pfvOff) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
           x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.setLineDash([]); if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
