@@ -807,3 +807,18 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 @media (max-width:760px){.ps-head{grid-template-columns:92px minmax(0,1fr)}.ps-head-t h2{font-size:20px;line-height:1.2}.ps-head-t .sub{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.ps-head .ps-about{grid-column:1/-1}}
 .ps-swmore{align-self:start;height:40px;margin-top:3px;padding:0 12px;border-radius:999px;border:1px dashed var(--ps-line2);background:none;color:var(--ps-tag);font-weight:600;font-size:12.5px;cursor:pointer;grid-column:span 2}
 @media(min-width:641px){.ps-tile.seg{grid-column:span 2}.ps-tile.seg .ps-segs{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}
+/* Feinschliff Ausführung (Desktop) */
+.ps-tile.best{border-color:var(--ps-line2);box-shadow:none}
+.print-page .ps-grid2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.ps-tile{background:var(--ps-card);border-color:var(--ps-line)}
+.ps-tl{font-size:12.5px;font-weight:600;color:var(--text-dim)}
+.ps-sec h3{font-size:19px;letter-spacing:-.01em}
+.ps-head{grid-template-columns:200px minmax(0,1fr)}
+.ps-head-t h2{font-size:30px;letter-spacing:-.02em;margin:0 0 8px}
+.ps-head-t .ps-facts{margin:0 0 10px}
+.ps-pcta{width:100%;margin-top:16px;min-height:50px;font-size:16px}
+.ps-pcta:disabled{opacity:.5}
+.ps-ptrust{list-style:none;margin:14px 0 0;padding:12px 0 0;border-top:1px solid var(--ps-line);display:grid;gap:6px;font-size:13px;color:var(--text-dim)}
+.ps-ptrust li::before{content:"✓";color:var(--ps-ok);font-weight:700;margin-right:8px}
+@media(max-width:900px){.ps-pcta,.ps-ptrust{display:none}}
+@media(max-width:760px){.ps-head{grid-template-columns:92px minmax(0,1fr)}.ps-head-t h2{font-size:20px}.ps-head-t .ps-facts li{font-size:11px;padding:3px 8px}}
