@@ -839,7 +839,7 @@ module.exports = function (D) {
     // Mindestmarge immer NACH Zahlungsgebühr (Mollie, konservativ: Kreditkarte) – netto ≥ (Einkauf × (1 + min %) + Fixgebühr) / (1 − (1 + USt) × Gebühr %)
     const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
-    const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard") || n.textile) return 0;
+    const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
       const c = +n.copies, at = t => { const cs = Object.keys(t || {}).map(Number).sort((x, y) => x - y); if (!cs.length || c < cs[0] || c > cs[cs.length - 1]) return 0;
         if (t[c]) return t[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo); };
