@@ -62,7 +62,10 @@ module.exports = function (D) {
   const PICKS = ["flyer", "postcards", "plakate", "pvc-banner", "folder", "tshirt-basic", "rollups", "mesh-banner", "tshirt-bio", "bauzaun"];
   async function draftFor(mon) {
     const w = kw(mon), list = (await products()).filter(p => PICKS.indexOf(p.key) > -1).sort((a, b) => PICKS.indexOf(a.key) - PICKS.indexOf(b.key));
-    const n = list.length || 1, pick = [0, 1, 2].map(i => list[(w * 3 + i * 7) % n]).filter(Boolean).filter((p, i, a) => a.indexOf(p) === i).map(p => p.key);
+    // Mischung: ein Papierprodukt, ein Großformat, abwechselnd Textil oder ein zweites Papierprodukt (jede Woche andere)
+    const have = k => list.some(p => p.key === k), PA = ["flyer", "postcards", "plakate", "folder"].filter(have), BI = ["pvc-banner", "rollups", "mesh-banner", "bauzaun"].filter(have), TX = ["tshirt-basic", "tshirt-bio"].filter(have);
+    let pick = [PA[w % (PA.length || 1)], BI[w % (BI.length || 1)], w % 2 === 0 && TX.length ? TX[(w / 2) % TX.length] : PA[(w + 2) % (PA.length || 1)]].filter(Boolean).filter((k, i, a) => a.indexOf(k) === i);
+    if (pick.length < 3) pick = pick.concat(list.map(p => p.key).filter(k => pick.indexOf(k) < 0)).slice(0, 3);
     const tip = TIPS[w % TIPS.length], d = await data();
     return { monday: mon, kw: w, status: "draft", subject: "Druck-Tipps der Woche (KW " + w + ") + " + d.settings.pct + " % Rabatt", intro: INTROS[w % INTROS.length], products: pick.slice(0, 3),
       tipTitle: tip[0], tipText: tip[1], code: "NL" + String(mon).slice(2, 4) + "KW" + String(w).padStart(2, "0"), createdAt: nowIso(), auto: true };
