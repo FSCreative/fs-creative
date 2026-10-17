@@ -152,7 +152,7 @@
       (co ? '<div class="ps-row2">' + acctField("company", "Firma", "text", me.company, "organization") + acctField("uid", "UID-Nummer", "text", me.uid) + "</div>" : "") +
       '<div class="ps-row2">' + acctField("firstName", "Vorname", "text", me.firstName, "given-name") + acctField("lastName", "Nachname", "text", me.lastName, "family-name") + "</div>" +
       acctField("street", "Straße und Hausnummer", "text", me.street, "street-address") + '<div class="ps-row2">' + acctField("zip", "PLZ", "text", me.zip, "postal-code") + acctField("city", "Ort", "text", me.city, "address-level2") + "</div>" +
-      acctField("phone", "Telefon", "tel", me.phone, "tel") + (A.form === "profile" ? msg : "") + '<button type="submit" class="ps-btn primary">Speichern</button></form></section>';
+      acctField("phone", "Telefon", "tel", me.phone, "tel") + '<label class="ps-cb"><input type="checkbox" name="newsletter"' + (me.newsletter ? " checked" : "") + '><span>Newsletter: jeden Montag Druck-Tipps und einen 5-%-Code per E-Mail (jederzeit abbestellbar)</span></label>' + (A.form === "profile" ? msg : "") + '<button type="submit" class="ps-btn primary">Speichern</button></form></section>';
     h += '<section class="ps-panel"><h3>Passwort ändern</h3><form class="ps-form" data-acct-form="password" novalidate>' + acctField("current", "Aktuelles Passwort", "password", "", "current-password") + acctField("password", "Neues Passwort (mind. 8 Zeichen)", "password", "", "new-password") + (A.form === "password" ? msg : "") + '<button type="submit" class="ps-btn">Passwort ändern</button></form>' +
       '<details class="ps-del"><summary>Konto löschen</summary><form class="ps-form" data-acct-form="delete" novalidate><p class="pd-muted">Dein Konto wird gelöscht. Bestellungen bewahren wir aus steuerlichen Gründen auf.</p>' + acctField("password", "Passwort zur Bestätigung", "password", "", "current-password") + (A.form === "delete" ? msg : "") + '<button type="submit" class="ps-btn">Konto endgültig löschen</button></form></details></section></div>';
     return h + "</div>";
@@ -160,7 +160,7 @@
   function bonusHtml() {
     var b = S.bonus, me = S.me; if (!b) return "";
     var tiers = '<div class="ps-tiers">' + b.tiers.map(function (t) { return '<div class="ps-tier ' + t.key + (b.tier === t.key ? " cur" : "") + '"><span class="medal" aria-hidden="true"></span><h3>' + esc(t.name) + '</h3><p class="pct">' + t.pct + " %</p><p>ab " + eur(t.from).replace(",00", "") + "</p></div>"; }).join("") + "</div>";
-    if (me.type !== "company") return '<section class="ps-panel ps-bonus-acc"><h3>Bonusprogramm für Firmen</h3><p class="pd-muted">Bis zu 10 % Rabatt auf alles – für Firmenkonten ab 5.000 € Jahresumsatz. Stell dazu unten den Kundentyp auf „Firma“.</p>' + tiers + '<p><a class="ps-link" href="/print/hilfe#bonus">So funktioniert’s</a></p></section>';
+    if (me.type !== "company") return "";   // Privatkunden: Bonusprogramm (nur Firmen) nicht anzeigen
     var top = b.tiers[b.tiers.length - 1], pct = Math.min(100, Math.round(b.revenue / top.from * 100));
     return '<section class="ps-panel ps-bonus-acc"><h3>Bonusprogramm</h3>' +
       '<div class="ps-bstat"><div><span class="pd-muted">Deine Stufe</span><b class="lvl ' + esc(b.tier || "none") + '">' + (b.name ? esc(b.name) + " · " + b.pct + " % Rabatt" : "noch keine Stufe") + '</b></div><div><span class="pd-muted">Umsatz ' + b.year + ' (netto)</span><b>' + eur(b.revenue) + "</b></div></div>" +
@@ -916,6 +916,7 @@
       field("street", "Straße und Hausnummer *", c.street, 'autocomplete="street-address" required') +
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
+      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar – du bekommst zuerst eine Bestätigungs-E-Mail). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
   }
   function mockHtml() {
@@ -1170,6 +1171,8 @@
     var names = { firstName: "Vorname", lastName: "Nachname", street: "Straße und Hausnummer", zip: "PLZ", city: "Ort", email: "E-Mail", phone: "Telefon", company: "Firma" };
     if (bad.length) { document.getElementById("psAddrErr").textContent = "Bitte prüfen: " + bad.map(function (k) { return names[k]; }).join(", "); var first = f.elements[bad[0]]; if (first) first.focus(); return; }
     if (S.ctype === "company" && S.uid && !S.uidRes) { uidCheck(); }
+    var nlo = document.getElementById("psNlOpt"); S.nlOpt = !!(nlo && nlo.checked);
+    if (S.nlOpt && !S.nlSent) { S.nlSent = true; api("/print/api/newsletter", { email: c.email, consent: true, source: "Kasse" }).catch(function () {}); }
     requoteCart(); go(6);
   }
 

@@ -1293,6 +1293,19 @@ module.exports = function (D) {
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
 
+  // Newsletter (print-newsletter.js): wöchentlich montags, Double-Opt-in, Bearbeitung im Cockpit
+  let NEWS = null;
+  async function priceFrom(k) {
+    const hit = FROM.get(k + "|nl"); if (hit && Date.now() - hit.at < 12 * 3600e3) return hit.v;
+    const s0 = await settings(), prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return null;
+    const t = (prod.tiers || []).indexOf(500) > -1 ? 500 : (prod.tiers || []).indexOf(100) > -1 ? 100 : (prod.tiers || [])[0];
+    const n = normalizeSel(prod, Object.assign({ copies: t }, prod.kind === "banner" && prod.custom ? { custom: { w: 200, h: 100 } } : {}));
+    const q = await quote(prod, n, "AT", "", {}); const v = { gross: q.gross, copies: n.copies }; FROM.set(k + "|nl", { at: Date.now(), v }); return v;
+  }
+  const nlMod = () => NEWS || (NEWS = require("./print-newsletter.js")({ store, mailSend: D.mailSend, sig, sigOk, nowIso, log, limited, send: D.send,
+    publicUrl: () => cfg().publicUrl, firm: () => Object.assign({}, FIRM_DEFAULT, (D.firm && D.firm()) || {}),
+    products: async () => { const s = await settings(); return publicCatalog(await catalog(false), s, await catalogAll().catch(() => null)); },
+    priceFrom, vouchers, saveVouchers: all => store.setMeta("print_vouchers", all), accounts: () => accountMod().listAll() }));
   // Kundenkonten (print-account.js): erst bei Bedarf laden
   let ACCOUNT = null;
   const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl) }));
@@ -1647,6 +1660,7 @@ module.exports = function (D) {
   }
   let lastDaily = 0;
   async function tick() {
+    nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     try {
       if (Date.now() - lastDaily < 20 * 3600e3) return;
       const m = (await store.getMeta("print_daily").catch(() => null)) || {};
@@ -1751,6 +1765,7 @@ module.exports = function (D) {
         const o = await store.getOrder(m[2]); if (o) await pollOrder(o).catch(e => log("Print.com-Webhook:", e.message));   // Inhalt egal – Status selbst abrufen
         return D.send(res, 200, "ok");
       }
+      if (p.indexOf("/print/newsletter/") === 0 || p === "/print/api/newsletter") { const r = await nlMod().handlePublic(req, res, p, u, ipOf(req), J, readJson, sameOrigin); if (r !== false) return; }
       if (p.indexOf("/print/api/") !== 0) return D.send(res, 404, "Not found");
       const ip = ipOf(req);
       if (p.indexOf("/print/api/account/") === 0) {
@@ -1950,6 +1965,7 @@ module.exports = function (D) {
   async function handleAdmin(req, res, u, p) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
+      if (p === "/admin/api/print/newsletter") return await nlMod().handleAdmin(req, res, p, J, readJson);
       if (p === "/admin/api/print/customers") {
         const A = accountMod();
         if (req.method === "POST") { const b = await readJson(req, 4000); if (b.op !== "discount") return J(res, 400, { ok: false, error: "op" }); const c = await A.setDiscount(String(b.id || ""), b.pct, b.note); return c ? J(res, 200, { ok: true }) : J(res, 404, { ok: false, error: "Kunde nicht gefunden" }); }

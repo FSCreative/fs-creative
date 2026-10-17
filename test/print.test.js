@@ -18,7 +18,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-"));
-  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
+  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
     .forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   const cpDir = (d) => { fs.mkdirSync(path.join(dir, d), { recursive: true }); fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => { if (e.isDirectory()) cpDir(path.join(d, e.name)); else fs.copyFileSync(path.join(ROOT, d, e.name), path.join(dir, d, e.name)); }); };
   ["admin-cockpit", "print"].forEach(cpDir);
@@ -558,6 +558,27 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     for (const fd of ["luik_6", "cross_8"]) { const rr = await fetch(B + "/print/api/template?product=folder&c=" + encodeURIComponent(JSON.stringify(Object.assign({}, FO, { sel: Object.assign({}, FO.sel, { size: "a5", fold: fd }) })))); assert.strictEqual(rr.status, 200, fd);
       if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, fd + ".pdf"), Buffer.from(await rr.arrayBuffer())); }
     assert.strictEqual((await fetch(B + "/print/api/template?product=gibtsnicht")).status, 404);
+  });
+  await t("Newsletter: Double-Opt-in, Bestätigung mit Code, Ausgabe im Cockpit bearbeiten, Testmail mit Pflichtangaben, Abmelden", async () => {
+    const em = "news@example.com";
+    assert.strictEqual((await post("/print/api/newsletter", { email: em })).status, 400, "ohne Einwilligung");
+    const r = await post("/print/api/newsletter", { email: em, consent: true, source: "Test" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    let st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 0, "erst nach Bestätigung"); assert.strictEqual(st.counts.pending, 1);
+    const cm = M.mails.filter(m => m.to === em).pop(); const link = (cm.text.match(/https?:\/\/\S+bestaetigen\S+/) || [])[0]; assert.ok(link, cm.text);
+    const cp = await fetch(B + new URL(link).pathname + new URL(link).search); assert.strictEqual(cp.status, 200); assert.ok(/NL-KW/.test(await cp.text()), "Code auf der Bestätigungsseite");
+    assert.strictEqual((await fetch(B + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(em) + "&t=falsch")).status, 400);
+    st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 1); assert.strictEqual(st.issue.status, "draft"); assert.strictEqual(st.settings.autoSend, false, "Automatik Standard AUS");
+    st = await admin("/admin/api/print/newsletter", { op: "save", monday: st.issue.monday, subject: "Testbetreff", intro: "Hallo Welt", code: "nl-test5", products: ["flyer", "visitenkarten"] });
+    assert.strictEqual(st.issue.code, "NL-TEST5"); assert.deepStrictEqual(st.issue.products, ["flyer", "visitenkarten"]);
+    const pv = await admin("/admin/api/print/newsletter", { op: "preview", monday: st.issue.monday }); assert.ok(/Hallo Welt/.test(pv.html) && /NL-TEST5/.test(pv.html) && /§ 25 MedienG/.test(pv.html) && /abmelden/i.test(pv.html));
+    await admin("/admin/api/print/newsletter", { op: "settings", testTo: "simon@fs-creative.at" });
+    await admin("/admin/api/print/newsletter", { op: "test", monday: st.issue.monday });
+    const tm = M.mails.filter(m => m.to === "simon@fs-creative.at" && /\[Test\] Testbetreff/.test(m.subject)).pop(); assert.ok(tm, "Testmail");
+    assert.ok(/NL-TEST5/.test(tm.text) && /Medieninhaber/.test(tm.text) && /print\/newsletter\/abmelden\?e=/.test(tm.text) && /einmal je Kundin\/Kunde/.test(tm.text));
+    const vo = await admin("/admin/api/print/vouchers"); const v = vo.vouchers.find(x => x.code === "NL-TEST5"); assert.ok(v && v.pct === 5 && v.perCustomer && v.until, "Wochencode als Gutschein");
+    const ul = B + "/print/newsletter/abmelden?e=" + encodeURIComponent(em) + "&t=" + (tm.text.match(/abmelden\?e=[^&]+&t=([a-f0-9]+)/) || [])[1];
+    const ug = await fetch(ul.replace(/simon%40fs-creative\.at/, encodeURIComponent(em))); assert.strictEqual(ug.status, 400, "Token gehört zu anderer Adresse");
+    st = await admin("/admin/api/print/newsletter", { op: "unsub", email: em }); assert.strictEqual(st.recipients, 0);
   });
   await t("KI-Assistent ohne ANTHROPIC_API_KEY: aus (Katalog ai=false, Endpunkt 503); /print/hilfe erreichbar", async () => {
     assert.strictEqual(cat.ai, false);

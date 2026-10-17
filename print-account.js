@@ -81,7 +81,7 @@ module.exports = function (D) {
       let c = m[email];
       if (c && c.verified) return J(res, 409, { ok: false, error: "Für diese E-Mail gibt es schon ein Konto – bitte anmelden." });
       if (!c) c = m[email] = { id: "K" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString("hex"), email, createdAt: nowIso(), verified: false };
-      setPw(c, b.password); profileIn(c, { firstName: b.firstName, lastName: b.lastName }); c.newsletter = b.newsletter === true;
+      setPw(c, b.password); profileIn(c, { firstName: b.firstName, lastName: b.lastName }); c.newsletter = b.newsletter === true; if (c.newsletter) c.newsletterAt = nowIso();
       await sendCode(c, "verify"); return J(res, 200, { ok: true, needCode: true });
     }
     if (p === "/print/api/account/verify") {
@@ -109,7 +109,7 @@ module.exports = function (D) {
     if (p === "/print/api/account/logout") return send(200, { ok: true }, clearCookie());
     // ab hier nur angemeldet
     const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
-    if (p === "/print/api/account/profile") { profileIn(c, b); if (b.newsletter !== undefined) c.newsletter = b.newsletter === true; await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null }); }
+    if (p === "/print/api/account/profile") { profileIn(c, b); if (b.newsletter !== undefined) { if (b.newsletter === true && !c.newsletter) c.newsletterAt = nowIso(); c.newsletter = b.newsletter === true; } await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null }); }
     if (p === "/print/api/account/password") {
       if (!pwOk(c, b.current)) return J(res, 400, { ok: false, error: "Das aktuelle Passwort stimmt nicht." });
       const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e }); setPw(c, b.password); await save(); return J(res, 200, { ok: true });
@@ -122,7 +122,7 @@ module.exports = function (D) {
     return J(res, 404, { ok: false, error: "not_found" });
   }
   // Cockpit: alle Kunden, eigener Rabatt je Kunde (zusätzlich zum Bonusprogramm – der höhere gilt)
-  async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "" })); }
+  async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { newsletterAt: c.newsletterAt || "", lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "" })); }
   async function setDiscount(id, pct, note) { const c = await byId(id); if (!c) return null; const n = parseFloat(String(pct == null ? "" : pct).replace(",", ".")); c.discountPct = isFinite(n) && n > 0 ? Math.min(50, Math.round(n * 10) / 10) : 0; c.discountNote = clip(note, 200); await save(); return c; }
   return { handle, current, createFromCheckout, pub, listAll, setDiscount, _test: { codeOk, newCode, hash } };
 };

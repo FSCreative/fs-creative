@@ -924,3 +924,12 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 .ps-dd i{font-size:0!important;width:30px!important;height:30px!important}
 .ps-dd i::before{content:"";display:block;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg)}
 .ps-dd:hover i{background:var(--accent);color:#fff}
+
+/* Newsletter-Anmeldung (Fußzeile) */
+.ps-nlf{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px 24px;align-items:center;padding:22px;margin:0 0 30px;border-radius:20px;background:linear-gradient(135deg,rgba(10,132,255,.16),rgba(191,90,242,.10));border:1px solid var(--ps-line2)}
+.ps-nlf .t b{display:block;font-size:18px;margin-bottom:4px}.ps-nlf .t span{color:var(--text-dim);font-size:14px}
+.ps-nlf .f{display:flex;gap:8px}.ps-nlf .f input{flex:1;min-width:0;padding:12px 14px;border-radius:999px;border:1px solid var(--ps-line2);background:var(--ps-field);color:inherit;font:inherit}
+.ps-nlf .c{grid-column:1/-1;display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--text-dim);line-height:1.45}.ps-nlf .c input{margin-top:2px;flex:none}
+.ps-nlf .m{grid-column:1/-1;margin:0;font-size:14px}.ps-nlf .m:empty{display:none}.ps-nlf .m.ok{color:var(--ps-ok)}.ps-nlf .m.bad{color:var(--ps-bad)}
+@media(max-width:760px){.ps-nlf{grid-template-columns:1fr;padding:18px}}
+.ps-nlopt{margin:14px 0 4px;font-size:13.5px}

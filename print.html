@@ -91,6 +91,26 @@
 </nav>
 <footer class="ps-foot ps-foot-big">
   <div class="wrap">
+    <form class="ps-nlf" data-nl-form data-nl-src="Fußzeile" novalidate>
+      <div class="t"><b>Druck-Tipps jeden Montag + 5 % Rabattcode</b><span>Produkttipps der Woche, ein Designer-Tipp und dein Wochencode – kostenlos und jederzeit abbestellbar.</span></div>
+      <div class="f"><input type="email" name="email" placeholder="deine@email.at" aria-label="E-Mail-Adresse für den Newsletter" autocomplete="email" required><button type="submit" class="ps-btn primary">Anmelden</button></div>
+      <label class="c"><input type="checkbox" name="consent" required> <span>Ich möchte den wöchentlichen Newsletter des FS Creative Druckshops (Produkttipps, Designer-Tipp, Rabattcode) per E-Mail erhalten. Die Einwilligung kann ich jederzeit über den Abmeldelink widerrufen. Details: <a href="/datenschutz">Datenschutzerklärung</a>.</span></label>
+      <p class="m" role="status" aria-live="polite"></p>
+    </form>
+    <script>
+      // Newsletter-Anmeldung (Double-Opt-in): erst der Link in der Bestätigungs-E-Mail meldet an
+      document.addEventListener("submit", function (e) {
+        var f = e.target.closest && e.target.closest("[data-nl-form]"); if (!f) return; e.preventDefault();
+        var m = f.querySelector(".m"), em = f.elements.email.value.trim(), b = f.querySelector("button");
+        var say = function (t, c) { m.textContent = t; m.className = "m " + (c || ""); };
+        if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(em)) { say("Bitte eine gültige E-Mail-Adresse eingeben.", "bad"); f.elements.email.focus(); return; }
+        if (!f.elements.consent.checked) { say("Bitte bestätige noch die Einwilligung.", "bad"); return; }
+        b.disabled = true; say("Einen Moment …");
+        fetch("/print/api/newsletter", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" }, body: JSON.stringify({ email: em, consent: true, source: f.getAttribute("data-nl-src") || "Shop" }) })
+          .then(function (r) { return r.json(); }).then(function (j) { b.disabled = false; say(j.ok ? j.msg : (j.error || "Das hat nicht geklappt."), j.ok ? "ok" : "bad"); if (j.ok) f.elements.email.value = ""; })
+          .catch(function () { b.disabled = false; say("Gerade nicht erreichbar – bitte später erneut.", "bad"); });
+      });
+    </script>
     <div class="ps-fgrid">
       <div class="ps-fbrand">
         <a class="brand" href="/print"><span class="mark"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="" loading="lazy"></span> FS Creative <span class="ps-brand-sub">Druckshop</span></a>
