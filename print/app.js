@@ -542,7 +542,10 @@
   function classics() { var P = S.cat.products, fl = prodByKey("flyer"), bn = P.filter(function (p) { return p.kind === "banner"; })[0]; return [fl, bn].filter(Boolean); }
   function dailyPicks() {
     var skip = {}; classics().forEach(function (p) { skip[p.key] = 1; });
-    var pool = S.cat.products.filter(function (p) { return !skip[p.key] && imgOk(p.img) && !badDesc(p); }); if (pool.length < 4) pool = S.cat.products.filter(function (p) { return !skip[p.key]; });
+    // Fokus: Produkte, bei denen wir laut Preisvergleich (druck.at/Flyeralarm) günstiger sind
+    var FOCUS = ["postcards", "plakate", "folder", "tshirt-basic", "tshirt-bio", "rollups", "mesh-banner", "bauzaun"];
+    var pool = S.cat.products.filter(function (p) { return !skip[p.key] && FOCUS.indexOf(p.key) > -1; });
+    if (pool.length < 4) pool = pool.concat(S.cat.products.filter(function (p) { return !skip[p.key] && FOCUS.indexOf(p.key) < 0 && imgOk(p.img) && !badDesc(p); }));
     var seed = daySeed(), rnd = function () { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
     // beliebte Produkte etwas häufiger, aber jeden Tag eine andere Mischung
     return pool.map(function (p) { return { p: p, k: rnd() * (p.best ? 1.6 : 1) }; }).sort(function (a, b) { return b.k - a.k; }).slice(0, 4).map(function (x) { return x.p; });

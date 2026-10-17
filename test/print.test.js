@@ -559,6 +559,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       if (process.env.TPL_OUT) fs.writeFileSync(path.join(process.env.TPL_OUT, fd + ".pdf"), Buffer.from(await rr.arrayBuffer())); }
     assert.strictEqual((await fetch(B + "/print/api/template?product=gibtsnicht")).status, 404);
   });
+  await t("Ziel-Marge je Kategorie: Werbeartikel 5 % vom Nettopreis nach Gebühr, ohne Wert wieder Standard", async () => {
+    const kp = cat.products.find(p => p.key === "kugelschreiber"); assert.ok(kp, "Kugelschreiber im Katalog");
+    const q = async () => (await admin("/admin/api/print/quote", { product: "kugelschreiber", sel: kp.defaults || {}, copies: (kp.tiers || [])[0] || 50, urgency: "standard" })).quote;
+    const before = await q(); assert.ok(before && before.net > 0, JSON.stringify(before));
+    await admin("/admin/api/print/settings", { groupMargin: { "gifts-merchandise-promotional": "5" } });
+    const after = await q(), pct = after.margin / after.net * 100;
+    assert.ok(after.net < before.net, "günstiger als mit Standardaufschlag"); assert.ok(pct >= 4.9 && pct < 6.5, "Marge " + pct.toFixed(2) + " %");
+    const st = await admin("/admin/api/print/state"); assert.strictEqual(st.settings.groupMargin["gifts-merchandise-promotional"], 5); assert.ok(st.groups.some(g => g.slug === "gifts-merchandise-promotional"));
+    await admin("/admin/api/print/settings", { groupMargin: { "gifts-merchandise-promotional": null } });
+    assert.strictEqual((await q()).net, before.net, "zurück auf Standard");
+  });
   await t("Newsletter: Double-Opt-in, Bestätigung mit Code, Ausgabe im Cockpit bearbeiten, Testmail mit Pflichtangaben, Abmelden", async () => {
     const em = "news@example.com";
     assert.strictEqual((await post("/print/api/newsletter", { email: em })).status, 400, "ohne Einwilligung");

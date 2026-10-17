@@ -246,7 +246,7 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || "") };
+    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin) };
     // Mitbewerber-Preisanker aus print-anchors.json (versioniert im Repo): neue Version → Produkte daraus übernehmen, übrige Anker bleiben
     if (process.env.PRINT_ANCHORS_FILE !== "off") try { const f = JSON.parse(fs.readFileSync(path.join(__dirname, "print-anchors.json"), "utf8")); if (f && f.version && String(f.version) !== SETTINGS.anchorsFile && f.anchors) { await saveSettings({ anchors: f.anchors, anchorsFile: String(f.version) }); log("Preisanker " + f.version + " übernommen (" + Object.keys(f.anchors).length + " Produkte)"); } } catch (e) { if (e.code !== "ENOENT") log("Preisanker-Datei:", e.message); }
     return SETTINGS;
@@ -256,6 +256,8 @@ module.exports = function (D) {
     const s = await settings();
     if (pl.live !== undefined) s.live = pl.live === true;
     if (pl.anchorsFile) s.anchorsFile = String(pl.anchorsFile).slice(0, 40);
+    // Ziel-Marge je Hauptkategorie in % vom Nettopreis (1–60), null = Standard
+    if (pl.groupMargin && typeof pl.groupMargin === "object") { s.groupMargin = s.groupMargin || {}; Object.keys(pl.groupMargin).slice(0, 40).forEach(k => { if (!/^[a-z0-9_-]{1,60}$/.test(k)) return; const v = pl.groupMargin[k], n = parseFloat(String(v == null ? "" : v).replace(",", ".")); if (v === null || v === "" || !isFinite(n)) delete s.groupMargin[k]; else s.groupMargin[k] = Math.max(1, Math.min(60, Math.round(n * 10) / 10)); }); }
     // Marge für alle Produkte: globaler Aufschlag/Mindestmarge (null = Standard aus PRINT_MARKUP_PCT/PRINT_MIN_MARGIN_EUR); applyAll entfernt alle Einzelwerte
     ["markupPct", "minMarginEur"].forEach(k => { if (pl[k] === undefined) return; const n = parseFloat(String(pl[k]).replace(",", ".")); s[k] = pl[k] === null || pl[k] === "" || !isFinite(n) ? null : Math.max(0, Math.min(k === "markupPct" ? 500 : 1000, n)); });
     // Preisanker (Mitbewerber-Bruttopreise je Ausführung und Auflage): Ziel = Anker − Abstand, nie unter Einkauf + Mindestmarge
@@ -834,10 +836,13 @@ module.exports = function (D) {
   async function quote(prod, n, country, postcode, cust) {
     if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
-    const markup = ov.markupPct != null ? +ov.markupPct : s.markupPct != null ? s.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : s.minMarginEur != null ? s.minMarginEur : c.minMargin;
+    // Ziel-Marge je Kategorie (Cockpit, z. B. Werbeartikel 5 %): Marge in % vom Nettopreis NACH Zahlungsgebühr → Aufschlag und Mindestmarge daraus (Produkt-Aufschlag geht vor)
+    const gmAll = s.groupMargin || {}, gmMain = catOf(prod.sku, s, prod.group, prod.cat).main, gmv = gmAll[gmMain] != null ? gmAll[gmMain] : gmAll[prod.group], gm = gmv != null && isFinite(+gmv) ? +gmv : null;
+    const gmUp = gm != null ? gm / (100 - gm) * 100 / (1 - 1.2 * payFee().pct / 100) : null;
+    const markup = ov.markupPct != null ? +ov.markupPct : gmUp != null ? gmUp : s.markupPct != null ? s.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : gmUp != null ? 0 : s.minMarginEur != null ? s.minMarginEur : c.minMargin;
     // Aufschlag (und ggf. Mindestmarge) nur auf das Produkt – Versand wird zum Einkaufspreis weitergegeben; auf 10 Cent aufrunden
     // Mindestmarge immer NACH Zahlungsgebühr (Mollie, konservativ: Kreditkarte) – netto ≥ (Einkauf × (1 + min %) + Fixgebühr) / (1 − (1 + USt) × Gebühr %)
-    const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
+    const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (gmUp != null ? gmUp : s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
     const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
@@ -1936,7 +1941,7 @@ module.exports = function (D) {
     const orders = await store.listOrders();
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
     return { ok: true, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: SETTINGS && SETTINGS.markupPct != null ? SETTINGS.markupPct : c.markup, minMarginEur: SETTINGS && SETTINGS.minMarginEur != null ? SETTINGS.minMarginEur : c.minMargin, envMarkupPct: c.markup, envMinMarginEur: c.minMargin },
-      settings: s, catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
+      settings: s, groups: mainsList().map(m => ({ slug: m.slug, name: m.name })), catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
       curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
   }
   async function sortimentState() {

@@ -58,7 +58,8 @@ module.exports = function (D) {
     "tshirt-basic": "Shirts mit Logo für Team, Verein und Event – schon ab 1 Stück.", "tshirt-bio": "Bio-Shirts von Stanley/Stella – fair, weich und mit deinem Design.", tasse: "Tassen mit Logo – das Werbegeschenk für jeden Tag.",
     baumwolltasche: "Stofftaschen mit Aufdruck – nachhaltig und gern getragen.", kugelschreiber: "Kugelschreiber mit Logo – der Klassiker unter den Give-aways.", bookmarks: "Lesezeichen für Buchhandlungen, Bibliotheken und Events.",
     "tear-off-calendars": "Abreißkalender mit deinem Logo – ein ganzes Jahr präsent.", beachflags: "Beachflags für Events, Eingänge und Sportplätze – weithin sichtbar." };
-  const PICKS = ["flyer", "visitenkarten", "plakate", "folder", "postcards", "aufkleber", "rollups", "pvc-banner", "stapled-magazines", "printed-letterheads", "blocknotes", "tshirt-basic", "tshirt-bio", "tasse", "baumwolltasche", "kugelschreiber", "bookmarks", "tear-off-calendars", "mesh-banner", "beachflags"];
+  // Empfehlungen: Produkte, bei denen wir laut Preisvergleich günstiger als druck.at/Flyeralarm sind (im Cockpit frei änderbar)
+  const PICKS = ["flyer", "postcards", "plakate", "pvc-banner", "folder", "tshirt-basic", "rollups", "mesh-banner", "tshirt-bio", "bauzaun"];
   async function draftFor(mon) {
     const w = kw(mon), list = (await products()).filter(p => PICKS.indexOf(p.key) > -1).sort((a, b) => PICKS.indexOf(a.key) - PICKS.indexOf(b.key));
     const n = list.length || 1, pick = [0, 1, 2].map(i => list[(w * 3 + i * 7) % n]).filter(Boolean).filter((p, i, a) => a.indexOf(p) === i).map(p => p.key);
@@ -202,7 +203,7 @@ module.exports = function (D) {
     return { settings: d.settings, issue: iss, recipients: rec.length, sending: SENDING, counts: { active: subs.filter(s => s.status === "active").length, pending: subs.filter(s => s.status === "pending").length, unsub: subs.filter(s => s.status === "unsub").length, accounts: rec.filter(r => r.source === "Kundenkonto").length },
       subs: subs.slice(0, 500).map(s => ({ email: s.email, status: s.status, source: s.source || "", at: s.confirmedAt || s.requestedAt || s.unsubAt || "" })),
       history: Object.values(d.issues).filter(x => x.status !== "draft").sort((a, b) => b.monday.localeCompare(a.monday)).slice(0, 30).map(x => ({ monday: x.monday, kw: x.kw, subject: x.subject, status: x.status, sent: x.sent || 0, failed: x.failed || 0, total: x.total || 0, sentAt: x.sentAt || "" })),
-      tips: TIPS.map(t => t[0]), picks: (await products()).filter(p => PICKS.indexOf(p.key) > -1).map(p => ({ key: p.key, title: p.title })).concat([]) };
+      tips: TIPS.map(t => t[0]), picks: (await products()).map(p => ({ key: p.key, title: (PICKS.indexOf(p.key) > -1 ? "★ " : "") + p.title, o: PICKS.indexOf(p.key) > -1 ? PICKS.indexOf(p.key) : 999 })).sort((x, y) => x.o - y.o || x.title.localeCompare(y.title, "de")).map(p => ({ key: p.key, title: p.title })) };
   }
   async function handleAdmin(req, res, p, J, readJson) {
     if (p !== "/admin/api/print/newsletter") return false;
