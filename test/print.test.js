@@ -28,7 +28,7 @@ function copyApp() {
 const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
 async function startServer(dir, env) {
   const port = 5300 + Math.floor(Math.random() * 600);
-  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x" }, env);
+  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x", PRINT_ANCHORS_FILE: "off" }, env);
   ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN", "RAILWAY_API_TOKEN", "CF_API_TOKEN", "ANTHROPIC_API_KEY", "DATABASE_URL", "PRINT_SECRET"].forEach((k) => { if (!(k in env)) delete e[k]; });
   Object.keys(env).forEach(k => { if (env[k] === undefined) delete e[k]; });
   const srv = cp.spawn(process.execPath, ["server.js"], { cwd: dir, env: e, stdio: ["ignore", "pipe", "pipe"] });

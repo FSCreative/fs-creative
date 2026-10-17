@@ -246,13 +246,16 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded) };
+    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || "") };
+    // Mitbewerber-Preisanker aus print-anchors.json (versioniert im Repo): neue Version → Produkte daraus übernehmen, übrige Anker bleiben
+    if (process.env.PRINT_ANCHORS_FILE !== "off") try { const f = JSON.parse(fs.readFileSync(path.join(__dirname, "print-anchors.json"), "utf8")); if (f && f.version && String(f.version) !== SETTINGS.anchorsFile && f.anchors) { await saveSettings({ anchors: f.anchors, anchorsFile: String(f.version) }); log("Preisanker " + f.version + " übernommen (" + Object.keys(f.anchors).length + " Produkte)"); } } catch (e) { if (e.code !== "ENOENT") log("Preisanker-Datei:", e.message); }
     return SETTINGS;
   }
   const SKU_RX = /^[a-z0-9_-]{1,80}$/i;
   async function saveSettings(pl) {
     const s = await settings();
     if (pl.live !== undefined) s.live = pl.live === true;
+    if (pl.anchorsFile) s.anchorsFile = String(pl.anchorsFile).slice(0, 40);
     // Marge für alle Produkte: globaler Aufschlag/Mindestmarge (null = Standard aus PRINT_MARKUP_PCT/PRINT_MIN_MARGIN_EUR); applyAll entfernt alle Einzelwerte
     ["markupPct", "minMarginEur"].forEach(k => { if (pl[k] === undefined) return; const n = parseFloat(String(pl[k]).replace(",", ".")); s[k] = pl[k] === null || pl[k] === "" || !isFinite(n) ? null : Math.max(0, Math.min(k === "markupPct" ? 500 : 1000, n)); });
     // Preisanker (Mitbewerber-Bruttopreise je Ausführung und Auflage): Ziel = Anker − Abstand, nie unter Einkauf + Mindestmarge
