@@ -344,11 +344,13 @@ module.exports = function (D) {
     return (excludes || []).some(r => r.length > 0 && r.every(x => { const v = cur[x.property] != null ? cur[x.property] : alias && alias[x.property] ? cur[alias[x.property]] : null; return v != null && x.options.indexOf(String(v)) > -1; }));
   }
   // Erste gültige Ergänzung: vars = [[slug, [Optionen in Wunsch-Reihenfolge]], …] (Tiefensuche, bricht ab, sobald eine Regel vollständig zutrifft)
+  const OMITTABLE = /^(pallet_delivery|bundle|cross_bundle|packaging_extras|sheet_size|special_size)$/;   // Logistik-/Produktionsangaben, die Print.com je Verfahren auch ohne Wert akzeptiert
   function solveSel(vars, base, excludes, alias) {
     const cur = Object.assign({}, base); vars = vars.filter(v => base[v[0]] == null && v[1].length);
     if (hitRules(excludes, cur, alias)) return null;
     let steps = 0;
-    const go = i => { if (i >= vars.length) return true; for (const o of vars[i][1]) { if (++steps > 20000) return false; cur[vars[i][0]] = o; if (!hitRules(excludes, cur, alias) && go(i + 1)) return true; } delete cur[vars[i][0]]; return false; };
+    // Option null = Eigenschaft weglassen (letzter Ausweg): Print.com verlangt z. B. pallet_delivery nur bei Offset – bei Digital/Inkjet ist jeder Wert ausgeschlossen, ohne Angabe gültig
+    const go = i => { if (i >= vars.length) return true; for (const o of vars[i][1]) { if (++steps > 20000) return false; if (o === null) delete cur[vars[i][0]]; else cur[vars[i][0]] = o; if (!hitRules(excludes, cur, alias) && go(i + 1)) return true; } delete cur[vars[i][0]]; return false; };
     return go(0) ? cur : null;
   }
   const qtyIn = (r, n) => r.ranges.some(g => n >= g.min && n <= g.max && (n - g.min) % g.step === 0);
@@ -448,7 +450,7 @@ module.exports = function (D) {
       if (!pref[pr.slug] && paper && /^(material|paper)/.test(pr.slug)) { const good = pr.options.filter(x => { const g = weightOf(x); return g >= paper[0] && g <= paper[1]; }).sort((a, b) => coated(b) - coated(a) || weightOf(a) - weightOf(b)).map(x => x.slug); rest = good.concat(rest.filter(x => good.indexOf(x) < 0)); }
       return p.concat(rest); };
     const base = {}; Object.keys(fixed).forEach(k => { if (!auto[k]) base[k] = fixed[k]; });
-    const sol = solveSel(exposed.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => [k, auto[k]])), base, prod.excludes, aliasOf(prod));
+    const sol = solveSel(exposed.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => [k, OMITTABLE.test(k) ? auto[k].concat([null]) : auto[k]])), base, prod.excludes, aliasOf(prod));
     exposed.forEach(pr => { prod.defaults[pr.slug] = sol && sol[pr.slug] != null ? sol[pr.slug] : order(pr)[0]; });
     return prod;
   }
@@ -667,7 +669,7 @@ module.exports = function (D) {
   function resolveSel(prod, sel, extra, only) {
     const base = {}; Object.keys(prod.fixed).forEach(k => { if (!prod.auto || !prod.auto[k]) base[k] = prod.fixed[k]; });
     prod.props.forEach(pr => { if (sel[pr.slug] != null) base[pr.slug] = sel[pr.slug]; }); Object.assign(base, extra || {});
-    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]);   // only: z. B. Druckverfahren passend zur Auflage
+    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]).map(v => OMITTABLE.test(v[0]) ? [v[0], v[1].concat([null])] : v);   // only: z. B. Druckverfahren passend zur Auflage
     let all = solveSel(vars, base, prod.excludes, aliasOf(prod)); const excl = !all;
     if (!all) all = Object.assign({}, prod.fixed, base);
     prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });

@@ -236,10 +236,11 @@
   function solve(vars, base) {
     var cur = Object.assign({}, base), steps = 0, al = aliasMap(); vars = vars.filter(function (v) { return base[v[0]] == null && v[1].length; });
     if (hitRules(cur, al)) return null;
-    function goV(i) { if (i >= vars.length) return true; for (var k = 0; k < vars[i][1].length; k++) { if (++steps > 20000) return false; cur[vars[i][0]] = vars[i][1][k]; if (!hitRules(cur, al) && goV(i + 1)) return true; } delete cur[vars[i][0]]; return false; }
+    function goV(i) { if (i >= vars.length) return true; for (var k = 0; k < vars[i][1].length; k++) { if (++steps > 20000) return false; if (vars[i][1][k] === null) delete cur[vars[i][0]]; else cur[vars[i][0]] = vars[i][1][k]; if (!hitRules(cur, al) && goV(i + 1)) return true; } delete cur[vars[i][0]]; return false; }
     return goV(0) ? cur : null;
   }
-  function autoVars() { var au = S.prod.auto || {}; return Object.keys(au).map(function (k) { return [k, au[k]]; }); }
+  var OMITTABLE = /^(pallet_delivery|bundle|cross_bundle|packaging_extras|sheet_size|special_size)$/;   // wie Server: darf als letzter Ausweg fehlen
+  function autoVars() { var au = S.prod.auto || {}; return Object.keys(au).map(function (k) { return [k, OMITTABLE.test(k) ? au[k].concat([null]) : au[k]]; }); }
   function baseOf(sel) { var p = S.prod, b = {}, au = p.auto || {}; Object.keys(p.fixed || {}).forEach(function (k) { if (!au[k]) b[k] = p.fixed[k]; }); if (kind() === "banner") b.size = "custom"; return Object.assign(b, sel); }
   function excluded(sel) { return !solve(autoVars(), baseOf(sel)); }
   function fixSel(changed) { // ausgeschlossene Kombination → die übrigen Optionen auf die nächste gültige Kombination setzen (aktuelle Werte zuerst probieren)
