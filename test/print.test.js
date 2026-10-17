@@ -430,6 +430,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(!("konfektion" in o)); assert.deepStrictEqual(r.j.size, { w: 2000, h: 1000 }); assert.ok(r.j.labels.some(l => l[1] === "200 × 100 cm"));
     assert.strictEqual((await post("/print/api/price", { product: "pvc-banner", copies: 1, custom: { w: 20, h: 100 } })).status, 400);
     assert.strictEqual((await post("/print/api/price", { product: "pvc-banner", copies: 1, custom: { w: 400, h: 400 } })).status, 400, "max. 500 × 300 cm");
+    // Preisanker nach Fläche (Mitbewerber-Bannerpreise je m²): 2 m² → 100, 3 m² → interpoliert 125, außerhalb der Vergleichsflächen kein Anker
+    await admin("/admin/api/print/settings", { anchors: { "pvc-banner": [{ sig: { konfektion: "hem_eyelets_50" }, area: [[0.5, { 1: 40, 2: 70 }], [2, { 1: 100, 2: 180 }], [4, { 1: 150, 2: 280 }]], src: "test" }] } });
+    const aq = async (w, h, c, k) => (await admin("/admin/api/print/quote", { product: "pvc-banner", sel: { konfektion: k || "hem_eyelets_50" }, custom: { w, h }, copies: c || 1, urgency: "standard" })).quote;
+    assert.strictEqual((await aq(200, 100)).anchor, 100); assert.strictEqual((await aq(300, 100)).anchor, 125); assert.strictEqual((await aq(200, 100, 2)).anchor, 180);
+    assert.strictEqual((await aq(500, 300)).anchor, null, "größer als verglichen"); assert.strictEqual((await aq(200, 100, 1, "trimmed")).anchor, null, "andere Konfektion");
+    await admin("/admin/api/print/settings", { anchors: { "pvc-banner": null } });
     const up = await upload(await pdfOf(2080, 1080, 1), "banner.pdf", { product: "pvc-banner", copies: 1, sel: { konfektion: "hem_eyelets_50" }, custom: { w: 200, h: 100 } });
     assert.strictEqual(up.status, 200, JSON.stringify(up.j)); assert.ok(up.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text)), JSON.stringify(up.j.checks));
   });

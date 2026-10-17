@@ -257,7 +257,10 @@ module.exports = function (D) {
     ["markupPct", "minMarginEur"].forEach(k => { if (pl[k] === undefined) return; const n = parseFloat(String(pl[k]).replace(",", ".")); s[k] = pl[k] === null || pl[k] === "" || !isFinite(n) ? null : Math.max(0, Math.min(k === "markupPct" ? 500 : 1000, n)); });
     // Preisanker (Mitbewerber-Bruttopreise je Ausführung und Auflage): Ziel = Anker − Abstand, nie unter Einkauf + Mindestmarge
     if (pl.anchors && typeof pl.anchors === "object") Object.keys(pl.anchors).slice(0, 300).forEach(k => { const a = pl.anchors[k]; if (a === null) { delete s.anchors[k]; return; } if (!Array.isArray(a)) return;
-      s.anchors[k] = a.slice(0, 150).map(x => ({ sig: Object.assign({}, x.sig || {}), tiers: Object.keys(x.tiers || {}).reduce((o, c) => { const v = parseFloat(x.tiers[c]); if (+c > 0 && v > 0) o[+c] = v; return o; }, {}), src: clip(x.src || "druck.at", 60), at: x.at || today() })).filter(x => Object.keys(x.tiers).length); });
+      const tc = t => Object.keys(t || {}).reduce((o, c) => { const v = parseFloat(t[c]); if (+c > 0 && v > 0) o[+c] = v; return o; }, {});
+      // area: Banner in Wunschgröße – Mitbewerberpreise je Fläche (m²) und Auflage, dazwischen linear interpoliert
+      s.anchors[k] = a.slice(0, 400).map(x => Object.assign({ sig: Object.assign({}, x.sig || {}), tiers: tc(x.tiers), src: clip(x.src || "druck.at", 60), at: x.at || today() },
+        Array.isArray(x.area) ? { area: x.area.slice(0, 120).map(p => [parseFloat(p && p[0]), tc(p && p[1])]).filter(p => p[0] > 0 && Object.keys(p[1]).length) } : {})).filter(x => Object.keys(x.tiers).length || (x.area && x.area.length > 1)); });
     if (pl.anchorGap !== undefined) { const g = parseFloat(String(pl.anchorGap).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 50) s.anchorGap = g; }
     if (pl.minMarginPct !== undefined) { const g = parseFloat(String(pl.minMarginPct).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 100) s.minMarginPct = g; }
     if (pl.applyAll === true) Object.keys(s.products).forEach(k => { delete s.products[k].markupPct; delete s.products[k].minMarginEur; });   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
@@ -833,10 +836,18 @@ module.exports = function (D) {
     // Mindestmarge immer NACH Zahlungsgebühr (Mollie, konservativ: Kreditkarte) – netto ≥ (Einkauf × (1 + min %) + Fixgebühr) / (1 − (1 + USt) × Gebühr %)
     const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
-    const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard") || n.kind === "banner" || n.textile) return 0;
+    const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard") || n.textile) return 0;
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
-      const cs = Object.keys(a.tiers).map(Number).sort((x, y) => x - y), c = +n.copies; if (!cs.length || c < cs[0] || c > cs[cs.length - 1]) return 0;
-      if (a.tiers[c]) return a.tiers[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return a.tiers[lo] + (a.tiers[hi] - a.tiers[lo]) * (c - lo) / (hi - lo); })();
+      const c = +n.copies, at = t => { const cs = Object.keys(t || {}).map(Number).sort((x, y) => x - y); if (!cs.length || c < cs[0] || c > cs[cs.length - 1]) return 0;
+        if (t[c]) return t[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo); };
+      if (a.area) {   // Wunschgröße: Preis über die Fläche interpolieren (gleiche Fläche → günstigster Mitbewerberpreis), nur innerhalb der verglichenen Flächen
+        if (!n.size) return 0; const m2 = n.size.w * n.size.h / 1e6, by = {};
+        a.area.forEach(p => { const v = at(p[1]); if (v > 0 && (!by[p[0]] || v < by[p[0]])) by[p[0]] = v; });
+        const pts = Object.keys(by).map(Number).sort((x, y) => x - y).map(x => [x, by[x]]); if (pts.length < 2 || m2 < pts[0][0] * 0.98 || m2 > pts[pts.length - 1][0] * 1.02) return 0;
+        const hi = pts.find(p => p[0] >= m2) || pts[pts.length - 1], lo = pts.filter(p => p[0] <= m2).pop() || pts[0];
+        return hi[0] === lo[0] ? lo[1] : lo[1] + (hi[1] - lo[1]) * (m2 - lo[0]) / (hi[0] - lo[0]);
+      }
+      return n.kind === "banner" ? 0 : at(a.tiers); })();
     const ancNet = ancGross ? (ancGross - (s.anchorGap != null ? s.anchorGap : 2)) / (1 + 20 / 100) : 0;   // Anker sind österreichische Bruttopreise (20 %)
     const netOf = b => Math.ceil(Math.max(floorOf(b), ancNet || (Math.max(b.product * (1 + markup / 100), b.product + minM) + b.shipping)) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust);
