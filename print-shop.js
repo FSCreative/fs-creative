@@ -458,7 +458,19 @@ module.exports = function (D) {
     exposed.forEach(pr => { prod.defaults[pr.slug] = sol && sol[pr.slug] != null ? sol[pr.slug] : order(pr)[0]; });
     return prod;
   }
-  const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, wir prüfen jede Datei.", group: g.main, expose: "auto", safe: 3, generic: true });
+  // Sinnvolle Vorauswahl für beliebte allgemeine Produkte (sonst nimmt Print.com oft das kleinste Format, z. B. Briefpapier A6)
+  const GEN_PREF = {
+    "printed-letterheads": { size: ["a4"], material: ["90gr_hv_bankpost", "100gr_hv_bankpost"], printtype: ["40"] },
+    "stapled-magazines": { size: ["a5", "a4"], pages: ["8", "12", "16"], material: ["135gr_gesatineerd_mc", "135gr_silk_mc"], cover_material: ["selfcover"] },
+    "bounded-magazines": { size: ["a5", "a4"], material: ["135gr_gesatineerd_mc", "135gr_silk_mc"] },
+    "wire-o-magazines": { size: ["a5", "a4"], material: ["135gr_gesatineerd_mc", "135gr_silk_mc"] },
+    "blocknotes": { size: ["a5", "a4", "a6"], material: ["80gr_hvo", "90gr_hvo"], printtype: ["40"], sheets_per_block: ["50s", "25s"], binding: ["blocknotes_bounded"] },
+    "postcards": { size: ["a6", "a6_landscape"], material: ["350gr_silk_mc", "300gr_silk_mc", "350gr_gesatineerd_mc"], printtype: ["44", "40"] },
+    "bookmarks": { material: ["350gr_silk_mc", "300gr_silk_mc"], printtype: ["44"] },
+    "placemats": { size: ["a3_landscape", "a3"], printtype: ["40"] },
+    "tear-off-calendars": { size: ["a4", "a5"] }
+  };
+  const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, wir prüfen jede Datei.", group: g.main, expose: "auto", safe: 3, generic: true, prefer: GEN_PREF[it.sku] });
   // ── Print.com-CMS (Bilder, Namen, Beschreibungen, Produktbaum), täglich ──
   let CMS = null, cmsLoading = null;
   const cmsBase = () => String(process.env.PRINT_CMS_BASE || "https://app.print.com/reseller").replace(/\/+$/, "");
