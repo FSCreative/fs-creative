@@ -117,7 +117,10 @@ const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotore
   { key: "embroidery", label: "Stick (nur Brust)", pm: "embroidering", val: "embroidery", min: 1, only: /^positions_chest/ }];
 // bei „alle Optionen“ nicht anbieten: braucht eigene Dateien/Stanzformen/Daten oder betrifft Verpackung & Palettenlieferung
 const AUTO_SKIP = /^(personalize|die_cut|spot_finish.*|variable_creasing_line|pallet_delivery|sealed|bundle|box_delivery|flexibleprintingmethod|delivery|standard_bundling|provide_label|designs)$/;
-const HIDDEN_PROPS = /^(copies|urgency|hidden|summary_image.*|brezo_article|product_weight|weight|article_number.*)$/;
+const HIDDEN_PROPS = /^(copies|urgency|hidden|summary_image.*|brezo_article|product_weight|weight|article_number.*|personalize)$/;   // personalize: Personalisierung aus Excel – nie stillschweigend mitbestellen
+// Zusatzleistungen, die Print.com als „Pflicht“ markiert, obwohl sie ohne Angabe gültig (und günstiger) sind – z. B. Briefpapier: Bohrlöcher/Ecken ohne „keine“-Option
+const EXTRA_PROPS = /^(drillholes|rounded_corners|perforation|sealed|punching|eyelets|creasing_lines?|numbering)$/;
+const NONE_OPT = "__none", NONE_SLUG = /^(none|no|geen|no_.*|without.*|0)$/;
 const DEF_TIERS = { flat: [100, 250, 500, 1000, 2500], banner: [1, 2, 3, 5, 10], promo: [50, 100, 250, 500, 1000], textile: [] };
 const NICE_TIERS = [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 const URGENCY_DE = { standard: "Standard", quick: "Schnell", urgent: "Express" };
@@ -398,6 +401,7 @@ module.exports = function (D) {
       if (manual && manual.test(p.slug)) return;
       if (kind !== "banner" && p.slug === "size" && !custom) opts = opts.filter(o => String(o.slug) !== "custom");   // „custom“ ohne erlaubte Maße ausblenden
       if (only[p.slug]) { const f = opts.filter(o => only[p.slug].indexOf(String(o.slug)) > -1); if (f.length) opts = f; }
+      if (EXTRA_PROPS.test(p.slug) && !opts.some(o => NONE_SLUG.test(String(o.slug)))) { p = Object.assign({}, p, { required: false }); opts = [{ slug: NONE_OPT, name: "Ohne" }].concat(opts); }   // „Ohne“ = Eigenschaft weglassen
       if (skip[p.slug]) { const f = opts.filter(o => skip[p.slug].indexOf(String(o.slug)) < 0); if (f.length) opts = f; }
       if (!opts.length) return;
       const hidden = pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden");
@@ -673,6 +677,7 @@ module.exports = function (D) {
     let all = solveSel(vars, base, prod.excludes, aliasOf(prod)); const excl = !all;
     if (!all) all = Object.assign({}, prod.fixed, base);
     prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });
+    Object.keys(all).forEach(k => { if (all[k] === NONE_OPT) delete all[k]; });
     return { all, excluded: excl };
   }
   const bad = m => Object.assign(new Error(m), { status: 400 });
