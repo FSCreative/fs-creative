@@ -748,11 +748,11 @@ module.exports = function (D) {
         if (pmOnly && pmOnly.printingmethod.indexOf(pm) < 0) continue;
         const rr = resolveSel(prod, sel, extra, Object.assign({}, pmOnly || {}, { printingmethod: [pm] }));
         if (rr.excluded || String(rr.all.printingmethod) !== pm) continue;
-        const po = Object.assign({}, rr.all, { copies }); if (prod.urgency.length) po.urgency = urgency; pmAlts.push({ pm, pcOpts: po });
+        const po = Object.assign({}, rr.all, { copies }); if (prod.urgency.length) po.urgency = urgency; pmAlts.push({ pm, pcOpts: po, more: variantsOf(prod, po) });
       }
       if (pmAlts.length < 2) pmAlts = null;
     }
-    return { sel, fileSel, copies, urgency, pcOpts, labels, pmWanted, pmAlts, sides: positions ? positions.length : sidesOf(all), size, folds, closed, variants, positions, textile: tex, excluded: excl, kind };
+    return { sel, fileSel, copies, urgency, pcOpts, pcMore: variantsOf(prod, pcOpts), labels, pmWanted, pmAlts, sides: positions ? positions.length : sidesOf(all), size, folds, closed, variants, positions, textile: tex, excluded: excl, kind };
   }
 
   // ── Steuer ──
@@ -773,6 +773,19 @@ module.exports = function (D) {
 
   // ── Preis (live) ──
   const PRICE_CACHE = new Map();
+  // Produktionsangaben, die Print.com nicht in Ausschlussregeln abbildet (z. B. Bogengröße „large_indigo_sheet“ nur Digital):
+  // liefert Print.com „keinen Preis“, die nächste gültige Variante probieren (sonst fiele z. B. Offset bei Broschüren weg → nur teurer Inkjet)
+  const VARY = ["sheet_size", "special_size", "flexibleprintingmethod"];
+  function variantsOf(prod, opts) {
+    const out = [opts], al = aliasOf(prod);
+    for (const k of VARY) { const l = (prod.auto || {})[k]; if (!l || opts[k] === undefined) continue;
+      for (const v of l.concat(OMITTABLE.test(k) ? [null] : [])) { if (out.length >= 5) break; if (v === opts[k]) continue; const o = Object.assign({}, opts); if (v === null) delete o[k]; else o[k] = v; if (!hitRules(prod.excludes, o, al)) out.push(o); } }
+    return out;
+  }
+  async function buyAny(prod, n, list, country, postcode) {
+    let last; for (const o of (list && list.length ? list : [n.pcOpts])) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { last = e; if (e.status !== 400) break; } }
+    throw last;
+  }
   async function purchase(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < 30 * 60e3) return hit.v;
@@ -813,7 +826,7 @@ module.exports = function (D) {
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
     if (n.pmAlts) {
-      const tries = await Promise.all(n.pmAlts.map(a => purchase(prod, Object.assign({}, n, { pcOpts: a.pcOpts }), country, postcode).then(v => ({ pm: a.pm, pcOpts: a.pcOpts, v }), () => null)));
+      const tries = await Promise.all(n.pmAlts.map(a => buyAny(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
       const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
       if (ok.length) {
         // automatisch: Offset, wo er preislich passt, sonst das günstigste (z. B. kleine Auflagen → Digitaldruck)
@@ -825,7 +838,7 @@ module.exports = function (D) {
         methods = ok.map(x => { const nt = netOf(x.v); return { pm: x.pm, name: PM_DE[x.pm] || x.pm, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)), deliveryDate: x.v.deliveryDate }; });
       }
     }
-    if (!buy) buy = await purchase(prod, n, country, postcode);
+    if (!buy) { const r = await buyAny(prod, n, n.pcMore, country, postcode); buy = r.v; n.pcOpts = r.pcOpts; }
     // Rabatte (Bonusprogramm bzw. Kundenrabatt, Gutschein): auf den ganzen Nettopreis, hintereinander, auf 10 Cent abgerundet
     const dl = (cust && Array.isArray(cust.disc) ? cust.disc : []).filter(d => d && +d.pct > 0).map(d => ({ label: String(d.label || "Rabatt").slice(0, 60), pct: Math.min(50, +d.pct) }));
     const fac = dl.reduce((f, d) => f * (1 - d.pct / 100), 1), bp = dl.length;
@@ -1955,7 +1968,7 @@ module.exports = function (D) {
       // Preis-Aufschlüsselung wie im Shop (nur lesend): Einkauf Produkt/Versand, Aufschlag, Verkauf; optional Print.com-Optionen überschreiben (pcOverride)
       if (p === "/admin/api/print/quote") {
         const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
-        const n = normalizeSel(prod, b); if (b.pcOverride && typeof b.pcOverride === "object") n.pcOpts = Object.assign({}, n.pcOpts, b.pcOverride);
+        const n = normalizeSel(prod, b); if (b.pcOverride && typeof b.pcOverride === "object") { n.pcOpts = Object.assign({}, n.pcOpts, b.pcOverride); n.pcMore = null; n.pmAlts = null; }
         try { const q = await quote(prod, n, "AT", "", { company: false }); return J(res, 200, { ok: true, pcOpts: n.pcOpts, quote: q }); }
         catch (e) { return J(res, 200, { ok: false, error: e.message, pcOpts: n.pcOpts }); }
       }
