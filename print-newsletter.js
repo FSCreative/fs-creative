@@ -51,13 +51,20 @@ module.exports = function (D) {
     "Gut gedruckt ist halb gewonnen. Unsere Auswahl der Woche – persönlich geprüft und in ganz Österreich versandkostenfrei.",
     "Kurz und knackig: drei Druck-Ideen, ein Designer-Tipp und dein Wochencode."
   ];
+  const DESC = { flyer: "Der Klassiker für Angebote und Events – von A6 bis A3, matt oder glänzend.", visitenkarten: "Der erste Eindruck zum Mitnehmen – auf Wunsch mit edler Veredelung.", plakate: "Große Wirkung ab 1 Stück – für Veranstaltungen, Aktionen und Schaufenster.",
+    folder: "Gefalzt für Speisekarten, Preislisten und Prospekte – mit Falz-Vorlage.", postcards: "Karten für Mailings, Einladungen und Grüße – in vielen Formaten.", aufkleber: "Logo-Sticker, Etiketten und Aufkleber in deiner Wunschform.",
+    rollups: "Mobiler Blickfang für Messe und Empfang – inklusive System und Tasche.", "pvc-banner": "Wetterfestes Banner in Wunschgröße – mit Saum und Ösen.", "mesh-banner": "Winddurchlässiges Gitterbanner für Zäune und Gerüste.",
+    "stapled-magazines": "Broschüren mit Rückenheftung – für Kataloge, Vereinshefte und Programme.", "printed-letterheads": "Briefpapier mit deinem Logo – seriös auf jedem Schreibtisch.", blocknotes: "Notizblöcke mit Logo – Werbung, die täglich in der Hand liegt.",
+    "tshirt-basic": "Shirts mit Logo für Team, Verein und Event – schon ab 1 Stück.", "tshirt-bio": "Bio-Shirts von Stanley/Stella – fair, weich und mit deinem Design.", tasse: "Tassen mit Logo – das Werbegeschenk für jeden Tag.",
+    baumwolltasche: "Stofftaschen mit Aufdruck – nachhaltig und gern getragen.", kugelschreiber: "Kugelschreiber mit Logo – der Klassiker unter den Give-aways.", bookmarks: "Lesezeichen für Buchhandlungen, Bibliotheken und Events.",
+    "tear-off-calendars": "Abreißkalender mit deinem Logo – ein ganzes Jahr präsent.", beachflags: "Beachflags für Events, Eingänge und Sportplätze – weithin sichtbar." };
   const PICKS = ["flyer", "visitenkarten", "plakate", "folder", "postcards", "aufkleber", "rollups", "pvc-banner", "stapled-magazines", "printed-letterheads", "blocknotes", "tshirt-basic", "tshirt-bio", "tasse", "baumwolltasche", "kugelschreiber", "bookmarks", "tear-off-calendars", "mesh-banner", "beachflags"];
   async function draftFor(mon) {
     const w = kw(mon), list = (await products()).filter(p => PICKS.indexOf(p.key) > -1).sort((a, b) => PICKS.indexOf(a.key) - PICKS.indexOf(b.key));
     const n = list.length || 1, pick = [0, 1, 2].map(i => list[(w * 3 + i * 7) % n]).filter(Boolean).filter((p, i, a) => a.indexOf(p) === i).map(p => p.key);
     const tip = TIPS[w % TIPS.length], d = await data();
     return { monday: mon, kw: w, status: "draft", subject: "Druck-Tipps der Woche (KW " + w + ") + " + d.settings.pct + " % Rabatt", intro: INTROS[w % INTROS.length], products: pick.slice(0, 3),
-      tipTitle: tip[0], tipText: tip[1], code: "NL-KW" + String(w).padStart(2, "0") + String(mon).slice(2, 4), createdAt: nowIso(), auto: true };
+      tipTitle: tip[0], tipText: tip[1], code: "NL" + String(mon).slice(2, 4) + "KW" + String(w).padStart(2, "0"), createdAt: nowIso(), auto: true };
   }
   async function issueFor(mon, create) { const d = await data(); if (!d.issues[mon] && create) { d.issues[mon] = await draftFor(mon); await save(); } return d.issues[mon] || null; }
 
@@ -77,7 +84,7 @@ module.exports = function (D) {
     const btn = (href, t) => '<a href="' + esc(href) + '" style="display:inline-block;background:#0a84ff;color:#ffffff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px;font-size:15px">' + esc(t) + "</a>";
     const card = x => '<td valign="top" style="width:33%;padding:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5ea;border-radius:14px;overflow:hidden;background:#ffffff"><tr><td>' +
       (x.p.img ? '<a href="' + esc(x.url) + '"><img src="' + esc(x.p.img) + '" alt="' + esc(x.p.title) + '" width="180" style="display:block;width:100%;height:auto;border:0"></a>' : "") +
-      '</td></tr><tr><td style="padding:12px 12px 14px"><div style="font-weight:700;font-size:15px;margin-bottom:4px">' + esc(x.p.title) + '</div><div style="font-size:13px;color:#6e6e73;line-height:1.4;margin-bottom:8px">' + esc(String(x.p.desc || "").slice(0, 90)) + "</div>" +
+      '</td></tr><tr><td style="padding:12px 12px 14px"><div style="font-weight:700;font-size:15px;margin-bottom:4px">' + esc(x.p.title) + '</div><div style="font-size:13px;color:#6e6e73;line-height:1.4;margin-bottom:8px">' + esc(String(DESC[x.p.key] || x.p.desc || "").slice(0, 110)) + "</div>" +
       (x.pr ? '<div style="font-size:13px;margin-bottom:10px">' + (+x.pr.copies).toLocaleString("de-AT") + " Stk. ab <b>" + eur(x.pr.gross) + "</b></div>" : "") + '<a href="' + esc(x.url) + '" style="color:#0a84ff;font-weight:600;text-decoration:none;font-size:14px">Jetzt gestalten →</a></td></tr></table></td>';
     const html = '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(iss.subject) + '</title></head><body style="margin:0;background:#f5f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d1d1f">' +
       '<div style="display:none;max-height:0;overflow:hidden">' + esc(iss.intro) + "</div>" +

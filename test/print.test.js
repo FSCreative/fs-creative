@@ -565,7 +565,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/newsletter", { email: em, consent: true, source: "Test" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     let st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 0, "erst nach Bestätigung"); assert.strictEqual(st.counts.pending, 1);
     const cm = M.mails.filter(m => m.to === em).pop(); const link = (cm.text.match(/https?:\/\/\S+bestaetigen\S+/) || [])[0]; assert.ok(link, cm.text);
-    const cp = await fetch(B + new URL(link).pathname + new URL(link).search); assert.strictEqual(cp.status, 200); assert.ok(/NL-KW/.test(await cp.text()), "Code auf der Bestätigungsseite");
+    const cp = await fetch(B + new URL(link).pathname + new URL(link).search); assert.strictEqual(cp.status, 200); assert.ok(/NL\d\dKW\d\d/.test(await cp.text()), "Code auf der Bestätigungsseite");
     assert.strictEqual((await fetch(B + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(em) + "&t=falsch")).status, 400);
     st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 1); assert.strictEqual(st.issue.status, "draft"); assert.strictEqual(st.settings.autoSend, false, "Automatik Standard AUS");
     st = await admin("/admin/api/print/newsletter", { op: "save", monday: st.issue.monday, subject: "Testbetreff", intro: "Hallo Welt", code: "nl-test5", products: ["flyer", "visitenkarten"] });
