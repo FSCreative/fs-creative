@@ -937,3 +937,34 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 /* Kein Element darf das Layout auf dem Handy verbreitern (z. B. horizontale Leisten) */
 .ps-layout>*,.ps-panel,.ps-sec{min-width:0}
 .ps-secnav{max-width:calc(100% + 28px)}
+
+/* ── Mobil: mehr Platz und weniger Ballast ── */
+.ps-feat .go .gs{display:none}
+@media(max-width:900px){
+  .ps-bnav{transition:transform .25s ease}
+  body.bn-hide .ps-bnav{transform:translateY(110%)}
+  .ps-mbar{transition:bottom .25s ease,padding .25s ease}
+  body.bn-hide .ps-mbar{bottom:0!important;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .print-page input:not([type=checkbox]):not([type=radio]):not([type=range]),.print-page select,.print-page textarea{font-size:16px!important}
+}
+@media(max-width:640px){
+  .ps-crumb{display:none}
+  .ps-head{grid-template-columns:76px minmax(0,1fr)!important;gap:12px!important;margin-bottom:12px!important}
+  .ps-head .ps-facts{display:none}
+  .ps-head-t h2{font-size:21px!important;margin-bottom:4px!important}
+  .ps-pre h3 .pd-muted{display:none}
+  .ps-home-hero{padding:14px 0 10px}
+  .ps-home-hero .eyebrow{display:none}
+  .ps-home-hero h1{font-size:30px!important;margin:6px auto 16px!important}
+  .ps-feat.big .ps-facts{display:none}
+  .ps-feat .go .gl{display:none}.ps-feat .go .gs{display:inline}
+  .ps-prodpanel{background:none!important;border:0!important;padding:0!important;box-shadow:none!important}
+  .ps-prodpanel>h2{font-size:24px}
+  .ps-grp-best .ps-badge{display:none}
+  .ps-prodpanel .ps-find{position:sticky;top:var(--nav-h);z-index:15;background:var(--bg);padding:8px 0;margin:0}
+  .ps-fgrid nav h3{cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:12px 0;margin:0;border-top:1px solid var(--ps-line)}
+  .ps-fgrid nav h3::after{content:"+";font-size:20px;font-weight:400;color:var(--text-dim)}
+  .ps-fgrid nav.open h3::after{content:"–"}
+  .ps-fgrid nav:not(.open) ul{display:none}
+  .ps-fgrid{gap:0!important}
+}

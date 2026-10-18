@@ -512,7 +512,11 @@
     nav.querySelectorAll("[data-sec]").forEach(function (b) { b.classList.toggle("on", b === cur); });
     if (cur && cur !== nav.__cur) { nav.__cur = cur; var r = cur.getBoundingClientRect(), nr = nav.getBoundingClientRect(); if (r.left < nr.left || r.right > nr.right) nav.scrollTo({ left: cur.offsetLeft - 16, behavior: "smooth" }); }
   }
-  var secRaf = 0; window.addEventListener("scroll", function () { if (!secRaf) secRaf = requestAnimationFrame(function () { secRaf = 0; secSpy(); }); }, { passive: true });
+  var secRaf = 0, lastY = 0; window.addEventListener("scroll", function () { if (!secRaf) secRaf = requestAnimationFrame(function () { secRaf = 0; secSpy();
+    // Mobil: untere Navigation beim Runterscrollen ausblenden, beim Hochscrollen (und am Seitenende) wieder zeigen – mehr Platz für den Inhalt
+    var y = window.scrollY, end = window.innerHeight + y >= document.documentElement.scrollHeight - 40;
+    if (y > lastY + 6 && y > 140 && !end) document.body.classList.add("bn-hide"); else if (y < lastY - 6 || y < 140 || end) document.body.classList.remove("bn-hide");
+    lastY = y; }); }, { passive: true });
   root.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-sec]"); if (!b) return; var el = document.getElementById(b.getAttribute("data-sec")), nav = root.querySelector(".ps-secnav"); if (!el) return;
     var off = (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--nav-h"), 10) || 64) + (nav ? nav.offsetHeight : 0) + 10; window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - off, behavior: "smooth" }); });
   // ── Darstellung ──
@@ -573,7 +577,7 @@
     var tag = p.designer ? "Online gestalten oder Datei hochladen" : p.kind === "banner" ? "Wunschgröße in cm" : "Druckdaten hochladen";
     return '<button type="button" class="ps-feat' + (big ? " big" : "") + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="ic">' + esc(p.icon) + "</span>") + "</span>" +
       '<span class="bd">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
-      (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go">' + esc(tag) + " →</span></span></button>";
+      (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
   function vHome() {
     var chipsK = ["flyer", "visitenkarten", "plakate", "aufkleber", "rollups", "folder"], chipsL = chipsK.map(prodByKey).filter(Boolean);
@@ -632,7 +636,7 @@
     var groups = (S.cat.groups || []).filter(function (x) { return x.slug === S.group || S.cat.products.filter(function (p) { return (p.cat || {}).main === x.slug; }).length >= 5; }), g = groups.filter(function (x) { return x.slug === S.group; })[0];
     var tabs = groups.length > 1 ? '<div class="ps-tabs" role="group" aria-label="Kategorien"><button type="button" data-group="" aria-pressed="' + !S.group + '">Alle</button>' + groups.map(function (x) { return '<button type="button" data-group="' + esc(x.slug) + '" aria-pressed="' + (S.group === x.slug) + '">' + esc(x.name) + "</button>"; }).join("") + "</div>" : "";
     var subs = g && g.subs.length > 1 ? '<div class="ps-subs" role="group" aria-label="Untergruppen"><button type="button" data-sub="" aria-pressed="' + !S.sub + '">Alle</button>' + g.subs.map(function (x) { return '<button type="button" data-sub="' + esc(x.slug) + '" aria-pressed="' + (S.sub === x.slug) + '">' + esc(x.name) + "</button>"; }).join("") + "</div>" : "";
-    return '<div class="ps-panel"><h2>Alle Produkte</h2><p class="sub">' + S.cat.products.length + " Produkte · alle Preise inkl. Versand innerhalb Österreichs.</p>" +
+    return '<div class="ps-panel ps-prodpanel"><h2>Alle Produkte</h2><p class="sub">' + S.cat.products.length + " Produkte · alle Preise inkl. Versand innerhalb Österreichs.</p>" +
       '<div class="ps-find"><input type="search" id="psQ" value="' + esc(S.q) + '" placeholder="Produkt suchen, z. B. Flyer, T-Shirt, Banner …" aria-label="Produkt suchen" autocomplete="off"></div>' + tabs + subs + '<div id="psGrid">' + gridHtml() + "</div></div>";
   }
   // Schritt 2: Ausführung

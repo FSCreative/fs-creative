@@ -98,6 +98,8 @@
       <p class="m" role="status" aria-live="polite"></p>
     </form>
     <script>
+      // Mobil: Linklisten im Footer zum Aufklappen
+      document.addEventListener("click", function (e) { var h = e.target.closest && e.target.closest(".ps-fgrid nav h3"); if (h && window.innerWidth <= 640) { var n = h.parentNode; n.classList.toggle("open"); h.setAttribute("aria-expanded", n.classList.contains("open")); } });
       // Newsletter-Anmeldung (Double-Opt-in): erst der Link in der Bestätigungs-E-Mail meldet an
       document.addEventListener("submit", function (e) {
         var f = e.target.closest && e.target.closest("[data-nl-form]"); if (!f) return; e.preventDefault();
