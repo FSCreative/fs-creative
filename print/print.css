@@ -968,3 +968,16 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
   .ps-fgrid nav:not(.open) ul{display:none}
   .ps-fgrid{gap:0!important}
 }
+/* Designer mobil: Schnellleiste, Schriften als Leiste, ohne Lineale */
+.pd-qa{display:none}
+@media(max-width:900px){
+  .pd-qa:not([hidden]){display:flex;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(132px + env(safe-area-inset-bottom));z-index:30;gap:4px;padding:6px;border-radius:999px;background:rgba(20,20,28,.94);border:1px solid var(--ps-line2);box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  .pd-qa button{display:flex;align-items:center;gap:6px;border:0;background:none;color:#fff;font:600 14px/1 inherit;padding:10px 14px;border-radius:999px;cursor:pointer}
+  .pd-qa button:active{background:#ffffff1a}.pd-qa button svg{width:18px;height:18px}
+  .pd.sheet-on .pd-qa{display:none}
+  .pd-stage{grid-template-columns:0 minmax(0,1fr)!important;grid-template-rows:0 minmax(0,1fr) auto!important}
+  .pd-rh,.pd-rv,.pd-corner{visibility:hidden}
+  .pd-fontsel{display:flex;gap:6px;max-height:none;overflow-x:auto;overflow-y:hidden;border:0;background:none;padding-bottom:4px;scrollbar-width:none}
+  .pd-fontsel::-webkit-scrollbar{display:none}
+  .pd-fontsel button{flex:none;width:auto;border:1px solid var(--ps-line2);border-radius:999px;padding:8px 14px;font-size:16px;background:#1a1a22}
+}
