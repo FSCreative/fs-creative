@@ -1031,7 +1031,7 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 .ps-track li::before{content:"";position:absolute;top:14px;right:50%;width:100%;height:3px;background:var(--ps-line2);z-index:0}
 .ps-track li:first-child::before{display:none}
 .ps-track li.done::before,.ps-track li.cur::before{background:var(--accent)}
-.ps-track i{position:relative;z-index:1;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:700 13px/1 inherit;background:var(--surface-2);border:2px solid var(--ps-line2);color:var(--text-dim)}
+.ps-track i{font-style:normal;position:relative;z-index:1;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:700 13px/1 inherit;background:var(--surface-2);border:2px solid var(--ps-line2);color:var(--text-dim)}
 .ps-track .done i{background:var(--accent);border-color:var(--accent);color:#fff}
 .ps-track .cur i{border-color:var(--accent);color:var(--text);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
 .ps-track .cur.warn i{border-color:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.25)}
