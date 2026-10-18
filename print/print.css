@@ -27,7 +27,7 @@
 @media(max-width:640px){.ps-steps .t{display:none}.ps-steps [aria-current="step"] .t{display:inline}.ps-steps li{flex:0 0 auto}.ps-steps [aria-current="step"]{flex:1 1 auto}}
 
 .ps-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;align-items:start}
-@media(max-width:900px){.ps-layout{grid-template-columns:1fr}}
+@media(max-width:900px){.ps-layout{grid-template-columns:minmax(0,1fr)}}
 .ps-panel{background:var(--ps-card);border:1px solid var(--ps-line);border-radius:var(--radius);padding:22px}
 .ps-panel h2{font-size:clamp(20px,2.6vw,25px);letter-spacing:-.02em;margin-bottom:6px}
 .ps-panel>p.sub{color:var(--text-dim);margin-bottom:18px;font-size:15px}
@@ -506,7 +506,7 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 .ps-who{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.ps-who .ps-sel{width:auto;flex:0 1 260px}
 @media (max-width:1100px){.ps-feats.four{grid-template-columns:repeat(2,minmax(0,1fr))}.ps-hsteps ol{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:760px){.ps-feats.two{grid-template-columns:1fr}.ps-feat.big{flex-direction:column}.ps-feat.big .ph{width:100%;min-height:0;aspect-ratio:16/10}.ps-designer-intro{grid-template-columns:1fr}.dv{height:220px}.ps-hsearch .ps-btn{display:none}}
-@media (max-width:480px){.ps-feats.four{grid-template-columns:1fr 1fr;gap:10px}.ps-feat .bd{padding:12px}.ps-feat .bd b{font-size:15px}.ps-feat .bd>span:not(.go){display:none}.ps-hsteps ol{grid-template-columns:1fr}}
+@media (max-width:480px){.ps-feats.four{grid-template-columns:1fr 1fr;gap:10px}.ps-feat .bd{padding:12px}.ps-feat .bd b{font-size:15px}.ps-feat .bd>span:not(.go):not(.ps-from){display:none}.ps-hsteps ol{grid-template-columns:1fr}}
 
 /* So geht's & FAQ */
 .ps-help .lhero{padding-bottom:6px}
@@ -933,3 +933,8 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 .ps-nlf .m{grid-column:1/-1;margin:0;font-size:14px}.ps-nlf .m:empty{display:none}.ps-nlf .m.ok{color:var(--ps-ok)}.ps-nlf .m.bad{color:var(--ps-bad)}
 @media(max-width:760px){.ps-nlf{grid-template-columns:1fr;padding:18px}}
 .ps-nlopt{margin:14px 0 4px;font-size:13.5px}
+
+/* Kein Element darf das Layout auf dem Handy verbreitern (z. B. horizontale Leisten) */
+.ps-layout>*,.ps-panel,.ps-sec{min-width:0}
+.ps-secnav{max-width:calc(100% + 28px)}
+@media(max-width:900px){html{overflow-x:clip}}
