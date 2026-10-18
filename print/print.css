@@ -937,4 +937,3 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 /* Kein Element darf das Layout auf dem Handy verbreitern (z. B. horizontale Leisten) */
 .ps-layout>*,.ps-panel,.ps-sec{min-width:0}
 .ps-secnav{max-width:calc(100% + 28px)}
-@media(max-width:900px){html{overflow-x:clip}}
