@@ -63,7 +63,7 @@
 .ps-prod .ph img{width:100%;height:100%;object-fit:cover;display:block}
 .ps-prod .ic{font-size:34px;width:64px;height:64px;border-radius:16px;background:#0a84ff1f;display:grid;place-items:center}
 .ps-prod .bd{display:flex;flex-direction:column;gap:5px;padding:12px 14px 14px;flex:1;min-width:0}
-.ps-prod b{font-size:16px;overflow-wrap:anywhere}
+.ps-prod b{font-size:16px;overflow-wrap:break-word;hyphens:auto;-webkit-hyphens:auto}
 .ps-prod .bd>span{color:var(--text-dim);font-size:13px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .ps-prod .bd>span.tag{margin-top:auto;font-size:11.5px;color:var(--ps-tag);font-weight:600;display:block}
 
