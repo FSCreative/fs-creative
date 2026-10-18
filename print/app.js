@@ -1248,13 +1248,20 @@
       else if (st === "rejected") h = '<div class="big">✋</div><h2>Bestellung storniert</h2><p>Die Bestellung ' + esc(o.nr) + " wurde storniert. Details haben wir dir per E-Mail geschickt.</p>";
       else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
         (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion.") +
-        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p><p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) : "") + "</p>" + (o.tracks && o.tracks.length ? '<p><a class="ps-btn small" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen</a></p>' : "") +
+        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) : "") + "</p>" + (o.tracks && o.tracks.length ? '<p><a class="ps-btn small" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen</a></p>' : "") +
         (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
         '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";
       var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
       if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
       root.innerHTML = '<div class="ps-panel ps-status">' + h + "</div>";
     });
+  }
+  // Fortschritt der Bestellung als Zeitleiste
+  function trackHtml(st) {
+    var at = { paid: 1, invoice_requested: 1, ordered: 2, in_production: 2, problem: 2, shipped: 3, delivered: 4 }[st]; if (at == null) return "";
+    var L = ["Bestellt", "Geprüft", "Produktion", "Versand", "Zugestellt"], fin = st === "delivered";
+    return '<ol class="ps-track" aria-label="Bestellfortschritt">' + L.map(function (l, i) { var c = i < at || fin ? "done" : i === at ? "cur" + (st === "problem" ? " warn" : "") : "";
+      return '<li class="' + c + '"' + (c.indexOf("cur") === 0 ? ' aria-current="step"' : "") + "><i aria-hidden=\"true\">" + (c === "done" ? "✓" : i + 1) + "</i><span>" + l + "</span></li>"; }).join("") + "</ol>";
   }
   function retryPay(v) { var p = v.split("|"); fetch("/print/api/order/" + encodeURIComponent(p[0]) + "/pay?t=" + encodeURIComponent(p[1]), { method: "POST", headers: H, body: "{}" }).then(function (r) { return r.json(); }).then(function (j) { if (j.ok && j.checkoutUrl) location.href = j.checkoutUrl; else toast(j.error || "Zahlung nicht möglich", true); }); }
 })();
