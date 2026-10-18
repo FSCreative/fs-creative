@@ -53,7 +53,7 @@
   function cartAdd() {
     var pr = S.price || {}, pv = S.previews && S.previews[0];
     var it = JSON.parse(JSON.stringify(cfgOf()));
-    Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
+    Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, tiers: (S.prod.tiers || []).slice(0, 30), img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
       fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), at: Date.now() });
@@ -73,12 +73,12 @@
       api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }).then(function (j) {
         if (seq !== rqSeq) return; S.quoting--;
         if (S.voucher) { if (j.voucherErr) { S.voucherErr = j.voucherErr; S.voucherOk = ""; } else if (j.voucher) { S.voucherOk = j.voucher.code + " · " + String(j.voucher.pct).replace(".", ",") + " % Rabatt"; S.voucherErr = ""; } }
-        if (j.ok) x.price = { net: j.price.net, gross: j.price.gross, vat: j.price.vat, rate: j.price.rate, deliveryDate: j.price.deliveryDate, taxNote: j.price.taxNote, bonus: j.price.bonus || null }; else { x.price = null; S.cartErr[x.id] = j.error || "Preis nicht verfügbar"; }
+        if (j.ok && j.labels && j.labels.length) x.labels = j.labels.slice(0, 12); if (j.ok) x.price = { net: j.price.net, gross: j.price.gross, vat: j.price.vat, rate: j.price.rate, deliveryDate: j.price.deliveryDate, taxNote: j.price.taxNote, bonus: j.price.bonus || null }; else { x.price = null; S.cartErr[x.id] = j.error || "Preis nicht verfügbar"; }
         if (!S.quoting) { cartSave(true); if (S.step === 6 || S.step === 4) render(); }
       }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
     });
   }
-  function itemLine(x) { return [x.size, (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
+  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
     return '<span class="ps-ci-img">' + (x.preview || im ? '<img src="' + esc(x.preview || im) + '" alt="" loading="lazy"' + (x.preview && im ? ' data-fb="' + esc(im) + '"' : "") + ">" : '<span aria-hidden="true">' + esc(x.icon || pp.icon || "🖨️") + "</span>") + "</span>"; }
   // Vorschaubild kaputt (z. B. abgelaufen) → Produktbild
@@ -88,7 +88,9 @@
     if (!S.cart.length) return '<div class="ps-panel ps-empty"><h2>Dein Warenkorb ist leer</h2><p class="sub">Such dir ein Produkt aus, gestalte es online oder lade deine Druckdaten hoch – dein Warenkorb bleibt 30 Tage gespeichert.</p><div class="ps-nav"><span></span><button type="button" class="ps-btn primary" data-act="shop">Produkte ansehen</button></div></div>';
     var h = '<div class="ps-layout"><div class="ps-panel"><h2>Warenkorb</h2><p class="sub">' + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · wird 30 Tage gespeichert" + (S.me ? " – auch in deinem Kundenkonto" : ' · <button type="button" class="ps-link" data-act="konto">Anmelden</button>, um ihn auf allen Geräten zu haben') + "</p><ul class=\"ps-cart\">";
     S.cart.forEach(function (x) {
-      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <em>Hinweise zur Datei beachten</em>' : "") +
+      var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
+        qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <em>Hinweise zur Datei beachten</em>' : "") +
         ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a></span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || "Preis folgt") + "</small>") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
@@ -391,7 +393,7 @@
       S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
-      S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
+      S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 ? 1 : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel(); S.presetBase = Object.assign({}, S.sel);
@@ -570,7 +572,7 @@
   var badDesc = function (p) { var d = txt(p.desc); return !d || d.toLowerCase() === String(p.title).toLowerCase() || /angebotsanfrage|nicht verfügbar|e-mail|@/i.test(d); };
   var FROMP = {};
   function loadFrom(keys) { keys = keys.filter(function (k) { return !(k in FROMP); }); if (!keys.length) return; keys.forEach(function (k) { FROMP[k] = null; });
-    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = {}; (p.props || []).forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
+    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = {}; (p.props || []).forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 ? (t.indexOf(5) > -1 && /plakat|poster/i.test(k + " " + p.title) ? 5 : 1) : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
     api("/print/api/from?keys=" + encodeURIComponent(keys.join(",")) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { if (!j.ok) return; Object.keys(j.from || {}).forEach(function (k) { FROMP[k] = j.from[k]; document.querySelectorAll('[data-from="' + k + '"]').forEach(function (el) { el.innerHTML = fromTxt(k); }); }); }).catch(function () {}); }
   function fromTxt(k) { var f = FROMP[k]; return f ? (+f.copies).toLocaleString("de-AT") + " Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
@@ -658,10 +660,18 @@
     return '<div class="ps-chips" role="radiogroup">' + opts.map(function (o) { var vis = imgOk(o.img) ? '<img src="' + esc(o.img) + '" alt="" loading="lazy">' : o.color ? '<i class="sw" style="background:' + esc(o.color) + '"></i>' : "";
       return '<label class="ps-chip' + (vis ? " vis" : "") + '"' + (o.desc ? ' title="' + esc(o.desc) + '"' : "") + '><input type="radio" name="' + esc(name) + '" value="' + esc(o.slug) + '"' + (String(cur) === String(o.slug) ? " checked" : "") + (dis && dis[o.slug] ? " disabled" : "") + "><span>" + vis + esc(o.name) + "</span></label>"; }).join("") + "</div>";
   }
+  // Häufige Bannergrößen als Schnellwahl (cm), nur was das Produkt erlaubt
+  var DIMS = [[100, 50], [150, 50], [200, 50], [200, 100], [250, 100], [300, 100], [400, 100], [300, 150], [300, 200], [500, 100]];
+  function dimChips() {
+    var C = S.prod.custom; if (C.unit !== "cm") return "";
+    var ok = DIMS.filter(function (d) { var w = d[0] * 10, h = d[1] * 10; return w >= C.minW && w <= C.maxW && h >= C.minH && h <= C.maxH; }); if (ok.length < 3) return "";
+    return '<div class="ps-dimchips" role="group" aria-label="Häufige Größen">' + ok.map(function (d) { var on = +S.custom.w === d[0] && +S.custom.h === d[1];
+      return '<button type="button" class="ps-dimc' + (on ? " on" : "") + '" data-dim="' + d[0] + "x" + d[1] + '" aria-pressed="' + on + '">' + d[0] + " × " + d[1] + "</button>"; }).join("") + "</div>";
+  }
   function customHtml() {
     var C = S.prod.custom, cm = C.unit === "cm", f = cm ? 10 : 1, u = C.unit;
-    return '<div class="ps-row2 ps-dims"><div class="ps-field"><label for="psW">Breite (' + u + ')</label><input id="psW" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="' + (cm ? 1 : 1) + '" value="' + esc(S.custom.w) + '"></div>' +
-      '<div class="ps-field"><label for="psH">Höhe (' + u + ')</label><input id="psH" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="1" value="' + esc(S.custom.h) + '"></div></div>' +
+    return dimChips() + '<div class="ps-row2 ps-dims"><div class="ps-field"><label for="psW">Breite (' + u + ')</label><input id="psW" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="' + (cm ? 1 : 1) + '" value="' + esc(S.custom.w) + '"></div>' +
+      '<div class="ps-field"><label for="psH">Höhe (' + u + ')</label><input id="psH" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="1" value="' + esc(S.custom.h) + '"></div><button type="button" class="ps-dimswap" data-dimswap="1" aria-label="Breite und Höhe tauschen" title="Hoch-/Querformat tauschen">⇄</button></div>' +
       '<p class="ps-help">Mindestens ' + C.minW / f + " × " + C.minH / f + " " + u + ", höchstens " + C.maxW / f + " × " + C.maxH / f + " " + u + " (Endformat, ohne Beschnitt).</p>";
   }
   function propHtml(pr, v) {
@@ -991,6 +1001,11 @@
     var tsb = e.target.closest("[data-tstep]");
     if (tsb) { var tv = tsb.getAttribute("data-tstep").split("|"), cur0 = S.textile.sizes[tv[0]] || 0, nv = Math.max(0, Math.min(5000, cur0 + (+tv[1]) * (cur0 >= 50 ? 5 : 1))); if (nv) S.textile.sizes[tv[0]] = nv; else delete S.textile.sizes[tv[0]];
       var inp = root.querySelector('[data-tsize="' + tv[0] + '"]'); if (inp) { inp.value = nv || ""; inp.closest(".ps-size").classList.toggle("on", !!nv); } renderPrice(); loadPrice(); return; }
+    var dm = e.target.closest("[data-dim],[data-dimswap]");
+    if (dm) { var wh = dm.hasAttribute("data-dim") ? dm.getAttribute("data-dim").split("x") : [S.custom.h, S.custom.w]; if (String(wh[0]) === String(S.custom.w) && String(wh[1]) === String(S.custom.h)) return;
+      S.custom.w = String(wh[0]); S.custom.h = String(wh[1]); if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
+      var iw = document.getElementById("psW"), ih = document.getElementById("psH"); if (iw) iw.value = S.custom.w; if (ih) ih.value = S.custom.h;
+      [].forEach.call(document.querySelectorAll(".ps-dimc"), function (b) { var on = b.getAttribute("data-dim") === S.custom.w + "x" + S.custom.h; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); loadPrice(); return; }
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
@@ -1059,6 +1074,7 @@
     var t = e.target;
     if (t.name && t.name.indexOf("prop:") === 0) { setProp(t.name.slice(5), t.value); return; }
     if (t.matches("select[data-prop]")) { setProp(t.getAttribute("data-prop"), t.value); return; }
+    if (t.matches("select[data-cartq]")) { var cx = S.cart.filter(function (x) { return x.id === t.getAttribute("data-cartq"); })[0]; if (!cx) return; cx.copies = +t.value; cx.n = +t.value; cx.price = null; S.cartErr = {}; cartSave(); render(); requoteCart(); return; }
     if (t.matches("select[data-copies]")) { S.copies = +t.value; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
     if (t.matches("select[data-urgency]")) { S.urgency = t.value; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
