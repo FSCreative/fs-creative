@@ -438,7 +438,7 @@ module.exports = function (D) {
     }
     let sizes = null, positions = null, methods = null, maxCopies = null;
     if (kind === "textile") {
-      sizes = ((by.textile_sizes && by.textile_sizes.options) || []).filter(o => o && o.slug != null).map(o => ({ slug: String(o.slug), name: (L.textile_sizes && L.textile_sizes[o.slug]) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : String(o.slug).replace(/^unisex_/, "").toUpperCase()) }));
+      sizes = ((by.textile_sizes && by.textile_sizes.options) || []).filter(o => o && o.slug != null).map(o => ({ slug: String(o.slug), name: (L.textile_sizes && L.textile_sizes[o.slug]) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : String(o.slug).replace(/^unisex_/, "").toUpperCase()).replace(/^Unisexe\b/i, "Unisex") }));
       positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: x[2].slice(), opts: by[x[0]].options.map(o => String(o.slug)) }));
       const pm = by.printingmethod && Array.isArray(by.printingmethod.options) ? by.printingmethod.options.map(o => String(o.slug)) : null;
       methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);

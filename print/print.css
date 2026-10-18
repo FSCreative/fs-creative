@@ -651,9 +651,9 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-size input::-webkit-outer-spin-button,.ps-size input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 @media(max-width:640px){
   .ps-sizes{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-  .ps-size{flex-direction:row;align-items:center;gap:6px;padding:6px 6px 6px 10px;border-radius:12px}
-  .ps-size .sz{flex:1 1 auto;min-width:0;text-align:left;font-size:14px;overflow-wrap:anywhere;line-height:1.15}
-  .ps-step{grid-template-columns:30px 38px 30px;gap:3px;flex:none}
+  .ps-size{flex-direction:row;align-items:center;gap:4px;padding:6px 5px 6px 9px;border-radius:12px}
+  .ps-size .sz{flex:1 1 auto;min-width:0;text-align:left;font-size:14px;white-space:nowrap;letter-spacing:-.01em;line-height:1.15}
+  .ps-step{grid-template-columns:28px 34px 28px;gap:2px;flex:none}
   .ps-step button{height:34px}
   .ps-size .ps-step input{min-height:34px;font-size:16px;padding:2px}
 }
