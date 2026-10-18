@@ -1008,3 +1008,20 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 /* Newsletter-Formular: Knopf darf nie überstehen */
 .ps-nlf .f input{flex:1 1 150px}.ps-nlf .f button{flex:0 0 auto}
 @media(max-width:420px){.ps-nlf .f{flex-wrap:wrap}.ps-nlf .f button{flex:1 1 100%}}
+/* Startseite: zuletzt angesehen */
+.ps-recent{margin:26px 0 34px}
+.ps-recent .ps-hsec-h{justify-content:space-between;margin-bottom:12px}.ps-recent .ps-hsec-h h2{font-size:clamp(20px,2.4vw,26px)}
+.ps-rec{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.ps-rec button{display:flex;align-items:center;gap:12px;padding:8px 12px 8px 8px;border-radius:14px;border:1px solid var(--ps-line2);background:var(--ps-card);color:var(--text);text-align:left;cursor:pointer;min-width:0}
+.ps-rec button:hover{border-color:var(--accent)}
+.ps-rec .ri{flex:none;width:56px;height:56px;border-radius:10px;overflow:hidden;background:#fff;display:grid;place-items:center;font-size:26px}
+.ps-rec .ri img{width:100%;height:100%;object-fit:cover}
+.ps-rec .rt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ps-rec .rt>b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-rec .ps-from{font-size:12.5px;white-space:nowrap}.ps-rec .ps-from b{font-size:14px}.ps-rec .ps-from small{display:none}
+@media(max-width:640px){
+  .ps-recent{margin:18px 0 26px}
+  .ps-rec{display:flex;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x mandatory;margin:0 -16px;padding:0 16px 4px}
+  .ps-rec::-webkit-scrollbar{display:none}
+  .ps-rec button{flex:0 0 auto;max-width:240px;scroll-snap-align:start}
+}

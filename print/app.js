@@ -390,7 +390,7 @@
       return;
     }
     if (!S.prod || S.prod.key !== key) {
-      S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
+      recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
       S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 ? 1 : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
@@ -529,7 +529,7 @@
   function render() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
-    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(classics().concat(dailyPicks()).map(function (p) { return p.key; })); return; }
+    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks()).map(function (p) { return p.key; })); return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
@@ -572,7 +572,16 @@
   var shortName = function (p) { return SHORT[p.key] || String(p.title).replace(/\s*\(.*\)\s*$/, ""); };
   var badDesc = function (p) { var d = txt(p.desc); return !d || d.toLowerCase() === String(p.title).toLowerCase() || /angebotsanfrage|nicht verfügbar|e-mail|@/i.test(d); };
   var FROMP = {};
-  function loadFrom(keys) { keys = keys.filter(function (k) { return !(k in FROMP); }); if (!keys.length) return; keys.forEach(function (k) { FROMP[k] = null; });
+  // „Zuletzt angesehen“ (nur in diesem Browser, ohne Personenbezug)
+  function recentGet() { try { var l = JSON.parse(localStorage.getItem("fsc-print-recent") || "[]"); return Array.isArray(l) ? l.filter(function (k) { return typeof k === "string"; }).slice(0, 10) : []; } catch (e) { return []; } }
+  function recentAdd(k) { try { var l = recentGet().filter(function (x) { return x !== k; }); l.unshift(k); localStorage.setItem("fsc-print-recent", JSON.stringify(l.slice(0, 10))); } catch (e) {} }
+  function recentProds() { return recentGet().map(prodByKey).filter(Boolean).slice(0, 8); }
+  function recentHtml() { var l = recentProds(); if (!l.length) return "";
+    return '<section class="ps-hsec ps-recent"><div class="ps-hsec-h"><h2>Zuletzt angesehen</h2><button type="button" class="ps-link" data-act="recentclr">Liste leeren</button></div><div class="ps-rec">' + l.map(function (p) {
+      return '<button type="button" data-prod="' + esc(p.key) + '"><span class="ri">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="rt"><b>' + esc(shortName(p)) + '</b><span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></button>"; }).join("") + "</div></section>"; }
+  function loadFrom(keys) { var seen = {}; keys = keys.filter(function (k) { if (k in FROMP || seen[k]) return false; seen[k] = 1; return true; }); if (!keys.length) return;
+    if (keys.length > 12) { for (var ci = 0; ci < keys.length; ci += 12) loadFrom(keys.slice(ci, ci + 12)); return; }   // Server nimmt max. 12 je Anfrage
+    keys.forEach(function (k) { FROMP[k] = null; });
     var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = {}; (p.props || []).forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 ? (t.indexOf(5) > -1 && /plakat|poster/i.test(k + " " + p.title) ? 5 : 1) : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
     api("/print/api/from?keys=" + encodeURIComponent(keys.join(",")) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { if (!j.ok) return; Object.keys(j.from || {}).forEach(function (k) { FROMP[k] = j.from[k]; document.querySelectorAll('[data-from="' + k + '"]').forEach(function (el) { el.innerHTML = fromTxt(k); }); }); }).catch(function () {}); }
   function fromTxt(k) { var f = FROMP[k]; return f ? (+f.copies).toLocaleString("de-AT") + " Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
@@ -594,7 +603,7 @@
     return '<section class="ps-home-hero"><span class="eyebrow">FS Creative Druckshop</span><h1>Was möchtest du heute drucken?</h1>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
-      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></section>' +
+      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></section>' + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       '<section class="ps-hsec ps-designer-intro"><div class="dt"><span class="eyebrow">Online-Designer</span><h2>Selbst gestalten – ganz ohne Grafikprogramm</h2><p>Wähle eine Vorlage, tausche Texte und Bilder aus, füge dein Logo und einen QR-Code hinzu – fertig. Der Designer kennt Format, Beschnitt und Sicherheitsabstand und erstellt daraus ein druckfertiges PDF.</p>' +
@@ -1059,6 +1068,7 @@
     if (k === "shop") { setPage(S.page === "produkte" ? "produkte" : "home"); return; }
     if (k === "searchall") { var hq = document.getElementById("psHomeQ"); S.q = hq ? hq.value.trim() : S.q; S.group = ""; S.sub = ""; setPage("produkte"); return; }
     if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
+    if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
     if (k === "acresend") { api("/print/api/account/resend", { email: S.acct.email, purpose: v }).then(function () { S.acct.msg = "Neuer Code ist unterwegs."; S.acct.err = ""; render(); }); return; }
