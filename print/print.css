@@ -981,3 +981,4 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
   .pd-fontsel::-webkit-scrollbar{display:none}
   .pd-fontsel button{flex:none;width:auto;border:1px solid var(--ps-line2);border-radius:999px;padding:8px 14px;font-size:16px;background:#1a1a22}
 }
+.pd-tool[hidden],.pd-qa[hidden]{display:none!important}
