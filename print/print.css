@@ -509,7 +509,7 @@ html.light .pd-modal .pd-dlg{--text:#f5f5f7;--text-dim:#a1a1aa;--text-faint:#6e6
 @media (max-width:480px){.ps-feats.four{grid-template-columns:1fr 1fr;gap:10px}.ps-feat .bd{padding:12px}.ps-feat .bd b{font-size:15px}.ps-feat .bd>span:not(.go):not(.ps-from){display:none}.ps-hsteps ol{grid-template-columns:1fr}}
 
 /* So geht's & FAQ */
-.ps-help .lhero{padding-bottom:6px}
+.ps-helppage .lhero{padding-bottom:6px}
 .ps-help-toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.ps-help-toc a{padding:8px 14px;border-radius:999px;border:1px solid var(--ps-line2);color:inherit;text-decoration:none;font-weight:600;font-size:14px}.ps-help-toc a:hover{border-color:var(--accent)}
 .ps-help-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px}
 .ps-help-card{padding:20px;border-radius:18px;border:1px solid var(--ps-line);background:var(--ps-card)}.ps-help-card h3{margin:0 0 8px}.ps-help-card p{margin:0;color:var(--text-dim)}
@@ -983,3 +983,7 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 }
 .pd-tool[hidden],.pd-qa[hidden]{display:none!important}
 .ps-cb.ps-need{outline:2px solid var(--ps-warn);outline-offset:4px;border-radius:8px;transition:outline-color .3s}
+
+/* Newsletter-Formular: Knopf darf nie überstehen */
+.ps-nlf .f input{flex:1 1 150px}.ps-nlf .f button{flex:0 0 auto}
+@media(max-width:420px){.ps-nlf .f{flex-wrap:wrap}.ps-nlf .f button{flex:1 1 100%}}
