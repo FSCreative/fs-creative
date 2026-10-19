@@ -654,10 +654,10 @@
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
   // Startseite: Sofortpreis im Hero – Produkt + Stückzahl antippen, echter Preis (Bestseller-Ausführung, inkl. Versand) kommt vom Server
-  var HQP = [["flyer", [250, 500, 1000, 2500]], ["visitenkarten", [250, 500, 1000, 2500]], ["plakate", [5, 10, 25, 50]], ["pvc-banner", [1, 2, 3, 5]]], HQC = {};
-  function hqList() { return HQP.map(function (x) { var p = prodByKey(x[0]); if (!p) return null; var t = p.tiers || [], q = x[1].filter(function (n) { return t.indexOf(n) > -1; }); if (!q.length) q = t.slice(0, 4); return q.length ? { p: p, q: q } : null; }).filter(Boolean); }
+  var HQP = [["flyer", [250, 500, 1000, 2500], 500], ["visitenkarten", [250, 500, 1000, 2500], 500], ["plakate", [5, 10, 25, 50], 10], ["pvc-banner", [1, 2, 3, 5], 1]], HQC = {};
+  function hqList() { return HQP.map(function (x) { var p = prodByKey(x[0]); if (!p) return null; var t = p.tiers || [], q = x[1].filter(function (n) { return t.indexOf(n) > -1; }); if (!q.length) q = t.slice(0, 4); return q.length ? { p: p, q: q, d: x[2] } : null; }).filter(Boolean); }
   function hqCur() { var L = hqList(); if (!L.length) return null; var h = S.hq || (S.hq = { k: L[0].p.key, q: 0 }), c = L.filter(function (x) { return x.p.key === h.k; })[0] || L[0]; h.k = c.p.key;
-    if (c.q.indexOf(h.q) < 0) h.q = c.q.indexOf(500) > -1 ? 500 : c.q[Math.min(1, c.q.length - 1)]; return { L: L, c: c, h: h }; }
+    if (c.q.indexOf(h.q) < 0) h.q = c.q.indexOf(c.d) > -1 ? c.d : c.q[0]; return { L: L, c: c, h: h }; }
   function hqPriceHtml(v, q) { if (!v) return '<span class="v">…</span><small>Preis wird berechnet</small>'; var co = S.ctype === "company", g = co ? v.gross / 1.2 : v.gross;
     return '<span class="v" data-v="' + g.toFixed(2) + '">' + eur(g) + "</span><small>" + (co ? "netto, zzgl. 20 % USt" : "inkl. 20 % USt") + " · inkl. Versand" + (q > 1 ? " · " + eur(g / q).replace(/(,\d\d)\d*/, "$1") + "/Stk." : "") + "</small>"; }
   function hqInner() { var x = hqCur(); if (!x) return ""; var c = x.c, h = x.h, v = HQC[h.k + "|" + h.q];
