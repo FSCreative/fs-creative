@@ -348,7 +348,8 @@ module.exports = function (D) {
     const w = parseFloat(String(o.width || "").replace(",", ".")), h = parseFloat(String(o.height || "").replace(",", "."));
     if (w > 0 && h > 0 && w <= 60000 && h <= 60000) return [w, h];   // mm, auch Großformat (z. B. 20-m-Vliesbanner)
     const slug = String(o.slug || "").toLowerCase(), t = (slug + " " + String(o.name || "")).toLowerCase().replace(/_/g, " ");
-    const m = t.match(/(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m\b)?/);
+    // Klartext-Name mit Einheit geht vor (Print.com: Slug „2000_x_76_mm“, Name „2000 x 76 cm“ = 20 m Vliesbanner)
+    const RX = /(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m\b)?/, mN = String(o.name || "").toLowerCase().replace(/_/g, " ").match(RX), m = mN && mN[3] ? mN : t.match(RX);
     // „banner_85_x_200“ (Roll-ups) ohne Einheit = cm
     if (m) { const f = m[3] === "cm" || (!m[3] && /^banner_\d/.test(slug)) ? 10 : m[3] === "m" ? 1000 : 1; return [parseFloat(m[1].replace(",", ".")) * f, parseFloat(m[2].replace(",", ".")) * f]; }
     const a = t.match(/\b(a[0-7]|dl|din lang)\b/); if (a) return A_SIZES[a[1].replace(" ", "_")].slice();
@@ -476,8 +477,13 @@ module.exports = function (D) {
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || SPEC_SKIP.test(p.slug) || inExp(p.slug) || fixed[p.slug] == null || auto[p.slug]) return;
       const v = String(fixed[p.slug]), o = (p.options || []).find(x => x && String(x.slug) === v); if (!o || NONE_SLUG.test(v)) return;
       const nm = p.slug === "printingmethod" ? SPEC_PM[v] || (String(o.name || "") !== v ? String(o.name) : "") : (L[p.slug] && L[p.slug][v]) || (p.slug === "printtype" && ptLabel(v)) || (o.name != null && String(o.name) !== v ? String(o.name) : "");
-      if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) specs.push([clip(T[p.slug] || p.title || p.slug, 60), clip(nm, 140), p.slug]);
+      if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) specs.push([clip(T[p.slug] || (p.slug === "printingmethod" ? "Druckverfahren" : p.title) || p.slug, 60), clip(nm, 140), p.slug]);
     });
+    // Konfektion je Seite (finish_top/bottom/left/right) mit gleichem Wert zu einer Zeile zusammenfassen
+    const SIDE = { finish_top: "oben", finish_bottom: "unten", finish_left: "links", finish_right: "rechts" }, fins = specs.filter(x => SIDE[x[2]]);
+    if (fins.length) { const byV = {}; fins.forEach(x => { (byV[x[1]] = byV[x[1]] || []).push(SIDE[x[2]]); });
+      const at = specs.indexOf(fins[0]); specs.splice(0, specs.length, ...specs.filter(x => !SIDE[x[2]]));
+      specs.splice(Math.min(at, specs.length), 0, ...Object.keys(byV).map(v => ["Konfektion " + (byV[v].length === 4 ? "rundum" : byV[v].join(" & ")), v, "finish"])); }
     // Endformat bei fester Größe: aus der Option (width/height bzw. Slug/Name), sonst kuratierte Maße, sonst Druckfläche
     let dims = null;
     if (kind === "flat" && !exposed.some(x => x.slug === "size")) {
