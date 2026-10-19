@@ -313,7 +313,9 @@ module.exports = function (D) {
   // ───────────────────────── Print.com ─────────────────────────
   // Print.com schonen: höchstens 4 Anfragen gleichzeitig (Rest wartet), bei Drosselung (429) bzw. kurzer Störung (502/503) automatisch kurz warten und neu versuchen
   const PC_MAX = 4; let pcActive = 0; const pcWait = [];
-  const pcSlot = () => new Promise(res => { if (pcActive < PC_MAX) { pcActive++; res(); } else pcWait.push(res); });
+  const PC_RATE = 8, pcStarts = [];   // höchstens 8 Anfragen je Sekunde
+  const pcSlot = () => new Promise(res => { if (pcActive < PC_MAX) { pcActive++; res(); } else pcWait.push(res); }).then(async () => {
+    for (;;) { const now = Date.now(); while (pcStarts.length && now - pcStarts[0] > 1000) pcStarts.shift(); if (pcStarts.length < PC_RATE) { pcStarts.push(now); return; } await new Promise(r => setTimeout(r, 1000 - (now - pcStarts[0]) + 5)); } });
   const pcFree = () => { const n = pcWait.shift(); if (n) n(); else pcActive--; };
   async function pcApi(method, p, body, opts) {
     for (let a = 0; ; a++) {
@@ -828,6 +830,11 @@ module.exports = function (D) {
       for (const v of l.concat(OMITTABLE.test(k) ? [null] : [])) { if (out.length >= 5) break; if (v === opts[k] || (v === null && opts[k] === undefined)) continue; const o = Object.assign({}, opts); if (v === null) delete o[k]; else o[k] = v; if (!hitRules(prod.excludes, o, al)) out.push(o); } }
     return out;
   }
+  // Erste lieferbare Variante (nacheinander, sparsam): für den ersten Durchgang je Druckverfahren
+  async function buyFirst(prod, n, list, country, postcode) {
+    let last; for (const o of (list && list.length ? list : [n.pcOpts]).slice(0, 4)) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { last = e; if (e.status !== 400) break; } }
+    throw last;
+  }
   // Immer die günstigste Produktionsvariante (Wunsch Simon 19.10.2026): bis zu 3 Varianten (z. B. mit/ohne Bogengröße → anderer Produzent/Versand)
   // parallel anfragen und die mit dem niedrigsten Gesamtpreis inkl. Versand nehmen; Print.com-Antworten 30 min zwischengespeichert
   async function buyAny(prod, n, list, country, postcode) {
@@ -893,8 +900,12 @@ module.exports = function (D) {
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
     if (n.pmAlts) {
-      const tries = await Promise.all(n.pmAlts.map(a => buyAny(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
+      // 1. Durchgang: je Verfahren die erste lieferbare Variante; 2. Durchgang: nur beim günstigsten Verfahren 1–2 weitere Varianten vergleichen (spart Print.com-Anfragen)
+      const tries = await Promise.all(n.pmAlts.map(a => buyFirst(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
       const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
+      if (ok.length) { const b0 = ok[0], al = n.pmAlts.find(a => a.pm === b0.pm), sig = JSON.stringify(b0.pcOpts), alts = ((al && al.more) || []).filter(o => JSON.stringify(o) !== sig).slice(0, 2);
+        if (alts.length) { const r = await buyAny(prod, n, [b0.pcOpts].concat(alts), country, postcode).catch(() => null); if (r && r.v.total < b0.v.total) ok[0] = { pm: b0.pm, pcOpts: r.pcOpts, v: r.v }; }
+        ok.sort((a, b) => netOf(a.v) - netOf(b.v)); }
       if (ok.length) {
         // automatisch: immer das günstigste Verfahren/der günstigste Produzent (Wunsch Simon 19.10.2026) – bei Gleichstand Offset (gleichmäßigere Farben)
         const off = ok.find(x => x.pm === "offset"), offOk = off && netOf(off.v) <= netOf(ok[0].v);

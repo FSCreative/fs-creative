@@ -455,7 +455,7 @@
     return items;
   }
   function disabledOf(pr) { // nie alle Optionen sperren (dann entscheidet Print.com beim Preis)
-    var d = {}, n = 0; pr.options.forEach(function (o) { var t = Object.assign({}, S.sel); t[pr.slug] = o.slug; if (excluded(t)) { d[o.slug] = 1; n++; } });
+    var d = {}, n = 0; pr.options.forEach(function (o) { var t = Object.assign({}, S.sel); t[pr.slug] = o.slug; if (excluded(t) || BAD[badKey(t)]) { d[o.slug] = 1; n++; } });
     return n >= pr.options.length ? {} : d;
   }
   // Abhängigkeiten (parentOptions / parent): Eigenschaft bzw. Option nur zeigen, wenn ein passender Wert gewählt ist
@@ -532,7 +532,13 @@
         if (seq !== pSeq) return; S.priceBusy = false;
         if (j.ok) { var before = isLogo() ? logoKey() : ""; S.price = j.price; S.price.size = j.size; S.price.folds = j.folds || null; S.price.closed = j.closed || null; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
           if (isLogo() && before !== logoKey()) { S.logos = {}; S.file = null; } }
+        else if (S.undo && /nicht lieferbar|keinen Preis/i.test(j.error || "")) {   // gerade gewählte Option geht nicht → zurück zur letzten bestellbaren Auswahl
+          var u = S.undo, t0 = Object.assign({}, u.sel); t0[u.slug] = u.val; BAD[badKey(t0)] = 1; S.undo = null;
+          var pr0 = S.prod.props.filter(function (x) { return x.slug === u.slug; })[0], o0 = pr0 && pr0.options.filter(function (x) { return x.slug === u.val; })[0];
+          S.sel = u.sel; toast("„" + (o0 ? o0.name : u.val) + "“ ist in dieser Kombination nicht lieferbar – deine vorige Auswahl ist wiederhergestellt.", true); render(); loadPrice(); return;
+        }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
+        if (j.ok) S.undo = null;
         if (j.ok) { S.alts = null; altSeq++; }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
@@ -1266,8 +1272,13 @@
     if (t.hasAttribute("data-tsize")) { var n = Math.max(0, Math.min(5000, parseInt(t.value, 10) || 0)); if (n) S.textile.sizes[t.getAttribute("data-tsize")] = n; else delete S.textile.sizes[t.getAttribute("data-tsize")]; renderPrice(); loadPrice(); return; }
   });
   function resetLogos() { var keep = {}; S.textile.positions.forEach(function (x) { if (S.logos[x]) keep[x] = S.logos[x]; }); S.logos = keep; S.file = null; }
+  // Nicht lieferbare Kombinationen (Print.com lehnt ab, ohne dass eine Regel greift): merken, Option in diesem Zusammenhang sperren, letzte bestellbare Auswahl wiederherstellen
+  var BAD = {};
+  function badKey(sel) { return S.prod.key + "|" + JSON.stringify(Object.keys(sel).sort().map(function (k) { return [k, sel[k]]; })); }
   function setProp(slug, val) {
-    var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : ""; S.sel[slug] = val; fixSel(slug);
+    var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : "";
+    S.undo = S.price && !S.priceErr && !S.priceBusy ? { sel: JSON.parse(before), slug: slug, val: val } : null;
+    S.sel[slug] = val; fixSel(slug);
     if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
     if (isLogo() && kind() === "promo" && lk !== logoKey()) { S.logos = {}; S.file = null; }
     render(); loadPrice();
