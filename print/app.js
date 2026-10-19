@@ -729,7 +729,12 @@
   function fillRows() { [].forEach.call(root.querySelectorAll(".ps-sec .ps-grid2"), function (g) { var run = [];
     var end = function () { if (run.length % 2) run[run.length - 1].classList.add("full"); run = []; };
     [].forEach.call(g.children, function (c) { if (c.classList.contains("seg") || c.classList.contains("wide") || c.classList.contains("full")) end(); else run.push(c); }); end(); }); }
-  function go(n) { S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
+  // Schritte im Browser-Verlauf: Zurück-Taste/Wisch-Geste geht Schritt für Schritt zurück statt aus dem Shop (Upload → Auswahl → Ausführung)
+  function stepPush(n, mode) { if (!S.prod || n < 2) return; var st = history.state || {}; if (st.psStep === n && (st.psMode || "") === (mode || "")) return;
+    try { if (!history.state && n === 2) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung
+      else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", location.href); } } catch (e) {} }
+  function go(n, nopush) { if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
+    if (!nopush) stepPush(n, n === 3 ? S.mode : ""); S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
 
   // ── Startseite: „Was möchtest du heute drucken?“ + Suche, Klassiker (Flyer, Banner), täglich 4 andere Produkte, Kategorien, Designer ──
   function daySeed() { var d = new Date(); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate(); }
@@ -842,7 +847,9 @@
     if (push !== false) try { history.pushState({ pg: pg }, "", pg === "produkte" ? "/print?produkte" + (S.group ? "&kategorie=" + encodeURIComponent(S.group) : "") : "/print"); } catch (e) {}
     render(); window.scrollTo({ top: 0 });
   }
-  window.addEventListener("popstate", function () { if (!S.cat) return; var qq = new URLSearchParams(location.search); if (qq.has("konto")) { S.view = "konto"; render(); return; } if (qq.has("warenkorb")) { S.view = ""; go(4); return; } setPage(qq.has("produkte") ? "produkte" : "home", false); });
+  window.addEventListener("popstate", function () { if (!S.cat) return; var st = history.state;
+    if (st && st.psStep && S.prod) { closeSheet(); S.view = ""; S.dd = ""; if (st.psStep === 3) S.mode = S.file ? S.mode : st.psMode || ""; go(st.psStep, true); return; }   // Schritt zurück/vor
+    var qq = new URLSearchParams(location.search); if (qq.has("konto")) { S.view = "konto"; render(); return; } if (qq.has("warenkorb")) { S.view = ""; go(4, true); return; } setPage(qq.has("produkte") ? "produkte" : "home", false); });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-nav]"); if (!a || !S.cat) return; e.preventDefault();
     var pg = a.getAttribute("data-nav"); S.group = a.getAttribute("data-navgroup") || ""; S.sub = ""; S.q = "";
@@ -1227,6 +1234,8 @@
         '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten, Hintergründe bis hierher ziehen</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie – keine Texte direkt auf die Falz</li>' : "") + '</ul><div class="ps-pfv-w" id="psPfvW"></div></div>' + reqHtml(false);
       if (S.file.preflight && S.file.preflight.status === "PROCESSING") h += '<p class="pd-muted" style="margin-top:8px"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>';
     } else if (S.mode === "upload") {
+      h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
+        : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
       h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : sd === 2 ? " · 2 Seiten" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
         reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
@@ -1454,9 +1463,10 @@
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
     if (k === "psheetx") { closeSheet(); return; }
-    if (k === "next2") { if (S.price && !S.priceBusy) go(3); else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
+    // ohne Datei immer zur Auswahl (Designer oder Upload), nicht wieder direkt in den Upload
+    if (k === "next2") { if (S.price && !S.priceBusy) { if (!S.file && S.mode === "upload") S.mode = ""; go(3); } else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
-    if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; render(); return; }
+    if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; if (v) stepPush(3, v); render(); return; }
     if (k === "clearfile") { S.file = null; S.previews = null; S.mode = ""; render(); return; }
     if (k === "editdesign") return openDesigner();
     if (k === "next3") { if (!S.file || S.file.blocked) return; if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }

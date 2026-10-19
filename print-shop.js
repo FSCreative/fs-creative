@@ -117,7 +117,7 @@ const CURATED = [
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("5" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("6" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -323,7 +323,9 @@ module.exports = function (D) {
       await pcSlot(!!(opts && opts.low)); let e0 = null, out;
       try { out = await pcApi1(method, p, body, opts); } catch (e) { e0 = e; } finally { pcFree(); }
       if (!e0) return out;
-      if (!(e0.status === 429 || e0.status === 502 || e0.status === 503) || a >= 3 || (opts && opts.form)) throw e0;
+      // kurze Störungen bei Print.com: 429/502/503 immer, 500 nur bei Preis-/Versandabfragen (z. B. „calculating urgency prices failed: UNAVAILABLE“)
+      const transient = e0.status === 429 || e0.status === 502 || e0.status === 503 || e0.status === 504 || (e0.status === 500 && /\/price$|^\/shipping\//.test(p));
+      if (!transient || a >= 3 || (opts && opts.form)) throw e0;
       await new Promise(r => setTimeout(r, [700, 1800, 4000][a] + Math.random() * 400));
     }
   }
@@ -361,6 +363,17 @@ module.exports = function (D) {
 
 
   const fmtDims = d => d[0] >= 100 && d[1] >= 100 && d[0] % 10 === 0 && d[1] % 10 === 0 ? d[0] / 10 + " × " + d[1] / 10 + " cm" : d[0] + " × " + d[1] + " mm";
+  // Druckart verständlich benennen: „4/4-farbig“ → „Beidseitig farbig (4/4)“, „1/0 Pantone“ → „Einseitig, 1 Pantone-Farbe (1/0)“ (Wunsch Simon: 4/4 allein versteht nicht jeder)
+  function ptName(name, slug) {
+    const nm = String(name || ""), sl = String(slug || ""), m = nm.match(/(\d)\s*\/\s*(\d)/) || sl.match(/^(\d)(\d)(?:_|$)/); if (!m) return nm;
+    const a = +m[1], b = +m[2], t = nm + " " + sl, pms = /pantone|pms/i.test(t), white = /wei(ß|ss)|white/i.test(t), black = /schwarz|black/i.test(t), code = " (" + a + "/" + b + ")";
+    if (!a && !b) return "Unbedruckt";
+    if (a !== b && b !== 0) return "Vorderseite " + (a === 4 ? "farbig" : a + "-farbig") + ", Rückseite " + (b === 1 ? "schwarz" : b === 4 ? "farbig" : b + "-farbig") + code;
+    const side = b === 0 ? "Einseitig" : "Beidseitig";
+    if (white) return side + " farbig + Weiß" + code;
+    if (pms) return side + (black && a === 1 ? " " : ", ") + (black && a === 1 ? "schwarz (Pantone-Schwarz)" : a === 1 ? "1 Pantone-Farbe" : a + " Pantone-Farben") + code;
+    return side + " " + (a === 4 ? "farbig" : a === 1 && black ? "schwarz" : a + "-farbig") + code;
+  }
   const ptLabel = v => { const m = String(v).match(/^(\d)(\d)$/); if (!m) return null; if (m[1] === "0") return "ohne Druck"; return m[2] === "0" ? (m[1] === "4" ? "4-farbig (CMYK)" : m[1] + "-farbig") : m[1] + "/" + m[2] + "-farbig (beidseitig)"; };
   const weightOf = o => { const m = (String(o.slug) + " " + String(o.name || "")).match(/(\d{2,4})\s*(gr|g\b|g\/m|gsm)/i); return m ? +m[1] : 0; };
   const coated = o => /bilderdruck|gloss|glänz|matt|silk|satin|(^|_)mc(_|$)/i.test(String(o.slug) + " " + String(o.name || "")) ? 1 : 0;
@@ -429,7 +442,7 @@ module.exports = function (D) {
       if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
       return x; };
     const optOut = (slug, o) => { const d = slug === "size" || slug === areaProp ? (dimsOf(o) || (slug === "size" && c.dims ? c.dims.slice() : null)) : null;
-      const nm = (L[slug] && L[slug][o.slug]) || (kind === "promo" && slug === "printtype" && ptLabel(o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
+      const nm = (L[slug] && L[slug][o.slug]) || (/^printtype/.test(slug) && ptName(o.name, o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || p.locked) return;
@@ -481,7 +494,7 @@ module.exports = function (D) {
     props.forEach(p => {
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || SPEC_SKIP.test(p.slug) || inExp(p.slug) || fixed[p.slug] == null || auto[p.slug]) return;
       const v = String(fixed[p.slug]), o = (p.options || []).find(x => x && String(x.slug) === v); if (!o || NONE_SLUG.test(v)) return;
-      const nm = p.slug === "printingmethod" ? SPEC_PM[v] || (String(o.name || "") !== v ? String(o.name) : "") : (L[p.slug] && L[p.slug][v]) || (p.slug === "printtype" && ptLabel(v)) || (o.name != null && String(o.name) !== v ? String(o.name) : "");
+      const nm = p.slug === "printingmethod" ? SPEC_PM[v] || (String(o.name || "") !== v ? String(o.name) : "") : (L[p.slug] && L[p.slug][v]) || (/^printtype/.test(p.slug) && ptName(o.name, v)) || (o.name != null && String(o.name) !== v ? String(o.name) : "");
       if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) specs.push([clip(T[p.slug] || (p.slug === "printingmethod" ? "Druckverfahren" : p.title) || p.slug, 60), clip(nm, 140), p.slug]);
     });
     // Konfektion je Seite (finish_top/bottom/left/right) mit gleichem Wert zu einer Zeile zusammenfassen
@@ -895,8 +908,12 @@ module.exports = function (D) {
     const P = pr && pr.prices || {};
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
     if (!(productPrice > 0)) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
-    const sp = await shipP;
-    let poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
+    let sp = await shipP, poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
+    if (!poss.length) {   // leere Versandantwort ist bei Print.com manchmal nur eine kurze Störung → einmal neu anfragen
+      await new Promise(r => setTimeout(r, 800));
+      sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo).catch(() => null);
+      ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
+    }
     const same = poss.filter(x => !x.urgency || x.urgency === n.urgency); if (same.length) poss = same;
     const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); };
     poss.sort((a, b) => cost(a) - cost(b) || String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
