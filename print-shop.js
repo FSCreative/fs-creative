@@ -6,7 +6,7 @@
 //   → im Cockpit (Druckaufträge) „Bei Print.com bestellen“ → POST /orders, Rechnung fertigstellen + an Kunden senden
 //   → täglich Status/Tracking von Print.com abrufen, Versandmail an den Kunden.
 // „Bezahlte Bestellungen automatisch senden“ ist eine Einstellung im Cockpit (Standard AUS).
-// Preise: Einkauf live von Print.com (Produkt + Versand) + Aufschlag PRINT_MARKUP_PCT, mindestens PRINT_MIN_MARGIN_EUR Marge –
+// Preise: Einkauf live von Print.com (Produkt + Versand) + Aufschlag PRINT_MARKUP_PCT (nur Prozentregeln, keine €-Mindestmarge) –
 // immer serverseitig berechnet, Preise vom Browser werden nie übernommen.
 // Speicher: mit DATABASE_URL in Postgres (print_order, print_file, Einstellungen/Katalog in fin_meta), sonst Dateien unter DATA_DIR/print-shop.
 const fs = require("fs");
@@ -897,7 +897,7 @@ module.exports = function (D) {
     // Ziel-Marge je Kategorie (Cockpit, z. B. Werbeartikel 5 %): Marge in % vom Nettopreis NACH Zahlungsgebühr → Aufschlag und Mindestmarge daraus (Produkt-Aufschlag geht vor)
     const gmAll = s.groupMargin || {}, gmMain = catOf(prod.sku, s, prod.group, prod.cat).main, gmv = gmAll[gmMain] != null ? gmAll[gmMain] : gmAll[prod.group], gm = gmv != null && isFinite(+gmv) ? +gmv : null;
     const gmUp = gm != null ? gm / (100 - gm) * 100 / (1 - 1.2 * payFee().pct / 100) : null;
-    const markup = ov.markupPct != null ? +ov.markupPct : gmUp != null ? gmUp : s.markupPct != null ? s.markupPct : c.markup, minM = ov.minMarginEur != null ? +ov.minMarginEur : gmUp != null ? 0 : s.minMarginEur != null ? s.minMarginEur : c.minMargin;
+    const markup = ov.markupPct != null ? +ov.markupPct : gmUp != null ? gmUp : s.markupPct != null ? s.markupPct : c.markup, minM = 0   /* keine €-Mindestmarge – nur Prozentregeln (Wunsch Simon 19.10.2026) */;
     // Aufschlag (und ggf. Mindestmarge) nur auf das Produkt – Versand wird zum Einkaufspreis weitergegeben; auf 10 Cent aufrunden
     // Mindestmarge immer NACH Zahlungsgebühr (Mollie, konservativ: Kreditkarte) – netto ≥ (Einkauf × (1 + min %) + Fixgebühr) / (1 − (1 + USt) × Gebühr %)
     const tax0 = taxFor(country, cust), fee = payFee(), floorOf = b => ((b.product + b.shipping) * (1 + (gmUp != null ? gmUp : s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100);
@@ -1916,8 +1916,9 @@ module.exports = function (D) {
           const hit = FROM.get(ck); if (hit && Date.now() - hit.at < 12 * 3600e3) { out[k] = hit.v; return; }
           try { const prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const tl = prod.tiers || [], big = prod.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((prod.cat && prod.cat.main) || prod.group || ""),
               t = qc && tl.indexOf(qc) > -1 ? qc : tl[0] === 1 && big ? 1 : tl[0] === 1 && tl.indexOf(5) > -1 ? 5 : [500, 250, 100, 50].find(x => tl.indexOf(x) > -1) || tl[0];   // typische Auflage statt kleinster
-            const n = normalizeSel(prod, Object.assign({ copies: t, sel }, prod.kind === "banner" && prod.custom ? { custom: { w: Math.max(prod.custom.minW, 1000) / 10, h: Math.max(prod.custom.minH, 500) / 10 } } : {}));
-            const q = await quote(prod, n, "AT", "", {}); const v = { gross: q.gross, copies: n.copies }; FROM.set(ck, { at: Date.now(), v }); out[k] = v; } catch (e) {} }));
+            const mk = sl => normalizeSel(prod, Object.assign({ copies: t, sel: sl }, prod.kind === "banner" && prod.custom ? { custom: { w: Math.max(prod.custom.minW, 1000) / 10, h: Math.max(prod.custom.minH, 500) / 10 } } : {}));
+            // Bestseller-Auswahl (z. B. beidseitig 4/4) ist nicht bei jedem Produkt lieferbar (PVC-Banner) → mit der Standard-Ausführung rechnen
+            let n = mk(sel), q; try { q = await quote(prod, n, "AT", "", {}); } catch (e) { if (!Object.keys(sel).length) throw e; n = mk({}); q = await quote(prod, n, "AT", "", {}); } const v = { gross: q.gross, copies: n.copies }; FROM.set(ck, { at: Date.now(), v }); out[k] = v; } catch (e) {} }));
         return J(res, 200, { ok: true, from: out });
       }
       if (p === "/print/api/product" && req.method === "GET") {
@@ -2109,7 +2110,7 @@ module.exports = function (D) {
     const sum = l => l.reduce((a, o) => { a.n++; a.net += +o.price.net || 0; a.purchase += +o.price.purchase.total || 0; a.fee += +o.price.payFee || 0; a.margin += +o.price.margin || 0; return a; }, { n: 0, net: 0, purchase: 0, fee: 0, margin: 0 });
     const mon = today().slice(0, 7), d30 = new Date(Date.now() - 30 * 864e5).toISOString();
     const r = x => Object.keys(x).reduce((o, k) => { o[k] = k === "n" ? x[k] : r2(x[k]); return o; }, {});
-    return { ok: true, rules: { markupPct: s.markupPct != null ? s.markupPct : c.markup, minMarginEur: s.minMarginEur != null ? s.minMarginEur : c.minMargin, minMarginPct: s.minMarginPct != null ? s.minMarginPct : 10,
+    return { ok: true, rules: { markupPct: s.markupPct != null ? s.markupPct : c.markup, minMarginPct: s.minMarginPct != null ? s.minMarginPct : 10,
         anchorMinPct: s.anchorMinPct != null ? +s.anchorMinPct : 5, anchorGap: s.anchorGap != null ? s.anchorGap : 2, anchors: Object.keys(s.anchors || {}).length, bulkFrom: s.bulkFrom != null ? +s.bulkFrom : 150, bulkTo: s.bulkTo != null ? +s.bulkTo : 1500, bulkFactor: s.bulkFactor != null ? +s.bulkFactor : 0.4,
         feePct: fee.pct, feeFix: fee.fix, proCheck: PRO_CHECK_GROSS, groupMargin: Object.keys(s.groupMargin || {}).filter(k => s.groupMargin[k] != null).map(k => ({ name: groupName(k), pct: s.groupMargin[k] })),
         overrides: Object.keys(s.products || {}).filter(k => s.products[k] && s.products[k].markupPct != null).map(k => ({ key: k, title: (CURATED.find(x => x.key === k) || {}).title || k, pct: s.products[k].markupPct })) },

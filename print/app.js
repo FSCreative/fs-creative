@@ -729,7 +729,7 @@
   // „Zuletzt angesehen“ (nur in diesem Browser, ohne Personenbezug)
   function recentGet() { try { var l = JSON.parse(localStorage.getItem("fsc-print-recent") || "[]"); return Array.isArray(l) ? l.filter(function (k) { return typeof k === "string"; }).slice(0, 10) : []; } catch (e) { return []; } }
   function recentAdd(k) { try { var l = recentGet().filter(function (x) { return x !== k; }); l.unshift(k); localStorage.setItem("fsc-print-recent", JSON.stringify(l.slice(0, 10))); } catch (e) {} }
-  function recentProds() { return recentGet().map(prodByKey).filter(Boolean).slice(0, 8); }
+  function recentProds() { return recentGet().map(prodByKey).filter(Boolean).slice(0, 6); }   // höchstens 6 (Wunsch Simon)
   function savedHomeHtml() { var l = savedList().slice(0, 4); if (!l.length) return "";
     return '<section class="ps-hsec ps-recent ps-savhome"><div class="ps-hsec-h"><h2>Deine Merkliste</h2>' + (S.me ? '<button type="button" class="ps-link" data-act="konto">Alle im Konto →</button>' : "") + '</div><div class="ps-savs">' + l.map(savedCard).join("") + "</div></section>"; }
   function recentHtml() { var l = recentProds(); if (!l.length) return "";
@@ -786,8 +786,8 @@
     var dsg = S.cat.products.filter(function (p) { return p.designer; }).slice(0, 4);
     var nw = newestProds(), hq = hqInner(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
     return '<section class="ps-home-hero ps-hero2"><div class="sheet"><i class="crop tl" aria-hidden="true"></i><i class="crop tr" aria-hidden="true"></i><i class="crop bl" aria-hidden="true"></i><i class="crop br" aria-hidden="true"></i>' + reg +
-      '<div class="hx"><span class="eyebrow">FS Creative Druckshop · Lieferung in ganz Österreich</span><h1>Flyer, Visitenkarten &amp; Banner <span class="gx">online drucken</span></h1>' +
-      '<p class="lead">Preis sofort sehen, online gestalten oder Datei hochladen – jede Datei wird automatisch geprüft, auf Wunsch zusätzlich vom Profi. Über ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + ' Produkte, Versand inklusive.</p>' +
+      '<div class="hx"><span class="eyebrow">FS Creative Druckshop · Lieferung in ganz Österreich</span><h1>Flyer, Visitenkarten &amp; Banner <span class="gx">online drucken</span>' + (S.cat.products.length >= 103 ? '<span class="hx-more">+ über ' + Math.floor((S.cat.products.length - 3) / 100) * 100 + ' weitere Produkte</span>' : "") + "</h1>" +
+      '<p class="lead">Preis sofort sehen, online gestalten oder Datei hochladen – jede Datei wird automatisch geprüft, auf Wunsch zusätzlich vom Profi. Versand innerhalb Österreichs inklusive.</p>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
       '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Datencheck</b> automatisch, Profi-Check optional</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + (hq ? '<div class="hq" id="psHq">' + hq + "</div>" : "") +
@@ -972,10 +972,26 @@
       '<p class="ps-help">Gesamt: <b id="psTexTotal">' + totalCopies().toLocaleString("de-AT") + " Stk.</b>" + (m.min > 1 ? " · " + esc(m.label.replace(/ \(.*$/, "")) + " ab " + m.min + " Stück" : "") + " · Der Preis hängt nicht von der Größe ab.</p></fieldset>";
     return meth + pos + sz;
   }
+  function galImgs(p) { var im = (p.images || []).filter(imgOk); if (!im.length && imgOk(p.img)) im = [p.img]; return im; }
   function galleryHtml(p) {
-    var im = (p.images || []).filter(imgOk); if (!im.length && imgOk(p.img)) im = [p.img]; if (!im.length) return "";
+    var im = galImgs(p); if (!im.length) return "";
     var i = Math.min(S.gal, im.length - 1);
-    return '<div class="ps-gal"><div class="main"><img src="' + esc(im[i]) + '" alt="' + esc(p.title) + '"></div>' + (im.length > 1 ? '<div class="th">' + im.map(function (u, k) { return '<button type="button" data-gal="' + k + '" aria-label="Bild ' + (k + 1) + '" aria-pressed="' + (k === i) + '"><img src="' + esc(u.replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy"></button>'; }).join("") + "</div>" : "") + "</div>";
+    return '<div class="ps-gal"><div class="main"><img src="' + esc(im[i]) + '" alt="' + esc(p.title) + '" data-galzoom="1"><button type="button" class="ps-gal-z" data-galzoom="1" aria-label="Bild vergrößern" title="Vergrößern">⤢</button>' + (im.length > 1 ? '<span class="ps-gal-n">' + (i + 1) + " / " + im.length + "</span>" : "") + "</div>" + (im.length > 1 ? '<div class="th">' + im.map(function (u, k) { return '<button type="button" data-gal="' + k + '" aria-label="Bild ' + (k + 1) + '" aria-pressed="' + (k === i) + '"><img src="' + esc(u.replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy"></button>'; }).join("") + "</div>" : "") + "</div>";
+  }
+  // Großansicht der Produktbilder: Klick aufs Bild, Pfeile/Wischen zum Blättern, Esc oder Klick daneben schließt
+  function galPop(i) {
+    var p = S.prod, im = p ? galImgs(p) : []; if (!im.length) return; var k = Math.max(0, Math.min(i || 0, im.length - 1)), back = document.activeElement;
+    var m = document.createElement("div"); m.className = "ps-lb"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", p.title + " – Bilder");
+    var draw = function () { m.innerHTML = '<img src="' + esc(String(im[k]).replace(/w=\d+/, "w=1800")) + '" alt="' + esc(p.title + " – Bild " + (k + 1)) + '">' +
+      (im.length > 1 ? '<button type="button" class="ps-lb-n p" data-lb="-1" aria-label="Vorheriges Bild">‹</button><button type="button" class="ps-lb-n n" data-lb="1" aria-label="Nächstes Bild">›</button><span class="ps-lb-c">' + (k + 1) + " / " + im.length + "</span>" : "") +
+      '<button type="button" class="ps-lb-x" aria-label="Schließen">×</button>'; var x = m.querySelector(".ps-lb-x"); if (x) x.focus(); };
+    var go = function (d) { k = (k + d + im.length) % im.length; draw(); };
+    var close = function () { m.remove(); document.removeEventListener("keydown", key); document.documentElement.classList.remove("ps-noscroll"); if (back && back.focus) back.focus(); };
+    var key = function (e) { if (e.key === "Escape") { e.stopPropagation(); close(); } else if (e.key === "ArrowLeft" && im.length > 1) go(-1); else if (e.key === "ArrowRight" && im.length > 1) go(1); };
+    m.addEventListener("click", function (e) { var b = e.target.closest("[data-lb]"); if (b) { go(+b.getAttribute("data-lb")); return; } if (e.target === m || e.target.closest(".ps-lb-x")) close(); });
+    var x0 = null; m.addEventListener("touchstart", function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+    m.addEventListener("touchend", function (e) { if (x0 == null || im.length < 2) return; var dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1); });
+    document.addEventListener("keydown", key); document.documentElement.classList.add("ps-noscroll"); document.body.appendChild(m); draw();
   }
   function aboutHtml(p) {
     var t = txt(p.about) || (/\n/.test(String(p.summary || "")) ? txt(p.summary) : "") || (/\n/.test(String(p.desc || "")) ? txt(p.desc) : ""); if (!t && !p.summary) return "";
@@ -1352,6 +1368,7 @@
     if (alt && S.alts && S.alts[+alt.getAttribute("data-alt")]) { var A = S.alts[+alt.getAttribute("data-alt")]; S.sel = Object.assign({}, A.sel); S.copies = A.copies; S.alts = null; S.priceErr = ""; if (S.file && !isLogo()) { S.file = null; S.previews = null; } toast("Übernommen: " + A.label); render(); loadPrice(); return; }
     var dc = e.target.closest("[data-ddcat]");
     if (dc) { var cv = dc.getAttribute("data-ddcat"), ci = cv.indexOf("|"); S.ddCat[cv.slice(0, ci)] = cv.slice(ci + 1); render(); var ds2 = root.querySelector(".ps-ddl.big .ps-dds"); if (ds2) ds2.scrollTop = 0; return; }
+    if (e.target.closest("[data-galzoom]")) { galPop(S.gal); return; }
     var dg = e.target.closest("[data-ddgrp]");
     if (dg) { var gv = dg.getAttribute("data-ddgrp"), gi = gv.indexOf("|"), gk = gv.slice(0, gi), gn = gv.slice(gi + 1), opn = dg.getAttribute("aria-expanded") !== "true", G0 = S.ddGrp[gk] = { _set: 1 }; if (opn) G0[gn] = true;   // Akkordeon: andere schließen
       var sc0 = root.querySelector(".ps-dds"), st0 = sc0 ? sc0.scrollTop : 0; render(); var sc1 = root.querySelector(".ps-dds"); if (sc1) sc1.scrollTop = st0; return; }
@@ -1372,7 +1389,7 @@
     if (t.hasAttribute("data-prod")) { pickProduct(t.getAttribute("data-prod"), function () { go(2); }); return; }
     if (t.hasAttribute("data-group")) { S.group = t.getAttribute("data-group"); S.sub = ""; render(); return; }
     if (t.hasAttribute("data-sub")) { S.sub = t.getAttribute("data-sub"); render(); return; }
-    if (t.hasAttribute("data-gal")) { S.gal = +t.getAttribute("data-gal"); var gm = root.querySelector(".ps-gal .main img"), th = t.querySelector("img"); if (gm && th) gm.src = th.src.replace(/w=\d+/, "w=1000"); root.querySelectorAll("[data-gal]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === t)); }); return; }
+    if (t.hasAttribute("data-gal")) { S.gal = +t.getAttribute("data-gal"); var gm = root.querySelector(".ps-gal .main img"), th = t.querySelector("img"), gn = root.querySelector(".ps-gal-n"); if (gm && th) gm.src = th.src.replace(/w=\d+/, "w=1000"); if (gn) gn.textContent = (S.gal + 1) + " / " + root.querySelectorAll("[data-gal]").length; root.querySelectorAll("[data-gal]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === t)); }); return; }
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
