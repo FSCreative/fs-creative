@@ -1303,3 +1303,7 @@ html.has-promo:not(.promo-x) .pullchain{top:40px}
 html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 @media(max-width:640px){.ps-promo .lg,.ps-promo .sm{display:none}.ps-promo .in{gap:8px;font-size:13px;padding:0 44px 0 12px}}
 @media(max-width:380px){.ps-promo .code i{display:none}.ps-promo .em{display:none}}
+/* Bilder füllen ihren Rahmen in jedem Browser vollständig (quadratische Produktfotos in 4:3-Rahmen; height:100 % greift bei aspect-ratio + grid in Safari nicht) */
+.ps-feat .ph,.ps-prod .ph,.ps-gal .main{position:relative}
+.ps-feat .ph img,.ps-prod .ph img,.ps-gal .main img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ps-catt .ci img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
