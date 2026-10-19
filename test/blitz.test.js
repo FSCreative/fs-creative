@@ -7,14 +7,14 @@ const createBlitzMock = require("./blitz-mock.js");
 
 const ROOT = path.join(__dirname, "..");
 const SECRET = "test-secret";
-const COOKIE = "fsadmin=" + encodeURIComponent("ok." + crypto.createHmac("sha256", SECRET).update("ok").digest("hex"));
+const COOKIE = "fsadmin=" + encodeURIComponent((v => v + "." + crypto.createHmac("sha256", SECRET).update(v).digest("hex"))("s1." + Date.now()));
 
 let pass = 0, fail = 0; const fails = [];
 async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fails.push(name + "\n    " + (e && e.message || e)); } }
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-blitz-"));
-  ["server.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
+  ["server.js", "client-ip.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   fs.mkdirSync(path.join(dir, "admin-cockpit"));
   fs.readdirSync(path.join(ROOT, "admin-cockpit")).forEach((f) => fs.copyFileSync(path.join(ROOT, "admin-cockpit", f), path.join(dir, "admin-cockpit", f)));
   return dir;

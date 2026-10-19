@@ -9,7 +9,7 @@ const fs = require("fs"), path = require("path"), os = require("os"), cp = requi
 
 const ROOT = path.join(__dirname, "..");
 const SECRET = "test-secret";
-const COOKIE = "fsadmin=" + encodeURIComponent("ok." + crypto.createHmac("sha256", SECRET).update("ok").digest("hex"));
+const COOKIE = "fsadmin=" + encodeURIComponent((v => v + "." + crypto.createHmac("sha256", SECRET).update(v).digest("hex"))("s1." + Date.now()));
 let pass = 0, fail = 0; const fails = [];
 async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fails.push("✗ " + name + "\n    " + (e && e.stack || e)); } }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -69,7 +69,7 @@ async function startServer(dir, env) {
   const srv = await startServer(dir, { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: "http://127.0.0.1:" + mock.server.address().port, CHAT_BEAT_TTL_MS: "1500", CHAT_AI_CONV_MAX: "4" });
   const B = srv.base;
   let ipN = 1;
-  const pub = (p, body, hdr) => fetch(B + p, body ? { method: "POST", headers: Object.assign({ "Content-Type": "application/json", "X-Forwarded-For": "10.1.0." + ipN }, hdr || {}), body: JSON.stringify(body) } : { headers: Object.assign({ "X-Forwarded-For": "10.1.0." + ipN }, hdr || {}) });
+  const pub = (p, body, hdr) => fetch(B + p, body ? { method: "POST", headers: Object.assign({ "Content-Type": "application/json", "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}), body: JSON.stringify(body) } : { headers: Object.assign({ "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}) });
   const pj = async (p, body, hdr) => { const r = await pub(p, body, hdr); return Object.assign({ _status: r.status }, await r.json()); };
   const adm = async (p, body) => { const r = await fetch(B + p, body ? { method: "POST", headers: { "Content-Type": "application/json", cookie: COOKIE }, body: JSON.stringify(body) } : { headers: { cookie: COOKIE } }); return Object.assign({ _status: r.status }, await r.json()); };
   const cidOf = s => (s + "x".repeat(24)).replace(/[^a-z0-9]/g, "a").slice(0, 24);

@@ -415,7 +415,7 @@
   function ddRow(key, x, cur, zi) {
     var sel = String(x.val) === String(cur);
     return '<div class="ps-ddo' + (zi % 2 ? " z" : "") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
-      '<button type="button" class="ps-ddp" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><span class="n">' + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
+      '<button type="button" class="ps-ddp' + (imgOk(x.img) ? " hasim" : "") + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<span class="n">' + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
       (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
       (sel ? '<span class="ps-ddck" aria-hidden="true">✓</span>' : dlSpan(key, x)) +
       (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>";
@@ -424,11 +424,18 @@
     DDI[key] = items;
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
     if (items.length <= 4 && key !== "copies") return '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
-      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel && key !== "urgency" ? "" : dlSpan(key, x)) + "</button>" +
+      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + (imgOk(x.img) ? " hasim" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel && key !== "urgency" ? "" : dlSpan(key, x)) + "</button>" +
         (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
     var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + '</span><i aria-hidden="true">▾</i></button>';
     if (!open) return btn;
     var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; });
+    if (items.length <= 12 && items.some(function (x) { return x.fold; })) {
+      var zf = 0, G = S.ddGrp[key] || {}, main = items.filter(function (x) { return !x.fold; }), folds = [];
+      items.forEach(function (x) { if (x.fold && folds.indexOf(x.fold) < 0) folds.push(x.fold); });
+      return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '"><div class="ps-dds">' + main.map(function (x) { return ddRow(key, x, cur, zf++); }).join("") +
+        folds.map(function (fn) { var l = items.filter(function (x) { return x.fold === fn; }), has = l.some(function (x) { return String(x.val) === String(cur); }), on = G._set ? !!G[fn] : has;
+          return '<div class="ps-ddg ps-ddgf"><button type="button" class="ps-ddgt" data-ddgrp="' + esc(key) + "|" + esc(fn) + '" aria-expanded="' + on + '"><span>' + esc(fn) + "</span><small>" + l.length + "</small>" + (has && !on ? '<b class="ps-ddgc" aria-label="enthält deine Auswahl">●</b>' : "") + '<i aria-hidden="true">' + (on ? "▾" : "▸") + "</i></button></div>" +
+            (on ? l.map(function (x) { return ddRow(key, x, cur, zf++); }).join("") : ""); }).join("") + "</div></div>"; }
     if (items.length <= 12) { var zi = 0; return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '"><div class="ps-dds">' + best.concat(rest).map(function (x) { return ddRow(key, x, cur, zi++); }).join("") + "</div></div>"; }
     // großer Auswahl-Dialog
     var cats = []; if (best.length) cats.push({ n: "★ Bestseller", l: best });
@@ -500,12 +507,22 @@
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
     var bo = bestOf(pr); items.sort(function (a, b) { return a.best && b.best ? bo.indexOf(a.val) - bo.indexOf(b.val) : 0; });
+    foldPrint(items);
     if (mobLite() && items.length > 4) {   // Handy: lange Listen nur mit Bestsellern (+ aktueller Auswahl), sonst die ersten 5 – der Rest „am PC“
       var cur = S.sel[pr.slug], keep = items.filter(function (it) { return it.best || it.val === cur; });
       if (keep.length < 2) { var d0 = (S.prod.defaults || {})[pr.slug]; keep = items.filter(function (it) { return it.val === d0 || it.val === cur; }); items.forEach(function (it) { if (keep.length < 5 && keep.indexOf(it) < 0 && !it.off) keep.push(it); }); }
       if (keep.length < items.length) { keep.more = items.length - keep.length; return keep; }
     }
     return items;
+  }
+  // Druckart (Wunsch Simon): normale Farbdrucke zuerst (beidseitig, einseitig farbig), Pantone- und Weiß-Varianten als eigene einklappbare Gruppen
+  var FOLD_PMS = "Pantone-Sonderfarben", FOLD_WHITE = "Mit Weißdruck";
+  function foldPrint(items) {
+    items.forEach(function (it) { it.fold = /pantone/i.test(it.name) ? FOLD_PMS : /wei(ß|ss)/i.test(it.name) ? FOLD_WHITE : ""; });
+    if (!items.some(function (it) { return it.fold; }) || items.every(function (it) { return it.fold; })) { items.forEach(function (it) { it.fold = ""; }); return; }
+    var rank = function (it) { return it.fold === FOLD_PMS ? 30 : it.fold === FOLD_WHITE ? 20 : it.best ? 0 : /^beidseitig farbig\b/i.test(it.name) ? 1 : /^einseitig farbig\b/i.test(it.name) ? 2 : 10; }, pos = items.slice();
+    items.sort(function (a, b) { return rank(a) - rank(b) || pos.indexOf(a) - pos.indexOf(b); });
+    items.forEach(function (it) { if (it.fold) it.group = it.fold; else if (!it.group) it.group = "Farbdruck (CMYK)"; });   // großer Auswahl-Dialog: als Kategorien
   }
   function mobLite() { return window.innerWidth <= 760 && !S.mobAll; }   // Handy übersichtlich (Wunsch Simon): Bestseller statt aller Optionen, „hier alle zeigen“ schaltet um
   function morePc(n) { return n ? '<span class="ps-td ps-morepc">+ ' + n + " weitere Option" + (n === 1 ? "" : "en") + ' am PC · <button type="button" class="ps-link" data-act="moball">hier zeigen</button></span>' : ""; }

@@ -186,7 +186,7 @@ module.exports = function (D) {
     return new Promise((resolve, reject) => { let b = "", n = 0; req.on("data", c => { n += c.length; if (n > max) { reject(Object.assign(new Error("too_large"), { code: 413 })); req.destroy(); } else b += c; });
       req.on("end", () => { try { const o = JSON.parse(b || "{}"); resolve(o && typeof o === "object" && !Array.isArray(o) ? o : {}); } catch (e) { reject(Object.assign(new Error("bad_json"), { code: 400 })); } }); req.on("error", reject); });
   }
-  const ipOf = req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim().slice(0, 64);
+  const ipOf = require("./client-ip.js").clientIp;   // echte Besucher-IP (Cloudflare/Railway, nicht fälschbar über X-Forwarded-For)
   // Nur gleiche Herkunft: fremde Seiten dürfen die API weder lesen noch beschreiben (keine CORS-Header, Origin/Sec-Fetch-Site geprüft)
   function sameOrigin(req) {
     const sfs = String(req.headers["sec-fetch-site"] || ""); if (sfs && sfs !== "same-origin" && sfs !== "none") return false;
@@ -199,7 +199,7 @@ module.exports = function (D) {
     if (now - pruned > 600000) { pruned = now; for (const [k, v] of HITS) if (!v.length || now - v[v.length - 1] > 3600000) HITS.delete(k); }   // IP-Einträge höchstens 1 Std. behalten
     const a = (HITS.get(key) || []).filter(t => now - t < win);
     if (a.length >= max) { HITS.set(key, a); return true; }
-    a.push(now); HITS.set(key, a); if (HITS.size > 20000) HITS.clear(); return false;
+    a.push(now); HITS.set(key, a); if (HITS.size > 20000) for (const k of HITS.keys()) { HITS.delete(k); if (HITS.size <= 18000) break; } return false;
   }
   const pageOf = v => { const s = line(v, 200); return /^\/[^\s]*$/.test(s) && !/^\/admin/.test(s) ? s : ""; };
 

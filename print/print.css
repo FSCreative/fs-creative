@@ -1317,3 +1317,16 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 .ps-msplit{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
 .ps-ms input{flex:1 1 auto;min-width:72px;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
 .ps-ms input::-webkit-outer-spin-button,.ps-ms input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+/* Druckart: einklappbare Gruppen (Pantone, Weiß) unter den normalen Farbdrucken */
+.ps-ddg.ps-ddgf{position:static;padding:4px 2px;margin-top:4px;text-transform:none;letter-spacing:0;font-size:14px}
+.ps-ddgf .ps-ddgt{min-height:44px;padding:8px 10px;border-radius:10px;color:var(--text-dim);font-weight:700}
+.ps-ddgf .ps-ddgt:hover{background:var(--ps-ddhov);color:var(--text)}
+.ps-ddgf .ps-ddgt[aria-expanded="true"]{color:var(--text)}
+.ps-ddgc{color:var(--ps-focus);font-size:10px}
+/* Fotos/Symbole zu Optionen (Material, Druckart, Veredelung …), wenn der Lieferant welche liefert */
+.ps-ddp.hasim{display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:12px;align-items:center}
+.ps-ddp.hasim img{grid-row:1/span 2;width:44px;height:44px;object-fit:cover;border-radius:8px;background:#fff}
+.ps-ddp.hasim>span{grid-column:2}
+.ps-sgo.hasim>button[role=radio]{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:10px;align-items:center}
+.ps-sgo.hasim>button[role=radio] img{grid-row:1/span 3;width:36px;height:36px;object-fit:cover;border-radius:7px;background:#fff}
+.ps-sgo.hasim>button[role=radio]>:not(img){grid-column:2}

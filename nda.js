@@ -262,9 +262,10 @@ module.exports = function (D) {
   }
 
   // ───────────────────────── HTTP-Hilfen ─────────────────────────
-  const HITS = new Map();
-  function limited(bucket, ip, max, windowMs) { const k = bucket + "|" + ip, now = Date.now(); const a = (HITS.get(k) || []).filter(t => now - t < windowMs); a.push(now); HITS.set(k, a); if (HITS.size > 20000) HITS.clear(); return a.length > max; }
-  const ipOf = req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const { clientIp, hitCounter } = require("./client-ip.js");
+  const HITS = hitCounter(20000);
+  const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
+  const ipOf = clientIp;   // echte Besucher-IP (Cloudflare/Railway, nicht fälschbar über X-Forwarded-For)
   function sameOrigin(req) {
     if (req.headers["x-nda"] !== "1") return false;
     const o = req.headers.origin; if (!o) return true;

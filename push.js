@@ -30,7 +30,7 @@ module.exports = function (D) {
     await load(); if (!ST.subs.length) return 0;
     const body = JSON.stringify({ title: String(msg.title || "FS Cockpit").slice(0, 80), body: String(msg.body || "").slice(0, 180), url: msg.url || "/admin", tag: msg.tag || topic });
     let n = 0, dead = [];
-    for (const s of ST.subs.filter(x => (x.topics || []).indexOf(topic) > -1)) {
+    for (const s of ST.subs.filter(x => topic === "*" || (x.topics || []).indexOf(topic) > -1)) {   // "*" = Sicherheitswarnung an alle Geräte
       try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, { TTL: 3600, urgency: "normal" }); n++; }
       catch (e) { if (e.statusCode === 404 || e.statusCode === 410) dead.push(s.endpoint); else console.error("Push:", e.statusCode || "", String(e.body || e.message || e).slice(0, 120)); }
     }

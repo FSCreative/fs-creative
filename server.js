@@ -6,6 +6,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { clientIp, hitCounter } = require("./client-ip.js");   // echte Besucher-IP hinter Cloudflare/Railway + Rate-Limit-Zähler
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
@@ -82,7 +83,8 @@ const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".
 const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "admin-cockpit.html": 1, "package.json": 1, "package-lock.json": 1 };
 function isPublicFile(filePath) {
   const rel = path.relative(ROOT, filePath);
-  if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".") || rel.split(path.sep)[0] === "admin-cockpit") return false;
+  const top = rel.split(path.sep)[0];
+  if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".") || top === "admin-cockpit" || top === "node_modules" || top === "test") return false;   // Bibliotheken und Tests nie öffentlich
   if (PRIVATE_FILES[rel.normalize("NFC")]) return false;
   return !!PUBLIC_EXT[path.extname(rel).toLowerCase()];
 }
@@ -194,20 +196,47 @@ const CF = { token: process.env.CF_API_TOKEN || "" };
 
 function hmac(v) { return crypto.createHmac("sha256", ADMIN_SECRET).update(v).digest("hex"); }
 function sign(v) { return v + "." + hmac(v); }
-function verify(tok) {
-  if (!tok) return false;
-  const i = tok.lastIndexOf("."); if (i < 0) return false;
+// Cockpit-Sitzung: „s1.<Ausstellzeit>“ signiert, gilt 30 Tage ab der letzten Nutzung (wird bei Nutzung täglich erneuert).
+// Alte Cookies ohne Zeitstempel („ok“) gelten nur noch bis ADMIN_LEGACY_UNTIL und werden bei der nächsten Nutzung umgestellt.
+// Überall abmelden: ADMIN_AUTH_SECRET in Railway ändern.
+const SESSION_MS = 30 * 86400000, ADMIN_LEGACY_UNTIL = Date.parse("2026-11-20T00:00:00Z");
+function sessionAge(tok) {   // Alter der Sitzung in ms, -1 = ungültig
+  if (!tok) return -1;
+  const i = tok.lastIndexOf("."); if (i < 0) return -1;
   const v = tok.slice(0, i), sig = tok.slice(i + 1), exp = hmac(v);
-  if (sig.length !== exp.length) return false;
-  try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(exp))) return false; } catch (e) { return false; }
-  return v === "ok";
+  if (sig.length !== exp.length) return -1;
+  try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(exp))) return -1; } catch (e) { return -1; }
+  if (v === "ok") return Date.now() < ADMIN_LEGACY_UNTIL ? SESSION_MS - 1 : -1;
+  const m = /^s1\.(\d{10,14})$/.exec(v); if (!m) return -1;
+  const age = Date.now() - Number(m[1]);
+  return age > -60000 && age < SESSION_MS ? Math.max(0, age) : -1;
 }
+const verify = tok => sessionAge(tok) >= 0;
+const sessionCookie = () => "fsadmin=" + encodeURIComponent(sign("s1." + Date.now())) + "; HttpOnly; Path=/; Max-Age=" + SESSION_MS / 1000 + "; SameSite=Lax; Secure";
 function parseCookies(req) {
   const out = {}; const c = req.headers.cookie || "";
   c.split(";").forEach(p => { const i = p.indexOf("="); if (i > 0) { const k = p.slice(0, i).trim(), v = p.slice(i + 1).trim(); try { out[k] = decodeURIComponent(v); } catch (e) { out[k] = v; } } });   // ungültige Kodierung (z. B. „%“) nie zum Absturz führen lassen
   return out;
 }
 function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
+// Anfrage stammt von der eigenen Seite (Sec-Fetch-Site / Origin); ohne beide Header (ältere Clients, Skripte) erlaubt – Cookie ist SameSite=Lax
+function sameSiteReq(req) {
+  const sfs = String(req.headers["sec-fetch-site"] || ""); if (sfs && sfs !== "same-origin" && sfs !== "none") return false;
+  const o = req.headers.origin; if (!o) return true;
+  try { return new URL(o).host.toLowerCase() === String(req.headers.host || "").toLowerCase(); } catch (e) { return false; }
+}
+// Cockpit-Anmeldung: Fehlversuche pro IP und insgesamt
+const LOGIN_FAILS = hitCounter(5000, 3600000), LOGIN_ALL = hitCounter(10, 3600000), LOGIN_DELAY = 800;
+let loginAlarmAt = 0;
+function loginFailed(ip) {
+  LOGIN_FAILS.hit(ip, 100, 900000); LOGIN_ALL.hit("all", 1000, 3600000);
+  const total = LOGIN_ALL.count("all", 3600000);
+  console.log("Cockpit-Anmeldung fehlgeschlagen (" + total + " in der letzten Stunde)");
+  if (total >= 20 && Date.now() - loginAlarmAt > 3600000) {
+    loginAlarmAt = Date.now();
+    if (process.env.DATABASE_URL) PUSH.send("*", { title: "Sicherheit: Cockpit-Anmeldung", body: total + " fehlgeschlagene Anmeldeversuche in der letzten Stunde. Falls du das nicht warst: Passwort ändern (ADMIN_PASSWORD in Railway).", url: "/admin", tag: "login-alarm" }).catch(() => {});
+  }
+}
 
 // Kurzzeit-Cache (25 s): mehrere offene Tabs/Polls lösen nicht jeweils eigene Abrufe bei den Plattformen aus.
 const JSON_MEMO = new Map();
@@ -2441,23 +2470,32 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 200, adminLoginPage(""), TYPES[".html"], { "X-Robots-Tag": "noindex" });
   }
   if (p === "/admin/login" && req.method === "POST") {
+    // Schutz gegen Passwort-Raten: pro IP max. 8 Fehlversuche in 15 Min. (danach gesperrt, Passwort wird gar nicht erst geprüft),
+    // jeder Fehlversuch antwortet verzögert; viele Fehlversuche insgesamt → Push-Warnung (höchstens 1× pro Stunde). Kein globales Aussperren.
+    const ip = clientIp(req);
+    if (LOGIN_FAILS.count(ip, 900000) >= 8) return send(res, 429, adminLoginPage("Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen."), TYPES[".html"], { "Retry-After": "900" });
     let body = "";
     req.on("data", c => { body += c; if (body.length > 4096) req.destroy(); });
     req.on("end", () => {
       const pw = new URLSearchParams(body).get("password") || "";
       const ok = ADMIN_PW && pw.length === ADMIN_PW.length && crypto.timingSafeEqual(Buffer.from(pw), Buffer.from(ADMIN_PW));
       if (ok) {
-        const cookie = "fsadmin=" + encodeURIComponent(sign("ok")) + "; HttpOnly; Path=/; Max-Age=2592000; SameSite=Lax; Secure";
-        return send(res, 302, "", "text/plain", { "Set-Cookie": cookie, Location: "/admin" });
+        LOGIN_FAILS.reset(ip);
+        return send(res, 302, "", "text/plain", { "Set-Cookie": sessionCookie(), Location: "/admin" });
       }
-      return send(res, 401, adminLoginPage("Falsches Passwort."), TYPES[".html"]);
+      loginFailed(ip);
+      setTimeout(() => send(res, 401, adminLoginPage("Falsches Passwort."), TYPES[".html"]), LOGIN_DELAY);
     });
     return;
   }
   if (p === "/admin/logout") {
     return send(res, 302, "", "text/plain", { "Set-Cookie": "fsadmin=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure", Location: "/admin/login" });
   }
-  if (!adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin/login" });
+  const sAge = sessionAge(parseCookies(req)["fsadmin"] || "");
+  if (sAge < 0) return send(res, 302, "", "text/plain", { Location: "/admin/login" });
+  if (sAge > 86400000) res.setHeader("Set-Cookie", sessionCookie());   // Sitzung bei Nutzung erneuern (30 Tage ab letzter Nutzung)
+  // Schutz gegen Fremdseiten-Anfragen (CSRF): ändernde Cockpit-Anfragen nur von der eigenen Seite
+  if (req.method !== "GET" && req.method !== "HEAD" && !sameSiteReq(req)) return send(res, 403, JSON.stringify({ error: "Anfrage von fremder Seite abgelehnt" }), TYPES[".json"]);
   // KI-Funktionen (Claude) – eigenes Modul ki.js
   if (p.indexOf("/admin/api/ki/") === 0) return guard(res, KI.handle(req, res, u, p));
   // Druckaufträge (Druckshop) – Cockpit-Seite admin-cockpit/zprint.js
@@ -3345,15 +3383,9 @@ async function handleAdmin(req, res, u, p) {
 const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 const LEAD_TO = process.env.LEAD_MAIL_TO || "simon@fs-creative.at";
 const LEAD_TOPICS = ["Website", "Online-Shop", "Buchungssystem / Plattform", "SEO & Sichtbarkeit", "Grafik & Branding", "Druck", "Fotobox / Event", "Betreuung & Hosting", "Etwas anderes"];
-const LEAD_HITS = new Map();
+const LEAD_HITS = hitCounter(5000);
 function readLeads() { try { const a = JSON.parse(fs.readFileSync(LEADS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
-function leadRateLimited(ip) {
-  const now = Date.now(), hour = 3600000;
-  const hits = (LEAD_HITS.get(ip) || []).filter(t => now - t < hour);
-  hits.push(now); LEAD_HITS.set(ip, hits);
-  if (LEAD_HITS.size > 5000) LEAD_HITS.clear();
-  return hits.length > 5;
-}
+const leadRateLimited = ip => LEAD_HITS.hit(ip, 5, 3600000);   // max. 5 Anfragen pro Stunde und IP
 function clip(v, n) { return String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n); }
 // Lead-Struktur wie beim Kontaktformular (auch für den Website-Chat, chat.js)
 function makeLead(d) {
@@ -3397,7 +3429,7 @@ function handleAnfrage(req, res) {
     // Spam-Schutz: verstecktes Feld muss leer bleiben, Formular darf nicht in unter 3 s abgeschickt werden.
     const age = Date.now() - Number(d.t || 0);
     if (d.website || !(age > 3000)) return json(200, { ok: true });
-    const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+    const ip = clientIp(req);
     if (leadRateLimited(ip)) return json(429, { error: "too_many" });
 
     const lead = makeLead(d);

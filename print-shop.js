@@ -56,7 +56,7 @@ function cmsTrim(j, keepSkus) {
     products[p.sku] = { n: String(NAME_FIX[p.sku] || p.productName || "").trim().slice(0, 120), da: String(p.dateAdded || "").slice(0, 10), i: A(p.image || p.icon), g: (p.images || []).map(A).filter(Boolean).slice(0, 6), d: String(p.description || "").trim().slice(0, 600), s: String(p.subtitle || p.summary || "").trim().slice(0, 200), pp: +p.popularity || 0 }; });   // pp = Beliebtheit laut Print.com (für „Bestseller“)
   const options = {};
   Object.values(j.option || {}).forEach(o => { if (!o || !o.slug || !o.property || o.property === "summary_image") return; const u = A(o.icon); if (u) options[o.property + "|" + o.slug] = u; });
-  const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), d: String(x.description || "").replace(/\s+/g, " ").trim().slice(0, 240), i: A(x.image) })).filter(x => x.d || x.i);
+  const info = Object.values(j.propertyOptionInfo || {}).filter(x => x && x.slug).map(x => ({ s: [String(x.slug)].concat(String(x.multipleSlugs || "").split(/\s+/).filter(Boolean)), p: String(x.product || "").split(/[\s,]+/).filter(Boolean), pr: String(x.property || ""), d: String(x.description || "").replace(/\s+/g, " ").trim().slice(0, 240), i: A(x.image) })).filter(x => x.d || x.i);
   return { mains, names, products, options, info };
 }
 
@@ -117,7 +117,7 @@ const CURATED = [
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("7" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("8" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -436,7 +436,7 @@ module.exports = function (D) {
     const cuOpt = by.size && (by.size.options || []).find(o => o && String(o.slug) === "custom"), cs = cuOpt && cuOpt.customSizes;
     const custom = c.custom ? { minW: c.custom[0], minH: c.custom[0], maxW: c.custom[1], maxH: c.custom[2], unit: "cm" }
       : cs && +cs.maxWidth > 0 && +cs.maxHeight > 0 ? { minW: +cs.minWidth || 10, minH: +cs.minHeight || 10, maxW: +cs.maxWidth, maxH: +cs.maxHeight, unit: kind === "banner" ? "cm" : "mm" } : kind === "banner" ? { minW: 300, minH: 300, maxW: 5000, maxH: 3000, unit: "cm" } : null;
-    const optExtra = (slug, o) => { const x = {}; const inf = cmsInfo(sku, String(o.slug)); const d = String(o.description || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || (inf && inf.d) || ""; if (d) x.desc = d.slice(0, 220);
+    const optExtra = (slug, o) => { const x = {}; const inf = cmsInfo(sku, String(o.slug), slug); const d = String(o.description || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || (inf && inf.d) || ""; if (d) x.desc = d.slice(0, 220);
       const ic = cmsOptImg(slug, String(o.slug)) || (inf && inf.i) || ""; if (ic) x.img = IMG(ic, 160);
       const hex = JSON.stringify(o.enrichments || "").match(/#[0-9a-f]{6}\b/i); if (hex) x.color = hex[0];
       if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
@@ -548,12 +548,12 @@ module.exports = function (D) {
     if (!de || !/^[\w.-]{1,120}\.json$/.test(String(de.fileName || ""))) throw new Error("CMS: keine deutsche Datei");
     const t = cmsTrim(await get(cmsBase() + "/" + de.fileName, 90000));
     if (!t.mains.length && !Object.keys(t.products).length) throw new Error("CMS: leer");
-    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 3 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
+    CMS = Object.assign({ at: nowIso(), file: de.fileName, v: 4 }, t); await store.setMeta("print_cms", CMS); PD_CACHE.clear();
     return CMS;
   }
   async function cms(force) {
     if (!CMS) CMS = await store.getMeta("print_cms").catch(() => null);
-    if (force || !CMS || !CMS.at || CMS.v !== 3 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit, v3: mit Aufnahmedatum (Neuheiten)
+    if (force || !CMS || !CMS.at || CMS.v !== 4 || Date.now() - Date.parse(CMS.at) > 24 * 3600e3) {   // v2: mit Beliebtheit, v3: mit Aufnahmedatum (Neuheiten), v4: Eigenschaft je Options-Info (Fotos)
       if (!cmsLoading) cmsLoading = cmsRefresh().catch(e => { log("CMS:", e.message); return CMS; }).finally(() => { cmsLoading = null; });
       if (force || !CMS) return cmsLoading;
     }
@@ -561,8 +561,10 @@ module.exports = function (D) {
   }
   const cmsProd = sku => (CMS && CMS.products && CMS.products[sku]) || null;
   const cmsOptImg = (prop, slug) => (CMS && CMS.options && CMS.options[prop + "|" + slug]) || "";
-  // Info/Bild zu einer Option nur, wenn Print.com sie ausdrücklich diesem Produkt zuordnet (Slugs wie „a3“, „40“, „none“ gibt es in vielen Produkten mit anderer Bedeutung)
-  const cmsInfo = (sku, slug) => { const l = (CMS && CMS.info) || []; return l.find(x => x.s.indexOf(slug) > -1 && x.p.length && x.p.indexOf(sku) > -1) || null; };
+  // Info/Bild zu einer Option: 1. ausdrücklich diesem Produkt zugeordnet, 2. allgemein für genau diese Eigenschaft (z. B. Druckart 4/0 → Symbol),
+  // 3. allgemein ohne Eigenschaft nur bei eindeutigen langen Kennungen (z. B. „custom_shape_kiss_cut“). Kurze Slugs wie „a3“, „40“, „none“ gibt es in vielen Produkten mit anderer Bedeutung.
+  const cmsInfo = (sku, slug, prop) => { const l = (CMS && CMS.info) || [], has = x => x.s.indexOf(slug) > -1;
+    return l.find(x => has(x) && x.p.length && x.p.indexOf(sku) > -1) || (prop && l.find(x => has(x) && !x.p.length && x.pr === prop)) || (slug.length >= 12 && /_/.test(slug) && l.find(x => has(x) && !x.p.length && !x.pr)) || null; };
   const groupName = slug => (CMS && CMS.names && CMS.names[slug]) || MAIN_DE[slug] || slug;
   function mainsList() {
     const m = CMS && CMS.mains && CMS.mains.length ? CMS.mains : Object.keys(MAIN_DE).filter(k => k !== OTHER).map(k => ({ slug: k, name: MAIN_DE[k], img: "", subs: [] }));
@@ -684,13 +686,25 @@ module.exports = function (D) {
   // Kurzbeschreibung für die Karte: Untertitel bzw. erste Zeile der Print.com-Beschreibung
   // Print.com-interne Produkte (z. B. „Probe intern“ / samples-internal, Test-Artikel) nie im Shop zeigen
   const INTERNAL_RX = /(^|[-_\s])(intern|internal|test|dummy)([-_\s]|$)/i, isInternal = (sku, title) => INTERNAL_RX.test(String(sku || "")) || INTERNAL_RX.test(String(title || ""));
+  // Lieferantentexte bereinigen: keine Lieferzeit-Versprechen (der Termin kommt immer live aus der Preisabfrage), keine Verweise „hier bestellen“ auf die Lieferanten-Seite
+  const CMS_LINK = /<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>|\[([^\]]*)\]\s*\(([^)]*)\)/gi, EXT_URL = /print\.com|ctfassets\.net|downloads\./i;
+  const CTA_RX = /\b(hier|klick|bestell|konfigur|findest du|sieh dir|erhältlich|übersicht)/i;
+  const PROMISE_RX = /\b\d{1,2}([:.]\d{2})?\s*Uhr\b|nächsten (Werk|Arbeits)?tag|folgenden (Werk|Arbeits)?tag|\bWerktag|über ?nacht|same.?day/i;
+  function cmsClean(t) {
+    return String(t || "").replace(/\s+in Rekordzeit/gi, "").split("\n").map(line => {
+      const sents = line.replace(CMS_LINK, (m, h1, t1, t2, h2) => { const href = h1 || h2 || "", txt = String(t1 != null ? t1 : t2 || "").replace(/<[^>]*>/g, "").trim(); return EXT_URL.test(href) ? "\u0001" + txt : txt; })
+        .split(/(?<=[.!?])\s+/).filter(s => !PROMISE_RX.test(s) && !(/\u0001/.test(s) && (CTA_RX.test(s) || /\u0001\s*(\.|$)/.test(s))));
+      const out = sents.join(" ").replace(/\u0001/g, "").trim();
+      return /^[-*•]?\s*$/.test(out) && line.trim() ? null : out;
+    }).filter(x => x !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
   const noHtml = t => String(t || "").replace(/<[^>]*>?/g, " ").replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").trim();   // Beschreibungen aus dem Print.com-CMS teils mit HTML
   const BRIEF_EXT = /^(pdf|jpe?g|png|gif|webp|svg|ai|eps|psd|tiff?|zip|docx?|txt|rtf|odt)$/i;
-  const shortDesc = (cp, fb) => { const t = cp && (cp.s || String(cp.d || "").split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(noHtml(t || fb || ""), 140); };
+  const shortDesc = (cp, fb) => { const t = cp && (cmsClean(cp.s) || cmsClean(cp.d).split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(noHtml(t || fb || ""), 140); };
   const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
-      pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(String(cp.d || "").split("\n").map(noHtml).join("\n"), 600) : "", summary: cp ? clip(noHtml(cp.s), 200) : "",
+      pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 600) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Shop-Katalog: nur freigeschaltete Produkte (allgemeine nur als Karte, Details beim Öffnen), gruppiert nach Print.com-Hauptgruppe/Untergruppe
@@ -2038,12 +2052,10 @@ module.exports = function (D) {
   }
 
   // ───────────────────────── HTTP: öffentlich ─────────────────────────
-  const HITS = new Map();
-  function limited(bucket, ip, max, windowMs) {
-    const k = bucket + "|" + ip, now = Date.now(); const a = (HITS.get(k) || []).filter(t => now - t < windowMs); a.push(now); HITS.set(k, a);
-    if (HITS.size > 20000) HITS.clear(); return a.length > max;
-  }
-  const ipOf = req => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const { clientIp, hitCounter } = require("./client-ip.js");
+  const HITS = hitCounter(20000);
+  const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
+  const ipOf = clientIp;   // echte Besucher-IP (Cloudflare/Railway, nicht fälschbar über X-Forwarded-For)
   function sameOrigin(req) {
     if (req.headers["x-print-shop"] !== "1") return false;
     const o = req.headers.origin; if (!o) return true;

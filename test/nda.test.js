@@ -10,7 +10,7 @@ const createMocks = require("./print-mocks.js");
 
 const ROOT = path.join(__dirname, "..");
 const SECRET = "test-secret";
-const COOKIE = "fsadmin=" + encodeURIComponent("ok." + crypto.createHmac("sha256", SECRET).update("ok").digest("hex"));
+const COOKIE = "fsadmin=" + encodeURIComponent((v => v + "." + crypto.createHmac("sha256", SECRET).update(v).digest("hex"))("s1." + Date.now()));
 let pass = 0, fail = 0; const fails = [];
 async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fails.push("✗ " + name + "\n    " + (e && e.stack || e)); } }
 
