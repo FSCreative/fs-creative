@@ -42,6 +42,15 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
     assert.strictEqual(clientIp(req("2a02:8388::1, 2a06:98c0:3600::103", "2a02:8388::1")), "2a02:8388::1");
     assert.strictEqual(clientIp(req(null, null, "::ffff:127.0.0.1")), "127.0.0.1");
     assert.strictEqual(clientIp(req("1.2.3.4, 10.1.2.3", null, "100.64.0.2")), "1.2.3.4", "interne Railway-Adressen übersprungen");
+    // auf Railway: X-Real-IP der Edge zählt (gefälschte X-Forwarded-For/CF-Header wirkungslos); mit eigenem Cloudflare-Proxy davor: CF-Connecting-IP
+    process.env.RAILWAY_ENVIRONMENT = "production";
+    try {
+      const rq = (rip, xff, cf) => Object.assign(req(xff, cf), { headers: Object.assign(req(xff, cf).headers, rip ? { "x-real-ip": rip } : {}) });
+      assert.strictEqual(clientIp(rq("91.114.101.246", "91.114.101.246, 34.1.2.3", "91.114.101.246")), "91.114.101.246");
+      assert.strictEqual(clientIp(rq("91.114.101.246", "6.6.6.6, 91.114.101.246, 34.1.2.3", "7.7.7.7")), "91.114.101.246", "Fälschung über XFF/CF-Header");
+      assert.strictEqual(clientIp(rq("172.70.1.1", "84.112.10.20, 172.70.1.1", "84.112.10.20")), "84.112.10.20", "eigener Cloudflare-Proxy");
+      assert.strictEqual(clientIp(rq("", "84.112.10.20, 34.1.2.3", null)), "34.1.2.3", "ohne X-Real-IP: rechter öffentlicher XFF-Eintrag");
+    } finally { delete process.env.RAILWAY_ENVIRONMENT; }
   });
   await t("Rate-Limit-Zähler: Flut neuer Schlüssel setzt bestehende Sperren nicht zurück", async () => {
     const H = hitCounter(1000);

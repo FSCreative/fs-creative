@@ -1,6 +1,8 @@
 "use strict";
-/* Echte Besucher-IP hinter Cloudflare → Railway (für Rate-Limits und Login-Sperre).
-   X-Forwarded-For wird von RECHTS gelesen: die rechten Einträge hängen unsere Proxys an, links kann der Besucher beliebiges eintragen.
+/* Echte Besucher-IP (für Rate-Limits und Login-Sperre).
+   Auf Railway: X-Real-IP – setzt Railways Edge selbst mit der Adresse, die sie sieht (Live-Prüfung 19.10.2026: Domain läuft direkt über Railways Edge,
+   nicht über einen eigenen Cloudflare-Proxy). Ist das eine Cloudflare-Adresse (eigener Cloudflare-Proxy davor), gilt CF-Connecting-IP.
+   Sonst (lokal/Tests): X-Forwarded-For wird von RECHTS gelesen: die rechten Einträge hängen unsere Proxys an, links kann der Besucher beliebiges eintragen.
    Private/interne Adressen (Railway) werden übersprungen; ist der erste öffentliche Eintrag eine Cloudflare-Adresse, gilt CF-Connecting-IP
    (setzt Cloudflare selbst, vom Besucher nicht fälschbar). Direkte Zugriffe an Cloudflare vorbei liefern die von Railway gesehene Adresse. */
 const net = require("net");
@@ -14,18 +16,29 @@ const CFL = list(CF), PRIVL = list(PRIV);
 const norm = ip => String(ip || "").trim().replace(/^\[|\]$/g, "").replace(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i, "$1");
 const isCf = ip => { const f = fam(ip); return !!f && CFL.check(ip, f); };
 let diag = 0;
+function railwayIp(req) {
+  const h = req.headers || {}, rip = norm(h["x-real-ip"]), f = fam(rip); if (!f) return "";
+  if (CFL.check(rip, f)) { const cf = norm(h["cf-connecting-ip"]); return fam(cf) ? cf : rip; }
+  return rip;
+}
+const cls = ip => { const f = fam(ip); return !f ? "ungültig" : PRIVL.check(ip, f) ? "privat" : CFL.check(ip, f) ? "cloudflare" : "öffentlich"; };
 function clientIp(req) {
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    const r = railwayIp(req);
+    if (diag < 3 && req.headers && req.headers["x-forwarded-for"]) { diag++;   // Kontrolle der Annahmen (ohne IP-Adressen)
+      const x = String(req.headers["x-forwarded-for"]).split(",").map(norm), cf = norm(req.headers["cf-connecting-ip"]);
+      console.log("IP-Kette: X-Real-IP " + (r ? cls(norm(req.headers["x-real-ip"])) : "fehlt") + ", XFF " + x.map(cls).join(" › ") + ", XFF[0] = X-Real-IP: " + (x[0] === r ? "ja" : "nein") + ", CF-Connecting-IP = X-Real-IP: " + (cf ? (cf === r ? "ja" : "nein") : "fehlt")); }
+    if (r) return r.slice(0, 64);
+  }
   const chain = String((req.headers && req.headers["x-forwarded-for"]) || "").split(",").map(norm).filter(Boolean).concat(norm(req.socket && req.socket.remoteAddress));
-  let out = "", viaCf = false;
+  let out = "";
   for (let i = chain.length - 1; i >= 0; i--) {
     const ip = chain[i], f = fam(ip); if (!f || PRIVL.check(ip, f)) continue;
-    if (CFL.check(ip, f)) { viaCf = true; const cf = norm(req.headers["cf-connecting-ip"]); out = fam(cf) ? cf : (chain[i - 1] && fam(chain[i - 1]) ? chain[i - 1] : ip); }
+    if (CFL.check(ip, f)) { const cf = norm(req.headers["cf-connecting-ip"]); out = fam(cf) ? cf : (chain[i - 1] && fam(chain[i - 1]) ? chain[i - 1] : ip); }
     else out = ip;
     break;
   }
   if (!out) out = chain[chain.length - 1] || "";
-  // einmalig nach dem Start: Aufbau der Proxy-Kette protokollieren (ohne IP-Adressen) – zur Kontrolle der Annahmen oben
-  if (diag < 3 && process.env.RAILWAY_ENVIRONMENT && req.headers && req.headers["x-forwarded-for"]) { diag++; console.log("IP-Kette: " + (chain.length - 1) + " XFF-Einträge, über Cloudflare: " + (viaCf ? "ja" : "nein") + ", cf-connecting-ip: " + (req.headers["cf-connecting-ip"] ? "ja" : "nein")); }
   return out.slice(0, 64);
 }
 // Zähler für Rate-Limits: abgelaufene Einträge werden regelmäßig entfernt; nie die ganze Tabelle leeren
