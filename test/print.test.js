@@ -3,7 +3,7 @@
    Geprüft: Einrichtungs-Zustand ohne Schlüssel, Katalog, Preis (serverseitig, Aufschlag/Mindestmarge/USt), CSRF-Schutz, Upload-Prüfung (Größe, dpi),
    Designer-PDF (Maße inkl. Beschnitt, TrimBox, eingebettete Schriften, CMYK, Bild-dpi), Bestellung mit Mollie (Webhook prüft per Abruf),
    KEINE automatische Bestellung bei Print.com, Rechnungsentwurf, Cockpit-Freigabe → POST /orders + Rechnung senden, signierte Datei-URL,
-   Rechnung für Firmen (VIES, ig. Lieferung 0 %), Ablehnen mit Erstattung, Statusabruf mit Versandmail, Entwürfe per Link, Shop-AGB. */
+   Rechnung für Firmen (VIES, immer 20 % USt), Ablehnen mit Erstattung, Statusabruf mit Versandmail, Entwürfe per Link, Shop-AGB. */
 "use strict";
 const assert = require("assert");
 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process"), crypto = require("crypto"), zlib = require("zlib");
