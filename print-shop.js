@@ -312,14 +312,15 @@ module.exports = function (D) {
 
   // ───────────────────────── Print.com ─────────────────────────
   // Print.com schonen: höchstens 4 Anfragen gleichzeitig (Rest wartet), bei Drosselung (429) bzw. kurzer Störung (502/503) automatisch kurz warten und neu versuchen
-  const PC_MAX = 4; let pcActive = 0; const pcWait = [];
+  // Nebensächliches (Aufpreise neben den Optionen) läuft mit niedriger Priorität: lässt immer einen Platz und 2 Anfragen/s für echte Preisanfragen frei
+  const PC_MAX = 4; let pcActive = 0; const pcWait = [], pcLow = [];
   const PC_RATE = 8, pcStarts = [];   // höchstens 8 Anfragen je Sekunde
-  const pcSlot = () => new Promise(res => { if (pcActive < PC_MAX) { pcActive++; res(); } else pcWait.push(res); }).then(async () => {
-    for (;;) { const now = Date.now(); while (pcStarts.length && now - pcStarts[0] > 1000) pcStarts.shift(); if (pcStarts.length < PC_RATE) { pcStarts.push(now); return; } await new Promise(r => setTimeout(r, 1000 - (now - pcStarts[0]) + 5)); } });
-  const pcFree = () => { const n = pcWait.shift(); if (n) n(); else pcActive--; };
+  const pcSlot = low => new Promise(res => { if (pcActive < (low ? PC_MAX - 1 : PC_MAX)) { pcActive++; res(); } else (low ? pcLow : pcWait).push(res); }).then(async () => {
+    for (;;) { const now = Date.now(); while (pcStarts.length && now - pcStarts[0] > 1000) pcStarts.shift(); if (pcStarts.length < (low ? PC_RATE - 2 : PC_RATE)) { pcStarts.push(now); return; } await new Promise(r => setTimeout(r, 1000 - (now - pcStarts[0]) + 5)); } });
+  const pcFree = () => { const n = pcWait.shift() || pcLow.shift(); if (n) n(); else pcActive--; };
   async function pcApi(method, p, body, opts) {
     for (let a = 0; ; a++) {
-      await pcSlot(); let e0 = null, out;
+      await pcSlot(!!(opts && opts.low)); let e0 = null, out;
       try { out = await pcApi1(method, p, body, opts); } catch (e) { e0 = e; } finally { pcFree(); }
       if (!e0) return out;
       if (!(e0.status === 429 || e0.status === 502 || e0.status === 503) || a >= 3 || (opts && opts.form)) throw e0;
@@ -847,12 +848,13 @@ module.exports = function (D) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 3 * 3600e3)) return hit.v;   // 3 h; Kasse: höchstens 5 min alt
     // Print.com ist maßgeblich: lehnt Print.com ab (oder Preis 0) und greift eine Ausschlussregel → „nicht lieferbar“
-    let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }); }
+    const lo = n.low ? { low: true } : undefined;
+    let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, lo); }
     catch (e) { if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
     const P = pr && pr.prices || {};
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
     if (!(productPrice > 0)) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
-    const sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 });
+    const sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo);
     let poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
     const same = poss.filter(x => !x.urgency || x.urgency === n.urgency); if (same.length) poss = same;
     const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); };
@@ -901,9 +903,11 @@ module.exports = function (D) {
     let buy, methods = null;
     if (n.pmAlts) {
       // 1. Durchgang: je Verfahren die erste lieferbare Variante; 2. Durchgang: nur beim günstigsten Verfahren 1–2 weitere Varianten vergleichen (spart Print.com-Anfragen)
-      const tries = await Promise.all(n.pmAlts.map(a => buyFirst(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
+      // n.quick (Aufpreise): nur das Verfahren der aktuellen Auswahl, ohne Feinvergleich – 2 Print.com-Anfragen je Option
+      const pmL = n.quick && n.pmAlts.some(a => a.pm === n.pmWanted) ? n.pmAlts.filter(a => a.pm === n.pmWanted) : n.pmAlts;
+      const tries = await Promise.all(pmL.map(a => buyFirst(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
       const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
-      if (ok.length) { const b0 = ok[0], al = n.pmAlts.find(a => a.pm === b0.pm), sig = JSON.stringify(b0.pcOpts), alts = ((al && al.more) || []).filter(o => JSON.stringify(o) !== sig).slice(0, 2);
+      if (ok.length && !n.quick) { const b0 = ok[0], al = n.pmAlts.find(a => a.pm === b0.pm), sig = JSON.stringify(b0.pcOpts), alts = ((al && al.more) || []).filter(o => JSON.stringify(o) !== sig).slice(0, 2);
         if (alts.length) { const r = await buyAny(prod, n, [b0.pcOpts].concat(alts), country, postcode).catch(() => null); if (r && r.v.total < b0.v.total) ok[0] = { pm: b0.pm, pcOpts: r.pcOpts, v: r.v }; }
         ok.sort((a, b) => netOf(a.v) - netOf(b.v)); }
       if (ok.length) {
@@ -915,7 +919,7 @@ module.exports = function (D) {
         methods = ok.map(x => { const nt = netOf(x.v); return { pm: x.pm, name: PM_DE[x.pm] || x.pm, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)), deliveryDate: x.v.deliveryDate }; });
       }
     }
-    if (!buy) { const r = await buyAny(prod, n, n.pcMore, country, postcode); buy = r.v; n.pcOpts = r.pcOpts; }
+    if (!buy) { const r = await (n.quick ? buyFirst : buyAny)(prod, n, n.pcMore, country, postcode); buy = r.v; n.pcOpts = r.pcOpts; }
     // Rabatte (Bonusprogramm bzw. Kundenrabatt, Gutschein): auf den ganzen Nettopreis, hintereinander, auf 10 Cent abgerundet
     const dl = (cust && Array.isArray(cust.disc) ? cust.disc : []).filter(d => d && +d.pct > 0).map(d => ({ label: String(d.label || "Rabatt").slice(0, 60), pct: Math.min(50, +d.pct) }));
     const fac = dl.reduce((f, d) => f * (1 - d.pct / 100), 1), bp = dl.length;
@@ -1788,7 +1792,8 @@ module.exports = function (D) {
   }
   const ASSET_V = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12);
   // Aktionsbanner in der Kopfzeile: aktiver Gutschein mit banner:true bzw. WILLKOMMEN10 (endet automatisch mit Ablauf/Deaktivierung im Cockpit)
-  function promoOf() { const t = today(); const v = Object.values(VOUCHERS || {}).find(x => x && x.active !== false && (x.banner === true || String(x.code || "").toUpperCase() === "WILLKOMMEN10") && (!x.until || t <= x.until) && !(x.maxUses && (x.used || 0) >= x.maxUses) && +x.pct > 0);
+  function promoOf() { const t = today(), ok = x => x && x.active !== false && (!x.until || t <= x.until) && !(x.maxUses && (x.used || 0) >= x.maxUses) && +x.pct > 0, L = Object.values(VOUCHERS || {});
+    const v = L.find(x => ok(x) && x.banner === true) || L.find(x => ok(x) && x.banner !== false && /^WILLKOMMEN/i.test(String(x.code || "")));   // im Cockpit markiert, sonst WILLKOMMEN…
     return v ? { code: String(v.code).toUpperCase(), pct: +v.pct, until: v.until || "", once: !!v.perCustomer } : null; }
   function promoHtml(pr) {
     const until = pr.until ? new Date(pr.until + "T12:00:00").toLocaleDateString("de-AT", { day: "numeric", month: "long" }) : "", pct = String(pr.pct).replace(".", ","), c = escH(pr.code);
@@ -1835,6 +1840,10 @@ module.exports = function (D) {
           .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
           .replace('data-hilfe>', 'data-hilfe class="active">').replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
         return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
+      }
+      if (p === "/print/sonderfarben.ase" && (req.method === "GET" || req.method === "HEAD")) {   // Sonderfarben-Palette (Adobe Swatch Exchange) für Weiß, Schnitt, Bohrung, Veredelung
+        let b = null; try { b = fs.readFileSync(path.join(__dirname, "print", "sonderfarben.ase")); } catch (e) { return D.send(res, 404, "Not found"); }
+        return D.send(res, 200, req.method === "HEAD" ? "" : b, "application/octet-stream", { "Content-Disposition": 'attachment; filename="FS-Creative-Sonderfarben.ase"', "Content-Length": b.length, "Cache-Control": "public, max-age=86400" });
       }
       if (p === "/print/agb.html") return D.send(res, 301, "", "text/plain", { Location: "/print/agb" });
       if ((p === "/print/agb" || p === "/print/agb/") && (req.method === "GET" || req.method === "HEAD")) {
@@ -1951,6 +1960,20 @@ module.exports = function (D) {
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
         return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, size: n.size, folds: n.folds, closed: n.closed, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
+      }
+      if (p === "/print/api/deltas") {   // Aufpreise je Option („+ 4,20 €“) gegenüber der aktuellen Auswahl – gleiches Druckverfahren, niedrige Priorität, max. 12 je Anfrage
+        if (limited("delta", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
+        const b = await readJson(req, 60000);
+        const s = await settings(); const prod = await findProduct(b.product, s); if (!prod) return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" });
+        const country = String(b.country || "AT").toUpperCase(), zip0 = String(b.zip || "").trim(), zip = COUNTRIES[country] && PLZ[country].test(zip0) ? zip0 : "";
+        const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
+        const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
+        const run = sel => { const n = normalizeSel(prod, Object.assign({}, b, { sel })); n.quick = true; n.low = true; return quote(prod, n, country, zip, cust); };
+        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {} }); }
+        const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
+        await Promise.all([0, 1].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
+          try { const q = await run(a.sel); d[k] = { net: r2(q.net - base.net), gross: r2(q.gross - base.gross) }; } catch (e) { d[k] = { off: e.status === 400 }; } } }));
+        return J(res, 200, { ok: true, d });
       }
       if (p === "/print/api/ai/design") {
         if (limited("ai", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
@@ -2082,7 +2105,8 @@ module.exports = function (D) {
           const pct = parseFloat(String(b.pct).replace(",", ".")); if (!(pct > 0 && pct <= 50)) return J(res, 400, { ok: false, error: "Rabatt 0,1–50 %" });
           const until = /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || "")) ? String(b.until) : "";
           const prev = all[code] || { code, createdAt: nowIso(), used: 0, usedBy: [] };
-          all[code] = Object.assign(prev, { pct: Math.round(pct * 10) / 10, maxUses: Math.max(0, parseInt(b.maxUses, 10) || 0), until, perCustomer: b.perCustomer !== false, active: b.active !== false, note: clip(b.note, 200) });
+          all[code] = Object.assign(prev, { pct: Math.round(pct * 10) / 10, maxUses: Math.max(0, parseInt(b.maxUses, 10) || 0), until, perCustomer: b.perCustomer !== false, active: b.active !== false, note: clip(b.note, 200), banner: b.banner === true ? true : b.banner === false ? false : prev.banner });
+          if (all[code].banner === true) Object.keys(all).forEach(k => { if (k !== code && (all[k].banner === true || (all[k].banner !== false && /^WILLKOMMEN/i.test(k)))) all[k].banner = false; });   // nur ein Code im Shop-Banner
           await store.setMeta("print_vouchers", all); return J(res, 200, { ok: true, voucher: all[code] });
         }
         return J(res, 200, { ok: true, vouchers: Object.values(all).map(v => Object.assign({}, v, { usedBy: undefined, customers: (v.usedBy || []).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });

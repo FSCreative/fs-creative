@@ -1,5 +1,6 @@
 "use strict";
-/* Druckshop-Newsletter (www.fs-creative.at/print): wöchentlich montags – Produkttipps der Woche, Designer-Tipp (rotiert), 5-%-Wochencode, Pflichtangaben.
+/* Druckshop-Newsletter (www.fs-creative.at/print): wöchentlich montags – Produkttipps der Woche, Designer-Tipp (rotiert), Pflichtangaben.
+   Rabattcode (5 %) nur in der ersten Ausgabe im Monat (Montag 1.–7.), 14 Tage gültig; die übrigen Wochen ohne Code.
    Anmeldung nur mit Double-Opt-in (§ 174 TKG 2021, DSGVO): Shop-Fußzeile/Kasse → Bestätigungslink; Kundenkonten mit Häkchen „Newsletter“ (E-Mail bestätigt) zählen mit.
    Abmeldung in jeder Ausgabe mit einem Klick (Bestätigungsseite, damit Link-Scanner nicht abmelden). Versand nur nach Freigabe im Cockpit – „automatisch montags“ ist ein Schalter (Standard AUS).
    Daten: Meta „print_newsletter“ { subs: {email: {status, source, createdAt, confirmedAt, unsubAt}}, settings, issues: {"2026-10-26": {...}} }. */
@@ -7,6 +8,10 @@ module.exports = function (D) {
   const { store, mailSend, sig, sigOk, nowIso, log, publicUrl, firm, products, priceFrom, vouchers, saveVouchers, accounts, limited } = D;
   const KEY = "print_newsletter";
   const DEF = { autoSend: false, sendHour: 8, pct: 5, codeDays: 14, testTo: "simon@fs-creative.at" };
+  const CODE_DAYS = 14;   // Monatscode: 2 Wochen gültig
+  const MON3 = ["JAN", "FEB", "MAR", "APR", "MAI", "JUN", "JUL", "AUG", "SEP", "OKT", "NOV", "DEZ"], MONDE = ["Jänner", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+  const codeIssue = mon => +String(mon).slice(8, 10) <= 7;   // erster Montag im Monat
+  const monthCode = mon => "NL" + MON3[+String(mon).slice(5, 7) - 1] + String(mon).slice(2, 4);   // z. B. NLNOV26
   let NL = null;
   async function data() { if (!NL) { NL = (await store.getMeta(KEY).catch(() => null)) || {}; NL.subs = NL.subs || {}; NL.issues = NL.issues || {}; NL.settings = Object.assign({}, DEF, NL.settings || {}); } return NL; }
   const save = async () => { await store.setMeta(KEY, NL); };
@@ -44,12 +49,17 @@ module.exports = function (D) {
     ["Entwurf per Link sichern", "Mit „Link“ speicherst du deinen Entwurf und machst später auf einem anderen Gerät weiter – oder schickst ihn zur Freigabe an Kolleg:innen."],
     ["Mehrere Motive, eine Auflage", "500 Flyer, aber zwei Designs? Wähle „Anzahl Motive“ und verteile die Stückzahl frei – ohne Aufpreis."]
   ];
+  const INTROS_CODE = [
+    "Neuer Monat, neuer Code: Hier sind unsere Druck-Tipps für dich – und 5 % Rabatt obendrauf, zwei Wochen lang.",
+    "Der Monat startet mit einem Dankeschön: Dein Rabattcode für die nächsten zwei Wochen, dazu drei Druck-Ideen und ein Designer-Tipp.",
+    "Monatsanfang ist Code-Zeit: 5 % auf deine nächste Bestellung – plus unsere Empfehlungen der Woche."
+  ];
   const INTROS = [
-    "Neue Woche, neue Ideen: Hier sind unsere Druck-Tipps für dich – und wie immer 5 % Rabatt obendrauf.",
+    "Neue Woche, neue Ideen: Hier sind unsere Druck-Tipps für dich.",
     "Damit deine Werbung diese Woche auffällt: drei Produkte, die sich gerade lohnen, und ein Profi-Tipp für den Designer.",
     "Du planst ein Event, eine Aktion oder einfach neue Visitenkarten? Diese Woche haben wir drei Empfehlungen für dich.",
     "Gut gedruckt ist halb gewonnen. Unsere Auswahl der Woche – persönlich geprüft und in ganz Österreich versandkostenfrei.",
-    "Kurz und knackig: drei Druck-Ideen, ein Designer-Tipp und dein Wochencode."
+    "Kurz und knackig: drei Druck-Ideen und ein Designer-Tipp für deine Woche."
   ];
   const DESC = { flyer: "Der Klassiker für Angebote und Events – von A6 bis A3, matt oder glänzend.", visitenkarten: "Der erste Eindruck zum Mitnehmen – auf Wunsch mit edler Veredelung.", plakate: "Große Wirkung ab 1 Stück – für Veranstaltungen, Aktionen und Schaufenster.",
     folder: "Gefalzt für Speisekarten, Preislisten und Prospekte – mit Falz-Vorlage.", postcards: "Karten für Mailings, Einladungen und Grüße – in vielen Formaten.", aufkleber: "Logo-Sticker, Etiketten und Aufkleber in deiner Wunschform.",
@@ -66,25 +76,29 @@ module.exports = function (D) {
     const have = k => list.some(p => p.key === k), PA = ["flyer", "postcards", "plakate", "folder"].filter(have), BI = ["pvc-banner", "rollups", "mesh-banner", "bauzaun"].filter(have), TX = ["tshirt-basic", "tshirt-bio"].filter(have);
     let pick = [PA[w % (PA.length || 1)], BI[w % (BI.length || 1)], w % 2 === 0 && TX.length ? TX[(w / 2) % TX.length] : PA[(w + 2) % (PA.length || 1)]].filter(Boolean).filter((k, i, a) => a.indexOf(k) === i);
     if (pick.length < 3) pick = pick.concat(list.map(p => p.key).filter(k => pick.indexOf(k) < 0)).slice(0, 3);
-    const tip = TIPS[w % TIPS.length], d = await data();
-    return { monday: mon, kw: w, status: "draft", subject: "Druck-Tipps der Woche (KW " + w + ") + " + d.settings.pct + " % Rabatt", intro: INTROS[w % INTROS.length], products: pick.slice(0, 3),
-      tipTitle: tip[0], tipText: tip[1], code: "NL" + String(mon).slice(2, 4) + "KW" + String(w).padStart(2, "0"), createdAt: nowIso(), auto: true };
+    const tip = TIPS[w % TIPS.length], d = await data(), wc = codeIssue(mon);
+    return { monday: mon, kw: w, status: "draft", subject: "Druck-Tipps der Woche (KW " + w + ")" + (wc ? " + " + String(d.settings.pct).replace(".", ",") + " % Rabatt" : ""), intro: wc ? INTROS_CODE[w % INTROS_CODE.length] : INTROS[w % INTROS.length], products: pick.slice(0, 3),
+      tipTitle: tip[0], tipText: tip[1], code: wc ? monthCode(mon) : "", createdAt: nowIso(), auto: true, v: 2 };
   }
-  async function issueFor(mon, create) { const d = await data(); if (!d.issues[mon] && create) { d.issues[mon] = await draftFor(mon); await save(); } return d.issues[mon] || null; }
+  // Nicht bearbeitete Entwürfe aus der Zeit mit Wochencode neu aufbauen (Code jetzt nur in der ersten Ausgabe im Monat)
+  async function issueFor(mon, create) { const d = await data(), c = d.issues[mon];
+    if ((!c && create) || (c && c.status === "draft" && c.auto && c.v !== 2)) { d.issues[mon] = await draftFor(mon); await save(); }
+    return d.issues[mon] || null; }
 
   // ── E-Mail (HTML + Text) ──
   async function render(iss, to) {
-    const d = await data(), base = publicUrl(), F = firm(), all = await products(), until = addDays(iss.monday, d.settings.codeDays - 1);
+    const d = await data(), base = publicUrl(), F = firm(), all = await products(), until = addDays(iss.monday, CODE_DAYS - 1), hasCode = !!iss.code;
+    const nextMon = MONDE[(+String(iss.monday).slice(5, 7)) % 12];
     const items = [];
     for (const k of iss.products || []) { const p = all.find(x => x.key === k); if (!p) continue; let pr = null; try { pr = await priceFrom(k); } catch (e) {} items.push({ p, pr, url: base + "/print?produkt=" + encodeURIComponent(k) + "&utm_source=newsletter&utm_campaign=kw" + iss.kw }); }
     const unsub = to ? base + "/print/newsletter/abmelden?e=" + encodeURIComponent(to) + "&t=" + sig("nlu", to.toLowerCase()) : base + "/print/newsletter/abmelden";
     const shop = base + "/print?utm_source=newsletter&utm_campaign=kw" + iss.kw;
     const legal = [
       "Du erhältst diesen Newsletter, weil du ihn im FS Creative Druckshop abonniert und bestätigt hast. Abmelden ist jederzeit kostenlos mit einem Klick möglich: " + unsub,
-      "Gutschein " + iss.code + ": " + String(d.settings.pct).replace(".", ",") + " % Rabatt auf den Bestellwert (netto, inkl. Versand) einer Bestellung im Druckshop www.fs-creative.at/print, gültig bis " + deDate(until) + ", einmal je Kundin/Kunde einlösbar, nicht mit anderen Gutscheincodes kombinierbar, keine Barablöse. Der Bonusrabatt für Firmen bleibt zusätzlich erhalten.",
+ hasCode ? "Gutschein " + iss.code + ": " + String(d.settings.pct).replace(".", ",") + " % Rabatt auf den Bestellwert (netto, inkl. Versand) einer Bestellung im Druckshop www.fs-creative.at/print, gültig bis " + deDate(until) + ", einmal je Kundin/Kunde einlösbar, nicht mit anderen Gutscheincodes kombinierbar, keine Barablöse. Der Bonusrabatt für Firmen bleibt zusätzlich erhalten." : "",
       "Alle Preise in Euro inkl. 20 % USt und Versand innerhalb Österreichs, Stand " + deDate(iss.monday) + "; „ab“-Preise gelten für die angegebene Stückzahl in Standardausführung. Druck- und Satzfehler vorbehalten. Es gelten unsere AGB für den Druckshop: " + base + "/print/agb",
       "Medieninhaber, Herausgeber und Verantwortlicher (Offenlegung gem. § 25 MedienG, Angaben gem. § 5 ECG): " + F.name + " – " + F.owner + ", Einzelunternehmen, " + F.street + ", " + F.zip + " " + F.city + ", Österreich · " + F.email + " · " + F.phone + " · UID " + F.uid + ". Grundlegende Richtung: Informationen über Angebote und Neuheiten des FS Creative Druckshops. Impressum: " + base + "/impressum · Datenschutz: " + base + "/datenschutz"
-    ];
+    ].filter(Boolean);
     const btn = (href, t) => '<a href="' + esc(href) + '" style="display:inline-block;background:#0a84ff;color:#ffffff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px;font-size:15px">' + esc(t) + "</a>";
     const card = x => '<td valign="top" style="width:33%;padding:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5ea;border-radius:14px;overflow:hidden;background:#ffffff"><tr><td>' +
       (x.p.img ? '<a href="' + esc(x.url) + '"><img src="' + esc(x.p.img) + '" alt="' + esc(x.p.title) + '" width="180" style="display:block;width:100%;height:auto;border:0"></a>' : "") +
@@ -94,26 +108,27 @@ module.exports = function (D) {
       '<div style="display:none;max-height:0;overflow:hidden">' + esc(iss.intro) + "</div>" +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7"><tr><td align="center" style="padding:20px 10px">' +
       '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
-      '<tr><td style="background:#0b0b10;color:#ffffff;padding:22px 26px"><div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#7db6ff">FS Creative Druckshop · KW ' + iss.kw + '</div><div style="font-size:24px;font-weight:700;margin-top:6px">Druck-Tipps der Woche</div></td></tr>' +
+      '<tr><td style="background:#0b0b10;color:#ffffff;padding:20px 26px 22px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td valign="middle" style="padding-right:12px"><a href="' + esc(shop) + '"><img src="' + esc(base) + '/logos/mail-logo-weiss.png" width="44" height="44" alt="FS Creative" style="display:block;width:44px;height:44px;border:0"></a></td><td valign="middle" style="font-size:19px;font-weight:700;letter-spacing:-.01em;color:#ffffff">FS Creative<div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7db6ff;margin-top:2px">Druckshop · KW ' + iss.kw + '</div></td></tr></table><div style="font-size:24px;font-weight:700;margin-top:16px">Druck-Tipps der Woche</div></td></tr>' +
       '<tr><td style="padding:22px 26px 6px;font-size:16px;line-height:1.5">' + esc(iss.intro).replace(/\n/g, "<br>") + "</td></tr>" +
-      '<tr><td style="padding:12px 26px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:2px dashed #0a84ff;border-radius:14px;background:#f0f7ff"><tr><td align="center" style="padding:16px"><div style="font-size:14px;color:#3a3a3c">Dein Newsletter-Code für ' + String(d.settings.pct).replace(".", ",") + ' % Rabatt</div><div style="font-size:26px;font-weight:800;letter-spacing:.08em;margin:6px 0;font-family:ui-monospace,Menlo,monospace">' + esc(iss.code) + '</div><div style="font-size:13px;color:#6e6e73">gültig bis ' + deDate(until) + " · einfach an der Kasse eingeben</div></td></tr></table></td></tr>" +
+      (hasCode ? '<tr><td style="padding:12px 26px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:2px dashed #0a84ff;border-radius:14px;background:#f0f7ff"><tr><td align="center" style="padding:16px"><div style="font-size:14px;color:#3a3a3c">🎉 Dein Monatscode für ' + String(d.settings.pct).replace(".", ",") + ' % Rabatt</div><div style="font-size:26px;font-weight:800;letter-spacing:.08em;margin:6px 0;font-family:ui-monospace,Menlo,monospace">' + esc(iss.code) + '</div><div style="font-size:13px;color:#6e6e73">gültig bis ' + deDate(until) + " (2 Wochen) · einfach an der Kasse eingeben</div></td></tr></table></td></tr>" : "") +
       (items.length ? '<tr><td style="padding:16px 20px 6px"><div style="font-size:18px;font-weight:700;padding:0 6px 8px">Unsere Empfehlungen der Woche</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' + items.map(card).join("") + "</tr></table></td></tr>" : "") +
       '<tr><td style="padding:14px 26px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;border-radius:14px"><tr><td style="padding:16px 18px"><div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6e6e73">Designer-Tipp der Woche</div><div style="font-size:16px;font-weight:700;margin:4px 0 6px">' + esc(iss.tipTitle) + '</div><div style="font-size:14px;line-height:1.5;color:#3a3a3c">' + esc(iss.tipText) + '</div><div style="margin-top:8px"><a href="' + esc(base + "/print/hilfe#designer") + '" style="color:#0a84ff;font-weight:600;text-decoration:none;font-size:14px">Mehr zum Online-Designer →</a></div></td></tr></table></td></tr>' +
-      '<tr><td align="center" style="padding:10px 26px 26px">' + btn(shop, "Zum Druckshop") + '<div style="font-size:13px;color:#6e6e73;margin-top:10px">Persönlich geprüft vor jedem Druck · Versand in Österreich inklusive</div></td></tr>' +
+      '<tr><td align="center" style="padding:10px 26px 26px">' + btn(shop, "Zum Druckshop") + '<div style="font-size:13px;color:#6e6e73;margin-top:10px">Persönlich geprüft vor jedem Druck · Versand in Österreich inklusive' + (hasCode ? "" : "<br>Den nächsten Rabattcode bekommst du mit dem ersten Newsletter im " + nextMon + ".") + "</div></td></tr>" +
       '<tr><td style="padding:18px 26px;background:#fafafa;border-top:1px solid #e5e5ea;font-size:11.5px;line-height:1.5;color:#86868b">' + legal.map(t => "<p style=\"margin:0 0 8px\">" + esc(t).replace(esc(unsub), '<a href="' + esc(unsub) + '" style="color:#6e6e73">Newsletter abbestellen</a>') + "</p>").join("") + "</td></tr>" +
       "</table></td></tr></table></body></html>";
-    const text = ["FS Creative Druckshop – Druck-Tipps der Woche (KW " + iss.kw + ")", "", iss.intro, "", "DEIN CODE: " + iss.code + " – " + d.settings.pct + " % Rabatt, gültig bis " + deDate(until), "",
-      "EMPFEHLUNGEN DER WOCHE"].concat(items.map(x => "• " + x.p.title + (x.pr ? " – " + x.pr.copies + " Stk. ab " + eur(x.pr.gross) : "") + "\n  " + x.url),
+    const text = ["FS Creative Druckshop – Druck-Tipps der Woche (KW " + iss.kw + ")", "", iss.intro, ""].concat(hasCode ? ["DEIN MONATSCODE: " + iss.code + " – " + d.settings.pct + " % Rabatt, gültig bis " + deDate(until), ""] : [], [
+      "EMPFEHLUNGEN DER WOCHE"]).concat(items.map(x => "• " + x.p.title + (x.pr ? " – " + x.pr.copies + " Stk. ab " + eur(x.pr.gross) : "") + "\n  " + x.url),
       ["", "DESIGNER-TIPP: " + iss.tipTitle, iss.tipText, "", "Zum Druckshop: " + shop, "", "—"], legal).join("\n");
     return { html, text, unsub, until };
   }
 
-  // ── Wochencode als Gutschein anlegen (5 %, 1× je Kunde, befristet) ──
+  // ── Monatscode als Gutschein anlegen (5 %, 1× je Kunde, 14 Tage) ──
   async function ensureCode(iss) {
-    const d = await data(), all = await vouchers(), code = String(iss.code || "").toUpperCase(), until = addDays(iss.monday, d.settings.codeDays - 1);
+    if (!iss.code) return;
+    const d = await data(), all = await vouchers(), code = String(iss.code || "").toUpperCase(), until = addDays(iss.monday, CODE_DAYS - 1);
     if (!/^[A-Z0-9_-]{3,40}$/.test(code)) throw Object.assign(new Error("Ungültiger Code"), { status: 400 });
     const prev = all[code] || { code, createdAt: nowIso(), used: 0, usedBy: [] };
-    all[code] = Object.assign(prev, { pct: d.settings.pct, maxUses: 0, until, perCustomer: true, active: true, note: "Newsletter KW " + iss.kw });
+    all[code] = Object.assign(prev, { pct: d.settings.pct, maxUses: 0, until, perCustomer: true, active: true, note: "Newsletter " + MONDE[+String(iss.monday).slice(5, 7) - 1] + " (KW " + iss.kw + ")" });
     await saveVouchers(all);
   }
 
@@ -171,12 +186,12 @@ module.exports = function (D) {
       if (b.consent !== true) return J(res, 400, { ok: false, error: "Bitte bestätige die Einwilligung" });
       const d = await data(), s = d.subs[email];
       if (s && s.status === "active") return J(res, 200, { ok: true, already: true, msg: "Du bist schon angemeldet – der nächste Newsletter kommt am Montag." });
-      d.subs[email] = Object.assign(s || {}, { email, status: "pending", source: clip(b.source || "Shop", 40), requestedAt: nowIso(), consentText: "Wöchentlicher Druckshop-Newsletter mit Produkttipps und Rabattcode per E-Mail; Abmeldung jederzeit" });
+      d.subs[email] = Object.assign(s || {}, { email, status: "pending", source: clip(b.source || "Shop", 40), requestedAt: nowIso(), consentText: "Wöchentlicher Druckshop-Newsletter mit Produkttipps, einmal im Monat mit Rabattcode, per E-Mail; Abmeldung jederzeit" });
       if (Object.keys(d.subs).length > 50000) return J(res, 503, { ok: false, error: "Gerade nicht möglich" });
       await save();
       const link = publicUrl() + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(email) + "&t=" + sig("nlc", email);
-      if (mailSend) await mailSend({ to: email, subject: "Bitte bestätige deine Newsletter-Anmeldung", text: "Hallo!\n\nBitte bestätige deine Anmeldung zum Newsletter des FS Creative Druckshops (wöchentlich montags: Produkttipps, Designer-Tipp und " + d.settings.pct + " %-Rabattcode):\n\n" + link + "\n\nWenn du dich nicht angemeldet hast, ignoriere diese E-Mail einfach – ohne Bestätigung erhältst du nichts.\n\nFS Creative · " + firm().owner + " · " + firm().street + " · " + firm().zip + " " + firm().city,
-        html: '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1d1d1f;max-width:560px"><h2 style="font-size:20px">Bitte bestätige deine Anmeldung</h2><p>Du bekommst dann jeden Montag unsere Druck-Tipps der Woche, einen Designer-Tipp und einen ' + d.settings.pct + '-%-Rabattcode.</p><p><a href="' + esc(link) + '" style="display:inline-block;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px">Anmeldung bestätigen</a></p><p style="color:#6e6e73;font-size:13px">Wenn du dich nicht angemeldet hast, ignoriere diese E-Mail einfach – ohne Bestätigung erhältst du nichts.</p><p style="color:#6e6e73;font-size:12px">FS Creative · ' + esc(firm().owner) + " · " + esc(firm().street) + " · " + esc(firm().zip + " " + firm().city) + "</p></div>" }).catch(e => log("Newsletter-Bestätigung:", e.message));
+      if (mailSend) await mailSend({ to: email, subject: "Bitte bestätige deine Newsletter-Anmeldung", text: "Hallo!\n\nBitte bestätige deine Anmeldung zum Newsletter des FS Creative Druckshops (wöchentlich montags: Produkttipps und Designer-Tipp, einmal im Monat mit " + d.settings.pct + "-%-Rabattcode):\n\n" + link + "\n\nWenn du dich nicht angemeldet hast, ignoriere diese E-Mail einfach – ohne Bestätigung erhältst du nichts.\n\nFS Creative · " + firm().owner + " · " + firm().street + " · " + firm().zip + " " + firm().city,
+        html: '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1d1d1f;max-width:560px"><h2 style="font-size:20px">Bitte bestätige deine Anmeldung</h2><p>Du bekommst dann jeden Montag unsere Druck-Tipps der Woche und einen Designer-Tipp – und einmal im Monat einen ' + d.settings.pct + '-%-Rabattcode.</p><p><a href="' + esc(link) + '" style="display:inline-block;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px">Anmeldung bestätigen</a></p><p style="color:#6e6e73;font-size:13px">Wenn du dich nicht angemeldet hast, ignoriere diese E-Mail einfach – ohne Bestätigung erhältst du nichts.</p><p style="color:#6e6e73;font-size:12px">FS Creative · ' + esc(firm().owner) + " · " + esc(firm().street) + " · " + esc(firm().zip + " " + firm().city) + "</p></div>" }).catch(e => log("Newsletter-Bestätigung:", e.message));
       return J(res, 200, { ok: true, msg: "Fast geschafft! Bitte bestätige die Anmeldung über den Link in der E-Mail an " + email + "." });
     }
     if (p === "/print/newsletter/bestaetigen" && req.method === "GET") {
@@ -184,8 +199,11 @@ module.exports = function (D) {
       if (!emailOk(email) || !sigOk("nlc", email, u.searchParams.get("t"))) return D.send(res, 400, page("Link ungültig", "<h1>Link ungültig</h1><p>Der Bestätigungslink ist ungültig oder unvollständig. Bitte melde dich erneut an.</p>"), "text/html; charset=utf-8");
       const d = await data(), s = d.subs[email] || { email, source: "Link" };
       const was = s.status === "active"; s.status = "active"; if (!was) s.confirmedAt = nowIso(); delete s.unsubAt; d.subs[email] = s; await save();
-      const iss = await issueFor(await targetMonday(), true);
-      return D.send(res, 200, page("Anmeldung bestätigt", "<h1>Danke – du bist dabei! 🎉</h1><p>Ab sofort bekommst du jeden Montag unsere Druck-Tipps der Woche. Mit deinem ersten Code sparst du gleich " + esc(String(d.settings.pct).replace(".", ",")) + " %:</p><div class=\"code\">" + esc(iss.code) + "</div><p class=\"muted\">Gültig bis " + deDate(addDays(iss.monday, d.settings.codeDays - 1)) + ", einmal je Kunde, an der Kasse eingeben. Abmelden kannst du dich jederzeit über den Link in jedem Newsletter.</p>"), "text/html; charset=utf-8");
+      // Laufender Monatscode (schon versendet und noch gültig) als Willkommen – sonst Hinweis auf den nächsten
+      const today = vienna().date, cur = Object.values(d.issues).filter(x => x.code && x.status === "sent" && addDays(x.monday, CODE_DAYS - 1) >= today).sort((a, b) => b.monday.localeCompare(a.monday))[0];
+      return D.send(res, 200, page("Anmeldung bestätigt", "<h1>Danke – du bist dabei! 🎉</h1><p>Ab sofort bekommst du jeden Montag unsere Druck-Tipps der Woche – und mit dem ersten Newsletter im Monat einen " + esc(String(d.settings.pct).replace(".", ",")) + "-%-Rabattcode.</p>" +
+        (cur ? "<p>Der aktuelle Code gilt noch – du sparst damit gleich " + esc(String(d.settings.pct).replace(".", ",")) + " %:</p><div class=\"code\">" + esc(cur.code) + "</div><p class=\"muted\">Gültig bis " + deDate(addDays(cur.monday, CODE_DAYS - 1)) + ", einmal je Kunde, an der Kasse eingeben.</p>" : "") +
+        "<p class=\"muted\">Abmelden kannst du dich jederzeit über den Link in jedem Newsletter.</p>"), "text/html; charset=utf-8");
     }
     if (p === "/print/newsletter/abmelden") {
       const email = String(u.searchParams.get("e") || "").toLowerCase(), t = u.searchParams.get("t");
@@ -203,7 +221,7 @@ module.exports = function (D) {
   async function state() {
     const d = await data(), mon = await targetMonday(), iss = await issueFor(mon, true), rec = await recipients();
     const subs = Object.values(d.subs).sort((a, b) => String(b.confirmedAt || b.requestedAt || "").localeCompare(String(a.confirmedAt || a.requestedAt || "")));
-    return { settings: d.settings, issue: iss, recipients: rec.length, sending: SENDING, counts: { active: subs.filter(s => s.status === "active").length, pending: subs.filter(s => s.status === "pending").length, unsub: subs.filter(s => s.status === "unsub").length, accounts: rec.filter(r => r.source === "Kundenkonto").length },
+    return { settings: d.settings, codeDays: CODE_DAYS, codeIssue: codeIssue(iss.monday), issue: iss, recipients: rec.length, sending: SENDING, counts: { active: subs.filter(s => s.status === "active").length, pending: subs.filter(s => s.status === "pending").length, unsub: subs.filter(s => s.status === "unsub").length, accounts: rec.filter(r => r.source === "Kundenkonto").length },
       subs: subs.slice(0, 500).map(s => ({ email: s.email, status: s.status, source: s.source || "", at: s.confirmedAt || s.requestedAt || s.unsubAt || "" })),
       history: Object.values(d.issues).filter(x => x.status !== "draft").sort((a, b) => b.monday.localeCompare(a.monday)).slice(0, 30).map(x => ({ monday: x.monday, kw: x.kw, subject: x.subject, status: x.status, sent: x.sent || 0, failed: x.failed || 0, total: x.total || 0, sentAt: x.sentAt || "" })),
       tips: TIPS.map(t => t[0]), picks: (await products()).map(p => ({ key: p.key, title: (PICKS.indexOf(p.key) > -1 ? "★ " : "") + p.title, o: PICKS.indexOf(p.key) > -1 ? PICKS.indexOf(p.key) : 999 })).sort((x, y) => x.o - y.o || x.title.localeCompare(y.title, "de")).map(p => ({ key: p.key, title: p.title })) };
@@ -217,7 +235,6 @@ module.exports = function (D) {
         const s = d.settings; if (b.autoSend !== undefined) s.autoSend = b.autoSend === true;
         if (b.sendHour !== undefined) s.sendHour = Math.max(5, Math.min(20, parseInt(b.sendHour, 10) || 8));
         if (b.pct !== undefined) { const n = parseFloat(String(b.pct).replace(",", ".")); if (n > 0 && n <= 30) s.pct = Math.round(n * 10) / 10; }
-        if (b.codeDays !== undefined) s.codeDays = Math.max(3, Math.min(60, parseInt(b.codeDays, 10) || 14));
         if (b.testTo !== undefined && emailOk(String(b.testTo).trim())) s.testTo = String(b.testTo).trim();
         await save(); return J(res, 200, Object.assign({ ok: true }, await state()));
       }
@@ -227,7 +244,7 @@ module.exports = function (D) {
         if (b.subject !== undefined) iss.subject = clip(b.subject, 160) || iss.subject; if (b.intro !== undefined) iss.intro = clip(b.intro, 1200);
         if (Array.isArray(b.products)) { const keys = (await products()).map(x => x.key); iss.products = b.products.map(String).filter(k => keys.indexOf(k) > -1).slice(0, 3); }
         if (b.tipTitle !== undefined) iss.tipTitle = clip(b.tipTitle, 120); if (b.tipText !== undefined) iss.tipText = clip(b.tipText, 800);
-        if (b.code !== undefined) { const c = String(b.code).toUpperCase().replace(/\s+/g, "").slice(0, 40); if (!/^[A-Z0-9_-]{3,40}$/.test(c)) return J(res, 400, { ok: false, error: "Code: 3–40 Zeichen, A–Z, 0–9, - und _" }); iss.code = c; }
+        if (b.code !== undefined) { const c = String(b.code).toUpperCase().replace(/\s+/g, "").slice(0, 40); if (c && !/^[A-Z0-9_-]{3,40}$/.test(c)) return J(res, 400, { ok: false, error: "Code: 3–40 Zeichen, A–Z, 0–9, - und _ (leer = ohne Code)" }); iss.code = c; }
         iss.auto = false; iss.editedAt = nowIso(); await save(); return J(res, 200, Object.assign({ ok: true }, await state()));
       }
       if (b.op === "regen") { const old = d.issues[mon]; if (old && old.status !== "draft") return J(res, 409, { ok: false, error: "Schon versendet" }); d.issues[mon] = await draftFor(mon); await save(); return J(res, 200, Object.assign({ ok: true }, await state())); }
@@ -239,5 +256,5 @@ module.exports = function (D) {
     } catch (e) { return J(res, e.status || 500, { ok: false, error: e.message }); }
     return J(res, 400, { ok: false, error: "Unbekannte Aktion" });
   }
-  return { handlePublic, handleAdmin, tick, recipients, _test: { kw, addDays, vienna } };
+  return { handlePublic, handleAdmin, tick, recipients, _test: { kw, addDays, vienna, codeIssue, monthCode } };
 };

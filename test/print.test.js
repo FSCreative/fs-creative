@@ -136,6 +136,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r2 = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780" }, BC, { copies: 100 })); assert.strictEqual(r2.j.price.net, 14); assert.strictEqual(r2.j.price.rate, 20);
     M.price.salesPrice = 20; M.price.shipping = 5;
   });
+  await t("Aufpreise je Option: Differenz zur aktuellen Auswahl, nicht lieferbare/ungültige → off", async () => {
+    const r = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "44", sel: Object.assign({}, BC.sel) }, { k: "x", sel: Object.assign({}, BC.sel, { material: "400gr_uncoated", finish: "gloss_laminate" }) }, { k: "gold", sel: Object.assign({}, BC.sel, { material: "gold" }) }] }));
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.deepStrictEqual(r.j.d["44"], { net: 0, gross: 0 }); assert.strictEqual(r.j.d.x.off, true); assert.strictEqual(r.j.d.gold.off, true);
+  });
   await t("Preis: ungültige Option/Auflage/ausgeschlossene Kombination → 400, Land außerhalb AT (auch DE) → 400", async () => {
     assert.strictEqual((await post("/print/api/price", Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { material: "gold" }) }))).status, 400);
     assert.strictEqual((await post("/print/api/price", Object.assign({}, BC, { copies: 50 }))).status, 400, "50 ist keine angebotene Stufe");
@@ -593,7 +597,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/newsletter", { email: em, consent: true, source: "Test" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     let st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 0, "erst nach Bestätigung"); assert.strictEqual(st.counts.pending, 1);
     const cm = M.mails.filter(m => m.to === em).pop(); const link = (cm.text.match(/https?:\/\/\S+bestaetigen\S+/) || [])[0]; assert.ok(link, cm.text);
-    const cp = await fetch(B + new URL(link).pathname + new URL(link).search); assert.strictEqual(cp.status, 200); assert.ok(/NL\d\dKW\d\d/.test(await cp.text()), "Code auf der Bestätigungsseite");
+    const cp = await fetch(B + new URL(link).pathname + new URL(link).search); assert.strictEqual(cp.status, 200); assert.ok(/ersten Newsletter im Monat/.test(await cp.text()), "Hinweis Monatscode auf der Bestätigungsseite");
     assert.strictEqual((await fetch(B + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(em) + "&t=falsch")).status, 400);
     st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 1); assert.strictEqual(st.issue.status, "draft"); assert.strictEqual(st.settings.autoSend, false, "Automatik Standard AUS");
     st = await admin("/admin/api/print/newsletter", { op: "save", monday: st.issue.monday, subject: "Testbetreff", intro: "Hallo Welt", code: "nl-test5", products: ["flyer", "visitenkarten"] });
@@ -604,6 +608,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const tm = M.mails.filter(m => m.to === "simon@fs-creative.at" && /\[Test\] Testbetreff/.test(m.subject)).pop(); assert.ok(tm, "Testmail");
     assert.ok(/NL-TEST5/.test(tm.text) && /Medieninhaber/.test(tm.text) && /print\/newsletter\/abmelden\?e=/.test(tm.text) && /einmal je Kundin\/Kunde/.test(tm.text));
     const vo = await admin("/admin/api/print/vouchers"); const v = vo.vouchers.find(x => x.code === "NL-TEST5"); assert.ok(v && v.pct === 5 && v.perCustomer && v.until, "Wochencode als Gutschein");
+    const NLT = require("../print-newsletter.js")({})._test; assert.ok(NLT.codeIssue("2026-11-02") && NLT.codeIssue("2026-12-07") && !NLT.codeIssue("2026-11-09") && NLT.monthCode("2026-11-02") === "NLNOV26", "Code nur in der ersten Ausgabe im Monat");
     const ul = B + "/print/newsletter/abmelden?e=" + encodeURIComponent(em) + "&t=" + (tm.text.match(/abmelden\?e=[^&]+&t=([a-f0-9]+)/) || [])[1];
     const ug = await fetch(ul.replace(/simon%40fs-creative\.at/, encodeURIComponent(em))); assert.strictEqual(ug.status, 400, "Token gehört zu anderer Adresse");
     st = await admin("/admin/api/print/newsletter", { op: "unsub", email: em }); assert.strictEqual(st.recipients, 0);

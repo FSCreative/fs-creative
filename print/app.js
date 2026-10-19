@@ -209,7 +209,7 @@
         : '<p class="pd-muted">Noch keine Bestellungen – such dir ein Produkt aus und gestalte es online oder lade deine Datei hoch.</p><button type="button" class="ps-btn primary small" data-act="shop">Produkte ansehen</button>') + "</section>";
       h += '<div class="col"><section class="ps-panel ps-qstats"><button type="button" data-cart-link><b>' + S.cart.length + "</b><span>im Warenkorb</span></button><button type=\"button\" data-act=\"atab:saved\"><b>" + (me.saved || []).length + "</b><span>Gemerkt</span></button><button type=\"button\" data-act=\"atab:orders\"><b>" + S.orders.length + "</b><span>Bestellungen</span></button></section>";
       if (!co) h += '<section class="ps-panel ps-acct-up"><h3>Bestellst du für eine Firma?</h3><p class="pd-muted">Mit einem Firmenkonto siehst du Nettopreise, bekommst Rechnungen mit Firmenname und UID und sammelst Rabatt im Bonusprogramm ' + (S.bonus && S.bonus.tiers && S.bonus.tiers.length ? "(bis zu " + S.bonus.tiers[S.bonus.tiers.length - 1].pct + " %)" : "") + '.</p><button type="button" class="ps-btn small" data-act="atab:settings">In den Einstellungen umstellen</button></section>';
-      if (!me.newsletter) h += '<section class="ps-panel ps-acct-up"><h3>5 % jeden Montag</h3><p class="pd-muted">Unser Newsletter bringt dir jede Woche Produkttipps, einen Designer-Tipp und einen 5-%-Code.</p><button type="button" class="ps-btn small" data-act="atab:settings">Newsletter aktivieren</button></section>';
+      if (!me.newsletter) h += '<section class="ps-panel ps-acct-up"><h3>Druck-Tipps jeden Montag</h3><p class="pd-muted">Unser Newsletter bringt dir jede Woche Produkttipps und einen Designer-Tipp – und einmal im Monat einen 5-%-Code.</p><button type="button" class="ps-btn small" data-act="atab:settings">Newsletter aktivieren</button></section>';
       h += "</div></div>" + bonusHtml();
     } else if (tab === "orders") {
       h += '<section class="ps-panel"><h3>Meine Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist ps-olist2">' + S.orders.map(orderRow).join("") + '</ul><p class="pd-muted" style="font-size:13px;margin-top:12px">„Nochmal bestellen“ legt die Bestellung mit derselben Druckdatei in den Warenkorb – der Preis wird dabei aktuell berechnet, Menge und Ausführung kannst du dort noch ändern.</p>' : '<p class="pd-muted">Noch keine Bestellungen.</p>') + "</section>";
@@ -369,19 +369,48 @@
   function changesText(ch) { return Object.keys(ch).map(function (k) { return propTitle(k) + " → " + optName(k, ch[k]); }).join(" · "); }
   // Eigene Auswahlliste: Bestseller oben, Gruppen, Suche ab 10 Einträgen, ⓘ je Option, nicht passende Optionen mit „passt mit …“ statt ausgegraut
   // Auswahl je nach Anzahl der Optionen: ≤ 4 direkt als Schaltflächen, ≤ 12 kompakte Liste, mehr = großer Auswahl-Dialog (Kategorien links, Optionen rechts, Suche)
+  // ── Aufpreise neben den Optionen („+ 4,20 €“): vom Server (/print/api/deltas), nur für gerade sichtbare Optionen, zwischengespeichert ──
+  var DLT = {}, DLQ = {}, dlT = 0, dlRun = 0, dlJobs = [];
+  function dlBase() { return S.prod && S.price && !S.priceBusy && S.step === 2 ? JSON.stringify([cfgOf(), S.price.pm || "", S.ctype, S.customer.country || S.country, S.customer.zip || "", S.voucher || ""]) : ""; }
+  function dlTxt(slug, val) {
+    var b = dlBase(), d = b && DLT[b + "|" + slug + "|" + val]; if (!d) return "";
+    var v = S.ctype === "company" ? d.net : d.gross; if (Math.abs(v) < 0.05) return '<span class="ps-dl z">± 0 €</span>';
+    return '<span class="ps-dl' + (v < 0 ? " m" : "") + '">' + (v > 0 ? "+ " : "− ") + eur(Math.abs(v)) + "</span>";
+  }
+  function dlSpan(key, x) { if (key.indexOf("prop:") !== 0 || x.off) return ""; var sl = key.slice(5); return '<span class="ps-dlw" data-dl="' + esc(sl + "|" + x.val) + '">' + dlTxt(sl, x.val) + "</span>"; }
+  function dlPaint() { [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { var v = el.getAttribute("data-dl"), i = v.indexOf("|"), h = dlTxt(v.slice(0, i), v.slice(i + 1)); if (el.innerHTML !== h) el.innerHTML = h; }); }
+  function dlKick() { clearTimeout(dlT); dlT = setTimeout(dlLoad, 350); }
+  function dlLoad() {
+    var b = dlBase(); if (!b) return; var want = {};
+    [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { if (!el.parentNode.getClientRects().length) return;   // nur Sichtbares (nicht in eingeklappten Bereichen; der leere Platzhalter selbst ist unsichtbar)
+      var v = el.getAttribute("data-dl"), i = v.indexOf("|"), slug = v.slice(0, i), val = v.slice(i + 1), k = b + "|" + slug + "|" + val;
+      if (k in DLT || DLQ[k] || String(S.sel[slug]) === val) return; (want[slug] = want[slug] || []).push(val); });
+    Object.keys(want).forEach(function (slug) { var alts = [];
+      want[slug].slice(0, 12).forEach(function (val) { var k = b + "|" + slug + "|" + val, ch = resolveWith(slug, val); if (ch === null) { DLT[k] = false; return; }
+        var sel = Object.assign({}, S.sel, ch); sel[slug] = val; DLQ[k] = 1; alts.push({ k: val, sel: sel }); });
+      if (alts.length) dlJobs.push({ b: b, slug: slug, alts: alts, cfg: Object.assign(cfgOf(), { pm: S.price.pm || S.pm || "auto", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }) }); });
+    dlNext(); dlNext();
+  }
+  function dlNext() {
+    if (dlRun >= 2 || !dlJobs.length) return; var j = dlJobs.shift(); if (j.b !== dlBase()) { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); dlNext(); return; }   // Auswahl hat sich inzwischen geändert
+    dlRun++;
+    api("/print/api/deltas", Object.assign({}, j.cfg, { alts: j.alts })).then(function (r) {
+      j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k, x = r && r.ok && r.d ? r.d[a.k] : null; delete DLQ[k]; DLT[k] = x && !x.off && isFinite(x.net) ? x : false; }); dlPaint();
+    }).catch(function () { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); }).then(function () { dlRun--; dlNext(); });
+  }
   function ddRow(key, x, cur, zi) {
     var sel = String(x.val) === String(cur);
     return '<div class="ps-ddo' + (zi % 2 ? " z" : "") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
       '<button type="button" class="ps-ddp" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><span class="n">' + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
       (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
-      (sel ? '<span class="ps-ddck" aria-hidden="true">✓</span>' : "") +
+      (sel ? '<span class="ps-ddck" aria-hidden="true">✓</span>' : dlSpan(key, x)) +
       (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>";
   }
   function ddHtml(key, title, items, cur) {
     DDI[key] = items;
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
     if (items.length <= 4 && key !== "copies") return '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
-      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + "</button>" +
+      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel ? "" : dlSpan(key, x)) + "</button>" +
         (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
     var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + '</span><i aria-hidden="true">▾</i></button>';
     if (!open) return btn;
@@ -544,7 +573,7 @@
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
         if (j.ok) { S.undo = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
-        if (j.ok) { S.alts = null; altSeq++; }
+        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
       }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); });
@@ -657,7 +686,7 @@
     if (S.step === 4 && S.cart.length && !S.view) { var t4 = cartTotals(), co4 = S.ctype === "company", m4 = document.createElement("div"); m4.className = "ps-mbar"; m4.id = "psMbar";
       m4.innerHTML = '<div class="mp"><b>' + eur(co4 ? t4.net : t4.gross) + "</b><small>" + S.cart.length + (S.cart.length === 1 ? " Position" : " Positionen") + " · " + (co4 ? "netto" : "inkl. USt") + ' · inkl. Versand</small></div><button type="button" class="ps-btn primary small" data-go="5">Zur Kasse</button>'; root.appendChild(m4); }
     if (S.step === 2 || S.step === 3) { var mb = document.createElement("div"); mb.className = "ps-mbar"; mb.id = "psMbar"; mb.innerHTML = '<button type="button" class="mp" data-act="psheet" aria-label="Preisdetails anzeigen"></button>' + (S.step === 2 ? '<button type="button" class="ps-btn primary small" data-act="next2">' + (isLogo() ? "Zum Logo" : "Zur Gestaltung") + "</button>" : S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary small" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : ""); root.appendChild(mb); renderPrice(); }
-    if (S.step === 2) { renderPrice(); secNav(); fillRows(); }
+    if (S.step === 2) { renderPrice(); secNav(); fillRows(); dlKick(); }
   }
   // Ausführung: Listen-Kacheln stehen paarweise; bleibt eine allein in der Reihe, nimmt sie die ganze Breite
   function fillRows() { [].forEach.call(root.querySelectorAll(".ps-sec .ps-grid2"), function (g) { var run = [];
@@ -981,6 +1010,35 @@
   }
   // Druckdaten-Anforderungen für genau diese Ausführung: Skizze (Beschnitt, Endformat, Sicherheitsabstand, Falz) + Checkliste + Profi-Details
   function mmF(v) { return String(Math.round(v * 10) / 10).replace(".", ","); }
+  // Technische Sonderfarben (Palette /print/sonderfarben.ase): Name → [Anzeigefarbe nur zur Unterscheidung, Bedeutung]
+  var SPOTS = {"White":["#00ffff","Weißdruck"],"Kisscut":["#ff0000","Anschnitt (Kiss-Cut)"],"Thrucut":["#ff00ff","Konturschnitt (durch)"],"Insidecut":["#800080","Innenschnitt"],"Vcut":["#00ff00","V-Schnitt"],"Perforation":["#ffff00","Perforation"],"Creasing":["#ff8000","Rillung"],"Score":["#80ff00","Ritzlinie"],"Drilling":["#0000ff","Bohrlöcher"],"Numbering":["#000000","Nummerierung"],"Scodix Spot":["#00ffff","Partieller Glanzlack"],"Scodix Sense 40":["#0080ff","3D-Lack 40 µm"],"Scodix Sense 80":["#008080","3D-Lack 80 µm"],"Scodix Foil Gold":["#ffff00","Folie Gold"],"Scodix Foil Silver":["#cccccc","Folie Silber"],"Scodix Foil Copper":["#e36678","Folie Kupfer"],"Scodix Foil Rose":["#ffb200","Folie Roségold"],"Scodix Foil Glitter":["#ff0000","Folie Glitzer"],"Scodix Foil Rainbow":["#00ff00","Folie Regenbogen"],"Cold Foil":["#00ff80","Kaltfolie"]};
+  function spotChip(n) { var x = SPOTS[n]; return '<span class="ps-spot"><i style="background:' + (x ? x[0] : "#888") + '"></i>' + esc(n) + "</span>"; }
+  // Welche Sonderfarben braucht die Druckdatei für genau diese Ausführung? → [[Name, Erklärung], …]
+  function spotNeeds() {
+    var p = S.prod, v = Object.assign({}, p.fixed || {}, S.sel), out = [], none = /^(none|no|nee|geen|ohne|without|clean_cut|no_.*)$/;
+    var add = function (n, t) { if (!out.some(function (x) { return x[0] === n; })) out.push([n, t]); };
+    Object.keys(v).forEach(function (k) { var x = String(v[k] == null ? "" : v[k]).toLowerCase(); if (!x || none.test(x)) return;
+      if (/^printtype/.test(k) && /white/.test(x)) add("White", "Weiß wird nur dort gedruckt, wo du Flächen in „White“ anlegst – z. B. unter Farbflächen und Logos");
+      if (/kiss_?cut/.test(x)) add("Kisscut", "Schnittkontur als geschlossene Linie um jedes Motiv – nur die Folie wird geschnitten");
+      else if (/die_?cut|thru_?cut/.test(x)) add("Thrucut", "Schnittkontur als geschlossene Linie – hier wird komplett durchgeschnitten");
+      if (/^perforation/.test(k)) add("Perforation", "Lage der Perforationslinie(n) als gerade Linie einzeichnen");
+      if (/drill/.test(k)) add("Drilling", "Bohrlöcher als Kreis in Originalgröße an die gewünschte Stelle setzen");
+      if (/numbering/.test(k)) add("Numbering", "Feld für die fortlaufende Nummer als Rechteck markieren");
+      if (/cold_?foil/.test(x)) add("Cold Foil", "Flächen für die Kaltfolie anlegen");
+      else if (/foil/.test(x) && /spot|scodix|gold|silver|copper|rose|rainbow|glitter/.test(x)) { var fo = /silver/.test(x) ? "Silver" : /copper/.test(x) ? "Copper" : /rose/.test(x) ? "Rose" : /rainbow/.test(x) ? "Rainbow" : /glitter/.test(x) ? "Glitter" : "Gold"; add("Scodix Foil " + fo, "Flächen für die Folienveredelung anlegen"); }
+      if (/spot_?uv|spot_?varnish|scodix_?spot/.test(x)) add("Scodix Spot", "Flächen, die glänzend lackiert werden");
+      if (/sense|3d_?(varnish|lak|lack)|raised/.test(x)) add(/80/.test(x) ? "Scodix Sense 80" : "Scodix Sense 40", "Flächen für den erhabenen 3D-Lack");
+    });
+    return out;
+  }
+  function spotItem() {
+    var need = spotNeeds(), pms = /pantone/i.test(labelOf("printtype") || "") || /pms/.test(String(S.sel.printtype || ""));
+    if (!need.length && !pms) return null;
+    return ["🎯", "Sonderfarben", (need.length ? "Deine Ausführung braucht in der Datei: " + need.map(function (x) { return '<span class="ps-spotr">' + spotChip(x[0]) + " " + esc(x[1]) + "</span>"; }).join("") +
+      " Als <b>Volltonfarbe mit genau diesem Namen</b> anlegen, 100 %, auf Überdrucken, am besten auf eigener Ebene. " : "") +
+      (pms ? "Pantone-Farben als <b>Volltonfarbe mit exaktem Namen</b> anlegen (z. B. PANTONE 286 C) – nicht in CMYK umwandeln. " : "") +
+      '<a href="/print/sonderfarben.ase" download>Farbpalette laden (.ase)</a> · <a href="/print/hilfe#sonderfarben" target="_blank" rel="noopener">alle Sonderfarben erklärt</a>'];
+  }
   function reqSketch(sz, b, safe, f) {
     var W = 200, H = Math.round(W * sz.h / sz.w); if (H > 250) { H = 250; W = Math.round(H * sz.w / sz.h); } if (H < 70) H = 70;
     var pb = 9, ps = 13, VW = W + 2 * pb, VH = H + 2 * pb, lines = "";
@@ -1006,11 +1064,12 @@
       ["🔤", "Schriften", "In der PDF <b>einbetten</b> oder in Pfade umwandeln; Schriftgröße ab " + (big ? "20 pt" : "6 pt") + ", feine Linien ab 0,25 pt"],
       ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 50 MB · keine Schnittmarken"]
     ];
+    var spi = spotItem(); if (spi) items.splice(5, 0, spi);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
     return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + unit(fileW) + " × " + unit(fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
       '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + '<figcaption><span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>" + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
       '<ul class="ps-req-l">' + items.map(function (x) { return '<li><span class="ri" aria-hidden="true">' + x[0] + "</span><div><b>" + x[1] + "</b><span>" + x[2] + "</span></div></li>"; }).join("") + "</ul></div>" +
-      '<details class="ps-req-pro"><summary>Für Profis</summary><ul><li>Farbprofil: ISO Coated v2 / PSO Coated v3 (Bogen), Gesamtfarbauftrag max. 300 %</li><li>Große schwarze Flächen als Tiefschwarz (z. B. 40/30/30/100), Text in reinem Schwarz (0/0/0/100)</li><li>Hintergründe und randabfallende Bilder immer bis in den Beschnitt ziehen</li><li>Transparenzen reduzieren bzw. PDF/X-4 verwenden, Überdrucken nur bewusst einsetzen</li>' + (sd === 2 ? "<li>Vorder- und Rückseite gleich ausgerichtet (Kopf an Kopf)</li>" : "") + "</ul></details>" +
+      '<details class="ps-req-pro"><summary>Für Profis</summary><ul><li>Farbprofil: ISO Coated v2 / PSO Coated v3 (Bogen), Gesamtfarbauftrag max. 300 %</li><li>Große schwarze Flächen als Tiefschwarz (z. B. 40/30/30/100), Text in reinem Schwarz (0/0/0/100)</li><li>Hintergründe und randabfallende Bilder immer bis in den Beschnitt ziehen</li><li>Transparenzen reduzieren bzw. PDF/X-4 verwenden, Überdrucken nur bewusst einsetzen</li><li>Technische Sonderfarben (Weiß, Konturschnitt, Perforation, Bohrung, Veredelung …): <a href="/print/sonderfarben.ase" download>Farbpalette (.ase)</a> für Illustrator, InDesign &amp; Affinity · <a href="/print/hilfe#sonderfarben" target="_blank" rel="noopener">Übersicht</a></li>' + (sd === 2 ? "<li>Vorder- und Rückseite gleich ausgerichtet (Kopf an Kopf)</li>" : "") + "</ul></details>" +
       tplBtn("soft") + '<p class="ps-req-f">Jede Datei prüfen wir automatisch und vor dem Druck persönlich. Unsicher? Lade sie einfach hoch – du siehst sofort eine Vorschau mit allen Rändern.</p></details>';
   }
   function logoReqHtml(pos) {
@@ -1140,7 +1199,7 @@
       field("street", "Straße und Hausnummer *", c.street, 'autocomplete="street-address" required') +
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
-      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar – du bekommst zuerst eine Bestätigungs-E-Mail). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
+      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar – du bekommst zuerst eine Bestätigungs-E-Mail). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
   }
   function mockHtml() {
