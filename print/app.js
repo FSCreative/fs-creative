@@ -583,7 +583,7 @@
   function render() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
-    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks()).map(function (p) { return p.key; })); hqLoad(); return; }
+    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks(), newestProds()).map(function (p) { return p.key; })); hqLoad(); return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
@@ -647,10 +647,14 @@
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
     if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + " Stk.");
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer"); return l.slice(0, 4); }
+  // Neu im Sortiment: die 4 zuletzt bei Print.com aufgenommenen Produkte (Datum aus dem Print.com-Katalog), ohne Doppelungen mit Klassikern/Fokus
+  function newestProds() { var ex = {}; classics().concat(dailyPicks()).forEach(function (p) { ex[p.key] = 1; });
+    return S.cat.products.filter(function (p) { return p.added && imgOk(p.img) && !ex[p.key]; }).sort(function (a, b) { return a.added < b.added ? 1 : a.added > b.added ? -1 : 0; }).slice(0, 4); }
+  function newLabel(d) { var t = new Date(d + "T12:00:00"); return isNaN(t) ? "Neu" : "Neu seit " + t.toLocaleDateString("de-AT", { day: "numeric", month: "long" }); }
   function featCard(p, big) {
     var tag = p.designer ? "Online gestalten oder Datei hochladen" : p.kind === "banner" ? "Wunschgröße in cm" : "Druckdaten hochladen";
     return '<button type="button" class="ps-feat' + (big ? " big" : "") + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="ic">' + esc(p.icon) + "</span>") + "</span>" +
-      '<span class="bd">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
+      '<span class="bd">' + (p.__new ? '<span class="ps-badge new">' + esc(newLabel(p.added)) + "</span>" : p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
   // Startseite: Sofortpreis im Hero – Produkt + Stückzahl antippen, echter Preis (Bestseller-Ausführung, inkl. Versand) kommt vom Server
@@ -682,7 +686,7 @@
     var tx = S.cat.products.filter(function (p) { return p.kind === "textile"; })[0]; if (tx) chipsL.push(tx);
     var groups = (S.cat.groups || []).map(function (g) { var l = S.cat.products.filter(function (p) { return (p.cat || {}).main === g.slug; }); var im = l.filter(function (p) { return imgOk(p.img); }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); })[0]; return { g: g, n: l.length, img: im && im.img }; }).filter(function (x) { return x.n >= 5; });
     var dsg = S.cat.products.filter(function (p) { return p.designer; }).slice(0, 4);
-    var hq = hqInner(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
+    var nw = newestProds(), hq = hqInner(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
     return '<section class="ps-home-hero ps-hero2"><div class="sheet"><i class="crop tl" aria-hidden="true"></i><i class="crop tr" aria-hidden="true"></i><i class="crop bl" aria-hidden="true"></i><i class="crop br" aria-hidden="true"></i>' + reg +
       '<div class="hx"><span class="eyebrow">FS Creative Druckshop · Lieferung in ganz Österreich</span><h1>Flyer, Visitenkarten &amp; Banner <span class="gx">online drucken</span></h1>' +
       '<p class="lead">Preis sofort sehen, online gestalten oder Datei hochladen – jede Datei wird vor dem Druck persönlich geprüft. Über ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + ' Produkte, Versand inklusive.</p>' +
@@ -692,6 +696,7 @@
       '<div class="cmyk" aria-hidden="true"><i class="c"></i><i class="m"></i><i class="y"></i><i class="k"></i><i class="k75"></i><i class="k50"></i><i class="k25"></i><span>Farbkontrollstreifen · CMYK · 300 dpi · 3 mm Beschnitt</span></div></div></section>' + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
+      (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die vier neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
       '<section class="ps-hsec ps-designer-intro"><div class="dt"><span class="eyebrow">Online-Designer</span><h2>Selbst gestalten – ganz ohne Grafikprogramm</h2><p>Wähle eine Vorlage, tausche Texte und Bilder aus, füge dein Logo und einen QR-Code hinzu – fertig. Der Designer kennt Format, Beschnitt und Sicherheitsabstand und erstellt daraus ein druckfertiges PDF.</p>' +
       '<ul><li>Fertige Vorlagen für ' + dsg.map(function (p) { return esc(p.title); }).join(", ") + "</li><li>KI-Assistent: Texte und Gestaltungsideen auf Knopfdruck</li><li>Eigene Bilder, Logo, Farben, Schriften, QR-Code (Link oder Kontakt)</li><li>Vorschau wie gedruckt und automatischer Druckdaten-Check</li><li>Entwurf speichern und später weitermachen</li></ul>" +
       '<div class="btn-row">' + dsg.slice(0, 2).map(function (p, i) { return '<button type="button" class="ps-btn' + (i ? "" : " primary") + '" data-prod="' + esc(p.key) + '">' + esc(p.title) + " gestalten</button>"; }).join("") + '<a class="ps-link" href="/print/hilfe#designer">Mehr zum Designer</a></div></div>' +

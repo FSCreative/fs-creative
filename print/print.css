@@ -1158,3 +1158,4 @@ html.light .ps-hero2 .hq{box-shadow:0 26px 60px rgba(20,30,60,.16),0 0 0 6px rgb
 .ps-acct-start>section:first-child{grid-row:auto}.ps-acct-start .col{display:flex;flex-direction:column;gap:16px;min-width:0}
 .ps-acct-hd .nm{flex:1 1 auto}
 @media(max-width:640px){.ps-acct-hd{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center}.ps-acct-hd .ps-btn{margin-left:0;padding:8px 12px;font-size:13px}.ps-acct-hd .nm .pd-muted{font-size:13px}}
+.ps-badge.new{background:linear-gradient(90deg,#30d158,#0a9e8f);color:#fff}
