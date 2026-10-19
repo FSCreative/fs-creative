@@ -17,6 +17,61 @@ const BUILD = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYME
 const DATA_DIR = (() => { try { fs.mkdirSync("/data", { recursive: true }); return "/data"; } catch (e) { return ROOT; } })();
 const TODOS_FILE = path.join(DATA_DIR, "todos.json");
 function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+// Auftragsmanagement: Aufträge (Projekte) und Aufgaben mit Status, Priorität, Frist, Checkliste, Kommentaren – im Datenspeicher wie To-Dos
+const AUFTRAG_FILE = path.join(DATA_DIR, "auftraege.json");
+function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0 }; } catch (e) { return { projects: [], tasks: [], rev: 0 }; } }
+function writeAuftraege(o) { o.rev = (+o.rev || 0) + 1; const tmp = AUFTRAG_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(o)); fs.renameSync(tmp, AUFTRAG_FILE); return o; }
+const TK_STATUS = ["offen", "arbeit", "pruefung", "erledigt"], TK_PRIO = ["normal", "hoch", "dringend"], PJ_STATUS = ["aktiv", "pausiert", "abgeschlossen"];
+const tkClip = (v, n) => String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n);
+const tkDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "";
+const tkId = p => p + Date.now().toString(36) + crypto.randomBytes(3).toString("hex");
+function auftragOp(b) {
+  const A = readAuftraege(), op = String(b.op || ""), now = Date.now();
+  const findT = id => A.tasks.find(t => t.id === id), findP = id => A.projects.find(p => p.id === id);
+  if (op === "task.save") {
+    const x = b.task || {}, old = x.id ? findT(String(x.id)) : null;
+    const title = tkClip(x.title, 200); if (!title) throw new Error("Bitte einen Titel eingeben");
+    const pid = x.projectId && findP(String(x.projectId)) ? String(x.projectId) : "";
+    const status = TK_STATUS.indexOf(x.status) > -1 ? x.status : (old ? old.status : "offen");
+    const t = Object.assign(old || { id: tkId("t"), created: now, comments: [], order: now }, {
+      title, projectId: pid, status, prio: TK_PRIO.indexOf(x.prio) > -1 ? x.prio : "normal", due: tkDate(x.due), notes: tkClip(x.notes, 4000),
+      checklist: (Array.isArray(x.checklist) ? x.checklist : []).slice(0, 60).map(c => ({ t: tkClip(c && c.t, 200), done: !!(c && c.done) })).filter(c => c.t), updated: now });
+    if (status === "erledigt" && !t.doneAt) t.doneAt = now; if (status !== "erledigt") t.doneAt = null;
+    if (!old) A.tasks.push(t);
+    return { data: writeAuftraege(A), id: t.id };
+  }
+  if (op === "task.move") {
+    const t = findT(String(b.id || "")); if (!t) throw new Error("Aufgabe nicht gefunden");
+    if (TK_STATUS.indexOf(b.status) > -1) { t.status = b.status; if (b.status === "erledigt" && !t.doneAt) t.doneAt = now; if (b.status !== "erledigt") t.doneAt = null; }
+    if (isFinite(+b.order)) t.order = +b.order; t.updated = now;
+    return { data: writeAuftraege(A), id: t.id };
+  }
+  if (op === "task.check") {   // Checklisten-Punkt direkt abhaken
+    const t = findT(String(b.id || "")); if (!t) throw new Error("Aufgabe nicht gefunden");
+    const i = parseInt(b.index, 10); if (t.checklist && t.checklist[i]) { t.checklist[i].done = !!b.done; t.updated = now; }
+    return { data: writeAuftraege(A), id: t.id };
+  }
+  if (op === "task.comment") {
+    const t = findT(String(b.id || "")); if (!t) throw new Error("Aufgabe nicht gefunden");
+    const text = tkClip(b.text, 2000); if (!text) throw new Error("Kommentar ist leer");
+    t.comments = (t.comments || []).concat([{ at: now, text }]).slice(-200); t.updated = now;
+    return { data: writeAuftraege(A), id: t.id };
+  }
+  if (op === "task.delete") { const n = A.tasks.length; A.tasks = A.tasks.filter(t => t.id !== String(b.id || "")); if (A.tasks.length === n) throw new Error("Aufgabe nicht gefunden"); return { data: writeAuftraege(A) }; }
+  if (op === "project.save") {
+    const x = b.project || {}, old = x.id ? findP(String(x.id)) : null;
+    const name = tkClip(x.name, 120); if (!name) throw new Error("Bitte einen Namen für den Auftrag eingeben");
+    const p = Object.assign(old || { id: tkId("p"), created: now }, { name, customer: tkClip(x.customer, 160), color: Math.max(0, Math.min(11, parseInt(x.color, 10) || 0)),
+      status: PJ_STATUS.indexOf(x.status) > -1 ? x.status : "aktiv", due: tkDate(x.due), note: tkClip(x.note, 2000), leadId: tkClip(x.leadId, 60), updated: now });
+    if (!old) A.projects.push(p);
+    return { data: writeAuftraege(A), id: p.id };
+  }
+  if (op === "project.delete") {
+    const id = String(b.id || ""); if (A.tasks.some(t => t.projectId === id)) throw new Error("Der Auftrag hat noch Aufgaben – bitte zuerst abschließen statt löschen");
+    A.projects = A.projects.filter(p => p.id !== id); return { data: writeAuftraege(A) };
+  }
+  throw new Error("Unbekannte Aktion");
+}
 function writeTodos(arr) { try { fs.writeFileSync(TODOS_FILE, JSON.stringify(Array.isArray(arr) ? arr : [])); return true; } catch (e) { return false; } }
 const EVENTS_FILE = path.join(DATA_DIR, "events.json");
 // 3-Wege-Merge (per id): Server-Stand S, Basis B (was der Client zuletzt vom Server kannte), Client-Stand C.
@@ -3194,7 +3249,7 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/cockpit" && req.method === "GET") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "").slice(0, 4) || String(new Date().getFullYear());
-    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1", u.searchParams.get("forecast") === "1"); ADMIN_SEEN = Date.now(); return sendGz(req, res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1", u.searchParams.get("forecast") === "1"); ADMIN_SEEN = Date.now(); return sendGz(req, res, 200, JSON.stringify(Object.assign({}, d, { auftraege: readAuftraege() })), TYPES[".json"], { "Cache-Control": "no-store" }); }   // Aufträge immer frisch (nicht aus dem Zwischenspeicher)
     catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "POST") {
@@ -3259,6 +3314,15 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/railway-costs" && req.method === "GET") {
     try { const d = await railwayCosts(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify({ configured: true, error: String(e.message || e).slice(0, 200), projects: {} }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/auftraege") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    if (req.method === "GET") return J(200, Object.assign({ ok: true }, readAuftraege()));
+    if (req.method !== "POST") return J(405, { ok: false, error: "method_not_allowed" });
+    let body = ""; req.on("data", c => { body += c; if (body.length > 300000) req.destroy(); });
+    req.on("end", () => { let b; try { b = JSON.parse(body || "{}"); } catch (e) { return J(400, { ok: false, error: "bad_json" }); }
+      try { const r = auftragOp(b); return J(200, Object.assign({ ok: true }, r)); } catch (e) { return J(400, { ok: false, error: String(e.message || e).slice(0, 200) }); } });
+    return;
   }
   if (p === "/admin/api/todos" && req.method === "GET") {
     return send(res, 200, JSON.stringify({ todos: readTodos() }), TYPES[".json"], { "Cache-Control": "no-store" });

@@ -142,6 +142,25 @@ async function startServer(dir, env) {
     const mm = await (await fetch(B + "/admin/api/mail-message?account=fs&folder=Archiv&uid=7", { headers: { cookie: COOKIE } })).json();
     assert.ok(mm.ok && mm.message.uid === 7 && mm.message.folder === "Archiv" && /Voller Inhalt/.test(mm.message.body), "Suchtreffer beim Öffnen komplett laden");
   });
+  await t("Auftragsmanagement: Aufträge und Aufgaben anlegen, verschieben, abhaken, kommentieren, löschen; Prüfungen; nur mit Anmeldung", async () => {
+    const op = async b => { const r = await fetch(B + "/admin/api/auftraege", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(b) }); return Object.assign(await r.json(), { _status: r.status }); };
+    assert.strictEqual((await fetch(B + "/admin/api/auftraege", { redirect: "manual" })).status, 302, "ohne Anmeldung");
+    assert.strictEqual((await op({ op: "project.save", project: { name: "" } }))._status, 400, "Name Pflicht");
+    const p = await op({ op: "project.save", project: { name: "Website Relaunch <b>Muster</b>", customer: "Muster GmbH", color: 99 } }); assert.strictEqual(p.ok, true); assert.strictEqual(p.data.projects[0].color, 11, "Farbe begrenzt");
+    const t1 = await op({ op: "task.save", task: { title: "Startseite Entwurf", projectId: p.id, prio: "hoch", due: "2026-10-21", status: "quatsch", checklist: [{ t: "A" }, { t: "" }, { t: "B", done: true }] } });
+    const tk = t1.data.tasks.find(x => x.id === t1.id); assert.strictEqual(tk.status, "offen"); assert.strictEqual(tk.prio, "hoch"); assert.strictEqual(tk.checklist.length, 2, "leere Punkte entfernt"); assert.strictEqual(tk.projectId, p.id);
+    assert.strictEqual((await op({ op: "task.save", task: { title: "x", due: "morgen" } })).data.tasks.find(x => x.title === "x").due, "", "ungültige Frist verworfen");
+    let r = await op({ op: "task.move", id: t1.id, status: "erledigt" }); let x = r.data.tasks.find(y => y.id === t1.id); assert.strictEqual(x.status, "erledigt"); assert.ok(x.doneAt > 0);
+    r = await op({ op: "task.move", id: t1.id, status: "arbeit" }); assert.strictEqual(r.data.tasks.find(y => y.id === t1.id).doneAt, null);
+    r = await op({ op: "task.check", id: t1.id, index: 0, done: true }); assert.strictEqual(r.data.tasks.find(y => y.id === t1.id).checklist[0].done, true);
+    r = await op({ op: "task.comment", id: t1.id, text: "Kunde will mehr Blau" }); assert.strictEqual(r.data.tasks.find(y => y.id === t1.id).comments[0].text, "Kunde will mehr Blau");
+    assert.strictEqual((await op({ op: "project.delete", id: p.id }))._status, 400, "Auftrag mit Aufgaben nicht löschbar");
+    const cd = await (await fetch(B + "/admin/api/cockpit", { headers: { cookie: COOKIE } })).json(); assert.ok(cd.auftraege && cd.auftraege.tasks.some(y => y.id === t1.id), "Aufträge kommen mit den Cockpit-Daten (frisch)");
+    r = await op({ op: "task.delete", id: t1.id }); assert.ok(!r.data.tasks.some(y => y.id === t1.id));
+    assert.strictEqual((await op({ op: "gibtsnicht" }))._status, 400);
+    const js = await (await fetch(B + "/admin/neu/zauftrag.js", { headers: { cookie: COOKIE } })).text(); assert.ok(/id:"auftraege"/.test(js) && /tkDeadlines/.test(js), "Modul ausgeliefert");
+    const sb = await (await fetch(B + "/admin/neu/zside.js", { headers: { cookie: COOKIE } })).text(); assert.ok(/renderSide/.test(sb) && /Nächste Termine/.test(sb), "Statusleiste ausgeliefert");
+  });
   await t("Cockpit-Modul „Rechtliches“ wird ausgeliefert", async () => {
     const h = await (await fetch(B + "/admin/neu", { headers: { cookie: COOKIE } })).text(); assert.ok(/\/admin\/neu\/zlegal\.js/.test(h), "Modul eingebunden");
     const js = await (await fetch(B + "/admin/neu/zlegal.js", { headers: { cookie: COOKIE } })).text(); assert.ok(/label:"Rechtliches"/.test(js) && /1336/.test(js) && /keine Rechtsberatung/.test(js));

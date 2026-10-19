@@ -127,7 +127,7 @@ FSC.render = function(){
   FSC._forceRender=false;
   var html; try{ html='<div class="view view-'+v.id+'">'+v.render()+'</div>'; }catch(e){ html='<div class="loading">Fehler beim Anzeigen: '+FSC.esc(e.message)+'</div>'; console.error(e); }
   /* Unveränderter Inhalt: DOM nicht anfassen (keine Sprünge, Eingaben bleiben) */
-  if(samev&&html===FSC._lastHtml&&main.firstChild){ if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh(); return; }
+  if(samev&&html===FSC._lastHtml&&main.firstChild){ if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh(); if(FSC.renderSide) try{ FSC.renderSide(); }catch(e){} return; }
   FSC._lastView=v.id; FSC._lastHtml=html; document.body.setAttribute("data-view",v.id);
   var inner=FSC.scrollSnap(main);
   main.innerHTML=html; try{ if(v.after) v.after(); }catch(e){ console.error(e); }
@@ -135,6 +135,7 @@ FSC.render = function(){
   if(samev) FSC.scrollRestore(main,inner);
   window.scrollTo(0,y);
   if(FSC.drawerRefresh&&document.getElementById("drawer").classList.contains("on")) FSC.drawerRefresh();
+  if(FSC.renderSide) try{ FSC.renderSide(); }catch(e){ console.error(e); }   // Statusleiste rechts (zside.js)
 };
 FSC.go = function(id){ FSC._forceRender=true; FSC.current=id; try{ history.replaceState(null,"","#"+id); }catch(e){} FSC.closeDrawer(); FSC.closeModal(); FSC.render(); window.scrollTo(0,0); };
 
