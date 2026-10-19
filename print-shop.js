@@ -117,7 +117,7 @@ const CURATED = [
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("6" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("7" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -446,7 +446,7 @@ module.exports = function (D) {
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || p.locked) return;
-      let opts = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null);
+      let opts = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null && String(o.slug).trim() !== "-" && String(o.name == null ? o.slug : o.name).trim() !== "");   // Print.com-Platzhalter („-“, leerer Name) weglassen
       if (areaProp && p.slug === areaProp) opts.forEach(o => { const d = dimsOf(o); if (d) areas[String(o.slug)] = d; });
       if (manual && manual.test(p.slug)) return;
       if (kind !== "banner" && p.slug === "size" && !custom) opts = opts.filter(o => String(o.slug) !== "custom");   // „custom“ ohne erlaubte Maße ausblenden
@@ -1849,11 +1849,21 @@ module.exports = function (D) {
   // ── Startseite: „Heute im Fokus“ und „Neu im Sortiment“ täglich prüfen – nur Produkte mit abrufbarem Preis, Bild und ohne bekannten teureren Mitbewerberpreis zeigen ──
   const FOCUS_POOL = ["postcards", "plakate", "folder", "tshirt-basic", "tshirt-bio", "rollups", "mesh-banner", "bauzaun", "aufkleber", "visitenkarten", "printed-letterheads", "blocknotes"];
   let HOME = null, homeRun = false;
+  const BEST_SEL = { size: ["a5", "a4", "a6", "us_large", "bc", "bc_plus"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "135gr_silk_mc", "350gr_silk_mc", "350gr_gesatineerd_mc", "300gr_silk_mc"], printtype: ["44"] },
+    BEST_POSTER = { size: ["a2", "a1", "a3", "a0"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "115gr_blueback"], printtype: ["40"] };
+  function bestSel(p, base) {   // wie app.js beim Öffnen eines Produkts: Format, Papier, Druck auf den ersten lieferbaren Bestseller
+    let sel = Object.assign({}, p.defaults || {}); const poster = /plakat|poster|wahlplakat/i.test(p.key + " " + p.title);
+    for (const k of ["size", "material", "printtype"]) { const pr = (p.props || []).find(x => x.slug === k); if (!pr) continue;
+      for (const v of ((poster && BEST_POSTER[k]) || BEST_SEL[k]).filter(x => pr.options.some(o => o.slug === x)).slice(0, 4)) {
+        const t = Object.assign({}, sel, { [k]: v }); try { if (!normalizeSel(p, Object.assign({}, base, { sel: t })).excluded) { sel = t; break; } } catch (e) {} } }
+    return sel;
+  }
   function stdInput(p) {   // Standard-/Bestseller-Ausführung wie im Shop vorausgewählt
     if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: 10, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }
     const T = p.tiers || [], bt = (/plakat|poster/i.test(p.key + " " + p.title) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1);
     const big = p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "");
-    return { copies: bt.indexOf(500) > -1 ? 500 : bt[0] || (T[0] === 1 && big ? 1 : T[Math.min(1, T.length - 1)]), sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
+    const base = { copies: bt.indexOf(500) > -1 ? 500 : bt[0] || (T[0] === 1 && big ? 1 : T[Math.min(1, T.length - 1)]), sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
+    base.sel = bestSel(p, base); return base;
   }
   async function homeCheck() {
     if (homeRun) return; homeRun = true;
@@ -1893,14 +1903,15 @@ module.exports = function (D) {
       for (const key of keys) {
         const p = await findProduct(key, s).catch(() => null), base = p && stdInput(p); if (!base) continue;
         const okQ = n => p.kind === "textile" ? n >= (((p.methods || [])[0] || {}).min || 1) : p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
-        let qs = (PUB_Q[p.kind] || PUB_Q.flat).filter(okQ).slice(0, 4); if (!qs.length) qs = [base.copies];
+        const big = p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "") || /roll|bauzaun|banner/i.test(p.key);
+        let qs = (big ? PUB_Q.banner : PUB_Q[p.kind] || PUB_Q.flat).filter(okQ).slice(0, 4); if (!qs.length) qs = [base.copies];
         const rows = []; let label = "";
         for (const q of qs) {
           const inp = JSON.parse(JSON.stringify(base)); inp.copies = q; if (inp.textile) { const sz = Object.keys(inp.textile.sizes)[0]; inp.textile.sizes = { [sz]: q }; }
           try { const n = normalizeSel(p, inp); n.low = true; const qt = await quote(p, n, "AT", "", {}); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net });
             if (!label) label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); } catch (e) {}
         }
-        if (!rows.length) continue;
+        if (!rows.length || (rows.length > 1 && rows.every(r => Math.abs(r.gross - rows[0].gross) < 0.01))) { if (rows.length > 1) log("Preisübersicht: " + key + " ausgelassen (gleicher Preis für alle Mengen)"); continue; }
         const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, rows });
       }
       if (items.length) { PUB = { at: nowIso(), items }; await store.setMeta("print_pub", PUB).catch(() => {}); }
@@ -2001,11 +2012,11 @@ module.exports = function (D) {
       const p = productOf(cat, key, s); if (!p || p.kind === "textile" || p.kind === "promo") continue;
       const T = p.tiers || [], bt = (/plakat|poster/i.test(p.key + " " + p.title) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1);
       const copies = bt.indexOf(500) > -1 ? 500 : bt[0] || (T[0] === 1 && p.kind === "banner" ? 1 : T[Math.min(1, T.length - 1)]);
-      const base = { copies, sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
+      const base = stdInput(p) || { copies, sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
       let q0; try { const n = normalizeSel(p, base); n.low = true; q0 = await quote(p, n, "AT", "", {}); n0++; } catch (e) { continue; }
       const runQ = inp => { let n; try { n = normalizeSel(p, Object.assign({}, base, { pm: q0.pm || "auto" }, inp)); } catch (e) { return Promise.resolve(null); } n.quick = true; n.low = true; return quote(p, n, "AT", "", {}).then(() => { n0++; }, () => null); };
       const jobs = (p.urgency || []).filter(u => u.slug !== "standard").map(u => ({ urgency: u.slug }));
-      p.props.forEach(pr => { if (pr.options.length <= 6) pr.options.forEach(o => { if (o.slug !== p.defaults[pr.slug]) jobs.push({ sel: Object.assign({}, p.defaults, { [pr.slug]: o.slug }) }); }); });
+      p.props.forEach(pr => { if (pr.options.length <= 6) pr.options.forEach(o => { if (o.slug !== base.sel[pr.slug]) jobs.push({ sel: Object.assign({}, base.sel, { [pr.slug]: o.slug }) }); }); });
       for (let i = 0; i < jobs.length; i += 3) await Promise.all(jobs.slice(i, i + 3).map(runQ));
     }
     log("Druckshop: Preise vorgewärmt (" + n0 + " Kalkulationen)");
@@ -2386,7 +2397,7 @@ module.exports = function (D) {
     const custom = p.custom ? { w: p.custom.unit === "cm" ? 200 : 100, h: p.custom.unit === "cm" ? 100 : 100 } : undefined;
     if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || [])[Math.min(3, (p.sizes || []).length - 1)]; if (!m || !sz) return [];
       return [Math.max(10, m.min), 50].filter((n, i, a) => a.indexOf(n) === i).map(n => ({ copies: n, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: n } } })); }
-    return qs.map(n => ({ copies: n, custom, sel: {} }));
+    return qs.map(n => ({ copies: n, custom, sel: bestSel(p, { copies: n, custom, urgency: "standard" }) }));   // Bestseller-Ausführung wie im Shop
   }
   async function marginsRun() {
     if (MG && MG.running) return; const s = await settings(), cat = await catalog(false);

@@ -143,7 +143,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(one > 0 && four === one, "4 gleichzeitige Anfragen = so viele Print.com-Aufrufe wie eine (" + one + " / " + four + ")");
   });
   await t("KI & Suchmaschinen: Preisübersicht /print/preise, llms.txt, Produktseite mit Inhalt + schema.org, Sitemap", async () => {
-    const pb = await admin("/admin/api/print/margins", { op: "pub" }); assert.ok(pb.pub && pb.pub.n >= 2, JSON.stringify(pb.pub));
+    M.priceOf = (sku, o) => 20 + (+o.copies || 0) / 100;   // echter Druckpreis steigt mit der Menge
+    const pb = await admin("/admin/api/print/margins", { op: "pub" }); delete M.priceOf; assert.ok(pb.pub && pb.pub.n >= 2, JSON.stringify(pb.pub));
     const pp = await fetch(B + "/print/preise"); const ph = await pp.text(); assert.strictEqual(pp.status, 200);
     assert.ok(/Druckpreise im Überblick/.test(ph) && /Visitenkarten/.test(ph) && /inkl\. 20 % USt/.test(ph) && /"@type":"ItemList"/.test(ph) && /"@type":"FAQPage"/.test(ph) && /\/print\/preise"/.test(ph), "Preisseite");
     assert.ok(!/print\.com/i.test(ph), "kein Lieferantenname");
