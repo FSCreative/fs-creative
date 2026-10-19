@@ -142,6 +142,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     c0 = cnt(); await Promise.all([1, 2, 3, 4].map(() => post("/print/api/price", Object.assign({ country: "AT" }, BC, { copies: 2500 })))); const four = cnt() - c0;
     assert.ok(one > 0 && four === one, "4 gleichzeitige Anfragen = so viele Print.com-Aufrufe wie eine (" + one + " / " + four + ")");
   });
+  await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
+    const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    // Einkauf 20 + 5 Versand: 20 × 1,15 + 5 = 28,00 netto (mit 35 % wären es 32,00)
+    assert.strictEqual(r.j.price.net, 28);
+    const b = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); assert.strictEqual(b.j.price.net, 32, "andere Produkte unverändert");
+  });
   await t("Aufpreise je Option: Differenz zur aktuellen Auswahl, nicht lieferbare/ungültige → off", async () => {
     const r = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "44", sel: Object.assign({}, BC.sel) }, { k: "x", sel: Object.assign({}, BC.sel, { material: "400gr_uncoated", finish: "gloss_laminate" }) }, { k: "gold", sel: Object.assign({}, BC.sel, { material: "gold" }) }] }));
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.d["44"].net, 0); assert.strictEqual(r.j.d["44"].gross, 0); assert.strictEqual(r.j.d.x.off, true); assert.strictEqual(r.j.d.gold.off, true);

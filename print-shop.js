@@ -664,7 +664,7 @@ module.exports = function (D) {
   }
   // Produkt für Shop/Preis/Bestellung: kuratiert (Schlüssel) oder allgemein (Print.com-SKU, nur wenn im Cockpit freigeschaltet; any = Cockpit-Vorschau)
   async function findProduct(key, s, any) {
-    key = String(key || ""); s = s || await settings();
+    key = String(key || ""); s = s || await settings(); if (isInternal(key, "")) return null;
     const cat = await catalog(false);
     const cp = cat && (cat.products || []).find(x => x.key === key || (any && x.sku === key));
     if (cp) return productOf(cat, cp.key, s, any);
@@ -682,18 +682,21 @@ module.exports = function (D) {
     return Object.assign(withAllow(hit.p, s), { group: g.main, cat: g });
   }
   // Kurzbeschreibung für die Karte: Untertitel bzw. erste Zeile der Print.com-Beschreibung
-  const shortDesc = (cp, fb) => { const t = cp && (cp.s || String(cp.d || "").split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(t || fb || "", 140); };
+  // Print.com-interne Produkte (z. B. „Probe intern“ / samples-internal, Test-Artikel) nie im Shop zeigen
+  const INTERNAL_RX = /(^|[-_\s])(intern|internal|test|dummy)([-_\s]|$)/i, isInternal = (sku, title) => INTERNAL_RX.test(String(sku || "")) || INTERNAL_RX.test(String(title || ""));
+  const noHtml = t => String(t || "").replace(/<[^>]*>?/g, " ").replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").trim();   // Beschreibungen aus dem Print.com-CMS teils mit HTML
+  const shortDesc = (cp, fb) => { const t = cp && (cp.s || String(cp.d || "").split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(noHtml(t || fb || ""), 140); };
   const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
-      pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cp.d, 600) : "", summary: cp ? clip(cp.s, 200) : "",
+      pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(String(cp.d || "").split("\n").map(noHtml).join("\n"), 600) : "", summary: cp ? clip(noHtml(cp.s), 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Shop-Katalog: nur freigeschaltete Produkte (allgemeine nur als Karte, Details beim Öffnen), gruppiert nach Print.com-Hauptgruppe/Untergruppe
   function publicCatalog(cat, s, all) {
     const cur = ((cat && cat.products) || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(pubProd);
     const skuSet = new Set(((cat && cat.products) || []).map(p => p.sku));
-    const gen = ((all && all.items) || []).filter(it => !skuSet.has(it.sku)).map(it => [it, catOf(it.sku, s, it.auto)]).filter(x => shown(s, x[0].sku, x[0].sku, x[1]))
+    const gen = ((all && all.items) || []).filter(it => !skuSet.has(it.sku) && !isInternal(it.sku, it.title)).map(it => [it, catOf(it.sku, s, it.auto)]).filter(x => shown(s, x[0].sku, x[0].sku, x[1]))
       .map(x => { const cp = cmsProd(x[0].sku); return { key: x[0].sku, title: NAME_FIX[x[0].sku] || (cp && cp.n) || x[0].title, added: (cp && cp.da) || "", icon: GROUP_ICON[x[1].main] || "📦", desc: shortDesc(cp, "Individuell bedruckt – Druckdaten hochladen."), group: x[1].main, cat: catPub(x[1]), img: cp && cp.i ? IMG(cp.i, 600) : "", pop: (cp && cp.pp) || 0, lazy: true }; });
     const order = mainsList().map(m => m.slug), ix = g => { const i = order.indexOf(g); return i < 0 ? 900 : i; };
     // Bestseller: die beliebtesten Produkte laut Print.com (Top 12, mindestens Beliebtheit 4 000); innerhalb der Gruppe zuerst
@@ -955,7 +958,10 @@ module.exports = function (D) {
     // Große Aufträge ohne Mitbewerberpreis: Aufschlag sinkt ab bulkFrom € Einkauf linear bis auf bulkFactor × Aufschlag bei bulkTo € (Standard 150 € → 1 500 €: 30 % → 12 %)
     const bulkF = b => { if (gmUp != null || ov.markupPct != null) return 1; const t = b.product + b.shipping, a = s.bulkFrom != null ? +s.bulkFrom : 150, z = s.bulkTo != null ? +s.bulkTo : 1500, f = s.bulkFactor != null ? +s.bulkFactor : 0.4;
       return t <= a ? 1 : t >= z ? f : 1 - (1 - f) * (t - a) / (z - a); };
-    const netOf = b => Math.ceil(Math.max(floorA(b), ancNet || (Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping)) * 10 - 1e-6) / 10;
+    // Werbeartikel: höchstens 15 % Aufschlag auf den Produkt-Einkauf (Wunsch Simon 19.10.2026, sonst zu teuer) – gilt auch gegenüber Mitbewerber-Ankern; die Zahlungsgebühr wird immer gedeckt
+    const promoCap = prod.kind === "promo" || gmMain === PROMO ? (s.promoMaxPct != null && isFinite(+s.promoMaxPct) ? +s.promoMaxPct : 15) : null;
+    const netOf0 = b => Math.max(floorA(b), ancNet || (Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping));
+    const netOf = b => Math.ceil((promoCap != null ? Math.min(netOf0(b), Math.max(b.product * (1 + promoCap / 100) + b.shipping, (b.product + b.shipping + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100))) : netOf0(b)) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust);
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
@@ -985,9 +991,9 @@ module.exports = function (D) {
     if (bp && methods) methods = methods.map(m => { const nt = disc(m.net); return Object.assign({}, m, { net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }); });
     const list = netOf(buy), net0 = disc(list), vat0 = r2(net0 * tax.rate / 100);
     // Rabatte (Bonus, Kundenrabatt, Gutschein) dürfen die Mindestmarge nach Gebühr nicht unterschreiten
-    const net = Math.max(net0, Math.ceil(floorA(buy) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
+    const net = Math.max(net0, Math.ceil((promoCap != null ? Math.min(floorA(buy), list) : floorA(buy)) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
     // Welche Regel hat den Preis bestimmt? (für die Marge-Übersicht im Cockpit)
-    const rule = (b => { const f = floorA(b); if (ancNet) return ancNet >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
+    const rule = (b => { if (promoCap != null && netOf(b) < Math.ceil(netOf0(b) * 10 - 1e-6) / 10 - 0.05) return "promoCap"; const f = floorA(b); if (ancNet) return ancNet >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
       const up = b.product * (1 + markup * bulkF(b) / 100), mk = Math.max(up, b.product + minM) + b.shipping; if (f >= mk) return "floor"; if (b.product + minM > up) return "minEur";
       return ov.markupPct != null ? "product" : bulkF(b) < 1 ? "bulk" : "markup"; })(buy);
     return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
