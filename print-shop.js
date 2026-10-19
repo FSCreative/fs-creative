@@ -117,7 +117,7 @@ const CURATED = [
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("3" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("4" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -345,16 +345,20 @@ module.exports = function (D) {
   let CAT = null, catLoading = null, ALL = null;
   const PD_CACHE = new Map();   // allgemeine (nicht kuratierte) Produkte: Details erst beim Öffnen laden, 24 h merken
   function dimsOf(o) {
-    const w = parseFloat(String(o.width || "").replace(",", ".")), h = parseFloat(String(o.height || "").replace(",", "."));
-    if (w > 0 && h > 0 && w <= 60000 && h <= 60000) return [w, h];   // mm, auch Großformat (z. B. 20-m-Vliesbanner)
     const slug = String(o.slug || "").toLowerCase(), t = (slug + " " + String(o.name || "")).toLowerCase().replace(/_/g, " ");
-    // Klartext-Name mit Einheit geht vor (Print.com: Slug „2000_x_76_mm“, Name „2000 x 76 cm“ = 20 m Vliesbanner)
-    const RX = /(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m\b)?/, mN = String(o.name || "").toLowerCase().replace(/_/g, " ").match(RX), m = mN && mN[3] ? mN : t.match(RX);
-    // „banner_85_x_200“ (Roll-ups) ohne Einheit = cm
-    if (m) { const f = m[3] === "cm" || (!m[3] && /^banner_\d/.test(slug)) ? 10 : m[3] === "m" ? 1000 : 1; return [parseFloat(m[1].replace(",", ".")) * f, parseFloat(m[2].replace(",", ".")) * f]; }
+    const RX = /(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m\b)?/, num = x => parseFloat(x.replace(",", "."));
+    const conv = m => { const f = m[3] === "cm" || (!m[3] && /^banner_\d/.test(slug)) ? 10 : m[3] === "m" ? 1000 : 1; return [num(m[1]) * f, num(m[2]) * f]; };   // „banner_85_x_200“ (Roll-ups) ohne Einheit = cm
+    // 1. Klartext-Name mit Einheit (maßgeblich – Print.com: Slug „2000_x_76_mm“ und Breite/Höhe 2000/76, Name „2000 x 76 cm“ = 20-m-Vliesbanner)
+    const mN = String(o.name || "").toLowerCase().replace(/_/g, " ").match(RX); if (mN && mN[3]) return conv(mN);
+    // 2. Breite/Höhe von Print.com (mm)
+    const w = parseFloat(String(o.width || "").replace(",", ".")), h = parseFloat(String(o.height || "").replace(",", "."));
+    if (w > 0 && h > 0 && w <= 60000 && h <= 60000) return [w, h];
+    // 3. Slug/Name ohne eindeutige Einheit, A-Formate
+    const m = t.match(RX); if (m) return conv(m);
     const a = t.match(/\b(a[0-7]|dl|din lang)\b/); if (a) return A_SIZES[a[1].replace(" ", "_")].slice();
     return null;
   }
+
   const fmtDims = d => d[0] >= 100 && d[1] >= 100 && d[0] % 10 === 0 && d[1] % 10 === 0 ? d[0] / 10 + " × " + d[1] / 10 + " cm" : d[0] + " × " + d[1] + " mm";
   const ptLabel = v => { const m = String(v).match(/^(\d)(\d)$/); if (!m) return null; if (m[1] === "0") return "ohne Druck"; return m[2] === "0" ? (m[1] === "4" ? "4-farbig (CMYK)" : m[1] + "-farbig") : m[1] + "/" + m[2] + "-farbig (beidseitig)"; };
   const weightOf = o => { const m = (String(o.slug) + " " + String(o.name || "")).match(/(\d{2,4})\s*(gr|g\b|g\/m|gsm)/i); return m ? +m[1] : 0; };
