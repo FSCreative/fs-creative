@@ -832,7 +832,7 @@ module.exports = function (D) {
     PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 2000) PRICE_CACHE.clear();
     return v;
   }
-  const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Großformatdruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
+  const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
   async function quote(prod, n, country, postcode, cust) {
     if (!COUNTRIES[country]) throw Object.assign(new Error("Lieferung derzeit nur innerhalb Österreichs"), { status: 400 });
     const s = await settings(), ov = s.products[prod.key] || {}, c = cfg();
