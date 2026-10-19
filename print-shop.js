@@ -313,9 +313,9 @@ module.exports = function (D) {
   // ───────────────────────── Print.com ─────────────────────────
   // Print.com schonen: höchstens 4 Anfragen gleichzeitig (Rest wartet), bei Drosselung (429) bzw. kurzer Störung (502/503) automatisch kurz warten und neu versuchen
   // Nebensächliches (Aufpreise neben den Optionen) läuft mit niedriger Priorität: lässt immer einen Platz und 2 Anfragen/s für echte Preisanfragen frei
-  const PC_MAX = 4; let pcActive = 0; const pcWait = [], pcLow = [];
+  const PC_MAX = 6; let pcActive = 0; const pcWait = [], pcLow = [];
   const PC_RATE = 8, pcStarts = [];   // höchstens 8 Anfragen je Sekunde
-  const pcSlot = low => new Promise(res => { if (pcActive < (low ? PC_MAX - 1 : PC_MAX)) { pcActive++; res(); } else (low ? pcLow : pcWait).push(res); }).then(async () => {
+  const pcSlot = low => new Promise(res => { if (pcActive < (low ? PC_MAX - 2 : PC_MAX)) { pcActive++; res(); } else (low ? pcLow : pcWait).push(res); }).then(async () => {
     for (;;) { const now = Date.now(); while (pcStarts.length && now - pcStarts[0] > 1000) pcStarts.shift(); if (pcStarts.length < (low ? PC_RATE - 2 : PC_RATE)) { pcStarts.push(now); return; } await new Promise(r => setTimeout(r, 1000 - (now - pcStarts[0]) + 5)); } });
   const pcFree = () => { const n = pcWait.shift() || pcLow.shift(); if (n) n(); else pcActive--; };
   async function pcApi(method, p, body, opts) {
@@ -868,17 +868,27 @@ module.exports = function (D) {
     const ok = rs.filter(r => r.v).sort((a, b) => a.v.total - b.v.total); if (ok.length) return ok[0];
     throw (rs.find(r => r.e && r.e.status !== 400) || rs[0]).e;
   }
+  // Viele Besucher: gleiche Print.com-Anfragen, die gerade laufen, teilen sich ein Ergebnis (INFLIGHT); Zwischenspeicher 6 h (Kasse: frisch, max. 5 min)
+  const INFLIGHT = new Map();
   async function purchase(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
-    const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 3 * 3600e3)) return hit.v;   // 3 h; Kasse: höchstens 5 min alt
+    const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 6 * 3600e3)) return hit.v;
+    if (n.cacheOnly) throw Object.assign(new Error("busy"), { status: 429, busy: true });   // Andrang: Nebensächliches nur aus dem Zwischenspeicher
+    if (INFLIGHT.has(key)) return INFLIGHT.get(key);
+    const run = purchase1(prod, n, country, postcode, key); INFLIGHT.set(key, run);
+    try { return await run; } finally { INFLIGHT.delete(key); }
+  }
+  async function purchase1(prod, n, country, postcode, key) {
     // Print.com ist maßgeblich: lehnt Print.com ab (oder Preis 0) und greift eine Ausschlussregel → „nicht lieferbar“
     const lo = n.low ? { low: true } : undefined;
+    // Versandmöglichkeiten gleichzeitig mit dem Preis anfragen (halbe Wartezeit); schlägt der Preis fehl, wird das Ergebnis verworfen
+    const shipP = pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo); shipP.catch(() => {});
     let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, lo); }
     catch (e) { if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
     const P = pr && pr.prices || {};
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
     if (!(productPrice > 0)) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
-    const sp = await pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo);
+    const sp = await shipP;
     let poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
     const same = poss.filter(x => !x.urgency || x.urgency === n.urgency); if (same.length) poss = same;
     const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); };
@@ -887,7 +897,7 @@ module.exports = function (D) {
     const best = poss[0];
     const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))[0];
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10) };
-    PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 5000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 1000); old.forEach(k => PRICE_CACHE.delete(k)); }
+    PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 20000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 4000); old.forEach(k => PRICE_CACHE.delete(k)); }
     return v;
   }
   const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
@@ -931,7 +941,7 @@ module.exports = function (D) {
       const pmL = n.quick && n.pmAlts.some(a => a.pm === n.pmWanted) ? n.pmAlts.filter(a => a.pm === n.pmWanted) : n.pmAlts;
       const tries = await Promise.all(pmL.map(a => buyFirst(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
       const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
-      if (ok.length && !n.quick) { const b0 = ok[0], al = n.pmAlts.find(a => a.pm === b0.pm), sig = JSON.stringify(b0.pcOpts), alts = ((al && al.more) || []).filter(o => JSON.stringify(o) !== sig).slice(0, 2);
+      if (ok.length && !n.quick && pcWait.length < 8) { const b0 = ok[0], al = n.pmAlts.find(a => a.pm === b0.pm), sig = JSON.stringify(b0.pcOpts), alts = ((al && al.more) || []).filter(o => JSON.stringify(o) !== sig).slice(0, 2);
         if (alts.length) { const r = await buyAny(prod, n, [b0.pcOpts].concat(alts), country, postcode).catch(() => null); if (r && r.v.total < b0.v.total) ok[0] = { pm: b0.pm, pcOpts: r.pcOpts, v: r.v }; }
         ok.sort((a, b) => netOf(a.v) - netOf(b.v)); }
       if (ok.length) {
@@ -1767,7 +1777,27 @@ module.exports = function (D) {
   }
   let lastDaily = 0;
   let lastTrack = 0;
+  // Vorwärmen (alle 2 h, niedrige Priorität): Hauptprodukte in der Standard-Ausführung samt Aufpreisen kurzer Optionen und Produktionszeiten –
+  // die Print.com-Antworten liegen dann im Zwischenspeicher (3 h) und Preise/Aufpreise erscheinen beim Öffnen sofort
+  let lastWarm = 0;
+  const WARM = ["flyer", "visitenkarten", "plakate", "folder", "pvc-banner", "aufkleber", "postcards", "rollups"];
+  async function warmPrices() {
+    const s = await settings(), cat = await catalog(false); let n0 = 0;
+    for (const key of WARM) {
+      const p = productOf(cat, key, s); if (!p || p.kind === "textile" || p.kind === "promo") continue;
+      const T = p.tiers || [], bt = (/plakat|poster/i.test(p.key + " " + p.title) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1);
+      const copies = bt.indexOf(500) > -1 ? 500 : bt[0] || (T[0] === 1 && p.kind === "banner" ? 1 : T[Math.min(1, T.length - 1)]);
+      const base = { copies, sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
+      let q0; try { const n = normalizeSel(p, base); n.low = true; q0 = await quote(p, n, "AT", "", {}); n0++; } catch (e) { continue; }
+      const runQ = inp => { let n; try { n = normalizeSel(p, Object.assign({}, base, { pm: q0.pm || "auto" }, inp)); } catch (e) { return Promise.resolve(null); } n.quick = true; n.low = true; return quote(p, n, "AT", "", {}).then(() => { n0++; }, () => null); };
+      const jobs = (p.urgency || []).filter(u => u.slug !== "standard").map(u => ({ urgency: u.slug }));
+      p.props.forEach(pr => { if (pr.options.length <= 6) pr.options.forEach(o => { if (o.slug !== p.defaults[pr.slug]) jobs.push({ sel: Object.assign({}, p.defaults, { [pr.slug]: o.slug }) }); }); });
+      for (let i = 0; i < jobs.length; i += 3) await Promise.all(jobs.slice(i, i + 3).map(runQ));
+    }
+    log("Druckshop: Preise vorgewärmt (" + n0 + " Kalkulationen)");
+  }
   async function tick() {
+    if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (cfg().pcKey && Date.now() - lastTrack > 2 * 3600e3) { lastTrack = Date.now(); pollAll().catch(e => log("Sendungsstatus:", e.message)); }   // Status/Tracking alle 2 h
     try {
@@ -1997,12 +2027,13 @@ module.exports = function (D) {
         const country = String(b.country || "AT").toUpperCase(), zip0 = String(b.zip || "").trim(), zip = COUNTRIES[country] && PLZ[country].test(zip0) ? zip0 : "";
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
-        const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
-        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {} }); }
+        const busy = pcLow.length > 24 || pcWait.length > 6;   // Andrang: Aufpreise nur aus dem Zwischenspeicher, der Rest kommt ein paar Sekunden später (Client fragt nach)
+        const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
+        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!e.busy }); }
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
-        await Promise.all([0, 1].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
-          try { const q = await run(a.sel, a.urgency); d[k] = { net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }; } catch (e) { d[k] = { off: e.status === 400 }; } } }));
-        return J(res, 200, { ok: true, d });
+        await Promise.all([0, 1, 2, 3].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
+          try { const q = await run(a.sel, a.urgency); d[k] = { net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }; } catch (e) { d[k] = e.busy ? { busy: true } : { off: e.status === 400 }; } } }));
+        return J(res, 200, { ok: true, d, busy });
       }
       if (p === "/print/api/ai/design") {
         if (limited("ai", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });

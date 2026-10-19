@@ -136,6 +136,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r2 = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780" }, BC, { copies: 100 })); assert.strictEqual(r2.j.price.net, 7.4); assert.strictEqual(r2.j.price.rate, 20);
     M.price.salesPrice = 20; M.price.shipping = 5;
   });
+  await t("Viele Besucher: gleichzeitige gleiche Preisanfragen → nur eine Anfrage je Variante an Print.com", async () => {
+    const cnt = () => M.log.filter(x => x.method === "POST" && /\/pc\/products\/[^/]+\/price$/.test(x.path)).length;
+    let c0 = cnt(); await post("/print/api/price", Object.assign({ country: "AT" }, BC, { copies: 1000 })); const one = cnt() - c0;
+    c0 = cnt(); await Promise.all([1, 2, 3, 4].map(() => post("/print/api/price", Object.assign({ country: "AT" }, BC, { copies: 2500 })))); const four = cnt() - c0;
+    assert.ok(one > 0 && four === one, "4 gleichzeitige Anfragen = so viele Print.com-Aufrufe wie eine (" + one + " / " + four + ")");
+  });
   await t("Aufpreise je Option: Differenz zur aktuellen Auswahl, nicht lieferbare/ungültige → off", async () => {
     const r = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "44", sel: Object.assign({}, BC.sel) }, { k: "x", sel: Object.assign({}, BC.sel, { material: "400gr_uncoated", finish: "gloss_laminate" }) }, { k: "gold", sel: Object.assign({}, BC.sel, { material: "gold" }) }] }));
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.d["44"].net, 0); assert.strictEqual(r.j.d["44"].gross, 0); assert.strictEqual(r.j.d.x.off, true); assert.strictEqual(r.j.d.gold.off, true);
@@ -381,15 +387,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     sv = await post("/print/api/account/saved", { op: "merge", items: [{ id: "l1", product: "flyer", title: "Flyer", c: cfgC + "x", n: 100 }, { id: "l2", product: "visitenkarten", c: cfgC }] }, { cookie: ck }); assert.strictEqual(sv.j.customer.saved.length, 2);
     assert.strictEqual((await post("/print/api/account/saved", { op: "add", item: { product: "x", c: "<script>" } }, { cookie: ck })).status, 400);
     sv = await post("/print/api/account/saved", { op: "del", id: sv.j.customer.saved[0].id }, { cookie: ck }); assert.strictEqual(sv.j.customer.saved.length, 1);
-    const ex = await fetch(B + "/print/api/account/export", { headers: { cookie: ck } }); assert.match(ex.headers.get("content-disposition") || "", /meine-daten/); assert.strictEqual((await ex.json()).bestellungen.length, 3, "inkl. Nachbestellung"); assert.strictEqual(pf.j.bonus.tier, ""); assert.strictEqual(pf.j.bonus.next.name, "Bronze"); assert.strictEqual(pf.j.bonus.next.missing, 4934);
+    const ex = await fetch(B + "/print/api/account/export", { headers: { cookie: ck } }); assert.match(ex.headers.get("content-disposition") || "", /meine-daten/); assert.strictEqual((await ex.json()).bestellungen.length, 3, "inkl. Nachbestellung"); assert.strictEqual(pf.j.bonus.tier, ""); assert.strictEqual(pf.j.bonus.next.name, "Bronze"); assert.strictEqual(pf.j.bonus.next.missing, 4936);
     const pb = await post("/print/api/price", Object.assign({ customerType: "company", __bonus: { pct: 50 } }, BC), { cookie: ck }); assert.strictEqual(pb.j.price.bonus, null, "ohne Stufe kein Rabatt, __bonus vom Client wird ignoriert");
     // Gutschein + eigener Kundenrabatt (Cockpit)
     assert.strictEqual((await admin("/admin/api/print/vouchers", { op: "save", code: "test10", pct: 10, maxUses: 1 })).ok, true);
-    let pv = await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC)); assert.strictEqual(pv.j.price.net, 29.7); assert.strictEqual(pv.j.voucher.code, "TEST10");
+    let pv = await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC)); assert.strictEqual(pv.j.price.net, 28.8); assert.strictEqual(pv.j.voucher.code, "TEST10");
     pv = await post("/print/api/price", Object.assign({ voucher: "FALSCH" }, BC)); assert.ok(/ungültig/.test(pv.j.voucherErr)); assert.strictEqual(pv.j.price.net, 32);
     const cl = await admin("/admin/api/print/customers"); const kc = cl.customers.find(c => c.email === em); assert.ok(kc && kc.orders === 3 && kc.type === "company", "2 Bestellungen + Nachbestellung");
     assert.strictEqual((await admin("/admin/api/print/customers", { op: "discount", id: kc.id, pct: 5, note: "Stammkunde" })).ok, true);
-    pv = await post("/print/api/price", Object.assign({ customerType: "company" }, BC), { cookie: ck }); assert.strictEqual(pv.j.price.net, 31.3); assert.strictEqual(pv.j.price.bonus.tier, "Kundenrabatt");
+    pv = await post("/print/api/price", Object.assign({ customerType: "company" }, BC), { cookie: ck }); assert.strictEqual(pv.j.price.net, 30.4); assert.strictEqual(pv.j.price.bonus.tier, "Kundenrabatt");
     const u4 = await upload(await pdfOf(89, 59, 2), "k4.pdf", BC), fc = Object.assign({}, cust, { email: em, type: "company", company: "Karl GmbH" });
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [it(u4, 0)] }, base, { customer: fc, voucher: "NOPE" }), { cookie: ck })).status, 400);
     pv = await post("/print/api/price", Object.assign({ customerType: "company", voucher: "TEST10" }, BC), { cookie: ck }); const g4 = pv.j.price.gross; assert.strictEqual(pv.j.price.net, 28.4, "Rabatt + Gutschein nie unter Mindestmarge nach Gebühr");

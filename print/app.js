@@ -99,7 +99,7 @@
     Object.assign(it, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: S.prod.title, tiers: (S.prod.tiers || []).slice(0, 30), img: imgOk(S.prod.img) ? S.prod.img : "", icon: S.prod.icon || "",
       fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
-      price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), at: Date.now() });
+      price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), checks: (S.file.checks || []).filter(function (c) { return c.level !== "ok"; }).map(function (c) { return { level: c.level, text: String(c.text || "").slice(0, 400) }; }).slice(0, 10), at: Date.now() });
     if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "" }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
     S.cart.push(it); cartSave();
     S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {}; motReset();
@@ -138,7 +138,7 @@
     S.cart.forEach(function (x) {
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
-      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <em>Hinweise zur Datei beachten</em>' : "") +
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a></span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
@@ -370,40 +370,47 @@
   // Eigene Auswahlliste: Bestseller oben, Gruppen, Suche ab 10 Einträgen, ⓘ je Option, nicht passende Optionen mit „passt mit …“ statt ausgegraut
   // Auswahl je nach Anzahl der Optionen: ≤ 4 direkt als Schaltflächen, ≤ 12 kompakte Liste, mehr = großer Auswahl-Dialog (Kategorien links, Optionen rechts, Suche)
   // ── Aufpreise neben den Optionen („+ 4,20 €“): vom Server (/print/api/deltas), nur für gerade sichtbare Optionen, zwischengespeichert ──
-  var DLT = {}, DLQ = {}, dlT = 0, dlRun = 0, dlJobs = [];
+  var DLT = {}, DLQ = {}, DLR = {}, DLW = {}, dlT = 0, dlRun = 0, dlJobs = [];
   function dlBase() { return S.prod && S.price && !S.priceBusy && S.step === 2 ? JSON.stringify([cfgOf(), S.price.pm || "", S.ctype, S.customer.country || S.country, S.customer.zip || "", S.voucher || ""]) : ""; }
   // slug „@u“ = Produktionszeit (Standard/Schnell/Express): zusätzlich der Liefertermin
   function dShort(iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "short" }) : ""; }
   function dlTxt(slug, val) {
-    var b = dlBase(); if (!b) return ""; var d = DLT[b + "|" + slug + "|" + val], u = slug === "@u", cur = u && val === S.urgency;
+    var b = dlBase(); if (!b) return S.priceBusy && S.step === 2 ? '<span class="ps-dl l" aria-label="Aufpreis wird berechnet"><i class="ps-spin"></i></span>' : "";
+    var k = b + "|" + slug + "|" + val, d = DLT[k], u = slug === "@u", cur = u && val === S.urgency;
+    if (d === undefined && !cur) return '<span class="ps-dl l" aria-label="Aufpreis wird berechnet"><i class="ps-spin"></i></span>';   // lädt (bzw. gleich) – Ladesymbol
     var dt = u ? (cur ? S.price && S.price.deliveryDate : d && d.date) : "", dh = dt ? '<span class="ps-dl d">' + esc(dShort(dt)) + "</span>" : "";
     if (cur || !d) return dh;
     var v = S.ctype === "company" ? d.net : d.gross, ph = Math.abs(v) < 0.05 ? (u ? "" : '<span class="ps-dl z">± 0 €</span>') : '<span class="ps-dl' + (v < 0 ? " m" : "") + '">' + (v > 0 ? "+ " : "− ") + eur(Math.abs(v)) + "</span>";
-    return dh + (dh && ph ? " · " : "") + ph;
+    return dh + (dh && ph ? " " : "") + ph;
   }
   function dlSpan(key, x) { if (x.off) return ""; var sl = key === "urgency" ? "@u" : key.indexOf("prop:") === 0 ? key.slice(5) : ""; if (!sl) return ""; return '<span class="ps-dlw" data-dl="' + esc(sl + "|" + x.val) + '">' + dlTxt(sl, x.val) + "</span>"; }
   function dlPaint() { [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { var v = el.getAttribute("data-dl"), i = v.indexOf("|"), h = dlTxt(v.slice(0, i), v.slice(i + 1)); if (el.innerHTML !== h) el.innerHTML = h; }); }
-  function dlKick() { clearTimeout(dlT); dlT = setTimeout(dlLoad, 350); }
+  function dlKick() { clearTimeout(dlT); dlT = setTimeout(dlLoad, 250); }
+  if (root) root.addEventListener("toggle", function () { if (S.step === 2) dlKick(); }, true);   // aufgeklappte „Weitere Optionen“: deren Aufpreise laden
   function dlLoad() {
     var b = dlBase(); if (!b) return; var want = {};
     [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { if (!el.parentNode.getClientRects().length) return;   // nur Sichtbares (nicht in eingeklappten Bereichen; der leere Platzhalter selbst ist unsichtbar)
       var v = el.getAttribute("data-dl"), i = v.indexOf("|"), slug = v.slice(0, i), val = v.slice(i + 1), k = b + "|" + slug + "|" + val;
-      if (k in DLT || DLQ[k] || (slug === "@u" ? val === S.urgency : String(S.sel[slug]) === val)) return; (want[slug] = want[slug] || []).push(val); });
-    if (kind() !== "textile" && S.prod.urgency.length > 1) S.prod.urgency.forEach(function (u) { var k = b + "|@u|" + u.slug; if (u.slug === S.urgency || k in DLT || DLQ[k]) return; var l = want["@u"] = want["@u"] || []; if (l.indexOf(u.slug) < 0) l.push(u.slug); });   // Liefertermine immer (auch ausgeblendete Stufen)
+      if (k in DLT || DLQ[k] || (DLW[k] && Date.now() < DLW[k]) || (slug === "@u" ? val === S.urgency : String(S.sel[slug]) === val)) return; (want[slug] = want[slug] || []).push(val); });
+    if (kind() !== "textile" && S.prod.urgency.length > 1) S.prod.urgency.forEach(function (u) { var k = b + "|@u|" + u.slug; if (u.slug === S.urgency || k in DLT || DLQ[k] || (DLW[k] && Date.now() < DLW[k])) return; var l = want["@u"] = want["@u"] || []; if (l.indexOf(u.slug) < 0) l.push(u.slug); });   // Liefertermine immer (auch ausgeblendete Stufen)
     Object.keys(want).forEach(function (slug) { var alts = [];
       want[slug].slice(0, 12).forEach(function (val) { var k = b + "|" + slug + "|" + val;
         if (slug === "@u") { DLQ[k] = 1; alts.push({ k: val, sel: Object.assign({}, S.sel), urgency: val }); return; }
         var ch = resolveWith(slug, val); if (ch === null) { DLT[k] = false; return; }
         var sel = Object.assign({}, S.sel, ch); sel[slug] = val; DLQ[k] = 1; alts.push({ k: val, sel: sel }); });
       if (alts.length) dlJobs.push({ b: b, slug: slug, alts: alts, cfg: Object.assign(cfgOf(), { pm: S.price.pm || S.pm || "auto", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }) }); });
-    dlNext(); dlNext();
+    dlNext(); dlNext(); dlNext();
   }
   function dlNext() {
-    if (dlRun >= 2 || !dlJobs.length) return; var j = dlJobs.shift(); if (j.b !== dlBase()) { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); dlNext(); return; }   // Auswahl hat sich inzwischen geändert
+    if (dlRun >= 3 || !dlJobs.length) return; var j = dlJobs.shift(); if (j.b !== dlBase()) { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); dlNext(); return; }   // Auswahl hat sich inzwischen geändert
     dlRun++;
     api("/print/api/deltas", Object.assign({}, j.cfg, { alts: j.alts })).then(function (r) {
-      j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k, x = r && r.ok && r.d ? r.d[a.k] : null; delete DLQ[k]; DLT[k] = x && !x.off && isFinite(x.net) ? x : false; }); dlPaint(); if (j.slug === "@u") urRefresh();
-    }).catch(function () { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); }).then(function () { dlRun--; dlNext(); });
+      var later = false;
+      j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k, x = r && r.ok && r.d ? r.d[a.k] : null; delete DLQ[k];
+        if ((r && r.busy && !x) || (x && x.busy)) { DLR[k] = (DLR[k] || 0) + 1; if (DLR[k] < 5) { later = true; DLW[k] = Date.now() + 2500; return; } }   // Andrang beim Server: später nochmal (max. 5×)
+        DLT[k] = x && !x.off && !x.busy && isFinite(x.net) ? x : false; });
+      dlPaint(); if (j.slug === "@u") urRefresh(); if (later) setTimeout(dlKick, 2500 + Math.random() * 2000);
+    }).catch(function () { j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k; delete DLQ[k]; DLT[k] = false; }); dlPaint(); }).then(function () { dlRun--; dlNext(); if (!dlJobs.length && !dlRun) dlKick(); });   // danach: noch sichtbare, nicht geladene Optionen nachholen
   }
   function ddRow(key, x, cur, zi) {
     var sel = String(x.val) === String(cur);
@@ -493,8 +500,15 @@
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
     var bo = bestOf(pr); items.sort(function (a, b) { return a.best && b.best ? bo.indexOf(a.val) - bo.indexOf(b.val) : 0; });
+    if (mobLite() && items.length > 4) {   // Handy: lange Listen nur mit Bestsellern (+ aktueller Auswahl), sonst die ersten 5 – der Rest „am PC“
+      var cur = S.sel[pr.slug], keep = items.filter(function (it) { return it.best || it.val === cur; });
+      if (keep.length < 2) { var d0 = (S.prod.defaults || {})[pr.slug]; keep = items.filter(function (it) { return it.val === d0 || it.val === cur; }); items.forEach(function (it) { if (keep.length < 5 && keep.indexOf(it) < 0 && !it.off) keep.push(it); }); }
+      if (keep.length < items.length) { keep.more = items.length - keep.length; return keep; }
+    }
     return items;
   }
+  function mobLite() { return window.innerWidth <= 760 && !S.mobAll; }   // Handy übersichtlich (Wunsch Simon): Bestseller statt aller Optionen, „hier alle zeigen“ schaltet um
+  function morePc(n) { return n ? '<span class="ps-td ps-morepc">+ ' + n + " weitere Option" + (n === 1 ? "" : "en") + ' am PC · <button type="button" class="ps-link" data-act="moball">hier zeigen</button></span>' : ""; }
   function disabledOf(pr) { // nie alle Optionen sperren (dann entscheidet Print.com beim Preis)
     var d = {}, n = 0; pr.options.forEach(function (o) { var t = Object.assign({}, S.sel); t[pr.slug] = o.slug; if (excluded(t) || BAD[badKey(t)]) { d[o.slug] = 1; n++; } });
     return n >= pr.options.length ? {} : d;
@@ -887,9 +901,9 @@
   function tileHtml(pr) {
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
-    var best = cur && isBest(pr, cur.slug);
-    return '<div class="ps-tile' + (opts.length >= 3 && opts.length <= 4 ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (pr.options.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, propItems(pr), S.sel[pr.slug]) +
-      (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + "</div>";
+    var best = cur && isBest(pr, cur.slug), its = propItems(pr), nseg = its.length >= 3 && its.length <= 4;
+    return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, its, S.sel[pr.slug]) +
+      (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + morePc(its.more) + "</div>";
   }
   function sec(title, inner, extra) { return inner || extra ? '<section class="ps-sec"><h3>' + esc(title) + "</h3>" + (inner ? '<div class="ps-grid2">' + inner + "</div>" : "") + (extra || "") + "</section>" : ""; }
   function sectionsHtml(p) {
@@ -943,8 +957,8 @@
     if (vis.length === 1) return '<div class="ps-tile" data-urtile><span class="ps-tl">Produktion</span><div class="ps-uronly"><b>' + esc(vis[0].name) + "</b>" + (st.D[vis[0].slug] ? "<span>Lieferung voraussichtlich " + esc(deDate(st.D[vis[0].slug])) + "</span>" : "") + "</div>" +
       '<span class="ps-td">Eine schnellere Produktion (' + esc(st.hid.map(nm).join(" oder ")) + ") gibt es für diese Ausführung nicht – " + esc(vis[0].name) + " ist hier bereits der früheste Liefertermin.</span></div>";
     return '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + '" data-urtile><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
-      ddHtml("urgency", "Produktion", vis.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) +
-      '<span class="ps-td">' + (st.hid.length ? esc(st.hid.map(nm).join(" und ")) + " bringt hier keinen früheren Liefertermin und ist deshalb ausgeblendet." : "Bestimmt den Liefertermin rechts.") + "</span></div>";
+      ddHtml("urgency", "Produktion", vis.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: st.D[u.slug] ? "" : { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) +   // sobald Termine da sind: Termin + Aufpreis statt Untertitel
+      '<span class="ps-td">' + (st.hid.length ? esc(st.hid.map(nm).join(" und ")) + " bringt hier keinen früheren Liefertermin und ist deshalb ausgeblendet." : "Bestimmt den Liefertermin.") + "</span></div>";
   }
   // Neue Termine da: Kachel aktualisieren; gewählte Stufe ohne früheren Termin → automatisch auf die günstigere mit gleichem Termin
   function urRefresh() {
@@ -971,6 +985,20 @@
       return '<div class="ps-size' + (v ? " on" : "") + '"><span class="sz">' + esc(x.short) + '</span><div class="ps-step"><button type="button" data-tstep="' + esc(x.slug) + '|-1" aria-label="' + esc(G.n + " " + x.short) + ' weniger">−</button><input type="number" inputmode="numeric" min="0" max="5000" data-tsize="' + esc(x.slug) + '" value="' + (v || "") + '" placeholder="0" aria-label="' + esc(G.n + " " + x.short) + ' Stück"><button type="button" data-tstep="' + esc(x.slug) + '|1" aria-label="' + esc(G.n + " " + x.short) + ' mehr">+</button></div></div>'; }).join("") + "</div>"; }).join("") +
       '<p class="ps-help">Gesamt: <b id="psTexTotal">' + totalCopies().toLocaleString("de-AT") + " Stk.</b>" + (m.min > 1 ? " · " + esc(m.label.replace(/ \(.*$/, "")) + " ab " + m.min + " Stück" : "") + " · Der Preis hängt nicht von der Größe ab.</p></fieldset>";
     return meth + pos + sz;
+  }
+  // Warenkorb/Kasse: Hinweise zur Datei als Pop-up (automatische Prüfung beim Hochladen + Hinweise aus der Vorschau)
+  function warnPop(id) {
+    var x = S.cart.filter(function (c) { return c.id === id; })[0]; if (!x) return; var back = document.activeElement;
+    var L = (x.checks || []).map(function (c) { return [c.level, c.text]; }).concat((x.clientWarn || []).map(function (t) { return ["warn", t]; }));
+    var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Hinweise zur Datei");
+    m.innerHTML = '<div class="ps-pop-c ps-warnpop"><div class="ps-pop-b"><span class="ps-pop-k">' + esc(x.title) + " · " + esc(x.fileName || "Druckdatei") + "</span><h3>Hinweise zur Datei</h3>" +
+      (L.length ? '<ul class="ps-wl">' + L.map(function (w) { return '<li class="' + (w[0] === "error" ? "e" : "w") + '"><span aria-hidden="true">' + (w[0] === "error" ? "✕" : "⚠") + "</span><span>" + esc(w[1]) + "</span></li>"; }).join("") + "</ul>"
+        : "<p>Bei der automatischen Prüfung gab es Hinweise zu dieser Datei. Öffne das Druck-PDF und kontrolliere Format, Ränder und Bildqualität.</p>") +
+      '<p class="pd-muted">Das sind Hinweise, keine Fehler, die eine Bestellung verhindern. Du kannst so bestellen, die Datei ersetzen (Position entfernen und neu hochladen) oder an der Kasse den Profi-Datencheck wählen – dann sehen wir sie uns vor dem Druck persönlich an.</p>' +
+      '<div class="ps-pop-a">' + (x.fileId ? '<a class="ps-btn primary" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF ansehen</a>' : "") + '<button type="button" class="ps-btn" data-popx="1">Schließen</button></div></div><button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
+    var close = function () { m.remove(); document.removeEventListener("keydown", k0); if (back && back.focus) back.focus(); }, k0 = function (e) { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) close(); });
+    document.addEventListener("keydown", k0); document.body.appendChild(m); var f = m.querySelector("[data-popx]"); if (f) f.focus();
   }
   function galImgs(p) { var im = (p.images || []).filter(imgOk); if (!im.length && imgOk(p.img)) im = [p.img]; return im; }
   function galleryHtml(p) {
@@ -1057,16 +1085,16 @@
     var isOn = function (sel) { return Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
     var bp = price(P.base), cheapSel = null;
     if (bp) P.cheap.forEach(function (c) { var cp = price(c); if (cp && cp.gross < bp.gross - 0.5 && (!cheapSel || cp.gross < price(cheapSel).gross)) cheapSel = c; });
-    var l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(P.prem ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
+    var lite = mobLite(), l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(P.prem && !lite ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
     window.__presets = l;
     var todo = [P.base].concat(P.cheap, P.prem ? [P.prem] : []).filter(function (sel) { return !(key(sel) in PRE); });
     if (todo.length) setTimeout(function () { var left = todo.length; todo.forEach(function (sel) { var k = key(sel); PRE[k] = null;
       api("/print/api/price", Object.assign(cfgOf(), { sel: sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { PRE[k] = j.ok ? j.price : false; }).catch(function () { PRE[k] = false; }).then(function () {
         if (--left) return; var box = document.getElementById("psPre"); if (box && S.step === 2) box.outerHTML = presetHtml(S.prod); }); }); }, 0);
-    if (l.length < 2 && !todo.length) return "";
+    if (l.length < 2 && !lite && !todo.length) return "";
     return '<section class="ps-sec ps-pre" id="psPre"><h3>Schnellauswahl <span class="pd-muted">· ein Klick, alles passend eingestellt</span></h3><div class="ps-pres">' + l.map(function (x) { var pr = price(x.sel), on = isOn(x.sel);
-      return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + "</div>" +
-      '<p class="ps-pre-more">Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.</p></section>';
+      return '<button type="button" class="ps-preb' + (on ? " on" : "") + '" data-preset="' + x.id + '" aria-pressed="' + on + '"><span class="pi" aria-hidden="true">' + x.icon + '</span><b>' + esc(x.name) + "</b><small>" + esc(desc(x.sel)) + '</small><span class="pp">' + (pr ? eur(co ? pr.net : pr.gross) : pr === false ? "–" : '<span class="ps-spin"></span>') + "</span>" + (on ? '<span class="ck">✓ gewählt</span>' : "") + "</button>"; }).join("") + (lite ? '<div class="ps-preb ps-prepc"><span class="pi" aria-hidden="true">🖥️</span><b>Weitere Optionen</b><small>Alle Papiere, Formate und Veredelungen findest du am PC.</small><button type="button" class="ps-link" data-act="moball">Hier alle zeigen</button></div>' : "") + "</div>" +
+      '<p class="ps-pre-more">' + (lite ? "Unten siehst du die beliebtesten Optionen – Format, Papier, Veredelung und Auflage." : "Oder unten alles selbst einstellen – Format, Papier, Veredelung und Auflage.") + "</p></section>";
   }
   function vOptions() {
     var p = S.prod, v = selValues(), k = kind();
@@ -1307,7 +1335,7 @@
     var lastDel = S.cart.reduce(function (m, x) { var d = x.price && x.price.deliveryDate; return d && d > m ? d : m; }, "");
     var money = S.quoting ? '<div class="total"><span><span class="ps-spin"></span> Preise werden bestätigt …</span><b></b></div>' : co ? '<div><span>Netto</span><b>' + eur(t.net) + "</b></div><div><span>" + (t.rate ? "zzgl. " + t.rate + " % USt" : "USt (steuerfreie ig. Lieferung)") + "</span><b>" + eur(t.vat) + '</b></div><div class="total"><span>Gesamt</span><b>' + eur(t.gross) + "</b></div>"
       : '<div class="total"><span>Gesamt inkl. ' + (t.rate || 0) + " % USt und Versand</span><b>" + eur(t.gross) + "</b></div>";
-    var items = '<ul class="ps-cart ps-cart-co">' + S.cart.map(function (x) { return "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f"><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF prüfen</a>' + (x.warn ? " · <em>Hinweise zur Datei beachten</em>" : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b>" : '<small>' + esc((S.cartErr || {})[x.id] || "…") + "</small>") + "</div></li>"; }).join("") + "</ul>";
+    var items = '<ul class="ps-cart ps-cart-co">' + S.cart.map(function (x) { return "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f"><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF prüfen</a>' + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b>" : '<small>' + esc((S.cartErr || {})[x.id] || "…") + "</small>") + "</div></li>"; }).join("") + "</ul>";
     var addr = [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, "Österreich"].filter(Boolean).join(", ");
     var saved = S.cart.reduce(function (a, x) { return a + (x.price && x.price.bonus ? +x.price.bonus.saved || 0 : 0); }, 0), dlab = (S.cart.filter(function (x) { return x.price && x.price.bonus; })[0] || { price: {} }).price.bonus;
     var warnN = S.cart.filter(function (x) { return x.warn; }).length;
@@ -1393,6 +1421,8 @@
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
+    if (k === "cwarn") { warnPop(v); return; }
+    if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
     if (k === "psheetx") { closeSheet(); return; }
     if (k === "next2") { if (S.price && !S.priceBusy) go(3); else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
