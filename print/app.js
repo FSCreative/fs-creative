@@ -583,7 +583,7 @@
   function render() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
-    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks()).map(function (p) { return p.key; })); return; }
+    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks()).map(function (p) { return p.key; })); hqLoad(); return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
@@ -637,10 +637,11 @@
   function recentHtml() { var l = recentProds(); if (!l.length) return "";
     return '<section class="ps-hsec ps-recent"><div class="ps-hsec-h"><h2>Zuletzt angesehen</h2><button type="button" class="ps-link" data-act="recentclr">Liste leeren</button></div><div class="ps-rec">' + l.map(function (p) {
       return '<button type="button" data-prod="' + esc(p.key) + '"><span class="ri">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="rt"><b>' + esc(shortName(p)) + '</b><span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></button>"; }).join("") + "</div></section>"; }
+  function fromSel(p) { var o = {}; (p.props || []).forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); return o; }
   function loadFrom(keys) { var seen = {}; keys = keys.filter(function (k) { if (k in FROMP || seen[k]) return false; seen[k] = 1; return true; }); if (!keys.length) return;
     if (keys.length > 12) { for (var ci = 0; ci < keys.length; ci += 12) loadFrom(keys.slice(ci, ci + 12)); return; }   // Server nimmt max. 12 je Anfrage
     keys.forEach(function (k) { FROMP[k] = null; });
-    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = {}; (p.props || []).forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && bigFmt(p) ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
+    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = fromSel(p); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && bigFmt(p) ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
     api("/print/api/from?keys=" + encodeURIComponent(keys.join(",")) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { if (!j.ok) return; Object.keys(j.from || {}).forEach(function (k) { FROMP[k] = j.from[k]; document.querySelectorAll('[data-from="' + k + '"]').forEach(function (el) { el.innerHTML = fromTxt(k); }); }); }).catch(function () {}); }
   function fromTxt(k) { var f = FROMP[k]; return f ? (+f.copies).toLocaleString("de-AT") + " Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
@@ -652,26 +653,43 @@
       '<span class="bd">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
-  // Startseite: Collage aus echten Produktbildern (dieselben Bilder wie im Sortiment, kein Fremdfoto)
-  function heroVis() {
-    var L = [["flyer", "a"], ["visitenkarten", "b"], ["pvc-banner", "c"], ["tshirt-basic", "d"]].map(function (x) { var p = prodByKey(x[0]); return p && imgOk(p.img) ? { p: p, c: x[1] } : null; }).filter(Boolean);
-    if (L.length < 3) return "";
-    return '<div class="hv">' + '<i class="glow g1" aria-hidden="true"></i><i class="glow g2" aria-hidden="true"></i>' + L.map(function (x) {
-      return '<button type="button" class="hc ' + x.c + '" data-prod="' + esc(x.p.key) + '" aria-label="' + esc(shortName(x.p)) + ' ansehen"><img src="' + esc(x.p.img) + '" alt="" decoding="async"><span>' + esc(shortName(x.p)) + "</span></button>"; }).join("") +
-      '<span class="hb b1" aria-hidden="true"><b>✓</b> Persönlich geprüft</span><span class="hb b2" aria-hidden="true"><b>✓</b> Preis sofort</span><span class="hb b3" aria-hidden="true"><b>✓</b> Versand in Österreich inklusive</span></div>';
-  }
+  // Startseite: Sofortpreis im Hero – Produkt + Stückzahl antippen, echter Preis (Bestseller-Ausführung, inkl. Versand) kommt vom Server
+  var HQP = [["flyer", [250, 500, 1000, 2500]], ["visitenkarten", [250, 500, 1000, 2500]], ["plakate", [5, 10, 25, 50]], ["pvc-banner", [1, 2, 3, 5]]], HQC = {};
+  function hqList() { return HQP.map(function (x) { var p = prodByKey(x[0]); if (!p) return null; var t = p.tiers || [], q = x[1].filter(function (n) { return t.indexOf(n) > -1; }); if (!q.length) q = t.slice(0, 4); return q.length ? { p: p, q: q } : null; }).filter(Boolean); }
+  function hqCur() { var L = hqList(); if (!L.length) return null; var h = S.hq || (S.hq = { k: L[0].p.key, q: 0 }), c = L.filter(function (x) { return x.p.key === h.k; })[0] || L[0]; h.k = c.p.key;
+    if (c.q.indexOf(h.q) < 0) h.q = c.q.indexOf(500) > -1 ? 500 : c.q[Math.min(1, c.q.length - 1)]; return { L: L, c: c, h: h }; }
+  function hqPriceHtml(v, q) { if (!v) return '<span class="v">…</span><small>Preis wird berechnet</small>'; var co = S.ctype === "company", g = co ? v.gross / 1.2 : v.gross;
+    return '<span class="v" data-v="' + g.toFixed(2) + '">' + eur(g) + "</span><small>" + (co ? "netto, zzgl. 20 % USt" : "inkl. 20 % USt") + " · inkl. Versand" + (q > 1 ? " · " + eur(g / q).replace(/(,\d\d)\d*/, "$1") + "/Stk." : "") + "</small>"; }
+  function hqInner() { var x = hqCur(); if (!x) return ""; var c = x.c, h = x.h, v = HQC[h.k + "|" + h.q];
+    return '<div class="hq-h"><span class="live" aria-hidden="true"></span><b>Sofortpreis</b><small>Endpreis für die Bestseller-Ausführung</small></div>' +
+      '<div class="hq-tabs" role="tablist" aria-label="Produkt">' + x.L.map(function (y) { var on = y.p.key === h.k; return '<button type="button" role="tab" aria-selected="' + on + '" data-act="hqk:' + esc(y.p.key) + '">' + (imgOk(y.p.img) ? '<img src="' + esc(y.p.img) + '" alt="" loading="lazy">' : '<i aria-hidden="true">' + esc(y.p.icon) + "</i>") + "<span>" + esc(shortName(y.p)) + "</span></button>"; }).join("") + "</div>" +
+      '<div class="hq-qty" role="group" aria-label="Stückzahl"><span>Stück</span>' + c.q.map(function (n) { return '<button type="button" aria-pressed="' + (n === h.q) + '" data-act="hqq:' + n + '">' + n.toLocaleString("de-AT") + "</button>"; }).join("") + "</div>" +
+      '<div class="hq-price' + (v ? "" : " busy") + '" aria-live="polite">' + hqPriceHtml(v, h.q) + "</div>" +
+      '<p class="hq-spec">' + (c.p.kind === "banner" ? "100 × 50 cm · Bestseller-Ausführung · Größe frei wählbar" : "Bestseller-Ausführung · Format, Papier &amp; Veredelung im nächsten Schritt wählbar") + "</p>" +
+      '<button type="button" class="ps-btn primary hq-go" data-act="hqgo">' + (c.p.designer ? "Jetzt gestalten" : "Jetzt konfigurieren") + " →</button>"; }
+  function hqLoad() { var x = hqCur(); if (!x) return; var h = x.h, key = h.k + "|" + h.q;
+    var show = function () { var box = document.querySelector("#psHq .hq-price"); if (!box || S.hq.k + "|" + S.hq.q !== key) return; var v = HQC[key], old = box.querySelector(".v[data-v]"), from = old ? +old.getAttribute("data-v") : 0;
+      box.classList.remove("busy"); box.innerHTML = hqPriceHtml(v, h.q); var el = box.querySelector(".v[data-v]"); if (!el || !from || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      var to = +el.getAttribute("data-v"), t0 = performance.now(); (function step(t) { var k = Math.min(1, (t - t0) / 420), e = 1 - Math.pow(1 - k, 3); el.textContent = eur(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); })(t0); };
+    if (key in HQC) { show(); return; }
+    var p = prodByKey(h.k), sels = {}; sels[h.k] = Object.assign(fromSel(p), { __copies: h.q });
+    api("/print/api/from?keys=" + encodeURIComponent(h.k) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { HQC[key] = j.ok && j.from && j.from[h.k] || null; show(); }).catch(function () {}); }
+  function hqUpd(keepPrice) { var c = document.getElementById("psHq"); if (!c) return; var old = c.querySelector(".hq-price .v[data-v]"), ov = old && old.outerHTML; c.innerHTML = hqInner();
+    var box = c.querySelector(".hq-price.busy"); if (box && ov && keepPrice) box.querySelector(".v").outerHTML = ov; hqLoad(); }
   function vHome() {
     var chipsK = ["flyer", "visitenkarten", "plakate", "aufkleber", "rollups", "folder"], chipsL = chipsK.map(prodByKey).filter(Boolean);
     var bn = S.cat.products.filter(function (p) { return p.kind === "banner"; })[0]; if (bn) chipsL.splice(3, 0, bn);
     var tx = S.cat.products.filter(function (p) { return p.kind === "textile"; })[0]; if (tx) chipsL.push(tx);
     var groups = (S.cat.groups || []).map(function (g) { var l = S.cat.products.filter(function (p) { return (p.cat || {}).main === g.slug; }); var im = l.filter(function (p) { return imgOk(p.img); }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); })[0]; return { g: g, n: l.length, img: im && im.img }; }).filter(function (x) { return x.n >= 5; });
     var dsg = S.cat.products.filter(function (p) { return p.designer; }).slice(0, 4);
-    var hv = heroVis();
-    return '<section class="ps-home-hero' + (hv ? " vis" : "") + '"><div class="hx"><span class="eyebrow">FS Creative Druckshop</span><h1>Was möchtest du heute <span class="gx">drucken</span>?</h1>' +
-      '<p class="lead">Flyer, Visitenkarten, Banner, T-Shirts und ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + '+ weitere Produkte – Preis sofort, online gestaltet oder hochgeladen, persönlich geprüft und in ganz Österreich geliefert.</p>' +
+    var hq = hqInner(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
+    return '<section class="ps-home-hero ps-hero2"><div class="sheet"><i class="crop tl" aria-hidden="true"></i><i class="crop tr" aria-hidden="true"></i><i class="crop bl" aria-hidden="true"></i><i class="crop br" aria-hidden="true"></i>' + reg +
+      '<div class="hx"><span class="eyebrow">FS Creative Druckshop · Lieferung in ganz Österreich</span><h1>Flyer, Visitenkarten &amp; Banner <span class="gx">online drucken</span></h1>' +
+      '<p class="lead">Preis sofort sehen, online gestalten oder Datei hochladen – jede Datei wird vor dem Druck persönlich geprüft. Über ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + ' Produkte, Versand inklusive.</p>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
-      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + hv + "</section>" + recentHtml() +
+      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + (hq ? '<div class="hq" id="psHq">' + hq + "</div>" : "") +
+      '<div class="cmyk" aria-hidden="true"><i class="c"></i><i class="m"></i><i class="y"></i><i class="k"></i><i class="k75"></i><i class="k50"></i><i class="k25"></i><span>Farbkontrollstreifen · CMYK · 300 dpi · 3 mm Beschnitt</span></div></div></section>' + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       '<section class="ps-hsec ps-designer-intro"><div class="dt"><span class="eyebrow">Online-Designer</span><h2>Selbst gestalten – ganz ohne Grafikprogramm</h2><p>Wähle eine Vorlage, tausche Texte und Bilder aus, füge dein Logo und einen QR-Code hinzu – fertig. Der Designer kennt Format, Beschnitt und Sicherheitsabstand und erstellt daraus ein druckfertiges PDF.</p>' +
@@ -1136,6 +1154,8 @@
     if (k === "shop") { setPage(S.page === "produkte" ? "produkte" : "home"); return; }
     if (k === "searchall") { var hq = document.getElementById("psHomeQ"); S.q = hq ? hq.value.trim() : S.q; S.group = ""; S.sub = ""; setPage("produkte"); return; }
     if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
+    if (k === "hqk" || k === "hqq") { if (k === "hqk") { S.hq.k = v; S.hq.q = 0; } else S.hq.q = +v; hqUpd(k === "hqq"); return; }
+    if (k === "hqgo") { var hx = hqCur(); if (!hx) return; var qq = hx.h.q; pickProduct(hx.h.k, function () { if ((S.prod.tiers || []).indexOf(qq) > -1) S.copies = qq; go(2); loadPrice(); }); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
