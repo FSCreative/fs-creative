@@ -624,7 +624,7 @@
     var b = document.getElementById("psPrice"); if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + priceHtml(false) +
       (S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
-      '<ul class="ps-ptrust"><li>Persönlich geprüft vor dem Druck</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
+      '<ul class="ps-ptrust"><li>Automatischer Datencheck, Profi-Check optional</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
     var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + " Stk." + (szl ? " · " + szl : "");
       m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
     var nx = document.getElementById("psNext2"); if (nx) nx.disabled = !S.price || S.priceBusy;
@@ -780,10 +780,10 @@
     var nw = newestProds(), hq = hqInner(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
     return '<section class="ps-home-hero ps-hero2"><div class="sheet"><i class="crop tl" aria-hidden="true"></i><i class="crop tr" aria-hidden="true"></i><i class="crop bl" aria-hidden="true"></i><i class="crop br" aria-hidden="true"></i>' + reg +
       '<div class="hx"><span class="eyebrow">FS Creative Druckshop · Lieferung in ganz Österreich</span><h1>Flyer, Visitenkarten &amp; Banner <span class="gx">online drucken</span></h1>' +
-      '<p class="lead">Preis sofort sehen, online gestalten oder Datei hochladen – jede Datei wird vor dem Druck persönlich geprüft. Über ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + ' Produkte, Versand inklusive.</p>' +
+      '<p class="lead">Preis sofort sehen, online gestalten oder Datei hochladen – jede Datei wird automatisch geprüft, auf Wunsch zusätzlich vom Profi. Über ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + ' Produkte, Versand inklusive.</p>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
-      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + (hq ? '<div class="hq" id="psHq">' + hq + "</div>" : "") +
+      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Datencheck</b> automatisch, Profi-Check optional</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + (hq ? '<div class="hq" id="psHq">' + hq + "</div>" : "") +
       '<div class="cmyk" aria-hidden="true"><i class="c"></i><i class="m"></i><i class="y"></i><i class="k"></i><i class="k75"></i><i class="k50"></i><i class="k25"></i><span>Farbkontrollstreifen · CMYK · 300 dpi · 3 mm Beschnitt</span></div></div></section>' + savedHomeHtml() + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
@@ -796,7 +796,7 @@
         '<div class="dv-card2"><span class="n">Maria Muster</span><span class="r">Gestalterin</span><span class="l"></span><span class="c">+43 664 123 45 67<br>maria@muster.at</span></div></div>' +
         '<div class="dv-ai"><b>✨ KI-Assistent</b><span>„Flyer fürs Sommerfest am 12. Juli, Eintritt frei“</span><em>Vorschlag übernommen ✓</em></div></div></div></div></section>' +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Alle Kategorien</h2><button type="button" class="ps-link" data-nav="produkte">Alle Produkte ansehen →</button></div><div class="ps-cats">' + groups.map(function (x) { return '<button type="button" class="ps-catt" data-nav="produkte" data-navgroup="' + esc(x.g.slug) + '"><span class="ci">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</span><span class="ct"><b>' + esc(x.g.name) + "</b><span>" + x.n + " Produkte →</span></span></button>"; }).join("") + "</div></section>" +
-      '<section class="ps-hsec ps-hsteps"><div class="ps-hsec-h"><h2>So einfach geht’s</h2><a class="ps-link" href="/print/hilfe">So geht’s &amp; FAQ →</a></div><ol><li><b>Produkt wählen</b><span>Format, Papier, Auflage – Preis sofort</span></li><li><b>Gestalten oder hochladen</b><span>Im Designer oder als fertige PDF</span></li><li><b>Bezahlen</b><span>Online oder als Firma auf Rechnung</span></li><li><b>Wir prüfen &amp; drucken</b><span>Persönlich geprüft, geliefert in ganz Österreich</span></li></ol></section>';
+      '<section class="ps-hsec ps-hsteps"><div class="ps-hsec-h"><h2>So einfach geht’s</h2><a class="ps-link" href="/print/hilfe">So geht’s &amp; FAQ →</a></div><ol><li><b>Produkt wählen</b><span>Format, Papier, Auflage – Preis sofort</span></li><li><b>Gestalten oder hochladen</b><span>Im Designer oder als fertige PDF</span></li><li><b>Bezahlen</b><span>Online oder als Firma auf Rechnung</span></li><li><b>Prüfen &amp; drucken</b><span>Automatischer Datencheck, Versand in ganz Österreich</span></li></ol></section>';
   }
   function setPage(pg, push) {
     S.view = ""; S.page = pg; S.step = 1; S.dd = "";
@@ -944,10 +944,43 @@
     return '<div class="ps-gal"><div class="main"><img src="' + esc(im[i]) + '" alt="' + esc(p.title) + '"></div>' + (im.length > 1 ? '<div class="th">' + im.map(function (u, k) { return '<button type="button" data-gal="' + k + '" aria-label="Bild ' + (k + 1) + '" aria-pressed="' + (k === i) + '"><img src="' + esc(u.replace(/w=\d+/, "w=160")) + '" alt="" loading="lazy"></button>'; }).join("") + "</div>" : "") + "</div>";
   }
   function aboutHtml(p) {
-    var t = txt(p.about); if (!t && !p.summary) return "";
+    var t = txt(p.about) || (/\n/.test(String(p.summary || "")) ? txt(p.summary) : "") || (/\n/.test(String(p.desc || "")) ? txt(p.desc) : ""); if (!t && !p.summary) return "";
     var lines = t.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean), bul = lines.filter(function (x) { return /^[-*•]/.test(x); });
     var body = (lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return "<p>" + esc(x.replace(/[#*_]+/g, "")) + "</p>"; }).join("")) + (bul.length ? "<ul>" + bul.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : "");
     return '<details class="ps-about"' + (bul.length && bul.length <= 6 && window.innerWidth > 760 ? " open" : "") + "><summary>Produktinfos" + (p.summary && lead(p.summary) && lead(p.summary).length < 50 && lead(p.summary).toLowerCase() !== String(p.title).toLowerCase() ? " · " + esc(lead(p.summary)) : "") + "</summary>" + body + "</details>";
+  }
+  // ── Technische Daten: Format, Material, Druck, fest vorgegebene Ausstattung (z. B. Ösen, Druckverfahren) + Einsatz/Beständigkeit je Material ──
+  function fmtSize(w, h) { if (Math.max(w, h) < 1000) return mmF(w) + " × " + mmF(h) + " mm"; var big = Math.max(w, h) >= 10000, u = function (v) { return big && v >= 1000 ? String(Math.round(v / 10) / 100).replace(".", ",") + " m" : String(Math.round(v) / 10).replace(".", ",") + " cm"; }; return u(w) + " × " + u(h); }
+  var USE = [   // [Muster im Material/Produkt, Einsatz, Eigenschaften] – erste passende Regel gilt
+    [/vlies|non.?woven|recyban/i, "Außen, für Events und Aktionen", "Leicht, PVC-frei und recycelbar; wetterfest für Veranstaltungen und Saisonaktionen – nicht für den jahrelangen Dauereinsatz gedacht"],
+    [/mesh|gitter|netz/i, "Außen", "Winddurchlässig dank feiner Löcher – für Gerüste, Bauzäune und windige Standorte; wetterfest und reißfest"],
+    [/blockout/i, "Innen & außen", "Lichtundurchlässig – auch beidseitig bedruckt scheint nichts durch; wetterfest und reißfest"],
+    [/backlit|citylight/i, "Leuchtkästen & Schaufenster", "Für Hinterleuchtung gemacht – Farben leuchten gleichmäßig"],
+    [/frontlit|\bpvc\b|plane/i, "Außen", "Wetterfest, reißfest und UV-beständig – der Standard für Banner im Freien"],
+    [/pes|polyester|textil|stoff|fahne|flag/i, "Innen & außen", "Knitterarm, leicht und edel in der Optik – für Messen, Rahmen und Beachflags"],
+    [/blueback/i, "Außen auf Plakatwänden", "Blickdichte blaue Rückseite – zum Kleistern auf Plakatwände; Papier, daher nur begrenzt witterungsbeständig"],
+    [/yupo|teslin|synaps|reißfest|reissfest|synthet|polyart/i, "Innen & außen", "Wasser- und reißfest – hält Regen, Fett und Knicke aus"],
+    [/vinyl|folie|foil/i, "Innen & außen", "Wasserfest und robust; Haltbarkeit draußen je nach Untergrund und Witterung"],
+    [/forex|hartschaum|dibond|alu|acryl|plexi|kapa|wabe|karton.?platte/i, "Innen (je nach Platte auch außen)", "Formstabile Platte – direkt aufstellbar oder montierbar"],
+    [/papier|paper|bilderdruck|gesatineerd|silk|offset|recycl|karton|board|biotop|recystar|bankpost|\d{2,3}\s*g/i, "Innenbereich", "Papier ist nicht wetterfest – draußen nur kurzzeitig oder geschützt (z. B. hinter Glas)", 1]   // nur ab A4 (Plakate) – bei Visitenkarten & Co. selbstverständlich
+  ];
+  function specRows(p) {
+    var rows = [], sp = p.props.filter(function (x) { return x.slug === "size"; })[0], sz = sizeOf(), specs = p.specs || [], hasDims = !sp && sz;
+    if (sp && sz && !isCustom()) rows.push(["Format", labelOf("size") + (/\d\s*[x×]\s*\d/.test(labelOf("size")) ? "" : " · " + fmtSize(sz.w, sz.h))]);
+    else if (sz) rows.push([isCustom() || p.kind === "banner" ? "Format (gewählt)" : "Endformat", fmtSize(sz.w, sz.h)]);
+    var mat = labelOf("material") || (specs.filter(function (x) { return x[2] === "material"; })[0] || [])[1] || "";
+    specs.forEach(function (x) { if (x[2] === "size" && hasDims) return; rows.push([x[0].replace(/\s*\(.*\)$/, ""), x[1]]); });
+    var u = null; [mat, labelOf("color_material"), p.title + " " + (p.desc || "")].some(function (hay) { if (!hay) return false; for (var i = 0; i < USE.length; i++) if (USE[i][0].test(hay)) { u = USE[i]; return true; } return false; });   // Material zuerst, dann Produkt
+    if (u && u[3] && !(sz && Math.max(sz.w, sz.h) >= 290)) u = null;
+    if (u && p.kind !== "textile" && p.kind !== "promo") { rows.push(["Einsatz", u[1]]); rows.push(["Beständigkeit", u[2]]); }
+    var fin = labelOf("finish"); if (fin && /kaschier|lamin|cellophan/i.test(fin)) rows.push(["Schutz", "Folienkaschierung schützt vor Feuchtigkeit, Kratzern und Abrieb"]);
+    return rows;
+  }
+  function specsHtml(p) {
+    var tx = kind() === "textile" || kind() === "promo";   // Textil/Werbeartikel: nur Marke, Material & Co. (Größen/Druck wählt man unten)
+    var rows = tx ? (p.specs || []).filter(function (x) { return !/^(size|printtype|quality_level|color.*|textile_sizes)$/.test(x[2]) && !/^variabel$/i.test(x[1]); }).map(function (x) { return [x[0].replace(/\s*\(.*\)$/, ""), x[1]]; }) : specRows(p);
+    if (rows.length < (tx ? 1 : 2)) return "";
+    return '<details class="ps-specs"' + (window.innerWidth > 760 || !p.props.length ? " open" : "") + '><summary>Technische Daten</summary><dl>' + rows.map(function (r) { return "<div><dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd></div>"; }).join("") + "</dl></details>";
   }
   // ── Schnellauswahl: drei fertige Pakete (Beliebt / Günstig / Hochwertig) – ein Klick, darunter weiterhin die volle Auswahl ──
   var PRE = {};
@@ -989,12 +1022,12 @@
     var p = S.prod, v = selValues(), k = kind();
     var props = presetHtml(p) + sectionsHtml(p), cust = "";
     var amount = k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" : amountHtml(p);
-    var area = k === "promo" ? (function () { var a = logoPositions()[0].area; return '<p class="ps-help ps-info">Druckfläche ' + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · Wir prüfen jede Datei vor dem Druck.</p>"; })() : "";
+    var area = k === "promo" ? (function () { var a = logoPositions()[0].area; return '<p class="ps-help ps-info">Druckfläche ' + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · jede Datei wird automatisch geprüft.</p>"; })() : "";
     var ur = k === "textile" && p.urgency.length > 1 ? '<fieldset class="ps-opt"><legend>Produktion</legend>' + chips("urgency", p.urgency, S.urgency) + "</fieldset>" : "";
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-who"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
-    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2>' + (facts(p).length ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<p class="sub">' + esc(badDesc(p) ? "" : lead(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + cfgBarHtml() + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
+    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2>' + (facts(p).length ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<p class="sub">' + esc(badDesc(p) ? "" : lead(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + specsHtml(p) + cfgBarHtml() + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
@@ -1065,12 +1098,13 @@
       ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 50 MB · keine Schnittmarken"]
     ];
     var spi = spotItem(); if (spi) items.splice(5, 0, spi);
+    if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
     return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + unit(fileW) + " × " + unit(fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
       '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + '<figcaption><span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>" + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
       '<ul class="ps-req-l">' + items.map(function (x) { return '<li><span class="ri" aria-hidden="true">' + x[0] + "</span><div><b>" + x[1] + "</b><span>" + x[2] + "</span></div></li>"; }).join("") + "</ul></div>" +
       '<details class="ps-req-pro"><summary>Für Profis</summary><ul><li>Farbprofil: ISO Coated v2 / PSO Coated v3 (Bogen), Gesamtfarbauftrag max. 300 %</li><li>Große schwarze Flächen als Tiefschwarz (z. B. 40/30/30/100), Text in reinem Schwarz (0/0/0/100)</li><li>Hintergründe und randabfallende Bilder immer bis in den Beschnitt ziehen</li><li>Transparenzen reduzieren bzw. PDF/X-4 verwenden, Überdrucken nur bewusst einsetzen</li><li>Technische Sonderfarben (Weiß, Konturschnitt, Perforation, Bohrung, Veredelung …): <a href="/print/sonderfarben.ase" download>Farbpalette (.ase)</a> für Illustrator, InDesign &amp; Affinity · <a href="/print/hilfe#sonderfarben" target="_blank" rel="noopener">Übersicht</a></li>' + (sd === 2 ? "<li>Vorder- und Rückseite gleich ausgerichtet (Kopf an Kopf)</li>" : "") + "</ul></details>" +
-      tplBtn("soft") + '<p class="ps-req-f">Jede Datei prüfen wir automatisch und vor dem Druck persönlich. Unsicher? Lade sie einfach hoch – du siehst sofort eine Vorschau mit allen Rändern.</p></details>';
+      tplBtn("soft") + '<p class="ps-req-f">Jede Datei prüfen wir beim Hochladen automatisch – du siehst sofort eine Vorschau mit allen Rändern. Unsicher? Wähle an der Kasse den Profi-Datencheck, dann sieht sich ein Profi deine Daten vor dem Druck persönlich an.</p></details>';
   }
   function logoReqHtml(pos) {
     return '<div class="ps-req ps-req-logo" ><div class="ps-req-b"><ul class="ps-req-l">' +
@@ -1087,7 +1121,7 @@
     var mtabs = "";
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + " Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
-    var h = mtabs + '<div class="ps-panel"><h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format prüfen wir vor dem Druck") + " · " + (sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
+    var h = mtabs + '<div class="ps-panel"><h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {
       h += '<div class="ps-file"><div><b>' + (S.file.kind === "design" ? "Deine Gestaltung" : esc(S.file.name)) + '</b><div class="pd-muted">' + (S.file.pages || "?") + " Seite(n) · " + (S.file.blocked ? "<span style=\"color:var(--ps-bad)\">bitte korrigieren</span>" : "bereit zum Druck") + '</div></div><div class="ps-row2" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (S.file.kind === "design" ? '<button type="button" class="ps-btn small" data-act="editdesign">Weiter bearbeiten</button>' : "") +
@@ -1114,7 +1148,7 @@
           : '<label class="ps-drop small" data-logo="' + esc(x.slug) + '"><input type="file" data-logo="' + esc(x.slug) + '" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"><b>Logo auswählen oder hierher ziehen</b><small>PNG mit transparentem Hintergrund (mind. 1000 px) oder Vektor-PDF · max. 50 MB</small><div class="ps-prog" hidden><i></i></div></label>') +
         '<div class="ps-uperr" data-err="' + esc(x.slug) + '"></div></div>'; }).join("");
     var merged = S.file ? '<div class="ps-file"><div><b>Logo-PDF für den Druck</b><div class="pd-muted">' + (S.file.pages || pos.length) + " Seite(n) – eine je Position · " + (S.file.blocked ? '<span style="color:var(--ps-bad)">bitte korrigieren</span>' : "bereit") + '</div></div><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a></div>' + checksHtml(S.file.checks.filter(function (c) { return c.level === "error"; })) : "";
-    return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird mittig in der Druckfläche platziert – wir prüfen jede Datei vor dem Druck.</p>" + '<div class="ps-logos">' + slots + "</div>" + (S.file ? "" : logoReqHtml(pos)) + merged +
+    return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + '<div class="ps-logos">' + slots + "</div>" + (S.file ? "" : logoReqHtml(pos)) + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   // Qualitäts-Ampel aus den Prüfergebnissen
@@ -1538,7 +1572,7 @@
       if (st === "pending_payment" || st === "payment_failed") h = '<div class="big">⚠️</div><h2>Zahlung nicht abgeschlossen</h2><p>Die Bestellung ' + esc(o.nr) + " ist gespeichert, aber noch nicht bezahlt.</p><div class=\"btn-row\" style=\"justify-content:center\"><button type=\"button\" class=\"ps-btn primary\" data-act=\"retrypay:" + esc(id) + "|" + esc(t) + "\">Erneut bezahlen</button></div>";
       else if (st === "rejected") h = '<div class="big">✋</div><h2>Bestellung storniert</h2><p>Die Bestellung ' + esc(o.nr) + " wurde storniert. Details haben wir dir per E-Mail geschickt.</p>";
       else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
-        (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion.") +
+        (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. " + (o.check === "pro" || o.check === "review" ? "Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion." : "Deine Druckdaten gehen jetzt direkt in Produktion.")) +
         " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + trackCard(o, id, t) +
         (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
         '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";

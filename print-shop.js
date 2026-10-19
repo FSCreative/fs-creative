@@ -117,7 +117,7 @@ const CURATED = [
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("2" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("3" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -171,7 +171,7 @@ function bonusCalc(orders, year) {
 }
 
 // Shop-AGB: Version wird bei jeder Bestellung gespeichert (bei Änderung der AGB hochzählen, Datum = Stand)
-const AGB_VERSION = "2026-10-15";
+const AGB_VERSION = "2026-10-19";
 // Mitgelieferte Schriften (SIL Open Font License, latin-Teilmenge, aus @fontsource) – Browser und PDF nutzen dieselben Dateien (print/fonts/*.woff)
 const FONTS = [
   ["Inter", "inter", 1], ["Open Sans", "open-sans", 1], ["Montserrat", "montserrat", 1], ["Lato", "lato", 1], ["Poppins", "poppins", 1], ["Raleway", "raleway", 1], ["Nunito", "nunito", 1],
@@ -346,7 +346,7 @@ module.exports = function (D) {
   const PD_CACHE = new Map();   // allgemeine (nicht kuratierte) Produkte: Details erst beim Öffnen laden, 24 h merken
   function dimsOf(o) {
     const w = parseFloat(String(o.width || "").replace(",", ".")), h = parseFloat(String(o.height || "").replace(",", "."));
-    if (w > 0 && h > 0 && w < 5000 && h < 5000) return [w, h];
+    if (w > 0 && h > 0 && w <= 60000 && h <= 60000) return [w, h];   // mm, auch Großformat (z. B. 20-m-Vliesbanner)
     const slug = String(o.slug || "").toLowerCase(), t = (slug + " " + String(o.name || "")).toLowerCase().replace(/_/g, " ");
     const m = t.match(/(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m\b)?/);
     // „banner_85_x_200“ (Roll-ups) ohne Einheit = cm
@@ -468,14 +468,26 @@ module.exports = function (D) {
       if (!sizes.length || !methods.length) throw new Error("Textil-Eigenschaften (Größen/Druckpositionen) fehlen");
       maxCopies = avail.length ? avail[avail.length - 1] : 2500;
     }
+    // Technische Daten: von Print.com fest vorgegebene Eigenschaften (genau eine Option bzw. kuratiert fix) – sonst für Kunden unsichtbar (z. B. Vliesbanner: Ösen oben/unten, Druckverfahren)
+    const SPEC_SKIP = /^(copies|urgency|bundle|sheet_size|special_size|pallet_delivery|packaging_extras|cross_bundle|delivery|box_delivery|standard_bundling|provide_label|designs|sealed|all_sides_equal_finish|flexibleprintingmethod|personalize|customer_packing_option|plano_delivery|summary_.*)$/;
+    const SPEC_PM = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", lfp_dye_sublimation: "Sublimationsdruck (Großformat)", hybrid: "Hybriddruck", lfp_uv: "UV-Großformatdruck", lfp_latex: "Latex-Großformatdruck", latex: "Latex-Digitaldruck" };
+    const specs = [], inExp = sl => exposed.some(x => x.slug === sl || (x.sets || []).indexOf(sl) > -1);
+    props.forEach(p => {
+      if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || SPEC_SKIP.test(p.slug) || inExp(p.slug) || fixed[p.slug] == null || auto[p.slug]) return;
+      const v = String(fixed[p.slug]), o = (p.options || []).find(x => x && String(x.slug) === v); if (!o || NONE_SLUG.test(v)) return;
+      const nm = p.slug === "printingmethod" ? SPEC_PM[v] || (String(o.name || "") !== v ? String(o.name) : "") : (L[p.slug] && L[p.slug][v]) || (p.slug === "printtype" && ptLabel(v)) || (o.name != null && String(o.name) !== v ? String(o.name) : "");
+      if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) specs.push([clip(T[p.slug] || p.title || p.slug, 60), clip(nm, 140), p.slug]);
+    });
     // Endformat bei fester Größe: aus der Option (width/height bzw. Slug/Name), sonst kuratierte Maße, sonst Druckfläche
     let dims = null;
     if (kind === "flat" && !exposed.some(x => x.slug === "size")) {
       const so = by.size && (by.size.options || []).find(o => o && String(o.slug) === fixed.size);
       dims = (so && dimsOf(so)) || (c.dims ? c.dims.slice() : null) || ((by.printing_size && (by.printing_size.options || []).map(o => o && dimsOf(o)).filter(Boolean)[0]) || null);
     }
-    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : kind === "flat" || kind === "banner", safe: c.safe || 3, sku: String(sku),
-      bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" ? 100 : 300),
+    // Sehr große bzw. extrem lange Formate (z. B. 20 m × 76 cm): Großformat-Auflösung, kein Online-Designer (nur Datei-Upload, Maßstab 1:10)
+    const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10), large = dims && Math.max(dims[0], dims[1]) >= 1000;
+    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge, safe: c.safe || 3, sku: String(sku),
+      bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
       props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
     prod.excludes = (Array.isArray(pd.excludes) ? pd.excludes : []).filter(Array.isArray).slice(0, 600).map(rule => rule.filter(x => x && x.property && Array.isArray(x.options)).map(x => ({ property: String(x.property), options: x.options.map(o => String(o && typeof o === "object" ? o.slug : o)) }))).filter(r => r.length);
@@ -501,7 +513,7 @@ module.exports = function (D) {
     "placemats": { size: ["a3_landscape", "a3"], printtype: ["40"] },
     "tear-off-calendars": { size: ["a4", "a5"] }
   };
-  const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, wir prüfen jede Datei.", group: g.main, expose: "auto", safe: 3, generic: true, prefer: GEN_PREF[it.sku] });
+  const genericCfg = (it, g) => ({ key: it.sku, title: it.title, icon: GROUP_ICON[g.main] || "📦", desc: "Individuell bedruckt – Druckdaten hochladen, jede Datei wird automatisch geprüft.", group: g.main, expose: "auto", safe: 3, generic: true, prefer: GEN_PREF[it.sku] });
   // ── Print.com-CMS (Bilder, Namen, Beschreibungen, Produktbaum), täglich ──
   let CMS = null, cmsLoading = null;
   const cmsBase = () => String(process.env.PRINT_CMS_BASE || "https://app.print.com/reseller").replace(/\/+$/, "");
@@ -652,7 +664,7 @@ module.exports = function (D) {
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cp.d, 600) : "", summary: cp ? clip(cp.s, 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
-      excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+      excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Shop-Katalog: nur freigeschaltete Produkte (allgemeine nur als Karte, Details beim Öffnen), gruppiert nach Print.com-Hauptgruppe/Untergruppe
   function publicCatalog(cat, s, all) {
     const cur = ((cat && cat.products) || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(pubProd);
@@ -787,6 +799,7 @@ module.exports = function (D) {
     if (kind === "flat" && !size) size = sizeOf(prod, all);
     let folds = null, closed = null;
     if (size && all.fold) { folds = foldSpec(all.fold, size.w, size.h); if (folds) { closed = size; size = folds.open; more.push(["Format offen", size.w + " × " + size.h + " mm"]); } }
+    if (!fmt && size && !prod.props.some(pr => pr.slug === "size") && kind === "flat") fmt = ["Endformat", fmtDims([size.w, size.h])];
     const labels = (fmt ? [fmt] : []).concat(prod.props.map(pr => [pr.title, (pr.options.find(o => o.slug === sel[pr.slug]) || {}).name || sel[pr.slug]]), more);
     const pmWanted = String(input.pm || "auto").replace(/[^a-z0-9_]/gi, "").slice(0, 40) || "auto";   // Druckverfahren: „auto“ = Offset wo möglich, sonst günstigstes
     // Alternativen je Druckverfahren (Digital/Offset/…): jeweils mit den Ausschlussregeln und Mengenbereichen gelöst – nur gültige Kombinationen
@@ -970,7 +983,7 @@ module.exports = function (D) {
       const ar = (info.media.w / info.media.h), arT = W / H;
       if (near(ar, arT, 0.02) || near(1 / ar, arT, 0.02)) out.push({ level: "warn", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm weicht ab, Seitenverhältnis passt – die Datei wird auf " + W + " × " + H + " mm skaliert." });
       else out.push({ level: "error", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm passt nicht zum gewählten Format (" + W + " × " + H + " mm inkl. Beschnitt)." });
-    } else out.push({ level: "warn", text: "Seitengröße konnte nicht automatisch gelesen werden – wir prüfen die Datei vor dem Druck persönlich." });
+    } else out.push({ level: "warn", text: "Seitengröße konnte nicht automatisch gelesen werden – bitte kontrolliere das Format selbst oder wähle an der Kasse den Profi-Datencheck." });
     if (info.pages && info.pages !== sides) out.push({ level: info.pages < sides ? "warn" : "error", text: "Die Datei hat " + info.pages + " Seite(n), für die gewählte Druckart werden " + sides + " benötigt." + (info.pages < sides ? " Die Rückseite bleibt sonst weiß." : "") });
     else if (info.pages) out.push({ level: "ok", text: info.pages + " Seite(n) – passt zur gewählten Druckart." });
     return out;
@@ -1196,7 +1209,7 @@ module.exports = function (D) {
       if (type !== "pdf") throw Object.assign(new Error("Für dieses Produkt bitte eine druckfertige PDF hochladen"), { status: 400 });
       const info = pdfInfo(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
       target.pages = info.pages;
-      return newFile("upload", name, buf, target, [{ level: "warn", text: "Format wird vor dem Druck geprüft – wir melden uns, falls etwas nicht passt." + (info.media ? " Seitengröße der Datei: " + info.media.w + " × " + info.media.h + " mm." : "") }], { original: "pdf" });
+      return newFile("upload", name, buf, target, [{ level: "warn", text: "Das Format kann hier nicht automatisch geprüft werden – bitte kontrolliere es selbst laut Produktbeschreibung oder wähle an der Kasse den Profi-Datencheck." + (info.media ? " Seitengröße der Datei: " + info.media.w + " × " + info.media.h + " mm." : "") }], { original: "pdf" });
     }
     if (type === "pdf") {
       const info = pdfInfo(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
@@ -1242,7 +1255,7 @@ module.exports = function (D) {
       const alpha = type === "png" && (buf[25] === 4 || buf[25] === 6 || buf.indexOf("tRNS", 33, "latin1") > -1);
       if (!alpha) checks.push({ level: "warn", text: (type === "jpg" ? "JPG" : "PNG") + " ohne transparenten Hintergrund – der Hintergrund wird mitgedruckt. Empfohlen: PNG mit transparentem Hintergrund." });
     }
-    checks.push({ level: "ok", text: pos.title + ": Logo wird mittig in der Druckfläche platziert (max. " + A[0] + " × " + A[1] + " mm, Platzierung ca. wie gezeigt). Wir prüfen jede Datei vor dem Druck." });
+    checks.push({ level: "ok", text: pos.title + ": Logo wird mittig in der Druckfläche platziert (max. " + A[0] + " × " + A[1] + " mm, Platzierung ca. wie gezeigt)." });
     const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "logo", name: clip(name, 120) || "logo", bytes: buf.length, createdAt: nowIso(), product: prod.key, sel: { pos: pos.slug }, size: null, bleed: 0, sides: 1, pages: 1, checks, orderId: null, sha256: crypto.createHash("sha256").update(buf).digest("hex") };
     Object.assign(meta, extra);
     await store.putFile(meta, buf);
@@ -1774,7 +1787,7 @@ module.exports = function (D) {
   }
   async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
-  const orderPublic = o => ({ id: o.id, nr: o.nr, groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
+  const orderPublic = o => ({ id: o.id, nr: o.nr, check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
     trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
