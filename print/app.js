@@ -124,6 +124,11 @@
   function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
     return '<span class="ps-ci-img">' + (x.preview || im ? '<img src="' + esc(x.preview || im) + '" alt="" loading="lazy"' + (x.preview && im ? ' data-fb="' + esc(im) + '"' : "") + ">" : '<span aria-hidden="true">' + esc(x.icon || pp.icon || "🖨️") + "</span>") + "</span>"; }
+  // Aktionsbanner: Code kopieren / Banner schließen (merkt sich das Gerät)
+  document.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-promo-copy],[data-promo-x]"); if (!b) return;
+    if (b.hasAttribute("data-promo-x")) { try { localStorage.setItem("fsc-print-promo-x", b.getAttribute("data-promo-x")); } catch (er) {} document.documentElement.classList.add("promo-x"); return; }
+    var code = b.getAttribute("data-promo-copy"), lab = b.querySelector("i"); copyText(code).then(function () { if (lab) { lab.textContent = "Kopiert ✓"; b.classList.add("ok"); setTimeout(function () { lab.textContent = "Kopieren"; b.classList.remove("ok"); }, 2200); } toast("Code " + code + " kopiert – an der Kasse einfügen 🎉"); }, function () { window.prompt("Code kopieren:", code); }); });
+  document.addEventListener("click", function (e) { var c = e.target.closest && e.target.closest("[data-copy]"); if (!c) return; copyText(c.getAttribute("data-copy")).then(function () { toast("Sendungsnummer kopiert"); }, function () {}); });
   // Vorschaubild kaputt (z. B. abgelaufen) → Produktbild
   document.addEventListener("error", function (e) { var t = e.target; if (t && t.tagName === "IMG" && t.closest && t.closest(".ps-ci-img")) { var fb = t.getAttribute("data-fb"); if (fb && t.src !== fb) { t.removeAttribute("data-fb"); t.src = fb; } else t.style.visibility = "hidden"; } }, true);
   function vCart() {
@@ -195,12 +200,12 @@
       '<nav class="ps-acct-nav" role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
     var orderRow = function (o) { var url = "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(o.token);
       return '<li><a href="' + url + '"><b>' + esc(o.product) + "</b><span>" + esc(o.nr) + " · " + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + " · " + (+o.copies || 0).toLocaleString("de-AT") + ' Stk.</span></a><span class="ps-ost">' + esc(o.statusText) + "</span><b>" + eur(co ? o.net : o.gross) + "</b>" +
-        '<span class="act">' + (o.canReorder ? '<button type="button" class="ps-btn small" data-act="reorder:' + esc(o.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-link" href="' + url + '">Details</a></span></li>'; };
+        '<span class="act">' + (o.tracks && o.tracks.length ? '<a class="ps-link" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a>' : "") + (o.canReorder ? '<button type="button" class="ps-btn small" data-act="reorder:' + esc(o.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-link" href="' + url + '">Details</a></span></li>'; };
     if (tab === "start") {
       var lo = S.orders[0];
       h += '<div class="ps-acct-grid ps-acct-start">';
       h += '<section class="ps-panel"><h3>Letzte Bestellung</h3>' + (lo ? '<p class="ps-lo"><b>' + esc(lo.product) + "</b> · " + (+lo.copies || 0).toLocaleString("de-AT") + " Stk. · " + eur(co ? lo.net : lo.gross) + '<br><span class="pd-muted">' + esc(lo.nr) + " vom " + esc(new Date(lo.createdAt).toLocaleDateString("de-AT")) + " · " + esc(lo.statusText) + "</span></p>" + trackHtml(lo.status) +
-        '<div class="btn-row">' + (lo.canReorder ? '<button type="button" class="ps-btn primary small" data-act="reorder:' + esc(lo.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-btn small" href="/print?bestellung=' + encodeURIComponent(lo.id) + "&t=" + encodeURIComponent(lo.token) + '">Details</a>' + (S.orders.length > 1 ? '<button type="button" class="ps-link" data-act="atab:orders">Alle ' + S.orders.length + " Bestellungen</button>" : "") + "</div>"
+        '<div class="btn-row">' + (lo.tracks && lo.tracks.length ? '<a class="ps-btn primary small" href="' + esc(lo.tracks[0]) + '" target="_blank" rel="noopener">📦 Sendung verfolgen</a>' : "") + (lo.canReorder ? '<button type="button" class="ps-btn' + (lo.tracks && lo.tracks.length ? "" : " primary") + ' small" data-act="reorder:' + esc(lo.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-btn small" href="/print?bestellung=' + encodeURIComponent(lo.id) + "&t=" + encodeURIComponent(lo.token) + '">Details</a>' + (S.orders.length > 1 ? '<button type="button" class="ps-link" data-act="atab:orders">Alle ' + S.orders.length + " Bestellungen</button>" : "") + "</div>"
         : '<p class="pd-muted">Noch keine Bestellungen – such dir ein Produkt aus und gestalte es online oder lade deine Datei hoch.</p><button type="button" class="ps-btn primary small" data-act="shop">Produkte ansehen</button>') + "</section>";
       h += '<div class="col"><section class="ps-panel ps-qstats"><button type="button" data-cart-link><b>' + S.cart.length + "</b><span>im Warenkorb</span></button><button type=\"button\" data-act=\"atab:saved\"><b>" + (me.saved || []).length + "</b><span>Gemerkt</span></button><button type=\"button\" data-act=\"atab:orders\"><b>" + S.orders.length + "</b><span>Bestellungen</span></button></section>";
       if (!co) h += '<section class="ps-panel ps-acct-up"><h3>Bestellst du für eine Firma?</h3><p class="pd-muted">Mit einem Firmenkonto siehst du Nettopreise, bekommst Rechnungen mit Firmenname und UID und sammelst Rabatt im Bonusprogramm ' + (S.bonus && S.bonus.tiers && S.bonus.tiers.length ? "(bis zu " + S.bonus.tiers[S.bonus.tiers.length - 1].pct + " %)" : "") + '.</p><button type="button" class="ps-btn small" data-act="atab:settings">In den Einstellungen umstellen</button></section>';
@@ -1261,6 +1266,7 @@
     if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
     if (k === "hqk" || k === "hqq") { if (k === "hqk") { S.hq.k = v; S.hq.q = 0; } else S.hq.q = +v; hqUpd(k === "hqq"); return; }
     if (k === "hqgo") { var hx = hqCur(); if (!hx) return; var qq = hx.h.q; pickProduct(hx.h.k, function () { if ((S.prod.tiers || []).indexOf(qq) > -1) S.copies = qq; go(2); loadPrice(); }); return; }
+    if (k === "statusref") { var sp = v.split("|"); t.disabled = true; t.textContent = "wird aktualisiert …"; showStatus(sp[0], sp[1], 99, true); return; }
     if (k === "cfgsave") { cfgSave(); return; }
     if (k === "cfgshare") { cfgShare(); return; }
     if (k === "savdel") { savDel(v); return; }
@@ -1464,9 +1470,9 @@
       showStatus(j.orderId, j.token);
     }).catch(function () { S.busy = false; S.err = "Keine Verbindung – bitte erneut versuchen."; render(); });
   }
-  function showStatus(id, t, n) {
+  function showStatus(id, t, n, refresh) {
     n = n || 0;
-    api("/print/api/order/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(t)).then(function (j) {
+    api("/print/api/order/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(t) + (refresh ? "&refresh=1" : "")).then(function (j) {
       if (!j.ok) { root.innerHTML = '<div class="ps-panel ps-status"><div class="big">🤔</div><h2>Bestellung nicht gefunden</h2><p>Bitte den Link aus der E-Mail verwenden oder uns kontaktieren.</p></div>'; return; }
       var o = j.order, st = o.status, h;
       if (st === "pending_payment" && n < 20) { root.innerHTML = '<div class="ps-panel ps-status"><div class="big"><span class="ps-spin" style="width:36px;height:36px"></span></div><h2>Zahlung wird bestätigt …</h2><p>Einen Moment – wir warten auf die Bestätigung von Mollie.</p></div>'; setTimeout(function () { showStatus(id, t, n + 1); }, 3000); return; }
@@ -1474,7 +1480,7 @@
       else if (st === "rejected") h = '<div class="big">✋</div><h2>Bestellung storniert</h2><p>Die Bestellung ' + esc(o.nr) + " wurde storniert. Details haben wir dir per E-Mail geschickt.</p>";
       else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
         (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion.") +
-        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + (o.tracks && o.tracks.length ? '<p><a class="ps-btn small" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen</a></p>' : "") +
+        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + trackCard(o, id, t) +
         (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
         '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";
       var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
@@ -1488,6 +1494,16 @@
     var L = ["Bestellt", "Geprüft", "Produktion", "Versand", "Zugestellt"], fin = st === "delivered";
     return '<ol class="ps-track" aria-label="Bestellfortschritt">' + L.map(function (l, i) { var c = i < at || fin ? "done" : i === at ? "cur" + (st === "problem" ? " warn" : "") : "";
       return '<li class="' + c + '"' + (c.indexOf("cur") === 0 ? ' aria-current="step"' : "") + "><i aria-hidden=\"true\">" + (c === "done" ? "✓" : i + 1) + "</i><span>" + l + "</span></li>"; }).join("") + "</ol>";
+  }
+  // Sendungsverfolgung: Paketdienst, Sendungsnummer, Link; „Status aktualisieren“ fragt Print.com (höchstens alle 15 min)
+  function trackCard(o, id, t) {
+    var ti = o.trackInfo || [], open = ["ordered", "in_production", "shipped", "problem"].indexOf(o.status) > -1, upd = open ? '<button type="button" class="ps-link" data-act="statusref:' + esc(id) + "|" + esc(t) + '">Status aktualisieren</button>' : "";
+    var chk = o.checkedAt ? '<span class="pd-muted">Stand ' + esc(new Date(o.checkedAt).toLocaleString("de-AT", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })) + "</span>" : "";
+    if (ti.length) return '<div class="ps-trackc"><h3><span aria-hidden="true">📦</span> Sendungsverfolgung</h3>' + ti.map(function (x) {
+        return '<div class="row"><div class="tx"><b>' + esc(x.carrier || "Paketdienst") + "</b>" + (x.code ? '<span>Sendungsnummer <code>' + esc(x.code) + '</code> <button type="button" class="ps-link" data-copy="' + esc(x.code) + '">kopieren</button></span>' : "") + '</div><a class="ps-btn primary small" href="' + esc(x.url) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a></div>'; }).join("") +
+      '<p class="ft">' + chk + " " + upd + '<br><small>Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen.</small></p></div>';
+    if (open) return '<div class="ps-trackc wait"><h3><span aria-hidden="true">📦</span> Sendungsverfolgung</h3><p>Sobald dein Paket unterwegs ist, erscheint hier die Sendungsverfolgung – und du bekommst sie zusätzlich per E-Mail.</p><p class="ft">' + chk + " " + upd + "</p></div>";
+    return "";
   }
   function retryPay(v) { var p = v.split("|"); fetch("/print/api/order/" + encodeURIComponent(p[0]) + "/pay?t=" + encodeURIComponent(p[1]), { method: "POST", headers: H, body: "{}" }).then(function (r) { return r.json(); }).then(function (j) { if (j.ok && j.checkoutUrl) location.href = j.checkoutUrl; else toast(j.error || "Zahlung nicht möglich", true); }); }
 })();

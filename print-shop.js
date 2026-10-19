@@ -1686,7 +1686,8 @@ module.exports = function (D) {
       o.payment.status = st; if (o.status === "pending_payment") o.status = "payment_failed"; hist(o, "Zahlung " + st); await store.putOrder(o);
     } else if (pay.amountRefunded && parseFloat(pay.amountRefunded.value) > 0 && o.payment.refund && o.payment.refund.status !== "refunded") { o.payment.refund.status = "refunded"; await store.putOrder(o); }
   }
-  // Status/Tracking bei Print.com abrufen (täglich bzw. auf Klick / Webhook von Print.com)
+  const carrierOf = url => { const h = (String(url).match(/^https?:\/\/([^/]+)/) || [])[1] || ""; return /dhl/i.test(h) ? "DHL" : /dpd/i.test(h) ? "DPD" : /ups/i.test(h) ? "UPS" : /gls/i.test(h) ? "GLS" : /fedex|tnt/i.test(h) ? "FedEx/TNT" : /post\.at|austrianpost/i.test(h) ? "Österreichische Post" : /postnl/i.test(h) ? "PostNL" : ""; };
+  // Status/Tracking bei Print.com abrufen (alle 2 h für offene Sendungen, auf Klick / Webhook von Print.com)
   const PC_DONE = { SHIPPED: "shipped", INTRANSIT: "shipped", DELIVERED: "delivered" };
   const PC_PROBLEM = /CANCELED|REFUSED|REJECTED|ERROR|RETURN/;
   async function pollOrder(o) {
@@ -1694,10 +1695,11 @@ module.exports = function (D) {
     const r = firstOf(await pcApi("GET", "/orders/" + encodeURIComponent(o.printcom.orderNumber)));
     const items = Array.isArray(r.items) ? r.items : [];
     const st = String((items[0] && items[0].status) || r.status || "").toUpperCase();
-    const tracks = []; (Array.isArray(r.shipments) ? r.shipments : []).forEach(s => (s.tracks || []).forEach(t => { if (t && /^https?:\/\//.test(String(t.trackUrl || "")) && tracks.indexOf(t.trackUrl) < 0) tracks.push(String(t.trackUrl)); }));
-    items.forEach(it => { if (it && /^https?:\/\//.test(String(it.trackingUrl || it.trackUrl || "")) && tracks.indexOf(it.trackingUrl || it.trackUrl) < 0) tracks.push(String(it.trackingUrl || it.trackUrl)); });
+    const tracks = [], info = [], addT = (url, code, carrier) => { url = String(url || ""); if (!/^https?:\/\//.test(url) || tracks.indexOf(url) > -1) return; tracks.push(url); info.push({ url, code: clip(code || "", 60), carrier: clip(carrier || carrierOf(url), 40) }); };
+    (Array.isArray(r.shipments) ? r.shipments : []).forEach(s => (s.tracks || []).forEach(t => { if (t) addT(t.trackUrl || t.url, t.trackingNumber || t.trackAndTraceCode || t.code || t.number, t.carrier || s.carrier || s.carrierName); }));
+    items.forEach(it => { if (it) addT(it.trackingUrl || it.trackUrl, it.trackingNumber || it.trackAndTraceCode, it.carrier); });
     const before = o.status;
-    o.printcom.status = st; o.printcom.checkedAt = nowIso(); if (tracks.length) o.printcom.tracks = tracks.slice(0, 5);
+    o.printcom.status = st; o.printcom.checkedAt = nowIso(); if (tracks.length) { o.printcom.tracks = tracks.slice(0, 5); o.printcom.trackInfo = info.slice(0, 5); }
     if (PC_DONE[st]) o.status = PC_DONE[st];
     else if (PC_PROBLEM.test(st)) o.status = "problem";
     else if (st && ["ordered", "problem"].indexOf(o.status) > -1) o.status = "in_production";
@@ -1706,7 +1708,12 @@ module.exports = function (D) {
       o.mails.shipped = await mail(o.customer.email, "Deine Drucksachen sind unterwegs · " + o.nr, "Deine Bestellung ist versendet",
         ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) ist gedruckt und auf dem Weg zu dir."],
         tracks.map((t, i) => ["Sendungsverfolgung" + (tracks.length > 1 ? " " + (i + 1) : ""), t]), tracks.length ? [] : ["Die Sendungsverfolgung schicken wir dir nach, sobald sie verfügbar ist."], D.notifyTo) ? nowIso() : null;
-      if (o.mails.shipped) hist(o, "Versandmail gesendet");
+      if (o.mails.shipped) { hist(o, "Versandmail gesendet"); if (tracks.length) o.mails.tracking = o.mails.shipped; }
+    } else if (o.mails.shipped && !o.mails.tracking && tracks.length) {   // Versandmail ging ohne Tracking raus → Tracking nachschicken
+      o.mails.tracking = await mail(o.customer.email, "Sendungsverfolgung zu deiner Bestellung · " + o.nr, "Hier kannst du dein Paket verfolgen",
+        ["Hallo " + o.customer.firstName + ",", "für deine Bestellung " + o.nr + " (" + o.product.title + ") ist jetzt die Sendungsverfolgung verfügbar."],
+        info.map((t, i) => [(t.carrier || "Sendungsverfolgung") + (t.code ? " · " + t.code : "") + (info.length > 1 ? " (" + (i + 1) + ")" : ""), t.url]), ["Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen."], D.notifyTo) ? nowIso() : null;
+      if (o.mails.tracking) hist(o, "Sendungsverfolgung per Mail nachgeschickt");
     }
     await store.putOrder(o);
     return o;
@@ -1727,8 +1734,10 @@ module.exports = function (D) {
     return n;
   }
   let lastDaily = 0;
+  let lastTrack = 0;
   async function tick() {
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
+    if (cfg().pcKey && Date.now() - lastTrack > 2 * 3600e3) { lastTrack = Date.now(); pollAll().catch(e => log("Sendungsstatus:", e.message)); }   // Status/Tracking alle 2 h
     try {
       if (Date.now() - lastDaily < 20 * 3600e3) return;
       const m = (await store.getMeta("print_daily").catch(() => null)) || {};
@@ -1762,13 +1771,14 @@ module.exports = function (D) {
   async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
   const orderPublic = o => ({ id: o.id, nr: o.nr, groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
-    payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [], email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
+    payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
+    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
   const live = () => process.env.PRINT_SHOP_LIVE === "1" || !!(SETTINGS && SETTINGS.live);   // Railway-Variable oder Schalter im Cockpit
   const liveReady = async () => { if (!SETTINGS) await settings().catch(() => null); return live(); };   // nach Neustart: Einstellungen erst laden
-  setTimeout(() => { settings().catch(() => {}); }, 0);
+  setTimeout(() => { settings().catch(() => {}); vouchers().catch(() => {}); }, 0);
   // Ansichtsmodus (PRINT_SHOP_VIEW=1, z. B. für die Mollie-Prüfung): Shop, Preise, AGB öffentlich sichtbar – Bestellen noch gesperrt
   const viewOnly = () => !live() && process.env.PRINT_SHOP_VIEW === "1";
   const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an office@fs-creative.at.";
@@ -1777,8 +1787,18 @@ module.exports = function (D) {
     return D.send(res, 404, html, "text/html; charset=utf-8", { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
   }
   const ASSET_V = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || Date.now()).replace(/[^\w.-]/g, "").slice(0, 12);
+  // Aktionsbanner in der Kopfzeile: aktiver Gutschein mit banner:true bzw. WILLKOMMEN10 (endet automatisch mit Ablauf/Deaktivierung im Cockpit)
+  function promoOf() { const t = today(); const v = Object.values(VOUCHERS || {}).find(x => x && x.active !== false && (x.banner === true || String(x.code || "").toUpperCase() === "WILLKOMMEN10") && (!x.until || t <= x.until) && !(x.maxUses && (x.used || 0) >= x.maxUses) && +x.pct > 0);
+    return v ? { code: String(v.code).toUpperCase(), pct: +v.pct, until: v.until || "", once: !!v.perCustomer } : null; }
+  function promoHtml(pr) {
+    const until = pr.until ? new Date(pr.until + "T12:00:00").toLocaleDateString("de-AT", { day: "numeric", month: "long" }) : "", pct = String(pr.pct).replace(".", ","), c = escH(pr.code);
+    return '<div class="ps-promo" id="psPromo" role="region" aria-label="Aktion"><div class="in"><span class="em" aria-hidden="true">🎉</span><span class="tx"><b>' + pct + ' % Willkommensrabatt</b><span class="lg"> auf deine Bestellung</span> – Code:</span>' +
+      '<button type="button" class="code" data-promo-copy="' + c + '" aria-label="Code ' + c + ' kopieren"><span>' + c + '</span><i>Kopieren</i></button>' +
+      '<span class="sm">' + (pr.once ? "einmal pro Kunde" : "") + (pr.once && until ? " · " : "") + (until ? "gültig bis " + escH(until) : "") + '</span><button type="button" class="x" data-promo-x="' + c + '" aria-label="Banner schließen">×</button></div></div>';
+  }
   function shopPage(req, res, preview) {
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    const pr = promoOf(); if (pr) html = html.replace('<html lang="de">', '<html lang="de" class="has-promo">').replace("</head>", '<script>try{if(localStorage.getItem("fsc-print-promo-x")==="' + pr.code + '")document.documentElement.classList.add("promo-x")}catch(e){}</script>\n</head>').replace(/<body([^>]*)>/, m => m + promoHtml(pr));
     // Shop-Dateien je Deploy neu laden (sonst bleibt bis zu 1 Std. die alte app.js/print.css im Browser-Cache)
     html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace("</head>", '<script>window.PRINT_V="' + ASSET_V + '";</script>\n</head>');
     if (preview === "view") html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
@@ -1900,7 +1920,11 @@ module.exports = function (D) {
       if (m) {
         if (!sigOk("order", m[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
         const o = await store.getOrder(m[1]); if (!o) return J(res, 404, { ok: false, error: "not_found" });
-        if (!m[2] && req.method === "GET") return J(res, 200, { ok: true, order: orderPublic(o) });
+        if (!m[2] && req.method === "GET") {
+          if (u.searchParams.get("refresh") === "1" && o.printcom && o.printcom.orderNumber && ["ordered", "in_production", "shipped", "problem"].indexOf(o.status) > -1
+            && (!o.printcom.checkedAt || Date.now() - Date.parse(o.printcom.checkedAt) > 15 * 60e3) && !limited("track", ip, 20, 3600e3)) { try { await pollOrder(o); } catch (e) { log("Tracking", o.nr, e.message); } }
+          return J(res, 200, { ok: true, order: orderPublic(o) });
+        }
         if (m[2] && req.method === "POST") {
           if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
           if (limited("pay", ip, 10, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });

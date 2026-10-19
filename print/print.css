@@ -1218,3 +1218,31 @@ html.light .ps-req-svg .tx rect{fill:#c9ced8}
 }
 .ps-dnote{margin:6px 0 0;font-size:12px;color:var(--text-faint);line-height:1.4}
 .ps-sum small.ps-dnote{display:block;font-weight:400}
+@media(min-width:1000px){.ps-req-l{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px}}
+/* Sendungsverfolgung */
+.ps-trackc{max-width:520px;margin:16px auto 6px;padding:16px;border-radius:18px;border:1px solid var(--ps-line2);background:var(--ps-card);text-align:left}
+.ps-trackc h3{margin:0 0 10px;font-size:16px;display:flex;gap:8px;align-items:center}
+.ps-trackc .row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--ps-line)}
+.ps-trackc .row:first-of-type{border-top:0}
+.ps-trackc .tx{display:flex;flex-direction:column;gap:3px}.ps-trackc .tx span{font-size:13px;color:var(--text-dim)}
+.ps-trackc code{font:600 13px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface);padding:2px 6px;border-radius:6px;color:var(--text)}
+.ps-trackc .ft{margin:8px 0 0;font-size:12.5px;color:var(--text-dim)}.ps-trackc .ft small{color:var(--text-faint)}
+.ps-trackc.wait p{margin:0;font-size:14px;color:var(--text-dim)}.ps-trackc.wait .ft{margin-top:8px}
+/* Aktionsbanner (Gutschein) in der Kopfzeile */
+.ps-promo{position:fixed;top:0;left:0;right:0;height:40px;z-index:102;display:flex;align-items:center;background:linear-gradient(90deg,#0a84ff 0%,#7c5cff 55%,#e6007e 100%);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18)}
+.ps-promo .in{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:0 48px 0 16px;font-size:14px;white-space:nowrap;overflow:hidden}
+.ps-promo .em{font-size:18px;line-height:1}
+.ps-promo .tx b{font-weight:800}
+.ps-promo .code{display:inline-flex;align-items:center;gap:8px;border:1.5px dashed rgba(255,255,255,.9);background:rgba(255,255,255,.14);color:#fff;border-radius:9px;padding:3px 4px 3px 10px;font:800 13.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;cursor:pointer;transition:background .15s}
+.ps-promo .code:hover{background:rgba(255,255,255,.26)}
+.ps-promo .code i{font:700 12px/1 -apple-system,"Inter",system-ui,sans-serif;font-style:normal;letter-spacing:0;background:#fff;color:#1d1d1f;padding:5px 9px;border-radius:6px}
+.ps-promo .code.ok i{background:#30d158;color:#fff}
+.ps-promo .sm{font-size:12.5px;opacity:.88}
+.ps-promo .x{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;font-size:19px;line-height:1;cursor:pointer}
+.ps-promo .x:hover{background:rgba(255,255,255,.3)}
+html.has-promo:not(.promo-x){--nav-h:100px}
+html.has-promo:not(.promo-x) header.nav{top:40px;height:60px}
+html.has-promo:not(.promo-x) .pullchain{top:40px}
+html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
+@media(max-width:640px){.ps-promo .lg,.ps-promo .sm{display:none}.ps-promo .in{gap:8px;font-size:13px;padding:0 44px 0 12px}}
+@media(max-width:380px){.ps-promo .code i{display:none}.ps-promo .em{display:none}}
