@@ -583,7 +583,7 @@
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
-      (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>") +
+      (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
   function renderPrice() {
@@ -974,6 +974,47 @@
     var f = S.price && S.price.folds;
     return '<a class="ps-tpl' + (cls ? " " + cls : "") + '" href="' + esc(tplUrl()) + '" download><span class="ic" aria-hidden="true">📐</span><span><b>Druckvorlage herunterladen (PDF)</b><small>Für InDesign, Illustrator, Affinity, Canva &amp; Co. – mit Beschnitt, Sicherheitsabstand' + (f ? " und Falzlinien" : "") + ", passend zu deiner Auswahl.</small></span><span class=\"dl\" aria-hidden=\"true\">↓</span></a>";
   }
+  // Druckdaten-Anforderungen für genau diese Ausführung: Skizze (Beschnitt, Endformat, Sicherheitsabstand, Falz) + Checkliste + Profi-Details
+  function mmF(v) { return String(Math.round(v * 10) / 10).replace(".", ","); }
+  function reqSketch(sz, b, safe, f) {
+    var W = 200, H = Math.round(W * sz.h / sz.w); if (H > 250) { H = 250; W = Math.round(H * sz.w / sz.h); } if (H < 70) H = 70;
+    var pb = 9, ps = 13, VW = W + 2 * pb, VH = H + 2 * pb, lines = "";
+    if (f) { (f.x || []).forEach(function (x) { var xx = pb + x / sz.w * W; lines += '<line x1="' + xx + '" y1="' + (pb - 4) + '" x2="' + xx + '" y2="' + (pb + H + 4) + '" class="fo"/>'; });
+      (f.y || []).forEach(function (y) { var yy = pb + y / sz.h * H; lines += '<line x1="' + (pb - 4) + '" y1="' + yy + '" x2="' + (pb + W + 4) + '" y2="' + yy + '" class="fo"/>'; }); }
+    return '<svg class="ps-req-svg" viewBox="0 0 ' + VW + " " + VH + '" role="img" aria-label="Skizze: Beschnitt, Endformat und Sicherheitsabstand">' +
+      (b ? '<rect x="0.75" y="0.75" width="' + (VW - 1.5) + '" height="' + (VH - 1.5) + '" rx="3" class="bl"/>' : "") +
+      '<rect x="' + pb + '" y="' + pb + '" width="' + W + '" height="' + H + '" class="tr"/>' +
+      '<rect x="' + (pb + ps) + '" y="' + (pb + ps) + '" width="' + Math.max(10, W - 2 * ps) + '" height="' + Math.max(10, H - 2 * ps) + '" rx="2" class="sa"/>' + lines +
+      '<g class="tx"><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 10) + '" width="' + Math.min(70, W - 2 * ps - 16) + '" height="6" rx="3"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 22) + '" width="' + Math.min(110, W - 2 * ps - 16) + '" height="4" rx="2"/><rect x="' + (pb + ps + 8) + '" y="' + (pb + ps + 31) + '" width="' + Math.min(90, W - 2 * ps - 16) + '" height="4" rx="2"/></g></svg>';
+  }
+  function reqHtml(open) {
+    var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = +p.safe || 3, dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
+    if (!sz) return "";
+    var fileW = sz.w + 2 * b, fileH = sz.h + 2 * b, unit = function (v) { return big && v >= 1000 ? mmF(v / 10) + " cm" : mmF(v) + " mm"; };
+    var pagesTxt = sd === 2 ? (f ? "Seite 1 = Außenseite, Seite 2 = Innenseite" : "Seite 1 = Vorderseite, Seite 2 = Rückseite") + " – beide in einer PDF" : "1 Seite";
+    var items = [
+      ["📏", "Dateiformat", "<b>" + unit(fileW) + " × " + unit(fileH) + "</b> – Endformat " + unit(sz.w) + " × " + unit(sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
+      ["🛡️", "Sicherheitsabstand", "Texte, Logos und wichtige Inhalte mindestens <b>" + mmF(safe) + " mm</b> vom Rand des Endformats entfernt" + (p.kind === "banner" ? " – im Randbereich sitzen Saum und Ösen" : "")],
+      ["🖼️", "Auflösung", "Bilder mit mindestens <b>" + dpi + " dpi</b> in Endgröße" + (big ? " (für Großformat genügt das, aus der Entfernung gesehen)" : "") + "; Logos und Texte am besten als Vektor"],
+      ["📄", "Seiten", pagesTxt],
+      ["🎨", "Farben", "<b>CMYK</b> anlegen – RGB-Dateien werden beim Druck umgerechnet, leuchtende Bildschirmfarben wirken dann etwas ruhiger"],
+      ["🔤", "Schriften", "In der PDF <b>einbetten</b> oder in Pfade umwandeln; Schriftgröße ab " + (big ? "20 pt" : "6 pt") + ", feine Linien ab 0,25 pt"],
+      ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 50 MB · keine Schnittmarken"]
+    ];
+    if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
+    return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + unit(fileW) + " × " + unit(fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +
+      '<div class="ps-req-b"><figure class="ps-req-fig">' + reqSketch(sz, b, safe, f) + '<figcaption><span><i class="bl"></i>Beschnitt ' + (b ? mmF(b) + " mm" : "–") + '</span><span><i class="tr"></i>Endformat</span><span><i class="sa"></i>Sicherheitsabstand ' + mmF(safe) + " mm</span>" + (f ? '<span><i class="fo"></i>Falz</span>' : "") + "</figcaption></figure>" +
+      '<ul class="ps-req-l">' + items.map(function (x) { return '<li><span class="ri" aria-hidden="true">' + x[0] + "</span><div><b>" + x[1] + "</b><span>" + x[2] + "</span></div></li>"; }).join("") + "</ul></div>" +
+      '<details class="ps-req-pro"><summary>Für Profis</summary><ul><li>Farbprofil: ISO Coated v2 / PSO Coated v3 (Bogen), Gesamtfarbauftrag max. 300 %</li><li>Große schwarze Flächen als Tiefschwarz (z. B. 40/30/30/100), Text in reinem Schwarz (0/0/0/100)</li><li>Hintergründe und randabfallende Bilder immer bis in den Beschnitt ziehen</li><li>Transparenzen reduzieren bzw. PDF/X-4 verwenden, Überdrucken nur bewusst einsetzen</li>' + (sd === 2 ? "<li>Vorder- und Rückseite gleich ausgerichtet (Kopf an Kopf)</li>" : "") + "</ul></details>" +
+      tplBtn("soft") + '<p class="ps-req-f">Jede Datei prüfen wir automatisch und vor dem Druck persönlich. Unsicher? Lade sie einfach hoch – du siehst sofort eine Vorschau mit allen Rändern.</p></details>';
+  }
+  function logoReqHtml(pos) {
+    return '<div class="ps-req ps-req-logo" ><div class="ps-req-b"><ul class="ps-req-l">' +
+      '<li><span class="ri" aria-hidden="true">🖼️</span><div><b>Beste Qualität</b><span>Vektor-PDF oder <b>PNG mit transparentem Hintergrund</b>, mindestens 1000 px breit</span></div></li>' +
+      '<li><span class="ri" aria-hidden="true">📏</span><div><b>Druckfläche</b><span>' + pos.map(function (x) { return esc(x.title) + " max. " + x.area[0] + " × " + x.area[1] + " mm"; }).join(" · ") + " – dein Logo wird proportional eingepasst und mittig platziert</span></div></li>" +
+      '<li><span class="ri" aria-hidden="true">🎨</span><div><b>Farben</b><span>Kräftige, klare Farben; sehr feine Linien und Schrift unter 2 mm Höhe werden auf Textil bzw. kleinen Werbeartikeln unscharf</span></div></li>' +
+      '<li><span class="ri" aria-hidden="true">✓</span><div><b>Kein Rahmen, kein Hintergrund</b><span>Nur das Logo selbst – weiße Flächen um das Logo werden sonst mitgedruckt</span></div></li></ul></div></div>';
+  }
   // Schritt 3: Gestalten / Druckdatei (Drucksachen, Banner)
   function vDesign() {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
@@ -988,15 +1029,15 @@
         (S.file.kind === "design" ? '<button type="button" class="ps-btn small" data-act="editdesign">Weiter bearbeiten</button>' : "") +
         '<a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a><button type="button" class="ps-btn small" data-act="clearfile">Andere Datei</button></div></div>' + qualHtml(S.file) + checksHtml(S.file.checks) +
         '<div class="ps-pfv" id="psPfv" data-fid="' + esc(S.file.fileId) + '"><div class="ps-pfv-h"><b>Vorschau mit Druckrändern</b><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
-        '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten, Hintergründe bis hierher ziehen</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie – keine Texte direkt auf die Falz</li>' : "") + '</ul><div class="ps-pfv-w" id="psPfvW"></div></div>';
+        '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten, Hintergründe bis hierher ziehen</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie – keine Texte direkt auf die Falz</li>' : "") + '</ul><div class="ps-pfv-w" id="psPfvW"></div></div>' + reqHtml(false);
       if (S.file.preflight && S.file.preflight.status === "PROCESSING") h += '<p class="pd-muted" style="margin-top:8px"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>';
     } else if (S.mode === "upload") {
       h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (sd === 2 ? " · 2 Seiten" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
-        '<p class="ps-terms">Tipp: PDF im Endformat' + (b ? " plus " + b + " mm Beschnitt an jeder Seite" : "") + ', Schriften eingebettet, Bilder mit ' + (p.dpi || 300) + ' dpi. <button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
+        reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
         '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button>' +
-        '<a class="ps-mode ps-mode-agency" href="/kontakt?von=print&amp;thema=Gestaltung%20' + encodeURIComponent(p.title) + '" target="_blank" rel="noopener"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></a></div>' + tplBtn("soft");
+        '<a class="ps-mode ps-mode-agency" href="/kontakt?von=print&amp;thema=Gestaltung%20' + encodeURIComponent(p.title) + '" target="_blank" rel="noopener"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></a></div>' + (reqHtml(false) || tplBtn("soft"));
     }
     return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button>' + (S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (S.file ? "Bitte die rot markierten Punkte korrigieren." : "Wähle oben, wie du deine Druckdaten erstellst.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
@@ -1009,7 +1050,7 @@
           : '<label class="ps-drop small" data-logo="' + esc(x.slug) + '"><input type="file" data-logo="' + esc(x.slug) + '" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"><b>Logo auswählen oder hierher ziehen</b><small>PNG mit transparentem Hintergrund (mind. 1000 px) oder Vektor-PDF · max. 50 MB</small><div class="ps-prog" hidden><i></i></div></label>') +
         '<div class="ps-uperr" data-err="' + esc(x.slug) + '"></div></div>'; }).join("");
     var merged = S.file ? '<div class="ps-file"><div><b>Logo-PDF für den Druck</b><div class="pd-muted">' + (S.file.pages || pos.length) + " Seite(n) – eine je Position · " + (S.file.blocked ? '<span style="color:var(--ps-bad)">bitte korrigieren</span>' : "bereit") + '</div></div><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a></div>' + checksHtml(S.file.checks.filter(function (c) { return c.level === "error"; })) : "";
-    return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird mittig in der Druckfläche platziert – wir prüfen jede Datei vor dem Druck.</p>" + '<div class="ps-logos">' + slots + "</div>" + merged +
+    return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird mittig in der Druckfläche platziert – wir prüfen jede Datei vor dem Druck.</p>" + '<div class="ps-logos">' + slots + "</div>" + (S.file ? "" : logoReqHtml(pos)) + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   // Qualitäts-Ampel aus den Prüfergebnissen
@@ -1135,7 +1176,7 @@
       '<label class="ps-cb"><input type="checkbox" data-act="newacct"' + (S.newAcct ? " checked" : "") + '><span><b>Kundenkonto anlegen</b> – Bestellungen und Adresse speichern (Bestätigung per Code an ' + esc(c.email) + ")</span></label>" +
       (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort (mind. 8 Zeichen)</label><input id="psNewPw" type="password" autocomplete="new-password" value="' + esc(S.newPw || "") + '"></div>' : "");
     return '<div class="ps-layout"><div class="ps-panel"><h2>Prüfen &amp; bestellen</h2><p class="sub">Bitte prüfe deine Druckdaten genau – gedruckt wird genau so, wie du sie freigibst.</p>' + items +
-      '<div class="ps-sum"><div><span>Lieferung an</span><b>' + esc(addr) + ' <button type="button" class="ps-link" data-go="5">ändern</button></b></div>' + (lastDel ? "<div><span>Voraussichtlich bei dir</span><b>" + esc(deDate(lastDel)) + "</b></div>" : "") + money + "</div>" +
+      '<div class="ps-sum"><div><span>Lieferung an</span><b>' + esc(addr) + ' <button type="button" class="ps-link" data-go="5">ändern</button></b></div>' + (lastDel ? "<div><span>Voraussichtlich bei dir<small class=\"ps-dnote\">ggf. auch erst am darauffolgenden Werktag</small></span><b>" + esc(deDate(lastDel)) + "</b></div>" : "") + money + "</div>" +
       '<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
       '<label class="ps-radio' + (S.cat.payments.mollie ? "" : " dis") + '"><input type="radio" name="pay" value="mollie"' + (S.payment === "mollie" ? " checked" : "") + (S.cat.payments.mollie ? "" : " disabled") + '><span><b>Online bezahlen</b><small>Kreditkarte, Apple Pay, EPS, PayPal u. a. – sicher über Mollie' + (S.cat.payments.mollie ? "" : " (gerade nicht verfügbar)") + "</small></span></label>" +
       (co ? '' : '<!--') + '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label>" + (co ? "" : "-->") + "</fieldset>" + chk + vch + acct +
@@ -1433,7 +1474,7 @@
       else if (st === "rejected") h = '<div class="big">✋</div><h2>Bestellung storniert</h2><p>Die Bestellung ' + esc(o.nr) + " wurde storniert. Details haben wir dir per E-Mail geschickt.</p>";
       else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
         (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion.") +
-        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) : "") + "</p>" + (o.tracks && o.tracks.length ? '<p><a class="ps-btn small" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen</a></p>' : "") +
+        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + (o.tracks && o.tracks.length ? '<p><a class="ps-btn small" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen</a></p>' : "") +
         (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
         '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";
       var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}

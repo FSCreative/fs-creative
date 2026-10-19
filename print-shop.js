@@ -1334,7 +1334,7 @@ module.exports = function (D) {
     const text = [title, ""].concat(intro, [""], (rows || []).map(r => r[0] + ": " + r[1]), [""], outro || [], ["", "FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn"]).join("\n");
     try { await D.mailSend({ to, subject, text, html: mailHtml(title, intro, rows, outro), replyTo }); return true; } catch (e) { log("Mail an " + String(to).replace(/^[^@]+/, "…") + " fehlgeschlagen:", e.message); return false; }
   }
-  const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) : "")],
+  const orderRows = o => [["Bestellnummer", o.nr], ["Produkt", o.product.title + " · " + o.copies + " Stk."]].concat(o.labels.map(l => [l[0], l[1]]), [["Lieferzeit", (URGENCY_DE[o.urgency] || o.urgency) + (o.price.deliveryDate ? " · voraussichtlich " + deDate(o.price.deliveryDate) + " (ggf. auch am darauffolgenden Werktag)" : "")],
     ["Lieferadresse", [o.customer.company, o.customer.firstName + " " + o.customer.lastName, o.customer.street, o.customer.zip + " " + o.customer.city, COUNTRIES[o.customer.country]].filter(Boolean).join(", ")],
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
