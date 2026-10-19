@@ -23,7 +23,7 @@ function copyApp() {
 }
 async function startServer(dir) {
   const port = 6500 + Math.floor(Math.random() * 400);
-  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "richtig-123", BLITZDINGS_COCKPIT_TOKEN: "fin-test-token-123" });
+  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "richtig-123", BLITZDINGS_COCKPIT_TOKEN: "fin-test-token-123", KOCHDU_STATS_TOKEN: "kochdu-stats-alt", FINAPI_TOKEN_KOCHDU: "kochdu-fin-neu-456" });
   ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN", "RAILWAY_API_TOKEN", "CF_API_TOKEN", "ANTHROPIC_API_KEY", "DATABASE_URL", "SEVDESK_API_KEY", "MAIL_API_URL", "PRINTCOM_API_KEY"].forEach((k) => delete e[k]);
   const srv = cp.spawn(process.execPath, ["server.js"], { cwd: dir, env: e, stdio: ["ignore", "pipe", "pipe"] });
   srv.out = ""; srv.stdout.on("data", (d) => (srv.out += d)); srv.stderr.on("data", (d) => (srv.out += d));
@@ -110,6 +110,9 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
     for (let i = 0; i < 10; i++) assert.strictEqual((await fa("GET", "/Contact", "falsch-" + i, "203.0.113.51")).status, 401);
     assert.strictEqual((await fa("GET", "/Contact", "fin-test-token-123", "203.0.113.51")).status, 429, "nach 10 falschen Tokens gesperrt");
     assert.ok(/fin-api blitzdings POST \/Contact/.test(srv.out) && /fin-api gesperrt blitzdings DELETE/.test(srv.out), "protokolliert");
+    assert.notStrictEqual((await fa("POST", "/Contact", "kochdu-fin-neu-456", "203.0.113.52")).status, 401, "eigener fin-api-Token (kochdu)");
+    assert.strictEqual((await fa("POST", "/Contact", "kochdu-stats-alt", "203.0.113.52")).status, 401, "Statistik-Token gilt nicht mehr, sobald der eigene gesetzt ist");
+    assert.ok(/blitzdings nutzt noch den Statistik-Token/.test(srv.out), "Hinweis im Protokoll");
   });
   await t("Bibliotheken, Tests und Server-Code nie öffentlich", async () => {
     for (const p of ["/node_modules/pdf-lib/package.json", "/node_modules/pdf-lib/README.md", "/test/print-cms-fixture.json", "/test/security.test.js", "/server.js", "/client-ip.js", "/package.json"]) {

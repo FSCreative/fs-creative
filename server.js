@@ -248,12 +248,20 @@ function loginFailed(ip) {
 const JSON_MEMO = new Map();
 // Nach Änderungen (Verrechnen, Bezahlt) die zwischengespeicherten Statistiken dieser Plattform verwerfen
 function forgetStats(baseUrl) { for (const k of Array.from(JSON_MEMO.keys())) if (k.indexOf(baseUrl) === 0) JSON_MEMO.delete(k); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
-async function getJSON(url) {
+// Token im Header statt in der URL (URLs landen in Zugriffsprotokollen – Sicherheitsprüfung 19.10.2026).
+// Kennt ein Dienst den Header nicht (401/403), einmal mit ?token= nachfragen und das merken.
+const TOKEN_IN_URL = new Set();
+async function getJSON(url, token) {
   const hit = JSON_MEMO.get(url);
   if (hit && Date.now() - hit.at < 25000) return hit.p;
   const p = (async () => {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 9000);
-    try { const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) return null; return await r.json(); }
+    const host = (() => { try { return new URL(url).host; } catch (e) { return url; } })();
+    const withQ = () => url + (url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    try {
+      let r = await fetch(token && TOKEN_IN_URL.has(host) ? withQ() : url, { headers: token ? { "x-api-token": token, authorization: "Bearer " + token } : {}, signal: ctrl.signal });
+      if (token && (r.status === 401 || r.status === 403) && !TOKEN_IN_URL.has(host)) { TOKEN_IN_URL.add(host); console.log("Token per Header abgelehnt, nutze URL:", host); r = await fetch(withQ(), { signal: ctrl.signal }); }
+      if (!r.ok) return null; return await r.json(); }
     catch (e) { return null; } finally { clearTimeout(t); }
   })();
   JSON_MEMO.set(url, { at: Date.now(), p });
@@ -263,7 +271,7 @@ async function getJSON(url) {
 function yearParam(year) { return year ? "&year=" + encodeURIComponent(year) : ""; }
 async function kantineurStats(year) {
   if (!KANTINEUR.token) return null;
-  const d = await getJSON(KANTINEUR.url + "?token=" + encodeURIComponent(KANTINEUR.token) + yearParam(year));
+  const d = await getJSON(KANTINEUR.url + yearParam(year).replace(/^&/, "?"), KANTINEUR.token);
   if (!d || d.error) return null;
   return {
     fetchedAt: d.fetchedAt,
@@ -284,8 +292,8 @@ async function mailSnapshot() {
   MAIL_SNAP.p = (async () => {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
     try {
-      const headers = MAIL_SNAP.etag && MAIL_SNAP.data ? { "If-None-Match": MAIL_SNAP.etag } : {};
-      const r = await fetch(MAIL.url + "?token=" + encodeURIComponent(MAIL.token), { headers, signal: ctrl.signal });
+      const headers = Object.assign({ "x-api-token": MAIL.token }, MAIL_SNAP.etag && MAIL_SNAP.data ? { "If-None-Match": MAIL_SNAP.etag } : {});
+      const r = await fetch(MAIL.url, { headers, signal: ctrl.signal });
       if (r.status === 304 && MAIL_SNAP.data) { MAIL_SNAP.at = Date.now(); return MAIL_SNAP.data; }
       if (!r.ok) return MAIL_SNAP.data;
       const d = await r.json(); if (!d || d.error || d.warming) return MAIL_SNAP.data;
@@ -327,7 +335,7 @@ setInterval(() => { if (MAIL.url && MAIL.token && process.env.DATABASE_URL) PUSH
 })();
 async function blitzdingsStats(year) {
   if (!BLITZ.token) return null;
-  const d = await getJSON(BLITZ.url + "?token=" + encodeURIComponent(BLITZ.token) + yearParam(year));
+  const d = await getJSON(BLITZ.url + yearParam(year).replace(/^&/, "?"), BLITZ.token);
   if (!d || d.error) return null;
   return d;
 }
@@ -363,7 +371,7 @@ async function blitzYearBookings(year) {
 }
 async function kochduStats(year) {
   if (!KOCHDU.token) return null;
-  const d = await getJSON(KOCHDU.url + "?token=" + encodeURIComponent(KOCHDU.token) + yearParam(year));
+  const d = await getJSON(KOCHDU.url + yearParam(year).replace(/^&/, "?"), KOCHDU.token);
   if (!d || d.error) return null;
   return d;
 }
@@ -372,7 +380,7 @@ async function valueroStats(year) {
   const objects = [];
   // Antonhaus (valuero-stats: provisionCents + months[{month,provisionCents,bookings}])
   if (ANTONHAUS.token) {
-    const d = await getJSON(ANTONHAUS.url + "?token=" + encodeURIComponent(ANTONHAUS.token) + yearParam(year));
+    const d = await getJSON(ANTONHAUS.url + yearParam(year).replace(/^&/, "?"), ANTONHAUS.token);
     if (d && d.ok) {
       objects.push({
         key: "antonhaus", name: "Antonhaus", ratesLabel: "5 % Website",
@@ -687,8 +695,8 @@ function privateCalQuick() {
 // Kalender-Termine (Outlook/CalDAV) über die Mail-API, falls dort ein CalDAV-Server konfiguriert ist.
 async function calendarEvents() {
   if (!MAIL.url || !MAIL.token) return null;
-  const calUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/calendar") + "?token=" + encodeURIComponent(MAIL.token);
-  const d = await getJSON(calUrl);
+  const calUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/calendar");
+  const d = await getJSON(calUrl, MAIL.token);
   if (!d || d.error || !Array.isArray(d.events)) return null;
   return d;
 }
@@ -828,11 +836,19 @@ ${err ? '<div class="err">' + err + "</div>" : ""}
 const SEV_TEST = /^http:\/\/127\.0\.0\.1[:/]/.test(process.env.SEVDESK_API_BASE || "");
 const SEV = { key: SEV_TEST ? (process.env.SEVDESK_API_KEY || "").trim() : "", src: SEV_TEST ? "test" : "", base: SEV_TEST ? process.env.SEVDESK_API_BASE.replace(/\/$/, "") : "", triedAt: 0, err: "" };
 async function sevKey() { return SEV.key; }
+const FINAPI_LEGACY = {};
 function finApiAuth(req) {
   const got = String(req.headers["authorization"] || req.headers["x-api-token"] || "").replace(/^Bearer\s+/i, "").trim();
   if (!got) return "";
   const ok = (exp, who) => { exp = String(exp || "").trim(); if (!exp || exp.length !== got.length) return ""; return crypto.timingSafeEqual(Buffer.from(exp), Buffer.from(got)) ? who : ""; };
-  return ok(process.env.BLITZDINGS_COCKPIT_TOKEN, "blitzdings") || ok(BLITZ.token, "blitzdings") || ok(KOCHDU.token, "kochdu") || ok(KANTINEUR.token, "kantineur") || "";
+  // eigene fin-api-Tokens je Plattform (FINAPI_TOKEN_*); solange einer fehlt, gilt für diese Plattform übergangsweise noch der Statistik-Token
+  const NEW = { kochdu: process.env.FINAPI_TOKEN_KOCHDU, blitzdings: process.env.FINAPI_TOKEN_BLITZDINGS, kantineur: process.env.FINAPI_TOKEN_KANTINEUR };
+  const OLD = { blitzdings: [process.env.BLITZDINGS_COCKPIT_TOKEN, BLITZ.token], kochdu: [KOCHDU.token], kantineur: [KANTINEUR.token] };
+  for (const who of Object.keys(NEW)) {
+    if (String(NEW[who] || "").trim()) { if (ok(NEW[who], who)) return who; continue; }
+    for (const t of OLD[who]) if (ok(t, who)) { if (!FINAPI_LEGACY[who]) { FINAPI_LEGACY[who] = 1; console.log("fin-api: " + who + " nutzt noch den Statistik-Token – FINAPI_TOKEN_" + who.toUpperCase() + " setzen"); } return who; }
+  }
+  return "";
 }
 function formNested(str) {   // a[b]=1&c=2 → {a:{b:"1"},c:"2"}
   const out = {};
@@ -1226,8 +1242,8 @@ async function sevVoucherFromMail(pl) {
     buf = f.buf; fname = f.fname; ctypeIn = f.ctype;
   } else {
   if (!MAIL.url || !MAIL.token) throw new Error("mail_not_configured");
-  const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?token=" + encodeURIComponent(MAIL.token) + "&folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || "0") + "&account=" + encodeURIComponent(m.account || "");
-  const r = await fetch(attUrl); if (!r.ok) throw new Error("anhang_nicht_geladen");
+  const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || "0") + "&account=" + encodeURIComponent(m.account || "");
+  const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token } }); if (!r.ok) throw new Error("anhang_nicht_geladen");
   buf = Buffer.from(await r.arrayBuffer());
   const cd = r.headers.get("content-disposition") || ""; fname = String(m.filename || "beleg.pdf");
   const m5987 = cd.match(/filename\*=UTF-8''([^;]+)/i), mPlain = cd.match(/filename="([^"]*)"/i);
@@ -1684,7 +1700,7 @@ function sevSummary(sev, year, today) {
 const SKIKAISER = { url: process.env.SKIKAISER_STATS_URL || "", token: process.env.SKIKAISER_STATS_TOKEN || "" };
 async function skikaiserStats(year) {
   if (!SKIKAISER.url) return { configured: false };
-  const d = await getJSON(SKIKAISER.url + (SKIKAISER.url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(SKIKAISER.token) + yearParam(year));
+  const d = await getJSON(SKIKAISER.url + (SKIKAISER.url.indexOf("?") > -1 ? yearParam(year) : yearParam(year).replace(/^&/, "?")), SKIKAISER.token);
   if (!d || d.error) return { configured: true, error: (d && d.error) || "keine_antwort" };
   const yr = String(year);
   let byMonth = {}, byProduct = {}, byPlatform = {}, totals = { grossCents: 0, proceedsCents: 0, count: 0, refunds: 0 }, recent = [];
@@ -1738,7 +1754,7 @@ function appKaufSummen(d, year) {
 }
 async function huettengaudiStats(year) {
   if (!HUETTENGAUDI.url) return { configured: false };
-  const d = await getJSON(HUETTENGAUDI.url + (HUETTENGAUDI.url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(HUETTENGAUDI.token) + yearParam(year));
+  const d = await getJSON(HUETTENGAUDI.url + (HUETTENGAUDI.url.indexOf("?") > -1 ? yearParam(year) : yearParam(year).replace(/^&/, "?")), HUETTENGAUDI.token);
   if (!d || d.error) return { configured: true, error: (d && d.error) || "keine_antwort" };
   // Backend liefert zusätzlich Nutzung, Fortschritt (Welten/Stufen), Ereignisse, Feedback, Fehler und die aktuelle Fernsteuerung (config)
   return Object.assign({ configured: true, fetchedAt: d.fetchedAt || new Date().toISOString() }, appKaufSummen(d, year), {
@@ -3267,13 +3283,13 @@ async function handleAdmin(req, res, u, p) {
     let items = []; try { items = JSON.parse(u.searchParams.get("atts") || "[]"); } catch (e) {}
     items = (Array.isArray(items) ? items : []).slice(0, 40);
     if (!items.length) return send(res, 400, "no_attachments");
-    const base = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?token=" + encodeURIComponent(MAIL.token) +
-      "&folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") + "&uid=" + encodeURIComponent(u.searchParams.get("uid") || "") +
+    const base = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") +
+      "?folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") + "&uid=" + encodeURIComponent(u.searchParams.get("uid") || "") +
       "&account=" + encodeURIComponent(u.searchParams.get("account") || "");
     try {
       const files = []; const used = {};
       for (const it of items) {
-        const r = await fetch(base + "&index=" + encodeURIComponent(String(it.index)));
+        const r = await fetch(base + "&index=" + encodeURIComponent(String(it.index)), { headers: { "x-api-token": MAIL.token } });
         if (!r.ok) continue;
         const data = Buffer.from(await r.arrayBuffer());
         let name = String(it.filename || "anhang").replace(/[\\/:*?"<>|\r\n]/g, "_").slice(0, 150) || "anhang";
@@ -3292,8 +3308,7 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/mail-attachment" && req.method === "GET") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, "mail_not_configured");
     const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") +
-      "?token=" + encodeURIComponent(MAIL.token) +
-      "&folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") +
+      "?folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") +
       "&uid=" + encodeURIComponent(u.searchParams.get("uid") || "") +
       "&index=" + encodeURIComponent(u.searchParams.get("index") || "0") +
       "&account=" + encodeURIComponent(u.searchParams.get("account") || "");

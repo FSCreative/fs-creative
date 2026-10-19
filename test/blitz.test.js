@@ -90,6 +90,10 @@ const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(sr
     assert.strictEqual(u.status, 200); assert.strictEqual(u.j.deleted, 1);
   });
   await t("Unbekannter Pfad → 404", async () => { const r = await json("/admin/api/blitz/xyz", { method: "POST", body: {} }); assert.strictEqual(r.status, 404); });
+  await t("Statistik-Abruf: Token im Header, nie in der URL", async () => {
+    const gets = mock.state.log.filter(l => l.method === "GET" && l.path === "/api/stats");
+    assert.ok(gets.length > 0, "Abruf erfolgt"); assert.ok(gets.every(l => !/token=/.test(l.query) && l.headerToken), JSON.stringify(gets.slice(0, 2)));
+  });
 
   srv.kill(); mock.server.close();
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}

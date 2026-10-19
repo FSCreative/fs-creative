@@ -50,7 +50,7 @@ function createBlitzMock(opts) {
       // /api/stats (bestehende API, Token per Query bzw. Body)
       if (u.pathname === "/api/stats") {
         if (req.method === "POST") { if (body.token !== TOKEN) return j(401, { error: "unauthorized" }); const b = S.bookings.find((x) => x.id === body.id); if (!b) return j(500, { ok: false }); b.paymentStatus = body.paid ? "PAID" : "UNPAID"; return j(200, { ok: true, id: b.id, paymentStatus: b.paymentStatus }); }
-        if (u.searchParams.get("token") !== TOKEN) return j(401, { error: "unauthorized" });
+        if ((u.searchParams.get("token") || req.headers["x-api-token"]) !== TOKEN) return j(401, { error: "unauthorized" });   // wie echt: Token per URL oder Header
         const t = iso(today); const up = S.bookings.filter((b) => b.status !== "CANCELLED" && b.eventDate >= t).sort((a, b) => a.eventDate.localeCompare(b.eventDate));
         const paid = S.bookings.filter((b) => b.paymentStatus === "PAID"), open = S.bookings.filter((b) => b.paymentStatus === "UNPAID" && b.status !== "CANCELLED");
         const sum = (a) => a.reduce((s, b) => s + b.totalCents, 0);

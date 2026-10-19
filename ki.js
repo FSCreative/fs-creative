@@ -315,10 +315,10 @@ module.exports = function createKi(deps) {
   const IMG = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
   async function fetchAttachment(m) {
     const MAIL = deps.MAIL; if (!MAIL.url || !MAIL.token) throw kiErr("Postfach ist nicht verbunden.", "mail");
-    const url = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?token=" + encodeURIComponent(MAIL.token) + "&folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || 0) + "&account=" + encodeURIComponent(m.account || "");
+    const url = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || 0) + "&account=" + encodeURIComponent(m.account || "");
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 30000);
     try {
-      const r = await fetch(url, { signal: ctrl.signal }); if (!r.ok) throw kiErr("Anhang konnte nicht geladen werden.", "mail");
+      const r = await fetch(url, { headers: { "x-api-token": MAIL.token }, signal: ctrl.signal }); if (!r.ok) throw kiErr("Anhang konnte nicht geladen werden.", "mail");
       const buf = Buffer.from(await r.arrayBuffer());
       const cd = r.headers.get("content-disposition") || ""; let fname = String(m.filename || "beleg");
       const a = cd.match(/filename\*=UTF-8''([^;]+)/i), b = cd.match(/filename="([^"]*)"/i);
