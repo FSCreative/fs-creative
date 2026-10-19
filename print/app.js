@@ -627,6 +627,14 @@
     var co = S.ctype === "company";
     return '<div class="ps-alts"><p class="ps-alts-h">Das geht – ähnliche Ausführungen:</p>' + S.alts.map(function (a, i) { return '<button type="button" class="ps-alt" data-alt="' + i + '"><span>' + esc(a.label) + "</span><b>" + eur(co ? a.price.net : a.price.gross) + "</b><small>Übernehmen →</small></button>"; }).join("") + "</div>";
   }
+  // Banner: Preis je m² groß (lange Bahnen wie das 20-m-Vliesbanner: je Laufmeter), Gesamtpreis kleiner darunter
+  function unitOf() {
+    var p = S.prod, sz = sizeOf(); if (!p || !sz || kind() === "textile" || kind() === "promo") return null;
+    var t = p.key + " " + p.title; if (!(p.kind === "banner" || /banner|plane|bauzaun|mesh|vlies/i.test(t)) || /roll|aufsteller|display/i.test(t)) return null;
+    var n = (S.price && S.price.copies) || totalCopies() || 1, L = Math.max(sz.w, sz.h), K = Math.min(sz.w, sz.h);
+    if (L >= 3000 && L / K >= 8) return { div: L / 1000 * n, unit: "lfm", label: "Laufmeter" };
+    return { div: sz.w * sz.h / 1e6 * n, unit: "m²", label: "m²" };
+  }
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
@@ -636,6 +644,12 @@
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
     if (p.bonus) what += '<p class="ps-bonus-tag">★ ' + esc(p.bonus.tier || "Rabatt") + " (" + String(p.bonus.pct).replace(".", ",") + " %) · du sparst " + eur(co ? p.bonus.saved : p.bonus.saved * (1 + (p.rate || 0) / 100)) + "</p>";
+    var u = unitOf();
+    if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
+      '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (+n > 1 ? (+n).toLocaleString("de-AT") + " Stk. · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
+      '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
+      (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 ? "<dt>Stückpreis</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
+      (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
     return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main) + '<small>' + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
       (p.rate ? '<div class="sum2">' + eur(co ? p.gross : p.net) + "<small>" + (co ? "inkl. USt" : "exkl. USt") + "</small></div>" : "") +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" + (p.rate ? " (" + eur(p.gross) + " brutto)" : "") : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
@@ -648,6 +662,7 @@
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
       '<ul class="ps-ptrust"><li>Automatischer Datencheck, Profi-Check optional</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
     var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + " Stk." + (szl ? " · " + szl : "");
+      var u0 = p && unitOf(); if (u0 && u0.div > 0) sm = eur((S.ctype === "company" ? p.net : p.gross) / u0.div) + "/" + u0.unit + " · " + sm;
       m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
     var nx = document.getElementById("psNext2"); if (nx) nx.disabled = !S.price || S.priceBusy;
     var tt = document.getElementById("psTexTotal"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + " Stk.";
@@ -720,6 +735,7 @@
   function daySeed() { var d = new Date(); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate(); }
   function classics() { var P = S.cat.products, fl = prodByKey("flyer"), bn = P.filter(function (p) { return p.kind === "banner"; })[0]; return [fl, bn].filter(Boolean); }
   function dailyPicks() {
+    var hm = S.cat.home && S.cat.home.focus && S.cat.home.focus.map(prodByKey).filter(Boolean); if (hm && hm.length >= 2) return hm.slice(0, 4);   // vom Server täglich geprüft (Preis, Bild, Mitbewerber)
     var skip = {}; classics().forEach(function (p) { skip[p.key] = 1; });
     // Fokus: Produkte, bei denen wir laut Preisvergleich (druck.at/Flyeralarm) günstiger sind
     var FOCUS = ["postcards", "plakate", "folder", "tshirt-basic", "tshirt-bio", "rollups", "mesh-banner", "bauzaun"];
@@ -761,7 +777,8 @@
     if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + " Stk.");
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer"); return l.slice(0, 4); }
   // Neu im Sortiment: die 4 zuletzt bei Print.com aufgenommenen Produkte (Datum aus dem Print.com-Katalog), ohne Doppelungen mit Klassikern/Fokus
-  function newestProds() { var ex = {}; classics().concat(dailyPicks()).forEach(function (p) { ex[p.key] = 1; });
+  function newestProds() { var hf = S.cat.home && S.cat.home.fresh && S.cat.home.fresh.map(prodByKey).filter(Boolean); if (hf && hf.length >= 2) return hf.slice(0, 4);
+    var ex = {}; classics().concat(dailyPicks()).forEach(function (p) { ex[p.key] = 1; });
     return S.cat.products.filter(function (p) { return p.added && imgOk(p.img) && !ex[p.key]; }).sort(function (a, b) { return a.added < b.added ? 1 : a.added > b.added ? -1 : 0; }).slice(0, 4); }
   function newLabel(d) { var t = new Date(d + "T12:00:00"); return isNaN(t) ? "Neu" : "Neu seit " + t.toLocaleDateString("de-AT", { day: "numeric", month: "long" }); }
   function featCard(p, big) {

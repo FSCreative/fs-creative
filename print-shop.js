@@ -1822,6 +1822,41 @@ module.exports = function (D) {
   let lastTrack = 0;
   // Vorwärmen (alle 2 h, niedrige Priorität): Hauptprodukte in der Standard-Ausführung samt Aufpreisen kurzer Optionen und Produktionszeiten –
   // die Print.com-Antworten liegen dann im Zwischenspeicher (3 h) und Preise/Aufpreise erscheinen beim Öffnen sofort
+  // ── Startseite: „Heute im Fokus“ und „Neu im Sortiment“ täglich prüfen – nur Produkte mit abrufbarem Preis, Bild und ohne bekannten teureren Mitbewerberpreis zeigen ──
+  const FOCUS_POOL = ["postcards", "plakate", "folder", "tshirt-basic", "tshirt-bio", "rollups", "mesh-banner", "bauzaun", "aufkleber", "visitenkarten", "printed-letterheads", "blocknotes"];
+  let HOME = null, homeRun = false;
+  function stdInput(p) {   // Standard-/Bestseller-Ausführung wie im Shop vorausgewählt
+    if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: 10, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }
+    const T = p.tiers || [], bt = (/plakat|poster/i.test(p.key + " " + p.title) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1);
+    const big = p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "");
+    return { copies: bt.indexOf(500) > -1 ? 500 : bt[0] || (T[0] === 1 && big ? 1 : T[Math.min(1, T.length - 1)]), sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
+  }
+  async function homeCheck() {
+    if (homeRun) return; homeRun = true;
+    try {
+      const s = await settings(), cat = await catalog(false), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
+      const day = today(), checks = [];
+      const check = async (key, area) => { const pp = byKey[key]; if (!pp) return null; const r = { key, title: pp.title, area, img: !!pp.img, ok: false, why: "" };
+        if (!pp.img) { r.why = "kein Produktbild"; checks.push(r); return r; }
+        try { const p = await findProduct(key, s); const inp = p && stdInput(p); if (!inp) throw new Error("keine Standard-Ausführung");
+          const n = normalizeSel(p, inp); n.low = true; const q = await quote(p, n, "AT", "", {});
+          Object.assign(r, { ok: true, gross: q.gross, net: q.net, copies: n.copies, purchase: q.purchase.total, margin: q.margin, pct: q.net ? r2(q.margin / q.net * 100) : 0, anchor: q.anchor || null, rule: q.rule });
+          if (q.anchor && q.gross > q.anchor + 0.5) { r.ok = false; r.why = "teurer als Mitbewerber (" + eur(q.anchor) + ")"; }
+        } catch (e) { r.why = clip(e.message, 120); }
+        checks.push(r); return r; };
+      // Fokus: Pool täglich neu gemischt, die ersten 4 geprüften
+      let seed = +day.replace(/-/g, "") % 233280; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+      const pool = FOCUS_POOL.filter(k => byKey[k] && k !== "flyer" && k !== "pvc-banner").map(k => [k, rnd()]).sort((a, b) => a[1] - b[1]).map(x => x[0]), focus = [];
+      for (const k of pool) { if (focus.length >= 4) break; const r = await check(k, "Fokus"); if (r && r.ok) focus.push(k); }
+      // Neu im Sortiment: die neuesten Produkte mit Bild, geprüft – die ersten 4, die bestehen
+      const fresh = [], newest = pub.filter(x => x.added && x.img && focus.indexOf(x.key) < 0 && x.key !== "flyer" && x.key !== "pvc-banner").sort((a, b) => b.added.localeCompare(a.added)).slice(0, 10);
+      for (const x of newest) { if (fresh.length >= 4) break; const r = await check(x.key, "Neu"); if (r && r.ok) fresh.push(x.key); }
+      HOME = { date: day, at: nowIso(), focus, fresh, checks };
+      await store.setMeta("print_home", HOME).catch(() => {});
+      log("Druckshop: Startseite geprüft – Fokus " + focus.join(", ") + " · Neu " + fresh.join(", ") + " · " + checks.filter(c => !c.ok).length + " aussortiert");
+    } finally { homeRun = false; }
+  }
+  async function homeState() { if (!HOME) HOME = await store.getMeta("print_home").catch(() => null); return HOME; }
   let lastWarm = 0;
   const WARM = ["flyer", "visitenkarten", "plakate", "folder", "pvc-banner", "aufkleber", "postcards", "rollups"];
   async function warmPrices() {
@@ -1840,6 +1875,7 @@ module.exports = function (D) {
     log("Druckshop: Preise vorgewärmt (" + n0 + " Kalkulationen)");
   }
   async function tick() {
+    if (cfg().pcKey) homeState().then(h => { if (!h || h.date !== today()) homeCheck().catch(e => log("Startseiten-Check:", e.message)); });   // täglich: Fokus & Neu prüfen
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (cfg().pcKey && Date.now() - lastTrack > 2 * 3600e3) { lastTrack = Date.now(); pollAll().catch(e => log("Sendungsstatus:", e.message)); }   // Status/Tracking alle 2 h
@@ -1977,7 +2013,7 @@ module.exports = function (D) {
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
         const cat = await catalog(false), all = await catalogAll().catch(() => null); cms(false).catch(() => {});   // CMS bei Versionswechsel im Hintergrund auffrischen
         const products = publicCatalog(cat, s, all);
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
@@ -2200,7 +2236,7 @@ module.exports = function (D) {
         anchorMinPct: s.anchorMinPct != null ? +s.anchorMinPct : 5, anchorGap: s.anchorGap != null ? s.anchorGap : 2, anchors: Object.keys(s.anchors || {}).length, bulkFrom: s.bulkFrom != null ? +s.bulkFrom : 150, bulkTo: s.bulkTo != null ? +s.bulkTo : 1500, bulkFactor: s.bulkFactor != null ? +s.bulkFactor : 0.4,
         feePct: fee.pct, feeFix: fee.fix, proCheck: PRO_CHECK_GROSS, groupMargin: Object.keys(s.groupMargin || {}).filter(k => s.groupMargin[k] != null).map(k => ({ name: groupName(k), pct: s.groupMargin[k] })),
         overrides: Object.keys(s.products || {}).filter(k => s.products[k] && s.products[k].markupPct != null).map(k => ({ key: k, title: (CURATED.find(x => x.key === k) || {}).title || k, pct: s.products[k].markupPct })) },
-      job: MG ? { running: MG.running, at: MG.at, done: MG.done, total: MG.total } : null, rows: MG ? MG.rows.slice().sort((a, b) => a.o - b.o || a.copies - b.copies) : [],
+      home: await homeState(), job: MG ? { running: MG.running, at: MG.at, done: MG.done, total: MG.total } : null, rows: MG ? MG.rows.slice().sort((a, b) => a.o - b.o || a.copies - b.copies) : [],
       orders: { month: r(sum(orders.filter(o => String(o.createdAt || "").slice(0, 7) === mon))), d30: r(sum(orders.filter(o => String(o.createdAt || "") >= d30))), all: r(sum(orders)) } };
   }
   async function adminState() {
@@ -2238,7 +2274,9 @@ module.exports = function (D) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
-        if (cfg().pcKey && ((req.method === "POST" && (await readJson(req, 1000)).op === "run") || !MG || (!MG.running && Date.now() - Date.parse(MG.at) > 12 * 3600e3))) marginsRun().catch(e => { if (MG) MG.running = false; log("Marge-Übersicht:", e.message); });
+        const mb = req.method === "POST" ? await readJson(req, 1000) : {};
+        if (mb.op === "home" && cfg().pcKey) { homeCheck().catch(e => log("Startseiten-Check:", e.message)); return J(res, 200, Object.assign(await marginsState(), { homeRunning: true })); }
+        if (cfg().pcKey && ((mb.op === "run") || !MG || (!MG.running && Date.now() - Date.parse(MG.at) > 12 * 3600e3))) marginsRun().catch(e => { if (MG) MG.running = false; log("Marge-Übersicht:", e.message); });
         return J(res, 200, await marginsState());
       }
       if (p === "/admin/api/print/newsletter") return await nlMod().handleAdmin(req, res, p, J, readJson);

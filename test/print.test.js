@@ -154,6 +154,13 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const ok = m.rows.filter(r => !r.error); assert.ok(ok.length >= 3, JSON.stringify(m.rows).slice(0, 400));
     ok.forEach(r => { assert.ok(Math.abs(r.net - r.purchase - r.fee - r.margin) < 0.02, "Gewinn = Netto − Einkauf − Gebühr " + JSON.stringify(r)); assert.ok(r.rule, "Regel"); });
   });
+  await t("Startseite: Fokus & Neu werden geprüft (Preis, Bild, Mitbewerber) und im Katalog ausgeliefert", async () => {
+    await admin("/admin/api/print/margins", { op: "home" });
+    let m; for (let i = 0; i < 60; i++) { m = await admin("/admin/api/print/margins"); if (m.home && m.home.checks) break; await new Promise(r => setTimeout(r, 200)); }
+    assert.ok(m.home && Array.isArray(m.home.checks) && Array.isArray(m.home.focus) && Array.isArray(m.home.fresh), JSON.stringify(m.home).slice(0, 300));
+    m.home.checks.forEach(c => assert.ok(c.ok || c.why, "aussortiert immer mit Grund"));
+    const cat = await (await fetch(B + "/print/api/catalog")).json(); assert.ok(cat.home && Array.isArray(cat.home.focus), "Katalog liefert geprüfte Auswahl");
+  });
   await t("Preis: ungültige Option/Auflage/ausgeschlossene Kombination → 400, Land außerhalb AT (auch DE) → 400", async () => {
     assert.strictEqual((await post("/print/api/price", Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { material: "gold" }) }))).status, 400);
     assert.strictEqual((await post("/print/api/price", Object.assign({}, BC, { copies: 50 }))).status, 400, "50 ist keine angebotene Stufe");
