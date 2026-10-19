@@ -347,6 +347,11 @@ module.exports = function createKi(deps) {
   }
   // Gemeinsame Extraktion für Mail-Anhänge und hochgeladene Dateien
   async function extractAtt(feature, att, head) {
+    if (feature === "autoscan") {   // unbeaufsichtigter Scan: Kosten begrenzen (max. 8 MB, PDF max. 20 Seiten, XML gekürzt)
+      if (att.buf.length > 8 * 1024 * 1024) throw kiErr("Anhang zu groß für den automatischen Scan (max. 8 MB).", "too_large");
+      if (/\.pdf$/i.test(att.fname) || /pdf/.test(att.ctype)) { const pg = (att.buf.toString("latin1").match(/\/Type\s*\/Page(?!s)/g) || []).length; if (pg > 20) throw kiErr("PDF mit mehr als 20 Seiten – bitte manuell prüfen.", "too_large"); }
+      if (/\.xml$/i.test(att.fname) || /xml/.test(att.ctype)) att = Object.assign({}, att, { buf: att.buf.slice(0, 60000) });
+    }
     const block = docBlock(att), types = await accountingTypes();
     const ctx = head + "\n" +
       "sevDesk-Buchungskategorien (id: Name, die häufigsten zuerst):\n" + (types.length ? types.map(t => t.id + ": " + t.name).join("\n") : "(keine Liste verfügbar – accountingTypeId leer lassen)") +
@@ -413,8 +418,9 @@ module.exports = function createKi(deps) {
       msgs.forEach(m => {
         if (!m || m.uid == null || m.deleted || /trash|papierkorb|junk|spam|sent|gesendet|draft|entw/i.test(m.folder || "")) return;
         const t = Date.parse(m.date || ""); if (!(t > since)) return;
-        const who = ((m.from || "") + " " + (m.fromName || "") + " " + (m.subject || "")).toLowerCase();
-        if (!toks.some(k => who.indexOf(k) > -1)) return;
+        // nur die Absenderadresse zählt (Betreff und Anzeigename kann jeder frei wählen); Stichwörter mit Leerzeichen (Firmennamen) auch im Anzeigenamen
+        const addr = String(m.from || "").toLowerCase(), nm = String(m.fromName || "").toLowerCase();
+        if (!toks.some(k => addr.indexOf(k) > -1 || (/\s/.test(k) && nm.indexOf(k) > -1))) return;
         (m.attachments || []).filter(VOUCHER_ATT).forEach(a => { const mm = { account: m.account || "", folder: m.folder || "INBOX", uid: m.uid, index: a.index || 0, filename: a.filename || "" }, key = mailKey(mm); const s = C.scanned[key]; if (s && (s.ok || (s.tries || 0) >= 2)) return; cands.push({ m, a, mm, key }); });
       });
       let found = 0;

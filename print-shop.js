@@ -707,6 +707,20 @@ module.exports = function (D) {
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 600) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
       excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+  // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
+  // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
+  const MAIN_INTO = { "gift-packaging": ["packaging-bags", "gift-packaging"], "displays-pos-material": ["indoor-interior", "displays-pos-material"], "outdoor-furniture": ["outdoor-advertising", "outdoor-furniture"], "materials-samples": ["outdoor-advertising", "banners-outdoor"] };
+  const SUB_BY_WORD = [[/liegest|deckchair/i, "outdoor-advertising", "outdoor-furniture"], [/fahne|flagge|skydancer/i, "outdoor-advertising", "flags-outdoor"], [/halterung für schilder|schildhalter/i, "outdoor-advertising", "signs-banners"],
+    [/bettbez|kissen|handtuch|schürze/i, "clothing-textile", "kitchen-living-textiles"], [/polo|shirt|socke|weste|leibchen|hoodie|pullover|jacke|\bactive t\b/i, "clothing-textile", "clothing"],
+    [/display|regalwobbler|regalstreifen|broschürenhalter|klapprahmen|warenpräsentation|inforahmen|aufsteller/i, "indoor-interior", "displays-pos-material"], [/tapete|kleister/i, "indoor-interior", "decoration"],
+    [/rakel|applikat/i, "stickers-tapes", "sticker-accessories"], [/namensschild/i, "paper-print", "office-print"], [/magazin|broschüre|buch|pocketplan|faltplan/i, "paper-print", "brochures-magazines"]];
+  function tidyCat(p, s) {
+    if (s && s.catOverride && s.catOverride[p.key]) return;
+    const c = p.cat || {}, into = MAIN_INTO[c.main]; let main = c.main, sub = c.sub || "";
+    if (into) { main = into[0]; sub = into[1]; }
+    else if (!sub || main === OTHER) { const hit = SUB_BY_WORD.find(x => x[0].test(p.title)); if (hit) { main = hit[1]; sub = hit[2]; } }
+    if (main !== c.main || sub !== (c.sub || "")) { p.cat = catPub({ main, sub }); p.group = main; }
+  }
   // Shop-Katalog: nur freigeschaltete Produkte (allgemeine nur als Karte, Details beim Öffnen), gruppiert nach Print.com-Hauptgruppe/Untergruppe
   function publicCatalog(cat, s, all) {
     const cur = ((cat && cat.products) || []).map(p => productOf(cat, p.key, s)).filter(Boolean).map(pubProd);
@@ -717,6 +731,7 @@ module.exports = function (D) {
     // Bestseller: die beliebtesten Produkte laut Print.com (Top 12, mindestens Beliebtheit 4 000); innerhalb der Gruppe zuerst
     // ohne Saison-/Nischenprodukte (Print.com führt z. B. Kalender, Lesezeichen, Pläne weit oben, das sind aber keine Alltags-Bestseller)
     const NICHE = /calendar|kalender|bookmark|lesezeichen|^maps$|plan$|election|wahlplakat/i, cand = p => (p.pop || 0) >= 4000 && !NICHE.test(p.key + " " + p.title);
+    gen.forEach(p => tidyCat(p, s));
     const all2 = cur.concat(gen), tops = all2.filter(cand).map(p => p.pop).sort((a, b) => b - a), cut = tops.length ? tops[Math.min(9, tops.length - 1)] : Infinity;
     all2.forEach(p => { p.best = cand(p) && p.pop >= cut; });
     return all2.map((p, i) => [p, i]).sort((a, b) => ix(a[0].group) - ix(b[0].group) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).map(x => x[0]);
@@ -1469,7 +1484,7 @@ module.exports = function (D) {
     const s0 = await settings(), prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return null;
     const t = (prod.tiers || []).indexOf(500) > -1 ? 500 : (prod.tiers || []).indexOf(100) > -1 ? 100 : (prod.tiers || [])[0];
     const n = normalizeSel(prod, Object.assign({ copies: t }, prod.kind === "banner" && prod.custom ? { custom: { w: 200, h: 100 } } : {}));
-    const q = await quote(prod, n, "AT", "", {}); const v = { gross: q.gross, copies: n.copies }; FROM.set(k + "|nl", { at: Date.now(), v }); return v;
+    const q = await quote(prod, n, "AT", "", {}); const v = { gross: q.gross, copies: n.copies }; fromSet(k + "|nl", { at: Date.now(), v }); return v;
   }
   const nlMod = () => NEWS || (NEWS = require("./print-newsletter.js")({ store, mailSend: D.mailSend, sig, sigOk, nowIso, log, limited, send: D.send,
     publicUrl: () => cfg().publicUrl, firm: () => Object.assign({}, FIRM_DEFAULT, (D.firm && D.firm()) || {}),
@@ -1516,6 +1531,7 @@ module.exports = function (D) {
   }
   // ── Rabatte: Bonusprogramm (Firmenkonto) oder eigener Kundenrabatt (der höhere gilt) + Gutscheincode ──
   let VOUCHERS = null; const FROM = new Map();
+  const fromSet = (k, v) => { if (FROM.size >= 6000) { let n = 1000; for (const x of FROM.keys()) { FROM.delete(x); if (--n <= 0) break; } } FROM.delete(k); FROM.set(k, v); };   // „ab“-Preise: höchstens 6 000 Einträge
   async function vouchers() { if (!VOUCHERS) VOUCHERS = (await store.getMeta("print_vouchers").catch(() => null)) || {}; return VOUCHERS; }
   const vCode = c => String(c || "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 40);
   async function voucherCheck(code, email) {
@@ -1602,7 +1618,7 @@ module.exports = function (D) {
     if (!cat || !s.open) throw Object.assign(new Error("Der Shop ist gerade nicht verfügbar"), { status: 503 });
     const items = Array.isArray(input.items) ? input.items.slice(0, 30) : []; if (!items.length) throw Object.assign(new Error("Der Warenkorb ist leer"), { status: 400 });
     if (input.acceptTerms !== true || input.acceptFagg !== true || input.acceptProof !== true) throw Object.assign(new Error("Bitte AGB, den Hinweis zum Rücktrittsrecht und die geprüften Druckdaten bestätigen"), { status: 400 });
-    const cust = validCustomer(input.customer);
+    const cust = validCustomer(input.customer); cust.feedbackOk = input.feedbackOk === true;   // freiwillig: nach der Lieferung per Mail um Feedback bitten
     let uidRes = null;
     if (cust.type === "company" && cust.uid) { uidRes = await uidCheck(cust.uid); cust.uidValid = !!uidRes.valid; if (uidRes.uid) cust.uid = uidRes.uid; }
     const method = input.payment === "invoice" ? "invoice" : "mollie";
@@ -1841,6 +1857,20 @@ module.exports = function (D) {
     await store.putOrder(o);
     return o;
   }
+  async function feedbackMails() {
+    const all = await store.listOrders(); let n = 0;
+    for (const o of all) {
+      if (!o.customer || o.customer.feedbackOk !== true || !o.mails || !o.mails.shipped || o.mails.feedback || (o.feedback && o.feedback.product)) continue;
+      const age = Date.now() - Date.parse(o.mails.shipped); if (!(age > 4 * 864e5 && age < 30 * 864e5) || ["shipped", "delivered"].indexOf(o.status) < 0) continue;
+      const link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#feedback";
+      o.mails.feedback = await mail(o.customer.email, "Wie gefallen dir deine Drucksachen? · " + o.nr, "Kurze Frage zu deiner Bestellung",
+        ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) sollte inzwischen bei dir sein. Wie zufrieden bist du damit? Deine Bewertung (1–5 Sterne, dauert 20 Sekunden) hilft uns sehr."],
+        [["Jetzt bewerten", link]], ["Du bekommst diese Mail, weil du bei der Bestellung zugestimmt hast, nach der Lieferung um Feedback gebeten zu werden. Es folgt keine weitere Erinnerung."]) ? nowIso() : "skip";
+      hist(o, o.mails.feedback !== "skip" ? "Feedback-Mail gesendet" : "Feedback-Mail fehlgeschlagen"); await store.putOrder(o); n++;
+      if (n >= 30) break;
+    }
+    return n;
+  }
   async function pollAll() {
     const all = await store.listOrders(); let n = 0;
     for (const o of all) {
@@ -2000,21 +2030,75 @@ module.exports = function (D) {
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
     const desc = noHtml(x.about || x.desc || "").replace(/\s+/g, " ").slice(0, 400);
-    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0"><p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title) + " online drucken</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
+    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title) + " online drucken</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
       (it ? "<h2>Preise (Stand " + escH(dateDe(P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
       (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(z[0]) + ":</b> " + escH(z[1]) + "</li>").join("") + "</ul>" : "") +
-      '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p><p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
+      '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p>' + simHtml(pub, x) + '<p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
+    if (!ld.image && x.img) ld.image = x.img;
     const t = escH(x.title) + " online drucken – Preis sofort inkl. Versand | FS Creative Druckshop", d = escH((x.title + ": " + (desc || "individuell bedruckt") + "").slice(0, 120) + (it ? " Ab " + eurDe(Math.min.apply(null, it.rows.map(r => r.gross))) + " inkl. USt und Versand." : " Preis sofort im Konfigurator.") + " Online gestalten oder Datei hochladen.");
     return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => block)
       .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
-      .replace("</head>", '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
+      .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
+      .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(x.cat, x.title, url)))
+      .replace("</head>", ldTag(ld) + "\n</head>");
+  }
+  // ── SEO für Sortiment und Kategorien (/print?produkte[&kategorie=…[&unter=…]]): vorgerendert mit Links, Brotkrumen, strukturierten Daten ──
+  const ldTag = o => '<script type="application/ld+json">' + JSON.stringify(Object.assign({ "@context": "https://schema.org" }, o)).replace(/</g, "\\u003c") + "</script>";
+  const catUrl = (main, sub, abs) => (abs ? SITE : "") + "/print?produkte" + (main ? "&kategorie=" + encodeURIComponent(main) : "") + (sub ? "&unter=" + encodeURIComponent(sub) : "");
+  const prodUrl = (key, abs) => (abs ? SITE : "") + "/print?produkt=" + encodeURIComponent(key);
+  function crumbsHtml(c, last) {
+    c = c || {}; const l = ['<a href="/print">Druckshop</a>', '<a href="' + escH(catUrl()) + '">Alle Produkte</a>'];
+    if (c.main) l.push('<a href="' + escH(catUrl(c.main)) + '">' + escH(c.mainName || c.main) + "</a>");
+    if (c.sub && last) l.push('<a href="' + escH(catUrl(c.main, c.sub)) + '">' + escH(c.subName || c.sub) + "</a>");
+    if (last) l.push("<span>" + escH(last) + "</span>");
+    return '<nav class="ps-crumbs" aria-label="Pfad">' + l.join(" › ") + "</nav>";
+  }
+  function crumbsLd(c, last, url) {
+    c = c || {}; const L = [["Start", SITE + "/"], ["Druckshop", SITE + "/print"], ["Alle Produkte", catUrl("", "", true)]];
+    if (c.main) L.push([c.mainName || c.main, catUrl(c.main, "", true)]); if (c.sub) L.push([c.subName || c.sub, catUrl(c.main, c.sub, true)]); if (last) L.push([last, url]);
+    return { "@type": "BreadcrumbList", itemListElement: L.map((x, i) => ({ "@type": "ListItem", position: i + 1, name: x[0], item: x[1] })) };
+  }
+  function simHtml(pub, x) {
+    const c = x.cat || {}, l = pub.filter(y => y.key !== x.key && y.cat && y.cat.main === c.main && (!c.sub || y.cat.sub === c.sub)).sort((a, b) => (b.pop || 0) - (a.pop || 0)).slice(0, 12);
+    return l.length ? "<h2>Ähnliche Produkte</h2><ul>" + l.map(y => '<li><a href="' + escH(prodUrl(y.key)) + '">' + escH(y.title) + "</a></li>").join("") + "</ul>" : "";
+  }
+  async function catSeo(html, main, sub) {
+    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), groups = publicGroups(pub);
+    const g = groups.find(x => x.slug === main) || null, sg = g && sub ? g.subs.find(x => x.slug === sub) || null : null;
+    const inG = (m, su) => pub.filter(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su));
+    let h1, intro, body, items, url, c;
+    if (!g) {
+      url = catUrl("", "", true); h1 = "Alle Produkte"; c = {};
+      intro = pub.length + " Drucksachen und Werbeartikel in " + groups.length + " Kategorien – Preis sofort online, alle Preise inkl. Versand innerhalb Österreichs.";
+      body = groups.map(x => '<h2><a href="' + escH(catUrl(x.slug)) + '">' + escH(x.name) + "</a> (" + inG(x.slug).length + ")</h2><ul>" + x.subs.filter(su => inG(x.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(x.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(x.slug, su.slug).length + ")</li>").join("") + "</ul>").join("");
+      items = pub.filter(p => p.best).slice(0, 20);
+    } else {
+      const list = inG(g.slug, sg ? sg.slug : "").sort((a, b) => (b.pop || 0) - (a.pop || 0)); url = catUrl(g.slug, sg ? sg.slug : "", true); c = { main: g.slug, mainName: g.name, sub: sg ? sg.slug : "", subName: sg ? sg.name : "" };
+      h1 = (sg ? sg.name : g.name) + " online drucken";
+      intro = list.length + " Produkte" + (sg ? " in „" + sg.name + "“ (" + g.name + ")" : " in „" + g.name + "“") + ": individuell bedruckt, Preis sofort online, Druckdaten hochladen oder online gestalten – Lieferung in ganz Österreich, Preise inkl. Versand.";
+      body = (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
+        "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(noHtml(p.desc), 110)) : "") + "</li>").join("") + "</ul>";
+      items = list.slice(0, 60);
+    }
+    const t = escH(h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"), d = escH(intro.slice(0, 158));
+    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(c, "") + "<h1>" + escH(h1) + "</h1><p>" + escH(intro) + "</p>" + body + '<p class="pd-muted">Sortiment wird geladen …</p></article></div>';
+    const coll = { "@type": "CollectionPage", name: h1, url, description: intro, isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" },
+      mainEntity: { "@type": "ItemList", numberOfItems: items.length, itemListElement: items.map((p, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(p.key, true), name: p.title })) } };
+    return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => block)
+      .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
+      .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t).replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d)
+      .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(c, "", url)))
+      .replace("</head>", ldTag(coll) + "\n</head>");
   }
   // Sitemap: Preisübersicht + Produktseiten (nur mit Bild)
   async function sitemapExtra() {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), d = today();
-    return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
+    const groups = publicGroups(pub), has = (m, su) => pub.some(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su)), loc = u => "  <url><loc>" + u.replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>";
+    const cats = [loc(catUrl("", "", true)) + "0.7</priority></url>"].concat(groups.filter(g => has(g.slug)).map(g => loc(catUrl(g.slug, "", true)) + "0.7</priority></url>"),
+      [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(catUrl(g.slug, su.slug, true)) + "0.6</priority></url>")))).join("\n") + "\n";
+    return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' + cats +
       pub.filter(x => x.img).map(x => '  <url><loc>' + SITE + "/print?produkt=" + encodeURIComponent(x.key) + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
   }
   async function homeState() { if (!HOME) HOME = await store.getMeta("print_home").catch(() => null); return HOME; }
@@ -2047,6 +2131,7 @@ module.exports = function (D) {
       if (m.at && Date.now() - Date.parse(m.at) < 20 * 3600e3) { lastDaily = Date.parse(m.at); return; }
       lastDaily = Date.now(); await store.setMeta("print_daily", { at: nowIso() });
       if (cfg().pcKey) { await catalog(true).catch(() => null); await pollAll(); }
+      await feedbackMails().catch(e => log("Feedback-Mails:", e.message));
       await cleanupFiles();
     } catch (e) { log("Tageslauf:", e.message); }
   }
@@ -2055,6 +2140,19 @@ module.exports = function (D) {
   const { clientIp, hitCounter } = require("./client-ip.js");
   const HITS = hitCounter(20000);
   const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
+  // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
+  const PDF_SLOTS = { busy: 0, wait: [] };
+  function pdfSlot() {
+    const release = () => { const w = PDF_SLOTS.wait.shift(); if (w) { clearTimeout(w.t); w.res(release); } else PDF_SLOTS.busy--; };
+    if (PDF_SLOTS.busy < 2) { PDF_SLOTS.busy++; return Promise.resolve(release); }
+    if (PDF_SLOTS.wait.length >= 12) return Promise.reject(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 }));
+    return new Promise((res, rej) => { const w = { res, t: setTimeout(() => { PDF_SLOTS.wait.splice(PDF_SLOTS.wait.indexOf(w), 1); rej(Object.assign(new Error("Gerade sehr viel los – bitte in einer Minute erneut versuchen"), { status: 503 })); }, 60000) }; PDF_SLOTS.wait.push(w); });
+  }
+  const withPdf = async fn => { const rel = await pdfSlot(); try { return await fn(); } finally { rel(); } };
+  // Entwürfe: je IP höchstens 150 MB pro Tag (Speicher schützen)
+  const DRAFT_BYTES = new Map();
+  function draftBudget(ip, bytes) { const day = new Date().toISOString().slice(0, 10), o = DRAFT_BYTES.get(ip); const used = o && o.day === day ? o.n : 0;
+    if (used + bytes > 150 * 1048576) return false; if (DRAFT_BYTES.size > 5000) DRAFT_BYTES.clear(); DRAFT_BYTES.set(ip, { day, n: used + bytes }); return true; }
   const ipOf = clientIp;   // echte Besucher-IP (Cloudflare/Railway, nicht fälschbar über X-Forwarded-For)
   function sameOrigin(req) {
     if (req.headers["x-print-shop"] !== "1") return false;
@@ -2073,7 +2171,7 @@ module.exports = function (D) {
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
   const orderPublic = o => ({ id: o.id, nr: o.nr, check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
-    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
+    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
@@ -2109,6 +2207,8 @@ module.exports = function (D) {
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
     const pk = u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120);
     if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk); } catch (e) { log("Produkt-SEO:", e.message); } }
+    else if (u && u.searchParams && u.searchParams.has("produkte")) { const km = String(u.searchParams.get("kategorie") || ""), ks = String(u.searchParams.get("unter") || "");
+      if (/^[\w-]{0,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks)) { try { html = await catSeo(html, km, ks); } catch (e) { log("Kategorie-SEO:", e.message); } } }
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function handlePublic(req, res, u, p) {
@@ -2215,16 +2315,21 @@ module.exports = function (D) {
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
       if (p === "/print/api/from" && req.method === "GET") {
-        let sels = {}; try { sels = JSON.parse(String(u.searchParams.get("sel") || "{}")) || {}; } catch (e) {}
-        const keys = String(u.searchParams.get("keys") || "").split(",").map(x => x.trim()).filter(Boolean).slice(0, 12), out = {}, s0 = await settings();
+        // Schutz: Anfragen je IP begrenzt, Auswahl nur einfache Werte (begrenzte Größe), Zwischenspeicher mit Obergrenze, Print.com-Abfragen mit niedriger Priorität
+        if (limited("from", ip, 150, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
+        const rawSel = String(u.searchParams.get("sel") || "{}"); let sels = {}; if (rawSel.length <= 8000) try { sels = JSON.parse(rawSel) || {}; } catch (e) {}
+        if (typeof sels !== "object" || Array.isArray(sels)) sels = {};
+        const keys = String(u.searchParams.get("keys") || "").split(",").map(x => x.trim()).filter(x => /^[\w.-]{1,80}$/.test(x)).slice(0, 12), out = {}, s0 = await settings();
         await Promise.all(keys.map(async k => {
-          const sel = Object.assign({}, sels[k] && typeof sels[k] === "object" ? sels[k] : {}), qc = parseInt(sel.__copies, 10) || 0, ck = k + JSON.stringify(sel); delete sel.__copies;
+          const s1 = sels[k] && typeof sels[k] === "object" && !Array.isArray(sels[k]) ? sels[k] : {}, sel = {};
+          Object.keys(s1).slice(0, 30).forEach(x => { if (/^[\w-]{1,60}$/.test(x) && (typeof s1[x] === "string" || typeof s1[x] === "number")) sel[x] = String(s1[x]).slice(0, 80); });
+          const qc = parseInt(sel.__copies, 10) || 0, ck = k + JSON.stringify(sel); delete sel.__copies;
           const hit = FROM.get(ck); if (hit && Date.now() - hit.at < 12 * 3600e3) { out[k] = hit.v; return; }
           try { const prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const tl = prod.tiers || [], big = prod.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((prod.cat && prod.cat.main) || prod.group || ""),
               t = qc && tl.indexOf(qc) > -1 ? qc : tl[0] === 1 && big ? 1 : tl[0] === 1 && tl.indexOf(5) > -1 ? 5 : [500, 250, 100, 50].find(x => tl.indexOf(x) > -1) || tl[0];   // typische Auflage statt kleinster
             const mk = sl => normalizeSel(prod, Object.assign({ copies: t, sel: sl }, prod.kind === "banner" && prod.custom ? { custom: { w: Math.max(prod.custom.minW, 1000) / 10, h: Math.max(prod.custom.minH, 500) / 10 } } : {}));
             // Bestseller-Auswahl (z. B. beidseitig 4/4) ist nicht bei jedem Produkt lieferbar (PVC-Banner) → mit der Standard-Ausführung rechnen
-            let n = mk(sel), q; try { q = await quote(prod, n, "AT", "", {}); } catch (e) { if (!Object.keys(sel).length) throw e; n = mk({}); q = await quote(prod, n, "AT", "", {}); } const v = { gross: q.gross, copies: n.copies }; FROM.set(ck, { at: Date.now(), v }); out[k] = v; } catch (e) {} }));
+            let n = mk(sel), q; n.low = true; try { q = await quote(prod, n, "AT", "", {}); } catch (e) { if (!Object.keys(sel).length) throw e; n = mk({}); n.low = true; q = await quote(prod, n, "AT", "", {}); } const v = { gross: q.gross, copies: n.copies }; fromSet(ck, { at: Date.now(), v }); out[k] = v; } catch (e) {} }));
         return J(res, 200, { ok: true, from: out });
       }
       if (p === "/print/api/product" && req.method === "GET") {
@@ -2259,6 +2364,21 @@ module.exports = function (D) {
         if (!buf) return J(res, 404, { ok: false, error: "Entwurf nicht gefunden (Entwürfe werden nach 60 Tagen gelöscht)" });
         let d = null; try { d = JSON.parse(Buffer.from(buf).toString("utf8")); } catch (e) {}
         return J(res, 200, { ok: true, draft: d });
+      }
+      // Feedback zur Bestellung (Bestellvorgang direkt danach, Drucksachen nach dem Versand): nur mit gültigem Bestell-Link
+      const fbm = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/feedback$/);
+      if (fbm && req.method === "POST") {
+        if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (!sigOk("order", fbm[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
+        if (limited("feedback", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const o = await store.getOrder(fbm[1]); if (!o) return J(res, 404, { ok: false, error: "not_found" });
+        const b = await readJson(req, 6000), stage = b.stage === "product" ? "product" : "order", rating = parseInt(b.rating, 10), text = clip(String(b.text || "").replace(/\s+/g, " "), 1000);
+        if (!(rating >= 1 && rating <= 5)) return J(res, 400, { ok: false, error: "Bitte 1 bis 5 Sterne wählen" });
+        if (stage === "product" && ["shipped", "delivered"].indexOf(o.status) < 0) return J(res, 400, { ok: false, error: "Die Drucksachen sind noch nicht unterwegs" });
+        if (Date.now() - Date.parse(o.createdAt) > 120 * 864e5) return J(res, 400, { ok: false, error: "Diese Bestellung ist schon zu lange her" });
+        o.feedback = o.feedback || {}; const first = !o.feedback[stage]; o.feedback[stage] = { rating, text, at: nowIso() }; hist(o, "Feedback (" + (stage === "product" ? "Drucksachen" : "Bestellung") + "): " + rating + "/5"); await store.putOrder(o);
+        if (D.push && (rating <= 3 || (text && first))) D.push("lead", { title: (rating <= 2 ? "⚠️ " : "") + "Feedback " + "★".repeat(rating) + "☆".repeat(5 - rating) + " · " + o.nr, body: (stage === "product" ? "Drucksachen: " : "Bestellvorgang: ") + (text || "ohne Kommentar"), url: "/admin#print", tag: "fb-" + o.id }).catch(() => {});
+        return J(res, 200, { ok: true });
       }
       m = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})(\/pay)?$/);
       if (m) {
@@ -2327,8 +2447,8 @@ module.exports = function (D) {
         if (!input || typeof input !== "object") { req.resume(); return J(res, 400, { ok: false, error: "Konfiguration fehlt" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "druck")), 120).replace(/[\\/:*?"<>|]/g, "_");
         await uploadTarget(input).catch(e => { req.resume(); throw e; });
-        const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
-        const meta = await handleUpload(buf, name, input);
+        const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
+        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
@@ -2338,27 +2458,28 @@ module.exports = function (D) {
         const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         const data = await store.fileData(id), info = await pdfInfoX(data); if (info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
         if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
-        const out = await addBleed(data, fm.size, +fm.bleed, mode), multi = (+fm.sides || 1) > 2;
+        const out = await withPdf(() => addBleed(data, fm.size, +fm.bleed, mode)), multi = (+fm.sides || 1) > 2;
         const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt: Motiv minimal vergrößert (" + fm.bleed + " mm je Seite) – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt automatisch ergänzt: Randbereiche gespiegelt (" + fm.bleed + " mm je Seite) – dein Motiv bleibt unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, multi));
         const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/logos") {
         if (limited("upload", ip, 60, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
-        const meta = await mergeLogos(await readJson(req, 40000));
+        const lb = await readJson(req, 40000), meta = await withPdf(() => mergeLogos(lb));
         return J(res, 200, Object.assign({ ok: true }, fileView(meta), { pageMap: meta.pageMap }));
       }
       if (p === "/print/api/design") {
         if (limited("upload", ip, 60, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
-        const b = await readJson(req, MAX_UPLOAD);
-        const meta = await handleDesign(b);
+        const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;   // Platz in der Warteschlange vor dem Einlesen (große Anfragen nicht alle gleichzeitig im Speicher)
+        try { const b = await readJson(req, MAX_UPLOAD); meta = await handleDesign(b); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/draft") {
-        if (limited("draft", ip, 30, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Entwürfe – bitte später erneut" });
+        if (limited("draft", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Entwürfe – bitte später erneut" });
         const b = await readJson(req, 25 * 1024 * 1024);
         const data = JSON.stringify({ product: clip(b.product, 80), sel: b.sel && typeof b.sel === "object" ? b.sel : {}, copies: b.copies, urgency: clip(b.urgency, 20), custom: objOf(b.custom), design: b.design });
         if (data.length > 25 * 1024 * 1024) return J(res, 413, { ok: false, error: "Entwurf zu groß" });
+        if (!draftBudget(ip, data.length)) return J(res, 429, { ok: false, error: "Heute wurden schon sehr viele Entwürfe gespeichert – bitte morgen erneut" });
         const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "draft", name: "entwurf.json", bytes: data.length, createdAt: nowIso(), orderId: null };
         await store.putFile(meta, Buffer.from(data, "utf8"));
         const me = await accountMod().current(req).catch(() => null);   // angemeldet: Entwurf im Kundenkonto merken
@@ -2470,6 +2591,13 @@ module.exports = function (D) {
   async function handleAdmin(req, res, u, p) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
+      if (p === "/admin/api/print/feedback" && req.method === "GET") {   // Kundenfeedback: Durchschnitt + neueste Bewertungen
+        const rows = (await store.listOrders()).filter(o => o.feedback && (o.feedback.order || o.feedback.product)).map(o => ({ id: o.id, nr: o.nr, product: o.product.title, copies: o.copies, name: [o.customer.firstName, o.customer.lastName].join(" ").trim(), company: o.customer.company || "",
+          order: o.feedback.order || null, productFb: o.feedback.product || null, at: (o.feedback.product || o.feedback.order).at })).sort((a, b) => a.at < b.at ? 1 : -1);
+        const avg = k => { const l = rows.map(r => r[k]).filter(Boolean); return l.length ? { n: l.length, avg: Math.round(l.reduce((a, x) => a + x.rating, 0) / l.length * 10) / 10 } : { n: 0, avg: null }; };
+        const asked = (await store.listOrders()).filter(o => o.mails && o.mails.feedback && o.mails.feedback !== "skip").length;
+        return J(res, 200, { ok: true, order: avg("order"), product: avg("productFb"), asked, rows: rows.slice(0, 100) });
+      }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};
         if (mb.op === "pub" && cfg().pcKey) { await pubBuild(); return J(res, 200, Object.assign(await marginsState(), { pub: (await pubState()) ? { at: PUB.at, n: PUB.items.length } : null })); }   // Preisübersicht jetzt neu erstellen

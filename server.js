@@ -163,8 +163,14 @@ function makeZip(files) {
   const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(cdSize, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat(parts.concat(central, [end]));
 }
+// Dateien (Belege, Anhänge) nur als PDF/Bild direkt im Browser anzeigen – XML, SVG, HTML u. a. könnten Skripte mit Cockpit-Rechten ausführen:
+// solche Dateien immer als Download und zusätzlich in einer Sandbox (Sicherheitsprüfung 19.10.2026)
+const INLINE_OK = /^(application\/pdf|image\/(png|jpe?g|gif|webp|bmp|heic)|text\/plain|audio\/|video\/)/i;
 function send(res, status, body, type, headers) {
-  res.writeHead(status, Object.assign({ "Content-Type": type || "text/plain; charset=utf-8" }, headers || {}));
+  headers = Object.assign({ "Content-Type": type || "text/plain; charset=utf-8" }, headers || {});
+  const cd = headers["Content-Disposition"];
+  if (cd && /^\s*inline/i.test(cd) && !INLINE_OK.test(String(headers["Content-Type"]))) { headers["Content-Disposition"] = cd.replace(/^\s*inline/i, "attachment"); headers["Content-Security-Policy"] = "sandbox; default-src 'none'"; }
+  res.writeHead(status, headers);
   res.end(body);
 }
 const COMPRESSIBLE = { ".html": 1, ".css": 1, ".js": 1, ".json": 1, ".svg": 1, ".xml": 1, ".txt": 1, ".webmanifest": 1 };
@@ -833,17 +839,27 @@ function formNested(str) {   // a[b]=1&c=2 → {a:{b:"1"},c:"2"}
   new URLSearchParams(str).forEach((v, k) => { const parts = k.replace(/\]/g, "").split("["); let cur = out; parts.forEach((pp, i) => { if (i === parts.length - 1) cur[pp] = v; else cur = cur[pp] = (cur[pp] && typeof cur[pp] === "object") ? cur[pp] : {}; }); });
   return out;
 }
+// Schnittstelle für die Plattformen (kochdu, Blitzdings, …): Sicherheitsprüfung 19.10.2026 – falsche Tokens gebremst,
+// nie löschen, keine Einstellungen/Bankkonten/Buchungskategorien/Belege/Benutzer ändern, jeder Zugriff protokolliert.
+// Genutzt wird laut Protokoll: Kontakte anlegen, Rechnungen erstellen und per Mail senden.
+const FINAPI_FAILS = hitCounter(2000, 3600000);
+const FINAPI_BLOCK = /^\/(FinSetting|CheckAccount|CheckAccountTransaction|AccountingType|AccountingContact|Voucher|VoucherPos|SevUser|SevClient|Tag|TagRelation|Export|ReceiptGuidance|Bank|Payment(?:Method)?)\b/i;
 async function finApi(req, res, u, p) {
   const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
-  const who = finApiAuth(req); if (!who) return J(401, { error: { message: "unauthorized" } });
-  let raw = ""; for await (const c of req) { raw += c; if (raw.length > 5000000) return J(413, { error: { message: "too_large" } }); }
+  const ip = clientIp(req);
+  if (FINAPI_FAILS.count(ip, 900000) >= 10) return J(429, { error: { message: "too_many" } });
+  const who = finApiAuth(req); if (!who) { FINAPI_FAILS.hit(ip, 100, 900000); console.log("fin-api: falscher Token"); return J(401, { error: { message: "unauthorized" } }); }
+  const fpath = p.slice("/fin-api/v1".length);
+  if (req.method === "DELETE" || (req.method !== "GET" && FINAPI_BLOCK.test(fpath))) { console.log("fin-api gesperrt", who, req.method, fpath.replace(/\d+/g, "{id}")); req.resume(); return J(403, { error: { message: "forbidden" } }); }
+  let raw = ""; for await (const c of req) { raw += c; if (raw.length > 2000000) return J(413, { error: { message: "too_large" } }); }
   const ct = String(req.headers["content-type"] || "");
   let body; try { body = !raw ? undefined : /json/.test(ct) ? JSON.parse(raw) : /x-www-form-urlencoded/.test(ct) ? formNested(raw) : JSON.parse(raw); } catch (e) { return J(400, { error: { message: "bad_body" } }); }
   const query = {}; u.searchParams.forEach((v, k) => { if (k !== "token") query[k] = v; });
   const path = p.slice("/fin-api/v1".length);
+  console.log("fin-api", who, req.method, path.replace(/\d+/g, "{id}"));   // jeder Zugriff, auch lesend (Grundlage für eine spätere Freigabeliste)
   try {
     const r = await sev(req.method, path, { query, body });
-    if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; console.log("fin-api", who, req.method, path.replace(/\d+/g, "{id}")); }
+    if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
     return J(200, r);
   } catch (e) { return J(e.status && e.status < 600 ? e.status : 500, { error: { message: String(e.message || e).slice(0, 300) } }); }
 }

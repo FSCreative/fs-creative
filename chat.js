@@ -142,6 +142,7 @@ module.exports = function (D) {
     if (!ki || !ki.configured || !ki.configured() || !ki.chatReply) return sysOnce(c, "fallback", T_FALLBACK);
     const C = cfg();
     if ((c.aiCount || 0) >= C.aiConvMax) return sysOnce(c, "cap", T_CAP);
+    const vip = CONV_IP.get(c.id); if (vip && limited("ai|" + vip, 12, 3600000)) return sysOnce(c, "cap", T_CAP);   // je Besucher-IP max. 12 KI-Antworten pro Stunde (auch über neue Unterhaltungen hinweg)
     const day = await aiDay(); if (day.n >= C.aiDayMax) return sysOnce(c, "cap", T_CAP);
     const msgs = await store.msgs(c.id, 0, 40), lastV = msgs.filter(m => m.from === "v").pop();
     if (!lastV || msgs[msgs.length - 1].from !== "v") return;           // nichts Neues zu beantworten
@@ -194,6 +195,7 @@ module.exports = function (D) {
     try { return new URL(o).host === String(req.headers.host || ""); } catch (e) { return false; }
   }
   const HITS = new Map(); let pruned = 0;
+  const CONV_IP = new Map();   // Unterhaltung → Besucher-IP (nur im Speicher, für das KI-Limit; wird nicht gespeichert)
   function limited(key, max, win) {
     const now = Date.now();
     if (now - pruned > 600000) { pruned = now; for (const [k, v] of HITS) if (!v.length || now - v[v.length - 1] > 3600000) HITS.delete(k); }   // IP-Einträge höchstens 1 Std. behalten
@@ -255,6 +257,7 @@ module.exports = function (D) {
         const m = await addMsg(c, "v", text);
         const on = isOnline();
         if (false && D.push && on) D.push("chat", { title: isNew ? "Neuer Website-Chat" + (c.name ? ": " + c.name : "") : "Chat: " + (c.name || "Besucher #" + c.no), body: text.slice(0, 160), url: "/admin#chat", tag: "chat-" + c.id }).catch(() => {});
+        CONV_IP.delete(c.id); CONV_IP.set(c.id, ip); if (CONV_IP.size > 5000) CONV_IP.delete(CONV_IP.keys().next().value);
         maybeAi(c).catch(() => {});
         return J(res, 200, { ok: true, msg: pubMsg(m), online: on });
       }

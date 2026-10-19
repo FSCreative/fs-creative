@@ -32,13 +32,14 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
-  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["marge","Marge"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
   if(FILTER==="kunden") return head+stat+tabs+customers();
   if(FILTER==="gutscheine") return head+stat+tabs+voucherView();
   if(FILTER==="newsletter") return head+stat+tabs+nlView();
   if(FILTER==="marge") return head+stat+tabs+mgView();
+  if(FILTER==="feedback") return head+stat+tabs+fbView();
   var L=list();
   return head+stat+tabs+'<section class="panel">'+(L.length?'<div class="pr-list">'+L.map(row).join("")+'</div>':'<div class="empty">'+(FILTER==="review"?"Nichts zu prüfen.":"Keine Aufträge.")+'</div>')+'</section>';
 }
@@ -86,7 +87,7 @@ function detail(j){
 function openOrder(id){ CUR=id; F.api("/admin/api/print/order?id="+encodeURIComponent(id)).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.openDrawer(detail(j)); }); }
 function op(body,msg){ F.toast("Bitte warten …"); return F.api("/admin/api/print/op",{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.toast(msg); load(true); if(j.order) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); }); }
 F.action("prreload",function(){ load(true); });
-F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); if(v==="marge") loadMg(); });
+F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); if(v==="marge") loadMg(); if(v==="feedback") loadFb(); });
 // ── Kunden: Liste, Umsatz, Bonusstufe, eigener Rabatt ──
 var CU=null, CUQ="", VO=null;
 function loadCust(){ F.api("/admin/api/print/customers").then(function(j){ CU=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",customers:[]}; F.render(); }); }
@@ -203,6 +204,19 @@ F.action("prsoprice",function(sku){ var out=document.querySelector('[data-sopric
 var NL=null, NLPV="";
 // ── Marge: wie rechnet der Shop, was bleibt pro Auftrag (Beispiele) und in echten Bestellungen ──
 var MG=null, mgT=0;
+// Kundenfeedback (Bewertung nach der Bestellung bzw. nach dem Versand)
+var FB=null;
+function loadFb(){ F.api("/admin/api/print/feedback").then(function(j){ FB=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler"}; if(FILTER==="feedback") F.render(); }); }
+function fbStars(r){ return '<span style="color:#ffb340;letter-spacing:1px" aria-label="'+r+' von 5 Sternen">'+"★★★★★".slice(0,r)+'<span style="opacity:.3">'+"★★★★★".slice(r)+'</span></span>'; }
+function fbView(){
+  if(!FB){ loadFb(); return '<section class="panel"><div class="empty">Lade …</div></section>'; }
+  if(!FB.ok) return '<div class="notice">'+esc(FB.error)+'</div>';
+  var card=function(t,x,sub){ return '<div class="panel" style="padding:14px 16px;flex:1;min-width:200px"><div class="muted" style="font-size:12.5px">'+t+'</div><div style="font-size:26px;font-weight:700;margin:4px 0">'+(x.avg!=null?String(x.avg).replace(".",",")+" / 5":"–")+'</div><div class="muted" style="font-size:12.5px">'+x.n+" Bewertung"+(x.n===1?"":"en")+(sub?" · "+sub:"")+'</div></div>'; };
+  var top='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 14px">'+card("Bestellvorgang (direkt nach der Bestellung)",FB.order)+card("Drucksachen (nach dem Versand)",FB.product,FB.asked+" per Mail gefragt")+'</div>';
+  var rows=FB.rows.map(function(r){ var one=function(lbl,f){ return f?'<div style="margin:3px 0"><span class="muted" style="font-size:12px">'+lbl+'</span> '+fbStars(f.rating)+(f.text?'<div style="margin:2px 0 0;white-space:pre-wrap">'+esc(f.text)+'</div>':'')+'</div>':''; };
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--line)"><div><b>'+esc(r.nr)+'</b> · '+esc(r.product)+' · '+r.copies+' Stk. · '+esc(r.company||r.name)+' <span class="muted" style="font-size:12px">'+esc(String(r.at).slice(0,10))+'</span></div>'+one("Bestellung",r.order)+one("Drucksachen",r.productFb)+'</div>'; }).join("");
+  return top+'<section class="panel"><div class="panel-h"><h2>Bewertungen</h2><span class="muted">Kund:innen werden direkt nach der Bestellung gefragt; per Mail nur mit Zustimmung an der Kasse (4 Tage nach dem Versand)</span></div><div class="panel-b">'+(rows||'<div class="empty">Noch keine Bewertungen.</div>')+'</div></section>';
+}
 function loadMg(run){ clearTimeout(mgT); F.api("/admin/api/print/margins",run?{body:{op:"run"}}:undefined).then(function(j){ MG=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler"}; if(FILTER==="marge"){ F.render(); if(MG.ok&&MG.job&&MG.job.running) mgT=setTimeout(loadMg,2500); } }); }
 var MG_RULE={ anchor:["Mitbewerber","Preis knapp unter dem Mitbewerberpreis (druck.at & Co.)"], markup:["Aufschlag","Standard-Aufschlag auf den Einkauf"], bulk:["Mengenrabatt","großer Auftrag – Aufschlag automatisch reduziert"], floor:["Mindestmarge %","Mindestmarge nach Zahlungsgebühr greift"], category:["Kategorie","Ziel-Marge der Kategorie"], product:["Produkt","eigener Aufschlag für dieses Produkt"] };
 function mgView(){

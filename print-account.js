@@ -14,10 +14,14 @@ module.exports = function (D) {
   async function all() { if (!CACHE) CACHE = (await store.getMeta("print_customers").catch(() => null)) || {}; return CACHE; }
   async function save() { await store.setMeta("print_customers", CACHE || {}); }
   const byId = async id => { const m = await all(); return Object.values(m).find(c => c.id === id) || null; };
-  const hash = (pw, salt) => crypto.scryptSync(String(pw), salt, 32).toString("hex");
-  function pwOk(c, pw) { if (!c || !c.pw) return false; const h = Buffer.from(hash(pw, c.pw.salt), "hex"), x = Buffer.from(c.pw.h, "hex"); return h.length === x.length && crypto.timingSafeEqual(h, x); }
-  function setPw(c, pw) { const salt = crypto.randomBytes(16).toString("hex"); c.pw = { salt, h: hash(pw, salt) }; }
-  const pwBad = pw => String(pw || "").length < 8 ? "Das Passwort braucht mindestens 8 Zeichen." : null;
+  // scrypt asynchron (blockiert den Server nicht bei vielen gleichzeitigen Anmeldungen); Passwortlänge begrenzt
+  const hash = (pw, salt) => new Promise((ok, no) => crypto.scrypt(String(pw).slice(0, 200), salt, 32, (e, k) => e ? no(e) : ok(k.toString("hex"))));
+  async function pwOk(c, pw) { if (!c || !c.pw) { await hash(pw, "x".repeat(32)); return false; } const h = Buffer.from(await hash(pw, c.pw.salt), "hex"), x = Buffer.from(c.pw.h, "hex"); return h.length === x.length && crypto.timingSafeEqual(h, x); }
+  async function setPw(c, pw) { const salt = crypto.randomBytes(16).toString("hex"); c.pw = { salt, h: await hash(pw, salt) }; }
+  const pwBad = pw => String(pw || "").length < 8 ? "Das Passwort braucht mindestens 8 Zeichen." : String(pw).length > 200 ? "Das Passwort ist zu lang (max. 200 Zeichen)." : null;
+  // je Konto: max. 10 falsche Passwörter in 15 Min.; Codes frühestens alle 60 s und max. 6 pro Stunde (gegen Mail-Flut)
+  const { hitCounter } = require("./client-ip.js"), PW_FAILS = hitCounter(5000, 3600000), CODE_SENT = hitCounter(5000, 3600000);
+  const pwLocked = email => PW_FAILS.count(email, 900000) >= 10;
   // Code: 6 Ziffern, nur als Hash gespeichert, 15 Minuten gültig, max. 5 Versuche
   function newCode(c, purpose) { const code = String(crypto.randomInt(0, 1e6)).padStart(6, "0"); c.code = { h: crypto.createHash("sha256").update(code + c.id).digest("hex"), purpose, exp: Date.now() + CODE_MIN * 60e3, tries: 0 }; return code; }
   function codeOk(c, code, purpose) {
@@ -28,6 +32,9 @@ module.exports = function (D) {
     c.code = null; return null;
   }
   async function sendCode(c, purpose, to) {
+    const k = c.id + "|" + (to || c.email);
+    if (c.code && c.code.purpose === purpose && c.code.exp - CODE_MIN * 60e3 > Date.now() - 60000) return;   // gerade erst geschickt
+    if (CODE_SENT.hit(k, 6, 3600000)) return;   // zu viele Codes in einer Stunde – still ignorieren (keine Auskunft über das Konto)
     const code = newCode(c, purpose); await save();
     const t = purpose === "reset" ? "Passwort zurücksetzen" : purpose === "email" ? "Neue E-Mail-Adresse bestätigen" : "E-Mail-Adresse bestätigen";
     await mail(to || c.email, code + " – dein Code für den FS Creative Druckshop", t, ["Hallo" + (c.firstName ? " " + c.firstName : "") + ",",
@@ -73,7 +80,7 @@ module.exports = function (D) {
     if (m[email]) return m[email];   // gibt es schon – Bestellung wird über die E-Mail im Profil angezeigt, sobald bestätigt
     if (pwBad(pw)) throw Object.assign(new Error(pwBad(pw)), { status: 400 });
     const c = { id: "K" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString("hex"), email, createdAt: nowIso(), verified: false };
-    setPw(c, pw); profileIn(c, cust); m[email] = c; await sendCode(c, "verify"); return c;
+    await setPw(c, pw); profileIn(c, cust); m[email] = c; await sendCode(c, "verify"); return c;
   }
 
   async function handle(req, res, p, ip, J, readJson, ordersOf, bonusOf) {
@@ -99,7 +106,7 @@ module.exports = function (D) {
       let c = m[email];
       if (c && c.verified) return J(res, 409, { ok: false, error: "Für diese E-Mail gibt es schon ein Konto – bitte anmelden." });
       if (!c) c = m[email] = { id: "K" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(3).toString("hex"), email, createdAt: nowIso(), verified: false };
-      setPw(c, b.password); profileIn(c, { firstName: b.firstName, lastName: b.lastName }); c.newsletter = b.newsletter === true; if (c.newsletter) c.newsletterAt = nowIso();
+      await setPw(c, b.password); profileIn(c, { firstName: b.firstName, lastName: b.lastName }); c.newsletter = b.newsletter === true; if (c.newsletter) c.newsletterAt = nowIso();
       await sendCode(c, "verify"); return J(res, 200, { ok: true, needCode: true });
     }
     if (p === "/print/api/account/verify") {
@@ -111,7 +118,9 @@ module.exports = function (D) {
     if (p === "/print/api/account/resend") { const c = m[email]; if (c && (b.purpose === "reset" ? c.verified : !c.verified)) await sendCode(c, b.purpose === "reset" ? "reset" : "verify"); return J(res, 200, { ok: true }); }
     if (p === "/print/api/account/login") {
       const c = m[email];
-      if (!c || !pwOk(c, b.password)) return J(res, 400, { ok: false, error: "E-Mail oder Passwort stimmt nicht." });
+      if (pwLocked(email)) return J(res, 429, { ok: false, error: "Zu viele Fehlversuche für dieses Konto – bitte 15 Minuten warten oder „Passwort vergessen“ nutzen." });
+      if (!c || !(await pwOk(c, b.password))) { PW_FAILS.hit(email, 100, 900000); return J(res, 400, { ok: false, error: "E-Mail oder Passwort stimmt nicht." }); }
+      PW_FAILS.reset(email);
       if (!c.verified) { await sendCode(c, "verify"); return J(res, 200, { ok: true, needCode: true, info: "Bitte bestätige zuerst deine E-Mail-Adresse – wir haben dir einen neuen Code geschickt." }); }
       c.lastLogin = nowIso(); await save();
       return send(200, await full(c), cookie(c));
@@ -121,7 +130,7 @@ module.exports = function (D) {
       const c = m[email]; if (!c) return J(res, 400, { ok: false, error: "Der Code stimmt nicht." });
       const e0 = pwBad(b.password); if (e0) return J(res, 400, { ok: false, error: e0 });
       const e = codeOk(c, b.code, "reset"); if (e) { await save(); return J(res, 400, { ok: false, error: e }); }
-      setPw(c, b.password); c.verified = true; await save();
+      await setPw(c, b.password); c.verified = true; await save();
       return send(200, await full(c), cookie(c));
     }
     if (p === "/print/api/account/logout") return send(200, { ok: true }, clearCookie());
@@ -129,8 +138,8 @@ module.exports = function (D) {
     const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
     if (p === "/print/api/account/profile") { profileIn(c, b, true); if (b.newsletter !== undefined) { if (b.newsletter === true && !c.newsletter) c.newsletterAt = nowIso(); c.newsletter = b.newsletter === true; } await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null }); }
     if (p === "/print/api/account/password") {
-      if (!pwOk(c, b.current)) return J(res, 400, { ok: false, error: "Das aktuelle Passwort stimmt nicht." });
-      const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e }); setPw(c, b.password); await save(); return J(res, 200, { ok: true });
+      if (!(await pwOk(c, b.current))) return J(res, 400, { ok: false, error: "Das aktuelle Passwort stimmt nicht." });
+      const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e }); await setPw(c, b.password); await save(); return J(res, 200, { ok: true });
     }
     if (p === "/print/api/account/type") {   // Umstellung Privat ↔ Firma (nur hier, mit Bestätigung)
       if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bitte bestätige die Umstellung." });
@@ -147,7 +156,7 @@ module.exports = function (D) {
       c.type = b.type; await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null });
     }
     if (p === "/print/api/account/email") {   // neue E-Mail-Adresse: Passwort + Code an die neue Adresse
-      if (!pwOk(c, b.password)) return J(res, 400, { ok: false, error: "Das Passwort stimmt nicht." });
+      if (!(await pwOk(c, b.password))) return J(res, 400, { ok: false, error: "Das Passwort stimmt nicht." });
       const ne = normMail(b.newEmail); if (!mailOk(ne)) return J(res, 400, { ok: false, error: "Bitte eine gültige neue E-Mail-Adresse eingeben." });
       if (ne === c.email) return J(res, 400, { ok: false, error: "Das ist schon deine E-Mail-Adresse." });
       if (m[ne]) return J(res, 409, { ok: false, error: "Für diese E-Mail-Adresse gibt es schon ein Konto." });
@@ -177,7 +186,7 @@ module.exports = function (D) {
     }
     if (p === "/print/api/account/cart") { c.cart = cartClean(b.items); c.cartAt = nowIso(); await save(); return J(res, 200, { ok: true, cart: c.cart }); }
     if (p === "/print/api/account/delete") {
-      if (!pwOk(c, b.password)) return J(res, 400, { ok: false, error: "Das Passwort stimmt nicht." });
+      if (!(await pwOk(c, b.password))) return J(res, 400, { ok: false, error: "Das Passwort stimmt nicht." });
       delete m[c.email]; await save(); return send(200, { ok: true }, clearCookie());   // Bestellungen bleiben (Aufbewahrungspflicht), nur das Konto wird gelöscht
     }
     return J(res, 404, { ok: false, error: "not_found" });

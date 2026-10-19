@@ -152,6 +152,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pr = await (await fetch(B + "/print?produkt=visitenkarten")).text();
     assert.ok(/<h1>Visitenkarten online drucken<\/h1>/.test(pr) && /"@type":"Product"/.test(pr) && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\?produkt=visitenkarten"/.test(pr) && /Stück: [\d.,]+ €/.test(pr), "Produktseite für Crawler");
     const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/preise<\/loc>/.test(sm), "Sitemap mit Preisübersicht");
+    // Sortiment/Kategorien vorgerendert (Titel, Brotkrumen, Links, CollectionPage), Sitemap mit Kategorien, Produktseite mit Brotkrumen
+    const catj = await (await fetch(B + "/print/api/catalog")).json(), vk = catj.products.find(p => p.key === "visitenkarten"), main = vk.cat.main;
+    const ov = await (await fetch(B + "/print?produkte")).text();
+    assert.ok(/<h1>Alle Produkte<\/h1>/.test(ov) && /"@type":"CollectionPage"/.test(ov) && ov.indexOf('href="/print?produkte&amp;kategorie=' + main + '"') > -1 && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\?produkte"/.test(ov), "Übersicht für Crawler");
+    const cp = await (await fetch(B + "/print?produkte&kategorie=" + main)).text();
+    assert.ok(/online drucken<\/h1>/.test(cp) && cp.indexOf('href="/print?produkt=visitenkarten"') > -1 && /"@type":"BreadcrumbList"/.test(cp) && /<title>[^<]*Produkte \| FS Creative Druckshop<\/title>/.test(cp), "Kategorieseite für Crawler");
+    assert.ok(/<title>Alle Produkte/.test(await (await fetch(B + "/print?produkte&kategorie=gibtsnicht")).text()), "unbekannte Kategorie → Übersicht");
+    const sm2 = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(sm2.indexOf("/print?produkte&amp;kategorie=" + main + "</loc>") > -1, "Sitemap mit Kategorien");
+    assert.ok(/"@type":"BreadcrumbList"[^<]*Visitenkarten/.test(pr) && /<nav class="ps-crumbs"/.test(pr) && /og:image" content="https:/.test(pr), "Produktseite mit Brotkrumen und Vorschaubild");
   });
   await t("Gestaltung anfragen: Datei-Upload, Anfrage mit Konfiguration → Lead, Datei nur fürs Cockpit", async () => {
     const upf = (name, body) => fetch(B + "/print/api/brief/file", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) }, body });
@@ -312,6 +321,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await post("/print/api/order", order())).status, 409, "Datei gehört schon zu einer Bestellung");
     const st = await (await fetch(B + "/print/api/order/" + r.j.orderId + "?t=" + r.j.token)).json(); assert.strictEqual(st.order.status, "pending_payment");
     assert.strictEqual((await fetch(B + "/print/api/order/" + r.j.orderId + "?t=falsch")).status, 404);
+  });
+  await t("Feedback: nur mit Bestell-Link, 1–5 Sterne, Drucksachen erst nach dem Versand; Cockpit-Übersicht", async () => {
+    const fb = (body, tok, hdr) => post("/print/api/order/" + o1.orderId + "/feedback?t=" + (tok || o1.token), body, hdr);
+    assert.strictEqual((await fb({ stage: "order", rating: 4 }, "falsch")).status, 404);
+    assert.strictEqual((await fb({ stage: "order", rating: 9 })).status, 400);
+    assert.strictEqual((await fb({ stage: "product", rating: 5 })).status, 400, "noch nicht versendet");
+    assert.strictEqual((await fb({ stage: "order", rating: 4, text: "Ging schnell <b>und</b> einfach" })).status, 200);
+    const st = await (await fetch(B + "/print/api/order/" + o1.orderId + "?t=" + o1.token)).json(); assert.deepStrictEqual(st.order.feedback, { order: true, product: false });
+    const a = await admin("/admin/api/print/feedback"); assert.strictEqual(a.ok, true); assert.deepStrictEqual(a.order, { n: 1, avg: 4 }); assert.strictEqual(a.rows[0].order.text, "Ging schnell <b>und</b> einfach");
   });
   await t("Mollie-Webhook: prüft per Abruf; „paid“ → bezahlt, Rechnungsentwurf, Mails – aber KEINE Print.com-Bestellung", async () => {
     const pid = o1.checkoutUrl.split("/").pop();

@@ -23,7 +23,7 @@ function copyApp() {
 }
 async function startServer(dir) {
   const port = 6500 + Math.floor(Math.random() * 400);
-  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "richtig-123" });
+  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "richtig-123", BLITZDINGS_COCKPIT_TOKEN: "fin-test-token-123" });
   ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN", "RAILWAY_API_TOKEN", "CF_API_TOKEN", "ANTHROPIC_API_KEY", "DATABASE_URL", "SEVDESK_API_KEY", "MAIL_API_URL", "PRINTCOM_API_KEY"].forEach((k) => delete e[k]);
   const srv = cp.spawn(process.execPath, ["server.js"], { cwd: dir, env: e, stdio: ["ignore", "pipe", "pipe"] });
   srv.out = ""; srv.stdout.on("data", (d) => (srv.out += d)); srv.stderr.on("data", (d) => (srv.out += d));
@@ -100,6 +100,16 @@ const req = (xff, cf, sock) => ({ headers: Object.assign({}, xff != null ? { "x-
     assert.notStrictEqual((await post({ "sec-fetch-site": "same-origin", origin: B })).status, 403);
     assert.notStrictEqual((await post({})).status, 403, "ohne Header (Skripte/Tests) erlaubt");
     const g = await fetch(B + "/admin/api/push", { headers: { cookie: COOKIE, "sec-fetch-site": "cross-site" } }); assert.strictEqual(g.status, 200, "Lesen per GET unverändert");
+  });
+  await t("fin-api: Löschen und sensible Bereiche gesperrt, falsche Tokens gebremst", async () => {
+    const fa = (m, p, tok, ip) => fetch(B + "/fin-api/v1" + p, { method: m, headers: { authorization: "Bearer " + (tok || "fin-test-token-123"), "content-type": "application/json", "x-forwarded-for": ip || "203.0.113.50" }, body: m === "GET" ? undefined : "{}" });
+    assert.strictEqual((await fa("DELETE", "/Invoice/1")).status, 403, "nie löschen");
+    assert.strictEqual((await fa("POST", "/FinSetting")).status, 403);
+    assert.strictEqual((await fa("PUT", "/CheckAccount/5")).status, 403);
+    assert.notStrictEqual((await fa("POST", "/Contact")).status, 403, "Kontakte anlegen (kochdu) weiter erlaubt");
+    for (let i = 0; i < 10; i++) assert.strictEqual((await fa("GET", "/Contact", "falsch-" + i, "203.0.113.51")).status, 401);
+    assert.strictEqual((await fa("GET", "/Contact", "fin-test-token-123", "203.0.113.51")).status, 429, "nach 10 falschen Tokens gesperrt");
+    assert.ok(/fin-api blitzdings POST \/Contact/.test(srv.out) && /fin-api gesperrt blitzdings DELETE/.test(srv.out), "protokolliert");
   });
   await t("Bibliotheken, Tests und Server-Code nie öffentlich", async () => {
     for (const p of ["/node_modules/pdf-lib/package.json", "/node_modules/pdf-lib/README.md", "/test/print-cms-fixture.json", "/test/security.test.js", "/server.js", "/client-ip.js", "/package.json"]) {

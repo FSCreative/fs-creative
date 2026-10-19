@@ -36,7 +36,7 @@
     S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products);
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
-    if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; }
+    if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
     var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } S.step = 2; render(); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; document.getElementById("psSetup").hidden = false; });
@@ -743,7 +743,7 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
-    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) loadFrom([].slice.call(root.querySelectorAll(".ps-prod[data-prod]")).slice(0, 12).map(function (b) { return b.getAttribute("data-prod"); })); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
+    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
       var t5 = cartTotals(), co5 = S.ctype === "company", m5 = document.createElement("div"); m5.className = "ps-mbar"; m5.id = "psMbar";
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Weiter zur Zahlung</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
@@ -883,7 +883,7 @@
   }
   window.addEventListener("popstate", function () { if (!S.cat) return; var st = history.state;
     if (st && st.psStep && S.prod) { closeSheet(); S.view = ""; S.dd = ""; if (st.psStep === 3) S.mode = S.file ? S.mode : st.psMode || ""; go(st.psStep, true); return; }   // Schritt zurück/vor
-    var qq = new URLSearchParams(location.search); if (qq.has("konto")) { S.view = "konto"; render(); return; } if (qq.has("warenkorb")) { S.view = ""; go(4, true); return; } setPage(qq.has("produkte") ? "produkte" : "home", false); });
+    var qq = new URLSearchParams(location.search); if (qq.has("konto")) { S.view = "konto"; render(); return; } if (qq.has("warenkorb")) { S.view = ""; go(4, true); return; } S.group = qq.get("kategorie") || ""; S.sub = qq.get("unter") || ""; S.q = qq.get("q") || ""; setPage(qq.has("produkte") ? "produkte" : "home", false); });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-nav]"); if (!a || !S.cat) return; e.preventDefault();
     var pg = a.getAttribute("data-nav"); S.group = a.getAttribute("data-navgroup") || ""; S.sub = ""; S.q = "";
@@ -901,20 +901,71 @@
     return S.cat.products.filter(function (p) { var c = p.cat || {}; if (S.group && c.main !== S.group) return false; if (S.sub && c.sub !== S.sub) return false;
       return !qq || (p.title + " " + p.desc + " " + (c.mainName || "") + " " + (c.subName || "") + " " + p.key).toLowerCase().indexOf(qq) > -1; });
   }
+  // Sortiment (Wunsch Simon 19.10.2026): Übersicht mit Kategorien + Unterkategorien statt aller Produkte untereinander;
+  // Kategorie-Ansicht mit Seitenleiste (Unterkategorien), Filtern, Sortierung und kompakten Karten; Preise laden, sobald Karten sichtbar werden
+  function cardSm(p) {
+    return '<a class="ps-pc' + (p.best ? " best" : "") + '" href="/print?produkt=' + encodeURIComponent(p.key) + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : isNew(p) ? '<span class="ps-badge nw">Neu</span>' : "") +
+      (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="bd"><b>' + esc(p.title) + "</b>" +
+      (p.designer ? '<span class="ps-pc-d">Online-Designer</span>' : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></a>";
+  }
+  function catA(main, sub, cls, inner, attrs) { return '<a' + (cls ? ' class="' + cls + '"' : "") + ' href="/print?produkte' + (main ? "&amp;kategorie=" + encodeURIComponent(main) : "") + (sub ? "&amp;unter=" + encodeURIComponent(sub) : "") + '" data-cat="' + esc(main || "") + "|" + esc(sub || "") + '"' + (attrs || "") + ">" + inner + "</a>"; }
+  function isNew(p) { if (!p.added) return false; var t = Date.parse(p.added + "T12:00:00"); return isFinite(t) && Date.now() - t < 120 * 864e5; }
+  function grpOf(slug) { return (S.cat.groups || []).filter(function (g) { return g.slug === slug; })[0] || null; }
+  function inGrp(slug, sub) { return S.cat.products.filter(function (p) { var c = p.cat || {}; return c.main === slug && (!sub || (sub === "_" ? !c.sub : c.sub === sub)); }); }
+  function subsOf(g) { var l = g.subs.map(function (x) { return { slug: x.slug, name: x.name, n: inGrp(g.slug, x.slug).length }; }).filter(function (x) { return x.n; }), rest = inGrp(g.slug, "_").length;
+    if (rest) l.push({ slug: "_", name: "Weitere", n: rest }); return l; }
+  function visGroups() { return (S.cat.groups || []).filter(function (g) { return inGrp(g.slug).length; }); }
+  function sorted(l) { var k = S.sort || "pop", c = l.slice();
+    if (k === "neu") c.sort(function (a, b) { return (b.added || "") < (a.added || "") ? -1 : (b.added || "") > (a.added || "") ? 1 : 0; });
+    else if (k === "az") c.sort(function (a, b) { return String(a.title).localeCompare(String(b.title), "de"); });
+    else c.sort(function (a, b) { return (b.best ? 1 : 0) - (a.best ? 1 : 0) || (b.pop || 0) - (a.pop || 0); });
+    return c; }
+  function fltd(l) { var f = S.flt || {}; return l.filter(function (p) { return (!f.best || p.best) && (!f.neu || isNew(p)) && (!f.des || p.designer); }); }
   function gridHtml() {
-    var l = filtered(), groups = S.cat.groups || [];
-    if (!l.length) return '<p class="pd-muted" style="padding:20px 0">Nichts gefunden – probier einen anderen Begriff oder <button type="button" class="ps-link" data-group="">alle Produkte</button>.</p>';
-    if (S.group || S.q.trim()) return '<div class="ps-products">' + l.map(cardHtml).join("") + "</div>";
-    var top = l.filter(function (p) { return p.best; }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); });
-    var bestSec = top.length ? '<section class="ps-grp ps-grp-best"><h3 class="ps-grp-h">★ Bestseller <span>die meistbestellten Produkte</span></h3><div class="ps-products">' + top.map(cardHtml).join("") + "</div></section>" : "";
-    return bestSec + groups.map(function (g) { var x = l.filter(function (p) { return (p.cat || {}).main === g.slug; }); return x.length ? '<section class="ps-grp"><h3 class="ps-grp-h">' + esc(g.name) + ' <span>' + x.length + '</span></h3><div class="ps-products">' + x.map(cardHtml).join("") + "</div></section>" : ""; }).join("");
+    var qq = S.q.trim();
+    if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return (p.title + " " + p.desc + " " + (c.mainName || "") + " " + (c.subName || "") + " " + p.key).toLowerCase().indexOf(ql) > -1; })); return l.length ? '<p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + '<div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
+      : '<p class="pd-muted" style="padding:20px 0">Nichts gefunden – probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.</p>'; }
+    var g = S.group && grpOf(S.group);
+    if (!g) {   // Übersicht: Bestseller + Kategorien mit Unterkategorien
+      var top = S.cat.products.filter(function (p) { return p.best; }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); }).slice(0, 10);
+      return (top.length ? '<section class="ps-pov-best"><h3 class="ps-grp-h">★ Bestseller <span>die meistbestellten Produkte</span></h3><div class="ps-pcs row">' + top.map(cardSm).join("") + "</div></section>" : "") +
+        '<h3 class="ps-grp-h">Alle Kategorien</h3><div class="ps-povg">' + visGroups().map(function (x) { var n = inGrp(x.slug).length, subs = subsOf(x).sort(function (a, b) { return b.n - a.n; }), more = subs.length > 5;
+          return '<div class="ps-pov">' + catA(x.slug, "", "ps-pov-h", '<span class="ci">' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</span><span class="ct"><b>' + esc(x.name) + "</b><small>" + n + " Produkte</small></span>") +
+            '<ul>' + subs.slice(0, 5).map(function (y) { return "<li>" + catA(x.slug, y.slug === "_" ? "_" : y.slug, "", esc(y.name) + "<span>" + y.n + "</span>") + "</li>"; }).join("") + "</ul>" +
+            catA(x.slug, "", "ps-link ps-pov-all", (more ? "Alle " + subs.length + " Bereiche · " : "Alle ") + n + " Produkte →") + "</div>"; }).join("") + "</div>";
+    }
+    var subs2 = subsOf(g), sub = subs2.filter(function (x) { return x.slug === S.sub; })[0], base = inGrp(g.slug, sub ? sub.slug : ""), l2 = sorted(fltd(base)), f = S.flt || {};
+    var side = '<nav class="ps-cv-side" aria-label="Unterkategorien">' + catA(g.slug, "", "", "Alles in " + esc(g.name) + "<span>" + inGrp(g.slug).length + "</span>", ' aria-current="' + !sub + '"') +
+      subs2.map(function (x) { return catA(g.slug, x.slug, "", esc(x.name) + "<span>" + x.n + "</span>", ' aria-current="' + (sub === x) + '"'); }).join("") +
+      '<div class="ps-cv-oth"><small>Weitere Kategorien</small>' + visGroups().filter(function (x) { return x !== g; }).map(function (x) { return catA(x.slug, "", "", esc(x.name)); }).join("") + "</div></nav>";
+    var chip = function (k, t, n) { return n ? '<button type="button" class="ps-fchip" data-flt="' + k + '" aria-pressed="' + !!f[k] + '">' + t + "</button>" : ""; };
+    var bar = '<div class="ps-cv-bar"><span class="ps-cv-n">' + l2.length + " Produkt" + (l2.length === 1 ? "" : "e") + "</span>" + chip("best", "★ Bestseller", base.some(function (p) { return p.best; })) + chip("neu", "Neu", base.some(isNew)) + chip("des", "Online-Designer", base.some(function (p) { return p.designer; })) +
+      '<label class="ps-cv-sort">Sortieren <select data-sort aria-label="Sortieren"><option value="pop"' + ((S.sort || "pop") === "pop" ? " selected" : "") + '>Beliebt</option><option value="neu"' + (S.sort === "neu" ? " selected" : "") + '>Neu</option><option value="az"' + (S.sort === "az" ? " selected" : "") + ">A–Z</option></select></label></div>";
+    return '<div class="ps-cv">' + side + '<div class="ps-cv-main">' + bar + (l2.length ? '<div class="ps-pcs">' + l2.map(cardSm).join("") + "</div>" : '<p class="pd-muted" style="padding:20px 0">Keine Produkte mit diesen Filtern – <button type="button" class="ps-link" data-flt="">Filter zurücksetzen</button>.</p>') + "</div></div>";
   }
   function vProducts() {
-    var groups = (S.cat.groups || []).filter(function (x) { return x.slug === S.group || S.cat.products.filter(function (p) { return (p.cat || {}).main === x.slug; }).length >= 5; }), g = groups.filter(function (x) { return x.slug === S.group; })[0];
-    var tabs = groups.length > 1 ? '<div class="ps-tabs" role="group" aria-label="Kategorien"><button type="button" data-group="" aria-pressed="' + !S.group + '">Alle</button>' + groups.map(function (x) { return '<button type="button" data-group="' + esc(x.slug) + '" aria-pressed="' + (S.group === x.slug) + '">' + esc(x.name) + "</button>"; }).join("") + "</div>" : "";
-    var subs = g && g.subs.length > 1 ? '<div class="ps-subs" role="group" aria-label="Untergruppen"><button type="button" data-sub="" aria-pressed="' + !S.sub + '">Alle</button>' + g.subs.map(function (x) { return '<button type="button" data-sub="' + esc(x.slug) + '" aria-pressed="' + (S.sub === x.slug) + '">' + esc(x.name) + "</button>"; }).join("") + "</div>" : "";
-    return '<div class="ps-panel ps-prodpanel"><h2>Alle Produkte</h2><p class="sub">' + S.cat.products.length + " Produkte · alle Preise inkl. Versand innerhalb Österreichs.</p>" +
-      '<div class="ps-find"><input type="search" id="psQ" value="' + esc(S.q) + '" placeholder="Produkt suchen, z. B. Flyer, T-Shirt, Banner …" aria-label="Produkt suchen" autocomplete="off"></div>' + tabs + subs + '<div id="psGrid">' + gridHtml() + "</div></div>";
+    var g = S.group && grpOf(S.group), sub = g && S.sub && subsOf(g).filter(function (x) { return x.slug === S.sub; })[0];
+    var crumbs = g || S.q.trim() ? '<nav class="ps-crumbs" aria-label="Pfad">' + catA("", "", "ps-link", "Alle Produkte") + (g ? " › " + catA(g.slug, "", "ps-link", esc(g.name)) : "") + (sub ? " › <span>" + esc(sub.name) + "</span>" : "") + "</nav>" : "";
+    var h = sub ? sub.name : g ? g.name : "Alle Produkte";
+    try { document.title = (S.q.trim() ? "Suche: " + S.q.trim() : h) + (g || S.q.trim() ? "" : " – " + S.cat.products.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"; } catch (e) {}
+    return '<div class="ps-panel ps-prodpanel">' + crumbs + "<h2>" + esc(h) + '</h2><p class="sub">' + (g ? inGrp(g.slug, sub ? sub.slug : "").length + " Produkte" : S.cat.products.length + " Produkte in " + visGroups().length + " Kategorien") + " · alle Preise inkl. Versand innerhalb Österreichs.</p>" +
+      '<div class="ps-find"><input type="search" id="psQ" value="' + esc(S.q) + '" placeholder="Produkt suchen, z. B. Flyer, T-Shirt, Banner …" aria-label="Produkt suchen" autocomplete="off"></div><div id="psGrid">' + gridHtml() + "</div></div>";
+  }
+  // „ab“-Preise erst laden, wenn die Karte in Sichtweite kommt (je 12 pro Anfrage, Server speichert 12 Std.)
+  var fromIO = null, fromQ = [], fromT = 0;
+  function fromObserve() {
+    var els = [].slice.call(root.querySelectorAll("[data-prod] [data-from]")).filter(function (e) { return !(e.getAttribute("data-from") in FROMP); });
+    if (fromIO) fromIO.disconnect();
+    if (!("IntersectionObserver" in window)) { loadFrom(els.slice(0, 24).map(function (e) { return e.getAttribute("data-from"); })); return; }
+    fromIO = new IntersectionObserver(function (en) { en.forEach(function (x) { if (x.isIntersecting) { fromQ.push(x.target.getAttribute("data-from")); fromIO.unobserve(x.target); } });
+      clearTimeout(fromT); fromT = setTimeout(function () { var k = fromQ; fromQ = []; if (k.length) loadFrom(k); }, 150); }, { rootMargin: "400px 0px" });
+    els.forEach(function (e) { fromIO.observe(e); });
+  }
+  function navCat(group, sub) {
+    S.group = group || ""; S.sub = sub || ""; S.q = ""; S.flt = {};
+    try { history.pushState({ pg: "produkte" }, "", "/print?produkte" + (S.group ? "&kategorie=" + encodeURIComponent(S.group) : "") + (S.sub ? "&unter=" + encodeURIComponent(S.sub) : "")); } catch (e) {}
+    if (S.page !== "produkte" || S.step !== 1 || S.view) { S.view = ""; S.page = "produkte"; S.step = 1; }
+    render(); window.scrollTo({ top: 0 });
   }
   // Schritt 2: Ausführung
   // Farbfelder: Hex je Farbname (Print.com liefert nur Namen/Produktfotos), englische Namen auf Deutsch
@@ -1424,6 +1475,7 @@
       '<div class="ps-row2"><div class="ps-zipcity">' + field("zip", "PLZ *", c.zip, 'autocomplete="postal-code" inputmode="numeric" required') + field("city", "Ort *", c.city, 'autocomplete="address-level2" required') + '</div><div class="ps-field"><label for="country">Land *</label><select id="country" name="country" autocomplete="country">' + S.cat.countries.map(function (x) { return '<option value="' + x.code + '"' + ((c.country || "AT") === x.code ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select></div></div>" +
       '<div class="ps-row2">' + field("email", "E-Mail *", c.email, 'type="email" autocomplete="email" required', '<span class="hint">Für Bestellbestätigung, Rechnung und Sendungsverfolgung.</span>') + field("phone", "Telefon *", c.phone, 'type="tel" autocomplete="tel" required', '<span class="hint">Nur für den Paketdienst bzw. Rückfragen.</span>') + "</div>" +
       '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psNlOpt"' + (S.nlOpt ? " checked" : "") + '><span>Ja, ich möchte jeden Montag Druck-Tipps und einmal im Monat einen 5-%-Code per E-Mail (Newsletter, jederzeit abbestellbar – du bekommst zuerst eine Bestätigungs-E-Mail). <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a></span></label>' +
+      '<label class="ps-cb ps-nlopt"><input type="checkbox" id="psFbOpt"' + (S.fbOpt ? " checked" : "") + '><span>Nach der Lieferung darf ich einmal per E-Mail um eine kurze Bewertung gebeten werden (freiwillig).</span></label>' +
       '<div id="psAddrErr" class="ps-err" role="alert"></div></form><div class="ps-nav"><button type="button" class="ps-btn" data-go="4">Zurück zum Warenkorb</button><button type="button" class="ps-btn primary" data-act="next4">Weiter zur Zahlung</button></div></div>' + cartAside() + "</div>";
   }
   function mockHtml() {
@@ -1524,11 +1576,14 @@
       return;
     }
     if (S.dd && !e.target.closest(".ps-ddl")) { S.dd = ""; S.ddInfo = ""; render(); }
+    var lk = e.target.closest("a[data-cat],a[data-prod]"); if (lk) { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); }   // echte Links: Strg/Cmd-Klick öffnet neuen Tab
+    var ct = e.target.closest("[data-cat]"); if (ct) { var cv0 = ct.getAttribute("data-cat").split("|"); navCat(cv0[0], cv0[1]); return; }
+    var fl = e.target.closest("[data-flt]"); if (fl) { var fk = fl.getAttribute("data-flt"); S.flt = S.flt || {}; if (!fk) S.flt = {}; else S.flt[fk] = !S.flt[fk]; var gg = document.getElementById("psGrid"); if (gg) { gg.innerHTML = gridHtml(); fromObserve(); } return; }
     var t = e.target.closest("[data-go],[data-prod],[data-act],[data-ctype],[data-group],[data-sub],[data-gal]"); if (!t || t.disabled) return;
     if (t.hasAttribute("data-go")) { e.preventDefault(); go(+t.getAttribute("data-go")); return; }
     if (t.hasAttribute("data-prod")) { pickProduct(t.getAttribute("data-prod"), function () { go(2); }); return; }
-    if (t.hasAttribute("data-group")) { S.group = t.getAttribute("data-group"); S.sub = ""; render(); return; }
-    if (t.hasAttribute("data-sub")) { S.sub = t.getAttribute("data-sub"); render(); return; }
+    if (t.hasAttribute("data-group")) { navCat(t.getAttribute("data-group"), ""); return; }
+    if (t.hasAttribute("data-sub")) { navCat(S.group, t.getAttribute("data-sub")); return; }
     if (t.hasAttribute("data-gal")) { S.gal = +t.getAttribute("data-gal"); var gm = root.querySelector(".ps-gal .main img"), th = t.querySelector("img"), gn = root.querySelector(".ps-gal-n"); if (gm && th) gm.src = th.src.replace(/w=\d+/, "w=1000"); if (gn) gn.textContent = (S.gal + 1) + " / " + root.querySelectorAll("[data-gal]").length; root.querySelectorAll("[data-gal]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === t)); }); return; }
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
@@ -1583,6 +1638,7 @@
     if (k === "retrypay") return retryPay(v);
   });
   root.addEventListener("change", function (e) {
+    if (e.target.hasAttribute && e.target.hasAttribute("data-sort")) { S.sort = e.target.value; var gs = document.getElementById("psGrid"); if (gs) { gs.innerHTML = gridHtml(); fromObserve(); } return; }
     var t = e.target;
     if (t.name && t.name.indexOf("prop:") === 0) { setProp(t.name.slice(5), t.value); return; }
     if (t.matches("select[data-prop]")) { setProp(t.getAttribute("data-prop"), t.value); return; }
@@ -1610,7 +1666,7 @@
     if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
     var t = e.target;
     if (t.id === "psHomeQ") { var sg = document.getElementById("psSug"), hv = sugHtml(t.value); sg.innerHTML = hv; sg.hidden = !hv; t.parentNode.setAttribute("aria-expanded", String(!!hv)); return; }
-    if (t.id === "psQ") { S.q = t.value; var g = document.getElementById("psGrid"); if (g) g.innerHTML = gridHtml(); return; }
+    if (t.id === "psQ") { S.q = t.value; var g = document.getElementById("psGrid"); if (g) { g.innerHTML = gridHtml(); fromObserve(); } return; }
     if (t.hasAttribute("data-tsize")) { var n = Math.max(0, Math.min(5000, parseInt(t.value, 10) || 0)); if (n) S.textile.sizes[t.getAttribute("data-tsize")] = n; else delete S.textile.sizes[t.getAttribute("data-tsize")]; renderPrice(); loadPrice(); return; }
   });
   function resetLogos() { var keep = {}; S.textile.positions.forEach(function (x) { if (S.logos[x]) keep[x] = S.logos[x]; }); S.logos = keep; S.file = null; }
@@ -1734,6 +1790,7 @@
     if (bad.length) { document.getElementById("psAddrErr").textContent = "Bitte prüfen: " + bad.map(function (k) { return names[k]; }).join(", "); var first = f.elements[bad[0]]; if (first) first.focus(); return; }
     if (S.ctype === "company" && S.uid && !S.uidRes) { uidCheck(); }
     var nlo = document.getElementById("psNlOpt"); S.nlOpt = !!(nlo && nlo.checked);
+    var fbo = document.getElementById("psFbOpt"); S.fbOpt = !!(fbo && fbo.checked);
     if (S.nlOpt && !S.nlSent) { S.nlSent = true; api("/print/api/newsletter", { email: c.email, consent: true, source: "Kasse" }).catch(function () {}); }
     requoteCart(); go(6);
   }
@@ -1749,7 +1806,7 @@
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
-      check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
+      check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {
       S.busy = false;
       if (j.status === 409 && j.price) { var x = S.cart[j.index || 0]; if (x) { x.price = Object.assign({}, x.price, { gross: j.price.gross, net: j.price.net, vat: j.price.vat, rate: j.price.rate }); cartSave(true); }
@@ -1772,14 +1829,37 @@
       else if (st === "rejected") h = '<div class="big">✋</div><h2>Bestellung storniert</h2><p>Die Bestellung ' + esc(o.nr) + " wurde storniert. Details haben wir dir per E-Mail geschickt.</p>";
       else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
         (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. " + (o.check === "pro" || o.check === "review" ? "Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion." : "Deine Druckdaten gehen jetzt direkt in Produktion.")) +
-        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + trackCard(o, id, t) +
+        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + trackCard(o, id, t) + fbHtml(o, id, t) +
         (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
         '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";
       var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
       if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
       root.innerHTML = '<div class="ps-panel ps-status">' + h + "</div>";
+      if (location.hash === "#feedback") { var fbx = document.getElementById("feedback"); if (fbx) fbx.scrollIntoView({ block: "center" }); }
     });
   }
+  // Feedback (Wunsch Simon 19.10.2026): direkt nach der Bestellung zum Bestellvorgang, nach dem Versand zu den Drucksachen
+  function fbHtml(o, id, t) {
+    var f = o.feedback || {}, shipped = o.status === "shipped" || o.status === "delivered", ask = shipped && !f.product ? "product" : !f.order ? "order" : "";
+    if (!ask) return f.order || f.product ? '<p class="ps-fb-done">Danke für dein Feedback!</p>' : "";
+    return '<div class="ps-fb" id="feedback" data-fb="' + ask + '" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>' + (ask === "product" ? "Wie zufrieden bist du mit deinen Drucksachen?" : "Wie war das Bestellen bei uns?") + "</h3>" +
+      '<div class="ps-fb-stars" role="radiogroup" aria-label="Bewertung von 1 bis 5 Sternen">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" role="radio" aria-checked="false" data-fbstar="' + n + '" aria-label="' + n + " von 5 Sternen" + '">★</button>'; }).join("") + "</div>" +
+      '<textarea maxlength="1000" rows="2" placeholder="' + (ask === "product" ? "Was hat dir gefallen, was können wir besser machen? (optional)" : "Was war gut, was hat gefehlt? (optional)") + '" aria-label="Kommentar (optional)"></textarea>' +
+      '<button type="button" class="ps-btn primary small" data-fbsend>Feedback senden</button><p class="ps-fb-msg" role="status"></p></div>';
+  }
+  document.addEventListener("click", function (e) {
+    var sb = e.target.closest && e.target.closest("[data-fbstar]");
+    if (sb) { var box = sb.closest(".ps-fb"), n = +sb.getAttribute("data-fbstar"); box.setAttribute("data-r", n);
+      [].forEach.call(box.querySelectorAll("[data-fbstar]"), function (b) { var v = +b.getAttribute("data-fbstar"); b.classList.toggle("on", v <= n); b.setAttribute("aria-checked", String(v === n)); }); return; }
+    var fsb = e.target.closest && e.target.closest("[data-fbsend]"); if (!fsb) return;
+    var bx = fsb.closest(".ps-fb"), r = +bx.getAttribute("data-r") || 0, msg = bx.querySelector(".ps-fb-msg");
+    if (!r) { msg.textContent = "Bitte zuerst 1 bis 5 Sterne wählen."; return; }
+    fsb.disabled = true; msg.textContent = "";
+    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/feedback?t=" + encodeURIComponent(bx.getAttribute("data-t")), { stage: bx.getAttribute("data-fb"), rating: r, text: bx.querySelector("textarea").value }).then(function (j) {
+      if (j.ok) bx.innerHTML = '<p class="ps-fb-done">Danke für dein Feedback!' + (r >= 4 ? " Das freut uns sehr." : " Wir schauen uns das genau an.") + "</p>";
+      else { msg.textContent = j.error || "Hat nicht geklappt – bitte später erneut versuchen."; fsb.disabled = false; }
+    }).catch(function () { msg.textContent = "Hat nicht geklappt – bitte später erneut versuchen."; fsb.disabled = false; });
+  });
   // Fortschritt der Bestellung als Zeitleiste
   function trackHtml(st) {
     var at = { paid: 1, invoice_requested: 1, ordered: 2, in_production: 2, problem: 2, shipped: 3, delivered: 4 }[st]; if (at == null) return "";

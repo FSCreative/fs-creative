@@ -118,7 +118,7 @@ function paint(){
   if(!built) return; var L=el.list, atEnd=L.scrollHeight-L.scrollTop-L.clientHeight<60; L.textContent="";
   if(!msgs.length) L.appendChild(h("div","fscc-hi",online?"Hallo! 👋 Wie kann ich dir helfen? Schreib mir einfach hier.":"Hallo! 👋 Erzähl kurz, worum es geht – Website, Grafik, Druck oder etwas anderes. Simon meldet sich persönlich."));
   msgs.forEach(function(m){ var b=h("div","fscc-m "+(m.from==="v"||m.from==="me"||m.from==="ki"||m.from==="sys"?m.from:"sys"));
-    if(m.from==="me"||m.from==="ki") b.appendChild(h("span","who",m.from==="me"?"Simon":"KI-Assistent"));
+    if(m.from==="me"||m.from==="ki") b.appendChild(h("span","who",m.from==="me"?"Simon":"KI-Assistent · Angaben unverbindlich"));
     b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at))); L.appendChild(b); });
   if(typing) L.appendChild(h("div","fscc-ty","schreibt …"));
   el.pv.style.display=st.started?"none":""; el.nm.style.display=st.started&&st.name?"none":"";
