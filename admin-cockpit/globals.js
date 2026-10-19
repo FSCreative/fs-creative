@@ -30,7 +30,7 @@ function announce(){
   var rf=document.querySelector(".rail-foot");
   if(rf&&!document.getElementById("rfNew")){
     var b=document.createElement("button"); b.type="button"; b.id="rfNew"; b.className="rf-new rf-ic";
-    b.innerHTML=F.svg("refresh")+'<span>Neue Version – neu laden</span>';
+    b.innerHTML=F.svg("refresh")+'<span>Neu laden</span>'; b.title="Neue Version verfügbar – neu laden";
     b.addEventListener("click",function(){ if(F.modalOpen()) F.confirm("Neu laden? Offene Eingaben im Dialog gehen verloren.","Neu laden",reloadNow); else reloadNow(); });
     rf.insertBefore(b,rf.firstChild);
   }

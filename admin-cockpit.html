@@ -280,7 +280,7 @@ body.priv .money,body.priv .num.v,body.priv .kpi .v,body.priv .day .v,body.priv 
 
 /* ===== Outlook-Look (Fluent): Kopfleiste, schmale App-Leiste, blaue Akzente, eckigere Bedienelemente ===== */
 body{font-size:14px}
-.topbar{position:sticky;top:0;z-index:35;display:grid;grid-template-columns:minmax(200px,1fr) minmax(0,640px) minmax(200px,1fr);align-items:center;gap:16px;height:48px;padding:0 12px 0 14px;background:var(--glow);color:#fff}
+.topbar{position:sticky;top:0;z-index:35;display:grid;grid-template-columns:minmax(max-content,1fr) minmax(160px,640px) minmax(max-content,1fr);align-items:center;gap:16px;height:48px;padding:0 12px 0 14px;background:var(--glow);color:#fff}
 :root[data-theme="dark"] .topbar{background:#0a0a0a}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .topbar{background:#0a0a0a} }
 .tb-brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-size:16px;min-width:0}
@@ -346,6 +346,7 @@ input.f,select.f,textarea.f{border-radius:4px}
 .topbar .rail-foot .rf-ic[aria-pressed="true"]{background:rgba(255,255,255,.22)}
 .topbar .rail-foot .rf-new{width:auto;display:flex;gap:6px;padding:0 12px;background:#fff;color:var(--glow);font-weight:700;border-radius:99px}
 .topbar .rail-foot .rf-new span{display:inline}
+@media (max-width:1500px){.tb-right .stamp{display:none}}
 .topbar .rail-foot .rf-new:hover{background:#fff;color:var(--glow)}
 .topbar .rail-foot .tb-i{display:grid;place-items:center;width:34px;height:34px;padding:0;color:#fff;border-radius:6px}
 .topbar .rail-foot .tb-i:hover{background:rgba(255,255,255,.16);color:#fff}
