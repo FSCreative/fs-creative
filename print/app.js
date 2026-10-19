@@ -600,16 +600,26 @@
       '<span class="bd">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
+  // Startseite: Collage aus echten Produktbildern (dieselben Bilder wie im Sortiment, kein Fremdfoto)
+  function heroVis() {
+    var L = [["flyer", "a"], ["visitenkarten", "b"], ["pvc-banner", "c"], ["tshirt-basic", "d"]].map(function (x) { var p = prodByKey(x[0]); return p && imgOk(p.img) ? { p: p, c: x[1] } : null; }).filter(Boolean);
+    if (L.length < 3) return "";
+    return '<div class="hv">' + '<i class="glow g1" aria-hidden="true"></i><i class="glow g2" aria-hidden="true"></i>' + L.map(function (x) {
+      return '<button type="button" class="hc ' + x.c + '" data-prod="' + esc(x.p.key) + '" aria-label="' + esc(shortName(x.p)) + ' ansehen"><img src="' + esc(x.p.img) + '" alt="" decoding="async"><span>' + esc(shortName(x.p)) + "</span></button>"; }).join("") +
+      '<span class="hb b1" aria-hidden="true"><b>✓</b> Persönlich geprüft</span><span class="hb b2" aria-hidden="true"><b>✓</b> Preis sofort</span><span class="hb b3" aria-hidden="true"><b>✓</b> Versand in Österreich inklusive</span></div>';
+  }
   function vHome() {
     var chipsK = ["flyer", "visitenkarten", "plakate", "aufkleber", "rollups", "folder"], chipsL = chipsK.map(prodByKey).filter(Boolean);
     var bn = S.cat.products.filter(function (p) { return p.kind === "banner"; })[0]; if (bn) chipsL.splice(3, 0, bn);
     var tx = S.cat.products.filter(function (p) { return p.kind === "textile"; })[0]; if (tx) chipsL.push(tx);
     var groups = (S.cat.groups || []).map(function (g) { var l = S.cat.products.filter(function (p) { return (p.cat || {}).main === g.slug; }); var im = l.filter(function (p) { return imgOk(p.img); }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); })[0]; return { g: g, n: l.length, img: im && im.img }; }).filter(function (x) { return x.n >= 5; });
     var dsg = S.cat.products.filter(function (p) { return p.designer; }).slice(0, 4);
-    return '<section class="ps-home-hero"><span class="eyebrow">FS Creative Druckshop</span><h1>Was möchtest du heute drucken?</h1>' +
+    var hv = heroVis();
+    return '<section class="ps-home-hero' + (hv ? " vis" : "") + '"><div class="hx"><span class="eyebrow">FS Creative Druckshop</span><h1>Was möchtest du heute <span class="gx">drucken</span>?</h1>' +
+      '<p class="lead">Flyer, Visitenkarten, Banner, T-Shirts und ' + (Math.floor((S.cat.products.length - 4) / 100) * 100) + '+ weitere Produkte – Preis sofort, online gestaltet oder hochgeladen, persönlich geprüft und in ganz Österreich geliefert.</p>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
-      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></section>' + recentHtml() +
+      '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + hv + "</section>" + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       '<section class="ps-hsec ps-designer-intro"><div class="dt"><span class="eyebrow">Online-Designer</span><h2>Selbst gestalten – ganz ohne Grafikprogramm</h2><p>Wähle eine Vorlage, tausche Texte und Bilder aus, füge dein Logo und einen QR-Code hinzu – fertig. Der Designer kennt Format, Beschnitt und Sicherheitsabstand und erstellt daraus ein druckfertiges PDF.</p>' +

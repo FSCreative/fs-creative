@@ -1046,3 +1046,35 @@ html.ps-noscroll,html.ps-noscroll body{overflow:hidden}
 .ps-track .done span,.ps-track .cur span{color:var(--text)}
 .ps-track .cur span{font-weight:700}
 @media(max-width:400px){.ps-track li{font-size:11px}.ps-track i{width:26px;height:26px;font-size:12px}.ps-track li::before{top:12px}}
+/* Startseite: Hero mit Produkt-Collage */
+.ps-home-hero .gx{background:linear-gradient(95deg,#0a84ff 0%,#7c5cff 55%,#ff3d9a 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;padding-right:.04em}
+.ps-home-hero .lead{max-width:60ch;margin:-8px auto 26px;color:var(--text-dim);font-size:clamp(15px,1.4vw,18px);line-height:1.55}
+.ps-home-hero .hv{display:none}
+@media(max-width:640px){.ps-home-hero .lead{display:none}}
+@media(min-width:1000px){
+  .ps-home-hero.vis{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:clamp(32px,4vw,64px);align-items:center;text-align:left;padding-bottom:40px}
+  .ps-home-hero.vis h1{margin:12px 0 18px;max-width:12ch}
+  .ps-home-hero.vis .lead{margin:0 0 26px;max-width:48ch}
+  .ps-home-hero.vis .ps-hsearch{margin:0;max-width:none}
+  .ps-home-hero.vis .ps-qchips{justify-content:flex-start;margin:18px 0 0;max-width:none}
+  .ps-home-hero.vis .ps-trust{justify-content:flex-start;gap:10px 22px}
+  .ps-home-hero .hv{display:block;position:relative;height:clamp(420px,38vw,540px);isolation:isolate}
+  .hv .glow{position:absolute;border-radius:50%;filter:blur(70px);opacity:.45;z-index:-1;pointer-events:none}
+  .hv .g1{width:60%;height:60%;left:5%;top:10%;background:#0a84ff}
+  .hv .g2{width:50%;height:50%;right:0;bottom:5%;background:#b04cff}
+  .hv .hc{position:absolute;border:0;padding:0;border-radius:22px;overflow:hidden;background:#fff;cursor:pointer;box-shadow:0 28px 60px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.08);transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s;animation:psFloat 7s ease-in-out infinite}
+  .hv .hc img{width:100%;height:100%;object-fit:cover;display:block}
+  .hv .hc span{position:absolute;left:12px;bottom:12px;background:rgba(12,12,18,.78);color:#fff;font-weight:600;font-size:13px;line-height:1;padding:8px 12px;border-radius:999px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+  .hv .hc:hover,.hv .hc:focus-visible{transform:rotate(0deg) scale(1.04);z-index:9;box-shadow:0 36px 80px rgba(0,0,0,.45),0 0 0 2px var(--accent)}
+  .hv .a{left:2%;top:6%;width:46%;height:58%;transform:rotate(-6deg);z-index:3}
+  .hv .b{right:3%;top:0;width:44%;height:36%;transform:rotate(5deg);z-index:2;animation-delay:-2s}
+  .hv .c{right:0;top:41%;width:54%;height:38%;transform:rotate(2.5deg);z-index:4;animation-delay:-4s}
+  .hv .d{left:16%;bottom:0;width:32%;height:40%;transform:rotate(-3deg);z-index:5;animation-delay:-1s}
+  .hv .hb{position:absolute;z-index:8;display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:14px;font-size:13.5px;font-weight:600;color:var(--text);background:color-mix(in srgb,var(--bg) 78%,transparent);border:1px solid var(--ps-line2);box-shadow:0 14px 34px rgba(0,0,0,.25);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);white-space:nowrap;animation:psFloat 6s ease-in-out infinite}
+  .hv .hb b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--ps-ok,#30d158);color:#fff;font-size:12px}
+  .hv .b1{left:-4%;top:58%;animation-delay:-3s}
+  .hv .b2{right:30%;top:-3%;animation-delay:-1.5s}
+  .hv .b3{right:-2%;bottom:3%;animation-delay:-4.5s}
+}
+@keyframes psFloat{0%,100%{translate:0 0}50%{translate:0 -9px}}
+@media(prefers-reduced-motion:reduce){.hv .hc,.hv .hb{animation:none}}
