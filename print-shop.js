@@ -116,6 +116,8 @@ const CURATED = [
     optLabels: { size: { balloon: "Luftballon (Standard)", heart_balloon: "Herzballon", big_balloon_60: "Riesenballon 60 cm", big_balloon_90: "Riesenballon 90 cm" }, printtype: { "10": "1-farbig, einseitig", "11": "1-farbig, beidseitig" } },
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
+// Prüfsumme der kuratierten Auswahl: ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
+const CUR_V = require("crypto").createHash("sha1").update(JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -561,7 +563,7 @@ module.exports = function (D) {
     // ganzes Sortiment (für Cockpit „Sortiment“ und allgemeine Produkte)
     ALL = { at: nowIso(), items: items.filter(p => SKU_RX.test(String(p.sku))).map(p => ({ sku: String(p.sku), title: clip(p.titlePlural || p.titleSingle || p.title || p.sku, 120), single: clip(p.titleSingle || "", 120), auto: categoryOf(p.sku, p.titleSingle, p.titlePlural) })) };
     await store.setMeta("print_catalog_all", ALL); PD_CACHE.clear();
-    const out = { at: nowIso(), products: [], errors: [] };
+    const out = { at: nowIso(), cv: CUR_V, products: [], errors: [] };
     for (const c of CURATED) {
       const ov = s.products[c.key] || {};
       let sku = ov.sku || "";
@@ -582,7 +584,7 @@ module.exports = function (D) {
   async function catalog(force) {
     if (!cfg().pcKey) return null;
     if (!CAT) CAT = await store.getMeta("print_catalog").catch(() => null);
-    const stale = !CAT || !CAT.at || Date.now() - Date.parse(CAT.at) > 24 * 3600e3;
+    const stale = !CAT || !CAT.at || Date.now() - Date.parse(CAT.at) > 24 * 3600e3 || CAT.cv !== CUR_V;   // kuratierte Auswahl geändert → neu einlesen
     if (force || stale) {
       if (!catLoading) catLoading = catalogRefresh().catch(e => { log("Katalog:", e.message); if (CAT) CAT.errors = [e.message]; return CAT; }).finally(() => { catLoading = null; });
       if (force || !CAT || !CAT.products || !CAT.products.length) return catLoading;
