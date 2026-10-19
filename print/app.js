@@ -486,6 +486,7 @@
           if (isLogo() && before !== logoKey()) { S.logos = {}; S.file = null; } }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
         if (j.ok) { S.alts = null; altSeq++; }
+        var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
       }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); });
     }, 220);
@@ -784,14 +785,14 @@
   }
   // Druckverfahren (Digital/Offset/…): Preise je Verfahren vom Server, günstigstes zuerst; „automatisch“ nimmt immer das günstigste
   function pmTile() {
-    var m = S.price && S.price.methods; if (!m || m.length < 2) return "";
+    var m = S.price && S.price.methods; if (!m || m.length < 2) return '<div data-pmtile hidden></div>';
     var co = S.ctype === "company", amt = function (x) { return eur(co ? x.net : x.gross); }, cheapest = m[0];
-    var auto = m.filter(function (x) { return x.pm === "offset"; })[0] || cheapest;
+    var auto = (S.pm || "auto") === "auto" ? m.filter(function (x) { return x.pm === S.price.pm; })[0] || cheapest : m.filter(function (x) { return x.pm === "offset"; })[0] || cheapest;   // „automatisch“ = was der Server gerade gewählt hat
     var items = [{ val: "auto", name: "Automatisch: " + auto.name, best: true, sub: (auto.pm === "offset" ? "Offsetdruck – hier am günstigsten bzw. gleichauf" : "günstigstes Verfahren für diese Auflage") + " · " + amt(auto) }].concat(m.map(function (x, i) { return { val: x.pm, name: x.name, sub: amt(x) + (i === 0 ? " · günstigstes" : " · +" + eur((co ? x.net - cheapest.net : x.gross - cheapest.gross))), desc: PM_INFO[x.pm] || "" }; }));
     var cur = S.pm || "auto", isAuto = cur === "auto";
     var fell = !isAuto && S.price.pm && S.price.pm !== cur;   // gewähltes Verfahren bei dieser Auswahl nicht möglich (z. B. Offset-Mindestmenge) → automatisch umgestellt
-    if (fell) return '<div class="ps-tile warn' + (items.length <= 4 ? " seg" : "") + (S.dd === "pm" ? " open" : "") + '"><span class="ps-tl">Druckverfahren</span>' + ddHtml("pm", "Druckverfahren", items, S.price.pm) + '<span class="ps-td" style="color:#ffb340">' + esc((m.filter(function (x) { return x.pm === cur; })[0] ? "" : ({ offset: "Offset", digital: "Digitaldruck" }[cur] || cur) + " ist bei dieser Auflage nicht möglich – automatisch auf " + (m.filter(function (x) { return x.pm === S.price.pm; })[0] || {}).name + " umgestellt.")) + "</span></div>";
-    return '<div class="ps-tile' + (items.length <= 4 ? " seg" : "") + (isAuto ? " best" : "") + (S.dd === "pm" ? " open" : "") + '"><span class="ps-tl">Druckverfahren' + (isAuto ? ' <span class="ps-bb">★ empfohlen</span>' : "") + "</span>" + ddHtml("pm", "Druckverfahren", items, cur) + '<span class="ps-td">' + esc(PM_INFO[S.price.pm] || "") + "</span></div>";
+    if (fell) return '<div data-pmtile class="ps-tile warn' + (items.length <= 4 ? " seg" : "") + (S.dd === "pm" ? " open" : "") + '"><span class="ps-tl">Druckverfahren</span>' + ddHtml("pm", "Druckverfahren", items, S.price.pm) + '<span class="ps-td" style="color:#ffb340">' + esc((m.filter(function (x) { return x.pm === cur; })[0] ? "" : ({ offset: "Offset", digital: "Digitaldruck" }[cur] || cur) + " ist bei dieser Auflage nicht möglich – automatisch auf " + (m.filter(function (x) { return x.pm === S.price.pm; })[0] || {}).name + " umgestellt.")) + "</span></div>";
+    return '<div data-pmtile class="ps-tile' + (items.length <= 4 ? " seg" : "") + (isAuto ? " best" : "") + (S.dd === "pm" ? " open" : "") + '"><span class="ps-tl">Druckverfahren' + (isAuto ? ' <span class="ps-bb">★ empfohlen</span>' : "") + "</span>" + ddHtml("pm", "Druckverfahren", items, cur) + '<span class="ps-td">' + esc(PM_INFO[S.price.pm] || "") + "</span></div>";
   }
   var PM_INFO = { digital: "Ideal für kleine Auflagen und schnelle Lieferung – ohne Einrichtekosten.", offset: "Ab mittleren Auflagen meist deutlich günstiger, sehr gleichmäßige Farben.", inkjet: "Großformatdruck für Plakate, Banner und Displays.", digital_uv: "UV-härtende Tinte, direkt auf das Material gedruckt.", screen_printing: "Kräftige, langlebige Farben – ideal für Textilien und Werbeartikel.", sublimation: "Farbe geht ins Material über – waschfest und dauerhaft." };
   function amountHtml(p) {
