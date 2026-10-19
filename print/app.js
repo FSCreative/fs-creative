@@ -37,11 +37,54 @@
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; }
-    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { S.step = 2; render(); }); }
+    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } S.step = 2; render(); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; document.getElementById("psSetup").hidden = false; });
 
   loadMe();
+
+  // ── Konfiguration teilen & merken: alles Gewählte steckt im Link (?produkt=…&c=…), kein Server nötig ──
+  var b64e = function (t) { return btoa(unescape(encodeURIComponent(t))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  var b64d = function (t) { t = String(t).replace(/-/g, "+").replace(/_/g, "/"); while (t.length % 4) t += "="; return decodeURIComponent(escape(atob(t))); };
+  function cfgPack() { var c = { s: S.sel, q: S.copies, u: S.urgency }; if (S.pm && S.pm !== "auto") c.m = S.pm; if (isCustom()) c.c = S.custom; if (kind() === "textile" && S.textile) c.t = S.textile; return b64e(JSON.stringify(c)); }
+  function cfgLink(p, code) { return location.origin + "/print?produkt=" + encodeURIComponent(p) + "&c=" + code; }
+  function cfgApply(code) {
+    var c; try { c = JSON.parse(b64d(code)); } catch (e) { return false; } if (!c || typeof c !== "object") return false;
+    var p = S.prod; (p.props || []).forEach(function (pr) { var v = c.s && c.s[pr.slug]; if (v != null && pr.options.some(function (o) { return String(o.slug) === String(v); })) S.sel[pr.slug] = String(v); });
+    if (+c.q > 0 && +c.q <= 1e6) S.copies = Math.round(+c.q); if (c.u && (p.urgency || []).some(function (u) { return u.slug === c.u; })) S.urgency = c.u; if (c.m && typeof c.m === "string") S.pm = c.m;
+    if (c.c && c.c.w && c.c.h && p.custom) S.custom = { w: String(+c.c.w || ""), h: String(+c.c.h || "") };
+    if (c.t && kind() === "textile" && S.textile && p.methods) { var m = p.methods.filter(function (x) { return x.key === c.t.method; })[0];
+      if (m) { S.textile.method = m.key; var ps = (c.t.positions || []).filter(function (x) { return m.positions.indexOf(x) > -1; }); if (ps.length) S.textile.positions = ps;
+        var sz = {}; Object.keys(c.t.sizes || {}).forEach(function (k) { if (p.sizes.some(function (x) { return x.slug === k; }) && +c.t.sizes[k] > 0) sz[k] = Math.min(5000, Math.round(+c.t.sizes[k])); }); if (Object.keys(sz).length) S.textile.sizes = sz; } }
+    fixSel(); return true;
+  }
+  function cfgSum() { var pr = S.price || {}, l = (pr.labels || []).filter(function (x) { return x && x[1] && !/auflage|druckverfahren|lieferzeit/i.test(x[0]) && !NONE_RX.test(String(x[1]).trim()); }).slice(0, 4).map(function (x) { return x[1]; });
+    return (isCustom() && S.custom ? [S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit] : []).concat(l).join(" · ").slice(0, 210); }
+  function savedLocal(v) { try { if (v) { localStorage.setItem("fsc-print-saved", JSON.stringify(v.slice(0, 30))); return v; } var l = JSON.parse(localStorage.getItem("fsc-print-saved") || "[]"); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+  function savedList() { return S.me ? (S.me.saved || []) : savedLocal(); }
+  function cfgSavedNow() { if (!S.prod) return null; var code = cfgPack(); return savedList().filter(function (x) { return x.product === S.prod.key && x.c === code; })[0] || null; }
+  function copyText(t) { if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t); return new Promise(function (ok, no) { var a = document.createElement("textarea"); a.value = t; a.setAttribute("readonly", ""); a.style.position = "fixed"; a.style.opacity = "0"; document.body.appendChild(a); a.select(); var r = false; try { r = document.execCommand("copy"); } catch (e) {} a.remove(); r ? ok() : no(); }); }
+  function shareLink(url, title, text) {
+    if (navigator.share && (navigator.maxTouchPoints > 0 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))) { navigator.share({ title: title, text: text, url: url }).catch(function () {}); return; }
+    copyText(url).then(function () { toast("Link kopiert – einfach einfügen und teilen"); }, function () { window.prompt("Link zum Teilen (kopieren):", url); });
+  }
+  function cfgShare() { shareLink(cfgLink(S.prod.key, cfgPack()), S.prod.title + " – FS Creative Druckshop", S.prod.title + " · " + totalCopies().toLocaleString("de-AT") + " Stk." + (cfgSum() ? " · " + cfgSum() : "") + (S.price ? " · " + eur(S.price.gross) + " inkl. USt & Versand" : "")); }
+  function cfgSave() {
+    var had = cfgSavedNow(); if (had) { savDel(had.id); return; }   // zweiter Klick = wieder entfernen
+    var it = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), product: S.prod.key, title: S.prod.title, img: imgOk(S.prod.img) ? S.prod.img : "", sum: cfgSum(), n: totalCopies(), gross: S.price ? S.price.gross : null, c: cfgPack(), at: new Date().toISOString() };
+    if (S.me) api("/print/api/account/saved", { op: "add", item: it }).then(function (j) { if (!j.ok) { toast(j.error || "Merken hat nicht geklappt", true); return; } S.me = j.customer; toast("Gemerkt – in deinem Konto unter „Merkliste“"); cfgBarUpd(); }).catch(function () { toast("Keine Verbindung", true); });
+    else { var l = savedLocal(); l.unshift(it); savedLocal(l); toast("Gemerkt – auf diesem Gerät. Mit Kundenkonto auf allen Geräten."); cfgBarUpd(); }
+  }
+  function savDel(id) {
+    if (S.me) api("/print/api/account/saved", { op: "del", id: id }).then(function (j) { if (j.ok) { S.me = j.customer; toast("Aus der Merkliste entfernt"); if (S.view || S.step === 1) render(); else cfgBarUpd(); } });
+    else { savedLocal(savedLocal().filter(function (x) { return x.id !== id; })); toast("Aus der Merkliste entfernt"); if (S.view || S.step === 1) render(); else cfgBarUpd(); }
+  }
+  function cfgBarHtml() { var on = !!cfgSavedNow();
+    return '<div class="ps-cfgbar"><button type="button" class="ps-cfgb' + (on ? " on" : "") + '" data-act="cfgsave" aria-pressed="' + on + '"><span aria-hidden="true">' + (on ? "♥" : "♡") + "</span>" + (on ? "Gemerkt" : "Merken") + '</button><button type="button" class="ps-cfgb" data-act="cfgshare"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Teilen</button></div>'; }
+  function cfgBarUpd() { [].forEach.call(document.querySelectorAll(".ps-cfgbar"), function (b) { b.outerHTML = cfgBarHtml(); }); }
+  function savedCard(x) { var url = cfgLink(x.product, x.c);
+    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || 0).toLocaleString("de-AT") + " Stk."].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
+      (x.gross != null ? '<small>beim Merken ' + eur(x.gross) + " · aktueller Preis beim Öffnen</small>" : "") + '</div><div class="ac"><a class="ps-btn primary small" href="' + esc(url) + '">Öffnen</a><button type="button" class="ps-link" data-act="savshare:' + esc(x.id) + '">Teilen</button><button type="button" class="ps-link" data-act="savdel:' + esc(x.id) + '">Entfernen</button></div></div>'; }
 
   // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
   function cartLoad() { try { var c = JSON.parse(localStorage.getItem("fsc-print-cart") || "null"); if (c && Array.isArray(c.items) && Date.now() - (+c.at || 0) < 30 * 864e5) return c.items; } catch (e) {} return []; }
@@ -108,6 +151,7 @@
       if (add.length) S.cart = S.cart.concat(add);
       var c = S.customer; ["company", "firstName", "lastName", "phone", "street", "zip", "city"].forEach(function (k) { if (!c[k] && S.me[k]) c[k] = S.me[k]; }); if (!c.email) c.email = S.me.email;
       if (S.me.type === "company") { S.ctype = "company"; if (!S.uid) S.uid = S.me.uid || ""; }
+      var loc = savedLocal(); if (loc.length) api("/print/api/account/saved", { op: "merge", items: loc }).then(function (r) { if (r.ok) { S.me = r.customer; savedLocal([]); try { localStorage.removeItem("fsc-print-saved"); } catch (e) {} if (S.view === "konto" || S.step === 1) render(); } }).catch(function () {});
       cartSave(!add.length && (j.cart || []).length === S.cart.length);
     }
     headUpdate();
@@ -145,7 +189,7 @@
       return h + "</div></div>";
     }
     var me = S.me, co = me.type === "company", tab = A.tab || "start", fm = function (k) { return A.form === k ? msg : ""; };
-    var TABS = [["start", "Übersicht"], ["orders", "Bestellungen" + (S.orders.length ? " (" + S.orders.length + ")" : "")], ["drafts", "Entwürfe" + ((me.drafts || []).length ? " (" + me.drafts.length + ")" : "")], ["address", "Adresse"], ["settings", "Einstellungen"]];
+    var TABS = [["start", "Übersicht"], ["orders", "Bestellungen" + (S.orders.length ? " (" + S.orders.length + ")" : "")], ["saved", "Merkliste" + ((me.saved || []).length ? " (" + me.saved.length + ")" : "")], ["drafts", "Entwürfe" + ((me.drafts || []).length ? " (" + me.drafts.length + ")" : "")], ["address", "Adresse"], ["settings", "Einstellungen"]];
     var ini = ((me.firstName || "")[0] || "") + ((me.lastName || "")[0] || "") || (me.email || "?")[0];
     h += back + '<div class="ps-acct-hd"><span class="av" aria-hidden="true">' + esc(ini.toUpperCase()) + '</span><div class="nm"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><span class="pd-muted">' + esc(me.email) + ' · <span class="ps-acct-type ' + (co ? "co" : "pr") + '">' + (co ? "Firmenkonto" + (me.company ? " · " + esc(me.company) : "") : "Privatkonto") + '</span></span></div><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>' +
       '<nav class="ps-acct-nav" role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
@@ -158,12 +202,16 @@
       h += '<section class="ps-panel"><h3>Letzte Bestellung</h3>' + (lo ? '<p class="ps-lo"><b>' + esc(lo.product) + "</b> · " + (+lo.copies || 0).toLocaleString("de-AT") + " Stk. · " + eur(co ? lo.net : lo.gross) + '<br><span class="pd-muted">' + esc(lo.nr) + " vom " + esc(new Date(lo.createdAt).toLocaleDateString("de-AT")) + " · " + esc(lo.statusText) + "</span></p>" + trackHtml(lo.status) +
         '<div class="btn-row">' + (lo.canReorder ? '<button type="button" class="ps-btn primary small" data-act="reorder:' + esc(lo.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-btn small" href="/print?bestellung=' + encodeURIComponent(lo.id) + "&t=" + encodeURIComponent(lo.token) + '">Details</a>' + (S.orders.length > 1 ? '<button type="button" class="ps-link" data-act="atab:orders">Alle ' + S.orders.length + " Bestellungen</button>" : "") + "</div>"
         : '<p class="pd-muted">Noch keine Bestellungen – such dir ein Produkt aus und gestalte es online oder lade deine Datei hoch.</p><button type="button" class="ps-btn primary small" data-act="shop">Produkte ansehen</button>') + "</section>";
-      h += '<div class="col"><section class="ps-panel ps-qstats"><button type="button" data-cart-link><b>' + S.cart.length + "</b><span>im Warenkorb</span></button><button type=\"button\" data-act=\"atab:drafts\"><b>" + (me.drafts || []).length + "</b><span>Entwürfe</span></button><button type=\"button\" data-act=\"atab:orders\"><b>" + S.orders.length + "</b><span>Bestellungen</span></button></section>";
+      h += '<div class="col"><section class="ps-panel ps-qstats"><button type="button" data-cart-link><b>' + S.cart.length + "</b><span>im Warenkorb</span></button><button type=\"button\" data-act=\"atab:saved\"><b>" + (me.saved || []).length + "</b><span>Gemerkt</span></button><button type=\"button\" data-act=\"atab:orders\"><b>" + S.orders.length + "</b><span>Bestellungen</span></button></section>";
       if (!co) h += '<section class="ps-panel ps-acct-up"><h3>Bestellst du für eine Firma?</h3><p class="pd-muted">Mit einem Firmenkonto siehst du Nettopreise, bekommst Rechnungen mit Firmenname und UID und sammelst Rabatt im Bonusprogramm ' + (S.bonus && S.bonus.tiers && S.bonus.tiers.length ? "(bis zu " + S.bonus.tiers[S.bonus.tiers.length - 1].pct + " %)" : "") + '.</p><button type="button" class="ps-btn small" data-act="atab:settings">In den Einstellungen umstellen</button></section>';
       if (!me.newsletter) h += '<section class="ps-panel ps-acct-up"><h3>5 % jeden Montag</h3><p class="pd-muted">Unser Newsletter bringt dir jede Woche Produkttipps, einen Designer-Tipp und einen 5-%-Code.</p><button type="button" class="ps-btn small" data-act="atab:settings">Newsletter aktivieren</button></section>';
       h += "</div></div>" + bonusHtml();
     } else if (tab === "orders") {
       h += '<section class="ps-panel"><h3>Meine Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist ps-olist2">' + S.orders.map(orderRow).join("") + '</ul><p class="pd-muted" style="font-size:13px;margin-top:12px">„Nochmal bestellen“ legt die Bestellung mit derselben Druckdatei in den Warenkorb – der Preis wird dabei aktuell berechnet, Menge und Ausführung kannst du dort noch ändern.</p>' : '<p class="pd-muted">Noch keine Bestellungen.</p>') + "</section>";
+    } else if (tab === "saved") {
+      var sv = me.saved || [];
+      h += '<section class="ps-panel"><h3>Merkliste</h3>' + (sv.length ? '<div class="ps-savs">' + sv.map(savedCard).join("") + '</div><p class="pd-muted" style="font-size:13px;margin-top:12px">Gemerkte Konfigurationen öffnen sich mit allen Optionen – der Preis wird dabei aktuell berechnet. Über „Teilen“ schickst du den Link z. B. an Kollegen zur Freigabe.</p>'
+        : '<p class="pd-muted">Noch nichts gemerkt. In jedem Produkt findest du oben „Merken“ und „Teilen“ – damit speicherst du die gewählte Ausführung oder schickst sie als Link weiter.</p>') + "</section>";
     } else if (tab === "drafts") {
       var dr = me.drafts || [];
       h += '<section class="ps-panel"><h3>Gespeicherte Entwürfe</h3>' + (dr.length ? '<div class="ps-drafts">' + dr.map(function (d) {
@@ -634,6 +682,8 @@
   function recentGet() { try { var l = JSON.parse(localStorage.getItem("fsc-print-recent") || "[]"); return Array.isArray(l) ? l.filter(function (k) { return typeof k === "string"; }).slice(0, 10) : []; } catch (e) { return []; } }
   function recentAdd(k) { try { var l = recentGet().filter(function (x) { return x !== k; }); l.unshift(k); localStorage.setItem("fsc-print-recent", JSON.stringify(l.slice(0, 10))); } catch (e) {} }
   function recentProds() { return recentGet().map(prodByKey).filter(Boolean).slice(0, 8); }
+  function savedHomeHtml() { var l = savedList().slice(0, 4); if (!l.length) return "";
+    return '<section class="ps-hsec ps-recent ps-savhome"><div class="ps-hsec-h"><h2>Deine Merkliste</h2>' + (S.me ? '<button type="button" class="ps-link" data-act="konto">Alle im Konto →</button>' : "") + '</div><div class="ps-savs">' + l.map(savedCard).join("") + "</div></section>"; }
   function recentHtml() { var l = recentProds(); if (!l.length) return "";
     return '<section class="ps-hsec ps-recent"><div class="ps-hsec-h"><h2>Zuletzt angesehen</h2><button type="button" class="ps-link" data-act="recentclr">Liste leeren</button></div><div class="ps-rec">' + l.map(function (p) {
       return '<button type="button" data-prod="' + esc(p.key) + '"><span class="ri">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="rt"><b>' + esc(shortName(p)) + '</b><span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></button>"; }).join("") + "</div></section>"; }
@@ -693,7 +743,7 @@
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Flyer, Visitenkarten, Banner …" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-qchips">' + chipsL.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="qi" aria-hidden="true">' + esc(p.icon) + "</span>") + "<span>" + esc(shortName(p)) + "</span></button>"; }).join("") + '<button type="button" class="all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte →</button></div>" +
       '<ul class="ps-trust"><li><b>Preis sofort</b> inkl. Versand</li><li><b>Persönlich geprüft</b> vor jedem Druck</li><li><b>Online gestalten</b> mit Vorlagen</li><li><b>Bestes Verfahren</b> automatisch zum besten Preis</li></ul></div>' + (hq ? '<div class="hq" id="psHq">' + hq + "</div>" : "") +
-      '<div class="cmyk" aria-hidden="true"><i class="c"></i><i class="m"></i><i class="y"></i><i class="k"></i><i class="k75"></i><i class="k50"></i><i class="k25"></i><span>Farbkontrollstreifen · CMYK · 300 dpi · 3 mm Beschnitt</span></div></div></section>' + recentHtml() +
+      '<div class="cmyk" aria-hidden="true"><i class="c"></i><i class="m"></i><i class="y"></i><i class="k"></i><i class="k75"></i><i class="k50"></i><i class="k25"></i><span>Farbkontrollstreifen · CMYK · 300 dpi · 3 mm Beschnitt</span></div></div></section>' + savedHomeHtml() + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die vier neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
@@ -903,7 +953,7 @@
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-who"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
-    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2>' + (facts(p).length ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<p class="sub">' + esc(badDesc(p) ? "" : lead(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
+    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2>' + (facts(p).length ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<p class="sub">' + esc(badDesc(p) ? "" : lead(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + cfgBarHtml() + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
@@ -1161,6 +1211,10 @@
     if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
     if (k === "hqk" || k === "hqq") { if (k === "hqk") { S.hq.k = v; S.hq.q = 0; } else S.hq.q = +v; hqUpd(k === "hqq"); return; }
     if (k === "hqgo") { var hx = hqCur(); if (!hx) return; var qq = hx.h.q; pickProduct(hx.h.k, function () { if ((S.prod.tiers || []).indexOf(qq) > -1) S.copies = qq; go(2); loadPrice(); }); return; }
+    if (k === "cfgsave") { cfgSave(); return; }
+    if (k === "cfgshare") { cfgShare(); return; }
+    if (k === "savdel") { savDel(v); return; }
+    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + " Stk." + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }

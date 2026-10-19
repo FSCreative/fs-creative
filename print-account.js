@@ -52,7 +52,12 @@ module.exports = function (D) {
     c.type = c.type === "company" ? "company" : "private"; c.country = "AT"; if (c.uid) c.uid = c.uid.replace(/[\s.\-]/g, "").toUpperCase(); }
   const pub = c => ({ id: c.id, email: c.email, verified: !!c.verified, createdAt: c.createdAt, type: c.type || "private", company: c.company || "", uid: c.uid || "", firstName: c.firstName || "", lastName: c.lastName || "",
     phone: c.phone || "", street: c.street || "", zip: c.zip || "", city: c.city || "", country: c.country || "AT", newsletter: !!c.newsletter,
-    uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c) });
+    uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c), saved: savedOf(c) });
+  // Merkliste: gespeicherte Konfigurationen (Produkt + Optionen als Link-Code, Preis beim Merken), max. 30
+  const savedOf = c => (c.saved || []).slice(0, 30);
+  const cleanSaved = x => x && typeof x === "object" && typeof x.product === "string" && typeof x.c === "string" && /^[A-Za-z0-9_-]{5,3000}$/.test(x.c) ? {
+    id: clip(x.id, 40) || crypto.randomBytes(5).toString("hex"), product: clip(x.product, 80), title: clip(x.title, 120), img: /^https:\/\/images\.ctfassets\.net\//.test(String(x.img || "")) ? clip(x.img, 400) : "",
+    sum: clip(x.sum, 220), n: Math.max(0, Math.min(1e6, parseInt(x.n, 10) || 0)), gross: x.gross != null && isFinite(+x.gross) ? Math.round(+x.gross * 100) / 100 : null, c: String(x.c).replace(/[^A-Za-z0-9_-]/g, ""), at: clip(x.at, 30) || nowIso() } : null;
   // Entwürfe aus dem Designer (per Link gespeichert, 60 Tage gültig) – im Konto gelistet
   const draftsOf = c => (c.drafts || []).filter(d => Date.now() - Date.parse(d.at) < 60 * DAY).slice(0, 12);
   async function addDraft(c, d) { const m = await all(), x = m[c.email]; if (!x) return; x.drafts = [{ id: clip(d.id, 40), t: clip(d.t, 60), product: clip(d.product, 80), title: clip(d.title, 120), preview: /^data:image\/jpeg;base64,/.test(d.preview || "") && d.preview.length < 16000 ? d.preview : "", at: nowIso() }].concat(draftsOf(x).filter(y => y.id !== d.id)).slice(0, 12); await save(); }
@@ -82,7 +87,7 @@ module.exports = function (D) {
       const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
       const data = { erstellt: nowIso(), hinweis: "Deine im FS Creative Druckshop gespeicherten Kontodaten. Bestellungen bewahren wir aus steuerlichen Gründen 7 Jahre auf.",
         konto: Object.assign(pub(c), { drafts: undefined, lastLogin: c.lastLogin || "", newsletterAt: c.newsletterAt || "", verifiedAt: c.verifiedAt || "" }), warenkorb: cartOf(c).map(x => ({ produkt: x.title, stueck: x.n, datei: x.fileName })),
-        entwuerfe: draftsOf(c).map(d => ({ produkt: d.title, gespeichert: d.at })), bestellungen: (await ordersOf(c)).map(o => ({ nr: o.nr, datum: o.createdAt, produkt: o.product, stueck: o.copies, status: o.statusText, brutto: o.gross })) };
+        entwuerfe: draftsOf(c).map(d => ({ produkt: d.title, gespeichert: d.at })), merkliste: savedOf(c).map(x => ({ produkt: x.title, ausfuehrung: x.sum, stueck: x.n, preisBeimMerken: x.gross, gemerkt: x.at })), bestellungen: (await ordersOf(c)).map(o => ({ nr: o.nr, datum: o.createdAt, produkt: o.product, stueck: o.copies, status: o.statusText, brutto: o.gross })) };
       res.setHeader("Content-Disposition", 'attachment; filename="druckshop-meine-daten.json"'); return J(res, 200, data);
     }
     if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
@@ -156,6 +161,14 @@ module.exports = function (D) {
       return J(res, 200, { ok: true, customer: pub(c) });
     }
     if (p === "/print/api/account/email-cancel") { c.pendingEmail = ""; c.code = null; await save(); return J(res, 200, { ok: true, customer: pub(c) }); }
+    if (p === "/print/api/account/saved") {   // Merkliste: add | del | merge (lokal Gemerktes beim Anmelden übernehmen)
+      const cur = savedOf(c), same = (a, b) => a.product === b.product && a.c === b.c;
+      if (b.op === "add") { const it = cleanSaved(b.item); if (!it) return J(res, 400, { ok: false, error: "Ungültige Konfiguration" }); c.saved = [it].concat(cur.filter(x => !same(x, it))).slice(0, 30); }
+      else if (b.op === "del") c.saved = cur.filter(x => x.id !== String(b.id || ""));
+      else if (b.op === "merge") { const add = (Array.isArray(b.items) ? b.items : []).slice(0, 30).map(cleanSaved).filter(Boolean).filter(a => !cur.some(x => same(x, a))); c.saved = cur.concat(add).slice(0, 30); }
+      else return J(res, 400, { ok: false, error: "op" });
+      await save(); return J(res, 200, { ok: true, customer: pub(c) });
+    }
     if (p === "/print/api/account/draft-del") { c.drafts = (c.drafts || []).filter(d => d.id !== String(b.id || "")); await save(); return J(res, 200, { ok: true, customer: pub(c) }); }
     if (p === "/print/api/account/reorder") {   // „Nochmal bestellen“: Warenkorb-Position aus einer eigenen Bestellung (gleiche Datei, aktueller Preis)
       if (!D.reorderOf) return J(res, 404, { ok: false, error: "not_found" });
