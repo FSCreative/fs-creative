@@ -497,7 +497,7 @@ module.exports = function (D) {
     }
     // Sehr große bzw. extrem lange Formate (z. B. 20 m × 76 cm): Großformat-Auflösung, kein Online-Designer (nur Datei-Upload, Maßstab 1:10)
     const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10), large = dims && Math.max(dims[0], dims[1]) >= 1000;
-    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge, safe: c.safe || 3, sku: String(sku),
+    const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null, safe: c.safe || 3, sku: String(sku),
       bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
       props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
@@ -698,6 +698,12 @@ module.exports = function (D) {
     return out;
   }
   function sidesOf(sel) { const t = String(sel.printtype || ""); const m = t.match(/^(\d)(\d)$/); return m && m[2] !== "0" ? 2 : 1; }
+  // Mehrseitige Produkte (Broschüren, Bücher, Kalender): benötigte PDF-Seiten laut Auswahl „pages“ (inkl. Umschlag) bzw. „N Blätter“ (× 2 bei beidseitigem Druck)
+  function pagesOf(prod, all) {
+    const pr = prod.props.find(x => x.slug === "pages"), v = all.pages != null ? all.pages : all.number_of_pages; if (v == null) return null;
+    const o = pr && pr.options.find(x => String(x.slug) === String(v)), nm = String((o && o.name) || ""), bl = nm.match(/(\d+)\s*Bl(ä|a)tt/i);
+    const n = bl ? +bl[1] * sidesOf(all) : Math.round(parseFloat(String(v))); return n > 2 ? n : null;
+  }
   function sizeOf(prod, sel) {
     const sp = prod.props.find(x => x.slug === "size"); const o = sp && sp.options.find(x => x.slug === sel.size);
     if (o && o.w && o.h) return { w: o.w, h: o.h };
@@ -825,7 +831,8 @@ module.exports = function (D) {
       }
       if (pmAlts.length < 2) pmAlts = null;
     }
-    return { sel, fileSel, copies, urgency, pcOpts, pcMore: variantsOf(prod, pcOpts), labels, pmWanted, pmAlts, sides: positions ? positions.length : sidesOf(all), size, folds, closed, variants, positions, textile: tex, excluded: excl, kind };
+    const pages = positions ? null : pagesOf(prod, all);
+    return { sel, fileSel, copies, urgency, pcOpts, pcMore: variantsOf(prod, pcOpts), labels, pmWanted, pmAlts, sides: positions ? positions.length : pages || sidesOf(all), pages, size, folds, closed, variants, positions, textile: tex, excluded: excl, kind };
   }
 
   // ── Steuer ──
@@ -989,6 +996,17 @@ module.exports = function (D) {
     }
     return null;
   }
+  // Wie pdfInfo, aber auch für komprimierte PDFs (Objekt-Streams, z. B. aus InDesign/pdf-lib): fehlende Angaben per pdf-lib nachlesen
+  async function pdfInfoX(buf) {
+    const i = pdfInfo(buf); if (i.encrypted || (i.media && i.pages)) return i;
+    try { const { PDFDocument } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false }), pg = d.getPages(), p0 = pg[0];
+      if (p0) { const m = p0.getMediaBox(), t = p0.getTrimBox(), r = v => r2(v / MM_PT);
+        if (!i.media) i.media = { w: r(m.width), h: r(m.height) };
+        if (!i.trim && t && (Math.abs(t.width - m.width) > 0.5 || Math.abs(t.height - m.height) > 0.5)) i.trim = { w: r(t.width), h: r(t.height) }; }
+      if (!i.pages || i.pages < pg.length) i.pages = pg.length;
+    } catch (e) { if (/encrypt/i.test(String(e.message))) i.encrypted = true; }
+    return i;
+  }
   function pdfInfo(buf) {
     const s = buf.toString("latin1");
     const box = name => { const m = s.match(new RegExp("\\/" + name + "\\s*\\[\\s*(-?[\\d.]+)\\s+(-?[\\d.]+)\\s+(-?[\\d.]+)\\s+(-?[\\d.]+)\\s*\\]")); return m ? { w: r2(Math.abs(m[3] - m[1]) / MM_PT), h: r2(Math.abs(m[4] - m[2]) / MM_PT) } : null; };
@@ -999,7 +1017,7 @@ module.exports = function (D) {
   }
   const near = (a, b, tol) => Math.abs(a - b) <= tol;
   const fits = (box, w, h, tol) => box && ((near(box.w, w, tol) && near(box.h, h, tol)) || (near(box.w, h, tol) && near(box.h, w, tol)));
-  function checkPdf(info, size, bleed, sides) {
+  function checkPdf(info, size, bleed, sides, multi) {
     const out = [], W = size.w + 2 * bleed, H = size.h + 2 * bleed;
     if (info.trim && fits(info.trim, size.w, size.h, 1)) out.push({ level: "ok", text: "Endformat (TrimBox) " + size.w + " × " + size.h + " mm passt." });
     if (fits(info.media, W, H, 1.2)) out.push({ level: "ok", text: "Seitengröße inkl. " + bleed + " mm Beschnitt passt (" + W + " × " + H + " mm)." });
@@ -1009,7 +1027,9 @@ module.exports = function (D) {
       if (near(ar, arT, 0.02) || near(1 / ar, arT, 0.02)) out.push({ level: "warn", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm weicht ab, Seitenverhältnis passt – die Datei wird auf " + W + " × " + H + " mm skaliert." });
       else out.push({ level: "error", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm passt nicht zum gewählten Format (" + W + " × " + H + " mm inkl. Beschnitt)." });
     } else out.push({ level: "warn", text: "Seitengröße konnte nicht automatisch gelesen werden – bitte kontrolliere das Format selbst oder wähle an der Kasse den Profi-Datencheck." });
-    if (info.pages && info.pages !== sides) out.push({ level: info.pages < sides ? "warn" : "error", text: "Die Datei hat " + info.pages + " Seite(n), für die gewählte Druckart werden " + sides + " benötigt." + (info.pages < sides ? " Die Rückseite bleibt sonst weiß." : "") });
+    if (multi && info.pages && info.pages !== sides) out.push({ level: "warn", text: "Die Datei hat " + info.pages + " Seiten, für deine Auswahl werden " + sides + " Seiten (inkl. Umschlag) benötigt – bitte Seitenzahl prüfen oder eine passende PDF hochladen." });
+    else if (multi && info.pages) out.push({ level: "ok", text: info.pages + " Seiten – passt zur gewählten Seitenzahl." });
+    else if (info.pages && info.pages !== sides) out.push({ level: info.pages < sides ? "warn" : "error", text: "Die Datei hat " + info.pages + " Seite(n), für die gewählte Druckart werden " + sides + " benötigt." + (info.pages < sides ? " Die Rückseite bleibt sonst weiß." : "") });
     else if (info.pages) out.push({ level: "ok", text: info.pages + " Seite(n) – passt zur gewählten Druckart." });
     return out;
   }
@@ -1204,6 +1224,28 @@ module.exports = function (D) {
     return meta;
   }
   const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes });
+  // Fehlender Beschnitt: automatisch ergänzen – „mirror“ = Randbereiche spiegeln (Motiv bleibt 1:1), „zoom“ = Motiv minimal vergrößern (Ränder werden angeschnitten)
+  async function addBleed(buf, size, bleed, mode) {
+    const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
+    const src = await PDFDocument.load(buf), out = await PDFDocument.create(), W = size.w * MM_PT, H = size.h * MM_PT, b = bleed * MM_PT;
+    for (const sp of src.getPages()) {
+      if ((sp.getRotation().angle || 0) % 360) throw bad("Gedrehte PDF-Seiten können nicht automatisch ergänzt werden");
+      const emb = await out.embedPage(sp), pw = emb.width, ph = emb.height, pg = out.addPage([W + 2 * b, H + 2 * b]);
+      if (mode === "zoom") { const f = Math.max((W + 2 * b) / pw, (H + 2 * b) / ph); pg.drawPage(emb, { x: (W + 2 * b - pw * f) / 2, y: (H + 2 * b - ph * f) / 2, xScale: f, yScale: f }); }
+      else {   // 8 gespiegelte Kopien rundum, leicht überlappend (keine Nahtlinien), Mitte zuletzt obenauf
+        const sx = W / pw, sy = H / ph, e = 1.5;
+        for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const cx = dx < 0 ? 0 : dx === 0 ? b : b + W, cw = dx === 0 ? W : b, cy = dy < 0 ? 0 : dy === 0 ? b : b + H, ch = dy === 0 ? H : b;
+          pg.pushOperators(pushGraphicsState(), rectangle(Math.max(0, cx - e), Math.max(0, cy - e), cw + 2 * e, ch + 2 * e), clip(), endPath());
+          pg.drawPage(emb, { x: dx === 0 ? b : dx < 0 ? b + e : b + 2 * W - e, y: dy === 0 ? b : dy < 0 ? b + e : b + 2 * H - e, xScale: dx === 0 ? sx : -sx, yScale: dy === 0 ? sy : -sy });
+          pg.pushOperators(popGraphicsState());
+        }
+        pg.drawPage(emb, { x: b, y: b, xScale: sx, yScale: sy });
+      }
+      pg.setTrimBox(b, b, W, H); pg.setBleedBox(0, 0, W + 2 * b, H + 2 * b);
+    }
+    return Buffer.from(await out.save());
+  }
   async function newFile(kind, name, pdf, target, checks, extra) {
     const meta = Object.assign({ id: "f" + crypto.randomBytes(12).toString("hex"), kind, name: clip(name, 120) || "druck.pdf", bytes: pdf.length, createdAt: nowIso(), product: target.product, sel: target.sel, size: target.size, bleed: target.bleed, sides: target.sides, pages: target.pages || null, checks, orderId: null, sha256: crypto.createHash("sha256").update(pdf).digest("hex") }, extra || {});
     try { const pf = await preflightStart(meta, pdf); if (pf) meta.preflight = pf; } catch (e) { log("Preflight-Start:", e.message); }
@@ -1214,7 +1256,7 @@ module.exports = function (D) {
     const prod = await findProduct(input.product); if (!prod) throw Object.assign(new Error("Produkt nicht verfügbar"), { status: 400 });
     const n = normalizeSel(prod, input);
     if (!n.size && !loose) throw Object.assign(new Error("Format unbekannt – bitte Druckdatei hochladen oder Gestaltung anfragen"), { status: 400 });
-    return { prod, n, target: { product: prod.key, sel: n.fileSel, size: n.size, bleed: prod.bleed, sides: n.sides } };
+    return { prod, n, target: { product: prod.key, sel: n.fileSel, size: n.size, bleed: prod.bleed, sides: n.sides, multi: !!n.pages } };
   }
   const isLogo = prod => prod.kind === "textile" || prod.kind === "promo";
   // Upload-Konfiguration vorab prüfen (bevor die Datei gelesen wird)
@@ -1232,15 +1274,16 @@ module.exports = function (D) {
     const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, JPG oder PNG möglich"), { status: 415 });
     if (!target.size) {   // Produkt ohne lesbares Endformat (allgemeines Print.com-Produkt): Datei annehmen, Format prüfen wir vor dem Druck
       if (type !== "pdf") throw Object.assign(new Error("Für dieses Produkt bitte eine druckfertige PDF hochladen"), { status: 400 });
-      const info = pdfInfo(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
+      const info = await pdfInfoX(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
       target.pages = info.pages;
       return newFile("upload", name, buf, target, [{ level: "warn", text: "Das Format kann hier nicht automatisch geprüft werden – bitte kontrolliere es selbst laut Produktbeschreibung oder wähle an der Kasse den Profi-Datencheck." + (info.media ? " Seitengröße der Datei: " + info.media.w + " × " + info.media.h + " mm." : "") }], { original: "pdf" });
     }
     if (type === "pdf") {
-      const info = pdfInfo(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
+      const info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
       target.pages = info.pages;
-      return newFile("upload", name, buf, target, checkPdf(info, target.size, target.bleed, target.sides), { original: "pdf" });
+      return newFile("upload", name, buf, target, checkPdf(info, target.size, target.bleed, target.sides, target.multi), { original: "pdf" });
     }
+    if (target.multi) throw Object.assign(new Error("Für mehrseitige Produkte bitte eine PDF mit allen " + target.sides + " Seiten hochladen"), { status: 400 });
     const dm = imgDims(buf, type); if (!dm || !dm.w || !dm.h) throw Object.assign(new Error("Bild konnte nicht gelesen werden"), { status: 400 });
     if (dm.w * dm.h > 150e6) throw Object.assign(new Error("Bild ist zu groß (max. 150 Megapixel)"), { status: 400 });
     const W = target.size.w + 2 * target.bleed, H = target.size.h + 2 * target.bleed;
@@ -1265,7 +1308,7 @@ module.exports = function (D) {
     const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, PNG oder JPG möglich"), { status: 415 });
     const A = pos.area, checks = [], extra = { original: type, pos: pos.slug, area: A };
     if (type === "pdf") {
-      const info = pdfInfo(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
+      const info = await pdfInfoX(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
       if (info.pages && info.pages > 1) checks.push({ level: "error", text: "Die PDF hat " + info.pages + " Seiten – bitte nur das Logo (1 Seite) hochladen." });
       if (info.media && fits(info.media, A[0], A[1], 1)) checks.push({ level: "ok", text: "Vektor-PDF in Größe der Druckfläche (" + A[0] + " × " + A[1] + " mm) – ideal." });
       else checks.push({ level: "warn", text: "Seitengröße " + (info.media ? info.media.w + " × " + info.media.h + " mm" : "unbekannt") + " – wir platzieren das Logo vor dem Druck passend in der Druckfläche (max. " + A[0] + " × " + A[1] + " mm)." });
@@ -2018,7 +2061,7 @@ module.exports = function (D) {
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         if (cust.company && cust.uid && country !== "AT") { const r = await uidCheck(cust.uid); cust.uidValid = r.valid; }
         const q = await quote(prod, n, country, COUNTRIES[country] && PLZ[country].test(zip) ? zip : "", cust);
-        return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, size: n.size, folds: n.folds, closed: n.closed, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
+        return J(res, 200, { ok: true, price: publicPrice(q), voucher: dd.voucher ? { code: dd.voucher.code, pct: dd.voucher.pct } : null, voucherErr: dd.voucherErr || "", sides: n.sides, pages: n.pages || null, size: n.size, folds: n.folds, closed: n.closed, bleed: prod.bleed, copies: n.copies, labels: n.labels, positions: n.positions });
       }
       if (p === "/print/api/deltas") {   // Aufpreise je Option („+ 4,20 €“) gegenüber der aktuellen Auswahl – gleiches Druckverfahren, niedrige Priorität, max. 12 je Anfrage
         if (limited("delta", ip, 300, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });
@@ -2053,6 +2096,18 @@ module.exports = function (D) {
         await uploadTarget(input).catch(e => { req.resume(); throw e; });
         const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" });
         const meta = await handleUpload(buf, name, input);
+        return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
+      if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
+        if (limited("upload", ip, 60, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const b = await readJson(req, 2000), id = String(b.fileId || ""), mode = b.mode === "zoom" ? "zoom" : "mirror";
+        if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
+        const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !(+fm.bleed > 0)) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const data = await store.fileData(id), info = await pdfInfoX(data); if (info.encrypted || !info.media) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        if (fits(info.media, fm.size.w + 2 * fm.bleed, fm.size.h + 2 * fm.bleed, 1.2)) return J(res, 400, { ok: false, error: "Die Datei hat bereits Beschnitt" });
+        const out = await addBleed(data, fm.size, +fm.bleed, mode), multi = (+fm.sides || 1) > 2;
+        const checks = [{ level: "ok", text: mode === "zoom" ? "Beschnitt ergänzt: Motiv minimal vergrößert (" + fm.bleed + " mm je Seite) – Inhalte ganz am Rand werden etwas angeschnitten." : "Beschnitt automatisch ergänzt: Randbereiche gespiegelt (" + fm.bleed + " mm je Seite) – dein Motiv bleibt unverändert." }].concat(checkPdf(await pdfInfoX(out), fm.size, +fm.bleed, +fm.sides || 1, multi));
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/(\.pdf)?$/i, "") + " (mit Beschnitt).pdf", out, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: "pdf", bleedFix: mode, from: fm.id });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/logos") {

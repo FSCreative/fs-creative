@@ -172,6 +172,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(r.j.blocked, false); assert.ok(r.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text))); assert.strictEqual(r.j.pages, 2); upOk = r.j;
     const bad = await upload(await pdfOf(210, 297, 1), "a4.pdf", BC); assert.strictEqual(bad.j.blocked, true); assert.ok(bad.j.checks.some(c => c.level === "error" && /passt nicht/.test(c.text)));
     const noB = await upload(await pdfOf(85, 55, 2), "ohne.pdf", BC); assert.ok(noB.j.checks.some(c => c.level === "warn" && /keinen Beschnitt/.test(c.text)));
+    // Beschnitt automatisch ergänzen: gespiegelt bzw. vergrößert → neue Datei mit passender Größe; falsches Token / schon mit Beschnitt → abgelehnt
+    for (const mode of ["mirror", "zoom"]) { const bf = await post("/print/api/file/bleed", { fileId: noB.j.fileId, token: noB.j.token, mode }); assert.strictEqual(bf.status, 200, JSON.stringify(bf.j));
+      assert.ok(bf.j.fileId !== noB.j.fileId && bf.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text)) && !bf.j.checks.some(c => /keinen Beschnitt/.test(c.text)) && bf.j.pages === 2, JSON.stringify(bf.j.checks)); }
+    assert.strictEqual((await post("/print/api/file/bleed", { fileId: noB.j.fileId, token: "falsch", mode: "mirror" })).status, 403);
+    assert.strictEqual((await post("/print/api/file/bleed", { fileId: upOk.fileId, token: upOk.token, mode: "mirror" })).status, 400, "hat schon Beschnitt");
     const txt = await upload(Buffer.from("hallo welt ".repeat(30)), "x.txt", BC); assert.strictEqual(txt.status, 415);
   });
   await t("Upload Bild: dpi wird geprüft, Bild wird in PDF mit exakter Größe gewandelt", async () => {

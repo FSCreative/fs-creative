@@ -563,6 +563,7 @@
     var sp = S.prod.props.filter(function (x) { return x.slug === "size"; })[0]; var o = sp && sp.options.filter(function (x) { return x.slug === S.sel.size; })[0];
     return o && o.w ? { w: o.w, h: o.h } : S.prod.dims ? { w: S.prod.dims[0], h: S.prod.dims[1] } : (S.price && S.price.size) || null;
   }
+  function pagesNeeded() { return S.price && S.price.pages || 0; }   // mehrseitige Produkte (Broschüre, Buch, Kalender): Seiten inkl. Umschlag
   function sides() { var m = String((S.sel.printtype || (S.prod.fixed || {}).printtype) || "").match(/^(\d)(\d)$/); return m && m[2] !== "0" ? 2 : 1; }
   function labelOf(slug) { var pr = S.prod.props.filter(function (x) { return x.slug === slug; })[0]; var o = pr && pr.options.filter(function (x) { return x.slug === S.sel[slug]; })[0]; return o ? o.name : ""; }
   function totalCopies() { if (kind() !== "textile") return S.copies; var t = 0, z = S.textile.sizes; Object.keys(z).forEach(function (k) { t += +z[k] || 0; }); return t; }
@@ -585,7 +586,7 @@
       var seq = ++pSeq;
       api("/print/api/price", Object.assign(cfgOf(), { country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) {
         if (seq !== pSeq) return; S.priceBusy = false;
-        if (j.ok) { var before = isLogo() ? logoKey() : ""; S.price = j.price; S.price.size = j.size; S.price.folds = j.folds || null; S.price.closed = j.closed || null; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
+        if (j.ok) { var before = isLogo() ? logoKey() : ""; S.price = j.price; S.price.size = j.size; S.price.folds = j.folds || null; S.price.closed = j.closed || null; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.pages = j.pages || null; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
           if (isLogo() && before !== logoKey()) { S.logos = {}; S.file = null; } }
         else if (S.undo && /nicht lieferbar|keinen Preis/i.test(j.error || "")) {   // gerade gewählte Option geht nicht → zurück zur letzten bestellbaren Auswahl
           var u = S.undo, t0 = Object.assign({}, u.sel); t0[u.slug] = u.val; BAD[badKey(t0)] = 1; BAD[badKey(S.sel)] = 1; S.undo = null;
@@ -1165,7 +1166,8 @@
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? +S.price.bleed : +p.bleed || 0, safe = +p.safe || 3, dpi = p.dpi || 300, f = S.price && S.price.folds, cl = f && S.price.closed, big = p.kind === "banner" || dpi < 200;
     if (!sz) return "";
     var fileW = sz.w + 2 * b, fileH = sz.h + 2 * b, unit = function (v) { return big && v >= 1000 ? mmF(v / 10) + " cm" : mmF(v) + " mm"; };
-    var pagesTxt = sd === 2 ? (f ? "Seite 1 = Außenseite, Seite 2 = Innenseite" : "Seite 1 = Vorderseite, Seite 2 = Rückseite") + " – beide in einer PDF" : "1 Seite";
+    var pgN = pagesNeeded(), pagesTxt = pgN ? "<b>" + pgN + " Seiten in einer PDF</b> (inkl. Umschlag) – Einzelseiten in Leserichtung, keine Doppelseiten: Seite 1 = Titel, Seite " + pgN + " = Rückseite; leere Seiten bitte mitzählen"
+      : sd === 2 ? (f ? "Seite 1 = Außenseite, Seite 2 = Innenseite" : "Seite 1 = Vorderseite, Seite 2 = Rückseite") + " – beide in einer PDF" : "1 Seite";
     var items = [
       ["📏", "Dateiformat", "<b>" + unit(fileW) + " × " + unit(fileH) + "</b> – Endformat " + unit(sz.w) + " × " + unit(sz.h) + (b ? " plus " + mmF(b) + " mm Beschnitt je Seite" : " (ohne Beschnitt)") + (cl ? "; gefalzt " + mmF(cl.w) + " × " + mmF(cl.h) + " mm" : "")],
       ["🛡️", "Sicherheitsabstand", "Texte, Logos und wichtige Inhalte mindestens <b>" + mmF(safe) + " mm</b> vom Rand des Endformats entfernt" + (p.kind === "banner" ? " – im Randbereich sitzen Saum und Ösen" : "")],
@@ -1199,16 +1201,16 @@
     var mtabs = "";
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + " Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
-    var h = mtabs + '<div class="ps-panel"><h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
+    var h = mtabs + '<div class="ps-panel"><h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {
       h += '<div class="ps-file"><div><b>' + (S.file.kind === "design" ? "Deine Gestaltung" : esc(S.file.name)) + '</b><div class="pd-muted">' + (S.file.pages || "?") + " Seite(n) · " + (S.file.blocked ? "<span style=\"color:var(--ps-bad)\">bitte korrigieren</span>" : "bereit zum Druck") + '</div></div><div class="ps-row2" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (S.file.kind === "design" ? '<button type="button" class="ps-btn small" data-act="editdesign">Weiter bearbeiten</button>' : "") +
-        '<a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a><button type="button" class="ps-btn small" data-act="clearfile">Andere Datei</button></div></div>' + qualHtml(S.file) + checksHtml(S.file.checks) +
+        '<a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a><button type="button" class="ps-btn small" data-act="clearfile">Andere Datei</button></div></div>' + qualHtml(S.file) + checksHtml(S.file.checks) + bleedFixHtml(S.file) +
         '<div class="ps-pfv" id="psPfv" data-fid="' + esc(S.file.fileId) + '"><div class="ps-pfv-h"><b>Vorschau mit Druckrändern</b><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
         '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten, Hintergründe bis hierher ziehen</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie – keine Texte direkt auf die Falz</li>' : "") + '</ul><div class="ps-pfv-w" id="psPfvW"></div></div>' + reqHtml(false);
       if (S.file.preflight && S.file.preflight.status === "PROCESSING") h += '<p class="pd-muted" style="margin-top:8px"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>';
     } else if (S.mode === "upload") {
-      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (sd === 2 ? " · 2 Seiten" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
+      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : sd === 2 ? " · 2 Seiten" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
         reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
@@ -1298,6 +1300,12 @@
       if (warns.length && S.file === f) { f.edgeWarn = warns; f.edgeErr = warns.some(function (w) { return w[0] === "!"; }); var qb = document.querySelector(".ps-qual"); if (qb && !/bad/.test(qb.className)) { qb.className = "ps-qual " + (f.edgeErr ? "bad" : "warn"); qb.innerHTML = '<i aria-hidden="true"></i><div><b>' + (f.edgeErr ? "Bitte korrigieren" : "Druckbar – mit Hinweisen") + "</b><span>Die automatische Prüfung hat etwas gefunden – siehe Hinweise unter der Vorschau." + (f.edgeErr ? " So würde der Druck sichtbar schlechter aussehen." : "") + " Unsicher? Wähle an der Kasse den Profi-Datencheck.</span></div>"; }
         if (f.edgeErr) document.querySelectorAll('[data-act="next3"]').forEach(function (bt) { if (!/Trotzdem/.test(bt.textContent)) bt.textContent = "Trotzdem in den Warenkorb"; }); }
     }).catch(function () { var b3 = document.getElementById("psPfv"); if (b3) b3.querySelector(".ps-pfv-c").innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – bitte „PDF ansehen“ nutzen.</p>'; });
+  }
+  // Kein Beschnitt in der PDF → automatisch ergänzen lassen (Ränder spiegeln oder Motiv minimal vergrößern), jederzeit rückgängig
+  function bleedFixHtml(f) {
+    if (S.fileOrig && S.fileOrig.next === f.fileId) return '<div class="ps-bfix ok"><b>✓ Beschnitt ergänzt</b><span>' + (f.bleedMode === "zoom" ? "Motiv minimal vergrößert." : "Randbereiche gespiegelt – dein Motiv bleibt unverändert.") + ' Kontrolliere die Vorschau unten.</span><button type="button" class="ps-link" data-act="bleedundo">Rückgängig</button></div>';
+    if (f.kind !== "upload" || !(f.checks || []).some(function (c) { return /keinen Beschnitt/.test(c.text || ""); })) return "";
+    return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so gibt es nach dem Schneiden keine weißen Blitzer.</span><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
   }
   function checksHtml(list) { return list && list.length ? '<ul class="ps-checks">' + list.map(function (c) { return '<li class="' + esc(c.level) + '">' + esc(c.text) + "</li>"; }).join("") + "</ul>" : ""; }
   function field(id, label, val, attrs, hint) { return '<div class="ps-field"><label for="' + id + '">' + label + '</label><input id="' + id + '" name="' + id + '" value="' + esc(val || "") + '" ' + (attrs || "") + ">" + (hint || "") + "</div>"; }
@@ -1422,6 +1430,10 @@
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
     if (k === "cwarn") { warnPop(v); return; }
+    if (k === "bleedfix" && S.file) { var f0 = S.file; t.disabled = true; t.textContent = "Wird ergänzt …";
+      api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
+        j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
+    if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
     if (k === "psheetx") { closeSheet(); return; }
