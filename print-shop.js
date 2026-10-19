@@ -1035,7 +1035,7 @@ module.exports = function (D) {
     const s = buf.toString("latin1");
     const box = name => { const m = s.match(new RegExp("\\/" + name + "\\s*\\[\\s*(-?[\\d.]+)\\s+(-?[\\d.]+)\\s+(-?[\\d.]+)\\s+(-?[\\d.]+)\\s*\\]")); return m ? { w: r2(Math.abs(m[3] - m[1]) / MM_PT), h: r2(Math.abs(m[4] - m[2]) / MM_PT) } : null; };
     let pages = (s.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
-    const cm = s.match(/\/Type\s*\/Pages\b[^>]*?\/Count\s+(\d+)|\/Count\s+(\d+)[^>]*?\/Type\s*\/Pages\b/g) || [];
+    const cm = s.match(/\/Type\s*\/Pages\b[^>]{0,400}?\/Count\s+(\d+)|\/Count\s+(\d+)[^>]{0,400}?\/Type\s*\/Pages\b/g) || [];
     cm.forEach(x => { const n = parseInt((x.match(/\/Count\s+(\d+)/) || [])[1], 10); if (n > pages) pages = n; });
     return { encrypted: /\/Encrypt\b/.test(s), pages: pages || null, media: box("MediaBox"), trim: box("TrimBox") };
   }

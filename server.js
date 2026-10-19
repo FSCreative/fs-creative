@@ -204,7 +204,7 @@ function verify(tok) {
 }
 function parseCookies(req) {
   const out = {}; const c = req.headers.cookie || "";
-  c.split(";").forEach(p => { const i = p.indexOf("="); if (i > 0) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); });
+  c.split(";").forEach(p => { const i = p.indexOf("="); if (i > 0) { const k = p.slice(0, i).trim(), v = p.slice(i + 1).trim(); try { out[k] = decodeURIComponent(v); } catch (e) { out[k] = v; } } });   // ungültige Kodierung (z. B. „%“) nie zum Absturz führen lassen
   return out;
 }
 function adminAuthed(req) { return verify(parseCookies(req)["fsadmin"] || ""); }
@@ -2459,11 +2459,11 @@ async function handleAdmin(req, res, u, p) {
   }
   if (!adminAuthed(req)) return send(res, 302, "", "text/plain", { Location: "/admin/login" });
   // KI-Funktionen (Claude) – eigenes Modul ki.js
-  if (p.indexOf("/admin/api/ki/") === 0) return KI.handle(req, res, u, p);
+  if (p.indexOf("/admin/api/ki/") === 0) return guard(res, KI.handle(req, res, u, p));
   // Druckaufträge (Druckshop) – Cockpit-Seite admin-cockpit/zprint.js
-  if (p.indexOf("/admin/api/print/") === 0) return PRINT.handleAdmin(req, res, u, p);
+  if (p.indexOf("/admin/api/print/") === 0) return guard(res, PRINT.handleAdmin(req, res, u, p));
   // Website-Chat – Cockpit-Seite admin-cockpit/zchat.js, Logik in chat.js
-  if (p.indexOf("/admin/api/chat/") === 0) return CHAT.handleAdmin(req, res, u, p);
+  if (p.indexOf("/admin/api/chat/") === 0) return guard(res, CHAT.handleAdmin(req, res, u, p));
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -3412,7 +3412,13 @@ function handleAnfrage(req, res) {
 const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos, readLeads, cockpitData, mailSnapshot, sevMeta, readBilling,
   steuerRaw: f => steuerRaw(f), readSteuer: () => readSteuer(), background: require.main === module });
 
+// Asynchrone Handler: Fehler abfangen und 500 senden statt den ganzen Prozess zu beenden (Sicherheitsprüfung 19.10.2026)
+function guard(res, pr) { if (pr && typeof pr.catch === "function") pr.catch(e => { console.error("Handler-Fehler:", e && e.message); try { if (!res.headersSent) send(res, 500, "Server error"); else res.end(); } catch (_) {} }); }
+process.on("unhandledRejection", e => console.error("unhandledRejection:", e && e.message));
+// Sicherheits-Header für alle Antworten (kein Einbetten in fremde Seiten, kein MIME-Sniffing, nur HTTPS, sparsamer Referrer)
+const SEC_HEADERS = { "X-Content-Type-Options": "nosniff", "X-Frame-Options": "SAMEORIGIN", "Referrer-Policy": "strict-origin-when-cross-origin", "Strict-Transport-Security": "max-age=31536000", "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=()" };
 const server = http.createServer((req, res) => {
+  for (const k in SEC_HEADERS) res.setHeader(k, SEC_HEADERS[k]);
   try {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
@@ -3438,10 +3444,10 @@ const server = http.createServer((req, res) => {
 
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
     if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
-      return void PRINT.handlePublic(req, res, u, p);
+      return void guard(res, PRINT.handlePublic(req, res, u, p));
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
-    if (p === "/nda" || p.indexOf("/nda/") === 0 || p.indexOf("/admin/api/nda/") === 0) return void NDA.handle(req, res, u, p);
+    if (p === "/nda" || p.indexOf("/nda/") === 0 || p.indexOf("/admin/api/nda/") === 0) return void guard(res, NDA.handle(req, res, u, p));
     // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml)
     if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/leistungen" || p === "/leistungen.html" || p === "/sitemap.xml")) {
       const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
@@ -3459,7 +3465,7 @@ const server = http.createServer((req, res) => {
         send(res, t ? 200 : 404, t || "Not found", "text/plain; charset=utf-8", { "Cache-Control": "public, max-age=3600" }); });
     }
     // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
-    if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void CHAT.handlePublic(req, res, u, p);
+    if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void guard(res, CHAT.handlePublic(req, res, u, p));
     if (p === "/api/anfrage") {
       if (req.method !== "POST") return send(res, 405, JSON.stringify({ error: "method_not_allowed" }), TYPES[".json"], { "Allow": "POST" });
       return void handleAnfrage(req, res);
