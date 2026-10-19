@@ -259,7 +259,7 @@ async function getJSON(url, token) {
     const host = (() => { try { return new URL(url).host; } catch (e) { return url; } })();
     const withQ = () => url + (url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(token);
     try {
-      let r = await fetch(token && TOKEN_IN_URL.has(host) ? withQ() : url, { headers: token ? { "x-api-token": token, authorization: "Bearer " + token } : {}, signal: ctrl.signal });
+      let r = await fetch(token && TOKEN_IN_URL.has(host) ? withQ() : url, { headers: token ? { "x-api-token": token, "x-stats-token": token, authorization: "Bearer " + token } : {}, signal: ctrl.signal });
       if (token && (r.status === 401 || r.status === 403) && !TOKEN_IN_URL.has(host)) { TOKEN_IN_URL.add(host); console.log("Token per Header abgelehnt, nutze URL:", host); r = await fetch(withQ(), { signal: ctrl.signal }); }
       if (!r.ok) return null; return await r.json(); }
     catch (e) { return null; } finally { clearTimeout(t); }
