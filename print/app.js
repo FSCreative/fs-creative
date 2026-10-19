@@ -535,7 +535,7 @@
         else if (S.undo && /nicht lieferbar|keinen Preis/i.test(j.error || "")) {   // gerade gewählte Option geht nicht → zurück zur letzten bestellbaren Auswahl
           var u = S.undo, t0 = Object.assign({}, u.sel); t0[u.slug] = u.val; BAD[badKey(t0)] = 1; S.undo = null;
           var pr0 = S.prod.props.filter(function (x) { return x.slug === u.slug; })[0], o0 = pr0 && pr0.options.filter(function (x) { return x.slug === u.val; })[0];
-          S.sel = u.sel; toast("„" + (o0 ? o0.name : u.val) + "“ ist in dieser Kombination nicht lieferbar – deine vorige Auswahl ist wiederhergestellt.", true); render(); loadPrice(); return;
+          S.sel = u.sel; toast("„" + (o0 ? o0.name : u.val) + "“ ist in dieser Kombination nicht lieferbar – deine vorige Auswahl ist wiederhergestellt.", true); render(); loadPrice(); wishAlts(u, o0 ? o0.name : u.val); return;
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
         if (j.ok) S.undo = null;
@@ -575,6 +575,7 @@
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
     var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + " Stk." + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
+    what += wishHtml();
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
     var main = co ? p.net : p.gross;
@@ -1173,6 +1174,8 @@
     var pb = e.target.closest("[data-preset]");
     if (pb) { var P0 = (window.__presets || []).filter(function (x) { return x.id === pb.getAttribute("data-preset"); })[0]; if (P0) { var had = !!S.file; S.sel = Object.assign({}, S.sel, P0.sel); fixSel(); if (had) { S.file = null; S.previews = null; motReset(true); } toast("Paket „" + P0.name + "“ übernommen"); render(); loadPrice(); } return; }
     var alt = e.target.closest("[data-alt]");
+    var wb = e.target.closest("[data-wish],[data-wishx]");
+    if (wb) { if (wb.hasAttribute("data-wish") && S.wish && S.wish.items[+wb.getAttribute("data-wish")]) { S.sel = Object.assign({}, S.wish.items[+wb.getAttribute("data-wish")].sel); fixSel(); toast("Übernommen"); } S.wish = null; wishSeq++; render(); loadPrice(); return; }
     if (alt && S.alts && S.alts[+alt.getAttribute("data-alt")]) { var A = S.alts[+alt.getAttribute("data-alt")]; S.sel = Object.assign({}, A.sel); S.copies = A.copies; S.alts = null; S.priceErr = ""; if (S.file && !isLogo()) { S.file = null; S.previews = null; } toast("Übernommen: " + A.label); render(); loadPrice(); return; }
     var dc = e.target.closest("[data-ddcat]");
     if (dc) { var cv = dc.getAttribute("data-ddcat"), ci = cv.indexOf("|"); S.ddCat[cv.slice(0, ci)] = cv.slice(ci + 1); render(); var ds2 = root.querySelector(".ps-ddl.big .ps-dds"); if (ds2) ds2.scrollTop = 0; return; }
@@ -1275,8 +1278,25 @@
   // Nicht lieferbare Kombinationen (Print.com lehnt ab, ohne dass eine Regel greift): merken, Option in diesem Zusammenhang sperren, letzte bestellbare Auswahl wiederherstellen
   var BAD = {};
   function badKey(sel) { return S.prod.key + "|" + JSON.stringify(Object.keys(sel).sort().map(function (k) { return [k, sel[k]]; })); }
+  // Gewünschte, aber so nicht lieferbare Option: bis zu 4 Kombinationen suchen, in denen sie geht (eine andere Eigenschaft geändert, Material zuerst)
+  var wishSeq = 0;
+  function wishAlts(u, name) {
+    var p = S.prod, seq = ++wishSeq, base = Object.assign({}, S.sel), cands = [], found = []; base[u.slug] = u.val;
+    p.props.slice().sort(function (a, b) { return (b.slug === "material") - (a.slug === "material"); }).forEach(function (pr) { if (pr.slug === u.slug || cands.length >= 4) return; var cur = S.sel[pr.slug], n = 0;
+      bestOf(pr).concat(pr.options.map(function (o) { return o.slug; })).filter(function (v, i, a) { return v !== cur && a.indexOf(v) === i; }).some(function (v) {
+        var t = Object.assign({}, base); t[pr.slug] = v; if (excluded(t) || BAD[badKey(t)]) return false;
+        cands.push({ sel: t, label: (pr.title || pr.slug) + ": " + optName(pr.slug, v) }); return ++n >= 2 || cands.length >= 4; }); });
+    if (!cands.length) return; S.wish = { name: name, items: "busy" }; renderPrice();
+    (function next(i) { if (seq !== wishSeq) return; if (i >= cands.length) { S.wish.items = found; renderPrice(); if (found.length && window.innerWidth <= 900 && S.step === 2 && !document.getElementById("psSheet")) openSheet(); return; }   // Handy: Vorschläge gleich zeigen
+      api("/print/api/price", Object.assign(cfgOf(), { sel: cands[i].sel, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" }))
+        .then(function (j) { if (j.ok) found.push(Object.assign(cands[i], { price: j.price })); else BAD[badKey(cands[i].sel)] = 1; }).catch(function () {}).then(function () { next(i + 1); }); })(0);
+  }
+  function wishHtml() { var w = S.wish; if (!w) return ""; var co = S.ctype === "company";
+    if (w.items === "busy") return '<div class="ps-wish"><p>„' + esc(w.name) + '“ geht so nicht – wir suchen passende Kombinationen <span class="ps-spin"></span></p></div>';
+    if (!w.items.length) return '<div class="ps-wish"><p>„' + esc(w.name) + '“ ist mit dieser Ausführung leider nicht lieferbar.</p></div>';
+    return '<div class="ps-wish"><p>„' + esc(w.name) + '“ gibt es so:</p>' + w.items.map(function (a, i) { return '<button type="button" class="ps-alt" data-wish="' + i + '"><span>' + esc(a.label) + "</span><b>" + eur(co ? a.price.net : a.price.gross) + "</b><small>Übernehmen →</small></button>"; }).join("") + '<button type="button" class="ps-link" data-wishx="1">Ausblenden</button></div>'; }
   function setProp(slug, val) {
-    var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : "";
+    var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : ""; S.wish = null; wishSeq++;
     S.undo = S.price && !S.priceErr && !S.priceBusy ? { sel: JSON.parse(before), slug: slug, val: val } : null;
     S.sel[slug] = val; fixSel(slug);
     if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
