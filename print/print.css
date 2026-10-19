@@ -824,10 +824,18 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 @media(max-width:900px){body:has(.ps-ddl.big) .ps-bnav,body:has(.pd) .ps-bnav,body:has(.ps-pop) .ps-bnav{display:none}}
 @media (max-width:760px){.ps-head{grid-template-columns:92px minmax(0,1fr)}.ps-head-t h2{font-size:20px;line-height:1.2}.ps-head-t .sub{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.ps-head .ps-about{grid-column:1/-1}}
 .ps-swmore{align-self:start;height:40px;margin-top:3px;padding:0 12px;border-radius:999px;border:1px dashed var(--ps-line2);background:none;color:var(--ps-tag);font-weight:600;font-size:12.5px;cursor:pointer;grid-column:span 2}
-@media(min-width:641px){.ps-tile.seg{grid-column:span 2}.ps-tile.seg .ps-segs{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}}
+/* Ausführung: Auswahlkarten (3–4 Optionen) über die ganze Breite in einer Reihe, Listen paarweise; einzelne Liste ganze Breite (app.js) */
+@media(min-width:641px){
+  .print-page .ps-grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ps-tile.seg,.ps-tile.full{grid-column:1/-1}
+  .ps-tile.seg .ps-segs{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .ps-tile.seg .ps-segs.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .ps-tile.seg .ps-segs.n4{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(min-width:641px) and (max-width:900px){.ps-tile.seg .ps-segs.n4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ps-sgo{min-width:0}.ps-sgo b{overflow-wrap:break-word;hyphens:auto;-webkit-hyphens:auto}
 /* Feinschliff Ausführung (Desktop) */
 .ps-tile.best{border-color:var(--ps-line2);box-shadow:none}
-.print-page .ps-grid2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
 .ps-tile{background:var(--ps-card);border-color:var(--ps-line)}
 .ps-tl{font-size:12.5px;font-weight:600;color:var(--text-dim)}
 .ps-sec h3{font-size:19px;letter-spacing:-.01em}
