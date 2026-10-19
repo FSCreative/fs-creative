@@ -700,7 +700,7 @@ module.exports = function (D) {
   function resolveSel(prod, sel, extra, only) {
     const base = {}; Object.keys(prod.fixed).forEach(k => { if (!prod.auto || !prod.auto[k]) base[k] = prod.fixed[k]; });
     prod.props.forEach(pr => { if (sel[pr.slug] != null) base[pr.slug] = sel[pr.slug]; }); Object.assign(base, extra || {});
-    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]).map(v => !OMITTABLE.test(v[0]) ? v : /^(bundle|cross_bundle)$/.test(v[0]) ? [v[0], [null].concat(v[1])] : [v[0], v[1].concat([null])]);   // only: z. B. Druckverfahren passend zur Auflage; Bündeln (Verpackung, kostet extra) nur wenn Print.com es verlangt
+    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]).map(v => OMITTABLE.test(v[0]) ? [v[0], [null].concat(v[1])] : v);   // only: z. B. Druckverfahren passend zur Auflage; Bündeln/Bogengröße/Verpackung zuerst weglassen (wie die Print.com-App, sonst Aufpreis – z. B. Digital-Bogen bei Offset +6 %), Werte nur als Ausweichlösung
     let all = solveSel(vars, base, prod.excludes, aliasOf(prod)); const excl = !all;
     if (!all) all = Object.assign({}, prod.fixed, base);
     prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });
@@ -811,8 +811,8 @@ module.exports = function (D) {
   const VARY = ["sheet_size", "special_size", "flexibleprintingmethod"];
   function variantsOf(prod, opts) {
     const out = [opts], al = aliasOf(prod);
-    for (const k of VARY) { const l = (prod.auto || {})[k]; if (!l || opts[k] === undefined) continue;
-      for (const v of l.concat(OMITTABLE.test(k) ? [null] : [])) { if (out.length >= 5) break; if (v === opts[k]) continue; const o = Object.assign({}, opts); if (v === null) delete o[k]; else o[k] = v; if (!hitRules(prod.excludes, o, al)) out.push(o); } }
+    for (const k of VARY) { const l = (prod.auto || {})[k]; if (!l || (opts[k] === undefined && !OMITTABLE.test(k))) continue;
+      for (const v of l.concat(OMITTABLE.test(k) ? [null] : [])) { if (out.length >= 5) break; if (v === opts[k] || (v === null && opts[k] === undefined)) continue; const o = Object.assign({}, opts); if (v === null) delete o[k]; else o[k] = v; if (!hitRules(prod.excludes, o, al)) out.push(o); } }
     return out;
   }
   async function buyAny(prod, n, list, country, postcode) {
@@ -865,7 +865,13 @@ module.exports = function (D) {
       }
       return n.kind === "banner" ? 0 : at(a.tiers); })();
     const ancNet = ancGross ? (ancGross - (s.anchorGap != null ? s.anchorGap : 2)) / (1 + 20 / 100) : 0;   // Anker sind österreichische Bruttopreise (20 %)
-    const netOf = b => Math.ceil(Math.max(floorOf(b), ancNet || (Math.max(b.product * (1 + markup / 100), b.product + minM) + b.shipping)) * 10 - 1e-6) / 10;
+    // Mit Mitbewerberpreis darf die Marge bis auf anchorMinPct (Standard 5 % vom Nettopreis nach Gebühr, Freigabe Simon 19.10.2026) sinken, damit wir knapp darunter bleiben
+    const ancMin = s.anchorMinPct != null && isFinite(+s.anchorMinPct) ? +s.anchorMinPct : 5, ancUp = ancMin / (100 - ancMin) * 100 / (1 - 1.2 * fee.pct / 100);
+    const floorA = b => gmUp == null && ancNet ? ((b.product + b.shipping) * (1 + Math.min(ancUp, s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100) : floorOf(b);
+    // Große Aufträge ohne Mitbewerberpreis: Aufschlag sinkt ab bulkFrom € Einkauf linear bis auf bulkFactor × Aufschlag bei bulkTo € (Standard 150 € → 1 500 €: 30 % → 12 %)
+    const bulkF = b => { if (gmUp != null || ov.markupPct != null) return 1; const t = b.product + b.shipping, a = s.bulkFrom != null ? +s.bulkFrom : 150, z = s.bulkTo != null ? +s.bulkTo : 1500, f = s.bulkFactor != null ? +s.bulkFactor : 0.4;
+      return t <= a ? 1 : t >= z ? f : 1 - (1 - f) * (t - a) / (z - a); };
+    const netOf = b => Math.ceil(Math.max(floorA(b), ancNet || (Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping)) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust);
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
@@ -891,7 +897,7 @@ module.exports = function (D) {
     const list = netOf(buy), net0 = disc(list), vat0 = r2(net0 * tax.rate / 100);
     // Rabatte (Bonus, Kundenrabatt, Gutschein) dürfen die Mindestmarge nach Gebühr nicht unterschreiten
     const net = Math.max(net0, Math.ceil(floorOf(buy) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
-    return { anchor: ancGross ? r2(ancGross) : null, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: markup, minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    return { anchor: ancGross ? r2(ancGross) : null, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
   const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
