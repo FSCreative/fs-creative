@@ -685,6 +685,7 @@ module.exports = function (D) {
   // Print.com-interne Produkte (z. B. „Probe intern“ / samples-internal, Test-Artikel) nie im Shop zeigen
   const INTERNAL_RX = /(^|[-_\s])(intern|internal|test|dummy)([-_\s]|$)/i, isInternal = (sku, title) => INTERNAL_RX.test(String(sku || "")) || INTERNAL_RX.test(String(title || ""));
   const noHtml = t => String(t || "").replace(/<[^>]*>?/g, " ").replace(/&nbsp;/g, " ").replace(/[ \t]+/g, " ").trim();   // Beschreibungen aus dem Print.com-CMS teils mit HTML
+  const BRIEF_EXT = /^(pdf|jpe?g|png|gif|webp|svg|ai|eps|psd|tiff?|zip|docx?|txt|rtf|odt)$/i;
   const shortDesc = (cp, fb) => { const t = cp && (cp.s || String(cp.d || "").split(/\n/).map(x => x.replace(/^[-*•\s]+/, "").trim()).filter(Boolean)[0]); return clip(noHtml(t || fb || ""), 140); };
   const catPub = g => ({ main: g.main, sub: g.sub || "", mainName: groupName(g.main), subName: g.sub ? groupName(g.sub) : "" });
   const pubProd = p => { const cp = cmsProd(p.sku), g = p.cat || { main: p.group || OTHER, sub: "" };
@@ -1838,7 +1839,7 @@ module.exports = function (D) {
   }
   async function cleanupFiles() {
     const files = await store.listFiles(); let n = 0;
-    for (const f of files) if (!f.orderId && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : 3) * 864e5) { await store.delFile(f.id); n++; }
+    for (const f of files) if (!f.orderId && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : 3) * 864e5) { await store.delFile(f.id); n++; }
     return n;
   }
   let lastDaily = 0;
@@ -2143,6 +2144,40 @@ module.exports = function (D) {
       if (p.indexOf("/print/newsletter/") === 0 || p === "/print/api/newsletter") { const r = await nlMod().handlePublic(req, res, p, u, ipOf(req), J, readJson, sameOrigin); if (r !== false) return; }
       if (p.indexOf("/print/api/") !== 0) return D.send(res, 404, "Not found");
       const ip = ipOf(req);
+      // „Wir gestalten für dich“: Briefing mit Konfiguration, Text und Dateien → Anfrage im Cockpit (Lead + Mail an Simon)
+      if (p === "/print/api/brief/file" && req.method === "POST") {
+        if (!sameOrigin(req)) { req.resume(); return J(res, 403, { ok: false, error: "forbidden" }); }
+        if (limited("brief-file", ip, 25, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Dateien – bitte später erneut" }); }
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "datei")), 120).replace(/[\\/:*?"<>|]/g, "_") || "datei";
+        const ext = (name.match(/\.([a-z0-9]{1,5})$/i) || [])[1] || "";
+        if (!BRIEF_EXT.test(ext)) { req.resume(); return J(res, 415, { ok: false, error: "Dateityp nicht erlaubt (PDF, Bilder, AI/EPS/PSD, Word, TXT oder ZIP)" }); }
+        const buf = await readBody(req, 15 * 1024 * 1024); if (buf.length < 10) return J(res, 400, { ok: false, error: "Datei ist leer" });
+        const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "brief", name, ext: ext.toLowerCase(), bytes: buf.length, createdAt: nowIso(), orderId: null, sha256: crypto.createHash("sha256").update(buf).digest("hex") };
+        await store.putFile(meta, buf);
+        return J(res, 200, { ok: true, id: meta.id, token: sig("brief", meta.id), name, bytes: buf.length });
+      }
+      if (p === "/print/api/brief" && req.method === "POST") {
+        if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (limited("brief", ip, 6, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
+        const b = await readJson(req, 30000);
+        if (b.website || !(Date.now() - Number(b.t || 0) > 3000)) return J(res, 200, { ok: true });   // Spam-Schutz wie beim Kontaktformular
+        const name = clip(b.name, 120), email = clip(b.email, 160).toLowerCase(), phone = clip(b.phone, 60), company = clip(b.company, 160), text = clip(b.text, 4000);
+        if (!name || !/^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i.test(email)) return J(res, 400, { ok: false, error: "Bitte Name und eine gültige E-Mail-Adresse angeben" });
+        if (b.consent !== true) return J(res, 400, { ok: false, error: "Bitte die Datenschutz-Einwilligung bestätigen" });
+        if (!text && !(Array.isArray(b.files) && b.files.length)) return J(res, 400, { ok: false, error: "Bitte kurz beschreiben, was gestaltet werden soll (oder Dateien anhängen)" });
+        const files = [];
+        for (const f of (Array.isArray(b.files) ? b.files : []).slice(0, 5)) { const id = String(f && f.id || ""); if (!/^f[a-f0-9]{24}$/.test(id) || !sigOk("brief", id, String(f.token || ""))) continue; const m = await store.fileMeta(id); if (m && m.kind === "brief") files.push(m); }
+        const c = b.cfg && typeof b.cfg === "object" ? b.cfg : {}, lab = (Array.isArray(c.labels) ? c.labels : []).slice(0, 14).map(l => clip(l && l[0], 60) + ": " + clip(l && l[1], 120)).filter(x => x.length > 2);
+        const msg = ["Gestaltungsanfrage aus dem Druckshop („Wir gestalten für dich“)", "",
+          "Produkt: " + clip(c.title || c.product, 120) + (c.copies ? " · " + clip(c.copies, 12) + " Stk." : "") + (c.price ? " · aktueller Druckpreis " + clip(c.price, 40) : ""),
+          lab.length ? "Ausführung: " + lab.join(" · ") : "", c.link ? "Konfiguration öffnen: " + clip(c.link, 900) : "", "",
+          "Wünsche / Briefing:", text || "(kein Text – siehe Dateien)", "",
+          files.length ? "Dateien (" + files.length + ", Download mit Cockpit-Anmeldung):\n" + files.map(m => "- " + m.name + " (" + Math.max(1, Math.round(m.bytes / 1024)) + " KB): " + cfg().publicUrl + "/admin/api/print/brief-file?id=" + m.id).join("\n") : "Keine Dateien angehängt."].filter(x => x !== "").join("\n");
+        const L = D.saveLead ? await D.saveLead({ name, email, phone, company, topic: "Grafik & Branding", entwurf: false, message: msg, source: "Druckshop: Gestaltung " + clip(c.title || c.product, 60) }) : null;
+        if (!L) return J(res, 500, { ok: false, error: "Konnte nicht gesendet werden – bitte schreib uns an office@fs-creative.at" });
+        for (const m of files) { m.leadId = L.id; m.keepUntil = new Date(Date.now() + 180 * 864e5).toISOString(); await store.putFile(m).catch(() => {}); }
+        return J(res, 200, { ok: true });
+      }
       if (p.indexOf("/print/api/account/") === 0) {
         if (req.method === "POST" && !sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
         return await accountMod().handle(req, res, p, ip, J, readJson, ordersOfCustomer, bonusOf);
@@ -2464,6 +2499,11 @@ module.exports = function (D) {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); const buf = o && await store.fileData(o.fileId);
         if (!buf) return D.send(res, 404, "Datei nicht gefunden");
         return D.send(res, 200, buf, "application/pdf", { "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store" });
+      }
+      if (p === "/admin/api/print/brief-file" && req.method === "GET") {
+        const id = String(u.searchParams.get("id") || ""), m = /^f[a-f0-9]{24}$/.test(id) ? await store.fileMeta(id) : null; if (!m || m.kind !== "brief") return D.send(res, 404, "Not found");
+        const data = await store.fileData(id); if (!data) return D.send(res, 404, "Not found");
+        return D.send(res, 200, data, "application/octet-stream", { "Content-Disposition": "attachment; filename*=UTF-8''" + encodeURIComponent(m.name), "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" });
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       const b = await readJson(req, 100000);

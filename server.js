@@ -3598,6 +3598,7 @@ FIN_PROP.register("dunning", {
   reject: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (pr) { st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); } } });
 // ── Druckshop www.fs-creative.at/print (print-shop.js): Bestellungen landen „Zur Prüfung“ und unter „Druckaufträge“ – bei Print.com bestellt wird nur per Klick ──
 const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, ki: KI,
+  saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,
   uidValid: v => STEUER_CALC.uidValid(v), viesCheck: v => viesCheck(v),
   createInvoice: pl => sevCreateInvoice(pl),

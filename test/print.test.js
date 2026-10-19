@@ -152,6 +152,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/<h1>Visitenkarten online drucken<\/h1>/.test(pr) && /"@type":"Product"/.test(pr) && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\?produkt=visitenkarten"/.test(pr) && /Stück: [\d.,]+ €/.test(pr), "Produktseite für Crawler");
     const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/preise<\/loc>/.test(sm), "Sitemap mit Preisübersicht");
   });
+  await t("Gestaltung anfragen: Datei-Upload, Anfrage mit Konfiguration → Lead, Datei nur fürs Cockpit", async () => {
+    const upf = (name, body) => fetch(B + "/print/api/brief/file", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name) }, body });
+    assert.strictEqual((await upf("virus.exe", Buffer.from("MZ...binary...."))).status, 415, "Dateityp gesperrt");
+    const f = await (await upf("logo.txt", Buffer.from("Mein Logo-Text – bitte groß"))).json(); assert.ok(f.ok && f.id && f.token, JSON.stringify(f));
+    assert.strictEqual((await post("/print/api/brief", { name: "Anna", email: "kaputt", text: "x", consent: true, t: Date.now() - 5000 })).status, 400, "E-Mail nötig");
+    const r = await post("/print/api/brief", { name: "Anna Test", email: "anna@example.com", text: "Flyer fürs Sommerfest, fröhlich & bunt", consent: true, t: Date.now() - 5000,
+      files: [{ id: f.id, token: f.token }, { id: f.id, token: "falsch" }], cfg: { product: "flyer", title: "Flyer", copies: 500, price: "40,08 € inkl. USt", labels: [["Format", "A5"]] } });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    assert.strictEqual((await fetch(B + "/admin/api/print/brief-file?id=" + f.id, { redirect: "manual" })).status, 302, "ohne Anmeldung kein Zugriff");
+    const dl = await fetch(B + "/admin/api/print/brief-file?id=" + f.id, { headers: { cookie: COOKIE } }); assert.strictEqual(dl.status, 200); assert.match(dl.headers.get("content-disposition") || "", /attachment/); assert.match(await dl.text(), /Logo-Text/);
+  });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     // Einkauf 20 + 5 Versand: 20 × 1,15 + 5 = 28,00 netto (mit 35 % wären es 32,00)

@@ -1042,6 +1042,50 @@
     m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) close(); });
     document.addEventListener("keydown", k0); document.body.appendChild(m); var f = m.querySelector("[data-popx]"); if (f) f.focus();
   }
+  // „Wir gestalten für dich“: Pop-up mit aktueller Konfiguration, Briefing-Text, Dateien und Kontakt → Anfrage an FS Creative (statt Kontaktformular)
+  function briefPop() {
+    var p = S.prod; if (!p) return; var back = document.activeElement, files = [], me = S.me || {}, cu = S.customer || {}, t0 = Date.now();
+    var pr = S.price, co = S.ctype === "company", priceTxt = pr ? eur(co ? pr.net : pr.gross) + (co ? " netto" : " inkl. USt") : "";
+    var labels = (pr && pr.labels && pr.labels.length ? pr.labels : p.props.map(function (x) { return [x.title, labelOf(x.slug)]; })).filter(function (l) { return l && l[1]; });
+    var link = ""; try { link = cfgLink(p.key, cfgPack()); } catch (e) {}
+    var val = function (k) { return esc(cu[k] || me[k] || ""); };
+    var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Gestaltung anfragen");
+    m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">Wir gestalten für dich</span><h3>Gestaltung anfragen</h3><p>Sag uns kurz, was drauf soll – wir melden uns mit Entwurf und Angebot. Gedruckt wird erst nach deiner Freigabe.</p>' +
+      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + " Stk.</b><span>" + esc(labels.map(function (l) { return l[1]; }).join(" · ")) + "</span>" + (priceTxt ? "<span>Druckpreis laut Konfiguration: " + esc(priceTxt) + " (Gestaltung nach Angebot)</span>" : "") + "</div>" +
+      '<label class="ps-bf"><span>Was soll gestaltet werden? *</span><textarea id="bfText" rows="5" maxlength="4000" placeholder="z. B. Anlass, Texte, Stil, Farben, was dir wichtig ist …"></textarea></label>' +
+      '<div class="ps-bf"><span>Dateien (optional) – Logo, Fotos, Texte · max. 5 Dateien à 15 MB</span><label class="ps-drop small ps-bfdrop"><input type="file" id="bfFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.svg,.ai,.eps,.psd,.tif,.tiff,.zip,.doc,.docx,.txt,.rtf,.odt"><b>Dateien auswählen oder hierher ziehen</b></label><ul class="ps-bfl" id="bfList"></ul></div>' +
+      '<div class="ps-bf2"><label class="ps-bf"><span>Name *</span><input id="bfName" autocomplete="name" value="' + esc([cu.firstName || me.firstName, cu.lastName || me.lastName].filter(Boolean).join(" ")) + '"></label><label class="ps-bf"><span>E-Mail *</span><input id="bfMail" type="email" autocomplete="email" value="' + val("email") + '"></label>' +
+      '<label class="ps-bf"><span>Telefon</span><input id="bfTel" type="tel" autocomplete="tel" value="' + val("phone") + '"></label><label class="ps-bf"><span>Firma / Verein</span><input id="bfCo" autocomplete="organization" value="' + val("company") + '"></label></div>' +
+      '<input type="text" id="bfHp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">' +
+      '<label class="ps-cb"><input type="checkbox" id="bfOk"><span>Ich bin einverstanden, dass FS Creative meine Angaben und Dateien zur Bearbeitung dieser Anfrage speichert (<a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a>).</span></label>' +
+      '<p class="ps-err" id="bfErr" hidden></p><div class="ps-pop-a"><button type="button" class="ps-btn primary" id="bfSend">Anfrage senden</button><button type="button" class="ps-btn" data-popx="1">Abbrechen</button></div></div>' +
+      '<button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
+    var q = function (id) { return m.querySelector("#" + id); }, err = function (t) { var e = q("bfErr"); if (!e) return; e.textContent = t || ""; e.hidden = !t; };
+    var list = function () { q("bfList").innerHTML = files.map(function (f, i) { return "<li><span>📎 " + esc(f.name) + " <small>" + Math.max(1, Math.round(f.size / 1024)).toLocaleString("de-AT") + ' KB</small></span><button type="button" class="ps-link" data-bfdel="' + i + '">Entfernen</button></li>'; }).join(""); };
+    var add = function (fl) { [].forEach.call(fl || [], function (f) { if (files.length >= 5) { err("Maximal 5 Dateien."); return; } if (f.size > 15 * 1024 * 1024) { err("„" + f.name + "“ ist größer als 15 MB."); return; } files.push(f); }); list(); };
+    var close = function () { m.remove(); document.removeEventListener("keydown", k0); if (back && back.focus) back.focus(); }, k0 = function (e) { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) { close(); return; } var d = e.target.closest("[data-bfdel]"); if (d) { files.splice(+d.getAttribute("data-bfdel"), 1); list(); } });
+    m.addEventListener("change", function (e) { if (e.target.id === "bfFiles") { err(""); add(e.target.files); e.target.value = ""; } });
+    var dz = m.querySelector(".ps-bfdrop"); ["dragover", "drop"].forEach(function (ev) { dz.addEventListener(ev, function (e) { e.preventDefault(); if (ev === "drop") { err(""); add(e.dataTransfer && e.dataTransfer.files); } }); });
+    var up = function (f) { return new Promise(function (ok, no) { var x = new XMLHttpRequest(); x.open("POST", "/print/api/brief/file"); x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
+      x.onload = function () { var j = null; try { j = JSON.parse(x.responseText); } catch (e) {} if (j && j.ok) ok(j); else no(new Error((j && j.error) || "Upload fehlgeschlagen")); }; x.onerror = function () { no(new Error("Keine Verbindung")); }; x.send(f); }); };
+    q("bfSend").addEventListener("click", function () {
+      var b = this, text = q("bfText").value.trim(), name = q("bfName").value.trim(), mail = q("bfMail").value.trim();
+      if (!text && !files.length) { err("Bitte kurz beschreiben, was gestaltet werden soll."); q("bfText").focus(); return; }
+      if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { err("Bitte Name und eine gültige E-Mail-Adresse angeben."); return; }
+      if (!q("bfOk").checked) { err("Bitte die Einwilligung zum Datenschutz bestätigen."); return; }
+      err(""); b.disabled = true; var done = [], i = 0;
+      var next = function () { if (i >= files.length) return send(); b.textContent = "Datei " + (i + 1) + " von " + files.length + " wird hochgeladen …"; up(files[i]).then(function (j) { done.push({ id: j.id, token: j.token }); i++; next(); }).catch(function (e) { b.disabled = false; b.textContent = "Anfrage senden"; err(e.message); }); };
+      var send = function () { b.textContent = "Wird gesendet …";
+        api("/print/api/brief", { name: name, email: mail, phone: q("bfTel").value.trim(), company: q("bfCo").value.trim(), text: text, consent: true, website: q("bfHp").value, t: t0, files: done,
+          cfg: { product: p.key, title: p.title, copies: totalCopies(), price: priceTxt, labels: labels.slice(0, 14), link: link } }).then(function (j) {
+          if (!j.ok) { b.disabled = false; b.textContent = "Anfrage senden"; err(j.error || "Konnte nicht gesendet werden."); return; }
+          m.querySelector(".ps-pop-b").innerHTML = '<span class="ps-pop-k">Wir gestalten für dich</span><h3>Danke, ' + esc(name.split(" ")[0]) + '! 🎉</h3><p>Deine Anfrage für ' + esc(p.title) + " ist bei uns angekommen" + (done.length ? " – samt " + done.length + (done.length === 1 ? " Datei" : " Dateien") : "") + ". Wir melden uns in der Regel innerhalb von 1–2 Werktagen mit Entwurf und Angebot an " + esc(mail) + '.</p><div class="ps-pop-a"><button type="button" class="ps-btn primary" data-popx="1">Schließen</button></div>';
+        }).catch(function () { b.disabled = false; b.textContent = "Anfrage senden"; err("Keine Verbindung – bitte erneut versuchen."); }); };
+      next();
+    });
+    document.addEventListener("keydown", k0); document.body.appendChild(m); var tf = q("bfText"); if (tf) tf.focus();
+  }
   function galImgs(p) { var im = (p.images || []).filter(imgOk); if (!im.length && imgOk(p.img)) im = [p.img]; return im; }
   function galleryHtml(p) {
     var im = galImgs(p); if (!im.length) return "";
@@ -1258,7 +1302,7 @@
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
         '<button type="button" class="ps-mode" data-act="mode:upload"><span class="ic" aria-hidden="true">⬆️</span><b>Druckdatei hochladen</b><span>Du hast schon eine fertige PDF (oder JPG/PNG)? Wir prüfen Format, Seiten und Auflösung automatisch.</span></button>' +
-        '<a class="ps-mode ps-mode-agency" href="/kontakt?von=print&amp;thema=Gestaltung%20' + encodeURIComponent(p.title) + '" target="_blank" rel="noopener"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></a></div>' + (reqHtml(false) || tplBtn("soft"));
+        '<button type="button" class="ps-mode ps-mode-agency" data-act="brief"><span class="ic" aria-hidden="true">🤝</span><b>Wir gestalten für dich</b><span>Keine Zeit oder keine Idee? Unser Team gestaltet deine ' + esc(p.title) + ' – du bekommst vorab einen Entwurf und ein Angebot.</span></button></div>' + (reqHtml(false) || tplBtn("soft"));
     }
     return '<div class="ps-layout">' + h + '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück zur Ausführung</button>' + (S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + "</button>" : '<span class="ps-nav-hint">' + (S.file ? "Bitte die rot markierten Punkte korrigieren." : "Wähle oben, wie du deine Druckdaten erstellst.") + "</span>") + '</div></div><aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
@@ -1473,6 +1517,7 @@
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
     if (k === "cwarn") { warnPop(v); return; }
+    if (k === "brief") { briefPop(); return; }
     if (k === "bleedfix" && S.file) { var f0 = S.file; t.disabled = true; t.textContent = "Wird ergänzt …";
       api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
