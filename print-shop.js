@@ -815,9 +815,13 @@ module.exports = function (D) {
       for (const v of l.concat(OMITTABLE.test(k) ? [null] : [])) { if (out.length >= 5) break; if (v === opts[k] || (v === null && opts[k] === undefined)) continue; const o = Object.assign({}, opts); if (v === null) delete o[k]; else o[k] = v; if (!hitRules(prod.excludes, o, al)) out.push(o); } }
     return out;
   }
+  // Immer die günstigste Produktionsvariante (Wunsch Simon 19.10.2026): bis zu 3 Varianten (z. B. mit/ohne Bogengröße → anderer Produzent/Versand)
+  // parallel anfragen und die mit dem niedrigsten Gesamtpreis inkl. Versand nehmen; Print.com-Antworten 30 min zwischengespeichert
   async function buyAny(prod, n, list, country, postcode) {
-    let last; for (const o of (list && list.length ? list : [n.pcOpts])) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { last = e; if (e.status !== 400) break; } }
-    throw last;
+    const L = (list && list.length ? list : [n.pcOpts]).slice(0, 3);
+    const rs = await Promise.all(L.map(o => purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode).then(v => ({ v, pcOpts: o }), e => ({ e }))));
+    const ok = rs.filter(r => r.v).sort((a, b) => a.v.total - b.v.total); if (ok.length) return ok[0];
+    throw (rs.find(r => r.e && r.e.status !== 400) || rs[0]).e;
   }
   async function purchase(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
@@ -879,9 +883,8 @@ module.exports = function (D) {
       const tries = await Promise.all(n.pmAlts.map(a => buyAny(prod, n, a.more || [a.pcOpts], country, postcode).then(r => ({ pm: a.pm, pcOpts: r.pcOpts, v: r.v }), () => null)));
       const ok = tries.filter(Boolean).sort((a, b) => netOf(a.v) - netOf(b.v));
       if (ok.length) {
-        // automatisch: Offset, wo er preislich passt, sonst das günstigste (z. B. kleine Auflagen → Digitaldruck)
-        // Offset nur, wenn er höchstens ~10 % über dem günstigsten Verfahren liegt (bei Kleinauflagen ist Offset oft ein Vielfaches teurer)
-        const off = ok.find(x => x.pm === "offset"), offOk = off && netOf(off.v) <= netOf(ok[0].v) * 1.1 + 0.5;
+        // automatisch: immer das günstigste Verfahren/der günstigste Produzent (Wunsch Simon 19.10.2026) – bei Gleichstand Offset (gleichmäßigere Farben)
+        const off = ok.find(x => x.pm === "offset"), offOk = off && netOf(off.v) <= netOf(ok[0].v);
         const pick = (n.pmWanted && n.pmWanted !== "auto" && ok.find(x => x.pm === n.pmWanted)) || (offOk ? off : ok[0]); buy = pick.v;
         n.pcOpts = pick.pcOpts; n.pm = pick.pm;
         if (n.labels && !n.labels.some(l => l[0] === "Druckverfahren")) n.labels.push(["Druckverfahren", PM_DE[pick.pm] || pick.pm]);
@@ -896,7 +899,7 @@ module.exports = function (D) {
     if (bp && methods) methods = methods.map(m => { const nt = disc(m.net); return Object.assign({}, m, { net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }); });
     const list = netOf(buy), net0 = disc(list), vat0 = r2(net0 * tax.rate / 100);
     // Rabatte (Bonus, Kundenrabatt, Gutschein) dürfen die Mindestmarge nach Gebühr nicht unterschreiten
-    const net = Math.max(net0, Math.ceil(floorOf(buy) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
+    const net = Math.max(net0, Math.ceil(floorA(buy) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
     return { anchor: ancGross ? r2(ancGross) : null, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
   const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
