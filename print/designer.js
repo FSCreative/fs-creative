@@ -381,7 +381,7 @@
   }
   function applyTemplate(id, initial, over) {
     var ctx = { product: D.o.product.key, w: D.mm.w, h: D.mm.h, bleed: D.b, safe: D.safe, sides: D.sides, panels: D.panels, foldX: D.fold ? D.fold.x : null, round: D.round };
-    if (over) { ctx.texts = over.texts; ctx.pal = over.pal; }
+    if (over) { ctx.texts = over.texts; ctx.pal = over.pal; ctx.noImg = !!over.noImg; }
     var pages = PrintTemplates.build(id, ctx), all = []; pages.forEach(function (p) { all = all.concat(p); });
     return loadFontsOf(all).then(function () {
       var sc = new fabric.StaticCanvas(null, { width: D.W, height: D.H });
@@ -870,12 +870,13 @@
     if (q.length < 4) { D.aiErr = "Beschreib kurz, was du gestalten möchtest."; renderPanel(); return; }
     var run = function () {
       D.aiBusy = true; D.aiErr = ""; renderPanel();
-      window.PrintShop.api("/print/api/ai/design", { product: D.o.product.key, brief: q, w: D.mm.w, h: D.mm.h }).then(function (j) {
+      var stl = PrintTemplates.list(D.o.product.key).map(function (x) { var s = PrintTemplates.styles[x.id] || {}; return { id: x.id, bg: s.bg, fg: s.fg, ac: s.ac, ac2: s.ac2, fh: s.fh, fb: s.fb }; });
+      window.PrintShop.api("/print/api/ai/design", { product: D.o.product.key, brief: q, w: D.mm.w, h: D.mm.h, styles: stl }).then(function (j) {
         D.aiBusy = false;
         if (!j.ok) { D.aiErr = j.error || "Das hat nicht geklappt."; renderPanel(); return; }
         var d = j.design || {}, texts = {}; "HSOBFAW".split("").forEach(function (k) { if (typeof d[k] === "string") texts[k] = d[k]; });
-        if (!PrintTemplates.styles[d.style]) d.style = PrintTemplates.list(D.o.product.key)[0].id;
-        applyTemplate(d.style, false, { texts: texts, pal: d.pal }).then(function () { changed(); D.aiTip = d.tip || ""; renderPanel(); toast("KI-Vorschlag übernommen – alles bleibt frei anpassbar" + (j.left != null && j.left < 0.05 ? " (heutiges KI-Kontingent fast aufgebraucht)" : "")); });
+        if (!PrintTemplates.list(D.o.product.key).some(function (x) { return x.id === d.style; })) d.style = PrintTemplates.list(D.o.product.key)[0].id;
+        applyTemplate(d.style, false, { texts: texts, pal: d.pal, noImg: d.photo === false }).then(function () { changed(); D.aiTip = d.tip || ""; renderPanel(); toast("KI-Vorschlag übernommen – alles bleibt frei anpassbar" + (j.left != null && j.left < 0.05 ? " (heutiges KI-Kontingent fast aufgebraucht)" : "")); });
       }).catch(function () { D.aiBusy = false; D.aiErr = "Keine Verbindung – bitte erneut versuchen."; renderPanel(); });
     };
     if (D.dirty) modal('<h3>KI-Vorschlag übernehmen?</h3><p class="pd-muted">Der Vorschlag ersetzt deine aktuelle Gestaltung.</p><div class="foot"><button class="ps-btn" data-a="m:no">Abbrechen</button><button class="ps-btn primary" data-a="m:yes">Übernehmen</button></div>', function (r) { if (r === "yes") run(); });

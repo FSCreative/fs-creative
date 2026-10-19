@@ -1326,17 +1326,23 @@ module.exports = function (D) {
     const key = aiKey(me, ip), left = await aiLeft(key);
     if (left < 0.02) throw Object.assign(new Error("Dein KI-Kontingent für heute ist aufgebraucht – morgen geht’s weiter. Vorlagen und alle anderen Funktionen kannst du natürlich weiter nutzen."), { status: 429 });
     const brief = clip(b.brief, 700); if (brief.length < 4) throw Object.assign(new Error("Beschreib kurz, was du gestalten möchtest."), { status: 400 });
-    const prod = CURATED.find(x => x.key === b.product); const styles = Object.keys(AI_STYLES);
-    const fonts = FONTS.map(f => f.family);
+    const prod = CURATED.find(x => x.key === b.product), fonts = FONTS.map(f => f.family), hx = v => /^#[0-9a-f]{6}$/i.test(String(v || "")) ? String(v) : "";
+    // nur Stile, die es für dieses Produkt als Vorlage gibt (vom Designer mitgeschickt, inkl. Grundpalette)
+    const given = (Array.isArray(b.styles) ? b.styles : []).slice(0, 30).filter(x => x && AI_STYLES[x.id]);
+    const styles = given.length ? given.map(x => x.id) : Object.keys(AI_STYLES);
+    const styleTxt = k => { const g = given.find(x => x.id === k); return k + " (" + AI_STYLES[k] + (g ? "; Grundfarben bg " + hx(g.bg) + ", fg " + hx(g.fg) + ", ac " + hx(g.ac) + ", ac2 " + hx(g.ac2) + "; Schriften " + (fonts.indexOf(g.fh) > -1 ? g.fh : "?") + " / " + (fonts.indexOf(g.fb) > -1 ? g.fb : "?") : "") + ")"; };
     const str = { type: "string" }, hex = { type: "string", pattern: "^#[0-9a-fA-F]{6}$" };
-    const schema = { type: "object", additionalProperties: false, required: ["style", "H", "S", "O", "B", "F", "A", "W", "pal", "tip"], properties: { style: { type: "string", enum: styles }, H: str, S: str, O: str, B: str, F: str, A: str, W: str,
+    const schema = { type: "object", additionalProperties: false, required: ["style", "photo", "H", "S", "O", "B", "F", "A", "W", "pal", "tip"], properties: { style: { type: "string", enum: styles }, photo: { type: "boolean" }, H: str, S: str, O: str, B: str, F: str, A: str, W: str,
       pal: { type: "object", additionalProperties: false, required: ["bg", "fg", "mute", "ac", "ac2", "fh", "fb"], properties: { bg: hex, fg: hex, mute: hex, ac: hex, ac2: hex, fh: { type: "string", enum: fonts }, fb: { type: "string", enum: fonts } } }, tip: str } };
     const system = ["Du bist Grafikdesigner:in im Online-Druckshop von FS Creative (Österreich). Du entwirfst Druckprodukte für Kund:innen: Texte (Deutsch, österreichische Schreibweise, Du-Form nur wenn passend), Stil und Farbpalette.",
       "Felder: H = Hauptüberschrift (kurz, max. 5 Wörter), S = Unterzeile, O = Datum/Ort/Kerninfo (kurz, sonst leer), B = Fließtext (max. 40 Wörter; bei Visitenkarten/Aufklebern leer), F = Kontakt-/Fußzeile (Zeilen mit \n), A = Störer/Preis/Badge (max. 3 Wörter, sonst leer), W = Website ohne https://.",
       "Für Visitenkarten: H = Name, S = Funktion, F = Telefon\nE-Mail\nWebsite, A = Adresse. Für Folder: B in Abschnitte mit Leerzeile trennen (Titel in erster Zeile).",
       "Erfinde keine konkreten Telefonnummern, Adressen oder Preise, die nicht im Auftrag stehen – nutze dann klar erkennbare Platzhalter wie „+43 …“ oder „www.deine-website.at“.",
-      "Farben: druckfreundlich (CMYK-tauglich, kein Neon außer beim Stil neon), ausreichend Kontrast zwischen bg und fg (fg auf bg gut lesbar), ac = Akzent, ac2 = zweiter Akzent, mute = gedämpfte Textfarbe. Schriften nur aus der Liste.",
-      "Wähle den Stil, der am besten passt: " + styles.map(k => k + " (" + AI_STYLES[k] + ")").join(", ") + ".",
+      "Texte: konkret auf genau diesen Auftrag zugeschnitten, keine Floskeln oder Füllwörter. H kurz und einprägsam (Anlass, Name oder Kernversprechen), S ergänzt H statt es zu wiederholen, O nur mit echten Angaben aus dem Auftrag (Datum, Uhrzeit, Ort), B nennt Nutzen/Programm in kurzen Sätzen, A nur bei echtem Aufhänger (z. B. „Eintritt frei“, „−20 %“, „Neu“).",
+      "Farben: harmonisch und druckfreundlich (CMYK-tauglich, kein Neon außer beim Stil neon). Geh von den Grundfarben des gewählten Stils aus und passe sie an Branche, Anlass und genannte Firmenfarben an (z. B. Bäckerei warm, Technik kühl, Natur/Bio Grüntöne). Höchstens zwei Akzentfarben, fg auf bg sehr gut lesbar (Kontrast mind. 4,5:1), mute ebenfalls lesbar, ac2 harmoniert mit ac. Bei hellem bg dunkle Schrift, bei dunklem bg helle.",
+      "Schriften nur aus der Liste: fh = Überschrift, fb = Fließtext. Schreibschriften (Pacifico, Dancing Script) und schmale Plakatschriften (Bebas Neue, Oswald) nur als fh, nie als fb. fb immer gut lesbar (z. B. Inter, Open Sans, Lato, Nunito, Lora). fh und fb dürfen gleich sein (z. B. minimal), sonst stimmig kombinieren (Serif + Sans).",
+      "photo = true nur, wenn der Auftrag ausdrücklich ein eigenes Foto/Bild erwähnt (z. B. Produktfoto, Foto vom Haus, Team- oder Speisenfotos). Sonst false – dann wird ein reines Typo-Design mit Dekor ohne Bildrahmen gesetzt. Es werden nie Fotos gesucht oder erzeugt.",
+      "Wähle den Stil, der inhaltlich und optisch am besten passt (nur aus dieser Liste): " + styles.map(styleTxt).join(", ") + ".",
       "tip = ein kurzer, konkreter Gestaltungstipp für genau diesen Auftrag (ein Satz).",
       "Lehne Inhalte ab, die illegal, hetzerisch, diskriminierend oder sexuell explizit sind, oder fremde Marken/Logos imitieren – setze dann H auf „Bitte anderen Inhalt wählen“ und alle anderen Texte leer."].join("\n");
     const user = "Produkt: " + (prod ? prod.title : clip(b.product, 60)) + (b.w && b.h ? " · Format " + Math.round(+b.w) + " × " + Math.round(+b.h) + " mm" : "") + "\nAuftrag der Kundin/des Kunden:\n" + brief;
@@ -1865,7 +1871,7 @@ module.exports = function (D) {
       }
       if (p === "/print/api/ai/design") {
         if (limited("ai", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
-        const b = await readJson(req, 4000); const me = await accountMod().current(req);
+        const b = await readJson(req, 12000); const me = await accountMod().current(req);
         const r = await aiDesign(b, me, ip); return J(res, 200, Object.assign({ ok: true }, r));
       }
       if (p === "/print/api/uid") {

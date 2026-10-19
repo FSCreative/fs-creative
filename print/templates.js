@@ -58,6 +58,7 @@
 
   function build(id, ctx) {
     var st = STYLES[id] || STYLES.klar, k = ctx.product, tx = TXT[k] || TXT.flyer, sz = SIZE[k] || SIZE.flyer;
+    if (ctx.noImg && tx.img) tx = Object.assign({}, tx, { img: false });   // KI-Vorschlag ohne eigenes Foto: kein leerer Bildrahmen
     if (ctx.texts) { tx = Object.assign({}, tx); Object.keys(ctx.texts).forEach(function (x) { if (typeof ctx.texts[x] === "string" && "HSOBFAW".indexOf(x) > -1 && x.length === 1) tx[x] = ctx.texts[x]; }); }
     if (ctx.pal) { st = Object.assign({}, st); ["bg", "fg", "mute", "ac", "ac2"].forEach(function (x) { if (/^#[0-9a-f]{6}$/i.test(ctx.pal[x] || "")) st[x] = ctx.pal[x]; }); if (ctx.pal.fh) st.fh = ctx.pal.fh; if (ctx.pal.fb) st.fb = ctx.pal.fb; }
     var pages = [];
@@ -184,12 +185,18 @@
       return els;
     }
     if (tx.O) { els.push(T(m, yl, cw * 0.7, upper(st, tx.O), pS * 0.85, { font: fb, bold: true, color: st.ac, ls: 80 })); yl += textH(tx.O, pS * 0.85, cw * 0.7, 1.16, fb) + m * 0.5; }
-    var hw = tx.logo ? cw * 0.72 : cw;   // Platz für das Logo rechts oben
-    els.push(T(m, yl, hw, H, pH, { font: fh, bold: st.hb, color: st.fg, lh: 1.02 })); yl += textH(H, pH, hw, 1.02, fh) + m * 0.25;
+    var hw = tx.logo ? cw * 0.72 : cw, typo = tx.img === false, pHl = typo ? pH * 1.25 : pH;   // Platz für das Logo rechts oben; ohne Foto größere Überschrift
+    els.push(T(m, yl, hw, H, pHl, { font: fh, bold: st.hb, color: st.fg, lh: 1.02 })); yl += textH(H, pHl, hw, 1.02, fh) + m * 0.25;
     els.push({ t: "rect", x: m, y: yl, w: mn * 0.12, h: Math.max(0.5, mn * 0.01), fill: st.ac }); yl += m * 0.45;
     els.push(T(m, yl, cw, tx.S, pS, { font: fb, color: st.mute, lh: 1.2 })); yl += textH(tx.S, pS, cw, 1.2, fb) + m * 0.6;
     var fH2 = textH(tx.F, pF, cw, 1.4, fb), badge = tx.A && ctx.product !== "rollups", r = Math.min(w, h) * 0.13, bw = badge ? cw - 2 * r - m * 0.5 : cw;   // Fließtext neben dem Störer, nie darunter
     if (tx.img) { var ih2 = Math.max(h * 0.12, (h - m - fH2 - m * 0.8) - yl - (tx.B ? textH(tx.B, pB, bw, 1.35, fb) + m * 0.6 : 0)); els.push({ t: "img", x: m, y: yl, w: cw, h: ih2, label: "Bild" }); yl += ih2 + m * 0.6; }
+    if (typo) {   // Typo-Layout: Infos nach unten, dazwischen ruhiges Kreis-Dekor in den Stilfarben (kein Bildrahmen)
+      var yB = Math.max(yl, h - m - fH2 - m * 0.9 - (tx.B ? textH(tx.B, pB, bw, 1.35, fb) : 0)), gp = yB - yl;
+      if (gp > h * 0.16) { var R = Math.min(gp * 0.42, cw * 0.32), cx = w - m - R * 0.8, cy = yl + gp / 2;
+        els.splice(1, 0, { t: "circle", cx: cx, cy: cy, r: R, fill: st.ac2, opacity: 0.55 }, { t: "circle", cx: cx - R * 0.75, cy: cy + R * 0.55, r: R * 0.32, fill: st.ac, opacity: 0.9 }); }
+      yl = yB;
+    }
     if (tx.B) els.push(T(m, yl, bw, tx.B, pB, { font: fb, color: st.fg, lh: 1.35 }));
     els.push(T(m, h - m - fH2, cw, tx.F, pF, { font: fb, color: st.mute, lh: 1.4 }));
     if (badge) { var by = tx.img ? yl - m * 0.6 : h - m - fH2 - r * 1.3; els.push({ t: "circle", cx: w - m - r * 0.9, cy: by, r: r, fill: st.ac }); els.push(T(w - m - r * 1.9, by - pS * 0.3528 * 0.7, 2 * r, tx.A, pS * 0.8, { font: fh, bold: true, color: "#ffffff", align: "center", lh: 1.1 })); }
@@ -228,15 +235,17 @@
       var x0 = PX(n - 1);  // Titelseite = rechtes Paneel
       if (st.lay === "band" || st.lay === "bold" || st.glow || st.circles) els.push({ t: "rect", x: x0, y: -b, w: pw + b, h: h + 2 * b, fill: st.lay === "bold" ? st.bg : st.ac, opacity: st.glow || st.circles ? 0.18 : 1 });
       var light = st.lay === "band";
-      els.push({ t: "img", x: x0 + m, y: m, w: cw, h: h * 0.42, label: "Bild" });
-      els.push(T(x0 + m, h * 0.42 + m * 1.6, cw, H, pH, { font: fh, bold: st.hb, color: light ? "#ffffff" : st.fg, lh: 1.05 }));
-      els.push(T(x0 + m, h * 0.42 + m * 1.6 + textH(H, pH, cw, 1.05, fh) + m * 0.3, cw, tx.S, pS, { font: fb, italic: st.lay === "frame", color: light ? "#e6f0ff" : st.ac, lh: 1.2 }));
+      var pic = tx.img !== false, ty = pic ? h * 0.42 + m * 1.6 : h * 0.3;   // ohne Foto: Titel höher, Akzentbalken statt Bildrahmen
+      if (pic) els.push({ t: "img", x: x0 + m, y: m, w: cw, h: h * 0.42, label: "Bild" });
+      else els.push({ t: "rect", x: x0 + m, y: ty - m * 1.1, w: cw * 0.28, h: Math.max(1.2, m * 0.14), fill: light ? "#ffffff" : st.ac });
+      els.push(T(x0 + m, ty, cw, H, pH, { font: fh, bold: st.hb, color: light ? "#ffffff" : st.fg, lh: 1.05 }));
+      els.push(T(x0 + m, ty + textH(H, pH, cw, 1.05, fh) + m * 0.3, cw, tx.S, pS, { font: fb, italic: st.lay === "frame", color: light ? "#e6f0ff" : st.ac, lh: 1.2 }));
       els.push({ t: "img", x: x0 + m, y: h - m - h * 0.08, w: cw * 0.45, h: h * 0.08, label: "Logo", dark: light });
       var xb = PX(n - 2);  // Rückseite
       els.push(T(xb + m, h - m - textH(tx.F, pF, cw, 1.45, fb) - Math.max(18, cw * 0.32) - m * 0.5, cw, tx.F, pF, { font: fb, color: st.mute, lh: 1.45 }));
       els.push({ t: "qr", x: xb + m, y: h - m - Math.max(18, cw * 0.32), s: Math.max(18, cw * 0.32), data: "https://" + tx.W, color: dk(st.bg) ? "#ffffff" : "#000000" });
       els.push(T(xb + m, m, cw, tx.A, pS, { font: fh, bold: true, color: st.ac }));
-      if (n > 2) { els.push(T(m, m, cw, "Willkommen", pS * 1.3, { font: fh, bold: st.hb, color: st.fg })); els.push(T(m, m + pS * 0.3528 * 2.2, cw, "Schön, dass du da bist. Bei uns kommt auf den Teller, was die Region gerade zu bieten hat – frisch, ehrlich und mit viel Liebe gekocht.", pB, { font: fb, color: st.fg, lh: 1.45 })); els.push({ t: "img", x: m, y: h * 0.5, w: cw, h: h * 0.4 - m, label: "Bild" }); }
+      if (n > 2) { els.push(T(m, m, cw, "Willkommen", pS * 1.3, { font: fh, bold: st.hb, color: st.fg })); els.push(T(m, m + pS * 0.3528 * 2.2, cw, "Schön, dass du da bist. Bei uns kommt auf den Teller, was die Region gerade zu bieten hat – frisch, ehrlich und mit viel Liebe gekocht.", pB, { font: fb, color: st.fg, lh: 1.45 })); if (tx.img !== false) els.push({ t: "img", x: m, y: h * 0.5, w: cw, h: h * 0.4 - m, label: "Bild" }); }
     } else {
       var parts = tx.B.split("\n\n");
       for (var i = 0; i < n; i++) {
