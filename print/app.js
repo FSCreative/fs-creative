@@ -706,7 +706,15 @@
     return '<ol class="ps-steps" aria-label="Bestellschritte">' + STEPS.map(function (t, i) { var n = i + 1, cur = n === S.step, done = n < S.step; if ((n === 2 || n === 3) && !S.prod) done = false; if (n > 4 && !S.cart.length) done = false;
       return '<li class="' + (done ? "done" : "") + '"' + (cur ? ' aria-current="step"' : "") + '><button type="button" data-go="' + n + '"' + (done ? "" : " disabled") + '><span class="n">' + (done ? "✓" : n) + '</span><span class="t">' + t + "</span></button></li>"; }).join("") + "</ol>";
   }
+  // Jede neue Seite (Start, Produkte, Kategorie, Produkt, Bestellschritt, Konto …) beginnt ganz oben – Optionen ändern lässt die Position, wo sie ist
+  try { history.scrollRestoration = "manual"; } catch (e) {}   // Zurück-Taste: Browser stellt keine alte (falsche) Scrollposition wieder her
+  var lastSig = null;
+  function pageSig() { return [S.view || "", S.step, S.step === 1 ? S.page + "|" + (S.group || "") + "|" + (S.sub || "") : "", S.step >= 2 && S.prod ? S.prod.key : "", S.step === 3 ? S.mode || "" : "", S.view === "konto" && S.acct ? S.acct.tab || "" : ""].join("|"); }
   function render() {
+    var sig = pageSig(), jump = sig !== lastSig; lastSig = sig; render0();
+    if (jump) { try { window.scrollTo({ top: 0, left: 0, behavior: "instant" }); } catch (e) { window.scrollTo(0, 0); } }
+  }
+  function render0() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
     if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks(), newestProds()).map(function (p) { return p.key; })); hqLoad(); return; }
@@ -731,10 +739,10 @@
     [].forEach.call(g.children, function (c) { if (c.classList.contains("seg") || c.classList.contains("wide") || c.classList.contains("full")) end(); else run.push(c); }); end(); }); }
   // Schritte im Browser-Verlauf: Zurück-Taste/Wisch-Geste geht Schritt für Schritt zurück statt aus dem Shop (Upload → Auswahl → Ausführung)
   function stepPush(n, mode) { if (!S.prod || n < 2) return; var st = history.state || {}; if (st.psStep === n && (st.psMode || "") === (mode || "")) return;
-    try { if (!history.state && n === 2) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung
+    try { if (!history.state && n === 2 && /[?&]produkt=/.test(location.search)) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung (sonst neuer Eintrag – Zurück führt zur Startseite)
       else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", location.href); } } catch (e) {} }
   function go(n, nopush) { if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
-    if (!nopush) stepPush(n, n === 3 ? S.mode : ""); S.step = n; S.err = ""; render(); var y = root.getBoundingClientRect().top + window.scrollY - 80; if (Math.abs(window.scrollY - y) > 40) window.scrollTo({ top: Math.max(0, y), behavior: "smooth" }); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
+    if (!nopush) stepPush(n, n === 3 ? S.mode : ""); S.step = n; S.err = ""; render(); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
 
   // ── Startseite: „Was möchtest du heute drucken?“ + Suche, Klassiker (Flyer, Banner), täglich 4 andere Produkte, Kategorien, Designer ──
   function daySeed() { var d = new Date(); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate(); }
