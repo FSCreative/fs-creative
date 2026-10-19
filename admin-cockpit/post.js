@@ -423,7 +423,9 @@ function readerHtml(){
   var canQr=!trashed&&!sent&&!dbox&&(m.replyTo||m.from);
   var qrVal=UI.mqrFor===m.id?(UI.mqr||""):"";
   var qr=canQr?'<div class="qreply"><textarea id="mqr" data-keepfocus="mqr" rows="3" aria-label="Schnell antworten" placeholder="Schnell antworten an '+esc(m.fromName||m.from)+' …">'+esc(qrVal)+'</textarea><div class="qbar"><span class="qh"><span class="kbd">⌘</span><span class="kbd">↵</span> senden · Signatur und Zitat werden angehängt</span><button type="button" class="btn" data-act="mx:reply">Erweitert</button><button type="button" class="btn primary" data-act="mx:qrsend">Senden</button></div></div>':'';
-  var body=m.bodyHtml?frame(m.body||"",m.subject):'<div class="mbody">'+linkify(m.body||m.preview||"")+'</div>';
+  if(m.lite&&!m._loading){ m._loading=true;   // Suchtreffer aus dem Postfach: Inhalt jetzt nachladen
+    F.api("/admin/api/mail-message?account="+encodeURIComponent(accOf(m))+"&folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)).then(function(j){ if(j&&j.ok&&j.message){ var keep={read:m.read,starred:m.starred}; Object.assign(m,j.message,keep); m.lite=false; } else m._err=(j&&j.error)||"Inhalt konnte nicht geladen werden"; m._loading=false; F.render(); }); }
+  var body=m.lite?'<div class="mbody mu">'+(m._err?esc(m._err):"Inhalt wird geladen …")+'</div>':m.bodyHtml?frame(m.body||"",m.subject):'<div class="mbody">'+linkify(m.body||m.preview||"")+'</div>';
   return '<div class="rtool">'+tb+'</div><div class="rin" id="mreadS">'+
     '<h2 class="rsubj">'+esc(m.subject||"(kein Betreff)")+'</h2><div class="rtags">'+tags+'</div>'+
     '<div class="rsender">'+av(sent?m.toName:m.fromName,sent?m.to:m.from,"lg")+

@@ -2566,6 +2566,14 @@ async function handleAdmin(req, res, u, p) {
       return sendGz(req, res, r.ok ? 200 : (r.status === 400 ? 400 : 502), JSON.stringify(r.ok ? Object.assign({ ok: true }, j) : { ok: false, error: j.error || "Suche fehlgeschlagen" }), TYPES[".json"], { "Cache-Control": "no-store" });
     } catch (e) { return send(res, 504, JSON.stringify({ ok: false, error: "Die Suche im Postfach hat zu lange gedauert" }), TYPES[".json"]); }
   }
+  if (p === "/admin/api/mail-message" && req.method === "GET") {   // einzelne Mail komplett (Suchtreffer kommen nur mit Kopfzeilen)
+    if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
+    try {
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/message") + "?account=" + encodeURIComponent(u.searchParams.get("account") || "") + "&folder=" + encodeURIComponent(u.searchParams.get("folder") || "INBOX") + "&uid=" + encodeURIComponent(u.searchParams.get("uid") || ""), { headers: { "x-api-token": MAIL.token }, signal: AbortSignal.timeout(30000) });
+      const j = await r.json().catch(() => ({}));
+      return sendGz(req, res, r.ok ? 200 : 502, JSON.stringify(r.ok ? j : { ok: false, error: j.error || "Mail konnte nicht geladen werden" }), TYPES[".json"], { "Cache-Control": "no-store" });
+    } catch (e) { return send(res, 504, JSON.stringify({ ok: false, error: "Zeitüberschreitung beim Laden der Mail" }), TYPES[".json"]); }
+  }
   if (p === "/admin/api/mail" && req.method === "GET") {
     if (u.searchParams.get("fresh") === "1") MAIL_SNAP.at = 0;
     const m = await mailSnapshot();

@@ -139,6 +139,8 @@ async function startServer(dir, env) {
     const r = await fetch(B + "/admin/api/mail-search?q=" + encodeURIComponent("von:maria Angebot") + "&account=all", { headers: { cookie: COOKIE } }); const j = await r.json();
     assert.strictEqual(r.status, 200, JSON.stringify(j)); assert.strictEqual(j.ok, true); assert.strictEqual(j.messages[0].folder, "Archiv"); assert.strictEqual(M.searches.pop().q, "von:maria Angebot");
     assert.strictEqual((await fetch(B + "/admin/api/mail-search?q=x", { redirect: "manual" })).status, 302, "ohne Anmeldung");
+    const mm = await (await fetch(B + "/admin/api/mail-message?account=fs&folder=Archiv&uid=7", { headers: { cookie: COOKIE } })).json();
+    assert.ok(mm.ok && mm.message.uid === 7 && mm.message.folder === "Archiv" && /Voller Inhalt/.test(mm.message.body), "Suchtreffer beim Öffnen komplett laden");
   });
   await t("Cockpit-Modul „Rechtliches“ wird ausgeliefert", async () => {
     const h = await (await fetch(B + "/admin/neu", { headers: { cookie: COOKIE } })).text(); assert.ok(/\/admin\/neu\/zlegal\.js/.test(h), "Modul eingebunden");
