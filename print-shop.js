@@ -567,7 +567,7 @@ module.exports = function (D) {
     for (const c of CURATED) {
       const ov = s.products[c.key] || {};
       let sku = ov.sku || "";
-      if (!sku) { const ex = items.find(p => c.skus.indexOf(String(p.sku).toLowerCase()) > -1); sku = ex ? ex.sku : (c.rx && (items.find(p => c.rx.test(p.sku) || c.rx.test(p.titlePlural || "") || c.rx.test(p.titleSingle || "")) || {}).sku) || ""; }
+      if (!sku) { let ex = null; for (const k of c.skus) { ex = items.find(p => String(p.sku).toLowerCase() === k); if (ex) break; } sku = ex ? ex.sku : (c.rx && (items.find(p => c.rx.test(p.sku) || c.rx.test(p.titlePlural || "") || c.rx.test(p.titleSingle || "")) || {}).sku) || ""; }
       if (!sku) { out.errors.push(c.title + ": kein passendes Print.com-Produkt gefunden"); continue; }
       try { out.products.push(parseProduct(c, sku, await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller"))); }
       catch (e) { out.errors.push(c.title + " (" + sku + "): " + e.message); }
@@ -1733,6 +1733,8 @@ module.exports = function (D) {
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
   const live = () => process.env.PRINT_SHOP_LIVE === "1" || !!(SETTINGS && SETTINGS.live);   // Railway-Variable oder Schalter im Cockpit
+  const liveReady = async () => { if (!SETTINGS) await settings().catch(() => null); return live(); };   // nach Neustart: Einstellungen erst laden
+  setTimeout(() => { settings().catch(() => {}); }, 0);
   // Ansichtsmodus (PRINT_SHOP_VIEW=1, z. B. für die Mollie-Prüfung): Shop, Preise, AGB öffentlich sichtbar – Bestellen noch gesperrt
   const viewOnly = () => !live() && process.env.PRINT_SHOP_VIEW === "1";
   const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an office@fs-creative.at.";
@@ -2096,6 +2098,6 @@ module.exports = function (D) {
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
   async function proposalValid(orderId) { const o = await store.getOrder(orderId); return !!o && !!REVIEW[o.status]; }
 
-  return { live, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
+  return { live, liveReady, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
 module.exports._bonusCalc = bonusCalc;

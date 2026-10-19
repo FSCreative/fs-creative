@@ -97,8 +97,8 @@ function setAttrValue(html, re, value) {
 }
 
 // Druckshop-Startschalter (PRINT_SHOP_LIVE=1): markierte Blöcke nur dann ausliefern
-function printLiveBlocks(html) {
-  let on = process.env.PRINT_SHOP_LIVE === "1"; try { if (!on && PRINT && PRINT.live) on = PRINT.live(); } catch (e) {}   // auch Schalter im Cockpit
+function printLiveBlocks(html, known) {
+  let on = known === true || process.env.PRINT_SHOP_LIVE === "1"; try { if (!on && PRINT && PRINT.live) on = PRINT.live(); } catch (e) {}   // auch Schalter im Cockpit
   return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "");
 }
 function renderIndex(baseHtml, route) {
@@ -3445,7 +3445,9 @@ const server = http.createServer((req, res) => {
     // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml)
     if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/leistungen" || p === "/leistungen.html" || p === "/sitemap.xml")) {
       const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
-      return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found"); sendGz(req, res, 200, printLiveBlocks(data), TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); });
+      // Shop-Einstellungen (Schalter „live“) erst laden – sonst fehlt die Druckshop-Werbung nach einem Neustart, bis jemand /print öffnet
+      return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found");
+        Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(on => sendGz(req, res, 200, printLiveBlocks(data, on), TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" })); });
     }
     // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
     if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void CHAT.handlePublic(req, res, u, p);
