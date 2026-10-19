@@ -135,6 +135,11 @@ async function startServer(dir, env) {
     const d = await admin("/admin/api/nda/op", { op: "delete", id: Bn.id, confirm: true }); assert.strictEqual(d.ok, true);
     assert.strictEqual((await fetch(B + "/nda/" + tokB)).status, 404); assert.ok(!(await admin("/admin/api/nda/list")).items.some(x => x.id === Bn.id));
   });
+  await t("Mail-Suche im ganzen Postfach: Weiterleitung an den Postfach-Dienst (Token im Header), nur mit Anmeldung", async () => {
+    const r = await fetch(B + "/admin/api/mail-search?q=" + encodeURIComponent("von:maria Angebot") + "&account=all", { headers: { cookie: COOKIE } }); const j = await r.json();
+    assert.strictEqual(r.status, 200, JSON.stringify(j)); assert.strictEqual(j.ok, true); assert.strictEqual(j.messages[0].folder, "Archiv"); assert.strictEqual(M.searches.pop().q, "von:maria Angebot");
+    assert.strictEqual((await fetch(B + "/admin/api/mail-search?q=x", { redirect: "manual" })).status, 302, "ohne Anmeldung");
+  });
   await t("Cockpit-Modul „Rechtliches“ wird ausgeliefert", async () => {
     const h = await (await fetch(B + "/admin/neu", { headers: { cookie: COOKIE } })).text(); assert.ok(/\/admin\/neu\/zlegal\.js/.test(h), "Modul eingebunden");
     const js = await (await fetch(B + "/admin/neu/zlegal.js", { headers: { cookie: COOKIE } })).text(); assert.ok(/label:"Rechtliches"/.test(js) && /1336/.test(js) && /keine Rechtsberatung/.test(js));

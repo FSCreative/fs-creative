@@ -138,6 +138,11 @@ module.exports = function createMocks() {
       }
       if ((mm = p.match(/^\/vies\/(\w\w)\/vat\/(\w+)$/))) { const uid = (mm[1] === "EL" ? "GR" : mm[1]) + mm[2]; return send(res, 200, { isValid: !!state.vies[uid], name: state.vies[uid] ? "Testfirma GmbH" : "", userError: state.vies[uid] ? "VALID" : "INVALID" }); }
       if (p === "/mail/api/send" && m === "POST") { state.mails.push(body); return send(res, 200, { ok: true }); }
+      if (p === "/mail/api/search" && m === "GET") {   // Postfach-Suche: Token nur im Header
+        if (req.headers["x-api-token"] !== "mt" || /token=/.test(req.url)) return send(res, 401, { error: "unauthorized" });
+        const q = u.searchParams.get("q") || ""; state.searches = (state.searches || []).concat([{ q, account: u.searchParams.get("account") }]);
+        return send(res, 200, { ok: true, q, took: 5, partial: false, total: 1, messages: [{ id: "m_alt1", account: "fs", folder: "Archiv", uid: 7, from: "maria@example.com", fromName: "Maria", subject: "Alte Mail: " + q, date: "2025-03-01T09:00:00.000Z", read: true, body: "Text", attachments: [] }] });
+      }
       send(res, 404, { error: "unknown" });
     });
   });

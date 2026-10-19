@@ -2556,6 +2556,16 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/alt" || p === "/admin/alt/") return send(res, 301, "", "text/plain", { Location: "/admin" });
 
   // Nur das Postfach (schnell, ohne Plattform-/Kalenderabrufe). ?etag=… → {same:true}, wenn sich nichts geändert hat.
+  // Suche direkt im Postfach (alle Ordner, auch ältere Mails, Volltext) – über den Postfach-Dienst
+  if (p === "/admin/api/mail-search" && req.method === "GET") {
+    if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
+    const q = String(u.searchParams.get("q") || "").slice(0, 200), acc = String(u.searchParams.get("account") || "all").slice(0, 40);
+    try {
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/search") + "?q=" + encodeURIComponent(q) + "&account=" + encodeURIComponent(acc), { headers: { "x-api-token": MAIL.token }, signal: AbortSignal.timeout(30000) });
+      const j = await r.json().catch(() => ({ error: "HTTP " + r.status }));
+      return sendGz(req, res, r.ok ? 200 : (r.status === 400 ? 400 : 502), JSON.stringify(r.ok ? Object.assign({ ok: true }, j) : { ok: false, error: j.error || "Suche fehlgeschlagen" }), TYPES[".json"], { "Cache-Control": "no-store" });
+    } catch (e) { return send(res, 504, JSON.stringify({ ok: false, error: "Die Suche im Postfach hat zu lange gedauert" }), TYPES[".json"]); }
+  }
   if (p === "/admin/api/mail" && req.method === "GET") {
     if (u.searchParams.get("fresh") === "1") MAIL_SNAP.at = 0;
     const m = await mailSnapshot();

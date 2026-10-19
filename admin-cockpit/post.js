@@ -167,7 +167,7 @@ M.action=function(op,msgs,target){
 };
 
 /* ---------- Zählen, Ansichten ---------- */
-function find(id){ for(var i=0;i<S.messages.length;i++) if(S.messages[i].id===id) return S.messages[i]; return null; }
+function find(id){ for(var i=0;i<S.messages.length;i++) if(S.messages[i].id===id) return S.messages[i]; var x=UI.msr&&UI.msr.list; if(x) for(var j=0;j<x.length;j++) if(x[j].id===id) return x[j]; return null; }
 M.find=find;
 function inboxUnread(k){ return S.messages.filter(function(m){ return !isHidden(m)&&(m.folder||"INBOX")==="INBOX"&&!m.read&&!m.local&&(!k||k==="all"||accOf(m)===k); }).length; }
 M.inboxUnread=inboxUnread;
@@ -199,9 +199,60 @@ function baseView(){
     else if(f==="starred") list=a.filter(function(m){return m.starred;});
     else list=a.filter(function(m){return (m.folder||"INBOX")==="INBOX";}); }
   if(f!=="outbox"&&f.indexOf("f:")!==0) list=list.filter(acctOk);
-  if(UI.mq){ var q=UI.mq.toLowerCase(); list=list.filter(function(m){ return ((m.fromName||"")+" "+(m.from||"")+" "+(m.to||"")+" "+(m.toName||"")+" "+(m.subject||"")+" "+(m.preview||"")+" "+(m.bodyHtml?"":(m.body||""))+" "+(m.bodyHtml?String(m.body||"").replace(/<[^>]+>/g," "):"")).toLowerCase().indexOf(q)>-1; }); }
+  if(UI.mq) list=searchList();
   return list;
 }
+/* ---------- Suche (Wunsch Simon 19.10.2026): alle Ordner, alle Wörter, Umlaute egal, Befehle, dazu Treffer direkt aus dem Postfach (auch ältere Mails, Volltext) ---------- */
+function normS(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ß/g,"ss"); }
+function parseMq(q){ var Q={words:[],from:[],to:[],subj:[],att:false,unread:false,star:false};
+  String(q||"").replace(/(\w+):("([^"]*)"|\S+)|"([^"]*)"|(\S+)/g,function(m,op,v,vq,ph,w){
+    if(op){ var val=(vq!=null?vq:v).trim(), o=op.toLowerCase(), nv=normS(val); if(!val) return m;
+      if(/^(von|from|absender)$/.test(o)) Q.from.push(nv); else if(/^(an|to)$/.test(o)) Q.to.push(nv); else if(/^(betreff|subject)$/.test(o)) Q.subj.push(nv);
+      else if(/^(hat|has)$/.test(o)&&/^(anhang|anhange|attachment)/.test(nv)) Q.att=true; else if(/^(ist|is)$/.test(o)&&/^(ungelesen|unread)$/.test(nv)) Q.unread=true; else if(/^(ist|is)$/.test(o)&&/^(markiert|starred)$/.test(nv)) Q.star=true; else Q.words.push(normS(m));
+      return m; }
+    var t=normS(ph!=null?ph:w).trim(); if(t) Q.words.push(t); return m; });
+  return Q; }
+M.parseMq=parseMq;
+var STX={};
+function stxOf(m){ var k=m.id+"|"+(m.body?m.body.length:0), c=STX[m.id]; if(c&&c.k===k) return c;
+  c=STX[m.id]={k:k,from:normS((m.fromName||"")+" "+(m.from||"")),to:normS((m.toName||"")+" "+(m.to||"")+" "+(m.toList||[]).map(function(a){return (a.name||"")+" "+a.address;}).join(" ")+" "+(m.ccList||[]).map(function(a){return (a.name||"")+" "+a.address;}).join(" ")),subj:normS(m.subject),
+    body:normS((m.preview||"")+" "+(m.bodyHtml?String(m.body||"").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&"):(m.body||""))+" "+(m.attachments||[]).map(function(a){return a.filename;}).join(" "))};
+  return c; }
+function mqMatch(m,Q){ var x=stxOf(m), all=x.from+" "+x.to+" "+x.subj+" "+x.body;
+  if(Q.att&&!(m.attachments&&m.attachments.length)) return false; if(Q.unread&&m.read) return false; if(Q.star&&!m.starred) return false;
+  for(var i=0;i<Q.words.length;i++) if(all.indexOf(Q.words[i])<0) return false;
+  for(i=0;i<Q.from.length;i++) if(x.from.indexOf(Q.from[i])<0) return false;
+  for(i=0;i<Q.to.length;i++) if(x.to.indexOf(Q.to[i])<0) return false;
+  for(i=0;i<Q.subj.length;i++) if(x.subj.indexOf(Q.subj[i])<0) return false;
+  return true; }
+function searchList(){
+  var Q=parseMq(UI.mq), f=UI.mf, inTrash=f==="trash", inSpam=f==="spam", seen={}, out=[];
+  var keep=function(m){ return m&&!m.local&&!m.outbox&&acctOk(m)&&(inTrash?isTrashed(m):!isTrashed(m))&&(inSpam?isSpam(m):(inTrash||!isSpam(m))); };
+  S.messages.forEach(function(m){ if(keep(m)&&mqMatch(m,Q)){ seen[m.id]=1; out.push(m); } });
+  var sr=UI.msr; if(sr&&sr.q===UI.mq.trim()&&sr.list) sr.list.forEach(function(m){ if(!seen[m.id]&&keep(m)&&(!Q.att||(m.attachments&&m.attachments.length))&&(!Q.star||m.starred)){ seen[m.id]=1; out.push(m); } });
+  return out;
+}
+// Server-Suche verzögert starten (nicht bei jedem Tastendruck)
+var msrT=0;
+function serverSearch(){
+  clearTimeout(msrT); var q=String(UI.mq||"").trim(), Q=parseMq(q);
+  if(!q||(!Q.words.some(function(w){return w.length>=2;})&&!Q.from.length&&!Q.to.length&&!Q.subj.length)){ UI.msr=null; return; }
+  if(UI.msr&&UI.msr.q===q&&UI.msr.acc===UI.macct) return;
+  UI.msr={q:q,acc:UI.macct,busy:true,list:null};
+  msrT=setTimeout(function(){ F.api("/admin/api/mail-search?q="+encodeURIComponent(q)+"&account="+encodeURIComponent(UI.macct||"all")).then(function(j){
+    if(!UI.msr||UI.msr.q!==q) return;
+    UI.msr={q:q,acc:UI.macct,busy:false,list:j&&j.ok?(j.messages||[]):[],err:j&&j.ok?"":((j&&j.error)||"Suche im Postfach fehlgeschlagen"),partial:!!(j&&j.partial),took:j&&j.took};
+    if(F.cur&&F.cur()!=="post") return; F.render(); }); },450); }
+M.serverSearch=serverSearch;
+function searchInfo(list){ if(!UI.mq) return "";
+  if(!UI.msr||UI.msr.q!==UI.mq.trim()||UI.msr.acc!==UI.macct) serverSearch();   // z. B. nach Kontowechsel neu im Postfach suchen
+  var sr=UI.msr, n=list.length, more=sr&&sr.list?sr.list.filter(function(m){ return !S.messages.some(function(x){return x.id===m.id;}); }).length:0;
+  return '<div class="msinfo">'+ic("search")+'<span><b>'+n+'</b> Treffer in allen Ordnern'+(UI.macct!=="all"&&multiAcc()?" ("+esc(accInfo(UI.macct).label)+")":"")+'</span>'+
+    (sr&&sr.busy?'<span class="mu"><span class="spin"></span> durchsucht das ganze Postfach …</span>':sr&&sr.err?'<span class="bad-t">'+esc(sr.err)+'</span>':sr&&sr.list?'<span class="mu">Postfach durchsucht'+(more?" · "+more+" ältere dazu":"")+(sr.partial?" · nur teilweise (zu viele Ordner)":"")+'</span>':'<span class="mu">Tipp: von:, an:, betreff:, hat:anhang, ist:ungelesen</span>')+'</div>'; }
+function hl(s){ var Q=UI.mq?parseMq(UI.mq):null, t=esc(s); if(!Q) return t; var ws=Q.words.concat(Q.from,Q.to,Q.subj).filter(function(w){return w.length>=2;}); if(!ws.length) return t;
+  var src=String(s||""), ns=normS(src); if(ns.length!==src.length) return t;   // Umlaute zerlegt → Positionen stimmen nicht, dann ohne Markierung
+  var marks=[]; ws.forEach(function(w){ var i=ns.indexOf(w); while(i>-1){ marks.push([i,i+w.length]); i=ns.indexOf(w,i+w.length); } });
+  if(!marks.length) return t; marks.sort(function(a,b){return a[0]-b[0];}); var out="",p=0; marks.forEach(function(r){ if(r[0]<p) return; out+=esc(src.slice(p,r[0]))+"<mark>"+esc(src.slice(r[0],r[1]))+"</mark>"; p=r[1]; }); return out+esc(src.slice(p)); }
 function isOpen(m){ var rs=replyState(m); return !m.outbox&&!m.draftLocal&&!isSent(m)&&!(rs&&rs.ans); }
 function mailView(){
   var list=baseView(), flt=UI.mfilt||"all";
@@ -263,14 +314,14 @@ function curFolderLabel(){ var f=UI.mf; if(FNAMES[f]) return FNAMES[f]; if(f.ind
 /* ---------- Liste ---------- */
 function rowHtml(m){
   var sent=isSent(m)||!!m.outbox||!!m.draftLocal, nm=sent?m.toName:m.fromName, ad=sent?m.to:m.from;
-  var who=esc(sent?("An: "+(m.toName||m.to||"—")):(m.fromName||m.from||"—"));
+  var who=sent?esc("An: ")+hl(m.toName||m.to||"—"):hl(m.fromName||m.from||"—");
   if(m.draftLocal) who='<span class="bad-t">Entwurf</span> · '+esc(m.to?("An: "+m.to):"(kein Empfänger)");
   if(m.outbox) who+=(m.ob.status==="failed"?' <span class="tag bad">Fehlgeschlagen</span>':' <span class="tag info">Wird gesendet</span>');
   var rs=replyState(m), ics="";
   if(rs&&rs.ans) ics+='<span title="Beantwortet'+(rs.date?" am "+esc(new Date(rs.date).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})):"")+'">'+ic("reply")+'</span>';
   if(rs&&rs.fwd) ics+='<span title="Weitergeleitet">'+ic("forward")+'</span>';
   if(m.attachments&&m.attachments.length) ics+='<span title="'+m.attachments.length+(m.attachments.length===1?" Anhang":" Anhänge")+'">'+ic("clip")+'</span>';
-  var fl=(UI.mf!=="inbox"&&UI.mf.indexOf("f:")!==0&&!m.outbox&&!m.draftLocal&&(m.folder||"INBOX")!=="INBOX"&&!isSent(m)&&!isTrashed(m)&&!isSpam(m))?'<span class="tag grey">'+esc(folderName(m.folder,accOf(m)))+'</span>':'';
+  var fl=UI.mq&&!m.outbox&&!m.draftLocal?'<span class="tag grey">'+esc(isTrashed(m)?"Papierkorb":isSent(m)?"Gesendet":(m.folder||"INBOX")==="INBOX"?"Posteingang":folderName(m.folder,accOf(m)))+'</span>':(UI.mf!=="inbox"&&UI.mf.indexOf("f:")!==0&&!m.outbox&&!m.draftLocal&&(m.folder||"INBOX")!=="INBOX"&&!isSent(m)&&!isTrashed(m)&&!isSpam(m))?'<span class="tag grey">'+esc(folderName(m.folder,accOf(m)))+'</span>':'';
   var canPick=!(m.outbox||m.draftLocal), picked=!!UI.mpick[m.id], qa="";
   if(canPick){
     if(isTrashed(m)) qa='<div class="mqa"><button type="button" data-act="mqa:restore|'+esc(m.id)+'" title="Wiederherstellen" aria-label="Wiederherstellen">'+ic("restore")+'</button><button type="button" class="dg" data-act="mqa:purge|'+esc(m.id)+'" title="Endgültig löschen" aria-label="Endgültig löschen">'+ic("trash")+'</button></div>';
@@ -280,7 +331,7 @@ function rowHtml(m){
   var avBtn=canPick?av(nm,ad,"",' data-act="mpick:'+esc(m.id)+'" role="checkbox" aria-checked="'+picked+'" tabindex="0" title="Auswählen (X)"','<span class="ck">'+ic("check")+'</span>'):av(nm,ad);
   return '<div class="mrow2'+(m.read?"":" unread")+(UI.msel===m.id?" sel":"")+(picked?" picked":"")+(isTrashed(m)?" trashed":"")+'" data-mid="'+esc(m.id)+'" tabindex="0"'+(canPick?' draggable="true"':'')+'>'+avBtn+
     '<div class="mm"><div class="l1"><span class="who">'+who+'</span>'+accPill(m)+'<span class="when" title="'+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'">'+esc(fmtMailDate(m.date))+'</span></div>'+
-    '<div class="l2"><span class="subj">'+esc(m.subject||"(kein Betreff)")+'</span>'+fl+'<span class="ics">'+ics+'</span>'+star+'</div>'+
+    '<div class="l2"><span class="subj">'+hl(m.subject||"(kein Betreff)")+'</span>'+fl+'<span class="ics">'+ics+'</span>'+star+'</div>'+
     (m.preview?'<div class="pre">'+esc(m.preview)+'</div>':'')+'</div>'+qa+'</div>';
 }
 function chipsHtml(list){
@@ -412,7 +463,7 @@ function vPost(){
   bulkHtml()+mobileBar(c)+
   '<div class="mbox'+(UI.msel?" reading":"")+'">'+
     '<nav class="mfold panel" aria-label="Ordner">'+folderPanel()+'</nav>'+
-    '<section class="panel mlistp" aria-label="Nachrichten"><div class="mptr" aria-hidden="true">'+ic("down")+'</div><div class="mchips">'+chipsHtml(list)+'</div><div class="mscroll" id="mlistS">'+listHtml(list)+'</div></section>'+
+    '<section class="panel mlistp" aria-label="Nachrichten"><div class="mptr" aria-hidden="true">'+ic("down")+'</div><div class="mchips">'+chipsHtml(list)+'</div><div class="mscroll" id="mlistS">'+searchInfo(list)+listHtml(list)+'</div></section>'+
     '<section class="panel mread" aria-label="Lesebereich">'+readerHtml()+'</section>'+
   '</div>'+(UI.msel||M.selectedIds().length?'':'<button type="button" class="mfab" data-act="compose" aria-label="Neue Mail">'+ic("edit")+'</button>');
 }
@@ -469,10 +520,10 @@ F.listen("click",".mrow2",function(el,e){
 });
 F.listen("keydown",".mrow2",function(el,e){ if(e.target!==el) return; if(e.key==="Enter"||e.key===" "){ e.preventDefault(); el.click(); } });
 F.listen("keydown",".mav[data-act]",function(el,e){ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); el.click(); } });
-F.listen("input","#msearch,#msearchm",function(el){ UI.mq=el.value; UI.mshow=150; F.render(); });
+F.listen("input","#msearch,#msearchm",function(el){ UI.mq=el.value; UI.mshow=150; serverSearch(); F.render(); });
 F.listen("keydown","#msearch,#msearchm",function(el,e){ if(e.key==="Escape"){ e.stopPropagation(); UI.mq=""; el.value=""; F.render(); var s=document.getElementById("msearch"); if(s) s.blur(); } });
 F.listen("input","#mqr",function(el){ UI.mqr=el.value; UI.mqrFor=UI.msel; });
-F.action("msearchx",function(){ UI.mq=""; F.render(); var s=document.getElementById("msearch"); if(s) s.focus(); });
+F.action("msearchx",function(){ UI.mq=""; UI.msr=null; F.render(); var s=document.getElementById("msearch"); if(s) s.focus(); });
 
 /* ---------- Navigation in der Ansicht ---------- */
 F.action("mfolder",function(k){ if(k!==UI.mf){ UI.mf=k; UI.mfilt="all"; UI.mpick={}; UI.msel=null; UI.mlistTop=0; UI.mshow=150; } F.closeModal(); F.render(); });
@@ -903,6 +954,11 @@ F.css([
 ".mchips .sp{flex:1}",".mchips .cn{font-family:var(--f-mono);font-size:11.5px;opacity:.75}",
 ".mchips .ci svg{width:13px;height:13px;vertical-align:-2px}",
 ".mscroll{overflow-y:auto;flex:1;min-height:0}",
+".msinfo{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-2);background:var(--panel)}",
+".msinfo svg{width:14px;height:14px;opacity:.7}.msinfo .mu{color:var(--ink-3)}",
+".msinfo .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--acc,#2f6bff);border-radius:50%;animation:msspin .8s linear infinite;vertical-align:-1px}",
+"@keyframes msspin{to{transform:rotate(360deg)}}",
+".mrow2 mark{background:rgba(255,200,0,.35);color:inherit;border-radius:3px;padding:0 1px}",
 ".mgrp{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:10px 14px 4px;position:sticky;top:0;background:var(--panel);z-index:1}",
 ".mrow2{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;padding:10px 12px 10px 14px;border-bottom:1px solid var(--line);cursor:pointer;position:relative;touch-action:pan-y;background:var(--panel);transition:transform .15s}",
 ".mrow2:hover{background:var(--sunk)}",
