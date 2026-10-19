@@ -372,21 +372,28 @@
   // ── Aufpreise neben den Optionen („+ 4,20 €“): vom Server (/print/api/deltas), nur für gerade sichtbare Optionen, zwischengespeichert ──
   var DLT = {}, DLQ = {}, dlT = 0, dlRun = 0, dlJobs = [];
   function dlBase() { return S.prod && S.price && !S.priceBusy && S.step === 2 ? JSON.stringify([cfgOf(), S.price.pm || "", S.ctype, S.customer.country || S.country, S.customer.zip || "", S.voucher || ""]) : ""; }
+  // slug „@u“ = Produktionszeit (Standard/Schnell/Express): zusätzlich der Liefertermin
+  function dShort(iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "short" }) : ""; }
   function dlTxt(slug, val) {
-    var b = dlBase(), d = b && DLT[b + "|" + slug + "|" + val]; if (!d) return "";
-    var v = S.ctype === "company" ? d.net : d.gross; if (Math.abs(v) < 0.05) return '<span class="ps-dl z">± 0 €</span>';
-    return '<span class="ps-dl' + (v < 0 ? " m" : "") + '">' + (v > 0 ? "+ " : "− ") + eur(Math.abs(v)) + "</span>";
+    var b = dlBase(); if (!b) return ""; var d = DLT[b + "|" + slug + "|" + val], u = slug === "@u", cur = u && val === S.urgency;
+    var dt = u ? (cur ? S.price && S.price.deliveryDate : d && d.date) : "", dh = dt ? '<span class="ps-dl d">' + esc(dShort(dt)) + "</span>" : "";
+    if (cur || !d) return dh;
+    var v = S.ctype === "company" ? d.net : d.gross, ph = Math.abs(v) < 0.05 ? (u ? "" : '<span class="ps-dl z">± 0 €</span>') : '<span class="ps-dl' + (v < 0 ? " m" : "") + '">' + (v > 0 ? "+ " : "− ") + eur(Math.abs(v)) + "</span>";
+    return dh + (dh && ph ? " · " : "") + ph;
   }
-  function dlSpan(key, x) { if (key.indexOf("prop:") !== 0 || x.off) return ""; var sl = key.slice(5); return '<span class="ps-dlw" data-dl="' + esc(sl + "|" + x.val) + '">' + dlTxt(sl, x.val) + "</span>"; }
+  function dlSpan(key, x) { if (x.off) return ""; var sl = key === "urgency" ? "@u" : key.indexOf("prop:") === 0 ? key.slice(5) : ""; if (!sl) return ""; return '<span class="ps-dlw" data-dl="' + esc(sl + "|" + x.val) + '">' + dlTxt(sl, x.val) + "</span>"; }
   function dlPaint() { [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { var v = el.getAttribute("data-dl"), i = v.indexOf("|"), h = dlTxt(v.slice(0, i), v.slice(i + 1)); if (el.innerHTML !== h) el.innerHTML = h; }); }
   function dlKick() { clearTimeout(dlT); dlT = setTimeout(dlLoad, 350); }
   function dlLoad() {
     var b = dlBase(); if (!b) return; var want = {};
     [].forEach.call(root.querySelectorAll("[data-dl]"), function (el) { if (!el.parentNode.getClientRects().length) return;   // nur Sichtbares (nicht in eingeklappten Bereichen; der leere Platzhalter selbst ist unsichtbar)
       var v = el.getAttribute("data-dl"), i = v.indexOf("|"), slug = v.slice(0, i), val = v.slice(i + 1), k = b + "|" + slug + "|" + val;
-      if (k in DLT || DLQ[k] || String(S.sel[slug]) === val) return; (want[slug] = want[slug] || []).push(val); });
+      if (k in DLT || DLQ[k] || (slug === "@u" ? val === S.urgency : String(S.sel[slug]) === val)) return; (want[slug] = want[slug] || []).push(val); });
+    if (kind() !== "textile" && S.prod.urgency.length > 1) S.prod.urgency.forEach(function (u) { var k = b + "|@u|" + u.slug; if (u.slug === S.urgency || k in DLT || DLQ[k]) return; var l = want["@u"] = want["@u"] || []; if (l.indexOf(u.slug) < 0) l.push(u.slug); });   // Liefertermine immer (auch ausgeblendete Stufen)
     Object.keys(want).forEach(function (slug) { var alts = [];
-      want[slug].slice(0, 12).forEach(function (val) { var k = b + "|" + slug + "|" + val, ch = resolveWith(slug, val); if (ch === null) { DLT[k] = false; return; }
+      want[slug].slice(0, 12).forEach(function (val) { var k = b + "|" + slug + "|" + val;
+        if (slug === "@u") { DLQ[k] = 1; alts.push({ k: val, sel: Object.assign({}, S.sel), urgency: val }); return; }
+        var ch = resolveWith(slug, val); if (ch === null) { DLT[k] = false; return; }
         var sel = Object.assign({}, S.sel, ch); sel[slug] = val; DLQ[k] = 1; alts.push({ k: val, sel: sel }); });
       if (alts.length) dlJobs.push({ b: b, slug: slug, alts: alts, cfg: Object.assign(cfgOf(), { pm: S.price.pm || S.pm || "auto", country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }) }); });
     dlNext(); dlNext();
@@ -395,7 +402,7 @@
     if (dlRun >= 2 || !dlJobs.length) return; var j = dlJobs.shift(); if (j.b !== dlBase()) { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); dlNext(); return; }   // Auswahl hat sich inzwischen geändert
     dlRun++;
     api("/print/api/deltas", Object.assign({}, j.cfg, { alts: j.alts })).then(function (r) {
-      j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k, x = r && r.ok && r.d ? r.d[a.k] : null; delete DLQ[k]; DLT[k] = x && !x.off && isFinite(x.net) ? x : false; }); dlPaint();
+      j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k, x = r && r.ok && r.d ? r.d[a.k] : null; delete DLQ[k]; DLT[k] = x && !x.off && isFinite(x.net) ? x : false; }); dlPaint(); if (j.slug === "@u") urRefresh();
     }).catch(function () { j.alts.forEach(function (a) { delete DLQ[j.b + "|" + j.slug + "|" + a.k]; }); }).then(function () { dlRun--; dlNext(); });
   }
   function ddRow(key, x, cur, zi) {
@@ -410,7 +417,7 @@
     DDI[key] = items;
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
     if (items.length <= 4 && key !== "copies") return '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
-      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel ? "" : dlSpan(key, x)) + "</button>" +
+      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '><b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel && key !== "urgency" ? "" : dlSpan(key, x)) + "</button>" +
         (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
     var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + '</span><i aria-hidden="true">▾</i></button>';
     if (!open) return btn;
@@ -573,7 +580,7 @@
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
         if (j.ok) { S.undo = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
-        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); }
+        if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
       }).catch(function () { if (seq !== pSeq) return; S.priceBusy = false; S.priceErr = "Keine Verbindung"; renderPrice(); });
@@ -916,9 +923,36 @@
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></label>'; }
-    var ur = p.urgency.length > 1 ? '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + '"><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
-      ddHtml("urgency", "Produktion", p.urgency.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) + '<span class="ps-td">Bestimmt den Liefertermin rechts.</span></div>' : "";
+    var ur = urTile(p);
     return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + "</div>" + ur + motHtml() + "</div></section>";
+  }
+  // Produktion: Schnell/Express nur zeigen, wenn sie wirklich früher liefern als eine günstigere Stufe (Termine kommen über /print/api/deltas)
+  var UR_ORD = ["standard", "quick", "urgent"];
+  function urState() {
+    var p = S.prod, b = dlBase(), D = {}, all = !!b;
+    p.urgency.forEach(function (u) { var dt = u.slug === S.urgency ? S.price && S.price.deliveryDate : b && (DLT[b + "|@u|" + u.slug] || {}).date; if (dt) D[u.slug] = dt; else all = false; });
+    var hid = [];
+    if (all) p.urgency.forEach(function (u) { var i = UR_ORD.indexOf(u.slug); if (i > 0 && UR_ORD.slice(0, i).some(function (c) { return D[c] && D[c] <= D[u.slug]; })) hid.push(u.slug); });
+    else if (S.urLast && S.urLast.key === p.key) hid = S.urLast.hid.filter(function (x) { return x !== S.urgency; });   // bis die neuen Termine da sind: letzte Einschätzung
+    if (all) S.urLast = { key: p.key, hid: hid };
+    return { D: D, hid: hid, all: all };
+  }
+  function urTile(p) {
+    if (kind() === "textile" || p.urgency.length < 2) return "";
+    var st = urState(), vis = p.urgency.filter(function (u) { return st.hid.indexOf(u.slug) < 0; }), nm = function (sl) { return (p.urgency.filter(function (u) { return u.slug === sl; })[0] || {}).name || sl; };
+    if (vis.length === 1) return '<div class="ps-tile" data-urtile><span class="ps-tl">Produktion</span><div class="ps-uronly"><b>' + esc(vis[0].name) + "</b>" + (st.D[vis[0].slug] ? "<span>Lieferung voraussichtlich " + esc(deDate(st.D[vis[0].slug])) + "</span>" : "") + "</div>" +
+      '<span class="ps-td">Eine schnellere Produktion (' + esc(st.hid.map(nm).join(" oder ")) + ") gibt es für diese Ausführung nicht – " + esc(vis[0].name) + " ist hier bereits der früheste Liefertermin.</span></div>";
+    return '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + '" data-urtile><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
+      ddHtml("urgency", "Produktion", vis.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) +
+      '<span class="ps-td">' + (st.hid.length ? esc(st.hid.map(nm).join(" und ")) + " bringt hier keinen früheren Liefertermin und ist deshalb ausgeblendet." : "Bestimmt den Liefertermin rechts.") + "</span></div>";
+  }
+  // Neue Termine da: Kachel aktualisieren; gewählte Stufe ohne früheren Termin → automatisch auf die günstigere mit gleichem Termin
+  function urRefresh() {
+    if (S.step !== 2 || !S.prod) return; var st = urState();
+    if (st.all && st.hid.indexOf(S.urgency) > -1) { var cur = st.D[S.urgency], to = UR_ORD.filter(function (c) { return st.D[c] && st.D[c] <= cur; })[0];
+      if (to && to !== S.urgency) { var from = S.urgency; S.urgency = to; toast("„" + ((S.prod.urgency.filter(function (u) { return u.slug === from; })[0] || {}).name || from) + "“ bringt hier keinen früheren Liefertermin – wir haben die günstigere Produktion gewählt."); render(); loadPrice(); return; } }
+    var el = root.querySelector("[data-urtile]"); if (!el || S.dd === "urgency") return; var h = urTile(S.prod); if (el.outerHTML === h) return;
+    var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); }
   }
   function qtyHtml(p) {
     var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);

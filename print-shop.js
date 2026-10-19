@@ -952,7 +952,11 @@ module.exports = function (D) {
     const list = netOf(buy), net0 = disc(list), vat0 = r2(net0 * tax.rate / 100);
     // Rabatte (Bonus, Kundenrabatt, Gutschein) dürfen die Mindestmarge nach Gebühr nicht unterschreiten
     const net = Math.max(net0, Math.ceil(floorA(buy) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
-    return { anchor: ancGross ? r2(ancGross) : null, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    // Welche Regel hat den Preis bestimmt? (für die Marge-Übersicht im Cockpit)
+    const rule = (b => { const f = floorA(b); if (ancNet) return ancNet >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
+      const up = b.product * (1 + markup * bulkF(b) / 100), mk = Math.max(up, b.product + minM) + b.shipping; if (f >= mk) return "floor"; if (b.product + minM > up) return "minEur";
+      return ov.markupPct != null ? "product" : bulkF(b) < 1 ? "bulk" : "markup"; })(buy);
+    return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
   }
   const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
@@ -1992,11 +1996,11 @@ module.exports = function (D) {
         const country = String(b.country || "AT").toUpperCase(), zip0 = String(b.zip || "").trim(), zip = COUNTRIES[country] && PLZ[country].test(zip0) ? zip0 : "";
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
-        const run = sel => { const n = normalizeSel(prod, Object.assign({}, b, { sel })); n.quick = true; n.low = true; return quote(prod, n, country, zip, cust); };
+        const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
         let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {} }); }
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
         await Promise.all([0, 1].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
-          try { const q = await run(a.sel); d[k] = { net: r2(q.net - base.net), gross: r2(q.gross - base.gross) }; } catch (e) { d[k] = { off: e.status === 400 }; } } }));
+          try { const q = await run(a.sel, a.urgency); d[k] = { net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }; } catch (e) { d[k] = { off: e.status === 400 }; } } }));
         return J(res, 200, { ok: true, d });
       }
       if (p === "/print/api/ai/design") {
@@ -2075,6 +2079,43 @@ module.exports = function (D) {
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok") };
   }
+  // ── Marge-Übersicht (Cockpit): Beispielrechnungen der kuratierten Produkte (Bestseller-Ausführung, Privatkunde, Lieferung AT) + echte Bestellungen ──
+  let MG = null;
+  const MG_Q = { flat: [250, 1000, 5000], banner: [1, 5], promo: [100, 500, 1000], textile: [10, 50] };
+  function mgCases(p) {
+    const ok = n => p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
+    const T = p.tiers || []; let qs = (MG_Q[p.kind] || MG_Q.flat).filter(ok); if (qs.length < 2 && p.kind !== "textile") qs = [T[0], T[Math.min(T.length - 1, 3)], T[T.length - 1] <= 5000 ? T[T.length - 1] : T[Math.min(T.length - 1, 5)]].filter((n, i, a) => n && a.indexOf(n) === i);
+    if (p.key === "rollups" || p.key === "pvc-banner" || p.key === "mesh-banner" || p.key === "bauzaun") qs = [1, 5].filter(ok).length ? [1, 5].filter(ok) : qs;
+    const custom = p.custom ? { w: p.custom.unit === "cm" ? 200 : 100, h: p.custom.unit === "cm" ? 100 : 100 } : undefined;
+    if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || [])[Math.min(3, (p.sizes || []).length - 1)]; if (!m || !sz) return [];
+      return [Math.max(10, m.min), 50].filter((n, i, a) => a.indexOf(n) === i).map(n => ({ copies: n, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: n } } })); }
+    return qs.map(n => ({ copies: n, custom, sel: {} }));
+  }
+  async function marginsRun() {
+    if (MG && MG.running) return; const s = await settings(), cat = await catalog(false);
+    const prods = CURATED.map(c => productOf(cat, c.key, s)).filter(Boolean), cases = [];
+    prods.forEach((p, pi) => mgCases(p).forEach(x => cases.push([p, x, pi])));
+    MG = { running: true, at: nowIso(), done: 0, total: cases.length, rows: [] }; let i = 0;
+    await Promise.all([0, 1].map(async () => { while (i < cases.length) { const [p, inp, pi] = cases[i++];
+      try { const n = normalizeSel(p, inp); n.low = true; const q = await quote(p, n, "AT", "", { company: false });
+        const lab = (n.labels || []).filter(l => /format|größe|material|papier|druck$|banner|system/i.test(l[0])).map(l => l[1]).slice(0, 3).join(" · ");
+        MG.rows.push({ o: pi, key: p.key, title: p.title, copies: n.copies, label: clip(lab, 140), pm: q.pm || "", product: q.purchase.product, shipping: q.purchase.shipping, purchase: q.purchase.total, net: q.net, gross: q.gross, fee: q.payFee, margin: q.margin, pct: q.net ? r2(q.margin / q.net * 100) : 0, rule: q.rule, anchor: q.anchor }); }
+      catch (e) { MG.rows.push({ o: pi, key: p.key, title: p.title, copies: inp.copies, error: clip(e.message, 120) }); }
+      MG.done++; } })).catch(e => log("Marge-Übersicht:", e.message));
+    MG.rows.sort((a, b) => a.o - b.o || a.copies - b.copies); MG.running = false; MG.at = nowIso();
+  }
+  async function marginsState() {
+    const s = await settings(), c = cfg(), fee = payFee(), orders = (await store.listOrders()).filter(o => BONUS_COUNTS[o.status] && o.price && o.price.purchase);
+    const sum = l => l.reduce((a, o) => { a.n++; a.net += +o.price.net || 0; a.purchase += +o.price.purchase.total || 0; a.fee += +o.price.payFee || 0; a.margin += +o.price.margin || 0; return a; }, { n: 0, net: 0, purchase: 0, fee: 0, margin: 0 });
+    const mon = today().slice(0, 7), d30 = new Date(Date.now() - 30 * 864e5).toISOString();
+    const r = x => Object.keys(x).reduce((o, k) => { o[k] = k === "n" ? x[k] : r2(x[k]); return o; }, {});
+    return { ok: true, rules: { markupPct: s.markupPct != null ? s.markupPct : c.markup, minMarginEur: s.minMarginEur != null ? s.minMarginEur : c.minMargin, minMarginPct: s.minMarginPct != null ? s.minMarginPct : 10,
+        anchorMinPct: s.anchorMinPct != null ? +s.anchorMinPct : 5, anchorGap: s.anchorGap != null ? s.anchorGap : 2, anchors: Object.keys(s.anchors || {}).length, bulkFrom: s.bulkFrom != null ? +s.bulkFrom : 150, bulkTo: s.bulkTo != null ? +s.bulkTo : 1500, bulkFactor: s.bulkFactor != null ? +s.bulkFactor : 0.4,
+        feePct: fee.pct, feeFix: fee.fix, proCheck: PRO_CHECK_GROSS, groupMargin: Object.keys(s.groupMargin || {}).filter(k => s.groupMargin[k] != null).map(k => ({ name: groupName(k), pct: s.groupMargin[k] })),
+        overrides: Object.keys(s.products || {}).filter(k => s.products[k] && s.products[k].markupPct != null).map(k => ({ key: k, title: (CURATED.find(x => x.key === k) || {}).title || k, pct: s.products[k].markupPct })) },
+      job: MG ? { running: MG.running, at: MG.at, done: MG.done, total: MG.total } : null, rows: MG ? MG.rows.slice().sort((a, b) => a.o - b.o || a.copies - b.copies) : [],
+      orders: { month: r(sum(orders.filter(o => String(o.createdAt || "").slice(0, 7) === mon))), d30: r(sum(orders.filter(o => String(o.createdAt || "") >= d30))), all: r(sum(orders)) } };
+  }
   async function adminState() {
     const c = cfg(), s = await settings();
     const orders = await store.listOrders();
@@ -2109,6 +2150,10 @@ module.exports = function (D) {
   async function handleAdmin(req, res, u, p) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
+      if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
+        if (cfg().pcKey && ((req.method === "POST" && (await readJson(req, 1000)).op === "run") || !MG || (!MG.running && Date.now() - Date.parse(MG.at) > 12 * 3600e3))) marginsRun().catch(e => { if (MG) MG.running = false; log("Marge-Übersicht:", e.message); });
+        return J(res, 200, await marginsState());
+      }
       if (p === "/admin/api/print/newsletter") return await nlMod().handleAdmin(req, res, p, J, readJson);
       if (p === "/admin/api/print/customers") {
         const A = accountMod();

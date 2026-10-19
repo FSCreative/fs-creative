@@ -32,12 +32,13 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
-  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["marge","Marge"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
   if(FILTER==="kunden") return head+stat+tabs+customers();
   if(FILTER==="gutscheine") return head+stat+tabs+voucherView();
   if(FILTER==="newsletter") return head+stat+tabs+nlView();
+  if(FILTER==="marge") return head+stat+tabs+mgView();
   var L=list();
   return head+stat+tabs+'<section class="panel">'+(L.length?'<div class="pr-list">'+L.map(row).join("")+'</div>':'<div class="empty">'+(FILTER==="review"?"Nichts zu prüfen.":"Keine Aufträge.")+'</div>')+'</section>';
 }
@@ -85,7 +86,7 @@ function detail(j){
 function openOrder(id){ CUR=id; F.api("/admin/api/print/order?id="+encodeURIComponent(id)).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.openDrawer(detail(j)); }); }
 function op(body,msg){ F.toast("Bitte warten …"); return F.api("/admin/api/print/op",{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.toast(msg); load(true); if(j.order) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); }); }
 F.action("prreload",function(){ load(true); });
-F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); });
+F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); if(v==="marge") loadMg(); });
 // ── Kunden: Liste, Umsatz, Bonusstufe, eigener Rabatt ──
 var CU=null, CUQ="", VO=null;
 function loadCust(){ F.api("/admin/api/print/customers").then(function(j){ CU=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",customers:[]}; F.render(); }); }
@@ -200,6 +201,39 @@ F.action("prsoreset",function(sku){ soOp({op:"set",sku:sku,on:null},"Folgt wiede
 F.action("prsoprice",function(sku){ var out=document.querySelector('[data-soprice="'+sku+'"]'); if(out) out.textContent="…"; F.api("/admin/api/print/sortiment",{body:{op:"preview",sku:sku}}).then(function(j){ var t=j&&j.ok?j.copies+" Stk. ab "+eur(j.gross)+" brutto (Einkauf "+eur(j.purchase)+", Marge "+eur(j.margin)+")":"kein Preis: "+((j&&j.error)||"Fehler"); if(out) out.textContent=t; else F.toast(t,!(j&&j.ok)); }); });
 // ── Newsletter: wöchentlich montags, Double-Opt-in; Ausgabe bearbeiten, Vorschau, Testmail, Versand (automatisch nur mit Schalter) ──
 var NL=null, NLPV="";
+// ── Marge: wie rechnet der Shop, was bleibt pro Auftrag (Beispiele) und in echten Bestellungen ──
+var MG=null, mgT=0;
+function loadMg(run){ clearTimeout(mgT); F.api("/admin/api/print/margins",run?{body:{op:"run"}}:undefined).then(function(j){ MG=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler"}; if(FILTER==="marge"){ F.render(); if(MG.ok&&MG.job&&MG.job.running) mgT=setTimeout(loadMg,2500); } }); }
+var MG_RULE={ anchor:["Mitbewerber","Preis knapp unter dem Mitbewerberpreis (druck.at & Co.)"], markup:["Aufschlag","Standard-Aufschlag auf den Einkauf"], bulk:["Mengenrabatt","großer Auftrag – Aufschlag automatisch reduziert"], floor:["Mindestmarge %","Mindestmarge nach Zahlungsgebühr greift"], minEur:["Mindestmarge €","kleiner Auftrag – Mindestbetrag greift"], category:["Kategorie","Ziel-Marge der Kategorie"], product:["Produkt","eigener Aufschlag für dieses Produkt"] };
+function mgView(){
+  if(!MG){ loadMg(); return '<section class="panel"><div class="empty">Lade …</div></section>'; }
+  if(!MG.ok) return '<div class="notice">'+esc(MG.error)+'</div>';
+  var R=MG.rules, pc=function(v){ return String(v).replace(".",",")+" %"; }, O=MG.orders;
+  var css='<style>.mg-t{width:100%;border-collapse:collapse;font-size:13.5px}.mg-t th{text-align:left;font-weight:600;color:var(--muted,#8a8f98);font-size:12px;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}.mg-t td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}.mg-t td.num,.mg-t th.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.mg-t tr.first td{border-top:2px solid var(--line)}.mg-t .lab{color:var(--muted,#8a8f98);font-size:12px}.mg-g{color:#30d158;font-weight:700}.mg-w{color:#ff9f0a;font-weight:700}.mg-k{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.mg-k>div{padding:12px 14px;border:1px solid var(--line);border-radius:12px}.mg-k b{display:block;font-size:20px}.mg-k span{font-size:12px;color:var(--muted,#8a8f98)}.mg-r{margin:0;padding-left:18px;display:grid;gap:6px;line-height:1.45}</style>';
+  var rules='<section class="panel"><div class="panel-h"><h2>So rechnet der Shop</h2><span class="muted">ändern unter „Preise &amp; Einstellungen“</span></div><div class="panel-b"><ol class="mg-r">'+
+    '<li><b>Aufschlag '+pc(R.markupPct)+'</b> auf den Print.com-Produktpreis (netto). Der Versand wird zum Einkaufspreis weiterverrechnet – daran verdienst du nichts, er ist aber im Endpreis „inkl. Versand“ enthalten.</li>'+
+    '<li><b>Mindestmarge</b>: mindestens '+eur(R.minMarginEur)+' bzw. '+pc(R.minMarginPct)+' auf den Einkauf – immer <b>nach</b> der Zahlungsgebühr ('+pc(R.feePct)+' + '+eur(R.feeFix)+', Kreditkarte gerechnet).</li>'+
+    '<li><b>Mitbewerberpreise</b> ('+R.anchors+' Produkte): Gibt es einen Vergleichspreis, liegt dein Preis '+eur(R.anchorGap)+' brutto darunter – die Marge darf dafür bis auf '+pc(R.anchorMinPct)+' sinken.</li>'+
+    '<li><b>Große Aufträge</b>: Ab '+eur(R.bulkFrom)+' Einkauf sinkt der Aufschlag schrittweise, bei '+eur(R.bulkTo)+' auf '+pc(Math.round(R.markupPct*R.bulkFactor*10)/10)+' – damit 10.000 Flyer konkurrenzfähig bleiben.</li>'+
+    (R.groupMargin.length?'<li><b>Ziel-Marge je Kategorie</b>: '+R.groupMargin.map(function(g){ return esc(g.name)+" "+pc(g.pct); }).join(" · ")+'</li>':'')+
+    (R.overrides.length?'<li><b>Eigener Aufschlag</b>: '+R.overrides.map(function(g){ return esc(g.title)+" "+pc(g.pct); }).join(" · ")+'</li>':'')+
+    '<li><b>Rabatte</b> (Bonusprogramm, Kundenrabatt, Gutscheine wie WILLKOMMEN) gehen von deiner Marge ab – aber nie unter die Mindestmarge.</li>'+
+    '<li><b>Profi-Datencheck</b>: '+eur(R.proCheck)+' brutto je Warenkorb – zusätzlicher Ertrag für deine Arbeitszeit.</li></ol></div></section>';
+  var ord='<section class="panel"><div class="panel-h"><h2>Echte Bestellungen</h2><span class="muted">bezahlt bzw. in Arbeit · Einkauf laut Kalkulation bei Bestellung</span></div><div class="panel-b"><div class="mg-k">'+
+    [["Dieser Monat",O.month],["Letzte 30 Tage",O.d30],["Gesamt",O.all]].map(function(x){ var v=x[1]; return '<div><span>'+x[0]+' · '+v.n+' Bestellung'+(v.n===1?"":"en")+'</span><b class="'+(v.margin>0?"mg-g":"")+'">'+eur(v.margin)+'</b><span>Gewinn von '+eur(v.net)+' Umsatz netto'+(v.net?' ('+pc(Math.round(v.margin/v.net*1000)/10)+')':'')+'</span></div>'; }).join("")+'</div></div></section>';
+  var J0=MG.job, rows=MG.rows||[], ok=rows.filter(function(r){ return !r.error; });
+  var avg=ok.length?ok.reduce(function(a,r){ return a+r.pct; },0)/ok.length:0, last="";
+  var tbl=rows.length?'<div style="overflow-x:auto"><table class="mg-t"><thead><tr><th>Produkt</th><th class="num">Menge</th><th class="num">Einkauf</th><th class="num">Verkauf netto</th><th class="num">Gebühr</th><th class="num">Gewinn</th><th class="num">Marge</th><th>Regel</th></tr></thead><tbody>'+rows.map(function(r){ var f=r.key!==last; last=r.key;
+      if(r.error) return '<tr class="'+(f?"first":"")+'"><td>'+(f?'<b>'+esc(r.title)+'</b>':'')+'</td><td class="num">'+esc(r.copies)+'</td><td colspan="6" class="muted small">'+esc(r.error)+'</td></tr>';
+      var ru=MG_RULE[r.rule]||[r.rule||"–",""];
+      return '<tr class="'+(f?"first":"")+'"><td>'+(f?'<b>'+esc(r.title)+'</b><div class="lab">'+esc(r.label)+'</div>':'')+'</td><td class="num">'+Number(r.copies).toLocaleString("de-AT")+'</td><td class="num" title="Produkt '+eur(r.product)+' + Versand '+eur(r.shipping)+'">'+eur(r.purchase)+'</td><td class="num">'+eur(r.net)+'</td><td class="num">'+eur(r.fee)+'</td><td class="num '+(r.pct<8?"mg-w":"mg-g")+'">'+eur(r.margin)+'</td><td class="num">'+pc(Math.round(r.pct*10)/10)+'</td><td title="'+esc(ru[1])+'">'+esc(ru[0])+'</td></tr>'; }).join("")+'</tbody></table></div>':'';
+  var ex='<section class="panel"><div class="panel-h"><h2>Was bleibt pro Auftrag?</h2><span class="muted">Bestseller-Ausführung · Privatkunde · Lieferung AT · ohne Rabatte</span>'+(J0&&!J0.running?'<button class="btn" data-act="mgrun">Neu berechnen</button>':'')+'</div><div class="panel-b">'+
+    (J0&&J0.running?'<p class="muted">⏳ Berechne mit Live-Preisen von Print.com … '+J0.done+' / '+J0.total+'</p>':'')+
+    (ok.length&&!(J0&&J0.running)?'<div class="mg-k" style="margin-bottom:12px"><div><span>Ø Marge in den Beispielen</span><b>'+pc(Math.round(avg*10)/10)+'</b><span>vom Nettoverkaufspreis, nach Gebühr</span></div><div><span>Gewinn je Beispiel</span><b>'+eur(Math.min.apply(null,ok.map(function(r){ return r.margin; })))+' – '+eur(Math.max.apply(null,ok.map(function(r){ return r.margin; })))+'</b><span>kleinster bis größter Auftrag</span></div></div>':'')+
+    tbl+'<p class="muted small" style="margin-top:10px">Gewinn = Verkauf netto − Einkauf (Produkt + Versand) − Zahlungsgebühr. Orange = unter 8 % Marge (meist Mitbewerberpreis knapp unterboten). Stand: '+(J0&&J0.at?esc(new Date(J0.at).toLocaleString("de-AT")):"–")+'</p></div></section>';
+  return css+ex+ord+rules;
+}
+F.action("mgrun",function(){ loadMg(true); });
 function loadNl(){ F.api("/admin/api/print/newsletter").then(function(j){ NL=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler"}; F.render(); }); }
 function nlOp(body,msg){ return F.api("/admin/api/print/newsletter",{body:body}).then(function(j){ if(j&&j.ok&&j.issue){ NL=j; } F.toast(j&&j.ok?(j.msg||msg||"Gespeichert"):((j&&j.error)||"Fehler"),!(j&&j.ok)); F.render(); return j; }); }
 function nlView(){

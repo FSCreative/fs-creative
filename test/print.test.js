@@ -138,7 +138,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   });
   await t("Aufpreise je Option: Differenz zur aktuellen Auswahl, nicht lieferbare/ungültige → off", async () => {
     const r = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "44", sel: Object.assign({}, BC.sel) }, { k: "x", sel: Object.assign({}, BC.sel, { material: "400gr_uncoated", finish: "gloss_laminate" }) }, { k: "gold", sel: Object.assign({}, BC.sel, { material: "gold" }) }] }));
-    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.deepStrictEqual(r.j.d["44"], { net: 0, gross: 0 }); assert.strictEqual(r.j.d.x.off, true); assert.strictEqual(r.j.d.gold.off, true);
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.d["44"].net, 0); assert.strictEqual(r.j.d["44"].gross, 0); assert.strictEqual(r.j.d.x.off, true); assert.strictEqual(r.j.d.gold.off, true);
+    const u = await post("/print/api/deltas", Object.assign({ country: "AT" }, BC, { alts: [{ k: "quick", sel: BC.sel, urgency: "quick" }, { k: "bad", sel: BC.sel, urgency: "warp" }] }));
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(u.j.d.quick.date), "Liefertermin je Produktionszeit " + JSON.stringify(u.j)); assert.strictEqual(u.j.d.bad.off, true, "unbekannte Produktionszeit");
+  });
+  await t("Marge-Übersicht (Cockpit): Regeln, Beispielrechnungen mit Gewinn und angewandter Regel", async () => {
+    let m = await admin("/admin/api/print/margins"); assert.ok(m.ok && m.rules && m.rules.markupPct > 0 && m.orders && m.orders.all, JSON.stringify(m).slice(0, 300));
+    for (let i = 0; i < 60 && !(m.job && !m.job.running); i++) { await new Promise(r => setTimeout(r, 200)); m = await admin("/admin/api/print/margins"); }
+    const ok = m.rows.filter(r => !r.error); assert.ok(ok.length >= 3, JSON.stringify(m.rows).slice(0, 400));
+    ok.forEach(r => { assert.ok(Math.abs(r.net - r.purchase - r.fee - r.margin) < 0.02, "Gewinn = Netto − Einkauf − Gebühr " + JSON.stringify(r)); assert.ok(r.rule, "Regel"); });
   });
   await t("Preis: ungültige Option/Auflage/ausgeschlossene Kombination → 400, Land außerhalb AT (auch DE) → 400", async () => {
     assert.strictEqual((await post("/print/api/price", Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { material: "gold" }) }))).status, 400);

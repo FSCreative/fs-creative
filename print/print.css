@@ -718,7 +718,9 @@ html.light .ps-ddl{box-shadow:0 24px 60px rgba(18,20,28,.18),0 2px 6px rgba(18,2
 .ps-dlw:empty{display:none}
 .ps-dlw{padding:0 6px;white-space:nowrap;align-self:center}
 .ps-dl{font-size:12.5px;font-weight:600;color:var(--text-dim);font-variant-numeric:tabular-nums;white-space:nowrap}
-.ps-dl.m{color:#30d158}.ps-dl.z{color:var(--text-faint);font-weight:500}
+.ps-dl.m{color:#30d158}.ps-dl.z{color:var(--text-faint);font-weight:500}.ps-dl.d{color:var(--text-dim);font-weight:500}
+.ps-uronly{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px;border-radius:12px;border:1px solid var(--ps-line2);background:var(--surface)}
+.ps-uronly b{font-size:14.5px}.ps-uronly span{font-size:13px;color:var(--text-dim)}
 .ps-sgo .ps-dlw{display:block;padding:0;margin-top:2px}.ps-sgo .ps-dlw:empty{display:none}
 .ps-ddo.warn .ps-dlw,.ps-sgo .ps-dlw{line-height:1.2}
 .ps-ddo{grid-template-columns:minmax(0,1fr) auto auto}
