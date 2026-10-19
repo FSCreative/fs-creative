@@ -65,7 +65,9 @@ function detail(j){
   var h='<div class="panel-h" style="position:sticky;top:0;background:var(--panel);z-index:2"><h2>'+esc(o.nr)+' <span class="tag '+(TAG[o.status]||"grey")+'">'+esc(j.statusText)+'</span></h2>'+F.btnClose("data-close")+'</div><div class="panel-b" style="display:grid;gap:16px">'+
     '<div class="pr-acts">'+(can?'<button class="btn primary" data-act="prplace:'+esc(o.id)+'">'+(o.status==="invoice_requested"?"Freigeben & bei Print.com bestellen":"Bei Print.com bestellen")+'</button>':'')+
     (["ordered","in_production","shipped","delivered","rejected"].indexOf(o.status)<0?'<button class="btn danger" data-act="prreject:'+esc(o.id)+'">Ablehnen'+(o.payment.status==="paid"?" / Erstatten":"")+'</button>':'')+
-    (o.printcom&&o.printcom.orderNumber?'<button class="btn" data-act="prpoll:'+esc(o.id)+'">Status abrufen</button>':'<button class="btn" data-act="prrequote:'+esc(o.id)+'">Einkauf live prüfen</button>')+'</div>'+
+    (o.printcom&&o.printcom.orderNumber?'<button class="btn" data-act="prpoll:'+esc(o.id)+'">Status abrufen</button>':'<button class="btn" data-act="prrequote:'+esc(o.id)+'">Einkauf live prüfen</button>')+
+    (["ordered","in_production","shipped"].indexOf(o.status)>-1||(o.status==="problem"&&o.printcom&&o.printcom.orderNumber)?'<button class="btn" data-act="prcomplete:'+esc(o.id)+'">Abschließen</button>':'')+
+    (F.tkByPrint&&F.tkByPrint(o.id)?'<button class="btn" data-act="prtask:'+esc(o.id)+'">In Aufträgen öffnen</button>':'')+'</div>'+
     (o.printcom&&o.printcom.error?'<div class="notice">Print.com: '+esc(o.printcom.error)+'</div>':'')+
     '<div class="pr-kv"><span>Kunde</span><b>'+esc([c.company,c.firstName+" "+c.lastName].filter(Boolean).join(" · "))+(c.uid?' · UID '+esc(c.uid)+(c.uidValid?' ✓':' (nicht bestätigt)'):'')+'</b><span>Adresse</span><b>'+esc(c.street+", "+c.zip+" "+c.city+", "+c.country)+'</b><span>Kontakt</span><b><a href="mailto:'+esc(c.email)+'">'+esc(c.email)+'</a> · '+esc(c.phone)+'</b>'+
     '<span>Produkt</span><b>'+esc(o.product.title)+' · '+o.copies+' Stk. · SKU '+esc(o.product.sku)+'</b>'+
@@ -85,7 +87,7 @@ function detail(j){
   return h;
 }
 function openOrder(id){ CUR=id; F.api("/admin/api/print/order?id="+encodeURIComponent(id)).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.openDrawer(detail(j)); }); }
-function op(body,msg){ F.toast("Bitte warten …"); return F.api("/admin/api/print/op",{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.toast(msg); load(true); if(j.order) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); }); }
+function op(body,msg,quiet){ F.toast("Bitte warten …"); return F.api("/admin/api/print/op",{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.toast(msg); load(true); if(j.order&&!quiet) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); if(F.tkReload) F.tkReload(); }); }
 F.action("prreload",function(){ load(true); });
 F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); if(v==="marge") loadMg(); if(v==="feedback") loadFb(); });
 // ── Kunden: Liste, Umsatz, Bonusstufe, eigener Rabatt ──
@@ -131,10 +133,17 @@ F.action("prvotog",function(code){ var v=(VO&&VO.vouchers||[]).find(function(x){
 F.action("prvoban",function(code){ var v=(VO&&VO.vouchers||[]).find(function(x){ return x.code===code; }); if(!v) return; var on=v.banner===true||(v.banner!==false&&/^WILLKOMMEN/i.test(v.code)); F.api("/admin/api/print/vouchers",{body:{op:"save",code:v.code,pct:v.pct,maxUses:v.maxUses,until:v.until,perCustomer:v.perCustomer,note:v.note,active:v.active!==false,banner:!on}}).then(function(j){ F.toast(j.ok?(on?"Nicht mehr im Banner":"Wird im Shop-Banner beworben 🎉"):(j.error||"Fehler"),!j.ok); loadVou(); }); });
 F.action("prvodel",function(code){ F.confirm("Gutschein „"+code+"“ löschen? Bereits eingelöste Bestellungen bleiben unverändert.","Löschen",function(){ F.api("/admin/api/print/vouchers",{body:{op:"delete",code:code}}).then(function(j){ F.toast(j.ok?"Gelöscht":(j.error||"Fehler"),!j.ok); loadVou(); }); },true); });
 F.action("prord",function(id){ openOrder(id); });
-F.action("prplace",function(id){ var o=(ST.orders||[]).find(function(x){ return x.id===id; })||{}; F.confirm("Jetzt bei Print.com bestellen? "+(o.nr||"")+" · "+(o.product||"")+" · Einkauf ca. "+eur(o.purchase)+". Danach wird die Rechnung fertiggestellt und an den Kunden gesendet.","Verbindlich bestellen",function(){ op({op:"place",id:id},"Bei Print.com bestellt"); }); });
-F.action("prreject",function(id){ var o=(ST.orders||[]).find(function(x){ return x.id===id; })||{};
+/* Freigeben / Ablehnen / Abschließen – auch aus den Aufträgen (info = Kurzinfo der Aufgabe, quiet = Bestellung danach nicht öffnen) */
+function ord(id,info){ return ((ST&&ST.orders)||[]).find(function(x){ return x.id===id; })||info||{}; }
+F.prPlace=function(id,info,quiet){ var o=ord(id,info); F.confirm("Jetzt bei Print.com bestellen? "+(o.nr||"")+" · "+(o.product||"")+(o.purchase!=null?" · Einkauf ca. "+eur(o.purchase):"")+". Danach wird die Rechnung fertiggestellt und an den Kunden gesendet.","Verbindlich bestellen",function(){ op({op:"place",id:id},"Bei Print.com bestellt",quiet); }); };
+F.prComplete=function(id,info,quiet){ var o=ord(id,info); F.confirm("Druckauftrag "+(o.nr||"")+" abschließen? Er gilt dann als zugestellt – der Status wird bei Print.com nicht mehr abgefragt, eine noch ausstehende Versandmail geht nicht mehr raus.","Abschließen",function(){ op({op:"complete",id:id,by:quiet?"Aufträge":"Druck-Seite"},"Druckauftrag abgeschlossen",quiet); }); };
+F.action("prplace",function(id){ F.prPlace(id); });
+F.action("prcomplete",function(id){ F.prComplete(id); });
+F.action("prtask",function(id){ var t=F.tkByPrint&&F.tkByPrint(id); if(!t) return; F.closeDrawer&&F.closeDrawer(); F.actions.tkopen(t.id); });
+F.action("prreject",function(id){ F.prReject(id); });
+F.prReject=function(id,info,quiet){ var o=ord(id,info);
   F.modal('<h2 style="font-size:19px">Bestellung '+esc(o.nr||"")+' ablehnen</h2><label class="fl">Grund (geht an den Kunden)<textarea class="f" id="prRe" rows="3" placeholder="z. B. Text liegt im Beschnitt, bitte neu hochladen"></textarea></label>'+(o.paymentStatus==="paid"?'<label class="small"><input type="checkbox" id="prRf" checked> Betrag über Mollie erstatten ('+eur(o.gross)+')</label>':'')+'<div class="foot"><span></span><span class="row"><button class="btn" data-closemodal>Abbrechen</button><button class="btn danger" id="prRok">Ablehnen</button></span></div>',"narrow");
-  document.getElementById("prRok").onclick=function(){ var r=document.getElementById("prRe").value, rf=document.getElementById("prRf"); F.closeModal(); op({op:"reject",id:id,reason:r,refund:rf?rf.checked:false},"Abgelehnt"+(rf&&rf.checked?" und Erstattung veranlasst":"")); }; });
+  document.getElementById("prRok").onclick=function(){ var r=document.getElementById("prRe").value, rf=document.getElementById("prRf"); F.closeModal(); op({op:"reject",id:id,reason:r,refund:rf?rf.checked:false},"Abgelehnt"+(rf&&rf.checked?" und Erstattung veranlasst":""),quiet); }; };
 F.action("prpoll",function(id){ op({op:"poll",id:id},"Status abgerufen"); });
 F.action("prpollall",function(){ F.api("/admin/api/print/op",{body:{confirm:true,op:"pollAll"}}).then(function(j){ F.toast(j.ok?j.polled+" Aufträge abgefragt":(j.error||"Fehler"),!j.ok); load(true); }); });
 F.action("prrequote",function(id){ op({op:"requote",id:id},"Einkaufspreis geprüft"); });

@@ -230,9 +230,14 @@ module.exports = function (D) {
   const rdJson = f => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { return null; } };
   const wrJson = (f, o) => { const t = f + ".tmp" + process.pid; fs.writeFileSync(t, JSON.stringify(o)); fs.renameSync(t, f); };
   const okId = id => /^[A-Za-z0-9_-]{6,60}$/.test(String(id || ""));
+  // Aufträge im Cockpit (server.js): jede gespeicherte Bestellung meldet ihren Stand – daraus wird die Aufgabe im Auftrag „Druckshop“
+  function taskInfo(o) { const c = o.customer || {}, p = o.price || {};
+    return { id: o.id, nr: o.nr, status: o.status, statusText: STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
+      gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "" }; }
+  function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
   const store = {
     async getOrder(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select data from print_order where id=$1", [id]); return r.rows[0] ? r.rows[0].data : null; } return rdJson(path.join(FDIR(), "orders", id + ".json")); },
-    async putOrder(o) { o.updatedAt = nowIso(); if (useDb()) { await (await db()).query("insert into print_order(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data, updated_at=now()", [o.id, JSON.stringify(o)]); return o; } wrJson(path.join(FDIR(), "orders", o.id + ".json"), o); return o; },
+    async putOrder(o) { o.updatedAt = nowIso(); if (useDb()) { await (await db()).query("insert into print_order(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data, updated_at=now()", [o.id, JSON.stringify(o)]); toTask(o); return o; } wrJson(path.join(FDIR(), "orders", o.id + ".json"), o); toTask(o); return o; },
     async listOrders() { if (useDb()) { const r = await (await db()).query("select data from print_order order by created_at desc limit 1000"); return r.rows.map(x => x.data); }
       const d = path.join(FDIR(), "orders"); return fs.readdirSync(d).filter(f => /\.json$/.test(f)).map(f => rdJson(path.join(d, f))).filter(Boolean).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); },
     async putFile(meta, buf) { if (useDb()) { await (await db()).query("insert into print_file(id,meta,data) values($1,$2::jsonb,$3) on conflict(id) do update set meta=excluded.meta, data=coalesce(excluded.data, print_file.data)", [meta.id, JSON.stringify(meta), buf || null]); return meta; }
@@ -2123,6 +2128,7 @@ module.exports = function (D) {
     if (cfg().pcKey) homeState().then(h => { if (!h || h.date !== today()) homeCheck().catch(e => log("Startseiten-Check:", e.message)); });   // täglich: Fokus & Neu prüfen
     if (cfg().pcKey && live() && Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
+    syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (cfg().pcKey && Date.now() - lastTrack > 2 * 3600e3) { lastTrack = Date.now(); pollAll().catch(e => log("Sendungsstatus:", e.message)); }   // Status/Tracking alle 2 h
     try {
@@ -2684,6 +2690,11 @@ module.exports = function (D) {
         const id = String(b.id || ""); const op = String(b.op || "");
         if (op === "place") { const o = await placeOrder(id, "Cockpit"); return J(res, 200, { ok: true, order: o }); }
         if (op === "reject") { const o = await rejectOrder(id, b.reason, b.refund !== false); return J(res, 200, { ok: true, order: o }); }
+        if (op === "complete") {   // manuell abschließen (z. B. aus den Aufträgen: „Erledigt“) – erst nach der Bestellung bei Print.com
+          const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
+          if (!(["ordered", "in_production", "shipped"].indexOf(o.status) > -1 || (o.status === "problem" && o.printcom && o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – abschließen geht erst nach der Bestellung bei Print.com");
+          o.status = "delivered"; o.closedAt = nowIso(); hist(o, "Manuell abgeschlossen" + (b.by ? " (" + clip(b.by, 40) + ")" : "")); await store.putOrder(o); return J(res, 200, { ok: true, order: o });
+        }
         if (op === "poll") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); return J(res, 200, { ok: true, order: await pollOrder(o) }); }
         if (op === "pollAll") return J(res, 200, { ok: true, polled: await pollAll() });
         if (op === "requote") {
@@ -2702,9 +2713,14 @@ module.exports = function (D) {
     } catch (e) { return J(res, 200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
 
+  // Abgleich mit den Aufträgen (nach dem Start und stündlich): offene Bestellungen ins Board, Statuswechsel nachziehen
+  async function syncTasks() { if (!D.onOrder) return 0; let n = 0;
+    for (const o of await store.listOrders()) { if (o.status === "pending_payment" || o.status === "payment_failed") continue;
+      if (!REVIEW[o.status] && Date.now() - Date.parse(o.updatedAt || o.createdAt) > 90 * 864e5) continue; toTask(o); n++; }
+    return n; }
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
   async function proposalValid(orderId) { const o = await store.getOrder(orderId); return !!o && !!REVIEW[o.status]; }
 
-  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
+  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, syncTasks, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
 module.exports._bonusCalc = bonusCalc;

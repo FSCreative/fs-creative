@@ -19,12 +19,48 @@ const TODOS_FILE = path.join(DATA_DIR, "todos.json");
 function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 // Auftragsmanagement: Aufträge (Projekte) und Aufgaben mit Status, Priorität, Frist, Checkliste, Kommentaren – im Datenspeicher wie To-Dos
 const AUFTRAG_FILE = path.join(DATA_DIR, "auftraege.json");
-function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0 }; } catch (e) { return { projects: [], tasks: [], rev: 0 }; } }
+function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0, printSkip: Array.isArray(o.printSkip) ? o.printSkip : [] }; } catch (e) { return { projects: [], tasks: [], rev: 0, printSkip: [] }; } }
 function writeAuftraege(o) { o.rev = (+o.rev || 0) + 1; const tmp = AUFTRAG_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(o)); fs.renameSync(tmp, AUFTRAG_FILE); return o; }
 const TK_STATUS = ["offen", "arbeit", "pruefung", "erledigt"], TK_PRIO = ["normal", "hoch", "dringend"], PJ_STATUS = ["aktiv", "pausiert", "abgeschlossen"];
 const tkClip = (v, n) => String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n);
 const tkDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "";
 const tkId = p => p + Date.now().toString(36) + crypto.randomBytes(3).toString("hex");
+// Druckshop ↔ Aufträge (Wunsch Simon 19.10.2026): jede Druckbestellung ab „zur Prüfung“ ist eine Aufgabe im Auftrag „Druckshop“.
+// Der Status kommt immer von der Druck-Seite (zur Prüfung → In Prüfung, bei Print.com bestellt → In Arbeit, versendet/abgeschlossen/abgelehnt → Erledigt);
+// im Board lösen die Spalten die passende Aktion auf der Druck-Seite aus (Freigeben & bestellen, Ablehnen, Abschließen) – nie stillschweigend.
+const PRINT_PJ = "pdruckshop";
+const PRINT_COL = { paid: "pruefung", invoice_requested: "pruefung", ordered: "arbeit", in_production: "arbeit", shipped: "erledigt", delivered: "erledigt", rejected: "erledigt" };
+const PRINT_NEW = { paid: 1, invoice_requested: 1, ordered: 1, in_production: 1, problem: 1 };   // nur dafür neue Aufgaben (alte Bestellungen nicht nachtragen)
+const PRINT_STEPS = ["Druckdaten geprüft & freigegeben", "Bei Print.com bestellt", "Versendet", "Zugestellt"], PRINT_RANK = { ordered: 2, in_production: 2, shipped: 3, delivered: 4 };
+function printTaskSync(o) {
+  if (!o || !o.id || !o.status) return false;
+  const col = o.status === "problem" ? (o.pcOrder ? "arbeit" : "pruefung") : PRINT_COL[o.status]; if (!col) return false;
+  const A = readAuftraege(), now = Date.now();
+  let t = A.tasks.find(x => x.print && x.print.id === o.id);
+  if (!t && (!PRINT_NEW[o.status] || A.printSkip.indexOf(o.id) > -1)) return false;
+  const num = v => isFinite(+v) && v !== null && v !== "" ? +v : null;
+  const info = { id: tkClip(o.id, 60), nr: tkClip(o.nr, 40), status: tkClip(o.status, 30), statusText: tkClip(o.statusText, 80), product: tkClip(o.product, 160), copies: num(o.copies), customer: tkClip(o.customer, 160),
+    gross: num(o.gross), purchase: num(o.purchase), margin: num(o.margin), payment: tkClip(o.payment, 20), paymentStatus: tkClip(o.paymentStatus, 30), pcOrder: tkClip(o.pcOrder, 40), reason: tkClip(o.reason, 300) };
+  let changed = false;
+  if (!A.projects.some(p => p.id === PRINT_PJ)) { A.projects.push({ id: PRINT_PJ, name: "Druckshop", customer: "", color: 4, status: "aktiv", due: "", note: "Bestellungen aus www.fs-creative.at/print – der Status kommt automatisch von der Druck-Seite.", leadId: "", created: now, updated: now }); changed = true; }
+  if (!t) {
+    t = { id: tkId("t"), created: now, order: now, comments: [], projectId: PRINT_PJ, title: tkClip(info.nr + " · " + (info.copies ? info.copies + "× " : "") + info.product + (info.customer ? " · " + info.customer : ""), 200),
+      notes: "", checklist: PRINT_STEPS.map(x => ({ t: x, done: false })), status: col, prio: "normal", due: "", doneAt: null, print: {} };
+    A.tasks.push(t); changed = true;
+  }
+  if (t.print.status !== o.status) {
+    const day = v => tkDate(String(v || "").slice(0, 10)), r = PRINT_RANK[o.status] || 0;
+    t.status = col; t.doneAt = col === "erledigt" ? (t.doneAt || now) : null;
+    t.prio = o.status === "problem" ? "dringend" : col === "pruefung" ? "hoch" : "normal";
+    if (col === "pruefung") t.due = day(o.createdAt) || t.due; else if (col === "arbeit") t.due = day(o.delivery) || t.due;
+    if (r) (t.checklist || []).forEach(c => { const i = PRINT_STEPS.indexOf(c.t); if (i > -1) c.done = i < r; });
+    if (t.print.status) t.comments = (t.comments || []).concat([{ at: now, text: "Druck-Seite: " + (info.statusText || info.status) + (o.status === "rejected" && info.reason ? " – " + info.reason : "") }]).slice(-200);
+    changed = true;
+  }
+  if (JSON.stringify(t.print) !== JSON.stringify(info)) { t.print = info; changed = true; }
+  if (!changed) return false;
+  t.updated = now; writeAuftraege(A); return true;
+}
 function auftragOp(b) {
   const A = readAuftraege(), op = String(b.op || ""), now = Date.now();
   const findT = id => A.tasks.find(t => t.id === id), findP = id => A.projects.find(p => p.id === id);
@@ -32,7 +68,7 @@ function auftragOp(b) {
     const x = b.task || {}, old = x.id ? findT(String(x.id)) : null;
     const title = tkClip(x.title, 200); if (!title) throw new Error("Bitte einen Titel eingeben");
     const pid = x.projectId && findP(String(x.projectId)) ? String(x.projectId) : "";
-    const status = TK_STATUS.indexOf(x.status) > -1 ? x.status : (old ? old.status : "offen");
+    const status = old && old.print ? old.status : TK_STATUS.indexOf(x.status) > -1 ? x.status : (old ? old.status : "offen");   // Druckaufträge: Status nur über die Druck-Seite
     const t = Object.assign(old || { id: tkId("t"), created: now, comments: [], order: now }, {
       title, projectId: pid, status, prio: TK_PRIO.indexOf(x.prio) > -1 ? x.prio : "normal", due: tkDate(x.due), notes: tkClip(x.notes, 4000),
       checklist: (Array.isArray(x.checklist) ? x.checklist : []).slice(0, 60).map(c => ({ t: tkClip(c && c.t, 200), done: !!(c && c.done) })).filter(c => c.t), updated: now });
@@ -43,6 +79,7 @@ function auftragOp(b) {
   }
   if (op === "task.move") {
     const t = findT(String(b.id || "")); if (!t) throw new Error("Aufgabe nicht gefunden");
+    if (t.print && b.status && b.status !== t.status) throw new Error("Druckaufträge folgen dem Status der Druck-Seite – bitte freigeben, ablehnen oder abschließen");
     if (TK_STATUS.indexOf(b.status) > -1) { t.status = b.status; if (b.status === "erledigt" && !t.doneAt) t.doneAt = now; if (b.status !== "erledigt") t.doneAt = null; }
     if (isFinite(+b.order)) t.order = +b.order; t.updated = now;
     return { data: writeAuftraege(A), id: t.id };
@@ -58,7 +95,9 @@ function auftragOp(b) {
     t.comments = (t.comments || []).concat([{ at: now, text }]).slice(-200); t.updated = now;
     return { data: writeAuftraege(A), id: t.id };
   }
-  if (op === "task.delete") { const n = A.tasks.length; A.tasks = A.tasks.filter(t => t.id !== String(b.id || "")); if (A.tasks.length === n) throw new Error("Aufgabe nicht gefunden"); return { data: writeAuftraege(A) }; }
+  if (op === "task.delete") { const d = findT(String(b.id || "")); if (!d) throw new Error("Aufgabe nicht gefunden");
+    if (d.print && d.print.id) A.printSkip = A.printSkip.filter(x => x !== d.print.id).concat([d.print.id]).slice(-500);   // gelöschte Druckaufgabe nicht wieder anlegen
+    A.tasks = A.tasks.filter(t => t !== d); return { data: writeAuftraege(A) }; }
   if (op === "project.save") {
     const x = b.project || {}, old = x.id ? findP(String(x.id)) : null;
     const name = tkClip(x.name, 120); if (!name) throw new Error("Bitte einen Namen für den Auftrag eingeben");
@@ -893,15 +932,19 @@ async function railwaySnapshot() {
 }
 function adminLoginPage(err) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>FS Cockpit — Anmelden</title><link rel="apple-touch-icon" href="/logos/cockpit-icon-180.png"><link rel="icon" type="image/png" href="/logos/cockpit-favicon.png"><link rel="manifest" href="/cockpit.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cockpit"><meta name="theme-color" content="#0a0a0f">
-<style>:root{color-scheme:light}body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,#eef2fb,#f7f9fd);font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f1729}
-.card{background:#fff;border:1px solid #e9edf5;border-radius:18px;padding:28px;width:320px;box-shadow:0 24px 60px -30px rgba(15,23,42,.4)}
-.logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#2f6bff,#7c4dff);display:grid;place-items:center;color:#fff;font-weight:800;margin-bottom:14px}
-h1{font-size:18px;margin:0 0 4px}p{font-size:12.5px;color:#6b7686;margin:0 0 16px}
-input{width:100%;box-sizing:border-box;border:1.5px solid #e9edf5;border-radius:11px;padding:11px 12px;font:inherit;font-size:14px;margin-bottom:10px}
-input:focus{outline:none;border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,.12)}
-button{width:100%;border:none;background:linear-gradient(135deg,#2f6bff,#7c4dff);color:#fff;border-radius:11px;padding:11px;font:inherit;font-weight:700;cursor:pointer}
-.err{color:#f04438;font-size:12.5px;margin-bottom:10px}</style></head>
-<body><form class="card" method="POST" action="/admin/login"><div class="logo">FS</div><h1>FS Creative Admin</h1><p>Bitte anmelden.</p>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>/* Look „Montafon Night“ wie im Cockpit (hell: „Montafon Day“) */
+:root{color-scheme:dark;--bg:#0b0e14;--card:#121620;--line:#1f2533;--ink:#eef1f7;--mut:#8a93a8;--acc:#7b8bff;--on:#0b0e14;--bad:#f87171}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f4f5f8;--card:#fff;--line:#e3e6ee;--ink:#11141b;--mut:#5f6778;--acc:#4f5bd5;--on:#fff;--bad:#c2364b}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);font-family:"Plus Jakarta Sans",-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;width:min(340px,calc(100vw - 32px));box-sizing:border-box}
+.logo{width:42px;height:42px;border-radius:12px;background:var(--acc);display:grid;place-items:center;color:var(--on);font-weight:800;font-size:14px;margin-bottom:16px}
+h1{font-size:19px;margin:0 0 4px;letter-spacing:-.02em}p{font-size:13px;color:var(--mut);margin:0 0 18px}
+input{width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:11px 12px;font:inherit;font-size:14px;margin-bottom:10px}
+input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 22%,transparent)}
+button{width:100%;border:none;background:var(--acc);color:var(--on);border-radius:10px;padding:11px;font:inherit;font-weight:700;cursor:pointer}button:hover{filter:brightness(1.08)}
+.err{color:var(--bad);font-size:12.5px;margin-bottom:10px}</style></head>
+<body><form class="card" method="POST" action="/admin/login"><div class="logo">FS</div><h1>FS Cockpit</h1><p>Bitte anmelden.</p>
 ${err ? '<div class="err">' + err + "</div>" : ""}
 <input type="password" name="password" placeholder="Passwort" autofocus autocomplete="current-password"><button type="submit">Anmelden</button></form></body></html>`;
 }
@@ -3776,7 +3819,9 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   sendInvoice: (id, to, subject, text) => SEV_OPS.invoiceOp({ confirm: true, op: "send", id, toEmail: to, subject, text }).then(r => { SEV_CACHE.at = 0; return r; }),
   deleteInvoice: id => sev("DELETE", "/Invoice/" + String(id).replace(/\D/g, "")).then(r => { SEV_CACHE.at = 0; return r; }),
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
+  onOrder: o => { try { printTaskSync(o); } catch (e) { console.error("Aufträge (Druck):", e.message); } },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
 const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },

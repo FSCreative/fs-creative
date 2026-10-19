@@ -55,24 +55,47 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
       (g.list.length?g.list.map(function(e){ return '<div class="hev"><span class="ht">'+esc(e.time||"ganztags")+'</span><span class="hb"></span><div style="min-width:0"><b>'+esc(e.title)+'</b>'+((e.location||e.cal)?'<small>'+esc([e.location||"",e.cal||""].filter(Boolean).join(" · "))+'</small>':'')+'</div></div>'; }).join(""):'<div class="hnone">Keine Termine</div>')+'</div>'; }).join("");
     return F.head(greet+", Simon.",esc(dateLine)+(f.length?" · "+f.length+(f.length===1?" Sache offen":" Sachen offen"):" · alles erledigt"),
       '<button class="btn" data-act="compose">Neue Mail</button><button class="btn" data-act="newevent:">Neuer Termin</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+
-    '<div class="day">'+
-      '<button data-go="kunden"><span class="k">Neue Anfragen</span><span class="v num">'+F.newLeads().length+'</span><span class="s">'+D.leads.length+' Leads insgesamt</span></button>'+
-      '<button data-go="geld"><span class="k">Offene Forderungen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?(sev.overdueCount?eur0(sev.overdueSum)+" überfällig":"nichts überfällig"):"lädt …")+'</span></button>'+
-      '<button data-go="web"><span class="k">Websites</span><span class="v num">'+(cust.length-bad.length)+'/'+cust.length+'</span><span class="s">'+(bad.length?bad.length+" mit Problem":"alle erreichbar")+'</span></button>'+
-    '</div>'+
-    '<div class="hgrid">'+
-      '<section class="panel hcol-todo"><div class="panel-h"><h2>Zu erledigen</h2><span class="muted">'+(f.length?f.length+" offen":"")+'</span></div>'+
+    kpiCards(sev,cust,bad)+
+    (function(){ var todoP='<section class="panel hcol-todo"><div class="panel-h"><h2>Zu erledigen</h2><span class="muted">'+(f.length?f.length+" offen · priorisiert":"")+'</span></div>'+
         (items?'<ul class="feed">'+items+'</ul>':'<div class="empty">Nichts offen. 🎉</div>')+
-        (f.length>12?'<button class="more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+
-      '</section>'+
-      '<div class="stack">'+
-        '<section class="panel"><div class="panel-h"><h2>Mein Tag</h2><button class="link" data-go="kal">Kalender →</button></div><div class="hagenda">'+agenda+'</div></section>'+
-        '<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>'+
-      '</div>'+
-      '<div class="stack">'+mailPanel()+incomePanel()+'</div>'+
-    '</div>';
+        (f.length>12?'<button class="more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+'</section>',
+      dayP='<section class="panel"><div class="panel-h"><h2>Mein Tag</h2><button class="link" data-go="kal">Kalender →</button></div><div class="hagenda">'+agenda+'</div></section>',
+      todosP='<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>';
+      /* Statusleiste rechts sichtbar → Termine und Mails stehen schon dort: zwei Spalten ohne Doppelungen */
+      if(F.sideVisible&&F.sideVisible()) return '<div class="hgrid two-col">'+todoP+'<div class="stack">'+projectsPanel()+todosP+incomePanel()+'</div></div>';
+      return '<div class="hgrid">'+todoP+'<div class="stack">'+projectsPanel()+dayP+todosP+'</div><div class="stack">'+mailPanel()+incomePanel()+'</div></div>'; })();
   }
 });
+/* Kennzahlen-Karten: Umsatz des Monats (mit Verlauf), offene Forderungen, offene Aufgaben, neue Anfragen (mit Verlauf je Woche) */
+function spark(vals,color){ if(!vals||vals.length<2) return ''; var mx=Math.max.apply(null,vals), mn=Math.min.apply(null,vals), w=120, h=28, rg=mx-mn||1;
+  var pts=vals.map(function(v,i){ return (i*(w/(vals.length-1))).toFixed(1)+","+(h-2-(v-mn)/rg*(h-6)).toFixed(1); }).join(" ");
+  return '<svg class="hk-sp" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" aria-hidden="true"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>'; }
+function kpiCards(sev,cust,bad){
+  var D=F.D, now=new Date(), cm=String(now.getFullYear())===String(D.year)?now.getMonth():-1, mName=now.toLocaleDateString("de-AT",{month:"long"});
+  var rev=sev&&sev.byMonth&&cm>-1?sev.byMonth.slice(0,cm+1):null, cur=rev?rev[cm]:null, prev=rev&&cm>0?rev[cm-1]:null;
+  var dlt=prev?Math.round((cur-prev)/prev*100):null;
+  var T=(D.auftraege&&D.auftraege.tasks)||[], t0=D.today, open=T.filter(function(t){ return t.status!=="erledigt"; }), over=open.filter(function(t){ return t.due&&t.due<t0; }).length, dueToday=open.filter(function(t){ return t.due===t0; }).length;
+  var wk=[0,0,0,0,0,0,0,0], ms=Date.now(); (D.leads||[]).forEach(function(l){ var a=Math.floor((ms-Date.parse(l.created))/(7*864e5)); if(a>=0&&a<8) wk[7-a]++; });
+  var nl=F.newLeads().length, wkNew=wk[7];
+  var card=function(go,k,v,sub,cls,sp,money){ return '<button data-go="'+go+'"><span class="k">'+k+'</span><span class="v num'+(money?" money":"")+'">'+v+'</span>'+(sp||'<span class="hk-nosp"></span>')+'<span class="s '+(cls||"")+'">'+sub+'</span></button>'; };
+  return '<div class="day hk">'+
+    (rev?card("geld","Umsatz "+esc(mName),eur0(cur),dlt==null?"laut Rechnungen":(dlt>=0?"+":"")+dlt+" % zum Vormonat",dlt==null?"":dlt>=0?"ok-t":"bad-t",spark(rev.slice(-7),"var(--ok)"),true):'')+
+    card("geld","Offene Forderungen",sev?eur0(sev.openSum):"—",sev?(sev.overdueCount?esc(eur0(sev.overdueSum))+" überfällig":"nichts überfällig"):"lädt …",sev&&sev.overdueCount?"warn-t":"ok-t","",true)+
+    card("auftraege","Offene Aufgaben",String(open.length),over?over+(over===1?" Frist":" Fristen")+" überschritten":dueToday?dueToday+" heute fällig":"keine Frist überschritten",over?"bad-t":dueToday?"glow-t":"ok-t")+
+    card("kunden","Neue Anfragen",String(nl),wkNew?wkNew+" diese Woche":(D.leads||[]).length+" Leads insgesamt","glow-t",spark(wk,"var(--glow)"))+
+    (bad.length?card("web","Websites",(cust.length-bad.length)+"/"+cust.length,bad.length+" mit Problem","bad-t"):'')+
+  '</div>'; }
+/* Aufträge im Blick: aktive Aufträge mit Fortschritt (erledigte/alle Aufgaben) und nächster Abgabe – Druckshop läuft separat */
+function projectsPanel(){
+  var A=F.D.auftraege||{projects:[],tasks:[]}, t0=F.D.today, PC=F.tkPCOL||["#7b8bff"];
+  var P=(A.projects||[]).filter(function(p){ return p.status==="aktiv"&&p.id!=="pdruckshop"; }).map(function(p){ var T=(A.tasks||[]).filter(function(t){ return t.projectId===p.id; }), o=T.filter(function(t){ return t.status!=="erledigt"; });
+    var due=o.filter(function(t){ return t.due; }).map(function(t){ return t.due; }).sort()[0]||p.due||"";
+    return {p:p,n:T.length,open:o.length,pct:T.length?Math.round((T.length-o.length)/T.length*100):0,due:due,over:o.some(function(t){ return t.due&&t.due<t0; })}; })
+    .sort(function(a,b){ return (b.over-a.over)||String(a.due||"9999").localeCompare(String(b.due||"9999")); }).slice(0,5);
+  var body=P.length?P.map(function(x){ var c=PC[x.p.color||0]||PC[0];
+    return '<button type="button" class="ab-r" data-act="tkprojopen:'+esc(x.p.id)+'"><span class="ab-t"><i style="background:'+c+'"></i><b>'+esc(x.p.name)+'</b><span class="ab-m'+(x.over?" bad-t":"")+'">'+(x.open?x.open+" offen":"alles erledigt")+(x.over?" · überfällig":x.due?" · Abgabe "+esc(deShort?deShort(x.due):de(x.due)):"")+'</span></span><span class="ab-b"><span style="width:'+x.pct+'%;background:'+c+'"></span></span></button>'; }).join("")
+    :'<div class="empty">Keine aktiven Aufträge. <button class="link" data-act="newproj">Auftrag anlegen</button></div>';
+  return '<section class="panel"><div class="panel-h"><h2>Aufträge im Blick</h2><button class="link" data-go="auftraege">Alle Aufträge →</button></div><div class="ab">'+body+'</div></section>'; }
 function feedItemHtml(x){ return '<li class="item"><span class="sev '+x.sev+'"></span><span class="ico">'+F.svg(x.icon)+'</span><div style="min-width:0"><div class="t"><span class="tag '+x.tag[0]+'">'+esc(x.tag[1])+'</span>'+esc(x.t)+'</div><div class="d">'+esc(x.d)+'</div></div><div class="acts">'+x.acts.map(function(a){ return '<button class="btn '+(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+'<button class="btn icon" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">✕</button></div></li>'; }
 
 /* ---------- Handy (≤ 900 px): eine Spalte im Stil der Finanzen-Ansicht ---------- */
@@ -170,8 +193,14 @@ F.action("incomeinfo",function(){
 });
 F.action("incomerecalc",function(){ F.closeModal(); F.api("/admin/api/cockpit?year="+F.year+"&forecast=1").then(function(d){ if(d&&d.income){ F.D=d; F.render(); F.toast("Prognose neu berechnet"); } }); });
 F.css(
-".hgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}"+
+".hgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}.hgrid.two-col{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}"+
+".hk>button{display:grid;align-content:start}.hk .hk-sp{width:100%;max-width:170px;height:26px;margin:4px 0 2px;display:block}.hk .hk-nosp{display:block;height:6px}"+
+".glow-t{color:var(--glow)}"+
+".ab{display:grid}.ab-r{display:grid;gap:9px;border:0;border-top:1px solid var(--line);background:none;text-align:left;padding:13px 18px 14px;width:100%;color:var(--ink)}.ab-r:first-child{border-top:0}.ab-r:hover{background:var(--sunk)}"+
+".ab-t{display:flex;align-items:center;gap:10px;min-width:0}.ab-t i{width:10px;height:10px;border-radius:3px;flex:none}.ab-t b{font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ab-m{margin-left:auto;font-size:12.5px;color:var(--ink-3);white-space:nowrap;flex:none}"+
+".ab-b{height:5px;border-radius:5px;background:var(--sunk);overflow:hidden}.ab-b span{display:block;height:100%;border-radius:5px}"+
 "@media (max-width:1280px){.hgrid{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}.hgrid>.stack:last-child{grid-column:2}}"+
+"@media (max-width:1100px){.hgrid,.hgrid.two-col{grid-template-columns:minmax(0,1fr)}.hgrid>.stack:last-child{grid-column:auto}}"+
 "@media (max-width:900px){.hgrid{grid-template-columns:minmax(0,1fr)}.hgrid>.stack:last-child{grid-column:auto}}"+
 ".hagenda{padding:0 16px 12px;display:grid;gap:10px}"+
 ".hday-h{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:capitalize;margin:4px 0 4px}.hday-h.today{color:var(--glow)}"+
@@ -185,9 +214,7 @@ F.css(
 ".tdrow .due{font-size:12px;color:var(--ink-3)}.tdrow .due.late{color:var(--bad)}"+
 ".hmail{grid-template-columns:52px minmax(0,1fr)!important}.hmail .time{white-space:nowrap;font-size:12px}.hmail.unread{box-shadow:inset 3px 0 0 var(--glow);margin-left:-16px;padding-left:16px!important}"+
 "@media (min-width:901px){"+
-  ".view-heute .head h1{font-size:26px}"+
-  ".view-heute .day{border:0;box-shadow:var(--shadow);border-radius:8px}"+
-  ".view-heute .day button{padding:12px 16px}.view-heute .day .v{font-size:22px}"+
+  ".view-heute .head h1{font-size:32px}"+
   ".view-heute .feed .item{grid-template-columns:8px minmax(0,1fr) auto!important;gap:12px;padding:10px 16px!important;row-gap:0}"+
   ".view-heute .feed .item .ico{display:none}"+
   ".view-heute .feed .item .sev{width:8px;height:8px;border-radius:50%;align-self:start;margin-top:7px}"+

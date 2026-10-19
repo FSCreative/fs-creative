@@ -28,7 +28,7 @@ F.css(
   '.kmd .n{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:16px;font-weight:600}'+
   '.kmd.out .n{color:var(--ink-3)}'+
   '.kmd.today .n{color:var(--m-blue,#0f6cbd);font-weight:800}'+
-  '.kmd.sel .n{background:var(--m-blue,#0f6cbd);color:#fff}'+
+  '.kmd.sel .n{background:var(--m-blue,#0f6cbd);color:var(--on-glow)}'+
   '.kmd .dots{display:flex;gap:2px;height:5px}.kmd .dots i{width:5px;height:5px;border-radius:50%;background:var(--c)}'+
   '.kmgrid{padding-bottom:6px}.kmgrid .kmd .n{width:34px;height:34px;font-size:15px}'+
   '.kmgrab{display:block;width:38px;height:5px;border-radius:99px;background:var(--line);margin:2px auto 6px;border:0}'+
@@ -80,7 +80,7 @@ F.css(
   '.ktadd{display:flex;gap:8px;position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:24;padding:8px 12px;background:color-mix(in srgb,var(--ground) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}'+
   '.ktadd input{flex:1;border-radius:99px;height:44px;font-size:16px;padding-inline:16px}'+
   '.ktadd input[type=date]{flex:0 0 46px;width:46px;padding:0 8px;color:transparent}.ktadd input[type=date]::-webkit-datetime-edit{display:none}'+
-  '.ktadd button{border-radius:99px;width:44px;height:44px;padding:0;display:grid;place-items:center;background:var(--m-blue,#0f6cbd);border:0;color:#fff;font-size:24px}'+
+  '.ktadd button{border-radius:99px;width:44px;height:44px;padding:0;display:grid;place-items:center;background:var(--m-blue,#0f6cbd);border:0;color:var(--on-glow);font-size:24px}'+
   '.view-kal .kmtodo{padding-bottom:70px}'+
 '}'
 );

@@ -10,32 +10,35 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cockpit">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#0a0a0f">
+<meta name="theme-color" content="#0b0e14">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <title>FS Cockpit</title>
-<script>try{var t=JSON.parse(localStorage.getItem("fsc_theme")||"null");if(t&&t!=="auto")document.documentElement.setAttribute("data-theme",t);if(JSON.parse(localStorage.getItem("fsc_priv")||"false"))document.documentElement.classList.add("priv-pre");}catch(e){}</script>
+<script>try{var t=JSON.parse(localStorage.getItem("fsc_theme")||"null")||"dark";if(t!=="auto")document.documentElement.setAttribute("data-theme",t);if(JSON.parse(localStorage.getItem("fsc_priv")||"false"))document.documentElement.classList.add("priv-pre");}catch(e){}</script>
 <style>
 /* Layout: Seitenleiste (Desktop) bzw. Tab-Leiste unten (Handy); "Heute" als priorisierte Liste; Abgleich als Tabelle je Quelle. */
 :root{
-  --ground:#f5f5f5; --panel:#ffffff; --sunk:#f0f0f0; --ink:#242424; --ink-2:#5c5c5c; --ink-3:#8a8a8a; --line:#e0e0e0;
-  --glow:#0f6cbd; --glow-ink:#0c3b5e; --glow-soft:#ebf3fc; --on-glow:#ffffff; --sel:#cfe4fa;
-  --ok:#107c10; --ok-soft:#dff6dd; --warn:#a35c00; --warn-soft:#fff4ce; --bad:#c4314b; --bad-soft:#fde7e9; --info:#0f6cbd; --info-soft:#ebf3fc;
-  --shadow:0 1px 2px rgba(0,0,0,.06),0 1.6px 3.6px rgba(0,0,0,.08);
-  --f-display:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI",Roboto,sans-serif;
-  --f-body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
-  --f-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  /* Look „Montafon Night“ (dunkel) bzw. „Montafon Day“ (hell): Indigo als einzige Akzentfarbe, Plus Jakarta Sans, Zahlen in JetBrains Mono */
+  --ground:#f4f5f8; --rail:#ffffff; --panel:#ffffff; --panel-2:#f8f9fc; --sunk:#eef0f5; --active:#eef0fe; --ink:#11141b; --ink-2:#4a5263; --ink-3:#5f6778; --line:#e3e6ee; --line-2:#d5d9e3;
+  --glow:#4f5bd5; --glow-ink:#3a44a8; --glow-soft:#eef0fe; --on-glow:#ffffff; --sel:#dfe3fd;
+  --ok:#0f8a5f; --ok-soft:#e1f4ec; --warn:#b45309; --warn-soft:#fdf0e1; --bad:#c2364b; --bad-soft:#fbe7ea; --info:#4f5bd5; --info-soft:#eef0fe; --pink:#a21caf;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 2px 8px rgba(16,24,40,.05); --shadow-pop:0 24px 60px rgba(16,24,40,.18);
+  --f-display:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --f-body:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --r:14px; --r-sm:9px; color-scheme:light;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --ground:#1b1b1b; --panel:#262626; --sunk:#2e2e2e; --ink:#f0f0f0; --ink-2:#c4c4c4; --ink-3:#999999; --line:#3a3a3a;
-  --glow:#479ef5; --glow-ink:#b4d6fa; --glow-soft:#0e2a47; --on-glow:#0a1a2a; --sel:#0e3a63;
-  --ok:#54b054; --ok-soft:#0f2e0f; --warn:#f7c04a; --warn-soft:#3a2d0a; --bad:#f1707b; --bad-soft:#3f1c21; --info:#479ef5; --info-soft:#0e2a47;
-  --shadow:0 1px 2px rgba(0,0,0,.35),0 1.6px 3.6px rgba(0,0,0,.3); color-scheme:dark;
+  --ground:#0b0e14; --rail:#0e121a; --panel:#121620; --panel-2:#171c28; --sunk:#1a1f2b; --active:#1b2131; --ink:#eef1f7; --ink-2:#a3abbd; --ink-3:#8a93a8; --line:#1f2533; --line-2:#2a3142;
+  --glow:#7b8bff; --glow-ink:#c4cbff; --glow-soft:rgba(123,139,255,.16); --on-glow:#0b0e14; --sel:rgba(123,139,255,.24);
+  --ok:#3ecf8e; --ok-soft:rgba(62,207,142,.14); --warn:#f5a524; --warn-soft:rgba(245,165,36,.14); --bad:#f87171; --bad-soft:rgba(248,113,113,.14); --info:#7b8bff; --info-soft:rgba(123,139,255,.14); --pink:#e879f9;
+  --shadow:none; --shadow-pop:0 24px 60px rgba(0,0,0,.5); color-scheme:dark;
 }}
 :root[data-theme="dark"]{
-  --ground:#1b1b1b; --panel:#262626; --sunk:#2e2e2e; --ink:#f0f0f0; --ink-2:#c4c4c4; --ink-3:#999999; --line:#3a3a3a;
-  --glow:#479ef5; --glow-ink:#b4d6fa; --glow-soft:#0e2a47; --on-glow:#0a1a2a; --sel:#0e3a63;
-  --ok:#54b054; --ok-soft:#0f2e0f; --warn:#f7c04a; --warn-soft:#3a2d0a; --bad:#f1707b; --bad-soft:#3f1c21; --info:#479ef5; --info-soft:#0e2a47;
-  --shadow:0 1px 2px rgba(0,0,0,.35),0 1.6px 3.6px rgba(0,0,0,.3); color-scheme:dark;
+  --ground:#0b0e14; --rail:#0e121a; --panel:#121620; --panel-2:#171c28; --sunk:#1a1f2b; --active:#1b2131; --ink:#eef1f7; --ink-2:#a3abbd; --ink-3:#8a93a8; --line:#1f2533; --line-2:#2a3142;
+  --glow:#7b8bff; --glow-ink:#c4cbff; --glow-soft:rgba(123,139,255,.16); --on-glow:#0b0e14; --sel:rgba(123,139,255,.24);
+  --ok:#3ecf8e; --ok-soft:rgba(62,207,142,.14); --warn:#f5a524; --warn-soft:rgba(245,165,36,.14); --bad:#f87171; --bad-soft:rgba(248,113,113,.14); --info:#7b8bff; --info-soft:rgba(123,139,255,.14); --pink:#e879f9;
+  --shadow:none; --shadow-pop:0 24px 60px rgba(0,0,0,.5); color-scheme:dark;
 }
 :root[data-theme="light"]{ color-scheme:light; }
 *{box-sizing:border-box}
@@ -278,85 +281,112 @@ button.kpi:hover{border-color:var(--ink-3)}
 body.priv .money,body.priv .num.v,body.priv .kpi .v,body.priv .day .v,body.priv td.r.num,body.priv .chart svg rect{filter:blur(7px)}
 .rail-foot .seg{margin:0 6px}
 
-/* ===== Outlook-Look (Fluent): Kopfleiste, schmale App-Leiste, blaue Akzente, eckigere Bedienelemente ===== */
-body{font-size:14px}
-.topbar{position:sticky;top:0;z-index:35;display:grid;grid-template-columns:minmax(max-content,1fr) minmax(160px,640px) minmax(max-content,1fr);align-items:center;gap:16px;height:48px;padding:0 12px 0 14px;background:var(--glow);color:#fff}
-:root[data-theme="dark"] .topbar{background:#0a0a0a}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .topbar{background:#0a0a0a} }
-.tb-brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-size:16px;min-width:0}
-.tb-brand img{width:28px;height:28px;border-radius:7px}
-.tb-search{display:flex;align-items:center;gap:10px;height:32px;border:0;border-radius:6px;background:rgba(255,255,255,.92);color:#424242;padding:0 12px;font-size:13.5px;text-align:left;width:100%}
-.tb-search svg{width:16px;height:16px;flex:none;color:var(--glow)}
-.tb-search span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tb-search kbd{font:600 11px var(--f-mono);color:#707070;border:1px solid #d0d0d0;border-radius:4px;padding:0 5px}
-.tb-search:hover{background:#fff}
-:root[data-theme="dark"] .tb-search{background:#2b2b2b;color:#c8c8c8}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tb-search{background:#2b2b2b;color:#c8c8c8} }
-.tb-right{display:flex;align-items:center;gap:6px;justify-content:flex-end;min-width:0}
-.tb-right .stamp{color:rgba(255,255,255,.75);font-size:12px;padding:0 6px;white-space:nowrap}
-.tb-i{width:34px;height:34px;border:0;border-radius:6px;background:none;color:#fff;display:grid;place-items:center}
-.tb-i svg{width:18px;height:18px}.tb-i:hover{background:rgba(255,255,255,.16)}
-.tb-sel{height:30px;border:1px solid rgba(255,255,255,.35);border-radius:6px;background:transparent;color:#fff;padding:0 6px;font-size:13px}
-.tb-sel option{color:#242424}
-.tb-av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--glow);font-weight:700;font-size:12.5px;text-decoration:none;margin-left:4px}
-:root[data-theme="dark"] .tb-av{background:var(--glow);color:#0a1a2a}
-.app{grid-template-columns:72px minmax(0,1fr);min-height:calc(100% - 48px)}
-.rail{top:48px;height:calc(100vh - 48px);padding:8px 4px;gap:2px;align-items:stretch;background:var(--ground);border-right:1px solid var(--line)}
+/* ===== Look „Montafon Night“ (Wunsch Simon 19.10.2026): breite Seitenleiste mit Gruppen, Suche + „Neu“ oben im Inhalt, Statusleiste rechts,
+   Indigo als einzige Akzentfarbe, ruhige Karten mit feinem Rahmen; hell = „Montafon Day“ ===== */
+:root{--rail-w:244px;--top-h:72px}
+body{font-size:14px;letter-spacing:-.003em}
+.app{display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"rail top" "rail main";min-height:100vh}
+.rail{grid-area:rail;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;padding:20px 14px 14px;background:var(--rail);border-right:1px solid var(--line);overflow-y:auto;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 8px 12px;font:700 16.5px/1 var(--f-display);color:var(--ink);letter-spacing:-.015em}
+.brand .bm{width:30px;height:30px;border-radius:9px;background:var(--glow);color:var(--on-glow);display:grid;place-items:center;font-size:11.5px;font-weight:800;letter-spacing:0;flex:none}
 .rail #nav{display:grid;gap:2px}
-.rail .nav-btn{position:relative;display:grid;justify-items:center;gap:3px;padding:9px 2px 7px;border-radius:6px;color:var(--ink-2);font-size:10.5px;font-weight:600;text-align:center;line-height:1.15}
-.rail .nav-btn svg{width:22px;height:22px}
-.rail .nav-btn .nl{display:none}
+.nav-g{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:16px 10px 6px}
+.rail .nav-btn{position:relative;display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px;border:0;border-radius:9px;background:none;color:var(--ink-2);font-weight:500;font-size:14px;text-align:left;line-height:1.3}
+.rail .nav-btn svg{width:18px;height:18px;flex:none}
 .rail .nav-btn:hover{background:var(--sunk);color:var(--ink)}
-.rail .nav-btn[aria-current="page"]{background:var(--panel);color:var(--glow);box-shadow:var(--shadow)}
-.rail .nav-btn[aria-current="page"]:before{content:"";position:absolute;left:-4px;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--glow)}
-.rail .nav-btn .count{position:absolute;top:3px;left:calc(50% + 6px);margin:0;font-size:10px;padding:0 5px;line-height:16px;min-width:16px;text-align:center}
+.rail .nav-btn[aria-current="page"]{background:var(--active);color:var(--ink);font-weight:600;box-shadow:inset 3px 0 0 var(--glow)}
+.rail .nav-btn[aria-current="page"] svg{color:var(--glow)}
+.rail .nav-btn .count{margin-left:auto;font:600 11px/18px var(--f-mono);min-width:20px;padding:0 6px;text-align:center;border-radius:99px}
+.rail-set{display:flex;gap:6px;padding:14px 4px 10px;margin-top:auto}
+.rail-set select{flex:1;min-width:0;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink-2);padding:0 6px;font-size:12.5px}
+.rail-user{display:flex;align-items:center;gap:10px;padding:12px 6px 2px;border-top:1px solid var(--line)}
+.ru-av{width:34px;height:34px;border-radius:50%;background:var(--sunk);color:var(--ink);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.ru-n{display:grid;min-width:0;flex:1;line-height:1.3}.ru-n b{color:var(--ink);font-weight:600;font-size:13.5px}.ru-n small{color:var(--ink-3);font-size:12px}
+.ru-out{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--ink-3);flex:none}.ru-out:hover{background:var(--sunk);color:var(--ink)}.ru-out svg{width:16px;height:16px}
 .count{background:var(--glow);color:var(--on-glow)}
-main{padding-block:20px 80px}
-.view{max-width:1400px;gap:16px}
-.head{align-items:center;padding-bottom:2px}
-.head h1{font-size:24px;letter-spacing:-.01em}
-.head p{margin:2px 0 0;font-size:13px;color:var(--ink-3)}
-.panel{border-radius:8px;border-color:transparent;box-shadow:var(--shadow)}
-.panel-h h2{font-size:15px}
-.btn{border-radius:4px;padding:5px 12px;font-weight:600;font-size:13px;min-height:32px}
-.btn.primary{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}
-.btn.primary:hover{filter:brightness(1.08)}
-.btn:hover{background:var(--sunk);border-color:var(--line)}
-.btn.primary:hover{background:var(--glow)}
-.btn.icon{min-height:32px}
-.chip,.subnav button{border-radius:4px}
-.chip[aria-pressed="true"],.subnav button[aria-current="true"],.seg button[aria-pressed="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:var(--glow)}
-.subnav{gap:4px;border-bottom:1px solid var(--line);padding-bottom:0}
-.subnav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--ink-2)}
-.subnav button:hover{color:var(--ink);background:var(--sunk)}
-.subnav button[aria-current="true"]{background:none;border-color:var(--glow);color:var(--ink)}
-input.f,select.f,textarea.f{border-radius:4px}
-:focus-visible{outline-color:var(--glow)}
-.kpi{gap:2px}
-.tag{border-radius:4px}
-.dialog{border-radius:8px;box-shadow:0 25.6px 57.6px rgba(0,0,0,.22),0 4.8px 14.4px rgba(0,0,0,.18);border:0}
-.drawer{box-shadow:-8px 0 24px rgba(0,0,0,.12);border-left:0}
-.toast{border-radius:6px}
-/* Werkzeuge in der Kopfleiste (KI, Beträge, Einstellungen, neue Version – werden von globals.js/ki-chat.js eingesetzt) */
-.topbar .tb-right.rail-foot{display:flex;margin:0;padding:0;gap:8px;font-size:13px}
-.topbar .rail-foot .rf-ic{width:34px;height:34px;padding:0;border:0;border-radius:6px;background:none;color:#fff;display:grid;place-items:center}
-.topbar .rail-foot .rf-ic:hover{background:rgba(255,255,255,.16);color:#fff}
+
+/* Kopfzeile im Inhaltsbereich: Suche, Werkzeuge, „+ Neu“ */
+.topbar{grid-area:top;position:sticky;top:0;z-index:35;display:flex;align-items:center;gap:8px;height:var(--top-h);padding:0 clamp(16px,2.6vw,36px);background:color-mix(in srgb,var(--ground) 86%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.tb-search{flex:1;min-width:140px;display:flex;align-items:center;gap:10px;height:42px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--ink-3);padding:0 12px 0 14px;font-size:14px;text-align:left;box-shadow:var(--shadow)}
+.tb-search:hover{border-color:var(--line-2)}
+.tb-search svg{width:16px;height:16px;flex:none}
+.tb-search span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-search kbd{font:600 11px var(--f-mono);color:var(--ink-3);border:1px solid var(--line-2);border-radius:6px;padding:1px 6px}
+.tb-right{display:flex;align-items:center;gap:8px;min-width:0}
+.tb-right .stamp{color:var(--ink-3);font-size:12px;padding:0 4px;white-space:nowrap}
+.topbar .rail-foot{margin:0;padding:0;font-size:13px}
+.topbar .rail-foot .rf-ic,.topbar .tb-i{position:relative;width:42px;height:42px;padding:0;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--ink-2);display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
+.topbar .rail-foot .rf-ic:hover,.topbar .tb-i:hover{color:var(--ink);border-color:var(--line-2);background:var(--panel)}
 .topbar .rail-foot .rf-ic span{display:none}
-.topbar .rail-foot .rf-ic svg{width:18px;height:18px}
-.topbar .rail-foot .rf-ic[aria-pressed="true"]{background:rgba(255,255,255,.22)}
-.topbar .rail-foot .rf-new{width:auto;display:flex;gap:6px;padding:0 12px;background:#fff;color:var(--glow);font-weight:700;border-radius:99px}
+.topbar .rail-foot .rf-ic svg,.topbar .tb-i svg{width:18px;height:18px}
+.topbar .rail-foot .rf-ic[aria-pressed="true"]{color:var(--glow);border-color:color-mix(in srgb,var(--glow) 45%,var(--line))}
+.topbar .rail-foot .rf-new{width:auto;display:flex;gap:6px;padding:0 14px;background:var(--glow-soft);color:var(--glow-ink);border-color:transparent;font-weight:700}
 .topbar .rail-foot .rf-new span{display:inline}
+.topbar .rail-foot .rf-new:hover{background:var(--glow-soft);color:var(--glow-ink)}
+.tb-new{height:42px;border:0;border-radius:11px;background:var(--glow);color:var(--on-glow);font-weight:700;font-size:14px;padding:0 18px;white-space:nowrap;display:flex;align-items:center;gap:6px;flex:none}
+.tb-new:hover{filter:brightness(1.08)}
+.tb-new svg{width:16px;height:16px}
 @media (max-width:1500px){.tb-right .stamp{display:none}}
-.topbar .rail-foot .rf-new:hover{background:#fff;color:var(--glow)}
-.topbar .rail-foot .tb-i{display:grid;place-items:center;width:34px;height:34px;padding:0;color:#fff;border-radius:6px}
-.topbar .rail-foot .tb-i:hover{background:rgba(255,255,255,.16);color:#fff}
-.topbar .rail-foot a.tb-av{display:grid;place-items:center;padding:0;color:var(--glow);background:#fff;border-radius:50%}
-.topbar .rail-foot a.tb-av:hover{background:#fff;color:var(--glow)}
-:root[data-theme="dark"] .topbar .rail-foot a.tb-av{background:var(--glow);color:#0a1a2a}
-.topbar .rail-foot select.tb-sel{border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;border-radius:6px;padding:0 6px}
+.nmenu{position:fixed;z-index:80;min-width:240px;background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-pop);padding:6px;display:grid;gap:1px}
+.nmenu button{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:8px;padding:9px 10px;text-align:left;color:var(--ink);font-weight:500}
+.nmenu button:hover,.nmenu button:focus-visible{background:var(--sunk)}
+.nmenu button svg{width:17px;height:17px;color:var(--ink-3);flex:none}
+.nmenu button kbd{margin-left:auto;font:600 10.5px var(--f-mono);color:var(--ink-3)}
+.nmenu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+
+/* Inhalt */
+main{grid-area:main;padding-block:6px 80px;padding-inline:clamp(16px,2.6vw,36px);min-width:0}
+.view{max-width:1400px;gap:18px}
+.head{align-items:flex-end;padding:6px 0 2px}
+.head h1{font-size:30px;font-weight:700;letter-spacing:-.025em;line-height:1.1;color:var(--ink)}
+.head p{margin:6px 0 0;font-size:14px;color:var(--ink-2)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.panel-h{padding:15px 18px;border-bottom:1px solid var(--line)}
+.panel-h h2{font-size:15.5px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.link{color:var(--glow);font-weight:600}
+.link:hover{color:var(--glow);text-decoration:underline}
+.btn{border-radius:10px;padding:6px 14px;font-weight:600;font-size:13px;min-height:34px;background:var(--panel);border:1px solid var(--line);color:var(--ink)}
+.btn:hover{border-color:var(--line-2);background:var(--sunk)}
+.btn.primary{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}
+.btn.primary:hover{background:var(--glow);border-color:var(--glow);filter:brightness(1.08)}
+.btn.glow{background:var(--glow-soft);border-color:transparent;color:var(--glow-ink)}
+.btn.icon{min-height:34px}
+.chip{border-radius:99px}
+.chip[aria-pressed="true"],.seg button[aria-pressed="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:color-mix(in srgb,var(--glow) 40%,transparent)}
+.seg{border-radius:10px;border-color:var(--line);background:var(--panel)}
+.subnav{gap:2px;border-bottom:1px solid var(--line);padding-bottom:0}
+.subnav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:9px 12px;color:var(--ink-2)}
+.subnav button:hover{color:var(--ink);background:none}
+.subnav button[aria-current="true"]{background:none;border-color:var(--glow);color:var(--ink)}
+input.f,select.f,textarea.f{border-radius:9px;background:var(--panel);border-color:var(--line);color:var(--ink)}
+input.f:focus,select.f:focus,textarea.f:focus{outline:none;border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}
+input.f::placeholder,textarea.f::placeholder{color:var(--ink-3)}
+:focus-visible{outline-color:var(--glow)}
+.tag{border-radius:99px;font-weight:600}
+th{color:var(--ink-3)}
+.dialog{border-radius:16px;border:1px solid var(--line);box-shadow:var(--shadow-pop)}
+.modal{background:rgba(5,7,12,.55);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.scrim{background:rgba(5,7,12,.5)}
+.drawer{border-left:1px solid var(--line);box-shadow:-12px 0 32px rgba(0,0,0,.25)}
+.toast{border-radius:11px}
+.notice{border-radius:12px;border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
+/* Kennzahlen als einzelne Karten */
+.day{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;background:none;border:0;border-radius:0;overflow:visible}
+.day>button{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow);gap:4px}
+.day>button:hover{background:var(--panel);border-color:var(--line-2)}
+.k{font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink-2);font-weight:500}
+.v{font-family:var(--f-mono);font-size:27px;font-weight:600;color:var(--ink);letter-spacing:-.03em}
+.s{font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.kpi .v{font-size:24px}
+.bar i{background:var(--glow)}
+/* Zahlen: in Tabellen und Listen die Grundschrift mit gleich breiten Ziffern, Mono nur für große Kennzahlen und Zähler */
+.num{font-family:var(--f-body);font-variant-numeric:tabular-nums;letter-spacing:0}
+.v.num,.kpi .v,.count{font-family:var(--f-mono)}
+.pipe{grid-template-columns:repeat(5,minmax(168px,1fr))}
 /* Postfach und Kalender füllen am PC den ganzen Bildschirm */
 @media (min-width:901px){
-  main:has(>.view-post),main:has(>.view-kal .kd){height:calc(100vh - 48px);display:flex;flex-direction:column;padding-block:14px 14px;padding-inline:18px}
+  main:has(>.view-post),main:has(>.view-kal .kd){height:calc(100vh - var(--top-h));display:flex;flex-direction:column;padding-block:2px 14px;padding-inline:clamp(14px,1.6vw,22px)}
   main>.view-post,main>.view-kal:has(.kd){flex:1;min-height:0;max-width:none;width:100%;display:flex;flex-direction:column;gap:12px}
   .view-post>.mbox{flex:1;min-height:0;align-items:stretch}
   .view-post .mfold,.view-post .mlistp,.view-post .mread{position:static!important;max-height:none!important;height:100%;min-height:0}
@@ -367,34 +397,55 @@ input.f,select.f,textarea.f{border-radius:4px}
   .view-kal .kd-main{display:flex;flex-direction:column;min-height:0;overflow:auto}
   .view-kal .kw-scroll{flex:1;max-height:none;min-height:0}
 }
+/* Mittlere Breite: Seitenleiste nur mit Symbolen */
+@media (min-width:901px) and (max-width:1180px){
+  :root{--rail-w:76px}
+  .rail{padding:16px 8px 10px;align-items:stretch}
+  .brand{justify-content:center;padding:0 0 10px}.brand b{display:none}
+  .nav-g{font-size:0;padding:8px 0 4px;border-top:1px solid var(--line);margin:6px 10px 0}
+  .nav-g:first-child{border-top:0;margin-top:0}
+  .rail .nav-btn{justify-content:center;padding:10px 0}
+  .rail .nav-btn .nl{display:none}
+  .rail .nav-btn .count{position:absolute;top:2px;right:6px;margin:0;font-size:10px;line-height:16px;min-width:16px;padding:0 4px}
+  .rail-set{display:none}
+  .rail-user{justify-content:center;padding:10px 0 0}.ru-n,.ru-out{display:none}
+}
+/* Handy: Reiter unten, keine Seitenleiste/Kopfzeile (eigene Kopfzeilen je Seite) */
 @media (max-width:900px){
-  .topbar{display:none}
-  .app{min-height:100%;grid-template-columns:minmax(0,1fr)}
-  .panel{border-color:var(--line);box-shadow:none}
-  .subnav{border-bottom:0}
-  .subnav button{border:1px solid var(--line);border-radius:99px;padding:6px 14px}
-  .subnav button[aria-current="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:var(--glow)}
-  .btn{border-radius:99px}
+  .app{display:block;min-height:100%}
+  .rail,.topbar{display:none}
   main{padding-block:16px 112px}
+  .panel{box-shadow:none}
+  .subnav{border-bottom:0;gap:6px}
+  .subnav button{border:1px solid var(--line);border-radius:99px;padding:6px 14px;background:var(--panel)}
+  .subnav button[aria-current="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:color-mix(in srgb,var(--glow) 40%,transparent)}
+  .btn{border-radius:99px}
+  .head h1{font-size:26px}
+  .tabbar{background:color-mix(in srgb,var(--rail) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+  .tabbar button[aria-current="page"]{color:var(--glow)}
+  .tabbar .count{background:var(--glow);color:var(--on-glow)}
 }
 </style>
 </head>
 <body>
-<header class="topbar" aria-label="Kopfleiste">
-  <div class="tb-brand"><img src="/logos/cockpit-favicon.png" alt=""><b>FS Cockpit</b></div>
-  <button id="searchBtn" class="tb-search" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>Suchen – Mails, Kunden, Rechnungen, Termine …</span><kbd>⌘K</kbd></button>
-  <div class="tb-right rail-foot">
-    <span class="stamp" id="stamp"></span>
-    <button id="refresh" class="tb-i" type="button" title="Aktualisieren" aria-label="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
-    <select id="year" class="tb-sel" aria-label="Jahr" title="Jahr"></select>
-    <select id="themeSel" class="tb-sel" aria-label="Darstellung" title="Darstellung"><option value="auto">Wie System</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
-    <a href="/admin/logout" class="tb-av" title="Abmelden (Simon Felder)">SF</a>
-  </div>
-</header>
 <div class="app">
   <aside class="rail" aria-label="Hauptnavigation">
+    <div class="brand"><span class="bm">FS</span><b>FS Cockpit</b></div>
     <nav id="nav"></nav>
+    <div class="rail-set">
+      <select id="year" aria-label="Jahr" title="Jahr"></select>
+      <select id="themeSel" aria-label="Darstellung" title="Darstellung"><option value="dark">Dunkel</option><option value="light">Hell</option><option value="auto">Wie System</option></select>
+    </div>
+    <div class="rail-user"><span class="ru-av">SF</span><span class="ru-n"><b>Simon Felder</b><small>FS Creative</small></span><a href="/admin/logout" class="ru-out" title="Abmelden" aria-label="Abmelden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></a></div>
   </aside>
+  <header class="topbar" aria-label="Kopfleiste">
+    <button id="searchBtn" class="tb-search" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>Suchen oder Befehl eingeben … Mails, Kunden, Rechnungen, Termine</span><kbd>⌘K</kbd></button>
+    <div class="tb-right rail-foot">
+      <span class="stamp" id="stamp"></span>
+      <button id="refresh" class="tb-i" type="button" title="Aktualisieren" aria-label="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    </div>
+    <button type="button" class="tb-new" data-act="newmenu" aria-haspopup="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Neu</button>
+  </header>
   <main id="main"><div class="loading">Lade deine Daten …</div></main>
   <aside class="side" id="side" aria-label="Statusleiste" hidden></aside>
 </div>

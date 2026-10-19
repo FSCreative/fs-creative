@@ -44,6 +44,7 @@ function deadlinesHtml(){ var l=deadlines(6);
     (l.length?l.map(function(d){ return '<button type="button" class="si dl" data-act="'+(d.kind==="tk"?"tkopen:":"todoview:")+esc(d.id)+'"><span class="bar" style="background:'+d.color+'"></span><span class="sm"><b>'+esc(d.title)+'</b><small>'+esc(d.project||"Ohne Auftrag")+'</small></span><span class="dd '+(d.cls||"")+'">'+esc(d.label||dayShort(d.due))+'</span></button>'; }).join(""):'<p class="se">Keine offenen Fristen. <button type="button" class="link" data-act="tknew:">Aufgabe anlegen</button></p>')+'</section>'; }
 
 var last="";
+F.sideVisible=function(){ return !!(UI.sideOn&&(!MQ||MQ.matches)); };
 F.renderSide=function(){
   var el=document.getElementById("side"), app=document.querySelector(".app"); if(!el||!app) return;
   var on=UI.sideOn&&(!MQ||MQ.matches)&&!!F.D;
@@ -55,8 +56,8 @@ F.renderSide=function(){
 };
 F.action("sidem",function(v){ var t=today(); if(+v===0){ UI.sideM=""; } else { var m=UI.sideM||t.slice(0,7), d=new Date(+m.slice(0,4),+m.slice(5,7)-1+(+v),1); UI.sideM=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); } F.renderSide(); });
 F.action("sidemail",function(id){ UI.msel=id; if(F.current!=="post") F.go("post"); else F.render(); });
-F.action("sidetoggle",function(){ UI.sideOn=!UI.sideOn; F.ls("fsc_side",UI.sideOn); F.renderSide(); });
-if(MQ&&MQ.addEventListener) MQ.addEventListener("change",function(){ F.renderSide(); });
+F.action("sidetoggle",function(){ UI.sideOn=!UI.sideOn; F.ls("fsc_side",UI.sideOn); F.renderSide(); if(F.current==="heute"){ F._forceRender=true; F.render(); } });
+if(MQ&&MQ.addEventListener) MQ.addEventListener("change",function(){ F.renderSide(); if(F.current==="heute"){ F._forceRender=true; F.render(); } });
 /* Schalter in der Kopfleiste */
 (function(){ var r=document.querySelector(".topbar .tb-right"); if(!r||document.getElementById("sideBtn")) return;
   var b=document.createElement("button"); b.type="button"; b.id="sideBtn"; b.className="rf-ic side-btn"; b.title="Statusleiste rechts ein-/ausblenden"; b.setAttribute("aria-label","Statusleiste ein-/ausblenden"); b.setAttribute("data-act","sidetoggle"); b.innerHTML=F.svg("side");
@@ -65,13 +66,13 @@ if(MQ&&MQ.addEventListener) MQ.addEventListener("change",function(){ F.renderSid
 F.css(
 '.side{display:none}'+
 '@media (min-width:1360px){'+
-  '.app.has-side{grid-template-columns:72px minmax(0,1fr) 300px}'+
-  '.app.has-side .side{display:flex;flex-direction:column;gap:12px;position:sticky;top:48px;height:calc(100vh - 48px);overflow-y:auto;padding:16px 14px 24px;border-left:1px solid var(--line);background:var(--ground);overscroll-behavior:contain}'+
+  '.app.has-side{grid-template-columns:var(--rail-w,244px) minmax(0,1fr) 312px;grid-template-areas:"rail top side" "rail main side"}'+
+  '.app.has-side .side{grid-area:side;display:flex;flex-direction:column;gap:14px;position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 16px 24px;border-left:1px solid var(--line);background:var(--ground);overscroll-behavior:contain;scrollbar-width:thin}'+
 '}'+
 '.side-btn svg{width:18px;height:18px}'+
 '@media (max-width:1359px){.side-btn{display:none!important}}'+
-'.sb{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 10px 8px;box-shadow:var(--shadow)}'+
-'.sb-h{display:flex;align-items:center;gap:4px;padding:0 4px 8px}.sb-h b{font-size:13.5px}.sb-h .cap{text-transform:capitalize}.sb-h .sp{flex:1}.sb-h .link{font-size:12px}'+
+'.sb{background:var(--panel);border:1px solid var(--line);border-radius:var(--r,14px);padding:14px 12px 10px;box-shadow:var(--shadow)}'+
+'.sb-h{display:flex;align-items:center;gap:4px;padding:0 4px 10px}.sb-h b{font-size:14.5px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}.sb-h .link{color:var(--ink-3);font-weight:500}.sb-h .link:hover{color:var(--glow);text-decoration:none}.sb-h .cap{text-transform:capitalize}.sb-h .sp{flex:1}.sb-h .link{font-size:12px}'+
 '.sb-n{border:0;background:none;width:24px;height:24px;border-radius:6px;color:var(--ink-2);font-size:16px;line-height:1}.sb-n:hover{background:var(--sunk);color:var(--ink)}'+
 '.scal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center}.scal>span{font-size:10.5px;color:var(--ink-3);font-weight:600;padding-bottom:2px}'+
 '.sd{position:relative;border:0;background:none;border-radius:7px;height:30px;font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums;padding:0}.sd:hover{background:var(--sunk)}.sd.past{color:var(--ink-3)}'+

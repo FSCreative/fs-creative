@@ -475,6 +475,33 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(sevMock.state.deletedInvoices.indexOf(x.order.invoice.id) > -1);
     assert.ok(M.mails.some(m => m.to === "maria@example.com" && /nicht gedruckt/.test(m.text)));
   });
+  await t("Aufträge: Druckbestellungen erscheinen als Aufgaben (Auftrag „Druckshop“), Status kommt von der Druck-Seite – Freigeben → In Arbeit, Abschließen/Ablehnen/Versendet → Erledigt", async () => {
+    let A = await admin("/admin/api/auftraege"); const pj = A.projects.find(p => p.id === "pdruckshop"); assert.ok(pj && pj.name === "Druckshop", "Auftrag Druckshop angelegt");
+    const byId = id => A.tasks.find(t => t.print && t.print.id === id);
+    const t1 = byId(o1.orderId); assert.ok(t1, "Mollie-Bestellung als Aufgabe"); assert.strictEqual(t1.status, "erledigt", "versendet → erledigt"); assert.strictEqual(t1.projectId, "pdruckshop");
+    assert.deepStrictEqual(t1.checklist.map(c => c.done), [true, true, true, false]); assert.ok(t1.comments.some(c => /Versendet/.test(c.text)), "Statuswechsel als Kommentar");
+    assert.ok(A.tasks.every(t => !t.print || t.print.status !== "pending_payment"), "unbezahlte Bestellungen nicht im Board");
+    const rj = A.tasks.find(t => t.print && t.print.status === "rejected"); assert.ok(rj && rj.status === "erledigt" && /Beschnitt/.test(rj.comments.map(c => c.text).join(" ")), "abgelehnt → erledigt mit Grund");
+    const fi = A.tasks.find(t => t.print && t.print.status === "invoice_requested" && t.print.customer === "Testfirma GmbH"); assert.ok(fi, "Rechnungs-Bestellung zur Prüfung");
+    assert.strictEqual(fi.status, "pruefung"); assert.strictEqual(fi.prio, "hoch"); assert.ok(/^D-\d{6}-/.test(fi.title) && /Testfirma GmbH/.test(fi.title)); assert.ok(fi.due, "Frist gesetzt");
+    // Board: Spalte wechseln geht nur über die Druck-Seite, Bearbeiten ändert den Status nicht
+    let r = await admin("/admin/api/auftraege", { op: "task.move", id: fi.id, status: "arbeit" }); assert.strictEqual(r.ok, false); assert.ok(/Druck-Seite/.test(r.error));
+    r = await admin("/admin/api/auftraege", { op: "task.save", task: { id: fi.id, title: "Firma Visitenkarten", status: "erledigt", checklist: fi.checklist } }); assert.strictEqual(r.ok, true);
+    let x = r.data.tasks.find(t => t.id === fi.id); assert.strictEqual(x.status, "pruefung"); assert.strictEqual(x.title, "Firma Visitenkarten"); assert.strictEqual(x.print.id, fi.print.id, "Verknüpfung bleibt");
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "complete", id: fi.print.id, confirm: true })).ok, false, "abschließen erst nach der Bestellung");
+    // Freigeben auf der Druck-Seite → In Arbeit
+    assert.strictEqual((await admin("/admin/api/print/op", { op: "place", id: fi.print.id, confirm: true })).ok, true);
+    A = await admin("/admin/api/auftraege"); x = byId(fi.print.id); assert.strictEqual(x.status, "arbeit"); assert.strictEqual(x.prio, "normal"); assert.deepStrictEqual(x.checklist.map(c => c.done), [true, true, false, false]);
+    assert.strictEqual(x.title, "Firma Visitenkarten", "eigener Titel bleibt"); assert.ok(x.print.pcOrder);
+    // Abschließen → Erledigt, Druck-Seite „Zugestellt“
+    r = await admin("/admin/api/print/op", { op: "complete", id: fi.print.id, confirm: true, by: "Aufträge" }); assert.strictEqual(r.ok, true, JSON.stringify(r)); assert.strictEqual(r.order.status, "delivered");
+    assert.ok(r.order.history.some(h => /Manuell abgeschlossen \(Aufträge\)/.test(h.what)));
+    A = await admin("/admin/api/auftraege"); x = byId(fi.print.id); assert.strictEqual(x.status, "erledigt"); assert.ok(x.doneAt); assert.ok(x.checklist.every(c => c.done));
+    // gelöschte Druckaufgabe kommt nicht wieder
+    assert.strictEqual((await admin("/admin/api/auftraege", { op: "task.delete", id: x.id })).ok, true);
+    await admin("/admin/api/print/op", { op: "note", id: fi.print.id, confirm: true, note: "egal" });
+    A = await admin("/admin/api/auftraege"); assert.ok(!byId(fi.print.id), "nicht neu angelegt");
+  });
   await t("Einstellungen: automatisch senden + Produkt-Aufschlag aus dem Cockpit", async () => {
     let s = await admin("/admin/api/print/settings", { products: { visitenkarten: { markupPct: "50" } } }); assert.strictEqual(s.settings.products.visitenkarten.markupPct, 50);
     const r = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); assert.strictEqual(r.j.price.net, 35);   // 20 × 1,5 = 30 + 5 Versand

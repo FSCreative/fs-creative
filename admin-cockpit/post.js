@@ -1067,7 +1067,7 @@ F.css([
 "  .mchips{background:var(--panel)}",
 "  .mtools .msearch input{border-radius:4px}",
 "}",
-":root{--m-blue:#0f6cbd;--m-red:#d13438}",
+":root{--m-blue:var(--glow);--m-red:var(--bad)}   /* Handy: Akzent = Montafon-Indigo */",
 "@media (max-width:900px){",
 /* Grundgerüst: Kopf und Werkzeugleiste des Desktops weg, Liste randlos */
 "  .view-post .head,.view-post .mtools,.view-post .mbulk{display:none}",
@@ -1122,7 +1122,7 @@ F.css([
 "  .mptr svg{width:20px;height:20px;transition:transform .2s}.mptr.ready svg{transform:rotate(180deg)}.mptr.spin svg{animation:mspin .8s linear infinite}",
 "  @keyframes mspin{to{transform:rotate(360deg)}}",
 /* Neue Mail */
-"  .mfab{display:grid;place-items:center;position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;border-radius:18px;border:0;background:var(--m-blue);color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:25;transition:transform .25s cubic-bezier(.2,.8,.2,1)}",
+"  .mfab{display:grid;place-items:center;position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;border-radius:18px;border:0;background:var(--m-blue);color:var(--on-glow);box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:25;transition:transform .25s cubic-bezier(.2,.8,.2,1)}",
 "  body:has(.toast.on) .mfab{transform:translateY(-64px)}",
 "  .toast{left:12px;right:12px;max-width:none;transform:translateY(20px);display:flex;justify-content:space-between;align-items:center;border-radius:14px;padding:13px 16px}.toast.on{transform:none}.toast .ta{flex:none}",
 "  .mfab svg{width:24px;height:24px}",
@@ -1149,7 +1149,7 @@ F.css([
 "  .qreply{display:none}",
 "  .mrbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;gap:8px;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}",
 "  .mrbar button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:11px 8px;font:inherit;font-weight:600;font-size:14px}",
-"  .mrbar button:first-child{background:var(--m-blue);border-color:var(--m-blue);color:#fff}",
+"  .mrbar button:first-child{background:var(--m-blue);border-color:var(--m-blue);color:var(--on-glow)}",
 "  .mrbar svg{width:18px;height:18px}",
 "  .mread.swback{transition:transform .2s}",
 /* Ordner-/Kontenblatt von links */

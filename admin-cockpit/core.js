@@ -99,8 +99,15 @@ FSC.feedItems = function(){
 function navCount(v){ try{ return FSC.D&&v.count?v.count():0; }catch(e){ return 0; } }
 FSC.renderNav = function(){
   var cur=FSC.current;
-  var RL={post:"E-Mail",web:"Websites",plat:"Plattformen",kunden:"Kunden",kal:"Kalender"};
-  document.getElementById("nav").innerHTML=FSC.views.filter(function(v){return !v.hidden;}).map(function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'" title="'+v.label+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+(RL[v.id]||v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("");
+  /* Seitenleiste in Gruppen (Look „Montafon Night“); Seiten ohne Gruppe landen unter „System“ */
+  var RL={post:"Postfach",web:"Websites",plat:"Plattformen",kunden:"Kunden",kal:"Kalender",geld:"Finanzen",print:"Druckshop",legal:"Rechtliches"};
+  var GRP=[["Arbeit",["heute","auftraege","post","kal","chat"]],["Kunden & Geld",["kunden","geld","print"]],["System",["web","plat","legal","ki"]]];
+  var vis=FSC.views.filter(function(v){return !v.hidden;}), used={};
+  var btn=function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'" title="'+v.label+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span class="nl">'+(RL[v.id]||v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; };
+  var groups=GRP.map(function(g){ return [g[0],g[1].map(function(id){ return vis.find(function(v){ return v.id===id; }); }).filter(Boolean)]; });
+  groups.forEach(function(g){ g[1].forEach(function(v){ used[v.id]=1; }); });
+  vis.forEach(function(v){ if(!used[v.id]) groups[groups.length-1][1].push(v); });
+  document.getElementById("nav").innerHTML=groups.filter(function(g){ return g[1].length; }).map(function(g){ return '<div class="nav-g">'+FSC.esc(g[0])+'</div>'+g[1].map(btn).join(""); }).join("");
   var mob=FSC.views.filter(function(v){return v.mobile;}).slice(0,5);
   var inMob=mob.some(function(v){return v.id===cur;});
   document.getElementById("tabbar").innerHTML=mob.map(function(v){ var c=navCount(v); return '<button data-go="'+v.id+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span>'+(v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; }).join("")+
@@ -152,7 +159,7 @@ FSC.confirm = function(text,okLabel,fn,danger){
 };
 
 /* ---------- Darstellung: Automatisch / Hell / Dunkel ---------- */
-FSC.theme = function(t){ if(t!==undefined){ FSC.ls("fsc_theme",t); } t=FSC.ls("fsc_theme")||"auto"; if(t==="auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme",t); var s=document.getElementById("themeSel"); if(s) s.value=t; return t; };
+FSC.theme = function(t){ if(t!==undefined){ FSC.ls("fsc_theme",t); } t=FSC.ls("fsc_theme")||"dark"; if(t==="auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme",t); var s=document.getElementById("themeSel"); if(s) s.value=t; return t; };
 FSC.action("theme",function(v){ FSC.theme(v); FSC.toast(v==="light"?"Heller Modus":v==="dark"?"Dunkler Modus":"Darstellung wie System"); if(document.getElementById("moreSheet")) FSC.actions.moresheet(); });
 
 /* ---------- Mehr-Menü (Handy) ---------- */
