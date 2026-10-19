@@ -116,8 +116,8 @@ const CURATED = [
     optLabels: { size: { balloon: "Luftballon (Standard)", heart_balloon: "Herzballon", big_balloon_60: "Riesenballon 60 cm", big_balloon_90: "Riesenballon 90 cm" }, printtype: { "10": "1-farbig, einseitig", "11": "1-farbig, beidseitig" } },
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
-// Prüfsumme der kuratierten Auswahl: ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update(JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+// Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
+const CUR_V = require("crypto").createHash("sha1").update("2" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
