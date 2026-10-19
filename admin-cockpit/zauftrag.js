@@ -80,9 +80,10 @@ function listView(l){
 
 /* ---------- Aufgaben-Dialog ---------- */
 var DR=null;
-function openTask(id,status){
+function openTask(id,status,pre){
   var t=id?A().tasks.find(function(x){ return x.id===id; }):null; if(id&&!t){ F.toast("Aufgabe nicht gefunden",true); return; }
-  DR=t?JSON.parse(JSON.stringify(t)):{id:"",title:"",projectId:UI.tkProj||"",status:status||"offen",prio:"normal",due:"",notes:"",checklist:[],comments:[]};
+  DR=t?JSON.parse(JSON.stringify(t)):Object.assign({id:"",title:"",projectId:UI.tkProj||"",status:status||"offen",prio:"normal",due:"",notes:"",checklist:[],comments:[]},pre||{});
+  var P0=proj(DR.projectId), lead0=P0&&leadOf(P0);
   var projs=A().projects.filter(function(p){ return p.status!=="abgeschlossen"||p.id===DR.projectId; });
   F.modal('<form class="tk-dlg" data-form="tksave"><div class="tk-dh"><h2>'+(t?"Aufgabe bearbeiten":"Neue Aufgabe")+'</h2>'+F.btnClose()+'</div>'+
     '<label class="fl">Titel<input class="f" name="title" required maxlength="200" value="'+esc(DR.title)+'"'+(t?"":" autofocus")+' placeholder="z. B. Startseite Entwurf an Kunden schicken"></label>'+
@@ -92,6 +93,7 @@ function openTask(id,status){
     '<div class="tk-g3"><label class="fl">Frist<input class="f" type="date" name="due" value="'+esc(DR.due||"")+'"></label><div class="fl tk-quick"><span>Schnell</span><div><button type="button" class="btn sm" data-act="tkdue:0">Heute</button><button type="button" class="btn sm" data-act="tkdue:1">Morgen</button><button type="button" class="btn sm" data-act="tkdue:7">+1 Woche</button><button type="button" class="btn sm" data-act="tkdue:x">Keine</button></div></div></div>'+
     '<div class="fl">Checkliste<div id="tkCl">'+clHtml()+'</div><div class="tk-cladd"><input class="f" id="tkClNew" placeholder="Punkt hinzufügen und Enter drücken" maxlength="200"><button type="button" class="btn" data-act="tkcladd">Hinzufügen</button></div></div>'+
     '<label class="fl">Notizen<textarea class="f" name="notes" rows="3" maxlength="4000" placeholder="Details, Links, Zugangsinfos …">'+esc(DR.notes||"")+'</textarea></label>'+
+    (DR.mailRef||lead0||t?'<div class="tk-links">'+(DR.mailRef?'<button type="button" class="btn sm" data-act="tkmail">📧 Mail: '+esc(String(DR.mailRef.subject||"öffnen").slice(0,60))+'</button>':'')+(lead0?'<button type="button" class="btn sm" data-act="tklead:'+esc(lead0.id)+'">👤 Kundenakte: '+esc(lead0.company||lead0.name)+'</button>':'')+(t?'<button type="button" class="btn sm" data-act="tktermin">📅 Als Termin eintragen</button>':'')+'</div>':'')+
     (t?'<div class="fl">Kommentare<div class="tk-cm">'+((t.comments||[]).slice().reverse().map(function(c){ return '<div><small>'+esc(new Date(c.at).toLocaleString("de-AT",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))+'</small><p>'+esc(c.text)+'</p></div>'; }).join("")||'<span class="mu">Noch keine Kommentare.</span>')+'</div><div class="tk-cladd"><input class="f" id="tkCmNew" placeholder="Kommentar schreiben …" maxlength="2000"><button type="button" class="btn" data-act="tkcomment">Senden</button></div></div>':'')+
     '<div class="foot">'+(t?'<button type="button" class="btn bad-t" data-act="tkdel:'+esc(t.id)+'">Löschen</button>':'<span></span>')+'<div class="btns"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></div></div></form>',"wide");
 }
@@ -105,7 +107,7 @@ F.listen("keydown","#tkClNew",function(el,e){ if(e.key==="Enter"){ e.preventDefa
 F.listen("keydown","#tkCmNew",function(el,e){ if(e.key==="Enter"){ e.preventDefault(); F.actions.tkcomment(); } });
 F.action("tkdue",function(v){ var f=document.querySelector(".tk-dlg"); if(!f) return; f.due.value=v==="x"?"":addDays(today(),+v); });
 F.form("tksave",function(f){
-  var x={id:DR.id||undefined,title:f.title.value,projectId:f.projectId.value,status:f.status.value,prio:f.prio.value,due:f.due.value,notes:f.notes.value,checklist:DR.checklist};
+  var x={id:DR.id||undefined,title:f.title.value,projectId:f.projectId.value,status:f.status.value,prio:f.prio.value,due:f.due.value,notes:f.notes.value,checklist:DR.checklist,mailRef:DR.mailRef||undefined};
   var pending=document.getElementById("tkClNew"); if(pending&&pending.value.trim()) x.checklist=x.checklist.concat([{t:pending.value.trim(),done:false}]);
   api("task.save",{task:x}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast(DR.id?"Gespeichert":"Aufgabe angelegt"); } });
 });
@@ -136,9 +138,10 @@ function projModal(){ var P=A().projects.slice().sort(function(a,b){ return (a.s
   F.modal('<div class="tk-dh"><h2>Aufträge</h2>'+F.btnClose()+'</div><div class="tk-pl">'+(P.map(function(p){ var n=A().tasks.filter(function(t){ return t.projectId===p.id; }), o=n.filter(function(t){ return t.status!=="erledigt"; }).length;
       return '<div class="tk-pr'+(p.status==="abgeschlossen"?" off":"")+'"><span class="sw" style="background:'+PCOL[p.color||0]+'"></span><div><b>'+esc(p.name)+'</b><small>'+esc([p.customer,p.status==="aktiv"?"":p.status==="pausiert"?"pausiert":"abgeschlossen",o+" offen / "+n.length+" Aufgaben",p.due?"bis "+F.de(p.due):""].filter(Boolean).join(" · "))+'</small></div><button type="button" class="btn sm" data-act="tkprojedit:'+esc(p.id)+'">Bearbeiten</button></div>'; }).join("")||'<p class="mu">Noch keine Aufträge.</p>')+'</div>'+
     '<div class="foot"><span></span><button type="button" class="btn primary" data-act="tkprojnew">+ Neuer Auftrag</button></div>',"narrow"); }
-function projEdit(id){ var p=id?proj(id):null, x=p||{name:"",customer:"",color:A().projects.length%PCOL.length,status:"aktiv",due:"",note:""};
+function projEdit(id,pre){ var p=id?proj(id):null, x=p||Object.assign({name:"",customer:"",color:A().projects.length%PCOL.length,status:"aktiv",due:"",note:"",leadId:""},pre||{}), ld=leadOf(x);
   var leads=((F.D&&F.D.leads)||[]).map(function(l){ return l.company||l.name; }).filter(Boolean).filter(function(v,i,a){ return a.indexOf(v)===i; }).slice(0,300);
-  F.modal('<form class="tk-dlg" data-form="tkprojsave"><input type="hidden" name="id" value="'+esc(x.id||"")+'"><div class="tk-dh"><h2>'+(p?"Auftrag bearbeiten":"Neuer Auftrag")+'</h2>'+F.btnClose()+'</div>'+
+  F.modal('<form class="tk-dlg" data-form="tkprojsave"><input type="hidden" name="id" value="'+esc(x.id||"")+'"><input type="hidden" name="leadId" value="'+esc(x.leadId||(ld?ld.id:""))+'"><div class="tk-dh"><h2>'+(p?"Auftrag bearbeiten":"Neuer Auftrag")+'</h2>'+F.btnClose()+'</div>'+
+    (p?'<div class="tk-links">'+(ld?'<button type="button" class="btn sm" data-act="tklead:'+esc(ld.id)+'">👤 Kundenakte</button>':'')+'<button type="button" class="btn sm" data-act="tkoffer:'+esc(p.id)+'">Angebot schreiben</button><button type="button" class="btn sm" data-act="tkinvoice:'+esc(p.id)+'">Rechnung schreiben</button><button type="button" class="btn sm" data-act="tknewin:'+esc(p.id)+'">+ Aufgabe</button></div>':'')+
     '<label class="fl">Name<input class="f" name="name" required maxlength="120" autofocus value="'+esc(x.name)+'" placeholder="z. B. Website Relaunch Muster GmbH"></label>'+
     '<label class="fl">Kunde<input class="f" name="customer" maxlength="160" list="tkLeads" value="'+esc(x.customer||"")+'" placeholder="Firma oder Name"><datalist id="tkLeads">'+leads.map(function(v){ return '<option value="'+esc(v)+'">'; }).join("")+'</datalist></label>'+
     '<div class="tk-g3"><label class="fl">Status<select class="f" name="status"><option value="aktiv"'+(x.status==="aktiv"?" selected":"")+'>Aktiv</option><option value="pausiert"'+(x.status==="pausiert"?" selected":"")+'>Pausiert</option><option value="abgeschlossen"'+(x.status==="abgeschlossen"?" selected":"")+'>Abgeschlossen</option></select></label>'+
@@ -149,10 +152,39 @@ F.action("tkprojects",projModal);
 F.action("tkprojnew",function(){ projEdit(""); });
 F.action("tkprojedit",projEdit);
 F.form("tkprojsave",function(f){ var c=f.querySelector('input[name=color]:checked');
-  api("project.save",{project:{id:f.id.value||undefined,name:f.name.value,customer:f.customer.value,status:f.status.value,due:f.due.value,note:f.note.value,color:c?c.value:0}}).then(function(j){ if(j&&j.ok){ F.toast("Auftrag gespeichert"); if(!f.id.value) UI.tkProj=j.id; projModal(); } }); });
+  var ld=leadOf({customer:f.customer.value,leadId:f.leadId.value});
+  api("project.save",{project:{id:f.id.value||undefined,name:f.name.value,customer:f.customer.value,status:f.status.value,due:f.due.value,note:f.note.value,color:c?c.value:0,leadId:ld?ld.id:""}}).then(function(j){ if(j&&j.ok){ F.toast("Auftrag gespeichert"); if(!f.id.value) UI.tkProj=j.id; projModal(); } }); });
 F.action("tkprojdel",function(id){ if(!confirm("Diesen Auftrag löschen?")) return; api("project.delete",{id:id}).then(function(j){ if(j&&j.ok){ if(UI.tkProj===id) UI.tkProj=""; projModal(); } }); });
 
+/* ---------- Verbindungen: Kunden, Mails, Kalender, Rechnungen ---------- */
+function leads(){ return (F.D&&F.D.leads)||[]; }
+function leadOf(p){ if(!p) return null; var L=leads(); if(p.leadId){ var a=L.find(function(l){ return l.id===p.leadId; }); if(a) return a; }
+  var c=String(p.customer||"").trim().toLowerCase(); return c?L.find(function(l){ return String(l.company||"").trim().toLowerCase()===c||String(l.name||"").trim().toLowerCase()===c; })||null:null; }
+function leadProjects(id){ var l=leads().find(function(x){ return x.id===id; }); return l?A().projects.filter(function(p){ var ld=leadOf(p); return ld&&ld.id===l.id; }):[]; }
+F.tkLeadProjects=leadProjects;
+F.tkLeadHtml=function(l){ var P=leadProjects(l.id); if(!P.length) return '';
+  return '<div><div class="sec-t">Aufträge</div>'+P.map(function(p){ var T=A().tasks.filter(function(t){ return t.projectId===p.id; }), o=T.filter(function(t){ return t.status!=="erledigt"; }), nx=o.filter(function(t){ return t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due); })[0];
+    return '<button type="button" class="tk-lr" data-act="tkprojopen:'+esc(p.id)+'"><span class="sw" style="background:'+PCOL[p.color||0]+'"></span><span><b>'+esc(p.name)+'</b><small>'+(o.length?o.length+" offen":"alles erledigt")+(nx?" · nächste Frist "+esc(dueLabel(nx.due)):"")+(p.status!=="aktiv"?" · "+esc(p.status):"")+'</small></span></button>'; }).join("")+'</div>'; };
+F.action("tkprojfromlead",function(id){ var l=leads().find(function(x){ return x.id===id; }); if(!l) return; F.closeDrawer&&F.closeDrawer(); if(F.current!=="auftraege") F.go("auftraege");
+  projEdit("",{name:(l.topic&&l.topic!=="Etwas anderes"?l.topic+" – ":"")+(l.company||l.name),customer:l.company||l.name,leadId:l.id}); });
+F.action("tkprojopen",function(id){ F.closeDrawer&&F.closeDrawer(); UI.tkProj=id; F.go("auftraege"); });
+F.action("tklead",function(id){ F.closeModal(); if(F.openLead){ if(F.current!=="kunden") F.go("kunden"); F.openLead(id); } });
+F.action("tknewin",function(pid){ UI.tkProj=pid; F.closeModal(); openTask("","offen",{projectId:pid}); });
+F.action("tkmail",function(){ var r=DR&&DR.mailRef; if(!r) return; F.closeModal(); UI.msel=r.id; UI.mq=r.subject||""; if(F.M&&F.M.serverSearch) F.M.serverSearch(); F.go("post"); });
+F.action("tktermin",function(){ if(!DR) return; var t=DR, p=proj(t.projectId); F.closeModal(); if(F.openEventEdit) F.openEventEdit({title:t.title+(p?" · "+p.name:""),notes:t.notes||""},t.due||today()); });
+function bill(pid,kind){ var p=proj(pid); if(!p) return; var ld=leadOf(p); F.closeModal(); if(F.openInvoice) F.openInvoice(Object.assign({title:(kind==="offer"?"Angebot · ":"Rechnung · ")+p.name,contactName:p.customer||(ld&&(ld.company||ld.name))||"",email:ld&&ld.email||""},kind==="offer"?{kind:"offer"}:{})); }
+F.action("tkoffer",function(pid){ bill(pid,"offer"); });
+F.action("tkinvoice",function(pid){ bill(pid,""); });
+/* Mail → Aufgabe: Betreff als Titel, Absender als Notiz, Mail verknüpft, Auftrag des Kunden vorausgewählt */
+F.tkFromMail=function(m){ if(!m) return;
+  var subj=String(m.subject||"").replace(/^\s*((re|aw|wg|fw|fwd)\s*:\s*)+/i,"").trim(), from=String(m.from||"").toLowerCase();
+  var ld=leads().find(function(l){ return l.email&&String(l.email).toLowerCase()===from; }), pr=ld?A().projects.filter(function(p){ var x=leadOf(p); return x&&x.id===ld.id&&p.status!=="abgeschlossen"; })[0]:null;
+  if(F.current!=="auftraege") F.go("auftraege");
+  openTask("","offen",{title:subj.slice(0,200)||"Mail beantworten",projectId:pr?pr.id:"",notes:"Aus Mail von "+(m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+"> vom "+new Date(m.date).toLocaleDateString("de-AT"),
+    mailRef:{id:m.id,account:m.account||"",folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}}); };
+
 /* ---------- für Statusleiste & Suche ---------- */
+F.tkOpenDue=function(){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,project:p?p.name:""}; }); };
 F.tkDeadlines=function(n){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due)||(a.prio==="dringend"?-1:0); }).slice(0,n||6).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,label:dueLabel(t.due),cls:dueCls(t),color:p?PCOL[p.color||0]:"var(--ink-3)",project:p?p.name:"",prio:t.prio}; }); };
 F.tkDueDays=function(){ var o={}; A().tasks.forEach(function(t){ if(t.status!=="erledigt"&&t.due) o[t.due]=(o[t.due]||0)+1; }); return o; };
 F.searcher(function(q){ q=q.toLowerCase(); return A().tasks.filter(function(t){ return t.title.toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(t){ var p=proj(t.projectId); return {group:"Aufgaben",label:t.title,sub:(p?p.name+" · ":"")+(t.due?"fällig "+dueLabel(t.due):"ohne Frist"),act:"tkopen:"+t.id}; }); });
@@ -182,6 +214,8 @@ F.css(
 '#tkCl{display:grid;gap:4px}.tk-cli{display:flex;align-items:center;gap:9px;padding:5px 8px;border-radius:8px;background:var(--sunk)}.tk-cli span{flex:1;font-size:14px;color:var(--ink)}.tk-cli.on span{text-decoration:line-through;color:var(--ink-3)}.tk-cli .x{border:0;background:none;color:var(--ink-3);font-size:18px;line-height:1}'+
 '.tk-cladd{display:flex;gap:8px;margin-top:6px}.tk-none2{font-size:12.5px}'+
 '.tk-cm{display:grid;gap:8px;max-height:220px;overflow:auto}.tk-cm div{background:var(--sunk);border-radius:8px;padding:7px 10px}.tk-cm small{color:var(--ink-3)}.tk-cm p{margin:2px 0 0;color:var(--ink);white-space:pre-wrap}'+
+'.tk-links{display:flex;flex-wrap:wrap;gap:6px}'+
+'.tk-lr{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 10px;margin-top:6px}.tk-lr:hover{border-color:var(--ink-3)}.tk-lr .sw{width:10px;height:10px;border-radius:3px;flex:none}.tk-lr span:last-child{display:grid;min-width:0}.tk-lr small{color:var(--ink-3)}'+
 '.tk-pl{display:grid;gap:6px}.tk-pr{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}.tk-pr.off{opacity:.6}.tk-pr .sw{width:12px;height:12px;border-radius:4px;flex:none}.tk-pr div{flex:1;min-width:0;display:grid}.tk-pr small{color:var(--ink-3)}'+
 '.tk-cols{display:flex;flex-wrap:wrap;gap:6px;padding-top:4px}.tk-cols input{position:absolute;opacity:0;pointer-events:none}.tk-cols span{display:block;width:22px;height:22px;border-radius:6px;cursor:pointer;border:2px solid transparent}.tk-cols input:checked+span{border-color:var(--ink);box-shadow:0 0 0 2px var(--panel) inset}'+
 '@media (max-width:900px){.tk-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.tk-board{grid-template-columns:repeat(4,minmax(260px,82vw));scroll-snap-type:x mandatory}.tk-col{scroll-snap-align:start}.tk-g3{grid-template-columns:1fr}.tk-tab th:nth-child(4),.tk-tab td:nth-child(4),.tk-tab th:nth-child(6),.tk-tab td:nth-child(6){display:none}}'

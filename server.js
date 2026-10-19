@@ -36,6 +36,7 @@ function auftragOp(b) {
     const t = Object.assign(old || { id: tkId("t"), created: now, comments: [], order: now }, {
       title, projectId: pid, status, prio: TK_PRIO.indexOf(x.prio) > -1 ? x.prio : "normal", due: tkDate(x.due), notes: tkClip(x.notes, 4000),
       checklist: (Array.isArray(x.checklist) ? x.checklist : []).slice(0, 60).map(c => ({ t: tkClip(c && c.t, 200), done: !!(c && c.done) })).filter(c => c.t), updated: now });
+    if (x.mailRef && typeof x.mailRef === "object") t.mailRef = { id: tkClip(x.mailRef.id, 60), account: tkClip(x.mailRef.account, 40), folder: tkClip(x.mailRef.folder, 200), uid: parseInt(x.mailRef.uid, 10) || 0, subject: tkClip(x.mailRef.subject, 200), from: tkClip(x.mailRef.from, 160) };
     if (status === "erledigt" && !t.doneAt) t.doneAt = now; if (status !== "erledigt") t.doneAt = null;
     if (!old) A.tasks.push(t);
     return { data: writeAuftraege(A), id: t.id };
@@ -371,6 +372,25 @@ const MAIL_RULES = require("./mail-rules.js")({
   },
 });
 setInterval(() => { if (MAIL.url && MAIL.token) MAIL_RULES.tick(); }, 2 * 60 * 1000);
+// Morgens (ab 7:30 Wiener Zeit, einmal pro Tag) Push an alle Geräte: was heute fällig bzw. überfällig ist (Aufträge + To-Dos)
+const DIGEST_FILE = path.join(DATA_DIR, "digest.json");
+function dailyDigest() {
+  if (!process.env.DATABASE_URL) return;
+  const hm = new Intl.DateTimeFormat("de-AT", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()), day = viennaToday();
+  if (hm < "07:30") return;
+  let last = ""; try { last = JSON.parse(fs.readFileSync(DIGEST_FILE, "utf8")).day || ""; } catch (e) {}
+  if (last === day) return;
+  try { fs.writeFileSync(DIGEST_FILE, JSON.stringify({ day })); } catch (e) { return; }
+  const A = readAuftraege(), open = A.tasks.filter(t => t.status !== "erledigt" && t.due && t.due <= day), over = open.filter(t => t.due < day);
+  const todos = readTodos().filter(t => !t.done && t.due && t.due <= day);
+  if (!open.length && !todos.length) return;
+  const parts = [];
+  if (open.length) parts.push(open.length + (open.length === 1 ? " Aufgabe" : " Aufgaben") + (over.length ? " (" + over.length + " überfällig)" : ""));
+  if (todos.length) parts.push(todos.length + (todos.length === 1 ? " To-Do" : " To-Dos"));
+  const first = open.concat(todos.map(t => ({ title: t.text }))).slice(0, 3).map(t => t.title).join(" · ");
+  PUSH.send("*", { title: "Heute fällig: " + parts.join(", "), body: first, url: "/admin#auftraege", tag: "digest-" + day }).catch(e => console.error("Push-Tagesübersicht:", e.message));
+}
+setInterval(dailyDigest, 5 * 60 * 1000);
 // Push-Benachrichtigungen (Handy): neue Mails jede Minute prüfen
 const PUSH = require("./push.js")({ getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
 setInterval(() => { if (MAIL.url && MAIL.token && process.env.DATABASE_URL) PUSH.mailTick(() => mailSnapshot()).catch(e => console.error("Push-Mail:", e.message)); }, 60 * 1000);

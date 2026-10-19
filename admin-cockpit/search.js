@@ -57,6 +57,8 @@ function baseActions(){
     {label:"Offene Rechnungen",sub:"Geld",icon:"euro",act:has("openinvoices")?"openinvoices:":"go:geld",kw:"unbezahlt überfällig"},
     {label:"Neues To-Do",sub:"Aufgabe anlegen",icon:"todo",act:has("newtodo")?"newtodo:":"_todo",kw:"aufgabe todo"},
     {label:"Neuer Termin",sub:"Kalender",icon:"kal",act:has("newevent")?"newevent:":"go:kal",kw:"termin kalender event"},
+    {label:"Neue Aufgabe",sub:"Aufträge – mit Frist und Checkliste",icon:"board",act:has("tknew")?"tknew:":"go:auftraege",kw:"aufgabe auftrag task frist deadline"},
+    {label:"Neuer Auftrag",sub:"Aufträge – Projekt für einen Kunden",icon:"board",act:has("tkprojnew")?"tkprojnew:":"go:auftraege",kw:"auftrag projekt kunde"},
     {label:"Einstellungen & E-Mail-Konten",sub:"Passwörter, iCloud, Verbindungen",icon:"gear",act:"settings:",kw:"einstellungen konten passwort"},
     {label:"Darstellung: Automatisch",sub:t==="auto"?"aktiv":"wie System",icon:"sun",act:"theme:auto",kw:"theme modus dunkel hell"},
     {label:"Darstellung: Hell",sub:t==="light"?"aktiv":"",icon:"sun",act:"theme:light",kw:"theme modus light"},

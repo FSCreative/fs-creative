@@ -402,7 +402,7 @@ function readerHtml(){
   else {
     if(dbox) tb+=rb("mx:editdraft","edit","Weiter bearbeiten"," pri",true);
     tb+=rb("mx:reply","reply","Antworten (R)","",true)+rb("mx:replyall","replyall","Allen antworten (A)")+rb("mx:forward","forward","Weiterleiten (F)")+
-      '<span class="rsep"></span>'+rb("mx:todo","todo","Als To-Do (T)")+rb("mx:termin","cal","Als Termin")+
+      '<span class="rsep"></span>'+rb("mx:todo","todo","Als To-Do (T)")+rb("mx:auftrag","board","Als Aufgabe (Aufträge)")+rb("mx:termin","cal","Als Termin")+
       '<span class="rsep"></span>'+rb("mx:move","folder","Verschieben (V)")+(spam?rb("mx:notspam","inboxin","Kein Spam – in den Posteingang"):rb("mx:spam","spam","Als Spam"))+rb("mx:trash","trash","Löschen (#)"," dg");
   }
   tb+='<span class="rsp"></span>'+rb("mx:"+(m.read?"unread":"read"),m.read?"mail":"mailopen",m.read?"Als ungelesen (U)":"Als gelesen (U)")+
@@ -689,7 +689,7 @@ F.action("mxmore",function(){
   var m=M.cur(); if(!m) return; var sp=isSpam(m), go=function(op){ return function(){ F.actions.mx(op,null); }; };
   M.ctx(0,0,[
     {label:"Allen antworten",act:go("replyall")},{label:"Weiterleiten",act:go("forward")},{sep:true},
-    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als To-Do",act:go("todo")},{label:"Als Termin",act:go("termin")},{sep:true},
+    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als To-Do",act:go("todo")},{label:"Als Aufgabe (Aufträge)",act:go("auftrag")},{label:"Als Termin",act:go("termin")},{sep:true},
     {label:sp?"Kein Spam":"Als Spam",act:go(sp?"notspam":"spam")},{label:"Drucken",act:go("print")},{label:"In Webmail öffnen",act:function(){ F.actions.mwebmail(); }}
   ],m.subject||"Mail");
 });
@@ -887,6 +887,7 @@ F.action("mx",function(op,el){
   else if(op==="forward") M.reply(m,"fwd");
   else if(op==="todo") M.todoFromMail(m);
   else if(op==="termin") M.eventFromMail(m);
+  else if(op==="auftrag"&&F.tkFromMail) F.tkFromMail(m);
   else if(op==="move"){ var p=menuPos(el&&el.isConnected?el:null); M.showMoveMenu(p[0],p[1],[m.id]); }
   else if(op==="spam") moveMessages([m.id],null,"spam");
   else if(op==="notspam") moveMessages([m.id],"INBOX","move");

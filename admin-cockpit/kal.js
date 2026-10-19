@@ -163,6 +163,7 @@ function calItems(){
     push(e.date,{kind:"evt",label:e.title||"Termin",time:e.time||"",end:e.endTime||"",loc:e.location||"",c:sp,priv:e.source==="icloud",
       sub:(e.source==="icloud"?"Privat · iCloud":e.source==="outlook"?"Mail-Kalender":spName(sp)),act:"eventview:"+e.id}); });
   (D.todos||[]).forEach(function(x){ if(x.due&&!x.done) push(x.due,{kind:"todo",label:x.text||"Aufgabe",c:"todo",time:"",sub:"To-Do"+(x.due<t?" · überfällig":""),late:x.due<t,act:"todoview:"+x.id}); });
+  if(F.tkOpenDue) F.tkOpenDue().forEach(function(x){ push(x.due,{kind:"todo",label:"⚑ "+x.title,c:"todo",time:"",sub:"Frist"+(x.project?" · "+x.project:"")+(x.due<t?" · überfällig":""),late:x.due<t,act:"tkopen:"+x.id}); });   // Fristen aus „Aufträge“
   ((D.sev&&D.sev.invoices)||[]).forEach(function(i){ if(i.due&&i.open>0.005) push(i.due,{kind:"inv",label:(i.nr||"Entwurf")+" · "+(i.contact||""),c:i.overdue?"invbad":"inv",time:"",sub:(i.overdue?"Überfällig":"Rechnung fällig")+" · offen "+F.eur(i.open),money:true,act:"fincal:"+(i.nr||i.id)}); });
   Object.keys(map).forEach(function(k){ map[k].sort(function(a,b){ return (a.time||"")<(b.time||"")?-1:(a.time||"")>(b.time||"")?1:0; }); });
   return map;
