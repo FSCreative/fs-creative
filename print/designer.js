@@ -797,11 +797,11 @@
   }
 
   // ── Vorschau, Export ──
-  function renderPreview(maxSide) {
+  function renderPreview(maxSide, q) {
     var c = D.c, v = c.viewportTransform.slice(), act0 = act(); c.discardActiveObject(); D.exporting = true;
     var hidden = c.getObjects().filter(function (o) { return o.role === "ph" && o.visible; }); hidden.forEach(function (o) { o.visible = false; });
     c.setViewportTransform([1, 0, 0, 1, 0, 0]);
-    var k = (maxSide || 1400) / Math.max(D.trim.w, D.trim.h), url = c.toDataURL({ format: "jpeg", quality: 0.9, left: D.trim.x, top: D.trim.y, width: D.trim.w, height: D.trim.h, multiplier: k });
+    var k = (maxSide || 1400) / Math.max(D.trim.w, D.trim.h), url = c.toDataURL({ format: "jpeg", quality: q || 0.9, left: D.trim.x, top: D.trim.y, width: D.trim.w, height: D.trim.h, multiplier: k });
     hidden.forEach(function (o) { o.visible = true; }); c.setViewportTransform(v); D.exporting = false; if (act0 && c.getObjects().indexOf(act0) > -1) c.setActiveObject(act0); c.requestRenderAll();
     return url;
   }
@@ -857,7 +857,8 @@
   function saveLink() {
     saveCur(); if (!window.PrintShop || !window.PrintShop.saveDraftLink) return;
     busy("Entwurf wird gespeichert …");
-    window.PrintShop.saveDraftLink({ pages: D.pages }).then(function (j) { busy(false);
+    var pv = ""; try { pv = renderPreview(180, 0.62); } catch (e) {}
+    window.PrintShop.saveDraftLink({ pages: D.pages }, pv.length < 16000 ? pv : "").then(function (j) { busy(false);
       if (!j.ok) { toast(j.error || "Speichern fehlgeschlagen", true); return; }
       modal('<h3>Entwurf gespeichert</h3><p class="pd-muted">Mit diesem Link kannst du die Gestaltung später (auch auf einem anderen Gerät) weiterbearbeiten. Er ist 60 Tage gültig – wer ihn kennt, kann den Entwurf öffnen.</p><input class="pd-in" id="pdLink" readonly value="' + esc(j.url) + '" style="margin-top:10px"><div class="foot"><button class="ps-btn" data-a="m:ok">Schließen</button><button class="ps-btn primary" data-a="m:copy">Link kopieren</button></div>', function (a) { if (a === "copy") { var i = document.getElementById("pdLink"); try { navigator.clipboard.writeText(i.value).then(function () { toast("Link kopiert"); }); } catch (e) { i.select(); document.execCommand("copy"); toast("Link kopiert"); } return true; } });
     }).catch(function () { busy(false); toast("Speichern fehlgeschlagen", true); });

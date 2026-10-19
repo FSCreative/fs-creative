@@ -27,11 +27,11 @@ module.exports = function (D) {
     if (h !== k.h) { k.tries++; return "Der Code stimmt nicht."; }
     c.code = null; return null;
   }
-  async function sendCode(c, purpose) {
+  async function sendCode(c, purpose, to) {
     const code = newCode(c, purpose); await save();
-    const t = purpose === "reset" ? "Passwort zurücksetzen" : "E-Mail-Adresse bestätigen";
-    await mail(c.email, code + " – dein Code für den FS Creative Druckshop", t, ["Hallo" + (c.firstName ? " " + c.firstName : "") + ",",
-      purpose === "reset" ? "mit diesem Code kannst du ein neues Passwort für dein Kundenkonto im Druckshop setzen:" : "danke für deine Registrierung im FS Creative Druckshop. Bitte bestätige deine E-Mail-Adresse mit diesem Code:"],
+    const t = purpose === "reset" ? "Passwort zurücksetzen" : purpose === "email" ? "Neue E-Mail-Adresse bestätigen" : "E-Mail-Adresse bestätigen";
+    await mail(to || c.email, code + " – dein Code für den FS Creative Druckshop", t, ["Hallo" + (c.firstName ? " " + c.firstName : "") + ",",
+      purpose === "reset" ? "mit diesem Code kannst du ein neues Passwort für dein Kundenkonto im Druckshop setzen:" : purpose === "email" ? "du möchtest die E-Mail-Adresse deines Kundenkontos im FS Creative Druckshop auf diese Adresse ändern. Bitte bestätige mit diesem Code:" : "danke für deine Registrierung im FS Creative Druckshop. Bitte bestätige deine E-Mail-Adresse mit diesem Code:"],
       [["Dein Code", code]], ["Der Code ist " + CODE_MIN + " Minuten gültig. Wenn du das nicht angefordert hast, kannst du diese Mail ignorieren."]);
   }
   // ── Sitzung ──
@@ -46,10 +46,16 @@ module.exports = function (D) {
   const clearCookie = () => COOKIE + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax" + (D.secure ? "; Secure" : "");
   // ── Profil ──
   const ADDR = ["type", "company", "uid", "firstName", "lastName", "phone", "street", "zip", "city", "country"];
-  function profileIn(c, p) { p = p || {}; ADDR.forEach(k => { if (p[k] !== undefined) c[k] = clip(p[k], k === "street" ? 120 : k === "company" ? 120 : 80); });
+  // keepType: Profil-Formular darf Kontotyp nicht ändern (Umstellung Privat ↔ Firma nur über /account/type in den Einstellungen)
+  function profileIn(c, p, keepType) { p = Object.assign({}, p || {}); if (keepType) { delete p.type; if (c.type !== "company") { delete p.company; delete p.uid; } }
+    ADDR.forEach(k => { if (p[k] !== undefined) c[k] = clip(p[k], k === "street" ? 120 : k === "company" ? 120 : 80); });
     c.type = c.type === "company" ? "company" : "private"; c.country = "AT"; if (c.uid) c.uid = c.uid.replace(/[\s.\-]/g, "").toUpperCase(); }
   const pub = c => ({ id: c.id, email: c.email, verified: !!c.verified, createdAt: c.createdAt, type: c.type || "private", company: c.company || "", uid: c.uid || "", firstName: c.firstName || "", lastName: c.lastName || "",
-    phone: c.phone || "", street: c.street || "", zip: c.zip || "", city: c.city || "", country: c.country || "AT", newsletter: !!c.newsletter });
+    phone: c.phone || "", street: c.street || "", zip: c.zip || "", city: c.city || "", country: c.country || "AT", newsletter: !!c.newsletter,
+    uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c) });
+  // Entwürfe aus dem Designer (per Link gespeichert, 60 Tage gültig) – im Konto gelistet
+  const draftsOf = c => (c.drafts || []).filter(d => Date.now() - Date.parse(d.at) < 60 * DAY).slice(0, 12);
+  async function addDraft(c, d) { const m = await all(), x = m[c.email]; if (!x) return; x.drafts = [{ id: clip(d.id, 40), t: clip(d.t, 60), product: clip(d.product, 80), title: clip(d.title, 120), preview: /^data:image\/jpeg;base64,/.test(d.preview || "") && d.preview.length < 16000 ? d.preview : "", at: nowIso() }].concat(draftsOf(x).filter(y => y.id !== d.id)).slice(0, 12); await save(); }
   // Warenkorb: Positionen mit Ausführung, Datei-Referenz (signiert) und Preis zum Zeitpunkt des Hinzufügens; nach 30 Tagen verfällt er
   function cartClean(items) {
     return (Array.isArray(items) ? items : []).slice(0, 30).map(x => x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) : null)
@@ -71,6 +77,13 @@ module.exports = function (D) {
     if (p === "/print/api/account/me" && req.method === "GET") {
       const c = await current(req); if (!c) return send(200, { ok: true, customer: null });
       return send(200, await full(c));
+    }
+    if (p === "/print/api/account/export" && req.method === "GET") {   // Auskunft (Art. 15 DSGVO): eigene Daten als Datei
+      const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
+      const data = { erstellt: nowIso(), hinweis: "Deine im FS Creative Druckshop gespeicherten Kontodaten. Bestellungen bewahren wir aus steuerlichen Gründen 7 Jahre auf.",
+        konto: Object.assign(pub(c), { drafts: undefined, lastLogin: c.lastLogin || "", newsletterAt: c.newsletterAt || "", verifiedAt: c.verifiedAt || "" }), warenkorb: cartOf(c).map(x => ({ produkt: x.title, stueck: x.n, datei: x.fileName })),
+        entwuerfe: draftsOf(c).map(d => ({ produkt: d.title, gespeichert: d.at })), bestellungen: (await ordersOf(c)).map(o => ({ nr: o.nr, datum: o.createdAt, produkt: o.product, stueck: o.copies, status: o.statusText, brutto: o.gross })) };
+      res.setHeader("Content-Disposition", 'attachment; filename="druckshop-meine-daten.json"'); return J(res, 200, data);
     }
     if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
     if (limited("acct", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
@@ -109,10 +122,45 @@ module.exports = function (D) {
     if (p === "/print/api/account/logout") return send(200, { ok: true }, clearCookie());
     // ab hier nur angemeldet
     const c = await current(req); if (!c) return J(res, 401, { ok: false, error: "Bitte anmelden." });
-    if (p === "/print/api/account/profile") { profileIn(c, b); if (b.newsletter !== undefined) { if (b.newsletter === true && !c.newsletter) c.newsletterAt = nowIso(); c.newsletter = b.newsletter === true; } await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null }); }
+    if (p === "/print/api/account/profile") { profileIn(c, b, true); if (b.newsletter !== undefined) { if (b.newsletter === true && !c.newsletter) c.newsletterAt = nowIso(); c.newsletter = b.newsletter === true; } await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null }); }
     if (p === "/print/api/account/password") {
       if (!pwOk(c, b.current)) return J(res, 400, { ok: false, error: "Das aktuelle Passwort stimmt nicht." });
       const e = pwBad(b.password); if (e) return J(res, 400, { ok: false, error: e }); setPw(c, b.password); await save(); return J(res, 200, { ok: true });
+    }
+    if (p === "/print/api/account/type") {   // Umstellung Privat ↔ Firma (nur hier, mit Bestätigung)
+      if (b.confirm !== true) return J(res, 400, { ok: false, error: "Bitte bestätige die Umstellung." });
+      if (b.type === "company") {
+        const company = clip(b.company, 120), uid = clip(b.uid, 20).replace(/[\s.\-]/g, "").toUpperCase();
+        if (company.length < 2) return J(res, 400, { ok: false, error: "Bitte den Firmennamen angeben." });
+        if (uid && !/^[A-Z]{2}[0-9A-Z]{8,12}$/.test(uid)) return J(res, 400, { ok: false, error: "Die UID-Nummer hat ein ungültiges Format (z. B. ATU12345678)." });
+        let chk = null; if (uid && D.uidCheck) { chk = await D.uidCheck(uid).catch(() => null);
+          if (chk && chk.format === false) return J(res, 400, { ok: false, error: "Die UID-Nummer hat ein ungültiges Format (z. B. ATU12345678)." });
+          if (chk && !chk.valid && !chk.unreachable && chk.why !== "Prüfung nicht verfügbar") return J(res, 400, { ok: false, error: "Die UID-Nummer " + uid + " ist laut EU-Prüfung (VIES) nicht gültig." }); }
+        c.company = company; c.uid = uid; c.uidCheck = chk ? { valid: chk.valid, name: chk.name || "", at: nowIso() } : null;
+      } else if (b.type !== "private") return J(res, 400, { ok: false, error: "Unbekannter Kontotyp." });
+      if (c.type !== b.type) { c.typeLog = (c.typeLog || []).concat([{ from: c.type || "private", to: b.type, at: nowIso() }]).slice(-10); c.typeAt = nowIso(); }
+      c.type = b.type; await save(); return J(res, 200, { ok: true, customer: pub(c), bonus: bonusOf ? await bonusOf(c) : null });
+    }
+    if (p === "/print/api/account/email") {   // neue E-Mail-Adresse: Passwort + Code an die neue Adresse
+      if (!pwOk(c, b.password)) return J(res, 400, { ok: false, error: "Das Passwort stimmt nicht." });
+      const ne = normMail(b.newEmail); if (!mailOk(ne)) return J(res, 400, { ok: false, error: "Bitte eine gültige neue E-Mail-Adresse eingeben." });
+      if (ne === c.email) return J(res, 400, { ok: false, error: "Das ist schon deine E-Mail-Adresse." });
+      if (m[ne]) return J(res, 409, { ok: false, error: "Für diese E-Mail-Adresse gibt es schon ein Konto." });
+      c.pendingEmail = ne; await sendCode(c, "email", ne); return J(res, 200, { ok: true, customer: pub(c) });
+    }
+    if (p === "/print/api/account/email-verify") {
+      const ne = c.pendingEmail; if (!ne) return J(res, 400, { ok: false, error: "Keine Änderung offen." });
+      const e = codeOk(c, b.code, "email"); if (e) { await save(); return J(res, 400, { ok: false, error: e }); }
+      if (m[ne]) { c.pendingEmail = ""; await save(); return J(res, 409, { ok: false, error: "Für diese E-Mail-Adresse gibt es inzwischen ein Konto." }); }
+      delete m[c.email]; c.emailLog = (c.emailLog || []).concat([{ from: c.email, at: nowIso() }]).slice(-5); c.email = ne; c.pendingEmail = ""; m[ne] = c; await save();
+      return J(res, 200, { ok: true, customer: pub(c) });
+    }
+    if (p === "/print/api/account/email-cancel") { c.pendingEmail = ""; c.code = null; await save(); return J(res, 200, { ok: true, customer: pub(c) }); }
+    if (p === "/print/api/account/draft-del") { c.drafts = (c.drafts || []).filter(d => d.id !== String(b.id || "")); await save(); return J(res, 200, { ok: true, customer: pub(c) }); }
+    if (p === "/print/api/account/reorder") {   // „Nochmal bestellen“: Warenkorb-Position aus einer eigenen Bestellung (gleiche Datei, aktueller Preis)
+      if (!D.reorderOf) return J(res, 404, { ok: false, error: "not_found" });
+      const it = await D.reorderOf(c, String(b.orderId || "")); if (!it) return J(res, 404, { ok: false, error: "Diese Bestellung kann nicht erneut bestellt werden." });
+      return J(res, 200, { ok: true, item: it });
     }
     if (p === "/print/api/account/cart") { c.cart = cartClean(b.items); c.cartAt = nowIso(); await save(); return J(res, 200, { ok: true, cart: c.cart }); }
     if (p === "/print/api/account/delete") {
@@ -124,5 +172,5 @@ module.exports = function (D) {
   // Cockpit: alle Kunden, eigener Rabatt je Kunde (zusätzlich zum Bonusprogramm – der höhere gilt)
   async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { newsletterAt: c.newsletterAt || "", lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "" })); }
   async function setDiscount(id, pct, note) { const c = await byId(id); if (!c) return null; const n = parseFloat(String(pct == null ? "" : pct).replace(",", ".")); c.discountPct = isFinite(n) && n > 0 ? Math.min(50, Math.round(n * 10) / 10) : 0; c.discountNote = clip(note, 200); await save(); return c; }
-  return { handle, current, createFromCheckout, pub, listAll, setDiscount, _test: { codeOk, newCode, hash } };
+  return { handle, current, createFromCheckout, pub, listAll, setDiscount, addDraft, _test: { codeOk, newCode, hash } };
 };

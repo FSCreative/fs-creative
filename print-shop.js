@@ -1313,7 +1313,7 @@ module.exports = function (D) {
     priceFrom, vouchers, saveVouchers: all => store.setMeta("print_vouchers", all), accounts: () => accountMod().listAll() }));
   // Kundenkonten (print-account.js): erst bei Bedarf laden
   let ACCOUNT = null;
-  const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl) }));
+  const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl), uidCheck, reorderOf }));
   // ── KI-Assistent im Designer: Tageslimit je Kunde (Konto bzw. IP) und gesamt; Kosten werden je Aufruf exakt verbucht ──
   const AI_STYLES = { klar: "klar, modern, weiß mit Blau", nacht: "dunkel, edel, Nachtblau mit Leuchten", elegant: "elegant, Creme mit Gold, Serifen", akzent: "seriös mit farbigem Band", bold: "plakativ, Gelb/Schwarz, große Großbuchstaben", natur: "natürlich, grün, ruhig", split: "großes Bild + Text, orange Akzente", kreise: "dunkel mit bunten Kreisen, lebendig", pastell: "sanfte Pastelltöne, freundlich", retro: "Retro 70er, Orange/Creme, Streifen", mono: "minimalistisch schwarz-weiß", business: "Business, Dunkelblau/Türkis", neon: "Neon, Nacht, Party", terracotta: "warm, Terracotta, Bild + Serifen", ozean: "frisch, Blau/Türkis, Wellen", kreide: "Kreidetafel, Gastro, dunkel mit Gelb", festlich: "festlich, Bordeaux mit Gold", sport: "sportlich, Schwarz/Rot, kräftig", frisch: "frisch, Grün/Weiß", handmade: "handgemacht, Kraftpapier, Schreibschrift", editorial: "Magazin-Stil, Rot-Akzent, Serifen", verspielt: "verspielt, Lila/Gelb, Punkte, Kinder & Feste" };
   const aiCfg = () => ({ day: Math.max(0.05, parseFloat(String(process.env.PRINT_AI_DAY_EUR || "0.3").replace(",", ".")) || 0.3), total: Math.max(0.5, parseFloat(String(process.env.PRINT_AI_DAY_TOTAL_EUR || "5").replace(",", ".")) || 5) });
@@ -1390,9 +1390,24 @@ module.exports = function (D) {
       resetTo: cur ? (BONUS_TIERS[b.idx - 2] ? BONUS_TIERS[b.idx - 2].name : "") : "", orders: l.length };
   }
 
+  // „Nochmal bestellen“ (Kundenkonto): Kopie der bestellten Druckdatei ohne Bestellbezug + gleiche Ausführung → Warenkorb; der Preis wird dort neu berechnet
+  async function reorderOf(c, id) {
+    const o = await store.getOrder(id); if (!o || !(o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email))) return null;
+    if (o.motifs && o.motifs.length > 1) return null;   // mehrere Motive: bitte neu zusammenstellen
+    const f = await store.fileMeta(String(o.fileId || "")); if (!f) return null; const data = await store.fileData(f.id); if (!data) return null;
+    const prod = await findProduct(o.product.key, await settings()).catch(() => null); if (!prod) return null;
+    const nf = Object.assign({}, f, { id: "f" + crypto.randomBytes(12).toString("hex"), createdAt: nowIso(), orderId: null, copyOf: f.id }); await store.putFile(nf, data);
+    const sel = Object.assign({}, o.sel || {}); delete sel.custom;
+    const C = prod.custom, k = C && C.unit === "cm" ? 10 : 1, custom = o.custom && o.custom.w && C ? { w: String(o.custom.w / k), h: String(o.custom.h / k) } : undefined;
+    const textile = o.textile ? { method: o.textile.method, positions: (o.textile.positions || []).map(x => x.slug), sizes: (o.textile.sizes || []).reduce((a, x) => { a[x.slug] = x.n; return a; }, {}) } : undefined;
+    const fl = (o.labels || []).find(l => /format|größe/i.test(l[0]));
+    return { product: prod.key, sel, copies: o.copies, urgency: o.urgency || "standard", pm: "auto", custom, textile, id: "r" + Date.now().toString(36) + crypto.randomBytes(2).toString("hex"), title: prod.title, img: "", icon: prod.icon || "",
+      tiers: (prod.tiers || []).slice(0, 30), fileId: nf.id, fileToken: sig("file", nf.id), fileName: (f.kind === "design" ? "Eigene Gestaltung" : f.name || "Druckdatei") + " (wie " + o.nr + ")", preview: "",
+      n: o.copies, labels: (o.labels || []).slice(0, 12), size: fl ? fl[1] : "", price: null, warn: false, clientWarn: [], at: Date.now(), reorderOf: o.nr };
+  }
   async function ordersOfCustomer(c) {
     const l = (await store.listOrders()).filter(o => o.customerId === c.id || (c.verified && o.customer && o.customer.email === c.email));
-    return l.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [] }));
+    return l.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 50).map(o => Object.assign(orderPublic(o), { createdAt: o.createdAt, token: sig("order", o.id), groupId: o.groupId || null, labels: o.labels || [], productKey: o.product.key, canReorder: !!o.fileId && !(o.motifs && o.motifs.length > 1) && o.status !== "pending_payment" && o.status !== "payment_failed" }));
   }
 
   // ───────────────────────── Bestellungen ─────────────────────────
@@ -1907,7 +1922,9 @@ module.exports = function (D) {
         if (data.length > 25 * 1024 * 1024) return J(res, 413, { ok: false, error: "Entwurf zu groß" });
         const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "draft", name: "entwurf.json", bytes: data.length, createdAt: nowIso(), orderId: null };
         await store.putFile(meta, Buffer.from(data, "utf8"));
-        return J(res, 200, { ok: true, id: meta.id, token: sig("draft", meta.id), url: cfg().publicUrl + "/print?entwurf=" + meta.id + "&t=" + sig("draft", meta.id) });
+        const me = await accountMod().current(req).catch(() => null);   // angemeldet: Entwurf im Kundenkonto merken
+        if (me) { const pr = CURATED.find(x => x.key === b.product); await accountMod().addDraft(me, { id: meta.id, t: sig("draft", meta.id), product: clip(b.product, 80), title: pr ? pr.title : clip(b.product, 80), preview: typeof b.preview === "string" ? b.preview : "" }).catch(() => {}); }
+        return J(res, 200, { ok: true, id: meta.id, token: sig("draft", meta.id), saved: !!me, url: cfg().publicUrl + "/print?entwurf=" + meta.id + "&t=" + sig("draft", meta.id) });
       }
       if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
         if (limited("order", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });

@@ -112,6 +112,7 @@
     }
     headUpdate();
   }
+  function refreshMe() { api("/print/api/account/me").then(function (j) { if (j.ok && j.customer) S.me = j.customer; }).catch(function () {}); }
   function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) render(); } }).catch(function () {}); }
   function headUpdate() {
     document.querySelectorAll("[data-acct-link]").forEach(function (a) { var l = a.querySelector("[data-acct-label]"); if (l) l.textContent = S.me ? "Konto" : "Anmelden"; else a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
@@ -143,20 +144,60 @@
         f('<div class="ps-field"><label for="ac_code">Code</label><input id="ac_code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code"></div>' + acctField("password", "Neues Passwort (mind. 8 Zeichen)", "password", "", "new-password"), "reset", "Passwort speichern") + '<p><button type="button" class="ps-link" data-act="acresend:reset">Code erneut senden</button></p>';
       return h + "</div></div>";
     }
-    var me = S.me, co = me.type === "company";
-    h += back + '<div class="ps-acct-hd"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><span class="pd-muted">' + esc(me.email) + '</span><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>';
-    h += '<div class="ps-acct-grid"><section class="ps-panel"><h3>Letzte Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist">' + S.orders.slice(0, 20).map(function (o) {
-      return '<li><a href="/print?bestellung=' + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(o.token) + '"><b>' + esc(o.product) + "</b><span>" + esc(o.nr) + " · " + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + " · " + (+o.copies || 0).toLocaleString("de-AT") + " Stk.</span></a><span class=\"ps-ost\">" + esc(o.statusText) + "</span><b>" + eur(o.gross) + "</b></li>"; }).join("") + "</ul>"
-      : '<p class="pd-muted">Noch keine Bestellungen.</p>') + (S.cart.length ? '<p><button type="button" class="ps-btn small" data-cart-link>Warenkorb (' + S.cart.length + ")</button></p>" : "") + "</section>";
-    h += bonusHtml();
-    h += '<section class="ps-panel"><h3>Rechnungs- &amp; Lieferadresse</h3><form class="ps-form" data-acct-form="profile" novalidate>' +
-      '<div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-act="acType:private" aria-pressed="' + !co + '">Privat</button><button type="button" data-act="acType:company" aria-pressed="' + co + '">Firma</button></div>' +
-      (co ? '<div class="ps-row2">' + acctField("company", "Firma", "text", me.company, "organization") + acctField("uid", "UID-Nummer", "text", me.uid) + "</div>" : "") +
-      '<div class="ps-row2">' + acctField("firstName", "Vorname", "text", me.firstName, "given-name") + acctField("lastName", "Nachname", "text", me.lastName, "family-name") + "</div>" +
-      acctField("street", "Straße und Hausnummer", "text", me.street, "street-address") + '<div class="ps-row2">' + acctField("zip", "PLZ", "text", me.zip, "postal-code") + acctField("city", "Ort", "text", me.city, "address-level2") + "</div>" +
-      acctField("phone", "Telefon", "tel", me.phone, "tel") + '<label class="ps-cb"><input type="checkbox" name="newsletter"' + (me.newsletter ? " checked" : "") + '><span>Newsletter: jeden Montag Druck-Tipps und einen 5-%-Code per E-Mail (jederzeit abbestellbar)</span></label>' + (A.form === "profile" ? msg : "") + '<button type="submit" class="ps-btn primary">Speichern</button></form></section>';
-    h += '<section class="ps-panel"><h3>Passwort ändern</h3><form class="ps-form" data-acct-form="password" novalidate>' + acctField("current", "Aktuelles Passwort", "password", "", "current-password") + acctField("password", "Neues Passwort (mind. 8 Zeichen)", "password", "", "new-password") + (A.form === "password" ? msg : "") + '<button type="submit" class="ps-btn">Passwort ändern</button></form>' +
-      '<details class="ps-del"><summary>Konto löschen</summary><form class="ps-form" data-acct-form="delete" novalidate><p class="pd-muted">Dein Konto wird gelöscht. Bestellungen bewahren wir aus steuerlichen Gründen auf.</p>' + acctField("password", "Passwort zur Bestätigung", "password", "", "current-password") + (A.form === "delete" ? msg : "") + '<button type="submit" class="ps-btn">Konto endgültig löschen</button></form></details></section></div>';
+    var me = S.me, co = me.type === "company", tab = A.tab || "start", fm = function (k) { return A.form === k ? msg : ""; };
+    var TABS = [["start", "Übersicht"], ["orders", "Bestellungen" + (S.orders.length ? " (" + S.orders.length + ")" : "")], ["drafts", "Entwürfe" + ((me.drafts || []).length ? " (" + me.drafts.length + ")" : "")], ["address", "Adresse"], ["settings", "Einstellungen"]];
+    var ini = ((me.firstName || "")[0] || "") + ((me.lastName || "")[0] || "") || (me.email || "?")[0];
+    h += back + '<div class="ps-acct-hd"><span class="av" aria-hidden="true">' + esc(ini.toUpperCase()) + '</span><div class="nm"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><span class="pd-muted">' + esc(me.email) + ' · <span class="ps-acct-type ' + (co ? "co" : "pr") + '">' + (co ? "Firmenkonto" + (me.company ? " · " + esc(me.company) : "") : "Privatkonto") + '</span></span></div><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>' +
+      '<nav class="ps-acct-nav" role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
+    var orderRow = function (o) { var url = "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(o.token);
+      return '<li><a href="' + url + '"><b>' + esc(o.product) + "</b><span>" + esc(o.nr) + " · " + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + " · " + (+o.copies || 0).toLocaleString("de-AT") + ' Stk.</span></a><span class="ps-ost">' + esc(o.statusText) + "</span><b>" + eur(co ? o.net : o.gross) + "</b>" +
+        '<span class="act">' + (o.canReorder ? '<button type="button" class="ps-btn small" data-act="reorder:' + esc(o.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-link" href="' + url + '">Details</a></span></li>'; };
+    if (tab === "start") {
+      var lo = S.orders[0];
+      h += '<div class="ps-acct-grid">';
+      h += '<section class="ps-panel"><h3>Letzte Bestellung</h3>' + (lo ? '<p class="ps-lo"><b>' + esc(lo.product) + "</b> · " + (+lo.copies || 0).toLocaleString("de-AT") + " Stk. · " + eur(co ? lo.net : lo.gross) + '<br><span class="pd-muted">' + esc(lo.nr) + " vom " + esc(new Date(lo.createdAt).toLocaleDateString("de-AT")) + " · " + esc(lo.statusText) + "</span></p>" + trackHtml(lo.status) +
+        '<div class="btn-row">' + (lo.canReorder ? '<button type="button" class="ps-btn primary small" data-act="reorder:' + esc(lo.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-btn small" href="/print?bestellung=' + encodeURIComponent(lo.id) + "&t=" + encodeURIComponent(lo.token) + '">Details</a>' + (S.orders.length > 1 ? '<button type="button" class="ps-link" data-act="atab:orders">Alle ' + S.orders.length + " Bestellungen</button>" : "") + "</div>"
+        : '<p class="pd-muted">Noch keine Bestellungen – such dir ein Produkt aus und gestalte es online oder lade deine Datei hoch.</p><button type="button" class="ps-btn primary small" data-act="shop">Produkte ansehen</button>') + "</section>";
+      h += '<section class="ps-panel ps-qstats"><button type="button" data-cart-link><b>' + S.cart.length + "</b><span>im Warenkorb</span></button><button type=\"button\" data-act=\"atab:drafts\"><b>" + (me.drafts || []).length + "</b><span>Entwürfe</span></button><button type=\"button\" data-act=\"atab:orders\"><b>" + S.orders.length + "</b><span>Bestellungen</span></button></section>";
+      if (!co) h += '<section class="ps-panel ps-acct-up"><h3>Bestellst du für eine Firma?</h3><p class="pd-muted">Mit einem Firmenkonto siehst du Nettopreise, bekommst Rechnungen mit Firmenname und UID und sammelst Rabatt im Bonusprogramm ' + (S.bonus && S.bonus.tiers && S.bonus.tiers.length ? "(bis zu " + S.bonus.tiers[S.bonus.tiers.length - 1].pct + " %)" : "") + '.</p><button type="button" class="ps-btn small" data-act="atab:settings">In den Einstellungen umstellen</button></section>';
+      if (!me.newsletter) h += '<section class="ps-panel ps-acct-up"><h3>5 % jeden Montag</h3><p class="pd-muted">Unser Newsletter bringt dir jede Woche Produkttipps, einen Designer-Tipp und einen 5-%-Code.</p><button type="button" class="ps-btn small" data-act="atab:settings">Newsletter aktivieren</button></section>';
+      h += "</div>" + bonusHtml();
+    } else if (tab === "orders") {
+      h += '<section class="ps-panel"><h3>Meine Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist ps-olist2">' + S.orders.map(orderRow).join("") + '</ul><p class="pd-muted" style="font-size:13px;margin-top:12px">„Nochmal bestellen“ legt die Bestellung mit derselben Druckdatei in den Warenkorb – der Preis wird dabei aktuell berechnet, Menge und Ausführung kannst du dort noch ändern.</p>' : '<p class="pd-muted">Noch keine Bestellungen.</p>') + "</section>";
+    } else if (tab === "drafts") {
+      var dr = me.drafts || [];
+      h += '<section class="ps-panel"><h3>Gespeicherte Entwürfe</h3>' + (dr.length ? '<div class="ps-drafts">' + dr.map(function (d) {
+        return '<div class="ps-draft"><a class="pv" href="/print?entwurf=' + encodeURIComponent(d.id) + "&t=" + encodeURIComponent(d.t) + '">' + (d.preview ? '<img src="' + esc(d.preview) + '" alt="">' : '<span aria-hidden="true">✎</span>') + '</a><b>' + esc(d.title) + '</b><span class="pd-muted">gespeichert am ' + esc(new Date(d.at).toLocaleDateString("de-AT")) + " · noch " + Math.max(1, 60 - Math.floor((Date.now() - Date.parse(d.at)) / 864e5)) + ' Tage</span><div class="btn-row"><a class="ps-btn primary small" href="/print?entwurf=' + encodeURIComponent(d.id) + "&t=" + encodeURIComponent(d.t) + '">Weiter gestalten</a><button type="button" class="ps-link" data-act="draftdel:' + esc(d.id) + '">Entfernen</button></div></div>'; }).join("") + "</div>"
+        : '<p class="pd-muted">Noch keine Entwürfe. Im Online-Designer findest du „Entwurf speichern“ – solange du angemeldet bist, landet der Entwurf hier und du kannst später (auch auf einem anderen Gerät) weitergestalten. Entwürfe bleiben 60 Tage gespeichert.</p>') + "</section>";
+    } else if (tab === "address") {
+      h += '<section class="ps-panel ps-acct-narrow"><h3>Rechnungs- &amp; Lieferadresse</h3><p class="pd-muted" style="margin-top:-4px">Wird an der Kasse automatisch eingesetzt.</p><form class="ps-form" data-acct-form="profile" novalidate>' +
+        (co ? '<p class="ps-acct-hint">Firma: <b>' + esc(me.company || "–") + "</b>" + (me.uid ? " · UID " + esc(me.uid) : "") + ' – Firmendaten änderst du in den <button type="button" class="ps-link" data-act="atab:settings">Einstellungen</button>.</p>' : "") +
+        '<div class="ps-row2">' + acctField("firstName", "Vorname", "text", me.firstName, "given-name") + acctField("lastName", "Nachname", "text", me.lastName, "family-name") + "</div>" +
+        acctField("street", "Straße und Hausnummer", "text", me.street, "street-address") + '<div class="ps-row2 ps-zip">' + acctField("zip", "PLZ", "text", me.zip, "postal-code") + acctField("city", "Ort", "text", me.city, "address-level2") + "</div>" +
+        acctField("phone", "Telefon (für den Paketdienst)", "tel", me.phone, "tel") + fm("profile") + '<button type="submit" class="ps-btn primary">Adresse speichern</button></form></section>';
+    } else {
+      var tf = A.typeOpen;
+      h += '<div class="ps-acct-set">';
+      h += '<section class="ps-panel"><h3>Kontotyp</h3><p class="ps-acct-cur"><span class="ps-acct-type ' + (co ? "co" : "pr") + '">' + (co ? "Firmenkonto" : "Privatkonto") + "</span>" + (me.typeAt ? ' <span class="pd-muted">seit ' + esc(new Date(me.typeAt).toLocaleDateString("de-AT")) + "</span>" : "") + "</p>";
+      if (!co && !tf) h += '<p class="pd-muted">Preise siehst du inkl. 20 % USt. Bestellst du für ein Unternehmen, stell auf ein Firmenkonto um: Nettopreise in der Anzeige, Rechnung mit Firmenname und UID (immer mit ausgewiesener USt – die holst du dir über den Vorsteuerabzug zurück) und Rabatt im Bonusprogramm.</p><button type="button" class="ps-btn" data-act="actype:open">Auf Firmenkonto umstellen …</button>';
+      if (!co && tf) h += '<form class="ps-form ps-typeform" data-acct-form="type" novalidate><input type="hidden" name="type" value="company"><p class="pd-muted">Bitte die Firmendaten angeben – sie stehen dann auf deinen Rechnungen.</p>' +
+        acctField("company", "Firmenname *", "text", me.company, "organization") + acctField("uid", "UID-Nummer (empfohlen, z. B. ATU12345678)", "text", me.uid) +
+        '<label class="ps-cb"><input type="checkbox" name="confirm"><span>Ich bestelle mit diesem Konto für ein Unternehmen. Preise werden netto angezeigt, die Rechnung weist immer 20 % USt aus.</span></label>' + fm("type") +
+        '<div class="btn-row"><button type="submit" class="ps-btn primary">Auf Firmenkonto umstellen</button><button type="button" class="ps-btn" data-act="actype:close">Abbrechen</button></div></form>';
+      if (co) h += '<form class="ps-form" data-acct-form="type" novalidate><input type="hidden" name="type" value="company"><input type="hidden" name="confirm" value="1">' +
+        '<div class="ps-row2">' + acctField("company", "Firmenname", "text", me.company, "organization") + acctField("uid", "UID-Nummer", "text", me.uid) + "</div>" +
+        (me.uid ? '<p class="pd-muted" style="font-size:13px;margin:-4px 0 10px">' + (me.uidValid === true ? "✓ UID laut EU-Prüfung (VIES) gültig" : me.uidValid === false ? "UID konnte zuletzt nicht bestätigt werden (VIES nicht erreichbar) – wir prüfen bei der Bestellung erneut." : "") + "</p>" : "") + fm("type") +
+        '<button type="submit" class="ps-btn primary">Firmendaten speichern</button></form>' +
+        '<details class="ps-del"><summary>Zurück auf Privatkonto umstellen</summary><form class="ps-form" data-acct-form="typeprivate" novalidate><p class="pd-muted">Preise werden dann inkl. USt angezeigt, das Bonusprogramm gilt nur für Firmenkonten. Deine Firmendaten bleiben gespeichert, falls du wieder umstellst.</p><label class="ps-cb"><input type="checkbox" name="confirm"><span>Ja, auf Privatkonto umstellen</span></label>' + fm("typeprivate") + '<button type="submit" class="ps-btn">Umstellen</button></form></details>';
+      h += "</section>";
+      h += '<section class="ps-panel"><h3>E-Mail-Adresse</h3>' + (me.pendingEmail ? '<p class="pd-muted">Wir haben einen Code an <b>' + esc(me.pendingEmail) + '</b> geschickt (15 Minuten gültig).</p><form class="ps-form" data-acct-form="emailverify" novalidate><div class="ps-field"><label for="ac_ecode">Code</label><input id="ac_ecode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code"></div>' + fm("emailverify") + '<div class="btn-row"><button type="submit" class="ps-btn primary">Neue Adresse bestätigen</button><button type="button" class="ps-link" data-act="emailcancel">Abbrechen</button></div></form>'
+        : '<p class="pd-muted">Aktuell: <b>' + esc(me.email) + '</b></p><details class="ps-del"><summary>E-Mail-Adresse ändern</summary><form class="ps-form" data-acct-form="email" novalidate>' + acctField("newEmail", "Neue E-Mail-Adresse", "email", "", "email") + acctField("password", "Passwort zur Bestätigung", "password", "", "current-password") + fm("email") + '<button type="submit" class="ps-btn">Code an neue Adresse senden</button></form></details>') + "</section>";
+      h += '<section class="ps-panel"><h3>Newsletter</h3><form class="ps-form" data-acct-form="newsletter" novalidate><label class="ps-cb"><input type="checkbox" name="newsletter"' + (me.newsletter ? " checked" : "") + '><span>Jeden Montag Druck-Tipps, ein Designer-Tipp und ein 5-%-Code per E-Mail (jederzeit abbestellbar)</span></label>' + fm("newsletter") + '<button type="submit" class="ps-btn small">Speichern</button></form></section>';
+      h += '<section class="ps-panel"><h3>Passwort ändern</h3><form class="ps-form" data-acct-form="password" novalidate>' + acctField("current", "Aktuelles Passwort", "password", "", "current-password") + acctField("password", "Neues Passwort (mind. 8 Zeichen)", "password", "", "new-password") + fm("password") + '<button type="submit" class="ps-btn">Passwort ändern</button></form></section>';
+      h += '<section class="ps-panel"><h3>Datenschutz</h3><p class="pd-muted">Lade alle Daten herunter, die wir zu deinem Konto speichern (Profil, Warenkorb, Entwürfe, Bestellübersicht).</p><a class="ps-btn small" href="/print/api/account/export" download>Meine Daten herunterladen</a>' +
+        '<details class="ps-del"><summary>Konto löschen</summary><form class="ps-form" data-acct-form="delete" novalidate><p class="pd-muted">Dein Konto wird gelöscht. Bestellungen bewahren wir aus steuerlichen Gründen auf.</p>' + acctField("password", "Passwort zur Bestätigung", "password", "", "current-password") + fm("delete") + '<button type="submit" class="ps-btn">Konto endgültig löschen</button></form></details></section>';
+      h += "</div>";
+    }
     return h + "</div>";
   }
   function bonusHtml() {
@@ -173,12 +214,17 @@
   function acctDo(act, form) {
     var A = S.acct, v = {}; if (form) Array.prototype.forEach.call(form.elements, function (el) { if (el.name) v[el.name] = el.type === "checkbox" ? el.checked : el.value.trim(); });
     if (v.email) A.email = v.email.toLowerCase();
-    var body = { email: A.email }, url = "/print/api/account/" + act;
+    var EP = { type: "type", typeprivate: "type", emailverify: "email-verify", newsletter: "profile" }, body = { email: A.email }, url = "/print/api/account/" + (EP[act] || act);
     if (act === "login") body.password = v.password;
     else if (act === "register") Object.assign(body, { password: v.password, firstName: v.firstName, lastName: v.lastName, newsletter: !!v.newsletter });
     else if (act === "verify") body.code = v.code;
     else if (act === "reset") Object.assign(body, { code: v.code, password: v.password });
-    else if (act === "profile") body = Object.assign({ type: S.me.type }, v);
+    else if (act === "profile") body = v;
+    else if (act === "type") body = { type: "company", company: v.company, uid: v.uid, confirm: v.confirm === true || v.confirm === "1" };
+    else if (act === "typeprivate") body = { type: "private", confirm: v.confirm === true };
+    else if (act === "email") body = { newEmail: v.newEmail, password: v.password };
+    else if (act === "emailverify") body = { code: v.code };
+    else if (act === "newsletter") body = { newsletter: !!v.newsletter };
     else if (act === "password") body = { current: v.current, password: v.password };
     else if (act === "delete") body = { password: v.password };
     A.busy = true; A.err = ""; A.msg = ""; A.form = act; render();
@@ -188,7 +234,12 @@
       if (j.needCode) { A.mode = "code"; A.msg = j.info || ""; render(); return; }
       if (act === "forgot") { A.mode = "reset"; A.msg = "Falls ein Konto existiert, ist der Code unterwegs."; render(); return; }
       if (act === "delete") { S.me = null; S.orders = []; A.mode = "login"; A.msg = "Dein Konto wurde gelöscht."; headUpdate(); render(); return; }
-      if (act === "profile" && S.prod) loadPrice();
+      if (/^(profile|type|typeprivate)$/.test(act) && S.prod) loadPrice();
+      if (/^(type|typeprivate|email|emailverify|newsletter)$/.test(act)) { S.me = j.customer; if (j.bonus) S.bonus = j.bonus; A.typeOpen = false;
+        if (act === "type" || act === "typeprivate") { S.ctype = S.me.type; S.uid = S.me.uid || ""; S.customer.company = S.me.company || S.customer.company; }
+        if (act === "emailverify") { A.email = S.customer.email = S.me.email; }
+        A.msg = { type: S.me.type === "company" && act === "type" ? "Firmenkonto aktiv – Preise werden jetzt netto angezeigt." : "Gespeichert.", typeprivate: "Auf Privatkonto umgestellt.", email: "Code an " + S.me.pendingEmail + " geschickt.", emailverify: "E-Mail-Adresse geändert.", newsletter: S.me.newsletter ? "Newsletter aktiviert – die Bestätigung kommt per E-Mail." : "Newsletter abbestellt." }[act];
+        render(); return; }
       if (act === "profile") { S.me = j.customer; S.bonus = j.bonus || S.bonus; A.msg = "Gespeichert."; ["company", "firstName", "lastName", "phone", "street", "zip", "city"].forEach(function (k) { S.customer[k] = S.me[k] || S.customer[k]; }); S.ctype = S.me.type; if (S.me.uid) S.uid = S.me.uid; render(); return; }
       if (act === "password") { A.msg = "Passwort geändert."; render(); return; }
       if (j.customer) { try { localStorage.removeItem("fsc-print-verify"); } catch (e) {} if (act === "verify" && !S.view && /bestellung=/.test(location.search)) { applyMe(j); toast("Willkommen – dein Konto ist bestätigt!"); S.view = "konto"; history.replaceState(null, "", "/print?konto"); render(); return; } applyMe(j); A.msg = ""; A.err = ""; toast(act === "verify" ? "Willkommen – dein Konto ist bestätigt!" : "Angemeldet"); render(); }
@@ -1089,7 +1140,13 @@
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
     if (k === "acresend") { api("/print/api/account/resend", { email: S.acct.email, purpose: v }).then(function () { S.acct.msg = "Neuer Code ist unterwegs."; S.acct.err = ""; render(); }); return; }
     if (k === "aclogout") { api("/print/api/account/logout", {}).then(function () { S.me = null; S.orders = []; S.acct.mode = "login"; toast("Abgemeldet"); render(); }); return; }
-    if (k === "acType") { S.me.type = v; render(); return; }
+    if (k === "atab") { S.acct.tab = v; S.acct.err = ""; S.acct.msg = ""; S.acct.form = ""; S.acct.typeOpen = false; render(); var an = root.querySelector(".ps-acct-nav"); if (an && an.getBoundingClientRect().top < 60) window.scrollTo({ top: Math.max(0, an.getBoundingClientRect().top + window.scrollY - 80), behavior: "instant" }); return; }
+    if (k === "actype") { S.acct.typeOpen = v === "open"; S.acct.err = ""; S.acct.msg = ""; S.acct.form = ""; render(); return; }
+    if (k === "draftdel" || k === "emailcancel") { api("/print/api/account/" + (k === "draftdel" ? "draft-del" : "email-cancel"), { id: v }).then(function (j) { if (j.ok) { S.me = j.customer; render(); } else toast(j.error || "Das hat nicht geklappt", true); }).catch(function () { toast("Keine Verbindung", true); }); return; }
+    if (k === "reorder") { t.disabled = true; api("/print/api/account/reorder", { orderId: v }).then(function (j) { t.disabled = false;
+        if (!j.ok) { toast(j.error || "Das hat nicht geklappt", true); return; }
+        S.cart.push(j.item); cartSave(); S.view = ""; toast("„" + j.item.title + "“ liegt wieder im Warenkorb – Preis wird aktualisiert"); go(4); requoteCart(); try { history.pushState(null, "", "/print?warenkorb"); } catch (e) {} })
+      .catch(function () { t.disabled = false; toast("Keine Verbindung", true); }); return; }
     if (k === "voucher") { var vi = document.getElementById("psVoucher"); S.voucher = v === "clear" ? "" : (vi ? vi.value.trim().toUpperCase() : ""); S.voucherErr = ""; S.voucherOk = ""; requoteCart(); render(); return; }
     if (k === "newacct") { S.newAcct = !S.newAcct; render(); return; }
     if (k === "uidcheck") return uidCheck();
@@ -1203,8 +1260,8 @@
       });
     });
   }
-  window.PrintShop.saveDraftLink = function (design) {
-    return api("/print/api/draft", Object.assign(cfgOf(), { design: design }));
+  window.PrintShop.saveDraftLink = function (design, preview) {
+    return api("/print/api/draft", Object.assign(cfgOf(), { design: design, preview: preview || "" })).then(function (j) { if (j.ok && j.saved) refreshMe(); return j; });
   };
 
   // ── Adresse ──

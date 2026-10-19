@@ -352,13 +352,23 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     for (const o of r.j.orders) { const st = await (await fetch(B + "/print/api/order/" + o.id + "?t=" + o.token)).json(); assert.notStrictEqual(st.order.status, "pending_payment", o.id); assert.strictEqual(st.order.groupSize, 2); }
     const me2 = await (await fetch(B + "/print/api/account/me", { headers: { cookie: ck } })).json(); assert.strictEqual(me2.orders.length, 2);
     assert.strictEqual(me2.bonus.company, false); assert.strictEqual(me2.bonus.revenue, 66);
-    const pf = await post("/print/api/account/profile", { type: "company", company: "Karl GmbH" }, { cookie: ck }); assert.strictEqual(pf.j.bonus.company, true); assert.strictEqual(pf.j.bonus.tier, ""); assert.strictEqual(pf.j.bonus.next.name, "Bronze"); assert.strictEqual(pf.j.bonus.next.missing, 4934);
+    // Kontotyp nur über die Einstellungen (mit Bestätigung), nicht übers Profil
+    const pp = await post("/print/api/account/profile", { type: "company", company: "Karl GmbH", city: "Schruns" }, { cookie: ck }); assert.strictEqual(pp.j.customer.type, "private"); assert.strictEqual(pp.j.customer.company, ""); assert.strictEqual(pp.j.customer.city, "Schruns");
+    assert.strictEqual((await post("/print/api/account/type", { type: "company", company: "Karl GmbH" }, { cookie: ck })).status, 400, "ohne Bestätigung keine Umstellung");
+    assert.strictEqual((await post("/print/api/account/type", { type: "company", company: "", confirm: true }, { cookie: ck })).status, 400, "Firmenname nötig");
+    const pf = await post("/print/api/account/type", { type: "company", company: "Karl GmbH", confirm: true }, { cookie: ck }); assert.strictEqual(pf.j.customer.type, "company"); assert.ok(pf.j.customer.typeAt); assert.strictEqual(pf.j.bonus.company, true);
+    // Nochmal bestellen: Kopie der Datei, gleiche Ausführung, Preis neu im Warenkorb
+    const ro = await post("/print/api/account/reorder", { orderId: r.j.orders[0].id }, { cookie: ck }); assert.strictEqual(ro.j.ok, true); assert.ok(ro.j.item.fileId && ro.j.item.fileId !== me2.orders[0].fileId); assert.strictEqual(ro.j.item.copies, me2.orders.find(o => o.id === r.j.orders[0].id).copies);
+    const ri = ro.j.item, rp = await post("/print/api/price", { product: ri.product, sel: ri.sel, copies: ri.copies, urgency: ri.urgency, pm: ri.pm, custom: ri.custom, textile: ri.textile, customerType: "private" }, { cookie: ck }); assert.strictEqual(rp.j.ok, true, JSON.stringify(rp.j));
+    const rc = await post("/print/api/checkout", Object.assign({ items: [{ product: ri.product, sel: ri.sel, copies: ri.copies, urgency: ri.urgency, pm: ri.pm, fileId: ri.fileId, fileToken: ri.fileToken, expectedGross: rp.j.price.gross }] }, base), { cookie: ck }); assert.strictEqual(rc.status, 200, "Nachbestellung geht durch die Kasse: " + JSON.stringify(rc.j));
+    assert.strictEqual((await post("/print/api/account/reorder", { orderId: "Pnichtda" }, { cookie: ck })).status, 404);
+    const ex = await fetch(B + "/print/api/account/export", { headers: { cookie: ck } }); assert.match(ex.headers.get("content-disposition") || "", /meine-daten/); assert.strictEqual((await ex.json()).bestellungen.length, 3, "inkl. Nachbestellung"); assert.strictEqual(pf.j.bonus.tier, ""); assert.strictEqual(pf.j.bonus.next.name, "Bronze"); assert.strictEqual(pf.j.bonus.next.missing, 4934);
     const pb = await post("/print/api/price", Object.assign({ customerType: "company", __bonus: { pct: 50 } }, BC), { cookie: ck }); assert.strictEqual(pb.j.price.bonus, null, "ohne Stufe kein Rabatt, __bonus vom Client wird ignoriert");
     // Gutschein + eigener Kundenrabatt (Cockpit)
     assert.strictEqual((await admin("/admin/api/print/vouchers", { op: "save", code: "test10", pct: 10, maxUses: 1 })).ok, true);
     let pv = await post("/print/api/price", Object.assign({ voucher: "TEST10" }, BC)); assert.strictEqual(pv.j.price.net, 29.7); assert.strictEqual(pv.j.voucher.code, "TEST10");
     pv = await post("/print/api/price", Object.assign({ voucher: "FALSCH" }, BC)); assert.ok(/ungültig/.test(pv.j.voucherErr)); assert.strictEqual(pv.j.price.net, 33);
-    const cl = await admin("/admin/api/print/customers"); const kc = cl.customers.find(c => c.email === em); assert.ok(kc && kc.orders === 2 && kc.type === "company");
+    const cl = await admin("/admin/api/print/customers"); const kc = cl.customers.find(c => c.email === em); assert.ok(kc && kc.orders === 3 && kc.type === "company", "2 Bestellungen + Nachbestellung");
     assert.strictEqual((await admin("/admin/api/print/customers", { op: "discount", id: kc.id, pct: 5, note: "Stammkunde" })).ok, true);
     pv = await post("/print/api/price", Object.assign({ customerType: "company" }, BC), { cookie: ck }); assert.strictEqual(pv.j.price.net, 31.3); assert.strictEqual(pv.j.price.bonus.tier, "Kundenrabatt");
     const u4 = await upload(await pdfOf(89, 59, 2), "k4.pdf", BC), fc = Object.assign({}, cust, { email: em, type: "company", company: "Karl GmbH" });
