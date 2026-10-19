@@ -80,6 +80,8 @@ FSC.load = function(force){
   return FSC.api("/admin/api/cockpit?year="+FSC.year+(force?"&force=1":"")).then(function(d){
     FSC.busy=false; if(!d||d.error||d.ok===false){ FSC.loadErr=(d&&d.error)||"Fehler"; } else { FSC.D=d; FSC.loadErr=""; FSC.dataHooks.forEach(function(h){ try{ h(d); }catch(e){ console.error(e); } }); }
     FSC.render();
+    /* Server hat den letzten Stand sofort geliefert und aktualisiert im Hintergrund → kurz danach still nachladen */
+    if(d&&d.stale){ clearTimeout(FSC._staleT); FSC._staleT=setTimeout(function(){ if(!document.hidden) FSC.load(false); },4000); }
   }).catch(function(e){ FSC.busy=false; if(String(e.message)!=="login"){ FSC.loadErr="Keine Verbindung zum Server."; FSC.render(); } });
 };
 

@@ -1824,14 +1824,26 @@ async function cockpitBuild(year, forceForecast) {
     events, todos: readTodos(),
   };
 }
-let COCKPIT_MEMO = { at: 0, key: "", data: null, p: null };
+// Cockpit-Daten: frisch (≤ 15 s) direkt, bis 30 min alt sofort ausliefern + im Hintergrund neu bauen (stale-while-revalidate).
+// at = 0 heißt „ungültig“ (nach Änderungen) → dann wird auf den Neubau gewartet. Letzter Stand liegt auch auf /data (schneller Start nach Deploy).
+let COCKPIT_INV = 0;
+const COCKPIT_MEMO = { _at: 0, key: "", data: null, p: null, pKey: "", get at() { return this._at; }, set at(v) { if (!v) COCKPIT_INV = Date.now(); this._at = v; } };
+const COCKPIT_SWR = 30 * 60e3, COCKPIT_SNAP_FILE = path.join(DATA_DIR, "cockpit-snap.json");
+let COCKPIT_SNAP_AT = 0;
+try { const sn = JSON.parse(fs.readFileSync(COCKPIT_SNAP_FILE, "utf8")); if (sn && sn.data && Date.now() - sn.at < COCKPIT_SWR) { COCKPIT_MEMO.data = sn.data; COCKPIT_MEMO.key = sn.key; COCKPIT_MEMO._at = sn.at; } } catch (e) {}
+function cockpitPersist() { if (Date.now() - COCKPIT_SNAP_AT < 60e3) return; COCKPIT_SNAP_AT = Date.now(); const M = COCKPIT_MEMO;
+  fs.writeFile(COCKPIT_SNAP_FILE, JSON.stringify({ at: M._at || Date.now(), key: M.key, data: M.data }), () => {}); }
+function cockpitRebuild(year, forceForecast) {
+  const key = String(year), M = COCKPIT_MEMO; if (M.p && M.pKey === key) return M.p;
+  const t0 = Date.now(); M.pKey = key;
+  M.p = cockpitBuild(year, forceForecast).then(d => { M.key = key; M.data = d; M._at = t0 >= COCKPIT_INV ? Date.now() : 0; M.p = null; cockpitPersist(); return d; }).catch(e => { M.p = null; throw e; });
+  return M.p;
+}
 async function cockpitData(year, force, forceForecast) {
-  const key = String(year);
-  if (!force && !forceForecast && COCKPIT_MEMO.data && COCKPIT_MEMO.key === key && Date.now() - COCKPIT_MEMO.at < 15000) return COCKPIT_MEMO.data;
-  if (COCKPIT_MEMO.p && COCKPIT_MEMO.key === key) return COCKPIT_MEMO.p;
-  COCKPIT_MEMO.key = key;
-  COCKPIT_MEMO.p = cockpitBuild(year, forceForecast).then(d => { COCKPIT_MEMO = { at: Date.now(), key, data: d, p: null }; return d; }).catch(e => { COCKPIT_MEMO.p = null; throw e; });
-  return COCKPIT_MEMO.p;
+  const key = String(year), M = COCKPIT_MEMO, ok = !force && !forceForecast && M.data && M.key === key && M.at > 0, age = Date.now() - M.at;
+  if (ok && age < 15000) return M.data;
+  if (ok && age < COCKPIT_SWR) { cockpitRebuild(year).catch(() => {}); return Object.assign({}, M.data, { stale: true }); }   // sofort, Aktualisierung läuft
+  return cockpitRebuild(year, forceForecast);
 }
 // Lead bearbeiten: Phase, geschätzter Wert, Notizen (Daten bleiben in leads.json)
 function leadOp(pl) {
@@ -1860,10 +1872,19 @@ function cockpitModules() {
   const first = ["core.js", "shared.js"];
   return first.filter(f => files.indexOf(f) > -1).concat(files.filter(f => first.indexOf(f) < 0).sort());
 }
+// Version des Cockpits = Prüfsumme seiner Dateien: ändert sich nur, wenn sich das Cockpit ändert (Shop-Deploys lösen kein Neuladen aus,
+// Module bleiben im Browser-Cache – jedes Modul mit eigener Prüfsumme)
+let COCKPIT_VER = null;
+function cockpitVer() {
+  if (COCKPIT_VER) return COCKPIT_VER; const all = crypto.createHash("sha1"), per = {};
+  try { all.update(fs.readFileSync(path.join(ROOT, "admin-cockpit.html"))); } catch (e) {}
+  cockpitModules().forEach(f => { per[f] = crypto.createHash("sha1").update(cockpitModule(f) || "").digest("hex").slice(0, 10); all.update(f + per[f]); });
+  COCKPIT_VER = { all: all.digest("hex").slice(0, 12), per }; return COCKPIT_VER;
+}
 function cockpitHtml() {
   let html; try { html = fs.readFileSync(path.join(ROOT, "admin-cockpit.html"), "utf8"); } catch (e) { return "<!doctype html><p>admin-cockpit.html fehlt.</p>"; }
-  const v = encodeURIComponent(String(BUILD).slice(0, 12));
-  return html.replace("<!--MODULES-->", cockpitModules().map(f => '<script src="/admin/neu/' + f + '?v=' + v + '"></script>').join("\n"));
+  const cv = cockpitVer();
+  return html.replace("<!--MODULES-->", '<script>window.FSC_BUILD="' + cv.all + '";</script>\n' + cockpitModules().map(f => '<script src="/admin/neu/' + f + '?v=' + (cv.per[f] || cv.all) + '"></script>').join("\n"));
 }
 function cockpitModule(name) {
   if (!/^[a-z0-9-]+\.js$/.test(name)) return null;
@@ -3068,7 +3089,7 @@ async function handleAdmin(req, res, u, p) {
     return;
   }
   if (p === "/admin/api/version") {
-    return send(res, 200, JSON.stringify({ build: BUILD }), TYPES[".json"], { "Cache-Control": "no-store" });
+    return send(res, 200, JSON.stringify({ build: cockpitVer().all, deploy: String(BUILD).slice(0, 12) }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/sites") {
     try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }

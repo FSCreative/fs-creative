@@ -14,8 +14,8 @@ F.css(
 );
 
 /* ---------- Neue Version ---------- */
-var me=document.currentScript, BUILD=null, fresh=false, toasted=0;
-try{ var m=/[?&]v=([^&]+)/.exec(me&&me.src||""); if(m) BUILD=decodeURIComponent(m[1]); }catch(e){}
+/* Version = Prüfsumme der Cockpit-Dateien (vom Server in die Seite geschrieben) – Shop-/Server-Deploys zählen nicht */
+var BUILD=window.FSC_BUILD||null, fresh=false, toasted=0;
 function short(b){ return String(b||"").slice(0,12); }
 function busyUI(){
   if(F.modalOpen&&F.modalOpen()) return true;
@@ -34,7 +34,7 @@ function announce(){
     b.addEventListener("click",function(){ if(F.modalOpen()) F.confirm("Neu laden? Offene Eingaben im Dialog gehen verloren.","Neu laden",reloadNow); else reloadNow(); });
     rf.insertBefore(b,rf.firstChild);
   }
-  if(Date.now()-toasted>5*60000){ toasted=Date.now(); F.toast("Neue Version verfügbar",false,"Neu laden",function(){ if(F.modalOpen()) F.confirm("Neu laden? Offene Eingaben im Dialog gehen verloren.","Neu laden",reloadNow); else reloadNow(); }); }
+  if(!toasted){ toasted=Date.now(); F.toast("Neue Version verfügbar",false,"Neu laden",function(){ if(F.modalOpen()) F.confirm("Neu laden? Offene Eingaben im Dialog gehen verloren.","Neu laden",reloadNow); else reloadNow(); }); }
 }
 function vcheck(fromVisible){
   if(document.hidden) return;
@@ -43,9 +43,7 @@ function vcheck(fromVisible){
     if(BUILD===null){ BUILD=short(d.build); return; }
     if(short(d.build)===short(BUILD)) return;
     if(!fresh){ fresh=true; toasted=0; }
-    /* Beim Zurückkommen ins Fenster still neu laden, wenn gerade nichts offen ist (wie im klassischen Dashboard) */
-    /* nur still neu laden, wenn oben auf der Seite und nichts offen ist – sonst Hinweis statt Sprung nach oben */
-    if(fromVisible&&!busyUI()&&window.scrollY<80){ reloadNow(); return; }
+    /* nie ungefragt neu laden (unterbricht die Arbeit) – nur dezenter Hinweis in der Seitenleiste */
     announce();
   }).catch(function(){});
 }
