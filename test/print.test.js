@@ -142,6 +142,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     c0 = cnt(); await Promise.all([1, 2, 3, 4].map(() => post("/print/api/price", Object.assign({ country: "AT" }, BC, { copies: 2500 })))); const four = cnt() - c0;
     assert.ok(one > 0 && four === one, "4 gleichzeitige Anfragen = so viele Print.com-Aufrufe wie eine (" + one + " / " + four + ")");
   });
+  await t("KI & Suchmaschinen: Preisübersicht /print/preise, llms.txt, Produktseite mit Inhalt + schema.org, Sitemap", async () => {
+    const pb = await admin("/admin/api/print/margins", { op: "pub" }); assert.ok(pb.pub && pb.pub.n >= 2, JSON.stringify(pb.pub));
+    const pp = await fetch(B + "/print/preise"); const ph = await pp.text(); assert.strictEqual(pp.status, 200);
+    assert.ok(/Druckpreise im Überblick/.test(ph) && /Visitenkarten/.test(ph) && /inkl\. 20 % USt/.test(ph) && /"@type":"ItemList"/.test(ph) && /"@type":"FAQPage"/.test(ph) && /\/print\/preise"/.test(ph), "Preisseite");
+    assert.ok(!/print\.com/i.test(ph), "kein Lieferantenname");
+    const lt = await fetch(B + "/llms.txt"); const ltx = await lt.text(); assert.strictEqual(lt.status, 200, ltx.slice(0, 200)); assert.ok(/# FS Creative/.test(ltx) && /Beispielpreise/.test(ltx) && /Visitenkarten.*€/.test(ltx) && !/print\.com/i.test(ltx), ltx.slice(0, 600));
+    const pr = await (await fetch(B + "/print?produkt=visitenkarten")).text();
+    assert.ok(/<h1>Visitenkarten online drucken<\/h1>/.test(pr) && /"@type":"Product"/.test(pr) && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\?produkt=visitenkarten"/.test(pr) && /Stück: [\d.,]+ €/.test(pr), "Produktseite für Crawler");
+    const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/preise<\/loc>/.test(sm), "Sitemap mit Preisübersicht");
+  });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     // Einkauf 20 + 5 Versand: 20 × 1,15 + 5 = 28,00 netto (mit 35 % wären es 32,00)

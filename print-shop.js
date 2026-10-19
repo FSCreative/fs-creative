@@ -1879,6 +1879,118 @@ module.exports = function (D) {
       log("Druckshop: Startseite geprüft – Fokus " + focus.join(", ") + " · Neu " + fresh.join(", ") + " · " + checks.filter(c => !c.ok).length + " aussortiert");
     } finally { homeRun = false; }
   }
+  // ── Öffentliche Preise für Suchmaschinen & KI-Assistenten (/print/preise, /llms.txt, Produktseiten, Website-Chat) ──
+  // Standard-Ausführung (wie im Shop vorausgewählt), typische Mengen, Endpreis inkl. 20 % USt und Versand nach Österreich; alle 6 h im Hintergrund (niedrige Priorität)
+  let PUB = null, pubRun = false, lastPub = 0;
+  const PUB_Q = { flat: [100, 250, 500, 1000, 2500, 5000], banner: [1, 2, 5], promo: [100, 250, 500, 1000], textile: [10, 25, 50] };
+  async function pubBuild() {
+    if (pubRun) return; pubRun = true;
+    try {
+      const s = await settings(), cat = await catalog(false), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
+      const h = await homeState(), keys = CURATED.map(c => c.key).concat((h && h.focus) || [], (h && h.fresh) || []).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
+      const items = [];
+      for (const key of keys) {
+        const p = await findProduct(key, s).catch(() => null), base = p && stdInput(p); if (!base) continue;
+        const okQ = n => p.kind === "textile" ? n >= (((p.methods || [])[0] || {}).min || 1) : p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
+        let qs = (PUB_Q[p.kind] || PUB_Q.flat).filter(okQ).slice(0, 4); if (!qs.length) qs = [base.copies];
+        const rows = []; let label = "";
+        for (const q of qs) {
+          const inp = JSON.parse(JSON.stringify(base)); inp.copies = q; if (inp.textile) { const sz = Object.keys(inp.textile.sizes)[0]; inp.textile.sizes = { [sz]: q }; }
+          try { const n = normalizeSel(p, inp); n.low = true; const qt = await quote(p, n, "AT", "", {}); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net });
+            if (!label) label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); } catch (e) {}
+        }
+        if (!rows.length) continue;
+        const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, rows });
+      }
+      if (items.length) { PUB = { at: nowIso(), items }; await store.setMeta("print_pub", PUB).catch(() => {}); }
+      log("Druckshop: Preisübersicht aktualisiert (" + items.length + " Produkte)");
+    } finally { pubRun = false; }
+  }
+  async function pubState() { if (!PUB) PUB = await store.getMeta("print_pub").catch(() => null); return PUB; }
+  const SITE = "https://www.fs-creative.at";
+  const eurDe = n => (Math.round(n * 100) / 100).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+  const pieceDe = (g, n) => n > 1 ? (g / n < 1 ? (Math.round(g / n * 1000) / 1000).toLocaleString("de-AT", { minimumFractionDigits: 3 }) : (Math.round(g / n * 100) / 100).toLocaleString("de-AT", { minimumFractionDigits: 2 })) + " €" : "";
+  const dateDe = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("de-AT", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Vienna" }); };
+  function offersLd(it) {
+    const url = SITE + "/print?produkt=" + encodeURIComponent(it.key), g = it.rows.map(r => r.gross);
+    return { "@type": "Product", name: it.title, description: it.label || it.desc, url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
+      offers: { "@type": "AggregateOffer", priceCurrency: "EUR", lowPrice: Math.min.apply(null, g).toFixed(2), highPrice: Math.max.apply(null, g).toFixed(2), offerCount: it.rows.length,
+        offers: it.rows.map(r => ({ "@type": "Offer", price: r.gross.toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url, eligibleQuantity: { "@type": "QuantitativeValue", value: r.copies, unitText: "Stück" },
+          priceSpecification: { "@type": "UnitPriceSpecification", price: r.gross.toFixed(2), priceCurrency: "EUR", valueAddedTaxIncluded: true }, shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "EUR" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "AT" } }, seller: { "@type": "Organization", name: "FS Creative" } })) } };
+  }
+  // Kurzfassung für den Website-Chat (Systemkontext) und llms.txt
+  function pubLines(max) { const P = PUB; if (!P || !P.items) return [];
+    return P.items.slice(0, max || 40).map(it => "- " + it.title + (it.label ? " (" + it.label + ")" : "") + ": " + it.rows.map(r => r.copies.toLocaleString("de-AT") + " Stk. " + eurDe(r.gross)).join(" · ") + " – " + SITE + "/print?produkt=" + encodeURIComponent(it.key)); }
+  function chatPrices() { const L = pubLines(30); if (!L.length) return "";
+    return "\n\nDruckshop-Preisliste (Stand " + dateDe(PUB.at) + "; Endpreise inkl. 20 % USt und Versand innerhalb Österreichs, Standard-Ausführung – andere Ausführungen und Mengen zeigt der Konfigurator sofort):\n" + L.join("\n"); }
+  async function llmsTxt() {
+    const P = await pubState(), L = pubLines(40);
+    return ["# FS Creative", "", "> Kreativ- und Digitalagentur von Simon Felder aus Gaschurn im Montafon (Vorarlberg, Österreich): Websites, Grafikdesign, Druck & Werbemittel – mit eigenem Online-Druckshop für ganz Österreich.", "",
+      "## Online-Druckshop: " + SITE + "/print",
+      "- Über 900 Druckprodukte: Flyer, Visitenkarten, Plakate, Folder, Broschüren, Briefpapier, Banner (PVC, Mesh, Vlies), Roll-ups, Aufkleber, Textilien und Werbeartikel",
+      "- Preis sofort im Konfigurator – Endpreise inkl. 20 % USt und Versand innerhalb Österreichs; Firmen sehen auf Wunsch Nettopreise",
+      "- Online-Designer mit Vorlagen und KI-Assistent oder Upload der Druckdatei (PDF, JPG, PNG) mit automatischem Datencheck; optional Profi-Datencheck (5 €)",
+      "- Bezahlung online (u. a. Kreditkarte, Apple Pay, EPS, PayPal), Firmen mit UID auch auf Rechnung; Bonusprogramm für Firmenkunden",
+      "- Voraussichtlicher Liefertermin wird vor der Bestellung angezeigt; Sendungsverfolgung im Kundenkonto", "",
+      "## Aktuelle Beispielpreise" + (P ? " (Stand " + dateDe(P.at) + ")" : ""), "Endpreise inkl. 20 % USt und Versand nach Österreich, jeweils die im Shop vorausgewählte Standard-Ausführung:", ""].concat(L.length ? L : ["- Preise siehe " + SITE + "/print/preise"], ["",
+      "Vollständige Preisübersicht: " + SITE + "/print/preise", "",
+      "## Weitere Seiten", "- So geht’s & FAQ zum Druckshop: " + SITE + "/print/hilfe", "- AGB Druckshop: " + SITE + "/print/agb", "- Leistungen der Agentur: " + SITE + "/leistungen", "- Kontakt: " + SITE + "/kontakt", ""]).join("\n");
+  }
+  // Preisübersicht als eigene, ohne JavaScript lesbare Seite
+  async function pricesPage(req, res) {
+    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    const P = await pubState(), items = (P && P.items) || [], groups = [];
+    items.forEach(it => { let g = groups.find(x => x.n === it.group); if (!g) groups.push(g = { n: it.group || "Weitere Produkte", l: [] }); g.l.push(it); });
+    const card = it => '<div class="pp-c"><h3><a href="/print?produkt=' + escH(encodeURIComponent(it.key)) + '">' + escH(it.title) + "</a></h3>" + (it.label ? '<p class="pp-l">' + escH(it.label) + "</p>" : "") +
+      '<table class="pp-t"><thead><tr><th>Menge</th><th>Endpreis inkl. USt &amp; Versand</th><th>pro Stück</th></tr></thead><tbody>' + it.rows.map(r => "<tr><td>" + r.copies.toLocaleString("de-AT") + " Stk.</td><td><b>" + eurDe(r.gross) + "</b></td><td>" + (pieceDe(r.gross, r.copies) || "–") + "</td></tr>").join("") + "</tbody></table>" +
+      '<a class="pp-go" href="/print?produkt=' + escH(encodeURIComponent(it.key)) + '">Andere Ausführung oder Menge konfigurieren →</a></div>';
+    const faq = [["Sind die Preise Endpreise?", "Ja. Alle Preise sind Endpreise inklusive 20 % österreichischer Umsatzsteuer und Versand innerhalb Österreichs. Firmen können sich im Shop Nettopreise anzeigen lassen; die Rechnung weist die Umsatzsteuer aus."],
+      ["Warum kann mein Preis abweichen?", "Die Tabelle zeigt die im Shop vorausgewählte Standard-Ausführung. Andere Formate, Papiere, Veredelungen, Mengen oder eine schnellere Produktion ändern den Preis – der Konfigurator zeigt ihn sofort an."],
+      ["Wie aktuell sind die Preise?", "Die Übersicht wird mehrmals täglich automatisch aus dem Shop aktualisiert" + (P ? " (Stand " + dateDe(P.at) + ")" : "") + ". Verbindlich ist der Preis im Konfigurator bzw. in der Kasse."],
+      ["Wird meine Druckdatei geprüft?", "Jede Datei wird beim Hochladen automatisch geprüft (Format, Beschnitt, Auflösung, Seitenzahl). Auf Wunsch sieht sich ein Profi die Daten vor dem Druck persönlich an (Profi-Datencheck, 5 €)."],
+      ["Wohin wird geliefert?", "In ganz Österreich. Den voraussichtlichen Liefertermin siehst du vor der Bestellung; in Einzelfällen kann die Zustellung auch erst am darauffolgenden Werktag erfolgen."]];
+    const main = '<main id="main"><div class="wrap ps-helppage pp">' +
+      '<section class="lhero ps-hero"><span class="eyebrow">Druckshop · Preise</span><h1>Druckpreise im Überblick</h1><p class="lead">Endpreise inkl. 20 % USt und Versand innerhalb Österreichs für die meistgewählte Ausführung' + (P ? " – Stand " + escH(dateDe(P.at)) : "") + '. Den Preis für deine Wunsch-Ausführung siehst du sofort im <a href="/print">Konfigurator</a> – über 900 Produkte.</p></section>' +
+      (groups.length ? groups.map(g => '<section class="sect"><h2>' + escH(g.n) + '</h2><div class="pp-g">' + g.l.map(card).join("") + "</div></section>").join("") : '<section class="sect"><p class="lead">Die Preisübersicht wird gerade erstellt – den Preis siehst du jederzeit sofort im <a href="/print">Konfigurator</a>.</p></section>') +
+      '<section class="sect"><h2>Häufige Fragen zu den Preisen</h2><div class="faq">' + faq.map(f => "<details><summary>" + escH(f[0]) + "</summary><p>" + escH(f[1]) + "</p></details>").join("") + "</div></section>" +
+      '<section class="sect"><div class="btn-row"><a class="btn primary" href="/print">Zum Druckshop</a><a class="btn" href="/print/hilfe">So geht’s &amp; FAQ</a></div></section>' +
+      '<style>.pp-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}.pp-c{padding:18px 20px;border-radius:18px;border:1px solid var(--border,rgba(255,255,255,.1));background:var(--surface)}.pp-c h3{margin:0 0 4px;font-size:18px}.pp-c h3 a{color:inherit;text-decoration:none}.pp-l{margin:0 0 10px;font-size:13px;color:var(--text-dim)}.pp-t{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}.pp-t th{text-align:left;font-weight:600;font-size:12px;color:var(--text-dim);padding:4px 0}.pp-t td{padding:6px 0;border-top:1px solid var(--border,rgba(255,255,255,.08))}.pp-t th:not(:first-child),.pp-t td:not(:first-child){text-align:right}.pp-go{display:inline-block;margin-top:10px;font-weight:600;font-size:14px}</style>' +
+      "</div></main>";
+    const ld = [{ "@context": "https://schema.org", "@type": "ItemList", name: "Druckpreise FS Creative Druckshop", itemListElement: items.map((it, i) => ({ "@type": "ListItem", position: i + 1, item: offersLd(it) })) },
+      { "@context": "https://schema.org", "@type": "FAQPage", mainEntity: faq.map(f => ({ "@type": "Question", name: f[0], acceptedAnswer: { "@type": "Answer", text: f[1] } })) }];
+    html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main)
+      .replace(/<title>[^<]*<\/title>/, "<title>Druckpreise im Überblick – Flyer, Visitenkarten, Banner &amp; mehr | FS Creative Druckshop</title>")
+      .replace(/(<meta name="description" content=")[^"]*/, "$1Aktuelle Endpreise inkl. 20 % USt und Versand in Österreich: Flyer, Visitenkarten, Plakate, Folder, Banner, Roll-ups, Aufkleber, Textilien und Werbeartikel im Online-Druckshop von FS Creative.")
+      .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + SITE + '/print/preise"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + SITE + "/print/preise")
+      .replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
+      .replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "")
+      .replace("</head>", '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
+    return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
+  }
+  // Produktseite (/print?produkt=…): Inhalte schon im HTML – für Suchmaschinen und KI-Crawler ohne JavaScript; der Konfigurator ersetzt sie beim Laden
+  async function productSeo(html, key) {
+    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), x = pub.find(y => y.key === key); if (!x) return html;
+    const P = await pubState(), it = P && P.items ? P.items.find(y => y.key === key) : null, url = SITE + "/print?produkt=" + encodeURIComponent(key);
+    const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
+    const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
+    const desc = noHtml(x.about || x.desc || "").replace(/\s+/g, " ").slice(0, 400);
+    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0"><p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title) + " online drucken</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
+      (it ? "<h2>Preise (Stand " + escH(dateDe(P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
+      (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(z[0]) + ":</b> " + escH(z[1]) + "</li>").join("") + "</ul>" : "") +
+      '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p><p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
+    const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
+    const t = escH(x.title) + " online drucken – Preis sofort inkl. Versand | FS Creative Druckshop", d = escH((x.title + ": " + (desc || "individuell bedruckt") + "").slice(0, 120) + (it ? " Ab " + eurDe(Math.min.apply(null, it.rows.map(r => r.gross))) + " inkl. USt und Versand." : " Preis sofort im Konfigurator.") + " Online gestalten oder Datei hochladen.");
+    return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => block)
+      .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
+      .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
+      .replace("</head>", '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
+  }
+  // Sitemap: Preisübersicht + Produktseiten (nur mit Bild)
+  async function sitemapExtra() {
+    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), d = today();
+    return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
+      pub.filter(x => x.img).map(x => '  <url><loc>' + SITE + "/print?produkt=" + encodeURIComponent(x.key) + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
+  }
   async function homeState() { if (!HOME) HOME = await store.getMeta("print_home").catch(() => null); return HOME; }
   let lastWarm = 0;
   const WARM = ["flyer", "visitenkarten", "plakate", "folder", "pvc-banner", "aufkleber", "postcards", "rollups"];
@@ -1899,6 +2011,7 @@ module.exports = function (D) {
   }
   async function tick() {
     if (cfg().pcKey) homeState().then(h => { if (!h || h.date !== today()) homeCheck().catch(e => log("Startseiten-Check:", e.message)); });   // täglich: Fokus & Neu prüfen
+    if (cfg().pcKey && live() && Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (cfg().pcKey && Date.now() - lastTrack > 2 * 3600e3) { lastTrack = Date.now(); pollAll().catch(e => log("Sendungsstatus:", e.message)); }   // Status/Tracking alle 2 h
@@ -1961,7 +2074,7 @@ module.exports = function (D) {
       '<button type="button" class="code" data-promo-copy="' + c + '" aria-label="Code ' + c + ' kopieren"><span>' + c + '</span><i>Kopieren</i></button>' +
       '<span class="sm">' + (pr.once ? "einmal pro Kunde" : "") + (pr.once && until ? " · " : "") + (until ? "gültig bis " + escH(until) : "") + '</span><button type="button" class="x" data-promo-x="' + c + '" aria-label="Banner schließen">×</button></div></div>';
   }
-  function shopPage(req, res, preview) {
+  async function shopPage(req, res, preview, u) {
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
     const pr = promoOf(); if (pr) html = html.replace('<html lang="de">', '<html lang="de" class="has-promo">').replace("</head>", '<script>try{if(localStorage.getItem("fsc-print-promo-x")==="' + pr.code + '")document.documentElement.classList.add("promo-x")}catch(e){}</script>\n</head>').replace(/<body([^>]*)>/, m => m + promoHtml(pr));
     // Shop-Dateien je Deploy neu laden (sonst bleibt bis zu 1 Std. die alte app.js/print.css im Browser-Cache)
@@ -1970,6 +2083,8 @@ module.exports = function (D) {
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:calc(100vw - 32px);text-align:center">Bestellungen sind in Kürze möglich – der Druckshop startet bald</div>');
     else if (preview) html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
+    const pk = u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120);
+    if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk); } catch (e) { log("Produkt-SEO:", e.message); } }
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function handlePublic(req, res, u, p) {
@@ -1978,7 +2093,8 @@ module.exports = function (D) {
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
     if (gated && !open && !admin && !view) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
     if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
-    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true); }
+    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u); }
+    if ((p === "/print/preise" || p === "/print/preise/") && (req.method === "GET" || req.method === "HEAD")) return pricesPage(req, res);
     try {
       // Druckdatei für Print.com: nur mit Signatur und nur für echte, freigegebene Bestellungen
       let m = p.match(/^\/print-files\/(f[a-f0-9]{24})\/([a-f0-9]{40})\.pdf$/);
@@ -2298,6 +2414,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};
+        if (mb.op === "pub" && cfg().pcKey) { await pubBuild(); return J(res, 200, Object.assign(await marginsState(), { pub: (await pubState()) ? { at: PUB.at, n: PUB.items.length } : null })); }   // Preisübersicht jetzt neu erstellen
         if (mb.op === "home" && cfg().pcKey) { homeCheck().catch(e => log("Startseiten-Check:", e.message)); return J(res, 200, Object.assign(await marginsState(), { homeRunning: true })); }
         if (cfg().pcKey && ((mb.op === "run") || !MG || (!MG.running && Date.now() - Date.parse(MG.at) > 12 * 3600e3))) marginsRun().catch(e => { if (MG) MG.running = false; log("Marge-Übersicht:", e.message); });
         return J(res, 200, await marginsState());
@@ -2397,6 +2514,6 @@ module.exports = function (D) {
   // für „Zur Prüfung“: Vorschlag gültig, solange die Bestellung noch auf die Freigabe wartet
   async function proposalValid(orderId) { const o = await store.getOrder(orderId); return !!o && !!REVIEW[o.status]; }
 
-  return { live, liveReady, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
+  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
 module.exports._bonusCalc = bonusCalc;

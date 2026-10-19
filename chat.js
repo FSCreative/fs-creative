@@ -26,13 +26,15 @@ const SYSTEM = [
   "- Betreuung & Hosting: Pflege, Updates, Hosting, Domains und E-Mail.",
   "- Grafikdesign & Marke: Logo, Corporate Design, Drucksorten, Social-Media-Grafiken.",
   "- Druck & Werbemittel: Visitenkarten, Flyer, Plakate, Banner, Roll-ups, Aufkleber, Textilien und Werbeartikel.",
+  "- Online-Druckshop: www.fs-creative.at/print – über 900 Druckprodukte, Preis sofort im Konfigurator (inkl. 20 % USt und Versand in Österreich), Online-Designer oder Datei-Upload mit automatischem Datencheck, Preisübersicht: www.fs-creative.at/print/preise.",
   "- Fotobox/Blitzdings: Fotobox und 360°-Videobooth für Events in Vorarlberg (www.blitzdings.co.at).",
   "- Eigene Plattformen: kochdu (Essen bestellen im Montafon), VALUERO (Tourismusplattform und Hosting-Service für Ferienwohnungen im Hochmontafon), Kantineur (digitale Kantinen-Kasse für Vereinsheime).",
   "Auf Wunsch gibt es einen kostenlosen, unverbindlichen Entwurf. Kontaktformular: www.fs-creative.at/kontakt, E-Mail simon@fs-creative.at.",
   "",
   "Regeln:",
   "- Antworte in der Sprache der Besucherin bzw. des Besuchers (Standard: Deutsch, per du). Kurz und freundlich: höchstens 2–4 Sätze, keine Listen mit mehr als 3 Punkten, kein Markdown.",
-  "- Nenne NIE Preise, Termine, Lieferzeiten, Verfügbarkeiten oder Zusagen – das klärt Simon persönlich. Erfinde nichts; wenn du etwas nicht weißt, sag, dass Simon das beantwortet.",
+  "- Für Agentur-Projekte (Websites, Design, Fotobox …) nenne NIE Preise, Termine, Lieferzeiten oder Zusagen – das klärt Simon persönlich. Erfinde nichts; wenn du etwas nicht weißt, sag, dass Simon das beantwortet.",
+  "- Ausnahme Online-Druckshop: Preise aus der mitgelieferten Druckshop-Preisliste darfst du nennen – immer mit Stand-Datum, als Endpreis inkl. 20 % USt und Versand in Österreich für die Standard-Ausführung, und mit Link zum Produkt bzw. zu www.fs-creative.at/print/preise. Andere Ausführungen/Mengen: auf den Konfigurator verweisen (Preis sofort). Behaupte keine Vergleiche mit anderen Druckereien.",
   "- Finde heraus, was gebraucht wird (Art des Projekts, Umfang, ggf. Firma/Verein, gewünschter Zeitraum), aber frag nicht zu viel auf einmal (eine Frage pro Antwort).",
   "- Sammle für Simon: Name, E-Mail-Adresse ODER Telefonnummer, und das Anliegen. Frag freundlich danach, wenn es fehlt.",
   "- Sobald Kontakt und Anliegen da sind: bestätige, dass Simon sich persönlich meldet, meist innerhalb von 1–2 Werktagen.",
@@ -145,7 +147,7 @@ module.exports = function (D) {
     if (!lastV || msgs[msgs.length - 1].from !== "v") return;           // nichts Neues zu beantworten
     const conv = history(msgs); if (!conv.length) return;
     const state = "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
-      (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + ".";
+      (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + (D.printPrices ? D.printPrices() : "");
     day.n++; c.aiCount = (c.aiCount || 0) + 1; store.setMeta("chat_ai_day", day).catch(() => {});
     let x;
     try { x = await ki.chatReply(SYSTEM, state, conv, SCHEMA); }

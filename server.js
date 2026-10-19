@@ -3437,7 +3437,7 @@ const server = http.createServer((req, res) => {
     }
 
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
-    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
+    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
       return void PRINT.handlePublic(req, res, u, p);
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
@@ -3447,7 +3447,16 @@ const server = http.createServer((req, res) => {
       const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
       // Shop-Einstellungen (Schalter „live“) erst laden – sonst fehlt die Druckshop-Werbung nach einem Neustart, bis jemand /print öffnet
       return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found");
-        Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(on => sendGz(req, res, 200, printLiveBlocks(data, on), TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" })); });
+        Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
+          let out = printLiveBlocks(data, on);
+          if (on && f === "sitemap.xml" && PRINT.sitemapExtra) { try { out = out.replace("</urlset>", await PRINT.sitemapExtra() + "</urlset>"); } catch (e2) {} }   // Druckshop: Preisübersicht + Produktseiten
+          sendGz(req, res, 200, out, TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); }); });
+    }
+    // llms.txt: Kurzinfo für KI-Assistenten (ChatGPT, Perplexity, Claude …) – Agentur + Druckshop mit aktuellen Beispielpreisen
+    if ((req.method === "GET" || req.method === "HEAD") && p === "/llms.txt") {
+      return void Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
+        const t = on && PRINT.llmsTxt ? await PRINT.llmsTxt().catch(() => "") : "";
+        send(res, t ? 200 : 404, t || "Not found", "text/plain; charset=utf-8", { "Cache-Control": "public, max-age=3600" }); });
     }
     // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
     if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void CHAT.handlePublic(req, res, u, p);
@@ -3597,7 +3606,7 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
-const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS,
+const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it => PRINT.placeOrder(it.payload.orderId, "Zur Prüfung").then(o => ({ orderNumber: o.printcom.orderNumber })), valid: it => PRINT.proposalValid(it.payload.orderId) });

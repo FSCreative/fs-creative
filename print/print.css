@@ -1307,3 +1307,7 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 .ps-feat .ph,.ps-prod .ph,.ps-gal .main{position:relative}
 .ps-feat .ph img,.ps-prod .ph img,.ps-gal .main img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .ps-catt .ci img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+/* Motiv-Stückzahlen: Feld breit genug für 5-stellige Mengen, ohne Pfeile, die die Zahl überdecken */
+.ps-msplit{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+.ps-ms input{flex:1 1 auto;min-width:72px;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+.ps-ms input::-webkit-outer-spin-button,.ps-ms input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
