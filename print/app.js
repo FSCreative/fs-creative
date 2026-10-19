@@ -533,12 +533,12 @@
         if (j.ok) { var before = isLogo() ? logoKey() : ""; S.price = j.price; S.price.size = j.size; S.price.folds = j.folds || null; S.price.closed = j.closed || null; S.price.bleed = j.bleed; S.price.sides = j.sides; S.price.copies = j.copies; S.price.labels = j.labels; S.price.positions = j.positions; S.priceErr = "";
           if (isLogo() && before !== logoKey()) { S.logos = {}; S.file = null; } }
         else if (S.undo && /nicht lieferbar|keinen Preis/i.test(j.error || "")) {   // gerade gewählte Option geht nicht → zurück zur letzten bestellbaren Auswahl
-          var u = S.undo, t0 = Object.assign({}, u.sel); t0[u.slug] = u.val; BAD[badKey(t0)] = 1; S.undo = null;
+          var u = S.undo, t0 = Object.assign({}, u.sel); t0[u.slug] = u.val; BAD[badKey(t0)] = 1; BAD[badKey(S.sel)] = 1; S.undo = null;
           var pr0 = S.prod.props.filter(function (x) { return x.slug === u.slug; })[0], o0 = pr0 && pr0.options.filter(function (x) { return x.slug === u.val; })[0];
           S.sel = u.sel; toast("„" + (o0 ? o0.name : u.val) + "“ ist in dieser Kombination nicht lieferbar – deine vorige Auswahl ist wiederhergestellt.", true); render(); loadPrice(); wishAlts(u, o0 ? o0.name : u.val); return;
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
-        if (j.ok) S.undo = null;
+        if (j.ok) { S.undo = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
         if (j.ok) { S.alts = null; altSeq++; }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
@@ -1297,7 +1297,7 @@
     return '<div class="ps-wish"><p>„' + esc(w.name) + '“ gibt es so:</p>' + w.items.map(function (a, i) { return '<button type="button" class="ps-alt" data-wish="' + i + '"><span>' + esc(a.label) + "</span><b>" + eur(co ? a.price.net : a.price.gross) + "</b><small>Übernehmen →</small></button>"; }).join("") + '<button type="button" class="ps-link" data-wishx="1">Ausblenden</button></div>'; }
   function setProp(slug, val) {
     var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : ""; S.wish = null; wishSeq++;
-    S.undo = S.price && !S.priceErr && !S.priceBusy ? { sel: JSON.parse(before), slug: slug, val: val } : null;
+    S.undo = S.good && S.good.key === S.prod.key ? { sel: JSON.parse(JSON.stringify(S.good.sel)), slug: slug, val: val } : null;   // zurück zur letzten Auswahl mit gültigem Preis
     S.sel[slug] = val; fixSel(slug);
     if ((S.file || S.mot.files.length) && !isLogo() && before !== JSON.stringify(S.sel)) { S.file = null; S.previews = null; motReset(true); toast("Ausführung geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
     if (isLogo() && kind() === "promo" && lk !== logoKey()) { S.logos = {}; S.file = null; }
