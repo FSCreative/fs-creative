@@ -311,7 +311,20 @@ module.exports = function (D) {
   }
 
   // ───────────────────────── Print.com ─────────────────────────
+  // Print.com schonen: höchstens 4 Anfragen gleichzeitig (Rest wartet), bei Drosselung (429) bzw. kurzer Störung (502/503) automatisch kurz warten und neu versuchen
+  const PC_MAX = 4; let pcActive = 0; const pcWait = [];
+  const pcSlot = () => new Promise(res => { if (pcActive < PC_MAX) { pcActive++; res(); } else pcWait.push(res); });
+  const pcFree = () => { const n = pcWait.shift(); if (n) n(); else pcActive--; };
   async function pcApi(method, p, body, opts) {
+    for (let a = 0; ; a++) {
+      await pcSlot(); let e0 = null, out;
+      try { out = await pcApi1(method, p, body, opts); } catch (e) { e0 = e; } finally { pcFree(); }
+      if (!e0) return out;
+      if (!(e0.status === 429 || e0.status === 502 || e0.status === 503) || a >= 3 || (opts && opts.form)) throw e0;
+      await new Promise(r => setTimeout(r, [700, 1800, 4000][a] + Math.random() * 400));
+    }
+  }
+  async function pcApi1(method, p, body, opts) {
     opts = opts || {};
     const c = cfg(); if (!c.pcKey) { const e = new Error("Print.com ist noch nicht eingerichtet (PRINTCOM_API_KEY fehlt)"); e.status = 503; throw e; }
     const auth = /^(Bearer|PrintApiKey)\s/i.test(c.pcKey) ? c.pcKey : "PrintApiKey " + c.pcKey;
@@ -825,7 +838,7 @@ module.exports = function (D) {
   }
   async function purchase(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
-    const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < 30 * 60e3) return hit.v;
+    const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 3 * 3600e3)) return hit.v;   // 3 h; Kasse: höchstens 5 min alt
     // Print.com ist maßgeblich: lehnt Print.com ab (oder Preis 0) und greift eine Ausschlussregel → „nicht lieferbar“
     let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }); }
     catch (e) { if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
@@ -841,7 +854,7 @@ module.exports = function (D) {
     const best = poss[0];
     const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))[0];
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10) };
-    PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 2000) PRICE_CACHE.clear();
+    PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 5000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 1000); old.forEach(k => PRICE_CACHE.delete(k)); }
     return v;
   }
   const PM_DE = { digital: "Digitaldruck", offset: "Offsetdruck", inkjet: "Inkjet-Digitaldruck", digital_uv: "UV-Digitaldruck", screen_printing: "Siebdruck", sublimation: "Sublimationsdruck", hybrid: "Hybriddruck" };
@@ -1520,6 +1533,7 @@ module.exports = function (D) {
       fm = await newFile("motifs", "motive.pdf", Buffer.from(await doc.save()), { product: t0.product, sel: t0.sel, size: t0.size, bleed: t0.bleed, sides: t0.sides, pages: pg - 1 }, checks, { pageMap, motifFiles: list.map(x => x.fm.id) });
       motifs = list.map((x, i) => ({ motif: i + 1, copies: x.copies, fileId: x.fm.id, fileName: x.fm.name }));
     } else fm = await chk(input.fileId, input.fileToken, "");
+    n.fresh = true;   // an der Kasse: Einkaufspreise höchstens 5 min alt
     const q = await quote(prod, n, cust.country, cust.zip, Object.assign({}, cust, { disc: Array.isArray(input.__disc) ? input.__disc : [] }));
     const exp = parseFloat(input.expectedGross);
     if (!isFinite(exp) || Math.abs(exp - q.gross) > 0.009) return { priceChanged: true, price: publicPrice(q) };

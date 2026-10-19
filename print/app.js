@@ -1196,12 +1196,12 @@
     if (k === "psheet") { openSheet(); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
     if (k === "psheetx") { closeSheet(); return; }
-    if (k === "next2") { if (S.price) go(3); return; }
+    if (k === "next2") { if (S.price && !S.priceBusy) go(3); else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
     if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; render(); return; }
     if (k === "clearfile") { S.file = null; S.previews = null; S.mode = ""; render(); return; }
     if (k === "editdesign") return openDesigner();
-    if (k === "next3") { if (!S.file || S.file.blocked) return;
+    if (k === "next3") { if (!S.file || S.file.blocked) return; if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
       if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }
         if (miss > -1) { motLoad(miss); toast("Jetzt Motiv " + (miss + 1) + " gestalten oder hochladen"); render(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
         if (motSum() !== +S.copies) { toast("Die Stückzahlen der Motive ergeben nicht die Auflage – bitte in „Ausführung“ anpassen", true); return; } }
