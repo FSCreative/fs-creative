@@ -781,11 +781,11 @@ module.exports = function (D) {
   }
 
   // ── Steuer ──
-  // AT: immer 20 %. DE privat: österreichische USt 20 % (TODO OSS: ab 10.000 € EU-weiten Fernverkäufen pro Jahr deutsche USt 19 % über OSS abführen –
-  // Schwelle im Blick behalten). DE Firma mit gültiger (VIES) deutscher UID: steuerfreie innergemeinschaftliche Lieferung 0 %, Hinweis auf der Rechnung.
+  // Immer österreichische USt 20 % – auch bei Firmen (Wunsch Simon, 19.10.2026): Anzeige für Firmen netto, Rechnung und Zahlung
+  // immer brutto mit ausgewiesener USt; Firmen holen sie sich über den Vorsteuerabzug zurück. Keine steuerfreie ig. Lieferung.
+  // (Hinweis bei späterer EU-Lieferung: Fernverkäufe an Private ggf. OSS, an Firmen mit UID wäre die ig. Lieferung gesetzlich steuerfrei.)
   function taxFor(country, cust) {
     const uid = String(cust && cust.uid || "").replace(/[\s.\-]/g, "").toUpperCase();
-    if (country !== "AT" && cust && cust.company && cust.uidValid && uid.slice(0, 2) === country) return { case: "igl", rate: 0, uid, note: "Steuerfreie innergemeinschaftliche Lieferung (Art. 6 Abs. 1 iVm Art. 7 UStG 1994). UID des Leistungsempfängers: " + uid + "." };
     return { case: "at20", rate: 20, uid: uid || "", note: "" };
   }
   async function uidCheck(uid) {
