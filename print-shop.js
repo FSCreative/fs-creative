@@ -83,8 +83,11 @@ const CURATED = [
     expose: ["size", "roll_up_banners", "material", "printtype"], titles: { roll_up_banners: "System" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 10, bleed: 10, dpi: 150, prefer: { size: ["banner_85_x_200"], roll_up_banners: ["basic", "budget"], printtype: ["40"] },
     optLabels: { roll_up_banners: { none: "Nur Druck (ohne System)", budget: "Budget", basic: "Basic", premium: "Premium", luxe: "Luxe", black_basic: "Basic schwarz", premium_black: "Premium schwarz", black_deluxe: "Deluxe schwarz", xxl: "XXL", double_deluxe: "Double Deluxe (beidseitig)" } } },
   // Banner in Wunschgröße: size "custom" + width/height in mm (live geprüft), Konfektion rundum gleich (all_sides_equal_finish)
-  { key: "pvc-banner", group: BANNER, cat: BANNER + "/banners-outdoor", kind: "banner", title: "PVC-Banner (Frontlit)", icon: "🏁", desc: "Wetterfestes Werbebanner in Wunschgröße – für Zaun, Fassade und Events.", skus: ["pvc-510"],
-    expose: ["material"], fixedOpts: { printtype: "40", all_sides_equal_finish: "yes" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100, custom: [300, 5000, 3000], prefer: { konfektion: ["hem_eyelets_50"] } },
+  // Banner: Print.com-Produkt „banners“ mit allen Materialien (PVC Frontlit, Blockout, Mesh, Textil) und ein-/beidseitigem Druck; Größe frei im Rahmen von Print.com
+  { key: "pvc-banner", group: BANNER, cat: BANNER + "/banners-outdoor", kind: "banner", title: "Banner", icon: "🏁", desc: "Wetterfestes Werbebanner in Wunschgröße – PVC Frontlit, Blockout, Mesh oder Textil.", skus: ["banners", "pvc-510"],
+    expose: ["material", "printtype"], skipOpts: { printtype: ["00"] }, titles: { material: "Material", printtype: "Druck" },
+    optLabels: { material: { "510gr_pvc": "PVC Frontlit 510 g (B1)", "610gr_blockout": "PVC Blockout 610 g (B1, blickdicht)", "280gr_mesh_b1": "Mesh 270 g (winddurchlässig, B1)", pes_outdoor: "Textil PES Outdoor 280 g" }, printtype: { "40": "Einseitig bedruckt", "44": "Beidseitig bedruckt" } },
+    fixedOpts: { all_sides_equal_finish: "yes" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100, prefer: { material: ["510gr_pvc"], printtype: ["40"], konfektion: ["hem_eyelets_50"] } },
   { key: "mesh-banner", group: BANNER, cat: BANNER + "/banners-outdoor", kind: "banner", title: "Mesh-Banner (winddurchlässig)", icon: "🌬️", desc: "Gitterbanner für Gerüste, Zäune und windige Standorte – in Wunschgröße.", skus: ["mesh"],
     expose: ["material"], fixedOpts: { printtype: "40", all_sides_equal_finish: "yes" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100, custom: [300, 5000, 3000], prefer: { konfektion: ["hem_eyelets_50"] } },
   // Bauzaun: Größe „banner_site_fences“ ohne Maße im Slug → 3410 × 1730 mm (Standard-Bauzaunfeld; vor Livegang mit Print.com-Vorlage prüfen)
@@ -98,12 +101,12 @@ const CURATED = [
   Object.assign({ key: "hoodie-bio", title: "Hoodie Bio (Stanley/Stella)", icon: "🧥", desc: "Kuscheliger Bio-Hoodie für Team, Verein und Merch.", skus: ["hoodie-premium-8"] }, TEX_OPTS),
   Object.assign({ key: "polo", title: "Poloshirt", icon: "👔", desc: "Poloshirt mit Logo – gedruckt oder gestickt.", skus: ["polo-budget-6"] }, TEX_OPTS),
   // Werbeartikel: Logo-Upload, Logo mittig auf der Druckfläche
-  { key: "kugelschreiber", group: PROMO, kind: "promo", title: "Kugelschreiber", icon: "🖊️", desc: "Kugelschreiber mit vollfarbigem Logo-Druck.", skus: ["pen-apollo-hardcolor"], expose: ["color"], titles: { color: "Farbe" },
-    fixedOpts: { printtype: "40", printingmethod: "digital_uv" }, tiers: [50, 150, 500, 2500], areaProp: "printing_size", printArea: [70, 6] },
-  { key: "feuerzeug", group: PROMO, kind: "promo", title: "Feuerzeug", icon: "🔥", desc: "Cricket-Feuerzeuge mit deinem Logo.", skus: ["cricket-original"], expose: ["color"], titles: { color: "Farbe" },
-    optLabels: { color: { yellow_pms_102c: "Gelb", red_pms_192c: "Rot", blue_pms_2118c: "Blau", "440002_15_black": "Schwarz" } }, fixedOpts: { printtype: "40", printingmethod: "digital_uv" }, tiers: [100, 250, 500, 1000], areaProp: "size", printArea: [60, 15] },
-  { key: "schluesselband", group: PROMO, kind: "promo", title: "Schlüsselband", icon: "🔑", desc: "Lanyards mit vollflächigem Druck für Events und Team.", skus: ["subyard-standard"], expose: ["size"], titles: { size: "Breite" },
-    optLabels: { size: { "15_x_430_mm": "15 mm", "20_x_430_mm": "20 mm" } }, fixedOpts: { printtype: "40", printingmethod: "sublimation" }, tiers: [50, 100, 250, 500], areaProp: "size", printArea: [20, 430] },
+  { key: "kugelschreiber", group: PROMO, kind: "promo", title: "Kugelschreiber", icon: "🖊️", desc: "Kugelschreiber mit vollfarbigem Logo-Druck.", skus: ["pen-apollo-hardcolor"], expose: ["color", "printtype"], titles: { color: "Farbe", printtype: "Druck" },
+    skipOpts: { printtype: ["00"] }, prefer: { printtype: ["40"] }, fixedOpts: { printingmethod: "digital_uv" }, tiers: [50, 150, 500, 2500], areaProp: "printing_size", printArea: [70, 6] },
+  { key: "feuerzeug", group: PROMO, kind: "promo", title: "Feuerzeug", icon: "🔥", desc: "Cricket-Feuerzeuge mit deinem Logo.", skus: ["cricket-original"], expose: ["color", "printtype"], titles: { color: "Farbe", printtype: "Druck" },
+    optLabels: { color: { yellow_pms_102c: "Gelb", red_pms_192c: "Rot", blue_pms_2118c: "Blau", "440002_15_black": "Schwarz", "440002_13_white": "Weiß" } }, skipOpts: { printtype: ["00"] }, prefer: { printtype: ["40"] }, fixedOpts: { printingmethod: "digital_uv" }, tiers: [100, 250, 500, 1000], areaProp: "size", printArea: [60, 15] },
+  { key: "schluesselband", group: PROMO, kind: "promo", title: "Schlüsselband", icon: "🔑", desc: "Lanyards mit vollflächigem Druck für Events und Team.", skus: ["subyard-standard"], expose: ["size", "printtype", "accessories"], titles: { size: "Breite", printtype: "Druck", accessories: "Ausweishülle" },
+    optLabels: { size: { "15_x_430_mm": "15 mm", "20_x_430_mm": "20 mm" }, accessories: { none: "Ohne" } }, skipOpts: { printtype: ["00"] }, prefer: { printtype: ["40"], accessories: ["none"] }, fixedOpts: { printingmethod: "sublimation" }, tiers: [50, 100, 250, 500], areaProp: "size", printArea: [20, 430] },
   { key: "baumwolltasche", group: PROMO, kind: "promo", title: "Baumwolltasche", icon: "👜", desc: "Robuste Stofftasche mit deinem Logo im Siebdruck.", skus: ["canvas-tote-bags"], expose: ["color_material", "print_position", "printtype"],
     titles: { color_material: "Farbe", print_position: "Druck auf", printtype: "Farben" }, skipOpts: { printtype: ["00"] }, fixedOpts: { printingmethod: "screen_printing" }, tiers: [50, 100, 250, 500], printArea: [250, 300], prefer: { printtype: ["10"] },
     optLabels: { color_material: { canvas_natural: "Natur", canvas_black: "Schwarz" }, print_position: { front: "Vorderseite", front_and_back_same_print: "Vorder- und Rückseite (gleiches Motiv)" } } },
@@ -695,7 +698,7 @@ module.exports = function (D) {
   function resolveSel(prod, sel, extra, only) {
     const base = {}; Object.keys(prod.fixed).forEach(k => { if (!prod.auto || !prod.auto[k]) base[k] = prod.fixed[k]; });
     prod.props.forEach(pr => { if (sel[pr.slug] != null) base[pr.slug] = sel[pr.slug]; }); Object.assign(base, extra || {});
-    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]).map(v => OMITTABLE.test(v[0]) ? [v[0], v[1].concat([null])] : v);   // only: z. B. Druckverfahren passend zur Auflage
+    const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]).map(v => !OMITTABLE.test(v[0]) ? v : /^(bundle|cross_bundle)$/.test(v[0]) ? [v[0], [null].concat(v[1])] : [v[0], v[1].concat([null])]);   // only: z. B. Druckverfahren passend zur Auflage; Bündeln (Verpackung, kostet extra) nur wenn Print.com es verlangt
     let all = solveSel(vars, base, prod.excludes, aliasOf(prod)); const excl = !all;
     if (!all) all = Object.assign({}, prod.fixed, base);
     prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });
@@ -760,7 +763,8 @@ module.exports = function (D) {
       variants = tex.sizes.map(x => Object.assign({ textile_sizes: x.slug }, all.color_textile != null ? { color_textile: all.color_textile } : {}, { copies: x.n }));
       if (variants.some(v => hitRules(prod.excludes, Object.assign({}, all, { textile_sizes: v.textile_sizes })))) excl = true;
     }
-    if (kind === "promo") { const a = areaOf(prod, all); positions = [{ slug: "area", title: "Druckfläche", area: [a.w, a.h] }]; fileSel = { pos: ["area"], area: [a.w, a.h] }; more.push(["Druckfläche", a.w + " × " + a.h + " mm"]); }
+    if (kind === "promo") { const a = areaOf(prod, all), two = /^(44|11)$/.test(String(all.printtype || ""));
+      positions = two ? [{ slug: "area", title: "Vorderseite", area: [a.w, a.h] }, { slug: "area2", title: "Rückseite", area: [a.w, a.h] }] : [{ slug: "area", title: "Druckfläche", area: [a.w, a.h] }]; fileSel = { pos: positions.map(x => x.slug), area: [a.w, a.h] }; more.push(["Druckfläche", a.w + " × " + a.h + " mm"]); }
     const pcOpts = Object.assign({}, all, { copies }); if (prod.urgency.length) pcOpts.urgency = urgency;
     if (kind === "flat" && !size) size = sizeOf(prod, all);
     let folds = null, closed = null;
@@ -1142,7 +1146,7 @@ module.exports = function (D) {
     if (!isLogo(prod)) return targetOf(input, true);
     // Logo je Druckposition: Textil – Position aus dem Produkt; Werbeartikel – Druckfläche der aktuellen Auswahl
     if (prod.kind === "textile") { const p = (prod.positions || []).find(x => x.slug === String(input.logo || "")); if (!p) throw bad("Druckposition fehlt"); return { prod, pos: { slug: p.slug, title: p.title, area: p.area } }; }
-    const n = normalizeSel(prod, input); return { prod, pos: n.positions[0] };
+    const n = normalizeSel(prod, input); return { prod, pos: n.positions.find(x => x.slug === String(input.logo || "")) || n.positions[0] };   // beidseitig: Vorder-/Rückseite
   }
   async function handleUpload(buf, name, input) {
     const t0 = await uploadTarget(input);
