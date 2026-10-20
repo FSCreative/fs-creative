@@ -3025,6 +3025,7 @@ async function handleAdmin(req, res, u, p) {
       if (pl.op === "save") return J(200, { ok: true, order: FIN_PAY.save(pl.order || {}) });
       if (pl.op === "delete" && pl.confirm === true) { FIN_PAY.remove(id); return J(200, { ok: true }); }
       if (pl.op === "paid") return J(200, { ok: true, order: FIN_PAY.setPaid(id, pl.on !== false) });
+      if (pl.op === "link") return J(200, { ok: true, order: FIN_PAY.linkVoucher(id, String(pl.voucherId || "")) });
       if (pl.op === "qr") return J(200, Object.assign({ ok: true }, await FIN_PAY.qr(id)));
       if (pl.op === "sepa") return J(200, Object.assign({ ok: true }, FIN_PAY.sepa((Array.isArray(pl.ids) ? pl.ids : []).map(x => String(x).slice(0, 60)).slice(0, 100))));
       if (pl.op === "bank" && pl.confirm === true) { if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung" }); return J(200, Object.assign({ ok: true }, await FIN_PAY.toBank(id, ORIGIN + "/admin/api/fin/pay/callback"))); }

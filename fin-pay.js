@@ -100,6 +100,8 @@ module.exports = function (D) {
     write(A); return Object.assign({}, o, { problems: problems(o) });
   }
   function remove(id) { const A = read(), o = A.orders.find(x => x.id === id); if (!o) throw new Error("Nicht gefunden"); if (!OPEN[o.status] && o.status !== "storniert") throw new Error("Schon bei der Bank – in George stornieren"); A.orders = A.orders.filter(x => x !== o); write(A); return true; }
+  // Beleg zur Zahlung (aus demselben Mail-Anhang angelegt, offen) – für die Anzeige und den späteren Abgleich
+  function linkVoucher(id, voucherId) { const A = read(), o = A.orders.find(x => x.id === id); if (!o) throw new Error("Nicht gefunden"); o.voucherId = clip(voucherId, 40); hist(o, "Beleg angelegt (offen)"); write(A); return o; }
   function setPaid(id, on) { const A = read(), o = A.orders.find(x => x.id === id); if (!o) throw new Error("Nicht gefunden"); if (on) { o.status = "bezahlt"; o.paid = Object.assign({ manual: true, date: today() }, o.paid || {}); hist(o, "Als bezahlt markiert"); } else { o.paid = null; o.status = problems(o).length ? "entwurf" : "bereit"; hist(o, "Bezahlt zurückgenommen"); } write(A); return o; }
 
   // EPC-QR (GiroCode, Version 002): George-App → Scannen → Daten sind ausgefüllt, Simon bestätigt in der App
@@ -146,5 +148,5 @@ module.exports = function (D) {
     try { const s = await D.ebank.payStatus(o.bank.paymentId); o.bank.checked = new Date().toISOString(); applyStatus(o, s); if (o.status === "bank") hist(o, "In George freigegeben – wartet auf Ausführung"); } catch (e) { hist(o, "Status nicht abrufbar: " + e.message); }
     write(A); return o;
   }
-  return { list, save, remove, setPaid, qr, sepa, toBank, callback, _test: { ibanOk, problems, norm, epc, match, read, write } };
+  return { list, save, remove, setPaid, linkVoucher, qr, sepa, toBank, callback, _test: { ibanOk, problems, norm, epc, match, read, write } };
 };

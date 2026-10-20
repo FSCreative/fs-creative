@@ -35,7 +35,7 @@ F.payPage=function(){
     return '<div class="pay-r" data-act="payedit:'+esc(o.id)+'" role="button" tabindex="0">'+
       '<span class="pay-ck" data-noact>'+(canSel?'<input type="checkbox" data-paysel="'+esc(o.id)+'"'+(SEL[o.id]?" checked":"")+' aria-label="Für SEPA-Datei auswählen">':'')+'</span>'+
       '<span class="pay-who"><b>'+esc(o.name||"—")+'</b><small>'+esc(ibanFmt(o.iban)||"IBAN fehlt")+'</small></span>'+
-      '<span class="pay-why"><span>'+esc(o.reference?"Ref. "+o.reference:(o.text||"—"))+'</span>'+((o.problems||[]).length?'<small class="bad-t">'+esc(o.problems[0])+'</small>':o.source&&o.source.kind==="mail"?'<small>📧 '+esc(o.source.subject||"aus Mail")+'</small>':'')+'</span>'+
+      '<span class="pay-why"><span>'+esc(o.reference?"Ref. "+o.reference:(o.text||"—"))+'</span>'+((o.problems||[]).length?'<small class="bad-t">'+esc(o.problems[0])+'</small>':o.source&&o.source.kind==="mail"?'<small>📧 '+esc(o.source.subject||"aus Mail")+(o.voucherId?' · 📄 Beleg angelegt':'')+'</small>':o.voucherId?'<small>📄 Beleg angelegt</small>':'')+'</span>'+
       '<span class="pay-when'+(late?" bad-t":"")+'">'+(o.date?esc(F.de(o.date)):'<span class="muted">sofort</span>')+'</span>'+
       '<span class="pay-amt"><b class="num">'+eur(o.amount)+'</b><span class="fsd-pill '+s[1]+'">'+esc(s[0])+'</span></span>'+
       '<span class="pay-acts" data-noact>'+(o.status==="bereit"&&b.ok?'<button type="button" class="btn primary sm" data-act="paybank:'+esc(o.id)+'">In George freigeben</button>':'')+
@@ -49,7 +49,24 @@ F.payPage=function(){
 };
 
 /* ---------- Erfassen / Bearbeiten ---------- */
-var DR=null;
+var DR=null, ATT=null, BEL=null;   /* ATT {m,a}: Zahlung aus einem Mail-Anhang → dort zusätzlich „Auch als Beleg anlegen (offen)“; BEL: KI-Auslesung als Beleg */
+function belegHtml(o){ if(!ATT||!ATT.a) return "";
+  var b=BEL||{}, M=F.M||{}, sent=M.voucherSent?M.voucherSent(ATT.m,ATT.a):null, dup=(b.dupes||[]).length, on=!sent&&!dup;
+  var lines=(b.lines||[]).filter(function(l){ return l.gross>0; }), rate=lines.length===1?lines[0].rate:BEL?(b.tax>0?20:0):20; rate=[20,13,10,0].indexOf(rate)>-1?rate:20;
+  var g=b.gross>0&&(!b.currency||b.currency==="EUR")?b.gross:(o.amount||"");
+  return '<div class="pay-bel"><label class="row" style="gap:10px"><input type="checkbox" name="mkbeleg"'+(on?" checked":"")+' style="width:18px;height:18px"> <b>Auch als Beleg anlegen (offen)</b> <span class="muted small">– mit „'+esc(ATT.a.filename||"Anhang")+'“</span></label>'+
+    (sent?'<div class="notice"><span>Dieser Anhang ist schon als Beleg erfasst ('+esc(new Date(sent.at).toLocaleDateString("de-AT"))+').</span></div>':'')+(dup&&F.KI&&F.KI.dupesHtml?F.KI.dupesHtml(b.dupes):'')+
+    '<div class="pay-belf"><div class="grid2"><label class="fl">Lieferant<input class="f" name="bsupplier" value="'+esc(b.supplier||o.name||"")+'"></label><label class="fl">Belegdatum<input class="f" type="date" name="bdate" value="'+esc(b.invoiceDate||o.invoiceDate||today())+'"></label></div>'+
+    '<div class="grid2"><label class="fl">Betrag brutto (€)<input class="f num" name="bgross" inputmode="decimal" value="'+esc(g?String(g).replace(".",","):"")+'"></label><label class="fl">USt-Satz<select class="f" name="btax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===rate?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
+    '<label class="fl">Kategorie<select class="f" name="bcat"><option value="">Kategorien werden geladen …</option></select></label>'+
+    '<label class="fl">Beschreibung<input class="f" name="bdesc" maxlength="200" value="'+esc(String((b.description||ATT.m.subject||"")+(b.invoiceNumber&&String(b.description||"").indexOf(b.invoiceNumber)<0?" · Nr. "+b.invoiceNumber:"")).slice(0,200))+'"></label>'+
+    (BEL?'':'<p class="muted small" style="margin:0">Belegdaten bitte kurz prüfen (KI-Auslesung nicht verfügbar).</p>')+'</div></div>'; }
+function belegCats(){ var sel=document.querySelector('form[data-form="paysave"] [name=bcat]'); if(!sel) return;
+  F.loadMeta(function(meta){ if(!document.body.contains(sel)) return; if(meta&&meta.error){ sel.innerHTML='<option value="">Kategorien nicht verfügbar</option>'; return; }
+    var ts=(meta&&meta.accountingTypes)||[], last=""; try{ last=String(localStorage.getItem("fsc_sev_cat")||"").replace(/^"|"$/g,""); }catch(e){}
+    var used=ts.filter(function(t){ return t.used>0; }), rest=ts.filter(function(t){ return !(t.used>0); }), opt=function(t){ return '<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>'; };
+    sel.innerHTML='<option value="">Kategorie wählen …</option>'+(used.length?'<optgroup label="Häufig verwendet">'+used.map(opt).join("")+'</optgroup>':'')+'<optgroup label="Alle Kategorien">'+rest.map(opt).join("")+'</optgroup>';
+    var pre=BEL&&BEL.accountingTypeId; if(pre&&ts.some(function(t){ return t.id===pre; })) sel.value=pre; else if(last&&ts.some(function(t){ return t.id===last; })) sel.value=last; }); }
 function form(o,x){ o=o||{}; x=x||{};
   var warn=(x.alreadyPaid?'<div class="notice" style="background:var(--warn-soft)"><span><b>Laut Rechnung schon bezahlt bzw. per Lastschrift/Karte</b> – bitte prüfen, ob du überhaupt überweisen musst.</span></div>':'')+
     (x.isPayable===false?'<div class="notice"><span>Das sieht nicht nach einer Zahlungsaufforderung aus.</span></div>':'')+(x.notes?'<p class="muted small" style="margin:0">KI-Hinweis: '+esc(x.notes)+'</p>':'');
@@ -64,24 +81,46 @@ function form(o,x){ o=o||{}; x=x||{};
     '<label class="fl">oder Verwendungszweck<input class="f" name="text" maxlength="140" value="'+esc(o.text||"")+'" placeholder="z. B. Rechnung 2026-123"'+(editable?"":" disabled")+'></label></div>'+
     '<div class="grid2"><label class="fl">Fällig am <span class="muted small">(leer = sofort)</span><input class="f" type="date" name="date" value="'+esc(o.date||"")+'"'+(editable?"":" disabled")+'></label>'+
     '<label class="fl">Rechnungsnummer <span class="muted small">(optional)</span><input class="f" name="invoiceNumber" maxlength="60" value="'+esc(o.invoiceNumber||"")+'"'+(editable?"":" disabled")+'></label></div>'+
+    (!o.id?belegHtml(o):'')+
     '<label class="fl">Notiz<textarea class="f" name="note" rows="2" maxlength="1000">'+esc(o.note||"")+'</textarea></label>'+
     (o.history&&o.history.length?'<details><summary class="muted small">Verlauf</summary><div class="small muted" style="display:grid;gap:2px;margin-top:6px">'+o.history.slice().reverse().map(function(h){ return '<span>'+esc(new Date(h.at).toLocaleString("de-AT",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))+' · '+esc(h.what)+'</span>'; }).join("")+'</div></details>':'')+
     '<div class="err" id="payErr"></div>'+
     '<div class="foot"><span class="row wrap">'+(o.id&&(OPENST[o.status]||o.status==="storniert")?'<button type="button" class="btn bad-t" data-act="paydel:'+esc(o.id)+'">Löschen</button>':'')+
       (o.id&&o.status!=="bezahlt"?'<button type="button" class="btn" data-act="paypaid:'+esc(o.id)+'">Als bezahlt markieren</button>':'')+(o.id&&o.status==="bezahlt"&&o.paid&&o.paid.manual?'<button type="button" class="btn" data-act="payunpaid:'+esc(o.id)+'">Doch nicht bezahlt</button>':'')+
-      (o.source&&o.source.mailId?'<button type="button" class="btn" data-act="paymail:'+esc(o.source.mailId)+'">Mail öffnen</button>':'')+'</span>'+
+      (o.source&&o.source.mailId?'<button type="button" class="btn" data-act="paymail:'+esc(o.source.mailId)+'">Mail öffnen</button>':'')+(o.voucherId?'<button type="button" class="btn" data-act="payvou">Beleg ansehen</button>':'')+'</span>'+
       '<span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">'+(editable?"Speichern":"Notiz speichern")+'</button></span></div></form>',"wide");
-  ibanHint();
+  ibanHint(); if(!o.id&&ATT&&ATT.a) belegCats();
 }
 function ibanHint(){ var f=document.querySelector('form[data-form="paysave"]'), el=document.getElementById("payIbanOk"); if(!f||!el) return; var v=f.iban.value.trim(); el.className="small "+(v?(ibanOk(v)?"ok-t":"bad-t"):""); el.textContent=v?(ibanOk(v)?"✓ IBAN gültig":"✗ IBAN stimmt nicht (Prüfziffer)"):""; }
 F.listen("input",'form[data-form="paysave"] [name="iban"]',ibanHint);
+/* Betrag/Empfänger der Zahlung → Beleg mitziehen, solange dort nicht selbst etwas geändert wurde */
+F.listen("input",'form[data-form="paysave"] [name="amount"],form[data-form="paysave"] [name="name"]',function(el){ var f=el.form, t=f&&f[el.name==="amount"?"bgross":"bsupplier"]; if(t&&t.getAttribute("data-own")!=="1"&&(!t.value||t.getAttribute("data-sync")==="1")){ t.value=el.value; t.setAttribute("data-sync","1"); } });
+F.listen("input",'form[data-form="paysave"] [name="bgross"],form[data-form="paysave"] [name="bsupplier"]',function(el){ el.setAttribute("data-own","1"); });
+F.listen("change",'form[data-form="paysave"] [name="mkbeleg"]',function(el){ var b=el.closest(".pay-bel"); if(b) b.classList.toggle("off",!el.checked); });
 F.form("paysave",function(f){ var err=document.getElementById("payErr"), btn=f.querySelector("[type=submit]");
   var o=Object.assign({},DR||{},{name:f.name.value,amount:f.amount.value.replace(/\./g,"").replace(",","."),iban:f.iban.value,bic:f.bic.value,reference:f.reference.value.trim(),text:f.text.value.trim(),date:f.date.value,invoiceNumber:f.invoiceNumber.value,note:f.note.value});
   if(/^\d+(\.\d{1,2})?$/.test(String(f.amount.value).trim())) o.amount=f.amount.value.trim();   /* „12.50“ ist schon ein Punkt-Betrag */
-  btn.disabled=true; err.textContent="";
-  api({op:"save",order:o}).then(function(j){ btn.disabled=false; if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; }
-    F.closeModal(); F.toast(j.order.status==="bereit"?"Zahlung bereit":"Gespeichert – "+((j.order.problems||[])[0]||"noch unvollständig"),j.order.status!=="bereit"); PAY=null; if(UI.fin==="pay") load(); else load(); }); });
-F.action("paynew",function(){ DR=null; form({}); });
+  /* Beleg (offen) aus demselben Anhang: vorher prüfen, damit nichts halb gespeichert wird */
+  var mk=f.mkbeleg&&f.mkbeleg.checked&&ATT&&ATT.a, vb=null;
+  if(mk){ var bg=parseFloat(String(f.bgross.value).replace(/\./g,"").replace(",",".")); if(/^\d+(\.\d{1,2})?$/.test(String(f.bgross.value).trim())) bg=parseFloat(f.bgross.value);
+    if(!(bg>0)){ err.textContent="Beleg: bitte den Betrag brutto eingeben."; f.bgross.focus(); return; }
+    if(!f.bcat.value){ err.textContent="Beleg: bitte eine Kategorie wählen."; f.bcat.focus(); return; }
+    var M=F.M||{}, m=ATT.m, a=ATT.a, lines=((BEL&&BEL.lines)||[]).filter(function(l){ return l.gross>0; });
+    vb={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf?M.accOf(m):(m.account||""),filename:a.filename},supplierName:f.bsupplier.value.trim()||f.name.value.trim(),date:f.bdate.value,description:f.bdesc.value.trim(),gross:bg,taxRate:parseFloat(f.btax.value),accountingTypeId:f.bcat.value};
+    if(lines.length>1){ var ps=0; lines.forEach(function(l){ ps+=+l.gross||0; }); if(Math.abs(ps-bg)<0.02) vb.positions=lines.map(function(l){ return {gross:l.gross,taxRate:l.rate}; }); }
+    if(BEL&&BEL.deliveryFrom){ vb.deliveryDate=BEL.deliveryFrom; if(BEL.deliveryTo) vb.deliveryDateUntil=BEL.deliveryTo; }
+    try{ localStorage.setItem("fsc_sev_cat",vb.accountingTypeId); }catch(e){} }
+  btn.disabled=true; err.textContent=mk?"Speichere Zahlung und Beleg …":"";
+  api({op:"save",order:o}).then(function(j){ if(!j||!j.ok){ btn.disabled=false; err.textContent=(j&&j.error)||"Fehler"; return; }
+    var ord=j.order, msg=ord.status==="bereit"?"Zahlung bereit":"Zahlung gespeichert – "+((ord.problems||[])[0]||"noch unvollständig");
+    var done=function(extra,bad){ F.closeModal(); F.toast(msg+(extra||""),bad||ord.status!=="bereit"); ATT=null; BEL=null; PAY=null; load(); };
+    if(!vb){ done(); return; }
+    F.api("/admin/api/sevdesk/voucher",{body:vb}).then(function(v){
+      if(!v||!v.ok){ done(" · Beleg NICHT angelegt: "+((v&&v.error)||"Fehler"),true); return; }
+      var M=F.M||{}, sk=F.ls("fsc_sev_sent")||{}; sk[ATT.m.id+"#"+(ATT.a.index||0)]={id:v.id,at:Date.now()}; F.ls("fsc_sev_sent",sk);
+      api({op:"link",id:ord.id,voucherId:String(v.id||"")}).then(function(){ done(" · Beleg angelegt (offen)"); if(F.load) F.load(true); });
+    }).catch(function(){ done(" · Beleg NICHT angelegt (keine Verbindung)",true); });
+  }); });
 F.action("payedit",function(id,el,e){ if(e&&e.target&&e.target.closest&&e.target.closest("[data-noact]")) return;   /* Klick aufs Häkchen öffnet nicht den Dialog */
   var o=((PAY&&PAY.orders)||[]).find(function(x){ return x.id===id; }); if(!o) return; DR={id:o.id}; form(o); });
 F.listen("keydown",".pay-r",function(el,e){ if(e.target===el&&(e.key==="Enter"||e.key===" ")){ e.preventDefault(); F.actions.payedit(el.getAttribute("data-act").split(":")[1]); } });
@@ -91,6 +130,8 @@ F.action("paydel",function(id){ F.confirm("Diesen Zahlungsauftrag löschen?","L�
 F.action("paypaid",function(id){ api({op:"paid",id:id,on:true}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Als bezahlt markiert"); load(); } }); });
 F.action("payunpaid",function(id){ api({op:"paid",id:id,on:false}).then(function(j){ if(j&&j.ok){ F.closeModal(); load(); } }); });
 F.action("paymail",function(id){ F.closeModal(); UI.msel=id; F.go("post"); });
+F.action("payvou",function(){ F.closeModal(); UI.fin="vou:open"; F.go("geld"); });
+F.action("paynew",function(){ DR=null; ATT=null; BEL=null; form({}); });
 
 /* ---------- QR-Code (George-App scannen) ---------- */
 F.action("payqr",function(id){ var o=((PAY&&PAY.orders)||[]).find(function(x){ return x.id===id; })||{};
@@ -120,10 +161,13 @@ F.payFromMail=function(m,a){ if(!m) return;
   var src={kind:"mail",mailId:m.id,account:acc,folder:m.folder||"INBOX",uid:m.uid||0,index:a?(a.index||0):null,filename:a?(a.filename||""):"",subject:m.subject||"",from:m.from||""};
   F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">Zahlung erfassen</h2>'+F.btnClose()+'</div><p class="muted" style="margin:0">'+F.svg("spark")+' Die KI liest '+(a?"„"+esc(a.filename||"den Anhang")+"“":"die Mail")+' aus …</p></div>',"narrow");
   var text=a?"":(m.bodyHtml?String(m.body||"").replace(/<[^>]+>/g," "):String(m.body||m.preview||""));
-  api({op:"extract",mail:{account:acc,folder:m.folder||"INBOX",uid:a?m.uid:null,index:a?(a.index||0):null,filename:a?a.filename:"",subject:m.subject,from:m.from,fromName:m.fromName,date:m.date},text:text}).then(function(j){
-    var x=(j&&j.ok&&j.x)||{};
-    DR={source:src}; form({name:x.name,iban:x.iban,bic:x.bic,amount:x.amount,reference:x.reference,text:x.text||(x.invoiceNumber&&!x.reference?"Rechnung "+x.invoiceNumber:""),date:x.date,invoiceNumber:x.invoiceNumber,source:src},j&&j.ok?x:{notes:"Automatisch auslesen ging nicht – bitte von Hand ausfüllen."});
-  }).catch(function(){ DR={source:src}; form({source:src},{notes:"Automatisch auslesen ging nicht – bitte von Hand ausfüllen."}); }); };
+  ATT=a?{m:m,a:a}:null; BEL=null;
+  var pP=api({op:"extract",mail:{account:acc,folder:m.folder||"INBOX",uid:a?m.uid:null,index:a?(a.index||0):null,filename:a?a.filename:"",subject:m.subject,from:m.from,fromName:m.fromName,date:m.date},text:text}).catch(function(){ return null; });
+  var pB=a&&F.KI&&F.KI.api?F.KI.api("beleg-extract",{mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:acc,filename:a.filename},subject:m.subject,from:m.from,fromName:m.fromName,date:m.date}).then(function(j){ return j&&j.beleg?Object.assign({},j.beleg,{dupes:j.dupes||[]}):null; }).catch(function(){ return null; }):Promise.resolve(null);
+  Promise.all([pP,pB]).then(function(r){ var j=r[0], x=(j&&j.ok&&j.x)||{}; BEL=r[1];
+    if(!x.amount&&BEL&&BEL.gross>0&&(!BEL.currency||BEL.currency==="EUR")) x.amount=BEL.gross; if(!x.name&&BEL&&BEL.supplier) x.name=BEL.supplier; if(!x.invoiceNumber&&BEL&&BEL.invoiceNumber) x.invoiceNumber=BEL.invoiceNumber;
+    DR={source:src}; form({name:x.name,iban:x.iban,bic:x.bic,amount:x.amount,reference:x.reference,text:x.text||(x.invoiceNumber&&!x.reference?"Rechnung "+x.invoiceNumber:""),date:x.date,invoiceNumber:x.invoiceNumber,invoiceDate:x.invoiceDate,source:src},j&&j.ok?x:{notes:"Zahlungsdaten automatisch auslesen ging nicht – bitte von Hand ausfüllen."});
+  }); };
 F.action("mpay",function(v){ var i=v.indexOf("|"), M=F.M||{}, m=M.find&&M.find(v.slice(0,i)); if(!m) return; var a=(m.attachments||[]).find(function(x){ return String(x.index||0)===v.slice(i+1); }); F.payFromMail(m,a||null); });
 
 /* Rückkehr aus George (…/admin?zahlung=status#geld) → Zahlungsaufträge zeigen */
@@ -134,7 +178,7 @@ F.feed(function(){ var o=((PAY&&PAY.orders)||[]), t=today(), due=o.filter(functi
   if(!PAY&&F.current==="heute"&&!busy&&Date.now()-at>300000) load();
   return due.length?[{id:"pay-due-"+due.length,rank:2,sev:due.some(function(x){ return x.date<t; })?"bad":"warn",icon:"euro",tag:["warn","Zahlung"],t:due.length===1?"Zahlung fällig: "+due[0].name+" · "+eur(due[0].amount):due.length+" Zahlungen fällig · "+eur(due.reduce(function(s,x){ return s+x.amount; },0)),d:"bis "+F.de(due.map(function(x){ return x.date; }).sort()[0])+" – in George freigeben",acts:[["Ansehen","fin:pay","primary"]]}]:[]; });
 
-F.css('form[data-form="paysave"] .grid2{align-items:end}.pay-info{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--warn-soft);color:var(--ink);font-size:13.5px;line-height:1.45}.pay-info.ok{background:var(--ok-soft)}.pay-info svg{width:18px;height:18px;flex:none;margin-top:1px}'+
+F.css('form[data-form="paysave"] .grid2{align-items:end}.pay-bel{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}.pay-bel.off .pay-belf{opacity:.45;pointer-events:none}.pay-belf{display:grid;gap:10px}.pay-info{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--warn-soft);color:var(--ink);font-size:13.5px;line-height:1.45}.pay-info.ok{background:var(--ok-soft)}.pay-info svg{width:18px;height:18px;flex:none;margin-top:1px}'+
   '.pay-l{display:grid;border:1px solid var(--line);border-radius:var(--r,14px);background:var(--panel);overflow:hidden}'+
   '.pay-r{display:grid;grid-template-columns:28px minmax(0,1.3fr) minmax(0,1.2fr) 92px 128px auto;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer}.pay-r:first-child{border-top:0}.pay-r:hover{background:var(--sunk)}'+
   '.pay-r small{display:block;font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-who,.pay-why{min-width:0;display:grid}.pay-who b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-why>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+

@@ -56,6 +56,12 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
     const b2 = P.save({ name: "Muster GmbH", iban: "AT611904300234573201", amount: 123.45, text: "nochmal" });
     const l2 = await P.list(); assert.strictEqual(l2.orders.find(x => x.id === b2.id).status, "bereit", "derselbe Umsatz zählt nicht doppelt");
   });
+  await t("Beleg zur Zahlung verknüpfen (aus demselben Anhang angelegt)", async () => {
+    const o = P.save({ name: "A1", iban: "AT611904300234573201", amount: 39.9, text: "Rechnung Oktober", source: { kind: "mail", mailId: "m9", index: 0, filename: "Rechnung.pdf" } });
+    const l = P.linkVoucher(o.id, "V123"); assert.strictEqual(l.voucherId, "V123"); assert.ok(l.history.some(h => /Beleg angelegt/.test(h.what)));
+    assert.strictEqual(T.read().orders.find(x => x.id === o.id).source.filename, "Rechnung.pdf");
+    assert.throws(() => P.linkVoucher("gibtsnicht", "V1"), /Nicht gefunden/);
+  });
   await t("Manuell bezahlt / zurück, Löschen nur solange nicht bei der Bank", async () => {
     const o = P.save({ name: "Hotel", iban: "DE89370400440532013000", amount: 50, text: "Zimmer" });
     assert.strictEqual(P.setPaid(o.id, true).status, "bezahlt"); assert.strictEqual(P.setPaid(o.id, false).status, "bereit");
