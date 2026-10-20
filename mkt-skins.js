@@ -47,7 +47,7 @@ module.exports = function (U) {
     const badge = (t, bg, fg) => h("div", Object.assign({ alignSelf: "flex-start", background: bg || KD.yellow, color: fg || KD.ink, borderRadius: 99, padding: story ? "12px 26px" : "10px 22px", fontFamily: "Outfit", fontWeight: 700, fontSize: story ? 32 : 28 }, TX), plain(t));
     const logoPill = (hh) => h("div", Object.assign({ background: "#ffffff", borderRadius: 99, padding: Math.round(hh * 0.3) + "px " + Math.round(hh * 0.55) + "px", boxShadow: "0 10px 30px rgba(40,20,120,0.18)" }, DE), logoImg(c, hh));
     const topRow = (onDark) => h("div", { justifyContent: "space-between", alignItems: "center", width: W2, flexShrink: 0 }, logoPill(story ? 50 : 42), c.counter ? h("div", Object.assign({ fontFamily: "Outfit", fontWeight: 700, fontSize: 26, color: onDark ? "rgba(255,255,255,0.85)" : KD.purple, background: onDark ? "rgba(255,255,255,0.16)" : "#ffffff", borderRadius: 99, padding: "8px 18px" }, TX), c.counter) : null);
-    const foot = (onDark) => h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = (onDark) => h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Outfit", fontWeight: 700, fontSize: 28, color: onDark ? "#fff" : KD.purple, alignItems: "center" }, TX), "Wischen", h("div", { marginLeft: 10 }, swipeArrow(onDark ? "#ffffff" : KD.purple))) :
         s.cta && tpl !== "cta" ? h("div", Object.assign({ background: onDark ? "#ffffff" : KD.purple, color: onDark ? KD.purple : "#fff", fontFamily: "Outfit", fontWeight: 800, fontSize: story ? 34 : 30, borderRadius: 99, padding: story ? "20px 38px" : "16px 32px" }, TX), plain(s.cta)) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Outfit", fontWeight: 600, fontSize: 24, color: onDark ? "rgba(255,255,255,0.8)" : rgba(KD.ink, 0.55) }, TX), c.url || "kochdu.at"));
@@ -137,7 +137,7 @@ module.exports = function (U) {
       h("div", Object.assign({ alignItems: "center", gap: 14 }, DE), icon, h("div", { fontFamily: "Barlow Condensed", fontWeight: 800, fontSize: story ? 40 : 34, letterSpacing: 2, color: fg }, "KANTINEUR")),
       c.counter ? h("div", Object.assign({ fontFamily: "Barlow Condensed", fontWeight: 700, fontSize: 28, letterSpacing: 2, color: dark ? KT.steel : KT.steel2 }, TX), c.counter) : null);
     const btn = (t) => h("div", Object.assign({ background: KT.steel, color: KT.night, fontFamily: "Barlow Condensed", fontWeight: 800, letterSpacing: 2, fontSize: story ? 36 : 32, padding: story ? "18px 34px" : "15px 30px" }, TX), plain(t).toUpperCase());
-    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Barlow Condensed", fontWeight: 700, fontSize: 30, letterSpacing: 3, color: dark ? KT.steel : KT.steel2, alignItems: "center" }, TX), "WEITER GEHT'S", h("div", { marginLeft: 10 }, swipeArrow(dark ? KT.steel : KT.steel2))) : s.cta && tpl !== "cta" ? btn(s.cta) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Barlow", fontWeight: 500, fontSize: 24, color: sub }, TX), "kantineur.at"));
     const kicker = s.kicker ? h("div", Object.assign({ fontFamily: "Barlow Condensed", fontWeight: 700, letterSpacing: 4, fontSize: story ? 30 : 26, color: dark ? KT.steel : KT.steel2, marginBottom: 20 }, TX), "— " + plain(s.kicker).toUpperCase()) : null;
@@ -200,7 +200,7 @@ module.exports = function (U) {
     const logo = h("div", Object.assign({ width: story ? 92 : 78, height: story ? 92 : 78, borderRadius: 18, background: "#ffffff", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 30px rgba(28,26,22,0.12)" }, DE), logoImg(c, story ? 62 : 52));
     const top = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, flexShrink: 0 }, logo, c.counter ? h("div", Object.assign({ fontFamily: "Cormorant Garamond", fontWeight: 500, fontStyle: "italic", fontSize: 34, color: BD.gold }, TX), c.counter.replace("/", " / ")) : null);
     const btn = t => h("div", Object.assign({ background: BD.gold, color: "#1c1a16", fontFamily: "Inter", fontWeight: 600, fontSize: story ? 30 : 27, borderRadius: 99, padding: story ? "20px 40px" : "17px 36px", boxShadow: "0 12px 30px rgba(156,117,41,0.3)" }, TX), plain(t));
-    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 600, letterSpacing: 4, fontSize: 22, color: BD.gold, alignItems: "center" }, TX), "WEITER", h("div", { marginLeft: 10 }, swipeArrow(BD.gold))) : s.cta && tpl !== "cta" ? btn(s.cta) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Inter", fontSize: 22, letterSpacing: 2, color: sub }, TX), "BLITZDINGS.CO.AT"));
     const R = kids => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Inter", background: rootBg(c, bg) }, [glow].concat(kids));
@@ -265,7 +265,7 @@ module.exports = function (U) {
     const brandRow = (onDark) => h("div", Object.assign({ alignItems: "center", gap: 14 }, DE), mountain(onDark ? "#ffffff" : VA.green, story ? 70 : 60), h("div", { fontFamily: "Merriweather", fontWeight: 400, letterSpacing: 6, fontSize: story ? 30 : 26, color: onDark ? "#ffffff" : VA.ink }, "VALUERO"));
     const top = onDark => h("div", { justifyContent: "space-between", alignItems: "center", width: W2, flexShrink: 0 }, brandRow(onDark), c.counter ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 600, fontSize: 24, color: onDark ? "rgba(255,255,255,0.8)" : VA.green }, TX), c.counter) : null);
     const btn = (t, onDark) => h("div", Object.assign({ background: onDark ? "#ffffff" : VA.green, color: onDark ? VA.green2 : "#ffffff", fontFamily: "Inter", fontWeight: 700, fontSize: story ? 30 : 27, borderRadius: 99, padding: story ? "20px 38px" : "16px 32px" }, TX), plain(t));
-    const foot = onDark => h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = onDark => h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 700, fontSize: 24, letterSpacing: 3, color: onDark ? "#fff" : VA.green, alignItems: "center" }, TX), "MEHR", h("div", { marginLeft: 10 }, swipeArrow(onDark ? "#ffffff" : VA.green))) : s.cta && tpl !== "cta" ? btn(s.cta, onDark) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Inter", fontSize: 22, color: onDark ? "rgba(255,255,255,0.8)" : rgba(VA.ink, 0.6) }, TX), "valuero.at"));
     const R = (bg, kids) => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Inter", background: rootBg(c, bg) }, kids);
@@ -311,7 +311,7 @@ module.exports = function (U) {
     const top = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, flexShrink: 0 }, c.brand.logo ? h("div", Object.assign({ width: story ? 96 : 84, height: story ? 96 : 84, borderRadius: 22, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,0.35)" }, DE), logoImg(c, story ? 96 : 84)) : stamp("", 40),
       h("div", Object.assign({ alignItems: "center", gap: 10 }, TX), c.counter ? h("div", { fontFamily: "Barlow Condensed", fontWeight: 800, fontStyle: "italic", fontSize: 32, color: "#fff", background: SK.ink, padding: "4px 16px" }, c.counter) : h("div", { alignItems: "center", gap: 8, fontFamily: "Barlow Condensed", fontWeight: 800, fontStyle: "italic", fontSize: 30, color: "#fff", background: SK.red, padding: "6px 16px" }, h("div", { width: 12, height: 12, borderRadius: 12, background: "#fff" }), "LIVE")));
     const bar = (t, sz) => h("div", Object.assign({ background: SK.red, padding: "8px 26px 10px", transform: "skewX(-10deg)", alignSelf: "flex-start" }, TX), h("div", { transform: "skewX(10deg)", fontFamily: "Barlow Condensed", fontWeight: 800, fontStyle: "italic", fontSize: sz, color: "#fff", letterSpacing: 1 }, plain(t).toUpperCase()));
-    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Barlow Condensed", fontWeight: 800, fontStyle: "italic", fontSize: 34, color: "#fff", alignItems: "center" }, TX), "WEITER", h("div", { marginLeft: 10 }, swipeArrow("#ffffff"))) : s.cta && tpl !== "cta" ? bar(s.cta, story ? 40 : 34) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Barlow Condensed", fontWeight: 700, fontStyle: "italic", fontSize: 28, color: "rgba(255,255,255,0.85)", letterSpacing: 1 }, TX), "BALD IM APP STORE"));
     const R = kids => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Archivo", background: rootBg(c, SK.ink) }, kids);
@@ -372,7 +372,7 @@ module.exports = function (U) {
     const icon = h("div", Object.assign({ width: story ? 92 : 80, height: story ? 92 : 80, borderRadius: 22, overflow: "hidden", border: "4px solid #ffffff", boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }, DE), logoImg(c, story ? 84 : 72));
     const top = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, flexShrink: 0 }, h("div", { alignItems: "center", gap: 16 }, icon, h("div", Object.assign({ fontFamily: "Fraunces", fontWeight: 800, fontSize: story ? 44 : 38, color: fg }, DE), "Hüttengaudi")),
       c.counter ? h("div", Object.assign({ fontFamily: "Fredoka", fontWeight: 600, fontSize: 26, color: dark ? HG.gold : HG.loden, background: dark ? "rgba(255,255,255,0.12)" : "#fff", borderRadius: 99, padding: "6px 16px" }, TX), c.counter) : null);
-    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Fredoka", fontWeight: 600, fontSize: 30, color: dark ? HG.gold : HG.loden, alignItems: "center" }, TX), "Weiter", h("div", { marginLeft: 10 }, swipeArrow(dark ? HG.gold : HG.loden))) : s.cta && tpl !== "cta" ? pill(s.cta, HG.gold, HG.loden2) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Fredoka", fontWeight: 500, fontSize: 26, color: sub }, TX), "Bald im App Store"));
     const R = kids => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Fredoka", background: rootBg(c, bg) }, snow.concat(kids));
@@ -435,42 +435,42 @@ module.exports = function (U) {
       c.counter ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 600, fontSize: 24, color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 99, padding: "6px 16px" }, TX), c.counter) : null);
     const btn = t => h("div", Object.assign({ background: BL, color: "#fff", fontFamily: "Inter", fontWeight: 700, fontSize: story ? 32 : 28, borderRadius: 99, padding: story ? "20px 38px" : "17px 34px", boxShadow: "0 0 40px rgba(10,132,255,0.45)" }, TX), plain(t));
     const kick = s.kicker ? h("div", Object.assign({ alignSelf: "flex-start", border: "1px solid rgba(10,132,255,0.5)", background: "rgba(10,132,255,0.12)", color: "#9cc9ff", borderRadius: 99, padding: "10px 22px", fontFamily: "Inter", fontWeight: 700, letterSpacing: 3, fontSize: story ? 24 : 21, marginBottom: 26 }, TX), plain(s.kicker).toUpperCase()) : null;
-    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+    const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: story ? 0 : "auto", flexShrink: 0 },   /* Hochformat (Reel): Inhalt mittig, Fußzeile unten */
       c.swipe ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 700, fontSize: 26, color: "#fff", alignItems: "center" }, TX), "Wischen", h("div", { marginLeft: 10 }, swipeArrow("#ffffff"))) : s.cta && tpl !== "cta" ? btn(s.cta) : h("div", {}),
       h("div", Object.assign({ fontFamily: "Inter", fontSize: 22, color: "rgba(255,255,255,0.6)" }, TX), shop ? "fs-creative.at/print" : "fs-creative.at"));
     const R = kids => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Inter", background: rootBg(c, "#0a0a0f") }, glow.concat(corners).concat(kids));
     const glass = (kids, st) => h("div", Object.assign({ flexDirection: "column", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 30, padding: "28px 28px" }, st || {}, TX), kids);
     if (tpl === "list") {
       const its = (s.items || []).slice(0, 5);
-      return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 92 : 80, 44, 0.6), "#fff")),
-        h("div", { flexDirection: "column", marginTop: 34, rowGap: 14 }, its.map((t, i) => glass([h("div", { alignItems: "center" },
-          h("div", { width: 52, height: 52, borderRadius: 14, background: BL, color: "#fff", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26, marginRight: 22, flexShrink: 0 }, String(i + 1)),
-          h("div", { fontSize: fit(plain(t), W2 - 140, 2, story ? 38 : 34, 24, 0.55), fontWeight: 600, color: "#fff", width: W2 - 130 }, plain(t)))], { padding: "20px 22px" })))), foot]);
+      return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 108 : 80, 44, 0.6), "#fff")),
+        h("div", { flexDirection: "column", marginTop: story ? 44 : 34, rowGap: story ? 18 : 14 }, its.map((t, i) => glass([h("div", { alignItems: "center" },
+          h("div", { width: story ? 64 : 52, height: story ? 64 : 52, borderRadius: 16, background: BL, color: "#fff", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: story ? 32 : 26, marginRight: 22, flexShrink: 0 }, String(i + 1)),
+          h("div", { fontSize: fit(plain(t), W2 - 150, 2, story ? 48 : 34, 24, 0.55), fontWeight: 600, color: "#fff", width: W2 - 130 }, plain(t)))], { padding: story ? "26px 26px" : "20px 22px" })))), foot]);
     }
     if (tpl === "stat") {
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick,
-        glass([h("div", { fontSize: 28, fontWeight: 600, color: "rgba(255,255,255,0.7)" }, plain(s.label || s.headline)),
-          h("div", { marginTop: 10, fontSize: fit(plain(s.number), W2 - 80, 1, story ? 220 : 190, 80, 0.62), fontWeight: 800, letterSpacing: -6, color: "#fff", lineHeight: 1 }, plain(s.number)),
+        glass([h("div", { fontSize: story ? 38 : 28, fontWeight: 600, color: "rgba(255,255,255,0.7)" }, plain(s.label || s.headline)),
+          h("div", { marginTop: 10, fontSize: fit(plain(s.number), W2 - 80, 1, story ? 280 : 190, 80, 0.62), fontWeight: 800, letterSpacing: -6, color: "#fff", lineHeight: 1 }, plain(s.number)),
           s.sub ? h("div", { marginTop: 16, fontSize: story ? 32 : 28, color: "rgba(255,255,255,0.7)" }, plain(s.sub)) : null], { padding: "40px 40px" })), foot]);
     }
     if (tpl === "compare") {
-      const col = (title, its, good) => glass([h("div", { fontWeight: 800, fontSize: story ? 38 : 33, color: good ? "#9cc9ff" : "rgba(255,255,255,0.65)" }, plain(title)), (its || []).slice(0, 5).map(t => h("div", { marginTop: 12, fontSize: story ? 30 : 26, color: good ? "#fff" : "rgba(255,255,255,0.6)", lineHeight: 1.3 }, plain(t)))], { width: (W2 - 24) / 2, border: "1px solid " + (good ? "rgba(10,132,255,0.7)" : "rgba(255,255,255,0.12)") });
-      return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 88 : 76, 42, 0.6), "#fff")),
-        h("div", { justifyContent: "space-between", marginTop: 34 }, col(s.leftTitle || "Bisher", s.leftItems, false), col(s.rightTitle || "Mit uns", s.rightItems, true))), foot]);
+      const col = (title, its, good) => glass([h("div", { fontWeight: 800, fontSize: story ? 46 : 33, color: good ? "#9cc9ff" : "rgba(255,255,255,0.65)" }, plain(title)), (its || []).slice(0, 5).map(t => h("div", { marginTop: story ? 16 : 12, fontSize: story ? 38 : 26, color: good ? "#fff" : "rgba(255,255,255,0.6)", lineHeight: 1.3 }, plain(t)))], { width: (W2 - 24) / 2, border: "1px solid " + (good ? "rgba(10,132,255,0.7)" : "rgba(255,255,255,0.12)") });
+      return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 104 : 76, 42, 0.6), "#fff")),
+        h("div", { justifyContent: "space-between", marginTop: story ? 44 : 34 }, col(s.leftTitle || "Bisher", s.leftItems, false), col(s.rightTitle || "Mit uns", s.rightItems, true))), foot]);
     }
     if (tpl === "cta") {
       return R([h("div", { flexDirection: "column", alignItems: "center", width: W2, marginTop: "auto", marginBottom: "auto" }, h("div", Object.assign({ width: story ? 150 : 130, height: story ? 150 : 130, borderRadius: 36, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center", boxShadow: "0 0 60px rgba(10,132,255,0.35)" }, DE), img(svg('<path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M9 20h6M10 22h4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>', "0 0 24 24", 96, 96), { width: story ? 90 : 78, height: story ? 90 : 78 })),
-        h("div", { marginTop: 40, alignSelf: "center" }, kick), h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 100 : 88, 46, 0.6), "#fff", true, W2)),
-        s.sub ? h("div", Object.assign({ marginTop: 20, fontSize: story ? 34 : 30, color: "rgba(255,255,255,0.7)", textAlign: "center", justifyContent: "center" }, TX), plain(s.sub)) : null,
+        h("div", { marginTop: 40, alignSelf: "center" }, kick), h("div", TX, head(s.headline, fit(plain(s.headline), W2, 3, story ? 124 : 88, 46, 0.6), "#fff", true, W2)),
+        s.sub ? h("div", Object.assign({ marginTop: 20, fontSize: story ? 40 : 30, color: "rgba(255,255,255,0.7)", textAlign: "center", justifyContent: "center" }, TX), plain(s.sub)) : null,
         h("div", { marginTop: 44 }, btn(s.cta || (shop ? "Jetzt online bestellen" : "Gratis Entwurf anfragen"))), h("div", Object.assign({ marginTop: 22, fontSize: 24, color: "rgba(255,255,255,0.55)" }, TX), shop ? "Versand in ganz Österreich inklusive" : "Gaschurn · Montafon · Vorarlberg"))]);
     }
     if (tpl === "quote") {
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, h("div", Object.assign({ fontSize: 160, fontWeight: 800, lineHeight: 0.8, backgroundImage: grad, backgroundClip: "text", color: "transparent", height: 110 }, TX), "“"),
-        h("div", TX, head(s.headline, fit(plain(s.headline), W2, 6, story ? 72 : 62, 36, 0.58), "#fff")), s.author ? h("div", Object.assign({ marginTop: 26, fontSize: 28, fontWeight: 600, color: "rgba(255,255,255,0.6)" }, TX), "— " + plain(s.author)) : null), foot]);
+        h("div", TX, head(s.headline, fit(plain(s.headline), W2, 6, story ? 92 : 62, 36, 0.58), "#fff")), s.author ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 34 : 28, fontWeight: 600, color: "rgba(255,255,255,0.6)" }, TX), "— " + plain(s.author)) : null), foot]);
     }
     return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick,
-      h("div", TX, head(s.headline, fit(plain(s.headline), W2, 4, story ? 128 : 112, 54, 0.6), "#fff")),
-      s.sub ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 38 : 34, lineHeight: 1.4, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot]);
+      h("div", TX, head(s.headline, fit(plain(s.headline), W2, 4, story ? 156 : 112, 54, 0.6), "#fff")),
+      s.sub ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 44 : 34, lineHeight: 1.4, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot]);
   }
 
   const SKINS = { kochdu, kantineur, blitzdings, valuero, skikaiser, huettengaudi, druckshop: c => fs(c, true), "fs-creative": c => fs(c, false) };
