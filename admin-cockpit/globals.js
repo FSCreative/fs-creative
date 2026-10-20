@@ -53,9 +53,12 @@ document.addEventListener("visibilitychange",function(){ if(!document.hidden) vc
 
 /* ---------- Ungelesene Mails im Fenstertitel ---------- */
 var BASE_TITLE=document.title||"FS Cockpit";
+var BADGE=-1;
 function title(){
   var n=0; try{ n=F.D&&F.unreadMails?F.unreadMails().length:0; }catch(e){}
   var t=(n?"("+n+") ":"")+BASE_TITLE; if(document.title!==t) document.title=t;
+  /* installierte App: Zahl der ungelesenen Mails am App-Symbol (Dock/Taskleiste) */
+  if(n!==BADGE&&navigator.setAppBadge){ BADGE=n; try{ (n?navigator.setAppBadge(n):navigator.clearAppBadge()).catch(function(){}); }catch(e){} }
 }
 var RESTORE=null; try{ RESTORE=JSON.parse(sessionStorage.getItem("fsc_restore")||"null"); sessionStorage.removeItem("fsc_restore"); }catch(e){}
 if(RESTORE&&(Date.now()-RESTORE.t>60000||RESTORE.h!==location.hash)) RESTORE=null;
