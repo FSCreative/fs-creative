@@ -48,6 +48,45 @@ function invCustomer(){
   var known=!c&&INVCTX&&INVCTX.contactId&&INVCTX.contactName===name;
   if(hint) hint.innerHTML=!name?"":c?'✓ Bestandskunde'+(c.nr?" · Kunden-Nr. "+esc(c.nr):"")+(c.street||c.city?"":" · Adresse wird beim Kunden ergänzt"):known?"✓ Bestandskunde":META?"Neuer Kunde – wird angelegt (Kunden-Nr. vergibt die Buchhaltung)":"";
 }
+/* Vorschlagsliste unter Eingabefeldern (statt <datalist>, das je nach Browser/App kaum aufklappt): ab dem ersten Buchstaben passende Einträge,
+   Pfeiltasten + Enter, Esc schließt, Klick übernimmt. Nutzung: <input data-sugg="schlüssel"> + F.SUGG[schlüssel]={items:function(q){…},pick:function(input,item){…}} */
+F.SUGG=F.SUGG||{};
+var SG={el:null,input:null,items:[],i:-1};
+function sgNorm(v){ return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ß/g,"ss"); }
+F.suggMatch=function(list,q,keys,max){ q=sgNorm(q).trim(); if(!q) return []; var out=[];
+  list.forEach(function(it){ var best=9; keys.forEach(function(k,ki){ var v=sgNorm(it[k]); if(!v) return; var at=v.indexOf(q); if(at<0) return; var sc=at===0?0:/[\s\-.,&\/(@]/.test(v.charAt(at-1))?1:2; if(ki&&sc>1) return; sc+=ki?3:0; if(sc<best) best=sc;   /* Nebenfelder (Nr., E-Mail …) nur ab Wortanfang */ }); if(best<9) out.push([best,it]); });
+  return out.sort(function(a,b){ return a[0]-b[0]||String(a[1].label).localeCompare(String(b[1].label),"de"); }).slice(0,max||8).map(function(x){ return x[1]; }); };
+function sgClose(){ if(SG.el) SG.el.remove(); SG.el=null; SG.input=null; SG.items=[]; SG.i=-1; }
+function sgOpen(input){ var cfg=F.SUGG[input.getAttribute("data-sugg")]; if(!cfg) return; var items=cfg.items(input.value)||[];
+  if(!items.length){ sgClose(); return; }
+  if(!SG.el||SG.input!==input){ sgClose(); SG.el=document.createElement("div"); SG.el.className="sugg"; SG.el.setAttribute("role","listbox"); input.parentNode.appendChild(SG.el); SG.input=input; }
+  SG.items=items; SG.i=-1;
+  SG.el.style.top=(input.offsetTop+input.offsetHeight+4)+"px"; SG.el.style.left=input.offsetLeft+"px"; SG.el.style.width=input.offsetWidth+"px";
+  SG.el.innerHTML=items.map(function(it,i){ return '<button type="button" role="option" tabindex="-1" data-sgi="'+i+'"><b>'+esc(it.label)+'</b>'+(it.sub?'<small>'+esc(it.sub)+'</small>':'')+(it.tag?'<span class="tag '+(it.tagCls||"grey")+'">'+esc(it.tag)+'</span>':'')+'</button>'; }).join(""); }
+function sgMark(){ if(!SG.el) return; [].forEach.call(SG.el.children,function(b,i){ b.classList.toggle("on",i===SG.i); if(i===SG.i) b.scrollIntoView({block:"nearest"}); }); }
+function sgPick(i){ var it=SG.items[i], input=SG.input; if(!it||!input) return; var cfg=F.SUGG[input.getAttribute("data-sugg")]; sgClose(); input.value=it.value!=null?it.value:it.label; if(cfg&&cfg.pick) cfg.pick(input,it); input.dispatchEvent(new Event("change",{bubbles:true})); }
+document.addEventListener("input",function(e){ var t=e.target; if(t&&t.getAttribute&&t.getAttribute("data-sugg")) sgOpen(t); });
+document.addEventListener("focusin",function(e){ var t=e.target; if(t&&t.getAttribute&&t.getAttribute("data-sugg")&&t.value.trim()) sgOpen(t); });
+document.addEventListener("focusout",function(e){ if(SG.input&&e.target===SG.input) setTimeout(function(){ if(SG.input&&document.activeElement!==SG.input) sgClose(); },120); });
+document.addEventListener("mousedown",function(e){ var b=e.target.closest&&e.target.closest("[data-sgi]"); if(!b) return; e.preventDefault(); sgPick(+b.getAttribute("data-sgi")); });
+document.addEventListener("keydown",function(e){ if(!SG.el||e.target!==SG.input) return;
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); SG.i=(SG.i+(e.key==="ArrowDown"?1:-1)+SG.items.length+1)%(SG.items.length+1); if(SG.i===SG.items.length) SG.i=-1; sgMark(); }
+  else if(e.key==="Enter"){ e.preventDefault(); if(SG.i>-1) sgPick(SG.i); else sgClose(); }   /* Enter bei offener Liste schickt das Formular nie ab */
+  else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); sgClose(); }
+  else if(e.key==="Tab") sgClose(); },true);
+F.css('.fl{position:relative}form[data-form="invoice"] .grid2{align-items:start}.sugg{position:absolute;z-index:90;display:grid;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-pop,0 16px 40px rgba(0,0,0,.3));padding:4px}'+
+  '.sugg button{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;align-items:center;text-align:left;border:0;background:none;border-radius:8px;padding:7px 10px;color:var(--ink);cursor:pointer}'+
+  '.sugg button b{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sugg button small{grid-column:1;font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sugg button .tag{grid-column:2;grid-row:1/span 2}'+
+  '.sugg button:hover,.sugg button.on{background:var(--sunk)}');
+/* Rechnung/Angebot „Firma / Name“: Kunden aus der Buchhaltung, dazu Kunden & Leads und Namen aus bisherigen Rechnungen (falls dort noch kein Kontakt) */
+function invPeople(){ var out=[], seen={};
+  var add=function(it){ var k=sgNorm(it.label).trim(); if(!k||seen[k]) return; seen[k]=1; out.push(it); };
+  ((META&&META.contacts)||[]).forEach(function(c){ add({label:c.name,sub:[c.nr?"Nr. "+c.nr:"",[c.zip,c.city].filter(Boolean).join(" "),c.email].filter(Boolean).join(" · "),tag:"Kunde",tagCls:"ok",nr:c.nr,email:c.email,city:c.city,kind:"contact"}); });
+  ((F.D&&F.D.leads)||[]).forEach(function(l){ var nm=l.company||l.name; if(nm) add({label:nm,sub:[l.company&&l.name?l.name:"",l.email].filter(Boolean).join(" · "),tag:"Lead",tagCls:"glow",email:l.email,person:l.company?l.name:"",kind:"lead"}); });
+  ((F.D&&F.D.sev&&F.D.sev.invoices)||[]).forEach(function(i){ if(i.contact) add({label:i.contact,sub:"aus Rechnungen",kind:"inv"}); });
+  return out; }
+F.SUGG.invcontact={items:function(q){ return F.suggMatch(invPeople(),q,["label","nr","email","sub"],10); },
+  pick:function(input,it){ var form=input.form; if(!form) return; if(it.kind==="lead"){ if(it.email&&!form.email.value.trim()) form.email.value=it.email; if(it.person&&!form.attn.value.trim()) form.attn.value=it.person; } invCustomer(); }};
 F.listen("input",'form[data-form="invoice"] [name="contact"]',function(){ invCustomer(); });
 F.listen("change",'form[data-form="invoice"] [name="contact"]',function(){ invCustomer(); });
 function invAddrBody(form,contact,body){
@@ -65,7 +104,7 @@ F.openInvoice=function(pre){
   F.modal('<form data-form="invoice" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+esc(pre.title||(offer?"Neues Angebot":"Neue Rechnung"))+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted" style="margin:0">'+(pre.id?'Du bearbeitest einen Entwurf. Die Positionen werden ersetzt.':'Wird als <b>Entwurf</b> angelegt. Danach kannst du ihn direkt hier ansehen und per Mail senden.')+'</p>'+(F.kiInvoiceHtml?F.kiInvoiceHtml(pre):'')+
     (pre.paidNote?'<div class="notice" style="background:var(--info-soft)"><span>'+pre.paidNote+'</span></div><label class="fl">Bezahlt auf Konto<select class="f" name="paidacc">'+(pre.paidAccounts||[]).map(function(a){ return '<option value="'+esc(a.id)+'"'+(/kasse/i.test(a.name)?" selected":"")+'>'+esc(a.name)+'</option>'; }).join("")+'</select></label>':'')+
-    '<div class="grid2"><label class="fl">Firma / Name<input class="f" name="contact" list="invContacts" required autocomplete="off" placeholder="Bestandskunde wählen oder neu eingeben" value="'+esc(cname)+'"><span class="muted small" id="invCustHint" aria-live="polite"></span></label><label class="fl">E-Mail<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label></div>'+
+    '<div class="grid2"><label class="fl">Firma / Name<input class="f" name="contact" data-sugg="invcontact" required autocomplete="off" placeholder="Name eintippen – Bestandskunden werden vorgeschlagen" value="'+esc(cname)+'"><span class="muted small" id="invCustHint" aria-live="polite"></span></label><label class="fl">E-Mail<input class="f" name="email" type="email" value="'+esc(pre.email||"")+'"></label></div>'+
     '<div class="grid2"><label class="fl">z. H. <span class="muted small">(optional)</span><input class="f" name="attn" placeholder="Ansprechperson" value="'+esc(A.contactPerson||"")+'"></label><label class="fl">UID <span class="muted small">(optional)</span><input class="f" name="uid" placeholder="ATU12345678" value="'+esc(pre.uid||"")+'"></label></div>'+
     '<label class="fl">Straße<input class="f" name="street" autocomplete="off" value="'+esc(A.street||"")+'"></label>'+
     '<div class="grid2"><div style="display:grid;grid-template-columns:6.5em minmax(0,1fr);gap:10px"><label class="fl">PLZ<input class="f" name="zip" inputmode="numeric" autocomplete="off" value="'+esc(A.zip||"")+'"></label><label class="fl">Ort<input class="f" name="city" autocomplete="off" value="'+esc(A.city||"")+'"></label></div><label class="fl">Land<input class="f" name="country" list="invLands" value="'+esc(land)+'"></label></div>'+
@@ -76,10 +115,11 @@ F.openInvoice=function(pre){
     (offer?'':'<label class="fl">Referenz <span class="muted small">(optional – steht rechts oben unter der Rechnungsnummer, z. B. Bestell- oder Projektnummer; leer = automatisch)</span><input class="f" name="reference" maxlength="60" value="'+esc(pre.reference||"")+'"></label>')+
     '<label class="fl">Einleitungstext<textarea class="f" name="head" rows="2">'+esc(pre.headText||"")+'</textarea></label>'+
     '<div><div class="sec-t">Positionen</div><div id="irows" style="display:grid;gap:10px">'+((pre.items&&pre.items.length?pre.items:[{}]).map(irow).join(""))+'</div><button type="button" class="link" data-addrow>+ Position</button></div>'+
-    '<div class="foot"><span id="invSum" class="num"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">'+(offer?"Angebot als Entwurf anlegen":pre.id?"Änderungen speichern":"Entwurf anlegen")+'</button></span></div><div class="err" id="invErr"></div><datalist id="invContacts"></datalist><datalist id="invLands">'+Object.keys(LAND).map(function(k){ return '<option value="'+esc(LAND[k])+'"></option>'; }).join("")+'</datalist><datalist id="invParts"></datalist></form>',"wide");
+    '<div class="foot"><span id="invSum" class="num"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="invSave">'+(offer?"Angebot als Entwurf anlegen":pre.id?"Änderungen speichern":"Entwurf anlegen")+'</button></span></div><div class="err" id="invErr"></div><datalist id="invLands">'+Object.keys(LAND).map(function(k){ return '<option value="'+esc(LAND[k])+'"></option>'; }).join("")+'</datalist><datalist id="invParts"></datalist></form>',"wide");
   invSum();
   if(F.sevParts) F.sevParts(function(ps){ PARTS=ps||[]; var dl=document.getElementById("invParts"); if(dl) dl.innerHTML=PARTS.filter(function(p){return p.active;}).map(function(p){ return '<option value="'+esc(p.name)+'">'+esc(F.eur(p.priceGross))+'</option>'; }).join(""); });
-  F.loadMeta(function(m){ var dl=document.getElementById("invContacts"); if(dl) dl.innerHTML=(m.contacts||[]).map(function(c){ return '<option value="'+esc(c.name)+'">'+esc([c.nr?"Nr. "+c.nr:"",[c.zip,c.city].filter(Boolean).join(" ")].filter(Boolean).join(" · "))+'</option>'; }).join(""); invCustomer(); });
+  F.loadMeta(function(m){ if(m&&m.error) META=null;   /* Fehler nicht merken → beim nächsten Öffnen neu versuchen */
+    var inp=document.querySelector('form[data-form="invoice"] [name="contact"]'); invCustomer(); if(inp&&document.activeElement===inp&&inp.value.trim()) sgOpen(inp); });
   invCustomer();
 };
 function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEach(function(r){ var g=function(k){ return r.querySelector('[data-i="'+k+'"]').value; }; var nm=g("name").trim(), pr=g("price"); if(!nm||pr==="") return; out.push({name:nm,text:g("text").trim(),qty:parseFloat(g("qty"))||1,priceGross:parseFloat(pr),taxRate:parseFloat(g("tax"))}); }); return out; }

@@ -450,9 +450,36 @@
 
   // Info-Popup zu einer Option (Papier, Veredelung …): Bild, Beschreibung, „Diese Option wählen“
   var DDI = {};
-  function infoPop(key, val) {
+  function infoItem(key, val) {
     var it = (DDI[key] || []).filter(function (x) { return String(x.val) === String(val); })[0];
     if (!it && key.indexOf("prop:") === 0 && S.prod) { var pr0 = S.prod.props.filter(function (x) { return x.slug === key.slice(5); })[0]; if (pr0) it = propItems(pr0).filter(function (x) { return String(x.val) === String(val); })[0]; }
+    return it || null;
+  }
+  // Infos beim Drüberfahren (Maus): kleine Karte neben dem „i“ – Klick öffnet weiterhin das große Fenster (am Handy/Tablet der einzige Weg)
+  var TIP = null, tipT = 0, HOVER = window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  function tipHide() { clearTimeout(tipT); if (TIP) { TIP.remove(); TIP = null; } }
+  function tipShow(btn) {
+    var iv = btn.getAttribute("data-ddinfo") || "", ii = iv.indexOf("|"), key = iv.slice(0, ii), val = iv.slice(ii + 1), it = infoItem(key, val); if (!it) return;
+    var pr = key.indexOf("prop:") === 0 && S.prod ? S.prod.props.filter(function (x) { return x.slug === key.slice(5); })[0] : null;
+    var d = txt(it.desc) || (pr ? glossOf(pr, { name: it.name, slug: val }) : ""), short = d.length > 420 ? d.slice(0, 400).replace(/\s+\S*$/, "") + " …" : d;
+    tipHide(); TIP = document.createElement("div"); TIP.className = "ps-tip"; TIP.setAttribute("role", "tooltip");
+    TIP.innerHTML = (imgOk(it.img) ? '<img src="' + esc(String(it.img).replace(/w=\d+/, "w=600")) + '" alt="">' : "") + '<div class="ps-tip-b"><span class="ps-pop-k">' + esc(pr ? pr.title : "Info") + "</span><b>" + esc(it.name) + "</b>" +
+      (short ? "<p>" + esc(short) + "</p>" : "") + (it.warn ? '<p class="ps-pop-w">Passt mit: ' + esc(it.warn) + "</p>" : it.off ? '<p class="ps-pop-w">Mit der aktuellen Auswahl nicht lieferbar.</p>' : "") + "</div>";
+    document.body.appendChild(TIP);
+    var r = btn.getBoundingClientRect(), w = TIP.offsetWidth, h = TIP.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+    var x = r.left - w - 12 >= 8 ? r.left - w - 12 : Math.min(vw - w - 8, r.right + 12), y = Math.max(8, Math.min(vh - h - 8, r.top + r.height / 2 - 40));
+    TIP.style.left = Math.round(x) + "px"; TIP.style.top = Math.round(y) + "px";
+  }
+  if (HOVER) {
+    document.addEventListener("mouseover", function (e) { var b = e.target.closest && e.target.closest(".ps-i[data-ddinfo]"); if (!b) return; if (TIP && TIP.__b === b) return; clearTimeout(tipT); tipT = setTimeout(function () { tipShow(b); if (TIP) TIP.__b = b; }, 120); });
+    document.addEventListener("mouseout", function (e) { var b = e.target.closest && e.target.closest(".ps-i[data-ddinfo]"); if (!b || (e.relatedTarget && b.contains(e.relatedTarget))) return; clearTimeout(tipT); tipT = setTimeout(tipHide, 80); });
+    document.addEventListener("focusin", function (e) { var b = e.target.closest && e.target.closest(".ps-i[data-ddinfo]"); if (b && b.matches(":focus-visible")) { tipShow(b); if (TIP) TIP.__b = b; } });
+    document.addEventListener("focusout", function (e) { if (e.target.closest && e.target.closest(".ps-i[data-ddinfo]")) tipHide(); });
+    window.addEventListener("scroll", tipHide, true); document.addEventListener("keydown", function (e) { if (e.key === "Escape") tipHide(); });
+  }
+  function infoPop(key, val) {
+    tipHide();
+    var it = infoItem(key, val);
     if (!it) return;
     var pr = key.indexOf("prop:") === 0 && S.prod ? S.prod.props.filter(function (x) { return x.slug === key.slice(5); })[0] : null, isCur = pr ? S.sel[pr.slug] === val : false;
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", it.name);
