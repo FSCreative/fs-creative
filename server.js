@@ -1415,7 +1415,16 @@ async function sevRulesOk() {   // eigene Buchhaltung: immer; echtes sevDesk nur
   let ok = false; try { const v = await sev("GET", "/Tools/bookkeepingSystemVersion"); ok = /^2/.test(String(v && v.objects && v.objects.version || "")); } catch (e) {}
   SEV_RULES_OK = { at: Date.now(), ok }; return ok;
 }
-function voucherRule(pl) { const r = String(pl && pl.taxRule || ""); return pl && pl.creditDebit !== "D" && VOU_RULES.indexOf(r) > -1 ? r : ""; }
+function voucherRule(pl) {
+  const r = String(pl && pl.taxRule || ""); if (!pl || pl.creditDebit === "D") return "";
+  if (VOU_RULES.indexOf(r) > -1) return r;
+  // ohne gewählte Regel, Beleg ohne USt: Belegtext entscheidet (sonst fehlt ig. Erwerb/Reverse Charge in der UVA – z. B. Geiger 08/2026)
+  const zero = !(parseFloat(pl.taxRate) > 0) && !(Array.isArray(pl.positions) && pl.positions.some(x => parseFloat(x && x.taxRate) > 0));
+  const txt = [pl.description, pl.supplierName].join(" ");
+  if (zero && /\big\.? ?(lieferung|erwerb)|innergemeinschaftlich|intra.?community|art\.? ?138/i.test(txt)) return "8";
+  if (zero && /reverse.?charge|steuerschuldnerschaft|(ü|ue)bergang der steuerschuld|art\.? ?196|§ ?13 ?b/i.test(txt)) return "14";
+  return "";
+}
 async function sevVoucherFromMail(pl) {
   const m = pl.mail || {};
   let buf, fname, ctypeIn = "";
