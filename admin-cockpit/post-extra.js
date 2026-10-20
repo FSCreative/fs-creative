@@ -41,6 +41,8 @@ function rowMenu(m,x,y){
     {label:"Weiterleiten",act:function(){ M.reply(m,"fwd"); }},
     {label:"Als Aufgabe",act:function(){ M.todoFromMail(m); }},
     {label:"Zahlung erfassen",act:function(){ if(F.payFromMail) F.payFromMail(m,null); }},
+    {label:"Rechnung erstellen",act:function(){ if(F.invoiceFromMail) F.invoiceFromMail(m,""); }},
+    {label:"Angebot erstellen",act:function(){ if(F.invoiceFromMail) F.invoiceFromMail(m,"offer"); }},
     {label:"Als Termin",act:function(){ M.eventFromMail(m); }},
     {sep:true},
     {label:"Verschieben …",act:function(){ M.showMoveMenu(x,y,UI.mpick[id]?M.selectedIds():[id]); }},

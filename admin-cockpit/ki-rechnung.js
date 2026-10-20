@@ -31,7 +31,7 @@ F.kiInvoiceHtml=function(pre){
   return out;
 };
 function fill(inv,pre){
-  F.openInvoice(Object.assign({},pre,{contactName:inv.contactName,email:inv.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
+  F.openInvoice(Object.assign({},pre,{contactName:inv.contactName||pre.contactName,email:inv.email||pre.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
     items:inv.items.map(function(i){ return {name:i.name,text:i.text,qty:i.qty,priceGross:i.priceGross,taxRate:i.taxRate}; }),
     taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv},
     pre.kind==="offer"?{validUntil:inv.validUntil||undefined,header:inv.header||pre.header}:{}));
@@ -53,6 +53,24 @@ F.action("kiinvfill",function(){
   var keep=Object.assign({},PRE); delete keep.kiInfo;
   K.invoiceDraft(req,keep).catch(function(e){ var er=document.getElementById("kiInvErr"); if(er) er.textContent=e.message; var bb=document.querySelector('[data-act="kiinvfill"]'); if(bb){ bb.disabled=false; bb.textContent="Ausfüllen"; } });
 });
+/* Rechnung oder Angebot direkt aus einer Mail (Postfach: Leiste, Rechtsklick, „Mehr“): Kunde aus Absender (bei gesendeten Mails: Empfänger) –
+   vorhandener Buchhaltungskontakt bzw. Lead per E-Mail bevorzugt –, dann füllt die KI Positionen und Texte aus der Mail aus. Angelegt wird erst mit „Entwurf anlegen“. */
+function mailAddr(m){ var M=F.M||{}, sent=M.isSent&&M.isSent(m), raw=sent?String(m.to||""):String(m.from||""), a=(raw.match(/[^\s<>,;"]+@[^\s<>,;"]+/)||[""])[0].toLowerCase();
+  var nm=sent?String(raw.split(/[<,;]/)[0]||"").replace(/"/g,"").trim():String(m.fromName||"").trim(); return {email:a,name:nm&&nm.indexOf("@")<0?nm:""}; }
+F.invoiceFromMail=function(m,kind){ if(!m) return; var offer=kind==="offer", who=mailAddr(m);
+  F.loadMeta(function(meta){
+    var c=who.email&&((meta&&meta.contacts)||[]).find(function(x){ return String(x.email||"").toLowerCase()===who.email; });
+    var l=who.email&&((F.D&&F.D.leads)||[]).find(function(x){ return String(x.email||"").toLowerCase()===who.email; });
+    var pre={title:(offer?"Neues Angebot":"Neue Rechnung")+" aus Mail",contactName:c?c.name:l?(l.company||l.name):(who.name||who.email),email:who.email};
+    if(offer) pre.kind="offer";
+    var M=F.M||{}, body=m.bodyHtml?String(m.body||"").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<br\s*\/?>/gi,"\n").replace(/<\/(p|div|tr|li)>/gi,"\n").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," "):String(m.body||m.preview||"");
+    var req={text:"",mailId:m.id,mail:{from:m.from,fromName:m.fromName,to:m.to,date:m.date,subject:m.subject,text:body.slice(0,12000)}};
+    F.openInvoice(Object.assign({},pre));
+    var start=function(){ if(K.st&&!K.st.configured){ var e0=document.getElementById("kiInvErr"); if(e0) e0.textContent="KI nicht eingerichtet – Positionen bitte von Hand eintragen."; return; }
+      var er=document.getElementById("kiInvErr"); if(er) er.textContent="KI liest die Mail „"+String(m.subject||"").slice(0,60)+"“ …";
+      K.invoiceDraft(req,pre).catch(function(e){ var e2=document.getElementById("kiInvErr"); if(e2) e2.textContent=e.message; else F.toast(e.message,true); }); };
+    if(K.st) start(); else K.load(true).then(start);
+  }); };
 /* Vorschlag aus dem Assistenten: Dialog öffnen und ausfüllen */
 K.invoiceFromProposal=function(d){
   F.openInvoice({title:"Neue Rechnung (KI)",kiText:d.text||""});

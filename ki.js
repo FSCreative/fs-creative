@@ -665,7 +665,10 @@ module.exports = function createKi(deps) {
     const today = deps.viennaToday(); const parts = [];
     if (pl.text) parts.push("Auftrag von Simon: " + clip(pl.text, 4000));
     if (pl.leadId) { const l = deps.readLeads().find(x => x.id === String(pl.leadId)); if (l) parts.push("<anfrage>\n" + JSON.stringify({ name: l.name, firma: l.company, email: l.email, telefon: l.phone, thema: l.topic, nachricht: clip(l.message, 4000), notizen: clip(l.notes, 2000), projektwert: l.value || 0 }) + "\n</anfrage>"); }
-    if (pl.mailId) { const snap = await deps.mailSnapshot(); const m = ((snap && snap.messages) || []).find(x => x.id === String(pl.mailId)); if (m) parts.push(mailInput({ from: m.from, fromName: m.fromName, to: m.to, date: m.date, subject: m.subject, text: clip(mailText(m), 12000) })); }
+    let mailDone = false;
+    if (pl.mailId) { const snap = await deps.mailSnapshot(); const m = ((snap && snap.messages) || []).find(x => x.id === String(pl.mailId)); if (m && mailText(m).trim()) { parts.push(mailInput({ from: m.from, fromName: m.fromName, to: m.to, date: m.date, subject: m.subject, text: clip(mailText(m), 12000) })); mailDone = true; } }
+    // „Rechnung aus Mail“: Inhalt kommt vom Cockpit mit (ältere Mails aus der Suche sind nicht im Schnappschuss)
+    if (!mailDone && pl.mail && typeof pl.mail === "object" && String(pl.mail.text || pl.mail.subject || "").trim()) parts.push(mailInput({ from: clip(pl.mail.from, 160), fromName: clip(pl.mail.fromName, 120), to: clip(pl.mail.to, 300), date: clip(pl.mail.date, 40), subject: clip(pl.mail.subject, 250), text: clip(pl.mail.text, 12000) }));
     if (!parts.length) throw kiErr(offer ? "Bitte beschreiben, was angeboten werden soll (oder eine Mail/Anfrage wählen)." : "Bitte beschreiben, was verrechnet werden soll (oder eine Mail/Anfrage wählen).", "empty");
     let contacts = []; try { contacts = ((await deps.sevMeta(false)).contacts || []).map(c => c.name).filter(Boolean); } catch (e) {}
     let rules = []; try { const raw = await Promise.race([deps.steuerRaw(false), new Promise(r => setTimeout(() => r(null), 8000))]); rules = ((raw && raw.taxRules) || []).filter(r => !/EXPENSE/i.test(r.side || "")).map(r => ({ id: String(r.id), txt: String(r.description || r.name || "").slice(0, 120) })); } catch (e) {}

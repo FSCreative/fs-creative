@@ -35,6 +35,7 @@ var IC={
   down:'<path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>',
   receipt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   pay:'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
+  inv:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   board:'<rect x="3.5" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="16.5" y="4" width="4" height="7" rx="1.5"/>',
   chev:'<path d="m6 9 6 6 6-6"/>',
   check:'<path d="m5 12 5 5 9-10"/>'
@@ -404,7 +405,7 @@ function readerHtml(){
   else {
     if(dbox) tb+=rb("mx:editdraft","edit","Weiter bearbeiten"," pri",true);
     tb+=rb("mx:reply","reply","Antworten (R)","",true)+rb("mx:replyall","replyall","Allen antworten (A)")+rb("mx:forward","forward","Weiterleiten (F)")+
-      '<span class="rsep"></span>'+rb("mx:auftrag","board","Als Aufgabe (T)")+rb("mx:zahlung","pay","Zahlung erfassen (KI liest Empfänger, IBAN, Betrag)")+rb("mx:termin","cal","Als Termin")+
+      '<span class="rsep"></span>'+rb("mx:auftrag","board","Als Aufgabe (T)")+rb("mx:zahlung","pay","Zahlung erfassen (KI liest Empfänger, IBAN, Betrag)")+rb("mx:rechnung","inv","Rechnung erstellen (KI liest die Mail)")+rb("mx:termin","cal","Als Termin")+
       '<span class="rsep"></span>'+rb("mx:move","folder","Verschieben (V)")+(spam?rb("mx:notspam","inboxin","Kein Spam – in den Posteingang"):rb("mx:spam","spam","Als Spam"))+rb("mx:trash","trash","Löschen (#)"," dg");
   }
   tb+='<span class="rsp"></span>'+rb("mx:"+(m.read?"unread":"read"),m.read?"mail":"mailopen",m.read?"Als ungelesen (U)":"Als gelesen (U)")+
@@ -703,7 +704,7 @@ F.action("mxmore",function(){
   var m=M.cur(); if(!m) return; var sp=isSpam(m), go=function(op){ return function(){ F.actions.mx(op,null); }; };
   M.ctx(0,0,[
     {label:"Allen antworten",act:go("replyall")},{label:"Weiterleiten",act:go("forward")},{sep:true},
-    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als Aufgabe",act:go("auftrag")},{label:"Zahlung erfassen",act:go("zahlung")},{label:"Als Termin",act:go("termin")},{sep:true},
+    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als Aufgabe",act:go("auftrag")},{label:"Zahlung erfassen",act:go("zahlung")},{label:"Rechnung erstellen",act:go("rechnung")},{label:"Angebot erstellen",act:go("angebot")},{label:"Als Termin",act:go("termin")},{sep:true},
     {label:sp?"Kein Spam":"Als Spam",act:go(sp?"notspam":"spam")},{label:"Drucken",act:go("print")},{label:"In Webmail öffnen",act:function(){ F.actions.mwebmail(); }}
   ],m.subject||"Mail");
 });
@@ -903,6 +904,8 @@ F.action("mx",function(op,el){
   else if(op==="termin") M.eventFromMail(m);
   else if(op==="auftrag"&&F.tkFromMail) F.tkFromMail(m);
   else if(op==="zahlung"&&F.payFromMail) F.payFromMail(m,null);
+  else if(op==="rechnung"&&F.invoiceFromMail) F.invoiceFromMail(m,"");
+  else if(op==="angebot"&&F.invoiceFromMail) F.invoiceFromMail(m,"offer");
   else if(op==="move"){ var p=menuPos(el&&el.isConnected?el:null); M.showMoveMenu(p[0],p[1],[m.id]); }
   else if(op==="spam") moveMessages([m.id],null,"spam");
   else if(op==="notspam") moveMessages([m.id],"INBOX","move");
