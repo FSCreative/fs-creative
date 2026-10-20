@@ -407,6 +407,7 @@ async function kantineurStats(year) {
     mrrCents: d.mrrCents || 0,
     subscribers: d.subscribers || { active: 0, paying: 0, sponsored: 0, byPlan: {} },
     canteens: d.canteens || { total: 0, byStatus: {} },
+    trial: d.trial || null,   // Testzeit („Demo-Modus“): running, endingSoon, expired, showcase (Vorführ-Kantinen, nicht mitgezählt)
   };
 }
 // Mail-Snapshot mit ETag: unverändert -> 304 (fast kein Traffic). Max. alle 20 s ein Abruf.

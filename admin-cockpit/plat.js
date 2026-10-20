@@ -205,7 +205,7 @@ function vUeb(){
   var ko=p.kochdu, kt=ko&&ko.totals||{}, bz=p.blitzdings, br=bz&&bz.revenue||{}, va=items("valuero");
   var cards=
     (ko?card("kochdu","kochdu",'Bestellplattform '+badge("kochdu"),[["Bezahlt",money(c2e(kt.barSettledCents)+c2e(kt.onlineProvisionCents))],["Bar-Gebühren offen",money(c2e(kt.barOpenCents),kt.barOpenCents>0?"warn-t":""),""],["Restaurants",num((ko.restaurants||[]).length)]]):'<div class="panel pl-card"><h3>kochdu</h3>'+off("kochdu")+'</div>')+
-    (ka?card("kantineur","Kantineur","Vereinskasse",[["Eingenommen",money(c2e(ka.revenueGrossCents))],["MRR",money(c2e(ka.mrrCents))],["Aktive Abos",num((ka.subscribers||{}).active)]]):'<div class="panel pl-card"><h3>Kantineur</h3>'+off("Kantineur")+'</div>')+
+    (ka?card("kantineur","Kantineur","Vereinskasse",[["Eingenommen",money(c2e(ka.revenueGrossCents))],["MRR",money(c2e(ka.mrrCents))],["Aktive Abos",num((ka.subscribers||{}).active)]].concat(ka.trial?[["In Testzeit (Demo)",num(ka.trial.running)+(ka.trial.endingSoon?' <span class="muted">· '+num(ka.trial.endingSoon)+' enden bald</span>':'')]]:[])):'<div class="panel pl-card"><h3>Kantineur</h3>'+off("Kantineur")+'</div>')+
     (bz?card("blitz","Blitzdings",'Fotobox &amp; 360° '+badge("blitz"),[["Bezahlt",money(c2e(br.paidCents))],["Offen",money(c2e(br.openCents),br.openCents>0?"warn-t":"")],["Anstehend",num((bz.bookings||{}).upcomingCount!=null?bz.bookings.upcomingCount:(bz.upcoming||[]).length)]]):'<div class="panel pl-card"><h3>Blitzdings</h3>'+off("Blitzdings")+'</div>')+
     (p.valuero?card("valuero","VALUERO",'Tourismus &amp; Hosting '+badge("valuero"),[["Verrechnet "+esc(F.D.year),money(va.reduce(function(a,x){return a+x.invoiced;},0))],["Offen",money(va.reduce(function(a,x){return a+x.unbilled;},0),"warn-t")]].concat(refund>0.005?[["Zu erstatten",money(refund,"bad-t")]]:[])):'<div class="panel pl-card"><h3>VALUERO</h3>'+off("den VALUERO-Objekten")+'</div>')+
     (fsc?'<button class="panel pl-card" data-go="web"><div class="pl-t"><h3>FS Creative</h3><span class="muted">Websites</span></div><dl class="pl-fig"><dt>Bezahlt</dt><dd>'+money(fsc.paid)+'</dd><dt>Offen</dt><dd>'+money(fsc.open,fsc.open>0.005?"warn-t":"")+'</dd></dl><span class="pl-note">Hosting, Domains &amp; Mail '+esc(F.D.year)+'</span></button>':'')+
@@ -333,11 +333,12 @@ function vKantineur(){
   var spon=+sub.sponsored||0;
   var stRows=Object.keys(cs).filter(function(s){return +cs[s]>0;}).sort(function(a,b){return cs[b]-cs[a];});
   var tones=["ok","info","glow","warn","bad","ink-3"];
-  return '<div class="kpis">'+
+  return '<div class="kpis"'+(k.trial?' style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"':'')+'>'+
       kpi("Umsatz diesen Monat",'<span class="money">'+eur(c2e(k.thisMonthGrossCents))+'</span>',"automatisch über die Plattform",{vcls:"ok-t"})+
       kpi("Aktive Abos",num(sub.active),num(sub.paying)+" zahlend · "+num(spon)+" gesponsert")+
       kpi("Umsatz / Monat (MRR)",'<span class="money">'+eur(mrr)+'</span>','<span class="money">'+eur(mrr*12)+'</span> pro Jahr'+(spon?" · "+spon+"× Gutschein gratis":""),{vcls:"ok-t"})+
       kpi("Eingenommen "+esc(F.D.year),'<span class="money">'+eur(c2e(k.revenueGrossCents))+'</span>',k.revenueNetCents?'netto <span class="money">'+eur(c2e(k.revenueNetCents))+'</span>':"brutto, fließt in die Gesamt-Einnahmen")+
+      (k.trial?kpi("In Testzeit (Demo)",num(k.trial.running),[k.trial.endingSoon?num(k.trial.endingSoon)+" enden in 3 Tagen":"keine endet in den nächsten 3 Tagen",k.trial.expired?num(k.trial.expired)+" abgelaufen ohne Abo":""].filter(Boolean).join(" · ")+(k.trial.showcase?' <span class="muted">· ohne '+num(k.trial.showcase)+' Vorführ-Kantine'+(k.trial.showcase===1?'':'n')+'</span>':''),{vcls:k.trial.endingSoon?"warn-t":""}):'')+
     '</div>'+
     '<div class="two">'+
       sec("Abo-Varianten",'<span class="muted">Umsatz effektiv, Gutscheine eingerechnet</span>',
