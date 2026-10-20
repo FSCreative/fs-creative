@@ -36,6 +36,7 @@ const FEATURES = {
   rechnung:  { label: "Rechnungen per KI vorbereiten", essential: true },
   chat:      { label: "Website-Chat: KI antwortet, wenn du offline bist (und legt Leads an)", essential: false },
   printdesign: { label: "Druckshop: KI-Assistent im Designer (Texte, Vorlage, Farben – Tageslimit je Kunde)", essential: false },
+  marketing: { label: "Marketing: Posts, Reels, Captions und Hashtags für deine Apps erstellen", essential: false },
 };
 const DEFAULT_SENDERS = ["railway", "google", "adobe", "world4you", "a1.net", "a1 telekom", "magenta", "drei.at", "cloudflare", "anthropic", "openai", "apple", "microsoft", "github", "figma", "notion", "hetzner", "canva", "envato", "paypal", "rechnung", "invoice", "receipt"].join("\n");
 
@@ -800,6 +801,12 @@ module.exports = function createKi(deps) {
     const u = msg.usage || {}, usd = priced({ input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 }, PRICES[modelFor("printdesign")] || PRICE_USD);
     return { json: jsonOf(msg), eur: usd * USD_EUR };
   }
+  // Marketing (marketing.js): Redaktionsplan als JSON (Structured Outputs); liefert die Kosten (EUR) für die Anzeige im Cockpit
+  async function marketingGen(system, user, schema, maxTokens) {
+    const msg = await claude("marketing", { system, messages: [{ role: "user", content: user }], maxTokens: maxTokens || 16000, effort: "medium", schema });
+    const u = msg.usage || {}, usd = priced({ input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 }, PRICES[modelFor("marketing")] || PRICE_USD);
+    return { json: jsonOf(msg), eur: usd * USD_EUR };
+  }
   async function chatReply(system, state, messages, schema) { const msg = await claude("chat", { system, system2: state, messages, maxTokens: 400, effort: "low", schema }); return jsonOf(msg); }
-  return { handle, configured, status, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
+  return { handle, configured, status, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign") && !overLimit(), marketingGen, marketingOn: () => configured() && featureOn("marketing") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
 };

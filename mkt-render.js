@@ -294,4 +294,139 @@ async function giveawayVideo(o) {
   return { file: out, cover, poster: o.posterFile || "", duration: Math.round(t0 * 10) / 10 };
 }
 
-module.exports = { ready, videoReady, h, img, png, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, _test: { backC1, ease, lines } };
+// ═════════════ Post-Vorlagen (Feed 1080×1350, Story/Reel 1080×1920) ═════════════
+/* Folie: { template: hook|list|quote|stat|compare|cta|photo, kicker, headline, sub, items[], cta, number, label, author, leftTitle, leftItems[], rightTitle, rightItems[], image(dataURI) }
+   Hervorhebung im Text mit *Sternchen* (wird als Markierung gesetzt). variant: brand | light | dark. layer: all | bg | fg (fürs Reel: Hintergrund und Text getrennt). */
+const FMT = { feed: { w: 1080, h: 1350, px: 84, top: 84, bottom: 84 }, story: { w: 1080, h: 1920, px: 92, top: 230, bottom: 400 } };
+function look(T, variant) {
+  if (variant === "light") return { bg: "linear-gradient(170deg, " + mix(T.light, "#ffffff", 0.35) + " 0%, " + T.light + " 100%)", fg: T.ink, sub: mix(T.ink, T.light, 0.32), mark: T.primary, markFg: onColor(T.primary), card: "#ffffff", cardFg: T.ink, line: mix(T.primary, T.light, 0.75), glowA: rgba(T.primary, 0.16), glowB: rgba(T.accent, 0.22) };
+  if (variant === "dark") { const d = mix(T.dark, "#05060a", 0.55); return { bg: "linear-gradient(165deg, " + mix(d, T.primary, 0.12) + " 0%, " + d + " 100%)", fg: "#ffffff", sub: "rgba(255,255,255,0.74)", mark: T.primary, markFg: onColor(T.primary), card: "rgba(255,255,255,0.08)", cardFg: "#ffffff", line: "rgba(255,255,255,0.16)", glowA: rgba(T.primary, 0.55), glowB: rgba(T.accent, 0.3) }; }
+  const fg = onColor(T.primary);
+  return { bg: "linear-gradient(160deg, " + T.primary + " 0%, " + T.dark + " 100%)", fg, sub: fg === "#ffffff" ? "rgba(255,255,255,0.8)" : rgba(T.ink, 0.75), mark: "#ffffff", markFg: T.primary === "#ffffff" ? T.ink : T.dark, card: fg === "#ffffff" ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.5)", cardFg: fg, line: "rgba(255,255,255,0.25)", glowA: rgba(T.accent, 0.5), glowB: rgba(T.dark, 0.9) };
+}
+// Wörter einzeln setzen (umbrechen wie Fließtext), *markierte* Teile als Marker-Fläche
+function rich(text, size, color, L, opt) {
+  opt = opt || {}; const parts = [];
+  String(text || "").split(/(\*[^*]+\*)/).forEach(seg => { if (!seg) return; const hl = /^\*[^*]+\*$/.test(seg); const t = hl ? seg.slice(1, -1) : seg;
+    if (!hl && parts.length && /^[?!.,:;…)“"]/.test(t)) { const m = t.match(/^[?!.,:;…)“"]+/)[0]; parts[parts.length - 1].tail = m; seg = t.slice(m.length); } else seg = t;
+    (hl && seg.length <= 22 ? [seg.trim()] : seg.split(/\s+/)).filter(Boolean).forEach(w => parts.push({ w, hl })); });
+  const gap = Math.round(size * 0.24);
+  const mk = p => p.hl ? h("span", { background: L.mark, color: L.markFg, borderRadius: Math.round(size * 0.16), padding: "0 " + Math.round(size * 0.16) + "px" }, p.w) : h("span", {}, p.w);
+  return h("div", { flexWrap: "wrap", justifyContent: opt.center ? "center" : "flex-start", alignItems: "center", rowGap: Math.round(size * (opt.gap || 0.08)), fontFamily: opt.family || "Poppins", fontWeight: opt.weight || 800, fontSize: size, lineHeight: 1.08, letterSpacing: opt.ls != null ? opt.ls : -size * 0.025, color },
+    parts.map(p => p.tail ? h("div", { marginRight: gap }, mk(p), h("span", {}, p.tail)) : h("div", { marginRight: gap }, mk(p))));
+}
+const plain = s => String(s || "").replace(/\*/g, "");
+const svgUri = (body, w, hh) => "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + hh + '" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>').toString("base64");
+const ICON = {
+  arrow: c => svgUri('<path d="M4 12h15M13 6l6 6-6 6" stroke="' + c + '" stroke-width="2.6"/>', 40, 40),
+  check: c => svgUri('<path d="M5 12.5l4.5 4.5L19 7.5" stroke="' + c + '" stroke-width="3"/>', 36, 36),
+  cross: c => svgUri('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="' + c + '" stroke-width="2.6"/>', 36, 36),
+};
+const cssColor = c => /^#/.test(String(c)) ? c : "#ffffff";
+function postEl(slide, brand, o) {
+  o = o || {}; const T = theme(brand), F = FMT[o.format === "story" ? "story" : "feed"], L = look(T, o.variant || "brand"), story = F === FMT.story;
+  const layer = o.layer || "all", TX = layer === "bg" ? { opacity: 0 } : {}, DE = layer === "fg" ? { opacity: 0 } : {};
+  const W2 = F.w - 2 * F.px, s = slide || {}, tpl = s.template === "photo" && !s.image ? "hook" : (s.template || "hook");
+  const root = Object.assign({ width: F.w, height: F.h, position: "relative", flexDirection: "column", fontFamily: "Inter", color: L.fg, overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px" },
+    layer === "fg" ? { background: "transparent" } : o.overVideo ? { background: "linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.28) 62%, rgba(0,0,0,0.72) 100%)" } : { background: L.bg });
+  const deco = o.overVideo ? [] : [h("div", Object.assign({ position: "absolute", left: -F.w * 0.3, top: -F.w * 0.25, width: F.w * 0.9, height: F.w * 0.9, borderRadius: F.w, background: "radial-gradient(circle, " + L.glowA + " 0%, rgba(0,0,0,0) 70%)" }, DE)),
+    h("div", Object.assign({ position: "absolute", right: -F.w * 0.35, bottom: -F.w * 0.3, width: F.w * 1.0, height: F.w * 1.0, borderRadius: F.w, background: "radial-gradient(circle, " + L.glowB + " 0%, rgba(0,0,0,0) 70%)" }, DE))];
+  if (tpl === "photo" && s.image) deco.push(img(s.image, Object.assign({ position: "absolute", left: 0, top: 0, width: F.w, height: F.h, objectFit: "cover" }, DE)),
+    h("div", Object.assign({ position: "absolute", left: 0, top: 0, width: F.w, height: F.h, background: "linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.05) 35%, rgba(0,0,0,0.78) 100%)" }, DE)));
+  const head = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginBottom: story ? 70 : 56, flexShrink: 0 },
+    h("div", DE, logoPill(brand, T, story ? 52 : 44)),
+    o.counter ? h("div", Object.assign({ fontSize: 26, fontWeight: 700, color: L.sub, background: L.card, borderRadius: 99, padding: "8px 18px" }, TX), o.counter) : null);
+  const kick = s.kicker ? h("div", Object.assign({ alignSelf: tpl === "cta" || tpl === "stat" ? "center" : "flex-start", fontSize: story ? 30 : 26, fontWeight: 700, letterSpacing: 3, color: tpl === "photo" ? "#ffffff" : L.fg, background: tpl === "photo" ? "rgba(255,255,255,0.18)" : L.card, borderRadius: 99, padding: "10px 22px", marginBottom: story ? 34 : 28 }, TX), plain(s.kicker).toUpperCase()) : null;
+  const subEl = (txt, size, center) => txt ? h("div", Object.assign({ fontSize: size, fontWeight: 500, lineHeight: 1.35, color: tpl === "photo" ? "rgba(255,255,255,0.88)" : L.sub, marginTop: story ? 34 : 26, textAlign: center ? "center" : "left", justifyContent: center ? "center" : "flex-start" }, TX), plain(txt)) : null;
+  const ctaEl = (txt, center) => txt ? h("div", Object.assign({ alignSelf: center ? "center" : "flex-start", background: L.mark, color: L.markFg, fontFamily: "Poppins", fontWeight: 700, fontSize: story ? 36 : 32, borderRadius: 99, padding: story ? "22px 40px" : "18px 34px", boxShadow: "0 14px 34px rgba(0,0,0,0.18)" }, TX), plain(txt)) : null;
+  const foot = h("div", { justifyContent: "space-between", alignItems: "center", width: W2, marginTop: "auto" },
+    o.swipe ? h("div", Object.assign({ fontSize: 28, fontWeight: 700, color: L.fg, alignItems: "center" }, TX), "Wischen", h("div", { marginLeft: 10 }, img(ICON.arrow(cssColor(L.fg)), { width: 34, height: 34 }))) : ctaEl(tpl === "cta" ? "" : s.cta),
+    o.url && tpl !== "cta" ? h("div", Object.assign({ fontSize: 24, fontWeight: 600, color: L.sub }, TX), o.url) : null);
+  let body;
+  const maxH = story ? 5 : 4, bigK = 0.64;
+  if (tpl === "list") {
+    const its = (s.items || []).slice(0, 5), n = its.length || 1, hs = fit(plain(s.headline), W2, 3, story ? 92 : 78, 44, bigK), isz = Math.min(story ? 40 : 36, Math.max(28, fit(its.reduce((a, b) => a.length > b.length ? a : b, ""), W2 - 120, 2, story ? 40 : 36, 26, 0.55)));
+    body = h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, rich(s.headline, hs, L.fg, L)),
+      h("div", { flexDirection: "column", marginTop: story ? 46 : 36, rowGap: n > 4 ? 14 : 18 },
+        its.map((t, i) => h("div", Object.assign({ alignItems: "center", background: L.card, borderRadius: 26, padding: (n > 4 ? 16 : 22) + "px 24px" }, TX),
+          h("div", { width: 58, height: 58, borderRadius: 58, flexShrink: 0, background: L.mark, color: L.markFg, alignItems: "center", justifyContent: "center", fontFamily: "Poppins", fontWeight: 800, fontSize: 28, marginRight: 22 }, String(i + 1)),
+          h("div", { fontSize: isz, fontWeight: 600, lineHeight: 1.25, color: L.cardFg, width: W2 - 130 }, plain(t))))));
+  } else if (tpl === "quote") {
+    const qs = fit(plain(s.headline), W2, story ? 7 : 6, story ? 78 : 68, 38, 0.58);
+    body = h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" },
+      h("div", Object.assign({ fontFamily: "Poppins", fontWeight: 900, fontSize: story ? 260 : 220, lineHeight: 0.8, color: L.mark, height: story ? 170 : 140 }, TX), "“"),
+      h("div", TX, rich(s.headline, qs, L.fg, L, { weight: 700 })),
+      s.author ? h("div", Object.assign({ fontSize: story ? 34 : 30, fontWeight: 600, color: L.sub, marginTop: 34 }, TX), "— " + plain(s.author)) : null);
+  } else if (tpl === "stat") {
+    const ns = fit(plain(s.number), W2, 1, story ? 300 : 260, 90, 0.66);
+    body = h("div", { flexDirection: "column", alignItems: "center", width: W2, marginTop: "auto", marginBottom: "auto" }, kick,
+      h("div", Object.assign({ fontFamily: "Poppins", fontWeight: 900, fontSize: ns, lineHeight: 1, letterSpacing: -ns * 0.04, color: L.fg }, TX), plain(s.number)),
+      h("div", Object.assign({ marginTop: 18, justifyContent: "center" }, TX), rich(s.label || s.headline, fit(plain(s.label || s.headline), W2, 2, story ? 66 : 58, 34, bigK), L.fg, L, { center: true, weight: 700 })),
+      subEl(s.sub, story ? 38 : 34, true));
+  } else if (tpl === "compare") {
+    const col = (title, items, good) => h("div", Object.assign({ flexDirection: "column", width: (W2 - 24) / 2, background: good ? L.mark : L.card, color: good ? L.markFg : L.cardFg, borderRadius: 30, padding: "28px 26px" }, TX),
+      h("div", { fontFamily: "Poppins", fontWeight: 800, fontSize: story ? 40 : 36, marginBottom: 18 }, plain(title)),
+      (items || []).slice(0, 5).map(t => h("div", { alignItems: "flex-start", marginTop: 12, fontSize: story ? 32 : 28, fontWeight: 600, lineHeight: 1.25 },
+        h("div", { width: 40, flexShrink: 0, paddingTop: 2, opacity: good ? 1 : 0.6 }, img((good ? ICON.check : ICON.cross)(cssColor(good ? L.markFg : L.cardFg)), { width: 28, height: 28 })), h("div", { width: (W2 - 24) / 2 - 94 }, plain(t)))));
+    body = h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick, h("div", TX, rich(s.headline, fit(plain(s.headline), W2, 3, story ? 88 : 74, 42, bigK), L.fg, L)),
+      h("div", { justifyContent: "space-between", marginTop: story ? 50 : 38 }, col(s.leftTitle || "Bisher", s.leftItems, false), col(s.rightTitle || brand.name, s.rightItems, true)));
+  } else if (tpl === "cta") {
+    body = h("div", { flexDirection: "column", alignItems: "center", width: W2, marginTop: "auto", marginBottom: "auto" },
+      h("div", Object.assign({ marginBottom: 40 }, DE), logoPill(brand, T, story ? 96 : 80)),
+      kick, h("div", Object.assign({ justifyContent: "center", width: W2 }, TX), rich(s.headline, fit(plain(s.headline), W2, 3, story ? 96 : 84, 44, bigK), L.fg, L, { center: true })),
+      subEl(s.sub, story ? 38 : 34, true), h("div", { height: 44 }), ctaEl(s.cta, true),
+      o.url && plain(s.cta).toLowerCase().indexOf(o.url.toLowerCase()) < 0 ? h("div", Object.assign({ fontSize: story ? 32 : 28, fontWeight: 600, color: L.sub, marginTop: 26 }, TX), o.url) : null);
+  } else {   // hook / photo
+    const hs = fit(plain(s.headline), W2, maxH, story ? 124 : 112, 52, bigK);
+    body = h("div", { flexDirection: "column", width: W2, marginTop: tpl === "photo" ? "auto" : "auto", marginBottom: tpl === "photo" ? 40 : "auto" }, kick,
+      h("div", TX, rich(s.headline, hs, tpl === "photo" ? "#ffffff" : L.fg, L)), subEl(s.sub, story ? 42 : 38));
+  }
+  return h("div", root, deco, head, body, tpl === "cta" ? null : foot);
+}
+async function slidePng(slide, brand, o) { const F = FMT[o && o.format === "story" ? "story" : "feed"]; return png(postEl(slide, brand, o), F.w, F.h); }
+async function toJpeg(pngFile, jpgFile) { if (!videoReady()) return pngFile; await ffmpeg(["-i", pngFile, "-q:v", "2", "-pix_fmt", "yuvj420p", jpgFile]); return jpgFile; }
+// Bilder eines Posts (Einzelbild oder Karussell) → JPEG-Dateien (Instagram verlangt JPEG)
+async function postImages(slides, brand, o) {
+  o = o || {}; const out = [], n = slides.length; fs.mkdirSync(o.dir, { recursive: true });
+  for (let i = 0; i < n; i++) {
+    const variant = o.variants ? o.variants[i % o.variants.length] : (slides[i].template === "cta" ? "brand" : i === 0 ? "brand" : "light");
+    const pf = path.join(o.dir, (o.prefix || "s") + i + ".png");
+    fs.writeFileSync(pf, await slidePng(slides[i], brand, { format: "feed", variant, counter: n > 1 ? (i + 1) + "/" + n : "", swipe: n > 1 && i === 0, url: o.url || "" }));
+    out.push(await toJpeg(pf, pf.replace(/\.png$/, ".jpg")));
+  }
+  return out;
+}
+// Reel 1080×1920: je Szene Hintergrund (ruhig zoomend oder Stock-Video) + Text (blendet ein und gleitet hoch), harte Schnitte; Musik aus der Bibliothek oder still
+function sceneDur(s) { const words = plain([s.kicker, s.headline, s.sub, (s.items || []).join(" "), s.number, s.label, (s.leftItems || []).join(" "), (s.rightItems || []).join(" ")].join(" ")).split(/\s+/).filter(Boolean).length; return Math.max(2.4, Math.min(5.5, 1.3 + words * 0.24)); }
+async function reelVideo(scenes, brand, o) {
+  if (!videoReady()) throw new Error("Video-Erzeugung nicht verfügbar (ffmpeg fehlt)");
+  o = o || {}; const dir = o.dir; fs.mkdirSync(dir, { recursive: true }); const P = f => path.join(dir, f); const segs = []; let total = 0;
+  for (let i = 0; i < scenes.length; i++) {
+    const s = scenes[i], variant = s.template === "cta" ? "brand" : (o.variants ? o.variants[i % o.variants.length] : (i % 2 ? "dark" : "brand")), d = +(o.durations && o.durations[i]) || sceneDur(s);
+    const bgVid = o.bgVideos && o.bgVideos[i];
+    const base = { format: "story", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid };
+    fs.writeFileSync(P("bg" + i + ".png"), await slidePng(s, brand, Object.assign({}, base, { layer: "bg" })));
+    fs.writeFileSync(P("fg" + i + ".png"), await slidePng(s, brand, Object.assign({}, base, { layer: "fg" })));
+    const inBg = bgVid ? ["-stream_loop", "-1", "-t", d.toFixed(2), "-i", bgVid] : ["-loop", "1", "-framerate", "30", "-t", d.toFixed(2), "-i", P("bg" + i + ".png")];
+    const bgF = bgVid ? "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,eq=brightness=-0.08:saturation=1.05[b0];[b0][2:v]overlay=0:0[b]"
+      : "[0:v]scale=2160:3840,zoompan=z='min(1+0.0009*on,1.12)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[b]";
+    const args = inBg.concat(["-loop", "1", "-framerate", "30", "-t", d.toFixed(2), "-i", P("fg" + i + ".png")]);
+    if (bgVid) args.push("-loop", "1", "-framerate", "30", "-t", d.toFixed(2), "-i", P("bg" + i + ".png"));
+    const seg = "seg" + i + ".mp4";
+    await ffmpeg(args.concat(["-filter_complex", bgF + ";[1:v]format=rgba,fade=t=in:st=0.12:d=0.4:alpha=1[t];[b][t]overlay=x=0:y='60*pow(1-min(max(t-0.12,0)/0.5,1),3)':eval=frame,format=yuv420p[v]",
+      "-map", "[v]", "-t", d.toFixed(2)]).concat(VENC).concat([P(seg)]));
+    segs.push(seg); total += d;
+  }
+  fs.writeFileSync(P("list.txt"), segs.map(s => "file '" + s + "'").join("\n"));
+  const out = o.outFile || P("reel.mp4"), music = o.music && fs.existsSync(o.music) ? o.music : "";
+  const args = ["-f", "concat", "-safe", "0", "-i", P("list.txt")];
+  if (music) args.push("-stream_loop", "-1", "-i", music, "-filter_complex", "[1:a]atrim=0:" + total.toFixed(2) + ",afade=t=in:st=0:d=0.4,afade=t=out:st=" + Math.max(0, total - 1.2).toFixed(2) + ":d=1.2,volume=0.9[a]", "-map", "0:v", "-map", "[a]");
+  else args.push("-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v", "-map", "1:a");
+  await ffmpeg(args.concat(["-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-t", total.toFixed(2), "-movflags", "+faststart", out]));
+  // Titelbild = Bild aus dem fertigen Reel (erste Szene, Text schon eingeblendet)
+  const cover = o.coverFile || P("cover.jpg"), d0 = +(o.durations && o.durations[0]) || sceneDur(scenes[0]);
+  await ffmpeg(["-ss", Math.min(1.3, d0 - 0.2).toFixed(2), "-i", out, "-frames:v", "1", "-q:v", "2", cover]);
+  return { file: out, cover, duration: Math.round(total * 10) / 10 };
+}
+
+module.exports = { ready, videoReady, h, img, png, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, _test: { backC1, ease, lines } };

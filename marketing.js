@@ -106,7 +106,7 @@ module.exports = function (D) {
   function drawPublic(d) {
     const v = d.video || {};
     return { id: d.id, at: d.at, brand: d.brand, brandName: d.brandName, title: d.title, prize: d.prize, claim: d.claim, count: d.count, lines: d.lines, dupes: d.dupes, excluded: d.excluded, hash: d.hash,
-      winners: d.winners, backups: d.backups, video: { status: v.status || "", error: v.error || "", duration: v.duration || 0, at: v.at || "", ms: v.ms || 0, file: v.file ? true : false, cover: v.cover ? true : false } };
+      winners: d.winners, backups: d.backups, postId: d.postId || "", source: d.source ? { type: d.source.type, permalink: d.source.permalink } : null, video: { status: v.status || "", error: v.error || "", duration: v.duration || 0, at: v.at || "", ms: v.ms || 0, file: v.file ? true : false, cover: v.cover ? true : false } };
   }
   async function draw(pl) {
     const b = brand(pl.brand);
@@ -119,14 +119,30 @@ module.exports = function (D) {
       count: p.participants.length, lines: p.lines, dupes: p.dupes, excluded: p.excluded, exclude: clip(pl.exclude, 2000),
       hash: crypto.createHash("sha256").update(p.participants.join("\n"), "utf8").digest("hex"),
       winners: idx.slice(0, nW).map(i => p.participants[i]), backups: idx.slice(nW).map(i => p.participants[i]),
-      participants: p.participants, method: "crypto.randomInt (Node.js, kryptografischer Zufall) am Server", video: { status: "wartet" } };
+      participants: p.participants, method: "crypto.randomInt (Node.js, kryptografischer Zufall) am Server", video: { status: "wartet" }, source: sourceOf(pl.source) };
     const s = state(); s.draws.unshift(d); if (s.draws.length > 100) s.draws.length = 100; save(true);
     queueVideo(d.id);
     return d;
   }
+  // Herkunft der Teilnehmer (Instagram-Beitrag und angekreuzte Bedingungen) – nur zur Dokumentation im Protokoll
+  function sourceOf(x) {
+    if (!x || typeof x !== "object" || x.type !== "instagram") return null;
+    const r = x.rules || {}, st = x.stats || {}, n = v => Math.max(0, parseInt(v, 10) || 0);
+    return { type: "instagram", permalink: clip(x.permalink, 300), caption: clip(x.caption, 160), loadedAt: clip(x.loadedAt, 40), edited: !!x.edited,
+      rules: { minTags: n(r.minTags), keyword: clip(r.keyword, 120), until: clip(r.until, 40), replies: !!r.replies, perComment: !!r.perComment, excludeOwn: r.excludeOwn !== false },
+      stats: { total: n(st.total), topLevel: n(st.topLevel), replies: n(st.replies), late: n(st.late), tags: n(st.tags), keyword: n(st.keyword), excluded: n(st.excluded), dupes: n(st.dupes) } };
+  }
   function protocol(d) {
     const L = [];
     L.push("GEWINNSPIEL-PROTOKOLL", "", "Marke: " + d.brandName, "Gewinnspiel: " + d.title + (d.prize ? " – " + d.prize : ""), "Ziehung: " + viennaStamp(d.at) + " (Europe/Vienna)", "Ziehungs-ID: " + d.id, "");
+    if (d.source && d.source.type === "instagram") {
+      const so = d.source, r = so.rules, st = so.stats;
+      L.push("Teilnehmer aus Instagram-Kommentaren: " + (so.permalink || "") + (so.caption ? " („" + so.caption + "“)" : ""), "Kommentare geladen: " + (so.loadedAt ? viennaStamp(so.loadedAt) : "") + " – " + st.total + " Kommentare (" + st.topLevel + " direkt, " + (st.total - st.topLevel) + " Antworten)");
+      L.push("Bedingungen: " + [r.minTags ? "mindestens " + r.minTags + " markierte Person(en)" : "", r.keyword ? "Kommentar enthält: " + r.keyword : "", r.until ? "Teilnahmeschluss " + viennaStamp(r.until) : "", r.replies ? "Antworten zählen mit" : "nur direkte Kommentare", r.perComment ? "jeder Kommentar = ein Los" : "jede Person nur einmal", r.excludeOwn ? "eigenes Konto ausgeschlossen" : ""].filter(Boolean).join(" · "));
+      L.push("Nicht prüfbar über die Instagram-Schnittstelle: „Beitrag gefällt mir“, „folgt dem Konto“, „in der Story geteilt“.");
+      if (so.edited) L.push("Hinweis: Die importierte Liste wurde vor der Ziehung von Hand bearbeitet.");
+      L.push("Herausgefallen: " + [st.late ? st.late + " nach Teilnahmeschluss" : "", st.tags ? st.tags + " zu wenige Markierungen" : "", st.keyword ? st.keyword + " ohne Stichwort" : "", st.dupes ? st.dupes + " weitere Kommentare derselben Person" : "", st.excluded ? st.excluded + (st.excluded === 1 ? " eigenes/ausgeschlossenes Konto" : " eigene/ausgeschlossene Konten") : "", !r.replies && st.replies ? st.replies + " Antworten" : ""].filter(Boolean).join(" · ") || "keine", "");
+    }
     L.push("Eingefügte Zeilen: " + d.lines, "Doppelte Teilnahmen entfernt: " + d.dupes, "Ausgeschlossen (eigene Konten u. a.): " + d.excluded + (d.exclude ? " – " + d.exclude.replace(/\s+/g, " ") : ""), "Gültige Teilnahmen: " + d.count, "");
     L.push("Prüfsumme der Teilnehmerliste (SHA-256, eine Zeile je Teilnahme): " + d.hash, "Zufallsverfahren: " + d.method, "");
     L.push(d.winners.length > 1 ? "GEWINNER" : "GEWINNER/IN"); d.winners.forEach((w, i) => L.push("  " + (i + 1) + ". " + w));
@@ -135,35 +151,40 @@ module.exports = function (D) {
     return L.join("\n") + "\n";
   }
 
-  // ───────────── Video-Aufträge (nacheinander, damit der Server nicht ausgelastet wird) ─────────────
-  const Q = []; let BUSY = false, CUR = "";
-  function queueVideo(id) { if (CUR === id) return; if (Q.indexOf(id) < 0) Q.push(id); const d = state().draws.find(x => x.id === id); if (d) { d.video = Object.assign({}, d.video, { status: "wartet", error: "" }); save(); } setImmediate(runQueue); }
+  // ───────────── Aufträge für Bilder/Videos (nacheinander, damit der Server nicht ausgelastet wird) ─────────────
+  // Einträge „draw:ID“ (Gewinnspiel-Video) und „post:ID“ (Post-Medien, mkt-posts.js)
+  const Q = []; let BUSY = false, CUR = ""; const JOBS = {};
+  function enqueue(job) { if (CUR === job) return; if (Q.indexOf(job) < 0) Q.push(job); setImmediate(runQueue); }
+  function queueVideo(id) { if (CUR === "draw:" + id) return; const d = state().draws.find(x => x.id === id); if (d) { d.video = Object.assign({}, d.video, { status: "wartet", error: "" }); save(); } enqueue("draw:" + id); }
+  JOBS.draw = async function (id) {
+    const s = state(), d = s.draws.find(x => x.id === id); if (!d) return;
+    const t = Date.now(), work = path.join(WORK, d.id);
+    d.video = { status: "läuft", at: nowIso() }; save();
+    try {
+      if (!R.videoReady()) throw new Error("Video-Erzeugung ist am Server nicht verfügbar (ffmpeg fehlt).");
+      const others = shuffled(d.participants.filter(n => d.winners.indexOf(n) < 0)).slice(0, 80);
+      const r = await R.giveawayVideo({ brand: await renderBrand(brand(d.brand)), title: d.title, prize: d.prize, claim: d.claim, total: d.count, date: viennaDate(d.at),
+        names: others.length ? others : d.winners, winners: d.winners, dir: work, outFile: path.join(MEDIA, d.id + ".mp4"), coverFile: path.join(MEDIA, d.id + "-cover.png"), posterFile: path.join(MEDIA, d.id + "-poster.jpg") });
+      d.video = { status: "fertig", file: d.id + ".mp4", cover: d.id + "-cover.png", poster: r.poster ? d.id + "-poster.jpg" : "", duration: r.duration, at: nowIso(), ms: Date.now() - t };
+    } catch (e) { console.error("marketing: Video", e.message); d.video = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; }
+    try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
+    save(true);
+  };
   async function runQueue() {
-    if (BUSY) return; const id = Q.shift(); if (!id) return; BUSY = true; CUR = id;
-    const s = state(), d = s.draws.find(x => x.id === id);
-    if (d) {
-      const t = Date.now(), work = path.join(WORK, d.id);
-      d.video = { status: "läuft", at: nowIso() }; save();
-      try {
-        if (!R.videoReady()) throw new Error("Video-Erzeugung ist am Server nicht verfügbar (ffmpeg fehlt).");
-        const others = shuffled(d.participants.filter(n => d.winners.indexOf(n) < 0)).slice(0, 80);
-        const r = await R.giveawayVideo({ brand: await renderBrand(brand(d.brand)), title: d.title, prize: d.prize, claim: d.claim, total: d.count, date: viennaDate(d.at),
-          names: others.length ? others : d.winners, winners: d.winners, dir: work, outFile: path.join(MEDIA, d.id + ".mp4"), coverFile: path.join(MEDIA, d.id + "-cover.png"), posterFile: path.join(MEDIA, d.id + "-poster.jpg") });
-        d.video = { status: "fertig", file: d.id + ".mp4", cover: d.id + "-cover.png", poster: r.poster ? d.id + "-poster.jpg" : "", duration: r.duration, at: nowIso(), ms: Date.now() - t };
-      } catch (e) { console.error("marketing: Video", e.message); d.video = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; }
-      try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
-      save(true);
-    }
+    if (BUSY) return; const job = Q.shift(); if (!job) return; BUSY = true; CUR = job;
+    const i = job.indexOf(":"), kind = job.slice(0, i), id = job.slice(i + 1);
+    try { if (JOBS[kind]) await JOBS[kind](id); } catch (e) { console.error("marketing: Auftrag", job, e.message); }
     BUSY = false; CUR = ""; if (Q.length) setImmediate(runQueue);
   }
   // nach einem Neustart: Videos, die beim Beenden noch offen waren, neu erzeugen (nur die aus der gespeicherten Datei – nicht laufende neue)
   const RECOVER = (() => { try { return state().draws.filter(d => d.video && (d.video.status === "läuft" || d.video.status === "wartet")).map(d => d.id); } catch (e) { return []; } })();
-  if (RECOVER.length) setTimeout(() => RECOVER.forEach(id => { if (Q.indexOf(id) < 0 && CUR !== id) queueVideo(id); }), 5000).unref();
+  if (RECOVER.length) setTimeout(() => RECOVER.forEach(id => { if (Q.indexOf("draw:" + id) < 0 && CUR !== "draw:" + id) queueVideo(id); }), 5000).unref();
 
   // ───────────── Dateien ─────────────
-  function sendFile(req, res, file, type, dlName) {
+  function sendFile(req, res, file, type, dlName, opt) {
     let st; try { st = fs.statSync(file); } catch (e) { return J(res, 404, { ok: false, error: "Datei nicht gefunden" }); }
-    const head = { "Content-Type": type, "Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes", "X-Content-Type-Options": "nosniff" };
+    const head = { "Content-Type": type, "Cache-Control": opt && opt.public ? "public, max-age=86400" : "private, max-age=3600", "Accept-Ranges": "bytes", "X-Content-Type-Options": "nosniff" };
+    if (req.method === "HEAD") { res.writeHead(200, Object.assign(head, { "Content-Length": st.size })); return res.end(); }
     if (dlName) head["Content-Disposition"] = "attachment; filename=\"" + dlName.replace(/[^\w.\-]/g, "_") + "\"";
     const range = String(req.headers.range || "").match(/^bytes=(\d*)-(\d*)$/);
     if (range && (range[1] || range[2])) {   // Video-Vorschau im Browser (Safari verlangt Teil-Anfragen)
@@ -178,6 +199,11 @@ module.exports = function (D) {
     return new Promise((resolve, reject) => { const ch = []; let n = 0; req.on("data", c => { n += c.length; if (n > max) { req.destroy(); reject(fail(413, "Anfrage zu groß")); } else ch.push(c); }); req.on("end", () => { try { resolve(JSON.parse(Buffer.concat(ch).toString("utf8") || "{}")); } catch (e) { reject(fail(400, "Ungültige Anfrage")); } }); req.on("error", reject); });
   }
   function brandPublic(b) { const up = ["png", "jpg", "svg"].some(x => fs.existsSync(path.join(DIR, "logo-" + b.key + "." + x))); return Object.assign({}, b, { logoUploaded: up }); }
+
+  // ───────────── Post-Planer (mkt-posts.js) und Veröffentlichen (mkt-publish.js) ─────────────
+  const PUB = require("./mkt-publish.js")(D.publish || {});
+  const POSTS = require("./mkt-posts.js")({ state, save, brand, brandList, renderBrand, MEDIA, WORK, DIR, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R, publisher: PUB,
+    get KI() { return typeof D.KI === "function" ? D.KI() : D.KI; }, push: D.push, secret: D.secret, publicBase: D.publicBase, background: D.background });
 
   // ───────────── Routen ─────────────
   async function handleAdmin(req, res, u, p) {
@@ -235,8 +261,14 @@ module.exports = function (D) {
         const m = l.uri.match(/^data:([^;]+);base64,(.*)$/); const buf = Buffer.from(m[2], "base64");
         res.writeHead(200, { "Content-Type": m[1], "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" }); return res.end(buf);
       }
+      if (p === "/admin/api/mkt/giveaway/post" && req.method === "POST") {   // Gewinnspiel-Video als Reel in den Planer
+        const pl = await body(req, 10000), d = state().draws.find(x => x.id === String(pl.id || "")); if (!d) throw fail(404, "Ziehung nicht gefunden");
+        const post = POSTS.giveawayPost(d); d.postId = post.id; save(true); return J(res, 200, { ok: true, postId: post.id });
+      }
+      if (await POSTS.handleAdmin(req, res, u, p)) return;
       return J(res, 404, { ok: false, error: "Nicht gefunden" });
-    } catch (e) { return J(res, e.status || 500, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+    } catch (e) { if (!res.headersSent) return J(res, e.status || 500, { ok: false, error: String(e.message || e).slice(0, 300) }); try { res.end(); } catch (e2) {} }
   }
-  return { handleAdmin, _test: { parseParticipants, drawIndices, protocol, state, draw, runQueue: () => runQueue(), queue: Q } };
+  function handlePublic(req, res, p) { try { return POSTS.handlePublic(req, res, p); } catch (e) { return J(res, 404, { ok: false }); } }
+  return { handleAdmin, handlePublic, tick: () => POSTS.tick(), _test: { parseParticipants, drawIndices, protocol, state, draw, runQueue: () => runQueue(), queue: Q, posts: POSTS, publisher: PUB } };
 };

@@ -2735,7 +2735,7 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (!process.env.DATABASE_URL) return J(200, { ok: false, error: "Datenbank fehlt" });
       if (req.method === "GET") return J(200, Object.assign({ ok: true, publicKey: await PUSH.publicKey() }, await PUSH.status(u.searchParams.get("endpoint") || "")));
-      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin", "chat"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
+      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin", "chat", "mkt"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
       if (pl.op === "subscribe") return J(200, await PUSH.subscribe(pl.subscription, pl.device, topics));
       if (pl.op === "unsubscribe") return J(200, await PUSH.unsubscribe(String(pl.endpoint || "")));
       if (pl.op === "topics") return J(200, await PUSH.setTopics(String(pl.endpoint || ""), topics || []));
@@ -3781,6 +3781,8 @@ const server = http.createServer((req, res) => {
         const t = on && PRINT.llmsTxt ? await PRINT.llmsTxt().catch(() => "") : "";
         send(res, t ? 200 : 404, t || "Not found", "text/plain; charset=utf-8", { "Cache-Control": "public, max-age=3600" }); });
     }
+    // Marketing: Bilder/Videos freigegebener Posts für Instagram, Facebook, Threads, Pinterest (die holen die Datei selbst ab) – marketing.js
+    if ((req.method === "GET" || req.method === "HEAD") && p.indexOf("/m/") === 0) return void MKT.handlePublic(req, res, p);
     // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
     if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void guard(res, CHAT.handlePublic(req, res, u, p));
     if (p === "/api/anfrage") {
@@ -3938,7 +3940,8 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
 setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
 const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment, DATA_DIR, secret: ADMIN_SECRET });
-const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET });
+const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET, KI: () => KI, publicBase: ORIGIN,
+  push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });

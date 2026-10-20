@@ -1,4 +1,5 @@
 /* Marketing: Gewinnspiel-Auslosung mit Video und Marken (Apps) – Server: marketing.js, Bilder/Videos: mkt-render.js.
+   Reiter „Planer“ und „Kanäle“ liegen in zmkplan.js (meldet sich über F.mktTab an).
    Gewinnspiel: Teilnehmer einfügen (eine Zeile je Teilnahme) → Zähler (doppelte/ausgeschlossene) → „Jetzt fair auslosen“ (Server, kryptografischer Zufall,
    Protokoll) → Video 1080×1920 wird am Server erzeugt (Namen laufen durch und bleiben beim Gewinner stehen) → Vorschau, Download, Titelbild, Protokoll.
    Marken: Profil je App (Beschreibung, Zielgruppe, Ton, Farben, Logo, Hashtags) – Grundlage für Gewinnspiel-Videos und später die Post-Erstellung. */
@@ -7,10 +8,11 @@
 var F=window.FSC, esc=F.esc, UI=F.UI;
 F.icons.mkt='<path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>';
 F.icons.mgift='<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M12 8S10.5 3.5 8 4.2C5.8 4.8 7 8 12 8zM12 8s1.5-4.5 4-3.8C18.2 4.8 17 8 12 8z"/>';
+F.icons.mig='<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1"/>';
 F.icons.mdl='<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>';
 
 var ST=null, LOADING=false, POLL=null, PARSE=null, PARSE_T=null, BUSY=false;
-UI.mktTab=UI.mktTab||F.ls("fsc_mkt_tab")||"gewinnspiel";
+UI.mktTab=UI.mktTab||F.ls("fsc_mkt_tab")||"planer";
 var GW=UI.mktGw=UI.mktGw||Object.assign({brand:"kochdu",title:"Wer gewinnt?",prize:"",winners:1,backups:2,claim:"",dedupe:true,exclude:"",text:""},F.ls("fsc_mkt_gw")||{});
 GW.text=GW.text||"";   /* Teilnehmerliste nur im Speicher, nicht im Browser abgelegt */
 UI.mktSel=UI.mktSel||"";
@@ -56,6 +58,16 @@ F.css(
 '.mk-b p{margin:0;font-size:13px;color:var(--ink-2)}'+
 '.mk-bf{display:grid;gap:10px}'+
 '.mk-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}'+
+'.mk-imp{display:flex;gap:10px;align-items:center;flex-wrap:wrap}'+
+'.mk-igg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:60vh;overflow:auto}'+
+'.mk-igm{display:grid;gap:4px;text-align:left;border:1px solid var(--line);border-radius:12px;padding:6px;background:var(--panel);font:inherit;color:inherit;cursor:pointer}'+
+'.mk-igm:hover{border-color:var(--ink-3)} .mk-igm img,.mk-igph{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:var(--sunk);display:block}'+
+'.mk-igm .c{font-size:12.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden} .mk-igm .s{font-size:11.5px;color:var(--ink-2)}'+
+'.mk-rules{display:grid;gap:9px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}'+
+'.mk-rules label{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}'+
+'.mk-rules label.dis{color:var(--ink-3)} .mk-rules label.dis span{font-size:12.5px}'+
+'.mk-rules .f.mk-n{width:64px;padding:4px 8px} .mk-rules .f.mk-w{width:220px;padding:4px 8px}'+
+'.mk-igres{padding:12px 2px;min-height:44px}'+
 '.mk-cols input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}'
 );
 
@@ -94,6 +106,7 @@ function formHtml(){
     '<div class="mk-row"><label class="fl">Gewinner<input class="f" type="number" min="1" max="10" data-mkgw="winners" value="'+(+GW.winners||1)+'"></label>'+
     '<label class="fl">Ersatzgewinner<input class="f" type="number" min="0" max="10" data-mkgw="backups" value="'+(+GW.backups||0)+'"></label>'+
     '<label class="fl" style="align-content:end"><span style="display:flex;gap:8px;align-items:center;padding:9px 0"><input type="checkbox" data-mkgw="dedupe"'+(GW.dedupe!==false?' checked':'')+'> Doppelte nur einmal</span></label></div>'+
+    '<div class="mk-imp"><button type="button" class="btn" data-act="mkigimp">'+F.svg("mig")+' Aus Instagram-Beitrag laden</button>'+(GW.source?'<span class="muted small">Geladen: <a href="'+esc(GW.source.permalink||"#")+'" target="_blank" rel="noopener">Instagram-Beitrag</a> · '+esc(rulesTxt(GW.source.rules))+(GW.text!==GW.importedText?' · <b>von Hand geändert</b>':'')+' <button type="button" class="link" data-act="mkigclear">entfernen</button></span>':'<span class="muted small">oder Namen unten einfügen</span>')+'</div>'+
     '<label class="fl">Teilnehmer<textarea class="f mk-ta" data-mkgw="text" spellcheck="false" placeholder="@lisa.montafon\n@markus_bludenz\nAnna Huber\n…">'+esc(GW.text)+'</textarea></label>'+
     '<div class="mk-count" id="mkCount">'+countHtml()+'</div>'+
     '<div class="mk-row2"><label class="fl">Nicht teilnehmen (eigene Konten)<textarea class="f" rows="2" data-mkgw="exclude" placeholder="@kochdu.at">'+esc(GW.exclude)+'</textarea></label>'+
@@ -109,6 +122,7 @@ function vidHtml(d){
     '<a class="btn" href="'+base+'&kind=cover&dl=1" download>'+F.svg("mdl")+' Titelbild (4:5)</a>'+
     '<a class="btn" href="/admin/api/mkt/giveaway/protocol?id='+encodeURIComponent(d.id)+'" download>'+F.svg("mdl")+' Protokoll</a>'+
     '<span class="muted small">'+(v.duration?String(v.duration).replace(".",",")+' s · ':'')+'1080×1920 · für Reel, Story, TikTok, Shorts</span>'+
+    (d.postId?'<button type="button" class="btn" data-act="mktab:planer">Im Planer ansehen</button>':'<button type="button" class="btn" data-act="mkgwpost:'+esc(d.id)+'">'+F.svg("mkt")+' Als Reel einplanen</button>')+
     '<button type="button" class="btn sm" data-act="mkrevideo:'+esc(d.id)+'">Video neu erzeugen</button></div></div>';
   if(v.status==="fehler") return '<div class="notice"><span><b>Video fehlgeschlagen:</b> '+esc(v.error||"unbekannt")+'</span><button type="button" class="btn sm" data-act="mkrevideo:'+esc(d.id)+'">Nochmal versuchen</button></div>'+
     '<a class="btn" href="/admin/api/mkt/giveaway/protocol?id='+encodeURIComponent(d.id)+'" download>'+F.svg("mdl")+' Protokoll</a>';
@@ -133,7 +147,8 @@ function gwHtml(){ return '<div class="mk-grid">'+formHtml()+'<div id="mkRes">'+
 
 F.listen("input","[data-mkgw]",function(el){ var k=el.getAttribute("data-mkgw"); if(k==="brand"||k==="dedupe") return;
   if(k==="dedupe") GW.dedupe=el.checked; else if(k==="winners"||k==="backups") GW[k]=Math.max(k==="winners"?1:0,Math.min(10,parseInt(el.value,10)||0)); else GW[k]=el.value;
-  saveGw(); if(k==="text"||k==="exclude"||k==="dedupe") reparse(); else paintCount(); });
+  saveGw(); if(k==="text"||k==="exclude"||k==="dedupe") reparse(); else paintCount();
+  if(k==="text"&&GW.source){ var imp=document.querySelector(".mk-imp b"); if(!imp&&GW.text!==GW.importedText){ var sp=document.querySelector(".mk-imp .muted"); if(sp) sp.insertAdjacentHTML("beforeend"," · <b>von Hand geändert</b>"); } } });
 F.listen("change","[data-mkgw]",function(el){ var k=el.getAttribute("data-mkgw");
   if(k==="brand"){ var old=brandOf(GW.brand), nb=brandOf(el.value); if(!GW.exclude.trim()||GW.exclude===defaultExclude(old)) GW.exclude=defaultExclude(nb); GW.brand=el.value; saveGw(); F.render(); reparse(); }
   if(k==="dedupe"){ GW.dedupe=el.checked; saveGw(); reparse(); } });
@@ -142,7 +157,8 @@ F.action("mkdraw",function(){
   var n=PARSE.count, b=brandOf(GW.brand);
   F.confirm("Jetzt "+(GW.winners>1?GW.winners+" Gewinner":"den Gewinner")+" aus "+n.toLocaleString("de-AT")+" Teilnahmen für "+(b?b.name:"")+" auslosen? Das Ergebnis wird protokolliert.","Auslosen",function(){
     BUSY=true; paintCount();
-    api("/admin/api/mkt/giveaway/draw",{confirm:true,brand:GW.brand,title:GW.title,prize:GW.prize,claim:GW.claim,winners:GW.winners,backups:GW.backups,dedupe:GW.dedupe,exclude:GW.exclude,text:GW.text}).then(function(j){
+    var src=GW.source?Object.assign({},GW.source,{edited:GW.text!==GW.importedText}):null;
+    api("/admin/api/mkt/giveaway/draw",{confirm:true,brand:GW.brand,title:GW.title,prize:GW.prize,claim:GW.claim,winners:GW.winners,backups:GW.backups,dedupe:GW.dedupe,exclude:GW.exclude,text:GW.text,source:src}).then(function(j){
       BUSY=false; if(!j||!j.ok){ F.toast((j&&j.error)||"Auslosung fehlgeschlagen",true); paintCount(); return; }
       ST.draws=[j.draw].concat(ST.draws||[]); UI.mktSel=j.draw.id; F.toast("Ausgelost: "+j.draw.winners.join(", ")); paintRes(); paintCount(); pollIfBusy();
     }).catch(function(){ BUSY=false; paintCount(); F.toast("Keine Verbindung zum Server",true); });
@@ -151,6 +167,70 @@ F.action("mkdraw",function(){
 F.action("mksel",function(id){ UI.mktSel=id; paintRes(); });
 F.action("mkrevideo",function(id){ api("/admin/api/mkt/giveaway/video",{id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); ST.draws=ST.draws.map(function(d){ return d.id===id?j.draw:d; }); paintRes(); pollIfBusy(); }); });
 F.action("mkdel",function(id){ F.confirm("Diese Auslosung samt Video und Protokoll löschen?","Löschen",function(){ api("/admin/api/mkt/giveaway/delete",{id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); ST.draws=ST.draws.filter(function(d){ return d.id!==id; }); if(UI.mktSel===id) UI.mktSel=""; paintRes(); F.toast("Gelöscht"); }); },true); });
+
+F.action("mkgwpost",function(id){ api("/admin/api/mkt/giveaway/post",{id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true);
+  ST.draws=ST.draws.map(function(d){ return d.id===id?Object.assign({},d,{postId:j.postId}):d; }); F.toast("Als Reel im Planer – dort Plattformen wählen und Go geben"); if(F.mktPlanReload) F.mktPlanReload(); UI.mktTab="planer"; F.ls("fsc_mkt_tab","planer"); F.render(); }); });
+
+/* ---------- Teilnehmer aus einem Instagram-Beitrag ---------- */
+var IGI=null;   /* {brand, media:[], sel, rules, res, loading} */
+function rulesTxt(r){ r=r||{}; return [r.minTags?"mind. "+r.minTags+" markiert":"", r.keyword?"Stichwort „"+r.keyword+"“":"", r.until?"bis "+new Date(r.until).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"", r.replies?"mit Antworten":"", r.perComment?"jeder Kommentar = 1 Los":"1 Los je Person"].filter(Boolean).join(" · "); }
+function igHasChannel(){ var P=F.mktPlan&&F.mktPlan(); return !!(P&&P.channels&&P.channels.some(function(c){ return c.brand===GW.brand&&c.platform==="instagram"&&c.status==="ok"; })); }
+F.action("mkigimp",function(){
+  if(!igHasChannel()){ F.modal('<div class="row-between"><h2 style="font-size:19px">Instagram verbinden</h2>'+F.btnClose()+'</div><p>Für den Import muss das Instagram-Konto von '+esc((brandOf(GW.brand)||{}).name||GW.brand)+' mit dem Cockpit verbunden sein (Business- oder Creator-Konto).</p><div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Später</button><button type="button" class="btn primary" data-act="mkgokan">Zu den Kanälen</button></span></div>',"narrow"); return; }
+  IGI={brand:GW.brand,media:null,sel:null,rules:Object.assign({minTags:1,keyword:"",until:"",replies:false,perComment:false,excludeOwn:true},(GW.source&&GW.source.rules)||{}),res:null,loading:true};
+  igPaint(); api("/admin/api/mkt/ig-media?brand="+encodeURIComponent(GW.brand)).then(function(j){ if(!IGI) return; IGI.loading=false; if(!j||!j.ok){ IGI.err=(j&&j.error)||"Fehler"; } else IGI.media=j.media; igPaint(); });
+});
+F.action("mkgokan",function(){ F.closeModal(); UI.mktTab="kanaele"; F.ls("fsc_mkt_tab","kanaele"); F.render(); });
+function igPaint(){
+  if(!IGI) return; var h='<div class="row-between"><h2 style="font-size:19px">Teilnehmer aus Instagram</h2>'+F.btnClose()+'</div>';
+  if(IGI.err) h+='<div class="notice"><span>'+esc(IGI.err)+'</span></div>';
+  else if(!IGI.sel){
+    h+=IGI.loading||!IGI.media?'<p class="muted">Lade deine letzten Beiträge …</p>':!IGI.media.length?'<p class="muted">Keine Beiträge gefunden.</p>':
+      '<p class="muted small" style="margin:4px 0 10px">Welcher Beitrag war das Gewinnspiel?</p><div class="mk-igg">'+IGI.media.map(function(m){ return '<button type="button" class="mk-igm" data-act="mkigsel:'+esc(m.id)+'">'+(m.thumb?'<img src="'+esc(m.thumb)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span class="mk-igph"></span>')+'<span class="c">'+esc(m.caption||"(ohne Text)")+'</span><span class="s">'+new Date(m.at).toLocaleDateString("de-AT")+' · '+m.comments+' Kommentare</span></button>'; }).join("")+'</div>';
+  } else {
+    var r=IGI.rules, st=IGI.res&&IGI.res.stats, m=IGI.media.find(function(x){ return x.id===IGI.sel; })||{};
+    h+='<p class="small" style="margin:4px 0 10px"><a href="'+esc(m.url||"#")+'" target="_blank" rel="noopener">Beitrag vom '+new Date(m.at).toLocaleDateString("de-AT")+'</a> · '+esc((m.caption||"").slice(0,80))+' <button type="button" class="link" data-act="mkigback">anderer Beitrag</button></p>'+
+      '<div class="mk-rules"><b>Was muss gegeben sein?</b>'+
+      '<label><input type="checkbox" checked disabled> Kommentar unter dem Beitrag</label>'+
+      '<label><input type="checkbox" data-igr="tagsOn"'+(r.minTags>0?' checked':'')+'> Mindestens <input class="f mk-n" type="number" min="1" max="10" data-igr="minTags" value="'+(r.minTags||1)+'"> Person(en) markiert (@name)</label>'+
+      '<label><input type="checkbox" data-igr="kwOn"'+(r.keyword?' checked':'')+'> Kommentar enthält <input class="f mk-w" data-igr="keyword" placeholder="z. B. #kochdu, Pizza" value="'+esc(r.keyword||"")+'"></label>'+
+      '<label><input type="checkbox" data-igr="untilOn"'+(r.until?' checked':'')+'> Teilnahmeschluss <input class="f mk-w" type="datetime-local" data-igr="until" value="'+esc(r.until?localDT(r.until):"")+'"></label>'+
+      '<label><input type="checkbox" data-igr="replies"'+(r.replies?' checked':'')+'> Antworten auf Kommentare zählen mit</label>'+
+      '<label><input type="checkbox" data-igr="perComment"'+(r.perComment?' checked':'')+'> Jeder Kommentar ist ein eigenes Los (sonst jede Person nur einmal)</label>'+
+      '<label><input type="checkbox" data-igr="excludeOwn"'+(r.excludeOwn!==false?' checked':'')+'> Eigenes Konto ausschließen</label>'+
+      '<label class="dis"><input type="checkbox" disabled> Beitrag mit „Gefällt mir“ markiert <span>– nicht prüfbar</span></label>'+
+      '<label class="dis"><input type="checkbox" disabled> Folgt dem Konto <span>– nicht prüfbar</span></label>'+
+      '<label class="dis"><input type="checkbox" disabled> In der Story geteilt <span>– nicht prüfbar</span></label>'+
+      '<p class="muted small" style="margin:2px 0 0">Instagram gibt Likes, Follower und Story-Teilungen über seine offizielle Schnittstelle nicht heraus.</p></div>'+
+      '<div class="mk-igres" id="mkIgRes">'+igResHtml()+'</div>'+
+      '<div class="foot"><button type="button" class="btn sm" data-act="mkigreload">Kommentare neu laden</button><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="button" class="btn primary" data-act="mkigok"'+(IGI.res&&IGI.res.participants.length?'':' disabled')+'>Übernehmen</button></span></div>';
+  }
+  F.modal(h,"wide");
+}
+function localDT(iso){ var d=new Date(iso); if(isNaN(d)) return ""; var z=function(n){ return String(n).padStart(2,"0"); }; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes()); }
+function igResHtml(){
+  if(!IGI||IGI.loading) return '<span class="muted">Lade Kommentare …</span>'; if(!IGI.res) return '';
+  var st=IGI.res.stats, out=[st.late?st.late+" nach Schluss":"",st.tags?st.tags+" zu wenige Markierungen":"",st.keyword?st.keyword+" ohne Stichwort":"",st.dupes?st.dupes+" weitere Kommentare derselben Person":"",st.excluded?st.excluded+(st.excluded===1?" eigenes Konto":" eigene Konten"):"",!IGI.rules.replies&&st.replies?st.replies+" Antworten":""].filter(Boolean);
+  return '<b>'+IGI.res.participants.length.toLocaleString("de-AT")+' Lose</b> von '+IGI.res.persons.toLocaleString("de-AT")+' Personen aus '+st.total.toLocaleString("de-AT")+' Kommentaren'+(out.length?'<br><span class="muted small">Raus: '+out.join(" · ")+'</span>':'');
+}
+function igRun(reload){ if(!IGI||!IGI.sel) return; IGI.loading=true; var el=document.getElementById("mkIgRes"); if(el) el.innerHTML=igResHtml(); var snap=JSON.stringify(IGI.rules);
+  api("/admin/api/mkt/ig-participants",{brand:IGI.brand,media:IGI.sel,rules:IGI.rules,reload:!!reload}).then(function(j){ if(!IGI||snap!==JSON.stringify(IGI.rules)) return; IGI.loading=false; if(!j||!j.ok){ IGI.res=null; var e=document.getElementById("mkIgRes"); if(e) e.innerHTML='<span class="bad-t">'+esc((j&&j.error)||"Fehler")+'</span>'; return; } IGI.res=j; IGI.loadedAt=new Date().toISOString(); var e2=document.getElementById("mkIgRes"); if(e2) e2.innerHTML=igResHtml(); var b=document.querySelector('[data-act="mkigok"]'); if(b) b.disabled=!j.participants.length; }); }
+F.action("mkigsel",function(id){ if(!IGI) return; IGI.sel=id; IGI.res=null; igPaint(); igRun(false); });
+F.action("mkigback",function(){ if(!IGI) return; IGI.sel=null; IGI.res=null; igPaint(); });
+F.action("mkigreload",function(){ igRun(true); });
+var IGT=null;
+F.listen("input","[data-igr]",function(el){ if(!IGI) return; var k=el.getAttribute("data-igr"), r=IGI.rules, form=el.closest(".mk-rules"), v=function(n){ return form.querySelector('[data-igr="'+n+'"]'); };
+  r.minTags=v("tagsOn").checked?Math.max(1,parseInt(v("minTags").value,10)||1):0;
+  r.keyword=v("kwOn").checked?v("keyword").value.trim():""; if(k==="keyword"&&el.value.trim()&&!v("kwOn").checked){ v("kwOn").checked=true; r.keyword=el.value.trim(); }
+  if(k==="until"&&el.value&&!v("untilOn").checked) v("untilOn").checked=true;
+  r.until=v("untilOn").checked&&v("until").value?new Date(v("until").value).toISOString():"";
+  r.replies=v("replies").checked; r.perComment=v("perComment").checked; r.excludeOwn=v("excludeOwn").checked;
+  clearTimeout(IGT); IGT=setTimeout(function(){ igRun(false); },350); });
+F.action("mkigok",function(){ if(!IGI||!IGI.res) return; var m=IGI.media.find(function(x){ return x.id===IGI.sel; })||{};
+  GW.text=IGI.res.participants.join("\n"); GW.importedText=GW.text; GW.dedupe=!IGI.rules.perComment;
+  GW.source={type:"instagram",media:IGI.sel,permalink:m.url||"",caption:(m.caption||"").slice(0,160),loadedAt:IGI.loadedAt||new Date().toISOString(),rules:Object.assign({},IGI.rules),stats:IGI.res.stats};
+  IGI=null; F.closeModal(); saveGw(); F.render(); reparse(); F.toast("Teilnehmer übernommen"); });
+F.action("mkigclear",function(){ GW.source=null; GW.importedText=""; F.render(); });
 
 /* ---------- Marken ---------- */
 function swatch(c){ return c?'<i style="background:'+esc(c)+'" title="'+esc(c)+'"></i>':''; }
@@ -192,17 +272,21 @@ F.form("mkbrand",function(form){
 });
 
 /* ---------- Seite ---------- */
-var TABS=[["gewinnspiel","Gewinnspiel"],["marken","Marken"]];
+/* Reiter: {id,label,order,sub,render,right} – Planer/Kanäle kommen aus zmkplan.js */
+var TABS=F.mktTabs=F.mktTabs||[];
+F.mktTab=function(t){ TABS.push(t); TABS.sort(function(a,b){ return a.order-b.order; }); };
+F.mktTab({id:"gewinnspiel",label:"Gewinnspiel",order:2,sub:"Fair auslosen und ein Video für Reel, Story und TikTok bekommen",render:function(){ return gwHtml(); }});
+F.mktTab({id:"marken",label:"Marken",order:4,sub:"Profile deiner Apps",render:function(){ return brandsHtml(); }});
+F.mktState=function(){ return ST; };
+F.mktReload=function(){ return load(); };
 function render(){
-  if(!ST){ load(); return F.head("Marketing","Gewinnspiele, Marken und Posts")+'<div class="muted" style="padding:20px">Lade …</div>'; }
+  if(!ST){ load(); return F.head("Marketing","Posts, Reels, Gewinnspiele")+'<div class="muted" style="padding:20px">Lade …</div>'; }
   if(!ST.ok) return F.head("Marketing","")+'<div class="notice"><span>'+esc(ST.error||"Fehler")+'</span><button type="button" class="btn sm" data-act="mkreload">Erneut versuchen</button></div>';
-  var tab=UI.mktTab;
-  var sub=tab==="gewinnspiel"?"Fair auslosen und ein Video für Reel, Story und TikTok bekommen":"Profile deiner Apps";
-  var warn=ST.render&&!ST.render.video?'<div class="notice" style="margin-bottom:12px"><span>Die Video-Erzeugung ist am Server noch nicht bereit (ffmpeg fehlt). Auslosen und Protokoll funktionieren trotzdem.</span></div>':'';
-  return F.head("Marketing",sub)+'<nav class="subnav" aria-label="Marketing" style="margin-bottom:14px">'+TABS.map(function(t){ return '<button type="button" data-act="mktab:'+t[0]+'" aria-current="'+(t[0]===tab)+'">'+t[1]+'</button>'; }).join("")+'</nav>'+warn+
-    (tab==="marken"?brandsHtml():gwHtml());
+  var tab=TABS.find(function(t){ return t.id===UI.mktTab; })||TABS[0];
+  var warn=ST.render&&!ST.render.video?'<div class="notice" style="margin-bottom:12px"><span>Die Video-Erzeugung ist am Server noch nicht bereit (ffmpeg fehlt).</span></div>':'';
+  return F.head("Marketing",tab.sub||"",tab.right?tab.right():"")+'<nav class="subnav" aria-label="Marketing" style="margin-bottom:14px">'+TABS.map(function(t){ return '<button type="button" data-act="mktab:'+t.id+'" aria-current="'+(t.id===tab.id)+'">'+t.label+'</button>'; }).join("")+'</nav>'+warn+tab.render();
 }
-F.action("mktab",function(t){ UI.mktTab=t; F.ls("fsc_mkt_tab",t); F.render(); });
+F.action("mktab",function(t){ UI.mktTab=t; F.ls("fsc_mkt_tab",t); if(t==="gewinnspiel"||t==="marken") load(); if((t==="planer"||t==="kanaele")&&F.mktPlanReload) F.mktPlanReload(); F.render(); });
 F.action("mkreload",function(){ ST=null; F.render(); });
-F.view({id:"mkt",label:"Marketing",short:"Marketing",icon:"mkt",order:18,render:render,after:function(){ if(GW.text.trim()&&!PARSE) reparse(); }});
+F.view({id:"mkt",label:"Marketing",short:"Marketing",icon:"mkt",order:18,render:render,after:function(){ if(GW.text.trim()&&!PARSE) reparse(); TABS.forEach(function(t){ if(t.id===UI.mktTab&&t.after) t.after(); }); }});
 })();
