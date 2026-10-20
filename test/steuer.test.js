@@ -537,6 +537,43 @@ else {
   t("Ist ab 2026: Jahre davor weiter nach Soll", () => { const o2 = inv({ net: 100, tax: 20, date: "2025-08-01", delivery: "2025-08-01", status: 200 }); near(kz(S.computeUva({ invoices: [o2], vouchers: [] }, stI(), Q(2025, 3)), "022"), 100); });
   t("Besteuerungsart je Jahr für die Anzeige", () => { assert.strictEqual(S.besteuerungTxt(stI(), "2026"), "Istbesteuerung"); assert.strictEqual(S.besteuerungTxt(stI(), "2025"), "Sollbesteuerung"); assert.strictEqual(S.besteuerungTxt(st0(), "2026"), "Sollbesteuerung"); });
 }
+/* ===================== Gleiche Nummer: Beleg und Rechnung der eigenen Buchhaltung (IDs ab 900000000 je Belegart) ===================== */
+{
+  const ri = inv({ id: "900000005", net: 500, date: "2026-08-10", delivery: "2026-08-10" }), rv = vou({ id: "900000005", net: 300, tax: 60, date: "2026-08-12", cat: "Software" });
+  const raw = { invoices: [ri], vouchers: [rv], creditNotes: [] }, s = st0(); s.docs["v900000005"] = { kz: "ignore" };
+  const r = S.computeUva(raw, s, Q(2026, 3));
+  t("Gleiche Nummer: Einordnung des Belegs („v…“) trifft nicht die Rechnung", () => { near(kz(r, "022"), 500); near(kz(r, "060", "tax"), 0); });
+  t("Gleiche Nummer: docKey trennt Beleg und Rechnung, sevDesk-IDs bleiben", () => { assert.strictEqual(S.docKey(rv), "v900000005"); assert.strictEqual(S.docKey(ri), "900000005"); assert.strictEqual(S.docKey({ id: "153873134", cd: "C" }), "153873134"); });
+  t("Gleiche Nummer: explainDoc mit Art bzw. „v…“ erklärt den Beleg, nicht die Rechnung", () => {
+    assert.strictEqual(S.explainDoc(raw, st0(), "900000005", "voucher").art, "Eingang"); assert.strictEqual(S.explainDoc(raw, st0(), "v900000005").art, "Eingang");
+    assert.strictEqual(S.explainDoc(raw, st0(), "900000005", "invoice").art, "Ausgang"); assert.strictEqual(S.explainDoc(raw, st0(), "v900000005").key, "v900000005"); });
+}
+
+/* ===================== USt-Prüfung (mismatches → type "check"): Belege ohne/mit unpassender Regel ===================== */
+{
+  const z = (o) => vou(Object.assign({ tax: 0, rate: 0, taxRule: "", date: "2026-08-10", supplierCountry: "" }, o));
+  const geiger = z({ net: 353.18, supplier: "Geiger GmbH & Co. KG", desc: "Folien Oracal, ig. Erwerb 08/2026", cat: "Wareneinkauf" });
+  const pcom = z({ net: 842.81, supplier: "Print.com B.V.", desc: "Week 35", cat: "Wareneinkauf" });
+  const cn = z({ net: 48.3, supplier: "Zhengzhouhanzhouboyangjinchukou Maoyi Youxiangongsi", taxRule: "8", cat: "Betriebs- und Geschäftsausstattung" });
+  const cnOk = z({ net: 7.48, supplier: "Shenzhenshi Shengkai Zhinengkeji Youxiangongsi", taxRule: "8", cat: "Wareneinkauf" });
+  const apple = vou({ net: 17.91, tax: 3.58, supplier: "Apple Distribution International Ltd.", date: "2026-09-05", cat: "Software-Miete" });
+  const warerc = z({ net: 24, supplier: "Creativ Collection Verlag GmbH", taxRule: "14", cat: "Wareneinkauf" });
+  const sev1 = z({ net: 34.9, supplier: "Buchhaltung XY GmbH", desc: "Abo Oktober · Reverse Charge", cat: "Buchführungskosten" });
+  const ok = z({ net: 12, supplier: "Geiger GmbH & Co. KG", desc: "ig. Erwerb", cat: "Wareneinkauf" });
+  const raw = { local: true, invoices: [], vouchers: [geiger, pcom, cn, cnOk, apple, warerc, sev1, ok], creditNotes: [] };
+  const s = st0(); s.supMap = { "shenzhenshi shengkai zhinengkeji youxiangongsi": "ige" }; s.docs[ok.id] = { checkOk: true };
+  const mm = S.mismatches(raw, s, "2026-07-01", "2026-09-30"), of = v => mm.filter(m => m.doc === v);
+  t("USt-Prüfung: Beleg ohne Regel mit „ig. Erwerb“ im Text → Regel 8 vorgeschlagen und korrigierbar", () => { const m = of(geiger)[0]; assert.ok(m && m.sub === "ige", JSON.stringify(of(geiger))); assert.strictEqual(m.rule, "8"); assert.ok(m.fixable); assert.strictEqual(m.kz, "ige"); });
+  t("USt-Prüfung: Print.com ohne Regel zählt jetzt als ig. Erwerb (NL) und die fehlende Regel 8 wird angezeigt", () => { const r = S.computeUva({ invoices: [], vouchers: [pcom], creditNotes: [] }, st0(), Q(2026, 3)); near(kz(r, "070"), 842.81); near(kz(r, "065", "tax"), 168.56);
+    const m = of(pcom)[0]; assert.ok(m && m.rule === "8" && m.fixable, JSON.stringify(of(pcom).map(x => [x.type, x.rule, x.fixable]))); });
+  t("USt-Prüfung: Händler aus China als ig. Erwerb → Hinweis Drittland (Regel 10 / keine Kennzahl, „EU-Lager“ möglich)", () => { const m = of(cn)[0]; assert.ok(m && m.sub === "dritt"); assert.strictEqual(m.kz, "none"); assert.ok(m.supOk); });
+  t("USt-Prüfung: Lieferant per Zuordnung als ig. Erwerb bestätigt → kein Hinweis", () => { assert.strictEqual(of(cnOk).length, 0); });
+  t("USt-Prüfung: ausländischer Anbieter mit österr. USt → OSS-Hinweis ohne Regeländerung", () => { const m = of(apple)[0]; assert.ok(m && m.sub === "oss" && m.hint && !m.fixable); });
+  t("USt-Prüfung: Ware als Reverse Charge gebucht → ig. Erwerb (Regel 8)", () => { const m = of(warerc)[0]; assert.ok(m && m.sub === "warerc" && m.rule === "8"); });
+  t("USt-Prüfung: „Reverse Charge“ im Belegtext ohne Regel → Regel 14", () => { const m = of(sev1)[0]; assert.ok(m && m.sub === "rc" && m.rule === "14", JSON.stringify(of(sev1))); });
+  t("USt-Prüfung: „Passt so“ (checkOk) blendet den Hinweis aus", () => { assert.strictEqual(of(ok).length, 0); });
+}
+
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 
 console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");

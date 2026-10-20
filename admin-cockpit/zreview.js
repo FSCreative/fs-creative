@@ -76,6 +76,8 @@ F.sugBox=function(kind,id){
   }).catch(function(){ var n=document.getElementById(el); if(n) n.remove(); });
   return '<div class="rv-sug" id="'+esc(el)+'"><span class="muted small">Suche passenden Vorschlag …</span></div>';
 };
+/* „wie zuletzt“ des geöffneten Umsatzes (falls schon geladen): {category, rate, rc, taxRule, supplier} – zum Vorbelegen von „Ausgabe buchen“ */
+F.sugLike=function(id){ var c=(SG["tx-"+String(id).replace(/[^\w-]/g,"")]||[]).filter(function(x){ return x.type==="like"; })[0]; return c&&c.do&&c.do.body&&c.do.body.act||null; };
 F.action("rvsug",function(v){ var p=String(v).split("~"), c=(SG[p[0]]||[])[+p[1]]; if(!c||!c.do) return;
   F.confirm("Übernehmen: "+c.label+"?","Übernehmen",function(){ F.toast("Ordne zu …"); F.api(c.do.url,{body:c.do.body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; }
     F.closeModal(); F.closeDrawer(); var S=F.sevState; if(S&&S.bank&&S.bank.transactions&&c.do.body.txId) S.bank.transactions=S.bank.transactions.filter(function(t){ return t.id!==c.do.body.txId; });

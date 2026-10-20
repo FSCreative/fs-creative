@@ -249,7 +249,7 @@ module.exports = function (D) {
       return { id, date: sevDay(v.voucherDate), status, statusLabel: String(v.voucherType || "") === "RV" ? "Vorlage (wiederkehrend)" : (VOU_STATUS[status] || String(status)), cd: v.creditDebit || "C", type: v.voucherType || "VOU",
         supplier: v.supplierName || (v.supplier && sevName(v.supplier)) || "", desc: v.description || "", gross, net: sevNum(v.sumNet), tax: sevNum(v.sumTax), paid,
         open: (status === 100 || status === 750) && String(v.voucherType || "VOU") !== "RV" ? Math.max(0, r2(gross - paid)) : 0, payDate: sevDay(v.payDate), hasDoc: !!(v.document && v.document.id), docId: v.document && v.document.id ? String(v.document.id) : "", docSource: v.docSource ? { auto: !!v.docSource.auto, upload: !!v.docSource.upload, from: v.docSource.from || "", subject: v.docSource.subject || "", at: v.docSource.at || "" } : null,
-        enshrined: !!v.enshrined, taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "", taxType: v.taxType || "", positions: pos,
+        enshrined: !!v.enshrined, taxRule: v.taxRule && v.taxRule.id ? String(v.taxRule.id) : "", taxType: v.taxType || "", taxSet: v.taxSet && v.taxSet.id ? String(v.taxSet.id) : "", positions: pos,
         category: pos.map(p => p.category).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(", ") };
     }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
     const data = { ok: true, year: y, fetchedAt: new Date().toISOString(), vouchers: list };
@@ -295,8 +295,12 @@ module.exports = function (D) {
         voucherPosSave: posIn.map(x => { const r = isFinite(parseFloat(x.taxRate)) ? parseFloat(x.taxRate) : 20, g = r2(parseFloat(x.gross)); return { objectName: "VoucherPos", mapAll: true, accountingType: { id: idOf(x.accountingTypeId), objectName: "AccountingType" }, taxRate: r, net: false, sumGross: g, sumNet: sevNet(g, r), comment: String(x.comment || "").slice(0, 250) }; }),
         voucherPosDelete: posOld.map(p => ({ id: Number(p.id), objectName: "VoucherPos" })),
       };
-      // Steuerregelung des Belegs beibehalten (Update 1.0: taxType/taxSet, Update 2.0: taxRule)
-      if (cur.taxRule && cur.taxRule.id) body.voucher.taxRule = { id: String(cur.taxRule.id), objectName: "TaxRule" };
+      // Steuerliche Regel: neu gewählt (pl.taxRule, nur Ausgaben) oder die bisherige beibehalten (Update 1.0: taxType/taxSet, Update 2.0: taxRule).
+      // ig. Erwerb / Reverse Charge: keine österr. USt auf der Rechnung → alle Positionen 0 % (netto = brutto), die UVA rechnet die 20 %.
+      const nr = String(pl.taxRule || ""), newRule = ["8", "9", "10", "12", "13", "14"].indexOf(nr) > -1 && String(cur.creditDebit || "C") === "C" ? nr : "";
+      if (newRule) { body.voucher.taxRule = { id: newRule, objectName: "TaxRule" }; body.voucher.reverseCharge = ["12", "13", "14"].indexOf(newRule) > -1;
+        if (["8", "12", "13", "14"].indexOf(newRule) > -1) body.voucherPosSave.forEach(x => { x.taxRate = 0; x.sumNet = x.sumGross; }); }
+      else if (cur.taxRule && cur.taxRule.id) body.voucher.taxRule = { id: String(cur.taxRule.id), objectName: "TaxRule" };
       else { body.voucher.taxType = cur.taxType || "default"; if (cur.taxSet && cur.taxSet.id) body.voucher.taxSet = { id: String(cur.taxSet.id), objectName: "TaxSet" }; }
       if (iso(pl.deliveryDate)) body.voucher.deliveryDate = sevDateDE(pl.deliveryDate);
       await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });

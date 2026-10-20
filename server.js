@@ -2277,7 +2277,7 @@ function steuerOp(pl) {
   else if (op === "doc") {
     const id = String(pl.id || "").slice(0, 40); const P = pl.patch || {}; const cur = o.docs[id] || {};
     if ("kz" in P) { const v = String(P.kz || ""); cur.kz = v && STEUER_KZ_OK.test(v) && v !== "auto" ? v : undefined; }
-    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil", "noAusfall", "assetChecked"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });
+    ["asset", "ignore", "pkw", "epkw", "used", "noMinderung", "teil", "noAusfall", "assetChecked", "checkOk"].forEach(f => { if (f in P) cur[f] = !!P[f] || undefined; });   // checkOk: Hinweis der USt-Prüfung gelesen
     if ("ahk" in P) { const n = n2(P.ahk); cur.ahk = n > 0 && n < 1e7 ? Math.round(n * 100) / 100 : undefined; }
     if ("label" in P) cur.label = String(P.label || "").slice(0, 80) || undefined;
     if ("sevAsset" in P) cur.sevAsset = String(P.sevAsset || "").slice(0, 20) || undefined;
@@ -3451,7 +3451,7 @@ async function handleAdmin(req, res, u, p) {
   }
   // Schnittstelle für KI-Vorschläge: aktuelle Einordnung eines Belegs mit Begründung (nur lesend)
   if (p === "/admin/api/steuer/explain" && req.method === "GET") {
-    try { const raw = await steuerRaw(false); const x = STEUER_CALC.explainDoc(raw, readSteuer(), String(u.searchParams.get("id") || "")); return send(res, x ? 200 : 404, JSON.stringify(x ? Object.assign({ ok: true }, x) : { ok: false, error: "nicht_gefunden" }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const raw = await steuerRaw(false); const x = STEUER_CALC.explainDoc(raw, readSteuer(), String(u.searchParams.get("id") || ""), String(u.searchParams.get("kind") || "")); return send(res, x ? 200 : 404, JSON.stringify(x ? Object.assign({ ok: true }, x) : { ok: false, error: "nicht_gefunden" }), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   // FinanzOnline: XML-Vorschau, Prüfung (T) und verbindliche Abgabe (P). PIN nur im Request-Body, wird nicht gespeichert.
@@ -3983,7 +3983,7 @@ async function steuerDiag(key) {
     L("meta", Object.assign({ period: p }, raw.meta.counts, { taxRules: raw.taxRules, taxSets: raw.taxSets }));
     const inP = d => { const t = d.delivery || d.date || ""; return (d.date >= p.from && d.date <= p.to) || (t >= p.from && t <= p.to); };
     const agg = {};
-    const add = (side, d) => { const x = STEUER_CALC.explainDoc(raw, o, d.id); if (!x) return; (x.positionen || []).forEach(l => {
+    const add = (side, d) => { const x = STEUER_CALC.explainDoc(raw, o, d.id, side === "AUS" ? "invoice" : "voucher"); if (!x) return; (x.positionen || []).forEach(l => {
       const k = side + " | regel=" + (x.sevDeskRegel ? x.sevDeskRegel.id + " " + x.sevDeskRegel.text : "–") + " | taxType=" + (d.taxType || "–") + " | satz=" + l.rate + " | klasse=" + l.klasse;
       const a = agg[k] || (agg[k] = { n: 0, net: 0, tax: 0, bsp: [] }); a.n++; a.net = Math.round((a.net + l.net) * 100) / 100; a.tax = Math.round((a.tax + l.tax) * 100) / 100;
       if (a.bsp.length < 4) a.bsp.push((x.partner || "") + " " + l.net + " (" + l.begruendung + ")"); }); };
@@ -3991,7 +3991,7 @@ async function steuerDiag(key) {
     (raw.vouchers || []).filter(d => d.status >= 100 && inP(d)).forEach(d => add(d.cd === "D" ? "AUS-B" : "EIN", d));
     Object.keys(agg).sort().forEach(k => L("gruppe", Object.assign({ k }, agg[k])));
     // Einzelliste: alle Eingangsbelege mit 0 % bzw. ig. Erwerb / Reverse Charge (Lieferant, Kategorie, Einordnung)
-    (raw.vouchers || []).filter(d => d.status >= 100 && d.cd !== "D" && inP(d)).forEach(d => { const x = STEUER_CALC.explainDoc(raw, o, d.id); if (!x) return;
+    (raw.vouchers || []).filter(d => d.status >= 100 && d.cd !== "D" && inP(d)).forEach(d => { const x = STEUER_CALC.explainDoc(raw, o, d.id, "voucher"); if (!x) return;
       const regel = x.sevDeskRegel ? x.sevDeskRegel.text : ""; const ls = x.positionen || [];
       if (!(/erwerb|reverse|revers/i.test(regel) || ls.some(l => /^(ige|ige3|ige0|rc|rcnv)$/.test(l.klasse)))) return;
       L("beleg", { datum: d.date, lieferant: d.supplier, beschreibung: (d.desc || "").slice(0, 60), netto: d.net, regel, uid: d.supplierUid || "", land: x.land || "", pos: ls.map(l => l.cat + " " + l.net + " → " + l.klasse) }); });

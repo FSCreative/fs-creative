@@ -60,7 +60,7 @@ F.action("kibelege",function(v){
 function sugOf(id){ return ((K.ui.belege&&K.ui.belege.list)||[]).filter(function(s){ return s.id===id; })[0]; }
 function steuerPost(body){ return F.api("/admin/api/steuer",{body:body}).then(function(j){ if(!j||j.ok===false) throw new Error((j&&j.error)||"Speichern fehlgeschlagen"); return j; }); }
 F.action("kibtake",function(id){ var s=sugOf(id); if(!s) return;
-  steuerPost({op:"doc",id:id,patch:{kz:s.uvaClass}}).then(function(){ K.ui.open["b"+id]="übernommen"; F.toast("Einordnung im Cockpit gespeichert"); K.rerender(); }).catch(K.fail); });
+  steuerPost({op:"doc",id:window.FSC_STEUER?FSC_STEUER.docKey({id:id,cd:"C"}):id,patch:{kz:s.uvaClass}}).then(function(){ K.ui.open["b"+id]="übernommen"; F.toast("Einordnung im Cockpit gespeichert"); K.rerender(); }).catch(K.fail); });
 F.action("kibe1a",function(id){ var s=sugOf(id); if(!s||!s.meta||!s.meta.cats||s.meta.cats.length!==1) return; var cat=s.meta.cats[0], mp={}; mp[cat]=s.e1a;
   F.confirm("E1a-Kennzahl "+K.e1aTxt(s.e1a)+" für alle Belege der Kategorie „"+cat+"“ verwenden?","Zuordnen",function(){ steuerPost({op:"mapping",mapping:mp}).then(function(){ K.ui.open["b"+id]="E1a zugeordnet"; F.toast("Kategorie zugeordnet"); K.rerender(); }).catch(K.fail); }); });
 F.action("kibsev",function(id){ var s=sugOf(id); if(!s) return; var m=s.meta||{};

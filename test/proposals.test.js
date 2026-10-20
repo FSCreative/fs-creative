@@ -262,6 +262,24 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     assert.strictEqual(String(L.get("CheckAccountTransaction", "952").status), "100", "Abzug (negativ) bleibt für die Gebühren-Zuordnung");
     assert.ok(!(await P.list()).some(x => x.key === "mcred:951"), "nichts mehr offen");
   });
+  await t("Bankregel mit Steuerregel ig. Erwerb (8): Beleg 0 % mit Regel 8, Vorschlagstext nennt die Regel", async () => {
+    await L.save("CheckAccountTransaction", { id: "961", checkAccount: { id: "1", objectName: "CheckAccount" }, amount: "-353.18", valueDate: "2026-09-08T00:00:00+02:00", entryDate: "2026-09-08T00:00:00+02:00", payeePayerName: "Geiger GmbH", paymtPurpose: "61055596", status: "100" });
+    const saved = (await R.handle({ op: "save", rule: { id: "rg", name: "Geiger", cond: { name: "geiger" }, act: { type: "beleg", category: "27", rate: 20, taxRule: "8", supplier: "Geiger GmbH & Co. KG" } } })).rule; assert.strictEqual(saved.act.taxRule, "8"); assert.strictEqual(saved.act.rc, false);
+    const r = await R.handle({ op: "apply", id: "rg" }); assert.strictEqual(r.done, 1);
+    const v = L.all("Voucher").find(x => x.fromRule === "rg"); assert.ok(v, "Beleg angelegt");
+    assert.strictEqual(String(v.taxRule && v.taxRule.id), "8"); assert.strictEqual(+v.sumTax, 0); assert.strictEqual(+v.sumGross, 353.18);
+    assert.ok(!v.reverseCharge, "ig. Erwerb ist kein Reverse Charge");
+  });
+  await t("„wie zuletzt“ übernimmt die Steuerregel des letzten Belegs (nicht nur RC ja/nein)", async () => {
+    await L.save("CheckAccountTransaction", { id: "962", checkAccount: { id: "1", objectName: "CheckAccount" }, amount: "-120.00", valueDate: "2026-10-08T00:00:00+02:00", entryDate: "2026-10-08T00:00:00+02:00", payeePayerName: "Geiger GmbH", paymtPurpose: "61055999", status: "100" });
+    const like = R.likeLast(L.get("CheckAccountTransaction", "962")); assert.ok(like && like.prev, "Vorgänger gefunden"); assert.strictEqual(like.prev.taxRule, "8");
+    const sug = await P.suggestTx("962").catch(() => null);
+    const c = sug && (sug.candidates || []).find(x => x.type === "like");
+    assert.ok(c, "Vorschlag „wie zuletzt“"); assert.ok(/ig\. Erwerb/.test(c.label), c.label); assert.strictEqual(c.do.body.act.taxRule, "8");
+    await R.likeApply("962", { type: "beleg", category: like.prev.category, rate: like.prev.rate, rc: like.prev.rc, taxRule: like.prev.taxRule, supplier: like.prev.supplier });
+    const v = L.all("Voucher").filter(x => String(x.supplierName) === "Geiger GmbH & Co. KG").sort((a, b) => +b.id - +a.id)[0];
+    assert.strictEqual(String(v.taxRule && v.taxRule.id), "8"); assert.strictEqual(+v.sumTax, 0);
+  });
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
   fails.forEach(f => console.log(" ✗ " + f));
   process.exit(fail ? 1 : 0);

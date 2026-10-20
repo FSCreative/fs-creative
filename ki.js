@@ -238,7 +238,7 @@ module.exports = function createKi(deps) {
   function voucherMeta(v, st) {
     const ls = CALC.lines(v), cats = Array.from(new Set(ls.map(l => l.cat).filter(Boolean)));
     return { id: v.id, date: v.date, supplier: v.supplier, gross: v.gross, net: v.net, tax: v.tax, desc: clip(v.desc, 120), taxRule: v.taxRule || "", taxRuleTxt: ruleTxt(v.taxRule) || v.taxType || "",
-      cockpit: ls.length ? CALC.inClass(v, ls[0], st) : "", override: (st.docs && st.docs[v.id] && st.docs[v.id].kz) || "", e1aNow: ls.length ? CALC.catKz(st, ls[0]) : "", cats, enshrined: !!v.enshrined,
+      cockpit: ls.length ? CALC.inClass(v, ls[0], st) : "", override: (st.docs && st.docs[CALC.docKey(v)] && st.docs[CALC.docKey(v)].kz) || "", e1aNow: ls.length ? CALC.catKz(st, ls[0]) : "", cats, enshrined: !!v.enshrined,
       fixable: !v.enshrined && v.cd === "C" && !!v.taxRule };
   }
   // Unklare Belege: Abweichungen laut Rechenkern, ausländische Lieferanten, Kategorien ohne Zuordnung, Belege ohne Steuerregel

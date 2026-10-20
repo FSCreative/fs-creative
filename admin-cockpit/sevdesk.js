@@ -8,6 +8,7 @@ F.UI.rgF=F.UI.rgF||"todo"; F.UI.rgQ=F.UI.rgQ||""; F.UI.bkAcc=F.UI.bkAcc||"all"; 
 F.sevState=S;
 
 F.css(
+  '.sd-tax{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}.sd-tax .trl{margin:0}.sd-tax>.btn{justify-self:start}.sd-uva{line-height:1.45}.sd-uva span{color:var(--ink-3)}'+
 '.sdsig{display:grid;gap:6px}.sdsig-pv{width:100%;height:150px;border:1px solid var(--line);border-radius:10px;background:#fff}'+
 '.drawer.xl{width:min(900px,100%)}'+
 '.sd-list{display:grid}'+
@@ -265,18 +266,21 @@ F.listen("input","[data-sdpickq]",function(el){ var b=document.getElementById("s
 F.action("sdbkpriv",function(id){ var t=S.pick&&S.pick.tx; F.closeModal(); bankDo(id,{op:"privat"},t&&t.amount>0?"Als Privateinlage markiert":"Als Privatentnahme markiert"); if(F.finTxReset) F.finTxReset(); });
 F.action("sdbkpick",function(v){ var p=v.split("|"), t=S.pick.tx, it=S.pick.items.find(function(x){return x.id===p[1]&&x.kind===p[0];}); F.closeModal(); bankDo(t.id,p[0]==="invoice"?{op:"invoice",invoiceId:p[1]}:{op:"voucher",voucherId:p[1]},"Zugeordnet: "+(it?it.label:"")); });
 F.action("sdbknew",function(id){
-  var t=txById(id); if(!t) return; var pos=t.amount>0;
+  var t=txById(id); if(!t) return; var pos=t.amount>0, la=!pos&&F.sugLike?F.sugLike(id):null;   /* vorbelegt wie der letzte Beleg desselben Händlers */
+  var laRule=la?(la.taxRule||(la.rc?"14":"9")):"9", laRate=la?(F.taxRuleZero(laRule)?0:+la.rate||0):0;
   F.loadMeta(function(m){
     var cats=(m.accountingTypes||[]);
     F.modal('<form data-form="sdbknew" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Einnahme":"Ausgabe")+' buchen</h2>'+F.btnClose()+'</div>'+
       '<p class="muted" style="margin:0">Legt einen Beleg an und verbucht ihn gleich mit diesem Umsatz – mit Rechnungsdatei oder ohne (z. B. Kontoführung, Bankspesen; die Datei kannst du später anhängen).</p>'+
       '<p style="margin:0"><b class="'+(pos?"ok-t":"bad-t")+'">'+eur(t.amount)+'</b> · '+de(t.date)+'</p>'+
-      '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+'</select></label></div>'+
-      (pos?'':F.taxRuleSelect('name="rule" data-rate="[name=tax]"',"9"))+
-      '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">— wählen —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>'+
+      (la?'<p class="muted small" style="margin:0">Vorbelegt wie beim letzten Beleg'+(la.supplier?' von „'+esc(la.supplier)+'“':'')+' – bitte kurz prüfen.</p>':'')+
+      '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(la&&la.supplier||t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'"'+(r===laRate?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
+      (pos?'':F.taxRuleSelect('name="rule" data-rate="[name=tax]"',laRule))+
+      '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">— wählen —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'"'+(la&&String(la.category)===String(c.id)?" selected":"")+'>'+esc(c.name)+'</option>'; }).join("")+'</select></label>'+
       '<label class="fl">Beschreibung<input class="f" name="desc" value="'+esc(t.purpose.slice(0,200))+'"></label>'+
       '<label class="fl">Rechnung / Beleg (optional)<input class="f" type="file" name="file" accept="application/pdf,image/png,image/jpeg,image/webp"></label>'+
       '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="sdBkGo">Buchen</button></span></div><div class="err" id="sdBkErr"></div></form>',"wide");
+    var rs=document.querySelector('[data-form="sdbknew"] [name=rule]'); if(rs) F.taxRuleSync(rs);
   });
 });
 F.form("sdbknew",function(f){
@@ -428,13 +432,39 @@ function openVou(id){
         (locked?'<div class="notice" style="background:var(--sunk)">'+(v.enshrined?"Festgeschrieben – nicht mehr änderbar.":"Bezahlt – zum Ändern zuerst „Zahlung lösen“.")+'</div>':'')+
         '<div class="grid2"><label class="fl">Belegdatum<input class="f" name="date" type="date" value="'+esc(v.date||"")+'"'+(locked?" disabled":"")+'></label><label class="fl">Lieferant<input class="f" name="supplier" value="'+esc(v.supplier)+'"'+(locked?" disabled":"")+'></label></div>'+
         '<label class="fl">Beschreibung<input class="f" name="desc" value="'+esc(v.desc)+'"'+(locked?" disabled":"")+'></label>'+
+        (v.cd==="D"?'':vTaxBox(v,locked))+
         '<div><div class="sec-t">Positionen</div><div id="vrows" style="display:grid;gap:8px">'+(v.positions.length?v.positions:[{}]).map(function(p){ return vrow(p,cats); }).join("")+'</div>'+(locked?'':'<button type="button" class="link" data-vadd>+ Position</button>')+'</div>'+
         '<div class="foot"><span class="num muted" id="vSum">'+eur(v.gross)+'</span>'+(locked?'':'<button class="btn primary" type="submit">Speichern</button>')+'</div><div class="err" id="vErr"></div>'+
       '</form><div style="min-width:0"><div class="sec-t">Belegdatei</div>'+(v.hasDoc?F.docEmbed(vdoc,vtitle,'<iframe class="sd-pdf" title="Beleg" src="'+esc(vdoc)+'"></iframe>'):'<div class="sd-empty" style="border:1px dashed var(--line);border-radius:12px">Keine Datei hinterlegt.<br><span class="muted">Über „Bearbeiten“ anhängen oder neu über „+ Beleg“ erfassen.</span></div>')+'</div></div>');
     if(locked) document.querySelectorAll("#vrows input,#vrows select,#vrows button").forEach(function(x){ x.disabled=true; });
-    S.vcats=cats;
+    else { var rs=document.querySelector('[data-form="sdvou"] [name=rule]'); if(rs) F.taxRuleSync(rs); }
+    S.vcats=cats; if(v.cd!=="D") vUvaLoad(id);
   });
 }
+/* Steuerliche Regel des Belegs: sichtbar und änderbar. Offen/Entwurf → mit „Speichern“; bezahlt → eigener Knopf (ändert nur die Regel,
+   Zahlung bleibt); festgeschrieben → nur Anzeige. Darunter, wie die UVA den Beleg einordnet (gleicher Rechenkern wie die UVA). */
+function vTaxBox(v,locked){
+  var fix=locked&&!v.enshrined, emptyTxt=v.taxSet?"aus sevDesk übernommen (Steuersatz-Set, ohne Regel)":"automatisch (ohne Regel)";
+  return '<div class="sd-tax">'+F.taxRuleSelect('name="rule" data-rate="[data-v=tax]"'+(v.enshrined?' disabled':'')+(fix?' data-keepdis':''),v.taxRule,{empty:emptyTxt,emptyHint:"Ohne Regel ordnet die UVA nach Steuersatz und Lieferant ein – Ergebnis siehe unten."})+
+    (fix?'<button type="button" class="btn" data-act="sdvrule:'+esc(v.id)+'">Steuerregel ändern</button>':'')+
+    '<div class="sd-uva muted small" id="vUva">UVA-Einordnung wird geladen …</div></div>';
+}
+var UVA_KL={"060":"Vorsteuer","rc":"Reverse Charge mit Vorsteuer","rcnv":"Reverse Charge ohne Vorsteuer","ige":"ig. Erwerb","ige3":"ig. Dreiecksgeschäft","ige0":"ig. Erwerb steuerfrei","eust":"Einfuhrumsatzsteuer","fx":"ausländische USt (nicht abziehbar)","none":"keine UVA-Kennzahl","pruefen":"bitte prüfen"};
+function vUvaLoad(id){
+  F.api("/admin/api/steuer/explain?id="+encodeURIComponent(id)+"&kind=voucher").then(function(j){
+    var el=document.getElementById("vUva"); if(!el) return;
+    if(!j||!j.ok||!j.positionen){ el.textContent=""; return; }
+    var seen={}, rows=j.positionen.filter(function(l){ var k=l.klasse+"|"+l.begruendung; if(seen[k]) return false; seen[k]=1; return true; });
+    el.innerHTML='<b>So zählt der Beleg in der UVA:</b> '+rows.map(function(l){ return esc(UVA_KL[l.klasse]||l.klasse)+(l.kennzahlen&&l.kennzahlen!=="–"?' · KZ '+esc(l.kennzahlen):'')+' <span>('+esc(l.begruendung)+')</span>'; }).join("; ")+(j.override?' <span class="tag grey">im Cockpit eingeordnet</span>':'');
+  }).catch(function(){ var el=document.getElementById("vUva"); if(el) el.textContent=""; });
+}
+F.action("sdvrule",function(id){
+  var sel=document.querySelector('[data-form="sdvou"] [name=rule]'), v=vouById(id); if(!sel||!v) return; var r=sel.value;
+  if(!r){ F.toast("Bitte eine Regel wählen",true); return; } if(r===String(v.taxRule||"")){ F.toast("Die Regel ist schon gesetzt"); return; }
+  F.confirm("Steuerliche Regel von „"+(v.supplier||"Beleg")+"“ auf „"+F.taxRuleName(r)+"“ ändern? Die Zahlung bleibt verbunden; die UVA rechnet den Beleg danach neu ein.","Regel ändern",function(){
+    F.api("/admin/api/steuer/sevfix",{body:{id:id,taxRule:r,confirm:true}}).then(function(j){ if(j&&j.ok){ F.toast("Steuerregel geändert"); reloadVouThen(id); } else F.toast((j&&j.error)||"Fehler",true); }).catch(function(){ F.toast("Keine Verbindung",true); });
+  });
+});
 F.action("sdvou",function(id){ openVou(id); });
 F.listen("click","[data-vadd]",function(){ document.getElementById("vrows").insertAdjacentHTML("beforeend",vrow({},S.vcats||[])); });
 F.listen("click","[data-vdel]",function(el){ if(document.querySelectorAll("#vrows .sd-vrow").length>1) el.closest(".sd-vrow").remove(); vSum(); });
@@ -445,7 +475,7 @@ F.form("sdvou",function(f){
   document.querySelectorAll("#vrows .sd-vrow").forEach(function(r){ var g=function(k){ return r.querySelector('[data-v="'+k+'"]').value; }; if(!g("gross")) return; pos.push({accountingTypeId:g("cat"),taxRate:g("tax"),gross:g("gross"),comment:g("comment")}); });
   if(!pos.length||pos.some(function(p){ return !p.accountingTypeId; })){ err.textContent="Jede Position braucht eine Kategorie und einen Betrag."; return; }
   var btn=f.querySelector("[type=submit]"); btn.disabled=true; btn.textContent="Speichere …"; err.textContent="";
-  post("/admin/api/sev/voucher-op",{op:"update",id:id,date:f.date.value,supplier:f.supplier.value,desc:f.desc.value,positions:pos}).then(function(j){
+  post("/admin/api/sev/voucher-op",{op:"update",id:id,date:f.date.value,supplier:f.supplier.value,desc:f.desc.value,positions:pos,taxRule:f.rule?f.rule.value:""}).then(function(j){
     btn.disabled=false; btn.textContent="Speichern";
     if(!j||!j.ok){ err.textContent=(j&&j.error)||"Fehler"; return; }
     F.toast("Beleg gespeichert"); reloadVouThen(id);

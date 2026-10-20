@@ -12,6 +12,7 @@ module.exports = function (D) {
   let ST = null, loading = null, NEW = [], timer = null;
   const running = new Set();
   const r2 = n => Math.round((+n || 0) * 100) / 100, day = v => String(v || "").slice(0, 10), nowIso = () => new Date().toISOString();
+  const TRN = { "8": "ig. Erwerb", "9": "Vorsteuer", "10": "keine Vorsteuer", "12": "Reverse Charge Drittland", "13": "Reverse Charge ohne Vorsteuer", "14": "Reverse Charge EU" };   // Steuerregel des letzten Belegs
   const KIND_LABEL = { rule: "Bankregeln", "mollie-match": "Mollie-Zahlung → Rechnung", "mollie-fee": "Mollie-Gebühren", "mollie-payout": "Mollie-Auszahlung (Geldtransit)", "mollie-income": "Mollie-Einnahmen ohne Rechnung",
     transfer: "Geldtransit zwischen Konten", docmatch: "Belegdateien aus Mails", "uva-payment": "USt-Zahlung ans Finanzamt", "recurring-voucher": "Wiederkehrende Belege", "recurring-invoice": "Wiederkehrende Rechnungen senden", dunning: "Mahnungen" };
 
@@ -201,8 +202,8 @@ module.exports = function (D) {
     }
     const R = D.rules && D.rules(), like = R && R.likeLast ? R.likeLast(t) : null;
     if (like && like.prev) { const p = like.prev;
-      out.push({ type: "like", id: "like", label: "Beleg anlegen wie zuletzt: " + (p.catName || "Kategorie " + p.category) + " · " + (p.rc ? "Reverse Charge" : p.rate + " %"), sub: (p.supplier || like.label) + " · zuletzt am " + p.date, amount: A, score: 55 + (like.privat ? 0 : 5), reasons: ["gleicher Händler/Zahler „" + like.label + "“ wurde am " + p.date + " so gebucht"],
-        do: { url: POP, body: { op: "like", txId: String(t.id), act: { type: "beleg", category: p.category, rate: p.rate, rc: !!p.rc, supplier: p.supplier }, confirm: true } } }); }
+      out.push({ type: "like", id: "like", label: "Beleg anlegen wie zuletzt: " + (p.catName || "Kategorie " + p.category) + " · " + (TRN[p.taxRule] ? TRN[p.taxRule] + (["8", "12", "13", "14"].indexOf(p.taxRule) > -1 ? "" : " " + p.rate + " %") : p.rc ? "Reverse Charge" : p.rate + " %"), sub: (p.supplier || like.label) + " · zuletzt am " + p.date, amount: A, score: 55 + (like.privat ? 0 : 5), reasons: ["gleicher Händler/Zahler „" + like.label + "“ wurde am " + p.date + " so gebucht"],
+        do: { url: POP, body: { op: "like", txId: String(t.id), act: { type: "beleg", category: p.category, rate: p.rate, rc: !!p.rc, taxRule: p.taxRule || "", supplier: p.supplier }, confirm: true } } }); }
     if (like && like.privat) out.push({ type: "privat", id: "privat", label: amt < 0 ? "Privatentnahme" : "Privateinlage", sub: like.privat + "× früher privat" + (like.privatLast ? " · zuletzt " + like.privatLast : ""), amount: A, score: like.prev ? 50 : 65, reasons: ["„" + like.label + "“ war früher privat"], do: { url: BOP, body: { txId: String(t.id), op: "privat", confirm: true } } });
     out.sort((a, b) => b.score - a.score);
     return { tx: { id: String(t.id), amount: amt, date: td, name: t.payeePayerName || "", purpose: String(t.paymtPurpose || "").slice(0, 200) }, candidates: out.slice(0, 6) };

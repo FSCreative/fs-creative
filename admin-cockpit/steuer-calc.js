@@ -41,9 +41,11 @@ var UID_RE={AT:/^ATU\d{8}$/,BE:/^BE[01]\d{9}$/,BG:/^BG\d{9,10}$/,CY:/^CY\d{8}[A-
 function uidValid(uid){ var u=String(uid||"").replace(/[\s.\-]/g,"").toUpperCase(); if(!u) return {ok:false,why:"keine UID"}; var cc=u.slice(0,2), re=UID_RE[cc]; if(!re) return {ok:false,why:"unbekanntes Länderkürzel "+cc,uid:u}; return re.test(u)?{ok:true,uid:u,cc:cc}:{ok:false,why:"Format passt nicht zu "+cc,uid:u}; }
 function uidCountry(uid){ var m=String(uid||"").replace(/\s/g,"").toUpperCase().match(/^([A-Z]{2})[0-9A-Z]{2,13}$/); return m?(m[1]==="EL"?"GR":m[1]):""; }
 // Bekannte ausländische Anbieter (Name → Land), falls in sevDesk keine UID hinterlegt ist
-var FOREIGN=[[/google|youtube/i,"IE"],[/meta platforms|facebook|instagram/i,"IE"],[/apple/i,"IE"],[/adobe/i,"IE"],[/microsoft|linkedin|github/i,"IE"],[/anthropic/i,"IE"],[/openai|chatgpt/i,"IE"],[/spotify/i,"SE"],[/hetzner/i,"DE"],[/amazon web services|\baws\b/i,"LU"],[/railway/i,"US"],[/cloudflare/i,"US"],[/figma/i,"US"],[/notion/i,"US"],[/vercel/i,"US"],[/netlify/i,"US"],[/digitalocean/i,"US"],[/dropbox/i,"IE"],[/canva/i,"AU"],[/zoom/i,"US"],[/slack/i,"IE"],[/atlassian/i,"AU"],[/jetbrains/i,"CZ"],[/midjourney/i,"US"],[/elevenlabs/i,"US"],[/framer/i,"NL"],[/\bwix(\.com)?\b/i,"IL"],[/webflow/i,"US"],[/calendly/i,"US"],[/zapier/i,"US"],[/mailchimp|intuit/i,"US"],[/envato/i,"AU"],[/shutterstock/i,"US"],[/squarespace/i,"IE"],[/godaddy/i,"US"],[/namecheap/i,"US"],[/twilio|sendgrid/i,"US"],[/postmark/i,"US"],[/fly\.io/i,"US"],[/stripe/i,"IE"],[/paypal/i,"LU"],[/shopify/i,"IE"],[/hubspot/i,"IE"],[/freepik/i,"ES"],[/fontshare|monotype|myfonts/i,"US"],[/\bunity\b/i,"US"],[/beds24/i,"DE"]];
+var FOREIGN=[[/google|youtube/i,"IE"],[/meta platforms|facebook|instagram/i,"IE"],[/apple/i,"IE"],[/adobe/i,"IE"],[/microsoft|linkedin|github/i,"IE"],[/anthropic/i,"IE"],[/openai|chatgpt/i,"IE"],[/spotify/i,"SE"],[/hetzner/i,"DE"],[/amazon web services|\baws\b/i,"LU"],[/railway/i,"US"],[/cloudflare/i,"US"],[/figma/i,"US"],[/notion/i,"US"],[/vercel/i,"US"],[/netlify/i,"US"],[/digitalocean/i,"US"],[/dropbox/i,"IE"],[/canva/i,"AU"],[/zoom/i,"US"],[/slack/i,"IE"],[/atlassian/i,"AU"],[/jetbrains/i,"CZ"],[/midjourney/i,"US"],[/elevenlabs/i,"US"],[/framer/i,"NL"],[/\bwix(\.com)?\b/i,"IL"],[/webflow/i,"US"],[/calendly/i,"US"],[/zapier/i,"US"],[/mailchimp|intuit/i,"US"],[/envato/i,"AU"],[/shutterstock/i,"US"],[/squarespace/i,"IE"],[/godaddy/i,"US"],[/namecheap/i,"US"],[/twilio|sendgrid/i,"US"],[/postmark/i,"US"],[/fly\.io/i,"US"],[/stripe/i,"IE"],[/paypal/i,"LU"],[/shopify/i,"IE"],[/hubspot/i,"IE"],[/freepik/i,"ES"],[/fontshare|monotype|myfonts/i,"US"],[/\bunity\b/i,"US"],[/beds24/i,"DE"],[/sevdesk/i,"DE"],[/wetransfer/i,"NL"]];
+// bekannte ausländische WARENlieferanten (ig. Erwerb, nicht Reverse Charge): Land für Belege ohne UID/Adresse
+var FOREIGN_GOODS=[[/print\.com gmbh/i,"DE"],[/print\.com/i,"NL"],[/photo ?& ?event c\.? ?s\./i,"DE"]];
 // Reihenfolge: UID-Präfix → bekannter ausländischer Anbieter → Land der Kontaktadresse (oft nur Standard "AT")
-function supplierCountry(v){ var c=uidCountry(v.supplierUid); if(c) return c; for(var i=0;i<FOREIGN.length;i++){ if(FOREIGN[i][0].test(v.supplier||"")) return FOREIGN[i][1]; } return v.supplierCountry?String(v.supplierCountry).toUpperCase():""; }
+function supplierCountry(v){ var c=uidCountry(v.supplierUid); if(c) return c; for(var i=0;i<FOREIGN.length;i++){ if(FOREIGN[i][0].test(v.supplier||"")) return FOREIGN[i][1]; } for(var j=0;j<FOREIGN_GOODS.length;j++){ if(FOREIGN_GOODS[j][0].test(v.supplier||"")) return FOREIGN_GOODS[j][1]; } return v.supplierCountry?String(v.supplierCountry).toUpperCase():""; }
 /* Kunde einer Ausgangsrechnung: UID und Land robust bestimmen (Cockpit-Angabe → UID des Kontakts → Rechnungsadresse → UID im
    Rechnungstext → Land des Kontakts). sevDesk liefert die gedruckte Adresse als Text (Invoice.address), Kopf-/Fußtext und taxText. */
 var CNAMES=[[/deutschland|germany|\bbrd\b/,"DE"],[/italien|italia|italy/,"IT"],[/schweiz|suisse|svizzera|switzerland/,"CH"],[/liechtenstein/,"LI"],[/frankreich|france/,"FR"],[/niederlande|netherlands|nederland|holland/,"NL"],[/belgien|belgique|belgi[eë]|belgium/,"BE"],[/luxemburg|luxembourg/,"LU"],[/spanien|espa[ñn]a|spain/,"ES"],[/portugal/,"PT"],[/irland|ireland/,"IE"],[/d(ä|ae)nemark|danmark|denmark/,"DK"],[/schweden|sverige|sweden/,"SE"],[/finnland|finland|suomi/,"FI"],[/polen|polska|poland/,"PL"],[/tschechien|tschechische|česk|czech/,"CZ"],[/slowakei|slovensko|slovakia/,"SK"],[/ungarn|magyarorsz|hungary/,"HU"],[/slowenien|slovenija|slovenia/,"SI"],[/kroatien|hrvatska|croatia/,"HR"],[/rum(ä|ae)nien|rom[aâ]nia/,"RO"],[/bulgarien|bulgaria/,"BG"],[/griechenland|greece|hellas/,"GR"],[/zypern|cyprus/,"CY"],[/malta/,"MT"],[/estland|estonia|eesti/,"EE"],[/lettland|latvia|latvija/,"LV"],[/litauen|lithuania|lietuva/,"LT"],[/(ö|oe)sterreich|austria/,"AT"],[/vereinigtes k(ö|oe)nigreich|united kingdom|gro(ß|ss)britannien|england|schottland/,"GB"],[/vereinigte staaten|united states|\busa\b/,"US"],[/norwegen|norway|norge/,"NO"]];
@@ -57,7 +59,7 @@ function textUids(t){ var out=[], re=/\b(ATU|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|FR|HR
 function docText(d){ return plain([d.taxText,d.headText,d.footText,d.texts,d.addrText].filter(Boolean).join("\n")); }
 var RX_RC=/reverse.?charge|steuerschuldnerschaft|(ü|ue)bergang der steuerschuld|steuerschuld geht|schuldet der leistungsempf|innergemeinschaftliche|ig\.? ?lieferung|art\.? ?196|§ ?3a|vat exempt|tax liability|autoliquidation|inversione contabile|verlegd/i;
 var RX_LIEF=/innergemeinschaftliche lieferung|ig\.? ?lieferung|art\.? ?7 ustg|art\.? ?138|intra.?community supply|steuerfreie innergemeinschaftliche/i, RX_DREI=/dreieck|triangular|art\.? ?25 ustg|art\.? ?141/i;
-function outInfo(inv,st){ var c=st?docCfg(st,inv.id):{}, ownU=String(st&&st.settings&&st.settings.uid||"").replace(/\s/g,"").toUpperCase();
+function outInfo(inv,st){ var c=st?docCfg(st,inv):{}, ownU=String(st&&st.settings&&st.settings.uid||"").replace(/\s/g,"").toUpperCase();
   var cu=c.uid&&uidValid(c.uid).ok?uidValid(c.uid).uid:"", du=uidCountry(inv.uid)?String(inv.uid).replace(/[\s.\-]/g,"").toUpperCase():"";
   var tu=textUids(docText(inv)).filter(function(u){ return u.slice(0,2)!=="AT"&&u!==ownU; })[0]||"";
   var uid=cu||du||tu, uidSrc=cu?"Cockpit":(du?"Kontakt":(tu?"Rechnungstext":""));
@@ -184,12 +186,12 @@ function reportedIn(st,inv){ if(!st||!inv.date) return null; var ks=Object.keys(
   var k0=periodKeyOf(st,d0); if(periodClosed(st,k0)&&!hasDocList(st,k0)) return {key:k0,date:d0,how:d0===inv.date?"nach Rechnungsdatum, wie bisher":"nach Zahlungseingang vor Rechnungsdatum, wie bisher"}; return null; }
 function sollParts(inv,st,total){
   var out0=sollParts0(inv,st,total), rep=reportedIn(st,inv), tt=total==null?1:total;
-  if(rep&&!docCfg(st,inv.id).teil) return [{share:tt,date:rep.date,why:"bereits mit der UVA "+rep.key.replace("-"," ")+" gemeldet ("+rep.how+")"}];
+  if(rep&&!docCfg(st,inv).teil) return [{share:tt,date:rep.date,why:"bereits mit der UVA "+rep.key.replace("-"," ")+" gemeldet ("+rep.how+")"}];
   // nicht gemeldete Anteile, deren Zeitraum schon abgeschlossen ist → im ersten offenen Zeitraum nachholen
   return out0.map(function(pt){ var pk=periodKeyOf(st,pt.date); if(!st||!periodClosed(st,pk)) return pt; var fo=firstOpenFrom(st,pt.date); if(!fo) return pt;
     return {share:pt.share,date:fo.from,why:"Nachholung aus "+pk.replace("-Q"," Q").replace("-M"," Monat ")+(pt.pre?" – Anzahlung vor Rechnung":" – Leistungszeitpunkt in bereits abgegebenem Zeitraum")+" (dort nicht gemeldet)",pre:pt.pre}; }); }
 function sollParts0(inv,st,total){
-  total=total==null?1:total; var g=num(inv.gross), soll=sollDate(inv), le=leistEnd(inv), c=docCfg(st,inv.id), out=[];
+  total=total==null?1:total; var g=num(inv.gross), soll=sollDate(inv), le=leistEnd(inv), c=docCfg(st,inv), out=[];
   if(c.teil&&inv.delivery&&inv.deliveryUntil&&inv.deliveryUntil>inv.delivery){
     var a=dayNo(inv.delivery), b=dayNo(inv.deliveryUntil), days=b-a+1, ym=inv.delivery.slice(0,7);
     while(ym<=inv.deliveryUntil.slice(0,7)){ var s0=Math.max(a,dayNo(ym+"-01")), e0=Math.min(b,dayNo(monthEnd(ym))), sh=(e0-s0+1)/days;
@@ -212,9 +214,12 @@ function sollParts0(inv,st,total){
 function rcDate(v){ var d=v.date||"", s0=v.delivery||""; return s0&&d&&s0<d?s0:(d||s0); }
 // Vorsteuer: bei längeren Zeiträumen (Jahresabo, im Voraus abgerechnet) Belegdatum; sonst Leistungsbeginn bzw. frühere Zahlung
 function vstDate(v){ var d=v.date||""; if(v.deliveryUntil&&v.delivery&&!isShortPeriod(v)&&v.deliveryUntil>v.delivery) return d; var le=leistEnd(v)||d, pm=payments(v).filter(function(p){ return p.amount>0&&p.date; }).map(function(p){ return p.date; }).sort()[0], t=pm&&pm<le?pm:le; return t>d?t:d; }
-function docCfg(st,id){ return (st.docs&&st.docs[id])||{}; }
-function skipInv(inv,st){ var c=docCfg(st,inv.id); return inv.status<200||inv.type==="MA"||inv.type==="WKR"||c.ignore||c.kz==="ignore"; }
-function skipVou(v,st){ var c=docCfg(st,v.id); return v.status<100||v.type==="RV"||c.ignore||c.kz==="ignore"; }   // RV = Vorlage wiederkehrender Beleg
+/* Cockpit-Einstellungen je Beleg (st.docs): Schlüssel = ID. Die eigene Buchhaltung vergibt Nummern ab 900000000 je Belegart –
+   Ausgabenbeleg und Ausgangsrechnung können also dieselbe Nummer haben. Belege (cd C/D) aus diesem Bereich bekommen deshalb „v“ davor. */
+function docKey(d){ if(d&&typeof d==="object"){ var id=String(d.id); return (d.cd==="C"||d.cd==="D")&&/^9\d{8}$/.test(id)?"v"+id:id; } return String(d); }
+function docCfg(st,d){ return (st.docs&&st.docs[docKey(d)])||{}; }
+function skipInv(inv,st){ var c=docCfg(st,inv); return inv.status<200||inv.type==="MA"||inv.type==="WKR"||c.ignore||c.kz==="ignore"; }
+function skipVou(v,st){ var c=docCfg(st,v); return v.status<100||v.type==="RV"||c.ignore||c.kz==="ignore"; }   // RV = Vorlage wiederkehrender Beleg
 // Nicht-betriebliche Kategorien (Privat, Steuerzahlungen, Umbuchungen, Kredit) – weder Einnahme noch Ausgabe
 var NONBIZ=/privat|entnahme|einlage|umbuchung|geldtransit|transit|umsatzsteuer|vorsteuer|\bust\b|ust-|zahllast|finanzamt|einkommensteuer|\best\b|kapitalertragsteuer|darlehen|kredit(?!karte)|tilgung|kaution/i;
 // Fallbacks, wenn die Kategorie fehlt (sevDesk Update 2.0: accountDatev statt accountingType):
@@ -234,7 +239,7 @@ var TAXRULE_TXT={"1":"steuerpflichtig","2":"Ausfuhr","3":"ig. Lieferung","4":"st
 
 // Ausgangsrechnung (oder Einnahmebeleg): Klasse je Position, mit Begründung
 function outWhy(doc,line,st){
-  var cfg=docCfg(st,doc.id), o=cfg.kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o==="inl"?(line.rate>0?"inl":"pruefen"):o,why:"im Cockpit manuell eingeordnet"+(o==="020"&&cfg.grund?" ("+cfg.grund+")":""),sure:true};
+  var cfg=docCfg(st,doc), o=cfg.kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o==="inl"?(line.rate>0?"inl":"pruefen"):o,why:"im Cockpit manuell eingeordnet"+(o==="020"&&cfg.grund?" ("+cfg.grund+")":""),sure:true};
   // Forderungsausfall berichtigt nur die Steuer (§ 16 Abs. 3) – 0-%-Umsätze bleiben in KZ 017/011 bzw. der ZM gemeldet
   var r=ruleKey(doc), oi=outInfo(doc,st), cc=oi.cc, eu=isEU(cc)&&cc!=="AT", hasUid=!!oi.uid, sem=r?ruleOut(r):"", t=docText(doc);
   // Mahngebühren / Verzugszinsen = Schadenersatz → nicht umsatzsteuerbar, weder in KZ 000 noch in der ZM (Betriebseinnahme bleibt)
@@ -268,8 +273,8 @@ function outClass(doc,line,st){ return outWhy(doc,line,st).c; }
 function atRate(rate){ return AT_RATES.indexOf(Math.round(rate*10)/10)>-1; }
 // Eingangsbeleg: Klasse je Position, mit Begründung
 function inWhy(v,line,st){
-  var o=docCfg(st,v.id).kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o,why:"im Cockpit manuell eingeordnet"};
-  var ac=docCfg(st,v.id);
+  var o=docCfg(st,v).kz; if(o&&o!=="auto"&&o!=="ignore") return {c:o,why:"im Cockpit manuell eingeordnet"};
+  var ac=docCfg(st,v);
   if(ac.asset&&ac.pkw&&Math.abs(line.tax)>0.004&&atRate(line.rate)){
     if(!ac.epkw) return {c:"none",why:"Pkw/Kombi: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG)"};
     var gr=Math.abs(num(v.gross)); if(gr>80000) return {c:"none",why:"E-Pkw über 80.000 € brutto: kein Vorsteuerabzug (§ 12 Abs. 2 Z 2a UStG)"};
@@ -307,7 +312,8 @@ function igeOrService(v,line,st){
   var m=st&&st.supMap&&st.supMap[supKey(v)]; if(m==="rc"||m==="ige") return {c:m,why:"Zuordnung für Lieferant „"+(v.supplier||"")+"“",sure:true};
   var cat=String(line.cat||"")+" "+String(v.desc||""), kz=catKz(st||{},line);
   // Reihenfolge: Anlagegut → bekannter Dienstleister (Meta, Google, Wix … auch wenn die Kategorie „Wareneinkauf“ heißt) → Waren-/Dienstleistungskategorie
-  if(docCfg(st,v.id).asset) return {c:"ige",why:"Warenkauf (Anlagegut)",sure:true};
+  if(docCfg(st,v).asset) return {c:"ige",why:"Warenkauf (Anlagegut)",sure:true};
+  if(FOREIGN_GOODS.some(function(f){ return f[0].test(v.supplier||""); })) return {c:"ige",why:"bekannter Warenlieferant",sure:true};
   var known=FOREIGN.some(function(f){ return f[0].test(v.supplier||""); });
   if(known) return {c:"rc",why:"bekannter Dienstleister",sure:true};
   if(kz==="9100"||kz==="9130"||RX_WARE.test(cat)) return {c:"ige",why:"Warenkauf ("+(line.cat||"Ware")+")",sure:true};
@@ -339,7 +345,7 @@ function partials(raw,st){
     var e=ers.filter(function(er){ return (er.date||"")>=(x.date||"")&&(x.origin&&er.origin?x.origin===er.origin:who(er)===who(x)); })[0];
     if(e) (out.er[e.id]=out.er[e.id]||{list:[]}).list.push(x); });
   ers.forEach(function(er){
-    var L=(out.er[er.id]||{list:[]}).list, A=L.reduce(function(a,x){ return a+num(x.net); },0), head=num(er.net), c=docCfg(st,er.id);
+    var L=(out.er[er.id]||{list:[]}).list, A=L.reduce(function(a,x){ return a+num(x.net); },0), head=num(er.net), c=docCfg(st,er);
     var rawPos=(er.lines||[]).reduce(function(a,l){ return a+num(l.net); },0), neg=(er.lines||[]).reduce(function(a,l){ return a+Math.min(0,num(l.net)); },0), tol=Math.max(0.05,Math.abs(A)*0.005);
     var mode=c.erMode==="rest"||c.erMode==="voll"?c.erMode:(A>0.01&&(Math.abs(head-(rawPos-A))<=tol||(neg<0&&Math.abs(neg+A)<=tol))?"rest":"voll");
     var F=mode==="rest"?head+A:head, soll=sollDate(er), cut=monthEnd(soll.slice(0,7)), D=0;
@@ -378,13 +384,13 @@ var MANUAL_KZ=["001","056","048","082","044","087","032","089","061","083","064"
 // Entgeltsminderung: bezahlte Rechnung mit Zahlbetrag < Brutto (Skonto, Teilausfall) bzw. im Cockpit als uneinbringlich markiert
 /* Ausgebuchte Forderung: im Cockpit mit Datum erfasst (docs[id].ausfall) oder automatisch erkannt – sevDesk liefert über die API
    kein eigenes Kennzeichen; „ausgebucht“ zeigt sich als Status bezahlt (1000) ohne Zahlungsbetrag. Abschaltbar je Rechnung (noAusfall). */
-function ausgebucht(inv,st){ var c=docCfg(st,inv.id); if(inv.type==="SR"||inv.type==="AR") return null;
+function ausgebucht(inv,st){ var c=docCfg(st,inv); if(inv.type==="SR"||inv.type==="AR") return null;
   if(STORNIERT[inv.id]&&!c.ausfall) return null;   // storniert (SR vorhanden) – kein Forderungsausfall
   if(c.ausfall) return {date:c.ausfall,auto:false};
   if(c.noAusfall||inv.status!==1000||num(inv.gross)<=0||Math.abs(num(inv.paid))>=0.005||payments(inv).length) return null;
   return {date:inv.payDate||inv.date,auto:true}; }
 function minderung(inv,st){
-  if(inv.type==="SR"||inv.type==="AR"||inv.type==="ER") return null; var c=docCfg(st,inv.id), g=num(inv.gross), paid=num(inv.paid);
+  if(inv.type==="SR"||inv.type==="AR"||inv.type==="ER") return null; var c=docCfg(st,inv), g=num(inv.gross), paid=num(inv.paid);
   if(g<=0) return null;
   var au=ausgebucht(inv,st); if(au){ var open=g-paid; if(open>0.01&&Math.abs(num(inv.tax))>0.004) return {date:au.date,share:open/g,amount:open,auto:au.auto,why:(au.auto?"ausgebucht (bezahlt ohne Zahlung)":"Forderungsausfall (uneinbringlich)")+" – Berichtigung § 16 Abs. 3 UStG"}; return null; }
   if(c.noMinderung||inv.status!==1000||paid<0.005) return null;
@@ -441,7 +447,7 @@ function computeUva(raw,st,p){
     var m=minderung(inv,st); if(m&&isIstDoc(st,m.date)&&isIstDoc(st,sollDate(inv))) m=null; if(m&&inP(m.date,p)){ ls.forEach(function(l){ revLine(inv,{rate:l.rate,net:-l.net*m.share,tax:-l.tax*m.share},{share:1,date:m.date,why:m.why},"out"); }); minder.push({doc:inv,date:m.date,share:m.share,amount:r2(m.amount),why:m.why,auto:!!m.auto}); }
   });
   (raw.creditNotes||[]).forEach(function(cn){
-    if(cn.status<200||docCfg(st,cn.id).ignore||docCfg(st,cn.id).kz==="ignore") return;
+    if(cn.status<200||docCfg(st,cn).ignore||docCfg(st,cn).kz==="ignore") return;
     var ls=lines(cn).map(function(l){ return {rate:l.rate,net:l.net>0?-l.net:l.net,tax:l.tax>0?-l.tax:l.tax}; });
     if(isIstDoc(st,cn.date)){ istParts(cn,st,"Auszahlung").forEach(function(pt){ if(inP(pt.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:Math.abs(pt.share),date:pt.date,why:pt.why},"out"); }); }); return; }
     if(inP(cn.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:1,date:cn.date,why:"Gutschrift – Monat der Ausstellung"},"out"); });
@@ -469,10 +475,10 @@ function computeUva(raw,st,p){
     }
     if(v.cd!=="C") return;
     ls.forEach(function(l){
-      if(nonBiz(l)&&docCfg(st,v.id).kz!=="060") return;
+      if(nonBiz(l)&&docCfg(st,v).kz!=="060") return;
       var c=inClass(v,l,st);
-      if(c==="rc"||c==="rcnv"){ var d1=rcDate(v); if(!inP(d1,p)) return; var rcr=num(docCfg(st,v.id).rcRate), t=r2(l.net*(rcr===10||rcr===13?rcr:20)/100); add("057",l.net,t,v,"in",d1,"Reverse Charge: Monat der Leistung"); if(c==="rc") add("066",0,t,v,"in",d1,"Vorsteuer aus Reverse Charge"); }
-      else if(c==="ige"){ if(!inP(v.date,p)) return; var igr=num(docCfg(st,v.id).igeRate), rate=IGE_KZ[String(igr)]&&igr!==19?igr:20, t2=r2(l.net*rate/100);   // österr. Satz, nie der Satz der Lieferantenrechnung (Art. 1, § 10 UStG)
+      if(c==="rc"||c==="rcnv"){ var d1=rcDate(v); if(!inP(d1,p)) return; var rcr=num(docCfg(st,v).rcRate), t=r2(l.net*(rcr===10||rcr===13?rcr:20)/100); add("057",l.net,t,v,"in",d1,"Reverse Charge: Monat der Leistung"); if(c==="rc") add("066",0,t,v,"in",d1,"Vorsteuer aus Reverse Charge"); }
+      else if(c==="ige"){ if(!inP(v.date,p)) return; var igr=num(docCfg(st,v).igeRate), rate=IGE_KZ[String(igr)]&&igr!==19?igr:20, t2=r2(l.net*rate/100);   // österr. Satz, nie der Satz der Lieferantenrechnung (Art. 1, § 10 UStG)
         if(Math.abs(l.tax)>0.004) info.push({doc:v,why:"ig. Erwerb mit ausgewiesener ausländischer USt ("+l.rate+" %) – diese ist keine Vorsteuer (Erstattungsverfahren), Lieferant um Rechnung ohne USt bitten"}); add("070",l.net,0,v,"in",v.date,"ig. Erwerb"); add(IGE_KZ[String(rate)],l.net,t2,v,"in",v.date,"ig. Erwerb"); add("065",0,t2,v,"in",v.date,"Vorsteuer ig. Erwerb"); }
       else if(c==="ige3"||c==="ige0"){ if(!inP(v.date,p)) return; if(c==="ige0") add("070",l.net,0,v,"in",v.date,"steuerfreier ig. Erwerb"); /* Dreieck: nur KZ 077, nicht 070 (U 1a Anm. 24) */ add(c==="ige3"?"077":"071",l.net,0,v,"in",v.date,c==="ige3"?"Erwerb gilt als besteuert (Art. 25 Abs. 2)":"steuerfrei (Art. 6 Abs. 2)"); }
       else if(c==="060"&&isIstDoc(st,vstDate(v))){ istParts(v,st,"bezahlt").forEach(function(pt){ if(inP(pt.date,p)) add("060",0,l.tax*pt.share,v,"in",pt.date,"Vorsteuer erst mit Zahlung – "+pt.why); }); }
@@ -575,7 +581,7 @@ function afaByMonth(raw,st,year){
 // Anlagegut: AfA-Plan (Halbjahresregel, linear oder degressiv mit Wechsel auf linear, Pkw mind. 8 Jahre, Luxustangente)
 function assetSplit(v,ls){ ls=ls||lines(v); var a=ls.filter(function(l){ return l.isAsset; }); return a.length&&a.length<ls.length?{asset:a,rest:ls.filter(function(l){ return !l.isAsset; })}:{asset:ls,rest:[]}; }
 function assetInfo(v,st){
-  var c=docCfg(st,v.id); if(!c.asset) return null;
+  var c=docCfg(st,v); if(!c.asset) return null;
   var ls=assetSplit(v).asset, ahk=0; ls.forEach(function(l){ var cl=inClass(v,l,st); ahk+=l.net+((cl==="none"||cl==="fx"||cl==="rcnv")?l.tax:0)+(cl==="rcnv"?l.net*0.2:0); });
   ahk=r2(Math.abs(ahk)); if(num(c.ahk)>0) ahk=r2(num(c.ahk));   // eigener Anlagenwert (z. B. nur ein Teil des Belegs ist die Anlage)
   // Pkw: mind. 8 Jahre (§ 8 Abs. 6 Z 1 EStG); gebrauchter Pkw: Restnutzungsdauer = 8 Jahre minus Zeit seit Erstzulassung (EStR Rz 3240)
@@ -614,7 +620,7 @@ function near15(d){ var md=String(d||"").slice(5,10); return md>="12-17"||(md&&m
 // Wirtschaftliche Zugehörigkeit: Jahr des Leistungsbeginns (sonst Belegdatum); Fälligkeit ≈ Belegdatum, muss ebenfalls im 15-Tage-Fenster liegen
 function zuYear(doc,pmDate,regular){ var y=String(pmDate||"").slice(0,4); if(!regular||!y) return y; var e=doc.delivery||doc.date||"", f=doc.date||e; if(!e||e.slice(0,4)===y) return y;
   return near15(pmDate)&&near15(f)&&Math.abs(dayNo(pmDate)-dayNo(f))<=31?e.slice(0,4):y; }
-function isRegular(doc,st,ls){ var w=docCfg(st,doc.id).wk; if(w==="ja") return true; if(w==="nein") return false; return (ls||[]).some(function(l){ var k=catKz(st,l); return k==="9225"||k==="9180"; }); }
+function isRegular(doc,st,ls){ var w=docCfg(st,doc).wk; if(w==="ja") return true; if(w==="nein") return false; return (ls||[]).some(function(l){ var k=catKz(st,l); return k==="9225"||k==="9180"; }); }
 function computeJab(raw,st,year){
   var y=String(year), Y=yc(year), inp=jabInp(st,y), E={}, cats={}, assets=[], checks=[], rev=0, revDocs=[], other={}, notes=[];
   function addE(kz,v){ E[kz]=(E[kz]||0)+v; }
@@ -622,17 +628,17 @@ function computeJab(raw,st,year){
   (raw.invoices||[]).forEach(function(inv){
     if(skipInv(inv,st)) return; var g=Math.abs(num(inv.gross)), ls=lines(inv), net=ls.reduce(function(a,l){ return a+l.net; },0);
     // Anteil = gezahlter Betrag / Brutto; Storno (net bereits negativ) zählt beim Ausgleich negativ – keine doppelte Negation
-    var reg=docCfg(st,inv.id).wk==="ja";
+    var reg=docCfg(st,inv).wk==="ja";
     payments(inv).forEach(function(pm){ if(zuYear(inv,pm.date,reg)!==y||!g) return; var sh=inv.type==="SR"?Math.abs(pm.amount)/g:pm.amount/g, n=net*sh; rev+=n; revDocs.push({doc:inv,net:r2(n),date:pm.date,src:pm.src}); });
   });
   // Gutschriften an Kunden (Rechnungskorrektur): Einnahmenminderung beim Abfluss (Zahlung laut Bank; sonst „bezahlt“ → Gutschriftsdatum)
   (raw.creditNotes||[]).forEach(function(cn){
-    var c=docCfg(st,cn.id); if(cn.status<200||c.ignore||c.kz==="ignore") return; var g=Math.abs(num(cn.gross)), net=Math.abs(lines(cn).reduce(function(a,l){ return a+l.net; },0)); if(!g) return;
+    var c=docCfg(st,cn); if(cn.status<200||c.ignore||c.kz==="ignore") return; var g=Math.abs(num(cn.gross)), net=Math.abs(lines(cn).reduce(function(a,l){ return a+l.net; },0)); if(!g) return;
     var pm=payments(cn); if(!pm.length&&cn.status===1000) pm=[{date:cn.date,amount:g,src:"status"}];
     pm.forEach(function(x){ if(zuYear(cn,x.date,false)!==y) return; var n=-net*Math.abs(x.amount)/g; rev+=n; revDocs.push({doc:cn,net:r2(n),date:x.date,src:x.src}); });
   });
   (raw.vouchers||[]).forEach(function(v){
-    if(skipVou(v,st)) return; var cfg=docCfg(st,v.id), ls=lines(v), g=num(v.gross);
+    if(skipVou(v,st)) return; var cfg=docCfg(st,v), ls=lines(v), g=num(v.gross);
     var reg=isRegular(v,st,ls);
     if(v.cd==="D"){ payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=pm.amount/g; ls.forEach(function(l){ if(nonBiz(l)) return; var kz=catKz(st,l), n=l.net*sh; if(kz==="9090"||kz==="9060"){ other[kz]=(other[kz]||0)+n; } else { rev+=n; revDocs.push({doc:v,net:r2(n),date:pm.date,src:pm.src}); } }); }); return; }
     if(v.cd!=="C") return;
@@ -670,7 +676,7 @@ function computeJab(raw,st,year){
   var ifb={"9276":0,"9277":0,"9344":0,"9345":0}, ifbBase=0, gfbInvest=0;
   assets.forEach(function(x){ var a=x.a; if(a.sy!==+y) return; var b=a.benefit;
     // § 10 Abs. 3/4 EStG: ND ≥ 4 Jahre, nicht gebraucht, keine GWG, keine Pkw/Kombi
-    if(b==="gfb"&&a.nd>=4&&!a.gwg&&!a.pkw&&!docCfg(st,a.doc.id).used) gfbInvest+=a.ahk;
+    if(b==="gfb"&&a.nd>=4&&!a.gwg&&!a.pkw&&!docCfg(st,a.doc).used) gfbInvest+=a.ahk;
     if(/^ifb/.test(b)&&a.ifbOk){ var base=Math.min(a.pkw?a.luxBase:a.ahk,Math.max(0,C.ifbMax-ifbBase));   ifbBase+=base;   // E-Pkw: nur angemessene AK; max. 1 Mio. € AK je Wirtschaftsjahr
       var oeko=b==="ifb15"||b==="ifb22", erh=a.ifbErhoeht; var kz=oeko?(erh?"9345":"9277"):(erh?"9344":"9276"); var rate=oeko?(erh?0.22:0.15):(erh?0.20:0.10);
       ifb[kz]+=base*rate; x.ifb={kz:kz,amount:r2(base*rate)}; } });
@@ -783,7 +789,7 @@ function controlCheckIst(raw,st,p){
   setRules(raw,st); var ust=0, vst=0, nIn=0, nOut=0, diffs=[];
   function paidShare(d){ var g=num(d.gross); if(!g) return 0; return payments(d).reduce(function(a,pm){ return a+(inP(pm.date,p)?pm.amount/g:0); },0); }
   (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)||!isIstDoc(st,inv.type==="SR"||inv.type==="AR"?inv.date:sollDate(inv))) return; var t=num(inv.tax), sh=paidShare(inv); if(Math.abs(sh)<1e-9) return; ust+=t*sh; nOut++; });
-  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn.id); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!isIstDoc(st,cn.date)) return; var sh=Math.abs(paidShare(cn)); if(sh) ust-=Math.abs(num(cn.tax))*sh; });
+  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!isIstDoc(st,cn.date)) return; var sh=Math.abs(paidShare(cn)); if(sh) ust-=Math.abs(num(cn.tax))*sh; });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v), sh=paidShare(v); if(Math.abs(sh)<1e-9) return;
     if(v.cd==="D"){ if(isIstDoc(st,v.delivery||v.date)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax*sh; }); return; }
     if(v.cd!=="C"||!isIstDoc(st,vstDate(v))) return; var t=0; ls.forEach(function(l){ if(!nonBiz(l)&&sevClassOf(v,l)==="060"&&atRate(l.rate)) t+=l.tax; }); if(Math.abs(t)<0.005) return; vst+=t*sh; nIn++;
@@ -805,7 +811,7 @@ function controlCheck(raw,st,p){
     else if(inv.type==="SR") uv.push(inv.date); else sollParts(inv,st,1).forEach(function(pt){ uv.push(pt.date); });
     var inU=uv.some(function(d){ return inP(d,p); });
     if(Math.abs(t)>0.004&&(inS!==inU||(inS&&uv.some(function(d){ return !inP(d,p); }))||(inv.type==="ER"&&inS))) diffs.push({doc:inv,kind:"out",tax:r2(t),sev:inv.date,uva:uv.join(", "),why:inv.type==="AR"?"Anzahlung: U30 im Monat der Zahlung":(inv.type==="ER"?"Endrechnung: U30 nur Gesamtentgelt abzüglich versteuerter Anzahlungen":"U30 nach Leistungsdatum/Soll-Zeitpunkt, Kontrollrechnung nach Rechnungsdatum")}); });
-  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn.id); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
+  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v);
     if(v.cd==="D"){ if(inP(v.date,p)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax; }); return; }
     if(v.cd!=="C") return; var t=0; ls.forEach(function(l){ if(!nonBiz(l)&&sevClassOf(v,l)==="060"&&atRate(l.rate)) t+=l.tax; }); if(Math.abs(t)<0.005) return;
@@ -821,11 +827,11 @@ function zeroRated(raw,st,p){ setRules(raw,st); var out=[];
   (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)||inv.type==="SR") return; var ls=lines(inv); if(!ls.some(function(l){ return Math.abs(l.tax)<0.005&&Math.abs(l.net)>0.004&&!(l.rate>0); })) return;
     var d=leistEnd(inv); if(!inP(d,p)&&!inP(inv.date,p)) return;
     var w=null; ls.forEach(function(l){ if(l.rate>0) return; var x=outWhy(inv,l,st); if(!w||!x.sure) w=x; }); if(!w) return;
-    var oi=outInfo(inv,st), cfg=docCfg(st,inv.id);
+    var oi=outInfo(inv,st), cfg=docCfg(st,inv);
     out.push({doc:inv,net:r2(ls.filter(function(l){ return !(l.rate>0); }).reduce(function(a,l){ return a+l.net; },0)),klasse:w.c,why:w.why,sure:!!w.sure,manual:!!(cfg.kz&&cfg.kz!=="auto"),at:!!w.at,uid:oi.uid,uidSrc:oi.uidSrc,land:oi.cc,landSrc:oi.ccSrc,rule:ruleKey(inv)?ruleTxt(ruleKey(inv)):""}); });
   return out; }
 function igeReview(raw,st,p){ setRules(raw,st); var by={};
-  (raw.vouchers||[]).forEach(function(v){ if(v.cd!=="C"||skipVou(v,st)||!inP(v.date,p)) return; lines(v).forEach(function(l){ var r=ruleKey(v); if(nonBiz(l)||!(r?ruleIn(r)==="ige":v.taxType==="eu")||(docCfg(st,v.id).kz&&docCfg(st,v.id).kz!=="auto")) return;
+  (raw.vouchers||[]).forEach(function(v){ if(v.cd!=="C"||skipVou(v,st)||!inP(v.date,p)) return; lines(v).forEach(function(l){ var r=ruleKey(v); if(nonBiz(l)||!(r?ruleIn(r)==="ige":v.taxType==="eu")||(docCfg(st,v).kz&&docCfg(st,v).kz!=="auto")) return;
     var w=igeOrService(v,l,st), k=supKey(v), x=by[k]=by[k]||{key:k,supplier:v.supplier||"",klasse:w.c,why:w.why,sure:w.sure,net:0,docs:[]}; x.net+=l.net; if(x.docs.indexOf(v)<0) x.docs.push(v); if(!w.sure) x.sure=false; }); });
   return Object.keys(by).map(function(k){ by[k].net=r2(by[k].net); return by[k]; }); }
 
@@ -840,16 +846,52 @@ function suggestRule(v,c){
   if(c==="rc") return eu?"14":"12"; if(c==="rcnv") return "13"; if(c==="ige") return "8"; if(c==="060") return "9"; if(c==="none"||c==="fx") return "10"; return "";
 }
 function sevClassOf(v,l){ var r=ruleKey(v), sem=r?ruleIn(r):""; if(sem==="ige"||sem==="none"||sem==="rc"||sem==="rcnv") return sem; if(sem==="060"||!r) return Math.abs(l.tax)>0.004?"060":"none"; return ""; }
+/* ---------- USt-Prüfung: Belege, deren Steuerregel zwar zur Einordnung passt, aber vermutlich falsch ist ----------
+   (Abgleich unten findet nur Widersprüche zwischen Regel und Einordnung – ein Beleg ganz ohne Regel fällt dort nicht auf.) */
+var RX_DRITT=/(shen ?zhen|guang ?zhou|dong ?guan|donguan|beijing|shanghai|hangzhou|wenzhou|wuxi|zhengzhou|quanzhou|ganzhou|shantou|chengdu|guizhou|yiwu|ningbo|xiamen|fujian|hong ?kong|youxian ?gongsi|youxiangongsi|maoyi ?you|kejiyouxian)|\(hk\)/i;
+var RX_IGE_TXT=/\big\.? ?(lieferung|erwerb)|innergemeinschaftlich|intra.?community|art\.? ?138|§ ?4 ?nr\.? ?1 ?b|steuerfreie eu/i;
+var RX_RC_TXT=/reverse.?charge|steuerschuldnerschaft|(ü|ue)bergang der steuerschuld|steuerschuld geht|art\.? ?196|§ ?13 ?b|vat reverse/i;
+// wie wurde derselbe Lieferant sonst gebucht? (nur Belege mit Regel) → {c, n, rule}
+function supHistory(raw){ var h={}; (raw.vouchers||[]).forEach(function(v){ if(v.cd!=="C"||v.status<100) return; var r=ruleKey(v), sem=r?ruleIn(r):"", k=supKey(v); if(!sem||!k) return;
+  var o=h[k]=h[k]||{n:0,c:{},rule:{}}; o.n++; o.c[sem]=(o.c[sem]||0)+1; if(/^\d+$/.test(r)) o.rule[sem]=r; }); return h; }
+function supDominant(h,v){ var o=h[supKey(v)]; if(!o) return null; var best=""; Object.keys(o.c).forEach(function(c){ if(!best||o.c[c]>o.c[best]) best=c; }); return best&&o.c[best]/o.n>=0.6?{c:best,n:o.c[best],rule:o.rule[best]||""}:null; }
+function ustChecks(raw,st,v,ls,cc,hist){
+  var cfg=docCfg(st,v); if(cfg.checkOk||(cfg.kz&&cfg.kz!=="auto")) return [];
+  var bl=ls.filter(function(l){ return !nonBiz(l); }); if(!bl.length) return [];
+  var cls=bl.map(function(l){ return inClass(v,l,st); }), allZero=bl.every(function(l){ return Math.abs(l.tax)<0.005&&!l.rate; });
+  var r=ruleKey(v), sem=r?ruleIn(r):"", sm=st.supMap&&st.supMap[supKey(v)], dom=supDominant(hist,v), txt=[v.supplier,v.desc].join(" ");
+  var known=FOREIGN.some(function(f){ return f[0].test(v.supplier||""); }), ware=bl.some(function(l){ return RX_WARE.test(String(l.cat||"")); });
+  var canRule=function(rule){ return !!rule&&!v.enshrined&&(!!v.taxRule||!!(raw&&raw.local)||!r)&&(rule==="9"||rule==="10"||allZero); };
+  var mk=function(sub,t,why,rule,kz,extra){ return Object.assign({doc:v,kind:"in",type:"check",sub:sub,t:t,fix:why,rule:rule||"",fixable:canRule(rule),enshrined:!!v.enshrined,kz:kz||""},extra||{}); };
+  var lf=v.supplier?"„"+v.supplier+"“":"des Lieferanten";
+  if(allZero&&cls.every(function(c){ return c==="none"; })&&(!sem||sem==="060")){
+    var ige=RX_IGE_TXT.test(txt)?"Belegtext nennt ig. Lieferung/Erwerb":sm==="ige"?"Lieferant "+lf+" ist als Warenlieferant (ig. Erwerb) zugeordnet":dom&&dom.c==="ige"?dom.n+" andere Belege "+lf+" sind als ig. Erwerb gebucht":"";
+    if(ige) return [mk("ige","Ware aus der EU ohne USt, aber nicht als ig. Erwerb gebucht – fehlt in KZ 070/072 und als Vorsteuer in KZ 065 (Zahllast bleibt gleich)",ige,"8","ige")];
+    var rc=RX_RC_TXT.test(txt)?"Belegtext nennt Reverse Charge":sm==="rc"?"Lieferant "+lf+" ist als Dienstleister (Reverse Charge) zugeordnet":dom&&dom.c==="rc"?dom.n+" andere Belege "+lf+" sind als Reverse Charge gebucht":"";
+    if(rc){ var rr=dom&&dom.c==="rc"&&dom.rule?dom.rule:(cc&&cc!=="AT"&&!isEU(cc)?"12":"14");
+      return [mk("rc","Ausländische Leistung ohne USt, aber nicht als Reverse Charge gebucht – fehlt in KZ 057 und als Vorsteuer in KZ 066 (Zahllast bleibt gleich)",rc,rr,"rc")]; }
+  }
+  if(cls.some(function(c){ return c==="ige"; })&&sm!=="ige"){
+    var uc=uidCountry(v.supplierUid), dritt=(cc&&cc!=="AT"&&!isEU(cc))?"Lieferant aus "+cc:(!uc&&RX_DRITT.test(v.supplier||""))?"Lieferant nach Name in China/Hongkong":"";
+    if(dritt) return [mk("dritt","Als ig. Erwerb gebucht, aber "+dritt+" – ig. Erwerb gibt es nur bei Lieferung aus einem EU-Land. Ware aus dem Drittland: keine UVA-Kennzahl (Einfuhrumsatzsteuer nur mit Zollbeleg, KZ 061).",
+      "Ausnahme: Versand aus einem EU-Lager mit EU-UID des Händlers (z. B. Amazon) – dann passt ig. Erwerb.","10","none",{supOk:true})]; }
+  if(cls.some(function(c){ return c==="rc"; })&&sem==="rc"&&ware&&!known&&sm!=="rc"&&(!cc||(cc!=="AT"&&isEU(cc))))
+    return [mk("warerc","Ware aus der EU als Reverse Charge (Dienstleistung) gebucht – richtig ist ig. Erwerb: KZ 070/072/065 statt 057/066 (Zahllast bleibt gleich)","Kategorie „"+(bl.filter(function(l){ return RX_WARE.test(String(l.cat||"")); })[0].cat)+"“ ist ein Warenkauf","8","ige")];
+  if(cls.some(function(c){ return c==="060"; })&&cc&&cc!=="AT")
+    return [mk("oss","Ausländischer Anbieter ("+cc+") hat österreichische USt verrechnet – das ist eine Rechnung für Privatkunden (OSS). Vorsteuer daraus ist streng genommen nicht abziehbar.",
+      "Tipp: im Kundenkonto des Anbieters die UID hinterlegen – dann kommt die Rechnung ohne USt (Reverse Charge) und die Frage stellt sich nicht.","","none",{hint:true})];
+  return [];
+}
 function mismatches(raw,st,from,to){
-  setRules(raw,st); var out=[];
+  setRules(raw,st); var out=[], hist=supHistory(raw);
   (raw.vouchers||[]).forEach(function(v){
     if(v.cd!=="C"||skipVou(v,st)) return; var d=v.date||""; if(from&&(d<from||d>to)) return;
-    var ls=lines(v), cc=supplierCountry(v), seen={};
+    var ls=lines(v), cc=supplierCountry(v), seen={}, had=out.length;
     ls.forEach(function(l){
       if(nonBiz(l)) return;
-      var mine=inClass(v,l,st), sev=sevClassOf(v,l), ov=docCfg(st,v.id).kz;
+      var mine=inClass(v,l,st), sev=sevClassOf(v,l), ov=docCfg(st,v).kz;
       var key=mine+"|"+sev; if(seen[key]) return; seen[key]=1;
-      if(mine==="060"&&catKz(st,l)==="9170"&&!docCfg(st,v.id).epkw&&!(st.settings&&st.settings.kfzVst)&&!seen.pkw){ /* Fiskal-Lkw/Kleinbus/E-Auto laut Einstellung: Vorsteuer erlaubt */ seen.pkw=1; out.push({doc:v,kind:"in",type:"pkw",t:"Kfz-Kosten mit Vorsteuer: bei Pkw/Kombi kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – ausgenommen E-Pkw (CO2 0), Fiskal-Lkw/Klein-Lkw laut BMF-Liste, Kleinbusse",fix:"Als 'nicht vorsteuerabziehbar' buchen, falls Pkw.",rule:"",fixable:false}); }
+      if(mine==="060"&&catKz(st,l)==="9170"&&!docCfg(st,v).epkw&&!(st.settings&&st.settings.kfzVst)&&!seen.pkw){ /* Fiskal-Lkw/Kleinbus/E-Auto laut Einstellung: Vorsteuer erlaubt */ seen.pkw=1; out.push({doc:v,kind:"in",type:"pkw",t:"Kfz-Kosten mit Vorsteuer: bei Pkw/Kombi kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – ausgenommen E-Pkw (CO2 0), Fiskal-Lkw/Klein-Lkw laut BMF-Liste, Kleinbusse",fix:"Als 'nicht vorsteuerabziehbar' buchen, falls Pkw.",rule:"",fixable:false}); }
       if(mine==="fx") out.push({doc:v,kind:"in",type:"fx",t:"Ausländische USt ("+l.rate+" %) – in Österreich nicht als Vorsteuer abziehbar",fix:"Als 'nicht vorsteuerabziehbar' buchen; Rückholung nur über das Erstattungsverfahren des Landes.",rule:"",fixable:false});
       else if(sev&&mine!==sev&&!(mine==="none"&&sev==="none")){
         var rule=suggestRule(v,mine), allZero=ls.every(function(x){ return Math.abs(x.tax)<0.005&&!x.rate; });
@@ -857,6 +899,7 @@ function mismatches(raw,st,from,to){
         out.push({doc:v,kind:"in",type:ov&&ov!=="auto"?"override":"rule",t:(ov&&ov!=="auto"?"Einordnung weicht von der Steuerregel ab":"Steuerregel passt nicht")+": Steuerregel "+(ruleKey(v)?ruleTxt(ruleKey(v)):(v.taxType||"–"))+" → Einordnung "+(IN_OPTS.filter(function(o){ return o[0]===mine; })[0]||[,mine])[1]+(cc?" (Lieferant "+cc+")":""),rule:rule,fixable:canRule&&!v.enshrined,enshrined:!!v.enshrined});
       }
     });
+    if(out.length===had) ustChecks(raw,st,v,ls,cc,hist).forEach(function(x){ out.push(x); });
   });
   (raw.invoices||[]).forEach(function(inv){
     if(skipInv(inv,st)) return; var d=inv.delivery||inv.date||""; if(from&&(d<from||d>to)) return;
@@ -867,7 +910,7 @@ function mismatches(raw,st,from,to){
       else if(!uv.ok) out.push({doc:inv,kind:"out",type:"uid",t:"UID „"+eu0+"“ ungültig: "+uv.why,fixable:false});
       if(!inv.delivery) out.push({doc:inv,kind:"out",type:"delivery",t:"Kein Leistungsdatum – ZM-Zeitraum wird nach Rechnungsdatum bestimmt",fixable:false});
     }
-    var ov=docCfg(st,inv.id).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – Steuerregel: "+(ruleKey(inv)?ruleTxt(ruleKey(inv)):(inv.taxType||"–")),fixable:false});
+    var ov=docCfg(st,inv).kz; if(ov&&ov!=="auto"&&ov!=="ignore") out.push({doc:inv,kind:"out",type:"override",t:"Nur im Cockpit eingeordnet ("+ov+") – Steuerregel: "+(ruleKey(inv)?ruleTxt(ruleKey(inv)):(inv.taxType||"–")),fixable:false});
     if(Math.abs(num(inv.tax))>0.004&&/§ ?6 abs\.? ?1 z(iffer)?\.? ?27|kleinunternehmer/i.test(docText(inv))) out.push({doc:inv,kind:"out",type:"ku",t:"Rechnungstext Kleinunternehmer, aber USt ausgewiesen (§ 11 Abs. 12 UStG: die ausgewiesene Steuer wird geschuldet) – Rechnungstext korrigieren",fixable:false});
     if(cl.indexOf("pruefen")>-1) out.push({doc:inv,kind:"out",type:"rule",t:"0 % bei steuerpflichtiger Steuerregel – Steuerregel oder Satz prüfen",fixable:false});
   });
@@ -877,7 +920,7 @@ function mismatches(raw,st,from,to){
 /* ---------- Forderungen: erkannte Entgeltsminderungen und alte offene Rechnungen (mögliche Ausfälle) ---------- */
 function receivables(raw,st,today){
   var out={minder:[],alt:[]}, lim=today?ymdAdd(today,-180):"";
-  (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)) return; var c=docCfg(st,inv.id), g=num(inv.gross), paid=num(inv.paid);
+  (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)) return; var c=docCfg(st,inv), g=num(inv.gross), paid=num(inv.paid);
     if(inv.status===1000&&!c.ausfall&&inv.type!=="SR"&&inv.type!=="AR"&&g>0&&paid>0.004&&g-paid>=0.02) out.minder.push({doc:inv,diff:r2(g-paid),pct:r2((g-paid)/g*100),aktiv:!!minderung(inv,st),aus:!!c.noMinderung});
     if((inv.status===200||inv.status===750)&&g>0&&(c.ausfall||(lim&&(inv.date||"")<lim))) out.alt.push({doc:inv,open:r2(g-paid),ausfall:c.ausfall||""}); });
   return out;
@@ -905,14 +948,15 @@ function euSummary(raw,st,p){
 }
 /* ---------- Schnittstelle für KI-Vorschläge: aktuelle Einordnung eines Belegs mit Begründung ---------- */
 // Liefert pro Position die Klasse (OUT_OPTS/IN_OPTS-Schlüssel), Kennzahlen und eine Begründung – ohne Seiteneffekte.
-function explainDoc(raw,st,id){
-  setRules(raw,st); id=String(id);
-  var inv=(raw.invoices||[]).concat(raw.creditNotes||[]).find(function(d){ return d.id===id; }), v=(raw.vouchers||[]).find(function(d){ return d.id===id; }), d=inv||v;
+// kind: "voucher" | "invoice" (optional) – nötig, wenn Beleg und Rechnung dieselbe Nummer haben; „v900…“ meint immer den Beleg
+function explainDoc(raw,st,id,kind){
+  setRules(raw,st); id=String(id); if(/^v9\d{8}$/.test(id)){ id=id.slice(1); kind="voucher"; }
+  var inv=kind==="voucher"?null:(raw.invoices||[]).concat(raw.creditNotes||[]).find(function(d){ return d.id===id; }), v=kind==="invoice"?null:(raw.vouchers||[]).find(function(d){ return d.id===id; }), d=kind==="voucher"?v:(inv||v);
   if(!d) return null;
   var out=!!inv||(v&&v.cd==="D"), kz={inl:"000 + Satz-KZ",ns:"–",zm:"ZM",zmd:"ZM (Dreieck)","017":"000 + 017","011":"000 + 011","020":"000 + 020","021":"000 + 021","016":"000 + 016",oss:"OSS","060":"060",rc:"057 + 066",rcnv:"057",ige:"070 + 072/073/008 + 065",ige3:"077",ige0:"070 + 071",eust:"061",fx:"–",none:"–",pruefen:"–"};
   var ls=lines(d).map(function(l){ var w=out?outWhy(d,l,st):inWhy(d,l,st); return {rate:l.rate,net:r2(l.net),tax:r2(l.tax),cat:l.cat,klasse:w.c,kennzahlen:kz[w.c]||"",begruendung:w.why,nichtBetrieblich:nonBiz(l)}; });
   return {id:id,art:out?"Ausgang":"Eingang",nr:d.nr||"",partner:d.contact||d.supplier||"",datum:d.date,leistungsdatum:d.delivery||null,netto:d.net,steuer:d.tax,brutto:d.gross,
-    sevDeskRegel:ruleKey(d)?{id:ruleKey(d),text:ruleTxt(ruleKey(d))}:null,land:out?customerCountry(d,st):supplierCountry(d),uid:out?outInfo(d,st).uid:(d.supplierUid||""),override:docCfg(st,id).kz||null,
+    sevDeskRegel:ruleKey(d)?{id:ruleKey(d),text:ruleTxt(ruleKey(d))}:null,land:out?customerCountry(d,st):supplierCountry(d),uid:out?outInfo(d,st).uid:(d.supplierUid||""),key:docKey(d),override:docCfg(st,d).kz||null,
     positionen:ls,optionen:(out?OUT_OPTS:IN_OPTS).map(function(o){ return o[0]; })};
 }
 
@@ -921,5 +965,5 @@ return {VERSION:10,uvaDocIds:uvaDocIds,ausgebucht:ausgebucht,reportedIn:reported
   OUT_OPTS:OUT_OPTS,IN_OPTS:IN_OPTS,UVA_ROWS:UVA_ROWS,MANUAL_KZ:MANUAL_KZ,BASE_KZ:BASE_KZ,TAX_KZ:TAX_KZ,TAXRULE_TXT:TAXRULE_TXT,E1A:E1A,
   computeUva:computeUva,uvaKzMap:uvaKzMap,istFrom:istFrom,besteuerungTxt:besteuerungTxt,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,afaMonths:afaMonths,afaByMonth:afaByMonth,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
   revenueNet:revenueNet,revenueGross:revenueGross,controlCheck:controlCheck,plausibility:plausibility,mismatches:mismatches,docCfg:docCfg,
-  outWhy:outWhy,inWhy:inWhy,uidValid:uidValid,ruleDiagnosis:ruleDiagnosis,ruleTxt:ruleTxt,setRules:setRules,receivables:receivables,euSummary:euSummary,explainDoc:explainDoc,minderung:minderung,kids:kids,faboKids:faboKids,jabInp:jabInp};
+  outWhy:outWhy,inWhy:inWhy,uidValid:uidValid,ruleDiagnosis:ruleDiagnosis,ruleTxt:ruleTxt,setRules:setRules,receivables:receivables,euSummary:euSummary,explainDoc:explainDoc,docKey:docKey,minderung:minderung,kids:kids,faboKids:faboKids,jabInp:jabInp};
 });
