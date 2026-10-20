@@ -48,7 +48,7 @@ module.exports = function (D) {
     const it = Object.assign({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), createdAt: nowIso() }, clean);
     ST.items.push(it); await persist();
     // Geldtransit zwischen eigenen Konten (Mollie/PayPal/Bank) bucht das Cockpit selbst – aber nur, wenn die Zuordnung eindeutig ist (vom Nutzer so gewünscht)
-    if (p.autoAccept && (p.kind === "mollie-payout" || p.kind === "transfer" || (p.kind === "mollie-match" && /^Connect-Provision/.test(String(p.title || ""))))) { try { await accept(it.id); it.auto = true; ST.log = (ST.log || []).concat([{ at: nowIso(), kind: it.kind, title: it.title, amount: it.amount, auto: true }]).slice(-500); await persist(); return true; } catch (e) { console.error("Geldtransit automatisch:", e.message); } }
+    if (p.autoAccept && (p.kind === "mollie-payout" || p.kind === "transfer" || p.kind === "mollie-credit" || (p.kind === "mollie-match" && /^Connect-Provision/.test(String(p.title || ""))))) { try { await accept(it.id); it.auto = true; ST.log = (ST.log || []).concat([{ at: nowIso(), kind: it.kind, title: it.title, amount: it.amount, auto: true }]).slice(-500); await persist(); return true; } catch (e) { console.error("Geldtransit automatisch:", e.message); } }
     notifySoon(it);
     return true;
   }

@@ -238,6 +238,8 @@ function outWhy(doc,line,st){
   var r=ruleKey(doc), oi=outInfo(doc,st), cc=oi.cc, eu=isEU(cc)&&cc!=="AT", hasUid=!!oi.uid, sem=r?ruleOut(r):"", t=docText(doc);
   // Mahngebühren / Verzugszinsen = Schadenersatz → nicht umsatzsteuerbar, weder in KZ 000 noch in der ZM (Betriebseinnahme bleibt)
   if(!(line.rate>0)&&(doc.type==="MA"||(doc.cd==="D"&&/mahngeb(ü|ue)hr|mahnspesen|verzugszins|schadenersatz/i.test(String(doc.desc||"")+" "+String(line.cat||""))))) return {c:"sonst",why:"Mahngebühr/Verzugszinsen = Schadenersatz – nicht umsatzsteuerbar, nicht in UVA und ZM",sure:true};
+  // Gutschrift von Zahlungsgebühren (z. B. Mollie-Monatsrechnung): Minderung einer Ausgabe, keine eigene Leistung → nicht umsatzsteuerbar
+  if(!(line.rate>0)&&doc.cd==="D"&&/geb(ü|ue)hrengutschrift/i.test(String(doc.desc||""))) return {c:"sonst",why:"Gutschrift von Zahlungsgebühren – keine eigene Leistung, nicht umsatzsteuerbar",sure:true};
   var lief=RX_LIEF.test(t), drei=RX_DREI.test(t), rc=RX_RC.test(t), igK=drei?"zmd":(lief?"017":"zm"), igT=drei?"Dreiecksgeschäft":(lief?"ig. Lieferung":"ig. sonstige Leistung");
   var land=cc?" (Kunde "+cc+(oi.ccSrc?" laut "+oi.ccSrc:"")+(hasUid?", UID "+oi.uid+(oi.uidSrc!=="Kontakt"?" aus "+oi.uidSrc:""):", keine UID")+")":"";
   if(sem==="inl"||(!r&&(doc.taxType==="default"||doc.taxType==="custom"||!doc.taxType))){

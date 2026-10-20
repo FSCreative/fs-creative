@@ -156,6 +156,10 @@ module.exports = function (D) {
   async function autoVouchers() {
     let n = 0; const now = Date.now(), prop = P(); if (!prop) return 0;
     try { n += await onlineProvisions(prop); } catch (e) { console.error("Online-Provisionen:", e.message); }
+    // Gebührengutschriften aus der Mollie-Monatsrechnung: feste Regel, wird gleich gebucht (Zur Prüfung → Verlauf)
+    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "invoice-compensation" && String(x.status) === "100" && +x.amount > 0)) {
+      try { if (await prop.add({ autoAccept: true, kind: "mollie-credit", key: "mcred:" + tx.id, txId: String(tx.id), amount: r2(+tx.amount), date: day(tx.valueDate), title: "Mollie-Gebührengutschrift als Einnahme-Beleg 0 % buchen", detail: "Mollie B.V. · Monatsrechnung mit Guthaben verrechnet · " + eu(+tx.amount), source: "Mollie-Abruf", payload: { txId: String(tx.id) } })) n++; } catch (e) { console.error("Mollie-Gutschrift:", e.message); }
+    }
     for (const tx of L.all("CheckAccountTransaction").filter(x => (x.mollieType === "payment" || x.mollieType === "application-fee") && String(x.status) === "100" && +x.amount > 0)) {
       const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
       if (tx.mollieType === "payment" && now - Date.parse(day(tx.valueDate) + "T12:00:00Z") < 3 * 864e5) continue;   // Rechnung kann noch kommen
@@ -173,6 +177,20 @@ module.exports = function (D) {
       try { if (await prop.add({ kind: "mollie-income", key: "minc:" + tx.id, txId: String(tx.id), amount: r2(gross), date: day(tx.valueDate), title: prov ? "Provision kochdu (Mollie Connect) als Einnahme-Beleg buchen" : "Einnahme-Beleg 20 % anlegen (keine Rechnung gefunden)", detail: (tx.payeePayerName || acc.name) + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id) } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); }
     }
     return n;
+  }
+  // Mollie-Monatsrechnung mit Guthaben verrechnet, Betrag positiv = Mollie hat zu viel Gebühr einbehalten und gibt es zurück (meist Cent-Beträge).
+  // Buchung: Einnahme-Beleg „Mollie-Gebührengutschrift“ 0 % (Minderung umsatzsteuerfreier Zahlungsgebühren → nicht umsatzsteuerbar, nicht in der UVA)
+  function feeCat() { const ats = L.all("AccountingType"); return ats.find(a => String(a.id) === "74") || ats.find(a => /kartengeb|kontof(ü|ue)hrung|bankspesen|bankgeb|geldverkehr/i.test(String(a.name || ""))) || null; }
+  async function creditVoucher(pl) {
+    const tx = L.get("CheckAccountTransaction", pl.txId); if (!tx || String(tx.status) !== "100") throw new Error("Der Mollie-Umsatz ist nicht mehr offen");
+    if (!(+tx.amount > 0)) throw new Error("Keine Gutschrift");
+    const d = day(tx.valueDate), pm = new Date(d + "T12:00:00Z"); pm.setUTCMonth(pm.getUTCMonth() - 1);
+    const mm = pm.toISOString().slice(5, 7) + "/" + pm.toISOString().slice(0, 4), cat = feeCat();
+    const body = { voucher: { supplierName: "Mollie B.V.", description: "Mollie-Gebührengutschrift (Monatsrechnung " + mm + " mit Guthaben verrechnet) – nicht umsatzsteuerbar", voucherDate: d, creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id) },
+      voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "0", sumGross: String(r2(+tx.amount)), net: "false", comment: "Gebührengutschrift Mollie, 0 % (Zahlungsdienst, Minderung der Gebühren)" }] };
+    const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
+    await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +tx.amount, date: d, checkAccountTransaction: { id: String(tx.id) } } });
+    return v.id;
   }
   async function incomeVoucher(pl) {
     const tx = L.get("CheckAccountTransaction", pl.txId); if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen");
@@ -219,6 +237,7 @@ module.exports = function (D) {
     if (kind === "mollie-fee") return bookFees(pl);
     if (kind === "mollie-payout") return bookPayout(pl);
     if (kind === "mollie-income") return incomeVoucher(pl);
+    if (kind === "mollie-credit") return creditVoucher(pl);
     throw new Error("unbekannter Mollie-Vorschlag");
   }
   async function syncOrg(tk, since, opt) {

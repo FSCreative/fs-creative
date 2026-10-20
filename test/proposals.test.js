@@ -38,7 +38,7 @@ function setup() {
   L.setProposer(P);
   P.register("rule", { exec: it => R.acceptProposal(it.payload) });
   const M = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P });
-  ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income"].forEach(k => P.register(k, { exec: it => M.accept(k, it.payload) }));
+  ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => P.register(k, { exec: it => M.accept(k, it.payload) }));
   P.register("transfer", { exec: it => L.pairApply(it.payload.aId, it.payload.bId) });
   return { fin, L, P, R, M };
 }
@@ -252,6 +252,15 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     const g = (M.summary().find(a => String(a.id) === "2").passthrough || []).find(x => x.party === "La Taverna");
     assert.strictEqual(g.count, 4); assert.strictEqual(g.late.count, 2); assert.strictEqual(g.late.net, 7.4);
     assert.strictEqual(await M.autoPassthrough(), 0, "nichts doppelt");
+  });
+  await t("Mollie-Gebührengutschrift (Monatsrechnung verrechnet, Betrag positiv): automatisch Einnahme-Beleg 0 % und mit dem Umsatz verbunden", async () => {
+    await L.save("CheckAccountTransaction", { id: "951", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "0.13", valueDate: "2026-10-01T00:00:00+02:00", entryDate: "2026-10-01T00:00:00+02:00", payeePayerName: "Mollie B.V.", paymtPurpose: "Mollie-Rechnung verrechnet", status: "100", mollieType: "invoice-compensation", mollieFee: true, mollieId: "m951" });
+    await L.save("CheckAccountTransaction", { id: "952", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "-0.40", valueDate: "2026-10-01T00:00:00+02:00", entryDate: "2026-10-01T00:00:00+02:00", payeePayerName: "Mollie B.V.", paymtPurpose: "Mollie-Rechnung verrechnet", status: "100", mollieType: "invoice-compensation", mollieFee: true, mollieId: "m952" });
+    await M.autoVouchers();
+    const v = L.all("Voucher").find(x => x.fromMollie === "951"); assert.ok(v, "Beleg angelegt"); assert.strictEqual(String(v.creditDebit), "D"); assert.ok(/Gebührengutschrift/.test(v.description) && /09\/2026/.test(v.description), v.description);
+    assert.strictEqual(+v.sumGross, 0.13); assert.strictEqual(+v.sumTax, 0); assert.notStrictEqual(String(L.get("CheckAccountTransaction", "951").status), "100", "Umsatz verbunden");
+    assert.strictEqual(String(L.get("CheckAccountTransaction", "952").status), "100", "Abzug (negativ) bleibt für die Gebühren-Zuordnung");
+    assert.ok(!(await P.list()).some(x => x.key === "mcred:951"), "nichts mehr offen");
   });
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
   fails.forEach(f => console.log(" ✗ " + f));

@@ -1097,7 +1097,7 @@ async function sevBuild() {
   const vouchers = (vou && vou.objects || []).map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), supplier: v.supplierName || "", desc: v.description || "" }));
   return { configured: true, source: SEV.src, version: ver && ver.objects && ver.objects.version || null, fetchedAt: new Date().toISOString(), today,
     invoices: invoices.slice(0, 600), accounts, transactions: txAll.slice(0, 120),
-    unassigned: txAll.filter(t => t.status === 100).length,
+    unassigned: (() => { const prov = new Set((tx && tx.objects || []).filter(t => t.mollieType === "application-fee").map(t => String(t.id))); return txAll.filter(t => t.status === 100 && !prov.has(t.id)).length; })(),   // Connect-Provisionen laufen über die Monats-Sammelrechnung
     vouchers: { drafts: vouchers.filter(v => v.status === 50).length, open: vouchers.filter(v => v.status === 100 && v.cd === "C").length,
       openSum: Math.round(vouchers.filter(v => v.status === 100 && v.cd === "C").reduce((s, v) => s + Math.max(0, v.gross - v.paid), 0) * 100) / 100,
       recent: vouchers.sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 12) } };
@@ -3849,7 +3849,7 @@ setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.co
 const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
 // Ausführung bestätigter Vorschläge: jeweils genau die Funktion, die früher automatisch lief
 FIN_PROP.register("rule", { exec: it => FIN_RULES.acceptProposal(it.payload) });
-["mollie-match", "mollie-fee", "mollie-payout", "mollie-income"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
+["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
 FIN_PROP.register("transfer", { exec: it => FIN_LOCAL.pairApply(it.payload.aId, it.payload.bId) });
 FIN_PROP.register("docmatch", { exec: it => FIN_DOCMATCH.handle({ op: "attach", confirm: true, voucherId: it.payload.voucherId, mailRef: it.payload.key }), valid: it => FIN_DOCMATCH.stillValid(it.payload) });
 FIN_PROP.register("uva-payment", { exec: it => sevUstPayment({ confirm: true, key: it.payload.key, transactionId: it.payload.transactionId }), valid: it => { const e = readSteuer().uva[it.payload.key]; return !!e && !e.paid; } });
