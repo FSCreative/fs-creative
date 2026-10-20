@@ -17,7 +17,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-offers-"));
-  ["server.js", "client-ip.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-publish.js", "mkt-skins.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
+  ["server.js", "client-ip.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   ["admin-cockpit"].forEach((d) => { fs.mkdirSync(path.join(dir, d)); fs.readdirSync(path.join(ROOT, d)).forEach((f) => fs.copyFileSync(path.join(ROOT, d, f), path.join(dir, d, f))); });
   return dir;
 }

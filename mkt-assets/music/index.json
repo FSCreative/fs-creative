@@ -4,153 +4,197 @@
   "title": "Bavarian Seascape",
   "mood": "alpin",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 110,
+  "beat0": 0.255
  },
  {
   "file": "alpin--forest-frolic-loop.m4a",
   "title": "Forest Frolic Loop",
   "mood": "alpin",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 103.35,
+  "beat0": 0.334
  },
  {
   "file": "alpin--lukewarm-banjo.m4a",
   "title": "Lukewarm Banjo",
   "mood": "alpin",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 120,
+  "beat0": 0.267
  },
  {
   "file": "elegant--lovely-piano-song.m4a",
   "title": "Lovely Piano Song",
   "mood": "elegant",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 100.35,
+  "beat0": 0
  },
  {
   "file": "elegant--martini-sunset.m4a",
   "title": "Martini Sunset",
   "mood": "elegant",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 139.67,
+  "beat0": 0.383
  },
  {
   "file": "elegant--night-in-venice.m4a",
   "title": "Night in Venice",
   "mood": "elegant",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 115,
+  "beat0": 0.456
  },
  {
   "file": "elektronisch--arpent.m4a",
   "title": "Arpent",
   "mood": "elektronisch",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 120,
+  "beat0": 0
  },
  {
   "file": "elektronisch--beat-one.m4a",
   "title": "Beat One",
   "mood": "elektronisch",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 120,
+  "beat0": 0
  },
  {
   "file": "elektronisch--hear-what-they-say.m4a",
   "title": "Hear What They Say",
   "mood": "elektronisch",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 116,
+  "beat0": 0.287
  },
  {
   "file": "episch--adventure.m4a",
   "title": "Adventure",
   "mood": "episch",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 120,
+  "beat0": 0
  },
  {
   "file": "episch--battle-ready.m4a",
   "title": "Battle Ready",
   "mood": "episch",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 88,
+  "beat0": 0.154
  },
  {
   "file": "episch--epic-blockbuster-2.m4a",
   "title": "Epic Blockbuster 2",
   "mood": "episch",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 120,
+  "beat0": 0
  },
  {
   "file": "froehlich--city-sunshine.m4a",
   "title": "City Sunshine",
   "mood": "froehlich",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 85,
+  "beat0": 0.711
  },
  {
   "file": "froehlich--fresh-focus.m4a",
   "title": "Fresh Focus",
   "mood": "froehlich",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 103.36,
+  "beat0": 0.522
  },
  {
   "file": "froehlich--funshine.m4a",
   "title": "Funshine",
   "mood": "froehlich",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 95.71,
+  "beat0": 0.235
  },
  {
   "file": "froehlich--happy-whistling-ukulele.m4a",
   "title": "Happy Whistling Ukulele",
   "mood": "froehlich",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 130,
+  "beat0": 0.305
  },
  {
   "file": "lustig--barnville.m4a",
   "title": "Barnville",
   "mood": "lustig",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 120,
+  "beat0": 0
  },
  {
   "file": "lustig--busybody.m4a",
   "title": "Busybody",
   "mood": "lustig",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 135,
+  "beat0": 0.319
  },
  {
   "file": "lustig--fancy-family.m4a",
   "title": "Fancy Family",
   "mood": "lustig",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 100,
+  "beat0": 0.165
  },
  {
   "file": "ruhig--adding-the-sun.m4a",
   "title": "Adding the Sun",
   "mood": "ruhig",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 90,
+  "beat0": 0.644
  },
  {
   "file": "ruhig--champ-de-tournesol.m4a",
   "title": "Champ de tournesol",
   "mood": "ruhig",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 105.48,
+  "beat0": 0.119
  },
  {
   "file": "ruhig--infinite-peace.m4a",
   "title": "Infinite Peace",
   "mood": "ruhig",
   "license": "CC0 1.0 (Public Domain)",
-  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)"
+  "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "bpm": 90.67,
+  "beat0": 0
  }
 ]

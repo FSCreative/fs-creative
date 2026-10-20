@@ -20,14 +20,16 @@ module.exports = function (U) {
       if (!hl && parts.length && /^[?!.,:;…)“"]/.test(t)) { const m = t.match(/^[?!.,:;…)“"]+/)[0]; parts[parts.length - 1].tail = m; t = t.slice(m.length); }
       (hl && t.length <= 24 ? [t.trim()] : t.split(/\s+/)).filter(Boolean).forEach(w => parts.push({ w: o.upper ? w.toUpperCase() : w, hl })); });
     const gap = Math.round(size * (o.wordGap || 0.26));
-    const mk = p => p.hl ? h("span", o.mark ? o.mark(size) : { color: o.hlColor || color }, p.w) : h("span", {}, p.w);
+    // __w/__hl: Merker für die Reel-Animation (mkt-motion.js), werden vor dem Zeichnen entfernt
+    const mk = p => p.hl ? h("span", Object.assign({ __hl: 1 }, o.mark ? o.mark(size) : { color: o.hlColor || color }), p.w) : h("span", {}, p.w);
     return h("div", { flexWrap: "wrap", justifyContent: o.center ? "center" : "flex-start", alignItems: "baseline", rowGap: Math.round(size * (o.rowGap != null ? o.rowGap : 0.06)), fontFamily: o.family, fontWeight: o.weight, fontStyle: o.italic ? "italic" : "normal", fontSize: size, lineHeight: o.lh || 1.05, letterSpacing: o.ls != null ? o.ls : -size * 0.02, color, width: o.width },
-      parts.map(p => h("div", { marginRight: gap }, mk(p), p.tail ? h("span", {}, p.tail) : null)));
+      parts.map(p => h("div", { marginRight: gap, __w: 1 }, mk(p), p.tail ? h("span", {}, p.tail) : null)));
   }
   // Grundgerüst: Format, Ebenen, Logo
   function base(slide, brand, o, F) {
     const layer = o.layer || "all", story = F.h > 1500;
-    return { s: slide || {}, brand, o, F, story, W2: F.w - 2 * F.px, layer, TX: layer === "bg" ? { opacity: 0 } : {}, DE: layer === "fg" ? { opacity: 0 } : {}, v: +o.v || 0,
+    // TX = Textelemente (im Reel einzeln animiert: __u), DE = Deko/Bilder (Hintergrund-Ebene)
+    return { s: slide || {}, brand, o, F, story, W2: F.w - 2 * F.px, layer, TX: layer === "bg" ? { opacity: 0 } : o.anim ? { __u: 1 } : {}, DE: layer === "fg" ? { opacity: 0 } : {}, v: +o.v || 0,
       image: slide && slide.image || "", image2: slide && slide.image2 || "", url: o.url || "", counter: o.counter || "", swipe: !!o.swipe };
   }
   const rootBg = (c, bg) => c.layer === "fg" ? "transparent" : bg;

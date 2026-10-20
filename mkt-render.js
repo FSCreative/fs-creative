@@ -54,12 +54,25 @@ function h(type, style, ...kids) {
 }
 function img(src, style) { return { type: "img", props: { src, style: Object.assign({}, style || {}), width: style && style.width, height: style && style.height } }; }
 
+// Merker der Reel-Animation (__u, __w, __hl …) aus den Stilen entfernen – satori kennt sie nicht
+function clean(el) {
+  if (!el || typeof el !== "object") return el;
+  if (Array.isArray(el)) return el.map(clean);
+  const p = el.props || {}, st = p.style; let ns = st;
+  if (st && Object.keys(st).some(k => k.charCodeAt(0) === 95 && k.charCodeAt(1) === 95)) { ns = {}; Object.keys(st).forEach(k => { if (!(k.charCodeAt(0) === 95 && k.charCodeAt(1) === 95)) ns[k] = st[k]; }); }
+  const kids = p.children, nk = kids && typeof kids === "object" ? clean(kids) : kids;
+  if (ns === st && nk === kids) return el;
+  return { type: el.type, props: Object.assign({}, p, { style: ns, children: nk }) };
+}
+async function svgOf(el, w, hgt) { return satori(clean(el), { width: w, height: hgt, fonts: fonts(), loadAdditionalAsset: async (code, seg) => code === "emoji" ? (await emojiUri(seg)) || undefined : undefined }); }
 async function png(el, w, hgt, opts) {
   if (!ready()) throw new Error("Bild-Erzeugung nicht verfügbar (satori/resvg fehlen)");
-  const svg = await satori(el, { width: w, height: hgt, fonts: fonts(), loadAdditionalAsset: async (code, seg) => code === "emoji" ? (await emojiUri(seg)) || undefined : undefined });
+  const svg = await svgOf(el, w, hgt);
   const r = new Resvg(svg, { fitTo: { mode: "width", value: Math.round(w * ((opts && opts.scale) || 1)) }, font: { loadSystemFonts: false }, background: opts && opts.background || undefined });
   return r.render().asPng();
 }
+// Rohbild (RGBA, vormultipliziert) für Videos – spart das PNG-Kodieren je Bild
+async function rawFrame(el, w, hgt) { const r = new Resvg(await svgOf(el, w, hgt), { fitTo: { mode: "width", value: w }, font: { loadSystemFonts: false } }).render(); return r.pixels; }
 
 // ───────────── Farben ─────────────
 function hex(c) { const m = String(c || "").trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i); if (!m) return null; let s = m[1]; if (s.length === 3) s = s.split("").map(x => x + x).join(""); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); }
@@ -451,4 +464,4 @@ async function reelVideo(scenes, brand, o) {
   return { file: out, cover, duration: Math.round(total * 10) / 10 };
 }
 
-module.exports = { ready, videoReady, h, img, png, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };
+module.exports = { ready, videoReady, h, img, png, rawFrame, clean, FFMPEG: () => FFMPEG, VENC, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };

@@ -10,6 +10,7 @@ const crypto = require("crypto");
 
 module.exports = function (C) {
   const { state, save, brand, brandList, renderBrand, MEDIA, WORK, DIR, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R } = C;
+  const MO = require("./mkt-motion.js")(R);   // bewegte Reels (Wörter einzeln, Übergänge, Takt)
   const P = C.publisher, PLATFORMS = P.PLATFORMS, PROVIDERS = P.PROVIDERS;
   const MUSIC = path.join(DIR, "music"), STOCK = path.join(DIR, "stock"); try { fs.mkdirSync(MUSIC, { recursive: true }); fs.mkdirSync(STOCK, { recursive: true }); } catch (e) {}
 
@@ -95,6 +96,7 @@ module.exports = function (C) {
     "NICHTS ERFINDEN: keine Kundenzitate, Bewertungen, Kundennamen, Zahlen, Preise, Partner, Auszeichnungen oder Funktionen, die nicht im Profil stehen. Zitate (template quote) nur als Aussage der Marke selbst, author = Marke oder „Team <Marke>“. stat nur mit Zahlen/Preisen aus dem Profil.",
     "Regeln aus „guardrails“ im Profil strikt einhalten (z. B. nicht veröffentlichte Apps: keine Download-Links versprechen).",
     "Formate: bild = genau 1 Folie; karussell = 4–7 Folien (Folie 1 Hook, Mitte Inhalt, letzte Folie template cta); reel = 3–6 Szenen (Szene 1 Hook in höchstens 7 Wörtern, letzte Szene cta). In jedem Karussell und Reel mindestens 3 verschiedene Vorlagen; die Beiträge eines Plans sollen sich in Format, Vorlagen und Thema deutlich unterscheiden.",
+    "REELS (dürfen nie langweilig wirken – sie werden animiert: Wörter springen einzeln ins Bild, Listenpunkte kommen im Takt der Musik, Zahlen zählen hoch, Szenenwechsel auf dem Beat): wähle je Reel ein Erzählformat und nenne es in idea – „Top 3“ (list, jeder Punkt ein Aha), „Mythos vs. Fakt“ (compare: links Mythos, rechts Fakt), „Vorher/Nachher“ (compare), „POV:“ (hook mit kicker „POV“ und einer Alltagssituation der Zielgruppe), „Wusstest du?“ (stat mit echter Zahl aus dem Profil), „Frage → Auflösung“ (Szene 1 Frage, nächste Szene überraschende Antwort), „3 Fehler, die …“ (list), „So geht's in 3 Schritten“ (list), „Countdown“. Szene 1 weckt Neugier in 0,5 Sekunden (Frage, steile These, konkrete Zahl, POV) – nie mit dem Markennamen oder „Wir“ beginnen. Jede Szene genau ein Gedanke; im Reel headline höchstens 6 Wörter, sub meist leer. Spannungsbogen: Hook → Inhalt → Payoff (die Szene vor cta löst auf) → cta kurz und konkret. 4–5 Szenen sind ideal (8–14 Sekunden). Vorlagen abwechseln (nicht zweimal dieselbe hintereinander). Höchstens 1 Emoji je Szene.",
     "Folientexte kurz: headline höchstens 8 Wörter (die wichtigsten 1–3 Wörter mit *Sternchen* markieren), sub höchstens 18 Wörter, items höchstens 5 Punkte à höchstens 8 Wörter, kicker 1–2 Wörter. Felder, die die Vorlage nicht braucht, leer lassen.",
     "Vorlagen: hook (kicker, headline, sub, cta), list (headline, items), compare (headline, leftTitle/leftItems = bisher/ohne, rightTitle/rightItems = mit der Marke; fair formuliert, keine Konkurrenz namentlich), stat (number, label, sub), quote (headline als Aussage, author), cta (kicker, headline, sub, cta = kurzer Aufruf oder Website), photo (wie hook, mit photoQuery = englischer Suchbegriff für ein Stockfoto, nur wenn ein Foto den Post wirklich besser macht).",
     "Captions je Plattform (ohne Hashtags, die kommen getrennt): instagram 3–6 kurze Absätze, erste Zeile = Hook (max. 8 Wörter), Emojis sparsam, Schluss mit CTA aus dem Profil; facebook ähnlich, darf die Website nennen; tiktok 1–2 Sätze; linkedin sachlicher, 3–5 Absätze, Mehrwert für Unternehmen/Vereine; threads höchstens 400 Zeichen, gesprächig; bluesky höchstens 230 Zeichen; youtube 2–3 Sätze Beschreibung; youtubeTitle höchstens 70 Zeichen; pinterestTitle höchstens 90 Zeichen. Keine Links außer der Website der Marke, kein „Link in Bio“.",
@@ -199,9 +201,9 @@ module.exports = function (C) {
   // Musik: Grundstock im Projekt (mkt-assets/music, CC0 von FreePD, je 45 s) + eigene Uploads; Auswahl nach Stimmung des Posts bzw. der Marke
   let SEED_MUSIC = null;
   function musicList() {
-    if (!SEED_MUSIC) { try { SEED_MUSIC = JSON.parse(fs.readFileSync(path.join(C.ROOT || path.dirname(DIR), "mkt-assets", "music", "index.json"), "utf8")).map(m => ({ id: "s-" + m.file, name: m.title, mood: m.mood, license: m.license, source: m.source, file: path.join(C.ROOT || path.dirname(DIR), "mkt-assets", "music", m.file), seed: true })); } catch (e) { SEED_MUSIC = []; } }
+    if (!SEED_MUSIC) { try { SEED_MUSIC = JSON.parse(fs.readFileSync(path.join(C.ROOT || path.dirname(DIR), "mkt-assets", "music", "index.json"), "utf8")).map(m => ({ id: "s-" + m.file, name: m.title, mood: m.mood, license: m.license, source: m.source, bpm: m.bpm || 0, beat0: m.beat0 || 0, file: path.join(C.ROOT || path.dirname(DIR), "mkt-assets", "music", m.file), seed: true })); } catch (e) { SEED_MUSIC = []; } }
     const hidden = S().mkt.musicHidden || [];
-    return SEED_MUSIC.filter(m => hidden.indexOf(m.id) < 0).concat(S().mkt.music.map(m => ({ id: m.id, name: m.name, mood: m.mood || "", license: m.license || "eigene Datei", file: path.join(MUSIC, m.file), seed: false })));
+    return SEED_MUSIC.filter(m => hidden.indexOf(m.id) < 0).concat(S().mkt.music.map(m => ({ id: m.id, name: m.name, mood: m.mood || "", license: m.license || "eigene Datei", bpm: m.bpm || 0, beat0: m.beat0 || 0, file: path.join(MUSIC, m.file), seed: false })));
   }
   function pickMusic(post) {
     if (post.music === "none") return null; const all = musicList().filter(m => fs.existsSync(m.file)); if (!all.length) return null;
@@ -246,7 +248,9 @@ module.exports = function (C) {
         let vids = clips.map(c0 => c0.file); if (!vids.length) vids = await stockVideos(p.bgQuery, want.filter(Boolean).length);
         let vi = 0; const bgVideos = want.map(w => w && vids.length ? vids[vi++ % vids.length] : "");
         const track = pickMusic(p);
-        const r = await R.reelVideo(slides, rb, { dir: work, url, v, bgVideos, music: track ? track.file : "", outFile: path.join(MEDIA, p.id + "-" + tag + ".mp4"), coverFile: path.join(MEDIA, p.id + "-" + tag + "-cover.jpg") });
+        const ro = { dir: work, url, v, bgVideos, music: track ? track.file : "", musicMeta: track ? { bpm: track.bpm, beat0: track.beat0 } : null, outFile: path.join(MEDIA, p.id + "-" + tag + ".mp4"), coverFile: path.join(MEDIA, p.id + "-" + tag + "-cover.jpg") };
+        // bewegtes Reel (Motion); falls das scheitert, das einfache Reel (Szenen blenden ein) – lieber schlicht als gar nicht
+        let r; try { r = await MO.reel(slides, rb, ro); media.motion = true; } catch (e) { console.error("marketing: Motion-Reel", e.message); r = await R.reelVideo(slides, rb, ro); media.motion = false; }
         media.video = path.basename(r.file); media.cover = path.basename(r.cover); media.duration = r.duration; media.track = track ? { id: track.id, name: track.name, license: track.license } : null;
       } else {
         const files = await R.postImages(slides, rb, { dir: work, url, prefix: "s", v });
@@ -530,6 +534,8 @@ module.exports = function (C) {
       const buf = Buffer.from(mm[2], "base64"); if (buf.length > 12e6) throw fail(400, "Datei zu groß (max. 12 MB)");
       const id = newId("m"), ext = { mpeg: "mp3", mp3: "mp3", mp4: "m4a", "x-m4a": "m4a", aac: "aac", wav: "wav", "x-wav": "wav", ogg: "ogg" }[mm[1]];
       fs.writeFileSync(path.join(MUSIC, id + "." + ext), buf); s.mkt.music.push({ id, name: clip(pl.name, 80) || "Titel", file: id + "." + ext, mood: MOODS.indexOf(pl.mood) > -1 ? pl.mood : "" }); save(true);
+      // Tempo im Hintergrund bestimmen (Schnitte im Takt)
+      MO.tempo(path.join(MUSIC, id + "." + ext)).then(t => { const m = t && S().mkt.music.find(x => x.id === id); if (m) { m.bpm = t.bpm; m.beat0 = t.beat0; save(); } }).catch(() => {});
       return J(res, 200, Object.assign({ ok: true }, overview())), true;
     }
     if (p === "/admin/api/mkt/ig-media" && req.method === "GET") {
