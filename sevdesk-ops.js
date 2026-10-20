@@ -431,7 +431,8 @@ module.exports = function (D) {
     const list = txs.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), book: sevDay(t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || (D.cardName && D.cardName(t.paymtPurpose)) || "", nameAuto: !t.payeePayerName && !!(D.cardName && D.cardName(t.paymtPurpose)), purpose: String(t.paymtPurpose || "").replace(/\s+/g, " ").trim().slice(0, 300), status: parseInt(t.status, 10) || 0,
       accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "", links: links[String(t.id)] || [], mollie: t.mollieType || "",
       // Status 400 hat drei Bedeutungen: echter Geldtransit (Gegenbuchung auf eigenem Konto), „erledigt“ (z. B. ausgeglichene Doppelbuchung, Kontoprüfung) und Fremdgeld (durchlaufend)
-      transit: !!t.transitWith && ["erledigt", "durchlaufend"].indexOf(String(t.transitWith)) < 0, settled: String(t.transitWith || "") === "erledigt" ? String(t.settledNote || "erledigt") : "",
+      transit: !!t.transitWith && ["erledigt", "durchlaufend", "korrektur"].indexOf(String(t.transitWith)) < 0, settled: String(t.transitWith || "") === "erledigt" ? String(t.settledNote || "erledigt") : "",
+      correction: String(t.transitWith || "") === "korrektur" ? String(t.paymtPurpose || "Korrekturbuchung").slice(0, 200) : "",
       passthrough: String(t.transitWith || "") === "durchlaufend" ? String(t.passthroughFor || "durchlaufend") : "" }))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (+b.id - +a.id));
     TX_CACHE = { at: Date.now(), data: { ok: true, transactions: list, accounts: (snap && snap.accounts) || [] } };
