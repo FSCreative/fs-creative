@@ -463,12 +463,24 @@ function vPost(){
   '<div class="mtools"><button type="button" class="btn fpill" data-act="mfoldsheet" aria-haspopup="dialog">'+ic("folder")+' '+esc(curFolderLabel())+(multiAcc()&&UI.macct!=="all"?" · "+esc(accInfo(UI.macct).label):"")+' '+ic("chev")+'</button>'+
     '<div class="msearch">'+F.svg("search")+'<input class="f" id="msearch" data-keepfocus="msearch" type="search" placeholder="Mails durchsuchen … (Taste /)" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'">'+(UI.mq?'<button type="button" class="x" data-act="msearchx" aria-label="Suche leeren">'+F.svg("close")+'</button>':'')+'</div></div>'+
   bulkHtml()+mobileBar(c)+
-  '<div class="mbox'+(UI.msel?" reading":"")+'">'+
+  '<div class="mbox'+(UI.msel?" reading":"")+'"'+(listW()?' style="--mlist-w:'+listW()+'px"':'')+'>'+
     '<nav class="mfold panel" aria-label="Ordner">'+folderPanel()+'</nav>'+
-    '<section class="panel mlistp" aria-label="Nachrichten"><div class="mptr" aria-hidden="true">'+ic("down")+'</div><div class="mchips">'+chipsHtml(list)+'</div><div class="mscroll" id="mlistS">'+searchInfo(list)+listHtml(list)+'</div></section>'+
+    '<section class="panel mlistp" aria-label="Nachrichten"><div class="mptr" aria-hidden="true">'+ic("down")+'</div><div class="mchips">'+chipsHtml(list)+'</div><div class="mscroll" id="mlistS">'+searchInfo(list)+listHtml(list)+'</div><div class="mlist-rs" role="separator" aria-orientation="vertical" aria-label="Breite der Mailliste" tabindex="0" title="Ziehen: Breite der Mailliste ändern · Doppelklick: Standardbreite"></div></section>'+
     '<section class="panel mread" aria-label="Lesebereich">'+readerHtml()+'</section>'+
   '</div>'+(UI.msel||M.selectedIds().length?'':'<button type="button" class="mfab" data-act="compose" aria-label="Neue Mail">'+ic("edit")+'</button>');
 }
+/* Breite der Mailliste am PC selbst ziehen (Wunsch Simon 20.10.2026): Griff am rechten Rand der Liste, Pfeiltasten ±20 px, Doppelklick = Standard; bleibt gespeichert */
+var MLW_MIN=240, MLW_READ=260;   // Mindestbreiten Liste bzw. Lesebereich
+function listW(){ var w=UI.mlistW!=null?UI.mlistW:F.ls("fsc_mlist_w"); return w&&isFinite(w)?Math.round(w):0; }
+function listMax(box){ var f=box.querySelector(".mfold"), fw=f&&f.offsetParent?f.offsetWidth:0; return Math.max(MLW_MIN,box.clientWidth-fw-MLW_READ); }
+function setListW(box,w,save){ w=Math.round(Math.max(MLW_MIN,Math.min(listMax(box),w))); box.style.setProperty("--mlist-w",w+"px"); UI.mlistW=w; if(save) F.ls("fsc_mlist_w",w); return w; }
+var MRS=null;
+document.addEventListener("pointerdown",function(e){ var h=e.target.closest&&e.target.closest(".mlist-rs"); if(!h||e.button!==0) return; var box=h.closest(".mbox"), lp=h.closest(".mlistp"); if(!box||!lp) return;
+  e.preventDefault(); MRS={x:e.clientX,w:lp.getBoundingClientRect().width}; document.body.classList.add("mrs-drag"); });
+document.addEventListener("pointermove",function(e){ if(!MRS) return; var box=document.querySelector(".mbox"); if(box) setListW(box,MRS.w+e.clientX-MRS.x,false); });
+document.addEventListener("pointerup",function(){ if(!MRS) return; MRS=null; document.body.classList.remove("mrs-drag"); if(UI.mlistW) F.ls("fsc_mlist_w",UI.mlistW); });
+document.addEventListener("dblclick",function(e){ if(!(e.target.closest&&e.target.closest(".mlist-rs"))) return; UI.mlistW=null; F.ls("fsc_mlist_w",null); var box=document.querySelector(".mbox"); if(box) box.style.removeProperty("--mlist-w"); });
+F.listen("keydown",".mlist-rs",function(el,e){ if(e.key!=="ArrowLeft"&&e.key!=="ArrowRight") return; e.preventDefault(); var box=el.closest(".mbox"), lp=el.closest(".mlistp"); if(box&&lp) setListW(box,lp.getBoundingClientRect().width+(e.key==="ArrowRight"?20:-20),true); });
 /* Handy: Kopfzeile wie in der Outlook-App (Konto/Ordner links, Titel, Suche) bzw. Auswahlleiste */
 function mobileBar(c){
   var nsel=M.selectedIds().length;
@@ -935,7 +947,9 @@ F.css([
 ".msearch .x svg{width:14px;height:14px}",
 ".fpill{display:none}",
 ".fpill svg{width:14px;height:14px}",
-".mbox{display:grid;grid-template-columns:212px minmax(0,360px) minmax(0,1fr);gap:14px;align-items:start}",
+".mbox{display:grid;grid-template-columns:212px minmax(0,var(--mlist-w,360px)) minmax(0,1fr);gap:14px;align-items:start}",
+".mlistp{position:relative}.mlist-rs{position:absolute;top:0;right:0;bottom:0;width:9px;cursor:col-resize;z-index:6;touch-action:none}.mlist-rs::after{content:\"\";position:absolute;top:0;bottom:0;right:0;width:2px;background:transparent;transition:background .15s}.mlist-rs:hover::after,.mlist-rs:focus-visible::after,.mrs-drag .mlist-rs::after{background:var(--glow)}.mlist-rs:focus-visible{outline:none}",
+"body.mrs-drag{cursor:col-resize;user-select:none;-webkit-user-select:none}body.mrs-drag iframe{pointer-events:none}",
 ".mfold{display:grid;gap:1px;align-content:start;padding:8px;position:sticky;top:60px;max-height:calc(100vh - 80px);overflow-y:auto}",
 ".fbtn,.accbtn{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border:0;background:none;border-radius:9px;color:var(--ink-2);font-weight:500;text-align:left;font-size:14px;min-width:0}",
 ".fbtn svg{width:16px;height:16px;flex:none}",
@@ -1045,7 +1059,7 @@ F.css([
 ".mbulk{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 12px;border-radius:var(--r);background:var(--info-soft);position:sticky;top:56px;z-index:5}",
 ".mbulk .sp{flex:1}",
 ".sheetf{position:static;max-height:none;padding:0}",
-"@media (max-width:1180px){.mbox{grid-template-columns:minmax(0,340px) minmax(0,1fr)}.mbox>.mfold{display:none}.fpill{display:inline-flex}}",
+"@media (max-width:1180px){.mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.mbox>.mfold{display:none}.fpill{display:inline-flex}}",
 ".mapp,.mapp-s,.mselbar,.mfab,.mrbar,.rb.mshow,.msw-bg,.mptr{display:none}",
 /* Outlook am PC: flache Ordnerspalte, blauer Balken bei Ungelesenen, hellblaue Auswahl */
 "@media (min-width:901px){",
@@ -1075,6 +1089,7 @@ F.css([
 "  .mbox{grid-template-columns:minmax(0,1fr);gap:0;margin-inline:calc(-1*clamp(16px,4vw,44px))}",
 "  .mbox.reading>.mlistp{display:none}.mbox:not(.reading)>.mread{display:none}",
 "  .mlistp,.mread{max-height:none;min-height:0;overflow:visible;position:static;border:0;border-radius:0;background:var(--ground)}",
+"  .mlist-rs{display:none}",
 "  .mscroll{overflow:visible}",
 /* Kopfzeile wie Outlook */
 "  .mapp{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;margin-inline:calc(-1*clamp(16px,4vw,44px));padding:calc(10px + env(safe-area-inset-top,0px)) 12px 8px;background:color-mix(in srgb,var(--ground) 88%,transparent);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px)}",
