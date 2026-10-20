@@ -2149,7 +2149,7 @@ function readSteuer() {
   // Besteuerungsart: Istbesteuerung (§ 17 UStG) ab 2026 – auf Wunsch von Simon (20.10.2026); Zeiträume davor wie abgegeben (Soll). Umschaltbar unter Steuern → Einstellungen.
   if (o.settings.besteuerung !== "ist" && o.settings.besteuerung !== "soll") { o.settings.besteuerung = "ist"; o.settings.istAb = "2026-01-01"; }
   if (o.settings.besteuerung === "ist" && !/^\d{4}-\d{2}-\d{2}$/.test(o.settings.istAb || "")) o.settings.istAb = "2026-01-01";
-  o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {};
+  o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {}; o.hintOk = o.hintOk || {};   // hintOk: Lieferanten, deren Hinweis (ausländische USt) gelesen ist
   o.uvaManual = o.uvaManual || {}; o.jabInput = o.jabInput || {}; o.trips = o.trips || {}; o.ruleMap = o.ruleMap || {}; o.supMap = o.supMap || {}; o.u1 = o.u1 || {};
   o.fon = Object.assign({ nextPaket: 1, archive: [] }, o.fon || {});
   // Einmalig: UVA Q1 + Q2 2026 sind laut Simon abgegeben und bezahlt (Datum unbekannt) – nicht festschreiben (Kfz-VSt-Korrektur mit Steuerberater offen)
@@ -2160,7 +2160,7 @@ function readSteuer() {
 }
 function writeSteuer(o) { try { fs.writeFileSync(STEUER_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
 // Für den Browser: Archiv ohne XML (das gibt es einzeln)
-function steuerPublic(o) { return { vies: o.vies || {}, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, ruleMap: o.ruleMap, supMap: o.supMap, u1: o.u1, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
+function steuerPublic(o) { return { vies: o.vies || {}, settings: o.settings, mapping: o.mapping, uva: o.uva, jab: o.jab, docs: o.docs, ruleMap: o.ruleMap, supMap: o.supMap, hintOk: o.hintOk, u1: o.u1, uvaManual: o.uvaManual, jabInput: o.jabInput, trips: o.trips, fon: { archive: (o.fon.archive || []).map(a => Object.assign({}, a, { xml: undefined })) } }; }
 // Alle Seiten laden; doppelte Objekte (z. B. wenn offset ignoriert wird) werden entfernt und gezählt
 async function sevAll(pathq, query, max, stats) {
   const out = []; const seen = new Set(); const lim = 1000; let dupes = 0;
@@ -2302,6 +2302,10 @@ function steuerOp(pl) {
     const id = String(pl.id || "").replace(/[^0-9ts]/g, "").slice(0, 12), side = pl.side === "in" ? "in" : "out", cls = String(pl.cls || "");
     if (!id) throw new Error("ungueltig"); const ok = (side === "in" ? STEUER_CALC.RULE_IN_CLASSES : STEUER_CALC.RULE_OUT_CLASSES).indexOf(cls) > -1;
     const cur = o.ruleMap[id] || {}; if (ok) cur[side] = cls; else delete cur[side]; if (Object.keys(cur).length) o.ruleMap[id] = cur; else delete o.ruleMap[id];
+  }
+  else if (op === "hintOk") {    // USt-Prüfung: Hinweis „ausländische USt“ für diesen Lieferanten ausblenden (oder wieder zeigen)
+    const k = String(pl.key || "").trim().toLowerCase().replace(/\s+/g, " ").slice(0, 120); if (!k) throw new Error("ungueltig");
+    if (pl.on === false) delete o.hintOk[k]; else o.hintOk[k] = true;
   }
   else if (op === "supMap") {    // ig. Erwerb gebucht: Ware (ige) oder Dienstleistung (rc) – je Lieferant
     const k = String(pl.key || pl.supplier || "").trim().toLowerCase().replace(/\s+/g, " ").slice(0, 120), v = String(pl.cls || "");

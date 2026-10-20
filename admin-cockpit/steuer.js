@@ -22,7 +22,7 @@ F.steuerLoad=function(){ if(!ST&&!loading) load(false); };
 /* Abschreibung je Monat und IDs der Anlage-Belege (für Übersicht/Diagramm: Kauf nicht als Aufwand, dafür AfA) */
 F.afaByMonth=function(year){ return ST&&ST.data?S.afaByMonth(ST.data,ST,year):null; };
 F.assetDocIds=function(){ var o={}; if(ST&&ST.docs) Object.keys(ST.docs).forEach(function(k){ var c=ST.docs[k]; if(c&&c.asset) o[k]=c.ahk>0?+c.ahk:true; /* Schlüssel wie FSC_STEUER.docKey (Belege der eigenen Buchhaltung: „v“ + ID) */ }); return o; };
-var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon","vies","ruleMap","supMap","u1"];
+var KEYS=["settings","mapping","uva","jab","docs","uvaManual","jabInput","trips","fon","vies","ruleMap","supMap","hintOk","u1"];
 function apply(j){ if(j) KEYS.forEach(function(k){ if(j[k]!==undefined) ST[k]=j[k]; }); }
 function post(body,msg){ return F.api("/admin/api/steuer",{body:body}).then(function(j){ if(j&&j.ok){ apply(j); if(msg) F.toast(msg); F.render(); } else F.toast("Speichern fehlgeschlagen: "+((j&&j.error)||""),true); return j; }); }
 var r2=S.r2;
@@ -90,7 +90,7 @@ function renderUva(){
   var chkN=function(list){ return list.filter(function(m){ return m.kind==="in"&&!m.hint&&(m.type==="check"||m.type==="rule"); }).length; };   /* USt-Prüfung: Belege mit vermutlich falscher Steuerregel */
   var chips=ps.map(function(p){ var d=ST.uva[p.key], st=d&&d.doneAt?"ok":(p.to>=today?"grey":(dueOf(p)<today?"bad":"warn")); var lbl=set.zeitraum==="monat"?new Date(p.year,p.endMonth-1,1).toLocaleDateString("de-AT",{month:"short"}):("Q"+p.key.slice(-1));
     var n=p.from<=today?chkN(S.mismatches(ST.data,ST,p.from,p.to)):0;
-    return '<button class="chip pchip '+st+'" data-act="uvap:'+p.key+'" aria-pressed="'+(p.key===cur.key)+'"'+(n?' title="'+n+' Beleg'+(n===1?"":"e")+' in der USt-Prüfung"':'')+'>'+lbl+(d&&d.doneAt?" ✓":"")+(n?' <span class="st-chk">'+n+'</span>':'')+'</button>'; }).join("");
+    return '<button class="chip pchip '+st+'" data-act="uvap:'+p.key+'" aria-pressed="'+(p.key===cur.key)+'"'+(n?' title="'+n+' Beleg'+(n===1?"":"e")+' in der USt-Prüfung"':'')+'>'+lbl+(d&&d.doneAt?" ✓":"")+(n?' <span class="st-chk'+(d&&d.doneAt?' done':'')+'">'+n+'</span>':'')+'</button>'; }).join("");
   var dz=r2(r.zahllast-ctl.zahllast);
   var mm=S.mismatches(ST.data,ST,cur.from,cur.to);
   var more=settingsBar()+rulesPanel(cur)+euPanel(cur,zmr)+zeroPanel(cur)+cnPanel(cur)+igePanel(cur)+recvPanel(cur,r)+dauerPanel(cur,r)+otherPanel(r)+manualPanel(cur)+syncPanel(cur,r,mm)+zmPanel(cur,r,zmr);
@@ -287,13 +287,15 @@ function syncPanel(cur,r,mm){
   var done=ST.uva[cur.key]||{}, tx=(ST.data.transactions||[]).filter(function(t){ return t.date>cur.to&&t.date<=F.ymd(new Date(cur.year,cur.endMonth+2,31)); });
   var match=tx.filter(function(t){ return r.zahllast>0&&Math.abs(Math.abs(t.amount)-r.zahllast)<0.02; }), other=tx.filter(function(t){ return match.indexOf(t)<0; });
   var KZL={ige:"ig. Erwerb",rc:"Reverse Charge",none:"keine Kennzahl"}, nfix=mm.filter(function(m){ return m.fixable; }).length, filed=!!(done.filed||done.doneAt);
-  var rows=mm.map(function(m,i){ var d=m.doc, out=m.kind==="out", k=S.docKey(d), chk=m.type==="check";
+  var row=function(m,i){ var d=m.doc, out=m.kind==="out", k=S.docKey(d), chk=m.type==="check";
     return '<tr'+(m.hint?' class="muted"':'')+'><td class="nowrap num">'+deShort(d.date)+'</td><td><b>'+esc(docName(d,out?"out":"in"))+'</b>'+(chk?' <span class="tag '+(m.hint?"grey":"warn")+'">'+(m.hint?"Hinweis":"USt-Prüfung")+'</span>':'')+'<div class="sub">'+esc(m.t)+'</div>'+(m.fix?'<div class="sub">'+esc(m.fix)+'</div>':'')+'</td><td class="r">'+money(d.net)+'</td><td class="st-mmb">'+
       (m.type==="rule"&&!out&&/Reverse Charge/.test(m.t)?'<button class="btn" data-act="stkz:'+esc(k)+':rc">Als RC übernehmen</button> <button class="btn" data-act="stkz:'+esc(k)+':none">Kein RC</button> ':'')+
       (chk?'':aiBtn(k))+(m.fixable?' <button class="btn primary" data-act="sevfix:'+i+'">Steuerregel korrigieren ('+esc(S.TAXRULE_TXT[m.rule]||m.rule)+')</button>':(m.enshrined?'<span class="tag grey" title="Gemeldet und festgeschrieben – Ausgleich mit der Jahreserklärung (U1)">festgeschrieben</span>':''))+
       (chk&&m.kz&&(!m.fixable||m.hint)?' <button class="btn" data-act="stkz:'+esc(k)+':'+m.kz+'" title="Ändert nur die Einordnung im Cockpit (UVA/U1), nicht den Beleg">'+(m.hint?"Ohne Vorsteuer einordnen":"In der UVA als „"+esc(KZL[m.kz]||m.kz)+"“ zählen")+'</button>':'')+
       (m.supOk?' <button class="btn" data-act="stsupok:'+esc(String(d.supplier||"").trim().toLowerCase().replace(/\s+/g," "))+'">Passt – Versand aus EU-Lager</button>':'')+
-      (chk?' <button class="link" data-act="stchkok:'+esc(k)+'">Passt so</button>':'')+'</td></tr>'; }).join("");
+      (chk?' <button class="link" data-act="stchkok:'+esc(k)+'">Passt so</button>':'')+(m.hint?' <button class="link" data-act="sthintok:'+esc(String(d.supplier||"").trim().toLowerCase().replace(/\s+/g," "))+'">für „'+esc(d.supplier||"")+'“ ausblenden</button>':'')+'</td></tr>'; };
+  var main=[], hints=[]; mm.forEach(function(m,i){ (m.hint?hints:main).push(row(m,i)); });
+  var rows=main.join("")+(hints.length?'<tr><td colspan="4"><button class="link" data-act="stdocs:hints">'+(F.UI.stOpen.hints?"▾":"▸")+' '+hints.length+' Hinweis'+(hints.length===1?"":"e")+' zu ausländischer USt (OSS)</button></td></tr>'+(F.UI.stOpen.hints?hints.join(""):""):"");
   return '<section class="panel" id="stSync"><div class="panel-h"><h2>Abgleich Steuerregel ↔ Einordnung</h2><span class="muted">Was in der UVA gerechnet wird, soll auch beim Beleg so gebucht sein – und umgekehrt. Dazu die USt-Prüfung: fehlender ig. Erwerb / Reverse Charge, Drittland, ausländische USt.</span></div>'+
     (nfix>1?'<div class="panel-b row wrap"><button class="btn primary" data-act="sevfixall">Alle '+nfix+' Steuerregeln korrigieren</button><span class="muted small">'+(filed?'Zeitraum ist schon gemeldet – Änderungen gleicht die U1 aus.':'Danach rechnet die UVA neu.')+'</span></div>':'')+
     (mm.length?'<div class="scroll"><table><tbody>'+rows+'</tbody></table></div>':'<div class="panel-b muted">Keine Abweichungen bei Steuerregeln, UIDs und Leistungsdaten in diesem Zeitraum.</div>')+
@@ -305,7 +307,8 @@ function syncPanel(cur,r,mm){
     '<div class="panel-b muted small">Änderungen an Belegen passieren nur nach deiner Bestätigung und nie bei festgeschriebenen Belegen. „Als RC übernehmen“ ändert nur die Einordnung.</div></section>';
 }
 F.action("stkz",function(v){ var a=v.split(":"); post({op:"doc",id:a[0],patch:{kz:a[1]}},a[1]==="rc"?"Als Reverse Charge übernommen":"Gespeichert"); });
-F.action("stsyncgo",function(){ var el=document.getElementById("stSync"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); });
+F.action("stsyncgo",function(){ if(!F.UI.stMore){ F.UI.stMore=true; F.render(); } setTimeout(function(){ var el=document.getElementById("stSync"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },60); });   /* Abgleich liegt unter „Details & Sonderfälle“ */
+F.action("sthintok",function(k){ post({op:"hintOk",key:k},"Hinweis für diesen Anbieter ausgeblendet"); });
 F.action("stchkok",function(k){ post({op:"doc",id:k,patch:{checkOk:true}},"Hinweis ausgeblendet"); });
 F.action("stsupok",function(k){ post({op:"supMap",key:k,cls:"ige"},"Lieferant als ig. Erwerb (EU-Lager) bestätigt"); });
 /* alle korrigierbaren Steuerregeln des Zeitraums nacheinander (je Beleg dieselbe Prüfung wie einzeln, festgeschriebene nie) */
@@ -614,7 +617,7 @@ function renderOverview(){
 }
 F.steuerOverview=renderOverview;
 F.action("stgo",function(v){ var p=v.split(":"), k=p[0], x=p.slice(1).join(":"); if(k==="uva"){ if(x) F.UI.uvaKey=x; F.actions.fin("uva"); } else if(k==="u1"){ F.UI.u1Year=x; F.actions.fin("u1"); } else if(k==="jab"){ F.UI.jabYear=x; F.actions.fin("jab"); } });
-F.css('.st-chk{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:8px;background:var(--warn);color:#fff;font-size:10.5px;line-height:16px;font-weight:700;text-align:center}.st-mmb{white-space:normal;min-width:200px}.st-mmb .btn{margin:2px 0}');
+F.css('.st-chk{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:8px;background:var(--warn);color:#fff;font-size:10.5px;line-height:16px;font-weight:700;text-align:center}.st-chk.done{background:var(--ink-3)}.st-mmb{white-space:normal;min-width:200px}.st-mmb .btn{margin:2px 0}');
 F.css('.st-ov{display:grid;gap:16px}.st-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.st-tile{margin:0}.st-tile .k{font-size:13px;color:var(--ink-2);font-weight:600}.st-tile .v{font-size:26px;font-weight:650;margin:4px 0 10px}.st-tile .row-between{padding:4px 0;border-top:1px solid var(--line)}'+
   '.st-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.st-step{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px;text-align:left;cursor:pointer;font:inherit;color:var(--ink)}.st-step .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--sunk);font-weight:700;flex:none}.st-step.done .n{background:var(--ok-soft);color:var(--ok)}.st-step:hover{border-color:var(--glow)}'+
   '@media (max-width:1100px){.st-tiles,.st-steps{grid-template-columns:minmax(0,1fr)}}');

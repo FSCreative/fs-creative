@@ -841,7 +841,8 @@ function igeReview(raw,st,p){ setRules(raw,st); var by={};
 // Vorgeschlagene sevDesk-Steuerregel: bevorzugt die im Konto vorhandene Regel mit passender Bedeutung (ReceiptGuidance), sonst Standard-IDs
 function suggestRule(v,c){
   var cc=supplierCountry(v), eu=isEU(cc)&&cc!=="AT", want=c==="fx"?"none":c;
-  if(RULES&&Object.keys(RULES).length){ var ids=Object.keys(RULES).filter(function(id){ return RULES[id].in===want; });
+  /* nur echte Steuerregeln vorschlagen – TaxSets („ts…“, aus sevDesk 1.0) lassen sich einem Beleg nicht als Regel zuweisen */
+  if(RULES&&Object.keys(RULES).length){ var ids=Object.keys(RULES).filter(function(id){ return RULES[id].in===want&&!RULES[id].taxSet&&(RULES[id].side===""||/EXPENSE/i.test(RULES[id].side)); });
     if(ids.length){ if(want==="rc"&&ids.length>1){ var e=ids.filter(function(id){ return /\beu\b|abs\. ?1\b/i.test(RULES[id].txt); }); var ne=ids.filter(function(id){ return e.indexOf(id)<0; }); return (eu?e[0]:ne[0])||ids[0]; } return ids[0]; } }
   if(c==="rc") return eu?"14":"12"; if(c==="rcnv") return "13"; if(c==="ige") return "8"; if(c==="060") return "9"; if(c==="none"||c==="fx") return "10"; return "";
 }
@@ -877,7 +878,7 @@ function ustChecks(raw,st,v,ls,cc,hist){
       "Ausnahme: Versand aus einem EU-Lager mit EU-UID des Händlers (z. B. Amazon) – dann passt ig. Erwerb.","10","none",{supOk:true})]; }
   if(cls.some(function(c){ return c==="rc"; })&&sem==="rc"&&ware&&!known&&sm!=="rc"&&(!cc||(cc!=="AT"&&isEU(cc))))
     return [mk("warerc","Ware aus der EU als Reverse Charge (Dienstleistung) gebucht – richtig ist ig. Erwerb: KZ 070/072/065 statt 057/066 (Zahllast bleibt gleich)","Kategorie „"+(bl.filter(function(l){ return RX_WARE.test(String(l.cat||"")); })[0].cat)+"“ ist ein Warenkauf","8","ige")];
-  if(cls.some(function(c){ return c==="060"; })&&cc&&cc!=="AT")
+  if(cls.some(function(c){ return c==="060"; })&&cc&&cc!=="AT"&&!(st.hintOk&&st.hintOk[supKey(v)]))
     return [mk("oss","Ausländischer Anbieter ("+cc+") hat österreichische USt verrechnet – das ist eine Rechnung für Privatkunden (OSS). Vorsteuer daraus ist streng genommen nicht abziehbar.",
       "Tipp: im Kundenkonto des Anbieters die UID hinterlegen – dann kommt die Rechnung ohne USt (Reverse Charge) und die Frage stellt sich nicht.","","none",{hint:true})];
   return [];
