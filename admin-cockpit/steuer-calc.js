@@ -1,7 +1,8 @@
 /* Steuer-Rechenkern (UVA U30, ZM, E1a, U1, ESt-Schätzung) – derselbe Code läuft im Browser (window.FSC_STEUER)
    und auf dem Server (require), damit die Kennzahlen für FinanzOnline serverseitig identisch berechnet werden.
    Grundlagen: U30 2026 (13.03.2026), E1a 2025 (24.10.2025), Ausfüllhilfe E2 2025 (14.11.2025), EStG/UStG.
-   USt: Sollbesteuerung (vereinbarte Entgelte) fix. E1a: Einnahmen-Ausgaben-Rechnung, Zufluss-Abfluss-Prinzip. */
+   USt: Ist- oder Sollbesteuerung (st.settings.besteuerung, Ist ab st.settings.istAb – Zeiträume davor wie abgegeben nach Soll).
+   E1a: Einnahmen-Ausgaben-Rechnung, Zufluss-Abfluss-Prinzip. */
 (function(root,factory){ if(typeof module==="object"&&module.exports) module.exports=factory(); else root.FSC_STEUER=factory(); })(this,function(){
 "use strict";
 function r2(n){ return Math.round((+n||0)*100)/100; }
@@ -391,6 +392,17 @@ function minderung(inv,st){
   var d=inv.payDate||(inv.pays&&inv.pays.length?inv.pays[inv.pays.length-1].date:""); if(!d) return null;
   return {date:d,share:diff/g,amount:diff,why:"Entgeltsminderung (Skonto/Kürzung "+(diff/g*100).toFixed(1).replace(".",",")+" %) im Monat der Zahlung"};
 }
+/* ---------- Istbesteuerung (§ 17 UStG: Steuer nach vereinnahmten Entgelten) ----------
+   Umsatzsteuer im Monat der Zahlung des Kunden; Vorsteuer erst, wenn die Rechnung bezahlt ist (§ 12 Abs. 1 Z 1 lit. a UStG,
+   Ist-Versteuerer bis 2 Mio. € Umsatz). Unverändert nach Leistungs-/Belegmonat: Reverse Charge (§ 19 Abs. 2 Z 1 lit. a),
+   ig. Erwerb (Art. 19), Einfuhrumsatzsteuer und die ZM. Gilt für Belege, deren Soll-Zeitpunkt ab „istAb“ liegt; ältere wurden
+   bereits nach Soll versteuert und werden nicht ein zweites Mal erfasst (auch nicht beim späteren Zahlungseingang). */
+function istFrom(st){ var s=(st&&st.settings)||{}; return s.besteuerung==="ist"?(s.istAb||"0000-01-01"):null; }
+function isIstDoc(st,d){ var a=istFrom(st); return !!a&&String(d||"")>=a; }
+function istParts(doc,st,label){ var a=istFrom(st), g=num(doc.gross); if(!g) return [];
+  return payments(doc).filter(function(pm){ return pm.date&&pm.date>=a&&Math.abs(pm.amount)>0.004; })
+    .map(function(pm){ return {share:pm.amount/g,date:pm.date,why:(label||"Zahlung")+" am "+pm.date.split("-").reverse().join(".")+" (Istbesteuerung)"}; }); }
+function besteuerungTxt(st,y){ var a=istFrom(st); return a&&(!y||String(y)+"-12-31">=a)?"Istbesteuerung":"Sollbesteuerung"; }
 function computeUva(raw,st,p){
   setRules(raw,st);
   var K={}, docs={}, zm=[], review=[], info=[], other={ns:[],oss:[],fx:[],none:[]}, minder=[];
@@ -401,6 +413,15 @@ function computeUva(raw,st,p){
   (raw.invoices||[]).forEach(function(inv){
     if(skipInv(inv,st)) return;
     var ls=lines(inv), parts=[];
+    if(isIstDoc(st,inv.type==="SR"||inv.type==="AR"?inv.date:sollDate(inv))){
+      // Istbesteuerung: jede Zahlung im Monat des Eingangs (auch Anzahlungen, Endrechnungen, Stornos mit Rückzahlung); ZM weiter nach Leistung
+      var ip=istParts(inv,st,inv.type==="SR"?"Rückzahlung":(inv.type==="AR"?"Anzahlung":"Zahlung")), dLi=leistEnd(inv);
+      ls.forEach(function(l){ if(outClass(inv,l,st)==="zm"){ if(inv.type!=="SR"&&inP(dLi,p)) revLine(inv,l,{share:1,date:dLi,why:"Leistungsdatum (ZM)"},"out"); return; }
+        ip.forEach(function(pt){ if(!inP(pt.date,p)) return;
+          if(inv.type==="SR") revLine(inv,{rate:l.rate,net:-Math.abs(l.net),tax:-Math.abs(l.tax)},{share:Math.abs(pt.share),date:pt.date,why:pt.why},"out");   // Storno: Rückzahlung mindert immer
+          else revLine(inv,l,pt,"out"); }); });
+      return;
+    }
     if(inv.type==="AR"){
       // Anzahlung: bei Zahlungseingang; Zahlungen nach dem Soll-Monat der Endrechnung sind dort bereits versteuert
       var g=num(inv.gross), lk=PT.ar[inv.id]; payments(inv).forEach(function(pm){ if(!inP(pm.date,p)||!g) return; if(lk&&pm.date>lk.cut){ info.push({doc:inv,why:"Zahlung nach der Endrechnung "+(lk.er.nr||"")+" – dort versteuert"}); return; } parts.push({share:pm.amount/g,date:pm.date,why:"Anzahlung bei Zahlungseingang"}); });
@@ -417,11 +438,12 @@ function computeUva(raw,st,p){
         sp.forEach(function(pt){ if(inP(pt.date,p)) revLine(inv,l,{share:pt.share,date:pt.date,why:pt.why||why},"out"); }); });
     }
     // Entgeltsminderung bei Sollbesteuerung (§ 16 UStG): Skonto/Teilausfall bei bezahlter Rechnung, Forderungsausfall laut Cockpit
-    var m=minderung(inv,st); if(m&&inP(m.date,p)){ ls.forEach(function(l){ revLine(inv,{rate:l.rate,net:-l.net*m.share,tax:-l.tax*m.share},{share:1,date:m.date,why:m.why},"out"); }); minder.push({doc:inv,date:m.date,share:m.share,amount:r2(m.amount),why:m.why,auto:!!m.auto}); }
+    var m=minderung(inv,st); if(m&&isIstDoc(st,m.date)&&isIstDoc(st,sollDate(inv))) m=null; if(m&&inP(m.date,p)){ ls.forEach(function(l){ revLine(inv,{rate:l.rate,net:-l.net*m.share,tax:-l.tax*m.share},{share:1,date:m.date,why:m.why},"out"); }); minder.push({doc:inv,date:m.date,share:m.share,amount:r2(m.amount),why:m.why,auto:!!m.auto}); }
   });
   (raw.creditNotes||[]).forEach(function(cn){
     if(cn.status<200||docCfg(st,cn.id).ignore||docCfg(st,cn.id).kz==="ignore") return;
     var ls=lines(cn).map(function(l){ return {rate:l.rate,net:l.net>0?-l.net:l.net,tax:l.tax>0?-l.tax:l.tax}; });
+    if(isIstDoc(st,cn.date)){ istParts(cn,st,"Auszahlung").forEach(function(pt){ if(inP(pt.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:Math.abs(pt.share),date:pt.date,why:pt.why},"out"); }); }); return; }
     if(inP(cn.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:1,date:cn.date,why:"Gutschrift – Monat der Ausstellung"},"out"); });
   });
   function revLine(doc,l,pt,kind){
@@ -441,6 +463,7 @@ function computeUva(raw,st,p){
     if(skipVou(v,st)) return;
     var ls=lines(v);
     if(v.cd==="D"){ // Einnahmebeleg
+      if(isIstDoc(st,v.delivery||v.date)){ istParts(v,st,"Eingang").forEach(function(pt){ if(inP(pt.date,p)) ls.forEach(function(l){ if(!nonBiz(l)) revLine(v,l,pt,"vin"); }); }); return; }
       var dd=v.delivery||v.date; if(!inP(dd,p)) return;
       ls.forEach(function(l){ if(nonBiz(l)) return; revLine(v,l,{share:1,date:dd,why:"Einnahmebeleg"},"vin"); }); return;
     }
@@ -452,6 +475,7 @@ function computeUva(raw,st,p){
       else if(c==="ige"){ if(!inP(v.date,p)) return; var igr=num(docCfg(st,v.id).igeRate), rate=IGE_KZ[String(igr)]&&igr!==19?igr:20, t2=r2(l.net*rate/100);   // österr. Satz, nie der Satz der Lieferantenrechnung (Art. 1, § 10 UStG)
         if(Math.abs(l.tax)>0.004) info.push({doc:v,why:"ig. Erwerb mit ausgewiesener ausländischer USt ("+l.rate+" %) – diese ist keine Vorsteuer (Erstattungsverfahren), Lieferant um Rechnung ohne USt bitten"}); add("070",l.net,0,v,"in",v.date,"ig. Erwerb"); add(IGE_KZ[String(rate)],l.net,t2,v,"in",v.date,"ig. Erwerb"); add("065",0,t2,v,"in",v.date,"Vorsteuer ig. Erwerb"); }
       else if(c==="ige3"||c==="ige0"){ if(!inP(v.date,p)) return; if(c==="ige0") add("070",l.net,0,v,"in",v.date,"steuerfreier ig. Erwerb"); /* Dreieck: nur KZ 077, nicht 070 (U 1a Anm. 24) */ add(c==="ige3"?"077":"071",l.net,0,v,"in",v.date,c==="ige3"?"Erwerb gilt als besteuert (Art. 25 Abs. 2)":"steuerfrei (Art. 6 Abs. 2)"); }
+      else if(c==="060"&&isIstDoc(st,vstDate(v))){ istParts(v,st,"bezahlt").forEach(function(pt){ if(inP(pt.date,p)) add("060",0,l.tax*pt.share,v,"in",pt.date,"Vorsteuer erst mit Zahlung – "+pt.why); }); }
       else if(c==="060"){ var dv=vstDate(v); if(!inP(dv,p)) return; add("060",0,l.tax,v,"in",dv,dv===v.date?"Belegdatum (Rechnung liegt vor, Leistung erbracht)":"Leistung erst "+dv+" ausgeführt bzw. bezahlt (§ 12 Abs. 1 Z 1 UStG)"); }
       else if(c==="eust"){ if(!inP(v.date,p)) return; add("061",0,l.tax||0,v,"in",v.date,"Einfuhrumsatzsteuer"); }
       else if(c==="fx"){ if(inP(v.date,p)) other.fx.push({doc:v,kind:"in",base:r2(l.net),tax:r2(l.tax),rate:l.rate,date:v.date}); }
@@ -754,12 +778,26 @@ function plausibility(raw,st,year){
   return out;
 }
 
+/* Kontrollrechnung bei Istbesteuerung: Steuer der Kopfsummen anteilig nach Zahlungen im Zeitraum (Reverse Charge/ig. Erwerb neutral) */
+function controlCheckIst(raw,st,p){
+  setRules(raw,st); var ust=0, vst=0, nIn=0, nOut=0, diffs=[];
+  function paidShare(d){ var g=num(d.gross); if(!g) return 0; return payments(d).reduce(function(a,pm){ return a+(inP(pm.date,p)?pm.amount/g:0); },0); }
+  (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)||!isIstDoc(st,inv.type==="SR"||inv.type==="AR"?inv.date:sollDate(inv))) return; var t=num(inv.tax), sh=paidShare(inv); if(Math.abs(sh)<1e-9) return; ust+=t*sh; nOut++; });
+  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn.id); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!isIstDoc(st,cn.date)) return; var sh=Math.abs(paidShare(cn)); if(sh) ust-=Math.abs(num(cn.tax))*sh; });
+  (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v), sh=paidShare(v); if(Math.abs(sh)<1e-9) return;
+    if(v.cd==="D"){ if(isIstDoc(st,v.delivery||v.date)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax*sh; }); return; }
+    if(v.cd!=="C"||!isIstDoc(st,vstDate(v))) return; var t=0; ls.forEach(function(l){ if(!nonBiz(l)&&sevClassOf(v,l)==="060"&&atRate(l.rate)) t+=l.tax; }); if(Math.abs(t)<0.005) return; vst+=t*sh; nIn++;
+    var our=ls.reduce(function(a,l){ return a+(inClass(v,l,st)==="060"&&!nonBiz(l)?l.tax:0); },0);
+    if(Math.abs(our-t)>0.005) diffs.push({doc:v,kind:"in",tax:r2((t-our)*sh),sev:v.date,uva:v.payDate||"",why:"im Cockpit anders eingeordnet (z. B. Pkw, ausländische USt, Override)"}); });
+  return {ust:r2(ust),vst:r2(vst),zahllast:r2(ust-vst),nOut:nOut,nIn:nIn,diffs:diffs};
+}
 /* ---------- Kontrollrechnung je Zeitraum: Steuer direkt aus den sevDesk-Kopfsummen ---------- */
 // USt = Summe sumTax der Ausgangsrechnungen (Leistungs-/Rechnungsdatum im Zeitraum), Vorsteuer = Summe sumTax der Eingangsbelege mit österreichischer USt (Belegdatum).
 // Nachbildung der sevDesk-USt-Auswertung: USt der Einnahmen (Rechnungs-/Belegdatum) minus ausgewiesene, laut Steuerregel
 // abziehbare Vorsteuer (Belegdatum). Reverse Charge und ig. Erwerb sind dort steuerneutral und fehlen. Abweichungen zur U30
 // entstehen v. a. durch den Soll-Zeitpunkt (Leistungsdatum, Anzahlungen, Endrechnungen) und Cockpit-Einordnungen → diffs.
 function controlCheck(raw,st,p){
+  if(istFrom(st)&&p.from>=istFrom(st)) return controlCheckIst(raw,st,p);
   setRules(raw,st); var ust=0, vst=0, nIn=0, nOut=0, diffs=[], PT=partials(raw,st);
   (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)) return; var t=num(inv.tax); if(inv.type==="SR"&&num(inv.net)>0) t=-t;
     var inS=inP(inv.date,p); if(inS){ ust+=t; nOut++; }
@@ -881,7 +919,7 @@ function explainDoc(raw,st,id){
 function uvaDocIds(r){ var ids={}; Object.keys(r.docs||{}).forEach(function(k){ r.docs[k].forEach(function(x){ if(x.doc&&x.doc.id&&!/^manual-/.test(x.doc.id)) ids[x.doc.id]=1; }); }); (r.zm||[]).forEach(function(z){ if(z.doc&&z.doc.id) ids[z.doc.id]=1; }); return Object.keys(ids); }
 return {VERSION:10,uvaDocIds:uvaDocIds,ausgebucht:ausgebucht,reportedIn:reportedIn,rcDate:rcDate,isShortPeriod:isShortPeriod,periodClosed:periodClosed,periodDue:periodDue,ruleKey:ruleKey,computeU1:computeU1,periodOfKey:periodOfKey,zeroRated:zeroRated,igeReview:igeReview,outInfo:outInfo,addrCountry:addrCountry,textUids:textUids,ruleSrc:ruleSrc,RULE_IN_CLASSES:RULE_IN_CLASSES,RULE_OUT_CLASSES:RULE_OUT_CLASSES,partials:partials,sollParts:sollParts,sollDate:sollDate,leistEnd:leistEnd,vstDate:vstDate,zuYear:zuYear,YEARS:YEARS,C:C,yc:yc,r2:r2,lines:lines,payments:payments,outClass:outClass,inClass:inClass,supplierCountry:supplierCountry,customerCountry:customerCountry,uidCountry:uidCountry,isEU:isEU,
   OUT_OPTS:OUT_OPTS,IN_OPTS:IN_OPTS,UVA_ROWS:UVA_ROWS,MANUAL_KZ:MANUAL_KZ,BASE_KZ:BASE_KZ,TAX_KZ:TAX_KZ,TAXRULE_TXT:TAXRULE_TXT,E1A:E1A,
-  computeUva:computeUva,uvaKzMap:uvaKzMap,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,afaMonths:afaMonths,afaByMonth:afaByMonth,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
+  computeUva:computeUva,uvaKzMap:uvaKzMap,istFrom:istFrom,besteuerungTxt:besteuerungTxt,zmRows:zmRows,computeJab:computeJab,assetInfo:assetInfo,afaMonths:afaMonths,afaByMonth:afaByMonth,estimateESt:estimateESt,tarif:tarif,catKz:catKz,defaultKz:defaultKz,nonBiz:nonBiz,
   revenueNet:revenueNet,revenueGross:revenueGross,controlCheck:controlCheck,plausibility:plausibility,mismatches:mismatches,docCfg:docCfg,
   outWhy:outWhy,inWhy:inWhy,uidValid:uidValid,ruleDiagnosis:ruleDiagnosis,ruleTxt:ruleTxt,setRules:setRules,receivables:receivables,euSummary:euSummary,explainDoc:explainDoc,minderung:minderung,kids:kids,faboKids:faboKids,jabInp:jabInp};
 });

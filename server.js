@@ -2146,7 +2146,9 @@ const STEUER_FILE = path.join(DATA_DIR, "steuer.json");
 function readSteuer() {
   let o = {}; try { o = JSON.parse(fs.readFileSync(STEUER_FILE, "utf8")) || {}; } catch (e) {}
   o.settings = Object.assign({ zeitraum: "quartal", steuernummer: "" }, o.settings || {});
-  o.settings.besteuerung = "soll";                                   // FS Creative: Sollbesteuerung (vereinbarte Entgelte) – fix
+  // Besteuerungsart: Istbesteuerung (§ 17 UStG) ab 2026 – auf Wunsch von Simon (20.10.2026); Zeiträume davor wie abgegeben (Soll). Umschaltbar unter Steuern → Einstellungen.
+  if (o.settings.besteuerung !== "ist" && o.settings.besteuerung !== "soll") { o.settings.besteuerung = "ist"; o.settings.istAb = "2026-01-01"; }
+  if (o.settings.besteuerung === "ist" && !/^\d{4}-\d{2}-\d{2}$/.test(o.settings.istAb || "")) o.settings.istAb = "2026-01-01";
   o.mapping = o.mapping || {}; o.uva = o.uva || {}; o.jab = o.jab || {}; o.docs = o.docs || {};
   o.uvaManual = o.uvaManual || {}; o.jabInput = o.jabInput || {}; o.trips = o.trips || {}; o.ruleMap = o.ruleMap || {}; o.supMap = o.supMap || {}; o.u1 = o.u1 || {};
   o.fon = Object.assign({ nextPaket: 1, archive: [] }, o.fon || {});
@@ -2263,7 +2265,9 @@ function steuerSummary(x) { const o = JSON.parse(JSON.stringify(x)); if (Array.i
 function steuerOp(pl) {
   const o = readSteuer(), op = String(pl.op || ""), key = String(pl.key || "").slice(0, 20);
   const n2 = v => { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? Math.round(n * 100) / 100 : 0; };
-  if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
+  if (op === "settings") { const P = pl.settings || {}; if (P.zeitraum === "quartal" || P.zeitraum === "monat") o.settings.zeitraum = P.zeitraum;
+    if (P.besteuerung === "ist" || P.besteuerung === "soll") o.settings.besteuerung = P.besteuerung;
+    if (/^\d{4}$/.test(String(P.istAb || ""))) o.settings.istAb = String(P.istAb) + "-01-01"; if ("steuernummer" in P) o.settings.steuernummer = String(P.steuernummer || "").replace(/[^\d\/ -]/g, "").slice(0, 20); if ("vst" in P) o.settings.vst = String(P.vst || "").replace(/[^0-9a-z]/gi, "").slice(0, 4);
     // Betriebsdaten für die E1a im Datenstrom JAHR_ERKL
     if ("betriebAdr" in P) o.settings.betriebAdr = String(P.betriebAdr || "").slice(0, 60); if ("betriebPlz" in P) o.settings.betriebPlz = String(P.betriebPlz || "").replace(/[^0-9A-Z]/gi, "").slice(0, 10); if ("betriebOrt" in P) o.settings.betriebOrt = String(P.betriebOrt || "").slice(0, 40);
     if ("kleineAnz" in P) o.settings.kleineAnz = P.kleineAnz === true || P.kleineAnz === "1" ? true : undefined;   // Standard: Gesetz (keine Bagatellgrenze)

@@ -512,6 +512,31 @@ else {
   t("RC-Bankregel: Kennzahlen-Map 057/066", () => { const m = S.uvaKzMap(U1); near(m["057"], 20); near(m["066"], 20); });
   t("ohne RC-Kennzeichen: 0 %-Beleg eines unbekannten Lieferanten ist kein Reverse Charge", () => { near(kz(U3, "057"), 0); near(kz(U3, "066", "tax"), 0); });
 }
+/* ===================== Istbesteuerung (§ 17 UStG) ab 2026 ===================== */
+{
+  const stI = () => Object.assign(st0(), { settings: { besteuerung: "ist", istAb: "2026-01-01" } });
+  const pay = (d, a) => ({ date: d, amount: a });
+  const r1 = inv({ net: 1000, tax: 200, date: "2026-06-20", delivery: "2026-06-15", status: 1000, paid: 1200, pays: [pay("2026-07-10", 1200)] });   // Leistung Q2, bezahlt Q3
+  const r2 = inv({ net: 500, tax: 100, date: "2026-08-01", delivery: "2026-08-01", status: 200, paid: 0 });                                     // offen → nichts
+  const r3 = inv({ net: 2000, tax: 400, date: "2026-07-01", delivery: "2026-07-01", status: 750, paid: 1200, pays: [pay("2026-09-15", 1200)] }); // halb bezahlt
+  const old = inv({ net: 300, tax: 60, date: "2025-12-10", delivery: "2025-12-10", status: 1000, paid: 360, pays: [pay("2026-01-20", 360)] });   // 2025 nach Soll versteuert
+  const sr = inv({ type: "SR", net: -500, tax: -100, date: "2026-08-20", lines: [{ rate: 20, net: -500, tax: -100 }], status: 1000, paid: 0 });   // Storno ohne Rückzahlung
+  const eu = inv({ net: 800, tax: 0, rate: 0, taxRule: "17", uid: "DE123456789", country: "DE", date: "2026-08-12", delivery: "2026-08-10", status: 200 });   // ZM nach Leistung
+  const v1 = vou({ net: 100, tax: 20, date: "2026-06-25", status: 1000, paid: 120, payDate: "2026-07-02", supplier: "Bürobedarf GmbH" });   // VSt erst bei Zahlung (Q3)
+  const v2 = vou({ net: 50, tax: 10, date: "2026-08-05", status: 100, paid: 0, supplier: "Druck GmbH" });                                      // unbezahlt → keine VSt
+  const g = vou({ net: 300, taxRule: "14", date: "2026-07-31", status: 100, paid: 0, supplier: "Google Ireland Ltd", cat: "Werbung" });         // RC unabhängig von Zahlung
+  const raw = { invoices: [r1, r2, r3, old, sr, eu], vouchers: [v1, v2, g], creditNotes: [] };
+  const Q3 = S.computeUva(raw, stI(), Q(2026, 3)), Q2 = S.computeUva(raw, stI(), Q(2026, 2)), Q1 = S.computeUva(raw, stI(), Q(2026, 1));
+  t("Ist: Umsatzsteuer im Monat der Zahlung (Leistung Q2, bezahlt Q3 → Q3), Teilzahlung anteilig, offene Rechnung nicht", () => { near(kz(Q3, "022"), 1000 + 1000); near(kz(Q3, "022", "tax"), 400); near(kz(Q2, "022"), 0); });
+  t("Ist: Rechnung aus 2025 (dort nach Soll versteuert) beim Zahlungseingang 2026 nicht nochmal", () => { near(kz(Q1, "022"), 0); });
+  t("Ist: Storno ohne Rückzahlung mindert nichts", () => { assert.ok(!(Q3.K["090"] && Q3.K["090"].tax)); near(kz(Q3, "022"), 2000); });
+  t("Ist: Vorsteuer erst bei Zahlung, unbezahlte Rechnung ohne Vorsteuer", () => { near(kz(Q3, "060", "tax"), 20); near(kz(Q2, "060", "tax"), 0); });
+  t("Ist: Reverse Charge und ZM weiter nach Leistung (unabhängig von der Zahlung)", () => { near(kz(Q3, "057"), 300); near(kz(Q3, "066", "tax"), 60); assert.ok(S.zmRows(Q3).some(z => z.net === 800)); });
+  t("Ist: Zahllast = USt der Zahlungen − bezahlte Vorsteuer (RC neutral)", () => { near(Q3.zahllast, 400 - 20); });
+  t("Soll bleibt Standard, wenn nichts eingestellt ist (Leistung Q2 → Q2)", () => { near(kz(S.computeUva(raw, st0(), Q(2026, 2)), "022"), 1000); });
+  t("Ist ab 2026: Jahre davor weiter nach Soll", () => { const o2 = inv({ net: 100, tax: 20, date: "2025-08-01", delivery: "2025-08-01", status: 200 }); near(kz(S.computeUva({ invoices: [o2], vouchers: [] }, stI(), Q(2025, 3)), "022"), 100); });
+  t("Besteuerungsart je Jahr für die Anzeige", () => { assert.strictEqual(S.besteuerungTxt(stI(), "2026"), "Istbesteuerung"); assert.strictEqual(S.besteuerungTxt(stI(), "2025"), "Sollbesteuerung"); assert.strictEqual(S.besteuerungTxt(st0(), "2026"), "Sollbesteuerung"); });
+}
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 
 console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
