@@ -15,17 +15,30 @@ if (!FFMPEG) { try { FFMPEG = require("ffmpeg-static") || ""; } catch (e) { FFMP
 
 // ───────────── Schriften ─────────────
 let FONTS = null;
+// Schriften der Marken (Website-Schriften): Poppins/Inter (Standard), Outfit (kochdu), Barlow + Barlow Condensed (Kantineur, Skikaiser),
+// Cormorant Garamond (Blitzdings), Merriweather (VALUERO), Fredoka + Fraunces (Hüttengaudi), Lilita One + Archivo (Skikaiser)
+const FONT_SET = [["Poppins", [600, 700, 800, 900]], ["Inter", [400, 500, 600, 700, 800]], ["Outfit", [500, 700, 800, 900]], ["Barlow", [400, 500, 600, 700]],
+  ["Barlow Condensed", [600, 700, 800], [700, 800]], ["Cormorant Garamond", [500, 600, 700], [500, 600]], ["Merriweather", [400, 700, 900], [400]],
+  ["Fredoka", [500, 600, 700]], ["Fraunces", [600, 700, 800], [700]], ["Lilita One", [400]], ["Archivo", [500, 700, 800], [800]]];
 function fonts() {
   if (FONTS) return FONTS;
   const base = n => { try { return path.dirname(require.resolve("@fontsource/" + n + "/package.json")); } catch (e) { return path.join(__dirname, "node_modules", "@fontsource", n); } };
-  const load = (fam, file, weight) => { try { return { name: fam, data: fs.readFileSync(path.join(base(fam.toLowerCase()), "files", file)), weight, style: "normal" }; } catch (e) { return null; } };
-  FONTS = [
-    load("Poppins", "poppins-latin-600-normal.woff", 600), load("Poppins", "poppins-latin-700-normal.woff", 700), load("Poppins", "poppins-latin-800-normal.woff", 800), load("Poppins", "poppins-latin-900-normal.woff", 900),
-    load("Poppins", "poppins-latin-ext-800-normal.woff", 800),
-    load("Inter", "inter-latin-400-normal.woff", 400), load("Inter", "inter-latin-500-normal.woff", 500), load("Inter", "inter-latin-600-normal.woff", 600), load("Inter", "inter-latin-700-normal.woff", 700),
-    load("Inter", "inter-latin-ext-500-normal.woff", 500), load("Inter", "inter-latin-ext-700-normal.woff", 700),
-  ].filter(Boolean);
+  const load = (fam, weight, style) => { const dir = fam.toLowerCase().replace(/ /g, "-"); try { return { name: fam, data: fs.readFileSync(path.join(base(dir), "files", dir + "-latin-" + weight + "-" + style + ".woff")), weight, style }; } catch (e) { return null; } };
+  FONTS = [];
+  FONT_SET.forEach(([fam, ws, its]) => { ws.forEach(w => FONTS.push(load(fam, w, "normal"))); (its || []).forEach(w => FONTS.push(load(fam, w, "italic"))); });
+  FONTS = FONTS.filter(Boolean);
   return FONTS;
+}
+// Emojis als Bilder (Twemoji, einmal geladen und zwischengespeichert) – sonst bleiben sie in Bildern leer
+const EMOJI_DIR = path.join(require("os").tmpdir(), "fsc-emoji"), EMOJI = new Map();
+function emojiCode(seg) { const cps = Array.from(seg).map(c => c.codePointAt(0)); const z = cps.indexOf(0x200d) > -1; return cps.filter(c => z || c !== 0xfe0f).map(c => c.toString(16)).join("-"); }
+async function emojiUri(seg) {
+  const code = emojiCode(seg); if (EMOJI.has(code)) return EMOJI.get(code);
+  const f = path.join(EMOJI_DIR, code + ".svg"); let svg = "";
+  try { svg = fs.readFileSync(f, "utf8"); } catch (e) {
+    try { const r = await fetch("https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/" + code + ".svg", { signal: AbortSignal.timeout(5000) }); if (r.ok) { svg = await r.text(); fs.mkdirSync(EMOJI_DIR, { recursive: true }); fs.writeFileSync(f, svg); } } catch (e2) {}
+  }
+  const uri = svg && /<svg/.test(svg) ? "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64") : ""; EMOJI.set(code, uri); return uri;
 }
 function ready() { return !!(satori && Resvg && fonts().length); }
 function videoReady() { return ready() && !!FFMPEG && fs.existsSync(FFMPEG); }
@@ -34,7 +47,7 @@ function videoReady() { return ready() && !!FFMPEG && fs.existsSync(FFMPEG); }
 // h("div", {style}, kind1, kind2 …) – div bekommt display:flex (satori verlangt das bei mehreren Kindern)
 function h(type, style, ...kids) {
   const children = kids.flat(Infinity).filter(c => c !== null && c !== undefined && c !== false && c !== "");
-  const st = Object.assign(type === "div" ? { display: "flex" } : {}, style || {});
+  const st = Object.assign(type === "div" ? { display: "flex" } : {}, style || {}); Object.keys(st).forEach(k => { if (st[k] === undefined || st[k] === null || st[k] === "") delete st[k]; });
   const props = { style: st };
   if (children.length) props.children = children.length === 1 ? children[0] : children;
   return { type, props };
@@ -43,7 +56,7 @@ function img(src, style) { return { type: "img", props: { src, style: Object.ass
 
 async function png(el, w, hgt, opts) {
   if (!ready()) throw new Error("Bild-Erzeugung nicht verfügbar (satori/resvg fehlen)");
-  const svg = await satori(el, { width: w, height: hgt, fonts: fonts() });
+  const svg = await satori(el, { width: w, height: hgt, fonts: fonts(), loadAdditionalAsset: async (code, seg) => code === "emoji" ? (await emojiUri(seg)) || undefined : undefined });
   const r = new Resvg(svg, { fitTo: { mode: "width", value: Math.round(w * ((opts && opts.scale) || 1)) }, font: { loadSystemFonts: false }, background: opts && opts.background || undefined });
   return r.render().asPng();
 }
@@ -323,8 +336,17 @@ const ICON = {
   cross: c => svgUri('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="' + c + '" stroke-width="2.6"/>', 36, 36),
 };
 const cssColor = c => /^#/.test(String(c)) ? c : "#ffffff";
+let SKINS = null;
+const skins = () => SKINS || (SKINS = require("./mkt-skins.js")({ h, img, fit, mix, rgba, onColor }));
+// Reel mit Video-Hintergrund: Hintergrund-Ebene ist nur ein Schatten (Text bleibt lesbar), der Text kommt aus dem Marken-Look
+function shadeEl(F) { return h("div", { width: F.w, height: F.h, background: "linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 32%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0.78) 100%)" }); }
 function postEl(slide, brand, o) {
-  o = o || {}; const T = theme(brand), F = FMT[o.format === "story" ? "story" : "feed"], L = look(T, o.variant || "brand"), story = F === FMT.story;
+  o = o || {}; const F0 = FMT[o.format === "story" ? "story" : "feed"];
+  if (brand && brand.key && skins().has(brand.key)) {
+    if (o.overVideo && o.layer === "bg") return shadeEl(F0);
+    return skins().el(Object.assign({}, slide, o.overVideo ? { image: "" } : {}), brand, o, F0);
+  }
+  const T = theme(brand), F = F0, L = look(T, o.variant || "brand"), story = F === FMT.story;
   const layer = o.layer || "all", TX = layer === "bg" ? { opacity: 0 } : {}, DE = layer === "fg" ? { opacity: 0 } : {};
   const W2 = F.w - 2 * F.px, s = slide || {}, tpl = s.template === "photo" && !s.image ? "hook" : (s.template || "hook");
   const root = Object.assign({ width: F.w, height: F.h, position: "relative", flexDirection: "column", fontFamily: "Inter", color: L.fg, overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px" },
@@ -391,7 +413,7 @@ async function postImages(slides, brand, o) {
   for (let i = 0; i < n; i++) {
     const variant = o.variants ? o.variants[i % o.variants.length] : (slides[i].template === "cta" ? "brand" : i === 0 ? "brand" : "light");
     const pf = path.join(o.dir, (o.prefix || "s") + i + ".png");
-    fs.writeFileSync(pf, await slidePng(slides[i], brand, { format: "feed", variant, counter: n > 1 ? (i + 1) + "/" + n : "", swipe: n > 1 && i === 0, url: o.url || "" }));
+    fs.writeFileSync(pf, await slidePng(slides[i], brand, { format: "feed", variant, v: (o.v || 0) + i, counter: n > 1 ? (i + 1) + "/" + n : "", swipe: n > 1 && i === 0, url: o.url || "" }));
     out.push(await toJpeg(pf, pf.replace(/\.png$/, ".jpg")));
   }
   return out;
@@ -404,7 +426,7 @@ async function reelVideo(scenes, brand, o) {
   for (let i = 0; i < scenes.length; i++) {
     const s = scenes[i], variant = s.template === "cta" ? "brand" : (o.variants ? o.variants[i % o.variants.length] : (i % 2 ? "dark" : "brand")), d = +(o.durations && o.durations[i]) || sceneDur(s);
     const bgVid = o.bgVideos && o.bgVideos[i];
-    const base = { format: "story", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid };
+    const base = { format: "story", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid, v: (o.v || 0) + i };
     fs.writeFileSync(P("bg" + i + ".png"), await slidePng(s, brand, Object.assign({}, base, { layer: "bg" })));
     fs.writeFileSync(P("fg" + i + ".png"), await slidePng(s, brand, Object.assign({}, base, { layer: "fg" })));
     const inBg = bgVid ? ["-stream_loop", "-1", "-t", d.toFixed(2), "-i", bgVid] : ["-loop", "1", "-framerate", "30", "-t", d.toFixed(2), "-i", P("bg" + i + ".png")];
@@ -429,4 +451,4 @@ async function reelVideo(scenes, brand, o) {
   return { file: out, cover, duration: Math.round(total * 10) / 10 };
 }
 
-module.exports = { ready, videoReady, h, img, png, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, _test: { backC1, ease, lines } };
+module.exports = { ready, videoReady, h, img, png, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };

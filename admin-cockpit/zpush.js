@@ -7,7 +7,7 @@ var F=window.FSC, esc=F.esc;
 if(F.icons&&!F.icons.bell) F.icons.bell='<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>';
 var ok=("serviceWorker" in navigator)&&("PushManager" in window)&&("Notification" in window);
 var standalone=(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
-var TOP=[["mail","Neue Mails im Posteingang"],["lead","Neue Anfragen (Website)"],["fin","Finanzen (Mahnungen, Zahllast, Belege)"],["mkt","Marketing (gepostet oder Fehler beim Posten)"]];
+var TOP=[["mail","Neue Mails im Posteingang"],["lead","Neue Anfragen (Website)"],["fin","Finanzen (Mahnungen, Zahllast, Belege)"],["mkt","Marketing (gepostet oder Fehler beim Posten)"],["wa","WhatsApp (neue Nachrichten)"]];
 function b64u(s){ var p="=".repeat((4-s.length%4)%4), b=atob((s+p).replace(/-/g,"+").replace(/_/g,"/")), a=new Uint8Array(b.length); for(var i=0;i<b.length;i++) a[i]=b.charCodeAt(i); return a; }
 var REG=null;
 function reg(){ if(!REG) REG=navigator.serviceWorker.register("/admin/sw.js",{scope:"/admin/"}).catch(function(e){ REG=null; throw e; }); return REG; }

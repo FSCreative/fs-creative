@@ -233,7 +233,7 @@ async function startServer(dir, env) {
     const z = fs.readFileSync(path.join(ROOT, "admin-cockpit", "zchat.js"), "utf8"); assert.ok(/esc\(m\.text\)/.test(z) && /F\.view\(\{id:"chat",label:"Chat"/.test(z));
     const html = await (await fetch(B + "/admin", { headers: { cookie: COOKIE } })).text(); assert.ok(/zchat\.js/.test(html));
     assert.ok(!/\["chat",/.test(fs.readFileSync(path.join(ROOT, "admin-cockpit", "zpush.js"), "utf8")), "kein Chat-Push (vom Nutzer nicht gewünscht)");
-    assert.ok(/T = \["mail", "lead", "fin", "chat"(, "mkt")?\]/.test(fs.readFileSync(path.join(ROOT, "server.js"), "utf8")), "Push-Thema chat am Server erlaubt");
+    assert.ok(/T = \["mail", "lead", "fin", "chat"(, "mkt")?(, "wa")?\]/.test(fs.readFileSync(path.join(ROOT, "server.js"), "utf8")), "Push-Thema chat am Server erlaubt");
   });
 
   srv.kill(); mock.server.close();

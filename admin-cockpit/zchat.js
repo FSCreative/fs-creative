@@ -1,12 +1,15 @@
 /* Website-Chat (Overlay auf www.fs-creative.at, Server chat.js): Unterhaltungen links, Verlauf rechts (Handy: Liste → Verlauf), oben Online/Offline.
    Online nur, solange das Cockpit offen ist (Herzschlag alle 45 s, 3 Min. ohne = offline → KI antwortet). Keine Push-Nachrichten für den Chat.
    KI je Unterhaltung: Auto (nur wenn du offline bist) · An (immer) · Aus. Schreibst du selbst, hört die KI auf.
-   Daten: /admin/api/chat/state (?v= → {same}), …/conv?id=&read=1, …/send, …/status, …/op (ai, close, reopen, delete, lead). */
+   Daten: /admin/api/chat/state (?v= → {same}), …/conv?id=&read=1, …/send, …/status, …/op (ai, close, reopen, delete, lead).
+   Umschalter oben „Website | WhatsApp“ (gemerkt in fsc_chat_mode): WhatsApp (nur lesen) zeichnet admin-cockpit/zwa.js über F.waChat. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc;
 F.icons.chat='<path d="M20 11.5a8 8 0 0 1-11.6 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>';
 var ST=null, VER="", SEL=null, TH=null, DRAFT={}, busy=false, beatT=null, ticks=0, compFor=null, sending=false;
+var MODE=F.ls("fsc_chat_mode")==="wa"?"wa":"web";
+F.chatMode=function(){ return MODE; };
 F.css('.ch-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.ch-top h1{font-size:26px}.ch-top p{margin:2px 0 0;color:var(--ink-3);font-size:13.5px}'+
   '.ch-st{display:inline-flex;align-items:center;gap:12px;padding:10px 18px 10px 12px;border-radius:99px;border:2px solid var(--line);background:var(--panel);font-weight:700;font-size:16px;color:var(--ink);cursor:pointer;min-height:52px}'+
   '.ch-st .sw{position:relative;width:52px;height:30px;border-radius:99px;background:var(--sunk);border:1px solid var(--line);transition:background .2s}.ch-st .sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--ink-3);transition:transform .2s,background .2s}'+
@@ -20,10 +23,11 @@ F.css('.ch-top{display:flex;align-items:center;justify-content:space-between;gap
   '.ch-th{display:flex;flex-direction:column;min-width:0;min-height:0}.ch-hd{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}.ch-hd .t{flex:1 1 180px;min-width:0}.ch-hd .t b{display:block;font-size:15.5px}.ch-hd .t span{display:block;font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
   '.ch-hd .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ch-hd .seg{display:inline-flex}.ch-hd .seg button{padding:5px 10px;font-size:12.5px}.ch-back{display:none}'+
   '.ch-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:6px;background:var(--sunk)}.ch-m{max-width:76%;padding:8px 12px;border-radius:16px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px;line-height:1.45;background:var(--panel);border:1px solid var(--line)}'+
-  '.ch-m small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}.ch-m.v{align-self:flex-start;border-bottom-left-radius:5px}.ch-m.me{align-self:flex-end;background:var(--ok-soft);border-color:transparent;border-bottom-right-radius:5px}'+
+  '.ch-m small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px}.ch-m.v{align-self:flex-start;border-bottom-left-radius:5px;font-family:var(--f-body);font-size:14.5px;font-weight:400;letter-spacing:normal;line-height:1.45;color:var(--ink)}.ch-m.me{align-self:flex-end;background:var(--ok-soft);border-color:transparent;border-bottom-right-radius:5px}'+
   '.ch-m.ki{align-self:flex-end;background:var(--info-soft);border-color:transparent;border-bottom-right-radius:5px}.ch-m .ki-t{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:0 6px;border-radius:6px;background:var(--info);color:#fff;margin-bottom:3px}'+
   '.ch-m.sys{align-self:center;background:none;border:0;color:var(--ink-3);font-size:12.5px;text-align:center}.ch-ty{align-self:flex-end;font-size:12.5px;color:var(--ink-3)}.ch-info{font-size:12.5px;color:var(--ink-2);padding:8px 14px;border-bottom:1px solid var(--line);display:flex;gap:12px;flex-wrap:wrap}'+
   '.ch-comp{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--line)}.ch-comp textarea{flex:1;resize:none;min-height:42px;max-height:160px;border-radius:14px}.ch-none{flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink-3);padding:30px;text-align:center}'+
+  '.ch-tr{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.ch-mode button{padding:8px 16px;font-size:14px;display:inline-flex;align-items:center;gap:6px}.ch-mn:empty{display:none}.ch-mn{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--ok);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}'+
   '@media(max-width:900px){.ch-app{grid-template-columns:1fr;height:calc(100dvh - 230px)}.ch-app .ch-th{display:none}.ch-app.sel .ch-list{display:none}.ch-app.sel .ch-th{display:flex}.ch-back{display:inline-flex}.ch-m{max-width:88%}.ch-st{font-size:15px}}');
 
 function api(path,body){ return F.api(path,body?{body:body}:undefined); }
@@ -33,7 +37,7 @@ function load(){
     if(!j||j.ok===false){ if(!ST) ST={ok:false,error:(j&&j.error)||"Fehler",convs:[]}; paint(); return; }
     if(j.same) return;
     var prevOn=ST&&ST.online; ST=j; VER=j.ver; F.renderNav(); beat(j.online); paint();
-    if(SEL&&F.current==="chat") loadThread();
+    if(SEL&&F.current==="chat"&&MODE==="web") loadThread();
     if(prevOn===true&&j.online===false&&F.current==="chat") F.toast("Chat-Status: offline – die KI antwortet",true);
   }).catch(function(){ busy=false; });
 }
@@ -92,7 +96,9 @@ function paintThread(){
   if(TH&&TH.id===SEL){ var end=ms.scrollHeight-ms.scrollTop-ms.clientHeight<80||!ms.childNodes.length; ms.innerHTML=msgsHtml(); if(end) ms.scrollTop=ms.scrollHeight; }
   else ms.innerHTML='<div class="ch-m sys">Lade …</div>';
 }
+function togN(){ var tn=document.getElementById("chTogN"); if(tn) tn.textContent=ST&&ST.unread?String(ST.unread):""; }   /* Zahl am Umschalter – auch in der WhatsApp-Ansicht */
 function paint(){
+  togN();
   var root=document.getElementById("chRoot"); if(!root) return;
   var stb=document.getElementById("chStatus"); if(stb) stb.innerHTML=statusBtn();
   if(ST&&ST.ok===false){ document.getElementById("chList").innerHTML='<div class="ch-empty">'+esc(ST.error)+'</div>'; return; }
@@ -102,12 +108,16 @@ function paint(){
   paintThread();
 }
 function grow(ta){ ta.style.height="auto"; ta.style.height=Math.min(160,ta.scrollHeight+2)+"px"; }
+/* Umschalter Website | WhatsApp – Zahlen (ungelesen) trägt jede Seite selbst ein (chTogN hier, waTogN in zwa.js) */
+function modeSeg(){ return '<div class="seg ch-mode" role="group" aria-label="Chat-Quelle"><button type="button" data-act="chmode:web" aria-pressed="'+(MODE==="web")+'">Website<span class="ch-mn" id="chTogN"></span></button><button type="button" data-act="chmode:wa" aria-pressed="'+(MODE==="wa")+'">WhatsApp<span class="ch-mn" id="waTogN"></span></button></div>'; }
 function render(){
+  if(MODE==="wa"&&F.waChat) return F.waChat.render(modeSeg());
   if(!ST) load();
-  return '<div id="chRoot" class="stackf"><div class="ch-top"><div><h1>Chat</h1><p>Website-Chat auf allen Seiten von fs-creative.at · <span id="chNote"></span></p></div><div id="chStatus"></div></div>'+
+  return '<div id="chRoot" class="stackf"><div class="ch-top"><div><h1>Chat</h1><p>Website-Chat auf allen Seiten von fs-creative.at · <span id="chNote"></span></p></div><div class="ch-tr">'+modeSeg()+'<div id="chStatus"></div></div></div>'+
     '<section class="panel ch-app" id="chApp"><aside class="ch-list" id="chList" aria-label="Unterhaltungen"></aside><section class="ch-th" id="chThread" aria-label="Verlauf"></section></section></div>';
 }
-function after(){ compFor=null; paint(); if(SEL) loadThread(); }
+function after(){ togN(); if(F.waChat) F.waChat.badge(); if(MODE==="wa"&&F.waChat) return F.waChat.after(); compFor=null; paint(); if(SEL) loadThread(); }
+F.action("chmode",function(m){ m=m==="wa"?"wa":"web"; if(m===MODE) return; MODE=m; F.ls("fsc_chat_mode",MODE); F._forceRender=true; F.render(); });
 function setConv(c){ if(!c||!ST) return; ST.convs=(ST.convs||[]).map(function(x){ return x.id===c.id?c:x; }); if(TH&&TH.id===c.id) TH.conv=c; VER=""; paint(); }
 function op(body){ body.id=SEL; return api("/admin/api/chat/op",body).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return null; } if(j.conv) setConv(j.conv); VER=""; load(); loadThread(); return j; }); }
 

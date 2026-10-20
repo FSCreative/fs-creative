@@ -2728,6 +2728,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/viw/") === 0) return guard(res, VIW.handleAdmin(req, res, u, p));
   // Marketing (Marken, Gewinnspiel-Auslosung mit Video) – Cockpit-Seite admin-cockpit/zmarketing.js, Logik in marketing.js / mkt-render.js
   if (p.indexOf("/admin/api/mkt/") === 0) return guard(res, MKT.handleAdmin(req, res, u, p));
+  // WhatsApp nur lesen (Cloud API, Coexistence) – Cockpit „Chat“ → WhatsApp (admin-cockpit/zwa.js), Logik in whatsapp.js; /admin/wa/connect = Verbinden-Seite (Embedded Signup, eigene CSP)
+  if (p.indexOf("/admin/api/wa/") === 0 || p === "/admin/wa/connect") return guard(res, WA.handleAdmin(req, res, u, p));
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -2735,7 +2737,7 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (!process.env.DATABASE_URL) return J(200, { ok: false, error: "Datenbank fehlt" });
       if (req.method === "GET") return J(200, Object.assign({ ok: true, publicKey: await PUSH.publicKey() }, await PUSH.status(u.searchParams.get("endpoint") || "")));
-      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin", "chat", "mkt"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
+      const pl = await sevBody(req, 8000), T = ["mail", "lead", "fin", "chat", "mkt", "wa"], topics = Array.isArray(pl.topics) ? pl.topics.filter(t => T.indexOf(t) > -1) : null;
       if (pl.op === "subscribe") return J(200, await PUSH.subscribe(pl.subscription, pl.device, topics));
       if (pl.op === "unsubscribe") return J(200, await PUSH.unsubscribe(String(pl.endpoint || "")));
       if (pl.op === "topics") return J(200, await PUSH.setTopics(String(pl.endpoint || ""), topics || []));
@@ -3783,6 +3785,8 @@ const server = http.createServer((req, res) => {
     }
     // Marketing: Bilder/Videos freigegebener Posts für Instagram, Facebook, Threads, Pinterest (die holen die Datei selbst ab) – marketing.js
     if ((req.method === "GET" || req.method === "HEAD") && p.indexOf("/m/") === 0) return void MKT.handlePublic(req, res, p);
+    // WhatsApp-Webhook von Meta (whatsapp.js): GET = Prüfung (hub.verify_token), POST = Nachrichten – Signatur über die Rohdaten, liest den Body selbst
+    if (p === "/api/whatsapp/webhook") return void guard(res, WA.handleWebhook(req, res, u));
     // Website-Chat (chat.js): Overlay-Skript /chat/w.js und öffentliche API /chat/api/…
     if (p === "/chat/w.js" || p.indexOf("/chat/api/") === 0) return void guard(res, CHAT.handlePublic(req, res, u, p));
     if (p === "/api/anfrage") {
@@ -3941,6 +3945,9 @@ setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):"
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
 const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment, DATA_DIR, secret: ADMIN_SECRET });
 const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET, KI: () => KI, publicBase: ORIGIN,
+  push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+// ── WhatsApp nur lesen (whatsapp.js): Cloud API mit Coexistence – Webhook /api/whatsapp/webhook, Cockpit „Chat“ → WhatsApp, Push-Thema „wa“ ──
+const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },

@@ -30,7 +30,8 @@ module.exports = function (D) {
     o.draws = Array.isArray(o.draws) ? o.draws : [];
     o.order = Array.isArray(o.order) ? o.order : [];
     // neue Marken aus der Vorlage ergänzen (eigene Änderungen bleiben)
-    seedBrands().forEach(b => { if (!o.brands[b.key]) { o.brands[b.key] = Object.assign({ enabled: true }, b); if (o.order.indexOf(b.key) < 0) o.order.push(b.key); } });
+    seedBrands().forEach(b => { if (!o.brands[b.key]) { o.brands[b.key] = Object.assign({ enabled: true }, b); if (o.order.indexOf(b.key) < 0) o.order.push(b.key); }
+      else if (!o.brands[b.key].logo && b.logo) o.brands[b.key].logo = b.logo; });   // später ergänzte Logos (z. B. App-Icons der Spiele) übernehmen
     ST = o; return ST;
   }
   let saveT = null;
@@ -71,7 +72,7 @@ module.exports = function (D) {
     const sz = imgSize(buf, type), out = { src, uri: "data:" + type + ";base64," + buf.toString("base64"), ratio: sz.h ? sz.w / sz.h : 1 };
     LOGO_CACHE[b.key] = out; return out;
   }
-  async function renderBrand(b) { const l = await logoData(b); return { name: b.name, colors: b.colors || {}, logo: l ? l.uri : "", logoRatio: l ? l.ratio : 1, logoBg: b.logoBg || "light" }; }
+  async function renderBrand(b) { const l = await logoData(b); return { key: b.key, name: b.name, colors: b.colors || {}, logo: l ? l.uri : "", logoRatio: l ? l.ratio : 1, logoBg: b.logoBg || "light" }; }
 
   // ───────────── Gewinnspiel ─────────────
   // Eine Zeile = eine Teilnahme. Erstes Wort mit @ oder ein Benutzername ohne Leerzeichen = Name; sonst die ganze Zeile (z. B. „Lisa Müller“).
@@ -202,7 +203,7 @@ module.exports = function (D) {
 
   // ───────────── Post-Planer (mkt-posts.js) und Veröffentlichen (mkt-publish.js) ─────────────
   const PUB = require("./mkt-publish.js")(D.publish || {});
-  const POSTS = require("./mkt-posts.js")({ state, save, brand, brandList, renderBrand, MEDIA, WORK, DIR, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R, publisher: PUB,
+  const POSTS = require("./mkt-posts.js")({ state, save, brand, brandList, renderBrand, imgSize, MEDIA, WORK, DIR, ROOT, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R, publisher: PUB,
     get KI() { return typeof D.KI === "function" ? D.KI() : D.KI; }, push: D.push, secret: D.secret, publicBase: D.publicBase, background: D.background });
 
   // ───────────── Routen ─────────────

@@ -68,6 +68,11 @@ F.css(
 '.mk-rules label.dis{color:var(--ink-3)} .mk-rules label.dis span{font-size:12.5px}'+
 '.mk-rules .f.mk-n{width:64px;padding:4px 8px} .mk-rules .f.mk-w{width:220px;padding:4px 8px}'+
 '.mk-igres{padding:12px 2px;min-height:44px}'+
+'.mk-lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;max-height:55vh;overflow:auto}'+
+'.mk-li{position:relative;border-radius:10px;overflow:hidden;background:var(--sunk);aspect-ratio:4/5}'+
+'.mk-li img,.mk-li video{width:100%;height:100%;object-fit:cover;display:block}'+
+'.mk-li .btn{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:0}'+
+'.mk-li .t{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;border-radius:99px;padding:2px 8px}'+
 '.mk-cols input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}'
 );
 
@@ -238,7 +243,7 @@ function brandsHtml(){
   return '<p class="muted" style="margin:0 0 12px">Das Profil jeder App ist die Grundlage für Videos und Posts: Farben, Logo, Tonfall, Zielgruppe und Hashtags.</p><div class="mk-brands">'+(ST.brands||[]).map(function(b){ var c=b.colors||{};
     return '<div class="panel mk-b"><div class="lg'+(b.logoBg==="dark"?' dark':'')+'">'+(b.logo||b.logoUploaded?'<img src="/admin/api/mkt/logo?key='+encodeURIComponent(b.key)+'&v='+encodeURIComponent(b.logoUploaded?"u":"d")+'" alt="" onerror="this.replaceWith(document.createTextNode(\'kein Logo\'))">':'<span class="muted small">kein Logo – bitte hochladen</span>')+'</div>'+
       '<div class="row-between"><b>'+esc(b.name)+'</b><div class="mk-sw">'+swatch(c.primary)+swatch(c.dark)+swatch(c.light)+swatch(c.accent)+'</div></div>'+
-      '<p>'+esc(b.oneLiner||"")+'</p><div><button type="button" class="btn sm" data-act="mkbrand:'+esc(b.key)+'">Bearbeiten</button></div></div>'; }).join("")+'</div>';
+      '<p>'+esc(b.oneLiner||"")+'</p><div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="mkbrand:'+esc(b.key)+'">Bearbeiten</button><button type="button" class="btn sm" data-act="mklib:'+esc(b.key)+'">Bilder & Videos</button></div></div>'; }).join("")+'</div>';
 }
 function lines(a){ return (a||[]).join("\n"); }
 F.action("mkbrand",function(key){
@@ -270,6 +275,26 @@ F.form("mkbrand",function(form){
   var go=function(){ api("/admin/api/mkt/brand",{key:key,patch:patch}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Speichern fehlgeschlagen",true); ST.brands=ST.brands.map(function(b){ return b.key===key?j.brand:b; }); F.closeModal(); F.toast("Gespeichert"); F.render(); }); };
   if(f){ if(f.size>3e6) return F.toast("Logo zu groß (max. 3 MB)",true); var r=new FileReader(); r.onload=function(){ patch.logoData=String(r.result); go(); }; r.readAsDataURL(f); } else go();
 });
+
+/* ---------- Bildersammlung je Marke (für Posts und Reels) ---------- */
+var LIBK=null;
+function libPaint(items){
+  var b=brandOf(LIBK)||{name:LIBK};
+  F.modal('<div class="row-between"><h2 style="font-size:19px">Bilder & Videos – '+esc(b.name)+'</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted small" style="margin:4px 0 12px">Daraus nimmt der Planer Fotos für Posts und Hintergründe für Reels. Eigene Fotos (JPG/PNG) und kurze Hochformat-Videos (MP4) machen die Posts persönlicher.</p>'+
+    (items?(items.length?'<div class="mk-lib">'+items.map(function(x){ var src="/admin/api/mkt/library-file?brand="+encodeURIComponent(LIBK)+"&id="+encodeURIComponent(x.id);
+      return '<div class="mk-li">'+(x.kind==="clip"?'<video src="'+src+'" muted playsinline preload="metadata"></video><span class="t">Video</span>':'<img src="'+src+'" alt="" loading="lazy">')+'<button type="button" class="btn icon sm" data-act="mklibdel:'+esc(x.id)+'" title="Entfernen" aria-label="Entfernen">'+F.svg("close")+'</button></div>'; }).join("")+'</div>':'<p class="muted">Noch keine Bilder.</p>'):'<p class="muted">Lade …</p>')+
+    '<div class="foot"><label class="btn"><input type="file" id="mkLibUp" accept="image/jpeg,image/png,video/mp4" multiple hidden> Hochladen</label><span class="muted small" id="mkLibMsg"></span><button type="button" class="btn" data-closemodal>Fertig</button></div>',"wide");
+}
+function libLoad(){ api("/admin/api/mkt/library?brand="+encodeURIComponent(LIBK)).then(function(j){ if(LIBK) libPaint(j&&j.ok?j.items:[]); }); }
+F.action("mklib",function(k){ LIBK=k; libPaint(null); libLoad(); });
+F.action("mklibdel",function(id){ F.confirm("Aus der Sammlung entfernen?","Entfernen",function(){ api("/admin/api/mkt/library",{brand:LIBK,remove:id}).then(function(){ libLoad(); }); },true); });
+F.listen("change","#mkLibUp",function(el){ var files=Array.prototype.slice.call(el.files||[]), msg=document.getElementById("mkLibMsg"), chain=Promise.resolve(), n=0;
+  files.forEach(function(f){ chain=chain.then(function(){ if(msg) msg.textContent="Lade hoch … "+(++n)+" von "+files.length;
+    if(/^video\//.test(f.type)){ if(f.size>80e6){ F.toast(f.name+": zu groß (max. 80 MB)",true); return; } return fetch("/admin/api/mkt/library-clip?brand="+encodeURIComponent(LIBK)+"&name="+encodeURIComponent(f.name),{method:"PUT",body:f,credentials:"same-origin"}).then(function(r){ return r.json(); }).then(function(j){ if(!j||!j.ok) F.toast((j&&j.error)||"Fehler",true); }); }
+    if(f.size>10e6){ F.toast(f.name+": zu groß (max. 10 MB)",true); return; }
+    return new Promise(function(ok){ var r=new FileReader(); r.onload=function(){ api("/admin/api/mkt/library",{brand:LIBK,name:f.name,data:String(r.result)}).then(function(j){ if(!j||!j.ok) F.toast((j&&j.error)||"Fehler",true); ok(); }); }; r.readAsDataURL(f); }); }); });
+  chain.then(function(){ libLoad(); }); });
 
 /* ---------- Seite ---------- */
 /* Reiter: {id,label,order,sub,render,right} – Planer/Kanäle kommen aus zmkplan.js */

@@ -91,6 +91,29 @@ function send(r, code, body, type, headers) { r.writeHead(code, Object.assign({ 
     const r = await call("POST", "/admin/api/mkt/giveaway/delete", { id: drawId }); assert.ok(r.json().ok);
     assert.ok(!M._test.state().draws.find(d => d.id === drawId)); assert.ok(!fs.existsSync(path.join(dir, "marketing", "media", drawId + ".mp4")));
   });
+  if (R.ready()) await t("Marken-Looks: jede App rendert alle Vorlagen (Feed + Story, Text- und Hintergrund-Ebene)", async () => {
+    const sl = { kicker: "Test", headline: "Ein *Test* mit Umlauten äöü ß €", sub: "Unterzeile", cta: "Los", items: ["Eins", "Zwei", "Drei"], number: "9 €", label: "pro *Monat*", author: "Team", leftTitle: "Alt", leftItems: ["a"], rightTitle: "Neu", rightItems: ["b"] };
+    const jpg = "data:image/jpeg;base64," + fs.readFileSync(path.join(ROOT, "mkt-assets", "kochdu", "essen-1.jpg")).toString("base64");
+    for (const key of ["kochdu", "kantineur", "blitzdings", "valuero", "skikaiser", "huettengaudi", "druckshop", "fs-creative"]) {
+      assert.ok(R.hasSkin(key), key);
+      for (const tpl of ["hook", "photo", "list", "compare", "stat", "quote", "cta"]) for (const format of ["feed", "story"]) {
+        const b = await R.slidePng(Object.assign({}, sl, { template: tpl, image: tpl === "photo" ? jpg : "" }), { key, name: key, colors: {} }, { format, v: tpl.length, counter: "2/5" });
+        assert.ok(b.length > 5000 && b.readUInt32BE(16) === 1080, key + " " + tpl + " " + format);
+      }
+      const bg = await R.slidePng(Object.assign({}, sl, { template: "hook" }), { key, name: key, colors: {} }, { format: "story", layer: "fg" }); assert.ok(bg.length > 1000);
+    }
+  });
+  await t("Bildersammlung: Grundstock je Marke, eigene Uploads, ausblenden", async () => {
+    let j = (await call("GET", "/admin/api/mkt/library", null, "?brand=kochdu")).json(); assert.ok(j.items.length >= 5 && j.items.every(x => x.kind === "photo" && !x.own));
+    j = (await call("GET", "/admin/api/mkt/library", null, "?brand=skikaiser")).json(); assert.ok(j.items.some(x => x.kind === "clip"));
+    const png = "data:image/png;base64," + fs.readFileSync(path.join(ROOT, "mkt-assets", "blitzdings", "box-mini.png")).toString("base64");
+    let r = (await call("POST", "/admin/api/mkt/library", { brand: "kantineur", name: "Tablet Foto.png", data: png })).json(); assert.ok(r.ok && /^u-tablet-foto-/.test(r.id));
+    r = await call("POST", "/admin/api/mkt/library", { brand: "kantineur", data: "data:image/gif;base64,R0lGOD" }); assert.strictEqual(r.code, 400);
+    const first = (await call("GET", "/admin/api/mkt/library", null, "?brand=kochdu")).json().items[0];
+    await call("POST", "/admin/api/mkt/library", { brand: "kochdu", remove: first.id });
+    j = (await call("GET", "/admin/api/mkt/library", null, "?brand=kochdu")).json(); assert.ok(!j.items.find(x => x.id === first.id), "ausgeblendet");
+    assert.ok(fs.existsSync(path.join(ROOT, "mkt-assets", "kochdu", first.name)), "Grundstock bleibt im Projekt");
+  });
   await t("Text einpassen: lange Einzelwörter werden kleiner statt abgeschnitten", async () => {
     const s1 = R.fit("@florian.st.gallenkirch", 770, 2, 112, 40, 0.66), s2 = R.fit("@anna", 770, 2, 112, 40, 0.66);
     assert.ok(s1 < 60, "lang " + s1); assert.strictEqual(s2, 112);
