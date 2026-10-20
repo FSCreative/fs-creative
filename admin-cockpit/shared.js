@@ -6,7 +6,7 @@ var F=window.FSC, esc=F.esc, eur=F.eur;
 /* ---------- Rechnung erstellen (Entwurf) ---------- */
 var META=null;
 F.loadMeta=function(cb,force){ if(META&&!force) return cb(META); F.api("/admin/api/sevdesk/meta"+(force?"?force=1":"")).then(function(m){ META=m||{}; cb(META); }).catch(function(){ cb({}); }); };
-function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" list="invParts" placeholder="Bezeichnung oder Artikel" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'"></div>'; }
+function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" list="invParts" placeholder="Bezeichnung oder Artikel" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'">'+(+it.discount>0?'<input type="hidden" data-i="disc" value="'+esc(it.discount)+'"><span class="irdisc">abzüglich '+esc(String(+it.discount).replace(".",","))+' % Rabatt</span>':'')+'</div>'; }
 var INVCTX=null, PARTS=[];
 F.addDays=function(iso,n){ var d=new Date(String(iso).slice(0,10)+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
 /* Anschrift: Einzelfelder ↔ mehrzeiliger Adressblock (Name / z. H. / Straße / PLZ Ort / Land) */
@@ -122,8 +122,8 @@ F.openInvoice=function(pre){
     var inp=document.querySelector('form[data-form="invoice"] [name="contact"]'); invCustomer(); if(inp&&document.activeElement===inp&&inp.value.trim()) sgOpen(inp); });
   invCustomer();
 };
-function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEach(function(r){ var g=function(k){ return r.querySelector('[data-i="'+k+'"]').value; }; var nm=g("name").trim(), pr=g("price"); if(!nm||pr==="") return; out.push({name:nm,text:g("text").trim(),qty:parseFloat(g("qty"))||1,priceGross:parseFloat(pr),taxRate:parseFloat(g("tax"))}); }); return out; }
-function invSum(){ var g=0; invItems().forEach(function(i){ g+=i.qty*i.priceGross; }); var el=document.getElementById("invSum"); if(el) el.textContent="Summe brutto "+eur(g); }
+function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEach(function(r){ var g=function(k){ return r.querySelector('[data-i="'+k+'"]').value; }; var nm=g("name").trim(), pr=g("price"); if(!nm||pr==="") return; var d=r.querySelector('[data-i="disc"]'), it={name:nm,text:g("text").trim(),qty:parseFloat(g("qty"))||1,priceGross:parseFloat(pr),taxRate:parseFloat(g("tax"))}; if(d&&+d.value>0) it.discount=+d.value; out.push(it); }); return out; }
+function invSum(){ var g=0; invItems().forEach(function(i){ g+=i.qty*i.priceGross*(1-(i.discount||0)/100); }); var el=document.getElementById("invSum"); if(el) el.textContent="Summe brutto "+eur(g); }
 F.listen("input","#irows",invSum);
 F.listen("change","#irows",invSum);
 /* Artikel gewählt → Preis, USt und Text übernehmen */
@@ -257,5 +257,5 @@ F.taxRuleSync=function(el){ var h=el.parentNode&&el.parentNode.querySelector(".t
   if(F.taxRuleZero(el.value)){ if(r.value!=="0"){ r.value="0"; r.dispatchEvent(new Event("change",{bubbles:true})); } r.disabled=true; r.title="Bei dieser Regel steht keine österr. USt auf der Rechnung"; }
   else { r.disabled=false; r.title=""; } };
 F.listen("change","select[data-taxrule]",function(el){ F.taxRuleSync(el); });
-F.css(".trl .trh{display:block;margin-top:4px;line-height:1.35}");
+F.css(".trl .trh{display:block;margin-top:4px;line-height:1.35}.irow .irdisc{grid-column:1/-1;font-size:12px;color:var(--ink-3);margin-top:-2px}");
 })();

@@ -37,8 +37,8 @@ module.exports = function (D) {
     const emails = await emailsOf(contactId);
     const positions = ((pj && pj.objects) || []).slice().sort((a, b) => (parseInt(a.positionNumber, 10) || 0) - (parseInt(b.positionNumber, 10) || 0)).map(x => {
       const q = x.quantity != null ? sevNum(x.quantity) : 1, rate = sevNum(x.taxRate), net = sevNum(x.priceNet != null ? x.priceNet : x.price);
-      const gross = x.priceGross != null && sevNum(x.priceGross) ? sevNum(x.priceGross) : r2(net * (1 + rate / 100));
-      return { id: String(x.id), name: String(x.name || ""), text: String(x.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), qty: q, priceNet: r2(net), priceGross: r2(gross), taxRate: rate, sumGross: r2(gross * q) };
+      const gross = x.priceGross != null && sevNum(x.priceGross) ? sevNum(x.priceGross) : r2(net * (1 + rate / 100)), disc = Math.max(0, Math.min(100, sevNum(x.discount) || 0));
+      return { id: String(x.id), name: String(x.name || ""), text: String(x.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), qty: q, priceNet: r2(net), priceGross: r2(gross), taxRate: rate, discount: disc, sumGross: r2(gross * q * (1 - disc / 100)) };
     });
     const status = parseInt(o.status, 10) || 0, date = sevDay(o.invoiceDate);
     let due = null; if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
@@ -100,6 +100,20 @@ module.exports = function (D) {
     body.invoice.id = Number(id);
     if (cur.nr) body.invoice.invoiceNumber = cur.nr;
     body.invoicePosDelete = cur.positions.map(p => ({ id: Number(p.id), objectName: "InvoicePos" }));
+    // Art (Teil-, Abschlags-, Schlussrechnung) und Titel bleiben – sonst würde aus der Schlussrechnung eine normale Rechnung
+    if (cur.type && cur.type !== "RE") body.invoice.invoiceType = cur.type;
+    if (!String(pl.header || "").trim() && cur.header) body.invoice.header = cur.header;
+    // Schlussrechnung: bezahlte Teil-/Abschlagsrechnungen zum selben Angebot als „abzüglich …“-Positionen (bei aus sevDesk übernommenen
+    // Schlussrechnungen steckte der Abzug nur in der Summe – beim Neuberechnen aus den Positionen ginge er sonst verloren)
+    if (cur.type === "ER" && cur.origin && cur.origin.id) {
+      const snap = await snapshot(false).catch(() => null), pos = body.invoicePosSave;
+      const parts = ((snap && snap.invoices) || []).filter(i => i.origin === cur.origin.id && (i.type === "AR" || i.type === "TR") && !i.cancelled && i.status >= 200 && String(i.id) !== String(id));
+      for (const a of parts) {
+        if (pos.some(p => /^abzüglich/i.test(String(p.name || "")) && a.nr && String(p.name).indexOf(a.nr) > -1)) continue;
+        const d = await invoiceDetail(a.id), label = "abzüglich " + (a.type === "TR" ? "Teilrechnung " : "Abschlagsrechnung ") + (a.nr || "") + " vom " + String(a.date || "").split("-").reverse().join(".");
+        d.positions.forEach(p => pos.push({ objectName: "InvoicePos", mapAll: true, positionNumber: pos.length, quantity: 1, price: -r2(p.priceNet * p.qty * (1 - (p.discount || 0) / 100)), name: label, text: "", unity: { id: 1, objectName: "Unity" }, taxRate: p.taxRate }));
+      }
+    }
     return body;
   }
 

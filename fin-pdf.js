@@ -107,7 +107,7 @@ module.exports = function (D) {
     const unitName = u => { const x = u && u.id && ctx.get("Unity", u.id); return x ? (x.translationCode === "UNITY_PIECE" ? "Stk" : (x.name || "")) : ""; };
     pos.forEach((p, i) => {
       const q = +p.quantity || 0, unit = showNet ? +p.price : +p.priceGross, sum = showNet ? +p.sumNet : +p.sumGross;
-      const txt = strip(p.text), hName = doc.font("Helvetica-Bold").fontSize(9).heightOfString(p.name || "", { width: 268 }), hTxt = txt ? doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2 : 0;
+      const disc = +p.discount || 0, txt = (strip(p.text) + (disc > 0 ? (strip(p.text) ? "\n" : "") + "abzüglich " + String(disc).replace(".", ",") + " % Rabatt" : "")).trim(), hName = doc.font("Helvetica-Bold").fontSize(9).heightOfString(p.name || "", { width: 268 }), hTxt = txt ? doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2 : 0;
       const rh = hName + hTxt + 16;
       if (y + rh > H - FH - 40) { doc.addPage(); y = 60; header(); }
       if (i % 2 === 1) doc.rect(L, y, R - L, rh).fill(ZEBRA);

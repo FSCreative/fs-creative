@@ -1222,7 +1222,8 @@ async function sevCreateInvoice(pl) {
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
       discount: 0, status: 100, taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", invoiceType: "RE", currency: "EUR", showNet: "1", smallSettlement: 0 },
     invoicePosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
-      return { objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),
+      const disc = Math.max(0, Math.min(100, parseFloat(i.discount) || 0));   // Rabatt je Position in % (z. B. aus Angebot/Schlussrechnung)
+      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
     invoicePosDelete: null, takeDefaultAddress: false,
   };
   // Optional (KI-Rechnung): Steuerregel nach sevDesk Update 2.0 (z. B. Reverse Charge), Leistungszeitraum bis
