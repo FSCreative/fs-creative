@@ -1383,6 +1383,16 @@ async function sevPdfSend(res, apiPath, fallbackName, dl) {
     return send(res, 200, buf, "application/pdf", { "Content-Disposition": (dl ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
   } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
 }
+// Mail-Signatur (HTML) für Rechnungs-/Mahnungsmails: kommt aus dem Postfach-Fenster (dort im Browser gespeichert) und liegt hier als Kopie,
+// damit auch automatisch versendete Rechnungen sie tragen. Nur einfache Bereinigung – die Signatur stammt vom Admin selbst.
+const MAIL_SIG_FILE = path.join(DATA_DIR, "mail-signatur.json");
+function mailSigClean(h) {
+  const BAD = "script|style|iframe|frame|object|embed|form|input|button|textarea|select|link|meta|base|svg|math";
+  return String(h || "").slice(0, 60000).replace(new RegExp("<(" + BAD + ")\\b[^>]*>[\\s\\S]*?<\\/\\1\\s*>", "gi"), "").replace(new RegExp("<\\/?(" + BAD + ")\\b[^>]*>", "gi"), "")
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "").replace(/(href|src)\s*=\s*(["']?)\s*(javascript|vbscript):[^"'\s>]*\2/gi, "$1=\"#\"")
+    .replace(/href\s*=\s*(["']?)\s*data:[^"'\s>]*\1/gi, "href=\"#\"").replace(/src\s*=\s*(["']?)\s*data:(?!image\/(png|jpe?g|gif|webp)[;,])[^"'\s>]*\1/gi, "src=\"#\"").trim();   // eingefügte Bilder (data:image) bleiben
+}
+function mailSignature() { try { const j = JSON.parse(fs.readFileSync(MAIL_SIG_FILE, "utf8")); return j && j.on !== false ? String(j.html || "") : ""; } catch (e) { return ""; } }
 // Mail-Anhang als Datei holen (für VIW Cloud u. a.): { buf, fname, ctype } – m: { folder, uid, index, account, filename }
 async function fetchMailAttachment(m) {
   if (!MAIL.url || !MAIL.token) throw new Error("Postfach nicht verbunden");
@@ -1568,7 +1578,7 @@ async function dunSend(st, list) {
   SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
   return res;
 }
-const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook,
+const SEV_OPS = require("./sevdesk-ops.js")({ sev, sevAll, sevNum, sevDay, sevName, sevDateDE, sevNet, viennaToday, sevMeta, sevBook, mailSignature: () => mailSignature(),
   // Kartenzahlung ohne Zahlername: Händler aus dem Buchungstext („E-COMM 24,00 AT K1 01.10. 08:35 WORLD4YOU INTERNET“ → „World4you Internet“)
   cardName: p => { try { const c = FIN_RULES.card(p); return c && c.merchant ? c.merchant.replace(/[*]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase().replace(/(^|[\s\-\/])([a-zäöü])/g, (m, x, y) => x + y.toUpperCase()) : ""; } catch (e) { return ""; } },
   snapshot: force => sevSnapshot(force), invalidate: meta => { SEV_CACHE.at = 0; if (meta) SEV_META.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; } });
@@ -3611,6 +3621,12 @@ async function handleAdmin(req, res, u, p) {
     } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_mkdir_failed" }), TYPES[".json"]); }
   }
   // Ordner-Verwaltung (Rechtsklick-Menü): anlegen / umbenennen / löschen / alle gelesen / leeren
+  if (p === "/admin/api/mail-signature") {   // Kopie der Postfach-Signatur für Rechnungsmails
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    if (req.method === "GET") return J(200, { ok: true, html: mailSignature() });
+    try { const pl = await sevBody(req, 80000); const html = mailSigClean(pl.html); fs.writeFileSync(MAIL_SIG_FILE, JSON.stringify({ html, on: pl.on !== false, at: new Date().toISOString() })); return J(200, { ok: true, length: html.length }); }
+    catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 200) }); }
+  }
   if (p === "/admin/api/mail-folder" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     try { const pl = await sevBody(req, 4000);

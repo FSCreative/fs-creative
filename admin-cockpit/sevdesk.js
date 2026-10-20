@@ -8,6 +8,7 @@ F.UI.rgF=F.UI.rgF||"todo"; F.UI.rgQ=F.UI.rgQ||""; F.UI.bkAcc=F.UI.bkAcc||"all"; 
 F.sevState=S;
 
 F.css(
+'.sdsig{display:grid;gap:6px}.sdsig-pv{width:100%;height:150px;border:1px solid var(--line);border-radius:10px;background:#fff}'+
 '.drawer.xl{width:min(900px,100%)}'+
 '.sd-list{display:grid}'+
 '.sd-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;font:inherit;color:inherit;width:100%}'+
@@ -148,6 +149,7 @@ function sendDialog(id,kind,ref){
       '<label class="fl">An<input class="f" name="to" type="text" list="sdMails" required value="'+esc(to)+'" placeholder="kunde@beispiel.at"></label><datalist id="sdMails">'+i.emails.map(function(m){ return '<option value="'+esc(m.value)+'">'; }).join("")+'</datalist>'+
       '<label class="fl">Betreff<input class="f" name="subject" required value="'+esc(i.mail.subject)+'"></label>'+
       '<label class="fl">Nachricht<textarea class="f" name="text" rows="9" required>'+esc(i.mail.text)+'</textarea></label>'+
+      (i.mail.signature?'<div class="sdsig"><label class="row" style="gap:8px;font-size:14px"><input type="checkbox" name="sig" checked> Meine Signatur anhängen</label><iframe class="sdsig-pv" sandbox="" title="Signatur" srcdoc="'+esc('<!doctype html><meta charset="utf-8"><style>body{margin:8px;font:13px Arial,sans-serif;color:#1b2420;background:#fff}</style>'+i.mail.signature)+'"></iframe></div>':'')+
       '<label class="row" style="gap:8px;font-size:14px"><input type="checkbox" name="copy"> Kopie an mich</label>'+
       '<div class="foot"><span class="num">'+eur(i.gross)+' · '+esc(i.contact.name||"")+'</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Jetzt senden</button></span></div><div class="err" id="sdSendErr"></div></form>',"wide");
   });
@@ -156,7 +158,7 @@ F.action("sdsend",function(id){ sendDialog(id,""); });
 F.form("sdsend",function(f){
   var id=f.getAttribute("data-id"), err=document.getElementById("sdSendErr"), btn=f.querySelector("[type=submit]");
   btn.disabled=true; btn.textContent="Sende …"; err.textContent="";
-  post("/admin/api/sev/invoice-op",{op:"send",id:id,toEmail:f.to.value,subject:f.subject.value,text:f.text.value,copy:f.copy.checked}).then(function(j){
+  post("/admin/api/sev/invoice-op",{op:"send",id:id,toEmail:f.to.value,subject:f.subject.value,text:f.text.value,copy:f.copy.checked,signature:f.sig?f.sig.checked:undefined}).then(function(j){
     if(!j||!j.ok){ btn.disabled=false; btn.textContent="Jetzt senden"; err.textContent=(j&&j.error)||"Fehler"; return; }
     F.closeModal(); F.toast("Gesendet an "+(j.sentTo||f.to.value)); afterOp(id);
   }).catch(function(){ btn.disabled=false; btn.textContent="Jetzt senden"; err.textContent="Keine Verbindung."; });

@@ -151,6 +151,12 @@ async function startServer(dir, env) {
     assert.ok((await r.text()).startsWith("%PDF"));
     const d = await fetch(B + "/admin/api/mail-attachment?folder=INBOX&uid=7&index=0&account=fs&dl=1", { headers: { cookie: COOKIE } }); assert.ok(/^attachment/.test(d.headers.get("content-disposition")));
   });
+  await t("Mail-Signatur für Rechnungsmails: am Server abgelegt, Skripte/Ereignisse entfernt, nur mit Anmeldung", async () => {
+    let r = await admin("/admin/api/mail-signature", { html: 'Liebe Grüße<br><b onclick="x()">Simon</b><script>alert(1)</script><a href="javascript:alert(1)">x</a><img src="https://www.fs-creative.at/logos/signatur.png">' });
+    assert.ok(r.ok, JSON.stringify(r)); const g = await admin("/admin/api/mail-signature");
+    assert.ok(/Liebe Grüße/.test(g.html) && /signatur\.png/.test(g.html)); assert.ok(!/script|onclick|javascript:/i.test(g.html), g.html);
+    const n = await fetch(B + "/admin/api/mail-signature", { redirect: "manual" }); assert.strictEqual(n.status, 302);
+  });
   await t("To-Dos → Aufgaben: offene To-Dos beim Start übernommen (Anfrage mit Kundenakte), Sicherung, keine To-Dos mehr; alte Fenster legen nichts doppelt an; neue Anfrage = Aufgabe", async () => {
     let A = await admin("/admin/api/auftraege");
     const st = A.tasks.find(x => x.title === "Steuerberater anrufen"); assert.ok(st, "offenes To-Do übernommen"); assert.strictEqual(st.due, "2026-10-21"); assert.strictEqual(st.status, "offen"); assert.ok(/wegen UVA/.test(st.notes)); assert.strictEqual(st.projectId, "");

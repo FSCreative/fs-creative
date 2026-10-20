@@ -33,12 +33,20 @@ async function startServer(dir, env) {
 }
 (async () => {
   const mocks = createMocks(); const mport = await listen(mocks.server);
-  const nc = createNc({ seed: [["/Projekte", { dir: true }], ["/Angebot.pdf", { data: Buffer.from("%PDF-1.4 Angebot") }], ["/Projekte/logo.png", { data: Buffer.from("PNGDATA") }], ["/seite.html", { data: Buffer.from("<script>alert(1)</script>") }]] });
+  const nc = createNc({ login: "simon@fs-creative.at", seed: [["/Projekte", { dir: true }], ["/Angebot.pdf", { data: Buffer.from("%PDF-1.4 Angebot") }], ["/Projekte/logo.png", { data: Buffer.from("PNGDATA") }], ["/seite.html", { data: Buffer.from("<script>alert(1)</script>") }]] });
   const nport = await listen(nc.server), NC = "http://127.0.0.1:" + nport;
+  // Freigabe-Link (neues öffentliches WebDAV, mit Link-Passwort) und alter Stil (ohne Passwort)
+  const sh = createNc({ share: { token: "AbCdEf12345", pass: "linkpw", root: "/Freigabe" }, seed: [["/Freigabe", { dir: true }], ["/Freigabe/Plan.pdf", { data: Buffer.from("%PDF plan") }], ["/Privat", { dir: true }]] });
+  const SH = "http://127.0.0.1:" + await listen(sh.server);
+  const old = createNc({ share: { token: "Old1234567", legacy: true, root: "/" }, seed: [["/Alt.txt", { data: Buffer.from("alt") }]] });
+  const OLD = "http://127.0.0.1:" + await listen(old.server);
   const dir = copyApp();
   const off = await startServer(dir, {});
-  const srv = await startServer(dir, { MAIL_API_URL: "http://127.0.0.1:" + mport + "/mail/api/mails", MAIL_API_TOKEN: "mt", VIW_CLOUD_URL: NC + "/index.php/apps/files/?dir=/", VIW_CLOUD_USER: nc.user, VIW_CLOUD_PASSWORD: nc.pass });
-  const bad = await startServer(dir, { VIW_CLOUD_URL: NC, VIW_CLOUD_USER: nc.user, VIW_CLOUD_PASSWORD: "falsch" });
+  const srv = await startServer(dir, { MAIL_API_URL: "http://127.0.0.1:" + mport + "/mail/api/mails", MAIL_API_TOKEN: "mt", VIW_CLOUD_URL: NC + "/index.php/apps/files/?dir=/", VIW_CLOUD_USER: nc.login, VIW_CLOUD_PASSWORD: nc.pass });
+  const bad = await startServer(dir, { VIW_CLOUD_URL: NC, VIW_CLOUD_USER: nc.login, VIW_CLOUD_PASSWORD: "falsch" });
+  const shs = await startServer(dir, { VIW_CLOUD_URL: SH + "/index.php/s/AbCdEf12345", VIW_CLOUD_PASSWORD: "linkpw" });
+  const shbad = await startServer(dir, { VIW_CLOUD_URL: SH + "/s/AbCdEf12345" });
+  const olds = await startServer(dir, { VIW_CLOUD_URL: OLD + "/s/Old1234567" });
   const B = srv.base;
   const get = async (p, base) => { const r = await fetch((base || B) + p, { headers: { cookie: COOKIE } }); return r.json(); };
   const op = async (body) => { const r = await fetch(B + "/admin/api/viw/op", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) }); return Object.assign(await r.json(), { _status: r.status }); };
@@ -49,7 +57,7 @@ async function startServer(dir, env) {
       const l = await get("/admin/api/viw/list?path=/", off.base); assert.strictEqual(l.ok, false); assert.ok(/nicht eingerichtet/.test(l.error), l.error);
     });
     await t("Status: kopierte Browser-Adresse wird zur Nextcloud-Adresse, erreichbar, Speicher", async () => {
-      const s = await get("/admin/api/viw/status?check=1"); assert.strictEqual(s.configured, true); assert.strictEqual(s.reachable, true, JSON.stringify(s)); assert.strictEqual(s.web, NC); assert.strictEqual(s.user, "simon");
+      const s = await get("/admin/api/viw/status?check=1"); assert.strictEqual(s.configured, true); assert.strictEqual(s.reachable, true, JSON.stringify(s)); assert.strictEqual(s.web, NC); assert.strictEqual(s.user, "simon@fs-creative.at"); assert.strictEqual(s.mode, "user");
       assert.ok(s.quota && s.quota.avail === 1073741824, JSON.stringify(s.quota)); assert.ok(!JSON.stringify(s).includes(nc.pass), "App-Passwort nie im Cockpit");
     });
     await t("Falsches App-Passwort → klare Meldung", async () => {
@@ -117,8 +125,30 @@ async function startServer(dir, env) {
       const h = await (await fetch(B + "/admin", { headers: { cookie: COOKIE } })).text(); assert.ok(/zviw\.js/.test(h), "Modul eingebunden");
       assert.ok(!nc.state.log.some(l => /\.\./.test(l)));
     });
+    await t("Login per E-Mail (Gastzugang): interne Benutzer-ID wird ermittelt, Pfade stimmen", async () => {
+      assert.ok(nc.state.log.some(l => l === "GET /ocs/v2.php/cloud/user"), "ID abgefragt"); assert.ok(nc.state.log.some(l => /^PROPFIND \/remote\.php\/dav\/files\/simon\//.test(l)), "Pfad mit interner ID");
+      assert.ok(!nc.state.log.some(l => /dav\/files\/simon%40|dav\/files\/simon@/.test(l)), "nie mit der E-Mail im Pfad");
+    });
+    const sget = async (base, p) => (await fetch(base + p, { headers: { cookie: COOKIE } })).json();
+    const sop = async (base, body) => (await fetch(base + "/admin/api/viw/op", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+    const sup = async (base, p, buf) => (await fetch(base + "/admin/api/viw/upload?path=" + encodeURIComponent(p), { method: "PUT", headers: { cookie: COOKIE, "content-type": "application/octet-stream" }, body: buf })).json();
+    await t("Freigabe-Link mit Passwort: Status, nur der freigegebene Ordner, Hochladen (auch groß in einem Stück), kein Teil-Upload", async () => {
+      const s = await sget(shs.base, "/admin/api/viw/status?check=1"); assert.strictEqual(s.mode, "share"); assert.strictEqual(s.reachable, true, JSON.stringify(s)); assert.strictEqual(s.web, SH + "/index.php/s/AbCdEf12345"); assert.strictEqual(s.user, "");
+      const l = await sget(shs.base, "/admin/api/viw/list?path=/"); assert.ok(l.ok, JSON.stringify(l)); assert.deepStrictEqual(l.items.map(x => x.name), ["Plan.pdf"]);
+      let r = await sop(shs.base, { op: "mkdir", dir: "/", name: "Fotos" }); assert.ok(r.ok, JSON.stringify(r)); assert.ok(sh.state.files.has("/Freigabe/Fotos"));
+      r = await sup(shs.base, "/Fotos/klein.jpg", Buffer.from("jpg")); assert.ok(r.ok, JSON.stringify(r)); assert.ok(sh.state.files.has("/Freigabe/Fotos/klein.jpg"));
+      const big = Buffer.alloc(11 * 1024 * 1024, 7); r = await sup(shs.base, "/Fotos/gross.mov", big); assert.ok(r.ok, JSON.stringify(r)); assert.strictEqual(sh.state.files.get("/Freigabe/Fotos/gross.mov").data.length, big.length);
+      r = await sop(shs.base, { op: "chunkstart", path: "/x.bin" }); assert.strictEqual(r.ok, false);
+      const d = await fetch(shs.base + "/admin/api/viw/file?path=" + encodeURIComponent("/Plan.pdf"), { headers: { cookie: COOKIE } }); assert.strictEqual(await d.text(), "%PDF plan");
+      const pv = await fetch(shs.base + "/admin/api/viw/preview?fileid=2", { headers: { cookie: COOKIE } }); assert.strictEqual(pv.status, 404);
+      assert.ok(!sh.state.files.has("/Privat/Plan.pdf") && !sh.state.log.some(l => /Privat/.test(l)), "nichts außerhalb der Freigabe");
+    });
+    await t("Freigabe-Link: fehlendes Passwort klar gemeldet; alter Link-Stil ohne Passwort geht", async () => {
+      const s = await sget(shbad.base, "/admin/api/viw/status?check=1"); assert.strictEqual(s.reachable, false); assert.ok(/Passwort/.test(s.error), s.error);
+      const l = await sget(olds.base, "/admin/api/viw/list?path=/"); assert.ok(l.ok, JSON.stringify(l)); assert.deepStrictEqual(l.items.map(x => x.name), ["Alt.txt"]);
+    });
   } finally {
-    [off, srv, bad].forEach(s => s.kill()); mocks.server.close(); nc.server.close();
+    [off, srv, bad, shs, shbad, olds].forEach(s => s.kill()); mocks.server.close(); nc.server.close(); sh.server.close(); old.server.close();
   }
   console.log(fails.join("\n")); console.log("VIW Cloud: " + pass + " bestanden, " + fail + " fehlgeschlagen");
   if (fail) console.log(srv.out.slice(-1500));

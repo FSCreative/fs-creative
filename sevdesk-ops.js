@@ -54,7 +54,19 @@ module.exports = function (D) {
       dunningLevel: parseInt(o.dunningLevel, 10) || 0, reminderDeadline: sevDay(o.reminderDeadline), dunningFeeOpen: sevNum(o.dunningFeeOpen), dunningFeePaid: sevNum(o.dunningFeePaid) };
   }
   // Standardtext für Rechnungs-/Mahnungsmail
-  function mailDefaults(inv, kind, ref) {
+  // Signatur aus dem Postfach (server.js mailSignature): unter jede Rechnungs-/Mahnungsmail. Gruß und Name am Textende entfallen,
+  // wenn die Signatur selbst grüßt bzw. den Namen trägt – sonst stünde beides doppelt da.
+  const mailSig = () => { try { return D.mailSignature ? String(D.mailSignature() || "") : ""; } catch (e) { return ""; } };
+  const sigText = h => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr|li|h\d)>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/[ \t]+/g, " ").trim();
+  const GREET = /^(mit )?(freundlichen|freundliche|liebe|beste|viele|herzliche|schöne|sonnige)\s+grüße?n?\b|^(lg|mfg|vg|grüße)\b/i;
+  function trimForSig(text, sig) {
+    const lines = String(text || "").replace(/\s+$/, "").split(/\r?\n/), st = sigText(sig).toLowerCase(), greets = GREET.test(sigText(sig).split("\n")[0].trim());
+    let i = lines.length; while (i > 0) { const x = lines[i - 1].trim().toLowerCase().replace(/[,.!]+$/, ""); if (!x || (x.length < 60 && st.indexOf(x) > -1)) i--; else break; }
+    if (i > 0 && greets && GREET.test(lines[i - 1].trim())) i--;
+    return lines.length - i <= 6 ? lines.slice(0, i).join("\n").replace(/\s+$/, "") : lines.join("\n");
+  }
+  function mailDefaults(inv, kind, ref) { const sig = mailSig(), md = mailDefaults0(inv, kind, ref); if (sig) md.text = trimForSig(md.text, sig); md.signature = sig; return md; }
+  function mailDefaults0(inv, kind, ref) {
     const nr = (kind === "reminder" && ref ? String(ref).slice(0, 40) : inv.nr) || "", name = inv.contact && inv.contact.name || "";
     const sum = (inv.gross || 0).toFixed(2).replace(".", ",") + " €";
     if (kind === "reminder") return { subject: "Zahlungserinnerung zu Rechnung " + nr, text: "Guten Tag " + name + ",\n\nleider ist die Rechnung " + nr + " über " + sum + " noch offen. Die Zahlungserinnerung finden Sie im Anhang.\n\nFalls Sie bereits bezahlt haben, betrachten Sie diese Nachricht bitte als gegenstandslos.\n\nFreundliche Grüße\nSimon Felder\nFS Creative" };
@@ -70,7 +82,8 @@ module.exports = function (D) {
       if (!to.length) throw new Error("Bitte eine gültige E-Mail-Adresse angeben.");
       const subject = String(pl.subject || "").trim().slice(0, 250); if (!subject) throw new Error("Betreff fehlt");
       const text = String(pl.text || "").trim(); if (!text) throw new Error("Text fehlt");
-      const body = { toEmail: to[0], subject, text: plainHtml(text), copy: !!pl.copy };
+      const sig = pl.signature === false ? "" : mailSig();
+      const body = { toEmail: to[0], subject, text: sig ? plainHtml(trimForSig(text, sig)) + "<br><br>" + sig : plainHtml(text), copy: !!pl.copy };
       if (to.length > 1) body.ccEmail = to.slice(1).join(",");
       await sev("POST", "/Invoice/" + id + "/sendViaEmail", { body, timeout: 60000 });
       out.sentTo = to.join(", ");
@@ -427,5 +440,5 @@ module.exports = function (D) {
     return { ok: true, creditNotes: cn.map(o => ({ id: String(o.id), nr: o.creditNoteNumber || "", date: sevDay(o.creditNoteDate), status: parseInt(o.status, 10) || 0, contact: sevName(o.contact), gross: sevNum(o.sumGross), net: sevNum(o.sumNet), header: o.header || "" })).sort((a, b) => String(b.date).localeCompare(String(a.date))) };
   }
   function resetCaches() { TX_CACHE = { at: 0, data: null }; VOU_CACHE = { at: 0, key: null, data: null }; }
-  return { resetCaches, invoiceDetail, invoiceOp, invoiceUpdateBody, mailDefaults, bankOpen, bankOp, vouchers, voucherDoc, voucherOp, contacts, contactSave, addrCategory, parts, partSave, transactions, creditNotes };
+  return { _sig: { trimForSig }, resetCaches, invoiceDetail, invoiceOp, invoiceUpdateBody, mailDefaults, bankOpen, bankOp, vouchers, voucherDoc, voucherOp, contacts, contactSave, addrCategory, parts, partSave, transactions, creditNotes };
 };

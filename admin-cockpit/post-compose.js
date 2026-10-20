@@ -44,6 +44,11 @@ function getSig(acc){ try{ var o=JSON.parse(localStorage.getItem(sigKey(acc))); 
 function setSig(o,acc){ try{ localStorage.setItem(sigKey(acc),JSON.stringify(o)); }catch(e){} }
 function sigBlock(acc){ return '<div class="fsig"><br>'+sanitize(getSig(acc).html)+'</div>'; }
 M.getSig=getSig; M.sigBlock=sigBlock;
+/* Signatur des Hauptkontos auch am Server ablegen – Rechnungs- und Mahnungsmails tragen sie dann ebenfalls (nur bei Änderung senden) */
+function sigHash(s){ var h=0; for(var i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return String(h)+":"+s.length; }
+function syncSig(){ var sg=getSig(""), h=sigHash(String(sg.html||"")); if(F.ls("fsc_sig_synced")===h) return;
+  F.api("/admin/api/mail-signature",{body:{html:sg.html||""}}).then(function(j){ if(j&&j.ok) F.ls("fsc_sig_synced",h); }).catch(function(){}); }
+setTimeout(syncSig,5000);
 
 /* ---------- Kontakte (aus gesendeten und empfangenen Mails gewichtet) ---------- */
 var CT=null, CT_V=-1;
@@ -324,7 +329,7 @@ F.action("mcdiscard",function(){ var d=data(); var go=function(){ deleteDraft(C.
   if(d.to||d.subject||dirty()||C.draftId) F.confirm("Diese Mail verwerfen?","Verwerfen",go,true); else go(); });
 F.action("mcsigedit",function(){ var s=$("mcSig"); if(!s.hidden){ s.hidden=true; return; } $("mcSigBody").innerHTML=sanitize(getSig(composeAcct()).html); s.hidden=false; $("mcSigBody").focus(); });
 F.action("mcsigx",function(){ $("mcSig").hidden=true; });
-F.action("mcsigsave",function(){ var sg=getSig(composeAcct()); sg.html=sanitize($("mcSigBody").innerHTML); setSig(sg,composeAcct()); var ex=$("mcBody").querySelector(".fsig"); if(ex) ex.innerHTML="<br>"+sg.html; $("mcSig").hidden=true; F.toast("Signatur gespeichert"); });
+F.action("mcsigsave",function(){ var sg=getSig(composeAcct()); sg.html=sanitize($("mcSigBody").innerHTML); setSig(sg,composeAcct()); var ex=$("mcBody").querySelector(".fsig"); if(ex) ex.innerHTML="<br>"+sg.html; $("mcSig").hidden=true; F.toast("Signatur gespeichert"); syncSig(); });
 F.action("mclinkok",function(){ var u=($("mcLinkUrl").value||"").trim(); $("mcLink").hidden=true; if(!u||/^\s*(javascript|data|vbscript):/i.test(u)||u==="https://") return; if(!/^[a-z]+:/i.test(u)) u="https://"+u;
   var b=$("mcBody"); b.focus(); if(C.linkRange){ var s=window.getSelection(); s.removeAllRanges(); s.addRange(C.linkRange); }
   try{ if(window.getSelection().isCollapsed) document.execCommand("insertHTML",false,'<a href="'+esc(u)+'">'+esc(u)+'</a>'); else document.execCommand("createLink",false,u); }catch(x){} });

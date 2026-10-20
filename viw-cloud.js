@@ -1,7 +1,9 @@
 // VIW Cloud: Dateien in der Nextcloud von VIW direkt aus dem Cockpit – Ordner ansehen, hoch- und herunterladen (auch ganze Ordner),
 // Ordner anlegen, umbenennen, verschieben, löschen (landet im Papierkorb der Nextcloud), Mail-Anhänge ablegen.
-// Zugang über WebDAV mit einem App-Passwort aus der Nextcloud (Railway: VIW_CLOUD_URL, VIW_CLOUD_USER, VIW_CLOUD_PASSWORD) – das Passwort bleibt am Server.
-// Große Dateien in Teilen zu 10 MB (Nextcloud-Chunking), jede Anfrage hier also höchstens ~10 MB. Cockpit-Seite: admin-cockpit/zviw.js
+// Zugang über WebDAV, zwei Arten (Railway: VIW_CLOUD_URL, VIW_CLOUD_USER, VIW_CLOUD_PASSWORD – Zugangsdaten bleiben am Server):
+//  • Anmeldung (auch Gastzugang): Adresse + Login (E-Mail/Benutzer) + Passwort bzw. App-Passwort; die interne Benutzer-ID holt sich das Modul selbst.
+//  • Freigabe-Link (…/s/TOKEN): nur der Link, ggf. mit Link-Passwort – öffentliche WebDAV-Schnittstelle der Freigabe.
+// Große Dateien bei Anmeldung in Teilen zu 10 MB (Nextcloud-Chunking); über einen Freigabe-Link in einem Stück (durchgereicht). Cockpit-Seite: admin-cockpit/zviw.js
 "use strict";
 const crypto = require("crypto");
 const { Readable } = require("stream");
@@ -14,19 +16,21 @@ module.exports = function (D) {
   const fail = (status, msg) => { const e = new Error(msg); e.status = status; return e; };
 
   function cfg() {
-    let url = String(process.env.VIW_CLOUD_URL || "").trim().replace(/[?#].*$/, "");
+    let url = String(process.env.VIW_CLOUD_URL || "").trim();
+    const sm = url.match(/\/(?:index\.php\/)?s\/([A-Za-z0-9]{5,64})(?:[/?#]|$)/), token = sm ? sm[1] : "";
+    url = url.replace(/[?#].*$/, "");
     // auch kopierte Browser-Adressen wie …/index.php/apps/files/?dir=/ oder …/remote.php/dav/files/… annehmen
     url = url.replace(/\/remote\.php(\/.*)?$/i, "").replace(/\/(index\.php\/)?(apps|s|f|login)(\/.*)?$/i, "").replace(/\/index\.php\/?$/i, "").replace(/\/+$/, "");
     if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
-    return { url, user: String(process.env.VIW_CLOUD_USER || "").trim(), pass: String(process.env.VIW_CLOUD_PASSWORD || "").trim() };
+    return { url, token, mode: token ? "share" : "user", user: String(process.env.VIW_CLOUD_USER || "").trim(), pass: String(process.env.VIW_CLOUD_PASSWORD || "").trim() };
   }
   function cfgError(c) {
-    if (!c.url || !c.user || !c.pass) return "nicht eingerichtet";
+    if (!c.url || (c.mode === "user" && (!c.user || !c.pass))) return "nicht eingerichtet";
     let u; try { u = new URL(c.url); } catch (e) { return "VIW_CLOUD_URL ist keine gültige Adresse"; }
     if (u.protocol !== "https:" && !/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) return "VIW_CLOUD_URL muss mit https:// beginnen";
     return "";
   }
-  const authOf = c => "Basic " + Buffer.from(c.user + ":" + c.pass).toString("base64");
+  const basic = (u, p) => "Basic " + Buffer.from(u + ":" + p).toString("base64");
 
   // Pfade aus dem Cockpit: „/Ordner/Datei.pdf“ – keine „.“/„..“-Teile, keine Steuerzeichen
   function parts(p) {
@@ -45,17 +49,49 @@ module.exports = function (D) {
     if (/[\/\\\x00-\x1f]/.test(n) || n === "." || n === "..") throw fail(400, "Ungültiger Name – bitte ohne / und \\");
     return n;
   }
-  const filesUrl = (c, p) => { const a = parts(p); return c.url + "/remote.php/dav/files/" + encodeURIComponent(c.user) + (a.length ? "/" + a.map(encodeURIComponent).join("/") : ""); };
-  const uploadsUrl = (c, id, n) => c.url + "/remote.php/dav/uploads/" + encodeURIComponent(c.user) + "/" + id + (n != null ? "/" + n : "");
+  const enc = p => { const a = parts(p); return a.length ? "/" + a.map(encodeURIComponent).join("/") : ""; };
+  const filesUrl = (a, p) => a.root + enc(p);
+  const uploadsUrl = (a, id, n) => { if (!a.uploads) throw fail(400, "Über einen Freigabe-Link geht kein Teil-Upload"); return a.uploads + "/" + id + (n != null ? "/" + n : ""); };
 
-  async function dav(method, url, opt) {
-    const c = cfg(), e = cfgError(c); if (e) throw fail(503, "VIW Cloud " + e);
+  async function rawFetch(method, url, auth, opt) {
     opt = opt || {};
-    const init = { method, headers: Object.assign({ Authorization: authOf(c), "OCS-APIRequest": "true" }, opt.headers || {}), redirect: "manual", signal: AbortSignal.timeout(opt.timeout || 30000) };
-    if (opt.body !== undefined) init.body = opt.body;
+    const init = { method, headers: Object.assign({ Authorization: auth, "OCS-APIRequest": "true" }, opt.headers || {}), redirect: "manual", signal: AbortSignal.timeout(opt.timeout || 30000) };
+    if (opt.body !== undefined) { init.body = opt.body; if (opt.body && typeof opt.body.pipe === "function") init.duplex = "half"; }
     try { return await fetch(url, init); }
     catch (x) { throw fail(502, "VIW Cloud nicht erreichbar" + (x && x.name === "TimeoutError" ? " (Zeitüberschreitung)" : "")); }
   }
+  // Zugang einmal ermitteln (je Konfiguration zwischengespeichert): WebDAV-Wurzel, Anmeldung, ggf. Teil-Upload-Ordner
+  let ACC = null;
+  const PF0 = { Depth: "0", "Content-Type": "application/xml; charset=utf-8" };
+  async function acct() {
+    const c = cfg(), e = cfgError(c); if (e) throw fail(503, "VIW Cloud " + e);
+    const key = [c.url, c.mode, c.token, c.user, crypto.createHash("sha256").update(c.pass).digest("hex")].join("|");
+    if (ACC && ACC.key === key) return ACC;
+    if (c.mode === "share") {
+      // Nextcloud ab 29: /public.php/dav/files/TOKEN (Link-Passwort mit Benutzer „anonymous“), ältere: /public.php/webdav (Benutzer = Token)
+      const a = { key, mode: "share", root: c.url + "/public.php/dav/files/" + c.token, auth: basic("anonymous", c.pass), web: c.url + "/index.php/s/" + c.token };
+      const r = await rawFetch("PROPFIND", a.root + "/", a.auth, { headers: PF0, body: PROPS });
+      if (r.status === 207) return (ACC = a);
+      const b = Object.assign({}, a, { root: c.url + "/public.php/webdav", auth: basic(c.token, c.pass) });
+      const r2 = await rawFetch("PROPFIND", b.root + "/", b.auth, { headers: PF0, body: PROPS });
+      if (r2.status === 207) return (ACC = b);
+      if (r.status === 401 || r2.status === 401) throw fail(502, c.pass ? "Freigabe-Link: Passwort stimmt nicht (VIW_CLOUD_PASSWORD)" : "Freigabe-Link ist mit Passwort geschützt – bitte VIW_CLOUD_PASSWORD setzen");
+      if (r.status === 404 && r2.status === 404) throw fail(404, "Freigabe-Link nicht gefunden – abgelaufen oder entfernt?");
+      throw davError(r2, "Freigabe öffnen");
+    }
+    // Anmeldung (auch Gastzugang): Login darf die E-Mail sein – die WebDAV-Pfade brauchen die interne Benutzer-ID
+    const auth = basic(c.user, c.pass); let id = c.user;
+    const credErr = () => fail(502, "Anmeldung bei der VIW Cloud abgelehnt – Login (E-Mail) und Passwort prüfen. Mit Zwei-Faktor-Anmeldung geht es nur mit App-Passwort.");
+    const o = await rawFetch("GET", c.url + "/ocs/v2.php/cloud/user?format=json", auth, { headers: { Accept: "application/json" } });
+    if (o.status === 401) throw credErr();
+    if (o.ok) { const j = await o.json().catch(() => null); const v = j && j.ocs && j.ocs.data && j.ocs.data.id; if (v) id = String(v); }
+    const a = { key, mode: "user", id, root: c.url + "/remote.php/dav/files/" + encodeURIComponent(id), uploads: c.url + "/remote.php/dav/uploads/" + encodeURIComponent(id), auth, web: c.url };
+    const r = await rawFetch("PROPFIND", a.root + "/", a.auth, { headers: PF0, body: PROPS });
+    if (r.status === 401) throw credErr();
+    if (r.status !== 207) throw davError(r, "Anmelden");
+    return (ACC = a);
+  }
+  async function dav(method, url, opt) { const a = await acct(); return rawFetch(method, url, a.auth, opt); }
   function davError(r, what) {
     const s = r.status;
     if (s === 401) return fail(502, "Anmeldung bei der VIW Cloud abgelehnt – Benutzername und App-Passwort prüfen");
@@ -78,7 +114,7 @@ module.exports = function (D) {
   const unx = s => String(s || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&#x([0-9a-f]+);/gi, (m, n) => String.fromCharCode(parseInt(n, 16))).replace(/&amp;/g, "&");
   function tag(b, name) { const m = b.match(new RegExp("<(?:[\\w-]+:)?" + name + "(?:\\s[^>]*)?(?:/>|>([\\s\\S]*?)</(?:[\\w-]+:)?" + name + "\\s*>)", "i")); return m ? (m[1] == null ? "" : m[1]) : null; }
   function parseMulti(xml, c) {
-    const base = decodeURIComponent(new URL(c.url + "/remote.php/dav/files/" + encodeURIComponent(c.user) + "/").pathname);
+    const base = decodeURIComponent(new URL(c.root + "/").pathname);
     const out = [];
     for (const b of String(xml).split(/<(?:[\w-]+:)?response(?=[\s>])/i).slice(1)) {
       let href = unx(tag(b, "href") || "").replace(/^https?:\/\/[^/]+/i, "");
@@ -94,7 +130,7 @@ module.exports = function (D) {
     return out;
   }
   async function propfind(p, depth) {
-    const c = cfg(), r = await dav("PROPFIND", filesUrl(c, p) + "/", { headers: { Depth: String(depth), "Content-Type": "application/xml; charset=utf-8" }, body: PROPS });
+    const c = await acct(), r = await dav("PROPFIND", filesUrl(c, p) + "/", { headers: { Depth: String(depth), "Content-Type": "application/xml; charset=utf-8" }, body: PROPS });
     if (r.status !== 207) throw davError(r, "Ordner lesen");
     return parseMulti(await r.text(), c);
   }
@@ -104,29 +140,37 @@ module.exports = function (D) {
     const items = all.filter(x => x.path !== at).sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, "de", { numeric: true, sensitivity: "base" }) : a.dir ? -1 : 1));
     return { path: at, self, items };
   }
-  async function exists(p) { const r = await dav("PROPFIND", filesUrl(cfg(), p), { headers: { Depth: "0", "Content-Type": "application/xml; charset=utf-8" }, body: PROPS }); if (r.status === 207) return true; if (r.status === 404) return false; throw davError(r, "prüfen"); }
+  async function exists(p) { const r = await dav("PROPFIND", filesUrl(await acct(), p), { headers: { Depth: "0", "Content-Type": "application/xml; charset=utf-8" }, body: PROPS }); if (r.status === 207) return true; if (r.status === 404) return false; throw davError(r, "prüfen"); }
 
   // ---- Ändern ----
-  async function mkdir(p) { const r = await dav("MKCOL", filesUrl(cfg(), p)); if (r.status !== 201) throw davError(r, "Ordner anlegen"); return { path: norm(p) }; }
+  async function mkdir(p) { const r = await dav("MKCOL", filesUrl(await acct(), p)); if (r.status !== 201) throw davError(r, "Ordner anlegen"); return { path: norm(p) }; }
   async function mkdirs(p) {   // ganzer Pfad, vorhandene Ordner sind kein Fehler (Ordner-Upload)
     const a = parts(p); let cur = "";
-    for (const s of a) { cur += "/" + s; const r = await dav("MKCOL", filesUrl(cfg(), cur)); if (r.status !== 201 && r.status !== 405) throw davError(r, "Ordner anlegen"); }
+    for (const s of a) { cur += "/" + s; const r = await dav("MKCOL", filesUrl(await acct(), cur)); if (r.status !== 201 && r.status !== 405) throw davError(r, "Ordner anlegen"); }
     return { path: "/" + a.join("/") };
   }
   async function moveTo(from, to, overwrite) {
-    const c = cfg(); if (norm(from) === "/") throw fail(400, "Der oberste Ordner bleibt");
+    const c = await acct(); if (norm(from) === "/") throw fail(400, "Der oberste Ordner bleibt");
     if (norm(to) === norm(from)) return { path: norm(to) };
     if ((norm(to) + "/").indexOf(norm(from) + "/") === 0) throw fail(400, "Ein Ordner kann nicht in sich selbst verschoben werden");
     const r = await dav("MOVE", filesUrl(c, from), { headers: { Destination: filesUrl(c, to), Overwrite: overwrite ? "T" : "F" }, timeout: 120000 });
     if (r.status !== 201 && r.status !== 204) throw davError(r, "verschieben");
     return { path: norm(to) };
   }
-  async function remove(p) { if (norm(p) === "/") throw fail(400, "Der oberste Ordner bleibt"); const r = await dav("DELETE", filesUrl(cfg(), p), { timeout: 120000 }); if (r.status !== 204 && r.status !== 200) throw davError(r, "löschen"); return { path: norm(p) }; }
+  async function remove(p) { if (norm(p) === "/") throw fail(400, "Der oberste Ordner bleibt"); const r = await dav("DELETE", filesUrl(await acct(), p), { timeout: 120000 }); if (r.status !== 204 && r.status !== 200) throw davError(r, "löschen"); return { path: norm(p) }; }
   async function putFile(p, buf, opt) {
     opt = opt || {}; const h = { "Content-Type": "application/octet-stream", "Content-Length": String(buf.length) };
     if (!opt.overwrite) h["If-None-Match"] = "*";
     if (opt.mtime > 0) h["X-OC-Mtime"] = String(Math.floor(opt.mtime));
-    const r = await dav("PUT", filesUrl(cfg(), p), { headers: h, body: buf, timeout: 600000 });
+    const r = await dav("PUT", filesUrl(await acct(), p), { headers: h, body: buf, timeout: 600000 });
+    if (r.status !== 201 && r.status !== 204) throw davError(r, "hochladen");
+    return { path: norm(p) };
+  }
+  async function putStream(p, req, len, opt) {
+    const h = { "Content-Type": "application/octet-stream", "Content-Length": String(len) };
+    if (!opt.overwrite) h["If-None-Match"] = "*";
+    if (opt.mtime > 0) h["X-OC-Mtime"] = String(Math.floor(opt.mtime));
+    const r = await dav("PUT", filesUrl(await acct(), p), { headers: h, body: req, timeout: 3600000 });
     if (r.status !== 201 && r.status !== 204) throw davError(r, "hochladen");
     return { path: norm(p) };
   }
@@ -138,21 +182,21 @@ module.exports = function (D) {
   }
   // Teil-Upload (Nextcloud-Chunking v2): Ordner anlegen → Teile 00001… → „.file“ ans Ziel verschieben
   const chunkId = id => { if (!/^fsc-[a-f0-9]{16,40}$/.test(String(id || ""))) throw fail(400, "Ungültige Upload-Kennung"); return String(id); };
-  async function chunkStart(p) { const c = cfg(), id = "fsc-" + crypto.randomBytes(12).toString("hex"); const r = await dav("MKCOL", uploadsUrl(c, id), { headers: { Destination: filesUrl(c, p) } }); if (r.status !== 201) throw davError(r, "Upload vorbereiten"); return { id }; }
+  async function chunkStart(p) { const c = await acct(), id = "fsc-" + crypto.randomBytes(12).toString("hex"); const r = await dav("MKCOL", uploadsUrl(c, id), { headers: { Destination: filesUrl(c, p) } }); if (r.status !== 201) throw davError(r, "Upload vorbereiten"); return { id }; }
   async function chunkPut(id, n, p, total, buf) {
-    const c = cfg(); n = parseInt(n, 10); if (!(n >= 1 && n <= 10000)) throw fail(400, "Ungültiger Teil");
+    const c = await acct(); n = parseInt(n, 10); if (!(n >= 1 && n <= 10000)) throw fail(400, "Ungültiger Teil");
     const r = await dav("PUT", uploadsUrl(c, chunkId(id), String(n).padStart(5, "0")), { headers: { Destination: filesUrl(c, p), "OC-Total-Length": String(+total || 0), "Content-Type": "application/octet-stream", "Content-Length": String(buf.length) }, body: buf, timeout: 600000 });
     if (r.status !== 201 && r.status !== 204) throw davError(r, "Teil " + n + " hochladen");
     return { n };
   }
   async function chunkDone(id, p, total, mtime, overwrite) {
-    const c = cfg(), h = { Destination: filesUrl(c, p), "OC-Total-Length": String(+total || 0), Overwrite: overwrite ? "T" : "F" };
+    const c = await acct(), h = { Destination: filesUrl(c, p), "OC-Total-Length": String(+total || 0), Overwrite: overwrite ? "T" : "F" };
     if (mtime > 0) h["X-OC-Mtime"] = String(Math.floor(mtime));
     const r = await dav("MOVE", uploadsUrl(c, chunkId(id), ".file"), { headers: h, timeout: 600000 });
     if (r.status !== 201 && r.status !== 204) { dav("DELETE", uploadsUrl(c, id)).catch(() => {}); throw davError(r, "zusammensetzen"); }
     return { path: norm(p) };
   }
-  async function chunkAbort(id) { await dav("DELETE", uploadsUrl(cfg(), chunkId(id))).catch(() => {}); return { id }; }
+  async function chunkAbort(id) { await dav("DELETE", uploadsUrl(await acct(), chunkId(id))).catch(() => {}); return { id }; }
 
   function readBody(req, max) {
     return new Promise((resolve, reject) => { const ch = []; let n = 0;
@@ -164,7 +208,8 @@ module.exports = function (D) {
 
   async function status(check) {
     const c = cfg(), e = cfgError(c);
-    const out = { ok: true, configured: !e, error: e && e !== "nicht eingerichtet" ? e : "", user: c.user, web: e ? "" : c.url, host: (() => { try { return new URL(c.url).host; } catch (x) { return ""; } })() };
+    const out = { ok: true, configured: !e, error: e && e !== "nicht eingerichtet" ? e : "", mode: c.mode, user: c.mode === "share" ? "" : c.user,
+      web: e ? "" : c.mode === "share" ? c.url + "/index.php/s/" + c.token : c.url, host: (() => { try { return new URL(c.url).host; } catch (x) { return ""; } })() };
     if (!out.configured || !check) return out;
     try { const r = await propfind("/", 0); out.reachable = true; out.quota = r[0] && r[0].quota; }
     catch (x) { out.reachable = false; out.error = x.message; }
@@ -178,8 +223,9 @@ module.exports = function (D) {
       if (p === "/admin/api/viw/list" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, await list(q("path") || "/")));
       if ((p === "/admin/api/viw/file" || p === "/admin/api/viw/preview") && req.method === "GET") {
         const c = cfg(), prev = p === "/admin/api/viw/preview";
+        if (prev && c.mode === "share") return send(res, 404, "");   // Vorschaubilder nur mit Anmeldung
         const r = prev ? await dav("GET", c.url + "/index.php/core/preview?fileId=" + encodeURIComponent(String(q("fileid") || "").replace(/\D/g, "")) + "&x=96&y=96&a=1&mode=cover&forceIcon=0")
-          : await dav("GET", filesUrl(c, q("path") || ""), { timeout: 600000 });
+          : await dav("GET", filesUrl(await acct(), q("path") || ""), { timeout: 600000 });
         const type = String(r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
         if (prev) { if (!r.ok || !/^image\/(png|jpe?g|gif|webp)$/.test(type)) { if (r.body) r.body.cancel().catch(() => {}); return send(res, 404, ""); }
           res.writeHead(200, { "Content-Type": type, "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" }); return Readable.fromWeb(r.body).pipe(res); }
@@ -190,9 +236,13 @@ module.exports = function (D) {
         res.writeHead(200, h); return Readable.fromWeb(r.body).pipe(res);
       }
       if (p === "/admin/api/viw/upload" && req.method === "PUT") {
-        const buf = await readBody(req, MAX_PART), dir = parentOf(q("path")), name = validName(baseOf(q("path")));
-        const target = (dir === "/" ? "" : dir) + "/" + name;
-        return J(res, 200, Object.assign({ ok: true }, await putFile(target, buf, { overwrite: q("overwrite") === "1", mtime: +q("mtime") || 0 })));
+        const dir = parentOf(q("path")), name = validName(baseOf(q("path"))), target = (dir === "/" ? "" : dir) + "/" + name, o = { overwrite: q("overwrite") === "1", mtime: +q("mtime") || 0 };
+        const len = +req.headers["content-length"] || 0;
+        if (len > MAX_PART) {   // große Datei in einem Stück (Freigabe-Link kennt keine Teile): direkt durchreichen, nicht zwischenspeichern
+          if ((await acct()).mode !== "share") { req.resume(); throw fail(413, "Große Dateien gehen in Teilen – bitte die Seite neu laden"); }
+          return J(res, 200, Object.assign({ ok: true }, await putStream(target, req, len, o)));
+        }
+        return J(res, 200, Object.assign({ ok: true }, await putFile(target, await readBody(req, MAX_PART), o)));
       }
       if (p === "/admin/api/viw/chunk" && req.method === "PUT") { const buf = await readBody(req, MAX_PART); return J(res, 200, Object.assign({ ok: true }, await chunkPut(q("id"), q("n"), q("path"), q("total"), buf))); }
       if (p === "/admin/api/viw/op" && req.method === "POST") {
@@ -224,5 +274,5 @@ module.exports = function (D) {
       return J(res, st === 409 && e.message === "exists" ? 409 : 200, { ok: false, error: e.message === "exists" ? "exists" : String(e.message || e).slice(0, 300) });
     }
   }
-  return { handleAdmin, status, _test: { parseMulti, parts, cfg } };
+  return { handleAdmin, status, _test: { parseMulti, parts, cfg, reset: () => { ACC = null; } } };
 };
