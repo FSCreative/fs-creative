@@ -170,7 +170,7 @@ module.exports = function (R) {
   async function sceneSeg(s, brand, o, i, len, delay, punch) {
     const P = o.P, dir = o.dir, bgVid = o.bgVideos && o.bgVideos[i];
     const variant = s.template === "cta" ? "brand" : (o.variants ? o.variants[i % o.variants.length] : (i % 2 ? "dark" : "brand"));
-    const base = { format: "story", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid, v: (o.v || 0) + i };
+    const base = { format: "reel", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid, v: (o.v || 0) + i }, LF = R.fmtFor(base, brand);   // Layout-Größe (reel: 900×1600 → 1080×1920)
     const bgPng = path.join(dir, "bg" + i + ".png"); fs.writeFileSync(bgPng, await R.slidePng(s, brand, Object.assign({}, base, { layer: "bg" })));
     const tree = R.postEl(s, brand, Object.assign({}, base, { layer: "fg", anim: true }));
     const pp = prepare(tree, P, o.G.half), N = Math.round(len * FPS), animEndF = Math.min(N, Math.ceil((delay + pp.end + 0.05) * FPS) + 1);
@@ -186,7 +186,7 @@ module.exports = function (R) {
     pp.units.forEach(u => units.push(delay + u.t0));
     let lastKey = null, lastBuf = null, frames = 0;
     await ff(inBg.concat(["-f", "rawvideo", "-pix_fmt", "rgba", "-s", W + "x" + H, "-framerate", String(FPS), "-i", "pipe:0", "-filter_complex", fc, "-map", "[v]", "-t", len.toFixed(3)]).concat(R.VENC).concat([seg]),
-      async stdin => { for (let f = 0; f < animEndF; f++) { const key = setState(pp, P, f / FPS - delay); if (key !== lastKey) { lastBuf = await R.rawFrame(pp.root, W, H); lastKey = key; frames++; } await write(stdin, lastBuf); } });
+      async stdin => { for (let f = 0; f < animEndF; f++) { const key = setState(pp, P, f / FPS - delay); if (key !== lastKey) { lastBuf = await R.rawFrame(pp.root, LF.w, LF.h, W); lastKey = key; frames++; } await write(stdin, lastBuf); } });
     return { seg, units, rendered: frames, animEnd: delay + pp.end };
   }
 

@@ -72,7 +72,7 @@ async function png(el, w, hgt, opts) {
   return r.render().asPng();
 }
 // Rohbild (RGBA, vormultipliziert) für Videos – spart das PNG-Kodieren je Bild
-async function rawFrame(el, w, hgt) { const r = new Resvg(await svgOf(el, w, hgt), { fitTo: { mode: "width", value: w }, font: { loadSystemFonts: false } }).render(); return r.pixels; }
+async function rawFrame(el, w, hgt, outW) { const r = new Resvg(await svgOf(el, w, hgt), { fitTo: { mode: "width", value: outW || w }, font: { loadSystemFonts: false } }).render(); return r.pixels; }
 
 // ───────────── Farben ─────────────
 function hex(c) { const m = String(c || "").trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i); if (!m) return null; let s = m[1]; if (s.length === 3) s = s.split("").map(x => x + x).join(""); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); }
@@ -323,7 +323,10 @@ async function giveawayVideo(o) {
 // ═════════════ Post-Vorlagen (Feed 1080×1350, Story/Reel 1080×1920) ═════════════
 /* Folie: { template: hook|list|quote|stat|compare|cta|photo, kicker, headline, sub, items[], cta, number, label, author, leftTitle, leftItems[], rightTitle, rightItems[], image(dataURI) }
    Hervorhebung im Text mit *Sternchen* (wird als Markierung gesetzt). variant: brand | light | dark. layer: all | bg | fg (fürs Reel: Hintergrund und Text getrennt). */
-const FMT = { feed: { w: 1080, h: 1350, px: 84, top: 84, bottom: 84 }, story: { w: 1080, h: 1920, px: 92, top: 230, bottom: 400 } };
+// reel: Layout auf 900×1600 gerechnet und verlustfrei auf 1080×1920 (out) vergrößert → Schrift und Elemente im Reel ~20 % größer
+const FMT = { feed: { w: 1080, h: 1350, px: 84, top: 84, bottom: 84 }, story: { w: 1080, h: 1920, px: 92, top: 230, bottom: 400 }, reel: { w: 900, h: 1600, px: 76, top: 190, bottom: 330, out: 1080 } };
+// Format eines Bildes: Reel-Format nur für Marken mit eigenem Look (das allgemeine Layout kennt es nicht → Hochformat)
+function fmtFor(o, brand) { const f = o && o.format; if (f === "reel") return brand && brand.key && skins().has(brand.key) ? FMT.reel : FMT.story; return FMT[f === "story" ? "story" : "feed"]; }
 function look(T, variant) {
   if (variant === "light") return { bg: "linear-gradient(170deg, " + mix(T.light, "#ffffff", 0.35) + " 0%, " + T.light + " 100%)", fg: T.ink, sub: mix(T.ink, T.light, 0.32), mark: T.primary, markFg: onColor(T.primary), card: "#ffffff", cardFg: T.ink, line: mix(T.primary, T.light, 0.75), glowA: rgba(T.primary, 0.16), glowB: rgba(T.accent, 0.22) };
   if (variant === "dark") { const d = mix(T.dark, "#05060a", 0.55); return { bg: "linear-gradient(165deg, " + mix(d, T.primary, 0.12) + " 0%, " + d + " 100%)", fg: "#ffffff", sub: "rgba(255,255,255,0.74)", mark: T.primary, markFg: onColor(T.primary), card: "rgba(255,255,255,0.08)", cardFg: "#ffffff", line: "rgba(255,255,255,0.16)", glowA: rgba(T.primary, 0.55), glowB: rgba(T.accent, 0.3) }; }
@@ -354,7 +357,7 @@ const skins = () => SKINS || (SKINS = require("./mkt-skins.js")({ h, img, fit, m
 // Reel mit Video-Hintergrund: Hintergrund-Ebene ist nur ein Schatten (Text bleibt lesbar), der Text kommt aus dem Marken-Look
 function shadeEl(F) { return h("div", { width: F.w, height: F.h, background: "linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 32%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0.78) 100%)" }); }
 function postEl(slide, brand, o) {
-  o = o || {}; const F0 = FMT[o.format === "story" ? "story" : "feed"];
+  o = o || {}; const F0 = fmtFor(o, brand);
   if (brand && brand.key && skins().has(brand.key)) {
     if (o.overVideo && o.layer === "bg") return shadeEl(F0);
     return skins().el(Object.assign({}, slide, o.overVideo ? { image: "" } : {}), brand, o, F0);
@@ -418,7 +421,7 @@ function postEl(slide, brand, o) {
   }
   return h("div", root, deco, head, body, tpl === "cta" ? null : foot);
 }
-async function slidePng(slide, brand, o) { const F = FMT[o && o.format === "story" ? "story" : "feed"]; return png(postEl(slide, brand, o), F.w, F.h); }
+async function slidePng(slide, brand, o) { const F = fmtFor(o, brand); return png(postEl(slide, brand, o), F.w, F.h, F.out ? { scale: F.out / F.w } : undefined); }
 async function toJpeg(pngFile, jpgFile) { if (!videoReady()) return pngFile; await ffmpeg(["-i", pngFile, "-q:v", "2", "-pix_fmt", "yuvj420p", jpgFile]); return jpgFile; }
 // Bilder eines Posts (Einzelbild oder Karussell) → JPEG-Dateien (Instagram verlangt JPEG)
 async function postImages(slides, brand, o) {
@@ -464,4 +467,4 @@ async function reelVideo(scenes, brand, o) {
   return { file: out, cover, duration: Math.round(total * 10) / 10 };
 }
 
-module.exports = { ready, videoReady, h, img, png, rawFrame, clean, FFMPEG: () => FFMPEG, VENC, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };
+module.exports = { ready, videoReady, h, img, png, rawFrame, clean, fmtFor, FFMPEG: () => FFMPEG, VENC, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };

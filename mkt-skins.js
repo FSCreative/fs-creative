@@ -208,7 +208,7 @@ module.exports = function (U) {
     const prod = c.image || "", isProd = /^data:image\/png/.test(prod);
     if ((tpl === "photo" || tpl === "hook") && prod) {
       // Produkt (Fotobox) auf weißer Karte bzw. Foto als Polaroid, Text daneben/darunter
-      const pw = story ? 560 : 470, ph = story ? 760 : 600;
+      const ph = story ? Math.min(760, Math.round((F.h - F.top - F.bottom) * 0.62)) : 600, pw = story ? Math.round(ph * 560 / 760) : 470;
       const frame = isProd ? h("div", Object.assign({ width: pw, height: ph, background: "#ffffff", borderRadius: 34, border: "1.5px solid " + BD.line, alignItems: "center", justifyContent: "center", boxShadow: "0 30px 70px rgba(28,26,22,0.12)" }, DE), img(prod, { height: ph - 90, width: Math.round((ph - 90) * (s.imageRatio || 0.4)), objectFit: "contain" }))
         : h("div", Object.assign({ width: pw, flexDirection: "column", background: "#ffffff", padding: "22px 22px 70px", boxShadow: "0 30px 70px rgba(28,26,22,0.18)", transform: "rotate(" + (v % 2 ? 3 : -3) + "deg)" }, DE), photo(prod, { width: pw - 44, height: ph - 160 }));
       return R([top, h("div", { flexDirection: story ? "column" : "row", alignItems: story ? "flex-start" : "center", width: W2, marginTop: "auto", marginBottom: "auto", gap: 40 },
@@ -378,7 +378,7 @@ module.exports = function (U) {
     const R = kids => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px", fontFamily: "Fredoka", background: rootBg(c, bg) }, snow.concat(kids));
     const framed = (wpx, hpx, rot) => h("div", Object.assign({ width: wpx, height: hpx, borderRadius: 34, overflow: "hidden", border: "10px solid #ffffff", boxShadow: "0 26px 60px rgba(0,0,0,0.3)", transform: "rotate(" + (rot || 0) + "deg)" }, DE), ph ? photo(ph, { width: wpx - 20, height: hpx - 20 }) : h("div", { width: wpx, height: hpx, background: HG.eiche }));
     if (tpl === "photo" || (tpl === "hook" && ph)) {
-      const fw = W2, fh = story ? 980 : 700;
+      const fw = W2, fh = story ? Math.min(980, Math.round((F.h - F.top - F.bottom) * 0.66)) : 700;   // Höhe aus dem Platz (Reel-Format ist kleiner)
       return R([top, h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto", alignItems: "center" }, framed(fw, fh, v % 2 ? 1.5 : -1.5),
         h("div", { flexDirection: "column", width: W2, marginTop: 40 }, s.kicker ? pill(s.kicker, HG.rot, "#fff", story ? 28 : 24) : null, h("div", Object.assign({ marginTop: 18 }, TX), head(s.headline, fit(plain(s.headline), W2, 3, story ? 92 : 74, 40, 0.55), fg)),
           s.sub ? h("div", Object.assign({ marginTop: 14, fontSize: story ? 34 : 29, fontWeight: 500, color: sub }, TX), plain(s.sub)) : null)), foot]);
