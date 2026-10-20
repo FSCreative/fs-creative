@@ -29,7 +29,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-mktpost-"));
   let M = null; const pub = http.createServer((q, s) => { const u = new URL(q.url, "http://x"); if (u.pathname.indexOf("/m/") === 0) return M.handlePublic(q, s, u.pathname); s.writeHead(404); s.end(); }), pport = await listen(pub);
   const KI_POSTS = { posts: [
-    { format: "karussell", pillar: "So funktioniert's", idea: "In 3 Schritten zum Essen", altText: "Folien mit Schritten", bgQuery: "",
+    { format: "karussell", pillar: "So funktioniert's", idea: "In 3 Schritten zum Essen", altText: "Folien mit Schritten", bgQuery: "", firstComment: "Was bestellst du heute? #nichtimkommentar", location: "",
       slides: [{ template: "hook", kicker: "Hunger?", headline: "Dei Wirt is *glei do*", sub: "Bestellen im Montafon", items: [], cta: "Jetzt bestellen", number: "", label: "", author: "", leftTitle: "", leftItems: [], rightTitle: "", rightItems: [], photoQuery: "" },
         { template: "list", kicker: "", headline: "So *einfach*", sub: "", items: ["Wirt wählen", "Bestellen", "Genießen"], cta: "", number: "", label: "", author: "", leftTitle: "", leftItems: [], rightTitle: "", rightItems: [], photoQuery: "" },
         { template: "cta", kicker: "Jetzt", headline: "Heute schon *kapituliert*?", sub: "", items: [], cta: "kochdu.at", number: "", label: "", author: "", leftTitle: "", leftItems: [], rightTitle: "", rightItems: [], photoQuery: "" }],
@@ -84,6 +84,11 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.strictEqual(PT.S().channels.length, 7);
   });
   let car, reel;
+  await t("Standorte je Marke: Instagram-Link/ID erkannt, ohne ID abgelehnt", async () => {
+    let r = await call("POST", "/admin/api/mkt/locations", { brand: "kochdu", locations: [{ name: "Schruns", id: "https://www.instagram.com/explore/locations/106097539419617/schruns-vorarlberg-austria/" }, { name: "Bludenz", id: "108215475876451" }] });
+    const j = r.json(); assert.deepStrictEqual(j.locations.kochdu, [{ name: "Schruns", id: "106097539419617" }, { name: "Bludenz", id: "108215475876451" }]);
+    r = await call("POST", "/admin/api/mkt/locations", { brand: "kochdu", locations: [{ name: "Gaschurn", id: "irgendwas" }] }); assert.strictEqual(r.code, 400);
+  });
   await t("Generieren: KI-Posts als Entwürfe, Plattformen passend zum Format, Termine vorgeschlagen", async () => {
     const r = await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 2, formats: { reel: true, karussell: true, bild: false }, topic: "Wintersaison" }); const j = r.json();
     assert.ok(j.ok, JSON.stringify(j)); assert.strictEqual(kiCalls, 1); assert.ok(/<vorgaben>Wintersaison<\/vorgaben>/.test(kiUser) && /<profil>/.test(kiUser) && /in allen Beiträgen um/.test(kiUser));
@@ -91,6 +96,8 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.deepStrictEqual(car.platforms.sort(), ["bluesky", "facebook", "instagram", "linkedin", "threads"]); assert.ok(reel.platforms.indexOf("youtube") > -1 && reel.platforms.indexOf("tiktok") > -1);
     assert.ok(car.scheduledAt && reel.scheduledAt && Math.abs(Date.parse(car.scheduledAt) - Date.parse(reel.scheduledAt)) >= 20 * 3600e3, "Abstand");
     assert.strictEqual(car.status, "entwurf");
+    assert.ok(/<standorte>Schruns \| Bludenz<\/standorte>/.test(kiUser), "Standorte an die KI");
+    assert.strictEqual(car.place.name, "Schruns", "Standard-Standort"); assert.strictEqual(reel.mood, "froehlich", "Stimmung der Marke");
   });
   await t("Medien: Karussell (JPEG + kleine Fassung) und Reel (MP4 + Titelbild)", async () => {
     const [a, b] = await waitMedia([car.id, reel.id]); const c = a.id === car.id ? a : b, rl = a.id === car.id ? b : a;
@@ -115,10 +122,12 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
   });
   await t("Fällig → automatisch posten: Instagram-Karussell, Facebook, Threads, LinkedIn, Bluesky", async () => {
     const c = PT.S().posts.find(p => p.id === car.id); c.scheduledAt = new Date(Date.now() - 60e3).toISOString();
-    mock.state.failNext["/fb/v26.0/pg1/feed"] = { status: 500, message: "Kurz nicht erreichbar" };
+    mock.state.failNext["/fb/v26.0/pg1/feed"] = { status: 500, message: "Kurz nicht erreichbar", times: 2 };   // auch der zweite Versuch (ohne Ort) scheitert
     await M.tick();
     assert.strictEqual(c.results.instagram.status, "ok", JSON.stringify(c.results.instagram)); assert.ok(/instagram\.com\/p\//.test(c.results.instagram.url));
     const igCar = mock.state.log.filter(l => l === "POST /ig/v26.0/1784/media").length; assert.strictEqual(igCar, 4, "3 Folien + Karussell");
+    const parent = mock.state.igParams.find(x => x.media_type === "CAROUSEL"); assert.strictEqual(parent.location_id, "106097539419617", "Standort am Karussell");
+    assert.ok(mock.state.igParams.filter(x => x.is_carousel_item).every(x => x.alt_text === "Folien mit Schritten"), "Alt-Text an den Folien");
     assert.ok(mock.state.fetched.filter(f => /\/m\//.test(f.url) && f.status === 200).length >= 3, "Instagram hat die Bilder abgeholt");
     assert.strictEqual(c.results.threads.status, "ok", JSON.stringify(c.results.threads)); assert.strictEqual(c.results.linkedin.status, "ok", JSON.stringify(c.results.linkedin)); assert.strictEqual(c.results.bluesky.status, "ok", JSON.stringify(c.results.bluesky));
     assert.strictEqual(c.results.facebook.status, "fehler"); assert.strictEqual(c.status, "teilweise");
@@ -129,7 +138,8 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const c = PT.S().posts.find(p => p.id === car.id), before = mock.state.posts.filter(p => p.pf === "instagram").length;
     await call("POST", "/admin/api/mkt/post", { id: car.id, op: "retry", platform: "facebook" }); for (let i = 0; i < 50 && c.status !== "gepostet"; i++) await sleep(50);
     assert.strictEqual(c.status, "gepostet"); assert.strictEqual(c.results.facebook.status, "ok"); assert.strictEqual(mock.state.posts.filter(p => p.pf === "instagram").length, before, "Instagram nicht doppelt");
-    const fb = mock.state.posts.filter(p => p.pf === "facebook").pop(); assert.strictEqual(fb.images, 3);
+    const cm = mock.state.comments || []; assert.ok(cm.some(x => x.pf === "instagram" && x.text === "Was bestellst du heute?") && cm.some(x => x.pf === "facebook" && x.text === "Was bestellst du heute?"), "erster Kommentar ohne Hashtags");
+    const fb = mock.state.posts.filter(p => p.pf === "facebook").pop(); assert.strictEqual(fb.images, 3); assert.strictEqual(fb.place, "106097539419617"); assert.ok(/utm_source=facebook/.test(fb.message), "Link mit Kampagnen-Kennung");
   });
   await t("Reel jetzt posten: Instagram, YouTube Shorts, TikTok (Entwurf), Threads; Token wird rechtzeitig erneuert", async () => {
     const rl = PT.S().posts.find(p => p.id === reel.id);
@@ -138,7 +148,9 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "update", patch: { platforms: ["instagram", "youtube", "tiktok", "threads"] } });
     await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "now" }); for (let i = 0; i < 100 && rl.status === "geplant" || rl.status === "läuft"; i++) await sleep(50);
     assert.strictEqual(rl.status, "gepostet", JSON.stringify(rl.results));
-    assert.ok(mock.state.uploads.igVideo > 10000, "Instagram hat das Video abgeholt"); assert.ok(/ig-long-2/.test(JSON.stringify(PT.unseal(ig.tok))), "Instagram-Token erneuert");
+    assert.ok(mock.state.uploads.igVideo > 10000, "Instagram hat das Video abgeholt");
+    const rp = mock.state.igParams.find(x => x.media_type === "REELS"); assert.ok(rp.audio_name && rl.media.track && rp.audio_name === rl.media.track.name, "Tonspur-Name = CC0-Titel");
+    assert.ok(/CC0/.test(rl.media.track.license)); assert.ok(/ig-long-2/.test(JSON.stringify(PT.unseal(ig.tok))), "Instagram-Token erneuert");
     assert.ok(/#Shorts$/.test(mock.state.posts.find(p => p.pf === "youtube").title)); assert.strictEqual(mock.state.ytMeta.status.privacyStatus, "public");
     const tt = mock.state.posts.find(p => p.pf === "tiktok"); assert.strictEqual(tt.bytes, tt.size); assert.strictEqual(rl.results.tiktok.status, "entwurf");
   });
@@ -194,7 +206,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const p = PT.S().posts.find(x => x.id === g.posts[0].id); await waitMedia([p.id]);
     p.hashtags.instagram = Array.from({ length: 12 }, (_, i) => "tag" + i); p.platforms = ["instagram"];
     await call("POST", "/admin/api/mkt/post", { id: p.id, op: "now" }); for (let i = 0; i < 100 && (p.status === "geplant" || p.status === "läuft"); i++) await sleep(50);
-    assert.strictEqual(p.results.instagram.status, "ok", JSON.stringify(p.results)); assert.ok(/nur 5 Hashtags/.test(p.results.instagram.note));
+    assert.strictEqual(p.results.instagram.status, "ok", JSON.stringify(p.results)); assert.ok(/5 Hashtags/.test(p.results.instagram.note), p.results.instagram.note);
     await call("POST", "/admin/api/mkt/app", { provider: "igTags", value: 5 });
   });
   await t("Konto trennen entfernt die Plattform aus offenen Posts", async () => {

@@ -68,6 +68,7 @@ F.css(
 '.mk-rules label.dis{color:var(--ink-3)} .mk-rules label.dis span{font-size:12.5px}'+
 '.mk-rules .f.mk-n{width:64px;padding:4px 8px} .mk-rules .f.mk-w{width:220px;padding:4px 8px}'+
 '.mk-igres{padding:12px 2px;min-height:44px}'+
+'.mk-loc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px;margin:6px 0}'+
 '.mk-lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;max-height:55vh;overflow:auto}'+
 '.mk-li{position:relative;border-radius:10px;overflow:hidden;background:var(--sunk);aspect-ratio:4/5}'+
 '.mk-li img,.mk-li video{width:100%;height:100%;object-fit:cover;display:block}'+
@@ -243,7 +244,7 @@ function brandsHtml(){
   return '<p class="muted" style="margin:0 0 12px">Das Profil jeder App ist die Grundlage für Videos und Posts: Farben, Logo, Tonfall, Zielgruppe und Hashtags.</p><div class="mk-brands">'+(ST.brands||[]).map(function(b){ var c=b.colors||{};
     return '<div class="panel mk-b"><div class="lg'+(b.logoBg==="dark"?' dark':'')+'">'+(b.logo||b.logoUploaded?'<img src="/admin/api/mkt/logo?key='+encodeURIComponent(b.key)+'&v='+encodeURIComponent(b.logoUploaded?"u":"d")+'" alt="" onerror="this.replaceWith(document.createTextNode(\'kein Logo\'))">':'<span class="muted small">kein Logo – bitte hochladen</span>')+'</div>'+
       '<div class="row-between"><b>'+esc(b.name)+'</b><div class="mk-sw">'+swatch(c.primary)+swatch(c.dark)+swatch(c.light)+swatch(c.accent)+'</div></div>'+
-      '<p>'+esc(b.oneLiner||"")+'</p><div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="mkbrand:'+esc(b.key)+'">Bearbeiten</button><button type="button" class="btn sm" data-act="mklib:'+esc(b.key)+'">Bilder & Videos</button></div></div>'; }).join("")+'</div>';
+      '<p>'+esc(b.oneLiner||"")+'</p><div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="mkbrand:'+esc(b.key)+'">Bearbeiten</button><button type="button" class="btn sm" data-act="mklib:'+esc(b.key)+'">Bilder & Videos</button><button type="button" class="btn sm" data-act="mkloc:'+esc(b.key)+'">Standorte'+((b.locations||[]).length?' ('+b.locations.length+')':'')+'</button></div></div>'; }).join("")+'</div>';
 }
 function lines(a){ return (a||[]).join("\n"); }
 F.action("mkbrand",function(key){
@@ -296,6 +297,18 @@ F.listen("change","#mkLibUp",function(el){ var files=Array.prototype.slice.call(
     if(f.size>10e6){ F.toast(f.name+": zu groß (max. 10 MB)",true); return; }
     return new Promise(function(ok){ var r=new FileReader(); r.onload=function(){ api("/admin/api/mkt/library",{brand:LIBK,name:f.name,data:String(r.result)}).then(function(j){ if(!j||!j.ok) F.toast((j&&j.error)||"Fehler",true); ok(); }); }; r.readAsDataURL(f); }); }); });
   chain.then(function(){ libLoad(); }); });
+
+/* ---------- Standorte je Marke (Instagram-/Facebook-Ort am Post) ---------- */
+function locRow(l){ return '<div class="mk-loc"><input class="f" data-ln placeholder="Name, z. B. Schruns" value="'+esc(l&&l.name||"")+'"><input class="f" data-li placeholder="Instagram-Orts-Link oder Facebook-Seiten-ID" value="'+esc(l&&l.id||"")+'"><button type="button" class="btn icon sm" data-act="mklocdel" aria-label="Entfernen">'+F.svg("close")+'</button></div>'; }
+F.action("mkloc",function(k){ var b=brandOf(k)||{}; var ls=b.locations||[];
+  F.modal('<form data-form="mkloc" data-key="'+esc(k)+'" class="mk-bf"><div class="row-between"><h2 style="font-size:19px">Standorte – '+esc(b.name||k)+'</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted small" style="margin:0">So findest du die ID: auf instagram.com nach dem Ort suchen (z. B. „Schruns“), den Ort öffnen und den Link aus der Adresszeile hier einfügen (…/explore/locations/<b>123456789</b>/…). Der erste Standort ist der Standard; die KI wählt pro Post den passenden aus deiner Liste.</p>'+
+    '<div id="mkLocs">'+(ls.length?ls.map(locRow).join(""):locRow(null))+'</div><div><button type="button" class="btn sm" data-act="mklocadd">+ Standort</button></div>'+
+    '<div class="foot"><span class="bad-t small" id="mkLocErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></span></div></form>',"narrow"); });
+F.action("mklocadd",function(){ var c=document.getElementById("mkLocs"); if(c) c.insertAdjacentHTML("beforeend",locRow(null)); });
+F.action("mklocdel",function(a,el){ var r=el&&el.closest(".mk-loc"); if(r) r.remove(); });
+F.form("mkloc",function(form){ var k=form.getAttribute("data-key"), list=Array.prototype.map.call(form.querySelectorAll(".mk-loc"),function(r){ return {name:r.querySelector("[data-ln]").value.trim(),id:r.querySelector("[data-li]").value.trim()}; }).filter(function(l){ return l.name||l.id; });
+  api("/admin/api/mkt/locations",{brand:k,locations:list}).then(function(j){ if(!j||!j.ok){ var e=document.getElementById("mkLocErr"); if(e) e.textContent=(j&&j.error)||"Fehler"; return; } ST.brands=ST.brands.map(function(b){ return b.key===k?Object.assign({},b,{locations:j.locations[k]||[]}):b; }); if(F.mktPlanReload) F.mktPlanReload(); F.closeModal(); F.toast("Standorte gespeichert"); F.render(); }); });
 
 /* ---------- Seite ---------- */
 /* Reiter: {id,label,order,sub,render,right} – Planer/Kanäle kommen aus zmkplan.js */

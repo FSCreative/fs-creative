@@ -15,7 +15,7 @@ module.exports = function () {
       const end = (c, o, h) => { res.writeHead(c, Object.assign({ "Content-Type": "application/json" }, h || {})); res.end(typeof o === "string" ? o : JSON.stringify(o || {})); };
       const pull = async url => { const r = await fetch(url); S.fetched.push({ url, status: r.status, type: r.headers.get("content-type") }); if (!r.ok) throw new Error("fetch " + r.status); return Buffer.from(await r.arrayBuffer()); };
       try {
-        const fk = Object.keys(S.failNext).find(k => p.indexOf(k) > -1); if (fk) { const m = S.failNext[fk]; delete S.failNext[fk]; return end(m.status || 400, { error: { message: m.message || "Fehler" } }); }
+        const fk = Object.keys(S.failNext).find(k => p.indexOf(k) > -1); if (fk) { const m = S.failNext[fk]; if ((m.times || 1) > 1) m.times--; else delete S.failNext[fk]; return end(m.status || 400, { error: { message: m.message || "Fehler" } }); }
         // ── Instagram ──
         if (p === "/igapi/oauth/access_token") return all.code === "code-ig" ? end(200, { access_token: "ig-short", user_id: "1784" }) : end(400, { error_message: "bad code" });
         if (p === "/ig/access_token") return end(200, { access_token: "ig-long", expires_in: 5184000 });
@@ -32,7 +32,11 @@ module.exports = function () {
           return end(200, { data: [{ id: "c4", username: "kochdu.at", text: "Viel Glück @alle", timestamp: "2026-10-16T10:00:00+0000" }, { id: "c5", username: "spaet", text: "@x zu spät", timestamp: "2026-10-25T10:00:00+0000" }, { id: "c6", username: "sepp", text: "#kochdu @freund", timestamp: "2026-10-17T10:00:00+0000" }] });
         }
         let m;
+        if ((m = p.match(/^\/ig\/v26\.0\/(igpost\d+)\/comments$/)) && req.method === "POST") { S.comments = (S.comments || []).concat([{ pf: "instagram", on: m[1], text: all.message }]); return end(200, { id: id("cm") }); }
+        if ((m = p.match(/^\/fb\/v26\.0\/([\w]+)\/comments$/)) && req.method === "POST") { S.comments = (S.comments || []).concat([{ pf: "facebook", on: m[1], text: all.message }]); return end(200, { id: id("cm") }); }
         if ((m = p.match(/^\/ig\/v26\.0\/1784\/media$/)) && req.method === "POST") {
+          S.igParams = (S.igParams || []).concat([Object.assign({}, all, { access_token: undefined })]);
+          if (all.location_id && all.location_id !== "106097539419617") return end(400, { error: { message: "Invalid location_id" } });
           if (all.access_token !== "ig-long" && all.access_token !== "ig-long-2") return end(401, { error: { message: "Invalid OAuth access token" } });
           if (all.media_type === "CAROUSEL") { if (!all.children || all.children.split(",").length < 2) return end(400, { error: { message: "children fehlt" } }); return end(200, { id: id("cc") }); }
           if (all.media_type === "REELS") { if (!all.video_url) return end(400, { error: { message: "video_url fehlt" } }); const b = await pull(all.video_url); S.uploads.igVideo = b.length; if (all.cover_url) await pull(all.cover_url); return end(200, { id: id("cr") }); }
@@ -46,7 +50,7 @@ module.exports = function () {
         if (p === "/fb/v26.0/oauth/access_token") return end(200, all.grant_type === "fb_exchange_token" ? { access_token: "fb-user-long" } : { access_token: "fb-user-short" });
         if (p === "/fb/v26.0/me/accounts") return end(200, { data: [{ id: "pg1", name: "kochdu", access_token: "pg1-tok" }, { id: "pg2", name: "FS Creative", access_token: "pg2-tok" }] });
         if (p === "/fb/v26.0/pg1/photos") { if (all.access_token !== "pg1-tok") return end(401, { error: { message: "token" } }); await pull(all.url); const pid = id("ph"); if (all.published === "false") return end(200, { id: pid }); S.posts.push({ pf: "facebook", id: "pg1_" + pid, caption: all.caption }); return end(200, { id: pid, post_id: "pg1_" + pid }); }
-        if (p === "/fb/v26.0/pg1/feed") { const n = Object.keys(all).filter(k => /^attached_media/.test(k)).length; const pid = "pg1_" + id("f"); S.posts.push({ pf: "facebook", id: pid, images: n, message: all.message }); return end(200, { id: pid }); }
+        if (p === "/fb/v26.0/pg1/feed") { const n = Object.keys(all).filter(k => /^attached_media/.test(k)).length; const pid = "pg1_" + id("f"); S.posts.push({ pf: "facebook", id: pid, images: n, message: all.message, place: all.place || "" }); return end(200, { id: pid }); }
         if ((m = p.match(/^\/fb\/v26\.0\/(pg1_[a-z]*\d+)$/))) return end(200, { permalink_url: "https://www.facebook.com/" + m[1] });
         // ── Threads ──
         if (p === "/th/oauth/access_token") return end(200, { access_token: "th-short", user_id: "th1" });

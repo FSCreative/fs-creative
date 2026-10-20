@@ -72,7 +72,7 @@ module.exports = function (D) {
     const st = c.state, rd = c.redirect;
     switch (provider) {
       case "instagram": return B.igAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments", state: st, enable_fb_login: "0", force_authentication: "1" });
-      case "facebook": return B.fbAuth + q({ client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts" });
+      case "facebook": return B.fbAuth + q({ client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement" });
       case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish", response_type: "code", state: st });
       case "linkedin": return B.liAuth + q({ response_type: "code", client_id: c.clientId, redirect_uri: rd, scope: "openid profile w_member_social", state: st });
       case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
@@ -163,43 +163,55 @@ module.exports = function (D) {
     }
     throw pubErr((what || "Instagram") + " braucht zu lange für die Verarbeitung.");
   }
+  // Instagram voll ausgefüllt: Caption + Hashtags, Standort, Alt-Text (Bilder), Titelbild + Tonspur-Name (Reels), erster Kommentar.
+  // Lehnt Instagram die Extras ab (z. B. mehr als 5 Hashtags, unbekannter Ort), zweiter Versuch schlicht – der Post geht nicht verloren.
   async function instagram(ch, tok, m) {
     const ig = ch.account.id, t = tok.access, base = B.ig, P = (path, form) => { const f = { access_token: t }; Object.keys(form).forEach(k => { if (form[k] !== "" && form[k] != null) f[k] = form[k]; }); return req("POST", base + "/" + GV + "/" + path, { form: f }); };
-    let creation;
-    if (m.format === "reel") { creation = (await P(ig + "/media", { media_type: "REELS", video_url: m.video.url, caption: m.caption, share_to_feed: "true", cover_url: m.cover ? m.cover.url : "" })).id; await igWait(base, creation, t, "Instagram"); }
-    else if (m.images.length > 1) {
-      const kids = []; for (const im of m.images.slice(0, 20)) kids.push((await P(ig + "/media", { image_url: im.url, is_carousel_item: "true" })).id);
-      for (const k of kids) await igWait(base, k, t, "Instagram");
-      creation = (await P(ig + "/media", { media_type: "CAROUSEL", children: kids.join(","), caption: m.caption })).id; await igWait(base, creation, t, "Instagram");
-    } else { creation = (await P(ig + "/media", { image_url: m.images[0].url, caption: m.caption })).id; await igWait(base, creation, t, "Instagram"); }
+    const build = async full => {
+      const loc = full && m.place ? m.place.id : "", alt = full ? String(m.alt || "").slice(0, 1000) : "", cap = full ? m.caption : (m.captionSafe || m.caption);
+      if (m.format === "reel") { const c = (await P(ig + "/media", { media_type: "REELS", video_url: m.video.url, caption: cap, share_to_feed: "true", cover_url: m.cover ? m.cover.url : "", location_id: loc, audio_name: full && m.audioName ? String(m.audioName).slice(0, 80) : "" })).id; await igWait(base, c, t, "Instagram"); return c; }
+      if (m.images.length > 1) {
+        const kids = []; for (const im of m.images.slice(0, 20)) kids.push((await P(ig + "/media", { image_url: im.url, is_carousel_item: "true", alt_text: alt })).id);
+        for (const k of kids) await igWait(base, k, t, "Instagram");
+        const c = (await P(ig + "/media", { media_type: "CAROUSEL", children: kids.join(","), caption: cap, location_id: loc })).id; await igWait(base, c, t, "Instagram"); return c;
+      }
+      const c = (await P(ig + "/media", { image_url: m.images[0].url, caption: cap, location_id: loc, alt_text: alt })).id; await igWait(base, c, t, "Instagram"); return c;
+    };
+    let creation, note = "";
+    try { creation = await build(true); }
+    catch (e) { if (e.auth || !(e.status >= 400 && e.status < 500)) throw e; creation = await build(false); note = "Instagram hat die Extras abgelehnt – schlicht gepostet (5 Hashtags, ohne Standort/Alt-Text)."; }
     const pub = await P(ig + "/media_publish", { creation_id: creation });
     let url = ""; try { url = (await req("GET", base + "/" + GV + "/" + pub.id + q({ fields: "permalink", access_token: t }))).permalink || ""; } catch (e) {}
-    return { id: pub.id, url };
+    if (m.firstComment) { try { await P(pub.id + "/comments", { message: m.firstComment }); } catch (e) { note = (note ? note + " " : "") + "Erster Kommentar ging nicht (" + String(e.message || "").slice(0, 80) + ")."; } }
+    return { id: pub.id, url, note };
   }
   async function facebook(ch, tok, m) {
     const pg = ch.account.id, t = tok.access, base = B.fb + "/" + GV;
     const link = async id => { try { return (await req("GET", base + "/" + id + q({ fields: "permalink_url", access_token: t }))).permalink_url || ""; } catch (e) { return ""; } };
+    const fbComment = async id => { if (!m.firstComment) return {}; try { await req("POST", base + "/" + id + "/comments", { form: { message: m.firstComment, access_token: t } }); return {}; } catch (e) { return { note: "Erster Kommentar ging nicht – Facebook-Konto bitte einmal neu verbinden." }; } };
     if (m.format === "reel") {
       const st = await req("POST", base + "/" + pg + "/video_reels", { form: { upload_phase: "start", access_token: t } });
       await req("POST", B.fbUpload + "/video-upload/" + GV + "/" + st.video_id, { headers: { Authorization: "OAuth " + t, file_url: m.video.url } });
       for (let i = 0; i < (D.pollMax || 72); i++) { const s = await req("GET", base + "/" + st.video_id + q({ fields: "status", access_token: t })); const up = s.status && (s.status.uploading_phase || {}).status; if (up === "complete" || (s.status && s.status.video_status === "ready")) break; if (s.status && s.status.video_status === "error") throw pubErr("Facebook konnte das Video nicht verarbeiten."); await sleep(waitMs); }
       await req("POST", base + "/" + pg + "/video_reels", { form: { upload_phase: "finish", video_id: st.video_id, video_state: "PUBLISHED", description: m.caption, access_token: t } });
-      return { id: st.video_id, url: (await link(st.video_id)) || "https://www.facebook.com/reel/" + st.video_id };
+      return Object.assign({ id: st.video_id, url: (await link(st.video_id)) || "https://www.facebook.com/reel/" + st.video_id }, await fbComment(st.video_id));
     }
     if (m.images.length > 1) {
-      const ids = []; for (const im of m.images.slice(0, 10)) ids.push((await req("POST", base + "/" + pg + "/photos", { form: { url: im.url, published: "false", access_token: t } })).id);
-      const form = { message: m.caption, access_token: t }; ids.forEach((id, i) => { form["attached_media[" + i + "]"] = JSON.stringify({ media_fbid: id }); });
-      const p = await req("POST", base + "/" + pg + "/feed", { form }); return { id: p.id, url: (await link(p.id)) || "https://www.facebook.com/" + p.id };
+      const ids = []; for (const im of m.images.slice(0, 10)) ids.push((await req("POST", base + "/" + pg + "/photos", { form: Object.assign({ url: im.url, published: "false", access_token: t }, m.alt ? { alt_text_custom: String(m.alt).slice(0, 1000) } : {}) })).id);
+      const form = Object.assign({ message: m.caption, access_token: t }, m.place ? { place: m.place.id } : {}); ids.forEach((id, i) => { form["attached_media[" + i + "]"] = JSON.stringify({ media_fbid: id }); });
+      let p; try { p = await req("POST", base + "/" + pg + "/feed", { form }); } catch (e) { if (!form.place || e.auth) throw e; delete form.place; p = await req("POST", base + "/" + pg + "/feed", { form }); }
+      return Object.assign({ id: p.id, url: (await link(p.id)) || "https://www.facebook.com/" + p.id }, await fbComment(p.id));
     }
-    const p = await req("POST", base + "/" + pg + "/photos", { form: { url: m.images[0].url, caption: m.caption, access_token: t } });
-    const pid = p.post_id || p.id; return { id: pid, url: (await link(pid)) || "https://www.facebook.com/" + pid };
+    const form = Object.assign({ url: m.images[0].url, caption: m.caption, access_token: t }, m.place ? { place: m.place.id } : {}, m.alt ? { alt_text_custom: String(m.alt).slice(0, 1000) } : {});
+    let p; try { p = await req("POST", base + "/" + pg + "/photos", { form }); } catch (e) { if (e.auth || (!form.place && !form.alt_text_custom)) throw e; delete form.place; delete form.alt_text_custom; p = await req("POST", base + "/" + pg + "/photos", { form }); }
+    const pid = p.post_id || p.id; return Object.assign({ id: pid, url: (await link(pid)) || "https://www.facebook.com/" + pid }, await fbComment(pid));
   }
   async function threads(ch, tok, m) {
     const uid = ch.account.id, t = tok.access, base = B.th + "/v1.0", P = (form) => req("POST", base + "/" + uid + "/threads", { form: Object.assign({ access_token: t }, form) });
     let cr;
     if (m.format === "reel") cr = (await P({ media_type: "VIDEO", video_url: m.video.url, text: m.caption })).id;
-    else if (m.images.length > 1) { const kids = []; for (const im of m.images.slice(0, 20)) kids.push((await P({ media_type: "IMAGE", image_url: im.url, is_carousel_item: "true" })).id); for (const k of kids) await igWait(B.th, k, t, "Threads", "v1.0"); cr = (await P({ media_type: "CAROUSEL", children: kids.join(","), text: m.caption })).id; }
-    else cr = (await P({ media_type: "IMAGE", image_url: m.images[0].url, text: m.caption })).id;
+    else if (m.images.length > 1) { const kids = []; for (const im of m.images.slice(0, 20)) kids.push((await P(Object.assign({ media_type: "IMAGE", image_url: im.url, is_carousel_item: "true" }, m.alt ? { alt_text: String(m.alt).slice(0, 1000) } : {}))).id); for (const k of kids) await igWait(B.th, k, t, "Threads", "v1.0"); cr = (await P({ media_type: "CAROUSEL", children: kids.join(","), text: m.caption })).id; }
+    else cr = (await P(Object.assign({ media_type: "IMAGE", image_url: m.images[0].url, text: m.caption }, m.alt ? { alt_text: String(m.alt).slice(0, 1000) } : {}))).id;
     await igWait(B.th, cr, t, "Threads", "v1.0");
     const pub = await req("POST", base + "/" + uid + "/threads_publish", { form: { creation_id: cr, access_token: t } });
     let url = ""; try { url = (await req("GET", base + "/" + pub.id + q({ fields: "permalink", access_token: t }))).permalink || ""; } catch (e) {}
@@ -232,7 +244,7 @@ module.exports = function (D) {
   async function youtube(ch, tok, m) {
     const size = fs.statSync(m.video.file).size;
     const tags = (m.tags || []).map(s => s.replace(/^#/, "")).slice(0, 15);
-    const meta = { snippet: { title: String(m.title || m.caption).slice(0, 100), description: String(m.caption).slice(0, 4900), tags, categoryId: "22", defaultLanguage: "de" }, status: { privacyStatus: "public", selfDeclaredMadeForKids: false, containsSyntheticMedia: false } };
+    const meta = { snippet: { title: String(m.title || m.caption).slice(0, 100), description: String(m.caption).slice(0, 4900), tags, categoryId: m.ytCategory || "22", defaultLanguage: "de", defaultAudioLanguage: "zxx" }, status: { privacyStatus: "public", selfDeclaredMadeForKids: false, containsSyntheticMedia: false } };
     const init = await req("POST", B.ytUpload + "/youtube/v3/videos?uploadType=resumable&part=snippet,status", { token: tok.access, json: meta, withHeaders: true, headers: { "X-Upload-Content-Type": "video/mp4", "X-Upload-Content-Length": String(size) } });
     const loc = init.headers.get("location"); if (!loc) throw pubErr("YouTube hat keine Upload-Adresse geliefert.");
     const r = await fetch(loc, { method: "PUT", headers: { Authorization: "Bearer " + tok.access, "Content-Type": "video/mp4", "Content-Length": String(size) }, body: fs.readFileSync(m.video.file), signal: AbortSignal.timeout(600000) });
@@ -251,7 +263,7 @@ module.exports = function (D) {
     } finally { fs.closeSync(fd); }
     let status = "";
     for (let i = 0; i < 24; i++) { const s = await req("POST", B.tt + "/v2/post/publish/status/fetch/", { token: tok.access, json: { publish_id: d.publish_id } }); status = s.data && s.data.status || ""; if (/SEND_TO_USER_INBOX|PUBLISH_COMPLETE/.test(status)) break; if (/FAILED/.test(status)) throw pubErr("TikTok: Verarbeitung fehlgeschlagen (" + (s.data.fail_reason || "") + ")"); await sleep(waitMs); }
-    return { id: d.publish_id, url: "", draft: true, note: "Liegt als Entwurf in deiner TikTok-App – dort Text prüfen und auf „Posten“ tippen." };
+    return { id: d.publish_id, url: "", draft: true, note: "Liegt als Entwurf in deiner TikTok-App – Text aus dem Cockpit kopieren („TikTok-Text kopieren“), einfügen und auf „Posten“ tippen." };
   }
   async function pinterest(ch, tok, m) {
     const ms = m.images.length > 1 ? { source_type: "multiple_image_urls", items: m.images.slice(0, 5).map(im => ({ url: im.url, title: String(m.title || "").slice(0, 100), description: String(m.caption).slice(0, 500), link: m.link || "" })) } : { source_type: "image_url", url: m.images[0].url };
