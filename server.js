@@ -3492,8 +3492,8 @@ async function handleAdmin(req, res, u, p) {
       "&index=" + encodeURIComponent(u.searchParams.get("index") || "0") +
       "&account=" + encodeURIComponent(u.searchParams.get("account") || "");
     try {
-      const r = await fetch(attUrl);
-      if (!r.ok) return send(res, r.status, "attachment_error");
+      const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token } });   // Token nur im Header (nicht mehr in der Adresse)
+      if (!r.ok) return send(res, r.status === 401 || r.status === 403 ? 502 : r.status, r.status === 404 ? "Anhang nicht gefunden – die Mail wurde evtl. verschoben." : "Anhang konnte nicht geladen werden (Mail-Dienst " + r.status + ").", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });
       const buf = Buffer.from(await r.arrayBuffer());
       // Mail inzwischen verschoben/gelöscht (UID ungültig): der Mail-Dienst liefert eine leere Datei → Hinweis statt Download
       if (!buf.length) return send(res, 404, "Anhang nicht mehr verfügbar – die Mail wurde verschoben oder gelöscht.", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });

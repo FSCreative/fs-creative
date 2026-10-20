@@ -138,6 +138,10 @@ module.exports = function createMocks() {
       }
       if ((mm = p.match(/^\/vies\/(\w\w)\/vat\/(\w+)$/))) { const uid = (mm[1] === "EL" ? "GR" : mm[1]) + mm[2]; return send(res, 200, { isValid: !!state.vies[uid], name: state.vies[uid] ? "Testfirma GmbH" : "", userError: state.vies[uid] ? "VALID" : "INVALID" }); }
       if (p === "/mail/api/send" && m === "POST") { state.mails.push(body); return send(res, 200, { ok: true }); }
+      if (p === "/mail/api/attachment" && m === "GET") {   // Anhang: Token nur im Header
+        if (req.headers["x-api-token"] !== "mt" || /token=/.test(req.url)) return send(res, 401, { error: "unauthorized" });
+        res.writeHead(200, { "content-type": "application/pdf", "content-disposition": 'attachment; filename="rechnung.pdf"' }); return res.end("%PDF-1.4\n%Test\n");
+      }
       if (p === "/mail/api/message" && m === "GET") {
         if (req.headers["x-api-token"] !== "mt") return send(res, 401, { error: "unauthorized" });
         return send(res, 200, { ok: true, message: { id: "m_alt1", account: u.searchParams.get("account"), folder: u.searchParams.get("folder"), uid: +u.searchParams.get("uid"), subject: "Alte Mail", body: "<p>Voller Inhalt</p>", bodyHtml: true, read: true } });
