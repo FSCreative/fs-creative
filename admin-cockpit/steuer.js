@@ -261,6 +261,9 @@ F.action("uvaprep",function(k){
 function closeBar(cur,done,r,due){ if(!done||(!done.doneAt&&!done.locked)) return '';
   var z=uvaZl(done); if(z==null) z=r.zahllast; var out=[];
   out.push(done.locked?'<span class="tag grey">festgeschrieben am '+de(done.locked.at)+'</span>':'<span class="tag warn">Quartal noch nicht festgeschrieben</span><button class="btn" data-act="uvaclose:'+cur.key+'">Quartal abschließen (festschreiben)</button>');
+  /* nachträgliche Änderungen in einem schon gemeldeten Zeitraum: keine berichtigte UVA – die U1 rechnet das ganze Jahr und zieht nur die gemeldeten Vorauszahlungen ab */
+  var dz=done.doneAt&&uvaZl(done)!=null?Math.round((r.zahllast-uvaZl(done))*100)/100:0;
+  if(Math.abs(dz)>=0.01) out.push('<span class="tag info">Seit der Abgabe '+(dz>0?"+":"−")+eur(Math.abs(dz))+' '+(dz>0?"mehr Zahllast":"weniger Zahllast")+' – wird mit der Jahreserklärung (U1 '+esc(cur.key.slice(0,4))+') ausgeglichen</span><button class="link" data-act="sdtab:u1">Zur U1</button>');
   if(done.doneAt&&z>0.005) out.push(done.paid?'<span class="tag ok">Zahllast bezahlt'+(done.paid.date?' am '+de(done.paid.date):' (bestätigt)')+'</span>':'<span class="tag '+(due<F.D.today?"bad":"warn")+'">Zahllast '+eur(z)+' offen – fällig '+de(due)+'</span><button class="btn" data-act="uvapaid:'+cur.key+'">Als bezahlt markieren</button>');
   return '<div class="panel-b row wrap" style="padding-top:0">'+out.join("")+'</div>'; }
 F.action("uvaclose",function(k){ var p=periodByKey(k), r=S.computeUva(ST.data,ST,p), d=ST.uva[k]||{}, sum={zahllast:r.zahllast,kz:S.uvaKzMap(r),docIds:S.uvaDocIds(r)}, z=d.doneAt&&uvaZl(d)!=null?uvaZl(d):r.zahllast;
