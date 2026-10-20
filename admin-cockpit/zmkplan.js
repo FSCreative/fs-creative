@@ -131,7 +131,7 @@ function postCard(p){
   return '<div class="panel mp-card" id="mp-'+esc(p.id)+'"><div class="mp-prev">'+prev+'</div><div class="mp-body">'+
     '<div class="mp-top"><span class="b">'+esc(FMT[p.format]||p.format)+'</span>'+(UI.mkBrand==="alle"?'<span class="b">'+esc(brandOf(p.brand).name)+'</span>':'')+(p.pillar?'<span class="muted">'+esc(p.pillar)+'</span>':'')+'<span class="muted">· '+esc(STL[p.status]||p.status)+'</span></div>'+
     '<div class="mp-idea">'+esc(p.idea||"")+'</div><div class="mp-cap">'+esc(String(cap).replace(/\n\n(#\S+\s*)+$/,""))+'</div>'+
-    (((p.hashtags||{}).instagram||[]).length?'<div class="mp-tags">'+p.hashtags.instagram.slice(0,5).map(function(t){ return '<span>'+esc(t.charAt(0)==="#"?t:"#"+t)+'</span>'; }).join("")+'</div>':'')+pfs+res+'<div class="mp-acts">'+acts+'</div></div></div>';
+    (((p.hashtags||{}).instagram||[]).length?'<div class="mp-tags">'+p.hashtags.instagram.slice(0,PL.igTags||5).map(function(t){ return '<span>'+esc(t.charAt(0)==="#"?t:"#"+t)+'</span>'; }).join("")+'</div>':'')+pfs+res+'<div class="mp-acts">'+acts+'</div></div></div>';
 }
 function planHtml(){
   if(!PL){ load(); return '<div class="muted" style="padding:20px">Lade …</div>'; }
@@ -250,9 +250,11 @@ function kanHtml(){
     '<div><div><b>Musik für Reels</b><br><span class="muted small">'+(PL.music||[]).length+' Titel</span></div><div><p class="muted small" style="margin:0 0 8px">Lizenzfreie Musik hochladen (z. B. von Pixabay Music oder der YouTube Audio Library). Jedes Reel bekommt zufällig einen Titel – im Post änderbar.</p>'+
       ((PL.music||[]).length?'<div class="mk-chips" style="margin-bottom:8px">'+PL.music.map(function(m){ return '<span>'+esc(m.name)+' <button type="button" class="link" data-act="mkmusdel:'+esc(m.id)+'" aria-label="Entfernen">×</button></span>'; }).join("")+'</div>':'')+
       '<input type="file" accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wav,audio/ogg" id="mkMusic" multiple></div></div>'+
+    '<div><div><b>Hashtags auf Instagram</b><br><span class="muted small">je Post</span></div><div><p class="muted small" style="margin:0 0 8px">Instagram erlaubt offiziell nur noch 5 Hashtags (seit Dezember 2025). Stellst du mehr ein und Instagram lehnt den Post ab, postet das Cockpit automatisch nochmal mit 5.</p><select class="f" style="width:auto" data-mpigtags>'+[5,10,15,20,30].map(function(n){ return '<option value="'+n+'"'+((PL.igTags||5)===n?' selected':'')+'>'+n+(n===5?' (empfohlen)':'')+'</option>'; }).join("")+'</select></div></div>'+
     '<div><div><b>Mitteilungen</b></div><div><p class="muted small" style="margin:0">Bei „gepostet“ oder Fehlern bekommst du eine Mitteilung, wenn du in den Mitteilungs-Einstellungen „Marketing“ einschaltest.</p></div></div></div></section>';
   return '<div class="mk-kan">'+appsHtml+tbl+extra+'</div>';
 }
+F.listen("change","[data-mpigtags]",function(el){ api("/admin/api/mkt/app",{provider:"igTags",value:+el.value}).then(function(j){ if(j&&j.ok){ PL=j; F.toast("Instagram: "+j.igTags+" Hashtags je Post"); } }); });
 F.action("mkcopy",function(){ try{ navigator.clipboard.writeText(PL.redirectUri); F.toast("Kopiert"); }catch(e){ F.toast("Bitte von Hand kopieren",true); } });
 F.form("mkapp",function(form){ var prov=form.getAttribute("data-prov"), cid=form.clientId.value.trim(), sec=form.secret.value.trim(); if(!cid) return F.toast("App-ID fehlt",true);
   api("/admin/api/mkt/app",{provider:prov,clientId:cid,secret:sec}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); PL=j; F.toast("Gespeichert"); F.render(); }); });

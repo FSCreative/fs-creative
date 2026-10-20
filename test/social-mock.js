@@ -36,6 +36,7 @@ module.exports = function () {
           if (all.access_token !== "ig-long" && all.access_token !== "ig-long-2") return end(401, { error: { message: "Invalid OAuth access token" } });
           if (all.media_type === "CAROUSEL") { if (!all.children || all.children.split(",").length < 2) return end(400, { error: { message: "children fehlt" } }); return end(200, { id: id("cc") }); }
           if (all.media_type === "REELS") { if (!all.video_url) return end(400, { error: { message: "video_url fehlt" } }); const b = await pull(all.video_url); S.uploads.igVideo = b.length; if (all.cover_url) await pull(all.cover_url); return end(200, { id: id("cr") }); }
+          if ((String(all.caption || "").match(/#\w+/g) || []).length > 5) return end(400, { error: { message: "The caption contains more than the maximum allowed number of hashtags." } });
           if (!all.image_url) return end(400, { error: { message: "image_url fehlt" } }); await pull(all.image_url); return end(200, { id: id("ci") });
         }
         if ((m = p.match(/^\/ig\/v26\.0\/(c[a-z]*\d+)$/))) return end(200, { status_code: "FINISHED" });

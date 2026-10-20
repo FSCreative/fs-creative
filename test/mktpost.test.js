@@ -187,6 +187,16 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const c = PT.S().posts.find(p => p.id === car.id), saved = c.hashtags.instagram; c.hashtags.instagram = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"];
     const ig = PT.captionFor(c, "instagram"); assert.strictEqual((ig.match(/#\w+/g) || []).length, 5); c.hashtags.instagram = saved;
   });
+  await t("Instagram mit mehr Hashtags eingestellt: abgelehnt → automatisch mit 5 nochmal", async () => {
+    let j = (await call("POST", "/admin/api/mkt/app", { provider: "igTags", value: 15 })).json(); assert.strictEqual(j.igTags, 15);
+    const g = (await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 1, formats: { karussell: false, reel: false, bild: true } })).json();
+    assert.ok(/instagram-Hashtags genau 15/.test(kiUser));
+    const p = PT.S().posts.find(x => x.id === g.posts[0].id); await waitMedia([p.id]);
+    p.hashtags.instagram = Array.from({ length: 12 }, (_, i) => "tag" + i); p.platforms = ["instagram"];
+    await call("POST", "/admin/api/mkt/post", { id: p.id, op: "now" }); for (let i = 0; i < 100 && (p.status === "geplant" || p.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(p.results.instagram.status, "ok", JSON.stringify(p.results)); assert.ok(/nur 5 Hashtags/.test(p.results.instagram.note));
+    await call("POST", "/admin/api/mkt/app", { provider: "igTags", value: 5 });
+  });
   await t("Konto trennen entfernt die Plattform aus offenen Posts", async () => {
     const g = (await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 1, formats: { karussell: true, reel: false, bild: false } })).json(); const p = g.posts[0];
     const bs = PT.S().channels.find(c => c.platform === "bluesky"); await call("POST", "/admin/api/mkt/disconnect", { id: bs.id });

@@ -59,10 +59,13 @@ module.exports = function (C) {
   }
 
   // ───────────── Captions je Plattform ─────────────
-  const tagsOf = (post, pf) => { const h = post.hashtags || {}; const list = (h[pf] && h[pf].length ? h[pf] : h.instagram || []).map(t => "#" + String(t).replace(/^#+/, "").replace(/[^\wäöüÄÖÜß]/g, "")).filter(t => t.length > 1); return Array.from(new Set(list)).slice(0, PLATFORMS[pf] ? PLATFORMS[pf].tags : 10); };
+  // Instagram: offiziell höchstens 5 Hashtags (seit 12/2025); in den Kanälen auf bis zu 30 stellbar – lehnt Instagram ab, wird mit 5 nochmal gepostet
+  const igTags = () => Math.max(5, Math.min(30, parseInt(S().mkt.igTags, 10) || 5));
+  const tagCap = (pf, cap) => cap || (pf === "instagram" ? igTags() : PLATFORMS[pf] ? PLATFORMS[pf].tags : 10);
+  const tagsOf = (post, pf, cap) => { const h = post.hashtags || {}; const list = (h[pf] && h[pf].length ? h[pf] : h.instagram || []).map(t => "#" + String(t).replace(/^#+/, "").replace(/[^\wäöüÄÖÜß]/g, "")).filter(t => t.length > 1); return Array.from(new Set(list)).slice(0, tagCap(pf, cap)); };
   function cut(s, n) { s = String(s || "").trim(); if (Array.from(s).length <= n) return s; const a = Array.from(s).slice(0, n - 1).join(""); const i = Math.max(a.lastIndexOf(". "), a.lastIndexOf("\n"), a.lastIndexOf("! "), a.lastIndexOf("? ")); return (i > n * 0.5 ? a.slice(0, i + 1) : a.replace(/\s+\S*$/, "")) .trim() + (i > n * 0.5 ? "" : "…"); }
-  function captionFor(post, pf) {
-    const c = post.captions || {}, b = state().brands[post.brand] || {}, tags = tagsOf(post, pf), max = PLATFORMS[pf] ? PLATFORMS[pf].max : 2000;
+  function captionFor(post, pf, cap) {
+    const c = post.captions || {}, b = state().brands[post.brand] || {}, tags = tagsOf(post, pf, cap), max = PLATFORMS[pf] ? PLATFORMS[pf].max : 2000;
     let txt = String(c[pf] || c.instagram || "").trim();
     if (pf === "youtube") txt = String(c.youtube || c.instagram || "").trim() + (b.url ? "\n\n" + b.url : "");
     const tagStr = tags.join(" "), room = max - (tagStr ? tagStr.length + 2 : 0);
@@ -108,6 +111,7 @@ module.exports = function (C) {
     "fs-creative": "Dunkler Apple-Look mit Verlaufsschrift; persönlich (Simon), regional.",
   };
   function profileFor(b) { return JSON.stringify({ name: b.name, website: b.url || "", appStore: b.appStoreUrl || "", playStore: b.playStoreUrl || "", oneLiner: b.oneLiner, whatItIs: b.whatItIs, audience: b.audience, usps: b.usps, tone: b.tone, pillars: b.pillars, hashtags: b.hashtags, ctas: b.ctas, seasonality: b.seasonality, guardrails: b.guardrails || "", handles: b.handles || [] }); }
+  const igHint = () => igTags() > 5 ? "\nAbweichend von den Regeln: instagram-Hashtags genau " + igTags() + " (Mix aus großen, Nischen-, regionalen und Marken-Hashtags, die stärksten zuerst)." : "";
   const standing = b => b.standing ? "<dauerhaft>" + clip(b.standing, 1500) + "</dauerhaft>\n" : "";
   // einen Beitrag mit Simons Anweisung neu schreiben (Format bleibt, Bild/Reel wird neu erzeugt)
   async function rewrite(post, instruction) {
@@ -115,7 +119,7 @@ module.exports = function (C) {
     if (!C.KI || !C.KI.marketingOn || !C.KI.marketingOn()) throw fail(400, "KI nicht verfügbar (Einstellungen → KI).");
     const cur = { format: post.format, pillar: post.pillar, idea: post.idea, slides: (post.slides || []).map(s0 => { const o = Object.assign({}, s0); delete o.image; delete o.image2; delete o.imageRatio; return o; }), captions: post.captions, hashtags: post.hashtags, altText: post.altText };
     const user = "<profil>" + profileFor(b) + "</profil>\n" + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
-      "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "");
+      "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 12000);
     const x = (r.json && r.json.posts || [])[0]; if (!x) throw fail(502, "Die KI hat keinen Beitrag geliefert – bitte nochmal.");
     const slides = (x.slides || []).filter(s0 => s0 && (s0.headline || (s0.items && s0.items.length) || s0.number)).slice(0, post.format === "bild" ? 1 : 7); if (!slides.length) throw fail(502, "Die KI-Antwort war leer – bitte nochmal.");
@@ -134,7 +138,7 @@ module.exports = function (C) {
     const vorg = clip(pl.instructions != null ? pl.instructions : pl.topic, 2000);
     const user = "<profil>" + profileFor(b) + "</profil>\n<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
       "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite)." : "nur dieses Format.") +
-      (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "");
+      (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 24000);
     const list = (r.json && r.json.posts || []).slice(0, count), out = [], batch = newId("b");
     let notBefore = 0;
@@ -266,8 +270,11 @@ module.exports = function (C) {
         if (!ch) { p.results[pf] = { status: "fehler", error: "Kein " + PLATFORMS[pf].label + "-Konto verbunden", at: nowIso() }; continue; }
         if (PLATFORMS[pf].formats.indexOf(p.format) < 0) { p.results[pf] = { status: "übersprungen", error: PLATFORMS[pf].label + " unterstützt dieses Format nicht", at: nowIso() }; continue; }
         try {
-          const tok = await tokFor(ch), r = await P.publish(pf, ch, tok, mediaFor(p, pf));
-          p.results[pf] = { status: r.draft ? "entwurf" : "ok", id: r.id || "", url: r.url || "", note: r.note || "", at: nowIso() }; ch.lastOk = nowIso(); ch.lastError = "";
+          const tok = await tokFor(ch); let r, note = "";
+          try { r = await P.publish(pf, ch, tok, mediaFor(p, pf)); }
+          catch (e1) { if (pf !== "instagram" || igTags() <= 5 || !/hashtag/i.test(String(e1.message || ""))) throw e1;
+            const m5 = mediaFor(p, pf); m5.caption = captionFor(p, pf, 5); r = await P.publish(pf, ch, tok, m5); note = "Instagram hat nur 5 Hashtags angenommen – mit 5 gepostet."; }
+          p.results[pf] = { status: r.draft ? "entwurf" : "ok", id: r.id || "", url: r.url || "", note: r.note || note, at: nowIso() }; ch.lastOk = nowIso(); ch.lastError = "";
         } catch (e) {
           p.results[pf] = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; ch.lastError = p.results[pf].error; if (e.auth) ch.status = "abgelaufen";
           console.error("marketing: posten", pf, String(e.message || e).slice(0, 200));
@@ -351,7 +358,7 @@ module.exports = function (C) {
     return { posts: s.posts.slice(0, 150).map(postPublic), channels: s.channels.filter(c => c.status !== "getrennt").map(channelPublic),
       platforms: Object.keys(PLATFORMS).map(k => Object.assign({ key: k }, PLATFORMS[k])),
       providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId })),
-      redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), music: s.mkt.music.map(m => ({ id: m.id, name: m.name })),
+      redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), igTags: igTags(), music: s.mkt.music.map(m => ({ id: m.id, name: m.name })),
       plans: Object.fromEntries(brandList().map(b => [b.key, plan(b)])), ki: !!(C.KI && C.KI.marketingOn && C.KI.marketingOn()) };
   }
 
@@ -453,6 +460,7 @@ module.exports = function (C) {
     if (p === "/admin/api/mkt/app" && req.method === "POST") {   // App-Zugang einer Plattform (Client-ID/Secret) bzw. Pexels-Schlüssel
       const pl = await body(req, 20000), s = S();
       if (pl.provider === "pexels") { s.mkt.pexels = pl.key ? seal({ v: clip(pl.key, 200) }) : undefined; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
+      if (pl.provider === "igTags") { s.mkt.igTags = Math.max(5, Math.min(30, parseInt(pl.value, 10) || 5)); save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
       if (pl.provider === "publicBase") { const v = clip(pl.value, 200).replace(/\/+$/, ""); if (v && !/^https:\/\/[a-z0-9.-]+$/i.test(v)) throw fail(400, "Adresse bitte als https://domain"); s.mkt.publicBase = v || undefined; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
       if (!PROVIDERS[pl.provider] || pl.provider === "bluesky") throw fail(400, "Unbekannter Anbieter");
       if (pl.remove) delete s.mkt.apps[pl.provider];
