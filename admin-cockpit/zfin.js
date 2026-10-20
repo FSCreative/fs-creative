@@ -582,7 +582,7 @@ function mdDefaults(f){ f=f||{}; var ad=[f.street||"Dorfstraße 3/Top 1",[f.zip|
   return [["Firma","Firmenname","Simon Leonhard Felder"],["Firma","Freie Bezeichnung",f.name||"FS Creative"],["Firma","Inhaber",f.owner||"Simon Leonhard Felder"],["Firma","Anschrift",ad],["Firma","Branche (SIC)","7311-0000 – Werbeagenturen"],
     ["Steuer & Register","UID-Nummer",f.uid||"ATU82622967"],["Steuer & Register","Steuernummer",f.taxNumber||"98159/4260"],["Steuer & Register","D-U-N-S® Nummer","30-108-8847"],["Steuer & Register","Gerichtsstand",f.court||"BG Bludenz"],
     ["Bank","Bank",f.bank||"Sparkasse Bludenz"],["Bank","IBAN",f.iban||"AT09 2060 7032 0137 9702"],["Bank","BIC",f.bic||"SSBLAT21XXX"],["Bank","Kontoinhaber",f.owner||"Simon Leonhard Felder"],
-    ["Kontakt","Telefon","0664/1430620"],["Kontakt","Telefon international","+43 664 1430620"],["Kontakt","E-Mail","simon@fs-creative.at"],["Kontakt","E-Mail Büro",f.email||"office@fs-creative.at"],["Kontakt","Website",f.web||"www.fs-creative.at"]]
+    ["Kontakt","Telefon","0664/1430620"],["Kontakt","Telefon international","+43 664 1430620"],["Kontakt","E-Mail","simon@fs-creative.at"],["Kontakt","E-Mail auf Rechnungen",f.email||"simon@fs-creative.at"],["Kontakt","Website",f.web||"www.fs-creative.at"]]
     .map(function(r){ return {g:r[0],l:r[1],v:r[2]}; }); }
 function mdLoad(){ if(C.busy.md) return; C.busy.md=1; F.api("/admin/api/mydata").then(function(j){ C.busy.md=0; MD=j&&j.ok?(j.rows&&j.rows.length?j.rows:mdDefaults(j.firm)):{err:(j&&j.error)||"Fehler"}; F.render(); }); }
 function pageMyData(){

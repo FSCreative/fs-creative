@@ -18,7 +18,7 @@ const MM_PT = 72 / 25.4;
 const COUNTRIES = { AT: "Österreich" };
 const PLZ = { AT: /^\d{4}$/, DE: /^\d{5}$/ };
 const MAX_UPLOAD = 50 * 1024 * 1024;
-const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", uid: "ATU82622967", email: "office@fs-creative.at", phone: "+43 664 1430620" };
+const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", uid: "ATU82622967", email: "simon@fs-creative.at", phone: "+43 664 1430620" };
 
 // Kategorien = Print.com-Produktbaum (Hauptgruppe/Untergruppe als Slug, Namen aus dem Print.com-CMS). Ohne Angabe von Print.com: Stichwort-Regeln als Ersatz.
 const PAPER = "paper-print", BANNER = "outdoor-advertising", INDOOR = "indoor-interior", STICK = "stickers-tapes", BAGS = "packaging-bags", PROMO = "gifts-merchandise-promotional", TEX = "clothing-textile", MATS = "materials-samples", OTHER = "other";
@@ -2186,7 +2186,7 @@ module.exports = function (D) {
   setTimeout(() => { settings().catch(() => {}); vouchers().catch(() => {}); }, 0);
   // Ansichtsmodus (PRINT_SHOP_VIEW=1, z. B. für die Mollie-Prüfung): Shop, Preise, AGB öffentlich sichtbar – Bestellen noch gesperrt
   const viewOnly = () => !live() && process.env.PRINT_SHOP_VIEW === "1";
-  const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an office@fs-creative.at.";
+  const VIEW_MSG = "Bestellungen sind in Kürze möglich – der Druckshop startet in den nächsten Tagen. Fragen gerne an simon@fs-creative.at.";
   function soonPage(res) {
     const html = '<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Bald verfügbar — FS Creative</title><link rel="stylesheet" href="/landing.css?v=4"></head><body><main id="main"><div class="wrap"><section class="lhero"><span class="eyebrow">Druck</span><h1>Bald verfügbar.</h1><p class="lead">Diese Seite ist noch nicht öffentlich. Drucksachen gestalten und drucken wir gern persönlich für dich.</p><div class="btn-row"><a class="btn primary" href="/druck">Zu Druck &amp; Print</a><a class="btn ghost" href="/kontakt?von=print&amp;thema=Druck">Anfragen</a></div></section></div></main></body></html>';
     return D.send(res, 404, html, "text/html; charset=utf-8", { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
@@ -2303,7 +2303,7 @@ module.exports = function (D) {
           "Wünsche / Briefing:", text || "(kein Text – siehe Dateien)", "",
           files.length ? "Dateien (" + files.length + ", Download mit Cockpit-Anmeldung):\n" + files.map(m => "- " + m.name + " (" + Math.max(1, Math.round(m.bytes / 1024)) + " KB): " + cfg().publicUrl + "/admin/api/print/brief-file?id=" + m.id).join("\n") : "Keine Dateien angehängt."].filter(x => x !== "").join("\n");
         const L = D.saveLead ? await D.saveLead({ name, email, phone, company, topic: "Grafik & Branding", entwurf: false, message: msg, source: "Druckshop: Gestaltung " + clip(c.title || c.product, 60) }) : null;
-        if (!L) return J(res, 500, { ok: false, error: "Konnte nicht gesendet werden – bitte schreib uns an office@fs-creative.at" });
+        if (!L) return J(res, 500, { ok: false, error: "Konnte nicht gesendet werden – bitte schreib uns an simon@fs-creative.at" });
         for (const m of files) { m.leadId = L.id; m.keepUntil = new Date(Date.now() + 180 * 864e5).toISOString(); await store.putFile(m).catch(() => {}); }
         return J(res, 200, { ok: true });
       }

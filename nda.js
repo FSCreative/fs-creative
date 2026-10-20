@@ -11,7 +11,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const VERSION = "NDA-2026-10.2";
-const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", country: "Österreich", uid: "ATU82622967", email: "office@fs-creative.at", phone: "+43 664 1430620" };
+const FIRM_DEFAULT = { name: "FS Creative", owner: "Simon Leonhard Felder", street: "Dorfstraße 3/1", zip: "6793", city: "Gaschurn", country: "Österreich", uid: "ATU82622967", email: "simon@fs-creative.at", phone: "+43 664 1430620" };
 // Grenzen für Eingaben (Zeichen)
 const LIM = { company: 120, name: 100, role: 80, street: 120, zip: 12, city: 80, country: 60, email: 160, phone: 40, project: 140, term: 200 };
 
@@ -322,7 +322,7 @@ module.exports = function (D) {
     const inp = (k, label, opt, attrs, val) => '<label data-f="' + k + '"><span><b>' + label + "</b>" + (opt ? ' <span class="opt">(optional)</span>' : "") + '</span><input type="' + (k === "email" ? "email" : k === "phone" ? "tel" : "text") + '" name="' + k + '" maxlength="' + LIM[k] + '" value="' + escH(val != null ? val : d0[k] || "") + '"' + (attrs || "") + '><span class="err" aria-live="polite"></span></label>';
     const cfg = { lim: LIM };
     return '<section class="lhero nda-hero"><span class="eyebrow">Vertraulichkeitsvereinbarung</span><h1>Vertraulich&shy;keits&shy;vereinbarung</h1><p class="lead">Lies die Vereinbarung in Ruhe, ergänze deine Angaben und unterzeichne direkt online. Danach bekommen du und FS Creative das unterschriebene PDF per E-Mail.</p></section>' +
-      '<noscript><div class="nda-msg on">Zum Unterschreiben wird JavaScript benötigt. Alternativ melde dich unter <a href="mailto:office@fs-creative.at">office@fs-creative.at</a>.</div></noscript>' +
+      '<noscript><div class="nda-msg on">Zum Unterschreiben wird JavaScript benötigt. Alternativ melde dich unter <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a>.</div></noscript>' +
       '<form id="ndaForm" novalidate autocomplete="on"><div class="nda-grid"><div class="nda-card nda-form"><h2>1. Deine Angaben</h2><p class="sub">Der Vertragstext rechts wird beim Ausfüllen automatisch ergänzt.</p><div class="nda-f">' +
       inp("company", "Firma", true, ' autocomplete="organization"') + inp("name", "Vor- und Nachname", false, ' autocomplete="name" required') + inp("role", "Funktion", true, ' autocomplete="organization-title" placeholder="z. B. Geschäftsführer"') +
       inp("street", "Straße und Hausnummer", false, ' autocomplete="street-address" required') + '<div class="nda-f2">' + inp("zip", "PLZ", false, ' autocomplete="postal-code" inputmode="numeric" required') + inp("city", "Ort", false, ' autocomplete="address-level2" required') + "</div>" +

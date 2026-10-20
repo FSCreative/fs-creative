@@ -93,7 +93,7 @@ async function startServer(dir, env) {
     const buf = Buffer.from(await p.arrayBuffer()), raw = buf.toString("latin1");
     assert.strictEqual(raw.slice(0, 4), "%PDF"); assert.ok(raw.indexOf("Projekt Alpine 2028") > -1, "geänderter Projektname im PDF"); assert.ok(raw.indexOf(hash) > -1, "Prüfwert im PDF"); assert.ok(raw.indexOf("Projekt Alpine 2027") < 0, "Vorschlag ersetzt");
     assert.strictEqual((raw.match(/\/Subtype \/Image/g) || []).length, 2, "nur das Logo (Bild + Transparenzmaske), kein Unterschriftsbild");
-    const toP = M.mails.find(m => m.to === "maria@example.com"), toO = M.mails.find(m => m.to === "office@fs-creative.at");
+    const toP = M.mails.find(m => m.to === "maria@example.com"), toO = M.mails.find(m => m.to === "simon@fs-creative.at");
     assert.ok(toP && toO, JSON.stringify(M.mails.map(m => m.to)));
     [toP, toO].forEach(m => { assert.strictEqual(m.attachments.length, 1); assert.strictEqual(m.attachments[0].contentType, "application/pdf"); assert.strictEqual(Buffer.from(m.attachments[0].content, "base64").slice(0, 4).toString(), "%PDF"); assert.ok(m.text.indexOf(hash) > -1); });
     assert.ok(/Projekt Alpine 2028/.test(toO.subject)); assert.strictEqual(toO.replyTo, "maria@example.com");

@@ -12,7 +12,7 @@ module.exports = function (D) {
     ST = (await getMeta("push").catch(() => null)) || {};
     if (!ST.vapid) { ST.vapid = webpush.generateVAPIDKeys(); ST.subs = ST.subs || []; await setMeta("push", ST); }
     ST.subs = ST.subs || [];
-    webpush.setVapidDetails("mailto:office@fs-creative.at", ST.vapid.publicKey, ST.vapid.privateKey);
+    webpush.setVapidDetails("mailto:simon@fs-creative.at", ST.vapid.publicKey, ST.vapid.privateKey);
     return ST;
   }
   const save = () => setMeta("push", ST);

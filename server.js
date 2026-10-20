@@ -1422,7 +1422,10 @@ async function mailApiSend(m) {
   const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
 }
 const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF, mailSend: mailApiSend });
-(async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); FIN_STATE.local = !SEV_TEST; FIN_STATE.firm = await FIN.getMeta("firm"); if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
+(async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); FIN_STATE.local = !SEV_TEST; FIN_STATE.firm = await FIN.getMeta("firm");
+  // office@ gibt es nicht (Wunsch Simon 20.10.2026): auf Rechnungen/Angeboten die richtige Adresse – einmalig umstellen, wenn noch die alte Vorgabe gespeichert ist
+  if (FIN_STATE.firm && String(FIN_STATE.firm.email || "").trim().toLowerCase() === "office@fs-creative.at") { FIN_STATE.firm = Object.assign({}, FIN_STATE.firm, { email: "simon@fs-creative.at" }); await FIN.setMeta("firm", FIN_STATE.firm); console.log("Firmendaten: E-Mail auf simon@fs-creative.at umgestellt"); }
+  if (FIN_STATE.local) console.log("Buchhaltung: eigene Daten (ohne sevDesk)"); } catch (e) { console.error("fin init:", e.message); } })();
 // Wiederkehrende Rechnungen/Belege: stündlich fällige Vorlagen abarbeiten – es entstehen nur ENTWÜRFE. Versand („automatisch senden“)
 // bzw. „Fertig erfasst“ bei Belegen passiert erst nach Bestätigung unter „Zur Prüfung“ (fin-proposals.js).
 async function proposeRecurringVouchers(made) {
