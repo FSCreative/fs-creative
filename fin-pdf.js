@@ -8,10 +8,12 @@ module.exports = function (D) {
   const DARK = "#1f1d1e", YEL = "#ffe600", INK = "#1f1d1e", MUTED = "#6b6b6b", LINE = "#e3e1dc", ZEBRA = "#f7f6f3", SOFT = "#bdbab3";
   const file = n => [path.join(__dirname, "logos", n)].find(p => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } });
   const LOGO_W = file("Logo Glühbirne Weiss.png") || file("Logo Glühbirne.png");
-  const eur = n => { const v = Math.round((+n || 0) * 100) / 100, a = Math.abs(v).toFixed(2).split("."); return (v < 0 ? "− " : "") + "€ " + a[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + a[1]; };
+  const eur = n => { const v = Math.round((+n || 0) * 100) / 100, a = Math.abs(v).toFixed(2).split("."); return (v < 0 ? "- " : "") + "€ " + a[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + a[1]; };
   const de = v => { const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
   const addDays = (v, n) => { const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n)); return d.toISOString().slice(0, 10); };
-  const strip = h => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>\s*<p[^>]*>/gi, "\n\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+  // HTML → Text; Einrückungen aus dem HTML-Quelltext weg; sevDesk-Platzhalter: [%PAYPAL%] (PayPal-Link, gibt es hier nicht) entfällt
+  const strip = h => String(h || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>\s*<p[^>]*>/gi, "\n\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/\[%PAYPAL%\]/gi, "").split("\n").map(l => l.replace(/[ \t]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   // Referenz rechts oben: eigenes Feld, sonst Auftrag/Angebot, Buchungsnummer aus dem Text (Blitzdings), sonst die Dokumentnummer selbst (Zahlungsreferenz)
   function referenceOf(o, ctx, nr) {
     if (o.reference) return String(o.reference);
@@ -144,7 +146,8 @@ module.exports = function (D) {
     y = Math.max(sy, sy0 + 70) + 22;
 
     // Text unten + Gruß
-    const foot = strip(o.footText) || (isOrder ? "Dieses Angebot ist 30 Tage gültig." : isCn ? "Der Betrag wird Ihnen gutgeschrieben bzw. überwiesen." : "Zahlbar innerhalb von " + (o.timeToPay || 14) + " Tagen ohne Abzug. Bitte bei der Überweisung die Rechnungsnummer " + nr + " angeben.");
+    // Gruß + Name setzt das PDF selbst darunter – aus sevDesk übernommene Fußtexte enthalten ihn schon („Mit freundlichen Grüßen [%KONTAKTPERSON%]“) → nicht doppelt
+    const foot = strip(o.footText).replace(/\n*\s*mit freundlichen gr(ü|ue)(ß|ss)en[\s,]*(\[%KONTAKTPERSON%\]|[^\n]{0,60})?\s*$/i, "").replace(/\[%KONTAKTPERSON%\]/gi, F.contactPerson || F.owner || "").trim() || (isOrder ? "Dieses Angebot ist 30 Tage gültig." : isCn ? "Der Betrag wird Ihnen gutgeschrieben bzw. überwiesen." : "Zahlbar innerhalb von " + (o.timeToPay || 14) + " Tagen ohne Abzug. Bitte bei der Überweisung die Rechnungsnummer " + nr + " angeben.");
     if (y > H - FH - 80) { doc.addPage(); y = 60; }
     doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(foot, L, y, { width: R - L - 140, lineGap: 2 }); y = doc.y + 12;
     doc.text("Mit freundlichen Grüßen", L, y); doc.font("Helvetica-Bold").text(F.owner || F.contactPerson || "", L, doc.y + 3);
