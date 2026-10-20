@@ -1,6 +1,7 @@
 // VIW Cloud: Dateien in der Nextcloud von VIW direkt aus dem Cockpit – Ordner ansehen, hoch- und herunterladen (auch ganze Ordner),
 // Ordner anlegen, umbenennen, verschieben, löschen (landet im Papierkorb der Nextcloud), Mail-Anhänge ablegen.
-// Zugang über WebDAV, zwei Arten (Railway: VIW_CLOUD_URL, VIW_CLOUD_USER, VIW_CLOUD_PASSWORD – Zugangsdaten bleiben am Server):
+// Zugang über WebDAV – Anmeldefenster im Cockpit (Zugangsdaten verschlüsselt am Server, Schlüssel aus ADMIN_AUTH_SECRET; nie zurück ans Cockpit),
+// ersatzweise Railway-Variablen VIW_CLOUD_URL, VIW_CLOUD_USER, VIW_CLOUD_PASSWORD. Zwei Arten:
 //  • Anmeldung (auch Gastzugang): Adresse + Login (E-Mail/Benutzer) + Passwort bzw. App-Passwort; die interne Benutzer-ID holt sich das Modul selbst.
 //  • Freigabe-Link (…/s/TOKEN): nur der Link, ggf. mit Link-Passwort – öffentliche WebDAV-Schnittstelle der Freigabe.
 // Große Dateien bei Anmeldung in Teilen zu 10 MB (Nextcloud-Chunking); über einen Freigabe-Link in einem Stück (durchgereicht). Cockpit-Seite: admin-cockpit/zviw.js
@@ -15,19 +16,35 @@ module.exports = function (D) {
   const J = (res, code, o) => send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store" });
   const fail = (status, msg) => { const e = new Error(msg); e.status = status; return e; };
 
-  function cfg() {
-    let url = String(process.env.VIW_CLOUD_URL || "").trim();
+  // ---- gespeicherte Anmeldung (Datei im Datenordner, Passwort AES-256-GCM) ----
+  const path = require("path"), fs = require("fs");
+  const LOGIN_FILE = path.join(D.DATA_DIR || __dirname, "viw-cloud.json");
+  const KEY = crypto.createHash("sha256").update("viw-cloud|" + String(D.secret || "")).digest();
+  function seal(t) { const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", KEY, iv), e = Buffer.concat([c.update(String(t), "utf8"), c.final()]); return [iv, c.getAuthTag(), e].map(b => b.toString("base64")).join("."); }
+  function unseal(x) { try { const [iv, tag, e] = String(x).split(".").map(v => Buffer.from(v, "base64")); const d = crypto.createDecipheriv("aes-256-gcm", KEY, iv); d.setAuthTag(tag); return Buffer.concat([d.update(e), d.final()]).toString("utf8"); } catch (err) { return null; } }
+  let STORED;   // undefined = noch nicht gelesen, null = keine
+  function stored() {
+    if (STORED !== undefined) return STORED;
+    try { const j = JSON.parse(fs.readFileSync(LOGIN_FILE, "utf8")); const pass = j.pass ? unseal(j.pass) : ""; STORED = j && j.url && pass !== null ? { url: j.url, user: j.user || "", pass, at: j.at } : null; }
+    catch (e) { STORED = null; }
+    return STORED;
+  }
+  function saveLogin(v) { fs.writeFileSync(LOGIN_FILE, JSON.stringify({ url: v.url, user: v.user || "", pass: v.pass ? seal(v.pass) : "", at: new Date().toISOString() }), { mode: 0o600 }); STORED = undefined; ACC = null; }
+  function clearLogin() { try { fs.unlinkSync(LOGIN_FILE); } catch (e) {} STORED = undefined; ACC = null; }
+  function cfg() { const st = stored(); return st ? Object.assign(cfgFrom(st), { source: "login" }) : Object.assign(cfgFrom({ url: process.env.VIW_CLOUD_URL, user: process.env.VIW_CLOUD_USER, pass: process.env.VIW_CLOUD_PASSWORD }), { source: "env" }); }
+  function cfgFrom(v) {
+    let url = String(v.url || "").trim();
     const sm = url.match(/\/(?:index\.php\/)?s\/([A-Za-z0-9]{5,64})(?:[/?#]|$)/), token = sm ? sm[1] : "";
     url = url.replace(/[?#].*$/, "");
     // auch kopierte Browser-Adressen wie …/index.php/apps/files/?dir=/ oder …/remote.php/dav/files/… annehmen
     url = url.replace(/\/remote\.php(\/.*)?$/i, "").replace(/\/(index\.php\/)?(apps|s|f|login)(\/.*)?$/i, "").replace(/\/index\.php\/?$/i, "").replace(/\/+$/, "");
     if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
-    return { url, token, mode: token ? "share" : "user", user: String(process.env.VIW_CLOUD_USER || "").trim(), pass: String(process.env.VIW_CLOUD_PASSWORD || "").trim() };
+    return { url, token, mode: token ? "share" : "user", user: String(v.user || "").trim(), pass: String(v.pass || "") };
   }
   function cfgError(c) {
     if (!c.url || (c.mode === "user" && (!c.user || !c.pass))) return "nicht eingerichtet";
-    let u; try { u = new URL(c.url); } catch (e) { return "VIW_CLOUD_URL ist keine gültige Adresse"; }
-    if (u.protocol !== "https:" && !/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) return "VIW_CLOUD_URL muss mit https:// beginnen";
+    let u; try { u = new URL(c.url); } catch (e) { return "Die Adresse ist ungültig"; }
+    if (u.protocol !== "https:" && !/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) return "Die Adresse muss mit https:// beginnen";
     return "";
   }
   const basic = (u, p) => "Basic " + Buffer.from(u + ":" + p).toString("base64");
@@ -63,8 +80,8 @@ module.exports = function (D) {
   // Zugang einmal ermitteln (je Konfiguration zwischengespeichert): WebDAV-Wurzel, Anmeldung, ggf. Teil-Upload-Ordner
   let ACC = null;
   const PF0 = { Depth: "0", "Content-Type": "application/xml; charset=utf-8" };
-  async function acct() {
-    const c = cfg(), e = cfgError(c); if (e) throw fail(503, "VIW Cloud " + e);
+  async function acct(cand) {
+    const c = cand || cfg(), e = cfgError(c); if (e) throw fail(503, e === "nicht eingerichtet" ? "VIW Cloud nicht eingerichtet" : e);
     const key = [c.url, c.mode, c.token, c.user, crypto.createHash("sha256").update(c.pass).digest("hex")].join("|");
     if (ACC && ACC.key === key) return ACC;
     if (c.mode === "share") {
@@ -208,7 +225,8 @@ module.exports = function (D) {
 
   async function status(check) {
     const c = cfg(), e = cfgError(c);
-    const out = { ok: true, configured: !e, error: e && e !== "nicht eingerichtet" ? e : "", mode: c.mode, user: c.mode === "share" ? "" : c.user,
+    const st = c.source === "login" ? stored() : null;
+    const out = { ok: true, configured: !e, error: e && e !== "nicht eingerichtet" ? e : "", source: c.source, form: st ? { url: st.url, user: st.user } : null, mode: c.mode, user: c.mode === "share" ? "" : c.user,
       web: e ? "" : c.mode === "share" ? c.url + "/index.php/s/" + c.token : c.url, host: (() => { try { return new URL(c.url).host; } catch (x) { return ""; } })() };
     if (!out.configured || !check) return out;
     try { const r = await propfind("/", 0); out.reachable = true; out.quota = r[0] && r[0].quota; }
@@ -216,10 +234,24 @@ module.exports = function (D) {
     return out;
   }
 
+  let TRIES = [];
   async function handleAdmin(req, res, u, p) {
     try {
       const q = k => u.searchParams.get(k);
       if (p === "/admin/api/viw/status" && req.method === "GET") return J(res, 200, await status(q("check") === "1"));
+      // Anmeldefenster: Zugang prüfen und erst dann (verschlüsselt) speichern; Abmelden löscht ihn
+      if (p === "/admin/api/viw/login" && req.method === "POST") {
+        const pl = await readJson(req);
+        if (pl.op === "logout") { clearLogin(); return J(res, 200, { ok: true }); }
+        TRIES = TRIES.filter(t => Date.now() - t < 600000);
+        if (TRIES.length >= 6) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte in 10 Minuten nochmal (schützt deinen VIW-Zugang vor einer Sperre)." });
+        const v = { url: String(pl.url || "").trim().slice(0, 500), user: String(pl.user || "").trim().slice(0, 200), pass: String(pl.pass || "").slice(0, 500) };
+        const c = cfgFrom(v), e = cfgError(c);
+        if (e) return J(res, 200, { ok: false, error: e === "nicht eingerichtet" ? (!c.url ? "Bitte die Adresse der VIW Cloud eingeben." : "Bitte Login und Passwort eingeben – oder einen Freigabe-Link (…/s/…).") : e });
+        TRIES.push(Date.now());
+        await acct(c); saveLogin(v); TRIES = [];
+        return J(res, 200, Object.assign(await status(true), { ok: true }));
+      }
       if (p === "/admin/api/viw/list" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, await list(q("path") || "/")));
       if ((p === "/admin/api/viw/file" || p === "/admin/api/viw/preview") && req.method === "GET") {
         const c = cfg(), prev = p === "/admin/api/viw/preview";

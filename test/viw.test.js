@@ -47,6 +47,7 @@ async function startServer(dir, env) {
   const shs = await startServer(dir, { VIW_CLOUD_URL: SH + "/index.php/s/AbCdEf12345", VIW_CLOUD_PASSWORD: "linkpw" });
   const shbad = await startServer(dir, { VIW_CLOUD_URL: SH + "/s/AbCdEf12345" });
   const olds = await startServer(dir, { VIW_CLOUD_URL: OLD + "/s/Old1234567" });
+  const dir2 = copyApp(), lsrv = await startServer(dir2, {});   // eigener Datenordner fürs Anmeldefenster
   const B = srv.base;
   const get = async (p, base) => { const r = await fetch((base || B) + p, { headers: { cookie: COOKIE } }); return r.json(); };
   const op = async (body) => { const r = await fetch(B + "/admin/api/viw/op", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) }); return Object.assign(await r.json(), { _status: r.status }); };
@@ -147,8 +148,22 @@ async function startServer(dir, env) {
       const s = await sget(shbad.base, "/admin/api/viw/status?check=1"); assert.strictEqual(s.reachable, false); assert.ok(/Passwort/.test(s.error), s.error);
       const l = await sget(olds.base, "/admin/api/viw/list?path=/"); assert.ok(l.ok, JSON.stringify(l)); assert.deepStrictEqual(l.items.map(x => x.name), ["Alt.txt"]);
     });
+    await t("Anmeldefenster: falsches Passwort nicht gespeichert, richtiges verschlüsselt gespeichert, nie zurückgegeben, Abmelden löscht", async () => {
+      const login = async body => (await fetch(lsrv.base + "/admin/api/viw/login", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+      let r = await login({ url: NC + "/index.php/apps/files/", user: nc.login, pass: "falsch" }); assert.strictEqual(r.ok, false); assert.ok(/Passwort/.test(r.error), r.error);
+      assert.ok(!fs.existsSync(path.join(dir2, "viw-cloud.json")), "nichts gespeichert");
+      r = await login({ url: "", user: "", pass: "" }); assert.strictEqual(r.ok, false); assert.ok(/Adresse/.test(r.error));
+      r = await login({ url: NC + "/index.php/apps/files/", user: nc.login, pass: nc.pass }); assert.ok(r.ok, JSON.stringify(r)); assert.strictEqual(r.reachable, true); assert.strictEqual(r.source, "login");
+      const raw = fs.readFileSync(path.join(dir2, "viw-cloud.json"), "utf8"); assert.ok(raw.indexOf(nc.pass) < 0, "Passwort verschlüsselt"); assert.ok(/simon@fs-creative\.at/.test(raw));
+      const st = await sget(lsrv.base, "/admin/api/viw/status?check=1"); assert.ok(!JSON.stringify(st).includes(nc.pass)); assert.deepStrictEqual(st.form, { url: NC + "/index.php/apps/files/", user: nc.login });
+      const l = await sget(lsrv.base, "/admin/api/viw/list?path=/"); assert.ok(l.ok && l.items.some(x => x.name === "Projekte"), JSON.stringify(l).slice(0, 200));
+      r = await login({ url: SH + "/s/AbCdEf12345", pass: "linkpw" }); assert.ok(r.ok, JSON.stringify(r)); assert.strictEqual(r.mode, "share");
+      r = await login({ op: "logout" }); assert.ok(r.ok); assert.ok(!fs.existsSync(path.join(dir2, "viw-cloud.json")));
+      assert.strictEqual((await sget(lsrv.base, "/admin/api/viw/status")).configured, false);
+      for (let i = 0; i < 6; i++) await login({ url: NC, user: nc.login, pass: "x" + i }); r = await login({ url: NC, user: nc.login, pass: nc.pass }); assert.ok(/Zu viele Versuche/.test(r.error || ""), "Bremse gegen Sperre bei VIW");
+    });
   } finally {
-    [off, srv, bad, shs, shbad, olds].forEach(s => s.kill()); mocks.server.close(); nc.server.close(); sh.server.close(); old.server.close();
+    [off, srv, bad, shs, shbad, olds, lsrv].forEach(s => s.kill()); mocks.server.close(); nc.server.close(); sh.server.close(); old.server.close();
   }
   console.log(fails.join("\n")); console.log("VIW Cloud: " + pass + " bestanden, " + fail + " fehlgeschlagen");
   if (fail) console.log(srv.out.slice(-1500));

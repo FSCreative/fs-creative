@@ -12,6 +12,7 @@ F.icons.vup='<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1
 F.icons.vdown='<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>';
 F.icons.vdots='<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>';
 F.icons.vext='<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>';
+F.icons.vlogout='<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H3"/>';
 F.icons.vrefresh='<path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/>';
 F.icons.vnewdir='<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/>';
 
@@ -54,16 +55,30 @@ function load(path,quiet){
 setTimeout(function(){ loadStatus(false); },1500);   /* nur ob eingerichtet – für den Knopf an Mail-Anhängen */
 
 /* ---------- Darstellung ---------- */
-function setupHtml(){
-  var err=ST&&ST.error?'<div class="notice" style="margin-bottom:14px">'+esc(ST.error)+'</div>':'';
-  var v=function(k,t){ return '<code>'+k+'</code><span>'+t+'</span>'; };
-  return '<div class="card vw-setup">'+err+'<h2>VIW Cloud verbinden</h2><p class="muted">Die Zugangsdaten trägst du einmal in Railway beim Dienst des Cockpits unter <b>Variables</b> ein – sie bleiben am Server, das Cockpit zeigt sie nie an.</p>'+
-    '<h3>Du meldest dich bei VIW mit E-Mail und Passwort an (auch Gastzugang)</h3><div class="vw-vars">'+v("VIW_CLOUD_URL","Adresse der Nextcloud, z. B. https://cloud.viw.at (die Adresse aus dem Browser geht auch)")+v("VIW_CLOUD_USER","dein Login, meist die E-Mail-Adresse")+v("VIW_CLOUD_PASSWORD","dein Passwort – oder, falls möglich, ein App-Passwort (Einstellungen → Sicherheit)")+'</div>'+
-    '<p class="muted small">Änderst du das Passwort bei VIW, hier in Railway mitändern. Mit Zwei-Faktor-Anmeldung geht es nur mit App-Passwort.</p>'+
-    '<h3>Du hast nur einen Freigabe-Link (…/s/…)</h3><div class="vw-vars">'+v("VIW_CLOUD_URL","der ganze Link, z. B. https://cloud.viw.at/s/AbCdEf123")+v("VIW_CLOUD_PASSWORD","nur wenn der Link ein Passwort hat")+'</div>'+
-    '<p class="muted small">Hochladen geht über den Link nur, wenn VIW ihn mit „Hochladen und Bearbeiten erlauben“ freigegeben hat.</p>'+
-    '<p class="muted">Nach dem Speichern startet das Cockpit neu (ca. 1 Minute) – dann diese Seite neu laden.</p></div>';
+/* Anmeldefenster: Adresse oder Freigabe-Link, Login, Passwort – der Server prüft den Zugang bei VIW und speichert ihn erst dann (verschlüsselt) */
+function isShare(u){ return /\/s\/[A-Za-z0-9]{5,}/.test(String(u||"")); }
+function loginHtml(pre,err){
+  pre=pre||{}; var sh=isShare(pre.url);
+  return '<form class="card vw-login" data-form="viwlogin" autocomplete="on"><div class="vw-lh">'+F.svg("cloud")+'<div><h2>Bei der VIW Cloud anmelden</h2><p class="muted">Mit deinem VIW-Zugang (auch Gastzugang) – oder nur mit einem Freigabe-Link.</p></div></div>'+
+    (err?'<div class="notice">'+esc(err)+'</div>':'')+
+    '<label class="fl">Adresse der VIW Cloud oder Freigabe-Link<input class="f" name="url" type="url" inputmode="url" placeholder="https://cloud.beispiel.at" autocomplete="url" required value="'+esc(pre.url||"")+'"></label>'+
+    '<div class="vw-lu'+(sh?' share':'')+'"><label class="fl vw-luser">Login (E-Mail)<input class="f" name="user" autocomplete="username" value="'+esc(pre.user||"")+'"></label>'+
+    '<label class="fl"><span class="vw-lpl">'+(sh?'Passwort des Links (falls vorhanden)':'Passwort')+'</span><input class="f" name="pass" type="password" autocomplete="current-password"></label></div>'+
+    '<p class="muted small" style="margin:0">Die Adresse aus dem Browser geht auch. Bei einem Freigabe-Link (…/s/…) reicht der Link.</p>'+
+    '<div class="vw-lf"><span class="muted small">'+(F.icons.lock?F.svg("lock"):'')+' Wird verschlüsselt am Server gespeichert und nie wieder angezeigt.</span><button class="btn primary" type="submit" id="vwLoginBtn">Anmelden</button></div><div class="bad-t small" id="vwLoginErr" role="alert"></div></form>';
 }
+F.listen("input",'form[data-form="viwlogin"] [name=url]',function(el){ var sh=isShare(el.value), b=el.form.querySelector(".vw-lu"), l=el.form.querySelector(".vw-lpl"); if(b) b.classList.toggle("share",sh); if(l) l.textContent=sh?"Passwort des Links (falls vorhanden)":"Passwort"; });
+F.form("viwlogin",function(f){
+  var btn=document.getElementById("vwLoginBtn"), er=document.getElementById("vwLoginErr"), sh=isShare(f.url.value);
+  er.textContent=""; btn.disabled=true; btn.textContent="Prüfe Zugang …";
+  api("/admin/api/viw/login",{url:f.url.value.trim(),user:sh?"":f.user.value.trim(),pass:f.pass.value}).then(function(j){
+    btn.disabled=false; btn.textContent="Anmelden";
+    if(!j||!j.ok){ er.textContent=(j&&j.error)||"Anmeldung fehlgeschlagen"; return; }
+    ST=j; F.viwOn=true; CUR=null; setPath("/"); F.toast("Mit der VIW Cloud verbunden"); F.render();
+  }).catch(function(){ btn.disabled=false; btn.textContent="Anmelden"; er.textContent="Keine Verbindung zum Server."; });
+});
+F.action("viwlogout",function(){ F.confirm("Von der VIW Cloud abmelden? Die gespeicherten Zugangsdaten werden gelöscht.","Abmelden",function(){
+  api("/admin/api/viw/login",{op:"logout"}).then(function(){ ST=null; CUR=null; F.viwOn=false; F.toast("Abgemeldet"); F.render(); }); }); });
 function crumbs(path){
   var a=String(path||"/").split("/").filter(Boolean), out='<button type="button" class="vw-cr" data-act="viwgo:/" data-vdrop="/">'+F.svg("cloud")+'<span>VIW Cloud</span></button>', cur="";
   a.forEach(function(s,i){ cur+="/"+s; out+='<span class="vw-sep">/</span><button type="button" class="vw-cr'+(i===a.length-1?' on':'')+'" data-act="viwgo:'+esc(cur)+'" data-vdrop="'+esc(cur)+'">'+esc(s)+'</button>'; });
@@ -107,12 +122,14 @@ function paintQueue(){ var h=document.getElementById("vwQh"); if(h) h.innerHTML=
 function quotaTxt(){ var qo=ST&&ST.quota; if(!qo||!(qo.used>=0)) return ""; return bytes(qo.used)+" belegt"+(qo.avail>0?" · "+bytes(qo.avail)+" frei":""); }
 function render(){
   if(!ST){ loadStatus(true); return F.head("VIW Cloud","Nextcloud von VIW")+'<div class="vw-empty muted">Lade …</div>'; }
-  if(!ST.configured) return F.head("VIW Cloud","Dateien in der Nextcloud von VIW – direkt aus dem Cockpit")+setupHtml();
+  if(!ST.configured) return F.head("VIW Cloud","Dateien in der Nextcloud von VIW – direkt aus dem Cockpit")+loginHtml(ST.form,ST.error);
   if(ST.reachable===undefined&&!STP) loadStatus(true);
+  if(ST.reachable===false) return F.head("VIW Cloud","Der gespeicherte Zugang funktioniert gerade nicht – bitte neu anmelden")+loginHtml(ST.form,ST.error);
   if(!CUR||CUR.path!==UI.viwPath){ if(!LOADING) load(UI.viwPath,true); }
   var web=webDir(UI.viwPath);
   var sub=(ST.mode==="share"?"Freigabe-Link":ST.user?"angemeldet als "+esc(ST.user):"")+(ST.host?" · "+esc(ST.host):"")+(quotaTxt()?" · "+esc(quotaTxt()):"")+(ST.reachable===false?' · <b class="bad-t">'+esc(ST.error||"nicht erreichbar")+'</b>':"");
-  var right='<button type="button" class="btn icon" data-act="viwreload" title="Aktualisieren" aria-label="Aktualisieren">'+F.svg("vrefresh")+'</button>'+
+  var right=(ST.source==="login"?'<button type="button" class="btn icon" data-act="viwlogout" title="Von der VIW Cloud abmelden" aria-label="Abmelden">'+F.svg("vlogout")+'</button>':'')+
+    '<button type="button" class="btn icon" data-act="viwreload" title="Aktualisieren" aria-label="Aktualisieren">'+F.svg("vrefresh")+'</button>'+
     (web?'<a class="btn" href="'+esc(web)+'" target="_blank" rel="noopener">'+F.svg("vext")+' In Nextcloud öffnen</a>':'')+
     '<button type="button" class="btn" data-act="viwnewdir">'+F.svg("vnewdir")+' Neuer Ordner</button>'+
     '<button type="button" class="btn primary" data-act="viwup">'+F.svg("vup")+' Hochladen</button>';
@@ -312,8 +329,9 @@ F.action("mviw",function(v){ var M=F.M||{}, i=v.indexOf("|"), m=M.find?M.find(v.
 
 /* ---------- Styles ---------- */
 F.css([
-".vw-setup{max-width:760px;padding:22px 24px}.vw-setup h2{font-size:19px;margin:0 0 6px}.vw-setup h3{font-size:15px;margin:18px 0 4px}.vw-setup ol{margin:14px 0;padding-left:20px;display:grid;gap:10px;line-height:1.5}",
-".vw-vars{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin-top:8px;align-items:baseline}.vw-vars code{font-family:var(--f-mono);font-size:12.5px;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:2px 7px}.vw-vars span{font-size:13px;color:var(--ink-2)}",
+".vw-login{max-width:620px;padding:24px;display:grid;gap:14px}.vw-lh{display:flex;gap:14px;align-items:flex-start}.vw-lh>svg{width:38px;height:38px;color:var(--glow);flex:none;margin-top:2px}.vw-lh h2{font-size:19px;margin:0 0 4px}.vw-lh p{margin:0}",
+".vw-lu{display:grid;grid-template-columns:1fr 1fr;gap:12px}.vw-lu.share{grid-template-columns:1fr}.vw-lu.share .vw-luser{display:none}.vw-lf{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.vw-lf svg{width:14px;height:14px;vertical-align:-2px}",
+"@media (max-width:600px){.vw-lu{grid-template-columns:1fr}}",
 ".vw-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 12px 6px;min-height:320px}",
 ".vw-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.vw-q-in{flex:0 1 260px;margin-left:auto}",
 ".vw-crumbs{display:flex;align-items:center;gap:2px;flex-wrap:wrap;min-width:0}.vw-cr{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--ink-2);font:inherit;font-weight:600;padding:5px 8px;border-radius:8px;cursor:pointer;max-width:240px}.vw-cr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
