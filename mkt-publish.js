@@ -19,14 +19,14 @@ const DEF = {
 };
 // Plattform → Anbieter (App-Zugang), Formate, Textgrenzen
 const PLATFORMS = {
-  instagram: { label: "Instagram", provider: "instagram", formats: ["bild", "karussell", "reel"], max: 2200, tags: 15 },
-  facebook: { label: "Facebook", provider: "facebook", formats: ["bild", "karussell", "reel"], max: 5000, tags: 3 },
+  instagram: { label: "Instagram", provider: "instagram", formats: ["bild", "karussell", "reel"], max: 2200, tags: 5 },   // Instagram erlaubt seit Dez. 2025 höchstens 5 Hashtags je Post/Reel (mehr → Post wird abgelehnt)
+  facebook: { label: "Facebook", provider: "facebook", formats: ["bild", "karussell", "reel"], max: 5000, tags: 5 },
   threads: { label: "Threads", provider: "threads", formats: ["bild", "karussell", "reel"], max: 500, tags: 1 },
-  tiktok: { label: "TikTok", provider: "tiktok", formats: ["reel"], max: 2200, tags: 5 },
+  tiktok: { label: "TikTok", provider: "tiktok", formats: ["reel"], max: 2200, tags: 6 },
   youtube: { label: "YouTube Shorts", provider: "google", formats: ["reel"], max: 5000, tags: 3 },
-  linkedin: { label: "LinkedIn", provider: "linkedin", formats: ["bild", "karussell", "reel"], max: 3000, tags: 3 },
+  linkedin: { label: "LinkedIn", provider: "linkedin", formats: ["bild", "karussell", "reel"], max: 3000, tags: 5 },
   pinterest: { label: "Pinterest", provider: "pinterest", formats: ["bild", "karussell"], max: 500, tags: 5 },
-  bluesky: { label: "Bluesky", provider: "bluesky", formats: ["bild", "karussell", "reel"], max: 300, tags: 2 },
+  bluesky: { label: "Bluesky", provider: "bluesky", formats: ["bild", "karussell", "reel"], max: 300, tags: 3 },
 };
 const PROVIDERS = {
   instagram: { label: "Instagram (Meta)", portal: "https://developers.facebook.com/apps", hint: "Meta-App (Typ Business) → Produkt „Instagram“ → „API-Einrichtung mit Instagram-Login“: Instagram-App-ID und -Geheimschlüssel. Dein Instagram-Konto muss ein Business- oder Creator-Konto sein." },

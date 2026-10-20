@@ -86,7 +86,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
   let car, reel;
   await t("Generieren: KI-Posts als Entwürfe, Plattformen passend zum Format, Termine vorgeschlagen", async () => {
     const r = await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 2, formats: { reel: true, karussell: true, bild: false }, topic: "Wintersaison" }); const j = r.json();
-    assert.ok(j.ok, JSON.stringify(j)); assert.strictEqual(kiCalls, 1); assert.ok(/<wunsch>Wintersaison<\/wunsch>/.test(kiUser) && /<profil>/.test(kiUser));
+    assert.ok(j.ok, JSON.stringify(j)); assert.strictEqual(kiCalls, 1); assert.ok(/<vorgaben>Wintersaison<\/vorgaben>/.test(kiUser) && /<profil>/.test(kiUser) && /in allen Beiträgen um/.test(kiUser));
     car = j.posts.find(p => p.format === "karussell"); reel = j.posts.find(p => p.format === "reel");
     assert.deepStrictEqual(car.platforms.sort(), ["bluesky", "facebook", "instagram", "linkedin", "threads"]); assert.ok(reel.platforms.indexOf("youtube") > -1 && reel.platforms.indexOf("tiktok") > -1);
     assert.ok(car.scheduledAt && reel.scheduledAt && Math.abs(Date.parse(car.scheduledAt) - Date.parse(reel.scheduledAt)) >= 20 * 3600e3, "Abstand");
@@ -170,6 +170,22 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const r = (await call("POST", "/admin/api/mkt/giveaway/post", { id: d.id })).json(); assert.ok(r.ok, JSON.stringify(r));
     const p = PT.S().posts.find(x => x.id === r.postId); assert.strictEqual(p.format, "reel"); assert.strictEqual(p.media.status, "fertig"); assert.ok(p.captions.instagram.indexOf(d.winners[0]) > -1); assert.ok(p.platforms.indexOf("instagram") > -1);
     assert.strictEqual(p.status, "entwurf", "erst nach Go");
+  });
+  await t("Dauerhafte Vorgaben je Marke + Neu schreiben eines Posts mit Anweisung", async () => {
+    await call("POST", "/admin/api/mkt/brand", { key: "kochdu", patch: { standing: "Immer die Wirte namentlich nennen." } });
+    const g = (await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 1, formats: { karussell: true, reel: false, bild: false }, instructions: "lustig" })).json(); const p = g.posts[0];
+    assert.ok(/<dauerhaft>Immer die Wirte namentlich nennen\.<\/dauerhaft>/.test(kiUser) && /<vorgaben>lustig<\/vorgaben>/.test(kiUser));
+    await waitMedia([p.id]);
+    let r = await call("POST", "/admin/api/mkt/post", { id: p.id, op: "rewrite", instruction: "" }); assert.strictEqual(r.code, 400);
+    r = (await call("POST", "/admin/api/mkt/post", { id: p.id, op: "rewrite", instruction: "kürzer und mit Frage" })).json(); assert.ok(r.ok, JSON.stringify(r));
+    assert.ok(/<bisher_beitrag>/.test(kiUser) && /<vorgaben>kürzer und mit Frage<\/vorgaben>/.test(kiUser) && !/data:image/.test(kiUser), "kein Bild an die KI");
+    assert.strictEqual(r.post.format, "karussell"); assert.strictEqual(r.post.media.status, "wartet");
+    const [n] = await waitMedia([p.id]); assert.strictEqual(n.media.status, "fertig");
+    await call("POST", "/admin/api/mkt/post", { id: p.id, op: "delete" });
+  });
+  await t("Instagram: höchstens 5 Hashtags (Instagram-Grenze seit 12/2025)", async () => {
+    const c = PT.S().posts.find(p => p.id === car.id), saved = c.hashtags.instagram; c.hashtags.instagram = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"];
+    const ig = PT.captionFor(c, "instagram"); assert.strictEqual((ig.match(/#\w+/g) || []).length, 5); c.hashtags.instagram = saved;
   });
   await t("Konto trennen entfernt die Plattform aus offenen Posts", async () => {
     const g = (await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 1, formats: { karussell: true, reel: false, bild: false } })).json(); const p = g.posts[0];

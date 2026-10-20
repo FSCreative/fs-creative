@@ -243,7 +243,7 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/mkt/brand" && req.method === "POST") {
         const pl = await body(req, 3e6), b = brand(pl.key), pa = pl.patch || {};
-        ["name", "url", "appStoreUrl", "playStoreUrl", "oneLiner", "whatItIs", "audience", "tone", "seasonality", "guardrails", "logoBg"].forEach(k => { if (pa[k] !== undefined) b[k] = clip(pa[k], k === "whatItIs" ? 1500 : 600); });
+        ["name", "url", "appStoreUrl", "playStoreUrl", "oneLiner", "whatItIs", "audience", "tone", "seasonality", "guardrails", "logoBg", "standing"].forEach(k => { if (pa[k] !== undefined) b[k] = clip(pa[k], k === "whatItIs" || k === "standing" ? 1500 : 600); });
         ["usps", "pillars", "hashtags", "ctas", "handles"].forEach(k => { if (Array.isArray(pa[k])) b[k] = pa[k].map(x => clip(x, 160)).filter(Boolean).slice(0, 40); });
         if (pa.colors && typeof pa.colors === "object") { b.colors = Object.assign({}, b.colors); ["primary", "dark", "light", "ink", "accent"].forEach(k => { if (/^#[0-9a-f]{6}$/i.test(String(pa.colors[k] || ""))) b.colors[k] = pa.colors[k]; }); }
         if (pa.enabled !== undefined) b.enabled = !!pa.enabled;

@@ -43,6 +43,12 @@ F.css(
 '.mp-idea{font-weight:700;font-size:15px}'+
 '.mp-cap{font-size:13px;color:var(--ink-2);white-space:pre-line;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}'+
 '.mp-pf{display:flex;gap:6px;flex-wrap:wrap}'+
+'.mp-tags{display:flex;gap:4px;flex-wrap:wrap}'+
+'.mp-tags span{font-size:11.5px;color:var(--glow-ink,var(--ink-2));background:var(--glow-soft,var(--sunk));border-radius:99px;padding:1px 8px}'+
+'.mp-qk{display:flex;gap:6px;flex-wrap:wrap}'+
+'.mp-qk button{border:1px dashed var(--line);background:none;border-radius:99px;padding:4px 11px;font:inherit;font-size:12.5px;color:var(--ink-2);cursor:pointer}'+
+'.mp-qk button:hover{border-color:var(--ink-3);color:var(--ink)}'+
+'.mp-vorg{min-height:70px}'+
 '.mp-pf button{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:3px 11px;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-3);cursor:pointer}'+
 '.mp-pf button[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}'+
 '.mp-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}'+
@@ -85,6 +91,7 @@ function brands(){ var S=F.mktState&&F.mktState(); return (S&&S.brands||[]).filt
 function brandOf(k){ return brands().find(function(b){ return b.key===k; })||{key:k,name:k,colors:{}}; }
 function pfLabel(k){ var p=(PL.platforms||[]).find(function(x){ return x.key===k; }); return p?p.label:k; }
 function chOf(brand,pf){ return (PL.channels||[]).find(function(c){ return c.brand===brand&&c.platform===pf; }); }
+var QUICK=["lustig & locker","seriös & informativ","kurz & knackig","Frage an die Community","Aktion bewerben","saisonal","hinter die Kulissen","Tipps & Tricks","in Mundart"];
 var FMT={reel:"Reel",karussell:"Karussell",bild:"Bild"}, STL={entwurf:"Zur Freigabe",geplant:"Geplant","läuft":"Wird gepostet",gepostet:"Gepostet",teilweise:"Teilweise gepostet",fehler:"Fehler"};
 function when(iso){ var d=new Date(iso); if(isNaN(d)) return ""; return d.toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
 function localDT(iso){ var d=new Date(iso); if(isNaN(d)) return ""; var z=function(n){ return String(n).padStart(2,"0"); }; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"T"+z(d.getHours())+":"+z(d.getMinutes()); }
@@ -116,14 +123,15 @@ function postCard(p){
   if(Object.keys(p.results||{}).length) res='<div class="mp-res">'+Object.keys(p.results).map(function(k){ var r=p.results[k];
     return '<span>'+esc(pfLabel(k))+': '+(r.status==="ok"?(r.url?'<a href="'+esc(r.url)+'" target="_blank" rel="noopener">✓ ansehen</a>':'✓ gepostet'):r.status==="entwurf"?'<b>Entwurf in der App</b> <span class="muted">'+esc(r.note||"")+'</span>':r.status==="übersprungen"?'<span class="muted">'+esc(r.error)+'</span>':'<span class="bad-t">'+esc(r.error||"Fehler")+'</span> <button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>')+'</span>'; }).join("")+'</div>';
   var acts;
-  if(p.status==="entwurf") acts='<input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"><button type="button" class="btn primary" data-act="mpgo:'+esc(p.id)+'"'+(md.status!=="fertig"||!p.platforms.length?' disabled':'')+'>'+F.svg("mgo")+' Go</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'"'+(md.status!=="fertig"||!p.platforms.length?' disabled':'')+'>Jetzt posten</button><button type="button" class="btn" data-act="mped:'+esc(p.id)+'">Bearbeiten</button><button type="button" class="btn sm" data-act="mpdel:'+esc(p.id)+'">Verwerfen</button>';
+  if(p.status==="entwurf") acts='<input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"><button type="button" class="btn primary" data-act="mpgo:'+esc(p.id)+'"'+(md.status!=="fertig"||!p.platforms.length?' disabled':'')+'>'+F.svg("mgo")+' Go</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'"'+(md.status!=="fertig"||!p.platforms.length?' disabled':'')+'>Jetzt posten</button><button type="button" class="btn" data-act="mped:'+esc(p.id)+'">Bearbeiten</button>'+(/^gewinnspiel/.test(p.source||"")?'':'<button type="button" class="btn" data-act="mprw:'+esc(p.id)+'">'+F.svg("mspark")+' Neu schreiben</button>')+'<button type="button" class="btn sm" data-act="mpdel:'+esc(p.id)+'">Verwerfen</button>';
   else if(p.status==="geplant") acts='<span class="small"><b>Geht '+esc(when(p.scheduledAt))+' raus</b></span><input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'"><button type="button" class="btn" data-act="mpstop:'+esc(p.id)+'">Stopp</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'">Jetzt posten</button><button type="button" class="btn" data-act="mped:'+esc(p.id)+'">Bearbeiten</button>';
   else if(p.status==="läuft") acts='<span class="small"><b>Wird gerade gepostet …</b></span>';
   else acts='<span class="small muted">'+esc(when(p.postedAt||p.scheduledAt))+'</span>'+(p.status!=="gepostet"?'<button type="button" class="btn sm" data-act="mpretry:'+esc(p.id)+'|">Fehlgeschlagene nochmal</button>':'')+'<button type="button" class="btn sm" data-act="mpdel:'+esc(p.id)+'">Entfernen</button>';
   var cap=p.preview&&(p.preview.instagram||p.preview[Object.keys(p.preview)[0]])||(p.captions&&p.captions.instagram)||"";
   return '<div class="panel mp-card" id="mp-'+esc(p.id)+'"><div class="mp-prev">'+prev+'</div><div class="mp-body">'+
     '<div class="mp-top"><span class="b">'+esc(FMT[p.format]||p.format)+'</span>'+(UI.mkBrand==="alle"?'<span class="b">'+esc(brandOf(p.brand).name)+'</span>':'')+(p.pillar?'<span class="muted">'+esc(p.pillar)+'</span>':'')+'<span class="muted">· '+esc(STL[p.status]||p.status)+'</span></div>'+
-    '<div class="mp-idea">'+esc(p.idea||"")+'</div><div class="mp-cap">'+esc(cap)+'</div>'+pfs+res+'<div class="mp-acts">'+acts+'</div></div></div>';
+    '<div class="mp-idea">'+esc(p.idea||"")+'</div><div class="mp-cap">'+esc(String(cap).replace(/\n\n(#\S+\s*)+$/,""))+'</div>'+
+    (((p.hashtags||{}).instagram||[]).length?'<div class="mp-tags">'+p.hashtags.instagram.slice(0,5).map(function(t){ return '<span>'+esc(t.charAt(0)==="#"?t:"#"+t)+'</span>'; }).join("")+'</div>':'')+pfs+res+'<div class="mp-acts">'+acts+'</div></div></div>';
 }
 function planHtml(){
   if(!PL){ load(); return '<div class="muted" style="padding:20px">Lade …</div>'; }
@@ -138,7 +146,9 @@ function planHtml(){
       (!PL.ki?'<div class="notice"><span>Die KI-Funktion „Marketing“ ist nicht aktiv (Einstellungen → KI) oder das Monatslimit ist erreicht.</span></div>':'')+
       '<div class="mp-genrow"><label>Anzahl <select class="f" data-mpgen="count">'+[3,4,5,7,10].map(function(n){ return '<option'+(+GO.count===n?' selected':'')+'>'+n+'</option>'; }).join("")+'</select></label>'+
       '<label><input type="checkbox" data-mpgen="reel"'+(GO.reel!==false?' checked':'')+'> Reels</label><label><input type="checkbox" data-mpgen="karussell"'+(GO.karussell!==false?' checked':'')+'> Karussells</label><label><input type="checkbox" data-mpgen="bild"'+(GO.bild!==false?' checked':'')+'> Einzelbilder</label></div>'+
-      '<input class="f" data-mpgen="topic" maxlength="600" placeholder="Thema oder Aktion (optional) – z. B. „Wintersaison startet“, „Gewinnspiel ankündigen“" value="'+esc(GO.topic||"")+'">'+
+      '<label class="fl">Deine Vorgaben für diesen Plan (optional)<textarea class="f mp-vorg" data-mpgen="instructions" maxlength="2000" rows="3" placeholder="z. B. „Wintersaison startet – Fokus auf Lieferung bei Schlechtwetter, locker in Mundart, ein Post mit Frage an die Community“">'+esc(GO.instructions!=null?GO.instructions:(GO.topic||""))+'</textarea></label>'+
+      '<div class="mp-qk">'+QUICK.map(function(q){ return '<button type="button" data-act="mpquick:'+esc(q)+'">+ '+esc(q)+'</button>'; }).join("")+'</div>'+
+      (b.standing?'<div class="mp-info"><span>Dauerhafte Vorgaben: '+esc(String(b.standing).slice(0,140))+(String(b.standing).length>140?'…':'')+' <button type="button" class="link" data-act="mkbrand:'+esc(cur)+'">ändern</button></span></div>':'<div class="mp-info"><span>Tipp: Dauerhafte Vorgaben für '+esc(b.name)+' (z. B. „immer Wirte namentlich nennen“) <button type="button" class="link" data-act="mkbrand:'+esc(cur)+'">hier eintragen</button></span></div>')+
       '<div class="mp-genrow" style="justify-content:space-between"><div class="mp-info"><span>Rhythmus: <b>'+plan.perWeek+' pro Woche</b> · '+esc((plan.times||[]).join(", "))+' <button type="button" class="link" data-act="mpplan:'+esc(cur)+'">ändern</button></span>'+
       '<span>Kanäle: '+(chs.length?chs.map(function(c){ return esc(pfLabel(c.platform))+(c.status!=="ok"?' <b class="bad-t">(neu verbinden)</b>':''); }).join(", "):'<b>keine</b> – <button type="button" class="link" data-act="mktab:kanaele">verbinden</button>')+'</span></div>'+
       '<button type="button" class="btn primary" data-act="mpgen"'+(GEN||!PL.ki?' disabled':'')+'>'+F.svg("mspark")+(GEN?' KI schreibt … (ca. 1 Min.)':' Generieren')+'</button></div></div></section>';
@@ -157,10 +167,11 @@ function postOp(id,op,extra,msg){ return api("/admin/api/mkt/post",Object.assign
 F.action("mpbrand",function(k){ UI.mkBrand=k; F.ls("fsc_mk_brand",k); F.render(); });
 F.action("mpreload",function(){ PL=null; F.render(); });
 F.listen("change","[data-mpgen]",function(el){ var k=el.getAttribute("data-mpgen"); GO[k]=el.type==="checkbox"?el.checked:el.value; F.ls("fsc_mk_gen",GO); });
-F.listen("input","[data-mpgen=topic]",function(el){ GO.topic=el.value; F.ls("fsc_mk_gen",GO); });
+F.listen("input","[data-mpgen=instructions]",function(el){ GO.instructions=el.value; F.ls("fsc_mk_gen",GO); });
+F.action("mpquick",function(q){ var el=document.querySelector("[data-mpgen=instructions]"), v=(el?el.value:(GO.instructions||"")).trim(); v=v?(v.replace(/[.,;]$/,"")+", "+q):q; GO.instructions=v; F.ls("fsc_mk_gen",GO); if(el){ el.value=v; el.focus(); } });
 F.action("mpgen",function(){
   if(GEN) return; GEN=true; F.render();
-  api("/admin/api/mkt/generate",{brand:UI.mkBrand,count:+GO.count||4,formats:{reel:GO.reel!==false,karussell:GO.karussell!==false,bild:GO.bild!==false},topic:GO.topic||""}).then(function(j){
+  api("/admin/api/mkt/generate",{brand:UI.mkBrand,count:+GO.count||4,formats:{reel:GO.reel!==false,karussell:GO.karussell!==false,bild:GO.bild!==false},instructions:GO.instructions!=null?GO.instructions:(GO.topic||"")}).then(function(j){
     GEN=false; if(!j||!j.ok){ F.toast((j&&j.error)||"Generieren fehlgeschlagen",true); F.render(); return; }
     PL.posts=j.posts.concat(PL.posts||[]); F.toast(j.posts.length+" Posts erstellt"+(j.eur?" (KI-Kosten ca. "+String(j.eur.toFixed(2)).replace(".",",")+" €)":"")+" – Bilder und Videos werden gerade gemacht"); F.render(); schedulePoll();
   }).catch(function(){ GEN=false; F.render(); F.toast("Keine Verbindung zum Server",true); });
@@ -200,6 +211,17 @@ F.form("mped",function(form){ var id=form.getAttribute("data-id"), p=PL.posts.fi
   if(changed) patch.slides=sl;
   var mu=form.querySelector('[name="music"]'); if(mu&&mu.value!==(p.music||"")) patch.music=mu.value;
   api("/admin/api/mkt/post",{id:id,op:"update",patch:patch}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); upd(j.post); F.closeModal(); F.toast(changed||patch.music!==undefined?"Gespeichert – wird neu erstellt":"Gespeichert"); F.render(); schedulePoll(); }); });
+// Einen Post mit Anweisung neu schreiben lassen (KI), Bild/Reel wird neu erzeugt
+F.action("mprw",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); if(!p) return;
+  F.modal('<form data-form="mprw" data-id="'+esc(id)+'" class="mp-ed"><div class="row-between"><h2 style="font-size:19px">Neu schreiben</h2>'+F.btnClose()+'</div><p class="muted small" style="margin:0">'+esc(p.idea||"")+'</p>'+
+    '<label class="fl">Was soll anders sein?<textarea class="f" name="ins" rows="4" maxlength="2000" autofocus placeholder="z. B. „lustiger, mehr Mundart, Fokus auf Pizza, Frage an die Community am Schluss“"></textarea></label>'+
+    '<div class="mp-qk">'+["lustiger","seriöser","kürzer","mehr Emojis","weniger Emojis","andere Hashtags","anderes Thema","Frage an die Community"].map(function(q){ return '<button type="button" data-act="mprwq:'+esc(q)+'">+ '+esc(q)+'</button>'; }).join("")+'</div>'+
+    '<div class="foot"><span class="muted small">Format bleibt, Texte, Hashtags und '+(p.format==="reel"?"Video":"Bilder")+' werden neu erstellt.</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary" id="mpRwBtn">'+F.svg("mspark")+' Neu schreiben</button></span></div></form>',"narrow"); });
+F.action("mprwq",function(q){ var el=document.querySelector('form[data-form="mprw"] [name=ins]'); if(!el) return; var v=el.value.trim(); el.value=v?(v.replace(/[.,;]$/,"")+", "+q):q; el.focus(); });
+F.form("mprw",function(form){ var id=form.getAttribute("data-id"), ins=form.ins.value.trim(), b=document.getElementById("mpRwBtn"); if(!ins) return F.toast("Bitte kurz sagen, was anders sein soll",true);
+  if(b){ b.disabled=true; b.textContent="KI schreibt um …"; }
+  api("/admin/api/mkt/post",{id:id,op:"rewrite",instruction:ins}).then(function(j){ if(!j||!j.ok){ if(b){ b.disabled=false; b.textContent="Neu schreiben"; } return F.toast((j&&j.error)||"Fehler",true); } upd(j.post); F.closeModal(); F.toast("Neu geschrieben – "+(j.post.format==="reel"?"Video":"Bilder")+" werden erstellt"); F.render(); schedulePoll(); }).catch(function(){ if(b){ b.disabled=false; } F.toast("Keine Verbindung",true); }); });
+
 // Rhythmus je Marke
 F.action("mpplan",function(k){ var pl=PL.plans&&PL.plans[k]||{perWeek:3,times:[]};
   F.modal('<form data-form="mpplan" data-key="'+esc(k)+'" class="mp-ed"><div class="row-between"><h2 style="font-size:19px">Rhythmus für '+esc(brandOf(k).name)+'</h2>'+F.btnClose()+'</div>'+

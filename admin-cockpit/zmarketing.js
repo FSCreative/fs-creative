@@ -260,6 +260,7 @@ F.action("mkbrand",function(key){
     '<div class="mk-row2"><label class="fl">Eigene Konten (z. B. @kochdu.at)<input class="f" name="handles" value="'+esc((b.handles||[]).join(" "))+'"></label>'+
     '<label class="fl">App Store<input class="f" name="appStoreUrl" value="'+esc(b.appStoreUrl||"")+'"></label></div>'+
     ta("seasonality","Saison",b.seasonality,2)+ta("guardrails","Nicht erwähnen / Regeln",b.guardrails,2)+
+    ta("standing","Dauerhafte Vorgaben für Posts (gelten bei jedem Generieren, z. B. „immer Wirte namentlich nennen, nie Preise“)",b.standing,3)+
     '<div><span class="muted small">Farben</span><div class="mk-cols">'+col("primary","Haupt")+col("dark","Dunkel")+col("light","Hell")+col("ink","Text")+col("accent","Akzent")+'</div></div>'+
     '<div class="mk-row2"><label class="fl">Logo hochladen (PNG, JPG, SVG)<input class="f" type="file" accept="image/png,image/jpeg,image/svg+xml" id="mkLogo"></label>'+
     '<label class="fl">Logo-Hintergrund<select class="f" name="logoBg"><option value="light"'+(b.logoBg!=="dark"?' selected':'')+'>Weiß (für dunkle Logos)</option><option value="dark"'+(b.logoBg==="dark"?' selected':'')+'>Dunkel (für helle Logos)</option></select></label></div>'+
@@ -269,7 +270,7 @@ F.form("mkbrand",function(form){
   var key=form.getAttribute("data-key"), g=function(n){ var el=form.querySelector('[name="'+n+'"]'); return el?el.value:""; }, ls=function(n){ return g(n).split("\n").map(function(s){ return s.trim(); }).filter(Boolean); };
   var patch={name:g("name"),url:g("url"),oneLiner:g("oneLiner"),whatItIs:g("whatItIs"),audience:g("audience"),tone:g("tone"),usps:ls("usps"),pillars:ls("pillars"),ctas:ls("ctas"),
     hashtags:g("hashtags").split(/[\s,]+/).filter(Boolean).map(function(h){ return h.charAt(0)==="#"?h:"#"+h; }),handles:g("handles").split(/[\s,]+/).filter(Boolean).map(function(h){ return h.charAt(0)==="@"?h:"@"+h; }),
-    appStoreUrl:g("appStoreUrl"),seasonality:g("seasonality"),guardrails:g("guardrails"),logoBg:g("logoBg"),enabled:form.querySelector('[name="enabled"]').checked,colors:{}};
+    appStoreUrl:g("appStoreUrl"),seasonality:g("seasonality"),guardrails:g("guardrails"),standing:g("standing"),logoBg:g("logoBg"),enabled:form.querySelector('[name="enabled"]').checked,colors:{}};
   Array.prototype.forEach.call(form.querySelectorAll("[data-mkc]"),function(el){ patch.colors[el.getAttribute("data-mkc")]=el.value; });
   var file=document.getElementById("mkLogo"), f=file&&file.files&&file.files[0];
   var go=function(){ api("/admin/api/mkt/brand",{key:key,patch:patch}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Speichern fehlgeschlagen",true); ST.brands=ST.brands.map(function(b){ return b.key===key?j.brand:b; }); F.closeModal(); F.toast("Gespeichert"); F.render(); }); };
