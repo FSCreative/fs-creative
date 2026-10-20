@@ -2253,7 +2253,7 @@ async function steuerRaw(force) {
       (r.taxRates || []).forEach(t => { if (x.rates.indexOf(t) < 0) x.rates.push(t); }); if (side && x.side.indexOf(side) < 0) x.side = (x.side ? x.side + "/" : "") + side; }); }));
     const taxRules = Object.keys(trBy).map(k => trBy[k]).sort((a, b) => +a.id - +b.id);
     const taxSets = Object.keys(tsBy).map(k => tsBy[k]);
-    const d = { fetchedAt: new Date().toISOString(), invoices, vouchers, creditNotes, transactions, taxRules, taxSets, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
+    const d = { fetchedAt: new Date().toISOString(), local: !!FIN_STATE.local, invoices, vouchers, creditNotes, transactions, taxRules, taxSets, meta: { dupes, counts: { invoices: invoices.length, vouchers: vouchers.length, creditNotes: creditNotes.length, payLogs: logs.length } } };
     STEUER_CACHE = { at: Date.now(), data: d, p: null };
     return d;
   })().catch(e => { STEUER_CACHE.p = null; throw e; });
@@ -2609,7 +2609,7 @@ async function sevFixTaxRule(pl) {
   if (!v) throw new Error("Beleg nicht gefunden.");
   if (v.enshrined) throw new Error("Der Beleg ist in sevDesk festgeschrieben und kann nicht geändert werden.");
   if (v.creditDebit !== "C") throw new Error("Nur Ausgabenbelege.");
-  if (!(v.taxRule && v.taxRule.id)) throw new Error("Dieses sevDesk-Konto verwendet noch keine Steuerregeln (Update 2.0).");
+  if (!(v.taxRule && v.taxRule.id) && !FIN_STATE.local) throw new Error("Dieses sevDesk-Konto verwendet noch keine Steuerregeln (Update 2.0).");   // eigene Buchhaltung: Regel nachtragen geht immer
   await sev("PUT", "/Voucher/" + id, { body: { taxRule: { id: rule, objectName: "TaxRule" } } });
   STEUER_CACHE.at = 0;
   return { id, taxRule: rule };

@@ -849,11 +849,11 @@ function mismatches(raw,st,from,to){
       if(nonBiz(l)) return;
       var mine=inClass(v,l,st), sev=sevClassOf(v,l), ov=docCfg(st,v.id).kz;
       var key=mine+"|"+sev; if(seen[key]) return; seen[key]=1;
-      if(mine==="060"&&catKz(st,l)==="9170"&&!docCfg(st,v.id).epkw&&!seen.pkw){ seen.pkw=1; out.push({doc:v,kind:"in",type:"pkw",t:"Kfz-Kosten mit Vorsteuer: bei Pkw/Kombi kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – ausgenommen E-Pkw (CO2 0), Fiskal-Lkw/Klein-Lkw laut BMF-Liste, Kleinbusse",fix:"Als 'nicht vorsteuerabziehbar' buchen, falls Pkw.",rule:"",fixable:false}); }
+      if(mine==="060"&&catKz(st,l)==="9170"&&!docCfg(st,v.id).epkw&&!(st.settings&&st.settings.kfzVst)&&!seen.pkw){ /* Fiskal-Lkw/Kleinbus/E-Auto laut Einstellung: Vorsteuer erlaubt */ seen.pkw=1; out.push({doc:v,kind:"in",type:"pkw",t:"Kfz-Kosten mit Vorsteuer: bei Pkw/Kombi kein Vorsteuerabzug (§ 12 Abs. 2 Z 2 lit. b UStG) – ausgenommen E-Pkw (CO2 0), Fiskal-Lkw/Klein-Lkw laut BMF-Liste, Kleinbusse",fix:"Als 'nicht vorsteuerabziehbar' buchen, falls Pkw.",rule:"",fixable:false}); }
       if(mine==="fx") out.push({doc:v,kind:"in",type:"fx",t:"Ausländische USt ("+l.rate+" %) – in Österreich nicht als Vorsteuer abziehbar",fix:"Als 'nicht vorsteuerabziehbar' buchen; Rückholung nur über das Erstattungsverfahren des Landes.",rule:"",fixable:false});
       else if(sev&&mine!==sev&&!(mine==="none"&&sev==="none")){
         var rule=suggestRule(v,mine), allZero=ls.every(function(x){ return Math.abs(x.tax)<0.005&&!x.rate; });
-        var canRule=!!rule&&!!v.taxRule&&(rule==="9"||rule==="8"||allZero);
+        var canRule=!!rule&&(!!v.taxRule||!!(raw&&raw.local))&&(rule==="9"||rule==="8"||allZero);   /* eigene Buchhaltung: Regel auch nachtragen, wenn der Beleg noch keine hat */
         out.push({doc:v,kind:"in",type:ov&&ov!=="auto"?"override":"rule",t:(ov&&ov!=="auto"?"Einordnung weicht von der Steuerregel ab":"Steuerregel passt nicht")+": Steuerregel "+(ruleKey(v)?ruleTxt(ruleKey(v)):(v.taxType||"–"))+" → Einordnung "+(IN_OPTS.filter(function(o){ return o[0]===mine; })[0]||[,mine])[1]+(cc?" (Lieferant "+cc+")":""),rule:rule,fixable:canRule&&!v.enshrined,enshrined:!!v.enshrined});
       }
     });
