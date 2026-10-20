@@ -69,6 +69,7 @@ function initForm(it){
     rate:lines.length>1&&eur?"mix":String(RATES.indexOf(r)>-1?r:20),cat:x.accountingTypeId||lastCat()||"",
     desc:String((x.description||"")+(x.invoiceNumber&&String(x.description||"").indexOf(x.invoiceNumber)<0?" · Nr. "+x.invoiceNumber:"")).replace(/^ · /,"").slice(0,200)};
   if(!it.f.desc) it.f.desc=String(it.name||"").replace(/\.[^.]+$/,"").slice(0,200);
+  it.f.rule=F.taxRuleOk(x.taxRule)?String(x.taxRule):"9"; if(F.taxRuleZero(it.f.rule)) it.f.rate="0";   /* Steuerliche Regel: KI-Vorschlag, sonst Vorsteuer abziehbar */
 }
 function num(v){ var n=parseFloat(String(v==null?"":v).replace(",",".")); return isFinite(n)?Math.round(n*100)/100:0; }
 function catName(id){ var c=(CATS||[]).filter(function(t){ return t.id===id; })[0]; return c?c.name:""; }
@@ -79,6 +80,8 @@ function valid(it){ return num(it.f.gross)>0&&catOk(it.f.cat)&&mixOk(it); }
 function high(it){ var x=it.x; return !!x&&(+x.confidence||0)>=HIGH&&x.isInvoice!==false&&eurOk(x)&&!(it.res&&it.res.dupes&&it.res.dupes.length)&&valid(it); }
 function taxTxt(it){
   var g=num(it.f.gross); if(!(g>0)) return "";
+  if(F.taxRuleZero(it.f.rule)) return F.taxRuleName(it.f.rule)+" · 0 % (die UVA rechnet 20 %)";
+  if(it.f.rule==="10") return "Keine Vorsteuer"+(+it.f.rate?" · "+it.f.rate+" % USt":"");
   if(it.f.rate==="mix") return linesOf(it.x).map(function(l){ return l.rate+" %: "+F.eur(l.gross); }).join(" · ");
   var r=+it.f.rate; return r?r+" % · VSt "+F.eur(g-g/(1+r/100)):"0 % · ohne VSt";
 }
@@ -129,7 +132,8 @@ function fieldsHtml(it){
     '<label class="fl kq-w">Lieferant<input class="f"'+a+'"supplier" list="mvContacts" value="'+esc(f.supplier)+'" autocomplete="off"></label>'+
     '<label class="fl">Datum<input class="f"'+a+'"date" type="date" value="'+esc(f.date)+'"></label>'+
     '<label class="fl">Betrag brutto (€)<input class="f num"'+a+'"gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+esc(f.gross)+'"></label>'+
-    '<label class="fl">Steuersatz<select class="f"'+a+'"rate">'+rateOpts+'</select></label>'+
+    '<label class="fl">Steuersatz<select class="f"'+a+'"rate"'+(F.taxRuleZero(f.rule)?' disabled title="Bei dieser Regel steht keine österr. USt auf der Rechnung"':'')+'>'+rateOpts+'</select></label>'+
+    F.taxRuleSelect('data-kq="'+k+'" data-k="rule" data-rate="[data-k=rate]"',f.rule).replace('class="fl trl"','class="fl trl kq-w"')+
     '<label class="fl">Kategorie<select class="f kq-cat"'+a+'"cat">'+catOpts(f.cat)+'</select></label>'+
     '<label class="fl kq-w">Beschreibung<input class="f"'+a+'"desc" maxlength="200" value="'+esc(f.desc)+'"></label></div>';
 }
@@ -219,7 +223,7 @@ function save(it,draft){
   try{ localStorage.setItem("fsc_sev_cat",f.cat); }catch(e){}
   it.saving=true; paintFoot(it); paintHead();
   return (K.sevVersion?K.sevVersion():Promise.resolve("")).then(function(ver){
-    if(/^2/.test(ver)&&x.taxRule) body.taxRule=x.taxRule;
+    if(F.taxRuleOk(f.rule)) body.taxRule=f.rule;   /* gewählte steuerliche Regel (Server prüft, ob die Buchhaltung Regeln kennt) */
     return F.api("/admin/api/sevdesk/voucher",{body:body});
   }).then(function(j){
     it.saving=false;

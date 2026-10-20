@@ -58,6 +58,7 @@ function belegHtml(o){ if(!ATT||!ATT.a) return "";
     (sent?'<div class="notice"><span>Dieser Anhang ist schon als Beleg erfasst ('+esc(new Date(sent.at).toLocaleDateString("de-AT"))+').</span></div>':'')+(dup&&F.KI&&F.KI.dupesHtml?F.KI.dupesHtml(b.dupes):'')+
     '<div class="pay-belf"><div class="grid2"><label class="fl">Lieferant<input class="f" name="bsupplier" value="'+esc(b.supplier||o.name||"")+'"></label><label class="fl">Belegdatum<input class="f" type="date" name="bdate" value="'+esc(b.invoiceDate||o.invoiceDate||today())+'"></label></div>'+
     '<div class="grid2"><label class="fl">Betrag brutto (€)<input class="f num" name="bgross" inputmode="decimal" value="'+esc(g?String(g).replace(".",","):"")+'"></label><label class="fl">USt-Satz<select class="f" name="btax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===rate?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
+    F.taxRuleSelect('name="brule" data-rate="[name=btax]"',b.taxRule)+
     '<label class="fl">Kategorie<select class="f" name="bcat"><option value="">Kategorien werden geladen …</option></select></label>'+
     '<label class="fl">Beschreibung<input class="f" name="bdesc" maxlength="200" value="'+esc(String((b.description||ATT.m.subject||"")+(b.invoiceNumber&&String(b.description||"").indexOf(b.invoiceNumber)<0?" · Nr. "+b.invoiceNumber:"")).slice(0,200))+'"></label>'+
     (BEL?'':'<p class="muted small" style="margin:0">Belegdaten bitte kurz prüfen (KI-Auslesung nicht verfügbar).</p>')+'</div></div>'; }
@@ -89,7 +90,7 @@ function form(o,x){ o=o||{}; x=x||{};
       (o.id&&o.status!=="bezahlt"?'<button type="button" class="btn" data-act="paypaid:'+esc(o.id)+'">Als bezahlt markieren</button>':'')+(o.id&&o.status==="bezahlt"&&o.paid&&o.paid.manual?'<button type="button" class="btn" data-act="payunpaid:'+esc(o.id)+'">Doch nicht bezahlt</button>':'')+
       (o.source&&o.source.mailId?'<button type="button" class="btn" data-act="paymail:'+esc(o.source.mailId)+'">Mail öffnen</button>':'')+(o.voucherId?'<button type="button" class="btn" data-act="payvou">Beleg ansehen</button>':'')+'</span>'+
       '<span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">'+(editable?"Speichern":"Notiz speichern")+'</button></span></div></form>',"wide");
-  ibanHint(); if(!o.id&&ATT&&ATT.a) belegCats();
+  ibanHint(); if(!o.id&&ATT&&ATT.a){ belegCats(); var rs=document.querySelector('form[data-form="paysave"] [name=brule]'); if(rs) F.taxRuleSync(rs); }
 }
 function ibanHint(){ var f=document.querySelector('form[data-form="paysave"]'), el=document.getElementById("payIbanOk"); if(!f||!el) return; var v=f.iban.value.trim(); el.className="small "+(v?(ibanOk(v)?"ok-t":"bad-t"):""); el.textContent=v?(ibanOk(v)?"✓ IBAN gültig":"✗ IBAN stimmt nicht (Prüfziffer)"):""; }
 F.listen("input",'form[data-form="paysave"] [name="iban"]',ibanHint);
@@ -106,7 +107,7 @@ F.form("paysave",function(f){ var err=document.getElementById("payErr"), btn=f.q
     if(!(bg>0)){ err.textContent="Beleg: bitte den Betrag brutto eingeben."; f.bgross.focus(); return; }
     if(!f.bcat.value){ err.textContent="Beleg: bitte eine Kategorie wählen."; f.bcat.focus(); return; }
     var M=F.M||{}, m=ATT.m, a=ATT.a, lines=((BEL&&BEL.lines)||[]).filter(function(l){ return l.gross>0; });
-    vb={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf?M.accOf(m):(m.account||""),filename:a.filename},supplierName:f.bsupplier.value.trim()||f.name.value.trim(),date:f.bdate.value,description:f.bdesc.value.trim(),gross:bg,taxRate:parseFloat(f.btax.value),accountingTypeId:f.bcat.value};
+    vb={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf?M.accOf(m):(m.account||""),filename:a.filename},supplierName:f.bsupplier.value.trim()||f.name.value.trim(),date:f.bdate.value,description:f.bdesc.value.trim(),gross:bg,taxRate:parseFloat(f.btax.value),accountingTypeId:f.bcat.value,taxRule:f.brule?f.brule.value:undefined};
     if(lines.length>1){ var ps=0; lines.forEach(function(l){ ps+=+l.gross||0; }); if(Math.abs(ps-bg)<0.02) vb.positions=lines.map(function(l){ return {gross:l.gross,taxRate:l.rate}; }); }
     if(BEL&&BEL.deliveryFrom){ vb.deliveryDate=BEL.deliveryFrom; if(BEL.deliveryTo) vb.deliveryDateUntil=BEL.deliveryTo; }
     try{ localStorage.setItem("fsc_sev_cat",vb.accountingTypeId); }catch(e){} }

@@ -269,7 +269,8 @@ F.action("sdbknew",function(id){
     F.modal('<form data-form="sdbknew" data-id="'+esc(id)+'" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(pos?"Einnahme":"Ausgabe")+' buchen</h2>'+F.btnClose()+'</div>'+
       '<p class="muted" style="margin:0">Legt einen Beleg an und verbucht ihn gleich mit diesem Umsatz – mit Rechnungsdatei oder ohne (z. B. Kontoführung, Bankspesen; die Datei kannst du später anhängen).</p>'+
       '<p style="margin:0"><b class="'+(pos?"ok-t":"bad-t")+'">'+eur(t.amount)+'</b> · '+de(t.date)+'</p>'+
-      '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+(pos?'':'<option value="rc14">Reverse Charge EU</option><option value="rc12">Reverse Charge Drittland</option>')+'</select></label></div>'+
+      '<div class="grid2"><label class="fl">Lieferant / Zahler<input class="f" name="supplier" value="'+esc(t.name)+'"></label><label class="fl">USt-Satz<select class="f" name="tax">'+[0,20,13,10].map(function(r){ return '<option value="'+r+'">'+r+' %</option>'; }).join("")+'</select></label></div>'+
+      (pos?'':F.taxRuleSelect('name="rule" data-rate="[name=tax]"',"9"))+
       '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">— wählen —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>'; }).join("")+'</select></label>'+
       '<label class="fl">Beschreibung<input class="f" name="desc" value="'+esc(t.purpose.slice(0,200))+'"></label>'+
       '<label class="fl">Rechnung / Beleg (optional)<input class="f" type="file" name="file" accept="application/pdf,image/png,image/jpeg,image/webp"></label>'+
@@ -278,7 +279,7 @@ F.action("sdbknew",function(id){
 });
 F.form("sdbknew",function(f){
   var id=f.getAttribute("data-id"); if(!f.cat.value){ document.getElementById("sdBkErr").textContent="Bitte eine Kategorie wählen."; return; }
-  var file=f.file&&f.file.files&&f.file.files[0], t=txById(id), rc=/^rc(\d+)$/.exec(f.tax.value), rate=rc?0:parseFloat(f.tax.value), rule=rc?rc[1]:"";
+  var file=f.file&&f.file.files&&f.file.files[0], t=txById(id), rule=f.rule?f.rule.value:"", rate=F.taxRuleZero(rule)?0:parseFloat(f.tax.value);
   if(!file||!t){ F.closeModal(); bankDo(id,{op:"newVoucher",accountingTypeId:f.cat.value,taxRate:rate,taxRule:rule,supplierName:f.supplier.value,description:f.desc.value},"Gebucht"); return; }
   /* mit Datei: hochladen → Beleg mit Datei anlegen und gleich mit dem Umsatz verbinden */
   var err=document.getElementById("sdBkErr"), btn=document.getElementById("sdBkGo"); if(file.size>15*1024*1024){ err.textContent="Die Datei ist größer als 15 MB."; return; }

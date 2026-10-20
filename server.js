@@ -1382,6 +1382,17 @@ async function sevPdfSend(res, apiPath, fallbackName, dl) {
     return send(res, 200, buf, "application/pdf", { "Content-Disposition": (dl ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
   } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
 }
+// Steuerliche Regel eines Ausgaben-Belegs (IDs wie sevDesk Update 2.0): 9 Vorsteuer, 10 keine Vorsteuer, 8 ig. Erwerb, 14/12 Reverse Charge EU/Drittland, 13 RC ohne Vorsteuer.
+// Bei ig. Erwerb und Reverse Charge steht auf der Rechnung keine österr. USt → Positionen mit 0 % (netto = brutto), die 20 % rechnet die UVA selbst.
+const VOU_RULES = ["8", "9", "10", "12", "13", "14"], VOU_RULES_ZERO = ["8", "12", "13", "14"];
+let SEV_RULES_OK = null;
+async function sevRulesOk() {   // eigene Buchhaltung: immer; echtes sevDesk nur mit Update 2.0
+  if (FIN_STATE.local) return true;
+  if (SEV_RULES_OK && Date.now() - SEV_RULES_OK.at < 3600000) return SEV_RULES_OK.ok;
+  let ok = false; try { const v = await sev("GET", "/Tools/bookkeepingSystemVersion"); ok = /^2/.test(String(v && v.objects && v.objects.version || "")); } catch (e) {}
+  SEV_RULES_OK = { at: Date.now(), ok }; return ok;
+}
+function voucherRule(pl) { const r = String(pl && pl.taxRule || ""); return pl && pl.creditDebit !== "D" && VOU_RULES.indexOf(r) > -1 ? r : ""; }
 async function sevVoucherFromMail(pl) {
   const m = pl.mail || {};
   let buf, fname, ctypeIn = "";
@@ -1409,9 +1420,10 @@ async function sevVoucherFromMail(pl) {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(pl.date || "") ? pl.date : viennaToday();
   const at = String(pl.accountingTypeId || "").replace(/\D/g, ""); if (!at) throw new Error("keine_kategorie");
   // Optional (KI-Vorbefüllung): je Steuersatz eine Position, Steuerregel nach sevDesk Update 2.0, Leistungszeitraum
-  const posIn = (Array.isArray(pl.positions) ? pl.positions : []).filter(x => x && parseFloat(x.gross) > 0).slice(0, 10);
-  const pos = posIn.length ? posIn.map(x => { const r = isFinite(parseFloat(x.taxRate)) ? parseFloat(x.taxRate) : rate, g = Math.round(parseFloat(x.gross) * 100) / 100; return { r, g }; }) : [{ r: rate, g: gross }];
-  const rule = ["8", "9", "10", "12", "13", "14"].indexOf(String(pl.taxRule || "")) > -1 ? String(pl.taxRule) : "";
+  let rule = voucherRule(pl); if (rule && !(await sevRulesOk())) rule = "";
+  const zero = VOU_RULES_ZERO.indexOf(rule) > -1;
+  const posIn = zero ? [] : (Array.isArray(pl.positions) ? pl.positions : []).filter(x => x && parseFloat(x.gross) > 0).slice(0, 10);
+  const pos = posIn.length ? posIn.map(x => { const r = isFinite(parseFloat(x.taxRate)) ? parseFloat(x.taxRate) : rate, g = Math.round(parseFloat(x.gross) * 100) / 100; return { r, g }; }) : [{ r: zero ? 0 : rate, g: gross }];
   const body = {
     voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(day), supplierName: String(pl.supplierName || "").slice(0, 200), description: String(pl.description || "").slice(0, 250),
       status: 50, taxType: "default", creditDebit: pl.creditDebit === "D" ? "D" : "C",   // D = Einnahme-Beleg (z. B. Provisionsgutschrift Paketshop)
@@ -1419,7 +1431,7 @@ async function sevVoucherFromMail(pl) {
     voucherPosSave: pos.map(x => ({ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: x.r, net: false, sumGross: x.g, sumNet: sevNet(x.g, x.r), comment: String(pl.description || "").slice(0, 250) })),
     voucherPosDelete: null, filename: tmp,
   };
-  if (rule) { body.voucher.taxRule = { id: rule, objectName: "TaxRule" }; delete body.voucher.taxType; }
+  if (rule) { body.voucher.taxRule = { id: rule, objectName: "TaxRule" }; delete body.voucher.taxType; if (["12", "13", "14"].indexOf(rule) > -1) body.voucher.reverseCharge = true; }
   if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDate || "")) body.voucher.deliveryDate = sevDateDE(pl.deliveryDate);
   if (/^\d{4}-\d{2}-\d{2}$/.test(pl.deliveryDateUntil || "") && pl.deliveryDateUntil !== pl.deliveryDate) body.voucher.deliveryDateUntil = sevDateDE(pl.deliveryDateUntil);
   const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
@@ -3898,6 +3910,8 @@ const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);
 // Mollie alle 6 Std.: importiert nur die Saldo-Bewegungen; Zuordnungen/Gebühren/Auszahlungen/Einnahme-Belege → „Zur Prüfung“ (nie selbst gebucht)
+// Beim Start: nachgelieferte Zahlungen von Betrieben, deren Mollie-Zahlungen schon als Fremdgeld markiert sind, gleich mit markieren (sonst erst beim nächsten Abruf)
+setTimeout(() => { if (FIN_STATE.local && process.env.DATABASE_URL) FIN_LOCAL.load().then(() => FIN_MOLLIE.autoPassthrough()).then(n => { if (n) { console.log("Mollie: " + n + " Zahlung(en) automatisch als Fremdgeld markiert"); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } }).catch(e => console.error("Mollie-Fremdgeld:", e.message)); }, 15000);
 setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
 
 // Einmalige Steuer-Diagnose ins Log (nur wenn STEUER_DIAG=<Zeitraum>, z. B. 2026-Q3): liest sevDesk nur, schreibt nichts.

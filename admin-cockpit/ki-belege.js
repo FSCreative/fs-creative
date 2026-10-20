@@ -108,13 +108,12 @@ K.openVoucherWith=function(m,a,x,onDone,opt){
       (!eur?'<div class="bad-t">Rechnung in '+esc(x.currency)+' ('+esc(String(x.gross))+' '+esc(x.currency)+') – bitte den Euro-Betrag laut Kontoauszug eintragen.</div>':'')+
       (x.isInvoice===false?'<div class="bad-t">Laut KI ist das vermutlich keine Rechnung.</div>':'')+
       (x.notes?'<div class="muted">'+esc(x.notes)+'</div>':'')+K.dupesHtml(opt.dupes)+
-      (/^2/.test(ver)?'':'<div class="muted">Steuerregel bitte beim Beleg prüfen.</div>')+'</div>';
+      '</div>';
     var extra=Object.assign({},opt.extra||{});
     if(lines.length>1&&eur) extra.positions=lines.map(function(l){ return {gross:l.gross,taxRate:l.rate}; });
-    if(/^2/.test(ver)) extra.taxRule=x.taxRule;
     if(x.deliveryFrom){ extra.deliveryDate=x.deliveryFrom; if(x.deliveryTo) extra.deliveryDateUntil=x.deliveryTo; }
     var rate=lines.length===1?lines[0].rate:(x.tax>0?20:0);
-    M.openVoucher(m,a,{fx:!eur&&x.gross>0?{amount:x.gross,cur:x.currency}:null,title:"Beleg prüfen (KI)",supplier:x.supplier,date:x.invoiceDate||undefined,gross:eur&&x.gross>0?x.gross:null,taxRate:[20,13,10,0].indexOf(rate)>-1?rate:20,
+    M.openVoucher(m,a,{fx:!eur&&x.gross>0?{amount:x.gross,cur:x.currency}:null,title:"Beleg prüfen (KI)",taxRule:x.taxRule,supplier:x.supplier,date:x.invoiceDate||undefined,gross:eur&&x.gross>0?x.gross:null,taxRate:[20,13,10,0].indexOf(rate)>-1?rate:20,
       desc:(x.description||m.subject||"")+(x.invoiceNumber&&String(x.description||"").indexOf(x.invoiceNumber)<0?" · Nr. "+x.invoiceNumber:""),cat:x.accountingTypeId||"",html:info,extra:extra,onDone:onDone,href:opt.href});
   });
 };

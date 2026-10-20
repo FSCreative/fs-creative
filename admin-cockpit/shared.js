@@ -235,4 +235,27 @@ F.todosPost=function(next){
 /* „To-Do anlegen“ (KI, Mail, Kundenakte …) legt seit 20.10.2026 eine Aufgabe in „Aufträge“ an (ohne Auftrag; Anfrage → mit Kundenakte verknüpft) */
 F.addTodo=function(t){ t=t||{}; return F.api("/admin/api/auftraege",{body:{op:"task.save",task:{title:String(t.text||"Aufgabe").slice(0,200),due:t.due||"",notes:t.notes||"",status:"offen",prio:t.prio||"normal",leadId:t.leadId||undefined}}})
   .then(function(j){ if(j&&j.ok&&j.data&&F.D){ F.D.auftraege=j.data; F.render(); return Object.assign({},j,{todos:[]}); } F.toast((j&&j.error)||"Aufgabe konnte nicht angelegt werden",true); return j; }); };
+
+/* ---------- Steuerliche Regel bei jeder Beleganlage (Scan/Upload, Mail-Anhang, Zahlung, Bankumsatz) ----------
+   IDs wie sevDesk Update 2.0 – die UVA rechnet daraus Vorsteuer, ig. Erwerb und Reverse Charge.
+   Bei ig. Erwerb und Reverse Charge steht auf der Rechnung keine österr. USt: Beleg mit 0 %, die 20 % rechnet die UVA selbst (Server erzwingt das auch). */
+F.TAXRULES=[["9","Vorsteuer abziehbar","Rechnung mit österr. USt – der Normalfall"],
+  ["10","Keine Vorsteuer","USt nicht abziehbar, z. B. PKW oder privat mitveranlasst"],
+  ["8","Innergemeinschaftlicher Erwerb","Ware aus der EU ohne USt (z. B. Print.com) – Erwerbsteuer und Vorsteuer je 20 %"],
+  ["14","Reverse Charge EU","Dienstleistung einer EU-Firma ohne USt (z. B. Google, Meta) – Steuer und Vorsteuer je 20 %"],
+  ["12","Reverse Charge Drittland","Dienstleistung aus Nicht-EU ohne USt (z. B. USA, Schweiz) – Steuer und Vorsteuer je 20 %"],
+  ["13","Reverse Charge ohne Vorsteuer","Steuerschuld geht auf dich über, Vorsteuer nicht abziehbar"]];
+F.taxRuleZero=function(r){ return ["8","12","13","14"].indexOf(String(r||""))>-1; };
+F.taxRuleName=function(r){ var x=F.TAXRULES.filter(function(t){ return t[0]===String(r); })[0]; return x?x[1]:""; };
+F.taxRuleHint=function(r){ var x=F.TAXRULES.filter(function(t){ return t[0]===String(r); })[0]; return x?x[2]+(F.taxRuleZero(r)?" · Beleg mit 0 % USt":""):""; };
+F.taxRuleOk=function(r){ return F.TAXRULES.some(function(t){ return t[0]===String(r||""); }); };
+/* attr: z. B. 'name="rule" data-rate="[name=tax]"' – data-rate: USt-Satz-Feld im selben Formular, das bei ig. Erwerb/RC auf 0 % springt */
+F.taxRuleSelect=function(attr,sel){ sel=F.taxRuleOk(sel)?String(sel):"9";
+  return '<label class="fl trl"><span>Steuerliche Regel</span><select class="f" '+(attr||"")+' data-taxrule>'+F.TAXRULES.map(function(t){ return '<option value="'+t[0]+'"'+(t[0]===sel?" selected":"")+'>'+esc(t[1])+'</option>'; }).join("")+'</select><span class="muted small trh">'+esc(F.taxRuleHint(sel))+'</span></label>'; };
+F.taxRuleSync=function(el){ var h=el.parentNode&&el.parentNode.querySelector(".trh"); if(h) h.textContent=F.taxRuleHint(el.value);
+  var rs=el.getAttribute("data-rate"), box=el.closest("form,.kq,.pay-belf"), r=rs&&box&&box.querySelector(rs); if(!r) return;
+  if(F.taxRuleZero(el.value)){ if(r.value!=="0"){ r.value="0"; r.dispatchEvent(new Event("change",{bubbles:true})); } r.disabled=true; r.title="Bei dieser Regel steht keine österr. USt auf der Rechnung"; }
+  else { r.disabled=false; r.title=""; } };
+F.listen("change","select[data-taxrule]",function(el){ F.taxRuleSync(el); });
+F.css(".trl .trh{display:block;margin-top:4px;line-height:1.35}");
 })();

@@ -264,7 +264,7 @@ module.exports = function (D) {
           res.payouts++; if (res0 < 0 && await linkPayout(tx, -res0, d)) res.linked++;   // linked = Vorschläge
         } else {
           const label = { refund: "Rückerstattung", chargeback: "Rückbuchung (Chargeback)", "application-fee": "Provision (Mollie Connect)", "split-payment": "Anteil Split-Zahlung", "invoice-compensation": "Mollie-Rechnung verrechnet", "balance-correction": "Korrektur", "failed-payment-fee": "Gebühr fehlgeschlagene Zahlung" }[type] || type;
-          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee", mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : (type === "application-fee" ? "kochdu" : "") });
+          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee", mollieDesc: pay && (type === "refund" || type === "chargeback") ? pay.description || "" : undefined, mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : (type === "application-fee" ? "kochdu" : "") });
           res.added++;
         }
         have.add(t.id);
@@ -290,8 +290,9 @@ module.exports = function (D) {
       await L.load();
       const since = (opt && (opt.resetSince || opt.since)) || new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
       const out = []; for (const tk of tks) out.push(await syncOrg(tk, since, opt).catch(e => ({ org: tk.key, error: e.message })));
+      const passthrough = await autoPassthrough();   // vor Zuordnung/Vorschlägen: Fremdgeld ist nie eigener Umsatz
       const relinked = await relink(), feesLinked = await linkFees(), rematched = await rematch(), vouchers = await autoVouchers();
-      STATE.last = { at: new Date().toISOString(), orgs: out, relinked, feesLinked, rematched, vouchers }; STATE.at = STATE.last.at; return STATE.last;
+      STATE.last = { at: new Date().toISOString(), orgs: out, passthrough, relinked, feesLinked, rematched, vouchers }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
   }
   // Abgleich je Mollie-Konto: eingenommen (brutto), Gebühren, netto, ausbezahlt (mit/ohne Bankumsatz), noch bei Mollie, Kontrolle gegen Mollie-Saldo
@@ -313,7 +314,9 @@ module.exports = function (D) {
         unmatched: pays.filter(t => String(t.status) === "100").map(t => ({ id: String(t.id), date: day(t.valueDate), name: t.payeePayerName, purpose: String(t.mollieDesc || t.paymtPurpose || "").slice(0, 80), gross: +t.mollieGross || +t.amount, fee: +t.mollieFeeAmt || 0 })),
         // Fremdgeld (z. B. Bestellungen eines Lokals vor Mollie Connect): nicht Umsatz, sondern an den Betrieb weiterzuleiten
         unmatchedGroups: Object.values(pays.filter(t => String(t.status) === "100").reduce((o, t) => { const k = partyOf(t); if (!k) return o; const x = o[k] = o[k] || { party: k, count: 0, sum: 0 }; x.count++; x.sum = r2(x.sum + (+t.amount || 0)); return o; }, {})).filter(g => g.count >= 2),
-        passthrough: Object.values(txs.filter(t => t.passthroughFor).reduce((o, t) => { const k = t.passthroughFor; const x = o[k] = o[k] || { party: k, count: 0, net: 0, gross: 0, from: day(t.valueDate), to: day(t.valueDate) }; x.count++; x.net = r2(x.net + (+t.amount || 0)); x.gross = r2(x.gross + (+t.mollieGross || +t.amount || 0)); if (day(t.valueDate) < x.from) x.from = day(t.valueDate); if (day(t.valueDate) > x.to) x.to = day(t.valueDate); return o; }, {})),
+        passthrough: Object.values(txs.filter(t => t.passthroughFor).reduce((o, t) => { const k = t.passthroughFor; const x = o[k] = o[k] || { party: k, count: 0, net: 0, gross: 0, from: day(t.valueDate), to: day(t.valueDate) }; x.count++; x.net = r2(x.net + (+t.amount || 0)); x.gross = r2(x.gross + (+t.mollieGross || +t.amount || 0)); if (day(t.valueDate) < x.from) x.from = day(t.valueDate); if (day(t.valueDate) > x.to) x.to = day(t.valueDate);
+          if (t.passthroughAuto) { x.late = x.late || { count: 0, net: 0, list: [] }; x.late.count++; x.late.net = r2(x.late.net + (+t.amount || 0)); x.late.list.push({ date: day(t.valueDate), amount: +t.amount || 0, desc: String(t.mollieDesc || t.paymtPurpose || "").slice(0, 60) }); }
+          return o; }, {})),
         notices: prov.length ? onlineNotices() : [],
         countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length,
         byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieProfile || "ohne Profil"; const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
@@ -322,14 +325,31 @@ module.exports = function (D) {
     return out;
   }
   function partyOf(t) { const m = String(t.mollieDesc || "").match(/^(.+?)\s+#\w+/); return m ? m[1].trim() : ""; }
+  // auch Rückerstattungen/Rückbuchungen (ältere ohne mollieDesc: „Rückerstattung kochdu: La Taverna #85 tr_…“)
+  function partyOfAny(t) { const p = partyOf(t); if (p) return p; if (!/refund|chargeback/.test(t.mollieType || "")) return "";
+    const m = String(t.paymtPurpose || "").replace(/^(Rückerstattung|Rückbuchung \(Chargeback\))\s+/, "").replace(/^[^:#]{1,60}:\s+/, "").match(/^(.+?)\s+#\w+/); return m ? m[1].trim() : ""; }
+  const PT_TYPES = t => t.mollieType === "payment" || /refund|chargeback/.test(t.mollieType || "");
+  function markPassthrough(t, party, auto) { t.status = "400"; t.transitWith = "durchlaufend"; t.passthroughFor = party; if (auto) t.passthroughAuto = new Date().toISOString(); return L.save("CheckAccountTransaction", t); }
+  // Fremdgeld automatisch: Wurden die Zahlungen eines Betriebs schon einmal (per Klick) als Fremdgeld markiert, gilt das auch für alles, was von ihm
+  // später noch auf deinem Mollie-Konto landet – z. B. Zahlungen von vor Mollie Connect, die Mollie erst nachträglich gutschreibt, oder Erstattungen.
+  // Seit Connect bekommt der Betrieb sein Geld direkt; auf deinem Konto landet von ihm nur noch die Provision (application-fee, wird nicht angefasst).
+  async function autoPassthrough() {
+    const key = (t, p) => String(t.checkAccount && t.checkAccount.id) + "|" + p, known = {}; let n = 0;
+    L.all("CheckAccountTransaction").forEach(t => { if (t.passthroughFor) known[key(t, t.passthroughFor)] = 1; });
+    for (const t of L.all("CheckAccountTransaction").filter(t => PT_TYPES(t) && String(t.status) === "100")) {
+      const party = partyOfAny(t); if (!party || !known[key(t, party)]) continue;
+      await markPassthrough(t, party, true); n++;
+    }
+    return n;
+  }
   // Zahlungen einer Partei als Fremdgeld markieren (nur auf ausdrücklichen Klick): kein Umsatz, Umsatz gilt als erledigt
   async function passthrough(party, accId) {
     await L.load(); let n = 0, sum = 0;
-    for (const t of L.all("CheckAccountTransaction").filter(t => t.mollieType === "payment" && String(t.status) === "100" && partyOf(t) === party && (!accId || String(t.checkAccount && t.checkAccount.id) === String(accId)))) {
-      t.status = "400"; t.transitWith = "durchlaufend"; t.passthroughFor = party; await L.save("CheckAccountTransaction", t); n++; sum = r2(sum + (+t.amount || 0));
+    for (const t of L.all("CheckAccountTransaction").filter(t => PT_TYPES(t) && String(t.status) === "100" && partyOfAny(t) === party && (!accId || String(t.checkAccount && t.checkAccount.id) === String(accId)))) {
+      await markPassthrough(t, party, false); n++; sum = r2(sum + (+t.amount || 0));
     }
     return { count: n, sum };
   }
   function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, passthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept, onlineCheck, onlineNotices };
+  return { sync, status, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept, onlineCheck, onlineNotices };
 };

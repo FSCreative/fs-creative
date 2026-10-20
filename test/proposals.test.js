@@ -231,6 +231,28 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     const a2 = L.get("CheckAccount", "2"); a2.mollieBalance = "bal_test"; await L.save("CheckAccount", a2);
     assert.strictEqual((M2.summary().find(a => String(a.id) === "2") || { notices: [] }).notices.length, 1, "Hinweis auf der Mollie-Karte");
   });
+  // Fremdgeld: Betrieb vor Mollie Connect (z. B. La Taverna) – einmal per Klick markiert, nachgelieferte Zahlungen/Erstattungen werden automatisch mitmarkiert
+  await t("Fremdgeld: nachgelieferte Zahlungen und Erstattungen eines schon markierten Betriebs automatisch markiert, andere Betriebe und Provisionen nicht", async () => {
+    const mtx = (id, amount, type, desc, extra) => L.save("CheckAccountTransaction", Object.assign({ id, checkAccount: { id: "2", objectName: "CheckAccount" }, amount: amount.toFixed(2), valueDate: "2026-10-12T00:00:00+02:00", entryDate: "2026-10-12T00:00:00+02:00", payeePayerName: "Gast", paymtPurpose: desc, status: "100", mollieType: type, mollieId: "m" + id }, extra || {}));
+    await mtx("901", 20, "payment", "kochdu: La Taverna #10 · tr_a", { mollieDesc: "La Taverna #10", mollieGross: "20.50" });
+    await mtx("902", 30, "payment", "kochdu: La Taverna #11 · tr_b", { mollieDesc: "La Taverna #11", mollieGross: "30.80" });
+    assert.strictEqual(await M.autoPassthrough(), 0, "ohne Klick nichts automatisch");
+    const r = await M.passthrough("La Taverna", "2"); assert.strictEqual(r.count, 2);
+    await mtx("903", 40, "payment", "kochdu: La Taverna #90 · tr_c", { mollieDesc: "La Taverna #90", mollieGross: "41.00", valueDate: "2026-10-16T00:00:00+02:00" });
+    await mtx("904", -32.6, "refund", "Rückerstattung kochdu: La Taverna #85 tr_d");
+    await mtx("905", 25, "payment", "kochdu: AGO #5 · tr_e", { mollieDesc: "AGO #5" });
+    await mtx("906", 1.2, "application-fee", "Provision (Mollie Connect) kochdu: La Taverna #91 tr_f", { mollieDesc: "La Taverna #91" });
+    await P.add({ kind: "mollie-income", key: "minc:903", txId: "903", amount: 41, date: "2026-10-16", title: "Einnahme-Beleg 20 % anlegen", payload: { txId: "903" } });
+    assert.strictEqual(await M.autoPassthrough(), 2);
+    assert.strictEqual(L.get("CheckAccountTransaction", "903").passthroughFor, "La Taverna"); assert.strictEqual(String(L.get("CheckAccountTransaction", "903").status), "400");
+    assert.strictEqual(L.get("CheckAccountTransaction", "904").passthroughFor, "La Taverna", "Erstattung (ohne mollieDesc) erkannt");
+    assert.strictEqual(String(L.get("CheckAccountTransaction", "905").status), "100", "anderer Betrieb bleibt offen");
+    assert.strictEqual(String(L.get("CheckAccountTransaction", "906").status), "100", "Provision nicht angefasst");
+    assert.ok(!(await P.list()).some(x => x.key === "minc:903"), "Einnahme-Vorschlag fällt weg");
+    const g = (M.summary().find(a => String(a.id) === "2").passthrough || []).find(x => x.party === "La Taverna");
+    assert.strictEqual(g.count, 4); assert.strictEqual(g.late.count, 2); assert.strictEqual(g.late.net, 7.4);
+    assert.strictEqual(await M.autoPassthrough(), 0, "nichts doppelt");
+  });
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
   fails.forEach(f => console.log(" ✗ " + f));
   process.exit(fail ? 1 : 0);

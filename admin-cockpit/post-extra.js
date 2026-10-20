@@ -276,6 +276,7 @@ M.openVoucher=function(m,a,pre){
     (vs?'<div class="notice">Dieser Anhang wurde am '+esc(new Date(vs.at).toLocaleDateString("de-AT"))+' schon als Beleg gesendet. Nochmal senden legt einen zweiten Beleg an.</div>':'')+
     '<div class="grid2"><label class="fl">Lieferant<input class="f" name="supplier" list="mvContacts" value="'+esc(pre.supplier||m.fromName||m.from||"")+'"></label><label class="fl">Belegdatum<input class="f" name="date" type="date" required value="'+day+'"></label>'+
     '<label class="fl">Betrag brutto (€)<input class="f num" name="gross" type="number" step="0.01" min="0.01" inputmode="decimal" value="'+(g?g.toFixed(2):"")+'"'+(g?'':' autofocus')+'></label><label class="fl">USt-Satz<select class="f" name="tax">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(r===tr?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select></label></div>'+
+    F.taxRuleSelect('name="rule" data-rate="[name=tax]"',pre.taxRule)+
     '<label class="fl">Kategorie<select class="f" name="cat" required><option value="">Kategorien werden geladen …</option></select></label>'+
     '<label class="fl">Beschreibung<input class="f" name="desc" maxlength="200" value="'+esc(String(pre.desc||m.subject||"").slice(0,200))+'"></label>'+(pre.html||"")+
     '<div class="fl"><span>Passende Buchung</span><select class="f" name="tx" id="mvTx"><option value="">Suche passende Buchung …</option></select>'+
@@ -283,6 +284,7 @@ M.openVoucher=function(m,a,pre){
     '<div class="err" id="mvMsg">'+(g&&!pre.html?'<span class="muted">Betrag aus der Mail übernommen – bitte kurz prüfen.</span>':'')+'</div>'+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="mvSave">Beleg speichern</button></span></div><datalist id="mvContacts"></datalist></form>'+(pvKind?'</div>':''),pvKind?"xwide":"narrow");
   if(pvKind==="img") wirePreview();
+  var rs=document.querySelector('[data-form="mvoucher"] [name=rule]'); if(rs) F.taxRuleSync(rs);
   mvWireSug();
   F.loadMeta(function(meta){
     var sel=document.querySelector('[data-form="mvoucher"] [name=cat]'); if(!sel) return;
@@ -310,7 +312,7 @@ function mvLoadSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if
 function mvWireSug(){ var f=document.querySelector('[data-form="mvoucher"]'); if(!f) return; ["gross","date","supplier"].forEach(function(n){ f[n].addEventListener("change",function(){ clearTimeout(mvSugT); mvSugT=setTimeout(mvLoadSug,250); }); }); mvLoadSug(); }
 F.form("mvoucher",function(f){
   if(!VOU) return; var m=VOU.m, a=VOU.a, msg=document.getElementById("mvMsg"), btn=document.getElementById("mvSave");
-  var body={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf(m),filename:a.filename},supplierName:f.supplier.value.trim(),date:f.date.value,description:f.desc.value.trim(),gross:parseFloat(String(f.gross.value).replace(",",".")),taxRate:parseFloat(f.tax.value),accountingTypeId:f.cat.value};
+  var body={mail:{folder:m.folder||"INBOX",uid:m.uid,index:a.index||0,account:M.accOf(m),filename:a.filename},supplierName:f.supplier.value.trim(),date:f.date.value,description:f.desc.value.trim(),gross:parseFloat(String(f.gross.value).replace(",",".")),taxRate:parseFloat(f.tax.value),accountingTypeId:f.cat.value,taxRule:f.rule?f.rule.value:undefined};
   var pre=VOU.pre||{}; if(pre.extra) Object.keys(pre.extra).forEach(function(k){ if(!(k in body)) body[k]=pre.extra[k]; });
   if(body.positions){ var ps=0; body.positions.forEach(function(x){ ps+=+x.gross||0; }); if(Math.abs(ps-body.gross)>0.02) delete body.positions; }  /* Betrag geändert → eine Position mit dem gewählten Satz */
   if(!(body.gross>0)){ msg.textContent="Bitte den Rechnungsbetrag (brutto) eingeben."; f.gross.focus(); return; }

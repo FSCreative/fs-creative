@@ -186,8 +186,12 @@ module.exports = function (D) {
         voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: rate, net: false, sumGross: g, sumNet: sevNet(g, rate), comment: String(pl.description || "").slice(0, 250) }],
         voucherPosDelete: null,
       };
-      // Reverse Charge (Leistung aus dem Ausland): 12 = Drittland, 14 = EU – Vorsteuer und Steuerschuld je 20 % (UVA KZ 066/057)
-      if (["12", "14"].indexOf(String(pl.taxRule || "")) > -1 && amount < 0) { body.voucher.taxRule = { id: String(pl.taxRule), objectName: "TaxRule" }; body.voucher.reverseCharge = true; delete body.voucher.taxType; body.voucherPosSave[0].taxRate = 0; body.voucherPosSave[0].sumNet = g; }
+      // Steuerliche Regel (Ausgaben): 9 Vorsteuer, 10 keine Vorsteuer, 8 ig. Erwerb, 14/12 Reverse Charge EU/Drittland (Vorsteuer und Steuerschuld je 20 %, UVA KZ 066/057), 13 RC ohne Vorsteuer.
+      // ig. Erwerb und Reverse Charge: Rechnung ohne österr. USt → Position mit 0 %, netto = brutto
+      const rule = String(pl.taxRule || "");
+      if (["8", "9", "10", "12", "13", "14"].indexOf(rule) > -1 && amount < 0) { body.voucher.taxRule = { id: rule, objectName: "TaxRule" }; delete body.voucher.taxType;
+        if (["8", "12", "13", "14"].indexOf(rule) > -1) { body.voucherPosSave[0].taxRate = 0; body.voucherPosSave[0].sumNet = g; }
+        if (["12", "13", "14"].indexOf(rule) > -1) body.voucher.reverseCharge = true; }
       const j = await sev("POST", "/Voucher/Factory/saveVoucher", { body, timeout: 40000 });
       const v = j && j.objects && (j.objects.voucher || j.objects) || {};
       if (!v.id) throw new Error("Beleg konnte nicht angelegt werden");
