@@ -73,6 +73,7 @@ F.css(
 '.mk-li{position:relative;border-radius:10px;overflow:hidden;background:var(--sunk);aspect-ratio:4/5}'+
 '.mk-li img,.mk-li video{width:100%;height:100%;object-fit:cover;display:block}'+
 '.mk-li .btn{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:0}'+
+'.mk-li .d{position:absolute;left:0;right:0;bottom:0;padding:16px 8px 6px;font-size:11px;line-height:1.3;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.7))}'+
 '.mk-li .t{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;border-radius:99px;padding:2px 8px}'+
 '.mk-cols input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}'
 );
@@ -285,7 +286,7 @@ function libPaint(items){
   F.modal('<div class="row-between"><h2 style="font-size:19px">Bilder & Videos – '+esc(b.name)+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted small" style="margin:4px 0 12px">Daraus nimmt der Planer Fotos für Posts und Hintergründe für Reels. Eigene Fotos (JPG/PNG) und kurze Hochformat-Videos (MP4) machen die Posts persönlicher.</p>'+
     (items?(items.length?'<div class="mk-lib">'+items.map(function(x){ var src="/admin/api/mkt/library-file?brand="+encodeURIComponent(LIBK)+"&id="+encodeURIComponent(x.id);
-      return '<div class="mk-li">'+(x.kind==="clip"?'<video src="'+src+'" muted playsinline preload="metadata"></video><span class="t">Video</span>':'<img src="'+src+'" alt="" loading="lazy">')+'<button type="button" class="btn icon sm" data-act="mklibdel:'+esc(x.id)+'" title="Entfernen" aria-label="Entfernen">'+F.svg("close")+'</button></div>'; }).join("")+'</div>':'<p class="muted">Noch keine Bilder.</p>'):'<p class="muted">Lade …</p>')+
+      return '<div class="mk-li">'+(x.kind==="clip"?'<video src="'+src+'" muted playsinline preload="metadata"></video><span class="t">Video</span>':'<img src="'+src+'" alt="'+esc(x.desc||"")+'" title="'+esc(x.desc||"Noch ohne Beschreibung – die KI beschreibt neue Fotos beim nächsten Generieren")+'" loading="lazy">'+(x.desc?'<span class="d">'+esc(x.desc)+'</span>':''))+'<button type="button" class="btn icon sm" data-act="mklibdel:'+esc(x.id)+'" title="Entfernen" aria-label="Entfernen">'+F.svg("close")+'</button></div>'; }).join("")+'</div>':'<p class="muted">Noch keine Bilder.</p>'):'<p class="muted">Lade …</p>')+
     '<div class="foot"><label class="btn"><input type="file" id="mkLibUp" accept="image/jpeg,image/png,video/mp4" multiple hidden> Hochladen</label><span class="muted small" id="mkLibMsg"></span><button type="button" class="btn" data-closemodal>Fertig</button></div>',"wide");
 }
 function libLoad(){ api("/admin/api/mkt/library?brand="+encodeURIComponent(LIBK)).then(function(j){ if(LIBK) libPaint(j&&j.ok?j.items:[]); }); }

@@ -215,6 +215,22 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.ok(PT.S().posts.find(x => x.id === p.id).platforms.indexOf("bluesky") < 0);
   });
 
+  await t("Bildwahl: KI-Bild passt → genau dieses; „kein passendes“ → Hook ohne Foto (kochdu); ohne Beschreibung reihum", async () => {
+    const ph = [{ id: "s-a.jpg" }, { id: "s-b.jpg" }, { id: "s-c.jpg" }];
+    const pl = PT.photoPlan("kochdu", [{ template: "hook", photo: "s-c.jpg" }, { template: "list" }, { template: "photo", photo: "" }], ph, true);
+    assert.strictEqual(pl[0].it.id, "s-c.jpg"); assert.strictEqual(pl[1], null); assert.ok(pl[2] && pl[2].it.id !== "s-c.jpg", "Foto-Vorlage braucht ein Bild, nicht doppelt");
+    assert.strictEqual(PT.photoPlan("kochdu", [{ template: "hook", photo: "" }], ph, true)[0], null, "kein passendes → ohne Foto");
+    assert.ok(PT.photoPlan("kochdu", [{ template: "hook", photo: "" }], ph, false)[0], "ohne Beschreibungen wie bisher");
+    assert.ok(PT.photoPlan("valuero", [{ template: "hook", photo: "" }], ph, true)[0], "VALUERO braucht immer ein Bild");
+  });
+  await t("Bildbeschreibung: einmal je Foto, Liste <bilder> im KI-Auftrag", async () => {
+    let seen = 0; KI.marketingVision = async items => { seen += items.length; return { images: items.map(x => ({ id: x.id, desc: "Testbild " + x.id })), eur: 0.001 }; };
+    const n1 = await PT.describeLibrary("kochdu"), first = seen; const n2 = await PT.describeLibrary("kochdu");
+    assert.ok(first > 0, "beschrieben"); assert.strictEqual(seen, first, "zweiter Lauf beschreibt nichts neu"); void n1; void n2;
+    const lib = (await call("GET", "/admin/api/mkt/library", null, "?brand=kochdu")).json();
+    assert.ok(lib.items.some(x => /Testbild/.test(x.desc || "")), "Beschreibung in der Sammlung");
+    delete KI.marketingVision;
+  });
   mock.server.close(); pub.close(); try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   console.log("mktpost: " + pass + " ok, " + fail + " fehlgeschlagen");
   if (fail) { fails.forEach(f => console.log("  ✗ " + f)); process.exit(1); }

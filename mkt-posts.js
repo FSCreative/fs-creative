@@ -83,7 +83,7 @@ module.exports = function (C) {
   function schema() {
     const str = { type: "string" }, strs = { type: "array", items: { type: "string" } };
     const obj = p => ({ type: "object", additionalProperties: false, required: Object.keys(p), properties: p });
-    const slide = obj({ template: { type: "string", enum: SLIDE_T }, kicker: str, headline: str, sub: str, items: strs, cta: str, number: str, label: str, author: str, leftTitle: str, leftItems: strs, rightTitle: str, rightItems: strs, photoQuery: str });
+    const slide = obj({ template: { type: "string", enum: SLIDE_T }, kicker: str, headline: str, sub: str, items: strs, cta: str, number: str, label: str, author: str, leftTitle: str, leftItems: strs, rightTitle: str, rightItems: strs, photoQuery: str, photo: str });
     return obj({ posts: { type: "array", items: obj({ format: { type: "string", enum: ["bild", "karussell", "reel"] }, pillar: str, idea: str, slides: { type: "array", items: slide },
       captions: obj({ instagram: str, facebook: str, tiktok: str, linkedin: str, threads: str, bluesky: str, youtube: str, youtubeTitle: str, pinterestTitle: str }),
       hashtags: obj({ instagram: strs, tiktok: strs, facebook: strs, linkedin: strs, threads: strs, bluesky: strs }), altText: str, bgQuery: str,
@@ -101,6 +101,7 @@ module.exports = function (C) {
     "Vorlagen: hook (kicker, headline, sub, cta), list (headline, items), compare (headline, leftTitle/leftItems = bisher/ohne, rightTitle/rightItems = mit der Marke; fair formuliert, keine Konkurrenz namentlich), stat (number, label, sub), quote (headline als Aussage, author), cta (kicker, headline, sub, cta = kurzer Aufruf oder Website), photo (wie hook, mit photoQuery = englischer Suchbegriff für ein Stockfoto, nur wenn ein Foto den Post wirklich besser macht).",
     "Captions je Plattform (ohne Hashtags, die kommen getrennt): instagram 3–6 kurze Absätze, erste Zeile = Hook (max. 8 Wörter), Emojis sparsam, Schluss mit CTA aus dem Profil; facebook ähnlich, darf die Website nennen; tiktok 1–2 Sätze; linkedin sachlicher, 3–5 Absätze, Mehrwert für Unternehmen/Vereine; threads höchstens 400 Zeichen, gesprächig; bluesky höchstens 230 Zeichen; youtube 2–3 Sätze Beschreibung; youtubeTitle höchstens 70 Zeichen; pinterestTitle höchstens 90 Zeichen. Keine Links außer der Website der Marke, kein „Link in Bio“.",
     "Hashtags ohne Leerzeichen, passend zum konkreten Beitrag (nicht immer dieselben): instagram genau 5 (Instagram erlaubt nicht mehr: 1 Marken-, 1 regionaler, 2 Nischen- und 1 größerer Hashtag, die stärksten zuerst; aus den hashtags des Profils plus passende), tiktok 4–6, facebook 3–5, linkedin 3–5, threads genau 1, bluesky 2–3.",
+    "photo (je Folie): Gibt es <bilder> (Fotos der Marke mit Beschreibung), wähle für Folien mit Foto (hook, photo, je nach Marke auch andere) die id des Bildes, das inhaltlich wirklich zum Folientext passt (z. B. passendes Gericht, passender Ort, passendes Produkt). Passt keines, leer lassen – lieber kein Foto als ein unpassendes. Ein Bild höchstens einmal je Beitrag. Ohne <bilder> immer leer.",
     "altText: kurze Bildbeschreibung (Barrierefreiheit). bgQuery: englischer Suchbegriff für ein passendes Hochformat-Stockvideo als Reel-Hintergrund (bei bild/karussell leer).",
     "mood: Musikstimmung fürs Reel (froehlich, lustig, elegant, ruhig, episch, alpin, elektronisch) passend zu Inhalt und Marke. location: genau ein Name aus <standorte>, wenn der Beitrag zu einem Ort passt, sonst leer – nie einen Ort erfinden. firstComment: erster Kommentar der Marke unter dem Beitrag (Frage an die Community oder kurzer Hinweis, ohne Hashtags, höchstens 150 Zeichen).",
     "Saison und heutiges Datum berücksichtigen, Content-Säulen (pillars) abwechseln, die zuletzt verwendeten Ideen aus <bisher> nicht wiederholen.",
@@ -129,7 +130,8 @@ module.exports = function (C) {
     const b = brand(post.brand);
     if (!C.KI || !C.KI.marketingOn || !C.KI.marketingOn()) throw fail(400, "KI nicht verfügbar (Einstellungen → KI).");
     const cur = { format: post.format, pillar: post.pillar, idea: post.idea, slides: (post.slides || []).map(s0 => { const o = Object.assign({}, s0); delete o.image; delete o.image2; delete o.imageRatio; return o; }), captions: post.captions, hashtags: post.hashtags, altText: post.altText };
-    const user = "<profil>" + profileFor(b) + "</profil>\n" + placesTxt(b) + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
+    await describeLibrary(b.key).catch(() => 0);
+    const user = "<profil>" + profileFor(b) + "</profil>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
       "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 12000);
     const x = (r.json && r.json.posts || [])[0]; if (!x) throw fail(502, "Die KI hat keinen Beitrag geliefert – bitte nochmal.");
@@ -147,7 +149,8 @@ module.exports = function (C) {
     const recent = S().posts.filter(p => p.brand === b.key).slice(0, 30).map(p => "- " + (p.pillar ? p.pillar + ": " : "") + p.idea).join("\n");
     const today = new Date().toLocaleDateString("de-AT", { timeZone: "Europe/Vienna", weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const vorg = clip(pl.instructions != null ? pl.instructions : pl.topic, 2000);
-    const user = "<profil>" + profileFor(b) + "</profil>\n<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
+    const descEur = await describeLibrary(b.key).catch(e => { console.error("marketing: Bildbeschreibung", e.message); return 0; });
+    const user = "<profil>" + profileFor(b) + "</profil>\n<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
       "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite)." : "nur dieses Format.") +
       (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 24000);
@@ -166,7 +169,7 @@ module.exports = function (C) {
     }
     if (S().posts.length > 400) S().posts.length = 400;
     save(true);
-    return { posts: out, eur: Math.round(r.eur * 100) / 100 };
+    return { posts: out, eur: Math.round((r.eur + descEur) * 100) / 100 };
   }
   // Vorschlagstermin schon beim Erstellen (sichtbar im Planer); fix wird er erst mit „Go“
   function nextSlotSim(b, p, notBefore) { return nextSlot(b, p.id, notBefore); }
@@ -224,6 +227,32 @@ module.exports = function (C) {
     return out;
   }
   const hashNum = s => parseInt(crypto.createHash("sha1").update(String(s)).digest("hex").slice(0, 8), 16);
+  // Bildbeschreibungen (KI, einmal je Foto) – der Generator wählt damit je Folie ein passendes Bild statt eines zufälligen
+  const LD = () => (S().mkt.libDesc = S().mkt.libDesc || {});
+  async function describeLibrary(key) {
+    if (!C.KI || !C.KI.marketingVision || !C.KI.marketingOn || !C.KI.marketingOn() || !R.videoReady()) return 0;
+    const d = LD()[key] = LD()[key] || {}, todo = library(key).filter(x => x.kind === "photo" && !d[x.id]).slice(0, 24); if (!todo.length) return 0;
+    const tmp = path.join(WORK, "desc-" + key + "-" + rand()); fs.mkdirSync(tmp, { recursive: true }); const items = [];
+    for (let i = 0; i < todo.length; i++) { const f = path.join(tmp, i + ".jpg"); try { await R.ffmpeg(["-i", todo[i].file, "-vf", "scale=512:-2", "-frames:v", "1", "-q:v", "5", f]); items.push({ id: todo[i].id, jpeg: fs.readFileSync(f) }); } catch (e) {} }
+    let eur = 0;
+    try { for (let i = 0; i < items.length; i += 8) { const r = await C.KI.marketingVision(items.slice(i, i + 8)); eur += r.eur || 0; r.images.forEach(m => { if (m.desc && todo.some(x => x.id === m.id)) d[m.id] = { d: clip(m.desc, 160), at: nowIso() }; }); } }
+    finally { save(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {} }
+    return eur;
+  }
+  /* Foto je Folie: von der KI gewähltes Bild (passt zum Text); „kein passendes“ (leer, Bilder beschrieben) → Hook ohne Foto bei Marken
+     mit Layout ohne Bild (kochdu, Blitzdings, Hüttengaudi); sonst reihum (jedes Bild möglichst nur einmal). → [{ it, it2 } | null] */
+  function photoPlan(key, slides, photos, described) {
+    const byId = {}, used = new Set(); let pi = 0; photos.forEach(x => { byId[x.id] = x; });
+    return slides.map(s => {
+      if (!R.wantsPhoto(key, s.template) || !photos.length) return null;
+      const pick = s.photo && byId[s.photo];
+      if (!pick && described && s.photo === "" && s.template === "hook" && ["kochdu", "blitzdings", "huettengaudi"].indexOf(key) > -1) return null;
+      let it = pick; if (!it) { const free = photos.filter(x => !used.has(x.id)); it = (free.length ? free : photos)[pi++ % (free.length || photos.length)]; } used.add(it.id);
+      const it2 = photos.length > 1 ? (photos.find(x => !used.has(x.id)) || photos[(photos.indexOf(it) + 1) % photos.length]) : null;
+      return { it, it2 };
+    });
+  }
+  const bilderTxt = b => { const d = LD()[b.key] || {}, ph = library(b.key).filter(x => x.kind === "photo" && d[x.id]); return ph.length ? "<bilder>\n" + ph.slice(0, 40).map(x => x.id + " | " + d[x.id].d).join("\n") + "\n</bilder>\n" : ""; };
   function seeded(arr, seed) { const a = arr.slice(); let x = seed >>> 0; for (let i = a.length - 1; i > 0; i--) { x = (x * 1664525 + 1013904223) >>> 0; const j = x % (i + 1); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function photoUri(item) { const buf = fs.readFileSync(item.file), type = /\.png$/i.test(item.file) ? "image/png" : "image/jpeg", sz = C.imgSize ? C.imgSize(buf, type) : { w: 1, h: 1 }; return { uri: "data:" + type + ";base64," + buf.toString("base64"), ratio: sz.h ? sz.w / sz.h : 1 }; }
   // Reels: Hintergrund-Videos – eigene Clips der Marke (z. B. Skikaiser-Trailer), sonst Stockvideos (Pexels) bei Marken mit heller Schrift auf dunklem Grund
@@ -235,10 +264,10 @@ module.exports = function (C) {
     try {
       const old = [].concat(p.media.images || [], p.media.video ? [p.media.video] : [], p.media.cover ? [p.media.cover] : [], p.media.small || []);
       const seed = hashNum(p.id + (p.media.rerender || "")), lib = library(b.key), photos = seeded(lib.filter(x => x.kind === "photo"), seed), clips = seeded(lib.filter(x => x.kind === "clip"), seed + 7);
-      let pi = 0; const slides = [];
-      for (const s of p.slides) {
-        const o = Object.assign({}, s);
-        if (R.wantsPhoto(b.key, s.template) && photos.length) { const ph = photoUri(photos[pi++ % photos.length]); o.image = ph.uri; o.imageRatio = ph.ratio; if (photos.length > 1) o.image2 = photoUri(photos[pi % photos.length]).uri; }
+      const slides = [], plan = photoPlan(b.key, p.slides, photos, Object.keys(LD()[b.key] || {}).length > 0);
+      for (let si = 0; si < p.slides.length; si++) {
+        const s = p.slides[si], o = Object.assign({}, s), pp = plan[si];
+        if (pp) { const ph = photoUri(pp.it); o.image = ph.uri; o.imageRatio = ph.ratio; if (pp.it2) o.image2 = photoUri(pp.it2).uri; }
         else if (s.template === "photo" && s.photoQuery) o.image = await stockPhoto(s.photoQuery).catch(() => "");
         slides.push(o);
       }
@@ -450,7 +479,7 @@ module.exports = function (C) {
         if (pa.hashtags && typeof pa.hashtags === "object") { post.hashtags = Object.assign({}, post.hashtags); Object.keys(pa.hashtags).forEach(k => { if (Array.isArray(pa.hashtags[k])) post.hashtags[k] = pa.hashtags[k].map(t => clip(t, 60)).filter(Boolean).slice(0, 30); }); }
         if (Array.isArray(pa.platforms)) post.platforms = pa.platforms.filter(pf => PLATFORMS[pf] && PLATFORMS[pf].formats.indexOf(post.format) > -1);
         if (pa.scheduledAt) { const t = Date.parse(pa.scheduledAt); if (!t) throw fail(400, "Ungültiger Zeitpunkt"); post.scheduledAt = new Date(t).toISOString(); }
-        if (Array.isArray(pa.slides) && !String(post.source || "").startsWith("gewinnspiel")) { post.slides = pa.slides.slice(0, 7).map(s0 => { const o = {}; ["template", "kicker", "headline", "sub", "cta", "number", "label", "author", "leftTitle", "rightTitle", "photoQuery"].forEach(k => { o[k] = clip(s0[k], 300); }); ["items", "leftItems", "rightItems"].forEach(k => { o[k] = Array.isArray(s0[k]) ? s0[k].map(x => clip(x, 120)).filter(Boolean).slice(0, 5) : []; }); if (SLIDE_T.indexOf(o.template) < 0) o.template = "hook"; return o; }); rerender = true; }
+        if (Array.isArray(pa.slides) && !String(post.source || "").startsWith("gewinnspiel")) { post.slides = pa.slides.slice(0, 7).map(s0 => { const o = {}; ["template", "kicker", "headline", "sub", "cta", "number", "label", "author", "leftTitle", "rightTitle", "photoQuery", "photo"].forEach(k => { o[k] = clip(s0[k], 300); }); ["items", "leftItems", "rightItems"].forEach(k => { o[k] = Array.isArray(s0[k]) ? s0[k].map(x => clip(x, 120)).filter(Boolean).slice(0, 5) : []; }); if (SLIDE_T.indexOf(o.template) < 0) o.template = "hook"; return o; }); rerender = true; }
         if (pa.music !== undefined) { post.music = clip(pa.music, 40); if (post.format === "reel" && !String(post.source || "").startsWith("gewinnspiel")) rerender = true; }
         if (pa.altText !== undefined) post.altText = clip(pa.altText, 400);
         if (pa.firstComment !== undefined) post.firstComment = clip(String(pa.firstComment).replace(/#\S+/g, "").trim(), 300);
@@ -550,7 +579,7 @@ module.exports = function (C) {
       return J(res, 200, Object.assign({ ok: true }, filterComments(cached.comments, pl.rules || {}, cached.self))), true;
     }
     // Bildersammlung: ansehen, hochladen (Fotos als data-URI, Videos roh per PUT), entfernen (Grundstock wird nur ausgeblendet)
-    if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand")); return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size })) }), true; }
+    if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand")); return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "" })) }), true; }
     if (p === "/admin/api/mkt/library-file" && req.method === "GET") {
       const b = brand(u.searchParams.get("brand")), it = library(b.key).find(x => x.id === String(u.searchParams.get("id") || "")); if (!it) throw fail(404, "Nicht gefunden");
       return sendFile(req, res, it.file, /\.mp4$/i.test(it.file) ? "video/mp4" : /\.png$/i.test(it.file) ? "image/png" : "image/jpeg", ""), true;
@@ -575,5 +604,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, _test: { library, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, _test: { library, photoPlan, describeLibrary, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
 };
