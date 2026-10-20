@@ -160,7 +160,7 @@ function calItems(){
   var bd=(D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[];
   bd.forEach(function(b){ push(b.eventDate,{kind:"bd",label:(b.package||"Buchung")+(b.customerName?" · "+b.customerName:""),c:"blitzdings",sub:"Blitzdings-Buchung"+(b.reference?" "+b.reference:""),loc:b.location||b.eventLocation||"",act:"go:plat",time:""}); });
   allEvents().forEach(function(e){ var sp=e.source==="icloud"?"privat":spKey(e.sparte);
-    push(e.date,{kind:"evt",label:e.title||"Termin",time:e.time||"",end:e.endTime||"",loc:e.location||"",c:sp,priv:e.source==="icloud",
+    push(e.date,{kind:"evt",id:e.id,editable:!readOnly(e)&&!e.pending,label:e.title||"Termin",time:e.time||"",end:e.endTime||"",loc:e.location||"",c:sp,priv:e.source==="icloud",
       sub:(e.source==="icloud"?"Privat · iCloud":e.source==="outlook"?"Mail-Kalender":spName(sp)),act:"eventview:"+e.id}); });
   (D.todos||[]).forEach(function(x){ if(x.due&&!x.done) push(x.due,{kind:"todo",label:x.text||"Aufgabe",c:"todo",time:"",sub:"To-Do"+(x.due<t?" · überfällig":""),late:x.due<t,act:"todoview:"+x.id}); });
   if(F.tkOpenDue) F.tkOpenDue().forEach(function(x){ push(x.due,{kind:"todo",label:"⚑ "+x.title,c:"todo",time:"",sub:"Frist"+(x.project?" · "+x.project:"")+(x.due<t?" · überfällig":""),late:x.due<t,act:"tkopen:"+x.id}); });   // Fristen aus „Aufträge“
@@ -169,7 +169,7 @@ function calItems(){
   return map;
 }
 function chip(e){
-  return '<button type="button" class="kc'+(e.late?" late":"")+'" style="--c:var(--sp-'+e.c+')" data-act="'+esc(e.act)+'" title="'+esc((e.time?e.time+(e.end?"–"+e.end:"")+" · ":"")+e.label+" · "+e.sub)+'">'+(e.priv?F.svg("lock"):'')+(e.time?'<span class="kt">'+esc(e.time)+'</span>':'')+esc(e.label)+'</button>';
+  return '<button type="button" class="kc'+(e.late?" late":"")+'" style="--c:var(--sp-'+e.c+')" data-act="'+esc(e.act)+'"'+(e.editable?' data-kev="'+esc(e.id)+'"':'')+' title="'+esc((e.time?e.time+(e.end?"–"+e.end:"")+" · ":"")+e.label+" · "+e.sub)+'">'+(e.priv?F.svg("lock"):'')+(e.time?'<span class="kt">'+esc(e.time)+'</span>':'')+esc(e.label)+'</button>';
 }
 function dvItem(e){
   var time=e.time?'<b>'+esc(e.time)+'</b>'+(e.end?'<small>bis '+esc(e.end)+'</small>':''):'<small>ganztägig</small>';
@@ -302,8 +302,8 @@ F.listen("change",'.sppick input[name="sparte"]',function(el){ var h=document.ge
 F.openEventEdit=function(ev,date){ openEventEdit(ev&&ev.id?findEvent(ev.id)||ev:(ev?Object.assign({},ev,{id:""}):null),date); };
 F.action("newevent",function(date){ openEventEdit(null,date); });
 
-function postManual(next){
-  var base=CAL.manualRaw.map(function(e){ return Object.assign({},e); });
+function postManual(next,baseIn){
+  var base=(baseIn||CAL.manualRaw).map(function(e){ return Object.assign({},e); });
   return F.api("/admin/api/events",{body:{events:next,base:base}}).then(function(j){
     if(j&&Array.isArray(j.events)){ CAL.manualRaw=j.events; syncD(); F.render(); return true; }
     F.toast("Termin konnte nicht gespeichert werden",true); return false;
@@ -482,7 +482,22 @@ F.view({id:"kal",label:"Kalender",short:"Kalender",icon:"kal",order:50,mobile:tr
   after:function(){ if(UI.kalTab!=="todo") loadCal(false); if(isMobile()&&F.kalMobileAfter) F.kalMobileAfter(); }
 });
 /* Für die Handy-Ansicht (kalm.js) */
-F.kalApi={calItems:calItems,allEvents:allEvents,today:today,addDays:addDays,diffDays:diffDays,longDate:longDate,isoOk:isoOk,isMobile:isMobile,openEventEdit:openEventEdit,openDayView:openDayView,
+/* Termin verschieben/verlängern (Ziehen im Kalender, kaldrag.js): sofort anzeigen, dann speichern (Cockpit bzw. iCloud); bei Fehler zurück */
+function moveEvent(id,patch){
+  var e=findEvent(id); if(!e) return Promise.resolve(false);
+  if(readOnly(e)){ F.toast(e.source==="outlook"?"Termine aus dem Mail-Kalender bitte dort ändern.":"Serientermine bitte direkt am iPhone ändern.",true); F.render(); return Promise.resolve(false); }
+  var obj={title:e.title||"Termin",date:patch.date||e.date,time:patch.time!=null?patch.time:(e.time||""),endTime:patch.endTime!=null?patch.endTime:(e.endTime||""),location:e.location||"",notes:e.notes||"",sparte:e.source==="icloud"?"privat":(e.sparte||"fsc"),source:e.source==="icloud"?"icloud":"manual"};
+  if(!obj.time) obj.endTime="";
+  if(e.source==="icloud"){
+    var pe=CAL.privEvents.find(function(x){ return String(x.id)===String(id); }), back=pe?Object.assign({},pe):null;
+    if(pe){ pe.date=obj.date; pe.time=obj.time; pe.endTime=obj.endTime; syncD(); F.render(); }
+    return privOp("update",{href:e.href,etag:e.etag,uid:e.uid,event:obj},"").then(function(r){ if(r.ok) return true; if(pe&&back) Object.assign(pe,back); syncD(); F.render(); F.toast(r.msg,true); return false; });
+  }
+  var before=CAL.manualRaw.map(function(x){ return Object.assign({},x); });
+  CAL.manualRaw=CAL.manualRaw.map(function(x){ return x.id===e.id?Object.assign({},x,{date:obj.date,time:obj.time,endTime:obj.endTime}):x; }); syncD(); F.render();
+  return postManual(CAL.manualRaw,before).then(function(ok){ if(!ok){ CAL.manualRaw=before; syncD(); F.render(); } return ok; });   /* „base“ = Stand vor der Änderung */
+}
+F.kalApi={moveEvent:moveEvent,findEvent:findEvent,calItems:calItems,allEvents:allEvents,today:today,addDays:addDays,diffDays:diffDays,longDate:longDate,isoOk:isoOk,isMobile:isMobile,openEventEdit:openEventEdit,openDayView:openDayView,
   todoStats:todoStats,todos:todos,findTodo:findTodo,patchTodo:patchTodo,okJ:okJ,grp:grp,dueMeta:dueMeta,loadCal:loadCal,CAL:CAL,statusLine:statusLine,vCal:vCal,SPARTEN:SPARTEN,spName:spName,delTodo:delTodo,curMonth:curMonth,selDay:selDay};
 F.kalVTodo=vTodo;
 
