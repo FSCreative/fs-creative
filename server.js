@@ -19,7 +19,7 @@ const TODOS_FILE = path.join(DATA_DIR, "todos.json");
 function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 // Auftragsmanagement: Aufträge (Projekte) und Aufgaben mit Status, Priorität, Frist, Checkliste, Kommentaren – im Datenspeicher wie To-Dos
 const AUFTRAG_FILE = path.join(DATA_DIR, "auftraege.json");
-function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0, printSkip: Array.isArray(o.printSkip) ? o.printSkip : [] }; } catch (e) { return { projects: [], tasks: [], rev: 0, printSkip: [] }; } }
+function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0, printSkip: Array.isArray(o.printSkip) ? o.printSkip : [], todosMigrated: o.todosMigrated || "", todoConv: Array.isArray(o.todoConv) ? o.todoConv : [] }; } catch (e) { return { projects: [], tasks: [], rev: 0, printSkip: [], todosMigrated: "", todoConv: [] }; } }
 function writeAuftraege(o) { o.rev = (+o.rev || 0) + 1; const tmp = AUFTRAG_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(o)); fs.renameSync(tmp, AUFTRAG_FILE); return o; }
 const TK_STATUS = ["offen", "arbeit", "pruefung", "erledigt"], TK_PRIO = ["normal", "hoch", "dringend"], PJ_STATUS = ["aktiv", "pausiert", "abgeschlossen"];
 const tkClip = (v, n) => String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n);
@@ -61,6 +61,36 @@ function printTaskSync(o) {
   if (!changed) return false;
   t.updated = now; writeAuftraege(A); return true;
 }
+// To-Dos gibt es nicht mehr (Wunsch Simon 20.10.2026): alles läuft über Aufgaben in „Aufträge“. Einmalig: offene To-Dos → Aufgaben (ohne Auftrag),
+// vorher komplette Sicherung nach todos-archiv.json; danach ist todos.json leer. Anfragen (id lead_…) behalten die Verknüpfung zur Kundenakte (leadId).
+const TODO_ARCHIV = path.join(DATA_DIR, "todos-archiv.json");
+function todoToTask(t, now) {
+  const lead = /^lead_/.test(String(t.id || "")) ? String(t.id) : "";
+  return { id: tkId("t"), created: +t.created || now, order: +t.created || now, comments: [], projectId: "", title: tkClip(String(t.text || "").replace(/^📩\s*/u, ""), 200) || "Aufgabe",
+    status: "offen", prio: lead ? "hoch" : "normal", due: tkDate(t.due), notes: tkClip([t.notes, "Aus den To-Dos übernommen"].filter(Boolean).join("\n"), 4000), checklist: [], doneAt: null, leadId: lead, updated: now };
+}
+function migrateTodos() {
+  const A = readAuftraege(); if (A.todosMigrated) return 0;
+  const todos = readTodos(), now = Date.now();
+  if (todos.length) { try { fs.writeFileSync(TODO_ARCHIV, JSON.stringify({ at: new Date().toISOString(), todos })); } catch (e) { console.error("To-Do-Archiv:", e.message); return 0; } }
+  const open = todos.filter(t => t && !t.done && String(t.text || "").trim());
+  open.forEach(t => A.tasks.push(todoToTask(t, now)));
+  A.todosMigrated = new Date().toISOString(); writeAuftraege(A); writeTodos([]);
+  if (open.length) console.log("To-Dos → Aufgaben: " + open.length + " übernommen (Sicherung: todos-archiv.json)");
+  return open.length;
+}
+// alte Cockpit-Fenster schicken evtl. noch To-Dos: neue offene Einträge werden zu Aufgaben (jeder nur einmal, archivierte nie)
+function todosToTasks(arr) {
+  const A = readAuftraege(), now = Date.now(); let arch = []; try { arch = (JSON.parse(fs.readFileSync(TODO_ARCHIV, "utf8")).todos || []).map(t => String(t.id)); } catch (e) {}
+  let n = 0;
+  (Array.isArray(arr) ? arr : []).forEach(t => { const id = String(t && t.id || ""); if (!t || t.done || !String(t.text || "").trim() || arch.indexOf(id) > -1 || (id && A.todoConv.indexOf(id) > -1)) return;
+    A.tasks.push(todoToTask(t, now)); if (id) A.todoConv = A.todoConv.concat([id]).slice(-500); n++; });
+  if (n) writeAuftraege(A);
+  return n;
+}
+// Aufgabe direkt anlegen (Server: neue Anfrage usw.)
+function addTask(t) { const A = readAuftraege(), now = Date.now(); const x = Object.assign({ id: tkId("t"), created: now, order: now, comments: [], projectId: "", status: "offen", prio: "normal", due: "", notes: "", checklist: [], doneAt: null, updated: now }, t); A.tasks.push(x); writeAuftraege(A); return x; }
+try { migrateTodos(); } catch (e) { console.error("To-Dos → Aufgaben:", e.message); }
 function auftragOp(b) {
   const A = readAuftraege(), op = String(b.op || ""), now = Date.now();
   const findT = id => A.tasks.find(t => t.id === id), findP = id => A.projects.find(p => p.id === id);
@@ -72,6 +102,7 @@ function auftragOp(b) {
     const t = Object.assign(old || { id: tkId("t"), created: now, comments: [], order: now }, {
       title, projectId: pid, status, prio: TK_PRIO.indexOf(x.prio) > -1 ? x.prio : "normal", due: tkDate(x.due), notes: tkClip(x.notes, 4000),
       checklist: (Array.isArray(x.checklist) ? x.checklist : []).slice(0, 60).map(c => ({ t: tkClip(c && c.t, 200), done: !!(c && c.done) })).filter(c => c.t), updated: now });
+    if (x.leadId !== undefined) t.leadId = tkClip(x.leadId, 60);
     if (x.mailRef && typeof x.mailRef === "object") t.mailRef = { id: tkClip(x.mailRef.id, 60), account: tkClip(x.mailRef.account, 40), folder: tkClip(x.mailRef.folder, 200), uid: parseInt(x.mailRef.uid, 10) || 0, subject: tkClip(x.mailRef.subject, 200), from: tkClip(x.mailRef.from, 160) };
     if (status === "erledigt" && !t.doneAt) t.doneAt = now; if (status !== "erledigt") t.doneAt = null;
     if (!old) A.tasks.push(t);
@@ -421,12 +452,10 @@ function dailyDigest() {
   if (last === day) return;
   try { fs.writeFileSync(DIGEST_FILE, JSON.stringify({ day })); } catch (e) { return; }
   const A = readAuftraege(), open = A.tasks.filter(t => t.status !== "erledigt" && t.due && t.due <= day), over = open.filter(t => t.due < day);
-  const todos = readTodos().filter(t => !t.done && t.due && t.due <= day);
-  if (!open.length && !todos.length) return;
+  if (!open.length) return;
   const parts = [];
   if (open.length) parts.push(open.length + (open.length === 1 ? " Aufgabe" : " Aufgaben") + (over.length ? " (" + over.length + " überfällig)" : ""));
-  if (todos.length) parts.push(todos.length + (todos.length === 1 ? " To-Do" : " To-Dos"));
-  const first = open.concat(todos.map(t => ({ title: t.text }))).slice(0, 3).map(t => t.title).join(" · ");
+  const first = open.slice(0, 3).map(t => t.title).join(" · ");
   PUSH.send("*", { title: "Heute fällig: " + parts.join(", "), body: first, url: "/admin#auftraege", tag: "digest-" + day }).catch(e => console.error("Push-Tagesübersicht:", e.message));
 }
 setInterval(dailyDigest, 5 * 60 * 1000);
@@ -3399,6 +3428,7 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const arr = Array.isArray(payload.todos) ? payload.todos : [];
+      if (readAuftraege().todosMigrated) { const n = todosToTasks(arr); return send(res, 200, JSON.stringify({ ok: true, count: 0, todos: [], tasks: n }), TYPES[".json"]); }   // To-Dos → Aufgaben
       const cur = readTodos();
       const merged = payload.force ? arr : merge3(cur, Array.isArray(payload.base) ? payload.base : null, arr);
       // Schutz: nicht-leeren Bestand nie mit leerer Liste überschreiben (außer force).
@@ -3578,9 +3608,8 @@ async function saveLead(lead, opt) {
   let stored = false;
   try { fs.writeFileSync(LEADS_FILE, JSON.stringify(leads)); stored = true; } catch (e) {}
   try { COCKPIT_MEMO.at = 0; } catch (e) {}
-  const todos = readTodos();
-  todos.push({ id: lead.id, text: "📩 Anfrage: " + lead.name + " – " + lead.topic + (lead.entwurf ? " (Gratis-Entwurf)" : "") + (lead.email ? " · " + lead.email : "") + (lead.phone ? " · " + lead.phone : "") + (/chat/i.test(lead.source || "") ? " · " + lead.source : ""), due: "", done: false, created: Date.now() });
-  writeTodos(todos);
+  try { addTask({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(), leadId: lead.id,
+    notes: tkClip([lead.email, lead.phone, /chat/i.test(lead.source || "") ? lead.source : ""].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }); } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
   if (!notify) return { stored, mailed: false };
   if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Neue Anfrage: " + lead.topic, body: lead.name + (lead.company ? " · " + lead.company : "") + " – " + String(lead.message || "").slice(0, 90), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
   let mailed = false;
@@ -3620,7 +3649,7 @@ function handleAnfrage(req, res) {
 }
 
 // ── KI (Claude über die Anthropic API): Logik in ki.js, hier nur die Anbindung an vorhandene Daten ──
-const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos, readLeads, cockpitData, mailSnapshot, sevMeta, readBilling,
+const KI = require("./ki.js")({ DATA_DIR, MAIL, send, viennaToday, readTodos: () => readAuftraege().tasks.map(t => ({ text: t.title, due: t.due || "", done: t.status === "erledigt" })), readLeads, cockpitData, mailSnapshot, sevMeta, readBilling,
   steuerRaw: f => steuerRaw(f), readSteuer: () => readSteuer(), background: require.main === module });
 
 // Asynchrone Handler: Fehler abfangen und 500 senden statt den ganzen Prozess zu beenden (Sicherheitsprüfung 19.10.2026)

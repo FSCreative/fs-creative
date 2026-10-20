@@ -1,4 +1,4 @@
-/* Statusleiste rechts (Wunsch Simon 19.10.2026): Monatskalender, die 5 nächsten Termine, neueste Mails, aktuelle Fristen (Aufträge + To-Dos).
+/* Statusleiste rechts (Wunsch Simon 19.10.2026): Monatskalender, die 5 nächsten Termine, neueste Mails, aktuelle Fristen (Aufgaben aus „Aufträge“).
    Nur auf breiten Bildschirmen (ab 1360 px); ein-/ausblendbar über die Kopfleiste, Einstellung bleibt gespeichert. */
 (function(){
 "use strict";
@@ -19,7 +19,6 @@ function nextEvents(n){ var t=today(), now=new Date(), hm=String(now.getHours())
 function newestMails(n){ var M=(F.D&&F.D.mail&&F.D.mail.messages)||[];
   return M.filter(function(m){ return !m.deleted&&F.isInbox&&F.isInbox(m); }).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); }).slice(0,n); }
 function deadlines(n){ var t=today(), l=(F.tkDeadlines?F.tkDeadlines(n):[]).map(function(d){ return Object.assign({kind:"tk"},d); });
-  ((F.D&&F.D.todos)||[]).filter(function(x){ return !x.done&&x.due; }).forEach(function(x){ l.push({kind:"todo",id:x.id,title:x.text,due:x.due,label:dayShort(x.due),cls:x.due<t?"over":x.due===t?"today":"",color:"var(--info)",project:"To-Do"}); });
   return l.sort(function(a,b){ return a.due.localeCompare(b.due); }).slice(0,n); }
 
 function monthHtml(){ var t=today(), m=UI.sideM||t.slice(0,7), y=+m.slice(0,4), mo=+m.slice(5,7)-1, first=new Date(y,mo,1), start=(first.getDay()+6)%7, days=new Date(y,mo+1,0).getDate();

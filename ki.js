@@ -457,10 +457,10 @@ module.exports = function createKi(deps) {
     tool("get_uva", "Umsatzsteuervoranmeldung (U30) für einen Zeitraum aus dem Steuer-Rechenkern: Kennzahlen, USt, Vorsteuer, Zahllast, offene Prüfpunkte.", { period: Object.assign({ description: "Zeitraum, z. B. \"2026-Q3\" (Quartal) oder \"2026-M07\" (Monat). Leer = aktuelles Quartal." }, S.str) }),
     tool("search_mails", "Durchsucht das Postfach (Betreff, Absender, Text). Liefert Treffer mit Auszug und mail_id.", { query: S.str, limit: Object.assign({ description: "max. Treffer (1–15)" }, { type: "integer" }) }),
     tool("get_calendar", "Termine (Dashboard-, Google- und iCloud-Kalender) in einem Datumsbereich (max. 60 Tage voraus).", { from: Object.assign({ description: "JJJJ-MM-TT" }, S.str), to: Object.assign({ description: "JJJJ-MM-TT" }, S.str) }),
-    tool("get_todos", "To-Do-Liste.", { include_done: S.bool }),
+    tool("get_todos", "Offene Aufgaben (Aufträge; früher To-Dos).", { include_done: S.bool }),
     tool("get_platforms", "Kennzahlen der Plattformen kochdu, Kantineur, Blitzdings, VALUERO und Skikaiser.", {}),
     tool("get_websites", "Kunden-Websites: Domains, Kunde, aktiv, Einnahmen/Kosten pro Jahr, Railway-Kosten.", {}),
-    tool("create_todo", "Schlägt ein neues To-Do vor (wird erst nach Bestätigung im Cockpit angelegt).", { text: S.str, due: Object.assign({ description: "Fälligkeit JJJJ-MM-TT oder leer" }, S.str) }),
+    tool("create_todo", "Schlägt eine neue Aufgabe vor (landet nach Bestätigung im Cockpit unter Aufträge).", { text: S.str, due: Object.assign({ description: "Fälligkeit JJJJ-MM-TT oder leer" }, S.str) }),
     tool("create_event", "Schlägt einen Termin vor (wird erst nach Bestätigung angelegt).", { title: S.str, date: Object.assign({ description: "JJJJ-MM-TT" }, S.str), time: Object.assign({ description: "HH:MM oder leer" }, S.str), end_time: Object.assign({ description: "HH:MM oder leer" }, S.str), location: S.str, notes: S.str }),
     tool("draft_invoice", "Bereitet eine Ausgangsrechnung vor: öffnet für Simon den vorbefüllten Rechnungsdialog (Entwurf in sevDesk erst nach seinem Klick).", { beschreibung: Object.assign({ description: "Was verrechnet wird, an wen, Beträge (netto/brutto), Zeitraum" }, S.str), lead_id: Object.assign({ description: "ID einer Anfrage oder leer" }, S.str), mail_id: Object.assign({ description: "mail_id aus search_mails oder leer" }, S.str) }),
     tool("draft_mail_reply", "Erstellt einen Mail-Entwurf, den Simon im Mail-Editor prüft und selbst sendet. Ohne Grußformel am Ende (die Signatur mit „Liebe Grüße“ wird automatisch angehängt).", { mail_id: Object.assign({ description: "mail_id aus search_mails, leer für neue Mail" }, S.str), to: S.str, subject: S.str, text: S.str }),
@@ -474,7 +474,7 @@ module.exports = function createKi(deps) {
     if (name === "get_overview") {
       const d = await cockpit(), msgs = (d.mail && d.mail.messages) || [];
       const sev = d.sev || {};
-      return { heute: today, offeneTodos: (d.todos || []).filter(t => !t.done).slice(0, 25).map(t => ({ text: clip(t.text, 160), faellig: t.due || "" })),
+      return { heute: today, offeneTodos: deps.readTodos().filter(t => !t.done).slice(0, 25).map(t => ({ text: clip(t.text, 160), faellig: t.due || "" })),   // offene Aufgaben (Aufträge)
         termine: (d.events || []).filter(e => e.date >= today && e.date <= plusDays(today, 7)).slice(0, 30).map(e => ({ datum: e.date, zeit: e.time || "", titel: clip(e.title, 120), quelle: e.source })),
         ungeleseneMails: msgs.filter(m => !m.read && (m.folder || "INBOX") === "INBOX").length,
         neueAnfragen: (d.leads || []).filter(l => (l.stage || "anfrage") === "anfrage").slice(0, 8).map(l => ({ name: l.name, firma: l.company || "", thema: l.topic, am: String(l.created || "").slice(0, 10) })),

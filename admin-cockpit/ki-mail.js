@@ -22,7 +22,7 @@ M.kiBar=function(m){
   if(s) bar+='<div class="kisum"><div class="row-between"><b>Zusammenfassung</b><button type="button" class="link" data-act="kimsumx:'+esc(m.id)+'">Ausblenden</button></div><p>'+esc(s.summary)+'</p>'+
     ((s.points||[]).length?'<ul>'+s.points.map(function(p){ return '<li>'+esc(p)+'</li>'; }).join("")+'</ul>':'')+
     '<div class="kitags">'+(s.actionNeeded?'<span class="tag warn">Handlung nötig</span>':'<span class="tag grey">nur zur Info</span>')+(s.deadline?'<span class="tag bad">bis '+esc(F.de(s.deadline))+'</span>':'')+(s.isLead?'<span class="tag info">mögliche Kundenanfrage</span>':'')+'</div>'+
-    (s.deadline||s.actionNeeded?'<div class="row wrap"><button type="button" class="btn" data-act="kimtodo:'+esc(m.id)+'">Als To-Do'+(s.deadline?" bis "+esc(F.deShort(s.deadline)):"")+'</button></div>':'')+'</div>';
+    (s.deadline||s.actionNeeded?'<div class="row wrap"><button type="button" class="btn" data-act="kimtodo:'+esc(m.id)+'">Als Aufgabe'+(s.deadline?" bis "+esc(F.deShort(s.deadline)):"")+'</button></div>':'')+'</div>';
   if(r.err) bar+='<div class="bad-t" style="font-size:13px">'+esc(r.err)+'</div>';
   return bar;
 };
@@ -46,7 +46,7 @@ F.action("kimreply",function(id){
 });
 F.action("kimtodo",function(id){
   var m=M.find&&M.find(id), s=MS[id]&&MS[id].sum; if(!m||!s||!F.addTodo) return;
-  F.addTodo({text:"✉ "+(m.fromName||m.from||"")+": "+(s.summary||m.subject||"").slice(0,180),due:s.deadline||"",mailId:id}).then(function(){ F.toast("To-Do angelegt"); });
+  F.addTodo({text:"✉ "+(m.fromName||m.from||"")+": "+(s.summary||m.subject||"").slice(0,180),due:s.deadline||"",mailId:id}).then(function(){ F.toast("Aufgabe angelegt",false,"Ansehen",function(){ F.go("auftraege"); }); });
 });
 F.action("kimask",function(id){
   var m=M.find&&M.find(id); if(!m||!K.chatOpen) return;

@@ -24,7 +24,7 @@ function md(t){
 }
 function propHtml(p,i,j){
   var d=p.data||{}, done=p.done, body, btn;
-  if(p.kind==="todo"){ body='<b>To-Do:</b> '+esc(d.text)+(d.due?' <span class="muted">fällig '+esc(F.de(d.due))+'</span>':''); btn="Anlegen"; }
+  if(p.kind==="todo"){ body='<b>Aufgabe:</b> '+esc(d.text)+(d.due?' <span class="muted">fällig '+esc(F.de(d.due))+'</span>':''); btn="Anlegen"; }
   else if(p.kind==="event"){ body='<b>Termin:</b> '+esc(d.title)+' <span class="muted">'+esc(F.de(d.date))+(d.time?" "+esc(d.time)+(d.endTime?"–"+esc(d.endTime):""):"")+(d.location?" · "+esc(d.location):"")+'</span>'; btn="Anlegen"; }
   else if(p.kind==="invoice"){ body='<b>Rechnung:</b> '+esc(String(d.text||"aus Anfrage/Mail").slice(0,300)); btn="Rechnungsdialog öffnen"; }
   else { body='<b>Mail an '+esc(d.to||"?")+':</b> '+esc(d.subject||"")+'<div class="kich-mail">'+esc(String(d.text||"").slice(0,600))+(String(d.text||"").length>600?" …":"")+'</div>'; btn="Im Mail-Editor öffnen"; }
@@ -116,7 +116,7 @@ F.action("kipropx",function(v){ var p=propOf(v); if(!p) return; p.done="verworfe
 F.action("kiprop",function(v){
   var p=propOf(v); if(!p||p.done) return; var d=p.data||{};
   var ok=function(t){ p.done=t; save(); paint(); };
-  if(p.kind==="todo"){ if(!F.D){ F.toast("Daten noch nicht geladen.",true); return; } F.addTodo({text:d.text,due:d.due||""}).then(function(j){ if(j&&j.ok!==false) { ok("angelegt"); F.toast("To-Do angelegt"); } }); return; }
+  if(p.kind==="todo"){ if(!F.D){ F.toast("Daten noch nicht geladen.",true); return; } F.addTodo({text:d.text,due:d.due||""}).then(function(j){ if(j&&j.ok!==false) { ok("angelegt"); F.toast("Aufgabe angelegt (Aufträge)"); } }); return; }
   if(p.kind==="event"){
     var ev={id:"e"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),title:d.title,date:d.date,time:d.time||"",endTime:d.endTime||"",location:d.location||"",notes:d.notes||"",source:"manual"};
     F.api("/admin/api/events").then(function(cur){ var base=(cur&&Array.isArray(cur.events))?cur.events:null; if(!base) throw new Error("load"); return F.api("/admin/api/events",{body:{events:base.concat([ev]),base:base}}); })

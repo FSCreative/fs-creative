@@ -111,7 +111,7 @@ var DR=null;
 function openTask(id,status,pre){
   var t=id?A().tasks.find(function(x){ return x.id===id; }):null; if(id&&!t){ F.toast("Aufgabe nicht gefunden",true); return; }
   DR=t?JSON.parse(JSON.stringify(t)):Object.assign({id:"",title:"",projectId:UI.tkProj||"",status:status||"offen",prio:"normal",due:"",notes:"",checklist:[],comments:[]},pre||{});
-  var P0=proj(DR.projectId), lead0=P0&&leadOf(P0);
+  var P0=proj(DR.projectId), lead0=(DR.leadId&&leads().find(function(l){ return l.id===DR.leadId; }))||(P0&&leadOf(P0));
   var projs=A().projects.filter(function(p){ return p.status!=="abgeschlossen"||p.id===DR.projectId; });
   F.modal('<form class="tk-dlg" data-form="tksave"><div class="tk-dh"><h2>'+(t?"Aufgabe bearbeiten":"Neue Aufgabe")+'</h2>'+F.btnClose()+'</div>'+
     (t&&t.print?printBlock(t):'')+
@@ -219,7 +219,7 @@ F.tkOpenDue=function(){ return A().tasks.filter(function(t){ return t.status!=="
 F.tkDeadlines=function(n){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due)||(a.prio==="dringend"?-1:0); }).slice(0,n||6).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,label:dueLabel(t.due),cls:dueCls(t),color:p?PCOL[p.color||0]:"var(--ink-3)",project:p?p.name:"",prio:t.prio}; }); };
 F.tkDueDays=function(){ var o={}; A().tasks.forEach(function(t){ if(t.status!=="erledigt"&&t.due) o[t.due]=(o[t.due]||0)+1; }); return o; };
 F.searcher(function(q){ q=q.toLowerCase(); return A().tasks.filter(function(t){ return t.title.toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(t){ var p=proj(t.projectId); return {group:"Aufgaben",label:t.title,sub:(p?p.name+" · ":"")+(t.due?"fällig "+dueLabel(t.due):"ohne Frist"),act:"tkopen:"+t.id}; }); });
-F.feed(function(){ var t=today(); return A().tasks.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t&&!x.print; }).map(function(x){ var p=proj(x.projectId), over=x.due<t;
+F.feed(function(){ var t=today(); return A().tasks.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t&&!x.print&&!x.leadId; }).map(function(x){ var p=proj(x.projectId), over=x.due<t;
   return {id:"tk:"+x.id,rank:over?2:3,sev:over?"bad":"ok",icon:"check",tag:[over?"bad":"ok",over?"Frist überschritten":"Heute fällig"],t:x.title,d:(p?p.name+" · ":"")+(over?"fällig "+F.de(x.due):"heute fällig"),acts:[["Öffnen","tkopen:"+x.id]]}; }); });
 
 F.css(

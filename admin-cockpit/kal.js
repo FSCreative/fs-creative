@@ -1,4 +1,4 @@
-/* Kalender & To-Dos: Monatsansicht (Desktop) / Monat + Tagesliste (Handy), Tagesansicht, Termin-Details und -Editor
+/* Kalender (früher „Kalender & To-Dos“ – Aufgaben laufen seit 20.10.2026 über „Aufträge“): Monatsansicht (Desktop) / Monat + Tagesliste (Handy), Tagesansicht, Termin-Details und -Editor
    (Dashboard-Termine über /admin/api/events mit {events, base}; private Termine im iCloud-Kalender über /admin/api/private-cal),
    To-Do-Liste mit Filtern, Gruppen, Detailansicht, Editor und Rückgängig.
    Öffentlich für andere Module: F.openTodoEdit(vorlage), F.openTodoView(id), F.openEventEdit(vorlage, datum), F.openEventView(id), F.calEvents().
@@ -203,7 +203,7 @@ function vCal(){
     '<div class="kagenda" aria-live="polite"><div class="kag-h"><div><b>'+esc(longDate(sel,true))+'</b><span class="muted">'+(agList.length?agList.length+(agList.length===1?" Eintrag":" Einträge"):"Keine Einträge")+'</span></div><button type="button" class="btn primary" data-act="newevent:'+sel+'">+ Termin</button></div>'+
       (agList.length?agList.map(dvItem).join(""):'<div class="empty" style="border-top:1px solid var(--line)">Frei – tippe auf „+ Termin“, um etwas einzutragen.</div>')+'</div>'+
     '<div class="klegend">'+SPARTEN.map(function(s){ return '<span><i class="spdot" style="--c:var(--sp-'+s[0]+')"></i>'+esc(s[0]==="privat"?"Privat (iCloud, mit iPhone synchron)":s[1])+'</span>'; }).join("")+
-      '<span><i class="spdot" style="--c:var(--sp-todo)"></i>To-Dos (fällig)</span><span><i class="spdot" style="--c:var(--sp-inv)"></i>Rechnung fällig</span><span><i class="spdot" style="--c:var(--sp-invbad)"></i>Rechnung überfällig</span></div>'+
+      '<span><i class="spdot" style="--c:var(--sp-todo)"></i>Fristen (Aufträge)</span><span><i class="spdot" style="--c:var(--sp-inv)"></i>Rechnung fällig</span><span><i class="spdot" style="--c:var(--sp-invbad)"></i>Rechnung überfällig</span></div>'+
   '</section>';
 }
 function statusLine(){
@@ -463,20 +463,21 @@ F.form("kaltodo",function(f){
 });
 
 /* ---------- Ansicht ---------- */
-UI.kalTab=UI.kalTab||F.ls("fsc_cockpit_kaltab")||"kal";
-F.action("kaltab",function(v){ UI.kalTab=v==="todo"?"todo":"kal"; F.ls("fsc_cockpit_kaltab",UI.kalTab); if(F.current!=="kal") F.go("kal"); else F.render(); });
-F.view({id:"kal",label:"Kalender & To-Dos",short:"Kalender",icon:"kal",order:50,mobile:true,
-  count:function(){ return todoStats().open.length; },
+/* To-Dos gibt es nicht mehr (20.10.2026) – Aufgaben laufen über „Aufträge“; alte Sprungziele führen dorthin */
+UI.kalTab="kal";
+F.action("kaltab",function(v){ if(v==="todo"){ F.go("auftraege"); return; } UI.kalTab="kal"; if(F.current!=="kal") F.go("kal"); else F.render(); });
+F.action("newtodo",function(){ F.actions.tknew&&F.actions.tknew("offen"); });
+F.action("todoedit",function(){ F.go("auftraege"); });
+F.action("todoview",function(){ F.go("auftraege"); });
+F.view({id:"kal",label:"Kalender",short:"Kalender",icon:"kal",order:50,mobile:true,
+  count:function(){ var t=today(); try{ return allEvents().filter(function(e){ return e.date===t; }).length; }catch(e){ return 0; } },
   render:function(){
     if(isMobile()&&F.kalMobile) return F.kalMobile();
-    var s=todoStats(), tab=UI.kalTab, t=today();
+    var t=today();
     var evToday=allEvents().filter(function(e){ return e.date===t; }).length;
-    var sub=tab==="todo"?(s.open.length?s.open.length+" offen"+(s.over.length?" · "+s.over.length+" überfällig":"")+(s.tod.length?" · "+s.tod.length+" heute fällig":""):"Alles erledigt.")
-      :"Dashboard-Termine, privater iCloud-Kalender, Mail-Kalender, fällige To-Dos und Rechnungen. "+(evToday?evToday+(evToday===1?" Termin":" Termine")+" heute.":"Heute keine Termine.");
-    return F.head("Kalender & To-Dos",esc(sub),'<button class="btn" data-act="newtodo">+ To-Do</button><button class="btn primary" data-act="newevent:">+ Termin</button>')+
-      '<div class="kal-top"><nav class="subnav" aria-label="Kalender oder To-Dos"><button type="button" data-act="kaltab:kal" aria-current="'+(tab!=="todo")+'">Kalender</button><button type="button" data-act="kaltab:todo" aria-current="'+(tab==="todo")+'">To-Dos<span class="cnt">'+s.open.length+'</span></button></nav>'+
-      (tab!=="todo"&&s.over.length?'<button type="button" class="tag bad" style="border:0" data-act="kaltab:todo">'+s.over.length+(s.over.length===1?" To-Do überfällig":" To-Dos überfällig")+'</button>':'')+'</div>'+
-      (tab==="todo"?vTodo():(F.kalDesk?F.kalDesk():vCal()));
+    var sub="Dashboard-Termine, privater iCloud-Kalender, Mail-Kalender, Fristen aus den Aufträgen und fällige Rechnungen. "+(evToday?evToday+(evToday===1?" Termin":" Termine")+" heute.":"Heute keine Termine.");
+    return F.head("Kalender",esc(sub),'<button class="btn" data-act="tknew:offen">+ Aufgabe</button><button class="btn primary" data-act="newevent:">+ Termin</button>')+
+      (F.kalDesk?F.kalDesk():vCal());
   },
   after:function(){ if(UI.kalTab!=="todo") loadCal(false); if(isMobile()&&F.kalMobileAfter) F.kalMobileAfter(); }
 });

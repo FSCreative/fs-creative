@@ -21,16 +21,20 @@ F.feed(function(){
   });
   // Plattform-Abgleich („Zu verrechnen“) bewusst nicht mehr unter „Zu erledigen“ – kochdu & Co. rechnen automatisch ab
   F.unreadMails().filter(function(m){ return !m.answered && (Date.now()-Date.parse(m.date||0))<14*864e5; }).slice(0,8).forEach(function(m){ out.push({id:"mail:"+m.id,rank:4,sev:"info",icon:"post",tag:["info","Mail"],t:(m.fromName||m.from||"")+": „"+(m.subject||"(kein Betreff)")+"“",d:F.ago(m.date)+" · ungelesen",acts:[["Lesen","mail:"+m.id,"primary"]]}); });
-  (D.todos||[]).filter(function(t){ return !t.done && t.due && t.due<=today; }).forEach(function(t){ out.push({id:"todo:"+t.id,rank:t.due<today?2:4,sev:t.due<today?"bad":"ok",icon:"check",tag:[t.due<today?"bad":"ok",t.due<today?"Überfällig":"Heute"],t:t.text||"Aufgabe",d:"To-Do · fällig "+de(t.due),acts:[["Erledigt","tododone:"+t.id]]}); });
   /* Bankumsätze & Entwürfe: Feed kommt aus sevdesk.js (Dateiname historisch) */
   return out;
 });
 
-F.todoList=function(arr){ var t=F.D.today; return arr.length?arr.map(function(x){ return '<div class="tdrow"><input type="checkbox" data-todo="'+esc(x.id)+'"'+(x.done?" checked":"")+' aria-label="Erledigt"><button type="button" class="todo-t" data-act="todoedit:'+esc(x.id)+'">'+esc(x.text||"")+(x.due?' <span class="due'+(!x.done&&x.due<t?" late":"")+'">'+(!x.done&&x.due<t?"überfällig · ":"")+de(x.due)+'</span>':'')+(x.notes?' <span class="due">· Notiz</span>':'')+'</button></div>'; }).join(""):'<div class="empty">Keine offenen To-Dos.</div>'; };
-F.todoAdd=function(){ return '<form class="todo-add" data-form="todo"><input class="f" name="text" placeholder="Neues To-Do …" aria-label="Neues To-Do" required><input class="f" type="date" name="due" aria-label="Fällig am" style="max-width:150px"><button class="btn primary" type="submit" aria-label="To-Do anlegen">+</button></form>'; };
-F.form("todo",function(f){ var txt=f.text.value.trim(); if(!txt) return; F.addTodo({text:txt,due:f.due.value||""}).then(function(){ F.toast("To-Do angelegt"); }); });
-F.listen("change","[data-todo]",function(el){ var id=el.getAttribute("data-todo"), on=el.checked; F.todosPost(F.D.todos.map(function(x){ return x.id===id?Object.assign({},x,{done:on,doneAt:on?Date.now():null}):x; })).then(function(){ if(on) F.toast("Erledigt",false,"Rückgängig",function(){ F.todosPost(F.D.todos.map(function(x){ return x.id===id?Object.assign({},x,{done:false}):x; })); }); }); });
-F.action("tododone",function(id){ F.todosPost(F.D.todos.map(function(t){ return t.id===id?Object.assign({},t,{done:true,doneAt:Date.now()}):t; })).then(function(){ F.toast("Erledigt"); }); });
+/* „Meine Aufgaben“ (früher To-Dos): offene Aufgaben aus „Aufträge“, nächste Frist zuerst; Haken = erledigt (mit Rückgängig), + legt eine Aufgabe ohne Auftrag an */
+function openTasks(){ var T=(F.D.auftraege&&F.D.auftraege.tasks)||[]; return T.filter(function(x){ return x.status!=="erledigt"; }).sort(function(a,b){ var pa=a.prio==="dringend"?0:a.prio==="hoch"?1:2, pb=b.prio==="dringend"?0:b.prio==="hoch"?1:2; return String(a.due||"9999").localeCompare(String(b.due||"9999"))||pa-pb; }); }
+F.taskList=function(n){ var t=F.D.today, arr=openTasks().slice(0,n||8), P=(F.D.auftraege&&F.D.auftraege.projects)||[];
+  return arr.length?arr.map(function(x){ var p=P.find(function(y){ return y.id===x.projectId; });
+    return '<div class="tdrow"><input type="checkbox" data-tkdone="'+esc(x.id)+'" aria-label="Erledigt"><button type="button" class="todo-t" data-act="tkopen:'+esc(x.id)+'">'+esc(x.title||"")+(x.due?' <span class="due'+(x.due<t?" late":"")+'">'+(x.due<t?"überfällig · ":"")+de(x.due)+'</span>':'')+(p?' <span class="due">· '+esc(p.name)+'</span>':'')+'</button></div>'; }).join(""):'<div class="empty">Keine offenen Aufgaben.</div>'; };
+F.taskAdd=function(){ return '<form class="todo-add" data-form="todo"><input class="f" name="text" placeholder="Neue Aufgabe …" aria-label="Neue Aufgabe" required><input class="f" type="date" name="due" aria-label="Fällig am" style="max-width:150px"><button class="btn primary" type="submit" aria-label="Aufgabe anlegen">+</button></form>'; };
+F.form("todo",function(f){ var txt=f.text.value.trim(); if(!txt) return; F.addTodo({text:txt,due:f.due.value||""}).then(function(j){ if(j&&j.ok) F.toast("Aufgabe angelegt",false,"Ansehen",function(){ F.go("auftraege"); }); }); });
+F.listen("change","[data-tkdone]",function(el){ var id=el.getAttribute("data-tkdone"), T=(F.D.auftraege&&F.D.auftraege.tasks)||[], x=T.find(function(y){ return y.id===id; }); if(!x||!F.tkApi) return;
+  if(x.print){ el.checked=false; F.toast("Druckaufträge schließt du auf der Druck-Seite ab",true); return; }
+  var prev=x.status; F.tkApi("task.move",{id:id,status:"erledigt"}).then(function(j){ if(j&&j.ok) F.toast("Erledigt ✓",false,"Rückgängig",function(){ F.tkApi("task.move",{id:id,status:prev}); }); }); });
 
 F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true,
   count:function(){ return F.feedItems().length; },
@@ -45,7 +49,6 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
     var bz=((D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[]).map(function(b){ var d=String(b.eventDate||"").slice(0,10); return {id:"bz_"+b.id,title:"Fotobox: "+(b.customerName||"Buchung")+(b.package?" · "+b.package:""),date:d,time:String(b.eventDate||"").slice(11,16).replace(/^00:00$/,""),location:b.location||"",cal:"Blitzdings"}; });
     var allEv=D.events.concat(bz.filter(function(b){ return /^\d{4}-\d{2}-\d{2}$/.test(b.date); })).filter(function(e){ return e.date>=today; }).sort(function(a,b){ return (a.date+(a.time||"")).localeCompare(b.date+(b.time||"")); });
     var todayEv=allEv.filter(function(e){return e.date===today;}), nextEv=allEv.slice(0,Math.max(8,todayEv.length+5));
-    var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
     var dateLine=new Date().toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
     /* Termine nach Tagen gruppieren: Heute, Morgen, dann Wochentag + Datum */
     var dayName=function(d){ if(d===today) return "Heute"; var t1=new Date(today+"T12:00:00"); t1.setDate(t1.getDate()+1); if(d===F.ymd(t1)) return "Morgen"; return new Date(d+"T12:00:00").toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"numeric"}); };
@@ -60,7 +63,7 @@ F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true
         (items?'<ul class="feed">'+items+'</ul>':'<div class="empty">Nichts offen. 🎉</div>')+
         (f.length>12?'<button class="more" data-act="togglefeed">'+(UI.feedAll?"Weniger anzeigen":"Alle "+f.length+" anzeigen")+'</button>':'')+'</section>',
       dayP='<section class="panel"><div class="panel-h"><h2>Mein Tag</h2><button class="link" data-go="kal">Kalender →</button></div><div class="hagenda">'+agenda+'</div></section>',
-      todosP='<section class="panel"><div class="panel-h"><h2>To-Dos</h2><button class="link" data-go="kal">Alle →</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>';
+      todosP='<section class="panel"><div class="panel-h"><h2>Meine Aufgaben</h2><button class="link" data-go="auftraege">Alle →</button></div>'+F.taskList(8)+F.taskAdd()+'</section>';
       /* Statusleiste rechts sichtbar → Termine und Mails stehen schon dort: zwei Spalten ohne Doppelungen */
       if(F.sideVisible&&F.sideVisible()) return '<div class="hgrid two-col">'+todoP+'<div class="stack">'+projectsPanel()+todosP+incomePanel()+'</div></div>';
       return '<div class="hgrid">'+todoP+'<div class="stack">'+projectsPanel()+dayP+todosP+'</div><div class="stack">'+mailPanel()+incomePanel()+'</div></div>'; })();
@@ -140,8 +143,7 @@ function mobileHeute(){
   var day=function(d,lbl){ var l=evs.filter(function(e){ return e.date===d; }); return '<div class="mx-day"><div class="mx-dh'+(d===today?" today":"")+'">'+lbl+'</div>'+(l.length?l.map(function(e){ return '<div class="mx-ev"><span class="num">'+esc(e.time||"ganztags")+'</span><i></i><div><b>'+esc(e.title)+'</b>'+((e.location||e.cal)?'<small>'+esc([e.location||"",e.cal||""].filter(Boolean).join(" · "))+'</small>':'')+'</div></div>'; }).join(""):'<div class="mx-none">Keine Termine</div>')+'</div>'; };
   var agenda='<section class="mx-card"><div class="mx-h"><h3>Mein Tag</h3><button type="button" class="mx-link" data-go="kal">Kalender'+mxIc("chev")+'</button></div>'+day(today,"Heute")+day(tomorrow,"Morgen")+'</section>';
   /* To-Dos */
-  var openTodos=(D.todos||[]).filter(function(t){return !t.done;}).sort(function(a,b){ return String(a.due||"9999").localeCompare(String(b.due||"9999")); });
-  var todos='<section class="mx-card flush mx-todos"><div class="mx-h"><h3>To-Dos</h3><button type="button" class="mx-link" data-go="kal">Alle'+mxIc("chev")+'</button></div>'+F.todoList(openTodos.slice(0,8))+F.todoAdd()+'</section>';
+  var todos='<section class="mx-card flush mx-todos"><div class="mx-h"><h3>Meine Aufgaben</h3><button type="button" class="mx-link" data-go="auftraege">Alle'+mxIc("chev")+'</button></div>'+F.taskList(8)+F.taskAdd()+'</section>';
   /* Neueste Mails (3) */
   var mails=((D.mail&&D.mail.messages)||[]).filter(function(m){ return F.isInbox(m)&&!m.deleted; }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,3), unread=F.unreadMails().length;
   var mailC='<section class="mx-card flush"><div class="mx-h"><h3>Neueste Mails'+(unread?' <span class="tag info">'+unread+' ungelesen</span>':'')+'</h3><button type="button" class="mx-link" data-go="post">Postfach'+mxIc("chev")+'</button></div>'+

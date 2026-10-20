@@ -103,7 +103,7 @@ F.kalDesk=function(){
   var a=A(), map=a.calItems(), v=UI.kdView, ds=days(), s=sel();
   var seg=[["day","Tag"],["workweek","Arbeitswoche"],["week","Woche"],["month","Monat"]].map(function(o){ return '<button type="button" data-act="kdview:'+o[0]+'" aria-pressed="'+(v===o[0])+'">'+o[1]+'</button>'; }).join("");
   var bar='<div class="kd-bar"><button type="button" class="btn" data-act="kdtoday">Heute</button><button type="button" class="kd-nav" data-act="kdshift:-1" aria-label="Zurück">‹</button><button type="button" class="kd-nav" data-act="kdshift:1" aria-label="Weiter">›</button><span class="t">'+esc(rangeTitle(ds))+'</span><span class="sp"></span><div class="kd-seg" role="group" aria-label="Ansicht">'+seg+'</div></div>';
-  var leg='<div class="kd-leg"><b>Bereiche</b>'+a.SPARTEN.map(function(x){ return '<span><i style="--c:var(--sp-'+x[0]+')"></i>'+esc(x[0]==="privat"?"Privat (iCloud)":x[1])+'</span>'; }).join("")+'<span><i style="--c:var(--sp-todo)"></i>To-Dos</span><span><i style="--c:var(--sp-inv)"></i>Rechnung fällig</span></div>';
+  var leg='<div class="kd-leg"><b>Bereiche</b>'+a.SPARTEN.map(function(x){ return '<span><i style="--c:var(--sp-'+x[0]+')"></i>'+esc(x[0]==="privat"?"Privat (iCloud)":x[1])+'</span>'; }).join("")+'<span><i style="--c:var(--sp-todo)"></i>Fristen (Aufträge)</span><span><i style="--c:var(--sp-inv)"></i>Rechnung fällig</span></div>';
   return '<div class="kd"><aside class="panel kd-side"><button type="button" class="btn primary kd-new" data-act="newevent:'+s+'">+ Neuer Termin</button>'+miniHtml(map)+leg+a.statusLine()+'</aside>'+
     '<section class="panel kd-main">'+bar+(v==="month"?a.vCal():weekHtml(map))+'</section></div>';
 };

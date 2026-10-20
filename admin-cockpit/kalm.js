@@ -163,7 +163,8 @@ F.kalMobile=function(){
   var bar='<div class="mapp kmapp"><button type="button" class="mapp-t" data-act="kmexpand"><b>'+esc(title)+' '+F.svg("m_chev")+'</b><span>'+(a.CAL.ready?(a.CAL.loading?"aktualisiert …":({agenda:"Agenda",day:"Tag",month:"Monat"}[v])):"lädt …")+'</span></button>'+
     '<button type="button" class="kmtoday" data-act="kmtoday" aria-label="Heute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg><b>'+td+'</b></button>'+
     '<button type="button" class="mapp-i" data-act="kmview" aria-label="Ansicht wechseln"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>'+
-    '<button type="button" class="mapp-i" data-act="kaltab:todo" aria-label="To-Dos" style="position:relative">'+F.svg("todo")+(s2.open.length?'<span class="kmbadge">'+s2.open.length+'</span>':'')+'</button></div>';
+    (function(){ var T=(F.D&&F.D.auftraege&&F.D.auftraege.tasks)||[], d=a.today(), n=T.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=d; }).length;
+      return '<button type="button" class="mapp-i" data-go="auftraege" aria-label="Aufgaben (Aufträge)" style="position:relative">'+F.svg("todo")+(n?'<span class="kmbadge">'+n+'</span>':'')+'</button></div>'; })();
   var body;
   if(v==="month") body='<div class="kmhead">'+bar+'</div><div class="kmonthwrap">'+a.vCal()+'</div>';
   else body='<div class="kmhead" id="kmhead">'+bar+'<div class="kmstrip" id="kmstrip">'+stripHtml(map)+'</div></div>'+(v==="day"?dayHtml(map):agendaHtml(map));

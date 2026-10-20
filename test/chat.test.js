@@ -172,7 +172,7 @@ async function startServer(dir, env) {
     assert.strictEqual(l.source, "Website-Chat (KI)"); assert.strictEqual(l.email, "max@example.com"); assert.strictEqual(l.topic, "Website"); assert.ok(/Tischlerei/.test(l.message)); assert.ok(/^lead_/.test(l.id));
     assert.strictEqual(l.name, "Max <b>M</b>", "vom Besucher eingegebener Name bleibt");
     const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.strictEqual(conv.leadId, l.id); assert.strictEqual(conv.email, "max@example.com");
-    const todos = JSON.parse(fs.readFileSync(path.join(dir, "todos.json"), "utf8")); assert.ok(todos.some(x => x.id === l.id));
+    const auf = JSON.parse(fs.readFileSync(path.join(dir, "auftraege.json"), "utf8")); assert.ok(auf.tasks.some(x => x.leadId === l.id && /^Anfrage: /.test(x.title)), "Anfrage als Aufgabe (Aufträge)");
     const u = JSON.parse(fs.readFileSync(path.join(dir, "ki-usage.json"), "utf8")); const mk = Object.keys(u.months).pop(); assert.ok(u.months[mk].chat && u.months[mk].chat.calls === 2 && u.months[mk].chat.model === "claude-sonnet-5-5");
     await sleep(300); await pj("/chat/api/send", { cid: A, text: "Danke!" });
     await waitFor(async () => (await adm("/admin/api/chat/conv?id=" + A)).conv.aiCount === 3);

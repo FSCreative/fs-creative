@@ -232,5 +232,7 @@ F.todosPost=function(next){
   var base=(F.D.todos||[]).map(function(t){return Object.assign({},t);});
   return F.api("/admin/api/todos",{body:{todos:next,base:base}}).then(function(j){ if(j&&Array.isArray(j.todos)) F.D.todos=j.todos; else F.toast("To-Dos konnten nicht gespeichert werden",true); F.render(); return j; });
 };
-F.addTodo=function(t){ return F.todosPost((F.D.todos||[]).concat([Object.assign({id:"t"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),text:"",due:"",done:false,created:Date.now()},t)])); };
+/* „To-Do anlegen“ (KI, Mail, Kundenakte …) legt seit 20.10.2026 eine Aufgabe in „Aufträge“ an (ohne Auftrag; Anfrage → mit Kundenakte verknüpft) */
+F.addTodo=function(t){ t=t||{}; return F.api("/admin/api/auftraege",{body:{op:"task.save",task:{title:String(t.text||"Aufgabe").slice(0,200),due:t.due||"",notes:t.notes||"",status:"offen",prio:t.prio||"normal",leadId:t.leadId||undefined}}})
+  .then(function(j){ if(j&&j.ok&&j.data&&F.D){ F.D.auftraege=j.data; F.render(); return Object.assign({},j,{todos:[]}); } F.toast((j&&j.error)||"Aufgabe konnte nicht angelegt werden",true); return j; }); };
 })();

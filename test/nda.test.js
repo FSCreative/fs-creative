@@ -36,6 +36,9 @@ async function startServer(dir, env) {
 (async () => {
   const mocks = createMocks(); const mport = await listen(mocks.server); const M = mocks.state;
   const dir = copyApp();
+  // To-Dos vor dem Start: werden beim Start zu Aufgaben (offene), Sicherung in todos-archiv.json
+  fs.writeFileSync(path.join(dir, "todos.json"), JSON.stringify([{ id: "t1", text: "Steuerberater anrufen", due: "2026-10-21", done: false, notes: "wegen UVA", created: 1 }, { id: "t2", text: "Alt und erledigt", done: true },
+    { id: "lead_abc123", text: "📩 Anfrage: Max Muster – Website", due: "", done: false, created: 2 }]));
   const srv = await startServer(dir, { MAIL_API_URL: "http://127.0.0.1:" + mport + "/mail/api/mails", MAIL_API_TOKEN: "mt" });
   const B = srv.base;
   const admin = async (p, body) => { const r = await fetch(B + p, body ? { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(body) } : { headers: { cookie: COOKIE } }); return Object.assign(await r.json().catch(() => ({})), { _status: r.status }); };
@@ -141,6 +144,23 @@ async function startServer(dir, env) {
     assert.strictEqual((await fetch(B + "/admin/api/mail-search?q=x", { redirect: "manual" })).status, 302, "ohne Anmeldung");
     const mm = await (await fetch(B + "/admin/api/mail-message?account=fs&folder=Archiv&uid=7", { headers: { cookie: COOKIE } })).json();
     assert.ok(mm.ok && mm.message.uid === 7 && mm.message.folder === "Archiv" && /Voller Inhalt/.test(mm.message.body), "Suchtreffer beim Öffnen komplett laden");
+  });
+  await t("To-Dos → Aufgaben: offene To-Dos beim Start übernommen (Anfrage mit Kundenakte), Sicherung, keine To-Dos mehr; alte Fenster legen nichts doppelt an; neue Anfrage = Aufgabe", async () => {
+    let A = await admin("/admin/api/auftraege");
+    const st = A.tasks.find(x => x.title === "Steuerberater anrufen"); assert.ok(st, "offenes To-Do übernommen"); assert.strictEqual(st.due, "2026-10-21"); assert.strictEqual(st.status, "offen"); assert.ok(/wegen UVA/.test(st.notes)); assert.strictEqual(st.projectId, "");
+    const ld = A.tasks.find(x => x.leadId === "lead_abc123"); assert.ok(ld && ld.title === "Anfrage: Max Muster – Website" && ld.prio === "hoch", "Anfrage mit Kundenakte, ohne Symbol");
+    assert.ok(!A.tasks.some(x => x.title === "Alt und erledigt"), "erledigte nicht übernommen");
+    const arch = JSON.parse(fs.readFileSync(path.join(dir, "todos-archiv.json"), "utf8")); assert.strictEqual(arch.todos.length, 3, "alles gesichert");
+    assert.deepStrictEqual((await admin("/admin/api/todos")).todos, []);
+    const n0 = A.tasks.length;
+    let r = await admin("/admin/api/todos", { todos: [{ id: "t1", text: "Steuerberater anrufen", done: false }, { id: "tneu", text: "Neu aus altem Fenster", due: "2026-10-30", done: false }], base: [] });
+    assert.strictEqual(r.ok, true); assert.deepStrictEqual(r.todos, []);
+    r = await admin("/admin/api/todos", { todos: [{ id: "tneu", text: "Neu aus altem Fenster", done: false }], base: [] });
+    A = await admin("/admin/api/auftraege"); assert.strictEqual(A.tasks.length, n0 + 1, "nur das neue, und nur einmal"); assert.ok(A.tasks.some(x => x.title === "Neu aus altem Fenster" && x.due === "2026-10-30"));
+    const lr = await fetch(B + "/api/anfrage", { method: "POST", headers: { "content-type": "application/json", origin: B }, body: JSON.stringify({ name: "Erika Beispiel", company: "Beispiel KG", email: "erika@example.com", topic: "Website", message: "Bitte melden", consent: true }) });
+    assert.strictEqual(lr.status, 200);
+    A = await admin("/admin/api/auftraege"); const at = A.tasks.find(x => /^Anfrage: Erika Beispiel \(Beispiel KG\)/.test(x.title)); assert.ok(at, "Anfrage als Aufgabe"); assert.ok(/^lead_/.test(at.leadId)); assert.ok(at.due); assert.ok(/Bitte melden/.test(at.notes));
+    assert.deepStrictEqual((await admin("/admin/api/todos")).todos, [], "keine To-Dos mehr");
   });
   await t("Auftragsmanagement: Aufträge und Aufgaben anlegen, verschieben, abhaken, kommentieren, löschen; Prüfungen; nur mit Anmeldung", async () => {
     const op = async b => { const r = await fetch(B + "/admin/api/auftraege", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/json" }, body: JSON.stringify(b) }); return Object.assign(await r.json(), { _status: r.status }); };

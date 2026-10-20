@@ -39,7 +39,7 @@ function rowMenu(m,x,y){
     {label:"Antworten",act:function(){ M.reply(m,"reply"); }},
     {label:"Allen antworten",act:function(){ M.reply(m,"all"); }},
     {label:"Weiterleiten",act:function(){ M.reply(m,"fwd"); }},
-    {label:"Als To-Do",act:function(){ M.todoFromMail(m); }},
+    {label:"Als Aufgabe",act:function(){ M.todoFromMail(m); }},
     {label:"Als Termin",act:function(){ M.eventFromMail(m); }},
     {sep:true},
     {label:"Verschieben …",act:function(){ M.showMoveMenu(x,y,UI.mpick[id]?M.selectedIds():[id]); }},
@@ -180,6 +180,7 @@ M.mailNotes=mailNotes;
 /* ---------- Als To-Do ---------- */
 M.todoFromMail=function(m){
   if(!m) return;
+  if(F.tkFromMail){ F.tkFromMail(m); return; }   /* seit 20.10.2026: Aufgabe in „Aufträge“ (Mail verknüpft, Kunde/Auftrag vorausgewählt) */
   F.modal('<form data-form="mtodo" class="stackf"><div class="row-between"><h2 style="font-size:19px">Als To-Do anlegen</h2>'+F.btnClose()+'</div>'+
     '<label class="fl">Aufgabe<input class="f" name="text" required value="'+esc(m.subject||"(kein Betreff)")+'"></label>'+
     '<label class="fl">Fällig am (optional)<input class="f" name="due" type="date"></label>'+
