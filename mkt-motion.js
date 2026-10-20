@@ -8,6 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const os = require("os");
 
 module.exports = function (R) {
   const W = 1080, H = 1920, FPS = 30;
@@ -184,10 +185,33 @@ module.exports = function (R) {
     const fc = bgF + ";[" + fgIdx + ":v]format=rgba[f];[b][f]overlay=0:0:alpha=premultiplied:eof_action=repeat:format=auto,scale=2160:3840,zoompan=z='" + z + "':x='" + kb[1] + "':y='" + kb[2] + "':d=1:s=1080x1920:fps=30,format=yuv420p[v]";
     const seg = path.join(dir, "seg" + i + ".mp4"), units = [];
     pp.units.forEach(u => units.push(delay + u.t0));
-    let lastKey = null, lastBuf = null, frames = 0;
+    let lastKey = null, lastBuf = null, frames = 0, tJs = 0; const t0 = Date.now();
     await ff(inBg.concat(["-f", "rawvideo", "-pix_fmt", "rgba", "-s", W + "x" + H, "-framerate", String(FPS), "-i", "pipe:0", "-filter_complex", fc, "-map", "[v]", "-t", len.toFixed(3)]).concat(R.VENC).concat([seg]),
-      async stdin => { for (let f = 0; f < animEndF; f++) { const key = setState(pp, P, f / FPS - delay); if (key !== lastKey) { lastBuf = await R.rawFrame(pp.root, LF.w, LF.h, W); lastKey = key; frames++; } await write(stdin, lastBuf); } });
+      async stdin => { for (let f = 0; f < animEndF; f++) { const key = setState(pp, P, f / FPS - delay); if (key !== lastKey) { const tj = Date.now(); lastBuf = await R.rawFrame(pp.root, LF.w, LF.h, W); tJs += Date.now() - tj; lastKey = key; frames++; } await write(stdin, lastBuf); } });
+    if (process.env.MOTION_DEBUG) console.log("motion: Szene " + i + " · " + frames + " Bilder gerechnet (" + tJs + " ms) · gesamt " + (Date.now() - t0) + " ms");
     return { seg, units, rendered: frames, animEnd: delay + pp.end };
+  }
+
+  /* Szenen parallel in Threads (mkt-motion-worker.js) – je Szene eigener satori/resvg; bis zu 4 gleichzeitig.
+     Scheitert ein Thread (z. B. kein worker_threads), rechnet der Hauptthread die Szenen nacheinander. */
+  async function runScenes(jobs, brand, o) {
+    const oo = { dir: o.dir, url: o.url, v: o.v, bgVideos: o.bgVideos || null, variants: o.variants || null, P: o.P, G: o.G };
+    const nw = Math.max(1, Math.min(jobs.length, 4, (os.cpus() || []).length || 1, +process.env.MOTION_THREADS || 4));
+    let W0 = null; try { W0 = require("worker_threads").Worker; } catch (e) { W0 = null; }
+    if (!W0 || nw < 2 || process.env.MOTION_THREADS === "1") { const out = []; for (const j of jobs) out.push(await sceneSeg(j.s, brand, oo, j.i, j.len, j.delay, j.punch)); return out; }
+    const out = new Array(jobs.length), workers = []; let next = 0, failed = null;
+    try {
+      await Promise.all(Array.from({ length: nw }, () => new Promise((resolve) => {
+        let wk; try { wk = new W0(path.join(__dirname, "mkt-motion-worker.js")); } catch (e) { failed = e; return resolve(); }
+        workers.push(wk);
+        const go = () => { if (failed || next >= jobs.length) return resolve(); const j = jobs[next++]; wk.postMessage({ id: j.i, s: j.s, brand, o: oo, i: j.i, len: j.len, delay: j.delay, punch: j.punch }); };
+        wk.on("message", m => { if (m.ok) out[m.id] = m.r; else failed = failed || new Error(m.error); go(); });
+        wk.on("error", e => { failed = failed || e; resolve(); });
+        go();
+      })));
+    } finally { workers.forEach(w => { try { w.terminate(); } catch (e) {} }); }
+    if (failed) throw failed;
+    return out;
   }
 
   // ───────────── Reel ─────────────
@@ -203,12 +227,9 @@ module.exports = function (R) {
     // Übergänge: je Wechsel ein Typ aus dem Markenprofil (rotierend), „cut“ = harter Schnitt mit Ruck
     const tr = []; for (let k = 1; k < n; k++) { const t = P.trans[(o.v + k - 1) % P.trans.length]; tr[k] = { type: t === "cut" ? "fade" : t, X: t === "cut" ? 0.06 : Math.min(P.tx, (c[k] - c[k - 1]) * 0.4, (c[k + 1] - c[k]) * 0.4), cut: t === "cut" }; }
     const X = k => (k >= 1 && k < n ? tr[k].X : 0);
-    const segs = [], unitTimes = [];
-    for (let i = 0; i < n; i++) {
-      const len = c[i + 1] - c[i] + X(i) / 2 + X(i + 1) / 2, delay = X(i) / 2 + (i === 0 ? 0.08 : 0.04), start = c[i] - X(i) / 2;
-      const r = await sceneSeg(scenes[i], brand, o, i, len, delay, i > 0 && tr[i].cut);
-      segs.push(r.seg); r.units.forEach(t => unitTimes.push(start + t));
-    }
+    const segs = [], unitTimes = [], jobs = scenes.map((s, i) => ({ s, i, len: c[i + 1] - c[i] + X(i) / 2 + X(i + 1) / 2, delay: X(i) / 2 + (i === 0 ? 0.08 : 0.04), start: c[i] - X(i) / 2, punch: i > 0 && tr[i].cut }));
+    const res = await runScenes(jobs, brand, o);
+    jobs.forEach((jb, i) => { segs.push(res[i].seg); res[i].units.forEach(t => unitTimes.push(jb.start + t)); });
     // Geräusche: Wusch kurz vor jedem Wechsel, Plopp/Tick beim Erscheinen (gedämpft), Rums am Anfang
     const ev = [];
     if (P.sfx.cut === "whoosh") for (let k = 1; k < n; k++) ev.push({ type: "whoosh", t: Math.max(0, c[k] - 0.24), d: 0.46, v: tr[k].cut ? 0.22 : 0.3 });
@@ -259,5 +280,5 @@ module.exports = function (R) {
     const bpm = Math.abs(b2 - Math.round(b2)) < 0.25 ? Math.round(b2) : Math.round(b2 * 100) / 100, b0 = Math.round((bp * HOP + N / 2) / SR * 1000) / 1000;
     return best > 0 ? { bpm, beat0: b0 < 0.05 ? 0 : b0 } : null;
   }
-  return { reel, tempo, MOTION, profile, _test: { prepare, setState, anim, countFmt, scramble, cuts, beatGrid } };
+  return { reel, tempo, MOTION, profile, _scene: sceneSeg, _test: { prepare, setState, anim, countFmt, scramble, cuts, beatGrid } };
 };

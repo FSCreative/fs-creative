@@ -7,7 +7,7 @@ function createBlitzMock(opts) {
   opts = opts || {};
   const TOKEN = opts.token || "test-token";
   const today = new Date(); const iso = (d) => d.toISOString().slice(0, 10);
-  const plus = (n) => { const d = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() + n)); return iso(d); };
+  const plus = (n) => { const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + n)); return iso(d); };   // UTC wie im Test (sonst um Mitternacht Ortszeit ein Tag Versatz)
   const S = {
     log: [],
     resources: [{ type: "MINI", name: "Mini-Box", quantity: 1 }, { type: "BUSINESS", name: "Business-Box", quantity: 1 }, { type: "VIDEO360", name: "360° Booth", quantity: 1 }],
