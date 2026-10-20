@@ -2726,6 +2726,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/chat/") === 0) return guard(res, CHAT.handleAdmin(req, res, u, p));
   // VIW Cloud (Nextcloud über WebDAV) – Cockpit-Seite admin-cockpit/zviw.js, Logik in viw-cloud.js
   if (p.indexOf("/admin/api/viw/") === 0) return guard(res, VIW.handleAdmin(req, res, u, p));
+  // Marketing (Marken, Gewinnspiel-Auslosung mit Video) – Cockpit-Seite admin-cockpit/zmarketing.js, Logik in marketing.js / mkt-render.js
+  if (p.indexOf("/admin/api/mkt/") === 0) return guard(res, MKT.handleAdmin(req, res, u, p));
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -3936,6 +3938,7 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
 setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
 const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment, DATA_DIR, secret: ADMIN_SECRET });
+const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET });
 const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });

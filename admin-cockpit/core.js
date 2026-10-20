@@ -100,8 +100,8 @@ function navCount(v){ try{ return FSC.D&&v.count?v.count():0; }catch(e){ return 
 FSC.renderNav = function(){
   var cur=FSC.current;
   /* Seitenleiste in Gruppen (Look „Montafon Night“); Seiten ohne Gruppe landen unter „System“ */
-  var RL={viw:"VIW Cloud",post:"Postfach",web:"Websites",plat:"Plattformen",kunden:"Kunden",kal:"Kalender",geld:"Finanzen",print:"Druckshop",legal:"Rechtliches"};
-  var GRP=[["Arbeit",["heute","auftraege","post","kal","chat","viw"]],["Kunden & Geld",["kunden","geld","print"]],["System",["web","plat","legal","ki"]]];
+  var RL={viw:"VIW Cloud",mkt:"Marketing",post:"Postfach",web:"Websites",plat:"Plattformen",kunden:"Kunden",kal:"Kalender",geld:"Finanzen",print:"Druckshop",legal:"Rechtliches"};
+  var GRP=[["Arbeit",["heute","auftraege","post","kal","chat","viw","mkt"]],["Kunden & Geld",["kunden","geld","print"]],["System",["web","plat","legal","ki"]]];
   var vis=FSC.views.filter(function(v){return !v.hidden;}), used={};
   var btn=function(v){ var c=navCount(v); return '<button class="nav-btn" data-go="'+v.id+'" title="'+v.label+'"'+(v.id===cur?' aria-current="page"':'')+'>'+FSC.svg(v.icon)+'<span class="nl">'+(RL[v.id]||v.short||v.label)+'</span>'+(c?'<span class="count">'+c+'</span>':'')+'</button>'; };
   var groups=GRP.map(function(g){ return [g[0],g[1].map(function(id){ return vis.find(function(v){ return v.id===id; }); }).filter(Boolean)]; });
