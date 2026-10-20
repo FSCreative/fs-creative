@@ -15,6 +15,7 @@ var IC={
   spam:'<path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
   trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
   folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  cloud:'<path d="M7 18.5h10.5a4.5 4.5 0 0 0 .7-8.95A6 6 0 0 0 6.3 10.6 4 4 0 0 0 7 18.5z"/>',
   reply:'<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
   replyall:'<polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/>',
   forward:'<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',
@@ -439,11 +440,11 @@ function attachmentsHtml(m){
     var dv=/^(PDF|Bild)$/.test(attIconTxt(a))?' data-docview data-doctitle="'+esc(a.filename||"Anhang")+'"':'';
     return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="Ansehen"'+dv+'><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
       '<a href="'+esc(href)+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen" aria-label="'+esc((a.filename||"Anhang")+" herunterladen")+'">'+ic("down")+'</a>'+
-      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+(canV&&F.payFromMail?'<button type="button" data-act="mpay:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Zahlung erfassen – KI liest Empfänger, IBAN, Betrag aus dieser Rechnung" aria-label="Zahlung erfassen">'+ic("pay")+'</button>':'')+'</span>';
+      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+(F.viwOn?'<button type="button" data-act="mviw:'+esc(m.id)+'|'+esc(a.index||0)+'" title="In VIW Cloud speichern" aria-label="In VIW Cloud speichern">'+ic("cloud")+'</button>':'')+(canV&&F.payFromMail?'<button type="button" data-act="mpay:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Zahlung erfassen – KI liest Empfänger, IBAN, Betrag aus dieser Rechnung" aria-label="Zahlung erfassen">'+ic("pay")+'</button>':'')+'</span>';
   }).join("");
   var zip="";
   if(atts.length>1){ var z="/admin/api/mail-attachments-zip?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&account="+encodeURIComponent(accOf(m))+"&name="+encodeURIComponent(m.subject||"Anhaenge")+"&atts="+encodeURIComponent(JSON.stringify(atts.map(function(a){ return {index:a.index,filename:a.filename}; })));
-    zip='<a class="link" href="'+esc(z)+'" download>'+ic("down")+' Alle als ZIP</a>'; }
+    zip='<span class="atta"><a class="link" href="'+esc(z)+'" download>'+ic("down")+' Alle als ZIP</a>'+(F.viwOn?'<button type="button" class="link" data-act="mviw:'+esc(m.id)+'|all">'+ic("cloud")+' Alle in VIW Cloud</button>':'')+'</span>'; }
   return '<div class="attbox"><div class="atth"><span>'+ic("clip")+' '+atts.length+(atts.length>1?" Anhänge":" Anhang")+'</span>'+zip+'</div><div class="attl">'+chips+'</div></div>';
 }
 function outboxReader(o){
@@ -1159,6 +1160,7 @@ F.css([
 ".atth{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--ink-2);font-weight:600;flex-wrap:wrap;align-items:center}",
 ".atth svg{width:14px;height:14px;vertical-align:-2px}",
 ".atth .link{display:inline-flex;gap:5px;align-items:center;padding:0}",
+".atth .atta{display:inline-flex;gap:14px;flex-wrap:wrap}.atth button.link{border:0;background:none;font:inherit;font-weight:600;color:var(--glow);cursor:pointer}",
 ".attl{display:flex;flex-wrap:wrap;gap:6px}",
 ".att{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:100%;font-size:13px;background:var(--panel)}",
 ".att>a,.att>button,.att>.ai{display:flex;align-items:center;gap:6px;padding:5px 9px;text-decoration:none;color:var(--ink);border:0;background:none;min-width:0}",

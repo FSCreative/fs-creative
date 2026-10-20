@@ -1382,6 +1382,18 @@ async function sevPdfSend(res, apiPath, fallbackName, dl) {
     return send(res, 200, buf, "application/pdf", { "Content-Disposition": (dl ? "attachment" : "inline") + '; filename="' + fname + '"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
   } catch (e) { return send(res, e.status || 500, "PDF konnte nicht geladen werden: " + String(e.message || e).slice(0, 200), "text/plain; charset=utf-8"); }
 }
+// Mail-Anhang als Datei holen (für VIW Cloud u. a.): { buf, fname, ctype } – m: { folder, uid, index, account, filename }
+async function fetchMailAttachment(m) {
+  if (!MAIL.url || !MAIL.token) throw new Error("Postfach nicht verbunden");
+  m = m || {};
+  const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || "0") + "&account=" + encodeURIComponent(m.account || "");
+  const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token } });
+  if (!r.ok) throw new Error(r.status === 404 ? "Anhang nicht gefunden – die Mail wurde evtl. verschoben" : "Anhang konnte nicht geladen werden (Mail-Dienst " + r.status + ")");
+  const buf = Buffer.from(await r.arrayBuffer()); if (!buf.length) throw new Error("Anhang nicht mehr verfügbar – die Mail wurde verschoben oder gelöscht");
+  const cd = r.headers.get("content-disposition") || "", m5987 = cd.match(/filename\*=UTF-8''([^;]+)/i), mPlain = cd.match(/filename="([^"]*)"/i);
+  let fname = String(m.filename || "anhang"); try { if (m5987) fname = decodeURIComponent(m5987[1]); else if (mPlain) fname = mPlain[1]; } catch (e) { if (mPlain) fname = mPlain[1]; }
+  return { buf, fname, ctype: r.headers.get("content-type") || "" };
+}
 // Steuerliche Regel eines Ausgaben-Belegs (IDs wie sevDesk Update 2.0): 9 Vorsteuer, 10 keine Vorsteuer, 8 ig. Erwerb, 14/12 Reverse Charge EU/Drittland, 13 RC ohne Vorsteuer.
 // Bei ig. Erwerb und Reverse Charge steht auf der Rechnung keine österr. USt → Positionen mit 0 % (netto = brutto), die 20 % rechnet die UVA selbst.
 const VOU_RULES = ["8", "9", "10", "12", "13", "14"], VOU_RULES_ZERO = ["8", "12", "13", "14"];
@@ -2697,6 +2709,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/print/") === 0) return guard(res, PRINT.handleAdmin(req, res, u, p));
   // Website-Chat – Cockpit-Seite admin-cockpit/zchat.js, Logik in chat.js
   if (p.indexOf("/admin/api/chat/") === 0) return guard(res, CHAT.handleAdmin(req, res, u, p));
+  // VIW Cloud (Nextcloud über WebDAV) – Cockpit-Seite admin-cockpit/zviw.js, Logik in viw-cloud.js
+  if (p.indexOf("/admin/api/viw/") === 0) return guard(res, VIW.handleAdmin(req, res, u, p));
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -3900,6 +3914,7 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
+const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment });
 const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
