@@ -1,5 +1,6 @@
 "use strict";
-// Bankkonten direkt (PSD2, nur Kontoinformation – keine Zahlungen) über Enable Banking: George / Erste Bank & Sparkassen.
+// Bankkonten direkt (PSD2) über Enable Banking: George / Erste Bank & Sparkassen – Kontoinformation und (seit 20.10.2026) Überweisungen auslösen,
+// die Simon in George selbst freigibt (starke Kundenauthentifizierung bei der Bank; ohne seine Bestätigung wird nichts ausgeführt).
 // Ablauf: „Bank verbinden“ → Freigabe in George (bis 180 Tage) → Rückkehr ins Cockpit → täglicher Abruf der gebuchten Umsätze.
 // Umsätze laufen durch denselben Import wie der Kontoauszug (Doppelte aus CSV/CAMT werden erkannt, Geldtransit, Bankregeln).
 // Zugang: EB_APP_ID + EB_PRIVATE_KEY (PEM der bei Enable Banking registrierten App). Freigabe wird nur als Sitzungs-ID gespeichert.
@@ -115,5 +116,35 @@ module.exports = function (D) {
     return { configured: !!(c.app && c.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error,
       sessions: (META.sessions || []).map(s => ({ bank: s.bank, validUntil: s.validUntil, accounts: s.accounts.map(a => { const acc = L.get("CheckAccount", a.accountId) || {}; return { id: a.accountId, name: acc.name || a.name, iban: a.iban, balance: acc.ebankBalance, diff: acc.ebankDiff, at: acc.ebankAt }; }) })) };
   }
-  return { banks, start, finish, sync, check, disconnect, status };
+  // ── Überweisungen (Payment Initiation) ──
+  // Kann die verbundene Bank Zahlungen über Enable Banking? (aus der Bankenliste; 1 Std. zwischengespeichert)
+  let CAPS = { at: 0, v: null };
+  async function payCaps() {
+    if (CAPS.v && Date.now() - CAPS.at < 3600e3) return CAPS.v;
+    await meta(); const s = (META.sessions || [])[0]; const c = cfg();
+    if (!c.app || !c.key) return (CAPS = { at: Date.now(), v: { ok: false, reason: "Bankanbindung nicht eingerichtet" } }).v;
+    if (!s) return (CAPS = { at: Date.now(), v: { ok: false, reason: "Keine Bank verbunden" } }).v;
+    let pay = null;
+    try { const l = await api("GET", "/aspsps?country=AT"); const a = (l.aspsps || []).find(x => x.name === s.bank); pay = a && (a.payments || []).find(x => x.payment_type === "SEPA" && x.psu_type === "business") || a && (a.payments || []).find(x => x.payment_type === "SEPA") || null; }
+    catch (e) { return { ok: false, reason: e.message }; }
+    const acc = (s.accounts || []).find(a => a.iban) || {};
+    CAPS = { at: Date.now(), v: pay ? { ok: true, bank: s.bank, iban: acc.iban || "", psu: pay.psu_type || "business", maxTx: pay.max_transactions || 1, debtorRequired: !!pay.debtor_account_required, refSupported: !!pay.reference_number_supported, dateSupported: !!pay.requested_execution_date_supported, remittanceLen: ((pay.remittance_information_lines || [])[0] || {}).max_length || 140 }
+      : { ok: false, bank: s.bank, reason: "Die Bank bietet über Enable Banking keine Überweisungen an (oder sie sind für deine App noch nicht freigeschaltet)" } };
+    return CAPS.v;
+  }
+  // Zahlung anlegen → Link zur Freigabe in George (Simon bestätigt dort; danach Rückkehr auf redirect)
+  async function payStart(o, redirect, state) {
+    const caps = await payCaps(); if (!caps.ok) throw new Error(caps.reason || "Überweisungen nicht verfügbar");
+    const tx = { instructed_amount: { amount: (+o.amount).toFixed(2), currency: "EUR" }, beneficiary: { creditor: { name: String(o.name).slice(0, 70) }, creditor_account: { identification: o.iban, scheme_name: "IBAN" } } };
+    if (o.reference && caps.refSupported) tx.reference_number = String(o.reference).slice(0, 35);
+    const text = String(o.reference && !caps.refSupported ? o.reference + (o.text ? " " + o.text : "") : o.text || "").slice(0, caps.remittanceLen || 140);
+    if (text) tx.remittance_information = [text];
+    if (o.date && caps.dateSupported && o.date > today()) tx.requested_execution_date = o.date;
+    const pr = { credit_transfer_transaction: [tx] };
+    if (caps.iban) pr.debtor_account = { identification: caps.iban, scheme_name: "IBAN" };
+    const j = await api("POST", "/payments", { payment_type: "SEPA", payment_request: pr, aspsp: { name: caps.bank, country: "AT" }, state, redirect_url: redirect, psu_type: caps.psu === "personal" ? "personal" : "business", language: "de" });
+    return { paymentId: String(j.payment_id || ""), url: String(j.url || ""), status: String(j.status || "") };
+  }
+  async function payStatus(id) { const j = await api("GET", "/payments/" + encodeURIComponent(id)); return { status: String(j.status || ""), final: !!j.final_status, reason: (j.status_reason_information || {}).status_reason_description || "" }; }
+  return { banks, start, finish, sync, check, disconnect, status, payCaps, payStart, payStatus };
 };

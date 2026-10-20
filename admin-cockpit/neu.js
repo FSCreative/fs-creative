@@ -5,7 +5,8 @@
 var F=window.FSC;
 F.icons.offer=F.icons.offer||'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/>';
 F.icons.plus=F.icons.plus||'<path d="M12 5v14M5 12h14"/>';
-var ITEMS=[["post","Neue Mail","compose"],["kal","Neuer Termin","newevent:"],["check","Neue Aufgabe","tknew:"],["board","Neuer Auftrag","newproj"],"-",["euro","Neue Rechnung","newinvoice"],["offer","Neues Angebot","newoffer"],["kunden","Neuer Kunde / Lead","newlead"]];
+F.icons.pay=F.icons.pay||'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>';
+var ITEMS=[["post","Neue Mail","compose"],["kal","Neuer Termin","newevent:"],["check","Neue Aufgabe","tknew:"],["board","Neuer Auftrag","newproj"],"-",["euro","Neue Rechnung","newinvoice"],["pay","Neue Zahlung (Überweisung)","paynew"],["offer","Neues Angebot","newoffer"],["kunden","Neuer Kunde / Lead","newlead"]];
 var menu=null;
 function close(){ if(menu){ menu.remove(); menu=null; document.removeEventListener("mousedown",outside,true); } }
 function outside(e){ if(menu&&!menu.contains(e.target)&&!e.target.closest(".tb-new")) close(); }

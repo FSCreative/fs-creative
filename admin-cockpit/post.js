@@ -34,6 +34,8 @@ var IC={
   keys:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
   down:'<path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>',
   receipt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  pay:'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
+  board:'<rect x="3.5" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="16.5" y="4" width="4" height="7" rx="1.5"/>',
   chev:'<path d="m6 9 6 6 6-6"/>',
   check:'<path d="m5 12 5 5 9-10"/>'
 };
@@ -376,7 +378,7 @@ function attachmentsHtml(m){
     var dv=/^(PDF|Bild)$/.test(attIconTxt(a))?' data-docview data-doctitle="'+esc(a.filename||"Anhang")+'"':'';
     return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="Ansehen"'+dv+'><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
       '<a href="'+esc(href)+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen" aria-label="'+esc((a.filename||"Anhang")+" herunterladen")+'">'+ic("down")+'</a>'+
-      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+'</span>';
+      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+(canV&&F.payFromMail?'<button type="button" data-act="mpay:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Zahlung erfassen – KI liest Empfänger, IBAN, Betrag aus dieser Rechnung" aria-label="Zahlung erfassen">'+ic("pay")+'</button>':'')+'</span>';
   }).join("");
   var zip="";
   if(atts.length>1){ var z="/admin/api/mail-attachments-zip?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&account="+encodeURIComponent(accOf(m))+"&name="+encodeURIComponent(m.subject||"Anhaenge")+"&atts="+encodeURIComponent(JSON.stringify(atts.map(function(a){ return {index:a.index,filename:a.filename}; })));
@@ -402,7 +404,7 @@ function readerHtml(){
   else {
     if(dbox) tb+=rb("mx:editdraft","edit","Weiter bearbeiten"," pri",true);
     tb+=rb("mx:reply","reply","Antworten (R)","",true)+rb("mx:replyall","replyall","Allen antworten (A)")+rb("mx:forward","forward","Weiterleiten (F)")+
-      '<span class="rsep"></span>'+rb("mx:todo","todo","Als To-Do (T)")+rb("mx:auftrag","board","Als Aufgabe (Aufträge)")+rb("mx:termin","cal","Als Termin")+
+      '<span class="rsep"></span>'+rb("mx:auftrag","board","Als Aufgabe (T)")+rb("mx:zahlung","pay","Zahlung erfassen (KI liest Empfänger, IBAN, Betrag)")+rb("mx:termin","cal","Als Termin")+
       '<span class="rsep"></span>'+rb("mx:move","folder","Verschieben (V)")+(spam?rb("mx:notspam","inboxin","Kein Spam – in den Posteingang"):rb("mx:spam","spam","Als Spam"))+rb("mx:trash","trash","Löschen (#)"," dg");
   }
   tb+='<span class="rsp"></span>'+rb("mx:"+(m.read?"unread":"read"),m.read?"mail":"mailopen",m.read?"Als ungelesen (U)":"Als gelesen (U)")+
@@ -701,7 +703,7 @@ F.action("mxmore",function(){
   var m=M.cur(); if(!m) return; var sp=isSpam(m), go=function(op){ return function(){ F.actions.mx(op,null); }; };
   M.ctx(0,0,[
     {label:"Allen antworten",act:go("replyall")},{label:"Weiterleiten",act:go("forward")},{sep:true},
-    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als To-Do",act:go("todo")},{label:"Als Aufgabe (Aufträge)",act:go("auftrag")},{label:"Als Termin",act:go("termin")},{sep:true},
+    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als Aufgabe",act:go("auftrag")},{label:"Zahlung erfassen",act:go("zahlung")},{label:"Als Termin",act:go("termin")},{sep:true},
     {label:sp?"Kein Spam":"Als Spam",act:go(sp?"notspam":"spam")},{label:"Drucken",act:go("print")},{label:"In Webmail öffnen",act:function(){ F.actions.mwebmail(); }}
   ],m.subject||"Mail");
 });
@@ -900,6 +902,7 @@ F.action("mx",function(op,el){
   else if(op==="todo") M.todoFromMail(m);
   else if(op==="termin") M.eventFromMail(m);
   else if(op==="auftrag"&&F.tkFromMail) F.tkFromMail(m);
+  else if(op==="zahlung"&&F.payFromMail) F.payFromMail(m,null);
   else if(op==="move"){ var p=menuPos(el&&el.isConnected?el:null); M.showMoveMenu(p[0],p[1],[m.id]); }
   else if(op==="spam") moveMessages([m.id],null,"spam");
   else if(op==="notspam") moveMessages([m.id],"INBOX","move");
@@ -1060,6 +1063,8 @@ F.css([
 ".mbulk .sp{flex:1}",
 ".sheetf{position:static;max-height:none;padding:0}",
 "@media (max-width:1180px){.mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.mbox>.mfold{display:none}.fpill{display:inline-flex}}",
+/* Statusleiste rechts eingeblendet und Bildschirm unter ~1750 px: Ordner als Knopf, damit der Lesebereich breit genug bleibt */
+"@media (min-width:901px) and (max-width:1750px){.app.has-side .mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.app.has-side .mbox>.mfold{display:none}.app.has-side .fpill{display:inline-flex}}",
 ".mapp,.mapp-s,.mselbar,.mfab,.mrbar,.rb.mshow,.msw-bg,.mptr{display:none}",
 /* Outlook am PC: flache Ordnerspalte, blauer Balken bei Ungelesenen, hellblaue Auswahl */
 "@media (min-width:901px){",

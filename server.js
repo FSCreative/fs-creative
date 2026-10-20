@@ -3011,6 +3011,32 @@ async function handleAdmin(req, res, u, p) {
       return J(200, { ok: true, id: r.objects.id });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  // Zahlungsaufträge: Rückkehr aus George (Freigabe/Abbruch) → Status holen → zurück ins Cockpit (Finanzen → Zahlungen)
+  if (p === "/admin/api/fin/pay/callback") {
+    let st = "fehler";
+    try { const o = await FIN_PAY.callback(String(u.searchParams.get("state") || "").slice(0, 80), u.searchParams.get("error") || "", String(u.searchParams.get("error_description") || "").slice(0, 200)); st = o.status; } catch (e) { console.error("Zahlung-Rückkehr:", e.message); }
+    return send(res, 302, "", "text/plain", { Location: "/admin?zahlung=" + encodeURIComponent(st) + "#geld" });
+  }
+  if (p === "/admin/api/fin/pay") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (req.method === "GET") return J(200, Object.assign({ ok: true }, await FIN_PAY.list()));
+      const pl = await sevBody(req, 40000), id = String(pl.id || "").slice(0, 60);
+      if (pl.op === "save") return J(200, { ok: true, order: FIN_PAY.save(pl.order || {}) });
+      if (pl.op === "delete" && pl.confirm === true) { FIN_PAY.remove(id); return J(200, { ok: true }); }
+      if (pl.op === "paid") return J(200, { ok: true, order: FIN_PAY.setPaid(id, pl.on !== false) });
+      if (pl.op === "qr") return J(200, Object.assign({ ok: true }, await FIN_PAY.qr(id)));
+      if (pl.op === "sepa") return J(200, Object.assign({ ok: true }, FIN_PAY.sepa((Array.isArray(pl.ids) ? pl.ids : []).map(x => String(x).slice(0, 60)).slice(0, 100))));
+      if (pl.op === "bank" && pl.confirm === true) { if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung" }); return J(200, Object.assign({ ok: true }, await FIN_PAY.toBank(id, ORIGIN + "/admin/api/fin/pay/callback"))); }
+      if (pl.op === "extract") {   // KI liest Überweisungsdaten aus einem Mail-Anhang (mail.uid + index) oder dem Mailtext
+        const m = pl.mail || {}, info = { subject: m.subject, from: m.from, fromName: m.fromName, date: m.date };
+        const att = m.uid && m.index != null ? { account: String(m.account || ""), folder: String(m.folder || "INBOX"), uid: parseInt(m.uid, 10) || 0, index: parseInt(m.index, 10) || 0, filename: String(m.filename || "") } : null;
+        const x = await KI.extractPayment(att, info, String(pl.text || "").slice(0, 40000), FIN_STATE.firm && FIN_STATE.firm.iban);
+        return J(200, { ok: true, x });
+      }
+      return J(400, { ok: false, error: "unbekannte Aktion" });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   if (p === "/admin/api/fin/ebank/callback") {
     try { if (u.searchParams.get("error")) throw new Error(u.searchParams.get("error_description") || u.searchParams.get("error")); await FIN_EBANK.finish(u.searchParams.get("code") || "", u.searchParams.get("state") || ""); FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("Bank:", e.message));
       return send(res, 302, "", "text/plain", { Location: "/admin#bank-verbunden" }); }
@@ -3769,6 +3795,11 @@ setTimeout(function railwayInv() { (FIN_STATE.local && RW.token ? FIN_RAILWAY.ru
 function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.proposed) console.log("Belegdateien:", r.proposed, "Zuordnung(en) zur Prüfung vorgeschlagen"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
 if (require.main === module) { setTimeout(docMatchTick, 3 * 60 * 1000); setInterval(docMatchTick, 15 * 60 * 1000); }
 const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
+// Zahlungsaufträge (fin-pay.js): erfassen/KI aus Mail → in George freigeben (Enable Banking) oder QR/SEPA-Datei; Abgleich mit den Kontoumsätzen
+const FIN_PAY = require("./fin-pay.js")({ DATA_DIR, firm: () => FIN_STATE.firm, ebank: FIN_EBANK,
+  transactions: async () => { if (!FIN_STATE.local || !process.env.DATABASE_URL) return []; await FIN_LOCAL.load(); const from = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
+    const accName = id => (FIN_LOCAL.get("CheckAccount", id) || {}).name || "";
+    return FIN_LOCAL.all("CheckAccountTransaction").filter(x => +x.amount < 0 && String(x.valueDate || "").slice(0, 10) >= from).map(x => ({ id: x.id, date: String(x.valueDate || "").slice(0, 10), amount: +x.amount, iban: x.payeePayerAcctNo || "", name: x.payeePayerName || "", purpose: x.paymtPurpose || "", account: accName(x.checkAccount && x.checkAccount.id) })); } });
 // George (PSD2) täglich – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.configured && st.sessions.length && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) return FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }); }).catch(e => console.error("Bank:", e.message)); }, 3600 * 1000);
 const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });

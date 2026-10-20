@@ -40,7 +40,7 @@ var NAV=[
   {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou",sub:[["vou","Alle"],["rvou","Wiederkehrend"]]},
-  {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"]]},
+  {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["pay","Zahlungsaufträge"],["kasse","Kassenbuch"]]},
   {id:"steuer",label:"Steuern",icon:"tax",sub:[["steuer","Übersicht"],["uva","Voranmeldung (UVA)"],["u1","Umsatzsteuer-Jahr (U1)"],["jab","Gewinn & Jahreserklärung"],["anlagen","Anlagen & Abschreibungen"],["prognose","Prognose"]]},
   {sep:"Verwalten"},
   {id:"ct",label:"Kontakte",icon:"ct"},
@@ -677,6 +677,7 @@ function content(){
   if(p==="wkr") return pageWkr();
   if(p==="rvou") return pageRv();
   if(p==="open") return pageBank("open");
+  if(p==="pay") return F.payPage?F.payPage():'<div class="sd-empty">Zahlungsaufträge nicht verfügbar.</div>';
   if(p==="orders"){ return head("Angebote","",'<button class="btn primary" data-act="newoffer">Angebot erstellen</button>')+(F.offersPanelHtml?F.offersPanelHtml():'<div class="sd-empty">Angebote findest du unter Kunden & Leads.</div>'); }
   if(p==="ct"){ F.UI.stT="kontakte"; return pageTab("stamm"); }
   if(p==="prod"){ F.UI.stT="artikel"; return pageTab("stamm"); }
@@ -690,7 +691,7 @@ function content(){
 /* ---------- Handy: gleiche Struktur als App-Ansicht (Reiter oben, Listen statt Tabellen, Beleg-Scan mit der Kamera) ---------- */
 var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["steuer","Steuern"]];
 var MMORE=[["Rechnungen & Belege",[["wkr","Wiederkehrende Rechnungen"],["rvou","Wiederkehrende Belege"],["dun","Mahnungen"],["cn","Gutschriften"],["orders","Angebote"]]],
-  ["Bank & Steuern",[["open","Nicht zugeordnet"],["kasse","Kassenbuch"],["uva","Voranmeldung (UVA)"],["anlagen","Abschreibungen"],["jab","Jahreserklärung"]]],
+  ["Bank & Steuern",[["pay","Zahlungsaufträge"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"],["uva","Voranmeldung (UVA)"],["anlagen","Abschreibungen"],["jab","Jahreserklärung"]]],
   ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; if(g==="u1"||g==="prognose") g="steuer";
   var main=MNAV.some(function(n){ return n[0]===g; }), more=null; MMORE.forEach(function(sec){ sec[1].forEach(function(x){ if(x[0]===g) more=x[1]; }); });
