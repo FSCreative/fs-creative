@@ -57,8 +57,8 @@ module.exports = function (R) {
   }
   const GLYPH = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789#%&";
   function scramble(txt, p, k) {   // Zeichen rasten von links nach rechts ein
-    const n = txt.length, fixed = Math.floor(n * E.out3(p));
-    let out = ""; for (let i = 0; i < n; i++) { const c = txt[i]; out += i < fixed || /\s/.test(c) ? c : GLYPH[Math.floor(rnd(k * 7 + i, Math.floor(p * 40)) * GLYPH.length)]; }
+    const ch = Array.from(txt), n = ch.length, fixed = Math.floor(n * E.out3(p));   // Zeichen statt UTF-16-Einheiten (Emojis bleiben ganz)
+    let out = ""; for (let i = 0; i < n; i++) { const c = ch[i]; out += i < fixed || /\s/.test(c) || !/[A-Za-zÄÖÜäöüß0-9]/.test(c) ? c : GLYPH[Math.floor(rnd(k * 7 + i, Math.floor(p * 40)) * GLYPH.length)]; }
     return out;
   }
   // Zahl hochzählen: Format (Tausenderpunkt, Komma, Einheit) bleibt

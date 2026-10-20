@@ -3455,7 +3455,11 @@ async function handleAdmin(req, res, u, p) {
   }
   // Schnittstelle für KI-Vorschläge: aktuelle Einordnung eines Belegs mit Begründung (nur lesend)
   if (p === "/admin/api/steuer/explain" && req.method === "GET") {
-    try { const raw = await steuerRaw(false); const x = STEUER_CALC.explainDoc(raw, readSteuer(), String(u.searchParams.get("id") || ""), String(u.searchParams.get("kind") || "")); return send(res, x ? 200 : 404, JSON.stringify(x ? Object.assign({ ok: true }, x) : { ok: false, error: "nicht_gefunden" }), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    try { const raw = await steuerRaw(false), st = readSteuer(), x = STEUER_CALC.explainDoc(raw, st, String(u.searchParams.get("id") || ""), String(u.searchParams.get("kind") || ""));
+      // Vorschlag der USt-Prüfung für genau diesen Beleg (Beleg-Ansicht zeigt ihn mit „Übernehmen“)
+      if (x && x.art === "Eingang" && x.datum) { const m = STEUER_CALC.mismatches(raw, st, x.datum, x.datum).find(y => y.kind === "in" && y.doc && STEUER_CALC.docKey(y.doc) === x.key);
+        if (m) x.pruefung = { t: m.t, fix: m.fix || "", rule: m.rule || "", ruleTxt: m.rule ? (STEUER_CALC.TAXRULE_TXT[m.rule] || m.rule) : "", fixable: !!m.fixable, hint: !!m.hint, kz: m.kz || "" }; }
+      return send(res, x ? 200 : 404, JSON.stringify(x ? Object.assign({ ok: true }, x) : { ok: false, error: "nicht_gefunden" }), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   // FinanzOnline: XML-Vorschau, Prüfung (T) und verbindliche Abgabe (P). PIN nur im Request-Body, wird nicht gespeichert.

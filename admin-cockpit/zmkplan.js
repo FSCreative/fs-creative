@@ -116,7 +116,7 @@ F.action("mkpick",function(a){ var p=a.split("|"); api("/admin/api/mkt/pick",{id
 /* ---------- Planer ---------- */
 function postCard(p){
   var md=p.media||{}, base="/admin/api/mkt/post-file?id="+encodeURIComponent(p.id)+"&v="+encodeURIComponent(md.rev||""), prev;
-  if(md.status!=="fertig") prev=md.status==="fehler"?'<div class="mp-wait"><div><b class="bad-t">Fehler</b><br>'+esc(md.error||"")+'<br><button type="button" class="btn sm" data-act="mprer:'+esc(p.id)+'">Nochmal</button></div></div>':'<div class="mp-wait"><div><i></i>'+(p.format==="reel"?"Video":"Bilder")+' werden erstellt …</div></div>';
+  if(md.status!=="fertig") prev=md.status==="fehler"?'<div class="mp-wait"><div><b class="bad-t">Fehler</b><br>'+esc(md.error||"")+'<br><button type="button" class="btn sm" data-act="mprer:'+esc(p.id)+'">Nochmal</button></div></div>':'<div class="mp-wait"><div><i></i>'+(p.format==="reel"?"Reel wird animiert …<br><span class=\"small\">dauert 1–2 Minuten</span>":"Bilder werden erstellt …")+'</div></div>';
   else if(p.format==="reel") prev='<video src="'+base+'&kind=video" poster="'+base+'&kind=cover" playsinline muted controls preload="none"></video>';
   else prev='<img src="'+base+'&i=0" alt="" data-act="mpview:'+esc(p.id)+'" loading="lazy">'+(md.images>1?'<span class="n">1/'+md.images+'</span>':'');
   var connected=(PL.platforms||[]).filter(function(pf){ var c=chOf(p.brand,pf.key); return c&&c.status!=="getrennt"&&pf.formats.indexOf(p.format)>-1; });

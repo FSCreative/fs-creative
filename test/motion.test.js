@@ -43,7 +43,7 @@ const kochdu = { key: "kochdu", name: "kochdu", colors: { primary: "#6645ef" }, 
     const g2 = T.beatGrid({ bpm: 85, beat0: 0.711 }), c2 = T.cuts([2.4, 3.2], g2); c2.slice(1).forEach(x => { const k = (x - 0.711) / g2.cut; assert.ok(Math.abs(k - Math.round(k)) < 1e-3, String(c2)); });
     assert.ok(!T.beatGrid(null).synced);
   });
-  await t("Scramble endet im echten Wort", () => { assert.strictEqual(T.scramble("Website", 1, 3), "Website"); assert.notStrictEqual(T.scramble("Website", 0.2, 3), "Website"); });
+  await t("Scramble endet im echten Wort, Emojis bleiben ganz", () => { assert.strictEqual(T.scramble("Website", 1, 3), "Website"); assert.notStrictEqual(T.scramble("Website", 0.2, 3), "Website"); assert.ok(T.scramble("Pizza🍕", 0.1, 2).endsWith("🍕")); });
   await t("Reel: Video mit Ton, Länge ≥ 7,5 s auf dem Takt, Titelbild", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "motion-")), music = path.join(ROOT, "mkt-assets", "music", "froehlich--city-sunshine.m4a");
     const r = await MO.reel([sl("hook", { kicker: "Hunger?", headline: "Heute *kochst du nicht*" }), sl("cta", { headline: "Bestell bei *kochdu*", cta: "Jetzt bestellen" })], kochdu,

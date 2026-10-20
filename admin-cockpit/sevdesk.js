@@ -8,7 +8,7 @@ F.UI.rgF=F.UI.rgF||"todo"; F.UI.rgQ=F.UI.rgQ||""; F.UI.bkAcc=F.UI.bkAcc||"all"; 
 F.sevState=S;
 
 F.css(
-  '.sd-tax{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}.sd-tax .trl{margin:0}.sd-tax>.btn{justify-self:start}.sd-uva{line-height:1.45}.sd-uva span{color:var(--ink-3)}'+
+  '.sd-chk{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--warn-soft);border:1px solid var(--warn);color:var(--ink)}.sd-chk.hint{background:var(--sunk);border-color:var(--line)}.sd-chk span{color:var(--ink-2)}.sd-chk .btn{margin-top:6px;display:block}.sd-tax{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}.sd-tax .trl{margin:0}.sd-tax>.btn{justify-self:start}.sd-uva{line-height:1.45}.sd-uva span{color:var(--ink-3)}'+
 '.sdsig{display:grid;gap:6px}.sdsig-pv{width:100%;height:150px;border:1px solid var(--line);border-radius:10px;background:#fff}'+
 '.drawer.xl{width:min(900px,100%)}'+
 '.sd-list{display:grid}'+
@@ -455,9 +455,13 @@ function vUvaLoad(id){
     var el=document.getElementById("vUva"); if(!el) return;
     if(!j||!j.ok||!j.positionen){ el.textContent=""; return; }
     var seen={}, rows=j.positionen.filter(function(l){ var k=l.klasse+"|"+l.begruendung; if(seen[k]) return false; seen[k]=1; return true; });
-    el.innerHTML='<b>So zählt der Beleg in der UVA:</b> '+rows.map(function(l){ return esc(UVA_KL[l.klasse]||l.klasse)+(l.kennzahlen&&l.kennzahlen!=="–"?' · KZ '+esc(l.kennzahlen):'')+' <span>('+esc(l.begruendung)+')</span>'; }).join("; ")+(j.override?' <span class="tag grey">im Cockpit eingeordnet</span>':'');
+    var pr=j.pruefung;
+    el.innerHTML='<b>So zählt der Beleg in der UVA:</b> '+rows.map(function(l){ return esc(UVA_KL[l.klasse]||l.klasse)+(l.kennzahlen&&l.kennzahlen!=="–"?' · KZ '+esc(l.kennzahlen):'')+' <span>('+esc(l.begruendung)+')</span>'; }).join("; ")+(j.override?' <span class="tag grey">im Cockpit eingeordnet</span>':'')+
+      (pr?'<div class="sd-chk'+(pr.hint?' hint':'')+'"><b>'+(pr.hint?"Hinweis":"USt-Prüfung")+':</b> '+esc(pr.t)+(pr.fix?' <span>'+esc(pr.fix)+'</span>':'')+(pr.rule&&pr.fixable?' <button type="button" class="btn primary" data-act="sdvrulesug:'+esc(id)+'|'+esc(pr.rule)+'">'+esc(F.taxRuleName(pr.rule)||pr.ruleTxt)+' übernehmen</button>':'')+'</div>':'');
   }).catch(function(){ var el=document.getElementById("vUva"); if(el) el.textContent=""; });
 }
+/* Vorschlag der USt-Prüfung: Regel in die Auswahl setzen und – wie „Steuerregel ändern“ – mit Bestätigung speichern */
+F.action("sdvrulesug",function(v){ var p=v.split("|"), sel=document.querySelector('[data-form="sdvou"] [name=rule]'); if(!sel) return; sel.value=p[1]; F.taxRuleSync(sel); F.actions.sdvrule(p[0]); });
 F.action("sdvrule",function(id){
   var sel=document.querySelector('[data-form="sdvou"] [name=rule]'), v=vouById(id); if(!sel||!v) return; var r=sel.value;
   if(!r){ F.toast("Bitte eine Regel wählen",true); return; } if(r===String(v.taxRule||"")){ F.toast("Die Regel ist schon gesetzt"); return; }
