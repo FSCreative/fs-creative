@@ -1573,5 +1573,5 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 details.ps-voucher{margin:16px 0 4px}details.ps-voucher summary{cursor:pointer;list-style:none;color:#0a84ff;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500}
 details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-voucher summary::after{content:" ▾"}details.ps-voucher[open] summary{margin-bottom:8px}
 .ps-price .ps-pcta{width:100%;margin-top:14px;height:46px}
-.ps-form .ps-seg{display:inline-flex;width:auto}
+#psAddr>.ps-seg{justify-self:start;align-self:start;width:auto;max-width:max-content}
 .ps-cart .ps-ci-pr .ps-link{font-size:13px;color:var(--text-faint)}
