@@ -1406,3 +1406,31 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 .ps-tip-b{padding:12px 14px 13px;display:grid;gap:4px}.ps-tip-b b{font-size:15px;line-height:1.3}.ps-tip-b p{margin:2px 0 0;color:var(--text-dim);font-size:13px;line-height:1.5}.ps-tip-b .ps-pop-w{margin-top:4px}
 @media (hover:hover) and (pointer:fine){.ps-i{cursor:help}}
 
+/* Datei anpassen (einpassen/füllen/drehen/Größe) */
+.ps-adj{margin-top:14px;padding:12px 14px;border-radius:14px;border:1px solid var(--ps-line2);background:var(--ps-card);display:grid;gap:10px}
+.ps-adj.hot{border-color:var(--ps-bad);box-shadow:0 0 0 3px color-mix(in srgb,var(--ps-bad) 15%,transparent)}
+.ps-adj.busy{opacity:.55;pointer-events:none}
+.ps-adj .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ps-adj .sep{width:1px;height:22px;background:var(--ps-line2);margin:0 2px}
+.ps-adj .ps-btn.on{background:var(--ps-chipon);color:var(--ps-chipon-t);border-color:var(--ps-focus)}
+.ps-adj-s{display:flex;align-items:center;gap:10px;flex:1;min-width:220px}
+.ps-adj-s input{flex:1;accent-color:currentColor}
+.ps-adj-s output{min-width:52px;text-align:right;font-variant-numeric:tabular-nums}
+/* Druck auf dem Produkt */
+.ps-pmk{margin-top:16px;padding:14px;border-radius:16px;border:1px solid var(--ps-line2);background:var(--ps-card)}
+.ps-pmk-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px}
+.ps-pmk-c{min-height:80px;display:block}
+.ps-pmk-ph{display:flex;justify-content:center;background:#f4f4f2;border-radius:12px;overflow:hidden}
+.ps-pmk-ph .st{position:relative;display:inline-block;max-width:100%;touch-action:none}
+.ps-pmk-ph .bg{display:block;max-width:100%;max-height:440px;width:auto;height:auto;user-select:none}
+.ps-pmk-ph .ov{visibility:hidden;position:absolute;transform:translate(-50%,-50%);cursor:grab;display:flex;align-items:center;justify-content:center}
+.ps-pmk-ph .ov img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none;filter:drop-shadow(0 .5px .5px rgba(0,0,0,.18))}
+.ps-pmk-ph .ov.full img{width:100%;height:100%;object-fit:fill;filter:none;opacity:.97}
+.ps-pmk-ph .ov:hover,.ps-pmk-ph .ov.drag{outline:1.5px dashed rgba(0,0,0,.45);outline-offset:3px}
+.ps-pmk-ph .ov.drag{cursor:grabbing}
+.ps-pmk-th{display:flex;gap:6px;margin-top:8px;overflow-x:auto}
+.ps-pmk-th button{flex:0 0 auto;width:54px;height:54px;padding:0;border-radius:10px;border:2px solid transparent;background:#f4f4f2;overflow:hidden;cursor:pointer}
+.ps-pmk-th button[aria-pressed="true"]{border-color:currentColor}
+.ps-pmk-th img{width:100%;height:100%;object-fit:cover}
+.ps-pmk-n{margin:8px 0 0;font-size:13px}
+.ps-pmk .ps-mock{min-height:220px}

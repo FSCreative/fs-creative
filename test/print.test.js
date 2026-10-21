@@ -18,7 +18,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-"));
-  ["server.js", "client-ip.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
+  ["server.js", "client-ip.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "seo.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
     .forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   const cpDir = (d) => { fs.mkdirSync(path.join(dir, d), { recursive: true }); fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => { if (e.isDirectory()) cpDir(path.join(d, e.name)); else fs.copyFileSync(path.join(ROOT, d, e.name), path.join(dir, d, e.name)); }); };
   ["admin-cockpit", "print"].forEach(cpDir);
@@ -230,6 +230,22 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pdf = Buffer.from(await (await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=" + hi.j.token + "&pdf=1")).arrayBuffer());
     const mb = mediaBox(pdf); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
     assert.strictEqual((await fetch(B + "/print/api/file/" + hi.j.fileId + "?t=falsch")).status, 404);
+  });
+
+  await t("Upload anpassen: Hochformat-Bild wird gedreht statt abgelehnt, PDF mit passendem Seitenverhältnis wird skaliert, Einpassen/Drehen/Skalieren vom Original", async () => {
+    const tall = await upload(png(700, 1060, [10, 90, 10]), "hoch.png", BC); assert.strictEqual(tall.status, 200, JSON.stringify(tall.j));
+    assert.strictEqual(tall.j.blocked, false, JSON.stringify(tall.j.checks)); assert.ok(tall.j.checks.some(c => /automatisch um 90° gedreht/.test(c.text))); assert.strictEqual(tall.j.adj, true); assert.strictEqual(tall.j.place.rotate, 90);
+    let mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + tall.j.fileId + "?t=" + tall.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
+    const big = await upload(await pdfOf(178, 118, 1), "doppelt.pdf", BC); assert.strictEqual(big.j.blocked, false, JSON.stringify(big.j.checks)); assert.ok(big.j.checks.some(c => c.level === "ok" && /automatisch auf 89 × 59 mm/.test(c.text)), JSON.stringify(big.j.checks));
+    mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + big.j.fileId + "?t=" + big.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
+    const a4 = await upload(await pdfOf(210, 297, 1), "a4.pdf", BC); assert.strictEqual(a4.j.blocked, true); assert.strictEqual(a4.j.adj, true, "falsches Format → Anpassen möglich");
+    const fit = await post("/print/api/file/fit", { fileId: a4.j.fileId, token: a4.j.token, mode: "fit", rotate: 90, scale: 0.9 }); assert.strictEqual(fit.status, 200, JSON.stringify(fit.j));
+    assert.strictEqual(fit.j.blocked, false, JSON.stringify(fit.j.checks)); assert.ok(fit.j.fileId !== a4.j.fileId && /angepasst/.test(fit.j.name)); assert.deepStrictEqual([fit.j.place.mode, fit.j.place.rotate, fit.j.place.scale], ["fit", 90, 0.9]);
+    mb = mediaBox(Buffer.from(await (await fetch(B + "/print/api/file/" + fit.j.fileId + "?t=" + fit.j.token + "&pdf=1")).arrayBuffer())); assert.deepStrictEqual([mm(mb[2]), mm(mb[3])], [89, 59]);
+    const again = await post("/print/api/file/fit", { fileId: fit.j.fileId, token: fit.j.token, mode: "fill", rotate: 0 }); assert.strictEqual(again.status, 200, "erneut anpassen (vom Original)"); assert.ok(!/angepasst\) \(angepasst/.test(again.j.name));
+    const img = await post("/print/api/file/fit", { fileId: tall.j.fileId, token: tall.j.token, mode: "fit", rotate: 270, scale: 1.5, dx: 3, dy: -2 }); assert.strictEqual(img.status, 200, JSON.stringify(img.j));
+    assert.strictEqual((await post("/print/api/file/fit", { fileId: tall.j.fileId, token: "falsch", mode: "fit" })).status, 403);
+    assert.strictEqual((await post("/print/api/file/fit", { fileId: upOk.fileId, token: upOk.token, mode: "fit" })).status, 200, "auch passende PDF lässt sich anpassen");
   });
 
   // ── Designer-Export ──

@@ -590,7 +590,7 @@
       return;
     }
     if (!S.prod || S.prod.key !== key) {
-      recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
+      recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; S.autoFix = key; S.pmkImg = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
       S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
@@ -638,7 +638,7 @@
           S.sel = u.sel; toast("„" + (o0 ? o0.name : u.val) + "“ ist in dieser Kombination nicht lieferbar – deine vorige Auswahl ist wiederhergestellt.", true); render(); loadPrice(); wishAlts(u, o0 ? o0.name : u.val); return;
         }
         else { S.price = null; S.priceErr = j.error || "Preis nicht verfügbar"; findAlts(); }
-        if (j.ok) { S.undo = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
+        if (j.ok) { S.undo = null; S.autoFix = null; S.good = { key: S.prod.key, sel: JSON.parse(JSON.stringify(S.sel)) }; }
         if (j.ok) { S.alts = null; altSeq++; dlPaint(); dlKick(); urRefresh(); }
         var pe = S.step === 2 && root.querySelector("[data-pmtile]"); if (pe) { var nt = pmTile(); if (pe.getAttribute("data-sig") !== nt) { var tmp = document.createElement("div"); tmp.innerHTML = nt; var ne = tmp.firstChild; ne.setAttribute("data-sig", nt); pe.replaceWith(ne); fillRows(); } }   // Verfahren + Preise zur aktuellen Auswahl
         renderPrice();
@@ -648,9 +648,9 @@
   // Nicht lieferbar → naheliegende Alternativen suchen (je eine Option ändern, Nachbar-Auflagen) und mit Preis anbieten
   var altSeq = 0;
   function findAlts() {
-    var seq = ++altSeq, p = S.prod; if (!p || isLogo()) return; S.alts = "busy";
+    var seq = ++altSeq, p = S.prod; if (!p || kind() === "textile") return; S.alts = "busy"; var auto = S.autoFix === p.key;
     var cands = [], seen = {}, add = function (sel, copies, label, w) { var k = JSON.stringify([sel, copies]); if (seen[k]) return; seen[k] = 1; cands.push({ sel: sel, copies: copies, label: label, w: w }); };
-    var tiers = (p.tiers || []).slice().sort(function (a, b) { return Math.abs(a - S.copies) - Math.abs(b - S.copies); }).filter(function (t) { return t !== S.copies; }).slice(0, 2);
+    var tiers = (p.tiers || []).slice().sort(function (a, b) { return Math.abs(a - S.copies) - Math.abs(b - S.copies); }).filter(function (t) { return t !== S.copies; }).slice(0, auto ? 6 : 2);
     tiers.forEach(function (t) { add(Object.assign({}, S.sel), t, "Auflage " + t.toLocaleString("de-AT") + " Stk.", 1); });
     p.props.forEach(function (pr) { var cur = S.sel[pr.slug], opts = pr.options.map(function (o) { return o.slug; }), i = opts.indexOf(cur);
       bestOf(pr).concat([opts[i - 1], opts[i + 1]]).filter(function (v, k, a) { return v && v !== cur && a.indexOf(v) === k; }).slice(0, 3).forEach(function (v) {
@@ -661,7 +661,9 @@
     cands.forEach(function (cd) {
       api("/print/api/price", Object.assign(cfgOf(), { sel: cd.sel, copies: cd.copies, country: S.customer.country || S.country, zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "" })).then(function (j) { if (j.ok) found.push(Object.assign(cd, { price: j.price })); }).catch(function () {}).then(function () {
         if (seq !== altSeq) return; if (--left) return;
-        S.alts = found.sort(function (a, b) { return a.w - b.w || a.price.gross - b.price.gross; }).slice(0, 4); renderPrice(); });
+        S.alts = found.sort(function (a, b) { return a.w - b.w || a.price.gross - b.price.gross; }).slice(0, 4);
+        if (auto && S.autoFix === p.key && S.alts.length && S.prod === p) { var A0 = S.alts[0]; S.autoFix = null; S.sel = Object.assign({}, A0.sel); S.copies = A0.copies; S.alts = null; S.priceErr = ""; S.presetBase = Object.assign({}, S.sel); render(); loadPrice(); return; }   // beim Öffnen: gleich eine lieferbare Ausführung mit Preis vorauswählen
+        renderPrice(); });
     });
   }
   function altsHtml() {
@@ -770,7 +772,7 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
-    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0);
+    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0); if (S.step === 3) setTimeout(pmkPaint, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
       var t5 = cartTotals(), co5 = S.ctype === "company", m5 = document.createElement("div"); m5.className = "ps-mbar"; m5.id = "psMbar";
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Weiter zur Zahlung</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
@@ -1223,21 +1225,32 @@
     [/forex|hartschaum|dibond|alu|acryl|plexi|kapa|wabe|karton.?platte/i, "Innen (je nach Platte auch außen)", "Formstabile Platte – direkt aufstellbar oder montierbar"],
     [/papier|paper|bilderdruck|gesatineerd|silk|offset|recycl|karton|board|biotop|recystar|bankpost|\d{2,3}\s*g/i, "Innenbereich", "Papier ist nicht wetterfest – draußen nur kurzzeitig oder geschützt (z. B. hinter Glas)", 1]   // nur ab A4 (Plakate) – bei Visitenkarten & Co. selbstverständlich
   ];
+  var BAG_RX = /tasche|beutel|\bbags?\b|tote|rucksack|shopper/i;
+  // Produktgröße (z. B. Tasche „43 × 18 × 35 cm“): eigenes Feld vom Server, sonst Größen-Angabe aus den Produktdaten – immer getrennt von der Druckfläche
+  function prodSize(p) {
+    if (p.sizeLabel && /\d/.test(p.sizeLabel)) return p.sizeLabel.replace(/\s*[x*]\s*/g, " × ");
+    var s = (p.specs || []).filter(function (x) { return x[2] === "size" && /\d/.test(x[1]); })[0]; if (!s) return "";
+    var t = /\(([^)]*)\)/.exec(s[0]); return s[1].replace(/\s*[x*]\s*/g, " × ") + (t && /x|×/.test(t[1]) ? " (" + t[1].replace(/\s*x\s*/g, " × ") + ")" : "");
+  }
+  function prodMm(p) { var t = prodSize(p).replace(/,/g, "."), m = /(\d+(?:\.\d+)?)\s*×\s*(\d+(?:\.\d+)?)(?:\s*×\s*(\d+(?:\.\d+)?))?\s*(mm|cm)?/.exec(t); if (!m) return null; var f = m[4] === "mm" ? 1 : 10; return { w: +m[1] * f, h: +(m[3] || m[2]) * f }; }   // B × T × H → Ansicht B × H
   function specRows(p) {
     var rows = [], sp = p.props.filter(function (x) { return x.slug === "size"; })[0], sz = sizeOf(), specs = p.specs || [], hasDims = !sp && sz;
+    var psz = prodSize(p);
     if (sp && sz && !isCustom()) rows.push(["Format", labelOf("size") + (/\d\s*[x×]\s*\d/.test(labelOf("size")) ? "" : " · " + fmtSize(sz.w, sz.h))]);
+    else if (sz && p.dimsArea) { if (psz) rows.push(["Produktgröße", psz]); rows.push(["Druckfläche", "max. " + fmtSize(sz.w, sz.h)]); }
     else if (sz) rows.push([isCustom() || p.kind === "banner" ? "Format (gewählt)" : "Endformat", fmtSize(sz.w, sz.h)]);
     var mat = labelOf("material") || (specs.filter(function (x) { return x[2] === "material"; })[0] || [])[1] || "";
-    specs.forEach(function (x) { if (x[2] === "size" && hasDims) return; rows.push([x[0].replace(/\s*\(.*\)$/, ""), x[1]]); });
+    specs.forEach(function (x) { if (x[2] === "size" && (hasDims || psz)) return; rows.push([x[0].replace(/\s*\(.*\)$/, ""), x[1]]); });
     var u = null; [mat, labelOf("color_material"), p.title + " " + (p.desc || "")].some(function (hay) { if (!hay) return false; for (var i = 0; i < USE.length; i++) if (USE[i][0].test(hay)) { u = USE[i]; return true; } return false; });   // Material zuerst, dann Produkt
     if (u && u[3] && !(sz && Math.max(sz.w, sz.h) >= 290)) u = null;
-    if (u && p.kind !== "textile" && p.kind !== "promo") { rows.push(["Einsatz", u[1]]); rows.push(["Beständigkeit", u[2]]); }
+    if (u && p.kind !== "textile" && p.kind !== "promo" && !BAG_RX.test(p.title + " " + (p.cat && p.cat.subName || ""))) { rows.push(["Einsatz", u[1]]); rows.push(["Beständigkeit", u[2]]); }
     var fin = labelOf("finish"); if (fin && /kaschier|lamin|cellophan/i.test(fin)) rows.push(["Schutz", "Folienkaschierung schützt vor Feuchtigkeit, Kratzern und Abrieb"]);
     return rows;
   }
   function specsHtml(p) {
     var tx = kind() === "textile" || kind() === "promo";   // Textil/Werbeartikel: nur Marke, Material & Co. (Größen/Druck wählt man unten)
     var rows = tx ? (p.specs || []).filter(function (x) { return !/^(size|printtype|quality_level|color.*|textile_sizes)$/.test(x[2]) && !/^variabel$/i.test(x[1]); }).map(function (x) { return [x[0].replace(/\s*\(.*\)$/, ""), x[1]]; }) : specRows(p);
+    if (tx) { var ps = prodSize(p), la = logoPositions(); rows = (ps ? [["Produktgröße", ps]] : []).concat(la.length && la[0].area ? [[la.length > 1 ? "Druckflächen" : "Druckfläche", la.map(function (x) { return (la.length > 1 ? x.title + ": " : "max. ") + x.area[0] + " × " + x.area[1] + " mm"; }).join(" · ")]] : [], rows); }
     if (rows.length < (tx ? 1 : 2)) return "";
     return '<details class="ps-specs"' + (window.innerWidth > 760 || !p.props.length ? " open" : "") + '><summary>Technische Daten</summary><dl>' + rows.map(function (r) { return "<div><dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd></div>"; }).join("") + "</dl></details>";
   }
@@ -1281,7 +1294,7 @@
     var p = S.prod, v = selValues(), k = kind();
     var props = presetHtml(p) + sectionsHtml(p), cust = "";
     var amount = k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" : amountHtml(p);
-    var area = k === "promo" ? (function () { var a = logoPositions()[0].area; return '<p class="ps-help ps-info">Druckfläche ' + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · jede Datei wird automatisch geprüft.</p>"; })() : "";
+    var area = k === "flat" && p.dimsArea && sizeOf() ? '<p class="ps-help ps-info">' + (prodSize(p) ? "Produktgröße " + esc(prodSize(p)) + " · " : "") + "Druckfläche max. " + fmtSize(sizeOf().w, sizeOf().h) + " · deine Datei wird automatisch eingepasst.</p>" : k === "promo" ? (function () { var a = logoPositions()[0].area; var ps = prodSize(p); return '<p class="ps-help ps-info">' + (ps ? "Produktgröße " + esc(ps) + " · " : "") + "Druckfläche max. " + a[0] + " × " + a[1] + " mm · dein Logo wird mittig platziert · jede Datei wird automatisch geprüft.</p>"; })() : "";
     var ur = k === "textile" && p.urgency.length > 1 ? '<fieldset class="ps-opt"><legend>Produktion</legend>' + chips("urgency", p.urgency, S.urgency) + "</fieldset>" : "";
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-who"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
@@ -1381,11 +1394,11 @@
     var mtabs = "";
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + " Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
-    var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? " · Endformat " + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
+    var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {
       h += '<div class="ps-file"><div><b>' + (S.file.kind === "design" ? "Deine Gestaltung" : esc(S.file.name)) + '</b><div class="pd-muted">' + (S.file.pages || "?") + " Seite(n) · " + (S.file.blocked ? "<span style=\"color:var(--ps-bad)\">bitte korrigieren</span>" : "bereit zum Druck") + '</div></div><div class="ps-row2" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (S.file.kind === "design" ? '<button type="button" class="ps-btn small" data-act="editdesign">Weiter bearbeiten</button>' : "") +
-        '<a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a><button type="button" class="ps-btn small" data-act="clearfile">Andere Datei</button></div></div>' + qualHtml(S.file) + checksHtml(S.file.checks) + bleedFixHtml(S.file) +
+        '<a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a><button type="button" class="ps-btn small" data-act="clearfile">Andere Datei</button></div></div>' + qualHtml(S.file) + checksHtml(S.file.checks) + adjHtml(S.file) + bleedFixHtml(S.file) + pmkHtml() +
         '<div class="ps-pfv" id="psPfv" data-fid="' + esc(S.file.fileId) + '"><div class="ps-pfv-h"><b>Vorschau mit Druckrändern</b><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
         '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten, Hintergründe bis hierher ziehen</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie – keine Texte direkt auf die Falz</li>' : "") + '</ul><div class="ps-pfv-w" id="psPfvW"></div></div>' + reqHtml(false);
       if (S.file.preflight && S.file.preflight.status === "PROCESSING") h += '<p class="pd-muted" style="margin-top:8px"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>';
@@ -1410,7 +1423,7 @@
           : '<label class="ps-drop small" data-logo="' + esc(x.slug) + '"><input type="file" data-logo="' + esc(x.slug) + '" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"><b>Logo auswählen oder hierher ziehen</b><small>PNG mit transparentem Hintergrund (mind. 1000 px) oder Vektor-PDF · max. 50 MB</small><div class="ps-prog" hidden><i></i></div></label>') +
         '<div class="ps-uperr" data-err="' + esc(x.slug) + '"></div></div>'; }).join("");
     var merged = S.file ? '<div class="ps-file"><div><b>Logo-PDF für den Druck</b><div class="pd-muted">' + (S.file.pages || pos.length) + " Seite(n) – eine je Position · " + (S.file.blocked ? '<span style="color:var(--ps-bad)">bitte korrigieren</span>' : "bereit") + '</div></div><a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a></div>' + checksHtml(S.file.checks.filter(function (c) { return c.level === "error"; })) : "";
-    return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + '<div class="ps-logos">' + slots + "</div>" + (S.file ? "" : logoReqHtml(pos)) + merged +
+    return '<div class="ps-panel"><h2>Logo hochladen</h2><p class="sub">' + esc(S.prod.title) + " · " + (kind() === "textile" ? "ein Logo je Druckposition" : "Logo für die Druckfläche") + ". Das Logo wird automatisch geprüft und mittig in der Druckfläche platziert.</p>" + '<div class="ps-logos">' + slots + "</div>" + (Object.keys(S.logos || {}).length ? pmkHtml() : "") + (S.file ? "" : logoReqHtml(pos)) + merged +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="2">Zurück</button><button type="button" class="ps-btn primary" data-act="next3"' + (S.file && !S.file.blocked ? "" : " disabled") + ">In den Warenkorb</button></div></div>";
   }
   // Qualitäts-Ampel aus den Prüfergebnissen
@@ -1489,6 +1502,116 @@
     if (f.kind !== "upload" || !(f.checks || []).some(function (c) { return /keinen Beschnitt/.test(c.text || ""); })) return "";
     return '<div class="ps-bfix"><b>Kein Beschnitt in deiner Datei?</b><span>Wir können ihn automatisch ergänzen – so gibt es nach dem Schneiden keine weißen Blitzer.</span><div class="btns"><button type="button" class="ps-btn small primary" data-act="bleedfix:mirror">Ränder spiegeln (empfohlen)</button><button type="button" class="ps-btn small" data-act="bleedfix:zoom">Motiv leicht vergrößern</button></div></div>';
   }
+  // ── Anpassen: Upload ganz einpassen / Format füllen, drehen, Größe – der Server setzt die Datei vom Original aus neu (exakte Größe inkl. Beschnitt) ──
+  function adjHtml(f) {
+    if (!f || !f.adj) return "";
+    var pl = f.place || { mode: "fill", rotate: 0, scale: 1 }, sc = Math.round((pl.scale || 1) * 100), hot = (f.checks || []).some(function (c) { return c.level === "error" && /passt nicht zum gewählten Format/.test(c.text || ""); });
+    var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
+    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht? Mit einem Klick anpassen:" : "Datei anpassen") + '</b><div class="row">' +
+      b("fit", "Ganz einpassen", pl.mode === "fit", "Alles bleibt sichtbar, freie Flächen bleiben weiß") + b("fill", "Format füllen", pl.mode !== "fit", "Füllt bis in den Beschnitt – Ränder werden angeschnitten") + '<span class="sep" aria-hidden="true"></span>' +
+      b("rl", "↺ 90°", null, "Nach links drehen") + b("rr", "↻ 90°", null, "Nach rechts drehen") + "</div>" +
+      '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (pl.mode !== "fit" && sc === 100 ? "" : b("reset", "Zurücksetzen")) + "</div></div>";
+  }
+  function adjApply(ch) {
+    var f = S.file; if (!f || !f.adj || S.adjBusy) return; var pl = Object.assign({ mode: "fill", rotate: 0, scale: 1 }, f.place || {}, ch);
+    S.adjBusy = true; var box = document.getElementById("psAdj"); if (box) box.classList.add("busy");
+    api("/print/api/file/fit", { fileId: f.fileId, token: f.token, mode: pl.mode, rotate: ((pl.rotate % 360) + 360) % 360, scale: pl.scale }).then(function (j) { S.adjBusy = false; if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
+      S.file = j; S.previews = null; S.fileOrig = null; render(); pollPreflight(); toast(j.blocked ? "Angepasst – bitte die Hinweise prüfen" : "Angepasst ✓"); }).catch(function () { S.adjBusy = false; toast("Keine Verbindung", true); render(); });
+  }
+  // ── Druck auf dem Produkt: Produktfoto mit Motiv/Logo in der Druckfläche (Textil, Werbeartikel, Taschen) bzw. Blatt-Vorschau (Papier) ──
+  var PMK = {};
+  function onPhoto() { var k = kind(); return (k === "textile" || k === "promo" || !!S.prod.dimsArea) && galImgs(S.prod).length > 0; }
+  function pmkHtml() { return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div><div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }
+  function fileUrl(f) { return "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1"; }
+  // PDF-Seiten als Bild (Beschnitt abgeschnitten); transparent für Logos
+  function pdfImgs(url, o) {
+    return pdfjs().then(function (L) { return L.getDocument({ url: url, withCredentials: true }).promise; }).then(function (doc) {
+      var jobs = []; for (var i = 1; i <= Math.min(o.pages || 1, doc.numPages); i++) jobs.push(doc.getPage(i));
+      return Promise.all(jobs.map(function (pp) { return pp.then(function (pg) {
+        var v0 = pg.getViewport({ scale: 1 }), sc = Math.min(3, (o.px || 700) / v0.width), vp = pg.getViewport({ scale: sc }), cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        return pg.render({ canvasContext: cv.getContext("2d"), viewport: vp, background: o.transparent ? "rgba(0,0,0,0)" : "#ffffff" }).promise.then(function () {
+          var wmm = v0.width / 72 * 25.4, t = o.trim, b = o.bleed || 0, cut = t && b && (Math.abs(wmm - (t.w + 2 * b)) < 2 || Math.abs(wmm - (t.h + 2 * b)) < 2) ? b * cv.width / wmm : 0;
+          var out = cv; if (cut > 0) { out = document.createElement("canvas"); out.width = Math.max(1, Math.round(cv.width - 2 * cut)); out.height = Math.max(1, Math.round(cv.height - 2 * cut)); out.getContext("2d").drawImage(cv, -cut, -cut); }
+          return o.transparent ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.86); }); }); }));
+    });
+  }
+  function logoImg(l) { var url = fileUrl(l); return new Promise(function (res, rej) { var im = new Image(); im.onload = function () { res(url); }; im.onerror = rej; im.src = url; }).catch(function () { return pdfImgs(url, { transparent: true, px: 600 }).then(function (a) { return a[0]; }); }); }
+  function pmkSrc(f, logo) {
+    var k = f.fileId + (logo ? ":l" : ""); if (PMK[k]) return PMK[k];
+    PMK[k] = (logo ? logoImg(f).then(function (u) { return [u]; }) : pdfImgs(fileUrl(f), { trim: f.size || sizeOf(), bleed: f.bleed != null ? f.bleed : S.prod.bleed, pages: 2, px: 800 })).catch(function () { delete PMK[k]; return null; });
+    return PMK[k];
+  }
+  function pmkPaint() {
+    var box = document.getElementById("psPmk"); if (!box) return; var c = box.querySelector(".ps-pmk-c"), p = S.prod, fid = S.file ? S.file.fileId : "", jobs;
+    if (isLogo()) jobs = logoPositions().filter(function (x) { return S.logos[x.slug] && !S.logos[x.slug].blocked; }).map(function (x) { return pmkSrc(S.logos[x.slug], true).then(function (a) { return a && { slug: x.slug, title: x.title, area: x.area, src: a[0] }; }); });
+    else if (S.file) { var sz = S.file.size || sizeOf(); jobs = sz ? [pmkSrc(S.file, false).then(function (a) { return a && { slug: "area", title: "Dein Druck", area: [sz.w, sz.h], src: a[0], pages: a, full: true }; })] : []; }
+    if (!jobs || !jobs.length) { box.hidden = true; return; }
+    Promise.all(jobs).then(function (L) { L = L.filter(Boolean); var b2 = document.getElementById("psPmk"); if (!b2 || (S.file ? S.file.fileId : "") !== fid) return;
+      if (!L.length) { b2.hidden = true; return; }
+      if (!isLogo() && S.file && S.file.kind === "upload" && !S.previews && L[0].pages) S.previews = L[0].pages.map(function (u) { return thumbOf(u); }).filter(Boolean);   // Warenkorb-Vorschau für hochgeladene Dateien
+      b2.querySelector(".ps-pmk-c").innerHTML = onPhoto() ? photoMock(L) : sheetMock(L[0].pages || [L[0].src]); if (onPhoto()) pmkLayout(); });
+  }
+  function thumbOf(u) { try { var im = new Image(); im.src = u; if (!im.complete || !im.naturalWidth) return u.length < 90000 ? u : ""; var f = Math.min(1, 320 / im.naturalWidth), cv = document.createElement("canvas"); cv.width = Math.round(im.naturalWidth * f); cv.height = Math.round(im.naturalHeight * f); cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); return cv.toDataURL("image/jpeg", 0.8); } catch (e) { return ""; } }
+  function sheetMock(pv) {
+    var k = S.prod.key, sz = sizeOf() || { w: 1, h: 1 }, wall = k === "plakate" || k === "rollups" || Math.max(sz.w, sz.h) >= 590, round = /rund|round|circle/i.test(String(S.sel.shape || S.sel.size || "")) || k === "buttons";
+    var wpct = k === "visitenkarten" ? 46 : k === "aufkleber" ? 38 : k === "rollups" ? 22 : 40;
+    var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
+    return '<div class="ps-mock' + (wall ? " wall" : "") + '" role="img" aria-label="Vorschau deiner Drucksache">' + (pv[1] && !wall ? sheet(pv[1], "back") : "") + sheet(pv[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Farben am Bildschirm können vom Druck abweichen</span></div>';
+  }
+  function photoMock(L) {
+    var p = S.prod, ims = galImgs(p), i = Math.min(S.pmkImg || 0, ims.length - 1), hasFront = L.some(function (x) { return x.slug === "positions_front"; }), back = null;
+    var ov = L.map(function (x) {
+      if (x.slug === "positions_back" && hasFront) { back = x; return ""; }
+      return '<div class="ov' + (x.full ? " full" : "") + '" data-pmkey="' + esc(p.key + ":" + x.slug) + '" data-aw="' + x.area[0] + '" data-ah="' + x.area[1] + '" style="aspect-ratio:' + x.area[0] + " / " + x.area[1] + '" title="' + esc(x.title) + ' – zum Verschieben ziehen"><img src="' + x.src + '" alt="' + esc(x.title) + '" draggable="false"></div>'; }).join("");
+    return '<div class="ps-pmk-ph"><div class="st"><img class="bg" src="' + esc(ims[i]) + '" crossorigin="anonymous" alt="' + esc(p.title) + '">' + ov + "</div></div>" +
+      (ims.length > 1 ? '<div class="ps-pmk-th">' + ims.slice(0, 6).map(function (u, n) { return '<button type="button" data-pmkimg="' + n + '" aria-pressed="' + (n === i) + '" aria-label="Foto ' + (n + 1) + '"><img src="' + esc(u) + '" alt=""></button>'; }).join("") + "</div>" : "") +
+      '<p class="pd-muted ps-pmk-n">' + (back ? "Rücken: dein Logo „" + esc(back.title) + "“ wird hinten gedruckt (auf dem Foto nicht sichtbar). " : "") + "Motiv ziehen, um die Wirkung zu sehen – gedruckt wird " + (isLogo() ? "mittig in der Druckfläche" : "genau wie in deiner Datei") + ".</p>";
+  }
+  // Produkt im Foto finden: Textil = zusammenhängende Shirtfarbe um die Bildmitte, sonst alles, was sich vom Hintergrund (Ecken) abhebt
+  function prodBox(img, tex) {
+    try { var n = 120, h = Math.max(1, Math.round(n * img.naturalHeight / img.naturalWidth)), cv = document.createElement("canvas"); cv.width = n; cv.height = h; var x = cv.getContext("2d"); x.drawImage(img, 0, 0, n, h);
+      var d = x.getImageData(0, 0, n, h).data, px = function (a, b) { var o = (b * n + a) * 4; return [d[o], d[o + 1], d[o + 2]]; }, dist = function (u, v) { return Math.abs(u[0] - v[0]) + Math.abs(u[1] - v[1]) + Math.abs(u[2] - v[2]); };
+      var bgc = [px(1, 1), px(n - 2, 1), px(1, h - 2), px(n - 2, h - 2)], isBg = function (c) { return bgc.some(function (b) { return dist(c, b) < 40; }); };
+      if (tex) {   // Shirtfarbe: Median im Bereich um die Mitte, dann Zeile/Spalte entlang wachsen
+        var cs = []; for (var yy = Math.round(h * .38); yy <= Math.round(h * .52); yy += 2) for (var xx = Math.round(n * .45); xx <= Math.round(n * .55); xx += 2) cs.push(px(xx, yy));
+        var med = [0, 1, 2].map(function (k) { var a = cs.map(function (c) { return c[k]; }).sort(function (u, v) { return u - v; }); return a[a.length >> 1]; }); if (isBg(med)) return null;
+        var hsv = function (c) { var r0 = c[0] / 255, g0 = c[1] / 255, b0 = c[2] / 255, mx = Math.max(r0, g0, b0), mn = Math.min(r0, g0, b0), dd = mx - mn, hu = 0; if (dd) hu = mx === r0 ? ((g0 - b0) / dd) % 6 : mx === g0 ? (b0 - r0) / dd + 2 : (r0 - g0) / dd + 4; return [(hu * 60 + 360) % 360, mx ? dd / mx : 0, mx]; }, hm = hsv(med);
+        var same = function (a, b) { var c = px(a, b), q = hsv(c); if (hm[1] < .22 || q[1] < .22) return dist(c, med) < 110 && Math.abs(q[1] - hm[1]) < .25; var dh = Math.abs(q[0] - hm[0]); return Math.min(dh, 360 - dh) < 20 && Math.abs(q[1] - hm[1]) < .4 && q[2] > .12; };   // Farbton statt Helligkeit – Falten/Schatten zählen mit
+        var cnt = [], ext = []; for (var y3 = 0; y3 < h; y3++) { var c3 = 0, mn3 = n, mx3 = -1; for (var x3 = 0; x3 < n; x3++) if (same(x3, y3)) { c3++; if (x3 < mn3) mn3 = x3; if (x3 > mx3) mx3 = x3; } cnt.push(c3); ext.push([mn3, mx3]); }   // Maske der Shirtfarbe, Logos/Falten im Shirt stören nicht
+        var t = 0, bt = h - 1; while (t < h && cnt[t] < n * .1) t++; while (bt > t && cnt[bt] < n * .1) bt--;
+        var ys = Math.round(t + (bt - t) * .6), xs = []; for (var y4 = ys - 2; y4 <= ys + 2; y4++) if (ext[y4] && ext[y4][1] > ext[y4][0]) xs.push(ext[y4]);
+        if (!xs.length) return null; var l = Math.min.apply(null, xs.map(function (e2) { return e2[0]; })), r = Math.max.apply(null, xs.map(function (e2) { return e2[1]; }));   // Rumpfbreite unterhalb der Ärmel
+        if (r - l < n * .15 || bt - t < h * .15) return null;
+        return { l: l / n, t: t / h, w: (r - l) / n, h: (bt - t) / h };
+      }
+      var L0 = n, R0 = 0, T0 = h, B0 = 0; for (var y2 = 0; y2 < h; y2 += 2) for (var x2 = 0; x2 < n; x2 += 2) if (!isBg(px(x2, y2))) { if (x2 < L0) L0 = x2; if (x2 > R0) R0 = x2; if (y2 < T0) T0 = y2; if (y2 > B0) B0 = y2; }
+      if (R0 - L0 < n * .2 || B0 - T0 < h * .2) return null; return { l: L0 / n, t: T0 / h, w: (R0 - L0) / n, h: (B0 - T0) / h };
+    } catch (e) { return null; }   // Foto ohne CORS: Standardlage
+  }
+  // Lage der Motive: Textil – Positionen relativ zum Shirt (Brust, Rücken, Ärmel), sonst mittig in der Produktfläche im Maßstab der Produktgröße
+  var TEX_REL = { positions_chest: [.68, .24], positions_chest_right: [.32, .24], positions_front: [.5, .42], positions_back: [.5, .42], positions_sleeve_left: [.95, .12], positions_sleeve_right: [.05, .12] };
+  function pmkLayout() {
+    var st = document.querySelector(".ps-pmk-ph .st"), bg = st && st.querySelector(".bg"); if (!bg) return;
+    var go = function () { var tex = kind() === "textile", bx = prodBox(bg, tex), pm = prodMm(S.prod), pos = S.pmkPos || {};
+      if (!bx) bx = tex ? { l: .3, t: .28, w: .4, h: .45 } : { l: .2, t: .2, w: .6, h: .6 };
+      [].forEach.call(st.querySelectorAll(".ov"), function (ov) { var key = ov.getAttribute("data-pmkey"), sl = key.slice(S.prod.key.length + 1), aw = +ov.getAttribute("data-aw"), mv = pos[key] || [0, 0];
+        var rel = tex ? (TEX_REL[sl] || [.5, .42]) : [.5, .5], wf = tex ? bx.w * aw / 500 : pm && pm.w ? bx.w * .9 * aw / pm.w : bx.w * .55;
+        if (ov.classList.contains("full") && !(pm && pm.w)) wf = bx.w * .6;
+        wf = Math.max(.06, Math.min(bx.w * .95, wf));
+        var at = [bx.l + rel[0] * bx.w, bx.t + rel[1] * bx.h]; ov.setAttribute("data-at", at.join(","));
+        ov.style.width = (wf * 100).toFixed(2) + "%"; ov.style.left = ((at[0] + mv[0]) * 100).toFixed(2) + "%"; ov.style.top = ((at[1] + mv[1]) * 100).toFixed(2) + "%"; ov.style.visibility = "visible"; }); };
+    if (bg.complete && bg.naturalWidth) go(); else { bg.onload = go; bg.onerror = function () { bg.removeAttribute("crossorigin"); bg.onerror = null; bg.onload = go; bg.src = bg.src + (bg.src.indexOf("?") > -1 ? "&" : "?") + "nc=1"; }; }
+  }
+  // Motiv auf dem Foto verschieben (nur Ansicht)
+  root.addEventListener("pointerdown", function (e) {
+    var ov = e.target.closest && e.target.closest(".ps-pmk-ph .ov"); if (!ov) return; e.preventDefault();
+    var st = ov.parentNode.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, l0 = parseFloat(ov.style.left), t0 = parseFloat(ov.style.top), key = ov.getAttribute("data-pmkey");
+    try { ov.setPointerCapture(e.pointerId); } catch (er) {} ov.classList.add("drag");
+    var mv = function (ev) { ov.style.left = Math.max(5, Math.min(95, l0 + (ev.clientX - x0) / st.width * 100)) + "%"; ov.style.top = Math.max(5, Math.min(95, t0 + (ev.clientY - y0) / st.height * 100)) + "%"; };
+    var up = function () { ov.removeEventListener("pointermove", mv); ov.removeEventListener("pointerup", up); ov.removeEventListener("pointercancel", up); ov.classList.remove("drag");
+      var at = String(ov.getAttribute("data-at") || "0.5,0.5").split(",").map(Number); S.pmkPos = S.pmkPos || {}; S.pmkPos[key] = [parseFloat(ov.style.left) / 100 - at[0], parseFloat(ov.style.top) / 100 - at[1]]; };
+    ov.addEventListener("pointermove", mv); ov.addEventListener("pointerup", up); ov.addEventListener("pointercancel", up);
+  });
   function checksHtml(list) { return list && list.length ? '<ul class="ps-checks">' + list.map(function (c) { return '<li class="' + esc(c.level) + '">' + esc(c.text) + "</li>"; }).join("") + "</ul>" : ""; }
   function field(id, label, val, attrs, hint) { return '<div class="ps-field"><label for="' + id + '">' + label + '</label><input id="' + id + '" name="' + id + '" value="' + esc(val || "") + '" ' + (attrs || "") + ">" + (hint || "") + "</div>"; }
   function vAddress() {
@@ -1572,6 +1695,7 @@
       S.custom.w = String(wh[0]); S.custom.h = String(wh[1]); if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
       var iw = document.getElementById("psW"), ih = document.getElementById("psH"); if (iw) iw.value = S.custom.w; if (ih) ih.value = S.custom.h;
       [].forEach.call(document.querySelectorAll(".ps-dimc"), function (b) { var on = b.getAttribute("data-dim") === S.custom.w + "x" + S.custom.h; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); loadPrice(); return; }
+    var pmi = e.target.closest("[data-pmkimg]"); if (pmi) { S.pmkImg = +pmi.getAttribute("data-pmkimg"); pmkPaint(); return; }
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
@@ -1620,6 +1744,8 @@
     if (k === "bleedfix" && S.file) { var f0 = S.file; t.disabled = true; t.textContent = "Wird ergänzt …";
       api("/print/api/file/bleed", { fileId: f0.fileId, token: f0.token, mode: v }).then(function (j) { if (!j.ok) { toast(j.error || "Nicht möglich", true); render(); return; }
         j.bleedMode = v; S.fileOrig = { file: f0, next: j.fileId }; S.file = j; S.previews = null; render(); pollPreflight(); toast("Beschnitt ergänzt ✓"); }).catch(function () { toast("Keine Verbindung", true); render(); }); return; }
+    if (k === "adj" && S.file) { var pl0 = S.file.place || { mode: "fill", rotate: 0, scale: 1 };
+      adjApply(v === "fit" || v === "fill" ? { mode: v } : v === "rl" ? { rotate: (pl0.rotate || 0) - 90 } : v === "rr" ? { rotate: (pl0.rotate || 0) + 90 } : { mode: "fill", scale: 1 }); return; }
     if (k === "bleedundo" && S.fileOrig) { S.file = S.fileOrig.file; S.fileOrig = null; S.previews = null; render(); toast("Originaldatei wiederhergestellt"); return; }
     if (k === "moball") { S.mobAll = true; render(); toast("Alle Optionen werden angezeigt"); return; }
     if (k === "toorder") { var ob = root.querySelector('.ps-nav [data-act="order"]'), un = root.querySelector('.ps-cb input[data-acc]:not(:checked)'); var tg = un ? un.closest(".ps-cb") : ob; if (tg) { tg.scrollIntoView({ behavior: "smooth", block: "center" }); if (un) { tg.classList.add("ps-need"); setTimeout(function () { tg.classList.remove("ps-need"); }, 1600); } } return; }
@@ -1665,6 +1791,7 @@
     if (k === "retrypay") return retryPay(v);
   });
   root.addEventListener("change", function (e) {
+    if (e.target.id === "psAdjS") { adjApply({ scale: +e.target.value / 100 }); return; }
     if (e.target.hasAttribute && e.target.hasAttribute("data-sort")) { S.sort = e.target.value; var gs = document.getElementById("psGrid"); if (gs) { gs.innerHTML = gridHtml(); fromObserve(); } return; }
     var t = e.target;
     if (t.name && t.name.indexOf("prop:") === 0) { setProp(t.name.slice(5), t.value); return; }
@@ -1690,6 +1817,7 @@
     if (t.hasAttribute("data-acc")) { S.accept[t.getAttribute("data-acc")] = t.checked; return; }
   });
   root.addEventListener("input", function (e) {
+    if (e.target.id === "psAdjS") { var ao = document.getElementById("psAdjO"); if (ao) ao.textContent = e.target.value + " %"; return; }
     if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
     var t = e.target;
     if (t.id === "psHomeQ") { var sg = document.getElementById("psSug"), hv = sugHtml(t.value); sg.innerHTML = hv; sg.hidden = !hv; t.parentNode.setAttribute("aria-expanded", String(!!hv)); return; }
@@ -1717,7 +1845,7 @@
     if (w.items === "busy") return '<div class="ps-wish"><p>„' + esc(w.name) + '“ geht so nicht – wir suchen passende Kombinationen <span class="ps-spin"></span></p></div>';
     if (!w.items.length) return '<div class="ps-wish"><p>„' + esc(w.name) + '“ ist mit dieser Ausführung leider nicht lieferbar.</p></div>';
     return '<div class="ps-wish"><p>„' + esc(w.name) + '“ gibt es so:</p>' + w.items.map(function (a, i) { return '<button type="button" class="ps-alt" data-wish="' + i + '"><span>' + esc(a.label) + "</span><b>" + eur(co ? a.price.net : a.price.gross) + "</b><small>Übernehmen →</small></button>"; }).join("") + '<button type="button" class="ps-link" data-wishx="1">Ausblenden</button></div>'; }
-  function setProp(slug, val) {
+  function setProp(slug, val) { S.autoFix = null;
     var before = JSON.stringify(S.sel), lk = isLogo() ? logoKey() : ""; S.wish = null; wishSeq++;
     S.undo = S.good && S.good.key === S.prod.key ? { sel: JSON.parse(JSON.stringify(S.good.sel)), slug: slug, val: val } : null;   // zurück zur letzten Auswahl mit gültigem Preis
     S.sel[slug] = val; fixSel(slug);

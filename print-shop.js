@@ -117,7 +117,7 @@ const CURATED = [
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("8" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("9" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -361,6 +361,7 @@ module.exports = function (D) {
       const mN = String(o.name || "").toLowerCase().replace(/_/g, " ").match(RX), n = mN && mN[3] ? conv(mN) : null, near = (a, b) => Math.abs(a - b) <= Math.max(1, b * 0.01);
       return n && near(n[0], w * 10) && near(n[1], h * 10) ? n : [w, h];
     }
+    if (/\d\s*[x×*]\s*\d+(?:[.,]\d+)?\s*[x×*]\s*\d/.test(t)) return null;   // „43 x 18 x 35 cm“ = Produktmaße (B × T × H einer Tasche), kein Druckformat
     const m = t.match(RX); if (m) return conv(m);
     const a = t.match(/\b(a[0-7]|dl|din lang)\b/); if (a) return A_SIZES[a[1].replace(" ", "_")].slice();
     return null;
@@ -508,21 +509,28 @@ module.exports = function (D) {
       const at = specs.indexOf(fins[0]); specs.splice(0, specs.length, ...specs.filter(x => !SIDE[x[2]]));
       specs.splice(Math.min(at, specs.length), 0, ...Object.keys(byV).map(v => ["Konfektion " + (byV[v].length === 4 ? "rundum" : byV[v].join(" & ")), v, "finish"])); }
     // Endformat bei fester Größe: aus der Option (width/height bzw. Slug/Name), sonst kuratierte Maße, sonst Druckfläche
-    let dims = null;
+    // Kommen die Maße nur aus der Druckfläche (z. B. Taschen: Größe „43 x 18 x 35 cm“ ohne lesbare Maße), sind sie die Druckfläche – nicht das Produkt.
+    let dims = null, dimsArea = false, sizeLabel = "";
     if (kind === "flat" && !exposed.some(x => x.slug === "size")) {
       const so = by.size && (by.size.options || []).find(o => o && String(o.slug) === fixed.size);
-      dims = (so && dimsOf(so)) || (c.dims ? c.dims.slice() : null) || ((by.printing_size && (by.printing_size.options || []).map(o => o && dimsOf(o)).filter(Boolean)[0]) || null);
+      dims = (so && dimsOf(so)) || (c.dims ? c.dims.slice() : null);
+      if (!dims) { dims = (by.printing_size && (by.printing_size.options || []).map(o => o && dimsOf(o)).filter(Boolean)[0]) || null; dimsArea = !!dims; }
+      if (so && !dimsOf(so)) sizeLabel = clip(String((L.size && L.size[so.slug]) || so.name || ""), 80);
     }
+    if (!sizeLabel && fixed.size && by.size) { const so = (by.size.options || []).find(o => o && String(o.slug) === fixed.size); if (so && so.name && !/^custom$/i.test(so.slug)) sizeLabel = clip(String(so.name), 80); }
     // Sehr große bzw. extrem lange Formate (z. B. 20 m × 76 cm): Großformat-Auflösung, kein Online-Designer (nur Datei-Upload, Maßstab 1:10)
     const huge = dims && (Math.max(dims[0], dims[1]) > 5000 || Math.max(dims[0], dims[1]) / Math.max(1, Math.min(dims[0], dims[1])) > 10), large = dims && Math.max(dims[0], dims[1]) >= 1000;
     const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null, safe: c.safe || 3, sku: String(sku),
       bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
-      props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
+      props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
     prod.excludes = (Array.isArray(pd.excludes) ? pd.excludes : []).filter(Array.isArray).slice(0, 600).map(rule => rule.filter(x => x && x.property && Array.isArray(x.options)).map(x => ({ property: String(x.property), options: x.options.map(o => String(o && typeof o === "object" ? o.slug : o)) }))).filter(r => r.length);
     // Vorauswahl: bevorzugte Optionen zuerst (kuratiert bzw. Papier 115–170 g Bilderdruck), dann die erste Kombination ohne Ausschluss
     const pref = c.prefer || {}, paper = c.paper !== undefined ? c.paper : kind === "flat" ? [115, 170] : null;
+    // Druck-Eigenschaften (Druck, Druckposition, Druckseite …): „Unbedruckt“/„Ohne“ nur als letzter Ausweg – beim Öffnen soll ein bedrucktes Produkt mit Preis stehen
+    const PRINTISH = /^(printtype.*|print_position.*|print_side.*|printing_(position|side|colou?rs?).*|positions?_.*|imprint.*)$/, BLANK = o => NONE_SLUG.test(String(o.slug)) || /^0+(_.*)?$|^0\/0|unprint|blank|^none$/i.test(String(o.slug)) || /^(unbedruckt|ohne( druck)?|keine?|blanko|neutral)$/i.test(String(o.name || "").trim());
     const order = pr => { const o = pr.options.map(x => x.slug); const p = (pref[pr.slug] || (pr.slug === "printtype" ? ["40", "44"] : [])).filter(x => o.indexOf(x) > -1); let rest = o.filter(x => p.indexOf(x) < 0);
+      if (!pref[pr.slug] && PRINTISH.test(pr.slug)) { const blank = pr.options.filter(BLANK).map(x => x.slug); rest = rest.filter(x => blank.indexOf(x) < 0).concat(rest.filter(x => blank.indexOf(x) > -1)); }
       if (!pref[pr.slug] && paper && /^(material|paper)/.test(pr.slug)) { const good = pr.options.filter(x => { const g = weightOf(x); return g >= paper[0] && g <= paper[1]; }).sort((a, b) => coated(b) - coated(a) || weightOf(a) - weightOf(b)).map(x => x.slug); rest = good.concat(rest.filter(x => good.indexOf(x) < 0)); }
       return p.concat(rest); };
     const base = {}; Object.keys(fixed).forEach(k => { if (!auto[k]) base[k] = fixed[k]; });
@@ -711,7 +719,7 @@ module.exports = function (D) {
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 600) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
-      excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+      excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
   const MAIN_INTO = { "gift-packaging": ["packaging-bags", "gift-packaging"], "displays-pos-material": ["indoor-interior", "displays-pos-material"], "outdoor-furniture": ["outdoor-advertising", "outdoor-furniture"], "materials-samples": ["outdoor-advertising", "banners-outdoor"] };
@@ -1281,7 +1289,35 @@ module.exports = function (D) {
     } catch (e) { log("Preflight:", e.message); }
     return meta;
   }
-  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes });
+  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null });
+  // Datei aufs Format setzen: „fill“ = füllt die Seite inkl. Beschnitt (Ränder werden angeschnitten), „fit“ = ganz sichtbar im Endformat (Rest weiß),
+  // rotate 0/90/180/270 (im Uhrzeigersinn), scale 0,25–4 (1 = passend), dx/dy = Verschiebung in mm. Quelle: PDF (alle Seiten) oder JPG/PNG (eine Seite).
+  async function placeFile(buf, type, size, bleed, o, sides) {
+    const { PDFDocument, degrees } = require("pdf-lib");
+    const out = await PDFDocument.create(), b = (+bleed || 0) * MM_PT, W = size.w * MM_PT + 2 * b, H = size.h * MM_PT + 2 * b;
+    const mode = o.mode === "fit" ? "fit" : "fill", sc = Math.min(4, Math.max(0.25, +o.scale || 1)), dx = (+o.dx || 0) * MM_PT, dy = (+o.dy || 0) * MM_PT;
+    let items = [];
+    if (type === "pdf") { const src = await PDFDocument.load(buf); for (const sp of src.getPages()) items.push({ el: await out.embedPage(sp), rot: (sp.getRotation().angle || 0), page: true }); }
+    else items.push({ el: type === "png" ? await out.embedPng(buf) : await out.embedJpg(buf), rot: 0 });
+    const auto = o.rotate == null || o.rotate === "auto";
+    for (const it of items) {
+      const w0 = it.el.width, h0 = it.el.height, srcRot = ((it.rot % 360) + 360) % 360;
+      let rot = auto ? 0 : ((Math.round(+o.rotate / 90) * 90) % 360 + 360) % 360;
+      const eff = r => (r + srcRot) % 180 ? [h0, w0] : [w0, h0];
+      if (auto && (eff(0)[0] > eff(0)[1]) !== (W > H) && Math.abs(W - H) > MM_PT && Math.abs(eff(0)[0] - eff(0)[1]) > 1) rot = 90;   // Hochformat-Motiv auf Querformat (und umgekehrt): automatisch drehen
+      it.usedRot = rot;
+      const [rw, rh] = eff(rot), bw = mode === "fit" ? W - 2 * b : W, bh = mode === "fit" ? H - 2 * b : H;
+      const f = (mode === "fit" ? Math.min(bw / rw, bh / rh) : Math.max(bw / rw, bh / rh)) * sc, a = w0 * f, c = h0 * f;
+      const th = -((rot + srcRot) % 360) * Math.PI / 180, cos = Math.cos(th), sin = Math.sin(th);   // pdf-lib dreht gegen den Uhrzeigersinn um den Ursprung
+      const cx = W / 2 + dx, cy = H / 2 - dy, ox = cx - (a / 2 * cos - c / 2 * sin), oy = cy - (a / 2 * sin + c / 2 * cos);
+      const pg = out.addPage([W, H]), opt = { x: ox, y: oy, width: a, height: c, rotate: degrees(-((rot + srcRot) % 360)) };
+      if (mode === "fit" || sc < 1) pg.drawRectangle({ x: 0, y: 0, width: W, height: H, color: require("pdf-lib").rgb(1, 1, 1) });
+      if (it.page) pg.drawPage(it.el, { x: ox, y: oy, xScale: f, yScale: f, rotate: opt.rotate }); else pg.drawImage(it.el, opt);
+      pg.setTrimBox(b, b, W - 2 * b, H - 2 * b); pg.setBleedBox(0, 0, W, H);
+    }
+    for (let i = items.length; i < (sides || 1); i++) out.addPage([W, H]);
+    return { pdf: Buffer.from(await out.save({ useObjectStreams: false })), rot: items[0] ? items[0].usedRot : 0, mode };
+  }
   // Fehlender Beschnitt: automatisch ergänzen – „mirror“ = Randbereiche spiegeln (Motiv bleibt 1:1), „zoom“ = Motiv minimal vergrößern (Ränder werden angeschnitten)
   async function addBleed(buf, size, bleed, mode) {
     const { PDFDocument, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } = require("pdf-lib");
@@ -1325,6 +1361,11 @@ module.exports = function (D) {
     if (prod.kind === "textile") { const p = (prod.positions || []).find(x => x.slug === String(input.logo || "")); if (!p) throw bad("Druckposition fehlt"); return { prod, pos: { slug: p.slug, title: p.title, area: p.area } }; }
     const n = normalizeSel(prod, input); return { prod, pos: n.positions.find(x => x.slug === String(input.logo || "")) || n.positions[0] };   // beidseitig: Vorder-/Rückseite
   }
+  // Original einer hochgeladenen Datei (für „Anpassen“: einpassen/füllen/drehen/skalieren – immer vom Original aus, ohne Qualitätsverlust)
+  async function keepSrc(buf, type, name) {
+    const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "src", name: clip(String(name || "original"), 120), bytes: buf.length, createdAt: nowIso(), original: type, orderId: null };
+    await store.putFile(meta, buf); return meta.id;
+  }
   async function handleUpload(buf, name, input) {
     const t0 = await uploadTarget(input);
     if (t0.pos) return handleLogo(buf, name, t0.prod, t0.pos);
@@ -1339,13 +1380,21 @@ module.exports = function (D) {
     if (type === "pdf") {
       const info = await pdfInfoX(buf); if (info.encrypted) throw Object.assign(new Error("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren"), { status: 400 });
       target.pages = info.pages;
-      return newFile("upload", name, buf, target, checkPdf(info, target.size, target.bleed, target.sides, target.multi), { original: "pdf" });
+      const checks = checkPdf(info, target.size, target.bleed, target.sides, target.multi), src = target.multi ? null : await keepSrc(buf, "pdf", name);
+      const sc = checks.findIndex(c => /Seitenverhältnis passt/.test(c.text || ""));
+      if (sc > -1 && src) {   // nur die Größe weicht ab → jetzt wirklich skalieren (vorher stand nur der Hinweis da)
+        try { const r = await withPdf(() => placeFile(buf, "pdf", target.size, target.bleed, { mode: "fill" }, target.sides));
+          checks[sc] = { level: "ok", text: "Seitengröße " + info.media.w + " × " + info.media.h + " mm automatisch auf " + (target.size.w + 2 * target.bleed) + " × " + (target.size.h + 2 * target.bleed) + " mm (inkl. Beschnitt) skaliert" + (r.rot ? " und gedreht" : "") + " – bitte in der Vorschau kontrollieren." };
+          return newFile("upload", name, r.pdf, target, checks, { original: "pdf", src, place: { mode: "fill", rotate: r.rot, scale: 1 } });
+        } catch (e) { log("Auto-Skalierung:", e.message); }
+      }
+      return newFile("upload", name, buf, target, checks, { original: "pdf", src });
     }
     if (target.multi) throw Object.assign(new Error("Für mehrseitige Produkte bitte eine PDF mit allen " + target.sides + " Seiten hochladen"), { status: 400 });
     const dm = imgDims(buf, type); if (!dm || !dm.w || !dm.h) throw Object.assign(new Error("Bild konnte nicht gelesen werden"), { status: 400 });
     if (dm.w * dm.h > 150e6) throw Object.assign(new Error("Bild ist zu groß (max. 150 Megapixel)"), { status: 400 });
     const W = target.size.w + 2 * target.bleed, H = target.size.h + 2 * target.bleed;
-    const rot = (dm.w > dm.h) !== (W > H) && Math.abs(W - H) > 1;
+    const rot = (dm.w > dm.h) !== (W > H) && Math.abs(W - H) > 1 && dm.w !== dm.h;
     const dpi = Math.round(Math.min((rot ? dm.h : dm.w) / (W / 25.4), (rot ? dm.w : dm.h) / (H / 25.4)));
     const D0 = prod.dpi || 300, f = D0 / 300;   // Großformat (Banner) braucht weniger dpi
     const checks = [];
@@ -1353,13 +1402,14 @@ module.exports = function (D) {
     else if (dpi >= Math.round(150 * f)) checks.push({ level: "warn", text: "Auflösung nur " + dpi + " dpi (empfohlen " + D0 + " dpi). Der Druck kann leicht unscharf wirken." });
     else if (dpi >= Math.round(72 * f)) checks.push({ level: "warn", text: "Auflösung sehr gering (" + dpi + " dpi). Der Druck wird sichtbar unscharf – besser eine größere Datei verwenden." });
     else checks.push({ level: "error", text: "Auflösung viel zu gering (" + dpi + " dpi) für " + W + " × " + H + " mm." });
-    if (rot) checks.push({ level: "error", text: "Bild ist " + (dm.w > dm.h ? "quer" : "hoch") + ", das Format aber " + (W > H ? "quer" : "hoch") + " – bitte passend drehen." });
-    const ar = (dm.w / dm.h) / (W / H); if (!rot && Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild wird mittig auf " + W + " × " + H + " mm zugeschnitten." });
+    if (rot) checks.push({ level: "ok", text: "Bild ist " + (dm.w > dm.h ? "quer" : "hoch") + ", das Format " + (W > H ? "quer" : "hoch") + " – automatisch um 90° gedreht. Unter „Datei anpassen“ kannst du die Drehung ändern." });
+    const ar = ((rot ? dm.h : dm.w) / (rot ? dm.w : dm.h)) / (W / H); if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten. Unter „Datei anpassen“ kannst du es stattdessen ganz einpassen." });
     checks.push({ level: "warn", text: "Bitte beachte: Inhalte im Beschnitt (" + target.bleed + " mm je Seite) werden abgeschnitten." });
     if (target.sides > 1) checks.push({ level: "warn", text: "Bild-Upload füllt nur die Vorderseite – die Rückseite bleibt weiß. Für zwei Seiten bitte eine 2-seitige PDF hochladen." });
-    let pdf; try { pdf = await imageToPdf(buf, type, target.size, target.bleed, target.sides); } catch (e) { throw Object.assign(new Error("Bild konnte nicht verarbeitet werden"), { status: 400 }); }
+    let pdf; try { pdf = (await withPdf(() => placeFile(buf, type, target.size, target.bleed, { mode: "fill" }, target.sides))).pdf; } catch (e) { try { pdf = await imageToPdf(buf, type, target.size, target.bleed, target.sides); } catch (e2) { throw Object.assign(new Error("Bild konnte nicht verarbeitet werden"), { status: 400 }); } }
     target.pages = target.sides;
-    return newFile("upload", String(name || "bild").replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, target, checks, { original: type, px: dm, dpi });
+    const src = await keepSrc(buf, type, name);
+    return newFile("upload", String(name || "bild").replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, target, checks, { original: type, px: dm, dpi, src, place: { mode: "fill", rotate: rot ? 90 : 0, scale: 1 } });
   }
   // Logo (Textil/Werbeartikel): Original wird gespeichert und geprüft; zusammengeführt wird erst in mergeLogos (eine PDF-Seite je Position)
   async function handleLogo(buf, name, prod, pos) {
@@ -2455,6 +2505,22 @@ module.exports = function (D) {
         await uploadTarget(input).catch(e => { req.resume(); throw e; });
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
         try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
+        return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
+      if (p === "/print/api/file/fit" && req.method === "POST") {   // Anpassen: einpassen/füllen, drehen, skalieren, verschieben – immer vom Original aus (neue Datei)
+        if (limited("upload", ip, 120, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const b = await readJson(req, 2000), id = String(b.fileId || "");
+        if (!sigOk("file", id, String(b.token || ""))) return J(res, 403, { ok: false, error: "Datei nicht gefunden" });
+        const fm = await store.fileMeta(id); if (!fm || fm.orderId || fm.kind !== "upload" || !fm.src || !fm.size) return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" });
+        const sm = await store.fileMeta(fm.src), data = sm && await store.fileData(fm.src); if (!data) return J(res, 400, { ok: false, error: "Original nicht mehr vorhanden – bitte Datei neu hochladen" });
+        const o = { mode: b.mode === "fit" ? "fit" : "fill", rotate: [0, 90, 180, 270].indexOf(+b.rotate) > -1 ? +b.rotate : 0, scale: Math.min(4, Math.max(0.25, +b.scale || 1)), dx: Math.max(-2000, Math.min(2000, +b.dx || 0)), dy: Math.max(-2000, Math.min(2000, +b.dy || 0)) };
+        let r; try { r = await withPdf(() => placeFile(data, sm.original || "pdf", fm.size, +fm.bleed || 0, o, +fm.sides || 1)); } catch (e) { return J(res, 400, { ok: false, error: e.status ? e.message : "Datei konnte nicht angepasst werden" }); }
+        const W = fm.size.w + 2 * (+fm.bleed || 0), H = fm.size.h + 2 * (+fm.bleed || 0);
+        const checks = (fm.checks || []).filter(c => c.level === "ok" && /dpi|Seite\(n\)|Seiten –/.test(c.text || "") || /Rückseite bleibt weiß|Bild-Upload füllt/.test(c.text || ""));
+        checks.unshift({ level: "ok", text: "Angepasst: " + (o.mode === "fit" ? "ganz eingepasst (freie Flächen bleiben weiß)" : "füllt das Format inkl. Beschnitt") + (o.rotate ? " · um " + o.rotate + "° gedreht" : "") + (o.scale !== 1 ? " · " + Math.round(o.scale * 100) + " %" : "") + (o.dx || o.dy ? " · verschoben" : "") + " – Seite " + W + " × " + H + " mm inkl. Beschnitt." });
+        if (o.mode === "fill" || o.scale > 1) checks.push({ level: "warn", text: "Bitte in der Vorschau kontrollieren: Inhalte am Rand und im Beschnitt (" + fm.bleed + " mm je Seite) werden abgeschnitten." });
+        if (fm.dpi && o.scale > 1) { const d2 = Math.round(fm.dpi / o.scale); if (d2 < 150) checks.push({ level: "warn", text: "Durch die Vergrößerung nur noch ca. " + d2 + " dpi – der Druck kann unscharf wirken." }); }
+        const meta = await newFile("upload", String(fm.name || "druck.pdf").replace(/( \(angepasst\))?(\.pdf)?$/i, "") + " (angepasst).pdf", r.pdf, { product: fm.product, sel: fm.sel, size: fm.size, bleed: fm.bleed, sides: fm.sides, pages: fm.pages }, checks, { original: fm.original, src: fm.src, from: fm.id, place: o, px: fm.px, dpi: fm.dpi });
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/bleed" && req.method === "POST") {   // Beschnitt automatisch ergänzen (neue Datei, Original bleibt)
