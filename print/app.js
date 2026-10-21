@@ -1572,7 +1572,7 @@
   function foldMock(src, xs, wmm, hmm, back) {
     var e = [0].concat(xs.slice().sort(function (a, b) { return a - b; })).concat([wmm]), H = 230, k = H / hmm, W = wmm * k;
     return '<div class="ps-fold" role="img" aria-label="Vorschau gefalzt">' + e.slice(0, -1).map(function (x0, i) { var w = (e[i + 1] - x0) * k;
-      return '<i style="width:' + w.toFixed(1) + "px;height:" + H + "px;background-image:url(" + src + ");background-size:" + W.toFixed(1) + "px " + H + "px;background-position:" + (-x0 * k).toFixed(1) + "px 0;transform:rotateY(" + (i % 2 ? -22 : 22) + 'deg)"></i>'; }).join("") + "</div>" + (back ? '<div class="ps-fold-in"><img src="' + back + '" alt=""><span>Innenseite</span></div>' : "");
+      return '<i style="width:' + w.toFixed(1) + "px;height:" + H + "px;background-image:url(" + src + ");background-size:" + W.toFixed(1) + "px " + H + "px;background-position:" + (-x0 * k).toFixed(1) + "px 0;transform:rotateY(" + (i % 2 ? -20 : 20) + "deg)" + (i ? ";margin-left:" + (-w * 0.06).toFixed(1) + "px" : "") + '"></i>'; }).join("") + "</div>" + (back ? '<div class="ps-fold-in"><img src="' + back + '" alt=""><span>Innenseite</span></div>' : "");
   }
   function sheetMock(pv) {
     var fo = S.price && S.price.folds, fsz = S.price && S.price.size;
