@@ -177,17 +177,20 @@ module.exports = function (D) {
     const ig = ch.account.id, t = tok.access, base = B.ig, P = (path, form) => { const f = { access_token: t }; Object.keys(form).forEach(k => { if (form[k] !== "" && form[k] != null) f[k] = form[k]; }); return req("POST", base + "/" + GV + "/" + path, { form: f }); };
     const build = async full => {
       const loc = full && m.place ? m.place.id : "", alt = full ? String(m.alt || "").slice(0, 1000) : "", cap = full ? m.caption : (m.captionSafe || m.caption);
-      if (m.format === "reel") { const c = (await P(ig + "/media", { media_type: "REELS", video_url: m.video.url, caption: cap, share_to_feed: "true", cover_url: m.cover ? m.cover.url : "", location_id: loc, audio_name: full && m.audioName ? String(m.audioName).slice(0, 80) : "" })).id; await igWait(base, c, t, "Instagram"); return c; }
+      // markierte Personen (auf dem Bild verteilt, beim Reel ohne Position) und Collab-Partner (gemeinsamer Beitrag, max. 3 – die Partner bestätigen in Instagram)
+      const tags = full ? (m.tags || []).slice(0, 20) : [], col = full && m.collabs && m.collabs.length ? JSON.stringify(m.collabs.slice(0, 3)) : "";
+      const ut = withPos => tags.length ? JSON.stringify(tags.map((u, i) => withPos ? { username: u, x: Math.round((0.2 + 0.6 * ((i % 4) / 3 || 0)) * 100) / 100, y: Math.round((0.75 - 0.12 * Math.floor(i / 4)) * 100) / 100 } : { username: u })) : "";
+      if (m.format === "reel") { const c = (await P(ig + "/media", { media_type: "REELS", video_url: m.video.url, caption: cap, share_to_feed: "true", cover_url: m.cover ? m.cover.url : "", location_id: loc, audio_name: full && m.audioName ? String(m.audioName).slice(0, 80) : "", user_tags: ut(false), collaborators: col })).id; await igWait(base, c, t, "Instagram"); return c; }
       if (m.images.length > 1) {
-        const kids = []; for (const im of m.images.slice(0, 20)) kids.push((await P(ig + "/media", { image_url: im.url, is_carousel_item: "true", alt_text: alt })).id);
+        const kids = []; let first = true; for (const im of m.images.slice(0, 20)) { kids.push((await P(ig + "/media", { image_url: im.url, is_carousel_item: "true", alt_text: alt, user_tags: first ? ut(true) : "" })).id); first = false; }
         for (const k of kids) await igWait(base, k, t, "Instagram");
-        const c = (await P(ig + "/media", { media_type: "CAROUSEL", children: kids.join(","), caption: cap, location_id: loc })).id; await igWait(base, c, t, "Instagram"); return c;
+        const c = (await P(ig + "/media", { media_type: "CAROUSEL", children: kids.join(","), caption: cap, location_id: loc, collaborators: col })).id; await igWait(base, c, t, "Instagram"); return c;
       }
-      const c = (await P(ig + "/media", { image_url: m.images[0].url, caption: cap, location_id: loc, alt_text: alt })).id; await igWait(base, c, t, "Instagram"); return c;
+      const c = (await P(ig + "/media", { image_url: m.images[0].url, caption: cap, location_id: loc, alt_text: alt, user_tags: ut(true), collaborators: col })).id; await igWait(base, c, t, "Instagram"); return c;
     };
     let creation, note = "";
     try { creation = await build(true); }
-    catch (e) { if (e.auth || !(e.status >= 400 && e.status < 500)) throw e; creation = await build(false); note = "Instagram hat die Extras abgelehnt – schlicht gepostet (5 Hashtags, ohne Standort/Alt-Text)."; }
+    catch (e) { if (e.auth || !(e.status >= 400 && e.status < 500)) throw e; creation = await build(false); note = "Instagram hat die Extras abgelehnt – schlicht gepostet (5 Hashtags, ohne Standort/Alt-Text" + ((m.tags || []).length || (m.collabs || []).length ? ", ohne Markierungen/Collab – Benutzernamen prüfen" : "") + ")."; }
     const pub = await P(ig + "/media_publish", { creation_id: creation });
     let url = ""; try { url = (await req("GET", base + "/" + GV + "/" + pub.id + q({ fields: "permalink", access_token: t }))).permalink || ""; } catch (e) {}
     if (m.firstComment) { try { await P(pub.id + "/comments", { message: m.firstComment }); } catch (e) { note = (note ? note + " " : "") + "Erster Kommentar ging nicht (" + String(e.message || "").slice(0, 80) + ")."; } }

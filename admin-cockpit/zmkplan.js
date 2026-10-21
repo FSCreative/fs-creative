@@ -135,7 +135,7 @@ function postCard(p){
     '<div class="mp-top"><span class="b">'+esc(FMT[p.format]||p.format)+'</span>'+(UI.mkBrand==="alle"?'<span class="b">'+esc(brandOf(p.brand).name)+'</span>':'')+(p.pillar?'<span class="muted">'+esc(p.pillar)+'</span>':'')+'<span class="muted">· '+esc(STL[p.status]||p.status)+'</span></div>'+
     '<div class="mp-idea">'+esc(p.idea||"")+'</div><div class="mp-cap">'+esc(String(cap).replace(/\n\n(#\S+\s*)+$/,""))+'</div>'+
     (((p.hashtags||{}).instagram||[]).length?'<div class="mp-tags">'+p.hashtags.instagram.slice(0,PL.igTags||5).map(function(t){ return '<span>'+esc(t.charAt(0)==="#"?t:"#"+t)+'</span>'; }).join("")+'</div>':'')+
-    '<div class="mp-meta">'+(p.place?'<span title="Standort (Instagram/Facebook)">📍 '+esc(p.place.name)+'</span>':'')+(p.format==="reel"?'<span title="Musik">🎵 '+esc(p.track?p.track.name+(p.track.license&&/CC0/.test(p.track.license)?" · CC0":""):p.music==="none"?"ohne Musik":"wird gewählt")+'</span>':'')+(p.firstComment?'<span title="Erster Kommentar">💬 '+esc(p.firstComment.slice(0,70))+(p.firstComment.length>70?'…':'')+'</span>':'')+(p.altText?'<span title="'+esc(p.altText)+'">♿ Bildbeschreibung</span>':'')+
+    '<div class="mp-meta">'+(p.place?'<span title="Standort (Instagram/Facebook)">📍 '+esc(p.place.name)+'</span>':'')+((p.tags||[]).length?'<span title="Markierte Personen (Instagram)">👤 '+esc(p.tags.map(function(u){ return "@"+u; }).join(" "))+'</span>':'')+((p.collabs||[]).length?'<span title="Collab (Instagram)">🤝 '+esc(p.collabs.map(function(u){ return "@"+u; }).join(" "))+'</span>':'')+(p.format==="reel"?'<span title="Musik">🎵 '+esc(p.track?p.track.name+(p.track.license&&/CC0/.test(p.track.license)?" · CC0":""):p.music==="none"?"ohne Musik":"wird gewählt")+'</span>':'')+(p.firstComment?'<span title="Erster Kommentar">💬 '+esc(p.firstComment.slice(0,70))+(p.firstComment.length>70?'…':'')+'</span>':'')+(p.altText?'<span title="'+esc(p.altText)+'">♿ Bildbeschreibung</span>':'')+
     (p.platforms.indexOf("tiktok")>-1?'<button type="button" class="link" data-act="mptt:'+esc(p.id)+'">TikTok-Text kopieren</button>':'')+'</div>'+pfs+res+'<div class="mp-acts">'+acts+'</div></div></div>';
 }
 function planHtml(){
@@ -211,6 +211,8 @@ F.action("mped",function(id){ var p=PL.posts.find(function(q){ return q.id===id;
       (music.some(function(m){ return !m.mood; })?'<optgroup label="Eigene">'+music.filter(function(m){ return !m.mood; }).map(function(m){ return '<option value="'+esc(m.id)+'"'+(p.music===m.id?' selected':'')+'>'+esc(m.name)+'</option>'; }).join("")+'</optgroup>':'')+'</select></label>':'')+
     '<div class="mk-row2"><label class="fl">Standort (Instagram/Facebook)<select class="f" name="place"><option value="">Kein Standort</option>'+((PL.locations&&PL.locations[p.brand])||[]).map(function(l){ return '<option value="'+esc(l.id)+'"'+(p.place&&p.place.id===l.id?' selected':'')+'>'+esc(l.name)+'</option>'; }).join("")+'</select></label>'+
     '<label class="fl">Erster Kommentar (Instagram/Facebook)<input class="f" name="firstComment" maxlength="300" value="'+esc(p.firstComment||"")+'"></label></div>'+
+    '<div class="mk-row2"><label class="fl">Personen markieren (Instagram)<input class="f" name="tags" placeholder="@lisa.montafon @kantineur" value="'+esc((p.tags||[]).map(function(u){ return "@"+u; }).join(" "))+'"></label>'+
+    '<label class="fl">Collab mit (Instagram, max. 3 – Partner bestätigt in Instagram)<input class="f" name="collabs" placeholder="@partnerkonto" value="'+esc((p.collabs||[]).map(function(u){ return "@"+u; }).join(" "))+'"></label></div>'+
     '<label class="fl">Bildbeschreibung (Alt-Text)<input class="f" name="altText" maxlength="400" value="'+esc(p.altText||"")+'"></label>'+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></span></div></form>',"wide"); });
 F.form("mped",function(form){ var id=form.getAttribute("data-id"), p=PL.posts.find(function(q){ return q.id===id; }); if(!p) return;
@@ -222,7 +224,7 @@ F.form("mped",function(form){ var id=form.getAttribute("data-id"), p=PL.posts.fi
   if(changed) patch.slides=sl;
   var mu=form.querySelector('[name="music"]'); if(mu&&mu.value!==(p.music||"")) patch.music=mu.value;
   var pl0=form.querySelector('[name="place"]'); if(pl0&&pl0.value!==((p.place&&p.place.id)||"")) patch.place=pl0.value;
-  patch.firstComment=form.querySelector('[name="firstComment"]').value; patch.altText=form.querySelector('[name="altText"]').value;
+  patch.firstComment=form.querySelector('[name="firstComment"]').value; patch.tags=form.querySelector('[name="tags"]').value; patch.collabs=form.querySelector('[name="collabs"]').value; patch.altText=form.querySelector('[name="altText"]').value;
   api("/admin/api/mkt/post",{id:id,op:"update",patch:patch}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); upd(j.post); F.closeModal(); F.toast(changed||patch.music!==undefined?"Gespeichert – wird neu erstellt":"Gespeichert"); F.render(); schedulePoll(); }); });
 // Einen Post mit Anweisung neu schreiben lassen (KI), Bild/Reel wird neu erzeugt
 F.action("mprw",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); if(!p) return;

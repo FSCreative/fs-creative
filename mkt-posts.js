@@ -336,7 +336,7 @@ module.exports = function (C) {
   function mediaFor(p, pf) {
     const md = p.media || {}, file = f => path.join(MEDIA, f), b = state().brands[p.brand] || {};
     return { format: p.format, caption: withLink(captionFor(p, pf), pf, p), captionSafe: withLink(captionFor(p, pf, 5), pf, p), title: titleFor(p, pf), tags: tagsOf(p, pf), link: utm(b.url || "", pf, p), alt: p.altText || "",
-      place: p.place && p.place.id ? p.place : null, firstComment: p.firstComment || "", ytCategory: YT_CAT[p.brand] || "22", audioName: md.track ? md.track.name : "",
+      place: p.place && p.place.id ? p.place : null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], ytCategory: YT_CAT[p.brand] || "22", audioName: md.track ? md.track.name : "",
       images: (md.images || []).map((f, i) => ({ url: pubUrl(f), file: file(f), small: md.small && md.small[i] ? file(md.small[i]) : "" })),
       video: md.video ? { url: pubUrl(md.video), file: file(md.video) } : null, cover: md.cover ? { url: pubUrl(md.cover), file: file(md.cover) } : null };
   }
@@ -479,7 +479,7 @@ module.exports = function (C) {
   function postPublic(p) {
     const md = p.media || {};
     return { id: p.id, batch: p.batch, brand: p.brand, createdAt: p.createdAt, status: p.status, format: p.format, pillar: p.pillar, idea: p.idea, slides: p.slides, captions: p.captions, hashtags: p.hashtags, altText: p.altText,
-      platforms: p.platforms || [], scheduledAt: p.scheduledAt || "", approvedAt: p.approvedAt || "", postedAt: p.postedAt || "", results: p.results || {}, music: p.music || "", mood: p.mood || "", place: p.place || null, firstComment: p.firstComment || "", track: (p.media || {}).track || null, lastError: p.lastError || "", source: p.source || "",
+      platforms: p.platforms || [], scheduledAt: p.scheduledAt || "", approvedAt: p.approvedAt || "", postedAt: p.postedAt || "", results: p.results || {}, music: p.music || "", mood: p.mood || "", place: p.place || null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], track: (p.media || {}).track || null, lastError: p.lastError || "", source: p.source || "",
       media: { status: md.status || "", error: md.error || "", images: (md.images || []).length, video: !!md.video, cover: !!md.cover, duration: md.duration || 0, rev: md.at || "" },
       preview: Object.fromEntries(PLATFORMS ? Object.keys(PLATFORMS).filter(pf => (p.platforms || []).indexOf(pf) > -1).map(pf => [pf, captionFor(p, pf)]) : []) };
   }
@@ -555,6 +555,10 @@ module.exports = function (C) {
         if (pa.music !== undefined) { post.music = clip(pa.music, 40); if (post.format === "reel" && !String(post.source || "").startsWith("gewinnspiel")) rerender = true; }
         if (pa.altText !== undefined) post.altText = clip(pa.altText, 400);
         if (pa.firstComment !== undefined) post.firstComment = clip(String(pa.firstComment).replace(/#\S+/g, "").trim(), 300);
+        // Instagram-Benutzernamen: markierte Personen und Collab-Partner (max. 3)
+        const users = v => [...new Set(String(Array.isArray(v) ? v.join(" ") : v || "").split(/[\s,;]+/).map(x => x.replace(/^@/, "").trim().toLowerCase()).filter(x => /^[a-z0-9._]{1,30}$/.test(x)))];
+        if (pa.tags !== undefined) post.tags = users(pa.tags).slice(0, 20);
+        if (pa.collabs !== undefined) post.collabs = users(pa.collabs).slice(0, 3);
         if (pa.place !== undefined) { const b0 = brand(post.brand); post.place = pa.place ? (b0.locations || []).find(l => l.id === String(pa.place)) || null : null; }
         if (rerender) { post.media = Object.assign({}, post.media, { status: "wartet" }); enqueue("post:" + post.id); }
         save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;

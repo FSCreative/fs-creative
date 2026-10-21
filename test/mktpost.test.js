@@ -47,7 +47,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     push: async () => 0 });
   const PT = M._test.posts._test;
   const call = async (method, p, body, qs) => { const r = res(); await M.handleAdmin(req(method, body), r, new URL("http://x" + p + (qs || "")), p); await r.finished; return r; };
-  const waitMedia = async ids => { for (let i = 0; i < 400; i++) { const ps = PT.S().posts.filter(p => ids.indexOf(p.id) > -1); if (ps.every(p => p.media && (p.media.status === "fertig" || p.media.status === "fehler"))) return ps; await sleep(100); } throw new Error("Medien nicht fertig"); };
+  const waitMedia = async ids => { for (let i = 0; i < 1200; i++) { const ps = PT.S().posts.filter(p => ids.indexOf(p.id) > -1); if (ps.every(p => p.media && (p.media.status === "fertig" || p.media.status === "fehler"))) return ps; await sleep(100); } throw new Error("Medien nicht fertig"); };
   const pubGet = async f => { const r = await fetch("http://127.0.0.1:" + pport + "/m/" + f); return r.status; };
 
   await t("Verbinden ohne App-Zugang wird abgelehnt", async () => {
@@ -112,6 +112,8 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
   await t("Öffentliche Medien erst nach Freigabe", async () => {
     const c = PT.S().posts.find(p => p.id === car.id); assert.strictEqual(await pubGet(c.media.images[0]), 404);
     assert.strictEqual(await pubGet("../state.json"), 404);
+    const tg = (await call("POST", "/admin/api/mkt/post", { id: car.id, op: "update", patch: { tags: "@Lisa.Montafon, @kantineur ungültig!", collabs: "@kantineur @a @b @c" } })).json();
+    assert.deepStrictEqual(tg.post.tags, ["lisa.montafon", "kantineur"], JSON.stringify(tg)); assert.deepStrictEqual(tg.post.collabs, ["kantineur", "a", "b"]);
     const r = (await call("POST", "/admin/api/mkt/post", { id: car.id, op: "go" })).json(); assert.strictEqual(r.post.status, "geplant");
     assert.strictEqual(await pubGet(c.media.images[0]), 200);
   });
@@ -131,6 +133,8 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.strictEqual(c.results.instagram.status, "ok", JSON.stringify(c.results.instagram)); assert.ok(/instagram\.com\/p\//.test(c.results.instagram.url));
     const igCar = mock.state.log.filter(l => l === "POST /ig/v26.0/1784/media").length; assert.strictEqual(igCar, 4, "3 Folien + Karussell");
     const parent = mock.state.igParams.find(x => x.media_type === "CAROUSEL"); assert.strictEqual(parent.location_id, "106097539419617", "Standort am Karussell");
+    assert.deepStrictEqual(JSON.parse(parent.collaborators), ["kantineur", "a", "b"], "Collab am Karussell");
+    const firstKid = mock.state.igParams.find(x => x.is_carousel_item); assert.deepStrictEqual(JSON.parse(firstKid.user_tags).map(u => u.username), ["lisa.montafon", "kantineur"], "Markierungen auf der ersten Folie");
     assert.ok(mock.state.igParams.filter(x => x.is_carousel_item).every(x => x.alt_text === "Folien mit Schritten"), "Alt-Text an den Folien");
     assert.ok(mock.state.fetched.filter(f => /\/m\//.test(f.url) && f.status === 200).length >= 3, "Instagram hat die Bilder abgeholt");
     assert.strictEqual(c.results.threads.status, "ok", JSON.stringify(c.results.threads)); assert.strictEqual(c.results.linkedin.status, "ok", JSON.stringify(c.results.linkedin)); assert.strictEqual(c.results.bluesky.status, "ok", JSON.stringify(c.results.bluesky));
