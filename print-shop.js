@@ -390,6 +390,15 @@ module.exports = function (D) {
     if (/^(material|paper)/.test(slug) && opts.some(weightOf)) return by(o => weightOf(o) || 1e9);
     return opts;
   }
+  // Rohe Print.com-Slugs als Optionsname lesbar machen (v. a. Farben, teils englisch/niederländisch mit angehängtem Produktnamen)
+  const COL_DE = { navy_blue: "Navyblau", navy: "Navy", off_white: "Off-White", heather_grey: "Grau meliert", heather_gray: "Grau meliert", grijsmelange: "Grau meliert", grey_melange: "Grau meliert", army_green: "Armeegrün", light_blue: "Hellblau", sky_blue: "Himmelblau", royal_blue: "Royalblau", dark_blue: "Dunkelblau", moss_green: "Moosgrün", bottle_green: "Flaschengrün", dark_grey: "Dunkelgrau", light_grey: "Hellgrau", charcoal: "Anthrazit", burgundy: "Bordeaux", black: "Schwarz", white: "Weiß", red: "Rot", blue: "Blau", green: "Grün", yellow: "Gelb", orange: "Orange", pink: "Rosa", purple: "Lila", grey: "Grau", gray: "Grau", brown: "Braun", beige: "Beige", natural: "Natur", zwart: "Schwarz", wit: "Weiß", rood: "Rot", blauw: "Blau", groen: "Grün", geel: "Gelb", grijs: "Grau" };
+  function humanSlug(v) {
+    const t = String(v).toLowerCase().split("_"), stop = /^(pms|pantone|hoodie|hood|sweater|sweat|tshirt|t|shirt|polo|jacket|cap|bag|bc|fotl|clique|gildan|stanley|stella|russell|zipped|zip|premium|basic|budget|\d{3,})$/;
+    let n = []; for (const w of t) { if (stop.test(w)) break; n.push(w); }
+    if (!n.length) n = t.slice(0, 2);
+    for (let k = n.length; k > 0; k--) { const key = n.slice(0, k).join("_"); if (COL_DE[key]) return COL_DE[key] + (k < n.length ? " " + n.slice(k).join(" ") : ""); }
+    const s2 = n.join(" "); return s2.charAt(0).toUpperCase() + s2.slice(1);
+  }
   function autoKind(by, pd) {
     if (by.textile_sizes) return "textile";
     const so = by.size && Array.isArray(by.size.options) ? by.size.options : [];
@@ -449,6 +458,7 @@ module.exports = function (D) {
       return x; };
     const optOut = (slug, o) => { const d = slug === "size" || slug === areaProp ? (dimsOf(o) || (slug === "size" && c.dims ? c.dims.slice() : null)) : null;
       let nm = (L[slug] && L[slug][o.slug]) || (/^printtype/.test(slug) && ptName(o.name, o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
+      if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(nm) || /^(color|colour|color_.*)$/.test(slug) && /^[a-z]/.test(nm)) nm = humanSlug(nm);   // „navy_blue_hoodie_bc_inspire_zipped_hood“ → „Navyblau“
       const OPT_DE = { selfcover: "Ohne eigenen Umschlag (wie Innenseiten)", "basic kit": "Basis-Set", "premium kit": "Premium-Set" }, ox = OPT_DE[String(nm).trim().toLowerCase()];
       if (ox) nm = ox; else nm = String(nm).replace(/^Din Large\b/i, "DIN lang");
       const nm2 = /^[a-zäöü]/.test(nm) && !/^\d|^[a-z]\d|^(x|ca\.|mm|cm)\b/.test(nm) ? nm.charAt(0).toUpperCase() + nm.slice(1) : nm;   // „stuhl“ → „Stuhl“
@@ -493,7 +503,8 @@ module.exports = function (D) {
       positions = TEX_POS.filter(x => by[x[0]] && Array.isArray(by[x[0]].options) && by[x[0]].options.length).map(x => ({ slug: x[0], title: x[1], area: x[2].slice(), opts: by[x[0]].options.map(o => String(o.slug)) }));
       const pm = by.printingmethod && Array.isArray(by.printingmethod.options) ? by.printingmethod.options.map(o => String(o.slug)) : null;
       methods = TEX_METHODS.filter(m => !pm || pm.indexOf(m.pm) > -1).map(m => ({ key: m.key, label: m.label, pm: pm ? m.pm : null, val: m.val, min: m.min, positions: positions.filter(p => p.opts.indexOf(m.val) > -1 && (!m.only || m.only.test(p.slug))).map(p => p.slug) })).filter(m => m.positions.length);
-      if (!sizes.length || !methods.length) throw new Error("Textil-Eigenschaften (Größen/Druckpositionen) fehlen");
+      // Mützen, Schals, Schürzen, Socken & Co.: keine Druckpositionen/Größen wie bei Shirts → als Werbeartikel (Logo auf der Druckfläche) anbieten statt gar nicht
+      if (!sizes.length || !methods.length) { if (c.generic && !c.kind && !c.__asPromo) return parseProduct(Object.assign({}, c, { kind: "promo", __asPromo: true }), sku, pd); throw new Error("Textil-Eigenschaften (Größen/Druckpositionen) fehlen"); }
       maxCopies = avail.length ? avail[avail.length - 1] : 2500;
     }
     // Technische Daten: von Print.com fest vorgegebene Eigenschaften (genau eine Option bzw. kuratiert fix) – sonst für Kunden unsichtbar (z. B. Vliesbanner: Ösen oben/unten, Druckverfahren)
