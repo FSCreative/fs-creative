@@ -533,6 +533,7 @@
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
     var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", group: gname(o) };
       if (pr.slug === "size" && o.w && o.h && !/\d\s*[x×]\s*\d/.test(o.name)) it.sub = fmtSize(o.w, o.h);
+      if (pr.slug === "size" && o.slug === S.sel.size && S.price && S.price.folds && S.price.size) it.sub = (it.sub ? it.sub + " · " : "") + "offen " + fmtSize(S.price.size.w, S.price.size.h);
       if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + C0.minW / f0 + " × " + C0.minH / f0 + " bis " + C0.maxW / f0 + " × " + C0.maxH / f0 + " " + C0.unit; if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
@@ -596,7 +597,8 @@
       recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; S.autoFix = key; S.pmkImg = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
-      S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
+      S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); var nice = [100, 50, 250, 25, 500, 10].filter(function (n) { return p.tiers.indexOf(n) > -1; })[0];   // ohne Bestseller-Auflage: runde, übliche Menge statt z. B. 42
+      S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel(); S.presetBase = Object.assign({}, S.sel);
@@ -1022,11 +1024,14 @@
   // Ausführung wie bei druck.at: Abschnitte mit beschrifteten Auswahlkacheln (2 Spalten), seltene Optionen eingeklappt
   var SECT_FORMAT = ["size", "shape", "custom_shape", "orientation", "roll_up_banners"], SECT_MAT = ["material", "color_material", "printtype", "print_position", "type_glue", "color", "color_textile"];
   var NONE_RX = /^(ohne|keine?|nein|nicht|offen geliefert|none|no)\b/i;
+  // Zeilen-Bezeichnung: „(Breite x Höhe)“ weglassen; bei Foldern ist das Format das gefalzte Format
+  function rowTitle(pr) { var t = String(pr.title || "").replace(/\s*\((Breite|B) ?x ?(Höhe|H)\)\s*$/i, ""); if (pr.slug === "size" && S.sel.fold && FOLD_RX.test(S.sel.fold)) t = "Format gefalzt"; if (t.length > 30 && /:/.test(t)) t = t.replace(/\s*:.*$/, ""); return t; }
   function tileHtml(pr) {
     var opts = optsOf(pr), dis = disabledOf(pr), cur = opts.filter(function (o) { return o.slug === S.sel[pr.slug]; })[0];
     if (/color/.test(pr.slug) && opts.some(function (o) { return colHex(o) || imgOk(o.img); })) return '<div class="ps-tile wide ps-coltile"><span class="ps-tl">' + esc(pr.title) + (cur ? ": <b>" + esc(colName(cur.name)) + "</b>" : "") + '<span class="pd-muted"> · ' + opts.length + " Farben</span></span>" + swatches("prop:" + pr.slug, opts, S.sel[pr.slug], dis, pr) + "</div>";
     var best = cur && isBest(pr, cur.slug), its = propItems(pr), nseg = its.length >= 3 && its.length <= 4;
-    return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, its, S.sel[pr.slug]) +
+    var ttl = rowTitle(pr);
+    return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(ttl) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, ttl, its, S.sel[pr.slug]) +
       (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + morePc(its.more) + "</div>";
   }
   function sec(title, inner, extra) { return (inner || "") + (extra ? fmtRow(extra) : ""); }
@@ -1301,7 +1306,7 @@
     var fct = facts(p), sz = sizeOf(), b0 = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">Endformat ' + fmtSize(sz.w, sz.h) + (b0 ? " · Datei mit " + b0 + " mm Beschnitt (" + (sz.w + 2 * b0) + " × " + (sz.h + 2 * b0) + " mm)" : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
     return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h2>' + esc(p.title) + '</h2><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + cfgBarHtml() + "</div></div>" +
-      aboutHtml(p) + presetHtml(p) + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) +
+      (function () { var ab = aboutHtml(p), lt = String(lead(p.desc) || "").trim(); return lt && ab.replace(/<[^>]+>/g, "").trim() === lt ? "" : ab; })() + presetHtml(p) + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }

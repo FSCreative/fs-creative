@@ -448,7 +448,9 @@ module.exports = function (D) {
       if (o.parent != null && (typeof o.parent === "string" || typeof o.parent === "number")) x.parent = String(o.parent);
       return x; };
     const optOut = (slug, o) => { const d = slug === "size" || slug === areaProp ? (dimsOf(o) || (slug === "size" && c.dims ? c.dims.slice() : null)) : null;
-      const nm = (L[slug] && L[slug][o.slug]) || (/^printtype/.test(slug) && ptName(o.name, o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
+      let nm = (L[slug] && L[slug][o.slug]) || (/^printtype/.test(slug) && ptName(o.name, o.slug)) || (o.name != null && String(o.name) !== String(o.slug) ? String(o.name) : d ? fmtDims(d) : String(o.name || o.slug));
+      const OPT_DE = { selfcover: "Ohne eigenen Umschlag (wie Innenseiten)", "basic kit": "Basis-Set", "premium kit": "Premium-Set" }, ox = OPT_DE[String(nm).trim().toLowerCase()];
+      if (ox) nm = ox; else nm = String(nm).replace(/^Din Large\b/i, "DIN lang");
       const nm2 = /^[a-zäöü]/.test(nm) && !/^\d|^[a-z]\d|^(x|ca\.|mm|cm)\b/.test(nm) ? nm.charAt(0).toUpperCase() + nm.slice(1) : nm;   // „stuhl“ → „Stuhl“
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm2, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
@@ -705,9 +707,13 @@ module.exports = function (D) {
   const CTA_RX = /\b(hier|klick|bestell|konfigur|findest du|sieh dir|erhältlich|übersicht)/i;
   const PROMISE_RX = /\b\d{1,2}([:.]\d{2})?\s*Uhr\b|nächsten (Werk|Arbeits)?tag|folgenden (Werk|Arbeits)?tag|\bWerktag|über ?nacht|same.?day/i;
   function cmsClean(t) {
-    return String(t || "").replace(/\s+in Rekordzeit/gi, "").split("\n").map(line => {
+    return String(t || "").replace(/\s+in Rekordzeit/gi, "")
+      .replace(/\[([^\]]*)\]\s*\(([^)]*)\)/g, (m, tx, u) => /^\s*((https?:)?\/\/|www\.)/i.test(tx) || /^\s*(hier|link|download|pdf|anleitung)\s*$/i.test(tx) ? "\u0001" : tx)   // [Text](Link) → Text; „[hier](…)“ → Marker
+      .replace(/\[\s*(https?:)?\/\/[^\]\s]*\s*\]?/gi, "\u0001")   // „[https://downloads…]“ bzw. abgeschnittene Links → Marker (Satz fällt weg)
+      .replace(/\s*\(\s*(https?:)?\/\/[^)]*\)/gi, "").replace(/(https?:)?\/\/\S+/gi, "\u0001")
+      .split("\n").filter(l => !/^\s*[-–—_=*]{3,}\s*$/.test(l)).map(line => {
       const sents = line.replace(CMS_LINK, (m, h1, t1, t2, h2) => { const href = h1 || h2 || "", txt = String(t1 != null ? t1 : t2 || "").replace(/<[^>]*>/g, "").trim(); return EXT_URL.test(href) ? "\u0001" + txt : txt; })
-        .split(/(?<=[.!?])\s+/).filter(s => !PROMISE_RX.test(s) && !(/\u0001/.test(s) && (CTA_RX.test(s) || /\u0001\s*(\.|$)/.test(s))));
+        .split(/(?<=[.!?])\s+/).filter(s => !PROMISE_RX.test(s) && !/herunter(laden)?\b|Vorlage.*:\s*\u0001|Montageanleitung/i.test(s) && !(/\u0001/.test(s) && (CTA_RX.test(s) || /\u0001\s*(\.|$)/.test(s) || /:\s*\u0001/.test(s))));
       const out = sents.join(" ").replace(/\u0001/g, "").trim();
       return /^[-*•]?\s*$/.test(out) && line.trim() ? null : out;
     }).filter(x => x !== null).join("\n").replace(/\n{3,}/g, "\n\n").trim();
