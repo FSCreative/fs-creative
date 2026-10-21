@@ -98,6 +98,12 @@ module.exports = function (D) {
       const l = await req("GET", B.fb + "/" + GV + "/oauth/access_token" + q({ grant_type: "fb_exchange_token", client_id: c.clientId, client_secret: c.secret, fb_exchange_token: s.access_token }));
       const pages = await req("GET", B.fb + "/" + GV + "/me/accounts" + q({ fields: "id,name,access_token,username", limit: "100", access_token: l.access_token }));
       const list = (pages.data || []).filter(p => p.access_token);
+      // Seiten aus einem Business-Portfolio fehlen in /me/accounts – die bei der Anmeldung ausgewählten Seiten stehen in den granularen Berechtigungen
+      try {
+        const dbg = await req("GET", B.fb + "/" + GV + "/debug_token" + q({ input_token: l.access_token, access_token: c.clientId + "|" + c.secret }));
+        const ids = [...new Set(((dbg.data && dbg.data.granular_scopes) || []).filter(g => /^pages_/.test(g.scope)).flatMap(g => g.target_ids || []))].filter(id => !list.some(p => String(p.id) === String(id)));
+        for (const id of ids.slice(0, 50)) { try { const pg = await req("GET", B.fb + "/" + GV + "/" + id + q({ fields: "id,name,access_token,username", access_token: l.access_token })); if (pg.access_token) list.push(pg); } catch (e) {} }
+      } catch (e) {}
       if (!list.length) throw pubErr("Keine Facebook-Seite gefunden – du musst Admin einer Seite sein und sie beim Anmelden freigeben.");
       return list.map(p => ({ platform: "facebook", account: { id: String(p.id), name: p.name, handle: p.username ? "@" + p.username : "" }, tok: { access: p.access_token, expiresAt: "" } }));
     }

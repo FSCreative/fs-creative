@@ -67,11 +67,15 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const again = await call("GET", "/admin/api/mkt/oauth/callback", null, "?code=code-ig&state=" + encodeURIComponent(au.searchParams.get("state"))); assert.ok(/fehler/.test(decodeURIComponent(again.head.Location)), "state nur einmal");
     const ch = PT.S().channels.find(c => c.platform === "instagram"); assert.strictEqual(ch.account.id, "1784"); assert.strictEqual(ch.account.handle, "@kochdu.at"); assert.ok(ch.tok.indexOf("ig-long") < 0, "Token verschlüsselt");
   });
-  await t("Facebook: mehrere Seiten → Auswahl", async () => {
+  await t("Facebook: mehrere Seiten → nach Namen den Marken zugeordnet, ohne Treffer → Auswahl", async () => {
     const j = (await call("POST", "/admin/api/mkt/connect", { brand: "kochdu", platform: "facebook" })).json(), st = new URL(j.url).searchParams.get("state");
-    const cb = await call("GET", "/admin/api/mkt/oauth/callback", null, "?code=x&state=" + encodeURIComponent(st)); const pick = cb.head.Location.match(/mktpick=([0-9a-f]+)/)[1];
+    const cb = await call("GET", "/admin/api/mkt/oauth/callback", null, "?code=x&state=" + encodeURIComponent(st)); const loc = decodeURIComponent(cb.head.Location);
+    assert.ok(/mkt=ok/.test(loc) && /kochdu ← kochdu/.test(loc) && /FS Creative ← FS Creative/.test(loc), loc);
+    const fb = PT.S().channels.filter(c => c.platform === "facebook"); assert.deepStrictEqual(fb.map(c => c.brand + ":" + c.account.id).sort(), ["druckshop:pg2", "fs-creative:pg2", "kochdu:pg1"]);
+    const j2 = (await call("POST", "/admin/api/mkt/connect", { brand: "valuero", platform: "facebook" })).json(), st2 = new URL(j2.url).searchParams.get("state");
+    const cb2 = await call("GET", "/admin/api/mkt/oauth/callback", null, "?code=x&state=" + encodeURIComponent(st2)); const pick = cb2.head.Location.match(/mktpick=([0-9a-f]+)/)[1];
     const o = (await call("GET", "/admin/api/mkt/pick", null, "?id=" + pick)).json(); assert.strictEqual(o.options.length, 2); assert.ok(!JSON.stringify(o).match(/pg1-tok/), "keine Tokens ans Cockpit");
-    const r = (await call("POST", "/admin/api/mkt/pick", { id: pick, i: 0 })).json(); assert.ok(r.channels.find(c => c.platform === "facebook" && c.account.id === "pg1"));
+    assert.strictEqual(PT.S().channels.filter(c => c.platform === "facebook").length, 3, "nichts doppelt verbunden");
   });
   await t("Threads verbinden, Bluesky mit App-Passwort (falsches Passwort abgelehnt)", async () => {
     const j = (await call("POST", "/admin/api/mkt/connect", { brand: "kochdu", platform: "threads" })).json(), st = new URL(j.url).searchParams.get("state");
@@ -81,7 +85,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     PT.upsertChannel("kochdu", { platform: "linkedin", account: { id: "urn:li:person:abc", name: "Simon" }, tok: { access: "li-tok", expiresAt: new Date(Date.now() + 50 * 864e5).toISOString() } });
     PT.upsertChannel("kochdu", { platform: "youtube", account: { id: "UC1", name: "kochdu" }, tok: { access: "yt-acc", refresh: "yt-ref", expiresAt: new Date(Date.now() + 3600e3).toISOString() } });
     PT.upsertChannel("kochdu", { platform: "tiktok", account: { id: "open1", name: "kochdu" }, tok: { access: "tt-acc", refresh: "tt-ref", expiresAt: new Date(Date.now() + 864e5).toISOString() } });
-    assert.strictEqual(PT.S().channels.length, 7);
+    assert.strictEqual(PT.S().channels.length, 9);   // inkl. Facebook bei FS Creative und Druckshop
   });
   let car, reel;
   await t("Standorte je Marke: Instagram-Link/ID erkannt, ohne ID abgelehnt", async () => {

@@ -447,7 +447,19 @@ module.exports = function (C) {
     if (u.searchParams.get("error")) return "/admin?mkt=" + encodeURIComponent("fehler:" + (u.searchParams.get("error_description") || u.searchParams.get("error")).slice(0, 160)) + "#mkt";
     try {
       const opts = await P.exchange(pend.provider, appCfg(pend.provider), String(u.searchParams.get("code") || ""));
-      if (opts.length === 1) { upsertChannel(pend.brand, opts[0]); return "/admin?mkt=" + encodeURIComponent("ok:" + PLATFORMS[opts[0].platform].label + " verbunden (" + (opts[0].account.handle || opts[0].account.name) + ")") + "#mkt"; }
+      // Mehrere Seiten/Konten (z. B. alle Facebook-Seiten auf einmal): nach Namen den Marken zuordnen – auch anderen Marken, die dort noch nichts verbunden haben.
+      // Gehört das einzige Konto erkennbar zu keiner Marke, wird nachgefragt statt blind zugeordnet.
+      const nrm = x => String(x || "").toLowerCase().replace(/^(der|die|das)\s+/, "").replace(/[^a-z0-9äöü]/g, "");
+      const fits = (b, o) => { const a = nrm(o.account.name), h = nrm(o.account.handle), bn = nrm(b.name), bk = nrm(b.key); if (!a && !h) return false;
+        return [a, h].filter(Boolean).some(x => x === bn || x === bk || (x.length >= 5 && (bn.indexOf(x) === 0 || x.indexOf(bn) === 0))); };
+      const done = [];
+      for (const o of opts) for (const b of brandList()) {
+        if (!fits(b, o)) continue;
+        if (b.key !== pend.brand && S().channels.some(c => c.brand === b.key && c.platform === o.platform && c.status === "ok")) continue;
+        upsertChannel(b.key, o); done.push(b.name + " ← " + (o.account.handle || o.account.name));
+      }
+      if (done.some(x => x.indexOf((brandList().find(b => b.key === pend.brand) || {}).name + " ←") === 0))
+        return "/admin?mkt=" + encodeURIComponent("ok:" + PLATFORMS[opts[0].platform].label + " verbunden: " + done.join(", ")) + "#mkt";
       const pick = crypto.randomBytes(12).toString("hex"); PENDING.set("pick:" + pick, { brand: pend.brand, options: opts, at: Date.now() });
       return "/admin?mktpick=" + pick + "#mkt";
     } catch (e) { return "/admin?mkt=" + encodeURIComponent("fehler:" + String(e.message || e).slice(0, 200)) + "#mkt"; }
