@@ -1475,7 +1475,7 @@
       var warns = [], okNotes = [], out = res.map(function (r, idx) {
         var cv = r.cv, x = cv.getContext("2d"), pxmm = cv.width / r.mmW, bp = r.b * pxmm, sp = (r.b + safe) * pxmm, W = cv.width, H = cv.height;
         // Randanalyse: Pixel zwischen Endformat und Sicherheitslinie, die deutlich vom typischen Randton abweichen
-        try { var data = x.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
+        if (!/rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"))) try { var data = x.getImageData(0, 0, W, H).data, lab = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
           var px = function (xx, yy) { var o = (yy * W + xx) * 4; return [data[o], data[o + 1], data[o + 2]]; };
           var dist = function (a, b2) { return Math.abs(a[0] - b2[0]) + Math.abs(a[1] - b2[1]) + Math.abs(a[2] - b2[2]); };
           var b0 = Math.ceil(bp) + 1, s0 = Math.floor(sp) - 1, hit = 0, sideNames = [];
@@ -1492,7 +1492,11 @@
         var dp = r.deep || {}, lab2 = res.length > 1 ? (idx ? "Rückseite" : "Vorderseite") + ": " : "";
         if (dp.imgs && dp.imgs.length) { var lo = Math.min.apply(null, dp.imgs); if (lo < 150) warns.push("!" + lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße – wird sichtbar unscharf. Bitte ein größeres Bild verwenden (empfohlen 300 dpi)."); else if (lo < 250) warns.push(lab2 + "Ein Bild hat nur ca. " + lo + " dpi in Druckgröße (empfohlen 300 dpi) – kann leicht unscharf wirken."); else okNotes.push(lab2 + dp.imgs.length + " Bild(er) mit ausreichender Auflösung (ab " + lo + " dpi)."); }
         if (dp.fonts && dp.fonts.length) warns.push(lab2 + "Schrift nicht eingebettet: " + dp.fonts.slice(0, 3).join(", ") + " – beim Export „Schriften einbetten“ aktivieren oder Text in Pfade umwandeln.");
-        if (!S.pfvOff) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
+        var rnd = /rund|round|circle|kreis/i.test(String(S.sel.shape || "") + " " + String(S.sel.size || "") + " " + labelOf("shape"));   // runde Aufkleber/Buttons: Schnittlinie als Kreis
+        if (!S.pfvOff && rnd) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; x.beginPath(); x.rect(0, 0, W, H); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2, true); x.fill("evenodd");
+          x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.beginPath(); x.ellipse(W / 2, H / 2, W / 2 - bp, H / 2 - bp, 0, 0, Math.PI * 2); x.stroke();
+          x.strokeStyle = "#30d158"; x.setLineDash([6, 4]); x.beginPath(); x.ellipse(W / 2, H / 2, Math.max(1, W / 2 - sp), Math.max(1, H / 2 - sp), 0, 0, Math.PI * 2); x.stroke(); x.restore(); }
+        else if (!S.pfvOff) { x.save(); x.fillStyle = "rgba(255,59,48,.28)"; if (bp > 0) { x.fillRect(0, 0, W, bp); x.fillRect(0, H - bp, W, bp); x.fillRect(0, bp, bp, H - 2 * bp); x.fillRect(W - bp, bp, bp, H - 2 * bp); }
           x.lineWidth = 1.5; x.strokeStyle = "#ff3b30"; x.setLineDash([]); if (bp > 0) x.strokeRect(bp, bp, W - 2 * bp, H - 2 * bp); else x.strokeRect(1, 1, W - 2, H - 2);
           x.strokeStyle = "#30d158"; x.setLineDash([6, 4]); x.strokeRect(sp, sp, W - 2 * sp, H - 2 * sp);
           var fo = S.price && S.price.folds; if (fo && trim.w === (S.price.size || {}).w) { x.strokeStyle = "#bf5af2"; x.lineWidth = 2; x.setLineDash([8, 5]);
@@ -1564,7 +1568,15 @@
       b2.querySelector(".ps-pmk-c").innerHTML = onPhoto() ? photoMock(L) : sheetMock(L[0].pages || [L[0].src]); if (onPhoto()) pmkLayout(); });
   }
   function thumbOf(u) { try { var im = new Image(); im.src = u; if (!im.complete || !im.naturalWidth) return u.length < 90000 ? u : ""; var f = Math.min(1, 320 / im.naturalWidth), cv = document.createElement("canvas"); cv.width = Math.round(im.naturalWidth * f); cv.height = Math.round(im.naturalHeight * f); cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); return cv.toDataURL("image/jpeg", 0.8); } catch (e) { return ""; } }
+  // Gefalzte Vorschau: offenes Blatt in Felder geteilt, im Zickzack angewinkelt – so sieht der Folder halb geöffnet aus
+  function foldMock(src, xs, wmm, hmm, back) {
+    var e = [0].concat(xs.slice().sort(function (a, b) { return a - b; })).concat([wmm]), H = 230, k = H / hmm, W = wmm * k;
+    return '<div class="ps-fold" role="img" aria-label="Vorschau gefalzt">' + e.slice(0, -1).map(function (x0, i) { var w = (e[i + 1] - x0) * k;
+      return '<i style="width:' + w.toFixed(1) + "px;height:" + H + "px;background-image:url(" + src + ");background-size:" + W.toFixed(1) + "px " + H + "px;background-position:" + (-x0 * k).toFixed(1) + "px 0;transform:rotateY(" + (i % 2 ? -22 : 22) + 'deg)"></i>'; }).join("") + "</div>" + (back ? '<div class="ps-fold-in"><img src="' + back + '" alt=""><span>Innenseite</span></div>' : "");
+  }
   function sheetMock(pv) {
+    var fo = S.price && S.price.folds, fsz = S.price && S.price.size;
+    if (fo && fo.x && fo.x.length && fsz) return '<div class="ps-mock ps-mock-fold">' + foldMock(pv[0], fo.x, fsz.w, fsz.h, pv[1]) + '<span class="cap">Vorschau gefalzt – Farben am Bildschirm können vom Druck abweichen</span></div>';
     var k = S.prod.key, sz = sizeOf() || { w: 1, h: 1 }, wall = k === "plakate" || k === "rollups" || Math.max(sz.w, sz.h) >= 590, round = /rund|round|circle/i.test(String(S.sel.shape || S.sel.size || "")) || k === "buttons";
     var wpct = k === "visitenkarten" ? 46 : k === "aufkleber" ? 38 : k === "rollups" ? 22 : 40;
     var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (round ? " round" : "") + '" style="width:' + (sz.w >= sz.h ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };

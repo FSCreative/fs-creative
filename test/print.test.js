@@ -678,7 +678,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const FO = { product: "folder", sel: { size: "1/3_a4", fold: "wikkel_6", printtype: "44" }, copies: 100, urgency: "standard" };
     const pr = await post("/print/api/price", FO); assert.strictEqual(pr.status, 200, JSON.stringify(pr.j));
     assert.deepStrictEqual(pr.j.size, { w: 297, h: 210 }); assert.deepStrictEqual(pr.j.closed, { w: 99, h: 210 });
-    assert.deepStrictEqual(pr.j.folds.x, [97, 197], "Außenseite: Einklappseite 97 mm, dann 100/100"); assert.deepStrictEqual(pr.j.folds.widths, [97, 100, 100]);
+    assert.deepStrictEqual(pr.j.folds.x, [98, 197.5], "Außenseite: Einklappseite 1 mm kürzer (Print.com), dann 99,5/99,5"); assert.deepStrictEqual(pr.j.folds.widths, [98, 99.5, 99.5]);
     const half = await post("/print/api/price", Object.assign({}, FO, { sel: Object.assign({}, FO.sel, { size: "a5", fold: "single_4" }) }));
     assert.deepStrictEqual(half.j.size, { w: 296, h: 210 }); assert.deepStrictEqual(half.j.folds.x, [148]);
     const b = pr.j.bleed, r = await fetch(B + "/print/api/template?dl=1&product=folder&c=" + encodeURIComponent(JSON.stringify(FO)));

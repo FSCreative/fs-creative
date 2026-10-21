@@ -1575,3 +1575,9 @@ details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-vouch
 .ps-price .ps-pcta{width:100%;margin-top:14px;height:46px}
 #psAddr>.ps-seg{justify-self:start;align-self:start;width:auto;max-width:max-content}
 .ps-cart .ps-ci-pr .ps-link{font-size:13px;color:var(--text-faint)}
+/* Folder gefalzt */
+.ps-mock-fold{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:40px 20px 44px}
+.ps-fold{display:flex;justify-content:center;perspective:1400px}
+.ps-fold i{display:block;flex:none;background-repeat:no-repeat;background-color:#fff;box-shadow:0 18px 34px rgba(0,0,0,.35)}
+.ps-fold i:nth-child(odd){filter:brightness(1)}.ps-fold i:nth-child(even){filter:brightness(.88)}
+.ps-fold-in{display:flex;flex-direction:column;align-items:center;gap:6px}.ps-fold-in img{max-width:min(62%,420px);box-shadow:0 8px 20px rgba(0,0,0,.35)}.ps-fold-in span{font-size:12px;color:rgba(255,255,255,.6)}

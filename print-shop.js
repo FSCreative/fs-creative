@@ -784,14 +784,16 @@ module.exports = function (D) {
     const n = t === "single" ? 2 : t === "luik" ? (pages === 6 ? 3 : 4) : pages / 2;
     if (t === "single" || t === "zigzag") { ws = Array(n).fill(w); out = Array(n).fill("").map((x, i) => i === n - 1 ? "Titel" : i === n - 2 && t === "single" ? "Rückseite" : "Außen " + (i + 1)); inn = Array(n).fill("").map((x, i) => "Innen " + (i + 1)); if (t === "zigzag") note = "Zickzackfalz: alle Felder gleich breit."; }
     else if (t === "wikkel") {
-      const st = n > 3 ? 1.5 : 2, flaps = Array(n - 2).fill(0).map((x, i) => w - st * (i + 1)), full = (n * w - flaps.reduce((a, x) => a + x, 0)) / 2;
+      // Print.com-Vorgabe (Drukwerkdeal-Anleitung): alle Felder außer Vorder- und Rückseite je 1 mm kürzer. Der Bogen bleibt n × Format (z. B. 1/3 A4 = A4-Bogen 297 mm),
+      // die beiden Außenfelder gleichen aus: 1/3 A4 Wickelfalz = 98 + 99,5 + 99,5 mm
+      const flaps = Array(n - 2).fill(w - 1), full = (n * w - flaps.reduce((a, x) => a + x, 0)) / 2;
       const inside = [full, full].concat(flaps).map(rd); ws = inside.slice().reverse();   // Außenseite = gespiegelte Innenseite
       out = ws.map((x, i) => i === n - 1 ? "Titel" : i === n - 2 ? "Rückseite" : "Klappe (außen)"); inn = inside.map((x, i) => i < 2 ? "Innen " + (i + 1) : "Einklappseite " + (i - 1));
-      note = "Wickelfalz: einklappende Seite" + (n > 3 ? "n sind" : " ist") + " schmaler, damit sie beim Falzen nicht staucht.";
+      note = "Wickelfalz: einklappende Seite" + (n > 3 ? "n sind" : " ist") + " je 1 mm schmaler (Vorgabe der Druckerei), damit beim Falzen nichts staucht – Texte dort entsprechend einrücken.";
     } else {   // Fensterfalz
-      ws = n === 3 ? [w / 2 - 1, w + 2, w / 2 - 1] : [w - 1, w + 1, w + 1, w - 1]; ws = ws.map(rd);
+      ws = n === 3 ? [w / 2 - 1, w + 2, w / 2 - 1] : [w - 1, w + 1, w + 1, w - 1]; ws = ws.map(rd);   // Bogen bleibt gleich, Klappen je 1 mm schmaler (schließen ohne zu stauchen)
       out = n === 3 ? ["Titel – rechte Hälfte", "Rückseite", "Titel – linke Hälfte"] : ["Klappe (außen)", "Rückseite", "Titel", "Klappe (außen)"]; inn = n === 3 ? ["Klappe innen", "Innen Mitte", "Klappe innen"] : ["Klappe innen", "Innen", "Innen", "Klappe innen"];
-      note = "Fensterfalz: beide Klappen falzen zur Mitte und sind je 1 mm schmaler.";
+      note = "Fensterfalz: beide Klappen falzen zur Mitte und sind je 1 mm schmaler – zusammen bilden sie die Vorderseite.";
     }
     return { slug, name, pages, closed: { w, h }, open: { w: rd(ws.reduce((a, x) => a + x, 0)), h }, x: acc(ws), y: [], widths: ws, out, in: inn, note };
   }
@@ -1304,7 +1306,8 @@ module.exports = function (D) {
       const w0 = it.el.width, h0 = it.el.height, srcRot = ((it.rot % 360) + 360) % 360;
       let rot = auto ? 0 : ((Math.round(+o.rotate / 90) * 90) % 360 + 360) % 360;
       const eff = r => (r + srcRot) % 180 ? [h0, w0] : [w0, h0];
-      if (auto && (eff(0)[0] > eff(0)[1]) !== (W > H) && Math.abs(W - H) > MM_PT && Math.abs(eff(0)[0] - eff(0)[1]) > 1) rot = 90;   // Hochformat-Motiv auf Querformat (und umgekehrt): automatisch drehen
+      const fitsRot = () => { const e = eff(90), a = (e[0] / e[1]) / (W / H); return a > 0.87 && a < 1.15; };   // gedreht passt das Seitenverhältnis (±15 %) – sonst stünde z. B. Text quer auf dem Roll-up
+      if (auto && (eff(0)[0] > eff(0)[1]) !== (W > H) && Math.abs(W - H) > MM_PT && Math.abs(eff(0)[0] - eff(0)[1]) > 1 && fitsRot()) rot = 90;   // Querformat-Motiv auf Hochformat (und umgekehrt): automatisch drehen
       it.usedRot = rot;
       const [rw, rh] = eff(rot), bw = mode === "fit" ? W - 2 * b : W, bh = mode === "fit" ? H - 2 * b : H;
       const f = (mode === "fit" ? Math.min(bw / rw, bh / rh) : Math.max(bw / rw, bh / rh)) * sc, a = w0 * f, c = h0 * f;
@@ -1394,7 +1397,7 @@ module.exports = function (D) {
     const dm = imgDims(buf, type); if (!dm || !dm.w || !dm.h) throw Object.assign(new Error("Bild konnte nicht gelesen werden"), { status: 400 });
     if (dm.w * dm.h > 150e6) throw Object.assign(new Error("Bild ist zu groß (max. 150 Megapixel)"), { status: 400 });
     const W = target.size.w + 2 * target.bleed, H = target.size.h + 2 * target.bleed;
-    const rot = (dm.w > dm.h) !== (W > H) && Math.abs(W - H) > 1 && dm.w !== dm.h;
+    const rot = (dm.w > dm.h) !== (W > H) && Math.abs(W - H) > 1 && dm.w !== dm.h && (r => r > 0.87 && r < 1.15)((dm.h / dm.w) / (W / H));   // nur drehen, wenn es gedreht wirklich passt
     const dpi = Math.round(Math.min((rot ? dm.h : dm.w) / (W / 25.4), (rot ? dm.w : dm.h) / (H / 25.4)));
     const D0 = prod.dpi || 300, f = D0 / 300;   // Großformat (Banner) braucht weniger dpi
     const checks = [];
@@ -1403,13 +1406,15 @@ module.exports = function (D) {
     else if (dpi >= Math.round(72 * f)) checks.push({ level: "warn", text: "Auflösung sehr gering (" + dpi + " dpi). Der Druck wird sichtbar unscharf – besser eine größere Datei verwenden." });
     else checks.push({ level: "error", text: "Auflösung viel zu gering (" + dpi + " dpi) für " + W + " × " + H + " mm." });
     if (rot) checks.push({ level: "ok", text: "Bild ist " + (dm.w > dm.h ? "quer" : "hoch") + ", das Format " + (W > H ? "quer" : "hoch") + " – automatisch um 90° gedreht. Unter „Anpassen“ kannst du die Drehung ändern." });
-    const ar = ((rot ? dm.h : dm.w) / (rot ? dm.w : dm.h)) / (W / H); if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten. Unter „Anpassen“ kannst du es stattdessen ganz einpassen." });
+    const ar = ((rot ? dm.h : dm.w) / (rot ? dm.w : dm.h)) / (W / H), far = Math.abs(ar - 1) > 0.25, mode = far ? "fit" : "fill";   // stark abweichend: ganz einpassen statt große Teile abzuschneiden
+    if (far) checks.push({ level: "warn", text: "Das Bild hat ein ganz anderes Seitenverhältnis als das Format – es wurde vollständig eingepasst, freie Flächen bleiben weiß. Unter „Anpassen“ kannst du stattdessen das Format füllen (dann wird angeschnitten)." });
+    else if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: "Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten. Unter „Anpassen“ kannst du es stattdessen ganz einpassen." });
     checks.push({ level: "warn", text: "Bitte beachte: Inhalte im Beschnitt (" + target.bleed + " mm je Seite) werden abgeschnitten." });
     if (target.sides > 1) checks.push({ level: "warn", text: "Bild-Upload füllt nur die Vorderseite – die Rückseite bleibt weiß. Für zwei Seiten bitte eine 2-seitige PDF hochladen." });
-    let pdf; try { pdf = (await withPdf(() => placeFile(buf, type, target.size, target.bleed, { mode: "fill" }, target.sides))).pdf; } catch (e) { try { pdf = await imageToPdf(buf, type, target.size, target.bleed, target.sides); } catch (e2) { throw Object.assign(new Error("Bild konnte nicht verarbeitet werden"), { status: 400 }); } }
+    let pdf; try { pdf = (await withPdf(() => placeFile(buf, type, target.size, target.bleed, { mode, rotate: rot ? 90 : 0 }, target.sides))).pdf; } catch (e) { try { pdf = await imageToPdf(buf, type, target.size, target.bleed, target.sides); } catch (e2) { throw Object.assign(new Error("Bild konnte nicht verarbeitet werden"), { status: 400 }); } }
     target.pages = target.sides;
     const src = await keepSrc(buf, type, name);
-    return newFile("upload", String(name || "bild").replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, target, checks, { original: type, px: dm, dpi, src, place: { mode: "fill", rotate: rot ? 90 : 0, scale: 1 } });
+    return newFile("upload", String(name || "bild").replace(/\.(jpe?g|png)$/i, "") + ".pdf", pdf, target, checks, { original: type, px: dm, dpi, src, place: { mode, rotate: rot ? 90 : 0, scale: 1 } });
   }
   // Logo (Textil/Werbeartikel): Original wird gespeichert und geprüft; zusammengeführt wird erst in mergeLogos (eine PDF-Seite je Position)
   async function handleLogo(buf, name, prod, pos) {

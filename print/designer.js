@@ -821,7 +821,14 @@
       (function next() { if (i >= D.sides) return loadPage(start, true).then(function () { resolve(res); }); loadPage(i, true).then(function () { try { res.push(fn(i)); } catch (e) { return reject(e); } i++; next(); }).catch(reject); })();
     });
   }
+  // Gefalzte Vorschau: offenes Blatt in Felder geteilt, im Zickzack angewinkelt – so sieht der Folder halb geöffnet aus
+  function foldMock(src, xs, wmm, hmm, back) {
+    var e = [0].concat(xs.slice().sort(function (a, b) { return a - b; })).concat([wmm]), H = 230, k = H / hmm, W = wmm * k;
+    return '<div class="ps-fold" role="img" aria-label="Vorschau gefalzt">' + e.slice(0, -1).map(function (x0, i) { var w = (e[i + 1] - x0) * k;
+      return '<i style="width:' + w.toFixed(1) + "px;height:" + H + "px;background-image:url(" + src + ");background-size:" + W.toFixed(1) + "px " + H + "px;background-position:" + (-x0 * k).toFixed(1) + "px 0;transform:rotateY(" + (i % 2 ? -22 : 22) + 'deg)"></i>'; }).join("") + "</div>" + (back ? '<div class="ps-fold-in"><img src="' + back + '" alt=""><span>Innenseite</span></div>' : "");
+  }
   function mock(previews) {
+    if (D.fold && D.fold.x && D.fold.x.length) return '<div class="ps-mock ps-mock-fold">' + foldMock(previews[0], D.fold.x, D.mm.w, D.mm.h, previews[1]) + '<span class="cap">Vorschau gefalzt – Bildschirmfarben können vom Druck abweichen</span></div>';
     var k = D.o.product.key, wall = k === "plakate" || k === "rollups", wpct = k === "visitenkarten" ? 46 : k === "aufkleber" ? 38 : k === "rollups" ? 22 : 40, land = D.mm.w >= D.mm.h;
     var sheet = function (src, cls) { return '<div class="sheet ' + (cls || "") + (D.round ? " round" : "") + '" style="width:' + (land ? wpct * 1.25 : wpct) + '%"><img src="' + src + '" alt=""></div>'; };
     return '<div class="ps-mock' + (wall ? " wall" : "") + '">' + (previews[1] && !wall ? sheet(previews[1], "back") : "") + sheet(previews[0]) + (k === "rollups" ? '<div class="stand" style="width:' + (wpct + 6) + '%"></div>' : "") + '<span class="cap">Vorschau – Bildschirmfarben können vom Druck abweichen</span></div>';
