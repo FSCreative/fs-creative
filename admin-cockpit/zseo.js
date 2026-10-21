@@ -1,0 +1,184 @@
+/* SEO (Server: seo.js): alle eigenen Websites – Seiten-Check mit Punkten, KI-Vorschläge je Seite, PageSpeed (Handy/Desktop),
+   Google Search Console (Suchbegriffe, Seiten, Klicks, Position, Sitemap, Indexierung) und Google Unternehmensprofil (Bewertungen beantworten,
+   Beiträge, Öffnungszeiten). Website-Liste wie unter „Websites“ (Railway + Cloudflare) plus von Hand ergänzte Domains. */
+(function(){
+"use strict";
+var F=window.FSC, esc=F.esc, UI=F.UI;
+F.icons.seo='<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/><path d="M8.5 11.5 10.3 13l3.2-3.6"/>';
+var ST=null, LOAD=false, SITE={}, GSC={}, GBP={}, POLL=null;
+UI.seoSel=UI.seoSel||F.ls("fsc_seo_sel")||""; UI.seoTab=UI.seoTab||F.ls("fsc_seo_tab")||"ueb";
+
+F.css(
+'.seo-grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;align-items:start}'+
+'@media(max-width:900px){.seo-grid{grid-template-columns:minmax(0,1fr)}}'+
+'.seo-list{display:grid;gap:6px;max-height:calc(100vh - 170px);overflow:auto;padding-right:2px}'+
+'.seo-si{display:flex;gap:10px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:8px 10px;font:inherit;color:var(--ink);text-align:left;cursor:pointer}'+
+'.seo-si[aria-current="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}'+
+'.seo-si b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.seo-si span.d{font-size:11.5px;color:var(--ink-3);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+'.seo-ring{--v:0;--c:var(--ink-3);flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--f-mono);background:conic-gradient(var(--c) calc(var(--v)*1%),var(--sunk) 0)}'+
+'.seo-ring i{width:30px;height:30px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-style:normal}'+
+'.seo-ring.big{width:74px;height:74px;font-size:20px}.seo-ring.big i{width:60px;height:60px}'+
+'.seo-head{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:16px 18px}'+
+'.seo-head h2{margin:0;font-size:20px}.seo-head .acts{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}'+
+'.seo-iss{display:grid;gap:6px;padding:12px 18px}'+
+'.seo-is{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:baseline;font-size:13.5px;padding:7px 0;border-bottom:1px solid var(--line)}'+
+'.seo-is:last-child{border-bottom:0}.seo-is a{font-size:12px;color:var(--ink-3);word-break:break-all;grid-column:2}'+
+'.seo-tbl{width:100%;border-collapse:collapse;font-size:13px}.seo-tbl th{text-align:left;font-size:11.5px;color:var(--ink-3);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}'+
+'.seo-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}.seo-tbl td.r{text-align:right;font-variant-numeric:tabular-nums}'+
+'.seo-tbl .u{font-size:11.5px;color:var(--ink-3);word-break:break-all}'+
+'.seo-len{font:600 11px var(--f-mono);padding:1px 6px;border-radius:6px}'+
+'.seo-sug{display:grid;gap:10px;padding:14px 18px;border-top:1px solid var(--line);background:var(--sunk)}'+
+'.seo-sug .row{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:8px;align-items:start;font-size:13.5px}'+
+'.seo-sug pre{white-space:pre-wrap;font-size:11.5px;max-height:220px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;margin:0}'+
+'.seo-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 18px}@media(max-width:700px){.seo-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
+'.seo-k{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;gap:2px}.seo-k .v{font-size:22px;font-weight:700}.seo-k .l{font-size:11.5px;color:var(--ink-3)}.seo-k .s{font-size:11.5px}'+
+'.seo-spark{display:flex;align-items:flex-end;gap:2px;height:70px;padding:0 18px 12px}.seo-spark i{flex:1;background:var(--accent,#6645ef);opacity:.75;border-radius:2px 2px 0 0;min-height:2px}'+
+'.seo-rev{display:grid;gap:6px;padding:12px 18px;border-bottom:1px solid var(--line)}.seo-rev .st{color:#e9b23a;letter-spacing:1px}.seo-rev .rp{border-left:2px solid var(--line);padding-left:10px;font-size:13px;color:var(--ink-2)}'+
+'.seo-tabs{margin:0 18px}'
+);
+
+function api(p,b){ return F.api(p,b?{body:b}:undefined); }
+function load(force){ if(LOAD) return; LOAD=true; api("/admin/api/seo/state"+(force?"?force=1":"")).then(function(j){ LOAD=false; ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler beim Laden",sites:[]}; if(F.current==="seo") F.render(); }); }
+function loadSite(id){ api("/admin/api/seo/site?id="+encodeURIComponent(id)).then(function(j){ if(j&&j.ok){ SITE[id]=j; ST.sites=ST.sites.map(function(s){ return s.id===id?j.site:s; }); } paint(); poll(); }); }
+function poll(){ clearTimeout(POLL); var s=cur(); if(s&&SITE[s.id]&&(SITE[s.id].site.running.check||SITE[s.id].site.running.psi)) POLL=setTimeout(function(){ if(F.current==="seo") loadSite(s.id); },4000); }
+function cur(){ return ST&&ST.sites?(ST.sites.find(function(s){ return s.id===UI.seoSel; })||null):null; }
+function paint(){ var el=document.getElementById("seoMain"); if(el) el.innerHTML=mainHtml(); var l=document.getElementById("seoList"); if(l) l.innerHTML=listHtml(); }
+function col(v){ return v==null?"var(--ink-3)":v>=85?"var(--ok)":v>=60?"var(--warn)":"var(--bad)"; }
+function ring(v,big){ return '<span class="seo-ring'+(big?" big":"")+'" style="--v:'+(v||0)+';--c:'+col(v)+'"><i>'+(v==null?"–":v)+'</i></span>'; }
+function ago(iso){ if(!iso) return "noch nie"; var d=Math.round((Date.now()-Date.parse(iso))/864e5); return d<1?"heute":d===1?"gestern":"vor "+d+" Tagen"; }
+function n0(x){ return Math.round(x||0).toLocaleString("de-AT"); }
+function pct(x){ return ((x||0)*100).toFixed(1).replace(".",",")+" %"; }
+function pos(x){ return x?(Math.round(x*10)/10).toString().replace(".",","):"–"; }
+function lenTag(n,lo,hi){ if(n==null) return '<span class="seo-len tag bad">fehlt</span>'; return '<span class="seo-len tag '+(n<lo?"warn":n>hi?"warn":"ok")+'">'+n+'</span>'; }
+
+function listHtml(){
+  var list=(ST.sites||[]).filter(function(s){ return !s.hidden||UI.seoShowHidden; });
+  return list.map(function(s){ var is=s.issues; return '<button type="button" class="seo-si" data-act="seosel:'+esc(s.id)+'" aria-current="'+(s.id===UI.seoSel)+'">'+ring(s.score)+'<span style="min-width:0"><b>'+esc(s.name)+'</b><span class="d">'+esc(s.domain)+(is?' · '+(is.fehler?is.fehler+' Fehler':'')+(is.fehler&&is.warnung?', ':'')+(is.warnung?is.warnung+' Warn.':''):' · noch nicht geprüft')+'</span></span></button>'; }).join("")||'<div class="empty">Keine Websites gefunden.</div>';
+}
+function googleBar(){ var g=ST.google||{};
+  if(g.connected) return '<span class="muted small">Google: <b>'+esc(g.email||"verbunden")+'</b> · Search Console &amp; Unternehmensprofil <button type="button" class="link" data-act="seogdis">trennen</button></span>';
+  return '<button type="button" class="btn sm primary" data-act="seogcon"'+(g.app?'':' title="Zuerst Google-App-Zugang eintragen"')+'>Google verbinden</button>'+(g.app?'':' <span class="muted small">Google-App-Zugang fehlt (Marketing › Kanäle › YouTube/Google). Weiterleitungs-Adresse: <code>'+esc(g.redirect||"")+'</code></span>');
+}
+var TABS=[["ueb","Überblick"],["seiten","Seiten"],["gsc","Google Suche"],["speed","Geschwindigkeit"],["gbp","Unternehmensprofil"]];
+function mainHtml(){
+  var s=cur(); if(!s) return '<div class="panel empty">Links eine Website wählen.</div>';
+  var d=SITE[s.id]; if(!d){ loadSite(s.id); return '<div class="panel empty">Lade …</div>'; }
+  var run=d.site.running, c=d.check;
+  var head='<div class="panel"><div class="seo-head">'+ring(d.site.score,true)+'<div><h2>'+esc(s.name)+'</h2><a class="small" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.domain)+'</a><div class="muted small">Geprüft: '+ago(c&&c.at)+(c?' · '+c.pages.length+' Seiten':'')+(d.site.perf!=null?' · Handy-Tempo '+d.site.perf:'')+'</div></div>'+
+    '<div class="acts"><button type="button" class="btn primary" data-act="seocheck:'+esc(s.id)+'"'+(run.check?' disabled':'')+'>'+(run.check?'Prüfe … (ca. 1 Min.)':'Jetzt prüfen')+'</button><button type="button" class="btn" data-act="seohide:'+esc(s.id)+'">'+(d.site.hidden?'Wieder einblenden':'Ausblenden')+'</button></div></div>'+
+    '<nav class="subnav seo-tabs" aria-label="SEO">'+TABS.map(function(t){ return '<button type="button" data-act="seotab:'+t[0]+'" aria-current="'+(UI.seoTab===t[0])+'">'+t[1]+'</button>'; }).join("")+'</nav><div style="height:10px"></div></div>';
+  var body=UI.seoTab==="seiten"?pagesHtml(s,d):UI.seoTab==="gsc"?gscHtml(s):UI.seoTab==="speed"?speedHtml(s,d):UI.seoTab==="gbp"?gbpHtml(s):overHtml(s,d);
+  return head+'<div style="height:12px"></div>'+body;
+}
+function overHtml(s,d){
+  var c=d.check; if(!c) return '<div class="panel empty">'+(d.checkError?'<span class="bad-t">'+esc(d.checkError)+'</span><br>':'')+'Noch nicht geprüft – „Jetzt prüfen“ liest Startseite und Sitemap und zeigt, was Google stört.</div>';
+  var grp={fehler:[],warnung:[],hinweis:[]}; c.issues.forEach(function(i){ (grp[i.sev]||grp.hinweis).push(i); });
+  var sec=function(k,label,cls){ var l=grp[k]; if(!l.length) return ""; return '<div class="panel" style="margin-bottom:12px"><div class="panel-h"><h2>'+label+' <span class="tag '+cls+'">'+l.length+'</span></h2></div><div class="seo-iss">'+l.map(function(i){ return '<div class="seo-is"><span class="tag '+cls+'">'+(k==="fehler"?"!":k==="warnung"?"?":"i")+'</span><span>'+esc(i.msg)+'</span>'+(i.url?'<a href="'+esc(i.url)+'" target="_blank" rel="noopener">'+esc(i.url)+'</a>':'')+'</div>'; }).join("")+'</div></div>'; };
+  var k='<div class="panel" style="margin-bottom:12px"><div class="seo-kpis">'+
+    '<div class="seo-k"><span class="l">Seiten geprüft</span><span class="v">'+c.pages.length+'</span><span class="s muted">'+(c.sitemap?c.urlsInSitemap+' in der Sitemap':'keine Sitemap')+'</span></div>'+
+    '<div class="seo-k"><span class="l">Fehler</span><span class="v" style="color:'+(grp.fehler.length?"var(--bad)":"var(--ok)")+'">'+grp.fehler.length+'</span><span class="s muted">wichtig für Google</span></div>'+
+    '<div class="seo-k"><span class="l">Warnungen</span><span class="v">'+grp.warnung.length+'</span><span class="s muted">verbessern</span></div>'+
+    '<div class="seo-k"><span class="l">robots.txt</span><span class="v" style="font-size:16px">'+(c.robots?"✓ vorhanden":"fehlt")+'</span><span class="s muted">Prüfdauer '+Math.round(c.ms/1000)+' s</span></div></div></div>';
+  return k+(grp.fehler.length+grp.warnung.length+grp.hinweis.length?sec("fehler","Fehler","bad")+sec("warnung","Warnungen","warn")+sec("hinweis","Hinweise","info"):'<div class="panel empty">Keine Probleme gefunden 🎉</div>');
+}
+function pagesHtml(s,d){
+  var c=d.check; if(!c) return '<div class="panel empty">Zuerst „Jetzt prüfen“.</div>';
+  var sug=d.suggest||{};
+  return '<div class="panel"><div class="panel-h"><h2>Seiten</h2><span class="muted small">Titel ideal 45–60, Beschreibung 120–155 Zeichen · „KI-Vorschlag“ schreibt bessere Texte (wenige Cent)</span></div><div style="overflow:auto"><table class="seo-tbl"><thead><tr><th>Seite</th><th>Titel</th><th>Beschr.</th><th>H1</th><th class="r">Wörter</th><th class="r">Bilder ohne Alt</th><th></th></tr></thead><tbody>'+
+    c.pages.map(function(p,i){ var sg=sug[p.url];
+      return '<tr><td><b>'+esc(p.title||"(kein Titel)")+'</b><div class="u">'+esc(p.url)+(p.status!==200?' · <span class="bad-t">'+esc(p.status||p.error)+'</span>':'')+'</div></td><td>'+lenTag(p.title?p.title.length:null,30,65)+'</td><td>'+lenTag(p.desc?p.desc.length:null,70,165)+'</td><td>'+(p.h1&&p.h1.length===1?'<span class="seo-len tag ok">1</span>':'<span class="seo-len tag warn">'+(p.h1?p.h1.length:0)+'</span>')+'</td><td class="r">'+n0(p.words)+'</td><td class="r">'+(p.noAlt?'<span class="warn-t">'+p.noAlt+'</span>':'0')+'</td>'+
+        '<td><button type="button" class="btn sm" data-act="seosug:'+esc(s.id)+'|'+i+'">'+(sg?"Neu vorschlagen":"KI-Vorschlag")+'</button></td></tr>'+(sg?'<tr><td colspan="7" style="padding:0">'+sugHtml(p,sg)+'</td></tr>':'');
+    }).join("")+'</tbody></table></div></div>';
+}
+function copyBtn(t){ return '<button type="button" class="btn sm" data-act="seocopy" data-copy="'+esc(t)+'">Kopieren</button>'; }
+function sugHtml(p,g){
+  return '<div class="seo-sug">'+
+    '<div class="row"><span class="muted">Titel</span><span><b>'+esc(g.title)+'</b> '+lenTag(g.title.length,30,65)+'<br><span class="muted small">bisher: '+esc(p.title||"–")+'</span></span>'+copyBtn(g.title)+'</div>'+
+    '<div class="row"><span class="muted">Beschreibung</span><span>'+esc(g.description)+' '+lenTag(g.description.length,70,165)+'<br><span class="muted small">bisher: '+esc(p.desc||"–")+'</span></span>'+copyBtn(g.description)+'</div>'+
+    '<div class="row"><span class="muted">H1</span><span>'+esc(g.h1)+'</span>'+copyBtn(g.h1)+'</div>'+
+    (g.keywords.length?'<div class="row"><span class="muted">Suchbegriffe</span><span>'+g.keywords.map(esc).join(" · ")+'</span><span></span></div>':'')+
+    (g.tips.length?'<div class="row"><span class="muted">Tipps</span><span><ul style="margin:0;padding-left:18px">'+g.tips.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join("")+'</ul></span><span></span></div>':'')+
+    (g.faqJsonLd?'<div class="row"><span class="muted">FAQ für Google</span><span>'+g.faq.map(function(f){ return '<b>'+esc(f.q)+'</b><br><span class="small">'+esc(f.a)+'</span>'; }).join("<br>")+'<pre>&lt;script type="application/ld+json"&gt;\n'+esc(g.faqJsonLd)+'\n&lt;/script&gt;</pre></span>'+copyBtn('<script type="application/ld+json">\n'+g.faqJsonLd+'\n</script>')+'</div>':'')+
+    '</div>';
+}
+function speedHtml(s,d){
+  var p=d.psi, run=d.site.running.psi;
+  var btn='<button type="button" class="btn sm primary" data-act="seopsi:'+esc(s.id)+'"'+(run?' disabled':'')+'>'+(run?'Messe … (ca. 1 Min.)':p?'Neu messen':'Jetzt messen')+'</button>';
+  if(!p) return '<div class="panel empty">'+(d.psiError?'<span class="bad-t">'+esc(d.psiError)+'</span><br>':'')+'Google PageSpeed misst Ladezeit und Technik am Handy und am Computer. '+btn+'</div>';
+  var blk=function(label,x){ if(!x||x.error) return '<div class="panel empty">'+label+': '+esc(x&&x.error||"–")+'</div>'; var sc=x.scores, f=x.field||{}, fv=function(m,u){ return m?'<span class="tag '+(m.cat==="FAST"?"ok":m.cat==="AVERAGE"?"warn":"bad")+'">'+(u==="s"?(m.p75/1000).toFixed(1).replace(".",",")+" s":u==="cls"?(m.p75/100).toFixed(2).replace(".",","):m.p75+" ms")+'</span>':'<span class="muted">–</span>'; };
+    return '<div class="panel" style="margin-bottom:12px"><div class="panel-h"><h2>'+label+'</h2><span class="muted small">'+ago(p.at)+'</span></div><div class="seo-kpis">'+
+      [["Leistung",sc.performance],["SEO (Technik)",sc.seo],["Barrierefreiheit",sc.accessibility],["Best Practices",sc.best]].map(function(k){ return '<div class="seo-k" style="display:flex;gap:10px;align-items:center">'+ring(k[1])+'<span class="l">'+k[0]+'</span></div>'; }).join("")+'</div>'+
+      '<div style="padding:0 18px 12px" class="small">Labor: Größter Inhalt (LCP) <b>'+esc(x.lab.lcp)+'</b> · Verschiebung (CLS) <b>'+esc(x.lab.cls)+'</b> · Blockierzeit <b>'+esc(x.lab.tbt)+'</b> · Erster Inhalt <b>'+esc(x.lab.fcp)+'</b><br>Echte Besucher (Chrome, 28 Tage): LCP '+fv(f.lcp,"s")+' · INP '+fv(f.inp,"ms")+' · CLS '+fv(f.cls,"cls")+'</div>'+
+      (x.opportunities.length?'<div class="seo-iss">'+x.opportunities.map(function(o){ return '<div class="seo-is"><span class="tag warn">⚡</span><span>'+esc(o.title)+(o.saving?' <span class="muted">('+esc(o.saving)+')</span>':'')+'</span></div>'; }).join("")+'</div>':'')+'</div>'; };
+  return '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">'+btn+'</div>'+blk("Handy",p.mobile)+blk("Computer",p.desktop);
+}
+function gscHtml(s){
+  var g=ST.google||{}; if(!g.connected) return '<div class="panel empty">Für Suchbegriffe, Klicks und Positionen Google verbinden (oben rechts).</div>';
+  var d=GSC[s.id]; if(!d){ api("/admin/api/seo/gsc?id="+encodeURIComponent(s.id)).then(function(j){ GSC[s.id]=j&&j.ok?j.gsc:{error:(j&&j.error)||"Fehler"}; paint(); }); return '<div class="panel empty">Lade Search Console …</div>'; }
+  if(d.error) return '<div class="notice"><span>'+esc(d.error)+'</span><button type="button" class="btn sm" data-act="seogscre:'+esc(s.id)+'">Nochmal</button></div>';
+  if(!d.property) return '<div class="panel empty">'+esc(d.note||"")+'<br><a class="btn sm" href="https://search.google.com/search-console/welcome" target="_blank" rel="noopener">In der Search Console hinzufügen</a></div>';
+  var t=d.total, pv=d.prev, dlt=function(a,b,inv){ if(!b) return ""; var x=(a-b)/b*100; if(inv) x=-x; return ' <span class="'+(x>=0?"ok-t":"bad-t")+' small">'+(x>=0?"+":"")+Math.round(x)+' %</span>'; };
+  var mx=Math.max.apply(null,d.days.map(function(x){ return x.clicks; }).concat([1]));
+  var tbl=function(rows,label){ return '<table class="seo-tbl"><thead><tr><th>'+label+'</th><th class="r">Klicks</th><th class="r">Impressionen</th><th class="r">CTR</th><th class="r">Position</th></tr></thead><tbody>'+rows.map(function(r){ return '<tr><td>'+esc(label==="Seite"?r.key.replace(/^https?:\/\/[^/]+/,"")||"/":r.key)+'</td><td class="r">'+n0(r.clicks)+'</td><td class="r">'+n0(r.impressions)+'</td><td class="r">'+pct(r.ctr)+'</td><td class="r">'+pos(r.position)+'</td></tr>'; }).join("")+'</tbody></table>'; };
+  return '<div class="panel" style="margin-bottom:12px"><div class="panel-h"><h2>Google Suche · letzte 28 Tage</h2><span class="muted small">'+esc(d.property)+' · <button type="button" class="link" data-act="seogscre:'+esc(s.id)+'">aktualisieren</button></span></div>'+
+    '<div class="seo-kpis"><div class="seo-k"><span class="l">Klicks</span><span class="v">'+n0(t.clicks)+dlt(t.clicks,pv.clicks)+'</span></div><div class="seo-k"><span class="l">Impressionen</span><span class="v">'+n0(t.impressions)+dlt(t.impressions,pv.impressions)+'</span></div>'+
+    '<div class="seo-k"><span class="l">Klickrate</span><span class="v">'+pct(t.ctr)+'</span></div><div class="seo-k"><span class="l">Ø Position</span><span class="v">'+pos(t.position)+dlt(t.position,pv.position,true)+'</span></div></div>'+
+    '<div class="seo-spark" title="Klicks pro Tag">'+d.days.map(function(x){ return '<i style="height:'+Math.max(2,x.clicks/mx*100)+'%" title="'+esc(x.key)+': '+x.clicks+' Klicks"></i>'; }).join("")+'</div></div>'+
+    '<div class="panel" style="margin-bottom:12px"><div class="panel-h"><h2>Suchbegriffe</h2><span class="muted small">Position 4–15 mit vielen Impressionen = Chance mit wenig Aufwand</span></div><div style="overflow:auto">'+tbl(d.queries,"Suchbegriff")+'</div></div>'+
+    '<div class="panel" style="margin-bottom:12px"><div class="panel-h"><h2>Seiten</h2></div><div style="overflow:auto">'+tbl(d.pages,"Seite")+'</div></div>'+
+    '<div class="panel"><div class="panel-h"><h2>Sitemaps &amp; Indexierung</h2><span class="row"><button type="button" class="btn sm" data-act="seosm:'+esc(s.id)+'">Sitemap einreichen</button><button type="button" class="btn sm" data-act="seoinsp:'+esc(s.id)+'">Startseite prüfen</button></span></div>'+
+    (d.sitemaps.length?'<table class="seo-tbl"><tbody>'+d.sitemaps.map(function(x){ return '<tr><td>'+esc(x.path)+'</td><td>'+(x.errors?'<span class="bad-t">'+x.errors+' Fehler</span>':'<span class="ok-t">ok</span>')+'</td><td class="u">eingereicht '+esc(String(x.submitted).slice(0,10))+' · gelesen '+esc(String(x.downloaded).slice(0,10))+'</td></tr>'; }).join("")+'</tbody></table>':'<div class="empty">Noch keine Sitemap eingereicht.</div>')+'<div id="seoInsp"></div></div>';
+}
+function gbpHtml(s){
+  var g=ST.google||{}; if(!g.connected) return '<div class="panel empty">Für Bewertungen, Beiträge und Öffnungszeiten Google verbinden (oben rechts). Google muss den Zugang zum Unternehmensprofil einmalig freischalten.</div>';
+  var d=GBP[s.id]; if(!d){ api("/admin/api/seo/gbp?id="+encodeURIComponent(s.id)).then(function(j){ GBP[s.id]=j&&j.ok?j.gbp:{error:(j&&j.error)||"Fehler"}; paint(); }); return '<div class="panel empty">Lade Unternehmensprofil …</div>'; }
+  if(d.error) return '<div class="notice"><span>'+esc(d.error)+'</span><button type="button" class="btn sm" data-act="seogbpre:'+esc(s.id)+'">Nochmal</button></div>';
+  if(!d.locations.length) return '<div class="panel empty">Kein Unternehmensprofil mit dieser Website-Adresse gefunden.'+(d.all&&d.all.length?'<div style="display:grid;gap:6px;margin-top:10px;justify-items:center">'+d.all.map(function(l){ return '<button type="button" class="btn sm" data-act="seogbplink:'+esc(s.id)+'|'+esc(l.name)+'">'+esc(l.title)+' zuordnen</button>'; }).join("")+'</div>':'')+'</div>';
+  return d.locations.map(function(l){ var rv=l.reviews||{reviews:[]}, open=rv.reviews.filter(function(r){ return !r.reply; }).length;
+    return '<div class="panel" style="margin-bottom:12px"><div class="panel-h"><h2>'+esc(l.title)+'</h2><span class="muted small">'+esc(l.address)+(l.maps?' · <a href="'+esc(l.maps)+'" target="_blank" rel="noopener">Google Maps</a>':'')+'</span></div>'+
+      (l.error?'<div class="notice"><span>'+esc(l.error)+'</span></div>':'')+
+      '<div class="seo-kpis"><div class="seo-k"><span class="l">Bewertung</span><span class="v">'+(rv.avg?String(Math.round(rv.avg*10)/10).replace(".",",")+' ★':'–')+'</span></div><div class="seo-k"><span class="l">Bewertungen</span><span class="v">'+n0(rv.total)+'</span></div><div class="seo-k"><span class="l">Unbeantwortet</span><span class="v" style="color:'+(open?"var(--warn)":"var(--ok)")+'">'+open+'</span></div>'+
+      '<div class="seo-k"><span class="l">Bewertungslink</span><span class="s">'+(l.review?'<button type="button" class="btn sm" data-act="seocopy" data-copy="'+esc(l.review)+'">Link kopieren</button>':'–')+'</span></div></div>'+
+      '<div class="seo-rev"><b>Beitrag im Unternehmensprofil</b><textarea class="f" rows="2" data-gbppost="'+esc(s.id)+'|'+esc(l.name)+'" placeholder="Neuigkeit, Angebot oder Veranstaltung …"></textarea><div class="row" style="display:flex;gap:8px"><input class="f" data-gbplink="'+esc(l.name)+'" placeholder="Link (optional), z. B. '+esc(s.url)+'"><button type="button" class="btn sm primary" data-act="seogbppost:'+esc(s.id)+'|'+esc(l.name)+'">Veröffentlichen</button></div></div>'+
+      rv.reviews.map(function(r){ return '<div class="seo-rev"><div><b>'+esc(r.name)+'</b> <span class="st">'+"★★★★★".slice(0,r.stars)+'<span style="opacity:.25">'+"★★★★★".slice(r.stars)+'</span></span> <span class="muted small">'+esc(String(r.at).slice(0,10))+'</span></div>'+(r.text?'<div>'+esc(r.text)+'</div>':'')+
+        (r.reply?'<div class="rp"><b>Deine Antwort:</b> '+esc(r.reply.text)+'</div>':'<div style="display:flex;gap:8px"><textarea class="f" rows="1" style="flex:1" data-gbprep="'+esc(s.id)+'|'+esc(l.name)+'|'+esc(r.id)+'" placeholder="Antworten …"></textarea><button type="button" class="btn sm primary" data-act="seogbprep:'+esc(s.id)+'|'+esc(l.name)+'|'+esc(r.id)+'">Senden</button></div>')+'</div>'; }).join("")+'</div>';
+  }).join("");
+}
+function render(){
+  if(!ST){ load(); return F.head("SEO","Alle Websites für Google optimieren")+'<div class="muted" style="padding:20px">Lade …</div>'; }
+  if(!ST.ok) return F.head("SEO","")+'<div class="notice"><span>'+esc(ST.error)+'</span><button type="button" class="btn sm" data-act="seoreload">Erneut</button></div>';
+  if(!cur()&&ST.sites.length){ UI.seoSel=ST.sites[0].id; }
+  return F.head("SEO",ST.sites.length+" Websites · Google-Suche, Geschwindigkeit, Unternehmensprofil",googleBar())+
+    '<div class="seo-grid"><div><div class="seo-list" id="seoList">'+listHtml()+'</div><div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="seoadd">+ Domain</button><button type="button" class="btn sm" data-act="seoall">Alle prüfen</button><button type="button" class="link small" data-act="seoshowhid">'+(UI.seoShowHidden?"Ausgeblendete verstecken":"Ausgeblendete zeigen")+'</button></div></div><div id="seoMain">'+mainHtml()+'</div></div>';
+}
+F.action("seosel",function(id){ UI.seoSel=id; F.ls("fsc_seo_sel",id); paint(); });
+F.action("seotab",function(t){ UI.seoTab=t; F.ls("fsc_seo_tab",t); paint(); });
+F.action("seoreload",function(){ ST=null; F.render(); });
+F.action("seoshowhid",function(){ UI.seoShowHidden=!UI.seoShowHidden; F.render(); });
+F.action("seocheck",function(id){ api("/admin/api/seo/check",{id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); setTimeout(function(){ loadSite(id); },600); }); });
+F.action("seopsi",function(id){ api("/admin/api/seo/psi",{id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); setTimeout(function(){ loadSite(id); },600); }); });
+F.action("seoall",function(){ var l=(ST.sites||[]).filter(function(s){ return !s.hidden; }); F.confirm(l.length+" Websites nacheinander prüfen? Das dauert einige Minuten, du kannst weiterarbeiten.","Prüfen",function(){ var i=0; (function next(){ if(i>=l.length){ load(true); return F.toast("Alle Websites geprüft"); } var s=l[i++]; api("/admin/api/seo/check",{id:s.id}).then(function(){ var w=setInterval(function(){ api("/admin/api/seo/site?id="+encodeURIComponent(s.id)).then(function(j){ if(j&&j.ok&&!j.site.running.check){ clearInterval(w); SITE[s.id]=j; ST.sites=ST.sites.map(function(x){ return x.id===s.id?j.site:x; }); paint(); next(); } }); },5000); }); })(); }); });
+F.action("seohide",function(id){ var s=SITE[id]; api("/admin/api/seo/hide",{id:id,hidden:!(s&&s.site.hidden)}).then(function(){ delete SITE[id]; load(true); }); });
+F.action("seoadd",function(){ F.modal('<form data-form="seoadd"><div class="row-between"><h2 style="font-size:19px">Website ergänzen</h2>'+F.btnClose()+'</div><label class="fl">Domain<input class="f" name="domain" placeholder="beispiel.at" required></label><label class="fl">Name<input class="f" name="name" placeholder="Beispiel GmbH"></label><div class="foot"><span></span><button type="submit" class="btn primary">Hinzufügen</button></div></form>',"narrow"); });
+F.form("seoadd",function(f){ api("/admin/api/seo/add",{domain:f.domain.value,name:f.name.value}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); F.closeModal(); UI.seoSel=j.id; ST=null; load(true); }); });
+F.action("seosug",function(a){ var x=a.split("|"), d=SITE[x[0]], p=d&&d.check&&d.check.pages[+x[1]]; if(!p) return; F.toast("KI schreibt Vorschläge …");
+  api("/admin/api/seo/suggest",{id:x[0],url:p.url}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); d.suggest=d.suggest||{}; d.suggest[p.url]=j.suggest; paint(); }); });
+F.action("seocopy",function(a,el){ var t=el&&el.getAttribute("data-copy")||""; (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){ F.toast("Kopiert"); },function(){ F.toast("Kopieren nicht möglich",true); }); });
+F.action("seogcon",function(){ api("/admin/api/seo/google/connect",{}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); location.href=j.url; }); });
+F.action("seogdis",function(){ F.confirm("Google trennen? Search Console und Unternehmensprofil sind dann nicht mehr sichtbar.","Trennen",function(){ api("/admin/api/seo/google/disconnect",{}).then(function(){ GSC={}; GBP={}; load(true); }); },true); });
+F.action("seogscre",function(id){ delete GSC[id]; api("/admin/api/seo/gsc?force=1&id="+encodeURIComponent(id)).then(function(j){ GSC[id]=j&&j.ok?j.gsc:{error:(j&&j.error)||"Fehler"}; paint(); }); });
+F.action("seosm",function(id){ var s=ST.sites.find(function(x){ return x.id===id; }); api("/admin/api/seo/sitemap",{id:id,sitemap:s.url+"sitemap.xml"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); F.toast("Sitemap eingereicht"); delete GSC[id]; paint(); }); });
+F.action("seoinsp",function(id){ var el=document.getElementById("seoInsp"); if(el) el.innerHTML='<div class="empty">Frage Google …</div>'; api("/admin/api/seo/inspect",{id:id}).then(function(j){ var e=document.getElementById("seoInsp"); if(!e) return; if(!j||!j.ok){ e.innerHTML='<div class="notice"><span>'+esc((j&&j.error)||"Fehler")+'</span></div>'; return; } var r=j.result;
+  e.innerHTML='<div class="seo-iss"><div class="seo-is"><span class="tag '+(r.verdict==="PASS"?"ok":"warn")+'">'+(r.verdict==="PASS"?"✓":"!")+'</span><span>'+esc(r.coverage||r.verdict)+(r.lastCrawl?' · zuletzt gecrawlt '+esc(String(r.lastCrawl).slice(0,10)):'')+(r.canonical?' · Google-Canonical: '+esc(r.canonical):'')+(r.link?' · <a href="'+esc(r.link)+'" target="_blank" rel="noopener">in der Search Console</a>':'')+'</span></div></div>'; }); });
+F.action("seogbpre",function(id){ delete GBP[id]; paint(); });
+F.action("seogbplink",function(a){ var x=a.split("|"); api("/admin/api/seo/gbp/link",{id:x[0],locations:[x[1]]}).then(function(){ delete GBP[x[0]]; paint(); }); });
+F.action("seogbprep",function(a){ var x=a.split("|"), ta=document.querySelector('[data-gbprep="'+CSS.escape(a)+'"]'), t=ta?ta.value.trim():""; if(!t) return F.toast("Bitte zuerst eine Antwort schreiben",true);
+  api("/admin/api/seo/gbp/reply",{id:x[0],location:x[1],review:x[2],text:t}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); F.toast("Antwort veröffentlicht"); delete GBP[x[0]]; api("/admin/api/seo/gbp?force=1&id="+encodeURIComponent(x[0])).then(function(k){ GBP[x[0]]=k&&k.ok?k.gbp:{error:"Fehler"}; paint(); }); }); });
+F.action("seogbppost",function(a){ var x=a.split("|"), ta=document.querySelector('[data-gbppost="'+CSS.escape(a)+'"]'), ln=document.querySelector('[data-gbplink="'+CSS.escape(x[1])+'"]'), t=ta?ta.value.trim():""; if(!t) return F.toast("Bitte einen Text eingeben",true);
+  F.confirm("Beitrag im Google-Unternehmensprofil veröffentlichen? Er ist danach öffentlich auf Google sichtbar.","Veröffentlichen",function(){ api("/admin/api/seo/gbp/post",{id:x[0],location:x[1],text:t,link:ln&&ln.value.trim()||""}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); F.toast("Beitrag veröffentlicht"); if(ta) ta.value=""; }); }); });
+
+/* Rückkehr von der Google-Anmeldung */
+(function(){ try{ var q=new URLSearchParams(location.search), m=q.get("seo"); if(!m) return; history.replaceState(null,"",location.pathname+location.hash); setTimeout(function(){ F.toast(m.replace(/^(ok|fehler):/,""),m.indexOf("ok:")!==0); ST=null; if(F.current==="seo") F.render(); },1200); }catch(e){} })();
+
+F.view({id:"seo",label:"SEO",short:"SEO",icon:"seo",order:19,render:render,after:function(){ poll(); }});
+})();

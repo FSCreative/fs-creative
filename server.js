@@ -2744,6 +2744,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/viw/") === 0) return guard(res, VIW.handleAdmin(req, res, u, p));
   // Marketing (Marken, Gewinnspiel-Auslosung mit Video) – Cockpit-Seite admin-cockpit/zmarketing.js, Logik in marketing.js / mkt-render.js
   if (p.indexOf("/admin/api/mkt/") === 0) return guard(res, MKT.handleAdmin(req, res, u, p));
+  // SEO – Cockpit-Seite admin-cockpit/zseo.js, Logik in seo.js
+  if (p.indexOf("/admin/api/seo/") === 0) return guard(res, SEO.handleAdmin(req, res, u, p));
   // WhatsApp nur lesen (Cloud API, Coexistence) – Cockpit „Chat“ → WhatsApp (admin-cockpit/zwa.js), Logik in whatsapp.js; /admin/wa/connect = Verbinden-Seite (Embedded Signup, eigene CSP)
   if (p.indexOf("/admin/api/wa/") === 0 || p === "/admin/wa/connect") return guard(res, WA.handleAdmin(req, res, u, p));
 
@@ -3971,6 +3973,10 @@ const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECR
   kochdu: async (query) => { if (!KOCHDU.token) throw new Error("kochdu ist im Cockpit nicht verbunden (KOCHDU_STATS_TOKEN fehlt)");
     const r = await fetch(KOCHDU.url + (KOCHDU.url.indexOf("?") > -1 ? "&" : "?") + query, { headers: { "x-api-token": KOCHDU.token }, signal: AbortSignal.timeout(20000) });
     const j = await r.json().catch(() => null); if (!r.ok || !j || !j.ok) throw new Error(r.status === 404 ? "Bei kochdu nicht gefunden" : "kochdu antwortet nicht (HTTP " + r.status + ")"); return j; } });
+// ── SEO (seo.js): alle eigenen Websites prüfen, PageSpeed, KI-Vorschläge, Google Search Console + Unternehmensprofil – Cockpit-Seite admin-cockpit/zseo.js ──
+const SEO = require("./seo.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, KI: () => KI, googleApp: () => MKT.googleApp(),
+  sites: async () => cockpitSites(await sitesSnapshot()) });
+if (require.main === module) setInterval(() => SEO.tick().catch(() => {}), 30 * 60 * 1000).unref();
 // ── WhatsApp nur lesen (whatsapp.js): Cloud API mit Coexistence – Webhook /api/whatsapp/webhook, Cockpit „Chat“ → WhatsApp, Push-Thema „wa“ ──
 const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
