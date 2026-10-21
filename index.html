@@ -461,10 +461,7 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ---------- Map consent (no request before click) ---------- */
-.map-consent{flex:1;min-height:260px;display:grid;place-items:center;padding:26px 22px;text-align:center;background:var(--surface-2);border-top:1px solid var(--border)}
-.map-consent .mc-title{font-size:16px;font-weight:600;margin-bottom:8px}
-.map-consent .mc-note{font-size:13.5px;color:var(--text-dim);line-height:1.55;max-width:46ch;margin:0 auto 16px}
-.map-consent .mc-note a{color:var(--accent)}
+.map-card .fsc-ph{flex:1;border-radius:0;border-top:1px solid var(--border)}
 
 /* ---------- Legal pages ---------- */
 .legal{max-width:820px;margin:0 auto}
@@ -601,7 +598,23 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
 .pullchain.hint .pc-knob-ring{animation:pcHint 2.1s ease-out .9s 3}
 @keyframes pcHint{0%{opacity:0;r:9}22%{opacity:.5}100%{opacity:0;r:30}}
 @media(max-width:900px),(hover:none){.pullchain{display:none!important}}
+
+/* ---------- Cookie-Banner (FS Consent) im Design der Seite – dunkel wie die Website, hell im Lichtschalter-Modus ---------- */
+:root{
+  --fsc-bg:#111118; --fsc-fg:#f5f5f7; --fsc-muted:#a1a1aa; --fsc-border:rgba(255,255,255,.14);
+  --fsc-accent:#ffffff; --fsc-accent-fg:#0a0a0f;
+  --fsc-radius:22px; --fsc-btn-radius:999px; --fsc-btn-weight:500;
+  --fsc-heading-weight:600; --fsc-heading-spacing:-.02em;
+  --fsc-shadow:0 30px 80px rgba(0,0,0,.55); --fsc-ph-bg:#16161d; --fsc-toggle-off:rgba(255,255,255,.22);
+}
+html.light{
+  --fsc-bg:#ffffff; --fsc-fg:#12131a; --fsc-muted:#565b68; --fsc-border:rgba(18,20,28,.14);
+  --fsc-accent:#14151c; --fsc-accent-fg:#ffffff;
+  --fsc-shadow:0 24px 60px rgba(18,20,28,.18); --fsc-ph-bg:#eceef2; --fsc-toggle-off:rgba(18,20,28,.2);
+}
 </style>
+<link rel="stylesheet" href="/fs-consent.css?v=1" />
+<script type="application/json" id="fs-consent-config">{"privacyUrl":"/datenschutz","imprintUrl":"/impressum","position":"bottom-left","tone":"du","categories":{"media":["Google Maps"]}}</script>
 </head>
 <body>
 <a class="skip" href="#app">Zum Inhalt springen</a>
@@ -1101,13 +1114,8 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
         </div>
         <div class="map-card reveal d2">
           <div class="mtop"><h3 style="font-size:18px;font-weight:600">So findest du uns</h3><p style="color:var(--text-dim);font-size:14px;margin-top:6px">Dorfstraße 3/1, 6793 Gaschurn — im Herzen des Montafons.</p></div>
-          <div class="map-consent" id="mapConsent">
-            <div>
-              <div class="mc-title">Karte von Google Maps</div>
-              <p class="mc-note">Beim Laden der Karte werden Daten – unter anderem deine IP-Adresse – an Google übertragen. Mehr dazu in der <a href="/datenschutz" data-link>Datenschutzerklärung</a>.</p>
-              <button type="button" class="btn ghost" id="mapLoadBtn">Karte laden</button>
-            </div>
-          </div>
+          <!-- Google Maps erst nach Einwilligung (FS Consent: Platzhalter mit „Karte laden“, sonst Banner/Cookie-Einstellungen) -->
+          <iframe class="map-frame" height="260" data-consent="media" data-service="Google Maps" data-title="Karte von Google Maps" data-src="https://maps.google.com/maps?q=Dorfstra%C3%9Fe%203%2C%206793%20Gaschurn&amp;output=embed" loading="lazy" referrerpolicy="no-referrer" title="Karte: Dorfstraße 3/1, 6793 Gaschurn"></iframe>
         </div>
       </div>
       <div class="cta-panel reveal" style="margin-top:18px">
@@ -1217,7 +1225,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
         <a href="/" class="back-link" data-link>← Zurück zur Startseite</a>
         <span class="pbadge" style="color:#9fb4c8;background:#9fb4c81a;border-color:#9fb4c844">Datenschutz</span>
         <h1>Datenschutzerklärung.</h1>
-        <p class="lead">Diese Website kommt ohne Cookies, ohne Tracking und ohne Analyse-Tools aus. Was trotzdem an Daten anfällt, steht hier – vollständig und verständlich.</p>
+        <p class="lead">Diese Website kommt ohne Tracking, ohne Werbe-Cookies und ohne Analyse-Tools aus. Externe Inhalte wie Google Maps laden wir nur mit deiner Einwilligung. Was trotzdem an Daten anfällt, steht hier – vollständig und verständlich.</p>
       </div>
       <section class="block">
         <div class="legal reveal">
@@ -1232,7 +1240,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
 
           <h2>2. Was diese Website <em>nicht</em> macht</h2>
           <ul>
-            <li><strong>Keine Cookies.</strong> Diese Website setzt keine Cookies.</li>
+            <li><strong>Keine Tracking- oder Werbe-Cookies.</strong> Technisch notwendig speichern wir nur deine Cookie-Auswahl in deinem Browser (Abschnitt 4a)<!--PRINT_LIVE--> und – nur wenn du dich im Kundenkonto des Druckshops anmeldest – ein Sitzungs-Cookie für die Anmeldung<!--/PRINT_LIVE-->.</li>
             <li><strong>Kein Tracking, keine Analyse.</strong> Es sind weder Google Analytics noch vergleichbare Werkzeuge eingebunden.</li>
             <li><strong>Keine externen Schriftarten.</strong> Es werden ausschließlich Systemschriften verwendet – es werden <em>keine</em> Google Fonts oder andere Schriften von fremden Servern geladen.</li>
             <li><strong>Keine Werbung, keine Social-Media-Plugins.</strong></li>
@@ -1257,9 +1265,13 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
           <p>Dieser Eintrag wird ausschließlich gesetzt, wenn du die Ansicht aktiv umschaltest. Er enthält keine personenbezogenen Daten, dient nur der Darstellung und wird <strong>nicht an uns oder Dritte übertragen</strong>. Du kannst ihn jederzeit über die Einstellungen deines Browsers löschen.</p>
           <p>Wenn du den Website-Chat nutzt, speichert dein Browser außerdem unter <code>fsc-chat</code> eine zufällige Kennung deiner Unterhaltung (damit der Verlauf beim Seitenwechsel erhalten bleibt) sowie – falls angegeben – deinen Namen. Details dazu in Abschnitt 6b.</p>
 
+          <h2>4a. Cookies &amp; Einwilligung</h2>
+          <p>Beim ersten Besuch fragen wir dich über einen Hinweis-Banner nach deiner Einwilligung für externe Inhalte. Deine Auswahl wird im lokalen Speicher deines Browsers (Eintrag <code>fs-consent</code>) für 12 Monate gespeichert; das ist technisch notwendig (§ 165 Abs. 3 TKG 2021) und wird nicht an uns oder Dritte übertragen.</p>
+          <p>Externe Inhalte (Google Maps) werden erst nach deiner Einwilligung geladen (Art. 6 Abs. 1 lit. a DSGVO, § 165 Abs. 3 TKG 2021). Du kannst deine Einwilligung jederzeit über den Link „Cookie-Einstellungen“ am Ende jeder Seite widerrufen oder ändern.</p>
+
           <h2>5. Google Maps – nur nach ausdrücklicher Einwilligung</h2>
-          <p>Auf der Paketshop-Seite bieten wir eine Karte an. Diese wird <strong>nicht automatisch geladen</strong>. Erst wenn du aktiv auf „Karte laden“ klickst, wird die Karte von Google nachgeladen.</p>
-          <p>Dabei werden Daten an <strong>Google Ireland Limited</strong> (Gordon House, Barrow Street, Dublin 4, Irland) und gegebenenfalls an Google LLC in den USA übertragen – insbesondere deine IP-Adresse. Rechtsgrundlage ist deine Einwilligung (Art. 6 Abs. 1 lit. a DSGVO). Du kannst deine Einwilligung jederzeit widerrufen, indem du die Seite neu lädst; die Karte wird dann wieder nicht geladen.</p>
+          <p>Auf der Paketshop-Seite bieten wir eine Karte an. Diese wird <strong>nicht automatisch geladen</strong>. Erst wenn du im Cookie-Banner bzw. in den Cookie-Einstellungen „Externe Medien“ erlaubst oder direkt bei der Karte auf „Karte laden“ klickst, wird die Karte von Google nachgeladen.</p>
+          <p>Dabei werden Daten an <strong>Google Ireland Limited</strong> (Gordon House, Barrow Street, Dublin 4, Irland) und gegebenenfalls an Google LLC in den USA übertragen – insbesondere deine IP-Adresse. Rechtsgrundlage ist deine Einwilligung (Art. 6 Abs. 1 lit. a DSGVO). Du kannst deine Einwilligung jederzeit über „Cookie-Einstellungen“ am Ende jeder Seite widerrufen. Hast du die Karte nur einmalig über „Karte laden“ geöffnet (ohne „Externe Medien immer erlauben“), wird sie beim nächsten Seitenaufruf wieder nicht geladen.</p>
           <p>Informationen zum Datenschutz bei Google: <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">policies.google.com/privacy</a></p>
           <p>Wenn du die Karte gar nicht laden möchtest, kannst du unseren Standort auch einfach über den Adress-Link öffnen – dieser führt dich erst nach deinem Klick zu Google Maps.</p>
 
@@ -1426,7 +1438,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
     </div>
     <div class="foot-bottom">
       <span>© <span id="year"></span> FS Creative · Gaschurn</span>
-      <span><a href="/impressum" data-link>Impressum</a> · <a href="/datenschutz" data-link>Datenschutz</a></span>
+      <span><a href="/impressum" data-link>Impressum</a> · <a href="/datenschutz" data-link>Datenschutz</a> · <a href="#cookie-einstellungen">Cookie-Einstellungen</a></span>
       <span>Mit ♥ im Montafon gebaut</span>
     </div>
   </div>
@@ -1560,20 +1572,7 @@ html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
   if(tabMenu) tabMenu.addEventListener('click', function(){ openSheet(); });
   if(navScrim) navScrim.addEventListener('click', function(){ openSheet(false); });
 
-  // Google Maps: no request until the visitor explicitly consents (DSGVO).
-  var mapBtn = document.getElementById('mapLoadBtn');
-  if(mapBtn){
-    mapBtn.addEventListener('click', function(){
-      var holder = document.getElementById('mapConsent');
-      if(!holder) return;
-      var ifr = document.createElement('iframe');
-      ifr.setAttribute('loading','lazy');
-      ifr.setAttribute('referrerpolicy','no-referrer');
-      ifr.setAttribute('title','Karte: Dorfstraße 3/1, 6793 Gaschurn');
-      ifr.src = 'https://maps.google.com/maps?q=Dorfstra%C3%9Fe%203%2C%206793%20Gaschurn&output=embed';
-      holder.parentNode.replaceChild(ifr, holder);
-    });
-  }
+  // Google Maps: kein Request ohne Einwilligung – erledigt FS Consent (/fs-consent.js, iframe mit data-src).
 
   window.addEventListener('popstate', render);
   window.addEventListener('scroll', function(){
@@ -1906,5 +1905,6 @@ document.addEventListener('click',function(e){var b=e.target.closest&&e.target.c
 })();
 </script>
 <script src="/chat/w.js?v=1" defer></script>
+<script src="/fs-consent.js?v=1" defer></script>
 </body>
 </html>

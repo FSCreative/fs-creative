@@ -198,7 +198,7 @@ const ROUTE_META = {
   "/referenzen": ["Referenzen — Websites & Plattformen | FS Creative", "Referenzen von FS Creative: Websites und Plattformen aus dem Montafon — Blitzdings, VALUERO, kochdu, La Taverna, Ortsfeuerwehr Gaschurn, Spenglerei Flöry u. v. m."],
   "/ueber-uns": ["Über uns — FS Creative aus dem Montafon", "Lerne FS Creative kennen: Kreativ- und Digitalagentur aus Gaschurn im Montafon, gegründet von Simon Felder."],
   "/kontakt": ["Kontakt & Gratis-Entwurf anfragen | FS Creative", "Projekt anfragen bei FS Creative aus Gaschurn: kurzes Formular ausfüllen, Antwort in 1–2 Werktagen und auf Wunsch ein kostenloser, unverbindlicher Entwurf."],
-  "/datenschutz": ["Datenschutzerklärung — FS Creative", "Datenschutzerklärung von FS Creative: keine Cookies, kein Tracking, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen."],
+  "/datenschutz": ["Datenschutzerklärung — FS Creative", "Datenschutzerklärung von FS Creative: kein Tracking, keine Werbe-Cookies, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen."],
   "/impressum": ["Impressum — FS Creative", "Impressum von FS Creative (Simon Leonhard Felder), Dorfstraße 3/1, 6793 Gaschurn. Offenlegung gemäß § 5 ECG und § 25 Mediengesetz."],
 };
 
@@ -207,11 +207,14 @@ const NOINDEX_ROUTES = { "/empfehlungen": true, "/paketshop": true };
 // Öffentlich ausgeliefert werden nur Website-Dateien — nie Server-Code, Admin-Vorlage oder Projektdateien.
 const PUBLIC_EXT = { ".html": 1, ".css": 1, ".png": 1, ".jpg": 1, ".jpeg": 1, ".webp": 1, ".gif": 1, ".svg": 1, ".ico": 1, ".pdf": 1, ".woff2": 1, ".woff": 1, ".txt": 1, ".xml": 1, ".webmanifest": 1 };
 const PRIVATE_FILES = { "server.js": 1, "admin-dashboard.html": 1, "admin-cockpit.html": 1, "package.json": 1, "package-lock.json": 1 };
+// .js bleibt grundsätzlich privat (Server-Code); einzeln freigegeben nur Skripte für Besucher: Cookie-Banner (FS Consent)
+const PUBLIC_JS = { "fs-consent.js": 1 };
 function isPublicFile(filePath) {
   const rel = path.relative(ROOT, filePath);
   const top = rel.split(path.sep)[0];
   if (!rel || rel.split(path.sep).some(s => s.charAt(0) === ".") || top === "admin-cockpit" || top === "node_modules" || top === "test") return false;   // Bibliotheken und Tests nie öffentlich
   if (PRIVATE_FILES[rel.normalize("NFC")]) return false;
+  if (PUBLIC_JS[rel.normalize("NFC")]) return true;
   return !!PUBLIC_EXT[path.extname(rel).toLowerCase()];
 }
 
