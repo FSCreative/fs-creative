@@ -119,6 +119,48 @@ function send(r, code, body, type, headers) { r.writeHead(code, Object.assign({ 
     assert.ok(s1 < 60, "lang " + s1); assert.strictEqual(s2, 112);
   });
 
+  // ───────────── Verlosung unter kochdu-Registrierungen (kochdu liefert nur Vornamen) ─────────────
+  const KQ = [], USERS = [
+    { id: "u1", first: "Lisa", at: "2026-09-22T08:00:00Z", verified: true, staff: false }, { id: "u2", first: "Lisa", at: "2026-09-25T08:00:00Z", verified: true, staff: false },
+    { id: "u3", first: "Lisa", at: "2026-10-01T08:00:00Z", verified: false, staff: false }, { id: "u4", first: "Markus", at: "2026-10-02T08:00:00Z", verified: true, staff: false },
+    { id: "u5", first: "Simon", at: "2026-10-03T08:00:00Z", verified: true, staff: true }, { id: "u6", first: "Anna", at: "2026-10-10T20:00:00Z", verified: true, staff: false }];
+  let OLD_KOCHDU = false;
+  const M2 = require(path.join(ROOT, "marketing.js"))({ send, DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "fsc-mkt2-")), ROOT,
+    kochdu: async q => { KQ.push(q); const u = new URLSearchParams(q);
+      if (u.get("registrant")) { const x = USERS.find(y => y.id === u.get("registrant")); if (!x) throw new Error("Bei kochdu nicht gefunden"); return { ok: true, name: x.first + " Muster", email: x.id + "@example.org" }; }
+      if (OLD_KOCHDU) return { ok: true, year: 2026, restaurants: [] };
+      return { ok: true, users: USERS.filter(y => y.at >= u.get("from") && y.at < u.get("to")) }; } });
+  const call2 = async (method, p, body) => { const r = res(); await M2.handleAdmin(req(method, body), r, new URL("http://x" + p), p); await r.finished; return r; };
+  await t("kochdu: Zeitraum in Wiener Zeit, bis-Tag ganz inklusive (Sommer- und Winterzeit)", async () => {
+    const r = M2._test.kochduRange({ from: "2026-09-22", to: "2026-10-10" });
+    assert.strictEqual(r.start, "2026-09-21T22:00:00.000Z"); assert.strictEqual(r.end, "2026-10-10T22:00:00.000Z");
+    assert.strictEqual(M2._test.kochduRange({ from: "2026-11-01", to: "2026-11-01" }).start, "2026-10-31T23:00:00.000Z");
+    assert.throws(() => M2._test.kochduRange({ from: "2026-10-10", to: "2026-09-22" }), /Zeitraum/);
+  });
+  await t("kochdu: Vorschau zählt Registrierungen, Mitarbeiter nie dabei, nur Vornamen in der Antwort", async () => {
+    const r = await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-10" }), j = r.json();
+    assert.strictEqual(j.ok, true, j.error); assert.strictEqual(j.count, 5); assert.strictEqual(j.stats.staff, 1); assert.strictEqual(j.stats.unverified, 1); assert.strictEqual(j.stats.unverifiedOut, 0);
+    assert.deepStrictEqual(j.sample, ["Lisa", "Lisa", "Lisa", "Markus", "Anna"]); assert.ok(!/@|u\d/.test(r.text()), "keine E-Mail/ID in der Antwort");
+    const v = (await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-10", verifiedOnly: true })).json();
+    assert.strictEqual(v.count, 4); assert.strictEqual(v.stats.unverifiedOut, 1);
+    assert.strictEqual((await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-09" })).json().count, 4, "Anna am 10.10. abends Wiener Zeit fällt raus");
+  });
+  await t("kochdu: Ziehung – gleiche Vornamen bleiben eigene Lose, Protokoll mit Kürzeln statt E-Mail, Kontakt nur für Gewinner", async () => {
+    const d = await M2._test.draw({ brand: "kochdu", winners: 1, backups: 2, title: "Wer gewinnt?", source: { type: "kochdu", from: "2026-09-22", to: "2026-10-10" } }); M2._test.queue.length = 0;
+    assert.strictEqual(d.count, 5); assert.strictEqual(d.dupes, 0); assert.strictEqual(d.excluded, 1); assert.strictEqual(d.participants.filter(n => n === "Lisa").length, 3);
+    assert.strictEqual(new Set(d.codes).size, 5); assert.ok(d.codes.every(c => /^K[0-9A-F]{6}$/.test(c)));
+    assert.strictEqual(d.winnerCodes.length, 1); assert.strictEqual(d.backupCodes.length, 2); assert.strictEqual(d.source.type, "kochdu");
+    const pr = M2._test.protocol(d); assert.ok(/alle Registrierungen bei kochdu vom 22\.09\.2026 bis 10\.10\.2026/.test(pr), pr); assert.ok(pr.indexOf("(" + d.winnerCodes[0] + ")") > -1); assert.ok(!/@/.test(pr), "keine E-Mail im Protokoll");
+    const pub = (await call2("GET", "/admin/api/mkt/state")).json().draws[0]; assert.ok(!("winnerIds" in pub) && !("codes" in pub)); assert.deepStrictEqual(pub.source, { type: "kochdu", from: "2026-09-22", to: "2026-10-10", verifiedOnly: false });
+    const c = (await call2("POST", "/admin/api/mkt/giveaway/contact", { id: d.id, kind: "w", i: 0 })).json(); assert.strictEqual(c.ok, true, c.error); assert.ok(/@example\.org$/.test(c.email)); assert.ok(c.name.indexOf(d.winners[0]) === 0);
+    assert.strictEqual((await call2("POST", "/admin/api/mkt/giveaway/contact", { id: d.id, kind: "w", i: 5 })).code, 404);
+  });
+  await t("kochdu: nur bei der Marke kochdu, verständlicher Hinweis solange kochdu das Update noch nicht hat", async () => {
+    await assert.rejects(M2._test.draw({ brand: "blitzdings", source: { type: "kochdu", from: "2026-09-22", to: "2026-10-10" } }), /nur bei der Marke kochdu/);
+    OLD_KOCHDU = true; const j = (await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-10" })).json(); OLD_KOCHDU = false;
+    assert.strictEqual(j.ok, false); assert.ok(/Update/.test(j.error), j.error);
+  });
+
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   console.log("marketing: " + pass + " ok, " + fail + " fehlgeschlagen");
   if (fail) { fails.forEach(f => console.log("  ✗ " + f)); process.exit(1); }

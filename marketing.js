@@ -104,23 +104,58 @@ module.exports = function (D) {
     return out;
   }
   function shuffled(a) { const x = a.slice(); for (let i = x.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); const t = x[i]; x[i] = x[j]; x[j] = t; } return x; }
+  // Teilnehmer aus kochdu-Registrierungen: Zeitraum in Wiener Zeit (Tag von–bis, beide inklusive). kochdu liefert nur Vorname + Kunden-ID;
+  // Mitarbeiter-, Admin- und Restaurant-Konten zählen nie, auf Wunsch nur bestätigte E-Mail-Adressen. Kürzel (K…) = Prüfsumme der Kunden-ID fürs Protokoll.
+  const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+  function viennaOffset(ms) { const p = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Vienna", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(ms)), g = t => +p.find(x => x.type === t).value;
+    return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) - ms; }
+  function viennaMidnight(day) { const t = Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)); return new Date(t - viennaOffset(t)).toISOString(); }
+  function kochduRange(x) {
+    const from = String(x && x.from || ""), to = String(x && x.to || "");
+    if (!DAY_RE.test(from) || !DAY_RE.test(to) || to < from) throw fail(400, "Bitte einen gültigen Zeitraum wählen (von–bis).");
+    const next = new Date(Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10) + 1)).toISOString().slice(0, 10);
+    return { from, to, start: viennaMidnight(from), end: viennaMidnight(next), verifiedOnly: !!(x && x.verifiedOnly) };
+  }
+  const kochduCode = id => "K" + crypto.createHash("sha256").update("kochdu:" + id).digest("hex").slice(0, 6).toUpperCase();
+  async function kochduEntries(x) {
+    if (typeof D.kochdu !== "function") throw fail(503, "kochdu ist nicht angebunden");
+    const r = kochduRange(x), j = await D.kochdu("registrations=1&from=" + encodeURIComponent(r.start) + "&to=" + encodeURIComponent(r.end));
+    if (!Array.isArray(j.users)) throw fail(502, "kochdu kennt diese Abfrage noch nicht – das Update dort läuft gerade, bitte in ein paar Minuten nochmal.");
+    const stats = { total: j.users.length, staff: 0, unverified: 0, unverifiedOut: 0 }, entries = [];
+    j.users.forEach(u => {
+      if (u.staff) { stats.staff++; return; }
+      if (!u.verified) { stats.unverified++; if (r.verifiedOnly) { stats.unverifiedOut++; return; } }
+      entries.push({ id: String(u.id), name: clip(u.first, 24) || "Gast", code: kochduCode(u.id) });
+    });
+    return { range: r, entries, stats };
+  }
   function drawPublic(d) {
     const v = d.video || {};
     return { id: d.id, at: d.at, brand: d.brand, brandName: d.brandName, title: d.title, prize: d.prize, claim: d.claim, count: d.count, lines: d.lines, dupes: d.dupes, excluded: d.excluded, hash: d.hash,
-      winners: d.winners, backups: d.backups, postId: d.postId || "", source: d.source ? { type: d.source.type, permalink: d.source.permalink } : null, video: { status: v.status || "", error: v.error || "", duration: v.duration || 0, at: v.at || "", ms: v.ms || 0, file: v.file ? true : false, cover: v.cover ? true : false } };
+      winners: d.winners, backups: d.backups, winnerCodes: d.winnerCodes || null, backupCodes: d.backupCodes || null, postId: d.postId || "",
+      source: !d.source ? null : d.source.type === "kochdu" ? { type: "kochdu", from: d.source.from, to: d.source.to, verifiedOnly: !!d.source.verifiedOnly } : { type: d.source.type, permalink: d.source.permalink }, video: { status: v.status || "", error: v.error || "", duration: v.duration || 0, at: v.at || "", ms: v.ms || 0, file: v.file ? true : false, cover: v.cover ? true : false } };
   }
   async function draw(pl) {
     const b = brand(pl.brand);
-    const p = parseParticipants(pl.text, pl.exclude, pl.dedupe !== false);
+    const ko = pl.source && pl.source.type === "kochdu" ? await kochduEntries(pl.source) : null;
+    if (ko && b.key !== "kochdu") throw fail(400, "kochdu-Registrierungen gibt es nur bei der Marke kochdu.");
+    const p = ko ? { participants: ko.entries.map(e => e.name), lines: ko.stats.total, dupes: 0, excluded: ko.stats.staff + ko.stats.unverifiedOut }
+      : parseParticipants(pl.text, pl.exclude, pl.dedupe !== false);
     const nW = Math.max(1, Math.min(10, parseInt(pl.winners, 10) || 1)), nB = Math.max(0, Math.min(10, parseInt(pl.backups, 10) || 0));
     if (p.participants.length < 2) throw fail(400, "Mindestens zwei Teilnahmen einfügen.");
     if (p.participants.length <= nW) throw fail(400, "Es gibt nicht mehr Teilnahmen als Gewinner.");
     const idx = drawIndices(p.participants.length, Math.min(p.participants.length, nW + nB));
     const d = { id: newId("g"), at: nowIso(), brand: b.key, brandName: b.name, title: clip(pl.title, 60) || "Wer gewinnt?", prize: clip(pl.prize, 90), claim: clip(pl.claim, 90),
-      count: p.participants.length, lines: p.lines, dupes: p.dupes, excluded: p.excluded, exclude: clip(pl.exclude, 2000),
-      hash: crypto.createHash("sha256").update(p.participants.join("\n"), "utf8").digest("hex"),
+      count: p.participants.length, lines: p.lines, dupes: p.dupes, excluded: p.excluded, exclude: ko ? "" : clip(pl.exclude, 2000),
+      hash: crypto.createHash("sha256").update((ko ? ko.entries.map(e => e.code + " " + e.name) : p.participants).join("\n"), "utf8").digest("hex"),
       winners: idx.slice(0, nW).map(i => p.participants[i]), backups: idx.slice(nW).map(i => p.participants[i]),
-      participants: p.participants, method: "crypto.randomInt (Node.js, kryptografischer Zufall) am Server", video: { status: "wartet" }, source: sourceOf(pl.source) };
+      participants: p.participants, method: "crypto.randomInt (Node.js, kryptografischer Zufall) am Server", video: { status: "wartet" },
+      source: ko ? { type: "kochdu", from: ko.range.from, to: ko.range.to, verifiedOnly: ko.range.verifiedOnly, stats: ko.stats } : sourceOf(pl.source) };
+    if (ko) {   // gleiche Vornamen bleiben unterscheidbar; Kunden-IDs nur am Server (für „Kontakt anzeigen“ beim Gewinner)
+      d.codes = ko.entries.map(e => e.code);
+      d.winnerCodes = idx.slice(0, nW).map(i => ko.entries[i].code); d.backupCodes = idx.slice(nW).map(i => ko.entries[i].code);
+      d.winnerIds = idx.slice(0, nW).map(i => ko.entries[i].id); d.backupIds = idx.slice(nW).map(i => ko.entries[i].id);
+    }
     const s = state(); s.draws.unshift(d); if (s.draws.length > 100) s.draws.length = 100; save(true);
     queueVideo(d.id);
     return d;
@@ -144,11 +179,19 @@ module.exports = function (D) {
       if (so.edited) L.push("Hinweis: Die importierte Liste wurde vor der Ziehung von Hand bearbeitet.");
       L.push("Herausgefallen: " + [st.late ? st.late + " nach Teilnahmeschluss" : "", st.tags ? st.tags + " zu wenige Markierungen" : "", st.keyword ? st.keyword + " ohne Stichwort" : "", st.dupes ? st.dupes + " weitere Kommentare derselben Person" : "", st.excluded ? st.excluded + (st.excluded === 1 ? " eigenes/ausgeschlossenes Konto" : " eigene/ausgeschlossene Konten") : "", !r.replies && st.replies ? st.replies + " Antworten" : ""].filter(Boolean).join(" · ") || "keine", "");
     }
+    if (d.source && d.source.type === "kochdu") {
+      const so = d.source, st = so.stats || {}, dd = x => x.slice(8, 10) + "." + x.slice(5, 7) + "." + x.slice(0, 4);
+      L.push("Teilnehmer: alle Registrierungen bei kochdu vom " + dd(so.from) + " bis " + dd(so.to) + " (jeweils ganzer Tag, Europe/Vienna)" + (so.verifiedOnly ? ", nur mit bestätigter E-Mail-Adresse" : ""),
+        "Registrierungen im Zeitraum: " + (st.total || 0) + " – nicht dabei: " + (st.staff || 0) + " Mitarbeiter-/Admin-/Restaurant-Konten" + (so.verifiedOnly ? ", " + (st.unverifiedOut || 0) + " ohne bestätigte E-Mail-Adresse" : ""),
+        "Angezeigt wird nur der Vorname. Das Kürzel in Klammern (K…) leitet sich aus der kochdu-Kunden-ID ab und unterscheidet Personen mit gleichem Vornamen.", "",
+        "Gültige Teilnahmen: " + d.count, "");
+    } else
     L.push("Eingefügte Zeilen: " + d.lines, "Doppelte Teilnahmen entfernt: " + d.dupes, "Ausgeschlossen (eigene Konten u. a.): " + d.excluded + (d.exclude ? " – " + d.exclude.replace(/\s+/g, " ") : ""), "Gültige Teilnahmen: " + d.count, "");
     L.push("Prüfsumme der Teilnehmerliste (SHA-256, eine Zeile je Teilnahme): " + d.hash, "Zufallsverfahren: " + d.method, "");
-    L.push(d.winners.length > 1 ? "GEWINNER" : "GEWINNER/IN"); d.winners.forEach((w, i) => L.push("  " + (i + 1) + ". " + w));
-    if (d.backups && d.backups.length) { L.push("", "ERSATZGEWINNER (in dieser Reihenfolge, falls sich jemand nicht meldet)"); d.backups.forEach((w, i) => L.push("  " + (i + 1) + ". " + w)); }
-    L.push("", "TEILNEHMERLISTE (" + d.count + ")"); d.participants.forEach((n, i) => L.push(String(i + 1).padStart(5, " ") + "  " + n));
+    const tag = (a, i) => a && a[i] ? " (" + a[i] + ")" : "";
+    L.push(d.winners.length > 1 ? "GEWINNER" : "GEWINNER/IN"); d.winners.forEach((w, i) => L.push("  " + (i + 1) + ". " + w + tag(d.winnerCodes, i)));
+    if (d.backups && d.backups.length) { L.push("", "ERSATZGEWINNER (in dieser Reihenfolge, falls sich jemand nicht meldet)"); d.backups.forEach((w, i) => L.push("  " + (i + 1) + ". " + w + tag(d.backupCodes, i))); }
+    L.push("", "TEILNEHMERLISTE (" + d.count + ")"); d.participants.forEach((n, i) => L.push(String(i + 1).padStart(5, " ") + "  " + n + tag(d.codes, i)));
     return L.join("\n") + "\n";
   }
 
@@ -217,6 +260,15 @@ module.exports = function (D) {
         const pl = await body(req, 3e6), r = parseParticipants(pl.text, pl.exclude, pl.dedupe !== false);
         return J(res, 200, { ok: true, count: r.participants.length, lines: r.lines, dupes: r.dupes, excluded: r.excluded, skipped: r.skipped, mode: r.mode, sample: r.participants.slice(0, 12) });
       }
+      if (p === "/admin/api/mkt/giveaway/kochdu" && req.method === "POST") {   // Vorschau: wie viele Registrierungen im Zeitraum (nur Vornamen)
+        const pl = await body(req, 10000), r = await kochduEntries(pl);
+        return J(res, 200, { ok: true, from: r.range.from, to: r.range.to, verifiedOnly: r.range.verifiedOnly, count: r.entries.length, stats: r.stats, sample: r.entries.slice(0, 14).map(e => e.name) });
+      }
+      if (p === "/admin/api/mkt/giveaway/contact" && req.method === "POST") {   // Name + E-Mail eines Gewinners/Ersatzgewinners (nur kochdu-Verlosungen)
+        const pl = await body(req, 10000), d = state().draws.find(x => x.id === String(pl.id || "")); if (!d) throw fail(404, "Ziehung nicht gefunden");
+        const ids = pl.kind === "b" ? d.backupIds : d.winnerIds, id = ids && ids[parseInt(pl.i, 10)]; if (!id || typeof D.kochdu !== "function") throw fail(404, "Kein Kontakt hinterlegt");
+        const j = await D.kochdu("registrant=" + encodeURIComponent(id)); return J(res, 200, { ok: true, name: clip(j.name, 120), email: clip(j.email, 200) });
+      }
       if (p === "/admin/api/mkt/giveaway/draw" && req.method === "POST") {
         const pl = await body(req, 3e6); if (pl.confirm !== true) throw fail(400, "Bestätigung fehlt");
         return J(res, 200, { ok: true, draw: drawPublic(await draw(pl)) });
@@ -271,5 +323,5 @@ module.exports = function (D) {
     } catch (e) { if (!res.headersSent) return J(res, e.status || 500, { ok: false, error: String(e.message || e).slice(0, 300) }); try { res.end(); } catch (e2) {} }
   }
   function handlePublic(req, res, p) { try { return POSTS.handlePublic(req, res, p); } catch (e) { return J(res, 404, { ok: false }); } }
-  return { handleAdmin, handlePublic, tick: () => POSTS.tick(), _test: { parseParticipants, drawIndices, protocol, state, draw, runQueue: () => runQueue(), queue: Q, posts: POSTS, publisher: PUB } };
+  return { handleAdmin, handlePublic, tick: () => POSTS.tick(), _test: { parseParticipants, drawIndices, protocol, kochduRange, state, draw, runQueue: () => runQueue(), queue: Q, posts: POSTS, publisher: PUB } };
 };

@@ -3962,7 +3962,11 @@ setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):"
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
 const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment, DATA_DIR, secret: ADMIN_SECRET });
 const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET, KI: () => KI, publicBase: ORIGIN,
-  push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
+  push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0),
+  // Verlosung unter kochdu-Registrierungen: kochdu liefert nur Vorname + Kunden-ID; Name/E-Mail nur einzeln für Gewinner
+  kochdu: async (query) => { if (!KOCHDU.token) throw new Error("kochdu ist im Cockpit nicht verbunden (KOCHDU_STATS_TOKEN fehlt)");
+    const r = await fetch(KOCHDU.url + (KOCHDU.url.indexOf("?") > -1 ? "&" : "?") + query, { headers: { "x-api-token": KOCHDU.token }, signal: AbortSignal.timeout(20000) });
+    const j = await r.json().catch(() => null); if (!r.ok || !j || !j.ok) throw new Error(r.status === 404 ? "Bei kochdu nicht gefunden" : "kochdu antwortet nicht (HTTP " + r.status + ")"); return j; } });
 // ── WhatsApp nur lesen (whatsapp.js): Cloud API mit Coexistence – Webhook /api/whatsapp/webhook, Cockpit „Chat“ → WhatsApp, Push-Thema „wa“ ──
 const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });

@@ -35,6 +35,7 @@ F.css(
 '.mk-win .k{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);font-weight:700}'+
 '.mk-win .w{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--ink);word-break:break-word}'+
 '.mk-win ol{margin:0;padding-left:22px;display:grid;gap:2px}'+
+'.mk-kdc{font:600 12px var(--f-mono);color:var(--ink-2);letter-spacing:.04em;vertical-align:middle}'+
 '.mk-vid{display:grid;grid-template-columns:200px minmax(0,1fr);gap:16px;align-items:start}'+
 '@media(max-width:640px){.mk-vid{grid-template-columns:minmax(0,1fr)}}'+
 '.mk-vid video{width:200px;aspect-ratio:9/16;border-radius:14px;background:#111;display:block}'+
@@ -91,7 +92,12 @@ function saveGw(){ var c=Object.assign({},GW); delete c.text; F.ls("fsc_mkt_gw",
 
 /* ---------- Gewinnspiel ---------- */
 function defaultExclude(b){ return b&&b.handles&&b.handles.length?b.handles.join("\n"):""; }
+function isKd(){ return !!(GW.source&&GW.source.type==="kochdu"); }
+function kdDay(x){ return x?x.slice(8,10)+"."+x.slice(5,7)+"."+x.slice(0,4):""; }
 function countHtml(){
+  if(isKd()){ if(!PARSE) return KD_ERR?'<span class="bad-t">'+esc(KD_ERR)+'</span> <button type="button" class="link" data-act="mkkdre">nochmal laden</button>':'<span class="muted">Lade Registrierungen …</span>'; var k=PARSE, st=k.stats||{};
+    return '<b>'+k.count.toLocaleString("de-AT")+' Teilnahmen</b><span>nur Vornamen sichtbar</span>'+(st.staff?'<span>'+st.staff+' Mitarbeiter-/Admin-Konten nicht dabei</span>':'')+(st.unverifiedOut?'<span>'+st.unverifiedOut+' ohne bestätigte E-Mail nicht dabei</span>':'')+
+      (k.sample&&k.sample.length?'<div class="mk-chips" style="flex-basis:100%">'+k.sample.map(function(n){ return '<span>'+esc(n)+'</span>'; }).join("")+(k.count>k.sample.length?'<span>+ '+(k.count-k.sample.length).toLocaleString("de-AT")+' weitere</span>':'')+'</div>':''); }
   if(!GW.text.trim()) return '<span class="muted">Noch keine Teilnehmer eingefügt.</span>';
   if(!PARSE) return '<span class="muted">Zähle …</span>';
   var p=PARSE;
@@ -100,7 +106,8 @@ function countHtml(){
 }
 function paintCount(){ var el=document.getElementById("mkCount"); if(el) el.innerHTML=countHtml(); var b=document.getElementById("mkDraw"); if(b) b.disabled=BUSY||!PARSE||PARSE.count<2||PARSE.count<=GW.winners; }
 function reparse(){
-  clearTimeout(PARSE_T); PARSE=null; paintCount();
+  clearTimeout(PARSE_T); PARSE=null; KD_ERR=""; paintCount();
+  if(isKd()){ var ks=JSON.stringify(GW.source); api("/admin/api/mkt/giveaway/kochdu",GW.source).then(function(j){ if(ks!==JSON.stringify(GW.source)) return; if(j&&j.ok) PARSE=j; else KD_ERR=(j&&j.error)||"kochdu nicht erreichbar"; paintCount(); }); return; }
   if(!GW.text.trim()) return;
   PARSE_T=setTimeout(function(){ var snap=GW.text+"|"+GW.exclude+"|"+GW.dedupe; api("/admin/api/mkt/giveaway/parse",{text:GW.text,exclude:GW.exclude,dedupe:GW.dedupe}).then(function(j){ if(snap!==GW.text+"|"+GW.exclude+"|"+GW.dedupe) return; PARSE=j&&j.ok?j:null; paintCount(); }); },300);
 }
@@ -112,11 +119,12 @@ function formHtml(){
     '<label class="fl">Gewinn<input class="f" data-mkgw="prize" maxlength="90" value="'+esc(GW.prize)+'" placeholder="z. B. Gewinn: 50 € kochdu-Gutschein"></label>'+
     '<div class="mk-row"><label class="fl">Gewinner<input class="f" type="number" min="1" max="10" data-mkgw="winners" value="'+(+GW.winners||1)+'"></label>'+
     '<label class="fl">Ersatzgewinner<input class="f" type="number" min="0" max="10" data-mkgw="backups" value="'+(+GW.backups||0)+'"></label>'+
-    '<label class="fl" style="align-content:end"><span style="display:flex;gap:8px;align-items:center;padding:9px 0"><input type="checkbox" data-mkgw="dedupe"'+(GW.dedupe!==false?' checked':'')+'> Doppelte nur einmal</span></label></div>'+
-    '<div class="mk-imp"><button type="button" class="btn" data-act="mkigimp">'+F.svg("mig")+' Aus Instagram-Beitrag laden</button>'+(GW.source?'<span class="muted small">Geladen: <a href="'+esc(GW.source.permalink||"#")+'" target="_blank" rel="noopener">Instagram-Beitrag</a> · '+esc(rulesTxt(GW.source.rules))+(GW.text!==GW.importedText?' · <b>von Hand geändert</b>':'')+' <button type="button" class="link" data-act="mkigclear">entfernen</button></span>':'<span class="muted small">oder Namen unten einfügen</span>')+'</div>'+
-    '<label class="fl">Teilnehmer<textarea class="f mk-ta" data-mkgw="text" spellcheck="false" placeholder="@lisa.montafon\n@markus_bludenz\nAnna Huber\n…">'+esc(GW.text)+'</textarea></label>'+
+    (isKd()?'':'<label class="fl" style="align-content:end"><span style="display:flex;gap:8px;align-items:center;padding:9px 0"><input type="checkbox" data-mkgw="dedupe"'+(GW.dedupe!==false?' checked':'')+'> Doppelte nur einmal</span></label>')+'</div>'+
+    (isKd()?'<div class="mk-imp"><span class="small"><b>Teilnehmer:</b> alle kochdu-Registrierungen vom '+kdDay(GW.source.from)+' bis '+kdDay(GW.source.to)+(GW.source.verifiedOnly?' · nur bestätigte E-Mail-Adressen':'')+' · Mitarbeiter- und Admin-Konten sind nie dabei</span> <button type="button" class="link" data-act="mkkdimp">ändern</button> <button type="button" class="link" data-act="mkkdclear">entfernen</button></div>':
+    '<div class="mk-imp"><button type="button" class="btn" data-act="mkigimp">'+F.svg("mig")+' Aus Instagram-Beitrag laden</button>'+(GW.brand==="kochdu"?'<button type="button" class="btn" data-act="mkkdimp">'+F.svg("mgift")+' kochdu-Registrierungen</button>':'')+(GW.source?'<span class="muted small">Geladen: <a href="'+esc(GW.source.permalink||"#")+'" target="_blank" rel="noopener">Instagram-Beitrag</a> · '+esc(rulesTxt(GW.source.rules))+(GW.text!==GW.importedText?' · <b>von Hand geändert</b>':'')+' <button type="button" class="link" data-act="mkigclear">entfernen</button></span>':'<span class="muted small">oder Namen unten einfügen</span>')+'</div>'+
+    '<label class="fl">Teilnehmer<textarea class="f mk-ta" data-mkgw="text" spellcheck="false" placeholder="@lisa.montafon\n@markus_bludenz\nAnna Huber\n…">'+esc(GW.text)+'</textarea></label>')+
     '<div class="mk-count" id="mkCount">'+countHtml()+'</div>'+
-    '<div class="mk-row2"><label class="fl">Nicht teilnehmen (eigene Konten)<textarea class="f" rows="2" data-mkgw="exclude" placeholder="@kochdu.at">'+esc(GW.exclude)+'</textarea></label>'+
+    '<div class="mk-row2">'+(isKd()?'<span></span>':'<label class="fl">Nicht teilnehmen (eigene Konten)<textarea class="f" rows="2" data-mkgw="exclude" placeholder="@kochdu.at">'+esc(GW.exclude)+'</textarea></label>')+
     '<label class="fl">Hinweis für Gewinner<textarea class="f" rows="2" data-mkgw="claim" maxlength="90" placeholder="Bitte melde dich per Direktnachricht bei uns.">'+esc(GW.claim)+'</textarea></label></div>'+
     '<div class="mk-go"><span class="muted small">Gelost wird am Server mit kryptografischem Zufall. Ergebnis und Teilnehmerliste werden protokolliert.</span>'+
     '<button type="button" class="btn primary" id="mkDraw" data-act="mkdraw"'+(BUSY||!PARSE||PARSE.count<2||PARSE.count<=GW.winners?' disabled':'')+'>'+F.svg("mgift")+' Jetzt fair auslosen</button></div>'+
@@ -142,13 +150,16 @@ function resHtml(){
     return '<li data-act="mksel:'+esc(x.id)+'" aria-current="'+(d&&x.id===d.id)+'"><span><b>'+esc(x.brandName)+'</b> · '+esc(x.winners.join(", "))+'<br><span class="s">'+new Date(x.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})+' · '+x.count.toLocaleString("de-AT")+' Teilnahmen</span></span><span class="s">'+(st==="fertig"?"Video fertig":st==="fehler"?"Fehler":"Video …")+'</span></li>'; }).join("")+'</ul>':'';
   if(!d) return '<section class="panel"><div class="panel-h"><h2>Ergebnis</h2></div><div class="mk-res"><p class="muted" style="margin:0">Noch keine Auslosung. Teilnehmer einfügen und auslosen – danach erscheint hier das Video zum Herunterladen.</p></div></section>';
   return '<section class="panel"><div class="panel-h"><h2>Ergebnis</h2><span class="muted small">'+new Date(d.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})+'</span></div><div class="mk-res">'+
-    '<div class="mk-win"><span class="k">'+esc(d.brandName)+' · '+(d.winners.length>1?d.winners.length+" Gewinner":"Gewonnen hat")+'</span>'+(d.winners.length>1?'<ol class="w" style="font-size:20px">'+d.winners.map(function(w){ return '<li>'+esc(w)+'</li>'; }).join("")+'</ol>':'<span class="w">'+esc(d.winners[0])+'</span>')+
-    (d.backups&&d.backups.length?'<span class="muted small">Ersatz, falls sich niemand meldet: '+d.backups.map(esc).join(" → ")+'</span>':'')+'</div>'+
+    '<div class="mk-win"><span class="k">'+esc(d.brandName)+' · '+(d.winners.length>1?d.winners.length+" Gewinner":"Gewonnen hat")+'</span>'+(d.winners.length>1?'<ol class="w" style="font-size:20px">'+d.winners.map(function(w,i){ return '<li>'+esc(w)+kdTag(d,"w",i)+'</li>'; }).join("")+'</ol>':'<span class="w">'+esc(d.winners[0])+kdTag(d,"w",0)+'</span>')+
+    (d.backups&&d.backups.length?'<span class="muted small">Ersatz, falls sich niemand meldet: '+d.backups.map(function(w,i){ return esc(w)+kdTag(d,"b",i); }).join(" → ")+'</span>':'')+
+    (d.winnerCodes?'<span class="muted small">kochdu-Registrierungen '+kdDay(d.source&&d.source.from)+' – '+kdDay(d.source&&d.source.to)+' · nur Vornamen; „Kontakt“ zeigt die E-Mail-Adresse nur dir</span>':'')+'</div>'+
     vidHtml(d)+
     '<div class="mk-meta"><span>'+d.count.toLocaleString("de-AT")+' gültige Teilnahmen'+(d.dupes?' · '+d.dupes+' doppelte entfernt':'')+(d.excluded?' · '+d.excluded+' ausgeschlossen':'')+'</span><span>Prüfsumme der Liste: <code>'+esc(d.hash.slice(0,24))+'…</code></span></div>'+
     '<div><button type="button" class="btn sm danger" data-act="mkdel:'+esc(d.id)+'">Auslosung löschen</button></div>'+
     '</div>'+(ds.length>1?'<div class="panel-h" style="border-top:1px solid var(--line);border-bottom:0"><h2>Frühere Auslosungen</h2></div>'+hist:'')+'</section>';
 }
+function kdTag(d,kind,i){ var c=kind==="b"?d.backupCodes:d.winnerCodes; if(!c||!c[i]) return "";
+  return ' <span class="mk-kdc">'+esc(c[i])+'</span> <button type="button" class="link small" data-act="mkkdct:'+esc(d.id)+'|'+kind+'|'+i+'">Kontakt</button>'; }
 function paintRes(){ var el=document.getElementById("mkRes"); if(el) el.innerHTML=resHtml(); }
 function gwHtml(){ return '<div class="mk-grid">'+formHtml()+'<div id="mkRes">'+resHtml()+'</div></div>'; }
 
@@ -157,7 +168,7 @@ F.listen("input","[data-mkgw]",function(el){ var k=el.getAttribute("data-mkgw");
   saveGw(); if(k==="text"||k==="exclude"||k==="dedupe") reparse(); else paintCount();
   if(k==="text"&&GW.source){ var imp=document.querySelector(".mk-imp b"); if(!imp&&GW.text!==GW.importedText){ var sp=document.querySelector(".mk-imp .muted"); if(sp) sp.insertAdjacentHTML("beforeend"," · <b>von Hand geändert</b>"); } } });
 F.listen("change","[data-mkgw]",function(el){ var k=el.getAttribute("data-mkgw");
-  if(k==="brand"){ var old=brandOf(GW.brand), nb=brandOf(el.value); if(!GW.exclude.trim()||GW.exclude===defaultExclude(old)) GW.exclude=defaultExclude(nb); GW.brand=el.value; saveGw(); F.render(); reparse(); }
+  if(k==="brand"){ var old=brandOf(GW.brand), nb=brandOf(el.value); if(isKd()&&el.value!=="kochdu"){ GW.source=null; PARSE=null; } if(!GW.exclude.trim()||GW.exclude===defaultExclude(old)) GW.exclude=defaultExclude(nb); GW.brand=el.value; saveGw(); F.render(); reparse(); }
   if(k==="dedupe"){ GW.dedupe=el.checked; saveGw(); reparse(); } });
 F.action("mkdraw",function(){
   if(BUSY||!PARSE) return;
@@ -177,6 +188,41 @@ F.action("mkdel",function(id){ F.confirm("Diese Auslosung samt Video und Protoko
 
 F.action("mkgwpost",function(id){ api("/admin/api/mkt/giveaway/post",{id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true);
   ST.draws=ST.draws.map(function(d){ return d.id===id?Object.assign({},d,{postId:j.postId}):d; }); F.toast("Als Reel im Planer – dort Plattformen wählen und Go geben"); if(F.mktPlanReload) F.mktPlanReload(); UI.mktTab="planer"; F.ls("fsc_mkt_tab","planer"); F.render(); }); });
+
+/* ---------- Teilnehmer aus kochdu-Registrierungen ---------- */
+/* kochdu liefert nur Vornamen; Mitarbeiter-/Admin-/Restaurant-Konten zählt kochdu nie mit. Gelost wird am Server mit der frisch geladenen Liste. */
+var KD=null, KD_T=null, KD_ERR="";
+function kdIso(d){ var z=function(n){ return String(n).padStart(2,"0"); }; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
+F.action("mkkdimp",function(){
+  var s=isKd()?GW.source:null, now=new Date();
+  KD={from:s?s.from:kdIso(new Date(now.getFullYear(),now.getMonth(),now.getDate()-30)),to:s?s.to:kdIso(now),verifiedOnly:!!(s&&s.verifiedOnly),res:null,loading:false,err:""};
+  F.modal('<div class="row-between"><h2 style="font-size:19px">Teilnehmer aus kochdu-Registrierungen</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted small" style="margin:4px 0 12px">Alle, die sich im Zeitraum bei kochdu registriert haben, bekommen ein Los. Sichtbar ist nur der Vorname – keine E-Mail-Adressen. Mitarbeiter-, Admin- und Restaurant-Konten sind nie dabei.</p>'+
+    '<div class="mk-row2"><label class="fl">Registriert ab<input class="f" type="date" data-kd="from" value="'+esc(KD.from)+'"></label><label class="fl">bis einschließlich<input class="f" type="date" data-kd="to" value="'+esc(KD.to)+'"></label></div>'+
+    '<label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" data-kd="verifiedOnly"'+(KD.verifiedOnly?' checked':'')+'> Nur Konten mit bestätigter E-Mail-Adresse</label>'+
+    '<div class="mk-igres" id="mkKdRes"></div>'+
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="button" class="btn primary" data-act="mkkdok" disabled>Übernehmen</button></span></div>',"narrow");
+  kdRun();
+});
+function kdResHtml(){ if(!KD) return ""; if(KD.loading) return '<span class="muted">Zähle Registrierungen …</span>'; if(KD.err) return '<span class="bad-t">'+esc(KD.err)+'</span>'; if(!KD.res) return "";
+  var r=KD.res, st=r.stats, info=[st.staff?st.staff+" Mitarbeiter-/Admin-Konten nicht dabei":"",st.unverifiedOut?st.unverifiedOut+" ohne bestätigte E-Mail nicht dabei":st.unverified?"davon "+st.unverified+" mit noch unbestätigter E-Mail":""].filter(Boolean);
+  return '<b>'+r.count.toLocaleString("de-AT")+' Teilnahmen</b> aus '+st.total.toLocaleString("de-AT")+' Registrierungen'+(info.length?'<br><span class="muted small">'+info.join(" · ")+'</span>':'')+
+    (r.sample.length?'<div class="mk-chips" style="margin-top:8px">'+r.sample.map(function(n){ return '<span>'+esc(n)+'</span>'; }).join("")+(r.count>r.sample.length?'<span>+ '+(r.count-r.sample.length).toLocaleString("de-AT")+' weitere</span>':'')+'</div>':''); }
+function kdPaint(){ var e=document.getElementById("mkKdRes"); if(e) e.innerHTML=kdResHtml(); var b=document.querySelector('[data-act="mkkdok"]'); if(b) b.disabled=!(KD&&KD.res&&KD.res.count>=2); }
+function kdRun(){ if(!KD) return; KD.loading=true; KD.err=""; kdPaint(); var snap=KD.from+"|"+KD.to+"|"+KD.verifiedOnly;
+  api("/admin/api/mkt/giveaway/kochdu",{from:KD.from,to:KD.to,verifiedOnly:KD.verifiedOnly}).then(function(j){ if(!KD||snap!==KD.from+"|"+KD.to+"|"+KD.verifiedOnly) return; KD.loading=false; if(!j||!j.ok){ KD.res=null; KD.err=(j&&j.error)||"kochdu nicht erreichbar"; } else KD.res=j; kdPaint(); }); }
+F.listen("input","[data-kd]",function(el){ if(!KD) return; var k=el.getAttribute("data-kd"); if(k==="verifiedOnly") KD.verifiedOnly=el.checked; else KD[k]=el.value; clearTimeout(KD_T); KD_T=setTimeout(kdRun,350); });
+F.listen("change","[data-kd]",function(el){ if(!KD) return; var k=el.getAttribute("data-kd"); if(k==="verifiedOnly"){ KD.verifiedOnly=el.checked; clearTimeout(KD_T); kdRun(); } });
+F.action("mkkdok",function(){ if(!KD||!KD.res) return;
+  GW.source={type:"kochdu",from:KD.res.from,to:KD.res.to,verifiedOnly:KD.res.verifiedOnly}; GW.text=""; GW.importedText=""; GW.dedupe=true;
+  PARSE=KD.res; KD_ERR=""; KD=null; F.closeModal(); saveGw(); F.render(); F.toast("Teilnehmer übernommen"); });
+F.action("mkkdclear",function(){ GW.source=null; GW.importedText=""; PARSE=null; KD_ERR=""; saveGw(); F.render(); reparse(); });
+F.action("mkkdre",function(){ reparse(); });
+F.action("mkkdct",function(a){ var x=a.split("|");
+  api("/admin/api/mkt/giveaway/contact",{id:x[0],kind:x[1],i:+x[2]}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Kontakt nicht gefunden",true);
+    F.modal('<div class="row-between"><h2 style="font-size:19px">Kontakt</h2>'+F.btnClose()+'</div><p class="muted small" style="margin:4px 0 10px">Nur für dich – zum Benachrichtigen. Nicht öffentlich zeigen.</p>'+
+      '<p style="margin:0 0 4px"><b>'+esc(j.name)+'</b></p><p style="margin:0"><a href="mailto:'+esc(j.email)+'">'+esc(j.email)+'</a></p>'+
+      '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button></span></div>',"narrow"); }); });
 
 /* ---------- Teilnehmer aus einem Instagram-Beitrag ---------- */
 var IGI=null;   /* {brand, media:[], sel, rules, res, loading} */
@@ -328,5 +374,5 @@ function render(){
 }
 F.action("mktab",function(t){ UI.mktTab=t; F.ls("fsc_mkt_tab",t); if(t==="gewinnspiel"||t==="marken") load(); if((t==="planer"||t==="kanaele")&&F.mktPlanReload) F.mktPlanReload(); F.render(); });
 F.action("mkreload",function(){ ST=null; F.render(); });
-F.view({id:"mkt",label:"Marketing",short:"Marketing",icon:"mkt",order:18,render:render,after:function(){ if(GW.text.trim()&&!PARSE) reparse(); TABS.forEach(function(t){ if(t.id===UI.mktTab&&t.after) t.after(); }); }});
+F.view({id:"mkt",label:"Marketing",short:"Marketing",icon:"mkt",order:18,render:render,after:function(){ if((GW.text.trim()||isKd())&&!PARSE&&!KD_ERR) reparse(); TABS.forEach(function(t){ if(t.id===UI.mktTab&&t.after) t.after(); }); }});
 })();
