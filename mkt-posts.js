@@ -26,7 +26,7 @@ module.exports = function (C) {
   function appCfg(provider) {
     const a = S().mkt.apps[provider] || {}, env = k => process.env["MKT_" + provider.toUpperCase() + "_" + k] || "";
     const sec = a.secret ? unseal(a.secret) : null;
-    return { clientId: a.clientId || env("CLIENT_ID"), secret: (sec && sec.v) || env("CLIENT_SECRET"), redirect: redirectUri() };
+    return { clientId: a.clientId || env("CLIENT_ID"), secret: (sec && sec.v) || env("CLIENT_SECRET"), redirect: redirectUri(), configId: a.configId || env("CONFIG_ID") };   // configId: Facebook Login for Business
   }
   const appReady = provider => provider === "bluesky" || (() => { const c = appCfg(provider); return !!(c.clientId && c.secret); })();
   const pexelsKey = () => { const k = S().mkt.pexels ? unseal(S().mkt.pexels) : null; return (k && k.v) || process.env.PEXELS_API_KEY || ""; };
@@ -416,7 +416,7 @@ module.exports = function (C) {
     const s = S();
     return { posts: s.posts.slice(0, 150).map(postPublic), channels: s.channels.filter(c => c.status !== "getrennt").map(channelPublic),
       platforms: Object.keys(PLATFORMS).map(k => Object.assign({ key: k }, PLATFORMS[k])),
-      providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId })),
+      providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId, configId: k === "facebook" ? appCfg(k).configId || "" : undefined })),
       redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), igTags: igTags(), music: musicList().map(m => ({ id: m.id, name: m.name, mood: m.mood, license: m.license, seed: m.seed })), moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })),
       locations: Object.fromEntries(brandList().map(b => [b.key, b.locations || []])),
       plans: Object.fromEntries(brandList().map(b => [b.key, plan(b)])), ki: !!(C.KI && C.KI.marketingOn && C.KI.marketingOn()) };
@@ -526,7 +526,8 @@ module.exports = function (C) {
       if (pl.provider === "publicBase") { const v = clip(pl.value, 200).replace(/\/+$/, ""); if (v && !/^https:\/\/[a-z0-9.-]+$/i.test(v)) throw fail(400, "Adresse bitte als https://domain"); s.mkt.publicBase = v || undefined; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
       if (!PROVIDERS[pl.provider] || pl.provider === "bluesky") throw fail(400, "Unbekannter Anbieter");
       if (pl.remove) delete s.mkt.apps[pl.provider];
-      else { const cur = s.mkt.apps[pl.provider] || {}; s.mkt.apps[pl.provider] = { clientId: clip(pl.clientId, 200) || cur.clientId || "", secret: pl.secret ? seal({ v: clip(pl.secret, 300) }) : cur.secret }; }
+      else { const cur = s.mkt.apps[pl.provider] || {}; s.mkt.apps[pl.provider] = { clientId: clip(pl.clientId, 200) || cur.clientId || "", secret: pl.secret ? seal({ v: clip(pl.secret, 300) }) : cur.secret };
+        if (pl.provider === "facebook") { const cfg = pl.configId !== undefined ? String(pl.configId || "").replace(/\D/g, "").slice(0, 30) : (cur.configId || ""); if (cfg) s.mkt.apps.facebook.configId = cfg; } }
       save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true;
     }
     if (p === "/admin/api/mkt/connect" && req.method === "POST") {

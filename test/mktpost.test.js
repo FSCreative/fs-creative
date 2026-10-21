@@ -231,6 +231,14 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.ok(lib.items.some(x => /Testbild/.test(x.desc || "")), "Beschreibung in der Sammlung");
     delete KI.marketingVision;
   });
+  await t("Facebook Login for Business: mit Konfigurations-ID config_id statt scope", async () => {
+    const P2 = require(path.join(ROOT, "mkt-publish.js"))({});
+    const a = new URL(P2.authUrl("facebook", { clientId: "11", redirect: "https://x/cb", state: "s", configId: "987654" }));
+    assert.strictEqual(a.searchParams.get("config_id"), "987654"); assert.ok(!a.searchParams.get("scope")); assert.strictEqual(a.searchParams.get("response_type"), "code");
+    const b = new URL(P2.authUrl("facebook", { clientId: "11", redirect: "https://x/cb", state: "s" })); assert.ok(/pages_manage_posts/.test(b.searchParams.get("scope")));
+    const r = await call("POST", "/admin/api/mkt/app", { provider: "facebook", clientId: "11", secret: "geheim", configId: "98 76-54" });
+    assert.strictEqual(r.json().providers.find(x => x.key === "facebook").configId, "987654");
+  });
   mock.server.close(); pub.close(); try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   console.log("mktpost: " + pass + " ok, " + fail + " fehlgeschlagen");
   if (fail) { fails.forEach(f => console.log("  ✗ " + f)); process.exit(1); }

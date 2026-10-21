@@ -30,7 +30,7 @@ const PLATFORMS = {
 };
 const PROVIDERS = {
   instagram: { label: "Instagram (Meta)", portal: "https://developers.facebook.com/apps", hint: "Meta-App (Typ Business) → Produkt „Instagram“ → „API-Einrichtung mit Instagram-Login“: Instagram-App-ID und -Geheimschlüssel. Dein Instagram-Konto muss ein Business- oder Creator-Konto sein." },
-  facebook: { label: "Facebook (Meta)", portal: "https://developers.facebook.com/apps", hint: "Dieselbe Meta-App: App-ID und App-Geheimcode (Einstellungen → Allgemeines). Produkt „Facebook Login for Business“. Damit Posts öffentlich sind, muss die App auf „Live“ stehen." },
+  facebook: { label: "Facebook (Meta)", portal: "https://developers.facebook.com/apps", hint: "Dieselbe Meta-App: App-ID und App-Geheimcode (App-Einstellungen → Allgemeines). „Facebook Login for Business“ → Konfiguration mit den Seiten-Berechtigungen anlegen und deren Konfigurations-ID eintragen. Damit Posts öffentlich sind, muss die App auf „Live“ stehen." },
   threads: { label: "Threads (Meta)", portal: "https://developers.facebook.com/apps", hint: "Meta-App mit Anwendungsfall „Threads-API“: Threads-App-ID und -Geheimschlüssel; dich als Threads-Tester eintragen und in Threads bestätigen." },
   google: { label: "YouTube (Google)", portal: "https://console.cloud.google.com/apis/credentials", hint: "Google-Cloud-Projekt → YouTube Data API v3 aktivieren → OAuth-Client (Webanwendung). Zustimmungsbildschirm auf „In Produktion“ stellen, sonst läuft die Anmeldung nach 7 Tagen ab." },
   tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "TikTok-App mit Login Kit und Content Posting API (Upload). Videos landen als Entwurf in deiner TikTok-App – dort tippst du auf Posten (TikTok erlaubt direktes Posten erst nach einer Prüfung)." },
@@ -72,7 +72,9 @@ module.exports = function (D) {
     const st = c.state, rd = c.redirect;
     switch (provider) {
       case "instagram": return B.igAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments", state: st, enable_fb_login: "0", force_authentication: "1" });
-      case "facebook": return B.fbAuth + q({ client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement" });
+      // Facebook Login for Business: Berechtigungen stehen in der Konfiguration (config_id), sonst klassisch per scope
+      case "facebook": return B.fbAuth + q(c.configId ? { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", config_id: c.configId, override_default_response_type: "true" }
+        : { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement" });
       case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish", response_type: "code", state: st });
       case "linkedin": return B.liAuth + q({ response_type: "code", client_id: c.clientId, redirect_uri: rd, scope: "openid profile w_member_social", state: st });
       case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
