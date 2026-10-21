@@ -158,14 +158,22 @@ module.exports = function (R) {
   }
   const write = (s, buf) => new Promise((res, rej) => { if (s.destroyed) return rej(new Error("ffmpeg beendet")); s.write(buf) ? res() : s.once("drain", res); });
   /* Kamerafahrt über dem fertigen Bild (Hintergrund + Text zusammen, sonst laufen Logo/Karten und Text auseinander) – wechselt je Szene.
-     A = Stärke (Foto/Video kräftiger, reines Layout sanft), pz = Ruck beim harten Schnitt. */
-  const KB = [
-    (N, A) => ["1+" + A + "*on/" + N, "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"],
-    (N, A) => ["1+" + A + "*(1-on/" + N + ")", "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"],
-    (N, A) => ["1+" + A, "(iw-iw/zoom)*on/" + N, "ih/2-(ih/zoom/2)"],
-    (N, A) => ["1+" + A, "(iw-iw/zoom)*(1-on/" + N + ")", "ih/2-(ih/zoom/2)"],
-    (N, A) => ["1+" + A, "iw/2-(iw/zoom/2)", "(ih-ih/zoom)*(1-on/" + N + ")"],
+     A = Stärke (Foto/Video kräftiger, reines Layout sanft), Ruck beim harten Schnitt nur leicht.
+     Umsetzung mit „perspective“ (Subpixel, kubisch interpoliert) statt zoompan: zoompan rundet Ausschnitt-Position je Bild auf ganze Pixel → Wackeln/Zittern. */
+  const KB = [   // [Zoom, Lage x 0…1, Lage y 0…1] als Ausdruck in u (0→1 über die Szene, weich ein-/ausgeblendet)
+    A => ["1+" + A + "*U", "0.5", "0.5"],
+    A => ["1+" + A + "*(1-U)", "0.5", "0.5"],
+    A => ["1+" + A, "U", "0.5"],
+    A => ["1+" + A, "(1-U)", "0.5"],
+    A => ["1+" + A, "0.5", "(1-U)"],
   ];
+  function camera(kb, N, punch, d0) {
+    const U = "(st(1,clip(on/" + N + ",0,1))*0+ld(1)*ld(1)*(3-2*ld(1))*0.35+ld(1)*0.65)";   // fast linear, sanft an den Enden
+    const Z = "(" + kb[0].replace(/U/g, U) + (punch ? "+0.035*pow(max(0,1-max(0,on/30-" + d0 + ")/0.35),2)*gte(on/30," + d0 + ")" : "") + ")";
+    const w = "(W/" + Z + ")", h = "(H/" + Z + ")", l = "(" + kb[1].replace(/U/g, U) + "*(W-" + w + "))", t = "(" + kb[2].replace(/U/g, U) + "*(H-" + h + "))";
+    const q = v => "'" + v + "'";
+    return "perspective=x0=" + q(l) + ":y0=" + q(t) + ":x1=" + q(l + "+" + w) + ":y1=" + q(t) + ":x2=" + q(l) + ":y2=" + q(t + "+" + h) + ":x3=" + q(l + "+" + w) + ":y3=" + q(t + "+" + h) + ":interpolation=cubic:eval=frame";
+  }
 
   // Eine Szene: Hintergrund (Kamerafahrt/Video) + Vordergrund-Animation ab „delay“ (= Mitte des Übergangs) → seg.mp4
   async function sceneSeg(s, brand, o, i, len, delay, punch) {
@@ -180,9 +188,8 @@ module.exports = function (R) {
     const fgIdx = bgVid ? 2 : 1;
     const bgF = bgVid ? "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,eq=brightness=-0.06:saturation=1.08[b0];[b0][1:v]overlay=0:0[b]"
       : "[0:v]scale=1080:1920,setsar=1,fps=30[b]";
-    const kb = KB[(o.v + i) % KB.length](N, bgVid || s.image ? 0.1 : 0.045), d0 = delay.toFixed(3);
-    const z = kb[0] + (punch ? "+0.08*pow(max(0,1-max(0,on/30-" + d0 + ")/0.3),2)*gte(on/30," + d0 + ")" : "");
-    const fc = bgF + ";[" + fgIdx + ":v]format=rgba[f];[b][f]overlay=0:0:alpha=premultiplied:eof_action=repeat:format=auto,scale=2160:3840,zoompan=z='" + z + "':x='" + kb[1] + "':y='" + kb[2] + "':d=1:s=1080x1920:fps=30,format=yuv420p[v]";
+    const kb = KB[(o.v + i) % KB.length](bgVid || s.image ? 0.07 : 0.035), d0 = delay.toFixed(3);
+    const fc = bgF + ";[" + fgIdx + ":v]format=rgba[f];[b][f]overlay=0:0:alpha=premultiplied:eof_action=repeat:format=auto,format=yuv444p," + camera(kb, N, punch, d0) + ",format=yuv420p[v]";
     const seg = path.join(dir, "seg" + i + ".mp4"), units = [];
     pp.units.forEach(u => units.push(delay + u.t0));
     let lastKey = null, lastBuf = null, frames = 0, tJs = 0; const t0 = Date.now();
