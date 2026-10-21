@@ -1581,3 +1581,4 @@ details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-vouch
 .ps-fold i{display:block;flex:none;background-repeat:no-repeat;background-color:#fff;box-shadow:0 18px 34px rgba(0,0,0,.35)}
 .ps-fold i:nth-child(odd){filter:brightness(1)}.ps-fold i:nth-child(even){filter:brightness(.88)}
 .ps-fold-in{display:flex;flex-direction:column;align-items:center;gap:6px}.ps-fold-in img{max-width:min(62%,420px);box-shadow:0 8px 20px rgba(0,0,0,.35)}.ps-fold-in span{font-size:12px;color:rgba(255,255,255,.6)}
+.ps-pov-best .ps-badge{display:none}   /* im Bestseller-Abschnitt ist das Abzeichen doppelt */
