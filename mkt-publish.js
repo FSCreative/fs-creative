@@ -71,13 +71,13 @@ module.exports = function (D) {
   function authUrl(provider, c) {   // c: { clientId, redirect, state }
     const st = c.state, rd = c.redirect;
     switch (provider) {
-      case "instagram": return B.igAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments", state: st, enable_fb_login: "0", force_authentication: "1" });
+      case "instagram": return B.igAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages", state: st, enable_fb_login: "0", force_authentication: "1" });
       // Facebook Login for Business: Berechtigungen stehen in der Konfiguration (config_id), sonst klassisch per scope
       case "facebook": return B.fbAuth + q(c.configId ? { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", config_id: c.configId, override_default_response_type: "true" }
-        : { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement" });
-      case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish", response_type: "code", state: st });
+        : { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement,pages_read_user_content,pages_messaging" });
+      case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies", response_type: "code", state: st });
       case "linkedin": return B.liAuth + q({ response_type: "code", client_id: c.clientId, redirect_uri: rd, scope: "openid profile w_member_social", state: st });
-      case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
+      case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
       case "tiktok": return B.ttAuth + q({ client_key: c.clientId, scope: "user.info.basic,video.upload", response_type: "code", redirect_uri: rd, state: st });
       case "pinterest": return B.pinAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "boards:read,pins:read,pins:write,user_accounts:read", state: st });
     }
@@ -317,7 +317,123 @@ module.exports = function (D) {
     }
     return out;
   }
-  return { PLATFORMS, PROVIDERS, authUrl, exchange, refresh, bskyLogin, publish, igMedia, igComments, _test: { liText, bskyFacets } };
+  // ───────────── Posteingang: Kommentare, Nachrichten, Likes je Kanal (lesen, antworten, liken) ─────────────
+  // Einheitlich: { items:[{ id, kind:"comment"|"message"|"like"|"mention", from:{name,handle,id}, text, at, mine, post:{id,text,url,thumb},
+  //   replies:[{from,text,at,mine}], can:{reply,like}, ref:{…für Antwort/Like} }], posts:[{id,text,url,thumb,at,likes,comments}], notes:[…] }
+  const clipT = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+  const permNote = (e, what) => /permission|scope|not authorized|\(#(10|200|230|3|190)\)|OAuthException|nicht berechtigt|insufficient/i.test(String(e && e.message)) ? what + ": Berechtigung fehlt – Konto unter Kanäle neu verbinden." : what + ": " + String(e && e.message || e).slice(0, 160);
+  async function inbox(platform, ch, tok, o) {
+    o = o || {}; const nPosts = o.posts || 10;
+    if (platform === "instagram") {
+      const t = tok.access, me = String(ch.account.handle || "").replace(/^@/, "").toLowerCase(), out = { items: [], posts: [], notes: [] };
+      const media = (await req("GET", B.ig + "/" + GV + "/" + ch.account.id + "/media" + q({ fields: "id,caption,timestamp,permalink,media_type,thumbnail_url,media_url,like_count,comments_count", limit: String(nPosts), access_token: t }))).data || [];
+      for (const m of media) {
+        const post = { id: m.id, text: clipT(m.caption, 140), url: m.permalink || "", thumb: m.thumbnail_url || m.media_url || "", at: m.timestamp || "" };
+        out.posts.push(Object.assign({ likes: m.like_count || 0, comments: m.comments_count || 0 }, post));
+        if (!m.comments_count) continue;
+        const r = await req("GET", B.ig + "/" + GV + "/" + m.id + "/comments" + q({ fields: "id,username,text,timestamp,like_count,replies.limit(25){id,username,text,timestamp}", limit: "30", access_token: t }));
+        (r.data || []).forEach(c => out.items.push({ id: "ig:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", likes: c.like_count || 0,
+          mine: String(c.username || "").toLowerCase() === me, post, replies: ((c.replies && c.replies.data) || []).map(x => ({ from: { name: x.username || "", handle: x.username ? "@" + x.username : "" }, text: x.text || "", at: x.timestamp || "", mine: String(x.username || "").toLowerCase() === me })).sort((a, b) => a.at < b.at ? -1 : 1),
+          can: { reply: true, like: false }, ref: { comment: c.id } }));
+      }
+      try {
+        const cv = await req("GET", B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(15){id,from,to,message,created_time}", limit: "20", access_token: t }));
+        (cv.data || []).forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(ch.account.id) && String(p.username || "").toLowerCase() !== me) || {};
+          if (!msgs.length) return; const last = msgs[msgs.length - 1];
+          out.items.push({ id: "ig:m:" + c.id, kind: "message", from: { name: other.username || other.name || "", handle: other.username ? "@" + other.username : "", id: other.id || "" }, text: last.message || "(Anhang)", at: last.created_time || c.updated_time || "",
+            mine: String(last.from && last.from.id) === String(ch.account.id), thread: msgs.map(x => ({ from: { name: (x.from && (x.from.username || x.from.name)) || "" }, text: x.message || "(Anhang)", at: x.created_time || "", mine: String(x.from && x.from.id) === String(ch.account.id) || String(x.from && x.from.username || "").toLowerCase() === me })),
+            can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
+      } catch (e) { out.notes.push(permNote(e, "Instagram-Nachrichten")); }
+      return out;
+    }
+    if (platform === "facebook") {
+      const t = tok.access, pid = ch.account.id, out = { items: [], posts: [], notes: [] };
+      const ps = (await req("GET", B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(25){id,message,from,created_time,like_count,parent}", limit: String(nPosts), access_token: t }))).data || [];
+      for (const p of ps) {
+        const post = { id: p.id, text: clipT(p.message, 140), url: p.permalink_url || "", thumb: p.full_picture || "", at: p.created_time || "" }, cm = (p.comments && p.comments.data) || [];
+        out.posts.push(Object.assign({ likes: (p.reactions && p.reactions.summary && p.reactions.summary.total_count) || 0, comments: (p.comments && p.comments.summary && p.comments.summary.total_count) || cm.length }, post));
+        const top = cm.filter(c => !c.parent), sub = cm.filter(c => c.parent), isMe = c => String(c.from && c.from.id) === String(pid);
+        top.forEach(c => out.items.push({ id: "fb:c:" + c.id, kind: "comment", from: { name: (c.from && c.from.name) || "Facebook-Nutzer", id: c.from && c.from.id || "" }, text: c.message || "", at: c.created_time || "", likes: c.like_count || 0, mine: isMe(c), post,
+          replies: sub.filter(x => x.parent && x.parent.id === c.id).map(x => ({ from: { name: (x.from && x.from.name) || "" }, text: x.message || "", at: x.created_time || "", mine: isMe(x) })).sort((a, b) => a.at < b.at ? -1 : 1),
+          can: { reply: true, like: true }, ref: { comment: c.id } }));
+      }
+      try {
+        const cv = await req("GET", B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", fields: "id,updated_time,participants,messages.limit(15){id,from,to,message,created_time}", limit: "20", access_token: t }));
+        (cv.data || []).forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(pid)) || {};
+          if (!msgs.length) return; const last = msgs[msgs.length - 1];
+          out.items.push({ id: "fb:m:" + c.id, kind: "message", from: { name: other.name || "", id: other.id || "" }, text: last.message || "(Anhang)", at: last.created_time || c.updated_time || "", mine: String(last.from && last.from.id) === String(pid),
+            thread: msgs.map(x => ({ from: { name: (x.from && x.from.name) || "" }, text: x.message || "(Anhang)", at: x.created_time || "", mine: String(x.from && x.from.id) === String(pid) })), can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
+      } catch (e) { out.notes.push(permNote(e, "Messenger-Nachrichten")); }
+      return out;
+    }
+    if (platform === "threads") {
+      const t = tok.access, me = String(ch.account.handle || "").replace(/^@/, "").toLowerCase(), out = { items: [], posts: [], notes: [] };
+      const th = (await req("GET", B.th + "/v1.0/me/threads" + q({ fields: "id,text,permalink,timestamp,media_url,thumbnail_url", limit: String(nPosts), access_token: t }))).data || [];
+      for (const p of th) {
+        const post = { id: p.id, text: clipT(p.text, 140), url: p.permalink || "", thumb: p.thumbnail_url || p.media_url || "", at: p.timestamp || "" };
+        let rs = []; try { rs = (await req("GET", B.th + "/v1.0/" + p.id + "/replies" + q({ fields: "id,text,username,timestamp", reverse: "false", access_token: t }))).data || []; } catch (e) { out.notes.push(permNote(e, "Threads-Antworten")); break; }
+        out.posts.push(Object.assign({ likes: null, comments: rs.length }, post));
+        rs.forEach(c => out.items.push({ id: "th:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", mine: String(c.username || "").toLowerCase() === me, post, replies: [], can: { reply: true, like: false }, ref: { replyTo: c.id } }));
+      }
+      return out;
+    }
+    if (platform === "bluesky") {
+      const t = tok.access, did = ch.account.id, out = { items: [], posts: [], notes: [] };
+      const n = (await req("GET", B.bsky + "/xrpc/app.bsky.notification.listNotifications" + q({ limit: "60" }), { token: t })).notifications || [];
+      const subj = [...new Set(n.filter(x => x.reasonSubject).map(x => x.reasonSubject))].slice(0, 25), posts = {};
+      if (subj.length) { const u = B.bsky + "/xrpc/app.bsky.feed.getPosts?" + subj.map(x => "uris=" + encodeURIComponent(x)).join("&"); try { ((await req("GET", u, { token: t })).posts || []).forEach(p => { posts[p.uri] = p; }); } catch (e) {} }
+      const pOf = uri => { const p = posts[uri]; const rk = String(uri || "").split("/").pop(); return p ? { id: uri, text: clipT(p.record && p.record.text, 140), url: "https://bsky.app/profile/" + (tok.handle || did) + "/post/" + rk, thumb: "", at: p.indexedAt || "" } : null; };
+      n.forEach(x => {
+        const from = { name: (x.author && (x.author.displayName || x.author.handle)) || "", handle: x.author && x.author.handle ? "@" + x.author.handle : "", id: x.author && x.author.did || "" };
+        if (x.reason === "like" || x.reason === "repost" || x.reason === "follow") out.items.push({ id: "bs:" + x.uri, kind: "like", sub: x.reason, from, text: x.reason === "like" ? "gefällt dein Beitrag" : x.reason === "repost" ? "hat deinen Beitrag geteilt" : "folgt dir jetzt", at: x.indexedAt || "", post: pOf(x.reasonSubject), isNew: !x.isRead, can: { reply: false, like: false } });
+        else if (x.reason === "reply" || x.reason === "mention" || x.reason === "quote") {
+          const rec = x.record || {}, root = rec.reply && rec.reply.root ? rec.reply.root : { uri: x.uri, cid: x.cid };
+          out.items.push({ id: "bs:" + x.uri, kind: x.reason === "reply" ? "comment" : "mention", from, text: rec.text || "", at: x.indexedAt || "", post: pOf(rec.reply && rec.reply.parent ? rec.reply.parent.uri : x.reasonSubject), isNew: !x.isRead, replies: [], can: { reply: true, like: true }, ref: { uri: x.uri, cid: x.cid, root } });
+        }
+      });
+      return out;
+    }
+    if (platform === "youtube") {
+      const t = tok.access, out = { items: [], posts: [], notes: [] };
+      const r = await req("GET", B.yt + "/youtube/v3/commentThreads" + q({ part: "snippet,replies", allThreadsRelatedToChannelId: ch.account.id, maxResults: "40", order: "time", textFormat: "plainText" }), { token: t });
+      (r.items || []).forEach(it => { const s = it.snippet && it.snippet.topLevelComment && it.snippet.topLevelComment.snippet || {}, vid = it.snippet && it.snippet.videoId || "";
+        const mine = c => String(c.authorChannelId && c.authorChannelId.value) === String(ch.account.id);
+        out.items.push({ id: "yt:" + it.id, kind: "comment", from: { name: s.authorDisplayName || "" }, text: s.textOriginal || s.textDisplay || "", at: s.publishedAt || "", likes: s.likeCount || 0, mine: mine(s),
+          post: vid ? { id: vid, text: "", url: "https://www.youtube.com/shorts/" + vid, thumb: "https://i.ytimg.com/vi/" + vid + "/default.jpg" } : null,
+          replies: ((it.replies && it.replies.comments) || []).map(c => ({ from: { name: c.snippet.authorDisplayName || "" }, text: c.snippet.textOriginal || "", at: c.snippet.publishedAt || "", mine: mine(c.snippet) })).sort((a, b) => a.at < b.at ? -1 : 1),
+          can: { reply: true, like: false }, ref: { parent: it.snippet.topLevelComment.id } }); });
+      return out;
+    }
+    return { items: [], posts: [], notes: [(PLATFORMS[platform] || {}).label + ": Kommentare und Nachrichten gibt die Plattform über ihre Schnittstelle nicht heraus – bitte direkt in der App antworten."] };
+  }
+  async function inboxReply(platform, ch, tok, ref, text, kind) {
+    const t = tok.access, msg = String(text || "").trim().slice(0, 2000); if (!msg) throw pubErr("Bitte einen Text eingeben.");
+    if (platform === "instagram") {
+      if (kind === "message") return req("POST", B.ig + "/" + GV + "/" + ch.account.id + "/messages", { json: { recipient: { id: ref.recipient }, message: { text: msg } }, token: t });
+      return req("POST", B.ig + "/" + GV + "/" + ref.comment + "/replies", { form: { message: msg, access_token: t } });
+    }
+    if (platform === "facebook") {
+      if (kind === "message") return req("POST", B.fb + "/" + GV + "/" + ch.account.id + "/messages" + q({ access_token: t }), { json: { recipient: { id: ref.recipient }, messaging_type: "RESPONSE", message: { text: msg } } });
+      return req("POST", B.fb + "/" + GV + "/" + ref.comment + "/comments", { form: { message: msg, access_token: t } });
+    }
+    if (platform === "threads") {
+      const c = await req("POST", B.th + "/v1.0/me/threads", { form: { media_type: "TEXT", text: msg.slice(0, 500), reply_to_id: ref.replyTo, access_token: t } });
+      await igWait(B.th, c.id, t, "Threads", "v1.0").catch(() => {});
+      return req("POST", B.th + "/v1.0/me/threads_publish", { form: { creation_id: c.id, access_token: t } });
+    }
+    if (platform === "bluesky") {
+      return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: t, json: { repo: ch.account.id, collection: "app.bsky.feed.post", record: { $type: "app.bsky.feed.post", text: msg.slice(0, 300), createdAt: new Date().toISOString(), langs: ["de"], facets: bskyFacets(msg.slice(0, 300)),
+        reply: { root: { uri: ref.root.uri, cid: ref.root.cid }, parent: { uri: ref.uri, cid: ref.cid } } } } });
+    }
+    if (platform === "youtube") return req("POST", B.yt + "/youtube/v3/comments" + q({ part: "snippet" }), { token: t, json: { snippet: { parentId: ref.parent, textOriginal: msg } } });
+    throw pubErr("Antworten ist hier nicht möglich.");
+  }
+  async function inboxLike(platform, ch, tok, ref) {
+    if (platform === "facebook") return req("POST", B.fb + "/" + GV + "/" + ref.comment + "/likes", { form: { access_token: tok.access } });
+    if (platform === "bluesky") return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.like", record: { $type: "app.bsky.feed.like", subject: { uri: ref.uri, cid: ref.cid }, createdAt: new Date().toISOString() } } });
+    throw pubErr("Liken ist hier über die Schnittstelle nicht möglich.");
+  }
+  return { PLATFORMS, PROVIDERS, authUrl, exchange, refresh, bskyLogin, publish, igMedia, igComments, inbox, inboxReply, inboxLike, _test: { liText, bskyFacets } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;

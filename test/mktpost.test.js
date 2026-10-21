@@ -239,6 +239,13 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const r = await call("POST", "/admin/api/mkt/app", { provider: "facebook", clientId: "11", secret: "geheim", configId: "98 76-54" });
     assert.strictEqual(r.json().providers.find(x => x.key === "facebook").configId, "987654");
   });
+  await t("Posteingang: je Marke alle verbundenen Kanäle, Fehler einzelner Kanäle brechen nichts ab, „neu“ wird beim Öffnen zurückgesetzt", async () => {
+    const r = await call("GET", "/admin/api/mkt/inbox", null, "?brand=kochdu&seen=1"), j = r.json();
+    assert.strictEqual(j.ok, true, j.error); assert.ok(j.channels.length >= 3, "Kanäle " + j.channels.length); j.channels.forEach(c => assert.ok(Array.isArray(c.items) && (c.error || c.notes)));
+    assert.ok(!JSON.stringify(j).includes('"ref"'), "interne Antwort-Adressen bleiben am Server");
+    const c = (await call("GET", "/admin/api/mkt/inbox/counts")).json(); assert.strictEqual(c.counts.kochdu, 0);
+    assert.strictEqual((await call("POST", "/admin/api/mkt/inbox/act", { brand: "kochdu", platform: "instagram", id: "gibtsnicht", op: "reply", text: "x" })).code, 404);
+  });
   await t("Druckshop: Produktfotos aus dem Shop in der Bildersammlung (mit Beschreibung, ausblendbar, verschwinden mit dem Produkt)", async () => {
     let prods = [{ key: "visitenkarten", title: "Visitenkarten", desc: "Klassisch auf 400 g", img: "https://images.ctfassets.net/x/vk.jpg?fm=jpg&q=85&w=1080" },
       { key: "flyer", title: "Flyer", desc: "", img: "https://images.ctfassets.net/x/fl.jpg?fm=jpg&q=85&w=1080" }, { key: "boese", title: "Fremd", desc: "", img: "https://example.org/x.jpg" }];

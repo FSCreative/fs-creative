@@ -340,6 +340,26 @@ module.exports = function (C) {
       images: (md.images || []).map((f, i) => ({ url: pubUrl(f), file: file(f), small: md.small && md.small[i] ? file(md.small[i]) : "" })),
       video: md.video ? { url: pubUrl(md.video), file: file(md.video) } : null, cover: md.cover ? { url: pubUrl(md.cover), file: file(md.cover) } : null };
   }
+  // ───────────── Posteingang ─────────────
+  const INBOX = new Map();   // Marke → { at, channels:[{ platform, label, account, items, posts, notes, error }] }
+  const pubItem = (it, platform) => { const o = Object.assign({}, it, { platform }); delete o.ref; return o; };
+  async function inboxOf(key, reload, markSeen) {
+    let box = INBOX.get(key);
+    if (!box || reload || Date.now() - box.at > 2 * 60e3) {
+      const chs = channelsOf(key), list = await Promise.all(chs.map(async ch => {
+        const base = { platform: ch.platform, label: PLATFORMS[ch.platform].label, account: ch.account && (ch.account.handle || ch.account.name) || "", items: [], posts: [], notes: [] };
+        try { return Object.assign(base, await P.inbox(ch.platform, ch, await tokFor(ch))); } catch (e) { return Object.assign(base, { error: String(e.message || e).slice(0, 300) }); }
+      }));
+      box = { at: Date.now(), channels: list }; INBOX.set(key, box);
+      const st = S().mkt, seen = (st.inboxSeen = st.inboxSeen || {})[key] || "", n = list.reduce((a, c) => a + c.items.filter(i => !i.mine && i.at > seen && i.kind !== "like").length, 0);
+      (st.inboxNew = st.inboxNew || {})[key] = n; save();
+    }
+    const st = S().mkt, seen = (st.inboxSeen || {})[key] || "";
+    const out = { at: new Date(box.at).toISOString(), seen, channels: box.channels.map(c => Object.assign({}, c, { items: c.items.map(i => Object.assign(pubItem(i, c.platform), { isNew: i.isNew || (!i.mine && !!seen && i.at > seen) })).sort((a, b) => a.at < b.at ? 1 : -1) })) };
+    if (markSeen) { (st.inboxSeen = st.inboxSeen || {})[key] = nowIso(); (st.inboxNew = st.inboxNew || {})[key] = 0; save(); }
+    return out;
+  }
+  function inboxCounts() { const st = S().mkt; return Object.assign({}, st.inboxNew || {}); }
   async function tokFor(ch) {
     let tok = unseal(ch.tok); if (!tok) throw Object.assign(new Error("Zugang nicht lesbar – bitte neu verbinden."), { auth: true });
     const pv = PLATFORMS[ch.platform].provider, n = await P.refresh(ch.platform, tok, appCfg(pv));
@@ -385,6 +405,18 @@ module.exports = function (C) {
       // Zugänge rechtzeitig auffrischen (einmal am Tag je Konto)
       for (const ch of S().channels.filter(c => c.status === "ok" && (!c.checkedAt || Date.now() - Date.parse(c.checkedAt) > 864e5))) {
         ch.checkedAt = nowIso(); try { await tokFor(ch); } catch (e) { ch.lastError = String(e.message || e).slice(0, 200); if (e.auth) ch.status = "abgelaufen"; } save();
+      }
+      // Posteingang alle 10 Minuten im Hintergrund: neue Kommentare/Nachrichten zählen und als Mitteilung melden (je Eintrag nur einmal)
+      const st = S().mkt; if (!st.inboxPollAt || Date.now() - Date.parse(st.inboxPollAt) > 10 * 60e3) {
+        st.inboxPollAt = nowIso(); const told = st.inboxTold = st.inboxTold || {}, first = !st.inboxToldInit;
+        for (const key of [...new Set(S().channels.filter(c => c.status === "ok").map(c => c.brand))]) {
+          let box; try { box = await inboxOf(key, true, false); } catch (e) { continue; }
+          const fresh = box.channels.flatMap(c => c.items.filter(i => !i.mine && i.kind !== "like" && !told[i.id] && Date.now() - Date.parse(i.at || 0) < 3 * 864e5).map(i => Object.assign({ pf: c.label }, i)));
+          fresh.forEach(i => { told[i.id] = Date.now(); });
+          if (!first && fresh.length && C.push) { const b = state().brands[key] || {}, i = fresh[0];
+            C.push("mkt", { title: (b.name || key) + ": " + (fresh.length > 1 ? fresh.length + " neue Kommentare/Nachrichten" : (i.kind === "message" ? "Nachricht" : "Kommentar") + " auf " + i.pf), body: (fresh.length > 1 ? i.pf + " · " : "") + (i.from && i.from.name ? i.from.name + ": " : "") + clip(i.text, 120), url: "/admin#mkt" }).catch(() => {}); }
+        }
+        Object.keys(told).forEach(k => { if (Date.now() - told[k] > 14 * 864e5) delete told[k]; }); st.inboxToldInit = true; save();
       }
     } catch (e) { console.error("marketing: tick", e.message); }
     TICKING = false;
@@ -595,6 +627,20 @@ module.exports = function (C) {
       // Tempo im Hintergrund bestimmen (Schnitte im Takt)
       MO.tempo(path.join(MUSIC, id + "." + ext)).then(t => { const m = t && S().mkt.music.find(x => x.id === id); if (m) { m.bpm = t.bpm; m.beat0 = t.beat0; save(); } }).catch(() => {});
       return J(res, 200, Object.assign({ ok: true }, overview())), true;
+    }
+    // Posteingang je Marke: Kommentare, Nachrichten, Likes aller verbundenen Kanäle (2 Minuten zwischengespeichert); „neu“ = seit dem letzten Öffnen
+    if (p === "/admin/api/mkt/inbox" && req.method === "GET") {
+      const b = brand(u.searchParams.get("brand")); return J(res, 200, Object.assign({ ok: true }, await inboxOf(b.key, u.searchParams.get("reload") === "1", u.searchParams.get("seen") === "1"))), true;
+    }
+    if (p === "/admin/api/mkt/inbox/counts" && req.method === "GET") return J(res, 200, { ok: true, counts: inboxCounts() }), true;
+    if (p === "/admin/api/mkt/inbox/act" && req.method === "POST") {
+      const pl = await body(req, 20000), b = brand(pl.brand), ch = channelsOf(b.key).find(c => c.platform === String(pl.platform || "")); if (!ch) throw fail(400, "Kanal nicht verbunden");
+      const box = INBOX.get(b.key), it = box && box.channels.flatMap(c => c.platform === ch.platform ? c.items : []).find(x => x.id === String(pl.id || "")); if (!it) throw fail(404, "Eintrag nicht mehr aktuell – bitte neu laden");
+      const tok = await tokFor(ch);
+      if (pl.op === "like") { await P.inboxLike(ch.platform, ch, tok, it.ref); it.liked = true; }
+      else { await P.inboxReply(ch.platform, ch, tok, it.ref, pl.text, it.kind); const r = { from: { name: ch.account.name || "Du" }, text: clip(pl.text, 2000), at: nowIso(), mine: true };
+        if (it.kind === "message") (it.thread = it.thread || []).push(r); else (it.replies = it.replies || []).push(r); it.answered = true; }
+      return J(res, 200, { ok: true, item: pubItem(it, ch.platform) }), true;
     }
     if (p === "/admin/api/mkt/ig-media" && req.method === "GET") {
       const ch = channelsOf(String(u.searchParams.get("brand") || "")).find(c => c.platform === "instagram"); if (!ch) throw fail(400, "Kein Instagram-Konto für diese Marke verbunden.");
