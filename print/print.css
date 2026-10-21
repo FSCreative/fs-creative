@@ -1568,3 +1568,10 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 @media (max-width:760px){.ps-h1tiles{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.ps-h1tiles .im{border-radius:14px}.ps-h1trust{gap:8px 16px;font-size:13px}}
 .ps-hqsec .hq-h b,.ps-hqsec .hq-h .live{display:none}.ps-hqsec .hq-h small{margin-left:0}
 @media (max-width:600px){.ps-cfg-h{align-items:flex-start;gap:14px}.ps-cfg>.ps-tile,.ps-cfg>[data-pmtile],.ps-cfg>div>.ps-tile{grid-template-columns:92px minmax(0,1fr)!important;column-gap:10px}.ps-cfg .ps-tile>.ps-tl{grid-column:1!important;padding-top:10px;font-size:13px}.ps-cfg .ps-tile>:not(.ps-tl),.ps-cfg .ps-own,.ps-cfgc{grid-column:2!important}.ps-cfg .ps-tile.open>.ps-segs,.ps-cfg .ps-tile.open>.ps-ddl,.ps-cfg .ps-tile.open>.ps-cfgc,.ps-cfg .ps-tile>.ps-td{grid-column:1/-1!important}.ps-cfg .ps-dd{font-size:14.5px}.ps-cfgv .ps-cfgb{height:28px}}
+/* Kasse aufgeräumt (Okt. 2026) */
+.ps-pay1{margin:18px 0 6px}.ps-pay1 p{margin:6px 0 0;font-size:14.5px;color:var(--text-dim)}.ps-pay1 b{color:var(--text)}
+details.ps-voucher{margin:16px 0 4px}details.ps-voucher summary{cursor:pointer;list-style:none;color:#0a84ff;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500}
+details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-voucher summary::after{content:" ▾"}details.ps-voucher[open] summary{margin-bottom:8px}
+.ps-price .ps-pcta{width:100%;margin-top:14px;height:46px}
+.ps-form .ps-seg{display:inline-flex;width:auto}
+.ps-cart .ps-ci-pr .ps-link{font-size:13px;color:var(--text-faint)}

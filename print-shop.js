@@ -578,7 +578,7 @@ module.exports = function (D) {
   // 3. allgemein ohne Eigenschaft nur bei eindeutigen langen Kennungen (z. B. „custom_shape_kiss_cut“). Kurze Slugs wie „a3“, „40“, „none“ gibt es in vielen Produkten mit anderer Bedeutung.
   const cmsInfo = (sku, slug, prop) => { const l = (CMS && CMS.info) || [], has = x => x.s.indexOf(slug) > -1;
     return l.find(x => has(x) && x.p.length && x.p.indexOf(sku) > -1) || (prop && l.find(x => has(x) && !x.p.length && x.pr === prop)) || (slug.length >= 12 && /_/.test(slug) && l.find(x => has(x) && !x.p.length && !x.pr)) || null; };
-  const groupName = slug => (CMS && CMS.names && CMS.names[slug]) || MAIN_DE[slug] || slug;
+  const groupName = slug => { const n = String((CMS && CMS.names && CMS.names[slug]) || MAIN_DE[slug] || slug); return n.charAt(0).toUpperCase() + n.slice(1); };   // „stickers“ → „Stickers“
   function mainsList() {
     const m = CMS && CMS.mains && CMS.mains.length ? CMS.mains : Object.keys(MAIN_DE).filter(k => k !== OTHER).map(k => ({ slug: k, name: MAIN_DE[k], img: "", subs: [] }));
     return m.concat(m.some(x => x.slug === OTHER) ? [] : [{ slug: OTHER, name: MAIN_DE[OTHER], img: "", subs: [] }]);

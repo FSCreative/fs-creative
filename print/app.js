@@ -144,7 +144,7 @@
     });
     h += "</ul>" + '<div class="ps-nav"><button type="button" class="ps-btn" data-act="shop">Weiter einkaufen</button><button type="button" class="ps-btn primary" data-go="5">Zur Kasse</button></div></div>' +
       '<aside class="ps-price"><h3>Summe</h3><div class="sum">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + (co && t.gross ? '<div class="sum2">' + eur(t.gross) + "<small>inkl. USt</small></div>" : "") +
-      '<p class="note">inkl. Versand innerhalb Österreichs · Datencheck kostenlos. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p></aside></div>';
+      '<p class="note">inkl. Versand innerhalb Österreichs · Datencheck kostenlos. Der endgültige Preis wird an der Kasse mit deiner Adresse bestätigt.</p><button type="button" class="ps-btn primary ps-pcta" data-go="5">Zur Kasse →</button></aside></div>';
     return h;
   }
 
@@ -1652,7 +1652,8 @@
   function cartAside() {
     var co = S.ctype === "company", t = cartTotals();
     return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + " Stk.</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
-      '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p></aside>';
+      '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p>' +
+      (S.step === 5 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next4">Weiter zur Zahlung →</button>' : S.step === 6 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + "Zahlungspflichtig bestellen</button>" : "") + "</aside>";   // Button-Lösung (§ 8 FAGG): Beschriftung muss die Zahlungspflicht nennen
   }
   function vCheckout() {
     var t = cartTotals(), c = S.customer, co = S.ctype === "company", invOk = co && S.uidRes && S.uidRes.valid, n = S.cart.length;
@@ -1666,12 +1667,12 @@
     var saved = S.cart.reduce(function (a, x) { return a + (x.price && x.price.bonus ? +x.price.bonus.saved || 0 : 0); }, 0), dlab = (S.cart.filter(function (x) { return x.price && x.price.bonus; })[0] || { price: {} }).price.bonus;
     var warnN = S.cart.filter(function (x) { return x.warn; }).length;
     var chk = '<fieldset class="ps-pay ps-check" style="border:0;padding:0"><legend class="ps-lbl">Datencheck</legend>' +
-      '<label class="ps-radio"><input type="radio" name="check" value="self"' + (S.check !== "pro" ? " checked" : "") + '><span><b>Direkt freigeben · 0 €</b><small>Deine Daten gehen nach der Zahlung sofort in Produktion – schnellste Lieferung. Unsere automatische Prüfung (Format, Beschnitt, Auflösung) ' +
-        (warnN ? "hat bei " + warnN + (warnN === 1 ? " Position Hinweise" : " Positionen Hinweise") + " – bitte im Warenkorb bzw. im Druck-PDF ansehen." : "hat nichts gefunden.") + "</small></span></label>" +
-      '<label class="ps-radio"><input type="radio" name="check" value="pro"' + (S.check === "pro" ? " checked" : "") + '><span><b>Profi-Datencheck · ' + eur(PRO_CHECK) + '</b><small>Ein Profi von FS Creative sieht sich deine Daten persönlich an (Beschnitt, Auflösung, Farben, Schriften) und meldet sich bei Problemen, bevor gedruckt wird. Hinweis: Das kann die Lieferzeit um etwa einen Werktag verlängern.</small></span></label>' +
+      '<label class="ps-radio"><input type="radio" name="check" value="self"' + (S.check !== "pro" ? " checked" : "") + '><span><b>Direkt freigeben · gratis</b><small>Schnellste Lieferung – die automatische Prüfung ' +
+        (warnN ? "hat bei " + warnN + (warnN === 1 ? " Position Hinweise." : " Positionen Hinweise.") : "hat nichts gefunden.") + "</small></span></label>" +
+      '<label class="ps-radio"><input type="radio" name="check" value="pro"' + (S.check === "pro" ? " checked" : "") + '><span><b>Profi-Datencheck · ' + eur(PRO_CHECK) + '</b><small>Wir sehen uns deine Daten persönlich an und melden uns vor dem Druck – ca. 1 Werktag länger.</small></span></label>' +
       (warnN && S.check !== "pro" ? '<p class="ps-check-warn">⚠ Bei ' + warnN + (warnN === 1 ? " Datei gibt" : " Dateien gibt") + " es Hinweise. Wir empfehlen den Profi-Datencheck – oder prüfe die Datei selbst noch einmal.</p>" : "") + "</fieldset>";
-    var vch = '<div class="ps-voucher"><label for="psVoucher" class="ps-lbl">Gutscheincode</label><div class="ps-uidrow"><input id="psVoucher" value="' + esc(S.voucher || "") + '" placeholder="z. B. WILLKOMMEN10" autocapitalize="characters" autocomplete="off"><button type="button" class="ps-btn small" data-act="voucher">' + (S.voucher ? "Ändern" : "Einlösen") + "</button>" + (S.voucher ? '<button type="button" class="ps-link" data-act="voucher:clear">entfernen</button>' : "") + "</div>" +
-      (S.voucherErr ? '<span class="hint bad">' + esc(S.voucherErr) + "</span>" : S.voucherOk ? '<span class="hint ok">✓ ' + esc(S.voucherOk) + "</span>" : "") + "</div>";
+    var vch = '<details class="ps-voucher"' + (S.voucher || S.voucherErr ? " open" : "") + '><summary class="ps-lbl">Gutscheincode einlösen</summary><div class="ps-uidrow"><input id="psVoucher" value="' + esc(S.voucher || "") + '" placeholder="z. B. WILLKOMMEN10" autocapitalize="characters" autocomplete="off"><button type="button" class="ps-btn small" data-act="voucher">' + (S.voucher ? "Ändern" : "Einlösen") + "</button>" + (S.voucher ? '<button type="button" class="ps-link" data-act="voucher:clear">entfernen</button>' : "") + "</div>" +
+      (S.voucherErr ? '<span class="hint bad">' + esc(S.voucherErr) + "</span>" : S.voucherOk ? '<span class="hint ok">✓ ' + esc(S.voucherOk) + "</span>" : "") + "</details>";
     if (t.fee && !S.quoting) money = '<div><span>Profi-Datencheck</span><b>' + eur(co ? t.fee / (1 + (t.rate || 0) / 100) : t.fee) + "</b></div>" + money;
     if (saved > 0 && !S.quoting) money = '<div class="ps-save"><span>' + esc(dlab ? dlab.tier : "Rabatt") + '</span><b>− ' + eur(co ? saved : saved * (1 + (t.rate || 0) / 100)) + "</b></div>" + money;
     var acct = S.me ? '<p class="pd-muted">Die Bestellung wird in deinem Kundenkonto (' + esc(S.me.email) + ") gespeichert.</p>" :
@@ -1679,9 +1680,9 @@
       (S.newAcct ? '<div class="ps-field" style="max-width:360px"><label for="psNewPw">Passwort (mind. 8 Zeichen)</label><input id="psNewPw" type="password" autocomplete="new-password" value="' + esc(S.newPw || "") + '"></div>' : "");
     return '<div class="ps-layout"><div class="ps-panel"><h2>Prüfen &amp; bestellen</h2><p class="sub">Bitte prüfe deine Druckdaten genau – gedruckt wird genau so, wie du sie freigibst.</p>' + items +
       '<div class="ps-sum"><div><span>Lieferung an</span><b>' + esc(addr) + ' <button type="button" class="ps-link" data-go="5">ändern</button></b></div>' + (lastDel ? "<div><span>Voraussichtlich bei dir<small class=\"ps-dnote\">ggf. auch erst am darauffolgenden Werktag</small></span><b>" + esc(deDate(lastDel)) + "</b></div>" : "") + money + "</div>" +
-      '<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
+      (!co && S.cat.payments.mollie ? '<div class="ps-pay1"><span class="ps-lbl">Zahlung</span><p><b>Online bezahlen</b> – Kreditkarte, Apple Pay, EPS u. a., sicher über Mollie</p></div>' : ('<fieldset class="ps-pay" style="border:0;padding:0"><legend class="ps-lbl">Zahlung</legend>' +
       '<label class="ps-radio' + (S.cat.payments.mollie ? "" : " dis") + '"><input type="radio" name="pay" value="mollie"' + (S.payment === "mollie" ? " checked" : "") + (S.cat.payments.mollie ? "" : " disabled") + '><span><b>Online bezahlen</b><small>Kreditkarte, Apple Pay, EPS, PayPal u. a. – sicher über Mollie' + (S.cat.payments.mollie ? "" : " (gerade nicht verfügbar)") + "</small></span></label>" +
-      (co ? '' : '<!--') + '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label>" + (co ? "" : "-->") + "</fieldset>" + chk + vch + acct +
+      (co ? '' : '<!--') + '<label class="ps-radio' + (invOk ? "" : " dis") + '"><input type="radio" name="pay" value="invoice"' + (S.payment === "invoice" ? " checked" : "") + (invOk ? "" : " disabled") + '><span><b>Rechnung (14 Tage)</b><small>' + (invOk ? "Für Firmen mit geprüfter UID – wir geben die Bestellung nach kurzer Prüfung frei." : "Nur für Firmen mit gültiger UID-Nummer (bei der Lieferadresse eintragen und prüfen).") + "</small></span></label>" + (co ? "" : "-->") + "</fieldset>")) + chk + vch + acct +
       '<label class="ps-cb"><input type="checkbox" data-acc="proof"' + (S.accept.proof ? " checked" : "") + '><span><b>Druckdaten geprüft:</b> Ich habe Texte, Rechtschreibung, Bilder, Farben und Format ' + (n > 1 ? "aller " + n + " Positionen " : "") + "geprüft und gebe die Daten so zum Druck frei.</span></label>" +
       '<label class="ps-cb"><input type="checkbox" data-acc="terms"' + (S.accept.terms ? " checked" : "") + '><span>Ich akzeptiere die <a href="/print/agb" target="_blank" rel="noopener">AGB</a> und habe die <a href="/datenschutz" target="_blank" rel="noopener">Datenschutzerklärung</a> gelesen.</span></label>' +
       '<label class="ps-cb"><input type="checkbox" data-acc="fagg"' + (S.accept.fagg ? " checked" : "") + '><span>Ich nehme zur Kenntnis, dass bei Waren, die nach meinen Vorgaben angefertigt bzw. bedruckt werden, <b>kein Rücktrittsrecht</b> besteht (§ 18 Abs. 1 Z 3 FAGG).</span></label>' +
@@ -1963,11 +1964,11 @@
 
   // ── Bestellen ──
   function order() {
-    var er = document.getElementById("psOrderErr"), pw = document.getElementById("psNewPw");
+    var er = document.getElementById("psOrderErr"), pw = document.getElementById("psNewPw"), show = function (m) { er.textContent = m; er.scrollIntoView({ block: "center", behavior: "smooth" }); };   // auch beim Klick im Preiskasten sichtbar
     if (pw) S.newPw = pw.value;
-    if (!S.accept.proof || !S.accept.terms || !S.accept.fagg) { er.textContent = "Bitte die drei Bestätigungen anhaken."; return; }
-    if (!S.payment) { er.textContent = "Bitte eine Zahlungsart wählen."; return; }
-    if (S.cart.some(function (x) { return !x.price; })) { er.textContent = "Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."; return; }
+    if (!S.accept.proof || !S.accept.terms || !S.accept.fagg) { show("Bitte die drei Bestätigungen anhaken."); return; }
+    if (!S.payment) { show("Bitte eine Zahlungsart wählen."); return; }
+    if (S.cart.some(function (x) { return !x.price; })) { show("Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."); return; }
     if (!S.me && S.newAcct && String(S.newPw || "").length < 8) { er.textContent = "Das Passwort für das Kundenkonto braucht mindestens 8 Zeichen."; if (pw) pw.focus(); return; }
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
