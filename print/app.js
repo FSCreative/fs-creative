@@ -415,18 +415,19 @@
   function ddRow(key, x, cur, zi) {
     var sel = String(x.val) === String(cur);
     return '<div class="ps-ddo' + (zi % 2 ? " z" : "") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
-      '<button type="button" class="ps-ddp' + (imgOk(x.img) ? " hasim" : "") + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<span class="n">' + esc(x.name) + (x.best ? ' <em>★ Bestseller</em>' : "") + "</span>" +
+      '<button type="button" class="ps-ddp' + (imgOk(x.img) ? " hasim" : "") + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<span class="n">' + esc(x.name) + (x.best ? ' <em>Beliebt</em>' : "") + "</span>" +
       (x.warn ? '<span class="h">passt mit: ' + esc(x.warn) + "</span>" : x.off ? '<span class="h">mit dieser Auswahl nicht lieferbar</span>' : x.sub ? '<span class="h">' + esc(x.sub) + "</span>" : "") + "</button>" +
       (sel ? '<span class="ps-ddck" aria-hidden="true">✓</span>' : dlSpan(key, x)) +
       (x.desc || x.img ? '<button type="button" class="ps-i" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>";
   }
   function ddHtml(key, title, items, cur) {
     DDI[key] = items;
-    var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key;
-    if (items.length <= 4 && key !== "copies") return '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
-      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + (imgOk(x.img) ? " hasim" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<b>' + esc(x.name) + (x.best ? ' <em title="Bestseller">★</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel && key !== "urgency" ? "" : dlSpan(key, x)) + "</button>" +
+    var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key, col = S.step === 2 && !S.view;   // Ausführung: jede Zeile startet eingeklappt (aktuelle Wahl + „Ändern“)
+    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + (col && c.sub ? " <small>" + esc(c.sub) + "</small>" : "") + '</span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>";
+    if (col && !open) return btn;
+    if (items.length <= 4 && key !== "copies") return (col ? btn : "") + '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
+      return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + (imgOk(x.img) ? " hasim" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<b>' + esc(x.name) + (x.best ? ' <em title="Beliebt bei unseren Kunden">Beliebt</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel && key !== "urgency" ? "" : dlSpan(key, x)) + "</button>" +
         (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
-    var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + '</span><i aria-hidden="true">▾</i></button>';
     if (!open) return btn;
     var best = items.filter(function (x) { return x.best; }), rest = items.filter(function (x) { return !x.best; });
     if (items.length <= 12 && items.some(function (x) { return x.fold; })) {
@@ -438,7 +439,7 @@
             (on ? l.map(function (x) { return ddRow(key, x, cur, zf++); }).join("") : ""); }).join("") + "</div></div>"; }
     if (items.length <= 12) { var zi = 0; return btn + '<div class="ps-ddl" role="listbox" aria-label="' + esc(title) + '"><div class="ps-dds">' + best.concat(rest).map(function (x) { return ddRow(key, x, cur, zi++); }).join("") + "</div></div>"; }
     // großer Auswahl-Dialog
-    var cats = []; if (best.length) cats.push({ n: "★ Bestseller", l: best });
+    var cats = []; if (best.length) cats.push({ n: "Beliebt", l: best });
     rest.forEach(function (x) { var g = x.group || "Weitere"; var G = cats.filter(function (y) { return y.n === g; })[0]; if (!G) { G = { n: g, l: [] }; cats.push(G); } G.l.push(x); });
     if (cats.length > 1) cats.push({ n: "Alle Optionen", l: items, all: true });
     var curCat = S.ddCat[key]; if (!cats.some(function (C) { return C.n === curCat; })) { var hc = cats.filter(function (C) { return !C.all && C.l.some(function (x) { return String(x.val) === String(cur); }); })[0]; curCat = (hc || cats[0]).n; }
@@ -498,7 +499,7 @@
     var rows = p.props.map(function (pr) { var o = pr.options.filter(function (x) { return x.slug === S.sel[pr.slug]; })[0]; if (!o || NONE_RX.test(String(o.name).trim())) return ""; var d = txt(o.desc) || glossOf(pr, o), im = imgOk(o.img) ? o.img : "";
       return '<div class="ps-si">' + (im ? '<img src="' + esc(im) + '" alt="" loading="lazy">' : '<span class="ps-si-ic" aria-hidden="true">✓</span>') + '<div><span class="ps-si-k">' + esc(pr.title) + "</span><b>" + esc(/color/.test(pr.slug) ? colName(o.name) : o.name) + "</b>" + (d ? "<p>" + esc(d.length > 220 ? d.slice(0, 217) + " …" : d) + "</p>" : "") +
         (d.length > 220 || im ? '<button type="button" class="ps-link" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(o.slug) + '">Mehr Infos</button>' : "") + "</div></div>"; }).filter(Boolean);
-    return rows.length ? '<details class="ps-selinfo"' + (window.innerWidth > 760 ? " open" : "") + '><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div>" + tplBtn("soft") + "</details>" : "";
+    return rows.length ? '<details class="ps-selinfo"><summary>Deine Auswahl im Detail</summary><div class="ps-si-grid">' + rows.join("") + "</div>" + tplBtn("soft") + "</details>" : "";
   }
   // Eigene Infotexte, wenn Print.com keine Beschreibung liefert (Papiere, Grammaturen, Veredelungen, Großformat-Materialien)
   var GLOSS = [
@@ -531,11 +532,13 @@
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
     var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", group: gname(o) };
+      if (pr.slug === "size" && o.w && o.h && !/\d\s*[x×]\s*\d/.test(o.name)) it.sub = fmtSize(o.w, o.h);
+      if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + C0.minW / f0 + " × " + C0.minH / f0 + " bis " + C0.maxW / f0 + " × " + C0.maxH / f0 + " " + C0.unit; if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
       if (open && o.slug !== S.sel[pr.slug]) { var ch = resolveWith(pr.slug, o.slug); if (ch === null) it.off = true; else if (Object.keys(ch).length) it.warn = changesText(ch); }
       return it; });
     var bo = bestOf(pr); items.sort(function (a, b) { return a.best && b.best ? bo.indexOf(a.val) - bo.indexOf(b.val) : 0; });
     foldPrint(items);
-    if (mobLite() && items.length > 4) {   // Handy: lange Listen nur mit Bestsellern (+ aktueller Auswahl), sonst die ersten 5 – der Rest „am PC“
+    if (!(S.step === 2) && mobLite() && items.length > 4) {   // Handy: lange Listen nur mit Bestsellern (+ aktueller Auswahl), sonst die ersten 5 – der Rest „am PC“
       var cur = S.sel[pr.slug], keep = items.filter(function (it) { return it.best || it.val === cur; });
       if (keep.length < 2) { var d0 = (S.prod.defaults || {})[pr.slug]; keep = items.filter(function (it) { return it.val === d0 || it.val === cur; }); items.forEach(function (it) { if (keep.length < 5 && keep.indexOf(it) < 0 && !it.off) keep.push(it); }); }
       if (keep.length < items.length) { keep.more = items.length - keep.length; return keep; }
@@ -704,8 +707,12 @@
       (compact ? "" : '<dl><dt>Stückpreis</dt><dd>' + eur(main / (n || 1)) + "</dd><dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
   }
+  function whoHtml() {
+    return '<div class="ps-pwho"><div class="ps-seg" role="group" aria-label="Preise anzeigen für"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
+      (S.cat.countries.length > 1 ? '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select>" : "") + "</div>";
+  }
   function renderPrice() {
-    var b = document.getElementById("psPrice"); if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + priceHtml(false) +
+    var b = document.getElementById("psPrice"); if (b && S.step < 4 && !S.view) b.innerHTML = '<h3>Dein Preis</h3>' + priceHtml(false) + (S.step === 2 ? whoHtml() : "") +
       (S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
       '<ul class="ps-ptrust"><li>Automatischer Datencheck, Profi-Check optional</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
@@ -1044,7 +1051,13 @@
     return '<div class="ps-tile' + (nseg ? " seg" : "") + (best ? " best" : "") + (S.dd === "prop:" + pr.slug ? " open" + (its.length > 12 ? " wide" : "") : "") + '"><span class="ps-tl">' + esc(pr.title) + (best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + (cur && (cur.desc || imgOk(cur.img) || glossOf(pr, cur)) ? '<button type="button" class="ps-i sm" data-ddinfo="prop:' + esc(pr.slug) + "|" + esc(cur.slug) + '" aria-label="Infos zu ' + esc(cur.name) + '" aria-haspopup="dialog">i</button>' : "") + "</span>" + ddHtml("prop:" + pr.slug, pr.title, its, S.sel[pr.slug]) +
       (cur && cur.desc ? '<span class="ps-td">' + esc(String(cur.desc).slice(0, 160)) + "</span>" : "") + morePc(its.more) + "</div>";
   }
-  function sec(title, inner, extra) { return inner || extra ? '<section class="ps-sec"><h3>' + esc(title) + "</h3>" + (inner ? '<div class="ps-grid2">' + inner + "</div>" : "") + (extra || "") + "</section>" : ""; }
+  function sec(title, inner, extra) { return (inner || "") + (extra ? fmtRow(extra) : ""); }
+  // Freies Format als eigene Zeile: eingeklappt Maß + Grenzen, aufgeklappt Schnellwahl, Breite/Höhe und Hinweis
+  function fmtRow(inner) {
+    var C = S.prod.custom, u = C.unit, f = u === "cm" ? 10 : 1, sz = sizeOf(), open = S.dd === "fmtc";
+    var val = sz ? (sz.w / f).toLocaleString("de-AT") + " × " + (sz.h / f).toLocaleString("de-AT") + " " + u : "Maße eingeben";
+    return '<div class="ps-tile' + (open ? " open" : "") + '"><span class="ps-tl">' + (kind() === "banner" ? "Format" : "Eigenes Format") + '</span><button type="button" class="ps-dd" data-dd="fmtc" aria-expanded="' + open + '"><span class="v">' + esc(val) + " <small>frei wählbar · " + C.minW / f + "–" + C.maxW / f + " × " + C.minH / f + "–" + C.maxH / f + " " + u + '</small></span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>" + (open ? '<div class="ps-cfgc">' + inner + "</div>" : "") + "</div>";
+  }   // Ausführung als eine ruhige Liste (Zeile je Option)
   function sectionsHtml(p) {
     var props = p.props.filter(function (pr) { return propVisible(pr); }), inS = function (l) { return props.filter(function (pr) { return l.indexOf(pr.slug) > -1; }); };
     var fmt = inS(SECT_FORMAT), mat = inS(SECT_MAT), rest = props.filter(function (pr) { return fmt.indexOf(pr) < 0 && mat.indexOf(pr) < 0; });
@@ -1055,7 +1068,7 @@
     var more = minor.length ? '<details class="ps-more"' + (changed ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
     var custom = (p.kind === "banner" && p.custom) || (fmt.some(function (pr) { return pr.slug === "size"; }) && isCustom()) ? customHtml() : "";
     var pmT = pmTile();
-    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + (main.length || more ? '<section class="ps-sec"><h3>Veredelung &amp; Optionen</h3>' + (main.length ? '<div class="ps-grid2">' + tiles(main) + "</div>" : "") + more + "</section>" : "");
+    return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
   }
   // Druckverfahren (Digital/Offset/…): Preise je Verfahren vom Server, günstigstes zuerst; „automatisch“ nimmt immer das günstigste
   function pmTile() {
@@ -1077,7 +1090,7 @@
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       own = '<label class="ps-own"><span>oder eigene Menge</span><input id="psQty" class="ps-sel" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (inT ? "" : S.copies) + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + ' Stk."></label>'; }
     var ur = urTile(p);
-    return '<section class="ps-sec"><h3>Auflage &amp; Lieferung</h3><div class="ps-grid2"><div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + "</div>" + ur + motHtml() + "</div></section>";
+    return '<div class="ps-tile' + (bt.indexOf(S.copies) > -1 ? " best" : "") + (S.dd === "copies" ? " open" : "") + '"><span class="ps-tl">Auflage' + (bt.indexOf(S.copies) > -1 ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" + sel + own + "</div>" + ur + motHtml();
   }
   // Produktion: Schnell/Express nur zeigen, wenn sie wirklich früher liefern als eine günstigere Stufe (Termine kommen über /print/api/deltas)
   var UR_ORD = ["standard", "quick", "urgent"];
@@ -1095,7 +1108,7 @@
     var st = urState(), vis = p.urgency.filter(function (u) { return st.hid.indexOf(u.slug) < 0; }), nm = function (sl) { return (p.urgency.filter(function (u) { return u.slug === sl; })[0] || {}).name || sl; };
     if (vis.length === 1) return '<div class="ps-tile" data-urtile><span class="ps-tl">Produktion</span><div class="ps-uronly"><b>' + esc(vis[0].name) + "</b>" + (st.D[vis[0].slug] ? "<span>Lieferung voraussichtlich " + esc(deDate(st.D[vis[0].slug])) + "</span>" : "") + "</div>" +
       '<span class="ps-td">Eine schnellere Produktion (' + esc(st.hid.map(nm).join(" oder ")) + ") gibt es für diese Ausführung nicht – " + esc(vis[0].name) + " ist hier bereits der früheste Liefertermin.</span></div>";
-    return '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + '" data-urtile><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
+    return '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + (S.dd === "urgency" ? " open" : "") + '" data-urtile><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
       ddHtml("urgency", "Produktion", vis.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: st.D[u.slug] ? "" : { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) +   // sobald Termine da sind: Termin + Aufpreis statt Untertitel
       '<span class="ps-td">' + (st.hid.length ? esc(st.hid.map(nm).join(" und ")) + " bringt hier keinen früheren Liefertermin und ist deshalb ausgeblendet." : "Bestimmt den Liefertermin.") + "</span></div>";
   }
@@ -1208,7 +1221,14 @@
     var t = txt(p.about) || (/\n/.test(String(p.summary || "")) ? txt(p.summary) : "") || (/\n/.test(String(p.desc || "")) ? txt(p.desc) : ""); if (!t && !p.summary) return "";
     var lines = t.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean), bul = lines.filter(function (x) { return /^[-*•]/.test(x); });
     var body = (lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return "<p>" + esc(x.replace(/[#*_]+/g, "")) + "</p>"; }).join("")) + (bul.length ? "<ul>" + bul.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : "");
-    return '<details class="ps-about"' + (bul.length && bul.length <= 6 && window.innerWidth > 760 ? " open" : "") + "><summary>Produktinfos" + (p.summary && lead(p.summary) && lead(p.summary).length < 50 && lead(p.summary).toLowerCase() !== String(p.title).toLowerCase() ? " · " + esc(lead(p.summary)) : "") + "</summary>" + body + "</details>";
+    // Produkttext immer sichtbar (Anfang), alles Weitere von Print.com eingeklappt darunter
+    var paras = lines.filter(function (x) { return !/^[-*•]/.test(x); }).map(function (x) { return x.replace(/[#*_]+/g, ""); }), headN = 0, len = 0;
+    while (headN < paras.length && (headN === 0 || len + paras[headN].length < 380)) { len += paras[headN].length; headN++; }
+    var head = paras.slice(0, headN), tail = paras.slice(headN), li = function (l) { return l.length ? "<ul>" + l.map(function (x) { return "<li>" + esc(x.replace(/^[-*•]\s*/, "").replace(/[#*_]+/g, "")) + "</li>"; }).join("") + "</ul>" : ""; };
+    if (!lines.length) return '<div class="ps-about"><p>' + esc(lead(p.summary)) + "</p></div>";
+    var shortBul = bul.length <= 6 && !tail.length;
+    return '<div class="ps-about">' + head.map(function (x) { return "<p>" + esc(x) + "</p>"; }).join("") + (shortBul ? li(bul) : "") +
+      (tail.length || !shortBul ? '<details class="ps-more-txt"><summary>Mehr zum Produkt</summary>' + tail.map(function (x) { return "<p>" + esc(x) + "</p>"; }).join("") + (shortBul ? "" : li(bul)) + "</details>" : "") + "</div>";
   }
   // ── Technische Daten: Format, Material, Druck, fest vorgegebene Ausstattung (z. B. Ösen, Druckverfahren) + Einsatz/Beständigkeit je Material ──
   function fmtSize(w, h) { if (Math.max(w, h) < 1000) return mmF(w) + " × " + mmF(h) + " mm"; var big = Math.max(w, h) >= 10000, u = function (v) { return big && v >= 1000 ? String(Math.round(v / 10) / 100).replace(".", ",") + " m" : String(Math.round(v) / 10).replace(".", ",") + " cm"; }; return u(w) + " × " + u(h); }
@@ -1252,7 +1272,7 @@
     var rows = tx ? (p.specs || []).filter(function (x) { return !/^(size|printtype|quality_level|color.*|textile_sizes)$/.test(x[2]) && !/^variabel$/i.test(x[1]); }).map(function (x) { return [x[0].replace(/\s*\(.*\)$/, ""), x[1]]; }) : specRows(p);
     if (tx) { var ps = prodSize(p), la = logoPositions(); rows = (ps ? [["Produktgröße", ps]] : []).concat(la.length && la[0].area ? [[la.length > 1 ? "Druckflächen" : "Druckfläche", la.map(function (x) { return (la.length > 1 ? x.title + ": " : "max. ") + x.area[0] + " × " + x.area[1] + " mm"; }).join(" · ")]] : [], rows); }
     if (rows.length < (tx ? 1 : 2)) return "";
-    return '<details class="ps-specs"' + (window.innerWidth > 760 || !p.props.length ? " open" : "") + '><summary>Technische Daten</summary><dl>' + rows.map(function (r) { return "<div><dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd></div>"; }).join("") + "</dl></details>";
+    return '<details class="ps-specs"' + (!p.props.length ? " open" : "") + '><summary>Technische Daten <span class="pd-muted">· ' + rows.length + " Angaben</span></summary><dl>" + rows.map(function (r) { return "<div><dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd></div>"; }).join("") + "</dl></details>";
   }
   // ── Schnellauswahl: drei fertige Pakete (Beliebt / Günstig / Hochwertig) – ein Klick, darunter weiterhin die volle Auswahl ──
   var PRE = {};
@@ -1299,7 +1319,11 @@
     var who = '<fieldset class="ps-opt"><legend>Preise anzeigen für</legend><div class="ps-who"><div class="ps-seg" role="group" aria-label="Kundentyp"><button type="button" data-ctype="private" aria-pressed="' + (S.ctype === "private") + '">Privat</button><button type="button" data-ctype="company" aria-pressed="' + (S.ctype === "company") + '">Firma</button></div>' +
       '<select class="ps-sel" data-country aria-label="Lieferland">' + S.cat.countries.map(function (c) { return '<option value="' + c.code + '"' + ((S.customer.country || "AT") === c.code ? " selected" : "") + ">Lieferung nach " + esc(c.name) + "</option>"; }).join("") + "</select></div></fieldset>";
     var crumbs = p.cat ? '<p class="ps-crumb">' + esc(p.cat.mainName || "") + (p.cat.subName ? " › " + esc(p.cat.subName) : "") + "</p>" : "";
-    return '<div class="ps-layout"><div class="ps-panel">' + crumbs + '<div class="ps-head">' + galleryHtml(p) + '<div class="ps-head-t"><h2>' + esc(p.title) + '</h2>' + (facts(p).length ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<p class="sub">' + esc(badDesc(p) ? "" : lead(p.desc) || "Der Preis aktualisiert sich bei jeder Änderung.") + "</p>" + aboutHtml(p) + specsHtml(p) + cfgBarHtml() + "</div></div>" + cust + props + area + amount + ur + who + (isLogo() ? "" : selInfoHtml(p)) +
+    var im = galImgs(p), thumb = im.length ? '<button type="button" class="ps-cfg-im" data-galzoom="1" aria-label="Produktbilder ansehen"><img src="' + esc(String(im[0]).replace(/w=\d+/, "w=400")) + '" alt="' + esc(p.title) + '">' + (im.length > 1 ? "<span>" + im.length + " Fotos</span>" : "") + "</button>" : "";
+    var fct = facts(p), sz = sizeOf(), b0 = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
+    var foot = k === "flat" && sz && !p.dimsArea ? '<p class="ps-cfg-foot">Endformat ' + fmtSize(sz.w, sz.h) + (b0 ? " · Datei mit " + b0 + " mm Beschnitt (" + (sz.w + 2 * b0) + " × " + (sz.h + 2 * b0) + " mm)" : "") + (tplBtn("") ? ' · <a class="ps-link" href="' + esc(tplUrl()) + '">Druckvorlage herunterladen</a>' : "") + "</p>" : "";
+    return '<div class="ps-layout ps-cfgv"><div class="ps-cfgm">' + crumbs + '<div class="ps-cfg-h">' + thumb + '<div><h2>' + esc(p.title) + '</h2><p class="sub">' + esc(badDesc(p) ? "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst." : lead(p.desc) || "Alles ist schon sinnvoll eingestellt – ändere nur, was du brauchst.") + "</p>" + (fct.length ? '<ul class="ps-facts">' + fct.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + cfgBarHtml() + "</div></div>" +
+      aboutHtml(p) + presetHtml(p) + cust + '<div class="ps-cfg">' + sectionsHtml(p) + (k === "textile" ? "" : amountHtml(p)) + "</div>" + (k === "textile" ? '<section class="ps-sec"><h3>Druck &amp; Größen</h3>' + textileHtml(p) + "</section>" + ur : "") + area + foot + specsHtml(p) + (isLogo() ? "" : selInfoHtml(p)) +
       '<div class="ps-nav"><button type="button" class="ps-btn" data-go="1">Zurück</button><button type="button" class="ps-btn primary" id="psNext2" data-act="next2">' + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + "</button></div></div>" +
       '<aside class="ps-price" id="psPrice" aria-live="polite"></aside></div>';
   }
@@ -1395,13 +1419,23 @@
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + " Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
     var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
-    if (S.file) {
-      h += '<div class="ps-file"><div><b>' + (S.file.kind === "design" ? "Deine Gestaltung" : esc(S.file.name)) + '</b><div class="pd-muted">' + (S.file.pages || "?") + " Seite(n) · " + (S.file.blocked ? "<span style=\"color:var(--ps-bad)\">bitte korrigieren</span>" : "bereit zum Druck") + '</div></div><div class="ps-row2" style="display:flex;gap:8px;flex-wrap:wrap">' +
-        (S.file.kind === "design" ? '<button type="button" class="ps-btn small" data-act="editdesign">Weiter bearbeiten</button>' : "") +
-        '<a class="ps-btn small" target="_blank" rel="noopener" href="/print/api/file/' + esc(S.file.fileId) + "?t=" + esc(S.file.token) + '&pdf=1">PDF ansehen</a><button type="button" class="ps-btn small" data-act="clearfile">Andere Datei</button></div></div>' + qualHtml(S.file) + checksHtml(S.file.checks) + adjHtml(S.file) + bleedFixHtml(S.file) + pmkHtml() +
-        '<div class="ps-pfv" id="psPfv" data-fid="' + esc(S.file.fileId) + '"><div class="ps-pfv-h"><b>Vorschau mit Druckrändern</b><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
-        '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten, Hintergründe bis hierher ziehen</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie – keine Texte direkt auf die Falz</li>' : "") + '</ul><div class="ps-pfv-w" id="psPfvW"></div></div>' + reqHtml(false);
-      if (S.file.preflight && S.file.preflight.status === "PROCESSING") h += '<p class="pd-muted" style="margin-top:8px"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>';
+    if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
+      var f = S.file, tab = S.pvTab === "pfv" ? "pfv" : "mock", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.copies ? [(+S.copies).toLocaleString("de-AT") + " Stk."] : []).join(" · ");
+      var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
+      var left = '<div class="ps-upv-l">' + mtabs + "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) : f.kind === "design" ? "Deine Gestaltung" : "Deine Datei") + '</h2><p class="sub">' + esc(sum) + "</p>" +
+        '<div class="ps-upv-st"><div class="ps-upv-tabs" role="tablist" aria-label="Vorschau"><button type="button" role="tab" data-pvtab="mock" aria-selected="' + (tab === "mock") + '">Auf dem Produkt</button><button type="button" role="tab" data-pvtab="pfv" aria-selected="' + (tab === "pfv") + '">Mit Druckrändern</button></div>' +
+        '<div class="ps-upv-pane" data-pane="mock"' + (tab === "mock" ? "" : " hidden") + ">" + pmkHtml() + "</div>" +
+        '<div class="ps-upv-pane" data-pane="pfv"' + (tab === "pfv" ? "" : " hidden") + '><div class="ps-pfv" id="psPfv" data-fid="' + esc(f.fileId) + '"><div class="ps-pfv-h"><label class="ps-cb sm"><input type="checkbox" id="psPfvT"' + (S.pfvOff ? "" : " checked") + '><span>Ränder anzeigen</span></label></div><div class="ps-pfv-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div>' +
+        '<ul class="ps-pfv-l"><li><i class="b"></i>Beschnitt – wird abgeschnitten</li><li><i class="t"></i>Endformat – hier wird geschnitten</li><li><i class="s"></i>Sicherheitsabstand – Texte &amp; Logos innerhalb halten</li>' + (S.price && S.price.folds ? '<li><i class="f"></i>Falzlinie</li>' : "") + "</ul></div></div></div>" +
+        (spec ? '<p class="ps-upv-spec">' + (p.dimsArea ? "Druckfläche " : "Endformat ") + esc(spec) + "</p>" : "") + "</div>";
+      var right = '<aside class="ps-upv-r"><div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages || "?") + " Seite" + (f.pages === 1 ? "" : "n") + (f.bytes ? " · " + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
+        (f.kind === "design" ? '<button type="button" class="ps-link" data-act="editdesign">Bearbeiten</button>' : "") + '<a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF</a><button type="button" class="ps-link" data-act="clearfile">Andere Datei</button></div></div>' +
+        qualHtml(f) + adjHtml(f) + bleedFixHtml(f) +
+        '<div class="ps-upv-chk">' + checksHtml(shown) + (rest.length ? '<details><summary>Alle Prüfungen anzeigen (' + top.length + ")</summary>" + checksHtml(rest) + "</details>" : "") + '<div id="psPfvW"></div></div>' +
+        (f.preflight && f.preflight.status === "PROCESSING" ? '<p class="pd-muted"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>' : "") + reqHtml(false) +
+        (!f.blocked ? '<button type="button" class="ps-btn primary ps-upv-go" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : '<p class="ps-nav-hint">Bitte die rot markierten Punkte korrigieren.</p>') +
+        '<button type="button" class="ps-btn ps-upv-back" data-go="2">Zurück zur Ausführung</button></aside>';
+      return '<div class="ps-upv">' + left + right + "</div>";
     } else if (S.mode === "upload") {
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
         : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
@@ -1492,7 +1526,7 @@
       var html = '<div class="ps-pfv-g">' + out.join("") + "</div>", wh = warns.length ? '<ul class="ps-checks">' + warns.map(function (w) { return '<li class="' + (w[0] === "!" ? "error" : "warn") + '">' + esc(w.replace(/^!/, "")) + "</li>"; }).join("") + "</ul>" : '<ul class="ps-checks"><li class="ok">Randanalyse: keine Inhalte zu nah am Rand gefunden.</li></ul>';
       if (okNotes.length) wh += '<ul class="ps-checks">' + okNotes.map(function (w) { return '<li class="ok">' + esc(w) + "</li>"; }).join("") + "</ul>";
       PFV[key] = { html: html, warn: wh }; var b2 = document.getElementById("psPfv"); if (b2 && b2.getAttribute("data-fid") === f.fileId) { b2.querySelector(".ps-pfv-c").innerHTML = html; document.getElementById("psPfvW").innerHTML = wh; }
-      if (warns.length && S.file === f) { f.edgeWarn = warns; f.edgeErr = warns.some(function (w) { return w[0] === "!"; }); var qb = document.querySelector(".ps-qual"); if (qb && !/bad/.test(qb.className)) { qb.className = "ps-qual " + (f.edgeErr ? "bad" : "warn"); qb.innerHTML = '<i aria-hidden="true"></i><div><b>' + (f.edgeErr ? "Bitte korrigieren" : "Druckbar – mit Hinweisen") + "</b><span>Die automatische Prüfung hat etwas gefunden – siehe Hinweise unter der Vorschau." + (f.edgeErr ? " So würde der Druck sichtbar schlechter aussehen." : "") + " Unsicher? Wähle an der Kasse den Profi-Datencheck.</span></div>"; }
+      if (warns.length && S.file === f) { f.edgeWarn = warns; f.edgeErr = warns.some(function (w) { return w[0] === "!"; }); var qb = document.querySelector(".ps-qual"); if (qb && !/bad/.test(qb.className)) { qb.className = "ps-qual " + (f.edgeErr ? "bad" : "warn"); qb.innerHTML = '<i aria-hidden="true"></i><div><b>' + (f.edgeErr ? "Bitte korrigieren" : "Druckbar – mit Hinweisen") + "</b><span>Die automatische Prüfung hat etwas gefunden – siehe Hinweise unten." + (f.edgeErr ? " So würde der Druck sichtbar schlechter aussehen." : "") + " Unsicher? Wähle an der Kasse den Profi-Datencheck.</span></div>"; }
         if (f.edgeErr) document.querySelectorAll('[data-act="next3"]').forEach(function (bt) { if (!/Trotzdem/.test(bt.textContent)) bt.textContent = "Trotzdem in den Warenkorb"; }); }
     }).catch(function () { var b3 = document.getElementById("psPfv"); if (b3) b3.querySelector(".ps-pfv-c").innerHTML = '<p class="pd-muted">Vorschau gerade nicht möglich – bitte „PDF ansehen“ nutzen.</p>'; });
   }
@@ -1507,9 +1541,9 @@
     if (!f || !f.adj) return "";
     var pl = f.place || { mode: "fill", rotate: 0, scale: 1 }, sc = Math.round((pl.scale || 1) * 100), hot = (f.checks || []).some(function (c) { return c.level === "error" && /passt nicht zum gewählten Format/.test(c.text || ""); });
     var b = function (act, lab, on, tip) { return '<button type="button" class="ps-btn small' + (on ? " on" : "") + '" data-act="adj:' + act + '"' + (tip ? ' title="' + tip + '"' : "") + (on != null ? ' aria-pressed="' + !!on + '"' : "") + ">" + lab + "</button>"; };
-    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht? Mit einem Klick anpassen:" : "Datei anpassen") + '</b><div class="row">' +
+    return '<div class="ps-adj' + (hot ? " hot" : "") + '" id="psAdj"><b>' + (hot ? "Format passt nicht? Mit einem Klick anpassen:" : "Anpassen") + '</b><div class="row">' +
       b("fit", "Ganz einpassen", pl.mode === "fit", "Alles bleibt sichtbar, freie Flächen bleiben weiß") + b("fill", "Format füllen", pl.mode !== "fit", "Füllt bis in den Beschnitt – Ränder werden angeschnitten") + '<span class="sep" aria-hidden="true"></span>' +
-      b("rl", "↺ 90°", null, "Nach links drehen") + b("rr", "↻ 90°", null, "Nach rechts drehen") + "</div>" +
+      b("rl", "↺", null, "Um 90° nach links drehen") + b("rr", "↻", null, "Um 90° nach rechts drehen") + "</div>" +
       '<div class="row"><label class="ps-adj-s"><span>Größe</span><input type="range" id="psAdjS" min="50" max="200" step="5" value="' + sc + '" aria-label="Größe in Prozent"><output id="psAdjO">' + sc + " %</output></label>" + (pl.mode !== "fit" && sc === 100 ? "" : b("reset", "Zurücksetzen")) + "</div></div>";
   }
   function adjApply(ch) {
@@ -1695,6 +1729,7 @@
       S.custom.w = String(wh[0]); S.custom.h = String(wh[1]); if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
       var iw = document.getElementById("psW"), ih = document.getElementById("psH"); if (iw) iw.value = S.custom.w; if (ih) ih.value = S.custom.h;
       [].forEach.call(document.querySelectorAll(".ps-dimc"), function (b) { var on = b.getAttribute("data-dim") === S.custom.w + "x" + S.custom.h; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); loadPrice(); return; }
+    var pvt = e.target.closest("[data-pvtab]"); if (pvt) { S.pvTab = pvt.getAttribute("data-pvtab"); [].forEach.call(root.querySelectorAll("[data-pvtab]"), function (b) { b.setAttribute("aria-selected", b === pvt); }); [].forEach.call(root.querySelectorAll("[data-pane]"), function (x) { x.hidden = x.getAttribute("data-pane") !== S.pvTab; }); return; }
     var pmi = e.target.closest("[data-pmkimg]"); if (pmi) { S.pmkImg = +pmi.getAttribute("data-pmkimg"); pmkPaint(); return; }
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
@@ -1719,14 +1754,14 @@
     if (dd) {
       if (dd.hasAttribute("data-dd")) { var k0 = dd.getAttribute("data-dd"); S.dd = S.dd === k0 ? "" : k0; S.ddInfo = ""; render(); if (S.dd) { var q0 = root.querySelector(".ps-ddq"), se = root.querySelector(".ps-ddo.sel"); if (se) se.scrollIntoView({ block: "nearest" }); if (q0 && window.innerWidth > 700) q0.focus(); } return; }
       if (dd.hasAttribute("data-ddinfo")) { var iv = dd.getAttribute("data-ddinfo"), ii = iv.indexOf("|"); infoPop(iv.slice(0, ii), iv.slice(ii + 1)); return; }
-      var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = ""; S.ddInfo = "";
+      var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = key === "prop:size" && val === "custom" ? "fmtc" : ""; S.ddInfo = "";   // eigenes Format gewählt → Eingabe gleich offen
       if (key.indexOf("prop:") === 0) { var slug = key.slice(5), before = Object.assign({}, S.sel); setProp(slug, val); var ch = {}; Object.keys(S.sel).forEach(function (k) { if (k !== slug && S.sel[k] !== before[k]) ch[k] = S.sel[k]; }); if (Object.keys(ch).length) toast("Angepasst, damit es zusammenpasst: " + changesText(ch)); return; }
       if (key === "copies") { S.copies = +val; motBalance(); var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
       if (key === "urgency") { S.urgency = val; render(); loadPrice(); return; }
       if (key === "pm") { S.pm = val; render(); loadPrice(); return; }
       return;
     }
-    if (S.dd && !e.target.closest(".ps-ddl")) { S.dd = ""; S.ddInfo = ""; render(); }
+    if (S.dd && !e.target.closest(".ps-ddl,.ps-cfgc,.ps-own")) { S.dd = ""; S.ddInfo = ""; render(); }
     var lk = e.target.closest("a[data-cat],a[data-prod]"); if (lk) { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); }   // echte Links: Strg/Cmd-Klick öffnet neuen Tab
     var ct = e.target.closest("[data-cat]"); if (ct) { var cv0 = ct.getAttribute("data-cat").split("|"); navCat(cv0[0], cv0[1]); return; }
     var fl = e.target.closest("[data-flt]"); if (fl) { var fk = fl.getAttribute("data-flt"); S.flt = S.flt || {}; if (!fk) S.flt = {}; else S.flt[fk] = !S.flt[fk]; var gg = document.getElementById("psGrid"); if (gg) { gg.innerHTML = gridHtml(); fromObserve(); } return; }
