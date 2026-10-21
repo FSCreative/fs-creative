@@ -30,6 +30,7 @@ F.css(
 document.addEventListener("pointerdown",function(e){
   if(e.button!==0||e.pointerType==="touch"||F.current!=="kal"||(A()&&A().isMobile&&A().isMobile())) return;
   var el=e.target.closest&&e.target.closest("[data-kev]"); if(!el) return;
+  if(D) finish(true);   /* altes Ziehen nie offen lassen (sonst bleiben Zeit-Anzeige/Geist am Bildschirm) */
   var rs=e.target.closest(".kwe-rs"), grid=el.classList.contains("kwe");
   D={el:el,id:el.getAttribute("data-kev"),pid:e.pointerId,x0:e.clientX,y0:e.clientY,started:false,
     kind:grid?"grid":(el.closest(".kw-all")?"allday":"month"),mode:rs?(rs.classList.contains("t")?"top":"bottom"):"move"};
@@ -91,9 +92,10 @@ function autoScroll(e){
 }
 
 /* ---------- Ende: speichern (oder abbrechen) ---------- */
-function cleanup(){ clearInterval(asT); document.documentElement.classList.remove("kdrag-on","kdrag-rs"); if(D){ hilite(null); if(D.ghost) D.ghost.remove(); if(D.tip) D.tip.remove(); } }
+function sweep(){ Array.prototype.forEach.call(document.querySelectorAll("body > .kdtip, body > .kghost"),function(x){ x.remove(); }); }
+function cleanup(d){ clearInterval(asT); document.documentElement.classList.remove("kdrag-on","kdrag-rs"); d=d||D; if(d){ if(d.hi) d.hi.classList.remove("kdrop"); d.hi=null; } sweep(); }
 function finish(cancel){
-  var d=D; D=null; if(!d) return; cleanup(); if(!d.started) return;
+  var d=D; D=null; if(!d) return; cleanup(d); if(!d.started) return;
   BLOCK=Date.now();   /* der Klick nach dem Ziehen öffnet den Termin nicht */
   var r=d.res, o=d.ev;
   var same=!r||(r.date===o.date&&(r.time==null||r.time===o.time)&&(r.endTime==null||r.endTime===o.endTime||(!r.time&&!o.time)));
@@ -106,6 +108,13 @@ function finish(cancel){
 }
 document.addEventListener("pointerup",function(e){ if(D&&e.pointerId===D.pid) finish(false); },true);
 document.addEventListener("pointercancel",function(e){ if(D&&e.pointerId===D.pid) finish(true); },true);
+/* Fenster verliert den Fokus, Tab wird gewechselt oder das Element verschwindet (Neuaufbau): Ziehen abbrechen statt hängen lassen */
+window.addEventListener("blur",function(){ if(D) finish(true); });
+document.addEventListener("visibilitychange",function(){ if(document.hidden&&D) finish(true); });
+document.addEventListener("lostpointercapture",function(e){ if(D&&D.started&&e.pointerId===D.pid&&!document.contains(D.el)) finish(true); },true);
+/* Sicherheitsnetz: bleibt trotzdem etwas stehen, verschwindet es beim nächsten Klick/Ansichtswechsel */
+document.addEventListener("pointerdown",function(){ if(!D) sweep(); },true);
+window.addEventListener("hashchange",function(){ if(D) finish(true); else sweep(); });
 document.addEventListener("keydown",function(e){ if(D&&D.started&&e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); finish(true); } },true);
 window.addEventListener("click",function(e){ if(Date.now()-BLOCK<350&&e.target.closest&&e.target.closest("[data-kev],[data-kdslot],[data-calday],.kw-col")){ e.preventDefault(); e.stopPropagation(); } },true);
 })();
