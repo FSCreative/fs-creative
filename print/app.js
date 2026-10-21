@@ -772,7 +772,7 @@
   function render0() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
-    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks(), newestProds()).map(function (p) { return p.key; })); hqLoad(); return; }
+    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks(), newestProds()).map(function (p) { return p.key; })); return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
@@ -862,44 +862,21 @@
       '<span class="bd">' + (p.__new ? '<span class="ps-badge new">' + esc(newLabel(p.added)) + "</span>" : p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
       (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
-  // Startseite: Sofortpreis im Hero – Produkt + Stückzahl antippen, echter Preis (Bestseller-Ausführung, inkl. Versand) kommt vom Server
-  var HQP = [["flyer", [250, 500, 1000, 2500], 500], ["visitenkarten", [250, 500, 1000, 2500], 500], ["plakate", [5, 10, 25, 50], 10], ["pvc-banner", [1, 2, 3, 5], 1]], HQC = {};
-  function hqList() { return HQP.map(function (x) { var p = prodByKey(x[0]); if (!p) return null; var t = p.tiers || [], q = x[1].filter(function (n) { return t.indexOf(n) > -1; }); if (!q.length) q = t.slice(0, 4); return q.length ? { p: p, q: q, d: x[2] } : null; }).filter(Boolean); }
-  function hqCur() { var L = hqList(); if (!L.length) return null; var h = S.hq || (S.hq = { k: L[0].p.key, q: 0 }), c = L.filter(function (x) { return x.p.key === h.k; })[0] || L[0]; h.k = c.p.key;
-    if (c.q.indexOf(h.q) < 0) h.q = c.q.indexOf(c.d) > -1 ? c.d : c.q[0]; return { L: L, c: c, h: h }; }
-  function hqPriceHtml(v, q) { if (!v) return '<span class="v">…</span><small>Preis wird berechnet</small>'; var co = S.ctype === "company", g = co ? v.gross / 1.2 : v.gross;
-    return '<span class="v" data-v="' + g.toFixed(2) + '">' + eur(g) + "</span><small>" + (co ? "netto, zzgl. 20 % USt" : "inkl. 20 % USt") + " · inkl. Versand" + (q > 1 ? " · " + eur(g / q).replace(/(,\d\d)\d*/, "$1") + "/Stk." : "") + "</small>"; }
-  function hqInner() { var x = hqCur(); if (!x) return ""; var c = x.c, h = x.h, v = HQC[h.k + "|" + h.q];
-    return '<div class="hq-h"><span class="live" aria-hidden="true"></span><b>Sofortpreis</b><small>Endpreis für die Bestseller-Ausführung</small></div>' +
-      '<div class="hq-tabs" role="tablist" aria-label="Produkt">' + x.L.map(function (y) { var on = y.p.key === h.k; return '<button type="button" role="tab" aria-selected="' + on + '" data-act="hqk:' + esc(y.p.key) + '">' + (imgOk(y.p.img) ? '<img src="' + esc(y.p.img) + '" alt="" loading="lazy">' : '<i aria-hidden="true">' + esc(y.p.icon) + "</i>") + "<span>" + esc(shortName(y.p)) + "</span></button>"; }).join("") + "</div>" +
-      '<div class="hq-qty" role="group" aria-label="Stückzahl"><span>Stück</span>' + c.q.map(function (n) { return '<button type="button" aria-pressed="' + (n === h.q) + '" data-act="hqq:' + n + '">' + n.toLocaleString("de-AT") + "</button>"; }).join("") + "</div>" +
-      '<div class="hq-price' + (v ? "" : " busy") + '" aria-live="polite">' + hqPriceHtml(v, h.q) + "</div>" +
-      '<p class="hq-spec">' + (c.p.kind === "banner" ? "100 × 50 cm · Bestseller-Ausführung · Größe frei wählbar" : "Bestseller-Ausführung · Format, Papier &amp; Veredelung im nächsten Schritt wählbar") + "</p>" +
-      '<button type="button" class="ps-btn primary hq-go" data-act="hqgo">' + (c.p.designer ? "Jetzt gestalten" : "Jetzt konfigurieren") + " →</button>"; }
-  function hqLoad() { var x = hqCur(); if (!x) return; var h = x.h, key = h.k + "|" + h.q;
-    var show = function () { var box = document.querySelector("#psHq .hq-price"); if (!box || S.hq.k + "|" + S.hq.q !== key) return; var v = HQC[key], old = box.querySelector(".v[data-v]"), from = old ? +old.getAttribute("data-v") : 0;
-      box.classList.remove("busy"); box.innerHTML = hqPriceHtml(v, h.q); var el = box.querySelector(".v[data-v]"); if (!el || !from || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      var to = +el.getAttribute("data-v"), t0 = performance.now(); (function step(t) { var k = Math.min(1, (t - t0) / 420), e = 1 - Math.pow(1 - k, 3); el.textContent = eur(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); })(t0); };
-    if (key in HQC) { show(); return; }
-    var p = prodByKey(h.k), sels = {}; sels[h.k] = Object.assign(fromSel(p), { __copies: h.q });
-    api("/print/api/from?keys=" + encodeURIComponent(h.k) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { HQC[key] = j.ok && j.from && j.from[h.k] || null; show(); }).catch(function () {}); }
-  function hqUpd(keepPrice) { var c = document.getElementById("psHq"); if (!c) return; var old = c.querySelector(".hq-price .v[data-v]"), ov = old && old.outerHTML; c.innerHTML = hqInner();
-    var box = c.querySelector(".hq-price.busy"); if (box && ov && keepPrice) box.querySelector(".v").outerHTML = ov; hqLoad(); }
   function vHome() {
     var chipsK = ["flyer", "visitenkarten", "plakate", "aufkleber", "rollups", "folder"], chipsL = chipsK.map(prodByKey).filter(Boolean);
     var bn = S.cat.products.filter(function (p) { return p.kind === "banner"; })[0]; if (bn) chipsL.splice(3, 0, bn);
     var tx = S.cat.products.filter(function (p) { return p.kind === "textile"; })[0]; if (tx) chipsL.push(tx);
     var groups = (S.cat.groups || []).map(function (g) { var l = S.cat.products.filter(function (p) { return (p.cat || {}).main === g.slug; }); var im = l.filter(function (p) { return imgOk(p.img); }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); })[0]; return { g: g, n: l.length, img: im && im.img }; }).filter(function (x) { return x.n >= 5; });
     var dsg = S.cat.products.filter(function (p) { return p.designer; }).slice(0, 4);
-    var nw = newestProds(), hq = hqInner(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
+    var nw = newestProds(), reg = '<svg class="reg" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="5"/><path d="M20 2v36M2 20h36"/></svg>';
     // Hero (Entwurf 1, Okt. 2026): eine Überschrift, eine Suche, sechs Produktfotos – Sofortpreis darunter als eigener Abschnitt
     var tiles = ["flyer", "visitenkarten", "plakate"].map(prodByKey).concat([bn, tx, S.cat.products.filter(function (p) { return p.kind === "promo"; })[0]]).filter(Boolean).slice(0, 6);
     return '<section class="ps-hero1"><h1>Drucken, <span class="gx">ganz einfach.</span></h1><p class="lead">Produkt wählen, Datei hochladen oder online gestalten – Preis sofort, Lieferung in ganz Österreich.</p>' +
       '<div class="ps-hsearch" role="combobox" aria-expanded="false" aria-haspopup="listbox"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="psHomeQ" placeholder="Was möchtest du drucken?" aria-label="Produkt suchen" autocomplete="off" aria-controls="psSug"><button type="button" class="ps-btn primary" data-act="searchall">Suchen</button><div class="ps-sug" id="psSug" role="listbox" hidden></div></div>' +
       '<div class="ps-h1tiles">' + tiles.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '"><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<i aria-hidden="true">' + esc(p.icon) + "</i>") + "</span><b>" + esc(p.kind === "promo" ? "Werbeartikel" : p.kind === "textile" ? "T-Shirts" : shortName(p)) + "</b></button>"; }).join("") + "</div>" +
-      '<button type="button" class="ps-link ps-h1all" data-nav="produkte">Alle ' + S.cat.products.length + " Produkte ansehen →</button>" +
+      '<button type="button" class="ps-link ps-h1all" data-nav="produkte">Alle Produkte ansehen →</button>' +
       '<ul class="ps-h1trust"><li>Preis sofort inkl. Versand</li><li>Datencheck gratis</li><li>Firmen auf Rechnung</li></ul></section>' +
-      (hq ? '<section class="ps-hsec ps-hqsec"><div class="ps-hsec-h"><h2>Sofortpreis</h2><span class="pd-muted">Produkt und Stückzahl antippen – Endpreis inkl. Versand</span></div><div class="hq" id="psHq">' + hq + "</div></section>" : "") + savedHomeHtml() + recentHtml() +
+      savedHomeHtml() + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die vier neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
@@ -1800,8 +1777,6 @@
     if (k === "shop") { setPage(S.page === "produkte" ? "produkte" : "home"); return; }
     if (k === "searchall") { var hq = document.getElementById("psHomeQ"); S.q = hq ? hq.value.trim() : S.q; S.group = ""; S.sub = ""; setPage("produkte"); return; }
     if (k === "konto") { S.view = "konto"; render(); window.scrollTo({ top: 0 }); return; }
-    if (k === "hqk" || k === "hqq") { if (k === "hqk") { S.hq.k = v; S.hq.q = 0; } else S.hq.q = +v; hqUpd(k === "hqq"); return; }
-    if (k === "hqgo") { var hx = hqCur(); if (!hx) return; var qq = hx.h.q; pickProduct(hx.h.k, function () { if ((S.prod.tiers || []).indexOf(qq) > -1) S.copies = qq; go(2); loadPrice(); }); return; }
     if (k === "statusref") { var sp = v.split("|"); t.disabled = true; t.textContent = "wird aktualisiert …"; showStatus(sp[0], sp[1], 99, true); return; }
     if (k === "cfgsave") { cfgSave(); return; }
     if (k === "cfgshare") { cfgShare(); return; }
