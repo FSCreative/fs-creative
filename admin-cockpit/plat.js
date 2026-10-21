@@ -234,9 +234,11 @@ function vKochdu(){
   var sevOk=!!F.D.sev;
   var body=rs.map(function(r){
     var ro=c2e(r.barOpenCents), rp=c2e(r.barSettledCents), ron=c2e(r.onlineProvisionCents), it=item("kochdu:"+r.id);
-    var last=it&&it.last?invLine(it.last):(r.lastSettledAt?'<span>'+de(String(r.lastSettledAt).slice(0,10))+' <span class="tag grey">ohne Rechnung</span></span>':'<span class="muted">noch nie</span>');
+    var li=r.lastInvoice, liAt=li?String(li.at||"").slice(0,10):"";   // Bar-Monatsrechnung, die kochdu selbst erstellt und verschickt hat
+    var last=it&&it.last?invLine(it.last):li&&(!r.lastSettledAt||liAt>=String(r.lastSettledAt).slice(0,10))?'<span>'+(li.docId?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(li.docId)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(li.nr||"")+'">'+esc(li.nr||"Rechnung")+'</a>':esc(li.nr||"Rechnung"))+' · '+esc(String(li.month||"").split("-").reverse().join("/"))+' <span class="tag '+(li.sent?"ok":"warn")+'">'+(li.sent?"Monatsrechnung verschickt":"Monatsrechnung, nicht verschickt")+'</span></span>'
+      :(r.lastSettledAt?'<span>'+de(String(r.lastSettledAt).slice(0,10))+' <span class="tag grey">ohne Rechnung</span></span>':'<span class="muted">noch nie</span>');
     var acts='<span class="muted">automatisch (monatliche Rechnung)</span>';   // Verrechnen läuft automatisch über die kochdu-Monatsabrechnung
-    return '<tr><td><b>'+esc(r.name||"—")+'</b>'+(r.provisionRatePct!=null?'<div class="sub">'+esc(r.provisionRatePct)+' % Provision</div>':'')+'</td>'+
+    return '<tr><td><b>'+esc(r.name||"—")+'</b>'+(r.active===false?' <span class="tag grey" title="Lokal stillgelegt – Provisionen bleiben sichtbar">stillgelegt</span>':'')+(r.provisionRatePct!=null?'<div class="sub">'+esc(r.provisionRatePct)+' % Provision</div>':'')+'</td>'+
       '<td class="r num" data-l="Bestellungen bar / online">'+num(r.barOrders)+' / '+num(r.onlineOrders)+'</td>'+
       '<td class="r" data-l="Bar offen">'+money(ro,ro>0.005?"warn-t":"")+'</td>'+
       '<td class="r" data-l="Bar verrechnet">'+money(rp,"ok-t")+'</td>'+
