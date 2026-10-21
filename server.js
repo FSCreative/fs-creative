@@ -3963,6 +3963,7 @@ setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):"
 const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment, DATA_DIR, secret: ADMIN_SECRET });
 const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET, KI: () => KI, publicBase: ORIGIN,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0),
+  printProducts: n => PRINT && PRINT.marketingProducts ? PRINT.marketingProducts(n) : Promise.resolve([]),   // Produktfotos aus dem Druckshop für die Marke „druckshop“
   // Verlosung unter kochdu-Registrierungen: kochdu liefert nur Vorname + Kunden-ID; Name/E-Mail nur einzeln für Gewinner
   kochdu: async (query) => { if (!KOCHDU.token) throw new Error("kochdu ist im Cockpit nicht verbunden (KOCHDU_STATS_TOKEN fehlt)");
     const r = await fetch(KOCHDU.url + (KOCHDU.url.indexOf("?") > -1 ? "&" : "?") + query, { headers: { "x-api-token": KOCHDU.token }, signal: AbortSignal.timeout(20000) });

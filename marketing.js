@@ -247,7 +247,7 @@ module.exports = function (D) {
   // ───────────── Post-Planer (mkt-posts.js) und Veröffentlichen (mkt-publish.js) ─────────────
   const PUB = require("./mkt-publish.js")(D.publish || {});
   const POSTS = require("./mkt-posts.js")({ state, save, brand, brandList, renderBrand, imgSize, MEDIA, WORK, DIR, ROOT, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R, publisher: PUB,
-    get KI() { return typeof D.KI === "function" ? D.KI() : D.KI; }, push: D.push, secret: D.secret, publicBase: D.publicBase, background: D.background });
+    get KI() { return typeof D.KI === "function" ? D.KI() : D.KI; }, push: D.push, printProducts: D.printProducts, secret: D.secret, publicBase: D.publicBase, background: D.background });
 
   // ───────────── Routen ─────────────
   async function handleAdmin(req, res, u, p) {

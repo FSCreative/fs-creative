@@ -239,6 +239,25 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const r = await call("POST", "/admin/api/mkt/app", { provider: "facebook", clientId: "11", secret: "geheim", configId: "98 76-54" });
     assert.strictEqual(r.json().providers.find(x => x.key === "facebook").configId, "987654");
   });
+  await t("Druckshop: Produktfotos aus dem Shop in der Bildersammlung (mit Beschreibung, ausblendbar, verschwinden mit dem Produkt)", async () => {
+    let prods = [{ key: "visitenkarten", title: "Visitenkarten", desc: "Klassisch auf 400 g", img: "https://images.ctfassets.net/x/vk.jpg?fm=jpg&q=85&w=1080" },
+      { key: "flyer", title: "Flyer", desc: "", img: "https://images.ctfassets.net/x/fl.jpg?fm=jpg&q=85&w=1080" }, { key: "boese", title: "Fremd", desc: "", img: "https://example.org/x.jpg" }];
+    const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-mkt3-")), jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4000, 1)]), fetched = [];
+    const M3 = require(path.join(ROOT, "marketing.js"))({ send, DATA_DIR: dir3, ROOT, secret: "t", KI: () => null, publicBase: "http://127.0.0.1", background: false, push: async () => 0, printProducts: async () => prods });
+    const P3 = M3._test.posts._test, of = global.fetch;
+    global.fetch = async (u, o) => { if (/images\.ctfassets\.net/.test(String(u))) { fetched.push(String(u)); return { ok: true, status: 200, arrayBuffer: async () => jpg }; } return of(u, o); };
+    try {
+      assert.strictEqual(await P3.syncPrintPhotos(true), 2); assert.strictEqual(fetched.length, 2, "nur Bilder vom Shop-Bilddienst");
+      const lib = P3.library("druckshop").filter(x => x.product); assert.deepStrictEqual(lib.map(x => x.id), ["p-flyer.jpg", "p-visitenkarten.jpg"]); assert.ok(lib.every(x => x.kind === "photo" && !x.own));
+      assert.ok(/^Produktfoto aus dem Shop: Visitenkarten – Klassisch auf 400 g$/.test(P3.S().mkt.libDesc.druckshop["p-visitenkarten.jpg"].d));
+      assert.ok(!P3.library("kochdu").some(x => x.product), "nur beim Druckshop");
+      assert.strictEqual(await P3.syncPrintPhotos(), 0, "höchstens alle 12 Stunden"); assert.strictEqual(fetched.length, 2);
+      const rm = res(); await M3.handleAdmin(req("POST", { brand: "druckshop", remove: "p-flyer.jpg" }), rm, new URL("http://x/admin/api/mkt/library"), "/admin/api/mkt/library"); await rm.finished;
+      assert.ok(!P3.library("druckshop").some(x => x.id === "p-flyer.jpg"), "ausgeblendet");
+      prods = prods.filter(x => x.key !== "visitenkarten"); await P3.syncPrintPhotos(true);
+      assert.ok(!fs.existsSync(path.join(dir3, "marketing", "library-print", "visitenkarten.jpg")) && !P3.S().mkt.libDesc.druckshop["p-visitenkarten.jpg"], "nicht mehr im Shop → weg");
+    } finally { global.fetch = of; try { fs.rmSync(dir3, { recursive: true, force: true }); } catch (e) {} }
+  });
   mock.server.close(); pub.close(); try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   console.log("mktpost: " + pass + " ok, " + fail + " fehlgeschlagen");
   if (fail) { fails.forEach(f => console.log("  ✗ " + f)); process.exit(1); }

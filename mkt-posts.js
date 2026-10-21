@@ -130,6 +130,7 @@ module.exports = function (C) {
     const b = brand(post.brand);
     if (!C.KI || !C.KI.marketingOn || !C.KI.marketingOn()) throw fail(400, "KI nicht verfügbar (Einstellungen → KI).");
     const cur = { format: post.format, pillar: post.pillar, idea: post.idea, slides: (post.slides || []).map(s0 => { const o = Object.assign({}, s0); delete o.image; delete o.image2; delete o.imageRatio; return o; }), captions: post.captions, hashtags: post.hashtags, altText: post.altText };
+    if (b.key === "druckshop") await syncPrintPhotos().catch(e => console.error("marketing: Produktfotos", e.message));
     await describeLibrary(b.key).catch(() => 0);
     const user = "<profil>" + profileFor(b) + "</profil>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
       "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
@@ -149,6 +150,7 @@ module.exports = function (C) {
     const recent = S().posts.filter(p => p.brand === b.key).slice(0, 30).map(p => "- " + (p.pillar ? p.pillar + ": " : "") + p.idea).join("\n");
     const today = new Date().toLocaleDateString("de-AT", { timeZone: "Europe/Vienna", weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const vorg = clip(pl.instructions != null ? pl.instructions : pl.topic, 2000);
+    if (b.key === "druckshop") await syncPrintPhotos().catch(e => console.error("marketing: Produktfotos", e.message));
     const descEur = await describeLibrary(b.key).catch(e => { console.error("marketing: Bildbeschreibung", e.message); return 0; });
     const user = "<profil>" + profileFor(b) + "</profil>\n<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
       "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite)." : "nur dieses Format.") +
@@ -217,14 +219,40 @@ module.exports = function (C) {
   const rand = () => crypto.randomBytes(8).toString("hex");
   // ───────────── Bildersammlung je Marke ─────────────
   // Grundstock im Projekt (mkt-assets/<marke>/: Fotos von der Website, Spielszenen, Trailer-Clips) + eigene Uploads (Datenordner marketing/library/<marke>/)
-  const LIB = path.join(DIR, "library");
+  // + beim Druckshop die Produktfotos aus dem Shop (marketing/library-print/, Kennung „p-…“, täglich abgeglichen)
+  const LIB = path.join(DIR, "library"), PLIB = path.join(DIR, "library-print");
   function library(key) {
     const out = [], hidden = ((S().mkt.libHidden || {})[key]) || [];
-    const add = (dir, own) => { let fl = []; try { fl = fs.readdirSync(dir); } catch (e) { return; }
-      fl.sort().forEach(f => { if (/^icon\./i.test(f)) return; const m = f.match(/\.(jpe?g|png|mp4)$/i); if (!m) return; const id = (own ? "u-" : "s-") + f; if (hidden.indexOf(id) > -1) return;
-        let size = 0; try { size = fs.statSync(path.join(dir, f)).size; } catch (e) {} out.push({ id, file: path.join(dir, f), kind: /mp4/i.test(m[1]) ? "clip" : "photo", own, name: f, size }); }); };
+    const add = (dir, own, pre) => { let fl = []; try { fl = fs.readdirSync(dir); } catch (e) { return; }
+      fl.sort().forEach(f => { if (/^icon\./i.test(f)) return; const m = f.match(/\.(jpe?g|png|mp4)$/i); if (!m) return; const id = (pre || (own ? "u-" : "s-")) + f; if (hidden.indexOf(id) > -1) return;
+        let size = 0; try { size = fs.statSync(path.join(dir, f)).size; } catch (e) {} out.push({ id, file: path.join(dir, f), kind: /mp4/i.test(m[1]) ? "clip" : "photo", own, name: f, size, product: pre === "p-" }); }); };
     add(path.join(C.ROOT || path.dirname(DIR), "mkt-assets", key), false); add(path.join(LIB, key), true);
+    if (key === "druckshop") add(PLIB, false, "p-");
     return out;
+  }
+  // Produktfotos aus dem Druckshop holen (höchstens alle 12 Stunden): neue laden, nicht mehr angebotene entfernen.
+  // Beschreibung = Produktname + Kurztext (keine KI nötig) – damit wählt der Generator zum Thema passende Produkte.
+  let printSync = null;
+  async function syncPrintPhotos(force) {
+    if (typeof C.printProducts !== "function") return 0;
+    const st = S().mkt; if (!force && st.printPhotosAt && Date.now() - Date.parse(st.printPhotosAt) < 12 * 3600e3) return 0;
+    if (printSync) return printSync;
+    printSync = (async () => {
+      const list = (await C.printProducts(30)) || []; if (!list.length) return 0;
+      fs.mkdirSync(PLIB, { recursive: true });
+      const d = LD().druckshop = LD().druckshop || {}, want = new Set(); let added = 0;
+      for (const p of list) {
+        const f = String(p.key || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 60) + ".jpg", file = path.join(PLIB, f); if (!/^[a-z0-9]/.test(f) || !/^https:\/\/images\.ctfassets\.net\//.test(String(p.img || ""))) continue;
+        want.add(f);
+        if (!fs.existsSync(file)) { try { const r = await fetch(p.img, { signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error("HTTP " + r.status); const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length < 2000 || buf.length > 8e6 || buf[0] !== 0xff || buf[1] !== 0xd8) throw new Error("kein JPG"); fs.writeFileSync(file, buf); added++; } catch (e) { console.error("marketing: Produktfoto", p.key, e.message); want.delete(f); continue; } }
+        const txt = clip("Produktfoto aus dem Shop: " + p.title + (p.desc ? " – " + p.desc : ""), 160); if (!d["p-" + f] || d["p-" + f].product) d["p-" + f] = { d: txt, at: nowIso(), product: true };
+      }
+      let fl = []; try { fl = fs.readdirSync(PLIB); } catch (e) {}
+      fl.forEach(f => { if (!want.has(f)) { try { fs.unlinkSync(path.join(PLIB, f)); } catch (e) {} delete d["p-" + f]; } });
+      st.printPhotosAt = nowIso(); save(); return added;
+    })().finally(() => { printSync = null; });
+    return printSync;
   }
   const hashNum = s => parseInt(crypto.createHash("sha1").update(String(s)).digest("hex").slice(0, 8), 16);
   // Bildbeschreibungen (KI, einmal je Foto) – der Generator wählt damit je Folie ein passendes Bild statt eines zufälligen
@@ -580,7 +608,8 @@ module.exports = function (C) {
       return J(res, 200, Object.assign({ ok: true }, filterComments(cached.comments, pl.rules || {}, cached.self))), true;
     }
     // Bildersammlung: ansehen, hochladen (Fotos als data-URI, Videos roh per PUT), entfernen (Grundstock wird nur ausgeblendet)
-    if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand")); return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "" })) }), true; }
+    if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand"));
+      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job; } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "" })) }), true; }
     if (p === "/admin/api/mkt/library-file" && req.method === "GET") {
       const b = brand(u.searchParams.get("brand")), it = library(b.key).find(x => x.id === String(u.searchParams.get("id") || "")); if (!it) throw fail(404, "Nicht gefunden");
       return sendFile(req, res, it.file, /\.mp4$/i.test(it.file) ? "video/mp4" : /\.png$/i.test(it.file) ? "image/png" : "image/jpeg", ""), true;
@@ -605,5 +634,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, _test: { library, photoPlan, describeLibrary, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, _test: { library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
 };
