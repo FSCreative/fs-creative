@@ -1282,7 +1282,7 @@
     var isOn = function (sel) { return Object.keys(sel).every(function (k) { return String(S.sel[k]) === String(sel[k]); }); };
     var bp = price(P.base), cheapSel = null;
     if (bp) P.cheap.forEach(function (c) { var cp = price(c); if (cp && cp.gross < bp.gross - 0.5 && (!cheapSel || cp.gross < price(cheapSel).gross)) cheapSel = c; });
-    var lite = mobLite(), l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(P.prem && !lite ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
+    var lite = false, l = [{ id: "beliebt", name: "Beliebt", icon: "★", sel: P.base }].concat(P.prem && !lite ? [{ id: "premium", name: "Hochwertig", icon: "◆", sel: P.prem }] : []);
     window.__presets = l;
     var todo = [P.base].concat(P.cheap, P.prem ? [P.prem] : []).filter(function (sel) { return !(key(sel) in PRE); });
     if (todo.length) setTimeout(function () { var left = todo.length; todo.forEach(function (sel) { var k = key(sel); PRE[k] = null;
