@@ -1548,3 +1548,22 @@ html.promo-x .ps-promo,html:not(.has-promo) .ps-promo{display:none}
 .ps-more-txt{margin-top:6px}.ps-more-txt summary{cursor:pointer;color:#0a84ff;font-weight:500;font-size:14px;padding:4px 0;list-style:none}.ps-more-txt summary::-webkit-details-marker{display:none}.ps-more-txt summary::after{content:" ▾"}.ps-more-txt[open] summary::after{content:" ▴"}
 .ps-cfgv .ps-specs,.ps-cfgv .ps-selinfo{border-radius:16px}
 .ps-cfgv .ps-specs+.ps-selinfo{margin-top:10px}
+/* ── Startseite, Hero „Drucken, ganz einfach.“ (Entwurf 1, Okt. 2026) ── */
+.ps-hero1{text-align:center;padding:clamp(48px,9vw,110px) 0 clamp(28px,4vw,44px)}
+.ps-hero1 h1{font-size:clamp(38px,6.4vw,68px);line-height:1.02;letter-spacing:-.035em;font-weight:800;margin:0}
+.ps-hero1 .gx{background:linear-gradient(90deg,#0a84ff,#bf5af2);-webkit-background-clip:text;background-clip:text;color:transparent}
+.ps-hero1 .lead{font-size:clamp(16px,1.6vw,19px);color:var(--text-dim);max-width:600px;margin:18px auto 0;line-height:1.5}
+.ps-hero1 .ps-hsearch{max-width:620px;margin:32px auto 0;border-radius:999px;padding:6px 6px 6px 18px;text-align:left}
+.ps-hero1 .ps-hsearch .ps-btn{border-radius:999px;height:46px;padding:0 22px}
+.ps-h1tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;max-width:1040px;margin:clamp(36px,5vw,56px) auto 0}
+.ps-h1tiles button{border:0;background:none;color:inherit;padding:0;cursor:pointer;font:inherit}
+.ps-h1tiles .im{display:block;aspect-ratio:1;border-radius:20px;overflow:hidden;background:#f2f2f0;transition:transform .2s,box-shadow .2s}
+.ps-h1tiles .im img{width:100%;height:100%;object-fit:cover;display:block}.ps-h1tiles .im i{display:grid;place-items:center;height:100%;font-size:40px;font-style:normal}
+.ps-h1tiles button:hover .im{transform:translateY(-3px);box-shadow:0 14px 30px rgba(0,0,0,.35)}
+.ps-h1tiles b{display:block;margin-top:10px;font-size:14px;font-weight:600}
+.ps-h1all{margin-top:18px;font-size:14px}
+.ps-h1trust{list-style:none;padding:0;margin:22px 0 0;display:flex;justify-content:center;gap:22px;flex-wrap:wrap;font-size:14px;color:var(--text-dim)}
+.ps-h1trust li::before{content:"✓ ";color:#30d158;font-weight:700}
+.ps-hqsec .hq{max-width:560px;background:var(--ps-card);border:1px solid var(--ps-line2);border-radius:24px;padding:20px}
+@media (max-width:760px){.ps-h1tiles{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.ps-h1tiles .im{border-radius:14px}.ps-h1trust{gap:8px 16px;font-size:13px}}
+.ps-hqsec .hq-h b,.ps-hqsec .hq-h .live{display:none}.ps-hqsec .hq-h small{margin-left:0}
