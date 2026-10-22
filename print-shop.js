@@ -989,8 +989,8 @@ module.exports = function (D) {
     const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); };
     poss.sort((a, b) => cost(a) - cost(b) || String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
     if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 502 });
-    const best = poss[0];
-    const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))[0];
+    const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)) || cost(a) - cost(b))[0];
+    const best = n.urgency === "urgent" ? fastest : poss[0];   // Standard/Schnell: günstigste Lieferung, Express: schnellste (Wunsch Simon)
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10) };
     PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 20000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 4000); old.forEach(k => PRICE_CACHE.delete(k)); }
     return v;

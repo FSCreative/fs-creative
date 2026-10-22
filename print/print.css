@@ -1607,3 +1607,22 @@ details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-vouch
 .ps-opc{display:grid;gap:8px;padding:12px;border-radius:12px;border:1px dashed var(--ps-line2)}
 .ps-opc .ps-dims{margin:0}.ps-opc .ps-help{margin:0}
 @media (max-width:600px){.ps-op{grid-column:1/-1!important}.ps-opgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ps-ocb{min-height:56px;padding:9px 30px 9px 10px}}
+/* Liefertermine als Datumsleiste (wie Print.com) */
+.ps-cfg .ps-urtile{align-items:start}
+.ps-cfg .ps-urtile>.ps-td{display:block!important;grid-column:2}
+.ps-urc{display:flex;flex-wrap:wrap;gap:8px;grid-column:2;margin:4px 0 8px}
+.ps-urc button{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:12px;border:1px solid var(--ps-line2);background:var(--ps-field);color:var(--text);font:inherit;font-size:14px;cursor:pointer}
+.ps-urc button.on{border-color:var(--accent,#0a84ff);box-shadow:inset 0 0 0 1px var(--accent,#0a84ff);background:var(--ps-chipon)}
+.ps-urc .pr{color:var(--text-dim);font-variant-numeric:tabular-nums}
+.d{display:inline-block;width:6px;height:16px;border-radius:3px;flex:none}.d.g{background:#2f7d5b}.d.p{background:#f4c7d6}.d.y{background:#f0b33b}
+.ps-urs{grid-column:2;overflow-x:auto;border:1px solid var(--ps-line2);border-radius:12px}
+.ps-urs-r{display:flex;min-width:max-content}
+.ps-urs .c{flex:1 1 0;min-width:58px;display:flex;flex-direction:column;align-items:flex-end;padding:8px 10px;border-left:1px solid var(--ps-line);font-size:12px;color:var(--text-dim)}
+.ps-urs .c:first-child{border-left:0}
+.ps-urs .c.we{background:rgba(127,127,127,.12);opacity:.6}
+.ps-urs .c .dn{font-size:20px;font-weight:600;color:var(--text);line-height:1.1}
+.ps-urs .c .pp{margin-top:8px;min-height:20px;display:flex;align-items:center;gap:3px;font-weight:600;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
+.ps-urs .c.has{cursor:pointer}.ps-urs .c.has:hover{background:var(--ps-chipon)}
+.ps-urs .c.on{background:#5b8fa3;color:#fff}.ps-urs .c.on .dn,.ps-urs .c.on .pp{color:#fff}
+@media (max-width:600px){.ps-urc,.ps-urs,.ps-cfg .ps-urtile>.ps-td{grid-column:1/-1!important}.ps-urs .c{flex-basis:62px}}
+.ps-urc .ps-dlw{display:none}

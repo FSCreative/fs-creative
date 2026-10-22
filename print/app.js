@@ -799,7 +799,7 @@
     if (S.step >= 5 && !S.cart.length) S.step = 4;
     if (S.step === 1) h += vProducts(); else if (S.step === 2) h += vOptions(); else if (S.step === 3) h += isLogo() ? vLogos() : vDesign(); else if (S.step === 4) h += vCart(); else if (S.step === 5) h += vAddress(); else h += vCheckout();
     root.innerHTML = h; headUpdate(); document.documentElement.classList.remove("ps-noscroll");
-    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0); if (S.step === 3) setTimeout(pmkPaint, 0);
+    var dc = root.querySelector(".ps-dimc.on"); if (dc) { var dp = dc.parentNode; dp.scrollLeft += dc.getBoundingClientRect().left - dp.getBoundingClientRect().left - 12; } if (S.step === 1 && !S.view) fromObserve(); if (S.step === 3 && S.file && !isLogo()) setTimeout(pfvRender, 0); if (S.step === 3) setTimeout(pmkPaint, 0); if (S.step === 2) setTimeout(urScroll, 0);
     if ((S.step === 5 || S.step === 6) && S.cart.length && !S.view) {   // Mobil: Summe + nächster Schritt immer griffbereit
       var t5 = cartTotals(), co5 = S.ctype === "company", m5 = document.createElement("div"); m5.className = "ps-mbar"; m5.id = "psMbar";
       m5.innerHTML = '<div class="mp"><b>' + eur(co5 ? t5.net : t5.gross) + "</b><small>" + (co5 ? "netto" : "inkl. USt") + " · inkl. Versand</small></div>" + (S.step === 5 ? '<button type="button" class="ps-btn primary small" data-act="next4">Weiter zur Zahlung</button>' : '<button type="button" class="ps-btn primary small" data-act="toorder">Bestellen ↓</button>'); root.appendChild(m5); }
@@ -1106,20 +1106,33 @@
   }
   function urTile(p) {
     if (kind() === "textile" || p.urgency.length < 2) return "";
-    var st = urState(), vis = p.urgency.filter(function (u) { return st.hid.indexOf(u.slug) < 0; }), nm = function (sl) { return (p.urgency.filter(function (u) { return u.slug === sl; })[0] || {}).name || sl; };
-    if (vis.length === 1) return '<div class="ps-tile" data-urtile><span class="ps-tl">Produktion</span><div class="ps-uronly"><b>' + esc(vis[0].name) + "</b>" + (st.D[vis[0].slug] ? "<span>Lieferung voraussichtlich " + esc(deDate(st.D[vis[0].slug])) + "</span>" : "") + "</div>" +
-      '<span class="ps-td">Eine schnellere Produktion (' + esc(st.hid.map(nm).join(" oder ")) + ") gibt es für diese Ausführung nicht – " + esc(vis[0].name) + " ist hier bereits der früheste Liefertermin.</span></div>";
-    return '<div class="ps-tile seg' + (S.urgency === "standard" ? " best" : "") + (S.dd === "urgency" ? " open" : "") + '" data-urtile><span class="ps-tl">Produktion' + (S.urgency === "standard" ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</span>" +
-      ddHtml("urgency", "Produktion", vis.map(function (u) { return { val: u.slug, name: u.name, best: u.slug === "standard", sub: st.D[u.slug] ? "" : { quick: "schneller als Standard", standard: "bestes Preis-Leistungs-Verhältnis", urgent: "so schnell wie möglich" }[u.slug] || "" }; }), S.urgency) +   // sobald Termine da sind: Termin + Aufpreis statt Untertitel
-      '<span class="ps-td">' + (st.hid.length ? esc(st.hid.map(nm).join(" und ")) + " bringt hier keinen früheren Liefertermin und ist deshalb ausgeblendet." : "Bestimmt den Liefertermin.") + "</span></div>";
+    var st = urState(), co = S.ctype === "company", b = dlBase(), cur = S.price ? (co ? S.price.net : S.price.gross) : null;
+    var vis = p.urgency.filter(function (u) { return st.hid.indexOf(u.slug) < 0; }).sort(function (a, b2) { return UR_ORD.indexOf(a.slug) - UR_ORD.indexOf(b2.slug); });
+    var LBL = { standard: ["Standard", "günstigste Lieferung", "g"], quick: ["Schnell", "", "p"], urgent: ["Express", "am schnellsten", "y"] };
+    var opts = vis.map(function (u) { var d = u.slug === S.urgency ? null : DLT[b + "|@u|" + u.slug], pr = u.slug === S.urgency ? cur : d && cur != null ? cur + (co ? d.net : d.gross) : null;
+      return { slug: u.slug, name: (LBL[u.slug] || [u.name])[0], sub: (LBL[u.slug] || [])[1] || "", c: (LBL[u.slug] || [])[2] || "g", date: st.D[u.slug] || "", price: pr }; });
+    // Liefertage wie bei Print.com: Datumsleiste mit Preis je Tag (Produktionsstandort wird nicht gezeigt)
+    var dates = opts.map(function (o) { return o.date; }).filter(Boolean).sort(), today = new Date(), days = [];
+    var start = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1), last = dates.length ? new Date(dates[dates.length - 1] + "T12:00:00") : new Date(start.getTime() + 6 * 864e5);
+    for (var d0 = new Date(start); d0 <= last || days.length < 7; d0 = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + 1)) { days.push(d0); if (days.length > 21) break; }   // Kalendertage (sicher über die Zeitumstellung)
+    var iso = function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); };
+    var WD = ["So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."], MO = ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."];
+    var chips = '<div class="ps-urc">' + opts.map(function (o) { var on = o.slug === S.urgency;
+      return '<button type="button" class="' + (on ? "on" : "") + '" data-ddpick="urgency|' + esc(o.slug) + '" aria-pressed="' + on + '"><i class="d ' + o.c + '"></i><b>' + esc(o.name) + "</b>" + (o.price != null ? '<span class="pr">' + eur(o.price) + "</span>" : '<span class="ps-spin"></span>') + (on ? "" : dlSpan("urgency", { val: o.slug })) + "</button>"; }).join("") + "</div>";   // dlSpan: lädt Termin + Aufpreis der anderen Produktionszeiten
+    var strip = '<div class="ps-urs" role="grid" aria-label="Liefertermine"><div class="ps-urs-r">' + days.map(function (d) { var k = iso(d), we = d.getDay() === 0 || d.getDay() === 6, hit = opts.filter(function (o) { return o.date === k; }).sort(function (a, b2) { return (a.price || 1e9) - (b2.price || 1e9); }), o = hit[0], on = o && hit.some(function (x) { return x.slug === S.urgency; });
+      return '<div class="c' + (we ? " we" : "") + (o ? " has" : "") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-ddpick="urgency|' + esc(on ? S.urgency : o.slug) + '"' : "") + '><span class="wd">' + WD[d.getDay()] + '</span><span class="dn">' + d.getDate() + '</span><span class="mo">' + MO[d.getMonth()] + "</span>" +
+        '<span class="pp">' + (o ? hit.map(function (x) { return '<i class="d ' + x.c + '"></i>'; }).join("") + (o.price != null ? eur(on ? opts.filter(function (x) { return x.slug === S.urgency; })[0].price : o.price) : "") : "") + "</span></div>"; }).join("") + "</div></div>";
+    return '<div class="ps-tile wide ps-urtile" data-urtile><span class="ps-tl">Lieferung</span>' + chips + strip + '<span class="ps-td">Lieferung frei Haus innerhalb Österreichs · Zustellung durch den Paketdienst, in Einzelfällen auch erst am darauffolgenden Werktag.</span></div>';
   }
+
   // Neue Termine da: Kachel aktualisieren; gewählte Stufe ohne früheren Termin → automatisch auf die günstigere mit gleichem Termin
+  function urScroll() { var w = root.querySelector(".ps-urs"), on = w && w.querySelector(".c.on"); if (on && w.scrollWidth > w.clientWidth) w.scrollLeft = Math.max(0, on.offsetLeft - w.clientWidth + on.offsetWidth + 8); }   // gewählter Liefertag immer sichtbar
   function urRefresh() {
     if (S.step !== 2 || !S.prod) return; var st = urState();
     if (st.all && st.hid.indexOf(S.urgency) > -1) { var cur = st.D[S.urgency], to = UR_ORD.filter(function (c) { return st.D[c] && st.D[c] <= cur; })[0];
       if (to && to !== S.urgency) { var from = S.urgency; S.urgency = to; toast("„" + ((S.prod.urgency.filter(function (u) { return u.slug === from; })[0] || {}).name || from) + "“ bringt hier keinen früheren Liefertermin – wir haben die günstigere Produktion gewählt."); render(); loadPrice(); return; } }
     var el = root.querySelector("[data-urtile]"); if (!el || S.dd === "urgency") return; var h = urTile(S.prod); if (el.outerHTML === h) return;
-    var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); }
+    var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); urScroll(); }
   }
   function qtyHtml(p) {
     var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);
