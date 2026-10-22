@@ -136,6 +136,13 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r2 = await post("/print/api/price", Object.assign({ country: "AT", zip: "6780" }, BC, { copies: 100 })); assert.strictEqual(r2.j.price.net, 7.4); assert.strictEqual(r2.j.price.rate, 20);
     M.price.salesPrice = 20; M.price.shipping = 5;
   });
+  await t("Lieferung: alle Liefertage mit Preis je Tag; Wunschtag nimmt den Versand dieses Tages", async () => {
+    const r = await post("/print/api/price", Object.assign({ country: "AT" }, BC)); const ds = r.j.price.days || [];
+    assert.ok(ds.length === 2 && ds[0].d < ds[1].d, JSON.stringify(ds)); assert.strictEqual(ds.find(x => x.d === r.j.price.deliveryDate).net, 32);
+    assert.strictEqual(ds.find(x => x.d === "2026-10-21").net, 46);   // 27 + 19 (UPS-Versand an diesem Tag)
+    const w = await post("/print/api/price", Object.assign({ country: "AT", wish: "2026-10-21" }, BC)); assert.strictEqual(w.j.price.deliveryDate, "2026-10-21"); assert.strictEqual(w.j.price.net, 46); assert.strictEqual(w.j.price.defDate, r.j.price.deliveryDate);
+    const x = await post("/print/api/price", Object.assign({ country: "AT", wish: "2030-01-01" }, BC)); assert.strictEqual(x.j.price.net, 32, "unbekannter Tag → Standardwahl");
+  });
   await t("Viele Besucher: gleichzeitige gleiche Preisanfragen → nur eine Anfrage je Variante an Print.com", async () => {
     const cnt = () => M.log.filter(x => x.method === "POST" && /\/pc\/products\/[^/]+\/price$/.test(x.path)).length;
     let c0 = cnt(); await post("/print/api/price", Object.assign({ country: "AT" }, BC, { copies: 1000 })); const one = cnt() - c0;

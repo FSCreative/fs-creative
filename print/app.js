@@ -116,7 +116,7 @@
   function requoteCart() {
     var seq = ++rqSeq; S.quoting = S.cart.length; S.cartErr = {};
     S.cart.forEach(function (x) {
-      api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }).then(function (j) {
+      api("/print/api/price", { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, country: S.customer.country || "AT", zip: S.customer.zip || "", customerType: S.ctype, uid: S.ctype === "company" ? S.uid : "", voucher: S.voucher || "" }).then(function (j) {
         if (seq !== rqSeq) return; S.quoting--;
         if (S.voucher) { if (j.voucherErr) { S.voucherErr = j.voucherErr; S.voucherOk = ""; } else if (j.voucher) { S.voucherOk = j.voucher.code + " · " + String(j.voucher.pct).replace(".", ",") + " % Rabatt"; S.voucherErr = ""; } }
         if (j.ok && j.labels && j.labels.length) x.labels = j.labels.slice(0, 12); if (j.ok) x.price = { net: j.price.net, gross: j.price.gross, vat: j.price.vat, rate: j.price.rate, deliveryDate: j.price.deliveryDate, taxNote: j.price.taxNote, bonus: j.price.bonus || null }; else { x.price = null; S.cartErr[x.id] = j.error || "Preis nicht verfügbar"; }
@@ -374,7 +374,7 @@
   // Auswahl je nach Anzahl der Optionen: ≤ 4 direkt als Schaltflächen, ≤ 12 kompakte Liste, mehr = großer Auswahl-Dialog (Kategorien links, Optionen rechts, Suche)
   // ── Aufpreise neben den Optionen („+ 4,20 €“): vom Server (/print/api/deltas), nur für gerade sichtbare Optionen, zwischengespeichert ──
   var DLT = {}, DLQ = {}, DLR = {}, DLW = {}, dlT = 0, dlRun = 0, dlJobs = [];
-  function dlBase() { return S.prod && S.price && !S.priceBusy && S.step === 2 ? JSON.stringify([cfgOf(), S.price.pm || "", S.ctype, S.customer.country || S.country, S.customer.zip || "", S.voucher || ""]) : ""; }
+  function dlBase() { return S.prod && S.price && !S.priceBusy && S.step === 2 ? JSON.stringify([Object.assign(cfgOf(), { wish: undefined }), S.price.pm || "", S.ctype, S.customer.country || S.country, S.customer.zip || "", S.voucher || ""]) : ""; }
   // slug „@u“ = Produktionszeit (Standard/Schnell/Express): zusätzlich der Liefertermin
   function dShort(iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "short" }) : ""; }
   function dlTxt(slug, val) {
@@ -619,7 +619,7 @@
       ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
         bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
       S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); var nice = [100, 50, 250, 25, 500, 10].filter(function (n) { return p.tiers.indexOf(n) > -1; })[0];   // ohne Bestseller-Auflage: runde, übliche Menge statt z. B. 42
-      S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
+      S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.dday = ""; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel(); S.presetBase = Object.assign({}, S.sel);
@@ -646,7 +646,7 @@
     return [{ slug: "area", title: "Druckfläche", area: (k && a[k]) || (ks.length === 1 ? a[ks[0]] : null) || p.printArea || [100, 100] }];
   }
   function logoKey() { return JSON.stringify(logoPositions().map(function (x) { return [x.slug, x.area]; })); }
-  function cfgOf() { return { product: S.prod.key, sel: S.sel, copies: S.copies, urgency: S.urgency, pm: S.pm || "auto", custom: isCustom() ? S.custom : undefined, textile: S.textile || undefined }; }
+  function cfgOf() { return { product: S.prod.key, sel: S.sel, copies: S.copies, urgency: S.urgency, wish: S.dday || undefined, pm: S.pm || "auto", custom: isCustom() ? S.custom : undefined, textile: S.textile || undefined }; }
 
   // ── Preis ──
   var pT, pSeq = 0;
@@ -1100,7 +1100,7 @@
   var UR_ORD = ["standard", "quick", "urgent"];
   function urState() {
     var p = S.prod, b = dlBase(), D = {}, all = !!b;
-    p.urgency.forEach(function (u) { var dt = u.slug === S.urgency ? S.price && S.price.deliveryDate : b && (DLT[b + "|@u|" + u.slug] || {}).date; if (dt) D[u.slug] = dt; else all = false; });
+    p.urgency.forEach(function (u) { var dt = u.slug === S.urgency ? S.price && (S.price.defDate || S.price.deliveryDate) : b && (DLT[b + "|@u|" + u.slug] || {}).date; if (dt) D[u.slug] = dt; else all = false; });
     var hid = [];
     if (all) p.urgency.forEach(function (u) { var i = UR_ORD.indexOf(u.slug); if (i > 0 && UR_ORD.slice(0, i).some(function (c) { return D[c] && D[c] <= D[u.slug]; })) hid.push(u.slug); });
     else if (S.urLast && S.urLast.key === p.key) hid = S.urLast.hid.filter(function (x) { return x !== S.urgency; });   // bis die neuen Termine da sind: letzte Einschätzung
@@ -1112,19 +1112,26 @@
     var st = urState(), co = S.ctype === "company", b = dlBase(), cur = S.price ? (co ? S.price.net : S.price.gross) : null;
     var vis = p.urgency.filter(function (u) { return st.hid.indexOf(u.slug) < 0; }).sort(function (a, b2) { return UR_ORD.indexOf(a.slug) - UR_ORD.indexOf(b2.slug); });
     var LBL = { standard: ["Standard", "günstigste Lieferung", "g"], quick: ["Schnell", "", "p"], urgent: ["Express", "am schnellsten", "y"] };
-    var opts = vis.map(function (u) { var d = u.slug === S.urgency ? null : DLT[b + "|@u|" + u.slug], pr = u.slug === S.urgency ? cur : d && cur != null ? cur + (co ? d.net : d.gross) : null;
+    // Preise: aktuelle Stufe aus dem Preis (Tage absolut), andere Stufen aus /print/api/deltas (an/ag = Standardtag, days = alle Tage absolut)
+    var LG = function (o) { return o ? (co ? o.net : o.gross) : null; };
+    var opts = vis.map(function (u) { var me = u.slug === S.urgency, d = me ? null : DLT[b + "|@u|" + u.slug], pr = me ? cur : d && (d.ag != null ? LG({ net: d.an, gross: d.ag }) : cur != null ? cur + (co ? d.net : d.gross) : null);
+      if (me && S.price && S.price.wish && S.price.days) { var df = S.price.days.filter(function (x) { return x.d === S.price.defDate; })[0]; if (df) pr = LG(df); }   // Chip zeigt den Standardtag der Stufe
       return { slug: u.slug, name: (LBL[u.slug] || [u.name])[0], sub: (LBL[u.slug] || [])[1] || "", c: (LBL[u.slug] || [])[2] || "g", date: st.D[u.slug] || "", price: pr }; });
-    // Liefertage wie bei Print.com: Datumsleiste mit Preis je Tag (Produktionsstandort wird nicht gezeigt)
-    var dates = opts.map(function (o) { return o.date; }).filter(Boolean).sort(), today = new Date(), days = [];
+    // Liefertage wie bei Print.com: jeder Tag, den Print.com anbietet, mit dem günstigsten Preis über alle Produktionszeiten (Produktionsstandort wird nicht gezeigt)
+    var by = {}, add = function (slug, list) { (list || []).forEach(function (x) { var pr = LG(x); if (pr == null || !x.d) return; if (!by[x.d] || pr < by[x.d].price - 0.004 || (Math.abs(pr - by[x.d].price) < 0.005 && UR_ORD.indexOf(slug) < UR_ORD.indexOf(by[x.d].slug))) by[x.d] = { slug: slug, price: pr, c: ((LBL[slug] || [])[2]) || "g" }; }); };
+    p.urgency.forEach(function (u) { if (u.slug === S.urgency) add(u.slug, S.price && S.price.days); else { var d = b && DLT[b + "|@u|" + u.slug]; if (d && d.days) add(u.slug, d.days); } });
+    opts.forEach(function (o) { if (o.date && !by[o.date] && o.price != null) by[o.date] = { slug: o.slug, price: o.price, c: o.c }; });   // ältere Antwort ohne Tage
+    var selDay = S.price && S.price.deliveryDate;
+    var dates = Object.keys(by).sort(), today = new Date(), days = [];
     var start = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1), last = dates.length ? new Date(dates[dates.length - 1] + "T12:00:00") : new Date(start.getTime() + 6 * 864e5);
-    for (var d0 = new Date(start); d0 <= last || days.length < 7; d0 = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + 1)) { days.push(d0); if (days.length > 21) break; }   // Kalendertage (sicher über die Zeitumstellung)
+    for (var d0 = new Date(start); d0 <= last || days.length < 7; d0 = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + 1)) { days.push(d0); if (days.length > 24) break; }   // Kalendertage (sicher über die Zeitumstellung)
     var iso = function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); };
     var WD = ["So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."], MO = ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."];
-    var chips = '<div class="ps-urc">' + opts.map(function (o) { var on = o.slug === S.urgency;
-      return '<button type="button" class="' + (on ? "on" : "") + '" data-ddpick="urgency|' + esc(o.slug) + '" aria-pressed="' + on + '"><i class="d ' + o.c + '"></i><b>' + esc(o.name) + "</b>" + (o.price != null ? '<span class="pr">' + eur(o.price) + "</span>" : '<span class="ps-spin"></span>') + (on ? "" : dlSpan("urgency", { val: o.slug })) + "</button>"; }).join("") + "</div>";   // dlSpan: lädt Termin + Aufpreis der anderen Produktionszeiten
-    var strip = '<div class="ps-urs" role="grid" aria-label="Liefertermine"><div class="ps-urs-r">' + days.map(function (d) { var k = iso(d), we = d.getDay() === 0 || d.getDay() === 6, hit = opts.filter(function (o) { return o.date === k; }).sort(function (a, b2) { return (a.price || 1e9) - (b2.price || 1e9); }), o = hit[0], on = o && hit.some(function (x) { return x.slug === S.urgency; });
-      return '<div class="c' + (we ? " we" : "") + (o ? " has" : "") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-ddpick="urgency|' + esc(on ? S.urgency : o.slug) + '"' : "") + '><span class="wd">' + WD[d.getDay()] + '</span><span class="dn">' + d.getDate() + '</span><span class="mo">' + MO[d.getMonth()] + "</span>" +
-        '<span class="pp">' + (o ? hit.map(function (x) { return '<i class="d ' + x.c + '"></i>'; }).join("") + (o.price != null ? eur(on ? opts.filter(function (x) { return x.slug === S.urgency; })[0].price : o.price) : "") : "") + "</span></div>"; }).join("") + "</div></div>";
+    var chips = '<div class="ps-urc">' + opts.map(function (o) { var on = o.slug === S.urgency && !(S.price && S.price.wish);
+      return '<button type="button" class="' + (on ? "on" : "") + '" data-ddpick="urgency|' + esc(o.slug) + '" aria-pressed="' + on + '"><i class="d ' + o.c + '"></i><b>' + esc(o.name) + "</b>" + (o.price != null ? '<span class="pr">' + eur(o.price) + "</span>" : '<span class="ps-spin"></span>') + (o.slug === S.urgency ? "" : dlSpan("urgency", { val: o.slug })) + "</button>"; }).join("") + "</div>";   // dlSpan: lädt Termine + Preise der anderen Produktionszeiten
+    var strip = '<div class="ps-urs" role="grid" aria-label="Liefertermine"><div class="ps-urs-r">' + days.map(function (d) { var k = iso(d), we = d.getDay() === 0 || d.getDay() === 6, o = by[k], on = k === selDay;
+      return '<div class="c' + (we ? " we" : "") + (o ? " has" : "") + (on ? " on" : "") + '"' + (o ? ' role="button" tabindex="0" data-ddpick="urgency|' + esc(o.slug) + "|" + k + '"' : "") + '><span class="wd">' + WD[d.getDay()] + '</span><span class="dn">' + d.getDate() + '</span><span class="mo">' + MO[d.getMonth()] + "</span>" +
+        '<span class="pp">' + (o ? '<i class="d ' + o.c + '"></i>' + eur(on && cur != null ? cur : o.price) : "") + "</span></div>"; }).join("") + "</div></div>";
     return '<div class="ps-tile wide ps-urtile" data-urtile><span class="ps-tl">Lieferung</span>' + chips + strip + '<span class="ps-td">Lieferung frei Haus innerhalb Österreichs · Zustellung durch den Paketdienst, in Einzelfällen auch erst am darauffolgenden Werktag.</span></div>';
   }
 
@@ -1133,7 +1140,7 @@
   function urRefresh() {
     if (S.step !== 2 || !S.prod) return; var st = urState();
     if (st.all && st.hid.indexOf(S.urgency) > -1) { var cur = st.D[S.urgency], to = UR_ORD.filter(function (c) { return st.D[c] && st.D[c] <= cur; })[0];
-      if (to && to !== S.urgency) { var from = S.urgency; S.urgency = to; toast("„" + ((S.prod.urgency.filter(function (u) { return u.slug === from; })[0] || {}).name || from) + "“ bringt hier keinen früheren Liefertermin – wir haben die günstigere Produktion gewählt."); render(); loadPrice(); return; } }
+      if (to && to !== S.urgency) { var from = S.urgency; S.urgency = to; S.dday = ""; toast("„" + ((S.prod.urgency.filter(function (u) { return u.slug === from; })[0] || {}).name || from) + "“ bringt hier keinen früheren Liefertermin – wir haben die günstigere Produktion gewählt."); render(); loadPrice(); return; } }
     var el = root.querySelector("[data-urtile]"); if (!el || S.dd === "urgency") return; var h = urTile(S.prod); if (el.outerHTML === h) return;
     var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); urScroll(); }
   }
@@ -1788,7 +1795,7 @@
       var pv = dd.getAttribute("data-ddpick"), i0 = pv.indexOf("|"), key = pv.slice(0, i0), val = pv.slice(i0 + 1); S.dd = key === "prop:size" && val === "custom" ? "fmtc" : ""; S.ddInfo = "";   // eigenes Format gewählt → Eingabe gleich offen
       if (key.indexOf("prop:") === 0) { var slug = key.slice(5), before = Object.assign({}, S.sel); setProp(slug, val); var ch = {}; Object.keys(S.sel).forEach(function (k) { if (k !== slug && S.sel[k] !== before[k]) ch[k] = S.sel[k]; }); if (Object.keys(ch).length) toast("Angepasst, damit es zusammenpasst: " + changesText(ch)); return; }
       if (key === "copies") { S.copies = +val; motBalance(); var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
-      if (key === "urgency") { S.urgency = val; render(); loadPrice(); return; }
+      if (key === "urgency") { var uv = val.split("|"); S.urgency = uv[0]; S.dday = uv[1] || ""; render(); loadPrice(); return; }   // Chip: Standardtag der Stufe, Tag in der Leiste: genau dieser Liefertag
       if (key === "pm") { S.pm = val; render(); loadPrice(); return; }
       return;
     }
@@ -1862,7 +1869,7 @@
     if (t.matches("select[data-prop]")) { setProp(t.getAttribute("data-prop"), t.value); return; }
     if (t.matches("select[data-cartq]")) { var cx = S.cart.filter(function (x) { return x.id === t.getAttribute("data-cartq"); })[0]; if (!cx) return; cx.copies = +t.value; cx.n = +t.value; cx.price = null; S.cartErr = {}; cartSave(); requoteCart(); render(); return; }
     if (t.matches("select[data-copies]")) { S.copies = +t.value; var qx = document.getElementById("psQty"); if (qx) qx.value = ""; render(); loadPrice(); return; }
-    if (t.matches("select[data-urgency]")) { S.urgency = t.value; render(); loadPrice(); return; }
+    if (t.matches("select[data-urgency]")) { S.urgency = t.value; S.dday = ""; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
     if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }
     if (t.hasAttribute("data-mots")) { S.mot.split[+t.getAttribute("data-mots")] = Math.max(1, parseInt(t.value, 10) || 1); render(); return; }
@@ -1873,7 +1880,7 @@
     if (t.name === "tmethod") { var p = S.prod, m = p.methods.filter(function (x) { return x.key === t.value; })[0]; S.textile.method = t.value; S.textile.positions = S.textile.positions.filter(function (x) { return m.positions.indexOf(x) > -1; }); if (!S.textile.positions.length) S.textile.positions = [m.positions[0]]; resetLogos(); render(); loadPrice(); return; }
     if (t.name === "tpos") { var ps = S.textile.positions.filter(function (x) { return x !== t.value; }); if (t.checked) ps.push(t.value); S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return ps.indexOf(x) > -1; }); resetLogos(); loadPrice(); return; }
     if (t.hasAttribute("data-logo") && t.files && t.files[0]) return uploadFile(t.files[0], t.getAttribute("data-logo"));
-    if (t.name === "urgency") { S.urgency = t.value; loadPrice(); return; }
+    if (t.name === "urgency") { S.urgency = t.value; S.dday = ""; loadPrice(); return; }
     if (t.matches("[data-country]")) { S.customer.country = t.value; if (S.customer.zip && !(t.value === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(S.customer.zip)) S.customer.zip = ""; loadPrice(); return; }
     if (t.id === "psFile" && t.files && t.files[0]) return uploadFile(t.files[0]);
     if (t.id === "country" || t.id === "zip") { saveAddr(); reprice(); return; }
@@ -1982,7 +1989,7 @@
       if (!j.ok || !j.draft || !prodByKey(j.draft.product)) { toast(j.error || "Entwurf nicht gefunden", true); render(); return; }
       var d = j.draft; pickProduct(d.product, function () {
         S.prod.props.forEach(function (pr) { if (d.sel && pr.options.some(function (o) { return o.slug === d.sel[pr.slug]; })) S.sel[pr.slug] = d.sel[pr.slug]; });
-        if (+d.copies > 0) S.copies = +d.copies; if (d.urgency) S.urgency = d.urgency; if (d.custom && d.custom.w) S.custom = { w: d.custom.w, h: d.custom.h };
+        if (+d.copies > 0) S.copies = +d.copies; if (d.urgency) { S.urgency = d.urgency; S.dday = d.wish || ""; } if (d.custom && d.custom.w) S.custom = { w: d.custom.w, h: d.custom.h };
         fixSel(); loadPrice(); S.step = 3; S.design = d.design || null; render(); if (S.design) openDesigner(S.design);
         try { history.replaceState(null, "", "/print"); } catch (e) {}
       });
@@ -2026,7 +2033,7 @@
     if (S.cart.some(function (x) { return !x.price; })) { show("Nicht alle Preise sind verfügbar – bitte die markierten Positionen im Warenkorb prüfen."); return; }
     if (!S.me && S.newAcct && String(S.newPw || "").length < 8) { er.textContent = "Das Passwort für das Kundenkonto braucht mindestens 8 Zeichen."; if (pw) pw.focus(); return; }
     S.busy = true; S.err = ""; render();
-    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
+    var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
       check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {

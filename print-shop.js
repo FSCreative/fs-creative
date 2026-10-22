@@ -879,6 +879,7 @@ module.exports = function (D) {
     }
     const urgency = String(input.urgency || ((prod.urgency.find(x => x.slug === "standard") || prod.urgency[0] || {}).slug) || "standard");   // Standard vor „Schnell“ (Print.com listet „quick“ teils zuerst)
     if (prod.urgency.length && !prod.urgency.some(u => u.slug === urgency)) throw bad("Ungültige Lieferzeit");
+    const wish = /^\d{4}-\d\d-\d\d$/.test(String(input.wish || "")) ? String(input.wish) : "";
     // Auflagen-Bereiche je Druckverfahren: nur Verfahren zulassen, die diese Menge drucken
     let pmOnly = null;
     if (prod.qty && prod.qty.length && prod.qty.some(x => x.pm) && !prod.qty.some(x => !x.pm && qtyIn(x, copies))) pmOnly = { printingmethod: prod.qty.filter(x => x.pm && qtyIn(x, copies)).map(x => x.pm) };
@@ -911,7 +912,7 @@ module.exports = function (D) {
       if (pmAlts.length < 2) pmAlts = null;
     }
     const pages = positions ? null : pagesOf(prod, all);
-    return { sel, fileSel, copies, urgency, pcOpts, pcMore: variantsOf(prod, pcOpts), labels, pmWanted, pmAlts, sides: positions ? positions.length : pages || sidesOf(all), pages, size, folds, closed, variants, positions, textile: tex, excluded: excl, kind };
+    return { sel, fileSel, copies, urgency, pcOpts, pcMore: variantsOf(prod, pcOpts), labels, pmWanted, pmAlts, sides: positions ? positions.length : pages || sidesOf(all), pages, size, folds, closed, variants, positions, textile: tex, excluded: excl, kind, wish };
   }
 
   // ── Steuer ──
@@ -956,7 +957,11 @@ module.exports = function (D) {
   }
   // Viele Besucher: gleiche Print.com-Anfragen, die gerade laufen, teilen sich ein Ergebnis (INFLIGHT); Zwischenspeicher 6 h (Kasse: frisch, max. 5 min)
   const INFLIGHT = new Map();
-  async function purchase(prod, n, country, postcode) {
+  // Wunsch-Liefertag (Datumsleiste): Versand dieses Tages statt der Standardwahl – nur wenn Print.com den Tag für diese Produktionszeit anbietet
+  function pickDay(v, wish) { const d = wish && Array.isArray(v.days) ? v.days.find(x => x.d === wish) : null; if (!d || d.d === v.deliveryDate) return v;
+    return Object.assign({}, v, { shipping: d.ship, total: r2(v.product + d.ship), deliveryDate: d.d, carrier: d.carrier, method: d.method, wish: d.d, def: v.deliveryDate }); }
+  async function purchase(prod, n, country, postcode) { return pickDay(await purchase0(prod, n, country, postcode), n.wish); }
+  async function purchase0(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 6 * 3600e3)) return hit.v;
     if (n.cacheOnly) throw Object.assign(new Error("busy"), { status: 429, busy: true });   // Andrang: Nebensächliches nur aus dem Zwischenspeicher
@@ -991,7 +996,9 @@ module.exports = function (D) {
     if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 502 });
     const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)) || cost(a) - cost(b))[0];
     const best = n.urgency === "urgent" ? fastest : poss[0];   // Standard/Schnell: günstigste Lieferung, Express: schnellste (Wunsch Simon)
-    const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10) };
+    const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10),
+      // alle Liefertage dieser Produktionszeit mit dem günstigsten Versand je Tag (für die Datumsleiste)
+      days: Object.values(poss.reduce((m, x) => { const d = String(x.deliveryDate || "").slice(0, 10); if (/^\d{4}-\d\d-\d\d$/.test(d) && (!m[d] || cost(x) < m[d].ship)) m[d] = { d, ship: r2(cost(x)), carrier: String(x.carrier || ""), method: String(x.method || "") }; return m; }, {})).sort((a, b) => a.d.localeCompare(b.d)).slice(0, 25) };
     PRICE_CACHE.set(key, { at: Date.now(), v }); if (PRICE_CACHE.size > 20000) { const old = Array.from(PRICE_CACHE.keys()).slice(0, 4000); old.forEach(k => PRICE_CACHE.delete(k)); }
     return v;
   }
@@ -1059,14 +1066,16 @@ module.exports = function (D) {
     if (bp && methods) methods = methods.map(m => { const nt = disc(m.net); return Object.assign({}, m, { net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }); });
     const list = netOf(buy), net0 = disc(list), vat0 = r2(net0 * tax.rate / 100);
     // Rabatte (Bonus, Kundenrabatt, Gutschein) dürfen die Mindestmarge nach Gebühr nicht unterschreiten
+    const netFin = b => Math.max(disc(netOf(b)), Math.ceil((promoCap != null ? Math.min(floorA(b), netOf(b)) : floorA(b)) * 10 - 1e-6) / 10);
+    const days = (buy.days || []).map(d => { const nt = netFin({ product: buy.product, shipping: d.ship, total: r2(buy.product + d.ship) }); return { d: d.d, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }; });
     const net = Math.max(net0, Math.ceil((promoCap != null ? Math.min(floorA(buy), list) : floorA(buy)) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
     // Welche Regel hat den Preis bestimmt? (für die Marge-Übersicht im Cockpit)
     const rule = (b => { if (promoCap != null && netOf(b) < Math.ceil(netOf0(b) * 10 - 1e-6) / 10 - 0.05) return "promoCap"; const f = floorA(b); if (ancNet) return ancNet >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
       const up = b.product * (1 + markup * bulkF(b) / 100), mk = Math.max(up, b.product + minM) + b.shipping; if (f >= mk) return "floor"; if (b.product + minM > up) return "minEur";
       return ov.markupPct != null ? "product" : bulkF(b) < 1 ? "bulk" : "markup"; })(buy);
-    return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, at: nowIso() };
+    return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, defDate: buy.def || buy.deliveryDate, wish: buy.wish || "", days, at: nowIso() };
   }
-  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
+  const publicPrice = q => ({ net: q.net, vat: q.vat, gross: q.gross, bonus: q.bonus || null, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || "", defDate: q.defDate || q.deliveryDate, days: q.days || [], shippingIncluded: true, methods: q.methods || null, pm: q.pm || null });
 
   // ───────────────────────── Dateien ─────────────────────────
   function sniff(buf) {
@@ -1775,7 +1784,7 @@ module.exports = function (D) {
       product: { key: prod.key, title: prod.title, sku: prod.sku, kind: prod.kind || "flat", group: prod.group || "" }, sel: n.sel,
       custom: n.kind === "banner" ? n.size : undefined, textile: n.textile || undefined, variants: n.variants || (motifs ? motifs.map(m => ({ copies: m.copies })) : undefined), motifs: motifs || undefined, pageMap: fm.pageMap || undefined, logoFiles: fm.logos || undefined, labels: n.labels, copies: n.copies, urgency: n.urgency, pcOptions: n.pcOpts, sides: n.sides, size: n.size, bleed: prod.bleed,
       fileId: fm.id, fileName: fm.name, fileKind: fm.kind, fileChecks: fm.checks || [], customer: cust, uidCheck: uidRes ? { valid: uidRes.valid, name: uidRes.name || "", at: nowIso() } : null,
-      price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
+      price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || undefined, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
     return { o, fm, clientWarn: Array.isArray(input.clientWarn) ? input.clientWarn : null };
@@ -1840,8 +1849,13 @@ module.exports = function (D) {
           // Textil: Größen-Mix als variants im Artikel (Variantenstruktur laut Doku, vor Livegang mit Testbestellung prüfen)
           Array.isArray(o.variants) && o.variants.length ? { variants: o.variants } : {}, { fileUrl: base + "/print-files/" + fm.id + "/" + sig("pcfile", fm.id) + ".pdf", fileOptions: { isProduction: true }, approveDesign: true,
           senderAddress: Object.assign({}, billingFs(), { vatNr: undefined }), shipments: [{ address: addr, copies: o.copies }] })] };
+      // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
+      const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
+      if (wishOk) Object.assign(body.items[0].shipments[0], { deliveryDate: pw, method: pm });
       let j;
       try { j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
+      catch (e) { if (!wishOk || e.status !== 400) { o.status = "problem"; o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; } delete body.items[0].shipments[0].deliveryDate; delete body.items[0].shipments[0].method; hist(o, "Wunsch-Liefertag " + pw + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt"); j = null; }
+      try { if (!j) j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
       catch (e) { o.status = "problem"; o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
       const r = firstOf(j);
       o.printcom = { orderNumber: String(r.orderNumber || (r.items && r.items[0] && r.items[0].orderNumber) || ""), at: nowIso(), by: by || "Cockpit", total: +r.orderTotal || +r.grandTotal || null, status: String((r.items && r.items[0] && r.items[0].status) || r.status || "") };
@@ -2508,11 +2522,11 @@ module.exports = function (D) {
         const cust = { company: b.customerType === "company", uid: String(b.uid || "") };
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         const busy = pcLow.length > 24 || pcWait.length > 6;   // Andrang: Aufpreise nur aus dem Zwischenspeicher, der Rest kommt ein paar Sekunden später (Client fragt nach)
-        const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
+        const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel, wish: "" }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
         let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!e.busy }); }
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
         await Promise.all([0, 1, 2, 3].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
-          try { const q = await run(a.sel, a.urgency); d[k] = { net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }; } catch (e) { d[k] = e.busy ? { busy: true } : { off: e.status === 400 }; } } }));
+          try { const q = await run(a.sel, a.urgency); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency ? { an: q.net, ag: q.gross, days: q.days || [] } : {}); } catch (e) { d[k] = e.busy ? { busy: true } : { off: e.status === 400 }; } } }));
         return J(res, 200, { ok: true, d, busy });
       }
       if (p === "/print/api/ai/design") {
