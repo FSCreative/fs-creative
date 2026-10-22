@@ -979,7 +979,7 @@ async function railwaySnapshot() {
 }
 function adminLoginPage(err) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>FS Cockpit — Anmelden</title><link rel="apple-touch-icon" href="/logos/cockpit-icon-180.png"><link rel="icon" type="image/png" href="/logos/cockpit-favicon.png"><link rel="manifest" href="/cockpit.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cockpit"><meta name="theme-color" content="#0a0a0f">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="/fonts/cockpit/fonts.css" rel="stylesheet">
 <style>/* Look „Montafon Night“ wie im Cockpit (hell: „Montafon Day“) */
 :root{color-scheme:dark;--bg:#0b0e14;--card:#121620;--line:#1f2533;--ink:#eef1f7;--mut:#8a93a8;--acc:#7b8bff;--on:#0b0e14;--bad:#f87171}
 @media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f4f5f8;--card:#fff;--line:#e3e6ee;--ink:#11141b;--mut:#5f6778;--acc:#4f5bd5;--on:#fff;--bad:#c2364b}}
@@ -3797,6 +3797,8 @@ const server = http.createServer((req, res) => {
       return send(res, 301, "", "text/plain", { Location: OLD_FOTOBOX[oldKey] });
     }
 
+    // Druckshop-Produktbilder über unseren Server (Bild-Proxy nur für images.ctfassets.net) – print-bild.js
+    if (p.indexOf("/print/bild/") === 0) return void guard(res, PRINT_BILD.handle(req, res, u, p, send));
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
     if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
       return void guard(res, PRINT.handlePublic(req, res, u, p));
@@ -3967,6 +3969,7 @@ FIN_PROP.register("dunning", {
   exec: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (!pr) throw new Error("Mahnung ist nicht mehr fällig"); const r = await dunSend(st, [pr]); if (!r[0] || !r[0].ok) throw new Error((r[0] && r[0].error) || "Senden fehlgeschlagen"); return r[0]; },
   reject: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (pr) { st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); } } });
 // ── Druckshop www.fs-creative.at/print (print-shop.js): Bestellungen landen „Zur Prüfung“ und unter „Druckaufträge“ – bei Print.com bestellt wird nur per Klick ──
+const PRINT_BILD = require("./print-bild.js");   // Bild-Proxy für Druckshop-Produktbilder (images.ctfassets.net)
 const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, ki: KI,
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,

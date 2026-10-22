@@ -62,8 +62,10 @@ module.exports = function (D) {
     uidValid: c.uidCheck ? !!c.uidCheck.valid : null, typeAt: c.typeAt || "", pendingEmail: c.pendingEmail || "", drafts: draftsOf(c), saved: savedOf(c) });
   // Merkliste: gespeicherte Konfigurationen (Produkt + Optionen als Link-Code, Preis beim Merken), max. 30
   const savedOf = c => (c.saved || []).slice(0, 30);
+  // Produktbild: intern immer als images.ctfassets.net-Adresse speichern (der Browser lädt es über unseren Bild-Proxy /print/bild/…)
+  const ctfImg = v => { v = String(v || ""); if (v.indexOf("/print/bild/") === 0) v = "https://images.ctfassets.net/" + v.slice(12); return /^https:\/\/images\.ctfassets\.net\//.test(v) ? clip(v, 400) : ""; };
   const cleanSaved = x => x && typeof x === "object" && typeof x.product === "string" && typeof x.c === "string" && /^[A-Za-z0-9_-]{5,3000}$/.test(x.c) ? {
-    id: clip(x.id, 40) || crypto.randomBytes(5).toString("hex"), product: clip(x.product, 80), title: clip(x.title, 120), img: /^https:\/\/images\.ctfassets\.net\//.test(String(x.img || "")) ? clip(x.img, 400) : "",
+    id: clip(x.id, 40) || crypto.randomBytes(5).toString("hex"), product: clip(x.product, 80), title: clip(x.title, 120), img: ctfImg(x.img),
     sum: clip(x.sum, 220), n: Math.max(0, Math.min(1e6, parseInt(x.n, 10) || 0)), gross: x.gross != null && isFinite(+x.gross) ? Math.round(+x.gross * 100) / 100 : null, c: String(x.c).replace(/[^A-Za-z0-9_-]/g, ""), at: clip(x.at, 30) || nowIso() } : null;
   // Entwürfe aus dem Designer (per Link gespeichert, 60 Tage gültig) – im Konto gelistet
   const draftsOf = c => (c.drafts || []).filter(d => Date.now() - Date.parse(d.at) < 60 * DAY).slice(0, 12);

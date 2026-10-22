@@ -19,10 +19,13 @@
   var txt = function (v) { return String(v || "").replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, "$1").replace(/<[^>]*>?/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "").replace(/&nbsp;/g, " ").replace(/\*\*|__/g, "").replace(/[ \t]{2,}/g, " ").trim(); };
   // erste Aussage einer Beschreibung (für Untertitel/Karten): keine Aufzählung, max. ~140 Zeichen
   var lead = function (v) { var t = txt(v); if (/^\s*[-*•]/.test(t)) return ""; t = t.split(/\n| - /)[0]; return t.length > 140 ? t.slice(0, 137).replace(/\s+\S*$/, "") + " …" : t; };
-  var imgOk = function (u) { return /^https:\/\/images\.ctfassets\.net\//.test(String(u || "")); };
+  // Produktbilder (CMS von Print.com auf images.ctfassets.net) über unseren Server laden: /print/bild/… – keine direkte Verbindung zu Contentful
+  var CTF = "https://images.ctfassets.net/";
+  var viaUs = function (v) { if (typeof v === "string") return v.indexOf(CTF) === 0 ? "/print/bild/" + v.slice(CTF.length) : v; if (v && typeof v === "object") Object.keys(v).forEach(function (k) { v[k] = viaUs(v[k]); }); return v; };
+  var imgOk = function (u) { return /^(https:\/\/images\.ctfassets\.net\/|\/print\/bild\/)/.test(String(u || "")); };
   function api(path, body, method) {
     return fetch(path, { method: method || (body ? "POST" : "GET"), headers: body ? H : {}, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status }; }).then(function (j) { j.status = r.status; return j; }); });
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status }; }).then(function (j) { j = viaUs(j); j.status = r.status; return j; }); });
   }
   var toastT;
   function toast(msg, bad) { var t = document.getElementById("psToast"); if (!t) { t = document.createElement("div"); t.id = "psToast"; t.className = "ps-toast"; t.setAttribute("role", "status"); document.body.appendChild(t); } t.textContent = msg; t.className = "ps-toast on" + (bad ? " bad" : ""); clearTimeout(toastT); toastT = setTimeout(function () { t.className = "ps-toast"; }, bad ? 5000 : 2600); }
@@ -30,7 +33,7 @@
 
   // ── Start ──
   var q = new URLSearchParams(location.search);
-  (window.__catP ? window.__catP.catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
+  (window.__catP ? window.__catP.then(viaUs).catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
     document.getElementById("psLoading").hidden = true;
     if (!c || !c.ready) { document.getElementById("psSetup").hidden = false; return; }
     S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products);
@@ -60,7 +63,7 @@
   }
   function cfgSum() { var pr = S.price || {}, l = (pr.labels || []).filter(function (x) { return x && x[1] && !/auflage|druckverfahren|lieferzeit/i.test(x[0]) && !NONE_RX.test(String(x[1]).trim()); }).slice(0, 4).map(function (x) { return x[1]; });
     return (isCustom() && S.custom ? [S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit] : []).concat(l).join(" · ").slice(0, 210); }
-  function savedLocal(v) { try { if (v) { localStorage.setItem("fsc-print-saved", JSON.stringify(v.slice(0, 30))); return v; } var l = JSON.parse(localStorage.getItem("fsc-print-saved") || "[]"); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
+  function savedLocal(v) { try { if (v) { localStorage.setItem("fsc-print-saved", JSON.stringify(v.slice(0, 30))); return v; } var l = JSON.parse(localStorage.getItem("fsc-print-saved") || "[]"); return Array.isArray(l) ? viaUs(l) : []; } catch (e) { return []; } }
   function savedList() { return S.me ? (S.me.saved || []) : savedLocal(); }
   function cfgSavedNow() { if (!S.prod) return null; var code = cfgPack(); return savedList().filter(function (x) { return x.product === S.prod.key && x.c === code; })[0] || null; }
   function copyText(t) { if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t); return new Promise(function (ok, no) { var a = document.createElement("textarea"); a.value = t; a.setAttribute("readonly", ""); a.style.position = "fixed"; a.style.opacity = "0"; document.body.appendChild(a); a.select(); var r = false; try { r = document.execCommand("copy"); } catch (e) {} a.remove(); r ? ok() : no(); }); }
@@ -87,7 +90,7 @@
       (x.gross != null ? '<small>beim Merken ' + eur(x.gross) + " · aktueller Preis beim Öffnen</small>" : "") + '</div><div class="ac"><a class="ps-btn primary small" href="' + esc(url) + '">Öffnen</a><button type="button" class="ps-link" data-act="savshare:' + esc(x.id) + '">Teilen</button><button type="button" class="ps-link" data-act="savdel:' + esc(x.id) + '">Entfernen</button></div></div>'; }
 
   // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
-  function cartLoad() { try { var c = JSON.parse(localStorage.getItem("fsc-print-cart") || "null"); if (c && Array.isArray(c.items) && Date.now() - (+c.at || 0) < 30 * 864e5) return c.items; } catch (e) {} return []; }
+  function cartLoad() { try { var c = JSON.parse(localStorage.getItem("fsc-print-cart") || "null"); if (c && Array.isArray(c.items) && Date.now() - (+c.at || 0) < 30 * 864e5) return viaUs(c.items); } catch (e) {} return []; }
   function cartSave(noSync) {
     try { localStorage.setItem("fsc-print-cart", JSON.stringify({ at: Date.now(), items: S.cart })); } catch (e) { try { localStorage.setItem("fsc-print-cart", JSON.stringify({ at: Date.now(), items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) })); } catch (e2) {} }
     if (S.me && !noSync) api("/print/api/account/cart", { items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) });
