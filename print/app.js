@@ -412,6 +412,23 @@
       dlPaint(); if (j.slug === "@u") urRefresh(); if (later) setTimeout(dlKick, 2500 + Math.random() * 2000);
     }).catch(function () { j.alts.forEach(function (a) { var k = j.b + "|" + j.slug + "|" + a.k; delete DLQ[k]; DLT[k] = false; }); dlPaint(); }).then(function () { dlRun--; dlNext(); if (!dlJobs.length && !dlRun) dlKick(); });   // danach: noch sichtbare, nicht geladene Optionen nachholen
   }
+  // Aufgeklappte Zeile: gleich große Kacheln (Name, kurzer Hinweis, Aufpreis, Info in der Ecke), Gruppen + Suche bei langen Listen,
+  // beim Format zusätzlich immer die freie Eingabe (Breite × Höhe mit Grenzen)
+  function optCard(key, x, cur) {
+    var sel = String(x.val) === String(cur), hint = x.off ? "nicht lieferbar mit dieser Auswahl" : x.warn ? "ändert " + x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ") : x.sub || "";
+    return '<div class="ps-oc' + (sel ? " on" : "") + (x.off ? " off" : "") + (x.warn ? " warn" : "") + '" data-q="' + esc(String(x.name + " " + (x.group || "") + " " + (x.sub || "")).toLowerCase()) + '"><button type="button" class="ps-ocb" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + (x.warn ? ' title="' + esc("passt mit: " + x.warn) + '"' : "") + ">" +
+      (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + "<b>" + esc(x.name) + "</b>" + (hint ? "<small>" + esc(hint) + "</small>" : "") + '<span class="ps-oc-f">' + (x.best ? '<em>Beliebt</em>' : "") + (sel ? '<span class="ps-oc-ok">✓ gewählt</span>' : dlSpan(key, x)) + "</span></button>" +
+      (x.desc || x.img ? '<button type="button" class="ps-oc-i" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>";
+  }
+  function optPanel(key, title, items, cur) {
+    var cust = key === "prop:size" && S.prod && S.prod.custom && S.prod.props.some(function (pr) { return pr.slug === "size" && pr.options.some(function (o) { return o.slug === "custom"; }); });
+    var list = cust ? items.filter(function (x) { return x.val !== "custom"; }) : items, groups = [], gi = {};
+    list.forEach(function (x) { var g = x.fold || x.group || ""; if (!(g in gi)) { gi[g] = groups.length; groups.push({ n: g, l: [] }); } groups[gi[g]].l.push(x); });
+    var named = groups.length > 1 && groups.some(function (g) { return g.n; });
+    return '<div class="ps-op">' + (list.length > 12 ? '<input type="search" class="ps-ddq ps-opq" placeholder="' + esc(title) + ' suchen …" aria-label="' + esc(title) + ' durchsuchen" autocomplete="off">' : "") +
+      groups.map(function (g) { return (named && g.n ? '<div class="ps-opg">' + esc(g.n) + "</div>" : "") + '<div class="ps-opgrid">' + g.l.map(function (x) { return optCard(key, x, cur); }).join("") + "</div>"; }).join("") +
+      (cust ? '<div class="ps-opc"><div class="ps-opg">Eigenes Format' + (isCustom() ? ' <span class="ps-oc-ok">✓ gewählt</span>' : "") + "</div>" + customHtml(true) + "</div>" : "") + "</div>";
+  }
   function ddRow(key, x, cur, zi) {
     var sel = String(x.val) === String(cur);
     return '<div class="ps-ddo' + (zi % 2 ? " z" : "") + (sel ? " sel" : "") + (x.warn ? " warn" : "") + (x.off ? " off" : "") + '" role="option" aria-selected="' + sel + '" data-q="' + esc(String(x.name + " " + (x.group || "")).toLowerCase()) + '">' +
@@ -425,6 +442,7 @@
     var c = items.filter(function (x) { return String(x.val) === String(cur); })[0] || {}, open = S.dd === key, col = S.step === 2 && !S.view;   // Ausführung: jede Zeile startet eingeklappt (aktuelle Wahl + „Ändern“)
     var btn = '<button type="button" class="ps-dd" data-dd="' + esc(key) + '" aria-haspopup="listbox" aria-expanded="' + open + '" aria-label="' + esc(title) + ": " + esc(c.name || "") + '"><span class="v">' + esc(c.name || "Bitte wählen") + (c.best ? ' <em class="ps-ddbs">★</em>' : "") + (col && c.sub ? " <small>" + esc(c.sub) + "</small>" : "") + '</span><i aria-hidden="true">▾</i><span class="ps-chg" aria-hidden="true">' + (open ? "Fertig" : "Ändern") + "</span></button>";
     if (col && !open) return btn;
+    if (col) return btn + optPanel(key, title, items, cur);
     if (items.length <= 4 && key !== "copies") return (col ? btn : "") + '<div class="ps-segs n' + items.length + '" role="radiogroup" aria-label="' + esc(title) + '">' + items.map(function (x) { var sel = String(x.val) === String(cur);
       return '<div class="ps-sgo' + (sel ? " on" : "") + (x.off ? " off" : "") + (imgOk(x.img) ? " hasim" : "") + '"><button type="button" role="radio" aria-checked="' + sel + '" data-ddpick="' + esc(key) + "|" + esc(x.val) + '"' + (x.off ? " disabled" : "") + '>' + (imgOk(x.img) ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '<b>' + esc(x.name) + (x.best ? ' <em title="Beliebt bei unseren Kunden">Beliebt</em>' : "") + "</b>" + (x.warn ? '<small title="' + esc("passt mit: " + x.warn) + '">ändert ' + esc(x.warn.split(" · ").map(function (c) { return c.split(" → ")[0]; }).join(", ")) + "</small>" : x.sub ? "<small>" + esc(x.sub) + "</small>" : "") + (sel && key !== "urgency" ? "" : dlSpan(key, x)) + "</button>" +
         (x.desc || x.img ? '<button type="button" class="ps-i sm" data-ddinfo="' + esc(key) + "|" + esc(x.val) + '" aria-label="Infos zu ' + esc(x.name) + '" aria-haspopup="dialog">i</button>' : "") + "</div>"; }).join("") + "</div>";
@@ -1007,10 +1025,10 @@
     return '<div class="ps-dimchips" role="group" aria-label="Häufige Größen">' + ok.map(function (d) { var on = +S.custom.w === d[0] && +S.custom.h === d[1];
       return '<button type="button" class="ps-dimc' + (on ? " on" : "") + '" data-dim="' + d[0] + "x" + d[1] + '" aria-pressed="' + on + '">' + d[0] + " × " + d[1] + "</button>"; }).join("") + "</div>";
   }
-  function customHtml() {
-    var C = S.prod.custom, cm = C.unit === "cm", f = cm ? 10 : 1, u = C.unit;
-    return dimChips() + '<div class="ps-row2 ps-dims"><div class="ps-field"><label for="psW">Breite (' + u + ')</label><input id="psW" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="' + (cm ? 1 : 1) + '" value="' + esc(S.custom.w) + '"></div>' +
-      '<div class="ps-field"><label for="psH">Höhe (' + u + ')</label><input id="psH" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="1" value="' + esc(S.custom.h) + '"></div><button type="button" class="ps-dimswap" data-dimswap="1" aria-label="Breite und Höhe tauschen" title="Hoch-/Querformat tauschen">⇄</button></div>' +
+  function customHtml(inl) {
+    var C = S.prod.custom, cm = C.unit === "cm", f = cm ? 10 : 1, u = C.unit, blank = inl && !isCustom(), cv = blank ? { w: "", h: "" } : S.custom;
+    return dimChips() + '<div class="ps-row2 ps-dims"><div class="ps-field"><label for="psW">Breite (' + u + ')</label><input id="psW" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="' + (cm ? 1 : 1) + '" value="' + esc(cv.w) + '"' + (blank ? ' placeholder="z. B. ' + (cm ? 200 : 148) + '"' : "") + '></div>' +
+      '<div class="ps-field"><label for="psH">Höhe (' + u + ')</label><input id="psH" type="number" inputmode="decimal" min="' + Math.min(C.minW, C.minH) / f + '" max="' + Math.max(C.maxW, C.maxH) / f + '" step="1" value="' + esc(cv.h) + '"' + (blank ? ' placeholder="z. B. ' + (cm ? 100 : 210) + '"' : "") + '></div><button type="button" class="ps-dimswap" data-dimswap="1" aria-label="Breite und Höhe tauschen" title="Hoch-/Querformat tauschen">⇄</button></div>' +
       '<p class="ps-help">Mindestens ' + C.minW / f + " × " + C.minH / f + " " + u + ", höchstens " + C.maxW / f + " × " + C.maxH / f + " " + u + " (Endformat, ohne Beschnitt).</p>";
   }
   function propHtml(pr, v) {
@@ -1049,7 +1067,7 @@
     var main = rest.filter(keep), minor = rest.filter(function (pr) { return !keep(pr); }), changed = minor.filter(function (pr) { return S.sel[pr.slug] !== (p.defaults || {})[pr.slug]; }).length;
     var tiles = function (l) { return l.map(tileHtml).join(""); };
     var more = minor.length ? '<details class="ps-more"' + (changed ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
-    var custom = (p.kind === "banner" && p.custom) || (fmt.some(function (pr) { return pr.slug === "size"; }) && isCustom()) ? customHtml() : "";
+    var custom = p.kind === "banner" && p.custom && !fmt.some(function (pr) { return pr.slug === "size"; }) ? customHtml() : "";   // sonst steht die freie Eingabe direkt in der Format-Zeile
     var pmT = pmTile();
     return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
   }
@@ -1721,6 +1739,7 @@
     if (tsb) { var tv = tsb.getAttribute("data-tstep").split("|"), cur0 = S.textile.sizes[tv[0]] || 0, nv = Math.max(0, Math.min(5000, cur0 + (+tv[1]) * (cur0 >= 50 ? 5 : 1))); if (nv) S.textile.sizes[tv[0]] = nv; else delete S.textile.sizes[tv[0]];
       var inp = root.querySelector('[data-tsize="' + tv[0] + '"]'); if (inp) { inp.value = nv || ""; inp.closest(".ps-size").classList.toggle("on", !!nv); } renderPrice(); loadPrice(); return; }
     var dm = e.target.closest("[data-dim],[data-dimswap]");
+    if (dm && S.prod && S.prod.custom && !isCustom()) { S.sel.size = "custom"; S.autoFix = null; }
     if (dm) { var wh = dm.hasAttribute("data-dim") ? dm.getAttribute("data-dim").split("x") : [S.custom.h, S.custom.w]; if (String(wh[0]) === String(S.custom.w) && String(wh[1]) === String(S.custom.h)) return;
       S.custom.w = String(wh[0]); S.custom.h = String(wh[1]); if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); }
       var iw = document.getElementById("psW"), ih = document.getElementById("psH"); if (iw) iw.value = S.custom.w; if (ih) ih.value = S.custom.h;
@@ -1757,7 +1776,7 @@
       if (key === "pm") { S.pm = val; render(); loadPrice(); return; }
       return;
     }
-    if (S.dd && !e.target.closest(".ps-ddl,.ps-cfgc,.ps-own")) { S.dd = ""; S.ddInfo = ""; render(); }
+    if (S.dd && !e.target.closest(".ps-ddl,.ps-cfgc,.ps-own,.ps-op")) { S.dd = ""; S.ddInfo = ""; render(); }
     var lk = e.target.closest("a[data-cat],a[data-prod]"); if (lk) { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); }   // echte Links: Strg/Cmd-Klick öffnet neuen Tab
     var ct = e.target.closest("[data-cat]"); if (ct) { var cv0 = ct.getAttribute("data-cat").split("|"); navCat(cv0[0], cv0[1]); return; }
     var fl = e.target.closest("[data-flt]"); if (fl) { var fk = fl.getAttribute("data-flt"); S.flt = S.flt || {}; if (!fk) S.flt = {}; else S.flt[fk] = !S.flt[fk]; var gg = document.getElementById("psGrid"); if (gg) { gg.innerHTML = gridHtml(); fromObserve(); } return; }
@@ -1831,7 +1850,10 @@
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
     if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }
     if (t.hasAttribute("data-mots")) { S.mot.split[+t.getAttribute("data-mots")] = Math.max(1, parseInt(t.value, 10) || 1); render(); return; }
-    if (t.id === "psW" || t.id === "psH") { S.custom[t.id === "psW" ? "w" : "h"] = t.value; if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } loadPrice(); return; }
+    if (t.id === "psW" || t.id === "psH") { S.custom[t.id === "psW" ? "w" : "h"] = t.value;
+      if (!isCustom() && S.prod.custom && S.sel.size !== "custom") { var ow = document.getElementById("psW"), oh = document.getElementById("psH"), sz0 = sizeOf() || {}, f0 = S.prod.custom.unit === "cm" ? 10 : 1;
+        if (!(ow && ow.value) || !(oh && oh.value)) { if (ow && !ow.value) ow.value = S.custom.w = String(Math.round((sz0.w || 148) / f0)); if (oh && !oh.value) oh.value = S.custom.h = String(Math.round((sz0.h || 210) / f0)); }
+        S.custom.w = ow ? ow.value : S.custom.w; S.custom.h = oh ? oh.value : S.custom.h; S.sel.size = "custom"; S.autoFix = null; [].forEach.call(root.querySelectorAll(".ps-oc.on"), function (x) { x.classList.remove("on"); }); } if (S.file || S.mot.files.length) { S.file = null; S.previews = null; motReset(true); toast("Format geändert – bitte die Gestaltung bzw. Datei erneut prüfen."); } loadPrice(); return; }
     if (t.name === "tmethod") { var p = S.prod, m = p.methods.filter(function (x) { return x.key === t.value; })[0]; S.textile.method = t.value; S.textile.positions = S.textile.positions.filter(function (x) { return m.positions.indexOf(x) > -1; }); if (!S.textile.positions.length) S.textile.positions = [m.positions[0]]; resetLogos(); render(); loadPrice(); return; }
     if (t.name === "tpos") { var ps = S.textile.positions.filter(function (x) { return x !== t.value; }); if (t.checked) ps.push(t.value); S.textile.positions = S.prod.positions.map(function (x) { return x.slug; }).filter(function (x) { return ps.indexOf(x) > -1; }); resetLogos(); loadPrice(); return; }
     if (t.hasAttribute("data-logo") && t.files && t.files[0]) return uploadFile(t.files[0], t.getAttribute("data-logo"));
@@ -1847,7 +1869,7 @@
   });
   root.addEventListener("input", function (e) {
     if (e.target.id === "psAdjS") { var ao = document.getElementById("psAdjO"); if (ao) ao.textContent = e.target.value + " %"; return; }
-    if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
+    if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo,.ps-oc").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
     var t = e.target;
     if (t.id === "psHomeQ") { var sg = document.getElementById("psSug"), hv = sugHtml(t.value); sg.innerHTML = hv; sg.hidden = !hv; t.parentNode.setAttribute("aria-expanded", String(!!hv)); return; }
     if (t.id === "psQ") { S.q = t.value; var g = document.getElementById("psGrid"); if (g) { g.innerHTML = gridHtml(); fromObserve(); } return; }
