@@ -125,14 +125,14 @@ module.exports = function (D) {
     j.users.forEach(u => {
       if (u.staff) { stats.staff++; return; }
       if (!u.verified) { stats.unverified++; if (r.verifiedOnly) { stats.unverifiedOut++; return; } }
-      entries.push({ id: String(u.id), name: clip(u.first, 24) || "Gast", code: kochduCode(u.id) });
+      entries.push({ id: String(u.id), name: clip(u.first, 24) || "Gast", full: clip(u.full, 60) || clip(u.first, 24) || "Gast", code: kochduCode(u.id) });   // name = Vorname (Video), full = Vor- und Nachname (nur Cockpit)
     });
     return { range: r, entries, stats };
   }
   function drawPublic(d) {
     const v = d.video || {};
     return { id: d.id, at: d.at, brand: d.brand, brandName: d.brandName, title: d.title, prize: d.prize, claim: d.claim, count: d.count, lines: d.lines, dupes: d.dupes, excluded: d.excluded, hash: d.hash,
-      winners: d.winners, backups: d.backups, winnerCodes: d.winnerCodes || null, backupCodes: d.backupCodes || null, postId: d.postId || "",
+      winners: d.winners, backups: d.backups, winnerCodes: d.winnerCodes || null, backupCodes: d.backupCodes || null, winnerFull: d.winnerFull || null, backupFull: d.backupFull || null, postId: d.postId || "",
       source: !d.source ? null : d.source.type === "kochdu" ? { type: "kochdu", from: d.source.from, to: d.source.to, verifiedOnly: !!d.source.verifiedOnly } : { type: d.source.type, permalink: d.source.permalink }, video: { status: v.status || "", error: v.error || "", duration: v.duration || 0, at: v.at || "", ms: v.ms || 0, file: v.file ? true : false, cover: v.cover ? true : false } };
   }
   async function draw(pl) {
@@ -155,6 +155,7 @@ module.exports = function (D) {
       d.codes = ko.entries.map(e => e.code);
       d.winnerCodes = idx.slice(0, nW).map(i => ko.entries[i].code); d.backupCodes = idx.slice(nW).map(i => ko.entries[i].code);
       d.winnerIds = idx.slice(0, nW).map(i => ko.entries[i].id); d.backupIds = idx.slice(nW).map(i => ko.entries[i].id);
+      d.winnerFull = idx.slice(0, nW).map(i => ko.entries[i].full); d.backupFull = idx.slice(nW).map(i => ko.entries[i].full);
     }
     const s = state(); s.draws.unshift(d); if (s.draws.length > 100) s.draws.length = 100; save(true);
     queueVideo(d.id);
@@ -262,7 +263,7 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/mkt/giveaway/kochdu" && req.method === "POST") {   // Vorschau: wie viele Registrierungen im Zeitraum (nur Vornamen)
         const pl = await body(req, 10000), r = await kochduEntries(pl);
-        return J(res, 200, { ok: true, from: r.range.from, to: r.range.to, verifiedOnly: r.range.verifiedOnly, count: r.entries.length, stats: r.stats, sample: r.entries.slice(0, 14).map(e => e.name) });
+        return J(res, 200, { ok: true, from: r.range.from, to: r.range.to, verifiedOnly: r.range.verifiedOnly, count: r.entries.length, stats: r.stats, sample: r.entries.slice(0, 14).map(e => e.full || e.name) });
       }
       if (p === "/admin/api/mkt/giveaway/contact" && req.method === "POST") {   // Name + E-Mail eines Gewinners/Ersatzgewinners (nur kochdu-Verlosungen)
         const pl = await body(req, 10000), d = state().draws.find(x => x.id === String(pl.id || "")); if (!d) throw fail(404, "Ziehung nicht gefunden");

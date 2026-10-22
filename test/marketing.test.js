@@ -122,7 +122,7 @@ function send(r, code, body, type, headers) { r.writeHead(code, Object.assign({ 
   // ───────────── Verlosung unter kochdu-Registrierungen (kochdu liefert nur Vornamen) ─────────────
   const KQ = [], USERS = [
     { id: "u1", first: "Lisa", at: "2026-09-22T08:00:00Z", verified: true, staff: false }, { id: "u2", first: "Lisa", at: "2026-09-25T08:00:00Z", verified: true, staff: false },
-    { id: "u3", first: "Lisa", at: "2026-10-01T08:00:00Z", verified: false, staff: false }, { id: "u4", first: "Markus", at: "2026-10-02T08:00:00Z", verified: true, staff: false },
+    { id: "u3", first: "Lisa", at: "2026-10-01T08:00:00Z", verified: false, staff: false }, { id: "u4", first: "Markus", full: "Markus Huber", at: "2026-10-02T08:00:00Z", verified: true, staff: false },
     { id: "u5", first: "Simon", at: "2026-10-03T08:00:00Z", verified: true, staff: true }, { id: "u6", first: "Anna", at: "2026-10-10T20:00:00Z", verified: true, staff: false }];
   let OLD_KOCHDU = false;
   const M2 = require(path.join(ROOT, "marketing.js"))({ send, DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "fsc-mkt2-")), ROOT,
@@ -140,7 +140,7 @@ function send(r, code, body, type, headers) { r.writeHead(code, Object.assign({ 
   await t("kochdu: Vorschau zählt Registrierungen, Mitarbeiter nie dabei, nur Vornamen in der Antwort", async () => {
     const r = await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-10" }), j = r.json();
     assert.strictEqual(j.ok, true, j.error); assert.strictEqual(j.count, 5); assert.strictEqual(j.stats.staff, 1); assert.strictEqual(j.stats.unverified, 1); assert.strictEqual(j.stats.unverifiedOut, 0);
-    assert.deepStrictEqual(j.sample, ["Lisa", "Lisa", "Lisa", "Markus", "Anna"]); assert.ok(!/@|u\d/.test(r.text()), "keine E-Mail/ID in der Antwort");
+    assert.deepStrictEqual(j.sample, ["Lisa", "Lisa", "Lisa", "Markus Huber", "Anna"]); assert.ok(!/@|u\d/.test(r.text()), "keine E-Mail/ID in der Antwort");
     const v = (await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-10", verifiedOnly: true })).json();
     assert.strictEqual(v.count, 4); assert.strictEqual(v.stats.unverifiedOut, 1);
     assert.strictEqual((await call2("POST", "/admin/api/mkt/giveaway/kochdu", { from: "2026-09-22", to: "2026-10-09" })).json().count, 4, "Anna am 10.10. abends Wiener Zeit fällt raus");
@@ -149,7 +149,7 @@ function send(r, code, body, type, headers) { r.writeHead(code, Object.assign({ 
     const d = await M2._test.draw({ brand: "kochdu", winners: 1, backups: 2, title: "Wer gewinnt?", source: { type: "kochdu", from: "2026-09-22", to: "2026-10-10" } }); M2._test.queue.length = 0;
     assert.strictEqual(d.count, 5); assert.strictEqual(d.dupes, 0); assert.strictEqual(d.excluded, 1); assert.strictEqual(d.participants.filter(n => n === "Lisa").length, 3);
     assert.strictEqual(new Set(d.codes).size, 5); assert.ok(d.codes.every(c => /^K[0-9A-F]{6}$/.test(c)));
-    assert.strictEqual(d.winnerCodes.length, 1); assert.strictEqual(d.backupCodes.length, 2); assert.strictEqual(d.source.type, "kochdu");
+    assert.strictEqual(d.winnerCodes.length, 1); assert.strictEqual(d.backupCodes.length, 2); assert.strictEqual(d.winnerFull.length, 1); assert.ok(d.participants.indexOf("Markus Huber") < 0, "Video/Liste nur mit Vornamen"); assert.strictEqual(d.source.type, "kochdu");
     const pr = M2._test.protocol(d); assert.ok(/alle Registrierungen bei kochdu vom 22\.09\.2026 bis 10\.10\.2026/.test(pr), pr); assert.ok(pr.indexOf("(" + d.winnerCodes[0] + ")") > -1); assert.ok(!/@/.test(pr), "keine E-Mail im Protokoll");
     const pub = (await call2("GET", "/admin/api/mkt/state")).json().draws[0]; assert.ok(!("winnerIds" in pub) && !("codes" in pub)); assert.deepStrictEqual(pub.source, { type: "kochdu", from: "2026-09-22", to: "2026-10-10", verifiedOnly: false });
     const c = (await call2("POST", "/admin/api/mkt/giveaway/contact", { id: d.id, kind: "w", i: 0 })).json(); assert.strictEqual(c.ok, true, c.error); assert.ok(/@example\.org$/.test(c.email)); assert.ok(c.name.indexOf(d.winners[0]) === 0);

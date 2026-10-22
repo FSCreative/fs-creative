@@ -147,17 +147,19 @@ function vidHtml(d){
 function resHtml(){
   var ds=ST.draws||[], d=ds.find(function(x){ return x.id===UI.mktSel; })||ds[0];
   var hist=ds.length?'<ul class="mk-hist">'+ds.map(function(x){ var st=x.video&&x.video.status;
-    return '<li data-act="mksel:'+esc(x.id)+'" aria-current="'+(d&&x.id===d.id)+'"><span><b>'+esc(x.brandName)+'</b> · '+esc(x.winners.join(", "))+'<br><span class="s">'+new Date(x.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})+' · '+x.count.toLocaleString("de-AT")+' Teilnahmen</span></span><span class="s">'+(st==="fertig"?"Video fertig":st==="fehler"?"Fehler":"Video …")+'</span></li>'; }).join("")+'</ul>':'';
+    return '<li data-act="mksel:'+esc(x.id)+'" aria-current="'+(d&&x.id===d.id)+'"><span><b>'+esc(x.brandName)+'</b> · '+esc(x.winners.map(function(w,i){ return fullOf(x,"w",i,w); }).join(", "))+'<br><span class="s">'+new Date(x.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})+' · '+x.count.toLocaleString("de-AT")+' Teilnahmen</span></span><span class="s">'+(st==="fertig"?"Video fertig":st==="fehler"?"Fehler":"Video …")+'</span></li>'; }).join("")+'</ul>':'';
   if(!d) return '<section class="panel"><div class="panel-h"><h2>Ergebnis</h2></div><div class="mk-res"><p class="muted" style="margin:0">Noch keine Auslosung. Teilnehmer einfügen und auslosen – danach erscheint hier das Video zum Herunterladen.</p></div></section>';
   return '<section class="panel"><div class="panel-h"><h2>Ergebnis</h2><span class="muted small">'+new Date(d.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})+'</span></div><div class="mk-res">'+
-    '<div class="mk-win"><span class="k">'+esc(d.brandName)+' · '+(d.winners.length>1?d.winners.length+" Gewinner":"Gewonnen hat")+'</span>'+(d.winners.length>1?'<ol class="w" style="font-size:20px">'+d.winners.map(function(w,i){ return '<li>'+esc(w)+kdTag(d,"w",i)+'</li>'; }).join("")+'</ol>':'<span class="w">'+esc(d.winners[0])+kdTag(d,"w",0)+'</span>')+
-    (d.backups&&d.backups.length?'<span class="muted small">Ersatz, falls sich niemand meldet: '+d.backups.map(function(w,i){ return esc(w)+kdTag(d,"b",i); }).join(" → ")+'</span>':'')+
-    (d.winnerCodes?'<span class="muted small">kochdu-Registrierungen '+kdDay(d.source&&d.source.from)+' – '+kdDay(d.source&&d.source.to)+' · nur Vornamen; „Kontakt“ zeigt die E-Mail-Adresse nur dir</span>':'')+'</div>'+
+    '<div class="mk-win"><span class="k">'+esc(d.brandName)+' · '+(d.winners.length>1?d.winners.length+" Gewinner":"Gewonnen hat")+'</span>'+(d.winners.length>1?'<ol class="w" style="font-size:20px">'+d.winners.map(function(w,i){ return '<li>'+esc(fullOf(d,"w",i,w))+kdTag(d,"w",i)+'</li>'; }).join("")+'</ol>':'<span class="w">'+esc(fullOf(d,"w",0,d.winners[0]))+kdTag(d,"w",0)+'</span>')+
+    (d.backups&&d.backups.length?'<span class="muted small">Ersatz, falls sich niemand meldet: '+d.backups.map(function(w,i){ return esc(fullOf(d,"b",i,w))+kdTag(d,"b",i); }).join(" → ")+'</span>':'')+
+    (d.winnerCodes?'<span class="muted small">kochdu-Registrierungen '+kdDay(d.source&&d.source.from)+' – '+kdDay(d.source&&d.source.to)+(d.winnerFull?' · Vor- und Nachname nur hier im Cockpit, im Video nur Vornamen; „Kontakt“ zeigt die E-Mail-Adresse':' · nur Vornamen; „Kontakt“ zeigt Name und E-Mail-Adresse')+' nur dir</span>':'')+'</div>'+
     vidHtml(d)+
     '<div class="mk-meta"><span>'+d.count.toLocaleString("de-AT")+' gültige Teilnahmen'+(d.dupes?' · '+d.dupes+' doppelte entfernt':'')+(d.excluded?' · '+d.excluded+' ausgeschlossen':'')+'</span><span>Prüfsumme der Liste: <code>'+esc(d.hash.slice(0,24))+'…</code></span></div>'+
     '<div><button type="button" class="btn sm danger" data-act="mkdel:'+esc(d.id)+'">Auslosung löschen</button></div>'+
     '</div>'+(ds.length>1?'<div class="panel-h" style="border-top:1px solid var(--line);border-bottom:0"><h2>Frühere Auslosungen</h2></div>'+hist:'')+'</section>';
 }
+// Vor- und Nachname (kochdu, nur im Cockpit) – ältere Auslosungen haben nur den Vornamen
+function fullOf(d,kind,i,w){ var f=kind==="b"?d.backupFull:d.winnerFull; return f&&f[i]?f[i]:w; }
 function kdTag(d,kind,i){ var c=kind==="b"?d.backupCodes:d.winnerCodes; if(!c||!c[i]) return "";
   return ' <span class="mk-kdc">'+esc(c[i])+'</span> <button type="button" class="link small" data-act="mkkdct:'+esc(d.id)+'|'+kind+'|'+i+'">Kontakt</button>'; }
 function paintRes(){ var el=document.getElementById("mkRes"); if(el) el.innerHTML=resHtml(); }
