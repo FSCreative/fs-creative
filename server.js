@@ -916,6 +916,7 @@ function keepRailway(d) {
     if (Date.now() - RW_ERR_LOG > 3600e3) { RW_ERR_LOG = Date.now(); console.error("Websites: Railway antwortet nicht (" + (r.error || "keine Projekte") + ") – nutze Stand vom " + RW_LAST.at); }
     return Object.assign({}, d, { railway: Object.assign({}, RW_LAST.railway, { stale: RW_LAST.at, staleError: r.error || "keine Projekte" }) });
   }
+  if (r && r.configured !== false && Date.now() - RW_ERR_LOG > 3600e3) { RW_ERR_LOG = Date.now(); console.error("Websites: Railway liefert keine Projekte (" + (r.error || "leer") + ") – noch kein gespeicherter Stand"); }
   return d;
 }
 async function sitesSnapshot(force) {
