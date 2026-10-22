@@ -774,7 +774,7 @@
   function render0() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
-    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate(); loadFrom(recentProds().concat(classics(), dailyPicks(), newestProds()).map(function (p) { return p.key; })); return; }
+    if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
     if ((S.step === 2 || S.step === 3) && !S.prod) S.step = 1;
@@ -835,7 +835,7 @@
     return '<section class="ps-hsec ps-recent ps-savhome"><div class="ps-hsec-h"><h2>Deine Merkliste</h2>' + (S.me ? '<button type="button" class="ps-link" data-act="konto">Alle im Konto →</button>' : "") + '</div><div class="ps-savs">' + l.map(savedCard).join("") + "</div></section>"; }
   function recentHtml() { var l = recentProds(); if (!l.length) return "";
     return '<section class="ps-hsec ps-recent"><div class="ps-hsec-h"><h2>Zuletzt angesehen</h2><button type="button" class="ps-link" data-act="recentclr">Liste leeren</button></div><div class="ps-rec">' + l.map(function (p) {
-      return '<button type="button" data-prod="' + esc(p.key) + '"><span class="ri">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="rt"><b>' + esc(shortName(p)) + '</b><span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></button>"; }).join("") + "</div></section>"; }
+      return '<button type="button" data-prod="' + esc(p.key) + '"><span class="ri">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="rt"><b>' + esc(shortName(p)) + '</b></span></button>'; }).join("") + "</div></section>"; }
   function fromSel(p) { var o = {}; (p.props || []).forEach(function (pr) { var b = (BEST[pr.slug] || []).filter(function (x) { return pr.options.some(function (q) { return q.slug === x; }); })[0]; if (b) o[pr.slug] = b; }); return o; }
   function loadFrom(keys) { var seen = {}; keys = keys.filter(function (k) { if (k in FROMP || seen[k]) return false; seen[k] = 1; return true; }); if (!keys.length) return;
     if (keys.length > 12) { for (var ci = 0; ci < keys.length; ci += 12) loadFrom(keys.slice(ci, ci + 12)); return; }   // Server nimmt max. 12 je Anfrage
@@ -862,7 +862,7 @@
     var tag = p.designer ? "Online gestalten oder Datei hochladen" : p.kind === "banner" ? "Wunschgröße in cm" : "Druckdaten hochladen";
     return '<button type="button" class="ps-feat' + (big ? " big" : "") + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<span class="ic">' + esc(p.icon) + "</span>") + "</span>" +
       '<span class="bd">' + (p.__new ? '<span class="ps-badge new">' + esc(newLabel(p.added)) + "</span>" : p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + "<b>" + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") +
-      (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span>" + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
+      (big ? '<ul class="ps-facts">' + facts(p).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" : "") + '<span class="go"><span class="gl">' + esc(tag) + '</span><span class="gs">' + (p.designer ? "Jetzt gestalten" : "Ansehen") + "</span> →</span></span></button>";
   }
   function vHome() {
     var chipsK = ["flyer", "visitenkarten", "plakate", "aufkleber", "rollups", "folder"], chipsL = chipsK.map(prodByKey).filter(Boolean);
