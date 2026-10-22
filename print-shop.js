@@ -964,14 +964,19 @@ module.exports = function (D) {
     const run = purchase1(prod, n, country, postcode, key); INFLIGHT.set(key, run);
     try { return await run; } finally { INFLIGHT.delete(key); }
   }
+  // Print.com lehnt eine Kalkulation ab: Grund knapp protokollieren (je Produkt höchstens 1× pro Stunde), damit sich „kein Preis“ nachvollziehen lässt
+  const PF = new Map();
+  function priceFail(prod, n, st, msg) { const k = prod.sku, t = PF.get(k) || 0; if (Date.now() - t < 3600e3) return; PF.set(k, Date.now()); if (PF.size > 2000) PF.clear();
+    log("Kein Preis " + prod.sku + " (" + (st || "?") + "): " + String(msg || "").replace(/\s+/g, " ").slice(0, 300) + " · Optionen " + JSON.stringify(n.pcOpts || {}).slice(0, 400)); }
   async function purchase1(prod, n, country, postcode, key) {
     // Print.com ist maßgeblich: lehnt Print.com ab (oder Preis 0) und greift eine Ausschlussregel → „nicht lieferbar“
     const lo = n.low ? { low: true } : undefined;
     // Versandmöglichkeiten gleichzeitig mit dem Preis anfragen (halbe Wartezeit); schlägt der Preis fehl, wird das Ergebnis verworfen
     const shipP = pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo); shipP.catch(() => {});
     let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, lo); }
-    catch (e) { if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
+    catch (e) { priceFail(prod, n, e.status, e.message); if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
     const P = pr && pr.prices || {};
+    if (!(+P.salesPrice > 0 || +P.productPrice > 0 || +P.normalPrice > 0)) priceFail(prod, n, 200, "Preis 0 / leer");
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
     if (!(productPrice > 0)) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: n.excluded ? 400 : 502 });
     let sp = await shipP, poss = []; ((sp && sp.results) || []).forEach(r => (r.possibilities || []).forEach(x => poss.push(x)));
