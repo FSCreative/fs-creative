@@ -900,10 +900,23 @@ function refreshSites() {
   if (!CF.token && !RW.token) return Promise.resolve(null);
   if (SITES_BUSY) return SITES_BUSY;
   SITES_BUSY = (CF.token ? buildSitesSnapshot() : (async () => ({ fetchedAt: new Date().toISOString(), configured: false, totals: {}, sites: [], railway: await railwaySnapshot().catch(() => null) }))())
-    .then(d => { if (d) SITES_CACHE = { at: Date.now(), data: d }; return d; })
+    .then(d => { if (d) SITES_CACHE = { at: Date.now(), data: keepRailway(d) }; return d && SITES_CACHE.data; })
     .catch(() => SITES_CACHE.data)
     .finally(() => { SITES_BUSY = null; });
   return SITES_BUSY;
+}
+// Railway antwortet nicht (Störung, Schlüssel abgelaufen): letzten guten Stand weiterverwenden – sonst fallen alle Websites auf „cf:“-Schlüssel
+// zurück und die Verrechnungs-Einstellungen (gespeichert je „rw:Projekt“) wirken leer
+const RW_LAST_FILE = path.join(DATA_DIR, "railway-last.json");
+let RW_LAST = (() => { try { return JSON.parse(fs.readFileSync(RW_LAST_FILE, "utf8")); } catch (e) { return null; } })(), RW_ERR_LOG = 0;
+function keepRailway(d) {
+  const r = d && d.railway;
+  if (r && r.projects && r.projects.length) { RW_LAST = { at: d.fetchedAt || new Date().toISOString(), railway: r }; try { fs.writeFileSync(RW_LAST_FILE, JSON.stringify(RW_LAST)); } catch (e) {} return d; }
+  if (r && r.configured !== false && RW_LAST && RW_LAST.railway) {
+    if (Date.now() - RW_ERR_LOG > 3600e3) { RW_ERR_LOG = Date.now(); console.error("Websites: Railway antwortet nicht (" + (r.error || "keine Projekte") + ") – nutze Stand vom " + RW_LAST.at); }
+    return Object.assign({}, d, { railway: Object.assign({}, RW_LAST.railway, { stale: RW_LAST.at, staleError: r.error || "keine Projekte" }) });
+  }
+  return d;
 }
 async function sitesSnapshot(force) {
   ADMIN_SEEN = Date.now();
@@ -1619,7 +1632,7 @@ function billingOp(pl) {
     ["domainLabel", "hostingLabel", "mailLabel"].forEach(k => { if (k in P) o.prices[k] = String(P[k] || "").slice(0, 80); });
   } else if (op === "site" && pl.key && pl.patch && typeof pl.patch === "object") {
     const k = cleanKey(pl.key), cur = o.sites[k] || {}, P = pl.patch;
-    ["active", "domain", "hosting", "mail", "own"].forEach(f => { if (f in P) cur[f] = (P[f] === null ? undefined : !!P[f]); });
+    ["active", "domain", "hosting", "mail", "own", "hidden"].forEach(f => { if (f in P) cur[f] = (P[f] === null ? undefined : !!P[f]); });   // hidden: Website gibt es nicht mehr – ausgeblendet
     if ("extra" in P) { const n = parseFloat(P.extra); cur.extra = isFinite(n) ? Math.round(n * 100) / 100 : 0; }
     if ("mailQty" in P) { const n = parseInt(P.mailQty, 10); cur.mailQty = n > 0 ? Math.min(n, 999) : 1; }
     if ("w4y" in P) cur.w4y = Array.isArray(P.w4y) ? P.w4y.filter(x => Object.prototype.hasOwnProperty.call(W4Y_PKG, x)).slice(0, 5) : undefined;

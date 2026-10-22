@@ -93,7 +93,7 @@ function prices(){ return Object.assign({},DEFP,(B&&B.prices)||{}); }
 function cfg(s){
   var c=(B&&B.sites&&B.sites[s.key])||{};
   if(!B) return {active:!!s.active,domain:false,hosting:false,mail:false,mailQty:1,extra:0,extraLabel:"",customer:s.customer||"",billedUntil:s.billedUntil||null,own:s.own!=null?!!s.own:OWN_RX.test(s.name),w4y:s.w4y||w4yDef(s.name),w4yQty:s.w4yQty||1};
-  return {active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:c.own!=null?!!c.own:OWN_RX.test(s.name),w4y:Array.isArray(c.w4y)?c.w4y:w4yDef(s.name),w4yQty:+c.w4yQty||1};
+  return {hidden:!!c.hidden,active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:c.own!=null?!!c.own:OWN_RX.test(s.name),w4y:Array.isArray(c.w4y)?c.w4y:w4yDef(s.name),w4yQty:+c.w4yQty||1};
 }
 function perPeriod(price,per,period){ price=+price||0; return per==="year"?price*period/12:price*period; }
 function siteLines(s,c){ var P=prices(), n=+P.period||12, L=[];
@@ -257,7 +257,7 @@ function kpisTech(){
 
 function vBill(){
   if(!B) return '<section class="panel"><div class="empty">'+(bBusy||!bTry?"Lade Abrechnung …":'Abrechnung konnte nicht geladen werden. <button class="btn" data-act="wbillreload">Erneut versuchen</button>')+'</div></section>';
-  var P=prices(), n=+P.period||12, all=sitesAll().map(function(s){ return {s:s,c:cfg(s)}; });
+  var P=prices(), n=+P.period||12, all0=sitesAll().map(function(s){ return {s:s,c:cfg(s)}; }), hid=all0.filter(function(x){ return x.c.hidden; }), all=U.showHidden?all0:all0.filter(function(x){ return !x.c.hidden; });
   var custAll=all.filter(function(x){ return !x.c.own; }), own=all.filter(function(x){ return x.c.own; });
   var act=custAll.filter(function(x){ return x.c.active; });
   var perYear=act.reduce(function(a,x){ return a+siteSum(x.s,x.c)*12/n; },0);
@@ -294,6 +294,7 @@ function vBill(){
   '<section class="panel"><div class="panel-h"><h2>Kunden-Websites &amp; Abrechnung</h2><div class="chips">'+
     chip("wbf","all",bf,"Alle",custAll.length)+chip("wbf","due",bf,"Fällig",cnt(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; }))+chip("wbf","active",bf,"Aktiv",act.length)+chip("wbf","inactive",bf,"Nicht verrechnet",custAll.length-act.length)+chip("wbf","bad",bf,"Probleme",cnt(function(x){ return siteBad(x.s); }))+
   '</div></div>'+
+  (hid.length?'<p class="muted" style="margin:0 0 8px">'+hid.length+' ausgeblendet ('+hid.map(function(x){ return esc(x.s.name); }).join(", ")+') · <button class="link" data-act="wshowhid">'+(U.showHidden?"wieder verbergen":"anzeigen")+'</button></p>':'')+
   '<div class="w-row hd"><span>Website · Kunde</span><span>Verrechnet wird</span><span style="text-align:right">Summe</span><span>Letzte Abrechnung</span><span></span></div>'+
   (rows||'<div class="empty">Keine Kundenprojekte'+(U.q||bf!=="all"?" in dieser Ansicht":"")+'.</div>')+
   '<div class="panel-b muted">Abrechnung pro '+(PERLBL[n]||n+" Monate")+' · Preise '+(P.gross?"brutto":"netto")+' · Antippen der Häkchen speichert sofort. Mit dem Zahnrad bearbeitest du Kunde, Postfächer und freien Betrag.</div></section>'+
@@ -361,6 +362,7 @@ function vWeb(){
   var right='<button class="btn" data-act="wrefresh"'+(sBusy?" disabled":"")+'>↻ Aktualisieren</button><button class="btn" data-act="wprices">'+F.svg("gear")+' Preise</button>';
   var tabs=[["bill","Abrechnung"],["rw","Railway"],["cf","Cloudflare"]];
   return F.head("Websites",sub+(rc&&rc.totalEur!=null?' · Railway gesamt <span class="money">'+eur0(rc.totalEur)+'</span> in den letzten 30 Tagen':''),right)+
+    (S&&S.railway&&S.railway.stale?'<div class="notice warn"><span>Railway antwortet gerade nicht ('+esc(S.railway.staleError||"")+') – angezeigt wird der Stand vom '+esc(new Date(S.railway.stale).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}))+'. Verrechnungs-Einstellungen sind unverändert.</span></div>':'')+
     kpisTech()+
     '<div class="w-tools"><div class="subnav" role="tablist">'+tabs.map(function(t){ return '<button data-act="wtab:'+t[0]+'" aria-current="'+(tab===t[0])+'">'+t[1]+'</button>'; }).join("")+'</div>'+
     '<input class="f" type="search" placeholder="'+(tab==="bill"?"Website, Domain oder Kunde filtern …":"Projekt, Domain oder Service filtern …")+'" data-wq data-keepfocus="wq" value="'+esc(U.q)+'" aria-label="Filtern"></div>'+
@@ -397,7 +399,7 @@ function drawerHtml(){
       '<div class="w-card"><h3>Rechnung pro '+(PERLBL[n]||n+" Monate")+' ('+(P.gross?"brutto":"netto")+')</h3>'+(lines.length?lines.map(function(l){ return '<div class="w-line"><span>'+esc(l.name)+'</span><b class="num money">'+eur(l.amount)+'</b></div>'; }).join("")+'<div class="w-line tot"><span>Summe</span><b class="num money">'+eur(sum)+'</b></div>':'<div class="muted">Noch nichts angehakt.</div>')+'</div>'+
     '</div>'+costs+
     '<div class="w-sec"><div class="sec-t">Abrechnungen</div>'+(recs.length?'<div class="w-dl">'+recs.map(function(r){ return '<div>'+invInfo(r)+(r.from&&r.to?'<div class="muted">Zeitraum '+de(r.from)+' – '+de(r.to)+'</div>':'')+'</div>'; }).join("")+'</div>':'<span class="muted">Noch keine.</span>')+'</div>'+
-    '<div><button class="btn" data-act="wown:'+K+'|1">Zu „Eigene Projekte“ verschieben</button></div>';
+    '<div class="row wrap"><button class="btn" data-act="wown:'+K+'|1">Zu „Eigene Projekte“ verschieben</button><button class="btn" data-act="whide:'+K+'|'+(c.hidden?0:1)+'" title="Website gibt es nicht mehr – aus der Liste nehmen (Einstellungen und Rechnungen bleiben)">'+(c.hidden?"Wieder anzeigen":"Ausblenden (gibt es nicht mehr)")+'</button></div>';
 }
 function drawerRender(){
   if(!drawerKey) return;
@@ -481,6 +483,9 @@ F.action("wbill",billSite);
 F.action("wtg",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), f=arg.slice(i+1), s=siteBy(key); if(!s||!B) return; var patch={}; patch[f]=!cfg(s)[f]; setSite(key,patch); });
 F.action("wown",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), v=arg.slice(i+1)==="1", s=siteBy(key);
   setSite(key,{own:v}).then(function(j){ if(j&&j.ok) F.toast((s?s.name+": ":"")+(v?"zu „Eigene Projekte“ verschoben":"wieder bei den Kunden-Websites"),false,"Rückgängig",function(){ setSite(key,{own:!v}); }); }); });
+F.action("whide",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), v=arg.slice(i+1)==="1", s=siteBy(key);
+  setSite(key,{hidden:v}).then(function(j){ if(j&&j.ok){ if(v&&F.closeModal) F.closeModal(); F.toast((s?s.name+": ":"")+(v?"ausgeblendet":"wieder sichtbar"),false,"Rückgängig",function(){ setSite(key,{hidden:!v}); }); F.render(); } }); });
+F.action("wshowhid",function(){ U.showHidden=!U.showHidden; F.render(); });
 F.action("wunbill",function(key){
   var rec=lastInv(key), s=siteBy(key); if(!rec) return;
   F.confirm("Letzte Abrechnung von „"+(s?s.name:key)+"“ ("+(rec.nr||"Entwurf")+", "+eur(rec.gross)+") zurücknehmen? Die Rechnung bleibt bestehen – bei Bedarf unter Finanzen › Rechnungen stornieren.","Zurücknehmen",function(){
