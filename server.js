@@ -2999,7 +2999,10 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (!process.env.DATABASE_URL) return J(200, { ok: false, error: "Keine Datenbank" });
       await FIN.init();
-      if (req.method === "GET") return J(200, { ok: true, rows: (await FIN.getMeta("mydata")) || null, firm: FIN_STATE.firm || null });
+      if (req.method === "GET") { const rows = await FIN.getMeta("mydata");
+        // EORI nachtragen, falls die gespeicherte Liste sie noch nicht hat (einmalig, danach normal bearbeitbar)
+        if (Array.isArray(rows) && rows.length && !rows.some(r => /eori/i.test(r.l || ""))) { const i = rows.findIndex(r => /d-u-n-s/i.test(r.l || "")); rows.splice(i > -1 ? i + 1 : rows.length, 0, { g: "Steuer & Register", l: "EORI-Nummer", v: "ATEOS1000169199" }); await FIN.setMeta("mydata", rows); }
+        return J(200, { ok: true, rows: rows || null, firm: FIN_STATE.firm || null }); }
       const pl = await sevBody(req, 60000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
       const rows = (Array.isArray(pl.rows) ? pl.rows : []).slice(0, 120).map(r => ({ g: String(r.g || "").slice(0, 40), l: String(r.l || "").slice(0, 80), v: String(r.v || "").slice(0, 500) })).filter(r => r.l || r.v);
       await FIN.setMeta("mydata", rows); return J(200, { ok: true, rows });
