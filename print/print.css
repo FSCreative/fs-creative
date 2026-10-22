@@ -1637,3 +1637,15 @@ details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-vouch
   .ps-urs .c .dn{font-size:18px}
   .ps-urs .c .pp{font-size:11.5px;gap:2px;margin-top:6px}
 }
+/* Info-Fenster: Fotos von Print.com (mit Vorschaubildern), Eigenschaften, ganzer Text */
+.ps-pop-g:empty{display:none}
+.ps-pop-g>img{display:block;width:100%;max-height:360px;object-fit:contain;background:#fff}
+.ps-pop-th{display:flex;gap:6px;padding:8px 22px 0;overflow-x:auto}
+.ps-pop-th button{flex:0 0 auto;width:56px;height:56px;padding:0;border-radius:10px;overflow:hidden;border:2px solid transparent;background:#fff;cursor:pointer}
+.ps-pop-th button.on{border-color:var(--accent,#0a84ff)}
+.ps-pop-th img{width:100%;height:100%;object-fit:cover;max-height:none}
+.ps-pop-ch{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.ps-pop-ch span{font-size:12.5px;padding:4px 10px;border-radius:999px;background:rgba(48,209,88,.14);color:var(--text)}
+.ps-pop-t ul{margin:0 0 12px;padding-left:20px;color:var(--text-dim);line-height:1.6}
+.ps-pop-t b{color:var(--text)}
+@media (max-width:600px){.ps-pop-g>img{max-height:40vh}}

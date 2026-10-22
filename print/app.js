@@ -499,20 +499,35 @@
     document.addEventListener("focusout", function (e) { if (e.target.closest && e.target.closest(".ps-i[data-ddinfo]")) tipHide(); });
     window.addEventListener("scroll", tipHide, true); document.addEventListener("keydown", function (e) { if (e.key === "Escape") tipHide(); });
   }
+  // Print.com-Infotext (Markdown-ähnlich) → Absätze, Aufzählungen, fett; Links/HTML sind serverseitig schon entfernt
+  function mdLite(t) {
+    var inl = function (x) { return esc(x.replace(/^#+\s*/, "")).replace(/\*\*(.+?)\*\*|__(.+?)__/g, function (m0, a, b) { return "<b>" + (a || b) + "</b>"; }).replace(/\*\*|__/g, ""); }, out = "", ul = [];
+    var flush = function () { if (ul.length) out += "<ul>" + ul.map(function (x) { return "<li>" + inl(x) + "</li>"; }).join("") + "</ul>"; ul = []; };
+    String(t || "").replace(/<[^>]*>/g, "").split(/\n+/).forEach(function (l) { l = l.trim(); if (!l) return; if (/^[-*•]\s+/.test(l)) ul.push(l.replace(/^[-*•]\s+/, "")); else { flush(); out += "<p>" + inl(l) + "</p>"; } });
+    flush(); return out;
+  }
   function infoPop(key, val) {
     tipHide();
     var it = infoItem(key, val);
     if (!it) return;
     var pr = key.indexOf("prop:") === 0 && S.prod ? S.prod.props.filter(function (x) { return x.slug === key.slice(5); })[0] : null, isCur = pr ? S.sel[pr.slug] === val : false;
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", it.name);
-    m.innerHTML = '<div class="ps-pop-c">' + (it.img ? '<img src="' + esc(String(it.img).replace(/w=\d+/, "w=900")) + '" alt="">' : "") + '<div class="ps-pop-b"><span class="ps-pop-k">' + esc(pr ? pr.title : "Info") + "</span><h3>" + esc(it.name) + (it.best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</h3>" +
-      "<p>" + esc(txt(it.desc) || "Zu dieser Option gibt es keine weiteren Infos.") + "</p>" + (it.warn ? '<p class="ps-pop-w">Passt mit: ' + esc(it.warn) + "</p>" : it.off ? '<p class="ps-pop-w">Mit der aktuellen Auswahl nicht lieferbar.</p>' : "") +
+    m.innerHTML = '<div class="ps-pop-c"><div class="ps-pop-g">' + (it.img ? '<img src="' + esc(String(it.img).replace(/w=\d+/, "w=900")) + '" alt="">' : "") + '</div><div class="ps-pop-b"><span class="ps-pop-k">' + esc(pr ? pr.title : "Info") + "</span><h3>" + esc(it.name) + (it.best ? ' <span class="ps-bb">★ Bestseller</span>' : "") + "</h3>" +
+      "<div class=\"ps-pop-t\"><p>" + esc(txt(it.desc) || "Zu dieser Option gibt es keine weiteren Infos.") + "</p></div>" + (it.warn ? '<p class="ps-pop-w">Passt mit: ' + esc(it.warn) + "</p>" : it.off ? '<p class="ps-pop-w">Mit der aktuellen Auswahl nicht lieferbar.</p>' : "") +
       '<div class="ps-pop-a">' + (pr && !isCur && !it.off ? '<button type="button" class="ps-btn primary" data-popsel="1">Diese Option wählen</button>' : isCur ? '<span class="ps-pop-ok">✓ Aktuell gewählt</span>' : "") + '<button type="button" class="ps-btn" data-popx="1">Schließen</button></div></div><button type="button" class="ps-pop-x" data-popx="1" aria-label="Schließen">×</button></div>';
     document.body.appendChild(m); var f = m.querySelector("[data-popsel]") || m.querySelector("[data-popx]"); if (f) f.focus();
+    // ganzer Text, Fotos und Eigenschaften von Print.com nachladen (Kachel/Tooltip haben nur die Kurzfassung)
+    if (pr && S.prod && (it.more || it.img)) api("/print/api/optinfo?product=" + encodeURIComponent(S.prod.key) + "&prop=" + encodeURIComponent(pr.slug) + "&val=" + encodeURIComponent(val)).then(function (j) {
+      if (!j || !j.ok || !m.isConnected) return;
+      var g = m.querySelector(".ps-pop-g"), t = m.querySelector(".ps-pop-t"), im = (j.imgs || []).filter(imgOk);
+      if (g && im.length) { g.innerHTML = '<img src="' + esc(im[0]) + '" alt="' + esc(it.name) + '">' + (im.length > 1 ? '<div class="ps-pop-th">' + im.map(function (u, i) { return '<button type="button" class="' + (i ? "" : "on") + '" data-popimg="' + esc(u) + '" aria-label="Foto ' + (i + 1) + '"><img src="' + esc(u.replace(/w=\d+/, "w=160")) + '" alt=""></button>'; }).join("") + "</div>" : ""); }
+      if (t && (j.text || (j.chars || []).length)) t.innerHTML = ((j.chars || []).length ? '<div class="ps-pop-ch">' + j.chars.map(function (c) { return "<span>" + esc(c) + "</span>"; }).join("") + "</div>" : "") + (j.text ? mdLite(j.text) : t.innerHTML);
+    }).catch(function () {});
     var close = function () { m.remove(); document.removeEventListener("keydown", esc0); };
     var esc0 = function (e) { if (e.key === "Escape") { e.stopPropagation(); close(); } };
     document.addEventListener("keydown", esc0);
     m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-popx]")) { close(); return; }
+      var pi = e.target.closest("[data-popimg]"); if (pi) { var big = m.querySelector(".ps-pop-g > img"); if (big) big.src = pi.getAttribute("data-popimg"); [].forEach.call(m.querySelectorAll("[data-popimg]"), function (b) { b.classList.toggle("on", b === pi); }); return; }
       if (e.target.closest("[data-popsel]")) { close(); var b = document.createElement("button"); b.setAttribute("data-ddpick", key + "|" + val); b.style.display = "none"; root.appendChild(b); b.click(); b.remove(); } });
   }
   // „Deine Auswahl im Detail“: immer sichtbare Infos zu allen gewählten Optionen
@@ -552,7 +567,7 @@
   }
   function propItems(pr) {
     var gname = function (o) { var g = (pr.groups || []).filter(function (x) { return x.slug === o.parent; })[0]; return g ? g.name : ""; }, open = S.dd === "prop:" + pr.slug || pr.options.length <= 4;
-    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", group: gname(o) };
+    var items = optsOf(pr).map(function (o) { var it = { val: o.slug, name: o.name, best: isBest(pr, o.slug), desc: txt(o.desc) || glossOf(pr, o), img: imgOk(o.img) ? o.img : "", more: !!o.more, group: gname(o) };
       if (pr.slug === "size" && o.w && o.h && !/\d\s*[x×]\s*\d/.test(o.name)) it.sub = fmtSize(o.w, o.h);
       if (pr.slug === "size" && o.slug === S.sel.size && S.price && S.price.folds && S.price.size) it.sub = (it.sub ? it.sub + " · " : "") + "offen " + fmtSize(S.price.size.w, S.price.size.h);
       if (pr.slug === "size" && o.slug === "custom" && S.prod.custom) { var C0 = S.prod.custom, f0 = C0.unit === "cm" ? 10 : 1; it.sub = "frei wählbar · " + C0.minW / f0 + " × " + C0.minH / f0 + " bis " + C0.maxW / f0 + " × " + C0.maxH / f0 + " " + C0.unit; if (S.sel.size === "custom" && sizeOf()) it.name = o.name + " (" + fmtSize(sizeOf().w, sizeOf().h) + ")"; }
