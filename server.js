@@ -1644,7 +1644,7 @@ function billingOp(pl) {
   } else if (op === "invoice" && pl.key && pl.invoice && typeof pl.invoice === "object") {
     const k = cleanKey(pl.key), I = pl.invoice;
     const inv = { id: String(I.id || ""), nr: String(I.nr || ""), date: String(I.date || new Date().toISOString().slice(0, 10)), gross: Math.round((parseFloat(I.gross) || 0) * 100) / 100,
-      from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200) };
+      from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200), group: I.group === true || undefined };   // group: Sammelrechnung (mehrere Buchungen)
     const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
     if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
   } else if (op === "ignore" && pl.key) {        // Posten in „Zu verrechnen“ ausblenden, bis der Betrag wieder steigt
