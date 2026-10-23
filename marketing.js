@@ -156,6 +156,7 @@ module.exports = function (D) {
       d.winnerCodes = idx.slice(0, nW).map(i => ko.entries[i].code); d.backupCodes = idx.slice(nW).map(i => ko.entries[i].code);
       d.winnerIds = idx.slice(0, nW).map(i => ko.entries[i].id); d.backupIds = idx.slice(nW).map(i => ko.entries[i].id);
       d.winnerFull = idx.slice(0, nW).map(i => ko.entries[i].full); d.backupFull = idx.slice(nW).map(i => ko.entries[i].full);
+      d.fullNames = ko.entries.map(e => e.full); d.winnerIdx = idx.slice(0, nW);   // Video mit Vor- und Nachnamen (Wunsch Simon 23.10.2026)
     }
     const s = state(); s.draws.unshift(d); if (s.draws.length > 100) s.draws.length = 100; save(true);
     queueVideo(d.id);
@@ -207,9 +208,10 @@ module.exports = function (D) {
     d.video = { status: "läuft", at: nowIso() }; save();
     try {
       if (!R.videoReady()) throw new Error("Video-Erzeugung ist am Server nicht verfügbar (ffmpeg fehlt).");
-      const others = shuffled(d.participants.filter(n => d.winners.indexOf(n) < 0)).slice(0, 80);
+      const full = Array.isArray(d.fullNames) && d.winnerFull, wins = full ? d.winnerFull : d.winners;
+      const others = shuffled(full ? d.fullNames.filter((n, i) => d.winnerIdx.indexOf(i) < 0) : d.participants.filter(n => d.winners.indexOf(n) < 0)).slice(0, 80);
       const r = await R.giveawayVideo({ brand: await renderBrand(brand(d.brand)), title: d.title, prize: d.prize, claim: d.claim, total: d.count, date: viennaDate(d.at),
-        names: others.length ? others : d.winners, winners: d.winners, dir: work, outFile: path.join(MEDIA, d.id + ".mp4"), coverFile: path.join(MEDIA, d.id + "-cover.png"), posterFile: path.join(MEDIA, d.id + "-poster.jpg") });
+        names: others.length ? others : wins, winners: wins, dir: work, outFile: path.join(MEDIA, d.id + ".mp4"), coverFile: path.join(MEDIA, d.id + "-cover.png"), posterFile: path.join(MEDIA, d.id + "-poster.jpg") });
       d.video = { status: "fertig", file: d.id + ".mp4", cover: d.id + "-cover.png", poster: r.poster ? d.id + "-poster.jpg" : "", duration: r.duration, at: nowIso(), ms: Date.now() - t };
     } catch (e) { console.error("marketing: Video", e.message); d.video = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; }
     try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
