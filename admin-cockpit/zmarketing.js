@@ -329,15 +329,17 @@ F.form("mkbrand",function(form){
 
 /* ---------- Bildersammlung je Marke (für Posts und Reels) ---------- */
 var LIBK=null;
-function libPaint(items){
-  var b=brandOf(LIBK)||{name:LIBK};
+function libPaint(items,j){
+  var b=brandOf(LIBK)||{name:LIBK}, w=j&&j.web;
   F.modal('<div class="row-between"><h2 style="font-size:19px">Bilder & Videos – '+esc(b.name)+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted small" style="margin:4px 0 12px">Daraus nimmt der Planer Fotos für Posts und Hintergründe für Reels. Eigene Fotos (JPG/PNG) und kurze Hochformat-Videos (MP4) machen die Posts persönlicher.</p>'+
+    (j&&j.url?'<div class="notice" style="margin-bottom:12px"><span>🌐 Website '+esc(j.url.replace(/^https:\/\/(www\.)?/,""))+': '+(w&&w.at?(w.error?'<span class="bad-t">'+esc(w.error)+'</span>':w.pages+' Seiten und '+w.images+' Fotos eingelesen')+' · Stand '+new Date(w.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):'noch nicht eingelesen')+' – die KI nutzt Texte und Fotos der Website.</span><button type="button" class="btn sm" data-act="mkweb">Jetzt neu einlesen</button></div>':'')+
     (items?(items.length?'<div class="mk-lib">'+items.map(function(x){ var src="/admin/api/mkt/library-file?brand="+encodeURIComponent(LIBK)+"&id="+encodeURIComponent(x.id);
       return '<div class="mk-li">'+(x.kind==="clip"?'<video src="'+src+'" muted playsinline preload="metadata"></video><span class="t">Video</span>':'<img src="'+src+'" alt="'+esc(x.desc||"")+'" title="'+esc(x.desc||"Noch ohne Beschreibung – die KI beschreibt neue Fotos beim nächsten Generieren")+'" loading="lazy">'+(x.desc?'<span class="d">'+esc(x.desc)+'</span>':''))+'<button type="button" class="btn icon sm" data-act="mklibdel:'+esc(x.id)+'" title="Entfernen" aria-label="Entfernen">'+F.svg("close")+'</button></div>'; }).join("")+'</div>':'<p class="muted">Noch keine Bilder.</p>'):'<p class="muted">Lade …</p>')+
     '<div class="foot"><label class="btn"><input type="file" id="mkLibUp" accept="image/jpeg,image/png,video/mp4" multiple hidden> Hochladen</label><span class="muted small" id="mkLibMsg"></span><button type="button" class="btn" data-closemodal>Fertig</button></div>',"wide");
 }
-function libLoad(){ api("/admin/api/mkt/library?brand="+encodeURIComponent(LIBK)).then(function(j){ if(LIBK) libPaint(j&&j.ok?j.items:[]); }); }
+function libLoad(){ api("/admin/api/mkt/library?brand="+encodeURIComponent(LIBK)).then(function(j){ if(LIBK) libPaint(j&&j.ok?j.items:[],j); }); }
+F.action("mkweb",function(){ F.toast("Website wird eingelesen – das dauert bis zu einer Minute …"); api("/admin/api/mkt/website",{brand:LIBK}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); F.toast("Website eingelesen"); libLoad(); }); });
 F.action("mklib",function(k){ LIBK=k; libPaint(null); libLoad(); });
 F.action("mklibdel",function(id){ F.confirm("Aus der Sammlung entfernen?","Entfernen",function(){ api("/admin/api/mkt/library",{brand:LIBK,remove:id}).then(function(){ libLoad(); }); },true); });
 F.listen("change","#mkLibUp",function(el){ var files=Array.prototype.slice.call(el.files||[]), msg=document.getElementById("mkLibMsg"), chain=Promise.resolve(), n=0;

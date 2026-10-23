@@ -179,10 +179,12 @@ document.addEventListener("click",function(e){
   var g=t.closest("[data-go]"); if(g){ e.preventDefault(); FSC.go(g.getAttribute("data-go")); return; }
   var a=t.closest("[data-act]"); if(a&&!a.disabled){ var s=a.getAttribute("data-act"), i=s.indexOf(":"), k=i>-1?s.slice(0,i):s, v=i>-1?s.slice(i+1):""; if(FSC.actions[k]){ e.preventDefault(); FSC.actions[k](v,a,e); return; } }
   var sn=t.closest("[data-snooze]"); if(sn){ FSC.snooze(sn.getAttribute("data-snooze")); return; }
-  if(t.closest("[data-close]")||t.id==="scrim"){ FSC.closeDrawer(); return; }
-  if(t.closest("[data-closemodal]")||t.classList.contains("modal")){ FSC.closeModal(); return; }
+  // Hintergrund schließt nur, wenn auch der Druck dort begann – Text markieren und über den Rand ziehen schließt nicht mehr
+  if(t.closest("[data-close]")||(t.id==="scrim"&&FSC._down===t)){ FSC.closeDrawer(); return; }
+  if(t.closest("[data-closemodal]")||(t.classList.contains("modal")&&FSC._down===t)){ FSC.closeModal(); return; }
   FSC.listeners.forEach(function(l){ if(l.type!=="click") return; var el=t.closest(l.sel); if(el) l.fn(el,e); });
 });
+document.addEventListener("pointerdown",function(e){ FSC._down=e.target; },true);
 ["change","input","keydown","dragstart","dragover","drop","contextmenu"].forEach(function(type){
   document.addEventListener(type,function(e){ var t=e.target; if(!t.closest) return; FSC.listeners.forEach(function(l){ if(l.type!==type) return; var el=t.closest(l.sel); if(el) l.fn(el,e); }); });
 });

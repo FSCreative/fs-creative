@@ -38,6 +38,8 @@ F.css(
 '.mp-wait{width:150px;aspect-ratio:4/5;border-radius:10px;background:var(--sunk);display:grid;place-items:center;text-align:center;font-size:12.5px;color:var(--ink-2);padding:10px}'+
 '.mp-wait i{display:block;width:24px;height:24px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--glow);animation:mkspin .9s linear infinite;margin:0 auto 8px}'+
 '.mp-body{display:grid;gap:9px;align-content:start;min-width:0}'+
+'.mp-opts{border:1px solid var(--line);border-radius:12px;padding:10px 12px}.mp-opts summary{cursor:pointer;font-weight:600}.mp-og{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line);margin-top:8px}.mp-og:first-of-type{border-top:0}'+
+'.mp-place{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.mp-place .f{flex:1 1 260px}.mp-placer{flex-basis:100%;display:flex;flex-wrap:wrap;gap:4px 14px}'+
 '.mp-top{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px}'+
 '.mp-top .b{font-weight:700;background:var(--sunk);border-radius:99px;padding:2px 9px}'+
 '.mp-idea{font-weight:700;font-size:15px}'+
@@ -124,7 +126,8 @@ function postCard(p){
   var pfs=connected.length?'<div class="mp-pf">'+connected.map(function(pf){ var on=p.platforms.indexOf(pf.key)>-1; return '<button type="button" '+(editable?'data-act="mppf:'+esc(p.id)+'|'+pf.key+'"':'disabled')+' aria-pressed="'+on+'">'+esc(pf.label)+'</button>'; }).join("")+'</div>':'<div class="muted small">Noch kein passendes Konto verbunden – <button type="button" class="link" data-act="mktab:kanaele">Kanäle</button></div>';
   var res="";
   if(Object.keys(p.results||{}).length) res='<div class="mp-res">'+Object.keys(p.results).map(function(k){ var r=p.results[k];
-    return '<span>'+esc(pfLabel(k))+': '+(r.status==="ok"?(r.url?'<a href="'+esc(r.url)+'" target="_blank" rel="noopener">✓ ansehen</a>':'✓ gepostet'):r.status==="entwurf"?'<b>Entwurf in der App</b> <span class="muted">'+esc(r.note||"")+'</span>':r.status==="übersprungen"?'<span class="muted">'+esc(r.error)+'</span>':'<span class="bad-t">'+esc(r.error||"Fehler")+'</span> <button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>')+'</span>'; }).join("")+'</div>';
+    var can=p.can||{}, ra=r.status==="ok"&&r.id?((can.edit||[]).indexOf(k)>-1?' <button type="button" class="link small" data-act="mprem:'+esc(p.id)+'|'+k+'|edit">Text ändern</button>':'')+((can.comments||[]).indexOf(k)>-1?' <button type="button" class="link small" data-act="mprem:'+esc(p.id)+'|'+k+'|comments">Kommentare '+(r.commentsOff?'ein':'aus')+'</button>':'')+((can.remove||[]).indexOf(k)>-1?' <button type="button" class="link small" data-act="mprem:'+esc(p.id)+'|'+k+'|delete">Löschen</button>':''):'';
+    return '<span>'+esc(pfLabel(k))+': '+(r.status==="gelöscht"?'<span class="muted">gelöscht</span>':r.status==="ok"?(r.url?'<a href="'+esc(r.url)+'" target="_blank" rel="noopener">✓ ansehen</a>':'✓ gepostet')+(r.editedAt?' <span class="muted small">geändert</span>':'')+ra:r.status==="entwurf"?'<b>Entwurf in der App</b> <span class="muted">'+esc(r.note||"")+'</span>':r.status==="übersprungen"?'<span class="muted">'+esc(r.error)+'</span>':'<span class="bad-t">'+esc(r.error||"Fehler")+'</span> <button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>')+'</span>'; }).join("")+'</div>';
   var acts;
   if(p.status==="entwurf") acts='<input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"><button type="button" class="btn primary" data-act="mpgo:'+esc(p.id)+'"'+(md.status!=="fertig"||!p.platforms.length?' disabled':'')+'>'+F.svg("mgo")+' Go</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'"'+(md.status!=="fertig"||!p.platforms.length?' disabled':'')+'>Jetzt posten</button><button type="button" class="btn" data-act="mped:'+esc(p.id)+'">Bearbeiten</button>'+(/^gewinnspiel/.test(p.source||"")?'':'<button type="button" class="btn" data-act="mprw:'+esc(p.id)+'">'+F.svg("mspark")+' Neu schreiben</button>')+'<button type="button" class="btn sm" data-act="mpdel:'+esc(p.id)+'">Verwerfen</button>';
   else if(p.status==="geplant") acts='<span class="small"><b>Geht '+esc(when(p.scheduledAt))+' raus</b></span><input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'"><button type="button" class="btn" data-act="mpstop:'+esc(p.id)+'">Stopp</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'">Jetzt posten</button><button type="button" class="btn" data-act="mped:'+esc(p.id)+'">Bearbeiten</button>';
@@ -213,8 +216,33 @@ F.action("mped",function(id){ var p=PL.posts.find(function(q){ return q.id===id;
     '<label class="fl">Erster Kommentar (Instagram/Facebook)<input class="f" name="firstComment" maxlength="300" value="'+esc(p.firstComment||"")+'"></label></div>'+
     '<div class="mk-row2"><label class="fl">Personen markieren (Instagram)<input class="f" name="tags" placeholder="@lisa.montafon @kantineur" value="'+esc((p.tags||[]).map(function(u){ return "@"+u; }).join(" "))+'"></label>'+
     '<label class="fl">Collab mit (Instagram, max. 3 – Partner bestätigt in Instagram)<input class="f" name="collabs" placeholder="@partnerkonto" value="'+esc((p.collabs||[]).map(function(u){ return "@"+u; }).join(" "))+'"></label></div>'+
+    '<div class="mp-place"><input class="f" id="mpPlaceQ" placeholder="Ort suchen (z. B. Schruns, Gasthof …) oder Instagram-Orts-Link einfügen" data-brand="'+esc(p.brand)+'"><button type="button" class="btn sm" data-act="mpplace:'+esc(p.brand)+'">Ort suchen / hinzufügen</button><div id="mpPlaceR" class="mp-placer"></div></div>'+
     '<label class="fl">Bildbeschreibung (Alt-Text)<input class="f" name="altText" maxlength="400" value="'+esc(p.altText||"")+'"></label>'+
+    '<label class="fl">Eigener Link (statt Website; Facebook, LinkedIn, YouTube, Pinterest)<input class="f" name="link" placeholder="https://…" value="'+esc(p.link||"")+'"></label>'+
+    optsHtml(p)+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></span></div></form>',"wide"); });
+// Zusatz-Optionen je Plattform (eingeklappt)
+function optsHtml(p){ var o=p.opts||{}, reel=p.format==="reel", chk=function(k,t,def){ var on=o[k]===undefined?!!def:!!o[k]; return '<label class="chk"><input type="checkbox" data-opt="'+k+'"'+(on?' checked':'')+'> '+t+'</label>'; },
+    sel=function(k,t,l){ return '<label class="fl">'+t+'<select class="f" data-opt="'+k+'">'+l.map(function(x){ return '<option value="'+esc(x[0])+'"'+((o[k]||"")===x[0]?' selected':'')+'>'+esc(x[1])+'</option>'; }).join("")+'</select></label>'; },
+    inp=function(k,t,ph){ return '<label class="fl">'+t+'<input class="f" data-opt="'+k+'" value="'+esc(o[k]||"")+'" placeholder="'+esc(ph||"")+'"></label>'; };
+  return '<details class="mp-opts"><summary>Mehr Optionen je Plattform</summary>'+
+    '<div class="mp-og"><b>Instagram</b>'+chk("igStory","Zusätzlich als Story teilen")+chk("igCommentsOff","Kommentare ausschalten")+(reel?chk("igShareToFeed","Reel auch im Feed zeigen",true)+chk("igTrial","Test-Reel (zuerst nur Nicht-Follower, Instagram entscheidet nach Erfolg)")+
+      '<div class="mk-row2">'+inp("igThumbOffset","Titelbild aus dem Video (Millisekunde, leer = gestaltetes Titelbild)","z. B. 2500")+inp("igAudioName","Name der Tonspur","z. B. kochdu Sound")+'</div>':'')+'</div>'+
+    '<div class="mp-og"><b>Facebook</b>'+chk("fbStory","Zusätzlich als Story der Seite teilen")+'</div>'+
+    '<div class="mp-og"><b>Threads</b><div class="mk-row2">'+sel("thReplyControl","Wer darf antworten?",[["","Alle (Standard)"],["accounts_you_follow","Nur Profile, denen du folgst"],["followers_only","Nur Follower"],["mentioned_only","Nur Erwähnte"]])+inp("thTopic","Thema (Topic-Tag)","z. B. Montafon")+'</div></div>'+
+    '<div class="mp-og"><b>LinkedIn</b><div class="mk-row2">'+sel("liVisibility","Sichtbarkeit",[["","Öffentlich"],["CONNECTIONS","Nur Kontakte"]])+'</div>'+chk("liNoReshare","Teilen durch andere verbieten")+'</div>'+
+    (reel?'<div class="mp-og"><b>YouTube</b><div class="mk-row2">'+sel("ytPrivacy","Sichtbarkeit",[["","Öffentlich"],["unlisted","Nicht gelistet"],["private","Privat"]])+'</div>'+chk("ytKids","Speziell für Kinder")+chk("ytAi","Enthält KI-erzeugte, realistisch wirkende Inhalte (Kennzeichnung)")+'</div>':'')+
+    (!reel?'<div class="mp-og"><b>Pinterest</b>'+inp("pinLink","Ziel-Link des Pins","https://…")+'</div>':'')+
+    '<div class="mp-og"><b>Bluesky</b><div class="mk-row2">'+sel("bsReply","Wer darf antworten?",[["","Alle"],["followers","Nur Follower"],["following","Nur Profile, denen du folgst"],["mentioned","Nur Erwähnte"],["nobody","Niemand"]])+sel("bsLang","Sprache",[["","Deutsch"],["en","Englisch"],["it","Italienisch"],["nl","Niederländisch"],["fr","Französisch"]])+'</div></div>'+
+    '</details>'; }
+F.action("mpplace",function(brand){ var q=document.getElementById("mpPlaceQ"), box=document.getElementById("mpPlaceR"), v=q?q.value.trim():""; if(!v) return;
+  var addLoc=function(name,id){ api("/admin/api/mkt/location-add",{brand:brand,name:name,id:id}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); PL.locations=j.locations; var sel=document.querySelector('form[data-form="mped"] [name="place"]');
+    if(sel){ sel.insertAdjacentHTML("beforeend",'<option value="'+esc(j.place.id)+'">'+esc(j.place.name)+'</option>'); sel.value=j.place.id; } box.innerHTML=""; q.value=""; F.toast("Ort „"+j.place.name+"“ hinzugefügt und gewählt"); }); };
+  if(/instagram\.com\/explore\/locations\/|facebook\.com\/|^\d{5,}$/.test(v)){ var nm=(v.match(/explore\/locations\/\d+\/([^/?]+)/)||[])[1]; var name=window.prompt("Name für diesen Ort",nm?decodeURIComponent(nm).replace(/-/g," "):""); if(name) addLoc(name,v); return; }
+  box.innerHTML='<span class="muted small">Suche …</span>';
+  api("/admin/api/mkt/place-search",{brand:brand,q:v}).then(function(j){ if(!j||!j.ok){ box.innerHTML='<span class="bad-t small">'+esc((j&&j.error)||"Fehler")+'</span>'; return; }
+    box.innerHTML=j.places.length?j.places.map(function(x){ return '<button type="button" class="link" data-pid="'+esc(x.id)+'" data-pname="'+esc(x.name)+'">'+esc(x.name)+(x.city?' <span class="muted small">'+esc(x.city)+'</span>':'')+'</button>'; }).join(""):'<span class="muted small">Nichts gefunden – Instagram-Orts-Link einfügen.</span>';
+    Array.prototype.forEach.call(box.querySelectorAll("[data-pid]"),function(b){ b.addEventListener("click",function(){ addLoc(b.getAttribute("data-pname"),b.getAttribute("data-pid")); }); }); }); });
 F.form("mped",function(form){ var id=form.getAttribute("data-id"), p=PL.posts.find(function(q){ return q.id===id; }); if(!p) return;
   var caps={}, tags={}, tg=function(v){ return String(v||"").split(/[\s,]+/).filter(Boolean).map(function(t){ return t.charAt(0)==="#"?t:"#"+t; }); };
   CAPS.forEach(function(k){ var el=form.querySelector('[name="cap_'+k[0]+'"]'); if(el) caps[k[0]]=el.value; });
@@ -224,6 +252,7 @@ F.form("mped",function(form){ var id=form.getAttribute("data-id"), p=PL.posts.fi
   if(changed) patch.slides=sl;
   var mu=form.querySelector('[name="music"]'); if(mu&&mu.value!==(p.music||"")) patch.music=mu.value;
   var pl0=form.querySelector('[name="place"]'); if(pl0&&pl0.value!==((p.place&&p.place.id)||"")) patch.place=pl0.value;
+  var op={}; Array.prototype.forEach.call(form.querySelectorAll("[data-opt]"),function(el){ var k=el.getAttribute("data-opt"); op[k]=el.type==="checkbox"?el.checked:el.value; }); patch.opts=op; patch.link=form.querySelector('[name="link"]').value.trim();
   patch.firstComment=form.querySelector('[name="firstComment"]').value; patch.tags=form.querySelector('[name="tags"]').value; patch.collabs=form.querySelector('[name="collabs"]').value; patch.altText=form.querySelector('[name="altText"]').value;
   api("/admin/api/mkt/post",{id:id,op:"update",patch:patch}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); upd(j.post); F.closeModal(); F.toast(changed||patch.music!==undefined?"Gespeichert – wird neu erstellt":"Gespeichert"); F.render(); schedulePoll(); }); });
 // Einen Post mit Anweisung neu schreiben lassen (KI), Bild/Reel wird neu erzeugt
@@ -291,3 +320,13 @@ F.action("mkmusdel",function(id){ api("/admin/api/mkt/music",{remove:id}).then(f
 F.mktTab({id:"planer",label:"Planer",order:1,sub:"Posts und Reels erstellen, freigeben, automatisch posten",render:planHtml});
 F.mktTab({id:"kanaele",label:"Kanäle",order:3,sub:"Social-Media-Konten verbinden",render:kanHtml});
 })();
+
+// Nach dem Posten: Text ändern / Kommentare ein-aus / auf der Plattform löschen
+F.action("mprem",function(v){ var x=v.split("|"), p=PL.posts.find(function(q){ return q.id===x[0]; }); if(!p) return; var pf=x[1], act=x[2], r=(p.results||{})[pf]||{};
+  var run=function(extra){ api("/admin/api/mkt/post",Object.assign({id:p.id,op:"remote",platform:pf,action:act},extra)).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); upd(j.post); F.closeModal(); F.toast(act==="delete"?"Auf "+pfLabel(pf)+" gelöscht":act==="edit"?"Text auf "+pfLabel(pf)+" geändert":"Gespeichert"); F.render(); }); };
+  if(act==="delete") return F.confirm("Diesen Beitrag auf "+pfLabel(pf)+" endgültig löschen? Das lässt sich nicht rückgängig machen.","Löschen",function(){ run({confirm:true}); },true);
+  if(act==="comments") return run({on:!!r.commentsOff});
+  var txt=r.text||(p.preview&&p.preview[pf])||"", yt=pf==="youtube"||pf==="pinterest";
+  F.modal('<form data-form="mprem" class="mp-ed"><div class="row-between"><h2 style="font-size:19px">Text auf '+esc(pfLabel(pf))+' ändern</h2>'+F.btnClose()+'</div>'+(yt?'<label class="fl">Titel<input class="f" name="title" maxlength="100" value="'+esc(pf==="youtube"?(p.captions||{}).youtubeTitle||"":(p.captions||{}).pinterestTitle||"")+'"></label>':'')+
+    '<label class="fl">Text<textarea class="f" name="text" rows="8">'+esc(txt)+'</textarea></label><div class="foot"><span class="muted small">Wird direkt auf '+esc(pfLabel(pf))+' geändert.</span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Ändern</button></span></div></form>',"wide");
+  F.form("mprem",function(form){ var t=form.querySelector('[name="title"]'); run({text:form.querySelector('[name="text"]').value,title:t?t.value:""}); }); });

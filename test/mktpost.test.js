@@ -1,3 +1,4 @@
+process.env.MKT_WEB = "off";
 /* Marketing-Planer (mkt-posts.js) und Veröffentlichen (mkt-publish.js) gegen die Plattform-Attrappe (test/social-mock.js):
    App-Zugang, Anmelden (OAuth inkl. Seitenauswahl, Bluesky), KI-Posts (Attrappe) → Medien → Go → Termin → automatisch posten, Fehler + nochmal,
    öffentliche Medien nur nach Freigabe, Instagram-Kommentare mit Bedingungen, Gewinnspiel → Reel. */

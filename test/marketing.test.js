@@ -1,3 +1,4 @@
+process.env.MKT_WEB = "off";
 /* Marketing (marketing.js, mkt-render.js): Teilnehmer erkennen, faire Ziehung, Protokoll, Routen, Video (wenn ffmpeg vorhanden). */
 "use strict";
 const assert = require("assert");

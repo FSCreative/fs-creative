@@ -12,6 +12,9 @@ module.exports = function (C) {
   const { state, save, brand, brandList, renderBrand, MEDIA, WORK, DIR, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R } = C;
   const MO = require("./mkt-motion.js")(R);   // bewegte Reels (Wörter einzeln, Übergänge, Takt)
   const P = C.publisher, PLATFORMS = P.PLATFORMS, PROVIDERS = P.PROVIDERS;
+  const WEB = require("./mkt-web.js")({ S: () => S(), save: () => save(), DIR: C.DIR, R: C.R, clip: C.clip, nowIso: C.nowIso, imgSize: C.imgSize });
+  // Website der Marke einlesen (höchstens 1×/Tag) – beim Erstellen höchstens 60 s warten, sonst mit dem letzten Stand weiter
+  const webFresh = b => Promise.race([WEB.sync(b).catch(e => console.error("marketing: Website", e.message)), new Promise(r => setTimeout(r, 60000))]);
   const MUSIC = path.join(DIR, "music"), STOCK = path.join(DIR, "stock"); try { fs.mkdirSync(MUSIC, { recursive: true }); fs.mkdirSync(STOCK, { recursive: true }); } catch (e) {}
 
   // ───────────── Verschlüsselung ─────────────
@@ -131,8 +134,9 @@ module.exports = function (C) {
     if (!C.KI || !C.KI.marketingOn || !C.KI.marketingOn()) throw fail(400, "KI nicht verfügbar (Einstellungen → KI).");
     const cur = { format: post.format, pillar: post.pillar, idea: post.idea, slides: (post.slides || []).map(s0 => { const o = Object.assign({}, s0); delete o.image; delete o.image2; delete o.imageRatio; return o; }), captions: post.captions, hashtags: post.hashtags, altText: post.altText };
     if (b.key === "druckshop") await syncPrintPhotos().catch(e => console.error("marketing: Produktfotos", e.message));
+    await webFresh(b);
     await describeLibrary(b.key).catch(() => 0);
-    const user = "<profil>" + profileFor(b) + "</profil>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
+    const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + placesTxt(b) + bilderTxt(b) + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
       "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 12000);
     const x = (r.json && r.json.posts || [])[0]; if (!x) throw fail(502, "Die KI hat keinen Beitrag geliefert – bitte nochmal.");
@@ -151,8 +155,9 @@ module.exports = function (C) {
     const today = new Date().toLocaleDateString("de-AT", { timeZone: "Europe/Vienna", weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const vorg = clip(pl.instructions != null ? pl.instructions : pl.topic, 2000);
     if (b.key === "druckshop") await syncPrintPhotos().catch(e => console.error("marketing: Produktfotos", e.message));
+    await webFresh(b);
     const descEur = await describeLibrary(b.key).catch(e => { console.error("marketing: Bildbeschreibung", e.message); return 0; });
-    const user = "<profil>" + profileFor(b) + "</profil>\n<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
+    const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + "<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
       "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite)." : "nur dieses Format.") +
       (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 24000);
@@ -228,6 +233,7 @@ module.exports = function (C) {
         let size = 0; try { size = fs.statSync(path.join(dir, f)).size; } catch (e) {} out.push({ id, file: path.join(dir, f), kind: /mp4/i.test(m[1]) ? "clip" : "photo", own, name: f, size, product: pre === "p-" }); }); };
     add(path.join(C.ROOT || path.dirname(DIR), "mkt-assets", key), false); add(path.join(LIB, key), true);
     if (key === "druckshop") add(PLIB, false, "p-");
+    add(WEB.libDir(key), false, "w-");   // Fotos von der Website (täglich abgeglichen)
     return out;
   }
   // Produktfotos aus dem Druckshop holen (höchstens alle 12 Stunden): neue laden, nicht mehr angebotene entfernen.
@@ -332,10 +338,10 @@ module.exports = function (C) {
   const YT_CAT = { skikaiser: "20", huettengaudi: "20", kochdu: "26", valuero: "19", blitzdings: "24", kantineur: "22", druckshop: "26", "fs-creative": "28" };
   function utm(url, pf, p) { if (!/^https?:\/\//.test(String(url || ""))) return url || ""; try { const u = new URL(url); u.searchParams.set("utm_source", pf); u.searchParams.set("utm_medium", "social"); u.searchParams.set("utm_campaign", p.brand + "-" + String(p.scheduledAt || p.createdAt || "").slice(0, 7)); return u.toString(); } catch (e) { return url; } }
   // Links nur, wo sie klickbar sind (Facebook, LinkedIn, YouTube, Pinterest, Bluesky per Link-Markierung) – Instagram/TikTok/Threads nennen nur die Domain
-  function withLink(txt, pf, p) { const b = state().brands[p.brand] || {}; if (!b.url || ["facebook", "linkedin", "youtube"].indexOf(pf) < 0 || /https?:\/\//.test(txt)) return txt; return txt.replace(/(\n\n#[^\n]+)?$/, m0 => "\n\n👉 " + utm(b.url, pf, p) + m0); }
+  function withLink(txt, pf, p) { const b = state().brands[p.brand] || {}, url = p.link || b.url; if (!url || ["facebook", "linkedin", "youtube"].indexOf(pf) < 0 || /https?:\/\//.test(txt)) return txt; return txt.replace(/(\n\n#[^\n]+)?$/, m0 => "\n\n👉 " + utm(url, pf, p) + m0); }
   function mediaFor(p, pf) {
     const md = p.media || {}, file = f => path.join(MEDIA, f), b = state().brands[p.brand] || {};
-    return { format: p.format, caption: withLink(captionFor(p, pf), pf, p), captionSafe: withLink(captionFor(p, pf, 5), pf, p), title: titleFor(p, pf), tags: tagsOf(p, pf), link: utm(b.url || "", pf, p), alt: p.altText || "",
+    return { format: p.format, caption: withLink(captionFor(p, pf), pf, p), captionSafe: withLink(captionFor(p, pf, 5), pf, p), title: titleFor(p, pf), tags: tagsOf(p, pf), link: utm(p.link || b.url || "", pf, p), alt: p.altText || "", opts: p.opts || {},
       place: p.place && p.place.id ? p.place : null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], ytCategory: YT_CAT[p.brand] || "22", audioName: md.track ? md.track.name : "",
       images: (md.images || []).map((f, i) => ({ url: pubUrl(f), file: file(f), small: md.small && md.small[i] ? file(md.small[i]) : "" })),
       video: md.video ? { url: pubUrl(md.video), file: file(md.video) } : null, cover: md.cover ? { url: pubUrl(md.cover), file: file(md.cover) } : null };
@@ -475,11 +481,24 @@ module.exports = function (C) {
     return sendFile(req, res, path.join(MEDIA, f), type, "", { public: true });
   }
 
+  // Zusatz-Optionen je Plattform (nur bekannte Schlüssel, Werte geprüft)
+  function cleanOpts(o) {
+    const b = k => o[k] === true, en = (k, l) => l.indexOf(String(o[k] || "")) > -1 ? String(o[k]) : "", out = {};
+    ["igShareToFeed"].forEach(k => { if (o[k] === false) out[k] = false; });
+    ["igTrial", "igStory", "igCommentsOff", "fbStory", "liNoReshare", "ytKids", "ytAi"].forEach(k => { if (b(k)) out[k] = true; });
+    const to = parseInt(o.igThumbOffset, 10); if (to > 0 && to < 600000) out.igThumbOffset = to;
+    if (o.igAudioName) out.igAudioName = clip(o.igAudioName, 80);
+    const v = { thReplyControl: en("thReplyControl", ["everyone", "accounts_you_follow", "mentioned_only", "followers_only"]), liVisibility: en("liVisibility", ["PUBLIC", "CONNECTIONS"]), ytPrivacy: en("ytPrivacy", ["public", "unlisted", "private"]), bsReply: en("bsReply", ["nobody", "followers", "following", "mentioned"]), bsLang: en("bsLang", ["de", "en", "it", "fr", "nl"]) };
+    Object.keys(v).forEach(k => { if (v[k]) out[k] = v[k]; });
+    if (o.thTopic) out.thTopic = clip(String(o.thTopic).replace(/^#/, ""), 50);
+    if (o.pinLink && /^https:\/\/\S+$/.test(String(o.pinLink))) out.pinLink = clip(o.pinLink, 300);
+    return out;
+  }
   // ───────────── Darstellung fürs Cockpit ─────────────
   function postPublic(p) {
     const md = p.media || {};
     return { id: p.id, batch: p.batch, brand: p.brand, createdAt: p.createdAt, status: p.status, format: p.format, pillar: p.pillar, idea: p.idea, slides: p.slides, captions: p.captions, hashtags: p.hashtags, altText: p.altText,
-      platforms: p.platforms || [], scheduledAt: p.scheduledAt || "", approvedAt: p.approvedAt || "", postedAt: p.postedAt || "", results: p.results || {}, music: p.music || "", mood: p.mood || "", place: p.place || null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], track: (p.media || {}).track || null, lastError: p.lastError || "", source: p.source || "",
+      platforms: p.platforms || [], scheduledAt: p.scheduledAt || "", approvedAt: p.approvedAt || "", postedAt: p.postedAt || "", results: p.results || {}, music: p.music || "", mood: p.mood || "", place: p.place || null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], opts: p.opts || {}, link: p.link || "", can: P.CAN || {}, track: (p.media || {}).track || null, lastError: p.lastError || "", source: p.source || "",
       media: { status: md.status || "", error: md.error || "", images: (md.images || []).length, video: !!md.video, cover: !!md.cover, duration: md.duration || 0, rev: md.at || "" },
       preview: Object.fromEntries(PLATFORMS ? Object.keys(PLATFORMS).filter(pf => (p.platforms || []).indexOf(pf) > -1).map(pf => [pf, captionFor(p, pf)]) : []) };
   }
@@ -491,6 +510,7 @@ module.exports = function (C) {
       providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId, configId: k === "facebook" ? appCfg(k).configId || "" : undefined })),
       redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), igTags: igTags(), music: musicList().map(m => ({ id: m.id, name: m.name, mood: m.mood, license: m.license, seed: m.seed })), moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })),
       locations: Object.fromEntries(brandList().map(b => [b.key, b.locations || []])),
+      web: Object.fromEntries(brandList().map(b => { const w = WEB.info(b.key); return [b.key, w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "", url: w.url || b.url || "" } : { url: b.url || "" }]; })),
       plans: Object.fromEntries(brandList().map(b => [b.key, plan(b)])), ki: !!(C.KI && C.KI.marketingOn && C.KI.marketingOn()) };
   }
 
@@ -559,6 +579,8 @@ module.exports = function (C) {
         const users = v => [...new Set(String(Array.isArray(v) ? v.join(" ") : v || "").split(/[\s,;]+/).map(x => x.replace(/^@/, "").trim().toLowerCase()).filter(x => /^[a-z0-9._]{1,30}$/.test(x)))];
         if (pa.tags !== undefined) post.tags = users(pa.tags).slice(0, 20);
         if (pa.collabs !== undefined) post.collabs = users(pa.collabs).slice(0, 3);
+        if (pa.opts && typeof pa.opts === "object") post.opts = cleanOpts(pa.opts);
+        if (pa.link !== undefined) { const l = String(pa.link || "").trim(); if (l && !/^https:\/\/[^\s]+$/.test(l)) throw fail(400, "Link bitte mit https:// angeben."); post.link = clip(l, 300); }
         if (pa.place !== undefined) { const b0 = brand(post.brand); post.place = pa.place ? (b0.locations || []).find(l => l.id === String(pa.place)) || null : null; }
         if (rerender) { post.media = Object.assign({}, post.media, { status: "wartet" }); enqueue("post:" + post.id); }
         save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;
@@ -579,6 +601,15 @@ module.exports = function (C) {
         if (String(post.source || "").startsWith("gewinnspiel")) throw fail(400, "Gewinnspiel-Videos bitte direkt bearbeiten.");
         const ins = clip(pl.instruction, 2000); if (!ins) throw fail(400, "Bitte sag kurz, was anders sein soll.");
         return J(res, 200, { ok: true, post: postPublic(await rewrite(post, ins)) }), true;
+      }
+      if (op === "remote") {   // nach dem Posten: Text ändern / löschen / Kommentare ein-aus auf einer Plattform
+        const pf = String(pl.platform || ""), r = post.results && post.results[pf], act = String(pl.action || ""); if (!r || r.status !== "ok" || !r.id) throw fail(400, "Auf dieser Plattform ist nichts veröffentlicht.");
+        const ch = channelsOf(post.brand).find(c => c.platform === pf); if (!ch) throw fail(400, "Kein Konto verbunden."); const tok = await tokFor(ch), ref = { id: r.id, format: post.format };
+        if (act === "edit") { const text = clip(pl.text, 5000); if (!text) throw fail(400, "Text fehlt."); await P.editRemote(pf, ch, tok, ref, { text, title: clip(pl.title, 100) }); r.editedAt = nowIso(); r.text = text; }
+        else if (act === "delete") { if (pl.confirm !== true) throw fail(400, "Bestätigung fehlt."); await P.removeRemote(pf, ch, tok, ref); r.status = "gelöscht"; r.deletedAt = nowIso(); r.url = ""; }
+        else if (act === "comments") { await P.commentsRemote(pf, ch, tok, ref, !!pl.on); r.commentsOff = !pl.on; }
+        else throw fail(400, "Unbekannte Aktion");
+        save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;
       }
       if (op === "stop") { if (post.status === "geplant") post.status = "entwurf"; save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true; }
       if (op === "rerender") { post.media = Object.assign({}, post.media, { status: "wartet", rerender: rand() }); enqueue("post:" + post.id); save(); return J(res, 200, { ok: true, post: postPublic(post) }), true; }
@@ -624,6 +655,24 @@ module.exports = function (C) {
         const m = raw.match(/explore\/locations\/(\d{5,})/) || raw.match(/[?&]id=(\d{5,})/) || raw.match(/facebook\.com\/(?:pages\/[^/]+\/)?(\d{8,})/) || raw.match(/^(\d{5,})$/);
         if (!name) return; if (!m) throw fail(400, "Für „" + name + "“ fehlt eine Orts-ID – bitte den Instagram-Orts-Link (instagram.com/explore/locations/…) oder die Facebook-Seiten-ID einfügen."); out.push({ name, id: m[1] }); });
       b.locations = out; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true;
+    }
+    if (p === "/admin/api/mkt/website" && req.method === "POST") {   // Website jetzt neu einlesen
+      const pl = await body(req, 2000), b = brand(pl.brand); if (!b.url) throw fail(400, "Für diese Marke ist keine Website hinterlegt.");
+      await WEB.sync(b, true); await describeLibrary(b.key).catch(() => 0); return J(res, 200, Object.assign({ ok: true }, overview())), true;
+    }
+    if (p === "/admin/api/mkt/place-search" && req.method === "POST") {   // Ort suchen über das verbundene Facebook-Konto der Marke (Facebook-Seiten mit Adresse)
+      const pl = await body(req, 5000), b = brand(pl.brand), qy = clip(pl.q, 80); if (qy.length < 2) throw fail(400, "Bitte mindestens 2 Zeichen.");
+      const ch = channelsOf(b.key).find(c => c.platform === "facebook") || S().channels.find(c => c.platform === "facebook" && c.status !== "getrennt");
+      if (!ch) throw fail(400, "Für die Ortssuche bitte ein Facebook-Konto verbinden – oder den Instagram-Orts-Link einfügen.");
+      let list; try { list = await P.placeSearch(ch, await tokFor(ch), qy); } catch (e) { throw fail(400, "Facebook erlaubt die Ortssuche für diese App nicht (" + String(e.message || "").slice(0, 120) + ") – bitte den Instagram-Orts-Link einfügen."); }
+      return J(res, 200, { ok: true, places: list }), true;
+    }
+    if (p === "/admin/api/mkt/location-add" && req.method === "POST") {   // einen Ort zur Marke hinzufügen (aus Suche oder Link) – bestehende bleiben
+      const pl = await body(req, 5000), b = brand(pl.brand), name = clip(pl.name, 80), raw = String(pl.id || pl.link || "").trim();
+      const m = raw.match(/explore\/locations\/(\d{5,})/) || raw.match(/[?&]id=(\d{5,})/) || raw.match(/facebook\.com\/(?:pages\/[^/]+\/)?(\d{8,})/) || raw.match(/^(\d{5,})$/);
+      if (!name) throw fail(400, "Name fehlt."); if (!m) throw fail(400, "Orts-ID fehlt – Instagram-Orts-Link (instagram.com/explore/locations/…) oder Facebook-Seiten-ID einfügen.");
+      b.locations = (b.locations || []).filter(l => l.id !== m[1]).concat([{ name, id: m[1] }]).slice(-30); save(true);
+      return J(res, 200, Object.assign({ ok: true, place: { name, id: m[1] } }, overview())), true;
     }
     if (p === "/admin/api/mkt/plan" && req.method === "POST") {
       const pl = await body(req, 5000), b = brand(pl.brand);
@@ -671,7 +720,7 @@ module.exports = function (C) {
     }
     // Bildersammlung: ansehen, hochladen (Fotos als data-URI, Videos roh per PUT), entfernen (Grundstock wird nur ausgeblendet)
     if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand"));
-      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job; } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "" })) }), true; }
+      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job; } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "", web: x.id.indexOf("w-") === 0 })), web: (w => w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "" } : null)(WEB.info(b.key)), url: b.url || "" }), true; }
     if (p === "/admin/api/mkt/library-file" && req.method === "GET") {
       const b = brand(u.searchParams.get("brand")), it = library(b.key).find(x => x.id === String(u.searchParams.get("id") || "")); if (!it) throw fail(404, "Nicht gefunden");
       return sendFile(req, res, it.file, /\.mp4$/i.test(it.file) ? "video/mp4" : /\.png$/i.test(it.file) ? "image/png" : "image/jpeg", ""), true;

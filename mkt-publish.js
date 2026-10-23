@@ -180,7 +180,11 @@ module.exports = function (D) {
       // markierte Personen (auf dem Bild verteilt, beim Reel ohne Position) und Collab-Partner (gemeinsamer Beitrag, max. 3 – die Partner bestätigen in Instagram)
       const tags = full ? (m.tags || []).slice(0, 20) : [], col = full && m.collabs && m.collabs.length ? JSON.stringify(m.collabs.slice(0, 3)) : "";
       const ut = withPos => tags.length ? JSON.stringify(tags.map((u, i) => withPos ? { username: u, x: Math.round((0.2 + 0.6 * ((i % 4) / 3 || 0)) * 100) / 100, y: Math.round((0.75 - 0.12 * Math.floor(i / 4)) * 100) / 100 } : { username: u })) : "";
-      if (m.format === "reel") { const c = (await P(ig + "/media", { media_type: "REELS", video_url: m.video.url, caption: cap, share_to_feed: "true", cover_url: m.cover ? m.cover.url : "", location_id: loc, audio_name: full && m.audioName ? String(m.audioName).slice(0, 80) : "", user_tags: ut(false), collaborators: col })).id; await igWait(base, c, t, "Instagram"); return c; }
+      const o = m.opts || {};
+      if (m.format === "reel") { const c = (await P(ig + "/media", { media_type: "REELS", video_url: m.video.url, caption: cap, share_to_feed: o.igShareToFeed === false ? "false" : "true",
+        cover_url: m.cover && !(o.igThumbOffset > 0) ? m.cover.url : "", thumb_offset: o.igThumbOffset > 0 ? String(Math.round(o.igThumbOffset)) : "", location_id: loc,
+        audio_name: full ? String(o.igAudioName || m.audioName || "").slice(0, 80) : "", user_tags: ut(false), collaborators: col,
+        trial_params: full && o.igTrial ? JSON.stringify({ graduation_strategy: "SS_PERFORMANCE" }) : "" })).id; await igWait(base, c, t, "Instagram"); return c; }
       if (m.images.length > 1) {
         const kids = []; let first = true; for (const im of m.images.slice(0, 20)) { kids.push((await P(ig + "/media", { image_url: im.url, is_carousel_item: "true", alt_text: alt, user_tags: first ? ut(true) : "" })).id); first = false; }
         for (const k of kids) await igWait(base, k, t, "Instagram");
@@ -194,9 +198,29 @@ module.exports = function (D) {
     const pub = await P(ig + "/media_publish", { creation_id: creation });
     let url = ""; try { url = (await req("GET", base + "/" + GV + "/" + pub.id + q({ fields: "permalink", access_token: t }))).permalink || ""; } catch (e) {}
     if (m.firstComment) { try { await P(pub.id + "/comments", { message: m.firstComment }); } catch (e) { note = (note ? note + " " : "") + "Erster Kommentar ging nicht (" + String(e.message || "").slice(0, 80) + ")."; } }
+    const o = m.opts || {};
+    if (o.igCommentsOff) { try { await P(pub.id, { comment_enabled: "false" }); } catch (e) { note = (note ? note + " " : "") + "Kommentare abschalten ging nicht."; } }
+    if (o.igStory) {   // zusätzlich als Story (Bild: erstes Bild, Reel: Video)
+      try { const sc = (await P(ig + "/media", m.format === "reel" ? { media_type: "STORIES", video_url: m.video.url } : { media_type: "STORIES", image_url: (m.story || m.images[0]).url })).id; await igWait(base, sc, t, "Instagram"); await P(ig + "/media_publish", { creation_id: sc }); note = (note ? note + " " : "") + "Auch als Story geteilt."; }
+      catch (e) { note = (note ? note + " " : "") + "Story ging nicht (" + String(e.message || "").slice(0, 80) + ")."; } }
     return { id: pub.id, url, note };
   }
+  // Facebook-Story der Seite (Bild: unveröffentlichtes Foto → photo_stories, Video: video_stories wie Reels)
+  async function fbStory(pg, t, base, m) {
+    if (m.format === "reel") {
+      const st = await req("POST", base + "/" + pg + "/video_stories", { form: { upload_phase: "start", access_token: t } });
+      await req("POST", B.fbUpload + "/video-upload/" + GV + "/" + st.video_id, { headers: { Authorization: "OAuth " + t, file_url: m.video.url } });
+      await req("POST", base + "/" + pg + "/video_stories", { form: { upload_phase: "finish", video_id: st.video_id, access_token: t } }); return;
+    }
+    const ph = await req("POST", base + "/" + pg + "/photos", { form: { url: (m.story || m.images[0]).url, published: "false", access_token: t } });
+    await req("POST", base + "/" + pg + "/photo_stories", { form: { photo_id: ph.id, access_token: t } });
+  }
   async function facebook(ch, tok, m) {
+    const r = await facebook0(ch, tok, m);
+    if (m.opts && m.opts.fbStory) { try { await fbStory(ch.account.id, tok.access, B.fb + "/" + GV, m); r.note = (r.note ? r.note + " " : "") + "Auch als Story geteilt."; } catch (e) { r.note = (r.note ? r.note + " " : "") + "Story ging nicht (" + String(e.message || "").slice(0, 80) + ")."; } }
+    return r;
+  }
+  async function facebook0(ch, tok, m) {
     const pg = ch.account.id, t = tok.access, base = B.fb + "/" + GV;
     const link = async id => { try { return (await req("GET", base + "/" + id + q({ fields: "permalink_url", access_token: t }))).permalink_url || ""; } catch (e) { return ""; } };
     const fbComment = async id => { if (!m.firstComment) return {}; try { await req("POST", base + "/" + id + "/comments", { form: { message: m.firstComment, access_token: t } }); return {}; } catch (e) { return { note: "Erster Kommentar ging nicht – Facebook-Konto bitte einmal neu verbinden." }; } };
@@ -218,7 +242,8 @@ module.exports = function (D) {
     const pid = p.post_id || p.id; return Object.assign({ id: pid, url: (await link(pid)) || "https://www.facebook.com/" + pid }, await fbComment(pid));
   }
   async function threads(ch, tok, m) {
-    const uid = ch.account.id, t = tok.access, base = B.th + "/v1.0", P = (form) => req("POST", base + "/" + uid + "/threads", { form: Object.assign({ access_token: t }, form) });
+    const o = m.opts || {}, ex = Object.assign({}, /^(everyone|accounts_you_follow|mentioned_only|parent_post_author_only|followers_only)$/.test(o.thReplyControl || "") ? { reply_control: o.thReplyControl } : {}, o.thTopic ? { topic_tag: String(o.thTopic).replace(/^#/, "").slice(0, 50) } : {});
+    const uid = ch.account.id, t = tok.access, base = B.th + "/v1.0", P = (form) => req("POST", base + "/" + uid + "/threads", { form: Object.assign({ access_token: t }, form.is_carousel_item ? {} : ex, form) });
     let cr;
     if (m.format === "reel") cr = (await P({ media_type: "VIDEO", video_url: m.video.url, text: m.caption })).id;
     else if (m.images.length > 1) { const kids = []; for (const im of m.images.slice(0, 20)) kids.push((await P(Object.assign({ media_type: "IMAGE", image_url: im.url, is_carousel_item: "true" }, m.alt ? { alt_text: String(m.alt).slice(0, 1000) } : {}))).id); for (const k of kids) await igWait(B.th, k, t, "Threads", "v1.0"); cr = (await P({ media_type: "CAROUSEL", children: kids.join(","), text: m.caption })).id; }
@@ -248,14 +273,14 @@ module.exports = function (D) {
       for (const im of m.images.slice(0, 20)) { const init = await req("POST", B.li + "/rest/images?action=initializeUpload", { token: t, headers: H, json: { initializeUploadRequest: { owner } } }); await putFile(init.value.uploadUrl, fs.readFileSync(im.file)); ims.push(init.value.image); }
       content = ims.length > 1 ? { multiImage: { images: ims.map(id => ({ id, altText: m.alt || "" })) } } : { media: { id: ims[0], altText: m.alt || "" } };
     }
-    const r = await req("POST", B.li + "/rest/posts", { token: t, headers: H, withHeaders: true, json: { author: owner, commentary: liText(m.caption), visibility: "PUBLIC", distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] }, content, lifecycleState: "PUBLISHED", isReshareDisabledByAuthor: false } });
+    const r = await req("POST", B.li + "/rest/posts", { token: t, headers: H, withHeaders: true, json: { author: owner, commentary: liText(m.caption), visibility: (m.opts || {}).liVisibility === "CONNECTIONS" ? "CONNECTIONS" : "PUBLIC", distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] }, content, lifecycleState: "PUBLISHED", isReshareDisabledByAuthor: !!(m.opts || {}).liNoReshare } });
     const urn = r.headers.get("x-restli-id") || (r.j && r.j.id) || "";
     return { id: urn, url: urn ? "https://www.linkedin.com/feed/update/" + urn + "/" : "" };
   }
   async function youtube(ch, tok, m) {
     const size = fs.statSync(m.video.file).size;
     const tags = (m.tags || []).map(s => s.replace(/^#/, "")).slice(0, 15);
-    const meta = { snippet: { title: String(m.title || m.caption).slice(0, 100), description: String(m.caption).slice(0, 4900), tags, categoryId: m.ytCategory || "22", defaultLanguage: "de", defaultAudioLanguage: "zxx" }, status: { privacyStatus: "public", selfDeclaredMadeForKids: false, containsSyntheticMedia: false } };
+    const meta = { snippet: { title: String(m.title || m.caption).slice(0, 100), description: String(m.caption).slice(0, 4900), tags, categoryId: m.ytCategory || "22", defaultLanguage: "de", defaultAudioLanguage: "zxx" }, status: { privacyStatus: /^(public|unlisted|private)$/.test((m.opts || {}).ytPrivacy || "") ? m.opts.ytPrivacy : "public", selfDeclaredMadeForKids: !!(m.opts || {}).ytKids, containsSyntheticMedia: !!(m.opts || {}).ytAi } };
     const init = await req("POST", B.ytUpload + "/youtube/v3/videos?uploadType=resumable&part=snippet,status", { token: tok.access, json: meta, withHeaders: true, headers: { "X-Upload-Content-Type": "video/mp4", "X-Upload-Content-Length": String(size) } });
     const loc = init.headers.get("location"); if (!loc) throw pubErr("YouTube hat keine Upload-Adresse geliefert.");
     const r = await fetch(loc, { method: "PUT", headers: { Authorization: "Bearer " + tok.access, "Content-Type": "video/mp4", "Content-Length": String(size) }, body: fs.readFileSync(m.video.file), signal: AbortSignal.timeout(600000) });
@@ -278,6 +303,7 @@ module.exports = function (D) {
   }
   async function pinterest(ch, tok, m) {
     const ms = m.images.length > 1 ? { source_type: "multiple_image_urls", items: m.images.slice(0, 5).map(im => ({ url: im.url, title: String(m.title || "").slice(0, 100), description: String(m.caption).slice(0, 500), link: m.link || "" })) } : { source_type: "image_url", url: m.images[0].url };
+    m = Object.assign({}, m, (m.opts || {}).pinLink ? { link: m.opts.pinLink } : {});
     const p = await req("POST", B.pin + "/v5/pins", { token: tok.access, json: { board_id: ch.account.id, title: String(m.title || "").slice(0, 100), description: String(m.caption).slice(0, 500), link: m.link || undefined, alt_text: String(m.alt || "").slice(0, 500), media_source: ms } });
     return { id: p.id, url: "https://www.pinterest.com/pin/" + p.id + "/" };
   }
@@ -306,11 +332,47 @@ module.exports = function (D) {
       embed = { $type: "app.bsky.embed.images", images };
     }
     const text = m.caption;
-    const r = await req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: t, json: { repo: did, collection: "app.bsky.feed.post", record: { $type: "app.bsky.feed.post", text, createdAt: new Date().toISOString(), langs: ["de"], facets: bskyFacets(text), embed } } });
+    const o = m.opts || {}, lang = /^[a-z]{2}$/.test(o.bsLang || "") ? o.bsLang : "de";
+    const r = await req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: t, json: { repo: did, collection: "app.bsky.feed.post", record: { $type: "app.bsky.feed.post", text, createdAt: new Date().toISOString(), langs: [lang], facets: bskyFacets(text), embed } } });
     const rkey = String(r.uri || "").split("/").pop();
+    if (/^(nobody|followers|following|mentioned)$/.test(o.bsReply || "")) {   // Antworten einschränken (Threadgate, gleiche Kennung wie der Post)
+      const allow = o.bsReply === "nobody" ? [] : [{ $type: "app.bsky.feed.threadgate#" + ({ followers: "followerRule", following: "followingRule", mentioned: "mentionRule" })[o.bsReply] }];
+      try { await req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: t, json: { repo: did, collection: "app.bsky.feed.threadgate", rkey, record: { $type: "app.bsky.feed.threadgate", post: r.uri, allow, createdAt: new Date().toISOString() } } }); } catch (e) {}
+    }
     return { id: r.uri, url: "https://bsky.app/profile/" + (tok.handle || did) + "/post/" + rkey };
   }
   const RUN = { instagram, facebook, threads, linkedin, youtube, tiktok, pinterest, bluesky };
+  // ───────────── Nach dem Posten: Text ändern, löschen, Kommentare (nur was die Schnittstellen erlauben) ─────────────
+  const CAN = { edit: ["facebook", "linkedin", "youtube", "pinterest"], remove: ["facebook", "threads", "linkedin", "youtube", "pinterest", "bluesky"], comments: ["instagram"] };
+  async function editRemote(platform, ch, tok, ref, o) {   // ref = { id, format }, o = { text, title }
+    const t = tok.access, text = String(o.text || "");
+    if (platform === "facebook") { await req("POST", B.fb + "/" + GV + "/" + ref.id, { form: Object.assign(ref.format === "reel" ? { description: text } : { message: text }, { access_token: t }) }); return; }
+    if (platform === "linkedin") { await req("POST", B.li + "/rest/posts/" + encodeURIComponent(ref.id), { token: t, headers: Object.assign({ "X-RestLi-Method": "PARTIAL_UPDATE" }, LIH), json: { patch: { $set: { commentary: liText(text) } } } }); return; }
+    if (platform === "youtube") {
+      const cur = await req("GET", B.yt + "/youtube/v3/videos" + q({ part: "snippet", id: ref.id }), { token: t }), sn = ((cur.items || [])[0] || {}).snippet; if (!sn) throw pubErr("YouTube-Video nicht gefunden.");
+      await req("PUT", B.yt + "/youtube/v3/videos?part=snippet", { token: t, json: { id: ref.id, snippet: { title: String(o.title || sn.title).slice(0, 100), description: text.slice(0, 4900), categoryId: sn.categoryId, tags: sn.tags || [], defaultLanguage: sn.defaultLanguage } } }); return; }
+    if (platform === "pinterest") { await req("PATCH", B.pin + "/v5/pins/" + encodeURIComponent(ref.id), { token: t, json: Object.assign({ description: text.slice(0, 500) }, o.title ? { title: String(o.title).slice(0, 100) } : {}) }); return; }
+    throw pubErr("Diese Plattform erlaubt kein nachträgliches Ändern über die Schnittstelle.");
+  }
+  async function removeRemote(platform, ch, tok, ref) {
+    const t = tok.access;
+    if (platform === "facebook") return req("DELETE", B.fb + "/" + GV + "/" + ref.id + q({ access_token: t }));
+    if (platform === "threads") return req("DELETE", B.th + "/v1.0/" + ref.id + q({ access_token: t }));
+    if (platform === "linkedin") return req("DELETE", B.li + "/rest/posts/" + encodeURIComponent(ref.id), { token: t, headers: LIH, okStatus: true });
+    if (platform === "youtube") return req("DELETE", B.yt + "/youtube/v3/videos" + q({ id: ref.id }), { token: t });
+    if (platform === "pinterest") return req("DELETE", B.pin + "/v5/pins/" + encodeURIComponent(ref.id), { token: t });
+    if (platform === "bluesky") { const rkey = String(ref.id).split("/").pop(); return req("POST", B.bsky + "/xrpc/com.atproto.repo.deleteRecord", { token: t, json: { repo: ch.account.id, collection: "app.bsky.feed.post", rkey } }); }
+    throw pubErr("Diese Plattform erlaubt kein Löschen über die Schnittstelle – bitte in der App löschen.");
+  }
+  async function commentsRemote(platform, ch, tok, ref, on) {
+    if (platform !== "instagram") throw pubErr("Kommentare lassen sich nur bei Instagram über die Schnittstelle ein- und ausschalten.");
+    return req("POST", B.ig + "/" + GV + "/" + ref.id, { form: { comment_enabled: on ? "true" : "false", access_token: tok.access } });
+  }
+  // Orte suchen (Facebook-Seiten mit Adresse, nutzbar für Instagram und Facebook) – braucht ein verbundenes Facebook-Konto
+  async function placeSearch(ch, tok, query) {
+    const r = await req("GET", B.fb + "/" + GV + "/pages/search" + q({ q: String(query).slice(0, 80), fields: "id,name,location,link", limit: "15", access_token: tok.access }));
+    return (r.data || []).filter(x => x && x.id).map(x => ({ id: String(x.id), name: String(x.name || "").slice(0, 80), city: x.location ? [x.location.street, x.location.city, x.location.country].filter(Boolean).join(", ").slice(0, 120) : "", hasLoc: !!(x.location && (x.location.latitude || x.location.city)) }));
+  }
   async function publish(platform, ch, tok, m) { if (!RUN[platform]) throw pubErr("Plattform nicht unterstützt"); return RUN[platform](ch, tok, m); }
 
   // Instagram: eigene Beiträge und deren Kommentare (für die Gewinnspiel-Auslosung)
@@ -442,7 +504,7 @@ module.exports = function (D) {
     if (platform === "bluesky") return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.like", record: { $type: "app.bsky.feed.like", subject: { uri: ref.uri, cid: ref.cid }, createdAt: new Date().toISOString() } } });
     throw pubErr("Liken ist hier über die Schnittstelle nicht möglich.");
   }
-  return { PLATFORMS, PROVIDERS, authUrl, exchange, refresh, bskyLogin, publish, igMedia, igComments, inbox, inboxReply, inboxLike, _test: { liText, bskyFacets } };
+  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, _test: { liText, bskyFacets } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;
