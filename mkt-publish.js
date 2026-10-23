@@ -393,8 +393,11 @@ module.exports = function (D) {
   //   replies:[{from,text,at,mine}], can:{reply,like}, ref:{…für Antwort/Like} }], posts:[{id,text,url,thumb,at,likes,comments}], notes:[…] }
   const clipT = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
   const permNote = (e, what) => /permission|scope|not authorized|\(#(10|200|230|3|190)\)|OAuthException|nicht berechtigt|insufficient/i.test(String(e && e.message)) ? what + ": Berechtigung fehlt – Konto unter Kanäle neu verbinden." : what + ": " + String(e && e.message || e).slice(0, 160);
+  // Seitenweise laden (Graph-API „paging.next“), höchstens n Seiten
+  async function pages(url, n) { let out = [], u = url; for (let i = 0; u && i < n; i++) { const r = await req("GET", u); out = out.concat(r.data || []); u = r.paging && r.paging.next; } return out; }
+  const attTxt = x => { const a = x && x.attachments && x.attachments.data && x.attachments.data[0]; return a ? (/image|photo/i.test(a.mime_type || a.type || "") || a.image_data ? "📷 Foto" : /video/i.test(a.mime_type || a.type || "") || a.video_data ? "🎬 Video" : /audio/i.test(a.mime_type || "") ? "🎤 Sprachnachricht" : a.file_url ? "📎 Datei" : a.share || a.generic_template ? "🔗 Geteilter Beitrag" : "📎 Anhang") : "📎 Anhang"; };
   async function inbox(platform, ch, tok, o) {
-    o = o || {}; const nPosts = o.posts || 10;
+    o = o || {}; const nPosts = o.posts || 25;
     if (platform === "instagram") {
       const t = tok.access, me = String(ch.account.handle || "").replace(/^@/, "").toLowerCase(), out = { items: [], posts: [], notes: [] };
       const media = (await req("GET", B.ig + "/" + GV + "/" + ch.account.id + "/media" + q({ fields: "id,caption,timestamp,permalink,media_type,thumbnail_url,media_url,like_count,comments_count", limit: String(nPosts), access_token: t }))).data || [];
@@ -402,24 +405,24 @@ module.exports = function (D) {
         const post = { id: m.id, text: clipT(m.caption, 140), url: m.permalink || "", thumb: m.thumbnail_url || m.media_url || "", at: m.timestamp || "" };
         out.posts.push(Object.assign({ likes: m.like_count || 0, comments: m.comments_count || 0 }, post));
         if (!m.comments_count) continue;
-        const r = await req("GET", B.ig + "/" + GV + "/" + m.id + "/comments" + q({ fields: "id,username,text,timestamp,like_count,replies.limit(25){id,username,text,timestamp}", limit: "30", access_token: t }));
+        const r = await req("GET", B.ig + "/" + GV + "/" + m.id + "/comments" + q({ fields: "id,username,text,timestamp,like_count,replies.limit(50){id,username,text,timestamp}", limit: "100", access_token: t }));
         (r.data || []).forEach(c => out.items.push({ id: "ig:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", likes: c.like_count || 0,
           mine: String(c.username || "").toLowerCase() === me, post, replies: ((c.replies && c.replies.data) || []).map(x => ({ from: { name: x.username || "", handle: x.username ? "@" + x.username : "" }, text: x.text || "", at: x.timestamp || "", mine: String(x.username || "").toLowerCase() === me })).sort((a, b) => a.at < b.at ? -1 : 1),
           can: { reply: true, like: false }, ref: { comment: c.id } }));
       }
       try {
-        const cv = await req("GET", B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(15){id,from,to,message,created_time}", limit: "20", access_token: t }));
-        (cv.data || []).forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(ch.account.id) && String(p.username || "").toLowerCase() !== me) || {};
+        const cvAll = await pages(B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4);
+        cvAll.forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(ch.account.id) && String(p.username || "").toLowerCase() !== me) || {};
           if (!msgs.length) return; const last = msgs[msgs.length - 1];
-          out.items.push({ id: "ig:m:" + c.id, kind: "message", from: { name: other.username || other.name || "", handle: other.username ? "@" + other.username : "", id: other.id || "" }, text: last.message || "(Anhang)", at: last.created_time || c.updated_time || "",
-            mine: String(last.from && last.from.id) === String(ch.account.id), thread: msgs.map(x => ({ from: { name: (x.from && (x.from.username || x.from.name)) || "" }, text: x.message || "(Anhang)", at: x.created_time || "", mine: String(x.from && x.from.id) === String(ch.account.id) || String(x.from && x.from.username || "").toLowerCase() === me })),
+          out.items.push({ id: "ig:m:" + c.id, kind: "message", from: { name: other.username || other.name || "Instagram-Nutzer", handle: other.username ? "@" + other.username : "", id: other.id || "" }, text: last.message || attTxt(last), at: last.created_time || c.updated_time || "",
+            mine: String(last.from && last.from.id) === String(ch.account.id), thread: msgs.map(x => ({ id: x.id, from: { name: (x.from && (x.from.username || x.from.name)) || other.username || "" }, text: x.message || attTxt(x), at: x.created_time || "", mine: String(x.from && x.from.id) === String(ch.account.id) || String(x.from && x.from.username || "").toLowerCase() === me })),
             can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
       } catch (e) { out.notes.push(permNote(e, "Instagram-Nachrichten")); }
       return out;
     }
     if (platform === "facebook") {
       const t = tok.access, pid = ch.account.id, out = { items: [], posts: [], notes: [] };
-      const ps = (await req("GET", B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(25){id,message,from,created_time,like_count,parent}", limit: String(nPosts), access_token: t }))).data || [];
+      const ps = (await req("GET", B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(100){id,message,from,created_time,like_count,parent}", limit: String(nPosts), access_token: t }))).data || [];
       for (const p of ps) {
         const post = { id: p.id, text: clipT(p.message, 140), url: p.permalink_url || "", thumb: p.full_picture || "", at: p.created_time || "" }, cm = (p.comments && p.comments.data) || [];
         out.posts.push(Object.assign({ likes: (p.reactions && p.reactions.summary && p.reactions.summary.total_count) || 0, comments: (p.comments && p.comments.summary && p.comments.summary.total_count) || cm.length }, post));
@@ -429,11 +432,12 @@ module.exports = function (D) {
           can: { reply: true, like: true }, ref: { comment: c.id } }));
       }
       try {
-        const cv = await req("GET", B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", fields: "id,updated_time,participants,messages.limit(15){id,from,to,message,created_time}", limit: "20", access_token: t }));
-        (cv.data || []).forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(pid)) || {};
+        const seenCv = new Set(), cvAll = [];
+        for (const folder of ["inbox", "other", "pending", "page_done"]) { let l = []; try { l = await pages(B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", folder, fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4); } catch (e) { if (folder === "inbox") throw e; } l.forEach(c => { if (!seenCv.has(c.id)) { seenCv.add(c.id); cvAll.push(c); } }); }
+        cvAll.forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(pid)) || {};
           if (!msgs.length) return; const last = msgs[msgs.length - 1];
-          out.items.push({ id: "fb:m:" + c.id, kind: "message", from: { name: other.name || "", id: other.id || "" }, text: last.message || "(Anhang)", at: last.created_time || c.updated_time || "", mine: String(last.from && last.from.id) === String(pid),
-            thread: msgs.map(x => ({ from: { name: (x.from && x.from.name) || "" }, text: x.message || "(Anhang)", at: x.created_time || "", mine: String(x.from && x.from.id) === String(pid) })), can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
+          out.items.push({ id: "fb:m:" + c.id, kind: "message", from: { name: other.name || "Facebook-Nutzer", id: other.id || "" }, text: last.message || attTxt(last), at: last.created_time || c.updated_time || "", mine: String(last.from && last.from.id) === String(pid),
+            thread: msgs.map(x => ({ id: x.id, from: { name: (x.from && x.from.name) || other.name || "" }, text: x.message || attTxt(x), at: x.created_time || "", mine: String(x.from && x.from.id) === String(pid) })), can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
       } catch (e) { out.notes.push(permNote(e, "Messenger-Nachrichten")); }
       return out;
     }
@@ -477,6 +481,15 @@ module.exports = function (D) {
     }
     return { items: [], posts: [], notes: [(PLATFORMS[platform] || {}).label + ": Kommentare und Nachrichten gibt die Plattform über ihre Schnittstelle nicht heraus – bitte direkt in der App antworten."] };
   }
+  // Kommentar löschen (Instagram, Facebook) bzw. ausblenden (Threads, YouTube: ablehnen) – Direktnachrichten lassen sich über keine Schnittstelle löschen
+  async function inboxDelete(platform, ch, tok, ref, kind) {
+    const t = tok.access; if (kind === "message") throw pubErr("Nachrichten lassen sich über die Schnittstelle nicht löschen.");
+    if (platform === "instagram" && ref.comment) return req("DELETE", B.ig + "/" + GV + "/" + ref.comment + q({ access_token: t }));
+    if (platform === "facebook" && ref.comment) return req("DELETE", B.fb + "/" + GV + "/" + ref.comment + q({ access_token: t }));
+    if (platform === "threads" && ref.replyTo) return req("POST", B.th + "/v1.0/" + ref.replyTo + "/manage_reply", { form: { hide: "true", access_token: t } });
+    if (platform === "youtube" && ref.parent) return req("POST", B.yt + "/youtube/v3/comments/setModerationStatus" + q({ id: ref.parent, moderationStatus: "rejected" }), { token: t, okStatus: false });
+    throw pubErr("Löschen ist hier über die Schnittstelle nicht möglich.");
+  }
   async function inboxReply(platform, ch, tok, ref, text, kind) {
     const t = tok.access, msg = String(text || "").trim().slice(0, 2000); if (!msg) throw pubErr("Bitte einen Text eingeben.");
     if (platform === "instagram") {
@@ -504,7 +517,7 @@ module.exports = function (D) {
     if (platform === "bluesky") return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.like", record: { $type: "app.bsky.feed.like", subject: { uri: ref.uri, cid: ref.cid }, createdAt: new Date().toISOString() } } });
     throw pubErr("Liken ist hier über die Schnittstelle nicht möglich.");
   }
-  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, _test: { liText, bskyFacets } };
+  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete, _test: { liText, bskyFacets } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;

@@ -352,19 +352,27 @@ module.exports = function (C) {
   async function inboxOf(key, reload, markSeen) {
     let box = INBOX.get(key);
     if (!box || reload || Date.now() - box.at > 2 * 60e3) {
-      const chs = channelsOf(key), list = await Promise.all(chs.map(async ch => {
+      const chs = channelsOf(key).filter(c => ["instagram", "facebook", "threads", "bluesky", "youtube"].indexOf(c.platform) > -1), list = await Promise.all(chs.map(async ch => {   // LinkedIn/TikTok/Pinterest geben nichts heraus
         const base = { platform: ch.platform, label: PLATFORMS[ch.platform].label, account: ch.account && (ch.account.handle || ch.account.name) || "", items: [], posts: [], notes: [] };
         try { return Object.assign(base, await P.inbox(ch.platform, ch, await tokFor(ch))); } catch (e) { return Object.assign(base, { error: String(e.message || e).slice(0, 300) }); }
       }));
       box = { at: Date.now(), channels: list }; INBOX.set(key, box);
-      const st = S().mkt, seen = (st.inboxSeen = st.inboxSeen || {})[key] || "", n = list.reduce((a, c) => a + c.items.filter(i => !i.mine && i.at > seen && i.kind !== "like").length, 0);
-      (st.inboxNew = st.inboxNew || {})[key] = n; save();
+      unreadCount(key, box);
     }
-    const st = S().mkt, seen = (st.inboxSeen || {})[key] || "";
-    const out = { at: new Date(box.at).toISOString(), seen, channels: box.channels.map(c => Object.assign({}, c, { items: c.items.map(i => Object.assign(pubItem(i, c.platform), { isNew: i.isNew || (!i.mine && !!seen && i.at > seen) })).sort((a, b) => a.at < b.at ? 1 : -1) })) };
-    if (markSeen) { (st.inboxSeen = st.inboxSeen || {})[key] = nowIso(); (st.inboxNew = st.inboxNew || {})[key] = 0; save(); }
+    const hd = hiddenOf(key), out = { at: new Date(box.at).toISOString(), channels: box.channels.map(c => Object.assign({}, c, { items: c.items.filter(i => !isHidden(hd, i)).map(i => Object.assign(pubItem(i, c.platform), { isNew: isUnread(key, i) })).sort((a, b) => ms(a.at) < ms(b.at) ? 1 : -1) })) };
     return out;
   }
+  // Gelesen/ungelesen je Eintrag: ungelesen, bis Simon ihn öffnet („gelesen“) – neue Aktivität (spätere Nachricht) macht ihn wieder ungelesen.
+  // Start: alles vor dem ersten Laden gilt als gelesen. Ausgeblendet/gelöscht: verschwindet, bis wieder etwas Neues kommt.
+  const ms = t => Date.parse(t || 0) || 0;
+  function readOf(key) { const st = S().mkt; st.inboxRead = st.inboxRead || {}; st.inboxReadBase = st.inboxReadBase || {}; if (!st.inboxReadBase[key]) st.inboxReadBase[key] = ms((st.inboxSeen || {})[key]) || Date.now(); return (st.inboxRead[key] = st.inboxRead[key] || {}); }
+  function hiddenOf(key) { const st = S().mkt; st.inboxHidden = st.inboxHidden || {}; return (st.inboxHidden[key] = st.inboxHidden[key] || {}); }
+  const isHidden = (hd, i) => hd[i.id] && hd[i.id] >= ms(i.at);
+  function isUnread(key, i) { if (i.mine || i.kind === "like") return false; const rd = readOf(key), t = ms(i.at); return t > S().mkt.inboxReadBase[key] && !(rd[i.id] && rd[i.id] >= t); }
+  function unreadCount(key, box) { box = box || INBOX.get(key); if (!box) return; const hd = hiddenOf(key); (S().mkt.inboxNew = S().mkt.inboxNew || {})[key] = box.channels.reduce((a, c) => a + c.items.filter(i => !isHidden(hd, i) && isUnread(key, i)).length, 0); save(); }
+  function markRead(key, ids, all) { const rd = readOf(key), box = INBOX.get(key); if (!box) return;
+    box.channels.forEach(c => c.items.forEach(i => { if (all || ids.indexOf(i.id) > -1) rd[i.id] = Math.max(ms(i.at), Date.now()); }));
+    Object.keys(rd).forEach(k => { if (Date.now() - rd[k] > 120 * 864e5) delete rd[k]; }); unreadCount(key, box); }
   function inboxCounts() { const st = S().mkt; return Object.assign({}, st.inboxNew || {}); }
   async function tokFor(ch) {
     let tok = unseal(ch.tok); if (!tok) throw Object.assign(new Error("Zugang nicht lesbar – bitte neu verbinden."), { auth: true });
@@ -699,12 +707,20 @@ module.exports = function (C) {
     }
     if (p === "/admin/api/mkt/inbox/counts" && req.method === "GET") return J(res, 200, { ok: true, counts: inboxCounts() }), true;
     if (p === "/admin/api/mkt/inbox/act" && req.method === "POST") {
-      const pl = await body(req, 20000), b = brand(pl.brand), ch = channelsOf(b.key).find(c => c.platform === String(pl.platform || "")); if (!ch) throw fail(400, "Kanal nicht verbunden");
+      const pl = await body(req, 20000), b = brand(pl.brand);
+      if (pl.op === "read" || pl.op === "readall") { markRead(b.key, (Array.isArray(pl.ids) ? pl.ids : [pl.id]).map(String).slice(0, 500), pl.op === "readall"); return J(res, 200, { ok: true, counts: inboxCounts() }), true; }
+      const ch = channelsOf(b.key).find(c => c.platform === String(pl.platform || "")); if (!ch) throw fail(400, "Kanal nicht verbunden");
       const box = INBOX.get(b.key), it = box && box.channels.flatMap(c => c.platform === ch.platform ? c.items : []).find(x => x.id === String(pl.id || "")); if (!it) throw fail(404, "Eintrag nicht mehr aktuell – bitte neu laden");
       const tok = await tokFor(ch);
       if (pl.op === "like") { await P.inboxLike(ch.platform, ch, tok, it.ref); it.liked = true; }
+      else if (pl.op === "hide" || pl.op === "delete") {   // löschen: auf der Plattform (Kommentare); Nachrichten und sonst: nur im Cockpit ausblenden
+        if (pl.op === "delete") await P.inboxDelete(ch.platform, ch, tok, it.ref, it.kind);
+        hiddenOf(b.key)[it.id] = Math.max(ms(it.at), Date.now()); if (pl.op === "delete") box.channels.forEach(c => { c.items = c.items.filter(x => x.id !== it.id); });
+        unreadCount(b.key); return J(res, 200, { ok: true, removed: true }), true;
+      }
       else { await P.inboxReply(ch.platform, ch, tok, it.ref, pl.text, it.kind); const r = { from: { name: ch.account.name || "Du" }, text: clip(pl.text, 2000), at: nowIso(), mine: true };
         if (it.kind === "message") (it.thread = it.thread || []).push(r); else (it.replies = it.replies || []).push(r); it.answered = true; }
+      markRead(b.key, [it.id]);
       return J(res, 200, { ok: true, item: pubItem(it, ch.platform) }), true;
     }
     if (p === "/admin/api/mkt/ig-media" && req.method === "GET") {

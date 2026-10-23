@@ -252,7 +252,12 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const r = await call("GET", "/admin/api/mkt/inbox", null, "?brand=kochdu&seen=1"), j = r.json();
     assert.strictEqual(j.ok, true, j.error); assert.ok(j.channels.length >= 3, "Kanäle " + j.channels.length); j.channels.forEach(c => assert.ok(Array.isArray(c.items) && (c.error || c.notes)));
     assert.ok(!JSON.stringify(j).includes('"ref"'), "interne Antwort-Adressen bleiben am Server");
-    const c = (await call("GET", "/admin/api/mkt/inbox/counts")).json(); assert.strictEqual(c.counts.kochdu, 0);
+    const unread = j.channels.flatMap(c => c.items.filter(i => i.isNew)), c = (await call("GET", "/admin/api/mkt/inbox/counts")).json(); assert.strictEqual(c.counts.kochdu, unread.length, "ungelesen bis gelesen");
+    if (unread.length) { const r1 = (await call("POST", "/admin/api/mkt/inbox/act", { brand: "kochdu", op: "read", ids: [unread[0].id] })).json(); assert.strictEqual(r1.counts.kochdu, unread.length - 1); }
+    assert.strictEqual((await call("POST", "/admin/api/mkt/inbox/act", { brand: "kochdu", op: "readall" })).json().counts.kochdu, 0);
+    const it0 = j.channels.flatMap(c => c.items.map(i => Object.assign({ pf: c.platform }, i))).find(i => i.kind === "message");
+    if (it0) { assert.strictEqual((await call("POST", "/admin/api/mkt/inbox/act", { brand: "kochdu", platform: it0.pf, id: it0.id, op: "hide" })).json().removed, true);
+      assert.ok(!(await call("GET", "/admin/api/mkt/inbox", null, "?brand=kochdu")).json().channels.some(c => c.items.some(i => i.id === it0.id)), "ausgeblendet"); }
     assert.strictEqual((await call("POST", "/admin/api/mkt/inbox/act", { brand: "kochdu", platform: "instagram", id: "gibtsnicht", op: "reply", text: "x" })).code, 404);
   });
   await t("Druckshop: Produktfotos aus dem Shop in der Bildersammlung (mit Beschreibung, ausblendbar, verschwinden mit dem Produkt)", async () => {

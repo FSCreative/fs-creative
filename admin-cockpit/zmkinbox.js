@@ -1,6 +1,6 @@
 /* Marketing › Posteingang (Server: mkt-posts.js /admin/api/mkt/inbox, Plattformen: mkt-publish.js inbox/inboxReply/inboxLike).
    Je Marke (Unternehmensbereich) einzeln öffnen: Kommentare mit Antworten, Direktnachrichten und Likes aller verbundenen Kanäle –
-   direkt antworten (Instagram, Facebook, Threads, Bluesky, YouTube) und liken (Facebook-Kommentare, Bluesky). Neu = seit dem letzten Öffnen der Marke. */
+   direkt antworten (Instagram, Facebook, Threads, Bluesky, YouTube) und liken (Facebook-Kommentare, Bluesky). Ungelesen bleibt ein Eintrag, bis er gelesen (angeklickt/„Gelesen“) wird; Kommentare löschen, Nachrichten ausblenden. */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, UI=F.UI;
@@ -39,7 +39,10 @@ F.css(
 '.mi-pc img,.mi-pc .ph{width:100%;aspect-ratio:1;object-fit:cover;background:var(--ground-2,#eee)}'+
 '.mi-pc div{padding:7px 9px;font-size:12px;display:grid;gap:3px}'+
 '.mi-pc .k{display:flex;gap:10px;font-weight:700;font-size:13px}'+
-'.mi-note{font-size:12.5px;color:var(--ink-3)}'
+'.mi-note{font-size:12.5px;color:var(--ink-3)}'+
+'.mi-it.new{border-left:4px solid var(--accent,#6645ef)}.mi-it.new .mi-h b{font-weight:800}'+
+'.mi-msg .w{display:block;font-size:11.5px;font-weight:700;opacity:.75;margin-bottom:2px}'+
+'.mi-acts2{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}'
 );
 
 function api(path,body){ return F.api(path,body?{body:body}:undefined); }
@@ -49,7 +52,7 @@ function ago(iso){ var t=Date.parse(iso); if(!t) return ""; var m=Math.round((Da
   var d=Math.round(h/24); return d<7?"vor "+d+(d===1?" Tag":" Tagen"):new Date(t).toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"}); }
 function loadCounts(){ api("/admin/api/mkt/inbox/counts").then(function(j){ if(j&&j.ok){ CNT=j.counts; if(F.current==="mkt"&&UI.mktTab==="posteingang") paint(); } }); }
 function load(key,reload){ if(!key||LOADING[key]) return; LOADING[key]=true; paint();
-  api("/admin/api/mkt/inbox?brand="+encodeURIComponent(key)+"&seen=1"+(reload?"&reload=1":"")).then(function(j){ LOADING[key]=false; BOX[key]=j&&j.ok?j:{error:(j&&j.error)||"Fehler beim Laden",channels:[]}; if(CNT) CNT[key]=0; paint(); })
+  api("/admin/api/mkt/inbox?brand="+encodeURIComponent(key)+"&seen=1"+(reload?"&reload=1":"")).then(function(j){ LOADING[key]=false; BOX[key]=j&&j.ok?j:{error:(j&&j.error)||"Fehler beim Laden",channels:[]}; loadCounts(); paint(); })
     .catch(function(){ LOADING[key]=false; BOX[key]={error:"Keine Verbindung zum Server",channels:[]}; paint(); }); }
 function paint(){ var el=document.getElementById("miRoot"); if(el) el.innerHTML=body(); }
 
@@ -58,13 +61,18 @@ function itemHtml(it,key){
   var post=it.post&&(it.post.text||it.post.thumb)?'<a class="mi-post" href="'+esc(it.post.url||"#")+'" target="_blank" rel="noopener">'+(it.post.thumb?'<img src="'+esc(it.post.thumb)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'')+'<span>zu: '+esc(it.post.text||"Beitrag")+'</span></a>':'';
   var id=esc(key+"|"+it.platform+"|"+it.id), busy=BUSY[it.id];
   if(it.kind==="like") return '<div class="mi-it"><div class="mi-h">'+pf+F.svg("mheart")+' <b>'+who+'</b> '+esc(it.text)+' <span>· '+ago(it.at)+'</span></div>'+post+'</div>';
-  var main=it.kind==="message"?'<div class="mi-thread">'+(it.thread||[]).slice(-8).map(function(m){ return '<div class="mi-msg'+(m.mine?" me":"")+'">'+esc(m.text)+'<i>'+ago(m.at)+'</i></div>'; }).join("")+'</div>'
+  var th=it.thread||[], full=OPEN[it.id], shown=full?th:th.slice(-10), msg=function(m){ return '<div class="mi-msg'+(m.mine?" me":"")+'"><span class="w">'+esc(m.mine?"Du":(m.from&&m.from.name)||"")+'</span>'+esc(m.text)+'<i>'+when(m.at)+'</i></div>'; };
+  var main=it.kind==="message"?'<div class="mi-thread">'+(th.length>shown.length?'<button type="button" class="link small" data-act="mimore:'+id+'">'+(th.length-shown.length)+' ältere Nachrichten anzeigen</button>':'')+shown.map(msg).join("")+'</div>'
     :'<div class="mi-t">'+esc(it.text)+'</div>'+(it.replies&&it.replies.length?'<div class="mi-rs">'+it.replies.map(function(r){ return '<div class="mi-r'+(r.mine?" me":"")+'"><b>'+esc(r.mine?"Du":r.from&&r.from.name||"")+'</b> '+esc(r.text)+' <span class="muted small">'+ago(r.at)+'</span></div>'; }).join("")+'</div>':'');
   var acts=(it.can&&it.can.reply?'<div class="mi-rep"><textarea class="f" rows="1" data-mirep="'+id+'" placeholder="'+(it.kind==="message"?"Nachricht schreiben …":"Antworten …")+'"></textarea><button type="button" class="btn primary sm" data-act="misend:'+id+'"'+(busy?' disabled':'')+'>'+(busy==="send"?"Sende …":"Senden")+'</button>'+
     (it.can.like?'<button type="button" class="btn sm" data-act="milike:'+id+'"'+(it.liked||busy?' disabled':'')+'>'+F.svg("mheart")+(it.liked?' Geliked':' Liken')+'</button>':'')+'</div>':'');
   var tag=it.kind==="message"?'Nachricht':it.kind==="mention"?'Erwähnung':'Kommentar';
-  return '<div class="mi-it'+(it.isNew?" new":"")+'"><div class="mi-h">'+pf+'<b>'+who+'</b><span>'+tag+' · '+ago(it.at)+'</span>'+(it.isNew?'<span class="tag info">neu</span>':'')+(it.answered||it.replies&&it.replies.some(function(r){ return r.mine; })||it.kind==="message"&&it.mine?'<span class="tag ok">beantwortet</span>':'')+(it.likes?'<span class="muted small">♥ '+it.likes+'</span>':'')+'</div>'+main+post+acts+'</div>';
+  var canDel=it.kind!=="message"&&["instagram","facebook","threads","youtube"].indexOf(it.platform)>-1;
+  acts+='<div class="mi-acts2">'+(it.isNew?'<button type="button" class="btn sm" data-act="miread:'+id+'">Gelesen</button>':'')+(canDel?'<button type="button" class="btn sm danger" data-act="midel:'+id+'">'+(it.platform==="threads"?"Ausblenden (Threads)":it.platform==="youtube"?"Ablehnen (YouTube)":"Löschen")+'</button>':'')+'<button type="button" class="btn sm" data-act="mihide:'+id+'" title="Nur im Cockpit ausblenden – kommt wieder, wenn etwas Neues dazukommt">Ausblenden</button></div>';
+  return '<div class="mi-it'+(it.isNew?" new":"")+'" data-miit="'+id+'"><div class="mi-h">'+pf+'<b>'+who+'</b><span>'+tag+' · '+ago(it.at)+'</span>'+(it.isNew?'<span class="tag info">ungelesen</span>':'')+(it.answered||it.replies&&it.replies.some(function(r){ return r.mine; })||it.kind==="message"&&it.mine?'<span class="tag ok">beantwortet</span>':'')+(it.likes?'<span class="muted small">♥ '+it.likes+'</span>':'')+'</div>'+main+post+acts+'</div>';
 }
+var OPEN={};
+function when(iso){ var t=Date.parse(iso); if(!t) return ""; return new Date(t).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
 function body(){
   var bs=brands(); if(!bs.length) return '<div class="muted" style="padding:20px">Lade …</div>';
   var key=UI.mkInBrand; if(!bs.some(function(b){ return b.key===key; })){ var w=bs.find(function(b){ return b.chs.length; })||bs[0]; key=UI.mkInBrand=w.key; }
@@ -77,10 +85,11 @@ function body(){
   d.channels.forEach(function(c){ c.items.forEach(function(i){ i.pfLabel=c.label; items.push(i); }); (c.posts||[]).forEach(function(p){ p.pfLabel=c.label; posts.push(p); });
     if(c.error) notes.push(c.label+": "+c.error); (c.notes||[]).forEach(function(n){ notes.push(n); }); });
   items.sort(function(a,b){ return (b.isNew?1:0)-(a.isNew?1:0)||(a.at<b.at?1:-1); });
-  var cnt={alle:items.filter(function(i){ return i.kind!=="like"; }).length,kommentare:items.filter(function(i){ return i.kind==="comment"||i.kind==="mention"; }).length,nachrichten:items.filter(function(i){ return i.kind==="message"; }).length,likes:posts.length+items.filter(function(i){ return i.kind==="like"; }).length};
-  var k=UI.mkInKind, kinds=[["alle","Alle"],["kommentare","Kommentare"],["nachrichten","Nachrichten"],["likes","Likes"]];
+  var unread=items.filter(function(i){ return i.isNew; }).length;
+  var cnt={ungelesen:unread,alle:items.filter(function(i){ return i.kind!=="like"; }).length,kommentare:items.filter(function(i){ return i.kind==="comment"||i.kind==="mention"; }).length,nachrichten:items.filter(function(i){ return i.kind==="message"; }).length,likes:posts.length+items.filter(function(i){ return i.kind==="like"; }).length};
+  var k=UI.mkInKind, kinds=[["alle","Alle"],["ungelesen","Ungelesen"],["kommentare","Kommentare"],["nachrichten","Nachrichten"],["likes","Likes"]];
   var bar='<div class="mi-bar"><div class="mp-pf">'+kinds.map(function(x){ return '<button type="button" data-act="mikind:'+x[0]+'" aria-pressed="'+(k===x[0])+'">'+x[1]+' '+(cnt[x[0]]||0)+'</button>'; }).join("")+'</div>'+
-    '<span class="muted small">Stand '+ago(d.at)+'</span><button type="button" class="btn sm" data-act="mireload"'+(LOADING[key]?' disabled':'')+'>'+(LOADING[key]?"Lade …":"Aktualisieren")+'</button></div>';
+    (unread?'<button type="button" class="btn sm" data-act="mireadall">Alle als gelesen markieren</button>':'')+'<span class="muted small">Stand '+ago(d.at)+'</span><button type="button" class="btn sm" data-act="mireload"'+(LOADING[key]?' disabled':'')+'>'+(LOADING[key]?"Lade …":"Aktualisieren")+'</button></div>';
   var list;
   if(k==="likes"){
     var lk=items.filter(function(i){ return i.kind==="like"; });
@@ -88,7 +97,7 @@ function body(){
       (lk.length?'<div class="mi-list" style="margin-top:12px">'+lk.map(function(i){ return itemHtml(i,key); }).join("")+'</div>':'')+
       '<p class="mi-note">Instagram und Facebook zeigen über ihre Schnittstelle nur die Anzahl der Likes, nicht wer geliked hat. Bluesky liefert die Namen.</p>';
   } else {
-    var sel=items.filter(function(i){ return k==="alle"?i.kind!=="like":k==="nachrichten"?i.kind==="message":(i.kind==="comment"||i.kind==="mention"); });
+    var sel=items.filter(function(i){ return k==="alle"?i.kind!=="like":k==="ungelesen"?i.isNew:k==="nachrichten"?i.kind==="message":(i.kind==="comment"||i.kind==="mention"); });
     list=sel.length?'<div class="mi-list">'+sel.map(function(i){ return itemHtml(i,key); }).join("")+'</div>':'<div class="panel empty">Nichts da – keine '+(k==="nachrichten"?"Nachrichten":"Kommentare")+' in den letzten Beiträgen.</div>';
   }
   return chips+bar+(notes.length?'<div class="notice" style="margin-bottom:12px"><span>'+notes.map(esc).join("<br>")+'</span></div>':'')+list;
@@ -104,6 +113,17 @@ F.action("misend",function(a){ var o=itemOf(a); if(!o) return; var ta=document.q
     var i=o.c.items.indexOf(o.it); o.c.items[i]=Object.assign(j.item,{isNew:false}); paint(); F.toast("Gesendet"); }); });
 F.action("milike",function(a){ var o=itemOf(a); if(!o) return; BUSY[o.it.id]="like"; paint();
   api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"like"}).then(function(j){ delete BUSY[o.it.id]; if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Liken fehlgeschlagen",true); } o.it.liked=true; paint(); }); });
+function setCnt(j){ if(j&&j.counts){ CNT=j.counts; } }
+function readItems(key,ids,all){ var d=BOX[key]; if(!d) return; d.channels.forEach(function(c){ c.items.forEach(function(i){ if(all||ids.indexOf(i.id)>-1) i.isNew=false; }); }); api("/admin/api/mkt/inbox/act",{brand:key,op:all?"readall":"read",ids:ids}).then(setCnt).then(paint); paint(); }
+F.action("miread",function(a){ var o=itemOf(a); if(o) readItems(o.key,[o.it.id]); });
+F.action("mireadall",function(){ readItems(UI.mkInBrand,[],true); });
+F.action("mimore",function(a){ var o=itemOf(a); if(!o) return; OPEN[o.it.id]=1; paint(); });
+var gone=function(o){ o.c.items=o.c.items.filter(function(i){ return i.id!==o.it.id; }); paint(); };
+F.action("mihide",function(a){ var o=itemOf(a); if(!o) return; api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"hide"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); gone(o); loadCounts(); F.toast("Ausgeblendet"); }); });
+F.action("midel",function(a){ var o=itemOf(a); if(!o) return; F.confirm("Diesen Kommentar von "+((o.it.from&&o.it.from.name)||"")+" auf "+o.it.pfLabel+(o.platform==="threads"?" ausblenden":o.platform==="youtube"?" ablehnen (wird ausgeblendet)":" endgültig löschen")+"?",o.platform==="instagram"||o.platform==="facebook"?"Löschen":"Ausblenden",function(){
+  api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"delete"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Löschen fehlgeschlagen",true); gone(o); loadCounts(); F.toast("Gelöscht"); }); },true); });
+// Klick in einen ungelesenen Eintrag (Text lesen) markiert ihn als gelesen
+document.addEventListener("click",function(e){ var el=e.target.closest&&e.target.closest(".mi-it.new[data-miit]"); if(!el||e.target.closest("button,a,textarea")) return; var o=itemOf(el.getAttribute("data-miit")); if(o) readItems(o.key,[o.it.id]); });
 F.listen("keydown","[data-mirep]",function(el,e){ if(e&&e.key==="Enter"&&(e.metaKey||e.ctrlKey)){ var b=el.parentNode.querySelector('[data-act^="misend:"]'); if(b) b.click(); } });
 
 F.mktTab({id:"posteingang",label:"Posteingang",order:1.5,sub:"Kommentare, Nachrichten und Likes je Unternehmensbereich – direkt antworten",
