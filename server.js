@@ -3356,7 +3356,8 @@ async function handleAdmin(req, res, u, p) {
     if (p === "/admin/api/blitz/bookings") r = await blitzCockpit("POST", "/bookings", pl);
     else if (p === "/admin/api/blitz/booking-status") {
       const id = String(pl.id || ""); if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_id" }), TYPES[".json"]);
-      r = await blitzCockpit("PATCH", "/bookings/" + encodeURIComponent(id), { status: pl.status || undefined, paymentStatus: pl.paymentStatus || undefined, allowOverlap: !!pl.allowOverlap });
+      const tc = pl.totalCents != null ? Math.round(+pl.totalCents) : undefined; if (tc !== undefined && !(tc >= 0 && tc <= 1e7)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_amount" }), TYPES[".json"]);
+      r = await blitzCockpit("PATCH", "/bookings/" + encodeURIComponent(id), { status: pl.status || undefined, paymentStatus: pl.paymentStatus || undefined, totalCents: tc, allowOverlap: !!pl.allowOverlap });   // totalCents: Betrag an Sammelrechnung angleichen
     }
     else if (p === "/admin/api/blitz/block") r = await blitzCockpit("POST", "/blocked", { date: pl.date, type: pl.type || null, reason: pl.reason || "" });
     else if (p === "/admin/api/blitz/unblock") {
