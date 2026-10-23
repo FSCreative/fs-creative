@@ -175,18 +175,22 @@ F.action("bkunblock",function(id){
 
 /* ---------- Details ---------- */
 function addr(b){ return [b.billingStreet,[b.billingZip,b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join(", "); }
+// Verrechnung laut Abgleich (Geld › Verrechnung): auch Sammelrechnungen, z. B. alle Oktober-Roadshows → eine Rechnung an Montafon Tourismus
+function invOf(b){ var a=F.D&&F.D.abgleich, it=a&&(a.items||[]).find(function(x){ return x.key==="blitz:"+b.id; }); return it&&it.last&&it.last.nr?it.last:null; }
+function invTxt(b){ var l=invOf(b); if(!l) return ""; var it=(F.D.abgleich.items||[]).find(function(x){ return x.key==="blitz:"+b.id; });
+  return l.nr+(/Sammelrechnung/.test(it.sub||"")?" (Sammelrechnung)":"")+" · "+(l.label||l.state||"")+(l.open>0.005&&l.state!=="bezahlt"?" · offen "+String(l.open.toFixed(2)).replace(".",",")+" €":""); }
 function showBooking(b,fresh){
   var range=de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):"");
   var rows=[["Termin",range],["Paket",b.package.name],["Status",(ST_LABEL[b.status]||b.status)+(b.blocking?"":" (belegt keine Box)")],["Zahlung",(b.paymentStatus==="PAID"?"bezahlt":b.paymentStatus==="REFUNDED"?"erstattet":"offen")+(b.paymentMethod==="INVOICE"?" · auf Rechnung":" · online")],
     ["Betrag",eur(c2e(b.totalCents))],["Kunde",b.customerName+(b.companyName?" ("+b.companyName+")":"")],["E-Mail",b.customerEmail],["Telefon",b.customerPhone],["Ort",b.eventLocation],["Adresse",addr(b)],
-    ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],["Rechnung",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":""]].filter(function(r){ return r[1]; });
-  var canInv=!!F.D.sev&&!b.sevdeskInvoiceId&&+b.totalCents>0;
+    ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],["Rechnung",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":invTxt(b)]].filter(function(r){ return r[1]; });
+  var abl=invOf(b), canInv=!!F.D.sev&&!b.sevdeskInvoiceId&&!abl&&+b.totalCents>0;
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+(fresh?"Buchung angelegt · ":"")+esc(b.customerName)+'</h2>'+F.btnClose()+'</div>'+
     (fresh?'<p class="muted" style="margin:6px 0 0">Gespeichert in Blitzdings ('+esc(b.reference)+'). Steht damit im Blitzdings-Admin, im Google-Kalender von Blitzdings, hier im Kalender und unter Heute.</p>':'')+
     '<dl class="bk-dl" style="margin:12px 0">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; }).join("")+'</dl>'+
     '<div class="sec-t">Weiter eintragen (optional)</div><div class="row wrap" style="gap:8px">'+
       '<button class="btn" data-act="bkical:'+esc(b.id)+'">In iCloud-Kalender eintragen</button>'+
-      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(b.sevdeskInvoiceId?"Blitzdings hat bereits eine Rechnung erstellt":"Buchhaltung ist gerade nicht erreichbar")+'"')+'>Rechnung vorbereiten</button>'+
+      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(b.sevdeskInvoiceId?"Blitzdings hat bereits eine Rechnung erstellt":abl?"Schon verrechnet mit "+(abl.nr||"Rechnung"):"Buchhaltung ist gerade nicht erreichbar")+'"')+'>Rechnung vorbereiten</button>'+
       '<button class="btn" data-act="bkinv:'+esc(b.id)+'~dep"'+(canInv?'':' disabled')+'>Anzahlung 50 % vorbereiten</button>'+
     '</div>'+
     '<div class="foot"><span class="row">'+(b.status!=="CANCELLED"?'<button class="btn danger" data-act="bkcancel:'+esc(b.id)+'">Stornieren</button>':'<button class="btn" data-act="bkrestore:'+esc(b.id)+'">Storno aufheben</button>')+
