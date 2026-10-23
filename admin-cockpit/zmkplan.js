@@ -152,7 +152,7 @@ function planHtml(){
     var chs=(PL.channels||[]).filter(function(c){ return c.brand===cur; }), plan=PL.plans&&PL.plans[cur]||{perWeek:3,times:[]};
     gen='<section class="panel"><div class="panel-h"><h2>Neue Posts für '+esc(b.name)+'</h2><span class="muted small">KI schreibt Texte und Hashtags, der Server macht Bilder und Reels</span></div><div class="mp-gen">'+
       (!PL.ki?'<div class="notice"><span>Die KI-Funktion „Marketing“ ist nicht aktiv (Einstellungen → KI) oder das Monatslimit ist erreicht.</span></div>':'')+
-      '<div class="mp-genrow"><label>Anzahl <select class="f" data-mpgen="count">'+[3,4,5,7,10].map(function(n){ return '<option'+(+GO.count===n?' selected':'')+'>'+n+'</option>'; }).join("")+'</select></label>'+
+      '<div class="mp-genrow"><label>Anzahl <select class="f" data-mpgen="count">'+[1,2,3,4,5,7,10].map(function(n){ return '<option'+(+GO.count===n?' selected':'')+'>'+n+'</option>'; }).join("")+'</select></label>'+
       '<label><input type="checkbox" data-mpgen="reel"'+(GO.reel!==false?' checked':'')+'> Reels</label><label><input type="checkbox" data-mpgen="karussell"'+(GO.karussell!==false?' checked':'')+'> Karussells</label><label><input type="checkbox" data-mpgen="bild"'+(GO.bild!==false?' checked':'')+'> Einzelbilder</label></div>'+
       '<label class="fl">Deine Vorgaben für diesen Plan (optional)<textarea class="f mp-vorg" data-mpgen="instructions" maxlength="2000" rows="3" placeholder="z. B. „Wintersaison startet – Fokus auf Lieferung bei Schlechtwetter, locker in Mundart, ein Post mit Frage an die Community“">'+esc(GO.instructions!=null?GO.instructions:(GO.topic||""))+'</textarea></label>'+
       '<div class="mp-qk">'+QUICK.map(function(q){ return '<button type="button" data-act="mpquick:'+esc(q)+'">+ '+esc(q)+'</button>'; }).join("")+'</div>'+
@@ -181,7 +181,7 @@ F.action("mpgen",function(){
   if(GEN) return; GEN=true; F.render();
   api("/admin/api/mkt/generate",{brand:UI.mkBrand,count:+GO.count||4,formats:{reel:GO.reel!==false,karussell:GO.karussell!==false,bild:GO.bild!==false},instructions:GO.instructions!=null?GO.instructions:(GO.topic||"")}).then(function(j){
     GEN=false; if(!j||!j.ok){ F.toast((j&&j.error)||"Generieren fehlgeschlagen",true); F.render(); return; }
-    PL.posts=j.posts.concat(PL.posts||[]); F.toast(j.posts.length+" Posts erstellt"+(j.eur?" (KI-Kosten ca. "+String(j.eur.toFixed(2)).replace(".",",")+" €)":"")+" – Bilder und Videos werden gerade gemacht"); F.render(); schedulePoll();
+    PL.posts=j.posts.concat(PL.posts||[]); F.toast(j.posts.length+(j.posts.length===1?" Post erstellt":" Posts erstellt")+(j.eur?" (KI-Kosten ca. "+String(j.eur.toFixed(2)).replace(".",",")+" €)":"")+" – Bilder und Videos werden gerade gemacht"); F.render(); schedulePoll();
   }).catch(function(){ GEN=false; F.render(); F.toast("Keine Verbindung zum Server",true); });
 });
 F.action("mppf",function(a){ var x=a.split("|"), p=PL.posts.find(function(q){ return q.id===x[0]; }); if(!p) return; var on=p.platforms.indexOf(x[1])>-1, list=on?p.platforms.filter(function(k){ return k!==x[1]; }):p.platforms.concat([x[1]]); postOp(p.id,"update",{patch:{platforms:list}}); });

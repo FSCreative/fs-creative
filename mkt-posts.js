@@ -158,7 +158,7 @@ module.exports = function (C) {
     await webFresh(b);
     const descEur = await describeLibrary(b.key).catch(e => { console.error("marketing: Bildbeschreibung", e.message); return 0; });
     const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + "<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
-      "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite)." : "nur dieses Format.") +
+      "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? (count === 1 ? "wähle das Format, das zum Thema am besten passt (Reel oder Karussell bringen meist die meiste Reichweite)." : "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite).") : "nur dieses Format.") +
       (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 24000);
     const list = (r.json && r.json.posts || []).slice(0, count), out = [], batch = newId("b");
@@ -260,6 +260,40 @@ module.exports = function (C) {
     })().finally(() => { printSync = null; });
     return printSync;
   }
+  // Envato-Import: ZIP (auch ZIP in ZIP) → Fotos (JPG/PNG/WebP, auf max. 2400 px) und Hochformat-/Querformat-Videos (MP4/MOV → MP4) in die Sammlung,
+  // Sounds (MP3/WAV/M4A/AIFF/OGG) in die Musik, Lizenztext (TXT/PDF/HTML im ZIP) samt Projektname als Nachweis je Datei.
+  async function envatoImport(b, zipBuf, project, zipName) {
+    const fz = require("fflate"); let files = {};
+    const take = (buf, depth) => { let ent; try { ent = fz.unzipSync(new Uint8Array(buf), { filter: f => !/(^|\/)(__MACOSX|\.)/.test(f.name) && f.originalSize < 200e6 }); } catch (e) { throw fail(400, "Das ist keine gültige ZIP-Datei."); }
+      Object.keys(ent).forEach(n => { if (/\.zip$/i.test(n) && depth < 2) take(Buffer.from(ent[n]), depth + 1); else if (!/\/$/.test(n)) files[n] = ent[n]; }); };
+    take(zipBuf, 0);
+    const st = S().mkt, lic = { id: newId("l"), source: "Envato", brand: b.key, project, zip: zipName || "", at: nowIso(), text: "", files: [] };
+    const licFile = Object.keys(files).find(n => /licen[cs]e|lizenz|certificate/i.test(n) && /\.(txt|html?|pdf)$/i.test(n)); if (licFile && !/\.pdf$/i.test(licFile)) lic.text = clip(Buffer.from(files[licFile]).toString("utf8").replace(/<[^>]*>/g, " ").replace(/\s+/g, " "), 4000);
+    const dir = path.join(LIB, b.key); fs.mkdirSync(dir, { recursive: true }); const tmpDir = path.join(WORK, "envato-x-" + rand()); fs.mkdirSync(tmpDir, { recursive: true });
+    const out = { photos: 0, clips: 0, sounds: 0, skipped: [] }, base = n => path.basename(n).toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9_-]+/g, "-").slice(0, 40) || "envato";
+    try {
+      for (const n of Object.keys(files)) {
+        const ext = (n.match(/\.([a-z0-9]+)$/i) || [])[1] || "", e = ext.toLowerCase(), src = path.join(tmpDir, rand() + "." + e);
+        try {
+          if (/^(jpe?g|png|webp)$/.test(e)) { fs.writeFileSync(src, files[n]); const f = "envato-" + base(n) + "-" + rand().slice(0, 4) + ".jpg";
+            await R.ffmpeg(["-i", src, "-vf", "scale='min(2400,iw)':-2", "-frames:v", "1", "-q:v", "3", path.join(dir, f)]); lic.files.push("u-" + f); out.photos++; }
+          else if (/^(mp4|mov|m4v)$/.test(e)) { fs.writeFileSync(src, files[n]); const f = "envato-" + base(n) + "-" + rand().slice(0, 4) + ".mp4";
+            await R.ffmpeg(["-i", src, "-t", "60", "-an", "-vf", "scale='if(gt(iw,ih),-2,min(1080,iw))':'if(gt(iw,ih),min(1080,ih),-2)',fps=30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-movflags", "+faststart", path.join(dir, f)]); lic.files.push("u-" + f); out.clips++; }
+          else if (/^(mp3|wav|m4a|aiff?|ogg)$/.test(e)) { fs.writeFileSync(src, files[n]); const id = newId("m");
+            await R.ffmpeg(["-i", src, "-vn", "-c:a", "libmp3lame", "-b:a", "192k", path.join(MUSIC, id + ".mp3")]);
+            st.music.push({ id, name: clip(path.basename(n).replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " "), 80), file: id + ".mp3", mood: "", license: "Envato · " + project });
+            MO.tempo(path.join(MUSIC, id + ".mp3")).then(t => { const m = t && S().mkt.music.find(x => x.id === id); if (m) { m.bpm = t.bpm; m.beat0 = t.beat0; save(); } }).catch(() => {});
+            lic.files.push(id); out.sounds++; }
+          else if (!/^(txt|pdf|html?|md|rtf|url|ds_store|db)$/.test(e)) out.skipped.push(path.basename(n));
+        } catch (err) { out.skipped.push(path.basename(n)); console.error("marketing: Envato", n, String(err.message || err).slice(0, 120)); }
+        finally { try { fs.unlinkSync(src); } catch (e2) {} }
+      }
+    } finally { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {} }
+    if (!lic.files.length) throw fail(400, "Im ZIP waren keine Fotos, Videos oder Sounds" + (out.skipped.length ? " (übersprungen: " + out.skipped.slice(0, 5).join(", ") + ")" : "") + ".");
+    (st.licenses = st.licenses || []).unshift(lic); if (st.licenses.length > 500) st.licenses.length = 500; save(true);
+    return Object.assign(out, { license: { id: lic.id, project, hasText: !!lic.text } });
+  }
+  const licOf = id => ((S().mkt.licenses || []).find(l => l.files.indexOf(id) > -1) || null);
   const hashNum = s => parseInt(crypto.createHash("sha1").update(String(s)).digest("hex").slice(0, 8), 16);
   // Bildbeschreibungen (KI, einmal je Foto) – der Generator wählt damit je Folie ein passendes Bild statt eines zufälligen
   const LD = () => (S().mkt.libDesc = S().mkt.libDesc || {});
@@ -736,7 +770,7 @@ module.exports = function (C) {
     }
     // Bildersammlung: ansehen, hochladen (Fotos als data-URI, Videos roh per PUT), entfernen (Grundstock wird nur ausgeblendet)
     if (p === "/admin/api/mkt/library" && req.method === "GET") { const b = brand(u.searchParams.get("brand"));
-      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job; } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "", web: x.id.indexOf("w-") === 0 })), web: (w => w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "" } : null)(WEB.info(b.key)), url: b.url || "" }), true; }
+      if (b.key === "druckshop") { const first = !S().mkt.printPhotosAt, job = syncPrintPhotos(u.searchParams.get("refresh") === "1").catch(e => console.error("marketing: Produktfotos", e.message)); if (first) await job; } return J(res, 200, { ok: true, items: library(b.key).map(x => ({ id: x.id, kind: x.kind, own: x.own, name: x.name, size: x.size, desc: ((LD()[b.key] || {})[x.id] || {}).d || "", web: x.id.indexOf("w-") === 0, lic: (l => l ? l.source + " · " + l.project + " · " + l.at.slice(0, 10) : "")(licOf(x.id)) })), web: (w => w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "" } : null)(WEB.info(b.key)), url: b.url || "" }), true; }
     if (p === "/admin/api/mkt/library-file" && req.method === "GET") {
       const b = brand(u.searchParams.get("brand")), it = library(b.key).find(x => x.id === String(u.searchParams.get("id") || "")); if (!it) throw fail(404, "Nicht gefunden");
       return sendFile(req, res, it.file, /\.mp4$/i.test(it.file) ? "video/mp4" : /\.png$/i.test(it.file) ? "image/png" : "image/jpeg", ""), true;
@@ -751,6 +785,13 @@ module.exports = function (C) {
       const dir = path.join(LIB, b.key); fs.mkdirSync(dir, { recursive: true }); const name = String(pl.name || "bild").toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9äöüß_-]+/g, "-").slice(0, 40) + "-" + rand().slice(0, 6) + (m[1] === "png" ? ".png" : ".jpg");
       fs.writeFileSync(path.join(dir, name), buf); return J(res, 200, { ok: true, id: "u-" + name }), true;
     }
+    if (p === "/admin/api/mkt/envato" && req.method === "PUT") {   // Envato-Download (ZIP) importieren: Fotos/Videos in die Sammlung der Marke, Sounds in die Musik, Lizenz mitspeichern
+      const b = brand(u.searchParams.get("brand")), project = clip(u.searchParams.get("project"), 120) || b.name + " Social Media", tmp = path.join(WORK, "envato-" + rand() + ".zip");
+      fs.mkdirSync(WORK, { recursive: true });
+      await new Promise((ok, ko) => { let n = 0; const w = fs.createWriteStream(tmp); req.on("data", d => { n += d.length; if (n > 250e6) { req.destroy(); w.destroy(); ko(fail(413, "ZIP zu groß (max. 250 MB)")); } }); req.pipe(w); w.on("finish", ok); w.on("error", ko); req.on("error", ko); }).catch(e => { try { fs.unlinkSync(tmp); } catch (e2) {} throw e; });
+      try { return J(res, 200, Object.assign({ ok: true }, await envatoImport(b, fs.readFileSync(tmp), project, clip(u.searchParams.get("name"), 120)))), true; }
+      finally { try { fs.unlinkSync(tmp); } catch (e) {} }
+    }
     if (p === "/admin/api/mkt/library-clip" && req.method === "PUT") {
       const b = brand(u.searchParams.get("brand")), dir = path.join(LIB, b.key); fs.mkdirSync(dir, { recursive: true });
       const name = String(u.searchParams.get("name") || "clip").toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9_-]+/g, "-").slice(0, 40) + "-" + rand().slice(0, 6) + ".mp4", tmp = path.join(dir, name + ".part");
@@ -761,5 +802,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, _test: { library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
 };

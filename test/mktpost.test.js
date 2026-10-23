@@ -260,6 +260,20 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
       assert.ok(!(await call("GET", "/admin/api/mkt/inbox", null, "?brand=kochdu")).json().channels.some(c => c.items.some(i => i.id === it0.id)), "ausgeblendet"); }
     assert.strictEqual((await call("POST", "/admin/api/mkt/inbox/act", { brand: "kochdu", platform: "instagram", id: "gibtsnicht", op: "reply", text: "x" })).code, 404);
   });
+  await t("Envato-ZIP: Fotos und Videos in die Sammlung, Sounds in die Musik, Lizenz mit Projekt je Datei", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-env-")), ff = a => R.ffmpeg(a);
+    await ff(["-f", "lavfi", "-i", "color=red:s=800x600", "-frames:v", "1", path.join(tmp, "a.jpg")]);
+    await ff(["-f", "lavfi", "-i", "color=blue:s=640x360:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(tmp, "v.mp4")]);
+    await ff(["-f", "lavfi", "-i", "sine=f=440:d=1", path.join(tmp, "s.wav")]);
+    const fz = require(path.join(ROOT, "node_modules", "fflate")), inner = fz.zipSync({ "Song/s.wav": fs.readFileSync(path.join(tmp, "s.wav")) });
+    const zip = Buffer.from(fz.zipSync({ "Foto/a.jpg": fs.readFileSync(path.join(tmp, "a.jpg")), "Clip/v.mp4": fs.readFileSync(path.join(tmp, "v.mp4")), "sound.zip": inner, "License.txt": Buffer.from("Envato Elements License Certificate – Item: Test"), "__MACOSX/._a.jpg": Buffer.from("x") }));
+    const r = await PT.envatoImport({ key: "kochdu", name: "kochdu" }, zip, "kochdu Social Media", "test.zip");
+    assert.deepStrictEqual([r.photos, r.clips, r.sounds], [1, 1, 1], JSON.stringify(r)); assert.strictEqual(r.license.hasText, true);
+    const lib = (await call("GET", "/admin/api/mkt/library", null, "?brand=kochdu")).json(), e = lib.items.filter(x => /envato/.test(x.name));
+    assert.strictEqual(e.length, 2); assert.ok(e.every(x => /Envato · kochdu Social Media/.test(x.lic)), JSON.stringify(e));
+    const mus = (await call("GET", "/admin/api/mkt/posts")).json().music.find(m => /Envato/.test(m.license || "")); assert.ok(mus, "Sound in der Musik");
+    await assert.rejects(PT.envatoImport({ key: "kochdu", name: "kochdu" }, Buffer.from("kein zip"), "x"), /ZIP/);
+  });
   await t("Druckshop: Produktfotos aus dem Shop in der Bildersammlung (mit Beschreibung, ausblendbar, verschwinden mit dem Produkt)", async () => {
     let prods = [{ key: "visitenkarten", title: "Visitenkarten", desc: "Klassisch auf 400 g", img: "https://images.ctfassets.net/x/vk.jpg?fm=jpg&q=85&w=1080" },
       { key: "flyer", title: "Flyer", desc: "", img: "https://images.ctfassets.net/x/fl.jpg?fm=jpg&q=85&w=1080" }, { key: "boese", title: "Fremd", desc: "", img: "https://example.org/x.jpg" }];
