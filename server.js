@@ -3247,6 +3247,35 @@ async function handleAdmin(req, res, u, p) {
         if (pl.op === "transit" && FIN_STATE.local) { if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" }); await FIN_LOCAL.load(); const a = FIN_LOCAL.get("CheckAccountTransaction", String(pl.txId || "")), b2 = FIN_LOCAL.get("CheckAccountTransaction", String(pl.withTxId || ""));
           if (!a || !b2 || Math.abs((+a.amount || 0) + (+b2.amount || 0)) > 0.005 || String((a.checkAccount || {}).id) === String((b2.checkAccount || {}).id)) return J(200, { ok: false, error: "Umsätze passen nicht zusammen (Betrag/Konto)" });
           await FIN_LOCAL.pairApply(a.id, b2.id); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return J(200, { ok: true }); }
+        // Geldtransit-Dialog: passende Gegenbuchungen (anderes eigenes Konto, gleicher Betrag mit umgekehrtem Vorzeichen, ±21 Tage), Kasse, Konto außerhalb des Cockpits, aufheben
+        if (/^transit-(cands|cash|ext|undo)$/.test(String(pl.op || "")) && FIN_STATE.local) {
+          await FIN_LOCAL.load(); const t = FIN_LOCAL.get("CheckAccountTransaction", String(pl.txId || "")); if (!t) return J(200, { ok: false, error: "Umsatz nicht gefunden" });
+          const accOf = x => String((x.checkAccount || {}).id || ""), day = x => String(x.valueDate || "").slice(0, 10), amt = +t.amount || 0, done = () => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return J(200, { ok: true }); };
+          const cashAcc = FIN_LOCAL.all("CheckAccount").find(a => FIN_LOCAL.isCash(a.id) && String(a.status) !== "0");
+          if (pl.op === "transit-cands") {
+            const accs = FIN_LOCAL.all("CheckAccount"), nm = id => (accs.find(a => String(a.id) === id) || {}).name || "Konto";
+            const c = FIN_LOCAL.all("CheckAccountTransaction").filter(x => x !== t && String(x.status) === "100" && !x.transitWith && accOf(x) !== accOf(t) && Math.abs((+x.amount || 0) + amt) < 0.005 && Math.abs(Date.parse(day(x)) - Date.parse(day(t))) <= 21 * 864e5)
+              .sort((x, y) => Math.abs(Date.parse(day(x)) - Date.parse(day(t))) - Math.abs(Date.parse(day(y)) - Date.parse(day(t))))
+              .slice(0, 20).map(x => ({ id: String(x.id), date: day(x), amount: +x.amount, account: nm(accOf(x)), name: String(x.payeePayerName || ""), purpose: String(x.paymtPurpose || "").slice(0, 120) }));
+            return J(200, { ok: true, cands: c, cash: cashAcc && accOf(t) !== String(cashAcc.id) ? { id: String(cashAcc.id), name: cashAcc.name || "Kasse", balance: FIN_LOCAL.cashBalance(cashAcc.id) } : null });
+          }
+          if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+          if (pl.op === "transit-undo") {
+            const w = String(t.transitWith || ""), o = /^\d+$|^[\w-]{6,}$/.test(w) && FIN_LOCAL.get("CheckAccountTransaction", w);
+            if (!w || ["erledigt", "durchlaufend", "korrektur", "opening"].indexOf(w) > -1) return J(200, { ok: false, error: "Kein Geldtransit" });
+            t.status = "100"; delete t.transitWith; delete t.transitNote; await FIN_LOCAL.save("CheckAccountTransaction", t);
+            if (o && String(o.transitWith) === String(t.id)) { o.status = "100"; delete o.transitWith; await FIN_LOCAL.save("CheckAccountTransaction", o); }
+            return done();
+          }
+          if (String(t.status) !== "100" || t.transitWith) return J(200, { ok: false, error: "Umsatz ist nicht mehr offen" });
+          if (pl.op === "transit-ext") { t.status = "400"; t.transitWith = "extern"; t.transitNote = String(pl.note || "eigenes Konto außerhalb des Cockpits").slice(0, 120); await FIN_LOCAL.save("CheckAccountTransaction", t); return done(); }
+          // Bank ↔ Kasse: Kassenbuchung mit umgekehrtem Vorzeichen am selben Tag anlegen und verbinden (Bestand darf nie negativ werden)
+          if (!cashAcc) return J(200, { ok: false, error: "Es gibt noch keine Kasse – zuerst unter Bank & Kasse › Kassenbuch anlegen." });
+          const d = day(t), ca = Math.round(-amt * 100) / 100, cd = FIN_LOCAL.all("CheckAccountTransaction").filter(x => accOf(x) === String(cashAcc.id)).map(day).filter(k => k >= d);
+          for (const k of [d].concat(cd)) if (FIN_LOCAL.cashBalance(cashAcc.id, k) + ca < -0.004) return J(200, { ok: false, error: "Kassenbestand würde am " + k.split("-").reverse().join(".") + " negativ werden." });
+          const ctx = { valueDate: t.valueDate, entryDate: new Date().toISOString(), amount: ca.toFixed(2), paymtPurpose: (ca > 0 ? "Bargeldbehebung " : "Bareinzahlung ") + (t.payeePayerName || "Bank"), payeePayerName: "Geldtransit", checkAccount: { id: String(cashAcc.id), objectName: "CheckAccount" }, status: "100", cashLocked: new Date().toISOString(), cashKind: "transit" };
+          const cr = await FIN_LOCAL.request("POST", "/CheckAccountTransaction", { body: ctx }); await FIN_LOCAL.pairApply(t.id, String(cr.objects.id)); return done();
+        }
         return J(200, await SEV_OPS.bankOp(pl)); }
       if (p === "/admin/api/sev/vouchers" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.vouchers(u.searchParams.get("year"), force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (p === "/admin/api/sev/voucher-op" && req.method === "POST") return J(200, await SEV_OPS.voucherOp(await sevBody(req)));
