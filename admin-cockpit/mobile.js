@@ -311,7 +311,13 @@ F.css(
   '.notice{border-radius:12px}'+
   'details.abg{background:var(--panel)}'+
   '.chart{padding:4px 12px 10px}'+
+  /* Kein Zoom: iOS zoomt bei Feldern unter 16px hinein und bleibt dort */
+  'html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}'+
+  'input,textarea,select{font-size:16px!important}'+
 '}'
 );
+/* Pinch-Zoom der ganzen Seite sperren (iOS ignoriert user-scalable=no); Dokumente haben eigene Zoom-Knöpfe */
+['gesturestart','gesturechange'].forEach(function(t){ document.addEventListener(t,function(e){ e.preventDefault(); },{passive:false}); });
+document.addEventListener('touchmove',function(e){ if(e.touches&&e.touches.length>1) e.preventDefault(); },{passive:false});
 
 })();

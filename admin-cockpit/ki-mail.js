@@ -57,15 +57,49 @@ F.action("kimask",function(id){
 F.kiLeadHtml=function(l){
   var r=K.st&&K.st.leads&&K.st.leads[l.id], busy=K.ui&&K.ui.busy["lead"+l.id];
   if(!r) return '<div class="kibox"><div class="row-between"><b>'+F.svg("spark")+' KI-Einschätzung</b><button type="button" class="btn" data-act="kilead:'+esc(l.id)+'"'+(busy?" disabled":"")+'>'+(busy?"Schätze ein …":"Einschätzen")+'</button></div><span class="muted">Priorität, Budget und nächster Schritt für diese Anfrage.</span></div>';
-  return '<div class="kibox"><div class="row-between"><b>'+F.svg("spark")+' KI-Einschätzung</b><span class="tag '+(r.priority==="hoch"?"bad":r.priority==="mittel"?"warn":"grey")+'">Priorität '+esc(r.priority)+'</span></div>'+
+  var pt='<span class="tag '+(r.priority==="hoch"?"bad":r.priority==="mittel"?"warn":"grey")+'">Priorität '+esc(r.priority)+'</span>';
+  var acts='<div class="kl-acts">'+(r.positions&&r.positions.length?'<button type="button" class="btn pri" data-act="kileadoffer:'+esc(l.id)+'">Angebot daraus</button>':'')+'<button type="button" class="btn" data-act="kileadfill:'+esc(l.id)+'">In Notizen übernehmen</button><button type="button" class="link" data-act="kileadre:'+esc(l.id)+'">Neu einschätzen</button></div>';
+  if(!r.v) return '<div class="kibox kl"><div class="row-between"><b>'+F.svg("spark")+' KI-Einschätzung</b>'+pt+'</div>'+
     '<div class="kitags">'+(r.projectType?'<span class="tag grey">'+esc(r.projectType)+'</span>':'')+(r.budgetRange?'<span class="tag grey">'+esc(r.budgetRange)+'</span>':'')+'</div>'+
-    '<div><b>Nächster Schritt:</b> '+esc(r.nextStep)+'</div><div class="muted">'+esc(r.notes)+'</div>'+
-    '<div class="row wrap"><button type="button" class="btn" data-act="kileadfill:'+esc(l.id)+'">In Notizen &amp; Projektwert übernehmen</button><button type="button" class="link" data-act="kileadre:'+esc(l.id)+'">Neu einschätzen</button></div></div>';
+    '<div><b>Nächster Schritt:</b> '+esc(r.nextStep||"")+'</div><div class="muted">'+esc(r.notes||"")+'</div><p class="muted kl-old">Ältere Einschätzung – „Neu einschätzen“ liefert Positionen und Preise.</p>'+acts+'</div>';
+  var li=function(a){ return '<ul class="kl-ul">'+a.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join("")+'</ul>'; };
+  var sec=function(t,h){ return '<div class="kl-s"><h4>'+t+'</h4>'+h+'</div>'; };
+  var pos=r.positions||[], rec=r.recurring||[];
+  return '<div class="kibox kl"><div class="row-between"><b>'+F.svg("spark")+' KI-Einschätzung</b>'+pt+'</div>'+
+    (r.summary?'<p class="kl-sum">'+esc(r.summary)+'</p>':'')+
+    '<div class="kitags">'+(r.projectType?'<span class="tag grey">'+esc(r.projectType)+'</span>':'')+(r.reason?'<span class="kl-why">'+esc(r.reason)+'</span>':'')+'</div>'+
+    (r.needs&&r.needs.length?sec("Bedarf",li(r.needs)):'')+
+    (pos.length?sec("Positionen (netto)",'<div class="kl-pos">'+pos.map(function(p){ var t=p.qty*p.priceNet; return '<div class="kl-p"><div class="kl-pn"><b>'+esc(p.name)+'</b>'+(p.desc?'<span>'+esc(p.desc)+'</span>':'')+'</div><div class="kl-pa"><b class="num">'+F.eur(t)+'</b>'+(p.qty!==1?'<span>'+String(p.qty).replace(".",",")+' '+esc(p.unit)+' × '+F.eur(p.priceNet)+'</span>':'<span>'+esc(p.unit)+'</span>')+'</div></div>'; }).join("")+
+      '<div class="kl-p kl-tot"><div class="kl-pn"><b>Summe einmalig</b>'+(r.budgetRange?'<span>Spanne '+esc(r.budgetRange)+'</span>':'')+'</div><div class="kl-pa"><b class="num">'+F.eur(r.budgetEur)+'</b><span>brutto '+F.eur(r.budgetEur*1.2)+'</span></div></div></div>'):'')+
+    (rec.length?sec("Laufend",'<div class="kl-pos">'+rec.map(function(p){ return '<div class="kl-p"><div class="kl-pn"><b>'+esc(p.name)+'</b></div><div class="kl-pa"><b class="num">'+F.eur(p.priceNet)+'</b><span>pro '+esc(p.per)+'</span></div></div>'; }).join("")+'</div>'):'')+
+    (r.nextSteps&&r.nextSteps.length?sec("Nächste Schritte",li(r.nextSteps)):'')+
+    (r.questions&&r.questions.length?sec("Fragen fürs Erstgespräch",li(r.questions)):'')+
+    acts+'</div>';
 };
+F.css(".kl{gap:10px;min-width:0;overflow-wrap:anywhere}.kl p{margin:0}.kl-sum{font-size:14.5px;line-height:1.45}.kl-why{font-size:12.5px;color:var(--ink-3);align-self:center}"+
+  ".kl-s{display:grid;gap:5px;min-width:0}.kl-s h4{margin:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:700}"+
+  ".kl-ul{margin:0;padding-left:18px;display:grid;gap:3px;font-size:14px;line-height:1.4}"+
+  ".kl-pos{display:grid;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}"+
+  ".kl-p{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-top:1px solid var(--line);min-width:0}.kl-p:first-child{border-top:0}"+
+  ".kl-pn{display:grid;gap:2px;min-width:0}.kl-pn b{font-size:14px;font-weight:600}.kl-pn span,.kl-pa span{font-size:12.5px;color:var(--ink-3)}"+
+  ".kl-pa{display:grid;justify-items:end;gap:2px;flex:none;text-align:right}.kl-pa b{font-size:14px;font-weight:600;white-space:nowrap}.kl-pa span{white-space:nowrap}"+
+  ".kl-tot{background:var(--sunk)}.kl-tot b{font-weight:700}.kl-old{font-size:12.5px}"+
+  ".kl-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}"+
+  "@media (max-width:900px){.kl-acts .btn{min-height:42px;flex:1 1 auto;justify-content:center}.kl-acts .link{min-height:40px}}");
+F.action("kileadoffer",function(id){
+  var r=K.st&&K.st.leads&&K.st.leads[id], l=F.D.leads.find(function(y){return y.id===id;}); if(!r||!l||!F.openOffer) return;
+  F.openOffer({title:"Angebot · "+(l.company||l.name),contactName:l.company||l.name,email:l.email,address:[l.company,l.company&&l.name!==l.company?l.name:""].filter(Boolean).join("\n")||l.name,
+    header:"Angebot"+(l.topic?" "+l.topic:""),headText:"Vielen Dank für Ihre Anfrage"+(l.topic?" zum Thema „"+l.topic+"“":"")+". Gerne biete ich Ihnen folgende Leistungen an:",
+    items:(r.positions||[]).map(function(p){ return {name:p.name,text:p.desc,qty:p.qty,priceGross:String(Math.round(p.priceNet*1.2*100)/100),taxRate:20}; }),after:{leadId:l.id}});
+});
 K.onLead=function(id){ if(F.UI.leadSel===id&&F.openLead&&document.getElementById("drawer").classList.contains("on")) F.openLead(id); };
 F.action("kileadfill",function(id){
   var r=K.st&&K.st.leads&&K.st.leads[id], f=document.querySelector('[data-form="leadedit"]'); if(!r||!f) return;
-  var add="KI-Einschätzung ("+F.de(F.D.today)+"): Priorität "+r.priority+(r.budgetRange?", Budget "+r.budgetRange:"")+". Nächster Schritt: "+r.nextStep+"\n"+r.notes;
+  var L=function(t,a){ return a&&a.length?"\n"+t+":\n"+a.map(function(x){ return "• "+x; }).join("\n"):""; };
+  var add=r.v?"KI-Einschätzung ("+F.de(F.D.today)+"): Priorität "+r.priority+(r.projectType?" · "+r.projectType:"")+(r.summary?"\n"+r.summary:"")+L("Bedarf",r.needs)+
+    L("Positionen (netto)",(r.positions||[]).map(function(p){ return p.name+(p.qty!==1?" ("+p.qty+" "+p.unit+")":"")+": "+F.eur(p.qty*p.priceNet); }))+(r.budgetEur?"\nSumme einmalig: "+F.eur(r.budgetEur)+" netto"+(r.budgetRange?" (Spanne "+r.budgetRange+")":""):"")+
+    L("Laufend",(r.recurring||[]).map(function(p){ return p.name+": "+F.eur(p.priceNet)+"/"+p.per; }))+L("Nächste Schritte",r.nextSteps)+L("Fragen",r.questions)
+    :"KI-Einschätzung ("+F.de(F.D.today)+"): Priorität "+r.priority+(r.budgetRange?", Budget "+r.budgetRange:"")+". Nächster Schritt: "+r.nextStep+"\n"+r.notes;
   f.notes.value=(f.notes.value?f.notes.value.replace(/\s+$/,"")+"\n\n":"")+add;
   if(!f.value.value&&r.budgetEur>0) f.value.value=r.budgetEur;
   f.notes.focus(); F.toast("Eingetragen – mit „Speichern“ übernehmen");

@@ -103,7 +103,7 @@ function moveTargets(acc){ var out=[{path:"INBOX",name:"Posteingang"}]; customFo
 
 /* ---------- Daten übernehmen ---------- */
 // Vorschautext: CSS-Reste aus HTML-Mails entfernen (z. B. „body,table,td,a{-webkit-text-size-adjust:100%} …“)
-function cleanPrev(t){ t=String(t||""); if(!/\{[^}]*[a-z-]+:[^}]*(\}|$)/i.test(t)) return t; return t.replace(/[^{}]{0,400}\{[^{}]*\}/g," ").replace(/[^{}]{0,400}\{[^}]*$/," ").replace(/@media[^{]*\{|\}/g," ").replace(/\s+/g," ").trim(); }
+function cleanPrev(t){ t=String(t||"").replace(/@import\s+(url\()?[^;)\s]*\)?;?/gi," ").replace(/@(font-face|media|charset|keyframes)[^{]*/gi," "); if(!/\{[^}]*[a-z-]+:[^}]*(\}|$)/i.test(t)) return t.replace(/\s+/g," ").trim(); return t.replace(/[^{}]{0,400}\{[^{}]*\}/g," ").replace(/[^{}]{0,400}\{[^}]*$/," ").replace(/^[^{}]*?[a-z-]+:[^;{}]+;[^{}]*\}/i," ").replace(/[{}]/g," ").replace(/\s+/g," ").trim(); }
 function norm(m){ return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:cleanPrev(m.preview),body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:!!m.read,starred:!!m.starred,deleted:false,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!m.answered,forwarded:!!m.forwarded,answeredAt:m.answeredAt||null,account:m.account||""}; }
 function applyOv(m){
   var o=OV[m.id]; if(!o) return m;
@@ -433,7 +433,18 @@ function listHtml(list){
 
 /* ---------- Lesebereich ---------- */
 function rb(act,icon,label,extra,showLabel){ return '<button type="button" class="rb'+(extra||"")+(/^(mback|mx:trash|mx:move|mx:read|mx:unread|mx:restore|mx:purge|mx:editdraft|mob:)/.test(act)?" mk":"")+'" data-act="'+act+'" title="'+esc(label)+'" aria-label="'+esc(label)+'">'+ic(icon)+(showLabel?'<span class="rl">'+esc(label.replace(/ \(.\)$/,""))+'</span>':'')+'</button>'; }
-function frame(html,title){ return '<iframe class="mframe" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="'+esc(title||"Mail-Inhalt")+'" srcdoc="'+esc('<!doctype html><meta charset="utf-8"><base target="_blank"><style>html,body{background:#fff}body{font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1b2420;margin:14px;overflow-wrap:anywhere}img{max-width:100%;height:auto}blockquote{margin:6px 0 6px 4px;padding-left:10px;border-left:3px solid #dcdfd8;color:#56605a}details.fsq{margin-top:12px}details.fsq>summary{cursor:pointer;display:inline-block;list-style:none;font-size:12.5px;color:#5f6778;border:1px solid #e3e6ee;background:#f4f5f8;border-radius:99px;padding:2px 10px;margin-bottom:8px}details.fsq>summary::-webkit-details-marker{display:none}</style>'+(html||""))+'"></iframe>'; }
+function frame(html,title){ return '<iframe class="mframe" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="'+esc(title||"Mail-Inhalt")+'" srcdoc="'+esc('<!doctype html><meta charset="utf-8"><base target="_blank"><style>html,body{background:#fff}body{font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1b2420;margin:14px;overflow-wrap:anywhere}img{max-width:100%;height:auto}blockquote{margin:6px 0 6px 4px;padding-left:10px;border-left:3px solid #dcdfd8;color:#56605a}details.fsq{margin-top:12px}details.fsq>summary{cursor:pointer;display:inline-block;list-style:none;font-size:12.5px;color:#5f6778;border:1px solid #e3e6ee;background:#f4f5f8;border-radius:99px;padding:2px 10px;margin-bottom:8px}details.fsq>summary::-webkit-details-marker{display:none}</style>'+(html||""))+'"></iframe>'; }
+/* Handy: Mail-Inhalt wie in Outlook – volle Höhe statt Rahmen mit eigenem Scrollbalken, breite Newsletter auf Bildschirmbreite verkleinert
+   (allow-same-origin ohne allow-scripts: im Rahmen läuft kein Skript, das Cockpit darf nur messen) */
+function fitFrame(f){
+  if(window.innerWidth>900) return; var d; try{ d=f.contentDocument; }catch(x){ return; } if(!d||!d.body) return;
+  var b=d.body; b.style.zoom=""; b.style.margin="12px 4px";
+  var w=d.documentElement.scrollWidth, cw=d.documentElement.clientWidth||f.clientWidth;
+  if(w>cw+4) b.style.zoom=String(Math.max(.4,cw/w));
+  f.style.height=Math.max(160,Math.ceil(d.documentElement.scrollHeight))+"px";
+  if(!f._fit){ f._fit=1; try{ d.addEventListener("toggle",function(){ fitFrame(f); },true); }catch(x){} }
+}
+document.addEventListener("load",function(e){ var f=e.target; if(f&&f.classList&&f.classList.contains("mframe")){ fitFrame(f); setTimeout(function(){ fitFrame(f); },400); setTimeout(function(){ fitFrame(f); },1500); } },true);
 M.frame=frame;
 function attachmentsHtml(m){
   var atts=(m&&m.attachments)||[]; if(!atts.length) return "";
@@ -1287,7 +1298,8 @@ F.css([
 "  .rsubj{font-size:22px;letter-spacing:-.01em}",
 "  .rsender{grid-template-columns:42px minmax(0,1fr)}.rdate{grid-column:2;text-align:left;display:block}.rdate span{margin-left:6px}",
 "  .attl{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.attl::-webkit-scrollbar{display:none}.att{flex:none}",
-"  .mframe{height:70vh;border-radius:12px}",
+"  .mframe{height:60vh;border:0;border-radius:0;display:block}",
+"  .mrow2 .accpill{display:none}.mrow2 .star:not(.on){display:none}.mrow2 .ics{opacity:.7}",
 "  .qreply{display:none}",
 "  .mrbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;gap:8px;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}",
 "  .mrbar button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:11px 8px;font:inherit;font-weight:600;font-size:14px}",
