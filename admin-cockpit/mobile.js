@@ -20,7 +20,7 @@ F.head=function(t,sub,right){
   MH.items=rest.map(function(b){ var lbl=(b.getAttribute("aria-label")||b.getAttribute("title")||b.textContent||"").replace(/\s+/g," ").trim(); return {html:b.outerHTML,label:lbl||"Aktion"}; });
   var subTxt=String(sub||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
   var fab="";
-  if(pri){ var c=pri.cloneNode(true); c.className="mfabx"; c.removeAttribute("style"); var lab=c.textContent.replace(/\s+/g," ").trim(); c.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>'+esc(lab.replace(/^\+\s*/,""))+'</span>'; fab=c.outerHTML; }
+  if(pri){ var c=pri.cloneNode(true); c.className="mfabx"; c.removeAttribute("style"); var lab=c.textContent.replace(/\s+/g," ").trim(); c.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>'+esc(lab.replace(/^\+\s*/,"").replace(/\s*(⌘|Strg\+|Ctrl\+)\S*$/,""))+'</span>'; fab=c.outerHTML; }
   return desk+'<div class="mh"><div class="mh-t"><b>'+t+'</b>'+(subTxt?'<span>'+esc(subTxt)+'</span>':'')+'</div>'+
     (MH.items.length?'<button type="button" class="mh-i" data-act="mhmore" aria-label="Weitere Aktionen">'+F.svg("more")+'</button>':'')+'</div>'+fab;
 };

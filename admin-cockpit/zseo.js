@@ -10,7 +10,8 @@ UI.seoSel=UI.seoSel||F.ls("fsc_seo_sel")||""; UI.seoTab=UI.seoTab||F.ls("fsc_seo
 
 F.css(
 '.seo-grid{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;align-items:start}'+
-'@media(max-width:900px){.seo-grid{grid-template-columns:minmax(0,1fr)}}'+
+'@media(max-width:900px){.seo-grid{grid-template-columns:minmax(0,1fr)}.seo-list{max-height:none;overflow:visible;padding-right:0}}'+
+'.seo-grid>div,.seo-si,.seo-si>*{min-width:0}'+
 '.seo-list{display:grid;gap:6px;max-height:calc(100vh - 170px);overflow:auto;padding-right:2px}'+
 '.seo-si{display:flex;gap:10px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:8px 10px;font:inherit;color:var(--ink);text-align:left;cursor:pointer}'+
 '.seo-si[aria-current="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}'+

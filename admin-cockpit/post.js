@@ -102,7 +102,9 @@ function fparent(acc,path){ var d=fdelim(acc,path), i=path.lastIndexOf(d), p=i>-
 function moveTargets(acc){ var out=[{path:"INBOX",name:"Posteingang"}]; customFolders(acc).forEach(function(f){ out.push({path:f.path,name:fpathLabel(acc,f.path)}); }); return out; }
 
 /* ---------- Daten übernehmen ---------- */
-function norm(m){ return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:m.preview||"",body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:!!m.read,starred:!!m.starred,deleted:false,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!m.answered,forwarded:!!m.forwarded,answeredAt:m.answeredAt||null,account:m.account||""}; }
+// Vorschautext: CSS-Reste aus HTML-Mails entfernen (z. B. „body,table,td,a{-webkit-text-size-adjust:100%} …“)
+function cleanPrev(t){ t=String(t||""); if(!/\{[^}]*[a-z-]+:[^}]*(\}|$)/i.test(t)) return t; return t.replace(/[^{}]{0,400}\{[^{}]*\}/g," ").replace(/[^{}]{0,400}\{[^}]*$/," ").replace(/@media[^{]*\{|\}/g," ").replace(/\s+/g," ").trim(); }
+function norm(m){ return {id:m.id,folder:m.folder||"INBOX",uid:m.uid,fromName:m.fromName||"",from:m.from||"",toName:m.toName||"",to:m.to||"",subject:m.subject||"",preview:cleanPrev(m.preview),body:m.body||m.preview||"",bodyHtml:!!m.bodyHtml,date:m.date||"",read:!!m.read,starred:!!m.starred,deleted:false,attachments:Array.isArray(m.attachments)?m.attachments:[],toList:m.toList||[],ccList:m.ccList||[],replyTo:m.replyTo||"",messageId:m.messageId||"",inReplyTo:m.inReplyTo||"",answered:!!m.answered,forwarded:!!m.forwarded,answeredAt:m.answeredAt||null,account:m.account||""}; }
 function applyOv(m){
   var o=OV[m.id]; if(!o) return m;
   if(Date.now()-o.at>OV_TTL){ delete OV[m.id]; return m; }

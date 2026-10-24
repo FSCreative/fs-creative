@@ -224,7 +224,7 @@ F.css(
   ".mx-off{border-top:1px solid var(--line);padding:12px 16px}"+
   ".mx-ot{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.mx-ot .mx-l>span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}"+
   ".mx-or{display:grid;justify-items:end;gap:4px;flex:none}.mx-or b{font-weight:600;font-size:15px;white-space:nowrap}"+
-  ".mx-oa{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:10px -16px 0;padding:0 16px}.mx-oa::-webkit-scrollbar{display:none}.mx-oa .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}"+
+  ".mx-oa{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}.mx-oa::-webkit-scrollbar{display:none}.mx-oa .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}"+
   /* Kundenakte als Vollbild-Blatt */
   ".drawer:has(.lm){background:var(--ground);padding:0 0 calc(28px + env(safe-area-inset-bottom,0px));gap:0}"+
   ".lm{display:grid;gap:12px;padding:0 12px;min-width:0}"+

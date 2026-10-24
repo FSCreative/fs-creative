@@ -178,6 +178,7 @@ F.css(
 '.w-tools input.f{max-width:300px}'+
 '.w-row{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1.5fr) minmax(135px,.6fr) minmax(0,1.25fr) auto;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}'+
 '.w-row:last-child{border-bottom:0}'+
+'.w-hid{margin:0;padding:4px 18px 8px}'+
 '.w-row.hd{padding-top:9px;padding-bottom:9px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600}'+
 '.w-row.off .w-name{color:var(--ink-2)}'+
 '.w-row.rw{grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) minmax(0,1.3fr) 110px auto}'+
@@ -294,7 +295,7 @@ function vBill(){
   '<section class="panel"><div class="panel-h"><h2>Kunden-Websites &amp; Abrechnung</h2><div class="chips">'+
     chip("wbf","all",bf,"Alle",custAll.length)+chip("wbf","due",bf,"Fällig",cnt(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; }))+chip("wbf","active",bf,"Aktiv",act.length)+chip("wbf","inactive",bf,"Nicht verrechnet",custAll.length-act.length)+chip("wbf","bad",bf,"Probleme",cnt(function(x){ return siteBad(x.s); }))+
   '</div></div>'+
-  (hid.length?'<p class="muted" style="margin:0 0 8px">'+hid.length+' ausgeblendet ('+hid.map(function(x){ return esc(x.s.name); }).join(", ")+') · <button class="link" data-act="wshowhid">'+(U.showHidden?"wieder verbergen":"anzeigen")+'</button></p>':'')+
+  (hid.length?'<p class="muted small w-hid">'+hid.length+' ausgeblendet ('+hid.map(function(x){ return esc(x.s.name); }).join(", ")+') · <button class="link" data-act="wshowhid">'+(U.showHidden?"wieder verbergen":"anzeigen")+'</button></p>':'')+
   '<div class="w-row hd"><span>Website · Kunde</span><span>Verrechnet wird</span><span style="text-align:right">Summe</span><span>Letzte Abrechnung</span><span></span></div>'+
   (rows||'<div class="empty">Keine Kundenprojekte'+(U.q||bf!=="all"?" in dieser Ansicht":"")+'.</div>')+
   '<div class="panel-b muted">Abrechnung pro '+(PERLBL[n]||n+" Monate")+' · Preise '+(P.gross?"brutto":"netto")+' · Antippen der Häkchen speichert sofort. Mit dem Zahnrad bearbeitest du Kunde, Postfächer und freien Betrag.</div></section>'+

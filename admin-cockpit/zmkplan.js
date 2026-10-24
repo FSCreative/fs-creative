@@ -17,6 +17,7 @@ F.mktPlan=function(){ return PL; };
 
 F.css(
 '.mp-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}'+
+'@media (max-width:700px){.mp-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -16px 14px;padding:2px 16px}.mp-chips::-webkit-scrollbar{display:none}.mp-chips button{flex:none}}'+
 '.mp-chips button{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:6px 14px;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink-2);cursor:pointer;display:inline-flex;gap:7px;align-items:center}'+
 '.mp-chips button[aria-pressed="true"]{background:var(--glow-soft);color:var(--glow-ink);border-color:color-mix(in srgb,var(--glow) 40%,transparent)}'+
 '.mp-chips i{width:10px;height:10px;border-radius:50%;display:inline-block}'+
