@@ -1299,6 +1299,7 @@ F.css([
 "  .rsender{grid-template-columns:42px minmax(0,1fr)}.rdate{grid-column:2;text-align:left;display:block}.rdate span{margin-left:6px}",
 "  .attl{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.attl::-webkit-scrollbar{display:none}.att{flex:none}",
 "  .mframe{height:60vh;border:0;border-radius:0;display:block}",
+"  .kibar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.kibar::-webkit-scrollbar{display:none}.kibar>*{flex:none}",
 "  .mrow2 .accpill{display:none}.mrow2 .star:not(.on){display:none}.mrow2 .ics{opacity:.7}",
 "  .qreply{display:none}",
 "  .mrbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;gap:8px;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}",
