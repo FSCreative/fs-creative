@@ -96,7 +96,7 @@ module.exports = function (D) {
     } else if (op === "reminder") {
       const j = await sev("POST", "/Invoice/Factory/createInvoiceReminder", { query: { "invoice[id]": id, "invoice[objectName]": "Invoice" }, body: { invoice: { id: Number(id), objectName: "Invoice" }, dunningFee: Math.max(0, Math.round((parseFloat(String(pl.fee || 0).replace(",", ".")) || 0) * 100) / 100), timeToPay: parseInt(pl.days, 10) || 7 }, timeout: 40000 });
       const m = first(j); out.reminder = { id: String(m.id || ""), nr: m.invoiceNumber || "" };
-      if (!out.reminder.id) throw new Error("sevDesk hat keine Mahnung erstellt");
+      if (!out.reminder.id) throw new Error("Die Mahnung konnte nicht erstellt werden");
     } else if (op === "draft") {
       await sev("PUT", "/Invoice/" + id + "/resetToDraft");
     } else if (op === "reopen") {
@@ -273,7 +273,7 @@ module.exports = function (D) {
         if (cont) { const oo = o.content ? o : o[0]; return { buf: Buffer.from(String(cont), oo.base64encoded === false ? "binary" : "base64"), type: oo.mimeType || oo.mimetype || "application/pdf", name: oo.filename || ("Beleg-" + id) }; }
       } catch (e) { lastErr = e; }
     }
-    const e = new Error("Die Belegdatei konnte nicht aus sevDesk geladen werden" + (lastErr ? ": " + String(lastErr.message || lastErr).slice(0, 120) : "")); e.status = 502; throw e;
+    const e = new Error("Die Belegdatei konnte nicht geladen werden" + (lastErr ? ": " + String(lastErr.message || lastErr).slice(0, 120) : "")); e.status = 502; throw e;
   }
   async function voucherOp(pl) {
     need(pl);
@@ -284,7 +284,7 @@ module.exports = function (D) {
       if (!cur.id) throw new Error("Beleg nicht gefunden");
       if (cur.enshrined) throw new Error("Der Beleg ist festgeschrieben und kann nicht mehr geändert werden.");
       const status = parseInt(cur.status, 10) || 0;
-      if (status >= 750) throw new Error("Bezahlte Belege kann sevDesk nicht ändern. Setze den Beleg zuerst auf offen zurück.");
+      if (status >= 750) throw new Error("Bezahlte Belege lassen sich nicht ändern. Setze den Beleg zuerst auf offen zurück.");
       const posIn = (Array.isArray(pl.positions) ? pl.positions : []).filter(x => x && parseFloat(x.gross) > 0 && idOf(x.accountingTypeId)).slice(0, 20);
       if (!posIn.length) throw new Error("Mindestens eine Position mit Kategorie und Betrag angeben.");
       const posOld = ((await sev("GET", "/VoucherPos", { query: { "voucher[id]": id, "voucher[objectName]": "Voucher", limit: 100 } }).catch(() => ({ objects: [] }))).objects || []);

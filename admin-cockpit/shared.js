@@ -242,7 +242,7 @@ F.addTodo=function(t){ t=t||{}; return F.api("/admin/api/auftraege",{body:{op:"t
 F.TAXRULES=[["9","Vorsteuer abziehbar","Rechnung mit österr. USt – der Normalfall · UVA: Vorsteuer KZ 060"],
   ["10","Keine Vorsteuer","USt nicht abziehbar, z. B. Pkw, privat mitveranlasst, Eigenbeleg, Kleinunternehmer · UVA: keine Kennzahl"],
   ["8","Innergemeinschaftlicher Erwerb","Ware aus der EU ohne USt (z. B. Print.com, Geiger) – Erwerbsteuer und Vorsteuer je 20 % · UVA: KZ 070/072 + Vorsteuer 065, Zahllast unverändert"],
-  ["14","Reverse Charge EU","Dienstleistung einer EU-Firma ohne USt (z. B. Google, Meta, sevDesk) – Steuer und Vorsteuer je 20 % · UVA: KZ 057 + Vorsteuer 066"],
+  ["14","Reverse Charge EU","Dienstleistung einer EU-Firma ohne USt (z. B. Google, Meta, Canva) – Steuer und Vorsteuer je 20 % · UVA: KZ 057 + Vorsteuer 066"],
   ["12","Reverse Charge Drittland","Dienstleistung aus Nicht-EU ohne USt (z. B. USA, Schweiz) – Steuer und Vorsteuer je 20 % · UVA: KZ 057 + Vorsteuer 066"],
   ["13","Reverse Charge ohne Vorsteuer","Steuerschuld geht auf dich über, Vorsteuer nicht abziehbar · UVA: nur KZ 057"]];
 F.taxRuleZero=function(r){ return ["8","12","13","14"].indexOf(String(r||""))>-1; };

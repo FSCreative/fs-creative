@@ -444,7 +444,7 @@ function openVou(id){
 /* Steuerliche Regel des Belegs: sichtbar und änderbar. Offen/Entwurf → mit „Speichern“; bezahlt → eigener Knopf (ändert nur die Regel,
    Zahlung bleibt); festgeschrieben → nur Anzeige. Darunter, wie die UVA den Beleg einordnet (gleicher Rechenkern wie die UVA). */
 function vTaxBox(v,locked){
-  var fix=locked&&!v.enshrined, emptyTxt=v.taxSet?"aus sevDesk übernommen (Steuersatz-Set, ohne Regel)":"automatisch (ohne Regel)";
+  var fix=locked&&!v.enshrined, emptyTxt=v.taxSet?"übernommen (Steuersatz-Set, ohne Regel)":"automatisch (ohne Regel)";
   return '<div class="sd-tax">'+F.taxRuleSelect('name="rule" data-rate="[data-v=tax]"'+(v.enshrined?' disabled':'')+(fix?' data-keepdis':''),v.taxRule,{empty:emptyTxt,emptyHint:"Ohne Regel ordnet die UVA nach Steuersatz und Lieferant ein – Ergebnis siehe unten."})+
     (fix?'<button type="button" class="btn" data-act="sdvrule:'+esc(v.id)+'">Steuerregel ändern</button>':'')+
     '<div class="sd-uva muted small" id="vUva">UVA-Einordnung wird geladen …</div></div>';

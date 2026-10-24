@@ -1759,7 +1759,7 @@ function invLink(rec, sevById, oldest) {
   if (!s && oldest && String(rec.date || "") < oldest) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "alt", label: "älter, nicht geprüft", paid: 0, open: 0 };
   // Gerade angelegt: sevDesk-Stand wird im Hintergrund nachgeladen
   if (!s && String(rec.date || "") >= ymdAdd(viennaToday(), -2)) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "neu", label: "wird synchronisiert", paid: 0, open: +rec.gross || 0 };
-  if (!s) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "fehlt", label: "nicht in sevDesk", paid: 0, open: 0 };
+  if (!s) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "fehlt", label: "nicht in der Buchhaltung", paid: 0, open: 0 };
   const state = s.overdue ? "ueberfaellig" : s.status === 1000 ? "bezahlt" : s.status === 100 ? "entwurf" : (s.status === 200 || s.status === 750) ? "offen" : "sonst";
   return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: s.paid, open: s.open, state, label: s.overdue ? "überfällig" : (INV_LABEL[s.status] || "?"), due: s.due };
 }
@@ -2597,7 +2597,7 @@ async function fonSenden(pl, modus) {
   // Entwurf aus frischen sevDesk-Daten, gegen die Anzeige im Browser abgleichen, erst dann Paketnummer ziehen
   const e = await fonEntwurf(art, key, 999999999, true);
   if (e.befunde.some(b => b.art === "fehler")) throw new Error("So nimmt FinanzOnline das Paket nicht an: " + e.befunde.filter(b => b.art === "fehler").map(b => b.text).join(" "));
-  if (art === "U30" && pl.expectZahllast != null && Math.abs(Number(pl.expectZahllast) - e.zahllast) > 0.005) throw new Error("Die Daten in sevDesk haben sich geändert (Zahllast jetzt " + e.zahllast.toFixed(2) + " statt " + Number(pl.expectZahllast).toFixed(2) + "). Bitte neu laden und erneut prüfen.");
+  if (art === "U30" && pl.expectZahllast != null && Math.abs(Number(pl.expectZahllast) - e.zahllast) > 0.005) throw new Error("Die Daten in der Buchhaltung haben sich geändert (Zahllast jetzt " + e.zahllast.toFixed(2) + " statt " + Number(pl.expectZahllast).toFixed(2) + "). Bitte neu laden und erneut prüfen.");
   const o0 = readSteuer(); const paket = o0.fon.nextPaket || 1; o0.fon.nextPaket = paket >= 999999998 ? 1 : paket + 1; writeSteuer(o0);
   e.xml = e.xml.replace("<PAKET_NR>999999999</PAKET_NR>", "<PAKET_NR>" + paket + "</PAKET_NR>");
   let rc = -3, msg = "";
@@ -2637,7 +2637,7 @@ async function sevFixTaxRule(pl) {
   if (!id || (known.length ? known : SEV_RULES_EXPENSE).indexOf(rule) < 0) throw new Error("ungueltig");
   const j = await sev("GET", "/Voucher/" + id); const v = j && j.objects && (Array.isArray(j.objects) ? j.objects[0] : j.objects);
   if (!v) throw new Error("Beleg nicht gefunden.");
-  if (v.enshrined) throw new Error("Der Beleg ist in sevDesk festgeschrieben und kann nicht geändert werden.");
+  if (v.enshrined) throw new Error("Der Beleg ist festgeschrieben und kann nicht geändert werden.");
   if (v.creditDebit !== "C") throw new Error("Nur Ausgabenbelege.");
   if (!(v.taxRule && v.taxRule.id) && !FIN_STATE.local) throw new Error("Dieses sevDesk-Konto verwendet noch keine Steuerregeln (Update 2.0).");   // eigene Buchhaltung: Regel nachtragen geht immer
   await sev("PUT", "/Voucher/" + id, { body: { taxRule: { id: rule, objectName: "TaxRule" } } });
@@ -2667,7 +2667,7 @@ async function sevUstPayment(pl) {
   let at = String(pl.accountingTypeId || "").replace(/\D/g, "");
   if (!at) { const all = await sev("GET", "/AccountingType", { query: { limit: 1000 } }).catch(() => ({ objects: [] }));
     const hit = ((all && all.objects) || []).filter(a => String(a.active) !== "0").find(a => /umsatzsteuer.*voraus|ust.*voraus|voraus.*umsatzsteuer|zahllast|umsatzsteuer.*finanzamt/i.test(a.name || "")); at = hit ? String(hit.id) : ""; }
-  if (!at) throw new Error("In sevDesk wurde keine Buchungskategorie für die USt-Vorauszahlung gefunden. Bitte den Beleg einmal manuell anlegen.");
+  if (!at) throw new Error("In der Buchhaltung wurde keine Buchungskategorie für die USt-Vorauszahlung gefunden. Bitte den Beleg einmal manuell anlegen.");
   const body = {
     voucher: { objectName: "Voucher", mapAll: true, voucherDate: sevDateDE(t.date), supplierName: "Finanzamt Österreich", description: "USt-Vorauszahlung " + p.label, status: 100, taxType: "default", creditDebit: "C", voucherType: "VOU", currency: "EUR" },
     voucherPosSave: [{ objectName: "VoucherPos", mapAll: true, accountingType: { id: at, objectName: "AccountingType" }, taxRate: 0, net: false, sumGross: amount, sumNet: amount, comment: "USt-Vorauszahlung " + p.label }],
