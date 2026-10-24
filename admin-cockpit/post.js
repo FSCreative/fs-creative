@@ -301,7 +301,7 @@ function serverSearch(){
     if(!UI.msr||UI.msr.q!==q) return;
     UI.msr={q:q,acc:UI.macct,busy:false,list:j&&j.ok?(j.messages||[]):[],err:j&&j.ok?"":((j&&j.error)||"Suche im Postfach fehlgeschlagen"),partial:!!(j&&j.partial),took:j&&j.took};
     if(F.cur&&F.cur()!=="post") return; F.render(); }); },450); }
-M.serverSearch=serverSearch;
+M.serverSearch=serverSearch; M.prevText=cleanPrev;
 function searchInfo(list){ if(!UI.mq) return "";
   if(!UI.msr||UI.msr.q!==UI.mq.trim()||UI.msr.acc!==UI.macct) serverSearch();   // z. B. nach Kontowechsel neu im Postfach suchen
   var sr=UI.msr, n=list.length, more=sr&&sr.list?sr.list.filter(function(m){ return !S.messages.some(function(x){return x.id===m.id;}); }).length:0;

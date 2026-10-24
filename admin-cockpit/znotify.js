@@ -19,7 +19,7 @@ function beep(kind){ var a=ac(); if(!a) return; try{ var t=a.currentTime+0.02;
   (kind==="chat"?[[880,0],[1175,0.13],[1568,0.26]]:[[660,0],[990,0.15]]).forEach(function(n){ var o=a.createOscillator(), g=a.createGain(); o.type="sine"; o.frequency.value=n[0];
     g.gain.setValueAtTime(0.0001,t+n[1]); g.gain.exponentialRampToValueAtTime(0.22,t+n[1]+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+n[1]+0.32); o.connect(g); g.connect(a.destination); o.start(t+n[1]); o.stop(t+n[1]+0.36); }); }catch(e){} }
 function notify(title,body,go,tag){
-  var o={body:String(body||"").slice(0,180),tag:tag,icon:"/logos/cockpit-icon-180.png",badge:"/logos/cockpit-favicon.png",data:{url:"/admin"+(go?"#"+go:"")}};
+  var o={body:String(body||"").slice(0,240),tag:tag,icon:"/logos/cockpit-icon-180.png",badge:"/logos/cockpit-favicon.png",data:{url:"/admin"+(go?"#"+go:"")}};
   var legacy=function(){ try{ var n=new Notification(title,{body:o.body,tag:tag,renotify:true,icon:o.icon}); n.onclick=function(){ try{ window.focus(); }catch(e){} if(go) F.go(go); n.close(); }; }catch(e){} };
   if(!F.swReg){ legacy(); return; }
   F.swReg().then(function(r){ return r.getNotifications({tag:tag}).then(function(l){ o.renotify=!l.length; return r.showNotification(title,o); }); }).catch(legacy);
@@ -38,8 +38,8 @@ function pollMail(){ if(!cfg().on||!cfg().mail) return;
     var inbox=md.messages.filter(function(m){ return m&&m.id&&/^inbox$/i.test(m.folder||"INBOX")&&!m.deleted; });
     if(!mailSeen){ mailSeen={}; inbox.forEach(function(m){ mailSeen[m.id]=1; }); return; }
     var fresh=inbox.filter(function(m){ return !mailSeen[m.id]&&!m.read; }); inbox.forEach(function(m){ mailSeen[m.id]=1; });
-    if(fresh.length===1) pop("mail",fresh[0].fromName||fresh[0].from||"Neue Mail",fresh[0].subject||"(ohne Betreff)","post","mail-"+fresh[0].id);
-    else if(fresh.length>1) pop("mail",fresh.length+" neue Mails",fresh.slice(0,3).map(function(m){ return (m.fromName||m.from||"")+": "+(m.subject||""); }).join(" · "),"post","mail");
+    if(fresh.length===1) pop("mail","Mail: "+(fresh[0].fromName||fresh[0].from||"unbekannt"),(fresh[0].subject||"(ohne Betreff)")+(F.M&&F.M.prevText&&F.M.prevText(fresh[0].preview)?"\n"+F.M.prevText(fresh[0].preview).slice(0,140):""),"post","mail-"+fresh[0].id);
+    else if(fresh.length>1) pop("mail","Mail: "+fresh.length+" neue",fresh.slice(0,3).map(function(m){ return (m.fromName||m.from||"")+" – "+(m.subject||""); }).join("\n"),"post","mail");
   }).catch(function(){});
 }
 /* Chat: ungelesene Besucher-Nachrichten je Unterhaltung gestiegen → Hinweis */
@@ -50,7 +50,7 @@ function pollChat(){ if(!cfg().on||!cfg().chat) return;
     var cur={}; j.convs.forEach(function(c){ cur[c.id]=c.unread||0; });
     if(!chatSeen){ chatSeen=cur; return; }
     var up=j.convs.filter(function(c){ return (c.unread||0)>(chatSeen[c.id]||0); }); chatSeen=cur;
-    if(up.length){ var c=up[0]; pop("chat","Website-Chat: "+(c.name||("Besucher #"+c.no)),(c.last&&c.last.text)||"Neue Nachricht","chat","chat-"+c.id); }
+    if(up.length){ var c=up[0]; pop("chat","Website-Chat: "+(c.name||("Besucher #"+c.no)),"Neue Nachricht auf der Website\n"+((c.last&&c.last.text)||""),"chat","chat-"+c.id); }
   }).catch(function(){});
 }
 setInterval(pollMail,30000); setInterval(pollChat,15000); setTimeout(function(){ pollMail(); pollChat(); },4000);

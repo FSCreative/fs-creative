@@ -28,7 +28,7 @@ module.exports = function (D) {
   // an alle Geräte mit dem Thema; tag fasst gleichartige Meldungen zusammen
   async function send(topic, msg) {
     await load(); if (!ST.subs.length) return 0;
-    const body = JSON.stringify({ title: String(msg.title || "FS Cockpit").slice(0, 80), body: String(msg.body || "").slice(0, 180), url: msg.url || "/admin", tag: msg.tag || topic });
+    const body = JSON.stringify({ title: String(msg.title || "FS Cockpit").slice(0, 80), body: String(msg.body || "").slice(0, 240), url: msg.url || "/admin", tag: msg.tag || topic });
     let n = 0, dead = [];
     for (const s of ST.subs.filter(x => topic === "*" || (x.topics || []).indexOf(topic) > -1)) {   // "*" = Sicherheitswarnung an alle Geräte
       try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, { TTL: 3600, urgency: "normal" }); n++; }
@@ -46,8 +46,12 @@ module.exports = function (D) {
     if (!seen) { seen = new Set(msgs.map(m => m.id)); return; }
     const fresh = msgs.filter(m => !seen.has(m.id) && !m.read && !m.deleted); msgs.forEach(m => seen.add(m.id));
     if (!fresh.length) return;
-    if (fresh.length === 1) { const m = fresh[0]; await send("mail", { title: m.fromName || m.from || "Neue Mail", body: m.subject || "(ohne Betreff)", url: "/admin#post", tag: "mail-" + m.id }); }
-    else await send("mail", { title: fresh.length + " neue Mails", body: fresh.slice(0, 3).map(m => (m.fromName || m.from || "") + ": " + (m.subject || "")).join(" · "), url: "/admin#post", tag: "mail" });
+    // Aufbau aller Meldungen (Wunsch Simon 24.10.2026): 1. Zeile „Art: von wem“, darunter Info + Text
+    if (fresh.length === 1) { const m = fresh[0]; await send("mail", { title: "Mail: " + (m.fromName || m.from || "unbekannt"), body: (m.subject || "(ohne Betreff)") + (prev(m.preview) ? "\n" + prev(m.preview) : ""), url: "/admin#post", tag: "mail-" + m.id }); }
+    else await send("mail", { title: "Mail: " + fresh.length + " neue", body: fresh.slice(0, 3).map(m => (m.fromName || m.from || "") + " – " + (m.subject || "")).join("\n"), url: "/admin#post", tag: "mail" });
+  }
+  // Mail-Vorschau ohne CSS-Reste aus HTML-Mails
+  function prev(t) { return String(t || "").replace(/@import[^;]*;?/gi, " ").replace(/[^{}]{0,300}\{[^{}]*\}/g, " ").replace(/[^{}]{0,300}\{[^}]*$/, " ").replace(/[{}]/g, " ").replace(/\s+/g, " ").trim().slice(0, 140);
   }
   return { publicKey, subscribe, unsubscribe, setTopics, send, status, mailTick };
 };

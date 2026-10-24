@@ -369,7 +369,7 @@ function loginFailed(ip) {
   console.log("Cockpit-Anmeldung fehlgeschlagen (" + total + " in der letzten Stunde)");
   if (total >= 20 && Date.now() - loginAlarmAt > 3600000) {
     loginAlarmAt = Date.now();
-    if (process.env.DATABASE_URL) PUSH.send("*", { title: "Sicherheit: Cockpit-Anmeldung", body: total + " fehlgeschlagene Anmeldeversuche in der letzten Stunde. Falls du das nicht warst: Passwort ändern (ADMIN_PASSWORD in Railway).", url: "/admin", tag: "login-alarm" }).catch(() => {});
+    if (process.env.DATABASE_URL) PUSH.send("*", { title: "Sicherheit: Cockpit-Anmeldung", body: total + " fehlgeschlagene Anmeldeversuche in der letzten Stunde\nFalls du das nicht warst: Passwort ändern (ADMIN_PASSWORD in Railway).", url: "/admin", tag: "login-alarm" }).catch(() => {});
   }
 }
 
@@ -460,7 +460,7 @@ function dailyDigest() {
   const parts = [];
   if (open.length) parts.push(open.length + (open.length === 1 ? " Aufgabe" : " Aufgaben") + (over.length ? " (" + over.length + " überfällig)" : ""));
   const first = open.slice(0, 3).map(t => t.title).join(" · ");
-  PUSH.send("*", { title: "Heute fällig: " + parts.join(", "), body: first, url: "/admin#auftraege", tag: "digest-" + day }).catch(e => console.error("Push-Tagesübersicht:", e.message));
+  PUSH.send("*", { title: "Aufgaben: heute fällig", body: parts.join(", ") + "\n" + first, url: "/admin#auftraege", tag: "digest-" + day }).catch(e => console.error("Push-Tagesübersicht:", e.message));
 }
 setInterval(dailyDigest, 5 * 60 * 1000);
 // Push-Benachrichtigungen (Handy): neue Mails jede Minute prüfen
@@ -3759,7 +3759,7 @@ async function saveLead(lead, opt) {
   try { addTask({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(), leadId: lead.id,
     notes: tkClip([lead.email, lead.phone, /chat/i.test(lead.source || "") ? lead.source : ""].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }); } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
   if (!notify) return { stored, mailed: false };
-  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Neue Anfrage: " + lead.topic, body: lead.name + (lead.company ? " · " + lead.company : "") + " – " + String(lead.message || "").slice(0, 90), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
+  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Lead: " + (lead.company || lead.name), body: [lead.topic, lead.company && lead.company !== lead.name ? lead.name : "", lead.entwurf ? "Gratis-Entwurf" : ""].filter(Boolean).join(" · ") + "\n" + String(lead.message || "").replace(/\s+/g, " ").slice(0, 140), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
   let mailed = false;
   if (MAIL.url && MAIL.token) {
     const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);
@@ -3905,7 +3905,8 @@ const server = http.createServer((req, res) => {
 });
 // „Zur Prüfung“: automatische Läufe legen nur Vorschläge ab, gebucht wird erst nach Bestätigung (Push-Thema „fin“ bei neuen Vorschlägen)
 const FIN_PROP = require("./fin-proposals.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), rules: () => FIN_RULES,
-  notify: async (fresh, total) => { if (!process.env.DATABASE_URL || !fresh.length) return; await PUSH.send("fin", { title: "Zur Prüfung: " + (fresh.length === 1 ? "1 neuer Vorschlag" : fresh.length + " neue Vorschläge"), body: fresh.slice(0, 3).map(x => x.title).join(" · ") + (total > fresh.length ? " (insgesamt " + total + " offen)" : ""), url: "/admin?fin=review#geld", tag: "fin-proposals" }); } });
+  notify: async (fresh, total) => { if (!process.env.DATABASE_URL || !fresh.length) return; await PUSH.send("fin", fresh.length === 1 && fresh[0].amount != null ? { title: "Buchung: " + (fresh[0].amount >= 0 ? "Eingang" : "Ausgang") + " iHv. " + Math.abs(fresh[0].amount).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €", body: fresh[0].title + (fresh[0].detail ? "\n" + String(fresh[0].detail).slice(0, 140) : (total > 1 ? "\nInsgesamt " + total + " zur Prüfung" : "")),
+    url: "/admin?fin=review#geld", tag: "fin-proposals" } : { title: "Buchung: " + fresh.length + " neue zur Prüfung", body: fresh.slice(0, 3).map(x => x.title + (x.amount != null ? " · " + x.amount.toLocaleString("de-AT", { minimumFractionDigits: 2 }) + " €" : "")).join("\n") + (total > fresh.length ? "\nInsgesamt " + total + " offen" : ""), url: "/admin?fin=review#geld", tag: "fin-proposals" }); } });
 FIN_LOCAL.setProposer(FIN_PROP);
 // Mollie als Zahlungskonto (nur lesend; Zugang über MOLLIE_ORG_TOKEN … in Railway) – Abruf importiert nur, Zuordnungen sind Vorschläge
 const FIN_MOLLIE = require("./fin-mollie.js")({ L: FIN_LOCAL, P: () => FIN_PROP,

@@ -314,6 +314,7 @@ F.css(
   /* Kein Zoom: iOS zoomt bei Feldern unter 16px hinein und bleibt dort */
   'html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}'+
   'input,textarea,select{font-size:16px!important}'+
+  '.hide-m,.kbd{display:none!important}'+   /* Tastenkürzel gibt es am Handy nicht */
 '}'
 );
 /* Pinch-Zoom der ganzen Seite sperren (iOS ignoriert user-scalable=no); Dokumente haben eigene Zoom-Knöpfe */

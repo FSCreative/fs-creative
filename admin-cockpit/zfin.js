@@ -982,11 +982,11 @@ F.css(
 '.fsd-ctitle{font-size:17px;font-weight:500;margin-bottom:4px}'+
 '.fsd .notice,.fsd .sd-empty{font-size:14px}'+
 '.fsm{display:block;min-height:calc(100vh - 60px);background:var(--ground);margin:0;padding-bottom:110px;padding-top:env(safe-area-inset-top,0px)}'+
-'.fsm::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:var(--sunk);z-index:6}'+
-'.fsm-head{padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:center}.fsm-hbtn{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;color:var(--ink)}.fsm-hbtn svg{width:20px;height:20px}'+
+'.fsm::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:var(--ground);z-index:6}'+
+'.fsm-head{padding:8px 16px 4px;display:flex;justify-content:space-between;align-items:center}.fsm-hbtn{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;color:var(--ink)}.fsm-hbtn svg{width:20px;height:20px}'+
 '.fsd-help{margin-top:auto}.fsd-help kbd{margin-left:auto;font:inherit;font-size:11px;color:var(--sd-mut);border:1px solid var(--sd-line2);border-radius:4px;padding:0 5px}'+
 '.fsm-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px;margin:0;color:var(--ink)}'+
-'.fsm-nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px 12px;scrollbar-width:none;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--sunk)}.fsm-nav::-webkit-scrollbar{display:none}'+
+'.fsm-nav{display:flex;gap:6px;overflow-x:auto;padding:6px 16px 10px;margin-bottom:12px;scrollbar-width:none;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}.fsm-nav::-webkit-scrollbar{display:none}'+
 '.fsm-nav button{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--ink)}'+
 '.fsm-nav button[aria-current]{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}'+
 '.fsm-body{padding:0 12px;display:grid;gap:12px}'+

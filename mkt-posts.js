@@ -440,7 +440,7 @@ module.exports = function (C) {
       p.status = !rs.length ? "fehler" : ok === rs.length ? "gepostet" : ok ? "teilweise" : "fehler"; p.postedAt = nowIso();
       save(true);
       const b = state().brands[p.brand] || {};
-      if (C.push) C.push("mkt", { title: (p.status === "gepostet" ? "Gepostet: " : p.status === "teilweise" ? "Teilweise gepostet: " : "Posten fehlgeschlagen: ") + b.name, body: (p.idea || "") + " · " + (p.platforms || []).map(pf => PLATFORMS[pf].label + " " + ({ ok: "✓", entwurf: "Entwurf", fehler: "✗", "übersprungen": "–" }[(p.results[pf] || {}).status] || "?")).join(", "), url: "/admin#mkt", tag: "mkt-" + p.id }).catch(() => {});
+      if (C.push) C.push("mkt", { title: "Marketing: " + b.name, body: (p.status === "gepostet" ? "Gepostet" : p.status === "teilweise" ? "Teilweise gepostet" : "Posten fehlgeschlagen") + " · " + (p.platforms || []).map(pf => PLATFORMS[pf].label + " " + ({ ok: "✓", entwurf: "Entwurf", fehler: "✗", "übersprungen": "–" }[(p.results[pf] || {}).status] || "?")).join(", ") + (p.idea ? "\n" + String(p.idea).slice(0, 140) : ""), url: "/admin#mkt", tag: "mkt-" + p.id }).catch(() => {});
     } catch (e) { p.status = "fehler"; p.lastError = String(e.message || e).slice(0, 300); save(true); }
     finally { RUNNING.delete(p.id); }
   }
@@ -462,7 +462,7 @@ module.exports = function (C) {
           const fresh = box.channels.flatMap(c => c.items.filter(i => !i.mine && i.kind !== "like" && !told[i.id] && Date.now() - Date.parse(i.at || 0) < 3 * 864e5).map(i => Object.assign({ pf: c.label }, i)));
           fresh.forEach(i => { told[i.id] = Date.now(); });
           if (!first && fresh.length && C.push) { const b = state().brands[key] || {}, i = fresh[0];
-            C.push("mkt", { title: (b.name || key) + ": " + (fresh.length > 1 ? fresh.length + " neue Kommentare/Nachrichten" : (i.kind === "message" ? "Nachricht" : "Kommentar") + " auf " + i.pf), body: (fresh.length > 1 ? i.pf + " · " : "") + (i.from && i.from.name ? i.from.name + ": " : "") + clip(i.text, 120), url: "/admin#mkt" }).catch(() => {}); }
+            C.push("mkt", { title: (fresh.length > 1 ? (b.name || key) + ": " + fresh.length + " neue Kommentare/Nachrichten" : (i.kind === "message" ? "Nachricht" : "Kommentar") + ": " + ((i.from && i.from.name) || (b.name || key))), body: (b.name || key) + " · " + i.pf + "\n" + clip(i.text, 140), url: "/admin#mkt" }).catch(() => {}); }
         }
         Object.keys(told).forEach(k => { if (Date.now() - told[k] > 14 * 864e5) delete told[k]; }); st.inboxToldInit = true; save();
       }

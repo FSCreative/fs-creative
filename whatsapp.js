@@ -180,7 +180,7 @@ module.exports = function (D) {
     k.lastAt = nowIso();
   }
   function accountUpdate(v) { const ev = clip(v && v.event, 60).toUpperCase(); if (!ev) return; const info = v.disconnection_info || v.ban_info || v.violation_info || v.restriction_info; settings().account = { event: ev, at: nowIso(), info: info ? clip(JSON.stringify(info), 300) : "" }; }
-  function notify(id, o) { if (!D.push) return; const nm = nameOf(id) || fmtNum(id); Promise.resolve().then(() => D.push("wa", { title: "WhatsApp: " + nm, body: preview(o).slice(0, 80), url: "/admin#chat", tag: "wa-" + id })).catch(() => {}); }
+  function notify(id, o) { if (!D.push) return; const nm = nameOf(id) || fmtNum(id); Promise.resolve().then(() => D.push("wa", { title: "WhatsApp: " + nm, body: (nameOf(id) ? fmtNum(id) + " · " : "") + "Nachricht\n" + preview(o).slice(0, 140), url: "/admin#chat", tag: "wa-" + id })).catch(() => {}); }
 
   function ingest(body) {
     const s = settings(), B = { chats: new Map(), dirty: new Set(), push: new Map(), media: [], get: id => { let c = B.chats.get(id); if (!c) { c = loadChat(id); B.chats.set(id, c); } return c; } };
