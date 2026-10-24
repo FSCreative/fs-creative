@@ -156,7 +156,7 @@ function mobileHeute(){
       (open?'<div class="mx-incb">'+inc.lines.map(function(l){ return '<div class="mx-il"><span>'+esc(l.label)+'<small>'+esc(l.basis)+(l.live&&l.key==="kochdu"?' · live':'')+'</small></span><b class="num money">'+eur0(l.monthly)+'</b></div>'; }).join("")+'<button type="button" class="mx-more" data-act="incomeinfo">Wie gerechnet?</button></div>':'')+'</section>';
   }
   return F.head(greet+", Simon.",esc(dateLine)+(f.length?" · "+f.length+(f.length===1?" Sache offen":" Sachen offen"):" · alles erledigt"),"")+
-    '<div class="mx">'+quick+chips+todo+agenda+todos+mailC+incC+'</div>';
+    '<div class="mx">'+quick+chips+agenda+todo+todos+mailC+incC+'</div>';
 }
 F.action("hmincome",function(){ F.UI.incOpen=!F.UI.incOpen; F._forceRender=true; F.render(); });
 /* Beim Drehen/Größenändern zwischen Handy- und Desktop-Darstellung wechseln */
@@ -272,7 +272,7 @@ F.css(
   /* To-Dos: große Häkchen + Eingabe */
   ".mx-todos .tdrow{grid-template-columns:28px minmax(0,1fr);gap:12px;min-height:54px;padding:8px 16px}"+
   ".mx-todos .tdrow input{width:24px;height:24px}"+
-  ".mx-todos .tdrow .todo-t{font-size:15px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;padding:6px 0;line-height:1.35}"+
+  ".mx-todos .tdrow .todo-t{font-size:15px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;padding:0;margin:6px 0;line-height:1.35}"+
   ".mx-todos .tdrow .due{font-size:12.5px}"+
   ".mx-todos .todo-add{display:grid;grid-template-columns:minmax(0,1fr) 54px;grid-template-areas:'t t' 'd b';gap:8px;padding:12px 16px 14px;border-top:1px solid var(--line)}"+
   ".mx-todos .todo-add input[name=text]{grid-area:t}.mx-todos .todo-add input[name=due]{grid-area:d;max-width:none!important}.mx-todos .todo-add .btn{grid-area:b;justify-content:center;font-size:22px;border-radius:12px}"+

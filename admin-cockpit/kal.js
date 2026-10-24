@@ -266,7 +266,7 @@ function openEventView(id){
   F.modal('<div class="row-between"><h2 class="ktitle"><span class="spdot" style="--c:var(--sp-'+sp+')"></span>'+esc(e.title||"Termin")+'</h2>'+F.btnClose()+'</div>'+
     '<dl class="kv"><dt>Datum</dt><dd>'+esc(longDate(e.date))+'</dd><dt>Zeit</dt><dd>'+esc(time)+'</dd>'+
     '<dt>Bereich</dt><dd><span class="tag grey" style="background:color-mix(in srgb,var(--sp-'+sp+') 16%,var(--panel));color:var(--ink)">'+esc(spName(sp))+'</span></dd>'+
-    (e.location?'<dt>Ort</dt><dd>'+esc(e.location)+'</dd>':'')+(e.notes?'<dt>Notizen</dt><dd class="pre">'+esc(e.notes)+'</dd>':'')+
+    (e.location?'<dt>Ort</dt><dd>'+(/^https?:\/\//.test(e.location)?'<a href="'+esc(e.location)+'" target="_blank" rel="noopener">'+esc(e.location)+'</a>':'<a href="https://maps.apple.com/?q='+encodeURIComponent(e.location)+'" target="_blank" rel="noopener">'+esc(e.location)+'</a>')+'</dd>':'')+(e.notes?'<dt>Notizen</dt><dd class="pre">'+esc(e.notes)+'</dd>':'')+
     '<dt>Kalender</dt><dd>'+src+'</dd></dl>'+
     '<div class="foot"><span>'+(ro?'':'<button type="button" class="btn danger" data-act="eventdel:'+esc(e.id)+'">Löschen</button>')+'</span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button>'+(ro?'':'<button type="button" class="btn primary" data-act="eventedit:'+esc(e.id)+'">Bearbeiten</button>')+'</span></div>',"narrow ksheet");
 }

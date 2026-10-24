@@ -6,7 +6,23 @@ var STAGES=F.STAGES=[["anfrage","Anfrage"],["entwurf","Entwurf"],["angebot","Ang
 function val(l){ return +l.value||0; }
 
 F.invLine=function(i){ var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":i.status===750?"teilbezahlt":"offen"; return '<span><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(i.nr||"Entwurf")+'">'+esc(i.nr||"Entwurf")+'</a> · '+de(i.date)+' · '+eur(i.gross)+' <span class="tag '+cls+'">'+lbl+'</span></span>'; };
-function leadMails(l){ var e=String(l.email||"").toLowerCase(); if(!e) return []; return F.D.mail.messages.filter(function(m){ return String(m.from||"").toLowerCase()===e||String(m.to||"").toLowerCase().indexOf(e)>-1; }).slice(0,8); }
+/* Mails zur Kundenakte: Absender/Empfänger, „Antwort an“, CC und Text (Formular-Mails kommen von FS Creative mit der Kundenadresse als „Antwort an“).
+   Zusätzlich wird beim Öffnen das ganze Postfach nach der Adresse durchsucht – der Schnappschuss enthält nur die letzten 200 Mails. */
+var LMS={};
+function mailHdr(m,e){ return JSON.stringify([m.from,m.to,m.replyTo,m.toList,m.ccList]).toLowerCase().indexOf(e)>-1; }
+function leadMails(l){ var e=String(l.email||"").toLowerCase().trim(); if(!e) return [];
+  var seen={}, all=F.D.mail.messages.filter(function(m){ return mailHdr(m,e)||String(m.preview||"").toLowerCase().indexOf(e)>-1; }).concat((LMS[e]&&LMS[e].list)||[]);
+  return all.filter(function(m){ if(seen[m.id]||m.deleted) return false; seen[m.id]=1; return true; }).sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||"")); }).slice(0,12); }
+function leadMailSearch(l){ var e=String(l.email||"").toLowerCase().trim(); if(!e||(LMS[e]&&(LMS[e].busy||Date.now()-LMS[e].at<300000))) return;
+  LMS[e]={busy:true,at:Date.now(),list:[]};
+  F.api("/admin/api/mail-search?q="+encodeURIComponent(e)+"&account=all").then(function(j){
+    LMS[e]={busy:false,at:Date.now(),list:j&&j.ok?(j.messages||[]).filter(function(m){ return mailHdr(m,e); }):[]};
+    var d=document.getElementById("drawer"); if(F.UI.leadSel===l.id&&d&&d.classList.contains("on")) openLead(l.id);
+  }); }
+function leadMailBusy(l){ var e=String(l.email||"").toLowerCase().trim(); return !!(LMS[e]&&LMS[e].busy); }
+F.action("leadmail",function(id){ var e=String((F.D.leads.find(function(x){ return x.id===F.UI.leadSel; })||{}).email||"").toLowerCase(), hit=LMS[e]&&LMS[e].list.find(function(m){ return m.id===id; });
+  if(hit&&!F.D.mail.messages.some(function(m){ return m.id===id; })) F.UI.msr={q:e,acc:"all",busy:false,list:LMS[e].list,err:""};   // ältere Mail aus der Suche: Postfach findet sie darüber
+  if(F.M&&F.M.open) F.M.open(id,{fromOutside:true}); });
 function leadInvoices(l){ if(!F.D.sev) return []; var names=[l.company,l.name].filter(Boolean).map(function(x){return x.toLowerCase();}); return F.D.sev.invoices.filter(function(i){ var c=String(i.contact||"").toLowerCase(); return c&&names.some(function(n){ return c===n||c.indexOf(n)>-1||n.indexOf(c)>-1; }); }).slice(0,8); }
 
 /* ---------- Angebote (Order, Typ AN) ---------- */
@@ -95,7 +111,7 @@ function leadPost(body){ return F.api("/admin/api/leads",{body:body}).then(funct
 
 function openLead(id){
   var l=F.D.leads.find(function(x){return x.id===id;}); if(!l) return; F.UI.leadSel=id;
-  var st=l.stage||"anfrage", mails=leadMails(l), invs=leadInvoices(l), offs=leadOffers(l);
+  var st=l.stage||"anfrage", mails=leadMails(l), invs=leadInvoices(l), offs=leadOffers(l); leadMailSearch(l);
   if(mob()){ F.openDrawer(leadSheet(l,st,mails,invs,offs),function(){ if(F.UI.leadSel) openLead(F.UI.leadSel); }); return; }
   F.openDrawer('<div class="row-between" style="align-items:flex-start"><div style="min-width:0"><div class="sec-t">Kundenakte</div><h2>'+esc(l.company||l.name)+'</h2><div class="muted">'+esc(l.topic||"")+' · seit '+de(l.created)+'</div></div><button class="btn icon" data-close aria-label="Schließen">'+F.svg("close")+'</button></div>'+
     '<div><div class="sec-t">Phase</div><div class="stages">'+STAGES.map(function(s){ return '<button data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div><div style="margin-top:6px"><button class="link" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></div></div>'+
@@ -104,7 +120,7 @@ function openLead(id){
     '<label class="fl">Notizen<textarea class="f" name="notes" rows="4" placeholder="Was wurde besprochen, was ist der nächste Schritt?">'+esc(l.notes||"")+'</textarea></label><div><button class="btn primary" type="submit">Speichern</button></div></form>'+
     '<dl class="kv"><dt>Gekommen über</dt><dd>'+esc(l.source||"—")+'</dd><dt>Gratis-Entwurf</dt><dd>'+(l.entwurf?"Ja, gewünscht":"Nein")+'</dd></dl>'+
     (l.message?'<div><div class="sec-t">Nachricht aus dem Formular</div><div class="mbody quote">'+esc(l.message)+'</div></div>':'')+
-    '<div><div class="sec-t">Mails</div>'+(mails.length?mails.map(function(m){ return '<button class="link" style="display:block;text-align:left" data-act="mail:'+esc(m.id)+'">'+deShort(String(m.date).slice(0,10))+' · '+esc(m.subject||"(kein Betreff)")+'</button>'; }).join(""):'<span class="muted">Keine Mails mit '+esc(l.email||"dieser Adresse")+' im Postfach.</span>')+'</div>'+
+    '<div><div class="sec-t">Mails</div>'+(mails.length?mails.map(function(m){ return '<button class="link" style="display:block;text-align:left" data-act="leadmail:'+esc(m.id)+'">'+deShort(String(m.date).slice(0,10))+' · '+esc(m.subject||"(kein Betreff)")+'</button>'; }).join(""):'<span class="muted">'+(leadMailBusy(l)?'Durchsucht das Postfach …':'Keine Mails mit '+esc(l.email||"dieser Adresse")+' im Postfach.')+'</span>')+'</div>'+
     '<div><div class="sec-t">Angebote</div>'+(offs.length?'<div class="invs">'+offs.slice(0,8).map(F.offerLine).join("")+'</div>':'<span class="muted">'+(OFF.list==null?(OFF.err?"Angebote nicht geladen.":"Lade …"):"Noch keine.")+'</span>')+'</div>'+
     '<div><div class="sec-t">Rechnungen</div>'+(invs.length?'<div class="invs">'+invs.map(F.invLine).join("")+'</div>':'<span class="muted">Noch keine.</span>')+'</div>'+
     ((l.history||[]).length?'<div><div class="sec-t">Verlauf</div><div class="muted">'+l.history.slice().reverse().map(function(h){ return de(h.at)+" → "+((STAGES.find(function(s){return s[0]===h.stage;})||[0,h.stage])[1]); }).join("<br>")+'</div></div>':''),
@@ -195,7 +211,7 @@ function leadSheet(l,st,mails,invs,offs){
       '<div class="mx-row lm-kv"><span class="mx-l"><span>Gekommen über</span><b>'+esc(l.source||"—")+'</b></span><span class="mx-r"><small>Gratis-Entwurf: '+(l.entwurf?"ja":"nein")+'</small></span></div></section>'+
     (F.kiLeadHtml?'<div class="lm-ki">'+F.kiLeadHtml(l)+'</div>':'')+
     (l.message?'<section class="mx-card"><div class="mx-h"><h3>Nachricht aus dem Formular</h3></div><div class="mbody quote">'+esc(l.message)+'</div></section>':'')+
-    '<section class="mx-card flush"><div class="mx-h"><h3>Mails</h3><span class="mx-sum">'+(mails.length||"")+'</span></div>'+(mails.length?mails.map(function(m){ return '<button type="button" class="mx-row" data-act="mail:'+esc(m.id)+'"><span class="mx-l"><b>'+esc(m.subject||"(kein Betreff)")+'</b><span>'+deShort(String(m.date).slice(0,10))+'</span></span><span class="mx-r">'+mxIc("chev")+'</span></button>'; }).join(""):'<p class="mx-empty">Keine Mails mit '+esc(l.email||"dieser Adresse")+' im Postfach.</p>')+'</section>'+
+    '<section class="mx-card flush"><div class="mx-h"><h3>Mails</h3><span class="mx-sum">'+(leadMailBusy(l)?'sucht …':(mails.length||""))+'</span></div>'+(mails.length?mails.map(function(m){ return '<button type="button" class="mx-row" data-act="leadmail:'+esc(m.id)+'"><span class="mx-l"><b>'+esc(m.subject||"(kein Betreff)")+'</b><span>'+deShort(String(m.date).slice(0,10))+'</span></span><span class="mx-r">'+mxIc("chev")+'</span></button>'; }).join(""):'<p class="mx-empty">'+(leadMailBusy(l)?'Durchsucht das Postfach …':'Noch keine.')+'</p>')+'</section>'+
     '<section class="mx-card flush"><div class="mx-h"><h3>Angebote</h3></div>'+(offs.length?offs.slice(0,8).map(function(o){ return '<a class="mx-row" href="/admin/api/sevdesk/offer-pdf?id='+encodeURIComponent(o.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Angebot '+esc(o.nr||"")+'"><span class="mx-l"><b>'+esc(o.nr||"Angebot")+'</b><span>'+de(o.date)+'</span></span><span class="mx-r lm-amt"><b class="num money">'+eur(o.gross)+'</b>'+offTag(o)+'</span></a>'; }).join(""):'<p class="mx-empty">'+(OFF.list==null?(OFF.err?"Angebote nicht geladen.":"Lade …"):"Noch keine.")+'</p>')+'</section>'+
     '<section class="mx-card flush"><div class="mx-h"><h3>Rechnungen</h3></div>'+(invs.length?invs.map(function(i){ var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":i.status===750?"teilbezahlt":"offen";
       return '<a class="mx-row" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(i.nr||"Entwurf")+'"><span class="mx-l"><b>'+esc(i.nr||"Entwurf")+'</b><span>'+de(i.date)+'</span></span><span class="mx-r lm-amt"><b class="num money">'+eur(i.gross)+'</b><span class="tag '+cls+'">'+lbl+'</span></span></a>'; }).join(""):'<p class="mx-empty">Noch keine.</p>')+'</section>'+
@@ -227,7 +243,7 @@ F.css(
   ".mx-oa{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}.mx-oa::-webkit-scrollbar{display:none}.mx-oa .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}"+
   /* Kundenakte als Vollbild-Blatt */
   ".drawer:has(.lm){background:var(--ground);padding:0 0 calc(28px + env(safe-area-inset-bottom,0px));gap:0}"+
-  ".lm{display:grid;gap:12px;padding:0 12px;min-width:0}"+
+  ".lm{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:0 12px;min-width:0}.lm>*{min-width:0}"+
   ".lm-h{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;margin:0 -12px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}"+
   ".lm-back{width:44px;height:44px;flex:none;border-radius:50%;border:0;background:var(--sunk);display:grid;place-items:center;color:var(--ink)}.lm-back svg{width:22px;height:22px}"+
   ".lm-ht{display:grid;min-width:0}.lm-ht b{font-size:19px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-display)}.lm-ht span{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
@@ -240,7 +256,8 @@ F.css(
   ".lm-lost{border:0;background:none;color:var(--ink-3);font-size:14px;font-weight:600;padding:12px 0 0;min-height:40px}"+
   ".lm a.mx-row{text-decoration:none}.lm-kv{cursor:default}.lm-amt{display:grid;justify-items:end;gap:3px}.lm-amt b{font-weight:600;font-size:15px;color:var(--ink)}"+
   ".lm .mbody.quote{font-size:14px;max-height:220px;overflow:auto}"+
-  ".lm-ki .kibox{border-radius:14px}"+
+  ".lm .mx-card.flush:has(>.mx-empty){display:flex;align-items:center;justify-content:space-between;gap:12px}.lm .mx-card.flush:has(>.mx-empty)>.mx-h{border:0;flex:none}.lm .mx-card.flush>.mx-empty{padding:0 16px 0 0;margin:0;text-align:right;font-size:13px;min-width:0}"+
+  ".lm-ki .kibox{border-radius:14px;overflow-wrap:anywhere}.lm-ki .kitags{display:flex;flex-wrap:wrap;gap:6px}.lm-ki .tag{white-space:normal;max-width:100%;height:auto;line-height:1.35;padding-top:3px;padding-bottom:3px}"+
   ".lm-form input.f,.lm-form textarea.f{font-size:16px;min-height:46px;border-radius:12px}.lm-form label.fl{font-size:13px}"+
   ".lm-save{justify-content:center;min-height:50px;font-size:16px;border-radius:12px}"+
   ".mx .tag,.lm .tag{font-size:12px}"+
