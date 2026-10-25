@@ -713,13 +713,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     await admin("/admin/api/print/settings", { groupMargin: { "gifts-merchandise-promotional": null } });
     assert.strictEqual((await q()).net, before.net, "zurück auf Standard");
   });
-  await t("Newsletter: Double-Opt-in, Bestätigung mit Code, Ausgabe im Cockpit bearbeiten, Testmail mit Pflichtangaben, Abmelden", async () => {
+  await t("Newsletter: Anmeldung sofort aktiv mit Willkommensmail, alte Bestätigungslinks gehen noch, Ausgabe im Cockpit bearbeiten, Testmail mit Pflichtangaben, Abmelden", async () => {
     const em = "news@example.com";
     assert.strictEqual((await post("/print/api/newsletter", { email: em })).status, 400, "ohne Einwilligung");
     const r = await post("/print/api/newsletter", { email: em, consent: true, source: "Test" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
-    let st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 0, "erst nach Bestätigung"); assert.strictEqual(st.counts.pending, 1);
-    const cm = M.mails.filter(m => m.to === em).pop(); const link = (cm.text.match(/https?:\/\/\S+bestaetigen\S+/) || [])[0]; assert.ok(link, cm.text);
-    const cp = await fetch(B + new URL(link).pathname + new URL(link).search); assert.strictEqual(cp.status, 200); assert.ok(/ersten Newsletter im Monat/.test(await cp.text()), "Hinweis Monatscode auf der Bestätigungsseite");
+    assert.ok(/angemeldet/.test(r.j.msg), r.j.msg);
+    let st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 1, "sofort aktiv"); assert.strictEqual(st.counts.pending || 0, 0);
+    await new Promise(z => setTimeout(z, 300));
+    const cm = M.mails.filter(m => m.to === em).pop(); assert.ok(cm && /Willkommen/.test(cm.subject) && !/bestaetigen/.test(cm.text) && /abmelden\?e=/.test(cm.text), cm && cm.text);
+    const cp = await fetch(B + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(em) + "&t="); assert.strictEqual(cp.status, 400, "ohne gültigen Token weiterhin abgelehnt");
     assert.strictEqual((await fetch(B + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(em) + "&t=falsch")).status, 400);
     st = await admin("/admin/api/print/newsletter"); assert.strictEqual(st.recipients, 1); assert.strictEqual(st.issue.status, "draft"); assert.strictEqual(st.settings.autoSend, false, "Automatik Standard AUS");
     st = await admin("/admin/api/print/newsletter", { op: "save", monday: st.issue.monday, subject: "Testbetreff", intro: "Hallo Welt", code: "nl-test5", products: ["flyer", "visitenkarten"] });

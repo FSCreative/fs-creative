@@ -1,7 +1,8 @@
 "use strict";
 /* Druckshop-Newsletter (www.fs-creative.at/print): wöchentlich montags – Produkttipps der Woche, Designer-Tipp (rotiert), Pflichtangaben.
    Rabattcode (5 %) nur in der ersten Ausgabe im Monat (Montag 1.–7.), 14 Tage gültig; die übrigen Wochen ohne Code.
-   Anmeldung nur mit Double-Opt-in (§ 174 TKG 2021, DSGVO): Shop-Fußzeile/Kasse → Bestätigungslink; Kundenkonten mit Häkchen „Newsletter“ (E-Mail bestätigt) zählen mit.
+   Anmeldung mit Einwilligungs-Häkchen ist sofort aktiv (Wunsch Simon 25.10.2026, statt Double-Opt-in): Shop-Fußzeile/Kasse → Willkommensmail mit Abmeldelink;
+   Einwilligung wird mit Text und Zeitpunkt gespeichert (Nachweis). Kundenkonten mit Häkchen „Newsletter“ (E-Mail bestätigt) zählen mit.
    Abmeldung in jeder Ausgabe mit einem Klick (Bestätigungsseite, damit Link-Scanner nicht abmelden). Versand nur nach Freigabe im Cockpit – „automatisch montags“ ist ein Schalter (Standard AUS).
    Daten: Meta „print_newsletter“ { subs: {email: {status, source, createdAt, confirmedAt, unsubAt}}, settings, issues: {"2026-10-26": {...}} }. */
 module.exports = function (D) {
@@ -13,6 +14,27 @@ module.exports = function (D) {
   const codeIssue = mon => +String(mon).slice(8, 10) <= 7;   // erster Montag im Monat
   const monthCode = mon => "NL" + MON3[+String(mon).slice(5, 7) - 1] + String(mon).slice(2, 4);   // z. B. NLNOV26
   let NL = null;
+  // Willkommensmail statt Bestätigungsanfrage – mit laufendem Monatscode (falls gültig) und Abmeldelink
+  function currentCode(d) { const today = vienna().date; return Object.values(d.issues).filter(x => x.code && x.status === "sent" && addDays(x.monday, CODE_DAYS - 1) >= today).sort((a, b) => b.monday.localeCompare(a.monday))[0]; }
+  async function welcome(email) {
+    if (!mailSend) return; const d = await data(), pct = String(d.settings.pct).replace(".", ","), cur = currentCode(d), f = firm();
+    const unsub = publicUrl() + "/print/newsletter/abmelden?e=" + encodeURIComponent(email) + "&t=" + sig("nlu", email);
+    const codeTxt = cur ? "\n\nDer aktuelle Code gilt noch – du sparst damit gleich " + pct + " %: " + cur.code + " (gültig bis " + deDate(addDays(cur.monday, CODE_DAYS - 1)) + ", einmal je Kunde, an der Kasse eingeben)." : "";
+    const codeHtml = cur ? '<p>Der aktuelle Code gilt noch – du sparst damit gleich ' + esc(pct) + ' %:</p><p style="font-size:22px;font-weight:700;letter-spacing:.06em;background:#f2f2f7;border-radius:12px;padding:12px 16px;display:inline-block">' + esc(cur.code) + '</p><p style="color:#6e6e73;font-size:13px">Gültig bis ' + esc(deDate(addDays(cur.monday, CODE_DAYS - 1))) + ', einmal je Kunde, an der Kasse eingeben.</p>' : "";
+    await mailSend({ to: email, subject: "Willkommen beim Druckshop-Newsletter 🎉",
+      text: "Hallo!\n\nDanke für deine Anmeldung – du bist dabei! Ab sofort bekommst du jeden Montag unsere Druck-Tipps der Woche und einen Designer-Tipp, und mit dem ersten Newsletter im Monat einen " + pct + "-%-Rabattcode." + codeTxt + "\n\nAbmelden kannst du dich jederzeit: " + unsub + "\n\nFS Creative · " + f.owner + " · " + f.street + " · " + f.zip + " " + f.city,
+      html: '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1d1d1f;max-width:560px"><h2 style="font-size:20px">Danke – du bist dabei! 🎉</h2><p>Ab sofort bekommst du jeden Montag unsere Druck-Tipps der Woche und einen Designer-Tipp – und mit dem ersten Newsletter im Monat einen ' + esc(pct) + '-%-Rabattcode.</p>' + codeHtml +
+        '<p><a href="' + esc(publicUrl() + "/print") + '" style="display:inline-block;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px">Zum Druckshop</a></p><p style="color:#6e6e73;font-size:12px">Du hast dich nicht angemeldet oder willst keine Mails mehr? <a href="' + esc(unsub) + '" style="color:#6e6e73">Abmelden</a><br>FS Creative · ' + esc(f.owner) + " · " + esc(f.street) + " · " + esc(f.zip + " " + f.city) + "</p></div>" });
+  }
+  // Einmalig: offene (unbestätigte) Anmeldungen aus der Double-Opt-in-Zeit aktivieren und begrüßen
+  let MIGRATED = false;
+  async function activatePending() {
+    if (MIGRATED) return; MIGRATED = true; const d = await data(), now = nowIso(), list = Object.values(d.subs).filter(s => s.status === "pending");
+    if (!list.length) return;
+    list.forEach(s => { s.status = "active"; s.confirmedAt = now; s.confirmNote = "ohne Bestätigungslink aktiviert (Einwilligung bei der Anmeldung)"; });
+    await save(); log("Newsletter: " + list.length + " offene Anmeldung(en) aktiviert");
+    for (const s of list) await welcome(s.email).catch(e => log("Newsletter-Willkommen:", e.message));
+  }
   async function data() { if (!NL) { NL = (await store.getMeta(KEY).catch(() => null)) || {}; NL.subs = NL.subs || {}; NL.issues = NL.issues || {}; NL.settings = Object.assign({}, DEF, NL.settings || {}); } return NL; }
   const save = async () => { await store.setMeta(KEY, NL); };
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -168,6 +190,7 @@ module.exports = function (D) {
   // Stündlich: Entwurf der nächsten Ausgabe bereitstellen; mit „automatisch“ montags ab der eingestellten Stunde versenden
   async function tick() {
     try {
+      await activatePending().catch(e => log("Newsletter-Aktivierung:", e.message));
       const d = await data(), v = vienna(), mon = addDays(v.date, -v.wd);
       await issueFor(await targetMonday(), true);
       const iss = d.issues[mon];
@@ -186,13 +209,12 @@ module.exports = function (D) {
       if (b.consent !== true) return J(res, 400, { ok: false, error: "Bitte bestätige die Einwilligung" });
       const d = await data(), s = d.subs[email];
       if (s && s.status === "active") return J(res, 200, { ok: true, already: true, msg: "Du bist schon angemeldet – der nächste Newsletter kommt am Montag." });
-      d.subs[email] = Object.assign(s || {}, { email, status: "pending", source: clip(b.source || "Shop", 40), requestedAt: nowIso(), consentText: "Wöchentlicher Druckshop-Newsletter mit Produkttipps, einmal im Monat mit Rabattcode, per E-Mail; Abmeldung jederzeit" });
+      d.subs[email] = Object.assign(s || {}, { email, status: "active", source: clip(b.source || "Shop", 40), requestedAt: nowIso(), confirmedAt: nowIso(), consentText: "Wöchentlicher Druckshop-Newsletter mit Produkttipps, einmal im Monat mit Rabattcode, per E-Mail; Abmeldung jederzeit" });
       if (Object.keys(d.subs).length > 50000) return J(res, 503, { ok: false, error: "Gerade nicht möglich" });
       await save();
-      const link = publicUrl() + "/print/newsletter/bestaetigen?e=" + encodeURIComponent(email) + "&t=" + sig("nlc", email);
-      if (mailSend) await mailSend({ to: email, subject: "Bitte bestätige deine Newsletter-Anmeldung", text: "Hallo!\n\nBitte bestätige deine Anmeldung zum Newsletter des FS Creative Druckshops (wöchentlich montags: Produkttipps und Designer-Tipp, einmal im Monat mit " + d.settings.pct + "-%-Rabattcode):\n\n" + link + "\n\nWenn du dich nicht angemeldet hast, ignoriere diese E-Mail einfach – ohne Bestätigung erhältst du nichts.\n\nFS Creative · " + firm().owner + " · " + firm().street + " · " + firm().zip + " " + firm().city,
-        html: '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1d1d1f;max-width:560px"><h2 style="font-size:20px">Bitte bestätige deine Anmeldung</h2><p>Du bekommst dann jeden Montag unsere Druck-Tipps der Woche und einen Designer-Tipp – und einmal im Monat einen ' + d.settings.pct + '-%-Rabattcode.</p><p><a href="' + esc(link) + '" style="display:inline-block;background:#0a84ff;color:#fff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px">Anmeldung bestätigen</a></p><p style="color:#6e6e73;font-size:13px">Wenn du dich nicht angemeldet hast, ignoriere diese E-Mail einfach – ohne Bestätigung erhältst du nichts.</p><p style="color:#6e6e73;font-size:12px">FS Creative · ' + esc(firm().owner) + " · " + esc(firm().street) + " · " + esc(firm().zip + " " + firm().city) + "</p></div>" }).catch(e => log("Newsletter-Bestätigung:", e.message));
-      return J(res, 200, { ok: true, msg: "Fast geschafft! Bitte bestätige die Anmeldung über den Link in der E-Mail an " + email + "." });
+      delete d.subs[email].unsubAt;
+      welcome(email).catch(e => log("Newsletter-Willkommen:", e.message));
+      return J(res, 200, { ok: true, msg: "Danke – du bist angemeldet! Eine Willkommensmail ist unterwegs an " + email + "." });
     }
     if (p === "/print/newsletter/bestaetigen" && req.method === "GET") {
       const email = String(u.searchParams.get("e") || "").toLowerCase();
