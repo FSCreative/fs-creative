@@ -102,7 +102,7 @@
     <script>
       // Mobil: Linklisten im Footer zum Aufklappen
       document.addEventListener("click", function (e) { var h = e.target.closest && e.target.closest(".ps-fgrid nav h3"); if (h && window.innerWidth <= 640) { var n = h.parentNode; n.classList.toggle("open"); h.setAttribute("aria-expanded", n.classList.contains("open")); } });
-      // Newsletter-Anmeldung (Double-Opt-in): erst der Link in der Bestätigungs-E-Mail meldet an
+      // Newsletter-Anmeldung: sofort aktiv, danach kommt eine Willkommensmail
       document.addEventListener("submit", function (e) {
         var f = e.target.closest && e.target.closest("[data-nl-form]"); if (!f) return; e.preventDefault();
         var m = f.querySelector(".m"), em = f.elements.email.value.trim(), b = f.querySelector("button");

@@ -1573,7 +1573,7 @@ module.exports = function (D) {
     [o.price.rate ? "Gesamt inkl. " + o.price.rate + " % USt" : "Gesamt (steuerfrei)", eur(o.price.gross) + (o.price.rate ? " (netto " + eur(o.price.net) + ")" : "")], ["Zahlung", o.payment.method === "invoice" ? "Rechnung (14 Tage)" : "Online bezahlt (Mollie)"]]);
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
 
-  // Newsletter (print-newsletter.js): wöchentlich montags, Double-Opt-in, Bearbeitung im Cockpit
+  // Newsletter (print-newsletter.js): wöchentlich montags, Anmeldung sofort aktiv (Willkommensmail), Bearbeitung im Cockpit
   let NEWS = null;
   async function priceFrom(k) {
     const hit = FROM.get(k + "|nl"); if (hit && Date.now() - hit.at < 12 * 3600e3) return hit.v;
