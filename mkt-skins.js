@@ -9,6 +9,7 @@
 "use strict";
 module.exports = function (U) {
   const { h, img, fit, mix, rgba, onColor } = U;
+  const lum = c => { const m = String(c || "").match(/^#([0-9a-f]{6})$/i); if (!m) return 0.5; const x = [0, 2, 4].map(i => { let v = parseInt(m[1].slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * x[0] + 0.7152 * x[1] + 0.0722 * x[2]; };
   const plain = s => String(s || "").replace(/\*/g, "");
   const svg = (body, vb, w, hh) => "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + hh + '" viewBox="' + vb + '">' + body + "</svg>").toString("base64");
   const pick = (arr, v) => arr[((v % arr.length) + arr.length) % arr.length];
@@ -473,12 +474,120 @@ module.exports = function (U) {
       s.sub ? h("div", Object.assign({ marginTop: 26, fontSize: story ? 44 : 34, lineHeight: 1.4, color: "rgba(255,255,255,0.72)" }, TX), plain(s.sub)) : null), foot]);
   }
 
+  // ═════════════ Titelbild (Folie/Szene 1): große Headline, je Post anderes Layout + andere Farbwelt aus dem CD der Marke ═════════════
+  // o.cv rotiert pro Post (mkt-posts: laufende Nummer der Marke) → aufeinanderfolgende Posts sehen nie gleich aus.
+  // Farbwelt: bg, fg, hl (Farbe der *markierten* Wörter), hlBg (statt Farbe: Fläche hinter dem Wort), sub, shape (Deko-Form)
+  const COVER = {
+    kochdu: { font: "Outfit", weight: 800, k: 0.58, pals: [
+      { bg: "linear-gradient(150deg, #8a6bff 0%, #6645ef 45%, #4c30d4 100%)", fg: "#ffffff", hlBg: KD.yellow, hlFg: KD.ink, sub: "rgba(255,255,255,0.85)", shape: "rgba(255,255,255,0.1)" },
+      { bg: KD.yellow, fg: KD.ink, hl: KD.purple, sub: rgba(KD.ink, 0.7), shape: "rgba(102,69,239,0.14)" },
+      { bg: KD.lav, fg: KD.ink, hlBg: KD.purple, hlFg: "#ffffff", sub: rgba(KD.ink, 0.65), shape: "rgba(102,69,239,0.12)" },
+      { bg: KD.ink, fg: "#ffffff", hl: KD.yellow, sub: "rgba(255,255,255,0.72)", shape: "rgba(169,150,255,0.18)" }] },
+    kantineur: { font: "Barlow Condensed", weight: 800, upper: true, k: 0.44, pals: [
+      { bg: KT.night, fg: "#ffffff", hl: KT.steel, sub: "rgba(255,255,255,0.7)", shape: "rgba(148,188,227,0.12)" },
+      { bg: KT.steel2, fg: "#ffffff", hlBg: KT.night, hlFg: "#ffffff", sub: "rgba(255,255,255,0.82)", shape: "rgba(29,45,61,0.18)" },
+      { bg: KT.paper, fg: KT.night, hl: KT.steel2, sub: rgba(KT.night, 0.65), shape: "rgba(89,128,166,0.14)" },
+      { bg: KT.sky, fg: KT.night, hlBg: "#ffffff", hlFg: KT.night, sub: rgba(KT.night, 0.7), shape: "rgba(255,255,255,0.3)" }] },
+    blitzdings: { font: "Cormorant Garamond", weight: 700, k: 0.5, lh: 0.98, pals: [
+      { bg: BD.creme, fg: BD.ink, hl: BD.gold2, sub: rgba(BD.ink, 0.65), shape: "rgba(199,156,71,0.16)" },
+      { bg: BD.ink, fg: BD.creme, hl: BD.gold, sub: "rgba(243,239,230,0.72)", shape: "rgba(199,156,71,0.16)" },
+      { bg: "linear-gradient(160deg, #d9b468 0%, " + BD.gold + " 55%, " + BD.gold2 + " 100%)", fg: BD.ink, hlBg: BD.creme, hlFg: BD.ink, sub: rgba(BD.ink, 0.75), shape: "rgba(255,255,255,0.18)" },
+      { bg: "#6e521d", fg: BD.creme, hl: "#edcf86", sub: "rgba(243,239,230,0.75)", shape: "rgba(237,207,134,0.14)" }] },
+    valuero: { font: "Merriweather", weight: 900, k: 0.64, lh: 1.08, pals: [
+      { bg: VA.green, fg: VA.warm, hl: VA.gold, sub: "rgba(244,241,234,0.8)", shape: "rgba(194,160,92,0.16)" },
+      { bg: VA.warm, fg: VA.ink, hl: VA.green, sub: rgba(VA.ink, 0.65), shape: "rgba(31,106,73,0.1)" },
+      { bg: VA.green2, fg: VA.warm, hlBg: VA.gold, hlFg: VA.ink, sub: "rgba(244,241,234,0.75)", shape: "rgba(255,255,255,0.07)" },
+      { bg: VA.gold, fg: VA.ink, hl: VA.green2, sub: rgba(VA.ink, 0.72), shape: "rgba(255,255,255,0.18)" }] },
+    skikaiser: { font: "Barlow Condensed", weight: 800, upper: true, italic: true, k: 0.44, pals: [
+      { bg: SK.red, fg: "#ffffff", hl: SK.gold, sub: "rgba(255,255,255,0.82)", shape: "rgba(0,0,0,0.12)" },
+      { bg: SK.ink, fg: "#ffffff", hlBg: SK.red, hlFg: "#ffffff", sub: "rgba(255,255,255,0.7)", shape: "rgba(216,30,44,0.18)" },
+      { bg: SK.paper, fg: SK.ink, hl: SK.red, sub: rgba(SK.ink, 0.65), shape: "rgba(216,30,44,0.1)" },
+      { bg: SK.gold, fg: SK.ink, hlBg: SK.ink, hlFg: "#ffffff", sub: rgba(SK.ink, 0.75), shape: "rgba(255,255,255,0.22)" }] },
+    huettengaudi: { font: "Fraunces", weight: 800, k: 0.58, pals: [
+      { bg: HG.loden, fg: HG.leinen, hl: HG.gold, sub: "rgba(246,240,228,0.78)", shape: "rgba(231,201,130,0.14)" },
+      { bg: HG.leinen, fg: HG.loden2, hl: HG.rot, sub: rgba(HG.loden2, 0.68), shape: "rgba(47,74,58,0.1)" },
+      { bg: HG.eiche, fg: HG.loden2, hlBg: HG.leinen, hlFg: HG.loden2, sub: rgba(HG.loden2, 0.75), shape: "rgba(255,255,255,0.2)" },
+      { bg: HG.rot, fg: HG.leinen, hl: HG.gold, sub: "rgba(246,240,228,0.8)", shape: "rgba(0,0,0,0.12)" }] },
+  };
+  const FSC_COVER = { font: "Inter", weight: 800, k: 0.6, pals: [
+    { bg: "#0a0a0f", fg: "#ffffff", hl: "#3a9bff", sub: "rgba(255,255,255,0.7)", shape: "rgba(10,132,255,0.22)" },
+    { bg: "linear-gradient(155deg, #3a9bff 0%, #0a84ff 50%, #0b5fd0 100%)", fg: "#ffffff", hlBg: "#0a0a0f", hlFg: "#ffffff", sub: "rgba(255,255,255,0.85)", shape: "rgba(255,255,255,0.12)" },
+    { bg: "#eaf3ff", fg: "#0a0a0f", hl: "#0a84ff", sub: "rgba(10,10,15,0.65)", shape: "rgba(10,132,255,0.12)" },
+    { bg: "#ffffff", fg: "#0a0a0f", hlBg: "#0a84ff", hlFg: "#ffffff", sub: "rgba(10,10,15,0.6)", shape: "rgba(10,132,255,0.08)" }] };
+  COVER.druckshop = FSC_COVER; COVER["fs-creative"] = FSC_COVER;
+  const COVER_TPL = ["hook", "photo"];
+  function cover(c) {
+    const { s, F, story, W2, TX, DE, o, brand } = c, st = COVER[brand.key] || FSC_COVER, cv = +o.cv || 0;
+    let P = pick(st.pals, cv);
+    const video = !!o.overVideo;
+    const onImage = () => { P = Object.assign({}, P, { fg: "#ffffff", sub: "rgba(255,255,255,0.86)" }, P.hlBg ? {} : { hl: lum(P.hl) < 0.25 ? "#ffffff" : P.hl }); };   // Text liegt auf Foto/Video
+    if (video) onImage();
+    const layouts = c.image && !video ? [4, 2, 1] : video ? [0, 3, 1] : [0, 1, 2, 3, 4];
+    const L = pick(layouts, cv + Math.floor(cv / st.pals.length));        // Layout und Farbe laufen versetzt → viele Kombinationen
+    const text = s.headline || s.label || s.number || "";
+    const head = (size, col, center, maxW) => h("div", TX, rich(text, size, col, { family: st.font, weight: st.weight, upper: st.upper, italic: st.italic, center, width: maxW, lh: st.lh || 1.02, ls: -size * (st.upper ? 0.005 : 0.03),
+      hlColor: P.hl, mark: P.hlBg ? sz => ({ background: P.hlBg, color: P.hlFg, padding: "0 " + Math.round(sz * 0.14) + "px", borderRadius: Math.round(sz * 0.08) }) : null }));
+    const hsize = (maxW, lines, max, min) => fit(plain(st.upper ? text.toUpperCase() : text), maxW, lines, max, min || 64, st.k);
+    const kick = (center, onImg) => s.kicker ? h("div", Object.assign({ alignSelf: center ? "center" : "flex-start", fontFamily: "Inter", fontWeight: 800, fontSize: story ? 30 : 26, letterSpacing: 4, color: P.hlBg && !onImg ? P.hlFg : onImg ? "#ffffff" : P.bg.indexOf("gradient") > -1 ? P.fg : P.bg, background: P.hlBg && !onImg ? P.hlBg : onImg ? "rgba(255,255,255,0.2)" : P.fg, borderRadius: 99, padding: "10px 24px", marginBottom: story ? 36 : 30 }, TX), plain(s.kicker).toUpperCase()) : null;
+    const sub = (center, maxW) => s.sub ? h("div", Object.assign({ fontFamily: "Inter", fontSize: story ? 40 : 34, fontWeight: 500, lineHeight: 1.35, color: P.sub, marginTop: story ? 34 : 28, width: maxW || W2, textAlign: center ? "center" : "left", justifyContent: center ? "center" : "flex-start" }, TX), plain(s.sub)) : null;
+    const lh = story ? 50 : 42, logo = h("div", Object.assign({ background: brand.logoBg === "dark" ? "#111111" : "#ffffff", borderRadius: 99, padding: Math.round(lh * 0.3) + "px " + Math.round(lh * 0.55) + "px", boxShadow: "0 10px 30px rgba(0,0,0,0.16)" }, DE),
+      brand.logo ? img(brand.logo, { height: lh, width: Math.round(lh * (brand.logoRatio || 4.9)) }) : h("div", { fontFamily: "Inter", fontWeight: 800, fontSize: Math.round(lh * 0.6), color: "#111" }, brand.name || ""));
+    const top = (center) => h("div", { justifyContent: center ? "center" : "space-between", alignItems: "center", width: W2, flexShrink: 0 }, logo,
+      !center && c.counter ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 700, fontSize: 26, color: P.fg, opacity: 0.8 }, TX), c.counter) : null);
+    const foot = (center) => h("div", { justifyContent: center ? "center" : "space-between", alignItems: "center", width: W2, marginTop: "auto", flexShrink: 0 },
+      c.swipe ? h("div", Object.assign({ fontFamily: "Inter", fontWeight: 700, fontSize: 28, color: P.fg, alignItems: "center" }, TX), "Wischen", h("div", { marginLeft: 10 }, swipeArrow(/^#/.test(P.fg) ? P.fg : "#ffffff"))) : h("div", {}),
+      center ? null : h("div", Object.assign({ fontFamily: "Inter", fontWeight: 600, fontSize: 24, color: P.sub }, TX), c.url || ""));
+    const pad = F.top + "px " + F.px + "px " + F.bottom + "px";
+    const R = (bg, kids) => h("div", { width: F.w, height: F.h, position: "relative", flexDirection: "column", overflow: "hidden", padding: pad, fontFamily: "Inter", background: rootBg(c, video ? "transparent" : bg) }, kids);
+    const blob = (x, y, d, col) => h("div", Object.assign({ position: "absolute", left: x, top: y, width: d, height: d, borderRadius: d, background: col }, DE));
+    if (L === 4 && c.image) {   // Vollbild-Foto, riesige Headline unten
+      onImage();
+      return R("#000", [h("div", Object.assign({ position: "absolute", left: 0, top: 0, width: F.w, height: F.h }, DE), photo(c.image, { width: F.w, height: F.h }),
+          h("div", { position: "absolute", left: 0, top: 0, width: F.w, height: F.h, background: "linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.25) 52%, rgba(0,0,0,0.85) 100%)" })),
+        top(false), h("div", { flexDirection: "column", width: W2, marginTop: "auto" }, kick(false, true), head(hsize(W2, 4, story ? 220 : 190), "#ffffff", false, W2), sub(false)), h("div", { height: 30 }), foot(false)]);
+    }
+    if (L === 2) {   // Farbblock oben mit Headline, unten Foto bzw. zweite Fläche
+      const bh = Math.round(F.h * (c.image ? 0.56 : 0.62));
+      return R(P.bg, [c.image ? h("div", Object.assign({ position: "absolute", left: 0, top: bh, width: F.w, height: F.h - bh }, DE), photo(c.image, { width: F.w, height: F.h - bh })) : h("div", Object.assign({ position: "absolute", left: 0, top: bh, width: F.w, height: F.h - bh, background: P.shape }, DE)),
+        h("div", Object.assign({ position: "absolute", left: 0, top: 0, width: F.w, height: bh, background: P.bg }, DE)),
+        h("div", Object.assign({ position: "absolute", left: F.px, top: bh - 8, width: 160, height: 16, borderRadius: 8, background: P.hlBg || P.hl }, DE)),
+        top(false), h("div", { flexDirection: "column", width: W2, height: bh - F.top - (story ? 110 : 90), justifyContent: "flex-end", paddingBottom: 40 }, kick(false), head(hsize(W2, 3, story ? 150 : 125, 56), P.fg, false, W2)),
+        c.image ? null : h("div", { flexDirection: "column", width: W2, marginTop: 30 }, sub(false)), foot(false)]);
+    }
+    if (L === 1) {   // zentriert, große Form dahinter (mit Foto: Foto im Kreis)
+      const d = Math.round(F.w * 0.9), cy = Math.round(F.h * 0.5 - d / 2);
+      return R(P.bg, [c.image ? h("div", Object.assign({ position: "absolute", left: (F.w - d) / 2, top: cy, width: d, height: d, borderRadius: d, overflow: "hidden" }, DE), photo(c.image, { width: d, height: d }), h("div", { position: "absolute", left: 0, top: 0, width: d, height: d, background: "rgba(0,0,0,0.42)" })) : blob((F.w - d) / 2, cy, d, P.shape),
+        blob(-F.w * 0.18, F.h - F.w * 0.32, F.w * 0.5, P.shape),
+        top(true), h("div", { flexDirection: "column", alignItems: "center", width: W2, marginTop: "auto", marginBottom: "auto" }, kick(true, !!c.image), head(hsize(W2 - 60, 4, story ? 170 : 150), c.image ? "#ffffff" : P.fg, true, W2), c.image ? null : sub(true)), foot(true)]);
+    }
+    if (L === 3) {   // jedes Wort eine Zeile, links ein Balken in Akzentfarbe
+      const words = plain(text).split(/\s+/).filter(Boolean), longest = words.reduce((a, b) => a.length > b.length ? a : b, "");
+      const size = Math.min(fit(st.upper ? longest.toUpperCase() : longest, W2 - 100, 1, story ? 240 : 210, 70, st.k * 1.08), Math.floor((F.h - F.top - F.bottom - 260) / (Math.max(1, words.length) * (st.lh || 1.02))));
+      return R(P.bg, [h("div", Object.assign({ position: "absolute", left: 0, top: 0, width: 26, height: F.h, background: P.hlBg || P.hl }, DE)), blob(F.w * 0.55, -F.w * 0.2, F.w * 0.7, P.shape),
+        top(false), h("div", { flexDirection: "column", width: W2, marginTop: "auto", marginBottom: "auto" }, kick(false),
+          h("div", { flexDirection: "column" }, rich(text.replace(/\s+/g, " "), size, P.fg, { family: st.font, weight: st.weight, upper: st.upper, italic: st.italic, width: W2 - 40, lh: 0.98, rowGap: 0.02, wordGap: 5, ls: -size * 0.02, hlColor: P.hl || P.hlBg })),
+          sub(false)), foot(false)]);
+    }
+    if (L === 4) {   // Rahmen in Akzentfarbe, Headline mittig (ohne Foto)
+      const inset = 46;
+      return R(P.bg, [h("div", Object.assign({ position: "absolute", left: inset, top: inset, width: F.w - 2 * inset, height: F.h - 2 * inset, border: "6px solid " + (P.hlBg || P.hl), borderRadius: 34 }, DE)),
+        blob(F.w * 0.6, F.h * 0.62, F.w * 0.6, P.shape),
+        top(true), h("div", { flexDirection: "column", alignItems: "center", width: W2, marginTop: "auto", marginBottom: "auto" }, kick(true), head(hsize(W2 - 80, 4, story ? 160 : 140), P.fg, true, W2 - 40), sub(true, W2 - 60)), foot(true)]);
+    }
+    // 0: Plakat – Headline riesig unten links, feine Linie darüber
+    return R(P.bg, [blob(-F.w * 0.25, -F.w * 0.3, F.w * 0.95, P.shape),
+      top(false), h("div", { flexDirection: "column", width: W2, marginTop: "auto" }, kick(false),
+        h("div", Object.assign({ width: 120, height: 12, borderRadius: 6, background: P.hlBg || P.hl, marginBottom: story ? 36 : 30 }, DE)),
+        head(hsize(W2, story ? 5 : 4, story ? 240 : 220), P.fg, false, W2), sub(false)), h("div", { height: 34 }), foot(false)]);
+  }
+
   const SKINS = { kochdu, kantineur, blitzdings, valuero, skikaiser, huettengaudi, druckshop: c => fs(c, true), "fs-creative": c => fs(c, false) };
   // Welche Vorlagen ein Foto brauchen (aus der Bildersammlung der Marke)
   const PHOTO_TPL = { kochdu: ["photo", "hook"], valuero: ["photo", "hook", "cta", "stat", "list"], skikaiser: ["photo", "hook", "stat", "list", "compare", "cta", "quote"], huettengaudi: ["photo", "hook"], blitzdings: ["photo", "hook"] };
   return {
     has: key => !!SKINS[key],
-    el: (slide, brand, o, F) => SKINS[brand.key](base(slide, brand, o, F)),
+    // o.cover: Titelbild (Folie/Szene 1) – nur für Folien ohne Listen/Vergleich, sonst bleibt der normale Look
+    el: (slide, brand, o, F) => (o.cover && COVER_TPL.indexOf((slide && slide.template) || "hook") > -1 ? cover : SKINS[brand.key])(base(slide, brand, o, F)),
     wantsPhoto: (key, tpl) => (PHOTO_TPL[key] || []).indexOf(tpl) > -1,
   };
 };

@@ -179,7 +179,7 @@ module.exports = function (R) {
   async function sceneSeg(s, brand, o, i, len, delay, punch) {
     const P = o.P, dir = o.dir, bgVid = o.bgVideos && o.bgVideos[i];
     const variant = s.template === "cta" ? "brand" : (o.variants ? o.variants[i % o.variants.length] : (i % 2 ? "dark" : "brand"));
-    const base = { format: "reel", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid, v: (o.v || 0) + i }, LF = R.fmtFor(base, brand);   // Layout-Größe (reel: 900×1600 → 1080×1920)
+    const base = { format: "reel", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid, v: (o.v || 0) + i, cover: i === 0, cv: o.cv || 0 }, LF = R.fmtFor(base, brand);   // Layout-Größe (reel: 900×1600 → 1080×1920)
     const bgPng = path.join(dir, "bg" + i + ".png"); fs.writeFileSync(bgPng, await R.slidePng(s, brand, Object.assign({}, base, { layer: "bg" })));
     const tree = R.postEl(s, brand, Object.assign({}, base, { layer: "fg", anim: true }));
     const pp = prepare(tree, P, o.G.half), N = Math.round(len * FPS), animEndF = Math.min(N, Math.ceil((delay + pp.end + 0.05) * FPS) + 1);

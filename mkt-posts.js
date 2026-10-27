@@ -79,6 +79,12 @@ module.exports = function (C) {
 
   // ───────────── KI: Posts erstellen ─────────────
   const SLIDE_T = ["hook", "list", "compare", "stat", "quote", "cta", "photo"];
+  // Folie 1 = Titelbild mit großer Headline: beginnt ein Karussell/Reel mit Liste, Zahl o. Ä., kommt davor ein Titelbild aus deren Headline
+  function withCover(slides, fmt) {
+    const s0 = slides[0]; if (!s0 || fmt === "bild" || ["hook", "photo"].indexOf(s0.template || "hook") > -1) return slides;
+    const t = String(s0.headline || s0.label || "").trim(); if (!t) return slides;
+    return [{ template: "hook", kicker: "", headline: t, sub: "" }].concat(slides).slice(0, 7);
+  }
   // Musik-Stimmungen (Reels) und Standard je Marke
   const MOODS = ["froehlich", "lustig", "elegant", "ruhig", "episch", "alpin", "elektronisch"];
   const MOOD_DE = { froehlich: "fröhlich", lustig: "lustig", elegant: "elegant", ruhig: "ruhig", episch: "episch", alpin: "alpin/volkstümlich", elektronisch: "elektronisch" };
@@ -98,7 +104,8 @@ module.exports = function (C) {
     "Sprache: Deutsch (Österreich) im Ton des Profils (Du-Form, wenn im Profil). Regional, konkret, keine Floskeln, keine Superlative ohne Beleg.",
     "NICHTS ERFINDEN: keine Kundenzitate, Bewertungen, Kundennamen, Zahlen, Preise, Partner, Auszeichnungen oder Funktionen, die nicht im Profil stehen. Zitate (template quote) nur als Aussage der Marke selbst, author = Marke oder „Team <Marke>“. stat nur mit Zahlen/Preisen aus dem Profil.",
     "Regeln aus „guardrails“ im Profil strikt einhalten (z. B. nicht veröffentlichte Apps: keine Download-Links versprechen).",
-    "Formate: bild = genau 1 Folie; karussell = 4–7 Folien (Folie 1 Hook, Mitte Inhalt, letzte Folie template cta); reel = 3–6 Szenen (Szene 1 Hook in höchstens 7 Wörtern, letzte Szene cta). In jedem Karussell und Reel mindestens 3 verschiedene Vorlagen; die Beiträge eines Plans sollen sich in Format, Vorlagen und Thema deutlich unterscheiden.",
+    "TITELBILD: Folie bzw. Szene 1 ist IMMER ein Titelbild mit einer großen Headline – template hook (oder photo), headline 2–6 Wörter, die stärksten 1–2 Wörter mit *Sternchen*, kicker 1–2 Wörter oder leer, sub höchstens 10 Wörter oder leer. Sie wird riesig und plakativ gesetzt (Layout und Farbe wechseln automatisch je Beitrag), also wie eine Schlagzeile formulieren: Frage, steile These, Zahl oder Neugier – nie Markenname zuerst.",
+    "Formate: bild = genau 1 Folie (das Titelbild); karussell = 4–7 Folien (Folie 1 Titelbild, Mitte Inhalt, letzte Folie template cta); reel = 3–6 Szenen (Szene 1 Titelbild, letzte Szene cta). In jedem Karussell und Reel mindestens 3 verschiedene Vorlagen; die Beiträge eines Plans sollen sich in Format, Vorlagen und Thema deutlich unterscheiden.",
     "REELS (dürfen nie langweilig wirken – sie werden animiert: Wörter springen einzeln ins Bild, Listenpunkte kommen im Takt der Musik, Zahlen zählen hoch, Szenenwechsel auf dem Beat): wähle je Reel ein Erzählformat und nenne es in idea – „Top 3“ (list, jeder Punkt ein Aha), „Mythos vs. Fakt“ (compare: links Mythos, rechts Fakt), „Vorher/Nachher“ (compare), „POV:“ (hook mit kicker „POV“ und einer Alltagssituation der Zielgruppe), „Wusstest du?“ (stat mit echter Zahl aus dem Profil), „Frage → Auflösung“ (Szene 1 Frage, nächste Szene überraschende Antwort), „3 Fehler, die …“ (list), „So geht's in 3 Schritten“ (list), „Countdown“. Szene 1 weckt Neugier in 0,5 Sekunden (Frage, steile These, konkrete Zahl, POV) – nie mit dem Markennamen oder „Wir“ beginnen. Jede Szene genau ein Gedanke; im Reel headline höchstens 6 Wörter, sub meist leer. Spannungsbogen: Hook → Inhalt → Payoff (die Szene vor cta löst auf) → cta kurz und konkret. 4–5 Szenen sind ideal (8–14 Sekunden). Vorlagen abwechseln (nicht zweimal dieselbe hintereinander). Höchstens 1 Emoji je Szene.",
     "Folientexte kurz: headline höchstens 8 Wörter (die wichtigsten 1–3 Wörter mit *Sternchen* markieren), sub höchstens 18 Wörter, items höchstens 5 Punkte à höchstens 8 Wörter, kicker 1–2 Wörter. Felder, die die Vorlage nicht braucht, leer lassen.",
     "Vorlagen: hook (kicker, headline, sub, cta), list (headline, items), compare (headline, leftTitle/leftItems = bisher/ohne, rightTitle/rightItems = mit der Marke; fair formuliert, keine Konkurrenz namentlich), stat (number, label, sub), quote (headline als Aussage, author), cta (kicker, headline, sub, cta = kurzer Aufruf oder Website), photo (wie hook, mit photoQuery = englischer Suchbegriff für ein Stockfoto, nur wenn ein Foto den Post wirklich besser macht).",
@@ -140,7 +147,7 @@ module.exports = function (C) {
       "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 12000);
     const x = (r.json && r.json.posts || [])[0]; if (!x) throw fail(502, "Die KI hat keinen Beitrag geliefert – bitte nochmal.");
-    const slides = (x.slides || []).filter(s0 => s0 && (s0.headline || (s0.items && s0.items.length) || s0.number)).slice(0, post.format === "bild" ? 1 : 7); if (!slides.length) throw fail(502, "Die KI-Antwort war leer – bitte nochmal.");
+    const slides = withCover((x.slides || []).filter(s0 => s0 && (s0.headline || (s0.items && s0.items.length) || s0.number)).slice(0, post.format === "bild" ? 1 : 7), post.format); if (!slides.length) throw fail(502, "Die KI-Antwort war leer – bitte nochmal.");
     Object.assign(post, { pillar: clip(x.pillar, 80) || post.pillar, idea: clip(x.idea, 200) || post.idea, slides, captions: x.captions || post.captions, hashtags: x.hashtags || post.hashtags, altText: clip(x.altText, 400), bgQuery: clip(x.bgQuery, 80), rewrittenAt: nowIso(), kiEur: Math.round(((post.kiEur || 0) + r.eur) * 1000) / 1000 }, extras(b, x));
     post.media = Object.assign({}, post.media, { status: "wartet", rerender: rand() }); enqueue("post:" + post.id); save(true);
     return post;
@@ -165,7 +172,7 @@ module.exports = function (C) {
     let notBefore = 0;
     for (const x of list) {
       const fmt = mix.indexOf(x.format) > -1 ? x.format : mix[0];
-      let slides = (x.slides || []).filter(s => s && (s.headline || (s.items && s.items.length) || s.number)).slice(0, fmt === "bild" ? 1 : 7);
+      let slides = withCover((x.slides || []).filter(s => s && (s.headline || (s.items && s.items.length) || s.number)).slice(0, fmt === "bild" ? 1 : 7), fmt);
       if (!slides.length) continue;
       const p = { id: newId("p"), batch, brand: b.key, createdAt: nowIso(), status: "entwurf", format: fmt, pillar: clip(x.pillar, 80), idea: clip(x.idea, 200), slides,
         captions: x.captions || {}, hashtags: x.hashtags || {}, altText: clip(x.altText, 400), bgQuery: clip(x.bgQuery, 80),
@@ -340,17 +347,19 @@ module.exports = function (C) {
         slides.push(o);
       }
       const tag = rand(), media = { status: "fertig", at: nowIso() }, v = seed % 12;
+      // Titelbild: laufende Nummer des Posts der Marke → jeder Post eine andere Kombination aus Layout und Farbwelt; neu rendern = nächste
+      const cv = S().posts.filter(x => x.brand === p.brand).indexOf(p) + (p.media.rerender ? hashNum(String(p.media.rerender)) % 7 + 1 : 0);
       if (p.format === "reel") {
         const ok = VIDEO_OK[b.key] || [], want = slides.map(s => ok.indexOf(s.template) > -1);
         let vids = clips.map(c0 => c0.file); if (!vids.length) vids = await stockVideos(p.bgQuery, want.filter(Boolean).length);
         let vi = 0; const bgVideos = want.map(w => w && vids.length ? vids[vi++ % vids.length] : "");
         const track = pickMusic(p);
-        const ro = { dir: work, url, v, bgVideos, music: track ? track.file : "", musicMeta: track ? { bpm: track.bpm, beat0: track.beat0 } : null, outFile: path.join(MEDIA, p.id + "-" + tag + ".mp4"), coverFile: path.join(MEDIA, p.id + "-" + tag + "-cover.jpg") };
+        const ro = { dir: work, url, v, cv, bgVideos, music: track ? track.file : "", musicMeta: track ? { bpm: track.bpm, beat0: track.beat0 } : null, outFile: path.join(MEDIA, p.id + "-" + tag + ".mp4"), coverFile: path.join(MEDIA, p.id + "-" + tag + "-cover.jpg") };
         // bewegtes Reel (Motion); falls das scheitert, das einfache Reel (Szenen blenden ein) – lieber schlicht als gar nicht
         let r; try { r = await MO.reel(slides, rb, ro); media.motion = true; } catch (e) { console.error("marketing: Motion-Reel", e.message); r = await R.reelVideo(slides, rb, ro); media.motion = false; }
         media.video = path.basename(r.file); media.cover = path.basename(r.cover); media.duration = r.duration; media.track = track ? { id: track.id, name: track.name, license: track.license } : null;
       } else {
-        const files = await R.postImages(slides, rb, { dir: work, url, prefix: "s", v });
+        const files = await R.postImages(slides, rb, { dir: work, url, prefix: "s", v, cv });
         media.images = []; media.small = [];
         for (let i = 0; i < files.length; i++) {
           const ext = path.extname(files[i]), name = p.id + "-" + tag + "-" + i + ext; fs.copyFileSync(files[i], path.join(MEDIA, name)); media.images.push(name);

@@ -429,7 +429,7 @@ async function postImages(slides, brand, o) {
   for (let i = 0; i < n; i++) {
     const variant = o.variants ? o.variants[i % o.variants.length] : (slides[i].template === "cta" ? "brand" : i === 0 ? "brand" : "light");
     const pf = path.join(o.dir, (o.prefix || "s") + i + ".png");
-    fs.writeFileSync(pf, await slidePng(slides[i], brand, { format: "feed", variant, v: (o.v || 0) + i, counter: n > 1 ? (i + 1) + "/" + n : "", swipe: n > 1 && i === 0, url: o.url || "" }));
+    fs.writeFileSync(pf, await slidePng(slides[i], brand, { format: "feed", variant, v: (o.v || 0) + i, cover: i === 0, cv: o.cv || 0, counter: n > 1 ? (i + 1) + "/" + n : "", swipe: n > 1 && i === 0, url: o.url || "" }));
     out.push(await toJpeg(pf, pf.replace(/\.png$/, ".jpg")));
   }
   return out;
