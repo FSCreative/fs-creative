@@ -1833,19 +1833,35 @@ function abgleichBuild(ctx) {
         items: [{ name: "kochdu Vermittlungsgebühren (Barzahlungen)", text: (+r.barOrders || 0) + " Bar-Bestellungen" + (since ? " seit " + since : "") + " bis " + todayDE, qty: 1, priceGross: open, taxRate: 20 }],
         after: { billing: { key: "kochdu:" + r.id, label: r.name || "" }, kochduSettle: { restaurantId: r.id, amountCents: Math.round(open * 100) } } } : null });
   });
-  // 3) VALUERO: Vermittlungsgebühren je Objekt (Stand serverseitig aus der Abrechnung)
+  // 3) VALUERO: Vermittlungsgebühren je Objekt – quartalsweise am 1. (1.1./1.4./1.7./1.10.) für das abgelaufene Quartal,
+  //    nach Aufenthalt (Anreisemonat), nicht nach Buchungsdatum: bis dahin stornierte Buchungen fallen von selbst heraus.
+  //    Alte Abrechnungen ohne Zeitraum (vor der Umstellung) werden bei der ersten Quartalsrechnung abgezogen.
+  const qEnd = d => { const y = +d.slice(0, 4), q = Math.floor((+d.slice(5, 7) - 1) / 3); return q === 0 ? (y - 1) + "-12-31" : y + "-" + String(q * 3).padStart(2, "0") + "-" + (q === 2 || q === 3 ? "30" : "31"); };
+  const yEnd = String(year) + "-12-31", dueThrough = qEnd(today <= yEnd ? today : ymdAdd(yEnd, 1));   // letzter Tag des zuletzt abgeschlossenen Quartals
+  const nextQ = ymdAdd(qEnd(ymdAddMonths(dueThrough.slice(0, 8) + "01", 4)), 1);                    // nächster Abrechnungstag
+  const vaPrevBy = {}; (((ctx.valueroPrev && ctx.valueroPrev.objects) || [])).forEach(o => { vaPrevBy[o.key] = o; });
+  const winStart = (+year - 1) + "-01-01";
   ((valuero && valuero.objects) || []).forEach(o => {
-    const prov = round2((+o.provisionCents || 0) / 100);
-    const all = recs("valuero:" + o.key).filter(x => String(x.date || "").slice(0, 4) === String(year));
+    const months = [].concat((vaPrevBy[o.key] && vaPrevBy[o.key].months) || [], o.months || []).filter(m => /^\d{4}-\d{2}$/.test(m.month || ""));
+    const sumM = (a, b) => round2(months.filter(m => m.month + "-01" >= a && m.month + "-01" <= b).reduce((t, m) => t + (+m.provisionCents || 0), 0) / 100);
+    const all = recs("valuero:" + o.key).filter(x => String(x.to || x.date || "") >= winStart);
     const links = all.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
     const billedSum = round2(all.reduce((a, x) => a + (+x.gross || 0), 0));
     const st = sumState(links.filter(l => l.state !== "manuell"));
-    const open = round2(Math.max(0, prov - billedSum)), refund = round2(Math.max(0, billedSum - prov));
-    items.push({ src: "valuero", key: "valuero:" + o.key, name: o.name, sub: (o.ratesLabel || "") + " · " + (+o.feeBookings || 0) + " Buchungen " + year,
-      unbilled: open, invoiced: billedSum, paid: round2(st.paid), open: round2(st.open), refund, accrued: prov, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
-      action: open > 0.005 ? { kind: "valuero", title: "Rechnung · VALUERO-Gebühren", contactName: o.name || "", headText: "Vermittlungsgebühren VALUERO " + year + ".",
-        items: [{ name: "VALUERO Vermittlungsgebühren " + year, text: (o.ratesLabel ? o.ratesLabel + " · " : "") + "lt. Buchungsaufstellung", qty: 1, priceGross: open, taxRate: 20 }],
-        after: { billing: { key: "valuero:" + o.key, label: o.name || o.key } } } : null });
+    const billedUntil = all.reduce((m, x) => (x.to && x.to > m ? x.to : m), "");
+    const legacy = billedUntil ? 0 : billedSum;                                                       // Altbestand ohne Zeitraum
+    const first = (months.find(m => (+m.provisionCents || 0) > 0) || {}).month;
+    const from = billedUntil ? ymdAdd(billedUntil, 1) : (first ? first + "-01" : winStart);
+    const gross = from <= dueThrough ? sumM(from, dueThrough) : 0;
+    const open = round2(Math.max(0, gross - legacy));
+    const covered = billedUntil ? sumM(winStart, billedUntil) : 0, refund = billedUntil ? round2(Math.max(0, billedSum - covered)) : round2(Math.max(0, legacy - gross));
+    const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufendes Quartal (+ spätere Anreisen)
+    const span = deDate(from) + " – " + deDate(dueThrough);
+    items.push({ src: "valuero", key: "valuero:" + o.key, name: o.name, sub: (o.ratesLabel || "") + " · " + (billedUntil ? "verrechnet bis " + deDate(billedUntil) : "quartalsweise nach Aufenthalt") + " · nächste Abrechnung " + deDate(nextQ),
+      unbilled: open, invoiced: billedSum, paid: round2(st.paid), open: round2(st.open), refund, accrued: round2(sumM(winStart, "9999-12-31")), pending, nextBilling: nextQ, billedUntil: billedUntil || null, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+      action: open > 0.005 ? { kind: "valuero", title: "Rechnung · VALUERO-Gebühren", contactName: o.name || "", deliveryDate: from, headText: "Vermittlungsgebühren VALUERO für Aufenthalte im Zeitraum " + span + ".",
+        items: [{ name: "VALUERO Vermittlungsgebühren", text: "Aufenthalte (Anreise) " + span + (o.ratesLabel ? " · " + o.ratesLabel : "") + (legacy > 0.005 ? " · abzüglich bereits verrechnet " + legacy.toFixed(2).replace(".", ",") + " €" : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: open, taxRate: 20 }],
+        after: { billing: { key: "valuero:" + o.key, from, to: dueThrough, label: o.name || o.key } } } : null });
   });
   // 4) Blitzdings: jede bestätigte Buchung braucht eine Rechnung. Blitzdings legt sie bei Online-Zahlung/Firmenkunden selbst an
   //    (sevdeskInvoiceId), sonst Abgleich über Buchungsnummer bzw. Kunde + Betrag/Datum. „Zu verrechnen“ erst ab 14 Tage vor dem Event;
@@ -2087,14 +2103,14 @@ async function incomeForecast(ctx) {
 }
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
-  const [sev, sitesSnap, rwc, k, b, ko, va, mail, cal, pc, ski, hg, bya] = await Promise.all([
+  const [sev, sitesSnap, rwc, k, b, ko, va, vaPrev, mail, cal, pc, ski, hg, bya] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
-    withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
+    withTimeout(valueroStats(String(+year - 1)), 8000, null), withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
     withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }), withTimeout(blitzYearBookings(year), 9000, null),
   ]);
   const bill = readBilling();
-  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, blitz: b, blitzAll: bya, kantineur: k });
+  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, valueroPrev: vaPrev, blitz: b, blitzAll: bya, kantineur: k });
   const P = bill.prices || {};
   const sites = cockpitSites(sitesSnap).map(s => {
     const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
