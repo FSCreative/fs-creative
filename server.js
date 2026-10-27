@@ -19,7 +19,7 @@ const TODOS_FILE = path.join(DATA_DIR, "todos.json");
 function readTodos() { try { const a = JSON.parse(fs.readFileSync(TODOS_FILE, "utf8")); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 // Auftragsmanagement: Aufträge (Projekte) und Aufgaben mit Status, Priorität, Frist, Checkliste, Kommentaren – im Datenspeicher wie To-Dos
 const AUFTRAG_FILE = path.join(DATA_DIR, "auftraege.json");
-function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0, printSkip: Array.isArray(o.printSkip) ? o.printSkip : [], todosMigrated: o.todosMigrated || "", todoConv: Array.isArray(o.todoConv) ? o.todoConv : [] }; } catch (e) { return { projects: [], tasks: [], rev: 0, printSkip: [], todosMigrated: "", todoConv: [] }; } }
+function readAuftraege() { try { const o = JSON.parse(fs.readFileSync(AUFTRAG_FILE, "utf8")); return { projects: Array.isArray(o.projects) ? o.projects : [], tasks: Array.isArray(o.tasks) ? o.tasks : [], rev: +o.rev || 0, printSkip: Array.isArray(o.printSkip) ? o.printSkip : [], todosMigrated: o.todosMigrated || "", todoConv: Array.isArray(o.todoConv) ? o.todoConv : [], trash: Array.isArray(o.trash) ? o.trash.filter(x => x && x.task && Date.now() - x.at < 30 * 864e5) : [] }; } catch (e) { return { projects: [], tasks: [], rev: 0, printSkip: [], todosMigrated: "", todoConv: [], trash: [] }; } }
 function writeAuftraege(o) { o.rev = (+o.rev || 0) + 1; const tmp = AUFTRAG_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(o)); fs.renameSync(tmp, AUFTRAG_FILE); return o; }
 const TK_STATUS = ["offen", "arbeit", "pruefung", "erledigt"], TK_PRIO = ["normal", "hoch", "dringend"], PJ_STATUS = ["aktiv", "pausiert", "abgeschlossen"];
 const tkClip = (v, n) => String(v == null ? "" : v).replace(/\r/g, "").trim().slice(0, n);
@@ -128,7 +128,12 @@ function auftragOp(b) {
   }
   if (op === "task.delete") { const d = findT(String(b.id || "")); if (!d) throw new Error("Aufgabe nicht gefunden");
     if (d.print && d.print.id) A.printSkip = A.printSkip.filter(x => x !== d.print.id).concat([d.print.id]).slice(-500);   // gelöschte Druckaufgabe nicht wieder anlegen
-    A.tasks = A.tasks.filter(t => t !== d); return { data: writeAuftraege(A) }; }
+    A.tasks = A.tasks.filter(t => t !== d); A.trash = [{ at: now, task: d }].concat(A.trash || []).slice(0, 50);   // Papierkorb: 30 Tage, „Rückgängig“ im Cockpit
+    return { data: writeAuftraege(A), deleted: d.id }; }
+  if (op === "task.restore") { const i = (A.trash || []).findIndex(x => x.task.id === String(b.id || "")); if (i < 0) throw new Error("Nicht mehr im Papierkorb");
+    const t = A.trash[i].task; A.trash.splice(i, 1); if (!findT(t.id)) A.tasks.push(Object.assign(t, { updated: now }));
+    if (t.print && t.print.id) A.printSkip = A.printSkip.filter(x => x !== t.print.id);
+    return { data: writeAuftraege(A), restored: t.id }; }
   if (op === "project.save") {
     const x = b.project || {}, old = x.id ? findP(String(x.id)) : null;
     const name = tkClip(x.name, 120); if (!name) throw new Error("Bitte einen Namen für den Auftrag eingeben");

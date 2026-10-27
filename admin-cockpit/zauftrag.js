@@ -12,7 +12,7 @@ var PCOL=["#7b8bff","#3ecf8e","#a78bfa","#e879f9","#f5a524","#2dd4bf","#f87171",
 F.tkPCOL=PCOL;
 UI.tkView=UI.tkView||F.ls("fsc_tk_view")||"board"; UI.tkProj=UI.tkProj||""; UI.tkPrio=UI.tkPrio||""; UI.tkQ=UI.tkQ||""; UI.tkDoneAll=!!UI.tkDoneAll;
 
-function A(){ var a=F.D&&F.D.auftraege; return a&&a.tasks?a:{projects:[],tasks:[]}; }
+function A(){ var a=F.D&&F.D.auftraege; return a&&a.tasks?a:{projects:[],tasks:[],trash:[]}; }
 function proj(id){ return A().projects.find(function(p){ return p.id===id; })||null; }
 function today(){ return (F.D&&F.D.today)||F.ymd(); }
 function addDays(iso,n){ var d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return F.ymd(d); }
@@ -26,7 +26,7 @@ function dueCls(t){ if(!t.due||t.status==="erledigt") return ""; var d=today(); 
 function api(op,payload){ return F.api("/admin/api/auftraege",{body:Object.assign({op:op},payload||{})}).then(function(j){
   if(j&&j.ok&&j.data){ F.D.auftraege=j.data; F.render(); } else F.toast((j&&j.error)||"Speichern fehlgeschlagen",true); return j; }); }
 F.tkApi=api;
-F.tkReload=function(){ return F.api("/admin/api/auftraege").then(function(j){ if(j&&j.ok&&F.D){ F.D.auftraege={projects:j.projects,tasks:j.tasks,rev:j.rev}; F.render(); if(DR&&DR.print&&document.querySelector(".tk-dlg")) openTask(DR.id); } }); };
+F.tkReload=function(){ return F.api("/admin/api/auftraege").then(function(j){ if(j&&j.ok&&F.D){ F.D.auftraege={projects:j.projects,tasks:j.tasks,rev:j.rev,trash:j.trash||[]}; F.render(); if(DR&&DR.print&&document.querySelector(".tk-dlg")) openTask(DR.id); } }); };
 F.tkByPrint=function(oid){ return A().tasks.find(function(t){ return t.print&&t.print.id===oid; })||null; };
 
 /* ---------- Druckaufträge: Status kommt von der Druck-Seite; Spalte wechseln = Aktion dort (mit Rückfrage) ---------- */
@@ -85,7 +85,7 @@ function vAuftraege(){
   var s=stats(), l=filtered(), act=A().projects.filter(function(p){ return p.status!=="abgeschlossen"; });
   var head=F.head("Aufträge",s.open+" offen · "+s.projects+" aktive"+(s.projects===1?"r Auftrag":" Aufträge"),
     '<div class="seg"><button type="button" data-act="tkview:board" aria-pressed="'+(UI.tkView==="board")+'">'+F.svg("board")+' Board</button><button type="button" data-act="tkview:list" aria-pressed="'+(UI.tkView==="list")+'">☰ Liste</button></div>'+
-    '<button type="button" class="btn" data-act="tkprojects">Aufträge verwalten</button><button type="button" class="btn primary" data-act="tknew:">+ Neue Aufgabe</button>');
+    '<button type="button" class="btn" data-act="tktrash" title="Gelöschte Aufgaben der letzten 30 Tage">Papierkorb'+((A().trash||[]).length?' ('+A().trash.length+')':'')+'</button>'+'<button type="button" class="btn" data-act="tkprojects">Aufträge verwalten</button><button type="button" class="btn primary" data-act="tknew:">+ Neue Aufgabe</button>');
   var kpi=function(k,v,cls,act0){ return '<button type="button" class="tk-kpi'+(cls?" "+cls:"")+'"'+(act0?' data-act="'+act0+'"':'')+'><span>'+k+'</span><b class="num">'+v+'</b></button>'; };
   var kpis='<div class="tk-kpis">'+kpi("Offen",s.open)+kpi("Diese Woche fällig",s.week)+kpi("Überfällig",s.over,s.over?"bad":"")+kpi("Diese Woche erledigt",s.done,"ok")+'</div>';
   var bar='<div class="tk-bar2"><select class="f" data-tkf="proj" aria-label="Auftrag"><option value="">Alle Aufträge</option>'+act.concat(A().projects.filter(function(p){ return p.status==="abgeschlossen"; })).map(function(p){ return '<option value="'+esc(p.id)+'"'+(UI.tkProj===p.id?" selected":"")+'>'+esc(p.name)+(p.status==="abgeschlossen"?" (abgeschlossen)":"")+'</option>'; }).join("")+'</select>'+
@@ -153,7 +153,11 @@ F.form("tksave",function(f){
 });
 F.action("tkcomment",function(){ var i=document.getElementById("tkCmNew"); if(!i||!i.value.trim()||!DR||!DR.id) return; var id=DR.id;
   api("task.comment",{id:id,text:i.value}).then(function(j){ if(j&&j.ok){ var keep={title:document.querySelector(".tk-dlg").title.value}; openTask(id); var f=document.querySelector(".tk-dlg"); if(f) f.title.value=keep.title; } }); });
-F.action("tkdel",function(id){ if(!confirm("Diese Aufgabe wirklich löschen?")) return; api("task.delete",{id:id}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Aufgabe gelöscht"); } }); });
+F.action("tkdel",function(id){ if(!confirm("Diese Aufgabe wirklich löschen?")) return; api("task.delete",{id:id}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Aufgabe gelöscht – 30 Tage im Papierkorb",false,"Rückgängig",function(){ api("task.restore",{id:id}).then(function(r){ if(r&&r.ok) F.toast("Wiederhergestellt"); }); }); } }); });
+/* Papierkorb: gelöschte Aufgaben der letzten 30 Tage wiederherstellen */
+F.action("tktrash",function(){ var tr=(F.D.auftraege&&F.D.auftraege.trash)||[];
+  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">Papierkorb</h2>'+F.btnClose()+'</div>'+(tr.length?'<p class="muted" style="margin:0">Gelöschte Aufgaben bleiben 30 Tage hier.</p>'+tr.map(function(x){ return '<div class="row-between" style="gap:10px;border-top:1px solid var(--line);padding-top:8px"><span style="min-width:0"><b>'+esc(x.task.title)+'</b><br><small class="muted">gelöscht am '+esc(new Date(x.at).toLocaleString("de-AT",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"}))+'</small></span><button type="button" class="btn sm" data-act="tkrestore:'+esc(x.task.id)+'">Wiederherstellen</button></div>'; }).join(""):'<p class="muted">Der Papierkorb ist leer.</p>')+'</div>',"narrow"); });
+F.action("tkrestore",function(id){ api("task.restore",{id:id}).then(function(r){ if(r&&r.ok){ F.closeModal(); F.toast("Wiederhergestellt"); } }); });
 F.action("tknew",function(st){ if(F.current!=="auftraege") F.go("auftraege"); openTask("",st||"offen"); });
 F.action("tkopen",function(id){ if(F.current!=="auftraege") F.go("auftraege"); openTask(id); });
 F.action("tkview",function(v){ UI.tkView=v==="list"?"list":"board"; F.ls("fsc_tk_view",UI.tkView); F.render(); });

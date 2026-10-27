@@ -189,6 +189,9 @@ async function startServer(dir, env) {
     assert.strictEqual((await op({ op: "project.delete", id: p.id }))._status, 400, "Auftrag mit Aufgaben nicht löschbar");
     const cd = await (await fetch(B + "/admin/api/cockpit", { headers: { cookie: COOKIE } })).json(); assert.ok(cd.auftraege && cd.auftraege.tasks.some(y => y.id === t1.id), "Aufträge kommen mit den Cockpit-Daten (frisch)");
     r = await op({ op: "task.delete", id: t1.id }); assert.ok(!r.data.tasks.some(y => y.id === t1.id));
+    assert.ok(r.data.trash.some(x => x.task.id === t1.id), "gelöscht → Papierkorb");
+    r = await op({ op: "task.restore", id: t1.id }); assert.ok(r.data.tasks.some(y => y.id === t1.id) && !r.data.trash.some(x => x.task.id === t1.id), "wiederhergestellt");
+    r = await op({ op: "task.delete", id: t1.id }); assert.ok(!r.data.tasks.some(y => y.id === t1.id));
     assert.strictEqual((await op({ op: "gibtsnicht" }))._status, 400);
     const js = await (await fetch(B + "/admin/neu/zauftrag.js", { headers: { cookie: COOKIE } })).text(); assert.ok(/id:"auftraege"/.test(js) && /tkDeadlines/.test(js), "Modul ausgeliefert");
     const sb = await (await fetch(B + "/admin/neu/zside.js", { headers: { cookie: COOKIE } })).text(); assert.ok(/renderSide/.test(sb) && /Nächste Termine/.test(sb), "Statusleiste ausgeliefert");
