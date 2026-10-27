@@ -894,7 +894,9 @@
     return f ? (+f.copies).toLocaleString("de-AT") + " Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
     if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + " Stk.");
-    if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer"); return l.slice(0, 4); }
+    if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer");
+    var rv = S.cat && S.cat.ratings && S.cat.ratings[p.key]; if (rv) l.unshift("★ " + String(rv.avg).replace(".", ",") + " · " + rv.n + " Bewertungen");   // echte Kundenbewertungen (ab 3)
+    return l.slice(0, 4); }
   // Neu im Sortiment: die 4 zuletzt bei Print.com aufgenommenen Produkte (Datum aus dem Print.com-Katalog), ohne Doppelungen mit Klassikern/Fokus
   function newestProds() { var hf = S.cat.home && S.cat.home.fresh && S.cat.home.fresh.map(prodByKey).filter(Boolean); if (hf && hf.length >= 2) return hf.slice(0, 4);
     var ex = {}; classics().concat(dailyPicks()).forEach(function (p) { ex[p.key] = 1; });

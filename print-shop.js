@@ -2144,6 +2144,15 @@ module.exports = function (D) {
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
   }
   // Produktseite (/print?produkt=…): Inhalte schon im HTML – für Suchmaschinen und KI-Crawler ohne JavaScript; der Konfigurator ersetzt sie beim Laden
+  // Echte Produktbewertungen (Feedback „Drucksachen“ nach dem Versand) je Produkt – nur zusammengefasst, ohne Namen/Texte; ab 3 Bewertungen
+  // für Google (aggregateRating) und sichtbar auf der Produktseite. Wird bei neuem Feedback verworfen, sonst 30 min gemerkt.
+  let RV = null;
+  async function ratings() {
+    if (RV && Date.now() - RV.at < 30 * 60e3) return RV.by;
+    const by = {}; for (const o of await store.listOrders().catch(() => [])) { const f = o.feedback && o.feedback.product; if (!f || !(f.rating >= 1) || !o.product) continue; const k = o.product.key, r = by[k] || (by[k] = { n: 0, sum: 0 }); r.n++; r.sum += f.rating; }
+    Object.keys(by).forEach(k => { by[k].avg = Math.round(by[k].sum / by[k].n * 10) / 10; }); RV = { at: Date.now(), by }; return by;
+  }
+  const RATING_MIN = 3;
   async function productSeo(html, key) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), x = pub.find(y => y.key === key); if (!x) return html;
     const P = await pubState(), it = P && P.items ? P.items.find(y => y.key === key) : null, url = SITE + "/print?produkt=" + encodeURIComponent(key);
@@ -2155,9 +2164,11 @@ module.exports = function (D) {
       (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(z[0]) + ":</b> " + escH(z[1]) + "</li>").join("") + "</ul>" : "") +
       '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p>' + simHtml(pub, x) + '<p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
+    const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
     if (!ld.image && x.img) ld.image = x.img;
     const t = escH(x.title) + " online drucken – Preis sofort inkl. Versand | FS Creative Druckshop", d = escH((x.title + ": " + (desc || "individuell bedruckt") + "").slice(0, 120) + (it ? " Ab " + eurDe(Math.min.apply(null, it.rows.map(r => r.gross))) + " inkl. USt und Versand." : " Preis sofort im Konfigurator.") + " Online gestalten oder Datei hochladen.");
-    return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => block)
+    const rvP = ld.aggregateRating ? "<p>★ " + escH(String(ld.aggregateRating.ratingValue).replace(".", ",")) + " von 5 – " + ld.aggregateRating.ratingCount + " Kundenbewertungen</p>" : "";
+    return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => rvP ? block.replace('<p class="pd-muted">Konfigurator wird geladen', rvP + '<p class="pd-muted">Konfigurator wird geladen') : block)
       .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
       .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
@@ -2430,8 +2441,8 @@ module.exports = function (D) {
         const c = cfg(), s = await settings();
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
         const cat = await catalog(false), all = await catalogAll().catch(() => null); cms(false).catch(() => {});   // CMS bei Versionswechsel im Hintergrund auffrischen
-        const products = publicCatalog(cat, s, all);
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        const products = publicCatalog(cat, s, all), rvAll = await ratings(), rv = {}; Object.keys(rvAll).forEach(k => { if (rvAll[k].n >= RATING_MIN) rv[k] = { avg: rvAll[k].avg, n: rvAll[k].n }; });
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
@@ -2506,7 +2517,7 @@ module.exports = function (D) {
         if (!(rating >= 1 && rating <= 5)) return J(res, 400, { ok: false, error: "Bitte 1 bis 5 Sterne wählen" });
         if (stage === "product" && ["shipped", "delivered"].indexOf(o.status) < 0) return J(res, 400, { ok: false, error: "Die Drucksachen sind noch nicht unterwegs" });
         if (Date.now() - Date.parse(o.createdAt) > 120 * 864e5) return J(res, 400, { ok: false, error: "Diese Bestellung ist schon zu lange her" });
-        o.feedback = o.feedback || {}; const first = !o.feedback[stage]; o.feedback[stage] = { rating, text, at: nowIso() }; hist(o, "Feedback (" + (stage === "product" ? "Drucksachen" : "Bestellung") + "): " + rating + "/5"); await store.putOrder(o);
+        o.feedback = o.feedback || {}; const first = !o.feedback[stage]; o.feedback[stage] = { rating, text, at: nowIso() }; RV = null; hist(o, "Feedback (" + (stage === "product" ? "Drucksachen" : "Bestellung") + "): " + rating + "/5"); await store.putOrder(o);
         if (D.push && (rating <= 3 || (text && first))) D.push("lead", { title: (rating <= 2 ? "⚠️ " : "") + "Feedback: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: "★".repeat(rating) + "☆".repeat(5 - rating) + " · " + o.nr + " · " + (stage === "product" ? "Drucksachen" : "Bestellvorgang") + "\n" + (text || "ohne Kommentar"), url: "/admin#print", tag: "fb-" + o.id }).catch(() => {});
         return J(res, 200, { ok: true });
       }
@@ -2744,7 +2755,7 @@ module.exports = function (D) {
   async function handleAdmin(req, res, u, p) {
     try {
       if (p === "/admin/api/print/state" && req.method === "GET") return J(res, 200, await adminState());
-      if (p === "/admin/api/print/feedback" && req.method === "GET") {   // Kundenfeedback: Durchschnitt + neueste Bewertungen
+      if (p === "/admin/api/print/feedback" && req.method === "GET") {   RV = null;   // Kundenfeedback: Durchschnitt + neueste Bewertungen
         const rows = (await store.listOrders()).filter(o => o.feedback && (o.feedback.order || o.feedback.product)).map(o => ({ id: o.id, nr: o.nr, product: o.product.title, copies: o.copies, name: [o.customer.firstName, o.customer.lastName].join(" ").trim(), company: o.customer.company || "",
           order: o.feedback.order || null, productFb: o.feedback.product || null, at: (o.feedback.product || o.feedback.order).at })).sort((a, b) => a.at < b.at ? 1 : -1);
         const avg = k => { const l = rows.map(r => r[k]).filter(Boolean); return l.length ? { n: l.length, avg: Math.round(l.reduce((a, x) => a + x.rating, 0) / l.length * 10) / 10 } : { n: 0, avg: null }; };

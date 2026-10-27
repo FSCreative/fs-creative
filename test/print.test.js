@@ -353,6 +353,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await fb({ stage: "order", rating: 4, text: "Ging schnell <b>und</b> einfach" })).status, 200);
     const st = await (await fetch(B + "/print/api/order/" + o1.orderId + "?t=" + o1.token)).json(); assert.deepStrictEqual(st.order.feedback, { order: true, product: false });
     const a = await admin("/admin/api/print/feedback"); assert.strictEqual(a.ok, true); assert.deepStrictEqual(a.order, { n: 1, avg: 4 }); assert.strictEqual(a.rows[0].order.text, "Ging schnell <b>und</b> einfach");
+    // Produktbewertungen → Google (aggregateRating) + sichtbar, erst ab 3 echten Bewertungen, ohne Namen/Texte
+    const od = path.join(dir, "print-shop", "orders"), mk = (i, r) => fs.writeFileSync(path.join(od, "PRV" + i + ".json"), JSON.stringify({ id: "PRV" + i, nr: "D-RV-" + i, createdAt: new Date().toISOString(), status: "delivered", product: { key: "visitenkarten", title: "Visitenkarten" }, customer: { firstName: "Geheim", lastName: "Name" + i }, price: {}, payment: {}, printcom: {}, mails: {}, history: [], feedback: { product: { rating: r, text: "Privat " + i, at: new Date().toISOString() } } }));
+    mk(1, 5); mk(2, 4); await admin("/admin/api/print/feedback");
+    let pg = await (await fetch(B + "/print?produkt=visitenkarten")).text(); assert.ok(!/aggregateRating/.test(pg), "unter 3 Bewertungen nichts");
+    mk(3, 5); await admin("/admin/api/print/feedback");
+    pg = await (await fetch(B + "/print?produkt=visitenkarten")).text();
+    assert.ok(/"aggregateRating":\{"@type":"AggregateRating","ratingValue":"4.7","bestRating":"5","worstRating":"1","ratingCount":3\}/.test(pg), pg.match(/aggregateRating[^}]*}/) || "kein aggregateRating");
+    assert.ok(/★ 4,7 von 5 – 3 Kundenbewertungen/.test(pg) && !/Geheim|Privat 1/.test(pg), "sichtbar, ohne Namen/Texte");
+    const ct = await (await fetch(B + "/print/api/catalog", { headers: { "X-Print-Shop": "1" } })).json(); assert.deepStrictEqual(ct.ratings.visitenkarten, { avg: 4.7, n: 3 });
+    for (const i of [1, 2, 3]) fs.unlinkSync(path.join(od, "PRV" + i + ".json")); await admin("/admin/api/print/feedback");
   });
   await t("Mollie-Webhook: prüft per Abruf; „paid“ → bezahlt, Rechnungsentwurf, Mails – aber KEINE Print.com-Bestellung", async () => {
     const pid = o1.checkoutUrl.split("/").pop();
