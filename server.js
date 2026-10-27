@@ -466,6 +466,8 @@ setInterval(dailyDigest, 5 * 60 * 1000);
 // Push-Benachrichtigungen (Handy): neue Mails jede Minute prüfen
 const PUSH = require("./push.js")({ getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)) });
 setInterval(() => { if (MAIL.url && MAIL.token && process.env.DATABASE_URL) PUSH.mailTick(() => mailSnapshot()).catch(e => console.error("Push-Mail:", e.message)); }, 60 * 1000);
+// Druckshop: Print.com-Auftragsnummer aus Bestellbestätigungen nachtragen (falls die API-Antwort keine lieferte) – alle 10 min
+setInterval(() => { if (MAIL.url && MAIL.token && PRINT && PRINT.linkFromMails) mailSnapshot().then(s => PRINT.linkFromMails((s && s.messages) || [])).catch(e => console.error("Druck-Mails:", e.message)); }, 10 * 60 * 1000);
 // Privates Railway-Netz nutzen (kostenlos, schneller) statt über das öffentliche Internet.
 (async () => {
   if (!MAIL.url || /railway\.internal/.test(MAIL.url)) return;

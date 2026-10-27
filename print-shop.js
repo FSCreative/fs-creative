@@ -1951,7 +1951,7 @@ module.exports = function (D) {
     if (PC_DONE[st]) o.status = PC_DONE[st];
     else if (PC_PROBLEM.test(st)) o.status = "problem";
     else if (st && ["ordered", "problem"].indexOf(o.status) > -1) o.status = "in_production";
-    if (o.status !== before) hist(o, "Print.com-Status: " + st);
+    if (o.status !== before) hist(o, ({ in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", problem: "Problem" }[o.status] || STATUS_DE[o.status] || o.status) + " – Print.com-Status: " + st);
     if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) {
       o.mails.shipped = await mail(o.customer.email, "Deine Drucksachen sind unterwegs · " + o.nr, "Deine Bestellung ist versendet",
         ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) ist gedruckt und auf dem Weg zu dir."],
@@ -1977,6 +1977,17 @@ module.exports = function (D) {
         [["Jetzt bewerten", link]], ["Du bekommst diese Mail, weil du bei der Bestellung zugestimmt hast, nach der Lieferung um Feedback gebeten zu werden. Es folgt keine weitere Erinnerung."]) ? nowIso() : "skip";
       hist(o, o.mails.feedback !== "skip" ? "Feedback-Mail gesendet" : "Feedback-Mail fehlgeschlagen"); await store.putOrder(o); n++;
       if (n >= 30) break;
+    }
+    return n;
+  }
+  // Print.com-Auftragsnummer aus der Bestellbestätigung („Bestellbestätigung für 6002328653 (D-261027-6B7C)“) nachtragen, wenn sie beim Bestellen nicht zurückkam
+  async function linkFromMails(msgs) {
+    const hits = (msgs || []).map(m => /print\.com/i.test(String(m.from || "")) && String(m.subject || "").match(/(\d{8,12})\s*\((D-\d{6}-[A-Z0-9]{4})\)/)).filter(Boolean); if (!hits.length) return 0;
+    const all = await store.listOrders(); let n = 0;
+    for (const h of hits) {
+      const o = all.find(x => x.nr === h[2]); if (!o || !o.printcom || o.printcom.orderNumber) continue;
+      o.printcom.orderNumber = h[1]; hist(o, "Print.com-Auftragsnummer " + h[1] + " aus der Bestellbestätigung übernommen"); await store.putOrder(o); n++;
+      try { await pollOrder(o); } catch (e) { log("Status", o.nr, e.message); }
     }
     return n;
   }
@@ -2653,7 +2664,14 @@ module.exports = function (D) {
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok") };
+      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o) };
+  }
+  // Fortschritt für die Leiste im Cockpit: Schritte mit Zeitpunkt (aus dem Verlauf), Print.com-Rohstatus, Liefertermin, Tracking
+  function progressOf(o) {
+    const hs = o.history || [], at = rx => { const h = hs.find(x => rx.test(String(x.what || ""))); return h ? h.at : null; };
+    const pc = o.printcom || {}, tr = (pc.trackInfo && pc.trackInfo[0]) || (pc.tracks && pc.tracks[0] ? { url: pc.tracks[0] } : null);
+    return { pc: pc.status || "", checkedAt: pc.checkedAt || null, delivery: (o.price && (o.price.wish || o.price.deliveryDate)) || null, track: tr ? { url: tr.url, code: tr.code || "", carrier: tr.carrier || "" } : null,
+      at: { order: o.createdAt, printcom: pc.at || at(/Bei Print\.com bestellt/), production: at(/^In Produktion/), shipped: at(/^Versendet|Versandmail gesendet/), delivered: at(/^Zugestellt/) }, motifs: Array.isArray(o.motifs) ? o.motifs.length : 0 };
   }
   // ── Marge-Übersicht (Cockpit): Beispielrechnungen der kuratierten Produkte (Bestseller-Ausführung, Privatkunde, Lieferung AT) + echte Bestellungen ──
   let MG = null;
@@ -2769,7 +2787,7 @@ module.exports = function (D) {
       if (p === "/admin/api/print/order" && req.method === "GET") {
         const o = await store.getOrder(String(u.searchParams.get("id") || "")); if (!o) return J(res, 404, { ok: false, error: "Bestellung nicht gefunden" });
         const fm = await store.fileMeta(o.fileId);
-        return J(res, 200, { ok: true, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null } : null, statusText: STATUS_DE[o.status] || o.status, autoSend: (await settings()).autoSend });
+        return J(res, 200, { ok: true, order: o, file: fm ? { id: fm.id, name: fm.name, kind: fm.kind, bytes: fm.bytes, pages: fm.pages, checks: fm.checks, preflight: fm.preflight || null, dpi: fm.dpi || null } : null, statusText: STATUS_DE[o.status] || o.status, progress: progressOf(o), autoSend: (await settings()).autoSend });
       }
       // Print.com-Sortiment (nur lesend): alle Produkte bzw. ein Produkt mit Eigenschaften – zum Auswählen fürs Shop-Sortiment
       if (p === "/admin/api/print/pcproducts" && req.method === "GET") {
@@ -2856,6 +2874,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, proposalValid, catalog, syncTasks, marketingProducts, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
+  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, proposalValid, catalog, syncTasks, marketingProducts, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
 module.exports._bonusCalc = bonusCalc;
