@@ -331,6 +331,10 @@ const KOCHDU = { url: process.env.KOCHDU_STATS_URL || "https://kochdu.at/api/sta
 // VALUERO: Gebühren pro Objekt (Antonhaus über valuero-stats, Alpinappart über /api/fees).
 const ANTONHAUS = { url: process.env.ANTONHAUS_STATS_URL || "https://antonhaus.at/api/valuero-stats", token: process.env.ANTONHAUS_STATS_TOKEN || "" };
 const ALPINAPPART = { url: process.env.ALPINAPPART_FEES_URL || "https://www.alpinappart.at/api/fees", key: process.env.ALPINAPPART_FEES_KEY || "" };
+// VALUERO Partner (Plattform): alle Häuser auf einmal, gleiches Format wie Antonhaus (provisionCents + months)
+const VALUERO_PARTNER = { url: process.env.VALUERO_PARTNER_STATS_URL || "https://partner.valuero.at/api/stats/valuero", token: process.env.VALUERO_PARTNER_STATS_TOKEN || "" };
+// Plattform-Slug → bisheriger Schlüssel im Cockpit (damit Rechnungen/Abrechnungen je Objekt weiter zusammenpassen)
+const VALUERO_KEYS = { "alpinappart-wachter": "alpinappart", "antonhaus": "antonhaus" };
 // Cloudflare: Zonen (= aktive Websites) + Insights
 const CF = { token: process.env.CF_API_TOKEN || "" };
 
@@ -532,8 +536,25 @@ async function kochduStats(year) {
 // VALUERO: beide Objekte abrufen und zu einem einheitlichen Format zusammenführen.
 async function valueroStats(year) {
   const objects = [];
+  // VALUERO Partner: alle freigeschalteten Häuser (ohne Demo-Häuser) – ersetzt die Einzelquellen, sobald ein Haus dort läuft
+  const fromPartner = new Set();
+  if (VALUERO_PARTNER.token) {
+    const d = await getJSON(VALUERO_PARTNER.url + yearParam(year).replace(/^&/, "?"), VALUERO_PARTNER.token);
+    for (const h of (d && d.ok && Array.isArray(d.properties) ? d.properties : [])) {
+      if (h.isDemo) continue;
+      const key = VALUERO_KEYS[h.property] || h.property;
+      const pct = (v) => String(v).replace(".", ",") + " %";
+      fromPartner.add(key);
+      objects.push({
+        key, name: h.name || key,
+        ratesLabel: pct(h.feePercentDirect || 0) + " Website" + (h.feePercentOta ? " · " + pct(h.feePercentOta) + " Booking" : ""),
+        provisionCents: h.provisionCents || 0, feeBookings: h.feeBookings || 0,
+        months: (h.months || []).map(m => ({ month: m.month, provisionCents: m.provisionCents || 0, bookings: m.bookings || 0 })),
+      });
+    }
+  }
   // Antonhaus (valuero-stats: provisionCents + months[{month,provisionCents,bookings}])
-  if (ANTONHAUS.token) {
+  if (ANTONHAUS.token && !fromPartner.has("antonhaus")) {
     const d = await getJSON(ANTONHAUS.url + yearParam(year).replace(/^&/, "?"), ANTONHAUS.token);
     if (d && d.ok) {
       objects.push({
@@ -544,7 +565,7 @@ async function valueroStats(year) {
     }
   }
   // Alpinappart (/api/fees: totals.fees + byMonth[{month,count,revenue,fees}])
-  if (ALPINAPPART.key) {
+  if (ALPINAPPART.key && !fromPartner.has("alpinappart")) {
     const d = await getJSON(ALPINAPPART.url + "?key=" + encodeURIComponent(ALPINAPPART.key) + (year ? "&year=" + encodeURIComponent(year) : ""));
     if (d && d.totals) {
       objects.push({
@@ -3391,7 +3412,7 @@ async function handleAdmin(req, res, u, p) {
       { key: "kochdu", label: "kochdu", ok: !!KOCHDU.token },
       { key: "kantineur", label: "Kantineur", ok: !!KANTINEUR.token },
       { key: "blitzdings", label: "Blitzdings", ok: !!BLITZ.token },
-      { key: "valuero", label: "VALUERO (Antonhaus / Alpinappart)", ok: !!(ANTONHAUS.token || ALPINAPPART.key) },
+      { key: "valuero", label: "VALUERO (Partner-Plattform, Antonhaus, Alpinappart)", ok: !!(VALUERO_PARTNER.token || ANTONHAUS.token || ALPINAPPART.key) },
     ];
     integrations.push({ key: "buchhaltung", label: "Buchhaltung (eigene, im Cockpit)", ok: FIN_STATE.local });
     integrations.push({ key: "ki", label: "KI (Claude von Anthropic)", ok: KI.configured() });
