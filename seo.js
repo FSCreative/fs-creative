@@ -282,6 +282,22 @@ module.exports = function (D) {
   }
   async function gbpHours(loc, periods) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=regularHours", { token: await gTok(loc.acct), json: { regularHours: { periods } } }); CACHE.delete("gbp:loc"); }
 
+  // Profile teilen (Wunsch Simon 27.10.2026): alle Standorte eines verbundenen Kontos bekommen ein weiteres Konto als Administrator (MANAGER);
+  // ist das Zielkonto auch verbunden, werden die Einladungen damit gleich angenommen. Ergebnis je Standort.
+  async function gbpShare(from, to, role) {
+    const locs = (await gbpLocations(true)).filter(l => l.acct === from), out = [];
+    for (const l of locs) {
+      try { await api("POST", B.gbpAcc + "/" + l.name + "/admins", { token: await gTok(from), json: { admin: to, role } }); out.push({ title: l.title, ok: true }); }
+      catch (e) { out.push({ title: l.title, ok: /already|exist|ALREADY/i.test(String(e.message)), error: clip(e.message, 200) }); }
+    }
+    let accepted = 0;
+    if (S().gAcc.some(x => x.email === to)) {
+      const t = await gTok(to), accs = (await api("GET", B.gbpAcc + "/accounts", { token: t })).accounts || [];
+      for (const a of accs) { let inv = []; try { inv = (await api("GET", B.gbpAcc + "/" + a.name + "/invitations", { token: t })).invitations || []; } catch (e) { continue; }
+        for (const i of inv) { try { await api("POST", B.gbpAcc + "/" + i.name + ":accept", { token: t, json: {} }); accepted++; } catch (e) {} } }
+    }
+    CACHE.clear(); return { locations: out, accepted };
+  }
   // ───────────── Routen ─────────────
   function body(req, max) { return new Promise((ok, no) => { const ch = []; let n = 0; req.on("data", c => { n += c.length; if (n > (max || 2e5)) { req.destroy(); no(fail(413, "Anfrage zu groß")); } else ch.push(c); }); req.on("end", () => { try { ok(JSON.parse(Buffer.concat(ch).toString("utf8") || "{}")); } catch (e) { no(fail(400, "Ungültige Anfrage")); } }); req.on("error", no); }); }
   function sitePub(s) { const r = S().sites[s.id] || {}, c = r.check;
@@ -316,6 +332,10 @@ module.exports = function (D) {
         let all = []; try { all = (await gbpLocations()).map(l => ({ name: l.name, title: l.title, website: l.website, acct: l.acct })); } catch (e) {}
         return J(res, 200, { ok: true, gbp: { connected: true, locations: out, all } }), true;
       }
+      if (p === "/admin/api/seo/gbp/share" && req.method === "POST") { const pl = await body(req); if (pl.confirm !== true) throw fail(400, "Bitte bestätigen");
+        const from = String(pl.from || ""), to = String(pl.to || "").trim().toLowerCase(), role = ["OWNER", "MANAGER", "SITE_MANAGER"].indexOf(pl.role) > -1 ? pl.role : "MANAGER";
+        if (!S().gAcc.some(x => x.email === from)) throw fail(400, "Konto nicht verbunden"); if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) throw fail(400, "Bitte eine gültige E-Mail");
+        return J(res, 200, Object.assign({ ok: true }, await gbpShare(from, to, role))), true; }
       if (p === "/admin/api/seo/gbp/link" && req.method === "POST") { const pl = await body(req), s = await siteOf(pl.id); rec(s.id).gbp = [].concat(pl.locations || []).map(String).slice(0, 10); save(); return J(res, 200, { ok: true }), true; }
       if (p.indexOf("/admin/api/seo/gbp/") === 0 && req.method === "POST") {
         const pl = await body(req), s = await siteOf(pl.id), loc = (await gbpOf(s)).find(l => l.name === String(pl.location || "")); if (!loc) throw fail(404, "Standort nicht gefunden");
