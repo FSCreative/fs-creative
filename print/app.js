@@ -859,7 +859,7 @@
   }
   function sugHtml(qq) {
     qq = (qq || "").trim().toLowerCase(); if (!qq) return "";
-    var l = S.cat.products.filter(function (p) { var c = p.cat || {}; return (p.title + " " + p.desc + " " + (c.mainName || "") + " " + (c.subName || "") + " " + p.key).toLowerCase().indexOf(qq) > -1; })
+    var l = S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, qq); })
       .sort(function (a, b) { var at = a.title.toLowerCase().indexOf(qq) === 0, bt = b.title.toLowerCase().indexOf(qq) === 0; return (bt - at) || ((b.pop || 0) - (a.pop || 0)); }).slice(0, 7);
     if (!l.length) return '<div class="ps-sug-empty">Nichts gefunden – <button type="button" class="ps-link" data-nav="produkte">alle Produkte ansehen</button> oder <a class="ps-link" href="#" data-chat-open>frag uns im Chat</a>.</div>';
     return l.map(function (p, i) { return '<button type="button" class="ps-sug-it" role="option" data-prod="' + esc(p.key) + '"' + (i === 0 ? ' aria-selected="true"' : "") + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="">' : esc(p.icon)) + "</span><span><b>" + esc(p.title) + "</b><small>" + esc((p.cat && p.cat.mainName) || p.desc || "") + "</small></span>" + (p.best ? '<span class="ps-badge sm">★</span>' : "") + "</button>"; }).join("") +
@@ -954,10 +954,21 @@
     return '<button type="button" class="ps-prod' + (p.best ? " best" : "") + '" data-prod="' + esc(p.key) + '" aria-pressed="' + (!!S.prod && S.prod.key === p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : "") + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + "</span>" +
       '<span class="bd"><b>' + esc(p.title) + "</b>" + (badDesc(p) || !lead(p.desc) ? "" : "<span>" + esc(lead(p.desc)) + "</span>") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + '</span><span class="tag">' + tag + "</span></span></button>";
   }
+  // Suche mit Synonymen (Wunsch Simon 27.10.2026): „Leinwand“ findet die Canvas-Drucke, dazu gängige Alltagswörter; mehrere Wörter = alle müssen passen
+  var SYN = { leinwand: ["leinwand", "canvas-print", "auf canvas", "canvas im"], leinwände: ["leinwand", "canvas-print", "auf canvas", "canvas im"], keilrahmen: ["canvas-print", "leinwand"],
+    plakat: ["plakat", "poster"], plakate: ["plakat", "poster"], poster: ["poster", "plakat"], aufkleber: ["aufkleber", "sticker", "etikett"], sticker: ["sticker", "aufkleber"],
+    tasse: ["tasse", "becher"], tassen: ["tasse", "becher"], becher: ["becher", "tasse"], kuli: ["kugelschreiber", "kuli"], kulis: ["kugelschreiber", "kuli"],
+    shirt: ["shirt"], tshirt: ["t-shirt", "shirt"], pulli: ["hoodie", "sweat", "pullover"], pullover: ["pullover", "hoodie", "sweat"], beutel: ["beutel", "tasche"], tasche: ["tasche", "beutel"], taschen: ["tasche", "beutel"],
+    schild: ["schild", "sign", "dibond", "forex"], schilder: ["schild", "sign", "dibond", "forex"], fahne: ["fahne", "flag", "beachflag"], flagge: ["flagge", "fahne", "flag"], prospekt: ["prospekt", "folder", "broschüre"], handzettel: ["flyer", "handzettel"] };
+  function prodMatch(p, q) {
+    q = String(q || "").trim().toLowerCase(); if (!q) return true; var c = p.cat || {}, hay = (p.title + " " + p.desc + " " + (c.mainName || "") + " " + (c.subName || "") + " " + p.key).toLowerCase();
+    if (hay.indexOf(q) > -1) return true;
+    return q.split(/\s+/).every(function (w) { return (SYN[w] || SYN[w.replace(/-/g, "")] || [w]).some(function (t) { return hay.indexOf(t) > -1; }); });
+  }
   function filtered() {
     var qq = S.q.trim().toLowerCase();
     return S.cat.products.filter(function (p) { var c = p.cat || {}; if (S.group && c.main !== S.group) return false; if (S.sub && c.sub !== S.sub) return false;
-      return !qq || (p.title + " " + p.desc + " " + (c.mainName || "") + " " + (c.subName || "") + " " + p.key).toLowerCase().indexOf(qq) > -1; });
+      return !qq || prodMatch(p, qq); });
   }
   // Sortiment (Wunsch Simon 19.10.2026): Übersicht mit Kategorien + Unterkategorien statt aller Produkte untereinander;
   // Kategorie-Ansicht mit Seitenleiste (Unterkategorien), Filtern, Sortierung und kompakten Karten; Preise laden, sobald Karten sichtbar werden
@@ -981,7 +992,7 @@
   function fltd(l) { var f = S.flt || {}; return l.filter(function (p) { return (!f.best || p.best) && (!f.neu || isNew(p)) && (!f.des || p.designer); }); }
   function gridHtml() {
     var qq = S.q.trim();
-    if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return (p.title + " " + p.desc + " " + (c.mainName || "") + " " + (c.subName || "") + " " + p.key).toLowerCase().indexOf(ql) > -1; })); return l.length ? '<p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + '<div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
+    if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, ql); })); return l.length ? '<p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + '<div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
       : '<p class="pd-muted" style="padding:20px 0">Nichts gefunden – probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.</p>'; }
     var g = S.group && grpOf(S.group);
     if (!g) {   // Übersicht: Bestseller + Kategorien mit Unterkategorien
