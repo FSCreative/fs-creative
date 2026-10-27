@@ -1940,9 +1940,13 @@ module.exports = function (D) {
   const PC_PROBLEM = /CANCELED|REFUSED|REJECTED|ERROR|RETURN/;
   async function pollOrder(o) {
     if (!o.printcom || !o.printcom.orderNumber) return o;
-    const r = firstOf(await pcApi("GET", "/orders/" + encodeURIComponent(o.printcom.orderNumber)));
+    const raw = await pcApi("GET", "/orders/" + encodeURIComponent(o.printcom.orderNumber));
+    // Antwort laut Doku { results: [order] }; robust: sonst das erste Objekt mit Status/Positionen irgendwo in der Antwort nehmen
+    const findOrder = (v, d) => { if (!v || typeof v !== "object" || d > 4) return null; if (!Array.isArray(v) && (v.status || Array.isArray(v.items)) && (v.orderNumber || v.items || v.id)) return v; for (const k of Object.keys(v)) { const f = findOrder(v[k], d + 1); if (f) return f; } return null; };
+    let r = firstOf(raw); if (!r.status && !Array.isArray(r.items)) r = findOrder(raw, 0) || r;
     const items = Array.isArray(r.items) ? r.items : [];
-    const st = String((items[0] && items[0].status) || r.status || "").toUpperCase();
+    const st = String((items[0] && (items[0].status || items[0].orderItemStatus)) || r.status || r.orderStatus || "").toUpperCase();
+    if (!st && !o.printcom.rawNoted) { o.printcom.rawNoted = true; hist(o, "Print.com-Statusabruf ohne Status – Antwort: " + clip(JSON.stringify(raw), 500)); }
     const tracks = [], info = [], addT = (url, code, carrier) => { url = String(url || ""); if (!/^https?:\/\//.test(url) || tracks.indexOf(url) > -1) return; tracks.push(url); info.push({ url, code: clip(code || "", 60), carrier: clip(carrier || carrierOf(url), 40) }); };
     (Array.isArray(r.shipments) ? r.shipments : []).forEach(s => (s.tracks || []).forEach(t => { if (t) addT(t.trackUrl || t.url, t.trackingNumber || t.trackAndTraceCode || t.code || t.number, t.carrier || s.carrier || s.carrierName); }));
     items.forEach(it => { if (it) addT(it.trackingUrl || it.trackUrl, it.trackingNumber || it.trackAndTraceCode, it.carrier); });
