@@ -103,8 +103,9 @@
       fileId: S.file.fileId, fileToken: S.file.token, fileName: S.file.kind === "design" ? "Eigene Gestaltung" : (S.file.name || "Druckdatei"), preview: pv && pv.length < 90000 ? pv : "",
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), checks: (S.file.checks || []).filter(function (c) { return c.level !== "ok"; }).map(function (c) { return { level: c.level, text: String(c.text || "").slice(0, 400) }; }).slice(0, 10), at: Date.now() });
-    if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "" }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
+    if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.thumb || (f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "") }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
     S.cart.push(it); cartSave();
+    if (it.motifs) it.motifs.forEach(function (m, i) { var f = S.mot.files[i], src = f && f.previews && f.previews[0]; if (!m.preview && src) mkThumb(src, function (t) { m.preview = t; cartSave(); if (S.step === 4) render(); }); });
     S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {}; motReset();
     toast("„" + it.title + "“ liegt im Warenkorb");
   }
@@ -311,7 +312,9 @@
   function motBalance() { var n = S.mot.n, c = +S.copies || 0, b = Math.floor(c / n), r = c - b * n; S.mot.split = []; for (var i = 0; i < n; i++) S.mot.split.push(b + (i < r ? 1 : 0)); }
   function motReset(keepN) { var n = keepN ? S.mot.n : 1; S.mot = { n: n, split: [], files: [], i: 0 }; motBalance(); }
   function motSum() { return S.mot.split.reduce(function (a, b) { return a + (+b || 0); }, 0); }
-  function motSave() { if (S.mot.n > 1) S.mot.files[S.mot.i] = { file: S.file, previews: S.previews, design: S.design, mode: S.mode }; }
+  function motSave() { if (S.mot.n > 1) { var i = S.mot.i, old = S.mot.files[i], pv = S.previews && S.previews[0]; S.mot.files[i] = { file: S.file, previews: S.previews, design: S.design, mode: S.mode, thumb: old && old.src === pv ? old.thumb : "", src: pv || "" }; if (pv && !S.mot.files[i].thumb) mkThumb(pv, function (t) { var f = S.mot.files[i]; if (f && f.src === pv) f.thumb = t; }); } }
+  // kleines Vorschaubild (JPEG ~240 px) für den Warenkorb – große PDF-Vorschauen passen nicht in den Speicher des Warenkorbs
+  function mkThumb(src, cb) { try { var im = new Image(); im.onload = function () { try { var w = 240, h = Math.max(1, Math.round(im.height * w / im.width)), c = document.createElement("canvas"); c.width = w; c.height = h; var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(im, 0, 0, w, h); cb(c.toDataURL("image/jpeg", 0.72)); } catch (e) {} }; im.src = src; } catch (e) {} }
   function motLoad(i) { motSave(); S.mot.i = i; var f = S.mot.files[i] || {}; S.file = f.file || null; S.previews = f.previews || null; S.design = f.design || null; S.mode = f.mode || ""; }
   function motHtml() {
     if (!motOk()) return "";
