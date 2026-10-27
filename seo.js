@@ -3,7 +3,7 @@
      Social-Vorschau (og:), strukturierte Daten (JSON-LD), Bilder ohne Alt-Text, kaputte interne Links, robots.txt/Sitemap, https → Punkte 0–100
    – Geschwindigkeit: Google PageSpeed Insights (Handy + Desktop; mit GOOGLE_PSI_KEY höheres Kontingent)
    – KI-Vorschläge je Seite: besserer Titel, Beschreibung, H1, FAQ (als JSON-LD zum Einbauen)
-   – Google (ein Google-Zugang, OAuth mit dem Google-App-Zugang aus Marketing › Kanäle): Search Console (Suchbegriffe, Seiten, Klicks,
+   – Google (mehrere Google-Konten, Wunsch Simon 27.10.2026 – Profile liegen auf verschiedenen Konten; OAuth mit dem Google-App-Zugang aus Marketing › Kanäle): Search Console (Suchbegriffe, Seiten, Klicks,
      Position, Sitemaps einreichen, Indexierung prüfen) und Google Unternehmensprofil (Bewertungen lesen/beantworten, Beiträge, Öffnungszeiten)
    Daten im Datenordner unter seo/state.json; Google-Zugang verschlüsselt. Alle Adressen über D.base überschreibbar (Tests). */
 "use strict";
@@ -32,7 +32,7 @@ module.exports = function (D) {
 
   // ───────────── Speicher ─────────────
   let ST = null, saveT = null;
-  function S() { if (ST) return ST; try { ST = JSON.parse(fs.readFileSync(FILE, "utf8")) || {}; } catch (e) { ST = {}; } ST.sites = ST.sites || {}; ST.google = ST.google || {}; return ST; }
+  function S() { if (ST) return ST; try { ST = JSON.parse(fs.readFileSync(FILE, "utf8")) || {}; } catch (e) { ST = {}; } ST.sites = ST.sites || {}; ST.google = ST.google || {}; if (!Array.isArray(ST.gAcc)) ST.gAcc = ST.google.tok ? [Object.assign({}, ST.google)] : []; return ST; }
   function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { const t = FILE + ".tmp"; fs.writeFileSync(t, JSON.stringify(ST)); fs.renameSync(t, FILE); } catch (e) { console.error("seo: speichern", e.message); } }, 150); }
   const key = () => crypto.createHash("sha256").update("seo:" + String(D.secret || "fsc")).digest();
   function seal(o) { const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", key(), iv), b = Buffer.concat([c.update(JSON.stringify(o), "utf8"), c.final()]); return [iv, c.getAuthTag(), b].map(x => x.toString("base64")).join("."); }
@@ -206,21 +206,26 @@ module.exports = function (D) {
   const redirect = () => String(D.publicBase || "").replace(/\/$/, "") + "/admin/api/seo/oauth/callback";
   const PEND = new Map();
   function gApp() { const a = (D.googleApp && D.googleApp()) || {}; return { clientId: a.clientId || process.env.GOOGLE_CLIENT_ID || "", secret: a.secret || process.env.GOOGLE_CLIENT_SECRET || "" }; }
-  function authUrl() { const a = gApp(); if (!a.clientId || !a.secret) throw fail(400, "Zuerst den Google-App-Zugang eintragen (Marketing › Kanäle › YouTube/Google – derselbe Google-Cloud-OAuth-Client)."); const st = crypto.randomBytes(16).toString("hex"); PEND.set(st, Date.now());
-    return B.gAuth + "?" + new URLSearchParams({ client_id: a.clientId, redirect_uri: redirect(), response_type: "code", scope: SCOPES.join(" "), access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st }).toString(); }
+  // state signiert (nicht nur im Speicher) – übersteht einen Neustart/Deploy während der Anmeldung; 30 min gültig
+  const stSig = v => crypto.createHmac("sha256", key()).update("gst:" + v).digest("hex").slice(0, 32);
+  function authUrl() { const a = gApp(); if (!a.clientId || !a.secret) throw fail(400, "Zuerst den Google-App-Zugang eintragen (Marketing › Kanäle › YouTube/Google – derselbe Google-Cloud-OAuth-Client)."); const v = Date.now().toString(36) + "." + crypto.randomBytes(8).toString("hex"), st = v + "." + stSig(v);
+    return B.gAuth + "?" + new URLSearchParams({ client_id: a.clientId, redirect_uri: redirect(), response_type: "code", scope: SCOPES.join(" "), access_type: "offline", prompt: "consent select_account", include_granted_scopes: "true", state: st }).toString(); }
+  function stOk(st) { const i = st.lastIndexOf("."), v = st.slice(0, i); if (i < 1 || stSig(v) !== st.slice(i + 1)) return false; const ts = parseInt(v.split(".")[0], 36); return Date.now() - ts < 30 * 60e3; }
   async function callback(u) {
-    const st = String(u.searchParams.get("state") || ""); if (!PEND.has(st)) return "/admin?seo=" + encodeURIComponent("fehler:Anmeldung abgelaufen – bitte nochmal verbinden") + "#seo";
-    PEND.delete(st); if (u.searchParams.get("error")) return "/admin?seo=" + encodeURIComponent("fehler:" + u.searchParams.get("error")) + "#seo";
+    const st = String(u.searchParams.get("state") || ""); if (!stOk(st) || PEND.has(st)) return "/admin?seo=" + encodeURIComponent("fehler:Anmeldung abgelaufen – bitte nochmal verbinden") + "#seo";
+    PEND.set(st, Date.now()); if (u.searchParams.get("error")) return "/admin?seo=" + encodeURIComponent("fehler:" + u.searchParams.get("error")) + "#seo";
     try {
       const a = gApp(), t = await api("POST", B.gToken, { form: { code: String(u.searchParams.get("code") || ""), client_id: a.clientId, client_secret: a.secret, redirect_uri: redirect(), grant_type: "authorization_code" } });
       if (!t.refresh_token) return "/admin?seo=" + encodeURIComponent("fehler:Google hat keinen dauerhaften Zugang geliefert – unter myaccount.google.com/permissions die App entfernen und neu verbinden.") + "#seo";
       let email = ""; try { email = (await api("GET", B.gUser, { token: t.access_token })).email || ""; } catch (e) {}
-      const g = S().google; g.tok = seal({ access: t.access_token, refresh: t.refresh_token, exp: Date.now() + (t.expires_in || 3600) * 1000 }); g.email = email; g.scopes = String(t.scope || ""); g.at = nowIso(); save();
-      return "/admin?seo=" + encodeURIComponent("ok:Google verbunden" + (email ? " (" + email + ")" : "")) + "#seo";
+      const L = S().gAcc, i = L.findIndex(x => x.email && x.email === email), acc = { tok: seal({ access: t.access_token, refresh: t.refresh_token, exp: Date.now() + (t.expires_in || 3600) * 1000 }), email, scopes: String(t.scope || ""), at: nowIso() };
+      if (i > -1) L[i] = acc; else L.push(acc); S().google = L[0]; CACHE.clear(); save();
+      return "/admin?seo=" + encodeURIComponent("ok:Google verbunden" + (email ? " (" + email + ")" : "") + (L.length > 1 ? " – " + L.length + " Konten" : "")) + "#seo";
     } catch (e) { return "/admin?seo=" + encodeURIComponent("fehler:" + String(e.message || e).slice(0, 200)) + "#seo"; }
   }
-  async function gTok() {
-    const g = S().google, t = g.tok && unseal(g.tok); if (!t) throw fail(400, "Google ist nicht verbunden.");
+  const gConnected = () => S().gAcc.some(x => x.tok);
+  async function gTok(email) {
+    const L = S().gAcc, g = (email && L.find(x => x.email === email)) || L[0] || {}, t = g.tok && unseal(g.tok); if (!t) throw fail(400, "Google ist nicht verbunden.");
     if (t.exp - Date.now() > 120e3) return t.access;
     const a = gApp(), r = await api("POST", B.gToken, { form: { client_id: a.clientId, client_secret: a.secret, refresh_token: t.refresh, grant_type: "refresh_token" } });
     t.access = r.access_token; t.exp = Date.now() + (r.expires_in || 3600) * 1000; g.tok = seal(t); save(); return t.access;
@@ -228,14 +233,18 @@ module.exports = function (D) {
   const CACHE = new Map(); async function cached(k, ms, fn, force) { const c = CACHE.get(k); if (!force && c && Date.now() - c.at < ms) return c.v; const v = await fn(); CACHE.set(k, { at: Date.now(), v }); return v; }
 
   // Search Console: passende Property zur Website (Domain-Property bevorzugt)
-  async function gscSites(force) { return cached("gsc:sites", 10 * 60e3, async () => ((await api("GET", B.gsc + "/sites", { token: await gTok() })).siteEntry || []).map(x => ({ url: x.siteUrl, level: x.permissionLevel })), force); }
+  const PROP_ACC = {};
+  async function gscSites(force) { return cached("gsc:sites", 10 * 60e3, async () => { const out = [];
+    for (const a of S().gAcc) { let l = []; try { l = (await api("GET", B.gsc + "/sites", { token: await gTok(a.email) })).siteEntry || []; } catch (e) { continue; }
+      l.forEach(x => { if (x.permissionLevel === "siteUnverifiedUser") return; if (!out.some(y => y.url === x.siteUrl)) { out.push({ url: x.siteUrl, level: x.permissionLevel, acct: a.email }); PROP_ACC[x.siteUrl] = a.email; } }); }
+    return out; }, force); }
   async function propOf(site) { const list = await gscSites(); const reg = site.id;
     return (list.find(x => x.url === "sc-domain:" + reg) || list.find(x => hostOf(x.url).replace(/^www\./, "") === reg && x.url.indexOf("https://") === 0) || list.find(x => hostOf(x.url).replace(/^www\./, "") === reg) || {}).url || ""; }
   const ymd = d => d.toISOString().slice(0, 10);
   async function gsc(site, force) {
     const prop = await propOf(site); if (!prop) return { connected: true, property: "", note: "Diese Website ist in der Google Search Console noch nicht angelegt bzw. bestätigt." };
     return cached("gsc:" + site.id, 30 * 60e3, async () => {
-      const t = await gTok(), end = new Date(Date.now() - 2 * 864e5), start = new Date(end.getTime() - 27 * 864e5), prev0 = new Date(start.getTime() - 28 * 864e5), enc = encodeURIComponent(prop);
+      const t = await gTok(PROP_ACC[prop]), end = new Date(Date.now() - 2 * 864e5), start = new Date(end.getTime() - 27 * 864e5), prev0 = new Date(start.getTime() - 28 * 864e5), enc = encodeURIComponent(prop);
       const q = (dims, s, e, n) => api("POST", B.gsc + "/sites/" + enc + "/searchAnalytics/query", { token: t, json: { startDate: ymd(s), endDate: ymd(e), dimensions: dims, rowLimit: n || 25, dataState: "all" } });
       const [tot, prev, byDay, queries, pages, sms] = await Promise.all([q([], start, end), q([], prev0, new Date(start.getTime() - 864e5)), q(["date"], start, end, 40), q(["query"], start, end, 30), q(["page"], start, end, 20),
         api("GET", B.gsc + "/sites/" + enc + "/sitemaps", { token: t }).catch(() => ({}))]);
@@ -245,32 +254,33 @@ module.exports = function (D) {
         sitemaps: (sms.sitemap || []).map(x => ({ path: x.path, submitted: x.lastSubmitted || "", downloaded: x.lastDownloaded || "", errors: +x.errors || 0, warnings: +x.warnings || 0, urls: ((x.contents || [])[0] || {}).submitted || "" })) };
     }, force);
   }
-  async function inspectUrl(site, url) { const prop = await propOf(site); if (!prop) throw fail(400, "Website ist nicht in der Search Console."); const j = await api("POST", B.inspect, { token: await gTok(), json: { inspectionUrl: url, siteUrl: prop, languageCode: "de-AT" } });
+  async function inspectUrl(site, url) { const prop = await propOf(site); if (!prop) throw fail(400, "Website ist nicht in der Search Console."); const j = await api("POST", B.inspect, { token: await gTok(PROP_ACC[prop]), json: { inspectionUrl: url, siteUrl: prop, languageCode: "de-AT" } });
     const r = (j.inspectionResult && j.inspectionResult.indexStatusResult) || {}; return { verdict: r.verdict || "", coverage: r.coverageState || "", lastCrawl: r.lastCrawlTime || "", canonical: r.googleCanonical || "", robots: r.robotsTxtState || "", indexing: r.indexingState || "", link: (j.inspectionResult || {}).inspectionResultLink || "" }; }
-  async function submitSitemap(site, sm) { const prop = await propOf(site); if (!prop) throw fail(400, "Website ist nicht in der Search Console."); await api("PUT", B.gsc + "/sites/" + encodeURIComponent(prop) + "/sitemaps/" + encodeURIComponent(sm), { token: await gTok() }); CACHE.delete("gsc:" + site.id); }
+  async function submitSitemap(site, sm) { const prop = await propOf(site); if (!prop) throw fail(400, "Website ist nicht in der Search Console."); await api("PUT", B.gsc + "/sites/" + encodeURIComponent(prop) + "/sitemaps/" + encodeURIComponent(sm), { token: await gTok(PROP_ACC[prop]) }); CACHE.delete("gsc:" + site.id); }
 
   // Unternehmensprofil: Standorte (über die Website-Adresse der Website zugeordnet), Bewertungen, Antworten, Beiträge, Öffnungszeiten
   async function gbpLocations(force) {
     return cached("gbp:loc", 30 * 60e3, async () => {
-      const t = await gTok(), accs = (await api("GET", B.gbpAcc + "/accounts", { token: t })).accounts || [], out = [];
+      const out = [];
+      for (const ga of S().gAcc) { let t, accs = []; try { t = await gTok(ga.email); accs = (await api("GET", B.gbpAcc + "/accounts", { token: t })).accounts || []; } catch (e) { continue; }
       for (const a of accs) { let page = ""; for (let i = 0; i < 5; i++) { const r = await api("GET", B.gbpInfo + "/" + a.name + "/locations?" + new URLSearchParams(Object.assign({ readMask: "name,title,websiteUri,storefrontAddress,regularHours,phoneNumbers,metadata", pageSize: "100" }, page ? { pageToken: page } : {})).toString(), { token: t });
-        (r.locations || []).forEach(l => out.push({ account: a.name, name: l.name, title: l.title, website: l.websiteUri || "", address: l.storefrontAddress ? [(l.storefrontAddress.addressLines || []).join(", "), l.storefrontAddress.postalCode, l.storefrontAddress.locality].filter(Boolean).join(" ") : "", hours: l.regularHours || null, phone: (l.phoneNumbers || {}).primaryPhone || "", maps: (l.metadata || {}).mapsUri || "", review: (l.metadata || {}).newReviewUri || "" }));
-        page = r.nextPageToken || ""; if (!page) break; } }
+        (r.locations || []).forEach(l => { if (out.some(x => x.name === l.name)) return; out.push({ acct: ga.email, account: a.name, name: l.name, title: l.title, website: l.websiteUri || "", address: l.storefrontAddress ? [(l.storefrontAddress.addressLines || []).join(", "), l.storefrontAddress.postalCode, l.storefrontAddress.locality].filter(Boolean).join(" ") : "", hours: l.regularHours || null, phone: (l.phoneNumbers || {}).primaryPhone || "", maps: (l.metadata || {}).mapsUri || "", review: (l.metadata || {}).newReviewUri || "" }); });
+        page = r.nextPageToken || ""; if (!page) break; } } }
       return out;
     }, force);
   }
   async function gbpOf(site) { const locs = await gbpLocations(); return locs.filter(l => regOf(hostOf(l.website)) === site.id || (rec(site.id).gbp || []).indexOf(l.name) > -1); }
   const STARS = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
-  async function gbpReviews(loc, force) { return cached("gbp:rev:" + loc.name, 15 * 60e3, async () => { const r = await api("GET", B.gbp4 + "/" + loc.account + "/" + loc.name + "/reviews?pageSize=50", { token: await gTok() });
+  async function gbpReviews(loc, force) { return cached("gbp:rev:" + loc.name, 15 * 60e3, async () => { const r = await api("GET", B.gbp4 + "/" + loc.account + "/" + loc.name + "/reviews?pageSize=50", { token: await gTok(loc.acct) });
     return { avg: r.averageRating || 0, total: r.totalReviewCount || 0, reviews: (r.reviews || []).map(x => ({ id: x.reviewId, name: x.reviewer && x.reviewer.displayName || "Google-Nutzer", stars: STARS[x.starRating] || 0, text: x.comment || "", at: x.createTime || "", reply: x.reviewReply ? { text: x.reviewReply.comment, at: x.reviewReply.updateTime } : null })) }; }, force); }
-  async function gbpReply(loc, id, text) { await api("PUT", B.gbp4 + "/" + loc.account + "/" + loc.name + "/reviews/" + encodeURIComponent(id) + "/reply", { token: await gTok(), json: { comment: clip(text, 4000) } }); CACHE.delete("gbp:rev:" + loc.name); }
+  async function gbpReply(loc, id, text) { await api("PUT", B.gbp4 + "/" + loc.account + "/" + loc.name + "/reviews/" + encodeURIComponent(id) + "/reply", { token: await gTok(loc.acct), json: { comment: clip(text, 4000) } }); CACHE.delete("gbp:rev:" + loc.name); }
   async function gbpPost(loc, o) {
     const body = { languageCode: "de", topicType: "STANDARD", summary: clip(o.text, 1500) };
     if (o.link) body.callToAction = { actionType: o.action || "LEARN_MORE", url: o.link };
     if (o.image) body.media = [{ mediaFormat: "PHOTO", sourceUrl: o.image }];
-    return api("POST", B.gbp4 + "/" + loc.account + "/" + loc.name + "/localPosts", { token: await gTok(), json: body });
+    return api("POST", B.gbp4 + "/" + loc.account + "/" + loc.name + "/localPosts", { token: await gTok(loc.acct), json: body });
   }
-  async function gbpHours(loc, periods) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=regularHours", { token: await gTok(), json: { regularHours: { periods } } }); CACHE.delete("gbp:loc"); }
+  async function gbpHours(loc, periods) { await api("PATCH", B.gbpInfo + "/" + loc.name + "?updateMask=regularHours", { token: await gTok(loc.acct), json: { regularHours: { periods } } }); CACHE.delete("gbp:loc"); }
 
   // ───────────── Routen ─────────────
   function body(req, max) { return new Promise((ok, no) => { const ch = []; let n = 0; req.on("data", c => { n += c.length; if (n > (max || 2e5)) { req.destroy(); no(fail(413, "Anfrage zu groß")); } else ch.push(c); }); req.on("end", () => { try { ok(JSON.parse(Buffer.concat(ch).toString("utf8") || "{}")); } catch (e) { no(fail(400, "Ungültige Anfrage")); } }); req.on("error", no); }); }
@@ -282,8 +292,8 @@ module.exports = function (D) {
     try {
       if (p === "/admin/api/seo/oauth/callback") { const to = await callback(u); res.writeHead(302, { Location: to, "Cache-Control": "no-store" }); res.end(); return true; }
       if (p === "/admin/api/seo/state" && req.method === "GET") {
-        const list = await siteList(u.searchParams.get("force") === "1"), g = S().google;
-        return J(res, 200, { ok: true, sites: list.map(sitePub), google: { connected: !!g.tok, email: g.email || "", app: !!(gApp().clientId && gApp().secret), redirect: redirect(), scopes: g.scopes || "" }, psiKey: !!process.env.GOOGLE_PSI_KEY }), true;
+        const list = await siteList(u.searchParams.get("force") === "1"), g = S().gAcc[0] || {};
+        return J(res, 200, { ok: true, sites: list.map(sitePub), google: { connected: gConnected(), email: g.email || "", accounts: S().gAcc.map(a => ({ email: a.email || "", at: a.at || "" })), app: !!(gApp().clientId && gApp().secret), redirect: redirect(), scopes: g.scopes || "" }, psiKey: !!process.env.GOOGLE_PSI_KEY }), true;
       }
       if (p === "/admin/api/seo/site" && req.method === "GET") {
         const s = await siteOf(u.searchParams.get("id")), r = S().sites[s.id] || {};
@@ -295,15 +305,15 @@ module.exports = function (D) {
       if (p === "/admin/api/seo/add" && req.method === "POST") { const pl = await body(req), h = hostOf(String(pl.domain || "")); if (!h || h.indexOf(".") < 0) throw fail(400, "Bitte eine Domain eingeben"); const id = regOf(h); Object.assign(rec(id), { manual: true, domain: h, name: clip(pl.name, 80) || id }); save(); SITES.at = 0; return J(res, 200, { ok: true, id }), true; }
       if (p === "/admin/api/seo/hide" && req.method === "POST") { const pl = await body(req); rec(String(pl.id)).hidden = !!pl.hidden; save(); return J(res, 200, { ok: true }), true; }
       if (p === "/admin/api/seo/google/connect" && req.method === "POST") return J(res, 200, { ok: true, url: authUrl() }), true;
-      if (p === "/admin/api/seo/google/disconnect" && req.method === "POST") { S().google = {}; CACHE.clear(); save(); return J(res, 200, { ok: true }), true; }
-      if (p === "/admin/api/seo/gsc" && req.method === "GET") { const s = await siteOf(u.searchParams.get("id")); if (!S().google.tok) return J(res, 200, { ok: true, gsc: { connected: false } }), true; return J(res, 200, { ok: true, gsc: await gsc(s, u.searchParams.get("force") === "1") }), true; }
+      if (p === "/admin/api/seo/google/disconnect" && req.method === "POST") { const pl = await body(req), e = String(pl.email || ""); S().gAcc = e ? S().gAcc.filter(x => x.email !== e) : []; S().google = S().gAcc[0] || {}; CACHE.clear(); save(); return J(res, 200, { ok: true }), true; }
+      if (p === "/admin/api/seo/gsc" && req.method === "GET") { const s = await siteOf(u.searchParams.get("id")); if (!gConnected()) return J(res, 200, { ok: true, gsc: { connected: false } }), true; return J(res, 200, { ok: true, gsc: await gsc(s, u.searchParams.get("force") === "1") }), true; }
       if (p === "/admin/api/seo/inspect" && req.method === "POST") { const pl = await body(req), s = await siteOf(pl.id); return J(res, 200, { ok: true, result: await inspectUrl(s, String(pl.url || s.url)) }), true; }
       if (p === "/admin/api/seo/sitemap" && req.method === "POST") { const pl = await body(req), s = await siteOf(pl.id); await submitSitemap(s, String(pl.sitemap || (s.url + "sitemap.xml"))); return J(res, 200, { ok: true }), true; }
       if (p === "/admin/api/seo/gbp" && req.method === "GET") {
-        const s = await siteOf(u.searchParams.get("id")); if (!S().google.tok) return J(res, 200, { ok: true, gbp: { connected: false } }), true;
+        const s = await siteOf(u.searchParams.get("id")); if (!gConnected()) return J(res, 200, { ok: true, gbp: { connected: false } }), true;
         const locs = await gbpOf(s), out = [];
         for (const l of locs) { let rv = null, err = ""; try { rv = await gbpReviews(l, u.searchParams.get("force") === "1"); } catch (e) { err = e.message; } out.push(Object.assign({}, l, { reviews: rv, error: err })); }
-        let all = []; try { all = (await gbpLocations()).map(l => ({ name: l.name, title: l.title, website: l.website })); } catch (e) {}
+        let all = []; try { all = (await gbpLocations()).map(l => ({ name: l.name, title: l.title, website: l.website, acct: l.acct })); } catch (e) {}
         return J(res, 200, { ok: true, gbp: { connected: true, locations: out, all } }), true;
       }
       if (p === "/admin/api/seo/gbp/link" && req.method === "POST") { const pl = await body(req), s = await siteOf(pl.id); rec(s.id).gbp = [].concat(pl.locations || []).map(String).slice(0, 10); save(); return J(res, 200, { ok: true }), true; }

@@ -76,6 +76,10 @@ const srv = http.createServer((q, s) => { let b = ""; q.on("data", c => { b += c
     const cb = await call("GET", "/admin/api/seo/oauth/callback", null, "?code=c&state=" + u.searchParams.get("state")); assert.ok(/seo=ok/.test(cb.head.Location), cb.head.Location);
     await new Promise(r => setTimeout(r, 400)); const raw = fs.readFileSync(path.join(dir, "seo", "state.json"), "utf8"); assert.ok(raw.indexOf("ref-1") < 0, "Token nicht im Klartext");
     const st = (await call("GET", "/admin/api/seo/state")).json(); assert.strictEqual(st.google.connected, true); assert.strictEqual(st.google.email, "simon@example.org");
+    const again = await call("GET", "/admin/api/seo/oauth/callback", null, "?code=c&state=" + u.searchParams.get("state")); assert.ok(/abgelaufen/.test(decodeURIComponent(again.head.Location)), "Anmeldelink nur einmal");
+    assert.ok(/abgelaufen/.test(decodeURIComponent((await call("GET", "/admin/api/seo/oauth/callback", null, "?code=c&state=x.y.falsch")).head.Location)), "gefälschter state");
+    const j2 = (await call("POST", "/admin/api/seo/google/connect", {})).json(); await call("GET", "/admin/api/seo/oauth/callback", null, "?code=c&state=" + new URL(j2.url).searchParams.get("state"));
+    const st2 = (await call("GET", "/admin/api/seo/state")).json(); assert.strictEqual(st2.google.accounts.length, 1, "gleiches Konto nicht doppelt");
   });
   await t("Search Console: Domain-Property gefunden, Klicks, Suchbegriffe, Sitemap einreichen", async () => {
     const g = (await call("GET", "/admin/api/seo/gsc", null, "?id=muster.at")).json().gsc; assert.strictEqual(g.property, "sc-domain:muster.at");
