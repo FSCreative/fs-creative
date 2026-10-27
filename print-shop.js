@@ -1806,8 +1806,9 @@ module.exports = function (D) {
     if (!o.invoice.id && D.createInvoice) {
       try {
         const c = o.customer, name = c.type === "company" ? c.company : c.firstName + " " + c.lastName;
-        const posName = o.product.title + " – " + o.copies + " Stück";
-        const posText = o.labels.map(l => l[0] + ": " + l[1]).concat(["Lieferzeit: " + (URGENCY_DE[o.urgency] || o.urgency), "inkl. Versand nach " + COUNTRIES[c.country]]).join("\n");
+        const mot = Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs : null;
+        const posName = o.product.title + " – " + o.copies + " Stück" + (mot ? " (" + mot.length + " Motive)" : "");
+        const posText = (mot ? ["Motive: " + mot.map(m => "Motiv " + m.motif + " × " + m.copies + " Stk.").join(", ")] : []).concat(o.labels.map(l => l[0] + ": " + l[1])).concat(["Lieferzeit: " + (URGENCY_DE[o.urgency] || o.urgency), "inkl. Versand nach " + COUNTRIES[c.country]]).join("\n");
         const r = await D.createInvoice({ contactName: name, email: c.email, uid: c.uidValid ? c.uid : "", street: c.street, zip: c.zip, city: c.city, country: c.country.toLowerCase(), contactPerson: c.type === "company" ? c.firstName + " " + c.lastName : "",
           header: "Rechnung Druckauftrag " + o.nr, reference: o.nr,
           headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung " + o.nr + ")." + (o.payment.method === "mollie" && o.payment.mollieId ? " Bezahlt online – Mollie " + o.payment.mollieId + "." : ""),
@@ -1839,6 +1840,8 @@ module.exports = function (D) {
   const LOCK = new Set();
   // Referenz am Artikel: Bestellnummer + Seitenzuordnung der Logo-PDF (z. B. „S1 Brust links, S2 Rücken“)
   const itemRef = o => Array.isArray(o.pageMap) && o.pageMap.length ? clip(o.nr + " · " + o.pageMap.map(p => "S" + p.page + " " + p.title).join(", "), 120) : o.nr;
+  const pcFileUrl = (base, id) => base + "/print-files/" + id + "/" + sig("pcfile", id) + ".pdf";
+  const motifDesigns = (o, base) => Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => ({ fileUrl: pcFileUrl(base, m.fileId), copies: m.copies })) : null;
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
   async function placeOrder(id, by) {
     if (LOCK.has(id)) throw new Error("Wird gerade gesendet");
@@ -1852,8 +1855,8 @@ module.exports = function (D) {
       const body = { deDuplicationId: o.id, customerReference: o.nr, poNumber: o.nr, webhookUrl: base + "/print/printcom-webhook/" + sig("pchook", o.id) + "/" + encodeURIComponent(o.id),
         billingAddress: billingFs(),
         items: [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
-          // Textil: Größen-Mix als variants im Artikel (Variantenstruktur laut Doku, vor Livegang mit Testbestellung prüfen)
-          Array.isArray(o.variants) && o.variants.length ? { variants: o.variants } : {}, { fileUrl: base + "/print-files/" + fm.id + "/" + sig("pcfile", fm.id) + ".pdf", fileOptions: { isProduction: true }, approveDesign: true,
+          // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
+          motifDesigns(o, base) ? { designs: motifDesigns(o, base) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, { fileUrl: pcFileUrl(base, fm.id) }), { fileOptions: { isProduction: true }, approveDesign: true,
           senderAddress: Object.assign({}, billingFs(), { vatNr: undefined }), shipments: [{ address: addr, copies: o.copies }] })] };
       // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
       const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
@@ -1865,13 +1868,16 @@ module.exports = function (D) {
       catch (e) { o.status = "problem"; o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
       const r = firstOf(j);
       o.printcom = { orderNumber: String(r.orderNumber || (r.items && r.items[0] && r.items[0].orderNumber) || ""), at: nowIso(), by: by || "Cockpit", total: +r.orderTotal || +r.grandTotal || null, status: String((r.items && r.items[0] && r.items[0].status) || r.status || "") };
-      o.status = "ordered"; hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : ""));
+      o.status = "ordered"; hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + " Motive als eigene Designs" : ""));
+      if (!o.printcom.orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
       await store.putOrder(o);
       // Rechnung fertigstellen und an den Kunden senden
       if (o.invoice.id && !o.invoice.sentAt && D.sendInvoice) {
         try { await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + o.nr + " · FS Creative",
           "Hallo " + o.customer.firstName + ",\n\ndein Druckauftrag " + o.nr + " ist jetzt in Produktion. Anbei die Rechnung" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
-          o.invoice.sentAt = nowIso(); o.invoice.draft = false; hist(o, "Rechnung fertiggestellt und an " + o.customer.email + " gesendet");
+          o.invoice.sentAt = nowIso(); o.invoice.draft = false;
+          if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+          hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "fertiggestellt und an " + o.customer.email + " gesendet");
         } catch (e) { o.invoice.sendError = clip(e.message, 300); hist(o, "Rechnung senden fehlgeschlagen: " + e.message); }
         await store.putOrder(o);
       }

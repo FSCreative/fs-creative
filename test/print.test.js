@@ -680,6 +680,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await post("/print/api/checkout", Object.assign({ items: [it(150, 100, 38.4)] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     const od = await admin("/admin/api/print/order?id=" + r.j.orderId); assert.deepStrictEqual(od.order.variants, [{ copies: 150 }, { copies: 100 }]);
     assert.strictEqual(od.order.motifs.length, 2); assert.strictEqual(od.order.pageMap[1].page, "3–4"); assert.strictEqual(od.file.pages, 4);
+    // An Print.com: je Motiv ein „design“ mit eigener PDF und Stückzahl, keine Gesamt-PDF, keine variants
+    const mpid = r.j.checkoutUrl.split("/").pop(); M.payments[mpid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + mpid });
+    const pl = await admin("/admin/api/print/op", { op: "place", id: r.j.orderId, confirm: true }); assert.strictEqual(pl.ok, true, JSON.stringify(pl));
+    const pcb = M.orders[M.orders.length - 1].items[0]; assert.ok(Array.isArray(pcb.designs) && pcb.designs.length === 2, JSON.stringify(pcb).slice(0, 300));
+    assert.deepStrictEqual(pcb.designs.map(d => d.copies), [150, 100]); assert.ok(!pcb.fileUrl && !pcb.variants, "fileUrl/variants schließen designs aus");
+    for (const d of pcb.designs) { const fr = await fetch(B + new URL(d.fileUrl).pathname); assert.strictEqual(fr.status, 200, "Motiv-PDF für Print.com abrufbar"); }
     const u3 = await upload(await pdfOf(89, 59, 2), "m3.pdf", BC);
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 38.4, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
   });

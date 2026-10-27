@@ -4009,6 +4009,7 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,
   uidValid: v => STEUER_CALC.uidValid(v), viesCheck: v => viesCheck(v),
   createInvoice: pl => sevCreateInvoice(pl),
+  invoiceNr: id => SEV_OPS.invoiceDetail(id).then(d => (d && d.nr) || ""),
   sendInvoice: (id, to, subject, text) => SEV_OPS.invoiceOp({ confirm: true, op: "send", id, toEmail: to, subject, text }).then(r => { SEV_CACHE.at = 0; return r; }),
   deleteInvoice: id => sev("DELETE", "/Invoice/" + String(id).replace(/\D/g, "")).then(r => { SEV_CACHE.at = 0; return r; }),
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),

@@ -244,7 +244,7 @@ function pageInvDetail(id){
   if((st===750||st===1000)&&!i0.cancelled&&d.type!=="SR"&&d.type!=="MA") more.push(["fincn:"+id,"Gutschrift"]);
   if(d.type==="RE"&&st>=200&&!i0.cancelled) more.push(["finwkr:"+id,"Wiederkehrend"]);
   var main=draft?'<button class="btn primary" data-act="sdsend:'+esc(id)+'">Per E-Mail senden</button>':(open?'<button class="btn primary" data-act="book:'+esc(id)+'">Als bezahlt markieren</button>':'');
-  var pos=(d.positions||[]).map(function(p){ return '<tr><td>'+esc(p.name)+(p.text?'<div class="sub">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("");
+  var pos=(d.positions||[]).map(function(p){ return '<tr><td>'+esc(p.name)+(p.text?'<div class="sub fsd-ptx">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("");
   var ids=(F.D.sev.invoices||[]).map(function(x){return x.id;}), ix=ids.indexOf(id), prev=ix>0?ids[ix-1]:"", next=ix>-1&&ix<ids.length-1?ids[ix+1]:"";
   var row=function(k,v){ return '<div><dt>'+k+'</dt><dd>'+v+'</dd></div>'; };
   var amt=String(eur(d.gross)).replace(/€\s?/,"").trim();
@@ -259,7 +259,7 @@ function pageInvDetail(id){
         row("Versendet am",d.sent?de(d.sendDate)+(d.sendType?' <span style="color:var(--sd-ink2)">als '+({VM:"E-Mail",VPR:"Druck",VP:"Post",VPDF:"PDF"}[d.sendType]||d.sendType)+'</span>':''):'—')+
         row("Festgeschrieben",d.enshrined?ic("lock")+de(d.sendDate||d.date):'nein')+(d.payDate?row("Bezahlt am",de(d.payDate)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+
       '</dl></section>'+
-      '<section class="fsd-card"><div class="fsd-ctitle">Positionen</div><table class="fsd-t sm"><tbody>'+pos+'</tbody></table></section></aside></div>';
+      '<section class="fsd-card"><div class="fsd-ctitle">Positionen</div><table class="fsd-t sm fsd-ptab"><tbody>'+pos+'</tbody></table></section></aside></div>';
 }
 F.action("finmore",function(id,el){
   var d=DET[id]; if(!d) return; var acts=[];
@@ -1035,7 +1035,8 @@ F.css(
 '.fsm-ihead .fsm-amt{margin-top:12px;font-size:34px}.fsm-ikv{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.fsm-ikv div{display:grid;gap:1px;align-content:start}.fsm-ikv span{font-size:12px;color:var(--ink-3)}.fsm-ikv b{font-size:16px;font-weight:600}.fsm-ikv i{font-style:normal;font-size:12.5px}'+
 '.fsm-acts1{display:grid;gap:8px}body .fsm .fsm-acts1 .btn{height:52px;justify-content:center;font-size:16px;font-weight:500;border-radius:12px}.fsm-acts1 .btn svg{width:20px;height:20px}body[data-view] .fsd.fsm .fsm-acts1 .btn.primary,body .fsd.fsm .fsm-acts1 .btn.primary{background:var(--glow)!important;color:var(--on-glow)!important}'+
 'body .fsm .fsm-acts .btn.fsm-danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,transparent);grid-column:1/-1}'+
-'.fsm-pos small{display:block;font-size:12px;color:var(--ink-3);margin-top:2px}.fsm-pos.tot{border-top:1px solid var(--line);border-bottom:0;font-weight:600}'+
+'.fsd-ptab{table-layout:fixed;width:100%}.fsd-ptab td:first-child{width:auto}.fsd-ptab td.r{width:72px;white-space:nowrap;vertical-align:top}.fsd-ptab td{vertical-align:top}.fsd-ptx{white-space:pre-line!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere;line-height:1.45;margin-top:3px;max-width:none!important;font-size:12.5px!important}'+
+'.fsm-pos small{white-space:pre-line;display:block;font-size:12px;color:var(--ink-3);margin-top:2px}.fsm-pos.tot{border-top:1px solid var(--line);border-bottom:0;font-weight:600}'+
 '.fsm-hist{list-style:none;margin:0;padding:0}.fsm-hist li{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;align-items:baseline}.fsm-hist li:last-child{border-bottom:0}.fsm-hist span{font-size:12.5px;color:var(--ink-3)}.fsm-hist b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fsm-hist i{font-style:normal;font-weight:600;white-space:nowrap}'+
 '.fsm .fsd-pager{border-top:1px solid var(--line)}.fsm-wide{overflow-x:auto}.fsm .fsd-head h1{font-size:20px}'+
 '.md-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}.md-row{display:grid;grid-template-columns:150px minmax(0,1fr) 20px;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--sd-line);background:none;padding:10px 4px;cursor:pointer;font:inherit;color:var(--sd-ink)}.md-row span{font-size:13px;color:var(--sd-mut2)}.md-row b{font-weight:500;font-size:14px;word-break:break-word}.md-row i{color:var(--sd-mut);opacity:0;display:grid}.md-row i svg{width:15px;height:15px}.md-row:hover{background:var(--sd-hov)}.md-row:hover i{opacity:1}'+
