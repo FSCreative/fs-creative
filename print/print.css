@@ -243,6 +243,8 @@ body.pd-open{overflow:hidden}
 .pd-top{grid-area:top;display:flex;align-items:center;gap:8px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top));border-bottom:1px solid var(--ps-line);background:#121219;min-width:0}
 .pd-top .ttl{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .pd-top .ttl small{display:block;font-weight:500;color:var(--text-faint);font-size:12px}
+.pd-mot{flex:none;display:inline-flex;align-items:baseline;gap:5px;margin-left:10px;padding:5px 11px;border-radius:999px;background:#0a84ff;color:#fff;font-weight:700;font-size:13px;white-space:nowrap}.pd-mot small{font-weight:600;opacity:.75;font-size:12px}.pd-mot i{font-style:normal;font-weight:500;font-size:12px;opacity:.85;padding-left:6px;border-left:1px solid rgba(255,255,255,.35)}
+@media(max-width:420px){.pd-mot{margin-left:2px;padding:4px 8px}.pd-mot i{display:none}}
 .pd-top .sp{flex:1}
 .pd-ib{display:inline-grid;place-items:center;min-width:40px;height:40px;padding:0 10px;border-radius:11px;border:1px solid transparent;background:none;color:var(--text);cursor:pointer;font-weight:600;gap:4px;white-space:nowrap}
 .pd-ib:hover{background:var(--surface-2)}
@@ -1649,3 +1651,6 @@ details.ps-voucher summary::-webkit-details-marker{display:none}details.ps-vouch
 .ps-pop-t ul{margin:0 0 12px;padding-left:20px;color:var(--text-dim);line-height:1.6}
 .ps-pop-t b{color:var(--text)}
 @media (max-width:600px){.ps-pop-g>img{max-height:40vh}}
+
+.ps-pmot{margin-top:-4px!important;font-weight:600;color:var(--ps-tag,#4da3ff)}
+.ps-ci-stack{position:relative;overflow:visible;background:none;width:80px!important;height:64px!important}.ps-ci-stack img{position:absolute;left:50%;top:50%;width:60px;height:40px;object-fit:cover;border-radius:5px;box-shadow:0 2px 8px rgba(0,0,0,.35);transform:translate(-50%,-50%) translateX(calc((var(--i) - (var(--n) - 1) / 2) * 6px)) rotate(calc((var(--i) - (var(--n) - 1) / 2) * 7deg))}.ps-ci-stack b{position:absolute;right:-4px;bottom:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#0a84ff;color:#fff;font-size:11.5px;font-weight:700;display:grid;place-items:center}

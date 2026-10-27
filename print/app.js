@@ -126,6 +126,8 @@
   }
   function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
+    var mp = (x.motifs || []).filter(function (m) { return m.preview; }).slice(0, 4);   // mehrere Motive: aufgefächerter Stapel aller Motive
+    if (mp.length > 1) return '<span class="ps-ci-img ps-ci-stack" title="' + x.motifs.length + ' Motive">' + mp.map(function (m, i) { return '<img src="' + esc(m.preview) + '" alt="" loading="lazy" style="--i:' + i + ";--n:" + mp.length + '">'; }).join("") + '<b>' + x.motifs.length + "</b></span>";
     return '<span class="ps-ci-img">' + (x.preview || im ? '<img src="' + esc(x.preview || im) + '" alt="" loading="lazy"' + (x.preview && im ? ' data-fb="' + esc(im) + '"' : "") + ">" : '<span aria-hidden="true">' + esc(x.icon || pp.icon || "🖨️") + "</span>") + "</span>"; }
   // Aktionsbanner: Code kopieren / Banner schließen (merkt sich das Gerät)
   document.addEventListener("click", function (e) { var b = e.target.closest && e.target.closest("[data-promo-copy],[data-promo-x]"); if (!b) return;
@@ -728,6 +730,7 @@
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
     var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + " Stk." + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
+    if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + " Stk." : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
     what += wishHtml();
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
@@ -1994,7 +1997,7 @@
     loadDesigner().then(function (D) {
       var tt = document.getElementById("psToast"); if (tt && /Designer wird geladen/.test(tt.textContent)) tt.className = "ps-toast";
       return D.open({ product: S.prod, sel: S.sel, labels: S.prod.props.map(function (pr) { return [pr.slug, labelOf(pr.slug)]; }), copies: S.copies, urgency: S.urgency, custom: isCustom() ? S.custom : undefined, size: sz, folds: S.price && S.price.folds, closed: S.price && S.price.closed, bleed: (S.price && S.price.bleed) || S.prod.bleed, safe: S.prod.safe || 3, sides: sides(), fonts: S.cat.fonts, design: draft || S.design,
-        motif: S.mot.n > 1 && motOk() ? S.mot.i + 1 : 0,
+        motif: S.mot.n > 1 && motOk() ? S.mot.i + 1 : 0, motifs: S.mot.n > 1 && motOk() ? S.mot.n : 0, motifCopies: S.mot.n > 1 && motOk() ? +S.mot.split[S.mot.i] || 0 : 0,
         onDone: function (file, previews, design) { S.file = file; S.previews = previews; S.design = design; S.mode = "design"; render(); toast(file.blocked ? "Bitte die markierten Punkte prüfen." : "Druck-PDF erstellt ✓"); },
         onClose: function (design) { if (design) S.design = design; render(); } });
     }).catch(function (e) { toast(e.message || "Designer konnte nicht geladen werden", true); });
