@@ -1752,6 +1752,8 @@ module.exports = function (D) {
     for (const o of orders) await submitted(o);
     return { orders, groupId, account };
   }
+  // Auswahl unabhängig von der Schlüssel-Reihenfolge vergleichen – Postgres (jsonb) sortiert die Schlüssel der gespeicherten Datei-Metadaten um
+  function canon(v) { if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]"; if (v && typeof v === "object") return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}"; return JSON.stringify(v === undefined ? null : v); }
   async function prepItem(input, s, cust, method, uidRes, idx, total) {
     const where = total > 1 ? "Position " + (idx + 1) + ": " : "";
     const fail = (m, st) => Object.assign(new Error(where + m), { status: st || 400 });
@@ -1762,7 +1764,7 @@ module.exports = function (D) {
       if (!f || !sigOk("file", f.id, tok)) throw fail(w + "Druckdatei nicht gefunden – bitte erneut hochladen");
       if (f.orderId) throw fail(w + "Diese Druckdatei gehört schon zu einer Bestellung – bitte erneut hochladen", 409);
       if (f.kind === "logo" || (f.kind === "logos") !== isLogo(prod)) throw fail("Bitte die Logos erneut hochladen");
-      if (f.product !== prod.key || JSON.stringify(f.sel) !== JSON.stringify(n.fileSel)) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
+      if (f.product !== prod.key || canon(f.sel) !== canon(n.fileSel)) throw fail(w + "Die Druckdatei passt nicht mehr zur gewählten Ausführung – bitte erneut hochladen oder gestalten", 409);
       if ((f.checks || []).some(c => c.level === "error")) throw fail(w + "Die Druckdatei hat noch Fehler – bitte korrigieren");
       return f;
     };

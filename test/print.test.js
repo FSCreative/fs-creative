@@ -673,6 +673,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   await t("Mehrere Motive: Stückzahlen je Motiv, PDFs zusammengeführt, variants + Seitenzuordnung", async () => {
     const base = { customer: Object.assign({}, cust, { email: "motive@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true, check: "pro" };
     const m1 = await upload(await pdfOf(89, 59, 2), "m1.pdf", BC), m2 = await upload(await pdfOf(89, 59, 2), "m2.pdf", BC);
+    // Postgres (jsonb) speichert die Auswahl mit umsortierten Schlüsseln – das darf nicht als „andere Ausführung“ gelten
+    for (const m of [m1, m2]) { const fp = path.join(dir, "print-shop", "files", m.j.fileId + ".json"), meta = JSON.parse(fs.readFileSync(fp, "utf8")); const ks = Object.keys(meta.sel).reverse(); meta.sel = Object.fromEntries(ks.map(k => [k, meta.sel[k]])); fs.writeFileSync(fp, JSON.stringify(meta)); }
     const it = (a, b, g) => Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: g, motifs: [{ copies: a, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: b, fileId: m2.j.fileId, fileToken: m2.j.token }] });
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [it(100, 100, 38.4)] }, base))).status, 400, "Summe ≠ Auflage");
     const r = await post("/print/api/checkout", Object.assign({ items: [it(150, 100, 38.4)] }, base)); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
