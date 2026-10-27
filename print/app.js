@@ -965,6 +965,7 @@
     if (hay.indexOf(q) > -1) return true;
     return q.split(/\s+/).every(function (w) { return (SYN[w] || SYN[w.replace(/-/g, "")] || [w]).some(function (t) { return hay.indexOf(t) > -1; }); });
   }
+  document.addEventListener("toggle", function (e) { var d = e.target; if (d && d.classList && d.classList.contains("ps-more")) S.moreOpen = d.open; }, true);
   function filtered() {
     var qq = S.q.trim().toLowerCase();
     return S.cat.products.filter(function (p) { var c = p.cat || {}; if (S.group && c.main !== S.group) return false; if (S.sub && c.sub !== S.sub) return false;
@@ -1101,7 +1102,7 @@
     var keep = function (pr) { return pr.slug === "finish" || !isNone(pr); };   // Veredelung immer sichtbar
     var main = rest.filter(keep), minor = rest.filter(function (pr) { return !keep(pr); }), changed = minor.filter(function (pr) { return S.sel[pr.slug] !== (p.defaults || {})[pr.slug]; }).length;
     var tiles = function (l) { return l.map(tileHtml).join(""); };
-    var more = minor.length ? '<details class="ps-more"' + (changed ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
+    var more = minor.length ? '<details class="ps-more"' + (changed || S.moreOpen || (S.dd && minor.some(function (pr) { return pr.slug === S.dd; })) ? " open" : "") + "><summary>Weitere Optionen <span>" + esc(minor.map(function (pr) { return pr.title; }).join(", ")) + "</span>" + (changed ? ' <b class="ps-cnt">' + changed + " gewählt</b>" : "") + '</summary><div class="ps-grid2">' + tiles(minor) + "</div></details>" : "";
     var custom = p.kind === "banner" && p.custom && !fmt.some(function (pr) { return pr.slug === "size"; }) ? customHtml() : "";   // sonst steht die freie Eingabe direkt in der Format-Zeile
     var pmT = pmTile();
     return sec("Format", tiles(fmt), custom) + sec("Material & Druck", tiles(mat) + pmT) + tiles(main) + (more ? '<div class="ps-tile wide ps-cfgx">' + more + "</div>" : "");
