@@ -2127,7 +2127,7 @@
   // Fortschritt der Bestellung als Zeitleiste
   function trackHtml(st) {
     var at = { paid: 1, invoice_requested: 1, ordered: 2, in_production: 2, problem: 2, shipped: 3, delivered: 4 }[st]; if (at == null) return "";
-    var L = ["Bestellt", "Geprüft", "Produktion", "Versand", "Zugestellt"], fin = st === "delivered";
+    var L = ["Bestellt", "Datencheck", "In Produktion", "Versendet", "Zugestellt"], fin = st === "delivered";
     return '<ol class="ps-track" aria-label="Bestellfortschritt">' + L.map(function (l, i) { var c = i < at || fin ? "done" : i === at ? "cur" + (st === "problem" ? " warn" : "") : "";
       return '<li class="' + c + '"' + (c.indexOf("cur") === 0 ? ' aria-current="step"' : "") + "><i aria-hidden=\"true\">" + (c === "done" ? "✓" : i + 1) + "</i><span>" + l + "</span></li>"; }).join("") + "</ol>";
   }

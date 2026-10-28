@@ -1840,6 +1840,23 @@ module.exports = function (D) {
   const LOCK = new Set();
   // Referenz am Artikel: Bestellnummer + Seitenzuordnung der Logo-PDF (z. B. „S1 Brust links, S2 Rücken“)
   const itemRef = o => Array.isArray(o.pageMap) && o.pageMap.length ? clip(o.nr + " · " + o.pageMap.map(p => "S" + p.page + " " + p.title).join(", "), 120) : o.nr;
+  // Beidseitiger Druck (z. B. 4/4), aber nur 1 Seite in der PDF (Kunde hat den Hinweis „Rückseite bleibt weiß“ bestätigt):
+  // Print.com erwartet 2 Seiten, sonst gilt die Datei als unvollständig (leere Vorschau, Mail „Druckdaten hochladen“) → weiße Rückseite in gleicher Größe anhängen.
+  const PADDED = new Map();
+  const needsBack = (fm, o) => !!(fm && o && fm.pages === 1 && !(o.price && o.price.pages) && !(Array.isArray(o.pageMap) && o.pageMap.length) && sidesOf(o.pcOptions || {}) === 2);
+  async function padForPrint(buf, fm, o) {
+    if (!needsBack(fm, o)) return buf;
+    const k = fm.id + ":" + buf.length; if (PADDED.has(k)) return PADDED.get(k);
+    const { PDFDocument } = require("pdf-lib"), d = await PDFDocument.load(buf, { updateMetadata: false });
+    if (d.getPageCount() !== 1) return buf;
+    const p0 = d.getPage(0), mb = p0.getMediaBox(), np = d.addPage([mb.width, mb.height]);
+    if (mb.x || mb.y) np.setMediaBox(mb.x, mb.y, mb.width, mb.height);
+    try { const tb = p0.getTrimBox(); np.setTrimBox(tb.x, tb.y, tb.width, tb.height); } catch (e) {}
+    try { const bb = p0.getBleedBox(); np.setBleedBox(bb.x, bb.y, bb.width, bb.height); } catch (e) {}
+    const out = Buffer.from(await d.save({ useObjectStreams: false }));
+    PADDED.set(k, out); if (PADDED.size > 40) PADDED.delete(PADDED.keys().next().value);
+    return out;
+  }
   const pcFileUrl = (base, id) => base + "/print-files/" + id + "/" + sig("pcfile", id) + ".pdf";
   const motifDesigns = (o, base) => Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => ({ fileUrl: pcFileUrl(base, m.fileId), copies: m.copies })) : null;
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
@@ -1869,6 +1886,7 @@ module.exports = function (D) {
       const r = firstOf(j);
       o.printcom = { orderNumber: String(r.orderNumber || (r.items && r.items[0] && r.items[0].orderNumber) || ""), at: nowIso(), by: by || "Cockpit", total: +r.orderTotal || +r.grandTotal || null, status: String((r.items && r.items[0] && r.items[0].status) || r.status || "") };
       o.status = "ordered"; hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + " Motive als eigene Designs" : ""));
+      if (needsBack(fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
       if (!o.printcom.orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
       await store.putOrder(o);
       // Rechnung fertigstellen und an den Kunden senden
@@ -1948,7 +1966,7 @@ module.exports = function (D) {
     const st = String((items[0] && (items[0].status || items[0].orderItemStatus)) || r.status || r.orderStatus || "").toUpperCase();
     if (!st && !o.printcom.rawNoted) { o.printcom.rawNoted = true; hist(o, "Print.com-Statusabruf ohne Status – Antwort: " + clip(JSON.stringify(raw), 500)); }
     const tracks = [], info = [], addT = (url, code, carrier) => { url = String(url || ""); if (!/^https?:\/\//.test(url) || tracks.indexOf(url) > -1) return; tracks.push(url); info.push({ url, code: clip(code || "", 60), carrier: clip(carrier || carrierOf(url), 40) }); };
-    (Array.isArray(r.shipments) ? r.shipments : []).forEach(s => (s.tracks || []).forEach(t => { if (t) addT(t.trackUrl || t.url, t.trackingNumber || t.trackAndTraceCode || t.code || t.number, t.carrier || s.carrier || s.carrierName); }));
+    (Array.isArray(r.shipments) ? r.shipments : []).forEach(s => (s.tracks || []).forEach(t => { if (t) addT(t.trackUrl || t.url, t.reference || t.trackingNumber || t.trackAndTraceCode || t.code || t.number || s.shipmentNumber, t.carrier || s.carrier || s.carrierName); }));
     items.forEach(it => { if (it) addT(it.trackingUrl || it.trackUrl, it.trackingNumber || it.trackAndTraceCode, it.carrier); });
     const before = o.status;
     o.printcom.status = st; o.printcom.checkedAt = nowIso(); if (tracks.length) { o.printcom.tracks = tracks.slice(0, 5); o.printcom.trackInfo = info.slice(0, 5); }
@@ -2364,7 +2382,8 @@ module.exports = function (D) {
         if (!sigOk("pcfile", m[1], m[2])) return D.send(res, 404, "Not found");
         const fm = await store.fileMeta(m[1]); const o = fm && fm.orderId && await store.getOrder(fm.orderId);
         if (!o || ["ordered", "in_production", "shipped", "delivered", "problem", "paid", "invoice_requested"].indexOf(o.status) < 0) return D.send(res, 404, "Not found");
-        const buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
+        let buf = await store.fileData(m[1]); if (!buf) return D.send(res, 404, "Not found");
+        buf = await padForPrint(buf, fm, o).catch(e => { log("Rückseite ergänzen", o.nr, e.message); return buf; });
         return D.send(res, 200, req.method === "HEAD" ? "" : buf, "application/pdf", { "Content-Length": String(buf.length), "Content-Disposition": 'inline; filename="' + o.nr + '.pdf"', "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" });
       }
       if (p === "/print/app.js" || p === "/print/designer.js" || p === "/print/templates.js") {
