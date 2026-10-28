@@ -2,7 +2,9 @@
    auf den hohen Gipfeln, Wald, Talwiese, Dorf mit Kirche) im ganzen Kopfbereich – oben links bis bündig an „Für dich, jetzt“
    (unten) und an die rechte Spalte „Heute“ (rechts). Hinter Uhr, Datum und Text blendet sie weich aus.
    Auf breiten Bildschirmen wächst das Dorf nach links: Gemeindeamt mit Fahne, Gasthof, Feuerwehr, SPAR, Haltestelle mit
-   Postbus, Holzbrücke, Gondelbahn und verstreute Höfe – nur so weit, wie neben Uhr, Text und Schnellknöpfen Platz ist.
+   Postbus, Holzbrücke, Gondelbahn (Schneise hinauf zur Bergstation am Kamm) und verstreute Höfe – nur so weit, wie neben
+   Uhr, Text und Schnellknöpfen Platz ist. Autos und Postbus fahren auf der Dorfstraße, Gondeln am Seil (nur CSS-transform,
+   läuft im Compositor; nachts stehen die Gondeln, Autos fahren mit Licht).
    Wetter aus F.D.weather (Sonne, Wolken, Regen, Schnee, Nebel, Gewitter, Schneefallgrenze) und Tag/Dämmerung/Nacht
    nach Wiener Zeit. Alle Farben als CSS-Variablen je Darstellung (Hell/Alpenglas/Dunkel).
    Hängt sich an .ag-hero, ohne heute.js zu ändern. „Bewegung reduzieren“ → Standbild. */
@@ -71,7 +73,7 @@ var PAL={
 var LAND=["hz","m1","m2","ms","mss","n1","n2","t1","t2","g1","g2","lx"];
 /* Farbakzente im Dorf (SPAR, Feuerwehr, Fahne, Gondeln, Postbus, Lärchenfassaden …): Tag-Grundton, abends/nachts abgedunkelt */
 var ACC={spg:"#15884a",spr:"#d8262e",fw:"#c42a2e",fwl:"#951c22",flr:"#cf2234",cab:"#cc3a2e",bus:"#ebb926",busd:"#a3801a",lar:"#b98f62",lrl:"#8a6643",
-  car1:"#7d92ad",car2:"#9b4d3e",car3:"#e2dfd8",flw:"#dc4650",mtl:"#69727e",tyre:"#2b2f35",gold:"#c9a24a",blu:"#4f7fdc",hh:"#f3c51b",hg:"#2a8a3c",txt:"#ffffff"};
+  car1:"#7d92ad",car2:"#9b4d3e",car3:"#e2dfd8",car4:"#3f4a5a",flw:"#dc4650",mtl:"#69727e",tyre:"#2b2f35",gold:"#c9a24a",blu:"#4f7fdc",hh:"#f3c51b",hg:"#2a8a3c",txt:"#ffffff"};
 var LIT={spg:1,spr:1,txt:1,hh:1,hg:1};
 /* Wetter verändert das Licht: bedeckt = entsättigt und dunstig, Gewitter = dunkler, Nebel = die Kette verschwindet im Grau */
 function palette(theme,phase,ic,snowy,season){
@@ -101,6 +103,10 @@ function palette(theme,phase,ic,snowy,season){
   p.gls=phase==="day"?mix(p.wino,p.s2,.55):mix(p.win,"#ffffff",.3);
   p.refl=phase==="day"?"rgba(255,255,255,"+(k>.3?.22:.36)+")":phase==="dusk"?"rgba(255,240,230,.12)":"rgba(255,255,255,0)";
   p.shelf=phase==="day"?mix(p.wino,p.s2,.25):mix(p.win,p.wdk,.45);
+  /* Fenster von Bus und Gondelkabinen: tagsüber wie Glas, abends und nachts dunkel (kein Innenlicht) */
+  p.glv=phase==="day"?p.gls:mix(p.wino,p.s2,phase==="dusk"?.22:.08);
+  /* Schneise und Lichtung der Gondelbahn: Wiese, etwas in den Dunst des Vorbergs gerückt (im Winter Schnee = Piste) */
+  p.glc=mix(p.g1,p.n1,.4);
   /* Gondelseile: dunkler Kern, heller Saum */
   p.cblc=mix(p.mtl,p.tyre,.45);
   p.cblh=theme==="light"?(phase==="night"?"rgba(225,232,245,.3)":"rgba(255,255,255,.5)"):"rgba(225,235,250,"+(phase==="night"?.2:.3)+")";
@@ -272,13 +278,62 @@ function spar(snowy){ var b='', d='', i;
 function busStop(){ return '<rect class="k-gls" x="-5.4" y="-8.4" width="10.8" height="6.8" opacity=".6"/><rect class="k-mtl" x="-6" y="-8.8" width=".8" height="8.8"/><rect class="k-mtl" x="5.2" y="-8.8" width=".8" height="8.8"/>'+
   '<rect class="k-rf" x="-7.2" y="-10" width="14.4" height="1.4"/><rect class="k-wdk" x="-4.4" y="-3.4" width="8.8" height=".9"/>'+
   '<rect class="k-mtl" x="10.2" y="-11.6" width=".7" height="11.6"/><circle class="k-hh" cx="10.55" cy="-12.8" r="2.5"/><text class="k-tx k-hgt" x="10.55" y="-11.55" font-size="3.4" text-anchor="middle">H</text>'; }
-function bus(){ var w=''; for(var x=-13.8;x<9;x+=4.75) w+='M'+n1(x)+' -9.2h4v3.6h-4z';
-  return '<path class="k-bus" d="M-15 -2V-9.4Q-15 -10.4 -14 -10.4H12.6Q14.2 -10.4 14.8 -8.8L15.6 -6V-2Z"/>'+
-  '<path class="k-gls" d="'+w+'M10.8 -9.2H12.8Q13.6 -9.2 14 -8.4L14.8 -5.6H10.8Z"/><rect class="k-busd" x="-15" y="-3.6" width="30.6" height="1.2"/>'+
+/* Postbus (Front rechts); lit = fährt: abends/nachts Scheinwerfer mit Lichtkegel und Rücklicht, Fenster bleiben dunkel */
+function bus(lit){ var w=''; for(var x=-13.8;x<9;x+=4.75) w+='M'+n1(x)+' -9.2h4v3.6h-4z';
+  return (lit?'<path class="k-beam" d="M15.4 -3.5L27 -4.4V-.2Z"/>':'')+'<path class="k-bus" d="M-15 -2V-9.4Q-15 -10.4 -14 -10.4H12.6Q14.2 -10.4 14.8 -8.8L15.6 -6V-2Z"/>'+
+  '<path class="k-glv" d="'+w+'M10.8 -9.2H12.8Q13.6 -9.2 14 -8.4L14.8 -5.6H10.8Z"/><rect class="k-busd" x="-15" y="-3.6" width="30.6" height="1.2"/>'+
+  (lit?'<rect class="k-hl" x="14.7" y="-4.3" width="1" height="1" rx=".3"/><rect class="k-tl" x="-15.3" y="-5.2" width=".8" height="1.4"/>':'')+
   '<circle class="k-tyre" cx="-9.6" cy="-1.8" r="1.8"/><circle class="k-tyre" cx="9.4" cy="-1.8" r="1.8"/>'; }
-/* Auto: gestreckt (Kombi), damit es neben Häusern und Bus nicht wie ein Spielzeug wirkt */
-function car(c){ return '<path class="'+c+'" d="M-7 -1.6V-3.5Q-7 -4.3 -6.2 -4.4L-4.2 -4.6L-2.3 -6.5H3.4Q4.4 -6.5 4.9 -5.8L5.9 -4.5L6.4 -4.4Q7 -4.3 7 -3.5V-1.6Z"/>'+
-  '<path class="k-wino" d="M-2 -6H.3V-4.7H-3.3ZM1 -6H3.2Q3.9 -6 4.3 -5.4L4.8 -4.7H1Z"/><circle class="k-tyre" cx="-4.3" cy="-1.5" r="1.35"/><circle class="k-tyre" cx="4.3" cy="-1.5" r="1.35"/>'; }
+/* Auto: gestreckt (Kombi), damit es neben Häusern und Bus nicht wie ein Spielzeug wirkt (Front rechts) */
+function car(c,lit){ return (lit?'<path class="k-beam" d="M6.6 -3.3L16 -3.9V-.3Z"/>':'')+'<path class="'+c+'" d="M-7 -1.6V-3.5Q-7 -4.3 -6.2 -4.4L-4.2 -4.6L-2.3 -6.5H3.4Q4.4 -6.5 4.9 -5.8L5.9 -4.5L6.4 -4.4Q7 -4.3 7 -3.5V-1.6Z"/>'+
+  '<path class="k-wino" d="M-2 -6H.3V-4.7H-3.3ZM1 -6H3.2Q3.9 -6 4.3 -5.4L4.8 -4.7H1Z"/>'+
+  (lit?'<rect class="k-hl" x="6.2" y="-3.9" width=".9" height=".8" rx=".3"/><rect class="k-tl" x="-7.2" y="-4" width=".7" height=".9"/>':'')+
+  '<circle class="k-tyre" cx="-4.3" cy="-1.5" r="1.35"/><circle class="k-tyre" cx="4.3" cy="-1.5" r="1.35"/>'; }
+/* Bewegung (Fahrzeuge, Gondelkabinen): kleine HTML-Ebenen mit Inline-SVG, bewegt nur über CSS-Keyframes auf transform –
+   das rechnet der Compositor, ohne dass der Hauptthread jedes Bild neu zeichnet (SMIL hielt ihn dauernd mit 60 Hz wach).
+   Die Ebenen (.alp-vl, .alp-gl) liegen exakt über dem Bild: 1600×320 Bildeinheiten, rechts unten verankert, skaliert mit --sc. */
+/* Dorfstraße als Polylinie – dieselbe Kurve wie der gezeichnete Weg (k-pa), links und rechts aus dem Bild verlängert */
+var ROADC=[[-20,294],[120,290],[260,297],[420,293],[580,289],[560,292],[600,291],[700,286],[820,294],[960,289],[1100,284],[1180,283],[1320,284],[1460,285],[1470,279],[1610,281]], ROADL=null;
+function road(){ if(ROADL) return ROADL; var p=[[-90,294.8]], i, j;
+  for(i=0;i+3<ROADC.length;i+=3){ var a=ROADC[i], b=ROADC[i+1], c=ROADC[i+2], e=ROADC[i+3];
+    for(j=0;j<=20;j++){ var t=j/20, u=1-t; p.push([u*u*u*a[0]+3*u*u*t*b[0]+3*u*t*t*c[0]+t*t*t*e[0], u*u*u*a[1]+3*u*u*t*b[1]+3*u*t*t*c[1]+t*t*t*e[1]]); } }
+  p.push([1690,281.6]); p=p.filter(function(q,k){ return !k||q[0]>p[k-1][0]+.01; });
+  function seg(x){ for(var k=1;k<p.length-1;k++) if(p[k][0]>=x) return k; return p.length-1; }
+  return (ROADL={y:function(x){ var k=seg(x), a=p[k-1], b=p[k]; return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]); }}); }
+/* Holzbrücke über den Dorfbach (Mitte BRX): das Deck wölbt sich über die Fahrbahn – Fahrzeuge heben und neigen sich sanft
+   (Kosinus-Buckel, Höhe BRA, halbe Breite BRB inkl. Auffahrt) und fahren hinter dem vorderen Geländer (Brücke in der vorderen Ebene) */
+var BRX=795, BRA=1.1, BRB=13;
+function bump(x){ var s=(x-BRX)/BRB; return s>-1&&s<1?BRA*(1+Math.cos(Math.PI*s))/2:0; }
+/* Fahrplan (gemeinsamer Takt VT_T, alle Fahrzeuge teilen ihn – so fährt auf derselben Spur nie eines auf ein anderes auf):
+   S = Start im Takt, legs = [Ziel-x, Tempo (Einheiten/s), "o" bremsen | "i" anfahren] oder ["h", Sekunden halten].
+   Rechts fahrende auf der vorderen Spur, links fahrende (gespiegelt) auf der hinteren – Rechtsverkehr. Postbus hin (hält an
+   der Haltestelle) und zurück, vier Autos; außerhalb des Bilds (x 380 / 1650) warten sie auf ihre nächste Fahrt. Im kompakten
+   Dorf (x > 1290) ist nach diesem Fahrplan nie mehr als ein Auto zugleich unterwegs; der Bus nur mit seiner Haltestelle. */
+var VT_T=100, VNL=1.5, VFL=-.9, VOL=380, VOR=1650;
+var VEHS=[
+  {g:"car4",S:6,x0:VOR,dir:-1,lane:VFL,s:.85,legs:[[VOL,42]]},
+  {g:"bus",S:50,x0:VOR,dir:-1,lane:VFL,s:1,vw:"bus",legs:[[VOL,36]]},
+  {g:"car2",S:78,x0:VOR,dir:-1,lane:VFL,s:.85,legs:[[VOL,40]]},
+  {g:"bus",S:0,x0:VOL,dir:1,lane:VNL,s:1,vw:"bus",legs:[[954,36],[990,36,"o"],["h",7],[1026,36,"i"],[VOR,36]]},
+  {g:"car1",S:30,x0:VOL,dir:1,lane:VNL,s:.85,legs:[[VOR,40]]},
+  {g:"car3",S:48,x0:VOL,dir:1,lane:VNL,s:.85,legs:[[VOR,42]]}];
+function kfVeh(o){ var R=road(), t=0, x=o.x0, P=[[0,x]], hw=o.g==="bus"?9.5:4.3*o.s;   // hw = halber Radstand
+  function H(v){ return R.y(v)-bump(v); }
+  o.legs.forEach(function(l){ if(l[0]==="h"){ t+=l[1]; P.push([t,x]); return; }
+    var d=l[0]-x, dt=(l[2]?2:1)*Math.abs(d)/l[1], n=l[2]?8:Math.max(1,Math.ceil(Math.abs(d)/24)), U=[], i, v;
+    for(i=1;i<=n;i++) U.push(i/n);
+    /* über der Brücke fein abtasten (gleichförmige Fahrt), sonst gingen Heben und Neigen zwischen den Stützpunkten verloren */
+    if(!l[2]) for(v=BRX-BRB-hw-2;v<=BRX+BRB+hw+2;v+=1.5){ var w=(v-x)/d; if(w>0&&w<1) U.push(w); }
+    U.sort(function(a,b){ return a-b; }).forEach(function(u){ var e=l[2]==="o"?1-(1-u)*(1-u):l[2]==="i"?u*u:u; P.push([t+dt*u,x+d*e]); });
+    t+=dt; x=l[0]; });
+  if(t<VT_T-.01) P.push([VT_T,x]);
+  /* Lage aus beiden Achsen: Höhe = Mitte zwischen Vorder- und Hinterrad, Neigung aus ihrem Höhenunterschied */
+  return P.map(function(q){ var a=H(q[1]-hw), b=H(q[1]+hw);
+    return (q[0]/VT_T*100).toFixed(3)+'%{transform:translate('+n1(q[1])+'px,'+(Math.round((a+b)*50)/100)+'px) rotate('+(Math.atan2(b-a,2*hw)*180/Math.PI).toFixed(2)+'deg)}'; }).join(""); }
+/* Fahrzeug-Element: äußeres i fährt (Keyframes), inneres b setzt Spur, Größe und Richtung (gespiegelt = nach links) */
+function vehEl(o,i){ var g=o.g==="bus"?bus(1):car("k-"+o.g,1), vb=o.g==="bus"?[-16,-11,44,11.6]:[-8,-7.2,25,7.8];
+  return '<i class="alp-mv" style="animation-name:alpV'+i+';animation-delay:-'+n1((VT_T-o.S)%VT_T)+'s"'+(o.vw?' data-vw="'+o.vw+'"':'')+'>'+
+    '<b style="transform:translate(0,'+o.lane+'px) scale('+(o.dir<0?-o.s:o.s)+','+o.s+')"><svg viewBox="'+vb.join(" ")+'" style="left:'+vb[0]+'px;top:'+vb[1]+'px;width:'+vb[2]+'px;height:'+vb[3]+'px">'+g+'</svg></b></i>'; }
 /* Stadel (Heustadel am Dorfrand): Holz, breites Tor, steiles Dach – damit am Rand nicht nur gleiche Häuser stehen */
 function stadel(snowy){ return '<path class="k-wd" d="M-13 0V-12L0 -22L13 -12V0Z"/><rect class="k-wdk" x="-13" y="-12.6" width="26" height="1.2" opacity=".6"/>'+
   '<rect class="k-wdk" x="-4.2" y="-9" width="8.4" height="9"/><path class="k-lrl" d="M-9.6 -11.4V0M-6.6 -11.4V-.2M6.6 -11.4V0M9.6 -11.4V0M0 -9V0" stroke-width=".45"/>'+
@@ -286,31 +341,74 @@ function stadel(snowy){ return '<path class="k-wd" d="M-13 0V-12L0 -22L13 -12V0Z
 function lamp(){ return '<rect class="k-mtl" x="-.35" y="-9.4" width=".7" height="9.4"/><rect class="k-mtl" x="-.35" y="-9.4" width="2.6" height=".8"/><circle class="k-win" cx="1.9" cy="-8.3" r=".7"/>'; }
 /* Talstation der Gondelbahn: Betonsockel, Glasband, Pultdach, das zum Seil hin ansteigt */
 function talstation(){ return '<rect class="k-pls" x="-19" y="-12" width="22" height="12"/><rect class="k-gls" x="-16.6" y="-10" width="17" height="5.4"/><path class="k-mul" d="M-12.4 -10V-4.6M-8.2 -10V-4.6M-4 -10V-4.6" stroke-width=".5"/>'+
-  '<rect class="k-lar" x="3" y="-15" width="16" height="15"/><path class="k-tyre" d="M5 -4.2V-12.2H19V-4.2Z" opacity=".85"/><rect class="k-cab" x="9.4" y="-10" width="4.8" height="4.2" rx=".9"/><rect class="k-gls" x="10.1" y="-9.3" width="3.4" height="1.5"/>'+
+  '<rect class="k-lar" x="3" y="-15" width="16" height="15"/><path class="k-tyre" d="M5 -4.2V-12.2H19V-4.2Z" opacity=".85"/><rect class="k-cab" x="9.4" y="-10" width="4.8" height="4.2" rx=".9"/><rect class="k-glv" x="10.1" y="-9.3" width="3.4" height="1.5"/>'+
   '<rect class="k-cab" x="-16.6" y="-2.8" width="10" height="1.5"/><path class="k-rf" d="M-21 -11.2L21.4 -17.4V-15.2L-21 -9.4Z"/>'; }
-/* Gondelbahn: zwei Seile von der Talstation zur Bergstation, Stützen, ein paar rote Kabinen */
-function gondola(A,B,ground){ var s='', i, c1='', c2='';
-  function P(t,o){ return [A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t+Math.sin(Math.PI*t)*2.6+o*(1-t*.6)]; }
+/* Gondelbahn: Schneise durch den Wald hinauf zu einer Lichtung knapp unter dem Kamm des Vorbergs, dort steht die
+   Bergstation (gespiegelte Talstation, kleiner, weil weiter weg). Drei Stützen stehen in der Schneise, zwei Seile laufen
+   ohne Lücke vom Dach der Talstation über die Stützen ins Dach der Bergstation. Kabinen ziehen langsam (move); nachts und
+   bei „Bewegung reduzieren“ hängen sie still. Kabinen weiter oben etwas kleiner (Tiefe). */
+var GONA=[761,265], GONS=[958,195.2], GONK=.56, GONB=[GONS[0]-21.4*GONK,GONS[1]-17.4*GONK], GOND=90;
+/* Seilpunkt bei t (0 = Talstation, 1 = Bergstation); o = Versatz des hinteren Seils (perspektivisch kleiner nach oben) */
+function gonP(t,o){ var A=GONA, B=GONB; return [A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t+Math.sin(Math.PI*t)*2.6+o*(1-t*.6)]; }
+/* Fahrweg einer Kabine: aus der Talstation heraus, am Seil entlang, in die Bergstation hinein (beide verdecken die Enden) */
+function kfCab(o,up){ var pts=[[754,266.6+o]], L=[0], i, out=[];
+  for(i=0;i<=16;i++) pts.push(gonP(i/16,o)); pts.push([GONB[0]+6,GONB[1]+1.2+o*.4]);
+  for(i=1;i<pts.length;i++) L.push(L[i-1]+Math.sqrt(Math.pow(pts[i][0]-pts[i-1][0],2)+Math.pow(pts[i][1]-pts[i-1][1],2)));
+  for(i=0;i<pts.length;i++){ var f=L[i]/L[L.length-1]; out.push([(up?f:1-f)*100,'transform:translate('+n1(pts[i][0])+'px,'+n1(pts[i][1])+'px) scale('+(1-.26*f).toFixed(3)+')']); }
+  out.sort(function(a,b){ return a[0]-b[0]; }); return out.map(function(q){ return q[0].toFixed(3)+'%{'+q[1]+'}'; }).join(""); }
+var CABSVG='<svg viewBox="-2.6 -.3 5.2 6.6" style="left:-2.6px;top:-.3px;width:5.2px;height:6.6px"><path class="k-cbl" d="M0 0v2.2" stroke-width=".4"/><rect class="k-cab" x="-2.4" y="2.1" width="4.8" height="4" rx=".9"/><rect class="k-glv" x="-1.7" y="2.7" width="3.4" height="1.5"/></svg>';
+/* einmal: Keyframes für alle Fahrzeuge und beide Seile */
+function motionCSS(){ var c=''; VEHS.forEach(function(o,i){ c+='@keyframes alpV'+i+'{'+kfVeh(o)+'}'; }); return c+'@keyframes alpGu{'+kfCab(0,1)+'}@keyframes alpGd{'+kfCab(1.5,0)+'}'; }
+function gondola(nearY,meadY,t2Y,move){ var s='', i, x, c1='', c2='', S=GONS, k=GONK, P=gonP;
   for(i=0;i<=16;i++){ var t=i/16, p=P(t,0), q=P(t,1.5); c1+=(i?'L':'M')+n1(p[0])+' '+n1(p[1]); c2+=(i?'L':'M')+n1(q[0])+' '+n1(q[1]); }
-  [.3,.66].forEach(function(t){ var p=P(t,0), g=Math.max(p[1]+8,ground(p[0],p[1]));
-    s+='<path class="k-mtl" d="M'+n1(p[0]-.5)+' '+n1(p[1]-.6)+'H'+n1(p[0]+.5)+'L'+n1(p[0]+1.7)+' '+n1(g)+'H'+n1(p[0]-1.7)+'Z"/><rect class="k-mtl" x="'+n1(p[0]-2.8)+'" y="'+n1(p[1]-1.2)+'" width="5.6" height="1"/>'; });
-  /* Seile zweifarbig: heller Saum (sichtbar vor dem dunklen Wald), dunkler Kern (sichtbar im hellen Dunst) – sonst hängen die Kabinen scheinbar in der Luft */
+  /* Gelände unter der Bahn: vom Waldrand an der Talwiese hinauf zur Lichtung, unten flach, oben steiler */
+  var g0=786, g1=S[0]-5, y0=meadY(g0)+.4, y1=S[1]+.6;
+  function U(x){ return Math.max(0,Math.min(1,(x-g0)/(g1-g0))); }
+  function G(x){ return y0-(y0-y1)*Math.pow(U(x),1.45); }
+  function Wd(x){ return 5.6-2.4*U(x); }
+  /* Lichtung am Kamm (linsenförmig, oben bis an die Kammlinie) */
+  var cx0=S[0]-34, cx1=S[0]+34, cr=34, cd=S[1]-nearY(S[0])+8;
+  function CB(x){ var v=(x-S[0])/cr; return nearY(x)+cd*Math.sqrt(Math.max(0,1-v*v)); }
+  var top=[], bot=[], cl=[], fr=rng(611);
+  for(x=g0-6;x<=g1+.1;x+=3){ top.push([x,G(x)-Wd(x)/2+(fr()-.5)*.9]); bot.unshift([x,Math.min(G(x)+Wd(x)/2,meadY(x)-.2)]); }
+  for(x=cx0;x<=cx1+.1;x+=2) cl.push([x,nearY(x)-.4]); for(x=cx1;x>=cx0-.1;x-=2) cl.push([x,CB(x)]);
+  s+='<path class="k-glc" d="'+poly(top.concat(bot))+poly(cl)+'"/>';
+  /* Baumspitzen der unteren (näheren) Waldkante ragen in Schneise und Lichtung – so liegen beide im Wald, nicht darauf */
+  var f1='', f2='';
+  for(x=g0+7;x<cx1-3;x+=2.4+fr()*1.4){ var lb=-1e9;
+    if(x<=g1) lb=Math.min(G(x)+Wd(x)/2,meadY(x)-.2); if(x>=cx0&&x<=cx1) lb=Math.max(lb,CB(x));
+    var yb=lb+1.5, h=2.4+fr()*2, w=h*.42, d='M'+n1(x-w)+' '+n1(yb)+'L'+n1(x)+' '+n1(yb-h)+'L'+n1(x+w)+' '+n1(yb)+'Z';
+    if(yb>t2Y(x)-14) f2+=d; else f1+=d; }
+  s+='<path class="k-t1" d="'+f1+'"/><path class="k-t2" d="'+f2+'"/>';
+  /* Stützen: stehen mitten in der Schneise, weiter oben etwas schmaler */
+  [.3,.56,.8].forEach(function(t){ var p=P(t,0), g=G(p[0]), f=1-.3*t;
+    s+='<path class="k-mtl" d="M'+n1(p[0]-.5*f)+' '+n1(p[1]-.6)+'H'+n1(p[0]+.5*f)+'L'+n1(p[0]+1.6*f)+' '+n1(g)+'H'+n1(p[0]-1.6*f)+'Z"/>'+
+       '<rect class="k-mtl" x="'+n1(p[0]-2.8*f)+'" y="'+n1(p[1]-1.2)+'" width="'+n1(5.6*f)+'" height="'+n1(f)+'"/><rect class="k-pls" x="'+n1(p[0]-2.1*f)+'" y="'+n1(g-.7)+'" width="'+n1(4.2*f)+'" height=".9"/>'; });
+  /* Seile zweifarbig: heller Saum (sichtbar vor dem dunklen Wald), dunkler Kern (sichtbar im hellen Dunst) */
   s+='<path class="k-cblh" d="'+c1+c2+'" stroke-width="1.25"/><path class="k-cbl" d="'+c1+c2+'" stroke-width=".55"/>';
-  [[.15,0],[.5,0],[.84,0],[.3,1.5],[.72,1.5]].forEach(function(c){ var p=P(c[0],c[1]);
-    s+='<path class="k-cbl" d="M'+n1(p[0])+' '+n1(p[1])+'v2.2" stroke-width=".4"/><rect class="k-cab" x="'+n1(p[0]-2.4)+'" y="'+n1(p[1]+2.1)+'" width="4.8" height="4" rx=".9"/><rect class="k-gls" x="'+n1(p[0]-1.7)+'" y="'+n1(p[1]+2.7)+'" width="3.4" height="1.5"/>'; });
-  s+='<g transform="translate('+n1(B[0])+' '+n1(B[1])+')"><rect class="k-pls" x="-1" y="-1.6" width="13" height="8"/><rect class="k-gls" x=".6" y=".2" width="9.6" height="2.4"/><path class="k-rf" d="M-3 -1.2L13.4 -4.2V-2.4L-3 .6Z"/></g>';
-  return s; }
+  /* Kabinen und Bergstation als eigene Ebene über dem Bild (vor Seil und Wald, hinter Nebel und Dorf): je drei Kabinen fahren
+     hinauf (vorderes Seil) und hinunter (hinteres), 90 s pro Fahrt; nachts und bei „Bewegung reduzieren“ hängen sie still.
+     Die Bergstation kommt zuletzt und deckt Seilende und ankommende Kabinen. Sichtbar zusammen mit der Talstation (data-vw). */
+  var c='';
+  if(move) [[0,15],[0,45],[0,75],[1,0],[1,30],[1,60]].forEach(function(q){ c+='<i class="alp-mv" style="animation-name:'+(q[0]?'alpGu':'alpGd')+';animation-delay:-'+q[1]+'s">'+CABSVG+'</i>'; });
+  else [[.15,0],[.5,0],[.84,0],[.3,1.5],[.72,1.5]].forEach(function(q){ var p=P(q[0],q[1]);
+    c+='<i class="alp-st" style="transform:translate('+n1(p[0])+'px,'+n1(p[1])+'px) scale('+(1-.26*q[0]).toFixed(2)+')">'+CABSVG+'</i>'; });
+  var x0=Math.floor(S[0]-21.6*k)-1, y0=Math.floor(S[1]-17.6*k)-1, w=Math.ceil(S[0]+21.2*k)+1-x0, h=Math.ceil(S[1])+1-y0;
+  c+='<svg viewBox="'+x0+' '+y0+' '+w+' '+h+'" style="left:'+x0+'px;top:'+y0+'px;width:'+w+'px;height:'+h+'px"><g transform="translate('+S[0]+' '+S[1]+') scale('+(-k)+' '+k+')">'+talstation()+'</g></svg>';
+  return {a:s,gon:'<div class="alp-gl" data-vw="talstation" aria-hidden="true">'+c+'</div>'}; }
 
 var LCACHE={};
-function landscape(snowy,snowLine,season){
-  var key=(snowy?1:0)+"|"+(snowLine||0)+"|"+season; if(LCACHE[key]) return LCACHE[key];
+/* move = Fahrzeuge fahren (sonst parken sie wie im Standbild), cab = Gondelkabinen fahren (nicht nachts) */
+function landscape(snowy,snowLine,season,move,cab){
+  var key=(snowy?1:0)+"|"+(snowLine||0)+"|"+season+"|"+(move?1:0)+(cab?1:0); if(LCACHE[key]) return LCACHE[key];
   var r=rng(20261028), mtn=ridge(MTN,.24,23,4), near=smooth(NEAR,8), mead=smooth(MEAD,10), i;
   var MF=flanks(mtn,MTN,r), mfa=MF.sh.join("");
   function facets(a,c){ return a.map(function(d){ return '<path class="'+c+'" d="'+d+'"/>'; }).join(""); }
   var msn='<path d="'+snowField(mtn,MTN,snowy?142:124,r)+'"/>';
   var nearY=function(x){ return yAt(near,x); }, meadY=function(x){ return yAt(mead,x); };
   var t1=forest(rng(5),function(x){ return nearY(x)+9+5*Math.sin(x/47)+3*Math.sin(x/13); },6.5,9,17,120,false);
-  var t2=forest(rng(9),function(x){ var a=nearY(x), b=meadY(x); return a+(b-a)*.5+4*Math.sin(x/31); },7,12,22,120,true);
+  var t2Y=function(x){ var a=nearY(x), b=meadY(x); return a+(b-a)*.5+4*Math.sin(x/31); };
+  var t2=forest(rng(9),t2Y,7,12,22,120,true);
   /* goldene Lärchen im Herbst (sonst hellere Fichten): einzelne Bäume am oberen Rand des vorderen Waldes */
   var lr=rng(77), lx="";
   for(i=0;i<34;i++){ var xx=260+lr()*1320, a0=nearY(xx), b0=meadY(xx), by=a0+(b0-a0)*(.42+lr()*.3);
@@ -344,6 +442,7 @@ function landscape(snowy,snowLine,season){
   var bridge='<g data-vb="770" data-k="bach" transform="translate(795 289.6)"><path class="k-wd" d="M-10 -.4Q0 -3.4 10 -.4V2.6H7Q0 -2.4 -7 2.6H-10Z"/><path class="k-wdk" d="M-10 1.4Q0 -1.8 10 1.4V2.6H7Q0 -2.4 -7 2.6H-10Z" opacity=".55"/>'+
     '<path class="k-brr" d="M-9.6 -2.4Q0 -6 9.6 -2.4M-9.4 -2.4V-.4M-4.8 -3.9V-1.7M0 -4.6V-2.4M4.8 -3.9V-1.7M9.4 -2.4V-.4" stroke-width=".7"/></g>';
   /* vorne: Vorberge, Wald, Talwiese mit Bach, Dorfstraße, Weg und Zaun */
+  var GD=gondola(nearY,meadY,t2Y,cab);
   var back2=SV+
     '<use href="#alpNearP" class="k-near"/>'+
     '<use href="#alpT1P" class="k-t1"/><g class="k-lx">'+lx+'</g><path class="k-t2" d="'+t2+'"/>'+
@@ -351,11 +450,11 @@ function landscape(snowy,snowLine,season){
     '<path class="k-g" d="M906 262C930 258 934 238 962 233C990 228 1032 228 1054 234C1074 240 1080 256 1104 262Z"/>'+
     '<path class="k-g" d="'+shape(mead)+'"/>'+creek+
     '<path class="k-rv" d="M-20 309C120 302 250 316 420 309S700 300 830 309S930 317 960 314C1060 306 1150 316 1240 310S1400 303 1480 309S1570 312 1610 306" stroke-width="2.4"/>'+
-    '<path class="k-pa" d="M-20 294C120 290 260 297 420 293S560 292 600 291C700 286 820 294 960 289S1180 283 1320 284S1470 279 1610 281" stroke-width="2.2"/>'+bridge+
+    '<path class="k-pa" d="M-20 294C120 290 260 297 420 293S560 292 600 291C700 286 820 294 960 289S1180 283 1320 284S1470 279 1610 281" stroke-width="2.2"/>'+
     '<path class="k-pa" d="M1384 330C1392 316 1376 304 1394 294S1404 286 1398 282" stroke-width="1.8"/>'+
     '<path class="k-fn" d="M1170 289.6H1262M1172 289.6v-3.4M1180 289.6v-3.4M1188 289.6v-3.4M1196 289.6v-3.4M1204 289.6v-3.4M1212 289.6v-3.4M1220 289.6v-3.4M1228 289.6v-3.4M1236 289.6v-3.4M1244 289.6v-3.4M1252 289.6v-3.4M1260 289.6v-3.4M1170 287.6H1262" stroke-width=".7"/>'+
     /* Gondelbahn (Talstation steht vorne beim Dorf) – nur wenn genug Platz ist */
-    '<g data-vb="716" data-n="gondel" data-k="talstation">'+gondola([761,265],[908,168],function(x,cy){ var b=meadY(x); return b-cy<34?b-1:cy+28; })+'</g>'+
+    '<g data-vb="716" data-n="gondel" data-k="talstation">'+GD.a+'</g>'+
   '</svg>';
   /* Dorf: hintere Reihe kleiner, Kirche, vordere Reihe; ein paar Bäume dazwischen, Fichten rahmen rechts */
   var vr=rng(314), H=[
@@ -404,21 +503,27 @@ function landscape(snowy,snowLine,season){
   grp(716,"talstation",[raw(talstation(),742,281,.9)],[tree("Pine2",720,283,.4,"k-t2")]);
   grp(648,"hof2",[hof("F",664,278,.78,0)],[tree("Tree",688,280,.38,"k-lx")],1);
   grp(586,"hof3",[raw(stadel(snowy),602,276,.8)],[tree("Pine2",620,278,.36,"k-t1")]);
-  /* vordere Straßenseite */
+  /* vordere Straßenseite (Fahrzeuge auf der Straße liegen dazwischen: vor der hinteren, hinter der vorderen Häuserzeile) */
+  var XBH=XB; XB=bridge;
   grp(1155,"feuerwehr",[put(feuerwehr(xr,snowy),1188,305,.98),raw(truck(),1234,308,1)]);
   grp(1044,"spar",[put(spar(snowy),1098,305,.98),raw(lamp(),1048,300,.9,0,LG),raw(car("k-car2"),1137,307,.85),raw(car("k-car1"),1149,308.6,.85,1)]);
-  grp(918,"bus",[raw(busStop(),1000,298,.95),raw(bus(),962,292,1),raw(lamp(),936,298,.9,0,LG)],[tree("Tree",924,300,.42,"k-lx")]);
-  grp(820,"hof4",[hof("S",846,303,1,0),raw(car("k-car3"),886,291,.85,1)],[tree("Pine2",878,306,.5,"k-t1")],1);
+  grp(918,"bus",[raw(busStop(),1000,298,.95),(move?{b:'',g:''}:raw(bus(),962,292,1)),raw(lamp(),936,298,.9,0,LG)],[tree("Tree",924,300,.42,"k-lx")]);
+  grp(820,"hof4",[hof("S",846,303,1,0),(move?{b:'',g:''}:raw(car("k-car3"),886,291,.85,1))],[tree("Pine2",878,306,.5,"k-t1")],1);
   grp(680,"hof5",[hof("F",700,303,.96,1)],[tree("Pine",728,306,.48,"k-t2")],1);
   grp(538,"hof6",[hof("S",562,301,.9,0)],[tree("Pine2",594,304,.46,"k-t1")]);
-  var front='<svg class="alp-front" viewBox="0 0 1600 320" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><defs>'+
+  /* Fahrzeuge (Fahrplan VEHS) fahren in einer eigenen Ebene zwischen den beiden Dorf-Ebenen: vor der hinteren Häuserzeile,
+     hinter der vorderen. Zu sehen nur rechts der Dorfgrenze und nicht hinter SPAR/Feuerwehr (CSS-Maske, setzt fit()). */
+  var VEH=move?'<div class="alp-vl" aria-hidden="true">'+VEHS.map(vehEl).join("")+'</div>':'';
+  var SVF='<svg class="alp-front" viewBox="0 0 1600 320" preserveAspectRatio="xMaxYMax slice" aria-hidden="true">';
+  var frontA=SVF+'<defs>'+
+    '<linearGradient id="alpHb"><stop offset="0" style="stop-color:var(--a-glowc);stop-opacity:.9"/><stop offset="1" style="stop-color:var(--a-glowc);stop-opacity:0"/></linearGradient>'+
     '<path id="alpPine" d="M0 -50L2.2 -43H1L4.6 -35H2.6L6.6 -26H4.2L8.6 -16H5.8L10 -6H1.2V0H-1.2V-6H-10L-5.8 -16H-8.6L-4.2 -26H-6.6L-2.6 -35H-4.6L-1 -43H-2.2Z"/>'+
     '<path id="alpPine2" d="M0 -52L1.6 -44H.8L3.6 -35H2L5.4 -25H3.4L7 -14H4.6L7.8 -6H1V0H-1V-6H-7.8L-4.6 -14H-7L-3.4 -25H-5.4L-2 -35H-3.6L-.8 -44H-1.6Z"/>'+
     '<g id="alpTree"><rect class="k-trunk" x="-1" y="-9" width="2" height="9"/><path d="M0 -40C6 -38 9.5 -30 9 -22C8.6 -14 4.6 -9 0 -9C-4.6 -9 -8.6 -14 -9 -22C-9.5 -30 -6 -38 0 -40Z"/></g>'+
     '<filter id="alpBlur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>'+
-    '<g class="k-glowg" filter="url(#alpBlur)">'+hg+XG+'</g>'+hb+XB+
-    '<g transform="'+VT+'"><g class="k-glowg" filter="url(#alpBlur)">'+glow+'</g>'+body+'</g></svg>';
-  return (LCACHE[key]={back:back,back2:back2,front:front,smoke:smoke});
+    '<g class="k-glowg" filter="url(#alpBlur)">'+hg+XG+'</g>'+hb+XBH+'</svg>';
+  var frontB=SVF+XB+'<g transform="'+VT+'"><g class="k-glowg" filter="url(#alpBlur)">'+glow+'</g>'+body+'</g></svg>';
+  return (LCACHE[key]={back:back,back2:back2,gon:GD.gon,front:frontA+VEH+frontB,smoke:smoke});
 }
 
 /* ---------- Wetter-Ebenen ---------- */
@@ -448,7 +553,7 @@ function snowTile(p,w,n,rmin,rmax,seed){ var r=rng(seed), sh=rgba(p.flk)[3]>0, s
   return tile(s+'</g></svg>'); }
 
 function build(st){
-  var p=palette(st.theme,st.phase,st.ic,st.snowy,st.season), L=landscape(st.snowy,st.snowLine,st.season), ic=st.ic, night=st.phase==="night", r=rng(99), i, h='';
+  var p=palette(st.theme,st.phase,st.ic,st.snowy,st.season), L=landscape(st.snowy,st.snowLine,st.season,!st.rm,!st.rm&&st.phase!=="night"), ic=st.ic, night=st.phase==="night", r=rng(99), i, h='';
   var vars=""; for(var k in p) vars+="--a-"+k+":"+p[k]+";";
   var clouds=/cloud|rain|snow|storm|fog/.test(ic), sun=!night&&/sun|cloudSun/.test(ic), clear=/sun|cloudSun/.test(ic);
   h+='<div class="alp-sky"></div>';
@@ -467,7 +572,7 @@ function build(st){
   h+=L.back;
   /* Wolkenbänder hängen vor der mittleren Kette (bedeckt, Regen, Schnee, Nebel, Gewitter) */
   if(/^(cloud|rain|snow|fog|storm)$/.test(ic)) h+='<div class="alp-band" data-band="150" style="animation-duration:84s"><i></i><i></i></div><div class="alp-band b2" data-band="182" style="animation-duration:66s;animation-delay:-30s"><i></i><i></i></div>';
-  h+=L.back2;
+  h+=L.back2+L.gon;
   if(st.snowLine) h+='<div class="alp-sll" data-sly="'+n1(yOf(st.snowLine))+'"></div>';
   if(ic==="fog") for(i=0;i<3;i++) h+='<div class="alp-fog" style="bottom:'+(8+i*12)+'%;animation-duration:'+(38+i*14)+'s;animation-delay:-'+(i*9)+'s"></div>';
   h+=L.front;
@@ -491,14 +596,17 @@ function state(){ var w=F.D&&F.D.weather||{}, ic=/^(sun|cloudSun|cloud|rain|snow
   sl=isFinite(sl)&&sl>0?Math.round(sl/50)*50:0;
   var winter=[11,0,1,2].indexOf(s.month)>-1, snowy=winter||(ic==="snow"&&(!sl||sl<=1300));
   var season=[8,9,10].indexOf(s.month)>-1?"autumn":[4,5,6,7].indexOf(s.month)>-1?"summer":"other";
-  return {theme:theme(),phase:s.phase,t:s.t,ic:ic,snowLine:sl,snowy:snowy,season:season}; }
+  return {theme:theme(),phase:s.phase,t:s.t,ic:ic,snowLine:sl,snowy:snowy,season:season,rm:reduced()}; }
+/* „Bewegung reduzieren“: Fahrzeuge parken (wie im Standbild), Kabinen hängen still – das Bild wird dafür neu gebaut */
+var MQ=null; try{ MQ=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)"); }catch(e){}
+function reduced(){ return !!(MQ&&MQ.matches); }
 
 /* ---------- Einhängen und Ausmessen ---------- */
 var CUR={key:"",el:null}, RO=null, OBS=[], RAF=0, LASTFIT="";
 function mount(){
   if(F.current!=="heute") return;
   var hero=document.querySelector("#main .ag-hero"); if(!hero) return;
-  var st=state(), key=[st.theme,st.phase,st.ic,st.snowLine,st.snowy,st.season].join("|");
+  var st=state(), key=[st.theme,st.phase,st.ic,st.snowLine,st.snowy,st.season,st.rm].join("|");
   if(CUR.key!==key||!CUR.el){ var old=CUR.el; CUR.el=build(st); CUR.key=key; CUR.st=st; LASTFIT=""; if(old&&old.parentNode) old.parentNode.removeChild(old); }
   CUR.st.t=st.t;
   hero.querySelectorAll(":scope>.ag-alp").forEach(function(x){ if(x!==CUR.el) x.parentNode.removeChild(x); });
@@ -534,7 +642,10 @@ function fit(){
     /* größeres Dorf: nur Gebäude zeigen, die ganz im voll sichtbaren Teil stehen (nie hinter Uhr, Text oder Schnellknöpfen) */
     var thr=Math.max(fadeEnd(W,big||all,mob)-24,qr?qr+28:0,all+16), vx=VW-(W-thr)/sc;
     if(!el._vbm) measure(el);
-    el.querySelectorAll("[data-vb]").forEach(function(g){ g.style.display=+g.getAttribute("data-vb")>=vx?"":"none"; }); }
+    el.querySelectorAll("[data-vb]").forEach(function(g){ g.style.display=+g.getAttribute("data-vb")>=vx?"":"none"; });
+    /* Fahrzeuge: erst ab der Dorfgrenze sichtbar (weich eingeblendet), Bus und weitere Autos nur mit „ihrem“ Dorfteil */
+    var vl=el.querySelector(".alp-vl"); if(vl){ var lx=Math.round(Math.max(vx-24,500)), vm=vehMask(lx); vl.style.webkitMaskImage=vm; vl.style.maskImage=vm; }
+    el.querySelectorAll("[data-vw]").forEach(function(v){ var g=el.querySelector('[data-n="'+v.getAttribute("data-vw")+'"]'); v.style.display=!g||g.style.display!=="none"?"":"none"; }); }
   /* Sonne, Mond, Rauch und Schneefallgrenze an Bildkoordinaten ausrichten (Bild ist rechts unten verankert) */
   var P=function(x,y){ return [W-(VW-x)*sc,H-(VH-y)*sc]; };
   var ux=Math.min(1530,VW-(W-((big||all)+70))/sc);   // Sonne/Mond nie hinter der Uhr
@@ -558,6 +669,11 @@ function measure(el){ var mins={}, ok=false, all=el.querySelectorAll("[data-k]")
   if(!ok) return;
   all.forEach(function(g){ var v=mins[g.getAttribute("data-k")]; if(v!=null) g.setAttribute("data-vb",Math.floor(v)); });
   el._vbm=1; }
+/* Maske der Fahrzeug-Ebene (Bildeinheiten): links ab der Dorfgrenze lx weich eingeblendet; SPAR und Feuerwehrhalle sind
+   niedriger als ein Bus – dahinter verschwinden Fahrzeuge ganz, sonst führen sie scheinbar übers Dach */
+function vehMask(lx){ return tile('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="320"><defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="'+lx+'" y1="0" x2="'+(lx+56)+'" y2="0">'+
+  '<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient></defs>'+
+  '<path fill-rule="evenodd" fill="url(#g)" d="M0 0H1600V320H0ZM1066.4 0h63.2v320h-63.2zM1158.5 0h59.5v320h-59.5z"/></svg>'); }
 /* Maske: oben weich ins Freie, links (hinter Uhr/Datum) durchsichtig, zur Mitte hin voll; um jede Textzeile weich ausgespart */
 function fadeStart(W,R){ return Math.max(0,Math.min(R-30,W*.7)); }
 function fadeEnd(W,R,mob){ var a=fadeStart(W,R); return Math.min(W*.95,Math.max(a+120,R+(mob?100:300))); }
@@ -586,6 +702,7 @@ if(main&&window.MutationObserver) new MutationObserver(function(){ mount(); }).o
 if(F.onData) F.onData(function(){ setTimeout(mount,0); });
 document.addEventListener("fsc-theme",function(){ setTimeout(mount,0); });
 setInterval(mount,5*60*1000);   // Tageszeit, Sonnenstand
+if(MQ){ var mqf=function(){ setTimeout(mount,0); }; if(MQ.addEventListener) MQ.addEventListener("change",mqf); else if(MQ.addListener) MQ.addListener(mqf); }
 setTimeout(mount,600);
 
 
@@ -616,8 +733,15 @@ F.css(
 ".ag-alp .k-bal{fill:none;stroke:var(--a-wd);opacity:.7}.ag-alp .k-brr{fill:none;stroke:var(--a-wdk);stroke-linecap:round}.ag-alp .k-flw{fill:var(--a-flw)}.ag-alp .k-gold{fill:var(--a-gold)}"+
 ".ag-alp .k-fw{fill:var(--a-fw)}.ag-alp .k-fwls{fill:none;stroke:var(--a-fwl)}.ag-alp .k-fwt{fill:var(--a-fw)}.ag-alp .k-flr{fill:var(--a-flr)}.ag-alp .k-blu{fill:var(--a-blu)}"+
 ".ag-alp .k-spg{fill:var(--a-spg)}.ag-alp .k-spr{fill:var(--a-spr)}.ag-alp .k-txt,.ag-alp .k-txf{fill:var(--a-txt)}.ag-alp .k-hh{fill:var(--a-hh)}.ag-alp .k-hgt{fill:var(--a-hg)}"+
+".ag-alp .k-glv{fill:var(--a-glv)}.ag-alp .k-glc{fill:var(--a-glc)}.ag-alp .k-car4{fill:var(--a-car4)}"+
+".ag-alp .k-hl{fill:var(--a-glowc);opacity:var(--a-glow)}.ag-alp .k-tl{fill:#ff3b30;opacity:var(--a-glow)}.ag-alp .k-beam{fill:url(#alpHb);opacity:calc(var(--a-glow)*.75)}"+
 ".ag-alp .k-cab{fill:var(--a-cab)}.ag-alp .k-bus{fill:var(--a-bus)}.ag-alp .k-busd{fill:var(--a-busd)}.ag-alp .k-car1{fill:var(--a-car1)}.ag-alp .k-car2{fill:var(--a-car2)}.ag-alp .k-car3{fill:var(--a-car3)}"+
 ".ag-alp .k-tx{font-family:Arial,Helvetica,sans-serif;font-weight:800}"+
+/* bewegte Ebenen (Fahrzeuge, Gondel): 1600×320 Bildeinheiten, rechts unten verankert wie die SVG-Bilder */
+".alp-vl,.alp-gl{right:0;bottom:0;width:1600px;height:320px;transform-origin:100% 100%;transform:scale(var(--sc,1));"+
+  "-webkit-mask-size:1600px 320px;mask-size:1600px 320px;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}"+
+".alp-mv,.alp-st{position:absolute;left:0;top:0;width:0;height:0}.alp-mv{animation:alpV0 100s linear infinite;will-change:transform}.alp-gl .alp-mv{animation-duration:"+GOND+"s}"+
+".alp-mob .alp-vl{display:none}.alp-mv>b{position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0}.alp-vl svg,.alp-gl svg{position:absolute;overflow:visible}"+
 /* Sonne, Mond, Sterne – Position setzt fit() */
 ".alp-astro{left:0;top:0;width:0;height:0}"+
 ".alp-sun>i{position:absolute;left:calc(var(--sc)*-100px);top:calc(var(--sc)*-100px);width:calc(var(--sc)*200px);height:calc(var(--sc)*200px);border-radius:50%;"+
@@ -661,6 +785,7 @@ F.css(
 "@keyframes alpSmoke{0%{opacity:0;transform:translateY(0) scale(.7,.6)}18%{opacity:.85}70%{opacity:.35}100%{opacity:0;transform:translate(calc(var(--sc)*-7px),calc(var(--sc)*-22px)) scale(1.6,1.25)}}"+
 "@keyframes alpFall{from{transform:translateY(0)}to{transform:translateY(var(--t))}}"+
 "@keyframes alpSway{from{transform:translateX(-10px)}to{transform:translateX(10px)}}"+
-"@media (prefers-reduced-motion:reduce){.ag-alp *{animation:none!important}.alp-chim>i{opacity:.6}.alp-chim>i+i{opacity:0}.alp-stars{opacity:.8}}"
+motionCSS()+
+"@media (prefers-reduced-motion:reduce){.ag-alp *{animation:none!important}.alp-vl,.alp-gl .alp-mv{display:none}.alp-chim>i{opacity:.6}.alp-chim>i+i{opacity:0}.alp-stars{opacity:.8}}"
 );
 })();
