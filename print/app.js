@@ -830,7 +830,7 @@
   var lastSig = null;
   function pageSig() { return [S.view || "", S.step, S.step === 1 ? S.page + "|" + (S.group || "") + "|" + (S.sub || "") : "", S.step >= 2 && S.prod ? S.prod.key : "", S.step === 3 ? S.mode || "" : "", S.view === "konto" && S.acct ? S.acct.tab || "" : ""].join("|"); }
   function render() {
-    var sig = pageSig(), jump = sig !== lastSig; lastSig = sig; render0();
+    var sig = pageSig(), jump = sig !== lastSig && !(lastSig === null && S.view === "xmas"); lastSig = sig; render0();   // Weihnachtsseite: serverseitig schon da – Scrollposition/Sprungmarke beim Übernehmen behalten
     if (jump) { try { window.scrollTo({ top: 0, left: 0, behavior: "instant" }); } catch (e) { window.scrollTo(0, 0); } }
   }
   function render0() {
@@ -964,7 +964,7 @@
     var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
     var im = function (w) { return "/print/bild/ez9mp376cw6o/" + x.img + "?fm=webp&w=" + w + "&q=75"; };
     return '<a class="ps-xteaser" href="/print/weihnachten"><span class="im"><img src="' + esc(im(1200)) + '" srcset="' + esc(im(800)) + " 800w, " + esc(im(1200)) + " 1200w, " + esc(im(1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' +
-      '<span class="tx"><span class="eyebrow">Weihnachten ' + esc(x.year) + "</span><b>Weihnachten mit deinem Design</b><span>Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : ".") + '</span><span class="ps-btn primary">Zur Weihnachtsabteilung <span aria-hidden="true">→</span></span></span></a>';
+      '<span class="tx"><span class="xm-eb">Weihnachten ' + esc(x.year) + "</span><b>Weihnachten mit deinem Design</b><span>Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : ".") + '</span><span class="ps-btn primary">Zur Weihnachtsabteilung <span aria-hidden="true">→</span></span></span></a>';
   }
   function setPage(pg, push) {
     S.view = ""; S.page = pg; S.step = 1; S.dd = "";

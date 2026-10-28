@@ -164,7 +164,7 @@ const THEMES = [
       ["gift-bag", "Geschenktaschen", "2LUxBL718wPA8UWIEjO2LN/17ea8ce20a643964c0f252d3cf8a29f7/2026-EOY-_loyalty_kit_-_gift_bag.jpg"],
       ["pillow-packs", "Kissenverpackungen", "15rcw39QcSixPZvDKEHR9m/b9911c91f8d3c5c09a59edf6b36dff8e/2026-EOY-_loyalty_kit_-_pillow_pack.jpg"]
     ] },
-  // Kachel/Banner aus den eigenen Produktfotos (das Set-Bild von Print.com ist dasselbe wie bei „Verpacken“)
+  // Kachel aus dem eigenen Produktfoto, statt Banner eine Collage aus drei Vorschlägen (das Set-Titelbild ist dasselbe wie bei „Verpacken“)
   { slug: "verpackungsset", nav: "Im Set", title: "Alles im gleichen Design",
     text: "Etiketten, Geschenkband, Geschenkpapier, Versandkarton und Karten aufeinander abgestimmt – ideal für Online-Shops, Geschenkboxen und Firmenpakete.",
     tile: ["5VDzwsLi2ERG096VJ5zpZy/e9f912a18c6e9d3c8ed34b42c7f165dc/2026-EOY-wrapping-kit-mailbox.jpg", 1], banner: null,
@@ -249,7 +249,7 @@ function render(data, shown, sea, opts) {
     '<a class="ps-btn primary" href="#xm-themen">Ideen ansehen</a></div></section>';
   const tiles = '<h2 class="xm-h" id="xm-themen">Ideen nach Thema</h2><nav class="xm-tiles" aria-label="Themen der Weihnachtsabteilung">' + themes.map(x => '<a class="xm-tile" href="#' + x.t.slug + '"><span class="xm-tph"><img src="' + escH(img(x.t.tile[0], 400)) + '" srcset="' + escH(srcset(x.t.tile[0], [300, 400, 600])) + '" sizes="(max-width: 560px) 46vw, 220px" width="400" height="300" alt="" loading="lazy" decoding="async"></span><b>' + escH(x.t.nav) + "</b><small>" + x.items.length + " Ideen</small></a>").join("") + "</nav>";
   const secs = themes.map(x => {
-    const b = x.t.banner, collage = !b ? x.items.slice(0, 3).map(i => '<img src="' + escH(img(i[2], 600)) + '" srcset="' + escH(srcset(i[2], [400, 600, 800])) + '" sizes="(max-width: 700px) 33vw, 400px" width="400" height="400" alt="" loading="lazy" decoding="async">').join("") : "";
+    const b = x.t.banner, collage = !b ? x.items.slice(-3).map(i => '<img src="' + escH(img(i[2], 600)) + '" srcset="' + escH(srcset(i[2], [400, 600, 800])) + '" sizes="(max-width: 700px) 33vw, 400px" width="400" height="400" alt="" loading="lazy" decoding="async">').join("") : "";
     return '<section class="xm-sec" id="' + x.t.slug + '" aria-labelledby="xm-h-' + x.t.slug + '">' +
       '<div class="xm-band' + (b ? "" : " collage") + '">' + (b ? '<img src="' + escH(img(b[0], 1600)) + '" srcset="' + escH(srcset(b[0], [800, 1200, 1600, 2000])) + '" sizes="(max-width: 1760px) 96vw, 1680px" width="1600" height="' + Math.round(1600 / b[1]) + '" alt="' + escH(x.t.alt) + '" loading="lazy" decoding="async">' : '<div class="xm-col" role="img" aria-label="' + escH(x.t.alt) + '">' + collage + "</div>") +
       '<div class="xm-band-t"><h2 id="xm-h-' + x.t.slug + '">' + escH(x.t.title) + "</h2><p>" + escH(x.t.text) + "</p></div></div>" +
