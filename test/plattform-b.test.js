@@ -713,6 +713,16 @@ function unitTests(T) {
       assert.strictEqual(e(once), -100); assert.strictEqual(e(thrice), -100);
     }
   });
+  await t("R4-4: Rücknahme am selben Tag vor der Zahlung gelistet → Richtung aus der Summe der Zahlungen (Gutschrift und Beleg mit negativer Summe zählen einmal, Vorzeichen richtig)", () => {
+    const cn = pays => ({ id: "cnR4", sevId: "1", nr: "GU-1", type: "GU", status: 1000, date: "2026-11-03", delivery: "2026-11-03", taxType: "default", taxRule: "1", contact: "Kunde", country: "AT", uid: "", net: 100, tax: 20, gross: 120, pays, lines: [{ rate: 20, net: 100, tax: 20 }], enshrined: false });
+    for (const sg of [1, -1]) {
+      const d = cn([{ date: "2026-11-10", amount: -120 * sg }, { date: "2026-11-10", amount: 120 * sg }, { date: "2026-11-12", amount: 120 * sg }]);
+      assert.strictEqual(K(S.computeUva({ invoices: [], vouchers: [], creditNotes: [d] }, StIst, Q4), "090"), -20, "UVA (Vorzeichen " + sg + ")");
+      assert.strictEqual(r2(S.computeJab({ invoices: [], vouchers: [], creditNotes: [d] }, StIst, 2026).rev), -100, "E1a (Vorzeichen " + sg + ")");
+      const p = payout({ pays: [{ date: "2026-11-10", amount: -95.5 * sg }, { date: "2026-11-10", amount: 95.5 * sg }, { date: "2026-11-14", amount: 95.5 * sg }], paid: 95.5 * sg });
+      assert.strictEqual(K(S.computeUva({ invoices: [p], vouchers: [], creditNotes: [] }, StIst, Q4), "022"), 0.75, "Beleg mit negativer Summe (Vorzeichen " + sg + ")");
+    }
+  });
   await t("B9: Gutschrift mit USt-Positionen gleichen Vorzeichens und einer 0-%-Position mit anderem Vorzeichen → normal gebucht (wie vor dem Umbau); USt-Konflikt → Prüfung", () => {
     const cnB = (lines, o) => Object.assign({ id: "cnB", nr: "GU-9", type: "GU", status: 1000, date: "2026-11-03", taxType: "default", taxRule: "1", contact: "Kunde", country: "AT", pays: [{ date: "2026-11-10", amount: 110 }], lines,
       net: r2(lines.reduce((a, l) => a + l.net, 0)), tax: r2(lines.reduce((a, l) => a + l.tax, 0)), gross: r2(lines.reduce((a, l) => a + l.net + l.tax, 0)) }, o || {});

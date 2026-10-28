@@ -408,14 +408,19 @@ function isIstDoc(st,d){ var a=istFrom(st); return !!a&&String(d||"")>=a; }
 // Anteil einer Zahlung am Beleg. Die eigene Buchhaltung speichert Zahlungen immer positiv – bei einem Beleg mit negativer Summe
 // (z. B. kochdu-Auszahlungsabrechnung: Gebühr +20 %, durchlaufende Posten −0 %, Summe = −Auszahlung) ist die Auszahlung der Ausgleich
 // des Belegs. Sonst würde die 20-%-Gebühr bei Istbesteuerung als −USt (KZ 090) statt +USt (KZ 022) gebucht.
-// Vorzeichen je Beleg normalisiert (Review B8): die erste Zahlung legt fest, wie dieser Beleg Zahlungen speichert (positiv = Ausgleich wie in
+// Vorzeichen je Beleg normalisiert (Review B8): die Richtung der Zahlungen (payDir) legt fest, wie dieser Beleg Zahlungen speichert (positiv = Ausgleich wie in
 // der eigenen Buchhaltung, negativ wie in sevDesk); jede weitere Zahlung zählt mit ihrem Vorzeichen relativ dazu – Zahlung, Rücknahme, Zahlung
 // ergibt Anteil 1, nicht 3. Belege mit positiver Summe: unverändert Zahlung / Summe.
-function payConv(doc,g){ if(!(g<0)) return 1; var f=payments(doc).filter(function(pm){ return Math.abs(pm.amount)>0.004; }).sort(function(a,b){ return String(a.date||"").localeCompare(String(b.date||"")); })[0]; return f&&f.amount>0?-1:1; }
+// Richtung, in der ein Beleg Zahlungen speichert: Vorzeichen der Summe aller Zahlungen (Zahlung, Rücknahme, Zahlung → wie die Zahlung, auch
+// wenn die Rücknahme am selben Tag zuerst steht, R4-4); Summe 0: betragsgrößte, sonst erste nach Datum. Gleichgerichtete Zahlungen: wie bisher.
+function payDir(pms){ var ps=(pms||[]).filter(function(pm){ return Math.abs(pm.amount)>0.004; }); if(!ps.length) return 1;
+  var s=ps.reduce(function(a,pm){ return a+pm.amount; },0); if(Math.abs(s)>0.004) return s<0?-1:1;
+  var f=ps.slice().sort(function(a,b){ return Math.abs(b.amount)-Math.abs(a.amount)||String(a.date||"").localeCompare(String(b.date||""))||(b.amount-a.amount); })[0]; return f.amount<0?-1:1; }
+function payConv(doc,g){ if(!(g<0)) return 1; var p=payments(doc).filter(function(pm){ return Math.abs(pm.amount)>0.004; }); return p.length&&payDir(p)>0?-1:1; }
 function payShare(amount,g,conv){ return g<0?(conv||1)*amount/g:amount/g; }
-// Gutschrift: jede Zahlung ist eine Auszahlung – bisher |Anteil|. Mit Zahlung, Rücknahme, Zahlung zählt die Rücknahme relativ zur ersten
-// Zahlung negativ (Anteil 1, nicht 3). Alle Zahlungen mit gleichem Vorzeichen: unverändert |Anteil|.
-function firstSign(pms){ var f=(pms||[]).filter(function(pm){ return Math.abs(pm.amount)>0.004; }).sort(function(a,b){ return String(a.date||"").localeCompare(String(b.date||"")); })[0]; return f&&f.amount<0?-1:1; }
+// Gutschrift: jede Zahlung ist eine Auszahlung – bisher |Anteil|. Mit Zahlung, Rücknahme, Zahlung zählt die Rücknahme relativ zur Richtung
+// der Zahlungen (payDir) negativ (Anteil 1, nicht 3). Alle Zahlungen mit gleichem Vorzeichen: unverändert |Anteil|.
+function firstSign(pms){ return payDir(pms); }
 function cnSign(amount,dir){ return amount*dir<0?-1:1; }
 function istParts(doc,st,label){ var a=istFrom(st), g=num(doc.gross); if(!g) return []; var cv=payConv(doc,g);
   return payments(doc).filter(function(pm){ return pm.date&&pm.date>=a&&Math.abs(pm.amount)>0.004; })
