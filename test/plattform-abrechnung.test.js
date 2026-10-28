@@ -389,7 +389,7 @@ function createMock() {
       if (m === "GET" && p === "/StaticCountry") return send(200, { objects: [{ id: "3", code: "at", name: "Österreich" }] });
       if (m === "GET" && p === "/Tools/bookkeepingSystemVersion") return send(200, { objects: { version: "2.0" } });
       if (m === "GET" && p === "/Invoice/Factory/getNextInvoiceNumber") { const v = "RE-" + state.nextNr; if (q.get("useNextNumber") === "true") state.nextNr++; return send(200, { objects: v }); }   // wie fin-local: reserviert nur mit useNextNumber=true
-      if (m === "POST" || m === "PUT") return send(201, { objects: { id: "1" } });
+      if (m === "POST" || m === "PUT") { (state.posted = state.posted || []).push({ p, json }); return send(201, { objects: { id: "1" } }); }
       return send(200, { objects: [] });
     });
   });
@@ -565,6 +565,19 @@ function createMock() {
     assert.ok(/fin-api gesperrt kochdu POST \/Fin\/settings/.test(srvOut) && /fremder Beleg/.test(srvOut), "protokolliert");
   });
 
+  await t("R3-4: Plattform-Token legt Kontakt/Adresse/Kommunikationsweg nur neu an – mitgeschickte ID bzw. Kundennummer wird verworfen (kein Überschreiben, keine Mail-Umleitung)", async () => {
+    const K = "fin-kochdu-1", Bz = "fin-blitz-1", Ka = "fin-kant-1"; M.state.posted = [];
+    let r = await fa(K, "POST", "/Contact", { id: "21", name: "Übernahme", customerNumber: "1001", category: { id: 3, objectName: "Category" } }); assert.strictEqual(r.status, 200);
+    r = await fa(Bz, "POST", "/CommunicationWay", { id: "77", contact: { id: "21", objectName: "Contact" }, type: "EMAIL", value: "fremd@example.org", key: { id: 1, objectName: "CommunicationWayKey" }, main: true }); assert.strictEqual(r.status, 200);
+    r = await fa(Bz, "POST", "/ContactAddress", { id: "55", contact: { id: "21", objectName: "Contact" }, street: "Weg 1" }); assert.strictEqual(r.status, 200);
+    r = await fa(Ka, "POST", "/Contact", { id: "21", name: "SV", finApiWho: "kochdu" }); assert.strictEqual(r.status, 200);
+    const got = M.state.posted.map(x => x.json);
+    assert.strictEqual(got.length, 4); got.forEach(b => { assert.ok(!("id" in b) && !("customerNumber" in b) && !("finApiWho" in b), JSON.stringify(b)); });
+    assert.strictEqual(got[1].contact.id, "21", "Verweis auf den eigenen Kontakt bleibt"); assert.strictEqual(got[1].value, "fremd@example.org");
+    // wie die Plattformen es heute schicken (ohne ID) – unverändert
+    r = await fa(K, "POST", "/Contact/21/addAddress", { street: "Gasse 1", zip: "6780", city: "Schruns" }); assert.strictEqual(r.status, 200); assert.deepStrictEqual(M.state.posted.slice(-1)[0].json, { street: "Gasse 1", zip: "6780", city: "Schruns" });
+    assert.ok(/Feld „id“ verworfen/.test(srvOut), "protokolliert");
+  });
   await t("A5/A6/A11: gelöschter Beleg → 400 „<Typ> nicht gefunden“ (nicht 403); Positionen/Status/Nummer/Zahlung/Gutschrift nur eigene; alte Auszahlungs-Gutschrift erkannt", async () => {
     const K = "fin-kochdu-1", Bz = "fin-blitz-1", Ka = "fin-kant-1";
     let r = await fa(K, "GET", "/Invoice/999"); assert.strictEqual(r.status, 400); assert.strictEqual(r.j.error.message, "Invoice nicht gefunden");

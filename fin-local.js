@@ -940,6 +940,7 @@ module.exports = function (D) {
   }
   async function create(t, body) {
     const o = Object.assign({ id: newId(t) }, stripMeta(body || {}));
+    if (body && body.id != null && get(t, String(body.id))) o.id = newId(t);   // Anlegen überschreibt nie einen bestehenden Datensatz (wie sevDesk: POST legt neu an, R3-4)
     if (t === "Contact" && !/^\d+$/.test(String(o.customerNumber || ""))) { if (o.customerNumber) o.externalNumber = String(o.customerNumber); o.customerNumber = await nextCustomerNumber(); }
     await save(t, o); return { objects: o };
   }

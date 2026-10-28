@@ -499,6 +499,15 @@ function unitTests(T) {
     await E.L.request("POST", "/Fin/creditNoteFromInvoice", { body: { invoiceId: "840", positions: [{ name: "Gutschrift von Hand", quantity: 1, priceGross: 8, grossPricing: true, taxRate: 20 }] } });
     await assert.rejects(() => E.P.accept(it.id)); assert.strictEqual(E.L.all("CreditNote").length, 1, "keine zweite Gutschrift");
   });
+  await t("R3-4: fin-local – Anlegen (POST) mit der ID eines bestehenden Kontakts/Kommunikationswegs legt neu an, überschreibt nie", async () => {
+    const E = finSetup([contact("40", "La Taverna"), ["CommunicationWay", { id: "77", objectName: "CommunicationWay", contact: { id: "40", objectName: "Contact" }, type: "EMAIL", value: "wirt@taverna.at", main: true }]]); await E.L.load();
+    const c = (await E.L.request("POST", "/Contact", { body: { id: "40", name: "Übernahme" } })).objects;
+    assert.notStrictEqual(String(c.id), "40"); assert.strictEqual(E.L.get("Contact", "40").name, "La Taverna");
+    const w = (await E.L.request("POST", "/CommunicationWay", { body: { id: "77", contact: { id: "40", objectName: "Contact" }, type: "EMAIL", value: "fremd@example.org" } })).objects;
+    assert.notStrictEqual(String(w.id), "77"); assert.strictEqual(E.L.get("CommunicationWay", "77").value, "wirt@taverna.at");
+    // neue ID, die es noch nicht gibt (z. B. Übernahme aus sevDesk): bleibt wie bisher
+    assert.strictEqual(String((await E.L.request("POST", "/Contact", { body: { id: "4711", name: "Neu" } })).objects.id), "4711");
+  });
   await t("R3-2: kochdu – jede Verrechnung von Hand gehört zu genau einem Monat; storniert + korrigiert neu ausgestellt (anderer Betrag) → Doppelung besteht; Oktober-Storno nimmt dem September nichts", async () => {
     const two = [contact("40", "La Taverna")].concat(invSeed("840", { gross: 120, extra: { status: "1000", paidAmount: "120.00" } }), invSeed("841", { gross: 130, date: "2026-11-01", extra: { status: "1000", paidAmount: "130.00" } }));
     const months = [{ month: "2026-09", doubleBilledCents: 5000, manualCents: 5000, doc: { docId: "840", nr: "RE-840" } }, { month: "2026-10", doubleBilledCents: 6000, manualCents: 6000, doc: { docId: "841", nr: "RE-841" } }];

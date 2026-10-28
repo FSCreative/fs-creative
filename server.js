@@ -1340,6 +1340,7 @@ const FINAPI_MARK = {
   kantineur: o => /kantineur/i.test(String(o.headText || "") + " " + String(o.header || "")),   // „Vielen Dank für die Nutzung von Der Kantineur.“ (Mollie-ID allein reicht nicht – steht auch in Druckshop-Rechnungen)
 };
 function finApiOwns(who, o) { if (!o || typeof o !== "object") return false; const src = o.finApiSource || o.finApiWho; if (src) return src === who; return !!(FINAPI_MARK[who] && FINAPI_MARK[who](o)); }
+const kindOf = rule => (rule && rule[2]) || "";
 function finApiRule(who, method, fpath) { return (FINAPI_ALLOW[who] || []).find(r => r[0] === method && r[1].test(fpath)) || null; }
 // Beleg nachschlagen: { doc } bzw. { err, notFound } – „nicht gefunden“ geht unverändert an die Plattform zurück (A5: fs-order erkennt
 // gelöschte Belege an 400 „<Typ> nicht gefunden“ bzw. 404, CONTRACT-fs-order §3), andere Fehler ebenfalls wie bisher
@@ -1406,6 +1407,9 @@ async function finApi(req, res, u, p) {
   const ct = String(req.headers["content-type"] || "");
   let body; try { body = !raw ? undefined : /json/.test(ct) ? JSON.parse(raw) : /x-www-form-urlencoded/.test(ct) ? formNested(raw) : JSON.parse(raw); } catch (e) { return J(400, { error: { message: "bad_body" } }); }
   const query = {}; u.searchParams.forEach((v, k) => { if (k !== "token") query[k] = v; });
+  // Kontakte, Adressen, Kommunikationswege werden nur neu angelegt: eine mitgeschickte ID (bzw. Kundennummer) würde einen fremden Kunden
+  // überschreiben oder dessen Mail-Adresse umleiten (R3-4) – keine Plattform schickt sie, sie wird verworfen
+  if (req.method === "POST" && !kindOf(rule) && body && typeof body === "object" && !Array.isArray(body)) ["id", "customerNumber", "finApiSource", "finApiWho"].forEach(k => { if (body[k] != null) { console.log("fin-api", who, "Feld „" + k + "“ verworfen", fpath.replace(/\d+/g, "{id}")); delete body[k]; } });
   const path = p.slice("/fin-api/v1".length);
   // Eigentum: Versand/Festschreiben/Lesen nur für Belege dieser Plattform; Entwurf überarbeiten nur, wenn er ihr gehört; neue Belege werden ihr zugeschrieben
   const docM = fpath.match(/^\/(Invoice|CreditNote)\/(\d+)/), kind = rule[2] || "";
