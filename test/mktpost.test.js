@@ -163,6 +163,33 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.ok(/#Shorts$/.test(mock.state.posts.find(p => p.pf === "youtube").title)); assert.strictEqual(mock.state.ytMeta.status.privacyStatus, "public");
     const tt = mock.state.posts.find(p => p.pf === "tiktok"); assert.strictEqual(tt.bytes, tt.size); assert.strictEqual(rl.results.tiktok.status, "entwurf");
   });
+  await t("TikTok direkt: Sichtbarkeit Pflicht (keine Vorgabe), Kontoangaben, öffentlich mit Link; ungeprüfte App → privat mit Hinweis", async () => {
+    const rl = PT.S().posts.find(p => p.id === reel.id), tc = PT.S().channels.find(c => c.brand === "kochdu" && c.platform === "tiktok");
+    const tk = PT.unseal(tc.tok); tk.scope = "user.info.basic,video.publish"; tc.tok = PT.seal(tk);
+    rl.status = "entwurf"; rl.results = {}; rl.platforms = ["tiktok"];
+    let r = await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "go" }); assert.strictEqual(r.code, 400); assert.strictEqual(r.json().tiktok, true, "Cockpit soll das TikTok-Fenster öffnen");
+    r = await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "now" }); assert.strictEqual(r.code, 400);
+    const ci = (await call("GET", "/admin/api/mkt/tiktok-creator", null, "?brand=kochdu")).json();
+    assert.ok(ci.ok && ci.direct && ci.nickname === "FS Creative" && ci.stitchOff === true && ci.privacy.indexOf("PUBLIC_TO_EVERYONE") > -1, JSON.stringify(ci));
+    assert.strictEqual((await call("GET", "/admin/api/mkt/posts")).json().channels.find(c => c.brand === "kochdu" && c.platform === "tiktok").direct, true);
+    r = await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "update", patch: { opts: { ttPrivacy: "SELF_ONLY", ttBrandPaid: true } } }); assert.strictEqual(r.code, 400, "bezahlte Partnerschaft nie privat");
+    r = (await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "update", patch: { opts: { ttPrivacy: "PUBLIC_TO_EVERYONE", ttComment: true, ttDuet: false, ttStitch: true, ttBrandOwn: true, ttPrivacyX: "x" } } })).json();
+    assert.deepStrictEqual(r.post.opts, { ttComment: true, ttStitch: true, ttBrandOwn: true, ttPrivacy: "PUBLIC_TO_EVERYONE" });
+    await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "now" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(rl.results.tiktok.status, "ok", JSON.stringify(rl.results)); assert.strictEqual(rl.results.tiktok.url, "https://www.tiktok.com/@fs.creative.at/video/7431234567890123456");
+    let pi = mock.state.ttDirect[mock.state.ttDirect.length - 1];
+    assert.deepStrictEqual([pi.privacy_level, pi.disable_comment, pi.disable_duet, pi.disable_stitch, pi.brand_organic_toggle, pi.brand_content_toggle], ["PUBLIC_TO_EVERYONE", false, true, true, true, false], "Stitch beim Konto aus → aus; Duett nicht angehakt → aus");
+    assert.ok(/Heute kochst du nicht/.test(pi.title) && /#kochdu/.test(pi.title), "Text mit Hashtags"); assert.strictEqual(PT.S().mkt.ttPrivate, false);
+    mock.state.ttUnaudited = true; const n0 = mock.state.ttDirect.length;
+    await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(rl.results.tiktok.status, "ok", JSON.stringify(rl.results)); assert.ok(/Nur für dich sichtbar/.test(rl.results.tiktok.note)); assert.strictEqual(rl.results.tiktok.url, "https://www.tiktok.com/@fs.creative.at");
+    assert.deepStrictEqual(mock.state.ttDirect.slice(n0).map(x => x.privacy_level), ["PUBLIC_TO_EVERYONE", "SELF_ONLY"]); assert.strictEqual(PT.S().mkt.ttPrivate, true); assert.strictEqual((await call("GET", "/admin/api/mkt/posts")).json().ttPrivate, true);
+    assert.strictEqual((await call("GET", "/admin/api/mkt/tiktok-creator", null, "?brand=kochdu")).json().privateOnly, true);
+    mock.state.ttUnaudited = false;
+    rl.opts = {}; await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(rl.results.tiktok.status, "fehler"); assert.ok(/wer das Video sehen darf/.test(rl.results.tiktok.error), "ohne Wahl kein Entwurf (Scope video.upload fehlt), sondern klarer Hinweis");
+    assert.ok(/scope=user\.info\.basic%2Cvideo\.publish/.test((await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok" })).json().url), "nur die Scopes fürs direkte Posten");
+  });
   await t("Bearbeiten: Folientext ändern erzeugt Bilder neu; gepostete Posts sind gesperrt", async () => {
     let r = await call("POST", "/admin/api/mkt/post", { id: car.id, op: "update", patch: { captions: { instagram: "x" } } }); assert.strictEqual(r.code, 400);
     const g = (await call("POST", "/admin/api/mkt/generate", { brand: "kochdu", count: 1, formats: { karussell: true, reel: false, bild: false } })).json(); const p = g.posts[0];

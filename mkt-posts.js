@@ -435,7 +435,7 @@ module.exports = function (C) {
   function mediaFor(p, pf) {
     const md = p.media || {}, file = f => path.join(MEDIA, f), b = state().brands[p.brand] || {};
     return { format: p.format, caption: withLink(captionFor(p, pf), pf, p), captionSafe: withLink(captionFor(p, pf, 5), pf, p), title: titleFor(p, pf), tags: tagsOf(p, pf), link: utm(p.link || b.url || "", pf, p), alt: p.altText || "", opts: MU.ytAi(p) ? Object.assign({}, p.opts || {}, { ytAi: true }) : p.opts || {},
-      place: p.place && p.place.id ? p.place : null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], ytCategory: YT_CAT[p.brand] || "22", audioName: md.track ? md.track.name + (md.track.credit && md.track.artist ? " – " + md.track.artist : "") : "",
+      place: p.place && p.place.id ? p.place : null, firstComment: p.firstComment || "", tags: p.tags || [], collabs: p.collabs || [], ytCategory: YT_CAT[p.brand] || "22", duration: md.duration || 0, audioName: md.track ? md.track.name + (md.track.credit && md.track.artist ? " – " + md.track.artist : "") : "",
       images: (md.images || []).map((f, i) => ({ url: pubUrl(f), file: file(f), small: md.small && md.small[i] ? file(md.small[i]) : "" })),
       video: md.video ? { url: pubUrl(md.video), file: file(md.video) } : null, cover: md.cover ? { url: pubUrl(md.cover), file: file(md.cover) } : null };
   }
@@ -677,6 +677,7 @@ module.exports = function (C) {
           const tok = await tokFor(ch); let r, note = "";
           r = await P.publish(pf, ch, tok, mediaFor(p, pf));
           p.results[pf] = { status: r.draft ? "entwurf" : "ok", id: r.id || "", url: r.url || "", note: r.note || note, at: nowIso() }; ch.lastOk = nowIso(); ch.lastError = "";
+          if (pf === "tiktok" && r.privacy && (p.opts || {}).ttPrivacy !== "SELF_ONLY") S().mkt.ttPrivate = r.privacy === "SELF_ONLY";   // öffentlich gewählt, privat gelandet = App noch ungeprüft
         } catch (e) {
           p.results[pf] = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; ch.lastError = p.results[pf].error; if (e.auth) ch.status = "abgelaufen";
           console.error("marketing: posten", pf, String(e.message || e).slice(0, 200));
@@ -829,14 +830,17 @@ module.exports = function (C) {
     return sendFile(req, res, path.join(MEDIA, f), type, "", { public: true });
   }
 
-  // Zusatz-Optionen je Plattform (nur bekannte Schlüssel, Werte geprüft)
+  // Zusatz-Optionen je Plattform (nur bekannte Schlüssel, Werte geprüft). TikTok: Sichtbarkeit ohne Vorgabe (wählt Simon), Interaktionen nur wenn angehakt,
+  // Werbekennzeichnung („Deine Marke“ / „Bezahlte Partnerschaft“ – die darf nicht privat sein)
+  const TT_PRIVACY = ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY"];
+  function ttCheck(o) { if (o.ttBrandPaid && o.ttPrivacy === "SELF_ONLY") throw fail(400, "TikTok: Eine bezahlte Partnerschaft kann nicht „Nur ich“ sein – bitte andere Sichtbarkeit wählen."); return o; }
   function cleanOpts(o) {
     const b = k => o[k] === true, en = (k, l) => l.indexOf(String(o[k] || "")) > -1 ? String(o[k]) : "", out = {};
     ["igShareToFeed"].forEach(k => { if (o[k] === false) out[k] = false; });
-    ["igTrial", "igStory", "igCommentsOff", "fbStory", "liNoReshare", "ytKids", "ytAi"].forEach(k => { if (b(k)) out[k] = true; });
+    ["igTrial", "igStory", "igCommentsOff", "fbStory", "liNoReshare", "ytKids", "ytAi", "ttComment", "ttDuet", "ttStitch", "ttBrandOwn", "ttBrandPaid"].forEach(k => { if (b(k)) out[k] = true; });
     const to = parseInt(o.igThumbOffset, 10); if (to > 0 && to < 600000) out.igThumbOffset = to;
     if (o.igAudioName) out.igAudioName = clip(o.igAudioName, 80);
-    const v = { thReplyControl: en("thReplyControl", ["everyone", "accounts_you_follow", "mentioned_only", "followers_only"]), liVisibility: en("liVisibility", ["PUBLIC", "CONNECTIONS"]), ytPrivacy: en("ytPrivacy", ["public", "unlisted", "private"]), bsReply: en("bsReply", ["nobody", "followers", "following", "mentioned"]), bsLang: en("bsLang", ["de", "en", "it", "fr", "nl"]) };
+    const v = { thReplyControl: en("thReplyControl", ["everyone", "accounts_you_follow", "mentioned_only", "followers_only"]), liVisibility: en("liVisibility", ["PUBLIC", "CONNECTIONS"]), ytPrivacy: en("ytPrivacy", ["public", "unlisted", "private"]), bsReply: en("bsReply", ["nobody", "followers", "following", "mentioned"]), bsLang: en("bsLang", ["de", "en", "it", "fr", "nl"]), ttPrivacy: en("ttPrivacy", TT_PRIVACY) };
     Object.keys(v).forEach(k => { if (v[k]) out[k] = v[k]; });
     if (o.thTopic) out.thTopic = clip(String(o.thTopic).replace(/^#/, ""), 50);
     if (o.pinLink && /^https:\/\/\S+$/.test(String(o.pinLink))) out.pinLink = clip(o.pinLink, 300);
@@ -850,12 +854,30 @@ module.exports = function (C) {
       media: { status: md.status || "", error: md.error || "", images: (md.images || []).length, video: !!md.video, cover: !!md.cover, duration: md.duration || 0, rev: md.at || "" },
       preview: Object.fromEntries(PLATFORMS ? Object.keys(PLATFORMS).filter(pf => (p.platforms || []).indexOf(pf) > -1).map(pf => [pf, captionFor(p, pf)]) : []) };
   }
-  function channelPublic(c) { return { id: c.id, brand: c.brand, platform: c.platform, account: c.account, status: c.status, expiresAt: c.expiresAt || "", connectedAt: c.connectedAt, lastError: c.lastError || "", lastOk: c.lastOk || "", verifiedAt: c.verifiedAt || "" }; }
+  const ttDirect = c => c && c.platform === "tiktok" && /video\.publish/.test(String((unseal(c.tok) || {}).scope || ""));
+  function channelPublic(c) { return Object.assign({ id: c.id, brand: c.brand, platform: c.platform, account: c.account, status: c.status, expiresAt: c.expiresAt || "", connectedAt: c.connectedAt, lastError: c.lastError || "", lastOk: c.lastOk || "", verifiedAt: c.verifiedAt || "" }, c.platform === "tiktok" ? { direct: ttDirect(c) } : {}); }
+  // TikTok direkt: ohne gewählte Sichtbarkeit keine Freigabe (TikTok-Vorgabe: keine Voreinstellung) – das Cockpit fragt vorher im TikTok-Fenster
+  function ttReady(post) {
+    if ((post.platforms || []).indexOf("tiktok") < 0 || (post.opts || {}).ttPrivacy) return;
+    if (ttDirect(channelsOf(post.brand).find(c => c.platform === "tiktok"))) throw Object.assign(fail(400, "TikTok: Bitte zuerst wählen, wer das Video sehen darf."), { tiktok: true });
+  }
+  // Konto-Angaben fürs TikTok-Fenster (kurz zwischengespeichert – TikTok erlaubt 20 Abfragen pro Minute)
+  const TTC = new Map();
+  async function ttCreatorFor(brandKey) {
+    const ch = channelsOf(brandKey).find(c => c.platform === "tiktok"); if (!ch) throw fail(404, "Kein TikTok-Konto verbunden.");
+    if (!ttDirect(ch)) return { direct: false, account: (ch.account && ch.account.name) || "" };
+    let hit = TTC.get(ch.id);
+    if (!hit || Date.now() - hit.at > 60e3) {
+      try { hit = { at: Date.now(), v: await P.tiktokCreator(await tokFor(ch)) }; TTC.set(ch.id, hit); }
+      catch (e) { if (e.auth) { ch.status = "abgelaufen"; ch.lastError = String(e.message || e).slice(0, 200); save(); } throw fail(502, String(e.message || e).slice(0, 200)); }
+    }
+    return Object.assign({ direct: true }, hit.v, { privateOnly: !!S().mkt.ttPrivate });
+  }
   function overview() {
     const s = S();
     const shT = tiktokSharedBrand() && s.channels.find(c => c.brand === tiktokSharedBrand() && c.platform === "tiktok" && c.status !== "getrennt");
     return { posts: s.posts.slice(0, 150).map(postPublic), channels: s.channels.filter(c => c.status !== "getrennt").map(channelPublic),
-      tiktokShared: shT ? { brand: shT.brand, account: (shT.account && (shT.account.handle || shT.account.name)) || "" } : null,
+      tiktokShared: shT ? { brand: shT.brand, account: (shT.account && (shT.account.handle || shT.account.name)) || "" } : null, ttPrivate: !!s.mkt.ttPrivate,
       platforms: Object.keys(PLATFORMS).map(k => Object.assign({ key: k }, PLATFORMS[k])),
       providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId, configId: k === "facebook" ? appCfg(k).configId || "" : undefined })),
       redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), pixabay: !!pixabayKey(), igTags: igTags(), moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })),
@@ -930,7 +952,7 @@ module.exports = function (C) {
         const users = v => [...new Set(String(Array.isArray(v) ? v.join(" ") : v || "").split(/[\s,;]+/).map(x => x.replace(/^@/, "").trim().toLowerCase()).filter(x => /^[a-z0-9._]{1,30}$/.test(x)))];
         if (pa.tags !== undefined) post.tags = users(pa.tags).slice(0, 20);
         if (pa.collabs !== undefined) post.collabs = users(pa.collabs).slice(0, 3);
-        if (pa.opts && typeof pa.opts === "object") post.opts = cleanOpts(pa.opts);
+        if (pa.opts && typeof pa.opts === "object") post.opts = ttCheck(cleanOpts(pa.opts));
         if (pa.link !== undefined) { const l = String(pa.link || "").trim(); if (l && !/^https:\/\/[^\s]+$/.test(l)) throw fail(400, "Link bitte mit https:// angeben."); post.link = clip(l, 300); }
         if (pa.place !== undefined) { const b0 = brand(post.brand); post.place = pa.place ? (b0.locations || []).find(l => l.id === String(pa.place)) || null : null; }
         if (rerender) { post.media = Object.assign({}, post.media, { status: "wartet" }); enqueue("post:" + post.id); }
@@ -942,12 +964,14 @@ module.exports = function (C) {
       }
       if (op === "go") {   // Freigabe: zur geplanten Zeit posten (vergangene Zeit → nächster freier Termin)
         if (!(post.platforms || []).length) throw fail(400, "Keine Plattform gewählt – zuerst ein Konto verbinden.");
+        ttReady(post);
         const lic = MU.licenseFor(post); if (lic) throw fail(400, "Musik: " + lic + " – bitte „Andere Musik“ wählen.");
         if (Date.parse(post.scheduledAt || 0) < Date.now() + 2 * 60e3) post.scheduledAt = nextSlot(brand(post.brand), post.id);
         post.status = "geplant"; post.approvedAt = nowIso(); save(true); return J(res, 200, { ok: true, post: postPublic(post) }), true;
       }
       if (op === "now") {
         if (!(post.platforms || []).length) throw fail(400, "Keine Plattform gewählt.");
+        ttReady(post);
         const lic = MU.licenseFor(post); if (lic) throw fail(400, "Musik: " + lic + " – bitte „Andere Musik“ wählen.");
         if (!post.media || post.media.status !== "fertig") throw fail(400, "Die Medien werden noch erstellt – kurz warten.");
         post.approvedAt = post.approvedAt || nowIso(); post.scheduledAt = nowIso(); post.status = "geplant"; save(true); publishPost(post).catch(() => {}); return J(res, 200, { ok: true, post: postPublic(post) }), true;
@@ -1001,6 +1025,7 @@ module.exports = function (C) {
       return J(res, 200, { ok: true, url: startOAuth(pl.brand, pl.platform) }), true;
     }
     if (p === "/admin/api/mkt/oauth/callback" && req.method === "GET") { const to = await oauthCallback(u); res.writeHead(302, { Location: to, "Cache-Control": "no-store" }); res.end(); return true; }
+    if (p === "/admin/api/mkt/tiktok-creator" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, await ttCreatorFor(brand(u.searchParams.get("brand")).key))), true;
     if (p === "/admin/api/mkt/pick" && req.method === "GET") { const pe = PENDING.get("pick:" + String(u.searchParams.get("id") || "")); if (!pe) throw fail(404, "Auswahl abgelaufen – bitte neu verbinden"); return J(res, 200, { ok: true, brand: pe.brand, options: pe.options.map((o, i) => ({ i, platform: o.platform, name: o.account.name, handle: o.account.handle })) }), true; }
     if (p === "/admin/api/mkt/pick" && req.method === "POST") {
       const pl = await body(req, 5000), key = "pick:" + String(pl.id || ""), pe = PENDING.get(key); if (!pe) throw fail(404, "Auswahl abgelaufen – bitte neu verbinden");

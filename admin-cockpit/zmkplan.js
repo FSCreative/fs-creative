@@ -251,6 +251,10 @@ F.css(
 '@media(max-width:640px){.modal:has(.dialog.mpv){padding:0;background:#000;place-items:center}.mpv-wrap{position:relative;display:block}'+
   '.mpv-ph{width:min(100vw,calc(100vh*9/16));border-radius:0;box-shadow:none}@supports(height:100dvh){.mpv-ph{width:min(100vw,calc(100dvh*9/16))}}'+
   '.mpv-top{padding-right:70px}.mpv-ctl{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:10px;gap:8px;z-index:3}.mpv-ctl button,.mpv-ctl a{width:40px;height:40px;background:rgba(0,0,0,.45);color:#fff;border-color:rgba(255,255,255,.25)}.mpv-ctl .dl,.mpv-ctl .ed{display:none}}'+
+'.tt-acc{display:flex;gap:10px;align-items:center}.tt-acc img{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--sunk)}.tt-acc div{display:grid}'+
+'.tt-top{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:start}.tt-top video{width:110px;aspect-ratio:9/16;border-radius:10px;background:#000;object-fit:cover}.tt-list{margin:0;padding-left:18px;font-size:13px}'+
+'.tt-int{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}.tt-int .off{opacity:.45;cursor:not-allowed}.tt-cc{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;gap:6px}.tt-ccx{display:grid;gap:6px;padding-left:4px}.tt-ccx[hidden]{display:none}'+
+'.tt-lab{margin:0;font-weight:600}.tt-cons{margin:0}.tt-note{margin:0;background:var(--sunk);border-radius:10px;padding:8px 10px}@media(max-width:520px){.tt-top{grid-template-columns:80px 1fr}.tt-top video{width:80px}}'+
 '.mp-opts{border:1px solid var(--line);border-radius:12px;padding:10px 12px}.mp-opts summary{cursor:pointer;font-weight:600}.mp-og{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line);margin-top:8px}.mp-og:first-of-type{border-top:0}'+
 '.mp-place{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.mp-place .f{flex:1 1 260px}.mp-placer{flex-basis:100%;display:flex;flex-wrap:wrap;gap:4px 14px}'+
 '.mp-mus{font-size:12.5px;margin:4px 0;display:flex;gap:4px 10px;flex-wrap:wrap}'+
@@ -352,7 +356,7 @@ function postCard(p,slim){
     var st=r.status==="gelöscht"?'<span class="muted">gelöscht</span>':r.status==="ok"?(r.url?'<a class="mp-ok" href="'+esc(r.url)+'" target="_blank" rel="noopener">'+F.svg("checkCircle")+' ansehen</a>':'<span class="mp-ok">'+F.svg("checkCircle")+' gepostet</span>')+(r.editedAt?' <span class="muted small">geändert</span>':''):
       r.status==="entwurf"?'<b>Entwurf in der App</b>':r.status==="übersprungen"?'<span class="muted">übersprungen</span>':'<span class="bad-t mp-err">'+F.svg("alertCircle")+' Fehler</span><button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>';
     var bad=["ok","gelöscht","entwurf","übersprungen"].indexOf(r.status)<0;
-    var msg=bad?'<span class="msg bad-t">'+esc(r.error||"Fehler")+'</span>':r.status==="entwurf"&&r.note?'<span class="msg muted">'+esc(r.note)+'</span>':r.status==="übersprungen"&&r.error?'<span class="msg muted">'+esc(r.error)+'</span>':'';
+    var msg=bad?'<span class="msg bad-t">'+esc(r.error||"Fehler")+'</span>':(r.status==="entwurf"||r.status==="ok")&&r.note?'<span class="msg muted">'+esc(r.note)+'</span>':r.status==="übersprungen"&&r.error?'<span class="msg muted">'+esc(r.error)+'</span>':'';
     return '<div class="mp-r'+(bad?' bad':'')+'"><span class="pfn">'+pfIcon(k)+esc(pfLabel(k))+'</span>'+st+msg+(lk?'<span class="lk">'+lk+'</span>':'')+'</div>'; }).join("")+'</div>';
   var ready=md.status==="fertig", main="", subs="", hint="", time=editable?'<label class="mp-time"><span>Zeit</span><input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"></label>':'';
   if(p.status==="entwurf"){ var dis=!ready||!p.platforms.length?' disabled':'';
@@ -370,7 +374,8 @@ function postCard(p,slim){
   var capHtml=capTxt.split(/\n\s*\n/).map(function(x){ return '<span class="pp">'+esc(x.trim())+'</span>'; }).join("");
   var mi=function(icon,title,txt){ return '<span title="'+esc(title)+'">'+F.svg(icon)+'<span class="ell">'+esc(txt)+'</span></span>'; };
   var meta=(p.place?mi("pin","Standort (Instagram/Facebook)",p.place.name):'')+((p.tags||[]).length?mi("user","Markierte Personen (Instagram)",p.tags.map(function(u){ return "@"+u; }).join(" ")):'')+((p.collabs||[]).length?mi("link","Collab (Instagram)",p.collabs.map(function(u){ return "@"+u; }).join(" ")):'')+(reel?'<button type="button" class="link mp-musl" data-act="mpmus:'+esc(p.id)+'" title="Musik anhören und ändern">'+F.svg("mnote")+'<span class="ell">'+esc(musLine(p))+'</span>'+(p.musicNote?'<i title="'+esc(p.musicNote)+'"></i>':'')+'</button>':'')+(p.firstComment?mi("message","Erster Kommentar: "+p.firstComment,p.firstComment.slice(0,70)+(p.firstComment.length>70?'…':'')):'')+(p.altText?mi("eye","Bildbeschreibung: "+p.altText,"Bildbeschreibung"):'')+
-    (p.platforms.indexOf("tiktok")>-1?'<button type="button" class="link" data-act="mptt:'+esc(p.id)+'">'+F.svg("copy")+' TikTok-Text kopieren</button>':'');
+    (p.platforms.indexOf("tiktok")>-1&&(p.opts||{}).ttPrivacy?mi("mtiktok","TikTok: wer das Video sehen darf","TikTok: "+(TTPV[p.opts.ttPrivacy]||"")):'')+
+    (p.platforms.indexOf("tiktok")>-1&&!ttDirectFor(p)?'<button type="button" class="link" data-act="mptt:'+esc(p.id)+'">'+F.svg("copy")+' TikTok-Text kopieren</button>':'');
   var nImg=!reel&&md.images>1?' · '+md.images:'';
   return '<article class="mp-card st-'+(STC[p.status]||"entwurf")+(slim?' slim':'')+'" id="mp-'+esc(p.id)+'" style="--bc:'+esc(bColor(p.brand))+'" aria-labelledby="mpt-'+esc(p.id)+'">'+
     '<div class="mp-prev">'+prev+'</div><div class="mp-mid">'+
@@ -505,10 +510,66 @@ F.action("mpgen",function(){
 });
 F.action("mppf",function(a){ var x=a.split("|"), p=PL.posts.find(function(q){ return q.id===x[0]; }); if(!p) return; var on=p.platforms.indexOf(x[1])>-1, list=on?p.platforms.filter(function(k){ return k!==x[1]; }):p.platforms.concat([x[1]]); postOp(p.id,"update",{patch:{platforms:list}}); });
 F.listen("change","[data-mptime]",function(el){ if(!el.value) return; postOp(el.getAttribute("data-mptime"),"update",{patch:{scheduledAt:new Date(el.value).toISOString()}},"Zeit geändert"); });
-F.action("mpgo",function(id){ postOp(id,"go",null,"Freigegeben – geht zur geplanten Zeit raus"); });
-F.action("mpgoall",function(){ var ids=PL.posts.filter(function(p){ return p.status==="entwurf"&&(UI.mkBrand==="alle"||p.brand===UI.mkBrand)&&p.media.status==="fertig"&&p.platforms.length; }).map(function(p){ return p.id; });
-  F.confirm(ids.length+" Posts freigeben? Sie gehen zu ihren geplanten Zeiten automatisch raus.","Alle freigeben",function(){ var chain=Promise.resolve(); ids.forEach(function(id){ chain=chain.then(function(){ return api("/admin/api/mkt/post",{id:id,op:"go"}).then(function(j){ if(j&&j.post) upd(j.post); }); }); }); chain.then(function(){ F.toast(ids.length+" Posts freigegeben"); F.render(); schedulePoll(); }); }); });
-F.action("mpnow",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); F.confirm("Jetzt sofort auf "+(p?p.platforms.map(pfLabel).join(", "):"")+" posten?","Jetzt posten",function(){ postOp(id,"now",null,"Wird gepostet …"); }); });
+F.action("mpgo",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }), go=function(){ postOp(id,"go",null,"Freigegeben – geht zur geplanten Zeit raus"); };
+  if(p&&ttNeeds(p)) ttAsk([p],"Freigeben",go); else go(); });
+F.action("mpgoall",function(){ var list=PL.posts.filter(function(p){ return p.status==="entwurf"&&(UI.mkBrand==="alle"||p.brand===UI.mkBrand)&&p.media.status==="fertig"&&p.platforms.length; }), ids=list.map(function(p){ return p.id; });
+  var all=function(){ F.confirm(ids.length+" Posts freigeben? Sie gehen zu ihren geplanten Zeiten automatisch raus.","Alle freigeben",function(){ var chain=Promise.resolve(); ids.forEach(function(id){ chain=chain.then(function(){ return api("/admin/api/mkt/post",{id:id,op:"go"}).then(function(j){ if(j&&j.post) upd(j.post); else if(j&&j.error) F.toast(j.error,true); }); }); }); chain.then(function(){ F.toast(ids.length+" Posts freigegeben"); F.render(); schedulePoll(); }); }); };
+  ttAskAll(list.filter(ttNeeds),"Weiter",all); });
+F.action("mpnow",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }), now=function(){ postOp(id,"now",null,"Wird gepostet …"); };
+  if(p&&ttNeeds(p)) return ttAsk([p],"Jetzt posten",now);
+  F.confirm("Jetzt sofort auf "+(p?p.platforms.map(pfLabel).join(", "):"")+" posten?","Jetzt posten",now); });
+/* TikTok direkt posten: vor der Freigabe Sichtbarkeit, Interaktionen und Werbekennzeichnung wählen. TikTok-Vorgaben: Kontoname zeigen, Sichtbarkeit ohne
+   Voreinstellung, keine Interaktion vorab angehakt (ausgeschaltete ausgegraut), Werbekennzeichnung standardmäßig aus, Zustimmung zur Music Usage Confirmation,
+   Vorschau, Text änderbar, Hinweis auf die Verarbeitungszeit. Gilt für alle gewählten Posts desselben TikTok-Kontos. */
+var TTPV={PUBLIC_TO_EVERYONE:"Alle",MUTUAL_FOLLOW_FRIENDS:"Freunde (folgen sich gegenseitig)",FOLLOWER_OF_CREATOR:"Follower",SELF_ONLY:"Nur ich"};
+var TT_MUC="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en", TT_BCP="https://www.tiktok.com/legal/page/global/bc-policy/en";
+function ttDirectFor(p){ var c=chFor(p.brand,"tiktok"); return !!(c&&c.direct); }
+function ttNeeds(p){ return p.platforms.indexOf("tiktok")>-1&&ttDirectFor(p)&&!(p.opts||{}).ttPrivacy; }
+function ttAskAll(list,verb,done){ var groups={}, order=[]; list.forEach(function(p){ var c=chFor(p.brand,"tiktok"), k=c?c.id:p.brand; if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(p); });
+  var next=function(i){ if(i>=order.length) return done(); ttAsk(groups[order[i]],i<order.length-1?"Weiter":verb,function(){ next(i+1); }); }; next(0); }
+function ttAsk(list,verb,done){
+  var p0=list[0], one=list.length===1;
+  F.modal('<div class="mp-ed" id="ttDlg"><div class="row-between"><h2 style="font-size:19px">Auf TikTok posten</h2>'+F.btnClose()+'</div><p class="muted">TikTok-Konto wird geladen …</p></div>',"narrow");
+  api("/admin/api/mkt/tiktok-creator?brand="+encodeURIComponent(p0.brand)).then(function(ci){
+    var box=document.getElementById("ttDlg"); if(!box) return;
+    if(!ci||!ci.ok){ box.innerHTML='<div class="row-between"><h2 style="font-size:19px">Auf TikTok posten</h2>'+F.btnClose()+'</div><p class="bad-t">'+esc((ci&&ci.error)||"TikTok ist gerade nicht erreichbar")+'</p><p class="muted small">Bitte später nochmal versuchen.</p>'; return; }
+    if(!ci.direct){ F.closeModal(); return done(); }
+    var long=list.filter(function(p){ return ci.maxSec&&(p.media.duration||0)>ci.maxSec; }), base=fileBase(p0), c=(p0.captions||{}).tiktok||"", h=((p0.hashtags||{}).tiktok||[]).join(" ");
+    var opt=(ci.privacy||[]).map(function(k){ return '<option value="'+esc(k)+'">'+esc(TTPV[k]||k)+'</option>'; }).join("");
+    var ia=function(n,t,off){ return '<label class="chk'+(off?' off':'')+'"'+(off?' title="In deinen TikTok-Einstellungen ausgeschaltet"':'')+'><input type="checkbox" name="'+n+'"'+(off?' disabled':'')+'> '+t+'</label>'; };
+    box.outerHTML='<form data-form="ttgo" class="mp-ed" id="ttDlg"><div class="row-between"><h2 style="font-size:19px">Auf TikTok posten</h2>'+F.btnClose()+'</div>'+
+      '<div class="tt-acc">'+(ci.avatar?'<img src="'+esc(ci.avatar)+'" alt="" referrerpolicy="no-referrer">':'')+'<div><b>'+esc(ci.nickname||"TikTok")+'</b>'+(ci.username?'<span class="muted small">@'+esc(ci.username)+'</span>':'')+'</div></div>'+
+      '<div class="tt-top">'+(p0.media.video?'<video src="'+base+'&kind=video" poster="'+base+'&kind=cover" muted playsinline controls preload="metadata"></video>':'<span></span>')+
+        (one?'<div class="mp-ed" style="gap:8px"><label class="fl">Text auf TikTok<textarea class="f" name="cap" rows="4" maxlength="2000">'+esc(c)+'</textarea></label><label class="fl">Hashtags<input class="f" name="tags" value="'+esc(h)+'"></label></div>'
+          :'<div><b>'+list.length+' Videos</b><ul class="tt-list">'+list.map(function(p){ return '<li>'+esc(p.idea||"Ohne Titel")+'</li>'; }).join("")+'</ul><span class="muted small">Texte änderst du je Post unter „Bearbeiten“.</span></div>')+'</div>'+
+      '<label class="fl">Wer darf das sehen?<select class="f" name="pv" required><option value="" selected disabled>Bitte wählen</option>'+opt+'</select></label>'+
+      '<div class="tt-int"><span class="small">Erlauben:</span>'+ia("cm","Kommentare",ci.commentOff)+ia("du","Duett",ci.duetOff)+ia("st","Stitch",ci.stitchOff)+'</div>'+
+      '<div class="tt-cc"><label class="chk"><input type="checkbox" name="cc"> <b>Inhalt offenlegen</b> <span class="muted small">– das Video bewirbt eine Marke, ein Produkt oder eine Dienstleistung</span></label>'+
+        '<div class="tt-ccx" hidden><label class="chk"><input type="checkbox" name="bo"> Deine Marke <span class="muted small">– du bewirbst dich selbst oder dein eigenes Unternehmen</span></label>'+
+        '<label class="chk"><input type="checkbox" name="bp"> Markeninhalt <span class="muted small">– du bewirbst eine andere Marke oder einen Dritten</span></label><p class="tt-lab small" id="ttLab"></p></div></div>'+
+      '<p class="tt-cons small" id="ttCons"></p>'+
+      '<p class="muted small" style="margin:0">Nach dem Posten kann es ein paar Minuten dauern, bis das Video auf deinem Profil erscheint.</p>'+
+      (ci.privateOnly?'<p class="tt-note small">Solange TikTok die App noch prüft, erscheint das Video zuerst nur für dich („Nur ich“). In der TikTok-App stellst du es dann mit ··· → Datenschutzeinstellungen auf „Alle“.</p>':'')+
+      (long.length?'<p class="bad-t small" style="margin:0">'+(one?'Das Video ist':'Ein Video ist')+' länger als die '+ci.maxSec+' s, die dieses Konto posten darf.</p>':'')+
+      '<div class="foot"><span class="muted small" id="ttWhy"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary" id="ttBtn" disabled>'+esc(verb)+'</button></span></div></form>';
+    var f=document.getElementById("ttDlg"); f._tt={list:list,done:done};
+    var sync=function(){ var pv=f.pv.value, cc=f.cc.checked, bo=f.bo.checked, bp=f.bp.checked, self=f.pv.querySelector('option[value="SELF_ONLY"]');
+      f.querySelector(".tt-ccx").hidden=!cc; if(!cc){ f.bo.checked=f.bp.checked=false; bo=bp=false; }
+      if(self){ self.disabled=bp; self.title=bp?"Markeninhalte können nicht privat sein":""; }
+      f.bp.disabled=pv==="SELF_ONLY"; f.bp.parentNode.title=pv==="SELF_ONLY"?"Markeninhalte können nicht privat sein":"";
+      document.getElementById("ttLab").textContent=bp?"Dein Video wird als „Bezahlte Partnerschaft“ gekennzeichnet.":bo?"Dein Video wird als „Werbeinhalt“ gekennzeichnet.":"";
+      document.getElementById("ttCons").innerHTML=bp?'Mit dem Posten stimmst du der <a href="'+TT_BCP+'" target="_blank" rel="noopener">Branded Content Policy</a> und der <a href="'+TT_MUC+'" target="_blank" rel="noopener">Music Usage Confirmation</a> von TikTok zu.'
+        :'Mit dem Posten stimmst du der <a href="'+TT_MUC+'" target="_blank" rel="noopener">Music Usage Confirmation</a> von TikTok zu.';
+      var why=!pv?"Bitte wählen, wer das Video sehen darf.":cc&&!bo&&!bp?"Gib an, ob dein Inhalt dich selbst, eine dritte Partei oder beides bewirbt.":long.length?"Video zu lang für TikTok.":"";
+      document.getElementById("ttWhy").textContent=why; document.getElementById("ttBtn").disabled=!!why; };
+    f.addEventListener("change",sync); sync(); }); }
+F.form("ttgo",function(form){ var t=form._tt; if(!t||form.querySelector("#ttBtn").disabled) return;
+  var pick={ttPrivacy:form.pv.value,ttComment:form.cm.checked,ttDuet:form.du.checked,ttStitch:form.st.checked,ttBrandOwn:form.bo.checked,ttBrandPaid:form.bp.checked};
+  var chain=Promise.resolve(true);
+  t.list.forEach(function(p){ chain=chain.then(function(ok){ if(!ok) return false; var patch={opts:Object.assign({},p.opts||{},pick)};
+    if(form.cap){ patch.captions={tiktok:form.cap.value}; patch.hashtags={tiktok:String(form.tags.value||"").split(/[\s,]+/).filter(Boolean).map(function(x){ return x.charAt(0)==="#"?x:"#"+x; })}; }
+    return api("/admin/api/mkt/post",{id:p.id,op:"update",patch:patch}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return false; } upd(j.post); return true; }); }); });
+  chain.then(function(ok){ if(!ok) return; F.closeModal(); t.done(); }); });
 F.action("mpstop",function(id){ postOp(id,"stop",null,"Gestoppt – wieder bei „Zur Freigabe“"); });
 F.action("mpretry",function(a){ var x=a.split("|"); postOp(x[0],"retry",{platform:x[1]||""},"Wird nochmal versucht …"); });
 F.action("mprer",function(id){ postOp(id,"rerender",null,"Wird neu erstellt …"); });
@@ -618,6 +679,8 @@ function optsHtml(p){ var o=p.opts||{}, reel=p.format==="reel", chk=function(k,t
     '<div class="mp-og"><b>LinkedIn</b><div class="mk-row2">'+sel("liVisibility","Sichtbarkeit",[["","Öffentlich"],["CONNECTIONS","Nur Kontakte"]])+'</div>'+chk("liNoReshare","Teilen durch andere verbieten")+'</div>'+
     (reel?'<div class="mp-og"><b>YouTube</b><div class="mk-row2">'+sel("ytPrivacy","Sichtbarkeit",[["","Öffentlich"],["unlisted","Nicht gelistet"],["private","Privat"]])+'</div>'+chk("ytKids","Speziell für Kinder")+chk("ytAi","Enthält KI-erzeugte, realistisch wirkende Inhalte (Kennzeichnung)")+'</div>':'')+
     (!reel?'<div class="mp-og"><b>Pinterest</b>'+inp("pinLink","Ziel-Link des Pins","https://…")+'</div>':'')+
+    (reel&&ttDirectFor(p)?'<div class="mp-og"><b>TikTok</b><div class="mk-row2">'+sel("ttPrivacy","Wer darf das sehen?",[["","Bitte wählen (beim Freigeben)"]].concat(Object.keys(TTPV).map(function(k){ return [k,TTPV[k]]; })))+'</div>'+
+      chk("ttComment","Kommentare erlauben")+chk("ttDuet","Duett erlauben")+chk("ttStitch","Stitch erlauben")+chk("ttBrandOwn","Werbung offenlegen: deine Marke („Werbeinhalt“)")+chk("ttBrandPaid","Werbung offenlegen: Markeninhalt („Bezahlte Partnerschaft“, nicht mit „Nur ich“)")+'</div>':'')+
     '<div class="mp-og"><b>Bluesky</b><div class="mk-row2">'+sel("bsReply","Wer darf antworten?",[["","Alle"],["followers","Nur Follower"],["following","Nur Profile, denen du folgst"],["mentioned","Nur Erwähnte"],["nobody","Niemand"]])+sel("bsLang","Sprache",[["","Deutsch"],["en","Englisch"],["it","Italienisch"],["nl","Niederländisch"],["fr","Französisch"]])+'</div></div>'+
     '</details>'; }
 F.action("mpplace",function(brand){ var q=document.getElementById("mpPlaceQ"), box=document.getElementById("mpPlaceR"), v=q?q.value.trim():""; if(!v) return;
@@ -671,10 +734,10 @@ function kanHtml(){
         '<div><p class="muted small" style="margin:0 0 8px">'+esc(p.hint)+'</p><form data-form="mkapp" data-prov="'+esc(p.key)+'" autocomplete="off"><input class="f" name="clientId" placeholder="App-ID / Client-ID" value="'+esc(p.clientId||"")+'"><input class="f" name="secret" type="password" placeholder="'+(p.ready?"Geheimschlüssel gespeichert":"Geheimschlüssel")+'" autocomplete="new-password">'+(p.key==="facebook"?'<input class="f" name="configId" inputmode="numeric" placeholder="Konfigurations-ID (Login for Business)" value="'+esc(p.configId||"")+'">':'')+'<button type="submit" class="btn sm">Speichern</button>'+(p.ready?'<button type="button" class="btn sm" data-act="mkappdel:'+esc(p.key)+'">Entfernen</button>':'')+'</form></div></div>'; }).join("")+'</div></section>';
   var tbl='<section class="panel"><div class="panel-h"><h2>2. Konten je App verbinden</h2><span class="muted small">Du meldest dich bei der Plattform selbst an – das Cockpit sieht dein Passwort nie</span></div><div class="mk-wrapx"><table class="mk-tbl"><thead><tr><th>App</th>'+pfs.map(function(p){ return '<th><span class="mk-pfi">'+pfIcon(p.key)+esc(p.label)+'</span></th>'; }).join("")+'</tr></thead><tbody>'+
     bs.map(function(b){ return '<tr><td><b>'+esc(b.name)+'</b></td>'+pfs.map(function(pf){ var c=chOf(b.key,pf.key), prov=provs.find(function(x){ return x.key===pf.provider; })||{};
-      if(c) return '<td><div class="mk-acc"><b>'+esc(c.account&&(c.account.handle||c.account.name)||"verbunden")+'</b>'+(c.status==="ok"?'<span class="ok-t small">✓ verbunden</span>':'<span class="bad-t small">abgelaufen – <button type="button" class="link" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'">neu verbinden</button></span>')+(c.lastError&&c.status==="ok"?'<span class="small muted" title="'+esc(c.lastError)+'">letzter Fehler</span>':'')+(c.status==="ok"?'<button type="button" class="link small" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'" title="Neu anmelden, z. B. für neue Berechtigungen (Nachrichten)">neu verbinden</button>':'')+'<button type="button" class="link small" data-act="mkdis:'+esc(c.id)+'">trennen</button></div></td>';
+      if(c) return '<td><div class="mk-acc"><b>'+esc(c.account&&(c.account.handle||c.account.name)||"verbunden")+'</b>'+(c.status==="ok"?'<span class="ok-t small">✓ verbunden</span>':'<span class="bad-t small">abgelaufen – <button type="button" class="link" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'">neu verbinden</button></span>')+(c.platform==="tiktok"&&c.status==="ok"?(c.direct?'<span class="small muted">postet direkt</span>':'<button type="button" class="link small bad-t" data-act="mkcon:'+esc(b.key)+'|tiktok">für direktes Posten neu verbinden</button>'):'')+(c.lastError&&c.status==="ok"?'<span class="small muted" title="'+esc(c.lastError)+'">letzter Fehler</span>':'')+(c.status==="ok"?'<button type="button" class="link small" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'" title="Neu anmelden, z. B. für neue Berechtigungen (Nachrichten)">neu verbinden</button>':'')+'<button type="button" class="link small" data-act="mkdis:'+esc(c.id)+'">trennen</button></div></td>';
       if(pf.key==="tiktok"&&PL.tiktokShared&&PL.tiktokShared.brand!==b.key) return '<td><div class="mk-acc"><span class="small muted">über</span><b>'+esc(PL.tiktokShared.account||"gemeinsames Konto")+'</b><span class="small muted">gemeinsames TikTok aller Marken</span></div></td>';
       return '<td>'+(prov.ready?'<button type="button" class="btn sm" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'">Verbinden</button>':'<span class="muted small" title="Zuerst den App-Zugang oben eintragen">–</span>')+'</td>'; }).join("")+'</tr>'; }).join("")+'</tbody></table></div>'+
-    '<p class="muted small" style="margin:10px 18px 14px">TikTok: Videos landen als Entwurf in deiner TikTok-App (dort auf „Posten“ tippen) – direktes Posten erlaubt TikTok erst nach einer Prüfung der App. X/Twitter kostet seit 2026 pro Post und ist deshalb nicht dabei.</p></section>';
+    '<p class="muted small" style="margin:10px 18px 14px">TikTok: Videos gehen direkt auf dein Profil – beim Freigeben wählst du, wer sie sehen darf. Solange TikTok die App noch prüft, sind sie zuerst nur für dich sichtbar. Steht beim TikTok-Konto „für direktes Posten neu verbinden“, einmal neu verbinden. X/Twitter kostet seit 2026 pro Post und ist deshalb nicht dabei.</p></section>';
   var extra='<section class="panel"><div class="panel-h"><h2>3. Extras für bessere Reels</h2></div><div class="mk-prov">'+
     '<div><div><b>Stockvideos & -fotos</b><br>'+(PL.pixabay||PL.pexels?'<span class="ok-t small">✓ aktiv'+(PL.pixabay?' (Pixabay'+(PL.pexels?' + Pexels':'')+')':' (Pexels)')+'</span>':'<span class="muted small">aus</span>')+'<br><a class="small" href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">Pixabay-API (gratis)</a></div><div><p class="muted small" style="margin:0 0 8px">Kostenlos: auf pixabay.com registrieren, dann angemeldet <a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">pixabay.com/api/docs</a> öffnen – bei „key (required)“ steht grün <b>Your API key</b>. Reels bekommen damit echte Videos als Hintergrund.</p><form data-form="mkpix" autocomplete="off"><input class="f" name="key" type="password" placeholder="'+(PL.pixabay?"Schlüssel gespeichert":"Pixabay-API-Schlüssel")+'" autocomplete="new-password"><button type="submit" class="btn sm">Speichern</button>'+(PL.pixabay?'<button type="button" class="btn sm" data-act="mkpixdel">Entfernen</button>':'')+'</form></div></div>'+
     '<div><div><b>Pexels (optional)</b><br>'+(PL.pexels?'<span class="ok-t small">✓ aktiv</span>':'<span class="muted small">aus</span>')+'<br><a class="small" href="https://www.pexels.com/api/" target="_blank" rel="noopener">Pexels-API</a></div><div><p class="muted small" style="margin:0 0 8px">Mit einem kostenlosen Pexels-Schlüssel bekommen Reels echte Videos als Hintergrund (Essen, Berge, Feiern …) statt Farbverlauf.</p><form data-form="mkpex" autocomplete="off"><input class="f" name="key" type="password" placeholder="'+(PL.pexels?"Schlüssel gespeichert":"Pexels-API-Schlüssel")+'" autocomplete="new-password"><button type="submit" class="btn sm">Speichern</button>'+(PL.pexels?'<button type="button" class="btn sm" data-act="mkpexdel">Entfernen</button>':'')+'</form></div></div>'+
@@ -770,7 +833,7 @@ function musPanel(p){
       '<span>Energie <span class="mu-en" role="group" aria-label="Energie 1 bis 5">'+[1,2,3,4,5].map(function(n){ return '<button type="button" data-act="mpmen:'+id+'|'+n+'" aria-pressed="'+(n===en)+'">'+n+'</button>'; }).join("")+'</span></span>'+
       '<label>Tempo <select class="f" data-mpmw="tempo" data-id="'+id+'">'+[["","automatisch"],["langsam","langsam"],["mittel","mittel"],["schnell","schnell"]].map(function(x){ return '<option value="'+x[0]+'"'+(x[0]===tempo?' selected':'')+'>'+x[1]+'</option>'; }).join("")+'</select></label></div>';
   var note=p.musicNote?'<p class="mu-note">'+F.svg("alertCircle")+'<span>'+esc(p.musicNote)+'</span></p>':'';
-  var tt=(p.platforms||[]).indexOf("tiktok")>-1?'<p class="mu-hint">TikTok: Im TikTok-Entwurf kannst du den Sound gegen einen aus der Commercial Music Library tauschen.</p>':'';
+  var tt=(p.platforms||[]).indexOf("tiktok")>-1&&!ttDirectFor(p)?'<p class="mu-hint">TikTok: Im TikTok-Entwurf kannst du den Sound gegen einen aus der Commercial Music Library tauschen.</p>':'';
   return '<div class="mu" data-mpmus="'+id+'">'+cur+note+act+want+'<div class="mu-sug" id="mpmSug-'+id+'"></div>'+tt+'</div>';
 }
 function musRepaint(id){ var p=(PL.posts||[]).find(function(q){ return q.id===id; }), el=document.querySelector('[data-mpmus="'+id+'"]'); if(p&&el) el.outerHTML=musPanel(p); }

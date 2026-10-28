@@ -217,6 +217,7 @@ const ROUTE_META = {
   "/ueber-uns": ["Über uns — FS Creative aus dem Montafon", "Lerne FS Creative kennen: Kreativ- und Digitalagentur aus Gaschurn im Montafon, gegründet von Simon Felder."],
   "/kontakt": ["Kontakt & Gratis-Entwurf anfragen | FS Creative", "Projekt anfragen bei FS Creative aus Gaschurn: kurzes Formular ausfüllen, Antwort in 1–2 Werktagen und auf Wunsch ein kostenloser, unverbindlicher Entwurf."],
   "/datenschutz": ["Datenschutzerklärung — FS Creative", "Datenschutzerklärung von FS Creative: kein Tracking, keine Werbe-Cookies, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen."],
+  "/nutzungsbedingungen": ["Nutzungsbedingungen — FS Cockpit | FS Creative", "Nutzungsbedingungen für das FS Cockpit, das interne Verwaltungsprogramm von FS Creative, und seine Verbindungen zu Instagram, Facebook, TikTok & Co."],
   "/impressum": ["Impressum — FS Creative", "Impressum von FS Creative (Simon Leonhard Felder), Dorfstraße 3/1, 6793 Gaschurn. Offenlegung gemäß § 5 ECG und § 25 Mediengesetz."],
 };
 // Bei Druckshop live (gleicher Schalter wie printLiveBlocks) nennt die Startseite auch den Druckshop; Kopie im Seiten-Script von index.html (ROUTE_META['/'])

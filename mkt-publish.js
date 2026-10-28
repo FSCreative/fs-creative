@@ -1,5 +1,5 @@
 /* Marketing: Veröffentlichen über die offiziellen Schnittstellen (kostenlos) – Anmeldung (OAuth), Token erneuern, Posten.
-   Plattformen: Instagram (Instagram-Login, graph.instagram.com), Facebook-Seite, Threads, LinkedIn (Profil), YouTube Shorts, TikTok (als Entwurf in die App),
+   Plattformen: Instagram (Instagram-Login, graph.instagram.com), Facebook-Seite, Threads, LinkedIn (Profil), YouTube Shorts, TikTok (direkt aufs Profil, sonst als Entwurf in die App),
    Pinterest, Bluesky (App-Passwort). X/Twitter kostet seit 2026 pro Post – nicht eingebaut.
    Medien holen Instagram/Facebook/Threads/Pinterest selbst über eine öffentliche Adresse (marketing.js: /m/…); LinkedIn, YouTube, TikTok und Bluesky bekommen die Datei hochgeladen.
    Alle Adressen sind über D.base überschreibbar (Tests mit Attrappen). Fehler kommen als lesbare deutsche Meldung zurück. */
@@ -33,7 +33,7 @@ const PROVIDERS = {
   facebook: { label: "Facebook (Meta)", portal: "https://developers.facebook.com/apps", hint: "Dieselbe Meta-App: App-ID und App-Geheimcode (App-Einstellungen → Allgemeines). „Facebook Login for Business“ → Konfiguration mit den Seiten-Berechtigungen anlegen und deren Konfigurations-ID eintragen. Damit Posts öffentlich sind, muss die App auf „Live“ stehen." },
   threads: { label: "Threads (Meta)", portal: "https://developers.facebook.com/apps", hint: "Meta-App mit Anwendungsfall „Threads-API“: Threads-App-ID und -Geheimschlüssel; dich als Threads-Tester eintragen und in Threads bestätigen." },
   google: { label: "YouTube (Google)", portal: "https://console.cloud.google.com/apis/credentials", hint: "Google-Cloud-Projekt → YouTube Data API v3 aktivieren → OAuth-Client (Webanwendung). Zustimmungsbildschirm auf „In Produktion“ stellen, sonst läuft die Anmeldung nach 7 Tagen ab." },
-  tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "TikTok-App mit Login Kit und Content Posting API (Upload). Videos landen als Entwurf in deiner TikTok-App – dort tippst du auf Posten (TikTok erlaubt direktes Posten erst nach einer Prüfung)." },
+  tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "TikTok-App mit Login Kit und Content Posting API, dort „Direct Post“ einschalten. Videos gehen direkt auf dein Profil – solange TikTok die App noch nicht geprüft hat, nur für dich sichtbar („Nur ich“)." },
   linkedin: { label: "LinkedIn", portal: "https://www.linkedin.com/developers/apps", hint: "LinkedIn-App mit „Share on LinkedIn“ und „Sign In with LinkedIn using OpenID Connect“. Postet auf dein Profil; die Anmeldung gilt 60 Tage." },
   pinterest: { label: "Pinterest", portal: "https://developers.pinterest.com/apps", hint: "Pinterest-App (Business-Konto). Mit „Trial access“ sind Pins nur für dich sichtbar – für öffentliche Pins „Standard access“ beantragen." },
   bluesky: { label: "Bluesky", portal: "https://bsky.app/settings/app-passwords", hint: "Kein Entwickler-Zugang nötig: in Bluesky unter Einstellungen → App-Passwörter ein App-Passwort anlegen und beim Verbinden eingeben." },
@@ -63,7 +63,7 @@ module.exports = function (D) {
       const auth = r.status === 401 || /OAuth|token|expired|invalid_grant|session/i.test(String(m || ""));
       throw pubErr((auth ? "Anmeldung abgelaufen oder ungültig – bitte neu verbinden. " : "") + new URL(url).host + " meldet " + r.status + (m ? ": " + String(m).slice(0, 220) : ""), { status: r.status, auth });
     }
-    return o.withHeaders ? { j, headers: r.headers, status: r.status } : j;
+    return o.withHeaders ? { j, headers: r.headers, status: r.status } : o.withText ? { j, txt } : j;
   }
   const q = o => "?" + new URLSearchParams(o).toString();
 
@@ -78,7 +78,7 @@ module.exports = function (D) {
       case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies", response_type: "code", state: st });
       case "linkedin": return B.liAuth + q({ response_type: "code", client_id: c.clientId, redirect_uri: rd, scope: "openid profile w_member_social", state: st });
       case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
-      case "tiktok": return B.ttAuth + q({ client_key: c.clientId, scope: "user.info.basic,video.upload", response_type: "code", redirect_uri: rd, state: st });
+      case "tiktok": return B.ttAuth + q({ client_key: c.clientId, scope: "user.info.basic,video.publish", response_type: "code", redirect_uri: rd, state: st });
       case "pinterest": return B.pinAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "boards:read,pins:read,pins:write,user_accounts:read", state: st });
     }
     throw pubErr("Unbekannter Anbieter");
@@ -129,7 +129,7 @@ module.exports = function (D) {
       const a = await req("POST", B.tt + "/v2/oauth/token/", { form: { client_key: c.clientId, client_secret: c.secret, code, grant_type: "authorization_code", redirect_uri: c.redirect } });
       if (a.error && a.error !== "ok") throw pubErr("TikTok: " + (a.error_description || a.error));
       let name = ""; try { const u = await req("GET", B.tt + "/v2/user/info/" + q({ fields: "open_id,display_name" }), { token: a.access_token }); name = u.data && u.data.user && u.data.user.display_name || ""; } catch (e) {}
-      return [{ platform: "tiktok", account: { id: a.open_id, name: name || "TikTok", handle: "" }, tok: { access: a.access_token, refresh: a.refresh_token, expiresAt: inSec(a.expires_in || 86400), refreshExpiresAt: inSec(a.refresh_expires_in || 31536000) } }];
+      return [{ platform: "tiktok", account: { id: a.open_id, name: name || "TikTok", handle: "" }, tok: { access: a.access_token, refresh: a.refresh_token, scope: a.scope || "", expiresAt: inSec(a.expires_in || 86400), refreshExpiresAt: inSec(a.refresh_expires_in || 31536000) } }];
     }
     if (provider === "pinterest") {
       const a = await req("POST", B.pin + "/v5/oauth/token", { form: { grant_type: "authorization_code", code, redirect_uri: c.redirect, continuous_refresh: "true" }, headers: { Authorization: "Basic " + Buffer.from(c.clientId + ":" + c.secret).toString("base64") } });
@@ -150,7 +150,7 @@ module.exports = function (D) {
     if (platform === "instagram" && left < 20 * 864e5) { const r = await req("GET", B.ig + "/refresh_access_token" + q({ grant_type: "ig_refresh_token", access_token: tok.access })); return Object.assign({}, tok, { access: r.access_token, expiresAt: inSec(r.expires_in || 5184000) }); }
     if (platform === "threads" && left < 20 * 864e5) { const r = await req("GET", B.th + "/refresh_access_token" + q({ grant_type: "th_refresh_token", access_token: tok.access })); return Object.assign({}, tok, { access: r.access_token, expiresAt: inSec(r.expires_in || 5184000) }); }
     if (platform === "youtube" && left < 5 * 60e3) { const r = await req("POST", B.gToken, { form: { client_id: c.clientId, client_secret: c.secret, refresh_token: tok.refresh, grant_type: "refresh_token" } }); return Object.assign({}, tok, { access: r.access_token, expiresAt: inSec(r.expires_in || 3600) }); }
-    if (platform === "tiktok" && left < 30 * 60e3) { const r = await req("POST", B.tt + "/v2/oauth/token/", { form: { client_key: c.clientId, client_secret: c.secret, grant_type: "refresh_token", refresh_token: tok.refresh } }); if (r.error && r.error !== "ok") throw pubErr("TikTok: " + (r.error_description || r.error), { auth: true }); return Object.assign({}, tok, { access: r.access_token, refresh: r.refresh_token || tok.refresh, expiresAt: inSec(r.expires_in || 86400) }); }
+    if (platform === "tiktok" && left < 30 * 60e3) { const r = await req("POST", B.tt + "/v2/oauth/token/", { form: { client_key: c.clientId, client_secret: c.secret, grant_type: "refresh_token", refresh_token: tok.refresh } }); if (r.error && r.error !== "ok") throw pubErr("TikTok: " + (r.error_description || r.error), { auth: true }); return Object.assign({}, tok, { access: r.access_token, refresh: r.refresh_token || tok.refresh, scope: r.scope || tok.scope || "", expiresAt: inSec(r.expires_in || 86400) }); }
     if (platform === "pinterest" && left < 3 * 864e5 && tok.refresh) { const r = await req("POST", B.pin + "/v5/oauth/token", { form: { grant_type: "refresh_token", refresh_token: tok.refresh, continuous_refresh: "true" }, headers: { Authorization: "Basic " + Buffer.from(c.clientId + ":" + c.secret).toString("base64") } }); return Object.assign({}, tok, { access: r.access_token, refresh: r.refresh_token || tok.refresh, expiresAt: inSec(r.expires_in || 2592000) }); }
     if (platform === "bluesky" && left < 5 * 60e3) {
       try { const r = await req("POST", B.bsky + "/xrpc/com.atproto.server.refreshSession", { token: tok.refresh }); return Object.assign({}, tok, { access: r.accessJwt, refresh: r.refreshJwt, expiresAt: inSec(3600) }); }
@@ -289,19 +289,53 @@ module.exports = function (D) {
   }
   // TikTok-Stücke: bis 64 MB als Ganzes (unter 5 MB Pflicht), darüber 10-MB-Stücke, der Rest hängt am letzten Stück (Media Transfer Guide)
   function ttChunks(size) { const MB = 1024 * 1024, chunk = size <= 64 * MB ? size : 10 * MB; return { chunk, n: Math.max(1, Math.floor(size / chunk)) }; }
+  const TT_MSG = { spam_risk_too_many_posts: "Für heute sind auf diesem Konto zu viele Posts – später nochmal.", spam_risk_user_banned_from_posting: "Dieses Konto darf gerade nicht posten.",
+    reached_active_user_cap: "Die App hat ihr Tageslimit bei TikTok erreicht – später nochmal.", unaudited_client_can_only_post_to_private_accounts: "Die App ist von TikTok noch nicht geprüft – bis dahin gehen nur private Posts.",
+    privacy_level_option_mismatch: "Die gewählte Sichtbarkeit gibt es für dieses Konto nicht – im Planer neu wählen.", scope_not_authorized: "Direktes Posten ist nicht freigegeben – TikTok neu verbinden.",
+    access_token_invalid: "Anmeldung abgelaufen – TikTok neu verbinden." };
+  const ttMsg = er => "TikTok: " + (TT_MSG[er.code] || er.message || er.code);
+  const ttAuthErr = code => /token|scope/i.test(String(code || ""));
+  // Konto-Angaben fürs direkte Posten: Spitzname, erlaubte Sichtbarkeiten, ausgeschaltete Interaktionen, Höchstlänge – laut TikTok vor jedem Posten frisch holen
+  async function tiktokCreator(tok) {
+    const r = await req("POST", B.tt + "/v2/post/publish/creator_info/query/", { token: tok.access, json: {}, okStatus: true }), er = r && r.error;
+    if (er && er.code && er.code !== "ok") throw pubErr(ttMsg(er), { auth: ttAuthErr(er.code) });
+    const d = r.data || {};
+    return { nickname: d.creator_nickname || "", username: d.creator_username || "", avatar: d.creator_avatar_url || "", privacy: Array.isArray(d.privacy_level_options) ? d.privacy_level_options : [],
+      commentOff: !!d.comment_disabled, duetOff: !!d.duet_disabled, stitchOff: !!d.stitch_disabled, maxSec: +d.max_video_post_duration_sec || 0 };
+  }
+  // Direkt aufs Profil (Direct Post, Scope video.publish), sobald im Planer die Sichtbarkeit gewählt ist (opts.ttPrivacy, TikTok verlangt die Wahl ohne Vorgabe).
+  // Ohne Wahl oder ohne Freigabe: wie bisher als Entwurf in die TikTok-App. Ungeprüfte App: TikTok nimmt nur „Nur ich“ an → privat posten statt scheitern.
   async function tiktok(ch, tok, m) {
-    const size = fs.statSync(m.video.file).size, { chunk, n } = ttChunks(size);
-    const init = await req("POST", B.tt + "/v2/post/publish/inbox/video/init/", { token: tok.access, json: { source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: chunk, total_chunk_count: n } } });
-    if (init.error && init.error.code && init.error.code !== "ok") throw pubErr("TikTok: " + (init.error.message || init.error.code), { auth: /token/i.test(init.error.code) });
+    const o = m.opts || {}, size = fs.statSync(m.video.file).size, { chunk, n } = ttChunks(size), src = { source: "FILE_UPLOAD", video_size: size, chunk_size: chunk, total_chunk_count: n };
+    const sc = String(tok.scope || ""), direct = !!o.ttPrivacy && /video\.publish/.test(sc);
+    if (!direct && /video\.publish/.test(sc) && !/video\.upload/.test(sc)) throw pubErr("TikTok: Bitte im Planer wählen, wer das Video sehen darf (Bearbeiten → Mehr Optionen → TikTok), dann „nochmal“.");
+    let init, ci = null, privacy = o.ttPrivacy, note = "";
+    if (direct) {
+      ci = await tiktokCreator(tok);
+      if (ci.maxSec && m.duration > ci.maxSec) throw pubErr("TikTok: Das Video ist " + Math.round(m.duration) + " s lang, dieses Konto darf höchstens " + ci.maxSec + " s posten.");
+      if (ci.privacy.length && ci.privacy.indexOf(privacy) < 0) throw pubErr(ttMsg({ code: "privacy_level_option_mismatch" }));
+      const info = pv => ({ title: String(m.caption || "").slice(0, 2200), privacy_level: pv, disable_comment: !o.ttComment || ci.commentOff, disable_duet: !o.ttDuet || ci.duetOff, disable_stitch: !o.ttStitch || ci.stitchOff,
+        brand_organic_toggle: !!o.ttBrandOwn, brand_content_toggle: !!o.ttBrandPaid, is_aigc: !!o.ytAi });
+      const go = pv => req("POST", B.tt + "/v2/post/publish/video/init/", { token: tok.access, json: { post_info: info(pv), source_info: src }, okStatus: true });
+      init = await go(privacy);
+      if (init.error && init.error.code === "unaudited_client_can_only_post_to_private_accounts" && privacy !== "SELF_ONLY" && !o.ttBrandPaid && ci.privacy.indexOf("SELF_ONLY") > -1) {
+        privacy = "SELF_ONLY"; init = await go(privacy);
+        note = "Nur für dich sichtbar gepostet – öffentlich erst, wenn TikTok die App geprüft hat. Bis dahin in der TikTok-App beim Video: ··· → Datenschutzeinstellungen → „Alle“.";
+      }
+    } else init = await req("POST", B.tt + "/v2/post/publish/inbox/video/init/", { token: tok.access, json: { source_info: src }, okStatus: true });
+    if (init.error && init.error.code && init.error.code !== "ok") throw pubErr(ttMsg(init.error), { auth: ttAuthErr(init.error.code) });
     const d = init.data || {}, fd = fs.openSync(m.video.file, "r");
     try {
       for (let i = 0; i < n; i++) { const a = i * chunk, z = i === n - 1 ? size - 1 : a + chunk - 1, buf = Buffer.alloc(z - a + 1); fs.readSync(fd, buf, 0, buf.length, a);
         const r = await fetch(d.upload_url, { method: "PUT", headers: { "Content-Type": "video/mp4", "Content-Length": String(buf.length), "Content-Range": "bytes " + a + "-" + z + "/" + size }, body: buf, signal: AbortSignal.timeout(300000) });
         if (!r.ok && r.status !== 206) throw pubErr("TikTok: Hochladen fehlgeschlagen (" + r.status + ")"); }
     } finally { fs.closeSync(fd); }
-    let status = "";
-    for (let i = 0; i < 24; i++) { const s = await req("POST", B.tt + "/v2/post/publish/status/fetch/", { token: tok.access, json: { publish_id: d.publish_id } }); status = s.data && s.data.status || ""; if (/SEND_TO_USER_INBOX|PUBLISH_COMPLETE/.test(status)) break; if (/FAILED/.test(status)) throw pubErr("TikTok: Verarbeitung fehlgeschlagen (" + (s.data.fail_reason || "") + ")"); await sleep(waitMs); }
-    return { id: d.publish_id, url: "", draft: true, note: "Liegt als Entwurf in deiner TikTok-App – Text aus dem Cockpit kopieren („TikTok-Text kopieren“), einfügen und auf „Posten“ tippen." };
+    let status = "", s = {}, txt = "";
+    for (let i = 0; i < (direct ? 36 : 24); i++) { ({ j: s, txt } = await req("POST", B.tt + "/v2/post/publish/status/fetch/", { token: tok.access, json: { publish_id: d.publish_id }, withText: true })); status = s.data && s.data.status || ""; if (/PUBLISH_COMPLETE/.test(status) || (!direct && /SEND_TO_USER_INBOX/.test(status))) break; if (/FAILED/.test(status)) throw pubErr("TikTok: Verarbeitung fehlgeschlagen (" + (s.data.fail_reason || "") + ")"); await sleep(waitMs); }
+    if (!direct) return { id: d.publish_id, url: "", draft: true, note: "Liegt als Entwurf in deiner TikTok-App (Posteingang → System-Benachrichtigungen) – Text aus dem Cockpit kopieren („TikTok-Text kopieren“), einfügen und auf „Posten“ tippen." };
+    const pid = (String(txt).match(/"publi[a-z]*_available_post_id"\s*:\s*\[\s*"?(\d+)/) || [])[1];   // aus dem Rohtext (TikTok schreibt „publicaly“): 19-stellige IDs verliert JSON.parse
+    if (status !== "PUBLISH_COMPLETE") note = (note ? note + " " : "") + "TikTok verarbeitet das Video noch – es erscheint in ein paar Minuten auf deinem Profil.";
+    return { id: String(pid || d.publish_id || ""), url: pid && ci.username ? "https://www.tiktok.com/@" + ci.username + "/video/" + pid : ci.username ? "https://www.tiktok.com/@" + ci.username : "", note, privacy };
   }
   async function pinterest(ch, tok, m) {
     const ms = m.images.length > 1 ? { source_type: "multiple_image_urls", items: m.images.slice(0, 5).map(im => ({ url: im.url, title: String(m.title || "").slice(0, 100), description: String(m.caption).slice(0, 500), link: m.link || "" })) } : { source_type: "image_url", url: m.images[0].url };
@@ -789,7 +823,7 @@ module.exports = function (D) {
     throw pubErr("Unbekannte Plattform");
   }
   return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
-    inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE, ttChunks } };
+    inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, tiktokCreator, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE, ttChunks } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;

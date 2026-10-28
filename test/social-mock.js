@@ -109,12 +109,21 @@ module.exports = function () {
         if (p === "/ytput/1") { S.uploads.yt = raw.length; const vid = id("yt"); S.posts.push({ pf: "youtube", id: vid, title: S.ytMeta.snippet.title }); return end(200, { id: vid }); }
         if (p === "/g/token") return end(200, { access_token: "yt-acc-2", expires_in: 3600 });
         // ── TikTok ──
-        if (p === "/tt/v2/post/publish/inbox/video/init/") { const si = json.source_info || {}; if (si.source !== "FILE_UPLOAD" || !si.video_size) return end(400, { error: { code: "invalid_params" } });
+        // Direct Post: Kontoangaben, Sichtbarkeit muss aus privacy_level_options sein; S.ttUnaudited = ungeprüfte App (nur SELF_ONLY)
+        if (p === "/tt/v2/post/publish/creator_info/query/") return end(200, { data: { creator_nickname: "FS Creative", creator_username: "fs.creative.at", creator_avatar_url: "", privacy_level_options: ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"],
+          comment_disabled: false, duet_disabled: false, stitch_disabled: true, max_video_post_duration_sec: 600 }, error: { code: "ok" } });
+        const direct = p === "/tt/v2/post/publish/video/init/";
+        if (p === "/tt/v2/post/publish/inbox/video/init/" || direct) { const si = json.source_info || {}, pi = json.post_info || {}; if (si.source !== "FILE_UPLOAD" || !si.video_size) return end(400, { error: { code: "invalid_params" } });
           const MB = 1024 * 1024, cs = si.chunk_size, vs = si.video_size;   // Regeln wie bei TikTok: 5–64 MB je Stück, unter 5 MB als Ganzes, Anzahl abgerundet
           if (!(cs > 0) || cs > 64 * MB || cs > vs || (vs < 5 * MB ? cs !== vs : cs < 5 * MB) || (vs > 64 * MB && cs === vs) || si.total_chunk_count !== Math.floor(vs / cs)) return end(400, { error: { code: "invalid_params", message: "The chunk size is invalid" } });
-          S.tt = { size: vs, got: 0 }; return end(200, { data: { publish_id: "pub1", upload_url: "http://" + req.headers.host + "/ttup" }, error: { code: "ok" } }); }
+          if (direct) { (S.ttDirect = S.ttDirect || []).push(pi);
+            if (["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"].indexOf(pi.privacy_level) < 0) return end(400, { error: { code: "privacy_level_option_mismatch" } });
+            if (S.ttUnaudited && pi.privacy_level !== "SELF_ONLY") return end(403, { error: { code: "unaudited_client_can_only_post_to_private_accounts", message: "Please review our integration guidelines" } }); }
+          S.tt = { size: vs, got: 0, direct, privacy: pi.privacy_level }; return end(200, { data: { publish_id: direct ? "pub2" : "pub1", upload_url: "http://" + req.headers.host + "/ttup" }, error: { code: "ok" } }); }
         if (p === "/ttup") { S.tt.got += raw.length; return end(201, ""); }
-        if (p === "/tt/v2/post/publish/status/fetch/") { S.posts.push({ pf: "tiktok", bytes: S.tt.got, size: S.tt.size }); return end(200, { data: { status: "SEND_TO_USER_INBOX" }, error: { code: "ok" } }); }
+        if (p === "/tt/v2/post/publish/status/fetch/") { S.posts.push({ pf: "tiktok", bytes: S.tt.got, size: S.tt.size, direct: S.tt.direct });
+          if (S.tt.direct) return end(200, '{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[' + (S.tt.privacy === "SELF_ONLY" ? "" : "7431234567890123456") + '],"uploaded_bytes":' + S.tt.got + '},"error":{"code":"ok"}}');   // 19-stellige Zahl wie bei TikTok
+          return end(200, { data: { status: "SEND_TO_USER_INBOX" }, error: { code: "ok" } }); }
         return end(404, { error: { message: "unbekannt " + p } });
       } catch (e) { return end(500, { error: { message: String(e.message || e) } }); }
     });

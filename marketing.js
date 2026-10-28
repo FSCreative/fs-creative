@@ -323,7 +323,7 @@ module.exports = function (D) {
       }
       if (await POSTS.handleAdmin(req, res, u, p)) return;
       return J(res, 404, { ok: false, error: "Nicht gefunden" });
-    } catch (e) { if (!res.headersSent) return J(res, e.status || 500, { ok: false, error: String(e.message || e).slice(0, 300) }); try { res.end(); } catch (e2) {} }
+    } catch (e) { if (!res.headersSent) return J(res, e.status || 500, Object.assign({ ok: false, error: String(e.message || e).slice(0, 300) }, e.tiktok ? { tiktok: true } : {})); try { res.end(); } catch (e2) {} }
   }
   function handlePublic(req, res, p) { try { return POSTS.handlePublic(req, res, p); } catch (e) { return J(res, 404, { ok: false }); } }
   return { handleAdmin, handlePublic, posts: POSTS, tick: () => POSTS.tick(), googleApp: () => POSTS.appCfg("google"), _test: { parseParticipants, drawIndices, protocol, kochduRange, state, draw, runQueue: () => runQueue(), queue: Q, posts: POSTS, publisher: PUB } };
