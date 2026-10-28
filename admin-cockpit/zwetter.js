@@ -21,7 +21,7 @@ function fogTex(){
 
 function Scene(host,w){
   this.host=host; this.w=w||{}; this.ic=this.w.icon||"cloud"; this.day=isDay();
-  var c=this.c=document.createElement("canvas"); c.className="ag-wx"; c.setAttribute("aria-hidden","true"); host.insertBefore(c,host.firstChild);
+  var c=this.c=document.createElement("canvas"); c.className="ag-wxfx"; c.setAttribute("aria-hidden","true"); host.insertBefore(c,host.firstChild);
   this.g=c.getContext("2d"); this.parts=[]; this.t0=performance.now(); this.flash=0; this.nextFlash=this.t0+4000+Math.random()*6000;
   this.size(); this.seed(); var self=this;
   this.onR=function(){ self.size(); self.seed(); if(still()) self.frame(self.t0+16); }; window.addEventListener("resize",this.onR);
@@ -49,7 +49,7 @@ Scene.prototype.frame=function(t){
     g.fillStyle=sg; g.fillRect(0,0,W,H);
     var pulse=0.5+0.5*Math.sin(sec*0.4); g.fillStyle="rgba(255,240,210,"+(0.05+pulse*0.03)+")"; g.beginPath(); g.arc(gx,gy+H*0.12,H*0.32,0,6.283); g.fill();
   }
-  if(/cloud|rain|storm|snow|fog/.test(ic)&&ic!=="cloudSun"){ var cg=g.createLinearGradient(0,0,0,H); cg.addColorStop(0,"rgba(150,165,185,"+(ic==="cloud"?0.16:0.22)+")"); cg.addColorStop(1,"rgba(150,165,185,0)"); g.fillStyle=cg; g.fillRect(0,0,W,H); }
+  if(/cloud|rain|storm|snow|fog/.test(ic)&&ic!=="cloudSun"){ var cg=g.createLinearGradient(0,0,0,H); cg.addColorStop(0,"rgba(150,165,185,"+(ic==="cloud"?0.09:0.14)+")"); cg.addColorStop(1,"rgba(150,165,185,0)"); g.fillStyle=cg; g.fillRect(0,0,W,H); }
   if(!this.day){ var ng=g.createLinearGradient(0,0,0,H); ng.addColorStop(0,"rgba(10,20,45,0.28)"); ng.addColorStop(1,"rgba(10,20,45,0)"); g.fillStyle=ng; g.fillRect(0,0,W,H); }
   /* Nebel / Wolkenschleier: weiche Textur, langsam ziehend (zwei Lagen gegeneinander) */
   if(/fog|cloud|rain|snow|storm/.test(ic)){
@@ -91,9 +91,9 @@ setInterval(mount,5*60*1000);   // Tag/Nacht-Wechsel, neues Wetter
 setTimeout(mount,1200);
 
 F.css(
-".ag-hero.has-wx{position:relative;isolation:isolate}.ag-hero.has-wx>*:not(.ag-wx){position:relative;z-index:1}"+
+".ag-hero.has-wx{position:relative;isolation:isolate}.ag-hero.has-wx>*:not(.ag-wxfx){position:relative;z-index:1}"+
 /* Canvas deckt den Kopfbereich ab, Ränder weich auslaufen lassen */
-".ag-wx{position:absolute;left:-12px;top:-14px;z-index:0;pointer-events:none;"+
-"-webkit-mask-image:linear-gradient(180deg,#000 0,#000 72%,transparent 100%);mask-image:linear-gradient(180deg,#000 0,#000 72%,transparent 100%)}"
+".ag-wxfx{position:absolute;left:-12px;top:-14px;z-index:0;pointer-events:none;"+
+"-webkit-mask-image:radial-gradient(ellipse 70% 75% at 42% 42%,#000 35%,transparent 100%);mask-image:radial-gradient(ellipse 70% 75% at 42% 42%,#000 35%,transparent 100%)}"
 );
 })();
