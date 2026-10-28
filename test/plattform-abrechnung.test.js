@@ -470,8 +470,28 @@ function createMock() {
     const mk = async (gp) => (await L.request("POST", "/Invoice/Factory/saveInvoice", { body: { invoice: { header: "Rechnung", status: "100", invoiceType: "RE", contact: { id: "1", objectName: "Contact" } },
       invoicePosSave: [Object.assign({ name: "VALUERO", quantity: 1, price: 289.63, taxRate: 20 }, gp ? { priceGross: 347.55, grossPricing: true } : {})] } })).objects.invoice;
     assert.strictEqual((await mk(false)).sumGross, "347.56"); assert.strictEqual((await mk(true)).sumGross, "347.55");
-    const srcTxt = fs.readFileSync(path.join(ROOT, "server.js"), "utf8"), fnTxt = srcTxt.slice(srcTxt.indexOf("async function sevCreateInvoice"), srcTxt.indexOf("async function sevBook"));
-    assert.ok(/priceGross: Math\.round\(parseFloat\(i\.priceGross\) \* 100\) \/ 100, grossPricing: true/.test(fnTxt), "Cockpit-Rechnungen schicken Bruttopreis");
+    assert.deepStrictEqual(T.sevPosPrice({ priceGross: "347.55" }, 20), { price: 289.63, priceGross: 347.55, grossPricing: true }, "brutto eingegeben → Bruttopreis maßgeblich");
+  });
+  await t("A10: netto eingegebene Positionen bleiben netto-genau; abgeleitete Belege (wiederkehrend, Abschlag/Schluss) behalten den Bruttopreis; PDF-Einzelpreis passt zur Zeilensumme", async () => {
+    const { L } = finSetup([], null, "2026-11-03"); await L.load();
+    const save = async (pos) => (await L.request("POST", "/Invoice/Factory/saveInvoice", { body: { invoice: { header: "Rechnung", status: "100", invoiceType: "RE", contact: { id: "1", objectName: "Contact" } }, invoicePosSave: pos } })).objects.invoice;
+    // Firmenposition netto angeboten: 7 × 10,04 netto → 70,28 netto (nicht 70,29); brutto eingegeben 7 × 12,05 → 84,35 brutto
+    const pN = T.sevPosPrice({ priceGross: "12.05", priceNet: 10.04 }, 20); assert.deepStrictEqual(pN, { price: 10.04 });
+    let inv = await save([Object.assign({ name: "Netto", quantity: 7, taxRate: 20 }, pN)]); assert.strictEqual(inv.sumNet, "70.28"); assert.strictEqual(inv.sumGross, "84.34");
+    inv = await save([Object.assign({ name: "Brutto", quantity: 7, taxRate: 20 }, T.sevPosPrice({ priceGross: "12.05" }, 20))]); assert.strictEqual(inv.sumGross, "84.35");
+    // wiederkehrende Rechnung aus einer Bruttopreis-Rechnung (3 × 10,00 brutto = 30,00)
+    const src = await save([{ name: "Hosting", quantity: 3, price: 8.33, priceGross: 10, grossPricing: true, taxRate: 20 }]); assert.strictEqual(src.sumGross, "30.00");
+    const w = (await L.request("POST", "/Fin/recurring", { body: { fromId: src.id, interval: "1M", start: "2026-11-01" } })).objects;
+    const made = await L.recurringRun(w.id); assert.strictEqual(made[0].invoice.sumGross, "30.00", "nicht 29,99");
+    // Angebot mit Bruttopreis 100,00 → 1. Abschlag 30 % = 30,00 brutto, Schlussrechnung 100,00 − 30,00 = 70,00 brutto
+    const od = (await L.request("POST", "/Order/Factory/saveOrder", { body: { order: { header: "Angebot", status: "100", orderType: "AN", contact: { id: "1", objectName: "Contact" } }, orderPosSave: [{ name: "Website", quantity: 1, price: 83.33, priceGross: 100, grossPricing: true, taxRate: 20 }] } })).objects.order;
+    const ar = (await L.request("POST", "/Fin/partialFromOrder", { body: { orderId: od.id, percent: 30 } })).objects; assert.strictEqual(ar.sumGross, "30.00");
+    await L.request("PUT", "/Invoice/" + ar.id + "/sendBy", { body: { sendType: "VPDF" } }); const arI = L.get("Invoice", ar.id); arI.status = "1000"; arI.paidAmount = arI.sumGross; await L.save("Invoice", arI);
+    const er = (await L.request("POST", "/Fin/finalFromOrder", { body: { orderId: od.id } })).objects; assert.strictEqual(er.sumGross, "70.00");
+    // PDF: 3 × 10,00 brutto, netto angezeigt → Einzelpreis 8,3333 (3 × 8,33 = 24,99 ≠ 25,00); passt der Cent-Wert, bleibt alles wie bisher
+    const PDF = require(path.join(ROOT, "fin-pdf.js"));
+    assert.deepStrictEqual(PDF.unitOf({ quantity: "3", price: "8.33", priceGross: "10.00", grossPricing: true, taxRate: "20", sumNet: "25.00", sumGross: "30.00" }, true), { unit: 8.3333, sum: 25, cents: false });
+    assert.deepStrictEqual(PDF.unitOf({ quantity: "1", price: "25.00", priceGross: "30.00", taxRate: "20", sumNet: "25.00", sumGross: "30.00" }, true), { unit: 25, sum: 25, cents: true });
   });
 
   // Teil 4: Server mit Attrappen

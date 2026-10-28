@@ -1579,6 +1579,14 @@ async function sevMeta(force) {
   return SEV_META.data;
 }
 function sevNet(gross, rate) { return Math.round(gross / (1 + (rate || 0) / 100) * 100) / 100; }
+// Preis einer Position (X3/A10): Bruttopreis maßgeblich nur, wo brutto eingegeben bzw. angeboten wird (Privatkunden, Mollie-, VALUERO-,
+// Blitzdings-Beträge) – die Buchhaltung rechnet netto/USt cent-genau vom Brutto zurück. Netto eingegebene Positionen (priceNet: Firmenangebot,
+// Website-Preise netto, KI-Angebot) bleiben netto-genau, sonst ändert sich das Netto bei Menge > 1 um Cents (7 × 10,04 → 70,29 statt 70,28).
+function sevPosPrice(i, r) {
+  const pn = i.priceNet === "" || i.priceNet == null ? NaN : parseFloat(i.priceNet), pg = parseFloat(i.priceGross);
+  if (isFinite(pn)) return { price: Math.round(pn * 100) / 100 };
+  return { price: sevNet(pg, r), priceGross: Math.round(pg * 100) / 100, grossPricing: true };
+}
 // sevDesk-Länder (StaticCountry) einmal laden: ISO-Code → ID; Fallback Österreich
 let SEV_COUNTRIES = null;
 const COUNTRY_NAMES = { at: "Österreich", de: "Deutschland", ch: "Schweiz", it: "Italien", li: "Liechtenstein", fr: "Frankreich", nl: "Niederlande", be: "Belgien", lu: "Luxemburg", es: "Spanien", pl: "Polen", cz: "Tschechien", sk: "Slowakei", hu: "Ungarn", si: "Slowenien", hr: "Kroatien", dk: "Dänemark", se: "Schweden", gb: "Vereinigtes Königreich", us: "USA" };
@@ -1660,8 +1668,8 @@ async function sevCreateInvoice(pl) {
       discount: 0, status: 100, taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", invoiceType: "RE", currency: "EUR", showNet: "1", smallSettlement: 0 },
     invoicePosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
       const disc = Math.max(0, Math.min(100, parseFloat(i.discount) || 0));   // Rabatt je Position in % (z. B. aus Angebot/Schlussrechnung)
-      // Bruttopreis maßgeblich (X3): die Buchhaltung rechnet netto/USt cent-genau vom Brutto zurück – sonst lag jede 6. Rechnung 1 Cent über dem Sollbetrag
-      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), priceGross: Math.round(parseFloat(i.priceGross) * 100) / 100, grossPricing: true, name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
+      // Bruttopreis maßgeblich (X3) außer bei netto eingegebenen Preisen (A10): sevPosPrice
+      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
     invoicePosDelete: null, takeDefaultAddress: false,
   };
   // Optional (KI-Rechnung): Steuerregel nach sevDesk Update 2.0 (z. B. Reverse Charge), Leistungszeitraum bis
@@ -1782,7 +1790,7 @@ async function sevCreateOffer(pl) {
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
       taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false },
     orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
-      return { objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), priceGross: Math.round(parseFloat(i.priceGross) * 100) / 100, grossPricing: true, name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),   // Bruttopreis maßgeblich (X3)
+      return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
     orderPosDelete: null,
   };
   const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
@@ -2521,7 +2529,7 @@ function abgleichBuild(ctx) {
     // Rechnung für einen Zeitraum: fac = Anteil am Abrechnungszeitraum (Jahresmodus: angefangene Monate ÷ 12)
     const mk = (f, t, fac) => { const sp = deDate(f) + " – " + deDate(t), mo = monthsIncl(f, t), part = fac < 0.999 ? " (anteilig " + mo + " von " + n + " Monaten)" : "", ls = lines.map(l => ({ name: l.name, amount: round2(l.amount * fac) }));
       return { amount: round2(ls.reduce((a, l) => a + l.amount, 0)), action: { kind: "site", title: "Rechnung · " + s.name, contactName: c.customer || s.name, deliveryDate: f, deliveryDateUntil: t, headText: "Leistungen für " + (s.domain || s.name) + " im Zeitraum " + sp + ".",
-        items: ls.map(l => ({ name: l.name, text: "Zeitraum " + sp + part, qty: 1, priceGross: round2(P.gross ? l.amount : l.amount * (1 + tax / 100)), taxRate: tax })),
+        items: ls.map(l => Object.assign({ name: l.name, text: "Zeitraum " + sp + part, qty: 1, priceGross: round2(P.gross ? l.amount : l.amount * (1 + tax / 100)), taxRate: tax }, P.gross ? {} : { priceNet: l.amount })),   // Nettopreise bleiben netto-genau (A10)
         after: { billing: { key: "site:" + s.key, from: f, to: t, label: s.name }, siteCustomer: c.customer ? null : s.key } } }; };
     const cur = mk(from, to, yearly ? Math.min(12, Math.max(1, monthsIncl(from, to))) / 12 : 1);
     items.push({ src: "website", key: "site:" + s.key, name: c.customer || s.name, sub: (s.domain || s.name) + " · " + (storno && due ? "storniert – wieder zu verrechnen" : billedUntil ? "verrechnet bis " + deDate(billedUntil) : "noch nie verrechnet"),
@@ -5498,4 +5506,4 @@ if (require.main === module) {
 
 module.exports = { renderIndex, ROUTE_META, NOINDEX_ROUTES };
 // nur für Tests (test/abgleich-storno.test.js): Abgleich-Rechenkern direkt prüfen
-if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, sevSummary, finApiIdem, kantineurStats, kantineurV2, notePid, blitzReportReconcile, blitzReportState, blitzReportSave, blitzReportRevoke, BLITZ_REPORT_FILE };
+if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, sevSummary, finApiIdem, kantineurStats, kantineurV2, notePid, blitzReportReconcile, blitzReportState, blitzReportSave, blitzReportRevoke, BLITZ_REPORT_FILE, sevPosPrice };

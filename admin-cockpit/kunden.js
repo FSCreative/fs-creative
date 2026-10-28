@@ -164,7 +164,7 @@ F.action("leadoffer",function(id){ var l=F.D.leads.find(function(y){return y.id=
   var g=+l.value||0;
   withMeta(l,function(){ F.openOffer(Object.assign(leadPre(l),{title:"Angebot · "+(l.company||l.name),
     header:"Angebot"+(l.topic?" "+l.topic:""),headText:"Vielen Dank für Ihre Anfrage"+(l.topic?" zum Thema „"+l.topic+"“":"")+". Gerne biete ich Ihnen folgende Leistungen an:",
-    items:[{name:l.topic||"Website",priceGross:g?String(Math.round(g*1.2*100)/100):"",taxRate:20,qty:1}]})); }); });
+    items:[{name:l.topic||"Website",priceGross:g?String(Math.round(g*1.2*100)/100):"",priceNet:g?g:undefined,taxRate:20,qty:1}]})); }); });   /* Wert netto → netto-genau (A10) */
 function leadPost(body){ return F.api("/admin/api/leads",{body:body}).then(function(j){ if(!j||!j.ok){ F.toast("Speichern fehlgeschlagen: "+((j&&j.error)||""),true); return null; } F.D.leads=j.leads; return j; })
   .catch(function(){ F.toast("Keine Verbindung zum Server.",true); return null; }); }
 

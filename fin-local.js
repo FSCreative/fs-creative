@@ -721,6 +721,8 @@ module.exports = function (D) {
     throw err(400, "unbekannte Kassen-Aktion");
   }
 
+  // Bruttopreis-Position (X3) bleibt beim Übernehmen in einen abgeleiteten Beleg bruttogenau (A10): Flag, Bruttopreis und Rabatt mitnehmen
+  const gpOf = p => (p && (p.grossPricing === true || p.grossPricing === "true") && p.priceGross != null ? { grossPricing: true, priceGross: p.priceGross, discount: p.discount } : {});
   // ── Abschlags- und Schlussrechnung aus einem Angebot/Auftrag ──
   function ordersInv(orderId) { return all("Invoice").filter(i => i.origin && String(i.origin.id) === String(orderId) && String(i.origin.objectName || "Order") === "Order"); }
   async function partialFromOrder(orderId, b) {
@@ -732,12 +734,13 @@ module.exports = function (D) {
     if (!(f > 0 && f <= 1)) throw err(400, "Prozent oder Betrag angeben");
     const ars = ordersInv(orderId).filter(i => String(i.invoiceType) === "AR" && !i.cancelled), sofar = ars.reduce((a, i) => a + (+i.sumNet || 0), 0);
     if (sofar + net * f > net + 0.01) throw err(400, "Abschläge wären höher als das Angebot");
-    const byRate = {}; pos.forEach(p => { const r = String(+p.taxRate || 0); byRate[r] = (byRate[r] || 0) + (+p.sumNet || 0); });
+    const byRate = {}, gRate = {}, allGp = {}; pos.forEach(p => { const r = String(+p.taxRate || 0); byRate[r] = (byRate[r] || 0) + (+p.sumNet || 0); gRate[r] = (gRate[r] || 0) + (+p.sumGross || 0); allGp[r] = (allGp[r] !== false) && !!gpOf(p).grossPricing; });
     const nr = ars.length + 1, pct = Math.round(f * 1000) / 10;
     const body = { invoice: { contact: od.contact, address: od.address, addressCountry: od.addressCountry, contactPerson: od.contactPerson, invoiceType: "AR", status: "100", header: nr + ". Abschlagsrechnung zu " + (od.orderNumber || "Angebot"),
       headText: "Vereinbarungsgemäß stellen wir Ihnen die " + nr + ". Abschlagszahlung (" + String(pct).replace(".", ",") + " %) für das Angebot " + (od.orderNumber || "") + " in Rechnung:", footText: "Die Abschlagszahlung wird mit der Schlussrechnung verrechnet. Zahlbar innerhalb von 14 Tagen.", timeToPay: "14",
       taxType: od.taxType, taxSet: od.taxSet, taxRule: od.taxRule, taxText: od.taxText, origin: ref("Order", od.id), deliveryDate: iso(today()) },
-      invoicePosSave: Object.keys(byRate).map((r, k) => ({ name: "Abschlag " + String(pct).replace(".", ",") + " % auf " + (od.orderNumber || "Angebot") + (Object.keys(byRate).length > 1 ? " (" + r + " %)" : ""), quantity: 1, price: s2(byRate[r] * f), taxRate: r, positionNumber: String(k), unity: ref("Unity", 1) })) };
+      invoicePosSave: Object.keys(byRate).map((r, k) => Object.assign({ name: "Abschlag " + String(pct).replace(".", ",") + " % auf " + (od.orderNumber || "Angebot") + (Object.keys(byRate).length > 1 ? " (" + r + " %)" : ""), quantity: 1, price: s2(byRate[r] * f), taxRate: r, positionNumber: String(k), unity: ref("Unity", 1) },
+        allGp[r] ? { grossPricing: true, priceGross: s2(gRate[r] * f) } : {})) };   // Bruttopreis-Angebot: Abschlag vom Brutto (A10)
     const res = await saveInvoice(body);
     od.status = "750"; await save("Order", od);
     return { objects: res.objects.invoice };
@@ -749,9 +752,10 @@ module.exports = function (D) {
     if (!ars.length) throw err(400, "Keine Abschlagsrechnungen – bitte normale Rechnung aus dem Angebot erstellen");
     const unpaid = ars.filter(i => String(i.invoiceType) === "AR" && String(i.status) !== "1000"); if (unpaid.length) throw err(400, "Schlussrechnung erst, wenn alle Abschläge bezahlt sind (" + unpaid.map(i => i.invoiceNumber || "Entwurf").join(", ") + ")");
     const day = today(); const late = ars.find(i => (dayOf(i.invoiceDate) || "") > day); if (late) throw err(400, "Datum der Schlussrechnung liegt vor einer Abschlagsrechnung");
-    const save0 = positionsOf("Order", od.id).map((p, k) => ({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part }));
+    const save0 = positionsOf("Order", od.id).map((p, k) => Object.assign({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part }, gpOf(p)));   // A10
     let k = save0.length;
-    for (const a of ars) for (const p of positionsOf("Invoice", a.id)) save0.push({ name: "abzüglich " + (String(a.invoiceType) === "TR" ? "Teilrechnung " : "Abschlagsrechnung ") + (a.invoiceNumber || "") + " vom " + (dayOf(a.invoiceDate) || "").split("-").reverse().join("."), quantity: "1", price: s2(-(+p.sumNet || 0)), taxRate: p.taxRate, positionNumber: String(k++), unity: ref("Unity", 1) });
+    for (const a of ars) for (const p of positionsOf("Invoice", a.id)) save0.push(Object.assign({ name: "abzüglich " + (String(a.invoiceType) === "TR" ? "Teilrechnung " : "Abschlagsrechnung ") + (a.invoiceNumber || "") + " vom " + (dayOf(a.invoiceDate) || "").split("-").reverse().join("."), quantity: "1", price: s2(-(+p.sumNet || 0)), taxRate: p.taxRate, positionNumber: String(k++), unity: ref("Unity", 1) },
+      gpOf(p).grossPricing ? { grossPricing: true, priceGross: s2(-(+p.sumGross || 0)) } : {}));   // Abzug genau wie der Abschlag (brutto bzw. netto)
     const res = await saveInvoice({ invoice: { contact: od.contact, address: od.address, addressCountry: od.addressCountry, contactPerson: od.contactPerson, invoiceType: "ER", status: "100", header: "Schlussrechnung zu " + (od.orderNumber || "Angebot"),
       headText: "Für die vereinbarten Leistungen laut " + (od.orderNumber || "Angebot") + " stellen wir Ihnen abzüglich der geleisteten Abschlagszahlungen in Rechnung:", footText: "Zahlbar innerhalb von 14 Tagen ohne Abzug.", timeToPay: "14",
       taxType: od.taxType, taxSet: od.taxSet, taxRule: od.taxRule, taxText: od.taxText, origin: ref("Order", od.id), deliveryDate: iso(dayOf(b && b.deliveryDate) || day) }, invoicePosSave: save0 });
@@ -781,7 +785,7 @@ module.exports = function (D) {
     const from = w.recur.advance ? d : prevD, until = w.recur.advance ? minus1(nextD) : minus1(d), fmt = x => x.split("-").reverse().join(".");
     const body = { invoice: { contact: w.contact, address: w.address, addressCountry: w.addressCountry, contactPerson: w.contactPerson, invoiceType: "RE", status: "100", header: w.header || "Rechnung", headText: (w.headText || "") + (w.recur.periodText !== false ? "<br>Leistungszeitraum: " + fmt(from) + " – " + fmt(until) : ""), footText: w.footText, timeToPay: w.timeToPay || "14",
       taxType: w.taxType, taxSet: w.taxSet, taxRule: w.taxRule, taxText: w.taxText, invoiceDate: iso(d), deliveryDate: iso(from), deliveryDateUntil: iso(until), origin: ref("Invoice", w.id), showNet: w.showNet },
-      invoicePosSave: positionsOf("Invoice", w.id).map((p, k) => ({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part })) };
+      invoicePosSave: positionsOf("Invoice", w.id).map((p, k) => Object.assign({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part }, gpOf(p))) };   // Vorlage 30,00 → Rechnung 30,00 (A10)
     const r = (await saveInvoice(body)).objects.invoice;
     w.recur.last = d; w.recur.lastInvoice = String(r.id); w.recur.next = addIv(d, iv, 1);
     if (w.recur.end && w.recur.next > w.recur.end) w.recur.active = false;

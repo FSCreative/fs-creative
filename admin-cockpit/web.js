@@ -467,7 +467,7 @@ function billSite(key){
   var span=de(from)+" – "+de(to);
   var go=function(){ F.closeDrawer(); F.openInvoice({title:"Rechnung · "+s.name,contactName:c.customer||s.name,address:c.customer||s.name,deliveryDate:from,
     headText:"Leistungen für "+(s.domain||s.name)+" im Zeitraum "+span+".",
-    items:lines.map(function(l){ return {name:l.name,text:"Zeitraum "+span,qty:1,priceGross:Math.round((P.gross?l.amount:l.amount*(1+tax/100))*100)/100,taxRate:tax}; }),
+    items:lines.map(function(l){ var it={name:l.name,text:"Zeitraum "+span,qty:1,priceGross:Math.round((P.gross?l.amount:l.amount*(1+tax/100))*100)/100,taxRate:tax}; if(!P.gross) it.priceNet=l.amount; return it; }),   /* Nettopreise bleiben netto-genau (A10) */
     after:{billing:{key:"site:"+key,from:from,to:to,label:s.name},siteCustomer:c.customer?null:key},
     onDone:function(){ loadBilling(); }}); };
   if(c.billedUntil&&!siteDue(c)) F.confirm("Bereits verrechnet bis "+de(c.billedUntil)+". Trotzdem den nächsten Zeitraum ("+span+") verrechnen?","Weiter",go);

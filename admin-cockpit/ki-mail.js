@@ -104,7 +104,7 @@ F.action("kileadoffer",function(id){
   var r=K.st&&K.st.leads&&K.st.leads[id], l=F.D.leads.find(function(y){return y.id===id;}); if(!r||!l||!F.openOffer) return;
   F.openOffer({title:"Angebot · "+(l.company||l.name),contactName:l.company||l.name,email:l.email,address:[l.company,l.company&&l.name!==l.company?l.name:""].filter(Boolean).join("\n")||l.name,
     header:"Angebot"+(l.topic?" "+l.topic:""),headText:"Vielen Dank für Ihre Anfrage"+(l.topic?" zum Thema „"+l.topic+"“":"")+". Gerne biete ich Ihnen folgende Leistungen an:",
-    items:(r.positions||[]).map(function(p){ return {name:p.name,text:p.desc,qty:p.qty,priceGross:String(Math.round(p.priceNet*1.2*100)/100),taxRate:20}; }),after:{leadId:l.id}});
+    items:(r.positions||[]).map(function(p){ return {name:p.name,text:p.desc,qty:p.qty,priceGross:String(Math.round(p.priceNet*1.2*100)/100),priceNet:p.priceNet,taxRate:20}; }),after:{leadId:l.id}});   /* netto angeboten → netto-genau (A10) */
 });
 K.onLead=function(id){ if(F.UI.leadSel===id&&F.openLead&&document.getElementById("drawer").classList.contains("on")) F.openLead(id); };
 F.action("kileadfill",function(id){

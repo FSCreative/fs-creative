@@ -3,12 +3,22 @@
 // dunkler Kopf mit Glühbirnen-Logo, Dokumentart + Nummer + Referenz rechts oben, gelber Akzentstreifen,
 // Anschrift links / Infoblock mit gelber Linie rechts, dunkler Tabellenkopf, Zahlbetrag in gelber Box, dunkle 4-spaltige Fußzeile.
 const path = require("path"), fs = require("fs");
+// Einzelpreis einer Position so genau, dass Menge × Einzelpreis die Zeilensumme ergibt (A10): Bruttopreis-Positionen netto (3 × 8,3333 = 25,00),
+// Nettopreis-Positionen brutto; reicht der auf Cent gerundete Wert, bleibt die Anzeige wie bisher. → { unit, sum, cents: true = 2 Nachkommastellen }
+function unitOf(p, showNet) {
+  const q = +p.quantity || 0, sum = showNet ? +p.sumNet : +p.sumGross, gp = p.grossPricing === true || p.grossPricing === "true", rt = +p.taxRate || 0, dsc = +p.discount || 0;
+  const exact = showNet ? (gp && p.priceGross != null ? +p.priceGross / (1 + rt / 100) : +p.price) : (gp || p.priceGross == null ? +p.priceGross : +p.price * (1 + rt / 100));
+  const r2u = Math.round(exact * 100) / 100, fits = Math.abs(Math.round(r2u * q * (1 - dsc / 100) * 100) / 100 - sum) < 0.005;
+  return { unit: fits ? r2u : Math.round(exact * 10000) / 10000, sum, cents: fits };
+}
 module.exports = function (D) {
   const { firm } = D;                 // firm(): Firmendaten (Name, Adresse, UID, Bank …)
   const DARK = "#1f1d1e", YEL = "#ffe600", INK = "#1f1d1e", MUTED = "#6b6b6b", LINE = "#e3e1dc", ZEBRA = "#f7f6f3", SOFT = "#bdbab3";
   const file = n => [path.join(__dirname, "logos", n)].find(p => { try { return fs.statSync(p).isFile(); } catch (e) { return false; } });
   const LOGO_W = file("Logo Glühbirne Weiss.png") || file("Logo Glühbirne.png");
   const eur = n => { const v = Math.round((+n || 0) * 100) / 100, a = Math.abs(v).toFixed(2).split("."); return (v < 0 ? "- " : "") + "€ " + a[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + a[1]; };
+  // bis 4 Nachkommastellen (mindestens 2) – Einzelpreis, wenn der Cent-Wert die Zeilensumme nicht ergibt
+  const eurX = n => { const v = Math.round((+n || 0) * 10000) / 10000, a = Math.abs(v).toFixed(4).replace(/0{1,2}$/, "").split("."); return (v < 0 ? "- " : "") + "€ " + a[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + a[1]; };
   const de = v => { const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
   const addDays = (v, n) => { const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n)); return d.toISOString().slice(0, 10); };
   // HTML → Text; Einrückungen aus dem HTML-Quelltext weg; sevDesk-Platzhalter: [%PAYPAL%] (PayPal-Link, gibt es hier nicht) entfällt
@@ -108,7 +118,7 @@ module.exports = function (D) {
     header();
     const unitName = u => { const x = u && u.id && ctx.get("Unity", u.id); return x ? (x.translationCode === "UNITY_PIECE" ? "Stk" : (x.name || "")) : ""; };
     pos.forEach((p, i) => {
-      const q = +p.quantity || 0, unit = showNet ? +p.price : +p.priceGross, sum = showNet ? +p.sumNet : +p.sumGross;
+      const q = +p.quantity || 0, U = unitOf(p, showNet), sum = U.sum, unitTxt = U.cents ? eur(U.unit) : eurX(U.unit);   // Einzelpreis passend zur Zeilensumme (A10)
       const disc = +p.discount || 0, txt = (strip(p.text) + (disc > 0 ? (strip(p.text) ? "\n" : "") + "abzüglich " + String(disc).replace(".", ",") + " % Rabatt" : "")).trim(), hName = doc.font("Helvetica-Bold").fontSize(9).heightOfString(p.name || "", { width: 268 }), hTxt = txt ? doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2 : 0;
       const rh = hName + hTxt + 16;
       if (y + rh > H - FH - 40) { doc.addPage(); y = 60; header(); }
@@ -119,7 +129,7 @@ module.exports = function (D) {
       if (txt) doc.font("Helvetica").fontSize(7.8).fillColor(MUTED).text(txt, cx.desc, ty + hName + 2, { width: 268 });
       const uName = unitName(p.unity);
       doc.font("Helvetica").fontSize(9).fillColor(INK).text((Math.round(q * 100) / 100).toLocaleString("de-AT") + (uName ? " " + uName : ""), cx.qty - 30, ty, { width: 86, align: "right" })
-        .text(eur(unit), cx.unit - 6, ty, { width: 62, align: "right" }).text((+p.taxRate || 0) + " %", cx.tax, ty, { width: 30, align: "right" });
+        .text(unitTxt, cx.unit - 6, ty, { width: 62, align: "right" }).text((+p.taxRate || 0) + " %", cx.tax, ty, { width: 30, align: "right" });
       doc.font("Helvetica-Bold").text(eur(sum), cx.sum, ty, { width: R - cx.sum - 8, align: "right" });
       y += rh; doc.moveTo(L, y).lineTo(R, y).lineWidth(.4).strokeColor(LINE).stroke();
     });
@@ -155,3 +165,4 @@ module.exports = function (D) {
     return done;
   };
 };
+module.exports.unitOf = unitOf;   // Tests (A10)
