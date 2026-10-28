@@ -1371,8 +1371,8 @@ F.css([
 ".mbulk{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px 8px 14px;border-radius:var(--r-sm);border:1px solid color-mix(in srgb,var(--info) 35%,transparent);background:linear-gradient(var(--info-soft),var(--info-soft)),var(--m-solid);position:sticky;top:56px;z-index:5}",
 ".mbulk>b{margin-right:4px;font-variant-numeric:tabular-nums}.mbulk .sp{flex:1}.mbulk .btn svg{width:15px;height:15px}",
 /* Ordner-/Kontenblatt */
-".sheetf{position:static;max-height:none;padding:0}",
-".accseg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;border-bottom:0;padding:2px 0 6px;margin:0}.accseg::-webkit-scrollbar{display:none}",
+".sheetf{position:static;max-height:none;padding:0;overflow:visible;flex:none}",
+".accseg{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;border-bottom:0;padding:2px 0 6px;margin:0;flex-shrink:0;min-height:50px}.accseg::-webkit-scrollbar{display:none}",
 ".accseg .accbtn{flex:none;width:auto;max-width:78vw;min-height:40px;border:1px solid var(--line);border-radius:99px;padding:6px 14px}",
 ".accseg .accbtn[aria-current=true]{border-color:color-mix(in srgb,var(--glow) 45%,transparent)}.accseg .atu{display:none}",
 ".sheeth{margin:10px 2px 0}.sheetrules{width:100%;justify-content:center;margin-top:10px;min-height:44px}",
