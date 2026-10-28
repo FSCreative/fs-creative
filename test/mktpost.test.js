@@ -188,7 +188,14 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     mock.state.ttUnaudited = false;
     rl.opts = {}; await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
     assert.strictEqual(rl.results.tiktok.status, "fehler"); assert.ok(/wer das Video sehen darf/.test(rl.results.tiktok.error), "ohne Wahl kein Entwurf (Scope video.upload fehlt), sondern klarer Hinweis");
-    assert.ok(/scope=user\.info\.basic%2Cvideo\.publish/.test((await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok" })).json().url), "nur die Scopes fürs direkte Posten");
+    const cj = (await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok" })).json();
+    assert.ok(/scope=user\.info\.basic%2Cvideo\.publish/.test(cj.url), "nur die Scopes fürs direkte Posten");
+    // Neu verbinden: dasselbe Konto bei FS Creative UND Druckshop erneuern (sonst behält der Druckshop den alten Zugang ohne video.publish), fremde Konten bleiben
+    ["fs-creative", "druckshop"].forEach(b => PT.upsertChannel(b, { platform: "tiktok", account: { id: "openFS", name: "FS Creative" }, tok: { access: "tt-alt", refresh: "tt-ref-alt", scope: "user.info.basic,video.upload", expiresAt: new Date(Date.now() + 864e5).toISOString() } }));
+    await call("GET", "/admin/api/mkt/oauth/callback", null, "?code=x&state=" + encodeURIComponent(new URL(cj.url).searchParams.get("state")));
+    const toks = b => PT.unseal(PT.S().channels.find(c => c.brand === b && c.platform === "tiktok").tok);
+    assert.strictEqual(toks("fs-creative").access, "tt-neu"); assert.strictEqual(toks("druckshop").access, "tt-neu", "Druckshop mit erneuert"); assert.ok(/video\.publish/.test(toks("druckshop").scope));
+    assert.strictEqual(toks("kochdu").access, "tt-acc", "anderes Konto unberührt");
   });
   await t("Bearbeiten: Folientext ändern erzeugt Bilder neu; gepostete Posts sind gesperrt", async () => {
     let r = await call("POST", "/admin/api/mkt/post", { id: car.id, op: "update", patch: { captions: { instagram: "x" } } }); assert.strictEqual(r.code, 400);

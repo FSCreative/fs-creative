@@ -109,6 +109,8 @@ module.exports = function () {
         if (p === "/ytput/1") { S.uploads.yt = raw.length; const vid = id("yt"); S.posts.push({ pf: "youtube", id: vid, title: S.ytMeta.snippet.title }); return end(200, { id: vid }); }
         if (p === "/g/token") return end(200, { access_token: "yt-acc-2", expires_in: 3600 });
         // ── TikTok ──
+        if (p === "/tt/v2/oauth/token/") return end(200, { access_token: "tt-neu", refresh_token: "tt-ref-neu", open_id: "openFS", scope: "user.info.basic,video.publish", expires_in: 86400, refresh_expires_in: 31536000 });
+        if (p === "/tt/v2/user/info/") return end(200, { data: { user: { open_id: "openFS", display_name: "FS Creative" } }, error: { code: "ok" } });
         // Direct Post: Kontoangaben, Sichtbarkeit muss aus privacy_level_options sein; S.ttUnaudited = ungeprüfte App (nur SELF_ONLY)
         if (p === "/tt/v2/post/publish/creator_info/query/") return end(200, { data: { creator_nickname: "FS Creative", creator_username: "fs.creative.at", creator_avatar_url: "", privacy_level_options: ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"],
           comment_disabled: false, duet_disabled: false, stitch_disabled: true, max_video_post_duration_sec: 600 }, error: { code: "ok" } });

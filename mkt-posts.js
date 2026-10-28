@@ -745,7 +745,8 @@ module.exports = function (C) {
       const done = [];
       for (const o of opts) for (const b of brandList()) {
         if (!fits(b, o)) continue;
-        if (b.key !== pend.brand && S().channels.some(c => c.brand === b.key && c.platform === o.platform && c.status === "ok")) continue;
+        // andere Marke mit eigenem, anderem Konto nicht überschreiben – dasselbe Konto aber mit erneuern (neue Berechtigungen, TikTok tauscht den Refresh-Token)
+        if (b.key !== pend.brand && S().channels.some(c => c.brand === b.key && c.platform === o.platform && c.status === "ok" && String((c.account || {}).id) !== String(o.account.id))) continue;
         upsertChannel(b.key, o); done.push(b.name + " ← " + (o.account.handle || o.account.name));
       }
       if (done.some(x => x.indexOf((brandList().find(b => b.key === pend.brand) || {}).name + " ←") === 0))
