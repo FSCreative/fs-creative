@@ -413,9 +413,13 @@ function isIstDoc(st,d){ var a=istFrom(st); return !!a&&String(d||"")>=a; }
 // ergibt Anteil 1, nicht 3. Belege mit positiver Summe: unverändert Zahlung / Summe.
 function payConv(doc,g){ if(!(g<0)) return 1; var f=payments(doc).filter(function(pm){ return Math.abs(pm.amount)>0.004; }).sort(function(a,b){ return String(a.date||"").localeCompare(String(b.date||"")); })[0]; return f&&f.amount>0?-1:1; }
 function payShare(amount,g,conv){ return g<0?(conv||1)*amount/g:amount/g; }
+// Gutschrift: jede Zahlung ist eine Auszahlung – bisher |Anteil|. Mit Zahlung, Rücknahme, Zahlung zählt die Rücknahme relativ zur ersten
+// Zahlung negativ (Anteil 1, nicht 3). Alle Zahlungen mit gleichem Vorzeichen: unverändert |Anteil|.
+function firstSign(pms){ var f=(pms||[]).filter(function(pm){ return Math.abs(pm.amount)>0.004; }).sort(function(a,b){ return String(a.date||"").localeCompare(String(b.date||"")); })[0]; return f&&f.amount<0?-1:1; }
+function cnSign(amount,dir){ return amount*dir<0?-1:1; }
 function istParts(doc,st,label){ var a=istFrom(st), g=num(doc.gross); if(!g) return []; var cv=payConv(doc,g);
   return payments(doc).filter(function(pm){ return pm.date&&pm.date>=a&&Math.abs(pm.amount)>0.004; })
-    .map(function(pm){ return {share:payShare(pm.amount,g,cv),date:pm.date,why:(label||"Zahlung")+" am "+pm.date.split("-").reverse().join(".")+" (Istbesteuerung)"}; }); }
+    .map(function(pm){ return {share:payShare(pm.amount,g,cv),amount:pm.amount,date:pm.date,why:(label||"Zahlung")+" am "+pm.date.split("-").reverse().join(".")+" (Istbesteuerung)"}; }); }
 // Gutschrift mit Positionen beider Vorzeichen (z. B. alte kochdu-Auszahlungs-Gutschrift: Gebühr neben gutgeschriebenen Beträgen):
 // Gutschriften gelten als Erlösminderung (jede Position wird negativ gerechnet) – eine darin enthaltene Gebühr mit USt würde die USt
 // mindern statt erhöhen. Solche Gutschriften werden nicht still gebucht, sondern zur Prüfung gemeldet (CONTRACT-fs-order §4 Punkt 7).
@@ -467,7 +471,7 @@ function computeUva(raw,st,p){
     if(cn.status<200||docCfg(st,cn).ignore||docCfg(st,cn).kz==="ignore") return;
     if(mixedSigns(cn)){ var dm=isIstDoc(st,cn.date)?istParts(cn,st,"Auszahlung").map(function(pt){ return pt.date; }):[cn.date]; if(dm.some(function(d){ return inP(d,p); })) review.push({doc:cn,kind:"out",why:MIXED_WHY}); return; }
     var ls=lines(cn).map(function(l){ return {rate:l.rate,net:l.net>0?-l.net:l.net,tax:l.tax>0?-l.tax:l.tax}; });
-    if(isIstDoc(st,cn.date)){ istParts(cn,st,"Auszahlung").forEach(function(pt){ if(inP(pt.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:Math.abs(pt.share),date:pt.date,why:pt.why},"out"); }); }); return; }
+    if(isIstDoc(st,cn.date)){ var cd=firstSign(payments(cn)); istParts(cn,st,"Auszahlung").forEach(function(pt){ if(inP(pt.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:Math.abs(pt.share)*cnSign(pt.amount,cd),date:pt.date,why:pt.why},"out"); }); }); return; }
     if(inP(cn.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:1,date:cn.date,why:"Gutschrift – Monat der Ausstellung"},"out"); });
   });
   function revLine(doc,l,pt,kind){
@@ -655,17 +659,17 @@ function computeJab(raw,st,year){
     var c=docCfg(st,cn); if(cn.status<200||c.ignore||c.kz==="ignore") return; var g=Math.abs(num(cn.gross)), net=Math.abs(lines(cn).reduce(function(a,l){ return a+l.net; },0)); if(!g) return;
     if(mixedSigns(cn)) notes.push({doc:cn,why:"Gutschrift mit Positionen beider Vorzeichen – Einnahmenminderung bitte prüfen"});
     var pm=payments(cn); if(!pm.length&&cn.status===1000) pm=[{date:cn.date,amount:g,src:"status"}];
-    pm.forEach(function(x){ if(zuYear(cn,x.date,false)!==y) return; var n=-net*Math.abs(x.amount)/g; rev+=n; revDocs.push({doc:cn,net:r2(n),date:x.date,src:x.src}); });
+    var cd=firstSign(pm); pm.forEach(function(x){ if(zuYear(cn,x.date,false)!==y) return; var n=-net*Math.abs(x.amount)*cnSign(x.amount,cd)/g; rev+=n; revDocs.push({doc:cn,net:r2(n),date:x.date,src:x.src}); });
   });
   (raw.vouchers||[]).forEach(function(v){
     if(skipVou(v,st)) return; var cfg=docCfg(st,v), ls=lines(v), g=num(v.gross);
-    var reg=isRegular(v,st,ls);
-    if(v.cd==="D"){ payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=pm.amount/g; ls.forEach(function(l){ if(nonBiz(l)) return; var kz=catKz(st,l), n=l.net*sh; if(kz==="9090"||kz==="9060"){ other[kz]=(other[kz]||0)+n; } else { rev+=n; revDocs.push({doc:v,net:r2(n),date:pm.date,src:pm.src}); } }); }); return; }
+    var reg=isRegular(v,st,ls), cv=payConv(v,g);   // negative Summe (Lieferantengutschrift, Erstattung an Kunden): Vorzeichen je Beleg normalisiert (B8); positive Summe unverändert
+    if(v.cd==="D"){ payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=payShare(pm.amount,g,cv); ls.forEach(function(l){ if(nonBiz(l)) return; var kz=catKz(st,l), n=l.net*sh; if(kz==="9090"||kz==="9060"){ other[kz]=(other[kz]||0)+n; } else { rev+=n; revDocs.push({doc:v,net:r2(n),date:pm.date,src:pm.src}); } }); }); return; }
     if(v.cd!=="C") return;
     if(cfg.asset){ var a=assetInfo(v,st); if(a){ var pl=a.plan.find(function(x){ return x.year===+y; }); if(pl){ addE(pl.kz,pl.afa); if(pl.afaLux) other.lux=(other.lux||0)+pl.afaLux; if(pl.abgang) addE("9210",pl.abgang); } assets.push({a:a,cur:pl||null}); }
       // nur die Anlagen-Positionen laufen über die AfA – übrige Positionen im selben Beleg (z. B. Zinsen, Versand) bleiben Ausgaben
       ls=assetSplit(v,ls).rest; if(!ls.length) return; }
-    payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=pm.amount/g; if(String(pm.date).slice(0,4)!==y) notes.push({doc:v,why:"§ 19 EStG 15-Tage-Regel: Zahlung "+pm.date+" zählt wirtschaftlich zu "+y});
+    payments(v).forEach(function(pm){ if(zuYear(v,pm.date,reg)!==y||!g) return; var sh=payShare(pm.amount,g,cv); if(String(pm.date).slice(0,4)!==y) notes.push({doc:v,why:"§ 19 EStG 15-Tage-Regel: Zahlung "+pm.date+" zählt wirtschaftlich zu "+y});
       ls.forEach(function(l){ var cat=l.cat||"(ohne Kategorie)", kz=catKz(st,l), cl=inClass(v,l,st), n=l.net*sh;
         if(cl==="none"||cl==="fx") n+=l.tax*sh;                 // nicht abziehbare Vorsteuer (Pkw, ausländische USt) ist Aufwand
         if(cl==="rcnv") n+=l.net*0.2*sh;                        // RC ohne Vorsteuerabzug: geschuldete USt ist Aufwand

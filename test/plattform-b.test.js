@@ -597,6 +597,28 @@ function unitTests(T) {
       const j = S.computeJab({ invoices: [d], vouchers: [], creditNotes: [] }, StIst, 2026); assert.strictEqual(r2(j.revDocs.filter(x => x.doc.id === "iP").reduce((a, x) => a + x.net, 0)), -96.25, "E1a einmal");
     }
   });
+  await t("R3-3: E1a – Lieferantengutschrift/negativer Einnahmenbeleg mit positiv gespeicherter Zahlung mindert (wie negativ gespeichert); Gutschrift mit Zahlung, Rücknahme, Zahlung zählt einmal", () => {
+    const vou = (o) => { const ls = [{ rate: 20, net: o.net, tax: o.tax, cat: o.cat || "Software", catId: "", catType: "" }];
+      return Object.assign({ id: "vR3", date: "2026-10-05", delivery: null, payDate: null, status: 1000, cd: "C", taxType: "default", taxRule: "9", supplier: "Lieferant", supplierUid: "", supplierCountry: "AT", desc: "", net: o.net, tax: o.tax, gross: r2(o.net + o.tax), enshrined: false, lines: ls }, o); };
+    const jab = v => S.computeJab({ invoices: [], vouchers: [v], creditNotes: [] }, StIst, 2026);
+    for (const sg of [1, -1]) {
+      const c = jab(vou({ net: -50, tax: -10, paid: 60 * sg, pays: [{ date: "2026-10-10", amount: 60 * sg }] }));
+      assert.strictEqual(r2(c.gewinn), 50, "Lieferantengutschrift mindert den Aufwand (Zahlung " + (60 * sg) + ")");
+      const d = jab(vou({ cd: "D", taxRule: "1", cat: "Erlöse", net: -8.07, tax: -1.62, paid: 9.69 * sg, pays: [{ date: "2026-10-10", amount: 9.69 * sg }] }));
+      assert.strictEqual(r2(d.rev), -8.07, "Erstattung an Kunden mindert die Einnahmen (Zahlung " + (9.69 * sg) + ")");
+    }
+    // positive Summe unverändert: Eingangsbeleg 120 bezahlt → Aufwand 100
+    assert.strictEqual(r2(jab(vou({ net: 100, tax: 20, paid: 120, pays: [{ date: "2026-10-10", amount: 120 }] })).gewinn), -100);
+    // Gutschrift an Kunden: Zahlung, Rücknahme, Zahlung = einmal (UVA Ist und E1a), gleiche Vorzeichen wie bisher |Anteil|
+    const cn = pays => ({ id: "cnR3", sevId: "1", nr: "GU-1", type: "GU", status: 1000, date: "2026-11-03", delivery: "2026-11-03", taxType: "default", taxRule: "1", contact: "Kunde", country: "AT", uid: "", net: 100, tax: 20, gross: 120, pays, lines: [{ rate: 20, net: 100, tax: 20 }], enshrined: false });
+    for (const sg of [1, -1]) {
+      const once = cn([{ date: "2026-11-10", amount: 120 * sg }]), thrice = cn([{ date: "2026-11-10", amount: 120 * sg }, { date: "2026-11-12", amount: -120 * sg }, { date: "2026-11-14", amount: 120 * sg }]);
+      const u1 = S.computeUva({ invoices: [], vouchers: [], creditNotes: [once] }, StIst, Q4), u3 = S.computeUva({ invoices: [], vouchers: [], creditNotes: [thrice] }, StIst, Q4);
+      assert.strictEqual(K(u1, "090"), -20); assert.strictEqual(K(u3, "090"), -20, "Rücknahme zählt gegen (Vorzeichen " + sg + ")");
+      const e = d => r2(S.computeJab({ invoices: [], vouchers: [], creditNotes: [d] }, StIst, 2026).rev);
+      assert.strictEqual(e(once), -100); assert.strictEqual(e(thrice), -100);
+    }
+  });
   await t("B9: Gutschrift mit USt-Positionen gleichen Vorzeichens und einer 0-%-Position mit anderem Vorzeichen → normal gebucht (wie vor dem Umbau); USt-Konflikt → Prüfung", () => {
     const cnB = (lines, o) => Object.assign({ id: "cnB", nr: "GU-9", type: "GU", status: 1000, date: "2026-11-03", taxType: "default", taxRule: "1", contact: "Kunde", country: "AT", pays: [{ date: "2026-11-10", amount: 110 }], lines,
       net: r2(lines.reduce((a, l) => a + l.net, 0)), tax: r2(lines.reduce((a, l) => a + l.tax, 0)), gross: r2(lines.reduce((a, l) => a + l.net + l.tax, 0)) }, o || {});
