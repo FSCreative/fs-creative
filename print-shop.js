@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const XMAS = require("./print-xmas.js");   // Weihnachtsabteilung /print/weihnachten (Themen, Texte, Bilder, Saison)
+const PRINT_BILD = require("./print-bild.js");   // Bild-Proxy /print/bild/… (Produktbilder im Google-Shopping-Feed)
 
 const MM_PT = 72 / 25.4;
 // nur Österreich: Print.com liefert direkt aus den NL – bei Lieferung nach DE wäre es kein ig. Erwerb in AT mehr (Dreiecksgeschäft bzw. DE-Registrierung)
@@ -2233,6 +2234,11 @@ module.exports = function (D) {
   // Standard-Ausführung (wie im Shop vorausgewählt), typische Mengen, Endpreis inkl. 20 % USt und Versand nach Österreich; alle 6 h im Hintergrund (niedrige Priorität)
   let PUB = null, pubRun = false, lastPub = 0;
   const PUB_Q = { flat: [100, 250, 500, 1000, 2500, 5000], banner: [1, 2, 5], promo: [100, 250, 500, 1000], textile: [10, 25, 50] };
+  // Merkmale der Standard-Ausführung für den Google-Shopping-Feed: Format (Titel), Farbe und Größe (Textil)
+  function attrsOf(p, n) {
+    const L = n.labels || [], val = rx => { const l = L.find(x => rx.test(String(x[0]))); return l ? clip(scrubText(String(l[1])), 80) : ""; };
+    return { fmt: p.kind === "textile" || p.kind === "promo" ? "" : val(/^(end)?format\b|^größe$/i), color: val(/^farbe$/i), size: n.textile && n.textile.sizes && n.textile.sizes[0] ? clip(n.textile.sizes[0].name, 20) : "" };
+  }
   async function pubBuild() {
     if (pubRun) return; pubRun = true;
     try {
@@ -2244,14 +2250,18 @@ module.exports = function (D) {
         const okQ = n => p.kind === "textile" ? n >= (((p.methods || [])[0] || {}).min || 1) : p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
         const big = p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "") || /roll|bauzaun|banner/i.test(p.key);
         let qs = (big ? PUB_Q.banner : PUB_Q[p.kind] || PUB_Q.flat).filter(okQ).slice(0, 4); if (!qs.length) qs = [base.copies];
-        const rows = []; let label = "";
+        const rows = []; let label = "", attrs = null, startN = null;
+        // Startauflage des Konfigurators und je Menge, ob der Link (/print?produkt=…[&menge=…]) genau diese Ausführung zeigt – für den Google-Shopping-Feed (Preis UND Menge
+        // auf der Zielseite gleich). print/app.js übernimmt die Startausführung nur, wenn ihre Auflage eine der Stufen ist (Textil: immer), ?menge= nur für Stufen (nie Textil).
+        try { startN = normalizeSel(p, JSON.parse(JSON.stringify(base))).copies; } catch (e) {}
+        const startOk = startN != null && (p.kind === "textile" || (p.tiers || []).indexOf(startN) > -1);
         for (const q of qs) {
           const inp = JSON.parse(JSON.stringify(base)); inp.copies = q; if (inp.textile) { const sz = Object.keys(inp.textile.sizes)[0]; inp.textile.sizes = { [sz]: q }; }
-          try { const n = normalizeSel(p, inp); n.low = true; const qt = await quote(p, n, "AT", "", {}); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net });
-            if (!label) label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); } catch (e) {}
+          try { const n = normalizeSel(p, inp); n.low = true; const qt = await quote(p, n, "AT", "", {}); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net, link: startOk && (n.copies === startN || (p.kind !== "textile" && (p.tiers || []).indexOf(n.copies) > -1)) });
+            if (!label) { label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); attrs = attrsOf(p, n); } } catch (e) {}
         }
         if (!rows.length || (rows.length > 1 && rows.every(r => Math.abs(r.gross - rows[0].gross) < 0.01))) { if (rows.length > 1) log("Preisübersicht: " + key + " ausgelassen (gleicher Preis für alle Mengen)"); continue; }
-        const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, rows });
+        const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows });
       }
       if (items.length) { PUB = { at: nowIso(), items }; await store.setMeta("print_pub", PUB).catch(() => {}); }
       log("Druckshop: Preisübersicht aktualisiert (" + items.length + " Produkte)");
@@ -2262,12 +2272,15 @@ module.exports = function (D) {
   const eurDe = n => (Math.round(n * 100) / 100).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
   const pieceDe = (g, n) => n > 1 ? (g / n < 1 ? (Math.round(g / n * 1000) / 1000).toLocaleString("de-AT", { minimumFractionDigits: 3 }) : (Math.round(g / n * 100) / 100).toLocaleString("de-AT", { minimumFractionDigits: 2 })) + " €" : "";
   const dateDe = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("de-AT", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Vienna" }); };
+  // Rückgabe laut Shop-AGB Punkt 6: Drucksachen, bedruckte Textilien, Banner und Werbeartikel sind nach Kundenvorgaben angefertigt –
+  // kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG), also keine Rückgabe; Gewährleistung (Punkt 8) bleibt unberührt. Lieferung nur nach Österreich.
+  const RETURN_LD = { "@type": "MerchantReturnPolicy", applicableCountry: "AT", returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted", merchantReturnLink: SITE + "/print/agb" };
   function offersLd(it) {
     const url = SITE + "/print?produkt=" + encodeURIComponent(it.key), g = it.rows.map(r => r.gross);
     return { "@type": "Product", name: it.title, description: scrubText(it.label || it.desc || ""), url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
       offers: { "@type": "AggregateOffer", priceCurrency: "EUR", lowPrice: Math.min.apply(null, g).toFixed(2), highPrice: Math.max.apply(null, g).toFixed(2), offerCount: it.rows.length,
         offers: it.rows.map(r => ({ "@type": "Offer", price: r.gross.toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url, eligibleQuantity: { "@type": "QuantitativeValue", value: r.copies, unitText: "Stück" },
-          priceSpecification: { "@type": "UnitPriceSpecification", price: r.gross.toFixed(2), priceCurrency: "EUR", valueAddedTaxIncluded: true }, shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "EUR" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "AT" } }, seller: { "@type": "Organization", name: "FS Creative" } })) } };
+          priceSpecification: { "@type": "UnitPriceSpecification", price: r.gross.toFixed(2), priceCurrency: "EUR", valueAddedTaxIncluded: true }, shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "EUR" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "AT" } }, hasMerchantReturnPolicy: RETURN_LD, seller: { "@type": "Organization", name: "FS Creative" } })) } };
   }
   // Kurzfassung für den Website-Chat (Systemkontext) und llms.txt
   function pubLines(max) { const P = PUB; if (!P || !P.items) return [];
@@ -2407,6 +2420,91 @@ module.exports = function (D) {
     return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
       (XMAS.season().on ? '  <url><loc>' + SITE + '/print/weihnachten</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' : "") + cats +
       pub.filter(x => x.img).map(x => '  <url><loc>' + SITE + "/print?produkt=" + encodeURIComponent(x.key) + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
+  }
+  // IndexNow (indexnow.js): Inhalts-Prüfsumme je Shop-Adresse der Sitemap (deren lastmod ist immer „heute“) – nur echte Änderungen werden an Bing & Co. gemeldet.
+  // Produktseite: Name, Kurztext, Bild, Preise der Übersicht; Kategorie: enthaltene Produkte; Preisübersicht: alle Preise; Weihnachten: Vorschläge mit Preis. Wirft, wenn der Katalog fehlt.
+  async function indexSigs() {
+    const s = await settings(), cat = await catalog(false); if (!cat) throw new Error("Katalog nicht geladen");
+    const pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), P = await pubState(), groups = publicGroups(pub), out = {};
+    const h = v => crypto.createHash("sha1").update(JSON.stringify(v)).digest("hex").slice(0, 12), price = {};
+    ((P && P.items) || []).forEach(it => { price[it.key] = (it.rows || []).map(r => [r.copies, r.gross]); });
+    out[SITE + "/print/preise"] = h(Object.keys(price).sort().map(k => [k, price[k]]));
+    if (XMAS.season().on) { await xmasState(); const xd = xmasData(); out[SITE + "/print/weihnachten"] = h(Object.keys(xd).sort().map(k => [k, xd[k].ok, xd[k].gross, xd[k].copies])); }
+    const inG = (m, su) => pub.filter(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su)).map(p => [p.key, p.title]).sort();
+    out[catUrl("", "", true)] = h(groups.map(g => [g.slug, g.name, g.subs.map(x => x.slug)]));
+    groups.forEach(g => { out[catUrl(g.slug, "", true)] = h(inG(g.slug)); g.subs.forEach(su => { out[catUrl(g.slug, su.slug, true)] = h(inG(g.slug, su.slug)); }); });
+    pub.forEach(x => { out[prodUrl(x.key, true)] = h([x.title, x.desc, x.img, price[x.key] || null]); });
+    return out;
+  }
+  // ── Google-Merchant-Center-Produktfeed /print/merchant.xml (kostenlose Einträge in Google Shopping) ──
+  // Ein Eintrag je Produkt der Preisübersicht (pubState): kleinste dort gezeigte Auflage, deren Ausführung der Link auf der Produktseite genau so vorwählt
+  // (Startausführung, ggf. ?menge=…) – Preis inkl. 20 % USt und Versand nach Österreich (Versand im Feed daher 0,00). Nur öffentlich sichtbare Produkte
+  // mit aktuellem Preis und Bild (über unseren Bild-Proxy). Texte immer durch scrubText; Einträge mit Lieferanten-Namen (auch in Bild-Dateinamen) fallen weg.
+  // Zwischengespeichert: neu nur bei neuem Preis-/Katalog-/Einstellungsstand, höchstens stündlich (viele Abrufe möglich).
+  const SUPPLIER_RX = /(?<![a-z])print[\s._-]{0,2}com(?![a-z])|drukwerkdeal|printdeal/i;
+  const GPC_RULES = [[/visitenkarte|business.?card/i, 957], [/einladung|invitation/i, 1371], [/postkarte|postcard/i, 3871], [/kuvert|briefumschl|envelope/i, 958], [/briefpapier|letterhead/i, 3457],
+    [/haftnotiz|sticky/i, 2689], [/kalender|calendar|diar(y|ies)|planer/i, 927], [/notizbl|notizbuch|notepad|notebook|schreibbl|blocknote/i, 961], [/präsentationsmappe|presentation.?folder/i, 5863],
+    [/grußkarte|klappkarte|weihnachtskarte|greeting|\bkarten?\b|\bcards?\b/i, 95], [/plakat|poster/i, 500044], [/flyer|folder|faltbl|leaflet|broschüre|brochure|prospekt|magazin|katalog/i, 5884],
+    [/roll.?up|roller.?banner|display|messe|theke|aufsteller|kundenstopper/i, 5865], [/fahne|flagge|\bflags?\b/i, 701], [/banner|bauzaun|schild|\bsigns?\b|plane|mesh|hohlkammer|forex|dibond/i, 976],
+    [/aufkleber|sticker|etikett|label/i, 960], [/schachtel|geschenkbox|gift.?box|\bbox(es)?\b/i, 5091], [/papiertüte|papiertasche|tragetasche|paper.?bag/i, 1837], [/tasche|beutel|\bbags?\b|tote/i, 5608],
+    [/verpackung|packaging|karton/i, 974], [/tasse|becher|\bmugs?\b/i, 2169], [/kugelschreiber|\bpens?\b|stift/i, 982], [/schürze|apron/i, 639], [/t-?shirt|polo|hoodie|pullover|sweat/i, 212]];
+  const GPC_GROUP = { [PAPER]: 956, [BANNER]: 976, [INDOOR]: 5863, [STICK]: 960, [BAGS]: 974, [PROMO]: 5863, [TEX]: 1604 };
+  const gpcOf = (key, title, group, kind) => { const t = key + " " + title, r = GPC_RULES.find(x => x[0].test(t)); return r ? r[1] : kind === "textile" ? 1604 : GPC_GROUP[group] || 5863; };
+  const xmlEsc = v => String(v == null ? "" : v).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
+  // Produktbild als absolute Adresse über unseren Bild-Proxy (JPEG, 1200 px) – nur gültige Contentful-Pfade, kein SVG, kein Lieferanten-Name im Dateinamen
+  function feedImg(u) {
+    const m = String(u || "").match(/^https:\/\/images\.ctfassets\.net\/([^?#]+)/); if (!m || /\.svg$/i.test(m[1])) return "";
+    const pth = PRINT_BILD.PREFIX + m[1]; if (SUPPLIER_RX.test(pth) || !PRINT_BILD.upstreamUrl(pth, "")) return "";
+    return SITE + pth + "?fm=jpg&w=1200";
+  }
+  // Menge für den Feed: kleinste Zeile der Preisübersicht, die der Link genau so zeigt (Stand ab dieser Version in pubBuild gemerkt; ältere Stände: kuratierte Produkte nachrechnen)
+  function feedPick(it, cat, s) {
+    let start = it.start, ok = r => r.link === true;
+    if (start == null) { const p = productOf(cat, it.key, s), st = p && p.start; if (!st) return null;
+      const tex = p.kind === "textile"; start = tex ? Object.values((st.textile && st.textile.sizes) || {}).reduce((a, v) => a + (+v || 0), 0) : +st.copies;
+      if (!tex && (p.tiers || []).indexOf(start) < 0) return null;
+      ok = r => r.copies === start || (!tex && (p.tiers || []).indexOf(r.copies) > -1); }
+    const row = (it.rows || []).filter(r => r && r.gross > 0 && r.copies > 0 && ok(r)).sort((a, b) => a.copies - b.copies)[0]; if (!row) return null;
+    return { row, link: prodUrl(it.key, true) + (row.copies !== start ? "&menge=" + row.copies : "") };
+  }
+  const fmtNice = f => String(f || "").replace(/\s+x\s+/g, " × ").replace(/^((?:DIN\s)?[A-C]\d{1,2}|DL|1\/3 A4)\s+-\s+(.+)$/i, "$1 ($2)").replace(/\s*\($/, "").trim();
+  function feedBuild(s, cat, all, P) {
+    const pub = cat ? publicCatalog(cat, s, all) : [], byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
+    const items = [], skipped = [];
+    for (const it of (P && P.items) || []) {
+      const x = byKey[it.key]; if (!x || isInternal(it.key, x.title)) { skipped.push(it.key + " (nicht sichtbar)"); continue; }
+      const pk = feedPick(it, cat, s); if (!pk) { skipped.push(it.key + " (keine verlinkbare Menge)"); continue; }
+      const imgs = [x.img].concat(x.images || []).map(feedImg).filter((v, i, a) => v && a.indexOf(v) === i); if (!imgs.length) { skipped.push(it.key + " (kein Bild)"); continue; }
+      const kind = it.kind || x.kind || "flat", a = it.attrs || {}, n = pk.row.copies, title = scrubText(x.title);
+      const seg = String(it.label || "").split(" · ").map(v => v.trim()).filter(Boolean);
+      const fmt = kind === "textile" || kind === "promo" ? "" : fmtNice(a.fmt || seg.find(v => /^((DIN\s)?[A-C]\d{1,2}|DL)\b|\d+(,\d+)?\s*[x×]\s*\d+/i.test(v)) || "");
+      const verb = kind === "textile" || kind === "promo" ? (/\bmit Logo\b/i.test(title) ? "bedrucken" : "mit Logo bedrucken") : "drucken";
+      const t = clip(title + (fmt && title.indexOf(fmt) < 0 ? " " + fmt : "") + " " + verb + " – " + n.toLocaleString("de-AT") + " Stück", 150);
+      // Beschreibung: Produkttext (Aufzählungen als Sätze, keine offene Überschrift am Ende), Standard-Ausführung, Ablauf – ohne Preis-/Versandwerbung (Google-Richtlinie)
+      const lines = scrubText(noHtml(x.about || x.desc || it.desc || "")).split(/\n+/).map(l => l.replace(/^[-*•–\s]+/, "").replace(/\s+/g, " ").trim()).filter(Boolean);
+      const about = lines.map(l => /[.!?:]$/.test(l) ? l : l + ".").join(" ").replace(/(^|[.!?]\s+)[^.!?]*:$/, "$1").trim(), logo = kind === "textile" || kind === "promo";
+      const desc = clip([title + (logo ? " – individuell mit deinem Logo bedruckt." : " – individuell bedruckt nach deinen Druckdaten."), about, it.label ? "Ausführung: " + scrubText(it.label) + "." : "",
+        logo ? "Logo hochladen, automatischer Datencheck vor dem Druck." : "Online gestalten oder Druckdatei hochladen, mit automatischem Datencheck vor dem Druck."].filter(Boolean).join(" "), 4900);
+      const gpc = gpcOf(it.key, title, x.group || (x.cat && x.cat.main), kind), ptype = scrubText([x.cat && x.cat.mainName, x.cat && x.cat.subName].filter(Boolean).join(" > "));
+      const tag = (k, v) => v ? "<g:" + k + ">" + xmlEsc(v) + "</g:" + k + ">" : "";
+      const apparel = gpc === 212 || gpc === 1604 ? tag("gender", "unisex") + tag("age_group", "adult") + tag("color", a.color || (kind === "textile" ? seg[0] : "")) + tag("size", a.size || (kind === "textile" ? "M" : "")) : "";
+      const xml = "<item>" + tag("id", it.key.length <= 50 ? it.key : it.key.slice(0, 41) + "-" + crypto.createHash("sha1").update(it.key).digest("hex").slice(0, 8)) + tag("title", t) + tag("description", desc) + tag("link", pk.link) +
+        tag("image_link", imgs[0]) + imgs.slice(1, 6).map(u => tag("additional_image_link", u)).join("") + tag("availability", "in_stock") + tag("condition", "new") + tag("price", pk.row.gross.toFixed(2) + " EUR") +
+        tag("brand", "FS Creative") + tag("identifier_exists", "no") + tag("google_product_category", String(gpc)) + tag("product_type", ptype) + apparel +
+        "<g:shipping><g:country>AT</g:country><g:service>Standard</g:service><g:price>0.00 EUR</g:price></g:shipping></item>\n";
+      if (SUPPLIER_RX.test(xml)) { skipped.push(it.key + " (Lieferanten-Name)"); continue; }
+      items.push(xml);
+    }
+    const head = '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">\n<channel>\n<title>FS Creative Druckshop</title>\n<link>' + SITE + "/print</link>\n" +
+      "<description>Drucksachen und Werbeartikel online gestalten und drucken – Endpreise inkl. 20 % USt und Versand innerhalb Österreichs" + (P && P.at ? " (Stand " + xmlEsc(dateDe(P.at)) + ")" : "") + ".</description>\n";
+    return { xml: head + items.join("") + "</channel>\n</rss>\n", n: items.length, skipped };
+  }
+  let MF = null;
+  async function merchantFeed() {
+    const s = await settings(), cat = await catalog(false).catch(() => null), all = await catalogAll().catch(() => null), P = await pubState(), pat = (P && P.at) || "";
+    if (MF && MF.s === s && MF.cat === cat && MF.all === all && MF.pat === pat && Date.now() - MF.t < 3600e3) return MF;
+    const r = feedBuild(s, cat, all, P); if (r.skipped.length && (!MF || MF.pat !== pat)) log("Shopping-Feed: " + r.n + " Produkte, ausgelassen: " + r.skipped.join(", "));
+    MF = Object.assign(r, { s, cat, all, pat, t: Date.now() }); return MF;
   }
   // ── Weihnachtsabteilung /print/weihnachten (Themen/Texte/Bilder: print-xmas.js) ──
   // Preis je Vorschlag = Startausführung des Konfigurators (wie die Shop-Karten, „ab … für N Stk.“), Liefertermin = frühester Tag aus derselben Preisberechnung
@@ -2614,6 +2712,12 @@ module.exports = function (D) {
     if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
     if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u); }
     if ((p === "/print/preise" || p === "/print/preise/") && (req.method === "GET" || req.method === "HEAD")) return pricesPage(req, res);
+    // Google-Merchant-Center-Feed: nur wenn der Shop öffentlich ist (Admins sehen ihn auch vorher); nicht in der Sitemap, robots.txt erlaubt ihn
+    if (p === "/print/merchant.xml" && (req.method === "GET" || req.method === "HEAD")) {
+      if (!open && !admin) return D.send(res, 404, "Not found", "text/plain; charset=utf-8", { "X-Robots-Tag": "noindex" });
+      const f = await merchantFeed();
+      return D.sendGz(req, res, 200, f.xml, "application/xml; charset=utf-8", { "Cache-Control": open ? "public, max-age=3600" : "no-store", "X-Robots-Tag": "noindex" });
+    }
     if ((p === "/print/weihnachten" || p === "/print/weihnachten/") && (req.method === "GET" || req.method === "HEAD")) { if (p !== "/print/weihnachten") return D.send(res, 301, "", "text/plain", { Location: "/print/weihnachten" + (u.search || "") }); return xmasPage(req, res, open ? false : (view && !admin) ? "view" : true); }
     try {
       // Druckdatei für Print.com: nur mit Signatur und nur für echte, freigegebene Bestellungen
@@ -3172,6 +3276,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { xmasOn: () => XMAS.season().on, llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA } };
+  return { xmasOn: () => XMAS.season().on, llmsTxt, chatPrices, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, feedImg, gpcOf, fmtNice, RETURN_LD } };
 };
 module.exports._bonusCalc = bonusCalc;
