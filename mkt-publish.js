@@ -290,7 +290,8 @@ module.exports = function (D) {
   // TikTok-Stücke: bis 64 MB als Ganzes (unter 5 MB Pflicht), darüber 10-MB-Stücke, der Rest hängt am letzten Stück (Media Transfer Guide)
   function ttChunks(size) { const MB = 1024 * 1024, chunk = size <= 64 * MB ? size : 10 * MB; return { chunk, n: Math.max(1, Math.floor(size / chunk)) }; }
   const TT_MSG = { spam_risk_too_many_posts: "Für heute sind auf diesem Konto zu viele Posts – später nochmal.", spam_risk_user_banned_from_posting: "Dieses Konto darf gerade nicht posten.",
-    reached_active_user_cap: "Die App hat ihr Tageslimit bei TikTok erreicht – später nochmal.", unaudited_client_can_only_post_to_private_accounts: "Die App ist von TikTok noch nicht geprüft – bis dahin gehen nur private Posts.",
+    reached_active_user_cap: "Die App hat ihr Tageslimit bei TikTok erreicht – später nochmal.",
+    spam_risk_too_many_pending_share: "In deiner TikTok-App warten schon 5 Entwürfe aus dem Cockpit (Posteingang → System-Benachrichtigungen) – erst diese posten oder löschen, dann „nochmal“.", unaudited_client_can_only_post_to_private_accounts: "Die App ist von TikTok noch nicht geprüft – bis dahin gehen nur private Posts.",
     privacy_level_option_mismatch: "Die gewählte Sichtbarkeit gibt es für dieses Konto nicht – im Planer neu wählen.", scope_not_authorized: "Direktes Posten ist nicht freigegeben – TikTok neu verbinden.",
     access_token_invalid: "Anmeldung abgelaufen – TikTok neu verbinden." };
   const ttMsg = er => "TikTok: " + (TT_MSG[er.code] || er.message || er.code);
