@@ -11,14 +11,15 @@ function isDay(){ var h=new Date().getHours(), m=new Date().getMonth(); var up=[
 function yOf(m){ return 200-(m-1000)/2300*170; }
 
 function mountains(){
-  return '<svg class="alp-mt" viewBox="0 0 600 200" preserveAspectRatio="xMidYMax slice" aria-hidden="true">'+
-    '<path class="m3" d="M0 150 L60 112 L105 128 L170 70 L215 96 L262 52 L318 104 L372 78 L430 118 L500 86 L560 110 L600 98 L600 200 L0 200Z"/>'+
-    '<path class="m2" d="M0 170 L48 140 L96 152 L150 108 L196 132 L246 92 L300 128 L352 100 L410 140 L468 104 L520 130 L600 116 L600 200 L0 200Z"/>'+
-    '<path class="snow" d="M246 92 L262 52 L280 74 L270 70 L262 80 L254 72Z M150 108 L170 70 L186 86 L176 84 L168 92 L160 86Z M352 100 L372 78 L388 94 L378 92 L372 98 L364 94Z M468 104 L500 86 L516 98 L504 96 L498 102 L488 98Z"/>'+
-    '<path class="m1" d="M0 200 L0 182 L70 158 L130 176 L200 150 L270 174 L340 156 L420 178 L500 160 L600 172 L600 200Z"/>'+
+  // Kette 1200 breit (zweite Hälfte gespiegelt, damit es nicht nach Wiederholung aussieht) → füllt den ganzen Kopfbereich
+  return '<svg class="alp-mt" viewBox="0 0 1200 200" preserveAspectRatio="xMidYMax slice" aria-hidden="true">'+
+    '<path class="m3" d="M0 150 L60 112 L105 128 L170 70 L215 96 L262 52 L318 104 L372 78 L430 118 L500 86 L560 110 L630 74 L690 104 L748 60 L800 92 L862 66 L920 108 L980 80 L1040 116 L1100 88 L1160 112 L1200 100 L1200 200 L0 200Z"/>'+
+    '<path class="m2" d="M0 170 L48 140 L96 152 L150 108 L196 132 L246 92 L300 128 L352 100 L410 140 L468 104 L520 130 L590 112 L650 138 L704 98 L760 128 L820 94 L880 132 L936 110 L996 142 L1056 106 L1112 134 L1200 118 L1200 200 L0 200Z"/>'+
+    '<path class="snow" d="M246 92 L262 52 L280 74 L270 70 L262 80 L254 72Z M150 108 L170 70 L186 86 L176 84 L168 92 L160 86Z M352 100 L372 78 L388 94 L378 92 L372 98 L364 94Z M468 104 L500 86 L516 98 L504 96 L498 102 L488 98Z M732 74 L748 60 L764 72 L754 70 L748 78 L740 72Z M846 78 L862 66 L878 78 L868 76 L862 82 L854 78Z M616 84 L630 74 L644 84 L636 82 L630 88 L622 84Z"/>'+
+    '<path class="m1" d="M0 200 L0 182 L70 158 L130 176 L200 150 L270 174 L340 156 L420 178 L500 160 L600 172 L680 154 L760 176 L840 158 L920 178 L1000 160 L1090 176 L1200 164 L1200 200Z"/>'+
     trees()+'</svg>';
 }
-function trees(){ var r=rnd(7), out=""; for(var i=0;i<16;i++){ var x=20+i*36+r()*14, b=184+r()*10, hgt=10+r()*9;
+function trees(){ var r=rnd(7), out=""; for(var i=0;i<32;i++){ var x=20+i*36+r()*14, b=184+r()*10, hgt=10+r()*9;
   out+='<path class="tree" d="M'+x.toFixed(1)+' '+(b-hgt).toFixed(1)+' L'+(x-hgt*0.36).toFixed(1)+' '+b.toFixed(1)+' L'+(x+hgt*0.36).toFixed(1)+' '+b.toFixed(1)+'Z"/>'; } return out; }
 
 function scene(w){
@@ -45,6 +46,7 @@ function mount(){
   if(cur&&cur.getAttribute("data-k")===key) return;
   var tmp=document.createElement("div"); tmp.innerHTML=scene(w); var el=tmp.firstChild; el.setAttribute("data-k",key);
   if(cur) hero.replaceChild(el,cur); else hero.insertBefore(el,hero.firstChild);
+  el.style.setProperty("--alpW",(hero.offsetWidth+180)+"px");
   hero.classList.add("has-alp"); LAST=key;
 }
 var main=document.getElementById("main");
@@ -56,8 +58,8 @@ setTimeout(mount,1200);
 F.css(
 /* Kulisse rechts im Kopfbereich (feste Höhe, weg von Text und Knöpfen), Text bleibt davor */
 ".ag-hero.has-alp{position:relative;isolation:isolate}.ag-hero.has-alp>*:not(.ag-alp){position:relative;z-index:1}"+
-".ag-alp{position:absolute;right:0;top:-6px;height:236px;width:min(620px,52%);z-index:0;pointer-events:none;overflow:hidden;"+
-"-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 30%);mask-image:linear-gradient(90deg,transparent 0,#000 30%);color:var(--ink)}"+
+".ag-alp{position:absolute;left:-8px;right:-8px;top:-6px;height:236px;z-index:0;pointer-events:none;overflow:hidden;"+
+"-webkit-mask-image:linear-gradient(90deg,rgba(0,0,0,.38) 0,rgba(0,0,0,.38) 28%,#000 58%);mask-image:linear-gradient(90deg,rgba(0,0,0,.38) 0,rgba(0,0,0,.38) 28%,#000 58%);color:var(--ink)}"+
 ".alp-sky{position:absolute;inset:0}"+
 ".alp-mt{position:absolute;left:0;right:0;bottom:0;width:100%;height:74%}"+
 ".alp-mt .m3{fill:currentColor;opacity:.13}.alp-mt .m2{fill:currentColor;opacity:.2}.alp-mt .m1{fill:currentColor;opacity:.3}"+
@@ -88,13 +90,13 @@ F.css(
 ":root[data-theme='light'] .alp-sl{border-top-color:rgba(40,60,90,.35)}"+
 "@keyframes alpSpin{to{transform:rotate(360deg)}}"+
 "@keyframes alpTwinkle{0%,100%{opacity:.15}50%{opacity:.95}}"+
-"@keyframes alpDrift{to{transform:translateX(660px) scale(var(--s))}}"+
+"@keyframes alpDrift{to{transform:translateX(var(--alpW,900px)) scale(var(--s))}}"+
 "@keyframes alpRain{to{transform:translate(-18px,220px) rotate(12deg)}}"+
 "@keyframes alpSnow{0%{transform:translate(0,0)}25%{transform:translate(8px,55px)}50%{transform:translate(-6px,110px)}75%{transform:translate(7px,165px)}100%{transform:translate(0,230px)}}"+
 "@keyframes alpFog{from{transform:translateX(-8%)}to{transform:translateX(8%)}}"+
 "@keyframes alpFlash{0%,88%,100%{background:rgba(255,255,255,0)}89%{background:rgba(255,255,255,.55)}90%{background:rgba(255,255,255,0)}91.5%{background:rgba(255,255,255,.35)}93%{background:rgba(255,255,255,0)}}"+
 /* Handy: Kulisse hinter der Uhr, etwas zurückhaltender */
-"@media (max-width:900px){.ag-alp{width:82%;height:190px;opacity:.9;top:calc(env(safe-area-inset-top,0px) - 4px)}}"+
+"@media (max-width:900px){.ag-alp{height:190px;opacity:.9;top:calc(env(safe-area-inset-top,0px) - 4px)}}"+
 "@media (prefers-reduced-motion:reduce){.ag-alp *{animation:none!important}.alp-cloud{transform:translateX(40%) scale(var(--s))}.alp-rain,.alp-snow,.alp-flash{display:none}}"
 );
 })();
