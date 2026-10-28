@@ -705,12 +705,15 @@ function blitzReportReconcile(bookings, bill, sev) {
   const sevLoaded = !!(sev && (sev.invoicesAll || sev.invoices)), bById = {}; bookings.forEach(b => { if (b && b.id) bById[String(b.id)] = b; });
   // echte Doppelrechnung (B2): Cockpit- und Blitzdings-Rechnung beide gültig und zusammen mehr als der Buchungsbetrag. Keine Doppelrechnung:
   // Nachverrechnung einer Differenz (BD-7), Ersatz für eine stornierte Blitzdings-Rechnung, stornierte/gelöschte Cockpit-Rechnung.
+  // wirksamer Betrag: Rechnung abzüglich Gutschriften – storniert oder voll gutgeschrieben zählt 0 (wie storniert); netto anteilig
+  const eff = x => (!x || x.cancelled || x.type === "SR" ? 0 : Math.max(0, round2((+x.gross || 0) - (+x.credited || 0)))), effN = x => (eff(x) > 0 && +x.gross ? round2((+x.net || 0) * eff(x) / +x.gross) : 0);
   const realDup = (bookingId, invId, otherId, inProgress) => {
-    const i = byId[String(invId)], b = bById[String(bookingId)]; if (!i || i.cancelled || i.type === "SR") return false;
+    const i = byId[String(invId)], b = bById[String(bookingId)]; if (eff(i) <= 0.005) return false;
     const oid = String(otherId || (b && b.sevdeskInvoiceId) || ""); if (!oid) return b ? b.invoiceInProgress === true : !!inProgress;   // Blitzdings legt (noch) an
-    const ot = byId[oid]; if (oid === String(invId) || !ot || ot.cancelled || ot.type === "SR") return false;
-    if (b) return round2((+i.gross || 0) + (+ot.gross || 0)) > round2((+b.totalCents || 0) / 100) + 0.02;
-    return Math.abs((+i.gross || 0) - (+ot.gross || 0)) < 0.02 ? true : null;   // Buchung nicht geladen: gleicher Betrag = doppelt, sonst unklar
+    const ot = byId[oid]; if (oid === String(invId) || eff(ot) <= 0.005) return false;
+    // doppelt nur, wenn brutto UND netto zusammen über der Buchung (Firmenbuchungen stehen netto, B2)
+    if (b) { const amt = round2((+b.totalCents || 0) / 100); return round2(eff(i) + eff(ot)) > amt + 0.02 && round2(effN(i) + effN(ot)) > amt + 0.02; }
+    return Math.abs(eff(i) - eff(ot)) < 0.02 ? true : null;   // Buchung nicht geladen: gleicher Betrag = doppelt, sonst unklar
   };
   if (supported) bookings.forEach(b => {
     if (!b || !BLITZ_ID.test(String(b.id || ""))) return;
@@ -721,7 +724,7 @@ function blitzReportReconcile(bookings, bill, sev) {
       if (known.has(String(r.id))) { if (String(b.cockpitInvoiceId || "") === String(r.id) && !b.cockpitInvoiceNr && i.nr && !o.q[k] && !recent(k)) again.push([b.id, r.id, i.nr]); return; }   // Nummer nachtragen
       if (o.q[k]) return;
       const own = b.sevdeskInvoiceId ? byId[String(b.sevdeskInvoiceId)] : null;   // Blitzdings-Rechnung storniert → die Cockpit-Rechnung ist der Ersatz, keine Doppelrechnung
-      if (b.sevdeskInvoiceId && String(b.sevdeskInvoiceId) !== String(r.id) && !(own && own.cancelled)) { if (realDup(b.id, r.id, b.sevdeskInvoiceId)) dup.push({ bookingId: String(b.id), reference: b.reference || "", invoiceId: String(r.id), nr: i.nr || "", other: String(b.sevdeskInvoiceId), otherNr: (byId[String(b.sevdeskInvoiceId)] || {}).nr || "" }); return; }
+      if (b.sevdeskInvoiceId && String(b.sevdeskInvoiceId) !== String(r.id) && !(own && eff(own) <= 0.005)) { if (realDup(b.id, r.id, b.sevdeskInvoiceId)) dup.push({ bookingId: String(b.id), reference: b.reference || "", invoiceId: String(r.id), nr: i.nr || "", other: String(b.sevdeskInvoiceId), otherNr: (byId[String(b.sevdeskInvoiceId)] || {}).nr || "" }); return; }
       if (o.done[k]) { if (!recent(k)) again.push([b.id, r.id, i.nr]); return; }
       if (String(r.date || "") >= since) again.push([b.id, r.id, i.nr]);
       else stock.push({ bookingId: String(b.id), reference: b.reference || "", invoiceId: String(r.id), nr: i.nr || "", date: r.date || "" });
@@ -2282,6 +2285,7 @@ function abgleichBlitz(o) {
   const REF = /bd-[a-z0-9]{2,16}(?:-[a-z0-9]{1,16}){0,3}/g;   // Buchungsnummern im Kopftext (auch Altformat „BD-2026-0042“, B3)
   const refsIn = i => (lc(i.ref) + " " + lc(i.header)).match(REF) || [];
   const L0 = (i, src) => { const l = invLink({ id: i.id, nr: i.nr, date: i.date, gross: i.gross }, sevById, ""); if (l) l.src = src; return l; };
+  const fullCr = x => !!x && (+x.gross || 0) > 0.005 && (+x.credited || 0) >= (+x.gross || 0) - 0.005;
   const cancelledB = b => b.status === "CANCELLED" || b.paymentStatus === "REFUNDED";
   const billable = b => amtOf(b) > 0 && !cancelledB(b) && !(b.status === "PENDING" && b.paymentStatus !== "PAID") && b.offerOpen !== true;
   const free0 = i => !linked[i.id] && !reserved[i.id];
@@ -2308,8 +2312,9 @@ function abgleichBlitz(o) {
     claim(id, c); return true; }); });
   C.forEach(c => {
     const ls = [], seen = {}, b = c.b;
-    const push = (l, src) => { if (!l || l.state === "storniert" || (l.id && seen[l.id])) return; if (l.id) seen[l.id] = 1; l.src = src; ls.push(l); };
-    if (c.sevI) { if (!c.sevI.cancelled) push(L0(c.sevI, "blitz"), "blitz"); }
+    // voll gutgeschriebene Rechnung zählt wie eine stornierte (B2: aufgehobene Blitzdings-Rechnung + Ersatz ist keine Doppelrechnung)
+    const push = (l, src) => { if (!l || l.state === "storniert" || fullCr(l) || (l.id && seen[l.id])) return; if (l.id) seen[l.id] = 1; l.src = src; ls.push(l); };
+    if (c.sevI) { if (!c.sevI.cancelled && !fullCr(c.sevI)) push(L0(c.sevI, "blitz"), "blitz"); }
     else if (b.sevdeskInvoiceId) push(invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: dayOf(b), gross: amtOf(b) }, sevById, oldest), "blitz");   // (noch) nicht geladen
     c.recsB.forEach(r => push(invLink(r, sevById, oldest), "cockpit"));
     c.cockpitOk.forEach(id => { if (!seen[id]) push(L0(sevById[id], "cockpit"), "cockpit"); });
@@ -2397,8 +2402,10 @@ function abgleichBlitz(o) {
     const viaGroup = !c.live.length && !c.weak && groupInv[b.id];
     const links = c.live.length ? c.live.slice() : c.weak ? [L0(c.weak, "name")] : viaGroup ? [L0(viaGroup, "group")] : [];
     links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-    const dead = !links.length ? (c.sevI && c.sevI.cancelled ? L0(c.sevI, "blitz") : rec ? invLink(rec, sevById, oldest) : null) : null;   // nur zur Historie (storniert)
+    const dead = !links.length ? (c.sevI && (c.sevI.cancelled || fullCr(c.sevI)) ? L0(c.sevI, "blitz") : rec ? invLink(rec, sevById, oldest) : null) : null;   // nur zur Historie (storniert bzw. voll gutgeschrieben)
     if (dead && dead.id) linked[dead.id] = 1;
+    const crDead = !links.length && [c.sevI].concat(c.recsB.map(r => r && r.id && sevById[String(r.id)])).find(x => x && !x.cancelled && fullCr(x));
+    if (crDead) notes.push({ lvl: "info", text: "Rechnung " + (crDead.nr || "Entwurf") + " ist voll gutgeschrieben und zählt wie storniert. War die Buchung bewusst kostenlos (Kulanz), Buchung in Blitzdings anpassen statt neu zu verrechnen." });
     const team = c.live.length ? mates(c) : [c], shared = team.length > 1;
     const deposit = c.recsB.some(r => r && r.deposit), group = !!viaGroup || shared || c.recsB.some(r => r && r.group);
     const st = sumState(links), sorted = links.slice().sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
@@ -2421,7 +2428,7 @@ function abgleichBlitz(o) {
       // unbekannt → nur Hinweis (B6 – ein bewusster Rabatt wird nie nachverrechnet)
       const bases = c.recsB.filter(r => r && r.id && links.some(l => l.id === String(r.id)) && r.bookingAmount != null && isFinite(+r.bookingAmount)).map(r => +r.bookingAmount);
       const base = bases.length ? Math.max.apply(null, bases) : null, raised = bl.length > 0 || (base != null && amt > base + 0.02);
-      if (bl.length && co.length && gG > amt + 0.02 && Math.abs(n - amt) >= 0.02)
+      if (bl.length && co.length && round2(gG - cr) > amt + 0.02 && round2(n - nCr) > amt + 0.02)   // brutto UND netto (nach Gutschriften) über der Buchung
         notes.push({ lvl: "bad", text: "Doppelrechnung prüfen: " + bl.map(l => l.nr || "Entwurf").join(", ") + " (von Blitzdings) und " + co.map(l => l.nr || "Entwurf").join(", ") + " (Cockpit) für dieselbe Buchung – eine davon stornieren bzw. den Entwurf löschen (nicht automatisch)." });
       else if (Math.abs(gG - amt) < 0.02 || Math.abs(n - amt) < 0.02) { /* passt */ }
       else if (amt > gG + 0.02 && raised) { diff = round2(Math.min(amt - gG, base != null && !bl.length ? amt - base : amt - gG)); unbilled = diff; notes.push({ lvl: "warn", text: "Betrag geändert: Buchung " + eu(amt) + ", verrechnet " + eu(gG) + " – Differenz " + eu(diff) + " nachverrechnen." }); }   // nur die Erhöhung seit dem Verrechnen – ein Rabatt bleibt

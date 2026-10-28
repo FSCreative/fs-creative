@@ -256,6 +256,27 @@ function unitTests(T) {
     assert.ok(it.notes.some(n => /Erstattung 9,69 € zu Rechnung RE-763/.test(n.text)));
   }]);
 
+  /* ---- dritte Prüfung (R3) ---- */
+  out.push(["R3-1/6: Blitzdings-Rechnung voll gutgeschrieben + Cockpit-Ersatz → keine Doppelrechnung; Ersatz storniert → wieder zu verrechnen (Hinweis); Firmenbuchung netto + Differenz → keine Doppelrechnung", () => {
+    const b = bk({ id: "cr1", reference: "BD-CR0001", customerName: "Kunde C", paymentStatus: "PAID", sevdeskInvoiceId: "801" });
+    const bdInv = I({ id: "801", nr: "RE-801", gross: 399, net: 332.5, paid: 399, contact: "Kunde C", credited: 399, date: "2026-10-01" });
+    const recs = { "blitz:cr1": [{ id: "901", nr: "RE-901", gross: 399, date: "2026-11-02", bookingAmount: 399 }] };
+    let it = blitz([b], [bdInv, I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02" })], recs)[0];
+    assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.invoiced, 399); assert.ok(!(it.notes || []).some(n => /Doppelrechnung/.test(n.text)), JSON.stringify(it.notes));
+    it = blitz([b], [bdInv, I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02", cancelled: true })], recs)[0];
+    assert.strictEqual(it.unbilled, 399, "voll gutgeschrieben + Ersatz storniert = nicht verrechnet"); assert.ok(it.action);
+    assert.ok(it.notes.some(n => /RE-801 ist voll gutgeschrieben/.test(n.text)), JSON.stringify(it.notes));
+    // teilweise gutgeschrieben bleibt wie bisher (A3: Gutschrift = bewusste Minderung, keine Nachverrechnung)
+    it = blitz([b], [Object.assign({}, bdInv, { credited: 99 })])[0]; assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null);
+    // echte Doppelrechnung bleibt rot
+    it = blitz([b], [Object.assign({}, bdInv, { credited: 0 }), I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02" })], recs)[0];
+    assert.ok(it.notes.some(n => n.lvl === "bad" && /Doppelrechnung prüfen/.test(n.text)), JSON.stringify(it.notes));
+    // Firmenbuchung netto 449: Blitzdings-Rechnung 478,80 brutto (399 netto) + Cockpit-Differenz 60 brutto (50 netto) → passt, nicht doppelt
+    it = blitz([bk({ id: "fn1", reference: "BD-FN0001", customerName: "Anna", companyName: "Hotel Alpenrose", totalCents: 44900, sevdeskInvoiceId: "811" })],
+      [I({ id: "811", nr: "RE-811", gross: 478.8, net: 399, contact: "Hotel Alpenrose", date: "2026-10-01" }), I({ id: "911", nr: "RE-911", gross: 60, net: 50, contact: "Hotel Alpenrose", date: "2026-11-02" })], { "blitz:fn1": [{ id: "911", nr: "RE-911", gross: 60, date: "2026-11-02", bookingAmount: 449 }] })[0];
+    assert.strictEqual(it.unbilled, 0); assert.ok(!(it.notes || []).some(n => /Doppelrechnung/.test(n.text)), JSON.stringify(it.notes));
+  }]);
+
   /* ---- fin-api Idempotency-Key (X8) mit der echten fin-local.js ---- */
   out.push(["fin-api: gleicher Idempotency-Key derselben Plattform → bestehende Rechnung, gleiches Format; andere Plattform/ohne Header → neu", async () => {
     const { L } = finSetup([contact("40", "SV Stainach")]); await L.load();
@@ -321,6 +342,22 @@ function unitTests(T) {
       // Buchhaltung nicht geladen → nichts löschen
       const st2 = B.blitzReportState(); st2.dup = { "h|662": { bookingId: "h", invoiceId: "662", other: "661" } }; B.blitzReportSave(st2);
       assert.strictEqual(B.blitzReportReconcile(books, bill, null).duplicates.length, 1); assert.ok(B.blitzReportState().dup["h|662"]);
+    });
+    await t("R3-1/6: Doppelrechnungs-Meldung – voll gutgeschriebene Blitzdings-Rechnung + Ersatz bzw. Firmenbuchung netto mit Differenzrechnung → keine Meldung; echte bleibt", () => {
+      const st = B.blitzReportState(); st.since = "2026-01-01T00:00:00.000Z"; st.q = {}; st.done = {};
+      st.dup = { "c|901": { bookingId: "c", invoiceId: "901", other: "801" }, "n|904": { bookingId: "n", invoiceId: "904", other: "804" }, "z|902": { bookingId: "z", invoiceId: "902", other: "802" } }; B.blitzReportSave(st);
+      const books = [bk({ id: "c", reference: "BD-CCC901", sevdeskInvoiceId: "801", invoiceIds: ["801"] }), bk({ id: "n", reference: "BD-NNN904", totalCents: 44900, sevdeskInvoiceId: "804", invoiceIds: ["804", "904"] }),
+        bk({ id: "z", reference: "BD-ZZZ902", sevdeskInvoiceId: "802", invoiceIds: ["802", "902"] })];
+      const bill = { invoices: { "blitz:c": [{ id: "901", nr: "RE-901", gross: 399, date: "2026-11-02" }] } };
+      const invs = [I({ id: "801", nr: "RE-801", credited: 399 }), I({ id: "901", nr: "RE-901" }), I({ id: "804", nr: "RE-804", gross: 478.8, net: 399 }), I({ id: "904", nr: "RE-904", gross: 60, net: 50 }), I({ id: "802", nr: "RE-802" }), I({ id: "902", nr: "RE-902" })];
+      const rep = B.blitzReportReconcile(books, bill, sev(invs));
+      assert.deepStrictEqual(rep.duplicates.map(d => d.bookingId + "|" + d.invoiceId), ["z|902"], JSON.stringify(rep.duplicates));
+      assert.deepStrictEqual(Object.keys(B.blitzReportState().dup), ["z|902"]);
+      assert.ok(B.blitzReportState().q["c|901"], "Ersatzrechnung wird normal gemeldet (nicht als doppelt verworfen)");
+      // Firmenbuchung netto: 2× 478,80 (brutto UND netto über der Buchung) → echte Doppelrechnung
+      const st2 = B.blitzReportState(); st2.dup = { "n|904": { bookingId: "n", invoiceId: "904", other: "804" } }; st2.q = {}; B.blitzReportSave(st2);
+      assert.strictEqual(B.blitzReportReconcile(books, bill, sev(invs.map(i => i.id === "904" ? Object.assign({}, i, { gross: 478.8, net: 399 }) : i))).duplicates.map(d => d.bookingId + "|" + d.invoiceId).join(), "n|904");
+      const st3 = B.blitzReportState(); st3.dup = {}; st3.q = {}; B.blitzReportSave(st3);
     });
     await t("B7: „Rückgängig“ einer Zuordnung blitz:<id> nimmt die wartende Meldung heraus bzw. vermerkt die gesendete als zurückgenommen", () => {
       B.billingOp({ op: "invoice", key: "blitz:bkR1", invoice: { id: "9101", nr: "RE-9101", gross: 399 } });
