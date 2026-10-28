@@ -13,8 +13,15 @@
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   S.page = "home"; S.check = "self"; S.cart = cartLoad(); S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
-  var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }); };
+  var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }).replace(/\s/g, " "); };   // „€ 95,24“ nie umbrechen
   var deDate = function (iso) { var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; var d = new Date(+m[1], +m[2] - 1, +m[3]); return d.toLocaleDateString("de-AT", { weekday: "short", day: "numeric", month: "long" }); };
+  // Zahl + Einheit und Datumsangaben bleiben zusammen (geschütztes Leerzeichen)
+  var nbsp = function (s) { return String(s).replace(/ /g, " "); };
+  var stk = function (n) { return (+n || 0).toLocaleString("de-AT") + " Stk."; };
+  var pDay = function (v) { var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/), d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v || NaN); return isNaN(d) ? null : d; };
+  var dNum = function (v) { var d = pDay(v); return d ? d.getDate() + "." + (d.getMonth() + 1) + "." : ""; };   // „4.11.“ (nicht dShort: das ist die Liefertermin-Anzeige „Mi., 4. Nov.“)
+  var dLong = function (v, wd) { var d = pDay(v); return d ? nbsp(d.toLocaleDateString("de-AT", wd ? { weekday: "short", day: "numeric", month: "long" } : { day: "numeric", month: "long" })) : ""; };
+  var dPast = function (v, now) { var d = pDay(v); if (!d) return false; var t = new Date(now || Date.now()); t.setHours(0, 0, 0, 0); return d < t; };
   // Texte aus dem Print.com-CMS: HTML/Markdown/Links entfernen (teils abgeschnittene <a href=…)
   var txt = function (v) { return String(v || "").replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, "$1").replace(/<[^>]*>?/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "").replace(/&nbsp;/g, " ").replace(/\*\*|__/g, "").replace(/[ \t]{2,}/g, " ").trim(); };
   // erste Aussage einer Beschreibung (für Untertitel/Karten): keine Aufzählung, max. ~140 Zeichen
@@ -71,7 +78,7 @@
     if (navigator.share && (navigator.maxTouchPoints > 0 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))) { navigator.share({ title: title, text: text, url: url }).catch(function () {}); return; }
     copyText(url).then(function () { toast("Link kopiert – einfach einfügen und teilen"); }, function () { window.prompt("Link zum Teilen (kopieren):", url); });
   }
-  function cfgShare() { shareLink(cfgLink(S.prod.key, cfgPack()), S.prod.title + " – FS Creative Druckshop", S.prod.title + " · " + totalCopies().toLocaleString("de-AT") + " Stk." + (cfgSum() ? " · " + cfgSum() : "") + (S.price ? " · " + eur(S.price.gross) + " inkl. USt & Versand" : "")); }
+  function cfgShare() { shareLink(cfgLink(S.prod.key, cfgPack()), S.prod.title + " – FS Creative Druckshop", S.prod.title + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk." + (cfgSum() ? " · " + cfgSum() : "") + (S.price ? " · " + eur(S.price.gross) + " inkl. USt & Versand" : "")); }
   function cfgSave() {
     var had = cfgSavedNow(); if (had) { savDel(had.id); return; }   // zweiter Klick = wieder entfernen
     var it = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), product: S.prod.key, title: S.prod.title, img: imgOk(S.prod.img) ? S.prod.img : "", sum: cfgSum(), n: totalCopies(), gross: S.price ? S.price.gross : null, c: cfgPack(), at: new Date().toISOString() };
@@ -86,7 +93,7 @@
     return '<div class="ps-cfgbar"><button type="button" class="ps-cfgb' + (on ? " on" : "") + '" data-act="cfgsave" aria-pressed="' + on + '"><span aria-hidden="true">' + (on ? "♥" : "♡") + "</span>" + (on ? "Gemerkt" : "Merken") + '</button><button type="button" class="ps-cfgb" data-act="cfgshare"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Teilen</button></div>'; }
   function cfgBarUpd() { [].forEach.call(document.querySelectorAll(".ps-cfgbar"), function (b) { b.outerHTML = cfgBarHtml(); }); }
   function savedCard(x) { var url = cfgLink(x.product, x.c);
-    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || 0).toLocaleString("de-AT") + " Stk."].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
+    return '<div class="ps-sav"><a class="im" href="' + esc(url) + '">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</a><div class="tx"><a href="' + esc(url) + '"><b>' + esc(x.title) + "</b></a><span>" + esc([(+x.n || 0).toLocaleString("de-AT") + "\u00a0Stk."].concat(x.sum ? [x.sum] : []).join(" · ")) + "</span>" +
       (x.gross != null ? '<small>beim Merken ' + eur(x.gross) + " · aktueller Preis beim Öffnen</small>" : "") + '</div><div class="ac"><a class="ps-btn primary small" href="' + esc(url) + '">Öffnen</a><button type="button" class="ps-link" data-act="savshare:' + esc(x.id) + '">Teilen</button><button type="button" class="ps-link" data-act="savdel:' + esc(x.id) + '">Entfernen</button></div></div>'; }
 
   // ── Warenkorb (30 Tage im Browser, angemeldet zusätzlich im Konto) ──
@@ -125,7 +132,7 @@
       }).catch(function () { if (seq !== rqSeq) return; S.quoting--; S.cartErr[x.id] = "Keine Verbindung"; if (!S.quoting && S.step === 6) render(); });
     });
   }
-  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + " Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
+  function itemLine(x, noQty) { return [x.size, noQty ? "" : (+x.n || 0).toLocaleString("de-AT") + "\u00a0Stk."].concat((x.labels || []).filter(function (l) { return l && l[1] && !/format|größe|auflage/i.test(l[0]) && !NONE_RX.test(String(l[1]).trim()); }).slice(0, 5).map(function (l) { return l[1]; })).filter(Boolean).join(" · "); }
   function itemThumb(x) { var pp = prodByKey(x.product) || {}, im = imgOk(x.img) ? x.img : imgOk(pp.img) ? pp.img : "";
     var mp = (x.motifs || []).filter(function (m) { return m.preview; }).slice(0, 4);   // mehrere Motive: aufgefächerter Stapel aller Motive
     if (mp.length > 1) return '<span class="ps-ci-img ps-ci-stack" title="' + x.motifs.length + ' Motive">' + mp.map(function (m, i) { return '<img src="' + esc(m.preview) + '" alt="" loading="lazy" style="--i:' + i + ";--n:" + mp.length + '">'; }).join("") + '<b>' + x.motifs.length + "</b></span>";
@@ -168,10 +175,10 @@
     headUpdate();
   }
   function refreshMe() { api("/print/api/account/me").then(function (j) { if (j.ok && j.customer) S.me = j.customer; }).catch(function () {}); }
-  function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) render(); } }).catch(function () {}); }
+  function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) { var sp = root.querySelector(".ps-status[data-oid]"); if (sp && LIVE.o) { if (!liveBusy()) renderStatus(LIVE.o, LIVE.id, LIVE.t); } else if (!sp && !(LIVE.statusMode && !S.view)) render(); } } }).catch(function () {}); }   // Bestellseite nicht durch die Startseite ersetzen
   function headUpdate() {
     document.querySelectorAll("[data-acct-link]").forEach(function (a) { var l = a.querySelector("[data-acct-label]"); if (l) l.textContent = S.me ? "Konto" : "Anmelden"; else a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
-    var cur = S.view === "konto" ? "konto" : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
+    var cur = S.view === "konto" ? "konto" : !S.view && root.querySelector(".ps-status[data-oid]") ? (S.me ? "konto" : "") : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
     document.querySelectorAll("[data-bn]").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-bn") === cur); });
     document.querySelectorAll("[data-cart-n]").forEach(function (b) { b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length; });
   }
@@ -202,23 +209,25 @@
     var me = S.me, co = me.type === "company", tab = A.tab || "start", fm = function (k) { return A.form === k ? msg : ""; };
     var TABS = [["start", "Übersicht"], ["orders", "Bestellungen" + (S.orders.length ? " (" + S.orders.length + ")" : "")], ["saved", "Merkliste" + ((me.saved || []).length ? " (" + me.saved.length + ")" : "")], ["drafts", "Entwürfe" + ((me.drafts || []).length ? " (" + me.drafts.length + ")" : "")], ["address", "Adresse"], ["settings", "Einstellungen"]];
     var ini = ((me.firstName || "")[0] || "") + ((me.lastName || "")[0] || "") || (me.email || "?")[0];
-    h += back + '<div class="ps-acct-hd"><span class="av" aria-hidden="true">' + esc(ini.toUpperCase()) + '</span><div class="nm"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><span class="pd-muted">' + esc(me.email) + ' · <span class="ps-acct-type ' + (co ? "co" : "pr") + '">' + (co ? "Firmenkonto" + (me.company ? " · " + esc(me.company) : "") : "Privatkonto") + '</span></span></div><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>' +
+    h += back + '<div class="ps-acct-hd"><span class="av" aria-hidden="true">' + esc(ini.toUpperCase()) + '</span><div class="nm"><h2>Hallo' + (me.firstName ? " " + esc(me.firstName) : "") + '!</h2><div class="ps-acct-meta"><span class="em">' + esc(me.email).replace("@", "@<wbr>") + '</span><span class="ps-acct-type ' + (co ? "co" : "pr") + '">' + (co ? "Firmenkonto" : "Privatkonto") + "</span>" + (co && me.company ? '<span class="cn">' + esc(me.company) + "</span>" : "") + '</div></div><button type="button" class="ps-btn small" data-act="aclogout">Abmelden</button></div>' +
       '<nav class="ps-acct-nav" role="tablist" aria-label="Kundenkonto">' + TABS.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (tab === t[0]) + '" data-act="atab:' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</nav>";
-    var orderRow = function (o) { var url = "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(o.token);
-      return '<li><a href="' + url + '"><b>' + esc(o.product) + "</b><span>" + esc(o.nr) + " · " + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + " · " + (+o.copies || 0).toLocaleString("de-AT") + ' Stk.</span></a><span class="ps-ost">' + esc(o.statusText) + "</span><b>" + eur(co ? o.net : o.gross) + "</b>" +
-        '<span class="act">' + (o.tracks && o.tracks.length ? '<a class="ps-link" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a>' : "") + (o.canReorder ? '<button type="button" class="ps-btn small" data-act="reorder:' + esc(o.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-link" href="' + url + '">Details</a></span></li>'; };
+    // Bestellzeile: Produkt + Preis, Metazeile, Fortschritt (Punkte + Status + Datum), Knöpfe
+    var price = function (o) { return '<b class="pr">' + eur(co ? o.net : o.gross) + (co ? "<small>netto</small>" : "") + "</b>"; };
+    var orderRow = function (o) {
+      return '<li class="ps-ord"><div class="hd"><a class="t" href="' + ordUrl(o) + '"><b>' + esc(o.product) + "</b>" + ordMeta(o) + "</a>" + price(o) + "</div>" +
+        '<div class="ft">' + miniTrack(o) + ordActs(o) + "</div></li>"; };
     if (tab === "start") {
       var lo = S.orders[0];
       h += '<div class="ps-acct-grid ps-acct-start">';
-      h += '<section class="ps-panel"><h3>Letzte Bestellung</h3>' + (lo ? '<p class="ps-lo"><b>' + esc(lo.product) + "</b> · " + (+lo.copies || 0).toLocaleString("de-AT") + " Stk. · " + eur(co ? lo.net : lo.gross) + '<br><span class="pd-muted">' + esc(lo.nr) + " vom " + esc(new Date(lo.createdAt).toLocaleDateString("de-AT")) + " · " + esc(lo.statusText) + "</span></p>" + trackHtml(lo.status) +
-        '<div class="btn-row">' + (lo.tracks && lo.tracks.length ? '<a class="ps-btn primary small" href="' + esc(lo.tracks[0]) + '" target="_blank" rel="noopener">📦 Sendung verfolgen</a>' : "") + (lo.canReorder ? '<button type="button" class="ps-btn' + (lo.tracks && lo.tracks.length ? "" : " primary") + ' small" data-act="reorder:' + esc(lo.id) + '">Nochmal bestellen</button>' : "") + '<a class="ps-btn small" href="/print?bestellung=' + encodeURIComponent(lo.id) + "&t=" + encodeURIComponent(lo.token) + '">Details</a>' + (S.orders.length > 1 ? '<button type="button" class="ps-link" data-act="atab:orders">Alle ' + S.orders.length + " Bestellungen</button>" : "") + "</div>"
+      h += '<section class="ps-panel ps-lastord"><h3>Letzte Bestellung</h3>' + (lo ? '<div class="ps-ord ps-ord1"><div class="hd"><a class="t" href="' + ordUrl(lo) + '"><b>' + esc(lo.product) + "</b>" + ordMeta(lo) + "</a>" + price(lo) + "</div>" +
+        (trackHtml(lo.status, lo.steps) || '<div class="ft">' + miniTrack(lo) + "</div>") + ordActs(lo, true) + "</div>" + (S.orders.length > 1 ? '<button type="button" class="ps-link ps-allord" data-act="atab:orders">Alle ' + S.orders.length + " Bestellungen ansehen</button>" : "")
         : '<p class="pd-muted">Noch keine Bestellungen – such dir ein Produkt aus und gestalte es online oder lade deine Datei hoch.</p><button type="button" class="ps-btn primary small" data-act="shop">Produkte ansehen</button>') + "</section>";
       h += '<div class="col"><section class="ps-panel ps-qstats"><button type="button" data-cart-link><b>' + S.cart.length + "</b><span>im Warenkorb</span></button><button type=\"button\" data-act=\"atab:saved\"><b>" + (me.saved || []).length + "</b><span>Gemerkt</span></button><button type=\"button\" data-act=\"atab:orders\"><b>" + S.orders.length + "</b><span>Bestellungen</span></button></section>";
-      if (!co) h += '<section class="ps-panel ps-acct-up"><h3>Bestellst du für eine Firma?</h3><p class="pd-muted">Mit einem Firmenkonto siehst du Nettopreise, bekommst Rechnungen mit Firmenname und UID und sammelst Rabatt im Bonusprogramm ' + (S.bonus && S.bonus.tiers && S.bonus.tiers.length ? "(bis zu " + S.bonus.tiers[S.bonus.tiers.length - 1].pct + " %)" : "") + '.</p><button type="button" class="ps-btn small" data-act="atab:settings">In den Einstellungen umstellen</button></section>';
+      if (!co) h += '<section class="ps-panel ps-acct-up"><h3>Bestellst du für eine Firma?</h3><p class="pd-muted">Mit einem Firmenkonto siehst du Nettopreise, bekommst Rechnungen mit Firmenname und UID und sammelst Rabatt im Bonusprogramm ' + (S.bonus && S.bonus.tiers && S.bonus.tiers.length ? "(bis\u00a0zu\u00a0" + S.bonus.tiers[S.bonus.tiers.length - 1].pct + "\u00a0%)" : "") + '.</p><button type="button" class="ps-btn small" data-act="atab:settings">In den Einstellungen umstellen</button></section>';
       if (!me.newsletter) h += '<section class="ps-panel ps-acct-up"><h3>Druck-Tipps jeden Montag</h3><p class="pd-muted">Unser Newsletter bringt dir jede Woche Produkttipps und einen Designer-Tipp – und einmal im Monat einen 5-%-Code.</p><button type="button" class="ps-btn small" data-act="atab:settings">Newsletter aktivieren</button></section>';
       h += "</div></div>" + bonusHtml();
     } else if (tab === "orders") {
-      h += '<section class="ps-panel"><h3>Meine Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist ps-olist2">' + S.orders.map(orderRow).join("") + '</ul><p class="pd-muted" style="font-size:13px;margin-top:12px">„Nochmal bestellen“ legt die Bestellung mit derselben Druckdatei in den Warenkorb – der Preis wird dabei aktuell berechnet, Menge und Ausführung kannst du dort noch ändern.</p>' : '<p class="pd-muted">Noch keine Bestellungen.</p>') + "</section>";
+      h += '<section class="ps-panel ps-acct-orders"><h3>Meine Bestellungen</h3>' + (S.orders.length ? '<ul class="ps-olist ps-olist2">' + S.orders.map(orderRow).join("") + '</ul><p class="pd-muted" style="font-size:13px;margin-top:12px">„Nochmal bestellen“ legt die Bestellung mit derselben Druckdatei in den Warenkorb – der Preis wird dabei aktuell berechnet, Menge und Ausführung kannst du dort noch ändern.</p>' : '<p class="pd-muted">Noch keine Bestellungen.</p>') + "</section>";
     } else if (tab === "saved") {
       var sv = me.saved || [];
       h += '<section class="ps-panel"><h3>Merkliste</h3>' + (sv.length ? '<div class="ps-savs">' + sv.map(savedCard).join("") + '</div><p class="pd-muted" style="font-size:13px;margin-top:12px">Gemerkte Konfigurationen öffnen sich mit allen Optionen – der Preis wird dabei aktuell berechnet. Über „Teilen“ schickst du den Link z. B. an Kollegen zur Freigabe.</p>'
@@ -321,7 +330,7 @@
     var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
     var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + '<button type="button" class="ps-mn' + (n > 5 ? " on" : "") + '" data-motn="' + (n > 5 ? n : 6) + '">' + (n > 5 ? n : "6+") + "</button>";
     var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>Stk.</small></label>'; }).join("") +
-      '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + " Stk." + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
+      '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk." + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
     return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
       (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln – jeweils mit Vorder- und Rückseite.</p>' : "") + "</div>";
   }
@@ -697,7 +706,7 @@
     var seq = ++altSeq, p = S.prod; if (!p || kind() === "textile") return; S.alts = "busy"; var auto = S.autoFix === p.key;
     var cands = [], seen = {}, add = function (sel, copies, label, w) { var k = JSON.stringify([sel, copies]); if (seen[k]) return; seen[k] = 1; cands.push({ sel: sel, copies: copies, label: label, w: w }); };
     var tiers = (p.tiers || []).slice().sort(function (a, b) { return Math.abs(a - S.copies) - Math.abs(b - S.copies); }).filter(function (t) { return t !== S.copies; }).slice(0, auto ? 6 : 2);
-    tiers.forEach(function (t) { add(Object.assign({}, S.sel), t, "Auflage " + t.toLocaleString("de-AT") + " Stk.", 1); });
+    tiers.forEach(function (t) { add(Object.assign({}, S.sel), t, "Auflage " + t.toLocaleString("de-AT") + "\u00a0Stk.", 1); });
     p.props.forEach(function (pr) { var cur = S.sel[pr.slug], opts = pr.options.map(function (o) { return o.slug; }), i = opts.indexOf(cur);
       bestOf(pr).concat([opts[i - 1], opts[i + 1]]).filter(function (v, k, a) { return v && v !== cur && a.indexOf(v) === k; }).slice(0, 3).forEach(function (v) {
         var r = resolveWith(pr.slug, v); if (r === null) return; var sel = Object.assign({}, S.sel, r); sel[pr.slug] = v;
@@ -732,8 +741,8 @@
   function priceHtml(compact) {
     if (!S.prod) return "";
     var p = S.price, co = S.ctype === "company", n = (p && p.copies) || totalCopies();
-    var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + " Stk." + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
-    if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + " Stk." : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
+    var what = '<p class="what">' + esc(S.prod.title) + " · " + (+n || 0).toLocaleString("de-AT") + "\u00a0Stk." + (isCustom() && sizeOf() ? " · " + esc(S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit) : labelOf("size") ? " · " + esc(labelOf("size")) : "") + "</p>";
+    if (S.mot.n > 1 && motOk()) { var ms = S.mot.split, eq = ms.every(function (v) { return +v === +ms[0]; }); what += '<p class="what ps-pmot">' + S.mot.n + " Motive " + (eq ? "à " + (+ms[0]).toLocaleString("de-AT") + "\u00a0Stk." : "(" + ms.map(function (v) { return (+v).toLocaleString("de-AT"); }).join(" / ") + " Stk.)") + "</p>"; }
     what += wishHtml();
     if (S.priceErr && !S.priceBusy) return what + '<p class="err">' + esc(S.priceErr) + "</p>" + altsHtml();
     if (!p) return what + '<p class="note"><span class="ps-spin"></span> Preis wird berechnet …</p>';
@@ -741,7 +750,7 @@
     if (p.bonus) what += '<p class="ps-bonus-tag">★ ' + esc(p.bonus.tier || "Rabatt") + " (" + String(p.bonus.pct).replace(".", ",") + " %) · du sparst " + eur(co ? p.bonus.saved : p.bonus.saved * (1 + (p.rate || 0) / 100)) + "</p>";
     var u = unitOf();
     if (u && u.div > 0) return what + '<div class="sum' + (S.priceBusy ? " loading" : "") + '">' + eur(main / u.div) + '<small>pro ' + u.label + " · " + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" +
-      '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + " Stk." : (+n > 1 ? (+n).toLocaleString("de-AT") + " Stk. · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
+      '<div class="sum2 ps-tot">Gesamt ' + eur(main) + "<small>" + (u.piece ? (+n).toLocaleString("de-AT") + "\u00a0Stk." : (+n > 1 ? (+n).toLocaleString("de-AT") + "\u00a0Stk. · " : "") + String(Math.round(u.div * 100) / 100).replace(".", ",") + " " + u.unit) + (co ? " · " + eur(p.gross) + " inkl. USt" : "") + "</small></div>" +
       '<p class="note">' + (co ? "netto zzgl. " + p.rate + " % USt" : "inkl. " + p.rate + " % USt") + " · inkl. Versand innerhalb Österreichs</p>" +
       (compact ? "" : '<dl><dt>Preis je ' + u.label + "</dt><dd>" + eur(main / u.div) + "</dd>" + (+n > 1 && !u.piece ? "<dt>Stückpreis</dt><dd>" + eur(main / n) + "</dd>" : "") + "<dt>Datencheck</dt><dd>automatisch gratis</dd><dt>Versand (AT)</dt><dd>inklusive</dd>" + (p.deliveryDate ? "<dt>Lieferung voraussichtlich</dt><dd>" + esc(deDate(p.deliveryDate)) + "</dd>" : "") + "</dl>" + (p.deliveryDate ? '<p class="ps-dnote">Zustellung durch den Paketdienst – in Einzelfällen auch erst am darauffolgenden Werktag.</p>' : "")) +
       (p.taxNote ? '<p class="note">' + esc(p.taxNote) + "</p>" : "");
@@ -760,11 +769,11 @@
       (S.step === 2 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next2"' + (S.price && !S.priceBusy ? "" : " disabled") + ">" + (isLogo() ? "Weiter zum Logo" : "Weiter zur Gestaltung") + " →</button>" :
        S.step === 3 && S.file && !S.file.blocked ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : "") +
       '<ul class="ps-ptrust"><li>Automatischer Datencheck, Profi-Check optional</li><li>Versand in Österreich inklusive</li><li>Sicher bezahlen – Firmen auch auf Rechnung</li></ul>';
-    var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + " Stk." + (szl ? " · " + szl : "");
+    var m = document.getElementById("psMbar"); if (m && S.prod && (S.step === 2 || S.step === 3) && m.querySelector("button.mp")) { var p = S.price; var szl = labelOf("size").replace(/\s+-\s+.*$/, ""), sm = totalCopies().toLocaleString("de-AT") + "\u00a0Stk." + (szl ? " · " + szl : "");
       var u0 = p && unitOf(); if (u0 && u0.div > 0) sm = eur((S.ctype === "company" ? p.net : p.gross) / u0.div) + "/" + u0.unit + " · " + sm;
       m.querySelector(".mp").innerHTML = p ? "<b>" + eur(S.ctype === "company" ? p.net : p.gross) + ' <i class="up" aria-hidden="true">⌃</i></b><small>' + esc(sm) + " · " + (S.ctype === "company" ? "netto" : "inkl. USt") + " · inkl. Versand</small>" : '<small>' + (S.priceErr ? esc(S.priceErr) : "Preis wird berechnet …") + "</small>"; }
     var nx = document.getElementById("psNext2"); if (nx) nx.disabled = !S.price || S.priceBusy;
-    var tt = document.getElementById("psTexTotal"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + " Stk.";
+    var tt = document.getElementById("psTexTotal"); if (tt) tt.textContent = totalCopies().toLocaleString("de-AT") + "\u00a0Stk.";
   }
 
   // Mobil: Preisdetails als Bottom-Sheet (Inhalt = Preisbox)
@@ -885,15 +894,15 @@
     var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = fromSel(p); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && bigFmt(p) ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
     api("/print/api/from?keys=" + encodeURIComponent(keys.join(",")) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { if (!j.ok) return; Object.keys(j.from || {}).forEach(function (k) { FROMP[k] = j.from[k]; document.querySelectorAll('[data-from="' + k + '"]').forEach(function (el) { el.innerHTML = fromTxt(k); }); }); }).catch(function () {}); }
   function fromTxt(k) { var f = FROMP[k], pp = f && prodByKey(k), g0 = f && (S.ctype === "company" ? f.gross / 1.2 : f.gross);
-    if (f && isPromo(pp) && f.copies > 1) return "<b>" + eur(g0 / f.copies).replace(/(,\d\d)\d*/, "$1") + "</b>/Stk. <small>(" + (+f.copies).toLocaleString("de-AT") + " Stk. " + eur(g0) + ")</small>";   // Werbeartikel: Stückpreis groß
+    if (f && isPromo(pp) && f.copies > 1) return "<b>" + eur(g0 / f.copies).replace(/(,\d\d)\d*/, "$1") + "</b>/Stk. <small>(" + (+f.copies).toLocaleString("de-AT") + "\u00a0Stk. " + eur(g0) + ")</small>";   // Werbeartikel: Stückpreis groß
     // Banner & lange Bahnen: Preis je m² bzw. Laufmeter groß, Größe dazu (sonst weiß niemand, dass „2 Stk.“ beim Vliesbanner 2 × 20 m sind)
     var bd = f && pp && (pp.dims ? { w: pp.dims[0], h: pp.dims[1] } : pp.kind === "banner" && pp.custom ? { w: Math.max(pp.custom.minW, 1000), h: Math.max(pp.custom.minH, 500) } : null);
     if (bd && (pp.kind === "banner" || /banner|plane|bauzaun|mesh|vlies/i.test(pp.key + " " + pp.title)) && !/roll|aufsteller|display/i.test(pp.key + " " + pp.title)) {
       var L = Math.max(bd.w, bd.h), K = Math.min(bd.w, bd.h), lm = L >= 3000 && L / K >= 8, n = +f.copies || 1, dv = lm ? L / 1000 * n : bd.w * bd.h / 1e6 * n;
       return "<b>" + eur(g0 / dv).replace(/(,\d\d)\d*/, "$1") + "</b>/" + (lm ? "lfm" : "m²") + " <small>(" + (n > 1 ? n + " × " : "") + fmtSize(bd.w, bd.h) + " · " + eur(g0) + ")</small>"; }
-    return f ? (+f.copies).toLocaleString("de-AT") + " Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
+    return f ? (+f.copies).toLocaleString("de-AT") + "\u00a0Stk. <b>" + eur(S.ctype === "company" ? f.gross / 1.2 : f.gross) + "</b>" + (f.copies > 1 ? ' <small>(' + eur((S.ctype === "company" ? f.gross / 1.2 : f.gross) / f.copies).replace(/(,\d\d)\d*/, "$1") + "/Stk.)</small>" : "") : ""; }
   function facts(p) { var pr = function (sl) { return (p.props || []).filter(function (x) { return x.slug === sl; })[0]; }, sz = pr("size"), mt = pr("material"), l = [];
-    if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + " Stk.");
+    if (sz && sz.options.length > 1) l.push(sz.options.length + " Formate"); if (mt && mt.options.length > 1) l.push(mt.options.length + " Materialien"); if (p.tiers && p.tiers.length) l.push("ab " + p.tiers[0].toLocaleString("de-AT") + "\u00a0Stk.");
     if (p.kind === "banner") l.push("Wunschgröße in cm"); if (p.designer) l.push("Online-Designer");
     var rv = S.cat && S.cat.ratings && S.cat.ratings[p.key]; if (rv) l.unshift("★ " + String(rv.avg).replace(".", ",") + " · " + rv.n + " Bewertungen");   // echte Kundenbewertungen (ab 3)
     return l.slice(0, 4); }
@@ -1123,7 +1132,7 @@
   var PM_INFO = { digital: "Ideal für kleine Auflagen und schnelle Lieferung – ohne Einrichtekosten.", offset: "Ab mittleren Auflagen meist deutlich günstiger, sehr gleichmäßige Farben.", inkjet: "Moderner Inkjet-Digitaldruck – gestochen scharf, bei manchen Ausführungen (z. B. mit Kaschierung) am günstigsten.", digital_uv: "UV-härtende Tinte, direkt auf das Material gedruckt.", screen_printing: "Kräftige, langlebige Farben – ideal für Textilien und Werbeartikel.", sublimation: "Farbe geht ins Material über – waschfest und dauerhaft." };
   function amountHtml(p) {
     var bt = bestTiers(p), inT = p.tiers.indexOf(S.copies) > -1;
-    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + " Stk. (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + " Stk.", best: bt.indexOf(n) > -1 }; }));
+    var qi = (inT ? [] : [{ val: S.copies, name: (+S.copies).toLocaleString("de-AT") + "\u00a0Stk. (eigene Menge)" }]).concat(p.tiers.map(function (n) { return { val: n, name: n.toLocaleString("de-AT") + "\u00a0Stk.", best: bt.indexOf(n) > -1 }; }));
     var sel = ddHtml("copies", "Auflage", qi, S.copies);
     var own = "";
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
@@ -1180,7 +1189,7 @@
     var tmp = document.createElement("div"); tmp.innerHTML = h; if (tmp.firstChild) { el.replaceWith(tmp.firstChild); fillRows(); dlPaint(); urScroll(); }
   }
   function qtyHtml(p) {
-    var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + " Stk." }; }), S.copies);
+    var cp = '<fieldset class="ps-opt"><legend>Auflage</legend>' + chips("copies", p.tiers.map(function (n) { return { slug: n, name: n.toLocaleString("de-AT") + "\u00a0Stk." }; }), S.copies);
     if (p.qty && p.qty.length) { var r = [].concat.apply([], p.qty.map(function (x) { return x.ranges; })), mn = Math.min.apply(null, r.map(function (g) { return g.min; })), mx = Math.max.apply(null, r.map(function (g) { return g.max; }));
       cp += '<div class="ps-qty"><label for="psQty">Andere Menge</label><input id="psQty" type="number" inputmode="numeric" min="' + mn + '" max="' + mx + '" value="' + (p.tiers.indexOf(S.copies) < 0 ? S.copies : "") + '" placeholder="' + mn + "–" + mx.toLocaleString("de-AT") + '"></div>'; }
     return cp + "</fieldset>";
@@ -1194,7 +1203,7 @@
     p.sizes.forEach(function (x) { var g = gOf(x.name), G = grpS.filter(function (y) { return y.n === g[0]; })[0]; if (!G) { G = { n: g[0], l: [] }; grpS.push(G); } G.l.push({ slug: x.slug, short: g[1] }); });
     var sz = '<fieldset class="ps-opt"><legend>Größen &amp; Stückzahl</legend>' + grpS.map(function (G) { return (G.n ? '<p class="ps-szg">' + esc(G.n) + "</p>" : "") + '<div class="ps-sizes">' + G.l.map(function (x) { var v = t.sizes[x.slug] || 0;
       return '<div class="ps-size' + (v ? " on" : "") + '"><span class="sz">' + esc(x.short) + '</span><div class="ps-step"><button type="button" data-tstep="' + esc(x.slug) + '|-1" aria-label="' + esc(G.n + " " + x.short) + ' weniger">−</button><input type="number" inputmode="numeric" min="0" max="5000" data-tsize="' + esc(x.slug) + '" value="' + (v || "") + '" placeholder="0" aria-label="' + esc(G.n + " " + x.short) + ' Stück"><button type="button" data-tstep="' + esc(x.slug) + '|1" aria-label="' + esc(G.n + " " + x.short) + ' mehr">+</button></div></div>'; }).join("") + "</div>"; }).join("") +
-      '<p class="ps-help">Gesamt: <b id="psTexTotal">' + totalCopies().toLocaleString("de-AT") + " Stk.</b>" + (m.min > 1 ? " · " + esc(m.label.replace(/ \(.*$/, "")) + " ab " + m.min + " Stück" : "") + " · Der Preis hängt nicht von der Größe ab.</p></fieldset>";
+      '<p class="ps-help">Gesamt: <b id="psTexTotal">' + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b>" + (m.min > 1 ? " · " + esc(m.label.replace(/ \(.*$/, "")) + " ab " + m.min + " Stück" : "") + " · Der Preis hängt nicht von der Größe ab.</p></fieldset>";
     return meth + pos + sz;
   }
   // Warenkorb/Kasse: Hinweise zur Datei als Pop-up (automatische Prüfung beim Hochladen + Hinweise aus der Vorschau)
@@ -1220,7 +1229,7 @@
     var val = function (k) { return esc(cu[k] || me[k] || ""); };
     var m = document.createElement("div"); m.className = "ps-pop"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Gestaltung anfragen");
     m.innerHTML = '<div class="ps-pop-c ps-brief"><div class="ps-pop-b"><span class="ps-pop-k">Wir gestalten für dich</span><h3>Gestaltung anfragen</h3><p>Sag uns kurz, was drauf soll – wir melden uns mit Entwurf und Angebot. Gedruckt wird erst nach deiner Freigabe.</p>' +
-      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + " Stk.</b><span>" + esc(labels.map(function (l) { return l[1]; }).join(" · ")) + "</span>" + (priceTxt ? "<span>Druckpreis laut Konfiguration: " + esc(priceTxt) + " (Gestaltung nach Angebot)</span>" : "") + "</div>" +
+      '<div class="ps-brief-cfg"><b>' + esc(p.title) + " · " + totalCopies().toLocaleString("de-AT") + "\u00a0Stk.</b><span>" + esc(labels.map(function (l) { return l[1]; }).join(" · ")) + "</span>" + (priceTxt ? "<span>Druckpreis laut Konfiguration: " + esc(priceTxt) + " (Gestaltung nach Angebot)</span>" : "") + "</div>" +
       '<label class="ps-bf"><span>Was soll gestaltet werden? *</span><textarea id="bfText" rows="5" maxlength="4000" placeholder="z. B. Anlass, Texte, Stil, Farben, was dir wichtig ist …"></textarea></label>' +
       '<div class="ps-bf"><span>Dateien (optional) – Logo, Fotos, Texte · max. 5 Dateien à 15 MB</span><label class="ps-drop small ps-bfdrop"><input type="file" id="bfFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.svg,.ai,.eps,.psd,.tif,.tiff,.zip,.doc,.docx,.txt,.rtf,.odt"><b>Dateien auswählen oder hierher ziehen</b></label><ul class="ps-bfl" id="bfList"></ul></div>' +
       '<div class="ps-bf2"><label class="ps-bf"><span>Name *</span><input id="bfName" autocomplete="name" value="' + esc([cu.firstName || me.firstName, cu.lastName || me.lastName].filter(Boolean).join(" ")) + '"></label><label class="ps-bf"><span>E-Mail *</span><input id="bfMail" type="email" autocomplete="email" value="' + val("email") + '"></label>' +
@@ -1476,10 +1485,10 @@
     var spec = sz ? (cl ? "offen " : "") + sz.w + " × " + sz.h + " mm" + (cl ? ", gefalzt " + cl.w + " × " + cl.h + " mm" : "") + (b ? " (Datei mit Beschnitt " + (sz.w + 2 * b) + " × " + (sz.h + 2 * b) + " mm)" : "") : "";
     var mtabs = "";
     if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
-      return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + " Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
+      return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
     var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
-      var f = S.file, tab = S.pvTab === "pfv" ? "pfv" : "mock", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + " Stk."] : S.copies ? [(+S.copies).toLocaleString("de-AT") + " Stk."] : []).join(" · ");
+      var f = S.file, tab = S.pvTab === "pfv" ? "pfv" : "mock", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
       var left = '<div class="ps-upv-l">' + mtabs + "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) : f.kind === "design" ? "Deine Gestaltung" : "Deine Datei") + '</h2><p class="sub">' + esc(sum) + "</p>" +
         '<div class="ps-upv-st"><div class="ps-upv-tabs" role="tablist" aria-label="Vorschau"><button type="button" role="tab" data-pvtab="mock" aria-selected="' + (tab === "mock") + '">Auf dem Produkt</button><button type="button" role="tab" data-pvtab="pfv" aria-selected="' + (tab === "pfv") + '">Mit Druckrändern</button></div>' +
@@ -1744,7 +1753,7 @@
   }
   function cartAside() {
     var co = S.ctype === "company", t = cartTotals();
-    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + " Stk.</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
+    return '<aside class="ps-price" id="psPrice" aria-live="polite"><h3>Warenkorb</h3><ul class="ps-mini">' + S.cart.map(function (x) { return "<li><span>" + esc(x.title) + " · " + (+x.n || 0).toLocaleString("de-AT") + "\u00a0Stk.</span><b>" + (x.price ? eur(co ? x.price.net : x.price.gross) : "…") + "</b></li>"; }).join("") + "</ul>" +
       '<div class="sum' + (S.quoting ? " loading" : "") + '">' + eur(co ? t.net : t.gross) + "<small>" + (co ? "exkl. USt" : "inkl. USt") + "</small></div>" + '<p class="note">inkl. Versand innerhalb Österreichs</p>' +
       (S.step === 5 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="next4">Weiter zur Zahlung →</button>' : S.step === 6 ? '<button type="button" class="ps-btn primary ps-pcta" data-act="order"' + (S.busy || S.quoting ? " disabled" : "") + ">" + "Zahlungspflichtig bestellen</button>" : "") + "</aside>";   // Button-Lösung (§ 8 FAGG): Beschriftung muss die Zahlungspflicht nennen
   }
@@ -1876,7 +1885,7 @@
     if (k === "cfgsave") { cfgSave(); return; }
     if (k === "cfgshare") { cfgShare(); return; }
     if (k === "savdel") { savDel(v); return; }
-    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + " Stk." + (sx.sum ? " · " + sx.sum : "")); return; }
+    if (k === "savshare") { var sx = savedList().filter(function (x) { return x.id === v; })[0]; if (sx) shareLink(cfgLink(sx.product, sx.c), sx.title + " – FS Creative Druckshop", sx.title + " · " + (+sx.n || 0).toLocaleString("de-AT") + "\u00a0Stk." + (sx.sum ? " · " + sx.sum : "")); return; }
     if (k === "recentclr") { try { localStorage.removeItem("fsc-print-recent"); } catch (e) {} render(); return; }
     if (k === "cartdel") { S.cart = S.cart.filter(function (x) { return x.id !== v; }); cartSave(); render(); return; }
     if (k === "am") { S.acct.mode = v; S.acct.err = ""; S.acct.msg = ""; render(); return; }
@@ -2084,62 +2093,179 @@
     }).catch(function () { S.busy = false; S.err = "Keine Verbindung – bitte erneut versuchen."; render(); });
   }
   function showStatus(id, t, n, refresh) {
-    n = n || 0;
+    n = n || 0; LIVE.statusMode = true;
     api("/print/api/order/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(t) + (refresh ? "&refresh=1" : "")).then(function (j) {
       if (!j.ok) { root.innerHTML = '<div class="ps-panel ps-status"><div class="big">🤔</div><h2>Bestellung nicht gefunden</h2><p>Bitte den Link aus der E-Mail verwenden oder uns kontaktieren.</p></div>'; return; }
-      var o = j.order, st = o.status, h;
-      if (st === "pending_payment" && n < 20) { root.innerHTML = '<div class="ps-panel ps-status"><div class="big"><span class="ps-spin" style="width:36px;height:36px"></span></div><h2>Zahlung wird bestätigt …</h2><p>Einen Moment – wir warten auf die Bestätigung von Mollie.</p></div>'; setTimeout(function () { showStatus(id, t, n + 1); }, 3000); return; }
-      if (st === "pending_payment" || st === "payment_failed") h = '<div class="big">⚠️</div><h2>Zahlung nicht abgeschlossen</h2><p>Die Bestellung ' + esc(o.nr) + " ist gespeichert, aber noch nicht bezahlt.</p><div class=\"btn-row\" style=\"justify-content:center\"><button type=\"button\" class=\"ps-btn primary\" data-act=\"retrypay:" + esc(id) + "|" + esc(t) + "\">Erneut bezahlen</button></div>";
-      else if (st === "rejected") h = '<div class="big">✋</div><h2>Bestellung storniert</h2><p>Die Bestellung ' + esc(o.nr) + " wurde storniert. Details haben wir dir per E-Mail geschickt.</p>";
-      else h = '<div class="big">🎉</div><h2>Danke für deine Bestellung!</h2><p>Bestellnummer <b>' + esc(o.nr) + "</b> · " + esc(o.product) + " · " + o.copies + " Stk. · " + eur(o.gross) + "</p><p>" +
-        (o.payment.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die Rechnung kommt per E-Mail." : "Die Zahlung ist eingegangen. " + (o.check === "pro" || o.check === "review" ? "Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion." : "Deine Druckdaten gehen jetzt direkt in Produktion.")) +
-        " Eine Bestätigung ist unterwegs an " + esc(o.email) + ".</p>" + trackHtml(st) + "<p>Status: <b>" + esc(o.statusText) + "</b>" + (o.deliveryDate ? " · Lieferung voraussichtlich " + esc(deDate(o.deliveryDate)) + " (ggf. auch am darauffolgenden Werktag)" : "") + "</p>" + trackCard(o, id, t) + fbHtml(o, id, t) +
-        (o.groupSize > 1 ? '<p class="pd-muted">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
-        '<div class="btn-row" style="justify-content:center"><a class="ps-btn" href="/print">Weitere Drucksachen bestellen</a>' + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>";
-      var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
-      if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
-      root.innerHTML = '<div class="ps-panel ps-status">' + h + "</div>";
+      var o = j.order;
+      if (o.status === "pending_payment" && n < 20) { root.innerHTML = '<div class="ps-panel ps-status"><div class="big"><span class="ps-spin" style="width:36px;height:36px"></span></div><h2>Zahlung wird bestätigt …</h2><p>Einen Moment – wir warten auf die Bestätigung von Mollie.</p></div>'; setTimeout(function () { showStatus(id, t, n + 1); }, 3000); return; }
+      renderStatus(o, id, t);
       if (location.hash === "#feedback") { var fbx = document.getElementById("feedback"); if (fbx) fbx.scrollIntoView({ block: "center" }); }
     });
   }
-  // Feedback (Wunsch Simon 19.10.2026): direkt nach der Bestellung zum Bestellvorgang, nach dem Versand zu den Drucksachen
+  /* STATUS_HEAD_START – reine Funktion ohne DOM (wird in test/print.test.js geprüft): Überschrift + Text der Bestellseite je Status.
+     F = { esc, eur, stk, dLong, past } · now = Zeitpunkt in ms */
+  function statusHead(o, F, now) {
+    var st = o.status, sd = o.steps || {}, pay = o.payment || {}, nw = function (s) { return '<span class="ps-nw">' + s + "</span>"; }, p = function (s) { return "<p>" + s + "</p>"; };
+    var exp = sd.expected && !F.past(sd.expected, now) ? "<b>" + nw(F.dLong(sd.expected, true)) + "</b>" : "", later = ' <span class="ps-later">(ggf. auch am darauffolgenden Werktag).</span>';
+    var fresh = st === "paid" || st === "invoice_requested" || ((st === "ordered" || st === "in_production") && now - Date.parse(o.createdAt || "") < 2 * 3600e3);
+    var contact = 'Fragen? Schreib uns an <a href="mailto:simon@fs-creative.at">simon@fs-creative.at</a> oder ruf an: ' + nw('<a href="tel:+436641430620">+43 664 1430620</a>') + ".";
+    var sub = '<p class="ps-osub"><span>Bestellnummer <b>' + F.esc(o.nr) + "</b></span><span>" + F.esc(o.product) + " · " + nw(F.stk(o.copies)) + " · " + nw(o.business ? F.eur(o.net) + " netto" : F.eur(o.gross)) + "</span></p>";
+    var r = { sub: sub };
+    if (st === "pending_payment" || st === "payment_failed") { r.key = "pay"; r.icon = "⚠️"; r.title = "Zahlung nicht abgeschlossen"; r.html = p("Die Bestellung " + nw(F.esc(o.nr)) + " ist gespeichert, aber noch nicht bezahlt."); }
+    else if (st === "rejected") { r.key = "rejected"; r.icon = "✋"; r.title = "Bestellung storniert";
+      r.html = p("Wir konnten deine Bestellung leider nicht in Druck geben\u00a0– sie wird nicht produziert. Den Grund haben wir dir per " + nw("E-Mail") + " geschickt.") +
+        (pay.refunded ? p("Den bezahlten Betrag erstatten wir dir über deinen Zahlungsweg\u00a0– das dauert meist ein paar Werktage.") : pay.method === "invoice" ? p("Eine Rechnung zu dieser Bestellung musst du nicht bezahlen.") : "") +
+        p("Melde dich gern, dann finden wir gemeinsam eine Lösung. " + contact); }
+    else if (st === "problem") { r.key = "problem"; r.icon = "⏳"; r.title = "Wir klären gerade etwas zu deiner Bestellung";
+      r.html = p("Bei deiner Bestellung ist eine Rückfrage aufgetaucht. Wir kümmern uns darum und melden uns spätestens am nächsten Werktag bei dir\u00a0– du musst vorerst nichts tun.") + p("Dadurch kann sich die Lieferung etwas verschieben. " + contact); }
+    else if (fresh) { r.key = "fresh"; r.icon = "🎉"; r.title = "Danke für deine Bestellung!";
+      r.html = p((pay.method === "invoice" ? "Wir prüfen deine Bestellung und geben sie in Kürze frei. Die " + nw("Rechnung kommt per E-Mail") + "." : "Die Zahlung ist eingegangen. " + (st === "paid" && (o.check === "pro" || o.check === "review") ? "Wir prüfen deine Druckdaten persönlich und geben sie dann in Produktion." : "Deine Druckdaten gehen jetzt " + (st === "paid" ? "direkt " : "") + "in Produktion.")) +
+        " Eine Bestätigung ist unterwegs an\u00a0" + nw(F.esc(o.email)) + ".") + (exp ? p("Lieferung voraussichtlich " + exp + later) : ""); }
+    else if (st === "ordered" || st === "in_production") { r.key = "production"; r.icon = "🖨️"; r.title = "Deine Drucksachen sind in Produktion";
+      r.html = p(exp ? "Lieferung voraussichtlich " + exp + later : "Sobald dein Paket unterwegs ist, bekommst du eine " + nw("E-Mail") + " mit der Sendungsverfolgung."); }
+    else if (st === "shipped") { r.key = "shipped"; r.icon = "🚚"; r.title = "Deine Bestellung ist unterwegs";
+      r.html = (sd.shipped ? p("Versendet am " + nw(F.dLong(sd.shipped)) + ".") : "") + p(exp ? "Zustellung voraussichtlich " + exp + later : "Die Zustellung erfolgt in der Regel innerhalb von 1–2 Werktagen."); }
+    else if (st === "delivered") { r.key = "delivered"; r.icon = "✅"; r.title = sd.delivered ? "Zugestellt am " + F.dLong(sd.delivered) : "Zugestellt";
+      r.html = p("Wir hoffen, deine Drucksachen gefallen dir!" + (o.feedback && o.feedback.product ? " Danke auch für deine Bewertung." : "")); }
+    else { r.key = "other"; r.icon = "📄"; r.title = "Deine Bestellung"; r.html = p("Status: " + F.esc(o.statusText || st)); }
+    return r;
+  }
+  /* STATUS_HEAD_END */
+  var SF = { esc: esc, eur: eur, stk: stk, dLong: dLong, past: dPast };
+  function renderStatus(o, id, t) {
+    var hd = statusHead(o, SF, Date.now()), k = hd.key;
+    LIVE.o = o; LIVE.id = id; LIVE.t = t;
+    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : fbHtml(o, id, t);
+    var body = k === "pay" ? '<div class="btn-row" style="justify-content:center"><button type="button" class="ps-btn primary" data-act="retrypay:' + esc(id) + "|" + esc(t) + '">Erneut bezahlen</button></div>'
+      : k === "rejected" ? "" : k === "shipped" ? tc + tr + fb : k === "delivered" ? fb + tr + tc : tr + tc + fb;
+    var h = '<div class="big" aria-hidden="true">' + hd.icon + "</div><h2>" + hd.title + "</h2>" + (k === "pay" ? "" : hd.sub) + hd.html + body +
+      (o.groupSize > 1 && k !== "pay" && k !== "rejected" ? '<p class="pd-muted ps-grp">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
+      (k === "pay" ? "" : '<div class="btn-row ps-sbtns"><a class="ps-btn" href="/print">' + (k === "rejected" || k === "problem" ? "Zum Shop" : "Weitere Drucksachen bestellen") + "</a>" + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>");
+    var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
+    if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
+    root.innerHTML = '<div class="ps-panel ps-status st-' + k + '" data-oid="' + esc(id) + '" data-t="' + esc(t) + '" data-st="' + esc(o.status) + '" data-sig="' + esc(liveSig(o)) + '">' + h + "</div>";
+    headUpdate();   // Bestellseite: in der Handy-Leiste nicht „Start“ markieren
+  }
+  // Feedback (Wunsch Simon 19.10.2026): direkt nach der Bestellung zum Bestellvorgang, nach dem Versand zu den Drucksachen.
+  // Danach – für alle, unabhängig von den Sternen (Google verbietet Bewertungs-Filter) – „Auch auf Google bewerten“, wenn ein Link hinterlegt ist.
+  var FOUND = ["Google-Suche", "Google Maps", "Empfehlung", "Instagram", "Facebook", "Flyer/Werbung", "Schon Kunde", "Sonstiges"];
+  var FOUND_Q = { "Google-Suche": "Wonach hast du gesucht? (optional)", "Empfehlung": "Von wem? (optional)", "Flyer/Werbung": "Wo hast du uns gesehen? (optional)", "Sonstiges": "Wo denn? (optional)" };
+  function fbThanks(r, url) {
+    return '<div class="ps-fb-done"><p class="ok"><b>Danke für dein Feedback!</b>' + (r ? (r >= 4 ? " Das freut uns sehr." : " Wir schauen uns das genau an.") : "") + "</p>" +
+      (url ? '<p class="g">Magst du deine Erfahrung auch auf Google teilen? Das hilft anderen bei der Entscheidung.</p><a class="ps-btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Auch auf Google bewerten ↗</a>' : "") + "</div>";
+  }
   function fbHtml(o, id, t) {
-    var f = o.feedback || {}, shipped = o.status === "shipped" || o.status === "delivered", ask = shipped && !f.product ? "product" : !f.order ? "order" : "";
-    if (!ask) return f.order || f.product ? '<p class="ps-fb-done">Danke für dein Feedback!</p>' : "";
+    var f = o.feedback || {}, shipped = o.status === "shipped" || o.status === "delivered", ask = shipped ? (f.product ? "" : "product") : (f.order ? "" : "order");
+    if (!ask) return f.order || f.product ? '<div class="ps-fb done">' + fbThanks(0, o.reviewUrl) + "</div>" : "";
     return '<div class="ps-fb" id="feedback" data-fb="' + ask + '" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>' + (ask === "product" ? "Wie zufrieden bist du mit deinen Drucksachen?" : "Wie war das Bestellen bei uns?") + "</h3>" +
-      '<div class="ps-fb-stars" role="radiogroup" aria-label="Bewertung von 1 bis 5 Sternen">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" role="radio" aria-checked="false" data-fbstar="' + n + '" aria-label="' + n + " von 5 Sternen" + '">★</button>'; }).join("") + "</div>" +
-      '<textarea maxlength="1000" rows="2" placeholder="' + (ask === "product" ? "Was hat dir gefallen, was können wir besser machen? (optional)" : "Was war gut, was hat gefehlt? (optional)") + '" aria-label="Kommentar (optional)"></textarea>' +
+      '<div class="ps-fb-stars" role="radiogroup" aria-label="Bewertung von 1 bis 5 Sternen (Pflichtfeld)">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" role="radio" aria-checked="false" data-fbstar="' + n + '" aria-label="' + n + " von 5 Sternen" + '">★</button>'; }).join("") + "</div>" +
+      '<label class="ps-fb-l" for="psFbTxt">Was können wir besser machen? <span>(optional)</span></label><textarea id="psFbTxt" maxlength="1000" rows="2" placeholder="' + (ask === "product" ? "z. B. Papier, Farben, Versand …" : "z. B. Gestaltung, Upload, Bezahlung …") + '"></textarea>' +
+      (f.source ? "" : '<fieldset class="ps-fb-src"><legend>Wie hast du uns gefunden? <span>(optional)</span></legend><div class="ch">' + FOUND.map(function (x) { return '<button type="button" aria-pressed="false" data-fbsrc="' + esc(x) + '">' + esc(x) + "</button>"; }).join("") +
+        '</div><input type="text" class="ps-fb-srct" maxlength="120" hidden aria-label="Ergänzung (optional)"></fieldset>') +
       '<button type="button" class="ps-btn primary small" data-fbsend>Feedback senden</button><p class="ps-fb-msg" role="status"></p></div>';
   }
   document.addEventListener("click", function (e) {
     var sb = e.target.closest && e.target.closest("[data-fbstar]");
-    if (sb) { var box = sb.closest(".ps-fb"), n = +sb.getAttribute("data-fbstar"); box.setAttribute("data-r", n);
+    if (sb) { var box = sb.closest(".ps-fb"), n = +sb.getAttribute("data-fbstar"); box.setAttribute("data-r", n); box.querySelector(".ps-fb-msg").textContent = "";
       [].forEach.call(box.querySelectorAll("[data-fbstar]"), function (b) { var v = +b.getAttribute("data-fbstar"); b.classList.toggle("on", v <= n); b.setAttribute("aria-checked", String(v === n)); }); return; }
+    var sc = e.target.closest && e.target.closest("[data-fbsrc]");
+    if (sc) { var fs = sc.closest(".ps-fb-src"), on = sc.getAttribute("aria-pressed") !== "true", inp = fs.querySelector(".ps-fb-srct"), v0 = sc.getAttribute("data-fbsrc");
+      [].forEach.call(fs.querySelectorAll("[data-fbsrc]"), function (b) { b.setAttribute("aria-pressed", String(on && b === sc)); });
+      inp.hidden = !(on && FOUND_Q[v0]); if (!inp.hidden) { inp.placeholder = FOUND_Q[v0]; inp.setAttribute("aria-label", FOUND_Q[v0]); } return; }
     var fsb = e.target.closest && e.target.closest("[data-fbsend]"); if (!fsb) return;
     var bx = fsb.closest(".ps-fb"), r = +bx.getAttribute("data-r") || 0, msg = bx.querySelector(".ps-fb-msg");
-    if (!r) { msg.textContent = "Bitte zuerst 1 bis 5 Sterne wählen."; return; }
+    if (!r) { msg.textContent = "Bitte zuerst 1 bis 5 Sterne wählen."; var s1 = bx.querySelector("[data-fbstar]"); if (s1) s1.focus(); return; }
+    var srcB = bx.querySelector('[data-fbsrc][aria-pressed="true"]'), srcT = bx.querySelector(".ps-fb-srct");
     fsb.disabled = true; msg.textContent = "";
-    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/feedback?t=" + encodeURIComponent(bx.getAttribute("data-t")), { stage: bx.getAttribute("data-fb"), rating: r, text: bx.querySelector("textarea").value }).then(function (j) {
-      if (j.ok) bx.innerHTML = '<p class="ps-fb-done">Danke für dein Feedback!' + (r >= 4 ? " Das freut uns sehr." : " Wir schauen uns das genau an.") + "</p>";
+    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/feedback?t=" + encodeURIComponent(bx.getAttribute("data-t")), { stage: bx.getAttribute("data-fb"), rating: r, text: bx.querySelector("textarea").value,
+      source: srcB ? srcB.getAttribute("data-fbsrc") : "", sourceText: srcB && srcT && !srcT.hidden ? srcT.value : "" }).then(function (j) {
+      if (j.ok) { bx.className = "ps-fb done"; bx.removeAttribute("data-r"); bx.innerHTML = fbThanks(r, j.reviewUrl); if (LIVE.o) { LIVE.o.feedback = LIVE.o.feedback || {}; LIVE.o.feedback[bx.getAttribute("data-fb")] = true; } }
       else { msg.textContent = j.error || "Hat nicht geklappt – bitte später erneut versuchen."; fsb.disabled = false; }
     }).catch(function () { msg.textContent = "Hat nicht geklappt – bitte später erneut versuchen."; fsb.disabled = false; });
   });
-  // Fortschritt der Bestellung als Zeitleiste
-  function trackHtml(st) {
-    var at = { paid: 1, invoice_requested: 1, ordered: 2, in_production: 2, problem: 2, shipped: 3, delivered: 4 }[st]; if (at == null) return "";
-    var L = ["Bestellt", "Datencheck", "In Produktion", "Versendet", "Zugestellt"], fin = st === "delivered";
-    return '<ol class="ps-track" aria-label="Bestellfortschritt">' + L.map(function (l, i) { var c = i < at || fin ? "done" : i === at ? "cur" + (st === "problem" ? " warn" : "") : "";
-      return '<li class="' + c + '"' + (c.indexOf("cur") === 0 ? ' aria-current="step"' : "") + "><i aria-hidden=\"true\">" + (c === "done" ? "✓" : i + 1) + "</i><span>" + l + "</span></li>"; }).join("") + "</ol>";
+  // Fortschritt der Bestellung als Zeitleiste – mit Datum je Schritt (bestellt am, Datencheck am, in Produktion seit, versendet am, zugestellt am / voraussichtlich)
+  var TRACK_L = ["Bestellt", "Datencheck", "In Produktion", "Versendet", "Zugestellt"], TRACK_K = ["ordered", "check", "production", "shipped", "delivered"];
+  var TRACK_AT = { paid: 1, invoice_requested: 1, ordered: 2, in_production: 2, problem: 2, shipped: 3, delivered: 4 };
+  function trackHtml(st, sd) {
+    var at = TRACK_AT[st]; if (at == null) return "";
+    var fin = st === "delivered"; sd = sd || {};
+    return '<ol class="ps-track" aria-label="Bestellfortschritt">' + TRACK_L.map(function (l, i) {
+      var c = i < at || fin ? "done" : i === at ? "cur" + (st === "problem" ? " warn" : "") : "", v = sd[TRACK_K[i]], d = "";
+      if (c === "cur warn") { l = "In Klärung"; v = ""; }   // wie in der Liste; kein „seit …“, solange etwas offen ist
+      if (c === "done" && v) d = dNum(v);
+      else if (i === 2 && c && v) d = "seit " + dNum(v);
+      else if (c && v) d = dNum(v);
+      else if (i === 4 && !fin && st !== "problem" && sd.expected && !dPast(sd.expected)) d = "ca. " + dNum(sd.expected);
+      return '<li class="' + c + '"' + (c.indexOf("cur") === 0 ? ' aria-current="step"' : "") + '><i aria-hidden="true">' + (c === "done" ? "✓" : i + 1) + '</i><span class="l">' + l + "</span>" + (d ? "<small>" + nbsp(d) + "</small>" : "<small></small>") + "</li>"; }).join("") + "</ol>";
   }
-  // Sendungsverfolgung: Paketdienst, Sendungsnummer, Link; „Status aktualisieren“ fragt Print.com (höchstens alle 15 min)
+  // Bestellliste im Konto: Link, Metazeile ohne hängende Trennpunkte, kompakter Fortschritt, einheitliche Knöpfe
+  function ordUrl(o) { return "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(o.token); }
+  function ordMeta(o) { return '<span class="ps-meta"><span class="in"><span>' + esc(o.nr) + "</span><span>" + esc(new Date(o.createdAt).toLocaleDateString("de-AT")) + "</span><span>" + stk(o.copies) + "</span></span></span>"; }
+  var CHIP = { pending_payment: ["Zahlung offen", "warn"], payment_failed: ["Zahlung fehlgeschlagen", "bad"], paid: ["Datencheck", "run"], invoice_requested: ["Wird geprüft", "run"], ordered: ["In Produktion", "run"], in_production: ["In Produktion", "run"],
+    problem: ["In Klärung", "warn"], shipped: ["Versendet", "ship"], delivered: ["Zugestellt", "ok"], rejected: ["Storniert", "bad"] };
+  function miniTrack(o) {
+    var c = CHIP[o.status] || [o.statusText || o.status, ""], at = TRACK_AT[o.status], fin = o.status === "delivered", sd = o.steps || {}, d = [];
+    if (fin) { if (sd.delivered) d.push("am " + dNum(sd.delivered)); }
+    else if (o.status === "shipped") { if (sd.shipped) d.push("am " + dNum(sd.shipped)); }
+    else if ((o.status === "ordered" || o.status === "in_production") && sd.production) d.push("seit " + dNum(sd.production));
+    if (o.status === "problem") d.push("wir melden uns bei dir");
+    if (o.status === "rejected") { var pm = o.payment || {}; if (pm.refunded) d.push("Betrag wird erstattet"); else if (pm.method === "invoice") d.push("Rechnung entfällt"); }
+    if (!fin && at != null && o.status !== "problem" && sd.expected && !dPast(sd.expected)) d.push((o.status === "shipped" ? "Zustellung" : "Lieferung") + " ca. " + dNum(sd.expected));
+    var dots = at == null ? "" : '<span class="dots" aria-hidden="true">' + [0, 1, 2, 3, 4].map(function (i) { return "<i" + (i < at || fin ? ' class="done"' : i === at ? ' class="cur"' : "") + "></i>"; }).join("") + '</span><span class="ps-sr">Schritt ' + ((fin ? 4 : at) + 1) + " von 5: </span>";
+    return '<div class="ps-mtrack' + (c[1] ? " st-" + c[1] : "") + '">' + dots + '<span class="ps-ost">' + esc(c[0]) + "</span>" + (d.length ? '<span class="ps-mtd">' + nbsp(d.join(" · ")) + "</span>" : "") + "</div>";
+  }
+  function ordActs(o, big) {
+    var tr = o.tracks && o.tracks.length, ship = tr && o.status === "shipped";
+    return '<div class="ps-oacts">' + (tr ? '<a class="ps-btn small' + (ship ? " primary" : "") + '" href="' + esc(o.tracks[0]) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a>' : "") +
+      (o.canReorder ? '<button type="button" class="ps-btn small' + (big && !ship ? " primary" : "") + '" data-act="reorder:' + esc(o.id) + '">Nochmal bestellen</button>' : "") +
+      '<a class="ps-btn small ghost" href="' + ordUrl(o) + '">Details</a></div>';
+  }
+  // Sendungsverfolgung: Paketdienst, Sendungsnummer mit Kopier-Knopf, Link; „Status aktualisieren“ fragt Print.com (höchstens alle 15 min)
+  var COPY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   function trackCard(o, id, t) {
     var ti = o.trackInfo || [], open = ["ordered", "in_production", "shipped", "problem"].indexOf(o.status) > -1, upd = open ? '<button type="button" class="ps-link" data-act="statusref:' + esc(id) + "|" + esc(t) + '">Status aktualisieren</button>' : "";
-    var chk = o.checkedAt ? '<span class="pd-muted">Stand ' + esc(new Date(o.checkedAt).toLocaleString("de-AT", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })) + "</span>" : "";
+    var chk = o.checkedAt ? "<span>Stand " + esc(nbsp(new Date(o.checkedAt).toLocaleString("de-AT", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }))) + "</span>" : "";
+    var ft = chk || upd ? '<p class="ft">' + chk + upd + "</p>" : "";
     if (ti.length) return '<div class="ps-trackc"><h3><span aria-hidden="true">📦</span> Sendungsverfolgung</h3>' + ti.map(function (x) {
-        return '<div class="row"><div class="tx"><b>' + esc(x.carrier || "Paketdienst") + "</b>" + (x.code ? '<span>Sendungsnummer <code>' + esc(x.code) + '</code> <button type="button" class="ps-link" data-copy="' + esc(x.code) + '">kopieren</button></span>' : "") + '</div><a class="ps-btn primary small" href="' + esc(x.url) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a></div>'; }).join("") +
-      '<p class="ft">' + chk + " " + upd + '<br><small>Die Zustellung kann in Einzelfällen auch erst am darauffolgenden Werktag erfolgen.</small></p></div>';
-    if (open) return '<div class="ps-trackc wait"><h3><span aria-hidden="true">📦</span> Sendungsverfolgung</h3><p>Sobald dein Paket unterwegs ist, erscheint hier die Sendungsverfolgung – und du bekommst sie zusätzlich per E-Mail.</p><p class="ft">' + chk + " " + upd + "</p></div>";
+        return '<div class="row"><div class="tx"><b>' + esc(x.carrier || "Paketdienst") + "</b>" + (x.code ? '<span class="sn"><span class="k">Sendungsnummer</span><span class="cd"><code>' + esc(x.code) + '</code><button type="button" class="ps-copy" data-copy="' + esc(x.code) + '" aria-label="Sendungsnummer kopieren" title="Sendungsnummer kopieren">' + COPY_SVG + "</button></span></span>" : "") +
+          '</div><a class="ps-btn small' + (o.status === "shipped" ? " primary" : "") + '" href="' + esc(x.url) + '" target="_blank" rel="noopener">Sendung verfolgen ↗</a></div>'; }).join("") +
+      ft + "</div>";
+    if (open && o.status !== "problem") return '<div class="ps-trackc wait"><h3><span aria-hidden="true">📦</span> Sendungsverfolgung</h3><p>Sobald dein Paket unterwegs ist, erscheint hier die Sendungsverfolgung – und du bekommst sie zusätzlich per <span class="ps-nw">E-Mail</span>.</p>' + ft + "</div>";
     return "";
   }
+  // Status leise aktualisieren: alle ~2 min, nur bei sichtbarem Tab und offenen Bestellungen; wer gerade tippt oder bewertet, wird nicht gestört
+  var LIVE = { at: 0 }, LIVE_OPEN = ["paid", "invoice_requested", "ordered", "in_production", "shipped", "problem"];
+  function liveSig(o) { var f = o.feedback || {}; return [o.status, o.checkedAt || "", (o.tracks || []).join(","), JSON.stringify(o.steps || {}), f.order ? 1 : 0, f.product ? 1 : 0].join("|"); }
+  function liveBusy() {
+    var a = document.activeElement; if (a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+    if (root.querySelector('.ps-fb[data-r], .ps-fb [aria-pressed="true"]')) return true;
+    return [].some.call(root.querySelectorAll(".ps-status textarea, .ps-status input"), function (x) { return !!x.value; });
+  }
+  function liveTick(force) {
+    if (document.visibilityState === "hidden" || (!force && Date.now() - LIVE.at < 115e3)) return;
+    var sp = root.querySelector(".ps-status[data-oid]");
+    if (sp) {
+      if (LIVE_OPEN.indexOf(sp.getAttribute("data-st")) < 0) return;
+      LIVE.at = Date.now(); var id = sp.getAttribute("data-oid"), t = sp.getAttribute("data-t");
+      api("/print/api/order/" + encodeURIComponent(id) + "?t=" + encodeURIComponent(t)).then(function (j) {
+        if (!j.ok || !root.contains(sp) || liveSig(j.order) === sp.getAttribute("data-sig")) return;
+        if (liveBusy()) { LIVE.at = Date.now() - 85e3; return; }   // in ~30 s erneut versuchen
+        var y = window.scrollY; renderStatus(j.order, id, t); window.scrollTo(0, y);
+      }).catch(function () {});
+      return;
+    }
+    if (S.view !== "konto" || !S.me || !root.querySelector(".ps-acct")) return;
+    var open = S.orders.filter(function (o) { return LIVE_OPEN.indexOf(o.status) > -1 && o.token; }).slice(0, 5); if (!open.length) return;
+    LIVE.at = Date.now();
+    Promise.all(open.map(function (o) { return api("/print/api/order/" + encodeURIComponent(o.id) + "?t=" + encodeURIComponent(o.token)).catch(function () { return {}; }); })).then(function (rs) {
+      var ch = false;
+      rs.forEach(function (j, i) { var o = open[i]; if (!j || !j.ok || liveSig(j.order) === liveSig(o)) return; ["status", "statusText", "tracks", "trackInfo", "checkedAt", "steps", "feedback", "deliveryDate"].forEach(function (k) { o[k] = j.order[k]; }); ch = true; });
+      if (!ch || S.view !== "konto") return;
+      var tab = S.acct.tab || "start", a = document.activeElement;
+      if ((tab === "start" || tab === "orders") && !(a && root.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) { var y = window.scrollY; render0(); window.scrollTo(0, y); }
+    });
+  }
+  setInterval(liveTick, 30e3);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") liveTick(); });
   function retryPay(v) { var p = v.split("|"); fetch("/print/api/order/" + encodeURIComponent(p[0]) + "/pay?t=" + encodeURIComponent(p[1]), { method: "POST", headers: H, body: "{}" }).then(function (r) { return r.json(); }).then(function (j) { if (j.ok && j.checkoutUrl) location.href = j.checkoutUrl; else toast(j.error || "Zahlung nicht möglich", true); }); }
 })();

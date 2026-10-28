@@ -1565,7 +1565,8 @@ module.exports = function (D) {
   function mailHtml(title, intro, rows, outro) {
     return '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;color:#1d1d1f;max-width:600px">' +
       "<h2 style=\"font-size:20px;margin:0 0 12px\">" + escH(title) + "</h2>" + intro.map(p => "<p style=\"margin:0 0 12px;line-height:1.5\">" + escH(p) + "</p>").join("") +
-      (rows && rows.length ? '<table cellpadding="5" style="border-collapse:collapse;margin:8px 0 14px">' + rows.map(r => "<tr><td style=\"color:#6e6e73;vertical-align:top\">" + escH(r[0]) + "</td><td><b>" + escH(r[1]) + "</b></td></tr>").join("") + "</table>" : "") +
+      (rows && rows.some(r => r[2] !== "button") ? '<table cellpadding="5" style="border-collapse:collapse;margin:8px 0 14px">' + rows.filter(r => r[2] !== "button").map(r => "<tr><td style=\"color:#6e6e73;vertical-align:top\">" + escH(r[0]) + "</td><td><b>" + escH(r[1]) + "</b></td></tr>").join("") + "</table>" : "") +
+      (rows || []).filter(r => r[2] === "button" && /^https?:\/\//.test(String(r[1]))).map(r => '<p style="margin:14px 0 18px"><a href="' + escH(r[1]) + '" style="display:inline-block;background:#0a84ff;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:999px">' + escH(r[0]) + "</a></p>").join("") +
       (outro || []).map(p => "<p style=\"margin:0 0 12px;line-height:1.5\">" + escH(p) + "</p>").join("") +
       '<p style="margin:18px 0 0;color:#6e6e73;font-size:13px">FS Creative · Simon Felder · Dorfstraße 3/1 · 6793 Gaschurn · <a href="https://www.fs-creative.at">fs-creative.at</a></p></div>';
   }
@@ -1694,6 +1695,27 @@ module.exports = function (D) {
 
   // ───────────────────────── Bestellungen ─────────────────────────
   const hist = (o, what) => { o.history = (o.history || []).concat([{ at: nowIso(), what: clip(what, 300) }]).slice(-60); };
+  // Zeitpunkt, an dem die Bestellung einen Status zum ersten Mal erreicht (Zeitleiste im Kundenbereich, Bewertungsmail nach der Zustellung)
+  const stamp = o => { if (!o.status) return; o.statusAt = o.statusAt || {}; if (!o.statusAt[o.status]) o.statusAt[o.status] = nowIso(); };
+  // Schritt der Zeitleiste (Bestellt · Datencheck · In Produktion · Versendet · Zugestellt) je Status
+  const STEP_RANK = { pending_payment: 0, payment_failed: 0, paid: 1, invoice_requested: 1, ordered: 2, in_production: 2, problem: 2, shipped: 3, delivered: 4 };
+  // Datum je Schritt: aus statusAt, bei älteren Bestellungen aus Verlauf und Zeitstempeln. Nur Zeitpunkte, keine internen Angaben.
+  function stepDates(o) {
+    const sa = o.statusAt || {}, H = o.history || [], first = re => (H.find(h => h && re.test(String(h.what || ""))) || {}).at || "";
+    const pc = o.printcom || {}, rank = STEP_RANK[o.status] == null ? -1 : STEP_RANK[o.status], ms = o.mails && o.mails.shipped;
+    const placed = sa.ordered || first(/^Bei Print\.com bestellt/) || (pc.orderNumber && pc.at) || "";
+    const r = { ordered: o.createdAt || "" };
+    if (rank >= 2) { r.check = placed; r.production = sa.in_production || first(/^In Produktion\b/) || placed; }
+    if (rank >= 3) r.shipped = sa.shipped || first(/^Versendet\b/) || (typeof ms === "string" && /^\d{4}-/.test(ms) ? ms : "") || first(/^Versandmail gesendet/);
+    if (rank >= 4) r.delivered = sa.delivered || o.closedAt || first(/^(Zugestellt\b|Manuell abgeschlossen)/);
+    if (rank >= 0 && rank < 4 && o.price && o.price.deliveryDate) r.expected = String(o.price.deliveryDate).slice(0, 10);
+    Object.keys(r).forEach(k => { if (!r[k]) delete r[k]; });
+    return r;
+  }
+  // Link für Google-Bewertungen: Railway-Variable PRINT_GOOGLE_REVIEW_URL, sonst vom Server (D.googleReviewUrl), sonst keiner (Knopf ausgeblendet)
+  const reviewUrl = () => { let v = String(process.env.PRINT_GOOGLE_REVIEW_URL || "").trim(); if (!v && typeof D.googleReviewUrl === "function") { try { v = String(D.googleReviewUrl() || "").trim(); } catch (e) { v = ""; } } return /^https:\/\/[^\s"'<>]{6,300}$/.test(v) ? v : ""; };
+  // „Wie hast du uns gefunden?“ – feste Auswahl, sonst leer
+  const FOUND_VIA = ["Google-Suche", "Google Maps", "Empfehlung", "Instagram", "Facebook", "Flyer/Werbung", "Schon Kunde", "Sonstiges"];
   function validCustomer(c) {
     c = c || {};
     const x = { type: c.type === "company" ? "company" : "private", company: clip(c.company, 120), uid: clip(c.uid, 20).replace(/[\s.\-]/g, "").toUpperCase(), firstName: clip(c.firstName, 60), lastName: clip(c.lastName, 60),
@@ -1904,12 +1926,12 @@ module.exports = function (D) {
       if (wishOk) Object.assign(body.items[0].shipments[0], { deliveryDate: pw, method: pm });
       let j;
       try { j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
-      catch (e) { if (!wishOk || e.status !== 400) { o.status = "problem"; o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; } delete body.items[0].shipments[0].deliveryDate; delete body.items[0].shipments[0].method; hist(o, "Wunsch-Liefertag " + pw + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt"); j = null; }
+      catch (e) { if (!wishOk || e.status !== 400) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; } delete body.items[0].shipments[0].deliveryDate; delete body.items[0].shipments[0].method; hist(o, "Wunsch-Liefertag " + pw + " nicht mehr möglich (" + clip(e.message, 120) + ") – ohne Wunschtermin bestellt"); j = null; }
       try { if (!j) j = await pcApi("POST", "/orders", body, { timeout: 60000 }); }
-      catch (e) { o.status = "problem"; o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
+      catch (e) { o.status = "problem"; stamp(o); o.printcom.error = clip(e.message, 300); hist(o, "Print.com-Bestellung fehlgeschlagen: " + e.message); await store.putOrder(o); throw e; }
       const r = firstOf(j);
       o.printcom = { orderNumber: String(r.orderNumber || (r.items && r.items[0] && r.items[0].orderNumber) || ""), at: nowIso(), by: by || "Cockpit", total: +r.orderTotal || +r.grandTotal || null, status: String((r.items && r.items[0] && r.items[0].status) || r.status || "") };
-      o.status = "ordered"; hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + " Motive als eigene Designs" : ""));
+      o.status = "ordered"; stamp(o); hist(o, "Bei Print.com bestellt (" + (by || "Cockpit") + ")" + (o.printcom.orderNumber ? " – Auftrag " + o.printcom.orderNumber : "") + (o.motifs && o.motifs.length > 1 ? " · " + o.motifs.length + " Motive als eigene Designs" : ""));
       if (needsBack(fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
       if (!o.printcom.orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
       await store.putOrder(o);
@@ -1948,7 +1970,7 @@ module.exports = function (D) {
       else { try { await D.deleteInvoice(o.invoice.id); o.invoice.deleted = nowIso(); hist(o, "Rechnungsentwurf gelöscht"); }
         catch (e) { o.invoice.deleteError = clip(e.message, 200); const st1 = await invoiceStatusOf(o.invoice.id); if (INV_SENT.indexOf(st1) > -1) { o.invoice.needsStorno = true; o.invoice.draft = false; hist(o, "Rechnung ist schon versendet – nicht gelöscht, bitte unter Finanzen stornieren"); } } }
     }
-    o.status = "rejected"; o.rejectReason = clip(reason, 500); hist(o, "Abgelehnt" + (reason ? ": " + reason : ""));
+    o.status = "rejected"; stamp(o); o.rejectReason = clip(reason, 500); hist(o, "Abgelehnt" + (reason ? ": " + reason : ""));
     await store.putOrder(o);
     if (o.status === "rejected" && o.payment.status !== "open") await mail(o.customer.email, "Deine Druckbestellung " + o.nr + " · FS Creative", "Deine Bestellung konnte leider nicht gedruckt werden",
       ["Hallo " + o.customer.firstName + ",", "leider können wir deine Bestellung " + o.nr + " so nicht in Druck geben." + (o.rejectReason ? " Grund: " + o.rejectReason : ""), o.payment.refund ? "Den Betrag von " + eur(o.price.gross) + " erstatten wir dir über den gewählten Zahlungsweg – das dauert meist ein paar Werktage." : ""].filter(Boolean),
@@ -2010,7 +2032,7 @@ module.exports = function (D) {
     if (PC_DONE[st]) o.status = PC_DONE[st];
     else if (PC_PROBLEM.test(st)) o.status = "problem";
     else if (st && ["ordered", "problem"].indexOf(o.status) > -1) o.status = "in_production";
-    if (o.status !== before) hist(o, ({ in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", problem: "Problem" }[o.status] || STATUS_DE[o.status] || o.status) + " – Print.com-Status: " + st);
+    if (o.status !== before) { stamp(o); hist(o, ({ in_production: "In Produktion", shipped: "Versendet", delivered: "Zugestellt", problem: "Problem" }[o.status] || STATUS_DE[o.status] || o.status) + " – Print.com-Status: " + st); }
     if ((o.status === "shipped" || o.status === "delivered") && !o.mails.shipped) {
       o.mails.shipped = await mail(o.customer.email, "Deine Drucksachen sind unterwegs · " + o.nr, "Deine Bestellung ist versendet",
         ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) ist gedruckt und auf dem Weg zu dir."],
@@ -2025,16 +2047,30 @@ module.exports = function (D) {
     await store.putOrder(o);
     return o;
   }
-  async function feedbackMails() {
+  // Bewertungsbitte nach der Lieferung – nur mit Zustimmung an der Kasse (customer.feedbackOk), einmal je Bestellung, nur tagsüber (8–20 Uhr Wien).
+  // Fällig 2 Tage nach „Zugestellt“; meldet der Paketdienst nie eine Zustellung, 5 Tage nach der Versandmail. Läuft stündlich (tick) → Mail 2–3 Tage nach der Zustellung.
+  const viennaHour = t => { try { return +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hourCycle: "h23" }).format(new Date(t)); } catch (e) { return new Date(t).getUTCHours() + 1; } };
+  function feedbackDue(o) {
+    const dl = o.status === "delivered" && Date.parse(stepDates(o).delivered || "");
+    if (dl) return dl + 2 * 864e5;
+    const sh = o.mails && typeof o.mails.shipped === "string" && Date.parse(o.mails.shipped);
+    return sh ? sh + 5 * 864e5 : 0;
+  }
+  async function feedbackMails(now) {
+    now = now == null ? Date.now() : +now;
+    const hr = viennaHour(now); if (hr < 8 || hr >= 20) return 0;
     const all = await store.listOrders(); let n = 0;
     for (const o of all) {
-      if (!o.customer || o.customer.feedbackOk !== true || !o.mails || !o.mails.shipped || o.mails.feedback || (o.feedback && o.feedback.product)) continue;
-      const age = Date.now() - Date.parse(o.mails.shipped); if (!(age > 4 * 864e5 && age < 30 * 864e5) || ["shipped", "delivered"].indexOf(o.status) < 0) continue;
+      if (!o.customer || o.customer.feedbackOk !== true || !o.mails || o.mails.feedback || (o.feedback && o.feedback.product)) continue;
+      if (["shipped", "delivered"].indexOf(o.status) < 0) continue;
+      const due = feedbackDue(o); if (!due || now < due || now - due > 25 * 864e5) continue;
       const link = cfg().publicUrl + "/print?bestellung=" + encodeURIComponent(o.id) + "&t=" + encodeURIComponent(sig("order", o.id)) + "#feedback";
-      o.mails.feedback = await mail(o.customer.email, "Wie gefallen dir deine Drucksachen? · " + o.nr, "Kurze Frage zu deiner Bestellung",
-        ["Hallo " + o.customer.firstName + ",", "deine Bestellung " + o.nr + " (" + o.product.title + ", " + o.copies + " Stk.) sollte inzwischen bei dir sein. Wie zufrieden bist du damit? Deine Bewertung (1–5 Sterne, dauert 20 Sekunden) hilft uns sehr."],
-        [["Jetzt bewerten", link]], ["Du bekommst diese Mail, weil du bei der Bestellung zugestimmt hast, nach der Lieferung um Feedback gebeten zu werden. Es folgt keine weitere Erinnerung."]) ? nowIso() : "skip";
-      hist(o, o.mails.feedback !== "skip" ? "Feedback-Mail gesendet" : "Feedback-Mail fehlgeschlagen"); await store.putOrder(o); n++;
+      const what = o.nr + " (" + o.product.title + ", " + o.copies + " Stk.)";
+      o.mails.feedback = await mail(o.customer.email, "Wie gefallen dir deine Drucksachen? · " + o.nr, "Sind deine Drucksachen gut angekommen?",
+        [(o.customer.firstName ? "Hallo " + o.customer.firstName + "," : "Hallo,"), (o.status === "delivered" ? "deine Bestellung " + what + " ist vor ein paar Tagen bei dir angekommen." : "deine Bestellung " + what + " sollte inzwischen bei dir angekommen sein.") + " Wie zufrieden bist du damit?",
+          "Deine Bewertung dauert keine Minute und hilft uns, noch besser zu werden. Danke!"],
+        [["Jetzt bewerten", link, "button"]], ["Du bekommst diese Mail einmalig, weil du bei der Bestellung zugestimmt hast. Es folgt keine Erinnerung."]) ? nowIso() : "skip";
+      hist(o, o.mails.feedback !== "skip" ? "Bewertungsmail gesendet" : "Bewertungsmail fehlgeschlagen"); await store.putOrder(o); n++;
       if (n >= 30) break;
     }
     return n;
@@ -2065,7 +2101,7 @@ module.exports = function (D) {
     for (const f of files) if (!f.orderId && Date.now() - Date.parse(f.createdAt) > (f.kind === "draft" ? 60 : f.kind === "brief" ? 180 : 3) * 864e5) { await store.delFile(f.id); n++; }
     return n;
   }
-  let lastDaily = 0;
+  let lastDaily = 0, lastFb = 0;
   let lastTrack = 0;
   // Sendungsstatus höchstens alle 25 min: tick() und der 30-min-Takt im Server teilen sich diese Sperre (früher doppelt gegen das Print.com-Limit)
   function pollDue() { if (!cfg().pcKey || Date.now() - lastTrack < 25 * 60e3) return false; lastTrack = Date.now(); return true; }
@@ -2318,13 +2354,13 @@ module.exports = function (D) {
     syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
+    if (Date.now() - lastFb > 55 * 60e3) { lastFb = Date.now(); feedbackMails().catch(e => log("Bewertungsmails:", e.message)); }   // stündlich: Bewertungsbitte 2–3 Tage nach der Zustellung
     try {
       if (Date.now() - lastDaily < 20 * 3600e3) return;
       const m = (await store.getMeta("print_daily").catch(() => null)) || {};
       if (m.at && Date.now() - Date.parse(m.at) < 20 * 3600e3) { lastDaily = Date.parse(m.at); return; }
       lastDaily = Date.now(); await store.setMeta("print_daily", { at: nowIso() });
       if (cfg().pcKey) { await catalog(true).catch(() => null); lastTrack = Date.now(); await pollAll(); }
-      await feedbackMails().catch(e => log("Feedback-Mails:", e.message));
       await cleanupFiles();
     } catch (e) { log("Tageslauf:", e.message); }
   }
@@ -2363,8 +2399,9 @@ module.exports = function (D) {
   async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
   const orderPublic = o => ({ id: o.id, nr: o.nr, check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
-    payment: { method: o.payment.method, status: o.payment.status }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
-    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
+    payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
+    createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(),
+    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!(o.feedback && ((o.feedback.order && o.feedback.order.source) || (o.feedback.product && o.feedback.product.source))) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
@@ -2576,12 +2613,13 @@ module.exports = function (D) {
         if (limited("feedback", ip, 20, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
         const o = await store.getOrder(fbm[1]); if (!o) return J(res, 404, { ok: false, error: "not_found" });
         const b = await readJson(req, 6000), stage = b.stage === "product" ? "product" : "order", rating = parseInt(b.rating, 10), text = clip(String(b.text || "").replace(/\s+/g, " "), 1000);
+        const source = FOUND_VIA.indexOf(String(b.source || "")) > -1 ? String(b.source) : "", sourceText = source ? clip(String(b.sourceText || "").replace(/\s+/g, " "), 120) : "";   // „Wie hast du uns gefunden?“ (freiwillig)
         if (!(rating >= 1 && rating <= 5)) return J(res, 400, { ok: false, error: "Bitte 1 bis 5 Sterne wählen" });
         if (stage === "product" && ["shipped", "delivered"].indexOf(o.status) < 0) return J(res, 400, { ok: false, error: "Die Drucksachen sind noch nicht unterwegs" });
         if (Date.now() - Date.parse(o.createdAt) > 120 * 864e5) return J(res, 400, { ok: false, error: "Diese Bestellung ist schon zu lange her" });
-        o.feedback = o.feedback || {}; const first = !o.feedback[stage]; o.feedback[stage] = { rating, text, at: nowIso() }; RV = null; hist(o, "Feedback (" + (stage === "product" ? "Drucksachen" : "Bestellung") + "): " + rating + "/5"); await store.putOrder(o);
-        if (D.push && (rating <= 3 || (text && first))) D.push("lead", { title: (rating <= 2 ? "⚠️ " : "") + "Feedback: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: "★".repeat(rating) + "☆".repeat(5 - rating) + " · " + o.nr + " · " + (stage === "product" ? "Drucksachen" : "Bestellvorgang") + "\n" + (text || "ohne Kommentar"), url: "/admin#print", tag: "fb-" + o.id }).catch(() => {});
-        return J(res, 200, { ok: true });
+        o.feedback = o.feedback || {}; const first = !o.feedback[stage]; o.feedback[stage] = Object.assign({ rating, text, at: nowIso() }, source ? { source } : {}, sourceText ? { sourceText } : {}); RV = null; hist(o, "Feedback (" + (stage === "product" ? "Drucksachen" : "Bestellung") + "): " + rating + "/5"); await store.putOrder(o);
+        if (D.push && (rating <= 3 || (text && first))) D.push("lead", { title: (rating <= 2 ? "⚠️ " : "") + "Feedback: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: "★".repeat(rating) + "☆".repeat(5 - rating) + " · " + o.nr + " · " + (stage === "product" ? "Drucksachen" : "Bestellvorgang") + "\n" + (text || "ohne Kommentar") + (source ? "\nGefunden über: " + source + (sourceText ? " (" + sourceText + ")" : "") : ""), url: "/admin#print", tag: "fb-" + o.id }).catch(() => {});
+        return J(res, 200, { ok: true, reviewUrl: reviewUrl() });
       }
       m = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})(\/pay)?$/);
       if (m) {
@@ -2840,7 +2878,8 @@ module.exports = function (D) {
           order: o.feedback.order || null, productFb: o.feedback.product || null, at: (o.feedback.product || o.feedback.order).at })).sort((a, b) => a.at < b.at ? 1 : -1);
         const avg = k => { const l = rows.map(r => r[k]).filter(Boolean); return l.length ? { n: l.length, avg: Math.round(l.reduce((a, x) => a + x.rating, 0) / l.length * 10) / 10 } : { n: 0, avg: null }; };
         const asked = (await store.listOrders()).filter(o => o.mails && o.mails.feedback && o.mails.feedback !== "skip").length;
-        return J(res, 200, { ok: true, order: avg("order"), product: avg("productFb"), asked, rows: rows.slice(0, 100) });
+        const sources = {}; rows.forEach(r => { const f = (r.order && r.order.source) ? r.order : (r.productFb && r.productFb.source) ? r.productFb : null; if (f) sources[f.source] = (sources[f.source] || 0) + 1; });
+        return J(res, 200, { ok: true, order: avg("order"), product: avg("productFb"), asked, sources, reviewUrl: reviewUrl(), rows: rows.slice(0, 100) });
       }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};
@@ -2931,7 +2970,7 @@ module.exports = function (D) {
         if (op === "complete") {   // manuell abschließen (z. B. aus den Aufträgen: „Erledigt“) – erst nach der Bestellung bei Print.com
           const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden");
           if (!(["ordered", "in_production", "shipped"].indexOf(o.status) > -1 || (o.status === "problem" && o.printcom && o.printcom.orderNumber))) throw new Error("Status „" + (STATUS_DE[o.status] || o.status) + "“ – abschließen geht erst nach der Bestellung bei Print.com");
-          o.status = "delivered"; o.closedAt = nowIso(); hist(o, "Manuell abgeschlossen" + (b.by ? " (" + clip(b.by, 40) + ")" : "")); await store.putOrder(o); return J(res, 200, { ok: true, order: o });
+          o.status = "delivered"; o.closedAt = nowIso(); stamp(o); hist(o, "Manuell abgeschlossen" + (b.by ? " (" + clip(b.by, 40) + ")" : "")); await store.putOrder(o); return J(res, 200, { ok: true, order: o });
         }
         if (op === "poll") { const o = await store.getOrder(id); if (!o) throw new Error("Bestellung nicht gefunden"); return J(res, 200, { ok: true, order: await pollOrder(o) }); }
         if (op === "pollAll") return J(res, 200, { ok: true, polled: await pollAll() });
@@ -2965,6 +3004,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary } };
+  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA } };
 };
 module.exports._bonusCalc = bonusCalc;

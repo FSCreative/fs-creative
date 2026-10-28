@@ -97,7 +97,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   // ── 2) eingerichtet (alles gegen Attrappen) ──
   srv = await startServer(dir, { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", MOLLIE_PRINT_API_KEY: "test_mollie_print", PRINT_MOLLIE_BASE: mbase + "/mollie",
     VIES_URL: mbase + "/vies", MAIL_API_URL: mbase + "/mail/api/mails", MAIL_API_TOKEN: "mt", SEVDESK_API_KEY: "sev-test-key", SEVDESK_API_BASE: "http://127.0.0.1:" + sport + "/api/v1",
-    PRINT_MARKUP_PCT: "35", PRINT_MIN_MARGIN_EUR: "8", PRINT_PUBLIC_URL: "https://www.fs-creative.at", PRINT_CMS_BASE: mbase + "/cms", PRINT_IMPORT_DELAY_MS: "0" });
+    PRINT_MARKUP_PCT: "35", PRINT_MIN_MARGIN_EUR: "8", PRINT_PUBLIC_URL: "https://www.fs-creative.at", PRINT_CMS_BASE: mbase + "/cms", PRINT_IMPORT_DELAY_MS: "0", PRINT_GOOGLE_REVIEW_URL: "https://g.page/r/TEST-fs/review" });
   const B = srv.base;
   const H = { "content-type": "application/json", "x-print-shop": "1" };
   const post = async (p, body, headers) => { const r = await fetch(B + p, { method: "POST", headers: Object.assign({}, H, headers || {}), body: JSON.stringify(body) }); return { status: r.status, j: await r.json().catch(() => null) }; };
@@ -350,9 +350,15 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await fb({ stage: "order", rating: 4 }, "falsch")).status, 404);
     assert.strictEqual((await fb({ stage: "order", rating: 9 })).status, 400);
     assert.strictEqual((await fb({ stage: "product", rating: 5 })).status, 400, "noch nicht versendet");
-    assert.strictEqual((await fb({ stage: "order", rating: 4, text: "Ging schnell <b>und</b> einfach" })).status, 200);
-    const st = await (await fetch(B + "/print/api/order/" + o1.orderId + "?t=" + o1.token)).json(); assert.deepStrictEqual(st.order.feedback, { order: true, product: false });
-    const a = await admin("/admin/api/print/feedback"); assert.strictEqual(a.ok, true); assert.deepStrictEqual(a.order, { n: 1, avg: 4 }); assert.strictEqual(a.rows[0].order.text, "Ging schnell <b>und</b> einfach");
+    assert.strictEqual((await fb({ stage: "order", rating: 3, source: "<script>", sourceText: "x" })).status, 200);
+    let a = await admin("/admin/api/print/feedback"); assert.ok(!("source" in a.rows[0].order) && !("sourceText" in a.rows[0].order), "unbekannte Quelle wird nicht gespeichert");
+    let st = await (await fetch(B + "/print/api/order/" + o1.orderId + "?t=" + o1.token)).json(); assert.deepStrictEqual(st.order.feedback, { order: true, product: false, source: false });
+    const fr = await fb({ stage: "order", rating: 4, text: "Ging schnell <b>und</b> einfach", source: "Google Maps", sourceText: "  Druckerei   Montafon " });
+    assert.strictEqual(fr.status, 200); assert.strictEqual(fr.j.reviewUrl, "https://g.page/r/TEST-fs/review", "Google-Link für alle, unabhängig von den Sternen");
+    st = await (await fetch(B + "/print/api/order/" + o1.orderId + "?t=" + o1.token)).json(); assert.deepStrictEqual(st.order.feedback, { order: true, product: false, source: true }); assert.strictEqual(st.order.reviewUrl, "https://g.page/r/TEST-fs/review");
+    a = await admin("/admin/api/print/feedback"); assert.strictEqual(a.ok, true); assert.deepStrictEqual(a.order, { n: 1, avg: 4 }); assert.strictEqual(a.rows[0].order.text, "Ging schnell <b>und</b> einfach");
+    assert.strictEqual(a.rows[0].order.source, "Google Maps"); assert.strictEqual(a.rows[0].order.sourceText, "Druckerei Montafon"); assert.deepStrictEqual(a.sources, { "Google Maps": 1 }); assert.strictEqual(a.reviewUrl, "https://g.page/r/TEST-fs/review");
+    assert.strictEqual((await fb({ stage: "order", rating: 0, source: "Instagram" })).status, 400, "Sterne sind Pflicht");
     // Produktbewertungen → Google (aggregateRating) + sichtbar, erst ab 3 echten Bewertungen, ohne Namen/Texte
     const od = path.join(dir, "print-shop", "orders"), mk = (i, r) => fs.writeFileSync(path.join(od, "PRV" + i + ".json"), JSON.stringify({ id: "PRV" + i, nr: "D-RV-" + i, createdAt: new Date().toISOString(), status: "delivered", product: { key: "visitenkarten", title: "Visitenkarten" }, customer: { firstName: "Geheim", lastName: "Name" + i }, price: {}, payment: {}, printcom: {}, mails: {}, history: [], feedback: { product: { rating: r, text: "Privat " + i, at: new Date().toISOString() } } }));
     mk(1, 5); mk(2, 4); await admin("/admin/api/print/feedback");
@@ -411,6 +417,11 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await admin("/admin/api/print/op", { op: "poll", id: o1.orderId, confirm: true }); assert.strictEqual(r.order.status, "shipped"); assert.deepStrictEqual(r.order.printcom.tracks, ["https://tracking.example/abc123"]);
     const sm = M.mails.filter(m => m.to === "maria@example.com" && /unterwegs/.test(m.subject)); assert.strictEqual(sm.length, 1); assert.ok(/tracking\.example\/abc123/.test(sm[0].text));
     await admin("/admin/api/print/op", { op: "poll", id: o1.orderId, confirm: true }); assert.strictEqual(M.mails.filter(m => /unterwegs/.test(m.subject)).length, 1);
+    // Bestellseite: Datum je Schritt (bestellt, Datencheck/bei der Druckerei, in Produktion seit, versendet) + voraussichtliche Lieferung
+    const st = (await (await fetch(B + "/print/api/order/" + o1.orderId + "?t=" + o1.token)).json()).order, sd = st.steps;
+    assert.ok(sd.ordered && sd.check && sd.production && sd.shipped && !sd.delivered, JSON.stringify(sd));
+    assert.ok(sd.ordered <= sd.check && sd.check <= sd.shipped, JSON.stringify(sd)); assert.strictEqual(sd.expected, st.deliveryDate);
+    assert.ok(r.order.statusAt && r.order.statusAt.ordered && r.order.statusAt.shipped, "statusAt gestempelt");
   });
   await t("Rechnung für Firmen: nur mit gültiger UID; AT-Firma → 20 % USt, Freigabe nötig, keine Zahlung", async () => {
     const up = await upload(await pdfOf(89, 59, 2), "firma.pdf", BC);
@@ -818,6 +829,106 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.strictEqual(PS._test.orderSummary(r2).invoice.needsStorno, true);
       const idx2 = await PS.invoiceIndex(); assert.ok(!idx2["8804"], "gelöschter Entwurf nicht mehr im Index"); assert.strictEqual(idx2["8805"].draft, false);
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
+  });
+  // ── 4) Bestellstatus im Kundenbereich: Schrittdaten, Bewertungsmail nach der Zustellung, Texte der Bestellseite ──
+  await t("Bewertungsmail: 2 Tage nach der Zustellung (nicht früher), nur mit Zustimmung, nur einmal, nur tagsüber; ohne Zustellmeldung 5 Tage nach dem Versand", async () => {
+    const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-fb-")), env0 = {};
+    ["PRINT_ANCHORS_FILE", "DATABASE_URL", "PRINT_PUBLIC_URL"].forEach(k => { env0[k] = process.env[k]; });
+    process.env.PRINT_ANCHORS_FILE = "off"; delete process.env.DATABASE_URL; delete process.env.PRINT_PUBLIC_URL;
+    try {
+      const sent = [];
+      const PS = require(path.join(dir, "print-shop.js"))({ DATA_DIR: ddir, mailSend: async m => { sent.push(m); } });
+      const od = path.join(ddir, "print-shop", "orders"); fs.mkdirSync(od, { recursive: true });
+      const NOW = Date.parse("2026-10-28T10:00:00+01:00"), HR = 3600e3, DAY = 864e5, iso = x => new Date(x).toISOString();
+      const mk = (id, extra) => { const o = Object.assign({ id, nr: "D-FB-" + id.slice(-2), createdAt: iso(NOW - 12 * DAY), status: "delivered", product: { key: "flyer", title: "Flyer" }, copies: 500, labels: [],
+        customer: { type: "private", firstName: "Eva", lastName: "Test", email: id.toLowerCase() + "@example.com", feedbackOk: true }, price: { net: 41.67, vat: 8.33, gross: 50, rate: 20, deliveryDate: "2026-10-20" },
+        payment: { method: "mollie", status: "paid" }, printcom: { orderNumber: "60001" }, mails: { shipped: iso(NOW - 6 * DAY) }, history: [] }, extra || {}); fs.writeFileSync(path.join(od, id + ".json"), JSON.stringify(o)); return o; };
+      const noConsent = { type: "private", firstName: "Nora", lastName: "Nein", email: "nein@example.com", feedbackOk: false };
+      mk("PFB01", { statusAt: { delivered: iso(NOW - 2 * DAY - HR) } });   // zugestellt vor 2 Tagen + 1 h → Mail
+      mk("PFB02", { statusAt: { delivered: iso(NOW - DAY) } });   // erst 1 Tag → noch nicht
+      mk("PFB03", { statusAt: { delivered: iso(NOW - 3 * DAY) }, customer: noConsent });   // keine Zustimmung
+      mk("PFB04", { status: "shipped", mails: { shipped: iso(NOW - 5 * DAY - HR) } });   // nie zugestellt gemeldet → 5 Tage nach der Versandmail
+      mk("PFB05", { status: "shipped", mails: { shipped: iso(NOW - 3 * DAY) } });   // versendet vor 3 Tagen → noch nicht
+      mk("PFB06", { mails: { shipped: iso(NOW - 4 * DAY) }, history: [{ at: iso(NOW - 3 * DAY), what: "Zugestellt – Print.com-Status: DELIVERED" }] });   // ältere Bestellung: Zustellung aus dem Verlauf
+      mk("PFB07", { statusAt: { delivered: iso(NOW - 3 * DAY) }, feedback: { product: { rating: 5, text: "", at: iso(NOW - DAY) } } });   // schon bewertet
+      mk("PFB08", { statusAt: { delivered: iso(NOW - 3 * DAY) }, customer: { type: "private", firstName: "Otto", lastName: "Ohne", email: "ohne@example.com" } });   // Feld fehlt = keine Zustimmung
+      mk("PFB09", { status: "in_production", mails: {}, statusAt: { in_production: iso(NOW - 9 * DAY) } });   // noch nicht versendet
+      mk("PFB10", { statusAt: { delivered: iso(NOW - 40 * DAY) } });   // viel zu alt
+      assert.strictEqual(PS._test.feedbackDue(JSON.parse(fs.readFileSync(path.join(od, "PFB01.json"), "utf8"))), NOW - HR, "fällig 2 Tage nach der Zustellung");
+      assert.strictEqual(await PS._test.feedbackMails(Date.parse("2026-10-28T22:30:00+01:00")), 0, "nachts keine Mails");
+      assert.strictEqual(sent.length, 0);
+      assert.strictEqual(await PS._test.feedbackMails(NOW), 3);
+      assert.deepStrictEqual(sent.map(m => m.to).sort(), ["pfb01@example.com", "pfb04@example.com", "pfb06@example.com"]);
+      const m1 = sent.find(m => m.to === "pfb01@example.com");
+      assert.ok(/Wie gefallen dir deine Drucksachen\? · D-FB-01/.test(m1.subject), m1.subject);
+      assert.ok(/vor ein paar Tagen bei dir angekommen/.test(m1.text) && /einmalig, weil du bei der Bestellung zugestimmt hast/.test(m1.text), m1.text);
+      assert.ok(/Jetzt bewerten: https:\/\/www\.fs-creative\.at\/print\?bestellung=PFB01&t=[a-f0-9]{40}#feedback/.test(m1.text), "Link mit Signatur");
+      assert.ok(/<a href="https:\/\/www\.fs-creative\.at\/print\?bestellung=PFB01&amp;t=[a-f0-9]{40}#feedback"[^>]*>Jetzt bewerten<\/a>/.test(m1.html), "Knopf in der HTML-Mail");
+      assert.ok(/sollte inzwischen bei dir angekommen sein/.test(sent.find(m => m.to === "pfb04@example.com").text), "Text ohne Zustellmeldung");
+      const s1 = JSON.parse(fs.readFileSync(path.join(od, "PFB01.json"), "utf8")); assert.ok(s1.mails.feedback && s1.mails.feedback !== "skip"); assert.ok(s1.history.some(h => h.what === "Bewertungsmail gesendet"));
+      // nur einmal je Bestellung – auch Tage später nicht erneut
+      assert.strictEqual(await PS._test.feedbackMails(NOW + HR), 0); assert.strictEqual(await PS._test.feedbackMails(NOW + 3 * DAY), 2, "PFB02 und PFB05 sind jetzt fällig");
+      assert.deepStrictEqual(sent.slice(3).map(m => m.to).sort(), ["pfb02@example.com", "pfb05@example.com"]);
+      assert.strictEqual(await PS._test.feedbackMails(NOW + 3 * DAY + HR), 0);
+      assert.ok(!sent.some(m => /nein@|ohne@|pfb07|pfb09|pfb10/.test(m.to)), "ohne Zustimmung, schon bewertet, nicht versendet oder zu alt → keine Mail");
+    } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
+  });
+  await t("orderPublic: Datum je Schritt (statusAt, sonst Verlauf), voraussichtliche Lieferung, Google-Link nur https, keine internen Daten", async () => {
+    const env0 = { u: process.env.PRINT_GOOGLE_REVIEW_URL, a: process.env.PRINT_ANCHORS_FILE }, tdir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-sd-")); process.env.PRINT_ANCHORS_FILE = "off";
+    try {
+      delete process.env.PRINT_GOOGLE_REVIEW_URL;
+      let PS = require(path.join(dir, "print-shop.js"))({ DATA_DIR: tdir });
+      const base = { id: "PSD01", nr: "D-SD-01", createdAt: "2026-10-20T08:00:00.000Z", product: { key: "flyer", title: "Flyer" }, copies: 500, labels: [], customer: { type: "company", company: "Muster GmbH", firstName: "Max", lastName: "Muster", email: "max@example.com", phone: "+43 1", street: "Geheimweg 1" },
+        price: { net: 40, gross: 48, rate: 20, purchase: { total: 20 }, margin: 12, deliveryDate: "2026-10-27" }, payment: { method: "invoice", status: "invoice" }, printcom: { orderNumber: "60009", at: "2026-10-20T09:00:00.000Z" }, mails: {}, feedback: {} };
+      // neue Bestellungen: statusAt
+      let o = Object.assign({}, base, { status: "delivered", statusAt: { ordered: "2026-10-20T09:00:00.000Z", in_production: "2026-10-21T06:00:00.000Z", shipped: "2026-10-23T14:00:00.000Z", delivered: "2026-10-26T11:00:00.000Z" } });
+      assert.deepStrictEqual(PS._test.stepDates(o), { ordered: "2026-10-20T08:00:00.000Z", check: "2026-10-20T09:00:00.000Z", production: "2026-10-21T06:00:00.000Z", shipped: "2026-10-23T14:00:00.000Z", delivered: "2026-10-26T11:00:00.000Z" });
+      // ältere Bestellungen: aus dem Verlauf; noch nicht zugestellt → voraussichtlich
+      o = Object.assign({}, base, { status: "shipped", history: [{ at: "2026-10-20T08:00:00.000Z", what: "Bestellung eingegangen" }, { at: "2026-10-20T09:30:00.000Z", what: "Bei Print.com bestellt (Cockpit) – Auftrag 60009" },
+        { at: "2026-10-21T07:00:00.000Z", what: "In Produktion – Print.com-Status: INPRODUCTION" }, { at: "2026-10-24T12:00:00.000Z", what: "Versendet – Print.com-Status: SHIPPED" }] });
+      assert.deepStrictEqual(PS._test.stepDates(o), { ordered: "2026-10-20T08:00:00.000Z", check: "2026-10-20T09:30:00.000Z", production: "2026-10-21T07:00:00.000Z", shipped: "2026-10-24T12:00:00.000Z", expected: "2026-10-27" });
+      // direkt von „bestellt“ auf „zugestellt“: Versand aus der Versandmail, Zustellung aus „Manuell abgeschlossen“
+      o = Object.assign({}, base, { status: "delivered", closedAt: "2026-10-25T16:00:00.000Z", mails: { shipped: "2026-10-23T10:00:00.000Z" }, history: [] });
+      assert.deepStrictEqual(PS._test.stepDates(o), { ordered: "2026-10-20T08:00:00.000Z", check: "2026-10-20T09:00:00.000Z", production: "2026-10-20T09:00:00.000Z", shipped: "2026-10-23T10:00:00.000Z", delivered: "2026-10-25T16:00:00.000Z" });
+      assert.deepStrictEqual(PS._test.stepDates(Object.assign({}, base, { status: "paid" })), { ordered: "2026-10-20T08:00:00.000Z", expected: "2026-10-27" });
+      assert.deepStrictEqual(PS._test.stepDates(Object.assign({}, base, { status: "rejected" })), { ordered: "2026-10-20T08:00:00.000Z" });
+      const pub = PS._test.orderPublic(Object.assign({}, base, { status: "in_production", statusAt: { in_production: "2026-10-21T06:00:00.000Z" } }));
+      assert.strictEqual(pub.steps.production, "2026-10-21T06:00:00.000Z"); assert.strictEqual(pub.createdAt, base.createdAt); assert.strictEqual(pub.business, true); assert.strictEqual(pub.reviewUrl, "");
+      assert.strictEqual(pub.email, "m…@example.com"); const js = JSON.stringify(pub);
+      assert.ok(!/Geheimweg|purchase|margin|history|"phone"|60009/.test(js), "keine internen Daten: " + js);
+      assert.deepStrictEqual(pub.feedback, { order: false, product: false, source: false });
+      process.env.PRINT_GOOGLE_REVIEW_URL = "https://g.page/r/TEST123/review"; assert.strictEqual(PS._test.orderPublic(o).reviewUrl, "https://g.page/r/TEST123/review");
+      process.env.PRINT_GOOGLE_REVIEW_URL = "javascript:alert(1)"; assert.strictEqual(PS._test.orderPublic(o).reviewUrl, "", "nur https");
+      delete process.env.PRINT_GOOGLE_REVIEW_URL;
+      PS = require(path.join(dir, "print-shop.js"))({ DATA_DIR: tdir, googleReviewUrl: () => "https://search.google.com/local/writereview?placeid=TEST" });
+      assert.strictEqual(PS._test.orderPublic(o).reviewUrl, "https://search.google.com/local/writereview?placeid=TEST", "Fallback: vom Server");
+    } finally { if (env0.u === undefined) delete process.env.PRINT_GOOGLE_REVIEW_URL; else process.env.PRINT_GOOGLE_REVIEW_URL = env0.u; if (env0.a === undefined) delete process.env.PRINT_ANCHORS_FILE; else process.env.PRINT_ANCHORS_FILE = env0.a; try { fs.rmSync(tdir, { recursive: true, force: true }); } catch (e) {} }
+  });
+  await t("Bestellseite (print/app.js): Überschrift und Text passen zum Status – „Danke“ nur direkt nach der Bestellung", async () => {
+    const src = fs.readFileSync(path.join(ROOT, "print", "app.js"), "utf8");
+    const m = src.match(/\/\* STATUS_HEAD_START[\s\S]*?\*\/\s*(function statusHead[\s\S]*?)\/\* STATUS_HEAD_END \*\//); assert.ok(m, "statusHead in app.js");
+    const statusHead = new Function(m[1] + "\nreturn statusHead;")();
+    const F = { esc: s => String(s).replace(/</g, "&lt;"), eur: n => "€ " + String(n).replace(".", ","), stk: n => n + " Stk.", dLong: v => "Tag " + String(v).slice(0, 10), past: v => String(v) < "2026-10-28" };
+    const NOW = Date.parse("2026-10-28T10:00:00+01:00");
+    const o = (status, extra) => Object.assign({ status, nr: "D-261028-TEST", product: "Flyer", copies: 500, gross: 56.28, net: 46.9, email: "l…@example.com", check: "self", createdAt: new Date(NOW - 3 * 864e5).toISOString(), payment: { method: "mollie", status: "paid" },
+      steps: { ordered: "2026-10-25T08:00:00Z", expected: "2026-11-04" }, feedback: {} }, extra || {});
+    let h = statusHead(o("paid", { check: "pro", createdAt: new Date(NOW - 600e3).toISOString() }), F, NOW);
+    assert.strictEqual(h.key, "fresh"); assert.strictEqual(h.title, "Danke für deine Bestellung!"); assert.ok(/persönlich/.test(h.html) && /<span class="ps-nw">l…@example\.com<\/span>/.test(h.html), h.html);
+    assert.ok(/Lieferung voraussichtlich <b><span class="ps-nw">Tag 2026-11-04<\/span><\/b>/.test(h.html), h.html);
+    assert.ok(!/persönlich/.test(statusHead(o("paid"), F, NOW).html), "„persönlich“ nur beim Profi-Datencheck");
+    assert.ok(/Rechnung kommt per E-Mail/.test(statusHead(o("invoice_requested", { payment: { method: "invoice", status: "invoice" } }), F, NOW).html));
+    assert.strictEqual(statusHead(o("ordered", { createdAt: new Date(NOW - 1800e3).toISOString() }), F, NOW).key, "fresh", "direkt nach der Bestellung automatisch freigegeben");
+    for (const st of ["ordered", "in_production"]) { h = statusHead(o(st), F, NOW); assert.strictEqual(h.title, "Deine Drucksachen sind in Produktion"); assert.ok(!/Danke|🎉/.test(h.title + h.icon) && /Lieferung voraussichtlich/.test(h.html)); }
+    h = statusHead(o("shipped", { steps: { shipped: "2026-10-27T15:00:00Z", expected: "2026-10-29" } }), F, NOW);
+    assert.strictEqual(h.title, "Deine Bestellung ist unterwegs"); assert.ok(/Versendet am <span class="ps-nw">Tag 2026-10-27<\/span>/.test(h.html) && /Zustellung voraussichtlich/.test(h.html), h.html);
+    assert.ok(/1–2 Werktagen/.test(statusHead(o("shipped", { steps: { shipped: "2026-10-20T15:00:00Z", expected: "2026-10-22" } }), F, NOW).html), "Termin vorbei → kein veraltetes Datum");
+    h = statusHead(o("delivered", { steps: { delivered: "2026-10-09T10:20:00Z" } }), F, NOW); assert.strictEqual(h.title, "Zugestellt am Tag 2026-10-09"); assert.ok(/gefallen dir/.test(h.html));
+    h = statusHead(o("problem"), F, NOW); assert.strictEqual(h.key, "problem"); assert.ok(/melden uns spätestens am nächsten Werktag/.test(h.html) && /simon@fs-creative\.at/.test(h.html) && !/Print\.com/.test(h.html));
+    h = statusHead(o("rejected", { payment: { method: "mollie", status: "paid", refunded: true } }), F, NOW); assert.strictEqual(h.title, "Bestellung storniert"); assert.ok(/erstatten wir dir/.test(h.html));
+    assert.ok(/musst du nicht bezahlen/.test(statusHead(o("rejected", { payment: { method: "invoice", status: "invoice" } }), F, NOW).html));
+    assert.strictEqual(statusHead(o("payment_failed"), F, NOW).title, "Zahlung nicht abgeschlossen");
+    assert.ok(/€ 46,9 netto/.test(statusHead(o("ordered", { business: true }), F, NOW).sub), "Firmen: netto");
+    assert.ok(/500 Stk\./.test(h.sub) && /ps-nw/.test(h.sub), "Menge + Einheit ohne Umbruch");
   });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }
