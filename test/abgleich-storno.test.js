@@ -154,12 +154,13 @@ function unitTests(T) {
     it = blitz([bk({ id: "b2", reference: "BD-1002", customerName: "Erika Beispiel" })], [I({ id: "304", gross: 300, cancelled: true, ref: "Buchung BD-1002", contact: "Erika Beispiel" })]).find(x => x.key === "blitz:b2");
     assert.strictEqual(it.unbilled, 300, "Referenz-Treffer nur auf nicht stornierte Rechnungen"); assert.ok(it.action);
   }]);
-  out.push(["Blitzdings: Anzahlung (deposit) → Rest bleibt offen, depositOnly, keine Aktion; ohne deposit wie bisher", () => {
+  out.push(["Blitzdings: Anzahlung (deposit) → Rest bleibt offen, depositOnly, keine Aktion; ohne deposit: Differenz nachverrechnen (BD-7)", () => {
     const invs = [I({ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200, paid: 200, contact: "Anna Anzahlung" })];
     let it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000 })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200, deposit: true }] }).find(x => x.key === "blitz:b3");
     assert.strictEqual(it.depositOnly, true); assert.strictEqual(it.invoiced, 200); assert.strictEqual(it.unbilled, 200); assert.strictEqual(it.paid, 200); assert.strictEqual(it.action, null);
     it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000 })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200 }] }).find(x => x.key === "blitz:b3");
-    assert.strictEqual(it.depositOnly, undefined); assert.strictEqual(it.unbilled, 0);
+    // BD-7 (Plattform-Audit): Buchung 400 €, Rechnung 200 € ohne Anzahlungsvermerk → Betrag geändert, die Differenz ist zu verrechnen (früher still 0)
+    assert.strictEqual(it.depositOnly, undefined); assert.strictEqual(it.unbilled, 200); assert.ok(it.action && it.action.items[0].priceGross === 200 && /Differenz/.test(it.action.items[0].name), JSON.stringify(it.action));
   }]);
   out.push(["Abgleich: Nachschlagen per ID in allen Rechnungen, Heuristiken nur auf den neuesten 600", () => {
     const all = []; for (let i = 0; i < 600; i++) all.push(I({ id: String(1000 + i), date: addDays("2026-01-01", Math.floor(i / 10)), contact: "Sonstige" }));

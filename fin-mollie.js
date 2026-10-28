@@ -71,17 +71,22 @@ module.exports = function (D) {
     const txt = i => low([i.invoiceNumber, i.header, i.headText, i.footText, i.customerInternalNote, i.address].join(" "));
     const pid = low(tx.molliePayment), meta = tx.mollieMeta && typeof tx.mollieMeta === "object" ? Object.keys(tx.mollieMeta).map(k => low(tx.mollieMeta[k])).filter(v => v && v.length >= 5 && !/^(true|false|null)$/.test(v)) : [];
     const openOf = i => r2((+i.sumGross || 0) - (+i.paidAmount || 0));
-    let hit = pid ? inv.filter(i => txt(i).indexOf(pid) > -1) : [];
+    // Mollie-ID als ganzes Wort (tr_abc trifft nicht tr_abcd), nur offene Rechnungen
+    let hit = pid.length >= 8 ? pidInvoices(tx, ["200", "750"]) : [];
     if (hit.length !== 1 && meta.length) hit = inv.filter(i => meta.some(v => txt(i).indexOf(v) > -1));
     if (hit.length !== 1) { const nm = low(tx.payeePayerName).split(/\s+/).filter(w => w.length > 2); hit = inv.filter(i => Math.abs(openOf(i) - gross) < 0.011).filter(i => { const c = i.contact && L.get("Contact", i.contact.id); const cn = low((c && (c.name || [c.surename, c.familyname].join(" "))) + " " + i.address); return !nm.length || nm.some(w => cn.indexOf(w) > -1); }); }
     if (hit.length !== 1) return null;
     const i = hit[0]; if (Math.abs(openOf(i) - gross) > 0.011) return null;   // nur volle Zahlung wird vorgeschlagen
+    // Plattform-Rechnung zu genau dieser Zahlung (Kantineur: „Mollie tr_…“ in der Notiz): nur bei exakt gleichem Brutto (Audit KA-5) –
+    // eine abweichende Summe (z. B. 11,63 statt 9,69 €) ist ein Fehler der Rechnung, nie eine Teil- oder Überzahlung
+    if (noteHasPid(i, pid) && (Math.abs((+i.sumGross || 0) - gross) > 0.005 || Math.abs(openOf(i) - gross) > 0.005)) return null;
     return i;
   }
   // Rechnungen, in deren Text die Mollie-ID dieser Zahlung steht (nicht storniert, RE/AR/ER/TR, Status aus „states“).
   // Ganzes Wort (tr_… ist kein Teil einer längeren ID); IDs unter 8 Zeichen zählen nicht.
   // idx (optional, pidIndex): Mollie-IDs aller Rechnungstexte, einmal je Lauf gebaut – viele offene Zahlungen durchsuchen nicht jedes Mal alle Rechnungen.
   const pidTxt = i => low([i.invoiceNumber, i.header, i.headText, i.footText, i.customerInternalNote, i.address].join(" "));
+  const noteHasPid = (i, pid) => pid.length >= 8 && new RegExp("(^|[^a-z0-9_])" + pid.replace(/[^a-z0-9_]/g, "\\$&") + "(?![a-z0-9_])").test(low(i.customerInternalNote));
   const pidInv = i => !i.cancelled && ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) > -1;
   function pidIndex() {
     const idx = {};

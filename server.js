@@ -450,7 +450,7 @@ async function kantineurStats(year) {
   if (!KANTINEUR.token) return null;
   const d = await getJSON(KANTINEUR.url + yearParam(year).replace(/^&/, "?"), KANTINEUR.token);
   if (!d || d.error) return null;
-  return {
+  return Object.assign({
     fetchedAt: d.fetchedAt,
     revenueGrossCents: (d.revenue && d.revenue.grossCents) || 0,
     revenueNetCents: (d.revenue && d.revenue.netCents) || 0,
@@ -459,7 +459,24 @@ async function kantineurStats(year) {
     subscribers: d.subscribers || { active: 0, paying: 0, sponsored: 0, byPlan: {} },
     canteens: d.canteens || { total: 0, byStatus: {} },
     trial: d.trial || null,   // Testzeit („Demo-Modus“): running, endingSoon, expired, showcase (Vorführ-Kantinen, nicht mitgezählt)
-  };
+  }, kantineurV2(d));
+}
+// Kantineur ab apiVersion 2 (CONTRACT-der-kantineur §1): Zahlungen mit Rechnungsbezug, Erstattungen, Abo-Warnungen.
+// Ältere Kantineur-Versionen liefern das nicht → leeres Objekt, alles bleibt wie bisher.
+function kantineurV2(d) {
+  if (!d || !(+d.apiVersion >= 2)) return {};
+  const rv = d.revenue || {}, c = v => Math.round(+v || 0), s = (v, n) => v == null ? null : String(v).slice(0, n || 80);
+  const pays = (Array.isArray(d.payments) ? d.payments : []).slice(0, 1000).map(p => ({
+    molliePaymentId: s(p.molliePaymentId, 40), paidAt: s(p.paidAt, 30), createdAt: s(p.createdAt, 30), canteenId: s(p.canteenId, 40), canteenName: s(p.canteenName, 120), plan: s(p.plan, 30),
+    grossCents: c(p.grossCents), netCents: p.netCents == null ? null : c(p.netCents), taxCents: p.taxCents == null ? null : c(p.taxCents), periodStart: s(p.periodStart, 10), periodEnd: s(p.periodEnd, 10),
+    invoiceId: s(p.invoiceId, 40), invoiceNumber: s(p.invoiceNumber, 40), invoiceSentAt: s(p.invoiceSentAt, 30), invoiceState: s(p.invoiceState, 20), invoiceError: s(p.invoiceError, 300),
+    refundedCents: c(p.refundedCents), chargedBackCents: c(p.chargedBackCents) }));
+  const list = (a, f) => (Array.isArray(a) ? a : []).slice(0, 100).map(f);
+  const at = d.attention || {};
+  return { apiVersion: +d.apiVersion, refundedCents: c(rv.refundedCents), chargedBackCents: c(rv.chargedBackCents), invoicedGrossCents: c(rv.invoicedGrossCents),
+    invoices: d.invoices && typeof d.invoices === "object" ? d.invoices : null, payments: pays, paymentsTruncated: !!d.paymentsTruncated,
+    attention: { pastDue: list(at.pastDue, x => ({ id: s(x.id, 40), name: s(x.name, 120), paidUntil: s(x.paidUntil, 30) })), activeWithoutMollie: list(at.activeWithoutMollie, x => ({ id: s(x.id, 40), name: s(x.name, 120), paidUntil: s(x.paidUntil, 30), priceCents: c(x.priceCents) })),
+      subscriptionErrors: list(at.subscriptionErrors, x => ({ id: s(x.id, 40), name: s(x.name, 120), error: s(x.error, 300) })), planChanges: list(at.planChanges, x => ({ id: s(x.id, 40), name: s(x.name, 120), plan: s(x.plan, 30), nextPlan: s(x.nextPlan, 30) })) } };
 }
 // Mail-Snapshot mit ETag: unverändert -> 304 (fast kein Traffic). Max. alle 20 s ein Abruf.
 // err/errAt/okAt: Fehler des letzten Abrufs (sonst lieferte ein toter Mail-Dienst unbemerkt den alten Stand) → mailFlags() fürs Cockpit
@@ -567,19 +584,138 @@ async function blitzCockpit(method, pathQ, body) {
   finally { clearTimeout(t); }
 }
 // Alle Blitzdings-Buchungen eines Jahres (inkl. vergangener, mit Status und der von Blitzdings angelegten sevDesk-Rechnung) für den Abgleich
-let BLITZ_YEAR = { at: 0, key: "", data: null };
-async function blitzYearBookings(year) {
-  if (!BLITZ_COCKPIT.token || !BLITZ_COCKPIT.base) return null;
-  const y = String(year);
-  if (BLITZ_YEAR.data && BLITZ_YEAR.key === y && Date.now() - BLITZ_YEAR.at < 3 * 60 * 1000) return BLITZ_YEAR.data;
-  const r = await blitzCockpit("GET", "/availability?from=" + y + "-01-01&to=" + y + "-12-31");
-  if (r.status !== 200 || !r.json || !r.json.ok || !Array.isArray(r.json.bookings)) return null;
-  BLITZ_YEAR = { at: Date.now(), key: y, data: r.json.bookings };
-  return BLITZ_YEAR.data;
+// Zwischenspeicher je Zeitraum (Audit BD-4/BD-10): Fällt Blitzdings aus, bleibt der letzte gute Stand (stale) statt still auf die
+// „Nächsten Termine“ zurückzufallen. includeCancelled=1: stornierte Buchungen mit ihren Rechnungen (neues Blitzdings; ein altes ignoriert den Parameter).
+const BLITZ_RANGES = new Map();   // "von|bis" → { at, data }
+async function blitzRange(from, to) {
+  const k = from + "|" + to, hit = BLITZ_RANGES.get(k);
+  if (hit && Date.now() - hit.at < 3 * 60 * 1000) return { data: hit.data, at: hit.at, stale: false };
+  const r = await blitzCockpit("GET", "/availability?from=" + from + "&to=" + to + "&includeCancelled=1");
+  if (r.status === 200 && r.json && r.json.ok && Array.isArray(r.json.bookings)) {
+    BLITZ_RANGES.set(k, { at: Date.now(), data: r.json.bookings }); if (BLITZ_RANGES.size > 12) BLITZ_RANGES.delete(BLITZ_RANGES.keys().next().value);
+    return { data: r.json.bookings, at: Date.now(), stale: false };
+  }
+  const err = r.json && r.json.error ? String(r.json.error).slice(0, 80) : "HTTP " + r.status;
+  return hit ? { data: hit.data, at: hit.at, stale: true, error: err } : { data: null, at: 0, stale: true, error: err };
+}
+// Buchungen für den Abgleich: gewähltes Jahr, im laufenden Jahr zusätzlich das Vorjahr (nicht verrechnete Dezember-Events verschwinden am 1.1.
+// nicht – abgleichBuild behält davon nur Offenes, _prev) und ab 15.12. die ersten 14 Tage des Folgejahres (fällig ab 14 Tage vor dem Event, _next).
+// status: ok | stale (Stand von …) | fehlt (nicht ladbar → Liste unvollständig, Banner im Cockpit)
+async function blitzAbgleichBookings(year, today) {
+  if (!BLITZ_COCKPIT.token || !BLITZ_COCKPIT.base) return { bookings: null, status: "aus" };
+  const y = +year, cur = String(y) === String(today).slice(0, 4);
+  const parts = [blitzRange(y + "-01-01", y + "-12-31")];
+  if (cur) parts.push(blitzRange((y - 1) + "-01-01", (y - 1) + "-12-31"));
+  if (cur && String(today).slice(5) >= "12-15") parts.push(blitzRange((y + 1) + "-01-01", (y + 1) + "-01-14"));
+  const [main, prev, next] = await Promise.all(parts);
+  if (!main.data) return { bookings: null, status: "fehlt", error: main.error || "" };
+  const seen = new Set(), out = [];
+  const add = (list, flag) => (list || []).forEach(b => { if (!b || !b.id || seen.has(b.id)) return; seen.add(b.id); out.push(flag ? Object.assign({}, b, { [flag]: true }) : b); });
+  add(main.data); if (prev && prev.data) add(prev.data, "_prev"); if (next && next.data) add(next.data, "_next");
+  const stale = [main, prev, next].filter(x => x && x.stale);
+  return { bookings: out, status: stale.length ? "stale" : "ok", at: Math.min.apply(null, [main, prev, next].filter(x => x && x.data).map(x => x.at)), error: stale.map(x => x.error).filter(Boolean).join(" · "),
+    partial: [prev, next].some(x => x && !x.data) };
+}
+// Nach einem Storno einer Rechnung bzw. einer Abrechnung (billMonth) den Belegstatus bei kochdu ohne Zwischenspeicher laden (&fresh=1,
+// CONTRACT-fs-order §1) – sonst gälte eine eben stornierte Monatsrechnung bis zu 5 min weiter als gültig und der Monat ließe sich nicht neu abrechnen.
+// Ein altes kochdu ignoriert den Parameter.
+let KOCHDU_FRESH_UNTIL = 0;
+function kochduFreshSoon() { if (!KOCHDU.token) return; KOCHDU_FRESH_UNTIL = Date.now() + 10 * 60e3; forgetStats(KOCHDU.url); }
+// ── Cockpit-Rechnung an Blitzdings melden (Audit BD-3, CONTRACT-blitzdings §1) ──
+// Nach jeder Cockpit-Rechnung bzw. jedem „Zuordnen“ zu „blitz:<id>“ (billing.json) meldet das Cockpit die Rechnung an Blitzdings
+// (POST /api/cockpit/bookings/:id/invoice). Danach legt Blitzdings für diese Buchung keine eigene Rechnung mehr an (Online-Zahlung,
+// Angebotsannahme, Firmenbuchung). Keine Rechnung wird geändert. Kennt Blitzdings die Meldung noch nicht (alte Version, 404) oder ist es
+// nicht erreichbar, bleibt sie in der Warteschlange und wird beim nächsten Abgleich wiederholt (mit Pause). Ältere Abrechnungs-Einträge
+// (vor dieser Version) meldet das Cockpit nur auf Simons Klick („an Blitzdings melden“). Doppelrechnungen werden nur angezeigt – nie gemeldet, nie storniert.
+const BLITZ_REPORT_FILE = path.join(DATA_DIR, "blitz-invoice-report.json");
+const BLITZ_ID = /^[A-Za-z0-9_-]{1,64}$/;
+function blitzReportState() {
+  let o = {}; try { o = JSON.parse(fs.readFileSync(BLITZ_REPORT_FILE, "utf8")) || {}; } catch (e) { o = {}; }
+  ["q", "done", "dup"].forEach(k => { o[k] = o[k] && typeof o[k] === "object" ? o[k] : {}; });
+  if (!o.since) { o.since = new Date().toISOString(); blitzReportSave(o); }   // ab hier gilt „neu“ (wird von selbst gemeldet)
+  return o;
+}
+function blitzReportSave(o) {
+  try { const ks = Object.keys(o.done); if (ks.length > 3000) ks.sort((a, b) => String(o.done[a]).localeCompare(String(o.done[b]))).slice(0, ks.length - 3000).forEach(k => { delete o.done[k]; });
+    fs.writeFileSync(BLITZ_REPORT_FILE, JSON.stringify(o)); } catch (e) { console.error("Blitzdings-Meldung speichern:", e.message); }
+}
+function blitzReportQueue(bookingId, invoiceId, nr, again) {
+  bookingId = String(bookingId || ""); invoiceId = String(invoiceId || "");
+  if (!BLITZ_COCKPIT.token || !BLITZ_ID.test(bookingId) || !BLITZ_ID.test(invoiceId)) return false;
+  const o = blitzReportState(), k = bookingId + "|" + invoiceId;
+  if (o.done[k] && !again) return false;
+  o.q[k] = Object.assign(o.q[k] || { at: new Date().toISOString(), tries: 0 }, { b: bookingId, inv: invoiceId, nr: String(nr || "").slice(0, 40), next: 0 });
+  blitzReportSave(o); blitzReportSoon(); return true;
+}
+let BLITZ_REPORT_T = null, BLITZ_REPORT_RUN = null;
+function blitzReportSoon() { if (BLITZ_REPORT_T) return; BLITZ_REPORT_T = setTimeout(() => { BLITZ_REPORT_T = null; blitzReportFlush().catch(e => console.error("Blitzdings-Meldung:", e.message)); }, 1500); if (BLITZ_REPORT_T.unref) BLITZ_REPORT_T.unref(); }
+async function blitzReportFlush(force) {
+  if (BLITZ_REPORT_RUN) return BLITZ_REPORT_RUN;
+  BLITZ_REPORT_RUN = (async () => {
+    const res = [], seen = new Set();
+    // mehrere Runden: was während des Laufs eingereiht wird (z. B. „an Blitzdings melden“), kommt im selben Lauf noch dran
+    for (let round = 0; round < 5; round++) {
+      const keys = Object.keys(blitzReportState().q).filter(k => !seen.has(k)); if (!keys.length) break;
+      for (const k of keys) {
+        seen.add(k);
+        const e0 = blitzReportState().q[k]; if (!e0 || (!force && e0.next && Date.now() < e0.next)) continue;
+        const r = await blitzCockpit("POST", "/bookings/" + encodeURIComponent(e0.b) + "/invoice", { invoiceId: e0.inv, invoiceNr: e0.nr || undefined });
+        const j = r.json || {}, bk = j.booking || {};
+        // Stand nach der Antwort frisch lesen und sofort speichern (währenddessen neu eingereihte Meldungen gehen nicht verloren)
+        const o = blitzReportState(), e = o.q[k] || e0;
+        if (r.status === 200 && j.ok) {
+          o.done[k] = new Date().toISOString(); delete o.q[k];
+          if (j.duplicate) o.dup[k] = { at: o.done[k], bookingId: e.b, invoiceId: e.inv, nr: e.nr, reference: String(bk.reference || ""), other: String(bk.sevdeskInvoiceId || ""), inProgress: !!bk.invoiceInProgress }; else delete o.dup[k];
+          res.push({ bookingId: e.b, invoiceId: e.inv, ok: true, duplicate: !!j.duplicate });
+        } else if ((r.status === 404 && j.error === "not_found") || r.status === 400) {   // Buchung unbekannt bzw. ungültig – nicht endlos wiederholen
+          delete o.q[k]; o.done[k] = "abgelehnt"; res.push({ bookingId: e.b, invoiceId: e.inv, ok: false, error: r.status === 404 ? "Buchung in Blitzdings unbekannt" : String(j.error || "abgelehnt").slice(0, 120) });
+        } else {
+          e.tries = (e.tries || 0) + 1; e.next = Date.now() + Math.min(6 * 3600e3, 15 * 60e3 * e.tries);
+          e.err = r.status === 404 || r.status === 405 ? "Blitzdings kennt die Meldung noch nicht (Update ausstehend)" : String(j.error || "HTTP " + r.status).slice(0, 120);
+          res.push({ bookingId: e.b, invoiceId: e.inv, ok: false, error: e.err, queued: true });
+          o.q[k] = e;
+        }
+        blitzReportSave(o);
+      }
+    }
+    return res;
+  })().finally(() => { BLITZ_REPORT_RUN = null; });
+  return BLITZ_REPORT_RUN;
+}
+// Abgleich mit der Verfügbarkeit (neues Blitzdings liefert invoiceIds): fehlende Meldungen nachholen bzw. als Bestand/Doppelrechnung zeigen
+function blitzReportReconcile(bookings, bill, sev) {
+  if (!BLITZ_COCKPIT.token) return null;
+  if (!Array.isArray(bookings)) bookings = [];
+  const supported = bookings.some(b => b && Array.isArray(b.invoiceIds));
+  const o = blitzReportState(), byId = {}, since = String(o.since).slice(0, 10), stock = [], dup = [], again = [];
+  // eben gemeldet (Verfügbarkeit ist bis zu 3 min zwischengespeichert) bzw. von Blitzdings abgelehnt → nicht gleich noch einmal
+  const recent = k => { const d = o.done[k]; return d === "abgelehnt" || (!!d && Date.now() - Date.parse(d) < 6 * 3600e3); };
+  ((sev && (sev.invoicesAll || sev.invoices)) || []).forEach(i => { byId[i.id] = i; });
+  if (supported) bookings.forEach(b => {
+    if (!b || !BLITZ_ID.test(String(b.id || ""))) return;
+    const known = new Set((b.invoiceIds || []).map(String));
+    (((bill && bill.invoices) || {})["blitz:" + b.id] || []).forEach(r => {
+      if (!r || !r.id) return; const i = byId[String(r.id)]; if (!i || i.cancelled || i.type === "SR") return;   // nur gültige, geladene Rechnungen
+      const k = b.id + "|" + r.id;
+      if (known.has(String(r.id))) { if (String(b.cockpitInvoiceId || "") === String(r.id) && !b.cockpitInvoiceNr && i.nr && !o.q[k] && !recent(k)) again.push([b.id, r.id, i.nr]); return; }   // Nummer nachtragen
+      if (o.q[k]) return;
+      const own = b.sevdeskInvoiceId ? byId[String(b.sevdeskInvoiceId)] : null;   // Blitzdings-Rechnung storniert → die Cockpit-Rechnung ist der Ersatz, keine Doppelrechnung
+      if (b.sevdeskInvoiceId && String(b.sevdeskInvoiceId) !== String(r.id) && !(own && own.cancelled)) { dup.push({ bookingId: String(b.id), reference: b.reference || "", invoiceId: String(r.id), nr: i.nr || "", other: String(b.sevdeskInvoiceId), otherNr: (byId[String(b.sevdeskInvoiceId)] || {}).nr || "" }); return; }
+      if (o.done[k]) { if (!recent(k)) again.push([b.id, r.id, i.nr]); return; }
+      if (String(r.date || "") >= since) again.push([b.id, r.id, i.nr]);
+      else stock.push({ bookingId: String(b.id), reference: b.reference || "", invoiceId: String(r.id), nr: i.nr || "", date: r.date || "" });
+    });
+  });
+  again.forEach(x => blitzReportQueue(x[0], x[1], x[2], true));
+  const q = blitzReportState().q;
+  if (Object.keys(q).some(k => !q[k].next || Date.now() >= q[k].next)) blitzReportSoon();   // wartende Meldungen (z. B. nach dem Blitzdings-Update) wiederholen
+  return { supported, pending: Object.keys(q).map(k => ({ bookingId: q[k].b, invoiceId: q[k].inv, nr: q[k].nr || "", err: q[k].err || "", tries: q[k].tries || 0 })).slice(0, 50),
+    stock: stock.slice(0, 200), duplicates: dup.concat(Object.keys(o.dup).map(k => o.dup[k])).slice(0, 50) };
 }
 async function kochduStats(year) {
   if (!KOCHDU.token) return null;
-  const d = await getJSON(KOCHDU.url + yearParam(year).replace(/^&/, "?"), KOCHDU.token);
+  const q = yearParam(year) + (Date.now() < KOCHDU_FRESH_UNTIL ? "&fresh=1" : "");
+  const d = await getJSON(KOCHDU.url + q.replace(/^&/, "?"), KOCHDU.token);
   if (!d || d.error) return null;
   return d;
 }
@@ -1198,11 +1334,30 @@ async function finApi(req, res, u, p) {
   if (kind === "list" && !(rule[3] || []).some(f => query[f] != null && String(query[f]) !== "")) return deny("Suche ohne Filter");
   console.log("fin-api", who, req.method, path.replace(/\d+/g, "{id}"));   // jeder Zugriff, auch lesend (Grundlage für eine spätere Freigabeliste)
   try {
+    const idem = await finApiIdem(who, req.method, path, req.headers["idempotency-key"], body, sev);   // X8: verlorene Antwort → keine zweite Rechnung
+    if (idem) { console.log("fin-api", who, "Idempotency-Key: bestehende Rechnung", idem.objects.invoice.id); return J(200, idem); }
     const r = await sev(req.method, path, { query, body });
     if (kind === "list" && r && Array.isArray(r.objects)) r.objects = r.objects.filter(o => finApiOwns(who, o));
     if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
     return J(200, r);
   } catch (e) { return J(e.status && e.status < 600 ? e.status : 500, { error: { message: String(e.message || e).slice(0, 300) } }); }
+}
+// Idempotency-Key bei neuen Rechnungen der Plattformen (Audit X8, CONTRACT-der-kantineur §2.3, CONTRACT-fs-order §3): Der Schlüssel wird mit
+// der Rechnung gespeichert (finApiKey = Plattform:Schlüssel, fin-local übernimmt unbekannte Felder). Kommt derselbe Schlüssel von derselben
+// Plattform noch einmal, gibt es die bestehende Rechnung zurück (gleiches Antwortformat, HTTP 200) statt einer zweiten. Ersatzweise für Kantineur:
+// nicht stornierte Rechnung mit derselben Notiz „Mollie tr_…“. Ohne Header (ältere Plattform-Versionen) bleibt alles wie bisher.
+async function finApiIdem(who, method, path, keyHeader, body, sevFn) {
+  if (method !== "POST" || path !== "/Invoice/Factory/saveInvoice" || !body || typeof body !== "object" || !body.invoice || typeof body.invoice !== "object" || body.invoice.id) return null;
+  const key = String(keyHeader || "").trim(); if (!key || key.length > 200 || !/^[\w:.\-]+$/.test(key)) return null;
+  const tag = who + ":" + key;
+  body.invoice.finApiKey = tag; body.invoice.finApiWho = who;
+  const live = l => (Array.isArray(l) ? l : []).filter(i => i && String(i.invoiceType || "RE") === "RE" && !i.cancelled);
+  let hit = live(((await sevFn("GET", "/Invoice", { query: { finApiKey: tag, limit: 50 } })) || {}).objects)[0];
+  const note = String(body.invoice.customerInternalNote || "");
+  if (!hit && who === "kantineur" && /^Mollie tr_[A-Za-z0-9]{4,40}$/.test(note)) hit = live(((await sevFn("GET", "/Invoice", { query: { customerInternalNote: note, limit: 50 } })) || {}).objects).filter(i => !i.finApiWho || i.finApiWho === who)[0];
+  if (!hit) return null;
+  const pos = await sevFn("GET", "/Invoice/" + hit.id + "/getPositions", { query: { limit: 100 } }).catch(() => ({ objects: [] }));
+  return { objects: { invoice: hit, invoicePos: (pos && pos.objects) || [] } };
 }
 async function sev(method, path, opts) {
   if (FIN_STATE.local) return FIN_LOCAL.request(method, path, opts || {});
@@ -1242,6 +1397,7 @@ function sevDay(v) { if (!v) return null; const t = String(v); if (/^\d{9,11}$/.
 function sevName(c) { if (!c) return ""; return String(c.name || [c.surename, c.familyname].filter(Boolean).join(" ") || "").trim(); }
 function sevDateDE(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : iso; }
 function viennaToday() { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date()); }
+function notePid(v) { const m = String(v || "").match(/(?:^|\s)Mollie\s+(tr_[A-Za-z0-9]{4,40})(?![A-Za-z0-9_])/); return m ? m[1] : undefined; }
 let SEV_CACHE = { at: 0, data: null, p: null };
 let SEV_META = { at: 0, data: null };
 // Vollständige Liste: eigene Buchhaltung liegt im Speicher → alles auf einmal, sonst seitenweise (sevAll)
@@ -1277,6 +1433,7 @@ async function sevBuild() {
       contact: sevName(o.contact), contactId: o.contact && o.contact.id ? String(o.contact.id) : "", header: o.header || "",
       ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
       net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, credit: sevNum(o.creditOpen), payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, stornoNr: o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : undefined, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
+      mpid: notePid(o.customerInternalNote),   // Kantineur: „Mollie tr_…“ in der Notiz → Zuordnung im Abgleich (KA-5)
       overdue: open > 0.005 && !!due && due < today };
   }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
   // Storno: sevDesk setzt beim Original kein „storniert“ – erkennbar an der Stornorechnung (SR) mit origin = Original
@@ -1777,6 +1934,7 @@ function dunProposals(st) {
   const mails = FIN_LOCAL.all("CommunicationWay").filter(c => String(c.type || "").toUpperCase() === "EMAIL" && /@/.test(c.value || ""));
   for (const o of inv) {
     if (String(o.invoiceType) !== "RE" || !(+o.status === 200 || +o.status === 750) || o.cancelled || o.noDunning) continue;
+    if (notePid(o.customerInternalNote)) continue;   // Kantineur-Abo: schon per Mollie eingezogen, die Zuordnung kommt über den Mollie-Abgleich – nie mahnen (KA-5)
     const open = r2((+o.sumGross || 0) - (+o.paidAmount || 0)), day = sevDay(o.invoiceDate); if (open < 1 || !day) continue;
     const mas = inv.filter(x => String(x.invoiceType) === "MA" && x.origin && String(x.origin.id) === String(o.id));
     if (mas.some(x => String(x.status) === "100")) continue;   // Mahnung erstellt, aber noch nicht versendet
@@ -1830,7 +1988,7 @@ function readBilling() {
 }
 function writeBilling(o) { try { if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; o.updatedAt = new Date().toISOString(); fs.writeFileSync(BILLING_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
 function billingOp(pl) {
-  const o = readBilling(); const op = String(pl.op || "");
+  const o = readBilling(); const op = String(pl.op || ""); let blitzReport = null;
   const cleanKey = k => String(k || "").slice(0, 200);
   if (op === "prices" && pl.prices && typeof pl.prices === "object") {
     const P = pl.prices, num = v => { const n = parseFloat(v); return isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0; };
@@ -1862,6 +2020,7 @@ function billingOp(pl) {
     // VALUERO: Quelle/Datumsbasis der Abrechnung (Quellenwechsel erkennen), adj = Nachverrechnung ohne eigenen Zeitraum; Website: bisheriges „verrechnet bis“
     if (/^[a-z0-9-]{1,20}$/.test(String(I.src || ""))) inv.src = String(I.src); if (/^[a-z]{1,12}$/.test(String(I.basis || ""))) inv.basis = String(I.basis); if (I.adj === true) inv.adj = true; const untilBefore = k.indexOf("site:") === 0 ? ((o.sites[k.slice(5)] || {}).billedUntil || "") : "";
     const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
+    if (k.indexOf("blitz:") === 0 && inv.id) blitzReport = [k.slice(6), inv.id, inv.nr];   // Cockpit-Rechnung an Blitzdings melden (BD-3)
     if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
     if (inv.to && untilBefore > inv.to) o.sites[k.slice(5)].billedUntil = untilBefore;   // nie zurück: Nachverrechnung eines früheren (stornierten) Zeitraums (WEB-2)
   } else if (op === "ignore" && pl.key) {        // Posten in „Zu verrechnen“ ausblenden, bis der Betrag wieder steigt
@@ -1884,6 +2043,7 @@ function billingOp(pl) {
     o.valuero[k] = cur;
   } else throw new Error("bad_op");
   if (!writeBilling(o)) throw new Error("save_failed");
+  if (blitzReport) blitzReportQueue(blitzReport[0], blitzReport[1], blitzReport[2]);
   return o;
 }
 if (process.env.NODE_ENV === "test") global.__fscBillingTest = { billingOp, readBilling, BILLING_FILE };   // nur Tests (test/plattform-abrechnung.test.js)
@@ -1998,6 +2158,187 @@ function invLink(rec, sevById, oldest) {
 }
 // verrechnet = Rechnung abzüglich Gutschriften zu ihr (sonst stünde nach einer Gutschrift weiter „zu viel verrechnet“ da – zweite Korrektur droht)
 function sumState(links) { return links.reduce((t, l) => { if (!l || l.state === "storniert") return t; t.invoiced += (+l.gross || 0) - (+l.credited || 0); t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
+
+// ── Abgleich Blitzdings (Plattform-Audit 28.10.2026: BD-1, BD-6, BD-7, BD-11, BD-4, BD-2/BD-3 Hinweise) ──
+// Jede bestätigte Buchung braucht genau eine Rechnung. Zwei Durchgänge:
+//  1) starke Treffer: Blitzdings-Rechnung (sevdeskInvoiceId), vom Cockpit gemeldete Rechnungen (cockpitInvoiceIds), Abrechnungs-Einträge
+//     „blitz:<id>“ (auch „Zuordnen“) und die Buchungsnummer im Kopftext. Alle diese Rechnungen sind „vergeben“ (claimed) – auch die
+//     stornierter Buchungen –, ebenso alles, was schon Websites/kochdu/VALUERO/Kantineur zugeordnet ist (linked).
+//  2) nur für Buchungen ohne starken Treffer: Kunde + Betrag (brutto oder netto) bzw. Datum, aber nur gegen freie Rechnungen ohne fremde
+//     Buchungsnummer im Kopftext und mit Rechnungsdatum Event −45 bis +180 Tage; jeder Treffer ist danach vergeben (eine Rechnung ↔ eine Buchung).
+//  Danach Sammelrechnungen (mehrere Buchungen eines Kunden = genau eine freie Rechnung). Ist die Blitzdings-Rechnung storniert, zählt die
+//  neueste gültige Zuordnung (BD-6). Betrag nach der Rechnung geändert → Differenz nachverrechnen bzw. Hinweis „Gutschrift prüfen“ (BD-7).
+//  Zur Prüfung (unbilled 0, keine Rechnungsaktion): stornierte/erstattete Buchung mit gültiger Rechnung, offenes Angebot kurz vor/nach dem
+//  Event, Rechnungsanlage in Blitzdings läuft/hängt, Doppelrechnung (Blitzdings + Cockpit). Vorjahresbuchungen (_prev) nur, wenn noch etwas offen ist.
+function abgleichBlitz(o) {
+  const { list, today, sevInv, sevById, oldest, recs, linked } = o, out = [];
+  const soon = ymdAdd(today, 14), lc = v => String(v || "").toLowerCase(), dayOf = b => String(b.eventDate || "").slice(0, 10), amtOf = b => round2((+b.totalCents || 0) / 100);
+  const eu = n => (+n || 0).toFixed(2).replace(".", ",") + " €";
+  const refRx = ref => /^bd-[a-z0-9]{3,12}$/i.test(String(ref || "")) ? new RegExp("(^|[^a-z0-9])" + lc(ref).replace(/-/g, "\\-") + "(?![a-z0-9])") : null;
+  const refsIn = i => (lc(i.ref) + " " + lc(i.header)).match(/bd-[a-z0-9]{3,12}/g) || [];
+  const txtOf = i => lc(i.ref) + " " + lc(i.header);
+  const L0 = (i, src) => { const l = invLink({ id: i.id, nr: i.nr, date: i.date, gross: i.gross }, sevById, ""); if (l) l.src = src; return l; };
+  const cancelledB = b => b.status === "CANCELLED" || b.paymentStatus === "REFUNDED";
+  const billable = b => amtOf(b) > 0 && !cancelledB(b) && !(b.status === "PENDING" && b.paymentStatus !== "PAID") && b.offerOpen !== true;
+  const C = list.filter(b => b && b.id).map(b => {
+    const rx = refRx(b.reference), sevI = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] || null : null;
+    return { b, recsB: recs("blitz:" + b.id), sevI, cockpitIds: Array.isArray(b.cockpitInvoiceIds) ? b.cockpitInvoiceIds.map(String) : [], refHits: rx ? sevInv.filter(i => i.type !== "SR" && rx.test(txtOf(i))) : [] };
+  });
+  // Durchgang 1: starke Treffer, alle vergeben
+  const claimed = new Map();   // Rechnungs-ID → Buchungsnummer (für den Hinweis „gehört schon zu …“)
+  const claim = (id, c) => { if (id && !claimed.has(String(id))) claimed.set(String(id), c.b.reference || c.b.id); };
+  C.forEach(c => { claim(c.b.sevdeskInvoiceId, c); c.cockpitIds.forEach(id => claim(id, c)); c.recsB.forEach(r => r && claim(r.id, c)); c.refHits.forEach(i => claim(i.id, c)); });
+  C.forEach(c => {
+    const ls = [], seen = {}, b = c.b;
+    const push = (l, src) => { if (!l || l.state === "storniert" || (l.id && seen[l.id])) return; if (l.id) seen[l.id] = 1; l.src = src; ls.push(l); };
+    if (c.sevI) { if (!c.sevI.cancelled) push(L0(c.sevI, "blitz"), "blitz"); }
+    else if (b.sevdeskInvoiceId) push(invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: dayOf(b), gross: amtOf(b) }, sevById, oldest), "blitz");   // (noch) nicht geladen
+    c.recsB.forEach(r => push(invLink(r, sevById, oldest), "cockpit"));
+    c.cockpitIds.forEach(id => { if (!seen[id] && sevById[id]) push(L0(sevById[id], "cockpit"), "cockpit"); });
+    c.refHits.forEach(i => { if (!i.cancelled) push(L0(i, "ref"), "ref"); });
+    c.live = ls;
+  });
+  // Durchgang 2: Kunde + Betrag/Datum nur gegen freie Rechnungen (nach Eventdatum, eine Rechnung ↔ eine Buchung)
+  const inWin = (i, d) => !!i.date && !!d && i.date >= ymdAdd(d, -45) && i.date <= ymdAdd(d, 180);
+  C.slice().sort((x, y) => dayOf(x.b).localeCompare(dayOf(y.b)) || String(x.b.id).localeCompare(String(y.b.id))).forEach(c => {
+    const b = c.b; if (c.live.length || !billable(b)) return;
+    const cust = lc(b.customerName), comp = lc(b.companyName), amt = amtOf(b), d = dayOf(b), own = lc(b.reference);
+    if (!cust && !comp) return;
+    const nameOk = i => { const n = lc(i.contact); return !!n && (n === cust || (!!comp && n === comp)); };
+    const amtOk = i => Math.abs(i.gross - amt) < 0.02 || Math.abs((+i.net || 0) - amt) < 0.02 || (!!d && (i.date === d || i.delivery === d));   // Firmen stehen teils netto (BD-11)
+    const cand = sevInv.filter(i => i.type !== "SR" && !i.cancelled && nameOk(i) && amtOk(i));
+    const free = cand.filter(i => !claimed.has(String(i.id)) && !linked[i.id] && refsIn(i).every(r => r === own) && inWin(i, d));
+    if (free.length) { c.weak = free[0]; claim(free[0].id, c); }
+    else { const t = cand.find(i => claimed.has(String(i.id))); if (t) c.takenBy = { inv: t, by: claimed.get(String(t.id)) }; }
+  });
+  // Sammelrechnungen: mehrere Buchungen desselben Kunden, die zusammen genau eine noch freie Rechnung ergeben
+  const bnorm = x => String(x || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|mbh|ges\.?m\.?b\.?h\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const nameHit = (a, b2) => { a = bnorm(a); b2 = bnorm(b2); return a.length >= 4 && b2.length >= 4 && (a.indexOf(b2) > -1 || b2.indexOf(a) > -1); };
+  const groupInv = {};
+  (function () {
+    const pool = C.filter(c => billable(c.b) && !c.live.length && !c.weak && !c.recsB.length).map(c => c.b);   // auch mit stornierter Blitzdings-Rechnung (BD-6)
+    const poolRefs = new Set(pool.map(b => lc(b.reference)).filter(Boolean));
+    // Rechnung mit Buchungsnummer einer anderen (nicht im Pool befindlichen) Buchung ist nie eine Sammelrechnung für diesen Pool (BD-1)
+    sevInv.filter(i => (i.type === "RE" || !i.type) && !i.cancelled && !claimed.has(String(i.id)) && !linked[i.id] && i.gross > 0 && refsIn(i).every(r => poolRefs.has(r))).sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(inv => {
+      const lo = ymdAdd(String(inv.date || today), -180), hi = ymdAdd(String(inv.date || today), 45);
+      const inW = b => !groupInv[b.id] && dayOf(b) >= lo && dayOf(b) <= hi;
+      const groups = [pool.filter(b => inW(b) && (nameHit(inv.contact, b.companyName) || nameHit(inv.contact, b.customerName)))];
+      const byCust = {}; pool.filter(inW).forEach(b => { const k = String(b.companyName || b.customerName || "").trim().toLowerCase(); if (k) (byCust[k] = byCust[k] || []).push(b); });
+      Object.keys(byCust).forEach(k => { if (byCust[k].length >= 2) groups.push(byCust[k]); });
+      const targets = [Math.round(inv.gross * 100), Math.round((+inv.net || 0) * 100)].filter(t => t > 0);   // Business-Buchungen stehen teils netto
+      for (let gi = 0; gi < groups.length; gi++) {
+        const grp = groups[gi].slice(0, 16); if (!grp.length || (gi > 0 && grp.length < 2)) continue;
+        const cents = grp.map(b => Math.round(+b.totalCents || 0)); let best = 0;
+        for (let m = 1; m < (1 << grp.length) && !best; m++) { let sum = 0, cnt = 0; for (let k = 0; k < grp.length; k++) if (m & (1 << k)) { sum += cents[k]; cnt++; } if ((gi === 0 || cnt >= 2) && targets.some(t => Math.abs(sum - t) <= 2)) best = m; }
+        if (best) { for (let k = 0; k < grp.length; k++) if (best & (1 << k)) groupInv[grp[k].id] = inv; claimed.set(String(inv.id), "Sammelrechnung"); break; }
+      }
+    });
+  })();
+  C.forEach(c => {
+    const b = c.b, amt = amtOf(b), day = dayOf(b); if (!(amt > 0)) return;
+    const ref = b.reference || "", extras = (b.extras || []).map(e => e && e.name).filter(Boolean).join(", ");
+    const pkg = typeof b.package === "string" ? b.package : (b.package && b.package.name) || "", who = b.companyName || b.customerName || "Buchung";
+    const notes = [], rec = c.recsB.slice(-1)[0];
+    const base = { src: "blitzdings", key: "blitz:" + b.id, bookingId: String(b.id), reference: ref, amount: amt, date: day, refund: 0, paidOnPlatform: b.paymentStatus === "PAID" };
+    const subOf = extra => (day ? (day < today ? "Event war am " : "Event am ") + deDate(day) : "") + (ref ? " · " + ref : "") + (b.paymentStatus === "PAID" ? " · online bezahlt" : "") + (extra || "");
+    const review = (text, lvl, links, more) => Object.assign({}, base, { name: who + (pkg ? " · " + pkg : ""), sub: subOf(), unbilled: 0, invoiced: round2(sumState(links).invoiced), paid: round2(sumState(links).paid), open: round2(sumState(links).open),
+      last: links[0] || null, invoices: links.slice(0, 4), action: null, review: true, notes: [{ lvl, text }].concat(notes) }, more || {});
+    // Storniert/erstattet: zählt nie zu „Zu verrechnen“; mit gültiger Rechnung bzw. Zahlung → „Storno prüfen“ (nie automatisch stornieren)
+    if (cancelledB(b)) {
+      c.live.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+      const inv = c.live.filter(l => l.id && l.state !== "manuell");
+      if (inv.length) out.push(review("Storno prüfen: Buchung " + (b.status === "CANCELLED" ? "storniert" : "erstattet") + ", Rechnung " + inv.map(l => l.nr || "Entwurf").join(", ") + " ist noch gültig – offen: stornieren, bezahlt: Gutschrift oder bewusst behalten (Stornogebühr). Nichts wird automatisch gebucht.", "bad", inv, { cancelled: true }));
+      else if (b.status === "CANCELLED" && b.paymentStatus === "PAID") out.push(review("Zahlung nach Storno: in Mollie erstatten oder Storno aufheben (danach normale Verrechnung).", "bad", [], { cancelled: true, paidAfterCancel: true }));
+      return;
+    }
+    // Offenes Angebot (Blitzdings: offerOpen) – nie eine Rechnung anbieten; kurz vor oder nach dem Event als Prüfpunkt, damit es nicht still verschwindet
+    if (b.offerOpen === true && !c.live.length) {
+      if (day && day <= soon) out.push(review("Angebot nicht angenommen – Event " + (day < today ? "war am " : "am ") + deDate(day) + ". Als angenommen markieren (danach normale Verrechnung) oder stornieren.", "warn", [], { offerOpen: true }));
+      return;
+    }
+    if (b.status === "PENDING" && b.paymentStatus !== "PAID" && !c.live.length) return;   // offene Anfrage bzw. laufende Online-Zahlung
+    // Blitzdings legt gerade selbst die Rechnung an (Sperre ohne Rechnungs-ID) – nicht zusätzlich verrechnen
+    if (b.invoiceInProgress === true && !c.live.length) {
+      const hang = !!b.invoiceClaimedAt && Date.now() - Date.parse(b.invoiceClaimedAt) > 3600e3;
+      if (hang || (day && day <= soon)) out.push(review(hang ? "Rechnungsanlage in Blitzdings hängt – Buchhaltung nach „Buchung " + ref + "“ durchsuchen, nicht blind neu anlegen." : "Blitzdings legt die Rechnung gerade an.", hang ? "bad" : "info", [], { inProgress: true }));
+      return;
+    }
+    const viaGroup = !c.live.length && !c.weak && groupInv[b.id];
+    const links = c.live.length ? c.live.slice() : c.weak ? [L0(c.weak, "name")] : viaGroup ? [L0(viaGroup, "group")] : [];
+    links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+    const dead = !links.length ? (c.sevI && c.sevI.cancelled ? L0(c.sevI, "blitz") : rec ? invLink(rec, sevById, oldest) : null) : null;   // nur zur Historie (storniert)
+    if (dead && dead.id) linked[dead.id] = 1;
+    const deposit = c.recsB.some(r => r && r.deposit), group = !!viaGroup || c.recsB.some(r => r && r.group);
+    const st = sumState(links), sorted = links.slice().sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
+    let unbilled = links.length ? 0 : amt, diff = 0;
+    if (b.offerOpen === true || (b.status === "PENDING" && b.paymentStatus !== "PAID")) notes.push({ lvl: "warn", text: "Angebot bzw. Anfrage noch nicht angenommen – Rechnung " + (links[0].nr || "Entwurf") + " gibt es schon." });
+    if (links.length && deposit) unbilled = round2(Math.max(0, amt - st.invoiced));
+    else if (links.length && !group && !c.weak && links.every(l => l.id && sevById[l.id])) {
+      const g = round2(st.invoiced), n = round2(links.reduce((a, l) => a + (+sevById[l.id].net || 0), 0));
+      const bl = links.filter(l => l.src === "blitz"), co = links.filter(l => l.src !== "blitz");
+      if (bl.length && co.length && Math.abs(g - amt) >= 0.02 && Math.abs(n - amt) >= 0.02)
+        notes.push({ lvl: "bad", text: "Doppelrechnung prüfen: " + bl.map(l => l.nr || "Entwurf").join(", ") + " (von Blitzdings) und " + co.map(l => l.nr || "Entwurf").join(", ") + " (Cockpit) für dieselbe Buchung – eine davon stornieren bzw. den Entwurf löschen (nicht automatisch)." });
+      else if (Math.abs(g - amt) < 0.02 || Math.abs(n - amt) < 0.02) { /* passt */ }
+      else if (amt > g + 0.02) { diff = round2(amt - g); unbilled = diff; notes.push({ lvl: "warn", text: "Betrag geändert: Buchung " + eu(amt) + ", verrechnet " + eu(g) + " – Differenz " + eu(diff) + " nachverrechnen." }); }
+      else if (amt < n - 0.02) notes.push({ lvl: "warn", text: "Betrag kleiner als verrechnet: Buchung " + eu(amt) + ", Rechnung " + eu(g) + " – Gutschrift prüfen (nicht automatisch)." });
+      else notes.push({ lvl: "warn", text: "Betrag weicht ab: Buchung " + eu(amt) + ", Rechnung brutto " + eu(g) + " / netto " + eu(n) + " – bitte prüfen." });
+    }
+    if (!links.length && c.takenBy) notes.push({ lvl: "warn", text: "Rechnung " + (c.takenBy.inv.nr || "Entwurf") + " (gleicher Kunde, gleicher Betrag) gehört schon zu " + c.takenBy.by + " – diese Buchung ist noch nicht verrechnet: Rechnung erstellen oder bewusst zuordnen." });
+    if (b.paymentStatus === "PAID" && unbilled > 0.005 && !links.length && String(b.paymentMethod || "STRIPE").toUpperCase() !== "INVOICE") notes.push({ lvl: "info", text: "Online bezahlt, aber ohne Rechnung – normale Rechnung (mit Buchungsnummer) erstellen; der Mollie-Abgleich ordnet die Zahlung zu." });
+    const dueNow = !!day && day <= soon;
+    if (!links.length && !dead && !dueNow) return;                                  // Event noch weit weg: noch nichts zu tun
+    const item = Object.assign({}, base, { name: who + (pkg ? " · " + pkg : ""), sub: subOf((viaGroup || group) ? " · Sammelrechnung" : ""),
+      unbilled, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open),
+      last: sorted[0] || dead || null, invoices: (sorted.length ? sorted : dead ? [dead] : []).slice(0, 4), depositOnly: deposit && links.length ? true : undefined, notes: notes.length ? notes : undefined,
+      action: unbilled > 0.005 && !(deposit && links.length) ? { kind: "blitzdings", title: (diff ? "Nachverrechnung" : "Rechnung") + " · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined,
+        headText: (ref ? "Buchung " + ref + " – " : "") + (diff ? "Nachverrechnung (Betrag nach der Rechnung geändert)." : "vielen Dank für Ihre Buchung bei Blitzdings."),
+        items: [{ name: "Blitzdings " + (pkg || "Fotobox") + (diff ? " – Differenz" : ""), text: diff ? "Buchungsbetrag " + eu(amt) + " · bereits verrechnet " + eu(st.invoiced) + " (" + links.map(l => l.nr || "Entwurf").join(", ") + ")" : [day ? "Event am " + deDate(day) : "", (b.eventLocation || b.location) ? "Ort: " + (b.eventLocation || b.location) : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: diff || amt, taxRate: 20 }],
+        after: { billing: { key: "blitz:" + b.id, label: who + (diff ? " (Differenz)" : "") } } } : null });
+    if (b._prev && !(item.unbilled > 0.005) && !(item.open > 0.005) && !notes.length) return;   // Vorjahr: nur, was noch offen ist
+    out.push(item);
+  });
+  return out;
+}
+// ── Abgleich Kantineur (KA-5): Kantineur rechnet die Abos selbst ab (nie eine Rechnungsaktion). Ab apiVersion 2 werden die Rechnungen je
+//    Mollie-Zahlung zugeordnet (payments[].invoiceId, sonst Notiz „Mollie tr_…“) und verrechnet/bezahlt/offen aus ihrem Status berechnet.
+//    Gemeldet werden: Rechnung fehlt (zählt in totals.missing), Entwurf mit Fehlertext (z. B. Betrag weicht ab, KA-1), Summe ≠ eingezogener
+//    Betrag, storniert, nicht versendet, Erstattung/Rückbuchung (Gutschrift-Vorschlag unter „Zur Prüfung“). Alte Kantineur-Version: wie bisher.
+//    Rechnungen mit „Mollie tr_…“ in der Notiz gehören immer zu Kantineur → nie „ohne Zuordnung“.
+function abgleichKantineur(k, o) {
+  if (!k) return null;
+  const { sevAllInv, sevById, link, linked } = o, eu = n => (+n || 0).toFixed(2).replace(".", ",") + " €";
+  const byPid = {}; sevAllInv.forEach(i => { if (i.mpid && i.type !== "SR") { (byPid[i.mpid] = byPid[i.mpid] || []).push(i); linked[i.id] = 1; } });
+  const subs = k.subscribers || {}, sub0 = (subs.paying || 0) + " zahlende Kantinen · MRR " + eu((k.mrrCents || 0) / 100) + (+subs.pastDue > 0 ? " · " + subs.pastDue + "× Zahlung offen" : "") + (+subs.activeWithoutMollie > 0 ? " · " + subs.activeWithoutMollie + "× ohne Monatsabo" : "");
+  const head = { src: "kantineur", key: "kantineur", name: "Kantineur-Abos", sub: sub0, unbilled: 0, refund: 0, auto: true, action: null };
+  if (!(+k.apiVersion >= 2) || !Array.isArray(k.payments) || !o.sevOk) {   // alte Kantineur-Version bzw. Buchhaltung nicht geladen (sonst „fehlt“ als Fehlalarm)
+    const g = round2((k.revenueGrossCents || 0) / 100);
+    return Object.assign(head, { invoiced: g, paid: g, open: 0, last: null, invoices: [] });
+  }
+  const links = [], notes = [], miss = []; let missingCents = 0;
+  k.payments.forEach(p => {
+    const g = round2((+p.grossCents || 0) / 100), when = p.paidAt ? deDate(String(p.paidAt).slice(0, 10)) : "", who = (p.canteenName || "Kantine") + (when ? " (" + when + ")" : "");
+    const byId = p.invoiceId ? sevById[String(p.invoiceId)] : null, cand = byId ? [byId] : (byPid[p.molliePaymentId] || []), live = cand.filter(i => !i.cancelled), inv = live[0] || cand[0] || null;
+    if (live.length > 1) notes.push({ lvl: "bad", text: "Mehrere Rechnungen zur Zahlung " + who + ": " + live.map(i => i.nr || "Entwurf").join(", ") + " – doppelt angelegt?", inv: live[1].id });
+    if (!inv && p.invoiceId) { const l = link({ id: String(p.invoiceId), nr: p.invoiceNumber || "", date: String(p.paidAt || "").slice(0, 10), gross: g }); if (l) { if (l.id) linked[l.id] = 1; links.push(l); } return; }
+    if (!inv) {
+      missingCents += +p.grossCents || 0;
+      miss.push({ id: "", nr: "", date: String(p.paidAt || p.createdAt || "").slice(0, 10), gross: g, paid: 0, open: 0, state: "fehlt", label: "Rechnung fehlt" });
+      notes.push({ lvl: "bad", text: "Rechnung fehlt: " + who + " · " + eu(g) + " eingezogen" + (p.invoiceError ? " – " + p.invoiceError : " – im Kantineur-Abo-Bereich „Nochmal versuchen“") });
+      return;
+    }
+    linked[inv.id] = 1;
+    const l = link({ id: inv.id, nr: inv.nr, date: inv.date, gross: inv.gross }); if (l) links.push(l);
+    if (inv.cancelled) notes.push({ lvl: "warn", text: "Rechnung " + (inv.nr || "") + " zu " + who + " ist storniert – die Zahlung hat keine gültige Rechnung.", inv: inv.id });
+    else if (Math.abs((+inv.gross || 0) - g) > 0.005) notes.push({ lvl: "bad", text: "Rechnung " + (inv.nr || "Entwurf") + " lautet auf " + eu(inv.gross) + ", eingezogen wurden " + eu(g) + " (" + who + ") – bitte prüfen, nichts wird automatisch geändert.", inv: inv.id });
+    if (inv.status === 100) notes.push({ lvl: "warn", text: "Rechnungsentwurf für " + who + " nicht versendet" + (p.invoiceError ? ": " + p.invoiceError : "") + ".", inv: inv.id });
+    else if (p.invoiceState === "unsent" && !inv.cancelled) notes.push({ lvl: "info", text: "Rechnung " + (inv.nr || "") + " für " + who + " wurde nicht per Mail versendet" + (p.invoiceError ? ": " + p.invoiceError : "") + ".", inv: inv.id });
+    const back = (+p.refundedCents || 0) + (+p.chargedBackCents || 0);
+    if (back > 0) notes.push({ lvl: inv.status === 750 || inv.status === 1000 ? "info" : "warn", text: (+p.chargedBackCents > 0 ? "Rückbuchung" : "Erstattung") + " " + eu(back / 100) + " zu Rechnung " + (inv.nr || "") + " (" + who + ") – " + (inv.status === 750 || inv.status === 1000 ? "Gutschrift-Vorschlag unter „Zur Prüfung“." : "Rechnung noch offen: zuerst die Mollie-Zahlung zuordnen, danach kommt der Gutschrift-Vorschlag."), inv: inv.id });
+  });
+  const st = sumState(links), all = links.concat(miss).sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
+  return Object.assign(head, { invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), missing: miss.length, missingAmount: round2(missingCents / 100),
+    last: all[0] || null, invoices: all.slice(0, 4), notes: notes.length ? notes.slice(0, 40) : undefined });
+}
 
 function abgleichBuild(ctx) {
   const { year, today, sev, bill, sitesSnap, kochdu, valuero, blitz, blitzAll, kantineur } = ctx;
@@ -2184,84 +2525,11 @@ function abgleichBuild(ctx) {
         items: [{ name: "VALUERO Vermittlungsgebühren – Nachverrechnung", text: "Anreisen bis " + deDate(billedUntil) + " (nach der Abrechnung nachgetragen oder gestiegen)" + (o.ratesLabel ? " · " + o.ratesLabel : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: catchup, taxRate: 20 }],
         after: { billing: { key, label: (o.name || o.key) + " (Nachverrechnung)", adj: true, src: o.src, basis: o.basis } } } : null });
   });
-  // 4) Blitzdings: jede bestätigte Buchung braucht eine Rechnung. Blitzdings legt sie bei Online-Zahlung/Firmenkunden selbst an
-  //    (sevdeskInvoiceId), sonst Abgleich über Buchungsnummer bzw. Kunde + Betrag/Datum. „Zu verrechnen“ erst ab 14 Tage vor dem Event;
-  //    offene Anfragen (PENDING, unbezahlt) und stornierte Buchungen zählen nicht.
-  const blitzList = Array.isArray(blitzAll) ? blitzAll : ((blitz && blitz.upcoming) || []);
-  const soon = ymdAdd(today, 14);
-  // Sammelrechnungen: mehrere Buchungen desselben Kunden, die zusammen genau eine noch freie Rechnung ergeben
-  const bnorm = x => String(x || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|mbh|ges\.?m\.?b\.?h\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
-  const nameHit = (a, b2) => { a = bnorm(a); b2 = bnorm(b2); return a.length >= 4 && b2.length >= 4 && (a.indexOf(b2) > -1 || b2.indexOf(a) > -1); };
-  const bOk = b => (+b.totalCents || 0) > 0 && b.status !== "CANCELLED" && b.paymentStatus !== "REFUNDED" && !(b.status === "PENDING" && b.paymentStatus !== "PAID");
-  const directHit = b => {
-    const amt = round2((+b.totalCents || 0) / 100), ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
-    let h = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
-    if (h && h.cancelled) h = null;   // wie unten: stornierte Rechnung zählt nicht, Ersatzrechnung suchen
-    if (!h && ref) h = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR" && !i.cancelled);
-    if (!h && (cust || comp)) h = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && !i.cancelled && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || Math.abs((+i.net || 0) - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
-    return h || null;
-  };
-  const groupInv = {};
-  (function () {
-    const taken = new Set();
-    blitzList.forEach(b => { const h = directHit(b); if (h) taken.add(String(h.id)); recs("blitz:" + b.id).forEach(r => { if (r && r.id) taken.add(String(r.id)); }); if (b.sevdeskInvoiceId) taken.add(String(b.sevdeskInvoiceId)); });
-    const pool = blitzList.filter(b => bOk(b) && !directHit(b) && !recs("blitz:" + b.id).length && !b.sevdeskInvoiceId);
-    sevInv.filter(i => (i.type === "RE" || !i.type) && !i.cancelled && !taken.has(String(i.id)) && !linked[i.id] && i.gross > 0).sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(inv => {
-      const lo = ymdAdd(String(inv.date || today), -180), hi = ymdAdd(String(inv.date || today), 45);
-      const inWin = b => !groupInv[b.id] && String(b.eventDate || "").slice(0, 10) >= lo && String(b.eventDate || "").slice(0, 10) <= hi;
-      // Kandidaten: 1) Kunde der Rechnung = Firma/Name der Buchung, 2) sonst je Buchungskunde (z. B. „WM-Roadshow“ für Montafon Tourismus) – dann mind. 2 Buchungen
-      const groups = [pool.filter(b => inWin(b) && (nameHit(inv.contact, b.companyName) || nameHit(inv.contact, b.customerName)))];
-      const byCust = {}; pool.filter(inWin).forEach(b => { const k = String(b.companyName || b.customerName || "").trim().toLowerCase(); if (k) (byCust[k] = byCust[k] || []).push(b); });
-      Object.keys(byCust).forEach(k => { if (byCust[k].length >= 2) groups.push(byCust[k]); });
-      // Business-Buchungen stehen bei Blitzdings netto → gegen Brutto UND Netto der Rechnung prüfen
-      const targets = [Math.round(inv.gross * 100), Math.round((+inv.net || 0) * 100)].filter(t => t > 0);
-      for (let gi = 0; gi < groups.length; gi++) {
-        const grp = groups[gi].slice(0, 16); if (!grp.length || (gi > 0 && grp.length < 2)) continue;
-        const cents = grp.map(b => Math.round(+b.totalCents || 0)); let best = 0;
-        for (let m = 1; m < (1 << grp.length) && !best; m++) { let sum = 0, cnt = 0; for (let k = 0; k < grp.length; k++) if (m & (1 << k)) { sum += cents[k]; cnt++; } if ((gi === 0 || cnt >= 2) && targets.some(t => Math.abs(sum - t) <= 2)) best = m; }
-        if (best) { for (let k = 0; k < grp.length; k++) if (best & (1 << k)) groupInv[grp[k].id] = inv; break; }
-      }
-    });
-  })();
-  blitzList.forEach(b => {
-    const amt = round2((+b.totalCents || 0) / 100); if (!(amt > 0)) return;
-    if (b.status === "CANCELLED" || b.paymentStatus === "REFUNDED") return;
-    if (b.status === "PENDING" && b.paymentStatus !== "PAID") return;
-    const ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
-    let hit = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
-    if (hit && hit.cancelled) hit = null;   // Blitzdings-Rechnung storniert: Ersatzrechnung suchen, sonst gilt sie unten als storniert
-    if (!hit && ref) hit = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR" && !i.cancelled);
-    if (!hit && (cust || comp)) hit = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && !i.cancelled && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
-    const viaGroup = !hit && groupInv[b.id]; if (viaGroup) hit = groupInv[b.id];
-    const recsB = recs("blitz:" + b.id), rec = recsB.slice(-1)[0];
-    const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : (b.sevdeskInvoiceId ? invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: day, gross: amt }, sevById, oldest) : (rec ? invLink(rec, sevById, oldest) : null));
-    if (link && link.id) linked[link.id] = 1;
-    const dead = !!link && link.state === "storniert";   // storniert: Buchung gilt wieder als nicht verrechnet, der Link bleibt zur Historie
-    const billed = link && !dead ? link : null;
-    // Anzahlung (Eintrag mit deposit): alle verschiedenen, nicht stornierten Rechnungen zählen – der Rest bleibt offen (Restrechnung im Cockpit vorbereiten)
-    let dep = null;
-    if (recsB.some(r => r && r.deposit)) {
-      const seen = {}, ls = [];
-      recsB.map(r => invLink(r, sevById, oldest)).concat(link ? [link] : []).forEach(l => { if (!l || (l.id && seen[l.id])) return; if (l.id) { seen[l.id] = 1; linked[l.id] = 1; } ls.push(l); });
-      ls.sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
-      const sd = sumState(ls);
-      dep = { links: ls, invoiced: round2(sd.invoiced), paid: round2(sd.paid), open: round2(sd.open), unbilled: round2(Math.max(0, amt - sd.invoiced)) };
-    }
-    const due = !!day && day <= soon;
-    if (!link && !due) return;                                  // Event noch weit weg: noch nichts zu tun
-    const paidOnPlatform = b.paymentStatus === "PAID";
-    const extras = (b.extras || []).map(e => e && e.name).filter(Boolean).join(", ");
-    const pkg = typeof b.package === "string" ? b.package : (b.package && b.package.name) || "";
-    const who = b.companyName || b.customerName || "Buchung";
-    items.push({ src: "blitzdings", key: "blitz:" + b.id, amount: amt, name: who + (pkg ? " · " + pkg : ""), sub: (day ? (day < today ? "Event war am " : "Event am ") + deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · online bezahlt" : "") + ((viaGroup || (rec && rec.group)) ? " · Sammelrechnung" : ""),
-      unbilled: dep ? dep.unbilled : billed ? 0 : amt, invoiced: dep ? dep.invoiced : billed ? billed.gross : 0, paid: dep ? dep.paid : billed && billed.state === "bezahlt" ? billed.gross : 0, open: dep ? dep.open : billed ? billed.open : 0, refund: 0, paidOnPlatform,
-      last: dep ? (dep.links[0] || null) : link, invoices: dep ? dep.links.slice(0, 4) : link ? [link] : [], date: day, depositOnly: dep ? true : undefined,
-      action: dep || billed ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
-        items: [{ name: "Blitzdings " + (pkg || "Fotobox"), text: [day ? "Event am " + deDate(day) : "", (b.eventLocation || b.location) ? "Ort: " + (b.eventLocation || b.location) : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: amt, taxRate: 20 }], after: { billing: { key: "blitz:" + b.id, label: who } } } });
-  });
-  // 5) Kantineur: Abos laufen automatisch über die Plattform
-  if (kantineur) items.push({ src: "kantineur", key: "kantineur", name: "Kantineur-Abos", sub: ((kantineur.subscribers && kantineur.subscribers.paying) || 0) + " zahlende Kantinen · MRR " + ((kantineur.mrrCents || 0) / 100).toFixed(2).replace(".", ",") + " €",
-    unbilled: 0, invoiced: round2((kantineur.revenueGrossCents || 0) / 100), paid: round2((kantineur.revenueGrossCents || 0) / 100), open: 0, refund: 0, auto: true, last: null, invoices: [], action: null });
+  // 4) Blitzdings und 5) Kantineur: eigene Funktionen (abgleichBlitz, abgleichKantineur). Kantineur zuerst zuordnen (linked), damit seine
+  //    Rechnungen nie über Name + Betrag als Blitzdings-Rechnung zählen; der Posten steht weiter am Ende.
+  const kaItem = abgleichKantineur(kantineur, { sevAllInv, sevById, link, linked, sevOk: !!(sev && sev.invoices) });
+  abgleichBlitz({ list: Array.isArray(blitzAll) ? blitzAll : ((blitz && blitz.upcoming) || []), today, sevInv, sevById, oldest, recs, linked }).forEach(x => items.push(x));
+  if (kaItem) items.push(kaItem);
   // Ausgeblendete Posten (bis der offene Betrag wieder steigt)
   const ign = bill.ignore || {};
   // Websites: nur der ausgeblendete Zeitraum (mit „from“; ältere Einträge ohne „from“ nur für Zeiträume, die beim Ausblenden schon begonnen hatten) – Folgejahre kommen wieder (WEB-6)
@@ -2484,6 +2752,17 @@ function platformStatus() {
     valuero: va.length ? { configured: true, ok: va.every(x => x.ok === null) ? null : !vaBad.length, error: vaBad.map(x => x.name + ": " + x.error).join(" · "), sources: va } : { configured: false },
     skikaiser: platStatus(!!SKIKAISER.url, SKIKAISER.url), huettengaudi: platStatus(!!HUETTENGAUDI.url, HUETTENGAUDI.url) };
 }
+function withSafe(fn) { try { return fn(); } catch (e) { console.error(e && e.message); return null; } }
+// Gutschrift-Vorschläge aus den Plattform-Daten (fin-credit.js): höchstens alle 10 Minuten, nie im Weg des Cockpit-Aufbaus
+let PLAT_CREDIT_AT = 0;
+function platCreditSoon(k, ko) {
+  if (!FIN_STATE.local || !process.env.DATABASE_URL || Date.now() - PLAT_CREDIT_AT < 10 * 60e3) return;
+  PLAT_CREDIT_AT = Date.now();
+  const hints = ((k && +k.apiVersion >= 2 && k.payments) || []).filter(p => p.invoiceId && ((+p.refundedCents || 0) + (+p.chargedBackCents || 0)) > 0)
+    .map(p => ({ invoiceId: String(p.invoiceId), pid: p.molliePaymentId || "", cents: (+p.refundedCents || 0) + (+p.chargedBackCents || 0), chargeback: +p.chargedBackCents > 0 }));
+  setImmediate(() => FIN_LOCAL.load().then(async () => { const n = (await FIN_CREDIT.refunds(hints)) + (await FIN_CREDIT.kochduDouble((ko && ko.restaurants) || []));
+    if (n) console.log("Gutschrift-Vorschläge:", n, "zur Prüfung"); }).catch(e => console.error("Gutschrift-Vorschläge:", e.message)));
+}
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
   const weatherP = withTimeout(weatherNow(), 3000, null);
@@ -2491,10 +2770,14 @@ async function cockpitBuild(year, forceForecast) {
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
     withTimeout(valueroStats(String(+year - 1)), 8000, null), withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
-    withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }), withTimeout(blitzYearBookings(year), 9000, null),
+    withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }), withTimeout(blitzAbgleichBookings(year, today), 9500, { bookings: null, status: "fehlt", error: "keine Antwort (Zeitüberschreitung)" }),
   ]);
   const bill = readBilling();
-  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, valueroPrev: vaPrev, blitz: b, blitzAll: bya, kantineur: k });
+  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, valueroPrev: vaPrev, blitz: b, blitzAll: bya.bookings, kantineur: k });
+  // BD-10: Blitzdings-Buchungsliste nicht (aktuell) ladbar → nie still auf „Nächste Termine“ zurückfallen, sondern Banner „Liste unvollständig“
+  abgleich.blitzStatus = { status: bya.status, at: bya.at ? new Date(bya.at).toISOString() : null, error: bya.error || "", partial: !!bya.partial };
+  const blitzReport = withSafe(() => blitzReportReconcile(bya.bookings, bill, sev));
+  platCreditSoon(k, ko);   // Gutschrift-Vorschläge (Kantineur-Erstattungen, kochdu doppelt verrechnet) – nur „Zur Prüfung“, im Hintergrund
   const P = bill.prices || {};
   const sites = cockpitSites(sitesSnap).map(s => {
     const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
@@ -2517,8 +2800,8 @@ async function cockpitBuild(year, forceForecast) {
     sev: sevSummary(sev, year, today), sevConfigured: true,
     abgleich,
     platforms: {
-      kochdu: ko ? { totals: ko.totals || {}, restaurants: ko.restaurants || [], nutzer: ko.nutzer || null, lastOrders: ko.lastOrders || [], fetchedAt: ko.fetchedAt } : null,
-      blitzdings: b ? { revenue: b.revenue || {}, bookings: b.bookings || {}, upcoming: b.upcoming || [], fetchedAt: b.fetchedAt } : null,
+      kochdu: ko ? { totals: ko.totals || {}, restaurants: ko.restaurants || [], nutzer: ko.nutzer || null, lastOrders: ko.lastOrders || [], fetchedAt: ko.fetchedAt, billing: ko.billing || null } : null,
+      blitzdings: b ? { revenue: b.revenue || {}, bookings: b.bookings || {}, upcoming: b.upcoming || [], fetchedAt: b.fetchedAt, invoiceReport: blitzReport } : null,
       kantineur: k, valuero: va,
     },
     sites, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx, fxFallback: !!rwc.fxFallback } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
@@ -3435,6 +3718,7 @@ async function handleAdmin(req, res, u, p) {
       const path = { creditnote: "/Fin/creditNoteFromInvoice", cash: "/Fin/cash", partial: "/Fin/partialFromOrder", final: "/Fin/finalFromOrder", recurring: "/Fin/recurring" }[kind];
       const r = await FIN_LOCAL.request("POST", path, { body: pl });
       SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches();
+      if (kind === "creditnote") kochduFreshSoon();   // Gutschrift/Storno per Gutschrift zu einer kochdu-Rechnung → Statistik frisch laden
       const o = r.objects; return J(200, { ok: true, result: Array.isArray(o) ? o.map(x => x && { id: String(x.id), nr: x.invoiceNumber || "" }) : (o && { id: String(o.id), nr: o.invoiceNumber || o.creditNoteNumber || "", type: o.invoiceType || "" }) });
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
@@ -3706,7 +3990,9 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (p === "/admin/api/sev/invoice" && req.method === "GET") { const d = await SEV_OPS.invoiceDetail(u.searchParams.get("id")); const b2b = await contactB2B(d.contact && d.contact.id);
         return J(200, Object.assign({ ok: true, mail: SEV_OPS.mailDefaults(d, u.searchParams.get("kind") || "", u.searchParams.get("ref") || "") }, d, { b2b })); }
-      if (p === "/admin/api/sev/invoice-op" && req.method === "POST") return J(200, Object.assign({ ok: true }, await SEV_OPS.invoiceOp(await sevBody(req))));
+      if (p === "/admin/api/sev/invoice-op" && req.method === "POST") { const pl = await sevBody(req), r = await SEV_OPS.invoiceOp(pl);
+        if (pl.op === "cancel") kochduFreshSoon();   // kochdu-Monatsrechnung storniert → Statistik frisch laden, Monat wieder abrechenbar
+        return J(200, Object.assign({ ok: true }, r)); }
       if (p === "/admin/api/sev/bank" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.bankOpen(force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (req.method === "POST" && typeof VM_CACHE !== "undefined") { VM_CACHE.at = 0; if (typeof IM_CACHE !== "undefined") IM_CACHE.at = 0; }   // Beleg/Zahlung geändert → Abgleich neu
       if (p === "/admin/api/sev/bank-op" && req.method === "POST") { const pl = await sevBody(req);
@@ -3778,10 +4064,14 @@ async function handleAdmin(req, res, u, p) {
     req.on("data", c => { body += c; if (body.length > 20000) req.destroy(); });
     req.on("end", async () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
+      // „neu abrechnen“ nur an ein kochdu, das billMonth kennt (Statistik mit months[]/billing) – ein altes kochdu speichert jede
+      // unbekannte Aktion als „Verrechnung von Hand“ (CONTRACT-fs-order §2)
+      if (payload && payload.action === "billMonth") { const st = await kochduStats(viennaToday().slice(0, 4)).catch(() => null);
+        if (!st || !(st.billing || (st.restaurants || []).some(r => Array.isArray(r.months)))) return send(res, 409, JSON.stringify({ ok: false, error: "unknown_action" }), TYPES[".json"]); }
       try {
         const r = await fetch(KOCHDU.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: KOCHDU.token }, payload)), signal: AbortSignal.timeout(20000) });
         const txt = await r.text();
-        if (r.ok) forgetStats(KOCHDU.url);
+        if (r.ok) { forgetStats(KOCHDU.url); if (payload && payload.action === "billMonth" && payload.dry === false) kochduFreshSoon(); }   // nach „neu abrechnen“ mit fresh=1 laden
         return send(res, r.status, txt, TYPES[".json"]);
       } catch (e) { return send(res, 502, JSON.stringify({ error: "kochdu_settle_failed" }), TYPES[".json"]); }
     });
@@ -3827,6 +4117,13 @@ async function handleAdmin(req, res, u, p) {
       const id = String(pl.id || ""); if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_id" }), TYPES[".json"]);
       const tc = pl.totalCents != null ? Math.round(+pl.totalCents) : undefined; if (tc !== undefined && !(tc >= 0 && tc <= 1e7)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_amount" }), TYPES[".json"]);
       r = await blitzCockpit("PATCH", "/bookings/" + encodeURIComponent(id), { status: pl.status || undefined, paymentStatus: pl.paymentStatus || undefined, totalCents: tc, allowOverlap: !!pl.allowOverlap });   // totalCents: Betrag an Sammelrechnung angleichen
+    }
+    else if (p === "/admin/api/blitz/booking-invoice") {   // Cockpit-Rechnungen an Blitzdings melden (Bestand per Klick, Nachholen)
+      const list = (Array.isArray(pl.items) ? pl.items : [pl]).slice(0, 300).filter(x => x && BLITZ_ID.test(String(x.bookingId || x.id || "")) && BLITZ_ID.test(String(x.invoiceId || "")));
+      if (!list.length) return send(res, 400, JSON.stringify({ ok: false, error: "bad_items" }), TYPES[".json"]);
+      list.forEach(x => blitzReportQueue(String(x.bookingId || x.id), String(x.invoiceId), String(x.nr || x.invoiceNr || ""), true));
+      const results = await blitzReportFlush(true);
+      r = { status: 200, json: { ok: true, results, reported: results.filter(x => x.ok).length, duplicates: results.filter(x => x.duplicate).length, queued: results.filter(x => x.queued).length } };
     }
     else if (p === "/admin/api/blitz/block") r = await blitzCockpit("POST", "/blocked", { date: pl.date, type: pl.type || null, reason: pl.reason || "" });
     else if (p === "/admin/api/blitz/unblock") {
@@ -4405,6 +4702,9 @@ const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () =>
 FIN_PROP.register("rule", { exec: it => FIN_RULES.acceptProposal(it.payload) });
 ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
 FIN_PROP.register("transfer", { exec: it => FIN_LOCAL.pairApply(it.payload.aId, it.payload.bId) });
+// Gutschrift zu einer Plattform-Rechnung (Kantineur-Erstattung/Rückbuchung, kochdu doppelt verrechnet): nur auf Klick, nie automatisch
+const FIN_CREDIT = require("./fin-credit.js")({ L: FIN_LOCAL, P: () => FIN_PROP, today: () => viennaToday(), reportedPeriods: () => steuerReportedPeriods() });
+FIN_PROP.register("invoice-credit", { label: "Gutschrift zu Plattform-Rechnung", exec: it => FIN_CREDIT.exec(Object.assign({}, it.payload, { key: it.key })).then(r => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return r; }), valid: it => FIN_CREDIT.valid(it) });
 // Doppelzahlung zurückbekommen / Guthaben zurückgezahlt: nie automatisch, nur per Klick (rückgängig über Bank › Umsatz bzw. /admin/api/fin/payment)
 FIN_PROP.register("refund-pair", { exec: it => FIN_LOCAL.refundPairApply(it.payload.aId, it.payload.bId), valid: it => FIN_LOCAL.refundValid(it.payload.aId, it.payload.bId) });
 FIN_PROP.register("credit-refund", { exec: it => FIN_LOCAL.creditRefund(it.payload.creditId, it.payload.txId), valid: it => { const c = FIN_LOCAL.get("CustomerCredit", it.payload.creditId); return !!c && +c.open > 0.004; } });
@@ -5001,4 +5301,4 @@ if (require.main === module) {
 
 module.exports = { renderIndex, ROUTE_META, NOINDEX_ROUTES };
 // nur für Tests (test/abgleich-storno.test.js): Abgleich-Rechenkern direkt prüfen
-if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, sevSummary };
+if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, sevSummary, finApiIdem, kantineurStats, kantineurV2, notePid };
