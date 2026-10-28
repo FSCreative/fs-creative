@@ -1,7 +1,8 @@
 /* Weihnachtsabteilung /print/weihnachten (print-xmas.js, print-shop.js) und Startausführung des Konfigurators (startOf) gegen Attrappen (test/print-mocks.js).
    Aufruf: node test/print-weihnachten.test.js – server.js läuft in einer Temp-Kopie, echte Dienste werden nie angesprochen.
    Geprüft: Saison-Logik, Kalender mit altem Jahr, Liefertermin-Hinweise, nur Bilder über /print/bild/, kein Lieferanten-Name; Startausführung passend zu
-   Mengen je Druckverfahren (Muster-Verfahren), Auflagen nur innerhalb der Mengen-Bereiche, nie mitgeschickte Personalisierung, Logistik-Angabe nach Ablehnung;
+   Mengen je Druckverfahren (Muster-Verfahren), Auflagen nur innerhalb der Mengen-Bereiche, nie mitgeschickte Personalisierung, Logistik-Angabe nur nach echter
+   Preis-Ablehnung (nie bei Versand-Störung, nicht je Produkt gemerkt), Versand-Störung bei Aufpreisen = später nochmal, veraltete Weihnachts-Preise nie zeigen;
    Seite mit SEO (Titel, canonical, CollectionPage, Sitemap), Preise/Liefertermine aus dem 12-h-Zwischenspeicher, außerhalb der Saison 302 und keine Einstiege. */
 "use strict";
 const assert = require("assert");
@@ -46,6 +47,12 @@ const XP = {
       { slug: "bundle", title: "Bündelung", locked: false, required: true, options: [opt("bundle_per_25", "je 25"), opt("bundle_per_50", "je 50")] },
       { slug: "printingmethod", title: "Druckverfahren", locked: false, required: true, options: [opt("digital", "Digital")] },
       copies([250, 500, 1000], [{ printingmethod: "digital", summary: [250, 500, 1000], options: [{ min: 1, max: 50000, steps: 1 }] }]), urgency] },
+  // Bündelung wählbar, aber nicht nötig (Versand-Störung darf hier nie zum Mitschicken führen)
+  "labels-on-roll": { sku: "labels-on-roll", bleed: 2, category: ["stickers-tapes", "stickers-on-roll"], excludes: [],
+    properties: [{ slug: "size", title: "Format", locked: false, required: true, options: [opt("40x40", "40 x 40 mm", { width: "40", height: "40" }), opt("50x50", "50 x 50 mm", { width: "50", height: "50" })] },
+      { slug: "bundle", title: "Bündelung", locked: false, required: true, options: [opt("bundle_per_25", "je 25"), opt("bundle_per_50", "je 50")] },
+      { slug: "printingmethod", title: "Druckverfahren", locked: false, required: true, options: [opt("digital", "Digital")] },
+      copies([250, 500, 1000], [{ printingmethod: "digital", summary: [250, 500, 1000], options: [{ min: 1, max: 50000, steps: 1 }] }]), urgency] },
   "christmas-baubles": { sku: "christmas-baubles", bleed: 0, category: ["gifts-merchandise-promotional", "seasonal"], excludes: [],
     properties: [{ slug: "color_material", title: "Farbe", locked: false, required: true, options: [opt("red", "Rot"), opt("blue", "Blau")] },
       { slug: "size", title: "Größe", locked: false, required: true, options: [opt("christmas_ball_8cm", "Kugel 8 cm")] },
@@ -57,7 +64,7 @@ const XP = {
       { slug: "printingmethod", title: "Druckverfahren", locked: false, required: true, options: [opt("offset", "Offset")] }, copies([100, 250, 500]), urgency] }
 };
 const XL = [{ sku: "magnetic-gift-boxes", titlePlural: "Magnet Geschenkboxen", active: true }, { sku: "slider-boxes", titlePlural: "Schiebeschachteln", active: true }, { sku: "growing-paper-envelopes", titlePlural: "Briefumschläge aus Saatpapier", active: true },
-  { sku: "hangtags", titlePlural: "Hängeetiketten", active: true }, { sku: "christmas-baubles", titlePlural: "Christbaumkugeln", active: true }, { sku: "month-calendars", titlePlural: "Monatskalender 2026", active: true }];
+  { sku: "hangtags", titlePlural: "Hängeetiketten $& $' Gold", active: true }, { sku: "labels-on-roll", titlePlural: "Aufkleber auf Rolle", active: true }, { sku: "christmas-baubles", titlePlural: "Christbaumkugeln", active: true }, { sku: "month-calendars", titlePlural: "Monatskalender 2026", active: true }];
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-xmas-"));
@@ -127,8 +134,12 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
 
   // ── 2) Server mit Attrappen: Startausführung, Preise, Seite ──
   const mocks = createMocks({ products: XP, list: XL }); await new Promise(r => mocks.server.listen(0, "127.0.0.1", r)); const M = mocks.state, mbase = "http://127.0.0.1:" + mocks.server.address().port;
+  const soon = new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10); M.possOf = u => [{ carrier: "DPD", method: "DPD_B2C", deliveryDate: soon, pickupDate: soon, urgency: u, price: { base: 5, cost: 5, urgency: 0 } }];   // Liefertermin in der Zukunft (vergangene Termine zeigt die Seite nie)
   const dir = copyApp();
   const env = { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", PRINT_CMS_BASE: mbase + "/cms", MAIL_API_URL: mbase + "/mail/api/mails", MAIL_API_TOKEN: "mt", PRINT_XMAS: "1" };
+  // veralteter Stand vom Vorjahr im Zwischenspeicher: darf nie angezeigt werden (kein alter Preis, kein vergangenes Lieferdatum)
+  fs.mkdirSync(path.join(dir, "print-shop"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "print-shop", "print_xmas.json"), JSON.stringify({ at: "2025-12-01T10:00:00.000Z", items: { "magnetic-gift-boxes": { ok: true, gross: 999.99, copies: 500, start: 500, date: "2025-12-03", at: "2025-12-01T10:00:00.000Z", title: "Alt" } } }));
   let srv = await startServer(dir, env); const B = srv.base;
   const admin = (p, body) => fetch(B + p, { method: body ? "POST" : "GET", headers: { cookie: COOKIE, "content-type": "application/json", origin: B }, body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
   const post = async (p, body) => { const r = await fetch(B + p, { method: "POST", headers: { "content-type": "application/json", "x-print-shop": "1", origin: B }, body: JSON.stringify(body) }); return { status: r.status, j: await r.json().catch(() => ({})) }; };
@@ -154,12 +165,26 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
       assert.ok(M.log.slice(n0).filter(l => /\/price$/.test(l.path)).every(l => !("personalize" in (l.body.options || {}))), "personalize nie an den Druckpartner");
       const r2 = await post("/print/api/price", { product: p.key, copies: 250, sel: Object.assign({}, p.start.sel, { printtype: "10_black" }), country: "AT" }); assert.ok(r2.status === 400 && /nicht lieferbar/.test(r2.j.error), JSON.stringify(r2.j));
     });
-    await t("Logistik-Angabe (Bündelung) erst nach Ablehnung mitschicken – danach bei diesem Produkt gleich mit", async () => {
-      const p = await prod("hangtags"); const n0 = M.log.length;
+    await t("Logistik-Angabe (Bündelung) nur nach echter Preis-Ablehnung, als letzte Ausweich-Variante – ohne Angabe immer zuerst, nichts je Produkt gemerkt; bestellt wird, was gerechnet wurde", async () => {
+      const p = await prod("hangtags"), calls = n => M.log.slice(n).filter(l => /hangtags\/price$/.test(l.path)).map(l => l.body.options.bundle || "-"); let n0 = M.log.length;
       const r = await post("/print/api/price", { product: p.key, copies: p.start.copies, sel: p.start.sel, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
-      const calls = M.log.slice(n0).filter(l => /\/price$/.test(l.path)).map(l => l.body.options.bundle || "-"); assert.deepStrictEqual(calls, ["-", "bundle_per_25"], "erst ohne, dann mit Bündelung: " + calls);
-      const n1 = M.log.length, r2 = await post("/print/api/price", { product: p.key, copies: 1000, sel: p.start.sel, country: "AT" }); assert.strictEqual(r2.status, 200);
-      assert.deepStrictEqual(M.log.slice(n1).filter(l => /\/price$/.test(l.path)).map(l => l.body.options.bundle || "-"), ["bundle_per_25"], "gleich mit Bündelung");
+      assert.deepStrictEqual(calls(n0), ["-", "bundle_per_25"], "erst ohne, dann mit Bündelung");
+      n0 = M.log.length; await post("/print/api/price", { product: p.key, copies: p.start.copies, sel: p.start.sel, country: "AT" }); assert.deepStrictEqual(calls(n0), [], "gleiche Auswahl: aus dem Zwischenspeicher (Ablehnung 10 min gemerkt)");
+      n0 = M.log.length; const r2 = await post("/print/api/price", { product: p.key, copies: 1000, sel: p.start.sel, country: "AT" }); assert.strictEqual(r2.status, 200);
+      assert.deepStrictEqual(calls(n0), ["-", "bundle_per_25"], "andere Auswahl: wieder zuerst ohne Angabe");
+      const q = await admin("/admin/api/print/quote", { product: p.key, sel: p.start.sel, copies: 1000, urgency: "standard" }); assert.ok(q.ok && q.pcOpts && q.pcOpts.bundle === "bundle_per_25", "Bestell-Optionen = gerechnete Optionen: " + JSON.stringify(q.pcOpts));
+    });
+    await t("Versand-Störung: keine Logistik-Angabe nachschicken, nichts merken; Aufpreise „später nochmal“ statt „nicht lieferbar“", async () => {
+      const p = await prod("labels-on-roll"), calls = n => M.log.slice(n).filter(l => /labels-on-roll\/price$/.test(l.path)).map(l => l.body.options.bundle || "-"); let n0 = M.log.length;
+      const pp = M.possOf; M.possOf = () => [];   // Versand antwortet leer (kurze Störung)
+      try {
+        const r = await post("/print/api/price", { product: p.key, copies: 500, sel: p.start.sel, country: "AT" }); assert.ok(r.status === 400 && /Versand/.test(r.j.error), JSON.stringify(r.j));
+        assert.ok(calls(n0).every(x => x === "-"), "bei Versand-Ablehnung nie mit Bündelung: " + calls(n0));
+        const d = await post("/print/api/deltas", { product: p.key, copies: 500, sel: p.start.sel, country: "AT", alts: [{ k: "50x50", sel: Object.assign({}, p.start.sel, { size: "50x50" }) }] });
+        assert.ok(d.j.ok && d.j.busy === true && !(d.j.d && d.j.d["50x50"] && d.j.d["50x50"].off), "Aufpreise: später nochmal " + JSON.stringify(d.j));
+      } finally { M.possOf = pp; }
+      n0 = M.log.length; const r2 = await post("/print/api/price", { product: p.key, copies: 1000, sel: p.start.sel, country: "AT" }); assert.strictEqual(r2.status, 200, JSON.stringify(r2.j));
+      assert.deepStrictEqual(calls(n0), ["-"], "danach wieder ohne Angabe (nichts gemerkt)");
     });
     await t("„ab“-Preis ohne Auswahl = Startausführung (auch allgemeine Produkte)", async () => {
       const f = await (await fetch(B + "/print/api/from?keys=magnetic-gift-boxes,slider-boxes,hangtags")).json();
@@ -167,6 +192,8 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
     });
     await t("Seite /print/weihnachten: serverseitig mit SEO, nur freigeschaltete Vorschläge, Bilder über den Proxy, Einstiege in Shop/Sitemap/Website", async () => {
       const r = await fetch(B + "/print/weihnachten"), h = await r.text(); assert.strictEqual(r.status, 200);
+      assert.ok(!/999,99/.test(h) && !/3\.12\./.test(h), "veralteter Preis/Liefertermin aus dem Vorjahr wird nicht gezeigt");
+      assert.ok(h.indexOf("Hängeetiketten $& $' Gold") > -1 && (h.match(/<\/head>/g) || []).length === 1 && (h.match(/<title>/g) || []).length === 1, "Sonderzeichen in Namen verändern das HTML nicht: " + (h.match(/"@type":"ItemList".{0,600}/) || [""])[0] + " head=" + (h.match(/<\/head>/g) || []).length + " title=" + (h.match(/<title>/g) || []).length);
       assert.ok(/<title>Weihnachten \d{4}: Karten, Kalender &amp; Geschenke mit Logo drucken \| FS Creative Druckshop<\/title>/.test(h), "Titel");
       assert.ok(/<link rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\/weihnachten"/.test(h) && /<meta name="description" content="Weihnachtskarten/.test(h));
       assert.ok(/"@type":"CollectionPage"/.test(h) && /"@type":"BreadcrumbList".*"name":"Weihnachten"/.test(h), "strukturierte Daten");
@@ -181,6 +208,7 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
       const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/<loc>https:\/\/www\.fs-creative\.at\/print\/weihnachten<\/loc>/.test(sm), "Sitemap");
       const idx = await (await fetch(B + "/")).text(); assert.ok(/href="\/print\/weihnachten" class="hx-more hx-xm"/.test(idx) && !/PRINT_XMAS/.test(idx), "Hinweis auf der Website-Startseite");
       const app = fs.readFileSync(path.join(ROOT, "print", "app.js"), "utf8"); assert.ok(/S\.view === "xmas"/.test(app) && /function setCopies/.test(app) && /function xmasTeaser/.test(app), "Shop-Ansicht, Menge aus Link, Teaser");
+      assert.ok(/if \(lk\) \{ if \(!S\.cat \|\| e\.metaKey/.test(app) && /function prodByKey\(k\) \{ return \(\(S\.cat && S\.cat\.products\) \|\| \[\]\)/.test(app), "Klick auf Produktkarte, bevor der Shop geladen ist: normaler Link statt Fehler");
     });
     await t("Preise & Liefertermine: im Hintergrund geprüft und zwischengespeichert (nicht je Seitenaufruf), Produkte ohne Preis verschwinden", async () => {
       let h = ""; for (let i = 0; i < 100; i++) { h = await (await fetch(B + "/print/weihnachten")).text(); if (/data-prod="hangtags"[\s\S]*?xm-p"/.test(h) && /Lieferung voraussichtlich ab/.test(h)) break; await sleep(150); }
@@ -197,6 +225,7 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
     await t("außerhalb der Saison: /print/weihnachten → 302 /print, kein Navigationspunkt, kein Teaser, nicht in der Sitemap, kein Hinweis auf der Website", async () => {
       const r = await fetch(srv.base + "/print/weihnachten", { redirect: "manual" }); assert.strictEqual(r.status, 302); assert.strictEqual(r.headers.get("location"), "/print"); assert.ok(/noindex/.test(r.headers.get("x-robots-tag") || ""));
       const shop = await (await fetch(srv.base + "/print")).text(); assert.ok(!/data-xnav/.test(shop) && !/<!--XMAS-->/.test(shop));
+      const pp = await (await fetch(srv.base + "/print/preise")).text(); assert.ok(!/data-xnav/.test(pp) && !/<!--XMAS-->/.test(pp), "auch nicht in der Preisübersicht");
       const cat = await (await fetch(srv.base + "/print/api/catalog")).json(); assert.strictEqual(cat.xmas, null);
       const sm = await (await fetch(srv.base + "/sitemap.xml")).text(); assert.ok(!/print\/weihnachten/.test(sm));
       const idx = await (await fetch(srv.base + "/")).text(); assert.ok(!/hx-xm"/.test(idx) && !/PRINT_XMAS/.test(idx));

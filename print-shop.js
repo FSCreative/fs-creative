@@ -1008,33 +1008,34 @@ module.exports = function (D) {
     return out;
   }
   // Logistik-Angaben (Bündelung, Palette, Verpackung …) schickt der Shop zuerst nicht mit – wie die Print.com-App, sonst oft Aufpreis. Manche Produkte rechnet
-  // Print.com aber nur mit Angabe (Hängeetiketten: „no supplier prices found“ ohne Bündelung) → nach einer Ablehnung einmal mit dem ersten zulässigen Wert
-  // nachfragen; klappt das, kommt die Angabe bei diesem Produkt künftig gleich mit (spart die abgelehnte Anfrage)
-  const NEEDS_FILL = new Set();
+  // Print.com aber nur mit Angabe (Hängeetiketten: „no supplier prices found“ ohne Bündelung). Deshalb NUR nach einer echten Preis-Ablehnung (noPrice, nie bei
+  // Versand-Ablehnung oder Störung) als letzte Ausweich-Variante hinter allen Varianten ohne Angabe; nichts wird je Produkt gemerkt – ohne Angabe wird immer zuerst
+  // gefragt (abgelehnte Kombinationen merkt NOPRICE 10 min, damit das nicht jedes Mal eine Anfrage kostet). Was gerechnet wurde (pcOpts), wird genau so bestellt.
   function filledOf(prod, opts) {
     const o = Object.assign({}, opts), al = aliasOf(prod); let ch = false;
     Object.keys(prod.auto || {}).filter(k => OMITTABLE.test(k) && o[k] === undefined).forEach(k => { const v = prod.auto[k].find(x => !hitRules(prod.excludes, Object.assign({}, prod.implicit || {}, o, { [k]: x }), al)); if (v != null) { o[k] = v; ch = true; } });
     return ch ? o : null;
   }
-  const fillList = (prod, list) => NEEDS_FILL.has(prod.sku) ? list.map(o => filledOf(prod, o) || o) : list;
   async function buyFilled(prod, n, opts, country, postcode, e0) {
-    const f = !n.excluded && e0 && e0.status === 400 && filledOf(prod, opts); if (!f) throw e0;
+    const f = !n.excluded && e0 && e0.noPrice && filledOf(prod, opts); if (!f) throw e0;
     let v; try { v = await purchase(prod, Object.assign({}, n, { pcOpts: f }), country, postcode); } catch (e) { throw e0; }
-    NEEDS_FILL.add(prod.sku); return { v, pcOpts: f };
+    return { v, pcOpts: f };
   }
+  // Fehler für die Weitergabe: „hart“ (kein 400) geht vor, sonst eine echte Preis-Ablehnung (für das Nachschicken), sonst der erste
+  const pickErr = errs => errs.find(e => e && e.status !== 400) || errs.find(e => e && e.noPrice) || errs[0];
   // Erste lieferbare Variante (nacheinander, sparsam): für den ersten Durchgang je Druckverfahren
   async function buyFirst(prod, n, list, country, postcode) {
-    const L = fillList(prod, (list && list.length ? list : [n.pcOpts]).slice(0, 4));
-    let last; for (const o of L) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { last = e; if (e.status !== 400) break; } }
-    return buyFilled(prod, n, L[0], country, postcode, last);
+    const L = (list && list.length ? list : [n.pcOpts]).slice(0, 4), errs = [];
+    for (const o of L) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { errs.push(e); if (e.status !== 400) break; } }
+    return buyFilled(prod, n, L[0], country, postcode, pickErr(errs));
   }
   // Immer die günstigste Produktionsvariante (Wunsch Simon 19.10.2026): bis zu 3 Varianten (z. B. mit/ohne Bogengröße → anderer Produzent/Versand)
   // parallel anfragen und die mit dem niedrigsten Gesamtpreis inkl. Versand nehmen; Print.com-Antworten 30 min zwischengespeichert
   async function buyAny(prod, n, list, country, postcode) {
-    const L = fillList(prod, (list && list.length ? list : [n.pcOpts]).slice(0, 3));
+    const L = (list && list.length ? list : [n.pcOpts]).slice(0, 3);
     const rs = await Promise.all(L.map(o => purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode).then(v => ({ v, pcOpts: o }), e => ({ e }))));
     const ok = rs.filter(r => r.v).sort((a, b) => a.v.total - b.v.total); if (ok.length) return ok[0];
-    return buyFilled(prod, n, L[0], country, postcode, (rs.find(r => r.e && r.e.status !== 400) || rs[0]).e);
+    return buyFilled(prod, n, L[0], country, postcode, pickErr(rs.map(r => r.e)));
   }
   // Viele Besucher: gleiche Print.com-Anfragen, die gerade laufen, teilen sich ein Ergebnis (INFLIGHT); Zwischenspeicher 6 h (Kasse: frisch, max. 5 min)
   const INFLIGHT = new Map();
@@ -1042,9 +1043,11 @@ module.exports = function (D) {
   function pickDay(v, wish) { const d = wish && Array.isArray(v.days) ? v.days.find(x => x.d === wish) : null; if (!d || d.d === v.deliveryDate) return v;
     return Object.assign({}, v, { shipping: d.ship, total: r2(v.product + d.ship), deliveryDate: d.d, carrier: d.carrier, method: d.method, wish: d.d, def: v.deliveryDate }); }
   async function purchase(prod, n, country, postcode) { return pickDay(await purchase0(prod, n, country, postcode), n.wish); }
+  const NOPRICE = new Map();   // echte Preis-Ablehnungen („no supplier prices“) je Anfrage, 10 min – spart wiederholte Anfragen ohne Logistik-Angabe
   async function purchase0(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 6 * 3600e3)) return hit.v;
+    const np = NOPRICE.get(key); if (np && Date.now() - np.at < 10 * 60e3) throw np.e;
     if (n.cacheOnly) throw Object.assign(new Error("busy"), { status: 429, busy: true });   // Andrang: Nebensächliches nur aus dem Zwischenspeicher
     if (INFLIGHT.has(key)) return INFLIGHT.get(key);
     const run = purchase1(prod, n, country, postcode, key); INFLIGHT.set(key, run);
@@ -1060,7 +1063,8 @@ module.exports = function (D) {
     // Versandmöglichkeiten gleichzeitig mit dem Preis anfragen (halbe Wartezeit); schlägt der Preis fehl, wird das Ergebnis verworfen
     const shipP = pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo); shipP.catch(() => {});
     let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, lo); }
-    catch (e) { priceFail(prod, n, e.status, e.message); if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
+    catch (e) { priceFail(prod, n, e.status, e.message); if (n.excluded || e.status === 400 || e.status === 422) { const noPrice = !n.excluded && /no supplier prices/i.test(String(e.message)), e2 = Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400, noPrice });
+      if (noPrice) { NOPRICE.set(key, { at: Date.now(), e: e2 }); if (NOPRICE.size > 3000) NOPRICE.clear(); } throw e2; } throw e; }
     const P = pr && pr.prices || {};
     if (!(+P.salesPrice > 0 || +P.productPrice > 0 || +P.normalPrice > 0)) priceFail(prod, n, 200, "Preis 0 / leer");
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
@@ -1074,7 +1078,7 @@ module.exports = function (D) {
     const same = poss.filter(x => !x.urgency || x.urgency === n.urgency); if (same.length) poss = same;
     const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); };
     poss.sort((a, b) => cost(a) - cost(b) || String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
-    if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 400 });   // 400 statt 502: Cloudflare ersetzt 502-Antworten durch eine HTML-Fehlerseite (Shop zeigte nur „Fehler 502“); andere Menge/Ausführung kann gehen
+    if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 400, shipping: true });   // 400 statt 502: Cloudflare ersetzt 502-Antworten durch eine HTML-Fehlerseite (Shop zeigte nur „Fehler 502“); andere Menge/Ausführung kann gehen. shipping: oft nur kurze Störung (Weihnachtsseite, Aufpreise: wie Störung behandeln)
     const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)) || cost(a) - cost(b))[0];
     const best = n.urgency === "urgent" ? fastest : poss[0];   // Standard/Schnell: günstigste Lieferung, Express: schnellste (Wunsch Simon)
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10),
@@ -2285,7 +2289,7 @@ module.exports = function (D) {
   }
   // Preisübersicht als eigene, ohne JavaScript lesbare Seite
   async function pricesPage(req, res) {
-    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    let html = ""; try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); } catch (e) { return D.send(res, 404, "Not found"); }   // Navigationspunkt „Weihnachten“ nur in der Saison
     const P = await pubState(), items = (P && P.items) || [], groups = [];
     items.forEach(it => { let g = groups.find(x => x.n === it.group); if (!g) groups.push(g = { n: it.group || "Weitere Produkte", l: [] }); g.l.push(it); });
     const card = it => '<div class="pp-c"><h3><a href="/print?produkt=' + escH(encodeURIComponent(it.key)) + '">' + escH(it.title) + "</a></h3>" + (it.label ? '<p class="pp-l">' + escH(it.label) + "</p>" : "") +
@@ -2311,7 +2315,7 @@ module.exports = function (D) {
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + SITE + '/print/preise"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + SITE + "/print/preise")
       .replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
       .replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "")
-      .replace("</head>", '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
+      .replace("</head>", () => '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
   }
   // Produktseite (/print?produkt=…): Inhalte schon im HTML – für Suchmaschinen und KI-Crawler ohne JavaScript; der Konfigurator ersetzt sie beim Laden
@@ -2344,7 +2348,7 @@ module.exports = function (D) {
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
       .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(x.cat, x.title, url)))
-      .replace("</head>", ldTag(ld) + "\n</head>");
+      .replace("</head>", () => ldTag(ld) + "\n</head>");
   }
   // ── SEO für Sortiment und Kategorien (/print?produkte[&kategorie=…[&unter=…]]): vorgerendert mit Links, Brotkrumen, strukturierten Daten ──
   const ldTag = o => '<script type="application/ld+json">' + JSON.stringify(Object.assign({ "@context": "https://schema.org" }, o)).replace(/</g, "\\u003c") + "</script>";
@@ -2392,7 +2396,7 @@ module.exports = function (D) {
       .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t).replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d)
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(c, "", url)))
-      .replace("</head>", ldTag(coll) + "\n</head>");
+      .replace("</head>", () => ldTag(coll) + "\n</head>");
   }
   // Sitemap: Preisübersicht + Produktseiten (nur mit Bild)
   async function sitemapExtra() {
@@ -2408,7 +2412,18 @@ module.exports = function (D) {
   // Preis je Vorschlag = Startausführung des Konfigurators (wie die Shop-Karten, „ab … für N Stk.“), Liefertermin = frühester Tag aus derselben Preisberechnung
   // (Standard-Produktion, Versand nach Österreich). Alle 12 h im Hintergrund, nacheinander mit Pause und niedriger Priorität (Print.com-Limit) – nie je Seitenaufruf.
   // Geht die Startausführung bei Print.com nicht (z. B. kein Versand für 500 Stk.), die nächstliegende Auflage; ganz ohne Preis → Vorschlag wird ausgeblendet.
-  let XMD = null, xmRun = false, xmTry = 0;
+  let XMD = null, xmRun = false, xmTry = 0, XPUB = null, XREN = null;
+  // Nur Einträge der letzten 36 h zählen (sonst ohne Preiszeile): kein alter Preis, kein vergangenes Lieferdatum, keine Vorjahresdaten am Saisonstart
+  const XM_MAX = 36 * 3600e3, xmFresh = it => !!(it && it.at && Date.now() - Date.parse(it.at) < XM_MAX);
+  function xmasData() { const out = {}, it = (XMD && XMD.items) || {}; Object.keys(it).forEach(k => { if (xmFresh(it[k])) out[k] = it[k]; }); return out; }
+  // Freigeschaltete Produkte für die Weihnachtsseite: Katalog-Stand höchstens alle 5 min neu zusammenstellen (viele Besucher erwartet)
+  async function xmasShown() {
+    const s = await settings(), cat = await catalog(false).catch(() => null); if (!cat) return null;
+    const all = await catalogAll().catch(() => null);
+    if (XPUB && XPUB.cat === cat && XPUB.all === all && XPUB.s === s && Date.now() - XPUB.t < 5 * 60e3) return XPUB;
+    const shown = {}; publicCatalog(cat, s, all).forEach(p => { shown[p.key] = p.title; });
+    XPUB = { cat, all, s, t: Date.now(), id: Math.random().toString(36).slice(2), shown }; return XPUB;
+  }
   async function xmasState() { if (!XMD) XMD = (await store.getMeta("print_xmas").catch(() => null)) || { at: null, items: {} }; return XMD; }
   function xmasKick() {
     if (xmRun || !cfg().pcKey || !live() || !XMAS.season().on || Date.now() - xmTry < 30 * 60e3) return;
@@ -2419,7 +2434,7 @@ module.exports = function (D) {
     try {
       const s = await settings(), sea = XMAS.season(), items = {}, bad = [], pv = parseInt(process.env.PRINT_XMAS_PAUSE_MS, 10), pause = isFinite(pv) && pv >= 0 ? pv : 1200;
       for (const k of XMAS.keys()) {
-        const r = { ok: false }; let asked = false;
+        const r = { ok: false, at: nowIso() }; let asked = false;
         try {
           const p = await findProduct(k, s); if (!p) throw Object.assign(new Error("im Shop nicht freigeschaltet"), { status: 400 });
           const pp = pubProd(p); r.title = pp.title; r.promo = p.kind === "promo" || (p.cat && p.cat.main) === PROMO;
@@ -2433,10 +2448,11 @@ module.exports = function (D) {
           if (!q) throw e0 || new Error("kein Preis");
           const days = (q.days || []).map(d => d.d).filter(Boolean).sort();
           Object.assign(r, { ok: true, gross: q.gross, copies: n.copies, start: inp.copies, date: days[0] || q.deliveryDate || "" });
-        } catch (e) { r.why = clip(e.message, 160); if (!r.stale) bad.push(k + ": " + r.why); r.status = e.status || 0; }
-        // Kurze Störung beim Druckpartner (kein 400 „kein Preis“): letzten guten Stand behalten statt den Vorschlag 12 h auszublenden
-        const prev = (XMD && XMD.items && XMD.items[k]) || null;
-        items[k] = !r.ok && !r.stale && r.status !== 400 && prev && prev.ok ? Object.assign({}, prev, { kept: true }) : r;
+        } catch (e) { r.why = clip(e.message, 160); if (!r.stale) bad.push(k + ": " + r.why); r.status = e.status || 0; r.shipping = !!e.shipping; }
+        // Kurze Störung beim Druckpartner (kein endgültiges „kein Preis“, auch Versand-Ablehnung): letzten guten Stand behalten, solange er jünger als 36 h ist –
+        // sonst ohne Preis zeigen (ok: null) statt den Vorschlag 12 h auszublenden
+        const prev = (XMD && XMD.items && XMD.items[k]) || null, transient = !r.ok && !r.stale && (r.status !== 400 || r.shipping);
+        items[k] = transient && prev && prev.ok && xmFresh(prev) ? Object.assign({}, prev, { kept: true }) : transient ? Object.assign(r, { ok: null }) : r;
         if (asked && pause) await new Promise(res => setTimeout(res, pause));   // Pause nur nach Print.com-Abfragen
       }
       XMD = { at: nowIso(), items }; await store.setMeta("print_xmas", XMD).catch(() => {});
@@ -2445,27 +2461,30 @@ module.exports = function (D) {
   }
   // Startseiten-Teaser im Shop (print/app.js): nur in der Saison
   function xmasTeaser(products) { const sea = XMAS.season(); if (!sea.on) return null; const shown = {}; (products || []).forEach(p => { shown[p.key] = 1; });
-    return { year: sea.year, before: sea.before, n: XMAS.count((XMD && XMD.items) || {}, shown), img: XMAS.HERO.img }; }
+    return { year: sea.year, before: sea.before, n: XMAS.count(xmasData(), shown), img: XMAS.HERO.img }; }
   async function xmasPage(req, res, preview) {
     const sea = XMAS.season();
     if (!sea.on) return D.send(res, 302, "", "text/plain", { Location: "/print", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex" });   // außerhalb der Saison: zurück in den Shop
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
-    const s = await settings(), x = await xmasState(), cat = await catalog(false).catch(() => null), pub = cat ? publicCatalog(cat, s, await catalogAll().catch(() => null)) : [], shown = {};
-    pub.forEach(p => { shown[p.key] = p.title; }); xmasKick();
-    const r = XMAS.render(x.items || {}, pub.length ? shown : null, sea), url = SITE + "/print/weihnachten";
+    await xmasState(); const xs = await xmasShown(); xmasKick();
+    // Inhalt je Datenstand zwischenspeichern (Preise, Freigaben, Tag) – nicht bei jedem Aufruf neu zusammensetzen
+    const rk = [XMD && XMD.at, xs ? xs.id : "-", sea.today, sea.before, Math.floor(Date.now() / 3600e3)].join("|");
+    if (!XREN || XREN.k !== rk) { const data = xmasData(); XREN = { k: rk, data, r: XMAS.render(data, xs ? xs.shown : null, sea) }; }
+    const r = XREN.r, data = XREN.data, shown = xs ? xs.shown : {}, url = SITE + "/print/weihnachten";
     const t = escH("Weihnachten " + sea.year + ": Karten, Kalender & Geschenke mit Logo drucken | FS Creative Druckshop");
     const d = escH("Weihnachtskarten, Kalender, Verpackung und Geschenke mit Logo online gestalten und drucken – mit Liefertermin je Produkt und Versand in ganz Österreich.");
-    const list = r.keys.map((k, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(k, true), name: (x.items[k] && x.items[k].title) || shown[k] || k }));
+    const list = r.keys.map((k, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(k, true), name: scrubText((data[k] && data[k].title) || shown[k] || k) }));
     const coll = { "@type": "CollectionPage", name: "Weihnachten im FS Creative Druckshop", url, description: d.replace(/&amp;/g, "&"), isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" }, mainEntity: { "@type": "ItemList", numberOfItems: list.length, itemListElement: list } };
     const crumbs = { "@type": "BreadcrumbList", itemListElement: [["Start", SITE + "/"], ["Druckshop", SITE + "/print"], ["Weihnachten", url]].map((z, i) => ({ "@type": "ListItem", position: i + 1, name: z[0], item: z[1] })) };
-    const og = SITE + XMAS.img(XMAS.HERO.img, 1200).replace("fm=webp", "fm=jpg");
+    const og = SITE + XMAS.img(XMAS.HERO.img, 1200).replace("fm=webp", "fm=jpg"), head = r.preload + "\n" + ldTag(coll) + "\n</head>";
+    // Ersetzungen immer als Funktion: „$&“, „$'“ o. Ä. in Produktnamen dürfen das HTML nicht verändern
     html = shell(html, preview).replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => '<div class="ps-loading ps-xmas-ssr" id="psLoading">' + r.html + "</div>")
-      .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
-      .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + url + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + url).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
-      .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(og))
+      .replace(/<title>[^<]*<\/title>/, () => "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, (m, a) => a + d)
+      .replace(/<link rel="canonical" href="[^"]*"/, () => '<link rel="canonical" href="' + url + '"').replace(/(<meta property="og:url" content=")[^"]*/, (m, a) => a + url).replace(/(<meta property="og:title" content=")[^"]*/, (m, a) => a + t)
+      .replace(/(<meta property="og:description" content=")[^"]*/, (m, a) => a + d).replace(/(<meta property="og:image" content=")[^"]*/, (m, a) => a + escH(og))
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbs))
-      .replace('class="ps-xnav" data-xnav>', 'class="ps-xnav active" data-xnav aria-current="page">')
-      .replace("</head>", r.preload + "\n" + ldTag(coll) + "\n</head>");
+      .replace('class="ps-xnav" data-xnav>', () => 'class="ps-xnav active" data-xnav aria-current="page">')
+      .replace("</head>", () => head);
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function homeState() { if (!HOME) HOME = await store.getMeta("print_home").catch(() => null); return HOME; }
@@ -2815,10 +2834,10 @@ module.exports = function (D) {
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         const busy = pcLow.length > 24 || pcWait.length > 6;   // Andrang: Aufpreise nur aus dem Zwischenspeicher, der Rest kommt ein paar Sekunden später (Client fragt nach)
         const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel, wish: "" }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
-        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!e.busy }); }
+        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!(e.busy || e.shipping) }); }
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
         await Promise.all([0, 1, 2, 3].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
-          try { const q = await run(a.sel, a.urgency); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency ? { an: q.net, ag: q.gross, days: q.days || [] } : {}); } catch (e) { d[k] = e.busy ? { busy: true } : { off: e.status === 400 }; } } }));
+          try { const q = await run(a.sel, a.urgency); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency ? { an: q.net, ag: q.gross, days: q.days || [] } : {}); } catch (e) { d[k] = e.busy || e.shipping ? { busy: true } : { off: e.status === 400 }; } } }));   // Versand-Ablehnung: später nochmal statt „nicht lieferbar“
         return J(res, 200, { ok: true, d, busy });
       }
       if (p === "/print/api/ai/design") {

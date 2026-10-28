@@ -352,7 +352,7 @@
   };
   function fixLabels(list) { (list || []).forEach(function (p) { (p.props || []).forEach(function (pr) { var L = LBL[pr.slug]; if (!L) return; if (L.t) pr.title = L.t; pr.options.forEach(function (o) { if (L.o && L.o[o.slug]) o.name = L.o[o.slug]; if (L.d && L.d[o.slug] && (!o.desc || L.force)) o.desc = L.d[o.slug]; }); if (L.force) pr.desc = ""; }); }); }
 
-  function prodByKey(k) { return (S.cat.products || []).filter(function (p) { return p.key === k; })[0] || null; }
+  function prodByKey(k) { return ((S.cat && S.cat.products) || []).filter(function (p) { return p.key === k; })[0] || null; }
   var kind = function () { return (S.prod && S.prod.kind) || "flat"; };
   var isLogo = function () { return kind() === "textile" || kind() === "promo"; };
   var isCustom = function () { return !!(S.prod && S.prod.custom && (kind() === "banner" || S.sel.size === "custom")); };
@@ -1866,7 +1866,7 @@
       return;
     }
     if (S.dd && !e.target.closest(".ps-ddl,.ps-cfgc,.ps-own,.ps-op")) { S.dd = ""; S.ddInfo = ""; render(); }
-    var lk = e.target.closest("a[data-cat],a[data-prod]"); if (lk) { if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); }   // echte Links: Strg/Cmd-Klick öffnet neuen Tab
+    var lk = e.target.closest("a[data-cat],a[data-prod]"); if (lk) { if (!S.cat || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; e.preventDefault(); }   // Shop noch nicht geladen (Weihnachtsseite vom Server): normaler Link   // echte Links: Strg/Cmd-Klick öffnet neuen Tab
     var ct = e.target.closest("[data-cat]"); if (ct) { var cv0 = ct.getAttribute("data-cat").split("|"); navCat(cv0[0], cv0[1]); return; }
     var fl = e.target.closest("[data-flt]"); if (fl) { var fk = fl.getAttribute("data-flt"); S.flt = S.flt || {}; if (!fk) S.flt = {}; else S.flt[fk] = !S.flt[fk]; var gg = document.getElementById("psGrid"); if (gg) { gg.innerHTML = gridHtml(); fromObserve(); } return; }
     var t = e.target.closest("[data-go],[data-prod],[data-act],[data-ctype],[data-group],[data-sub],[data-gal]"); if (!t || t.disabled) return;

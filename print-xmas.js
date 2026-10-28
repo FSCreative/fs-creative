@@ -210,7 +210,7 @@ function priceHtml(x) {
 }
 // Liefertermin: frühester Tag aus der Preisberechnung (Standard-Produktion, Versand nach Österreich)
 function shipHtml(x, sea) {
-  if (!x || !x.date) return "";
+  if (!x || !x.date || x.date < sea.today) return "";   // vergangenes Datum nie zeigen (veralteter Stand)
   const late = sea.before && x.date > sea.deadline;
   const d = '<span class="xm-dd">' + wdDe(x.date) + dayDe(x.date) + "</span>";
   if (late) return '<span class="xm-d late"><i aria-hidden="true"></i><span>Kommt erst nach Weihnachten an (voraussichtlich ab ' + d + ")</span></span>";
