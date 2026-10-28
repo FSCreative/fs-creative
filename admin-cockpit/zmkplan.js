@@ -42,6 +42,45 @@ F.css(
 '.mp-prev{position:relative;width:150px}'+
 '.mp-prev img,.mp-prev video{width:150px;border-radius:10px;display:block;background:var(--sunk);cursor:pointer}'+
 '.mp-prev img{aspect-ratio:4/5;object-fit:cover} .mp-prev video{aspect-ratio:9/16;object-fit:cover}'+
+/* Reel in der Liste: stumm, beim Drüberfahren läuft es an; Klick öffnet die große Vorschau mit Ton */
+'.mp-reel{position:relative;display:block;width:150px;padding:0;border:0;background:none;cursor:pointer;border-radius:10px;overflow:hidden;color:#fff}'+
+'.mp-reel video{pointer-events:none}'+
+'.mp-reel .pl{position:absolute;left:8px;right:8px;bottom:8px;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border-radius:99px;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font-size:12.5px;font-weight:700;transition:transform .15s,background .15s}'+
+'.mp-reel:hover .pl,.mp-reel:focus-visible .pl{transform:scale(1.04);background:rgba(0,0,0,.72)} .mp-reel .pl svg{width:15px;height:15px}'+
+/* Große Reel-Vorschau: Handy im Format 9:16 in Bildschirmhöhe, mit Ton und Instagram-Oberfläche (zeigt, was Texte verdecken) */
+'.modal:has(.dialog.mpv){place-items:center}'+
+'.modal .dialog.mpv{width:auto;max-width:none;max-height:none;padding:0;border-radius:0;animation:none;background:none!important;border:0!important;box-shadow:none!important;overflow:visible;display:block}.modal .dialog.mpv:before{display:none}'+
+'.mpv-wrap{display:flex;gap:16px;align-items:stretch}'+
+'.mpv-ph{position:relative;width:min(calc((100vh - 64px)*9/16),calc(100vw - 110px),480px);aspect-ratio:9/16;border-radius:30px;overflow:hidden;background:#000;color:#fff;box-shadow:0 30px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.14);-webkit-user-select:none;user-select:none}'+
+'@supports(height:100dvh){.mpv-ph{width:min(calc((100dvh - 64px)*9/16),calc(100vw - 110px),480px)}}'+
+'.mpv-ph video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:block;cursor:pointer}'+
+'.mpv-ui{position:absolute;inset:0;pointer-events:none;transition:opacity .25s}'+
+'.mpv-ph.pure .mpv-ui{opacity:0}'+
+'.mpv-top{position:absolute;top:0;left:0;right:0;padding:16px 18px 48px;background:linear-gradient(rgba(0,0,0,.42),transparent);font-weight:800;font-size:17px;letter-spacing:-.01em}'+
+'.mpv-bot{position:absolute;left:0;right:0;bottom:0;padding:70px 66px 24px 14px;background:linear-gradient(transparent,rgba(0,0,0,.62));display:grid;gap:9px;font-size:13.5px;line-height:1.38;text-shadow:0 1px 3px rgba(0,0,0,.45)}'+
+'.mpv-who{display:flex;align-items:center;gap:9px;font-weight:700;min-width:0}.mpv-who .ell{min-width:0}'+
+'.mpv-av{width:32px;height:32px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:800;overflow:hidden;box-shadow:0 0 0 1.5px #fff;text-shadow:none}'+
+'.mpv-av img{width:100%;height:100%;object-fit:contain;padding:4px}'+
+'.mpv-fo{border:1px solid rgba(255,255,255,.75);border-radius:8px;padding:2px 10px;font-size:12.5px;flex:none}'+
+'.mpv-cap{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line;overflow-wrap:anywhere;pointer-events:auto;cursor:pointer}'+
+'.mpv-cap.open{display:block;max-height:38vh;overflow-y:auto}'+
+'.mpv-mus{display:flex;align-items:center;gap:6px;font-size:12.5px;min-width:0}.mpv-mus svg{width:14px;height:14px;flex:none}'+
+'.mpv-side{position:absolute;right:8px;bottom:92px;display:grid;gap:20px;justify-items:center}'+
+'.mpv-side svg{width:28px;height:28px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.45))}'+
+'.mpv-big{position:absolute;left:50%;top:50%;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;background:rgba(0,0,0,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:grid;place-items:center;opacity:0;transform:scale(.8);transition:opacity .2s,transform .2s;pointer-events:none}'+
+'.mpv-ph.paused .mpv-big{opacity:1;transform:none}.mpv-big svg{width:34px;height:34px;margin-left:5px}'+
+'.mpv-bar{position:absolute;left:0;right:0;bottom:0;height:22px;display:flex;align-items:flex-end;cursor:pointer;touch-action:none;z-index:2}'+
+'.mpv-bar i{position:relative;display:block;width:100%;height:3px;background:rgba(255,255,255,.28);transition:height .15s}'+
+'.mpv-bar:hover i,.mpv-bar.drag i{height:7px}.mpv-bar b{position:absolute;left:0;top:0;bottom:0;width:0;background:#fff}'+
+'.mpv-msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);background:rgba(0,0,0,.6);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:99px;padding:8px 14px;font-size:13px;font-weight:700;white-space:nowrap;pointer-events:none;transition:opacity .3s}'+
+'.mpv-msg:empty{opacity:0}'+
+'.mpv-ctl{display:flex;flex-direction:column;gap:10px;align-items:center}'+
+'.mpv-ctl button,.mpv-ctl a{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--glass-line,var(--line));background:var(--glass-strong,var(--panel));color:var(--ink);cursor:pointer;-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);box-shadow:var(--glass-hi,none);transition:transform .15s}'+
+'.mpv-ctl button:hover,.mpv-ctl a:hover{transform:scale(1.07)}.mpv-ctl button[aria-pressed="true"]{color:var(--glow,var(--accent))}.mpv-ctl svg{width:20px;height:20px}'+
+'.mpv-ctl .x{margin-bottom:auto}.mpv-ctl a{text-decoration:none}.mpv-t{font-size:12px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 1px 4px rgba(0,0,0,.6);white-space:nowrap}'+
+'@media(max-width:640px){.modal:has(.dialog.mpv){padding:0;background:#000;place-items:center}.mpv-wrap{position:relative;display:block}'+
+  '.mpv-ph{width:min(100vw,calc(100vh*9/16));border-radius:0;box-shadow:none}@supports(height:100dvh){.mpv-ph{width:min(100vw,calc(100dvh*9/16))}}'+
+  '.mpv-top{padding-right:70px}.mpv-ctl{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:10px;gap:8px;z-index:3}.mpv-ctl button,.mpv-ctl a{width:40px;height:40px;background:rgba(0,0,0,.45);color:#fff;border-color:rgba(255,255,255,.25)}.mpv-ctl .dl,.mpv-ctl .ed{display:none}}'+
 '.mp-prev .n{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11.5px;font-weight:700;border-radius:99px;padding:2px 8px}'+
 '.mp-wait{width:150px;aspect-ratio:4/5;border-radius:10px;background:var(--sunk);display:grid;place-items:center;text-align:center;font-size:12.5px;color:var(--ink-2);padding:10px}'+
 '.mp-wait i{display:block;width:24px;height:24px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--glow);animation:mkspin .9s linear infinite;margin:0 auto 8px}'+
@@ -138,7 +177,7 @@ F.action("mkpick",function(a){ var p=a.split("|"); api("/admin/api/mkt/pick",{id
 function postCard(p){
   var md=p.media||{}, base="/admin/api/mkt/post-file?id="+encodeURIComponent(p.id)+"&v="+encodeURIComponent(md.rev||""), prev;
   if(md.status!=="fertig") prev=md.status==="fehler"?'<div class="mp-wait"><div><b class="bad-t">Fehler</b><br>'+esc(md.error||"")+'<br><button type="button" class="btn sm" data-act="mprer:'+esc(p.id)+'">Nochmal</button></div></div>':'<div class="mp-wait"><div><i></i>'+(p.format==="reel"?"Reel wird animiert …<br><span class=\"small\">dauert 1–2 Minuten</span>":"Bilder werden erstellt …")+'</div></div>';
-  else if(p.format==="reel") prev='<video src="'+base+'&kind=video" poster="'+base+'&kind=cover" playsinline muted controls preload="none"></video>';
+  else if(p.format==="reel") prev='<button type="button" class="mp-reel" data-act="mpvid:'+esc(p.id)+'" aria-label="Reel mit Ton ansehen"><video src="'+base+'&kind=video" poster="'+base+'&kind=cover" playsinline muted loop preload="none"></video><span class="pl">'+mpvI("play")+' Ansehen</span></button>';
   else prev='<img src="'+base+'&i=0" alt="" data-act="mpview:'+esc(p.id)+'" loading="lazy">'+(md.images>1?'<span class="n">1/'+md.images+'</span>':'');
   var connected=(PL.platforms||[]).filter(function(pf){ var c=chOf(p.brand,pf.key); return c&&c.status!=="getrennt"&&pf.formats.indexOf(p.format)>-1; });
   var editable=p.status==="entwurf"||p.status==="geplant";
@@ -224,6 +263,69 @@ F.action("mpcap",function(id,el){ var o=UI.mpCapOpen=UI.mpCapOpen||{}; o[id]=!o[
 F.action("mptt",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); var t=p&&p.preview&&p.preview.tiktok||""; if(!t) return F.toast("Kein TikTok-Text",true); try{ navigator.clipboard.writeText(t); F.toast("TikTok-Text kopiert – in der TikTok-App einfügen"); }catch(e){ F.toast("Bitte von Hand kopieren",true); } });
 F.action("mpview",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); if(!p) return; var base="/admin/api/mkt/post-file?id="+encodeURIComponent(id)+"&v="+encodeURIComponent(p.media.rev||"");
   F.modal('<div class="row-between"><h2 style="font-size:17px">'+esc(p.idea||"")+'</h2>'+F.btnClose()+'</div><div class="mp-car">'+Array.from({length:p.media.images}).map(function(_,i){ return '<a href="'+base+'&i='+i+'&dl=1" download title="Herunterladen"><img src="'+base+'&i='+i+'" alt="Folie '+(i+1)+'"></a>'; }).join("")+'</div><p class="muted small">Klick auf ein Bild lädt es herunter.</p>',"wide"); });
+/* Reel-Vorschau: Handyformat 9:16 in Bildschirmhöhe, startet mit Ton; eigene Regler statt Browser-Vollbild.
+   Die Instagram-Oberfläche (Name, Text, Musik, Symbole rechts) zeigt, ob Texte im Video verdeckt werden – per Auge-Knopf ausblendbar. */
+var MPV_I={play:'<path d="M7 4.5v15l12.5-7.5z" fill="currentColor" stroke="none"/>',pause:'<rect x="6" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" stroke="none"/>',
+  vol:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a7.8 7.8 0 0 1 0 11"/>',mute:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+  heart:'<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/>',cmt:'<path d="M20.5 11.5a8.5 8.5 0 0 1-12.4 7.6L3.5 20.5l1.4-4.6A8.5 8.5 0 1 1 20.5 11.5z"/>',
+  send:'<path d="M21 3.5 10.5 13.5M21 3.5l-6.5 17-4-7-7-4z"/>',dots:'<circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/>'};
+function mpvI(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+MPV_I[k]+'</svg>'; }
+function mpvFmt(s){ s=Math.max(0,Math.floor(s||0)); return Math.floor(s/60)+":"+("0"+s%60).slice(-2); }
+function mpvMsg(t){ var m=document.getElementById("mpvMsg"); if(!m) return; m.textContent=t; clearTimeout(mpvMsg.t); mpvMsg.t=setTimeout(function(){ m.textContent=""; },1600); }
+function mpvSync(){ var v=document.getElementById("mpvV"), ph=document.getElementById("mpvPh"); if(!v||!ph) return;
+  ph.classList.toggle("paused",v.paused);
+  var pb=document.getElementById("mpvPlay"), mb=document.getElementById("mpvMute");
+  if(pb){ pb.innerHTML=mpvI(v.paused?"play":"pause"); pb.setAttribute("aria-label",v.paused?"Abspielen (Leertaste)":"Pause (Leertaste)"); pb.title=pb.getAttribute("aria-label"); }
+  if(mb){ mb.innerHTML=mpvI(v.muted?"mute":"vol"); mb.setAttribute("aria-label",v.muted?"Ton an (M)":"Ton aus (M)"); mb.title=mb.getAttribute("aria-label"); }
+}
+function mpvWire(v){
+  var bar=document.getElementById("mpvBar"), pos=document.getElementById("mpvPos"), t=document.getElementById("mpvT"), drag=false;
+  ["play","pause","volumechange"].forEach(function(ev){ v.addEventListener(ev,mpvSync); });
+  v.addEventListener("click",function(){ if(v.paused) v.play().catch(function(){}); else v.pause(); });
+  (function tick(){ if(!v.isConnected) return; var d=v.duration||0; if(!drag) pos.style.width=(d?v.currentTime/d*100:0)+"%"; t.textContent=mpvFmt(v.currentTime)+" / "+mpvFmt(d); requestAnimationFrame(tick); })();
+  function seek(e){ var r=bar.getBoundingClientRect(), x=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)); pos.style.width=x*100+"%"; if(v.duration) v.currentTime=x*v.duration; }
+  bar.addEventListener("pointerdown",function(e){ drag=true; bar.classList.add("drag"); try{ bar.setPointerCapture(e.pointerId); }catch(er){} seek(e); });
+  bar.addEventListener("pointermove",function(e){ if(drag) seek(e); });
+  ["pointerup","pointercancel"].forEach(function(ev){ bar.addEventListener(ev,function(){ drag=false; bar.classList.remove("drag"); }); });
+}
+F.action("mpvid",function(id){ var p=(PL.posts||[]).find(function(q){ return q.id===id; }); if(!p||!p.media) return;
+  var base="/admin/api/mkt/post-file?id="+encodeURIComponent(id)+"&v="+encodeURIComponent(p.media.rev||""), b=brandOf(p.brand), ch=chOf(p.brand,"instagram")||chOf(p.brand,"tiktok"), acc=ch&&ch.account||{};
+  var who=String(acc.handle||acc.name||b.name||"").replace(/^@/,""), col=b.logoBg==="dark"?((b.colors&&b.colors.dark)||"#0a0a0f"):(b.logo||b.logoUploaded)?"#fff":((b.colors&&b.colors.primary)||"#3a4a5c");   /* Kreis wie das Profilbild: Logo auf passendem Grund */
+  var av=(b.logo||b.logoUploaded)?'<img src="/admin/api/mkt/logo?key='+encodeURIComponent(b.key)+'&v='+encodeURIComponent(b.logoUploaded?"u":"d")+'" alt="">':esc(String(b.name||"?").split(/\s+/).map(function(w){ return w.charAt(0); }).join("").slice(0,2).toUpperCase());
+  var cap=String(p.preview&&(p.preview.instagram||p.preview[Object.keys(p.preview)[0]])||(p.captions&&p.captions.instagram)||"").replace(/\n\n(#\S+\s*)+$/,"");
+  var mus=p.track&&p.track.name?p.track.name:p.music==="none"?"Originalton – "+who:"Musik passend zur Stimmung", pure=F.ls("fsc_mpv_pure")===true;
+  F.modal('<div class="mpv-wrap"><div class="mpv-ph paused'+(pure?' pure':'')+'" id="mpvPh">'+
+      '<video id="mpvV" src="'+base+'&kind=video" poster="'+base+'&kind=cover" playsinline loop preload="auto"></video>'+
+      '<div class="mpv-ui" aria-hidden="true"><div class="mpv-top">Reels</div>'+
+        '<div class="mpv-side">'+mpvI("heart")+mpvI("cmt")+mpvI("send")+mpvI("dots")+'</div>'+
+        '<div class="mpv-bot"><div class="mpv-who"><span class="mpv-av" style="background:'+esc(col)+'">'+av+'</span><span class="ell">'+esc(who)+'</span><span class="mpv-fo">Folgen</span></div>'+
+          (cap?'<div class="mpv-cap" data-act="mpvcap">'+esc(cap)+'</div>':'')+(mus?'<div class="mpv-mus">'+F.svg("mnote")+'<span class="ell">'+esc(mus)+'</span></div>':'')+'</div></div>'+
+      '<div class="mpv-big">'+mpvI("play")+'</div><div class="mpv-msg" id="mpvMsg"></div>'+
+      '<div class="mpv-bar" id="mpvBar" role="slider" aria-label="Position im Video"><i><b id="mpvPos"></b></i></div></div>'+
+    '<div class="mpv-ctl"><button type="button" class="x" data-closemodal aria-label="Schließen (Esc)" title="Schließen (Esc)">'+F.svg("close")+'</button>'+
+      '<button type="button" id="mpvPlay" data-act="mpvplay"></button><button type="button" id="mpvMute" data-act="mpvmute"></button>'+
+      '<button type="button" data-act="mpvui" aria-pressed="'+!pure+'" aria-label="Instagram-Oberfläche ein/aus" title="Instagram-Oberfläche ein/aus – zeigt, was Name, Text und Symbole verdecken">'+F.svg("eye")+'</button>'+
+      '<a class="dl" href="'+base+'&kind=video&dl=1" download aria-label="Video herunterladen" title="Video herunterladen">'+F.svg("download")+'</a>'+
+      (p.status==="entwurf"||p.status==="geplant"?'<button type="button" class="ed" data-act="mped:'+esc(p.id)+'" aria-label="Post bearbeiten" title="Post bearbeiten">'+F.svg("edit")+'</button>':'')+
+      '<span class="mpv-t" id="mpvT">0:00</span></div></div>',"mpv");
+  var v=document.getElementById("mpvV"); mpvWire(v); mpvSync();
+  v.muted=false; var pr=v.play();   // Klick zählt als Erlaubnis → startet mit Ton; blockiert der Browser, läuft es stumm mit Hinweis
+  if(pr&&pr.catch) pr.catch(function(){ v.muted=true; v.play().catch(function(){}); mpvMsg("Ton aus – tippe auf den Lautsprecher"); });
+});
+F.action("mpvplay",function(){ var v=document.getElementById("mpvV"); if(v){ if(v.paused) v.play().catch(function(){}); else v.pause(); } });
+F.action("mpvmute",function(){ var v=document.getElementById("mpvV"); if(v){ v.muted=!v.muted; if(!v.muted&&v.paused) v.play().catch(function(){}); mpvMsg(v.muted?"Ton aus":"Ton an"); } });
+F.action("mpvui",function(){ var ph=document.getElementById("mpvPh"), on=ph.classList.toggle("pure"); F.ls("fsc_mpv_pure",on); var bt=document.querySelector('[data-act="mpvui"]'); if(bt) bt.setAttribute("aria-pressed",String(!on)); mpvMsg(on?"Nur Video":"Mit Instagram-Oberfläche"); });
+F.action("mpvcap",function(){ var c=document.querySelector(".mpv-cap"); if(c) c.classList.toggle("open"); });
+document.addEventListener("keydown",function(e){ var v=document.getElementById("mpvV"); if(!v||e.metaKey||e.ctrlKey||e.altKey||/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName||"")) return;
+  if(e.key===" "||e.key==="k"){ e.preventDefault(); if(v.paused) v.play().catch(function(){}); else v.pause(); }
+  else if(e.key==="m"||e.key==="M"){ v.muted=!v.muted; mpvMsg(v.muted?"Ton aus":"Ton an"); }
+  else if(e.key==="ArrowLeft"){ e.preventDefault(); v.currentTime=Math.max(0,v.currentTime-3); }
+  else if(e.key==="ArrowRight"){ e.preventDefault(); v.currentTime=Math.min(v.duration||0,v.currentTime+3); } });
+// Liste: Reel läuft beim Drüberfahren stumm an (nur mit Maus)
+if(window.matchMedia&&matchMedia("(hover:hover)").matches){
+  document.addEventListener("mouseover",function(e){ var r=e.target.closest&&e.target.closest(".mp-reel"); if(!r||r.contains(e.relatedTarget)) return; var v=r.querySelector("video"); if(v){ v.muted=true; v.play().catch(function(){}); } });
+  document.addEventListener("mouseout",function(e){ var r=e.target.closest&&e.target.closest(".mp-reel"); if(!r||r.contains(e.relatedTarget)) return; var v=r.querySelector("video"); if(v) v.pause(); });
+}
 // Bearbeiten: Texte je Plattform, Hashtags, Folientexte (Folien ändern → Bilder neu)
 var CAPS=[["instagram","Instagram"],["facebook","Facebook"],["tiktok","TikTok"],["linkedin","LinkedIn"],["threads","Threads (max. 500)"],["bluesky","Bluesky (max. 300)"],["youtube","YouTube-Beschreibung"],["youtubeTitle","YouTube-Titel"],["pinterestTitle","Pinterest-Titel"]];
 F.action("mped",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); if(!p) return; var c=p.captions||{}, h=p.hashtags||{};
@@ -314,6 +416,7 @@ function kanHtml(){
   var tbl='<section class="panel"><div class="panel-h"><h2>2. Konten je App verbinden</h2><span class="muted small">Du meldest dich bei der Plattform selbst an – das Cockpit sieht dein Passwort nie</span></div><div class="mk-wrapx"><table class="mk-tbl"><thead><tr><th>App</th>'+pfs.map(function(p){ return '<th><span class="mk-pfi">'+pfIcon(p.key)+esc(p.label)+'</span></th>'; }).join("")+'</tr></thead><tbody>'+
     bs.map(function(b){ return '<tr><td><b>'+esc(b.name)+'</b></td>'+pfs.map(function(pf){ var c=chOf(b.key,pf.key), prov=provs.find(function(x){ return x.key===pf.provider; })||{};
       if(c) return '<td><div class="mk-acc"><b>'+esc(c.account&&(c.account.handle||c.account.name)||"verbunden")+'</b>'+(c.status==="ok"?'<span class="ok-t small">✓ verbunden</span>':'<span class="bad-t small">abgelaufen – <button type="button" class="link" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'">neu verbinden</button></span>')+(c.lastError&&c.status==="ok"?'<span class="small muted" title="'+esc(c.lastError)+'">letzter Fehler</span>':'')+(c.status==="ok"?'<button type="button" class="link small" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'" title="Neu anmelden, z. B. für neue Berechtigungen (Nachrichten)">neu verbinden</button>':'')+'<button type="button" class="link small" data-act="mkdis:'+esc(c.id)+'">trennen</button></div></td>';
+      if(pf.key==="tiktok"&&PL.tiktokShared&&PL.tiktokShared.brand!==b.key) return '<td><div class="mk-acc"><span class="small muted">über</span><b>'+esc(PL.tiktokShared.account||"gemeinsames Konto")+'</b><span class="small muted">gemeinsames TikTok aller Marken</span></div></td>';
       return '<td>'+(prov.ready?'<button type="button" class="btn sm" data-act="mkcon:'+esc(b.key)+'|'+pf.key+'">Verbinden</button>':'<span class="muted small" title="Zuerst den App-Zugang oben eintragen">–</span>')+'</td>'; }).join("")+'</tr>'; }).join("")+'</tbody></table></div>'+
     '<p class="muted small" style="margin:10px 18px 14px">TikTok: Videos landen als Entwurf in deiner TikTok-App (dort auf „Posten“ tippen) – direktes Posten erlaubt TikTok erst nach einer Prüfung der App. X/Twitter kostet seit 2026 pro Post und ist deshalb nicht dabei.</p></section>';
   var extra='<section class="panel"><div class="panel-h"><h2>3. Extras für bessere Reels</h2></div><div class="mk-prov">'+
