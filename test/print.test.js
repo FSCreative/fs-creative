@@ -71,6 +71,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual((await fetch(srv.base + "/print.html", { redirect: "manual" })).status, 404);
     assert.ok(!/href="\/print"/.test(await (await fetch(srv.base + "/druck")).text()), "kein Link in druck.html");
     const home = await (await fetch(srv.base + "/")).text(); assert.ok(!/href="\/print"/.test(home) && !/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));
+    // Gegen-Marker PRINT_OFF: Ersatz-Überschrift nur bei Shop offline; Titel/Beschreibung ohne Druckshop (ROUTE_META)
+    assert.ok(/Ideen aus dem Tal/.test(home) && !/>Pixel</.test(home) && !/PRINT_OFF/.test(home), "Hero: Ersatz aus PRINT_OFF, keine Druck-Fassung");
+    const metas = (home.match(/<title>[^<]*<\/title>|<meta (name|property)="(description|og:title|og:description|twitter:title|twitter:description)" content="[^"]*"/g) || []).join("\n");
+    assert.ok(/<title>Webdesign Montafon &amp; Vorarlberg \| FS Creative<\/title>/.test(metas) && metas.split("\n").length === 6 && !/Druck/.test(metas), "Startseite offline: Titel/Beschreibung ohne Druckshop\n" + metas);
     assert.ok(!/\/print</.test(await (await fetch(srv.base + "/sitemap.xml")).text()));
     assert.strictEqual((await fetch(srv.base + "/print/mollie-webhook", { method: "POST", body: "id=tr_x" })).status, 200, "Webhook bleibt erreichbar");
   });
@@ -780,10 +784,33 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/href="\/print"/.test(await (await fetch(B + "/druck")).text()), "Link „Jetzt online bestellen“");
     assert.ok(/\/print<\/loc>/.test(await (await fetch(B + "/sitemap.xml")).text()));
     const home = await (await fetch(B + "/")).text(); assert.ok(/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));
+    assert.ok(/>Pixel</.test(home) && !/Ideen aus dem Tal/.test(home) && !/PRINT_OFF/.test(home), "Hero: Druck-Fassung, PRINT_OFF-Ersatz entfernt");
+    assert.strictEqual((home.match(/<title>/g) || []).length, 1); assert.ok(/<title>Webdesign Montafon &amp; Vorarlberg · Druckshop \| FS Creative<\/title>/.test(home), "Titel mit Druckshop");
+    assert.ok(/<meta name="description" content="[^"]*Drucksachen direkt online bestellen/.test(home) && /<meta property="og:title" content="[^"]*Druckshop/.test(home) && /<meta property="og:description" content="[^"]*Drucksachen/.test(home));
+    const kontakt = await (await fetch(B + "/kontakt")).text(); assert.ok(/<title>Kontakt &amp; Gratis-Entwurf/.test(kontakt) && />Pixel</.test(kontakt) && !/PRINT_OFF|Ideen aus dem Tal/.test(kontakt), "SPA-Route: eigener Titel, Blöcke wie Startseite");
   });
   await t("Cockpit-Liste: E-Mail und Rechnung (id, Nummer, gesendet) je Druckauftrag – für Rechnungs-Link und Kundenakte", async () => {
     const s = await admin("/admin/api/print/state"); const x = s.orders.find(o => o.id === o1.orderId);
     assert.strictEqual(x.email, "maria@example.com"); assert.ok(x.invoice && x.invoice.id, JSON.stringify(x.invoice)); assert.ok(x.invoice.sentAt, "gesendet"); assert.strictEqual(x.invoice.draft, false);
+  });
+  // (leert den Preis-Zwischenspeicher – deshalb als letzte Prüfung am laufenden Server)
+  await t("„ab“-Preise: ohne Auswahl (Startseite) dieselbe Vorauswahl wie die Shop-Karten → gleicher Preis aus demselben Zwischenspeicher; BEST gleich in app.js und Server", async () => {
+    // Vorauswahl der Produktkarten direkt aus print/app.js (BEST, bigFmt, fromSel, Auflage aus loadFrom)
+    const app = fs.readFileSync(path.join(ROOT, "print", "app.js"), "utf8"), grab = (re) => { const m = app.match(re); assert.ok(m, "print/app.js: " + re); return m[1]; };
+    const cardSel = Function(grab(/(var BEST = \{[^;]*\};)/) + grab(/(function bigFmt\(p\) \{[^\n]*\})/) + grab(/(function fromSel\(p\) \{[^\n]*\})/) +
+      "return function (p) { var o = fromSel(p); var t = p.tiers || [], bq = " + grab(/var t = p\.tiers \|\| \[\], bq = ([^;]*);/) + "; if (bq) o.__copies = bq; return o; };")();
+    const best = (f, re) => Function("return " + fs.readFileSync(path.join(ROOT, f), "utf8").match(re)[1])();
+    assert.deepStrictEqual(best("print-shop.js", /const FROM_BEST = (\{[^;]*\});/), best("print/app.js", /var BEST = (\{[^;]*\});/), "FROM_BEST (Server) = BEST (print/app.js)");
+    const cat2 = await (await fetch(B + "/print/api/catalog")).json(), keys = ["visitenkarten", "flyer", "rollups"], sels = {};
+    keys.forEach(k => { const o = cardSel(cat2.products.find(p => p.key === k)); if (Object.keys(o).length) sels[k] = o; });
+    assert.ok(Object.keys(sels).length === 3 && sels.flyer.__copies, JSON.stringify(sels));
+    const from = async (sel) => (await fetch(B + "/print/api/from?keys=" + keys.join(",") + (sel ? "&sel=" + encodeURIComponent(JSON.stringify(sel)) : ""))).json();
+    const shop = await from(sels); assert.ok(keys.every(k => shop.from[k] && shop.from[k].gross > 0), JSON.stringify(shop));
+    const sp0 = M.price.salesPrice; M.price.salesPrice = 40; await admin("/admin/api/print/settings", {});   // Einkauf teurer, Preis-Zwischenspeicher leer: alter Preis kommt nur noch aus dem gemeinsamen FROM-Eintrag
+    try {
+      const home = await from(null); assert.deepStrictEqual(home.from, shop.from, "Startseite ohne sel = Shop-Karten (gleicher Eintrag)");
+      const fresh = await from({ flyer: { __copies: 100 } }); assert.ok(fresh.from.flyer && fresh.from.flyer.gross > shop.from.flyer.gross, "Gegenprobe: andere Auswahl rechnet neu " + JSON.stringify(fresh));
+    } finally { M.price.salesPrice = sp0; await admin("/admin/api/print/settings", {}); }
   });
   // ── 3) Druckshop-Modul direkt (ohne server.js): Doppelversand, Rechnungs-Index, Aufgaben-Info, Ablehnen mit versendeter Rechnung ──
   await t("Rechnung vor dem Bestellen schon versendet (Status 200): bei Print.com bestellt, aber KEINE zweite Rechnungsmail, sentAt gesetzt", async () => {

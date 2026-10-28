@@ -160,24 +160,10 @@ main{padding-top:var(--nav-h)}
 .page.active{display:block}
 @keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 
-/* ---------- Hero ---------- */
-.hero{position:relative;padding-block:clamp(80px,14vh,160px) clamp(60px,9vh,110px);text-align:center}
+/* ---------- Hero (Eyebrow + Buttons, auch außerhalb des Heros genutzt) ---------- */
 .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);background:var(--surface);border:1px solid var(--border);padding:7px 15px;border-radius:999px;margin-bottom:26px}
 .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:#34c759;box-shadow:0 0 0 0 #34c75999;animation:pulse 2.4s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 #34c75966}70%{box-shadow:0 0 0 10px #34c75900}100%{box-shadow:0 0 0 0 #34c75900}}
-h1.display{
-  font-size:clamp(40px,7.2vw,82px);line-height:1.1;font-weight:700;letter-spacing:-.035em;padding-bottom:.12em;
-  background:linear-gradient(180deg,#ffffff,#9aa0b2 50%,#ffffff);background-size:100% 200%;background-position:0 0;
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-}
-.hero p.lead{max-width:640px;margin:26px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--text-dim);line-height:1.5}
-/* Hero lightbulb — großes, dezentes Hintergrund-Motiv */
-.hero{overflow:hidden}
-.hero-bulb{position:absolute;left:50%;top:74px;transform:translateX(-50%);width:clamp(360px,90vw,1040px);height:auto;z-index:0;pointer-events:none;display:flex;align-items:flex-start;justify-content:center;will-change:transform}
-.bulb-glow{position:absolute;inset:-44%;border-radius:50%;background:radial-gradient(circle,rgba(255,203,96,.2),rgba(255,193,84,.06) 28%,transparent 52%);z-index:-1;opacity:.9}
-.bulb-float{display:flex;width:100%}
-.hero-bulb img{width:100%;height:auto;opacity:.24;filter:drop-shadow(0 0 32px rgba(255,201,92,.34))}
-.hero .eyebrow,.hero h1.display,.hero p.lead,.hero .btn-row{position:relative;z-index:2}
 .btn-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px}
 .btn{
   display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:500;
@@ -196,6 +182,175 @@ h1.display{
 .btn.ghost:hover{background:rgba(255,255,255,.1)}
 .btn .arr{transition:transform .25s var(--ease)}
 .btn:hover .arr{transform:translateX(3px)}
+
+/* ---------- Hero „Zwei Welten“: Webdesign + Druckshop ---------- */
+:root{--hx-web:#0a84ff;--hx-web-t:#6cb6ff;--hx-ink:#ffd60a;--hx-ray:#ffd60a;--hx-faint:#90909b;--hx-r:clamp(24px,2.4vw,34px);--hx-door:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.02));--hx-door-b:rgba(255,255,255,.1);--hx-door-bh:rgba(255,255,255,.2);--hx-door-hi:rgba(255,255,255,.1);--hx-door-sh:0 50px 100px -60px rgba(0,0,0,.95);--hx-scr:#15161d;--hx-scr-b:rgba(255,255,255,.14);--hx-bar:#1d1e26;--hx-url:rgba(255,255,255,.08);--hx-url-t:#a3a3ad;--hx-frame:#2a2b36}
+html.light{--hx-web:#0a6fe0;--hx-web-t:#0a5cc0;--hx-ray:#f0a500;--hx-faint:#5f6370;--hx-door:linear-gradient(180deg,rgba(255,255,255,.96),rgba(255,255,255,.72));--hx-door-b:rgba(18,20,28,.08);--hx-door-bh:rgba(18,20,28,.16);--hx-door-hi:#fff;--hx-door-sh:0 40px 80px -50px rgba(20,24,40,.38);--hx-scr:#fff;--hx-scr-b:rgba(18,20,28,.12);--hx-bar:#eef0f4;--hx-url:#fff;--hx-url-t:#555966;--hx-frame:#d3d6de}
+.hx{position:relative;isolation:isolate;padding:clamp(26px,4.4vh,60px) 0 clamp(52px,8vh,96px)}
+.hx [hidden]{display:none!important}
+.hx-in{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.hx-nw{white-space:nowrap}
+.hx-head{text-align:center;margin-bottom:clamp(22px,3.8vh,44px)}
+.hx .eyebrow{margin-bottom:clamp(14px,2.2vh,24px)}
+.hx-title{font-weight:700;letter-spacing:-.04em}
+.hx-big{display:block;font-size:clamp(40px,7vw,96px);line-height:1.04;color:var(--text)}
+.hx-big.hx-off{font-size:clamp(34px,5.6vw,76px);line-height:1.06}
+.hx-w{background:linear-gradient(105deg,#8fd8ff,#2e95ff 55%,#0a6cff);-webkit-background-clip:text;background-clip:text;color:transparent}
+html.light .hx-w{background-image:linear-gradient(105deg,#1a8cff,#0a5fd6 60%,#0047b3)}
+.hx-amp{color:var(--text-faint);font-weight:400}
+.hx-p{position:relative;color:#16171d;padding:0 .08em;white-space:nowrap}
+.hx-p::before{content:"";position:absolute;z-index:-1;left:-.04em;right:-.01em;top:.17em;bottom:.03em;background:var(--hx-ink);border-radius:.06em .14em .08em .12em;transform:rotate(-1.8deg) skewX(-7deg)}
+/* Marken-Detail: der Schlusspunkt leuchtet wie die FS-Creative-Glühbirne (Strahlen aus dem Logo) */
+.hx-dot{display:inline-block;margin-left:.1em}
+.hx-rays{display:inline-block;vertical-align:baseline;width:.6em;height:.56em;margin:0 -.19em 0 -.41em;overflow:visible;pointer-events:none}
+.hx-rays line{stroke:var(--hx-ray);stroke-width:5.5;stroke-linecap:round}
+.hx-rg,.hx-glow{animation:hxOn 1.1s steps(1,end) .9s backwards}
+@keyframes hxOn{0%{opacity:0}30%{opacity:1}42%{opacity:.25}55%{opacity:1}}
+html.light .hx-glow{opacity:.55}
+html.light .hx-dot{color:#f0a500}
+html.light .hx-amp{color:#7a7f8c}   /* „&“ auf hellem Grund: Kontrast ≥ 3:1 (große Schrift) */
+.hx-sub{display:block;margin-top:clamp(10px,1.6vh,18px);font-size:clamp(17px,1.65vw,23px);font-weight:500;letter-spacing:-.015em;line-height:1.35;color:var(--text-dim);text-wrap:balance}
+/* Türen: Subgrid, damit Tag, Titel, Text und Buttons beider Türen auf gleicher Höhe liegen */
+.hx-doors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(4,auto) 1fr;gap:0 clamp(14px,1.6vw,22px)}
+.hx-door{position:relative;isolation:isolate;display:grid;grid-row:span 5;grid-template-rows:subgrid;min-width:0;overflow:hidden;border-radius:var(--hx-r);background:var(--hx-door);border:1px solid var(--hx-door-b);box-shadow:inset 0 1px 0 var(--hx-door-hi),var(--hx-door-sh);-webkit-backdrop-filter:blur(20px) saturate(150%);backdrop-filter:blur(20px) saturate(150%);transition:transform .5s var(--ease),border-color .4s var(--ease);animation:hxUp .9s var(--ease) .05s backwards}
+.hx-door+.hx-door{animation-delay:.17s}
+@keyframes hxUp{from{opacity:0;transform:translateY(26px)}}
+.hx-door::before{content:"";position:absolute;z-index:-1;left:-20%;right:-20%;bottom:-40%;height:95%;background:radial-gradient(closest-side,var(--hx-g),transparent);opacity:.75;transition:opacity .5s var(--ease)}
+.hx-door::after{content:"";position:absolute;top:0;left:16%;right:16%;height:1px;background:linear-gradient(90deg,transparent,var(--hx-line),transparent)}
+.hx-web{--hx-g:rgba(10,132,255,.46);--hx-line:rgba(110,185,255,.85);--hx-acc:var(--hx-web-t)}
+.hx-print{--hx-g:rgba(255,170,0,.17);--hx-line:rgba(255,214,10,.9);--hx-acc:#ffd60a}
+html.light .hx-web{--hx-g:rgba(10,132,255,.18)}
+html.light .hx-print{--hx-g:rgba(255,190,0,.26);--hx-acc:#9a6b00}
+.hx-copy{display:grid;grid-row:1/5;grid-template-rows:subgrid;justify-items:center;align-items:start;text-align:center;padding:clamp(24px,3.4vh,38px) clamp(20px,2.6vw,40px) 0}
+.hx-tag{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;line-height:1;padding:7px 12px 7px 10px;border-radius:999px}
+.hx-tag svg{width:15px;height:15px;flex:none}
+.hx-web .hx-tag{color:var(--hx-web-t);background:rgba(10,132,255,.15)}
+html.light .hx-web .hx-tag{background:rgba(10,111,224,.09)}
+.hx-print .hx-tag{color:#1d1d1f;background:var(--hx-ink)}
+.hx-h2{margin-top:14px;font-size:clamp(24px,2.45vw,36px);font-weight:700;letter-spacing:-.032em;line-height:1.08}
+/* ganze Tür klickbar: der Titel-Link spannt sich über die Karte, Buttons und Produktfotos liegen darüber */
+.hx-h2 a{color:inherit}
+.hx-h2 a::after{content:"";position:absolute;inset:0;z-index:1;border-radius:var(--hx-r)}
+.hx-h2 a:focus-visible{outline:none}
+.hx-h2 a:focus-visible::after{outline:2px solid var(--accent);outline-offset:-3px}
+.hx-text{max-width:29em;margin:10px auto 0;font-size:clamp(15px,1.15vw,17px);line-height:1.5;color:var(--text-dim);text-wrap:pretty}
+.hx-note{display:block;margin-top:6px;font-size:13.5px;line-height:1.4;color:var(--hx-faint)}
+.hx-price{display:none}
+.hx-cta{position:relative;z-index:2;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 22px;margin-top:clamp(14px,2.2vh,22px)}
+.hx-cta .btn{padding:13px 24px;font-size:15.5px;min-height:48px}
+.btn.hx-btn-ink{background:var(--hx-ink);color:#1d1d1f}
+.btn.hx-btn-ink:hover{background:#ffe04d;box-shadow:0 14px 40px -12px rgba(255,214,10,.6)}
+.hx-more{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:15.5px;font-weight:500;color:var(--text)}
+.hx-more i{font-style:normal;font-weight:600;color:var(--hx-acc);transition:transform .25s var(--ease)}
+.hx-more:hover{text-decoration:underline;text-underline-offset:4px}
+.hx-more:hover i{transform:translateX(3px)}
+.hx-stage{position:relative;grid-row:5;height:clamp(200px,31vh,330px);margin-top:clamp(12px,2.2vh,22px);container-type:inline-size}
+/* Web-Bühne: echte Projekte – VALUERO im Browser, kochdu am Handy (Maße in cqi = % der Bühnenbreite) */
+.hx-browser{position:absolute;left:10cqi;right:10cqi;top:7%;border-radius:2.4cqi 2.4cqi 0 0;background:var(--hx-scr);border:1px solid var(--hx-scr-b);box-shadow:0 30px 70px -30px rgba(0,0,0,.75);overflow:hidden;transition:transform .6s var(--ease)}
+.hx-bar{display:flex;align-items:center;gap:1cqi;height:6.4cqi;padding:0 2.2cqi;background:var(--hx-bar);border-bottom:1px solid var(--hx-scr-b)}
+.hx-bar i{flex:none;width:1.5cqi;height:1.5cqi;border-radius:50%;background:#ff5f57}
+.hx-bar i:nth-child(2){background:#febc2e}.hx-bar i:nth-child(3){background:#28c840}
+.hx-url{margin:0 auto;transform:translateX(-3cqi);padding:.6cqi 4cqi;border-radius:99px;background:var(--hx-url);color:var(--hx-url-t);font-size:max(9px,1.9cqi);font-weight:500;letter-spacing:0;line-height:1.2;white-space:nowrap}
+.hx-shot{display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:cover;object-position:top;background:#cfd3d6}
+.hx-phone{position:absolute;right:5cqi;bottom:-7%;width:18cqi;aspect-ratio:9/18;border-radius:3.4cqi;background:var(--hx-scr);border:.9cqi solid var(--hx-frame);box-shadow:0 30px 50px -18px rgba(0,0,0,.75);overflow:hidden;transition:transform .6s var(--ease)}
+.hx-phone img{display:block;width:100%;height:100%;object-fit:cover;object-position:top;background:#fff}
+.hx-sticker{position:absolute;z-index:6;display:grid;place-content:center;text-align:center;width:16cqi;aspect-ratio:1;border-radius:50%;font-size:max(10px,2.1cqi);font-weight:700;line-height:1.08;box-shadow:0 14px 30px -12px rgba(0,0,0,.7);transition:transform .6s var(--ease)}
+.hx-sticker b{display:block;font-size:1.65em;letter-spacing:-.04em}
+.hx-web .hx-sticker{left:4cqi;top:1%;background:#0a6be0;color:#fff;transform:rotate(-12deg)}
+/* Druck-Bühne: Fächer aus echten Produktfotos (Mitte liegt oben), Preis-Etiketten bleiben waagrecht */
+.hx-fan{z-index:2;pointer-events:none}
+.hx-fanbox{position:absolute;left:50%;top:52%;width:31cqi;aspect-ratio:1;transform:translate(-50%,-50%)}
+.hx-card{position:absolute;inset:0;padding:1cqi;border-radius:2.6cqi;background:#fff;box-shadow:0 26px 44px -22px rgba(0,0,0,.85),0 0 0 1px rgba(0,0,0,.05);transform-origin:50% 270%;transform:rotate(var(--r,0deg)) translateY(var(--ty,0)) scale(var(--s,1));transition:transform .55s var(--ease);animation:hxFan 1.1s var(--ease) .25s backwards;pointer-events:auto}
+@keyframes hxFan{from{transform:rotate(0deg) translateY(5%) scale(.96);opacity:0}}
+.hx-card img{width:100%;height:100%;object-fit:cover;border-radius:1.8cqi;background:#efeded}
+.hx-c1{--r:-21deg;--s:.93;z-index:1}.hx-c2{z-index:3}.hx-c3{--r:21deg;--s:.93;z-index:2}
+.hx-card:hover,.hx-card:focus-visible{--ty:-3.5cqi;z-index:5}
+.hx-lbl{position:absolute;left:1.4cqi;top:1.4cqi;display:flex;flex-direction:column;align-items:flex-start;padding:5px 9px 6px;border-radius:9px;background:rgba(255,255,255,.97);color:#1d1d1f;font-size:13px;line-height:1.3;letter-spacing:-.01em;box-shadow:0 4px 14px rgba(0,0,0,.16);transform:rotate(calc(var(--r,0deg) * -1));transform-origin:0 0;transition:transform .55s var(--ease)}
+.hx-c3 .hx-lbl{left:auto;right:1.4cqi;align-items:flex-end;text-align:right;transform-origin:100% 0}
+.hx-lbl b{font-weight:700}
+.hx-lbl span{color:#30333b;font-weight:600;white-space:nowrap}
+.hx-lbl .hx-cp{color:#565b66;font-weight:500}
+/* schwebender PRINT-Knopf (chat-widget.js) macht Platz, solange die Druck-Tür sichtbar ist */
+/* … und am Handy machen PRINT-Knopf und Chat-Blase Platz, solange ein Hero-Button darunter liegt (html.hx-cb) */
+html .fscc-print,html .fscc-b{transition:transform .2s,box-shadow .2s,opacity .3s var(--ease),visibility .3s}
+html.hx-pv .fscc-print{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(10px)}
+@media(max-width:640px){html.hx-cb .fscc-print,html.hx-cb .fscc-b{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(10px)}}
+@media(min-width:601px){
+  /* Druckshop offline: nur die Web-Tür – quer, Text links, Bühne rechts */
+  .hx-door:only-child{grid-column:1/-1;grid-row:auto;grid-template-rows:none;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);align-items:center}
+  .hx-door:only-child .hx-copy{display:block;grid-row:auto;justify-items:normal;text-align:left;padding:clamp(28px,4vh,48px) 0 clamp(28px,4vh,48px) clamp(24px,3.4vw,52px)}
+  .hx-door:only-child .hx-text{margin-left:0}
+  .hx-door:only-child .hx-cta{justify-content:flex-start}
+  .hx-door:only-child .hx-stage{grid-row:auto;align-self:stretch;height:auto;min-height:clamp(250px,32vh,340px);margin:0}
+  .hx-door:only-child .hx-browser{top:12%}
+  .hx-door:only-child .hx-sticker{top:5%;left:3cqi}
+}
+@media(hover:hover) and (min-width:601px){
+  .hx-door:hover{transform:translateY(-4px);border-color:var(--hx-door-bh)}
+  .hx-door:hover::before{opacity:1}
+  .hx-web:hover .hx-browser{transform:translateY(-8px)}
+  .hx-web:hover .hx-phone{transform:translateY(-16px) rotate(-3deg)}
+  .hx-door:hover .hx-sticker{transform:rotate(-4deg) scale(1.06)}
+  .hx-print:hover .hx-c1{--r:-24deg}.hx-print:hover .hx-c3{--r:24deg}.hx-print:hover .hx-c2{--ty:-2cqi}
+  .hx-print .hx-card:hover{--ty:-4.5cqi}
+}
+@media(max-width:900px) and (min-width:601px){
+  .hx-cta .btn{padding:12px 18px;font-size:15px}
+  .hx-stage{height:clamp(190px,26vh,260px)}
+  .hx-lbl{font-size:12px;padding:4px 7px 5px}
+}
+/* Handy: beide Welten nebeneinander als Kacheln – Bild oben, darunter Titel, Text, Button */
+@media(max-width:600px){
+  .hx{padding:12px 0 30px}
+  .hx-in{padding:0 16px}
+  .hx .eyebrow{font-size:12px;padding:6px 12px;margin-bottom:12px}
+  .hx-big{font-size:clamp(34px,10.8vw,52px)}
+  .hx-big.hx-off{font-size:clamp(28px,8.6vw,40px)}
+  .hx-sub{font-size:15px;margin-top:6px}
+  .hx-head{margin-bottom:16px}
+  .hx-doors{grid-template-rows:auto auto auto 1fr auto;gap:0 10px}
+  .hx-door{--hx-r:22px;padding:0 12px 10px}
+  .hx-door:only-child{grid-column:1/-1}
+  .hx-stage{grid-row:1;height:auto;aspect-ratio:1.5;margin:0 -12px;overflow:hidden;border-bottom:1px solid var(--hx-door-b)}
+  .hx-door:only-child .hx-stage{aspect-ratio:2.3}
+  .hx-copy{grid-row:2/6;padding:12px 0 0;justify-items:start;text-align:left}
+  .hx-tag{font-size:10px;letter-spacing:.05em;padding:4px 8px 4px 7px;gap:4px}
+  .hx-tag svg{width:12px;height:12px}
+  .hx-h2{margin-top:8px;font-size:18px;line-height:1.12;letter-spacing:-.025em}
+  .hx-text{margin:5px 0 0;font-size:13px;line-height:1.42}
+  .hx-dt,.hx-note{display:none}
+  .hx-price{display:block;margin-top:5px;font-size:12.5px;font-weight:600;line-height:1.35;color:var(--text)}
+  .hx-cta{flex-direction:column;align-items:stretch;align-self:end;width:100%;gap:0;margin-top:12px}
+  .hx-cta .btn{justify-content:center;gap:6px;padding:10px 8px;font-size:14px;min-height:44px}
+  .hx-more{justify-content:center;gap:4px;font-size:13px;text-align:center}
+  .hx-phone,.hx-sticker{display:none}
+  .hx-browser{left:9cqi;right:9cqi;top:13%;border-radius:3.4cqi 3.4cqi 0 0;box-shadow:0 14px 30px -14px rgba(0,0,0,.6)}
+  .hx-bar{height:9cqi;padding:0 3cqi;gap:1.6cqi}
+  .hx-bar i{width:2.4cqi;height:2.4cqi}
+  .hx-url{font-size:max(8px,4cqi);padding:.6cqi 4cqi}
+  .hx-door:only-child .hx-browser{left:24cqi;right:24cqi;top:12%}
+  .hx-door:only-child .hx-bar{height:4.6cqi}
+  .hx-door:only-child .hx-url{font-size:max(8px,1.9cqi)}
+  .hx-fan .hx-card{pointer-events:none}   /* Tippen auf den Fächer = ganze Kachel → Druckshop */
+  .hx-fanbox{width:46cqi;top:56%}
+  .hx-card{padding:1.8cqi;border-radius:5cqi;transform-origin:50% 230%}
+  .hx-card img{border-radius:3.4cqi}
+  .hx-c1{--r:-17deg}.hx-c3{--r:17deg}
+  .hx-lbl{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
+@media(max-width:380px){
+  .hx-cta .arr{display:none}
+}
+@media(max-width:360px){
+  .hx-doors{gap:0 8px}
+  .hx-door{padding:0 10px 8px}
+  .hx-stage{margin:0 -10px}
+  .hx-h2{font-size:16.5px}
+  .hx-text,.hx-price{font-size:12.5px}
+  .hx-tag{font-size:9.5px;letter-spacing:.03em}
+  .hx-cta .btn{font-size:13px;padding:10px 6px}
+  .hx-more{font-size:12.5px}
+}
 
 /* ---------- Sections ---------- */
 section.block{padding-top:clamp(56px,9vh,104px);padding-bottom:clamp(56px,9vh,104px)}
@@ -433,9 +588,6 @@ footer{border-top:1px solid var(--border);margin-top:40px;padding:48px 0 60px}
 @media(max-width:600px){
   .wrap{padding:0 22px}
   section.block{padding-top:clamp(42px,8vh,72px);padding-bottom:clamp(42px,8vh,72px)}
-  .hero{padding-block:92px 56px}
-  h1.display{font-size:clamp(31px,8.6vw,46px)}
-  .hero p.lead{font-size:16px;margin-top:20px}
   .btn-row{gap:10px;margin-top:30px}
   .btn{width:100%;justify-content:center;padding:14px 22px}
   .sec-head{margin-bottom:34px}
@@ -570,15 +722,12 @@ html.light{
 html.light .orb{opacity:.2}
 html.light .grain{opacity:.03;mix-blend-mode:multiply}
 html.light header.nav{background:rgba(255,255,255,.72)}
-html.light h1.display{background:linear-gradient(180deg,#14151c,#4b5162 55%,#14151c);-webkit-background-clip:text;background-clip:text;color:transparent}
 html.light .stat .num{background:linear-gradient(180deg,#14151c,#5a6070);-webkit-background-clip:text;background-clip:text;color:transparent}
 html.light .btn.primary{background:#14151c;color:#fff}
 html.light .btn.primary:hover{background:#2c2e3a}
 html.light .btn.ghost:hover{background:rgba(18,20,28,.06)}
 html.light .card:hover,html.light .proj-card:hover,html.light .ref-card:hover,html.light .rec-card:hover{border-color:rgba(18,20,28,.22)}
 html.light .cta-panel{background:linear-gradient(180deg,rgba(18,20,28,.05),rgba(18,20,28,.015))}
-html.light .bulb-glow{opacity:1;background:radial-gradient(circle,rgba(255,196,86,.4),rgba(255,180,60,.12) 30%,transparent 56%)}
-html.light .hero-bulb img{opacity:.5;filter:brightness(.5) sepia(.35) saturate(1.4) drop-shadow(0 0 40px rgba(255,190,70,.6))}
 html.light ::-webkit-scrollbar-track{background:#eceef1}
 html.light ::-webkit-scrollbar-thumb{background:#c3c8d1;border-color:#eceef1}
 html.light ::-webkit-scrollbar-thumb:hover{background:#adb2bd}
@@ -702,21 +851,91 @@ html.light{
 
   <!-- ============ HOME ============ -->
   <section class="page active" data-route="/">
-    <div class="hero">
-      <div class="hero-bulb" id="heroBulb" title="FS Creative">
-        <span class="bulb-glow"></span>
-        <span class="bulb-float"><img src="/logos/Logo%20Gl%C3%BChbirne%20Weiss.png" alt="" aria-hidden="true"></span>
-      </div>
-      <div class="wrap">
-      <span class="eyebrow"><span class="dot"></span> Webdesign &amp; Digitalagentur · Montafon · Vorarlberg</span>
-      <h1 class="display">Ideen aus dem Tal,<br>gebaut für das Netz.</h1>
-      <p class="lead">FS Creative ist deine Webdesign-Agentur aus Gaschurn im Montafon. Wir gestalten und programmieren Websites, Online-Shops und Buchungsplattformen für Betriebe in Vorarlberg und Tirol — und betreiben mit Blitzdings, VALUERO, kochdu und Kantineur selbst digitale Plattformen.</p>
-      <div class="btn-row">
-        <a href="/kontakt?von=start" class="btn primary" data-link>Gratis Entwurf anfragen <span class="arr" aria-hidden="true">→</span></a>
-        <a href="#projekte" class="btn ghost">Unsere Projekte</a>
-      </div>
+    <!-- HERO „Zwei Welten“: Webdesign (links) + Druck (rechts). Druck-Teile nur bei Shop live, Ersatz-Überschrift nur bei Shop offline (Marker: server.js printLiveBlocks) -->
+    <div class="hx">
+      <div class="hx-in">
+        <div class="hx-head">
+          <span class="eyebrow"><span class="dot"></span> <span><!--PRINT_LIVE--><span>Webdesign &amp; Druck</span><!--/PRINT_LIVE--><!--PRINT_OFF--><span class="hx-off">Webdesign &amp; Digitalagentur</span><!--/PRINT_OFF--> · Gaschurn im Montafon</span></span>
+          <h1 class="hx-title"><!--PRINT_LIVE--><span class="hx-big"><span class="hx-w">Pixel</span> <span class="hx-amp">&amp;</span> <span class="hx-p">Papier</span><span class="hx-dot">.</span><svg class="hx-rays" viewBox="0 0 60 56" aria-hidden="true" focusable="false"><defs><radialGradient id="hxGlowG"><stop offset="0" stop-color="#ffc53d" stop-opacity=".6"/><stop offset="1" stop-color="#ffc53d" stop-opacity="0"/></radialGradient></defs><circle class="hx-glow" cx="30" cy="49" r="24" fill="url(#hxGlowG)"/><g class="hx-rg"><line x1="30" y1="33" x2="30" y2="22"/><line x1="40.3" y1="36.7" x2="47.4" y2="28.3"/><line x1="19.7" y1="36.7" x2="12.6" y2="28.3"/></g></svg></span> <span class="hx-sub"><span class="hx-nw">Webdesign-Agentur</span> &amp; <span class="hx-nw">Online-Druckshop</span> aus Vorarlberg</span><!--/PRINT_LIVE--><!--PRINT_OFF--><span class="hx-big hx-off">Ideen aus dem Tal,<br> gebaut für das <span class="hx-w">Netz.</span></span> <span class="hx-sub hx-off">Webdesign-Agentur aus dem Montafon, Vorarlberg</span><!--/PRINT_OFF--></h1>
+        </div>
+        <div class="hx-doors">
+          <article class="hx-door hx-web" aria-labelledby="hx-web-h">
+            <div class="hx-copy">
+              <p class="hx-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Webdesign<span class="hx-dt">-Agentur</span></span></p>
+              <h2 class="hx-h2" id="hx-web-h"><a href="/leistungen">Websites &amp; Plattformen</a></h2>
+              <p class="hx-text">Websites, Online-Shops und Buchungs&shy;plattformen<span class="hx-dt"> für Betriebe in Vorarlberg und Tirol</span>.<span class="hx-note">Live im Bild: unsere eigenen Plattformen VALUERO und kochdu</span><span class="hx-price">Für Vorarlberg &amp; Tirol</span></p>
+              <div class="hx-cta">
+                <a href="/kontakt?von=start" class="btn primary" data-link><span>Gratis Entwurf<span class="hx-dt"> anfragen</span></span> <span class="arr" aria-hidden="true">→</span></a>
+                <a href="#projekte" class="hx-more">Unsere Projekte <i aria-hidden="true">›</i></a>
+              </div>
+            </div>
+            <div class="hx-stage" aria-hidden="true">
+              <div class="hx-browser">
+                <div class="hx-bar"><i></i><i></i><i></i><span class="hx-url">valuero.at</span></div>
+                <img class="hx-shot" src="/logos/hero-valuero.webp" alt="" width="880" height="550" decoding="async">
+              </div>
+              <div class="hx-phone"><img src="/logos/hero-kochdu.webp" alt="" width="240" height="480" loading="lazy" decoding="async"></div>
+              <span class="hx-sticker"><span><b>Gratis</b>Entwurf</span></span>
+            </div>
+          </article>
+          <!--PRINT_LIVE-->
+          <article class="hx-door hx-print" aria-labelledby="hx-print-h">
+            <div class="hx-copy">
+              <p class="hx-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg><span>Neu · <span class="hx-dt">Online-</span>Druckshop</span></p>
+              <h2 class="hx-h2" id="hx-print-h"><a href="/print">Druck &amp; Werbeartikel</a></h2>
+              <p class="hx-text">Über 900 Produkte<span class="hx-dt"> von Flyer bis T-Shirt</span>. Online gestalten oder Datei hochladen<span class="hx-dt">, Preis sofort sehen</span>.<span class="hx-note">Endpreise inkl. 20&nbsp;% USt und Versand in Österreich</span><span class="hx-price" data-from="flyer" data-name="Flyer">Preis sofort im Konfigurator</span></p>
+              <div class="hx-cta">
+                <a href="/print" class="btn hx-btn-ink">Zum Druckshop <span class="arr" aria-hidden="true">→</span></a>
+                <a href="/druck" class="hx-more">Gestaltung vom Profi <i aria-hidden="true">›</i></a>
+              </div>
+            </div>
+            <div class="hx-stage hx-fan">
+              <div class="hx-fanbox">
+                <a class="hx-card hx-c1" href="/print?produkt=visitenkarten"><img src="/print/bild/ez9mp376cw6o/2c8N0Vf6jRQuKJv3baJVTt/67ddba9cfd0c24f6fdee18538f2c2165/Business_Cards.jpg?fm=webp&w=400" alt="" width="400" height="400" loading="lazy" decoding="async"><span class="hx-lbl"><b>Visitenkarten</b> <span data-from="visitenkarten" data-part="p" hidden></span> <span class="hx-cp" data-from="visitenkarten" data-part="c" hidden></span></span></a>
+                <a class="hx-card hx-c2" href="/print?produkt=flyer"><img src="/print/bild/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/fb45b1d11b0e56c2cce9b9b6543bfe63/Flyers.jpg?fm=webp&w=400" alt="" width="400" height="400" loading="lazy" decoding="async"><span class="hx-lbl"><b>Flyer</b> <span data-from="flyer" data-part="p" hidden></span> <span class="hx-cp" data-from="flyer" data-part="c" hidden></span></span></a>
+                <a class="hx-card hx-c3" href="/print?produkt=rollups"><img src="/print/bild/ez9mp376cw6o/7AtzlkKgHLuI3HHG4DpopX/57fccfc1b6b849e5d06b77741900758a/Groupshot-Banner.jpg?fm=webp&w=400" alt="" width="400" height="400" loading="lazy" decoding="async"><span class="hx-lbl"><b>Roll-ups</b> <span data-from="rollups" data-part="p" hidden></span> <span class="hx-cp" data-from="rollups" data-part="c" hidden></span></span></a>
+              </div>
+            </div>
+          </article>
+          <!--/PRINT_LIVE-->
+        </div>
       </div>
     </div>
+    <script>
+    /* Hero: schwebende Knöpfe (Chat, PRINT) blenden am Handy aus, solange ein Hero-Button im unteren Bildschirmstreifen liegt, wo sie sitzen */
+    (function(){
+      var ctas=document.querySelectorAll('.hx-cta');if(!ctas.length||!('IntersectionObserver' in window))return;
+      var de=document.documentElement,io,t;
+      function setup(){if(io)io.disconnect();
+        io=new IntersectionObserver(function(en){en.forEach(function(e){e.target.hxIn=e.isIntersecting;});var any=false;ctas.forEach(function(c){if(c.hxIn)any=true;});de.classList.toggle('hx-cb',any);},{rootMargin:'-'+Math.max(0,innerHeight-150)+'px 0px 0px 0px'});
+        ctas.forEach(function(c){c.hxIn=false;io.observe(c);});}
+      setup();addEventListener('resize',function(){clearTimeout(t);t=setTimeout(setup,250);});
+    })();
+    </script>
+    <!--PRINT_LIVE-->
+    <script>
+    /* Hero Druck-Tür: (1) schwebenden PRINT-Knopf ausblenden, solange die Tür sichtbar ist; (2) „ab“-Preise einmal laden, wenn sie sichtbar wird (im Leerlauf).
+       Ohne „sel“ nimmt der Server dieselbe Vorauswahl wie die Produktkarten im Shop (print-shop.js fromDefaultSel = print/app.js fromSel/BEST + typische Auflage) → gleicher Preis, gleicher Cache-Eintrag. Fehler → Preis bleibt ausgeblendet. */
+    (function(){
+      var door=document.querySelector('.hx-print');if(!door)return;
+      var de=document.documentElement,els=door.querySelectorAll('[data-from]'),done=!els.length;
+      function run(){
+        var keys=[];els.forEach(function(e){var k=e.getAttribute('data-from');if(keys.indexOf(k)<0)keys.push(k);});
+        fetch('/print/api/from?keys='+encodeURIComponent(keys.join(','))).then(function(r){return r.ok?r.json():null;}).then(function(j){
+          if(!j||!j.ok||!j.from)return;
+          var nf=new Intl.NumberFormat('de-AT',{minimumFractionDigits:2,maximumFractionDigits:2}),ni=new Intl.NumberFormat('de-AT'),sp=String.fromCharCode(160);
+          els.forEach(function(e){var f=j.from[e.getAttribute('data-from')];if(!f||!(f.gross>0))return;
+            var n=e.getAttribute('data-name'),part=e.getAttribute('data-part'),pr='ab'+sp+nf.format(f.gross)+sp+'€',cp=f.copies>0?ni.format(f.copies)+sp+'Stk.':'';
+            if(part==='c'&&!cp)return;
+            e.textContent=part==='p'?pr:part==='c'?cp:(n?n+' ':'')+pr+(cp?' für '+cp:'');e.hidden=false;});
+        }).catch(function(){});
+      }
+      function load(){if(done)return;done=true;if(window.requestIdleCallback)requestIdleCallback(run,{timeout:2000});else setTimeout(run,200);}
+      if(!('IntersectionObserver' in window)){window.addEventListener('load',load,{once:true});return;}
+      new IntersectionObserver(function(en){var v=en[en.length-1].isIntersecting;de.classList.toggle('hx-pv',v);if(v){if(document.readyState==='complete')load();else window.addEventListener('load',load,{once:true});}}).observe(door);
+    })();
+    </script>
+    <!--/PRINT_LIVE-->
 
     <section class="block wrap" id="leistungen">
       <div class="sec-head reveal">
@@ -742,7 +961,7 @@ html.light{
           <span class="tag-new">Neu · Online-Druckshop</span>
           <h2 id="druckshop-h">Drucksachen online bestellen.</h2>
           <p>Flyer, Visitenkarten, Plakate, Roll-ups, Aufkleber und T-Shirts – im Designer gestalten oder Druckdatei hochladen, Preis sofort sehen und bequem bestellen. Jede Datei wird automatisch geprüft, auf Wunsch auch persönlich vom Profi.</p>
-          <ul><li>Über 900 Produkte, Preise inkl. Versand in Österreich</li><li>Kostenloser Datencheck durch uns</li><li>Sicher online bezahlen oder auf Rechnung</li></ul>
+          <ul><li>Über 900 Produkte, Preise inkl. Versand in Österreich</li><li>Automatischer Datencheck, Profi-Check optional</li><li>Sicher online bezahlen oder auf Rechnung</li></ul>
           <div class="btn-row"><a href="/print" class="btn primary">Zum Druckshop <span class="arr" aria-hidden="true">→</span></a><a href="/druck" class="btn ghost">Gestaltung vom Profi</a></div>
         </div>
         <div class="st-grid"><a class="st-p" href="/print?produkt=flyer"><span class="st-ph"><img src="/print/bild/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/fb45b1d11b0e56c2cce9b9b6543bfe63/Flyers.jpg?fm=webp&w=400" alt="" loading="lazy" decoding="async"><em>★ Bestseller</em></span><b>Flyer</b></a><a class="st-p" href="/print?produkt=visitenkarten"><span class="st-ph"><img src="/print/bild/ez9mp376cw6o/2c8N0Vf6jRQuKJv3baJVTt/67ddba9cfd0c24f6fdee18538f2c2165/Business_Cards.jpg?fm=webp&w=400" alt="" loading="lazy" decoding="async"><em>★ Bestseller</em></span><b>Visitenkarten</b></a><a class="st-p" href="/print?produkt=plakate"><span class="st-ph"><img src="/print/bild/ez9mp376cw6o/6BujIpUeRjqQOkMQw38hL3/fb6daa3e62933e2be71331f8491afff3/Magnet_Poster.jpg?fm=webp&w=400" alt="" loading="lazy" decoding="async"><em>★ Bestseller</em></span><b>Plakate</b></a><a class="st-p" href="/print?produkt=rollups"><span class="st-ph"><img src="/print/bild/ez9mp376cw6o/7AtzlkKgHLuI3HHG4DpopX/57fccfc1b6b849e5d06b77741900758a/Groupshot-Banner.jpg?fm=webp&w=400" alt="" loading="lazy" decoding="async"><em>★ Bestseller</em></span><b>Roll-ups</b></a><a class="st-p" href="/print?produkt=aufkleber"><span class="st-ph"><img src="/print/bild/ez9mp376cw6o/6noTheBvvThVaN0y8S25go/0635d35785a03c21ef2b900f406906fe/individual_stickers_contour-group.jpg?fm=webp&w=400" alt="" loading="lazy" decoding="async"></span><b>Aufkleber</b></a><a class="st-p" href="/print?produkt=tshirt-basic"><span class="st-ph"><img src="/print/bild/ez9mp376cw6o/3W8tP5rIT9iiwxDgtO2kWY/dddbee1966c4fdcc86fa74531c6cd7c0/Fotl-FruitoftheLoomOriginalFull-CutT610820azureblue13378.jpg?fm=webp&w=400" alt="" loading="lazy" decoding="async"></span><b>T-Shirts</b></a></div>
@@ -1481,6 +1700,8 @@ html.light{
     '/datenschutz': ['Datenschutzerklärung — FS Creative', 'Datenschutzerklärung von FS Creative: keine Cookies, kein Tracking, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen.'],
     '/impressum': ['Impressum — FS Creative', 'Impressum von FS Creative (Simon Leonhard Felder), Dorfstraße 3/1, 6793 Gaschurn. Offenlegung gemäß § 5 ECG und § 25 Mediengesetz.']
   };
+  // Druckshop live (nur dann liefert der Server die Druck-Tür im Hero aus): Startseite nennt auch den Druckshop – gleich wie ROUTE_META_PRINT in server.js
+  if(document.querySelector('.hx-print')) ROUTE_META['/'] = ['Webdesign Montafon & Vorarlberg · Druckshop | FS Creative', 'Webdesign aus dem Montafon: Websites, Online-Shops & Buchungsplattformen für Vorarlberg & Tirol – plus Drucksachen direkt online bestellen. Gratis Entwurf anfragen.'];
   function setMeta(sel, attr, val){ var e = document.querySelector(sel); if(e) e.setAttribute(attr, val); }
   function applyMeta(route){
     var m = ROUTE_META[route];
@@ -1694,16 +1915,6 @@ html.light{
 
   var reduceFX = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(!reduceFX){
-    // parallax fill of the hero headline (only the gradient moves, text stays)
-    var heroFill = document.querySelector('h1.display');
-    var heroBulb = document.getElementById('heroBulb');
-    function updHero(){
-      var y = window.scrollY || document.documentElement.scrollTop || 0;
-      if(heroFill) heroFill.style.backgroundPositionY = (y * 0.45) + 'px';
-      if(heroBulb) heroBulb.style.transform = 'translateX(-50%) translateY(' + (y * 0.3).toFixed(1) + 'px)';
-    }
-    window.addEventListener('scroll', updHero, {passive:true});
-    updHero();
 
     var orbEls = document.querySelectorAll('.orb');
     window.addEventListener('mousemove', function(e){

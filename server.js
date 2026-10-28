@@ -219,6 +219,10 @@ const ROUTE_META = {
   "/datenschutz": ["Datenschutzerklärung — FS Creative", "Datenschutzerklärung von FS Creative: kein Tracking, keine Werbe-Cookies, keine Google Fonts. Google Maps wird nur nach ausdrücklicher Einwilligung geladen."],
   "/impressum": ["Impressum — FS Creative", "Impressum von FS Creative (Simon Leonhard Felder), Dorfstraße 3/1, 6793 Gaschurn. Offenlegung gemäß § 5 ECG und § 25 Mediengesetz."],
 };
+// Bei Druckshop live (gleicher Schalter wie printLiveBlocks) nennt die Startseite auch den Druckshop; Kopie im Seiten-Script von index.html (ROUTE_META['/'])
+const ROUTE_META_PRINT = {
+  "/": ["Webdesign Montafon & Vorarlberg · Druckshop | FS Creative", "Webdesign aus dem Montafon: Websites, Online-Shops & Buchungsplattformen für Vorarlberg & Tirol – plus Drucksachen direkt online bestellen. Gratis Entwurf anfragen."],
+};
 
 const NOINDEX_ROUTES = { "/empfehlungen": true, "/paketshop": true };
 
@@ -245,17 +249,24 @@ function setAttrValue(html, re, value) {
   return html.replace(re, function (m, p1, p2) { return p1 + value + p2; });
 }
 
-// Druckshop-Startschalter (PRINT_SHOP_LIVE=1): markierte Blöcke nur dann ausliefern
-function printLiveBlocks(html, known) {
+// Druckshop-Startschalter (PRINT_SHOP_LIVE=1 oder Schalter im Cockpit)
+function printOn(known) {
   let on = known === true || process.env.PRINT_SHOP_LIVE === "1"; try { if (!on && PRINT && PRINT.live) on = PRINT.live(); } catch (e) {}   // auch Schalter im Cockpit
-  return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "");
+  return on;
 }
-function renderIndex(baseHtml, route) {
-  const meta = ROUTE_META[route];
+// Markierte Blöcke: <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> nur bei Shop live ausliefern, <!--PRINT_OFF-->…<!--/PRINT_OFF--> (Ersatz) nur bei Shop offline
+function printLiveBlocks(html, known) {
+  const on = printOn(known);
+  return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "")
+    .replace(/<!--PRINT_OFF-->([\s\S]*?)<!--\/PRINT_OFF-->/g, (m, inner) => on ? "" : inner);
+}
+function renderIndex(baseHtml, route, live) {
+  const on = printOn(live);
+  const meta = (on && ROUTE_META_PRINT[route]) || ROUTE_META[route];
   const noindex = !!NOINDEX_ROUTES[route];
   const known = !!meta || noindex;
   const url = ORIGIN + (route === "/" ? "/" : route);
-  let html = printLiveBlocks(baseHtml);
+  let html = printLiveBlocks(baseHtml, on);
   if (meta) {
     const title = esc(meta[0]);
     const desc = esc(meta[1]);
@@ -4084,13 +4095,13 @@ const server = http.createServer((req, res) => {
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
     if (p === "/nda" || p.indexOf("/nda/") === 0 || p.indexOf("/admin/api/nda/") === 0) return void guard(res, NDA.handle(req, res, u, p));
-    // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml)
+    // Links/Abschnitte zum Druckshop erst zeigen, wenn er öffentlich ist (Blöcke <!--PRINT_LIVE-->…<!--/PRINT_LIVE--> in druck.html, index.html, sitemap.xml; Ersatz bei Shop offline in <!--PRINT_OFF-->…<!--/PRINT_OFF-->)
     if ((req.method === "GET" || req.method === "HEAD") && (p === "/" || p === "/index.html" || p === "/druck" || p === "/druck.html" || p === "/leistungen" || p === "/leistungen.html" || p === "/sitemap.xml")) {
       const f = p === "/sitemap.xml" ? "sitemap.xml" : p === "/" || p === "/index.html" ? "index.html" : /^\/leistungen/.test(p) ? "leistungen.html" : "druck.html";
       // Shop-Einstellungen (Schalter „live“) erst laden – sonst fehlt die Druckshop-Werbung nach einem Neustart, bis jemand /print öffnet
       return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found");
         Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
-          let out = printLiveBlocks(data, on);
+          let out = f === "index.html" ? renderIndex(data, "/", on).html : printLiveBlocks(data, on);   // Startseite: Titel/Beschreibung je nach Shop-Schalter (ROUTE_META_PRINT)
           if (on && f === "sitemap.xml" && PRINT.sitemapExtra) { try { out = out.replace("</urlset>", await PRINT.sitemapExtra() + "</urlset>"); } catch (e2) {} }   // Druckshop: Preisübersicht + Produktseiten
           sendGz(req, res, 200, out, TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); }); });
     }

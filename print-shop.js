@@ -1635,6 +1635,16 @@ module.exports = function (D) {
   // ── Rabatte: Bonusprogramm (Firmenkonto) oder eigener Kundenrabatt (der höhere gilt) + Gutscheincode ──
   let VOUCHERS = null; const FROM = new Map();
   const fromSet = (k, v) => { if (FROM.size >= 6000) { let n = 1000; for (const x of FROM.keys()) { FROM.delete(x); if (--n <= 0) break; } } FROM.delete(k); FROM.set(k, v); };   // „ab“-Preise: höchstens 6 000 Einträge
+  // „ab“-Preis ohne mitgeschickte Auswahl (z. B. Hero der Startseite): dieselbe Vorauswahl wie die Produktkarten im Shop (print/app.js BEST, fromSel und
+  // typische Auflage in loadFrom) – gleicher Preis, gleicher Eintrag in FROM. BEST muss mit print/app.js übereinstimmen (test/print.test.js prüft das).
+  const FROM_BEST = { size: ["a5", "a4", "a6", "us_large", "bc", "bc_plus"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "135gr_silk_mc", "350gr_silk_mc", "350gr_gesatineerd_mc", "300gr_silk_mc"], printtype: ["44"] };
+  function fromDefaultSel(prod) {
+    const o = {}; (prod.props || []).forEach(pr => { const b = (FROM_BEST[pr.slug] || []).find(x => (pr.options || []).some(q => q.slug === x)); if (b) o[pr.slug] = b; });
+    const t = prod.tiers || [], big = prod.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((prod.cat && prod.cat.main) || prod.group || "");
+    const bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && big ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)];
+    if (bq) o.__copies = bq;
+    return o;
+  }
   async function vouchers() { if (!VOUCHERS) VOUCHERS = (await store.getMeta("print_vouchers").catch(() => null)) || {}; return VOUCHERS; }
   const vCode = c => String(c || "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 40);
   async function voucherCheck(code, email) {
@@ -2551,12 +2561,15 @@ module.exports = function (D) {
         const rawSel = String(u.searchParams.get("sel") || "{}"); let sels = {}; if (rawSel.length <= 8000) try { sels = JSON.parse(rawSel) || {}; } catch (e) {}
         if (typeof sels !== "object" || Array.isArray(sels)) sels = {};
         const keys = String(u.searchParams.get("keys") || "").split(",").map(x => x.trim()).filter(x => /^[\w.-]{1,80}$/.test(x)).slice(0, 12), out = {}, s0 = await settings();
+        const cat0 = keys.some(k => !(sels[k] && typeof sels[k] === "object" && !Array.isArray(sels[k]))) ? await catalog(false).catch(() => null) : null;
         await Promise.all(keys.map(async k => {
-          const s1 = sels[k] && typeof sels[k] === "object" && !Array.isArray(sels[k]) ? sels[k] : {}, sel = {};
+          let s1 = sels[k] && typeof sels[k] === "object" && !Array.isArray(sels[k]) ? sels[k] : null, pd = null; const sel = {};
+          // ohne Auswahl: kuratierte Produkte wie die Shop-Karte (Bestseller + typische Auflage); allgemeine kennt die Karte nur ohne Optionen → Standard wie bisher
+          if (!s1) { s1 = {}; if (cat0 && (cat0.products || []).some(x => x.key === k)) { try { pd = await findProduct(k, s0); } catch (e) {} if (!pd) return; s1 = fromDefaultSel(pd); } }
           Object.keys(s1).slice(0, 30).forEach(x => { if (/^[\w-]{1,60}$/.test(x) && (typeof s1[x] === "string" || typeof s1[x] === "number")) sel[x] = String(s1[x]).slice(0, 80); });
           const qc = parseInt(sel.__copies, 10) || 0, ck = k + JSON.stringify(sel); delete sel.__copies;
           const hit = FROM.get(ck); if (hit && Date.now() - hit.at < 12 * 3600e3) { out[k] = hit.v; return; }
-          try { const prod = await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const tl = prod.tiers || [], big = prod.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((prod.cat && prod.cat.main) || prod.group || ""),
+          try { const prod = pd || await findProduct(k, s0); if (!prod || prod.kind === "textile" || prod.kind === "promo") return; const tl = prod.tiers || [], big = prod.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((prod.cat && prod.cat.main) || prod.group || ""),
               t = qc && tl.indexOf(qc) > -1 ? qc : tl[0] === 1 && big ? 1 : tl[0] === 1 && tl.indexOf(5) > -1 ? 5 : [500, 250, 100, 50].find(x => tl.indexOf(x) > -1) || tl[0];   // typische Auflage statt kleinster
             const mk = sl => normalizeSel(prod, Object.assign({ copies: t, sel: sl }, prod.kind === "banner" && prod.custom ? { custom: { w: Math.max(prod.custom.minW, 1000) / 10, h: Math.max(prod.custom.minH, 500) / 10 } } : {}));
             // Bestseller-Auswahl (z. B. beidseitig 4/4) ist nicht bei jedem Produkt lieferbar (PVC-Banner) → mit der Standard-Ausführung rechnen
