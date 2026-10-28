@@ -480,6 +480,9 @@ button,.btn,.nav-btn,.chip,.tag,.count,.link,th,kbd,code,pre,input,select,textar
 .tabbar button:active{transform:scale(.93)}
 .tabbar button.lq-near{color:var(--ink)}
 .tabbar .tb-dot{top:1px;left:calc(50% + 7px);right:auto;box-shadow:0 0 0 2px var(--panel)}
+.lq-lens,.lq-ghost{display:none}   /* Linse nur im Alpenglas (unten) */
+.lq-drop.lq-lift{transition:none}
+.lq-fade>.lq-under{opacity:.12}
 
 /* ===== Look „Alpenglas“ (Wunsch Simon 27.10.2026): Bergfoto, Milchglas, weiße Schrift, Cyan-Akzent – Standard-Theme „glas“.
    Unschärfe (backdrop-filter) nur auf wenigen obersten Flächen: Leiste, Kopfzeile, Karten der obersten Ebene, Overlays.
@@ -609,6 +612,30 @@ button,.btn,.nav-btn,.chip,.tag,.count,.link,th,kbd,code,pre,input,select,textar
 :where(:root[data-theme="glas"]) .lq-drop.drag>i{background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.12))}
 /* Brechung (nur Chromium, von core.js erkannt): SVG-Verschiebung der Kanten statt reiner Unschärfe; Safari behält blur+saturate */
 :where(:root[data-theme="glas"].lq-refract) .rail{backdrop-filter:url(#lqRail) blur(12px) saturate(175%) brightness(1.04)}
+/* Linse beim Drücken/Ziehen (wie iOS 26): klare Glaslinse über der Leiste, größer als sie. core.js setzt Lage, Größe und Hub per transform;
+   Inhalt = vergrößerte Kopie der Einträge (.lq-li), am Rand leicht verkleinert (.lq-le, wirkt wie Brechung). Lichtkante oben links,
+   Regenbogensaum, dunklere Kante unten rechts, leichte Aufhellung – kein backdrop-filter:url() nötig (läuft auch in Safari). */
+:where(:root[data-theme="glas"]) .lq-lens.on{display:block;position:fixed;left:0;top:0;z-index:31;pointer-events:none;border-radius:999px;transform-origin:50% 50%;will-change:transform}
+.lq-lens>*{position:absolute;inset:0;border-radius:inherit;pointer-events:none}
+.lq-lens .lq-lb{overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.02) 48%,rgba(255,255,255,.07));
+  -webkit-backdrop-filter:blur(1.5px) saturate(180%) brightness(1.22);backdrop-filter:blur(1.5px) saturate(180%) brightness(1.22)}
+.lq-lens .lq-le,.lq-lens .lq-li{position:absolute;inset:0}
+.lq-lens .lq-le>.lq-ghost{filter:blur(.4px) brightness(1.08)}
+.lq-lens .lq-ls{box-shadow:0 12px 28px rgba(0,0,0,.22),0 3px 8px rgba(0,0,0,.14)}
+.lq-lens .lq-lr{box-shadow:inset 0 0 0 .75px rgba(255,255,255,.5),inset 2px 2.5px 1.5px -1px rgba(255,255,255,.95),inset -2px -2.5px 2px -1px rgba(255,255,255,.45),
+  inset 0 -14px 16px -14px rgba(0,0,0,.32),inset 0 12px 14px -13px rgba(255,255,255,.5),inset 0 0 16px rgba(255,255,255,.12)}
+.lq-lens .lq-lr::before,.lq-lens .lq-lr::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude}
+.lq-lens .lq-lr::before{padding:3px;opacity:.55;mix-blend-mode:screen;
+  background:conic-gradient(from 200deg,#ff6ec4,#ffd36e 9%,#8fffc9 18%,#6ec8ff 27%,#c38bff 36%,rgba(255,255,255,0) 42%,rgba(255,255,255,0) 58%,#ff6ec4 64%,#ffd36e 73%,#8fffc9 82%,#6ec8ff 91%,#c38bff)}
+.lq-lens .lq-lr::after{padding:1.5px;background:linear-gradient(155deg,#fff,rgba(255,255,255,.22) 28%,rgba(255,255,255,0) 50%,rgba(255,255,255,.25) 74%,rgba(255,255,255,.9))}
+/* Kopie der Leiste in der Linse: gleiche Klassen wie das Original (.tabbar/.rail), deren Fläche aber neutralisiert – nur die Einträge zählen */
+.lq-ghost.lq-ghost{display:block!important;position:absolute!important;left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:0!important;height:0!important;
+  margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+  overflow:visible!important;transform-origin:0 0;pointer-events:none;z-index:auto!important}
+.lq-ghost.lq-ghost::before,.lq-ghost.lq-ghost::after{content:none!important;display:none!important}
+@media (prefers-reduced-transparency:reduce){.lq-lens .lq-lb{background:rgba(24,34,50,.88)}}
+:where(:root[data-theme="glas"].lq-refract) .lq-lens .lq-lb{backdrop-filter:url(#lqLens) blur(1.5px) saturate(180%) brightness(1.22)}   /* Chromium: Rand bricht zusätzlich den Hintergrund */
 
 /* Kopfzeile: oben durchsichtig, beim Scrollen eigenes Glas; Suche als Glas-Pille, runde Glas-Knöpfe, „+ Neu“ als weiße Pille */
 :where(:root[data-theme="glas"]) .topbar{gap:10px;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;transition:background-color .25s,box-shadow .25s}
@@ -643,7 +670,10 @@ button,.btn,.nav-btn,.chip,.tag,.count,.link,th,kbd,code,pre,input,select,textar
   :where(:root[data-theme="glas"]) .tabbar button[aria-current="page"]{color:var(--ink)}
   :where(:root[data-theme="glas"]) .tabbar button[aria-current="page"] svg{color:var(--glow);filter:drop-shadow(0 0 6px rgba(159,240,255,.45))}
   :where(:root[data-theme="glas"]) .tabbar button.lq-near{color:var(--ink)}
-  :where(:root[data-theme="glas"]) .tabbar .lq-drop>i{border-radius:22px}
+  /* ruhend: aktiver Reiter in einer dunkler getönten Kapsel (wie iOS 26); beim Drücken hebt sie sich als klare Linse (.lq-lens) */
+  :where(:root[data-theme="glas"]) .tabbar .lq-drop>i{border-radius:22px;background:rgba(2,8,18,.36);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),inset 0 -1px 0 rgba(0,0,0,.14)}
+  :where(:root[data-theme="glas"]) .tabbar .lq-drop>i::before{opacity:.16}
+  :where(:root[data-theme="glas"]) .tabbar .lq-drop>i::after{opacity:.3}
   :where(:root[data-theme="glas"]) .tabbar .count{top:2px}
   :where(:root[data-theme="glas"]) .tabbar .tb-dot{box-shadow:0 0 0 2px rgba(14,22,34,.9),0 0 8px var(--bad)}
   :where(:root[data-theme="glas"].lq-refract) .tabbar{backdrop-filter:url(#lqTab) blur(10px) saturate(175%) brightness(1.05)}

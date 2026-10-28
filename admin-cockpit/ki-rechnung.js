@@ -31,9 +31,11 @@ F.kiInvoiceHtml=function(pre){
   return out;
 };
 function fill(inv,pre){
-  F.openInvoice(Object.assign({},pre,{contactName:inv.contactName||pre.contactName,email:inv.email||pre.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
+  var nm=inv.contactName||pre.contactName, same=String(nm||"").toLowerCase().replace(/\s+/g," ").trim()===String(pre.contactName||"").toLowerCase().replace(/\s+/g," ").trim();
+  F.openInvoice(Object.assign({},pre,{contactName:nm,email:inv.email||pre.email,address:inv.address,invoiceDate:inv.invoiceDate,deliveryDate:inv.deliveryDate,headText:inv.headText,
     items:inv.items.map(function(i){ return {name:i.name,text:i.text,qty:i.qty,priceGross:i.priceGross,taxRate:i.taxRate}; }),
-    taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv},
+    taxRule:inv.taxRule||undefined,footText:inv.footText,country:inv.country||undefined,uid:inv.uid||undefined,timeToPay:inv.timeToPay,deliveryDateUntil:inv.deliveryDateUntil||undefined,kiInfo:inv,
+    contactId:same?pre.contactId:undefined},   /* andere Firma laut KI → vorher bekannter Kontakt gilt nicht mehr */
     pre.kind==="offer"?{validUntil:inv.validUntil||undefined,header:inv.header||pre.header}:{}));
 }
 K.invoiceDraft=function(req,pre){
@@ -59,9 +61,11 @@ function mailAddr(m){ var M=F.M||{}, sent=M.isSent&&M.isSent(m), raw=sent?String
   var nm=sent?String(raw.split(/[<,;]/)[0]||"").replace(/"/g,"").trim():String(m.fromName||"").trim(); return {email:a,name:nm&&nm.indexOf("@")<0?nm:""}; }
 F.invoiceFromMail=function(m,kind){ if(!m) return; var offer=kind==="offer", who=mailAddr(m);
   F.loadMeta(function(meta){
-    var c=who.email&&((meta&&meta.contacts)||[]).find(function(x){ return String(x.email||"").toLowerCase()===who.email; });
+    var cs=who.email?((meta&&meta.contacts)||[]).filter(function(x){ return String(x.email||"").toLowerCase()===who.email; }):[], c=cs[0];
     var l=who.email&&((F.D&&F.D.leads)||[]).find(function(x){ return String(x.email||"").toLowerCase()===who.email; });
     var pre={title:(offer?"Neues Angebot":"Neue Rechnung")+" aus Mail",contactName:c?c.name:l?(l.company||l.name):(who.name||who.email),email:who.email};
+    if(cs.length===1&&c.id) pre.contactId=String(c.id);   /* genau ein Kontakt mit dieser E-Mail – gilt nur, solange der Name im Dialog unverändert bleibt */
+    if(l) pre.after={leadId:l.id};            /* Lead-Phase rückt vor, Lead merkt sich den Kontakt */
     if(offer) pre.kind="offer";
     var M=F.M||{}, body=m.bodyHtml?String(m.body||"").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<br\s*\/?>/gi,"\n").replace(/<\/(p|div|tr|li)>/gi,"\n").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," "):String(m.body||m.preview||"");
     var req={text:"",mailId:m.id,mail:{from:m.from,fromName:m.fromName,to:m.to,date:m.date,subject:m.subject,text:body.slice(0,12000)}};

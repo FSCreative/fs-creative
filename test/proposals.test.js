@@ -21,8 +21,8 @@ function memFin(seed) {
 const acc = (id, name) => ["CheckAccount", { id, name, status: "100", type: "online" }];
 const tx = (id, accId, amount, date, name, purpose) => ["CheckAccountTransaction", { id, checkAccount: { id: accId, objectName: "CheckAccount" }, amount: amount.toFixed(2), valueDate: date + "T00:00:00+02:00", entryDate: date + "T00:00:00+02:00", payeePayerName: name, paymtPurpose: purpose, status: "100" }];
 
-function setup() {
-  const fin = memFin([
+function setup(seed) {
+  const fin = memFin(seed || [
     acc("1", "George"), acc("2", "PayPal"),
     ["AccountingType", { id: "27", name: "Software", status: "100" }],
     tx("101", "1", -23.5, "2026-10-01", "WORLD4YOU INTERNET SERVICES", "Webhosting Oktober"),
@@ -280,6 +280,51 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     const v = L.all("Voucher").filter(x => String(x.supplierName) === "Geiger GmbH & Co. KG").sort((a, b) => +b.id - +a.id)[0];
     assert.strictEqual(String(v.taxRule && v.taxRule.id), "8"); assert.strictEqual(+v.sumTax, 0);
   });
+  // Druckshop + Mollie (Istbesteuerung!): Die Rechnung bleibt ENTWURF, bis bei Print.com bestellt wird – die bezahlte Mollie-Zahlung
+  // darf dann keinen Vorschlag „Einnahme-Beleg 20 %“ bekommen (doppelter Umsatz, doppelte USt). Erst nach dem Fertigstellen: Zuordnung als Vorschlag.
+  {
+    const pid = "tr_Druck7kQ2m", acc2 = ["CheckAccount", { id: "2", name: "Mollie – Druckshop", status: "100", type: "online", mollieBalance: "bal_print" }];
+    const pay = (id, p, gross, net, date) => ["CheckAccountTransaction", { id, checkAccount: { id: "2", objectName: "CheckAccount" }, amount: net.toFixed(2), mollieGross: gross.toFixed(2), mollieFeeAmt: (gross - net).toFixed(2), molliePayment: p, mollieType: "payment", mollieId: "m" + id, valueDate: date + "T00:00:00+02:00", entryDate: date + "T00:00:00+02:00", payeePayerName: "Maria Muster", paymtPurpose: "Druckshop " + p, mollieDesc: "Druckbestellung", status: "100" }];
+    const E = setup([acc("1", "George"), acc2, pay("1201", pid, 38.4, 37.46, "2026-09-20"), pay("1202", "tr_Fremd5551x", 20, 19.39, "2026-09-20"), pay("1203", "tr_Druck7kQ2mX", 12, 11.5, "2026-09-20")]);
+    await E.L.load();
+    const r = await E.L.request("POST", "/Invoice/Factory/saveInvoice", { body: { invoice: { header: "Rechnung Druckauftrag D-260919-AB12", headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung D-260919-AB12). Bezahlt online – Mollie " + pid + ".", status: "100", invoiceType: "RE", timeToPay: 0, contact: { id: "1", objectName: "Contact" } },
+      invoicePosSave: [{ name: "Visitenkarten – 250 Stück", quantity: 1, price: 32, priceGross: 38.4, grossPricing: true, taxRate: 20 }] } });
+    const invId = String(r.objects.invoice.id);
+    const keys = async () => (await E.P.list()).map(x => x.key);
+    await t("Druckshop-Entwurf mit „Mollie tr_…“: Mollie-Zahlung (älter als 3 Tage) bekommt KEINEN Einnahme-Beleg-Vorschlag", async () => {
+      assert.strictEqual(String(E.L.get("Invoice", invId).status), "100");
+      assert.strictEqual(E.M.draftHit(E.L.get("CheckAccountTransaction", "1201")), true);
+      assert.strictEqual(E.M.draftHit(E.L.get("CheckAccountTransaction", "1203")), false, "längere ID mit gleichem Anfang ist eine andere Zahlung");
+      await E.M.autoVouchers();
+      const k = await keys();
+      assert.ok(!k.some(x => x === "minc:1201"), "kein minc-Vorschlag zur Druckshop-Zahlung: " + k.join(","));
+      assert.ok(!k.some(x => /^mmatch:1201:/.test(x)), "Entwurf wird noch nicht zugeordnet");
+      assert.ok(k.indexOf("minc:1202") > -1, "Gegenprobe: Zahlung ohne Rechnung bekommt den Vorschlag weiterhin");
+      assert.ok(k.indexOf("minc:1203") > -1, "längere Mollie-ID (gleicher Anfang) zählt nicht als Treffer");
+      assert.strictEqual(String(E.L.get("CheckAccountTransaction", "1201").status), "100", "nichts gebucht");
+      assert.strictEqual(E.L.all("Voucher").length, 0, "kein Beleg angelegt");
+    });
+    await t("alter offener minc-Vorschlag zur Druckshop-Zahlung: Annehmen bucht nichts (Fehler mit Hinweis), Vorschlag wird nicht selbst abgelehnt", async () => {
+      await E.P.add({ kind: "mollie-income", key: "minc:1201", txId: "1201", amount: 38.4, date: "2026-09-20", title: "Einnahme-Beleg 20 % anlegen (keine Rechnung gefunden)", payload: { txId: "1201" } });
+      const it = (await E.P.list()).find(x => x.key === "minc:1201"); assert.ok(it, "Vorschlag bleibt sichtbar");
+      await assert.rejects(() => E.P.accept(it.id), /Rechnungsentwurf/);
+      assert.strictEqual(E.L.all("Voucher").length, 0, "kein Einnahme-Beleg"); assert.strictEqual(String(E.L.get("CheckAccountTransaction", "1201").status), "100");
+      const res = await E.P.acceptAll("mollie-income"); assert.ok(res.some(x => x.id === it.id && !x.ok), "„Alle annehmen“ bucht ihn ebenfalls nicht");
+      assert.strictEqual(E.L.all("Voucher").filter(v => v.fromMollie === "1201").length, 0);
+      await E.P.reject(it.id);
+    });
+    await t("Rechnung fertiggestellt (Status 200) → rematch legt „Mollie-Zahlung → Rechnung“ als Vorschlag an (ohne autoAccept), Annehmen bucht", async () => {
+      await E.L.request("PUT", "/Invoice/" + invId + "/sendBy", { body: { sendType: "VPDF" } });
+      assert.strictEqual(String(E.L.get("Invoice", invId).status), "200");
+      assert.strictEqual(await E.M.rematch(), 1);
+      const m = (await E.P.list()).find(x => x.key === "mmatch:1201:" + invId); assert.ok(m, "Zuordnungs-Vorschlag"); assert.strictEqual(m.kind, "mollie-match"); assert.ok(!m.auto, "nicht automatisch angenommen");
+      assert.strictEqual(String(E.L.get("CheckAccountTransaction", "1201").status), "100", "noch nichts gebucht"); assert.strictEqual(String(E.L.get("Invoice", invId).status), "200");
+      await E.M.autoVouchers(); assert.ok(!(await keys()).some(x => x === "minc:1201"), "auch jetzt kein Einnahme-Beleg");
+      await E.P.accept(m.id);
+      assert.strictEqual(String(E.L.get("Invoice", invId).status), "1000"); assert.strictEqual(String(E.L.get("CheckAccountTransaction", "1201").status), "200");
+      assert.strictEqual(E.L.all("Voucher").filter(v => v.fromMollie === "1201").length, 0, "Umsatz nur einmal (Rechnung)");
+    });
+  }
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");
   fails.forEach(f => console.log(" ✗ " + f));
   process.exit(fail ? 1 : 0);

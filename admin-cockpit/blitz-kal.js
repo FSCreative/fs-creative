@@ -73,7 +73,8 @@ function load(force){
     if(!j||j.ok===false) S.err=(j&&j.error)||"Fehler";
     else { S.data=j; S.key=key; }
     if(F.current==="plat"&&F.UI.plat==="blitz") F.render();
-  }).catch(function(){ if(S.loading!==key) return; S.loading=false; S.err="Keine Verbindung"; if(F.current==="plat") F.render(); });
+    wanted();
+  }).catch(function(){ if(S.loading!==key) return; S.loading=false; S.err="Keine Verbindung"; if(F.current==="plat") F.render(); wanted(); });
 }
 function loadCat(cb,force){
   if(S.cat&&!force){ if(cb) cb(S.cat); return; }
@@ -85,6 +86,8 @@ function loadCat(cb,force){
     S.cat=j; S.catErr=""; if(cb) cb(j);
   }).catch(function(){ S.catLoading=false; F.toast("Keine Verbindung zu Blitzdings",true); });
 }
+/* bkshow für eine Buchung außerhalb des geladenen Monats: nach dem Laden öffnen */
+function wanted(){ if(!S.want) return; var id=S.want; S.want=null; var b=bookingById(id); if(b) showBooking(b); else F.toast(S.err&&!S.data?"Blitzdings nicht erreichbar: "+S.err:"Buchung nicht gefunden – evtl. storniert oder in Blitzdings gelöscht",true); }
 function refreshAll(){ S.key=""; load(true); setTimeout(function(){ F.load(true); },300); }
 
 function bookingById(id){ return S.data&&(S.data.bookings||[]).find(function(b){ return b.id===id; }); }
@@ -179,29 +182,49 @@ F.action("bkunblock",function(id){
 
 /* ---------- Details ---------- */
 function addr(b){ return [b.billingStreet,[b.billingZip,b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join(", "); }
+/* Rechnungsempfänger einer Buchung (auch für „Rechnung“ in Plattformen): Firma vor Person, Person als z. H., Rechnungsadresse, E-Mail */
+F.blitzInvTo=function(b){ var co=String(b.companyName||"").trim(), pe=String(b.customerName||"").trim(), who=co||pe;
+  return {contactName:who,email:b.customerEmail||"",address:[who,co&&pe&&pe!==co?"z. H. "+pe:"",b.billingStreet,[b.billingZip,b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n")}; };
+function mailLink(e){ return '<a href="mailto:'+esc(e)+'"'+(F.actions.mmailto?' data-act="mmailto:'+esc(e)+'" title="Mail im Cockpit schreiben"':'')+'>'+esc(e)+'</a>'; }
+function invBtn(id,label){ return id&&F.actions.fin?'<button type="button" class="link" data-act="fin:invd:'+esc(id)+'" title="Rechnung öffnen">'+esc(label)+'</button>':esc(label); }
 // Verrechnung laut Abgleich (Geld › Verrechnung): auch Sammelrechnungen, z. B. alle Oktober-Roadshows → eine Rechnung an Montafon Tourismus
-function invOf(b){ var a=F.D&&F.D.abgleich, it=a&&(a.items||[]).find(function(x){ return x.key==="blitz:"+b.id; }); return it&&it.last&&it.last.nr?it.last:null; }
-function invTxt(b){ var l=invOf(b); if(!l) return ""; var it=(F.D.abgleich.items||[]).find(function(x){ return x.key==="blitz:"+b.id; });
-  return l.nr+(/Sammelrechnung/.test(it.sub||"")?" (Sammelrechnung)":"")+" · "+(l.label||l.state||"")+(l.open>0.005&&l.state!=="bezahlt"?" · offen "+String(l.open.toFixed(2)).replace(".",",")+" €":""); }
+function abgItem(b){ var a=F.D&&F.D.abgleich; return (a&&(a.items||[]).find(function(x){ return x.key==="blitz:"+b.id; }))||null; }
+function invOf(b){ var it=abgItem(b); return it&&it.last&&(it.last.nr||it.last.id)?it.last:null; }   /* auch Entwurf (noch ohne Nummer) */
+function invHtml(b){ var l=invOf(b); if(!l) return ""; var it=abgItem(b)||{};
+  return invBtn(l.id,l.nr||"Entwurf")+(/Sammelrechnung/.test(it.sub||"")?" (Sammelrechnung)":"")+" · "+esc(l.label||l.state||"")+(l.open>0.005&&l.state!=="bezahlt"&&l.state!=="storniert"?' · offen <span class="money">'+esc(eur(l.open))+'</span>':"")+
+    (it.depositOnly&&+it.unbilled>0.005?' · Rest offen <span class="money">'+esc(eur(+it.unbilled))+'</span>':"")+(l.state==="storniert"?" – neue Rechnung möglich":""); }
+/* Anzahlungen dieser Buchung (nicht storniert) für die Restrechnung */
+function depLinks(b){ var it=abgItem(b); return it&&it.depositOnly?(it.invoices||[]).filter(function(l){ return l&&l.id&&l.state!=="storniert"; }):[]; }
 function showBooking(b,fresh){
   var range=de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):"");
+  var abl=invOf(b), sto=!!(abl&&abl.state==="storniert"), deps=depLinks(b), ai=abgItem(b), rest=deps.length&&ai&&+ai.unbilled>0.005;
   var rows=[["Termin",range],["Paket",b.package.name],["Status",(ST_LABEL[b.status]||b.status)+(b.blocking?"":" (belegt keine Box)")],["Zahlung",(b.paymentStatus==="PAID"?"bezahlt":b.paymentStatus==="REFUNDED"?"erstattet":"offen")+(b.paymentMethod==="INVOICE"?" · auf Rechnung":" · online")],
-    ["Betrag",eur(c2e(b.totalCents))],["Kunde",b.customerName+(b.companyName?" ("+b.companyName+")":"")],["E-Mail",b.customerEmail],["Telefon",b.customerPhone],["Ort",b.eventLocation],["Adresse",addr(b)],
-    ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],["Rechnung",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":invTxt(b)]].filter(function(r){ return r[1]; });
-  var abl=invOf(b), canInv=!!F.D.sev&&!b.sevdeskInvoiceId&&!abl&&+b.totalCents>0;
+    ["Betrag",eur(c2e(b.totalCents))],["Kunde",b.customerName+(b.companyName?" ("+b.companyName+")":"")],["E-Mail",b.customerEmail,b.customerEmail?mailLink(b.customerEmail):null],["Telefon",b.customerPhone,b.customerPhone?'<a href="tel:'+esc(String(b.customerPhone).replace(/[^\d+]/g,""))+'">'+esc(b.customerPhone)+'</a>':null],["Ort",b.eventLocation],["Adresse",addr(b)],
+    ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],
+    abl?["Rechnung","x",invHtml(b)]:["Rechnung",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":"",b.sevdeskInvoiceId?invBtn(b.sevdeskInvoiceId,"Rechnung aus Blitzdings vorhanden"):null]].filter(function(r){ return r[1]; });
+  /* neue Rechnung: ohne Rechnung oder wenn die bisherige storniert ist */
+  var canInv=!!F.D.sev&&+b.totalCents>0&&(sto||(!b.sevdeskInvoiceId&&!abl));
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+(fresh?"Buchung angelegt · ":"")+esc(b.customerName)+'</h2>'+F.btnClose()+'</div>'+
     (fresh?'<p class="muted" style="margin:6px 0 0">Gespeichert in Blitzdings ('+esc(b.reference)+'). Steht damit im Blitzdings-Admin, im Google-Kalender von Blitzdings, hier im Kalender und unter Heute.</p>':'')+
-    '<dl class="bk-dl" style="margin:12px 0">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; }).join("")+'</dl>'+
+    '<dl class="bk-dl" style="margin:12px 0">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+(r[2]!=null?r[2]:esc(r[1]))+'</dd>'; }).join("")+'</dl>'+
     '<div class="sec-t">Weiter eintragen (optional)</div><div class="row wrap" style="gap:8px">'+
       '<button class="btn" data-act="bkical:'+esc(b.id)+'">In iCloud-Kalender eintragen</button>'+
-      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(b.sevdeskInvoiceId?"Blitzdings hat bereits eine Rechnung erstellt":abl?"Schon verrechnet mit "+(abl.nr||"Rechnung"):"Buchhaltung ist gerade nicht erreichbar")+'"')+'>Rechnung vorbereiten</button>'+
+      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(!F.D.sev?"Buchhaltung ist gerade nicht erreichbar":b.sevdeskInvoiceId&&!abl?"Blitzdings hat bereits eine Rechnung erstellt":abl?"Schon verrechnet mit "+(abl.nr||"Rechnungsentwurf"):"Kein Betrag")+'"')+'>Rechnung vorbereiten</button>'+
       '<button class="btn" data-act="bkinv:'+esc(b.id)+'~dep"'+(canInv?'':' disabled')+'>Anzahlung 50 % vorbereiten</button>'+
+      (rest?'<button class="btn primary" data-act="bkinv:'+esc(b.id)+'~rest"'+(F.D.sev?' title="Volle Positionen abzüglich Anzahlung – nur Entwurf"':' disabled title="Buchhaltung ist gerade nicht erreichbar"')+'>Restrechnung vorbereiten</button>':'')+
     '</div>'+
     '<div class="foot"><span class="row">'+(b.status!=="CANCELLED"?'<button class="btn danger" data-act="bkcancel:'+esc(b.id)+'">Stornieren</button>':'<button class="btn" data-act="bkrestore:'+esc(b.id)+'">Storno aufheben</button>')+
       '<button class="btn" data-act="bkpaid:'+esc(b.id)+'">'+(b.paymentStatus==="PAID"?"Auf offen":"Als bezahlt")+'</button></span>'+
       '<span class="row"><a class="btn" href="https://www.blitzdings.co.at/admin/buchungen/'+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">In Blitzdings ↗</a><button class="btn primary" data-closemodal>Fertig</button></span></div>',"narrow");
 }
-F.action("bkshow",function(id){ var b=bookingById(id); if(b) showBooking(b); });
+function bkDayOf(id){ var p=F.D&&F.D.platforms&&F.D.platforms.blitzdings, u=p&&(p.upcoming||[]).find(function(x){ return String(x.id)===String(id); }); if(u&&u.eventDate) return String(u.eventDate).slice(0,10);
+  var it=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).find(function(x){ return x.key==="blitz:"+id; }); return it&&it.date?String(it.date).slice(0,10):""; }
+F.action("bkshow",function(id){
+  var b=bookingById(id)||LAST[id]; if(b){ showBooking(b); return; }
+  var m=(bkDayOf(id)||today()).slice(0,7);
+  if(S.data&&S.month===m&&!S.loading){ F.toast("Buchung nicht gefunden – evtl. storniert oder in Blitzdings gelöscht",true); return; }
+  S.want=id; if(S.month!==m){ S.month=m; S.data=null; } S.key=""; load(true);   /* Monat der Buchung laden, dann öffnen (wanted) */
+});
 function setStatus(id,body,msg){
   F.api("/admin/api/blitz/booking-status",{body:Object.assign({id:id},body)}).then(function(j){
     if(!j||j.ok===false){ F.toast("Blitzdings hat nicht gespeichert: "+((j&&j.error)||"Fehler"),true); return; }
@@ -229,18 +252,24 @@ F.action("bkical",function(id,el){
 F.action("bkinv",function(v){
   var x=String(v).split("~"), b=bookingById(x[0])||LAST[x[0]]; if(!b) return;
   if(!F.D.sev){ F.toast("Buchhaltung ist gerade nicht erreichbar",true); return; }
-  var dep=x[1]==="dep", txt=[de(b.eventDate)?"Event am "+de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):""):"",b.eventLocation?"Ort: "+b.eventLocation:""].filter(Boolean).join(" · ");
+  var dep=x[1]==="dep", rest=x[1]==="rest", txt=[de(b.eventDate)?"Event am "+de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):""):"",b.eventLocation?"Ort: "+b.eventLocation:""].filter(Boolean).join(" · ");
   var items;
   if(dep) items=[{name:"Anzahlung 50 % – Blitzdings "+b.package.name,text:"Buchung "+b.reference+(txt?" · "+txt:""),qty:1,priceGross:Math.round(b.totalCents/2)/100,taxRate:20}];
   else {
     var exSum=(b.extras||[]).reduce(function(s,e){ return s+(+e.priceCents||0); },0);
     items=[{name:"Blitzdings "+b.package.name,text:txt,qty:1,priceGross:c2e(b.totalCents-exSum),taxRate:20}].concat((b.extras||[]).map(function(e){ return {name:e.name,text:"",qty:1,priceGross:c2e(e.priceCents),taxRate:20}; }));
   }
-  F.openInvoice({title:(dep?"Anzahlung":"Rechnung")+" · Blitzdings-Buchung",contactName:b.companyName||b.customerName,email:b.customerEmail,
-    address:[b.companyName||b.customerName,b.billingStreet,[b.billingZip,b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"),
+  /* Restrechnung: volle Positionen abzüglich jeder Anzahlung (negativ, Steuersatz der Anzahlungsrechnung) – nur ein Entwurf */
+  if(rest){ var deps=depLinks(b); if(!deps.length){ F.toast("Keine Anzahlung gefunden",true); return; }
+    items=items.concat(deps.map(function(l){ return {name:"abzüglich Anzahlung "+(l.nr||"(Entwurf)")+(l.date?" vom "+de(String(l.date).slice(0,10)):""),text:"",qty:1,priceGross:-(Math.round((+l.gross||0)*100)/100),taxRate:depRate(l)}; })); }
+  F.openInvoice(Object.assign({title:(dep?"Anzahlung":rest?"Restrechnung":"Rechnung")+" · Blitzdings-Buchung"},F.blitzInvTo(b),{
     deliveryDate:b.eventDate,headText:"Buchung "+b.reference+" – vielen Dank für Ihre Buchung bei Blitzdings.",items:items,
-    after:{billing:{key:"blitz:"+b.id,label:b.customerName+" · "+b.reference+(dep?" (Anzahlung)":"")}}});
+    after:{billing:Object.assign({key:"blitz:"+b.id,label:b.customerName+" · "+b.reference+(dep?" (Anzahlung)":rest?" (Restrechnung)":"")},dep?{deposit:true}:{})}}));
 });
+
+/* Steuersatz einer Anzahlungsrechnung (aus brutto/netto der Buchhaltung, sonst 20 %) */
+function depRate(l){ var i=((F.D&&F.D.sev&&F.D.sev.invoices)||[]).find(function(x){ return String(x.id)===String(l.id); }); if(!i||!(+i.net>0)) return 20;
+  var r=(+i.gross/+i.net-1)*100; return [20,13,10,0].reduce(function(a,c){ return Math.abs(c-r)<Math.abs(a-r)?c:a; },20); }
 
 /* ---------- Formular ---------- */
 var LAST={};   // frisch angelegte Buchungen (für Folgeaktionen, bevor der Kalender neu geladen ist)

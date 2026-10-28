@@ -4,8 +4,18 @@
 var F=window.FSC, esc=F.esc, eur=F.eur;
 
 /* ---------- Rechnung erstellen (Entwurf) ---------- */
-var META=null;
-F.loadMeta=function(cb,force){ if(META&&!force) return cb(META); F.api("/admin/api/sevdesk/meta"+(force?"?force=1":"")).then(function(m){ META=m||{}; cb(META); }).catch(function(){ cb({}); }); };
+var META=null, METAQ=null;
+/* Kontakte & Kategorien der Buchhaltung: einmal laden, gleichzeitige Aufrufe teilen sich die Anfrage, Fehler werden nicht gemerkt (nächster Aufruf versucht es neu) */
+F.loadMeta=function(cb,force){ cb=cb||function(){}; if(META&&!force) return cb(META); if(METAQ&&!force){ METAQ.push(cb); return; }
+  var q=METAQ=[cb], done=function(m){ if(METAQ===q) METAQ=null; q.forEach(function(f){ try{ f(m); }catch(e){ console.error(e); } }); };
+  F.api("/admin/api/sevdesk/meta"+(force?"?force=1":"")).then(function(m){ m=m||{}; META=m.error?null:m; done(m); }).catch(function(){ done({}); }); };
+F.metaCached=function(){ return META&&!META.error&&META.contacts?META:null; };   /* nur lesen, lädt nichts nach */
+/* Vergleich Kunde ↔ Beleg: Name exakt (klein, getrimmt, Leerzeichen zusammengefasst – nie Teilstring), E-Mail als reine Adresse */
+F.normName=function(s){ return String(s||"").toLowerCase().replace(/\s+/g," ").trim(); };
+F.normMail=function(s){ var m=String(s||"").match(/[^\s<>,;:"'()\[\]]+@[^\s<>,;:"'()\[\]]+/); return m?m[0].toLowerCase().replace(/\.+$/,""):""; };
+/* Verweis auf eine Mail (für Aufgaben): Objekt oder Mail-ID */
+F.mailRef=function(m){ if(m&&typeof m!=="object"){ var id=String(m); m=(F.M&&F.M.find&&F.M.find(id))||((F.D&&F.D.mail&&F.D.mail.messages)||[]).find(function(x){ return x.id===id; })||null; }
+  return m&&m.id?{id:m.id,account:m.account||"",folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}:null; };
 function irow(it){ it=it||{}; var tax=it.taxRate!=null?+it.taxRate:20; return '<div class="irow"><input class="f" data-i="name" list="invParts" placeholder="Bezeichnung oder Artikel" value="'+esc(it.name||"")+'"><input class="f num" data-i="qty" type="number" min="0" step="0.5" value="'+esc(it.qty||1)+'" aria-label="Menge"><input class="f num" data-i="price" type="number" step="0.01" placeholder="brutto €" value="'+(it.priceGross!=null?esc(it.priceGross):"")+'" aria-label="Einzelpreis brutto"><select class="f" data-i="tax" aria-label="USt">'+[20,13,10,0].map(function(r){ return '<option value="'+r+'"'+(tax===r?" selected":"")+'>'+r+' %</option>'; }).join("")+'</select><button type="button" class="btn icon del" data-delrow aria-label="Position entfernen">✕</button><input class="f t2" data-i="text" placeholder="Beschreibung (optional)" value="'+esc(it.text||"")+'">'+(+it.discount>0?'<input type="hidden" data-i="disc" value="'+esc(it.discount)+'"><span class="irdisc">abzüglich '+esc(String(+it.discount).replace(".",","))+' % Rabatt</span>':'')+'</div>'; }
 var INVCTX=null, PARTS=[];
 F.addDays=function(iso,n){ var d=new Date(String(iso).slice(0,10)+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
@@ -151,16 +161,18 @@ F.form("invoice",function(form){
     if(!body.contactId) META=null;   /* neuer Kunde → Kundenliste neu laden */
     var after=(INVCTX&&INVCTX.after)||{}, jobs=[];
     if(after.siteCustomer) jobs.push(F.api("/admin/api/billing",{body:{op:"site",key:after.siteCustomer.replace(/^site:/,""),patch:{customer:contact}}}));
-    if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:{id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label}}}));
+    if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:Object.assign({id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label},after.billing.deposit?{deposit:true}:{})}}));   /* deposit: Anzahlung (Restrechnung folgt) */
     if(after.paid&&form.paidacc){ var pa=form.paidacc.value; jobs.push(F.api("/admin/api/sev/invoice-op",{body:{confirm:true,op:"sent",id:j.id,sendType:"VPDF"}}).then(function(r){ if(!r||!r.ok) return r; return F.api("/admin/api/sevdesk/book",{body:{id:j.id,amount:after.paid.amount,date:after.paid.date,accountId:pa}}); })); }
     if(after.kochduSettle) jobs.push(F.api("/admin/api/kochdu-settle",{body:{action:"settle",restaurantId:after.kochduSettle.restaurantId,amountCents:after.kochduSettle.amountCents}}));
-    var cb=INVCTX&&INVCTX.onDone;
-    Promise.all(jobs.map(function(p){ return p.then(function(r){ return r&&r.ok!==false&&!r.error; }).catch(function(){ return false; }); })).then(function(res){
-      var failed=res.filter(function(x){ return !x; }).length;
+    var cb=INVCTX&&INVCTX.onDone, soft=editing?[]:ctxJobs(after,j,contact,"invoice");   /* Lead/Auftrag merken sich den Beleg (nur Cockpit-Daten) */
+    Promise.all([Promise.all(jobs.map(function(p){ return p.then(function(r){ return r&&r.ok!==false&&!r.error; }).catch(function(){ return false; }); })),Promise.all(soft)]).then(function(rr){
+      var res=rr[0], failed=res.filter(function(x){ return !x; }).length, softFailed=rr[1].filter(function(x){ return !x; }).length;
+      var open=function(){ if(F.sevOpenInvoice) F.sevOpenInvoice(j.id); else F.viewDoc("/admin/api/sevdesk/pdf?id="+encodeURIComponent(j.id),"Rechnung "+(j.nr||"Entwurf")); };
       F.closeModal();
       if(failed) F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt, aber "+failed+" Folgeschritt(e) (als verrechnet markieren) fehlgeschlagen – bitte prüfen",true);
       else if(editing) F.toast("Entwurf gespeichert");
-      else F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt",false,"Öffnen & senden",function(){ if(F.sevOpenInvoice) F.sevOpenInvoice(j.id); else F.viewDoc("/admin/api/sevdesk/pdf?id="+encodeURIComponent(j.id),"Rechnung "+(j.nr||"Entwurf")); });
+      else if(softFailed) F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt – Verknüpfung mit Kundenakte/Auftrag nicht gespeichert",true,"Öffnen & senden",open);
+      else F.toast("Rechnungsentwurf "+(j.nr||"")+" angelegt",false,"Öffnen & senden",open);
       if(cb) cb(j,{failed:failed}); F.load(true); });
   }).catch(function(){ btn.disabled=false; btn.textContent=lblSave; err.textContent="Keine Verbindung zum Server."; });
 });
@@ -177,16 +189,43 @@ function saveOffer(form,items,contact,err,btn){
     var order=["anfrage","entwurf","angebot","auftrag","live"], move=l&&order.indexOf(l.stage||"anfrage")<order.indexOf("angebot");
     var patch=move?{stage:"angebot"}:null;
     if(l&&!(+l.value>0)){ var net=items.reduce(function(s,i){ return s+i.qty*i.priceGross/(1+(i.taxRate||0)/100); },0); patch=Object.assign(patch||{},{value:Math.round(net)}); }
+    var cid=l&&linkCid(l,j,contact); if(cid) patch=Object.assign(patch||{},{contactId:cid});   /* Lead merkt sich den Buchhaltungs-Kontakt */
     var job=patch?F.api("/admin/api/leads",{body:{op:"update",id:lid,patch:patch}}).then(function(r){ if(r&&r.ok) F.D.leads=r.leads; return r&&r.ok; }).catch(function(){ return false; }):Promise.resolve(true);
-    job.then(function(ok){
+    Promise.all([job,projLink(ctx.after&&ctx.after.project,"offer",j,contact,l)||Promise.resolve(true)]).then(function(rr){ var ok=rr[0], pdf=function(){ F.viewDoc("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(j.id),"Angebot "+(j.nr||"")); };
       F.closeModal();
       if(!ok) F.toast("Angebot "+(j.nr||"")+" angelegt, aber die Phase des Leads konnte nicht gesetzt werden",true);
-      else F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",function(){ F.viewDoc("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(j.id),"Angebot "+(j.nr||"")); });
+      else if(!rr[1]) F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt – Verknüpfung mit dem Auftrag nicht gespeichert",true,"PDF ansehen",pdf);
+      else F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",pdf);
       if(ctx.onDone) ctx.onDone(j);
       if(F.offersLoad) F.offersLoad(true); F.render();
     });
   }).catch(function(){ btn.disabled=false; btn.textContent=lbl; err.textContent="Keine Verbindung zum Server."; });
 }
+/* Kontext nach dem Anlegen (after.leadId, after.project): nur Cockpit-Daten (leads.json, auftraege.json), nie der Beleg selbst.
+   Lead-Kontakt nur bei eindeutigem Bezug: Name im Dialog = Firma/Name des Leads oder genau ein Kontakt mit der E-Mail des Leads. */
+var STAGE_ORDER=["anfrage","entwurf","angebot","auftrag","live"];
+function linkCid(l,j,contact){ var cid=j&&j.contactId!=null?String(j.contactId):"";
+  if(!l||l.contactId||!/^\d{1,12}$/.test(cid)) return "";
+  var n=F.normName(contact), em=F.normMail(l.email), m=F.metaCached(), hits=em&&m?m.contacts.filter(function(c){ return F.normMail(c.email)===em; }):[];
+  return (n&&(n===F.normName(l.company)||n===F.normName(l.name)))||(hits.length===1&&String(hits[0].id)===cid)?cid:""; }
+function projLink(pr,kind,j,contact,l){ var pid=pr&&pr.id?String(pr.id):""; if(!pid||!j||!j.id) return null;
+  return F.api("/admin/api/auftraege",{body:{op:"project.link",id:pid,kind:kind,docId:String(j.id),nr:j.nr||""}}).then(function(r){
+    if(!r||!r.ok) return /unbekannte aktion/i.test(String((r&&r.error)||""));   /* alter Server ohne „project.link“: still übergehen */
+    if(r.data&&F.D) F.D.auftraege=r.data;
+    var p=r.data&&(r.data.projects||[]).find(function(x){ return x.id===pid; }), cid=j.contactId!=null?String(j.contactId):"", n=F.normName(contact);
+    if(p&&!p.contactId&&/^\d{1,12}$/.test(cid)&&n&&(n===F.normName(p.customer)||(l&&(n===F.normName(l.company)||n===F.normName(l.name)))))   /* Auftrag merkt sich den Kontakt */
+      return F.api("/admin/api/auftraege",{body:{op:"project.save",project:{id:p.id,name:p.name,customer:p.customer||"",status:p.status,due:p.due||"",note:p.note||"",color:p.color||0,leadId:p.leadId||"",contactId:cid}}})
+        .then(function(s){ if(s&&s.ok&&s.data&&F.D) F.D.auftraege=s.data; return true; }).catch(function(){ return true; });
+    return true;
+  }).catch(function(){ return false; }); }
+function ctxJobs(after,j,contact,kind){ var out=[], lid=after&&after.leadId, l=lid&&F.D&&(F.D.leads||[]).find(function(x){ return x.id===lid; });
+  if(l){ var patch={}, cid=linkCid(l,j,contact);
+    if(kind==="invoice"&&STAGE_ORDER.indexOf(l.stage||"anfrage")<STAGE_ORDER.indexOf("auftrag")) patch.stage="auftrag";   /* Phase nur vorwärts */
+    if(cid) patch.contactId=cid;
+    if(patch.stage||patch.contactId) out.push(F.api("/admin/api/leads",{body:{op:"update",id:lid,patch:patch}}).then(function(r){ if(r&&r.ok&&F.D) F.D.leads=r.leads; return !!(r&&r.ok); }).catch(function(){ return false; })); }
+  var pl=projLink(after&&after.project,kind,j,contact,l); if(pl) out.push(pl);
+  return out; }
+F.projLinkDoc=function(pid,kind,j){ return projLink({id:pid},kind,j,"",null)||Promise.resolve(true); };   /* z. B. Rechnung aus einem Angebot, das im Auftrag hängt */
 F.action("newinvoice",function(){ F.openInvoice({}); });
 F.action("pdf",function(id,el){ F.viewDoc("/admin/api/sevdesk/pdf?id="+encodeURIComponent(id),(el&&el.getAttribute("data-doctitle"))||"Rechnung"); });
 
@@ -234,7 +273,11 @@ F.todosPost=function(next){
   return F.api("/admin/api/todos",{body:{todos:next,base:base}}).then(function(j){ if(j&&Array.isArray(j.todos)) F.D.todos=j.todos; else F.toast("To-Dos konnten nicht gespeichert werden",true); F.render(); return j; });
 };
 /* „To-Do anlegen“ (KI, Mail, Kundenakte …) legt seit 20.10.2026 eine Aufgabe in „Aufträge“ an (ohne Auftrag; Anfrage → mit Kundenakte verknüpft) */
-F.addTodo=function(t){ t=t||{}; return F.api("/admin/api/auftraege",{body:{op:"task.save",task:{title:String(t.text||"Aufgabe").slice(0,200),due:t.due||"",notes:t.notes||"",status:"offen",prio:t.prio||"normal",leadId:t.leadId||undefined}}})
+/* t: {text, due, notes, prio, leadId, projectId, mailRef | mailId} – Auftrag, Kundenakte und Mail bleiben an der Aufgabe hängen */
+F.addTodo=function(t){ t=t||{}; var task={title:String(t.text||"Aufgabe").slice(0,200),due:t.due||"",notes:t.notes||"",status:"offen",prio:t.prio||"normal",leadId:t.leadId||undefined};
+  if(t.projectId) task.projectId=String(t.projectId);
+  var mr=t.mailRef&&typeof t.mailRef==="object"?t.mailRef:t.mailId?F.mailRef(t.mailId):null; if(mr) task.mailRef=mr;
+  return F.api("/admin/api/auftraege",{body:{op:"task.save",task:task}})
   .then(function(j){ if(j&&j.ok&&j.data&&F.D){ F.D.auftraege=j.data; F.render(); return Object.assign({},j,{todos:[]}); } F.toast((j&&j.error)||"Aufgabe konnte nicht angelegt werden",true); return j; }); };
 
 /* ---------- Steuerliche Regel bei jeder Beleganlage (Scan/Upload, Mail-Anhang, Zahlung, Bankumsatz) ----------

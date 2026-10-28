@@ -39,8 +39,8 @@ F.barChart=function(vals,opts){
     g+='<text x="'+(x+w/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="11" fill="var(--ink-3)">'+M[i]+'</text>'; });
   return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(opts.label||"Diagramm")+'">'+g+'</svg>';
 };
-function stateTag(l){ if(!l) return '<span class="tag grey">keine Rechnung</span>'; var m={bezahlt:"ok",offen:"warn",ueberfaellig:"bad",entwurf:"grey",fehlt:"bad",manuell:"grey",alt:"grey",neu:"info",sonst:"grey"}; return '<span class="tag '+(m[l.state]||"grey")+'">'+esc(l.label)+'</span>'; }
-function invLink(l){ if(!l) return ""; return l.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(l.nr||"Entwurf")+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"manuell"); }
+function stateTag(l){ if(!l) return '<span class="tag grey">keine Rechnung</span>'; var m={bezahlt:"ok",offen:"warn",ueberfaellig:"bad",entwurf:"grey",fehlt:"bad",manuell:"grey",alt:"grey",neu:"info",sonst:"grey",storniert:"grey"}; return '<span class="tag '+(m[l.state]||"grey")+'">'+esc(l.label)+'</span>'; }
+function invLink(l){ if(!l) return ""; return l.id?'<a href="#" data-act="fin:invd:'+esc(l.id)+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"manuell"); }
 function problem(x){ return x.refund>0.005||(x.invoices||[]).some(function(l){return l&&(l.state==="fehlt"||l.state==="ueberfaellig");})||x.settledWithoutInvoice>0.005; }
 
 /* VALUERO-Abrechnungen, die das frühere Dashboard nur im Browser gespeichert hat */
@@ -67,7 +67,8 @@ F.action("invf",function(k){ F.UI.invF=k; F.UI.invMore=0; F.render(); });
 F.action("invmore",function(){ F.UI.invMore=(F.UI.invMore||0)+40; F.render(); });
 F.action("txacc",function(id){ F.UI.txAcc=id; F.render(); });
 F.listen("input","[data-invq]",function(el){ F.UI.invQ=el.value; clearTimeout(el._d); el._d=setTimeout(F.render,250); });
-F.searcher(function(q){ return F.D.sev?F.D.sev.invoices.filter(function(i){ return (i.nr+" "+i.contact+" "+(i.header||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(i){ return {group:"Rechnungen",label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.gross)+(i.open>0.005?" · offen "+eur(i.open):" · bezahlt"),act:"sdinv:"+i.id}; }):[]; });
+function invSt(i){ return i.cancelled?" · storniert":i.type==="SR"?" · Storno":i.status===100?(i.src==="print"?" · wartet auf Druckauftrag":" · Entwurf"):i.open>0.005?" · offen "+eur(i.open):i.status===1000?" · bezahlt":""; }
+F.searcher(function(q){ return F.D.sev?F.D.sev.invoices.filter(function(i){ return i.type!=="MA"&&(i.nr+" "+i.contact+" "+(i.header||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(i){ return {group:"Rechnungen",label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.gross)+invSt(i),act:"fin:invd:"+i.id}; }):[]; });
 
 F.view({id:"geld",label:"Finanzen",short:"Finanzen",icon:"geld",order:30,mobile:true,
   count:function(){ return (F.reviewCount?F.reviewCount():0)+((F.D.sev&&F.D.sev.overdueCount)||0); },   // Zur Prüfung + überfällige Rechnungen (früher: Plattform-Posten ohne Rechnung)
@@ -118,10 +119,10 @@ function renderUebersicht(){
   var D=F.D, sev=D.sev, ab=D.abgleich, f=F.UI.money, SRC=F.SRC, mig=valueroLegacy();
   var zu=ab.items.filter(function(x){ return x.unbilled>0.005||x.refund>0.005; }).sort(function(a,b){ return (b.unbilled||0)-(a.unbilled||0); });
   var ign=ab.items.filter(function(x){ return x.ignored; });
-  var drafts=sev?sev.invoices.filter(function(i){return i.status===100;}):[], over=sev?sev.invoices.filter(function(i){return i.overdue;}):[];
+  var drafts=sev?sev.invoices.filter(function(i){return i.status===100&&i.src!=="print";}):[], over=sev?sev.invoices.filter(function(i){return i.overdue;}):[];   /* Druck-Entwürfe warten auf den Druckauftrag */
   var vdr=sev&&sev.vouchers?sev.vouchers.drafts||0:0, unass=sev?sev.unassigned||0:0;
   var tiles=[];
-  if(over.length) tiles.push('<button class="bad" data-act="sdtab:rechnungen|over"><span class="n">'+over.length+'</span><span class="l">Überfällig</span><span class="h">'+eur0(over.reduce(function(s,i){return s+i.open;},0))+' – erinnern oder mahnen</span></button>');
+  if(over.length) tiles.push('<button class="bad" data-act="sdtab:rechnungen|overdue"><span class="n">'+over.length+'</span><span class="l">Überfällig</span><span class="h">'+eur0(over.reduce(function(s,i){return s+i.open;},0))+' – erinnern oder mahnen</span></button>');
   if(drafts.length) tiles.push('<button class="info" data-act="sdtab:rechnungen|draft"><span class="n">'+drafts.length+'</span><span class="l">Entwürfe senden</span><span class="h">'+eur0(drafts.reduce(function(s,i){return s+i.gross;},0))+' warten auf Versand</span></button>');
   if(unass) tiles.push('<button class="info" data-act="sdtab:bank"><span class="n">'+unass+'</span><span class="l">Bankumsätze zuordnen</span><span class="h">mit Vorschlägen</span></button>');
   if(vdr) tiles.push('<button data-act="sdtab:belege|draft"><span class="n">'+vdr+'</span><span class="l">Beleg-Entwürfe</span><span class="h">prüfen & fertig markieren</span></button>');
@@ -139,7 +140,7 @@ function renderUebersicht(){
   var groups={}; rows.forEach(function(x){ (groups[x.src]=groups[x.src]||[]).push(x); });
   var body=Object.keys(SRC).filter(function(k){return groups[k];}).map(function(k){
     return '<tr class="grp"><td colspan="5">'+SRC[k]+'</td></tr>'+groups[k].map(function(x){
-      var invs=(x.invoices||[]).map(function(l){ return '<span>'+(l&&l.id?'<a href="#" data-act="sdinv:'+esc(l.id)+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l&&l.nr||"manuell"))+' · '+eur(l.gross)+' '+stateTag(l)+'</span>'; }).join("");
+      var invs=(x.invoices||[]).map(function(l){ return '<span>'+(l&&l.id?invLink(l):esc(l&&l.nr||"manuell"))+' · '+eur(l.gross)+' '+stateTag(l)+'</span>'; }).join("");
       if(x.src==="kochdu"&&x.settledWithoutInvoice>0.005) invs+='<span class="tag warn">'+eur(x.settledWithoutInvoice)+' ohne Rechnung als verrechnet markiert</span>';
       if(x.ignored) invs+='<span class="tag grey">'+eur(x.ignored.amount)+' ausgeblendet</span>';
       return '<tr><td><b>'+esc(x.name)+'</b><div class="sub">'+esc(x.sub)+'</div></td><td class="r num">'+(x.unbilled>0.005?'<b class="warn-t">'+eur(x.unbilled)+'</b>':'<span class="muted">—</span>')+'</td><td class="r num">'+eur(x.invoiced)+'</td><td class="r num">'+(x.open>0.005?eur(x.open):'<span class="muted">—</span>')+'</td><td><div class="invs">'+(invs||'<span class="muted">—</span>')+'</div></td></tr>';
@@ -154,7 +155,7 @@ function renderUebersicht(){
     '<div class="kpis">'+
       '<div class="panel kpi"><span class="k">Umsatz '+esc(D.year)+'</span><span class="v num">'+(sev?eur0(sev.revenueYear):"—")+'</span><span class="s">gestellte Rechnungen, brutto</span></div>'+
       '<button class="panel kpi" data-act="sdtab:rechnungen|open"><span class="k">Offen</span><span class="v num">'+(sev?eur0(sev.openSum):"—")+'</span><span class="s">'+(sev?sev.openCount+" Rechnungen":"")+'</span></button>'+
-      '<button class="panel kpi" data-act="sdtab:rechnungen|over"><span class="k">Überfällig</span><span class="v num'+(sev&&sev.overdueSum?" bad-t":"")+'">'+(sev?eur0(sev.overdueSum):"—")+'</span><span class="s">'+(sev?sev.overdueCount+" Rechnungen":"")+'</span></button>'+
+      '<button class="panel kpi" data-act="sdtab:rechnungen|overdue"><span class="k">Überfällig</span><span class="v num'+(sev&&sev.overdueSum?" bad-t":"")+'">'+(sev?eur0(sev.overdueSum):"—")+'</span><span class="s">'+(sev?sev.overdueCount+" Rechnungen":"")+'</span></button>'+
       '<button class="panel kpi" data-act="sdtab:bank"><span class="k">Bank</span><span class="v num'+(bal!=null&&bal<0?" bad-t":"")+'">'+(bal==null?"—":eur0(bal))+'</span><span class="s">'+(sev?sev.accounts.length+" Konten":"")+'</span></button>'+
     '</div>'+
     '<section class="panel" id="zuVerrechnen"><div class="panel-h"><h2>Zu verrechnen</h2><span class="muted">'+(zu.length?eur(ab.totals.unbilled)+' · '+zu.length+' Posten':'')+'</span></div>'+
@@ -172,8 +173,9 @@ F.listen("click","[data-abg] > summary",function(el){ F.UI.abgOpen=!el.parentNod
 // Logik: Ist (gestellte Rechnungen bis heute) + Rest des Jahres.
 // Rest je Monat = aktuelles Monatstempo (Schnitt der letzten 3 vollen Monate); hat das Vorjahr mind. 8 Monate mit Umsatz,
 // zur Hälfte gemischt mit dem Vorjahreswert dieses Monats × Wachstumsfaktor (Ist heuer ÷ Vorjahr im gleichen Zeitraum).
-// Dazu kommen Plattform-Einnahmen, die nicht über eigene Rechnungen laufen (Kantineur-Abos, kochdu-Online-Provisionen),
+// Dazu kommen Plattform-Einnahmen, die nicht über eigene Rechnungen laufen (Kantineur-Abos),
 // und bereits angefallene, aber noch nicht verrechnete Beträge aus dem Abgleich.
+// kochdu-Online-Provisionen nicht extra: sie werden je Monat per Sammelrechnung verrechnet (fin-mollie.js) und stecken schon in „Rechnungen“.
 function monthSums(invs,year){ var m=new Array(12).fill(0); invs.forEach(function(i){ if((i.status===200||i.status===750||i.status===1000)&&String(i.date||"").slice(0,4)===String(year)){ var k=parseInt(String(i.date).slice(5,7),10)-1; m[k]+=i.type==="SR"?-Math.abs(i.gross):i.gross; } }); return m; }
 F.renderPrognose=function(){ return renderPrognose(); };
 function renderPrognose(){
@@ -200,17 +202,14 @@ function renderPrognose(){
   }
   method=hasPrev?"je zur Hälfte Vorjahresverlauf × Wachstum ("+(growth>=1?"+":"")+Math.round((growth-1)*100)+" %) und aktuelles Monatstempo":"aktuelles Monatstempo (Schnitt der letzten "+last3.length+" vollen Monate)"+(prevMonths?"; Vorjahr hat zu wenige Monate für einen Saisonverlauf":"");
   var rest=restMonths.reduce(function(a,b){return a+b.v;},0);
-  var inc=D.income||{lines:[]}, kantMon=0, kantYtd=0, kochOnlineYtd=0;
+  var inc=D.income||{lines:[]}, kantMon=0, kantYtd=0;
   var kl=(inc.lines||[]).find(function(l){return l.key==="kantineur";}); kantMon=kl?kl.monthly:0;
   var ka=D.platforms&&D.platforms.kantineur; kantYtd=ka?(ka.revenueGrossCents||0)/100:0;
-  var ko=D.platforms&&D.platforms.kochdu; kochOnlineYtd=ko&&ko.totals?(ko.totals.onlineProvisionCents||0)/100:0;
   var remFrac=(12-mNow-dayFrac);
-  var kochOnlineRest=mNow+dayFrac>0?kochOnlineYtd/(mNow+dayFrac)*remFrac:0;
   var unbilled=D.abgleich.totals.unbilled||0;
   var rows=[
-    ["Rechnungen",ist,rest,"Ist bis heute + Hochrechnung: "+method],
+    ["Rechnungen",ist,rest,"Ist bis heute + Hochrechnung: "+method+" · inkl. kochdu-Online-Provisionen (monatliche Sammelrechnung)"],
     ["Kantineur-Abos",kantYtd,kantMon*remFrac,"läuft über die Plattform, nicht über eigene Rechnungen"],
-    ["kochdu Online-Provisionen",kochOnlineYtd,kochOnlineRest,"automatisch einbehalten, hochgerechnet"],
     ["Angefallen, noch nicht verrechnet",0,unbilled,"aus dem Abgleich – kommt mit den nächsten Rechnungen"]
   ].filter(function(r){ return r[1]>0.5||r[2]>0.5; });
   var tIst=rows.reduce(function(a,r){return a+r[1];},0), tRest=rows.reduce(function(a,r){return a+r[2];},0), total=tIst+tRest;

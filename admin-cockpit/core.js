@@ -149,7 +149,7 @@ FSC.load = function(force){
   if(FSC.busy) return Promise.resolve(); FSC.busy=true;
   return FSC.api("/admin/api/cockpit?year="+FSC.year+(force?"&force=1":"")).then(function(d){
     FSC.busy=false; if(!d||d.error||d.ok===false){ FSC.loadErr=(d&&d.error)||"Fehler"; } else { FSC.D=d; FSC.loadErr=""; FSC.dataHooks.forEach(function(h){ try{ h(d); }catch(e){ console.error(e); } }); }
-    FSC.render();
+    FSC.render(); runDeep();   // Deep-Link-Aktion (#ansicht/aktion:arg) erst mit Daten
     /* Server hat den letzten Stand sofort geliefert und aktualisiert im Hintergrund → kurz danach still nachladen */
     if(d&&d.stale){ clearTimeout(FSC._staleT); FSC._staleT=setTimeout(function(){ if(!document.hidden) FSC.load(false); },4000); }
   }).catch(function(e){ FSC.busy=false; if(String(e.message)!=="login"){ FSC.loadErr="Keine Verbindung zum Server."; FSC.render(); } });
@@ -299,64 +299,189 @@ document.addEventListener("keydown",function(e){
 /* ---------- Liquid Glass: Navigation ----------
    Ein „Tropfen“ je Leiste markiert den aktiven Eintrag: gleitet per Feder (leichtes Überschwingen) und dehnt sich in Bewegungsrichtung,
    folgt Maus bzw. Tastaturfokus sanft und kehrt beim Verlassen zum aktiven Eintrag zurück; übersteht das Neuzeichnen der Leiste.
-   Handy: folgt dem Finger über die Reiterleiste und rastet beim Loslassen am nächsten Eintrag ein.
-   Glanzlicht folgt dem Zeiger (--mx/--my an .lq-glare, --dx/--dy am Tropfen). „Bewegung reduzieren“: springt ohne Animation. */
+   Drücken und Ziehen (Finger, Maus, Stift): der Tropfen folgt, beim Loslassen rastet er federnd am nächsten Eintrag ein und öffnet ihn.
+   Alpenglas zusätzlich wie iOS 26: beim Drücken hebt sich der Tropfen als klare Glaslinse aus der Leiste – größer als die Leiste,
+   vergrößert die Einträge darunter, Lichtkante mit Regenbogensaum – folgt dem Finger und sinkt nach dem Einrasten zurück in die getönte Kapsel.
+   Ohne backdrop-filter:url() (kann Safari nicht): die Linse zeigt eine vergrößerte Kopie der Einträge, die echten bekommen dort ein Loch (Maske).
+   Pro Bild nur transform/opacity (dazu Lage/Größe der Maske). Glanzlicht folgt dem Zeiger (--mx/--my an .lq-glare, --dx/--dy am Tropfen).
+   „Bewegung reduzieren“: keine Linse, springt ohne Animation. */
 var RMQ=window.matchMedia?window.matchMedia("(prefers-reduced-motion: reduce)"):null;
 function still(){ return !!(RMQ&&RMQ.matches); }
+function glas(){ return document.documentElement.getAttribute("data-theme")==="glas"; }
+function tnow(){ return window.performance&&performance.now?performance.now():Date.now(); }
+function f2(n){ return String(Math.round(n*100)/100); }
+var MASKOK=false; try{ MASKOK=!!(window.CSS&&CSS.supports&&(CSS.supports("mask-composite","exclude")||CSS.supports("-webkit-mask-composite","xor"))); }catch(e){}
 function itemKey(b){ return b?(b.getAttribute("data-go")||b.getAttribute("data-act")||""):""; }
+/* Federn [Steifigkeit, Dämpfung]: spring = zum aktiven Eintrag, soft = Hover/Finger, snap = Einrasten nach dem Ziehen (federnder),
+   drag = Tropfen folgt dem Zeiger fast direkt, lens = Linse folgt mit kleinem Nachlauf */
+var SPR={spring:[520,30],soft:[300,28],snap:[560,23],drag:[1400,72],lens:[950,46]};
 function Drop(host,list,axis,sel){   // host: positionierter Container (scrollt mit den Einträgen), list: Container der Einträge, axis: "y" | "x"
   this.host=host; this.list=list; this.axis=axis; this.sel=sel;
   var el=document.createElement("span"); el.className="lq-drop off"; el.setAttribute("aria-hidden","true"); el.appendChild(document.createElement("i"));
   host.insertBefore(el,host.firstChild); this.el=el;
-  this.p=null; this.t=null; this.tk=""; this.v=0; this.sv=0; this.k=520; this.c=30; this.raf=0; this.at=0; this.cur=""; this.hov=""; this.drag=null;
+  this.p=null; this.t=null; this.tk=""; this.v=0; this.sv=0; this.k=520; this.c=30; this.raf=0; this.at=0; this.cur=""; this.hov=""; this.drag=false; this.S=null;
+  this.L=0; this.Lv=0; this.Lt=0; this.kl=760; this.cl=30; this.dropAt=0; this.lens=null;   // Linse: Hub 0…1 (Feder), Ziel, Absinken ab Zeitpunkt
   var me=this; this._step=function(ts){ me.step(ts); };
 }
 Drop.prototype.items=function(){ return Array.prototype.slice.call(this.list.querySelectorAll(this.sel)); };
 Drop.prototype.find=function(k){ var l=this.items(); for(var i=0;i<l.length;i++) if(itemKey(l[i])===k) return l[i]; return null; };
 Drop.prototype.active=function(){ return this.list.querySelector(this.sel+'[aria-current="page"]'); };
 /* Lage relativ zum Container über offset* (ohne CSS-Transform des gedrückten Knopfs); null = nicht sichtbar */
-Drop.prototype.box=function(b){
+Drop.prototype.rect=function(b){
   if(!b||!b.offsetParent) return null;
   var x=0, y=0, e=b; while(e&&e!==this.host){ x+=e.offsetLeft; y+=e.offsetTop; e=e.offsetParent; }
   if(e!==this.host) return null;
-  return this.axis==="y"?{pos:y,size:b.offsetHeight,c:x,cs:b.offsetWidth}:{pos:x,size:b.offsetWidth,c:y,cs:b.offsetHeight};
+  return {x:x,y:y,w:b.offsetWidth,h:b.offsetHeight};
 };
+Drop.prototype.box=function(b){ var r=this.rect(b); if(!r) return null; return this.axis==="y"?{pos:r.y,size:r.h,c:r.x,cs:r.w}:{pos:r.x,size:r.w,c:r.y,cs:r.h}; };
+Drop.prototype.kick=function(){ if(!this.raf){ this.at=0; this.raf=requestAnimationFrame(this._step); } };
 Drop.prototype.paint=function(){
   var p=this.p; if(!p) return;
   var s=still()?0:Math.min(1,Math.abs(this.v)/1700), al=1+0.32*s, cr=1-0.14*s, st=this.el.style;   // Dehnen in Laufrichtung, quer etwas schmäler
   if(this.axis==="y"){ st.width=p.cs+"px"; st.height=p.size+"px"; st.transform="translate3d("+p.c.toFixed(2)+"px,"+p.pos.toFixed(2)+"px,0) scale("+cr.toFixed(3)+","+al.toFixed(3)+")"; }
   else { st.width=p.size+"px"; st.height=p.cs+"px"; st.transform="translate3d("+p.pos.toFixed(2)+"px,"+p.c.toFixed(2)+"px,0) scale("+al.toFixed(3)+","+cr.toFixed(3)+")"; }
+  if(this.lens&&this.lens.on) this.lens.paint(s);
 };
-Drop.prototype.go=function(b,mode){   // mode: "jump" (sofort) | "spring" (zum aktiven, mit Überschwingen) | "soft" (Hover/Finger, weicher)
+Drop.prototype.go=function(b,mode){   // mode: "jump" (sofort) | "keep" (Ziel nachführen, Feder behalten) | Name aus SPR
   var t=this.box(b);
   if(!t){ this.el.classList.add("off"); return; }
   var was=this.el.classList.contains("off"); this.el.classList.remove("off"); this.tk=itemKey(b);
-  if(!this.p||was||mode==="jump"||still()){ if(this.raf) cancelAnimationFrame(this.raf); this.raf=0; this.p={pos:t.pos,size:t.size,c:t.c,cs:t.cs}; this.t=t; this.v=this.sv=0; this.paint(); return; }
-  this.t=t; this.k=mode==="soft"?300:520; this.c=mode==="soft"?28:30;
-  if(!this.raf){ this.at=0; this.raf=requestAnimationFrame(this._step); }
+  if(!this.p||was||mode==="jump"||still()){ if(this.raf) cancelAnimationFrame(this.raf); this.raf=0; this.p={pos:t.pos,size:t.size,c:t.c,cs:t.cs}; this.t=t; this.v=this.sv=0; this.paint(); if(this.lens&&this.lens.on) this.kick(); return; }
+  this.t=t; if(mode!=="keep"){ var k=SPR[mode]||SPR.spring; this.k=k[0]; this.c=k[1]; }
+  this.kick();
 };
+/* Ziehen: Ziel folgt dem Zeiger (pos entlang der Leiste), Größe vom nächsten Eintrag */
+Drop.prototype.follow=function(pos,b){ var q=this.box(b)||this.t; if(!q) return; this.t={pos:pos,size:q.size,c:q.c,cs:q.cs}; var k=SPR[this.lens&&this.lens.on?"lens":"drag"]; this.k=k[0]; this.c=k[1]; this.kick(); };
 Drop.prototype.step=function(ts){
   this.raf=0; var dt=this.at?Math.min(0.034,Math.max(0.001,(ts-this.at)/1000)):1/60; this.at=ts;
   var p=this.p, t=this.t; if(!p||!t) return;
-  if(this.drag){ this.v*=Math.pow(0.02,dt); if(Math.abs(this.v)<5) this.v=0; this.paint(); if(this.v) this.raf=requestAnimationFrame(this._step); return; }
+  var ln=!!(this.lens&&this.lens.on);
+  if(ln&&this.dropAt&&tnow()>=this.dropAt){ this.Lt=0; this.dropAt=0; this.kl=420; this.cl=30; }   // Linse sinkt zurück in die Kapsel
   for(var i=0,h=dt/4;i<4;i++){
     this.v+=(-this.k*(p.pos-t.pos)-this.c*this.v)*h; p.pos+=this.v*h;
     this.sv+=(-this.k*(p.size-t.size)-this.c*this.sv)*h; p.size+=this.sv*h;
+    if(ln){ this.Lv+=(-this.kl*(this.L-this.Lt)-this.cl*this.Lv)*h; this.L+=this.Lv*h; }
   }
   var f=Math.min(1,dt*16); p.c+=(t.c-p.c)*f; p.cs+=(t.cs-p.cs)*f;
-  if(Math.abs(p.pos-t.pos)<0.3&&Math.abs(this.v)<8&&Math.abs(p.size-t.size)<0.3&&Math.abs(this.sv)<8&&Math.abs(p.c-t.c)<0.3&&Math.abs(p.cs-t.cs)<0.3){ this.p={pos:t.pos,size:t.size,c:t.c,cs:t.cs}; this.v=this.sv=0; this.paint(); return; }
+  var rest=Math.abs(p.pos-t.pos)<0.3&&Math.abs(this.v)<8&&Math.abs(p.size-t.size)<0.3&&Math.abs(this.sv)<8&&Math.abs(p.c-t.c)<0.3&&Math.abs(p.cs-t.cs)<0.3;
+  var lrest=!ln||(!this.dropAt&&Math.abs(this.L-this.Lt)<0.004&&Math.abs(this.Lv)<0.05);
+  if(rest&&lrest){
+    this.p={pos:t.pos,size:t.size,c:t.c,cs:t.cs}; this.v=this.sv=0;
+    if(ln){ this.L=this.Lt; this.Lv=0; if(!this.Lt){ this.lens.stop(); ln=false; } }
+    this.paint(); return;
+  }
   this.paint(); this.raf=requestAnimationFrame(this._step);
 };
 /* nach jedem Zeichnen: zum aktiven (bzw. gerade überfahrenen) Eintrag; gleicher Eintrag in Ruhe = ohne Animation nachziehen */
-Drop.prototype.sync=function(){
+Drop.prototype.sync=function(mode){
   if(this.drag) return;
+  if(this.lens&&this.lens.on) this.lens.refresh();
   var a=this.active(), k=itemKey(a), h=this.hov?this.find(this.hov):null, tg=h||a;
   if(a&&k!==this.cur&&this.axis==="y"){ var hs=this.host, at=this.box(a); if(at&&(at.pos<hs.scrollTop||at.pos+at.size>hs.scrollTop+hs.clientHeight)) hs.scrollTop=Math.max(0,at.pos-hs.clientHeight/2); }   // aktiven Eintrag in der scrollenden Liste sichtbar halten
   this.cur=k;
   if(!tg){ this.el.classList.add("off"); return; }
   this.el.classList.toggle("away",!!h&&h!==a);
-  this.go(tg,itemKey(tg)===this.tk&&!this.raf?"jump":(h?"soft":"spring"));
+  var same=itemKey(tg)===this.tk;
+  this.go(tg,mode||(same?(this.raf?"keep":"jump"):(h?"soft":"spring")));
 };
+/* Linse heben (nur Alpenglas, nicht bei „Bewegung reduzieren“); true = Linse ist oben */
+Drop.prototype.lift=function(){
+  if(still()||!glas()||!this.p) return false;
+  try{ if(!this.lens) this.lens=new Lens(this); if(!this.lens.on&&!this.lens.start()) return false; }catch(e){ console.error(e); return false; }
+  this.Lt=1; this.dropAt=0; this.kl=760; this.cl=30; this.kick(); return true;
+};
+Drop.prototype.lower=function(ms){ if(!this.lens||!this.lens.on) return; this.dropAt=tnow()+Math.max(0,ms||0); this.kick(); };
+Drop.prototype.unlift=function(){ if(this.lens) this.lens.stop(); };   // sofort weg (Darstellung gewechselt, Bewegung reduzieren)
+
+/* ---- Linse: eigene Ebene über allem (die Leiste beschneidet sie nicht). Aufbau: Schatten · Körper (leichte Unschärfe/Aufhellung;
+   darin der Rand mit leicht verkleinerter Kopie = Brechung und die Mitte mit vergrößerter Kopie) · Lichtkante mit Regenbogensaum ---- */
+function svgUrl(w,h,body){ return 'url("data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">'+body+'</svg>')+'")'; }
+var MASKP=["webkitMaskImage","maskImage","webkitMaskRepeat","maskRepeat","webkitMaskSize","maskSize","webkitMaskPosition","maskPosition","webkitMaskComposite","maskComposite"];
+function setMask(el,img,xor){ var s=el.style; s.webkitMaskImage=s.maskImage=img; s.webkitMaskRepeat=s.maskRepeat="no-repeat"; s.webkitMaskSize=s.maskSize="100% 100%"; if(xor){ s.webkitMaskComposite="xor"; s.maskComposite="exclude"; } }
+function Lens(d){
+  var kind=d.axis==="x"?"tab":"rail", el=document.createElement("div");
+  el.className="lq-lens lq-lens-"+kind; el.setAttribute("aria-hidden","true"); try{ el.inert=true; }catch(e){}
+  el.innerHTML='<i class="lq-ls"></i><span class="lq-lb"><span class="lq-le"><span></span></span><span class="lq-li"><span></span></span></span><i class="lq-lr"></i>';
+  document.body.appendChild(el);
+  this.d=d; this.kind=kind; this.el=el; this.on=false; this.W=0; this.H=0; this.src=null; this.ox=0; this.oy=0; this.lx=0; this.ly=0;
+  this.ls=el.firstChild; this.lr=el.lastChild; this.le=el.querySelector(".lq-le"); this.li=el.querySelector(".lq-li");
+  this.ge=this.le.firstChild; this.gi=this.li.firstChild;
+  this.ge.className=this.gi.className=(kind==="tab"?"tabbar":"rail lq-on")+" lq-ghost";   // gleiche Klassen wie die echte Leiste → gleiche Darstellung
+  this.mag=kind==="tab"?1.2:1.16; this.edge=0.9;   // Vergrößerung in der Mitte, Verkleinerung am Rand
+  var me=this; d.host.addEventListener("scroll",function(){ if(me.on){ me.measure(); me.paint(0); } },{passive:true});
+}
+Lens.prototype.measure=function(){   // Lage des Containers am Bildschirm (einmal je Heben, beim Scrollen/Größe ändern) – nicht pro Bild
+  var d=this.d, h=d.host, r=h.getBoundingClientRect(), l=d.rect(d.list);
+  this.ox=r.left+h.clientLeft-h.scrollLeft; this.oy=r.top+h.clientTop-h.scrollTop; this.lx=l?l.x:0; this.ly=l?l.y:0;
+  return r.width>0&&r.height>0;
+};
+Lens.prototype.size=function(W,H){
+  this.W=W; this.H=H; this.el.style.width=W+"px"; this.el.style.height=H+"px";
+  var R=Math.min(W,H)/2, b=Math.max(5,Math.round(Math.min(W,H)*0.15)), sd=(b*0.3).toFixed(1);
+  this.hole=svgUrl(W,H,'<rect width="'+W+'" height="'+H+'" rx="'+R+'"/>');
+  var inner=svgUrl(W,H,'<filter id="f" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="'+sd+'"/></filter><rect x="'+b+'" y="'+b+'" width="'+(W-2*b)+'" height="'+(H-2*b)+'" rx="'+(R-b)+'" filter="url(#f)"/>');
+  setMask(this.li,inner); setMask(this.le,inner+","+this.hole,true);   // Mitte weich ausgeblendet, Rand = Kapsel ohne Mitte
+};
+Lens.prototype.start=function(){
+  var d=this.d, t=d.t||d.p; if(!t||!this.measure()) return false;
+  var cw=d.axis==="x"?t.size:t.cs, ch=d.axis==="x"?t.cs:t.size, W, H;
+  if(this.kind==="tab"){ H=Math.round(d.host.offsetHeight*1.16); W=Math.round(Math.max(cw*1.2,H*1.3)); }   // höher als die Leiste, ragt oben und unten hinaus
+  else { W=Math.round(cw+14); H=Math.round(Math.max(ch*1.5,ch+16)); }
+  if(!W||!H) return false;
+  if(W!==this.W||H!==this.H) this.size(W,H);
+  this.build(); this.on=true; this.el.classList.add("on");
+  if(LQ.upd) try{ LQ.upd(); }catch(e){}   // Chromium: Brechungskarte passend zur Linsengröße
+  d.el.classList.add("lq-lift");
+  if(MASKOK) setMask(d.list,this.hole+",linear-gradient(#000,#000)",true); else d.list.classList.add("lq-fade");
+  d.L=0; d.Lv=0; this.paint(0);
+  return true;
+};
+/* Kopie der Einträge (ohne Aktionen/IDs) an derselben Stelle wie die echten, relativ zum Container */
+Lens.prototype.build=function(){
+  var d=this.d, ch=d.list.children, out=[];
+  for(var i=0;i<ch.length;i++){
+    var c=ch[i], r=d.rect(c); if(!r) continue;
+    var k=c.cloneNode(true);
+    ["id","data-go","data-act","title","tabindex","aria-label"].forEach(function(a){ k.removeAttribute(a); });
+    k.classList.remove("lq-near"); k.classList.remove("lq-under"); k.setAttribute("data-lqi",String(i));
+    k.style.cssText+=";position:absolute;left:"+r.x+"px;top:"+r.y+"px;width:"+r.w+"px;height:"+r.h+"px;margin:0;transform:none;transition:none";
+    out.push(k.outerHTML);
+  }
+  var html=out.join(""); this.gi.innerHTML=html; this.ge.innerHTML=html; this.src=d.list._h;
+};
+Lens.prototype.refresh=function(){ if(this.on&&this.src!==this.d.list._h){ this.measure(); this.build(); } };   // Leiste wurde neu gezeichnet (aktiver Eintrag, Zähler)
+Lens.prototype.near=function(b){
+  if(!this.on) return; var i=b?Array.prototype.indexOf.call(this.d.list.children,b):-1;
+  [this.gi,this.ge].forEach(function(g){ Array.prototype.forEach.call(g.children,function(x){ x.classList.toggle("lq-near",+x.getAttribute("data-lqi")===i); }); });
+};
+Lens.prototype.paint=function(s){
+  var d=this.d, p=d.p; if(!this.on||!p) return;
+  var X=d.axis==="x", L=d.L>0?d.L:0, Lc=L>1?1:L, W=this.W, H=this.H;
+  var cw=X?p.size:p.cs, ch=X?p.cs:p.size, cx=X?p.pos+p.size/2:p.c+p.cs/2, cy=X?p.c+p.cs/2:p.pos+p.size/2;
+  var vw=cw+(W-cw)*L, vh=ch+(H-ch)*L, al=1+0.2*(s||0), cr=1-0.09*(s||0);   // Kapsel → Linse (Überschwingen = kurzes Aufploppen), Dehnen beim Ziehen
+  if(X){ vw*=al; vh*=cr; } else { vh*=al; vw*=cr; }
+  var kx=vw/W, ky=vh/H;
+  this.el.style.transform="translate3d("+f2(this.ox+cx-W/2)+"px,"+f2(this.oy+cy-H/2)+"px,0) scale("+kx.toFixed(4)+","+ky.toFixed(4)+")";
+  /* Kopien: Punkt P der Leiste erscheint bei A + m·(P − A), A = Mitte der Linse (Seitenleiste mit Text: beim Symbol, sonst
+     rutschen Symbol und Textanfang aus der Linse); Skalierung der Linse wird herausgerechnet */
+  var m=1+(this.mag-1)*Lc, e=1-(1-this.edge)*Lc, ax=!X&&cw>120?p.c+22:cx;
+  function gt(sx,sy){ return "translate("+f2(W/2+(ax-cx)/kx-sx*ax)+"px,"+f2(H/2-sy*cy)+"px) scale("+(sx).toFixed(4)+","+(sy).toFixed(4)+")"; }
+  this.gi.style.transform=gt(m/kx,m/ky); this.ge.style.transform=gt(e/kx,e/ky);
+  var a=String(Math.min(1,L*1.5)); this.lr.style.opacity=a; this.ls.style.opacity=a;
+  d.el.style.opacity=String(Math.max(0,1-L*1.6));   // getönte Kapsel blendet aus, solange die Linse oben ist
+  /* Loch in den echten Einträgen unter der Linse (sonst doppelt) */
+  var hw=Math.max(0,vw-2), hh=Math.max(0,vh-2), hx=cx-this.lx-hw/2, hy=cy-this.ly-hh/2, ls=d.list.style;
+  if(MASKOK){ ls.webkitMaskPosition=ls.maskPosition=f2(hx)+"px "+f2(hy)+"px,0 0"; ls.webkitMaskSize=ls.maskSize=f2(hw)+"px "+f2(hh)+"px,100% 100%"; }
+  else { var lx=this.lx, ly=this.ly; Array.prototype.forEach.call(d.list.children,function(x){ var r=d.rect(x); if(!r) return; var mx=r.x+r.w/2-lx, my=r.y+r.h/2-ly; x.classList.toggle("lq-under",Math.abs(mx-hx-hw/2)<hw/2&&Math.abs(my-hy-hh/2)<hh/2); }); }   // ohne Masken: Einträge unter der Linse ausblenden
+};
+Lens.prototype.stop=function(){
+  if(!this.on) return; var d=this.d, s=d.list.style;
+  this.on=false; this.el.classList.remove("on"); this.gi.innerHTML=this.ge.innerHTML=""; this.src=null;
+  MASKP.forEach(function(k){ s[k]=""; });
+  d.list.classList.remove("lq-fade"); Array.prototype.forEach.call(d.list.children,function(x){ x.classList.remove("lq-under"); });
+  d.el.classList.remove("lq-lift"); d.el.style.opacity=""; d.L=d.Lv=d.Lt=0; d.dropAt=0;
+};
+
 function lqKeys(list,sel,axis){   // Pfeiltasten wandern durch die Einträge
   list.addEventListener("keydown",function(e){
     var k=e.key, nx=axis==="y"?"ArrowDown":"ArrowRight", pv=axis==="y"?"ArrowUp":"ArrowLeft";
@@ -373,56 +498,78 @@ function lqGlare(surface,d){   // Glanzlicht folgt dem Zeiger; Variablen auf eig
     var q=d.el.getBoundingClientRect(); if(q.width){ d.el.style.setProperty("--dx",Math.round(ev.clientX-q.left)+"px"); d.el.style.setProperty("--dy",Math.round(ev.clientY-q.top)+"px"); } }); },{passive:true});
   surface.addEventListener("pointerleave",function(){ ev=null; g.style.removeProperty("--mx"); g.style.removeProperty("--my"); d.el.style.removeProperty("--dx"); d.el.style.removeProperty("--dy"); });
 }
+/* Drücken/Ziehen über einer Leiste. o.follow: Tropfen folgt jedem Drücken (Reiterleiste), o.any: Drücken irgendwo auf der Leiste,
+   o.noTouchDrag: Finger scrollt die Liste statt zu ziehen (Seitenleiste am iPad) */
+function lqPress(d,surf,o){
+  var X=d.axis==="x", S=null, noClick=0;
+  function at(e,s){ return X?e.clientX-s.ox:e.clientY-s.oy; }   // Zeigerlage entlang der Leiste, relativ zum Container
+  function boxes(){ return d.items().map(function(b){ var q=d.box(b); return q?{b:b,a:q.pos,z:q.pos+q.size,m:q.pos+q.size/2}:null; }).filter(Boolean); }
+  function nearOf(l,hp){ var best=null, bd=1e9; l.forEach(function(q){ var dd=Math.abs(q.m-hp); if(dd<bd){ bd=dd; best=q; } }); return best; }
+  function mark(b){ d.items().forEach(function(x){ x.classList.toggle("lq-near",x===b); }); if(d.lens) d.lens.near(b); }
+  function later(){ setTimeout(function(){ if(!S){ d.hov=""; d.sync(); } },60); }
+  function end(e,cancel){
+    var s=S; S=d.S=null; d.el.classList.remove("press"); if(!s) return;
+    if(s.moved){
+      d.drag=false; d.el.classList.remove("drag"); mark(null); noClick=Date.now()+450; d.hov="";
+      var q=!cancel&&e&&s.bx&&s.bx.length?nearOf(s.bx,at(e,s)):null, b=q&&q.b;
+      if(b&&!b.isConnected) b=d.find(itemKey(b));   // Leiste wurde während des Ziehens neu gezeichnet → gleichen Eintrag im neuen DOM nehmen
+      if(b&&(b.getAttribute("aria-current")!=="page"||b.hasAttribute("data-act"))){ d.hov=itemKey(b); d.sync("snap"); b.click(); later(); }   // einrasten und öffnen
+      else d.sync("snap");
+      if(s.lens) d.lower(150);
+    } else {
+      if(s.lens) d.lower(cancel?0:Math.max(70,240-(tnow()-s.at)));   // kurzes Antippen: Linse kurz zeigen
+      if(d.hov&&(o.follow||s.type!=="mouse")) later();
+    }
+  }
+  surf.addEventListener("pointerdown",function(e){
+    if(e.button>0||(S&&tnow()-S.at<8000)) return;
+    var b=e.target.closest&&e.target.closest(d.sel); if(b&&!d.list.contains(b)) b=null;
+    if(!b&&!o.any) return;
+    var r=d.host.getBoundingClientRect();
+    S=d.S={id:e.pointerId,type:e.pointerType,x:e.clientX,y:e.clientY,moved:false,at:tnow(),lens:false,bx:null,ox:r.left+d.host.clientLeft-d.host.scrollLeft,oy:r.top+d.host.clientTop-d.host.scrollTop};
+    d.el.classList.add("press");
+    if(still()) return;
+    if(!b){ var q=nearOf(boxes(),at(e,S)); b=q&&q.b; }
+    S.lens=d.lift();   // Alpenglas: Linse heben
+    if(b&&(S.lens||o.follow||e.pointerType!=="mouse")){ d.hov=itemKey(b); d.sync(); }   // Tropfen/Linse unter den Finger
+  });
+  surf.addEventListener("pointermove",function(e){
+    if(!S||e.pointerId!==S.id) return;
+    if(S.type==="mouse"&&!e.buttons){ end(e,true); return; }   // Maustaste außerhalb losgelassen
+    if(!S.moved){
+      if(still()||Math.abs(X?e.clientX-S.x:e.clientY-S.y)<8) return;
+      if(o.noTouchDrag&&S.type==="touch") return;
+      S.bx=boxes(); if(!S.bx.length||!d.p) return;
+      S.moved=true; try{ surf.setPointerCapture(e.pointerId); }catch(x){}
+      d.drag=true; d.el.classList.add("drag"); d.el.classList.remove("away");
+    }
+    var hp=at(e,S), q=nearOf(S.bx,hp), w=q.z-q.a, lo=S.bx[0].a, hi=S.bx[S.bx.length-1].z-w, pos=hp-w/2;
+    if(pos<lo) pos=lo-Math.min(16,(lo-pos)*0.3); else if(pos>hi) pos=hi+Math.min(16,(pos-hi)*0.3);   // an den Enden leicht gummiartig
+    d.follow(pos,q.b); mark(q.b);
+  });
+  surf.addEventListener("pointerup",function(e){ if(S&&e.pointerId===S.id) end(e,false); });
+  surf.addEventListener("pointercancel",function(e){ if(S&&e.pointerId===S.id) end(e,true); });   // z. B. Finger scrollt die Seitenleiste
+  surf.addEventListener("pointerleave",function(e){ if(S&&!S.moved&&e.pointerId===S.id&&e.pointerType==="mouse") end(e,true); });
+  window.addEventListener("blur",function(){ if(S) end(null,true); });
+  /* nach dem Ziehen keinen zusätzlichen Klick des Browsers auf den Startknopf durchlassen (der eigene .click() oben ist nicht „trusted“) */
+  document.addEventListener("click",function(e){ if(Date.now()<noClick&&e.isTrusted&&surf.contains(e.target)){ e.preventDefault(); e.stopImmediatePropagation(); } },true);
+}
 function lqRail(d,rail){
   var list=d.list;
   list.addEventListener("pointerover",function(e){
-    if(e.pointerType==="touch"||still()) return;
+    if(e.pointerType==="touch"||still()||d.S) return;
     var b=e.target.closest&&e.target.closest(d.sel); if(!b||!list.contains(b)) return;
     var k=itemKey(b); if(k===d.hov) return; d.hov=k; d.sync();
   });
-  list.addEventListener("pointerleave",function(){ d.el.classList.remove("press"); if(!d.hov) return; d.hov=""; d.sync(); });
+  list.addEventListener("pointerleave",function(){ if(d.S&&d.S.moved) return; d.el.classList.remove("press"); if(!d.hov) return; d.hov=""; d.sync(); });
   list.addEventListener("focusin",function(e){ var b=e.target.closest&&e.target.closest(d.sel), fv=false; if(!b||still()) return; try{ fv=b.matches(":focus-visible"); }catch(x){} if(fv){ d.hov=itemKey(b); d.sync(); } });
   list.addEventListener("focusout",function(e){ if(e.relatedTarget&&list.contains(e.relatedTarget)) return; var hv=false; try{ hv=list.matches(":hover"); }catch(x){} if(d.hov&&!hv){ d.hov=""; d.sync(); } });
-  list.addEventListener("pointerdown",function(e){ var b=e.target.closest&&e.target.closest(d.sel); if(!b||e.button>0) return; d.el.classList.add("press");
-    if(e.pointerType!=="mouse"&&!still()){ d.hov=itemKey(b); d.sync(); } });   // Finger (iPad): Tropfen springt unter den Finger
-  ["pointerup","pointercancel"].forEach(function(t){ list.addEventListener(t,function(e){ d.el.classList.remove("press"); if(e.pointerType!=="mouse"&&d.hov) setTimeout(function(){ d.hov=""; d.sync(); },60); }); });
+  lqPress(d,list,{follow:false,any:false,noTouchDrag:true});   // Maus: Drücken hebt die Linse, Ziehen über die Liste, Loslassen öffnet
   lqKeys(list,d.sel,"y"); lqGlare(rail,d);
 }
 function lqTab(d){
-  var tb=d.host, S=null, noClick=0;
-  function near(x){ var best=null, bd=1e9; d.items().forEach(function(b){ var r=b.getBoundingClientRect(), dd=Math.abs(r.left+r.width/2-x); if(dd<bd){ bd=dd; best=b; } }); return best; }
-  function mark(b){ d.items().forEach(function(x){ x.classList.toggle("lq-near",x===b); }); }
-  tb.addEventListener("pointerdown",function(e){
-    if(e.button>0) return; var b=e.target.closest&&e.target.closest(d.sel);
-    S={id:e.pointerId,x:e.clientX,moved:false,t:0}; d.el.classList.add("press");
-    if(b&&!still()){ d.hov=itemKey(b); d.sync(); }
-  });
-  tb.addEventListener("pointermove",function(e){
-    if(!S||e.pointerId!==S.id) return;
-    if(!S.moved){ if(still()||Math.abs(e.clientX-S.x)<8) return; S.moved=true; try{ tb.setPointerCapture(e.pointerId); }catch(x){} d.drag={}; d.el.classList.add("drag"); d.el.classList.remove("away"); }
-    var l=d.items(); if(!l.length||!d.p) return;
-    var a=d.box(l[0]), z=d.box(l[l.length-1]); if(!a||!z) return;
-    var hr=tb.getBoundingClientRect(), w=d.p.size, x=Math.max(a.pos,Math.min(z.pos+z.size-w,e.clientX-hr.left-tb.clientLeft-w/2));
-    var now=e.timeStamp||Date.now(), dt=S.t?Math.max(0.008,(now-S.t)/1000):0.016; S.t=now;
-    d.v=d.v*0.5+((x-d.p.pos)/dt)*0.5; d.p.pos=x; d.paint();
-    if(!d.raf){ d.at=0; d.raf=requestAnimationFrame(d._step); }
-    mark(near(e.clientX));
-  });
-  function end(e,cancel){
-    var s=S; S=null; d.el.classList.remove("press"); if(!s) return;
-    if(s.moved){
-      d.drag=null; d.el.classList.remove("drag"); mark(null); noClick=Date.now()+450; d.hov="";
-      var b=cancel?null:near(e.clientX);
-      if(b&&b.getAttribute("aria-current")!=="page"){ d.hov=itemKey(b); d.sync(); b.click(); setTimeout(function(){ if(!S){ d.hov=""; d.sync(); } },60); }   // einrasten und öffnen
-      else d.sync();
-    } else if(d.hov) setTimeout(function(){ if(!S){ d.hov=""; d.sync(); } },60);
-  }
-  tb.addEventListener("pointerup",function(e){ end(e,false); });
-  tb.addEventListener("pointercancel",function(e){ end(e,true); });
-  tb.addEventListener("pointerleave",function(e){ if(S&&!S.moved&&e.pointerType==="mouse"){ S=null; d.el.classList.remove("press"); if(d.hov){ d.hov=""; d.sync(); } } });
-  /* nach dem Ziehen keinen zusätzlichen Klick des Browsers auf den Startknopf durchlassen (der eigene .click() oben ist nicht „trusted“) */
-  document.addEventListener("click",function(e){ if(Date.now()<noClick&&e.isTrusted&&tb.contains(e.target)){ e.preventDefault(); e.stopImmediatePropagation(); } },true);
-  lqKeys(d.list,d.sel,"x"); lqGlare(tb,d);
+  lqPress(d,d.host,{follow:true,any:true,noTouchDrag:false});
+  lqKeys(d.list,d.sel,"x"); lqGlare(d.host,d);
 }
 /* Brechung wie bei echtem Glas: nur Chromium kann SVG-Filter in backdrop-filter (Safari/WebKit behält Unschärfe + Sättigung + Glanz).
    Verschiebungskarte aus zwei Verläufen (Rot = x, Grün = y), an den Rändern am stärksten, passend zur Größe der Fläche. */
@@ -432,7 +579,7 @@ function lqRefract(){
   if(!ok) return null;
   var NS="http://www.w3.org/2000/svg", XL="http://www.w3.org/1999/xlink", svg=document.createElementNS(NS,"svg"), defs=document.createElementNS(NS,"defs");
   svg.setAttribute("aria-hidden","true"); svg.setAttribute("focusable","false"); svg.style.cssText="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none";
-  var FL=[["lqRail",".rail",22,34],["lqTab",".tabbar",16,26]];   // id, Fläche, Randbreite px, Stärke
+  var FL=[["lqRail",".rail",22,34],["lqTab",".tabbar",16,26],["lqLens",".lq-lens.on .lq-lb",12,22]];   // id, Fläche, Randbreite px, Stärke (Linse: nur solange sie oben ist)
   function mk(tag,attrs,parent){ var n=document.createElementNS(NS,tag); Object.keys(attrs).forEach(function(k){ n.setAttribute(k,attrs[k]); }); parent.appendChild(n); return n; }
   FL.forEach(function(f){
     var fl=mk("filter",{id:f[0],x:"0",y:"0",width:"100%",height:"100%","color-interpolation-filters":"sRGB"},defs);
@@ -465,20 +612,53 @@ FSC.lqInit=function(){
   var rail=ri&&ri.parentNode;
   if(sc&&nav&&rail){ LQ.rail=new Drop(sc,nav,"y",".nav-btn"); rail.classList.add("lq-on"); rail.classList.toggle("lq-hov",!still()); lqRail(LQ.rail,rail); }
   if(tb&&ti){ LQ.tab=new Drop(tb,ti,"x","button"); lqTab(LQ.tab); }
-  var upd=null; try{ upd=lqRefract(); }catch(e){ console.error(e); }
-  var again=function(){ FSC.lqSync(); if(upd) upd(); }, rz=0;
+  var upd=null; try{ upd=lqRefract(); }catch(e){ console.error(e); } LQ.upd=upd;
+  var both=function(fn){ [LQ.rail,LQ.tab].forEach(function(d){ if(d) fn(d); }); };
+  var remeasure=function(){ both(function(d){ if(d.lens&&d.lens.on&&d.lens.measure()) d.lens.paint(0); }); };   // Linse oben: Lage am Bildschirm neu lesen
+  var again=function(){ remeasure(); FSC.lqSync(); if(upd) upd(); }, rz=0;
   window.addEventListener("resize",function(){ clearTimeout(rz); rz=setTimeout(again,120); });
-  document.addEventListener("fsc-theme",function(){ requestAnimationFrame(again); });
+  window.addEventListener("scroll",remeasure,{passive:true});
+  document.addEventListener("fsc-theme",function(){ if(!glas()) both(function(d){ d.unlift(); }); requestAnimationFrame(again); });
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(again,function(){});
-  if(RMQ&&RMQ.addEventListener) RMQ.addEventListener("change",function(){ if(rail) rail.classList.toggle("lq-hov",!still()); FSC.lqSync(); });
+  if(RMQ&&RMQ.addEventListener) RMQ.addEventListener("change",function(){ if(rail) rail.classList.toggle("lq-hov",!still()); if(still()) both(function(d){ d.unlift(); }); FSC.lqSync(); });
 };
 /* Symbole in fester Seiten-Markup (data-ico="name") */
 function fillIcons(){ Array.prototype.forEach.call(document.querySelectorAll("[data-ico]"),function(el){ if(el._ico) return; el._ico=1; el.insertAdjacentHTML("afterbegin",FSC.svg(el.getAttribute("data-ico"))); }); }
 
+/* ---------- Deep-Links (Mitteilungen, Links, Adresszeile) ----------
+   „#ansicht“ öffnet die Seite – auch versteckte wie „#conn“ (Verbindungen); „#ansicht/aktion:arg“ ruft danach F.actions[aktion](arg) auf,
+   sobald die Daten geladen sind (z. B. „#kunden/lead:<id>“, „#geld/fin:invd:<id>“); „#/aktion:arg“ bleibt auf der aktuellen Seite.
+   Nur Sprung- und Öffnen-Aktionen (FSC.deepActs) – ein fremder Link kann so nie etwas senden, buchen oder löschen.
+   Unbekannte Hashes (z. B. „#bank-verbunden“) bleiben wie bisher unberührt. */
+FSC.deepActs={fin:1,lead:1,bkshow:1,prord:1,tkprojopen:1,tkopen:1,sdct:1,sdinv:1,sdtab:1,mmailto:1,mail:1,pltab:1,website:1,chopen:1,conn:1,settings:1,pushcfg:1,search:1};
+var DEEP=null;
+FSC.parseHash=function(h){
+  h=String(h||"").replace(/^#/,""); if(!h) return null;
+  try{ h=decodeURIComponent(h); }catch(e){}
+  var i=h.indexOf("/"), v=i>-1?h.slice(0,i):h, a=i>-1?h.slice(i+1):"", j=a.indexOf(":"), k=j>-1?a.slice(0,j):a, arg=j>-1?a.slice(j+1):"";
+  if(v&&!FSC.views.some(function(x){ return x.id===v; })) return null;
+  if(k&&!(FSC.deepActs[k]&&FSC.actions[k])) k="";
+  if(!v&&!k) return null;
+  return {view:v,act:k,arg:arg};
+};
+function runDeep(){   // nach dem (ersten) Laden; ältere als 2 Minuten verfallen (z. B. Server war lange nicht erreichbar)
+  if(!DEEP||!FSC.D) return; var d=DEEP; DEEP=null; if(Date.now()-d.at>120000) return;
+  setTimeout(function(){ try{ FSC.actions[d.act](d.arg); }catch(e){ console.error(e); } },0);
+}
+/* true = Hash war ein Sprungziel. Seitenwechsel nur, wenn nötig (eine offene Seite bleibt sonst unverändert, wie bisher) */
+FSC.openHash=function(h){
+  var d=FSC.parseHash(h); if(!d) return false;
+  if(d.view&&FSC.current!==d.view) FSC.go(d.view);
+  else if(d.act){ try{ history.replaceState(null,"","#"+FSC.current); }catch(e){} }   // Aktion nicht in der Adresse lassen (Neu laden wiederholt sie sonst)
+  if(d.act){ DEEP={act:d.act,arg:d.arg,at:Date.now()}; runDeep(); }
+  return true;
+};
+window.addEventListener("hashchange",function(){ var h=location.hash.slice(1); if(h&&h!==FSC.current) FSC.openHash(h); });
+
 /* ---------- Start ---------- */
 FSC.start = function(){
   fillIcons(); try{ FSC.lqInit(); }catch(e){ console.error(e); }
-  try{ var h=location.hash.slice(1); if(h&&FSC.views.some(function(v){return v.id===h;})) FSC.current=h; }catch(e){}
+  try{ var dh=FSC.parseHash(location.hash); if(dh){ if(dh.view) FSC.current=dh.view; if(dh.act){ DEEP={act:dh.act,arg:dh.arg,at:Date.now()}; history.replaceState(null,"",dh.view?"#"+dh.view:location.pathname+location.search); } } }catch(e){}
   if(!FSC.views.some(function(v){return v.id===FSC.current;})) FSC.current=FSC.views[0].id;
   var ys=document.getElementById("year"), cy=new Date().getFullYear(), o=""; for(var y=cy;y>=cy-4;y--) o+='<option value="'+y+'">'+y+'</option>'; ys.innerHTML=o; ys.value=FSC.year;
   ys.addEventListener("change",function(){ FSC.year=ys.value; FSC.D=null; FSC.render(); FSC.load(true); });

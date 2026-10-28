@@ -41,6 +41,8 @@ function printTaskSync(o) {
   const num = v => isFinite(+v) && v !== null && v !== "" ? +v : null;
   const info = { id: tkClip(o.id, 60), nr: tkClip(o.nr, 40), status: tkClip(o.status, 30), statusText: tkClip(o.statusText, 80), product: tkClip(o.product, 160), copies: num(o.copies), customer: tkClip(o.customer, 160),
     gross: num(o.gross), purchase: num(o.purchase), margin: num(o.margin), payment: tkClip(o.payment, 20), paymentStatus: tkClip(o.paymentStatus, 30), pcOrder: tkClip(o.pcOrder, 40), reason: tkClip(o.reason, 300) };
+  // Rechnung und Kunde anklickbar (nur wenn der Druckshop sie liefert – sonst bleibt die Aufgabe unverändert)
+  if (o.invoiceId) info.invoiceId = tkClip(o.invoiceId, 20); if (o.invoiceNr) info.invoiceNr = tkClip(o.invoiceNr, 40); if (o.email) info.email = tkClip(o.email, 160);
   let changed = false;
   if (!A.projects.some(p => p.id === PRINT_PJ)) { A.projects.push({ id: PRINT_PJ, name: "Druckshop", customer: "", color: 4, status: "aktiv", due: "", note: "Bestellungen aus www.fs-creative.at/print – der Status kommt automatisch von der Druck-Seite.", leadId: "", created: now, updated: now }); changed = true; }
   if (!t) {
@@ -139,7 +141,18 @@ function auftragOp(b) {
     const name = tkClip(x.name, 120); if (!name) throw new Error("Bitte einen Namen für den Auftrag eingeben");
     const p = Object.assign(old || { id: tkId("p"), created: now }, { name, customer: tkClip(x.customer, 160), color: Math.max(0, Math.min(11, parseInt(x.color, 10) || 0)),
       status: PJ_STATUS.indexOf(x.status) > -1 ? x.status : "aktiv", due: tkDate(x.due), note: tkClip(x.note, 2000), leadId: tkClip(x.leadId, 60), updated: now });
+    if (x.contactId !== undefined) { const cid = String(x.contactId == null ? "" : x.contactId).trim(); if (!/^\d{0,12}$/.test(cid)) throw new Error("Ungültige Kontakt-ID"); if (cid) p.contactId = cid; else delete p.contactId; }   // Buchhaltungs-Kontakt (fehlt das Feld, bleibt er)
     if (!old) A.projects.push(p);
+    return { data: writeAuftraege(A), id: p.id };
+  }
+  // Angebote/Rechnungen eines Auftrags merken (nur Verweise, ohne Beträge – die kommen immer frisch aus der Buchhaltung)
+  if (op === "project.link" || op === "project.unlink") {
+    const p = findP(String(b.id || "")); if (!p) throw new Error("Auftrag nicht gefunden");
+    const kind = b.kind === "offer" || b.kind === "invoice" ? b.kind : ""; if (!kind) throw new Error("Unbekannte Belegart");
+    const docId = String(b.docId == null ? "" : b.docId).trim(); if (!/^\d{1,12}$/.test(docId)) throw new Error("Ungültige Beleg-ID");
+    const rest = (Array.isArray(p.docs) ? p.docs : []).filter(d => d && !(d.kind === kind && String(d.docId) === docId));
+    p.docs = op === "project.link" ? rest.concat([{ kind, docId, nr: tkClip(b.nr, 40), at: now }]).slice(-100) : rest;
+    p.updated = now;
     return { data: writeAuftraege(A), id: p.id };
   }
   if (op === "project.delete") {
@@ -1145,16 +1158,29 @@ function sevDateDE(iso) { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\
 function viennaToday() { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date()); }
 let SEV_CACHE = { at: 0, data: null, p: null };
 let SEV_META = { at: 0, data: null };
+// Vollständige Liste: eigene Buchhaltung liegt im Speicher → alles auf einmal, sonst seitenweise (sevAll)
+function sevList(pth, q, max) {
+  if (FIN_STATE.local) return sev("GET", pth, { query: Object.assign({}, q, { limit: 1000000 }), timeout: 40000 }).then(j => (j && j.objects) || []);
+  return sevAll(pth, q, max);
+}
+// Druckshop-Rechnungen erkennen (print-shop.js invoiceIndex, dort 60 s zwischengespeichert). PRINT ist eine const weiter unten → nur im try (TDZ)
+function printInvoiceIndex() {
+  try { if (PRINT && typeof PRINT.invoiceIndex === "function") return withTimeout(PRINT.invoiceIndex(), 4000, {}).then(x => (x && typeof x === "object" ? x : {})); } catch (e) {}
+  return Promise.resolve({});
+}
 async function sevBuild() {
   const today = viennaToday();
-  const [ver, inv, cas, tx, vou] = await Promise.all([
+  const [ver, invRaw, cas, tx, vou, txOpenRaw, vouDraftRaw, pidx] = await Promise.all([
     sev("GET", "/Tools/bookkeepingSystemVersion").catch(() => null),
-    sev("GET", "/Invoice", { query: { limit: 1000, embed: "contact" }, timeout: 40000 }),
+    sevList("/Invoice", { embed: "contact" }, 30000),
     sev("GET", "/CheckAccount", { query: { limit: 100 } }),
     sev("GET", "/CheckAccountTransaction", { query: { limit: 300 } }).catch(() => ({ objects: [] })),
     sev("GET", "/Voucher", { query: { limit: 300 } }).catch(() => ({ objects: [] })),
+    sevList("/CheckAccountTransaction", { status: 100 }, 30000).catch(() => null),   // Zähler „nicht zugeordnet“ aus allen Umsätzen
+    sevList("/Voucher", { status: 50 }, 30000).catch(() => null),                    // Zähler Beleg-Entwürfe aus allen Belegen
+    printInvoiceIndex(),
   ]);
-  const invoices = (inv && inv.objects || []).filter(o => o.invoiceType !== "MA" && o.invoiceType !== "WKR").map(o => {   // WKR = Vorlage für wiederkehrende Rechnungen, keine Forderung
+  const all = invRaw.filter(o => o.invoiceType !== "MA" && o.invoiceType !== "WKR").map(o => {   // WKR = Vorlage für wiederkehrende Rechnungen, keine Forderung
     const date = sevDay(o.invoiceDate), gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount), status = parseInt(o.status, 10) || 0;
     let due = null;
     if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
@@ -1162,23 +1188,39 @@ async function sevBuild() {
     return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, date, due, delivery: sevDay(o.deliveryDate),
       contact: sevName(o.contact), contactId: o.contact && o.contact.id ? String(o.contact.id) : "", header: o.header || "",
       ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
-      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
+      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, stornoNr: o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : undefined, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
       overdue: open > 0.005 && !!due && due < today };
   }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
   // Storno: sevDesk setzt beim Original kein „storniert“ – erkennbar an der Stornorechnung (SR) mit origin = Original
-  { const srOf = {}; invoices.forEach(i => { if (i.type === "SR" && i.origin) srOf[i.origin] = i.nr || true; }); invoices.forEach(i => { if (i.type !== "SR" && srOf[i.id]) { i.cancelled = true; i.stornoNr = srOf[i.id] === true ? "" : srOf[i.id]; i.overdue = false; } }); }
+  { const srOf = {}; all.forEach(i => { if (i.type === "SR" && i.origin) srOf[i.origin] = i.nr || true; }); all.forEach(i => { if (i.type !== "SR" && srOf[i.id]) { i.cancelled = true; i.stornoNr = srOf[i.id] === true ? "" : srOf[i.id]; i.overdue = false; } }); }
+  // Herkunft Druckshop (src/printId/printNr) und Überzahlung (over = Guthaben des Kunden, nur Anzeige)
+  all.forEach(i => { const px = pidx[i.id]; i.src = px ? "print" : ""; if (px) { i.printId = String(px.orderId || ""); i.printNr = String(px.nr || ""); }
+    i.over = i.gross > 0 && !i.cancelled && (i.status === 750 || i.status === 1000) ? Math.max(0, Math.round((i.paid - i.gross) * 100) / 100) : 0; });
+  // Ausgeliefert: neueste 600 + alle Entwürfe/offenen (ältere offene fehlten sonst überall); die vollständige Liste bleibt am Server (invoicesAll)
+  const invoices = all.slice(0, 600).concat(all.slice(600).filter(i => i.status === 100 || i.status === 200 || i.status === 750));
+  // Mahnungen (MA) im Entwurf: angelegt, aber nie versendet – nur lesen
+  const invById = {}; all.forEach(i => { invById[i.id] = i; });
+  const reminderDrafts = invRaw.filter(o => o.invoiceType === "MA" && (parseInt(o.status, 10) || 0) === 100).map(o => {
+    const oid = o.origin && o.origin.id ? String(o.origin.id) : "", orig = invById[oid];
+    return { id: String(o.id), nr: o.invoiceNumber || "", invoiceId: oid, invoiceNr: orig ? orig.nr : "", invoiceOpen: orig ? orig.open : 0, contact: sevName(o.contact) || (orig ? orig.contact : ""), contactId: o.contact && o.contact.id ? String(o.contact.id) : (orig ? orig.contactId : ""),
+      level: parseInt(o.dunningLevel, 10) || 0, fee: sevNum(o.dunningFee), gross: sevNum(o.sumGross), date: sevDay(o.invoiceDate) };
+  }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
   const accountsRaw = (cas && cas.objects || []).filter(a => String(a.status) !== "0");
   const balances = await Promise.all(accountsRaw.map(a => sev("GET", "/CheckAccount/" + a.id + "/getBalanceAtDate", { query: { date: today } }).then(j => sevNum(j && j.objects)).catch(() => null)));
   const accounts = accountsRaw.map((a, i) => ({ id: String(a.id), name: a.name || "Konto", type: a.type || "", importType: a.importType || "", isDefault: String(a.defaultAccount) === "1", balance: balances[i] }));
   const txAll = (tx && tx.objects || []).map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || "", purpose: String(t.paymtPurpose || t.entryText || "").replace(/\s+/g, " ").trim().slice(0, 140), status: parseInt(t.status, 10) || 0, accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "" }))
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const vouchers = (vou && vou.objects || []).map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), supplier: v.supplierName || "", desc: v.description || "" }));
-  return { configured: true, source: SEV.src, version: ver && ver.objects && ver.objects.version || null, fetchedAt: new Date().toISOString(), today,
-    invoices: invoices.slice(0, 600), accounts, transactions: txAll.slice(0, 120),
-    unassigned: (() => { const prov = new Set((tx && tx.objects || []).filter(t => t.mollieType === "application-fee").map(t => String(t.id))); return txAll.filter(t => t.status === 100 && !prov.has(t.id)).length; })(),   // Connect-Provisionen laufen über die Monats-Sammelrechnung
-    vouchers: { drafts: vouchers.filter(v => v.status === 50).length, open: vouchers.filter(v => v.status === 100 && v.cd === "C").length,
+  const txUnassigned = t => (parseInt(t.status, 10) || 0) === 100 && t.mollieType !== "application-fee";   // Connect-Provisionen laufen über die Monats-Sammelrechnung
+  const out = { configured: true, source: SEV.src, version: ver && ver.objects && ver.objects.version || null, fetchedAt: new Date().toISOString(), today,
+    invoices, reminderDrafts, accounts, transactions: txAll.slice(0, 120),
+    unassigned: (txOpenRaw || (tx && tx.objects) || []).filter(txUnassigned).length,
+    vouchers: { drafts: vouDraftRaw ? vouDraftRaw.filter(v => (parseInt(v.status, 10) || 0) === 50).length : vouchers.filter(v => v.status === 50).length, open: vouchers.filter(v => v.status === 100 && v.cd === "C").length,
       openSum: Math.round(vouchers.filter(v => v.status === 100 && v.cd === "C").reduce((s, v) => s + Math.max(0, v.gross - v.paid), 0) * 100) / 100,
       recent: vouchers.sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 12) } };
+  // nur am Server: nicht aufzählbar → JSON.stringify und Object.assign lassen es weg (landet nie in einer Antwort)
+  Object.defineProperty(out, "invoicesAll", { value: all, enumerable: false });
+  return out;
 }
 async function sevSnapshot(force) {
   const fresh = SEV_CACHE.data && (Date.now() - SEV_CACHE.at < 3 * 60 * 1000);
@@ -1192,7 +1234,7 @@ async function sevMeta(force) {
   const [at, pos, ct] = await Promise.all([
     sev("GET", "/AccountingType", { query: { limit: 1000 } }),
     sev("GET", "/VoucherPos", { query: { limit: 300, embed: "accountingType" } }).catch(() => ({ objects: [] })),
-    sev("GET", "/Contact", { query: { limit: 1000, depth: 1 } }).catch(() => ({ objects: [] })),
+    sevList("/Contact", { depth: 1 }, 30000).then(objects => ({ objects })).catch(() => ({ objects: [] })),   // alle Kontakte (früher max. 1000)
   ]);
   // Rechnungsdialog: Bestandskunden automatisch ausfüllen (Adresse, E-Mail, UID, Kunden-Nr.)
   const [ads, cws, ctry] = await Promise.all([
@@ -1314,7 +1356,7 @@ async function sevCreateInvoice(pl) {
   const j = await sev("POST", "/Invoice/Factory/saveInvoice", { body, timeout: 40000 });
   const invo = j && j.objects && (j.objects.invoice || j.objects) || {};
   SEV_CACHE.at = 0;
-  return { id: String(invo.id || ""), nr: invo.invoiceNumber || "", gross: sevNum(invo.sumGross) };
+  return { id: String(invo.id || ""), nr: invo.invoiceNumber || "", gross: sevNum(invo.sumGross), contactId: String(contactId || "") };   // contactId: Lead/Auftrag merken sich den Buchhaltungs-Kontakt
 }
 async function sevBook(pl) {
   const id = String(pl.id || "").replace(/\D/g, ""); if (!id) throw new Error("keine_rechnung");
@@ -1425,7 +1467,7 @@ async function sevCreateOffer(pl) {
   const j = await sev("POST", "/Order/Factory/saveOrder", { body, timeout: 40000 });
   const o = j && j.objects && (j.objects.order || j.objects) || {};
   OFFERS_CACHE.at = 0;
-  return { id: String(o.id || ""), nr: o.orderNumber || nr, gross: sevNum(o.sumGross), validUntil: valid };
+  return { id: String(o.id || ""), nr: o.orderNumber || nr, gross: sevNum(o.sumGross), validUntil: valid, contactId: String(contactId || "") };
 }
 // Status ändern (nur auf ausdrücklichen Klick, confirm:true): 200 = als versendet markieren, 300 = abgelehnt, 500 = angenommen
 async function sevOfferStatus(pl) {
@@ -1624,6 +1666,14 @@ const DUN_DEF = { enabled: false, mode: "suggest", days: [7, 14, 14], ttp: [7, 1
 const DUN_T = ["Zahlungserinnerung", "1. Mahnung", "2. Mahnung"];
 async function dunState() { const m = (await FIN.getMeta("dunning").catch(() => null)) || {}; m.settings = Object.assign({}, DUN_DEF, m.settings || {}); m.settings.mode = "suggest"; m.skip = m.skip || {}; m.log = m.log || []; return m; }
 function dunB2B(c) { return !!c && (!!String(c.vatNumber || "").trim() || (!!String(c.name || "").trim() && !c.surename && !c.familyname)); }
+// Firma oder privat (gleiche Regel wie im Mahnlauf) – für das Rechnungsdetail (z. B. Mahngebühr im manuellen Dialog), nur lesen
+async function contactB2B(id) {
+  id = String(id || "").replace(/\D/g, ""); if (!id) return false;
+  try {
+    if (FIN_STATE.local) { await FIN_LOCAL.load(); return dunB2B(FIN_LOCAL.get("Contact", id)); }
+    const j = await sev("GET", "/Contact/" + id); const o = j && j.objects; return dunB2B(Array.isArray(o) ? o[0] : o);
+  } catch (e) { return false; }
+}
 function dunProposals(st) {
   const S = st.settings, today = viennaToday(), inv = FIN_LOCAL.all("Invoice"), out = [], r2 = n => Math.round((+n || 0) * 100) / 100;
   const txIn = FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0);
@@ -1705,7 +1755,7 @@ function billingOp(pl) {
   } else if (op === "invoice" && pl.key && pl.invoice && typeof pl.invoice === "object") {
     const k = cleanKey(pl.key), I = pl.invoice;
     const inv = { id: String(I.id || ""), nr: String(I.nr || ""), date: String(I.date || new Date().toISOString().slice(0, 10)), gross: Math.round((parseFloat(I.gross) || 0) * 100) / 100,
-      from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200), group: I.group === true || undefined };   // group: Sammelrechnung (mehrere Buchungen)
+      from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200), group: I.group === true || undefined, deposit: I.deposit === true || undefined };   // group: Sammelrechnung (mehrere Buchungen), deposit: Anzahlung (Rest bleibt offen)
     const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
     if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
   } else if (op === "ignore" && pl.key) {        // Posten in „Zu verrechnen“ ausblenden, bis der Betrag wieder steigt
@@ -1826,15 +1876,19 @@ function invLink(rec, sevById, oldest) {
   // Gerade angelegt: sevDesk-Stand wird im Hintergrund nachgeladen
   if (!s && String(rec.date || "") >= ymdAdd(viennaToday(), -2)) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "neu", label: "wird synchronisiert", paid: 0, open: +rec.gross || 0 };
   if (!s) return { id: rec.id, nr: rec.nr || "", date: rec.date, gross: rec.gross, state: "fehlt", label: "nicht in der Buchhaltung", paid: 0, open: 0 };
+  // Storniert: zählt weder als verrechnet noch als bezahlt (die Buchhaltung führt das Original als „bezahlt“ durch die Stornorechnung)
+  if (s.cancelled) return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: 0, open: 0, state: "storniert", label: "storniert" + (s.stornoNr ? " (" + s.stornoNr + ")" : ""), due: s.due };
   const state = s.overdue ? "ueberfaellig" : s.status === 1000 ? "bezahlt" : s.status === 100 ? "entwurf" : (s.status === 200 || s.status === 750) ? "offen" : "sonst";
   return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: s.paid, open: s.open, state, label: s.overdue ? "überfällig" : (INV_LABEL[s.status] || "?"), due: s.due };
 }
-function sumState(links) { return links.reduce((t, l) => { if (!l) return t; t.invoiced += +l.gross || 0; t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
+function sumState(links) { return links.reduce((t, l) => { if (!l || l.state === "storniert") return t; t.invoiced += +l.gross || 0; t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
 
 function abgleichBuild(ctx) {
   const { year, today, sev, bill, sitesSnap, kochdu, valuero, blitz, blitzAll, kantineur } = ctx;
-  const sevInv = (sev && sev.invoices) || [];
-  const sevById = {}; sevInv.forEach(i => { sevById[i.id] = i; });
+  // Nachschlagen per ID in der vollständigen Liste; Heuristiken (Referenz, Name+Betrag, Sammelrechnung) und „oldest“ bleiben auf den neuesten 600
+  const sevAllInv = (sev && (sev.invoicesAll || sev.invoices)) || [];
+  const sevInv = sev && sev.invoicesAll ? sev.invoicesAll.slice(0, 600) : ((sev && sev.invoices) || []);
+  const sevById = {}; sevAllInv.forEach(i => { sevById[i.id] = i; });
   const oldest = sevInv.length >= 600 ? sevInv.reduce((m, i) => (i.date && (!m || i.date < m) ? i.date : m), "") : "";
   const link = (r) => invLink(r, sevById, oldest);
   const linked = {};      // sevDesk-IDs, die einer Quelle zugeordnet sind
@@ -1845,15 +1899,22 @@ function abgleichBuild(ctx) {
   cockpitSites(sitesSnap).forEach(s => {
     const c = siteCfgOf(bill, s); if (c.own || !c.active) return;
     const lines = siteLinesOf(s, c, P); const sum = round2(lines.reduce((a, l) => a + l.amount, 0)); if (sum <= 0) return;
-    const links = recs("site:" + s.key).map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+    const recArr = recs("site:" + s.key), links = recArr.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
     const n = +P.period || 12, tax = isFinite(+P.taxRate) ? +P.taxRate : 20;
-    // Stichtag 1.1.: jährlich je Kalenderjahr verrechnet; fällig erst ab 1.1. (nie verrechnete nur im Jänner)
+    // Storno: ist die Rechnung des letzten Zeitraums storniert, gilt dieser Zeitraum wieder als offen („wirksam verrechnet bis“).
+    // billing.json bleibt unverändert; nur wenn billedUntil noch auf diesen Eintrag zeigt (sonst gilt eine Änderung von Hand).
+    const dead = links.map(l => !!l && l.state === "storniert");
+    let top = -1; recArr.forEach((r, i) => { if (!r || !r.to) return; if (top < 0 || r.to > recArr[top].to || (r.to === recArr[top].to && dead[top] && !dead[i])) top = i; });
+    const storno = top > -1 && dead[top] && c.billedUntil === recArr[top].to;
+    const liveTo = recArr.reduce((m, r, i) => (r && r.to && !dead[i] && r.to > m ? r.to : m), "");
+    const billedUntil = !storno ? c.billedUntil : (recArr[top].from ? [ymdAdd(recArr[top].from, -1), liveTo].sort().pop() : liveTo) || null;
+    // Stichtag 1.1.: jährlich je Kalenderjahr verrechnet; fällig erst ab 1.1. (nie verrechnete nur im Jänner – nach Storno sofort)
     const yearly = n === 12 && P.yearStart !== false;
-    const due = yearly ? (c.billedUntil ? c.billedUntil < today : today.slice(5, 7) === "01") : (!c.billedUntil || c.billedUntil < today);
-    const from = c.billedUntil ? ymdAdd(c.billedUntil, 1) : (yearly ? today.slice(0, 4) + "-01-01" : today), to = yearly ? from.slice(0, 4) + "-12-31" : ymdAdd(ymdAddMonths(from, n), -1), span = deDate(from) + " – " + deDate(to);
+    const due = storno && !billedUntil ? true : yearly ? (billedUntil ? billedUntil < today : today.slice(5, 7) === "01") : (!billedUntil || billedUntil < today);
+    const from = billedUntil ? ymdAdd(billedUntil, 1) : (yearly ? today.slice(0, 4) + "-01-01" : today), to = yearly ? from.slice(0, 4) + "-12-31" : ymdAdd(ymdAddMonths(from, n), -1), span = deDate(from) + " – " + deDate(to);
     const st = sumState(links);
-    items.push({ src: "website", key: "site:" + s.key, name: c.customer || s.name, sub: (s.domain || s.name) + " · " + (c.billedUntil ? "verrechnet bis " + deDate(c.billedUntil) : "noch nie verrechnet"),
-      unbilled: due ? sum : 0, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), refund: 0, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+    items.push({ src: "website", key: "site:" + s.key, name: c.customer || s.name, sub: (s.domain || s.name) + " · " + (storno && due ? "storniert – wieder zu verrechnen" : billedUntil ? "verrechnet bis " + deDate(billedUntil) : "noch nie verrechnet"),
+      unbilled: due ? sum : 0, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), refund: 0, billedUntil: billedUntil || null, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
       action: due ? { kind: "site", title: "Rechnung · " + s.name, contactName: c.customer || s.name, deliveryDate: from, headText: "Leistungen für " + (s.domain || s.name) + " im Zeitraum " + span + ".",
         items: lines.map(l => ({ name: l.name, text: "Zeitraum " + span, qty: 1, priceGross: round2(P.gross ? l.amount : l.amount * (1 + tax / 100)), taxRate: tax })),
         after: { billing: { key: "site:" + s.key, from, to, label: s.name }, siteCustomer: c.customer ? null : s.key } } : null });
@@ -1884,9 +1945,11 @@ function abgleichBuild(ctx) {
     const sumM = (a, b) => round2(months.filter(m => m.month + "-01" >= a && m.month + "-01" <= b).reduce((t, m) => t + (+m.provisionCents || 0), 0) / 100);
     const all = recs("valuero:" + o.key).filter(x => String(x.to || x.date || "") >= winStart);
     const links = all.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-    const billedSum = round2(all.reduce((a, x) => a + (+x.gross || 0), 0));
+    const live = all.filter((x, i) => !(links[i] && links[i].state === "storniert"));   // stornierte Abrechnungen zählen nicht (bleiben zur Anzeige in invoices)
+    const billedSum = round2(live.reduce((a, x) => a + (+x.gross || 0), 0));
+    const invoicedYear = round2(live.filter(x => String(x.date || "").slice(0, 4) === String(year)).reduce((a, x) => a + (+x.gross || 0), 0));   // „Verrechnet <Jahr>“
     const st = sumState(links.filter(l => l.state !== "manuell"));
-    const billedUntil = all.reduce((m, x) => (x.to && x.to > m ? x.to : m), "");
+    const billedUntil = live.reduce((m, x) => (x.to && x.to > m ? x.to : m), "");
     const legacy = billedUntil ? 0 : billedSum;                                                       // Altbestand ohne Zeitraum
     const first = (months.find(m => (+m.provisionCents || 0) > 0) || {}).month;
     const from = billedUntil ? ymdAdd(billedUntil, 1) : (first ? first + "-01" : winStart);
@@ -1896,7 +1959,7 @@ function abgleichBuild(ctx) {
     const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufendes Quartal (+ spätere Anreisen)
     const span = deDate(from) + " – " + deDate(dueThrough);
     items.push({ src: "valuero", key: "valuero:" + o.key, name: o.name, sub: (o.ratesLabel || "") + " · " + (billedUntil ? "verrechnet bis " + deDate(billedUntil) : "quartalsweise nach Aufenthalt") + " · nächste Abrechnung " + deDate(nextQ),
-      unbilled: open, invoiced: billedSum, paid: round2(st.paid), open: round2(st.open), refund, accrued: round2(sumM(winStart, "9999-12-31")), pending, nextBilling: nextQ, billedUntil: billedUntil || null, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+      unbilled: open, invoiced: billedSum, invoicedYear, paid: round2(st.paid), open: round2(st.open), refund, accrued: round2(sumM(winStart, "9999-12-31")), pending, nextBilling: nextQ, billedUntil: billedUntil || null, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
       action: open > 0.005 ? { kind: "valuero", title: "Rechnung · VALUERO-Gebühren", contactName: o.name || "", deliveryDate: from, headText: "Vermittlungsgebühren VALUERO für Aufenthalte im Zeitraum " + span + ".",
         items: [{ name: "VALUERO Vermittlungsgebühren", text: "Aufenthalte (Anreise) " + span + (o.ratesLabel ? " · " + o.ratesLabel : "") + (legacy > 0.005 ? " · abzüglich bereits verrechnet " + legacy.toFixed(2).replace(".", ",") + " €" : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: open, taxRate: 20 }],
         after: { billing: { key: "valuero:" + o.key, from, to: dueThrough, label: o.name || o.key } } } : null });
@@ -1913,8 +1976,9 @@ function abgleichBuild(ctx) {
   const directHit = b => {
     const amt = round2((+b.totalCents || 0) / 100), ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
     let h = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
-    if (!h && ref) h = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR");
-    if (!h && (cust || comp)) h = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || Math.abs((+i.net || 0) - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
+    if (h && h.cancelled) h = null;   // wie unten: stornierte Rechnung zählt nicht, Ersatzrechnung suchen
+    if (!h && ref) h = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR" && !i.cancelled);
+    if (!h && (cust || comp)) h = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && !i.cancelled && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || Math.abs((+i.net || 0) - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
     return h || null;
   };
   const groupInv = {};
@@ -1945,12 +2009,24 @@ function abgleichBuild(ctx) {
     if (b.status === "PENDING" && b.paymentStatus !== "PAID") return;
     const ref = String(b.reference || "").toLowerCase(), cust = String(b.customerName || "").toLowerCase(), comp = String(b.companyName || "").toLowerCase(), day = String(b.eventDate || "").slice(0, 10);
     let hit = b.sevdeskInvoiceId ? sevById[String(b.sevdeskInvoiceId)] : null;
-    if (!hit && ref) hit = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR");
-    if (!hit && (cust || comp)) hit = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
+    if (hit && hit.cancelled) hit = null;   // Blitzdings-Rechnung storniert: Ersatzrechnung suchen, sonst gilt sie unten als storniert
+    if (!hit && ref) hit = sevInv.find(i => (i.ref || "").toLowerCase().indexOf(ref) > -1 && i.type !== "SR" && !i.cancelled);
+    if (!hit && (cust || comp)) hit = sevInv.find(i => { const c = String(i.contact || "").toLowerCase(); return i.type !== "SR" && !i.cancelled && (c === cust || (comp && c === comp)) && (Math.abs(i.gross - amt) < 0.02 || (day && (i.date === day || i.delivery === day))); });
     const viaGroup = !hit && groupInv[b.id]; if (viaGroup) hit = groupInv[b.id];
-    const rec = recs("blitz:" + b.id).slice(-1)[0];
+    const recsB = recs("blitz:" + b.id), rec = recsB.slice(-1)[0];
     const link = hit ? invLink({ id: hit.id, nr: hit.nr, date: hit.date, gross: hit.gross }, sevById, "") : (b.sevdeskInvoiceId ? invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: day, gross: amt }, sevById, oldest) : (rec ? invLink(rec, sevById, oldest) : null));
     if (link && link.id) linked[link.id] = 1;
+    const dead = !!link && link.state === "storniert";   // storniert: Buchung gilt wieder als nicht verrechnet, der Link bleibt zur Historie
+    const billed = link && !dead ? link : null;
+    // Anzahlung (Eintrag mit deposit): alle verschiedenen, nicht stornierten Rechnungen zählen – der Rest bleibt offen (Restrechnung im Cockpit vorbereiten)
+    let dep = null;
+    if (recsB.some(r => r && r.deposit)) {
+      const seen = {}, ls = [];
+      recsB.map(r => invLink(r, sevById, oldest)).concat(link ? [link] : []).forEach(l => { if (!l || (l.id && seen[l.id])) return; if (l.id) { seen[l.id] = 1; linked[l.id] = 1; } ls.push(l); });
+      ls.sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
+      const sd = sumState(ls);
+      dep = { links: ls, invoiced: round2(sd.invoiced), paid: round2(sd.paid), open: round2(sd.open), unbilled: round2(Math.max(0, amt - sd.invoiced)) };
+    }
     const due = !!day && day <= soon;
     if (!link && !due) return;                                  // Event noch weit weg: noch nichts zu tun
     const paidOnPlatform = b.paymentStatus === "PAID";
@@ -1958,8 +2034,9 @@ function abgleichBuild(ctx) {
     const pkg = typeof b.package === "string" ? b.package : (b.package && b.package.name) || "";
     const who = b.companyName || b.customerName || "Buchung";
     items.push({ src: "blitzdings", key: "blitz:" + b.id, amount: amt, name: who + (pkg ? " · " + pkg : ""), sub: (day ? (day < today ? "Event war am " : "Event am ") + deDate(day) : "") + (b.reference ? " · " + b.reference : "") + (paidOnPlatform ? " · online bezahlt" : "") + ((viaGroup || (rec && rec.group)) ? " · Sammelrechnung" : ""),
-      unbilled: link ? 0 : amt, invoiced: link ? link.gross : 0, paid: link && link.state === "bezahlt" ? link.gross : 0, open: link ? link.open : 0, refund: 0, paidOnPlatform, last: link, invoices: link ? [link] : [], date: day,
-      action: link ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
+      unbilled: dep ? dep.unbilled : billed ? 0 : amt, invoiced: dep ? dep.invoiced : billed ? billed.gross : 0, paid: dep ? dep.paid : billed && billed.state === "bezahlt" ? billed.gross : 0, open: dep ? dep.open : billed ? billed.open : 0, refund: 0, paidOnPlatform,
+      last: dep ? (dep.links[0] || null) : link, invoices: dep ? dep.links.slice(0, 4) : link ? [link] : [], date: day, depositOnly: dep ? true : undefined,
+      action: dep || billed ? null : { kind: "blitzdings", title: "Rechnung · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined, headText: (b.reference ? "Buchung " + b.reference + " – " : "") + "vielen Dank für Ihre Buchung bei Blitzdings.",
         items: [{ name: "Blitzdings " + (pkg || "Fotobox"), text: [day ? "Event am " + deDate(day) : "", (b.eventLocation || b.location) ? "Ort: " + (b.eventLocation || b.location) : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: amt, taxRate: 20 }], after: { billing: { key: "blitz:" + b.id, label: who } } } });
   });
   // 5) Kantineur: Abos laufen automatisch über die Plattform
@@ -1968,8 +2045,8 @@ function abgleichBuild(ctx) {
   // Ausgeblendete Posten (bis der offene Betrag wieder steigt)
   const ign = bill.ignore || {};
   items.forEach(x => { const g = ign[x.key]; if (g && x.unbilled > 0.005 && x.unbilled <= (+g.amount || 0) + 0.01) { x.ignored = { amount: x.unbilled, at: g.at, note: g.note || "" }; x.unbilled = 0; x.action = null; } });
-  // 6) Offene sevDesk-Rechnungen ohne Zuordnung
-  const unlinked = sevInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
+  // 6) Offene sevDesk-Rechnungen ohne Zuordnung (alle offenen, auch ältere)
+  const unlinked = sevAllInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
   const totals = items.reduce((t, x) => { t.unbilled += x.unbilled || 0; t.open += x.open || 0; t.refund += x.refund || 0; if (x.unbilled > 0.005) t.unbilledCount++; if (x.invoices.some(l => l && l.state === "fehlt")) t.missing++; return t; }, { unbilled: 0, open: 0, refund: 0, unbilledCount: 0, missing: 0 });
   ["unbilled", "open", "refund"].forEach(k => { totals[k] = round2(totals[k]); });
   return { items, unlinked, totals };
@@ -1977,13 +2054,14 @@ function abgleichBuild(ctx) {
 
 function sevSummary(sev, year, today) {
   if (!sev || !sev.invoices) return null;
-  const inv = sev.invoices, yr = String(year);
+  const inv = sev.invoicesAll || sev.invoices, yr = String(year);   // Kennzahlen aus der vollständigen Liste (bleibt am Server)
   const counted = inv.filter(i => (i.status === 200 || i.status === 750 || i.status === 1000) && String(i.date || "").slice(0, 4) === yr);
   const byMonth = new Array(12).fill(0); counted.forEach(i => { const m = parseInt(String(i.date).slice(5, 7), 10) - 1; if (m >= 0 && m < 12) byMonth[m] += i.gross; });
-  const open = inv.filter(i => i.open > 0.005), overdue = open.filter(i => i.overdue);
+  const open = inv.filter(i => i.open > 0.005), overdue = open.filter(i => i.overdue), drafts = inv.filter(i => i.status === 100);
   return { fetchedAt: sev.fetchedAt, revenueYear: round2(counted.reduce((a, i) => a + i.gross, 0)), byMonth: byMonth.map(round2),
     openSum: round2(open.reduce((a, i) => a + i.open, 0)), openCount: open.length, overdueSum: round2(overdue.reduce((a, i) => a + i.open, 0)), overdueCount: overdue.length,
-    drafts: inv.filter(i => i.status === 100).length, invoices: inv.slice(0, 600), accounts: sev.accounts || [], unassigned: sev.unassigned || 0, vouchers: sev.vouchers || {}, transactions: (sev.transactions || []).slice(0, 120) };
+    drafts: drafts.filter(i => i.src !== "print").length, printDrafts: drafts.filter(i => i.src === "print").length,   // Druck-Entwürfe sendet der Druckshop beim Bestellen selbst
+    invoices: sev.invoices.slice(), reminderDrafts: sev.reminderDrafts || [], accounts: sev.accounts || [], unassigned: sev.unassigned || 0, vouchers: sev.vouchers || {}, transactions: (sev.transactions || []).slice(0, 120) };
 }
 
 
@@ -2261,6 +2339,8 @@ function leadOp(pl) {
     if ("value" in P) { const n = parseFloat(P.value); l.value = isFinite(n) && n >= 0 ? round2(n) : 0; }
     if ("notes" in P) l.notes = clip(P.notes, 5000);
     ["name", "company", "email", "phone", "topic"].forEach(f => { if (f in P) l[f] = clip(P[f], 160); });
+    // Buchhaltungs-Kontakt merken (nur die ID; "" löst die Verknüpfung)
+    if ("contactId" in P) { const cid = String(P.contactId == null ? "" : P.contactId).trim(); if (!/^\d{0,12}$/.test(cid)) throw new Error("bad_contact"); if (cid) l.contactId = cid; else delete l.contactId; }
     l.updated = new Date().toISOString();
   } else throw new Error("bad_op");
   fs.writeFileSync(LEADS_FILE, JSON.stringify(leads));
@@ -3016,7 +3096,7 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/sevdesk/pdf" && req.method === "GET") {
     const id = String(u.searchParams.get("id") || "").replace(/\D/g, "");
     if (!id) return send(res, 400, "missing id");
-    const inv = SEV_CACHE.data && (SEV_CACHE.data.invoices || []).find(x => x.id === id);
+    const inv = SEV_CACHE.data && (SEV_CACHE.data.invoicesAll || SEV_CACHE.data.invoices || []).find(x => x.id === id);
     return sevPdfSend(res, "/Invoice/" + id + "/getPdf", (inv && inv.nr) ? inv.nr + ".pdf" : "Rechnung-" + id + ".pdf", u.searchParams.get("dl") === "1");
   }
   // ---- sevDesk-Angebote (Kunden & Leads) ----
@@ -3369,7 +3449,8 @@ async function handleAdmin(req, res, u, p) {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     const force = u.searchParams.get("force") === "1";
     try {
-      if (p === "/admin/api/sev/invoice" && req.method === "GET") { const d = await SEV_OPS.invoiceDetail(u.searchParams.get("id")); return J(200, Object.assign({ ok: true, mail: SEV_OPS.mailDefaults(d, u.searchParams.get("kind") || "", u.searchParams.get("ref") || "") }, d)); }
+      if (p === "/admin/api/sev/invoice" && req.method === "GET") { const d = await SEV_OPS.invoiceDetail(u.searchParams.get("id")); const b2b = await contactB2B(d.contact && d.contact.id);
+        return J(200, Object.assign({ ok: true, mail: SEV_OPS.mailDefaults(d, u.searchParams.get("kind") || "", u.searchParams.get("ref") || "") }, d, { b2b })); }
       if (p === "/admin/api/sev/invoice-op" && req.method === "POST") return J(200, Object.assign({ ok: true }, await SEV_OPS.invoiceOp(await sevBody(req))));
       if (p === "/admin/api/sev/bank" && req.method === "GET") return sendGz(req, res, 200, JSON.stringify(await SEV_OPS.bankOpen(force)), TYPES[".json"], { "Cache-Control": "no-store" });
       if (req.method === "POST" && typeof VM_CACHE !== "undefined") { VM_CACHE.at = 0; if (typeof IM_CACHE !== "undefined") IM_CACHE.at = 0; }   // Beleg/Zahlung geändert → Abgleich neu
@@ -3882,7 +3963,7 @@ async function saveLead(lead, opt) {
   try { addTask({ title: tkClip("Anfrage: " + lead.name + (lead.company ? " (" + lead.company + ")" : "") + " – " + lead.topic + (lead.entwurf ? " · Gratis-Entwurf" : ""), 200), prio: "hoch", due: viennaToday(), leadId: lead.id,
     notes: tkClip([lead.email, lead.phone, /chat/i.test(lead.source || "") ? lead.source : ""].filter(Boolean).join(" · ") + (lead.message ? "\n\n" + lead.message : ""), 4000) }); } catch (e) { console.error("Anfrage → Aufgabe:", e.message); }
   if (!notify) return { stored, mailed: false };
-  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Lead: " + (lead.company || lead.name), body: [lead.topic, lead.company && lead.company !== lead.name ? lead.name : "", lead.entwurf ? "Gratis-Entwurf" : ""].filter(Boolean).join(" · ") + "\n" + String(lead.message || "").replace(/\s+/g, " ").slice(0, 140), url: "/admin#kunden", tag: "lead-" + lead.id }).catch(() => {});
+  if (process.env.DATABASE_URL) PUSH.send("lead", { title: "Lead: " + (lead.company || lead.name), body: [lead.topic, lead.company && lead.company !== lead.name ? lead.name : "", lead.entwurf ? "Gratis-Entwurf" : ""].filter(Boolean).join(" · ") + "\n" + String(lead.message || "").replace(/\s+/g, " ").slice(0, 140), url: "/admin#kunden/lead:" + encodeURIComponent(lead.id), tag: "lead-" + lead.id }).catch(() => {});   // Deep-Link: öffnet direkt die Kundenakte (core.js openHash)
   let mailed = false;
   if (MAIL.url && MAIL.token) {
     const rows = [["Name", lead.name], ["E-Mail", lead.email], ["Telefon", lead.phone], ["Firma / Verein", lead.company], ["Thema", lead.topic], ["Gratis-Entwurf", lead.entwurf ? "Ja" : "Nein"], ["Seite", lead.source]].filter(r => r[1]);
@@ -4133,7 +4214,12 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   uidValid: v => STEUER_CALC.uidValid(v), viesCheck: v => viesCheck(v),
   createInvoice: pl => sevCreateInvoice(pl),
   invoiceNr: id => SEV_OPS.invoiceDetail(id).then(d => (d && d.nr) || ""),
-  sendInvoice: (id, to, subject, text) => SEV_OPS.invoiceOp({ confirm: true, op: "send", id, toEmail: to, subject, text }).then(r => { SEV_CACHE.at = 0; return r; }),
+  // Status vor dem Senden prüfen (von Hand schon versendet → nicht doppelt mailen); "" = unbekannt
+  invoiceStatus: id => SEV_OPS.invoiceDetail(id).then(d => String((d && d.status) || "")).catch(() => ""),
+  // nach dem Senden: offene Mollie-Zahlung dieser Rechnung zuordnen – nur als Vorschlag „Zur Prüfung“ (Simon bestätigt), nie gebucht
+  sendInvoice: (id, to, subject, text) => SEV_OPS.invoiceOp({ confirm: true, op: "send", id, toEmail: to, subject, text }).then(r => { SEV_CACHE.at = 0;
+    if (process.env.DATABASE_URL && FIN_STATE.local) setTimeout(() => FIN_MOLLIE.rematch().catch(e => console.error("Mollie-Rematch:", e.message)), 2000);
+    return r; }),
   deleteInvoice: id => sev("DELETE", "/Invoice/" + String(id).replace(/\D/g, "")).then(r => { SEV_CACHE.at = 0; return r; }),
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
   onOrder: o => { try { printTaskSync(o); } catch (e) { console.error("Aufträge (Druck):", e.message); } },
@@ -4611,3 +4697,5 @@ if (require.main === module) {
 }
 
 module.exports = { renderIndex, ROUTE_META, NOINDEX_ROUTES };
+// nur für Tests (test/abgleich-storno.test.js): Abgleich-Rechenkern direkt prüfen
+if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, sevSummary };

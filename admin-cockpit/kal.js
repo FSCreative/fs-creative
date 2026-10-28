@@ -3,7 +3,7 @@
    To-Do-Liste mit Filtern, Gruppen, Detailansicht, Editor und Rückgängig.
    Öffentlich für andere Module: F.openTodoEdit(vorlage), F.openTodoView(id), F.openEventEdit(vorlage, datum), F.openEventView(id), F.calEvents().
    Aktionen: todoedit:id, todoview:id, tododel:id, todotoggle:id, newtodo, newevent[:datum], event:id / eventview:id, eventedit:id,
-   eventdel:id, kaltab:kal|todo, calnav:-1|0|1, dayview:datum, fincal:nr. */
+   eventdel:id, kaltab:kal|todo, calnav:-1|0|1, dayview:datum, bzopen:buchung, fincal:nr|id (Alias auf fin:invd). */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, de=F.de, UI=F.UI;
@@ -168,13 +168,14 @@ function calItems(){
   var map={}, D=F.D, t=today();
   function push(k,o){ k=String(k||"").slice(0,10); if(!isoOk(k)) return; (map[k]=map[k]||[]).push(o); }
   var bd=(D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[];
-  bd.forEach(function(b){ push(b.eventDate,{kind:"bd",label:(b.package||"Buchung")+(b.customerName?" · "+b.customerName:""),c:"blitzdings",sub:"Blitzdings-Buchung"+(b.reference?" "+b.reference:""),loc:b.location||b.eventLocation||"",act:"go:plat",time:""}); });
+  bd.forEach(function(b){ push(b.eventDate,{kind:"bd",label:(b.package||"Buchung")+(b.customerName?" · "+b.customerName:""),c:"blitzdings",sub:"Blitzdings-Buchung"+(b.reference?" "+b.reference:""),loc:b.location||b.eventLocation||"",act:b.id!=null?"bzopen:"+b.id:"pltab:blitz",time:""}); });
   allEvents().forEach(function(e){ var sp=e.source==="icloud"?"privat":spKey(e.sparte);
     push(e.date,{kind:"evt",id:e.id,editable:!readOnly(e)&&!e.pending,label:e.title||"Termin",time:e.time||"",end:e.endTime||"",loc:e.location||"",c:sp,priv:e.source==="icloud",
       sub:(e.source==="icloud"?"Privat · iCloud":e.source==="outlook"?"Mail-Kalender":spName(sp)),act:"eventview:"+e.id}); });
   (D.todos||[]).forEach(function(x){ if(x.due&&!x.done) push(x.due,{kind:"todo",label:x.text||"Aufgabe",c:"todo",time:"",sub:"To-Do"+(x.due<t?" · überfällig":""),late:x.due<t,act:"todoview:"+x.id}); });
   if(F.tkOpenDue) F.tkOpenDue().forEach(function(x){ push(x.due,{kind:"todo",label:x.title,ico:"flag",c:"todo",time:"",sub:"Frist"+(x.project?" · "+x.project:"")+(x.due<t?" · überfällig":""),late:x.due<t,act:"tkopen:"+x.id}); });   // Fristen aus „Aufträge“ (Symbol: Fahne)
-  ((D.sev&&D.sev.invoices)||[]).forEach(function(i){ if(i.due&&i.open>0.005) push(i.due,{kind:"inv",label:(i.nr||"Entwurf")+" · "+(i.contact||""),c:i.overdue?"invbad":"inv",time:"",sub:(i.overdue?"Überfällig":"Rechnung fällig")+" · offen "+F.eur(i.open),money:true,act:"fincal:"+(i.nr||i.id)}); });
+  /* fällige Rechnungen (ohne Entwürfe und Stornos) → Rechnungsseite */
+  ((D.sev&&D.sev.invoices)||[]).forEach(function(i){ if(i.due&&i.open>0.005&&i.status!==100&&!i.cancelled) push(i.due,{kind:"inv",label:(i.nr||"Entwurf")+" · "+(i.contact||""),c:i.overdue?"invbad":"inv",time:"",sub:(i.overdue?"Überfällig":"Rechnung fällig")+" · offen "+F.eur(i.open),money:true,act:F.actions.fin?"fin:invd:"+i.id:"fincal:"+(i.nr||i.id)}); });
   Object.keys(map).forEach(function(k){ map[k].sort(function(a,b){ return (a.time||"")<(b.time||"")?-1:(a.time||"")>(b.time||"")?1:0; }); });
   return map;
 }
@@ -256,7 +257,18 @@ document.addEventListener("keydown",function(e){
 F.action("calnav",function(v){ shiftMonth(+v||0); });
 F.action("calreload",function(){ loadCal(true); F.render(); });
 F.action("dayview",function(k){ openDayView(k); });
-F.action("fincal",function(nr){ F.closeModal(); F.UI.invQ=nr||""; F.UI.invF="all"; F.go("geld"); });
+/* Rechnung aus dem Kalender: Rechnungsseite (fin:invd); fincal bleibt als Alias für ältere Sprungziele (Nummer oder ID) */
+F.action("fincal",function(nr){ F.closeModal(); nr=String(nr||"");
+  var i=((F.D&&F.D.sev&&F.D.sev.invoices)||[]).find(function(x){ return String(x.id)===nr||(x.nr&&x.nr===nr); });
+  if(F.actions.fin){ if(i) F.actions.fin("invd:"+i.id); else { F.UI.fq_inv=nr; F.UI.fpg=0; F.actions.fin("inv"); } return; }
+  F.UI.invQ=nr; F.UI.invF="all"; F.go("geld"); });
+/* Blitzdings-Buchung öffnen (Kalender, Heute): Buchungsfenster, sonst Plattformen › Blitzdings mit dieser Buchung */
+F.openBooking=function(id){
+  var mh=document.getElementById("modalHost"), before=mh?mh.innerHTML:"";
+  if(F.actions.bkshow){ try{ F.actions.bkshow(id); }catch(e){ console.error(e); } if(mh&&mh.innerHTML&&mh.innerHTML!==before) return; }
+  if(F.actions.pltab){ F.closeModal(); F.actions.pltab("blitz~"+id); } else F.go("plat");
+};
+F.action("bzopen",function(id){ F.openBooking(id); });
 
 /* ---------- Tagesansicht ---------- */
 function openDayView(k){

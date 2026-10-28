@@ -96,6 +96,7 @@ function P(){ return (F.D&&F.D.platforms)||{}; }
 function item(key){ return ((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).find(function(x){return x.key===key;})||null; }
 function items(src){ return ((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){return x.src===src;}); }
 function billRecs(key){ return (BILL&&BILL.invoices&&BILL.invoices[key])||[]; }
+function vaYear(x){ return x&&x.invoicedYear!=null?(+x.invoicedYear||0):((x&&+x.invoiced)||0); }   /* VALUERO „Verrechnet <Jahr>“: nur Rechnungen dieses Jahres, ohne Stornos (alter Server: invoiced) */
 function stamp(iso){ return iso?'Stand '+new Date(iso).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""; }
 F.icons.external=F.icons.external||'<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>';
 function ext(url,label){ return '<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener" title="'+esc(label)+' in neuem Tab öffnen">'+esc(label)+F.svg("external")+'</a>'; }
@@ -104,10 +105,12 @@ function num(n){ return (+n||0).toLocaleString("de-AT"); }
 function kpi(k,v,s,opts){ opts=opts||{}; var tag=opts.act?'button':'div';
   return '<'+tag+' class="panel kpi'+(opts.cls?" "+opts.cls:"")+'"'+(opts.act?' data-act="'+opts.act+'"':'')+'><span class="k">'+k+'</span><span class="v num'+(opts.vcls?" "+opts.vcls:"")+'">'+v+'</span>'+(s?'<span class="s">'+s+'</span>':'')+'</'+tag+'>'; }
 F.platKpi=kpi;
-function sevTag(l){ if(!l) return ""; var m={bezahlt:"ok",offen:"warn",ueberfaellig:"bad",entwurf:"grey",fehlt:"bad",manuell:"grey",alt:"grey",neu:"info",sonst:"grey"}; return '<span class="tag '+(m[l.state]||"grey")+'">'+esc(l.label||"")+'</span>'; }
+function sevTag(l){ if(!l) return ""; var m={bezahlt:"ok",offen:"warn",ueberfaellig:"bad",entwurf:"grey",fehlt:"bad",manuell:"grey",alt:"grey",neu:"info",sonst:"grey",storniert:"grey"}; return '<span class="tag '+(m[l.state]||"grey")+'">'+esc(l.label||"")+'</span>'; }
 function invLine(l){
   if(!l) return '<span class="muted">noch nie</span>';
-  var nr=l.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(l.nr||"Entwurf")+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"ohne Rechnung");
+  /* Rechnung öffnet das Rechnungsdetail (Finanzen) – ohne Finanzen-Modul das PDF. <a>, weil invLine auch in Knöpfen steht (kein Knopf im Knopf) */
+  var nr=l.id&&F.actions.fin?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" data-act="fin:invd:'+esc(l.id)+'" title="Rechnung öffnen">'+esc(l.nr||"Entwurf")+'</a>'
+    :l.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(l.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(l.nr||"Entwurf")+'">'+esc(l.nr||"Entwurf")+'</a>':esc(l.nr||"ohne Rechnung");
   return '<span>'+nr+' · '+deShort(l.date)+' · '+money(l.gross)+' '+sevTag(l)+'</span>';
 }
 /* Waagrechte Balken (HTML, damit am Handy lesbar): rows=[{label,parts:[[wert,cls,titel]],right}] */
@@ -185,6 +188,7 @@ function fscRevenue(){
   ((F.D.sev&&F.D.sev.invoices)||[]).forEach(function(i){ byId[i.id]=i; });
   Object.keys(BILL.invoices).forEach(function(k){ if(k.indexOf("site:")!==0) return;
     (BILL.invoices[k]||[]).forEach(function(inv){ if(String(inv.date||"").slice(0,4)!==yr) return; var x=byId[inv.id];
+      if(x&&(x.cancelled||x.type==="SR")) return;   /* storniert: weder bezahlt noch offen */
       if(x){ if(x.status===100||x.status===50){ r.open+=+inv.gross||0; return; } r.paid+=+x.paid||(x.status===1000?+x.gross||0:0); r.open+=+x.open||0; }
       else r.open+=+inv.gross||0; }); });
   return r;
@@ -194,7 +198,7 @@ function sums(){
   if(p.kochdu){ var t=p.kochdu.totals||{}; out.push({id:"kochdu",label:"kochdu",paid:c2e(t.barSettledCents)+c2e(t.onlineProvisionCents),open:c2e(t.barOpenCents),note:"Bar verrechnet + Online-Provision"}); }
   if(p.kantineur) out.push({id:"kantineur",label:"Kantineur",paid:c2e(p.kantineur.revenueGrossCents),open:0,note:"Abos laufen automatisch"});
   if(p.blitzdings){ var r=p.blitzdings.revenue||{}; out.push({id:"blitz",label:"Blitzdings",paid:c2e(r.paidCents),open:c2e(r.openCents),note:"laut Blitzdings"}); }
-  if(p.valuero){ var v=items("valuero"); out.push({id:"valuero",label:"VALUERO",paid:v.reduce(function(a,x){return a+(+x.invoiced||0);},0),open:v.reduce(function(a,x){return a+(+x.unbilled||0);},0),refund:v.reduce(function(a,x){return a+(+x.refund||0);},0),note:"verrechnet "+F.D.year}); }
+  if(p.valuero){ var v=items("valuero"); out.push({id:"valuero",label:"VALUERO",paid:v.reduce(function(a,x){return a+vaYear(x);},0),open:v.reduce(function(a,x){return a+(+x.unbilled||0);},0),refund:v.reduce(function(a,x){return a+(+x.refund||0);},0),note:"verrechnet "+F.D.year}); }
   var ski=F.D.skikaiser; if(ski&&ski.configured&&ski.totals) out.push({id:"ski",label:"Skikaiser",paid:c2e(ski.totals.proceedsCents),open:0,note:"Erlös nach Store-Gebühr"});
   var hg=F.D.huettengaudi; if(hg&&hg.configured&&hg.totals) out.push({id:"hg",label:"Hüttengaudi",paid:c2e(hg.totals.proceedsCents),open:0,note:"Erlös nach Store-Gebühr"});
   return out;
@@ -214,7 +218,7 @@ function vUeb(){
     (ko?card("kochdu","kochdu",'Bestellplattform '+badge("kochdu"),[["Bezahlt",money(c2e(kt.barSettledCents)+c2e(kt.onlineProvisionCents))],["Bar-Gebühren offen",money(c2e(kt.barOpenCents),kt.barOpenCents>0?"warn-t":""),""],["Restaurants",num((ko.restaurants||[]).length)]]):'<div class="panel pl-card"><h3>kochdu</h3>'+off("kochdu")+'</div>')+
     (ka?card("kantineur","Kantineur","Vereinskasse",[["Eingenommen",money(c2e(ka.revenueGrossCents))],["MRR",money(c2e(ka.mrrCents))],["Aktive Abos",num((ka.subscribers||{}).active)]].concat(ka.trial?[["In Testzeit (Demo)",num(ka.trial.running)+(ka.trial.endingSoon?' <span class="muted">· '+num(ka.trial.endingSoon)+' enden bald</span>':'')]]:[])):'<div class="panel pl-card"><h3>Kantineur</h3>'+off("Kantineur")+'</div>')+
     (bz?card("blitz","Blitzdings",'Fotobox &amp; 360° '+badge("blitz"),[["Bezahlt",money(c2e(br.paidCents))],["Offen",money(c2e(br.openCents),br.openCents>0?"warn-t":"")],["Anstehend",num((bz.bookings||{}).upcomingCount!=null?bz.bookings.upcomingCount:(bz.upcoming||[]).length)]]):'<div class="panel pl-card"><h3>Blitzdings</h3>'+off("Blitzdings")+'</div>')+
-    (p.valuero?card("valuero","VALUERO",'Tourismus &amp; Hosting '+badge("valuero"),[["Verrechnet "+esc(F.D.year),money(va.reduce(function(a,x){return a+x.invoiced;},0))],["Offen",money(va.reduce(function(a,x){return a+x.unbilled;},0),"warn-t")]].concat(refund>0.005?[["Zu erstatten",money(refund,"bad-t")]]:[])):'<div class="panel pl-card"><h3>VALUERO</h3>'+off("den VALUERO-Objekten")+'</div>')+
+    (p.valuero?card("valuero","VALUERO",'Tourismus &amp; Hosting '+badge("valuero"),[["Verrechnet "+esc(F.D.year),money(va.reduce(function(a,x){return a+vaYear(x);},0))],["Offen",money(va.reduce(function(a,x){return a+x.unbilled;},0),"warn-t")]].concat(refund>0.005?[["Zu erstatten",money(refund,"bad-t")]]:[])):'<div class="panel pl-card"><h3>VALUERO</h3>'+off("den VALUERO-Objekten")+'</div>')+
     (fsc?'<button class="panel pl-card" data-go="web"><div class="pl-t"><h3>FS Creative</h3><span class="muted">Websites</span></div><dl class="pl-fig"><dt>Bezahlt</dt><dd>'+money(fsc.paid)+'</dd><dt>Offen</dt><dd>'+money(fsc.open,fsc.open>0.005?"warn-t":"")+'</dd></dl><span class="pl-note">Hosting, Domains &amp; Mail '+esc(F.D.year)+'</span></button>':'')+
     (ski&&ski.configured&&ski.totals?card("ski","Skikaiser","In-App-Käufe",[["Erlös",money(c2e(ski.totals.proceedsCents))],["Käufe",num(ski.totals.count)]]):card("ski","Skikaiser","In-App-Käufe",[],'<span class="pl-note">'+(ski&&ski.configured?"Statistik antwortet gerade nicht.":"Noch nicht verbunden. Hier steht, was die App liefern muss.")+'</span>'))+
     (hg&&hg.configured&&hg.totals?card("hg","Hüttengaudi","Edelweiß-Pakete",[["Erlös",money(c2e(hg.totals.proceedsCents))],["Käufe",num(hg.totals.count)]].concat(hg.users?[["Aktiv 7 Tage",num(hg.users.aktiv7)]]:[])):card("hg","Hüttengaudi","Edelweiß-Pakete",[],'<span class="pl-note">'+(hg&&hg.configured?"Statistik antwortet gerade nicht.":"Noch nicht verbunden. Hier steht, was die App liefern muss.")+'</span>'));
@@ -376,7 +380,7 @@ function vBlitz(){
     var inv="";
     if(it&&it.last) inv='<span class="invs">'+invLine(it.last)+'</span>';
     else if(rec) inv='<span>'+(rec.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(rec.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(rec.nr||"Entwurf")+'">'+esc(rec.nr||"Entwurf")+'</a>':esc(rec.nr||"Rechnung"))+' <span class="tag info">angelegt '+deShort(rec.date)+'</span></span>';
-    var canInv=!inv&&+b.totalCents>0;
+    var sto=!!(it&&it.last&&it.last.state==="storniert"), canInv=(!inv||sto)&&+b.totalCents>0;   /* storniert → wieder zu verrechnen */
     var paid=b.paymentStatus==="PAID";
     return '<div class="pl-bk"><div class="pl-date"><b>'+(d?d.getDate():"–")+'</b><span>'+(d?esc(d.toLocaleDateString("de-AT",{month:"short"})):"")+'</span></div>'+
       '<div style="min-width:0"><div><b>'+esc(b.package||"Buchung")+'</b>'+(b.reference?' <span class="tag grey">'+esc(b.reference)+'</span>':'')+'</div>'+
@@ -386,6 +390,7 @@ function vBlitz(){
       '<div class="pl-right"><span class="pl-amt money">'+eur(c2e(b.totalCents))+'</span>'+bzPayTag(b)+
         '<div class="pl-acts">'+inv+
           (canInv?'<button class="btn" data-act="plbinv:'+esc(b.id)+'"'+(sevOk?'':' disabled title="Buchhaltung ist gerade nicht erreichbar"')+'>Rechnung</button>':'')+
+          (it&&it.depositOnly&&+it.unbilled>0.005&&F.actions.bkshow?'<button class="btn" data-act="bkshow:'+esc(b.id)+'" title="Anzahlung verrechnet – Restrechnung im Buchungsfenster vorbereiten">Restrechnung · '+money(+it.unbilled)+'</button>':'')+
           '<button class="btn'+(paid?"":" primary")+'" data-act="plbpay:'+esc(b.id)+'"'+(BUSY["b"+b.id]?" disabled":"")+'>'+(paid?"↺ Auf offen":"Als bezahlt")+'</button>'+
         '</div></div></div>';
   }).join("");
@@ -396,7 +401,25 @@ function vBlitz(){
       kpi("Diesen Monat bezahlt",'<span class="money">'+eur(c2e(r.thisMonthPaidCents))+'</span>',r.refundedCents?'<span class="money">'+eur(c2e(r.refundedCents))+'</span> erstattet':"seit Monatsanfang")+
     '</div>'+kal+
     sec("Nächste Termine",'<span class="muted">„Als bezahlt“ wird direkt in Blitzdings gespeichert</span>',ups.length?list:'<div class="empty">Keine anstehenden Termine.</div>')+
+    bzPastSec(sevOk)+
     sec("Bezahlt vs. offen",'<span class="muted">'+esc(F.D.year)+'</span>',donut([["Bezahlt",c2e(r.paidCents),"ok",'<span class="money">'+eur(c2e(r.paidCents))+'</span>'],["Offen",c2e(r.openCents),"warn",'<span class="money">'+eur(c2e(r.openCents))+'</span>']].concat(r.refundedCents?[["Erstattet",c2e(r.refundedCents),"ink-3",'<span class="money">'+eur(c2e(r.refundedCents))+'</span>']]:[]),num((+bk.paidCount||0)+(+bk.openCount||0))));
+}
+/* Vergangene Buchungen ohne Rechnung (aus dem Abgleich): Rechnung, bezahlte Rechnung, einer bestehenden zuordnen oder ausblenden */
+function bzPastSec(sevOk){
+  var t=F.D.today||"", past=items("blitzdings").filter(function(x){ return (+x.unbilled||0)>0.005&&x.date&&x.date<t; }).sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  if(!past.length) return "";
+  var A=F.actions, sum=past.reduce(function(a,x){ return a+(+x.unbilled||0); },0);
+  var rows=past.map(function(x){ var id=String(x.key).replace(/^blitz:/,""), d=new Date(x.date+"T12:00:00"), dis=sevOk?"":' disabled title="Buchhaltung ist gerade nicht erreichbar"';
+    return '<div class="pl-bk"><div class="pl-date"><b>'+d.getDate()+'</b><span>'+esc(d.toLocaleDateString("de-AT",{month:"short"}))+'</span></div>'+
+      '<div style="min-width:0"><div><b>'+esc(x.name||"Buchung")+'</b></div><div class="pl-meta"><span>'+esc(x.sub||"")+'</span></div>'+(x.last&&(x.last.state==="storniert"||x.depositOnly)?'<div class="pl-meta"><span class="invs">'+(x.depositOnly?"Anzahlung: ":"")+invLine(x.last)+'</span></div>':'')+'</div>'+
+      '<div class="pl-right"><span class="pl-amt money">'+eur(x.unbilled)+'</span>'+(x.depositOnly?'<span class="tag warn">Rest offen</span>':x.paidOnPlatform?'<span class="tag ok">online bezahlt</span>':'<span class="tag warn">ohne Rechnung</span>')+
+        '<div class="pl-acts">'+(x.action?'<button class="btn primary" data-act="plbinv:'+esc(id)+'"'+dis+'>Rechnung</button>':'')+
+          (x.depositOnly&&A.bkshow?'<button class="btn primary" data-act="bkshow:'+esc(id)+'" title="Anzahlung verrechnet – Restrechnung im Buchungsfenster vorbereiten">Restrechnung</button>':'')+
+          (x.paidOnPlatform&&x.action&&A.sdpaidinv?'<button class="btn" data-act="sdpaidinv:'+esc(x.key)+'"'+dis+' title="Rechnung anlegen und gleich als bezahlt verbuchen">Bezahlte Rechnung</button>':'')+
+          (A.sdassign?'<button class="btn" data-act="sdassign:'+esc(x.key)+'" title="Einer bestehenden (Sammel-)Rechnung zuordnen">Zuordnen</button>':'')+
+          (A.sdign?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+
+      '</div></div></div>'; }).join("");
+  return sec("Ohne Rechnung (vergangen)",'<span class="muted">'+past.length+' Buchung'+(past.length===1?"":"en")+' · <span class="money">'+eur(sum)+'</span></span>',rows);
 }
 function bzBooking(id){ return ((P().blitzdings||{}).upcoming||[]).find(function(b){ return String(b.id)===String(id); }); }
 function bzApply(b,paid,d){
@@ -425,14 +448,17 @@ function bzSetPaid(id,paid,quiet){
 }
 F.action("plbpay",function(id){ var b=bzBooking(id); if(b) bzSetPaid(id,b.paymentStatus!=="PAID"); });
 F.action("plbinv",function(id){
-  var b=bzBooking(id); if(!b) return;
+  var b=bzBooking(id), it=item("blitz:"+id); if(!b&&!(it&&it.action)) return;   /* vergangene Buchung: nur im Abgleich (Vorlage it.action) */
   if(!F.D.sev){ F.toast("Buchhaltung ist gerade nicht erreichbar",true); return; }
-  var it=item("blitz:"+b.id), day=String(b.eventDate||"").slice(0,10), extras=(b.extras||[]).map(function(e){return e&&e.name;}).filter(Boolean).join(", ");
-  var pre=it&&it.action?JSON.parse(JSON.stringify(it.action)):{title:"Rechnung · Blitzdings-Buchung",contactName:b.customerName||"",deliveryDate:day||undefined,headText:(b.reference?"Buchung "+b.reference+" – ":"")+"vielen Dank für Ihre Buchung bei Blitzdings.",
-    items:[{name:"Blitzdings "+(b.package||"Fotobox"),text:[day?"Event am "+de(day):"",b.location?"Ort: "+b.location:"",extras?"inkl. "+extras:""].filter(Boolean).join(" · "),qty:1,priceGross:c2e(b.totalCents),taxRate:20}]};
+  b=b||{id:id};
+  var day=String(b.eventDate||"").slice(0,10), extras=(b.extras||[]).map(function(e){return e&&e.name;}).filter(Boolean).join(", ");
+  var to=F.blitzInvTo?F.blitzInvTo(b):{contactName:b.customerName||"",email:b.customerEmail||""};   /* Firma vor Person, Person als z. H. (blitz-kal.js) */
+  var pre=it&&it.action?JSON.parse(JSON.stringify(it.action)):Object.assign({title:"Rechnung · Blitzdings-Buchung",deliveryDate:day||undefined,headText:(b.reference?"Buchung "+b.reference+" – ":"")+"vielen Dank für Ihre Buchung bei Blitzdings.",
+    items:[{name:"Blitzdings "+(b.package||"Fotobox"),text:[day?"Event am "+de(day):"",b.location?"Ort: "+b.location:"",extras?"inkl. "+extras:""].filter(Boolean).join(" · "),qty:1,priceGross:c2e(b.totalCents),taxRate:20}]},to);
   if(b.customerEmail&&!pre.email) pre.email=b.customerEmail;
   /* Bug #4 behoben: Rechnung wird in der Abrechnungs-Historie vermerkt */
-  pre.after=Object.assign({},pre.after||{},{billing:{key:"blitz:"+b.id,label:(b.customerName||"Buchung")+(b.reference?" · "+b.reference:"")}});
+  var lbl=b.customerName?b.customerName+(b.reference?" · "+b.reference:""):((pre.after&&pre.after.billing&&pre.after.billing.label)||"Buchung");
+  pre.after=Object.assign({},pre.after||{},{billing:{key:"blitz:"+id,label:lbl}});
   pre.onDone=function(){ loadBill(); };
   F.openInvoice(pre);
 });
@@ -443,7 +469,8 @@ function vValuero(){
   if(!va) return '<div class="panel empty">Keine Verbindung zu den VALUERO-Objekten (Antonhaus, Alpinappart).</div>';
   var objs=va.objects||[], sevOk=!!F.D.sev, tOpen=0,tPaid=0,tTot=0,tRef=0;
   var cards=objs.map(function(o){
-    var it=item("valuero:"+o.key)||{invoiced:0,unbilled:c2e(o.provisionCents),refund:0}, prov=c2e(o.provisionCents), settled=+it.invoiced||0, open=+it.unbilled||0, refund=+it.refund||0;
+    var it=item("valuero:"+o.key)||{invoiced:0,unbilled:c2e(o.provisionCents),refund:0}, prov=c2e(o.provisionCents), settled=vaYear(it), open=+it.unbilled||0, refund=+it.refund||0;
+    var canUndo=billRecs("valuero:"+o.key).length>0||!!it.last, busy=!!BUSY["v"+o.key];
     tOpen+=open; tPaid+=settled; tTot+=prov; tRef+=refund;
     var opened=!!F.UI.platOpen[o.key];
     var months=(o.months||[]).slice().sort(function(a,b){ return String(a.month).localeCompare(String(b.month)); });
@@ -453,6 +480,8 @@ function vValuero(){
         '<span class="muted">fällig '+money(open)+' · verrechnet '+money(settled)+' · gesamt '+money(prov)+(it.pending>0.005?' · laufendes Quartal '+money(it.pending):'')+(it.nextBilling?' · nächste Abrechnung '+esc(de(it.nextBilling)):'')+(refund>0.005?' · <b class="bad-t">erstatten '+money(refund)+'</b>':'')+' · '+num(o.feeBookings)+' Buchungen</span>'+
         (it.last?'<span class="invs">Letzte Rechnung: '+invLine(it.last)+'</span>':'')+
       '</button><div class="pl-acts">'+
+        (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Rechnungsentwurf für die fälligen Quartale anlegen">Verrechnen · '+money(open)+'</button>':'')+
+        (canUndo?'<button class="btn" data-act="plvundo:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Letzte Abrechnung zurücknehmen">Rückgängig</button>':'')+
       '</div></div>'+
       (refund>0.005?'<div class="pl-refund">Zu erstatten: <b class="money">'+eur(refund)+'</b>. Es wurde mehr verrechnet als aktuell an Gebühren angefallen ist (Storno nach der Abrechnung). Mit „Rückgängig“ die letzte Abrechnung zurücknehmen und neu verrechnen.</div>':'')+
       (opened?'<div class="pl-months"><table class="pl-tbl"><thead><tr><th>Anreisemonat</th><th class="r">Buchungen</th><th class="r">Gebühr</th></tr></thead><tbody>'+
@@ -463,7 +492,7 @@ function vValuero(){
   return (sevOk?'':'<div class="notice"><span>Die Buchhaltung antwortet gerade nicht. „Verrechnen“ vermerkt dann nur den Betrag, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
     '<div class="kpis">'+
       kpi("Fällige Gebühren",'<span class="money">'+eur(tOpen)+'</span>',"abgelaufene Quartale, nach Aufenthalt",{vcls:tOpen>0.005?"warn-t":""})+
-      kpi("Verrechnet "+esc(F.D.year),'<span class="money">'+eur(tPaid)+'</span>',"laut Abrechnungs-Historie",{vcls:"ok-t"})+
+      kpi("Verrechnet "+esc(F.D.year),'<span class="money">'+eur(tPaid)+'</span>',"Rechnungen "+esc(F.D.year)+", ohne Stornos",{vcls:"ok-t"})+
       kpi("Gebühren gesamt",'<span class="money">'+eur(tTot)+'</span>',num(objs.reduce(function(a,o){return a+(+o.feeBookings||0);},0))+" Buchungen")+
       (tRef>0.005?kpi("Zu erstatten",'<span class="money">'+eur(tRef)+'</span>',"mehr verrechnet als angefallen",{vcls:"bad-t"}):kpi("Objekte",num(objs.length),"Antonhaus, Alpinappart …"))+
     '</div>'+
@@ -506,12 +535,13 @@ F.action("plvundo",function(key){
 
 /* ---------- Ansicht ---------- */
 var LINKS={kochdu:["https://www.kochdu.at/admin","kochdu-Admin"],kantineur:["https://www.kantineur.at/betreiber","Betreiber-Bereich"],blitz:["https://www.blitzdings.co.at/admin","Blitzdings-Admin"]};
-F.action("pltab",function(t){ var x=String(t).split("~"); t=x[0]; if(!TABS.some(function(y){return y[0]===t;})) t="ueb"; if(t==="valuero"&&x[1]) F.UI.platOpen[x[1]]=true; F.UI.plat=t; F.ls("fsc_plat_tab",t); if(F.current!=="plat") F.go("plat"); else { F.render(); window.scrollTo(0,0); } });
+F.action("pltab",function(t){ var x=String(t).split("~"); t=x[0]; if(!TABS.some(function(y){return y[0]===t;})) t="ueb"; if(t==="valuero"&&x[1]) F.UI.platOpen[x[1]]=true; F.UI.plat=t; F.ls("fsc_plat_tab",t); if(F.current!=="plat") F.go("plat"); else { F.render(); window.scrollTo(0,0); }
+  if(t==="blitz"&&x[1]&&F.actions.bkshow) F.actions.bkshow(x[1]); });   /* blitz~<id>: Buchung gleich öffnen */
 function vPlat(){
   var tab=F.UI.plat, nc=newCounts(), p=P();
   var subnav='<nav class="subnav pl-sub" aria-label="Plattformen">'+TABS.map(function(t){ var n=nc[TAB2SEEN[t[0]]]; return '<button type="button" data-act="pltab:'+t[0]+'" aria-current="'+(t[0]===tab)+'">'+t[1]+(n?'<span class="count">'+n+'</span>':'')+'</button>'; }).join("")+'</nav>';
   var src={kochdu:p.kochdu,kantineur:p.kantineur,blitz:p.blitzdings,valuero:p.valuero}[tab];
-  var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"&&tab!=="hg"?'<button class="btn" data-go="geld">Abgleich</button>':'');
+  var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"&&tab!=="hg"?(F.actions.fin?'<button class="btn" data-act="fin:inv">Rechnungen</button>':'<button class="btn" data-go="geld">Finanzen</button>'):'');
   var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung per Rechnung.",ski:"App mit In-App-Käufen (Einmalkäufe).",hg:"Idle-Game für iOS mit Edelweiß-Paketen (Einmalkäufe)."};
   var body=tab==="kochdu"?vKochdu():tab==="kantineur"?vKantineur():tab==="blitz"?vBlitz():tab==="valuero"?vValuero():tab==="ski"?(F.skikaiserView?F.skikaiserView():'<div class="panel empty">Skikaiser-Modul fehlt.</div>'):tab==="hg"?(F.huettengaudiView?F.huettengaudiView():'<div class="panel empty">Hüttengaudi-Modul fehlt.</div>'):vUeb();
   return F.head("Plattformen",subs[tab]+(src&&src.fetchedAt?' <span class="muted">· '+esc(stamp(src.fetchedAt))+'</span>':''),right?'<div class="row wrap pl-head-r">'+right+'</div>':'')+subnav+body;
@@ -526,7 +556,7 @@ F.view({id:"plat",label:"Plattformen",short:"Plattf.",icon:"plat",order:70,
 F.searcher(function(q){
   var p=P(), out=[];
   ((p.kochdu||{}).restaurants||[]).forEach(function(r){ if(String(r.name||"").toLowerCase().indexOf(q)>-1) out.push({group:"Plattformen",label:"kochdu · "+r.name,sub:"Bar offen "+eur(c2e(r.barOpenCents)),act:"pltab:kochdu~"+r.id}); });
-  ((p.blitzdings||{}).upcoming||[]).forEach(function(b){ if((String(b.customerName||"")+" "+(b.reference||"")+" "+(b.package||"")+" "+(b.location||"")).toLowerCase().indexOf(q)>-1) out.push({group:"Plattformen",label:"Blitzdings · "+(b.customerName||"Buchung"),sub:de(String(b.eventDate||"").slice(0,10))+" · "+(b.package||"")+" · "+eur(c2e(b.totalCents)),act:"pltab:blitz~"+b.id}); });
+  ((p.blitzdings||{}).upcoming||[]).forEach(function(b){ if((String(b.customerName||"")+" "+(b.reference||"")+" "+(b.package||"")+" "+(b.location||"")).toLowerCase().indexOf(q)>-1) out.push({group:"Plattformen",label:"Blitzdings · "+(b.customerName||"Buchung"),sub:de(String(b.eventDate||"").slice(0,10))+" · "+(b.package||"")+" · "+eur(c2e(b.totalCents)),act:(F.actions.bkshow?"bkshow:":"pltab:blitz~")+b.id}); });
   ((p.valuero||{}).objects||[]).forEach(function(o){ if(String(o.name||"").toLowerCase().indexOf(q)>-1) out.push({group:"Plattformen",label:"VALUERO · "+o.name,sub:num(o.feeBookings)+" Buchungen",act:"pltab:valuero~"+o.key}); });
   [["kochdu","kochdu"],["kantineur","Kantineur"],["blitzdings","Blitzdings","blitz"],["valuero","VALUERO"],["skikaiser","Skikaiser","ski"]].forEach(function(t){ if(t[0].indexOf(q)===0) out.push({group:"Plattformen",label:t[1],sub:"Plattform öffnen",act:"pltab:"+(t[2]||t[0])}); });
   if(["hüttengaudi","huettengaudi","huttengaudi"].some(function(n){ return n.indexOf(q)===0; })) out.push({group:"Plattformen",label:"Hüttengaudi",sub:"Plattform öffnen",act:"pltab:hg"});

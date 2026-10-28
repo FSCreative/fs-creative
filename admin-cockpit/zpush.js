@@ -40,9 +40,12 @@ function sheet(){
 }
 F.action("pushcfg",sheet);
 F.pushEnable=function(topics){ return ok?enable(topics,Promise.resolve(Notification.permission)):Promise.reject(new Error("Push nicht verfügbar")); };
-/* Mitteilung angetippt → der Service Worker holt dieses Fenster nach vorne und sagt, welche Ansicht */
+/* Mitteilung angetippt → der Service Worker holt dieses Fenster nach vorne und sagt, welche Ansicht.
+   Deep-Links „#ansicht/aktion:arg“ (z. B. „#kunden/lead:<id>“) öffnen danach direkt das Objekt (F.openHash, core.js) */
 if("serviceWorker" in navigator){ navigator.serviceWorker.addEventListener("message",function(e){ var d=e.data||{}; if(d.type!=="fsc-go") return;
-  var h=String(d.url||"").split("#")[1]||""; if(h&&F.views&&F.views.some(function(v){ return v.id===h; })&&F.current!==h) F.go(h); });
+  var h=String(d.url||"").split("#")[1]||""; if(!h) return;
+  if(F.openHash){ F.openHash(h); return; }
+  if(F.views&&F.views.some(function(v){ return v.id===h; })&&F.current!==h) F.go(h); });
   try{ navigator.serviceWorker.startMessages(); }catch(e){} }
 F.form("pushcfg",function(f){ var tp=TOP.map(function(t){ return t[0]; }).filter(function(k){ return f["t_"+k].checked; }), err=document.getElementById("pushErr");
   var perm=Notification.permission==="granted"?null:ask();   // sofort im Antippen fragen – sonst lehnt das iPhone ohne Nachfrage ab

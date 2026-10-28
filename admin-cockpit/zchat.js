@@ -83,7 +83,7 @@ function listHtml(){
 function threadHead(c){
   return '<div class="ch-hd"><button type="button" class="btn icon ch-back" data-act="chback" aria-label="Zurück zur Liste">'+F.svg("chevL")+'</button><div class="t"><b>'+esc(nameOf(c))+'</b><span>'+esc([c.email,c.phone].filter(Boolean).join(" · ")||"keine Kontaktdaten")+(c.page?' · auf '+esc(c.page):'')+'</span></div>'+
     '<div class="acts"><span class="muted small">KI übernimmt</span><div class="seg" role="group" aria-label="KI übernimmt">'+[["auto","Auto"],["on","An"],["off","Aus"]].map(function(o){ return '<button type="button" data-act="chai:'+o[0]+'" aria-pressed="'+(c.ai===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>'+
-    (c.leadId?'<button type="button" class="btn" data-go="kunden">Lead ✓</button>':'<button type="button" class="btn" data-act="chlead">Als Lead</button>')+
+    (c.leadId?'<button type="button" class="btn" data-act="lead:'+esc(c.leadId)+'" title="Kundenakte öffnen">Lead ✓</button>':'<button type="button" class="btn" data-act="chlead">Als Lead</button>')+
     '<button type="button" class="btn" data-act="'+(c.closed?"chreopen":"chclose")+'">'+(c.closed?"Wieder öffnen":"Beenden")+'</button><button type="button" class="btn danger" data-act="chdel" aria-label="Unterhaltung löschen">Löschen</button></div></div>'+
     '<div class="ch-info"><span>'+esc(aiTxt(c))+'</span>'+(c.aiCount?'<span>KI-Antworten: '+c.aiCount+'/'+((ST&&ST.aiConvMax)||15)+'</span>':'')+(c.request?'<span>Anliegen: '+esc(c.request)+'</span>':'')+(TH&&TH.pages&&TH.pages.length>1?'<span>Seiten: '+esc(TH.pages.join(", "))+'</span>':'')+'</div>';
 }
@@ -150,7 +150,9 @@ F.action("chlead",function(){
 });
 F.form("chlead",function(f){ api("/admin/api/chat/op",{op:"lead",id:SEL,name:f.name.value,company:f.company.value,email:f.email.value,phone:f.phone.value,topic:f.topic.value,message:f.message.value}).then(function(j){
   if(!j||!j.ok){ var e=document.getElementById("chLeadErr"); if(e) e.textContent=(j&&j.error)||"Fehler"; return; }
-  F.closeModal(); setConv(j.conv); F.toast("Lead angelegt"); if(F.load) F.load(true); }); });
+  F.closeModal(); setConv(j.conv); var lid=j.conv&&j.conv.leadId;
+  if(lid&&F.actions.lead) F.toast("Lead angelegt",false,"Kundenakte",function(){ F.actions.lead(lid); }); else F.toast("Lead angelegt");
+  if(F.load) F.load(true); }); });
 F.form("chsend",function(f){
   var ta=document.getElementById("chText"), text=ta.value.trim(), id=SEL; if(!text||sending||!id) return; sending=true;
   api("/admin/api/chat/send",{id:id,text:text}).then(function(j){ sending=false;

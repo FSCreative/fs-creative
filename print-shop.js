@@ -234,11 +234,14 @@ module.exports = function (D) {
   // Aufträge im Cockpit (server.js): jede gespeicherte Bestellung meldet ihren Stand – daraus wird die Aufgabe im Auftrag „Druckshop“
   function taskInfo(o) { const c = o.customer || {}, p = o.price || {};
     return { id: o.id, nr: o.nr, status: o.status, statusText: STATUS_DE[o.status] || o.status, createdAt: o.createdAt, product: (o.product && o.product.title) || "", copies: o.copies, customer: c.company || ((c.firstName || "") + " " + (c.lastName || "")).trim(),
-      gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "" }; }
+      gross: p.gross, purchase: p.purchase && p.purchase.total, margin: p.margin, delivery: p.deliveryDate || "", payment: o.payment && o.payment.method, paymentStatus: o.payment && o.payment.status, pcOrder: (o.printcom && o.printcom.orderNumber) || "", reason: o.rejectReason || "",
+      invoiceId: (o.invoice && o.invoice.id && !o.invoice.deleted && String(o.invoice.id)) || "", invoiceNr: (o.invoice && !o.invoice.deleted && o.invoice.nr) || "", email: c.email || "" }; }
   function toTask(o) { if (D.onOrder && o && o.id) { try { D.onOrder(taskInfo(o)); } catch (e) { console.log("Druckshop: Aufträge", e.message); } } }
   const store = {
     async getOrder(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select data from print_order where id=$1", [id]); return r.rows[0] ? r.rows[0].data : null; } return rdJson(path.join(FDIR(), "orders", id + ".json")); },
-    async putOrder(o) { o.updatedAt = nowIso(); if (useDb()) { await (await db()).query("insert into print_order(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data, updated_at=now()", [o.id, JSON.stringify(o)]); toTask(o); return o; } wrJson(path.join(FDIR(), "orders", o.id + ".json"), o); toTask(o); return o; },
+    async putOrder(o) { o.updatedAt = nowIso(); if (useDb()) { await (await db()).query("insert into print_order(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data, updated_at=now()", [o.id, JSON.stringify(o)]); } else wrJson(path.join(FDIR(), "orders", o.id + ".json"), o);
+      if (o.invoice && o.invoice.id) idxDirty();   // Rechnungs-Index (invoiceIndex) neu lesen
+      toTask(o); return o; },
     async listOrders() { if (useDb()) { const r = await (await db()).query("select data from print_order order by created_at desc limit 1000"); return r.rows.map(x => x.data); }
       const d = path.join(FDIR(), "orders"); return fs.readdirSync(d).filter(f => /\.json$/.test(f)).map(f => rdJson(path.join(d, f))).filter(Boolean).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); },
     async putFile(meta, buf) { if (useDb()) { await (await db()).query("insert into print_file(id,meta,data) values($1,$2::jsonb,$3) on conflict(id) do update set meta=excluded.meta, data=coalesce(excluded.data, print_file.data)", [meta.id, JSON.stringify(meta), buf || null]); return meta; }
@@ -247,6 +250,9 @@ module.exports = function (D) {
     async fileData(id) { if (!okId(id)) return null; if (useDb()) { const r = await (await db()).query("select data from print_file where id=$1", [id]); return r.rows[0] ? r.rows[0].data : null; } try { return fs.readFileSync(path.join(FDIR(), "files", id + ".pdf")); } catch (e) { return null; } },
     async listFiles() { if (useDb()) { const r = await (await db()).query("select meta from print_file"); return r.rows.map(x => x.meta); } const d = path.join(FDIR(), "files"); return fs.readdirSync(d).filter(f => /\.json$/.test(f)).map(f => rdJson(path.join(d, f))).filter(Boolean); },
     async delFile(id) { if (!okId(id)) return; if (useDb()) { await (await db()).query("delete from print_file where id=$1", [id]); return; } ["pdf", "json"].forEach(x => { try { fs.unlinkSync(path.join(FDIR(), "files", id + "." + x)); } catch (e) {} }); },
+    // nur Bestellungen mit Rechnung, nur die nötigen Felder (für invoiceIndex – schont die Datenbank)
+    async invoiceRows() { if (useDb()) { const r = await (await db()).query("select data->>'id' as id, data->>'nr' as nr, data->>'status' as status, data->'customer'->>'email' as email, data->'invoice' as invoice from print_order where data->'invoice'->>'id' is not null order by created_at desc limit 5000"); return r.rows.map(x => ({ id: x.id, nr: x.nr, status: x.status, customer: { email: x.email }, invoice: x.invoice })); }
+      return store.listOrders(); },
     async getMeta(k) { if (useDb()) { await db(); return D.fin.getMeta(k); } return rdJson(path.join(FDIR(), k + ".json")); },
     async setMeta(k, v) { if (useDb()) { await db(); return D.fin.setMeta(k, v); } wrJson(path.join(FDIR(), k + ".json"), v); },
   };
@@ -1801,6 +1807,21 @@ module.exports = function (D) {
     await store.putOrder(o);
     return submittedRest(o);
   }
+  // Rechnung → Druckauftrag für die Buchhaltung (server.js: Kennzeichen „wartet auf Druckauftrag“, Link zum Auftrag).
+  // Nur aus dem eigenen Speicher (keine Last für Shop/Print.com), 60 s zwischengespeichert; gleichzeitige Aufrufe teilen sich eine Abfrage.
+  let INV_IDX = { at: 0, map: null, p: null };
+  const idxDirty = () => { INV_IDX.at = 0; };
+  function invoiceIndex() {
+    if (INV_IDX.map && Date.now() - INV_IDX.at < 60e3) return Promise.resolve(INV_IDX.map);
+    if (INV_IDX.p) return INV_IDX.p;
+    const p = INV_IDX.p = store.invoiceRows().then(list => {
+      const map = {};
+      (list || []).forEach(o => { const iv = o && o.invoice; if (!iv || !iv.id || iv.deleted) return;
+        map[String(iv.id)] = { orderId: o.id, nr: o.nr || "", status: o.status || "", email: (o.customer && o.customer.email) || "", sentAt: iv.sentAt || "", draft: !!iv.draft }; });
+      INV_IDX = { at: Date.now(), map, p: null }; return map;
+    }).catch(e => { INV_IDX.p = null; throw e; });
+    return p;
+  }
   // Rechnungs-ENTWURF in der eigenen Buchhaltung (fertiggestellt und gesendet wird erst beim Bestellen bei Print.com)
   async function makeInvoice(o) {
     if (!o.invoice.id && D.createInvoice) {
@@ -1838,6 +1859,9 @@ module.exports = function (D) {
     if ((s.autoSend || direct) && o.status === "paid") { try { await placeOrder(o.id, direct ? "automatisch (vom Kunden direkt freigegeben)" : "automatisch (Einstellung)"); } catch (e) { hist(o, "Automatisch senden fehlgeschlagen: " + e.message); await store.putOrder(o).catch(() => {}); log("Automatisch senden", o.nr, e.message); } }
   }
   const LOCK = new Set();
+  // Status der Rechnung in der Buchhaltung ("100" Entwurf, "200" offen, "750" teilbezahlt, "1000" bezahlt); "" = unbekannt (alter Server/keine Antwort)
+  const invoiceStatusOf = id => typeof D.invoiceStatus === "function" ? Promise.resolve().then(() => D.invoiceStatus(id)).then(s => String(s == null ? "" : s), () => "") : Promise.resolve("");
+  const INV_SENT = ["200", "750", "1000"];
   // Referenz am Artikel: Bestellnummer + Seitenzuordnung der Logo-PDF (z. B. „S1 Brust links, S2 Rücken“)
   const itemRef = o => Array.isArray(o.pageMap) && o.pageMap.length ? clip(o.nr + " · " + o.pageMap.map(p => "S" + p.page + " " + p.title).join(", "), 120) : o.nr;
   // Beidseitiger Druck (z. B. 4/4), aber nur 1 Seite in der PDF (Kunde hat den Hinweis „Rückseite bleibt weiß“ bestätigt):
@@ -1889,8 +1913,15 @@ module.exports = function (D) {
       if (needsBack(fm, o) && !motifDesigns(o, base)) hist(o, "1-seitige PDF bei beidseitigem Druck – weiße Rückseite für Print.com ergänzt");
       if (!o.printcom.orderNumber) hist(o, "Print.com-Antwort ohne Auftragsnummer: " + clip(JSON.stringify(j), 400));
       await store.putOrder(o);
-      // Rechnung fertigstellen und an den Kunden senden
-      if (o.invoice.id && !o.invoice.sentAt && D.sendInvoice) {
+      // Rechnung fertigstellen und an den Kunden senden – außer sie ist schon fertiggestellt (z. B. von Hand unter Finanzen gesendet): dann kein zweites Mal
+      // Status unbekannt (alter Server, Buchhaltung antwortet nicht) → wie bisher senden
+      const invSt = o.invoice.id && !o.invoice.sentAt && D.sendInvoice ? await invoiceStatusOf(o.invoice.id) : "";
+      if (o.invoice.id && !o.invoice.sentAt && D.sendInvoice && INV_SENT.indexOf(invSt) > -1) {
+        o.invoice.sentAt = nowIso(); o.invoice.draft = false; o.invoice.sentBefore = true;
+        if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} }
+        hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "war bereits versendet – nicht erneut gesendet");
+        await store.putOrder(o);
+      } else if (o.invoice.id && !o.invoice.sentAt && D.sendInvoice) {
         try { await D.sendInvoice(o.invoice.id, o.customer.email, "Rechnung zu deiner Druckbestellung " + o.nr + " · FS Creative",
           "Hallo " + o.customer.firstName + ",\n\ndein Druckauftrag " + o.nr + " ist jetzt in Produktion. Anbei die Rechnung" + (o.payment.method === "mollie" ? " (bereits bezahlt)." : " – zahlbar innerhalb von 14 Tagen.") + "\n\nVielen Dank!\n\nFreundliche Grüße\nSimon Felder\nFS Creative");
           o.invoice.sentAt = nowIso(); o.invoice.draft = false;
@@ -1910,7 +1941,13 @@ module.exports = function (D) {
       const rf = await mollie("POST", "/payments/" + encodeURIComponent(o.payment.mollieId) + "/refunds", { amount: { currency: "EUR", value: o.price.gross.toFixed(2) }, description: "Erstattung Druckauftrag " + o.nr });
       o.payment.refund = { id: String(rf.id || ""), status: String(rf.status || ""), at: nowIso(), amount: o.price.gross }; hist(o, "Erstattung über Mollie veranlasst (" + eur(o.price.gross) + ")");
     }
-    if (o.invoice.id && o.invoice.draft && D.deleteInvoice) { try { await D.deleteInvoice(o.invoice.id); o.invoice.deleted = nowIso(); hist(o, "Rechnungsentwurf gelöscht"); } catch (e) { o.invoice.deleteError = clip(e.message, 200); } }
+    // Entwurf löschen. Ist die Rechnung schon versendet (z. B. von Hand), geht das nicht mehr: nur vermerken – stornieren macht Simon selbst, nie automatisch
+    if (o.invoice.id && o.invoice.draft && D.deleteInvoice) {
+      const st0 = await invoiceStatusOf(o.invoice.id);
+      if (INV_SENT.indexOf(st0) > -1) { o.invoice.needsStorno = true; o.invoice.draft = false; if (!o.invoice.nr && D.invoiceNr) { try { o.invoice.nr = (await D.invoiceNr(o.invoice.id)) || ""; } catch (e) {} } hist(o, "Rechnung " + (o.invoice.nr ? o.invoice.nr + " " : "") + "ist schon versendet – nicht gelöscht, bitte unter Finanzen stornieren"); }
+      else { try { await D.deleteInvoice(o.invoice.id); o.invoice.deleted = nowIso(); hist(o, "Rechnungsentwurf gelöscht"); }
+        catch (e) { o.invoice.deleteError = clip(e.message, 200); const st1 = await invoiceStatusOf(o.invoice.id); if (INV_SENT.indexOf(st1) > -1) { o.invoice.needsStorno = true; o.invoice.draft = false; hist(o, "Rechnung ist schon versendet – nicht gelöscht, bitte unter Finanzen stornieren"); } } }
+    }
     o.status = "rejected"; o.rejectReason = clip(reason, 500); hist(o, "Abgelehnt" + (reason ? ": " + reason : ""));
     await store.putOrder(o);
     if (o.status === "rejected" && o.payment.status !== "open") await mail(o.customer.email, "Deine Druckbestellung " + o.nr + " · FS Creative", "Deine Bestellung konnte leider nicht gedruckt werden",
@@ -2700,7 +2737,8 @@ module.exports = function (D) {
   function orderSummary(o) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
-      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o) };
+      payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
+      email: (o.customer && o.customer.email) || "", invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
   // Fortschritt für die Leiste im Cockpit: Schritte mit Zeitpunkt (aus dem Verlauf), Print.com-Rohstatus, Liefertermin, Tracking
   function progressOf(o) {
@@ -2927,6 +2965,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
+  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary } };
 };
 module.exports._bonusCalc = bonusCalc;

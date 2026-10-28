@@ -485,7 +485,7 @@ function attachmentsHtml(m){
     var dv=/^(PDF|Bild)$/.test(attIconTxt(a))?' data-docview data-doctitle="'+esc(a.filename||"Anhang")+'"':'';
     return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="'+esc((a.filename||"Anhang")+" – ansehen")+'"'+dv+'><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
       '<a href="'+esc(href)+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen" aria-label="'+esc((a.filename||"Anhang")+" herunterladen")+'">'+ic("down")+'</a>'+
-      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+(F.viwOn?'<button type="button" data-act="mviw:'+esc(m.id)+'|'+esc(a.index||0)+'" title="In VIW Cloud speichern" aria-label="In VIW Cloud speichern">'+ic("cloud")+'</button>':'')+(canV&&F.payFromMail?'<button type="button" data-act="mpay:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Zahlung erfassen – KI liest Empfänger, IBAN, Betrag aus dieser Rechnung" aria-label="Zahlung erfassen">'+ic("pay")+'</button>':'')+'</span>';
+      (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+(F.viwOn?'<button type="button" data-act="mviw:'+esc(m.id)+'|'+esc(a.index||0)+'" title="In VIW Cloud speichern" aria-label="In VIW Cloud speichern">'+ic("cloud")+'</button>':'')+(canV&&F.payFromMail?'<button type="button" data-act="mpay:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Überweisung anlegen – KI liest Empfänger, IBAN und Betrag aus dieser Rechnung" aria-label="Überweisung anlegen">'+ic("pay")+'</button>':'')+'</span>';
   }).join("");
   var zip="";
   if(atts.length>1){ var z="/admin/api/mail-attachments-zip?folder="+encodeURIComponent(m.folder||"INBOX")+"&uid="+encodeURIComponent(m.uid)+"&account="+encodeURIComponent(accOf(m))+"&name="+encodeURIComponent(m.subject||"Anhaenge")+"&atts="+encodeURIComponent(JSON.stringify(atts.map(function(a){ return {index:a.index,filename:a.filename}; })));
@@ -500,6 +500,106 @@ function outboxReader(o){
     (o.attachments&&o.attachments.length?'<div class="attbox"><div class="atth"><span>'+ic("clip")+' '+o.attachments.length+(o.attachments.length>1?" Anhänge":" Anhang")+'</span></div><div class="attl">'+o.attachments.map(function(a){ return '<span class="att"><span class="ai"><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm" title="'+esc(a.filename)+'">'+esc(a.filename)+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></span></span>'; }).join("")+'</div></div>':'')+
     frame(o.html,"Mail im Postausgang")+'</div>';
 }
+/* ---------- Kunde zur Mail: Kundenakte, Kontakt, offene Rechnungen, Auftrag ----------
+   Adresse: bei Formular-Mails (Absender ist eine eigene Adresse) „Antwort an“, sonst der Absender, bei gesendeten Mails der Empfänger.
+   Zuordnung nur über F.who (kunden.js, exakt per E-Mail/Kontakt); fehlt es, wenigstens der Lead mit genau dieser E-Mail. Liest nur. */
+var FREEMAIL=/^(gmail|googlemail|gmx|web|yahoo|ymail|outlook|hotmail|live|msn|icloud|me|mac|aon|a1|chello|kabsi|t-online|freenet|posteo|mailbox|protonmail|proton|pm)\./i;
+var NOREPLY=/(^|[._+-])(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounces?|newsletters?|news|notifications?)([._+-]|@)/i;
+function mAddr(s){ return (String(s||"").toLowerCase().match(/[^\s<>,;"]+@[^\s<>,;"]+/)||[""])[0]; }
+function mName(s){ var t=String(s||""), i=t.indexOf("<"); return i>0?t.slice(0,i).replace(/["']/g,"").trim():""; }
+/* eigene Adresse oder eigene Firmen-Domain (Freemail-Domains zählen nie als eigene) */
+function ownAddr(a){ if(!a) return true; var my=myAddrs(); if(my[a]) return true; var d=a.split("@")[1]||""; if(!d||FREEMAIL.test(d)) return false;
+  return Object.keys(my).some(function(x){ return x.split("@")[1]===d; }); }
+function custCands(m){ var out=[], add=function(a){ a=mAddr(a); if(a&&!ownAddr(a)&&out.indexOf(a)<0) out.push(a); };
+  if(isSent(m)||m.local){ (m.toList||[]).forEach(function(x){ add(x&&x.address); }); add(m.to); }
+  else { add(m.from); add(m.replyTo); }   /* Formular-Mail: Absender ist eigene Adresse → bleibt nur „Antwort an“ */
+  return out; }
+function whoOf(addr){ if(!addr||!F.D) return null;
+  if(F.who){ try{ return F.who({email:addr})||null; }catch(e){ console.error(e); return null; } }
+  var ls=(F.D.leads||[]).filter(function(l){ return l&&String(l.email||"").trim().toLowerCase()===addr; }), l=ls.filter(function(x){ return x.stage!=="verloren"; })[0]||ls[0];
+  return l?{lead:l,contact:null,openInvoices:[],openSum:0,projects:[]}:null; }
+function whoKnown(w){ return !!(w&&(w.lead||w.contact||w.contactId||(w.openInvoices||[]).length||(w.projects||[]).length)); }
+/* offene Rechnungen ohne Entwürfe und Stornos */
+function openInv(w){ return ((w&&w.openInvoices)||[]).filter(function(i){ return i&&+i.open>0.005&&i.status!==100&&!i.cancelled&&i.type!=="SR"; }); }
+function activeProj(w){ return ((w&&w.projects)||[]).filter(function(p){ return p&&p.status!=="abgeschlossen"&&p.id!=="pdruckshop"; }); }
+M.custOf=function(m){
+  if(!m||m.outbox||m.draftLocal||!F.D) return null;
+  var cs=custCands(m), hit=null, addr=cs[0]||"";
+  for(var i=0;i<cs.length&&!hit;i++){ var w=whoOf(cs[i]); if(whoKnown(w)){ hit=w; addr=cs[i]; } }
+  var sent=isSent(m)||!!m.local;
+  return {addr:addr,who:hit,lead:hit&&hit.lead||null,open:openInv(hit),projects:activeProj(hit),
+    canLead:!hit&&!!addr&&!sent&&!NOREPLY.test(addr)&&!isSpam(m)&&!isTrashed(m)&&!isDraftBox(m)};
+};
+M.openInv=openInv;
+/* Buchhaltungs-Daten (Kontakte) einmal im Hintergrund holen, damit F.who auch Kontakte ohne Lead findet */
+var META_REQ=false;
+function wantMeta(){ if(META_REQ||!F.who||!F.loadMeta) return; META_REQ=true;
+  setTimeout(function(){ F.loadMeta(function(){ if(F.current==="post"&&UI.msel) F.render(); }); },400); }
+function rcChip(act,icon,tone,label,title,cls){
+  return '<button type="button" class="tag '+tone+' tagbtn'+(cls?" "+cls:"")+'" data-act="'+esc(act)+'" title="'+esc(title||label)+'">'+ic(icon)+'<span>'+label+'</span></button>'; }
+function custRow(m){
+  var c=M.custOf(m); if(!c) return "";
+  var w=c.who, ld=c.lead, ct=w&&(w.contact||(w.contactId?{id:w.contactId}:null)), inv=c.open, pj=c.projects, out=[];
+  if(ld){ var ln=ld.company||ld.name||c.addr; out.push(rcChip("lead:"+ld.id,"user","glow",'<span class="rc-pre">Kundenakte · </span>'+esc(ln),"Kundenakte öffnen: "+ln,"rc-k")); }
+  if(ct&&ct.id){ var nr=ct.nr?"Kd.-Nr. "+ct.nr:"Kontakt";
+    out.push(rcChip("mct:"+ct.id,"building","grey",esc(ld?nr:(ct.name||c.addr)+(ct.nr?" · "+nr:"")),"Kontakt in der Buchhaltung öffnen"+(ct.name?": "+ct.name:""),ld?"rc-n":"rc-k")); }
+  if(inv.length){ var od=inv.filter(function(i){ return i.overdue; }).length, sum=inv.reduce(function(s,i){ return s+(+i.open||0); },0);
+    var tt=inv.length===1?"Offene Rechnung "+(inv[0].nr||"")+(od?" – überfällig":"")+" öffnen":inv.length+" offene Rechnungen"+(od?", davon "+od+" überfällig":"")+" – Liste öffnen";
+    var il=od===inv.length?od+" überfällig":inv.length+" offen";   /* rot, sobald eine überfällig ist – Details im Tooltip */
+    out.push(rcChip(inv.length===1?"fin:invd:"+inv[0].id:"minvopen:"+m.id,"inv",od?"bad":"warn",il+' · <span class="money">'+esc(F.eur(sum))+'</span>',tt,"rc-m")); }
+  if(pj.length) out.push(rcChip("tkprojopen:"+pj[0].id,"board","grey",'<span class="rc-pre">Auftrag · </span>'+esc(pj[0].name||"")+(pj.length>1?" +"+(pj.length-1):""),"Auftrag öffnen: "+(pj[0].name||"")+(pj.length>1?" (insgesamt "+pj.length+" laufende Aufträge)":""),"rc-p"));
+  if(!out.length&&c.canLead) out.push(rcChip("mlead:"+m.id,"plus","grey","Als Lead übernehmen","Noch kein Kunde – "+c.addr+" als neuen Lead anlegen und die Kundenakte öffnen","rc-new"));
+  if(!out.length) return "";
+  return '<div class="rcust" role="group" aria-label="Kunde">'+out.join("")+'</div>';
+}
+/* Vorbefüllung „Als Lead übernehmen“: Name aus dem Absender (sonst aus der Adresse), Nachricht = Betreff + Auszug */
+function leadPre(m,c){
+  var a=c.addr, n="";
+  if(a===mAddr(m.from)) n=String(m.fromName||"").trim(); else if(a===mAddr(m.replyTo)) n=mName(m.replyTo);
+  if(!n||n.indexOf("@")>-1) n=a.split("@")[0].replace(/[0-9]+/g," ").replace(/[._+-]+/g," ").trim().split(/\s+/).filter(Boolean).map(function(x){ return x.charAt(0).toUpperCase()+x.slice(1); }).join(" ");
+  var txt=m.bodyHtml?(M.htmlToText?M.htmlToText(m.body||""):String(m.body||"").replace(/<[^>]+>/g," ")):String(m.body||m.preview||"");
+  txt=txt.replace(/\r/g,"").replace(/[ \t\u00a0]+/g," ").replace(/ *\n[\s]*/g,"\n").trim(); if(txt.length>700) txt=txt.slice(0,700).replace(/\s+\S*$/,"")+" …";
+  var subj=String(m.subject||"").replace(/^\s*((re|aw|wg|fw|fwd)\s*:\s*)+/i,"").trim();
+  var topic=subj.replace(/^(neue\s+)?(kontakt|website-?|web-?)?anfrage\s*[:\-–]\s*/i,"").trim()||subj;
+  return {name:n||a,company:"",email:a,phone:"",topic:topic.slice(0,80),message:("Betreff: "+(subj||"(kein Betreff)")+(txt?"\n\n"+txt:"")).slice(0,2000),source:"Mail"};
+}
+M.leadFromMail=function(m){
+  var c=M.custOf(m); if(!c||!c.addr){ F.toast("Keine Absender-Adresse gefunden",true); return; }
+  if(c.lead){ if(F.actions.lead) F.actions.lead(c.lead.id); return; }
+  var pre=leadPre(m,c);
+  if(F.newLead){ F.newLead(pre); return; }
+  if(!F.actions.newlead){ F.toast("Leads legst du unter „Kunden“ an.",true); return; }
+  F.actions.newlead();   /* älterer Stand ohne F.newLead: Dialog öffnen und ausfüllen */
+  var f=document.querySelector('[data-form="newlead"]'); if(!f) return;
+  ["name","company","email","phone","topic","message"].forEach(function(k){ if(f[k]&&pre[k]) f[k].value=pre[k]; });
+};
+/* Zahlungseingang: eine offene Rechnung → bestehender Dialog „Zahlungseingang erfassen“ (gebucht wird erst dort), mehrere → Liste „Offen“ des Kunden */
+M.payIn=function(m,list){
+  var c=M.custOf(m), inv=c?c.open:[];
+  if(!inv.length){ F.toast("Keine offene Rechnung zu diesem Absender gefunden",true); return; }
+  if(inv.length===1&&!list){ if(F.openBook) F.openBook(inv[0].id); else if(F.actions.fin) F.actions.fin("invd:"+inv[0].id); return; }
+  var names=[]; inv.forEach(function(i){ var n=String(i.contact||"").trim(); if(n&&names.indexOf(n)<0) names.push(n); });
+  F.UI.fq_inv=names.length===1?names[0]:""; F.UI.fpg=0;
+  if(F.actions.fin) F.actions.fin("inv:open"); else if(F.actions.openinvoices) F.actions.openinvoices(); else F.go("geld");
+};
+/* Menüeinträge (… im Lesebereich, Rechtsklick): Kundenakte bzw. „Als Lead übernehmen“ und „Zahlungseingang erfassen …“ (nur bei offenen Rechnungen) */
+M.custItems=function(m){
+  var c=M.custOf(m), o={cust:null,pay:null}; if(!c) return o;
+  if(c.lead&&F.actions.lead) o.cust={label:"Kundenakte öffnen",icon:"user",act:function(){ F.actions.lead(c.lead.id); }};
+  else if(c.canLead) o.cust={label:"Als Lead übernehmen",icon:"user",act:function(){ M.leadFromMail(m); }};
+  if(c.open.length) o.pay={label:"Zahlungseingang erfassen …",icon:"wallet",act:function(){ M.payIn(m,false); }};
+  return o;
+};
+F.action("mlead",function(id){ var m=find(id)||M.cur(); if(m) M.leadFromMail(m); });
+F.action("minvopen",function(id){ var m=find(id)||M.cur(); if(m) M.payIn(m,true); });
+F.action("mpayin",function(id){ var m=find(id)||M.cur(); if(m) M.payIn(m,false); });
+/* Kontakt: Drawer aus der Buchhaltung; sind die Kontakte dort noch nicht geladen, über die Kontaktliste – der Drawer öffnet sich, sobald sie da sind */
+/* sdct (sevdesk.js) lädt fehlende Kontakte selbst und öffnet danach den Drawer – genau einmal aufrufen, nie in einer Schleife
+   (sonst je 300 ms eine neue, ggf. erzwungene Kontakt-Abfrage an sevDesk und der Drawer wird laufend neu aufgebaut) */
+F.action("mct",function(id){
+  if(F.actions.sdct){ try{ F.actions.sdct(id); return; }catch(e){ console.error(e); } }
+  if(F.actions.sdctgo) F.actions.sdctgo(id); else F.go("geld");
+});
 function readerHtml(){
   var sel=UI.msel;
   if(sel&&sel.indexOf("ob_")===0&&M.findOb){ var o=M.findOb(sel); if(o) return outboxReader(o); }
@@ -520,7 +620,7 @@ function readerHtml(){
     rb("mx:star",m.starred?"starfill":"star",m.starred?"Markierung entfernen":"Markieren",{cls:m.starred?"on":"",lvl:4,key:"S",short:m.starred?"Markiert":"Markieren"})+
     (!trashed&&!dbox?rb("mx:termin","cal","Als Termin eintragen",{cls:"lx",lvl:4,short:"Termin"}):'')+
     (!trashed&&F.actions.kimsum?rb("mxki","spark","KI: zusammenfassen oder Antwort vorschlagen",{cls:"ki lx",lvl:4,short:"KI"}):'')+
-    '<span class="rsp"></span><button type="button" class="rb rmore mk" data-act="mxmore" title="Weitere Aktionen: Aufgabe, Zahlung, Rechnung, Spam, Drucken …" aria-label="Weitere Aktionen" aria-haspopup="menu">'+F.svg("more")+'</button>';
+    '<span class="rsp"></span><button type="button" class="rb rmore mk" data-act="mxmore" title="Weitere Aktionen: Kundenakte, Aufgabe, Rechnung, Zahlungseingang, Überweisung, Spam, Drucken …" aria-label="Weitere Aktionen" aria-haspopup="menu">'+F.svg("more")+'</button>';
   var who=sent?(m.toName||m.to):(m.fromName||m.from), addr=sent?m.to:m.from;
   var tos=(m.toList&&m.toList.length?m.toList:(m.to?[{name:m.toName,address:m.to}]:[])).map(function(x){ return esc(x.name||x.address); });
   var ccs=(m.ccList||[]).map(function(x){ return esc(x.name||x.address); });
@@ -549,6 +649,7 @@ function readerHtml(){
     '<div class="rsender">'+av(sent?m.toName:m.fromName,sent?m.to:m.from,"lg")+
       '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an '+esc(addr)+'">&lt;'+esc(addr)+'&gt;</button>':'')+'</div>'+(toLine?'<div class="rto">'+toLine+'</div>':'')+'</div>'+
       '<div class="rdate">'+esc(m.date?new Date(m.date).toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"")+'<span>'+esc(relTime(m.date))+'</span></div></div>'+
+    (trashed||dbox?'':custRow(m))+
     attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
     (m.body||m.preview?'':'<div class="notice"><span>Kein Textinhalt im Abruf. Die vollständige Nachricht findest du im Webmail.</span><button type="button" class="btn" data-act="mwebmail">In Webmail öffnen</button></div>')+
     qr+
@@ -673,6 +774,7 @@ function after(){
   if(UI.mfocusQr){ UI.mfocusQr=false; var q=document.getElementById("mqr"); if(q) q.focus(); }
   if(!S.full&&!S.loading&&!S.err) M.loadFull();
   else if(S.full&&!S.loading&&Date.now()-S.fullAt>60000) M.loadFull();
+  wantMeta();
 }
 M.render=function(){ F.render(); };
 
@@ -901,7 +1003,12 @@ F.action("mxmore",function(v,el){
     if(mob) its.push({label:"Allen antworten",icon:"replyall",act:go("replyall")},{label:"Weiterleiten",icon:"forward",act:go("forward")},{sep:true},
       {label:m.starred?"Markierung entfernen":"Markieren",icon:m.starred?"starfill":"star",act:go("star")});
     if(mob||narrow) its.push({label:"Als Termin",icon:"cal",act:go("termin")});
-    its.push({label:"Als Aufgabe",icon:"board",act:go("auftrag")},{label:"Zahlung erfassen",icon:"pay",act:go("zahlung")},{label:"Rechnung erstellen",icon:"inv",act:go("rechnung")},{label:"Angebot erstellen",icon:"inv",act:go("angebot")});
+    var ci=M.custItems(m);
+    if(its.length) its.push({sep:true});
+    if(ci.cust) its.push(ci.cust);
+    its.push({label:"Als Aufgabe",icon:"board",act:go("auftrag")},{label:"Rechnung erstellen",icon:"inv",act:go("rechnung")},{label:"Angebot erstellen",icon:"inv",act:go("angebot")});
+    if(ci.pay) its.push(ci.pay);
+    its.push({label:"Überweisung anlegen",icon:"pay",act:go("zahlung")});
     if((mob||narrow)&&F.actions.kimsum){ its.push({sep:true},{label:"KI: Zusammenfassen",icon:"spark",act:function(){ F.actions.kimsum(m.id); }});
       if(!isSent(m)&&F.actions.kimreply) its.push({label:"KI: Antwort vorschlagen",icon:"spark",act:function(){ F.actions.kimreply(m.id); }}); }
     its.push({sep:true},{label:sp?"Kein Spam":"Als Spam",icon:sp?"inboxin":"spam",act:go(sp?"notspam":"spam")});
@@ -1337,6 +1444,17 @@ F.css([
 ".raddr:hover{text-decoration:underline}",
 ".rto{font-size:13px;color:var(--ink-3);overflow-wrap:anywhere}",
 ".rdate{font-size:12.5px;color:var(--ink-3);text-align:right;display:grid;font-variant-numeric:tabular-nums}",
+/* Kunden-Zeile unter dem Absender: kompakte Chips, am PC eine Zeile (Namen kürzen sich), am Handy umbrechend */
+".rcust{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:nowrap;margin-top:-4px;padding:1px 0}",
+".rcust .tag.tagbtn{display:inline-flex;align-items:center;gap:5px;flex:0 1 auto;min-width:0;max-width:100%;margin:0;padding:3px 10px 3px 8px;min-height:26px;font:600 12.5px/1.3 var(--f-body);border:1px solid transparent;transition:border-color .12s,background .12s}",
+".rcust .tag.tagbtn:hover{border-color:color-mix(in srgb,currentColor 35%,transparent)}",
+".rcust .tag.tagbtn:focus-visible{outline:2px solid var(--glow);outline-offset:1px}",
+".rcust .tag>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+".rcust .tag svg{width:13px;height:13px;flex:none}",
+".rcust .tag.rc-m,.rcust .tag.rc-n{flex-shrink:0;font-variant-numeric:tabular-nums}",
+".rcust .tag.rc-k{flex-shrink:2;max-width:min(300px,100%)}.rcust .tag.rc-p{flex-shrink:3;max-width:min(260px,100%)}.rcust .tag.rc-k,.rcust .tag.rc-p{min-width:min(96px,100%)}",
+".rcust .tag.rc-new{background:transparent;border-style:dashed;border-color:var(--line-2,var(--line));color:var(--ink-2)}",
+".rcust .tag.rc-new:hover{color:var(--ink);background:var(--hover,var(--sunk))}",
 /* Mail-Inhalt: HTML-Mails auf weißem „Papier“ (für weißen Hintergrund gestaltet), Text-Mails auf der Glasfläche */
 ".mframe{width:100%;height:max(440px,calc(100vh - 470px));border:1px solid var(--line);border-radius:14px;background:#fff;display:block}",
 ":root[data-theme=\"glas\"] .mframe{border-color:transparent;box-shadow:0 10px 30px rgb(0 0 0/.25)}",
@@ -1395,6 +1513,8 @@ F.css([
 "@container (max-width:999px){.rb.l3 .rl{display:none}.rb.l3{padding:0 9px}}",
 "@container (max-width:859px){.rb.lx{display:none}}",
 "@container (max-width:739px){.rb.l2 .rl{display:none}.rb.l2{padding:0 9px}.rtool{gap:2px}}",
+"@container (max-width:859px){.rcust .rc-pre{display:none}}",
+"@container (max-width:559px){.rcust{flex-wrap:wrap}}",
 "@container (max-width:399px){.rb.l1 .rl{display:none}.rb.l1{padding:0 9px}.rsep{display:none}}",
 ":root{--m-blue:var(--glow);--m-red:var(--bad)}   /* Handy-Akzent (auch kalm.js/mobile.js) */",
 "@media (max-width:900px){",
@@ -1497,6 +1617,7 @@ F.css([
 "  .rin{overflow:visible;padding:18px 16px 24px;gap:16px}",
 "  .rsubj{font-size:22px;letter-spacing:-.01em}",
 "  .rsender{grid-template-columns:44px minmax(0,1fr)}.rdate{grid-column:2;text-align:left;display:block}.rdate span{margin-left:6px}",
+"  .rcust{flex-wrap:wrap;margin-top:-6px;gap:8px}.rcust .tag.tagbtn{min-height:38px;padding:6px 13px 6px 11px;font-size:14px}.rcust .tag svg{width:15px;height:15px}.rcust .tag.rc-m{flex-shrink:1}",
 "  .attl{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.attl::-webkit-scrollbar{display:none}.att{flex:none}",
 "  .att>a,.att>button,.att>.ai{min-height:42px}",
 "  .att .nm{max-width:min(240px,55vw)}",

@@ -1,4 +1,4 @@
-/* Finanzen (eigene Buchhaltung): eigene Navigation links (Übersicht, Aufträge, Rechnungen, Belege, Bank, Steuern, Verwalten),
+/* Finanzen (eigene Buchhaltung): eigene Navigation links (Übersicht, Angebote, Rechnungen, Belege, Bank, Steuern, Verwalten),
    Tabellen, Rechnung als eigene Seite mit PDF links und Details rechts.
    Nutzt die vorhandenen Aktionen (senden, Zahlung, Mahnung, Storno, Beleg, Bank-Zuordnung …) und Unterseiten (UVA, U1, JAB, Prognose, Firma & Einstellungen). */
 (function(){
@@ -44,7 +44,7 @@ function ic(k){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 var NAV=[
   {id:"dash",label:"Übersicht",icon:"dash"},
   {id:"review",label:"Zur Prüfung",icon:"tag"},   /* Vorschläge statt automatischer Buchungen (zreview.js) */
-  {id:"orders",label:"Aufträge",icon:"orders",sub:[["orders","Angebote"]]},
+  {id:"orders",label:"Angebote",icon:"orders",sub:[["orders","Angebote"]]},   /* „Aufträge“ sind im Cockpit die Projekte (Seitenleiste) */
   {id:"inv",label:"Rechnungen",icon:"inv",sub:[["inv","Alle"],["wkr","Wiederkehrend"],["dun","Mahnungen"],["cn","Gutschriften"]]},
   {id:"vou",label:"Belege",icon:"vou",sub:[["vou","Alle"],["rvou","Wiederkehrend"]]},
   {id:"bank",label:"Bank & Kasse",icon:"bank",sub:[["bank","Kontoumsätze"],["open","Nicht zugeordnet"],["pay","Zahlungsaufträge"],["kasse","Kassenbuch"]]},
@@ -70,6 +70,10 @@ function sidebar(){
 F.action("fin",function(p){ if(/^invd/.test(p)&&!p.split(":")[1]) p="inv"; UI.fin=p; if(!/^invd/.test(p)) F.ls("fsc_fin_page",p.split(":")[0]); UI.fpg=0; if(F.current!=="geld"){ F.go("geld"); return; } F._forceRender=true; F.render(); window.scrollTo(0,0); });
 
 /* Status-Pillen */
+/* Druckshop-Entwurf (src/printId vom Server, fehlt bei altem Server → wie bisher normaler Entwurf) */
+function isPrintDraft(i){ return !!i&&i.status===100&&i.src==="print"; }
+/* bezahlt = wirklich bezahlt: stornierte Originale (intern Status 1000) und Stornorechnungen nicht */
+function isPaidInv(i){ return i.status===1000&&!i.cancelled&&i.type!=="SR"; }
 function pill(kind,label){ return '<span class="fsd-pill '+kind+'">'+esc(label)+'</span>'; }
 /* teilbezahlt: Status 750 oder schon ein Teil eingegangen (offen < brutto) */
 function isPart(i){ return !i.cancelled&&i.type!=="SR"&&i.status!==100&&i.status!==1000&&i.open>0.005&&(i.status===750||i.open<Math.abs(+i.gross||0)-0.005); }
@@ -196,7 +200,7 @@ function pageDash(){
   var accs=sev.accounts||[], bal=accs.reduce(function(a,x){return a+(+x.balance||0);},0);
   var ab=F.D.abgleich.totals;
   var tasks=[];
-  var drafts=sev.invoices.filter(function(i){return i.status===100;}); if(drafts.length) tasks.push(["inv:draft",drafts.length+" Rechnungsentwürfe","noch nicht versendet"]);
+  var drafts=sev.invoices.filter(function(i){return i.status===100&&!isPrintDraft(i);}); if(drafts.length) tasks.push(["inv:draft",drafts.length+(drafts.length===1?" Rechnungsentwurf":" Rechnungsentwürfe"),"noch nicht versendet"]);
   var od=sev.invoices.filter(function(i){return i.overdue;}); if(od.length) tasks.push(["inv:due",od.length+" überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0))+" offen"]);
   if(sev.unassigned) tasks.push(["open",sev.unassigned+" Bankumsätze","noch nicht zugeordnet"]);
   if(sev.vouchers&&sev.vouchers.drafts) tasks.push(["vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen"]);
@@ -211,7 +215,7 @@ function pageDash(){
       '<section class="fsd-card span2 fch"><div class="fsd-ch"><b>Ertrag / Aufwand</b><span class="muted">netto · '+esc(y)+(vd?'':' · lädt …')+'</span></div>'+
         '<div class="fch-sum"><div><span><i style="background:var(--ok)"></i>Erträge</span><b>'+eur0(tr)+'</b></div><div><span><i style="background:var(--bad)"></i>Aufwand</span><b>'+eur0(te-afa.reduce(function(a,b){return a+b;},0))+'</b></div><div><span><i style="background:var(--warn)"></i>Abschreibung</span><b>'+eur0(afa.reduce(function(a,b){return a+b;},0))+'</b></div><div><span><i style="background:var(--glow)"></i>Ergebnis</span><b class="'+(tr-te<0?"bad-t":"ok-t")+'">'+eur0(tr-te)+'</b></div></div>'+
         '<div class="fch-tip" id="fchTip">'+chart.tip+'</div>'+chart.svg+'</section>'+
-      '<section class="fsd-card"><div class="fsd-ch"><b>Meine Aufgaben</b></div>'+(tasks.length?tasks.map(function(t){ return '<button type="button" class="fsd-task" data-act="'+esc(t[3]||"fin:"+t[0])+'"><b>'+esc(t[1])+'</b><span>'+esc(t[2])+'</span><i>'+ic("right")+'</i></button>'; }).join(""):'<div class="sd-empty">Du hast keine offenen Aufgaben. 🎉</div>')+'</section>'+
+      '<section class="fsd-card"><div class="fsd-ch"><b>Zu erledigen</b></div>'+(tasks.length?tasks.map(function(t){ return '<button type="button" class="fsd-task" data-act="'+esc(t[3]||"fin:"+t[0])+'"><b>'+esc(t[1])+'</b><span>'+esc(t[2])+'</span><i>'+ic("right")+'</i></button>'; }).join(""):'<div class="sd-empty">Du hast keine offenen Aufgaben. 🎉</div>')+'</section>'+
       '<section class="fsd-card"><div class="fsd-ch"><b>Aufwand</b><span class="muted">nach Kategorie</span></div><div class="fsd-dn">'+donut(catArr.slice(0,6),cols,eur0(te))+'<div class="fsd-dl">'+catArr.slice(0,6).map(function(c,k){ return '<span title="'+esc(c[0])+'"><i style="background:'+cols[k%cols.length]+'"></i><em>'+esc(c[0])+'</em><b>'+eur0(c[1])+'</b></span>'; }).join("")+'</div></div></section>'+
       '<section class="fsd-card"><div class="fsd-ch"><b>Rechnungen</b><span class="muted">'+esc(y)+'</span></div><div class="fsd-dn">'+donut([["Bezahlt",paid],["Offen",open],["Überfällig",over]],["var(--ok)","var(--warn)","var(--bad)"],eur0(paid+open+over))+'<div class="fsd-dl"><span><i style="background:var(--ok)"></i><em>Bezahlt</em><b>'+eur0(paid)+'</b></span><span><i style="background:var(--warn)"></i><em>Offen</em><b>'+eur0(open)+'</b></span><span><i style="background:var(--bad)"></i><em>Überfällig</em><b>'+eur0(over)+'</b></span></div></div></section>'+
       '<section class="fsd-card"><div class="fsd-ch"><b>Konto</b></div><div class="fsd-big">'+eur(bal)+'</div><div class="fsd-bigl">Gesamtsaldo</div>'+accs.map(function(a){ return '<button type="button" class="fsd-acc" data-act="fin:bank:'+esc(a.id)+'"><span title="'+esc(a.name)+'">'+esc(a.name)+'</span><b'+(a.balance<0?' class="bad-t"':'')+'>'+(a.balance==null?"—":eur(a.balance))+'</b></button>'; }).join("")+'</section>'+
@@ -224,15 +228,16 @@ function pageInv(kind){
   var parts=UI.fin.split(":"), f=parts[1]||"all", q=(UI.fq_inv||"").toLowerCase(), per=25;
   var base=F.D.sev.invoices.slice().sort(function(a,b){ return (+b.id||0)-(+a.id||0); }).filter(function(i){ return kind==="dun"?i.dunning>0:i.type!=="MA"; });
   var cnt={all:base.length,draft:0,open:0,part:0,due:0,paid:0,locked:0};
-  base.forEach(function(i){ if(i.status===100) cnt.draft++; if(i.open>0.005&&i.status!==100) cnt.open++; if(isPart(i)) cnt.part++; if(i.overdue) cnt.due++; if(i.status===1000) cnt.paid++; if(i.enshrined) cnt.locked++; });
-  var list=base.filter(function(i){ if(f==="draft"&&i.status!==100) return false; if(f==="open"&&!(i.open>0.005&&i.status!==100)) return false; if(f==="part"&&!isPart(i)) return false; if(f==="due"&&!i.overdue) return false; if(f==="paid"&&i.status!==1000) return false; if(f==="locked"&&!i.enshrined) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; });
+  base.forEach(function(i){ if(i.status===100) cnt.draft++; if(i.open>0.005&&i.status!==100) cnt.open++; if(isPart(i)) cnt.part++; if(i.overdue) cnt.due++; if(isPaidInv(i)) cnt.paid++; if(i.enshrined) cnt.locked++; });
+  var list=base.filter(function(i){ if(f==="draft"&&i.status!==100) return false; if(f==="open"&&!(i.open>0.005&&i.status!==100)) return false; if(f==="part"&&!isPart(i)) return false; if(f==="due"&&!i.overdue) return false; if(f==="paid"&&!isPaidInv(i)) return false; if(f==="locked"&&!i.enshrined) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; });
   var openSum=base.reduce(function(a,i){ return a+(i.status!==100?i.open:0); },0), pg=UI.fpg||0;
   var rows=list.slice(pg*per,(pg+1)*per).map(function(i){
-    var sub=i.type==="SR"?(i.header||"Stornorechnung"):(i.header&&!/^rechnung$/i.test(i.header)?i.header:("Rechnung "+(i.nr||"")));
-    var icons='<span class="fsd-ic">'+(i.status===100?'<button type="button" title="Per E-Mail senden" data-act="sdsend:'+esc(i.id)+'">'+ic("mail")+'</button>':(i.open>0.005?'<button type="button" title="Zahlung erfassen" data-act="book:'+esc(i.id)+'">'+ic("cash")+'</button>':''))+'<button type="button" title="Herunterladen" data-act="fdl:'+esc(i.id)+'">'+ic("dl")+'</button></span>';
+    var sub=i.type==="SR"?(i.header||"Stornorechnung"):(i.header&&!/^rechnung$/i.test(i.header)?i.header:("Rechnung "+(i.nr||""))), pr=isPrintDraft(i);
+    if(pr) sub="Wartet auf Druckauftrag"+(i.printNr?" "+i.printNr:"")+" · "+sub;
+    var icons='<span class="fsd-ic">'+(i.status===100?(pr&&i.printId?'<button type="button" title="Druckauftrag öffnen – die Rechnung wird beim Bestellen automatisch gesendet" data-act="prord:'+esc(i.printId)+'">'+ic("printer")+'</button>':'<button type="button" title="Per E-Mail senden" data-act="sdsend:'+esc(i.id)+'">'+ic("mail")+'</button>'):(i.open>0.005?'<button type="button" title="Zahlungseingang erfassen" data-act="book:'+esc(i.id)+'">'+ic("cash")+'</button>':''))+'<button type="button" title="Herunterladen" data-act="fdl:'+esc(i.id)+'">'+ic("dl")+'</button></span>';
     return '<tr class="fsd-row" data-act="fin:invd:'+esc(i.id)+'"><td>'+invPill(i)+'</td><td class="nowrap c-due">'+relDue(i)+'</td><td class="nowrap m c-nr">'+(i.status===100?'– – –':(i.enshrined?'<span class="fsd-lock" title="Festgeschrieben">'+ic("lock")+'</span>':'')+esc(i.nr||"–"))+'</td><td><div class="fsd-who">'+esc(i.contact||"—")+'</div><div class="sub" title="'+esc(sub)+'">'+esc(sub)+'</div></td><td class="m nowrap c-date">'+deShort(i.date)+'</td><td class="r nowrap">'+eur(i.type==="SR"?-Math.abs(i.gross):i.gross)+'</td><td class="r nowrap">'+eur(i.status===100?i.gross:i.open)+(isPart(i)?'<div class="sub">bezahlt '+eur(Math.abs(+i.gross||0)-i.open)+'</div>':'')+'</td><td class="r">'+icons+'</td></tr>';
   }).join("");
-  return head(kind==="dun"?"Mahnungen":"Rechnungen",'Offene Rechnungen: '+eur(openSum),'<button class="btn primary" data-act="newinvoice">'+ic("plus")+'Rechnung schreiben</button>')+(kind==="dun"?dunCard():'')+
+  return head(kind==="dun"?"Mahnungen":"Rechnungen",'Offene Rechnungen: '+eur(openSum),'<button class="btn primary" data-act="newinvoice">'+ic("plus")+'Rechnung schreiben</button>')+(kind==="dun"?remDraftsCard()+dunCard():'')+
     '<section class="fsd-card flush fsd-tc"><div class="fsd-bar">'+tabs("fin:"+(kind==="dun"?"dun":"inv"),f,[["all","Alle"],["draft","Entwurf"],["open","Offen"],["part","Teilbezahlt"],["due","Fällig"],["locked","Festgeschrieben"],["paid","Bezahlt"]])+search("inv","Suchen …")+'</div>'+
     '<div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th class="c-due">Fälligkeit</th><th class="c-nr">Rechnungsnr.</th><th>Kunde</th><th class="c-date">Datum</th><th class="r">Betrag (brutto)</th><th class="r">Offen (brutto)</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="8" class="empty">Keine Rechnungen in dieser Ansicht.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section>';
 }
@@ -243,15 +248,9 @@ function pageInvDetail(id){
   if(!d){ if(!C.busy["d"+id]){ C.busy["d"+id]=1; F.api("/admin/api/sev/invoice?id="+encodeURIComponent(id)).then(function(j){ C.busy["d"+id]=0; DET[id]=j||{ok:false}; F.render(); }); } return '<div class="sd-empty">Lade Rechnung …</div>'; }
   if(!d.ok) return '<div class="fsd-dhead"><button class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><h1>Rechnung</h1></div><div class="notice">Diese Rechnung wurde nicht gefunden.</div>';
   var st=d.status, draft=st===100, open=st===200||st===750, i0=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{};
-  var kind=d.type==="MA"?"Mahnung":d.type==="SR"?"Stornorechnung":"Rechnung";
-  var more=[];
-  if(draft){ more.push(["sdedit:"+id,"Bearbeiten"]); more.push(["sdsent:"+id,"Als versendet markieren"]); }
-  if(open||st===1000){ more.push(["sdsend:"+id,"Per E-Mail senden"]); }
-  if(open&&d.type==="RE"){ more.push(["sdremind:"+id,"Mahnung erstellen"]); if(st===200&&!(d.paid>0)&&!d.enshrined) more.push(["sddraft:"+id,"Zurück auf Entwurf"]); }
-  if(st===200&&d.type==="RE"&&!i0.cancelled) more.push(["sdcancel:"+id,"Stornieren"]);
-  if((st===750||st===1000)&&!i0.cancelled&&d.type!=="SR"&&d.type!=="MA") more.push(["fincn:"+id,"Gutschrift"]);
-  if(d.type==="RE"&&st>=200&&!i0.cancelled) more.push(["finwkr:"+id,"Wiederkehrend"]);
-  var main=draft?'<button class="btn primary" data-act="sdsend:'+esc(id)+'">'+ic("mail")+'Per E-Mail senden</button>':(open?'<button class="btn primary" data-act="book:'+esc(id)+'">'+ic("cash")+'Als bezahlt markieren</button>':'');
+  var kind=d.type==="MA"?"Mahnung":d.type==="SR"?"Stornorechnung":"Rechnung", canc=!!(i0.cancelled||d.cancelled), pr=isPrintDraft(Object.assign({},i0,{status:st}));
+  var more=moreActs(id,d,i0);
+  var main=draft?(pr&&i0.printId?'<button class="btn primary" data-act="prord:'+esc(i0.printId)+'">'+ic("printer")+'Druckauftrag öffnen</button>':'<button class="btn primary" data-act="sdsend:'+esc(id)+'">'+ic("mail")+'Per E-Mail senden</button>'):(open?'<button class="btn primary" data-act="book:'+esc(id)+'">'+ic("cash")+'Zahlungseingang erfassen</button>':'');
   var pos=(d.positions||[]).map(function(p){ return '<tr><td>'+esc(p.name)+(p.text?'<div class="sub fsd-ptx">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("");
   var ids=(F.D.sev.invoices||[]).map(function(x){return x.id;}), ix=ids.indexOf(id), prev=ix>0?ids[ix-1]:"", next=ix>-1&&ix<ids.length-1?ids[ix+1]:"";
   var row=function(k,v){ return '<div><dt>'+k+'</dt><dd>'+v+'</dd></div>'; };
@@ -260,28 +259,62 @@ function pageInvDetail(id){
       '<button class="btn" data-act="newinvoice">'+ic("plus")+'Neue Rechnung</button>'+(more.length?'<button class="btn" data-act="finmore:'+esc(id)+'" aria-haspopup="menu">Mehr'+ic("chevD")+'</button>':'')+'<a class="btn" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(id)+'&dl=1">'+ic("dl")+'Herunterladen</a>'+main+'</div>'+
     '<div class="fsd-detail">'+F.docEmbed("/admin/api/sevdesk/pdf?id="+encodeURIComponent(id),kind+" "+(d.nr||"Entwurf"),'<div class="fsd-pdf"><iframe title="PDF" src="/admin/api/sevdesk/pdf?id='+encodeURIComponent(id)+'#view=FitH"></iframe></div>',"PDF ansehen")+
     '<aside class="fsd-side"><section class="fsd-card fsd-nrbar"><b>'+esc(d.nr||"Entwurf")+'</b><span class="fsd-ic"><button type="button" title="Vorherige"'+(prev?' data-act="fin:invd:'+esc(prev)+'"':' disabled style="opacity:.3"')+'>'+ic("left")+'</button><button type="button" title="Nächste"'+(next?' data-act="fin:invd:'+esc(next)+'"':' disabled style="opacity:.3"')+'>'+ic("right")+'</button></span></section>'+
-      '<section class="fsd-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="fsd-cname">'+esc(d.contact.name||"")+'</div><div class="fsd-cdate">'+de(d.date)+'</div></div>'+invPill(Object.assign({},i0,{status:st}))+'</div><div class="fsd-amt"><span>Betrag <i>(Brutto)</i></span><b>'+esc(amt)+'<small>EUR</small></b></div>'+(d.open>0.005&&d.paid>0?'<div class="fsd-cdate" style="text-align:right">davon offen '+eur(d.open)+'</div>':'')+'</section>'+
+      '<section class="fsd-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="fsd-cname">'+esc(d.contact.name||"")+'</div><div class="fsd-cdate">'+de(d.date)+'</div></div>'+invPill(Object.assign({},i0,{status:st,cancelled:canc,type:d.type}))+'</div><div class="fsd-amt"><span>Betrag <i>(Brutto)</i></span><b>'+esc(amt)+'<small>EUR</small></b></div>'+(d.open>0.005&&d.paid>0?'<div class="fsd-cdate" style="text-align:right">davon offen '+eur(d.open)+'</div>':'')+
+        (i0.over>0.005?'<div class="fsd-cdate" style="text-align:right">überzahlt <b class="num money">+'+eur(i0.over)+'</b> · Guthaben beim Kunden</div>':'')+
+        (pr?'<div class="notice" style="margin-top:12px">Wird beim Bestellen bei Print.com automatisch fertiggestellt und gesendet'+(i0.printNr?' (Druckauftrag '+esc(i0.printNr)+')':'')+'. Von Hand senden nur, wenn der Druckauftrag nicht bestellt wird.</div>':'')+'</section>'+
       '<section class="fsd-card"><div class="fsd-ctitle">Rechnungsdetails</div><dl class="fsd-rows" style="margin:0">'+
-        row("Fälligkeit",relDue(Object.assign({},i0,{status:st})))+row("Zahlungsziel",d.due?'<b style="font-weight:600">'+de(d.due)+'</b> ('+d.timeToPay+' Tage)':'—')+
+        row("Fälligkeit",relDue(Object.assign({},i0,{status:st,cancelled:canc})))+row("Zahlungsziel",d.due?'<b style="font-weight:600">'+de(d.due)+'</b> ('+d.timeToPay+' Tage)':'—')+
         row("Rechnungsdatum",de(d.date))+row("Leistungsdatum",de(d.delivery)+(d.deliveryUntil?' – '+de(d.deliveryUntil):''))+
         row("Versendet am",d.sent?de(d.sendDate)+(d.sendType?' <span style="color:var(--sd-ink2)">als '+({VM:"E-Mail",VPR:"Druck",VP:"Post",VPDF:"PDF"}[d.sendType]||d.sendType)+'</span>':''):'—')+
-        row("Festgeschrieben",d.enshrined?ic("lock")+de(d.sendDate||d.date):'nein')+(d.payDate?row("Bezahlt am",de(d.payDate)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+
-      '</dl></section>'+
+        row("Festgeschrieben",d.enshrined?ic("lock")+de(d.sendDate||d.date):'nein')+(d.payDate&&!canc?row("Bezahlt am",de(d.payDate)):'')+(canc?row("Storniert",stornoHtml(id,i0,d)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+
+      '</dl></section>'+invLinksCard(id,d,i0)+
       '<section class="fsd-card"><div class="fsd-ctitle">Positionen</div><table class="fsd-t sm fsd-ptab"><tbody>'+pos+'</tbody></table></section></aside></div>';
 }
-F.action("finmore",function(id,el){
-  var d=DET[id]; if(!d) return; var acts=[];
-  var st=d.status, draft=st===100, open=st===200||st===750;
-  if(draft){ acts.push(["Bearbeiten","sdedit"]); acts.push(["Als versendet markieren","sdsent"]); }
+/* „Mehr“ (Seite + Menü): gleiche Regeln wie bisher. Neu: Mahnung auch für Abschlagsrechnungen (AR, der Server erlaubt das),
+   Storno-Status auch aus dem Detail, Druck-Entwurf: Senden nur hier (mit Rückfrage), Hauptknopf öffnet den Druckauftrag */
+function moreActs(id,d,i1){
+  var acts=[], st=d.status, draft=st===100, open=st===200||st===750, canc=!!(i1.cancelled||d.cancelled), pr=isPrintDraft(Object.assign({},i1,{status:st}));
+  if(draft){ if(pr&&i1.printId) acts.push(["Per E-Mail senden","sdsend"]); acts.push(["Bearbeiten","sdedit"]); acts.push(["Als versendet markieren","sdsent"]); }
   if(open||st===1000) acts.push(["Per E-Mail senden","sdsend"]);
-  if(open&&d.type==="RE"){ acts.push(["Mahnung erstellen","sdremind"]); if(st===200&&!(d.paid>0)&&!d.enshrined) acts.push(["Zurück auf Entwurf","sddraft"]); }
-  var i1=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{};
-  if((st===750||st===1000)&&!i1.cancelled&&d.type!=="SR"&&d.type!=="MA") acts.push(["Gutschrift (Minderleistung)","fincn"]);
-  if(d.type==="RE"&&st>=200&&!i1.cancelled) acts.push(["Als wiederkehrend anlegen","finwkr"]);
-  if(st===200&&d.type==="RE"&&!i1.cancelled) acts.push(["Stornieren","sdcancel",1]);
+  if(open&&(d.type==="RE"||d.type==="AR")) acts.push(["Mahnung erstellen","sdremind"]);
+  if(open&&d.type==="RE"&&st===200&&!(d.paid>0)&&!d.enshrined) acts.push(["Zurück auf Entwurf","sddraft"]);
+  if((st===750||st===1000)&&!canc&&d.type!=="SR"&&d.type!=="MA") acts.push(["Gutschrift (Minderleistung)","fincn"]);
+  if(d.type==="RE"&&st>=200&&!canc) acts.push(["Als wiederkehrend anlegen","finwkr"]);
+  if(st===200&&d.type==="RE"&&!canc) acts.push(["Stornieren","sdcancel",1]);
+  return acts;
+}
+F.action("finmore",function(id,el){
+  var d=DET[id]; if(!d) return;
+  var i1=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{}, acts=moreActs(id,d,i1);
   var r=el.getBoundingClientRect();
   if(F.M&&F.M.ctx) F.M.ctx(r.left,r.bottom+4,acts.map(function(a){ return {label:a[0],danger:!!a[2],act:function(){ delete DET[id]; F.actions[a[1]](id); }}; }));
 });
+/* Storniert durch: Stornorechnung (SR mit origin = diese Rechnung) als Link, sonst nur die Nummer */
+function stornoHtml(id,i0,d){ var sr=(F.D.sev.invoices||[]).find(function(x){ return x.type==="SR"&&x.origin===id; }), nr=(sr&&sr.nr)||i0.stornoNr||d.stornoNr||"";
+  return sr?'<button type="button" class="link" data-act="fin:invd:'+esc(sr.id)+'">'+esc(nr||"Stornorechnung")+'</button>':(nr?esc(nr):'ja'); }
+
+/* ---------- Herkunft & Verknüpfungen (nur Daten im Client, nichts wird geändert) ---------- */
+var SRCN={website:"Website",kochdu:"kochdu",valuero:"VALUERO",blitzdings:"Blitzdings",kantineur:"Kantineur"};
+function srcAct(x){ var k=String(x.key||""), v=k.slice(k.indexOf(":")+1);
+  if(x.src==="website") return "website:"+v; if(x.src==="valuero") return "pltab:valuero~"+v; if(x.src==="blitzdings") return "pltab:blitz~"+v; if(x.src==="kochdu") return "pltab:kochdu"; if(x.src==="kantineur") return "pltab:kantineur"; return ""; }
+function invLinks(id,d,i0){
+  var L=[], inv=F.D.sev.invoices||[], cid=(d.contact&&d.contact.id)||i0.contactId||"", em=d.emails&&d.emails[0]?d.emails[0].value:"";
+  var add=function(k,act,label){ if(act) L.push([k,act,label]); };
+  if(cid) add("Kontakt","sdct:"+cid,(d.contact&&d.contact.name)||i0.contact||"Kontakt öffnen");
+  if(F.who&&(cid||em)){ try{ var w=F.who({contactId:cid,email:em}); if(w&&w.lead&&w.lead.id) add("Kundenakte","lead:"+w.lead.id,w.lead.company||w.lead.name||"Kundenakte öffnen"); }catch(e){} }
+  var o=d.origin||null, oid=o&&o.id?String(o.id):String(i0.origin||""), isInv=o&&o.type?o.type==="Invoice":(d.type==="SR"||d.type==="MA");
+  if(oid){ if(isInv){ var oi=inv.find(function(x){ return x.id===oid; }); add(d.type==="SR"?"Storno zu":d.type==="MA"?"Mahnung zu":"Bezug","fin:invd:"+oid,"Rechnung "+((oi&&oi.nr)||"öffnen")); }
+    else { var of=((F.OFF&&F.OFF.list)||[]).find(function(x){ return String(x.id)===oid; }); add("Aus Angebot","offpdf:"+oid,of&&of.nr?"Angebot "+of.nr:"Angebot ansehen (PDF)"); } }
+  if(d.type!=="SR"){ var sr=inv.find(function(x){ return x.type==="SR"&&x.origin===id; }); if(sr) add("Storniert durch","fin:invd:"+sr.id,"Stornorechnung "+(sr.nr||"")); }
+  ((F.D.sev.reminderDrafts||[]).filter(function(m){ return String(m.invoiceId)===id; })).forEach(function(m){ add("Mahnung","sdsendma:"+m.id+"|"+(d.nr||m.invoiceNr||""),(m.nr||"Mahnung")+" – nicht versendet, jetzt senden"); });
+  if(i0.src==="print"&&i0.printId) add("Druckauftrag","prord:"+i0.printId,i0.printNr||"Druckauftrag öffnen");
+  var pl=((F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return (x.invoices||[]).some(function(l){ return l&&String(l.id)===id; }); });
+  pl.slice(0,6).forEach(function(x){ add(SRCN[x.src]||x.src,srcAct(x),x.name||x.key); }); if(pl.length>6) L.push(["","","… und "+(pl.length-6)+" weitere (Sammelrechnung)"]);
+  if(F.projectsOfDoc){ try{ (F.projectsOfDoc(id)||[]).forEach(function(p){ if(p&&p.id) add("Auftrag","tkprojopen:"+p.id,p.name||"Auftrag öffnen"); }); }catch(e){} }
+  return L;
+}
+function invLinksCard(id,d,i0,mob){ var L=invLinks(id,d,i0); if(!L.length) return '';
+  return (mob?'<section class="fsm-card"><h3>Herkunft &amp; Verknüpfungen</h3>':'<section class="fsd-card"><div class="fsd-ctitle">Herkunft &amp; Verknüpfungen</div>')+'<dl class="fsd-rows" style="margin:0">'+L.map(function(r){ return '<div><dt>'+esc(r[0])+'</dt><dd>'+(r[1]?'<button type="button" class="link" data-act="'+esc(r[1])+'">'+esc(r[2])+'</button>':'<span class="muted">'+esc(r[2])+'</span>')+'</dd></div>'; }).join("")+'</dl></section>'; }
 
 /* ---------- Gutschriften ---------- */
 function pageCn(){
@@ -403,7 +436,7 @@ F.action("febconnect",function(){ F.toast("Öffne George-Freigabe …"); var w=w
     F.toast("Freigabe im Browserfenster bestätigen – das Cockpit aktualisiert sich danach von selbst");
     var t=setInterval(function(){ if(++n>120){ clearInterval(t); return; } F.api("/admin/api/fin/ebank").then(function(e){ if(e&&e.ok&&JSON.stringify((e.sessions||[]).map(function(x){ return x.validUntil; }))!==before&&(e.sessions||[]).length){ clearInterval(t); EB=e; C.tx=null; F.toast("George verbunden – Umsätze werden abgerufen"); F.render(); setTimeout(function(){ EB=null; C.tx=null; F.load(true); },8000); } }); },5000); }); });
 F.action("febren",function(id){ var a=null; (EB.sessions||[]).forEach(function(x){ x.accounts.forEach(function(y){ if(y.id===id) a=y; }); }); var nm=prompt("Neuer Name für das Konto",a?a.name:""); if(!nm) return; F.api("/admin/api/fin/ebank",{body:{op:"rename",id:id,name:nm}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } EB=null; C.tx=null; F.render(); }); });
-F.action("febdisc",function(b){ if(!confirm("Verbindung zu "+b+" trennen? Bereits importierte Umsätze bleiben.")) return; F.api("/admin/api/fin/ebank",{body:{op:"disconnect",bank:b}}).then(function(){ EB=null; F.render(); }); });
+F.action("febdisc",function(b){ F.confirm("Verbindung zu "+b+" trennen? Bereits importierte Umsätze bleiben.","Trennen",function(){ F.api("/admin/api/fin/ebank",{body:{op:"disconnect",bank:b}}).then(function(){ EB=null; F.render(); }); },true); });
 F.action("febsync",function(){ F.toast("Rufe Bankumsätze ab …"); F.api("/admin/api/fin/ebank",{body:{op:"sync",confirm:true}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Abruf fehlgeschlagen",true); return; } EB=null; C.tx=null; var e=(j.result.accounts||[]).filter(function(x){ return x.error; }), n=(j.result.accounts||[]).reduce(function(a,x){ return a+(x.added||0); },0); F.toast(e.length?e.map(function(x){ return x.account+": "+x.error; }).join(" · "):n+" neue Bankumsätze",!!e.length); F.load(true); }); });
 (function(){ var h=location.hash||""; if(h.indexOf("#bank-verbunden")===0||h.indexOf("#bank-fehler=")===0){ setTimeout(function(){ if(h.indexOf("#bank-fehler=")===0) F.toast("George: "+decodeURIComponent(h.slice(13)),true); else F.toast("George verbunden – Umsätze werden abgerufen"); try{ history.replaceState(null,"",location.pathname+location.search); }catch(e){} },800); } })();
 function pageBank(mode){
@@ -451,12 +484,28 @@ F.action("ftxassign",function(id){ var st=F.sevState; if(st&&st.bank&&st.bank.ok
 /* ---------- Automatischer Mahnlauf: Vorschläge freigeben (einzeln oder alle), Einstellungen ---------- */
 var DN=null;
 function dnLoad(){ if(C.busy.dn) return; C.busy.dn=1; F.api("/admin/api/fin/dunning").then(function(j){ C.busy.dn=0; DN=j||{ok:false}; F.render(); }); }
+/* für den manuellen Mahn-Dialog: Gebühren/Fristen wie im Mahnlauf, Firma/privat aus dem Vorschlag */
+F.dunSettings=function(){ return DN&&DN.ok&&DN.settings?DN.settings:null; };
+F.dunProposal=function(id){ return DN&&DN.ok?((DN.proposals||[]).find(function(p){ return String(p.id)===String(id); })||null):null; };
+/* Nicht versendete Mahnungen (MA-Entwürfe, vom Server als reminderDrafts; fehlt bei altem Server) */
+function remDrafts(){ var r=F.D&&F.D.sev&&F.D.sev.reminderDrafts; return Array.isArray(r)?r:[]; }
+function remDraftsCard(){
+  var L=remDrafts(); if(!L.length) return '';
+  return '<section class="fsd-card"><div class="fsd-ch"><b>Nicht versendete Mahnungen</b><span class="muted">'+L.length+(L.length===1?" Entwurf":" Entwürfe")+'</span></div>'+
+    '<p class="muted" style="font-size:12.5px;margin:0 0 4px">Erstellt, aber nie verschickt. Die Rechnung zeigt die Mahnstufe trotzdem, und der Mahnlauf schlägt sie erst wieder vor, wenn diese Mahnung versendet ist.</p>'+
+    L.map(function(m){ return '<div class="dn-row"><div><b>'+esc((m.nr?m.nr+" · ":"")+"zu "+(m.invoiceNr||"Rechnung")+" · "+(m.contact||"—"))+'</b><span>'+(m.level?"Mahnstufe "+esc(m.level)+" · ":"")+(m.date?"erstellt am "+de(m.date)+" · ":"")+(+m.fee>0?'Mahngebühr <b class="num money">'+eur(+m.fee)+'</b>':"ohne Mahngebühr")+'</span></div>'+
+      '<span class="dn-acts"><button class="btn primary" data-act="sdsendma:'+esc(m.id)+'|'+esc(m.invoiceNr||"")+'">Senden</button>'+(m.invoiceId?'<button class="btn" data-act="fin:invd:'+esc(m.invoiceId)+'">Rechnung ansehen</button>':'')+'</span></div>'; }).join("")+'</section>';
+}
 function dnPost(b,msg){ return F.api("/admin/api/fin/dunning",{body:b}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } DN=j; var r=j.result||[], bad=r.filter(function(x){ return !x.ok; });
   if(r.length){ F.toast(bad.length?(r.length-bad.length)+" gesendet, "+bad.length+" fehlgeschlagen: "+bad[0].error:(r.length===1?"Mahnung gesendet":r.length+" Mahnungen gesendet"),!!bad.length); F.load(true); } else if(msg) F.toast(msg); F.render(); }); }
-/* Aufgaben für Übersicht (Desktop + Handy): Mahnungen zur Freigabe, offene USt-Zahllast */
+/* Aufgaben für Übersicht (Desktop + Handy): Mahnungen zur Freigabe, nicht versendete Mahnungen, VALUERO, offene USt-Zahllast */
 function extraTasks(){ var t=[]; if(!DN) dnLoad();
   var rc=F.reviewCount?F.reviewCount():0; if(rc) t.push(["review",rc+(rc===1?" Vorschlag":" Vorschläge")+" zur Prüfung","Zuordnungen bestätigen oder ablehnen – nichts wird automatisch gebucht"]);
   if(!rc&&DN&&DN.ok&&DN.settings.enabled&&(DN.proposals||[]).length){ var n=DN.proposals.length; t.push(["dun",n+(n===1?" Mahnung":" Mahnungen")+" zur Freigabe","Mahnlauf – mit einem Klick senden"]); }
+  var rd=remDrafts().length; if(rd) t.push(["dun",rd+(rd===1?" Mahnung":" Mahnungen")+" nicht versendet","erstellt, aber nie verschickt – jetzt senden"]);
+  /* VALUERO-Gebühren: fällig, sobald der Abgleich einen offenen Betrag zeigt – verrechnet wird unter Plattformen (nur Entwurf) */
+  var vi=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return x.src==="valuero"&&x.unbilled>0.005; });
+  if(vi.length){ var vs=vi.reduce(function(a,x){ return a+(+x.unbilled||0); },0); t.push(["valuero","VALUERO: "+eur(vs)+" fällig",vi.length+(vi.length===1?" Objekt":" Objekte")+" – unter Plattformen verrechnen","pltab:valuero"]); }
   (F.uvaOpen?F.uvaOpen():[]).forEach(function(u){ t.push(["uva","USt-Zahllast "+u.short+" · "+eur0(u.amount),(u.due<F.D.today?"überfällig seit ":"fällig ")+de(u.due)+" – bis zur Zahlung offen","stgo:uva:"+u.key]); });
   return t; }
 function dunCard(){
@@ -481,8 +530,9 @@ F.action("dnall",function(){ var ok=(DN.proposals||[]).filter(function(p){ retur
   F.confirm(ok.length+(ok.length===1?" Erinnerung/Mahnung":" Erinnerungen/Mahnungen")+" erstellen und per E-Mail senden? ("+ok.map(function(p){ return p.nr; }).join(", ")+")","Alle senden",function(){ F.toast("Sende "+ok.length+" …"); dnPost({confirm:true,op:"approveAll",ids:ok.map(function(p){ return p.id; })}); }); });
 F.action("dnskip",function(id){ dnPost({confirm:true,op:"skip",id:id},"Übersprungen – nächste Stufe kommt später"); });
 F.action("dnnever",function(id){ F.confirm("Diese Rechnung nie im Mahnlauf vorschlagen? (Manuell mahnen geht weiterhin.)","Nie mahnen",function(){ dnPost({confirm:true,op:"nodunning",id:id,on:true},"Rechnung wird nicht mehr gemahnt"); }); });
+/* Modus gibt es nicht mehr im Formular – der Server erzwingt ohnehin „suggest“ (nur vorschlagen) */
 F.form("dnset",function(f){ var g=function(n){ return f[n].value; };
-  dnPost({op:"settings",settings:{enabled:f.enabled.checked,mode:f.mode.value,days:[g("d0"),g("d1"),g("d2")],ttp:[g("t0"),g("t1"),g("t2")],b2bFees:[g("b2bFees0"),g("b2bFees1"),g("b2bFees2")],b2cFees:[g("b2cFees0"),g("b2cFees1"),g("b2cFees2")]}},"Mahnlauf gespeichert"); });
+  dnPost({op:"settings",settings:{enabled:f.enabled.checked,days:[g("d0"),g("d1"),g("d2")],ttp:[g("t0"),g("t1"),g("t2")],b2bFees:[g("b2bFees0"),g("b2bFees1"),g("b2bFees2")],b2cFees:[g("b2cFees0"),g("b2cFees1"),g("b2cFees2")]}},"Mahnlauf gespeichert"); });
 
 /* ---------- Festschreiben ---------- */
 var LK=null;
@@ -734,12 +784,12 @@ function mRow(act,title,sub,amt,right,cls){ return '<button type="button" class=
 function mDash(){
   if(!sevOk()) return noSev();
   var sev=F.D.sev, ab=F.D.abgleich.totals, accs=(sev.accounts||[]).filter(function(a){ return Math.abs(+a.balance||0)>0.004||/george|erste|kochdu|fs creative$|paypal|mollie/i.test(a.name||""); });
-  var od=sev.invoices.filter(function(i){return i.overdue&&!i.cancelled;}), op=sev.invoices.filter(function(i){return i.open>0.005&&i.status!==100&&!i.cancelled&&i.type!=="SR";}), dr=sev.invoices.filter(function(i){return i.status===100;});
+  var od=sev.invoices.filter(function(i){return i.overdue&&!i.cancelled;}), op=sev.invoices.filter(function(i){return i.open>0.005&&i.status!==100&&!i.cancelled&&i.type!=="SR";}), dr=sev.invoices.filter(function(i){return i.status===100&&!isPrintDraft(i);});   /* Druck-Entwürfe warten auf den Druckauftrag */
   var nt=function(l){ return l.reduce(function(a,i){ return a+(i.gross?i.open*i.net/i.gross:i.open); },0); };
   var fg=yearFig(), res=fg.tr-fg.te, mx=Math.max.apply(null,fg.rev.concat(fg.exp.map(function(v,k){ return v+fg.afa[k]; })).concat([1])), cm=new Date().getFullYear()===+fg.y?new Date().getMonth():11;
   var bars=fg.rev.map(function(v,k){ var e=fg.exp[k]+fg.afa[k]; return '<div class="fsm-bar'+(k>cm?" fut":"")+'" title="'+"JFMAMJJASOND"[k]+'"><i style="height:'+Math.round(v/mx*100)+'%"></i><u style="height:'+Math.round(e/mx*100)+'%"></u><span>'+"JFMAMJJASOND"[k]+'</span></div>'; }).join("");
   var rcN=F.reviewCount?F.reviewCount():0;
-  var todo=[rcN?mRow("fin:review",rcN+(rcN===1?" Vorschlag":" Vorschläge")+" zur Prüfung","bestätigen oder ablehnen – nichts wird automatisch gebucht","",ic("right"),"rv-hot"):"",dr.length?mRow("fin:inv:draft",dr.length+" Rechnungsentwürfe","noch nicht versendet","",ic("right")):"",
+  var todo=[rcN?mRow("fin:review",rcN+(rcN===1?" Vorschlag":" Vorschläge")+" zur Prüfung","bestätigen oder ablehnen – nichts wird automatisch gebucht","",ic("right"),"rv-hot"):"",dr.length?mRow("fin:inv:draft",dr.length+(dr.length===1?" Rechnungsentwurf":" Rechnungsentwürfe"),"noch nicht versendet","",ic("right")):"",
      od.length?mRow("fin:inv:due",od.length+" Rechnungen überfällig",eur0(od.reduce(function(a,i){return a+i.open;},0))+" offen – erinnern oder mahnen","",ic("right")):"",
      sev.unassigned?mRow("fin:open",sev.unassigned+" Bankumsätze zuordnen","Rechnung, Beleg oder privat","",ic("right")):"",
      sev.vouchers&&sev.vouchers.drafts?mRow("fin:vou:draft",sev.vouchers.drafts+" Beleg-Entwürfe","prüfen & abschließen","",ic("right")):"",
@@ -775,13 +825,13 @@ function mGrouped(full,page,dateOf,sumOf,rowFn,fmt){
   return out;
 }
 function mSum(l,f){ return l.reduce(function(a,x){ return a+(+f(x)||0); },0); }
-function mInvRowL(i){ var sub=esc(i.nr||"Entwurf")+" · "+deShort(i.date)+(i.status===100||i.status===1000||i.cancelled||i.type==="SR"?"":" · "+relDue(i))+(isPart(i)?" · bezahlt "+eur(Math.abs(+i.gross||0)-i.open)+", offen "+eur(i.open):"");
+function mInvRowL(i){ var sub=esc(i.nr||"Entwurf")+" · "+deShort(i.date)+(isPrintDraft(i)?" · wartet auf Druckauftrag":"")+(i.status===100||i.status===1000||i.cancelled||i.type==="SR"?"":" · "+relDue(i))+(isPart(i)?" · bezahlt "+eur(Math.abs(+i.gross||0)-i.open)+", offen "+eur(i.open):"");
   return mRow("fin:invd:"+esc(i.id),i.contact,sub,eur(i.type==="SR"?-Math.abs(i.gross):i.gross),invPill(i),"lx"); }
 function mInv(kind){
   if(!sevOk()) return noSev();
   var f=UI.fin.split(":")[1]||"all", q=(UI.fq_inv||"").toLowerCase(), per=30, pg=UI.fpg||0, pre="fin:"+(kind==="dun"?"dun":"inv")+":";
   var base=F.D.sev.invoices.filter(function(i){ return kind==="dun"?i.dunning>0:i.type!=="MA"; });
-  var isOpen=function(i){ return i.open>0.005&&i.status!==100; }, F0={draft:function(i){return i.status===100;},open:isOpen,part:isPart,due:function(i){return !!i.overdue;},paid:function(i){return i.status===1000;},locked:function(i){return !!i.enshrined;}};
+  var isOpen=function(i){ return i.open>0.005&&i.status!==100; }, F0={draft:function(i){return i.status===100;},open:isOpen,part:isPart,due:function(i){return !!i.overdue;},paid:isPaidInv,locked:function(i){return !!i.enshrined;}};
   var by=function(k){ return base.filter(F0[k]); }, od=by("due"), op=by("open"), dr=by("draft"), pd=by("paid"), pt=by("part");
   var list=base.filter(function(i){ if(F0[f]&&!F0[f](i)) return false; return !q||(i.nr+" "+i.contact+" "+i.header+" "+i.gross).toLowerCase().indexOf(q)>-1; })
     .sort(function(a,b){ return String(b.date||"").localeCompare(String(a.date||""))||((+b.id||0)-(+a.id||0)); });
@@ -794,7 +844,7 @@ function mInv(kind){
     {label:"Bezahlt",val:String(pd.length),sub:eur0(mSum(pd,function(i){return i.gross;})),act:tg("paid"),on:f==="paid"},
     {label:"Alle",val:String(base.length),sub:"Rechnungen",act:pre+"all",on:f==="all"}]);
   var rows=mGrouped(list,list.slice(pg*per,(pg+1)*per),function(i){return i.date;},function(i){ return i.type==="SR"?-Math.abs(i.gross):i.gross; },mInvRowL);
-  return (kind==="dun"?'<div class="fsm-wide">'+dunCard()+'</div>':'')+chips+mSearch("inv","Rechnung, Kunde, Betrag …")+
+  return (kind==="dun"?'<div class="fsm-wide">'+remDraftsCard()+dunCard()+'</div>':'')+chips+mSearch("inv","Rechnung, Kunde, Betrag …")+
     '<section class="fsm-card flush fsm-list">'+(rows||'<p class="fsm-empty">Keine Rechnungen'+(f!=="all"||q?" in dieser Ansicht":"")+'.</p>')+pager(list.length,per)+'</section>'+
     '<button type="button" class="fsm-fab" data-act="newinvoice" aria-label="Rechnung schreiben">'+ic("plus")+'</button>';
 }
@@ -802,15 +852,16 @@ function mInvDetail(id){
   var d=DET[id]; if(!d){ pageInvDetail(id); return '<p class="fsm-empty">Lade Rechnung …</p>'; }
   if(!d.ok) return '<div class="fsm-dh"><button type="button" class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><b>Rechnung</b></div><div class="notice">Diese Rechnung wurde nicht gefunden.</div>';
   var st=d.status, i0=(F.D.sev.invoices||[]).find(function(x){return x.id===id;})||{}, draft=st===100, open=st===200||st===750, ix=Object.assign({},i0,{status:st,due:d.due||i0.due});
-  var kind=d.type==="MA"?"Mahnung":d.type==="SR"?"Stornorechnung":"Rechnung";
-  /* Hauptaktionen (groß, untereinander), weitere Aktionen, Gefährliches zuletzt */
+  var kind=d.type==="MA"?"Mahnung":d.type==="SR"?"Stornorechnung":"Rechnung", canc=!!(i0.cancelled||d.cancelled), pr=isPrintDraft(ix);
+  ix.cancelled=canc; ix.type=d.type;
+  /* Hauptaktionen (groß, untereinander), weitere Aktionen, Gefährliches zuletzt – gleiche Regeln wie am Desktop (moreActs) */
   var b=[], s=[], x=[];
-  if(draft){ b.push(["sdsend","Per E-Mail senden",ic("mail")]); s.push(["sdedit","Bearbeiten"]); s.push(["sdsent","Als versendet markieren"]); }
-  if(open){ b.push(["book","Zahlung erfassen",ic("cash")]); b.push(["sdsend","Per E-Mail senden",ic("mail")]); if(d.type==="RE") s.push(["sdremind","Mahnung erstellen"]); if(st===200&&d.type==="RE"&&!(d.paid>0)&&!d.enshrined) s.push(["sddraft","Zurück auf Entwurf"]); }
+  if(draft){ if(pr&&i0.printId){ b.push(["prord","Druckauftrag öffnen",ic("printer"),i0.printId]); s.push(["sdsend","Per E-Mail senden"]); } else b.push(["sdsend","Per E-Mail senden",ic("mail")]); s.push(["sdedit","Bearbeiten"]); s.push(["sdsent","Als versendet markieren"]); }
+  if(open){ b.push(["book","Zahlungseingang erfassen",ic("cash")]); b.push(["sdsend","Per E-Mail senden",ic("mail")]); if(d.type==="RE"||d.type==="AR") s.push(["sdremind","Mahnung erstellen"]); if(st===200&&d.type==="RE"&&!(d.paid>0)&&!d.enshrined) s.push(["sddraft","Zurück auf Entwurf"]); }
   if(st===1000) b.push(["sdsend","Per E-Mail senden",ic("mail")]);
-  if((st===750||st===1000)&&!i0.cancelled&&d.type!=="SR"&&d.type!=="MA") s.push(["fincn","Gutschrift"]);
-  if(d.type==="RE"&&st>=200&&!i0.cancelled) s.push(["finwkr","Wiederkehrend"]);
-  if(st===200&&d.type==="RE"&&!i0.cancelled) x.push(["sdcancel","Stornieren"]);
+  if((st===750||st===1000)&&!canc&&d.type!=="SR"&&d.type!=="MA") s.push(["fincn","Gutschrift"]);
+  if(d.type==="RE"&&st>=200&&!canc) s.push(["finwkr","Wiederkehrend"]);
+  if(st===200&&d.type==="RE"&&!canc) x.push(["sdcancel","Stornieren"]);
   var pdf='/admin/api/sevdesk/pdf?id='+encodeURIComponent(id);
   var ids=(F.D.sev.invoices||[]).map(function(y){return y.id;}), k=ids.indexOf(id), prev=k>0?ids[k-1]:"", next=k>-1&&k<ids.length-1?ids[k+1]:"";
   var row=function(a,v){ return '<div><dt>'+a+'</dt><dd>'+v+'</dd></div>'; };
@@ -821,22 +872,25 @@ function mInvDetail(id){
   if(d.dunningLevel>0) hist.push([d.reminderDeadline||"","Mahnstufe "+d.dunningLevel+(d.reminderDeadline?" · Frist":""),""]);
   var pays=[]; if(C.tx&&C.tx.ok) (C.tx.transactions||[]).forEach(function(t){ (t.links||[]).forEach(function(l){ if(l.type==="Invoice"&&l.id===id) pays.push([t.date,"Zahlung "+(t.name||""),eur(l.amount||t.amount)]); }); });
   hist=hist.concat(pays);
-  if(!pays.length&&d.paid>0.005) hist.push([d.payDate||"",st===1000?"Bezahlt":"Teilzahlung",eur(d.paid)]);
+  if(canc) hist.push(["","Storniert"+((i0.stornoNr||d.stornoNr)?" ("+(i0.stornoNr||d.stornoNr)+")":""),""]);
+  else if(!pays.length&&d.paid>0.005) hist.push([d.payDate||"",st===1000?"Bezahlt":"Teilzahlung",eur(d.paid)]);
   else if(d.payDate&&st===1000&&!pays.length) hist.push([d.payDate,"Bezahlt",""]);
   if(d.enshrined) hist.push([d.sendDate||d.date,"Festgeschrieben",""]);
   hist.sort(function(a,c){ return (!a[0])-(!c[0])||String(a[0]).localeCompare(String(c[0])); });
-  var btn=function(a,cls){ return '<button type="button" class="btn'+(cls?" "+cls:"")+'" data-act="'+a[0]+':'+esc(id)+'">'+(a[2]||"")+esc(a[1])+'</button>'; };
+  var btn=function(a,cls){ return '<button type="button" class="btn'+(cls?" "+cls:"")+'" data-act="'+a[0]+':'+esc(a[3]||id)+'">'+(a[2]||"")+esc(a[1])+'</button>'; };
   return '<div class="fsm-dh"><button type="button" class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><b>'+esc(kind)+' '+esc(d.nr||"(Entwurf)")+'</b><span class="sp"></span>'+
       '<button type="button" class="fsm-hbtn"'+(prev?' data-act="fin:invd:'+esc(prev)+'"':' disabled')+' aria-label="Vorherige">'+ic("left")+'</button><button type="button" class="fsm-hbtn"'+(next?' data-act="fin:invd:'+esc(next)+'"':' disabled')+' aria-label="Nächste">'+ic("right")+'</button></div>'+
     '<section class="fsm-card fsm-ihead"><div class="fsm-top"><div><b>'+esc(d.contact.name||"—")+'</b><span>'+esc(d.nr||"Entwurf")+' · '+de(d.date)+'</span></div>'+invPill(ix)+'</div>'+
-      '<div class="fsm-amt">'+eur(d.gross)+'</div><div class="fsm-sub">netto '+eur(d.net)+' · USt '+eur(d.tax)+'</div>'+
+      '<div class="fsm-amt">'+eur(d.gross)+'</div><div class="fsm-sub">netto '+eur(d.net)+' · USt '+eur(d.tax)+(i0.over>0.005?' · überzahlt +'+eur(i0.over):'')+'</div>'+
+      (pr?'<div class="notice" style="margin-top:10px">Wird beim Bestellen bei Print.com automatisch fertiggestellt und gesendet'+(i0.printNr?' (Druckauftrag '+esc(i0.printNr)+')':'')+'.</div>':'')+
       '<div class="fsm-ikv">'+(open?'<div><span>Offen</span><b>'+eur(d.open)+'</b></div>':'')+'<div><span>'+(st===1000?"Bezahlt am":"Fällig")+'</span><b>'+(st===1000?(de(d.payDate)||"—"):(d.due?de(d.due):"—"))+'</b>'+(st!==1000&&!draft?'<i>'+relDue(ix)+'</i>':'')+'</div></div></section>'+
     '<div class="fsm-acts1">'+b.map(function(a,n){ return btn(a,n===0?"primary":""); }).join("")+'<a class="btn" href="'+pdf+'" target="_blank" rel="noopener"'+F.docAttrs(pdf,kind+" "+(d.nr||"Entwurf"))+'>'+ic("vou")+'PDF ansehen</a></div>'+
     '<div class="fsm-acts">'+s.map(function(a){ return btn(a); }).join("")+'<button type="button" class="btn" data-act="fdl:'+esc(id)+'">'+ic("dl")+'Herunterladen</button>'+x.map(function(a){ return btn(a,"fsm-danger"); }).join("")+'</div>'+
     '<section class="fsm-card"><h3>Positionen</h3>'+((d.positions||[]).map(function(p){ return '<div class="fsm-pos"><span>'+esc(p.name)+(p.qty!==1?' <i>× '+esc(String(p.qty).replace(".",","))+'</i>':'')+(p.text?'<small>'+esc(p.text)+'</small>':'')+'</span><b>'+eur(p.sumGross)+'</b></div>'; }).join("")||'<p class="fsm-empty">Keine Positionen.</p>')+
       '<div class="fsm-pos tot"><span>Gesamt brutto</span><b>'+eur(d.gross)+'</b></div></section>'+
     (hist.length?'<section class="fsm-card"><h3>Zahlungen &amp; Verlauf</h3><ol class="fsm-hist">'+hist.map(function(h){ return '<li><span>'+(h[0]?deShort(h[0]):"")+'</span><b>'+esc(h[1])+'</b>'+(h[2]?'<i>'+h[2]+'</i>':'')+'</li>'; }).join("")+'</ol></section>':'')+
-    '<section class="fsm-card"><h3>Rechnungsdetails</h3><dl class="fsd-rows" style="margin:0">'+row("Zahlungsziel",d.due?de(d.due)+' ('+d.timeToPay+' Tage)':'—')+row("Leistungsdatum",(de(d.delivery)||"—")+(d.deliveryUntil?' – '+de(d.deliveryUntil):''))+row("Versendet am",d.sent?de(d.sendDate):'—')+row("Festgeschrieben",d.enshrined?'ja':'nein')+(d.payDate?row("Bezahlt am",de(d.payDate)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+'</dl></section>';
+    '<section class="fsm-card"><h3>Rechnungsdetails</h3><dl class="fsd-rows" style="margin:0">'+row("Zahlungsziel",d.due?de(d.due)+' ('+d.timeToPay+' Tage)':'—')+row("Leistungsdatum",(de(d.delivery)||"—")+(d.deliveryUntil?' – '+de(d.deliveryUntil):''))+row("Versendet am",d.sent?de(d.sendDate):'—')+row("Festgeschrieben",d.enshrined?'ja':'nein')+(d.payDate&&!canc?row("Bezahlt am",de(d.payDate)):'')+(canc?row("Storniert",stornoHtml(id,i0,d)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+'</dl></section>'+
+    invLinksCard(id,d,i0,true);
 }
 function mVou(){
   var y=String(F.D.year); vouLoad(); var vd=C.vou[y];

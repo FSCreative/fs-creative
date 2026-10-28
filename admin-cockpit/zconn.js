@@ -66,10 +66,10 @@ F.css(
 '.cn-fix{display:grid;gap:8px;padding:12px 14px;border-radius:var(--r-sm,12px);background:var(--sunk);border:1px solid var(--line)}'+
 '.cn-fix p{margin:0;font-size:13px;line-height:1.45;color:var(--ink-2);text-wrap:pretty}'+
 '.cn-fix b{color:var(--ink)}'+
-'.cn-vars{display:flex;flex-wrap:wrap;gap:8px}'+
+'.cn-vars{display:flex;flex-wrap:wrap;gap:8px}.cn-vl{margin-left:4px;font-size:12px}'+
 '.cn-var{display:inline-flex;align-items:center;gap:2px;max-width:100%;padding:0 0 0 10px;border-radius:10px;background:var(--field,var(--panel));border:1px solid var(--line)}'+
 '.cn-var code{font:600 13px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);overflow-wrap:anywhere;min-width:0}'+
-'.cn-var button{flex:none;width:44px;height:44px;border:0;background:transparent;color:var(--ink-2);border-radius:9px;display:grid;place-items:center;cursor:pointer}'+
+'.cn-var button{flex:none;min-width:44px;height:44px;padding:0 10px;border:0;background:transparent;color:var(--ink-2);border-radius:9px;display:inline-flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;white-space:nowrap}'+
 '.cn-var button:hover{color:var(--ink);background:var(--hover,var(--sunk))}'+
 '.cn-var button svg{width:17px;height:17px}'+
 '.cn-offt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:52px;padding:12px 16px;border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer}'+
@@ -143,10 +143,10 @@ function headHtml(){
 function fixHtml(x){
   var f=x.fix; if(!f||f.kind==="none") return "";
   if(f.kind==="railway"){
-    var vars=(f.vars||[]).map(function(v){ return '<span class="cn-var"><code>'+esc(v)+'</code><button type="button" data-act="cncopy:'+esc(v)+'" aria-label="'+esc(v)+' kopieren" title="Namen kopieren">'+icon("copy")+'</button></span>'; }).join("");
-    return '<div class="cn-fix"><p><b>'+esc(f.label||"In Railway eintragen")+'</b> – '+esc(f.hint||"Railway → Dienst fs-creative → Variables")+'.'+(vars?' Danach startet der Dienst neu und die Verbindung wird automatisch geprüft.':'')+'</p>'+
+    var vars=(f.vars||[]).map(function(v){ return '<span class="cn-var"><code>'+esc(v)+'</code><button type="button" data-act="cncopy:'+esc(v)+'" aria-label="Variablenname '+esc(v)+' kopieren" title="Variablenname kopieren (nicht der Schlüssel)">'+icon("copy")+'<span class="cn-vl">Name kopieren</span></button></span>'; }).join("");
+    return '<div class="cn-fix"><p><b>'+esc(f.label||"In Railway eintragen")+'</b> – '+esc(f.hint||"Railway → Dienst fs-creative → Variables")+'.'+(vars?' Kopiert wird nur der <b>Name</b> der Variable – den Schlüssel selbst erstellst du beim Anbieter und fügst ihn in Railway als Wert ein. Danach startet der Dienst neu und die Verbindung wird automatisch geprüft.':'')+'</p>'+
       (vars?'<div class="cn-vars">'+vars+'</div>':'')+
-      '<div class="cn-acts"><a class="btn" href="https://railway.com/dashboard" target="_blank" rel="noopener">'+icon("external")+'Railway öffnen</a></div></div>';
+      '<div class="cn-acts">'+((f.vars||[]).indexOf("RAILWAY_API_TOKEN")>-1?'<a class="btn" href="https://railway.com/account/tokens" target="_blank" rel="noopener">'+icon("external")+'Token bei Railway erstellen</a>':'')+'<a class="btn" href="https://railway.com/dashboard" target="_blank" rel="noopener">'+icon("external")+'Railway öffnen</a></div></div>';
   }
   return "";
 }
@@ -258,7 +258,7 @@ function runFix(f){
 }
 F.action("cnfix",function(k){ if(!runFix(fixOf(k))) F.actions.conn(k); });
 F.action("cncopy",function(v){
-  var ok=function(){ F.toast(v+" kopiert"); };
+  var ok=function(){ F.toast("Variablenname „"+v+"“ kopiert – den Schlüssel als Wert in Railway einfügen"); };
   var fb=function(){ var t=document.createElement("textarea"); t.value=v; t.setAttribute("readonly",""); t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.select(); try{ document.execCommand("copy"); ok(); }catch(e){ F.toast("Bitte markieren und kopieren",true); } t.remove(); };
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(ok,fb); else fb();
 });

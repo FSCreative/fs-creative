@@ -8,15 +8,17 @@ var T=[
  {id:"dash",t:"Übersicht",s:"Deine Zahlen auf einen Blick",b:[
   ["Umsatz","Netto (ohne Umsatzsteuer): alle fertigen Rechnungen des Jahres ohne stornierte, plus Einnahme-Belege. Klein darunter steht der Brutto-Betrag (inkl. USt)."],
   ["Offene Forderungen","Was Kunden dir noch schulden, netto. Rot = Zahlungsziel überschritten (fällig), gelb = noch nicht fällig."],
-  ["Meine Aufgaben","Alles, was du noch tun solltest: Entwürfe versenden, überfällige Rechnungen mahnen, Bankumsätze zuordnen, Beleg-Entwürfe abschließen. Ein Klick führt direkt hin."],
+  ["Zu erledigen","Alles, was du noch tun solltest: Entwürfe versenden, überfällige Rechnungen mahnen, nicht versendete Mahnungen senden, Bankumsätze zuordnen, Beleg-Entwürfe abschließen, fällige VALUERO-Gebühren verrechnen, USt-Zahllast überweisen. Ein Klick führt direkt hin. Druckshop-Entwürfe stehen hier nicht – sie gehen beim Bestellen automatisch raus."],
   ["Ertrag / Aufwand","Grün = Einnahmen, rot = Ausgaben je Monat (netto, nach Rechnungs- bzw. Belegdatum)."]]},
- {id:"inv",t:"Rechnungen",s:"Schreiben, senden, bezahlt markieren",b:[
-  ["So läuft eine Rechnung","1. „Rechnung schreiben“ → Entwurf (noch ohne Nummer). 2. Prüfen und „Per E-Mail senden“ (oder als versendet markieren) → erst jetzt bekommt sie die fortlaufende Nummer und wird festgeschrieben. 3. Zahlung kommt → im Bankumsatz zuordnen oder „Als bezahlt markieren“."],
-  ["Status","Entwurf (lila) · Offen (gelb) · Fällig (rot, Zahlungsziel vorbei) · Teilbezahlt · Bezahlt (grün) · Storniert (grau)."],
+ {id:"inv",t:"Rechnungen",s:"Schreiben, senden, Zahlungseingang erfassen",b:[
+  ["So läuft eine Rechnung","1. „Rechnung schreiben“ → Entwurf (noch ohne Nummer). 2. Prüfen und „Per E-Mail senden“ (oder als versendet markieren) → erst jetzt bekommt sie die fortlaufende Nummer und wird festgeschrieben. 3. Zahlung kommt → im Bankumsatz zuordnen oder „Zahlungseingang erfassen“."],
+  ["Status","Entwurf (lila) · Offen (gelb) · Fällig (rot, Zahlungsziel vorbei) · Teilbezahlt · Bezahlt (grün) · Storniert (grau, zählt nie als bezahlt) · Storno (die Stornorechnung selbst)."],
+  ["Druckshop-Rechnungen","Jede Druckbestellung legt einen Entwurf an („wartet auf Druckauftrag“). Er wird beim Bestellen bei Print.com automatisch fertiggestellt und an den Kunden gesendet – nicht von Hand senden, sonst bekommt der Kunde die Rechnung doppelt. Der Knopf öffnet den Druckauftrag."],
   ["Fehler in einer Rechnung?","Noch offen und unbezahlt → „Stornieren“ (es entsteht eine Stornorechnung) und neu schreiben. Schon bezahlt → „Gutschrift (Minderleistung)“. Versendete Rechnungen kann man nicht mehr ändern – das schreibt das Gesetz so vor."],
   ["Kunde zahlt weniger","Im Zahlungsdialog den Grund wählen: Teilzahlung (Rest bleibt offen), Skonto (mindert Umsatz und USt) oder Bankspesen (Ausgabe ohne Vorsteuer)."]]},
  {id:"invd",t:"Rechnung im Detail",s:"PDF, Status und alle Aktionen",b:[
-  ["Aktionen","Oben rechts: „Als bezahlt markieren“ bzw. „Per E-Mail senden“. Unter „Mehr“: Mahnung, Gutschrift, als wiederkehrend anlegen, Stornieren."],
+  ["Aktionen","Oben rechts: „Zahlungseingang erfassen“ bzw. „Per E-Mail senden“ (bei Druckshop-Entwürfen „Druckauftrag öffnen“). Unter „Mehr“: Mahnung, Gutschrift, als wiederkehrend anlegen, Stornieren."],
+  ["Herkunft & Verknüpfungen","Zeigt, wozu die Rechnung gehört: Kontakt, Kundenakte, Angebot, Stornorechnung, Druckauftrag, Plattform oder Website und Auftrag – ein Klick öffnet es."],
   ["Festgeschrieben 🔒","Die Rechnung ist unveränderbar (gesetzliche Pflicht). Zahlungen, Mahnungen, Storno und Gutschrift gehen trotzdem."]]},
  {id:"wkr",t:"Wiederkehrende Rechnungen",s:"Monatlich, jährlich … automatisch",b:[
   ["Anlegen","Eine passende Rechnung öffnen → Mehr → „Als wiederkehrend anlegen“. Intervall, erstes Datum und ggf. Enddatum wählen."],
@@ -28,12 +30,13 @@ var T=[
   ["Vorschlag beim Öffnen","Beim Öffnen eines offenen Bankumsatzes oder eines unbezahlten Belegs steht oben der beste Kandidat mit Begründung – „Übernehmen“ ordnet mit einem Tipp zu."]]},
  {id:"dun",t:"Mahnungen",s:"Erinnern, mahnen, Mahngebühr",b:[
   ["Stufen","1. Zahlungserinnerung (freundlich, meist ohne Gebühr) → 1. Mahnung → 2. Mahnung → letzte Mahnung. Jede Stufe setzt eine neue Frist."],
-  ["Mahngebühr","Ist Schadenersatz und daher nicht umsatzsteuerpflichtig: ohne USt auf der Mahnung, nicht in der UVA. Zahlt der Kunde die Gebühr mit, wird sie automatisch als eigene Einnahme gebucht."],
+  ["Mahngebühr","Ist Schadenersatz und daher nicht umsatzsteuerpflichtig: ohne USt auf der Mahnung, nicht in der UVA. Zahlt der Kunde die Gebühr mit, wird sie automatisch als eigene Einnahme gebucht. Beim Mahnen von Hand wird die Gebühr aus den Mahnlauf-Einstellungen vorgeschlagen (Firma oder privat)."],
+  ["Nicht versendete Mahnungen","Eine Mahnung, die erstellt, aber nie verschickt wurde (z. B. Dialog geschlossen). Die Rechnung zeigt die Mahnstufe trotzdem, und der Mahnlauf überspringt sie, bis die Mahnung raus ist. Unter Mahnungen steht sie mit „Senden“."],
   ["Bezahlt","Sobald die Rechnung bezahlt ist, gelten auch alle Mahnungen dazu als erledigt."]]},
  {id:"cn",t:"Gutschriften",s:"Korrektur bezahlter Rechnungen",b:[
   ["Wann?","Nur bei bezahlten oder teilbezahlten Rechnungen, z. B. Leistung kleiner als verrechnet oder Teilrückerstattung. Offene Rechnungen werden stattdessen storniert."],
   ["Steuer","Die Gutschrift mindert Umsatz und Umsatzsteuer im Monat, in dem sie ausgestellt wird."]]},
- {id:"orders",t:"Angebote",s:"Vom Angebot zur Rechnung",b:[
+ {id:"orders",t:"Angebote",s:"Vom Angebot zur Rechnung (in der Seitenleiste „Aufträge“ sind deine Projekte)",b:[
   ["In Rechnung","„In Rechnung“ macht aus dem Angebot einen Rechnungsentwurf."],
   ["Abschlagsrechnung (Anzahlung)","„Abschlag“: einen Prozentsatz oder Betrag vorab verrechnen. Die USt dafür ist im Monat der Zahlung fällig – das macht die UVA automatisch."],
   ["Schlussrechnung","Wenn alle Abschläge bezahlt sind: „Schlussrechnung“ – alle Positionen minus der Abschläge."]]},
@@ -54,6 +57,10 @@ var T=[
  {id:"kasse",t:"Kassenbuch",s:"Bargeld richtig aufzeichnen",b:[
   ["Regeln","Jede Kassenbuchung ist sofort unveränderbar. Fehler korrigierst du mit „Stornieren“ – das bucht eine Gegenbuchung mit heutigem Datum. Der Kassenstand darf nie unter 0 fallen."],
   ["Belege","Danach die Buchung mit „Zuordnen“ dem passenden Beleg oder der Rechnung zuweisen."]]},
+ {id:"pay",t:"Zahlungsaufträge",s:"Überweisungen anlegen und freigeben",b:[
+  ["Überweisung anlegen","Von Hand oder aus einer Rechnungsmail (Postfach → „Überweisung anlegen“): die KI liest Empfänger, IBAN, Betrag und Referenz aus. Auf Wunsch entsteht gleich der Beleg (offen)."],
+  ["Freigeben","„In George freigeben“ legt die Überweisung an – ausgeführt wird erst nach deiner Bestätigung in George. Alternativ QR-Code mit der George-App scannen oder SEPA-Datei hochladen."],
+  ["Bezahlt","Wird automatisch erkannt, sobald die Abbuchung am Konto ist."]]},
  {id:"steuer",t:"Steuer-Übersicht",s:"Was steht an, was ist bezahlt",b:[
   ["Voranmeldungen","Jede Zeile ist ein UVA-Zeitraum: grün abgegeben, gelb bald fällig, rot überfällig. „Prüfen & abgeben“ führt direkt zur Voranmeldung."],
   ["Jahr auf einen Blick","Umsatzsteuer (was du dem Finanzamt schuldest), Gewinn und geschätzte Einkommensteuer – jeweils mit „schon bezahlt“ und „noch offen“."],
@@ -87,7 +94,10 @@ var G=[
  ["Vorsteuer","Die USt auf deinen Einkäufen. Wird von der Umsatzsteuer abgezogen."],
  ["Zahllast","Umsatzsteuer minus Vorsteuer – das zahlst du mit der UVA ans Finanzamt."],
  ["Reverse Charge","Bei Rechnungen aus dem EU-Ausland ohne USt (Google, Meta …) schuldest du die USt selbst – und ziehst sie gleich als Vorsteuer ab. Ergebnis 0, muss aber gemeldet werden."],
- ["Sollbesteuerung","USt zählt im Monat der Leistung, egal wann bezahlt wird. In Österreich der Normalfall."],
+ ["Istbesteuerung","Die Umsatzsteuer entsteht erst im Monat, in dem der Kunde bezahlt; Vorsteuer, wenn du die Eingangsrechnung bezahlt hast. Gilt bei dir seit 2026 (umschaltbar unter Steuern → Einstellungen)."],
+ ["Sollbesteuerung","USt zählt im Monat der Leistung, egal wann bezahlt wird. Bei dir für Zeiträume bis 2025."],
+ ["Zahlungseingang erfassen","Ein Kunde hat eine Rechnung bezahlt – mit Teilzahlung, Skonto oder Bankspesen. Nicht verwechseln mit „Überweisung anlegen“."],
+ ["Überweisung anlegen","Du bezahlst selbst etwas (Zahlungsauftrag): unter Bank & Kasse → Zahlungsaufträge, freigeben in George."],
  ["E/A-Rechnung","Einnahmen-Ausgaben-Rechnung: Gewinn nach Zahlungsdatum (Geld rein minus Geld raus, Anlagen über Abschreibung)."],
  ["Abschreibung (AfA)","Kosten einer Anlage werden über die Nutzungsdauer verteilt abgesetzt."],
  ["GWG","Geringwertiges Wirtschaftsgut bis 1.000 € netto – sofort voll absetzbar."],

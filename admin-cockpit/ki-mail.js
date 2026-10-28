@@ -19,11 +19,12 @@ M.kiBar=function(m){
     '<button type="button" class="btn'+(r.busy==="sum"?" busy":"")+'" data-act="kimsum:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="sum"?"Fasse zusammen …":"Zusammenfassen")+'</button>'+
     (sent?'':'<button type="button" class="btn'+(r.busy==="reply"?" busy":"")+'" data-act="kimreply:'+esc(m.id)+'"'+(r.busy?" disabled":"")+'>'+(r.busy==="reply"?"Schreibe Vorschlag …":"Antwort vorschlagen")+'</button>')+
     '<button type="button" class="btn icon" data-act="kimask:'+esc(m.id)+'" title="Im Assistenten zu dieser Mail fragen" aria-label="Assistent fragen">?</button></div>';
-  var s=r.sum;
+  var s=r.sum, cc=s&&s.isLead&&M.custOf?M.custOf(m):null, canL=!!(cc&&cc.canLead&&F.actions.mlead);   /* mögliche Anfrage von Unbekannt → als Lead übernehmen */
   if(s) bar+='<div class="kisum"><div class="row-between"><b>Zusammenfassung</b><button type="button" class="link" data-act="kimsumx:'+esc(m.id)+'">Ausblenden</button></div><p>'+esc(s.summary)+'</p>'+
     ((s.points||[]).length?'<ul>'+s.points.map(function(p){ return '<li>'+esc(p)+'</li>'; }).join("")+'</ul>':'')+
     '<div class="kitags">'+(s.actionNeeded?'<span class="tag warn">Handlung nötig</span>':'<span class="tag grey">nur zur Info</span>')+(s.deadline?'<span class="tag bad">bis '+esc(F.de(s.deadline))+'</span>':'')+(s.isLead?'<span class="tag info">mögliche Kundenanfrage</span>':'')+'</div>'+
-    (s.deadline||s.actionNeeded?'<div class="row wrap"><button type="button" class="btn" data-act="kimtodo:'+esc(m.id)+'">Als Aufgabe'+(s.deadline?" bis "+esc(F.deShort(s.deadline)):"")+'</button></div>':'')+'</div>';
+    (s.deadline||s.actionNeeded||canL?'<div class="row wrap">'+(s.deadline||s.actionNeeded?'<button type="button" class="btn" data-act="kimtodo:'+esc(m.id)+'">Als Aufgabe'+(s.deadline?" bis "+esc(F.deShort(s.deadline)):"")+'</button>':'')+
+      (canL?'<button type="button" class="btn" data-act="mlead:'+esc(m.id)+'">Als Lead übernehmen</button>':'')+'</div>':'')+'</div>';
   if(r.err) bar+='<div class="bad-t" style="font-size:13px">'+esc(r.err)+'</div>';
   return bar;
 };
@@ -46,9 +47,16 @@ F.action("kimreply",function(id){
     else F.compose({title:"Antworten",to:m.replyTo||m.from,subject:"Re: "+String(m.subject||"").replace(/^(re|aw)\s*:\s*/i,""),text:j.text,inReplyTo:m.messageId||undefined,account:M.accOf?M.accOf(m):undefined});
   }).catch(function(e){ r.busy=""; r.err=e.message; rr(); });
 });
+/* KI-Aufgabe: Mail verknüpft (mailRef wie bei „Als Aufgabe“ in zauftrag.js), Kunde und laufender Auftrag, wenn der Absender bekannt ist */
 F.action("kimtodo",function(id){
   var m=M.find&&M.find(id), s=MS[id]&&MS[id].sum; if(!m||!s||!F.addTodo) return;
-  F.addTodo({text:"✉ "+(m.fromName||m.from||"")+": "+(s.summary||m.subject||"").slice(0,180),due:s.deadline||"",mailId:id}).then(function(){ F.toast("Aufgabe angelegt",false,"Ansehen",function(){ F.go("auftraege"); }); });
+  var c=M.custOf?M.custOf(m):null, pj=c&&c.projects||[];
+  var t={text:"✉ "+(m.fromName||m.from||"")+": "+(s.summary||m.subject||"").slice(0,180),due:s.deadline||"",
+    notes:"Aus Mail von "+(m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+">"+(m.date&&!isNaN(new Date(m.date))?" vom "+new Date(m.date).toLocaleDateString("de-AT"):"")+(m.subject?"\nBetreff: "+m.subject:""),
+    mailRef:{id:m.id,account:m.account||(M.accOf?M.accOf(m):""),folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}};
+  if(c&&c.lead) t.leadId=c.lead.id;
+  if(pj.length===1) t.projectId=pj[0].id;
+  F.addTodo(t).then(function(j){ if(!(j&&j.ok)) return; F.toast("Aufgabe angelegt",false,"Ansehen",function(){ F.go("auftraege"); }); }).catch(function(){ F.toast("Aufgabe konnte nicht angelegt werden",true); });
 });
 F.action("kimask",function(id){
   var m=M.find&&M.find(id); if(!m||!K.chatOpen) return;

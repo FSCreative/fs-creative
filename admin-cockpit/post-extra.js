@@ -32,6 +32,8 @@ M.ctxOpen=function(){ return ctxEl&&!ctxEl.hidden; };
 
 function rowMenu(m,x,y){
   var id=m.id, tr=M.isTrashed(m), sp=M.isSpam(m);
+  /* Kunde zur Mail (post.js): Kundenakte bzw. „Als Lead übernehmen“, „Zahlungseingang erfassen …“ nur bei offenen Rechnungen */
+  var ci=!tr&&!m.local&&M.custItems?M.custItems(m):{};
   var items=[
     {label:"Öffnen",act:function(){ M.open(id,{fromOutside:F.current!=="post"}); }},
     {label:m.read?"Als ungelesen markieren":"Als gelesen markieren",act:function(){ M.setRead([m],!m.read); }},
@@ -40,10 +42,13 @@ function rowMenu(m,x,y){
     {label:"Antworten",act:function(){ M.reply(m,"reply"); }},
     {label:"Allen antworten",act:function(){ M.reply(m,"all"); }},
     {label:"Weiterleiten",act:function(){ M.reply(m,"fwd"); }},
+    {sep:true},
+    ci.cust?{label:ci.cust.label,act:ci.cust.act}:{hide:true},
     {label:"Als Aufgabe",act:function(){ M.todoFromMail(m); }},
-    {label:"Zahlung erfassen",act:function(){ if(F.payFromMail) F.payFromMail(m,null); }},
     {label:"Rechnung erstellen",act:function(){ if(F.invoiceFromMail) F.invoiceFromMail(m,""); }},
     {label:"Angebot erstellen",act:function(){ if(F.invoiceFromMail) F.invoiceFromMail(m,"offer"); }},
+    ci.pay?{label:ci.pay.label,act:ci.pay.act}:{hide:true},
+    {label:"Überweisung anlegen",act:function(){ if(F.payFromMail) F.payFromMail(m,null); }},
     {label:"Als Termin",act:function(){ M.eventFromMail(m); }},
     {sep:true},
     {label:"Archivieren",act:function(){ M.archive(UI.mpick[id]?M.selectedIds():[id]); },hide:!(M.canArchive&&M.canArchive(m))},
@@ -61,7 +66,7 @@ F.listen("contextmenu",".mrow2",function(el,e){ var id=el.getAttribute("data-mid
 F.listen("keydown",".mrow2",function(el,e){ if(e.target!==el) return; if(e.key==="ContextMenu"||(e.shiftKey&&e.key==="F10")){ var m=M.find(el.getAttribute("data-mid")); if(!m) return; e.preventDefault(); var r=el.getBoundingClientRect(); rowMenu(m,r.left+40,r.top+r.height/2); } });
 
 /* ---------- Tastenkürzel ---------- */
-var KEYS=[["Nächste / vorherige Mail",["J","K"],["↓","↑"]],["Neue Mail",["C"]],["Antworten",["R"]],["Allen antworten",["A"]],["Weiterleiten",["F"]],["Archivieren",["E"]],["Löschen",["#"],["Entf"]],["Markieren (Stern)",["S"]],["Gelesen / ungelesen",["U"]],["Auswählen",["X"]],["Verschieben",["V"]],["Als To-Do",["T"]],["Suchen",["/"]],["Diese Hilfe",["?"]],["Senden (im Editor)",["⌘","↵"]],["Entwurf speichern (im Editor)",["⌘","S"]],["Schließen / abwählen",["Esc"]],["Kontextmenü auf einer Zeile",["⇧","F10"]]];
+var KEYS=[["Nächste / vorherige Mail",["J","K"],["↓","↑"]],["Neue Mail",["C"]],["Antworten",["R"]],["Allen antworten",["A"]],["Weiterleiten",["F"]],["Archivieren",["E"]],["Löschen",["#"],["Entf"]],["Markieren (Stern)",["S"]],["Gelesen / ungelesen",["U"]],["Auswählen",["X"]],["Verschieben",["V"]],["Als Aufgabe",["T"]],["Suchen",["/"]],["Diese Hilfe",["?"]],["Senden (im Editor)",["⌘","↵"]],["Entwurf speichern (im Editor)",["⌘","S"]],["Schließen / abwählen",["Esc"]],["Kontextmenü auf einer Zeile",["⇧","F10"]]];
 M.showKeys=function(){
   F.modal('<div class="row-between"><h2 style="font-size:19px">Tastenkürzel im Postfach</h2>'+F.btnClose()+'</div><div class="mkeys">'+KEYS.map(function(k){ return '<div><span>'+esc(k[0])+'</span><span>'+k[1].map(function(x){ return '<span class="kbd">'+esc(x)+'</span>'; }).join(" ")+(k[2]?' <span class="muted">oder</span> '+k[2].map(function(x){ return '<span class="kbd">'+esc(x)+'</span>'; }).join(" "):'')+'</span></div>'; }).join("")+'</div><div class="foot"><span class="muted">Rechtsklick auf eine Mail öffnet weitere Aktionen. Am Handy: Zeile nach links wischen löscht, nach rechts ändert gelesen, lange drücken wählt aus.</span><button type="button" class="btn primary" data-closemodal>Alles klar</button></div>',"narrow");
 };

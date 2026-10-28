@@ -153,13 +153,15 @@ F.listen("keydown","#tkClNew",function(el,e){ if(e.key==="Enter"){ e.preventDefa
 F.listen("keydown","#tkCmNew",function(el,e){ if(e.key==="Enter"){ e.preventDefault(); F.actions.tkcomment(); } });
 F.action("tkdue",function(v){ var f=document.querySelector(".tk-dlg"); if(!f) return; f.due.value=v==="x"?"":addDays(today(),+v); });
 F.form("tksave",function(f){
-  var x={id:DR.id||undefined,title:f.title.value,projectId:f.projectId.value,status:f.status.value,prio:f.prio.value,due:f.due.value,notes:f.notes.value,checklist:DR.checklist,mailRef:DR.mailRef||undefined};
+  var x={id:DR.id||undefined,title:f.title.value,projectId:f.projectId.value,status:f.status.value,prio:f.prio.value,due:f.due.value,notes:f.notes.value,checklist:DR.checklist,mailRef:DR.mailRef||undefined,leadId:DR.leadId||undefined};   /* leadId: Aufgabe erscheint in der Kundenakte */
   var pending=document.getElementById("tkClNew"); if(pending&&pending.value.trim()) x.checklist=x.checklist.concat([{t:pending.value.trim(),done:false}]);
-  api("task.save",{task:x}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast(DR.id?"Gespeichert":"Aufgabe angelegt"); } });
+  var isNew=!DR.id, lid=DR.leadId||"";
+  api("task.save",{task:x}).then(function(j){ if(j&&j.ok){ F.closeModal(); var ld=isNew&&lid&&leads().find(function(l){ return l.id===lid; });
+    if(ld&&F.openLead) F.toast("Aufgabe angelegt",false,"Kundenakte",function(){ F.actions.tklead(ld.id); }); else F.toast(isNew?"Aufgabe angelegt":"Gespeichert"); } });
 });
 F.action("tkcomment",function(){ var i=document.getElementById("tkCmNew"); if(!i||!i.value.trim()||!DR||!DR.id) return; var id=DR.id;
   api("task.comment",{id:id,text:i.value}).then(function(j){ if(j&&j.ok){ var keep={title:document.querySelector(".tk-dlg").title.value}; openTask(id); var f=document.querySelector(".tk-dlg"); if(f) f.title.value=keep.title; } }); });
-F.action("tkdel",function(id){ if(!confirm("Diese Aufgabe wirklich löschen?")) return; api("task.delete",{id:id}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Aufgabe gelöscht – 30 Tage im Papierkorb",false,"Rückgängig",function(){ api("task.restore",{id:id}).then(function(r){ if(r&&r.ok) F.toast("Wiederhergestellt"); }); }); } }); });
+F.action("tkdel",function(id){ F.confirm("Diese Aufgabe wirklich löschen?","Löschen",function(){ api("task.delete",{id:id}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Aufgabe gelöscht – 30 Tage im Papierkorb",false,"Rückgängig",function(){ api("task.restore",{id:id}).then(function(r){ if(r&&r.ok) F.toast("Wiederhergestellt"); }); }); } }); },true); });
 /* Papierkorb: gelöschte Aufgaben der letzten 30 Tage wiederherstellen */
 F.action("tktrash",function(){ var tr=(F.D.auftraege&&F.D.auftraege.trash)||[];
   F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">Papierkorb</h2>'+F.btnClose()+'</div>'+(tr.length?'<p class="muted" style="margin:0">Gelöschte Aufgaben bleiben 30 Tage hier.</p>'+tr.map(function(x){ return '<div class="row-between" style="gap:10px;border-top:1px solid var(--line);padding-top:8px"><span style="min-width:0"><b>'+esc(x.task.title)+'</b><br><small class="muted">gelöscht am '+esc(new Date(x.at).toLocaleString("de-AT",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"}))+'</small></span><button type="button" class="btn sm" data-act="tkrestore:'+esc(x.task.id)+'">Wiederherstellen</button></div>'; }).join(""):'<p class="muted">Der Papierkorb ist leer.</p>')+'</div>',"narrow"); });
@@ -198,14 +200,39 @@ function projEdit(id,pre){ var p=id?proj(id):null, x=p||Object.assign({name:"",c
     '<div class="tk-g3"><label class="fl">Status<select class="f" name="status"><option value="aktiv"'+(x.status==="aktiv"?" selected":"")+'>Aktiv</option><option value="pausiert"'+(x.status==="pausiert"?" selected":"")+'>Pausiert</option><option value="abgeschlossen"'+(x.status==="abgeschlossen"?" selected":"")+'>Abgeschlossen</option></select></label>'+
     '<label class="fl">Abgabe (optional)<input class="f" type="date" name="due" value="'+esc(x.due||"")+'"></label><div class="fl">Farbe<div class="tk-cols">'+PCOL.map(function(c,i){ return '<label><input type="radio" name="color" value="'+i+'"'+((x.color||0)===i?" checked":"")+'><span style="background:'+c+'"></span></label>'; }).join("")+'</div></div></div>'+
     '<label class="fl">Notiz<textarea class="f" name="note" rows="2" maxlength="2000">'+esc(x.note||"")+'</textarea></label>'+
-    '<div class="foot">'+(p?'<button type="button" class="btn bad-t" data-act="tkprojdel:'+esc(p.id)+'">Löschen</button>':'<button type="button" class="btn" data-act="tkprojects">Zurück</button>')+'<div class="btns"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></div></div></form>',"narrow"); }
+    (p?'<div class="fl">Angebote &amp; Rechnungen<div id="tkDocs" class="tk-docs">'+projDocsHtml(p)+'</div></div>':'')+
+    '<div class="foot">'+(p?'<button type="button" class="btn bad-t" data-act="tkprojdel:'+esc(p.id)+'">Löschen</button>':'<button type="button" class="btn" data-act="tkprojects">Zurück</button>')+'<div class="btns"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></div></div></form>',"narrow");
+  /* Angebote noch nicht geladen → Status nachtragen, ohne den Dialog neu aufzubauen */
+  if(p&&docsOf(p).some(function(d){ return d.kind==="offer"; })&&F.OFF&&!F.OFF.list&&F.offersLoad) F.offersLoad(false).then(function(){ var el=document.getElementById("tkDocs"), pp=proj(p.id); if(el&&pp) el.innerHTML=projDocsHtml(pp); }); }
+/* ---------- Angebote & Rechnungen am Auftrag (project.docs; fehlt das Feld → alter Server, nur Hinweis) ---------- */
+function docsOf(p){ return p&&Array.isArray(p.docs)?p.docs:[]; }
+function docKey(d){ return String((d&&(d.docId||d.id))||""); }
+/* Aufträge, die einen Beleg enthalten; kind "invoice" (Standard) oder "offer" – Angebots- und Rechnungsnummern können gleich sein */
+F.projectsOfDoc=function(id,kind){ id=String(id||""); kind=kind||"invoice"; if(!id) return [];
+  return A().projects.filter(function(p){ return docsOf(p).some(function(d){ return docKey(d)===id&&(d.kind||"invoice")===kind; }); }); };
+function docRow(pid,kind,id,label,tag,sub){ var isO=kind==="offer";
+  return '<div class="tk-dr"><button type="button" class="tk-lr" data-act="'+(isO?"offpdf:":"fin:invd:")+esc(id)+'"><span class="sw" style="background:'+(isO?"var(--info)":"var(--ok)")+'"></span><span><b>'+label+' '+tag+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</span></button>'+
+    '<button type="button" class="btn icon sm" data-act="tkdocunlink:'+esc(pid)+'|'+kind+'|'+esc(id)+'" aria-label="Verknüpfung lösen" title="Verknüpfung mit dem Auftrag lösen">×</button></div>'; }
+function projDocsHtml(p){ var D=docsOf(p), inv=(F.D&&F.D.sev&&F.D.sev.invoices)||[], offs=F.OFF&&F.OFF.list, eur=F.eur, sum={off:0,inv:0,paid:0}, miss=0;
+  if(!D.length) return '<span class="mu">Noch keine. „Angebot schreiben“ und „Rechnung schreiben“ hier im Auftrag merken sich den Beleg automatisch.</span>';
+  var rows=D.slice().sort(function(a,b){ return (+b.at||0)-(+a.at||0); }).map(function(d){ var id=docKey(d);
+    if(d.kind==="offer"){ var o=offs&&offs.find(function(x){ return x.id===id; }); if(o&&o.status!==100&&o.status!==300) sum.off+=+o.net||0; if(!o&&offs) miss++;
+      return docRow(p.id,"offer",id,"Angebot "+esc((o&&o.nr)||d.nr||""),o&&F.offTag?F.offTag(o):'<span class="tag grey">'+(offs?"nicht gefunden":F.OFF&&F.OFF.err?"nicht geladen":"lädt …")+'</span>',o?F.de(o.date)+' · netto <span class="num money">'+eur(o.net)+'</span>':''); }
+    var i=inv.find(function(x){ return x.id===id; }), s=i&&F.invState?F.invState(i):null; if(!i) miss++;
+    if(i&&!i.cancelled&&i.type!=="SR"&&i.status!==100){ var net=+i.net||0; sum.inv+=net; sum.paid+=i.status===1000?net:(+i.gross>0?net*Math.min(1,(+i.paid||0)/(+i.gross)):0); }   /* nur Anzeige */
+    return docRow(p.id,"invoice",id,"Rechnung "+esc((i&&i.nr)||d.nr||"Entwurf"),s?'<span class="tag '+s[0]+'">'+s[1]+'</span>':'<span class="tag grey">Status unbekannt</span>',i?F.de(i.date)+' · netto <span class="num money">'+eur(i.net)+'</span>':''); }).join("");
+  return rows+'<div class="tk-dsum">Netto: angeboten <span class="num money">'+eur(sum.off)+'</span> · verrechnet <span class="num money">'+eur(sum.inv)+'</span> · bezahlt <span class="num money">'+eur(Math.round(sum.paid*100)/100)+'</span>'+(miss?' <span class="mu">('+miss+' nicht in den aktuellen Listen)</span>':'')+'</div>'; }
+F.action("tkdocunlink",function(v){ var a=String(v||"").split("|"); if(a.length<3) return;
+  F.confirm("Verknüpfung mit dem Auftrag lösen? Der Beleg selbst bleibt unverändert.","Lösen",function(){ api("project.unlink",{id:a[0],kind:a[1],docId:a[2]}).then(function(){ if(proj(a[0])) projEdit(a[0]); }); }); });
 F.action("tkprojects",projModal);
 F.action("tkprojnew",function(){ projEdit(""); });
 F.action("tkprojedit",projEdit);
 F.form("tkprojsave",function(f){ var c=f.querySelector('input[name=color]:checked');
-  var ld=leadOf({customer:f.customer.value,leadId:f.leadId.value});
-  api("project.save",{project:{id:f.id.value||undefined,name:f.name.value,customer:f.customer.value,status:f.status.value,due:f.due.value,note:f.note.value,color:c?c.value:0,leadId:ld?ld.id:""}}).then(function(j){ if(j&&j.ok){ F.toast("Auftrag gespeichert"); if(!f.id.value) UI.tkProj=j.id; projModal(); } }); });
-F.action("tkprojdel",function(id){ if(!confirm("Diesen Auftrag löschen?")) return; api("project.delete",{id:id}).then(function(j){ if(j&&j.ok){ if(UI.tkProj===id) UI.tkProj=""; projModal(); } }); });
+  var ld=leadOf({customer:f.customer.value,leadId:f.leadId.value}), old=f.id.value?proj(f.id.value):null;
+  /* Buchhaltungs-Kontakt behalten, solange der Kunde gleich bleibt; sonst den des Leads (ältere Server ignorieren das Feld) */
+  var cid=(old&&old.contactId&&F.normName(old.customer)===F.normName(f.customer.value)?String(old.contactId):"")||(ld&&ld.contactId?String(ld.contactId):"");
+  api("project.save",{project:{id:f.id.value||undefined,name:f.name.value,customer:f.customer.value,status:f.status.value,due:f.due.value,note:f.note.value,color:c?c.value:0,leadId:ld?ld.id:"",contactId:cid}}).then(function(j){ if(j&&j.ok){ F.toast("Auftrag gespeichert"); if(!f.id.value) UI.tkProj=j.id; projModal(); } }); });
+F.action("tkprojdel",function(id){ F.confirm("Diesen Auftrag löschen?","Löschen",function(){ api("project.delete",{id:id}).then(function(j){ if(j&&j.ok){ if(UI.tkProj===id) UI.tkProj=""; projModal(); } else projEdit(id); }); },true); });
 
 /* ---------- Verbindungen: Kunden, Mails, Kalender, Rechnungen ---------- */
 function leads(){ return (F.D&&F.D.leads)||[]; }
@@ -213,9 +240,14 @@ function leadOf(p){ if(!p) return null; var L=leads(); if(p.leadId){ var a=L.fin
   var c=String(p.customer||"").trim().toLowerCase(); return c?L.find(function(l){ return String(l.company||"").trim().toLowerCase()===c||String(l.name||"").trim().toLowerCase()===c; })||null:null; }
 function leadProjects(id){ var l=leads().find(function(x){ return x.id===id; }); return l?A().projects.filter(function(p){ var ld=leadOf(p); return ld&&ld.id===l.id; }):[]; }
 F.tkLeadProjects=leadProjects;
-F.tkLeadHtml=function(l){ var P=leadProjects(l.id); if(!P.length) return '';
-  return '<div><div class="sec-t">Aufträge</div>'+P.map(function(p){ var T=A().tasks.filter(function(t){ return t.projectId===p.id; }), o=T.filter(function(t){ return t.status!=="erledigt"; }), nx=o.filter(function(t){ return t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due); })[0];
-    return '<button type="button" class="tk-lr" data-act="tkprojopen:'+esc(p.id)+'"><span class="sw" style="background:'+PCOL[p.color||0]+'"></span><span><b>'+esc(p.name)+'</b><small>'+(o.length?o.length+" offen":"alles erledigt")+(nx?" · nächste Frist "+esc(dueLabel(nx.due)):"")+(p.status!=="aktiv"?" · "+esc(p.status):"")+'</small></span></button>'; }).join("")+'</div>'; };
+/* offene Aufgaben, die direkt an einem Lead hängen (Anfrage, „nächster Schritt“, aus Mail) */
+F.tkLeadTasks=function(lid){ return lid?A().tasks.filter(function(t){ return t.leadId===lid&&t.status!=="erledigt"; }).sort(function(a,b){ return (a.due||"9999").localeCompare(b.due||"9999"); }):[]; };
+F.tkLeadHtml=function(l){ var P=leadProjects(l.id), T=F.tkLeadTasks(l.id); if(!P.length&&!T.length) return '';
+  return (P.length?'<div><div class="sec-t">Aufträge</div>'+P.map(function(p){ var T=A().tasks.filter(function(t){ return t.projectId===p.id; }), o=T.filter(function(t){ return t.status!=="erledigt"; }), nx=o.filter(function(t){ return t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due); })[0], nd=docsOf(p).length;
+    return '<button type="button" class="tk-lr" data-act="tkprojopen:'+esc(p.id)+'"><span class="sw" style="background:'+PCOL[p.color||0]+'"></span><span><b>'+esc(p.name)+'</b><small>'+(o.length?o.length+" offen":"alles erledigt")+(nx?" · nächste Frist "+esc(dueLabel(nx.due)):"")+(nd?" · "+nd+" Beleg"+(nd===1?"":"e"):"")+(p.status!=="aktiv"?" · "+esc(p.status):"")+'</small></span></button>'; }).join("")+'</div>':'')+
+    (T.length?'<div><div class="sec-t">Offene Aufgaben</div>'+T.slice(0,6).map(function(t){ var p=proj(t.projectId);
+      return '<button type="button" class="tk-lr" data-act="tkopen:'+esc(t.id)+'"><span class="sw" style="background:'+(p?PCOL[p.color||0]:"var(--ink-3)")+'"></span><span><b>'+esc(t.title)+'</b><small>'+(t.due?'<span class="tk-due '+dueCls(t)+'">'+esc(dueLabel(t.due))+'</span>':'ohne Frist')+(p?' · '+esc(p.name):'')+'</small></span></button>'; }).join("")+
+      (T.length>6?'<span class="mu">+ '+(T.length-6)+' weitere</span>':'')+'</div>':''); };
 F.action("tkprojfromlead",function(id){ var l=leads().find(function(x){ return x.id===id; }); if(!l) return; F.closeDrawer&&F.closeDrawer(); if(F.current!=="auftraege") F.go("auftraege");
   projEdit("",{name:(l.topic&&l.topic!=="Etwas anderes"?l.topic+" – ":"")+(l.company||l.name),customer:l.company||l.name,leadId:l.id}); });
 F.action("tkprojopen",function(id){ F.closeDrawer&&F.closeDrawer(); UI.tkProj=id; F.go("auftraege"); });
@@ -223,24 +255,42 @@ F.action("tklead",function(id){ F.closeModal(); if(F.openLead){ if(F.current!=="
 F.action("tknewin",function(pid){ UI.tkProj=pid; F.closeModal(); openTask("","offen",{projectId:pid}); });
 F.action("tkmail",function(){ var r=DR&&DR.mailRef; if(!r) return; F.closeModal(); UI.msel=r.id; UI.mq=r.subject||""; if(F.M&&F.M.serverSearch) F.M.serverSearch(); F.go("post"); });
 F.action("tktermin",function(){ if(!DR) return; var t=DR, p=proj(t.projectId); F.closeModal(); if(F.openEventEdit) F.openEventEdit({title:t.title+(p?" · "+p.name:""),notes:t.notes||""},t.due||today()); });
-function bill(pid,kind){ var p=proj(pid); if(!p) return; var ld=leadOf(p); F.closeModal(); if(F.openInvoice) F.openInvoice(Object.assign({title:(kind==="offer"?"Angebot · ":"Rechnung · ")+p.name,contactName:p.customer||(ld&&(ld.company||ld.name))||"",email:ld&&ld.email||""},kind==="offer"?{kind:"offer"}:{})); }
+/* Angebot/Rechnung aus dem Auftrag: Kontakt (Auftrag, sonst Lead), Lead-Phase und Auftrag merken sich den Beleg (after), Referenz = Auftragsname (änderbar) */
+function bill(pid,kind){ var p=proj(pid); if(!p||!F.openInvoice) return; var ld=leadOf(p), cid=String(p.contactId||(ld&&ld.contactId)||""); F.closeModal();
+  var go=function(){ var m=F.metaCached&&F.metaCached(), c=cid&&m?m.contacts.find(function(x){ return String(x.id)===cid; })||null:null;
+    var nm=c?c.name:(p.customer||(ld&&(ld.company||ld.name))||""), person=ld&&ld.name&&F.normName(ld.name)!==F.normName(nm)?ld.name:"";
+    var pre={title:(kind==="offer"?"Angebot · ":"Rechnung · ")+p.name,contactName:nm,email:(ld&&ld.email)||(c&&c.email)||"",after:{project:{id:p.id}}};
+    if(person) pre.address=[nm,person].join("\n");
+    if(ld) pre.after.leadId=ld.id;
+    if(cid) pre.contactId=cid;   /* greift im Dialog nur, solange der Name unverändert bleibt */
+    if(kind==="offer") pre.kind="offer"; else pre.reference=String(p.name||"").slice(0,60);
+    F.openInvoice(pre); };
+  if(cid&&!(F.metaCached&&F.metaCached())&&F.loadMeta) F.loadMeta(go); else go(); }
 F.action("tkoffer",function(pid){ bill(pid,"offer"); });
 F.action("tkinvoice",function(pid){ bill(pid,""); });
 /* Mail → Aufgabe: Betreff als Titel, Absender als Notiz, Mail verknüpft, Auftrag des Kunden vorausgewählt */
 F.tkFromMail=function(m){ if(!m) return;
-  var subj=String(m.subject||"").replace(/^\s*((re|aw|wg|fw|fwd)\s*:\s*)+/i,"").trim(), from=String(m.from||"").toLowerCase();
-  var ld=leads().find(function(l){ return l.email&&String(l.email).toLowerCase()===from; }), pr=ld?A().projects.filter(function(p){ var x=leadOf(p); return x&&x.id===ld.id&&p.status!=="abgeschlossen"; })[0]:null;
+  var subj=String(m.subject||"").replace(/^\s*((re|aw|wg|fw|fwd)\s*:\s*)+/i,"").trim(), ld=null;
+  [m.replyTo,m.from].map(F.normMail).filter(Boolean).some(function(a){   /* Formular-Mails: Kunde steht in „Antwort an“ */
+    var hit=leads().filter(function(l){ return F.normMail(l.email)===a; }).sort(function(x,y){ return (x.stage==="verloren")-(y.stage==="verloren")||String(y.updated||y.created||"").localeCompare(String(x.updated||x.created||"")); });
+    ld=hit[0]||null; return !!ld; });
+  var pr=ld?A().projects.filter(function(p){ var x=leadOf(p); return x&&x.id===ld.id&&p.status!=="abgeschlossen"; })[0]:null;
   if(F.current!=="auftraege") F.go("auftraege");
-  openTask("","offen",{title:subj.slice(0,200)||"Mail beantworten",projectId:pr?pr.id:"",notes:"Aus Mail von "+(m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+"> vom "+new Date(m.date).toLocaleDateString("de-AT"),
-    mailRef:{id:m.id,account:m.account||"",folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}}); };
+  openTask("","offen",{title:subj.slice(0,200)||"Mail beantworten",projectId:pr?pr.id:"",leadId:ld?ld.id:"",notes:"Aus Mail von "+(m.fromName?m.fromName+" ":"")+"<"+(m.from||"")+"> vom "+new Date(m.date).toLocaleDateString("de-AT"),
+    mailRef:F.mailRef?F.mailRef(m):{id:m.id,account:m.account||"",folder:m.folder||"INBOX",uid:m.uid||0,subject:m.subject||"",from:m.from||""}}); };
 
 /* ---------- für Statusleiste & Suche ---------- */
 F.tkOpenDue=function(){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,project:p?p.name:""}; }); };
 F.tkDeadlines=function(n){ return A().tasks.filter(function(t){ return t.status!=="erledigt"&&t.due; }).sort(function(a,b){ return a.due.localeCompare(b.due)||(a.prio==="dringend"?-1:0); }).slice(0,n||6).map(function(t){ var p=proj(t.projectId); return {id:t.id,title:t.title,due:t.due,label:dueLabel(t.due),cls:dueCls(t),color:p?PCOL[p.color||0]:"var(--ink-3)",project:p?p.name:"",prio:t.prio}; }); };
 F.tkDueDays=function(){ var o={}; A().tasks.forEach(function(t){ if(t.status!=="erledigt"&&t.due) o[t.due]=(o[t.due]||0)+1; }); return o; };
-F.searcher(function(q){ q=q.toLowerCase(); return A().tasks.filter(function(t){ return t.title.toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(t){ var p=proj(t.projectId); return {group:"Aufgaben",label:t.title,sub:(p?p.name+" · ":"")+(t.due?"fällig "+dueLabel(t.due):"ohne Frist"),act:"tkopen:"+t.id}; }); });
-F.feed(function(){ var t=today(); return A().tasks.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t&&!x.print&&!x.leadId; }).map(function(x){ var p=proj(x.projectId), over=x.due<t;
-  return {id:"tk:"+x.id,rank:over?2:3,sev:over?"bad":"ok",icon:"check",tag:[over?"bad":"ok",over?"Frist überschritten":"Heute fällig"],t:x.title,d:(p?p.name+" · ":"")+(over?"fällig "+F.de(x.due):"heute fällig"),acts:[["Öffnen","tkopen:"+x.id]]}; }); });
+/* Suche: Aufgaben auch über Auftragsname und Kunde, dazu die Aufträge selbst */
+F.searcher(function(q){ q=q.toLowerCase(); return A().tasks.filter(function(t){ var p=proj(t.projectId); return (t.title+" "+(p?p.name+" "+(p.customer||""):"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(t){ var p=proj(t.projectId); return {group:"Aufgaben",label:t.title,sub:(p?p.name+" · ":"")+(t.due?"fällig "+dueLabel(t.due):"ohne Frist"),act:"tkopen:"+t.id}; }); });
+F.searcher(function(q){ q=q.toLowerCase(); return A().projects.filter(function(p){ return (p.name+" "+(p.customer||"")).toLowerCase().indexOf(q)>-1; }).sort(function(a,b){ return (a.status==="abgeschlossen")-(b.status==="abgeschlossen"); }).slice(0,4).map(function(p){
+  var o=A().tasks.filter(function(t){ return t.projectId===p.id&&t.status!=="erledigt"; }).length; return {group:"Aufträge",label:p.name,sub:[p.customer,o?o+" offen":"",p.status!=="aktiv"?p.status:""].filter(Boolean).join(" · "),act:"tkprojopen:"+p.id}; }); });
+/* Heute: fällige Aufgaben – auch Kunden-Aufgaben; nur die automatische „Anfrage: …“-Aufgabe bleibt weg, solange der Lead noch in „Anfrage“ ist (steht dort schon als „Neue Anfrage“) */
+function anfrageHidden(x,L){ if(!x.leadId||!/^Anfrage: /.test(x.title||"")) return false; var l=L.find(function(y){ return y.id===x.leadId; }); return !l||(l.stage||"anfrage")==="anfrage"; }
+F.feed(function(){ var t=today(), L=leads(); return A().tasks.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t&&!x.print&&!anfrageHidden(x,L); }).map(function(x){ var p=proj(x.projectId), over=x.due<t, ld=x.leadId?L.find(function(y){ return y.id===x.leadId; }):null;
+  return {id:"tk:"+x.id,rank:over?2:3,sev:over?"bad":"ok",icon:"check",tag:[over?"bad":"ok",over?"Frist überschritten":"Heute fällig"],t:x.title,d:(p?p.name+" · ":ld?(ld.company||ld.name)+" · ":"")+(over?"fällig "+F.de(x.due):"heute fällig"),acts:[["Öffnen","tkopen:"+x.id]].concat(ld?[["Kundenakte","lead:"+ld.id]]:[])}; }); });
 
 F.css(
 '.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}.seg button{border:0;background:none;padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:6px}.seg button svg{width:15px;height:15px}.seg button[aria-pressed="true"]{background:var(--sunk);color:var(--ink)}'+
@@ -279,6 +329,9 @@ GL+'.tk-col{background:color-mix(in srgb,var(--ground) 45%,var(--panel))}'+GL+'.
 '.tk-g3:has(.tk-seg){grid-template-columns:1fr}.tk-seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}.tk-seg label{position:relative;cursor:pointer}.tk-seg input{position:absolute;opacity:0;pointer-events:none}.tk-seg span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:transparent;border-radius:99px;padding:6px 12px;font-size:13.5px;font-weight:500;color:var(--ink);white-space:nowrap}.tk-seg i{width:8px;height:8px;border-radius:50%}.tk-seg input:checked+span{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}.tk-seg .warn input:checked+span{background:var(--warn);border-color:var(--warn)}.tk-seg .bad input:checked+span{background:var(--bad);border-color:var(--bad);color:var(--on-glow)}.tk-seg input:focus-visible+span{outline:2px solid var(--glow);outline-offset:2px}@media (max-width:900px){.tk-seg span{padding:9px 14px;font-size:14.5px}}@media (max-width:900px){.tkm-sum{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--ink-3);margin:2px 0 10px}.tkm-sum .bad{color:var(--bad);font-weight:600}.tkm-sum .ok{color:var(--ok)}.view-auftraege .tk-bar2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.view-auftraege .tk-bar2 .tk-q{grid-column:1/-1;order:-1}.view-auftraege .tk-bar2 select.f{min-width:0;width:100%}.tkm-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:12px calc(-1*clamp(16px,4vw,44px)) 10px;padding:0 clamp(16px,4vw,44px)}.tkm-tabs::-webkit-scrollbar{display:none}.tkm-tabs button{flex:none;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:8px 14px;font:inherit;font-size:14px;font-weight:500}.tkm-tabs button b{font-weight:600;color:var(--ink-3)}.tkm-tabs button[aria-current]{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}.tkm-tabs button[aria-current] b{color:inherit}.tkm-tabs .dot{width:8px;height:8px;border-radius:50%}.tkm-cards{display:grid;gap:8px;padding-bottom:90px}.tk-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.tk-board{grid-template-columns:repeat(4,minmax(260px,82vw));scroll-snap-type:x mandatory}.tk-col{scroll-snap-align:start}.tk-g3{grid-template-columns:1fr}.tk-tab th:nth-child(4),.tk-tab td:nth-child(4),.tk-tab th:nth-child(6),.tk-tab td:nth-child(6){display:none}}'
 );
 
+/* Angebote & Rechnungen im Auftrag-Dialog, Aufgaben in der Kundenakte */
+F.css('.tk-docs{display:grid;gap:0}.tk-dr{display:flex;gap:6px;align-items:center;min-width:0}.tk-dr .tk-lr{flex:1;min-width:0}.tk-dr>.btn{flex:none;margin-top:6px}'+
+  '.tk-lr b{overflow-wrap:anywhere}.tk-lr b>.tag{display:inline-flex;margin-left:6px;font-size:11px;vertical-align:1px}.tk-lr small>.tk-due{display:inline-flex;font-size:inherit}.tk-lr small>.num{display:inline}.tk-dsum{font-size:12.5px;color:var(--ink-2);margin-top:8px;text-wrap:pretty}');
 F.view({id:"auftraege",label:"Aufträge",short:"Aufträge",icon:"board",order:22,mobile:false,
   count:function(){ var t=today(); return A().tasks.filter(function(x){ return x.status!=="erledigt"&&x.due&&x.due<=t; }).length; },
   render:vAuftraege});

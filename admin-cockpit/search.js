@@ -62,7 +62,10 @@ function baseActions(){
   var a=[
     {label:"Neue Mail schreiben",sub:"Postfach",icon:"post",act:"_compose",kw:"mail schreiben e-mail verfassen"},
     {label:"Neue Rechnung",sub:"Entwurf anlegen",icon:"euro",act:"_invoice",kw:"rechnung faktura"},
-    {label:"Offene Rechnungen",sub:"Geld",icon:"euro",act:has("openinvoices")?"openinvoices:":"go:geld",kw:"unbezahlt überfällig"},
+    has("newoffer")?{label:"Neues Angebot",sub:"Entwurf anlegen",icon:"offer",act:"newoffer:",kw:"angebot kostenvoranschlag offerte"}:null,
+    has("newlead")?{label:"Neuer Lead",sub:"Kunden & Leads",icon:"kunden",act:"newlead:",kw:"lead kunde anfrage interessent kundenakte"}:null,
+    has("paynew")?{label:"Überweisung anlegen",sub:"Zahlung an einen Lieferanten",icon:"pay",act:"paynew:",kw:"überweisung zahlung bezahlen iban zahlungsauftrag lieferant"}:null,
+    {label:"Offene Rechnungen",sub:"Geld",icon:"euro",act:has("openinvoices")?"openinvoices:":"go:geld",kw:"unbezahlt überfällig zahlungseingang"},
     {label:"Neuer Termin",sub:"Kalender",icon:"kal",act:has("newevent")?"newevent:":"go:kal",kw:"termin kalender event"},
     {label:"Neue Aufgabe",sub:"Aufträge – mit Frist und Checkliste",icon:"board",act:has("tknew")?"tknew:":"go:auftraege",kw:"aufgabe auftrag task frist deadline"},
     {label:"Neuer Auftrag",sub:"Aufträge – Projekt für einen Kunden",icon:"board",act:has("tkprojnew")?"tkprojnew:":"go:auftraege",kw:"auftrag projekt kunde"},

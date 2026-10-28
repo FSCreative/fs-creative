@@ -43,7 +43,14 @@ module.exports = function (D) {
     const status = parseInt(o.status, 10) || 0, date = sevDay(o.invoiceDate);
     let due = null; if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
     const gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount);
-    return { id, nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, statusLabel: INV_STATUS[status] || String(status),
+    // Storno: eigene Buchhaltung markiert das Original (cancelled), sevDesk nur über die Stornorechnung (SR mit origin = Original) – nur lesen
+    let cancelled = !!o.cancelled, stornoNr = o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : "";   // Storno per Gutschrift: Gutschrift-Nr.
+    if (String(o.invoiceType || "RE") !== "SR" && (cancelled || status === 1000)) {
+      const sj = await sev("GET", "/Invoice", { query: { "origin[id]": id, "origin[objectName]": "Invoice", invoiceType: "SR", limit: 50 } }).catch(() => null);
+      const sr = ((sj && sj.objects) || []).find(x => x && String(x.invoiceType) === "SR" && x.origin && String(x.origin.id) === id);
+      if (sr) { cancelled = true; stornoNr = sr.invoiceNumber || ""; }
+    }
+    return { id, nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, statusLabel: INV_STATUS[status] || String(status), cancelled, stornoNr,
       date, delivery: sevDay(o.deliveryDate), deliveryUntil: sevDay(o.deliveryDateUntil), reference: o.reference || "", due, timeToPay: parseInt(o.timeToPay, 10) || 0,
       header: o.header || "", headText: String(o.headText || ""), footText: String(o.footText || ""), address: String(o.address || ""),
       contact: { id: contactId, name: sevName(c) }, emails, positions,
@@ -120,7 +127,7 @@ module.exports = function (D) {
     // Schlussrechnungen steckte der Abzug nur in der Summe – beim Neuberechnen aus den Positionen ginge er sonst verloren)
     if (cur.type === "ER" && cur.origin && cur.origin.id) {
       const snap = await snapshot(false).catch(() => null), pos = body.invoicePosSave;
-      const parts = ((snap && snap.invoices) || []).filter(i => i.origin === cur.origin.id && (i.type === "AR" || i.type === "TR") && !i.cancelled && i.status >= 200 && String(i.id) !== String(id));
+      const parts = ((snap && (snap.invoicesAll || snap.invoices)) || []).filter(i => i.origin === cur.origin.id && (i.type === "AR" || i.type === "TR") && !i.cancelled && i.status >= 200 && String(i.id) !== String(id));
       for (const a of parts) {
         if (pos.some(p => /^abzüglich/i.test(String(p.name || "")) && a.nr && String(p.name).indexOf(a.nr) > -1)) continue;
         const d = await invoiceDetail(a.id), label = "abzüglich " + (a.type === "TR" ? "Teilrechnung " : "Abschlagsrechnung ") + (a.nr || "") + " vom " + String(a.date || "").split("-").reverse().join(".");
@@ -336,7 +343,8 @@ module.exports = function (D) {
     ad.forEach(a => { const c = a.contact && a.contact.id; if (c == null) return; (addrBy[String(c)] = addrBy[String(c)] || []).push(a); });
     cw.forEach(w => { const c = w.contact && w.contact.id; if (c == null) return; (comBy[String(c)] = comBy[String(c)] || []).push(w); });
     const snap = await snapshot(false).catch(() => null);
-    const invBy = {}; ((snap && snap.invoices) || []).forEach(i => { if (!i.contactId) return; const t = invBy[i.contactId] || (invBy[i.contactId] = { count: 0, revenue: 0, open: 0, last: "" }); if (i.status >= 200 && i.type !== "SR") { t.count++; t.revenue += i.gross; } t.open += i.open || 0; if ((i.date || "") > t.last) t.last = i.date; });
+    // Umsatz/Anzahl je Kunde aus allen Rechnungen (nicht nur den neuesten 600)
+    const invBy = {}; ((snap && (snap.invoicesAll || snap.invoices)) || []).forEach(i => { if (!i.contactId) return; const t = invBy[i.contactId] || (invBy[i.contactId] = { count: 0, revenue: 0, open: 0, last: "" }); if (i.status >= 200 && i.type !== "SR") { t.count++; t.revenue += i.gross; } t.open += i.open || 0; if ((i.date || "") > t.last) t.last = i.date; });
     const list = cs.map(c => {
       const id = String(c.id), a = (addrBy[id] || [])[0] || null, ws = comBy[id] || [];
       const pick = type => { const x = ws.filter(w => w.type === type).sort((p, q) => (String(q.main) === "1" ? 1 : 0) - (String(p.main) === "1" ? 1 : 0))[0]; return x ? { id: String(x.id), value: String(x.value || "") } : null; };
@@ -429,7 +437,7 @@ module.exports = function (D) {
   async function transactions(force) {
     if (!force && TX_CACHE.data && Date.now() - TX_CACHE.at < 2 * 60 * 1000) return TX_CACHE.data;
     const [txs, logs, snap] = await Promise.all([sevAll("/CheckAccountTransaction", {}, 50000), sevAll("/CheckAccountTransactionLog", {}, 50000).catch(() => []), snapshot(false).catch(() => null)]);
-    const invNr = {}; ((snap && snap.invoices) || []).forEach(i => { invNr[i.id] = i.nr || "Entwurf"; });
+    const invNr = {}; ((snap && (snap.invoicesAll || snap.invoices)) || []).forEach(i => { invNr[i.id] = i.nr || "Entwurf"; });
     const links = {};
     logs.forEach(l => { const t = l.checkAccountTransaction && l.checkAccountTransaction.id, o = l.object || {}; if (!t || !o.id) return; (links[String(t)] = links[String(t)] || []).push({ type: o.objectName, id: String(o.id), nr: o.objectName === "Invoice" ? (invNr[o.id] || "Rechnung") : "Beleg", amount: sevNum(l.amountPaid) }); });
     const list = txs.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), book: sevDay(t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || (D.cardName && D.cardName(t.paymtPurpose)) || "", nameAuto: !t.payeePayerName && !!(D.cardName && D.cardName(t.paymtPurpose)), purpose: String(t.paymtPurpose || "").replace(/\s+/g, " ").trim().slice(0, 300), status: parseInt(t.status, 10) || 0,

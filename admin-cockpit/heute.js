@@ -36,16 +36,39 @@ F.feed(function(){
   var D=F.D, out=[], today=D.today;
   F.newLeads().forEach(function(l){ out.push({id:"lead:"+l.id,rank:1,sev:"glow",icon:"lead",tag:["glow","Neue Anfrage"],t:(l.company?l.company+" · ":"")+l.name,d:(l.topic||"Anfrage")+(l.entwurf?" · möchte einen Gratis-Entwurf":"")+(l.source?" · über "+l.source:"")+" · "+F.ago(l.created),acts:[["Kundenakte","lead:"+l.id],["Antworten","replylead:"+l.id,"primary"]]}); });
   var sev=D.sev;
-  if(sev) sev.invoices.filter(function(i){return i.overdue&&i.open>0.005;}).forEach(function(i){ out.push({id:"inv:"+i.id,rank:2,sev:"bad",icon:"euro",tag:["bad","Überfällig"],t:(i.contact||"Kunde")+" · "+(i.nr||"Entwurf"),d:eur(i.open)+" offen · fällig seit "+de(i.due),acts:[["Details","sdinv:"+i.id],["Mahnen","sdremind:"+i.id],["Zahlung erfassen","book:"+i.id,"primary"]]}); });
+  /* Überfällige Rechnung: „Details“ öffnet die Rechnungsseite (fin:invd), Zahlungseingang über den bestehenden Dialog (gebucht wird erst dort) */
+  if(sev) sev.invoices.filter(function(i){return i.overdue&&i.open>0.005&&!i.cancelled&&i.type!=="SR";}).forEach(function(i){ out.push({id:"inv:"+i.id,rank:2,sev:"bad",icon:"euro",tag:["bad","Überfällig"],t:(i.contact||"Kunde")+" · "+(i.nr||"Entwurf"),d:eur(i.open)+" offen · fällig seit "+de(i.due),acts:[["Details",(F.actions.fin?"fin:invd:":"sdinv:")+i.id],["Mahnen","sdremind:"+i.id],["Zahlungseingang erfassen","book:"+i.id,"primary"]]}); });
   (D.sites||[]).forEach(function(s){
     if(/FAILED|CRASHED/.test(s.status||"")) out.push({id:"rw:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Deploy"],t:"Deploy fehlgeschlagen: "+s.name,d:"Railway · letzter Versuch "+(s.lastDeploy?F.ago(s.lastDeploy):""),acts:[["Websites","go:web"]]});
     else if(s.up===false&&(s.active||!s.own)) out.push({id:"down:"+s.key,rank:2,sev:"bad",icon:"alert",tag:["bad","Offline"],t:s.name+" ist nicht erreichbar",d:s.domain||"",acts:s.url?[["Öffnen","url:"+s.url]]:[]});
   });
   // Plattform-Abgleich („Zu verrechnen“) bewusst nicht mehr unter „Zu erledigen“ – kochdu & Co. rechnen automatisch ab
-  F.unreadMails().filter(function(m){ return !m.answered && (Date.now()-Date.parse(m.date||0))<14*864e5; }).slice(0,8).forEach(function(m){ out.push({id:"mail:"+m.id,rank:4,sev:"info",icon:"post",tag:["info","Mail"],t:(m.fromName||m.from||"")+": „"+(m.subject||"(kein Betreff)")+"“",d:F.ago(m.date)+" · ungelesen",acts:[["Lesen","mail:"+m.id,"primary"]]}); });
+  /* Mail eines bekannten Kunden (Postfach: F.M.custOf) bekommt zusätzlich „Kundenakte“ */
+  F.unreadMails().filter(function(m){ return !m.answered && (Date.now()-Date.parse(m.date||0))<14*864e5; }).slice(0,8).forEach(function(m){
+    var c=null; try{ c=F.M&&F.M.custOf?F.M.custOf(m):null; }catch(e){ c=null; }
+    var acts=[["Lesen","mail:"+m.id,"primary"]]; if(c&&c.lead) acts.push(["Kundenakte","lead:"+c.lead.id]);
+    out.push({id:"mail:"+m.id,rank:4,sev:"info",icon:"post",tag:["info","Mail"],t:(m.fromName||m.from||"")+": „"+(m.subject||"(kein Betreff)")+"“",d:F.ago(m.date)+" · ungelesen"+(c&&c.lead?" · Kunde: "+(c.lead.company||c.lead.name||""):""),acts:acts}); });
   /* Bankumsätze & Entwürfe: Feed kommt aus sevdesk.js (Dateiname historisch) */
   return out;
 });
+
+/* Hinweis „Auftrag abgeschlossen, aber keine Rechnung“ – nur ein Hinweis mit Knopf, nie automatisch eine Rechnung.
+   Gilt nur für Aufträge, die ihre Belege kennen (project.docs) oder ab heute angelegt wurden; ältere Aufträge bleiben wie bisher still.
+   Als verrechnet gilt: verknüpfte Rechnung (nicht storniert) oder eine Rechnung an den Buchhaltungs-Kontakt des Leads seit Auftragsbeginn. */
+var NOINV_FROM=Date.parse("2026-10-28T00:00:00");
+function projBilled(p){
+  var inv=(F.D.sev&&F.D.sev.invoices)||[], byId=function(id){ return inv.find(function(i){ return String(i.id)===String(id); }); };
+  if((Array.isArray(p.docs)?p.docs:[]).some(function(d){ if(!d||d.kind!=="invoice") return false; var i=byId(d.docId!=null?d.docId:d.id); return !i||(!i.cancelled&&i.type!=="SR"); })) return true;
+  var ld=p.leadId&&(F.D.leads||[]).find(function(l){ return l.id===p.leadId; }), cid=p.contactId||(ld&&ld.contactId), from=p.created?F.ymd(new Date(+p.created)):"";
+  return !!(cid&&inv.some(function(i){ return String(i.contactId)===String(cid)&&!i.cancelled&&i.type!=="SR"&&i.type!=="MA"&&(!from||String(i.date||"")>=from); }));
+}
+F.feed(function(){
+  var A=F.D.auftraege, ok=F.ls("fsc_noinv_ok")||{}; if(!A||!Array.isArray(A.projects)||!F.D.sev) return [];
+  return A.projects.filter(function(p){ return p&&p.status==="abgeschlossen"&&p.id!=="pdruckshop"&&!ok[p.id]&&(Array.isArray(p.docs)||(+p.created||0)>=NOINV_FROM)&&!projBilled(p); }).slice(0,5).map(function(p){
+    return {id:"noinv:"+p.id,rank:3,sev:"warn",icon:"euro",tag:["warn","Rechnung fehlt"],t:"Auftrag abgeschlossen: "+p.name,d:(p.customer?p.customer+" · ":"")+"noch keine Rechnung verknüpft",
+      acts:[["Rechnung erstellen","tkinvoice:"+p.id,"primary"],["Auftrag","tkprojopen:"+p.id],["Keine nötig","hnoinv:"+p.id]]}; });
+});
+F.action("hnoinv",function(id){ var ok=F.ls("fsc_noinv_ok")||{}; ok[id]=Date.now(); F.ls("fsc_noinv_ok",ok); F.toast("Ausgeblendet – für diesen Auftrag kommt kein Hinweis mehr"); F.render(); });
 
 /* „Meine Aufgaben“ (früher To-Dos): offene Aufgaben aus „Aufträge“, nächste Frist zuerst; Haken = erledigt (mit Rückgängig), + legt eine Aufgabe ohne Auftrag an */
 function openTasks(){ var T=(F.D.auftraege&&F.D.auftraege.tasks)||[]; return T.filter(function(x){ return x.status!=="erledigt"; }).sort(function(a,b){ var pa=a.prio==="dringend"?0:a.prio==="hoch"?1:2, pb=b.prio==="dringend"?0:b.prio==="hoch"?1:2; return String(a.due||"9999").localeCompare(String(b.due||"9999"))||pa-pb; }); }
@@ -134,7 +157,7 @@ function forCard(f){
 /* ---------- Termine: heute (jetzt hervorgehoben, nächster mit „in 25 Min.“), danach die nächsten Tage ---------- */
 function bzEvents(){ var D=F.D;
   return ((D.platforms&&D.platforms.blitzdings&&D.platforms.blitzdings.upcoming)||[]).map(function(b){ var d=String(b.eventDate||"").slice(0,10), e=String(b.eventEndDate||"").slice(0,10), pk=b.package&&typeof b.package==="object"?b.package.name:b.package;
-    return {id:"bz_"+b.id,bz:true,cust:b.customerName||"",title:"Fotobox: "+(b.customerName||"Buchung")+(pk?" · "+pk:""),date:d,end:/^\d{4}-\d{2}-\d{2}$/.test(e)&&e>d?e:"",
+    return {id:"bz_"+b.id,bid:b.id,bz:true,cust:b.customerName||"",title:"Fotobox: "+(b.customerName||"Buchung")+(pk?" · "+pk:""),date:d,end:/^\d{4}-\d{2}-\d{2}$/.test(e)&&e>d?e:"",
       time:String(b.eventDate||"").slice(11,16).replace(/^00:00$/,""),endTime:String(b.eventEndDate||"").slice(11,16).replace(/^00:00$/,""),location:b.location||"",cal:"Blitzdings"}; })
     .filter(function(b){ return /^\d{4}-\d{2}-\d{2}$/.test(b.date); }); }
 function agendaData(){
@@ -150,7 +173,7 @@ function tm(t){ var m=String(t||"").match(/^(\d{1,2}):(\d{2})/); return m?p2(m[1
 function evTimes(e){ var s0=tm(e.time); if(!s0) return null; var s=new Date(e.date+"T"+s0+":00").getTime(); if(isNaN(s)) return null;
   var e0=tm(e.endTime), en=e0?new Date(e.date+"T"+e0+":00").getTime():NaN; if(isNaN(en)||en<=s) en=s+3600e3; return [s,en]; }
 function evRow(e,isToday){ var t=isToday?evTimes(e):null, meta=[e.location||"",e.cal||""].filter(Boolean).join(" · "), tt=tm(e.time);
-  var act=e.bz?' data-act="pltab:blitz"':(e.id?' data-act="event:'+esc(e.id)+'"':' data-go="kal"');
+  var act=e.bz?' data-act="'+(e.bid!=null&&F.actions.bzopen?"bzopen:"+esc(e.bid):e.bid!=null?"pltab:blitz~"+esc(e.bid):"pltab:blitz")+'"':(e.id?' data-act="event:'+esc(e.id)+'"':' data-go="kal"');
   return '<button type="button" class="ag-ev"'+act+(t?' data-s="'+t[0]+'" data-e="'+t[1]+'"':'')+' title="'+esc(e.title+(tt?" · "+tt+(tm(e.endTime)?"–"+tm(e.endTime):""):" · ganztags")+(meta?" · "+meta:""))+'">'+
     '<span class="ag-ev-t'+(tt?"":" ad")+'">'+esc(tt||"ganztags")+'</span><span class="ag-ev-b"><b>'+esc(e.title||"Termin")+'</b><small><span class="ag-rel"></span><span class="ag-m">'+esc(meta)+'</span></small></span></button>'; }
 function agendaCard(){ var A=agendaData(), today=F.D.today, out="", last="";

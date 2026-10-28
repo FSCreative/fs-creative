@@ -770,6 +770,55 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/\/print<\/loc>/.test(await (await fetch(B + "/sitemap.xml")).text()));
     const home = await (await fetch(B + "/")).text(); assert.ok(/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));
   });
+  await t("Cockpit-Liste: E-Mail und Rechnung (id, Nummer, gesendet) je Druckauftrag – für Rechnungs-Link und Kundenakte", async () => {
+    const s = await admin("/admin/api/print/state"); const x = s.orders.find(o => o.id === o1.orderId);
+    assert.strictEqual(x.email, "maria@example.com"); assert.ok(x.invoice && x.invoice.id, JSON.stringify(x.invoice)); assert.ok(x.invoice.sentAt, "gesendet"); assert.strictEqual(x.invoice.draft, false);
+  });
+  // ── 3) Druckshop-Modul direkt (ohne server.js): Doppelversand, Rechnungs-Index, Aufgaben-Info, Ablehnen mit versendeter Rechnung ──
+  await t("Rechnung vor dem Bestellen schon versendet (Status 200): bei Print.com bestellt, aber KEINE zweite Rechnungsmail, sentAt gesetzt", async () => {
+    const ddir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-unit-")), env0 = {};
+    ["PRINTCOM_API_KEY", "PRINTCOM_BASE", "PRINT_ANCHORS_FILE", "DATABASE_URL"].forEach(k => { env0[k] = process.env[k]; });
+    Object.assign(process.env, { PRINTCOM_API_KEY: "pc-test-key", PRINTCOM_BASE: mbase + "/pc", PRINT_ANCHORS_FILE: "off" }); delete process.env.DATABASE_URL;
+    try {
+      const sent = [], tasks = [], deleted = []; let status = "200";
+      const PS = require(path.join(dir, "print-shop.js"))({ DATA_DIR: ddir, invoiceStatus: async () => { if (status === null) throw new Error("Buchhaltung antwortet nicht"); return status; }, invoiceNr: async id => "RE-" + id,
+        sendInvoice: async (...a) => { sent.push(a); }, deleteInvoice: async id => { if (status !== "100") throw new Error("kein Entwurf"); deleted.push(id); }, onOrder: o => tasks.push(o) });
+      const od = path.join(ddir, "print-shop", "orders"), fd = path.join(ddir, "print-shop", "files"); fs.mkdirSync(od, { recursive: true }); fs.mkdirSync(fd, { recursive: true });
+      fs.writeFileSync(path.join(fd, "FUNIT01.json"), JSON.stringify({ id: "FUNIT01", name: "unit.pdf", kind: "upload", pages: 2 }));
+      const mk = (id, inv, extra) => { const o = Object.assign({ id, nr: "D-UNIT-" + id.slice(-2), createdAt: new Date().toISOString(), status: "paid", product: { key: "visitenkarten", title: "Visitenkarten", sku: "businesscards" }, copies: 250, pcOptions: { copies: 250 }, labels: [], fileId: "FUNIT01",
+        customer: { type: "private", firstName: "Maria", lastName: "Muster", email: "maria@example.com", phone: "+43 664 1", street: "Silvrettastraße 12", zip: "6793", city: "Gaschurn", country: "AT" }, price: { net: 32, vat: 6.4, gross: 38.4, rate: 20 },
+        payment: { method: "mollie", status: "paid", mollieId: "tr_unit" + id.slice(-2) }, invoice: Object.assign({ nr: "", draft: true }, inv), printcom: {}, mails: {}, history: [] }, extra || {}); fs.writeFileSync(path.join(od, id + ".json"), JSON.stringify(o)); return o; };
+      const n0 = M.orders.length;
+      mk("PUNIT01", { id: "8801" });
+      const o = await PS.placeOrder("PUNIT01", "Test");
+      assert.strictEqual(o.status, "ordered"); assert.strictEqual(M.orders.length, n0 + 1, "bei Print.com bestellt");
+      assert.strictEqual(sent.length, 0, "keine zweite Rechnungsmail");
+      assert.ok(o.invoice.sentAt, "sentAt gesetzt"); assert.strictEqual(o.invoice.draft, false); assert.strictEqual(o.invoice.nr, "RE-8801");
+      assert.ok(o.history.some(h => /war bereits versendet – nicht erneut gesendet/.test(h.what)), JSON.stringify(o.history));
+      // Gegenprobe: Entwurf (100) bzw. Status unbekannt (Buchhaltung antwortet nicht) → wie bisher fertigstellen und senden
+      status = "100"; mk("PUNIT02", { id: "8802" });
+      const o2 = await PS.placeOrder("PUNIT02", "Test"); assert.strictEqual(sent.length, 1); assert.strictEqual(sent[0][0], "8802"); assert.strictEqual(sent[0][1], "maria@example.com"); assert.ok(o2.invoice.sentAt);
+      status = null; mk("PUNIT03", { id: "8803" });
+      await PS.placeOrder("PUNIT03", "Test"); assert.strictEqual(sent.length, 2, "Status unbekannt → senden wie bisher"); assert.strictEqual(sent[1][0], "8803");
+      // Rechnungs-Index für die Buchhaltung (Kennzeichen „wartet auf Druckauftrag“)
+      status = "100"; mk("PUNIT04", { id: "8804" }, { status: "invoice_requested", payment: { method: "invoice", status: "invoice" } });
+      const idx = await PS.invoiceIndex();
+      assert.deepStrictEqual(Object.keys(idx).sort(), ["8801", "8802", "8803", "8804"]);
+      assert.deepStrictEqual(Object.assign({}, idx["8801"], { sentAt: !!idx["8801"].sentAt }), { orderId: "PUNIT01", nr: "D-UNIT-01", status: "ordered", email: "maria@example.com", sentAt: true, draft: false });
+      assert.strictEqual(idx["8804"].draft, true); assert.strictEqual(idx["8804"].sentAt, "");
+      assert.strictEqual(await PS.invoiceIndex(), idx, "60 s zwischengespeichert");
+      // Druck-Aufgabe (Aufträge) kennt Rechnung und E-Mail
+      const ti = tasks.filter(x => x.id === "PUNIT01").pop(); assert.strictEqual(ti.invoiceId, "8801"); assert.strictEqual(ti.invoiceNr, "RE-8801"); assert.strictEqual(ti.email, "maria@example.com");
+      // Ablehnen: Entwurf → gelöscht; schon versendet → nicht gelöscht, Hinweis „bitte stornieren“ (nie automatisch stornieren)
+      const r1 = await PS._test.rejectOrder("PUNIT04", "Test", false); assert.deepStrictEqual(deleted, ["8804"]); assert.ok(r1.invoice.deleted); assert.ok(!r1.invoice.needsStorno);
+      status = "200"; mk("PUNIT05", { id: "8805" }, { status: "invoice_requested", payment: { method: "invoice", status: "invoice" } });
+      const r2 = await PS._test.rejectOrder("PUNIT05", "Test", false);
+      assert.strictEqual(r2.status, "rejected"); assert.strictEqual(r2.invoice.needsStorno, true); assert.ok(!r2.invoice.deleted); assert.deepStrictEqual(deleted, ["8804"]);
+      assert.ok(r2.history.some(h => /bitte unter Finanzen stornieren/.test(h.what)));
+      assert.strictEqual(PS._test.orderSummary(r2).invoice.needsStorno, true);
+      const idx2 = await PS.invoiceIndex(); assert.ok(!idx2["8804"], "gelöschter Entwurf nicht mehr im Index"); assert.strictEqual(idx2["8805"].draft, false);
+    } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
+  });
   srv.kill(); sevMock.server.close(); mocks.server.close();
   if (fail) { console.log(fails.join("\n")); console.log("--- Server-Log ---\n" + srv.out.slice(-3000)); }
   console.log((fail ? "FEHLER: " : "OK: ") + pass + " bestanden, " + fail + " fehlgeschlagen");

@@ -42,10 +42,10 @@ F.payPage=function(){
         (o.status==="bereit"?'<button type="button" class="btn sm" data-act="payqr:'+esc(o.id)+'" title="QR-Code für die George-App">QR</button>':'')+
         (o.status==="bank"?'<small class="muted">in George bestätigen</small>':'')+'</span></div>'; }).join("");
   return head("Zahlungsaufträge",open.length?open.length+" offen · "+eur(sum):"Überweisungen erfassen und in George freigeben",
-      (sel.length?'<button class="btn" data-act="paysepa">'+F.svg("download")+'SEPA-Datei ('+sel.length+')</button>':'')+'<button class="btn primary" data-act="paynew">'+F.svg("plus")+'Zahlung erfassen</button>')+
+      (sel.length?'<button class="btn" data-act="paysepa">'+F.svg("download")+'SEPA-Datei ('+sel.length+')</button>':'')+'<button class="btn primary" data-act="paynew">'+F.svg("plus")+'Überweisung anlegen</button>')+
     info+chips+
     (L.length?'<div class="fsd-card flush pay-l">'+rows+'</div>'
-      :'<div class="sd-empty">'+(UI.payF==="offen"?"Keine offenen Zahlungen. Im Postfach bei einer Rechnung auf „Zahlung erfassen“ (Kartensymbol) klicken – die KI füllt alles aus.":"Keine Einträge.")+'</div>');
+      :'<div class="sd-empty">'+(UI.payF==="offen"?"Keine offenen Überweisungen. Im Postfach bei einer Rechnung auf „Überweisung anlegen“ (Kartensymbol) klicken – die KI füllt alles aus.":"Keine Einträge.")+'</div>');
 };
 
 /* ---------- Erfassen / Bearbeiten ---------- */
@@ -72,7 +72,7 @@ function form(o,x){ o=o||{}; x=x||{};
   var warn=(x.alreadyPaid?'<div class="notice" style="background:var(--warn-soft)"><span><b>Laut Rechnung schon bezahlt bzw. per Lastschrift/Karte</b> – bitte prüfen, ob du überhaupt überweisen musst.</span></div>':'')+
     (x.isPayable===false?'<div class="notice"><span>Das sieht nicht nach einer Zahlungsaufforderung aus.</span></div>':'')+(x.notes?'<p class="muted small" style="margin:0">KI-Hinweis: '+esc(x.notes)+'</p>':'');
   var editable=!o.status||OPENST[o.status];
-  F.modal('<form data-form="paysave" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(o.id?"Zahlung":"Neue Zahlung")+'</h2>'+F.btnClose()+'</div>'+warn+
+  F.modal('<form data-form="paysave" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(o.id?"Überweisung":"Neue Überweisung")+'</h2>'+F.btnClose()+'</div>'+warn+
     (o.source&&o.source.kind==="mail"?'<p class="muted small pay-src">'+F.svg("post")+'<span>Aus Mail: '+esc(o.source.subject||"")+(o.source.filename?" · "+esc(o.source.filename):"")+'</span></p>':'')+
     '<div class="grid2"><label class="fl">Empfänger<input class="f" name="name" required maxlength="70" value="'+esc(o.name||"")+'"'+(editable?"":" disabled")+'></label>'+
     '<label class="fl">Betrag (€)<input class="f num" name="amount" required inputmode="decimal" value="'+esc(o.amount?String(o.amount).replace(".",","):"")+'"'+(editable?"":" disabled")+'></label></div>'+
@@ -113,7 +113,7 @@ F.form("paysave",function(f){ var err=document.getElementById("payErr"), btn=f.q
     try{ localStorage.setItem("fsc_sev_cat",vb.accountingTypeId); }catch(e){} }
   btn.disabled=true; err.textContent=mk?"Speichere Zahlung und Beleg …":"";
   api({op:"save",order:o}).then(function(j){ if(!j||!j.ok){ btn.disabled=false; err.textContent=(j&&j.error)||"Fehler"; return; }
-    var ord=j.order, msg=ord.status==="bereit"?"Zahlung bereit":"Zahlung gespeichert – "+((ord.problems||[])[0]||"noch unvollständig");
+    var ord=j.order, msg=ord.status==="bereit"?"Überweisung bereit":"Überweisung gespeichert – "+((ord.problems||[])[0]||"noch unvollständig");
     var done=function(extra,bad){ F.closeModal(); F.toast(msg+(extra||""),bad||ord.status!=="bereit"); ATT=null; BEL=null; PAY=null; load(); };
     if(!vb){ done(); return; }
     F.api("/admin/api/sevdesk/voucher",{body:vb}).then(function(v){
@@ -160,7 +160,7 @@ F.action("paybank",function(id){ var o=((PAY&&PAY.orders)||[]).find(function(x){
 F.payFromMail=function(m,a){ if(!m) return;
   var M=F.M||{}, acc=M.accOf?M.accOf(m):(m.account||"");
   var src={kind:"mail",mailId:m.id,account:acc,folder:m.folder||"INBOX",uid:m.uid||0,index:a?(a.index||0):null,filename:a?(a.filename||""):"",subject:m.subject||"",from:m.from||""};
-  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">Zahlung erfassen</h2>'+F.btnClose()+'</div><p class="muted" style="margin:0">'+F.svg("spark")+' Die KI liest '+(a?"„"+esc(a.filename||"den Anhang")+"“":"die Mail")+' aus …</p></div>',"narrow");
+  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:20px">Überweisung anlegen</h2>'+F.btnClose()+'</div><p class="muted" style="margin:0">'+F.svg("spark")+' Die KI liest '+(a?"„"+esc(a.filename||"den Anhang")+"“":"die Mail")+' aus …</p></div>',"narrow");
   var text=a?"":(m.bodyHtml?String(m.body||"").replace(/<[^>]+>/g," "):String(m.body||m.preview||""));
   ATT=a?{m:m,a:a}:null; BEL=null;
   var pP=api({op:"extract",mail:{account:acc,folder:m.folder||"INBOX",uid:a?m.uid:null,index:a?(a.index||0):null,filename:a?a.filename:"",subject:m.subject,from:m.from,fromName:m.fromName,date:m.date},text:text}).catch(function(){ return null; });
@@ -177,7 +177,7 @@ F.action("mpay",function(v){ var i=v.indexOf("|"), M=F.M||{}, m=M.find&&M.find(v
 
 F.feed(function(){ var o=((PAY&&PAY.orders)||[]), t=today(), due=o.filter(function(x){ return x.status==="bereit"&&x.date&&x.date<=F.addDays(t,2); });
   if(!PAY&&F.current==="heute"&&!busy&&Date.now()-at>300000) load();
-  return due.length?[{id:"pay-due-"+due.length,rank:2,sev:due.some(function(x){ return x.date<t; })?"bad":"warn",icon:"euro",tag:["warn","Zahlung"],t:due.length===1?"Zahlung fällig: "+due[0].name+" · "+eur(due[0].amount):due.length+" Zahlungen fällig · "+eur(due.reduce(function(s,x){ return s+x.amount; },0)),d:"bis "+F.de(due.map(function(x){ return x.date; }).sort()[0])+" – in George freigeben",acts:[["Ansehen","fin:pay","primary"]]}]:[]; });
+  return due.length?[{id:"pay-due-"+due.length,rank:2,sev:due.some(function(x){ return x.date<t; })?"bad":"warn",icon:"euro",tag:["warn","Überweisung"],t:due.length===1?"Überweisung fällig: "+due[0].name+" · "+eur(due[0].amount):due.length+" Überweisungen fällig · "+eur(due.reduce(function(s,x){ return s+x.amount; },0)),d:"bis "+F.de(due.map(function(x){ return x.date; }).sort()[0])+" – in George freigeben",acts:[["Ansehen","fin:pay","primary"]]}]:[]; });
 
 F.css('form[data-form="paysave"] .grid2{align-items:end}.pay-bel{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}.pay-bel.off .pay-belf{opacity:.45;pointer-events:none}.pay-belf{display:grid;gap:10px}.pay-info{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--warn-soft);color:var(--ink);font-size:13.5px;line-height:1.45}.pay-info.ok{background:var(--ok-soft)}.pay-info svg{width:18px;height:18px;flex:none;margin-top:1px}'+
   '.pay-l{display:grid}'+

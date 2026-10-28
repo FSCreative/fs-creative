@@ -78,6 +78,28 @@ module.exports = function (D) {
     const i = hit[0]; if (Math.abs(openOf(i) - gross) > 0.011) return null;   // nur volle Zahlung wird vorgeschlagen
     return i;
   }
+  // Rechnungen, in deren Text die Mollie-ID dieser Zahlung steht (nicht storniert, RE/AR/ER/TR, Status aus „states“).
+  // Ganzes Wort (tr_… ist kein Teil einer längeren ID); IDs unter 8 Zeichen zählen nicht.
+  // idx (optional, pidIndex): Mollie-IDs aller Rechnungstexte, einmal je Lauf gebaut – viele offene Zahlungen durchsuchen nicht jedes Mal alle Rechnungen.
+  const pidTxt = i => low([i.invoiceNumber, i.header, i.headText, i.footText, i.customerInternalNote, i.address].join(" "));
+  const pidInv = i => !i.cancelled && ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) > -1;
+  function pidIndex() {
+    const idx = {};
+    for (const i of L.all("Invoice")) { if (!pidInv(i)) continue; const t = pidTxt(i); if (t.indexOf("tr_") < 0) continue;
+      const rx = /(?:^|[^a-z0-9_])(tr_[a-z0-9_]+)/g; let m; while ((m = rx.exec(t))) { const a = idx[m[1]] = idx[m[1]] || []; if (a.indexOf(i) < 0) a.push(i); } }
+    return idx;
+  }
+  function pidInvoices(tx, states, idx) {
+    const pid = low(tx && tx.molliePayment); if (pid.length < 8) return [];
+    if (idx && /^tr_[a-z0-9_]+$/.test(pid)) return (idx[pid] || []).filter(i => states.indexOf(String(i.status)) > -1 && pidInv(i));
+    const rx = new RegExp("(^|[^a-z0-9_])" + pid.replace(/[^a-z0-9_]/g, "\\$&") + "(?![a-z0-9_])");
+    return L.all("Invoice").filter(i => states.indexOf(String(i.status)) > -1 && pidInv(i) && rx.test(pidTxt(i)));
+  }
+  // Druckshop: Rechnung ist noch ENTWURF (wird erst beim Bestellen bei Print.com fertiggestellt) → Zahlung gehört zu ihr, kein Einnahme-Beleg
+  const draftHit = (tx, idx) => pidInvoices(tx, ["100"], idx).length > 0;
+  // Einnahme-Beleg wäre doppelter Umsatz (bei Istbesteuerung auch doppelte USt): Mollie-ID steht schon in einer Rechnung
+  // (Entwurf, offen oder bezahlt – z. B. Warenkorb: eine Zahlung, mehrere Druckrechnungen → von Hand zuordnen)
+  const invoiceHit = (tx, idx) => pidInvoices(tx, ["100", "200", "750", "1000"], idx).length > 0;
   // gefundene Rechnung als Vorschlag ablegen (früher: sofort gebucht)
   async function autoMatch(tx) {
     const i = matchOf(tx), prop = P(); if (!i || !prop) return false;
@@ -154,7 +176,7 @@ module.exports = function (D) {
     return n;
   }
   async function autoVouchers() {
-    let n = 0; const now = Date.now(), prop = P(); if (!prop) return 0;
+    let n = 0, pidIdx = null; const now = Date.now(), prop = P(); if (!prop) return 0;
     try { n += await onlineProvisions(prop); } catch (e) { console.error("Online-Provisionen:", e.message); }
     // Gebührengutschriften aus der Mollie-Monatsrechnung: feste Regel, wird gleich gebucht (Zur Prüfung → Verlauf)
     for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "invoice-compensation" && String(x.status) === "100" && +x.amount > 0)) {
@@ -164,6 +186,9 @@ module.exports = function (D) {
       const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id); if (!acc || acc.mollieAutoVoucher === false) continue;
       if (tx.mollieType === "payment" && now - Date.parse(day(tx.valueDate) + "T12:00:00Z") < 3 * 864e5) continue;   // Rechnung kann noch kommen
       if (tx.mollieType === "payment" && matchOf(tx)) continue;   // passende Rechnung → dafür gibt es den Zuordnungs-Vorschlag
+      if (tx.mollieType === "payment" && !pidIdx) pidIdx = pidIndex();
+      if (tx.mollieType === "payment" && draftHit(tx, pidIdx)) continue;   // Druckshop-Entwurf → Zuordnung folgt nach dem Fertigstellen (rematch), nie Einnahme-Beleg
+      if (tx.mollieType === "payment" && invoiceHit(tx, pidIdx)) continue;   // Rechnung mit dieser Mollie-ID gibt es schon → kein zweiter Umsatz
       // Connect-Provision: der Beleg ist die monatliche Sammelrechnung „kochdu Provisionen MM/JJJJ“ (aus fs-order) → als Teilzahlung dieser Rechnung vorschlagen, nie eigener Einnahme-Beleg (sonst doppelt)
       if (tx.mollieType === "application-fee") {
         const d = day(tx.valueDate), mm = d.slice(5, 7) + "/" + d.slice(0, 4);
@@ -194,6 +219,8 @@ module.exports = function (D) {
   }
   async function incomeVoucher(pl) {
     const tx = L.get("CheckAccountTransaction", pl.txId); if (!tx || String(tx.status) !== "100") throw new Error("Die Mollie-Zahlung ist nicht mehr offen");
+    // ältere offene Vorschläge (vor der Prüfung in autoVouchers) bzw. „Alle annehmen“: nie zusätzlich zur Rechnung buchen – nichts wird angelegt
+    if (tx.mollieType === "payment" && invoiceHit(tx)) throw new Error(draftHit(tx) ? "Zu dieser Zahlung gibt es schon einen Rechnungsentwurf (Druckshop, wird beim Bestellen fertiggestellt) – ein Einnahme-Beleg wäre doppelter Umsatz. Bitte diesen Vorschlag ablehnen; die Zahlung wird der Rechnung zugeordnet, sobald sie fertiggestellt ist." : "Zu dieser Zahlung gibt es schon eine Rechnung mit derselben Mollie-ID – ein Einnahme-Beleg wäre doppelter Umsatz. Bitte diesen Vorschlag ablehnen und die Zahlung der Rechnung zuordnen.");
     const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id) || { name: "Mollie" }, cat = incomeCategory();
     {
       const gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
@@ -379,5 +406,5 @@ module.exports = function (D) {
       catch (e) { out.push({ key: tk.key, ok: false, status: e.status || 0, error: e.name === "AbortError" ? "keine Antwort (Zeitüberschreitung)" : e.message }); } }
     return out;
   }
-  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept, onlineCheck, onlineNotices };
+  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, draftHit, invoiceHit, summary, autoVouchers, accept, onlineCheck, onlineNotices };
 };
