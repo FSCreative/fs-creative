@@ -95,7 +95,7 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
     assert.strictEqual(o.header, "Angebot Website"); assert.strictEqual(o.headText, "Danke für die Anfrage."); assert.ok(o.address.indexOf("Dorfstraße 1") > -1);
     assert.ok(o.footText.indexOf("gültig bis " + iso(14).split("-").reverse().join(".")) > -1, o.footText);
     assert.strictEqual(b.orderPosSave.length, 2);
-    assert.deepStrictEqual(b.orderPosSave[0], { objectName: "OrderPos", mapAll: true, positionNumber: 0, quantity: 1, price: 2000, name: "Website", text: "5 Seiten", unity: { id: 1, objectName: "Unity" }, taxRate: 20 });
+    assert.deepStrictEqual(b.orderPosSave[0], { objectName: "OrderPos", mapAll: true, positionNumber: 0, quantity: 1, price: 2000, priceGross: 2400, grossPricing: true, name: "Website", text: "5 Seiten", unity: { id: 1, objectName: "Unity" }, taxRate: 20 });   // Bruttopreis maßgeblich (X3)
     assert.strictEqual(b.orderPosSave[1].price, 10); assert.strictEqual(b.orderPosSave[1].quantity, 12);
     assert.ok(!mock.state.createdContacts.length, "kein neuer Kontakt");
   });

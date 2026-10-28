@@ -234,6 +234,13 @@ function unitTests(T) {
     assert.ok(d0 && d0.sev, "sev im Cockpit"); assert.strictEqual(d0.sev.openCount, 1); assert.strictEqual(d0.sev.openSum, 500); assert.strictEqual(d0.sev.drafts, 1); assert.strictEqual(d0.sev.printDrafts, 0);
     assert.strictEqual(d0.sev.reminderDrafts.length, 1); assert.strictEqual(d0.sev.invoices.length, 602);
   });
+  await t("VALUERO: neues Haus ohne Abrechnungsbeginn → kein Verrechnen, Ein-Klick „Abrechnungsbeginn festlegen“ (VA-7)", async () => {
+    const it = vItem(d0); assert.ok(it, "VALUERO-Posten da"); assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(/Abrechnungsbeginn/.test(it.blocked || ""), it.blocked);
+    assert.strictEqual(it.proposal && it.proposal.op, "vastart");
+    const r = await api("/admin/api/billing", { op: "vastart", key: "haus-test", start: vMonth + "-01" }); assert.strictEqual(r.j.ok, true, JSON.stringify(r.j));
+    assert.strictEqual((await api("/admin/api/billing", { op: "vastart", key: "haus-test", start: "2026-13" })).j.ok, false, "nur JJJJ-MM-01");
+    d0 = (await api("/admin/api/cockpit?force=1&year=" + year)).j;
+  });
   let created;
   await t("VALUERO: Quartal offen → Rechnung (contactId in der Antwort) → verrechnet, invoicedYear", async () => {
     const it = vItem(d0); assert.ok(it, "VALUERO-Posten da"); assert.strictEqual(it.unbilled, 75); assert.ok(it.action);

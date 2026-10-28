@@ -147,9 +147,13 @@ module.exports = function (D) {
   const onlineRe = m => new RegExp("kochdu Online-Provisionen " + m.slice(5, 7) + "\\/" + m.slice(0, 4), "i");
   const isOnlineInv = (i, m) => onlineRe(m).test(String(i.header || "")) && !i.cancelled && String(i.invoiceType || "RE") !== "SR";
   function onlineInvoice(m) { return L.all("Invoice").find(i => isOnlineInv(i, m) && ["200", "750", "1000"].indexOf(String(i.status)) > -1) || null; }
+  // KO-6: nur fertigstellen, wenn es für den Monat noch keine fertige Sammelrechnung gibt; bei mehreren Entwürfen nur den von fs-order
+  // (platformRef „kochdu:<JJJJ-MM>:online“), sonst keinen – weitere Entwürfe meldet onlineNotices („prüfen und löschen“)
+  const onlineDrafts = m => L.all("Invoice").filter(i => isOnlineInv(i, m) && String(i.status) === "100");
   async function finalizeOnlineInvoice(m) {
     if (todayIso() <= monthEnd(m)) return null;   // Monat noch offen
-    const dr = L.all("Invoice").find(i => isOnlineInv(i, m) && String(i.status) === "100");
+    const done = onlineInvoice(m); if (done) return done;
+    const drs = onlineDrafts(m), dr = drs.length === 1 ? drs[0] : drs.find(i => String(i.platformRef || "") === "kochdu:" + m + ":online") || null;
     if (dr) { try { await L.request("PUT", "/Invoice/" + dr.id + "/sendBy", { body: { sendType: "VPDF" } }); console.log("Online-Provisionsrechnung fertiggestellt:", mmOf(m)); } catch (e) { console.error("Online-Provisionsrechnung " + mmOf(m) + ":", e.message); } }
     return onlineInvoice(m);
   }
@@ -162,10 +166,22 @@ module.exports = function (D) {
     catch (e) { console.error("kochdu Connect-Zahlungen:", e.message); }
   }
   const feeMonth = tx => { const m = String(tx.paymtPurpose || tx.mollieDesc || "").match(/\btr_[A-Za-z0-9]+/); return (m && CONNECT.map[m[0]]) || day(tx.valueDate).slice(0, 7); };
+  // Connect-Provisionen kommen von kochdu UND VALUERO (beide behalten ihre Provision per Mollie Connect auf diesem Konto ein, Audit 28.10.2026).
+  // VALUERO: Beschreibung „VALUERO Provision <Buchungscode>“ (valuero-partner). kochdu: Zahlungsnummer in der kochdu-Liste (Bestellungen der letzten
+  // 200 Tage) bzw. „kochdu“ im Text. Kennt die geladene kochdu-Liste die Zahlung nicht (und lag die Provision schon vor dem Laden der Liste vor),
+  // ist sie nicht von kochdu → VALUERO. Ohne kochdu-Liste: abwarten – nie mehr nach Buchungsdatum auf die kochdu-Sammelrechnung.
+  const addDays = (d, n) => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  function feePlatform(tx) {
+    const t = low([tx.mollieDesc, tx.paymtPurpose, tx.payeePayerName].join(" ")), pid = (String(tx.paymtPurpose || tx.mollieDesc || "").match(/\btr_[A-Za-z0-9]+/) || [])[0];
+    if (/(^|[^a-z0-9_])valuero/.test(t)) return "valuero";
+    if ((pid && CONNECT.map[pid]) || /(^|[^a-z0-9_])kochdu/.test(t)) return "kochdu";
+    if (CONNECT.at && Date.parse(day(tx.valueDate) + "T23:59:59Z") < CONNECT.at - 864e5 && day(tx.valueDate) >= addDays(todayIso(), -150)) return "valuero";
+    return "";
+  }
   // abgeschlossene Monate ab ONLINE_FROM: Mollie-Provisionen (Summe inkl. negativer Korrekturen) gegen die Sammelrechnung
   function onlineCheck() {
     const today = todayIso(), by = {};
-    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee")) {
+    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && feePlatform(x) === "kochdu")) {
       const m = feeMonth(tx); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
       const x = by[m] = by[m] || { month: m, mm: mmOf(m), fees: 0, count: 0, open: 0 }; x.fees = r2(x.fees + (+tx.amount || 0)); x.count++; if (String(tx.status) === "100") x.open++;
     }
@@ -173,12 +189,23 @@ module.exports = function (D) {
       return Object.assign(x, { invoiceId: i ? String(i.id) : null, invoiceNumber: i ? i.invoiceNumber || "" : null, gross: i ? r2(+i.sumGross || 0) : null, diff: i ? r2(x.fees - (+i.sumGross || 0)) : null }); });
   }
   function onlineNotices() {
-    return onlineCheck().map(x => x.invoiceId == null ? "Online-Provisionen " + x.mm + ": " + eu(x.fees) + " von Mollie, aber noch keine Sammelrechnung „kochdu Online-Provisionen " + x.mm + "“ (fs-order Monatsabrechnung) – Zuordnung folgt, sobald sie da ist."
-      : Math.abs(x.diff) >= 0.01 ? "Differenz Online-Provisionen " + x.mm + ": " + eu(x.diff) + " (Mollie " + eu(x.fees) + " · Rechnung " + (x.invoiceNumber || "") + " " + eu(x.gross) + ") – z. B. Rückerstattungen oder Bestellungen um Mitternacht; die Provisionen sind trotzdem der Rechnung zugeordnet." : null).filter(Boolean);
+    // Connect-Provisionen ohne Plattform (kochdu-Liste noch nicht geladen) – werden erst zugeordnet, wenn klar ist, ob kochdu oder VALUERO
+    const unk = L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0 && day(x.valueDate) < addDays(todayIso(), -2) && !feePlatform(x)), us = r2(unk.reduce((a, x) => a + (+x.amount || 0), 0));
+    return (unk.length ? [unk.length + " Connect-Provision" + (unk.length === 1 ? "" : "en") + " (" + eu(us) + ") noch keiner Plattform zugeordnet (kochdu oder VALUERO) – " + (CONNECT.at ? "Zuordnung folgt beim nächsten Abruf." : "kochdu-Liste nicht geladen, Zuordnung folgt, sobald kochdu erreichbar ist.")] : []).concat(onlineCheck().map(x => x.invoiceId == null ? "Online-Provisionen " + x.mm + ": " + eu(x.fees) + " von Mollie, aber noch keine Sammelrechnung „kochdu Online-Provisionen " + x.mm + "“ (fs-order Monatsabrechnung) – Zuordnung folgt, sobald sie da ist."
+      : Math.abs(x.diff) >= 0.01 ? "Differenz Online-Provisionen " + x.mm + ": " + eu(x.diff) + " (Mollie " + eu(x.fees) + " · Rechnung " + (x.invoiceNumber || "") + " " + eu(x.gross) + ") – z. B. Rückerstattungen oder Bestellungen um Mitternacht; die Provisionen sind trotzdem der Rechnung zugeordnet." : null).filter(Boolean))
+      .concat(dupDraftNotices());
+  }
+  // weitere Entwürfe „kochdu Online-Provisionen MM/JJJJ“ (z. B. nach verlorener Antwort zweimal angelegt) – nie automatisch fertigstellen oder löschen
+  function dupDraftNotices() {
+    const by = {}; L.all("Invoice").filter(i => String(i.status) === "100" && !i.cancelled).forEach(i => { const x = String(i.header || "").match(/kochdu Online-Provisionen (\d{2})\/(\d{4})/i); if (x) (by[x[2] + "-" + x[1]] = by[x[2] + "-" + x[1]] || []).push(i); });
+    return Object.keys(by).sort().map(m => { const fin = onlineInvoice(m), n = by[m].length;
+      if (fin) return (n === 1 ? "Weiterer Entwurf" : n + " weitere Entwürfe") + " „kochdu Online-Provisionen " + mmOf(m) + "“ neben " + (fin.invoiceNumber || "der fertigen Sammelrechnung") + " – nicht fertiggestellt, bitte prüfen und löschen.";
+      if (n > 1 && todayIso() > monthEnd(m) && !by[m].some(i => String(i.platformRef || "") === "kochdu:" + m + ":online")) return n + " Entwürfe „kochdu Online-Provisionen " + mmOf(m) + "“ – keiner eindeutig, bitte einen prüfen und fertigstellen, die anderen löschen.";
+      return null; }).filter(Boolean);
   }
   async function onlineProvisions(prop) {
     let n = 0; const today = todayIso(), byM = {}; await loadConnect();
-    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0)) {
+    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0 && feePlatform(x) === "kochdu")) {
       const m = feeMonth(tx); if (m < ONLINE_FROM || today <= monthEnd(m)) continue;
       (byM[m] = byM[m] || []).push(tx);
     }
@@ -206,6 +233,11 @@ module.exports = function (D) {
       if (tx.mollieType === "payment" && invoiceHit(tx, pidIdx)) continue;   // Rechnung mit dieser Mollie-ID gibt es schon → kein zweiter Umsatz
       // Connect-Provision: der Beleg ist die monatliche Sammelrechnung „kochdu Provisionen MM/JJJJ“ (aus fs-order) → als Teilzahlung dieser Rechnung vorschlagen, nie eigener Einnahme-Beleg (sonst doppelt)
       if (tx.mollieType === "application-fee") {
+        const pf = feePlatform(tx);
+        // VALUERO: keine Sammelrechnung – die Quartalsrechnung zieht die einbehaltene Provision ab („abzüglich bei Online-Zahlung bereits einbehalten“),
+        // vereinnahmt ist sie mit der Einbehaltung (Istbesteuerung) → Einnahme-Beleg 20 %, nur als Vorschlag (Simon bestätigt)
+        if (pf === "valuero") { try { if (await prop.add({ kind: "mollie-income", key: "minc:" + tx.id, txId: String(tx.id), amount: r2(+tx.amount), date: day(tx.valueDate), title: "Provision VALUERO (Mollie Connect) als Einnahme-Beleg buchen", detail: String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120) + " · nur buchen, wenn die VALUERO-Quartalsrechnung diesen Betrag als „bei Online-Zahlung bereits einbehalten“ abzieht", source: "Mollie-Abruf", payload: { txId: String(tx.id), platform: "valuero" } })) n++; } catch (e) { console.error("Mollie-Vorschlag:", e.message); } continue; }
+        if (pf !== "kochdu") continue;   // Plattform noch unklar → beim nächsten Abruf
         const d = day(tx.valueDate), mm = d.slice(5, 7) + "/" + d.slice(0, 4);
         if (d.slice(0, 7) >= ONLINE_FROM) continue;   // ab 10/2026: Sammelrechnung „kochdu Online-Provisionen“ (onlineProvisions), nicht mehr „kochdu Provisionen“
         await finalizeProvisionInvoice(mm, d);
@@ -239,8 +271,8 @@ module.exports = function (D) {
     const acc = L.get("CheckAccount", tx.checkAccount && tx.checkAccount.id) || { name: "Mollie" }, cat = incomeCategory();
     {
       const gross = tx.mollieType === "payment" ? (+tx.mollieGross || +tx.amount) : +tx.amount;
-      const prov = tx.mollieType === "application-fee";
-      const body = { voucher: { supplierName: prov ? "Mollie Connect (kochdu)" : (tx.payeePayerName || acc.name), description: (prov ? "Provision kochdu (Mollie Connect) " : "Einnahme " + acc.name.replace(/^Mollie – /, "") + " – ") + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), voucherDate: day(tx.valueDate), creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id) },
+      const prov = tx.mollieType === "application-fee", plat = prov && (pl.platform === "valuero" || feePlatform(tx) === "valuero") ? "VALUERO" : "kochdu";
+      const body = { voucher: { supplierName: prov ? "Mollie Connect (" + plat + ")" : (tx.payeePayerName || acc.name), description: (prov ? "Provision " + plat + " (Mollie Connect) " : "Einnahme " + acc.name.replace(/^Mollie – /, "") + " – ") + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), voucherDate: day(tx.valueDate), creditDebit: "D", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id) },
         voucherPosSave: [{ accountingType: cat ? { id: String(cat.id), objectName: "AccountingType" } : undefined, taxRate: "20", sumGross: String(r2(gross)), net: "false", comment: "aus Mollie (bestätigt)" }] };
       const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
       await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: +tx.amount, date: day(tx.valueDate), checkAccountTransaction: { id: String(tx.id) } } });
@@ -380,7 +412,7 @@ module.exports = function (D) {
           return o; }, {})),
         notices: prov.length ? onlineNotices() : [],
         countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length,
-        byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieProfile || "ohne Profil"; const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
+        byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieType === "application-fee" && feePlatform(t) === "valuero" ? "VALUERO" : (t.mollieProfile || "ohne Profil"); const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
           if (t.mollieType === "application-fee") x.provisions = r2(x.provisions + (+t.amount || 0)); else { x.gross = r2(x.gross + (+t.mollieGross || +t.amount)); x.fees = r2(x.fees + (+t.mollieFeeAmt || 0)); x.count++; if (String(t.status) === "100") x.unmatched++; } return o; }, {})) });
     }
     return out;

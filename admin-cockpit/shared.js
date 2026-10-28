@@ -161,7 +161,7 @@ F.form("invoice",function(form){
     if(!body.contactId) META=null;   /* neuer Kunde → Kundenliste neu laden */
     var after=(INVCTX&&INVCTX.after)||{}, jobs=[];
     if(after.siteCustomer) jobs.push(F.api("/admin/api/billing",{body:{op:"site",key:after.siteCustomer.replace(/^site:/,""),patch:{customer:contact}}}));
-    if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:Object.assign({id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label},after.billing.deposit?{deposit:true}:{})}}));   /* deposit: Anzahlung (Restrechnung folgt) */
+    if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:Object.assign({id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label},after.billing.deposit?{deposit:true}:{},after.billing.src?{src:after.billing.src,basis:after.billing.basis}:{},after.billing.adj?{adj:true}:{})}}));   /* deposit: Anzahlung (Restrechnung folgt); src/basis: VALUERO-Quelle, adj: Nachverrechnung */
     if(after.paid&&form.paidacc){ var pa=form.paidacc.value; jobs.push(F.api("/admin/api/sev/invoice-op",{body:{confirm:true,op:"sent",id:j.id,sendType:"VPDF"}}).then(function(r){ if(!r||!r.ok) return r; return F.api("/admin/api/sevdesk/book",{body:{id:j.id,amount:after.paid.amount,date:after.paid.date,accountId:pa}}); })); }
     if(after.kochduSettle) jobs.push(F.api("/admin/api/kochdu-settle",{body:{action:"settle",restaurantId:after.kochduSettle.restaurantId,amountCents:after.kochduSettle.amountCents}}));
     var cb=INVCTX&&INVCTX.onDone, soft=editing?[]:ctxJobs(after,j,contact,"invoice");   /* Lead/Auftrag merken sich den Beleg (nur Cockpit-Daten) */

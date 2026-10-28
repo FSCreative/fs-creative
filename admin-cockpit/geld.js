@@ -44,13 +44,16 @@ function invLink(l){ if(!l) return ""; return l.id?'<a href="#" data-act="fin:in
 function problem(x){ return x.refund>0.005||(x.invoices||[]).some(function(l){return l&&(l.state==="fehlt"||l.state==="ueberfaellig");})||x.settledWithoutInvoice>0.005; }
 
 /* VALUERO-Abrechnungen, die das frühere Dashboard nur im Browser gespeichert hat */
+/* geprüft gegen ALLE Abrechnungs-Einträge am Server (nicht nur die letzten 4 im Abgleich) – sonst käme der Altbestand doppelt (VA-8) */
+var BILLG=null, billgBusy=false;
 function valueroLegacy(){
   var st=F.ls("fsc_einnahmen_dashboard_v1"), settled=Object.assign({antonhaus:[{amountCents:34754,at:"2026-07-30T00:00:00.000Z"}]},(st&&st.valuero&&st.valuero.settled)||{}), out=[], sum=0;
   if(!settled||!F.D) return {count:0,sum:0,list:[]};
+  if(!BILLG){ if(!billgBusy){ billgBusy=true; F.api("/admin/api/billing").then(function(b){ billgBusy=false; if(b&&b.invoices){ BILLG=b; F.render(); } }).catch(function(){ billgBusy=false; }); } return {count:0,sum:0,list:[]}; }
   Object.keys(settled).forEach(function(key){ (settled[key]||[]).forEach(function(s){
     if(!s||!(+s.amountCents>0)||String(s.at||"").slice(0,4)!==String(F.D.year)) return;
     var item=F.D.abgleich.items.find(function(x){return x.key==="valuero:"+key;}); if(!item) return;
-    var known=(item.invoices||[]).some(function(l){ return (s.invoiceId&&l.id===String(s.invoiceId))||(Math.abs((+l.gross||0)-s.amountCents/100)<0.02&&String(l.date||"").slice(0,10)===String(s.at).slice(0,10)); });
+    var known=((BILLG.invoices||{})["valuero:"+key]||[]).concat(item.invoices||[]).some(function(l){ return l&&((s.invoiceId&&String(l.id)===String(s.invoiceId))||(Math.abs((+l.gross||0)-s.amountCents/100)<0.02&&String(l.date||"").slice(0,10)===String(s.at).slice(0,10))); });
     if(!known&&!(s.invoiceId&&item.invoiced>=s.amountCents/100-0.02)){ out.push({key:key,s:s,name:item.name}); sum+=s.amountCents/100; }
   }); });
   return {count:out.length,sum:sum,list:out};
@@ -58,9 +61,9 @@ function valueroLegacy(){
 F.action("migrate",function(){
   var mig=valueroLegacy(); if(!mig.count) return;
   Promise.all(mig.list.map(function(e){ return F.api("/admin/api/billing",{body:{op:"invoice",key:"valuero:"+e.key,invoice:{id:e.s.invoiceId?String(e.s.invoiceId):"",nr:e.s.invoiceId?"":"manuell",gross:e.s.amountCents/100,date:String(e.s.at).slice(0,10),label:e.name+" (übernommen)"}}}); }))
-    .then(function(){ F.toast(mig.count+" VALUERO-Abrechnungen übernommen"); F.load(true); }).catch(function(){ F.toast("Übernehmen fehlgeschlagen",true); });
+    .then(function(){ BILLG=null; F.toast(mig.count+" VALUERO-Abrechnungen übernommen"); F.load(true); }).catch(function(){ F.toast("Übernehmen fehlgeschlagen",true); });
 });
-F.action("invoice",function(key){ var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(x&&x.action) F.openInvoice(x.action); });
+F.action("invoice",function(key){ var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(x&&x.action&&x.src!=="kochdu") F.openInvoice(x.action); });   /* kochdu: Monatsrechnung kommt von kochdu selbst */
 F.action("openinvoices",function(){ F.UI.geldTab="rechnungen"; F.UI.rgF="open"; F.go("geld"); });
 F.action("money",function(k){ F.UI.money=k; F.render(); });
 F.action("invf",function(k){ F.UI.invF=k; F.UI.invMore=0; F.render(); });
@@ -98,8 +101,10 @@ F.css(
 );
 F.action("sdign",function(key){
   var x=F.D.abgleich.items.find(function(y){return y.key===key;}); if(!x) return;
-  F.confirm("„"+x.name+"“ ("+eur(x.unbilled)+") ausblenden? Der Posten taucht wieder auf, sobald mehr zu verrechnen ist.","Ausblenden",function(){
-    F.api("/admin/api/billing",{body:{op:"ignore",key:key,amount:x.unbilled}}).then(function(j){ if(j&&j.ok===false){ F.toast("Nicht gespeichert",true); return; } F.toast("Ausgeblendet",false,"Rückgängig",function(){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.load(true); }); }); F.load(true); });
+  /* Website: nur dieser Zeitraum – das Folgejahr kommt wieder (WEB-6) */
+  var from=x.src==="website"&&x.action&&x.action.after&&x.action.after.billing?x.action.after.billing.from:undefined;
+  F.confirm("„"+x.name+"“ ("+eur(x.unbilled)+") ausblenden? "+(from?"Gilt nur für den Zeitraum ab "+de(from)+" – der nächste Zeitraum kommt wieder.":"Der Posten taucht wieder auf, sobald mehr zu verrechnen ist."),"Ausblenden",function(){
+    F.api("/admin/api/billing",{body:{op:"ignore",key:key,amount:x.unbilled,from:from}}).then(function(j){ if(j&&j.ok===false){ F.toast("Nicht gespeichert",true); return; } F.toast("Ausgeblendet",false,"Rückgängig",function(){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.load(true); }); }); F.load(true); });
   });
 });
 /* Bereits bezahlte Buchung (bar/Überweisung/online): Rechnung anlegen → als versendet markieren → Zahlung verbuchen */
@@ -117,7 +122,7 @@ F.action("sdshowign",function(){ F.UI.showIgn=!F.UI.showIgn; F.render(); });
 F.action("sdzu",function(){ var el=document.getElementById("zuVerrechnen"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); });
 function renderUebersicht(){
   var D=F.D, sev=D.sev, ab=D.abgleich, f=F.UI.money, SRC=F.SRC, mig=valueroLegacy();
-  var zu=ab.items.filter(function(x){ return x.unbilled>0.005||x.refund>0.005; }).sort(function(a,b){ return (b.unbilled||0)-(a.unbilled||0); });
+  var zu=ab.items.filter(function(x){ return x.unbilled>0.005||x.refund>0.005||(x.src==="valuero"&&x.blocked); }).sort(function(a,b){ return (b.unbilled||0)-(a.unbilled||0); });
   var ign=ab.items.filter(function(x){ return x.ignored; });
   var drafts=sev?sev.invoices.filter(function(i){return i.status===100&&i.src!=="print";}):[], over=sev?sev.invoices.filter(function(i){return i.overdue;}):[];   /* Druck-Entwürfe warten auf den Druckauftrag */
   var vdr=sev&&sev.vouchers?sev.vouchers.drafts||0:0, unass=sev?sev.unassigned||0:0;
@@ -133,10 +138,11 @@ function renderUebersicht(){
   var cm=String(new Date().getFullYear())===String(D.year)?new Date().getMonth():-1;
   var card=function(x){
     var tag={website:"Website",kochdu:"kochdu",valuero:"VALUERO",blitzdings:"Blitzdings",kantineur:"Kantineur"}[x.src]||x.src;
-    return '<div class="c"><div class="top"><span class="tag grey">'+esc(tag)+'</span>'+(x.refund>0.005?'<span class="tag bad">'+eur(x.refund)+' zu viel verrechnet</span>':'')+'</div>'+
-      '<div><div class="nm">'+esc(x.name)+'</div><div class="sb">'+esc(x.sub)+'</div></div>'+
+    var auto=x.src==="kochdu";   /* kochdu rechnet seit 15.10.2026 selbst monatlich ab – hier keine eigene Rechnung (sonst doppelt) */
+    return '<div class="c"><div class="top"><span class="tag grey">'+esc(tag)+'</span>'+(x.refund>0.005?'<span class="tag bad">'+eur(x.refund)+' zu viel verrechnet</span>':'')+(x.storno?'<span class="tag warn">storniert</span>':'')+'</div>'+
+      '<div><div class="nm">'+esc(x.name)+'</div><div class="sb">'+esc(x.sub)+'</div>'+(x.blocked?'<div class="sb warn-t">'+esc(x.blocked)+'</div>':'')+(auto?'<div class="sb">kochdu rechnet selbst ab (Monatsrechnung am 1.). '+(x.unbilled>0.005?'Rückstand im kochdu-Reiter unter „Zur Prüfung“ abrechnen.':'')+'</div>':'')+'</div>'+
       (x.unbilled>0.005?'<div class="amt">'+eur(x.unbilled)+'</div>':'')+
-      '<div class="ac">'+(x.action?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005&&x.paidOnPlatform?'<button class="btn" data-act="sdpaidinv:'+esc(x.key)+'" title="Rechnung anlegen und gleich als bezahlt verbuchen">Bezahlte Rechnung</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005?'<button class="btn" data-act="sdassign:'+esc(x.key)+'" title="Einer bestehenden (Sammel-)Rechnung zuordnen">Zuordnen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
+      '<div class="ac">'+(x.action&&!auto?'<button class="btn primary" data-act="invoice:'+esc(x.key)+'">Rechnung erstellen</button>':'')+(auto&&x.unbilled>0.005?'<button class="btn" data-act="pltab:kochdu">kochdu öffnen</button>':'')+(x.src==="valuero"&&x.proposal?'<button class="btn primary" data-act="vaprop:'+esc(String(x.key).replace(/^valuero:/,""))+'">'+esc(x.proposal.label||"Prüfen")+'</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005&&x.paidOnPlatform?'<button class="btn" data-act="sdpaidinv:'+esc(x.key)+'" title="Rechnung anlegen und gleich als bezahlt verbuchen">Bezahlte Rechnung</button>':'')+(x.src==="blitzdings"&&x.unbilled>0.005?'<button class="btn" data-act="sdassign:'+esc(x.key)+'" title="Einer bestehenden (Sammel-)Rechnung zuordnen">Zuordnen</button>':'')+(x.unbilled>0.005?'<button class="btn" data-act="sdign:'+esc(x.key)+'" title="Ohne Rechnung erledigt – ausblenden">Ausblenden</button>':'')+'</div></div>';
   };
   // Detail-Abgleich (eingeklappt)
   var rows=ab.items.filter(function(x){ if(f==="zu") return x.unbilled>0.005||x.refund>0.005; if(f==="offen") return x.open>0.005; if(f==="prob") return problem(x); return true; });
