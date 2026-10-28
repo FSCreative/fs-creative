@@ -90,4 +90,4 @@ async function handle(req, res, u, p, send) {
   return deliver(req, res, send, entry);
 }
 
-module.exports = { handle, proxify, PREFIX, _test: { upstreamUrl, snap, cache } };
+module.exports = { handle, proxify, upstreamUrl, PREFIX, _test: { upstreamUrl, snap, cache } };

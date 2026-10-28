@@ -4853,7 +4853,7 @@ const server = http.createServer((req, res) => {
     // Druckshop-Produktbilder über unseren Server (Bild-Proxy nur für images.ctfassets.net) – print-bild.js
     if (p.indexOf("/print/bild/") === 0) return void guard(res, PRINT_BILD.handle(req, res, u, p, send));
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
-    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/weihnachten" || p === "/print/weihnachten/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
+    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/merchant.xml" || p === "/print/weihnachten" || p === "/print/weihnachten/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
       return void guard(res, PRINT.handlePublic(req, res, u, p));
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
@@ -4864,10 +4864,11 @@ const server = http.createServer((req, res) => {
       // Shop-Einstellungen (Schalter „live“) erst laden – sonst fehlt die Druckshop-Werbung nach einem Neustart, bis jemand /print öffnet
       return void fs.readFile(path.join(ROOT, f), "utf8", (e, data) => { if (e) return send(res, 404, "Not found");
         Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
-          let out = f === "index.html" ? renderIndex(data, "/", on).html : printLiveBlocks(data, on);   // Startseite: Titel/Beschreibung je nach Shop-Schalter (ROUTE_META_PRINT)
-          if (on && f === "sitemap.xml" && PRINT.sitemapExtra) { try { out = out.replace("</urlset>", await PRINT.sitemapExtra() + "</urlset>"); } catch (e2) {} }   // Druckshop: Preisübersicht + Produktseiten
+          const out = f === "index.html" ? renderIndex(data, "/", on).html : f === "sitemap.xml" ? await sitemapXml(data, on) : printLiveBlocks(data, on);   // Startseite: Titel/Beschreibung je nach Shop-Schalter (ROUTE_META_PRINT)
           sendGz(req, res, 200, out, TYPES[path.extname(f)], { "Cache-Control": f === "sitemap.xml" ? "public, max-age=3600" : "no-cache" }); }); });
     }
+    // IndexNow-Schlüsseldatei /<Schlüssel>.txt (indexnow.js)
+    if (INDEXNOW.handle(req, res, p, send)) return;
     // llms.txt: Kurzinfo für KI-Assistenten (ChatGPT, Perplexity, Claude …) – Agentur + Druckshop mit aktuellen Beispielpreisen
     if ((req.method === "GET" || req.method === "HEAD") && p === "/llms.txt") {
       return void Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
@@ -5080,6 +5081,24 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   onOrder: o => { try { printTaskSync(o); } catch (e) { console.error("Aufträge (Druck):", e.message); } },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board
+// Sitemap: statische sitemap.xml (Druckshop-Blöcke nur wenn öffentlich) + Druckshop-Seiten (Preisübersicht, Kategorien, Produkte).
+// strict (IndexNow): Fehler im Druckshop-Teil werfen statt still weglassen – sonst gälten alle Shop-Seiten als entfernt
+async function sitemapXml(data, on, strict) {
+  let out = printLiveBlocks(data, on);
+  if (on && PRINT.sitemapExtra) { try { out = out.replace("</urlset>", await PRINT.sitemapExtra() + "</urlset>"); } catch (e) { if (strict) throw e; } }
+  return out;
+}
+// ── IndexNow (indexnow.js): neue/geänderte Seiten der Sitemap täglich an Bing & Co. melden (speist ChatGPT-Suche, Copilot, DuckDuckGo) – nur in Produktion, im Hintergrund ──
+// Signatur je Adresse: lastmod der statischen Sitemap, für Shop-Seiten die Inhalts-Prüfsumme aus print-shop.js (deren lastmod ist immer „heute“)
+async function indexEntries() {
+  const on = await Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false);
+  const xml = await sitemapXml(await fs.promises.readFile(path.join(ROOT, "sitemap.xml"), "utf8"), on, true);
+  const sigs = on && PRINT.indexSigs ? await PRINT.indexSigs() : {};
+  return (xml.match(/<url>[\s\S]*?<\/url>/g) || []).map(u => { const loc = ((u.match(/<loc>([^<]+)<\/loc>/) || [])[1] || "").trim().replace(/&amp;/g, "&"), lm = (u.match(/<lastmod>([^<]+)<\/lastmod>/) || [])[1] || "";
+    return { loc, sig: sigs[loc] || lm }; }).filter(e => e.loc);
+}
+const INDEXNOW = require("./indexnow.js")({ DATA_DIR, origin: ORIGIN, entries: indexEntries });
+if (require.main === module) INDEXNOW.start();
 // ── Website-Chat (chat.js): Live-Chat auf der Website, offline antwortet die KI (ki.js, Funktion „chat“) und legt Leads an ──
 const VIW = require("./viw-cloud.js")({ send, mailAttachment: fetchMailAttachment, DATA_DIR, secret: ADMIN_SECRET });
 const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECRET, KI: () => KI, publicBase: ORIGIN,
