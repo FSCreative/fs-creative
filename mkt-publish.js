@@ -33,7 +33,7 @@ const PROVIDERS = {
   facebook: { label: "Facebook (Meta)", portal: "https://developers.facebook.com/apps", hint: "Dieselbe Meta-App: App-ID und App-Geheimcode (App-Einstellungen → Allgemeines). „Facebook Login for Business“ → Konfiguration mit den Seiten-Berechtigungen anlegen und deren Konfigurations-ID eintragen. Damit Posts öffentlich sind, muss die App auf „Live“ stehen." },
   threads: { label: "Threads (Meta)", portal: "https://developers.facebook.com/apps", hint: "Meta-App mit Anwendungsfall „Threads-API“: Threads-App-ID und -Geheimschlüssel; dich als Threads-Tester eintragen und in Threads bestätigen." },
   google: { label: "YouTube (Google)", portal: "https://console.cloud.google.com/apis/credentials", hint: "Google-Cloud-Projekt → YouTube Data API v3 aktivieren → OAuth-Client (Webanwendung). Zustimmungsbildschirm auf „In Produktion“ stellen, sonst läuft die Anmeldung nach 7 Tagen ab." },
-  tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "TikTok-App mit Login Kit und Content Posting API, dort „Direct Post“ einschalten. Videos gehen direkt auf dein Profil – solange TikTok die App noch nicht geprüft hat, nur für dich sichtbar („Nur ich“)." },
+  tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "TikTok-App mit Login Kit und Content Posting API, dort „Direct Post“ einschalten. Videos gehen direkt auf dein Profil, sobald TikTok die App geprüft hat – bis dahin als Entwurf in deine TikTok-App." },
   linkedin: { label: "LinkedIn", portal: "https://www.linkedin.com/developers/apps", hint: "LinkedIn-App mit „Share on LinkedIn“ und „Sign In with LinkedIn using OpenID Connect“. Postet auf dein Profil; die Anmeldung gilt 60 Tage." },
   pinterest: { label: "Pinterest", portal: "https://developers.pinterest.com/apps", hint: "Pinterest-App (Business-Konto). Mit „Trial access“ sind Pins nur für dich sichtbar – für öffentliche Pins „Standard access“ beantragen." },
   bluesky: { label: "Bluesky", portal: "https://bsky.app/settings/app-passwords", hint: "Kein Entwickler-Zugang nötig: in Bluesky unter Einstellungen → App-Passwörter ein App-Passwort anlegen und beim Verbinden eingeben." },
@@ -78,7 +78,7 @@ module.exports = function (D) {
       case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies", response_type: "code", state: st });
       case "linkedin": return B.liAuth + q({ response_type: "code", client_id: c.clientId, redirect_uri: rd, scope: "openid profile w_member_social", state: st });
       case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
-      case "tiktok": return B.ttAuth + q({ client_key: c.clientId, scope: "user.info.basic,video.publish", response_type: "code", redirect_uri: rd, state: st });
+      case "tiktok": return B.ttAuth + q({ client_key: c.clientId, scope: "user.info.basic,video.upload,video.publish", response_type: "code", redirect_uri: rd, state: st });
       case "pinterest": return B.pinAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "boards:read,pins:read,pins:write,user_accounts:read", state: st });
     }
     throw pubErr("Unbekannter Anbieter");
@@ -304,12 +304,15 @@ module.exports = function (D) {
       commentOff: !!d.comment_disabled, duetOff: !!d.duet_disabled, stitchOff: !!d.stitch_disabled, maxSec: +d.max_video_post_duration_sec || 0 };
   }
   // Direkt aufs Profil (Direct Post, Scope video.publish), sobald im Planer die Sichtbarkeit gewählt ist (opts.ttPrivacy, TikTok verlangt die Wahl ohne Vorgabe).
-  // Ohne Wahl oder ohne Freigabe: wie bisher als Entwurf in die TikTok-App. Ungeprüfte App: TikTok nimmt nur „Nur ich“ an → privat posten statt scheitern.
+  // Ohne Wahl oder ohne Freigabe: als Entwurf in die TikTok-App. Ungeprüfte App: TikTok nimmt nur Posts auf private Konten an („Nur ich“) –
+  // erst privat versuchen, bei öffentlichem Konto dann als Entwurf (audit: "private" bzw. "draft" → Hinweis im Cockpit).
   async function tiktok(ch, tok, m) {
     const o = m.opts || {}, size = fs.statSync(m.video.file).size, { chunk, n } = ttChunks(size), src = { source: "FILE_UPLOAD", video_size: size, chunk_size: chunk, total_chunk_count: n };
-    const sc = String(tok.scope || ""), direct = !!o.ttPrivacy && /video\.publish/.test(sc);
+    const sc = String(tok.scope || ""); let direct = !!o.ttPrivacy && /video\.publish/.test(sc), audit = "";
     if (!direct && /video\.publish/.test(sc) && !/video\.upload/.test(sc)) throw pubErr("TikTok: Bitte im Planer wählen, wer das Video sehen darf (Bearbeiten → Mehr Optionen → TikTok), dann „nochmal“.");
     let init, ci = null, privacy = o.ttPrivacy, note = "";
+    const inboxInit = () => req("POST", B.tt + "/v2/post/publish/inbox/video/init/", { token: tok.access, json: { source_info: src }, okStatus: true });
+    const unaudited = r => r.error && r.error.code === "unaudited_client_can_only_post_to_private_accounts";
     if (direct) {
       ci = await tiktokCreator(tok);
       if (ci.maxSec && m.duration > ci.maxSec) throw pubErr("TikTok: Das Video ist " + Math.round(m.duration) + " s lang, dieses Konto darf höchstens " + ci.maxSec + " s posten.");
@@ -318,11 +321,12 @@ module.exports = function (D) {
         brand_organic_toggle: !!o.ttBrandOwn, brand_content_toggle: !!o.ttBrandPaid, is_aigc: !!o.ytAi });
       const go = pv => req("POST", B.tt + "/v2/post/publish/video/init/", { token: tok.access, json: { post_info: info(pv), source_info: src }, okStatus: true });
       init = await go(privacy);
-      if (init.error && init.error.code === "unaudited_client_can_only_post_to_private_accounts" && privacy !== "SELF_ONLY" && !o.ttBrandPaid && ci.privacy.indexOf("SELF_ONLY") > -1) {
-        privacy = "SELF_ONLY"; init = await go(privacy);
+      if (unaudited(init) && privacy !== "SELF_ONLY" && !o.ttBrandPaid && ci.privacy.indexOf("SELF_ONLY") > -1) {
+        privacy = "SELF_ONLY"; init = await go(privacy); audit = "private";
         note = "Nur für dich sichtbar gepostet – öffentlich erst, wenn TikTok die App geprüft hat. Bis dahin in der TikTok-App beim Video: ··· → Datenschutzeinstellungen → „Alle“.";
       }
-    } else init = await req("POST", B.tt + "/v2/post/publish/inbox/video/init/", { token: tok.access, json: { source_info: src }, okStatus: true });
+      if (unaudited(init) && /video\.upload/.test(sc)) { direct = false; audit = "draft"; init = await inboxInit(); }
+    } else init = await inboxInit();
     if (init.error && init.error.code && init.error.code !== "ok") throw pubErr(ttMsg(init.error), { auth: ttAuthErr(init.error.code) });
     const d = init.data || {}, fd = fs.openSync(m.video.file, "r");
     try {
@@ -332,10 +336,10 @@ module.exports = function (D) {
     } finally { fs.closeSync(fd); }
     let status = "", s = {}, txt = "";
     for (let i = 0; i < (direct ? 36 : 24); i++) { ({ j: s, txt } = await req("POST", B.tt + "/v2/post/publish/status/fetch/", { token: tok.access, json: { publish_id: d.publish_id }, withText: true })); status = s.data && s.data.status || ""; if (/PUBLISH_COMPLETE/.test(status) || (!direct && /SEND_TO_USER_INBOX/.test(status))) break; if (/FAILED/.test(status)) throw pubErr("TikTok: Verarbeitung fehlgeschlagen (" + (s.data.fail_reason || "") + ")"); await sleep(waitMs); }
-    if (!direct) return { id: d.publish_id, url: "", draft: true, note: "Liegt als Entwurf in deiner TikTok-App (Posteingang → System-Benachrichtigungen) – Text aus dem Cockpit kopieren („TikTok-Text kopieren“), einfügen und auf „Posten“ tippen." };
+    if (!direct) return { id: d.publish_id, url: "", draft: true, audit, note: (audit ? "TikTok lässt direktes Posten erst nach der Prüfung der App zu – bis dahin als Entwurf. " : "") + "Liegt als Entwurf in deiner TikTok-App: Posteingang → System-Benachrichtigungen → Video öffnen, Text aus dem Cockpit einfügen („TikTok-Text kopieren“) und auf „Posten“ tippen." };
     const pid = (String(txt).match(/"publi[a-z]*_available_post_id"\s*:\s*\[\s*"?(\d+)/) || [])[1];   // aus dem Rohtext (TikTok schreibt „publicaly“): 19-stellige IDs verliert JSON.parse
     if (status !== "PUBLISH_COMPLETE") note = (note ? note + " " : "") + "TikTok verarbeitet das Video noch – es erscheint in ein paar Minuten auf deinem Profil.";
-    return { id: String(pid || d.publish_id || ""), url: pid && ci.username ? "https://www.tiktok.com/@" + ci.username + "/video/" + pid : ci.username ? "https://www.tiktok.com/@" + ci.username : "", note, privacy };
+    return { id: String(pid || d.publish_id || ""), url: pid && ci.username ? "https://www.tiktok.com/@" + ci.username + "/video/" + pid : ci.username ? "https://www.tiktok.com/@" + ci.username : "", note, privacy, audit };
   }
   async function pinterest(ch, tok, m) {
     const ms = m.images.length > 1 ? { source_type: "multiple_image_urls", items: m.images.slice(0, 5).map(im => ({ url: im.url, title: String(m.title || "").slice(0, 100), description: String(m.caption).slice(0, 500), link: m.link || "" })) } : { source_type: "image_url", url: m.images[0].url };

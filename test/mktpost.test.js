@@ -179,13 +179,23 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.strictEqual(rl.results.tiktok.status, "ok", JSON.stringify(rl.results)); assert.strictEqual(rl.results.tiktok.url, "https://www.tiktok.com/@fs.creative.at/video/7431234567890123456");
     let pi = mock.state.ttDirect[mock.state.ttDirect.length - 1];
     assert.deepStrictEqual([pi.privacy_level, pi.disable_comment, pi.disable_duet, pi.disable_stitch, pi.brand_organic_toggle, pi.brand_content_toggle], ["PUBLIC_TO_EVERYONE", false, true, true, true, false], "Stitch beim Konto aus → aus; Duett nicht angehakt → aus");
-    assert.ok(/Heute kochst du nicht/.test(pi.title) && /#kochdu/.test(pi.title), "Text mit Hashtags"); assert.strictEqual(PT.S().mkt.ttPrivate, false);
+    assert.ok(/Heute kochst du nicht/.test(pi.title) && /#kochdu/.test(pi.title), "Text mit Hashtags"); assert.ok(!PT.S().mkt.ttAudit);
     mock.state.ttUnaudited = true; const n0 = mock.state.ttDirect.length;
     await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
     assert.strictEqual(rl.results.tiktok.status, "ok", JSON.stringify(rl.results)); assert.ok(/Nur für dich sichtbar/.test(rl.results.tiktok.note)); assert.strictEqual(rl.results.tiktok.url, "https://www.tiktok.com/@fs.creative.at");
-    assert.deepStrictEqual(mock.state.ttDirect.slice(n0).map(x => x.privacy_level), ["PUBLIC_TO_EVERYONE", "SELF_ONLY"]); assert.strictEqual(PT.S().mkt.ttPrivate, true); assert.strictEqual((await call("GET", "/admin/api/mkt/posts")).json().ttPrivate, true);
-    assert.strictEqual((await call("GET", "/admin/api/mkt/tiktok-creator", null, "?brand=kochdu")).json().privateOnly, true);
+    assert.deepStrictEqual(mock.state.ttDirect.slice(n0).map(x => x.privacy_level), ["PUBLIC_TO_EVERYONE", "SELF_ONLY"]); assert.strictEqual(PT.S().mkt.ttAudit, "private"); assert.strictEqual((await call("GET", "/admin/api/mkt/posts")).json().ttAudit, "private");
+    assert.strictEqual((await call("GET", "/admin/api/mkt/tiktok-creator", null, "?brand=kochdu")).json().audit, "private");
     mock.state.ttUnaudited = false;
+    // öffentliches Konto + ungeprüfte App: TikTok nimmt gar keinen direkten Post an → Entwurf (mit video.upload), sonst klare Meldung
+    mock.state.ttUnauditedPublic = true; const n1 = mock.state.ttDirect.length;
+    await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(rl.results.tiktok.status, "fehler"); assert.ok(/noch nicht geprüft/.test(rl.results.tiktok.error), rl.results.tiktok.error);
+    tk.scope = "user.info.basic,video.upload,video.publish"; tc.tok = PT.seal(Object.assign(PT.unseal(tc.tok), { scope: tk.scope }));
+    await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(rl.results.tiktok.status, "entwurf", JSON.stringify(rl.results)); assert.ok(/erst nach der Prüfung/.test(rl.results.tiktok.note) && /System-Benachrichtigungen/.test(rl.results.tiktok.note));
+    assert.deepStrictEqual(mock.state.ttDirect.slice(n1).map(x => x.privacy_level), ["PUBLIC_TO_EVERYONE", "SELF_ONLY", "PUBLIC_TO_EVERYONE", "SELF_ONLY"]);
+    assert.strictEqual(PT.S().mkt.ttAudit, "draft"); assert.strictEqual((await call("GET", "/admin/api/mkt/tiktok-creator", null, "?brand=kochdu")).json().audit, "draft");
+    mock.state.ttUnauditedPublic = false; tk.scope = "user.info.basic,video.publish"; tc.tok = PT.seal(Object.assign(PT.unseal(tc.tok), { scope: tk.scope }));
     rl.opts = {}; await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
     assert.strictEqual(rl.results.tiktok.status, "fehler"); assert.ok(/wer das Video sehen darf/.test(rl.results.tiktok.error), "ohne Wahl kein Entwurf (Scope video.upload fehlt), sondern klarer Hinweis");
     // Nachholen mit TikTok-Fenster (auch bei schon geposteten Posts): nur TikTok-Wahl und TikTok-Text werden übernommen
@@ -195,7 +205,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.strictEqual(rl.results.tiktok.status, "ok", JSON.stringify(rl.results)); assert.deepStrictEqual(rl.opts, { igStory: true, ttComment: true, ttPrivacy: "MUTUAL_FOLLOW_FRIENDS" });
     pi = mock.state.ttDirect[mock.state.ttDirect.length - 1]; assert.strictEqual(pi.privacy_level, "MUTUAL_FOLLOW_FRIENDS"); assert.ok(/^Neu für TikTok/.test(pi.title) && /#neu/.test(pi.title), pi.title);
     const cj = (await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok" })).json();
-    assert.ok(/scope=user\.info\.basic%2Cvideo\.publish/.test(cj.url), "nur die Scopes fürs direkte Posten");
+    assert.ok(/scope=user\.info\.basic%2Cvideo\.upload%2Cvideo\.publish/.test(cj.url), "Direkt posten plus Entwurf bis zur Prüfung");
     // Neu verbinden: dasselbe Konto bei FS Creative UND Druckshop erneuern (sonst behält der Druckshop den alten Zugang ohne video.publish), fremde Konten bleiben
     ["fs-creative", "druckshop"].forEach(b => PT.upsertChannel(b, { platform: "tiktok", account: { id: "openFS", name: "FS Creative" }, tok: { access: "tt-alt", refresh: "tt-ref-alt", scope: "user.info.basic,video.upload", expiresAt: new Date(Date.now() + 864e5).toISOString() } }));
     await call("GET", "/admin/api/mkt/oauth/callback", null, "?code=x&state=" + encodeURIComponent(new URL(cj.url).searchParams.get("state")));

@@ -120,7 +120,8 @@ module.exports = function () {
           if (!(cs > 0) || cs > 64 * MB || cs > vs || (vs < 5 * MB ? cs !== vs : cs < 5 * MB) || (vs > 64 * MB && cs === vs) || si.total_chunk_count !== Math.floor(vs / cs)) return end(400, { error: { code: "invalid_params", message: "The chunk size is invalid" } });
           if (direct) { (S.ttDirect = S.ttDirect || []).push(pi);
             if (["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"].indexOf(pi.privacy_level) < 0) return end(400, { error: { code: "privacy_level_option_mismatch" } });
-            if (S.ttUnaudited && pi.privacy_level !== "SELF_ONLY") return end(403, { error: { code: "unaudited_client_can_only_post_to_private_accounts", message: "Please review our integration guidelines" } }); }
+            // ungeprüfte App: auf privatem Konto nur SELF_ONLY (S.ttUnaudited), auf öffentlichem Konto gar nichts (S.ttUnauditedPublic)
+            if (S.ttUnauditedPublic || (S.ttUnaudited && pi.privacy_level !== "SELF_ONLY")) return end(403, { error: { code: "unaudited_client_can_only_post_to_private_accounts", message: "Please review our integration guidelines" } }); }
           S.tt = { size: vs, got: 0, direct, privacy: pi.privacy_level }; return end(200, { data: { publish_id: direct ? "pub2" : "pub1", upload_url: "http://" + req.headers.host + "/ttup" }, error: { code: "ok" } }); }
         if (p === "/ttup") { S.tt.got += raw.length; return end(201, ""); }
         if (p === "/tt/v2/post/publish/status/fetch/") { S.posts.push({ pf: "tiktok", bytes: S.tt.got, size: S.tt.size, direct: S.tt.direct });

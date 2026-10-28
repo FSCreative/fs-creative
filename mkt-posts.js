@@ -677,7 +677,7 @@ module.exports = function (C) {
           const tok = await tokFor(ch); let r, note = "";
           r = await P.publish(pf, ch, tok, mediaFor(p, pf));
           p.results[pf] = { status: r.draft ? "entwurf" : "ok", id: r.id || "", url: r.url || "", note: r.note || note, at: nowIso() }; ch.lastOk = nowIso(); ch.lastError = "";
-          if (pf === "tiktok" && r.privacy && (p.opts || {}).ttPrivacy !== "SELF_ONLY") S().mkt.ttPrivate = r.privacy === "SELF_ONLY";   // öffentlich gewählt, privat gelandet = App noch ungeprüft
+          if (pf === "tiktok") { if (r.audit) S().mkt.ttAudit = r.audit; else if (r.privacy && r.privacy !== "SELF_ONLY") S().mkt.ttAudit = ""; }   // App noch ungeprüft („private“/„draft“) bzw. geprüft
         } catch (e) {
           p.results[pf] = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; ch.lastError = p.results[pf].error; if (e.auth) ch.status = "abgelaufen";
           console.error("marketing: posten", pf, String(e.message || e).slice(0, 200));
@@ -872,13 +872,13 @@ module.exports = function (C) {
       try { hit = { at: Date.now(), v: await P.tiktokCreator(await tokFor(ch)) }; TTC.set(ch.id, hit); }
       catch (e) { if (e.auth) { ch.status = "abgelaufen"; ch.lastError = String(e.message || e).slice(0, 200); save(); } throw fail(502, String(e.message || e).slice(0, 200)); }
     }
-    return Object.assign({ direct: true }, hit.v, { privateOnly: !!S().mkt.ttPrivate });
+    return Object.assign({ direct: true }, hit.v, { audit: S().mkt.ttAudit || "" });
   }
   function overview() {
     const s = S();
     const shT = tiktokSharedBrand() && s.channels.find(c => c.brand === tiktokSharedBrand() && c.platform === "tiktok" && c.status !== "getrennt");
     return { posts: s.posts.slice(0, 150).map(postPublic), channels: s.channels.filter(c => c.status !== "getrennt").map(channelPublic),
-      tiktokShared: shT ? { brand: shT.brand, account: (shT.account && (shT.account.handle || shT.account.name)) || "" } : null, ttPrivate: !!s.mkt.ttPrivate,
+      tiktokShared: shT ? { brand: shT.brand, account: (shT.account && (shT.account.handle || shT.account.name)) || "" } : null, ttAudit: s.mkt.ttAudit || "",
       platforms: Object.keys(PLATFORMS).map(k => Object.assign({ key: k }, PLATFORMS[k])),
       providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId, configId: k === "facebook" ? appCfg(k).configId || "" : undefined })),
       redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), pixabay: !!pixabayKey(), igTags: igTags(), moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })),
