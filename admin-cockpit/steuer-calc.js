@@ -405,9 +405,18 @@ function minderung(inv,st){
    bereits nach Soll versteuert und werden nicht ein zweites Mal erfasst (auch nicht beim späteren Zahlungseingang). */
 function istFrom(st){ var s=(st&&st.settings)||{}; return s.besteuerung==="ist"?(s.istAb||"0000-01-01"):null; }
 function isIstDoc(st,d){ var a=istFrom(st); return !!a&&String(d||"")>=a; }
+// Anteil einer Zahlung am Beleg. Die eigene Buchhaltung speichert Zahlungen immer positiv – bei einem Beleg mit negativer Summe
+// (z. B. kochdu-Auszahlungsabrechnung: Gebühr +20 %, durchlaufende Posten −0 %, Summe = −Auszahlung) ist die Auszahlung der Ausgleich
+// des Belegs: Anteil = |Zahlung| / |Summe|. Sonst würde die 20-%-Gebühr bei Istbesteuerung als −USt (KZ 090) statt +USt (KZ 022) gebucht.
+function payShare(amount,g){ return g<0?Math.abs(amount)/Math.abs(g):amount/g; }
 function istParts(doc,st,label){ var a=istFrom(st), g=num(doc.gross); if(!g) return [];
   return payments(doc).filter(function(pm){ return pm.date&&pm.date>=a&&Math.abs(pm.amount)>0.004; })
-    .map(function(pm){ return {share:pm.amount/g,date:pm.date,why:(label||"Zahlung")+" am "+pm.date.split("-").reverse().join(".")+" (Istbesteuerung)"}; }); }
+    .map(function(pm){ return {share:payShare(pm.amount,g),date:pm.date,why:(label||"Zahlung")+" am "+pm.date.split("-").reverse().join(".")+" (Istbesteuerung)"}; }); }
+// Gutschrift mit Positionen beider Vorzeichen (z. B. alte kochdu-Auszahlungs-Gutschrift: Gebühr neben gutgeschriebenen Beträgen):
+// Gutschriften gelten als Erlösminderung (jede Position wird negativ gerechnet) – eine darin enthaltene Gebühr mit USt würde die USt
+// mindern statt erhöhen. Solche Gutschriften werden nicht still gebucht, sondern zur Prüfung gemeldet (CONTRACT-fs-order §4 Punkt 7).
+function mixedSigns(cn){ var ls=lines(cn); return ls.some(function(l){ return l.net>0.004; })&&ls.some(function(l){ return l.net<-0.004; }); }
+var MIXED_WHY="Gutschrift mit Positionen beider Vorzeichen (z. B. Gebühr mit USt neben Gutschriftsbeträgen) – nicht verbucht, bitte prüfen: als Rechnung mit negativer Summe neu erstellen bzw. Steuer von Hand eintragen";
 function besteuerungTxt(st,y){ var a=istFrom(st); return a&&(!y||String(y)+"-12-31">=a)?"Istbesteuerung":"Sollbesteuerung"; }
 function computeUva(raw,st,p){
   setRules(raw,st);
@@ -448,6 +457,7 @@ function computeUva(raw,st,p){
   });
   (raw.creditNotes||[]).forEach(function(cn){
     if(cn.status<200||docCfg(st,cn).ignore||docCfg(st,cn).kz==="ignore") return;
+    if(mixedSigns(cn)){ var dm=isIstDoc(st,cn.date)?istParts(cn,st,"Auszahlung").map(function(pt){ return pt.date; }):[cn.date]; if(dm.some(function(d){ return inP(d,p); })) review.push({doc:cn,kind:"out",why:MIXED_WHY}); return; }
     var ls=lines(cn).map(function(l){ return {rate:l.rate,net:l.net>0?-l.net:l.net,tax:l.tax>0?-l.tax:l.tax}; });
     if(isIstDoc(st,cn.date)){ istParts(cn,st,"Auszahlung").forEach(function(pt){ if(inP(pt.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:Math.abs(pt.share),date:pt.date,why:pt.why},"out"); }); }); return; }
     if(inP(cn.date,p)) ls.forEach(function(l){ revLine(cn,l,{share:1,date:cn.date,why:"Gutschrift – Monat der Ausstellung"},"out"); });
@@ -629,11 +639,12 @@ function computeJab(raw,st,year){
     if(skipInv(inv,st)) return; var g=Math.abs(num(inv.gross)), ls=lines(inv), net=ls.reduce(function(a,l){ return a+l.net; },0);
     // Anteil = gezahlter Betrag / Brutto; Storno (net bereits negativ) zählt beim Ausgleich negativ – keine doppelte Negation
     var reg=docCfg(st,inv).wk==="ja";
-    payments(inv).forEach(function(pm){ if(zuYear(inv,pm.date,reg)!==y||!g) return; var sh=inv.type==="SR"?Math.abs(pm.amount)/g:pm.amount/g, n=net*sh; rev+=n; revDocs.push({doc:inv,net:r2(n),date:pm.date,src:pm.src}); });
+    payments(inv).forEach(function(pm){ if(zuYear(inv,pm.date,reg)!==y||!g) return; var sh=inv.type==="SR"||num(inv.gross)<0?Math.abs(pm.amount)/g:pm.amount/g, n=net*sh; rev+=n; revDocs.push({doc:inv,net:r2(n),date:pm.date,src:pm.src}); });
   });
   // Gutschriften an Kunden (Rechnungskorrektur): Einnahmenminderung beim Abfluss (Zahlung laut Bank; sonst „bezahlt“ → Gutschriftsdatum)
   (raw.creditNotes||[]).forEach(function(cn){
     var c=docCfg(st,cn); if(cn.status<200||c.ignore||c.kz==="ignore") return; var g=Math.abs(num(cn.gross)), net=Math.abs(lines(cn).reduce(function(a,l){ return a+l.net; },0)); if(!g) return;
+    if(mixedSigns(cn)) notes.push({doc:cn,why:"Gutschrift mit Positionen beider Vorzeichen – Einnahmenminderung bitte prüfen"});
     var pm=payments(cn); if(!pm.length&&cn.status===1000) pm=[{date:cn.date,amount:g,src:"status"}];
     pm.forEach(function(x){ if(zuYear(cn,x.date,false)!==y) return; var n=-net*Math.abs(x.amount)/g; rev+=n; revDocs.push({doc:cn,net:r2(n),date:x.date,src:x.src}); });
   });
@@ -787,9 +798,9 @@ function plausibility(raw,st,year){
 /* Kontrollrechnung bei Istbesteuerung: Steuer der Kopfsummen anteilig nach Zahlungen im Zeitraum (Reverse Charge/ig. Erwerb neutral) */
 function controlCheckIst(raw,st,p){
   setRules(raw,st); var ust=0, vst=0, nIn=0, nOut=0, diffs=[];
-  function paidShare(d){ var g=num(d.gross); if(!g) return 0; return payments(d).reduce(function(a,pm){ return a+(inP(pm.date,p)?pm.amount/g:0); },0); }
+  function paidShare(d){ var g=num(d.gross); if(!g) return 0; return payments(d).reduce(function(a,pm){ return a+(inP(pm.date,p)?payShare(pm.amount,g):0); },0); }
   (raw.invoices||[]).forEach(function(inv){ if(skipInv(inv,st)||!isIstDoc(st,inv.type==="SR"||inv.type==="AR"?inv.date:sollDate(inv))) return; var t=num(inv.tax), sh=paidShare(inv); if(Math.abs(sh)<1e-9) return; ust+=t*sh; nOut++; });
-  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!isIstDoc(st,cn.date)) return; var sh=Math.abs(paidShare(cn)); if(sh) ust-=Math.abs(num(cn.tax))*sh; });
+  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!isIstDoc(st,cn.date)||mixedSigns(cn)) return; var sh=Math.abs(paidShare(cn)); if(sh) ust-=Math.abs(num(cn.tax))*sh; });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v), sh=paidShare(v); if(Math.abs(sh)<1e-9) return;
     if(v.cd==="D"){ if(isIstDoc(st,v.delivery||v.date)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax*sh; }); return; }
     if(v.cd!=="C"||!isIstDoc(st,vstDate(v))) return; var t=0; ls.forEach(function(l){ if(!nonBiz(l)&&sevClassOf(v,l)==="060"&&atRate(l.rate)) t+=l.tax; }); if(Math.abs(t)<0.005) return; vst+=t*sh; nIn++;
@@ -811,7 +822,7 @@ function controlCheck(raw,st,p){
     else if(inv.type==="SR") uv.push(inv.date); else sollParts(inv,st,1).forEach(function(pt){ uv.push(pt.date); });
     var inU=uv.some(function(d){ return inP(d,p); });
     if(Math.abs(t)>0.004&&(inS!==inU||(inS&&uv.some(function(d){ return !inP(d,p); }))||(inv.type==="ER"&&inS))) diffs.push({doc:inv,kind:"out",tax:r2(t),sev:inv.date,uva:uv.join(", "),why:inv.type==="AR"?"Anzahlung: U30 im Monat der Zahlung":(inv.type==="ER"?"Endrechnung: U30 nur Gesamtentgelt abzüglich versteuerter Anzahlungen":"U30 nach Leistungsdatum/Soll-Zeitpunkt, Kontrollrechnung nach Rechnungsdatum")}); });
-  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!inP(cn.date,p)) return; ust-=Math.abs(num(cn.tax)); });
+  (raw.creditNotes||[]).forEach(function(cn){ var cc=docCfg(st,cn); if(cn.status<200||cc.ignore||cc.kz==="ignore"||!inP(cn.date,p)||mixedSigns(cn)) return; ust-=Math.abs(num(cn.tax)); });
   (raw.vouchers||[]).forEach(function(v){ if(skipVou(v,st)) return; var ls=lines(v);
     if(v.cd==="D"){ if(inP(v.date,p)) ls.forEach(function(l){ if(!nonBiz(l)) ust+=l.tax; }); return; }
     if(v.cd!=="C") return; var t=0; ls.forEach(function(l){ if(!nonBiz(l)&&sevClassOf(v,l)==="060"&&atRate(l.rate)) t+=l.tax; }); if(Math.abs(t)<0.005) return;

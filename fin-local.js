@@ -633,15 +633,19 @@ module.exports = function (D) {
     const o = need("Invoice", invId);
     if (["RE", "ER", "AR", "TR"].indexOf(String(o.invoiceType)) < 0) throw err(400, "Nur zu Rechnungen möglich");
     if (["750", "1000"].indexOf(String(o.status)) < 0 || o.cancelled) throw err(400, "Gutschrift nur zu bezahlten oder teilbezahlten Rechnungen – offene Rechnungen bitte stornieren");
-    const pos = (b.positions || []).map(p => ({ name: String(p.name || "Minderleistung").slice(0, 200), text: String(p.text || ""), quantity: String(+p.quantity || 0), price: s2(+p.price || 0), taxRate: String(+p.taxRate || 0) })).filter(p => +p.quantity && +p.price);
+    // grossPricing: Bruttobetrag maßgeblich (z. B. Erstattung über Mollie 9,69 € → Gutschrift genau 9,69 €, USt daraus zurückgerechnet – wie posSums)
+    const gp = p => (p.grossPricing === true || p.grossPricing === "true") && p.priceGross != null && isFinite(+p.priceGross);
+    const pos = (b.positions || []).map(p => Object.assign({ name: String(p.name || "Minderleistung").slice(0, 200), text: String(p.text || ""), quantity: String(+p.quantity || 0), price: s2(gp(p) ? +p.priceGross / (1 + (+p.taxRate || 0) / 100) : +p.price || 0), taxRate: String(+p.taxRate || 0) },
+      gp(p) ? { grossPricing: true, priceGross: s2(+p.priceGross) } : {})).filter(p => +p.quantity && (+p.price || +p.priceGross));
     if (!pos.length) throw err(400, "Keine Positionen");
     const already = all("CreditNote").filter(c => c.refSrcInvoice && String(c.refSrcInvoice.id) === String(o.id)).reduce((a, c) => a + (+c.sumGross || 0), 0);
-    const sum = pos.reduce((a, p) => a + (+p.quantity) * (+p.price) * (1 + (+p.taxRate) / 100), 0);
+    const sum = pos.reduce((a, p) => a + (p.grossPricing ? (+p.quantity) * (+p.priceGross) : (+p.quantity) * (+p.price) * (1 + (+p.taxRate) / 100)), 0);
     if (r2(already + sum) > r2(+o.sumGross || 0) + 0.01) throw err(400, "Gutschriften wären höher als die Rechnung");
     const day = dayOf(b.date) || today();
     const cn = { id: newId("CreditNote"), status: "200", currency: "EUR", paidAmount: "0", creditNoteDate: iso(day), deliveryDate: o.deliveryDate || o.invoiceDate, contact: o.contact, address: o.address, addressCountry: o.addressCountry, contactPerson: o.contactPerson,
       creditNoteNumber: await nextNumber("CreditNote", "", "creditNoteNumber", "GU-"), header: "Gutschrift zu Rechnung " + (o.invoiceNumber || ""), headText: String(b.reason || "Wir schreiben Ihnen folgende Beträge zu Rechnung " + (o.invoiceNumber || "") + " gut:"),
       footText: "Der Betrag wird Ihnen erstattet bzw. mit offenen Forderungen verrechnet.", taxType: o.taxType, taxRule: o.taxRule, taxSet: o.taxSet, taxText: o.taxText, bookingCategory: "UNDERACHIEVEMENT", refSrcInvoice: ref("Invoice", o.id), creditNoteCategory: "UNDERACHIEVEMENT" };
+    if (b.creditKey) cn.creditKey = String(b.creditKey).slice(0, 160);   // Ein-Klick-Vorschlag (fin-credit.js): dieselbe Gutschrift nie zweimal
     if (settings().autoEnshrine) cn.enshrined = nowIso();
     for (const [k, p] of pos.entries()) { const x = Object.assign({ id: newId("CreditNotePos"), creditNote: ref("CreditNote", cn.id), positionNumber: String(k), unity: ref("Unity", 1) }, p); posSums(x); await save("CreditNotePos", x); }
     docSums(cn, positionsOf("CreditNote", cn.id)); await save("CreditNote", cn);

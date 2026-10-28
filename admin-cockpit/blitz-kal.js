@@ -10,6 +10,8 @@ var F=window.FSC, esc=F.esc, eur=F.eur, de=F.de;
 var S={ month:null, data:null, key:"", loading:false, err:"", cat:null, catErr:"", catLoading:false };
 var TYPE_LABEL={MINI:"Mini",BUSINESS:"Business",VIDEO360:"360°"};
 var ST_LABEL={CONFIRMED:"bestätigt",PENDING:"Zahlung läuft",COMPLETED:"erledigt",CANCELLED:"storniert"};
+/* offenes Angebot (Blitzdings offerOpen) statt „Zahlung läuft“ */
+function stLabel(b){ return b.offerOpen===true?"Angebot offen":(ST_LABEL[b.status]||b.status); }
 var WD=["Mo","Di","Mi","Do","Fr","Sa","So"];
 F.icons.chevL=F.icons.chevL||'<path d="m15 6-6 6 6 6"/>';
 F.icons.chevR=F.icons.chevR||'<path d="m9 6 6 6-6 6"/>';
@@ -154,7 +156,7 @@ function openDay(iso){
   var st=(S.data&&S.data.days||{})[iso]||{};
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+esc(F.dayLabel(iso,today()))+' · '+de(iso)+'</h2>'+F.btnClose()+'</div>'+
     '<dl class="bk-dl" style="margin:10px 0">'+types().map(function(x){ return '<dt>'+esc(TYPE_LABEL[x]||x)+'</dt><dd>'+({free:'<span class="tag ok">frei</span>',booked:'<span class="tag warn">gebucht</span>',blocked:'<span class="tag bad">gesperrt</span>'})[st[x]||"free"]+'</dd>'; }).join("")+'</dl>'+
-    (bs.length?'<div class="sec-t">Buchungen</div>'+bs.map(function(b){ return '<button type="button" class="btn bk-pick" data-act="bkshow:'+esc(b.id)+'" title="'+esc(b.customerName+" · "+b.package.name)+'"><span>'+esc(b.customerName)+' · '+esc(b.package.name)+'</span><span class="tag '+(b.blocking?"warn":"grey")+'">'+esc(ST_LABEL[b.status]||b.status)+'</span></button>'; }).join(""):'')+
+    (bs.length?'<div class="sec-t">Buchungen</div>'+bs.map(function(b){ return '<button type="button" class="btn bk-pick" data-act="bkshow:'+esc(b.id)+'" title="'+esc(b.customerName+" · "+b.package.name)+'"><span>'+esc(b.customerName)+' · '+esc(b.package.name)+'</span><span class="tag '+(b.blocking?"warn":"grey")+'">'+esc(stLabel(b))+'</span></button>'; }).join(""):'')+
     (bl.length?'<div class="sec-t">Gesperrt</div>'+bl.map(function(x){ return '<div class="row-between" style="margin-bottom:6px"><span>'+(x.type?esc(TYPE_LABEL[x.type]||x.type):"Alle Boxen")+(x.reason?' – '+esc(x.reason):'')+'</span><button class="btn" data-act="bkunblock:'+esc(x.id)+'">Freigeben</button></div>'; }).join(""):'')+
     '<div class="foot"><span class="row"><button class="btn" data-act="bkblock:'+iso+'">Tag sperren</button></span><span class="row"><button class="btn" data-closemodal>Schließen</button>'+(iso>=today()?'<button class="btn primary" data-act="bknew:'+iso+'">Buchung anlegen</button>':'')+'</span></div>',"narrow");
 }
@@ -208,19 +210,20 @@ function depLinks(b){ var it=abgItem(b); return it&&it.depositOnly?(it.invoices|
 function showBooking(b,fresh){
   var range=de(b.eventDate)+(b.eventEndDate&&b.eventEndDate!==b.eventDate?" – "+de(b.eventEndDate):"");
   var abl=invOf(b), sto=!!(abl&&abl.state==="storniert"), deps=depLinks(b), ai=abgItem(b), rest=deps.length&&ai&&+ai.unbilled>0.005;
-  var rows=[["Termin",range],["Paket",b.package.name],["Status",(ST_LABEL[b.status]||b.status)+(b.blocking?"":" (belegt keine Box)")],["Zahlung",(b.paymentStatus==="PAID"?"bezahlt":b.paymentStatus==="REFUNDED"?"erstattet":"offen")+(b.paymentMethod==="INVOICE"?" · auf Rechnung":" · online")],
+  var rows=[["Termin",range],["Paket",b.package.name],["Status",stLabel(b)+(b.blocking?"":" (belegt keine Box)")],["Zahlung",(b.paymentStatus==="PAID"?"bezahlt":b.paymentStatus==="REFUNDED"?"erstattet":"offen")+(b.paymentMethod==="INVOICE"?" · auf Rechnung":" · online")],
     ["Betrag",eur(c2e(b.totalCents))],["Kunde",b.customerName+(b.companyName?" ("+b.companyName+")":"")],["E-Mail",b.customerEmail,b.customerEmail?mailLink(b.customerEmail):null],["Telefon",b.customerPhone,b.customerPhone?'<a href="tel:'+esc(String(b.customerPhone).replace(/[^\d+]/g,""))+'">'+esc(b.customerPhone)+'</a>':null],["Ort",b.eventLocation],["Adresse",addr(b)],
     ["Extras",(b.extras||[]).map(function(e){ return e.name; }).join(", ")],["Notiz",b.note],["Referenz",b.reference+" · Quelle: "+(b.source||"web")],
     abl?["Rechnung","x",invHtml(b)]:["Rechnung",b.sevdeskInvoiceId?"Rechnung aus Blitzdings vorhanden":"",b.sevdeskInvoiceId?invBtn(b.sevdeskInvoiceId,"Rechnung aus Blitzdings vorhanden"):null]].filter(function(r){ return r[1]; });
-  /* neue Rechnung: ohne Rechnung oder wenn die bisherige storniert ist */
-  var canInv=!!F.D.sev&&+b.totalCents>0&&(sto||(!b.sevdeskInvoiceId&&!abl));
+  /* neue Rechnung: ohne Rechnung oder wenn die bisherige storniert ist – nie für ein offenes Angebot/eine laufende Zahlung bzw. während Blitzdings selbst eine anlegt (Doppelrechnung, BD-3) */
+  var offer=b.offerOpen===true||(b.status==="PENDING"&&b.paymentStatus!=="PAID"), busy=b.invoiceInProgress===true;
+  var canInv=!!F.D.sev&&+b.totalCents>0&&!offer&&!busy&&(sto||(!b.sevdeskInvoiceId&&!abl));
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+(fresh?"Buchung angelegt · ":"")+esc(b.customerName)+'</h2>'+F.btnClose()+'</div>'+
     (fresh?'<p class="muted" style="margin:6px 0 0">Gespeichert in Blitzdings ('+esc(b.reference)+'). Steht damit im Blitzdings-Admin, im Google-Kalender von Blitzdings, hier im Kalender und unter Heute.</p>':'')+
     (fresh&&b.mailInfo?'<p class="bk-mailinfo" role="status" style="margin:8px 0 0"><b>Mail an den Kunden:</b> '+esc(b.mailInfo)+'</p>':'')+
     '<dl class="bk-dl" style="margin:12px 0">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+(r[2]!=null?r[2]:esc(r[1]))+'</dd>'; }).join("")+'</dl>'+
     '<div class="sec-t">Weiter eintragen (optional)</div><div class="row wrap" style="gap:8px">'+
       '<button class="btn" data-act="bkical:'+esc(b.id)+'">In iCloud-Kalender eintragen</button>'+
-      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(!F.D.sev?"Buchhaltung ist gerade nicht erreichbar":b.sevdeskInvoiceId&&!abl?"Blitzdings hat bereits eine Rechnung erstellt":abl?"Schon verrechnet mit "+(abl.nr||"Rechnungsentwurf"):"Kein Betrag")+'"')+'>Rechnung vorbereiten</button>'+
+      '<button class="btn" data-act="bkinv:'+esc(b.id)+'~full"'+(canInv?'':' disabled title="'+(!F.D.sev?"Buchhaltung ist gerade nicht erreichbar":offer?"Angebot bzw. Zahlung noch nicht angenommen – Rechnung erst nach der Annahme":busy?"Blitzdings legt die Rechnung gerade an":b.sevdeskInvoiceId&&!abl?"Blitzdings hat bereits eine Rechnung erstellt":abl?"Schon verrechnet mit "+(abl.nr||"Rechnungsentwurf"):"Kein Betrag")+'"')+'>Rechnung vorbereiten</button>'+
       '<button class="btn" data-act="bkinv:'+esc(b.id)+'~dep"'+(canInv?'':' disabled')+'>Anzahlung 50 % vorbereiten</button>'+
       (rest?'<button class="btn primary" data-act="bkinv:'+esc(b.id)+'~rest"'+(F.D.sev?' title="Volle Positionen abzüglich Anzahlung – nur Entwurf"':' disabled title="Buchhaltung ist gerade nicht erreichbar"')+'>Restrechnung vorbereiten</button>':'')+
     '</div>'+
@@ -242,7 +245,9 @@ function setStatus(id,body,msg){
     F.closeModal(); F.toast(msg); refreshAll();
   }).catch(function(){ F.toast("Keine Verbindung",true); });
 }
-F.action("bkcancel",function(id){ var b=bookingById(id); if(!b) return; F.confirm("Buchung "+b.reference+" ("+b.customerName+") stornieren? Der Tag wird wieder frei, der Google-Termin entfernt. Der Kunde bekommt keine Mail.","Stornieren",function(){ setStatus(id,{status:"CANCELLED"},"Buchung storniert"); },true); });
+F.action("bkcancel",function(id){ var b=bookingById(id); if(!b) return; var l=invOf(b), inv=l&&l.state!=="storniert"?(l.nr||"Entwurf"):(b.sevdeskInvoiceId?"aus Blitzdings":"");
+  /* BD-2: die Rechnung bleibt bestehen – nie automatisch stornieren; „Storno prüfen“ erscheint unter Plattformen › Blitzdings */
+  F.confirm("Buchung "+b.reference+" ("+b.customerName+") stornieren? Der Tag wird wieder frei, der Google-Termin entfernt. Der Kunde bekommt keine Mail."+(inv?" Achtung: Zur Buchung gibt es die Rechnung "+inv+" – sie bleibt bestehen. Offen: unter Finanzen › Rechnungen stornieren; bezahlt: Gutschrift oder Stornogebühr behalten (erscheint unter „Storno prüfen“).":""),"Stornieren",function(){ setStatus(id,{status:"CANCELLED"},"Buchung storniert"); },true); });
 F.action("bkrestore",function(id){ setStatus(id,{status:"CONFIRMED"},"Storno aufgehoben"); });
 F.action("bkpaid",function(id){ var b=bookingById(id); if(b) setStatus(id,{paymentStatus:b.paymentStatus==="PAID"?"UNPAID":"PAID"},b.paymentStatus==="PAID"?"Wieder auf offen":"Als bezahlt markiert"); });
 
@@ -404,16 +409,18 @@ F.form("bkbook",function(f){
     }
     var p=c.pkg, ex=(S.cat.extras||[]).filter(function(e){ return body.extras.indexOf(e.slug)>-1; });
     var nb={id:j.booking.id,reference:j.booking.reference,eventDate:j.booking.eventDate,eventEndDate:j.booking.eventEndDate,status:j.booking.status,paymentStatus:j.booking.paymentStatus,paymentMethod:body.paymentMethod,blocking:true,source:"cockpit",
+      offerOpen:cm==="offer"&&j.booking.status==="PENDING",   /* neues Blitzdings: Angebot bleibt bis zur Annahme offen */
       package:{slug:p.slug,name:p.name},resourceTypes:p.resourceTypes,customerName:body.customerName,customerEmail:body.customerEmail.toLowerCase(),customerPhone:body.customerPhone,companyName:body.customerType==="COMPANY"?body.companyName:"",
       eventLocation:body.eventLocation,billingStreet:body.billingStreet,billingZip:body.billingZip,billingCity:body.billingCity,note:[body.eventTime?"Uhrzeit: "+body.eventTime:"",body.note].filter(Boolean).join("\n"),
       totalCents:j.booking.totalCents,sevdeskInvoiceId:(j.effects&&j.effects.sevdeskInvoiceId)||"",extras:ex.map(function(e){ return {name:e.name,priceCents:e.priceCents}; })};
     LAST[nb.id]=nb;
     /* klar sagen, ob eine Mail an den Kunden ging (Toast + Hinweis in der Buchungsansicht) */
     var mail=j.effects&&j.effects.mailSent, failed=cm!=="none"&&mail===false, what=MAIL_WHAT[cm];
-    var inv=!body.sevdeskInvoice?"":nb.sevdeskInvoiceId?"Rechnung fertiggestellt, geht per Mail an den Kunden":"Rechnung nicht erstellt – bitte in Blitzdings prüfen";
+    var deferred=!!(j.effects&&j.effects.sevdeskDeferred);   /* Angebot: Blitzdings legt die Rechnung erst bei der Annahme an */
+    var inv=!body.sevdeskInvoice?"":nb.sevdeskInvoiceId?"Rechnung fertiggestellt, geht per Mail an den Kunden":deferred?"Rechnung entsteht bei der Annahme durch den Kunden":"Rechnung nicht erstellt – bitte in Blitzdings prüfen";
     var sent=failed?what+" NICHT gesendet (Mail fehlgeschlagen)":what+" an "+nb.customerEmail+" gesendet";
     nb.mailInfo=[cm==="none"?"keine – persönlich/gedruckt":sent,inv].filter(Boolean).join(" · ");
-    F.toast("Gebucht: "+nb.customerName+" am "+de(nb.eventDate)+" · "+[cm==="none"?"keine Mail an den Kunden":sent,inv].filter(Boolean).join(" · "),failed||(body.sevdeskInvoice&&!nb.sevdeskInvoiceId));
+    F.toast("Gebucht: "+nb.customerName+" am "+de(nb.eventDate)+" · "+[cm==="none"?"keine Mail an den Kunden":sent,inv].filter(Boolean).join(" · "),failed||(body.sevdeskInvoice&&!nb.sevdeskInvoiceId&&!deferred));
     if(nb.eventDate.slice(0,7)!==S.month){ S.month=nb.eventDate.slice(0,7); S.data=null; }
     refreshAll();
     showBooking(nb,true);

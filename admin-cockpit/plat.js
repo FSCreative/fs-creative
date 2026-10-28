@@ -68,6 +68,11 @@ F.css(
 /* Kacheln in einem Panel (z. B. App-Statistiken) sind verschachtelt: kein zweiter Panel-Grund */
 '@media (min-width:901px){.view-plat .panel .kpi.panel{background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}}'+
 '.pl-fig:empty{display:none}'+
+/* Prüfpunkte (Plattform-Audit): je Zeile Stufe, Text, Aktionen */
+'.pl-checks{display:grid}'+
+'.pl-ck{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--line);font-size:13.5px}'+
+'.pl-ck:last-child{border-bottom:0}.pl-ck .pl-ckt{min-width:0;overflow-wrap:anywhere;text-wrap:pretty}'+
+'.pl-ck.bad{background:var(--bad-soft)}'+
 '@media (max-width:900px){'+
   '.pl-cards{grid-template-columns:minmax(0,1fr)}'+
   '.pl-tbl thead{display:none}'+
@@ -86,6 +91,7 @@ F.css(
   '.pl-bk .pl-right .pl-acts{grid-column:1/-1;justify-content:flex-start}'+
   '.pl-objh{grid-template-columns:minmax(0,1fr)}'+
   '.pl-objh .pl-acts{justify-content:flex-start}'+
+  '.pl-ck{grid-template-columns:minmax(0,1fr)}.pl-ck .pl-acts{justify-content:flex-start}'+
 '}'
 );
 
@@ -133,6 +139,17 @@ function donut(segs,center){
 F.platHbars=hbars; F.platDonut=donut;
 function quote(label,done,total){ var p=total>0?Math.min(100,done/total*100):0; return '<div class="panel pl-quote"><div class="row-between"><span>'+esc(label)+'</span><b class="num">'+Math.round(p)+' %</b></div><div class="bar"><i style="width:'+p.toFixed(1)+'%"></i></div></div>'; }
 function sec(title,right,body){ return '<section class="panel"><div class="panel-h"><h2>'+title+'</h2>'+(right||"")+'</div>'+body+'</section>'; }
+/* Prüfpunkte: rows=[{lvl:"bad"|"warn"|"info",tag,text,inv (Rechnung öffnen),acts (HTML)}] – rot = Achtung, nie automatisch gebucht */
+var CK_TAG={bad:"Achtung",warn:"Prüfen",info:"Hinweis"}, CK_ORD={bad:0,warn:1,info:2};
+function checkRows(rows){ return rows.slice().sort(function(a,b){ return (CK_ORD[a.lvl]||2)-(CK_ORD[b.lvl]||2); }); }
+function checkList(rows){
+  return '<div class="pl-checks">'+checkRows(rows).map(function(r){ var l=CK_TAG[r.lvl]?r.lvl:"info";
+    return '<div class="pl-ck '+l+'"><span class="tag '+l+'">'+esc(r.tag||CK_TAG[l])+'</span><span class="pl-ckt">'+esc(r.text||"")+'</span><span class="pl-acts">'+
+      (r.inv&&F.actions.fin?'<button class="btn" data-act="fin:invd:'+esc(r.inv)+'">Rechnung öffnen</button>':'')+(r.acts||"")+'</span></div>'; }).join("")+'</div>';
+}
+function checkSec(title,rows){ if(!rows.length) return ""; var bad=rows.filter(function(r){ return r.lvl==="bad"; }).length;
+  return sec(title,'<span class="tag '+(bad?"bad":"warn")+'">'+rows.length+(bad?" · "+bad+" dringend":"")+'</span>',checkList(rows)); }
+function mmOf(m){ return String(m||"").split("-").reverse().join("/"); }
 
 /* ---------- Billing-Historie (für Rückgängig & Blitzdings-Rechnungen) ---------- */
 function loadBill(){ return F.api("/admin/api/billing").then(function(b){ if(b&&b.invoices){ BILL=b; } return BILL; }).catch(function(){ return BILL; }); }
@@ -261,6 +278,7 @@ function vKochdu(){
   var hasApp=ko.nutzer&&(kunden!=null||n.apple!=null||n.android!=null);
   var chartRows=rs.filter(function(r){ return (+r.barOpenCents||0)+(+r.barSettledCents||0)>0; }).map(function(r){ var a=c2e(r.barSettledCents), b=c2e(r.barOpenCents); return {label:r.name||"—",right:'<span class="money">'+eur0(a)+' verrechnet'+(b>0.005?' · '+eur0(b)+' offen':'')+'</span>',parts:[[a,"a","Verrechnet "+eur(a)],[b,"b","Offen "+eur(b)]]}; });
   return (sevOk?'':'<div class="notice"><span>Die Buchhaltung antwortet gerade nicht. „Verrechnen“ markiert dann nur als verrechnet, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
+    checkSec("Zur Prüfung",koChecks(ko))+
     '<div class="kpis">'+
       kpi("Bestellungen",num((+bo||0)+(+oo||0)),num(bo)+" bar · "+num(oo)+" online")+
       kpi("Bar-Gebühren offen",'<span class="money">'+eur(open)+'</span>',"verrechnest du selbst",{vcls:open>0.005?"warn-t":""})+
@@ -291,6 +309,55 @@ function lastOrdersSec(ko){
     return '<tr><td class="nowrap num muted">'+esc(o.at?new Date(o.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"")+'</td><td><b>'+esc(o.restaurant)+'</b><div class="sub">#'+esc(o.nr)+(o.customer?' · '+esc(o.customer):'')+(o.type?' · '+esc(o.type==="DELIVERY"?"Lieferung":o.type==="PICKUP"?"Abholung":o.type==="DINE_IN"?"vor Ort":o.type.toLowerCase()):'')+'</div></td><td><span class="tag '+st[1]+'">'+esc(st[0])+'</span></td><td class="nowrap">'+esc(o.payment==="cash"?"bar":o.payment?"online":"")+'</td><td class="r num money">'+eur(c2e(o.totalCents))+'</td></tr>'; }).join("")+'</tbody></table></div>');
 }
 function kochduRest(id){ return ((P().kochdu||{}).restaurants||[]).find(function(r){ return String(r.id)===String(id); }); }
+/* Prüfpunkte aus der kochdu-Statistik (CONTRACT-fs-order §4): stornierte/fehlende Monatsabrechnung → „neu abrechnen“ (billMonth, erst Probelauf),
+   doppelt verrechnet → Gutschrift-Vorschlag unter „Zur Prüfung“ (nur auf Klick), alte Auszahlungs-Gutschrift → melden, nie still ändern */
+function koChecks(ko){
+  var rows=[], inv={}; ((F.D.sev&&F.D.sev.invoices)||[]).forEach(function(i){ inv[i.id]=i; });
+  var bm=function(r,m,part,lbl){ var k=r.id+"~"+m+"~"+part; return '<button class="btn primary" data-act="plkbm:'+esc(k)+'"'+(BUSY["m"+k]?" disabled":"")+'>'+esc(lbl)+'</button>'; };
+  (ko.restaurants||[]).forEach(function(r){ var nm=r.name||"Lokal";
+    (r.months||[]).forEach(function(m){ var mm=mmOf(m.month), d=m.doc||{};
+      if(+m.doubleBilledCents>0){ var di=d.docId&&inv[d.docId], paid=!!di&&(di.status===750||di.status===1000);
+        rows.push({lvl:"bad",tag:"Doppelt verrechnet",text:nm+" "+mm+": "+eur(c2e(m.doubleBilledCents))+" schon per Verrechnung von Hand abgerechnet und nochmals in "+(d.nr||"der Monatsrechnung")+". "+(paid?"Gutschrift-Vorschlag liegt unter „Zur Prüfung“ (nur auf Klick).":"Die Monatsrechnung ist noch nicht bezahlt – eine Gutschrift geht erst danach; nichts wird automatisch korrigiert."),inv:d.docId||"",acts:paid&&F.actions.fin?'<button class="btn" data-act="fin:review">Zur Prüfung</button>':''}); }
+      if(m.state==="storniert"&&+m.openCents>0){ var cd=(m.cancelledDocs||[])[0]||{}; rows.push({lvl:"warn",tag:"Storniert",text:nm+" "+mm+": Monatsrechnung "+(cd.nr||"")+" storniert – "+eur(c2e(m.openCents))+" neu abrechnen.",inv:cd.docType==="CreditNote"?"":(cd.docId||""),acts:bm(r,m.month,"cash","Neu abrechnen")}); }
+      else if(m.state==="ueberschneidung"&&+m.openCents>0) rows.push({lvl:"warn",tag:"Teilweise von Hand",text:nm+" "+mm+": "+eur(c2e(m.manualCents))+" schon von Hand verrechnet, Rest "+eur(c2e(m.openCents))+" offen.",acts:bm(r,m.month,"cash","Rest abrechnen")});
+      else if(m.state==="rueckstand"&&+m.openCents>0) rows.push({lvl:"warn",tag:"Rückstand",text:nm+" "+mm+": weder Monatsrechnung noch Verrechnung von Hand ("+eur(c2e(m.openCents))+"). Vorsicht: Die alte Sammelrechnung „kochdu Provisionen "+mm+"“ kann den Monat schon enthalten – vorher prüfen.",acts:bm(r,m.month,"cash","Abrechnen …")});
+      else if(m.state==="offen"&&!m.autoPending&&+m.openCents>0) rows.push({lvl:"warn",tag:"Monatslauf fehlt",text:nm+" "+mm+": abgeschlossen, aber noch keine Monatsrechnung ("+eur(c2e(m.openCents))+").",acts:bm(r,m.month,"cash","Abrechnen")});
+      else if(m.state==="haengt") rows.push({lvl:"info",tag:"Lauf hängt",text:nm+" "+mm+": Abrechnungslauf ohne Beleg – der nächste Lauf übernimmt den Beleg oder legt ihn an."});
+      if(+m.owedCents>0&&!(m.doc&&m.state==="gutschrift")) rows.push({lvl:"warn",tag:"An das Lokal",text:nm+" "+mm+": kochdu schuldet dem Lokal "+eur(c2e(m.owedCents))+" (Guthaben/Gutscheine übersteigen die Gebühr).",acts:bm(r,m.month,"cash","Abrechnung an das Lokal erstellen")});
+    });
+    (r.payouts||[]).forEach(function(x){ if(!x||!x.legacySign||x.cancelled||x.deleted) return;
+      rows.push({lvl:"warn",tag:"Alte Auszahlungs-Gutschrift",text:nm+" "+mmOf(x.month)+": Auszahlungs-Gutschrift "+(x.nr||"(Entwurf)")+" in alter Form (Gebühr ohne USt). Bitte den Entwurf löschen und neu erzeugen – nichts wird still geändert.",acts:bm(r,x.month,"payout","Neu erzeugen …")}); });
+  });
+  var now=Date.now(); (((ko.billing||{}).hanging)||[]).forEach(function(h){ if(h&&h.since&&now-Date.parse(h.since)>864e5) rows.push({lvl:"info",tag:"Lauf hängt",text:"Abrechnung "+mmOf(h.month)+" ("+(h.part||"")+") seit "+deShort(String(h.since).slice(0,10))+" ohne Beleg."}); });
+  return rows;
+}
+/* „Neu abrechnen“: kochdu-Aktion billMonth über den bestehenden Proxy – erst Probelauf (zeigt, was entsteht), dann auf Klick echt */
+function kbmErr(j){ var e=(j&&(j.error||(j.line&&j.line.error)))||"unbekannter Fehler"; return {bad_month:"ungültiger Monat",month_not_closed:"Monat ist noch nicht abgeschlossen",not_found:"Lokal nicht gefunden",billing_exclude:"Lokal ist von der Barabrechnung ausgenommen",unknown_action:"kochdu kennt „neu abrechnen“ noch nicht (Update ausstehend)",bad_part:"unbekannte Abrechnungsart"}[e]||String(e); }
+F.action("plkbm",function(v){
+  var x=String(v).split("~"), rid=x[0], month=x[1], part=x[2]==="payout"?"payout":"cash", r=kochduRest(rid); if(!r||BUSY["m"+v]) return;
+  if(!Array.isArray(r.months)){ F.toast("kochdu kennt „neu abrechnen“ noch nicht (Update ausstehend)",true); return; }   /* altes kochdu würde jede unbekannte Aktion als „verrechnet“ speichern */
+  var m=(r.months||[]).find(function(y){ return y.month===month; })||{}, mm=mmOf(month), body={action:"billMonth",restaurantId:rid,month:month,part:part};
+  BUSY["m"+v]=1; F.render();
+  F.api("/admin/api/kochdu-settle",{body:Object.assign({dry:true},body)}).then(function(j){
+    delete BUSY["m"+v]; F.render();
+    if(!j||j.ok===false||j.error){ F.toast("kochdu: "+kbmErr(j),true); return; }
+    var l=j.line||{};
+    if(j.nothing||l.skipped){ F.toast((r.name||"")+" "+mm+": "+(l.skipped||"nichts abzurechnen")); F.load(true); return; }
+    var g=+l.gross||0, neg=g<0||part==="payout";
+    var txt=(r.name||"")+" "+mm+": "+(part==="payout"?"Auszahlungs-Abrechnung":"Barzahlungsabrechnung")+" über "+eur(g)+(+l.manualSettledGross>0?" (abzüglich bereits von Hand verrechnet "+eur(+l.manualSettledGross)+")":"")+". "+
+      (neg?"Wird als Entwurf angelegt – du überweist und sendest selbst.":"Wird angelegt, fertiggestellt und per Mail an das Lokal geschickt.")+(l.addressWarning?" Hinweis: "+l.addressWarning:"")+
+      (m.state==="rueckstand"?" Achtung: Monat vor 10/2026 – die alte Sammelrechnung „kochdu Provisionen "+mm+"“ kann diese Gebühren schon als Erlös enthalten. Bitte vorher prüfen.":"");
+    F.confirm(txt,neg?"Entwurf anlegen":"Abrechnen & senden",function(){
+      BUSY["m"+v]=1; F.render();
+      F.api("/admin/api/kochdu-settle",{body:Object.assign({dry:false,send:true},body)}).then(function(k2){
+        delete BUSY["m"+v];
+        if(!k2||k2.ok===false||k2.error){ F.toast("kochdu: "+kbmErr(k2)+" – bitte in kochdu prüfen, bevor du es noch einmal versuchst",true); F.load(true); return; }
+        var l2=k2.line||{}; F.toast((r.name||"")+" "+mm+": "+(l2.skipped?l2.skipped:(l2.invoiceNumber?"Rechnung "+l2.invoiceNumber:"Beleg")+" angelegt"+(l2.mail?" und versendet":"")));
+        F.load(true);
+      }).catch(function(){ delete BUSY["m"+v]; F.toast("Keine Verbindung zu kochdu – bitte in kochdu prüfen, ob der Beleg entstanden ist",true); F.render(); });
+    });
+  }).catch(function(){ delete BUSY["m"+v]; F.toast("Keine Verbindung zum Server",true); F.render(); });
+});
 function kochduSettleOnly(r){
   var cents=Math.round(+r.barOpenCents||0); BUSY["k"+r.id]=1; F.render();
   F.api("/admin/api/kochdu-settle",{body:{action:"settle",restaurantId:r.id,amountCents:cents}}).then(function(j){
@@ -334,7 +401,36 @@ F.action("plkundo",function(id){
 
 /* ---------- Kantineur ---------- */
 var KA_PLANS={KANTINEUR:{label:"Kantineur",price:9},MAGAZINEUR:{label:"Magazineur",price:14.9}};
-var KA_STATUS={ACTIVE:["aktiv","ok"],TRIAL:["Testphase","info"],PAUSED:["pausiert","warn"],INACTIVE:["inaktiv","grey"],CANCELLED:["gekündigt","bad"],CANCELED:["gekündigt","bad"],EXPIRED:["abgelaufen","grey"],PENDING:["ausstehend","warn"]};
+var KA_STATUS={ACTIVE:["aktiv","ok"],TRIAL:["Testphase","info"],PAUSED:["pausiert","warn"],INACTIVE:["inaktiv","grey"],CANCELLED:["gekündigt","bad"],CANCELED:["gekündigt","bad"],EXPIRED:["abgelaufen","grey"],PENDING:["ausstehend","warn"],PAST_DUE:["Zahlung offen","bad"]};
+var KA_ADMIN="https://kantineur.at/betreiber/kantinen";
+function kaPlan(p){ return (KA_PLANS[p]||{}).label||p||"—"; }
+/* Prüfpunkte Kantineur (KA-7/KA-10, Abo-Fehler, Rechnungen aus dem Abgleich): Doppelabbuchung und „Zahlung offen“ rot */
+function kaChecks(k){
+  var a=k.attention||{}, rows=[], it=item("kantineur"), dd=function(v){ return v?de(String(v).slice(0,10)):""; };
+  (a.subscriptionErrors||[]).forEach(function(x){ var dbl=/zweites mollie-abo|doppelt abgebucht/i.test(x.error||"");
+    rows.push({lvl:dbl?"bad":"warn",tag:dbl?"Doppelabbuchung":"Abo-Fehler",text:(x.name||"Kantine")+": "+(x.error||"Monatsabo bei Mollie nicht in Ordnung")+(dbl?" – zweites Abo im Kantineur-Betreiberbereich bzw. bei Mollie beenden und doppelt Eingezogenes erstatten.":""),acts:ext(KA_ADMIN,"Kantineur")}); });
+  (a.pastDue||[]).forEach(function(x){ rows.push({lvl:"bad",tag:"Zahlung offen",text:(x.name||"Kantine")+": Monatseinzug geplatzt oder zurückgebucht"+(x.paidUntil?" · bezahlt bis "+dd(x.paidUntil):"")+".",acts:ext(KA_ADMIN,"Kantineur")}); });
+  (a.activeWithoutMollie||[]).forEach(function(x){ rows.push({lvl:"warn",tag:"Kein Monatsabo",text:(x.name||"Kantine")+": bezahlt, aber kein Monatsabo bei Mollie – es wird nicht mehr abgebucht"+(x.paidUntil?" (bezahlt bis "+dd(x.paidUntil)+")":"")+". Nachholen mit „Abo bei Mollie einrichten“.",acts:ext(KA_ADMIN,"Kantineur")}); });
+  (a.planChanges||[]).forEach(function(x){ rows.push({lvl:"info",tag:"Tarifwechsel",text:(x.name||"Kantine")+": "+kaPlan(x.plan)+" → "+kaPlan(x.nextPlan)+" ab dem nächsten Einzug."}); });
+  /* ältere Kantineur-Version ohne attention: Status-Zähler */
+  var cs=(k.canteens||{}).byStatus||{};
+  if(!a.pastDue&&+cs.PAST_DUE>0) rows.push({lvl:"bad",tag:"Zahlung offen",text:num(cs.PAST_DUE)+(+cs.PAST_DUE===1?" Kantine":" Kantinen")+" mit geplatztem Monatseinzug – im Kantineur-Betreiberbereich ansehen.",acts:ext(KA_ADMIN,"Kantineur")});
+  ((it&&it.notes)||[]).forEach(function(n){ rows.push(n); });
+  return rows;
+}
+/* Abo-Zahlungen mit Rechnung (Kantineur ab apiVersion 2) */
+function kaPaySec(k){
+  var ps=(k.payments||[]).slice(0,12); if(!ps.length) return "";
+  var inv={}; ((F.D.sev&&F.D.sev.invoices)||[]).forEach(function(i){ inv[i.id]=i; if(i.mpid&&i.type!=="SR"&&!inv[i.mpid]) inv[i.mpid]=i; });
+  var ST={sent:["versendet","ok"],unsent:["nicht versendet","warn"],missing:["Rechnung fehlt","bad"]};
+  return sec("Abo-Zahlungen & Rechnungen",'<span class="muted">je Mollie-Einzug genau eine Rechnung</span>','<div class="scroll"><table class="pl-tbl"><thead><tr><th>Bezahlt</th><th>Kantine</th><th class="r">Betrag</th><th>Rechnung</th></tr></thead><tbody>'+
+    ps.map(function(p){ var i=(p.invoiceId&&inv[p.invoiceId])||inv[p.molliePaymentId], st=ST[p.invoiceState]||["?","grey"], back=(+p.refundedCents||0)+(+p.chargedBackCents||0);
+      var nr=i?(F.actions.fin?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" data-act="fin:invd:'+esc(i.id)+'">'+esc(i.nr||"Entwurf")+'</a>':esc(i.nr||"Entwurf")):(p.invoiceNumber?esc(p.invoiceNumber):'<span class="muted">—</span>');
+      return '<tr><td class="nowrap" data-l="Bezahlt">'+(p.paidAt?deShort(String(p.paidAt).slice(0,10)):"—")+'</td><td data-l="Kantine"><b>'+esc(p.canteenName||"—")+'</b><div class="sub">'+esc(kaPlan(p.plan))+(p.periodStart?" · "+deShort(p.periodStart)+"–"+deShort(p.periodEnd):"")+'</div></td>'+
+        '<td class="r" data-l="Betrag">'+money(c2e(p.grossCents))+(back>0?'<div class="sub bad-t">'+(+p.chargedBackCents>0?"zurückgebucht ":"erstattet ")+'<span class="money">'+eur(c2e(back))+'</span></div>':'')+'</td>'+
+        '<td data-l="Rechnung"><span class="invs">'+nr+' <span class="tag '+(i&&i.status===100?"warn":st[1])+'">'+esc(i&&i.status===100?"Entwurf":i&&i.cancelled?"storniert":st[0])+'</span>'+(i&&Math.abs((+i.gross||0)-c2e(p.grossCents))>0.005?' <span class="tag bad">Betrag weicht ab</span>':'')+'</span>'+(p.invoiceError?'<div class="sub warn-t">'+esc(p.invoiceError)+'</div>':'')+'</td></tr>'; }).join("")+
+    '</tbody></table></div>'+(k.paymentsTruncated||(k.payments||[]).length>12?'<p class="pl-note" style="padding:0 18px 12px">Die letzten 12 Einzüge – alle im Kantineur-Betreiberbereich.</p>':''));
+}
 function vKantineur(){
   var k=P().kantineur;
   if(!k) return '<div class="panel empty">Keine Verbindung zu Kantineur. Prüfe KANTINEUR_STATS_URL und KANTINEUR_STATS_TOKEN in Railway.</div>';
@@ -346,13 +442,16 @@ function vKantineur(){
   var spon=+sub.sponsored||0;
   var stRows=Object.keys(cs).filter(function(s){return +cs[s]>0;}).sort(function(a,b){return cs[b]-cs[a];});
   var tones=["ok","info","glow","warn","bad","ink-3"];
-  return '<div class="kpis"'+(k.trial?' style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"':'')+'>'+
+  var cks=kaChecks(k), ckBad=cks.filter(function(r){ return r.lvl==="bad"; }).length, ckWarn=cks.filter(function(r){ return r.lvl==="warn"; }).length, ki=k.invoices||null;
+  return '<div class="kpis"'+(k.trial||ckBad||ckWarn?' style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"':'')+'>'+
       kpi("Umsatz diesen Monat",'<span class="money">'+eur(c2e(k.thisMonthGrossCents))+'</span>',"automatisch über die Plattform",{vcls:"ok-t"})+
       kpi("Aktive Abos",num(sub.active),num(sub.paying)+" zahlend · "+num(spon)+" gesponsert")+
       kpi("Umsatz / Monat (MRR)",'<span class="money">'+eur(mrr)+'</span>','<span class="money">'+eur(mrr*12)+'</span> pro Jahr'+(spon?" · "+spon+"× Gutschein gratis":""),{vcls:"ok-t"})+
       kpi("Eingenommen "+esc(F.D.year),'<span class="money">'+eur(c2e(k.revenueGrossCents))+'</span>',k.revenueNetCents?'netto <span class="money">'+eur(c2e(k.revenueNetCents))+'</span>':"brutto, fließt in die Gesamt-Einnahmen")+
+      (ckBad||ckWarn?kpi("Zur Prüfung",num(ckBad+ckWarn),(ckBad?num(ckBad)+" dringend":"")+(ckBad&&ckWarn?" · ":"")+(ckWarn?num(ckWarn)+" prüfen":""),{vcls:ckBad?"bad-t":"warn-t"}):'')+
       (k.trial?kpi("In Testzeit (Demo)",num(k.trial.running),[k.trial.endingSoon?num(k.trial.endingSoon)+" enden in 3 Tagen":"keine endet in den nächsten 3 Tagen",k.trial.expired?num(k.trial.expired)+" abgelaufen ohne Abo":""].filter(Boolean).join(" · ")+(k.trial.showcase?' <span class="muted">· ohne '+num(k.trial.showcase)+' Vorführ-Kantine'+(k.trial.showcase===1?'':'n')+'</span>':''),{vcls:k.trial.endingSoon?"warn-t":""}):'')+
     '</div>'+
+    checkSec("Zur Prüfung",cks)+
     '<div class="two">'+
       sec("Abo-Varianten",'<span class="muted">Umsatz effektiv, Gutscheine eingerechnet</span>',
         '<table class="pl-tbl"><thead><tr><th>Variante</th><th class="r">Listenpreis</th><th class="r">Aktiv</th><th class="r">Zahlend</th><th class="r">Umsatz / Monat</th></tr></thead><tbody>'+
@@ -362,15 +461,48 @@ function vKantineur(){
     '</div>'+
     sec("Kantinen nach Status",'<span class="muted">'+num((k.canteens||{}).total)+' registriert</span>',
       stRows.length?hbars(stRows.map(function(s,i){ var m=KA_STATUS[s]||[s.toLowerCase(),"grey"]; return {label:m[0].charAt(0).toUpperCase()+m[0].slice(1),right:num(cs[s])+(cs[s]===1?" Kantine":" Kantinen"),parts:[[+cs[s],{ok:"a",warn:"b",info:"c"}[m[1]]||"d",m[0]]]}; })):'<div class="empty">Keine Status-Aufteilung verfügbar.</div>')+
-    '<p class="pl-note">Kantineur rechnet die Abos selbst ab. Hier ist nichts zu verrechnen.</p>';
+    kaPaySec(k)+
+    '<p class="pl-note">Kantineur rechnet die Abos selbst ab: je Mollie-Einzug eine Rechnung in deiner Buchhaltung, die Zahlung ordnet der Mollie-Abgleich zu. Hier ist nichts zu verrechnen'+(ki?' · Rechnungen '+num(ki.written)+(ki.missing?' · <span class="bad-t">'+num(ki.missing)+' fehlen</span>':'')+(ki.unsent?' · '+num(ki.unsent)+' nicht versendet':''):'')+'.</p>';
 }
 
 /* ---------- Blitzdings ---------- */
 function bzPayTag(b){ return b.paymentStatus==="PAID"?'<span class="tag ok">bezahlt</span>':b.paymentStatus==="REFUNDED"?'<span class="tag grey">erstattet</span>':'<span class="tag warn">offen</span>'; }
+/* BD-10: Buchungsliste nicht (aktuell) geladen → sichtbar, nie still „0 zu verrechnen“ */
+function bzStatusNote(){ var s=F.D&&F.D.abgleich&&F.D.abgleich.blitzStatus; if(!s||(s.status!=="fehlt"&&s.status!=="stale"&&!s.partial)) return "";
+  return '<div class="notice" style="background:var(--warn-soft)"><span><b>Blitzdings-Buchungen '+(s.status==="fehlt"?"nicht geladen":"nicht aktuell")+'</b> – Liste unvollständig'+(s.status==="stale"&&s.at?" (Stand "+esc(new Date(s.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}))+")":"")+(s.error?": "+esc(s.error):"")+'. „Zu verrechnen“ kann zu niedrig sein.</span><button class="btn" data-act="reload">Neu laden</button></div>'; }
+/* Prüfpunkte Blitzdings: Abgleich-Hinweise (Storno prüfen, offenes Angebot, Doppelrechnung, Betrag geändert …) + Rechnungsmeldung an Blitzdings */
+function bzChecks(bz){
+  var rows=[], rep=bz&&bz.invoiceReport;
+  items("blitzdings").forEach(function(x){ (x.notes||[]).forEach(function(n){ var id=x.bookingId||String(x.key).replace(/^blitz:/,"");
+    var acts=(F.actions.bkshow?'<button class="btn" data-act="bkshow:'+esc(id)+'">Buchung</button>':'')+(x.offerOpen?'<button class="btn primary" data-act="plbaccept:'+esc(id)+'">Als angenommen markieren</button>':'');
+    rows.push({lvl:n.lvl,tag:n.lvl==="bad"&&x.cancelled?"Storno prüfen":x.offerOpen?"Angebot offen":"",text:(x.name||"Buchung")+(x.reference?" ("+x.reference+")":"")+": "+n.text,inv:n.inv||((x.cancelled||/Doppelrechnung/.test(n.text))&&x.last&&x.last.id)||"",acts:acts}); }); });
+  if(rep){
+    if((rep.stock||[]).length) rows.push({lvl:"warn",tag:"An Blitzdings melden",text:rep.stock.length+(rep.stock.length===1?" Cockpit-Rechnung ist":" Cockpit-Rechnungen sind")+" Blitzdings noch nicht gemeldet (ältere Einträge). Melden sperrt dort die automatische Rechnung bei Online-Zahlung oder Angebotsannahme – keine Rechnung wird geändert.",acts:'<button class="btn primary" data-act="plbrep:stock"'+(BUSY.brep?" disabled":"")+'>An Blitzdings melden</button>'});
+    (rep.duplicates||[]).forEach(function(d){ rows.push({lvl:"bad",tag:"Doppelrechnung",text:"Buchung "+(d.reference||d.bookingId)+": Cockpit-Rechnung "+(d.nr||"(Entwurf)")+(d.other?" und Blitzdings-Rechnung "+(d.otherNr||"")+"":"")+(d.inProgress?" – Blitzdings legt gerade selbst eine an":"")+". Eine davon stornieren bzw. den Entwurf löschen – nicht automatisch.",inv:d.invoiceId}); });
+    var pend=(rep.pending||[]).filter(function(x){ return x.tries>0; });
+    if(pend.length) rows.push({lvl:"info",tag:"Meldung wartet",text:pend.length+(pend.length===1?" Rechnungsmeldung wartet":" Rechnungsmeldungen warten")+" auf Blitzdings: "+(pend[0].err||"nicht erreichbar")+" – wird von selbst wiederholt.",acts:'<button class="btn" data-act="plbrep:pending"'+(BUSY.brep?" disabled":"")+'>Jetzt versuchen</button>'});
+  }
+  return rows;
+}
+F.action("plbrep",function(what){
+  var rep=(P().blitzdings||{}).invoiceReport||{}, list=what==="stock"?(rep.stock||[]):(rep.pending||[]); if(!list.length||BUSY.brep) return;
+  var go=function(){ BUSY.brep=1; F.render();
+    F.api("/admin/api/blitz/booking-invoice",{body:{items:list.map(function(x){ return {bookingId:x.bookingId,invoiceId:x.invoiceId,nr:x.nr||""}; })}}).then(function(j){
+      delete BUSY.brep; if(!j||j.ok===false){ F.toast("Blitzdings: "+((j&&j.error)||"nicht erreichbar"),true); F.render(); return; }
+      F.toast(j.reported+" gemeldet"+(j.duplicates?" · "+j.duplicates+" mögliche Doppelrechnung(en) – bitte prüfen":"")+(j.queued?" · "+j.queued+" warten (Blitzdings-Update ausstehend)":""),!!j.duplicates||!!j.queued); F.load(true);
+    }).catch(function(){ delete BUSY.brep; F.toast("Keine Verbindung zum Server",true); F.render(); }); };
+  if(what==="stock") F.confirm(list.length+(list.length===1?" Cockpit-Rechnung":" Cockpit-Rechnungen")+" an Blitzdings melden? Blitzdings legt für diese Buchungen dann keine eigene Rechnung mehr an. Rechnungen werden nicht geändert.","Melden",go); else go();
+});
+/* offenes Angebot: Kunde hat z. B. telefonisch zugesagt → in Blitzdings bestätigen (danach normale Verrechnung, keine Blitzdings-Rechnung) */
+F.action("plbaccept",function(id){
+  F.confirm("Angebot als angenommen markieren? Die Buchung wird in Blitzdings bestätigt und erscheint danach normal unter „Zu verrechnen“.","Als angenommen markieren",function(){
+    F.api("/admin/api/blitz/booking-status",{body:{id:id,status:"CONFIRMED"}}).then(function(j){ if(!j||j.ok===false){ F.toast("Blitzdings hat nicht gespeichert: "+((j&&j.error)||"Fehler"),true); return; } F.toast("Angebot als angenommen markiert"); F.load(true); }).catch(function(){ F.toast("Keine Verbindung",true); });
+  });
+});
 function vBlitz(){
   var bz=P().blitzdings;
   var kal=F.blitzKal?F.blitzKal():"";   /* Verfügbarkeitskalender + Buchung anlegen (blitz-kal.js) */
-  if(!bz) return '<div class="panel empty">Keine Verbindung zu Blitzdings. Prüfe BLITZDINGS_STATS_URL und BLITZDINGS_STATS_TOKEN in Railway.</div>'+kal;
+  if(!bz) return bzStatusNote()+'<div class="panel empty">Keine Verbindung zu Blitzdings. Prüfe BLITZDINGS_STATS_URL und BLITZDINGS_STATS_TOKEN in Railway.</div>'+checkSec("Zur Prüfung",bzChecks(null))+kal;
   var r=bz.revenue||{}, bk=bz.bookings||{}, ups=(bz.upcoming||[]).slice().sort(function(a,b){ return String(a.eventDate||"").localeCompare(String(b.eventDate||"")); });
   var sevOk=!!F.D.sev;
   var list=ups.map(function(b){
@@ -380,26 +512,28 @@ function vBlitz(){
     var inv="";
     if(it&&it.last) inv='<span class="invs">'+invLine(it.last)+'</span>';
     else if(rec) inv='<span>'+(rec.id?'<a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(rec.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(rec.nr||"Entwurf")+'">'+esc(rec.nr||"Entwurf")+'</a>':esc(rec.nr||"Rechnung"))+' <span class="tag info">angelegt '+deShort(rec.date)+'</span></span>';
-    var sto=!!(it&&it.last&&it.last.state==="storniert"), canInv=(!inv||sto)&&+b.totalCents>0;   /* storniert → wieder zu verrechnen */
+    var sto=!!(it&&it.last&&it.last.state==="storniert"), diff=!!(it&&it.action&&inv&&!sto&&+it.unbilled>0.005&&!it.depositOnly);   /* storniert → wieder zu verrechnen; Betrag geändert → Differenz */
+    var offer=b.offerOpen===true||(b.status==="PENDING"&&b.paymentStatus!=="PAID");   /* Angebot/Anfrage noch nicht angenommen: nie eine Rechnung (sonst Doppelrechnung bei Annahme) */
+    var canInv=(!inv||sto||diff)&&+b.totalCents>0&&!offer&&b.invoiceInProgress!==true;
     var paid=b.paymentStatus==="PAID";
     return '<div class="pl-bk"><div class="pl-date"><b>'+(d?d.getDate():"–")+'</b><span>'+(d?esc(d.toLocaleDateString("de-AT",{month:"short"})):"")+'</span></div>'+
       '<div style="min-width:0"><div><b>'+esc(b.package||"Buchung")+'</b>'+(b.reference?' <span class="tag grey">'+esc(b.reference)+'</span>':'')+'</div>'+
         '<div class="pl-meta"><span>'+esc(b.customerName||"—")+'</span>'+(b.location?'<span>'+esc(b.location)+'</span>':'')+(b.customerPhone?'<a href="tel:'+esc(String(b.customerPhone).replace(/[^\d+]/g,""))+'">'+esc(b.customerPhone)+'</a>':'')+(b.customerEmail?'<span>'+esc(b.customerEmail)+'</span>':'')+'<span>'+(d?esc(d.toLocaleDateString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"})):"")+esc(end)+'</span></div>'+
         ((b.extras||[]).length?'<div class="pl-meta">+ '+esc(b.extras.map(function(e){return e&&e.name;}).filter(Boolean).join(", "))+'</div>':'')+
       '</div>'+
-      '<div class="pl-right"><span class="pl-amt money">'+eur(c2e(b.totalCents))+'</span>'+bzPayTag(b)+
+      '<div class="pl-right"><span class="pl-amt money">'+eur(c2e(b.totalCents))+'</span>'+(offer?'<span class="tag info">'+(b.offerOpen?"Angebot offen":"nicht angenommen")+'</span>':bzPayTag(b))+
         '<div class="pl-acts">'+inv+
-          (canInv?'<button class="btn" data-act="plbinv:'+esc(b.id)+'"'+(sevOk?'':' disabled title="Buchhaltung ist gerade nicht erreichbar"')+'>Rechnung</button>':'')+
+          (canInv?'<button class="btn" data-act="plbinv:'+esc(b.id)+'"'+(sevOk?'':' disabled title="Buchhaltung ist gerade nicht erreichbar"')+'>'+(diff?"Differenz · "+money(+it.unbilled):"Rechnung")+'</button>':'')+
           (it&&it.depositOnly&&+it.unbilled>0.005&&F.actions.bkshow?'<button class="btn" data-act="bkshow:'+esc(b.id)+'" title="Anzahlung verrechnet – Restrechnung im Buchungsfenster vorbereiten">Restrechnung · '+money(+it.unbilled)+'</button>':'')+
           '<button class="btn'+(paid?"":" primary")+'" data-act="plbpay:'+esc(b.id)+'"'+(BUSY["b"+b.id]?" disabled":"")+'>'+(paid?"↺ Auf offen":"Als bezahlt")+'</button>'+
         '</div></div></div>';
   }).join("");
-  return '<div class="kpis">'+
+  return bzStatusNote()+'<div class="kpis">'+
       kpi("Bezahlt",'<span class="money">'+eur(c2e(r.paidCents))+'</span>',num(bk.paidCount)+" bezahlte Buchungen",{vcls:"ok-t"})+
       kpi("Offen",'<span class="money">'+eur(c2e(r.openCents))+'</span>',num(bk.openCount)+" offen",{vcls:r.openCents>0?"warn-t":""})+
       kpi("Anstehende Termine",num(bk.upcomingCount!=null?bk.upcomingCount:ups.length),"ab heute")+
       kpi("Diesen Monat bezahlt",'<span class="money">'+eur(c2e(r.thisMonthPaidCents))+'</span>',r.refundedCents?'<span class="money">'+eur(c2e(r.refundedCents))+'</span> erstattet':"seit Monatsanfang")+
-    '</div>'+kal+
+    '</div>'+checkSec("Zur Prüfung",bzChecks(bz))+kal+
     sec("Nächste Termine",'<span class="muted">„Als bezahlt“ wird direkt in Blitzdings gespeichert</span>',ups.length?list:'<div class="empty">Keine anstehenden Termine.</div>')+
     bzPastSec(sevOk)+
     sec("Bezahlt vs. offen",'<span class="muted">'+esc(F.D.year)+'</span>',donut([["Bezahlt",c2e(r.paidCents),"ok",'<span class="money">'+eur(c2e(r.paidCents))+'</span>'],["Offen",c2e(r.openCents),"warn",'<span class="money">'+eur(c2e(r.openCents))+'</span>']].concat(r.refundedCents?[["Erstattet",c2e(r.refundedCents),"ink-3",'<span class="money">'+eur(c2e(r.refundedCents))+'</span>']]:[]),num((+bk.paidCount||0)+(+bk.openCount||0))));
