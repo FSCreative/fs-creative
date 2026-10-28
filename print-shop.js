@@ -2421,7 +2421,7 @@ module.exports = function (D) {
       for (const k of XMAS.keys()) {
         const r = { ok: false }; let asked = false;
         try {
-          const p = await findProduct(k, s); if (!p) throw new Error("im Shop nicht freigeschaltet");
+          const p = await findProduct(k, s); if (!p) throw Object.assign(new Error("im Shop nicht freigeschaltet"), { status: 400 });
           const pp = pubProd(p); r.title = pp.title; r.promo = p.kind === "promo" || (p.cat && p.cat.main) === PROMO;
           if (XMAS.staleYear(pp.title, sea)) { r.stale = true; throw new Error("Kalender mit altem Jahr"); }
           const inp = stdInput(p); if (!inp) throw new Error("keine Startausführung");
@@ -2433,8 +2433,10 @@ module.exports = function (D) {
           if (!q) throw e0 || new Error("kein Preis");
           const days = (q.days || []).map(d => d.d).filter(Boolean).sort();
           Object.assign(r, { ok: true, gross: q.gross, copies: n.copies, start: inp.copies, date: days[0] || q.deliveryDate || "" });
-        } catch (e) { r.why = clip(e.message, 160); if (!r.stale) bad.push(k + ": " + r.why); }
-        items[k] = r;
+        } catch (e) { r.why = clip(e.message, 160); if (!r.stale) bad.push(k + ": " + r.why); r.status = e.status || 0; }
+        // Kurze Störung beim Druckpartner (kein 400 „kein Preis“): letzten guten Stand behalten statt den Vorschlag 12 h auszublenden
+        const prev = (XMD && XMD.items && XMD.items[k]) || null;
+        items[k] = !r.ok && !r.stale && r.status !== 400 && prev && prev.ok ? Object.assign({}, prev, { kept: true }) : r;
         if (asked && pause) await new Promise(res => setTimeout(res, pause));   // Pause nur nach Print.com-Abfragen
       }
       XMD = { at: nowIso(), items }; await store.setMeta("print_xmas", XMD).catch(() => {});
