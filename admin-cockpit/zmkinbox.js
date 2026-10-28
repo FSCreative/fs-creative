@@ -1,13 +1,15 @@
-/* Marketing › Posteingang (Server: mkt-posts.js /admin/api/mkt/inbox, Plattformen: mkt-publish.js inbox/inboxReply/inboxLike).
+/* Marketing › Posteingang (Server: mkt-posts.js /admin/api/mkt/inbox/all, Plattformen: mkt-publish.js inbox/inboxReply/inboxLike).
    Wie ein Mailprogramm: links EINE Zeile je Kommentar bzw. Unterhaltung (alle Marken oder eine), rechts der Verlauf mit Beitrag und Antwortfeld.
-   Marken werden im Hintergrund geladen (höchstens 3 gleichzeitig), Filtern und Wechseln passiert sofort im Browser.
+   Sofort da: alle Marken kommen in EINER Antwort aus dem Zwischenspeicher des Servers, aufgefrischt wird im Hintergrund („Stand vor … Min.“ + drehendes Symbol).
+   Filtern und Wechseln passiert sofort im Browser, der letzte Stand bleibt beim Wechseln der Ansicht erhalten.
    Zustand je Eintrag: Neu (ungelesen) → Offen → Beantwortet; „Erledigt“ merkt sich der Server (bis wieder jemand schreibt).
    Likes sind keine Einträge, nur eine Zeile („… Likes diese Woche“) und die Beitragsübersicht rechts.
    Handy (≤ 900 px): Liste volle Breite, Antippen öffnet den Verlauf bildschirmfüllend (Zurück-Knopf, Antwortfeld unten fix). */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, UI=F.UI;
-var BOX={}, CNT=null, CNTREQ=false, LOADING={}, BUSY={}, OPEN={}, DRAFT={}, MENU=false, QUEUE=[], INFLIGHT=0, PUSHED=false, LASTSEL="", PT=0;
+var BOX={}, CNT=null, CNTREQ=false, LOADING={}, REFR={}, BUSY={}, OPEN={}, DRAFT={}, MENU=false, PUSHED=false, LASTSEL="", PT=0;
+var PULL=0, PV="", PLAST=0, PERR=false, PTIMER=0, SRV={keys:null,at:""};   // laufende Anfragen, Kennung des letzten Stands, letzte Antwort (fehlgeschlagen?), Marken laut Server
 UI.mkInBrand=UI.mkInBrand||F.ls("fsc_mkin_b")||"alle";
 UI.mkInKind=UI.mkInKind||"offen";
 UI.mkInSort=UI.mkInSort||F.ls("fsc_mkin_sort")||"neu";
@@ -229,6 +231,13 @@ F.css(
 );
 
 function api(path,body){ return F.api(path,body?{body:body}:undefined); }
+/* Aktionen (gelesen, antworten, liken, erledigt, ausblenden, löschen): eine Antwort von /inbox/all, die der Server vor dem Ende einer Aktion
+   zusammengestellt hat, würde den gerade geänderten Eintrag zurücksetzen → verwerfen und nach der Aktion frisch holen */
+var ACTS=0, AGEN=0, REPULL=false;
+function act(body){ ACTS++; AGEN++;
+  return api("/admin/api/mkt/inbox/act",body).catch(function(){ return {ok:false,error:"Keine Verbindung zum Server"}; })
+    .then(function(j){ ACTS--; AGEN++; setTimeout(repull,0); return j; }); }
+function repull(){ if(REPULL&&!ACTS&&!PULL){ REPULL=false; pull(""); } }
 function mob(){ return !!(window.matchMedia&&matchMedia("(max-width:900px)").matches); }
 function brands(){ var S=F.mktState&&F.mktState(), P=F.mktPlan&&F.mktPlan(), chs=(P&&P.channels||[]).filter(function(c){ return c.status==="ok"; });
   return (S&&S.brands||[]).filter(function(b){ return b.enabled!==false; }).map(function(b){ return {key:b.key,name:b.name,color:(b.colors&&b.colors.primary)||"",chs:chs.filter(function(c){ return c.brand===b.key; })}; }); }
@@ -258,21 +267,42 @@ function lastAt(i){ var m=ms(i.at); (i.replies||[]).concat(i.thread||[]).forEach
 function kindLbl(i){ return i.kind==="message"?"Nachricht":i.kind==="mention"?"Erwähnung":"Kommentar"; }
 function preview(i){ if(i.kind==="message"){ var t=i.thread||[], l=t[t.length-1]; if(l) return {me:!!l.mine,t:l.text}; return {me:!!i.mine,t:i.text}; } return {me:false,t:i.text}; }
 
-/* ---------- Laden: alle verbundenen Marken, höchstens 3 gleichzeitig ---------- */
+/* ---------- Laden: alle Marken in EINER Anfrage, sofort aus dem Zwischenspeicher des Servers ----------
+   Der Server antwortet gleich mit dem letzten Stand (auch nach Neustart/Deploy) und frischt Veraltetes im Hintergrund auf („refreshing“).
+   Solange etwas aufgefrischt wird, fragt das Cockpit mit wait= nach – der Server antwortet, sobald eine Marke fertig ist (spätestens nach 20 s);
+   sonst alle 3 Minuten. Unverändertes kommt nur als Kennung zurück (v). „Aktualisieren“ stößt alle Marken an, ohne etwas zu blockieren. */
 function liveKeys(){ return brands().filter(function(b){ return b.chs.length; }).map(function(b){ return b.key; }); }
-function stale(k,age){ var d=BOX[k]; if(!d) return true; var t=Date.now()-(d._t||0); return d.error?t>60e3:t>(age||2*60e3); }
-function ensure(force,age){ liveKeys().forEach(function(k){ if(force||stale(k,age)) load(k,force); }); }
-function load(key,reload){ if(!key||LOADING[key]) return; LOADING[key]=true; QUEUE.push([key,!!reload]); pump(); }
-function pump(){ while(INFLIGHT<3&&QUEUE.length){ (function(q){ var key=q[0]; INFLIGHT++;
-  api("/admin/api/mkt/inbox?brand="+encodeURIComponent(key)+"&seen=1"+(q[1]?"&reload=1":"")).then(function(j){
-    BOX[key]=j&&j.ok?Object.assign(j,{_t:Date.now()}):Object.assign({channels:[]},BOX[key]&&!BOX[key].error?BOX[key]:{},{error:(j&&j.error)||"Fehler beim Laden",_t:Date.now()}); })
-  .catch(function(){ BOX[key]=Object.assign({channels:[]},BOX[key]&&!BOX[key].error?BOX[key]:{},{error:"Keine Verbindung zum Server",_t:Date.now()}); })
-  .then(function(){ LOADING[key]=false; INFLIGHT--; if(!INFLIGHT&&!QUEUE.length) loadCounts(); paintSoon(); pump(); }); })(QUEUE.shift()); } }
+function refreshing(keys){ return (keys||Object.keys(REFR)).some(function(k){ return REFR[k]; }); }
+function pull(reload,wait){ var t0=Date.now(), g=AGEN, q=[]; PULL++;
+  if(reload) q.push("reload="+encodeURIComponent(reload)); if(wait) q.push("wait="+wait); if(PV) q.push("v="+PV);
+  api("/admin/api/mkt/inbox/all"+(q.length?"?"+q.join("&"):""))
+    .then(function(j){ if(j&&j.ok&&(g!==AGEN||ACTS)){ REPULL=true; return; } apply(j); },function(){ apply({ok:false,error:"Keine Verbindung zum Server"}); })   // während einer Aktion: veraltet
+    .then(function(){ PULL--; PLAST=Date.now(); if(REPULL&&!ACTS&&!PULL){ REPULL=false; pull(""); return; } paintSoon(); next(Date.now()-t0); }); }
+function apply(j){
+  PERR=!j||!j.ok;
+  if(PERR){ var er=(j&&j.error)||"Fehler beim Laden"; REFR={}; Object.keys(LOADING).forEach(function(k){ if(LOADING[k]&&!BOX[k]) BOX[k]={channels:[],error:er,_t:Date.now()}; LOADING[k]=false; });
+    liveKeys().forEach(function(k){ if(!BOX[k]) BOX[k]={channels:[],error:er,_t:Date.now()}; }); return; }
+  if(j.same) return;
+  PV=j.v||""; SRV={keys:Object.keys(j.brands||{}),at:j.at||""};
+  SRV.keys.forEach(function(k){ var d=j.brands[k]; REFR[k]=!!d.refreshing;
+    if(!d.at){ LOADING[k]=!!d.refreshing; if(!d.refreshing) BOX[k]={channels:[],error:d.error||"Noch nichts geladen",_t:Date.now()}; else if(BOX[k]&&!BOX[k].at) delete BOX[k]; return; }   // noch nie geladen: erst nach der ersten Abfrage
+    LOADING[k]=false; BOX[k]=Object.assign(d,{_t:Date.now()}); });
+  Object.keys(REFR).forEach(function(k){ if(SRV.keys.indexOf(k)<0){ REFR[k]=false; LOADING[k]=false; } });
+  if(j.counts){ CNT=j.counts; CNTREQ=true; tabPaint(); } }
+/* Marken mit Kanälen ohne Posteingang (TikTok, LinkedIn, Pinterest) – der Server kennt für sie nichts: leer statt „lädt“ */
+function fillEmpty(){ if(!SRV.keys) return; liveKeys().forEach(function(k){ if(!BOX[k]&&SRV.keys.indexOf(k)<0) BOX[k]={at:SRV.at,channels:[],_t:Date.now()}; }); }
+/* nächste Nachfrage: nur solange aufgefrischt wird und der Posteingang offen ist (kam die Antwort sofort, kurz warten) */
+function next(dur){ clearTimeout(PTIMER); PTIMER=0; if(PULL||!refreshing()||!document.getElementById("miRoot")) return;
+  PTIMER=setTimeout(function(){ PTIMER=0; if(!PULL) pull("",20000); },dur<1000?2000:0); }
+/* beim Öffnen: sofort zeichnen (letzter Stand im Speicher) und den aktuellen Stand holen, wenn er fehlt, älter als 3 Min. ist oder gerade aufgefrischt wird */
+function ensure(){ if(PULL||PTIMER) return; if(!PLAST||Date.now()-PLAST>(PERR?30e3:3*60e3)||refreshing()) pull(""); }
+function reloadAll(k){ (k?[k]:liveKeys()).forEach(function(x){ REFR[x]=true; }); pull(k||"1"); paint(); }
 function loadCounts(){ CNTREQ=true; api("/admin/api/mkt/inbox/counts").then(function(j){ if(j&&j.ok){ CNT=j.counts; tabPaint(); paintSoon(); } }); }
 /* Zähler am Reiter „Posteingang“ (zmarketing.js) ohne Neuaufbau nachziehen */
 function tabPaint(){ if(F.current==="mkt"&&F.mktTabPaint) F.mktTabPaint("posteingang"); }
 function unreadTotal(){ var n=0; if(CNT) Object.keys(CNT).forEach(function(k){ n+=+CNT[k]||0; }); return n; }
 function anyLoading(){ return Object.keys(LOADING).some(function(k){ return LOADING[k]; }); }
+function busyNow(keys){ return anyLoading()||refreshing(keys); }
 
 /* ---------- Daten für die Ansicht ---------- */
 function scopeKeys(){ return UI.mkInBrand==="alle"?liveKeys():[UI.mkInBrand]; }
@@ -297,7 +327,7 @@ function likesInfo(keys){ var wk=Date.now()-7*864e5, o={likes:0,com:0,fol:0,post
       if(c.error) o.errs.push({k:k,b:b,t:c.label+": "+c.error}); (c.notes||[]).forEach(function(n){ o.notes.push(b.name+" · "+n); }); }); });
   o.posts.sort(function(a,b){ return ms(b.at)-ms(a.at); }); return o; }
 function stampIso(keys){ var t=0; keys.forEach(function(k){ var d=BOX[k]; if(d&&d.at){ var x=ms(d.at); if(!t||x<t) t=x; } }); return t?new Date(t).toISOString():""; }
-function stampTxt(keys){ if(anyLoading()) return "Lädt …"; var s=stampIso(keys); return s?'<span class="mi-sw">Stand </span>'+ago(s):"Aktualisieren"; }
+function stampTxt(keys){ var s=stampIso(keys); if(!s) return busyNow(keys)?"Lädt …":"Aktualisieren"; return '<span class="mi-sw">Stand </span>'+ago(s); }
 function rowOf(uid){ var o=uid&&itemOf(uid), b=o&&brandOf(o.key); if(!o||!b) return null; var s=stOf(o.it); return {k:o.key,b:b,c:o.c,it:o.it,uid:uid,st:s,open:isOpen(s),last:lastAt(o.it)}; }
 
 /* ---------- Bausteine ---------- */
@@ -316,8 +346,8 @@ function metaHtml(keys,li,v){ var unread=v.all.filter(function(r){ return r.it.i
   if(!v.ld) lk='';
   var sort='<button type="button" class="mi-lnk" data-act="misort" title="Sortierung umschalten: '+(UI.mkInSort==="offen"?"Neueste zuerst":"Offene zuerst")+'">'+F.svg("msort")+(UI.mkInSort==="offen"?"Offene zuerst":"Neueste zuerst")+'</button>';
   var ra=unread?'<button type="button" class="mi-lnk" data-act="mireadall" title="Alle '+unread+' neuen Einträge als gelesen markieren">'+F.svg("mailOpen")+'<span class="mi-rl">Alle gelesen</span></button>':'';
-  var busy=anyLoading();
-  return '<div class="mi-meta">'+lk+'<span class="mi-sp"></span>'+sort+ra+'<button type="button" class="mi-lnk mi-rf'+(busy?" busy":"")+'" data-act="mireload"'+(busy?' disabled':'')+' title="Jetzt aktualisieren – holt Kommentare und Nachrichten frisch von den Plattformen" aria-label="Aktualisieren">'+F.svg("refresh")+'<span class="mi-stamp" id="miStamp">'+stampTxt(keys)+'</span></button></div>'; }
+  var busy=busyNow(keys), tt=busy?"Wird im Hintergrund aktualisiert – du kannst schon lesen und antworten":"Jetzt aktualisieren – holt Kommentare und Nachrichten frisch von den Plattformen";
+  return '<div class="mi-meta">'+lk+'<span class="mi-sp"></span>'+sort+ra+'<button type="button" class="mi-lnk mi-rf'+(busy?" busy":"")+'" data-act="mireload"'+(busy?' disabled':'')+' title="'+tt+'" aria-label="'+(busy?"Wird aktualisiert":"Aktualisieren")+'">'+F.svg("refresh")+'<span class="mi-stamp" id="miStamp">'+stampTxt(keys)+'</span></button></div>'; }
 function rowHtml(r){ var i=r.it, nm=(i.from&&i.from.name)||"Unbekannt", pv=preview(i), un=i.isNew;
   return '<div class="mi-row'+(un?" unread":"")+(r.uid===UI.mkInSel?" sel":"")+'" role="button" tabindex="0" data-act="misel:'+esc(r.uid)+'" data-miit="'+esc(r.uid)+'" aria-current="'+(r.uid===UI.mkInSel)+'">'+avatar(nm,r.c.platform)+
     '<span class="mi-rm"><span class="mi-l1"><span class="mi-who" title="'+esc(nm+(i.from&&i.from.handle&&i.from.handle.replace(/^@/,"")!==nm?" ("+i.from.handle+")":""))+'">'+esc(nm)+'</span><span class="mi-when" title="'+esc(when(new Date(r.last).toISOString()))+'">'+ago(new Date(r.last).toISOString())+'</span></span>'+
@@ -390,8 +420,8 @@ function body(){
   if(!bs.length||!P) return '<div class="mi-win"><div class="mi-box"><section class="mi-lp"><div class="mi-scroll">'+skel(6)+'</div></section><section class="mi-rp"></section></div></div>';
   if(P.ok===false) return '<div class="notice"><span>'+esc(P.error||"Kanäle konnten nicht geladen werden")+'</span><button type="button" class="btn sm" data-act="mireplan">'+F.svg("refresh")+' Erneut versuchen</button></div>';
   if(UI.mkInBrand!=="alle"&&!brandOf(UI.mkInBrand)) UI.mkInBrand="alle";
-  var keys=scopeKeys(), live=liveKeys();
-  setTimeout(function(){ ensure(false); },0);
+  fillEmpty(); var keys=scopeKeys(), live=liveKeys();
+  setTimeout(ensure,0);
   var v=view(), li=likesInfo(keys); v.ld=loaded(keys); var top=topHtml(bs,v);
   if(!live.length) return '<div class="mi-win mi-solo">'+topHtml(bs,v,true)+'<div class="mi-box"><section class="mi-lp" style="border:0">'+empty("plug","Noch keine Kanäle verbunden","Verbinde Instagram, Facebook &amp; Co. – dann landen Kommentare und Nachrichten aller Marken hier.",'<button type="button" class="btn primary sm" data-act="mktab:kanaele">'+F.svg("link")+' Kanäle verbinden</button>')+'</section></div></div>';
   var b=UI.mkInBrand!=="alle"&&brandOf(UI.mkInBrand);
@@ -420,14 +450,14 @@ function vv(){ var v=window.visualViewport, rp=document.querySelector("#miRoot .
 if(window.visualViewport){ visualViewport.addEventListener("resize",vv); visualViewport.addEventListener("scroll",vv); }
 function grow(t){ if(!t) return; t.style.height="auto"; t.style.height=Math.min(t.scrollHeight+2,mob()?160:200)+"px"; }
 window.addEventListener("resize",function(){ if(document.getElementById("miRoot")) fit(); });
-/* „Stand vor … Min.“ nachziehen und alle 3 Minuten still neu laden, solange der Posteingang offen ist */
-setInterval(function(){ var s=document.getElementById("miStamp"); if(!s||document.hidden) return; s.innerHTML=stampTxt(scopeKeys()); if(!anyLoading()&&liveKeys().some(function(k){ return stale(k,3*60e3); })) ensure(false,3*60e3); },30e3);
+/* „Stand vor … Min.“ nachziehen und alle 3 Minuten still nachfragen, solange der Posteingang offen ist (der Server frischt Veraltetes auf) */
+setInterval(function(){ var s=document.getElementById("miStamp"); if(!s||document.hidden) return; s.innerHTML=stampTxt(scopeKeys()); ensure(); },30e3);
 
 /* ---------- Aktionen ---------- */
 function itemOf(a){ var x=String(a||"").split("|"), d=BOX[x[0]]; if(!d||!d.channels) return null; var c=d.channels.find(function(c){ return c.platform===x[1]; }); var it=c&&c.items.find(function(i){ return i.id===x.slice(2).join("|"); }); return it?{key:x[0],platform:x[1],it:it,c:c,uid:a}:null; }
 function setCnt(j){ if(j&&j.counts){ CNT=j.counts; tabPaint(); } }
 function readItems(key,ids,all){ var d=BOX[key]; if(!d||!d.channels) return; d.channels.forEach(function(c){ c.items.forEach(function(i){ if(all||ids.indexOf(i.id)>-1) i.isNew=false; }); });
-  api("/admin/api/mkt/inbox/act",{brand:key,op:all?"readall":"read",ids:ids}).then(setCnt).then(paintSoon); paintSoon(); }
+  act({brand:key,op:all?"readall":"read",ids:ids}).then(setCnt).then(paintSoon); paintSoon(); }
 /* nach Erledigt/Ausblenden am PC gleich zum nächsten Eintrag der Liste (Handy: zurück zur Liste) */
 function nextAfter(uid){ var l=view().list, i=l.findIndex(function(r){ return r.uid===uid; }); if(i<0) return ""; var n=l[i+1]||l[i-1]; return n?n.uid:""; }
 function select(uid){ var ae=document.activeElement, fr=ae&&ae.classList&&ae.classList.contains("mi-row");
@@ -440,20 +470,20 @@ F.action("misel",function(uid){ if(uid===UI.mkInSel&&!mob()) return; select(uid)
 F.action("miback",function(){ if(PUSHED){ history.back(); return; } closeSel(); });
 window.addEventListener("popstate",function(){ if(!PUSHED) return; PUSHED=false; if(UI.mkInSel||UI.mkInPane){ UI.mkInSel=""; UI.mkInPane=""; paint(); } });
 F.action("mibmenu",function(){ MENU=!MENU; paint(); if(MENU){ var f=document.querySelector('.mi-mi[aria-current="true"]')||document.querySelector(".mi-mi"); if(f) f.focus({preventScroll:true}); } });
-F.action("miopen",function(k){ UI.mkInBrand=k||"alle"; F.ls("fsc_mkin_b",UI.mkInBrand); MENU=false; if(UI.mkInSel&&UI.mkInBrand!=="alle"&&UI.mkInSel.split("|")[0]!==UI.mkInBrand) UI.mkInSel=""; if(UI.mkInBrand!=="alle"&&stale(UI.mkInBrand)) load(UI.mkInBrand); paint(); });
+F.action("miopen",function(k){ UI.mkInBrand=k||"alle"; F.ls("fsc_mkin_b",UI.mkInBrand); MENU=false; if(UI.mkInSel&&UI.mkInBrand!=="alle"&&UI.mkInSel.split("|")[0]!==UI.mkInBrand) UI.mkInSel=""; ensure(); paint(); });
 F.action("mikind",function(k){ if(k==="likes"){ UI.mkInSel=""; UI.mkInPane="likes"; if(mob()&&!PUSHED){ try{ history.pushState({fscMi:1},""); PUSHED=true; }catch(e){} } paint(); return; }
   UI.mkInKind=k==="ungelesen"?"offen":(["offen","kommentare","nachrichten","alle"].indexOf(k)>-1?k:"offen"); if(UI.mkInPane==="likes"&&!mob()) UI.mkInPane=""; paint(); });
 F.action("misort",function(){ UI.mkInSort=UI.mkInSort==="offen"?"neu":"offen"; F.ls("fsc_mkin_sort",UI.mkInSort); paint(); });
 F.action("miqclear",function(){ UI.mkInQ=""; paint(); var q=document.querySelector("[data-miq]"); if(q&&!mob()) q.focus(); });
-F.action("mireload",function(k){ if(k){ load(k,true); } else ensure(true); paint(); });
+F.action("mireload",function(k){ reloadAll(k||""); });
 F.action("mireplan",function(){ if(F.mktPlanReload) F.mktPlanReload(); });
 F.action("misend",function(a){ var o=itemOf(a); if(!o) return; var ta=document.querySelector('[data-mirep="'+CSS.escape(a)+'"]'), txt=(ta?ta.value:DRAFT[a]||"").trim(); if(!txt) return F.toast("Bitte zuerst einen Text schreiben",true);
   DRAFT[a]=ta?ta.value:txt; BUSY[o.it.id]="send"; paint();
-  api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"reply",text:txt}).then(function(j){ delete BUSY[o.it.id];
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:"reply",text:txt}).then(function(j){ delete BUSY[o.it.id];
     if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Senden fehlgeschlagen",true); }
     var i=o.c.items.indexOf(o.it); o.c.items[i]=Object.assign(j.item,{isNew:false,done:o.it.done}); delete DRAFT[a]; paint(); F.toast("Gesendet"); }); });
 F.action("milike",function(a){ var o=itemOf(a); if(!o) return; BUSY[o.it.id]="like"; paint();
-  api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"like"}).then(function(j){ delete BUSY[o.it.id]; if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Liken fehlgeschlagen",true); } o.it.liked=true; paint(); }); });
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:"like"}).then(function(j){ delete BUSY[o.it.id]; if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Liken fehlgeschlagen",true); } o.it.liked=true; paint(); }); });
 F.action("misuggest",function(a){ var o=itemOf(a); if(!o) return; var ta=document.querySelector('[data-mirep="'+CSS.escape(a)+'"]'), hint=ta?ta.value.trim():""; BUSY[o.it.id]="ki"; paint();
   api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"suggest",hint:hint}).then(function(j){ delete BUSY[o.it.id];
     if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"KI-Vorschlag fehlgeschlagen",true); }
@@ -463,15 +493,15 @@ F.action("mireadall",function(){ scopeKeys().forEach(function(k){ var d=BOX[k]; 
 F.action("mimore",function(a){ var o=itemOf(a); if(!o) return; OPEN[o.it.id]=1; paint(); });
 function setDone(a,done){ var o=itemOf(a); if(!o) return; var nx=done&&UI.mkInKind==="offen"?a:"";
   o.it.done=done; o.it.isNew=false; if(nx) advance(a); else paint();
-  api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:done?"done":"open"}).then(function(j){ if(!j||!j.ok){ o.it.done=!done; paint(); return F.toast((j&&j.error)||"Fehler",true); } setCnt(j); paintSoon(); });
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:done?"done":"open"}).then(function(j){ if(!j||!j.ok){ o.it.done=!done; paint(); return F.toast((j&&j.error)||"Fehler",true); } setCnt(j); paintSoon(); });
   F.toast(done?"Erledigt":"Wieder offen",false,done?"Rückgängig":"",done?function(){ setDone(a,false); }:null); }
 F.action("midone",function(a){ setDone(a,true); });
 F.action("mireopen",function(a){ setDone(a,false); });
 var gone=function(o){ o.c.items=o.c.items.filter(function(i){ return i.id!==o.it.id; }); };
-F.action("mihide",function(a){ var o=itemOf(a); if(!o) return; api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"hide"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true);
+F.action("mihide",function(a){ var o=itemOf(a); if(!o) return; act({brand:o.key,platform:o.platform,id:o.it.id,op:"hide"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true);
   var sel=UI.mkInSel===a, n=sel&&!mob()?nextAfter(a):""; gone(o); if(sel){ if(mob()) advance(a); else if(n) select(n); else closeSel(); } else paint(); loadCounts(); F.toast("Ausgeblendet"); }); });
 F.action("midel",function(a){ var o=itemOf(a); if(!o) return; F.confirm("Diesen Kommentar von "+((o.it.from&&o.it.from.name)||"")+" auf "+o.c.label+(o.platform==="threads"?" ausblenden":o.platform==="youtube"?" ablehnen (wird ausgeblendet)":" endgültig löschen")+"?",o.platform==="instagram"||o.platform==="facebook"?"Löschen":"Ausblenden",function(){
-  api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:o.it.id,op:"delete"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Löschen fehlgeschlagen",true);
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:"delete"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Löschen fehlgeschlagen",true);
     var sel=UI.mkInSel===a, n=sel&&!mob()?nextAfter(a):""; gone(o); if(sel){ if(mob()) advance(a); else if(n) select(n); else closeSel(); } else paint(); loadCounts(); F.toast(o.platform==="instagram"||o.platform==="facebook"?"Gelöscht":"Ausgeblendet"); }); },true); });
 
 /* Eingaben: Suche filtert sofort, Antwortfeld wächst mit und merkt sich den Entwurf */
@@ -492,6 +522,6 @@ document.addEventListener("keydown",function(e){ if(e.key!=="Escape"||!document.
 
 F.mktTab({id:"posteingang",label:"Posteingang",icon:"inbox",order:1.5,sub:"Kommentare und Nachrichten aller Marken – lesen, beantworten, erledigen",
   count:function(){ if(!CNT&&!CNTREQ) loadCounts(); return unreadTotal(); }, countTitle:function(n){ return n+" ungelesen"; },
-  render:function(){ if(!CNT&&!CNTREQ) loadCounts(); if(F.mktPlan&&!F.mktPlan()&&F.mktPlanReload) F.mktPlanReload(); var h=body(); return '<div id="miRoot">'+h+'</div>'; },
+  render:function(){ ensure(); if(!CNT&&!CNTREQ&&!PULL) loadCounts(); if(F.mktPlan&&!F.mktPlan()&&F.mktPlanReload) F.mktPlanReload(); var h=body(); return '<div id="miRoot">'+h+'</div>'; },
   after:function(){ after(); }});
 })();

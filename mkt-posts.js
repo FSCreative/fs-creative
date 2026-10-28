@@ -7,6 +7,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const zlib = require("zlib");
 
 module.exports = function (C) {
   const { state, save, brand, brandList, renderBrand, MEDIA, WORK, DIR, J, fail, clip, newId, nowIso, body, sendFile, enqueue, JOBS, R } = C;
@@ -443,20 +444,116 @@ module.exports = function (C) {
       video: md.video ? { url: pubUrl(md.video), file: file(md.video) } : null, cover: md.cover ? { url: pubUrl(md.cover), file: file(md.cover) } : null };
   }
   // ───────────── Posteingang ─────────────
+  // Sofort statt warten (stale-while-revalidate): Anfragen bekommen immer gleich den letzten Stand – auch nach Neustart/Deploy (inbox-cache.json).
+  // Ist er älter als 2 Minuten, holt der Server ihn im Hintergrund neu: EINE Abfrage je Marke (doppelte Anstöße warten auf dieselbe), höchstens 3 Marken gleichzeitig.
+  // Die privaten Antwort-Adressen (item.ref) bleiben am Server (auch in der Datei), Zugänge/Tokens stehen nie darin.
   const INBOX = new Map();   // Marke → { at, channels:[{ platform, label, account, items, posts, notes, error }] }
+  const INBOX_PF = ["instagram", "facebook", "threads", "bluesky", "youtube"];   // LinkedIn/TikTok/Pinterest geben nichts heraus
+  const INBOX_TTL = 2 * 60e3, INBOX_FILE = path.join(DIR, "inbox-cache.json"), INBOX_MAX = 6e6;
+  const REFRESH = new Map(), REFRESH_ERR = new Map();   // Marke → laufende Abfrage (Promise) bzw. letzter unerwarteter Fehler
+  let inboxSeenAt = 0, inboxPolling = false, inboxSaveT = null, slotsFree = 3; const slotQ = [];
+  const slot = () => slotsFree > 0 ? (slotsFree--, Promise.resolve()) : new Promise(r => slotQ.push(r));
+  const unslot = () => { const n = slotQ.shift(); if (n) n(); else slotsFree++; };
   const pubItem = (it, platform) => { const o = Object.assign({}, it, { platform }); delete o.ref; return o; };
-  async function inboxOf(key, reload, markSeen) {
-    let box = INBOX.get(key);
-    if (!box || reload || Date.now() - box.at > 2 * 60e3) {
-      const chs = channelsOf(key).filter(c => ["instagram", "facebook", "threads", "bluesky", "youtube"].indexOf(c.platform) > -1), list = await Promise.all(chs.map(async ch => {   // LinkedIn/TikTok/Pinterest geben nichts heraus
-        const base = { platform: ch.platform, label: PLATFORMS[ch.platform].label, account: ch.account && (ch.account.handle || ch.account.name) || "", items: [], posts: [], notes: [] };
-        try { return Object.assign(base, await P.inbox(ch.platform, ch, await tokFor(ch))); } catch (e) { return Object.assign(base, { error: String(e.message || e).slice(0, 300) }); }
-      }));
-      box = { at: Date.now(), channels: list }; INBOX.set(key, box);
-      unreadCount(key, box);
-    }
-    const hd = hiddenOf(key), dn = doneOf(key), out = { at: new Date(box.at).toISOString(), channels: box.channels.map(c => Object.assign({}, c, { items: c.items.filter(i => !isHidden(hd, i)).map(i => Object.assign(pubItem(i, c.platform), { isNew: isUnread(key, i) }, isDone(dn, i) ? { done: true } : {})).sort((a, b) => ms(a.at) < ms(b.at) ? 1 : -1) })) };
-    return out;
+  const inboxChannels = key => channelsOf(key).filter(c => INBOX_PF.indexOf(c.platform) > -1);
+  // Marken mit mindestens einem Kanal, der Kommentare/Nachrichten liefert
+  const inboxKeys = () => brandList().filter(b => b.enabled !== false).map(b => b.key).filter(k => inboxChannels(k).length);   // ausgeschaltete Marken zeigt das Cockpit nicht → nicht abfragen
+  // gespeicherten Stand nach Neustart/Deploy laden
+  (function inboxLoad() {
+    try { const o = JSON.parse(fs.readFileSync(INBOX_FILE, "utf8")) || {};
+      Object.keys(o.boxes || {}).forEach(k => { const b = o.boxes[k]; if (b && +b.at && Array.isArray(b.channels)) INBOX.set(k, { at: +b.at, channels: b.channels.filter(c => c && c.platform && Array.isArray(c.items)) }); });
+    } catch (e) { if (e.code !== "ENOENT") console.error("marketing: Posteingang-Zwischenspeicher", e.message); }
+  })();
+  // speichern (gebündelt): ohne Zugangsdaten, höchstens ~6 MB – sonst je Kanal nur die neuesten Einträge
+  const NOSAVE = /^(access_?token|token|tok|secret|refresh|password|pass)$/i;
+  const saveRep = (k, v) => NOSAVE.test(k) ? undefined : typeof v === "string" && v.indexOf("access_token=") > -1 ? v.replace(/access_token=[^&\s"]*/g, "access_token=") : v;
+  function inboxSaveSoon() { clearTimeout(inboxSaveT); inboxSaveT = setTimeout(inboxSave, 1500); if (inboxSaveT.unref) inboxSaveT.unref(); }
+  function inboxSave() {
+    const pack = n => { const boxes = {}; for (const [k, b] of INBOX) boxes[k] = { at: b.at, channels: b.channels.map(c => !n ? c : Object.assign({}, c, { posts: (c.posts || []).slice(0, 24),
+      items: c.items.slice().sort((a, b2) => theirAt(b2) - theirAt(a)).slice(0, n).map(i => Object.assign({}, i, i.thread ? { thread: i.thread.slice(-30) } : {}, i.replies ? { replies: i.replies.slice(-30) } : {})) })) };
+      return JSON.stringify({ v: 1, savedAt: nowIso(), boxes }, saveRep); };
+    let txt = pack(0); for (const n of [200, 80, 30]) { if (txt.length <= INBOX_MAX) break; txt = pack(n); }
+    if (txt.length > INBOX_MAX) { console.error("marketing: Posteingang-Zwischenspeicher zu groß – nicht gespeichert"); return Promise.resolve(); }
+    const tmp = INBOX_FILE + ".tmp";   // nacheinander schreiben – zwei gleichzeitige Schreibvorgänge in dieselbe .tmp-Datei ergäben kaputtes JSON
+    return (inboxSaving = inboxSaving.then(() => fs.promises.writeFile(tmp, txt)).then(() => fs.promises.rename(tmp, INBOX_FILE)).catch(e => console.error("marketing: Posteingang speichern", e.message)));
+  }
+  let inboxSaving = Promise.resolve();
+  // Im Cockpit Gesendetes nicht verlieren: während einer laufenden Abfrage (oder bevor die Plattform sie anzeigt – Threads/Bluesky liefern eigene
+  // Antworten gar nicht mit) übernimmt der neue Stand die eigenen Antworten (local, höchstens 3 Tage) und „Gefällt mir“ aus dem bisherigen Stand.
+  // Zeigt die Plattform die Antwort selbst (gleicher Text oder eigene Antwort ab ~2 Min. davor), entfällt die lokale Kopie.
+  const normT = s => String(s || "").replace(/\s+/g, " ").trim();
+  function keepLocal(old, list) {
+    if (!old) return;
+    list.forEach(c => { const oc = old.channels.find(x => x.platform === c.platform); if (!oc || oc.items === c.items) return;
+      const byId = new Map(oc.items.map(i => [i.id, i]));
+      c.items.forEach(i => { const o = byId.get(i.id); if (!o) return;
+        if (o.liked) i.liked = true;
+        ["replies", "thread"].forEach(f => {
+          const loc = (o[f] || []).filter(r => r.local && Date.now() - ms(r.at) < 3 * 864e5); if (!loc.length) return;
+          const cur = i[f] || [], add = loc.filter(r => !cur.some(x => x.mine && (normT(x.text) === normT(r.text) || ms(x.at) >= ms(r.at) - 120e3)));
+          if (add.length) i[f] = cur.concat(add).sort((a, b) => ms(a.at) - ms(b.at));
+        });
+      }); });
+  }
+  // EINE Abfrage je Marke: laufende wird geteilt. Fehlt ein Kanal (Plattform-Fehler), bleibt sein letzter Stand mit Fehlerhinweis sichtbar.
+  function refreshInbox(key) {
+    if (REFRESH.has(key)) return REFRESH.get(key);
+    const job = (async () => {
+      await slot();
+      try {
+        const prev = INBOX.get(key), list = await Promise.all(inboxChannels(key).map(async ch => {
+          const base = { platform: ch.platform, label: PLATFORMS[ch.platform].label, account: ch.account && (ch.account.handle || ch.account.name) || "", items: [], posts: [], notes: [] };
+          try { return Object.assign(base, await P.inbox(ch.platform, ch, await tokFor(ch))); }
+          catch (e) { const old = prev && prev.channels.find(c => c.platform === ch.platform); return Object.assign(base, old ? { items: old.items, posts: old.posts || [], notes: old.notes || [] } : {}, { error: String(e.message || e).slice(0, 300) }); }
+        }));
+        keepLocal(INBOX.get(key), list);
+        const box = { at: Date.now(), channels: list }; INBOX.set(key, box); REFRESH_ERR.delete(key);
+        unreadCount(key, box); inboxSaveSoon(); return box;
+      } catch (e) { REFRESH_ERR.set(key, String(e.message || e).slice(0, 300)); throw e; }
+      finally { REFRESH.delete(key); unslot(); }
+    })();
+    REFRESH.set(key, job); job.catch(e => console.error("marketing: Posteingang", key, String(e && e.message || e).slice(0, 200)));
+    return job;
+  }
+  // Stand einer Marke fürs Cockpit: ohne ref, ausgeblendete weg, „neu“/„erledigt“ je Eintrag, neueste zuerst
+  function pubBox(key) {
+    const box = INBOX.get(key); if (!box) return null;
+    const hd = hiddenOf(key), dn = doneOf(key);
+    return { at: new Date(box.at).toISOString(), channels: box.channels.map(c => Object.assign({}, c, { items: c.items.filter(i => !isHidden(hd, i)).map(i => Object.assign(pubItem(i, c.platform), { isNew: isUnread(key, i) }, isDone(dn, i) ? { done: true } : {})).sort((a, b) => ms(a.at) < ms(b.at) ? 1 : -1) })) };
+  }
+  // alter Weg je Marke: noch nie geladen oder „neu laden“ → warten; sonst sofort, veraltet → im Hintergrund auffrischen
+  async function inboxOf(key, reload) {
+    const box = INBOX.get(key);
+    if (!box || reload) await refreshInbox(key);
+    else if (Date.now() - box.at > INBOX_TTL) refreshInbox(key).catch(() => {});
+    return pubBox(key);
+  }
+  // alle Marken in einer Antwort; reload=1 (alle) bzw. reload=<marke> stößt die Abfrage an, ohne zu warten.
+  // wait=<ms> (höchstens 25 s): läuft gerade eine Abfrage, antwortet der Server, sobald eine fertig ist – das Cockpit fragt so nur nach, wenn es etwas Neues gibt.
+  async function inboxAll(u, res) {
+    inboxSeenAt = Date.now();
+    const rl = String(u.searchParams.get("reload") || ""), wait = Math.max(0, Math.min(25000, parseInt(u.searchParams.get("wait"), 10) || 0)), keys = inboxKeys();
+    keys.forEach(k => { const b = INBOX.get(k); if (rl === "1" || rl === k || !b || Date.now() - b.at > INBOX_TTL) refreshInbox(k).catch(() => {}); });
+    const running = keys.map(k => REFRESH.get(k)).filter(Boolean);
+    if (wait && running.length) await new Promise(r => { const t = setTimeout(r, wait); const done = () => { clearTimeout(t); r(); }; Promise.race(running).then(done, done); if (res && res.once) res.once("close", done); });   // Cockpit hat aufgegeben → nicht weiter warten
+    const brands = {}; keys.forEach(k => { brands[k] = Object.assign(pubBox(k) || { at: "", channels: [] }, { refreshing: REFRESH.has(k), error: REFRESH_ERR.get(k) || "" }); });
+    const o = { brands, counts: inboxCounts() }, v = crypto.createHash("sha1").update(JSON.stringify(o)).digest("hex").slice(0, 16);
+    return u.searchParams.get("v") === v ? { ok: true, same: true, v } : Object.assign({ ok: true, v, at: nowIso() }, o);   // unverändert → nur die Kennung
+  }
+  // Hintergrund: alle Marken auffrischen, neue Kommentare/Nachrichten zählen und als Mitteilung melden (je Eintrag nur einmal)
+  async function pollInbox() {
+    const st = S().mkt, told = st.inboxTold = st.inboxTold || {}, first = !st.inboxToldInit;
+    const keys = [...new Set(S().channels.filter(c => c.status === "ok" && INBOX_PF.indexOf(c.platform) > -1).map(c => c.brand))].filter(k => state().brands[k]);
+    await Promise.all(keys.map(async key => {
+      const b0 = INBOX.get(key);   // gerade erst (vom Cockpit) aufgefrischt → nicht gleich nochmal abfragen
+      try { if (!b0 || Date.now() - b0.at > INBOX_TTL) await refreshInbox(key); else if (REFRESH.has(key)) await REFRESH.get(key); } catch (e) { return; }
+      const box = pubBox(key); if (!box) return;
+      const fresh = box.channels.flatMap(c => c.items.filter(i => !i.mine && i.kind !== "like" && !told[i.id] && Date.now() - Date.parse(i.at || 0) < 3 * 864e5).map(i => Object.assign({ pf: c.label }, i)));
+      fresh.forEach(i => { told[i.id] = Date.now(); });
+      if (!first && fresh.length && C.push) { const b = state().brands[key] || {}, i = fresh[0];
+        C.push("mkt", { title: (fresh.length > 1 ? (b.name || key) + ": " + fresh.length + " neue Kommentare/Nachrichten" : (i.kind === "message" ? "Nachricht" : "Kommentar") + ": " + ((i.from && i.from.name) || (b.name || key))), body: (b.name || key) + " · " + i.pf + "\n" + clip(i.text, 140), url: "/admin#mkt" }).catch(() => {}); }
+    }));
+    Object.keys(told).forEach(k => { if (Date.now() - told[k] > 14 * 864e5) delete told[k]; }); st.inboxToldInit = true; save();
   }
   // „Erledigt“ (nur im Cockpit): gilt, bis jemand anderes wieder schreibt – eigene Antworten lassen es erledigt
   function doneOf(key) { const st = S().mkt; st.inboxDone = st.inboxDone || {}; return (st.inboxDone[key] = st.inboxDone[key] || {}); }
@@ -490,7 +587,13 @@ module.exports = function (C) {
     box.channels.forEach(c => c.items.forEach(i => { if (all || ids.indexOf(i.id) > -1) rd[i.id] = Math.max(ms(i.at), Date.now()); }));
     Object.keys(rd).forEach(k => { if (Date.now() - rd[k] > 120 * 864e5) delete rd[k]; }); unreadCount(key, box); }
   function inboxCounts() { const st = S().mkt; return Object.assign({}, st.inboxNew || {}); }
-  async function tokFor(ch) {
+  // Je Kanal nur EIN Auffrischen gleichzeitig: Posteingang (Hintergrund) und Posten laufen nebeneinander, und ein Bluesky-Refresh-Token gilt nur einmal
+  const TOKQ = new Map();
+  function tokFor(ch) {
+    const k = ch.id || ch.brand + "|" + ch.platform; if (TOKQ.has(k)) return TOKQ.get(k);
+    const p = tokFor1(ch).finally(() => { TOKQ.delete(k); }); TOKQ.set(k, p); return p;
+  }
+  async function tokFor1(ch) {
     let tok = unseal(ch.tok); if (!tok) throw Object.assign(new Error("Zugang nicht lesbar – bitte neu verbinden."), { auth: true });
     const pv = PLATFORMS[ch.platform].provider, n = await P.refresh(ch.platform, tok, appCfg(pv));
     if (n) { tok = n; ch.tok = seal(tok); ch.expiresAt = tok.expiresAt || ""; save(); }
@@ -571,17 +674,12 @@ module.exports = function (C) {
       for (const p of due.slice(0, 3)) await publishPost(p);
       // Zugänge rechtzeitig auffrischen und einmal am Tag je Konto mit einer leichten Leseanfrage prüfen (auch „abgelaufene“ – vielleicht wieder gültig)
       for (const ch of S().channels.filter(c => (c.status === "ok" || c.status === "abgelaufen") && (!c.checkedAt || Date.now() - Date.parse(c.checkedAt) > 864e5))) await verifyChannel(ch);
-      // Posteingang alle 10 Minuten im Hintergrund: neue Kommentare/Nachrichten zählen und als Mitteilung melden (je Eintrag nur einmal)
-      const st = S().mkt; if (!st.inboxPollAt || Date.now() - Date.parse(st.inboxPollAt) > 10 * 60e3) {
-        st.inboxPollAt = nowIso(); const told = st.inboxTold = st.inboxTold || {}, first = !st.inboxToldInit;
-        for (const key of [...new Set(S().channels.filter(c => c.status === "ok").map(c => c.brand))]) {
-          let box; try { box = await inboxOf(key, true, false); } catch (e) { continue; }
-          const fresh = box.channels.flatMap(c => c.items.filter(i => !i.mine && i.kind !== "like" && !told[i.id] && Date.now() - Date.parse(i.at || 0) < 3 * 864e5).map(i => Object.assign({ pf: c.label }, i)));
-          fresh.forEach(i => { told[i.id] = Date.now(); });
-          if (!first && fresh.length && C.push) { const b = state().brands[key] || {}, i = fresh[0];
-            C.push("mkt", { title: (fresh.length > 1 ? (b.name || key) + ": " + fresh.length + " neue Kommentare/Nachrichten" : (i.kind === "message" ? "Nachricht" : "Kommentar") + ": " + ((i.from && i.from.name) || (b.name || key))), body: (b.name || key) + " · " + i.pf + "\n" + clip(i.text, 140), url: "/admin#mkt" }).catch(() => {}); }
-        }
-        Object.keys(told).forEach(k => { if (Date.now() - told[k] > 14 * 864e5) delete told[k]; }); st.inboxToldInit = true; save();
+      // Posteingang im Hintergrund auffrischen (hält den Stand für das Cockpit warm, meldet Neues): alle 10 Minuten, solange das Cockpit
+      // in den letzten 15 Minuten den Posteingang abgefragt hat alle 4 Minuten. Läuft neben tick() her – Posten wartet nie auf langsame Plattformen.
+      const st = S().mkt, every = Date.now() - inboxSeenAt < 15 * 60e3 ? 4 * 60e3 : 10 * 60e3;
+      if (!inboxPolling && (!st.inboxPollAt || Date.now() - Date.parse(st.inboxPollAt) > every)) {
+        st.inboxPollAt = nowIso(); inboxPolling = true;
+        pollInbox().catch(e => console.error("marketing: Posteingang", e.message)).then(() => { inboxPolling = false; });
       }
     } catch (e) { console.error("marketing: tick", e.message); }
     TICKING = false;
@@ -855,11 +953,21 @@ module.exports = function (C) {
       MO.tempo(path.join(MUSIC, id + "." + ext)).then(t => { const m = t && S().mkt.music.find(x => x.id === id); if (m) { m.bpm = t.bpm; m.beat0 = t.beat0; save(); } }).catch(() => {});
       return J(res, 200, Object.assign({ ok: true }, overview())), true;
     }
-    // Posteingang je Marke: Kommentare, Nachrichten, Likes aller verbundenen Kanäle (2 Minuten zwischengespeichert); „neu“ = seit dem letzten Öffnen
-    if (p === "/admin/api/mkt/inbox" && req.method === "GET") {
-      const b = brand(u.searchParams.get("brand")); return J(res, 200, Object.assign({ ok: true }, await inboxOf(b.key, u.searchParams.get("reload") === "1", u.searchParams.get("seen") === "1"))), true;
+    // Posteingang aller Marken auf einmal (sofort aus dem Zwischenspeicher, Auffrischen im Hintergrund) – gzip, weil mehrere hundert Einträge samt Verläufen
+    if (p === "/admin/api/mkt/inbox/all" && req.method === "GET") {
+      const o = await inboxAll(u, res), txt = JSON.stringify(o);
+      if (/\bgzip\b/.test(String(req.headers && req.headers["accept-encoding"] || "")) && txt.length > 4096) {
+        const gz = await new Promise((ok, ko) => zlib.gzip(txt, { level: 6 }, (e, b) => e ? ko(e) : ok(b)));
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Content-Encoding": "gzip", "Vary": "Accept-Encoding" }); res.end(gz); return true;
+      }
+      return J(res, 200, o), true;
     }
-    if (p === "/admin/api/mkt/inbox/counts" && req.method === "GET") return J(res, 200, { ok: true, counts: inboxCounts() }), true;
+    // Posteingang je Marke (älterer Weg): Kommentare, Nachrichten, Likes aller verbundenen Kanäle; „neu“ = seit dem letzten Öffnen
+    if (p === "/admin/api/mkt/inbox" && req.method === "GET") {
+      inboxSeenAt = Date.now(); const b = brand(u.searchParams.get("brand"));
+      return J(res, 200, Object.assign({ ok: true }, await inboxOf(b.key, u.searchParams.get("reload") === "1") || { at: "", channels: [] }, { refreshing: REFRESH.has(b.key) })), true;
+    }
+    if (p === "/admin/api/mkt/inbox/counts" && req.method === "GET") { inboxSeenAt = Date.now(); return J(res, 200, { ok: true, counts: inboxCounts() }), true; }
     if (p === "/admin/api/mkt/inbox/act" && req.method === "POST") {
       const pl = await body(req, 20000), b = brand(pl.brand);
       if (pl.op === "read" || pl.op === "readall") { markRead(b.key, (Array.isArray(pl.ids) ? pl.ids : [pl.id]).map(String).slice(0, 500), pl.op === "readall"); return J(res, 200, { ok: true, counts: inboxCounts() }), true; }
@@ -873,14 +981,14 @@ module.exports = function (C) {
       }
       if (pl.op === "suggest") return J(res, 200, Object.assign({ ok: true }, await replySuggest(b, ch, it, pl.hint))), true;
       const tok = await tokFor(ch);
-      if (pl.op === "like") { await P.inboxLike(ch.platform, ch, tok, it.ref); it.liked = true; }
+      if (pl.op === "like") { await P.inboxLike(ch.platform, ch, tok, it.ref); it.liked = true; inboxSaveSoon(); }
       else if (pl.op === "hide" || pl.op === "delete") {   // löschen: auf der Plattform (Kommentare); Nachrichten und sonst: nur im Cockpit ausblenden
         if (pl.op === "delete") await P.inboxDelete(ch.platform, ch, tok, it.ref, it.kind);
-        hiddenOf(b.key)[it.id] = Math.max(ms(it.at), Date.now()); if (pl.op === "delete") box.channels.forEach(c => { c.items = c.items.filter(x => x.id !== it.id); });
+        hiddenOf(b.key)[it.id] = Math.max(ms(it.at), Date.now()); if (pl.op === "delete") { box.channels.forEach(c => { c.items = c.items.filter(x => x.id !== it.id); }); inboxSaveSoon(); }
         unreadCount(b.key); return J(res, 200, { ok: true, removed: true }), true;
       }
-      else { await P.inboxReply(ch.platform, ch, tok, it.ref, pl.text, it.kind); const r = { from: { name: ch.account.name || "Du" }, text: clip(pl.text, 2000), at: nowIso(), mine: true };
-        if (it.kind === "message") (it.thread = it.thread || []).push(r); else (it.replies = it.replies || []).push(r); it.answered = true; }
+      else { await P.inboxReply(ch.platform, ch, tok, it.ref, pl.text, it.kind); const r = { from: { name: ch.account.name || "Du" }, text: clip(pl.text, 2000), at: nowIso(), mine: true, local: true };
+        if (it.kind === "message") (it.thread = it.thread || []).push(r); else (it.replies = it.replies || []).push(r); it.answered = true; inboxSaveSoon(); }
       markRead(b.key, [it.id]);
       return J(res, 200, { ok: true, item: pubItem(it, ch.platform) }), true;
     }
@@ -929,5 +1037,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, pixabayPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, pixabayPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING, INBOX, refreshInbox, inboxFlush: () => { clearTimeout(inboxSaveT); return inboxSave(); }, pollInbox } };
 };

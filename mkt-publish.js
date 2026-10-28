@@ -393,25 +393,34 @@ module.exports = function (D) {
   //   replies:[{from,text,at,mine}], can:{reply,like}, ref:{…für Antwort/Like} }], posts:[{id,text,url,thumb,at,likes,comments}], notes:[…] }
   const clipT = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
   const permNote = (e, what) => /permission|scope|not authorized|\(#(10|200|230|3|190)\)|OAuthException|nicht berechtigt|insufficient/i.test(String(e && e.message)) ? what + ": Berechtigung fehlt – Konto unter Kanäle neu verbinden." : what + ": " + String(e && e.message || e).slice(0, 160);
+  // Lesen im Posteingang: höchstens 25 s je Anfrage (eine hängende Plattform hält die Marke nicht eine Minute auf)
+  const RD = { timeout: 25000 }, get = (url, o) => req("GET", url, Object.assign({}, RD, o || {}));
   // Seitenweise laden (Graph-API „paging.next“), höchstens n Seiten
-  async function pages(url, n) { let out = [], u = url; for (let i = 0; u && i < n; i++) { const r = await req("GET", u); out = out.concat(r.data || []); u = r.paging && r.paging.next; } return out; }
+  async function pages(url, n) { let out = [], u = url; for (let i = 0; u && i < n; i++) { const r = await get(u); out = out.concat(r.data || []); u = r.paging && r.paging.next; } return out; }
+  // je Beitrag eine Anfrage – gleichzeitig, aber höchstens n auf einmal (Ratenlimits der Plattformen); Ergebnisse in der Reihenfolge der Liste
+  async function mapLimit(list, n, fn) { const out = new Array(list.length); let i = 0;
+    await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => { while (i < list.length) { const k = i++; out[k] = await fn(list[k], k); } })); return out; }
+  const PAR = 4;
   const attTxt = x => { const a = x && x.attachments && x.attachments.data && x.attachments.data[0]; return a ? (/image|photo/i.test(a.mime_type || a.type || "") || a.image_data ? "📷 Foto" : /video/i.test(a.mime_type || a.type || "") || a.video_data ? "🎬 Video" : /audio/i.test(a.mime_type || "") ? "🎤 Sprachnachricht" : a.file_url ? "📎 Datei" : a.share || a.generic_template ? "🔗 Geteilter Beitrag" : "📎 Anhang") : "📎 Anhang"; };
   async function inbox(platform, ch, tok, o) {
     o = o || {}; const nPosts = o.posts || 25;
     if (platform === "instagram") {
       const t = tok.access, me = String(ch.account.handle || "").replace(/^@/, "").toLowerCase(), out = { items: [], posts: [], notes: [] };
-      const media = (await req("GET", B.ig + "/" + GV + "/" + ch.account.id + "/media" + q({ fields: "id,caption,timestamp,permalink,media_type,thumbnail_url,media_url,like_count,comments_count", limit: String(nPosts), access_token: t }))).data || [];
-      for (const m of media) {
+      // Nachrichten parallel zu Beiträgen/Kommentaren laden (unabhängig voneinander)
+      const cvJob = pages(B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4).then(l => ({ l }), e => ({ e }));
+      const media = (await get(B.ig + "/" + GV + "/" + ch.account.id + "/media" + q({ fields: "id,caption,timestamp,permalink,media_type,thumbnail_url,media_url,like_count,comments_count", limit: String(nPosts), access_token: t }))).data || [];
+      // Kommentare nur für Beiträge mit Kommentaren, je Beitrag eine Anfrage – höchstens 4 gleichzeitig
+      const cms = await mapLimit(media, PAR, m => m.comments_count ? get(B.ig + "/" + GV + "/" + m.id + "/comments" + q({ fields: "id,username,text,timestamp,like_count,replies.limit(50){id,username,text,timestamp}", limit: "100", access_token: t })) : null);
+      media.forEach((m, mi) => {
         const post = { id: m.id, text: clipT(m.caption, 140), url: m.permalink || "", thumb: m.thumbnail_url || m.media_url || "", at: m.timestamp || "" };
         out.posts.push(Object.assign({ likes: m.like_count || 0, comments: m.comments_count || 0 }, post));
-        if (!m.comments_count) continue;
-        const r = await req("GET", B.ig + "/" + GV + "/" + m.id + "/comments" + q({ fields: "id,username,text,timestamp,like_count,replies.limit(50){id,username,text,timestamp}", limit: "100", access_token: t }));
+        const r = cms[mi]; if (!r) return;
         (r.data || []).forEach(c => out.items.push({ id: "ig:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", likes: c.like_count || 0,
           mine: String(c.username || "").toLowerCase() === me, post, replies: ((c.replies && c.replies.data) || []).map(x => ({ from: { name: x.username || "", handle: x.username ? "@" + x.username : "" }, text: x.text || "", at: x.timestamp || "", mine: String(x.username || "").toLowerCase() === me })).sort((a, b) => a.at < b.at ? -1 : 1),
           can: { reply: true, like: false }, ref: { comment: c.id } }));
-      }
+      });
       try {
-        const cvAll = await pages(B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4);
+        const cv = await cvJob; if (cv.e) throw cv.e; const cvAll = cv.l;
         cvAll.forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(ch.account.id) && String(p.username || "").toLowerCase() !== me) || {};
           if (!msgs.length) return; const last = msgs[msgs.length - 1];
           out.items.push({ id: "ig:m:" + c.id, kind: "message", from: { name: other.username || other.name || "Instagram-Nutzer", handle: other.username ? "@" + other.username : "", id: other.id || "" }, text: last.message || attTxt(last), at: last.created_time || c.updated_time || "",
@@ -422,7 +431,10 @@ module.exports = function (D) {
     }
     if (platform === "facebook") {
       const t = tok.access, pid = ch.account.id, out = { items: [], posts: [], notes: [] };
-      const ps = (await req("GET", B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(100){id,message,from,created_time,like_count,parent}", limit: String(nPosts), access_token: t }))).data || [];
+      // Messenger: alle vier Ordner gleichzeitig und parallel zu den Beiträgen (Fehler im Hauptordner → Hinweis wie bisher, andere Ordner sind freiwillig)
+      const FOLDERS = ["inbox", "other", "pending", "page_done"];
+      const cvJob = Promise.all(FOLDERS.map(folder => pages(B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", folder, fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4).catch(e => { if (folder === "inbox") throw e; return []; }))).then(l => ({ l }), e => ({ e }));
+      const ps = (await get(B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(100){id,message,from,created_time,like_count,parent}", limit: String(nPosts), access_token: t }))).data || [];
       for (const p of ps) {
         const post = { id: p.id, text: clipT(p.message, 140), url: p.permalink_url || "", thumb: p.full_picture || "", at: p.created_time || "" }, cm = (p.comments && p.comments.data) || [];
         out.posts.push(Object.assign({ likes: (p.reactions && p.reactions.summary && p.reactions.summary.total_count) || 0, comments: (p.comments && p.comments.summary && p.comments.summary.total_count) || cm.length }, post));
@@ -432,8 +444,8 @@ module.exports = function (D) {
           can: { reply: true, like: true }, ref: { comment: c.id } }));
       }
       try {
-        const seenCv = new Set(), cvAll = [];
-        for (const folder of ["inbox", "other", "pending", "page_done"]) { let l = []; try { l = await pages(B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", folder, fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4); } catch (e) { if (folder === "inbox") throw e; } l.forEach(c => { if (!seenCv.has(c.id)) { seenCv.add(c.id); cvAll.push(c); } }); }
+        const seenCv = new Set(), cvAll = [], cv = await cvJob; if (cv.e) throw cv.e;
+        cv.l.forEach(l => l.forEach(c => { if (!seenCv.has(c.id)) { seenCv.add(c.id); cvAll.push(c); } }));
         cvAll.forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(pid)) || {};
           if (!msgs.length) return; const last = msgs[msgs.length - 1];
           out.items.push({ id: "fb:m:" + c.id, kind: "message", from: { name: other.name || "Facebook-Nutzer", id: other.id || "" }, text: last.message || attTxt(last), at: last.created_time || c.updated_time || "", mine: String(last.from && last.from.id) === String(pid),
@@ -443,10 +455,13 @@ module.exports = function (D) {
     }
     if (platform === "threads") {
       const t = tok.access, me = String(ch.account.handle || "").replace(/^@/, "").toLowerCase(), out = { items: [], posts: [], notes: [] };
-      const th = (await req("GET", B.th + "/v1.0/me/threads" + q({ fields: "id,text,permalink,timestamp,media_url,thumbnail_url", limit: String(nPosts), access_token: t }))).data || [];
-      for (const p of th) {
-        const post = { id: p.id, text: clipT(p.text, 140), url: p.permalink || "", thumb: p.thumbnail_url || p.media_url || "", at: p.timestamp || "" };
-        let rs = []; try { rs = (await req("GET", B.th + "/v1.0/" + p.id + "/replies" + q({ fields: "id,text,username,timestamp", reverse: "false", access_token: t }))).data || []; } catch (e) { out.notes.push(permNote(e, "Threads-Antworten")); break; }
+      // Threads liefert keine Antwortzahl je Beitrag → Antworten der 15 neuesten Beiträge abfragen, höchstens 4 gleichzeitig
+      const th = ((await get(B.th + "/v1.0/me/threads" + q({ fields: "id,text,permalink,timestamp,media_url,thumbnail_url", limit: String(Math.min(nPosts, 15)), access_token: t }))).data || []).slice(0, 15);
+      let bad = null;   // fehlt die Berechtigung, nicht noch 14 weitere Male fragen
+      const rr = await mapLimit(th, PAR, p => bad ? { e: bad } : get(B.th + "/v1.0/" + p.id + "/replies" + q({ fields: "id,text,username,timestamp", reverse: "false", access_token: t })).then(r => ({ rs: r.data || [] }), e => { bad = bad || e; return { e }; }));
+      for (let pi = 0; pi < th.length; pi++) {
+        const p = th[pi], post = { id: p.id, text: clipT(p.text, 140), url: p.permalink || "", thumb: p.thumbnail_url || p.media_url || "", at: p.timestamp || "" };
+        if (rr[pi].e) { out.notes.push(permNote(rr[pi].e, "Threads-Antworten")); break; } const rs = rr[pi].rs;
         out.posts.push(Object.assign({ likes: null, comments: rs.length }, post));
         rs.forEach(c => out.items.push({ id: "th:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", mine: String(c.username || "").toLowerCase() === me, post, replies: [], can: { reply: true, like: false }, ref: { replyTo: c.id } }));
       }
@@ -454,9 +469,9 @@ module.exports = function (D) {
     }
     if (platform === "bluesky") {
       const t = tok.access, did = ch.account.id, out = { items: [], posts: [], notes: [] };
-      const n = (await req("GET", B.bsky + "/xrpc/app.bsky.notification.listNotifications" + q({ limit: "60" }), { token: t })).notifications || [];
+      const n = (await get(B.bsky + "/xrpc/app.bsky.notification.listNotifications" + q({ limit: "60" }), { token: t })).notifications || [];
       const subj = [...new Set(n.filter(x => x.reasonSubject).map(x => x.reasonSubject))].slice(0, 25), posts = {};
-      if (subj.length) { const u = B.bsky + "/xrpc/app.bsky.feed.getPosts?" + subj.map(x => "uris=" + encodeURIComponent(x)).join("&"); try { ((await req("GET", u, { token: t })).posts || []).forEach(p => { posts[p.uri] = p; }); } catch (e) {} }
+      if (subj.length) { const u = B.bsky + "/xrpc/app.bsky.feed.getPosts?" + subj.map(x => "uris=" + encodeURIComponent(x)).join("&"); try { ((await get(u, { token: t })).posts || []).forEach(p => { posts[p.uri] = p; }); } catch (e) {} }
       const pOf = uri => { const p = posts[uri]; const rk = String(uri || "").split("/").pop(); return p ? { id: uri, text: clipT(p.record && p.record.text, 140), url: "https://bsky.app/profile/" + (tok.handle || did) + "/post/" + rk, thumb: "", at: p.indexedAt || "" } : null; };
       n.forEach(x => {
         const from = { name: (x.author && (x.author.displayName || x.author.handle)) || "", handle: x.author && x.author.handle ? "@" + x.author.handle : "", id: x.author && x.author.did || "" };
@@ -470,7 +485,7 @@ module.exports = function (D) {
     }
     if (platform === "youtube") {
       const t = tok.access, out = { items: [], posts: [], notes: [] };
-      const r = await req("GET", B.yt + "/youtube/v3/commentThreads" + q({ part: "snippet,replies", allThreadsRelatedToChannelId: ch.account.id, maxResults: "40", order: "time", textFormat: "plainText" }), { token: t });
+      const r = await get(B.yt + "/youtube/v3/commentThreads" + q({ part: "snippet,replies", allThreadsRelatedToChannelId: ch.account.id, maxResults: "40", order: "time", textFormat: "plainText" }), { token: t });
       (r.items || []).forEach(it => { const s = it.snippet && it.snippet.topLevelComment && it.snippet.topLevelComment.snippet || {}, vid = it.snippet && it.snippet.videoId || "";
         const mine = c => String(c.authorChannelId && c.authorChannelId.value) === String(ch.account.id);
         out.items.push({ id: "yt:" + it.id, kind: "comment", from: { name: s.authorDisplayName || "" }, text: s.textOriginal || s.textDisplay || "", at: s.publishedAt || "", likes: s.likeCount || 0, mine: mine(s),
