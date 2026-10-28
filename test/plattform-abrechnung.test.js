@@ -328,7 +328,11 @@ function createMock() {
     { id: "804", objectName: "Invoice", invoiceNumber: "RE-804", invoiceType: "RE", status: "200", header: "Rechnung", headText: "Vielen Dank für die Nutzung von Der Kantineur.", customerInternalNote: "Mollie tr_k1", sumGross: "9.69", contact: { id: "21", objectName: "Contact" } },
     { id: "805", objectName: "Invoice", invoiceNumber: "RE-805", invoiceType: "RE", status: "200", header: "Rechnung", headText: "Website", customerInternalNote: "Mollie tr_k1", sumGross: "50", contact: { id: "21", objectName: "Contact" } },
   ];
-  const state = { inv, saved: [], calls: [], partnerQ: [], antonQ: [], antonMode: "arrival", partnerDown: false };
+  const PAYOUT_FOOT_OLD = "Auszahlung der Onlinezahlungen, die ueber FS Creative eingegangen sind (Mollie direkt/WIMO), abzueglich kochdu-Gebuehr. Barzahlungen und mit kochdu-Guthaben bezahlte Bestellungen (eigene Monatsrechnung) und Mollie-Connect-Zahlungen (Geld direkt beim Lokal) sind hier nicht enthalten. Durchlaufende Posten 0% USt; kochdu-Gebuehr zzgl. 20% USt. Automatischer Entwurf.";
+  const cns = [{ id: "901", objectName: "CreditNote", creditNoteNumber: "GU-901", status: "100", header: "Auszahlung Online-Zahlungen 09/2026", footText: PAYOUT_FOOT_OLD, sumGross: "-80", contact: { id: "21", objectName: "Contact" } },
+    { id: "902", objectName: "CreditNote", creditNoteNumber: "GU-902", status: "100", header: "Auszahlung Online-Zahlungen 09/2026", footText: "Auszahlung Fremdgeld an das Lokal", sumGross: "-50", contact: { id: "21", objectName: "Contact" } }];
+  const pos = [{ id: "8011", invoice: { id: "801", objectName: "Invoice" } }, { id: "8021", invoice: { id: "802", objectName: "Invoice" } }, { id: "9011", creditNote: { id: "901", objectName: "CreditNote" } }];
+  const state = { inv, cns, pos, saved: [], calls: [], partnerQ: [], antonQ: [], antonMode: "arrival", partnerDown: false };
   let n = 0;
   const server = http.createServer((req, res) => {
     let body = ""; req.on("data", c => (body += c)); req.on("end", () => {
@@ -346,9 +350,12 @@ function createMock() {
       const p = u.pathname.replace(/^\/api\/v1/, ""), m = req.method; state.calls.push(m + " " + p);
       if (req.headers.authorization !== KEY) return send(401, { error: { message: "Authentication required" } });
       let mm;
-      if (m === "GET" && (mm = p.match(/^\/(Invoice|CreditNote)\/(\d+)$/))) { const o = inv.find(x => x.id === mm[2]); return o ? send(200, { objects: [o] }) : send(400, { error: { message: "Invoice nicht gefunden" } }); }
-      if (m === "GET" && p === "/Invoice") { let l = inv.slice(); q.forEach((v, k) => { if (/^(limit|offset|embed|countAll)$/.test(k) || /\[objectName\]$/.test(k)) return; const km = k.match(/^(\w+)\[id\]$/); l = l.filter(o => km ? o[km[1]] && String(o[km[1]].id) === v : String(o[k]) === v); }); return send(200, { objects: l }); }
+      const listOf = { Invoice: inv, CreditNote: cns, InvoicePos: pos, CreditNotePos: pos };
+      if (m === "GET" && (mm = p.match(/^\/(Invoice|CreditNote)\/(\d+)$/))) { const o = listOf[mm[1]].find(x => x.id === mm[2]); return o ? send(200, { objects: [o] }) : send(400, { error: { message: mm[1] + " nicht gefunden" } }); }
+      if ((m === "PUT" || m === "POST") && (mm = p.match(/^\/(Invoice|CreditNote)\/(\d+)\/\w+$/)) && !listOf[mm[1]].some(x => x.id === mm[2])) return send(400, { error: { message: mm[1] + " nicht gefunden" } });
+      if (m === "GET" && (mm = p.match(/^\/(Invoice|CreditNote|InvoicePos|CreditNotePos)$/))) { let l = listOf[mm[1]].slice(); q.forEach((v, k) => { if (/^(limit|offset|embed|countAll|depth)$/.test(k) || /\[objectName\]$/.test(k)) return; const km = k.match(/^(\w+)\[id\]$/); l = l.filter(o => km ? o[km[1]] && String(o[km[1]].id) === v : String(o[k]) === v); }); return send(200, { objects: l }); }
       if (m === "POST" && p === "/Invoice/Factory/saveInvoice") { state.saved.push(json); const o = Object.assign({ id: String(900 + (++n)), objectName: "Invoice", status: "100" }, json.invoice || {}); inv.push(o); return send(201, { objects: { invoice: o } }); }
+      if (m === "POST" && p === "/CreditNote/Factory/saveCreditNote") { state.saved.push(json); const o = Object.assign({ id: String(950 + (++n)), objectName: "CreditNote", status: "100" }, json.creditNote || {}); cns.push(o); return send(201, { objects: { creditNote: o } }); }
       if (m === "GET" && p === "/SevUser") return send(200, { objects: [{ id: "1" }] });
       if (m === "GET" && p === "/Contact") return send(200, { objects: [] });
       if (m === "GET" && p === "/StaticCountry") return send(200, { objects: [{ id: "3", code: "at", name: "Österreich" }] });
@@ -408,23 +415,35 @@ function createMock() {
   }
 
   // Teil 3: Mollie
-  await t("Mollie Connect: kochdu-Provision (Zahlung in der kochdu-Liste) → kochdu-Sammelrechnung; VALUERO-Provision → Vorschlag Einnahme-Beleg (nie auf kochdu); unbekannte → VALUERO erst mit geladener kochdu-Liste", async () => {
-    const seed = [["CheckAccount", { id: "2", name: "Mollie – kochdu", status: "100", type: "online", mollieBalance: "bal_1" }],
+  // Mollie-Abruf wie in Produktion (fin-mollie.js sync mit nachgestellter Mollie-API): Connect-Provisionen kommen als Saldo-Umsatz „application-fee“
+  // ohne Beschreibung der Zahlung – im Text steht nur „Provision (Mollie Connect) tr_…“ (Review A7: Test mit dem echten Importtext)
+  const mollieFetch = (btx) => { const json = o => ({ ok: true, status: 200, json: async () => o });
+    return async (url) => { if (/organizations\/me/.test(url)) return json({ name: "FS Creative" }); if (/\/profiles/.test(url)) return json({ _embedded: { profiles: [] }, _links: {} });
+      if (/\/balances\?/.test(url)) return json({ _embedded: { balances: [{ id: "bal_1", currency: "EUR", availableAmount: { value: "0" }, pendingAmount: { value: "0" } }] }, _links: {} });
+      if (/\/balances\/bal_1\/transactions/.test(url)) return json({ _embedded: { balance_transactions: btx }, _links: {} });
+      return { ok: false, status: 404, json: async () => ({ title: "Not Found" }) }; }; };
+  const feeTx = (id, amount, date, ctx) => ({ id, type: "application-fee", resultAmount: { value: amount, currency: "EUR" }, initialAmount: { value: amount, currency: "EUR" }, context: ctx, createdAt: date + "T10:00:00+00:00" });
+  await t("A7: Connect-Provisionen aus dem echten Mollie-Abruf – kochdu (Zahlung in der kochdu-Liste) → Sammelrechnung; ohne Erkennung „Plattform unklar“ ohne Einnahme-Beleg-Vorschlag; VALUERO nur bei positiver Erkennung", async () => {
+    const seed = [["CheckAccount", { id: "2", name: "Mollie – kochdu", status: "100", type: "online", mollieBalance: "bal_1", mollieNamed: true }],
       ["Invoice", { id: "880", invoiceType: "RE", status: "100", header: "kochdu Online-Provisionen 10/2026 (Mollie Connect)", sumGross: "5.00", paidAmount: "0", invoiceDate: "2026-10-31T00:00:00+02:00", contact: { id: "1", objectName: "Contact" } }],
-      ["InvoicePos", { id: "8801", invoice: { id: "880", objectName: "Invoice" }, name: "Online-Provisionen", quantity: "1", price: "4.17", priceGross: "5.00", grossPricing: true, taxRate: "20", positionNumber: "0" }],
-      fee("1", 5.00, "2026-10-05", "Provision (Mollie Connect)  tr_Aa1x"),
-      fee("2", 7.50, "2026-10-06", "Provision (Mollie Connect)  tr_Bb2y", { mollieDesc: "VALUERO Provision BK-123" }),
-      fee("3", 3.20, "2026-10-07", "Provision (Mollie Connect)  tr_Cc3z")];
-    const { L, P, M } = finSetup(seed, async () => [{ id: "tr_Aa1x", at: "2026-10-04T10:00:00Z" }], "2026-11-03");
-    await L.load(); await M.autoVouchers();
-    assert.strictEqual(String(L.get("CheckAccountTransaction", "1").status), "200", "kochdu → Sammelrechnung");
-    assert.strictEqual(String(L.get("CheckAccountTransaction", "2").status), "100", "VALUERO nie automatisch"); assert.strictEqual(String(L.get("CheckAccountTransaction", "3").status), "100");
-    assert.strictEqual(+L.get("Invoice", "880").paidAmount, 5, "nur die kochdu-Provision auf der kochdu-Rechnung");
-    const list = await P.list(), p2 = list.find(x => x.key === "minc:2"), p3 = list.find(x => x.key === "minc:3");
-    assert.ok(p2 && /VALUERO/.test(p2.title), JSON.stringify(list.map(x => x.key + " " + x.title))); assert.ok(p3 && /VALUERO/.test(p3.title), "von kochdu nicht gekannt → VALUERO (Vorschlag)");
-    assert.ok(!M.onlineNotices().some(n => /Differenz/.test(n)), JSON.stringify(M.onlineNotices()));
-    await P.accept(p2.id); const v = L.all("Voucher").find(x => x.fromMollie === "2"); assert.ok(v && v.supplierName === "Mollie Connect (VALUERO)" && /Provision VALUERO/.test(v.description), JSON.stringify(v));
-    const s = M.summary(); assert.ok(s.length === 0 || !(s[0].byProfile || []).some(b => b.name === "kochdu" && b.provisions > 5), JSON.stringify(s));
+      ["InvoicePos", { id: "8801", invoice: { id: "880", objectName: "Invoice" }, name: "Online-Provisionen", quantity: "1", price: "4.17", priceGross: "5.00", grossPricing: true, taxRate: "20", positionNumber: "0" }]];
+    const btx = [feeTx("baltr_f1", "5.00", "2026-10-05", { paymentId: "tr_Aa1xKoch" }), feeTx("baltr_f2", "7.50", "2026-10-06", { paymentId: "tr_Bb2yVal", payingOwner: { organizationId: "org_9", organizationName: "Haus Waldheim" } }),
+      feeTx("baltr_f3", "3.20", "2026-10-07", { paymentId: "tr_Cc3zVal", description: "VALUERO Provision BK-123" })];
+    const fin = memFin(seed), Lm = require(path.join(ROOT, "fin-local.js"))({ fin, renderPdf: async () => ({}), mailSend: async () => ({}) });
+    const Pm = require(path.join(ROOT, "fin-proposals.js"))({ L: Lm, getMeta: fin.getMeta, setMeta: fin.setMeta, rules: () => null, autoPay: () => true, today: () => "2026-11-03", reportedPeriods: () => [] }); Lm.setProposer(Pm);
+    const M = require(path.join(ROOT, "fin-mollie.js"))({ L: Lm, P: () => Pm, today: () => "2026-11-03", fetch: mollieFetch(btx), connectPayments: async () => [{ id: "tr_Aa1xKoch", at: "2026-10-04T10:00:00Z" }] });
+    ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => Pm.register(k, { exec: it => M.accept(k, it.payload) }));
+    process.env.MOLLIE_ORG_TOKEN = "test_x"; try { await M.sync({ since: "2026-10-01" }); } finally { delete process.env.MOLLIE_ORG_TOKEN; }
+    const tx = mid => Lm.all("CheckAccountTransaction").find(x => x.mollieId === mid);
+    assert.ok(/^Provision \(Mollie Connect\)\s+tr_Bb2yVal$/.test(tx("baltr_f2").paymtPurpose), "echter Importtext: " + tx("baltr_f2").paymtPurpose);
+    assert.strictEqual(String(tx("baltr_f1").status), "200", "kochdu → Sammelrechnung"); assert.strictEqual(+Lm.get("Invoice", "880").paidAmount, 5, "nur die kochdu-Provision auf der kochdu-Rechnung");
+    assert.strictEqual(String(tx("baltr_f2").status), "100"); assert.strictEqual(String(tx("baltr_f3").status), "100", "VALUERO nie automatisch");
+    const list = await Pm.list();
+    assert.ok(!list.some(x => x.key === "minc:" + tx("baltr_f2").id), "ohne Erkennung kein Einnahme-Beleg-Vorschlag (sonst doppelter Erlös): " + JSON.stringify(list.map(x => x.key + " " + x.title)));
+    const p3 = list.find(x => x.key === "minc:" + tx("baltr_f3").id); assert.ok(p3 && /VALUERO/.test(p3.title), "positiv erkannt (Beschreibung der Provision im Mollie-Kontext)");
+    assert.ok(M.onlineNotices().some(n => /1 Connect-Provision \(7,50 €\) keiner Plattform zuzuordnen/.test(n) && /von Hand zuordnen/.test(n)), JSON.stringify(M.onlineNotices()));
+    await Pm.accept(p3.id); const v = Lm.all("Voucher").find(x => x.fromMollie === String(tx("baltr_f3").id)); assert.ok(v && v.supplierName === "Mollie Connect (VALUERO)", JSON.stringify(v));
+    const s0 = M.summary()[0]; assert.ok(s0.byProfile.some(b => b.name === "Connect (Plattform unklar)" && b.provisions === 7.5) && s0.byProfile.some(b => b.name === "kochdu" && b.provisions === 5), JSON.stringify(s0.byProfile));
   });
   await t("Mollie Connect: ohne kochdu-Liste keine Zuordnung nach Buchungsdatum (abwarten, Hinweis)", async () => {
     const seed = [["CheckAccount", { id: "2", name: "Mollie – kochdu", status: "100", type: "online" }],
@@ -433,7 +452,7 @@ function createMock() {
     const { L, P, M } = finSetup(seed, async () => [], "2026-11-03");
     await L.load(); await M.autoVouchers();
     assert.strictEqual(String(L.get("CheckAccountTransaction", "1").status), "100"); assert.ok(!(await P.list()).length);
-    assert.ok(M.onlineNotices().some(n => /noch keiner Plattform zugeordnet/.test(n)), JSON.stringify(M.onlineNotices()));
+    assert.ok(M.onlineNotices().some(n => /keiner Plattform zuzuordnen.*kochdu-Liste nicht geladen/.test(n)), JSON.stringify(M.onlineNotices()));
   });
   await t("KO-6: Online-Sammelrechnung nur einmal fertigstellen – weitere Entwürfe nur melden", async () => {
     const draft = (id, extra) => ["Invoice", Object.assign({ id, invoiceType: "RE", status: "100", header: "kochdu Online-Provisionen 10/2026 (Mollie Connect)", sumGross: "5.00", paidAmount: "0", invoiceDate: "2026-10-31T00:00:00+02:00", contact: { id: "1", objectName: "Contact" } }, extra || {})];
@@ -496,6 +515,65 @@ function createMock() {
     assert.strictEqual((await fa(Ka, "GET", "/Invoice/804")).status, 200); assert.strictEqual((await fa(Ka, "GET", "/Invoice/805")).status, 403); assert.strictEqual((await fa(Ka, "POST", "/Invoice/804/sendViaEmail", {})).status, 200);
     assert.strictEqual((await fa(Ka, "GET", "/Contact?depth=0&limit=1000")).status, 403, "Kantineur braucht keine Kontaktliste");
     assert.ok(/fin-api gesperrt kochdu POST \/Fin\/settings/.test(srvOut) && /fremder Beleg/.test(srvOut), "protokolliert");
+  });
+
+  await t("A5/A6/A11: gelöschter Beleg → 400 „<Typ> nicht gefunden“ (nicht 403); Positionen/Status/Nummer/Zahlung/Gutschrift nur eigene; alte Auszahlungs-Gutschrift erkannt", async () => {
+    const K = "fin-kochdu-1", Bz = "fin-blitz-1", Ka = "fin-kant-1";
+    let r = await fa(K, "GET", "/Invoice/999"); assert.strictEqual(r.status, 400); assert.strictEqual(r.j.error.message, "Invoice nicht gefunden");
+    r = await fa(K, "GET", "/CreditNote/998"); assert.strictEqual(r.status, 400); assert.strictEqual(r.j.error.message, "CreditNote nicht gefunden");
+    r = await fa(K, "PUT", "/Invoice/999/sendBy", { sendType: "VPDF" }); assert.strictEqual(r.status, 400); assert.ok(/nicht gefunden/.test(r.j.error.message));
+    assert.strictEqual((await fa(Ka, "GET", "/Invoice/997")).status, 400, "Kantineur ebenso");
+    // A6: fremde Positionen, Status, Nummer, Zahlung, Gutschrift zu fremder Rechnung
+    const nb = (extra) => Object.assign({ invoice: { header: "kochdu-Gebühr Barzahlungen 11/2026", status: "100", invoiceNumber: null, contact: { id: "21", objectName: "Contact" } }, invoicePosSave: [], invoicePosDelete: null }, extra || {});
+    const before = M.state.saved.length;
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", nb({ invoicePosDelete: [{ id: "8021" }] }))).status, 403, "Position der fremden RE-802 löschen");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", nb({ invoicePosSave: [{ id: "8021", price: "1.00", quantity: 1, taxRate: 20 }] }))).status, 403, "fremde Position umhängen");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: "1000", contact: { id: "21", objectName: "Contact" } }, invoicePosSave: [] })).status, 403, "Status bezahlt");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: "100", paidAmount: "500" }, invoicePosSave: [] })).status, 403, "paidAmount");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: "100", invoiceNumber: "RE-802" }, invoicePosSave: [] })).status, 403, "fremde Rechnungsnummer");
+    assert.strictEqual((await fa(K, "POST", "/CreditNote/Factory/saveCreditNote", { creditNote: { header: "x", status: "200", refSrcInvoice: { id: "802", objectName: "Invoice" } }, creditNotePosSave: [] })).status, 403, "Gutschrift zu fremder Rechnung");
+    assert.strictEqual((await fa(K, "POST", "/CreditNote/Factory/saveCreditNote", { creditNote: { header: "x", status: "100", refSrcInvoice: { id: "802", objectName: "Invoice" } }, creditNotePosSave: [] })).status, 403, "auch als Entwurf");
+    assert.strictEqual((await fa(K, "POST", "/CreditNote/Factory/saveCreditNote", { creditNote: { id: "902", header: "x", status: "100" }, creditNotePosSave: [] })).status, 403, "fremder Gutschrift-Entwurf (gleicher Kopf, anderer Fußtext)");
+    assert.strictEqual(M.state.saved.length, before, "nichts davon erreichte die Buchhaltung");
+    // eigener Entwurf: eigene Position überarbeiten erlaubt, festgeschriebene/offene eigene Rechnung nicht
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "801", header: "kochdu-Gebühr Barzahlungen 10/2026", status: "100" }, invoicePosSave: [{ id: "8011", price: "2.00", quantity: 1, taxRate: 20 }], invoicePosDelete: null })).status, 200);
+    assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "803", header: "x", status: "200" }, invoicePosSave: [] })).status, 403, "offene (nicht Entwurf) eigene Rechnung");
+    // Blitzdings: neue Rechnung „offen“ mit eigener Nummer aus getNextInvoiceNumber erlaubt, vergebene Nummer nicht
+    assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "Rechnung RE-803", invoiceNumber: "RE-803", status: 200, reference: "BD-1002", headText: "Buchung BD-1002 – vielen Dank" }, invoicePosSave: [] })).status, 403);
+    // A11: alte Auszahlungs-Gutschrift (Kopf + Fußtext von fs-order) gehört kochdu, die von Hand angelegte mit gleichem Kopf nicht
+    assert.strictEqual((await fa(K, "GET", "/CreditNote/901")).status, 200); assert.strictEqual((await fa(K, "GET", "/CreditNote/902")).status, 403);
+    r = await fa(K, "GET", "/CreditNote?contact[id]=21&contact[objectName]=Contact&limit=100"); assert.strictEqual(r.status, 200);
+    assert.ok(r.j.objects.some(o => o.id === "901") && !r.j.objects.some(o => o.id === "902"), "findDocs findet die alte Auszahlungs-Gutschrift → kein zweiter Entwurf");
+  });
+  await t("Laufende Rechnungsläufe (alte UND neue Plattform-Version) werden von der Freigabeliste nicht blockiert: kochdu 01.11., Kantineur 05.11., Blitzdings laufend", async () => {
+    const K = "fin-kochdu-1", Bz = "fin-blitz-1", Ka = "fin-kant-1", ok = (r, what) => assert.ok(r.status === 200, what + ": " + r.status + " " + JSON.stringify(r.j));
+    const pos = (g) => ({ objectName: "InvoicePos", mapAll: "true", quantity: 1, price: Math.round(g / 1.2 * 100) / 100, name: "Gebühr", text: "", taxRate: 20, unity: { id: "1", objectName: "Unity" }, priceGross: g, grossPricing: true });
+    const kInv = (extra) => Object.assign({ objectName: "Invoice", invoiceNumber: null, contact: { id: "21", objectName: "Contact" }, contactPerson: { id: "1", objectName: "SevUser" }, invoiceDate: "01.11.2026", header: "kochdu-Gebühr Barzahlungen 10/2026", headText: "", footText: "", discount: 0, status: "100", smallSettlement: "0", taxRate: 0, taxText: "Umsatzsteuer", taxType: "default", invoiceType: "RE", currency: "EUR", showNet: "1", mapAll: "true", timeToPay: 14 }, extra || {});
+    // kochdu NEU (fs-order audit-fixes): Rechnung mit platformRef + Idempotency-Key, fertigstellen, mailen, Status lesen, wiederfinden; Auszahlung als Rechnung mit negativer Summe
+    let r = await fetch(base + "/fin-api/v1/Invoice/Factory/saveInvoice", { method: "POST", headers: { authorization: K, "content-type": "application/json", "idempotency-key": "kochdu:2026-10:cash:7", "x-forwarded-for": "203.0.113.201" }, body: JSON.stringify({ invoice: kInv({ platformRef: "kochdu:2026-10:cash:7", address: "La Taverna\nGasse 1\n6780 Schruns", addressCountry: { id: "3", objectName: "StaticCountry" } }), invoicePosSave: [pos(42.1)], invoicePosDelete: null, discountSave: null, discountDelete: null }) });
+    const jr = await r.json(); assert.strictEqual(r.status, 200, JSON.stringify(jr)); const kid = jr.objects.invoice.id;
+    ok(await fa(K, "PUT", "/Invoice/" + kid + "/sendBy", { sendType: "VPDF", sendDraft: false }), "kochdu sendBy"); ok(await fa(K, "POST", "/Invoice/" + kid + "/sendViaEmail", { toEmail: "lokal@test.at", subject: "x", text: "y" }), "kochdu sendViaEmail");
+    ok(await fa(K, "GET", "/Invoice/" + kid), "kochdu Status"); ok(await fa(K, "GET", "/Invoice?platformRef=kochdu%3A2026-10%3Acash%3A7&limit=50"), "kochdu findDocs");
+    ok(await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: kInv({ header: "Auszahlung Online-Zahlungen 10/2026", platformRef: "kochdu:2026-10:payout:7" }), invoicePosSave: [pos(4.5), Object.assign(pos(-100), { taxRate: 0, priceGross: -100, price: -100 })], invoicePosDelete: null }), "kochdu Auszahlung (negativ)");
+    ok(await fa(K, "POST", "/ContactAddress", { contact: { id: "21", objectName: "Contact" }, street: "Gasse 1", zip: "6780", city: "Schruns", country: { id: "3", objectName: "StaticCountry" } }), "kochdu ContactAddress");
+    // kochdu ALT (origin/main): Rechnung ohne platformRef, Auszahlungs-Gutschrift, addAddress (Formular)
+    ok(await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: kInv({ header: "kochdu-Gebühr Barzahlungen 10/2026" }), invoicePosSave: [pos(12)], invoicePosDelete: null, discountSave: null, discountDelete: null }), "kochdu alt Rechnung");
+    ok(await fa(K, "POST", "/CreditNote/Factory/saveCreditNote", { creditNote: { objectName: "CreditNote", creditNoteNumber: null, contact: { id: "21", objectName: "Contact" }, contactPerson: { id: "1", objectName: "SevUser" }, creditNoteDate: "01.11.2026", header: "Auszahlung Online-Zahlungen 10/2026", headText: "", footText: "x Automatischer Entwurf.", status: "100", smallSettlement: "0", taxRate: 0, taxText: "Umsatzsteuer", taxType: "default", creditNoteType: "CN", bookingCategory: "UNDERACHIEVEMENT", currency: "EUR", showNet: "1", mapAll: "true" }, creditNotePosSave: [pos(80)], creditNotePosDelete: null }), "kochdu alt Auszahlungs-Gutschrift");
+    // Kantineur NEU und ALT: Rechnung (Entwurf, Notiz „Mollie tr_…“), Versand, Lesen, Suche
+    const kaInv = { objectName: "Invoice", mapAll: true, invoiceType: "RE", status: 100, invoiceDate: "05.11.2026", deliveryDate: "05.11.2026", contact: { id: "21", objectName: "Contact" }, contactPerson: { id: "1", objectName: "SevUser" }, address: "SV\nWeg 1", currency: "EUR", discount: 0, taxRate: 20, taxText: "Umsatzsteuer 20 %", taxType: "default", smallSettlement: false, showNet: false, timeToPay: 0, headText: "Vielen Dank für die Nutzung von Der Kantineur.", customerInternalNote: "Mollie tr_run0501" };
+    r = await fetch(base + "/fin-api/v1/Invoice/Factory/saveInvoice", { method: "POST", headers: { authorization: Ka, "content-type": "application/json", "idempotency-key": "kantineur-tr_run0501", "x-forwarded-for": "203.0.113.202" }, body: JSON.stringify({ invoice: Object.assign({}, kaInv, { deliveryDateUntil: "04.12.2026" }), invoicePosSave: [Object.assign(pos(9.69), { positionNumber: 0 })], invoicePosDelete: null, discountSave: null, discountDelete: null, takeDefaultAddress: false }) });
+    const jk = await r.json(); assert.strictEqual(r.status, 200, JSON.stringify(jk)); const kaid = jk.objects.invoice.id;
+    ok(await fa(Ka, "POST", "/Invoice/" + kaid + "/sendViaEmail", { toEmail: "verein@test.at", subject: "x", text: "y" }), "Kantineur Versand"); ok(await fa(Ka, "GET", "/Invoice/" + kaid), "Kantineur lesen");
+    ok(await fa(Ka, "GET", "/Invoice?customerInternalNote=" + encodeURIComponent("Mollie tr_run0501") + "&invoiceType=RE&limit=50"), "Kantineur Suche");
+    ok(await fa(Ka, "POST", "/Invoice/Factory/saveInvoice", { invoice: Object.assign({}, kaInv, { customerInternalNote: "Mollie tr_run0502" }), invoicePosSave: [{ objectName: "InvoicePos", mapAll: true, quantity: 1, price: 9, name: "Abo", text: "", taxRate: 20, unity: { id: 1, objectName: "Unity" }, positionNumber: 0 }], invoicePosDelete: null, discountSave: null, discountDelete: null, takeDefaultAddress: false }), "Kantineur alt");
+    for (const [m, p0] of [["GET", "/Tools/bookkeepingSystemVersion"], ["GET", "/SevUser"], ["GET", "/Contact/21"]]) ok(await fa(Ka, m, p0), "Kantineur " + p0);
+    ok(await fa(Ka, "POST", "/Contact", { name: "SV Neu", category: { id: 3, objectName: "Category" }, status: 1000 }), "Kantineur Kontakt");
+    // Blitzdings (alt = neu): Nummer holen, Rechnung „offen“ mit dieser Nummer, festschreiben, mailen
+    r = await fa(Bz, "GET", "/Invoice/Factory/getNextInvoiceNumber?invoiceType=RE&useNextNumber=true"); ok(r, "Blitzdings Nummer"); const nr = r.j.objects;
+    r = await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { objectName: "Invoice", invoiceNumber: nr, contact: { id: "21", objectName: "Contact" }, contactPerson: { id: "1", objectName: "SevUser" }, invoiceDate: "2026-11-02", deliveryDate: "2026-11-10", header: "Rechnung " + nr, headText: "Buchung BD-RUN001 – vielen Dank für Ihre Buchung bei Blitzdings.", footText: "Zahlbar", timeToPay: 14, discount: 0, address: "Kunde", status: 200, smallSettlement: 0, taxRate: 20, taxText: "Umsatzsteuer 20%", taxType: "default", invoiceType: "RE", reference: "BD-RUN001", currency: "EUR", showNet: "1", mapAll: "true" }, invoicePosSave: [pos(399)], invoicePosDelete: null, filename: null, discountSave: null, discountDelete: null });
+    ok(r, "Blitzdings Rechnung"); const bid = r.j.objects.invoice.id;
+    ok(await fa(Bz, "PUT", "/Invoice/" + bid + "/enshrine"), "Blitzdings festschreiben"); ok(await fa(Bz, "POST", "/Invoice/" + bid + "/sendViaEmail", { toEmail: "k@test.at", subject: "x", text: "y", copy: false }), "Blitzdings mailen");
+    for (const [m, p0] of [["GET", "/SevUser"], ["GET", "/Contact?depth=0&limit=2000"], ["POST", "/Contact"], ["POST", "/ContactAddress"], ["POST", "/CommunicationWay"]]) ok(await fa(Bz, m, p0, m === "POST" ? { name: "x" } : undefined), "Blitzdings " + p0);
   });
 
   await t("VALUERO-Abrufe: Partner mit contract=2, Antonhaus mit basis=arrival; Umstellung per Ein-Klick (Schnappschuss am Server) → danach nach Anreise", async () => {

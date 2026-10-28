@@ -1328,13 +1328,60 @@ const FINAPI_ALLOW = {
 };
 // Beleg gehört der Plattform: beim Anlegen über die fin-api vermerkt (finApiSource) oder – ältere Belege – am Merkmal der Plattform
 const FINAPI_MARK = {
-  kochdu: o => /^kochdu:/.test(String(o.platformRef || "")) || /kochdu/i.test(String(o.header || "")),
+  // A11: alte Auszahlungs-Gutschriften von fs-order („Auszahlung Online-Zahlungen MM/JJJJ“, ohne platformRef) am Fußtext der Plattform erkennen
+  // („… abzueglich kochdu-Gebuehr … Automatischer Entwurf.“) – ein im Cockpit von Hand angelegter Beleg mit gleichem Kopf zählt nicht
+  kochdu: o => /^kochdu:/.test(String(o.platformRef || "")) || /kochdu/i.test(String(o.header || "")) ||
+    (/^\s*Auszahlung Online-Zahlungen \d{2}\/\d{4}\s*$/.test(String(o.header || "")) && /kochdu/i.test(String(o.footText || "")) && /Automatischer Entwurf/.test(String(o.footText || ""))),
   blitzdings: o => /^BD-/i.test(String(o.reference || "")) || /blitzdings|^\s*Buchung BD-/i.test(String(o.headText || "") + " " + String(o.header || "")),
   kantineur: o => /kantineur/i.test(String(o.headText || "") + " " + String(o.header || "")),   // „Vielen Dank für die Nutzung von Der Kantineur.“ (Mollie-ID allein reicht nicht – steht auch in Druckshop-Rechnungen)
 };
 function finApiOwns(who, o) { if (!o || typeof o !== "object") return false; const src = o.finApiSource || o.finApiWho; if (src) return src === who; return !!(FINAPI_MARK[who] && FINAPI_MARK[who](o)); }
 function finApiRule(who, method, fpath) { return (FINAPI_ALLOW[who] || []).find(r => r[0] === method && r[1].test(fpath)) || null; }
-async function finApiDoc(type, id) { const r = await sev("GET", "/" + type + "/" + id).catch(() => null); const o = r && r.objects; return Array.isArray(o) ? o[0] || null : (o || null); }
+// Beleg nachschlagen: { doc } bzw. { err, notFound } – „nicht gefunden“ geht unverändert an die Plattform zurück (A5: fs-order erkennt
+// gelöschte Belege an 400 „<Typ> nicht gefunden“ bzw. 404, CONTRACT-fs-order §3), andere Fehler ebenfalls wie bisher
+async function finApiDoc(type, id) {
+  try { const r = await sev("GET", "/" + type + "/" + id); const o = r && r.objects; return { doc: Array.isArray(o) ? o[0] || null : (o || null) }; }
+  catch (e) { return { doc: null, err: e, notFound: e.status === 404 || (e.status === 400 && new RegExp("^" + type + " nicht gefunden", "i").test(String(e.message || ""))) }; }
+}
+// Anlegen/Überarbeiten über die fin-api (A6): nur Entwürfe der eigenen Plattform, Positionen nur dieses Belegs, Status/Nummer/Zahlung nur so,
+// wie die Plattformen sie heute schicken (kochdu/Kantineur: Entwurf 100, Blitzdings: offen 200 mit Nummer aus getNextInvoiceNumber –
+// alte und neue Versionen, CONTRACT-fs-order §3, CONTRACT-der-kantineur §2.2, CONTRACT-blitzdings §5), Gutschrift nur zu eigener Rechnung.
+// Rückgabe: null = erlaubt, Text = Grund der Sperre, { err } = Fehler beim Nachschlagen (unverändert weitergeben), { bad } = ungültiger Aufruf.
+async function finApiSaveCheck(who, fpath, body) {
+  const k = /CreditNote/.test(fpath) ? "creditNote" : "invoice", T = k === "invoice" ? "Invoice" : "CreditNote", doc = body && body[k];
+  if (!doc || typeof doc !== "object") return { bad: true };
+  const ps = body[k + "PosSave"], pd = body[k + "PosDelete"];
+  if ((ps != null && !Array.isArray(ps)) || (pd != null && !Array.isArray(pd))) return { bad: true };
+  let cur = null;
+  if (doc.id) {
+    const r = await finApiDoc(T, String(doc.id).replace(/\D/g, "")); if (r.err) return r;
+    cur = r.doc; if (!finApiOwns(who, cur)) return "fremder Beleg";
+    if (String(cur.status) !== "100" || cur.enshrined) return "Beleg ist kein Entwurf bzw. festgeschrieben";
+  } else doc.finApiSource = who;
+  const st = doc.status == null || doc.status === "" ? "100" : String(doc.status);
+  if (st !== "100" && !(st === "200" && k === "invoice" && !cur)) return "Status " + st;
+  if (doc.paidAmount != null && doc.paidAmount !== "" && Math.abs(+doc.paidAmount || 0) > 0.004) return "paidAmount";
+  if (doc.enshrined || doc.cancelled) return "Festschreiben/Storno nur über die dafür vorgesehenen Aufrufe";
+  const nrF = k === "invoice" ? "invoiceNumber" : "creditNoteNumber";
+  if (doc[nrF] != null && String(doc[nrF]).trim()) {   // eigene Nummer (Blitzdings) nur, wenn sie noch nicht vergeben ist
+    const ex = await sev("GET", "/" + T, { query: { [nrF]: String(doc[nrF]).trim(), limit: 10 } }).catch(e => ({ err: e }));
+    if (ex && ex.err) return { err: ex.err };
+    if (((ex && ex.objects) || []).some(o => o && String(o[nrF] || "") === String(doc[nrF]).trim() && (!cur || String(o.id) !== String(cur.id)))) return "Nummer schon vergeben";
+  }
+  if (k === "creditNote" && doc.refSrcInvoice && (doc.refSrcInvoice.id || doc.refSrcInvoice.id === 0)) {
+    const r = await finApiDoc("Invoice", String(doc.refSrcInvoice.id).replace(/\D/g, "")); if (r.err && !r.notFound) return r;
+    if (!finApiOwns(who, r.doc)) return "Gutschrift zu fremder Rechnung";
+  }
+  const ids = [].concat(ps || [], pd || []).filter(x => x && x.id != null && String(x.id) !== "").map(x => String(x.id));
+  if (ids.length) {
+    if (!cur) return "Positionen fremder Belege";
+    const own = await sev("GET", "/" + T + "Pos", { query: { [k + "[id]"]: String(cur.id), limit: 1000 } }).catch(e => ({ err: e }));
+    if (own && own.err) return { err: own.err };
+    const mine = new Set(((own && own.objects) || []).map(x => String(x.id)));
+    if (ids.some(id => !mine.has(id))) return "Positionen fremder Belege";
+  }
+  return null;
+}
 async function finApi(req, res, u, p) {
   const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
   const ip = clientIp(req);
@@ -1351,11 +1398,9 @@ async function finApi(req, res, u, p) {
   const path = p.slice("/fin-api/v1".length);
   // Eigentum: Versand/Festschreiben/Lesen nur für Belege dieser Plattform; Entwurf überarbeiten nur, wenn er ihr gehört; neue Belege werden ihr zugeschrieben
   const docM = fpath.match(/^\/(Invoice|CreditNote)\/(\d+)/), kind = rule[2] || "";
-  if (kind === "own" && docM && !finApiOwns(who, await finApiDoc(docM[1], docM[2]))) return deny("fremder Beleg");
-  if (kind === "save") { const k = /CreditNote/.test(fpath) ? "creditNote" : "invoice", doc = body && body[k];
-    if (!doc || typeof doc !== "object") return J(400, { error: { message: "bad_body" } });
-    if (doc.id) { if (!finApiOwns(who, await finApiDoc(k === "invoice" ? "Invoice" : "CreditNote", String(doc.id).replace(/\D/g, "")))) return deny("fremder Beleg"); }
-    else doc.finApiSource = who; }
+  const errOut = r => J(r.err.status && r.err.status < 600 ? r.err.status : 500, { error: { message: String(r.err.message || r.err).slice(0, 300) } });
+  if (kind === "own" && docM) { const r = await finApiDoc(docM[1], docM[2]); if (r.err) return errOut(r); if (!finApiOwns(who, r.doc)) return deny("fremder Beleg"); }
+  if (kind === "save") { const deny2 = await finApiSaveCheck(who, fpath, body); if (deny2 && deny2.err) return errOut(deny2); if (deny2 && deny2.bad) return J(400, { error: { message: "bad_body" } }); if (deny2) return deny(deny2); }
   if (kind === "list" && !(rule[3] || []).some(f => query[f] != null && String(query[f]) !== "")) return deny("Suche ohne Filter");
   console.log("fin-api", who, req.method, path.replace(/\d+/g, "{id}"));   // jeder Zugriff, auch lesend (Grundlage für eine spätere Freigabeliste)
   try {
@@ -2908,9 +2953,11 @@ let PLAT_CREDIT_AT = 0;
 function platCreditSoon(k, ko) {
   if (!FIN_STATE.local || !process.env.DATABASE_URL || Date.now() - PLAT_CREDIT_AT < 10 * 60e3) return;
   PLAT_CREDIT_AT = Date.now();
-  const hints = ((k && +k.apiVersion >= 2 && k.payments) || []).filter(p => p.invoiceId && ((+p.refundedCents || 0) + (+p.chargedBackCents || 0)) > 0)
-    .map(p => ({ invoiceId: String(p.invoiceId), pid: p.molliePaymentId || "", cents: (+p.refundedCents || 0) + (+p.chargedBackCents || 0), chargeback: +p.chargedBackCents > 0 }));
-  setImmediate(() => FIN_LOCAL.load().then(async () => { const n = (await FIN_CREDIT.refunds(hints)) + (await FIN_CREDIT.kochduDouble((ko && ko.restaurants) || []));
+  // nur Erstattungen (Rückbuchungen sind keine Gutschrift, B10); auch Zahlungen ohne invoiceId – fin-credit findet die Rechnung über die Mollie-ID (B11)
+  const hints = ((k && +k.apiVersion >= 2 && k.payments) || []).filter(p => (p.invoiceId || p.molliePaymentId) && (+p.refundedCents || 0) > 0)
+    .map(p => ({ invoiceId: p.invoiceId ? String(p.invoiceId) : "", pid: p.molliePaymentId || "", cents: +p.refundedCents || 0 }));
+  setImmediate(() => FIN_LOCAL.load().then(async () => { await FIN_MOLLIE.backfillRefunds().catch(() => 0);   // Bestand: Zahlungsnummer an Erstattungen (idempotent, B1)
+    const n = (await FIN_CREDIT.refunds(hints)) + (await FIN_CREDIT.kochduDouble((ko && ko.restaurants) || []));
     if (n) console.log("Gutschrift-Vorschläge:", n, "zur Prüfung"); }).catch(e => console.error("Gutschrift-Vorschläge:", e.message)));
 }
 async function cockpitBuild(year, forceForecast) {
@@ -4853,7 +4900,7 @@ FIN_PROP.register("rule", { exec: it => FIN_RULES.acceptProposal(it.payload) });
 ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
 FIN_PROP.register("transfer", { exec: it => FIN_LOCAL.pairApply(it.payload.aId, it.payload.bId) });
 // Gutschrift zu einer Plattform-Rechnung (Kantineur-Erstattung/Rückbuchung, kochdu doppelt verrechnet): nur auf Klick, nie automatisch
-const FIN_CREDIT = require("./fin-credit.js")({ L: FIN_LOCAL, P: () => FIN_PROP, today: () => viennaToday(), reportedPeriods: () => steuerReportedPeriods() });
+const FIN_CREDIT = require("./fin-credit.js")({ L: FIN_LOCAL, P: () => FIN_PROP, today: () => viennaToday(), reportedPeriods: () => steuerReportedPeriods(), billing: () => readBilling() });
 FIN_PROP.register("invoice-credit", { label: "Gutschrift zu Plattform-Rechnung", exec: it => FIN_CREDIT.exec(Object.assign({}, it.payload, { key: it.key })).then(r => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); return r; }), valid: it => FIN_CREDIT.valid(it) });
 // Doppelzahlung zurückbekommen / Guthaben zurückgezahlt: nie automatisch, nur per Klick (rückgängig über Bank › Umsatz bzw. /admin/api/fin/payment)
 FIN_PROP.register("refund-pair", { exec: it => FIN_LOCAL.refundPairApply(it.payload.aId, it.payload.bId), valid: it => FIN_LOCAL.refundValid(it.payload.aId, it.payload.bId) });

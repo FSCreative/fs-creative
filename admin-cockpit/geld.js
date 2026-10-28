@@ -120,6 +120,9 @@ F.action("sdpaidinv",function(key){
 F.action("sdunign",function(key){ F.api("/admin/api/billing",{body:{op:"unignore",key:key}}).then(function(){ F.toast("Wieder eingeblendet"); F.load(true); }); });
 F.action("sdshowign",function(){ F.UI.showIgn=!F.UI.showIgn; F.render(); });
 F.action("sdzu",function(){ var el=document.getElementById("zuVerrechnen"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); });
+/* BD-10/B11: Blitzdings-Buchungsliste nicht (aktuell) geladen → auch hier sichtbar (der Abgleich nutzt dann nur „Nächste Termine“) */
+function bzListNote(ab){ var s=ab&&ab.blitzStatus; if(!s||(s.status!=="fehlt"&&s.status!=="stale"&&!s.partial)) return "";
+  return '<div class="notice" style="margin:0 16px 12px;background:var(--warn-soft)"><span><b>Blitzdings-Buchungen '+(s.status==="fehlt"?"nicht geladen":"nicht aktuell")+'</b> – Blitzdings-Posten unvollständig'+(s.status==="stale"&&s.at?" (Stand "+esc(new Date(s.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}))+")":"")+(s.error?": "+esc(s.error):"")+'. Vergangene Buchungen können fehlen, Beträge ohne Gewähr – erst nach dem Neuladen verrechnen.</span><button class="btn" data-act="reload">Neu laden</button></div>'; }
 function renderUebersicht(){
   var D=F.D, sev=D.sev, ab=D.abgleich, f=F.UI.money, SRC=F.SRC, mig=valueroLegacy();
   var zu=ab.items.filter(function(x){ return x.unbilled>0.005||x.refund>0.005||(x.src==="valuero"&&x.blocked); }).sort(function(a,b){ return (b.unbilled||0)-(a.unbilled||0); });
@@ -168,6 +171,7 @@ function renderUebersicht(){
       '<button class="panel kpi" data-act="sdtab:bank"><span class="k">Bank</span><span class="v num'+(bal!=null&&bal<0?" bad-t":"")+'">'+(bal==null?"—":eur0(bal))+'</span><span class="s">'+(sev?sev.accounts.length+" Konten":"")+'</span></button>'+
     '</div>'+
     '<section class="panel" id="zuVerrechnen"><div class="panel-h"><h2>Zu verrechnen</h2><span class="muted">'+(zu.length?eur(ab.totals.unbilled)+' · '+zu.length+' Posten':'')+'</span></div>'+
+      bzListNote(ab)+
       (zu.length?'<div class="bill">'+zu.map(card).join("")+'</div>':'<div class="sd-empty"><b>Nichts offen 🎉</b>Alle Leistungen sind verrechnet.</div>')+
       (ign.length?'<div style="padding:0 16px 14px"><button class="link" data-act="sdshowign">'+(F.UI.showIgn?"Ausgeblendete verbergen":ign.length+" ausgeblendet · anzeigen")+'</button>'+(F.UI.showIgn?'<div class="sd-list sd-box" style="margin-top:8px">'+ign.map(function(x){ return '<div class="sd-row" style="cursor:default"><div><div class="t">'+esc(x.name)+'</div><div class="s">'+eur(x.ignored.amount)+' · ausgeblendet am '+de(String(x.ignored.at||"").slice(0,10))+'</div></div><div class="r"><button class="btn" data-act="sdunign:'+esc(x.key)+'">Wieder einblenden</button></div></div>'; }).join("")+'</div>':'')+'</div>':'')+
     '</section>'+

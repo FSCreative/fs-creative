@@ -39,6 +39,8 @@ module.exports = function (D) {
   }
   const amt = a => a && a.value != null ? +a.value : 0;
   const ctxId = (c, rx) => { const m = JSON.stringify(c || {}).match(rx); return m ? m[0] : ""; };
+  // alle Texte im Mollie-Kontext (ohne IDs), z. B. Name der zahlenden Organisation
+  const ctxStrings = c => { const out = []; (function walk(v, n) { if (n > 4 || v == null) return; if (typeof v === "string") { if (v.length > 2 && !/^(tr|org|pfl|bal|baltr|re|chb|stl|tst)_[A-Za-z0-9]+$/.test(v) && !/^\d{4}-\d{2}-\d{2}T/.test(v)) out.push(v); } else if (typeof v === "object") Object.keys(v).forEach(k => walk(v[k], n + 1)); })(c, 0); return out.slice(0, 8); };
   async function newTx(accId, o) {
     const r = await L.request("POST", "/CheckAccountTransaction", { body: Object.assign({ checkAccount: { id: String(accId), objectName: "CheckAccount" }, status: "100", payeePayerName: "", paymtPurpose: "" }, o) });
     return r.objects;
@@ -172,15 +174,15 @@ module.exports = function (D) {
   }
   const feeMonth = tx => { const m = String(tx.paymtPurpose || tx.mollieDesc || "").match(/\btr_[A-Za-z0-9]+/); return (m && CONNECT.map[m[0]]) || day(tx.valueDate).slice(0, 7); };
   // Connect-Provisionen kommen von kochdu UND VALUERO (beide behalten ihre Provision per Mollie Connect auf diesem Konto ein, Audit 28.10.2026).
-  // VALUERO: Beschreibung „VALUERO Provision <Buchungscode>“ (valuero-partner). kochdu: Zahlungsnummer in der kochdu-Liste (Bestellungen der letzten
-  // 200 Tage) bzw. „kochdu“ im Text. Kennt die geladene kochdu-Liste die Zahlung nicht (und lag die Provision schon vor dem Laden der Liste vor),
-  // ist sie nicht von kochdu → VALUERO. Ohne kochdu-Liste: abwarten – nie mehr nach Buchungsdatum auf die kochdu-Sammelrechnung.
+  // Zugeordnet wird nur bei positiver Erkennung (Review A7): kochdu = Zahlungsnummer in der kochdu-Liste (Bestellungen der letzten 200 Tage) bzw.
+  // „kochdu“ im Text; VALUERO = „VALUERO“ im Text des Umsatzes (Beschreibung der Provision „VALUERO Provision <Buchungscode>“, falls Mollie sie im
+  // Umsatz mitliefert – der Abruf speichert dafür die Texte aus dem Mollie-Kontext). Alles andere bleibt „Plattform unklar – bitte zuordnen“:
+  // kein Einnahme-Beleg-Vorschlag (sonst doppelter Erlös neben der VALUERO-Quartalsrechnung), nie nach Buchungsdatum auf die kochdu-Sammelrechnung.
   const addDays = (d, n) => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   function feePlatform(tx) {
-    const t = low([tx.mollieDesc, tx.paymtPurpose, tx.payeePayerName].join(" ")), pid = (String(tx.paymtPurpose || tx.mollieDesc || "").match(/\btr_[A-Za-z0-9]+/) || [])[0];
+    const t = low([tx.mollieDesc, tx.paymtPurpose, tx.payeePayerName, tx.mollieCtx].join(" ")), pid = (String(tx.paymtPurpose || tx.mollieDesc || "").match(/\btr_[A-Za-z0-9]+/) || [])[0];
     if (/(^|[^a-z0-9_])valuero/.test(t)) return "valuero";
     if ((pid && CONNECT.map[pid]) || /(^|[^a-z0-9_])kochdu/.test(t)) return "kochdu";
-    if (CONNECT.at && Date.parse(day(tx.valueDate) + "T23:59:59Z") < CONNECT.at - 864e5 && day(tx.valueDate) >= addDays(todayIso(), -150)) return "valuero";
     return "";
   }
   // abgeschlossene Monate ab ONLINE_FROM: Mollie-Provisionen (Summe inkl. negativer Korrekturen) gegen die Sammelrechnung
@@ -194,9 +196,9 @@ module.exports = function (D) {
       return Object.assign(x, { invoiceId: i ? String(i.id) : null, invoiceNumber: i ? i.invoiceNumber || "" : null, gross: i ? r2(+i.sumGross || 0) : null, diff: i ? r2(x.fees - (+i.sumGross || 0)) : null }); });
   }
   function onlineNotices() {
-    // Connect-Provisionen ohne Plattform (kochdu-Liste noch nicht geladen) – werden erst zugeordnet, wenn klar ist, ob kochdu oder VALUERO
+    // Connect-Provisionen ohne erkennbare Plattform – nie automatisch und ohne fertigen Einnahme-Beleg-Vorschlag (A7)
     const unk = L.all("CheckAccountTransaction").filter(x => x.mollieType === "application-fee" && String(x.status) === "100" && +x.amount > 0 && day(x.valueDate) < addDays(todayIso(), -2) && !feePlatform(x)), us = r2(unk.reduce((a, x) => a + (+x.amount || 0), 0));
-    return (unk.length ? [unk.length + " Connect-Provision" + (unk.length === 1 ? "" : "en") + " (" + eu(us) + ") noch keiner Plattform zugeordnet (kochdu oder VALUERO) – " + (CONNECT.at ? "Zuordnung folgt beim nächsten Abruf." : "kochdu-Liste nicht geladen, Zuordnung folgt, sobald kochdu erreichbar ist.")] : []).concat(onlineCheck().map(x => x.invoiceId == null ? "Online-Provisionen " + x.mm + ": " + eu(x.fees) + " von Mollie, aber noch keine Sammelrechnung „kochdu Online-Provisionen " + x.mm + "“ (fs-order Monatsabrechnung) – Zuordnung folgt, sobald sie da ist."
+    return (unk.length ? [unk.length + " Connect-Provision" + (unk.length === 1 ? "" : "en") + " (" + eu(us) + ") keiner Plattform zuzuordnen (kochdu oder VALUERO) – " + (CONNECT.at ? "nicht in der kochdu-Liste und nicht als VALUERO erkennbar: bitte in der Bank-Ansicht von Hand zuordnen (VALUERO-Provision nur buchen, wenn die Quartalsrechnung sie als „bei Online-Zahlung bereits einbehalten“ abzieht)." : "kochdu-Liste nicht geladen, Zuordnung folgt, sobald kochdu erreichbar ist.")] : []).concat(onlineCheck().map(x => x.invoiceId == null ? "Online-Provisionen " + x.mm + ": " + eu(x.fees) + " von Mollie, aber noch keine Sammelrechnung „kochdu Online-Provisionen " + x.mm + "“ (fs-order Monatsabrechnung) – Zuordnung folgt, sobald sie da ist."
       : Math.abs(x.diff) >= 0.01 ? "Differenz Online-Provisionen " + x.mm + ": " + eu(x.diff) + " (Mollie " + eu(x.fees) + " · Rechnung " + (x.invoiceNumber || "") + " " + eu(x.gross) + ") – z. B. Rückerstattungen oder Bestellungen um Mitternacht; die Provisionen sind trotzdem der Rechnung zugeordnet." : null).filter(Boolean))
       .concat(dupDraftNotices());
   }
@@ -362,7 +364,11 @@ module.exports = function (D) {
           res.payouts++; if (res0 < 0 && await linkPayout(tx, -res0, d)) res.linked++;   // linked = Vorschläge
         } else {
           const label = { refund: "Rückerstattung", chargeback: "Rückbuchung (Chargeback)", "application-fee": "Provision (Mollie Connect)", "split-payment": "Anteil Split-Zahlung", "invoice-compensation": "Mollie-Rechnung verrechnet", "balance-correction": "Korrektur", "failed-payment-fee": "Gebühr fehlgeschlagene Zahlung" }[type] || type;
-          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee", mollieDesc: pay && (type === "refund" || type === "chargeback") ? pay.description || "" : undefined, mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : (type === "application-fee" ? "kochdu" : "") });
+          // Connect-Provision: Texte aus dem Mollie-Kontext merken (z. B. zahlende Organisation bzw. Beschreibung der Provision) – Grundlage der Plattform-Erkennung (A7)
+          const ctxTxt = type === "application-fee" ? ctxStrings(t.context).concat(typeof t.description === "string" ? [t.description] : []).join(" · ").slice(0, 300) : "";
+          // Erstattung/Rückbuchung: ursprüngliche Zahlung (tr_…) am Umsatz, damit Gutschrift-Vorschlag und Zuordnung sie finden (B1)
+          await newTx(acc.id, { valueDate: iso(d), entryDate: iso(d), amount: s2(res0), payeePayerName: type === "application-fee" || type === "invoice-compensation" ? "Mollie B.V." : name, paymtPurpose: (label + " " + (prof + (pay ? pay.description || "" : "")) + " " + (pid || "")).trim(), mollieId: t.id, mollieType: type, mollieFee: /fee|compensation/.test(type) && type !== "application-fee", mollieDesc: pay && (type === "refund" || type === "chargeback") ? pay.description || "" : undefined, mollieProfile: pay && profiles[pay.profileId] ? profiles[pay.profileId] : (type === "application-fee" ? "kochdu" : ""),
+            molliePayment: pid && (type === "refund" || type === "chargeback") ? pid : undefined, mollieGross: type === "refund" || type === "chargeback" ? s2(init) : undefined, mollieFeeAmt: (type === "refund" || type === "chargeback") && Math.abs(ded) > 0.004 ? s2(Math.abs(ded)) : undefined, mollieCtx: ctxTxt || undefined });
           res.added++;
         }
         have.add(t.id);
@@ -379,6 +385,17 @@ module.exports = function (D) {
     }
     return res;
   }
+  // Bestand (B1): Erstattungs-/Rückbuchungsumsätze von vor dieser Version tragen die ursprüngliche Zahlung (tr_…) nur im Verwendungszweck –
+  // einmalig nachtragen, damit Gutschrift-Vorschlag und Zuordnung sie finden. Idempotent: nur Umsätze ohne molliePayment, nichts sonst geändert.
+  async function backfillRefunds() {
+    let n = 0;
+    for (const t of L.all("CheckAccountTransaction").filter(x => /^(refund|chargeback)$/.test(String(x.mollieType || "")) && !x.molliePayment)) {
+      const ids = String(t.paymtPurpose || "").match(/(?:^|[^A-Za-z0-9_])(tr_[A-Za-z0-9]{4,40})(?![A-Za-z0-9_])/g); if (!ids) continue;
+      const pid = ids[ids.length - 1].replace(/^[^t]*/, ""); t.molliePayment = pid; await L.save("CheckAccountTransaction", t); n++;
+    }
+    if (n) console.log("Mollie: Zahlungsnummer an " + n + " Erstattungs-/Rückbuchungsumsätzen nachgetragen");
+    return n;
+  }
   // Auszahlungen, die vor dem Bankimport kamen, später nachverknüpfen
   async function relink() { let n = 0; const prop = P(); if (!prop) return 0; const busy = await prop.busyTx("mollie-payout"); for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieId && /outgoing-transfer$/.test(x.mollieType || "") && !x.transitWith && +x.amount < 0)) if (await linkPayout(tx, -(+tx.amount), day(tx.valueDate), busy)) n++; return n; }
   async function sync(opt) {
@@ -386,6 +403,7 @@ module.exports = function (D) {
     STATE.running = true; STATE.error = "";
     try {
       await L.load();
+      await backfillRefunds().catch(e => console.error("Mollie-Nachtrag Erstattungen:", e.message));
       const since = (opt && (opt.resetSince || opt.since)) || new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
       const out = []; for (const tk of tks) out.push(await syncOrg(tk, since, opt).catch(e => ({ org: tk.key, error: e.message })));
       const passthrough = await autoPassthrough();   // vor Zuordnung/Vorschlägen: Fremdgeld ist nie eigener Umsatz
@@ -417,7 +435,7 @@ module.exports = function (D) {
           return o; }, {})),
         notices: prov.length ? onlineNotices() : [],
         countPayments: pays.length, countMatched: pays.filter(t => String(t.status) !== "100").length,
-        byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const k = t.mollieType === "application-fee" && feePlatform(t) === "valuero" ? "VALUERO" : (t.mollieProfile || "ohne Profil"); const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
+        byProfile: Object.values(pays.concat(prov).reduce((o, t) => { const fp = t.mollieType === "application-fee" ? feePlatform(t) : "", k = t.mollieType === "application-fee" ? (fp === "valuero" ? "VALUERO" : fp === "kochdu" ? (t.mollieProfile || "kochdu") : "Connect (Plattform unklar)") : (t.mollieProfile || "ohne Profil"); const x = o[k] = o[k] || { name: k, gross: 0, fees: 0, count: 0, unmatched: 0, provisions: 0 };
           if (t.mollieType === "application-fee") x.provisions = r2(x.provisions + (+t.amount || 0)); else { x.gross = r2(x.gross + (+t.mollieGross || +t.amount)); x.fees = r2(x.fees + (+t.mollieFeeAmt || 0)); x.count++; if (String(t.status) === "100") x.unmatched++; } return o; }, {})) });
     }
     return out;
@@ -458,5 +476,5 @@ module.exports = function (D) {
       catch (e) { out.push({ key: tk.key, ok: false, status: e.status || 0, error: e.name === "AbortError" ? "keine Antwort (Zeitüberschreitung)" : e.message }); } }
     return out;
   }
-  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, draftHit, invoiceHit, summary, autoVouchers, accept, onlineCheck, onlineNotices };
+  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, draftHit, invoiceHit, summary, autoVouchers, accept, onlineCheck, onlineNotices, backfillRefunds, feePlatform };
 };

@@ -18,14 +18,14 @@ function memFin(seed) {
     getMeta: async k => (k in meta ? JSON.parse(JSON.stringify(meta[k])) : null), setMeta: async (k, v) => { meta[k] = JSON.parse(JSON.stringify(v)); },
     putFileRaw: async () => {}, getFile: async () => null };
 }
-function finSetup(seed, today) {
+function finSetup(seed, today, billing, mfetch) {
   const fin = memFin(seed);
   const L = require(path.join(ROOT, "fin-local.js"))({ fin, renderPdf: async () => Buffer.from(""), mailSend: async () => ({}) });
   const P = require(path.join(ROOT, "fin-proposals.js"))({ L, getMeta: fin.getMeta, setMeta: fin.setMeta, autoPay: () => true, today: () => today || "2026-11-20", reportedPeriods: () => [{ from: "2026-01-01", to: "2026-06-30" }] });
   L.setProposer(P);
-  const C = require(path.join(ROOT, "fin-credit.js"))({ L, P: () => P, today: () => today || "2026-11-20", reportedPeriods: () => [{ from: "2026-01-01", to: "2026-06-30" }] });
+  const C = require(path.join(ROOT, "fin-credit.js"))({ L, P: () => P, today: () => today || "2026-11-20", reportedPeriods: () => [{ from: "2026-01-01", to: "2026-06-30" }], billing: () => billing || { invoices: {} } });
   P.register("invoice-credit", { exec: it => C.exec(Object.assign({}, it.payload, { key: it.key })), valid: it => C.valid(it) });
-  const M = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P, today: () => today || "2026-11-20" });
+  const M = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P, today: () => today || "2026-11-20", fetch: mfetch });
   ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => P.register(k, { exec: it => M.accept(k, it.payload) }));
   return { fin, L, P, C, M };
 }
@@ -345,16 +345,16 @@ function unitTests(T) {
     assert.strictEqual(await C.refunds([{ invoiceId: "810", pid: "tr_open0001", cents: 969 }]), 0); assert.strictEqual((await P.list()).length, 0);
     assert.ok(!L.get("Invoice", "810").cancelled);
   });
-  await t("KA-2 Weg 2: Kantineur meldet Erstattung ohne Mollie-Umsatz → Gutschrift ohne Zuordnung; später kommt der Umsatz → nur noch Zuordnung zur selben Gutschrift", async () => {
+  await t("KA-2 Weg 2: Kantineur meldet Erstattung ohne Mollie-Umsatz → Gutschrift ohne Zuordnung; später kommt der Erstattungsumsatz → nur noch Zuordnung zur selben Gutschrift", async () => {
     const seed = [acc("2", "Mollie"), contact("40", "SV")].concat(invSeed("820", { gross: 14.9, extra: { status: "1000", paidAmount: "14.90", customerInternalNote: "Mollie tr_late0001" } }));
     const { L, P, C } = finSetup(seed); await L.load();
-    const hint = [{ invoiceId: "820", pid: "tr_late0001", cents: 1490, chargeback: true }];
+    const hint = [{ invoiceId: "820", pid: "tr_late0001", cents: 1490 }];   // Erstattung (Rückbuchungen bekommen keine Gutschrift, Review B10)
     assert.strictEqual(await C.refunds(hint), 1);
-    let it = (await P.list())[0]; assert.ok(/Rückbuchung/.test(it.title)); assert.deepStrictEqual(it.txIds, null);
+    let it = (await P.list())[0]; assert.ok(/Erstattung/.test(it.title)); assert.deepStrictEqual(it.txIds, null);
     const r = await P.accept(it.id); const cn = L.get("CreditNote", r.result.creditNoteId);
     assert.strictEqual(+cn.sumGross, 14.9); assert.strictEqual(String(cn.status), "200", "offen bis zur Auszahlung");
     assert.strictEqual(await C.refunds(hint), 0, "schon gutgeschrieben");
-    await L.save("CheckAccountTransaction", { id: "921", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "-14.90", valueDate: iso("2026-11-21"), status: "100", mollieId: "cb1", mollieType: "chargeback", molliePayment: "tr_late0001" });
+    await L.save("CheckAccountTransaction", { id: "921", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "-14.90", valueDate: iso("2026-11-21"), status: "100", mollieId: "rf21", mollieType: "refund", molliePayment: "tr_late0001" });
     assert.strictEqual(await C.refunds(hint), 1);
     it = (await P.list())[0]; assert.ok(/der Gutschrift .* zuordnen/.test(it.title), it.title);
     await P.accept(it.id);
@@ -380,6 +380,88 @@ function unitTests(T) {
     assert.strictEqual(await C.kochduDouble(rest), 0);
   });
 
+  /* Teil 2b: Review B1/B4/B10/B11 – Erstattungen aus dem echten Mollie-Abruf, kochdu-Rest, Rückbuchungen */
+  const mfetch = (btx) => { const json = o => ({ ok: true, status: 200, json: async () => o });
+    return async (url) => { if (/organizations\/me/.test(url)) return json({ name: "FS" }); if (/\/profiles/.test(url)) return json({ _embedded: { profiles: [{ id: "pfl_1", name: "Kantineur" }] }, _links: {} });
+      if (/\/balances\?/.test(url)) return json({ _embedded: { balances: [{ id: "bal_1", currency: "EUR", availableAmount: { value: "0" }, pendingAmount: { value: "0" } }] }, _links: {} });
+      if (/\/balances\/bal_1\/transactions/.test(url)) return json({ _embedded: { balance_transactions: btx }, _links: {} });
+      const m = url.match(/\/payments\/(tr_\w+)/); if (m) return json({ id: m[1], profileId: "pfl_1", description: "Kantineur Abo", details: { consumerName: "SV Stainach" }, metadata: { canteenId: "c1" } });
+      return { ok: false, status: 404, json: async () => ({}) }; }; };
+  const msync = async (M) => { process.env.MOLLIE_ORG_TOKEN = "test_x"; try { await M.sync({ since: "2026-11-01" }); } finally { delete process.env.MOLLIE_ORG_TOKEN; } };
+  const kaAcc = ["CheckAccount", { id: "2", name: "Mollie – Kantineur", status: "100", type: "online", mollieBalance: "bal_1", mollieNamed: true }];
+  await t("B1: Erstattung aus dem echten Mollie-Abruf (sync) trägt die Zahlungsnummer → Gutschrift-Vorschlag genau über den erstatteten Betrag, Klick bucht Gutschrift + Zuordnung", async () => {
+    const seed = [kaAcc, contact("40", "SV Stainach")].concat(invSeed("800", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_refund01" } }));
+    const btx = [{ id: "baltr_rf1", type: "refund", resultAmount: { value: "-9.69", currency: "EUR" }, initialAmount: { value: "-9.69", currency: "EUR" }, context: { paymentId: "tr_refund01", refundId: "re_abc123" }, createdAt: "2026-11-18T10:00:00+00:00" }];
+    const { L, P, C, M } = finSetup(seed, null, null, mfetch(btx)); await L.load(); await msync(M);
+    const rt = L.all("CheckAccountTransaction").find(x => x.mollieType === "refund");
+    assert.strictEqual(rt.molliePayment, "tr_refund01"); assert.strictEqual(rt.mollieGross, "-9.69");
+    assert.strictEqual(await C.refunds([]), 1, "Weg 1 greift"); const it = (await P.list()).find(x => x.kind === "invoice-credit");
+    assert.deepStrictEqual(it.txIds, [String(rt.id)]); const r = await P.accept(it.id); const cn = L.get("CreditNote", r.result.creditNoteId);
+    assert.strictEqual(+cn.sumGross, 9.69); assert.strictEqual(String(L.get("CheckAccountTransaction", rt.id).status), "200"); assert.strictEqual(await C.refunds([{ invoiceId: "800", pid: "tr_refund01", cents: 969 }]), 0);
+  });
+  await t("B1: Mollie zieht beim Erstatten eine Gebühr ab → Gutschrift = erstatteter Betrag (initialAmount), Umsatz nicht automatisch zugeordnet", async () => {
+    const seed = [kaAcc, contact("40", "SV")].concat(invSeed("801", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_refund02" } }));
+    const btx = [{ id: "baltr_rf2", type: "refund", resultAmount: { value: "-9.94", currency: "EUR" }, initialAmount: { value: "-9.69", currency: "EUR" }, deductions: { value: "-0.25", currency: "EUR" }, context: { paymentId: "tr_refund02" }, createdAt: "2026-11-18T10:00:00+00:00" }];
+    const { L, P, C, M } = finSetup(seed, null, null, mfetch(btx)); await L.load(); await msync(M);
+    assert.strictEqual(await C.refunds([]), 1); const it = (await P.list()).find(x => x.kind === "invoice-credit");
+    assert.strictEqual(it.amount, -9.69); assert.ok(!it.txIds || !it.txIds.length, "ohne Zuordnung"); assert.ok(/0,25 € Gebühr/.test(it.detail), it.detail);
+    const r = await P.accept(it.id); assert.strictEqual(+L.get("CreditNote", r.result.creditNoteId).sumGross, 9.69);
+    assert.strictEqual(String(L.all("CheckAccountTransaction").find(x => x.mollieType === "refund").status), "100"); assert.strictEqual(await C.refunds([]), 0, "kein zweiter Vorschlag");
+  });
+  await t("B1: Bestand – Erstattungsumsatz ohne Zahlungsnummer wird aus dem Verwendungszweck nachgetragen (einmalig, idempotent)", async () => {
+    const seed = [kaAcc, contact("40", "SV")].concat(invSeed("802", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_altbestand1" } }),
+      [["CheckAccountTransaction", { id: "905", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "-9.69", valueDate: iso("2026-11-10"), payeePayerName: "SV", paymtPurpose: "Rückerstattung Kantineur: Kantineur Abo tr_altbestand1", status: "100", mollieId: "baltr_old", mollieType: "refund" }]]);
+    const { L, C, M } = finSetup(seed); await L.load();
+    assert.strictEqual(await C.refunds([]), 0, "vorher findet Weg 1 nichts");
+    assert.strictEqual(await M.backfillRefunds(), 1); assert.strictEqual(L.get("CheckAccountTransaction", "905").molliePayment, "tr_altbestand1");
+    assert.strictEqual(await M.backfillRefunds(), 0, "idempotent"); assert.strictEqual(await C.refunds([]), 1);
+  });
+  await t("B10: Rückbuchung (Chargeback) → kein Gutschrift-Vorschlag, weder aus Mollie noch aus der Kantineur-Meldung", async () => {
+    const seed = [kaAcc, contact("40", "SV")].concat(invSeed("803", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_cback001" } }));
+    const btx = [{ id: "baltr_cb1", type: "chargeback", resultAmount: { value: "-9.69", currency: "EUR" }, initialAmount: { value: "-9.69", currency: "EUR" }, context: { paymentId: "tr_cback001", chargebackId: "chb_1" }, createdAt: "2026-11-18T10:00:00+00:00" }];
+    const { L, P, C, M } = finSetup(seed, null, null, mfetch(btx)); await L.load(); await msync(M);
+    assert.strictEqual(L.all("CheckAccountTransaction").find(x => x.mollieType === "chargeback").molliePayment, "tr_cback001");
+    assert.strictEqual(await C.refunds([{ invoiceId: "803", pid: "tr_cback001", cents: 969, chargeback: true }]), 0); assert.strictEqual((await P.list()).filter(x => x.kind === "invoice-credit").length, 0);
+  });
+  await t("B11: Kantineur meldet Erstattung ohne invoiceId → Rechnung eindeutig über die Mollie-ID gefunden, Vorschlag entsteht", async () => {
+    const seed = [kaAcc, contact("40", "SV")].concat(invSeed("804", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_ohneid01" } }));
+    const { L, C } = finSetup(seed); await L.load();
+    assert.strictEqual(await C.refunds([{ invoiceId: "", pid: "tr_ohneid01", cents: 969 }]), 1);
+  });
+  await t("B4: kochdu doppelt verrechnet – Gutschrift von Hand oder stornierte Rechnung der Verrechnung von Hand werden abgezogen, nie eine zweite Gutschrift", async () => {
+    const rest = [{ id: "R1", name: "La Taverna", months: [{ month: "2026-09", doubleBilledCents: 800, manualCents: 800, doc: { docId: "840", nr: "RE-840" } }] }];
+    const base = () => [contact("40", "La Taverna")].concat(invSeed("840", { gross: 42.1, extra: { status: "1000", paidAmount: "42.10", header: "kochdu-Gebühr Barzahlungen 09/2026" } }));
+    let E = finSetup(base().concat([["CreditNote", { id: "70", status: "200", creditNoteNumber: "GU-70", sumNet: "6.67", sumTax: "1.33", sumGross: "8.00", paidAmount: "0", refSrcInvoice: { id: "840", objectName: "Invoice" } }]])); await E.L.load();
+    assert.strictEqual(await E.C.kochduDouble(rest), 0, "schon von Hand gutgeschrieben");
+    E = finSetup(base().concat([["CreditNote", { id: "71", status: "200", creditNoteNumber: "GU-71", sumNet: "2.50", sumTax: "0.50", sumGross: "3.00", paidAmount: "0", refSrcInvoice: { id: "840", objectName: "Invoice" } }]])); await E.L.load();
+    assert.strictEqual(await E.C.kochduDouble(rest), 1); assert.strictEqual((await E.P.list())[0].amount, -5, "nur der Rest");
+    const bill = { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-09-20", gross: 8 }] } };
+    E = finSetup(base().concat(invSeed("850", { gross: 8, extra: { status: "1000", paidAmount: "8.00", cancelled: true } })), null, bill); await E.L.load();
+    assert.strictEqual(await E.C.kochduDouble(rest), 0, "Rechnung der Verrechnung von Hand storniert → nichts doppelt");
+    // Vorschlag liegt, danach bucht Simon die Gutschrift von Hand → Vorschlag ungültig
+    E = finSetup(base()); await E.L.load(); assert.strictEqual(await E.C.kochduDouble(rest), 1); const it = (await E.P.list())[0];
+    await E.L.request("POST", "/Fin/creditNoteFromInvoice", { body: { invoiceId: "840", positions: [{ name: "Gutschrift von Hand", quantity: 1, priceGross: 8, grossPricing: true, taxRate: 20 }] } });
+    await assert.rejects(() => E.P.accept(it.id)); assert.strictEqual(E.L.all("CreditNote").length, 1, "keine zweite Gutschrift");
+  });
+  /* Teil 2c: Anzeigen (B11) – plat.js/geld.js in einer vm mit Stub-Cockpit */
+  const bootUi = (file, D, UI) => { const vm = require("vm"), views = {};
+    const base = { UI: Object.assign({ platOpen: {} }, UI || {}), D, actions: {}, icons: {}, geldTabs: [{ id: "uebersicht" }], _pendTabs: [], SRC: {}, api: () => new Promise(() => {}),
+      esc: x => String(x == null ? "" : x), eur: n => (+n || 0).toFixed(2) + " €", eur0: n => Math.round(+n || 0) + " €", de: x => String(x || ""), deShort: x => String(x || ""),
+      view(v) { views[v.id] = v; }, action(n, f) { base.actions[n] = f; }, head: (a, b, c) => "<h1>" + a + "</h1>" + (c || ""), ls: () => null };
+    const F = new Proxy(base, { get: (o, k) => (k in o ? o[k] : (typeof k === "string" ? function () { return ""; } : undefined)) });
+    const ctx = { window: { FSC: F }, document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] }, setTimeout: () => 0, clearTimeout() {}, Date, Math, JSON, Object, String, Array, Promise, console, Number, isFinite, parseFloat, encodeURIComponent };
+    vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(ROOT, "admin-cockpit", file), "utf8"), ctx); return views; };
+  await t("B11: kochdu-Zeile „Doppelt verrechnet“ verschwindet nach der Gutschrift (Teil-Gutschrift: nur der Rest); BD-10-Banner auch unter „Zu verrechnen“", () => {
+    const D = { year: "2026", today: "2026-11-20", sev: { invoices: [{ id: "840", nr: "RE-840", status: 1000, gross: 42.1, credited: 8 }] }, abgleich: { items: [], unlinked: [], totals: { unbilled: 0 } },
+      platforms: { kochdu: { totals: {}, restaurants: [{ id: "R1", name: "La Taverna", months: [{ month: "2026-09", doubleBilledCents: 800, doc: { docId: "840", nr: "RE-840" } }] }] } } };
+    const v = bootUi("plat.js", D, { plat: "kochdu" });
+    assert.ok(!/Doppelt verrechnet/.test(v.plat.render()), "gutgeschrieben → keine Zeile");
+    D.sev.invoices[0].credited = 3; assert.ok(/davon 3\.00 € gutgeschrieben, offen 5\.00 €/.test(v.plat.render()));
+    D.sev.invoices[0].credited = 0; assert.ok(/Doppelt verrechnet<\/span><span class="pl-ckt">La Taverna 09\/2026: 8\.00 €/.test(v.plat.render()));
+    const G = { year: "2026", today: "2026-11-20", sevConfigured: false, sev: null, abgleich: { items: [], unlinked: [], totals: { unbilled: 0 }, blitzStatus: { status: "fehlt", error: "keine Antwort" } }, platforms: {} };
+    const g = bootUi("geld.js", G, { geldTab: "uebersicht", money: "zu" });
+    assert.ok(/Blitzdings-Buchungen nicht geladen/.test(g.geld.render())); G.abgleich.blitzStatus = { status: "ok" }; assert.ok(!/Blitzdings-Buchungen nicht/.test(g.geld.render()));
+  });
   /* Teil 3: Mollie-Zuordnung über „Mollie tr_…“ nur exakt (fin-mollie.js matchOf) */
   await t("Mollie tr_ in der Notiz: exakt gleiches Brutto → Zuordnung; 11,63 statt 9,69 → keine; tr_abc trifft nicht tr_abcdef", async () => {
     const seed = [acc("2", "Mollie"), contact("40", "SV Stainach")].concat(invSeed("850", { gross: 9.69, extra: { customerInternalNote: "Mollie tr_exact001" } }), invSeed("851", { gross: 11.63, extra: { customerInternalNote: "Mollie tr_wrong001" } }), invSeed("852", { gross: 9.69, extra: { customerInternalNote: "Mollie tr_prefix0012" } }));

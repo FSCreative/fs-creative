@@ -145,6 +145,7 @@ module.exports = function (D) {
     const inv = Object.assign({}, body.invoice || {});
     let o = inv.id ? get("Invoice", inv.id) : null;
     if (o && String(o.status) !== "100") throw err(400, "Nur Entwürfe können geändert werden");
+    posGuard("Invoice", o, body.invoicePosSave, body.invoicePosDelete);
     const isNew = !o;
     o = Object.assign(o || { id: newId("Invoice"), status: "100", paidAmount: "0", currency: "EUR", invoiceType: "RE" }, stripMeta(inv));
     if (inv.invoiceDate) o.invoiceDate = iso(dayOf(inv.invoiceDate)); if (inv.deliveryDate) o.deliveryDate = iso(dayOf(inv.deliveryDate)); if (inv.deliveryDateUntil) o.deliveryDateUntil = iso(dayOf(inv.deliveryDateUntil));
@@ -152,7 +153,7 @@ module.exports = function (D) {
     // wie sevDesk: Entwürfe haben noch keine feste Nummer – vergeben wird sie erst beim Fertigstellen (Versand/Download), in Versandreihenfolge
     if (isNew && String(o.status) !== "100" && !o.invoiceNumber) await finalize(o, true);
     // Positionen
-    (body.invoicePosDelete || []).forEach(p => { if (p && p.id) { const x = get("InvoicePos", p.id); if (x) { C.InvoicePos.delete(String(p.id)); fin.db().query("delete from fin_obj where type='InvoicePos' and id=$1", [String(p.id)]).catch(() => {}); } } });
+    (body.invoicePosDelete || []).forEach(p => { if (p && p.id) { const x = get("InvoicePos", p.id); if (x && x.invoice && String(x.invoice.id) === String(o.id)) { C.InvoicePos.delete(String(p.id)); fin.db().query("delete from fin_obj where type='InvoicePos' and id=$1", [String(p.id)]).catch(() => {}); } } });
     const saved = [];
     for (const p of (body.invoicePosSave || [])) {
       const x = Object.assign(p.id ? (get("InvoicePos", p.id) || {}) : { id: newId("InvoicePos") }, stripMeta(p), { invoice: ref("Invoice", o.id) });
@@ -163,6 +164,15 @@ module.exports = function (D) {
     return { objects: { invoice: o, invoicePos: saved } };
   }
   function stripMeta(x) { const c = Object.assign({}, x); delete c.mapAll; delete c.objectName; delete c.create; delete c.update; return c; }
+  // Positionen nur des eigenen Belegs ändern/löschen (Review A6): eine Positions-ID eines anderen (z. B. festgeschriebenen) Belegs wird nie
+  // umgehängt oder gelöscht – vor jeder Änderung prüfen, damit nichts halb gespeichert wird
+  function posGuard(T, o, save0, del0) {
+    const key = T.charAt(0).toLowerCase() + T.slice(1), mine = x => !!o && !!x && !!x[key] && String(x[key].id) === String(o.id);
+    for (const p of [].concat(Array.isArray(save0) ? save0 : [], Array.isArray(del0) ? del0 : [])) {
+      if (!p || p.id == null || String(p.id) === "") continue; const x = get(T + "Pos", p.id);
+      if (x && !mine(x)) throw err(400, "Position " + p.id + " gehört zu einem anderen Beleg");
+    }
+  }
   // ── Regeln wie sevDesk (Handbuch): Fertigstellen = feste Nummer + Status offen + (Standard) automatische Festschreibung ──
   function settings() { return Object.assign({ autoEnshrine: true }, get("FinSetting", "1") || {}); }
   async function finalize(o, noSave) {
@@ -833,11 +843,13 @@ module.exports = function (D) {
   async function saveCreditNote(body) {
     const cb = Object.assign({}, body.creditNote || {});
     let o = cb.id ? get("CreditNote", cb.id) : null; const isNew = !o;
+    if (o && String(o.status) !== "100") throw err(400, "Nur Entwürfe können geändert werden");   // wie Rechnungen (Review A6)
+    posGuard("CreditNote", o, body.creditNotePosSave, body.creditNotePosDelete);
     o = Object.assign(o || { id: newId("CreditNote"), status: "100", currency: "EUR", paidAmount: "0" }, stripMeta(cb));
     if (cb.creditNoteDate) o.creditNoteDate = iso(dayOf(cb.creditNoteDate)); if (!o.creditNoteDate) o.creditNoteDate = iso(today());
     if (cb.deliveryDate) o.deliveryDate = iso(dayOf(cb.deliveryDate));
     if (isNew && !cb.creditNoteNumber) o.creditNoteNumber = await nextNumber("CreditNote", "", "creditNoteNumber", "GU-");
-    for (const p of (body.creditNotePosDelete || [])) if (p && p.id) await del("CreditNotePos", p.id);
+    for (const p of (body.creditNotePosDelete || [])) if (p && p.id) { const x = get("CreditNotePos", p.id); if (x && x.creditNote && String(x.creditNote.id) === String(o.id)) await del("CreditNotePos", p.id); }
     for (const p of (body.creditNotePosSave || [])) { const x = Object.assign(p.id ? (get("CreditNotePos", p.id) || {}) : { id: newId("CreditNotePos") }, stripMeta(p), { creditNote: ref("CreditNote", o.id) }); posSums(x); await save("CreditNotePos", x); }
     docSums(o, positionsOf("CreditNote", o.id)); await save("CreditNote", o);
     return { objects: { creditNote: o } };
