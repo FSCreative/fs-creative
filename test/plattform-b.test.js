@@ -592,21 +592,28 @@ function unitTests(T) {
       assert.strictEqual(inv.sumGross, want, "Entwurf " + id + ": " + JSON.stringify(pre.items));
     }
   });
-  await t("R3-8: Rechnungsformular – netto vorgegebener Preis nur mit unverändertem Steuersatz netto-genau; Vorschau = Rechnung (je Position wie die Buchhaltung)", async () => {
+  await t("R3-8/R4-3: Rechnungsformular – netto vorgegebener Preis bleibt netto-genau, auch bei geändertem Steuersatz (Brutto neu aus dem Netto); Vorschau = Rechnung", async () => {
     // irow/invItems/invSum aus shared.js mit einer Mini-Zeile (Attribute aus dem erzeugten HTML)
     const src = fs.readFileSync(path.join(ROOT, "admin-cockpit", "shared.js"), "utf8"), vm = require("vm");
     const iRow = src.slice(src.indexOf("function irow(it){"), src.indexOf("\n", src.indexOf("function irow(it){"))), iInv = src.slice(src.indexOf("function invItems(){"), src.indexOf('F.listen("input","#irows",invSum);'));
     const parse = html => { const els = []; html.replace(/<input([^>]*)>|<select([^>]*)>([\s\S]*?)<\/select>/g, (m, ai, as, inner) => { const a = {}, tag = ai != null ? "input" : "select", attrs = ai != null ? ai : as; attrs.replace(/([\w-]+)="([^"]*)"/g, (x, k, v) => { a[k] = v; });
       let value = a.value || ""; if (tag === "select") { const sel = (inner || "").match(/<option value="([^"]*)" selected>/); value = sel ? sel[1] : ""; }
-      els.push({ a, value, getAttribute: k => (k in a ? a[k] : null) }); }); return { els, querySelector: q => els.find(e => '[data-i="' + e.a["data-i"] + '"]' === q) || null }; };
+      els.push({ a, value, getAttribute: k => (k in a ? a[k] : null), setAttribute: (k, v) => { a[k] = String(v); } }); }); return { els, querySelector: q => els.find(e => '[data-i="' + e.a["data-i"] + '"]' === q) || null }; };
     const run = (item, edit) => { const ctx = { esc: x => String(x == null ? "" : x).replace(/"/g, "&quot;"), eur: n => (+n).toFixed(2), out: {} };
-      vm.createContext(ctx); vm.runInContext(iRow + "\n" + iInv, ctx); const row = parse(ctx.irow(item)); if (edit) edit(row);
+      vm.createContext(ctx); vm.runInContext(iRow + "\n" + iInv, ctx); const row = parse(ctx.irow(item)); if (edit) edit(row, ctx);
       ctx.document = { querySelectorAll: () => [row], getElementById: () => ctx.out }; const items = ctx.invItems(); ctx.invSum(); return { items, sum: ctx.out.textContent }; };
     const it0 = { name: "Website-Betreuung", qty: 1, priceGross: 120, priceNet: 100, taxRate: 20 };
     let r = run(it0); assert.strictEqual(r.items[0].priceNet, 100, "unverändert → netto-genau"); assert.strictEqual(r.sum, "Summe brutto 120.00");
-    r = run(it0, row => { row.querySelector('[data-i="tax"]').value = "0"; });
-    assert.strictEqual(r.items[0].priceNet, undefined, "Steuersatz geändert → Bruttopreis gilt"); assert.strictEqual(r.sum, "Summe brutto 120.00");
-    assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 120, priceGross: 120, grossPricing: true }, "Rechnung = Vorschau (120)");
+    // Steuersatz 20 → 0 % (wie der Handler: netTax, dann Summe): Netto 100 bleibt, Brutto wird 100; Rechnung = Vorschau = 100
+    r = run(it0, (row, c) => { row.querySelector('[data-i="tax"]').value = "0"; c.netTax(row); });
+    assert.strictEqual(r.items[0].priceNet, 100, "Netto bleibt"); assert.strictEqual(r.items[0].priceGross, 100); assert.strictEqual(r.sum, "Summe brutto 100.00");
+    assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 100 }, "Rechnung netto 100 = Vorschau");
+    r = run(it0, (row, c) => { row.querySelector('[data-i="tax"]').value = "10"; c.netTax(row); }); assert.strictEqual(r.items[0].priceNet, 100); assert.strictEqual(r.sum, "Summe brutto 110.00");
+    // Preis von Hand geändert, danach Steuersatz → der eingetippte Bruttopreis gilt (Vorschau = Rechnung)
+    r = run(it0, (row, c) => { row.querySelector('[data-i="price"]').value = "150"; row.querySelector('[data-i="tax"]').value = "0"; c.netTax(row); });
+    assert.strictEqual(r.items[0].priceNet, undefined); assert.strictEqual(r.sum, "Summe brutto 150.00"); assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 150, priceGross: 150, grossPricing: true });
+    // Netto mit mehr als 2 Nachkommastellen (z. B. KI): Vorschau rundet den Einzelpreis wie der Server (7 × 36,93 = 258,51 netto → 310,21)
+    r = run({ name: "KI", qty: 7, priceGross: 44.32, priceNet: 36.9333, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 310.21");
     // 7 × 10,04 netto: Vorschau wie die Buchhaltung (84,34), nicht 7 × 12,05 = 84,35
     r = run({ name: "Beratung", qty: 7, priceGross: 12.05, priceNet: 10.04, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.34");
     r = run({ name: "Beratung", qty: 7, priceGross: 12.05, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.35", "brutto eingegeben");

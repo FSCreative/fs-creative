@@ -138,22 +138,28 @@ function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEa
      bzw. anderer Steuersatz → der angezeigte Bruttopreis gilt (R3-8: sonst Vorschau 120, Rechnung 100) */
   var pe=r.querySelector('[data-i="price"]'), pn=pe&&pe.getAttribute("data-net"); if(pn!=null&&pn!==""&&parseFloat(pe.getAttribute("data-g0"))===parseFloat(pr)&&parseFloat(pe.getAttribute("data-t0"))===it.taxRate) it.priceNet=parseFloat(pn);
   out.push(it); }); return out; }
-/* Summe wie die Buchhaltung je Position rechnet (fin-local posSums): netto vorgegeben → Netto cent-genau + USt daraus, sonst Brutto cent-genau */
+/* Summe wie die Buchhaltung je Position rechnet (Server sevPosPrice + fin-local posSums): Einzelpreis auf Cent, netto vorgegeben → Netto
+   cent-genau + USt daraus, sonst Brutto cent-genau */
 function invSum(){ var c=function(n){ return Math.round(n*100)/100; }, n=0, t=0; invItems().forEach(function(i){ var d=1-(i.discount||0)/100, r=+i.taxRate||0, sn, sg;
-    if(i.priceNet!=null){ sn=c(i.qty*i.priceNet*d); n+=sn; t+=c(sn*r/100); } else { sg=c(i.qty*i.priceGross*d); sn=c(sg/(1+r/100)); n+=sn; t+=c(sg-sn); } });
+    if(i.priceNet!=null){ sn=c(i.qty*c(i.priceNet)*d); n+=sn; t+=c(sn*r/100); } else { sg=c(i.qty*c(i.priceGross)*d); sn=c(sg/(1+r/100)); n+=sn; t+=c(sg-sn); } });
   var el=document.getElementById("invSum"); if(el) el.textContent="Summe brutto "+eur(c(c(n)+c(t))); }
 /* Nachverrechnung (VALUERO): je Teilzeitraum eine Position – im Formular geänderter Betrag zählt genau für seinen Zeitraum (R3-12);
    passt die Zahl der Positionen nicht mehr, rechnet der Server die Teilbeträge anteilig um */
 function adjParts(parts,items){ if(!parts||!parts.length||!items||items.length!==parts.length) return parts||undefined;
   var c=function(n){ return Math.round(n*100)/100; };
-  return parts.map(function(p,k){ var i=items[k], d=1-(i.discount||0)/100, r=+i.taxRate||0, sn=i.priceNet!=null?c(i.qty*i.priceNet*d):0; return {from:p.from,to:p.to,gross:i.priceNet!=null?c(sn+c(sn*r/100)):c(i.qty*i.priceGross*d)}; }); }
+  return parts.map(function(p,k){ var i=items[k], d=1-(i.discount||0)/100, r=+i.taxRate||0, sn=i.priceNet!=null?c(i.qty*c(i.priceNet)*d):0; return {from:p.from,to:p.to,gross:i.priceNet!=null?c(sn+c(sn*r/100)):c(i.qty*c(i.priceGross)*d)}; }); }
+/* netto vorgegebene Position (data-net), Preis unverändert: anderer Steuersatz → Bruttopreis aus dem Netto neu (Netto bleibt, R4-3) */
+function netTax(r){ var pe=r&&r.querySelector('[data-i="price"]'), tx=r&&r.querySelector('[data-i="tax"]'), pn=pe&&pe.getAttribute("data-net"); if(pn==null||pn===""||!tx) return;
+  if(parseFloat(pe.getAttribute("data-g0"))!==parseFloat(pe.value)) return;   /* Preis von Hand geändert → der eingegebene Bruttopreis gilt */
+  var g=Math.round(parseFloat(pn)*(1+(parseFloat(tx.value)||0)/100)*100)/100; pe.value=String(g); pe.setAttribute("data-g0",String(g)); pe.setAttribute("data-t0",String(parseFloat(tx.value)||0)); }
 F.listen("input","#irows",invSum);
 F.listen("change","#irows",invSum);
+F.listen("change",'#irows [data-i="tax"]',function(el){ netTax(el.closest(".irow")); invSum(); });
 /* Artikel gewählt → Preis, USt und Text übernehmen */
 F.listen("change",'#irows [data-i="name"]',function(el){
   var p=PARTS.find(function(x){ return x.name===el.value; }); if(!p) return;
   var r=el.closest(".irow"), pr=r.querySelector('[data-i="price"]'), tx=r.querySelector('[data-i="text"]'), tax=r.querySelector('[data-i="tax"]');
-  if(pr&&!pr.value) pr.value=p.priceGross; if(tx&&!tx.value&&p.text) tx.value=p.text; if(tax) tax.value=String(p.taxRate);
+  if(pr&&!pr.value) pr.value=p.priceGross; if(tx&&!tx.value&&p.text) tx.value=p.text; if(tax){ tax.value=String(p.taxRate); netTax(r); }
   invSum();
 });
 F.listen("click","[data-addrow]",function(){ document.getElementById("irows").insertAdjacentHTML("beforeend",irow({})); });
