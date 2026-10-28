@@ -460,6 +460,18 @@ function unitTests(T) {
     const r = await P.accept(it.id); assert.strictEqual(+L.get("CreditNote", r.result.creditNoteId).sumGross, 9.69);
     assert.strictEqual(String(L.all("CheckAccountTransaction").find(x => x.mollieType === "refund").status), "100"); assert.strictEqual(await C.refunds([]), 0, "kein zweiter Vorschlag");
   });
+  await t("R3-10: älterer Erstattungsumsatz ohne Bruttobetrag (Teilerstattung 5,00 + 0,25 Gebühr = 5,25) → nie 5,25 gutschreiben: ohne Angabe kein Vorschlag, mit Kantineur-Meldung bzw. „brutto …, Gebühr …“ genau 5,00", async () => {
+    const seed = (purpose) => [kaAcc, contact("40", "SV")].concat(invSeed("806", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_teil0001" } }),
+      [["CheckAccountTransaction", { id: "941", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "-5.25", valueDate: iso("2026-11-18"), payeePayerName: "SV", paymtPurpose: purpose, status: "100", mollieId: "rf41", mollieType: "refund", molliePayment: "tr_teil0001" }]]);
+    let E = finSetup(seed("Rückerstattung tr_teil0001")); await E.L.load();
+    assert.strictEqual(await E.C.refunds([]), 0, "Betrag unbekannt → kein Vorschlag"); assert.strictEqual((await E.P.list()).length, 0);
+    E = finSetup(seed("Rückerstattung tr_teil0001")); await E.L.load();
+    assert.strictEqual(await E.C.refunds([{ invoiceId: "806", pid: "tr_teil0001", cents: 500 }]), 1); let it = (await E.P.list()).find(x => x.kind === "invoice-credit");
+    assert.strictEqual(it.amount, -5, "Kantineur-Meldung als Obergrenze"); assert.ok(!it.txIds || !it.txIds.length, "Umsatz (mit Gebühr) von Hand zuordnen");
+    E = finSetup(seed("Kantineur Abo · tr_teil0001 · brutto -5.00, Gebühr 0.25")); await E.L.load();
+    assert.strictEqual(await E.C.refunds([]), 1); it = (await E.P.list()).find(x => x.kind === "invoice-credit"); assert.strictEqual(it.amount, -5); assert.ok(!it.txIds || !it.txIds.length);
+    const r = await E.P.accept(it.id); assert.strictEqual(+E.L.get("CreditNote", r.result.creditNoteId).sumGross, 5); assert.strictEqual(String(E.L.get("CheckAccountTransaction", "941").status), "100");
+  });
   await t("B1: Bestand – Erstattungsumsatz ohne Zahlungsnummer wird aus dem Verwendungszweck nachgetragen (einmalig, idempotent)", async () => {
     const seed = [kaAcc, contact("40", "SV")].concat(invSeed("802", { gross: 9.69, extra: { status: "1000", paidAmount: "9.69", customerInternalNote: "Mollie tr_altbestand1" } }),
       [["CheckAccountTransaction", { id: "905", checkAccount: { id: "2", objectName: "CheckAccount" }, amount: "-9.69", valueDate: iso("2026-11-10"), payeePayerName: "SV", paymtPurpose: "Rückerstattung Kantineur: Kantineur Abo tr_altbestand1", status: "100", mollieId: "baltr_old", mollieType: "refund" }]]);

@@ -26,8 +26,17 @@ module.exports = function (D) {
   const credits = invId => L.all("CreditNote").filter(c => c.refSrcInvoice && String(c.refSrcInvoice.id) === String(invId));
   const creditedSum = invId => r2(credits(invId).reduce((a, c) => a + (+c.sumGross || 0), 0));
   const refundTx = t => !!t && String(t.mollieType || "") === "refund" && String(t.status) === "100" && +t.amount < 0 && /^tr_\w{4,}$/.test(String(t.molliePayment || ""));
-  // erstatteter Betrag = Mollie initialAmount (mollieGross); ältere Umsätze ohne diesen Wert: Umsatzbetrag. feeOf = von Mollie zusätzlich abgezogen
-  const refAmt = t => (t && t.mollieGross != null && isFinite(+t.mollieGross) && Math.abs(+t.mollieGross) > 0.004 ? Math.abs(+t.mollieGross) : Math.abs(+(t && t.amount) || 0));
+  // erstatteter Betrag = Mollie initialAmount (mollieGross); sonst Umsatz abzüglich vermerkter Gebühr bzw. „brutto …, Gebühr …“ im Verwendungszweck.
+  // Ältere Umsätze ohne diese Angaben: Umsatzbetrag, aber „unbekannt“ (kann die Gebühr enthalten, R3-10). feeOf = von Mollie zusätzlich abgezogen
+  function refInfo(t) {
+    const a = Math.abs(+(t && t.amount) || 0);
+    if (t && t.mollieGross != null && isFinite(+t.mollieGross) && Math.abs(+t.mollieGross) > 0.004) return { amt: Math.abs(+t.mollieGross), known: true };
+    if (t && +t.mollieFeeAmt > 0.004) return { amt: r2(a - Math.abs(+t.mollieFeeAmt)), known: true };
+    const m = String((t && t.paymtPurpose) || "").match(/brutto (-?\d+(?:\.\d+)?), Gebühr (\d+(?:\.\d+)?)/);
+    if (m && Math.abs(+m[1]) > 0.004) return { amt: Math.abs(+m[1]), known: true };
+    return { amt: a, known: false };
+  }
+  const refAmt = t => refInfo(t).amt;
   const feeOf = t => r2(Math.abs(+(t && t.amount) || 0) - refAmt(t));
   const absSum = txs => r2(txs.reduce((a, t) => a + refAmt(t), 0));
   // genau ein Steuersatz auf der Rechnung (sonst wäre die Aufteilung der Gutschrift eine Ermessensfrage → nur von Hand)
@@ -119,11 +128,17 @@ module.exports = function (D) {
     const hintBy = {}; (hints || []).forEach(h => { if (h && h.pid) hintBy[String(h.pid)] = (hintBy[String(h.pid)] || 0) + (+h.cents || 0); });
     for (const id of Object.keys(byInv)) {
       const { inv, txs } = byInv[id]; if (!paidInv(inv)) continue;   // offene Rechnung: kein Vorschlag (nie stornieren) – Hinweis im Kantineur-Bereich
-      const gross = absSum(txs), fee = r2(txs.reduce((a, t) => a + Math.max(0, feeOf(t)), 0));
-      const ids = fee > 0.004 ? [] : txs.map(t => String(t.id)).sort();   // mit Mollie-Gebühr: Gutschrift über den erstatteten Betrag, Umsatz von Hand
+      let gross = absSum(txs), fee = r2(txs.reduce((a, t) => a + Math.max(0, feeOf(t)), 0));
       // Plausibilität mit der Kantineur-Statistik: mehr Erstattungsumsatz als insgesamt erstattet (z. B. Gebühr im Umsatz) → nur von Hand
-      const pids = Array.from(new Set(txs.map(t => String(t.molliePayment))));
-      if (pids.every(x => hintBy[x] != null) && gross > r2(pids.reduce((a, x) => a + hintBy[x], 0) / 100) + 0.005) { console.log("Gutschrift-Vorschlag ausgelassen (Betrag passt nicht zur Kantineur-Meldung):", inv.invoiceNumber || inv.id); continue; }
+      const pids = Array.from(new Set(txs.map(t => String(t.molliePayment)))), hintSum = pids.every(x => hintBy[x] != null) ? r2(pids.reduce((a, x) => a + hintBy[x], 0) / 100) : null;
+      if (txs.some(t => !refInfo(t).known)) {
+        // ältere Umsätze ohne Bruttobetrag: nie mehr gutschreiben als erstattet (R3-10) – Kantineur-Meldung als Obergrenze (Rest = Gebühr, Umsatz von Hand);
+        // ohne Meldung nur eine volle Erstattung (Umsatz = offener Rechnungsbetrag), sonst kein Vorschlag (Betrag unbekannt, Erstattung von Hand gutschreiben)
+        if (hintSum != null) { if (gross > hintSum + 0.005) { fee = r2(gross - hintSum); gross = hintSum; } }
+        else if (!(txs.length === 1 && Math.abs(gross - r2((+inv.sumGross || 0) - creditedSum(inv.id))) <= 0.005)) { console.log("Gutschrift-Vorschlag ausgelassen (Erstattungsbetrag unbekannt – ältere Mollie-Buchung ohne Bruttobetrag, kann die Gebühr enthalten; bitte von Hand gutschreiben):", inv.invoiceNumber || inv.id); continue; }
+      } else if (hintSum != null && gross > hintSum + 0.005) { console.log("Gutschrift-Vorschlag ausgelassen (Betrag passt nicht zur Kantineur-Meldung):", inv.invoiceNumber || inv.id); continue; }
+      if (!(gross > 0.004)) continue;
+      const ids = fee > 0.004 ? [] : txs.map(t => String(t.id)).sort();   // mit Mollie-Gebühr: Gutschrift über den erstatteten Betrag, Umsatz von Hand
       const cn = credits(inv.id).find(c => String(c.status) === "200" && !((+c.paidAmount || 0) > 0.004) && Math.abs((+c.sumGross || 0) - gross) <= 0.005);
       if (cn && !ids.length) continue;   // Gutschrift gibt es schon, Zuordnung mit Gebühr nur von Hand
       if (!cn && (rateOf(inv) == null || creditedSum(inv.id) + gross > r2(+inv.sumGross || 0) + 0.005)) continue;
