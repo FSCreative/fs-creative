@@ -35,7 +35,9 @@ const srv = http.createServer((q, s) => { let b = ""; q.on("data", c => { b += c
   if (/\/sitemaps$/.test(p)) return J({ sitemap: [{ path: "https://www.muster.at/sitemap.xml", lastSubmitted: "2026-10-01T00:00:00Z", errors: "0", warnings: "0", contents: [{ submitted: "12" }] }] });
   if (/\/sitemaps\//.test(p) && q.method === "PUT") return J({});
   if (p === "/acc/accounts") return J({ accounts: [{ name: "accounts/1" }] });
-  if (p === "/info/accounts/1/locations") return J({ locations: [{ name: "locations/9", title: "Pizzeria Muster", websiteUri: "https://www.muster.at/", storefrontAddress: { addressLines: ["Dorfstr. 1"], postalCode: "6780", locality: "Schruns" }, metadata: { mapsUri: "https://maps.google.com/?cid=1", newReviewUri: "https://g.page/r/x/review" } }, { name: "locations/10", title: "Andere", websiteUri: "https://andere.at" }] });
+  if (p === "/info/accounts/1/locations") return J({ locations: [{ name: "locations/9", title: "Pizzeria Muster", websiteUri: "https://www.muster.at/", storefrontAddress: { addressLines: ["Dorfstr. 1"], postalCode: "6780", locality: "Schruns" }, metadata: { mapsUri: "https://maps.google.com/?cid=1", newReviewUri: "https://g.page/r/x/review" } }, { name: "locations/10", title: "Andere", websiteUri: "https://andere.at" },
+    { name: "locations/12", title: "FS Creative Druck & Werbetechnik", websiteUri: "https://www.fs-creative.at/print", metadata: { placeId: "ChIJdruck" } },
+    { name: "locations/11", title: "FS Creative", websiteUri: "https://www.fs-creative.at/", metadata: { placeId: "ChIJfs", newReviewUri: "https://g.page/r/fs-creative/review" } }] });
   if (p === "/v4/accounts/1/locations/9/reviews") return J({ averageRating: 4.6, totalReviewCount: 2, reviews: [{ reviewId: "r1", reviewer: { displayName: "Lisa" }, starRating: "FIVE", comment: "Super Pizza!", createTime: "2026-10-10T10:00:00Z" }, { reviewId: "r2", reviewer: { displayName: "Max" }, starRating: "FOUR", comment: "Gut", createTime: "2026-10-01T10:00:00Z", reviewReply: { comment: "Danke!", updateTime: "2026-10-02T10:00:00Z" } }] });
   if (p === "/v4/accounts/1/locations/9/reviews/r1/reply" && q.method === "PUT") return J({ comment: JSON.parse(b).comment });
   if (p === "/v4/accounts/1/locations/9/localPosts" && q.method === "POST") return J({ name: "accounts/1/locations/9/localPosts/77", searchUrl: "https://g.co/post" });
@@ -94,6 +96,10 @@ const srv = http.createServer((q, s) => { let b = ""; q.on("data", c => { b += c
     r = (await call("POST", "/admin/api/seo/gbp/post", { id: "muster.at", location: "locations/9", text: "Heute Pizza-Abend", link: "https://www.muster.at/" })).json(); assert.strictEqual(r.ok, true, r.error);
     const post = JSON.parse(G.calls.filter(c => /localPosts/.test(c.p)).pop().body); assert.strictEqual(post.summary, "Heute Pizza-Abend"); assert.strictEqual(post.callToAction.url, "https://www.muster.at/");
     assert.strictEqual((await call("POST", "/admin/api/seo/gbp/reply", { id: "muster.at", location: "locations/10", review: "r1", text: "x" })).code, 404, "fremder Standort");
+  });
+  await t("Google-Bewertungslink (Druckshop): Profil „FS Creative“, newReviewUri, zwischengespeichert", async () => {
+    assert.strictEqual(await SEO.reviewUrl(true), "https://g.page/r/fs-creative/review");
+    const n = G.calls.length; assert.strictEqual(await SEO.reviewUrl(), "https://g.page/r/fs-creative/review"); assert.strictEqual(G.calls.length, n, "aus dem Zwischenspeicher");
   });
   srv.close(); try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   console.log("seo: " + pass + " ok, " + fail + " fehlgeschlagen");

@@ -272,10 +272,26 @@ module.exports = function (D) {
       const out = [];
       for (const ga of S().gAcc) { let t, accs = []; try { t = await gTok(ga.email); accs = (await api("GET", B.gbpAcc + "/accounts", { token: t })).accounts || []; } catch (e) { if (e.auth && !ga.err) { ga.err = { at: nowIso(), auth: true, msg: "Anmeldung abgelaufen – bitte neu verbinden" }; save(); } continue; }
       for (const a of accs) { let page = ""; for (let i = 0; i < 5; i++) { const r = await api("GET", B.gbpInfo + "/" + a.name + "/locations?" + new URLSearchParams(Object.assign({ readMask: "name,title,websiteUri,storefrontAddress,regularHours,phoneNumbers,metadata", pageSize: "100" }, page ? { pageToken: page } : {})).toString(), { token: t });
-        (r.locations || []).forEach(l => { if (out.some(x => x.name === l.name)) return; out.push({ acct: ga.email, account: a.name, name: l.name, title: l.title, website: l.websiteUri || "", address: l.storefrontAddress ? [(l.storefrontAddress.addressLines || []).join(", "), l.storefrontAddress.postalCode, l.storefrontAddress.locality].filter(Boolean).join(" ") : "", hours: l.regularHours || null, phone: (l.phoneNumbers || {}).primaryPhone || "", maps: (l.metadata || {}).mapsUri || "", review: (l.metadata || {}).newReviewUri || "" }); });
+        (r.locations || []).forEach(l => { if (out.some(x => x.name === l.name)) return; out.push({ acct: ga.email, account: a.name, name: l.name, title: l.title, website: l.websiteUri || "", address: l.storefrontAddress ? [(l.storefrontAddress.addressLines || []).join(", "), l.storefrontAddress.postalCode, l.storefrontAddress.locality].filter(Boolean).join(" ") : "", hours: l.regularHours || null, phone: (l.phoneNumbers || {}).primaryPhone || "", maps: (l.metadata || {}).mapsUri || "", review: (l.metadata || {}).newReviewUri || "", placeId: (l.metadata || {}).placeId || "" }); });
         page = r.nextPageToken || ""; if (!page) break; } } }
       return out;
     }, force);
+  }
+  // Google-Link „Bewertung schreiben“ des eigenen Unternehmensprofils (Druckshop, Simon: „Google link dann einfach zu fs creative profil“):
+  // Standort mit Titel „FS Creative“ (eigene Website bevorzugt) – metadata.newReviewUri, sonst über die placeId. Gefunden: 12 Std. gemerkt,
+  // nicht gefunden/nicht verbunden: 10 Min.; Fehler beim Abruf → letzter bekannter Wert. Liefert immer einen String (nie Fehler).
+  let REVIEW = { at: 0, url: "" };
+  async function reviewUrl(force) {
+    if (!force && REVIEW.at && Date.now() - REVIEW.at < (REVIEW.url ? 12 * 3600e3 : 10 * 60e3)) return REVIEW.url;
+    let url = REVIEW.url;
+    try {
+      const rank = l => (/^\s*fs[\s-]?creative\s*$/i.test(String(l.title || "")) ? 4 : /\bfs[\s-]?creative\b/i.test(String(l.title || "")) ? 2 : 0) + (/fs-creative\.at/i.test(String(l.website || "")) ? 1 : 0);
+      const l = (await gbpLocations()).filter(x => rank(x) >= 2).sort((a, b) => rank(b) - rank(a))[0] || null;
+      const u = l ? (l.review || (l.placeId ? "https://search.google.com/local/writereview?placeid=" + encodeURIComponent(l.placeId) : "")) : "";
+      url = /^https:\/\//.test(u) ? u : "";
+    } catch (e) { /* Google nicht erreichbar: letzten Wert behalten */ }
+    REVIEW = { at: Date.now(), url };
+    return url;
   }
   async function gbpOf(site) { const locs = await gbpLocations(); return locs.filter(l => regOf(hostOf(l.website)) === site.id || (rec(site.id).gbp || []).indexOf(l.name) > -1); }
   const STARS = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
@@ -376,5 +392,5 @@ module.exports = function (D) {
     }
     return out;
   }
-  return { handleAdmin, tick, health, info, _test: { parsePage, pageIssues, crawl, siteList, regOf, S, seal, unseal, gsc, propOf, gbpOf, suggest } };
+  return { handleAdmin, tick, health, info, reviewUrl, _test: { parsePage, pageIssues, crawl, siteList, regOf, S, seal, unseal, gsc, propOf, gbpOf, suggest } };
 };

@@ -201,21 +201,28 @@ module.exports = function (D) {
     const day = dayOf(b.date) || today();
     let tx = b.checkAccountTransaction && b.checkAccountTransaction.id ? get("CheckAccountTransaction", b.checkAccountTransaction.id) : null;
     const accId = b.checkAccount && b.checkAccount.id ? String(b.checkAccount.id) : (tx && tx.checkAccount ? String(tx.checkAccount.id) : "");
+    // Überzahlung mit Auswahl „Woher kommt die Differenz?“ – vor jeder Änderung prüfen (sonst bliebe ein Umsatz ohne Zuordnung gebucht)
+    // Mollie/PayPal: der Umsatz ist netto (nach Gebühr) – die Differenz zählt vom Bruttobetrag, die Gebühr wird wie sonst als Zahlungsgebühr gebucht (Review 28.10.2026)
+    const exFee = t === "Invoice" && b.extra && tx && (tx.mollieFeeAmt || tx.feeAmt) && Math.abs(amt - Math.abs(+tx.amount || 0)) < 0.005 ? r2(Math.abs(+(tx.mollieFeeAmt || tx.feeAmt))) : 0;
+    const ex = t === "Invoice" && b.extra && typeof b.extra === "object" ? checkExtra(o, r2(amt + exFee), b.extra, tx) : null;
+    // automatische Buchung: Umsatz und Rechnung müssen genau jetzt noch offen sein (ohne await bis zur Statusänderung → nie doppelt zugeordnet)
+    if (b.auto && (!tx || String(tx.status) !== "100" || tx.transitWith || (t === "Invoice" && ["200", "750"].indexOf(String(o.status)) < 0))) throw err(409, "Umsatz oder Rechnung ist schon zugeordnet");
     if (!tx) {   // Zahlung ohne Bankumsatz (bar, Kasse, PayPal …): Umsatz auf dem gewählten Konto anlegen
       const sign = (t === "Voucher" && String(o.creditDebit) === "C") || t === "CreditNote" ? -1 : 1;
       if (accId && isCash(accId)) { await cashGuard(accId, iso(day), sign * amt); }
       tx = { id: newId("CheckAccountTransaction"), valueDate: iso(day), entryDate: iso(day), amount: s2(sign * amt), paymtPurpose: (o.invoiceNumber || o.description || o.supplierName || "Zahlung"), payeePayerName: t === "Voucher" ? (o.supplierName || "") : "", checkAccount: ref("CheckAccount", accId), status: "200" };
     } else tx.status = "200";
     await save("CheckAccountTransaction", tx);
+    if (ex) amt = ex.open;   // die Rechnung bekommt genau den offenen Betrag, die Differenz wird unten eigens verbucht
     // Zahlung zu einer gemahnten Rechnung: was über den offenen Betrag hinausgeht, deckt zuerst die Mahngebühr (eigener Einnahme-Beleg, 0 %)
     let feePart = 0;
-    if (t === "Invoice" && +o.dunningFeeOpen > 0) { const openAmt = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)); feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(amt - openAmt))); if (b.feeAmount != null) feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(+b.feeAmount)), amt); }
+    if (!ex && t === "Invoice" && +o.dunningFeeOpen > 0) { const openAmt = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)); feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(amt - openAmt))); if (b.feeAmount != null) feePart = Math.min(+o.dunningFeeOpen, Math.max(0, r2(+b.feeAmount)), amt); }
     if (feePart > 0) { await bookFee(o, feePart, tx, day); amt = r2(amt - feePart); if (amt <= 0.004) { await save(t, o); return { objects: {} }; } }
     // Differenzgrund bei Zahlung < offener Betrag (wie sevDesk bookAmount.type): N Teilzahlung · CB Skonto · MTC Kosten des Zahlungsverkehrs
     const mFee = tx && (tx.mollieFeeAmt || tx.feeAmt) ? Math.abs(+(tx.mollieFeeAmt || tx.feeAmt)) : 0;
     const dtype0 = String(b.type || "").toUpperCase(), open00 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0));
     const incomeDoc = t === "Invoice" || (t === "Voucher" && String(o.creditDebit) === "D");
-    const dtype = dtype0 && dtype0 !== "N" ? dtype0 : (incomeDoc && mFee > 0 && Math.abs(r2(open00 - amt) - mFee) < 0.05 ? "MTC" : (dtype0 || "N")), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
+    const dtype = dtype0 && dtype0 !== "N" ? dtype0 : (incomeDoc && mFee > 0 && !b.split && Math.abs(r2(open00 - amt) - mFee) < 0.05 ? "MTC" : (dtype0 || "N")), open0 = r2(Math.abs(+o.sumGross || 0) - (+o.paidAmount || 0)), diff = r2(open0 - amt);
     let logAmt = amt, paid = r2((+o.paidAmount || 0) + amt);
     const gross = Math.abs(+o.sumGross || 0);
     if (incomeDoc && diff > 0.004 && dtype === "MTC") {
@@ -225,12 +232,304 @@ module.exports = function (D) {
     o.paidAmount = s2(paid); o.payDate = iso(day);
     o.status = paid >= gross - 0.005 ? "1000" : "750";
     // Skonto: Rechnung ist erledigt; der Unterschied ist eine Entgeltsminderung zum Steuersatz der Rechnung (Monat der Zahlung)
-    if (t === "Invoice" && diff > 0.004 && dtype === "CB") { o.status = "1000"; o.skontoAmount = s2(r2((+o.skontoAmount || 0) + diff)); }
+    let skonto = 0;
+    if (t === "Invoice" && diff > 0.004 && dtype === "CB") { o.status = "1000"; skonto = diff; o.skontoAmount = s2(r2((+o.skontoAmount || 0) + diff)); }
     await save(t, o);
-    if (t === "Invoice" && o.status === "1000") for (const m of all("Invoice").filter(x => String(x.invoiceType) === "MA" && x.origin && String(x.origin.id) === String(o.id) && String(x.status) !== "1000")) { m.status = "1000"; m.payDate = iso(day); await save("Invoice", m); }
+    const closed = [];   // erledigte Mahnungen merken (Zahlung lösen stellt sie wieder her)
+    if (t === "Invoice" && o.status === "1000") for (const m of all("Invoice").filter(x => String(x.invoiceType) === "MA" && x.origin && String(x.origin.id) === String(o.id) && String(x.status) !== "1000")) { closed.push({ id: String(m.id), status: String(m.status), payDate: m.payDate || null }); m.status = "1000"; m.payDate = iso(day); await save("Invoice", m); }
     const log = { id: newId("CheckAccountTransactionLog"), object: ref(t, o.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(logAmt), bookingDate: iso(day), fromStatus: "100", toStatus: o.status };
+    if (skonto) log.skonto = s2(skonto); if (closed.length) log.closedReminders = closed; if (b.auto) log.auto = true;
+    if (ex) log.extra = { kind: ex.kind, amount: s2(ex.over) };
     await save("CheckAccountTransactionLog", log);
+    if (ex) { log.extraIds = await bookExtra(o, ex, tx, day);
+      if (exFee > 0) { const fv = await bookCost(o, exFee, tx, day, tx.feeBy || "Mollie B.V."); log.extraIds.push({ type: "Voucher", id: String(fv.id) }); }   // Zahlungsgebühr (Ausgabe, wird mit „Lösen“ mit entfernt)
+      await save("CheckAccountTransactionLog", log); await save("Invoice", o); }
     return { objects: log };
+  }
+
+  // ── Überzahlung: „Woher kommt die Differenz?“ (Zahlung > offener Betrag) ──
+  // fee = Mahnspesen/Mahngebühr, interest = Verzugszinsen: Schadenersatz → eigener Einnahme-Beleg 0 %, nicht umsatzsteuerbar (nicht in der UVA)
+  // tip = Trinkgeld/Aufrundung: Teil des Entgelts → Einnahme-Beleg 20 % USt (Betrag brutto)
+  // credit = Guthaben/Doppelzahlung: bleibt beim Kunden (CustomerCredit, keine Einnahme), Rücküberweisung später zuordenbar
+  // invoices = Zahlung deckt weitere offene Rechnung(en) desselben Kunden (Aufteilung am selben Umsatz, Rest → Guthaben)
+  const EXTRA = { fee: "Mahnspesen", interest: "Verzugszinsen", tip: "Trinkgeld/Aufrundung", credit: "Guthaben", invoices: "weitere Rechnungen" };
+  const openOfInv = i => r2(Math.abs(+i.sumGross || 0) - (+i.paidAmount || 0));
+  function checkExtra(o, amt, x, tx) {
+    const kind = String(x.kind || "");
+    if (!EXTRA[kind]) throw err(400, "Bitte auswählen, woher die Differenz kommt");
+    if (["200", "750"].indexOf(String(o.status)) < 0 || o.cancelled) throw err(400, "Die Rechnung ist nicht offen");
+    if (tx && String(tx.status) !== "100") throw err(400, "Dieser Umsatz ist schon zugeordnet");
+    const open = openOfInv(o), over = r2(amt - open);
+    if (!(open > 0.004)) throw err(400, "Die Rechnung hat keinen offenen Betrag");
+    if (!(over > 0.004)) throw err(400, "Keine Überzahlung – der Betrag ist nicht höher als der offene Betrag");
+    if (x.amount != null && x.amount !== "" && Math.abs(r2(+x.amount) - over) > 0.01) throw err(400, "Die Differenz hat sich geändert (jetzt " + s2(over).replace(".", ",") + " €) – bitte neu laden");
+    return { kind, open, over, invoices: kind === "invoices" ? checkTargets(o, x.invoices, over) : null };
+  }
+  // Zielrechnungen (gleicher Kunde, offen): [{id, amount?}] → [{inv, part}], Reihenfolge wie gewählt
+  function checkTargets(o, list, over) {
+    const ids = [...new Set((Array.isArray(list) ? list : []).map(x => String(x && typeof x === "object" ? x.id : x).replace(/\D/g, "")).filter(Boolean))].slice(0, 20);
+    if (!ids.length) throw err(400, "Bitte mindestens eine weitere Rechnung wählen");
+    let rest = over; const out = [];
+    for (const id of ids) {
+      const i = get("Invoice", id); if (!i || String(i.id) === String(o.id)) throw err(400, "Rechnung " + id + " nicht gefunden");
+      if (["200", "750"].indexOf(String(i.status)) < 0 || i.cancelled || ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) < 0) throw err(400, "Rechnung " + (i.invoiceNumber || id) + " ist nicht offen");
+      if (o.contact && i.contact && String(o.contact.id) !== String(i.contact.id)) throw err(400, "Rechnung " + (i.invoiceNumber || id) + " gehört zu einem anderen Kunden");
+      const part = Math.min(rest, openOfInv(i)); if (!(part > 0.004)) continue;
+      out.push({ inv: i, part: r2(part) }); rest = r2(rest - part);
+    }
+    if (!out.length) throw err(400, "Die gewählten Rechnungen haben keinen offenen Betrag");
+    return out;
+  }
+  // Differenz am selben Umsatz verbuchen → Liste der angelegten Objekte [{type,id}]
+  async function bookExtra(o, ex, tx, day) {
+    const made = [];
+    if (ex.kind === "fee") { const v = await bookFee(o, ex.over, tx, day); v.extraKind = "fee"; await save("Voucher", v); made.push({ type: "Voucher", id: String(v.id) }); }
+    else if (ex.kind === "interest") { const v = await bookInterest(o, ex.over, tx, day); made.push({ type: "Voucher", id: String(v.id) }); }
+    else if (ex.kind === "tip") { const v = await bookTip(o, ex.over, tx, day); made.push({ type: "Voucher", id: String(v.id) }); }
+    else if (ex.kind === "credit") { const c = await addCredit(o, ex.over, tx, day, "Überzahlung/Doppelzahlung"); made.push({ type: "CustomerCredit", id: String(c.id) }); }
+    else if (ex.kind === "invoices") {
+      let rest = ex.over;
+      for (const x of ex.invoices) { await bookAmount("Invoice", x.inv.id, { amount: x.part, date: day, checkAccountTransaction: { id: String(tx.id) }, split: true }); rest = r2(rest - x.part); made.push({ type: "Invoice", id: String(x.inv.id), amount: s2(x.part) }); }
+      if (rest > 0.004) { const c = await addCredit(o, rest, tx, day, "Rest nach Aufteilung auf weitere Rechnungen"); made.push({ type: "CustomerCredit", id: String(c.id) }); }
+    }
+    return made;
+  }
+  function custName(inv) { const c = inv.contact && get("Contact", inv.contact.id); return (c && (c.name || [c.surename, c.familyname].filter(Boolean).join(" "))) || ""; }
+  // Ertragskonto für Verzugszinsen: Zinserträge / sonstige Erträge – nie ein Aufwandskonto wie „Zinsen und ähnliche Aufwendungen“ (Review 28.10.2026)
+  function interestAccountingType() {
+    const ats = all("AccountingType").filter(x => !/aufw|kosten|spesen|ausgab|geb(ü|ue)hr|steuer/i.test(String(x.name || "")));   // steuer: nie „Ertragsteuern“ o. ä. über /ertr/
+    const rx = [/verzugszins/i, /zinsertr/i, /sonstige (betriebliche )?ertr/i, /ertr/i, /zinsen/i, /erl[öo]s/i];
+    for (const r of rx) { const a = ats.find(x => r.test(String(x.name || ""))); if (a) return a; }
+    return null;
+  }
+  // Erlöskonto für Trinkgeld/Aufrundung: bei einem anderen Satz als 20 % zuerst ein Erlöskonto mit genau diesem Satz („Erlöse 10 %“, „Erlöse 0 %“ …)
+  function tipAccountingType(rate) {
+    const ats = all("AccountingType"), rx = rate != null && rate !== 20 ? new RegExp("(erl(ö|oe)s|einnahm)[^0-9]*\\b" + String(rate).replace(".", "[.,]") + "\\s?%", "i") : null;
+    return (rx && ats.find(a => rx.test(a.name || ""))) || ats.find(a => /einnahmen \/ erl(ö|oe)se \/ verk(ä|ae)ufe/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)se 20|umsatzerl(ö|oe)se/i.test(a.name || "")) || ats.find(a => /erl(ö|oe)s|einnahm/i.test(a.name || "")) || null;
+  }
+  // Steuerbehandlung für Trinkgeld/Aufrundung = die der Rechnung (Teil des Entgelts, Review 28.10.2026): ein Steuersatz → dieser; keine USt auf der
+  // Rechnung (Reverse Charge, Drittland, ig. Lieferung, 0 %) → 0 %; mehrere Sätze → 20 % (Normalsatz, der Dialog sagt das dazu)
+  function tipTax(inv) {
+    if (["eu", "noteu", "ss"].indexOf(String(inv.taxType || "")) > -1 || !(Math.abs(+inv.sumTax || 0) > 0.004)) return { rate: 0, mixed: false };
+    const rates = [...new Set(positionsOf("Invoice", inv.id).filter(p => Math.abs(+p.sumNet || +p.sumGross || 0) > 0.004).map(p => r2(+p.taxRate || 0)))];
+    if (rates.length === 1) return { rate: rates[0], mixed: false };
+    if (!rates.length) {   // Rechnung ohne Positionen (z. B. Übernahme): Satz aus den Kopfsummen, wenn er glatt aufgeht
+      const n = Math.abs(+inv.sumNet || 0), tx = Math.abs(+inv.sumTax || 0), r = n > 0.004 ? Math.round(tx / n * 100) : 0;
+      if (r > 0 && Math.abs(r2(n * r / 100) - tx) <= 0.05) return { rate: r, mixed: false };
+    }
+    return { rate: 20, mixed: rates.length > 1 };
+  }
+  // Verzugszinsen: wie Mahngebühr (Schadenersatz, 0 %, nicht umsatzsteuerbar), eigenes Buchungskonto (Zinserträge/sonstige Erträge)
+  async function bookInterest(inv, amt, tx, day) {
+    const at = interestAccountingType();
+    const v = { id: newId("Voucher"), status: "1000", creditDebit: "D", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt),
+      supplierName: custName(inv), description: "Verzugszinsen zu Rechnung " + (inv.invoiceNumber || "") + " – Schadenersatz, nicht umsatzsteuerbar",
+      taxType: "noteu", taxText: "nicht umsatzsteuerbar (Schadenersatz)", origin: ref("Invoice", inv.id), extraKind: "interest" };
+    const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Verzugszinsen (Schadenersatz) – nicht umsatzsteuerbar" };
+    if (at) p.accountingType = ref("AccountingType", at.id);
+    await save("VoucherPos", p);
+    v.sumNet = s2(amt); v.sumGross = s2(amt); v.sumTax = "0.00"; await save("Voucher", v);
+    await save("CheckAccountTransactionLog", { id: newId("CheckAccountTransactionLog"), object: ref("Voucher", v.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: "1000" });
+    return v;
+  }
+  // Trinkgeld/Aufrundung an das Unternehmen: Teil des Entgelts → Erlös mit der Steuerbehandlung der Rechnung (tipTax, Betrag ist brutto).
+  // 0 %: Steuerart/-regel der Rechnung übernehmen, damit die UVA den Beleg wie die Rechnung einordnet (z. B. Reverse Charge, Ausfuhr)
+  async function bookTip(inv, amt, tx, day) {
+    const tt = tipTax(inv), rate = tt.rate, at = tipAccountingType(rate), net = r2(amt / (1 + rate / 100)), tax = r2(amt - net);
+    const note = rate > 0 ? rate + " % USt enthalten" + (tt.mixed ? ", Rechnung mit mehreren Steuersätzen – Normalsatz" : "") : "0 % USt wie die Rechnung";
+    const v = { id: newId("Voucher"), status: "1000", creditDebit: "D", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt),
+      supplierName: custName(inv), description: "Trinkgeld/Aufrundung zu Rechnung " + (inv.invoiceNumber || "") + " (" + note + ")",
+      taxType: rate > 0 ? "default" : (inv.taxType || "default"), origin: ref("Invoice", inv.id), extraKind: "tip" };
+    // Steuerregel der Rechnung immer übernehmen (Gegenprobe 28.10.2026): OSS-Rechnung mit 19 % DE → Regel „OSS“, sonst würde der Beleg als
+    // Inland 19 % (KZ 037 Jungholz) eingeordnet; Inlandsrechnung → Regel „steuerpflichtig“ wie bisher
+    if (inv.taxRule) v.taxRule = inv.taxRule;
+    if (!(rate > 0)) { if (inv.taxSet) v.taxSet = inv.taxSet; if (inv.taxText) v.taxText = inv.taxText; }
+    const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: String(rate), sumNet: s2(net), sumGross: s2(amt), sumTax: s2(tax), sumNetAccounting: s2(net), sumGrossAccounting: s2(amt), sumTaxAccounting: s2(tax), net: "false", comment: "Trinkgeld/Aufrundung – Teil des Entgelts, " + rate + " % USt" };
+    if (at) p.accountingType = ref("AccountingType", at.id);
+    await save("VoucherPos", p);
+    v.sumNet = s2(net); v.sumGross = s2(amt); v.sumTax = s2(tax); await save("Voucher", v);
+    await save("CheckAccountTransactionLog", { id: newId("CheckAccountTransactionLog"), object: ref("Voucher", v.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: "1000" });
+    return v;
+  }
+  // Guthaben des Kunden (Überzahlung/Doppelzahlung): keine Einnahme, keine USt – eigener Datensatz mit Zahlungszuordnung am Umsatz
+  async function addCredit(inv, amt, tx, day, note) {
+    const c = { id: newId("CustomerCredit"), invoice: ref("Invoice", inv.id), contact: inv.contact || null, invoiceNumber: inv.invoiceNumber || "", contactName: custName(inv), amount: s2(amt), open: s2(amt), date: iso(day), txId: String(tx.id), note: String(note || "Guthaben").slice(0, 200), status: "open", refunds: [] };
+    await save("CustomerCredit", c);
+    await save("CheckAccountTransactionLog", { id: newId("CheckAccountTransactionLog"), object: ref("CustomerCredit", c.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(amt), bookingDate: iso(day), fromStatus: "100", toStatus: "200" });
+    inv.creditOpen = s2(r2((+inv.creditOpen || 0) + amt));
+    return c;
+  }
+  const invLogs = id => all("CheckAccountTransactionLog").filter(l => l.object && l.object.objectName === "Invoice" && String(l.object.id) === String(id));
+  // Betrag einer Zahlungszuordnung: eigene Buchhaltung amountPaid, aus sevDesk übernommene Logs ammountPayed (sonst würde „Lösen“ 0 € freigeben)
+  const logPaid = l => +(l.amountPaid != null ? l.amountPaid : l.ammountPayed) || 0;
+  const txLogs = id => all("CheckAccountTransactionLog").filter(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(id));
+  let SERIALQ = Promise.resolve();   // Warteschlange für reclassOver/unbook/Rückzahlungen (siehe serial() am Ende)
+  // ── Bereits verbuchte Überzahlung nachträglich zuordnen (z. B. RE-1233): nur Zahlungszuordnung, auch bei festgeschriebener Rechnung ──
+  async function reclassOver(invId, b) {
+    await load(); b = b || {};
+    const o = need("Invoice", invId);
+    if (["RE", "AR", "ER", "TR"].indexOf(String(o.invoiceType || "RE")) < 0 || o.cancelled) throw err(400, "Nur zu (nicht stornierten) Rechnungen möglich");
+    const gross = Math.abs(+o.sumGross || 0), over = r2((+o.paidAmount || 0) - gross);
+    if (!(over > 0.004)) throw err(400, "Keine Überzahlung an dieser Rechnung");
+    const kind = String(b.kind || ""); if (!EXTRA[kind]) throw err(400, "Bitte auswählen, woher die Differenz kommt");
+    const amt = b.amount != null && b.amount !== "" ? r2(+b.amount) : over;
+    if (!(amt > 0.004) || amt > over + 0.005) throw err(400, "Betrag muss zwischen 0,01 und " + s2(over).replace(".", ",") + " € liegen");
+    // Überzahlung kam mit der letzten Zahlung → von hinten abbauen
+    const logs = invLogs(o.id).filter(l => l.checkAccountTransaction && logPaid(l) > 0).sort((x, y) => String(dayOf(y.bookingDate) || "").localeCompare(String(dayOf(x.bookingDate) || "")) || (+y.id - +x.id));
+    const plan = []; let rest = amt;
+    for (const l of logs) { if (rest <= 0.004) break; const tx = get("CheckAccountTransaction", l.checkAccountTransaction.id); if (!tx) continue;
+      if (tx.enshrined) throw err(400, "Die Zahlung vom " + (dayOf(tx.valueDate) || "").split("-").reverse().join(".") + " liegt in einem festgeschriebenen Zeitraum – Korrektur nur per Gegenbuchung");
+      const part = r2(Math.min(rest, logPaid(l))); plan.push({ l, tx, part }); rest = r2(rest - part); }
+    if (!plan.length || rest > 0.004) throw err(400, "Keine passende Bankzahlung an dieser Rechnung – Überzahlung kann nicht zugeordnet werden");
+    const targets = kind === "invoices" ? checkTargets(o, b.invoices, amt) : null;
+    const made = []; let tq = targets ? targets.slice() : null;
+    for (const p of plan) {
+      const day = dayOf(p.tx.valueDate) || dayOf(p.l.bookingDate) || today();
+      p.l.amountPaid = s2(r2(logPaid(p.l) - p.part)); if (p.l.ammountPayed != null) p.l.ammountPayed = p.l.amountPaid; p.l.reclass = (p.l.reclass || []).concat([{ at: nowIso(), kind, amount: s2(p.part) }]);
+      if (+p.l.amountPaid <= 0.004) { await save("PaymentUnlink", { id: newId("PaymentUnlink"), at: nowIso(), reason: "Überzahlung zugeordnet (" + EXTRA[kind] + ")", invoice: ref("Invoice", o.id), log: p.l }); await del("CheckAccountTransactionLog", p.l.id); }
+      else await save("CheckAccountTransactionLog", p.l);
+      o.paidAmount = s2(r2(+o.paidAmount - p.part));
+      if (kind === "invoices") {
+        let restP = p.part;
+        while (restP > 0.004 && tq.length) { const x = tq[0], part = r2(Math.min(restP, x.part)); await bookAmount("Invoice", x.inv.id, { amount: part, date: day, checkAccountTransaction: { id: String(p.tx.id) }, split: true }); made.push({ type: "Invoice", id: String(x.inv.id), amount: s2(part) }); x.part = r2(x.part - part); restP = r2(restP - part); if (x.part <= 0.004) tq.shift(); }
+        if (restP > 0.004) { const c = await addCredit(o, restP, p.tx, day, "Rest nach Aufteilung auf weitere Rechnungen"); made.push({ type: "CustomerCredit", id: String(c.id) }); }
+      } else made.push.apply(made, await bookExtra(o, { kind, over: p.part }, p.tx, day));
+    }
+    o.overHistory = (o.overHistory || []).concat([{ at: nowIso(), kind, amount: s2(amt) }]);
+    // Zahlungsdatum = letzte verbliebene Zahlung (Istbesteuerung rechnet eigene Zahlungen nach payDate): fiel die spätere Doppelzahlung ganz weg,
+    // gehört die USt wieder in den Monat der echten Zahlung (sonst rutscht sie z. B. von Q3 nach Q4) – wie unbook (Review 28.10.2026)
+    { const rd = invLogs(o.id).map(l => dayOf(l.bookingDate)).filter(Boolean).sort(); if (rd.length) o.payDate = iso(rd[rd.length - 1]); }
+    o.status = (+o.paidAmount || 0) >= gross - 0.005 ? "1000" : "750";
+    await save("Invoice", o);
+    return { objects: { invoice: o, made } };
+  }
+  // ── Zahlung lösen (nur die Zahlungszuordnung) – auch bei festgeschriebener Rechnung. Entfernt die Zuordnung dieses Umsatzes,
+  //    die Zusatzbelege aus Überzahlung/Zahlungsgebühr (gleicher Umsatz) und ein daraus entstandenes Guthaben; Umsatz wird wieder offen. ──
+  async function unbook(invId, txId, opt) {
+    await load(); opt = opt || {};
+    const o = need("Invoice", invId);
+    if (String(o.invoiceType) === "SR" || o.cancelled) throw err(400, "Stornierte Rechnungen: Zahlungen werden über die Gutschrift/Storno gelöst");
+    const logs = invLogs(o.id).filter(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(txId));
+    if (!logs.length) throw err(400, "Diese Zahlung ist der Rechnung nicht (mehr) zugeordnet");
+    const tx = get("CheckAccountTransaction", txId);
+    if (tx && tx.enshrined) throw err(400, "Der Umsatz liegt in einem festgeschriebenen Zeitraum – Zahlung kann nicht gelöst werden");
+    const tl = txLogs(txId);
+    const extraV = all("Voucher").filter(v => v.origin && v.origin.objectName === "Invoice" && String(v.origin.id) === String(o.id) && tl.some(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id)));
+    if (extraV.some(v => v.enshrined)) throw err(400, "Ein Zusatzbeleg zu dieser Zahlung ist festgeschrieben – Korrektur nur per Gegenbeleg");
+    const credits = all("CustomerCredit").filter(c => c.invoice && String(c.invoice.id) === String(o.id) && String(c.txId) === String(txId));
+    if (credits.some(c => r2(+c.open) < r2(+c.amount) - 0.004)) throw err(400, "Das Guthaben aus dieser Zahlung wurde schon (teilweise) zurückgezahlt – zuerst die Rückzahlung lösen");
+    for (const v of extraV) {
+      for (const l of tl.filter(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(v.id))) await del("CheckAccountTransactionLog", l.id);
+      for (const p of positionsOf("Voucher", v.id)) await del("VoucherPos", p.id);
+      if (v.dunningFee) { const amt = Math.abs(+v.sumGross || 0), used = v.feeOpenUsed != null ? +v.feeOpenUsed : amt; o.dunningFeeOpen = s2(r2((+o.dunningFeeOpen || 0) + used)); o.dunningFeePaid = s2(Math.max(0, r2((+o.dunningFeePaid || 0) - amt))); }
+      await save("PaymentUnlink", { id: newId("PaymentUnlink"), at: nowIso(), reason: "Zusatzbeleg entfernt (Zahlung gelöst)", invoice: ref("Invoice", o.id), voucher: v });
+      await del("Voucher", v.id);
+    }
+    for (const c of credits) { for (const l of tl.filter(l => l.object && l.object.objectName === "CustomerCredit" && String(l.object.id) === String(c.id))) await del("CheckAccountTransactionLog", l.id); o.creditOpen = s2(Math.max(0, r2((+o.creditOpen || 0) - (+c.open || 0)))); await del("CustomerCredit", c.id); }
+    let freed = 0;
+    for (const l of logs) {
+      freed = r2(freed + logPaid(l));
+      if (l.skonto) o.skontoAmount = s2(Math.max(0, r2((+o.skontoAmount || 0) - (+l.skonto || 0))));
+      for (const m0 of (l.closedReminders || [])) { const m = get("Invoice", m0.id); if (m && String(m.status) === "1000") { m.status = m0.status || "200"; m.payDate = m0.payDate || null; await save("Invoice", m); } }
+      await save("PaymentUnlink", { id: newId("PaymentUnlink"), at: nowIso(), reason: String(opt.reason || "Zahlung gelöst").slice(0, 200), invoice: ref("Invoice", o.id), log: l, auto: !!opt.auto });
+      await del("CheckAccountTransactionLog", l.id);
+    }
+    const paid = r2((+o.paidAmount || 0) - freed), gross = Math.abs(+o.sumGross || 0);
+    o.paidAmount = s2(paid);
+    o.status = paid >= gross - 0.005 && paid > 0.004 ? "1000" : paid > 0.004 ? "750" : "200";
+    const rest = invLogs(o.id).map(l => dayOf(l.bookingDate)).filter(Boolean).sort();
+    o.payDate = rest.length ? iso(rest[rest.length - 1]) : null;
+    await save("Invoice", o);
+    // Aufteilung „weitere Rechnungen“ aus dieser Zahlung mit lösen – sonst bliebe der Umsatz „zugeordnet“ (Status 200), obwohl ein Teil frei ist (Review 28.10.2026)
+    const split = [...new Set([].concat(...logs.map(l => (l.extraIds || []).filter(x => x && x.type === "Invoice").map(x => String(x.id)))))];
+    for (const sid of split) if (invLogs(sid).some(l => l.checkAccountTransaction && String(l.checkAccountTransaction.id) === String(txId))) await unbook(sid, txId, opt);
+    // Kassenbuch: die Bareinnahme bleibt stehen und ist ab jetzt gesperrt (nur Gegenbuchung, nie löschen/ändern)
+    if (tx && !txLogs(txId).length) { tx.status = "100"; delete tx.autoBooked; if (tx.checkAccount && isCash(tx.checkAccount.id) && !tx.cashLocked) tx.cashLocked = nowIso(); await save("CheckAccountTransaction", tx); }
+    return { objects: { invoice: o, freed: { txId: String(txId), amount: freed }, removed: extraV.map(v => String(v.id)).concat(credits.map(c => "credit:" + c.id), split.map(id => "invoice:" + id)) } };
+  }
+  // ── Guthaben zurückgezahlt: Ausgang an den Kunden ↔ Guthaben (keine Ausgabe, keine Steuer) ──
+  async function creditRefund(creditId, txId) {
+    await load(); const c = need("CustomerCredit", creditId), tx = need("CheckAccountTransaction", txId);
+    if (String(tx.status) !== "100" || tx.transitWith) throw err(400, "Der Umsatz ist nicht mehr offen");
+    const amt = r2(-(+tx.amount || 0)); if (!(amt > 0)) throw err(400, "Nur Ausgänge (Rücküberweisung) können einem Guthaben zugeordnet werden");
+    if (amt > r2(+c.open) + 0.005) throw err(400, "Rücküberweisung ist höher als das offene Guthaben");
+    const day = dayOf(tx.valueDate) || today();
+    const l = { id: newId("CheckAccountTransactionLog"), object: ref("CustomerCredit", c.id), checkAccountTransaction: ref("CheckAccountTransaction", tx.id), amountPaid: s2(-amt), bookingDate: iso(day), fromStatus: "200", toStatus: "1000" };
+    await save("CheckAccountTransactionLog", l);
+    c.open = s2(r2(+c.open - amt)); c.status = +c.open <= 0.004 ? "refunded" : "open"; c.refunds = (c.refunds || []).concat([{ txId: String(tx.id), amount: s2(amt), date: iso(day), logId: String(l.id) }]); await save("CustomerCredit", c);
+    const inv = c.invoice && get("Invoice", c.invoice.id); if (inv) { inv.creditOpen = s2(Math.max(0, r2((+inv.creditOpen || 0) - amt))); await save("Invoice", inv); }
+    tx.status = "200"; await save("CheckAccountTransaction", tx);
+    return { objects: c };
+  }
+  async function creditRefundUndo(txId) {
+    await load(); const tx = need("CheckAccountTransaction", txId);
+    if (tx.enshrined) throw err(400, "Festgeschrieben – kann nicht gelöst werden");
+    const ls = txLogs(txId).filter(l => l.object && l.object.objectName === "CustomerCredit"); if (!ls.length) throw err(400, "Keine Guthaben-Rückzahlung");
+    for (const l of ls) { const c = get("CustomerCredit", l.object.id), amt = r2(-(+l.amountPaid || 0));
+      if (c) { c.open = s2(r2(+c.open + amt)); c.status = "open"; c.refunds = (c.refunds || []).filter(x => String(x.logId) !== String(l.id)); await save("CustomerCredit", c);
+        const inv = c.invoice && get("Invoice", c.invoice.id); if (inv) { inv.creditOpen = s2(r2((+inv.creditOpen || 0) + amt)); await save("Invoice", inv); } }
+      await del("CheckAccountTransactionLog", l.id); }
+    if (!txLogs(txId).length) { tx.status = "100"; await save("CheckAccountTransaction", tx); }
+    return { objects: tx };
+  }
+  // ── Doppelzahlung + Rückzahlung (z. B. Lieferant zahlt eine doppelt abgebuchte Rechnung zurück) ──
+  // Ausgabe a (Doppelzahlung) und Eingang b (Rückzahlung) gleichen Betrags: als Paar verbuchen (kein Aufwand, keine Vorsteuer).
+  // War a per Korrektur-Umsatz („doppelt erfasst“) neutralisiert → Korrektur-Umsatz entfernen; war a einem Beleg zugeordnet
+  // (Beleg überbezahlt) → b dem Beleg als Gegenbuchung zuordnen. Alles per refundUndo rückgängig machbar.
+  function refundMode(a) {
+    if (!a || a.refundPair || !(+a.amount < 0)) return null;
+    const ls = txLogs(a.id);
+    if (a.correctedBy) { const c = get("CheckAccountTransaction", a.correctedBy); if (!ls.length && (!c || String(c.transitWith) === "korrektur" || String(c.correctionOf) === String(a.id)) && !(c && c.enshrined)) return { mode: "correction", corr: c }; return null; }
+    if (String(a.status) === "100" && !a.transitWith && !ls.length) return { mode: "open" };
+    if (ls.length && ls.every(l => l.object && l.object.objectName === "Voucher" && String(l.object.id) === String(ls[0].object.id))) {
+      const v = get("Voucher", ls[0].object.id);
+      if (v && String(v.creditDebit) === "C" && !v.enshrined && r2((+v.paidAmount || 0) - Math.abs(+v.sumGross || 0)) >= Math.abs(+a.amount) - 0.005) return { mode: "voucher", voucher: v };
+    }
+    return null;
+  }
+  async function refundPairApply(aId, bId) {
+    await load(); const a = need("CheckAccountTransaction", aId), b = need("CheckAccountTransaction", bId);
+    if (String(b.status) !== "100" || b.transitWith || b.cashLocked) throw err(400, "Die Rückzahlung ist nicht mehr offen");
+    const A = r2(+b.amount || 0); if (!(A > 0) || Math.abs(r2(+a.amount + A)) > 0.005) throw err(400, "Beträge passen nicht zusammen");
+    if (a.enshrined || b.enshrined) throw err(400, "Festgeschrieben – Korrektur nur per Gegenbuchung");
+    const m = refundMode(a); if (!m) throw err(400, "Die Ausgabe ist inzwischen anders verbucht");
+    const at = nowIso(), da = dayOf(a.valueDate) || "", db = dayOf(b.valueDate) || today(), de = d => d.split("-").reverse().join(".");
+    if (m.mode === "voucher") {
+      const v = m.voucher, gross = Math.abs(+v.sumGross || 0);
+      const l = { id: newId("CheckAccountTransactionLog"), object: ref("Voucher", v.id), checkAccountTransaction: ref("CheckAccountTransaction", b.id), amountPaid: s2(-A), bookingDate: iso(db), fromStatus: String(v.status), toStatus: String(v.status), refundOf: String(a.id) };
+      await save("CheckAccountTransactionLog", l);
+      v.paidAmount = s2(r2((+v.paidAmount || 0) - A)); v.status = +v.paidAmount >= gross - 0.005 ? "1000" : +v.paidAmount > 0.004 ? "750" : "100"; await save("Voucher", v);
+      b.status = "200"; b.refundPair = { mode: "voucher", with: String(a.id), voucherId: String(v.id), logId: String(l.id), at }; await save("CheckAccountTransaction", b);
+      return { objects: { mode: "voucher", voucherId: String(v.id) } };
+    }
+    const prev = { status: a.status, transitWith: a.transitWith || null, transitNote: a.transitNote || null, settledNote: a.settledNote || null, correctedBy: a.correctedBy || null, correctionNote: a.correctionNote || null };
+    let corr = null;
+    if (m.mode === "correction") { corr = m.corr ? JSON.parse(JSON.stringify(m.corr)) : null; if (m.corr) await del("CheckAccountTransaction", m.corr.id); delete a.correctedBy; delete a.correctionNote; }
+    delete a.settledNote;
+    a.status = "400"; a.transitWith = String(b.id); a.transitNote = "Doppelzahlung + Rückzahlung am " + de(db) + " (" + s2(A).replace(".", ",") + " €)"; a.refundPair = { mode: m.mode, with: String(b.id), prev, corr, at };
+    b.status = "400"; b.transitWith = String(a.id); b.transitNote = "Rückzahlung der Doppelzahlung vom " + de(da); b.refundPair = { mode: m.mode, with: String(a.id), at };
+    await save("CheckAccountTransaction", a); await save("CheckAccountTransaction", b);
+    return { objects: { mode: m.mode, removedCorrection: corr ? String(corr.id) : null } };
+  }
+  async function refundUndo(txId) {
+    await load(); const x = need("CheckAccountTransaction", txId), rp = x.refundPair; if (!rp) throw err(400, "Keine Doppelzahlung/Rückzahlung verbucht");
+    if (x.enshrined || (get("CheckAccountTransaction", rp.with) || {}).enshrined) throw err(400, "Festgeschrieben – kann nicht gelöst werden");
+    if (rp.mode === "voucher") {
+      const b = x, v = get("Voucher", rp.voucherId), l = get("CheckAccountTransactionLog", rp.logId);
+      if (v && v.enshrined) throw err(400, "Beleg festgeschrieben – kann nicht gelöst werden");
+      if (l) await del("CheckAccountTransactionLog", l.id);
+      if (v) { const gross = Math.abs(+v.sumGross || 0); v.paidAmount = s2(r2((+v.paidAmount || 0) + Math.abs(+b.amount || 0))); v.status = +v.paidAmount >= gross - 0.005 ? "1000" : +v.paidAmount > 0.004 ? "750" : "100"; await save("Voucher", v); }
+      delete b.refundPair; b.status = txLogs(b.id).length ? "200" : "100"; await save("CheckAccountTransaction", b);
+      return { objects: b };
+    }
+    const o = get("CheckAccountTransaction", rp.with), a = rp.prev ? x : o, b = rp.prev ? o : x;
+    if (!a || !a.refundPair || !a.refundPair.prev) throw err(400, "Gegenstück nicht gefunden");
+    const p = a.refundPair.prev, corr = a.refundPair.corr;
+    ["status", "transitWith", "transitNote", "settledNote", "correctedBy", "correctionNote"].forEach(k => { if (p[k] == null) delete a[k]; else a[k] = p[k]; });
+    delete a.refundPair; await save("CheckAccountTransaction", a);
+    if (corr && corr.id && !get("CheckAccountTransaction", corr.id)) await save("CheckAccountTransaction", corr);
+    if (b) { b.status = "100"; delete b.transitWith; delete b.transitNote; delete b.refundPair; await save("CheckAccountTransaction", b); }
+    return { objects: a };
   }
   async function resetToOpen(t, id) {
     const o = need(t, id); if (isLocked(t, o)) throw err(400, "Festgeschrieben – Korrektur nur per Storno, Gutschrift oder Gegenbuchung");
@@ -287,7 +586,7 @@ module.exports = function (D) {
     const c = inv.contact && get("Contact", inv.contact.id), at = feeAccountingType();
     const v = { id: newId("Voucher"), status: "1000", creditDebit: "D", voucherType: "VOU", currency: "EUR", voucherDate: iso(day), payDate: iso(day), paidAmount: s2(amt),
       supplierName: (c && (c.name || [c.surename, c.familyname].filter(Boolean).join(" "))) || "", description: "Mahngebühr zu Rechnung " + (inv.invoiceNumber || "") + " – Schadenersatz, nicht umsatzsteuerbar",
-      taxType: "noteu", taxText: "nicht umsatzsteuerbar (Schadenersatz)", origin: ref("Invoice", inv.id), dunningFee: true };
+      taxType: "noteu", taxText: "nicht umsatzsteuerbar (Schadenersatz)", origin: ref("Invoice", inv.id), dunningFee: true, feeOpenUsed: s2(Math.min(Math.max(0, +inv.dunningFeeOpen || 0), amt)) };
     const p = { id: newId("VoucherPos"), voucher: ref("Voucher", v.id), taxRate: "0", sumNet: s2(amt), sumGross: s2(amt), sumTax: "0.00", sumNetAccounting: s2(amt), sumGrossAccounting: s2(amt), sumTaxAccounting: "0.00", net: "false", comment: "Mahngebühr (Schadenersatz) – nicht umsatzsteuerbar" };
     if (at) p.accountingType = ref("AccountingType", at.id);
     await save("VoucherPos", p);
@@ -715,6 +1014,62 @@ module.exports = function (D) {
     }
     return n;
   }
+  // Doppelzahlung zurückbekommen (Rückzahlung einer früheren Ausgabe gleichen Betrags) und Guthaben zurückgezahlt (Ausgang an den Kunden):
+  // nur erkennen und „Zur Prüfung“ vorschlagen – verbucht wird erst per Klick (refundPairApply / creditRefund), nie automatisch.
+  const REFUND_RX = /doppel(t|zahlung|buchung)|r(ü|ue)ckzahlung|r(ü|ue)ckerstattung|r(ü|ue)ck(ü|ue)berweisung|erstattung|gutschrift|refund/i;
+  const foldN = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+  const NAME_STOP = new Set(["gmbh", "mbh", "und", "the", "ltd", "inc", "bank", "sparkasse", "raiffeisen", "erste", "online", "zahlung", "rechnung", "gutschrift", "auszahlung", "doppelzahlung", "rueckzahlung", "ruckzahlung", "überweisung", "ueberweisung", "sepa", "lastschrift", "abbuchung", "dauerauftrag"]);
+  const nameTok = s => foldN(s).split(/[^a-z0-9äöüß]+/).filter(w => w.length >= 4 && !NAME_STOP.has(w) && !/^\d+$/.test(w));
+  const sameName = (x, y) => { const a = nameTok(x), b = nameTok(y); return a.length > 0 && b.length > 0 && a.some(w => b.indexOf(w) > -1); };
+  const docNums = s => (String(s || "").match(/\d{5,}/g) || []);
+  const dDiff = (x, y) => Math.round((Date.parse(dayOf(x) + "T12:00:00Z") - Date.parse(dayOf(y) + "T12:00:00Z")) / 864e5);
+  function refundCandidates() {
+    const out = [], txs = all("CheckAccountTransaction"), RANK = { correction: 0, open: 1, voucher: 2 };
+    // Rückzahlung kommt auf dasselbe Konto zurück; Umbuchungen zwischen eigenen Konten (PayPal, Übertrag …) sind Geldtransit, keine Rückzahlung
+    const TRANSIT = /übertrag|uebertrag|umbuchung|paypal|auszahlung auf (ihr )?bankkonto|abbuchung auf bankkonto|withdrawal|transfer to bank|bargeld|kassa|kasse/i;
+    const accOf = x => String((x.checkAccount || {}).id || "");
+    for (const b of txs.filter(b => String(b.status) === "100" && +b.amount > 0 && !b.transitWith && !b.cashLocked && !b.mollieType && !TRANSIT.test((b.paymtPurpose || "") + " " + (b.payeePayerName || "")))) {
+      const A = r2(+b.amount), nb = docNums(b.paymtPurpose), word = REFUND_RX.test((b.paymtPurpose || "") + " " + (b.payeePayerName || ""));
+      const cands = txs.filter(a => Math.abs(r2(+a.amount + A)) <= 0.005 && a !== b && accOf(a) === accOf(b) && !a.mollieType && !a.cashLocked && !TRANSIT.test((a.paymtPurpose || "") + " " + (a.payeePayerName || "")) && (d => d >= 0 && d <= 120)(dDiff(b.valueDate, a.valueDate)))   // Betrag zuerst: läuft alle 4 Min. über alle Umsätze
+        .filter(a => sameName(a.payeePayerName, b.payeePayerName) || (word && nb.length > 0 && docNums((a.paymtPurpose || "") + " " + (a.payeePayerName || "")).some(n => nb.indexOf(n) > -1)))
+        .map(a => ({ a, m: refundMode(a) })).filter(x => x.m);
+      if (!cands.length) continue;
+      cands.sort((x, y) => RANK[x.m.mode] - RANK[y.m.mode] || String(dayOf(y.a.valueDate)).localeCompare(String(dayOf(x.a.valueDate))));
+      out.push({ a: cands[0].a, b, mode: cands[0].m.mode });
+    }
+    const credits = all("CustomerCredit").filter(c => +c.open > 0.004);
+    if (credits.length) for (const t of txs.filter(t => String(t.status) === "100" && +t.amount < 0 && !t.transitWith && !t.cashLocked)) {
+      const A = r2(-(+t.amount)), pu = foldN(t.paymtPurpose).replace(/[^a-z0-9]/g, "");
+      const hits = credits.filter(c => Math.abs(r2(+c.open) - A) <= 0.005 && (d => d >= 0 && d <= 365)(dDiff(t.valueDate, c.date)) && (sameName(c.contactName, t.payeePayerName) || (!!c.invoiceNumber && pu.indexOf(foldN(c.invoiceNumber).replace(/[^a-z0-9]/g, "")) > -1)));
+      if (hits.length === 1) out.push({ credit: hits[0], t });
+    }
+    return out;
+  }
+  function refundValid(aId, bId) { const a = get("CheckAccountTransaction", aId), b = get("CheckAccountTransaction", bId); return !!(a && b && String(b.status) === "100" && !b.transitWith && Math.abs(r2(+a.amount + +b.amount)) <= 0.005 && refundMode(a)); }
+  async function refundScan() {
+    if (!PROP) return 0; await load();
+    const busy = await PROP.busyTx(), eu = n => s2(n).replace(".", ",") + " €", de = d => String(dayOf(d) || "").split("-").reverse().join(".");
+    let n = 0;
+    for (const x of refundCandidates()) {
+      try {
+        if (x.credit) {
+          if (busy.has(String(x.t.id))) continue;
+          if (await PROP.add({ kind: "credit-refund", key: "crefund:" + x.credit.id + ":" + x.t.id, txId: String(x.t.id), invoiceId: x.credit.invoice ? String(x.credit.invoice.id) : null, amount: r2(+x.t.amount), date: dayOf(x.t.valueDate),
+            title: "Guthaben zurückgezahlt: " + (x.credit.contactName || "Kunde") + (x.credit.invoiceNumber ? " (Rechnung " + x.credit.invoiceNumber + ")" : ""),
+            detail: "Rücküberweisung " + de(x.t.valueDate) + " " + eu(-(+x.t.amount)) + " ↔ Guthaben vom " + de(x.credit.date) + " – keine Ausgabe, keine Steuer", source: "Abgleich", payload: { creditId: String(x.credit.id), txId: String(x.t.id) } })) n++;
+          continue;
+        }
+        if (busy.has(String(x.b.id)) || busy.has(String(x.a.id))) continue;
+        const A = r2(+x.b.amount), who = x.b.payeePayerName || x.a.payeePayerName || "Rückzahlung";
+        if (await PROP.add({ kind: "refund-pair", key: "refund:" + x.a.id + ":" + x.b.id, txIds: [String(x.b.id)], txId: String(x.b.id), amount: A, date: dayOf(x.b.valueDate),
+          title: "Doppelzahlung zurückbekommen: " + who + " " + eu(A) + " verbuchen",
+          detail: "Ausgabe " + de(x.a.valueDate) + " „" + String(x.a.paymtPurpose || x.a.payeePayerName || "").slice(0, 60) + "“ ↔ Rückzahlung " + de(x.b.valueDate) + " „" + String(x.b.paymtPurpose || "").slice(0, 60) + "“" +
+            (x.mode === "correction" ? " · der Korrektur-Umsatz („doppelt erfasst“) wird entfernt, Saldo stimmt wieder" : x.mode === "voucher" ? " · Gegenbuchung am überbezahlten Beleg" : " · als Paar verbuchen") + " – kein Aufwand, keine Vorsteuer",
+          source: "Abgleich", payload: { aId: String(x.a.id), bId: String(x.b.id), mode: x.mode } })) n++;
+      } catch (e) { console.error("Doppelzahlung erkennen:", e.message); }
+    }
+    return n;
+  }
   async function pairApply(aId, bId) {
     await load(); const a = get("CheckAccountTransaction", aId), b = get("CheckAccountTransaction", bId);
     if (!a || !b || String(a.status) !== "100" || String(b.status) !== "100" || a.transitWith || b.transitWith) throw err(400, "Einer der Umsätze ist nicht mehr offen");
@@ -738,7 +1093,12 @@ module.exports = function (D) {
       added++;
     }
     const paired = dry ? 0 : await pairTransfers();
+    if (!dry) await refundScan().catch(e => console.error("Doppelzahlung erkennen:", e.message));
     return { total: items.length, added, dup, paired, sample: fresh.slice(0, 5) };
   }
-  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply, pairTransfers };
+  return { request, load, get, all, positionsOf, save, del, attachDoc, isLocked, addIso, importBank, recurringRun, recurringVoucherRun, cashBalance, isCash, setProposer, pairApply, pairTransfers,
+    reclassOver: serial(reclassOver), unbook: serial(unbook), creditRefund: serial(creditRefund), creditRefundUndo: serial(creditRefundUndo), refundPairApply: serial(refundPairApply), refundUndo: serial(refundUndo), refundValid, refundScan, refundCandidates, tipTax };
+  // Zahlungszuordnungs-Operationen nacheinander (Doppelklick, zweites Gerät, „Rückgängig“ und „Lösen“ gleichzeitig): sonst rechnen zwei Läufe mit
+  // demselben Ausgangsstand – z. B. paidAmount −100 nach zweimal „Lösen“ oder Überzahlung doppelt abgebaut (Review 28.10.2026)
+  function serial(fn) { return function () { const a = arguments, r = SERIALQ.then(() => fn.apply(null, a)); SERIALQ = r.catch(() => {}); return r; }; }
 };

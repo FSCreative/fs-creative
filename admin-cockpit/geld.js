@@ -126,6 +126,9 @@ function renderUebersicht(){
   if(drafts.length) tiles.push('<button class="info" data-act="sdtab:rechnungen|draft"><span class="n">'+drafts.length+'</span><span class="l">Entwürfe senden</span><span class="h">'+eur0(drafts.reduce(function(s,i){return s+i.gross;},0))+' warten auf Versand</span></button>');
   if(unass) tiles.push('<button class="info" data-act="sdtab:bank"><span class="n">'+unass+'</span><span class="l">Bankumsätze zuordnen</span><span class="h">mit Vorschlägen</span></button>');
   if(vdr) tiles.push('<button data-act="sdtab:belege|draft"><span class="n">'+vdr+'</span><span class="l">Beleg-Entwürfe</span><span class="h">prüfen & fertig markieren</span></button>');
+  /* Überzahlte Rechnungen (eigene Buchhaltung): Differenz zuordnen – Mahnspesen, Zinsen, Trinkgeld, weitere Rechnung oder Guthaben */
+  var ovp=sev&&sev.local?sev.invoices.filter(function(i){ return F.overToAssign?F.overToAssign(i):i.over>0.005&&!i.cancelled; }):[];   /* ohne gewollt überzahlte Mollie-Connect-Sammelrechnungen */
+  if(ovp.length) tiles.push('<button class="info" data-act="'+(ovp.length===1?"overpay:"+esc(ovp[0].id):"fin:inv:paid")+'"><span class="n">'+ovp.length+'</span><span class="l">Überzahlung zuordnen</span><span class="h">'+(ovp.length===1?esc(ovp[0].nr||"")+" · ":"")+eur(ovp.reduce(function(s,i){return s+i.over;},0))+' – woher kommt die Differenz?</span></button>');
   var bal=sev?sev.accounts.reduce(function(s,a){return s+(+a.balance||0);},0):null;
   var cm=String(new Date().getFullYear())===String(D.year)?new Date().getMonth():-1;
   var card=function(x){

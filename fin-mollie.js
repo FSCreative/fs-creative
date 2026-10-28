@@ -100,11 +100,26 @@ module.exports = function (D) {
   // Einnahme-Beleg wäre doppelter Umsatz (bei Istbesteuerung auch doppelte USt): Mollie-ID steht schon in einer Rechnung
   // (Entwurf, offen oder bezahlt – z. B. Warenkorb: eine Zahlung, mehrere Druckrechnungen → von Hand zuordnen)
   const invoiceHit = (tx, idx) => pidInvoices(tx, ["100", "200", "750", "1000"], idx).length > 0;
-  // gefundene Rechnung als Vorschlag ablegen (früher: sofort gebucht)
+  // gefundene Rechnung: exakt und eindeutig (matchOf) → wird automatisch verbucht (Simon 28.10.2026: „brauche keine Prüfung“) – mit Eintrag
+  // „Automatisch verbucht“ und „Rückgängig“ (fin-proposals.js). Einmal rückgängig gemacht → normaler Vorschlag „Zur Prüfung“.
+  // Zahlungen älter als 60 Tage oder in einem schon gemeldeten UVA-Zeitraum bleiben immer Vorschlag (fin-proposals.js autoDateOk, auch mit Mollie-ID).
   async function autoMatch(tx) {
     const i = matchOf(tx), prop = P(); if (!i || !prop) return false;
     const c = i.contact && L.get("Contact", i.contact.id), cn = c ? (c.name || [c.surename, c.familyname].filter(Boolean).join(" ")) : "";
-    return prop.add({ kind: "mollie-match", key: "mmatch:" + tx.id + ":" + i.id, txId: String(tx.id), invoiceId: String(i.id), amount: r2(+tx.mollieGross || +tx.amount), date: day(tx.valueDate), title: "Mollie-Zahlung → Rechnung " + (i.invoiceNumber || i.id) + (cn ? " · " + cn : ""), detail: (tx.payeePayerName || "") + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120) + (+tx.mollieFeeAmt > 0 ? " · Gebühr " + eu(tx.mollieFeeAmt) + " wird als Zahlungsgebühr gebucht" : ""), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(i.id) } });
+    // automatisch nur bei sicherer Zuordnung: Mollie-ID bzw. Bestellnummer im Rechnungstext – nur nach Betrag+Name, wenn die Zahlung frisch ist (≤ 60 Tage) und nicht lange vor der Rechnung liegt
+    const t0 = pidTxt(i), pid = low(tx.molliePayment), meta = tx.mollieMeta && typeof tx.mollieMeta === "object" ? Object.keys(tx.mollieMeta).map(k => low(tx.mollieMeta[k])).filter(v => v && v.length >= 5 && !/^(true|false|null)$/.test(v)) : [];
+    // Metadaten (Bestellnummer …) zählen nur, wenn sie genau diese eine Rechnung treffen (allgemeine Werte wie ein Shopname stehen in vielen Rechnungen)
+    const strong = (pid.length >= 8 && t0.indexOf(pid) > -1) || (meta.some(v => t0.indexOf(v) > -1) && L.all("Invoice").filter(x => ["100", "200", "750", "1000"].indexOf(String(x.status)) > -1 && pidInv(x) && meta.some(v => pidTxt(x).indexOf(v) > -1)).length === 1);
+    const dd = (a, b) => Math.round((Date.parse(day(a) + "T12:00:00Z") - Date.parse(day(b) + "T12:00:00Z")) / 864e5);
+    // ohne Mollie-ID: Zahlername muss wirklich zum Kunden passen (nicht nur „GmbH“) und genau eine offene Rechnung hat diesen Betrag – sonst nur Vorschlag
+    const g = +tx.mollieGross || +tx.amount, nm = low(tx.payeePayerName).split(/[^a-z0-9äöüß]+/).filter(w => w.length > 2 && !/^(gmbh|mbh|gesmbh|kg|og|ag|co|und|the|ltd|inc|limited)$/.test(w)), cn2 = low(cn + " " + (i.address || ""));
+    const same = L.all("Invoice").filter(x => ["200", "750"].indexOf(String(x.status)) > -1 && !x.cancelled && ["RE", "AR", "ER", "TR"].indexOf(String(x.invoiceType || "RE")) > -1 && Math.abs(r2((+x.sumGross || 0) - (+x.paidAmount || 0)) - g) < 0.011).length;
+    // Mollie-ID steht in einer ANDEREN Rechnung (z. B. Druckshop-Entwurf, Warenkorb) → die Zahlung gehört dorthin, nie automatisch an i
+    const elsewhere = pidInvoices(tx, ["100", "200", "750", "1000"]).some(x => String(x.id) !== String(i.id));
+    // nur nach Name: der Name darf zu keinem ANDEREN Kontakt passen (Vorgabe „Zahlername passt nicht zu einem anderen Kunden“, Gegenprobe 28.10.2026)
+    const otherName = () => L.all("Contact").some(k => (!c || String(k.id) !== String(c.id)) && (n => nm.some(w => n.indexOf(w) > -1))(low(k.name || [k.surename, k.familyname].filter(Boolean).join(" "))));
+    const sure = !elsewhere && (strong || (nm.some(w => cn2.indexOf(w) > -1) && same === 1 && dd(todayIso(), tx.valueDate) <= 60 && dd(i.invoiceDate, tx.valueDate) <= 7 && !otherName()));
+    return prop.add({ autoAccept: sure, kind: "mollie-match", key: "mmatch:" + tx.id + ":" + i.id, txId: String(tx.id), invoiceId: String(i.id), amount: r2(+tx.mollieGross || +tx.amount), date: day(tx.valueDate), title: "Mollie-Zahlung → Rechnung " + (i.invoiceNumber || i.id) + (cn ? " · " + cn : ""), detail: (tx.payeePayerName || "") + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120) + (+tx.mollieFeeAmt > 0 ? " · Gebühr " + eu(tx.mollieFeeAmt) + " wird als Zahlungsgebühr gebucht" : ""), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(i.id) } });
   }
   async function bookMatch(pl) {
     const tx = L.get("CheckAccountTransaction", pl.txId), i = L.get("Invoice", pl.invoiceId);

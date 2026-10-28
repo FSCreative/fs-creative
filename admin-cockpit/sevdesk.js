@@ -284,9 +284,21 @@ function bankDo(txId,body,label){
     F.toast(label||"Zugeordnet"); F.render(); F.load(true);
   }).catch(function(){ if(el) el.classList.remove("gone"); fail(); });
 }
+/* Zahlungseingang > offener Betrag (eigene Buchhaltung): Auswahl „Woher kommt die Differenz?“ statt stiller Überzahlung.
+   Mollie/PayPal: der Umsatz ist netto nach Gebühr (t.fee) – Differenz vom Bruttobetrag, die Gebühr bucht der Server als Zahlungsgebühr (fin-local bookAmount) */
+function bankOver(t,invId,label){
+  var sev=F.D&&F.D.sev, i=sev&&sev.local&&(sev.invoices||[]).find(function(x){ return x.id===invId; }); if(!i||!(t.amount>0)||!(i.open>0.004)) return false;
+  var fee=Math.round((+t.fee||0)*100)/100, pay=Math.round((t.amount+fee)*100)/100, over=Math.round((pay-i.open)*100)/100; if(!(over>0.004)) return false;
+  F.overpayDialog({inv:i,pay:pay,fee:fee,open:i.open,over:over,feeOpen:i.feeOpen,purpose:(t.name||"")+" "+(t.purpose||""),mode:"book",
+    submit:function(extra){ return post("/admin/api/sev/bank-op",{op:"invoice",invoiceId:invId,txId:t.id,extra:extra}); },
+    done:function(){ if(S.bank) S.bank.transactions=S.bank.transactions.filter(function(x){ return x.id!==t.id; }); if(F.finAfterBook) F.finAfterBook(); if(F.finTxReset) F.finTxReset(); F.render(); F.load(true); }});
+  return true;
+}
+F.bankOver=bankOver;
 F.action("sdbk",function(v){
   var p=v.split("|"), t=txById(p[0]); if(!t) return;
   var s=t.suggestions.find(function(x){ return x.id===p[2]&&x.kind===p[1]; })||{label:""};
+  if(p[1]==="invoice"&&bankOver(t,p[2],s.label)) return;
   var body=p[1]==="invoice"?{op:"invoice",invoiceId:p[2]}:{op:"voucher",voucherId:p[2]};
   var amt=Math.abs(t.amount), warn=Math.abs(amt-(s.open||0))>0.011&&s.open?(amt<s.open?" Achtung: Betrag "+eur(amt)+" ≠ offen "+eur(s.open)+" (wird als Teilzahlung gebucht).":" Achtung: Überzahlung +"+eur(amt-s.open)+" (offen "+eur(s.open)+") – "+(p[1]==="invoice"?"die Rechnung wird bezahlt, das Guthaben von "+eur(amt-s.open)+" bleibt beim Kunden offen.":"der Beleg wird bezahlt, "+eur(amt-s.open)+" mehr als offen.")):"";
   F.confirm(eur(t.amount)+" vom "+deShort(t.date)+" mit „"+s.label+"“ verbuchen?"+warn,"Zuordnen",function(){ bankDo(t.id,body,"Zugeordnet: "+s.label); });
@@ -305,7 +317,7 @@ F.action("sdbkother",function(id){
 function pickList(q){ var it=S.pick.items.filter(function(x){ return !q||x.q.indexOf(q)>-1; }).slice(0,80); return it.map(function(x){ return '<button type="button" data-act="sdbkpick:'+x.kind+'|'+esc(x.id)+'"><span>'+esc(x.label)+'</span><span class="muted num">'+esc(x.sub)+'</span></button>'; }).join("")||'<div class="sd-empty">Nichts gefunden.</div>'; }
 F.listen("input","[data-sdpickq]",function(el){ var b=document.getElementById("sdPick"); if(b) b.innerHTML=pickList(el.value.toLowerCase()); });
 F.action("sdbkpriv",function(id){ var t=S.pick&&S.pick.tx; F.closeModal(); bankDo(id,{op:"privat"},t&&t.amount>0?"Als Privateinlage markiert":"Als Privatentnahme markiert"); if(F.finTxReset) F.finTxReset(); });
-F.action("sdbkpick",function(v){ var p=v.split("|"), t=S.pick.tx, it=S.pick.items.find(function(x){return x.id===p[1]&&x.kind===p[0];}); F.closeModal(); bankDo(t.id,p[0]==="invoice"?{op:"invoice",invoiceId:p[1]}:{op:"voucher",voucherId:p[1]},"Zugeordnet: "+(it?it.label:"")); });
+F.action("sdbkpick",function(v){ var p=v.split("|"), t=S.pick.tx, it=S.pick.items.find(function(x){return x.id===p[1]&&x.kind===p[0];}); if(p[0]==="invoice"&&bankOver(t,p[1],it&&it.label)) return; F.closeModal(); bankDo(t.id,p[0]==="invoice"?{op:"invoice",invoiceId:p[1]}:{op:"voucher",voucherId:p[1]},"Zugeordnet: "+(it?it.label:"")); });
 F.action("sdbknew",function(id){
   var t=txById(id); if(!t) return; var pos=t.amount>0, la=!pos&&F.sugLike?F.sugLike(id):null;   /* vorbelegt wie der letzte Beleg desselben Händlers */
   var laRule=la?(la.taxRule||(la.rc?"14":"9")):"9", laRate=la?(F.taxRuleZero(laRule)?0:+la.rate||0):0;

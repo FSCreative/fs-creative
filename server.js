@@ -1188,7 +1188,7 @@ async function sevBuild() {
     return { id: String(o.id), nr: o.invoiceNumber || "", type: o.invoiceType || "RE", status, date, due, delivery: sevDay(o.deliveryDate),
       contact: sevName(o.contact), contactId: o.contact && o.contact.id ? String(o.contact.id) : "", header: o.header || "",
       ref: String(o.headText || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
-      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, stornoNr: o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : undefined, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
+      net: sevNum(o.sumNet), tax: sevNum(o.sumTax), gross, paid, open, credit: sevNum(o.creditOpen), payDate: sevDay(o.payDate), sent: !!o.sendDate, enshrined: !!o.enshrined, cancelled: !!o.cancelled, stornoNr: o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : undefined, origin: o.origin && o.origin.id ? String(o.origin.id) : "", dunning: parseInt(o.dunningLevel, 10) || 0, feeOpen: sevNum(o.dunningFeeOpen),
       overdue: open > 0.005 && !!due && due < today };
   }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (parseInt(b.id, 10) - parseInt(a.id, 10)));
   // Storno: sevDesk setzt beim Original kein „storniert“ – erkennbar an der Stornorechnung (SR) mit origin = Original
@@ -1212,7 +1212,8 @@ async function sevBuild() {
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const vouchers = (vou && vou.objects || []).map(v => ({ id: String(v.id), date: sevDay(v.voucherDate), status: parseInt(v.status, 10) || 0, cd: v.creditDebit, gross: sevNum(v.sumGross), paid: sevNum(v.paidAmount), supplier: v.supplierName || "", desc: v.description || "" }));
   const txUnassigned = t => (parseInt(t.status, 10) || 0) === 100 && t.mollieType !== "application-fee";   // Connect-Provisionen laufen über die Monats-Sammelrechnung
-  const out = { configured: true, source: SEV.src, version: ver && ver.objects && ver.objects.version || null, fetchedAt: new Date().toISOString(), today,
+  const autoBooked = FIN_STATE.local && process.env.DATABASE_URL ? await FIN_PROP.autoRecent(7).catch(() => []) : [];
+  const out = { configured: true, source: SEV.src, local: !!FIN_STATE.local, autoBooked, version: ver && ver.objects && ver.objects.version || null, fetchedAt: new Date().toISOString(), today,
     invoices, reminderDrafts, accounts, transactions: txAll.slice(0, 120),
     unassigned: (txOpenRaw || (tx && tx.objects) || []).filter(txUnassigned).length,
     vouchers: { drafts: vouDraftRaw ? vouDraftRaw.filter(v => (parseInt(v.status, 10) || 0) === 50).length : vouchers.filter(v => v.status === 50).length, open: vouchers.filter(v => v.status === 100 && v.cd === "C").length,
@@ -1372,8 +1373,14 @@ async function sevBook(pl) {
     body.checkAccount = { id: String(pl.accountId || ""), objectName: "CheckAccount" };
   }
   if (!body.checkAccount.id) throw new Error("kein_konto");
+  // Überzahlung: „Woher kommt die Differenz?“ (Mahnspesen, Verzugszinsen, Trinkgeld, weitere Rechnungen, Guthaben) – nur eigene Buchhaltung
+  if (pl.extra && typeof pl.extra === "object" && pl.extra.kind) {
+    if (!FIN_STATE.local) throw new Error("Differenz zuordnen geht nur mit der eigenen Buchhaltung");
+    body.extra = { kind: String(pl.extra.kind).slice(0, 20), amount: pl.extra.amount != null ? Math.round(parseFloat(pl.extra.amount) * 100) / 100 : undefined,
+      invoices: Array.isArray(pl.extra.invoices) ? pl.extra.invoices.slice(0, 20).map(x => ({ id: String(x && typeof x === "object" ? x.id : x).replace(/\D/g, "") })) : undefined };
+  }
   const j = await sev("PUT", "/Invoice/" + id + "/bookAmount", { body });
-  SEV_CACHE.at = 0;
+  SEV_CACHE.at = 0; if (body.extra) { STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }
   return j && j.objects || true;
 }
 // ── sevDesk-Angebote (Order, orderType "AN"): Liste, PDF, Entwurf anlegen, Status, in Rechnung umwandeln ──
@@ -2459,11 +2466,15 @@ async function steuerRaw(force) {
     const txBy = {}; tx.forEach(t => { txBy[String(t.id)] = sevDay(t.valueDate || t.entryDate); });
     const pays = {};
     logs.forEach(l => { const ob = l.object || l.objectFrom || {}; const id = ob.id; if (!id) return; const kind = ob.objectName || "";
-      const amount = sevNum(l.ammountPayed != null ? l.ammountPayed : (l.amountPayed != null ? l.amountPayed : l.amount));
+      // Betrag: sevDesk ammountPayed (Tippfehler der API) / amountPayed, eigene Buchhaltung amountPaid – sonst gälte bei Teilzahlungen alles am Tag der letzten Zahlung
+      const amount = sevNum(l.ammountPayed != null ? l.ammountPayed : (l.amountPayed != null ? l.amountPayed : (l.amountPaid != null ? l.amountPaid : l.amount)));
       const t = l.checkAccountTransaction && l.checkAccountTransaction.id; const date = (t && txBy[String(t)]) || sevDay(l.bookingDate || l.create);
       if (!amount || !date) return; (pays[kind + ":" + id] = pays[kind + ":" + id] || []).push({ date, amount }); });
     // Zahlungen nur übernehmen, wenn sie zum bezahlten Betrag passen – sonst gilt das Zahlungsdatum aus sevDesk
-    const paysFor = (kind, id, paid) => { const a = pays[kind + ":" + id]; if (!a) return undefined; const s = a.reduce((x, p) => x + p.amount, 0); return Math.abs(Math.abs(s) - Math.abs(paid)) < 0.05 ? a.sort((x, y) => x.date.localeCompare(y.date)) : undefined; };
+    // Eigene Buchhaltung: Zusatzbelege am Zahlungseingang (z. B. Mollie-Gebühr als Ausgabe) tragen den Betrag mit dem Vorzeichen des Umsatzes (−) –
+    // aus Sicht des Belegs ist das eine Zahlung (+), daher bei umgekehrtem Vorzeichen spiegeln (sonst negative Ausgabe in der E1a)
+    const paysFor = (kind, id, paid) => { const a = pays[kind + ":" + id]; if (!a) return undefined; const s = a.reduce((x, p) => x + p.amount, 0); if (Math.abs(Math.abs(s) - Math.abs(paid)) >= 0.05) return undefined;
+      return (Math.abs(paid) > 0.004 && s * paid < 0 ? a.map(p => ({ date: p.date, amount: -p.amount })) : a).sort((x, y) => x.date.localeCompare(y.date)); };
     const country = o => (o && (o.code || o.translationCode) ? String(o.code || "").toUpperCase() : "");
     const invoices = inv.filter(o => o.invoiceType !== "MA").map(o => {
       const c = o.contact || {}, paid = sevNum(o.paidAmount);
@@ -2571,6 +2582,14 @@ function steuerOp(pl) {
   return o;
 }
 // Zeitraum aus Schlüssel: "2026-Q3" oder "2026-M07"
+// Schon gemeldete Zeiträume: UVA mit „abgegeben“-Vermerk (doneAt), U1/Jahreserklärung eingereicht → [{key, from, to}].
+// Automatische Buchungen (fin-proposals.js autoDateOk) dürfen dort nie etwas still ändern – Korrekturen nur bewusst (Ausgleich über die U1).
+function steuerReportedPeriods() {
+  const o = readSteuer(), out = [];
+  Object.keys(o.uva || {}).forEach(k => { const e = o.uva[k], p = steuerPeriod(k); if (e && e.doneAt && p) out.push({ key: k, from: p.from, to: p.to }); });
+  ["u1", "jab"].forEach(t => Object.keys(o[t] || {}).forEach(y => { const e = o[t][y]; if (e && e.doneAt && /^\d{4}$/.test(y)) out.push({ key: t + ":" + y, from: y + "-01-01", to: y + "-12-31" }); }));
+  return out;
+}
 function steuerPeriod(key) {
   const m = String(key || "").match(/^(\d{4})-(Q([1-4])|M(0[1-9]|1[0-2]))$/); if (!m) return null;
   const y = +m[1], from = m[3] ? (+m[3] - 1) * 3 + 1 : +m[4], to = m[3] ? +m[3] * 3 : +m[4];
@@ -3287,6 +3306,27 @@ async function handleAdmin(req, res, u, p) {
       return J(200, Object.assign({ ok: true }, await FIN_DOCMATCH.handle(pl)));
     } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
   }
+  // Zahlungszuordnung (nur eigene Buchhaltung, nur per Klick): Überzahlung nachträglich zuordnen (reclass), Zahlung lösen (unbook – auch bei
+  // festgeschriebener Rechnung, nur die Zuordnung), automatische Buchung rückgängig (autoundo), Doppelzahlung/Guthaben-Rückzahlung lösen
+  if (p === "/admin/api/fin/payment") {
+    const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    try {
+      if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung" });
+      await FIN_LOCAL.load();
+      if (req.method === "GET") return J(200, { ok: true, auto: await FIN_PROP.autoRecent(+u.searchParams.get("days") || 14) });
+      const pl = await sevBody(req, 20000); if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
+      const op = String(pl.op || ""), inv = String(pl.invoiceId || "").replace(/\D/g, ""), tx = String(pl.txId || "").replace(/\D/g, "");
+      let r;
+      if (op === "reclass") r = (await FIN_LOCAL.reclassOver(inv, { kind: String(pl.kind || ""), amount: pl.amount, invoices: Array.isArray(pl.invoices) ? pl.invoices.slice(0, 20) : [] })).objects;
+      else if (op === "unbook") { r = (await FIN_LOCAL.unbook(inv, tx, { reason: "Zahlung gelöst (Cockpit)" })).objects; await FIN_PROP.noteUnbook(tx, inv).catch(() => {}); }
+      else if (op === "autoundo") r = await FIN_PROP.autoUndo(String(pl.id || ""));
+      else if (op === "refundundo") r = (await FIN_LOCAL.refundUndo(tx)).objects;
+      else if (op === "creditrefundundo") r = (await FIN_LOCAL.creditRefundUndo(tx)).objects;
+      else return J(400, { ok: false, error: "unbekannte Aktion" });
+      SEV_CACHE.at = 0; STEUER_CACHE.at = 0; IM_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+      return J(200, { ok: true, op, result: r && r.invoice ? { invoiceId: String(r.invoice.id), nr: r.invoice.invoiceNumber || "", paid: +r.invoice.paidAmount || 0, status: +r.invoice.status || 0, made: r.made || undefined, freed: r.freed || undefined } : (r && r.id ? { id: String(r.id) } : true) });
+    } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); }
+  }
   // Korrekturbuchung auf einem Konto (z. B. doppelt importierter Umsatz): Gegenbuchung statt Löschen – nachvollziehbar, kein Einfluss auf Gewinn/Steuer
   if (p === "/admin/api/fin/correction" && req.method === "POST") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
@@ -3473,6 +3513,7 @@ async function handleAdmin(req, res, u, p) {
           }
           if (pl.confirm !== true) return J(400, { ok: false, error: "Bestätigung fehlt" });
           if (pl.op === "transit-undo") {
+            if (t.refundPair) { await FIN_LOCAL.refundUndo(t.id); return done(); }
             const w = String(t.transitWith || ""), o = /^\d+$|^[\w-]{6,}$/.test(w) && FIN_LOCAL.get("CheckAccountTransaction", w);
             if (!w || ["erledigt", "durchlaufend", "korrektur", "opening"].indexOf(w) > -1) return J(200, { ok: false, error: "Kein Geldtransit" });
             t.status = "100"; delete t.transitWith; delete t.transitNote; await FIN_LOCAL.save("CheckAccountTransaction", t);
@@ -4109,6 +4150,14 @@ const server = http.createServer((req, res) => {
 });
 // „Zur Prüfung“: automatische Läufe legen nur Vorschläge ab, gebucht wird erst nach Bestätigung (Push-Thema „fin“ bei neuen Vorschlägen)
 const FIN_PROP = require("./fin-proposals.js")({ L: FIN_LOCAL, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), rules: () => FIN_RULES,
+  // Zahlungseingänge (Bank + Mollie) exakt und eindeutig → automatisch verbuchen (Simon 28.10.2026), jede Buchung mit „Rückgängig“
+  autoPay: () => !!FIN_STATE.local && !!process.env.DATABASE_URL, today: () => viennaToday(),
+  // nie still in gemeldete UVA-Zeiträume buchen (ältere/gemeldete Eingänge bleiben „Zur Prüfung“)
+  reportedPeriods: () => steuerReportedPeriods(),
+  notifyAuto: async list => { if (!process.env.DATABASE_URL || !list.length) return; const eu = n => (+n || 0).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+    SEV_CACHE.at = 0; STEUER_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
+    await PUSH.send("fin", list.length === 1 ? { title: "Zahlung eingegangen: " + (list[0].contact || list[0].payer || "Kunde") + " · " + eu(list[0].amount), body: "Rechnung " + (list[0].nr || "") + " automatisch verbucht – im Cockpit rückgängig machbar.", url: "/admin#geld", tag: "fin-auto" }
+      : { title: list.length + " Zahlungen eingegangen", body: list.slice(0, 4).map(x => (x.contact || x.payer || "Kunde") + " · " + (x.nr || "") + " · " + eu(x.amount)).join("\n") + "\nAutomatisch verbucht – im Cockpit rückgängig machbar.", url: "/admin#geld", tag: "fin-auto" }); },
   notify: async (fresh, total) => { if (!process.env.DATABASE_URL || !fresh.length) return; await PUSH.send("fin", fresh.length === 1 && fresh[0].amount != null ? { title: "Buchung: " + (fresh[0].amount >= 0 ? "Eingang" : "Ausgang") + " iHv. " + Math.abs(fresh[0].amount).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €", body: fresh[0].title + (fresh[0].detail ? "\n" + String(fresh[0].detail).slice(0, 140) : (total > 1 ? "\nInsgesamt " + total + " zur Prüfung" : "")),
     url: "/admin?fin=review#geld", tag: "fin-proposals" } : { title: "Buchung: " + fresh.length + " neue zur Prüfung", body: fresh.slice(0, 3).map(x => x.title + (x.amount != null ? " · " + x.amount.toLocaleString("de-AT", { minimumFractionDigits: 2 }) + " €" : "")).join("\n") + (total > fresh.length ? "\nInsgesamt " + total + " offen" : ""), url: "/admin?fin=review#geld", tag: "fin-proposals" }); } });
 FIN_LOCAL.setProposer(FIN_PROP);
@@ -4126,7 +4175,7 @@ const FIN_RAILWAY = require("./fin-railway.js")({ L: FIN_LOCAL, gql: (q, v) => r
 setTimeout(function railwayInv() { (FIN_STATE.local && RW.token ? FIN_RAILWAY.run() : Promise.resolve()).catch(() => {}).finally(() => setTimeout(railwayInv, 6 * 3600e3).unref()); }, 90e3).unref();
 function docMatchTick() { if (FIN_STATE.local && process.env.DATABASE_URL && MAIL.url && MAIL.token) FIN_DOCMATCH.run(false).then(r => { if (r && r.proposed) console.log("Belegdateien:", r.proposed, "Zuordnung(en) zur Prüfung vorgeschlagen"); if (r && r.err) console.error("Belegdateien:", r.err); }).catch(e => console.error("Belegdateien:", e.message)); }
 if (require.main === module) { setTimeout(docMatchTick, 3 * 60 * 1000); setInterval(docMatchTick, 15 * 60 * 1000); }
-const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
+const FIN_EBANK = require("./fin-ebank.js")({ L: FIN_LOCAL, hash: FIN_BANK.hash, getMeta: k => FIN.init().then(() => FIN.getMeta(k)), setMeta: (k, v) => FIN.init().then(() => FIN.setMeta(k, v)), after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })), auto: await autoBook().then(l => l.length).catch(() => 0) }) });
 // Zahlungsaufträge (fin-pay.js): erfassen/KI aus Mail → in George freigeben (Enable Banking) oder QR/SEPA-Datei; Abgleich mit den Kontoumsätzen
 const FIN_PAY = require("./fin-pay.js")({ DATA_DIR, firm: () => FIN_STATE.firm, ebank: FIN_EBANK,
   transactions: async () => { if (!FIN_STATE.local || !process.env.DATABASE_URL) return []; await FIN_LOCAL.load(); const from = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10);
@@ -4134,11 +4183,14 @@ const FIN_PAY = require("./fin-pay.js")({ DATA_DIR, firm: () => FIN_STATE.firm, 
     return FIN_LOCAL.all("CheckAccountTransaction").filter(x => +x.amount < 0 && String(x.valueDate || "").slice(0, 10) >= from).map(x => ({ id: x.id, date: String(x.valueDate || "").slice(0, 10), amount: +x.amount, iban: x.payeePayerAcctNo || "", name: x.payeePayerName || "", purpose: x.paymtPurpose || "", account: accName(x.checkAccount && x.checkAccount.id) })); } });
 // George (PSD2) täglich – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.configured && st.sessions.length && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) return FIN_EBANK.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }); }).catch(e => console.error("Bank:", e.message)); }, 3600 * 1000);
-const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })) }) });
+const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })), auto: await autoBook().then(l => l.length).catch(() => 0) }) });
 // Ausführung bestätigter Vorschläge: jeweils genau die Funktion, die früher automatisch lief
 FIN_PROP.register("rule", { exec: it => FIN_RULES.acceptProposal(it.payload) });
 ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
 FIN_PROP.register("transfer", { exec: it => FIN_LOCAL.pairApply(it.payload.aId, it.payload.bId) });
+// Doppelzahlung zurückbekommen / Guthaben zurückgezahlt: nie automatisch, nur per Klick (rückgängig über Bank › Umsatz bzw. /admin/api/fin/payment)
+FIN_PROP.register("refund-pair", { exec: it => FIN_LOCAL.refundPairApply(it.payload.aId, it.payload.bId), valid: it => FIN_LOCAL.refundValid(it.payload.aId, it.payload.bId) });
+FIN_PROP.register("credit-refund", { exec: it => FIN_LOCAL.creditRefund(it.payload.creditId, it.payload.txId), valid: it => { const c = FIN_LOCAL.get("CustomerCredit", it.payload.creditId); return !!c && +c.open > 0.004; } });
 FIN_PROP.register("docmatch", { exec: it => FIN_DOCMATCH.handle({ op: "attach", confirm: true, voucherId: it.payload.voucherId, mailRef: it.payload.key }), valid: it => FIN_DOCMATCH.stillValid(it.payload) });
 FIN_PROP.register("uva-payment", { exec: it => sevUstPayment({ confirm: true, key: it.payload.key, transactionId: it.payload.transactionId }), valid: it => { const e = readSteuer().uva[it.payload.key]; return !!e && !e.paid; } });
 FIN_PROP.register("recurring-voucher", { exec: it => SEV_OPS.voucherOp({ confirm: true, op: "open", id: it.payload.voucherId }), valid: it => { const v = FIN_LOCAL.get("Voucher", it.payload.voucherId); return !!v && String(v.status) === "50"; } });
@@ -4178,7 +4230,14 @@ async function vmCompute() {
 // Offene Ausgangsrechnungen ↔ Zahlungseingang am Konto (Rechnungsnummer im Zweck, Betrag, Kundenname) – wie Beleg-Abgleich, im Hintergrund gerechnet
 const IM_CACHE = { at: 0, items: null, p: null };
 // „Zur Prüfung“ vorwärmen: Abgleich Belege/Rechnungen ↔ Bank regelmäßig im Hintergrund rechnen, damit das Öffnen sofort geht
-setTimeout(function warmProposals() { (FIN_STATE.local ? FIN_LOCAL.load().then(() => FIN_LOCAL.pairTransfers()).then(() => FIN_PROP.view()) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
+// Dabei: Doppelzahlung/Rückzahlung erkennen (nur Vorschlag) und eindeutige Zahlungseingänge automatisch verbuchen (autoBook)
+async function autoBook() {
+  if (!FIN_STATE.local || !process.env.DATABASE_URL) return [];
+  const l = await FIN_PROP.autoBookIncoming();
+  if (l.length) { console.log("Zahlungseingänge automatisch verbucht:", l.map(x => (x.nr || x.invoiceId) + " " + x.amount).join(", ")); SEV_CACHE.at = 0; STEUER_CACHE.at = 0; IM_CACHE.at = 0; VM_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
+  return l;
+}
+setTimeout(function warmProposals() { (FIN_STATE.local ? FIN_LOCAL.load().then(() => FIN_LOCAL.pairTransfers()).then(() => FIN_LOCAL.refundScan().catch(e => console.error("Doppelzahlung erkennen:", e.message))).then(() => autoBook().catch(e => console.error("Automatisch verbuchen:", e.message))).then(() => FIN_PROP.view()) : Promise.resolve()).catch(e => console.error("Vorschläge vorwärmen:", e.message)).finally(() => setTimeout(warmProposals, 4 * 60e3)); }, 20e3).unref();
 async function imCompute() {
   await FIN_LOCAL.load(); const best = {}; let n = 0;
   for (const t of FIN_LOCAL.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.mollieType && !t.cashLocked)) {
@@ -4187,8 +4246,9 @@ async function imCompute() {
     const c = (r.candidates || []).find(x => x.type === "invoice" && x.score >= 60); if (!c) continue;
     if (!best[c.id] || best[c.id].score < c.score) best[c.id] = { score: c.score, t, c };
   }
-  return Object.values(best).map(b => ({ id: "im:" + b.c.id + ":" + b.t.id, key: "im:" + b.c.id + ":" + b.t.id, invoiceId: String(b.c.id), txId: String(b.t.id), amount: +b.t.amount, date: String(b.t.valueDate || "").slice(0, 10),
-    title: b.c.label + " ↔ Zahlungseingang " + (b.t.payeePayerName || "") + " · " + (+b.t.amount).toFixed(2).replace(".", ",") + " €", detail: String(b.t.paymtPurpose || "").replace(/\s+/g, " ").slice(0, 120) + (b.c.why ? " · " + [].concat(b.c.why).join(", ") : (b.c.reason ? " · " + b.c.reason : "")), source: "Abgleich" }));
+  return Object.values(best).map(b => { const over = Math.round((+b.t.amount - (+b.c.amount || 0)) * 100) / 100;
+    return { id: "im:" + b.c.id + ":" + b.t.id, key: "im:" + b.c.id + ":" + b.t.id, invoiceId: String(b.c.id), txId: String(b.t.id), amount: +b.t.amount, date: String(b.t.valueDate || "").slice(0, 10), open: +b.c.amount || 0, over: over > 0.004 ? over : 0,
+    title: b.c.label + " ↔ Zahlungseingang " + (b.t.payeePayerName || "") + " · " + (+b.t.amount).toFixed(2).replace(".", ",") + " €" + (over > 0.004 ? " · Überzahlung " + over.toFixed(2).replace(".", ",") + " € – beim Bestätigen zuordnen" : ""), detail: String(b.t.paymtPurpose || "").replace(/\s+/g, " ").slice(0, 120) + (b.c.why ? " · " + [].concat(b.c.why).join(", ") : (b.c.reason ? " · " + b.c.reason : "")), source: "Abgleich" }; });
 }
 FIN_PROP.register("invoice-match", {
   label: "Rechnung ↔ Zahlungseingang verbinden",
@@ -4200,7 +4260,8 @@ FIN_PROP.register("invoice-match", {
     const skip = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {};
     return (IM_CACHE.items || []).filter(x => !skip["inv:" + x.invoiceId + ":" + x.txId] && (FIN_LOCAL.get("CheckAccountTransaction", x.txId) || {}).status === "100");
   },
-  exec: async it => { IM_CACHE.at = 0; VM_CACHE.at = 0; return SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "invoice", invoiceId: it.invoiceId }); },
+  exec: async it => { if (it.over > 0.004) throw new Error("Überzahlung " + it.over.toFixed(2).replace(".", ",") + " € – bitte einzeln bestätigen und auswählen, woher die Differenz kommt");
+    IM_CACHE.at = 0; VM_CACHE.at = 0; return SEV_OPS.bankOp({ confirm: true, txId: it.txId, op: "invoice", invoiceId: it.invoiceId }); },
   reject: async it => { const s = (await FIN.getMeta("vmatchSkip").catch(() => null)) || {}; s["inv:" + it.invoiceId + ":" + it.txId] = new Date().toISOString(); await FIN.setMeta("vmatchSkip", s); } });
 FIN_PROP.register("dunning", {
   list: async () => { const st = await dunState(); if (!st.settings.enabled) return []; return dunProposals(st).map(x => ({ id: "dun:" + x.id, key: "dun:" + x.id + ":" + x.level, invoiceId: x.id, amount: x.open, date: x.due, title: x.title + " zu " + x.nr + " · " + (x.contact || "—"), detail: x.overdueDays + " Tage überfällig" + (x.fee > 0 ? " · Mahngebühr " + x.fee.toFixed(2).replace(".", ",") + " €" : "") + (x.email ? " · an " + x.email : "") + (x.hint ? " · " + x.hint : ""), source: "Mahnlauf", hint: x.hint || "" })); },
@@ -4208,6 +4269,20 @@ FIN_PROP.register("dunning", {
   reject: async it => { const st = await dunState(), pr = dunProposals(st).find(x => x.id === it.invoiceId); if (pr) { st.skip[pr.id] = pr.level; await FIN.setMeta("dunning", st); } } });
 // ── Druckshop www.fs-creative.at/print (print-shop.js): Bestellungen landen „Zur Prüfung“ und unter „Druckaufträge“ – bei Print.com bestellt wird nur per Klick ──
 const PRINT_BILD = require("./print-bild.js");   // Bild-Proxy für Druckshop-Produktbilder (images.ctfassets.net)
+// Google-Link „Bewertung schreiben“ des Unternehmensprofils FS Creative (Druckshop, Simon: „Google link dann einfach zu fs creative profil“):
+// Railway-Variable PRINT_GOOGLE_REVIEW_URL hat Vorrang, sonst seo.js reviewUrl() (Business Profile, Standort „FS Creative“, dort zwischengespeichert).
+// Blockiert nie: Abruf im Hintergrund, bis dahin der letzte bekannte Wert bzw. "".
+const GREVIEW = { at: 0, url: "", p: null };
+function googleReviewUrl() {
+  const env = String(process.env.PRINT_GOOGLE_REVIEW_URL || "").trim(); if (env) return env;
+  let fn = null; try { fn = SEO && typeof SEO.reviewUrl === "function" ? SEO.reviewUrl : null; } catch (e) { fn = null; }   // SEO wird erst weiter unten angelegt
+  if (fn && !GREVIEW.p && Date.now() - GREVIEW.at > 10 * 60e3) {
+    GREVIEW.at = Date.now();
+    GREVIEW.p = Promise.race([fn(), new Promise(r => { const tm = setTimeout(() => r(GREVIEW.url), 20000); if (tm.unref) tm.unref(); })])
+      .then(url => { if (/^https:\/\//.test(String(url || ""))) GREVIEW.url = String(url); }).catch(e => console.error("Google-Bewertungslink:", e.message)).finally(() => { GREVIEW.p = null; });
+  }
+  return GREVIEW.url;
+}
 const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, ki: KI,
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   mailSend: m => mailApiSend(m), notifyTo: LEAD_TO,
@@ -4216,12 +4291,14 @@ const PRINT = require("./print-shop.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: 
   invoiceNr: id => SEV_OPS.invoiceDetail(id).then(d => (d && d.nr) || ""),
   // Status vor dem Senden prüfen (von Hand schon versendet → nicht doppelt mailen); "" = unbekannt
   invoiceStatus: id => SEV_OPS.invoiceDetail(id).then(d => String((d && d.status) || "")).catch(() => ""),
-  // nach dem Senden: offene Mollie-Zahlung dieser Rechnung zuordnen – nur als Vorschlag „Zur Prüfung“ (Simon bestätigt), nie gebucht
+  // nach dem Senden: offene Mollie-Zahlung dieser Rechnung zuordnen – exakt + Mollie-ID im Rechnungstext → automatisch verbucht (mit „Rückgängig“),
+  // sonst bzw. bei alter Zahlung/gemeldetem Zeitraum als Vorschlag „Zur Prüfung“ (fin-mollie.js autoMatch)
   sendInvoice: (id, to, subject, text) => SEV_OPS.invoiceOp({ confirm: true, op: "send", id, toEmail: to, subject, text }).then(r => { SEV_CACHE.at = 0;
     if (process.env.DATABASE_URL && FIN_STATE.local) setTimeout(() => FIN_MOLLIE.rematch().catch(e => console.error("Mollie-Rematch:", e.message)), 2000);
     return r; }),
   deleteInvoice: id => sev("DELETE", "/Invoice/" + String(id).replace(/\D/g, "")).then(r => { SEV_CACHE.at = 0; return r; }),
   propose: pl => process.env.DATABASE_URL ? FIN_PROP.add(pl) : Promise.resolve(false),
+  googleReviewUrl: () => googleReviewUrl(),
   onOrder: o => { try { printTaskSync(o); } catch (e) { console.error("Aufträge (Druck):", e.message); } },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 setTimeout(() => PRINT.syncTasks().catch(e => console.error("Aufträge (Druck):", e.message)), 15 * 1000).unref();   // offene Druckaufträge nach dem Start ins Board

@@ -245,11 +245,108 @@ F.openBook=function(id,txId){
 F.action("book",function(id){ F.openBook(id); });
 F.listen("input","form[data-form=book] input[name=amount]",function(el){ var o=+el.getAttribute("data-open")||0, a=+el.value||0, d=Math.round((o-a)*100)/100, box=document.getElementById("bkDiff"); if(!box) return; box.hidden=!(d>0.004&&a>0); var t=document.getElementById("bkDiffAmt"); if(t) t.textContent=F.eur(d); });
 F.form("book",function(f){
-  var id=f.getAttribute("data-id"), err=document.getElementById("bkErr"); err.textContent="Buche …";
+  var id=f.getAttribute("data-id"), err=document.getElementById("bkErr");
   var body={id:id,amount:f.amount.value,date:f.date.value,accountId:f.account.value,diffType:f.diffType&&!document.getElementById("bkDiff").hidden?f.diffType.value:""};
   if(f.tx&&f.tx.value){ body.transactionId=f.tx.value; body.accountId=f.tx.selectedOptions[0].getAttribute("data-acc")||body.accountId; }
+  /* Mehr als offen (eigene Buchhaltung): erst fragen, woher die Differenz kommt – gebucht wird dort mit „Verbuchen“ */
+  var i=F.D&&F.D.sev&&F.D.sev.invoices.find(function(x){return x.id===id;}), amt=Math.round((parseFloat(f.amount.value)||0)*100)/100, over=i?Math.round((amt-i.open)*100)/100:0;
+  if(i&&F.D.sev.local&&i.open>0.004&&over>0.004){
+    var tx=body.transactionId&&(F.D.sev.transactions||[]).find(function(t){ return t.id===body.transactionId; });
+    F.overpayDialog({inv:i,pay:amt,open:i.open,over:over,feeOpen:i.feeOpen,purpose:tx?(tx.name+" "+tx.purpose):"",mode:"book",
+      submit:function(extra){ return F.api("/admin/api/sevdesk/book",{body:Object.assign({},body,{extra:extra})}); },done:function(){ if(F.finInvReset) F.finInvReset(id); F.load(true); }});
+    return;
+  }
+  err.textContent="Buche …";
   F.api("/admin/api/sevdesk/book",{body:body}).then(function(j){ if(j&&j.ok){ F.closeModal(); F.toast("Zahlung gebucht"); F.load(true); } else err.textContent="Nicht gebucht: "+((j&&j.error)||"unbekannt"); }).catch(function(){ err.textContent="Keine Verbindung."; });
 });
+
+/* ---------- Überzahlung: „Woher kommt die Differenz?“ (Glas-Dialog, Radio-Karten) ----------
+   o: {inv (Rechnung aus F.D.sev.invoices), pay (brutto), fee (Mollie-/PayPal-Gebühr, optional), open, over, feeOpen, purpose, mode:"book"|"reclass", submit(extra) → Promise({ok}), done()}
+   Gebucht wird erst mit „Verbuchen“; Abbrechen ändert nichts. Mahnspesen/Verzugszinsen: Schadenersatz → 0 %, nicht umsatzsteuerbar;
+   Trinkgeld/Aufrundung: Steuerbehandlung der Rechnung (opTip, wie fin-local tipTax); Guthaben: keine Einnahme, die Rücküberweisung wird später
+   zugeordnet (Vorschlag „Guthaben zurückgezahlt“). Verrechnen mit einer anderen Rechnung = „Zahlung für weitere Rechnung“ – ein schon markiertes
+   Guthaben lässt sich nicht nachträglich verrechnen (bewusst: keine Umbuchung zwischen Rechnungen ohne Zahlung, Review 28.10.2026). */
+F.css(
+  '.op-dlg .op-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}'+
+  '.op-sum>div{background:var(--sunk);border:1px solid var(--line);border-radius:var(--r-sm,12px);padding:10px 12px;min-width:0}'+
+  '.op-sum span{display:block;font-size:12.5px;color:var(--ink-3)}.op-sum b{display:block;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+  '.op-sum .op-d{border-color:var(--glow);background:var(--glow-soft)}.op-sum .op-d b{font-size:19px;color:var(--glow-ink,var(--ink))}'+
+  '.op-opts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}'+
+  '.op-c{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--sunk);cursor:pointer;min-height:44px;transition:background .15s,border-color .15s}'+
+  '.op-c:hover{background:var(--hover,var(--sunk))}.op-c.on{border-color:var(--glow);background:var(--sel)}'+
+  '.op-c>input{margin:2px 0 0;accent-color:var(--glow);width:18px;height:18px;flex:none}.op-c>span{min-width:0;flex:1}'+
+  '.op-c b{display:block;font-size:15px;font-weight:600;text-wrap:balance}.op-c small{display:block;color:var(--ink-2);font-size:13px;margin-top:2px;text-wrap:pretty;hyphens:auto}'+
+  '.op-inv{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;margin-top:8px}.op-inv label{display:flex;gap:8px;align-items:center;font-size:13.5px;min-height:36px}.op-inv label>span:first-of-type{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.op-inv .num{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}'+
+  '@media (prefers-reduced-motion:reduce){.op-c{transition:none}}'+
+  '@media (max-width:560px){.op-dlg .op-sum{grid-template-columns:1fr 1fr}.op-sum .op-d{grid-column:1/-1}}'
+);
+var OP=null;
+var OPK={fee:"Mahnspesen",interest:"Verzugszinsen",tip:"Trinkgeld",invoices:"weitere Rechnungen",credit:"Guthaben"};
+/* Trinkgeld/Aufrundung: Steuersatz wie die Rechnung (Server: fin-local tipTax aus den Positionen) – keine USt auf der Rechnung (Reverse Charge,
+   Drittland, 0 %) → 0 %; ein Satz → dieser; sonst gemischte Sätze → 20 % (Normalsatz). Hier aus netto/USt der Rechnung geschätzt. */
+function opTip(inv){ var n=Math.abs(+inv.net||0), t=Math.abs(+inv.tax||0); if(!(t>0.004)) return {rate:0};
+  var r=n>0.004?Math.round(t/n*100):20; return r>0&&Math.abs(Math.round(n*r)/100-t)<=0.05?{rate:r}:{rate:20,mixed:true}; }
+F.overpayDialog=function(o){
+  var inv=o.inv||{}, others=((F.D&&F.D.sev&&F.D.sev.invoices)||[]).filter(function(i){ return inv.contactId&&i.contactId===inv.contactId&&i.id!==inv.id&&(i.status===200||i.status===750)&&i.open>0.005&&!i.cancelled&&i.type!=="SR"&&i.type!=="MA"; });
+  /* vorausgewählt: Rechnungsnummer im Verwendungszweck, sonst genau passender offener Betrag */
+  var pt=String(o.purpose||""), pn=pt.toLowerCase().replace(/[^a-z0-9]/g,""), pre={};
+  others.forEach(function(i){ var n=String(i.nr||"").toLowerCase().replace(/[^a-z0-9]/g,""), d=(String(i.nr||"").match(/(\d{3,})\s*$/)||[])[1]; if((n.length>=4&&/[a-z]/.test(n)&&pn.indexOf(n)>-1)||(d&&new RegExp("(^|\\D)"+d+"(\\D|$)").test(pt))) pre[i.id]=1; });
+  if(!Object.keys(pre).length){ var ex=others.filter(function(i){ return Math.abs(i.open-o.over)<0.006; }); if(ex.length===1) pre[ex[0].id]=1; }
+  var sel=Object.keys(pre).length?"invoices":((+o.feeOpen||0)>0&&Math.abs(o.feeOpen-o.over)<0.006?"fee":"");
+  OP={o:o,others:others}; var tip=opTip(inv), fee=Math.round((+o.fee||0)*100)/100;
+  var opt=function(k,title,sub,extra){ return '<label class="op-c'+(sel===k?" on":"")+'"><input type="radio" name="kind" value="'+k+'"'+(sel===k?" checked":"")+'><span><b>'+title+'</b><small>'+sub+'</small>'+(extra||"")+'</span></label>'; };
+  var list=others.length?'<div class="op-inv" id="opInv"'+(sel==="invoices"?'':' hidden')+'>'+others.map(function(i){ return '<label><input type="checkbox" name="inv" value="'+esc(i.id)+'"'+(pre[i.id]?" checked":"")+'><span title="'+esc(i.nr||"")+'">'+esc(i.nr||"Entwurf")+' · '+F.deShort(i.date)+'</span><span class="num money">offen '+eur(i.open)+'</span></label>'; }).join("")+'<small id="opInvSum"></small></div>':'';
+  F.modal('<form data-form="overpay" class="stackf op-dlg" novalidate>'+
+    '<div class="row-between"><h2 style="font-size:20px">Woher kommt die Differenz?</h2>'+F.btnClose()+'</div>'+
+    '<p class="muted" style="margin:0;overflow-wrap:anywhere">'+esc(inv.nr||"Rechnung")+' · '+esc(inv.contact||"")+'</p>'+
+    '<div class="op-sum"><div><span>'+(o.mode==="reclass"?"Bezahlt":"Zahlung")+'</span><b class="money">'+eur(o.pay)+'</b></div><div><span>'+(o.mode==="reclass"?"Rechnung":"Offen")+'</span><b class="money">'+eur(o.open)+'</b></div><div class="op-d"><span>Differenz</span><b class="money">'+eur(o.over)+'</b></div></div>'+
+    (fee>0.004?'<p class="muted" style="margin:0;font-size:13px">Zahlung brutto inkl. Gebühr '+eur(fee)+' – die Gebühr wird wie sonst als Zahlungsgebühr (Ausgabe) gebucht.</p>':'')+
+    '<div class="op-opts" role="radiogroup" aria-label="Grund der Differenz">'+
+      opt("fee","Mahnspesen / Mahngebühr","Eigener Einnahme-Beleg 0 % – Schadenersatz, nicht umsatzsteuerbar.")+
+      opt("interest","Verzugszinsen","Eigener Einnahme-Beleg 0 % – Schadenersatz, nicht umsatzsteuerbar.")+
+      opt("tip","Trinkgeld / Aufrundung",tip.rate>0?"Eigener Einnahme-Beleg, "+tip.rate+" % USt sind im Betrag enthalten"+(tip.mixed?" – die Rechnung hat mehrere Steuersätze, gebucht wird der Normalsatz 20 %.":" (wie auf der Rechnung)."):"Eigener Einnahme-Beleg ohne USt (0 %) – wie die Rechnung (z. B. Reverse Charge, Ausland).")+
+      (others.length?opt("invoices","Zahlung für weitere Rechnung"+(others.length>1?"en":"")+" "+(inv.contact?"von "+esc(inv.contact):"desselben Kunden"),"Die Differenz bezahlt die gewählten offenen Rechnungen mit.",list):"")+
+      opt("credit","Guthaben / Doppelzahlung","Bleibt als Guthaben beim Kunden (keine Einnahme). Die Rücküberweisung an den Kunden wird später zugeordnet – das Cockpit schlägt sie vor."+(others.length?" Soll stattdessen eine offene Rechnung bezahlt werden: „Zahlung für weitere Rechnung“ wählen.":""))+
+    '</div>'+
+    '<div class="foot"><span class="err" id="opErr" role="status"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="opGo">Verbuchen</button></span></div></form>',"narrow");
+  opSync();
+};
+function opSync(){
+  var f=document.querySelector("form[data-form=overpay]"); if(!f||!OP) return;
+  var k=(f.querySelector("input[name=kind]:checked")||{}).value||"";
+  Array.prototype.forEach.call(f.querySelectorAll(".op-c"),function(c){ var r=c.querySelector("input[name=kind]"); c.classList.toggle("on",!!(r&&r.checked)); });
+  var box=document.getElementById("opInv"), ok=!!k;
+  if(box){ box.hidden=k!=="invoices";
+    var sum=0; Array.prototype.forEach.call(box.querySelectorAll("input[name=inv]:checked"),function(c){ var i=OP.others.find(function(x){ return x.id===c.value; }); if(i) sum+=i.open; });
+    sum=Math.round(sum*100)/100; var rest=Math.round((OP.o.over-sum)*100)/100, s=document.getElementById("opInvSum");
+    if(s) s.textContent=!sum?"Bitte mindestens eine Rechnung wählen.":rest>0.004?"Gewählt "+F.eur(sum)+" – Rest "+F.eur(rest)+" bleibt als Guthaben.":rest<-0.004?"Gewählt "+F.eur(sum)+" – die letzte Rechnung wird teilweise bezahlt.":"Passt genau.";
+    if(k==="invoices"&&!sum) ok=false; }
+  var b=document.getElementById("opGo"); if(b) b.disabled=!ok;
+}
+F.listen("change","form[data-form=overpay] input",function(){ opSync(); });
+F.form("overpay",function(f){
+  if(!OP) return; var k=(f.querySelector("input[name=kind]:checked")||{}).value||"", err=document.getElementById("opErr"), btn=document.getElementById("opGo");
+  if(!k){ err.textContent="Bitte auswählen, woher die Differenz kommt."; return; }
+  var extra={kind:k,amount:OP.o.over}; if(k==="invoices"){ extra.invoices=Array.prototype.map.call(f.querySelectorAll("input[name=inv]:checked"),function(c){ return {id:c.value}; }); if(!extra.invoices.length){ err.textContent="Bitte mindestens eine Rechnung wählen."; return; } }
+  var o=OP.o; btn.disabled=true; err.textContent="Verbuche …";
+  Promise.resolve(o.submit(extra)).then(function(j){
+    if(j&&j.ok){ F.closeModal(); OP=null; F.toast((o.mode==="reclass"?"Zugeordnet: ":"Gebucht – Differenz als ")+OPK[k]+" "+F.eur(o.over)); if(o.done) o.done(j); }
+    else { btn.disabled=false; err.textContent="Nicht verbucht: "+((j&&j.error)||"unbekannt"); }
+  }).catch(function(){ btn.disabled=false; err.textContent="Keine Verbindung."; });
+});
+/* Überzahlung, die zugeordnet werden soll (Liste, Detail, Kachel „Überzahlung zuordnen“): nicht bei der Mollie-Connect-Sammelrechnung
+   „kochdu Online-Provisionen MM/JJJJ“ – dort ist die Differenz gewollt (Provisionen über der Rechnungssumme, Hinweis auf der Mollie-Karte) */
+F.overOnline=function(i){ return /kochdu online-provisionen/i.test(String((i&&i.header)||"")); };
+F.overToAssign=function(i){ return !!i&&(+i.over||0)>0.005&&!i.cancelled&&!F.overOnline(i); };
+/* Bereits verbuchte Überzahlung nachträglich zuordnen (Rechnungsdetail/-liste: „Überzahlung € x – zuordnen“) */
+F.overpayReclass=function(id,after){
+  var i=F.D&&F.D.sev&&(F.D.sev.invoices||[]).find(function(x){ return x.id===id; }); if(!i) return;
+  var over=Math.round((+i.over||0)*100)/100; if(!(over>0.004)){ F.toast("Keine Überzahlung an dieser Rechnung"); return; }
+  F.overpayDialog({inv:i,pay:i.paid,open:i.gross,over:over,feeOpen:i.feeOpen,purpose:"",mode:"reclass",
+    submit:function(extra){ return F.api("/admin/api/fin/payment",{body:{confirm:true,op:"reclass",invoiceId:id,kind:extra.kind,amount:extra.amount,invoices:extra.invoices}}); },
+    done:function(){ if(after) after(); F.load(true); }});
+};
+F.action("overpay",function(id){ F.overpayReclass(id,F.finInvReset?function(){ F.finInvReset(id); }:null); });
 
 /* ---------- Einfache Mail (das Postfach-Modul ersetzt F.compose durch die volle Version) ---------- */
 F.compose=function(pre){

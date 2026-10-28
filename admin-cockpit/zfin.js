@@ -235,7 +235,7 @@ function pageInv(kind){
     var sub=i.type==="SR"?(i.header||"Stornorechnung"):(i.header&&!/^rechnung$/i.test(i.header)?i.header:("Rechnung "+(i.nr||""))), pr=isPrintDraft(i);
     if(pr) sub="Wartet auf Druckauftrag"+(i.printNr?" "+i.printNr:"")+" · "+sub;
     var icons='<span class="fsd-ic">'+(i.status===100?(pr&&i.printId?'<button type="button" title="Druckauftrag öffnen – die Rechnung wird beim Bestellen automatisch gesendet" data-act="prord:'+esc(i.printId)+'">'+ic("printer")+'</button>':'<button type="button" title="Per E-Mail senden" data-act="sdsend:'+esc(i.id)+'">'+ic("mail")+'</button>'):(i.open>0.005?'<button type="button" title="Zahlungseingang erfassen" data-act="book:'+esc(i.id)+'">'+ic("cash")+'</button>':''))+'<button type="button" title="Herunterladen" data-act="fdl:'+esc(i.id)+'">'+ic("dl")+'</button></span>';
-    return '<tr class="fsd-row" data-act="fin:invd:'+esc(i.id)+'"><td>'+invPill(i)+'</td><td class="nowrap c-due">'+relDue(i)+'</td><td class="nowrap m c-nr">'+(i.status===100?'– – –':(i.enshrined?'<span class="fsd-lock" title="Festgeschrieben">'+ic("lock")+'</span>':'')+esc(i.nr||"–"))+'</td><td><div class="fsd-who">'+esc(i.contact||"—")+'</div><div class="sub" title="'+esc(sub)+'">'+esc(sub)+'</div></td><td class="m nowrap c-date">'+deShort(i.date)+'</td><td class="r nowrap">'+eur(i.type==="SR"?-Math.abs(i.gross):i.gross)+'</td><td class="r nowrap">'+eur(i.status===100?i.gross:i.open)+(isPart(i)?'<div class="sub">bezahlt '+eur(Math.abs(+i.gross||0)-i.open)+'</div>':'')+'</td><td class="r">'+icons+'</td></tr>';
+    return '<tr class="fsd-row" data-act="fin:invd:'+esc(i.id)+'"><td>'+invPill(i)+'</td><td class="nowrap c-due">'+relDue(i)+'</td><td class="nowrap m c-nr">'+(i.status===100?'– – –':(i.enshrined?'<span class="fsd-lock" title="Festgeschrieben">'+ic("lock")+'</span>':'')+esc(i.nr||"–"))+'</td><td><div class="fsd-who">'+esc(i.contact||"—")+'</div><div class="sub" title="'+esc(sub)+'">'+esc(sub)+'</div></td><td class="m nowrap c-date">'+deShort(i.date)+'</td><td class="r nowrap">'+eur(i.type==="SR"?-Math.abs(i.gross):i.gross)+'</td><td class="r nowrap">'+eur(i.status===100?i.gross:i.open)+(isPart(i)?'<div class="sub">bezahlt '+eur(Math.abs(+i.gross||0)-i.open)+'</div>':'')+(F.D.sev.local&&F.overToAssign(i)?'<div class="sub"><button type="button" class="fin-overl" data-act="overpay:'+esc(i.id)+'" title="Woher kommt die Differenz? (Mahnspesen, Zinsen, Trinkgeld, weitere Rechnung, Guthaben)">Überzahlung <span class="money">'+eur(i.over)+'</span> – zuordnen</button></div>':(i.credit>0.005?'<div class="sub">Guthaben <span class="money">'+eur(i.credit)+'</span></div>':''))+'</td><td class="r">'+icons+'</td></tr>';
   }).join("");
   return head(kind==="dun"?"Mahnungen":"Rechnungen",'Offene Rechnungen: '+eur(openSum),'<button class="btn primary" data-act="newinvoice">'+ic("plus")+'Rechnung schreiben</button>')+(kind==="dun"?remDraftsCard()+dunCard():'')+
     '<section class="fsd-card flush fsd-tc"><div class="fsd-bar">'+tabs("fin:"+(kind==="dun"?"dun":"inv"),f,[["all","Alle"],["draft","Entwurf"],["open","Offen"],["part","Teilbezahlt"],["due","Fällig"],["locked","Festgeschrieben"],["paid","Bezahlt"]])+search("inv","Suchen …")+'</div>'+
@@ -260,14 +260,14 @@ function pageInvDetail(id){
     '<div class="fsd-detail">'+F.docEmbed("/admin/api/sevdesk/pdf?id="+encodeURIComponent(id),kind+" "+(d.nr||"Entwurf"),'<div class="fsd-pdf"><iframe title="PDF" src="/admin/api/sevdesk/pdf?id='+encodeURIComponent(id)+'#view=FitH"></iframe></div>',"PDF ansehen")+
     '<aside class="fsd-side"><section class="fsd-card fsd-nrbar"><b>'+esc(d.nr||"Entwurf")+'</b><span class="fsd-ic"><button type="button" title="Vorherige"'+(prev?' data-act="fin:invd:'+esc(prev)+'"':' disabled style="opacity:.3"')+'>'+ic("left")+'</button><button type="button" title="Nächste"'+(next?' data-act="fin:invd:'+esc(next)+'"':' disabled style="opacity:.3"')+'>'+ic("right")+'</button></span></section>'+
       '<section class="fsd-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="fsd-cname">'+esc(d.contact.name||"")+'</div><div class="fsd-cdate">'+de(d.date)+'</div></div>'+invPill(Object.assign({},i0,{status:st,cancelled:canc,type:d.type}))+'</div><div class="fsd-amt"><span>Betrag <i>(Brutto)</i></span><b>'+esc(amt)+'<small>EUR</small></b></div>'+(d.open>0.005&&d.paid>0?'<div class="fsd-cdate" style="text-align:right">davon offen '+eur(d.open)+'</div>':'')+
-        (i0.over>0.005?'<div class="fsd-cdate" style="text-align:right">überzahlt <b class="num money">+'+eur(i0.over)+'</b> · Guthaben beim Kunden</div>':'')+
+        overHtml(id,d,i0)+
         (pr?'<div class="notice" style="margin-top:12px">Wird beim Bestellen bei Print.com automatisch fertiggestellt und gesendet'+(i0.printNr?' (Druckauftrag '+esc(i0.printNr)+')':'')+'. Von Hand senden nur, wenn der Druckauftrag nicht bestellt wird.</div>':'')+'</section>'+
       '<section class="fsd-card"><div class="fsd-ctitle">Rechnungsdetails</div><dl class="fsd-rows" style="margin:0">'+
         row("Fälligkeit",relDue(Object.assign({},i0,{status:st,cancelled:canc})))+row("Zahlungsziel",d.due?'<b style="font-weight:600">'+de(d.due)+'</b> ('+d.timeToPay+' Tage)':'—')+
         row("Rechnungsdatum",de(d.date))+row("Leistungsdatum",de(d.delivery)+(d.deliveryUntil?' – '+de(d.deliveryUntil):''))+
         row("Versendet am",d.sent?de(d.sendDate)+(d.sendType?' <span style="color:var(--sd-ink2)">als '+({VM:"E-Mail",VPR:"Druck",VP:"Post",VPDF:"PDF"}[d.sendType]||d.sendType)+'</span>':''):'—')+
         row("Festgeschrieben",d.enshrined?ic("lock")+de(d.sendDate||d.date):'nein')+(d.payDate&&!canc?row("Bezahlt am",de(d.payDate)):'')+(canc?row("Storniert",stornoHtml(id,i0,d)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+
-      '</dl></section>'+invLinksCard(id,d,i0)+
+      '</dl></section>'+payCard(id,d,false,canc)+invLinksCard(id,d,i0)+
       '<section class="fsd-card"><div class="fsd-ctitle">Positionen</div><table class="fsd-t sm fsd-ptab"><tbody>'+pos+'</tbody></table></section></aside></div>';
 }
 /* „Mehr“ (Seite + Menü): gleiche Regeln wie bisher. Neu: Mahnung auch für Abschlagsrechnungen (AR, der Server erlaubt das),
@@ -383,6 +383,78 @@ function transitBtn(short){ var on=noTransit(); return '<button type="button" cl
 F.action("ftxnotransit",function(){ var v=!noTransit(); if(F.ls) F.ls("fsc_notransit",v); UI.noTransit=v; UI.fpg=0; F.render(); });
 /* nach jeder Zuordnung/Buchung: Mollie-Abgleich, Bankliste und Prüf-Liste frisch laden (sonst bleibt „Zuordnen“ stehen) */
 F.finAfterBook=function(){ MO=null; C.tx=null; if(F.reviewReset) F.reviewReset(); };
+F.finInvReset=function(id){ if(id) delete DET[id]; else DET={}; C.tx=null; F.render(); };
+
+/* ---------- Überzahlung, Guthaben, Zahlungen einer Rechnung (Zahlung lösen – auch bei festgeschriebener Rechnung) ---------- */
+F.css(
+  '.fin-over{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;width:100%;margin-top:10px;padding:9px 12px;border:1px solid var(--warn);border-radius:12px;background:var(--warn-soft);color:var(--ink);font:inherit;font-size:13.5px;text-align:left;cursor:pointer;min-height:44px}'+
+  '.fin-over:hover{filter:brightness(1.08)}.fin-over b{font-variant-numeric:tabular-nums}.fin-over svg{width:16px;height:16px;vertical-align:-3px;margin-right:6px;color:var(--warn)}.fin-over .go{font-weight:600;white-space:nowrap}'+
+  '.fin-over.cr{border-color:var(--line);background:var(--sunk);cursor:default}.fin-over.cr svg{color:var(--ink-2)}.fin-over small{color:var(--ink-2);font-size:12.5px}'+
+  '.fin-overl{background:none;border:0;padding:0;color:var(--warn);font:inherit;font-size:12px;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}'+
+  '.fin-overl.fsm-ovl{display:flex;align-items:center;width:100%;min-height:40px;margin-top:-4px;padding:0 16px 6px;font-size:13px}'+
+  '.fin-pay{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)}.fin-pay:first-of-type{border-top:0}'+
+  '.fin-pay>div{min-width:0}.fin-pay b{font-variant-numeric:tabular-nums;font-weight:600;font-size:13.5px}.fin-pay small{display:block;color:var(--ink-2);font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+  '.fin-auto{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 0;border-top:1px solid var(--line);flex-wrap:wrap}.fin-auto:first-of-type{border-top:0}.fin-auto>div{min-width:0;flex:1 1 240px}'+
+  '.fin-auto b{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}.fin-auto small{display:block;color:var(--ink-2);font-size:12.5px}.fin-auto .amt{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ok);white-space:nowrap}'
+);
+function overHtml(id,d,i0,mobile){
+  var o=Math.round((+(d&&d.over)||+(i0&&i0.over)||0)*100)/100, cr=+(d&&d.credit)||+(i0&&i0.credit)||0, h="";
+  if(o>0.005&&(F.overOnline(i0)||F.overOnline(d))) h+='<div class="fin-over cr"><span>'+ic("alertCircle")+'Mehr bezahlt <b class="money">'+eur(o)+'</b></span><small>Mollie-Connect-Provisionen über der Rechnungssumme – siehe Mollie-Abgleich</small></div>';
+  else if(o>0.005) h+=F.D.sev.local?'<button type="button" class="fin-over" data-act="overpay:'+esc(id)+'"><span>'+ic("alertCircle")+'Überzahlung <b class="money">'+eur(o)+'</b></span><span class="go">zuordnen →</span></button>'
+    :'<div class="fin-over cr"><span>'+ic("alertCircle")+'Überzahlung <b class="money">'+eur(o)+'</b></span><small>Guthaben beim Kunden</small></div>';
+  /* Guthaben: es gibt nur die Rücküberweisung (Vorschlag „Guthaben zurückgezahlt“), kein nachträgliches Verrechnen – Text entsprechend */
+  if(cr>0.005) h+='<div class="fin-over cr"><span>'+ic("wallet")+'Guthaben beim Kunden <b class="money">'+eur(cr)+'</b></span><small>wartet auf die Rücküberweisung</small></div>';
+  return h;
+}
+function payCard(id,d,mobile,canc){
+  var ps=(d&&d.payments)||[], loc=F.D.sev.local&&!canc&&!(d&&d.cancelled)&&(d&&d.type)!=="SR"; if(!ps.length) return "";   /* storniert: Zahlungen löst Storno/Gutschrift (Server lehnt „Lösen“ ab) */
+  return '<section class="'+(mobile?"fsm-card":"fsd-card")+'">'+(mobile?'<h3>Zahlungen</h3>':'<div class="fsd-ctitle">Zahlungen</div>')+ps.map(function(p){
+    var sub=(p.name?p.name+" · ":"")+(p.purpose||"");
+    return '<div class="fin-pay"><div><b class="money">'+(p.date?de(p.date)+' · ':'')+eur(p.amount)+'</b>'+(p.auto?' '+pill("grey","automatisch"):'')+(p.extra?' '+pill("grey",{fee:"+ Mahnspesen",interest:"+ Verzugszinsen",tip:"+ Trinkgeld",credit:"+ Guthaben",invoices:"+ weitere Rechnung"}[p.extra]||""):'')+(sub?'<small title="'+esc(sub)+'">'+esc(sub)+'</small>':'')+'</div>'+
+      (loc&&p.txId?'<button type="button" class="btn sm" data-act="finunbook:'+esc(id)+'|'+esc(p.txId)+'" title="Nur die Zuordnung lösen – der Bankumsatz ist danach wieder offen">Lösen</button>':'')+'</div>'; }).join("")+'</section>';
+}
+F.action("finunbook",function(v){
+  var q=String(v).split("|"), id=q[0], txId=q[1], d=DET[id], p=d&&(d.payments||[]).find(function(x){ return x.txId===txId; });
+  F.confirm("Zahlung"+(p?" vom "+de(p.date)+" ("+F.eur(p.amount)+")":"")+" von "+((d&&d.nr)||"dieser Rechnung")+" lösen? Die Rechnung ist danach wieder offen, der Bankumsatz unter „Bank“ wieder zuzuordnen. Zusatzbelege aus dieser Zahlung (Mahnspesen, Zinsen, Trinkgeld, Zahlungsgebühr, Guthaben) und eine Aufteilung auf weitere Rechnungen werden mit entfernt. Die Rechnung selbst bleibt unverändert.","Zahlung lösen",function(){
+    F.api("/admin/api/fin/payment",{body:{confirm:true,op:"unbook",invoiceId:id,txId:txId}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Zahlung gelöst – Umsatz wieder offen"); F.finInvReset(id); if(F.finAfterBook) F.finAfterBook(); F.load(true); });
+  },true);
+});
+/* „Zur Prüfung“: Zahlungseingang ↔ Rechnung mit Überzahlung → beim Bestätigen erst „Woher kommt die Differenz?“ (statt stiller Überzahlung) */
+function wrapReview(){
+  var o=F.actions.rvok; if(!o||o._over) return;
+  var w=function(id,el,e){
+    if(!/^im:/.test(String(id))||!F.D.sev||!F.D.sev.local||!F.bankOver) return o(id,el,e);
+    F.api("/admin/api/fin/proposals?detail="+encodeURIComponent(id)).then(function(j){
+      var x=j&&j.ok&&j.item; if(!x||!(x.over>0.004)) return o(id,el,e);
+      var t=(j.txs||[])[0]||{}; F.closeModal();
+      if(!F.bankOver({id:x.txId,amount:+t.amount||+x.amount||0,name:t.name||"",purpose:t.purpose||""},x.invoiceId)) o(id,el,e);
+    }).catch(function(){ o(id,el,e); });
+  };
+  w._over=true; F.actions.rvok=w;
+}
+window.addEventListener("load",function(){ wrapReview(); });
+/* Automatisch verbuchte Zahlungseingänge (Bank/Mollie, exakt und eindeutig) – jederzeit „Rückgängig“ */
+function autoList(){ return ((F.D&&F.D.sev&&F.D.sev.autoBooked)||[]).filter(function(a){ return !a.undone; }); }
+function autoCard(mobile){
+  var l=autoList(); if(!l.length) return "";
+  return '<section class="'+(mobile?"fsm-card":"fsd-card")+'"><div class="rv-gh"><b>Automatisch verbucht <span class="muted">(letzte 7 Tage)</span></b></div><p class="muted small" style="margin:0 0 6px">Zahlungseingänge, die genau und eindeutig zu einer Rechnung passten. Passt etwas nicht: „Rückgängig“ löst nur die Zahlung, der Umsatz kommt wieder zur Prüfung.</p>'+
+    l.map(function(a){ return '<div class="fin-auto"><div><b>'+esc(a.contact||a.payer||"Zahlung")+' → Rechnung '+esc(a.nr||"")+'</b><small>'+(a.date?de(a.date)+' · ':'')+esc(a.source==="Mollie"?"Mollie":"Bank")+(a.why?' · '+esc(a.why):'')+'</small></div><span class="amt money">'+eur(a.amount)+'</span><span class="row" style="gap:6px"><button type="button" class="btn sm" data-act="fin:invd:'+esc(a.invoiceId)+'">Ansehen</button><button type="button" class="btn sm" data-act="autoundo:'+esc(a.id)+'">Rückgängig</button></span></div>'; }).join("")+'</section>';
+}
+F.action("autoundo",function(id){
+  var a=autoList().find(function(x){ return x.id===id; }); if(!a) return;
+  F.confirm("Automatische Buchung rückgängig machen? Die Zahlung "+F.eur(a.amount)+(a.contact?" von "+a.contact:"")+" wird von Rechnung "+(a.nr||"")+" gelöst, der Umsatz ist wieder offen und landet unter „Zur Prüfung“.","Rückgängig",function(){
+    F.api("/admin/api/fin/payment",{body:{confirm:true,op:"autoundo",id:id}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; }
+      a.undone=true; F.toast("Rückgängig – Umsatz wieder offen"); F.finInvReset(a.invoiceId); if(F.finAfterBook) F.finAfterBook(); F.load(true); });
+  });
+});
+F.action("autoseen",function(id){ var s=F.ls("fsc_autobook_seen")||{}; s[id]=Date.now(); Object.keys(s).forEach(function(k){ if(Date.now()-s[k]>30*864e5) delete s[k]; }); F.ls("fsc_autobook_seen",s); F.render(); });
+/* „Heute“: ruhige Zeile je automatisch verbuchter Zahlung („Zahlung eingegangen: …“) mit „Rückgängig“ */
+F.feed(function(){
+  var seen=F.ls("fsc_autobook_seen")||{};
+  return autoList().filter(function(a){ return !seen[a.id]; }).slice(0,5).map(function(a){
+    return {id:"autobook:"+a.id,rank:6,sev:"ok",icon:"euro",tag:["ok","Zahlung"],t:"Zahlung eingegangen: "+(a.contact||a.payer||"Kunde")+" · "+F.eur(a.amount),d:"Rechnung "+(a.nr||"")+" automatisch verbucht"+(a.date?" · "+de(a.date):"")+(a.source==="Mollie"?" · über Mollie":""),
+      acts:[["Rückgängig","autoundo:"+a.id],["Rechnung","fin:invd:"+a.invoiceId],["Gesehen","autoseen:"+a.id,"primary"]]}; });
+});
 /* Mollie-Abgleich je Konto: eingenommen → Gebühren → netto → ausbezahlt (auf der Bank?) → noch bei Mollie, Kontrolle gegen den Mollie-Saldo */
 function mollieCard(m){
   var ok=m.diff==null?null:Math.abs(m.diff)<0.02, st=function(l,v,cls,sub){ return '<div class="mo-k"><span>'+l+'</span><b class="num'+(cls?" "+cls:"")+'">'+v+'</b>'+(sub?'<i>'+sub+'</i>':'')+'</div>'; };
@@ -444,10 +516,10 @@ function pageBank(mode){
   if(!C.tx.ok) return head("Konten","")+noSev();
   var parts=UI.fin.split(":"), acc=mode==="kasse"?(((C.tx.accounts||[]).find(function(a){return /kasse|register/i.test(a.name+" "+a.type);})||{}).id||"none"):(parts[1]||"all"), q=(UI.fq_tx||"").toLowerCase(), per=50, pg=UI.fpg||0;
   var accs=C.tx.accounts||[];
-  var list=C.tx.transactions.filter(function(t){ if(noTransit()&&(t.transit||t.settled||t.passthrough||t.correction)) return false; if(t.mollie==="application-fee") return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
-  var stp=function(t){ if(t.transit) return pill("grey","Geldtransit"); if(t.settled) return '<span title="'+esc(t.settled)+'">'+pill("grey","Erledigt")+'</span>'; if(t.correction) return '<span title="'+esc(t.correction)+'">'+pill("grey","Korrektur")+'</span>'; if(t.passthrough) return '<span title="Durchlaufend für '+esc(t.passthrough)+'">'+pill("grey","Fremdgeld")+'</span>'; return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):""; };
+  var list=C.tx.transactions.filter(function(t){ if(noTransit()&&(t.transit||t.refund||t.settled||t.passthrough||t.correction)) return false; if(t.mollie==="application-fee") return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
+  var stp=function(t){ if(t.refund) return '<span title="'+esc(t.refund)+'">'+pill("grey","Doppelzahlung")+'</span>'; if(t.transit) return pill("grey","Geldtransit"); if(t.settled) return '<span title="'+esc(t.settled)+'">'+pill("grey","Erledigt")+'</span>'; if(t.correction) return '<span title="'+esc(t.correction)+'">'+pill("grey","Korrektur")+'</span>'; if(t.passthrough) return '<span title="Durchlaufend für '+esc(t.passthrough)+'">'+pill("grey","Fremdgeld")+'</span>'; return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):""; };
   var rows=list.slice(pg*per,(pg+1)*per).map(function(t){ var lk=t.links.map(function(l){ return l.type==="Invoice"?'<a href="#" data-act="fin:invd:'+esc(l.id)+'">'+esc(l.nr)+'</a>':'<a href="#" data-act="sdvou:'+esc(l.id)+'">Beleg</a>'; }).join(", ");
-    return '<tr><td>'+stp(t)+'</td><td><b class="fsd-who">'+esc(t.name||"—")+'</b><div class="sub sub2" title="'+esc(t.purpose)+'">'+esc(t.purpose)+'</div></td><td class="num nowrap">'+deShort(t.date)+'</td><td class="r num '+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</td><td>'+(lk||(t.status===100?'<span class="fsd-btns"><button class="btn" data-act="ftxassign:'+esc(t.id)+'">'+ic("link")+'Zuordnen</button><button class="btn sm" data-act="ftxpriv:'+esc(t.id)+'" title="'+(t.amount<0?"Privatentnahme":"Privateinlage")+' – kein Betriebsumsatz">Privat</button><button class="btn sm" data-act="ftxtransit:'+esc(t.id)+'" title="Umbuchung zwischen eigenen Konten (z. B. Bank → Kasse, PayPal → Bank)">Geldtransit</button></span>':t.status===300?'<button class="btn sm" data-act="ftxunpriv:'+esc(t.id)+'">Privat aufheben</button>':t.transit?'<button class="btn sm" data-act="ftxuntransit:'+esc(t.id)+'">Geldtransit aufheben</button>':'<span class="muted">—</span>'))+'</td></tr>'; }).join("");
+    return '<tr><td>'+stp(t)+'</td><td><b class="fsd-who">'+esc(t.name||"—")+'</b><div class="sub sub2" title="'+esc(t.purpose)+'">'+esc(t.purpose)+'</div></td><td class="num nowrap">'+deShort(t.date)+'</td><td class="r num '+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</td><td>'+(lk?lk+txUndo(t):(t.status===100?'<span class="fsd-btns"><button class="btn" data-act="ftxassign:'+esc(t.id)+'">'+ic("link")+'Zuordnen</button><button class="btn sm" data-act="ftxpriv:'+esc(t.id)+'" title="'+(t.amount<0?"Privatentnahme":"Privateinlage")+' – kein Betriebsumsatz">Privat</button><button class="btn sm" data-act="ftxtransit:'+esc(t.id)+'" title="Umbuchung zwischen eigenen Konten (z. B. Bank → Kasse, PayPal → Bank)">Geldtransit</button></span>':t.status===300?'<button class="btn sm" data-act="ftxunpriv:'+esc(t.id)+'">Privat aufheben</button>':t.refund?txUndo(t):t.transit?'<button class="btn sm" data-act="ftxuntransit:'+esc(t.id)+'">Geldtransit aufheben</button>':'<span class="muted">—</span>'))+'</td></tr>'; }).join("");
   var title=mode==="kasse"?"Kassenbuch":mode==="open"?"Unvollständig":"Alle Konten";
   var accTabs=mode==="kasse"?"":tabs("fin:"+(mode==="open"?"open":"bank"),acc,[["all","Alle"]].concat(accs.map(function(a){ return [a.id,a.name]; })));
   if(!MO&&!C.busy.mo){ C.busy.mo=1; F.api("/admin/api/fin/mollie?year="+F.D.year).then(function(j){ C.busy.mo=0; MO=j||{ok:false}; F.render(); }); }
@@ -459,6 +531,14 @@ function pageBank(mode){
   return head(title,mode==="open"?list.length+" Umsätze ohne Zuordnung":(MO&&MO.at?"Mollie zuletzt abgerufen: "+de(MO.at.slice(0,10))+" "+MO.at.slice(11,16):""),(MO&&MO.configured?'<button class="btn" data-act="fmollie">'+ic("sync")+'Mollie abrufen</button>':'')+(EB&&EB.sessions&&EB.sessions.length&&mode==="bank"?'<button class="btn" data-act="febsync">'+ic("sync")+'George abrufen</button>':'')+(PP&&PP.configured&&mode==="bank"?'<button class="btn" data-act="fpaypal">'+ic("sync")+'PayPal abrufen</button>':'')+'<button class="btn" data-act="bankrules">'+ic("rules")+'Regeln</button><button class="btn" data-act="sdbkimp">'+ic("up")+'Kontoauszug importieren</button><button class="btn" data-act="ftxreload">'+ic("sync")+'Aktualisieren</button>'+(EB&&EB.sessions&&EB.sessions.length&&mode==="bank"?EB.sessions.map(function(x){ return '<button class="btn" data-act="febdisc:'+esc(x.bank)+'" title="Verbindung zu '+esc(x.bank)+' trennen">George trennen</button>'; }).join(""):''))+moBox+moSum+
     '<section class="fsd-card flush fsd-tc"><div class="fsd-bar">'+accTabs+search("tx","Name, Verwendungszweck, Betrag …")+transitBtn()+'</div><div class="scroll"><table class="fsd-t"><thead><tr><th>Status</th><th>Name / Verwendungszweck</th><th>Buchungstag</th><th class="r">Betrag</th><th>Verknüpfungen</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">Keine Umsätze.</td></tr>')+'</tbody></table></div>'+pager(list.length,per)+'</section>';
 }
+/* Doppelzahlung + Rückzahlung bzw. Guthaben-Rückzahlung wieder lösen (stellt einen entfernten Korrektur-Umsatz wieder her) */
+function txUndo(t,mob){
+  if(t.refund) return mob?'<button type="button" data-act="ftxunrefund:'+esc(t.id)+'">Doppelzahlung lösen</button>':' <button class="btn sm" data-act="ftxunrefund:'+esc(t.id)+'" title="'+esc(t.refund)+'">Lösen</button>';
+  if(t.amount<0&&(t.links||[]).some(function(l){ return l.credit; })) return mob?'<button type="button" data-act="ftxuncredit:'+esc(t.id)+'">Guthaben-Rückzahlung lösen</button>':' <button class="btn sm" data-act="ftxuncredit:'+esc(t.id)+'">Lösen</button>';
+  return "";
+}
+F.action("ftxunrefund",function(id){ F.confirm("Doppelzahlung + Rückzahlung lösen? Beide Umsätze kommen in den vorherigen Zustand zurück (ein entfernter Korrektur-Umsatz wird wiederhergestellt).","Lösen",function(){ F.api("/admin/api/fin/payment",{body:{confirm:true,op:"refundundo",txId:id}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Gelöst"); C.tx=null; if(F.finAfterBook) F.finAfterBook(); F.load(true); F.render(); }); }); });
+F.action("ftxuncredit",function(id){ F.confirm("Rücküberweisung vom Guthaben lösen? Das Guthaben ist danach wieder offen, der Umsatz wieder zuzuordnen.","Lösen",function(){ F.api("/admin/api/fin/payment",{body:{confirm:true,op:"creditrefundundo",txId:id}}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } F.toast("Gelöst"); C.tx=null; if(F.finAfterBook) F.finAfterBook(); F.load(true); F.render(); }); }); });
 /* Offenen Umsatz zuordnen: vorhandene Bank-Zuordnung (Vorschläge) verwenden */
 F.finTxReset=function(){ setTimeout(function(){ C.tx=null; F.render(); },1200); };
 F.action("ftxpriv",function(id){ var t=(C.tx&&C.tx.transactions||[]).find(function(x){ return x.id===id; }); var w=t&&t.amount>0?"Privateinlage":"Privatentnahme";
@@ -745,7 +825,7 @@ function pageAbgl(){ var prev=UI.geldTab; UI.geldTab="uebersicht"; try{ var v=F.
 function content(){
   var p=UI.fin.split(":")[0], id=UI.fin.split(":")[1];
   if(p==="dash") return pageDash();
-  if(p==="review") return F.reviewPage?F.reviewPage():'';
+  if(p==="review"){ wrapReview(); return (F.reviewPage?F.reviewPage():'')+autoCard(); }
   if(p==="inv") return pageInv("inv");
   if(p==="dun") return pageInv("dun");
   if(p==="invd") return pageInvDetail(id);
@@ -826,7 +906,8 @@ function mGrouped(full,page,dateOf,sumOf,rowFn,fmt){
 }
 function mSum(l,f){ return l.reduce(function(a,x){ return a+(+f(x)||0); },0); }
 function mInvRowL(i){ var sub=esc(i.nr||"Entwurf")+" · "+deShort(i.date)+(isPrintDraft(i)?" · wartet auf Druckauftrag":"")+(i.status===100||i.status===1000||i.cancelled||i.type==="SR"?"":" · "+relDue(i))+(isPart(i)?" · bezahlt "+eur(Math.abs(+i.gross||0)-i.open)+", offen "+eur(i.open):"");
-  return mRow("fin:invd:"+esc(i.id),i.contact,sub,eur(i.type==="SR"?-Math.abs(i.gross):i.gross),invPill(i),"lx"); }
+  return mRow("fin:invd:"+esc(i.id),i.contact,sub,eur(i.type==="SR"?-Math.abs(i.gross):i.gross),invPill(i),"lx")+
+    (F.D.sev.local&&F.overToAssign(i)?'<button type="button" class="fin-overl fsm-ovl" data-act="overpay:'+esc(i.id)+'" title="Woher kommt die Differenz? (Mahnspesen, Zinsen, Trinkgeld, weitere Rechnung, Guthaben)">Überzahlung <span class="money">'+eur(i.over)+'</span> – zuordnen</button>':''); }
 function mInv(kind){
   if(!sevOk()) return noSev();
   var f=UI.fin.split(":")[1]||"all", q=(UI.fq_inv||"").toLowerCase(), per=30, pg=UI.fpg||0, pre="fin:"+(kind==="dun"?"dun":"inv")+":";
@@ -881,7 +962,7 @@ function mInvDetail(id){
   return '<div class="fsm-dh"><button type="button" class="fsd-back" data-act="fin:inv" aria-label="Zurück">'+ic("back")+'</button><b>'+esc(kind)+' '+esc(d.nr||"(Entwurf)")+'</b><span class="sp"></span>'+
       '<button type="button" class="fsm-hbtn"'+(prev?' data-act="fin:invd:'+esc(prev)+'"':' disabled')+' aria-label="Vorherige">'+ic("left")+'</button><button type="button" class="fsm-hbtn"'+(next?' data-act="fin:invd:'+esc(next)+'"':' disabled')+' aria-label="Nächste">'+ic("right")+'</button></div>'+
     '<section class="fsm-card fsm-ihead"><div class="fsm-top"><div><b>'+esc(d.contact.name||"—")+'</b><span>'+esc(d.nr||"Entwurf")+' · '+de(d.date)+'</span></div>'+invPill(ix)+'</div>'+
-      '<div class="fsm-amt">'+eur(d.gross)+'</div><div class="fsm-sub">netto '+eur(d.net)+' · USt '+eur(d.tax)+(i0.over>0.005?' · überzahlt +'+eur(i0.over):'')+'</div>'+
+      '<div class="fsm-amt">'+eur(d.gross)+'</div><div class="fsm-sub">netto '+eur(d.net)+' · USt '+eur(d.tax)+'</div>'+overHtml(id,d,i0,true)+
       (pr?'<div class="notice" style="margin-top:10px">Wird beim Bestellen bei Print.com automatisch fertiggestellt und gesendet'+(i0.printNr?' (Druckauftrag '+esc(i0.printNr)+')':'')+'.</div>':'')+
       '<div class="fsm-ikv">'+(open?'<div><span>Offen</span><b>'+eur(d.open)+'</b></div>':'')+'<div><span>'+(st===1000?"Bezahlt am":"Fällig")+'</span><b>'+(st===1000?(de(d.payDate)||"—"):(d.due?de(d.due):"—"))+'</b>'+(st!==1000&&!draft?'<i>'+relDue(ix)+'</i>':'')+'</div></div></section>'+
     '<div class="fsm-acts1">'+b.map(function(a,n){ return btn(a,n===0?"primary":""); }).join("")+'<a class="btn" href="'+pdf+'" target="_blank" rel="noopener"'+F.docAttrs(pdf,kind+" "+(d.nr||"Entwurf"))+'>'+ic("vou")+'PDF ansehen</a></div>'+
@@ -890,7 +971,7 @@ function mInvDetail(id){
       '<div class="fsm-pos tot"><span>Gesamt brutto</span><b>'+eur(d.gross)+'</b></div></section>'+
     (hist.length?'<section class="fsm-card"><h3>Zahlungen &amp; Verlauf</h3><ol class="fsm-hist">'+hist.map(function(h){ return '<li><span>'+(h[0]?deShort(h[0]):"")+'</span><b>'+esc(h[1])+'</b>'+(h[2]?'<i>'+h[2]+'</i>':'')+'</li>'; }).join("")+'</ol></section>':'')+
     '<section class="fsm-card"><h3>Rechnungsdetails</h3><dl class="fsd-rows" style="margin:0">'+row("Zahlungsziel",d.due?de(d.due)+' ('+d.timeToPay+' Tage)':'—')+row("Leistungsdatum",(de(d.delivery)||"—")+(d.deliveryUntil?' – '+de(d.deliveryUntil):''))+row("Versendet am",d.sent?de(d.sendDate):'—')+row("Festgeschrieben",d.enshrined?'ja':'nein')+(d.payDate&&!canc?row("Bezahlt am",de(d.payDate)):'')+(canc?row("Storniert",stornoHtml(id,i0,d)):'')+(d.emails&&d.emails[0]?row("E-Mail",esc(d.emails[0].value)):'')+'</dl></section>'+
-    invLinksCard(id,d,i0,true);
+    payCard(id,d,true,canc)+invLinksCard(id,d,i0,true);
 }
 function mVou(){
   var y=String(F.D.year); vouLoad(); var vd=C.vou[y];
@@ -924,17 +1005,18 @@ function mBank(mode){
   if(!C.tx.ok) return noSev();
   var acc=UI.fin.split(":")[1]||"all", q=(UI.fq_tx||"").toLowerCase(), per=40, pg=UI.fpg||0, accs=C.tx.accounts||[], all=C.tx.transactions||[], an={};
   accs.forEach(function(a){ an[a.id]=a.name; });
-  var list=all.filter(function(t){ if(noTransit()&&(t.transit||t.settled||t.passthrough||t.correction)) return false; if(t.mollie==="application-fee") return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
+  var list=all.filter(function(t){ if(noTransit()&&(t.transit||t.refund||t.settled||t.passthrough||t.correction)) return false; if(t.mollie==="application-fee") return false; if(acc!=="all"&&t.accountId!==acc) return false; if(mode==="open"&&t.status!==100) return false; return !q||(t.name+" "+t.purpose+" "+t.amount).toLowerCase().indexOf(q)>-1; });
   var nOpen=all.filter(function(t){ return t.status===100&&(acc==="all"||t.accountId===acc); }).length, cur=mode==="open"?"open":"bank";
   var used={}; all.forEach(function(t){ used[t.accountId]=1; });
   var chips=[{label:nOpen?"Zuzuordnen":"Alles zugeordnet",val:String(nOpen),sub:mode==="open"?"Alle zeigen":"offen zuordnen",act:"fin:"+(mode==="open"?"bank":"open")+":"+acc,on:mode==="open",cls:nOpen?"warn":""},
     {label:"Alle Konten",val:eur0(mSum(accs,function(a){return a.balance;})),sub:"Saldo gesamt",act:"fin:"+cur+":all",on:acc==="all"}]
     .concat(accs.filter(function(a){ return used[a.id]||Math.abs(+a.balance||0)>0.004; }).map(function(a){ return {label:a.name,val:'<span class="'+((+a.balance||0)<0?"bad-t":"")+'">'+eur(+a.balance||0)+'</span>',sub:"Saldo",act:"fin:"+cur+":"+(acc===a.id?"all":esc(a.id)),on:acc===a.id}; }));
-  var stp=function(t){ if(t.transit) return pill("grey","Geldtransit"); if(t.settled) return '<span title="'+esc(t.settled)+'">'+pill("grey","Erledigt")+'</span>'; if(t.correction) return '<span title="'+esc(t.correction)+'">'+pill("grey","Korrektur")+'</span>'; if(t.passthrough) return '<span title="Durchlaufend für '+esc(t.passthrough)+'">'+pill("grey","Fremdgeld")+'</span>'; return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):"";};
+  var stp=function(t){ if(t.refund) return '<span title="'+esc(t.refund)+'">'+pill("grey","Doppelzahlung")+'</span>'; if(t.transit) return pill("grey","Geldtransit"); if(t.settled) return '<span title="'+esc(t.settled)+'">'+pill("grey","Erledigt")+'</span>'; if(t.correction) return '<span title="'+esc(t.correction)+'">'+pill("grey","Korrektur")+'</span>'; if(t.passthrough) return '<span title="Durchlaufend für '+esc(t.passthrough)+'">'+pill("grey","Fremdgeld")+'</span>'; return t.status===100?pill("open","Offen"):t.status===300?pill("grey","Privat"):"";};
   var row=function(t){ var id=esc(t.id), main='<span class="fsm-l"><b>'+esc(t.name||"—")+'</b><span>'+esc(deShort(t.date)+(acc==="all"&&an[t.accountId]?" · "+an[t.accountId]:"")+(t.purpose?" · "+t.purpose.replace(/\s+/g," ").slice(0,90):""))+'</span></span><span class="fsm-r"><b class="'+(t.amount<0?"bad-t":"ok-t")+'">'+eur(t.amount)+'</b>'+stp(t)+'</span>';
     var foot="";
     if(t.status===100) foot='<div class="fsm-txa"><button type="button" class="btn primary" data-act="ftxassign:'+id+'">'+ic("link")+'Zuordnen</button><button type="button" class="btn" data-act="ftxpriv:'+id+'" title="'+(t.amount<0?"Privatentnahme":"Privateinlage")+' – kein Betriebsumsatz">Privat</button><button type="button" class="btn" data-act="ftxtransit:'+id+'">Geldtransit</button></div>';
-    else if(t.links.length) foot='<div class="fsm-txl">'+t.links.map(function(l){ return l.type==="Invoice"?'<button type="button" data-act="fin:invd:'+esc(l.id)+'">'+ic("inv")+'Rechnung '+esc(l.nr||"")+'</button>':'<button type="button" data-act="sdvou:'+esc(l.id)+'">'+ic("vou")+'Beleg</button>'; }).join("")+'</div>';
+    else if(t.links.length) foot='<div class="fsm-txl">'+t.links.map(function(l){ return l.type==="Invoice"?'<button type="button" data-act="fin:invd:'+esc(l.id)+'">'+ic("inv")+(l.credit?esc(l.nr||"Guthaben"):'Rechnung '+esc(l.nr||""))+'</button>':'<button type="button" data-act="sdvou:'+esc(l.id)+'">'+ic("vou")+'Beleg</button>'; }).join("")+txUndo(t,true)+'</div>';
+    else if(t.refund) foot='<div class="fsm-txl">'+txUndo(t,true)+'</div>';
     else if(t.status===300) foot='<div class="fsm-txl"><button type="button" data-act="ftxunpriv:'+id+'">Privat aufheben</button></div>';
     else if(t.transit) foot='<div class="fsm-txl"><button type="button" data-act="ftxuntransit:'+id+'">Geldtransit aufheben</button></div>';
     return '<div class="fsm-tx'+(t.status===100?" open":"")+'">'+(t.status===100?'<button type="button" class="fsm-txm" data-act="ftxassign:'+id+'">'+main+'</button>':'<div class="fsm-txm">'+main+'</div>')+foot+'</div>'; };
@@ -944,7 +1026,7 @@ function mBank(mode){
 }
 function mobile(){
   var p=UI.fin.split(":")[0], id=UI.fin.split(":")[1], body;
-  if(p==="dash") body=mDash(); else if(p==="review") body=F.reviewPage?F.reviewPage(true):''; else if(p==="inv") body=mInv("inv"); else if(p==="dun") body=mInv("dun"); else if(p==="invd") body=mInvDetail(id);
+  if(p==="dash") body=mDash(); else if(p==="review"){ wrapReview(); body=(F.reviewPage?F.reviewPage(true):'')+autoCard(true); } else if(p==="inv") body=mInv("inv"); else if(p==="dun") body=mInv("dun"); else if(p==="invd") body=mInvDetail(id);
   else if(p==="vou") body=mVou(); else if(p==="bank") body=mBank("bank"); else if(p==="open") body=mBank("open");
   else body='<div class="fsm-wide">'+content()+'</div>';
   return '<div class="fsd fsm">'+(p==="invd"?"":'<div class="fsm-head"><h1>Finanzen</h1><button type="button" class="fsm-hbtn" data-act="help" aria-label="Hilfe">'+ic("help")+'</button></div>'+mNav())+'<div class="fsm-body">'+body+'</div></div>';

@@ -1,5 +1,8 @@
 "use strict";
 // „Zur Prüfung“ (fin-proposals.js): automatische Läufe buchen nichts mehr, sie legen Vorschläge ab; accept() bucht genau wie früher.
+// Ausnahme seit 28.10.2026 (Simon: „brauche keine Prüfung“): Zahlungseingänge (Bank + Mollie) exakt und eindeutig → automatisch verbucht,
+// sichtbar unter „Automatisch verbucht“ und rückgängig machbar. Die Tests laufen wie der Server mit eingeschaltetem autoPay, festem Stichtag
+// und gemeldeten Quartalen Q1/Q2 2026 (wie readSteuer nach der Übernahme).
 // Läuft ohne Datenbank: fin-local.js mit einem Speicher-Fake für fin.js.
 const assert = require("assert");
 const path = require("path");
@@ -21,6 +24,7 @@ function memFin(seed) {
 const acc = (id, name) => ["CheckAccount", { id, name, status: "100", type: "online" }];
 const tx = (id, accId, amount, date, name, purpose) => ["CheckAccountTransaction", { id, checkAccount: { id: accId, objectName: "CheckAccount" }, amount: amount.toFixed(2), valueDate: date + "T00:00:00+02:00", entryDate: date + "T00:00:00+02:00", payeePayerName: name, paymtPurpose: purpose, status: "100" }];
 
+const TODAY = "2026-10-28", REPORTED = [{ from: "2026-01-01", to: "2026-03-31" }, { from: "2026-04-01", to: "2026-06-30" }];
 function setup(seed) {
   const fin = memFin(seed || [
     acc("1", "George"), acc("2", "PayPal"),
@@ -33,11 +37,12 @@ function setup(seed) {
     ["Voucher", { id: "500", voucherType: "VOU", status: "100", creditDebit: "C", supplierName: "Spotify AB", description: "Abo Oktober", voucherDate: "2026-10-01T00:00:00+02:00", sumGross: "9.90", paidAmount: "0" }],
   ]);
   const L = require(path.join(ROOT, "fin-local.js"))({ fin, renderPdf: async () => ({}), mailSend: async () => ({}) });
-  const P = require(path.join(ROOT, "fin-proposals.js"))({ L, getMeta: fin.getMeta, setMeta: fin.setMeta, rules: () => R });
+  // wie server.js: autoPay an (eigene Buchhaltung + Datenbank), Stichtag, gemeldete Zeiträume
+  const P = require(path.join(ROOT, "fin-proposals.js"))({ L, getMeta: fin.getMeta, setMeta: fin.setMeta, rules: () => R, autoPay: () => true, today: () => TODAY, reportedPeriods: () => REPORTED });
   const R = require(path.join(ROOT, "fin-bankrules.js"))({ L, P: () => P, getMeta: fin.getMeta, setMeta: fin.setMeta });
   L.setProposer(P);
   P.register("rule", { exec: it => R.acceptProposal(it.payload) });
-  const M = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P });
+  const M = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P, today: () => TODAY });
   ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => P.register(k, { exec: it => M.accept(k, it.payload) }));
   P.register("transfer", { exec: it => L.pairApply(it.payload.aId, it.payload.bId) });
   return { fin, L, P, R, M };
@@ -101,15 +106,22 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
     assert.strictEqual((await P.list()).length, 0);
     x.status = "100"; await L.save("CheckAccountTransaction", x);
   });
-  await t("Mollie: Zahlung → Rechnung nur als Vorschlag, accept bucht (inkl. Gebühr)", async () => {
-    const before = L.all("CheckAccountTransactionLog").length;
+  await t("Mollie: eindeutige Zahlung (Mollie-ID in der Rechnung) → automatisch verbucht inkl. Gebühr, sichtbar, rückgängig machbar – danach nur Vorschlag, accept bucht", async () => {
     assert.strictEqual(await M.autoMatch(L.get("CheckAccountTransaction", "104")), true);
-    assert.strictEqual(L.get("CheckAccountTransaction", "104").status, "100"); assert.strictEqual(L.get("Invoice", "700").status, "200");
-    assert.strictEqual(L.all("CheckAccountTransactionLog").length, before);
-    const m = (await P.list()).find(x => x.kind === "mollie-match"); assert.ok(m); assert.strictEqual(m.invoiceId, "700");
+    assert.strictEqual(String(L.get("Invoice", "700").status), "1000"); assert.strictEqual(L.get("CheckAccountTransaction", "104").status, "200");
+    assert.ok(L.all("Voucher").some(v => v.creditDebit === "C" && /Mollie/.test(v.supplierName) && Math.abs(+v.sumGross - 1.5) < 0.005), "Gebühr als Zahlungsgebühr gebucht");
+    const v = await P.view(), a = v.auto.find(x => x.txId === "104"); assert.ok(a && a.nr === "RE-1001" && a.source === "Mollie", "Eintrag „Automatisch verbucht“");
+    assert.ok(v.log.some(l => l.auto && /^Automatisch verbucht: Mollie-Zahlung → Rechnung RE-1001/.test(l.title)), "Zur Prüfung → zuletzt erledigt");
+    assert.ok(!v.items.some(x => x.txId === "104"), "kein offener Vorschlag mehr");
     assert.strictEqual(await M.autoVouchers(), 0, "kein Einnahme-Beleg-Vorschlag, wenn eine Rechnung passt");
+    await P.autoUndo(a.id);
+    assert.strictEqual(String(L.get("Invoice", "700").status), "200"); assert.strictEqual(L.get("CheckAccountTransaction", "104").status, "100");
+    assert.ok(!L.all("Voucher").some(x => x.origin && String(x.origin.id) === "700"), "Gebührenbeleg mit gelöst");
+    assert.strictEqual(await M.autoMatch(L.get("CheckAccountTransaction", "104")), true);
+    const m = (await P.list()).find(x => x.kind === "mollie-match" && x.txId === "104"); assert.ok(m, "nach „Rückgängig“ nur noch Vorschlag");
+    assert.strictEqual(L.get("CheckAccountTransaction", "104").status, "100", "nicht wieder automatisch");
     await P.accept(m.id);
-    assert.strictEqual(L.get("Invoice", "700").status, "1000"); assert.strictEqual(L.get("CheckAccountTransaction", "104").status, "200");
+    assert.strictEqual(String(L.get("Invoice", "700").status), "1000"); assert.strictEqual(L.get("CheckAccountTransaction", "104").status, "200");
   });
   await t("Vorschlag beim Öffnen eines Belegs: passender offener Umsatz", async () => {
     const s = await P.suggestVoucher("500"); assert.ok(s.candidates.length >= 1); assert.strictEqual(s.candidates[0].type, "tx"); assert.strictEqual(s.candidates[0].id, "102");
@@ -313,16 +325,38 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
       assert.strictEqual(E.L.all("Voucher").filter(v => v.fromMollie === "1201").length, 0);
       await E.P.reject(it.id);
     });
-    await t("Rechnung fertiggestellt (Status 200) → rematch legt „Mollie-Zahlung → Rechnung“ als Vorschlag an (ohne autoAccept), Annehmen bucht", async () => {
+    await t("Rechnung fertiggestellt (Status 200) → rematch verbucht die Mollie-Zahlung automatisch (Mollie-ID im Rechnungstext), Umsatz nur einmal", async () => {
       await E.L.request("PUT", "/Invoice/" + invId + "/sendBy", { body: { sendType: "VPDF" } });
       assert.strictEqual(String(E.L.get("Invoice", invId).status), "200");
       assert.strictEqual(await E.M.rematch(), 1);
-      const m = (await E.P.list()).find(x => x.key === "mmatch:1201:" + invId); assert.ok(m, "Zuordnungs-Vorschlag"); assert.strictEqual(m.kind, "mollie-match"); assert.ok(!m.auto, "nicht automatisch angenommen");
-      assert.strictEqual(String(E.L.get("CheckAccountTransaction", "1201").status), "100", "noch nichts gebucht"); assert.strictEqual(String(E.L.get("Invoice", invId).status), "200");
-      await E.M.autoVouchers(); assert.ok(!(await keys()).some(x => x === "minc:1201"), "auch jetzt kein Einnahme-Beleg");
-      await E.P.accept(m.id);
       assert.strictEqual(String(E.L.get("Invoice", invId).status), "1000"); assert.strictEqual(String(E.L.get("CheckAccountTransaction", "1201").status), "200");
+      assert.ok((await E.P.autoRecent(7)).some(a => a.txId === "1201" && a.invoiceId === invId), "unter „Automatisch verbucht“");
+      await E.M.autoVouchers(); assert.ok(!(await keys()).some(x => x === "minc:1201"), "auch jetzt kein Einnahme-Beleg");
       assert.strictEqual(E.L.all("Voucher").filter(v => v.fromMollie === "1201").length, 0, "Umsatz nur einmal (Rechnung)");
+    });
+  }
+  // Bank: automatisch nur exakt und eindeutig; mehrdeutig, alt (gemeldetes Quartal / > 60 Tage) oder unbekannter Zahler → bleibt zur Prüfung
+  {
+    const ct = (id, name) => ["Contact", { id, name }];
+    const inv = (id, nr, cid, gross, date) => ["Invoice", { id, invoiceType: "RE", status: "200", invoiceNumber: nr, contact: { id: cid, objectName: "Contact" }, sumGross: gross.toFixed(2), paidAmount: "0", invoiceDate: (date || "2026-10-01") + "T00:00:00+02:00" }];
+    const E = setup([acc("1", "George"), ct("c1", "Huber KG"), ct("c2", "Maier OG"),
+      inv("7001", "RE-2001", "c1", 99), inv("7002", "RE-2002", "c2", 150), inv("7003", "RE-2003", "c1", 150), inv("7004", "RE-2004", "c2", 80, "2026-05-01"), inv("7005", "RE-2005", "c1", 45),
+      tx("3001", "1", 99, "2026-10-20", "Huber KG", "Danke"), tx("3002", "1", 150, "2026-10-20", "Irgendwer", "Zahlung"), tx("3003", "1", 80, "2026-06-10", "Maier OG", "RE-2004"),
+      tx("3005", "1", 45, "2026-10-21", "Max Muster", "Rechnung")]);
+    await E.L.load();
+    await t("Bank eindeutig (einziger Betrag + Name des Kunden) → automatisch verbucht, sichtbar, rückgängig; danach nie wieder automatisch", async () => {
+      const d = await E.P.autoBookIncoming(); assert.deepStrictEqual(d.map(x => x.nr), ["RE-2001"]);
+      assert.strictEqual(String(E.L.get("Invoice", "7001").status), "1000"); assert.ok(E.L.get("CheckAccountTransaction", "3001").autoBooked);
+      const v = await E.P.view(), a = v.auto.find(x => x.nr === "RE-2001"); assert.ok(a, "Eintrag „Automatisch verbucht“"); assert.ok(v.log.some(l => l.auto && /RE-2001/.test(l.title)));
+      await E.P.autoUndo(a.id);
+      assert.strictEqual(String(E.L.get("Invoice", "7001").status), "200"); assert.strictEqual(E.L.get("CheckAccountTransaction", "3001").status, "100");
+      assert.strictEqual((await E.P.autoBookIncoming()).length, 0, "nach „Rückgängig“ bleibt er zur Prüfung");
+    });
+    await t("Bank mehrdeutig (zwei Rechnungen 150 €), alt (Q2 gemeldet) bzw. unbekannter Zahler → nichts gebucht, Rechnung bleibt Kandidat zur Prüfung", async () => {
+      ["3002", "3003", "3005"].forEach(id => assert.strictEqual(E.L.get("CheckAccountTransaction", id).status, "100", "Umsatz " + id + " offen"));
+      ["7002", "7003", "7004", "7005"].forEach(id => assert.strictEqual(String(E.L.get("Invoice", id).status), "200", "Rechnung " + id + " offen"));
+      assert.ok((await E.P.suggestTx("3003")).candidates.some(c => c.type === "invoice" && c.id === "7004"), "alte Zahlung: Rechnung als Kandidat");
+      assert.ok((await E.P.suggestTx("3005")).candidates.some(c => c.type === "invoice" && c.id === "7005"), "unbekannter Zahler: Rechnung als Kandidat");
     });
   }
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");

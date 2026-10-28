@@ -14,21 +14,24 @@ module.exports = function (D) {
   const r2 = n => Math.round((+n || 0) * 100) / 100, day = v => String(v || "").slice(0, 10), nowIso = () => new Date().toISOString();
   const TRN = { "8": "ig. Erwerb", "9": "Vorsteuer", "10": "keine Vorsteuer", "12": "Reverse Charge Drittland", "13": "Reverse Charge ohne Vorsteuer", "14": "Reverse Charge EU" };   // Steuerregel des letzten Belegs
   const KIND_LABEL = { rule: "Bankregeln", "mollie-match": "Mollie-Zahlung → Rechnung", "mollie-fee": "Mollie-Gebühren", "mollie-payout": "Mollie-Auszahlung (Geldtransit)", "mollie-income": "Mollie-Einnahmen ohne Rechnung",
-    transfer: "Geldtransit zwischen Konten", docmatch: "Belegdateien aus Mails", "uva-payment": "USt-Zahlung ans Finanzamt", "recurring-voucher": "Wiederkehrende Belege", "recurring-invoice": "Wiederkehrende Rechnungen senden", dunning: "Mahnungen" };
+    transfer: "Geldtransit zwischen Konten", docmatch: "Belegdateien aus Mails", "uva-payment": "USt-Zahlung ans Finanzamt", "recurring-voucher": "Wiederkehrende Belege", "recurring-invoice": "Wiederkehrende Rechnungen senden", dunning: "Mahnungen",
+    "refund-pair": "Doppelzahlung zurückbekommen", "credit-refund": "Guthaben zurückgezahlt" };
 
   function register(kind, h) { H[kind] = h; }
   async function state() {
     if (ST) return ST;
     if (!loading) loading = (async () => {
       const s = (await getMeta("proposals").catch(() => null)) || {};
-      ST = { items: Array.isArray(s.items) ? s.items : [], rejected: s.rejected && typeof s.rejected === "object" ? s.rejected : {}, log: Array.isArray(s.log) ? s.log : [] };
+      ST = { items: Array.isArray(s.items) ? s.items : [], rejected: s.rejected && typeof s.rejected === "object" ? s.rejected : {}, log: Array.isArray(s.log) ? s.log : [],
+        auto: Array.isArray(s.auto) ? s.auto : [], autoSkip: s.autoSkip && typeof s.autoSkip === "object" ? s.autoSkip : {} };   // auto: automatisch verbuchte Zahlungseingänge (mit „Rückgängig“), autoSkip: Umsatz:Rechnung nie wieder automatisch
       return ST;
     })().finally(() => { loading = null; });
     return loading;
   }
   async function persist() {
     const keys = Object.keys(ST.rejected); if (keys.length > 4000) keys.sort((a, b) => String(ST.rejected[a]).localeCompare(String(ST.rejected[b]))).slice(0, keys.length - 4000).forEach(k => { delete ST.rejected[k]; });
-    ST.log = ST.log.slice(0, 200);
+    ST.log = ST.log.slice(0, 200); ST.auto = (ST.auto || []).slice(0, 300);
+    const sk = Object.keys(ST.autoSkip || {}); if (sk.length > 3000) sk.sort((a, b) => String(ST.autoSkip[a]).localeCompare(String(ST.autoSkip[b]))).slice(0, sk.length - 3000).forEach(k => { delete ST.autoSkip[k]; });
     await setMeta("proposals", ST);
   }
   function notifySoon(it) {
@@ -45,14 +48,28 @@ module.exports = function (D) {
     const clean = { kind: String(p.kind), key, title: String(p.title || "").slice(0, 200), detail: String(p.detail || "").slice(0, 400), amount: p.amount != null && isFinite(+p.amount) ? r2(p.amount) : null, date: day(p.date) || null,
       txId: p.txId != null ? String(p.txId) : null, txIds: Array.isArray(p.txIds) ? p.txIds.map(String) : null, invoiceId: p.invoiceId != null ? String(p.invoiceId) : null, voucherId: p.voucherId != null ? String(p.voucherId) : null,
       source: String(p.source || "").slice(0, 120), payload: p.payload || {} };
-    if (cur) { const before = JSON.stringify(cur); Object.assign(cur, clean); if (JSON.stringify(cur) !== before) await persist(); return false; }
+    const payMatch = p.kind === "mollie-match" && !/^Connect-Provision/.test(String(p.title || "")) && !(p.payload && p.payload.online);
+    // Kundenzahlung nur automatisch, wenn sie frisch ist und in keinem schon gemeldeten Zeitraum liegt (autoDateOk) – sonst bleibt sie Vorschlag
+    const payAuto = () => { const t = p.txId != null && L.get("CheckAccountTransaction", p.txId); return autoPayOn() && !ST.autoSkip[String(p.txId) + ":" + String(p.invoiceId)] && autoDateOk(t ? t.valueDate : p.date); };
+    if (cur) { const before = JSON.stringify(cur); Object.assign(cur, clean); if (JSON.stringify(cur) !== before) await persist();
+      // älterer Vorschlag (vor dem automatischen Verbuchen entstanden), jetzt eindeutig → ebenfalls automatisch verbuchen
+      if (p.autoAccept && payMatch && payAuto() && !running.has(cur.id)) { try { await accept(cur.id, { auto: true }); await recordAuto({ txId: cur.txId, invoiceId: cur.invoiceId, amount: cur.amount, date: cur.date, why: "Mollie-Zahlung gehört zur Rechnung", source: "Mollie" }); return true; } catch (e) { console.error("Automatisch verbuchen (" + p.kind + "):", e.message); } }
+      return false; }
     const it = Object.assign({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), createdAt: nowIso() }, clean);
     ST.items.push(it); await persist();
-    // Geldtransit zwischen eigenen Konten (Mollie/PayPal/Bank) bucht das Cockpit selbst – aber nur, wenn die Zuordnung eindeutig ist (vom Nutzer so gewünscht)
-    if (p.autoAccept && (p.kind === "mollie-payout" || p.kind === "transfer" || p.kind === "mollie-credit" || (p.kind === "mollie-match" && /^Connect-Provision/.test(String(p.title || ""))))) { try { await accept(it.id); it.auto = true; ST.log = (ST.log || []).concat([{ at: nowIso(), kind: it.kind, title: it.title, amount: it.amount, auto: true }]).slice(-500); await persist(); return true; } catch (e) { console.error("Geldtransit automatisch:", e.message); } }
+    // Geldtransit zwischen eigenen Konten (Mollie/PayPal/Bank) bucht das Cockpit selbst – aber nur, wenn die Zuordnung eindeutig ist (vom Nutzer so gewünscht).
+    // Seit 28.10.2026 auch Mollie-Zahlung → Rechnung, wenn exakt und eindeutig (fin-mollie.js matchOf) – mit Eintrag „Automatisch verbucht“ und „Rückgängig“.
+    // Einmal rückgängig gemachte Zuordnungen (autoSkip) bleiben normale Vorschläge.
+    // Kundenzahlungen nur, wenn der Server das automatische Verbuchen eingeschaltet hat (D.autoPay) – sonst wie bisher nur Vorschlag.
+    const autoOk = p.kind === "mollie-payout" || p.kind === "transfer" || p.kind === "mollie-credit" || (p.kind === "mollie-match" && (!payMatch || payAuto()));
+    if (p.autoAccept && autoOk) {
+      try { await accept(it.id, { auto: true }); it.auto = true;
+        if (payMatch) await recordAuto({ txId: it.txId, invoiceId: it.invoiceId, amount: it.amount, date: it.date, why: "Mollie-Zahlung gehört zur Rechnung", source: "Mollie" });
+        return true; } catch (e) { console.error("Automatisch verbuchen (" + p.kind + "):", e.message); } }
     notifySoon(it);
     return true;
   }
+  const autoPayOn = () => { try { return typeof D.autoPay === "function" ? !!D.autoPay() : !!D.autoPay; } catch (e) { return false; } };
   const txOpen = id => { const t = L.get("CheckAccountTransaction", id); return !!t && String(t.status) === "100" && !t.transitWith; };
   async function valid(it) {
     const ids = (it.txIds || []).concat(it.txId && !(it.txIds || []).length ? [it.txId] : []);
@@ -75,18 +92,18 @@ module.exports = function (D) {
   async function view() {
     const items = await list(), groups = {};
     items.forEach(x => { const g = groups[x.kind] = groups[x.kind] || { kind: x.kind, label: (H[x.kind] && H[x.kind].label) || KIND_LABEL[x.kind] || x.kind, count: 0 }; g.count++; });
-    return { items: items.map(x => { const o = Object.assign({}, x); delete o.payload; return o; }), groups: Object.values(groups), count: items.length, log: ST.log.slice(0, 20) };
+    return { items: items.map(x => { const o = Object.assign({}, x); delete o.payload; return o; }), groups: Object.values(groups), count: items.length, log: ST.log.slice(0, 20), auto: (ST.auto || []).slice(0, 15) };
   }
   async function find(id) { const items = await list(); const it = items.find(x => x.id === String(id)); if (!it) throw new Error("Vorschlag nicht mehr vorhanden (schon erledigt oder veraltet)"); return it; }
   // Bestätigen: führt genau die früher automatische Aktion aus
-  async function accept(id) {
+  async function accept(id, opt) {
     const it = await find(id), h = H[it.kind]; if (!h || !h.exec) throw new Error("Für diese Art gibt es keine Ausführung");
     if (running.has(it.id)) throw new Error("Wird gerade ausgeführt");
     running.add(it.id);
     try {
       const r = await h.exec(it);
       if (!it.virtual) { ST.items = ST.items.filter(x => x.id !== it.id); }
-      ST.log.unshift({ at: nowIso(), kind: it.kind, title: it.title, amount: it.amount, date: it.date, ok: true }); await persist();
+      ST.log.unshift(Object.assign({ at: nowIso(), kind: it.kind, title: (opt && opt.auto ? "Automatisch verbucht: " : "") + it.title, amount: it.amount, date: it.date, ok: true }, opt && opt.auto ? { auto: true } : {})); await persist();
       return { id: it.id, kind: it.kind, result: r == null ? true : r };
     } catch (e) {
       if (!it.virtual) { const x = ST.items.find(y => y.id === it.id); if (x) { x.error = String(e.message || e).slice(0, 200); await persist(); } }
@@ -110,6 +127,117 @@ module.exports = function (D) {
   async function busyTx(kind) { await state(); const s = new Set(); ST.items.filter(x => !kind || x.kind === kind).forEach(x => { (x.txIds || []).concat(x.txId ? [x.txId] : []).forEach(id => s.add(String(id))); }); return s; }
   async function forTx(txId) { return (await list()).filter(x => x.txId === String(txId) || (x.txIds || []).indexOf(String(txId)) > -1); }
   async function forVoucher(vid) { return (await list()).filter(x => x.voucherId === String(vid)); }
+
+  // ── Zahlungseingänge automatisch verbuchen (Simon 28.10.2026: „brauche keine Prüfung“) – nur exakt und eindeutig:
+  //    Betrag = offener Betrag (±0,005) UND (Rechnungsnummer im Zweck ODER einzige offene Rechnung mit diesem Betrag und Zahler = Kunde
+  //    der Rechnung: Name oder IBAN, von der dieser Kunde schon bezahlt hat). Kein Geldtransit/Mollie/PayPal/eigene Überweisung/Rückzahlung,
+  //    Umsatz in keinem anderen Vorschlag, Zahlung höchstens 60 Tage alt und in keinem schon gemeldeten Zeitraum (autoDateOk).
+  //    Mehrdeutig, alt, Teil- oder Überzahlung → bleibt „Zur Prüfung“. Jede Buchung: Eintrag „Automatisch verbucht“ mit „Rückgängig“. ──
+  const AUTO_NOT = /mollie|paypal|stripe|sumup|klarna|revolut|\bwise\b|übertrag|uebertrag|umbuchung|eigen(e|er|es)? ?(überweisung|ueberweisung|konto)|auszahlung|bargeld|bareinzahlung|einzahlung|\bkassa\b|\bkasse\b/i;
+  const REFUND_WORD = /doppel(t|zahlung)|r(ü|ue)ckzahlung|r(ü|ue)ckerstattung|erstattung|gutschrift|refund|storno/i;
+  const todayV = () => (typeof D.today === "function" ? D.today() : new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date()));
+  // Gemeldete UVA-Zeiträume dürfen sich nie still ändern (Review 28.10.2026: sonst würden direkt nach dem Einspielen offene Eingänge aus Q1/Q2
+  // automatisch verbucht). Automatisch nur, wenn der Umsatz (Valuta = Zahlungsdatum bei Istbesteuerung) höchstens 60 Tage alt ist und in keinem
+  // gemeldeten Zeitraum liegt – D.reportedPeriods() aus server.js (UVA „abgegeben“, U1/Jahreserklärung eingereicht): [{from, to}].
+  // Ohne diese Angabe: nicht vor dem Beginn des Vorquartals. rep: einmal je Lauf geholt (undefined → hier holen).
+  function reportedNow() {
+    if (typeof D.reportedPeriods !== "function") return null;
+    try { return D.reportedPeriods() || []; } catch (e) { return [{ from: "0000-01-01", to: "9999-12-31" }]; }   // nicht lesbar → sicherheitshalber alles als gemeldet
+  }
+  function autoDateOk(d0, rep) {
+    const d = day(d0), td = todayV(); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || ddays(td, d) > 60) return false;
+    if (rep === undefined) rep = reportedNow();
+    if (rep) return !rep.some(x => x && d >= String(x.from) && d <= String(x.to));
+    const y = +td.slice(0, 4), q0 = Math.floor((+td.slice(5, 7) - 1) / 3) * 3 - 3;   // Vorquartal: erster Monat (0-basiert, < 0 = Vorjahr)
+    return d >= (q0 < 0 ? (y - 1) + "-10-01" : y + "-" + String(q0 + 1).padStart(2, "0") + "-01");
+  }
+  let NEWAUTO = [], autoTimer = null;
+  async function recordAuto(e) {
+    await state();
+    const i = L.get("Invoice", e.invoiceId) || {}, t = L.get("CheckAccountTransaction", e.txId) || {}, c = i.contact && L.get("Contact", i.contact.id);
+    const x = { id: "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: nowIso(), txId: String(e.txId), invoiceId: String(e.invoiceId), nr: i.invoiceNumber || "", contact: contactName(c) || t.payeePayerName || "",
+      payer: t.payeePayerName || "", amount: e.amount != null ? r2(e.amount) : r2(+t.amount), date: day(t.valueDate) || day(e.date) || null, why: String(e.why || "").slice(0, 160), source: e.source || "Bank" };
+    ST.auto.unshift(x);
+    // Zahlung gehört jetzt zur Rechnung → kein weiterer Vorschlag für denselben Umsatz (z. B. Einnahme-Beleg – sonst doppelter Umsatz und bei Istbesteuerung doppelte USt)
+    ST.items = ST.items.filter(y => !(y.txId === x.txId || (y.txIds || []).indexOf(x.txId) > -1));
+    if (e.log) ST.log.unshift({ at: x.at, kind: "auto", title: "Automatisch verbucht: Zahlung " + (x.payer || "") + " → Rechnung " + (x.nr || "") + (x.contact && x.contact !== x.payer ? " · " + x.contact : ""), amount: x.amount, date: x.date, ok: true, auto: true });
+    await persist();
+    if (D.notifyAuto) { NEWAUTO.push(x); if (!autoTimer) { autoTimer = setTimeout(async () => { autoTimer = null; const l = NEWAUTO; NEWAUTO = []; try { await D.notifyAuto(l); } catch (er) { console.error("Zahlung-Push:", er.message); } }, 3000); if (autoTimer.unref) autoTimer.unref(); } }
+    return x;
+  }
+  // Läufe (Takt alle 4 Min., nach George-/PayPal-Abruf) nacheinander, nie parallel – sonst könnten zwei Läufe denselben Umsatz buchen
+  let autoChain = Promise.resolve();
+  function autoBookIncoming(o) { const run = autoChain.then(() => autoBookRun(o)); autoChain = run.catch(() => {}); return run; }
+  async function autoBookRun(o) {
+    o = o || {}; await state(); await L.load();
+    const busy = await busyTx(), refunds = new Set(), own = ownNames(), rep = reportedNow();
+    try { (L.refundCandidates ? L.refundCandidates() : []).forEach(x => { if (x.b) refunds.add(String(x.b.id)); }); } catch (e) { /* Erkennung ist nur Zusatzschutz */ }
+    const openOf = i => r2(Math.abs(+i.sumGross || 0) - (+i.paidAmount || 0));
+    const inv = L.all("Invoice").filter(i => ["200", "750"].indexOf(String(i.status)) > -1 && !i.cancelled && ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) > -1 && openOf(i) > 0.005);
+    const txs = L.all("CheckAccountTransaction").filter(t => String(t.status) === "100" && +t.amount > 0 && !t.transitWith && !t.cashLocked && !t.mollieType && !t.refundPair && !busy.has(String(t.id)) && !refunds.has(String(t.id)));
+    const plan = [], hitsBy = {}; let contacts = null, ibanIdx = null;
+    // Zahler-IBAN → Kunden, die von dieser IBAN schon eine Rechnung bezahlt haben (frühere Zuordnungen) – positiver Beleg „Zahler = Kunde“
+    const ibanOf = s0 => String(s0 || "").replace(/\s+/g, "").toUpperCase();
+    const ibanPaid = (t, ic) => { const ib = ibanOf(t.payeePayerAcctNo); if (!ic || ib.length < 15) return false;
+      if (!ibanIdx) { ibanIdx = {}; L.all("CheckAccountTransactionLog").forEach(l => { if (!l.object || l.object.objectName !== "Invoice" || !l.checkAccountTransaction) return;
+        const x = L.get("CheckAccountTransaction", l.checkAccountTransaction.id), i = L.get("Invoice", l.object.id), k = x ? ibanOf(x.payeePayerAcctNo) : "";
+        if (k.length >= 15 && i && i.contact) (ibanIdx[k] = ibanIdx[k] || new Set()).add(String(i.contact.id)); }); }
+      return !!ibanIdx[ib] && ibanIdx[ib].has(String(ic.id)); };
+    for (const t of txs) {
+      const hay = String(t.payeePayerName || "") + " " + String(t.paymtPurpose || "");
+      if (AUTO_NOT.test(hay)) continue;
+      const pn = fold(t.payeePayerName); if (pn && own.some(x => x && pn.indexOf(x) > -1)) continue;   // eigene Überweisung
+      const A = r2(+t.amount), exact = inv.filter(i => Math.abs(openOf(i) - A) <= 0.005); if (!exact.length) continue;
+      const purp = fold(t.paymtPurpose), purpN = purp.replace(/[^a-z0-9]/g, "");
+      // Ziffern immer als ganze Zahl (sonst trifft „RE-123“ auch „RE-1233“)
+      const numHit = i => { const nr = fold(i.invoiceNumber); if (!nr) return false; const full = nr.replace(/[^a-z0-9]/g, ""), dg = (nr.match(/(\d{3,})\s*$/) || [])[1], dgHit = () => !!dg && new RegExp("(^|[^0-9])" + dg + "([^0-9]|$)").test(purp); if (full.length >= 4 && /[a-z]/.test(full) && purpN.indexOf(full) > -1 && (!dg || dgHit())) return true; return dgHit(); };
+      const num = inv.filter(numHit);
+      let pick = null, why = "";
+      if (num.length === 1 && exact.indexOf(num[0]) > -1) { pick = num[0]; why = "Rechnungsnummer " + (num[0].invoiceNumber || "") + " im Verwendungszweck, Betrag exakt"; }
+      else if (!num.length && exact.length === 1 && !REFUND_WORD.test(hay)) {
+        const i = exact[0], td = day(t.valueDate);
+        if (td < day(i.invoiceDate) && ddays(i.invoiceDate, td) > 7) continue;   // Zahlung lange vor der Rechnung → nicht eindeutig
+        if (L.all("Invoice").some(x => String(x.status) !== "100" && String(x.id) !== String(i.id) && numHit(x))) continue;   // Zweck nennt eine andere (z. B. schon bezahlte) Rechnung → z. B. Doppelzahlung, nicht eindeutig
+        // nur nach Betrag braucht es einen positiven Beleg, dass der Zahler der Kunde ist (Review 28.10.2026): Name passt (wie bei den Vorschlägen)
+        // oder die IBAN hat schon eine Rechnung dieses Kunden bezahlt. Unbekannter oder fehlender Zahlername → bleibt „Zur Prüfung“.
+        const cp = nameToks(t.payeePayerName), ic = i.contact && L.get("Contact", i.contact.id);
+        const byName = cp.toks.length > 0 && nameCheck(contactName(ic), cp) === "match";
+        if (!byName && !ibanPaid(t, ic)) continue;
+        // Name passt (auch) zu einem anderen Kunden → mehrdeutig, bleibt zur Prüfung – auch wenn er zum Rechnungskunden passt (z. B. „Hotel Sonne“ zahlt,
+        // die einzige offene Rechnung mit dem Betrag gehört „Hotel Post“: beide treffen „hotel“). Gegenprobe 28.10.2026: galt nur ohne Namenstreffer.
+        if (cp.toks.length) { contacts = contacts || L.all("Contact"); if (contacts.some(c => (!ic || String(c.id) !== String(ic.id)) && nameCheck(contactName(c), cp) === "match")) continue; }
+        pick = i; why = "einzige offene Rechnung mit genau diesem Betrag, " + (byName ? "Zahler = Kunde" : "IBAN des Kunden");
+      }
+      if (!pick || ST.autoSkip[String(t.id) + ":" + String(pick.id)]) continue;
+      // alt oder in einem gemeldeten Zeitraum → bleibt zur Prüfung (zählt aber mit, wenn ein zweiter Eingang dieselbe Rechnung trifft)
+      plan.push({ t, i: pick, why, A, old: !autoDateOk(t.valueDate, rep) }); (hitsBy[pick.id] = hitsBy[pick.id] || []).push(String(t.id));
+    }
+    const done = [];
+    for (const p of plan) {
+      if (p.old || hitsBy[p.i.id].length > 1) continue;   // alt/gemeldet bzw. zwei Eingänge für dieselbe Rechnung → mehrdeutig, bleibt zur Prüfung
+      const t = L.get("CheckAccountTransaction", p.t.id), i = L.get("Invoice", p.i.id);
+      if (!t || String(t.status) !== "100" || !i || ["200", "750"].indexOf(String(i.status)) < 0 || Math.abs(openOf(i) - p.A) > 0.005) continue;
+      if (o.dry) { done.push({ txId: String(t.id), invoiceId: String(i.id), nr: i.invoiceNumber || "", amount: p.A, why: p.why }); continue; }
+      try {
+        await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: p.A, date: day(t.valueDate), checkAccountTransaction: { id: String(t.id) }, auto: true } });
+        const t2 = L.get("CheckAccountTransaction", t.id); if (t2) { t2.autoBooked = { at: nowIso(), invoiceId: String(i.id), why: p.why }; await L.save("CheckAccountTransaction", t2); }
+        done.push(await recordAuto({ txId: t.id, invoiceId: i.id, amount: p.A, why: p.why, source: "Bank", log: true }));
+      } catch (e) { console.error("Automatisch verbuchen:", e.message); }
+    }
+    return done;
+  }
+  // „Rückgängig“ einer automatischen Buchung: nur die Zahlungszuordnung lösen (auch bei festgeschriebener Rechnung), danach nie wieder automatisch
+  async function autoUndo(id) {
+    await state(); const x = ST.auto.find(a => a.id === String(id)); if (!x) throw new Error("Eintrag nicht gefunden");
+    if (x.undone) throw new Error("Schon rückgängig gemacht");
+    await L.unbook(x.invoiceId, x.txId, { reason: "Automatische Buchung rückgängig", auto: true });
+    x.undone = nowIso(); ST.autoSkip[x.txId + ":" + x.invoiceId] = x.undone;
+    ST.log.unshift({ at: x.undone, kind: "auto", title: "Rückgängig: automatische Buchung" + (x.nr ? " Rechnung " + x.nr : "") + (x.contact ? " · " + x.contact : "") + " – Umsatz wieder offen", amount: x.amount, date: x.date, ok: true, undo: true });
+    await persist(); return x;
+  }
+  // Zahlung von Hand gelöst → dieselbe Zuordnung nie wieder automatisch
+  async function noteUnbook(txId, invId) { await state(); const k = String(txId) + ":" + String(invId); ST.autoSkip[k] = nowIso(); ST.auto.filter(a => a.txId === String(txId) && a.invoiceId === String(invId) && !a.undone).forEach(a => { a.undone = ST.autoSkip[k]; }); await persist(); }
+  async function autoRecent(days) { await state(); const lim = Date.now() - (days || 7) * 864e5; return ST.auto.filter(a => !a.undone && Date.parse(a.at) >= lim).slice(0, 30); }
 
   // ── Vorschläge beim Öffnen (Umsatz / Beleg): Kandidaten mit Begründung, nie automatisch angewendet ──
   const STOP = new Set(["gmbh", "ltd", "inc", "limited", "und", "and", "the", "kartenzahlung", "zahlung", "lastschrift", "abbuchung", "dauerauftrag", "gutschrift", "ueberweisung", "überweisung", "rechnung", "invoice", "e-comm", "ecomm", "mastercard", "visa", "debit", "karte", "spesen", "kurs", "sepa", "online", "payment", "auszahlung"]);
@@ -264,5 +392,5 @@ module.exports = function (D) {
     out.sort((a, b) => b.score - a.score);
     return { query: { amount, date, name, credit }, candidates: out.slice(0, 8) };
   }
-  return { register, add, list, view, accept, reject, acceptAll, busyTx, forTx, forVoucher, suggestTx, suggestVoucher, suggestFor, KIND_LABEL, _state: () => ST };
+  return { register, add, list, view, accept, reject, acceptAll, busyTx, forTx, forVoucher, suggestTx, suggestVoucher, suggestFor, autoBookIncoming, recordAuto, autoUndo, noteUnbook, autoRecent, KIND_LABEL, _state: () => ST };
 };

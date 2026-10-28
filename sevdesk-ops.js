@@ -43,6 +43,15 @@ module.exports = function (D) {
     const status = parseInt(o.status, 10) || 0, date = sevDay(o.invoiceDate);
     let due = null; if (date) { const d = new Date(date + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (parseInt(o.timeToPay, 10) || 0)); due = d.toISOString().slice(0, 10); }
     const gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount);
+    // Zahlungen dieser Rechnung (Bankumsatz, Datum, Betrag, automatisch?) und offenes Guthaben – für „Zahlung lösen“ und „Überzahlung zuordnen“
+    const lj = Math.abs(paid) > 0.004 ? await sev("GET", "/CheckAccountTransactionLog", { query: { "object[id]": id, "object[objectName]": "Invoice", limit: 200 } }).catch(() => null) : null;
+    const plogs = ((lj && lj.objects) || []).filter(l => l && l.object && String(l.object.id) === id && (!l.object.objectName || l.object.objectName === "Invoice"));
+    const payments = (await Promise.all(plogs.map(async l => { const tid = l.checkAccountTransaction && l.checkAccountTransaction.id ? String(l.checkAccountTransaction.id) : "";
+      const t = tid ? first(await sev("GET", "/CheckAccountTransaction/" + tid).catch(() => null)) : {};
+      return { logId: String(l.id || ""), txId: tid, date: sevDay(t.valueDate || l.bookingDate), amount: sevNum(l.amountPaid != null ? l.amountPaid : l.ammountPayed), name: String(t.payeePayerName || ""), purpose: String(t.paymtPurpose || "").replace(/\s+/g, " ").slice(0, 160), auto: !!(l.auto || t.autoBooked), extra: l.extra && l.extra.kind ? String(l.extra.kind) : "" }; })))
+      .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+    const cj = o.creditOpen != null ? await sev("GET", "/CustomerCredit", { query: { "invoice[id]": id, limit: 50 } }).catch(() => null) : null;   // nur eigene Buchhaltung
+    const credits = ((cj && cj.objects) || []).filter(c => c && c.invoice && String(c.invoice.id) === id).map(c => ({ id: String(c.id), amount: sevNum(c.amount), open: sevNum(c.open), date: sevDay(c.date), note: String(c.note || "") }));
     // Storno: eigene Buchhaltung markiert das Original (cancelled), sevDesk nur über die Stornorechnung (SR mit origin = Original) – nur lesen
     let cancelled = !!o.cancelled, stornoNr = o.cancelled && o.cancelledBy ? String(o.cancelledBy).slice(0, 60) : "";   // Storno per Gutschrift: Gutschrift-Nr.
     if (String(o.invoiceType || "RE") !== "SR" && (cancelled || status === 1000)) {
@@ -58,7 +67,8 @@ module.exports = function (D) {
       sent: !!o.sendDate, sendDate: sevDay(o.sendDate), sendType: o.sendType || "", enshrined: !!o.enshrined, payDate: sevDay(o.payDate),
       origin: o.origin && o.origin.id ? { id: String(o.origin.id), type: o.origin.objectName || "" } : null,
       taxRule: o.taxRule && o.taxRule.id ? String(o.taxRule.id) : "", taxType: o.taxType || "", taxSet: o.taxSet && o.taxSet.id ? String(o.taxSet.id) : "",
-      dunningLevel: parseInt(o.dunningLevel, 10) || 0, reminderDeadline: sevDay(o.reminderDeadline), dunningFeeOpen: sevNum(o.dunningFeeOpen), dunningFeePaid: sevNum(o.dunningFeePaid) };
+      dunningLevel: parseInt(o.dunningLevel, 10) || 0, reminderDeadline: sevDay(o.reminderDeadline), dunningFeeOpen: sevNum(o.dunningFeeOpen), dunningFeePaid: sevNum(o.dunningFeePaid),
+      over: gross > 0 && !cancelled && (status === 750 || status === 1000) ? Math.max(0, r2(paid - gross)) : 0, credit: sevNum(o.creditOpen), payments, credits };
   }
   // Standardtext für Rechnungs-/Mahnungsmail
   // Signatur aus dem Postfach (server.js mailSignature): unter jede Rechnungs-/Mahnungsmail. Gruß und Name am Textende entfallen,
@@ -172,7 +182,9 @@ module.exports = function (D) {
       });
       sug.sort((a, b) => b.score - a.score);
       const acc = t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "";
-      return { id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount, name, purpose: purpose.slice(0, 240), accountId: acc, account: accName[acc] || "", suggestions: sug.slice(0, 4) };
+      // fee: Mollie-/PayPal-Gebühr (eigene Buchhaltung) – der Umsatz ist netto, eine Überzahlung zählt vom Bruttobetrag (sevdesk.js bankOver)
+      const fee = Math.abs(sevNum(t.mollieFeeAmt || t.feeAmt)) || 0;
+      return { id: String(t.id), date: sevDay(t.valueDate || t.entryDate), amount, name, purpose: purpose.slice(0, 240), accountId: acc, account: accName[acc] || "", fee: fee > 0.004 ? fee : undefined, suggestions: sug.slice(0, 4) };
     }).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
     return { ok: true, fetchedAt: new Date().toISOString(), transactions: list,
       openInvoices: invOpen.map(i => ({ id: i.id, nr: i.nr, contact: i.contact, open: i.open, date: i.date })),
@@ -193,7 +205,8 @@ module.exports = function (D) {
     if (op === "invoice") {
       const id = idOf(pl.invoiceId); if (!id) throw new Error("keine_rechnung");
       if (!(amount > 0)) throw new Error("Rechnungen passen nur zu Zahlungseingängen.");
-      await sevBook({ id, amount: Math.abs(amount), date: day, transactionId: txId, accountId });
+      // Überzahlung: Auswahl „Woher kommt die Differenz?“ aus dem Cockpit (extra), sonst wie bisher
+      await sevBook(Object.assign({ id, amount: Math.abs(amount), date: day, transactionId: txId, accountId }, pl.extra && typeof pl.extra === "object" && pl.extra.kind ? { extra: pl.extra } : {}));
     } else if (op === "voucher") {
       const id = idOf(pl.voucherId); if (!id) throw new Error("kein_beleg");
       await sev("PUT", "/Voucher/" + id + "/bookAmount", { body: bookBody(amount) });
@@ -439,11 +452,16 @@ module.exports = function (D) {
     const [txs, logs, snap] = await Promise.all([sevAll("/CheckAccountTransaction", {}, 50000), sevAll("/CheckAccountTransactionLog", {}, 50000).catch(() => []), snapshot(false).catch(() => null)]);
     const invNr = {}; ((snap && (snap.invoicesAll || snap.invoices)) || []).forEach(i => { invNr[i.id] = i.nr || "Entwurf"; });
     const links = {};
-    logs.forEach(l => { const t = l.checkAccountTransaction && l.checkAccountTransaction.id, o = l.object || {}; if (!t || !o.id) return; (links[String(t)] = links[String(t)] || []).push({ type: o.objectName, id: String(o.id), nr: o.objectName === "Invoice" ? (invNr[o.id] || "Rechnung") : "Beleg", amount: sevNum(l.amountPaid) }); });
+    // Guthaben (Überzahlung/Doppelzahlung, eigene Buchhaltung) verweist auf seine Rechnung
+    const credOf = {}; if (logs.some(l => l.object && l.object.objectName === "CustomerCredit")) ((await sevAll("/CustomerCredit", {}, 5000).catch(() => [])) || []).forEach(c => { credOf[String(c.id)] = c; });
+    logs.forEach(l => { const t = l.checkAccountTransaction && l.checkAccountTransaction.id, o = l.object || {}; if (!t || !o.id) return; const cr = o.objectName === "CustomerCredit" ? credOf[String(o.id)] : null;
+      (links[String(t)] = links[String(t)] || []).push(cr ? { type: "Invoice", id: String(cr.invoice && cr.invoice.id || ""), nr: "Guthaben " + (cr.invoiceNumber || invNr[cr.invoice && cr.invoice.id] || ""), credit: true, amount: sevNum(l.amountPaid) }
+        : { type: o.objectName, id: String(o.id), nr: o.objectName === "Invoice" ? (invNr[o.id] || "Rechnung") : "Beleg", amount: sevNum(l.amountPaid) }); });
     const list = txs.map(t => ({ id: String(t.id), date: sevDay(t.valueDate || t.entryDate), book: sevDay(t.entryDate), amount: sevNum(t.amount), name: t.payeePayerName || (D.cardName && D.cardName(t.paymtPurpose)) || "", nameAuto: !t.payeePayerName && !!(D.cardName && D.cardName(t.paymtPurpose)), purpose: String(t.paymtPurpose || "").replace(/\s+/g, " ").trim().slice(0, 300), status: parseInt(t.status, 10) || 0,
       accountId: t.checkAccount && t.checkAccount.id ? String(t.checkAccount.id) : "", links: links[String(t.id)] || [], mollie: t.mollieType || "",
       // Status 400 hat drei Bedeutungen: echter Geldtransit (Gegenbuchung auf eigenem Konto), „erledigt“ (z. B. ausgeglichene Doppelbuchung, Kontoprüfung) und Fremdgeld (durchlaufend)
-      transit: !!t.transitWith && ["erledigt", "durchlaufend", "korrektur"].indexOf(String(t.transitWith)) < 0, settled: String(t.transitWith || "") === "erledigt" ? String(t.settledNote || "erledigt") : "",
+      refund: t.refundPair ? String(t.transitNote || "Doppelzahlung + Rückzahlung") : "", auto: !!t.autoBooked,
+      transit: !!t.transitWith && !t.refundPair && ["erledigt", "durchlaufend", "korrektur"].indexOf(String(t.transitWith)) < 0, settled: String(t.transitWith || "") === "erledigt" ? String(t.settledNote || "erledigt") : "",
       correction: String(t.transitWith || "") === "korrektur" ? String(t.paymtPurpose || "Korrekturbuchung").slice(0, 200) : "",
       passthrough: String(t.transitWith || "") === "durchlaufend" ? String(t.passthroughFor || "durchlaufend") : "" }))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (+b.id - +a.id));

@@ -55,7 +55,7 @@ F.reviewPage=function(mobile){
   var body=groups.length?groups.map(function(g){ var list=items.filter(function(x){ return x.kind===g.kind; });
       return '<section class="'+(mobile?"fsm-card":"fsd-card")+' rv-g"><div class="rv-gh"><b>'+esc(g.label)+' <span class="muted">('+g.count+')</span></b>'+(g.count>1?'<button class="btn primary" data-act="rvall:'+esc(g.kind)+'">'+F.svg("checkCircle")+' Alle bestätigen ('+g.count+')</button>':'')+'</div>'+list.map(item).join("")+'</section>'; }).join("")
     :'<section class="'+(mobile?"fsm-card":"fsd-card")+'"><p class="sd-empty">Nichts zu prüfen. 🎉<br><span class="muted">Neue Vorschläge (Bankregeln, Mollie, Geldtransit, Belegdateien, USt-Zahlung …) erscheinen hier – nichts wird ohne dich gebucht.</span></p></section>';
-  var log=(RV.log||[]).length?'<details class="'+(mobile?"fsm-card":"fsd-card")+'"><summary>Zuletzt erledigt</summary>'+RV.log.slice(0,12).map(function(l){ return '<div class="muted" style="font-size:12.5px;padding:3px 0">'+de(String(l.at).slice(0,10))+' · '+(l.rejected?"abgelehnt":"bestätigt")+' · '+esc(l.title||"")+(l.amount!=null?' · '+eur(l.amount):'')+'</div>'; }).join("")+'</details>':'';
+  var log=(RV.log||[]).length?'<details class="'+(mobile?"fsm-card":"fsd-card")+'"><summary>Zuletzt erledigt</summary>'+RV.log.slice(0,12).map(function(l){ return '<div class="muted" style="font-size:12.5px;padding:3px 0">'+de(String(l.at).slice(0,10))+' · '+(l.rejected?"abgelehnt":l.undo?"rückgängig":l.auto?"automatisch":"bestätigt")+' · '+esc(l.title||"")+(l.amount!=null?' · '+eur(l.amount):'')+'</div>'; }).join("")+'</details>':'';
   return head+body+log;
 };
 function done(j,msg){ if(F.finAfterBook) F.finAfterBook(); if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); RV=null; load(); return; } RV=j; F.toast(msg); if(F.finTxReset) F.finTxReset(); F.load(true); }
@@ -82,6 +82,8 @@ F.sugBox=function(kind,id){
 /* „wie zuletzt“ des geöffneten Umsatzes (falls schon geladen): {category, rate, rc, taxRule, supplier} – zum Vorbelegen von „Ausgabe buchen“ */
 F.sugLike=function(id){ var c=(SG["tx-"+String(id).replace(/[^\w-]/g,"")]||[]).filter(function(x){ return x.type==="like"; })[0]; return c&&c.do&&c.do.body&&c.do.body.act||null; };
 F.action("rvsug",function(v){ var p=String(v).split("~"), c=(SG[p[0]]||[])[+p[1]]; if(!c||!c.do) return;
+  /* Rechnung mit Überzahlung (eigene Buchhaltung): erst „Woher kommt die Differenz?“ (sevdesk.js F.bankOver) statt stiller Überzahlung */
+  var b0=c.do.body||{}, S0=F.sevState, t0=b0.op==="invoice"&&S0&&S0.bank&&(S0.bank.transactions||[]).find(function(t){ return t.id===b0.txId; }); if(t0&&F.bankOver&&F.bankOver(t0,b0.invoiceId,c.label)) return;
   F.confirm("Übernehmen: "+c.label+"?","Übernehmen",function(){ F.toast("Ordne zu …"); F.api(c.do.url,{body:c.do.body}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; }
     F.closeModal(); F.closeDrawer(); var S=F.sevState; if(S&&S.bank&&S.bank.transactions&&c.do.body.txId) S.bank.transactions=S.bank.transactions.filter(function(t){ return t.id!==c.do.body.txId; });
     F.toast("Übernommen: "+c.label); RV=null; if(F.finTxReset) F.finTxReset(); F.load(true); }); }); });
