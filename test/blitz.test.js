@@ -73,6 +73,14 @@ const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(sr
     const r = await json("/admin/api/blitz/bookings", { method: "POST", body: { packageSlug: "digital", eventDate: day(3), customerName: "Doppelt", customerEmail: "d@example.at" } });
     assert.strictEqual(r.status, 409); assert.strictEqual(r.j.ok, false); assert.strictEqual(r.j.conflicts[0].reference, "BD-AAAA11");
   });
+  await t("Kundenmail nur auf ausdrückliche Wahl: fehlt/ungültig → „none“ an Blitzdings, gewählte Werte unverändert", async () => {
+    const last = () => mock.state.log.filter((x) => x.method === "POST" && x.path === "/api/cockpit/bookings").pop().body.customerMail;
+    await json("/admin/api/blitz/bookings", { method: "POST", body: { packageSlug: "digital", eventDate: day(3), customerName: "Ohne Wahl", customerEmail: "o@example.at" } });
+    assert.strictEqual(last(), "none", "fehlt → none (Blitzdings würde sonst eine Bestätigung senden)");
+    await json("/admin/api/blitz/bookings", { method: "POST", body: { packageSlug: "digital", eventDate: day(3), customerName: "Komisch", customerEmail: "o@example.at", customerMail: "alle" } });
+    assert.strictEqual(last(), "none");
+    for (const v of ["confirmation", "offer", "none"]) { await json("/admin/api/blitz/bookings", { method: "POST", body: { packageSlug: "digital", eventDate: day(3), customerName: "Gewählt", customerEmail: "o@example.at", customerMail: v } }); assert.strictEqual(last(), v); }
+  });
   await t("Storno über booking-status → PATCH an Blitzdings", async () => {
     const r = await json("/admin/api/blitz/booking-status", { method: "POST", body: { id: created.id, status: "CANCELLED" } });
     assert.strictEqual(r.status, 200); assert.strictEqual(r.j.booking.status, "CANCELLED");

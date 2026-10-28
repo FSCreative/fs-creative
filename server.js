@@ -1483,8 +1483,8 @@ async function sevOfferStatus(pl) {
   const status = parseInt(pl.status, 10); if ([200, 300, 500].indexOf(status) < 0) throw new Error("ungültiger Status");
   const cur = OFFERS_CACHE.data && (OFFERS_CACHE.data.offers || []).find(x => x.id === id);
   if (cur && (cur.status === 750 || cur.status === 1000)) throw new Error("Das Angebot ist schon (teilweise) berechnet.");
-  // Entwurf → versendet: über sendBy (sevDesk verlangt dafür eine Versandart), sonst Status direkt setzen
-  if (status === 200 && (!cur || cur.status === 100)) await sev("PUT", "/Order/" + id + "/sendBy", { body: { sendType: "VPDF", sendDraft: false } });
+  // Entwurf → versendet: über sendBy (sevDesk verlangt dafür eine Versandart: VM = per Mail, VPR = gedruckt übergeben, sonst VPDF), sonst Status direkt setzen
+  if (status === 200 && (!cur || cur.status === 100)) await sev("PUT", "/Order/" + id + "/sendBy", { body: { sendType: ["VM", "VPR"].indexOf(pl.sendType) > -1 ? pl.sendType : "VPDF", sendDraft: false } });
   else await sev("PUT", "/Order/" + id, { body: { status } });
   OFFERS_CACHE.at = 0;
   return { id, status };
@@ -3606,7 +3606,8 @@ async function handleAdmin(req, res, u, p) {
     if (req.method !== "POST") return send(res, 405, JSON.stringify({ ok: false, error: "method" }), TYPES[".json"]);
     let pl; try { pl = await sevBody(req, 50000); } catch (e) { return send(res, 400, JSON.stringify({ ok: false, error: String(e.message || e) }), TYPES[".json"]); }
     let r;
-    if (p === "/admin/api/blitz/bookings") r = await blitzCockpit("POST", "/bookings", pl);
+    // Kundenmail nur auf ausdrückliche Wahl: Blitzdings würde ohne Angabe eine Buchungsbestätigung senden (Wunsch Simon 28.10.2026)
+    if (p === "/admin/api/blitz/bookings") r = await blitzCockpit("POST", "/bookings", Object.assign({}, pl, { customerMail: ["confirmation", "offer", "none"].indexOf(pl.customerMail) > -1 ? pl.customerMail : "none" }));
     else if (p === "/admin/api/blitz/booking-status") {
       const id = String(pl.id || ""); if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_id" }), TYPES[".json"]);
       const tc = pl.totalCents != null ? Math.round(+pl.totalCents) : undefined; if (tc !== undefined && !(tc >= 0 && tc <= 1e7)) return send(res, 400, JSON.stringify({ ok: false, error: "bad_amount" }), TYPES[".json"]);

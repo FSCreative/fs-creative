@@ -19,6 +19,7 @@ function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-offers-"));
   ["server.js", "connections.js", "client-ip.js", "print-bild.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-web.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "seo.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html"].forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   ["admin-cockpit"].forEach((d) => { fs.mkdirSync(path.join(dir, d)); fs.readdirSync(path.join(ROOT, d)).forEach((f) => fs.copyFileSync(path.join(ROOT, d, f), path.join(dir, d, f))); });
+  if (fs.existsSync(path.join(ROOT, "fonts"))) fs.cpSync(path.join(ROOT, "fonts"), path.join(dir, "fonts"), { recursive: true });   // Cockpit-Schriften (sonst Konsolenfehler im Browser-Test)
   return dir;
 }
 const listen = (srv) => new Promise((r) => srv.listen(0, "127.0.0.1", () => r(srv.address().port)));
@@ -133,6 +134,18 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
     const r = await json("/admin/api/sevdesk/offers");
     assert.strictEqual(r.j.offers.find((o) => o.id === "501").status, 500); assert.strictEqual(r.j.offers.find((o) => o.id === "502").status, 200);
   });
+  await t("Status: Versandart beim Markieren – VPR (gedruckt übergeben), VM (per Mail), sonst VPDF", async () => {
+    await json("/admin/api/sevdesk/offers?force=1");
+    const n = mock.state.puts.length;
+    const a = await post("/admin/api/sevdesk/offer-status", { id: "901", status: 200, sendType: "VPR", confirm: true }); assert.strictEqual(a.j.ok, true, JSON.stringify(a.j));
+    assert.deepStrictEqual(mock.state.puts[n], { id: "901", sendBy: { sendType: "VPR", sendDraft: false } });
+    const b = await post("/admin/api/sevdesk/offer-status", { id: "902", status: 200, sendType: "VX", confirm: true }); assert.strictEqual(b.j.ok, true, JSON.stringify(b.j));
+    assert.deepStrictEqual(mock.state.puts[n + 1], { id: "902", sendBy: { sendType: "VPDF", sendDraft: false } }, "unbekannte Versandart → VPDF");
+    mock.state.orders.find((o) => o.id === "902").status = "100"; await json("/admin/api/sevdesk/offers?force=1");
+    const c = await post("/admin/api/sevdesk/offer-status", { id: "902", status: 200, sendType: "VM", confirm: true }); assert.strictEqual(c.j.ok, true);
+    assert.deepStrictEqual(mock.state.puts[n + 2], { id: "902", sendBy: { sendType: "VM", sendDraft: false } });
+    assert.strictEqual(mock.state.log.filter((l) => /sendViaEmail/.test(l.path)).length, 0, "Markieren verschickt nie eine Mail");
+  });
   await t("In Rechnung umwandeln: createInvoiceFromOrder nur mit confirm", async () => {
     const no = await post("/admin/api/sevdesk/offer-invoice", { id: "501" }); assert.strictEqual(no.j.ok, false); assert.strictEqual(mock.state.invoicesFromOrder.length, 0);
     const r = await post("/admin/api/sevdesk/offer-invoice", { id: "501", confirm: true });
@@ -204,8 +217,19 @@ const iso = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); ret
         assert.strictEqual(await page.inputValue('#modalHost [name="valid"]').then((v) => /^\d{4}-\d{2}-\d{2}$/.test(v)), true);
         await page.fill('#irows [data-i="price"]', "1200");
         const n = mock.state.saved.length;
+        const putsBefore = mock.state.puts.length;
         await page.click("#invSave");
+        // danach wird gefragt, wie das Angebot zum Kunden kommt – nichts passiert automatisch (Wunsch Simon 28.10.2026)
+        await page.waitForSelector("#modalHost .od-dlg .od-opts", { timeout: 10000 });
+        assert.ok(/Angebot AN-\d+ ist angelegt/.test(await page.textContent("#modalHost h2")));
+        assert.deepStrictEqual(await page.$$eval("#modalHost .od-c b", (els) => els.map((e) => e.textContent)), ["Per Mail senden", "Drucken / persönlich übergeben", "Später entscheiden"]);
+        assert.ok(/anna@lerch\.at/.test(await page.textContent('#modalHost [data-act^="offmail:"]')), "Empfänger aus dem Dialog");
+        await page.click('#modalHost [data-act^="offlater:"]');
         await page.waitForFunction(() => !document.getElementById("modalHost").innerHTML, null, { timeout: 10000 });
+        assert.strictEqual(mock.state.puts.length, putsBefore, "Später entscheiden → bleibt Entwurf");
+        await page.evaluate(() => window.FSC.go("kunden"));
+        await page.waitForSelector('#offers [data-act^="offmail:"]', { timeout: 10000 });   // Entwurf: später „Per Mail senden“ / „Drucken“ aus der Liste
+        assert.ok(await page.$('#offers [data-act^="offprint:"]')); assert.ok(!(await page.$('#offers [data-act="offmail:501"]')), "nur bei Entwürfen");
         assert.strictEqual(mock.state.saved.length, n + 1); const o = mock.state.saved[n].order;
         assert.strictEqual(o.orderType, "AN"); assert.strictEqual(o.header, "Angebot Website-Relaunch"); assert.strictEqual(mock.state.saved[n].orderPosSave[0].price, 1000);
         const leads = await json("/admin/api/leads"); const l = leads.j.leads.find((x) => x.id === lid);

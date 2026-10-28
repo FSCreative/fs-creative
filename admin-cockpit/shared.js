@@ -192,10 +192,13 @@ function saveOffer(form,items,contact,err,btn){
     var cid=l&&linkCid(l,j,contact); if(cid) patch=Object.assign(patch||{},{contactId:cid});   /* Lead merkt sich den Buchhaltungs-Kontakt */
     var job=patch?F.api("/admin/api/leads",{body:{op:"update",id:lid,patch:patch}}).then(function(r){ if(r&&r.ok) F.D.leads=r.leads; return r&&r.ok; }).catch(function(){ return false; }):Promise.resolve(true);
     Promise.all([job,projLink(ctx.after&&ctx.after.project,"offer",j,contact,l)||Promise.resolve(true)]).then(function(rr){ var ok=rr[0], pdf=function(){ F.viewDoc("/admin/api/sevdesk/offer-pdf?id="+encodeURIComponent(j.id),"Angebot "+(j.nr||"")); };
-      F.closeModal();
-      if(!ok) F.toast("Angebot "+(j.nr||"")+" angelegt, aber die Phase des Leads konnte nicht gesetzt werden",true);
-      else if(!rr[1]) F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt – Verknüpfung mit dem Auftrag nicht gespeichert",true,"PDF ansehen",pdf);
-      else F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",pdf);
+      var warn=!ok?"Die Phase des Leads konnte nicht gesetzt werden.":!rr[1]?"Verknüpfung mit dem Auftrag nicht gespeichert.":"";
+      /* Danach fragen, wie das Angebot zum Kunden kommt (Mail / Drucken / später) – es wird nie automatisch gesendet (zangebot.js) */
+      if(F.offerDeliver) F.offerDeliver({id:j.id,nr:j.nr,contact:contact,email:body.email,gross:j.gross,validUntil:j.validUntil||body.validUntil,contactId:j.contactId,draft:true},{created:true,warn:warn,note:move?"Lead jetzt in Phase „Angebot“.":""});
+      else { F.closeModal();
+        if(!ok) F.toast("Angebot "+(j.nr||"")+" angelegt, aber die Phase des Leads konnte nicht gesetzt werden",true);
+        else if(!rr[1]) F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt – Verknüpfung mit dem Auftrag nicht gespeichert",true,"PDF ansehen",pdf);
+        else F.toast("Angebot "+(j.nr||"")+" als Entwurf angelegt"+(move?" · Lead jetzt in „Angebot“":""),false,"PDF ansehen",pdf); }
       if(ctx.onDone) ctx.onDone(j);
       if(F.offersLoad) F.offersLoad(true); F.render();
     });

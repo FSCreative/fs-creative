@@ -93,12 +93,17 @@ function outboxSend(o){
       markReplied(o.source);
       if(UI.msel==="ob_"+o.oid) UI.msel=loc.id;
       M.changed(); F.toast("Gesendet an "+o.to); M.refresh(); M.scheduleReload(8000);
+      runAfter(o);
     })
     .catch(function(err){ if(String(err&&err.message)==="login") return; o.status="failed"; o.error=String(err&&err.message||err||"Keine Verbindung"); saveOutbox(); F.toast("Senden fehlgeschlagen – die Mail liegt im Postausgang",true,"Ansehen",function(){ UI.mf="outbox"; UI.msel="ob_"+o.oid; F.go("post"); }); M.refresh(); });
 }
+/* Folgeschritt erst nach erfolgreichem Versand, z. B. Angebot als versendet markieren (zangebot.js): o.after={kind,…} ist reines JSON und
+   übersteht so auch den Postausgang im Browser (Wiederholen nach Neuladen); ausgeführt wird F.mailAfter[kind](after,{to,subject,files}) – files = tatsächlich mitgeschickte Anhänge. */
+F.mailAfter=F.mailAfter||{};
+function runAfter(o){ var a=o&&o.after, fn=a&&a.kind&&F.mailAfter[a.kind]; if(typeof fn!=="function") return; try{ fn(a,{to:o.to,subject:o.subject,files:(o.attachments||[]).filter(function(x){ return x&&x.content; }).map(function(x){ return x.filename; })}); }catch(e){ console.error(e); } }
 var obSeq=0;
 function queueMail(d){
-  var o={oid:(++obSeq)+"_"+Date.now().toString(36),account:d.account||"",cc:d.cc||"",bcc:d.bcc||"",inReplyTo:d.inReplyTo||"",source:d.source||null,to:d.to,subject:d.subject,html:d.html,text:d.text,attachments:d.attachments||[],preview:String(d.text||"").replace(/\s+/g," ").trim().slice(0,180),date:new Date().toISOString(),status:"sending",error:""};
+  var o={oid:(++obSeq)+"_"+Date.now().toString(36),account:d.account||"",cc:d.cc||"",bcc:d.bcc||"",inReplyTo:d.inReplyTo||"",source:d.source||null,after:d.after||null,to:d.to,subject:d.subject,html:d.html,text:d.text,attachments:d.attachments||[],preview:String(d.text||"").replace(/\s+/g," ").trim().slice(0,180),date:new Date().toISOString(),status:"sending",error:""};
   OB.push(o); F.toast("Wird gesendet …"); outboxSend(o); return o;
 }
 M.queueMail=queueMail;
@@ -108,7 +113,7 @@ F.action("mob",function(v){
   if(op==="retry"){ outboxSend(o); }
   else if(op==="discard"){ F.confirm(o.status==="sending"?"Die Mail wird gerade gesendet. Trotzdem aus dem Postausgang entfernen?":"Diese Mail verwerfen? Sie wird nicht gesendet.","Verwerfen",function(){ OB=OB.filter(function(x){ return x!==o; }); saveOutbox(); UI.msel=null; M.refresh(); },true); }
   else if(op==="edit"){ if(o.status==="sending"){ F.toast("Die Mail wird gerade gesendet – bitte kurz warten.",true); return; } OB=OB.filter(function(x){ return x!==o; }); saveOutbox(); UI.msel=null; M.refresh();
-    openCompose("Neue Nachricht",o.to,o.subject,o.html,{raw:true,cc:o.cc,bcc:o.bcc,inReplyTo:o.inReplyTo,source:o.source,account:o.account,atts:o.attachments.filter(function(a){ return a.content; })}); }
+    openCompose("Neue Nachricht",o.to,o.subject,o.html,{raw:true,cc:o.cc,bcc:o.bcc,inReplyTo:o.inReplyTo,source:o.source,account:o.account,after:o.attsDropped?null:o.after,atts:o.attachments.filter(function(a){ return a.content; })}); }   /* Anhang verloren → kein Folgeschritt (z. B. Angebot ohne PDF nicht als versendet markieren) */
 });
 F.action("mobshow",function(oid){ UI.mf="outbox"; UI.msel="ob_"+oid; F.go("post"); });
 F.action("mobretry",function(oid){ var o=M.findOb("ob_"+oid); if(o) outboxSend(o); });
@@ -155,6 +160,7 @@ function openCompose(title,to,subj,bodyHtml,opts){
   var accs=accList(), want=opts.account||(UI.macct&&UI.macct!=="all"?UI.macct:M.primaryAcct());
   if(!accs.some(function(a){ return a.key===want; })) want=accs[0].key;
   C={open:true,atts:(opts.atts||[]).slice(),title:title==="Verfassen"?"Neue Nachricht":(title||"Neue Nachricht"),inReplyTo:opts.inReplyTo||"",source:opts.source||null,draftId:opts.draftId||null,account:want,autoT:null,
+    after:opts.after||null,   /* Folgeschritt nach dem Senden (runAfter) – nicht im Entwurf gespeichert, Entwürfe haben keine Anhänge */
     rc:{mcTo:splitAddr(to),mcCc:splitAddr(opts.cc),mcBcc:splitAddr(opts.bcc)}};
   var sig=getSig(want), raw=!!opts.raw;
   var sigOn=raw?(opts.sigOn!==false&&/class="fsig"/.test(bodyHtml||"")):sig.on;
@@ -281,7 +287,7 @@ function doSend(){
   ],function(){
     if(!C.open) return;
     d=data();
-    queueMail({account:d.account,to:d.to,cc:d.cc,bcc:d.bcc,subject:d.subject,html:d.html,text:d.text,inReplyTo:C.inReplyTo,source:C.source,attachments:C.atts.filter(function(a){ return a.content; }).map(function(a){ return {filename:a.filename,contentType:a.contentType,size:a.size,content:a.content}; })});
+    queueMail({account:d.account,to:d.to,cc:d.cc,bcc:d.bcc,subject:d.subject,html:d.html,text:d.text,inReplyTo:C.inReplyTo,source:C.source,after:C.after,attachments:C.atts.filter(function(a){ return a.content; }).map(function(a){ return {filename:a.filename,contentType:a.contentType,size:a.size,content:a.content}; })});
     deleteDraft(C.draftId); hide();
   });
 }
@@ -387,11 +393,12 @@ window.addEventListener("keydown",function(e){
 window.addEventListener("click",function(e){ if(C.open&&e.target===host()){ e.stopPropagation(); closeCompose(); } },true);
 window.addEventListener("pagehide",function(){ if(C.open) saveIfMeaningful(true); });
 
-/* ---------- F.compose für alle Module: {title,to,cc,bcc,subject,text,html,inReplyTo,account,atts} ---------- */
+/* ---------- F.compose für alle Module: {title,to,cc,bcc,subject,text,html,inReplyTo,account,atts,after} ----------
+   after: {kind,…} (JSON) → nach erfolgreichem Versand F.mailAfter[kind] (siehe runAfter); gesendet wird immer erst mit „Senden“ */
 F.compose=function(pre){
   pre=pre||{};
   var body=pre.html!=null?sanitize(pre.html):"";
-  openCompose(pre.title||"Neue Nachricht",pre.to||"",pre.subject||"",body,{lead:pre.text!=null&&pre.text!==""?pre.text:null,cc:pre.cc,bcc:pre.bcc,inReplyTo:pre.inReplyTo,account:pre.account,atts:pre.atts,source:pre.source||null});
+  openCompose(pre.title||"Neue Nachricht",pre.to||"",pre.subject||"",body,{lead:pre.text!=null&&pre.text!==""?pre.text:null,cc:pre.cc,bcc:pre.bcc,inReplyTo:pre.inReplyTo,account:pre.account,atts:pre.atts,source:pre.source||null,after:pre.after||null});
 };
 F.action("compose",function(){ F.compose({}); });
 

@@ -47,7 +47,17 @@ F.css(
 '.bk-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14px;margin:0}'+
 '.bk-dl dt{color:var(--ink-2)} .bk-dl dd{margin:0;overflow-wrap:anywhere}'+
 '@media (max-width:720px){.bk-day{min-height:52px;padding:4px}.bk-chip{display:none}.bk-day .bk-cnt{display:inline}.bk-nav h3{min-width:0}}'+
-'.bk-cnt{display:none;font-size:11px;color:var(--warn)}'
+'.bk-cnt{display:none;font-size:11px;color:var(--warn)}'+
+/* Kundenmail: drei Karten, nichts vorausgewählt */
+'.bk-mo{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}'+
+'.bk-mc{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk);cursor:pointer;min-height:44px;min-width:0;transition:background .15s,border-color .15s}'+
+'.bk-mc:hover{background:var(--hover,var(--sunk))}.bk-mc.on{border-color:var(--glow);background:var(--sel,var(--hover))}'+
+'.bk-mc:focus-within{outline:2px solid var(--glow);outline-offset:2px}'+
+'.bk-mc input{margin:2px 0 0;accent-color:var(--glow);width:17px;height:17px;flex:none}.bk-mc>span{min-width:0}'+
+'.bk-mc b{display:block;font-size:14px;font-weight:600;text-wrap:balance}.bk-mc small{display:block;color:var(--ink-2);font-size:12.5px;margin-top:1px}'+
+'.bk-mo.need .bk-mc{border-color:var(--bad)}'+
+'@media (max-width:720px){.bk-mo{grid-template-columns:minmax(0,1fr)}}'+
+'@media (prefers-reduced-motion:reduce){.bk-mc{transition:none}}'
 );
 
 /* ---------- Datum ---------- */
@@ -206,6 +216,7 @@ function showBooking(b,fresh){
   var canInv=!!F.D.sev&&+b.totalCents>0&&(sto||(!b.sevdeskInvoiceId&&!abl));
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+(fresh?"Buchung angelegt · ":"")+esc(b.customerName)+'</h2>'+F.btnClose()+'</div>'+
     (fresh?'<p class="muted" style="margin:6px 0 0">Gespeichert in Blitzdings ('+esc(b.reference)+'). Steht damit im Blitzdings-Admin, im Google-Kalender von Blitzdings, hier im Kalender und unter Heute.</p>':'')+
+    (fresh&&b.mailInfo?'<p class="bk-mailinfo" role="status" style="margin:8px 0 0"><b>Mail an den Kunden:</b> '+esc(b.mailInfo)+'</p>':'')+
     '<dl class="bk-dl" style="margin:12px 0">'+rows.map(function(r){ return '<dt>'+esc(r[0])+'</dt><dd>'+(r[2]!=null?r[2]:esc(r[1]))+'</dd>'; }).join("")+'</dl>'+
     '<div class="sec-t">Weiter eintragen (optional)</div><div class="row wrap" style="gap:8px">'+
       '<button class="btn" data-act="bkical:'+esc(b.id)+'">In iCloud-Kalender eintragen</button>'+
@@ -297,10 +308,17 @@ function renderForm(cat,pre){
     '<label class="fl">Notiz (intern, steht in Blitzdings)<textarea class="f" name="note" rows="2"></textarea></label>'+
     '<div class="sec-t">Preis &amp; Zahlung</div>'+
     '<div class="grid2"><label class="fl">Rabatt in € (optional)<input class="f num" name="discount" type="number" min="0" step="0.01"></label><label class="fl">Fixer Endpreis in € (optional)<input class="f num" name="override" type="number" min="0" step="0.01" placeholder="leer = berechnet"></label>'+
-    '<label class="fl">Zahlung<select class="f" name="pay"><option value="INVOICE_UNPAID">Auf Rechnung – offen</option><option value="INVOICE_PAID">Bereits bezahlt (bar/Überweisung)</option></select></label>'+
-    '<label class="fl">Mail an Kunden<select class="f" name="customerMail"><option value="confirmation">Buchungsbestätigung (wie online)</option><option value="offer">Angebot mit Annahme-Link</option><option value="none">Keine Mail</option></select></label></div>'+
-    '<label class="chk"><input type="checkbox" name="notifyAdmin"> Interne Info-Mail an Blitzdings</label>'+
-    '<label class="chk"><input type="checkbox" name="sevdeskInvoice"> Rechnung sofort fertigstellen (Buchhaltung, wie Online-Firmenbuchung; braucht Adresse)</label>'+
+    '<label class="fl">Zahlung<select class="f" name="pay"><option value="INVOICE_UNPAID">Auf Rechnung – offen</option><option value="INVOICE_PAID">Bereits bezahlt (bar/Überweisung)</option></select></label></div>'+
+    /* Kundenmail nur auf ausdrückliche Wahl (Wunsch Simon 28.10.2026) – nichts vorausgewählt, ohne Wahl wird nicht gebucht */
+    '<div class="sec-t" id="bkMailT">Mail an den Kunden</div>'+
+    '<div class="bk-mo" id="bkMail" role="radiogroup" aria-labelledby="bkMailT" aria-describedby="bkMailHint" aria-required="true">'+
+      bkMailOpt("confirmation","Buchungsbestätigung senden","wie bei einer Online-Buchung")+
+      bkMailOpt("offer","Angebot mit Annahme-Link senden","Kunde bestätigt selbst online")+
+      bkMailOpt("none","Keine Mail","gebe es persönlich/gedruckt mit")+'</div>'+
+    '<p class="muted small" id="bkMailHint" style="margin:-4px 0 0">Bitte wählen – ohne Auswahl wird nicht gebucht. Eine Mail geht sofort beim Buchen raus.</p>'+
+    '<label class="chk"><input type="checkbox" name="notifyAdmin"> Interne Info-Mail an Blitzdings (nicht an den Kunden)</label>'+
+    '<label class="chk"><input type="checkbox" name="sevdeskInvoice"> Rechnung sofort fertigstellen und per Mail an den Kunden senden (Buchhaltung, wie Online-Firmenbuchung; braucht Adresse)</label>'+
+    '<div class="bk-warn" id="bkInvWarn" hidden>Achtung: Mit diesem Haken geht die Rechnung trotzdem per Mail an den Kunden. Ganz ohne Mail: Haken weg und nach dem Buchen „Rechnung vorbereiten“ (Entwurf, zum Drucken).</div>'+
     '<label class="chk" id="bkOvl" hidden><input type="checkbox" name="allowOverlap"> Trotzdem anlegen (Doppelbelegung bewusst zulassen)</label>'+
     '<div class="err" id="bkErr"></div>'+
     '<div class="foot"><span>Gesamt <span class="bk-price" id="bkSum">–</span> <span class="muted" id="bkSumSub"></span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit" id="bkSave">In Blitzdings buchen</button></span></div></form>',"wide");
@@ -336,8 +354,22 @@ function formUpdate(){
   var co=f.customerType.value==="COMPANY"; f.querySelectorAll(".bk-co").forEach(function(l){ l.hidden=!co; });
   var c=calc(f), sum=document.getElementById("bkSum"), sub=document.getElementById("bkSumSub");
   if(c){ sum.textContent=eur(c2e(c.total)); sub.textContent=(c.days>1?c.days+" Tage · ":"")+(c.override!=null?"fixer Preis":c.disc?"inkl. "+eur(c2e(c.disc))+" Rabatt":""); }
-  availHint(f);
+  availHint(f); mailSync(f);
 }
+/* Kundenmail: Auswahl-Karten, Knopftext sagt, was rausgeht („Buchen & Bestätigung senden“ …), Hinweis bei Rechnung + „Keine Mail“ */
+function bkMailOpt(v,t,s){ return '<label class="bk-mc"><input type="radio" name="customerMail" value="'+v+'"><span><b>'+esc(t)+'</b><small>'+esc(s)+'</small></span></label>'; }
+function mailChoice(f){ var r=f.querySelector('input[name="customerMail"]:checked'); return r?r.value:""; }
+var MAIL_WHAT={confirmation:"Buchungsbestätigung",offer:"Angebot"};
+function saveLabel(f){ var m=mailChoice(f), inv=!!(f.sevdeskInvoice&&f.sevdeskInvoice.checked), parts=[];
+  if(!m) return "In Blitzdings buchen";
+  if(m==="confirmation") parts.push("Bestätigung"); else if(m==="offer") parts.push("Angebot");
+  if(inv) parts.push("Rechnung");
+  return parts.length?"Buchen & "+parts.join(" + ")+" senden":"Buchen ohne Mail"; }
+function mailSync(f){ var m=mailChoice(f), box=document.getElementById("bkMail"), w=document.getElementById("bkInvWarn"), b=document.getElementById("bkSave");
+  f.querySelectorAll(".bk-mc").forEach(function(l){ var r=l.querySelector("input"); l.classList.toggle("on",!!(r&&r.checked)); });
+  if(box&&m){ box.classList.remove("need"); var er=document.getElementById("bkErr"); if(er&&/Mail an den Kunden/.test(er.textContent)) er.textContent=""; }
+  if(w) w.hidden=!(m==="none"&&f.sevdeskInvoice&&f.sevdeskInvoice.checked);
+  if(b&&!b.disabled) b.textContent=saveLabel(f); }
 F.listen("change",'form[data-form="bkbook"]',function(el,e){ if(e.target.name==="packageSlug") renderExtras(); formUpdate(); });
 F.listen("input",'form[data-form="bkbook"]',function(){ formUpdate(); });
 
@@ -351,17 +383,19 @@ F.form("bkbook",function(f){
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v("customerEmail"))) miss.push("E-Mail");
   if(f.customerType.value==="COMPANY"&&(!v("companyName")||!v("vatId"))) miss.push("Firmenname und UID");
   if(f.sevdeskInvoice.checked&&(!v("billingStreet")||!v("billingZip")||!v("billingCity"))) miss.push("Adresse (für die Rechnung)");
-  if(miss.length){ err.textContent="Bitte ausfüllen: "+miss.join(", "); return; }
-  var pay=f.pay.value.split("_");
+  var cm=mailChoice(f), box=document.getElementById("bkMail");
+  if(!cm){ miss.push("Mail an den Kunden (bitte wählen)"); if(box) box.classList.add("need"); }
+  if(miss.length){ err.textContent="Bitte ausfüllen: "+miss.join(", "); if(!cm&&miss.length===1&&box){ var r0=box.querySelector("input"); if(r0) r0.focus(); } return; }
+  var pay=f.pay.value.split("_"), label=saveLabel(f);
   var body={packageSlug:v("packageSlug"),eventDate:v("eventDate"),eventEndDate:v("eventEndDate"),eventTime:v("eventTime"),eventLocation:v("eventLocation"),
     extras:Array.prototype.map.call(f.querySelectorAll('input[name="extra"]:checked'),function(i){ return i.value; }),
     customerName:v("customerName"),customerEmail:v("customerEmail"),customerPhone:v("customerPhone"),customerType:f.customerType.value,
     companyName:v("companyName"),vatId:v("vatId"),billingStreet:v("billingStreet"),billingZip:v("billingZip"),billingCity:v("billingCity"),note:v("note"),
     paymentMethod:pay[0],paymentStatus:pay[1],discountCents:c.disc,totalCentsOverride:c.override,
-    customerMail:f.customerMail.value,notifyAdmin:f.notifyAdmin.checked,sevdeskInvoice:f.sevdeskInvoice.checked,allowOverlap:f.allowOverlap.checked};
+    customerMail:cm,notifyAdmin:f.notifyAdmin.checked,sevdeskInvoice:f.sevdeskInvoice.checked,allowOverlap:f.allowOverlap.checked};
   btn.disabled=true; btn.textContent="Speichere in Blitzdings …"; err.textContent="";
   F.api("/admin/api/blitz/bookings",{body:body}).then(function(j){
-    btn.disabled=false; btn.textContent="In Blitzdings buchen";
+    btn.disabled=false; btn.textContent=label;
     if(!j||j.ok===false){
       if(j&&j.conflicts&&j.conflicts.length){ document.getElementById("bkOvl").hidden=false;
         err.textContent=(j.error||"Termin belegt")+" – "+j.conflicts.slice(0,3).map(function(x){ return de(x.date)+" "+(TYPE_LABEL[x.type]||x.type)+(x.reason==="blocked"?" gesperrt":" ("+(x.reference||"gebucht")+")"); }).join(", "); }
@@ -374,12 +408,16 @@ F.form("bkbook",function(f){
       eventLocation:body.eventLocation,billingStreet:body.billingStreet,billingZip:body.billingZip,billingCity:body.billingCity,note:[body.eventTime?"Uhrzeit: "+body.eventTime:"",body.note].filter(Boolean).join("\n"),
       totalCents:j.booking.totalCents,sevdeskInvoiceId:(j.effects&&j.effects.sevdeskInvoiceId)||"",extras:ex.map(function(e){ return {name:e.name,priceCents:e.priceCents}; })};
     LAST[nb.id]=nb;
-    var mail=j.effects&&j.effects.mailSent;
-    F.toast("Gebucht: "+nb.customerName+" am "+de(nb.eventDate)+(body.customerMail!=="none"?(mail===false?" · Mail NICHT versendet":" · Mail versendet"):""),mail===false&&body.customerMail!=="none");
+    /* klar sagen, ob eine Mail an den Kunden ging (Toast + Hinweis in der Buchungsansicht) */
+    var mail=j.effects&&j.effects.mailSent, failed=cm!=="none"&&mail===false, what=MAIL_WHAT[cm];
+    var inv=!body.sevdeskInvoice?"":nb.sevdeskInvoiceId?"Rechnung fertiggestellt, geht per Mail an den Kunden":"Rechnung nicht erstellt – bitte in Blitzdings prüfen";
+    var sent=failed?what+" NICHT gesendet (Mail fehlgeschlagen)":what+" an "+nb.customerEmail+" gesendet";
+    nb.mailInfo=[cm==="none"?"keine – persönlich/gedruckt":sent,inv].filter(Boolean).join(" · ");
+    F.toast("Gebucht: "+nb.customerName+" am "+de(nb.eventDate)+" · "+[cm==="none"?"keine Mail an den Kunden":sent,inv].filter(Boolean).join(" · "),failed||(body.sevdeskInvoice&&!nb.sevdeskInvoiceId));
     if(nb.eventDate.slice(0,7)!==S.month){ S.month=nb.eventDate.slice(0,7); S.data=null; }
     refreshAll();
     showBooking(nb,true);
-  }).catch(function(){ btn.disabled=false; btn.textContent="In Blitzdings buchen"; err.textContent="Keine Verbindung zum Server."; });
+  }).catch(function(){ btn.disabled=false; btn.textContent=label; err.textContent="Keine Verbindung zum Server."; });
 });
 
 F.blitzKalState=S;   /* für Tests */
