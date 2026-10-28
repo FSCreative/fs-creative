@@ -73,19 +73,23 @@ module.exports = function (R) {
   // ───────────── Layout vorbereiten: Einheiten (Zeilen/Blöcke), Wörter, Markierungen, Zahlen ─────────────
   function prepare(root, P, grid) {
     const units = [], nums = [];
-    (function walk(node, cur) {
+    (function walk(node, cur, inh) {   // inh: geerbte Schriftgröße/Laufweite (für die Fächer des Zählers)
       if (!node || typeof node !== "object") return;
-      if (Array.isArray(node)) { node.forEach(n => walk(n, cur)); return; }
+      if (Array.isArray(node)) { node.forEach(n => walk(n, cur, inh)); return; }
       const pr = node.props || (node.props = {}), st = pr.style || {};
+      inh = { fs: +st.fontSize || inh.fs, ls: st.letterSpacing != null ? st.letterSpacing : inh.ls, ta: st.textAlign || inh.ta };
       let u = cur;
       if (st.__u && !cur) { u = { node, words: [], hls: [], st0: st }; units.push(u); }
       if (st.__w && u) u.words.push({ node, st0: st });
       if (st.__hl && u) u.hls.push({ node, st0: st, w: u.words[u.words.length - 1] || null });
       const ch = pr.children;
-      if (u && typeof ch === "string" && /^[^\d\s]{0,2}\d[\d.,]*\s?(%|€|k|K|\+|x|×|h|min|km|m)?$/.test(ch.trim()) && (+st.fontSize || 0) >= 90) nums.push({ node, u, text: ch });
+      if (u && typeof ch === "string" && /^[^\d\s]{0,2}\d[\d.,]*\s?(%|€|k|K|\+|x|×|h|min|km|m)?$/.test(ch.trim()) && (+st.fontSize || 0) >= 90) {
+        const ls = typeof inh.ls === "number" ? inh.ls : /em$/.test(inh.ls) ? parseFloat(inh.ls) * inh.fs : parseFloat(inh.ls) || 0;
+        nums.push({ node, u, text: ch, align: inh.ta, ls });
+      }
       if (u && u.words.length && typeof ch === "string" && st.__w === undefined) { /* Wort-Text unter dem Wort */ }
-      walk(ch, u);
-    })(root, null);
+      walk(ch, u, inh);
+    })(root, null, { fs: 16, ls: 0, ta: "" });
     // keine Merker (Layout ohne eigenen Look): Kinder der Wurzel als Einheiten
     if (!units.length) { const kids = [].concat((root.props && root.props.children) || []).filter(x => x && typeof x === "object"); kids.forEach(n => units.push({ node: n, words: [], hls: [], st0: (n.props && n.props.style) || {} })); }
     // Zeitplan: Einheiten nacheinander; Blöcke ohne Wörter (Listenpunkte, Knöpfe) auf halben Taktschlägen
@@ -103,6 +107,30 @@ module.exports = function (R) {
     units.forEach(u => u.words.forEach(w => { w.txt = []; (function f(n) { if (!n || typeof n !== "object") return; if (Array.isArray(n)) return n.forEach(f); const c = n.props && n.props.children; if (typeof c === "string") w.txt.push({ node: n, s: c }); else f(c); })(w.node); }));
     return { root, units, nums, end };
   }
+  /* Scramble ohne Umbruch-Springen: das echte Wort bleibt unsichtbar im Layout (hält Breite und Zeilen fest), die gewürfelten Zeichen
+     liegen mittig darüber – sonst verschieben sich je Bild alle folgenden Wörter, manchmal bricht sogar die Zeile anders um. */
+  function steady(real, shown) {
+    return { type: "div", props: { style: { display: "flex", position: "relative" }, children: [{ type: "span", props: { style: { opacity: 0 }, children: real } },
+      { type: "div", props: { style: { display: "flex", position: "absolute", left: 0, right: 0, top: 0, justifyContent: "center", whiteSpace: "nowrap" }, children: shown } }] } };
+  }
+  /* Zähler: die Zahl wird Zeichen für Zeichen in Fächer gesetzt, jedes so breit wie das Zeichen der fertigen Zahl (rechtsbündig zugeordnet:
+     Einer über Einern). Die zählende Ziffer steht mittig in ihrem Fach – sonst springt die Zahl je Bild hin und her, weil „1“ schmal und
+     „0“ breit ist. Auch die fertige Zahl bleibt in den Fächern (kein Ruck am Ende; einziger Unterschied zum Standbild: keine Unterschneidung). */
+  function counter(real, shown, ls, align) {
+    const R = Array.from(real), S = Array.from(shown), off = R.length - S.length;
+    if (off < 0) return shown;
+    // satori setzt die Laufweite nur zwischen Zeichen eines Textes – im Fach (ein Zeichen) fehlt sie, daher als Abstand nachgetragen
+    const cell = (c, ch, last) => ({ type: "div", props: { style: Object.assign({ display: "flex", position: "relative" }, ls && !last ? { marginRight: ls } : {}), children: [
+      { type: "span", props: { style: Object.assign({ opacity: 0 }, /\s/.test(c) ? { whiteSpace: "pre" } : {}), children: c } }].concat(ch && !/\s/.test(ch) ?
+      [{ type: "div", props: { style: { display: "flex", position: "absolute", left: 0, right: 0, top: 0, justifyContent: "center" }, children: ch } }] : []) } });
+    // Vorzeichen/Währung vorne („+“, „€“) bleibt in seinem Fach, nur die Ziffern füllen ihre Fächer rechtsbündig (sonst hüpft „+“ bei jeder neuen Stelle nach links)
+    const m = String(real).match(/^([^\d]*)(\d[\d.,]*)(.*)$/), pre = m ? Array.from(m[1]).length : 0, suf = m ? Array.from(m[3]).length : 0;
+    const keepPre = pre > 0 && off > 0 && S.slice(0, pre).join("") === m[1] && S.slice(S.length - suf).join("") === m[3];
+    const at = i => keepPre ? (i < pre ? S[i] : i >= pre + off ? S[i - off] : "") : i >= off ? S[i - off] : "";
+    const words = [[]]; R.forEach((c, i) => { words[words.length - 1].push(cell(c, at(i), i === R.length - 1)); if (/\s/.test(c)) words.push([]); });   // Leerzeichen bleibt am Wort davor (Umbruch wie im Text)
+    return { type: "div", props: { style: { display: "flex", flexWrap: "wrap", justifyContent: align === "center" ? "center" : align === "right" ? "flex-end" : "flex-start" },
+      children: words.filter(w => w.length).map(w => ({ type: "div", props: { style: { display: "flex" }, children: w } })) } };
+  }
   // Zustand zum Zeitpunkt t setzen (verändert die Stile im Baum); Rückgabe: Schlüssel zum Wiederverwenden gleicher Bilder
   function setState(pp, P, t) {
     const key = [];
@@ -112,7 +140,7 @@ module.exports = function (R) {
         u.node.props.style = u.st0;
         u.words.forEach(w => {
           const p = clamp((t - w.t0) / P.wd, 0, 1), a = anim(P.word, p, w.k); w.node.props.style = mix(w.st0, a); key.push(Math.round(p * 1000));
-          if (P.word === "scramble") w.txt.forEach((x, i) => { x.node.props.children = p >= 1 ? x.s : scramble(x.s, p, w.k + i); });
+          if (P.word === "scramble") w.txt.forEach((x, i) => { x.node.props.children = p >= 1 ? x.s : steady(x.s, scramble(x.s, p, w.k + i)); });
         });
       } else { const p = clamp((t - u.t0) / P.du, 0, 1); u.node.props.style = mix(u.st0, anim(P.unit, p, u.k)); key.push(Math.round(p * 1000)); }
       u.hls.forEach(hl => {
@@ -123,7 +151,7 @@ module.exports = function (R) {
         hl.node.props.style = s;
       });
     });
-    pp.nums.forEach(n => { const p = clamp((t - n.t0) / (n.t1 - n.t0), 0, 1); n.node.props.children = p >= 1 ? n.text : countFmt(n.text, E.outExpo(p)); key.push(Math.round(p * 1000)); });
+    pp.nums.forEach(n => { const p = clamp((t - n.t0) / (n.t1 - n.t0), 0, 1); n.node.props.children = counter(n.text, p >= 1 ? n.text : countFmt(n.text, E.outExpo(p)), n.ls, n.align); key.push(Math.round(p * 1000)); });
     return key.join(",");
   }
 
@@ -157,8 +185,54 @@ module.exports = function (R) {
     });
   }
   const write = (s, buf) => new Promise((res, rej) => { if (s.destroyed) return rej(new Error("ffmpeg beendet")); s.write(buf) ? res() : s.once("drain", res); });
-  /* Kamerafahrt über dem fertigen Bild (Hintergrund + Text zusammen, sonst laufen Logo/Karten und Text auseinander) – wechselt je Szene.
-     A = Stärke (Foto/Video kräftiger, reines Layout sanft), Ruck beim harten Schnitt nur leicht.
+
+  // ───────────── Ebenen: Hintergrund (mit Kamerafahrt) und Vordergrund (steht still) ─────────────
+  /* Die Kamerafahrt läuft nur über den Hintergrund: Wurzel-Fläche und Deko (__de: Fotos, Verläufe, Kreise, Sticker).
+     Text, Karten unter dem Text (ungemarkte Flächen) und das Logo bilden den Vordergrund und stehen nach dem Einfliegen pixelgenau still –
+     so laufen Logo/Karten und Text nicht auseinander, und die Schrift wird nicht Bild für Bild neu abgetastet (früher lief die Fahrt über
+     das fertige Bild: Kanten flimmerten, der Encoder rechnete die Schrift in jedem Bild neu → „zittert“). */
+  const isLogo = (n, logo) => { const st = (n.props && n.props.style) || {}; return !!st.__logo || (n.type === "img" && !!logo && n.props.src === logo); };
+  function hasLogo(n, logo) { if (!n || typeof n !== "object") return false; if (Array.isArray(n)) return n.some(x => hasLogo(x, logo)); return isLogo(n, logo) || hasLogo(n.props && n.props.children, logo); }
+  // Fläche/Farbe entfernen, Größe und Lage behalten (Rahmenbreite bleibt, nur unsichtbar)
+  function unpaint(st, type) {
+    const s = Object.assign({}, st);
+    ["background", "backgroundColor", "backgroundImage", "boxShadow", "textShadow"].forEach(k => delete s[k]);
+    ["border", "borderTop", "borderRight", "borderBottom", "borderLeft"].forEach(k => { if (typeof s[k] === "string") { const m = s[k].trim().match(/^(\S+)(?:\s+(solid|dashed|dotted|double))?/); s[k] = (m ? m[1] : "0px") + " " + ((m && m[2]) || "solid") + " transparent"; } });
+    if (s.borderColor) s.borderColor = "transparent";
+    s.color = "transparent";
+    if (type === "img") s.opacity = 0;
+    return s;
+  }
+  // Hintergrund: nur Wurzel-Fläche und Deko zeichnen (Logo nicht – das steht im Vordergrund)
+  function bgLayer(root, logo) {
+    (function walk(n, top) {
+      if (!n || typeof n !== "object") return;
+      if (Array.isArray(n)) return n.forEach(x => walk(x, false));
+      const pr = n.props || (n.props = {}), st = pr.style || {};
+      if (st.__de) { if (hasLogo(n, logo)) pr.style = Object.assign({}, st, { opacity: 0 }); return; }
+      if (!top) pr.style = unpaint(st, n.type);
+      walk(pr.children, false);
+    })(root, true);
+    return root;
+  }
+  /* Vordergrund: alles außer Deko. Dazu kommen das Logo (steckt in Deko; nur wenn die Szene es zeigt – über Video gibt es keins) und
+     Deko innerhalb eines Text-Blocks (z. B. Foto-Kachel einer Liste – gehört zum Block und fliegt mit ihm ein; fehlte früher im Reel ganz).
+     Unsichtbare Fotos werden durch ein leeres Bild ersetzt (spart das Dekodieren je Bild). */
+  const BLANK = "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>').toString("base64");
+  function fgLayer(root, logo, withLogo) {
+    (function walk(n, hidden, unit) {
+      if (!n || typeof n !== "object") return;
+      if (Array.isArray(n)) return n.forEach(x => walk(x, hidden, unit));
+      const pr = n.props || (n.props = {}), st = pr.style || {};
+      if (st.__u) unit = true;
+      if (st.__de && !hidden) { if (unit || (withLogo && hasLogo(n, logo))) { const s = Object.assign({}, st); delete s.opacity; pr.style = s; } else hidden = true; }
+      if (hidden && n.type === "img" && typeof pr.src === "string" && pr.src.length > 4000 && +(pr.width || st.width) > 0 && +(pr.height || st.height) > 0) pr.src = BLANK;
+      walk(pr.children, hidden, unit);
+    })(root, false, false);
+    return root;
+  }
+
+  /* Kamerafahrt über den Hintergrund – wechselt je Szene. A = Stärke (Foto/Video kräftiger, reines Layout sanft), Ruck beim harten Schnitt nur leicht.
      Umsetzung mit „perspective“ (Subpixel, kubisch interpoliert) statt zoompan: zoompan rundet Ausschnitt-Position je Bild auf ganze Pixel → Wackeln/Zittern. */
   const KB = [   // [Zoom, Lage x 0…1, Lage y 0…1] als Ausdruck in u (0→1 über die Szene, weich ein-/ausgeblendet)
     A => ["1+" + A + "*U", "0.5", "0.5"],
@@ -180,8 +254,9 @@ module.exports = function (R) {
     const P = o.P, dir = o.dir, bgVid = o.bgVideos && o.bgVideos[i];
     const variant = s.template === "cta" ? "brand" : (o.variants ? o.variants[i % o.variants.length] : (i % 2 ? "dark" : "brand"));
     const base = { format: "reel", variant: bgVid ? "dark" : variant, url: o.url || "", overVideo: !!bgVid, v: (o.v || 0) + i, cover: i === 0, cv: o.cv || 0 }, LF = R.fmtFor(base, brand);   // Layout-Größe (reel: 900×1600 → 1080×1920)
-    const bgPng = path.join(dir, "bg" + i + ".png"); fs.writeFileSync(bgPng, await R.slidePng(s, brand, Object.assign({}, base, { layer: "bg" })));
-    const tree = R.postEl(s, brand, Object.assign({}, base, { layer: "fg", anim: true }));
+    const logo = (brand && brand.logo) || "", bgPng = path.join(dir, "bg" + i + ".png"), bgTree = R.postEl(s, brand, Object.assign({}, base, { layer: "bg", anim: true })), withLogo = hasLogo(bgTree, logo);
+    fs.writeFileSync(bgPng, await R.png(bgLayer(bgTree, logo), LF.w, LF.h, { scale: W / LF.w }));
+    const tree = fgLayer(R.postEl(s, brand, Object.assign({}, base, { layer: "fg", anim: true })), logo, withLogo);
     const pp = prepare(tree, P, o.G.half), N = Math.round(len * FPS), animEndF = Math.min(N, Math.ceil((delay + pp.end + 0.05) * FPS) + 1);
     const inBg = bgVid ? ["-stream_loop", "-1", "-t", len.toFixed(3), "-i", bgVid, "-loop", "1", "-framerate", String(FPS), "-t", len.toFixed(3), "-i", bgPng]
       : ["-loop", "1", "-framerate", String(FPS), "-t", len.toFixed(3), "-i", bgPng];
@@ -189,7 +264,9 @@ module.exports = function (R) {
     const bgF = bgVid ? "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,eq=brightness=-0.06:saturation=1.08[b0];[b0][1:v]overlay=0:0[b]"
       : "[0:v]scale=1080:1920,setsar=1,fps=30[b]";
     const kb = KB[(o.v + i) % KB.length](bgVid || s.image ? 0.07 : 0.035), d0 = delay.toFixed(3);
-    const fc = bgF + ";[" + fgIdx + ":v]format=rgba[f];[b][f]overlay=0:0:alpha=premultiplied:eof_action=repeat:format=auto,format=yuv444p," + camera(kb, N, punch, d0) + ",format=yuv420p[v]";
+    // Kamerafahrt nur über den Hintergrund (RGB, kubisch), Text-Ebene darüber an fester Stelle (nach dem Einfliegen: letztes Bild steht).
+    // overlay im gepackten RGB: mit format=gbrp/yuv444 rechnet ffmpeg 6 vormultipliziertes Alpha falsch (Weiß → #efefef)
+    const fc = bgF + ";[b]format=gbrp," + camera(kb, N, punch, d0) + ",format=rgb24[bc];[" + fgIdx + ":v]format=rgba[f];[bc][f]overlay=0:0:alpha=premultiplied:eof_action=repeat:format=rgb,format=yuv420p[v]";
     const seg = path.join(dir, "seg" + i + ".mp4"), units = [];
     pp.units.forEach(u => units.push(delay + u.t0));
     let lastKey = null, lastBuf = null, frames = 0, tJs = 0; const t0 = Date.now();
@@ -287,5 +364,5 @@ module.exports = function (R) {
     const bpm = Math.abs(b2 - Math.round(b2)) < 0.25 ? Math.round(b2) : Math.round(b2 * 100) / 100, b0 = Math.round((bp * HOP + N / 2) / SR * 1000) / 1000;
     return best > 0 ? { bpm, beat0: b0 < 0.05 ? 0 : b0 } : null;
   }
-  return { reel, tempo, MOTION, profile, _scene: sceneSeg, _test: { prepare, setState, anim, countFmt, scramble, cuts, beatGrid } };
+  return { reel, tempo, MOTION, profile, _scene: sceneSeg, _test: { prepare, setState, anim, countFmt, scramble, cuts, beatGrid, bgLayer, fgLayer, steady, counter } };
 };

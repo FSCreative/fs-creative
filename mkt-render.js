@@ -8,8 +8,21 @@ const path = require("path");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 
-let satori = null, Resvg = null, FFMPEG = process.env.FFMPEG_BIN || "";
-try { const m = require("satori"); satori = m.default || m; } catch (e) { satori = null; }
+let satori = null, Resvg = null, FFMPEG = process.env.FFMPEG_BIN || "", SATORI_EXACT = false;
+/* satori schreibt Transformationen als matrix(…) mit nur 2 Nachkommastellen – Schrift-Pfade liegen aber in absoluten Koordinaten
+   (bis 1600 px). Bei scale/rotate wird so z. B. 1,0055 zu 1,01, während die Verschiebung um den Drehpunkt exakt gerechnet ist:
+   ein Wort weiter unten springt dadurch je Bild um bis zu ~8 px hin und her („die Schrift zittert beim Einfliegen“).
+   Daher laden wir satori mit 5 Nachkommastellen für die Matrix (eigene Kopie im Speicher, node_modules bleibt unverändert).
+   Ändert sich satori so, dass die Stelle nicht mehr passt, wird das Original geladen (Test „satori: exakte Matrix“ fällt dann auf). */
+function loadSatori() {
+  const Module = require("module"), file = require.resolve("satori"), src = fs.readFileSync(file, "utf8");
+  const re = /matrix\(\$\{(\w+)\.map\((\w+)=>\2\.toFixed\(2\)\)\.join\(","\)\}\)/;
+  if (!re.test(src)) { const m = require("satori"); return m.default || m; }
+  const m = new Module(file, module); m.filename = file; m.paths = Module._nodeModulePaths(path.dirname(file));
+  m._compile(src.replace(re, (all, arr, v) => "matrix(${" + arr + ".map(" + v + "=>+" + v + ".toFixed(5)).join(\",\")})"), file);
+  SATORI_EXACT = true; return m.exports.default || m.exports;
+}
+try { satori = loadSatori(); } catch (e) { try { const m = require("satori"); satori = m.default || m; SATORI_EXACT = false; } catch (e2) { satori = null; } }
 try { Resvg = require("@resvg/resvg-js").Resvg; } catch (e) { Resvg = null; }
 if (!FFMPEG) { try { FFMPEG = require("ffmpeg-static") || ""; } catch (e) { FFMPEG = ""; } }
 
@@ -142,7 +155,7 @@ function bgStyle(T) { return { background: "linear-gradient(160deg, " + T.primar
 function logoPill(brand, T, height) {
   const hgt = height || 64;
   if (brand && brand.logo) return h("div", { background: brand.logoBg === "dark" ? T.dark : "#ffffff", borderRadius: 999, padding: Math.round(hgt * 0.32) + "px " + Math.round(hgt * 0.6) + "px", boxShadow: "0 10px 30px rgba(0,0,0,0.18)" }, img(brand.logo, { height: hgt, width: Math.round(hgt * (brand.logoRatio || 4.9)) }));
-  return h("div", { background: "#ffffff", color: T.primary, borderRadius: 999, padding: "16px 34px", fontFamily: "Poppins", fontWeight: 800, fontSize: Math.round(hgt * 0.62) }, (brand && brand.name) || "");
+  return h("div", { background: "#ffffff", color: T.primary, borderRadius: 999, padding: "16px 34px", fontFamily: "Poppins", fontWeight: 800, fontSize: Math.round(hgt * 0.62), __logo: 1 }, (brand && brand.name) || "");
 }
 
 // ───────────── Gewinnspiel-Video ─────────────
@@ -363,7 +376,7 @@ function postEl(slide, brand, o) {
     return skins().el(Object.assign({}, slide, o.overVideo ? { image: "" } : {}), brand, o, F0);
   }
   const T = theme(brand), F = F0, L = look(T, o.variant || "brand"), story = F === FMT.story;
-  const layer = o.layer || "all", TX = layer === "bg" ? { opacity: 0 } : {}, DE = layer === "fg" ? { opacity: 0 } : {};
+  const layer = o.layer || "all", TX = layer === "bg" ? { opacity: 0 } : {}, DE = Object.assign(layer === "fg" ? { opacity: 0 } : {}, o.anim ? { __de: 1 } : {});   // __de: Deko-Merker fürs Reel (mkt-motion.js)
   const W2 = F.w - 2 * F.px, s = slide || {}, tpl = s.template === "photo" && !s.image ? "hook" : (s.template || "hook");
   const root = Object.assign({ width: F.w, height: F.h, position: "relative", flexDirection: "column", fontFamily: "Inter", color: L.fg, overflow: "hidden", padding: F.top + "px " + F.px + "px " + F.bottom + "px" },
     layer === "fg" ? { background: "transparent" } : o.overVideo ? { background: "linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.28) 62%, rgba(0,0,0,0.72) 100%)" } : { background: L.bg });
@@ -467,4 +480,4 @@ async function reelVideo(scenes, brand, o) {
   return { file: out, cover, duration: Math.round(total * 10) / 10 };
 }
 
-module.exports = { ready, videoReady, h, img, png, rawFrame, clean, fmtFor, FFMPEG: () => FFMPEG, VENC, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };
+module.exports = { ready, videoReady, h, img, png, rawFrame, svgOf, satoriExact: () => SATORI_EXACT, clean, fmtFor, FFMPEG: () => FFMPEG, VENC, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };
