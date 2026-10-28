@@ -13,8 +13,8 @@
 <meta name="theme-color" content="#0d1520">
 <link href="/fonts/cockpit/fonts.css" rel="stylesheet"><!-- Plus Jakarta Sans + JetBrains Mono lokal (keine Verbindung zu Google) -->
 <title>FS Cockpit</title>
-<!-- Darstellung vor dem ersten Zeichnen: „glas“ (Alpenglas) ist Standard; einmalig wird „dunkel“/nichts auf „glas“ umgestellt (Merker fsc_theme_glas1), hell/System bleiben -->
-<script>(function(){var d=document.documentElement,L,t="glas";try{L=window.localStorage;t=JSON.parse(L.getItem("fsc_theme")||"null");if(!L.getItem("fsc_theme_glas1")){if(!t||t==="dark"){t="glas";L.setItem("fsc_theme",JSON.stringify(t));}L.setItem("fsc_theme_glas1","1");}if(["glas","dark","light","auto"].indexOf(t)<0)t="glas";}catch(e){t="glas";}
+<!-- Darstellung vor dem ersten Zeichnen: „glas“ (Alpenglas) ist Standard; einmalig wird jede bisherige Wahl auf „glas“ umgestellt (Merker fsc_theme_glas2), danach gilt die eigene Wahl -->
+<script>(function(){var d=document.documentElement,L,t="glas";try{L=window.localStorage;t=JSON.parse(L.getItem("fsc_theme")||"null");if(!L.getItem("fsc_theme_glas2")){t="glas";L.setItem("fsc_theme",JSON.stringify(t));L.setItem("fsc_theme_glas1","1");L.setItem("fsc_theme_glas2","1");}if(["glas","dark","light","auto"].indexOf(t)<0)t="glas";}catch(e){t="glas";}
 if(t==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",t);
 var mm=function(q){try{return !!(window.matchMedia&&matchMedia(q).matches);}catch(e){return false;}},dk=t==="auto"?mm("(prefers-color-scheme: dark)"):t!=="light";
 var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="glas"?"#0d1520":dk?"#0b0e14":"#f4f5f8");
@@ -360,7 +360,7 @@ body{font-size:14px;letter-spacing:-.003em}
 
 /* Inhalt */
 main{grid-area:main;padding-block:6px 80px;padding-inline:clamp(16px,2.6vw,36px);min-width:0}
-.view{max-width:1400px;gap:18px}
+.view,.view.view-post{max-width:none;gap:18px}   /* Desktop: volle Breite nutzen (auch Postfach) */
 .head{align-items:flex-end;padding:6px 0 2px}
 .head h1{font-size:30px;font-weight:700;letter-spacing:-.025em;line-height:1.1;color:var(--ink)}
 .head p{margin:6px 0 0;font-size:14px;color:var(--ink-2)}
