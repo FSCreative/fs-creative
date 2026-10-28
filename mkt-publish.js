@@ -401,13 +401,202 @@ module.exports = function (D) {
   async function mapLimit(list, n, fn) { const out = new Array(list.length); let i = 0;
     await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => { while (i < list.length) { const k = i++; out[k] = await fn(list[k], k); } })); return out; }
   const PAR = 4;
-  const attTxt = x => { const a = x && x.attachments && x.attachments.data && x.attachments.data[0]; return a ? (/image|photo/i.test(a.mime_type || a.type || "") || a.image_data ? "📷 Foto" : /video/i.test(a.mime_type || a.type || "") || a.video_data ? "🎬 Video" : /audio/i.test(a.mime_type || "") ? "🎤 Sprachnachricht" : a.file_url ? "📎 Datei" : a.share || a.generic_template ? "🔗 Geteilter Beitrag" : "📎 Anhang") : "📎 Anhang"; };
+  // ───────────── Posteingang: Anhänge (Fotos, GIFs, Sticker, Videos, Sprachnachrichten, Dateien, geteilte Beiträge/Reels, Story-Erwähnungen) ─────────────
+  // Kompakt je Anhang: { t, url, prev, w, h, mime, name, size, title, link, owner, mediaId, storyId, exp, state:"ok"|"expired"|"gone"|"ephemeral"|"unsupported"|"unknown" }
+  // Gespeichert werden nur Adresse und Angaben, NIE die Datei (Meta verbietet das für Story-Erwähnungen) – angezeigt über den Durchreich-Proxy in mkt-posts.js.
+  const H24 = 864e5;
+  // Medien-Adressen der Plattformen: nur bekannte CDN-Hosts über https (Tests: zusätzlich D.cdnHosts) – nie beliebige Adressen abrufen (SSRF)
+  const CDN_RE = /(^|\.)(fbsbx\.com|fbcdn\.net|cdninstagram\.com|facebook\.com)$/i, CDN_X = (D.cdnHosts || []).map(String);
+  function cdnOk(v) { try { const x = new URL(String(v)); return (x.protocol === "https:" && CDN_RE.test(x.hostname)) || (CDN_X.indexOf(x.host) > -1 && /^https?:$/.test(x.protocol)); } catch (e) { return false; } }
+  const urlOf = v => { v = String(v || "").trim(); return v.length < 3000 && (/^https:\/\/[^\s"'<>\\]+$/i.test(v) || cdnOk(v)) ? v : ""; };
+  // Links, die das Cockpit öffnen darf (Deep-Links in die Apps, Permalinks)
+  const LINK_OK = /^https:\/\/(ig\.me|(www\.)?instagram\.com|(www\.)?threads\.(net|com)|bsky\.app|(www\.|m\.|business\.)?facebook\.com)\/[^\s"'<>\\]*$/;
+  const linkOf = v => LINK_OK.test(String(v || "")) ? String(v).slice(0, 500) : "";
+  const tidy = o => { Object.keys(o).forEach(k => { const v = o[k]; if (v === "" || v == null || v === false || (typeof v === "number" && !(v > 0))) delete o[k]; }); return o; };
+  const EMO = { love: "❤️", like: "👍", haha: "😂", wow: "😮", sad: "😢", angry: "😠", smile: "😊", yay: "🎉" };
+  const ms = t => Date.parse(t || 0) || 0;
+  // Graph-Nachricht (Instagram/Facebook) → alle Anhänge, auch neben Text
+  function attsOf(x) {
+    const out = [], at = ms(x.created_time), exp = at ? new Date(at + H24).toISOString() : "";
+    const add = a => { a.state = a.state || "ok"; out.push(tidy(a)); };
+    ((x.attachments && x.attachments.data) || []).forEach(a => {
+      const im = a.image_data, vd = a.video_data, mt = String(a.mime_type || "").toLowerCase(), py = a.payload || {}, ty = String(a.type || "").toLowerCase(), fu = urlOf(a.file_url || py.url);
+      if (im) { const gif = urlOf(im.animated_gif_url); return add({ t: im.render_as_sticker ? "sticker" : gif ? "gif" : "image", url: gif || urlOf(im.url), prev: gif ? urlOf(im.url) : urlOf(im.preview_url), w: +im.width, h: +im.height }); }
+      if (vd) return add({ t: "video", url: urlOf(vd.url), prev: urlOf(vd.preview_url), w: +vd.width, h: +vd.height });
+      if (a.generic_template) { const g = a.generic_template; return add({ t: "template", title: clipT([g.title, g.subtitle].filter(Boolean).join(" – "), 300), url: urlOf(g.media_url || g.image_url), link: urlOf(g.url || (g.cta && g.cta.url) || (g.default_action && g.default_action.url)) }); }
+      // Webhook-Form (type + payload), die manche Konten auch im Abruf liefern
+      if (/story_mention/.test(ty)) return add({ t: "story_mention", url: fu, exp });
+      if (/reel/.test(ty)) return add({ t: "reel", url: fu, title: clipT(py.title, 300), mediaId: String(py.reel_video_id || "") });
+      if (/ig_post|share/.test(ty) && fu) return add({ t: "post", url: fu, title: clipT(py.title, 300), mediaId: String(py.ig_post_media_id || "") });
+      if (fu) return add({ t: /^audio\//.test(mt) || ty === "audio" ? "audio" : /animated/.test(ty) ? "gif" : /^image\//.test(mt) || ty === "image" ? "image" : /^video\//.test(mt) || ty === "video" ? "video" : "file", url: fu, mime: mt, name: clipT(a.name, 120), size: +a.size });
+      add({ t: "ephemeral", state: "ephemeral" });   // Anhang ohne Adresse: Einmal-Foto/-Video, nur in der App sichtbar
+    });
+    ((x.shares && x.shares.data) || []).forEach(s => {   // geteilte Beiträge/Reels: Bild- bzw. Video-Adresse und Text, meist ohne Permalink
+      const ty = String(s.type || "").toLowerCase(), link = urlOf(s.link), url = urlOf(s.url);
+      if (!url && !link && !s.title && !s.name && !s.description) return;
+      add({ t: /reel/.test(ty) ? "reel" : /post|media|photo|video/.test(ty) || (url && !link) ? "post" : "link", url: url !== link ? url : "", link, title: clipT(s.title || s.description || s.name, 300), mediaId: s.id ? String(s.id) : "" });
+    });
+    const st = x.story || {}, rs = x.reply_to && x.reply_to.story;
+    if (st.mention) add({ t: "story_mention", url: urlOf(st.mention.link || st.mention.url), storyId: String(st.mention.id || ""), exp });
+    if (st.reply_to || rs) { const r = st.reply_to || rs; add({ t: "story_reply", url: urlOf(r.link || r.url), storyId: String(r.id || ""), exp }); }
+    if (typeof x.sticker === "string" && urlOf(x.sticker) && !out.some(a => a.t === "sticker")) add({ t: "sticker", url: urlOf(x.sticker) });
+    if (x.is_unsupported) add({ t: "unsupported", state: "unsupported" });
+    return out.slice(0, 10);
+  }
+  // Ablauf ohne Netzabfrage: Storys sind 24 h nach dem Erwähnen weg
+  function stamp(a) { if (/^story_/.test(a.t)) { if (a.exp && ms(a.exp) < Date.now()) a.state = "expired"; else if (!a.url && a.state === "ok") a.state = "unknown"; } return a; }
+  // Kurztext für Liste und Mitteilung (statt „📎 Anhang“)
+  const LBL = { image: "📷 Foto", gif: "GIF", sticker: "Sticker", video: "🎬 Video", audio: "🎤 Sprachnachricht", file: "📎 Datei", post: "🔗 Geteilter Beitrag", reel: "🎞 Geteiltes Reel", link: "🔗 Link", template: "🔗 Karte", quote: "💬 Zitat",
+    story_mention: "📣 hat dich in der Story erwähnt", story_reply: "↩︎ hat auf deine Story geantwortet", ephemeral: "👁 Einmal-Foto/-Video (nur in der App)", unsupported: "Nachricht nur in der App sichtbar" };
+  function labelOf(atts) {
+    const a = (atts || [])[0]; if (!a) return ""; if (a.old) return "Anhang (älter, nur in der App)";
+    let l = LBL[a.t] || "📎 Anhang"; if (a.t === "file" && a.name) l += " „" + clipT(a.name, 60) + "“"; if ((a.t === "post" || a.t === "reel") && a.owner) l += " von " + a.owner;
+    return atts.length > 1 ? l + " (+" + (atts.length - 1) + ")" : l;
+  }
+  // Feldleiter: reichster Feldsatz zuerst; meldet Meta „unbekanntes Feld“, der nächste. Die funktionierende Stufe wird je Kanal gemerkt (st), nach 7 Tagen neu probiert.
+  const fieldErr = e => !e.auth && e.status === 400 && /nonexisting field|unknown field|invalid field|\(#100\)/i.test(String(e.message || ""));
+  async function ladder(st, key, levels, run) {
+    const m = st[key], start = m && Date.now() - m.at < 7 * H24 ? Math.min(m.n, levels.length - 1) : 0;
+    for (let k = start; k < levels.length; k++) {
+      try { const r = await run(levels[k], k); st[key] = { n: k, at: m && m.n === k && start === k && k > 0 ? m.at : Date.now() }; return r; }
+      catch (e) { if (!fieldErr(e) || k === levels.length - 1) throw e; }
+    }
+  }
+  const ATT_F = "attachments{id,mime_type,name,size,file_url,image_data{url,preview_url,width,height,render_as_sticker,animated_gif_url},video_data{url,preview_url,width,height},generic_template}";
+  const SHR_F = "shares{id,name,description,link,type,url,title}", MSG0 = "id,from,to,message,created_time";
+  const IG_MSG = [MSG0 + "," + ATT_F + "," + SHR_F + ",story,reactions,reply_to,is_unsupported", MSG0 + "," + ATT_F + "," + SHR_F + ",story", MSG0 + ",attachments,shares,story", MSG0 + ",attachments"];
+  const FB_MSG = [MSG0 + "," + ATT_F + "," + SHR_F + ",sticker,reactions,reply_to,is_unsupported", MSG0 + "," + ATT_F + "," + SHR_F, MSG0 + ",attachments,shares", MSG0 + ",attachments"];
+  // Ablaufprüfung einer Medien-Adresse (1 Byte, Weiterleitungen einzeln geprüft), Ergebnis 15 min gemerkt: ok | gone (403/404/410) | unknown
+  async function cdnFetch(url, o) {
+    o = o || {}; let u = String(url || "");
+    for (let i = 0; i < 4; i++) {
+      if (!cdnOk(u)) throw pubErr("Unbekannte Medien-Adresse", { status: 404, host: true });
+      const r = await fetch(u, { headers: Object.assign({ "User-Agent": "Mozilla/5.0 (FS-Cockpit)" }, o.range ? { Range: o.range } : {}), redirect: "manual", signal: o.signal || AbortSignal.timeout(o.timeout || 20000) });
+      const loc = r.status >= 300 && r.status < 400 && r.headers.get("location");
+      if (!loc) return r;
+      try { if (r.body) await r.body.cancel(); } catch (e) {}
+      u = new URL(loc, u).toString();
+    }
+    throw pubErr("Zu viele Weiterleitungen", { status: 502 });
+  }
+  const PROBE = new Map();
+  async function probe(url) {
+    const c = PROBE.get(url); if (c && Date.now() - c.at < 15 * 60e3) return c;
+    const o = { at: Date.now(), st: "unknown", mime: "" };
+    try { const r = await cdnFetch(url, { range: "bytes=0-0", timeout: 5000 }); o.st = r.ok ? "ok" : [403, 404, 410].indexOf(r.status) > -1 ? "gone" : "unknown"; if (r.ok) o.mime = String(r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase().slice(0, 60); try { if (r.body) await r.body.cancel(); } catch (e) {} } catch (e) {}
+    PROBE.set(url, o); if (PROBE.size > 2000) PROBE.delete(PROBE.keys().next().value); return o;
+  }
+  // Unterhaltungen (Instagram/Facebook) → Einträge mit Verlauf und allen Anhängen.
+  // x: { o (Optionen von inbox), base, t, detail (Felder Einzelabruf), isMine(m), nameOf(m, other), other(c), item(c, other) → Grundeintrag }
+  async function convItems(cvAll, x) {
+    const o = x.o, prevAtt = new Map(), need = [], rows = [];
+    (o.prev || []).forEach(i => (i.thread || []).forEach(m => { if (m.id && m.att && m.att.length) prevAtt.set(m.id, m.att); }));
+    cvAll.forEach(c => {
+      const raw = (c.messages && c.messages.data) || []; if (!raw.length) return; const other = x.other(c);
+      const thread = raw.map((m, idx) => {
+        let att = attsOf(m); const text = String(m.message || ""), keep = prevAtt.get(m.id);
+        // Zusammenführen mit dem letzten Stand: gleiche Adresse behält „abgelaufen/gelöscht“; Meta liefert Angaben nur für die 20 neuesten Nachrichten
+        if (keep) { if (!att.length) att = keep.map(a => Object.assign({}, a)); else att.forEach((a, k) => { const p = keep[k]; if (p && p.t === a.t && p.url && p.url === a.url) { if (p.state === "gone" || p.state === "expired") a.state = p.state; if (p.mime && !a.mime) a.mime = p.mime; } }); }
+        if (!att.length && !text && o.msgx && o.msgx[m.id]) att = (o.msgx[m.id].att || []).map(a => Object.assign({}, a));
+        const r = { id: m.id, from: { name: x.nameOf(m, other) }, text, at: m.created_time || "", mine: x.isMine(m) };
+        if (att.length) r.att = att; else if (!text && idx < 20 && !(o.msgx && o.msgx[m.id])) need.push(r);
+        r._i = idx;
+        const re = ((m.reactions && m.reactions.data) || []).map(z => ({ e: z.emoji || EMO[String(z.reaction || "").toLowerCase()] || "❤️" })).slice(0, 6); if (re.length) r.react = re;
+        const rt = m.reply_to && (m.reply_to.mid || m.reply_to.id); if (rt) r.replyTo = { mid: String(rt) };
+        return r;
+      }).reverse();
+      rows.push({ c, other, thread });
+    });
+    // Einzelabruf (GET /<Nachricht>?fields=story,…) nur, wenn die Feldleiter auf einer schlichten Stufe steht – je Nachricht nur einmal (o.msgx), höchstens 10 je Abruf
+    if (need.length && x.poor) {
+      await mapLimit(need.slice(0, 10), PAR, async r => {
+        let att = []; try { att = attsOf(Object.assign({ created_time: r.at }, await get(x.base + "/" + encodeURIComponent(r.id) + q({ fields: x.detail, access_token: x.t }), { timeout: 10000 }))); }
+        catch (e) { if (e.auth || !(e.status >= 400 && e.status < 500)) return; }   // Meta kennt die Nachricht so nicht → merken (leer), nicht bei jedem Abruf neu fragen
+        if (att.length) r.att = att; if (o.msgx) { o.msgx[r.id] = { t: Date.now(), att }; o.msgxDirty = true; }
+      });
+    }
+    const stories = [];
+    rows.forEach(rw => rw.thread.forEach(r => {
+      if (!r.text && !r.att) r.att = [tidy({ t: "unsupported", state: "unknown", old: r._i >= 20 ? 1 : 0 })];
+      delete r._i; (r.att || []).forEach(a => { stamp(a); if (/^story_/.test(a.t) && a.state === "ok" && a.url) stories.push({ at: ms(r.at), a }); });
+      if (!r.text && r.att) r.label = labelOf(r.att);
+      if (r.replyTo) { const z = rw.thread.find(y => y.id === r.replyTo.mid); if (z) r.replyTo.text = clipT(z.text || z.label, 120); }
+    }));
+    // noch nicht abgelaufene Storys prüfen (gelöscht? Bild oder Video?), die 10 neuesten je Kanal
+    await mapLimit(stories.sort((a, b) => b.at - a.at).slice(0, 10), PAR, async s => { const p = await probe(s.a.url); if (p.st === "gone") s.a.state = "expired"; if (p.mime && !s.a.mime) s.a.mime = p.mime; });
+    return rows.map(rw => {
+      const th = rw.thread, last = th[th.length - 1], it = x.item(rw.c, rw.other), wk = Date.now() - 7 * H24;
+      const theirs = t0 => th.filter(r => !r.mine && ms(r.at) > wk && (r.att || []).some(a => a.t === t0)).pop();
+      const sm = theirs("story_mention"), sr = theirs("story_reply"), sh = th.some(r => !r.mine && ms(r.at) > wk && (r.att || []).some(a => a.t === "post" || a.t === "reel"));
+      if (sm || sr || sh) { const a = sm && sm.att.find(z => z.t === "story_mention"); it.flags = tidy({ storyMention: !!sm, storyReply: !!sr, share: sh, sm: sm ? sm.id : "", smExp: a && a.exp || "", smState: a && a.state || "" }); }
+      if (sm && it.can) it.can.story = "app";
+      return Object.assign(it, { text: last.text || last.label || "", at: last.at || it.at || "", mine: !!last.mine, thread: th });
+    });
+  }
+  // Markierungen in fremden Beiträgen (Instagram /tags, Facebook-Seite /tagged): höchstens alle 30 Minuten (Fehler wegen Berechtigung: 1× am Tag), dazwischen der letzte Stand
+  async function tagsOf(st, key, prefix, prev, fetchItems, note) {
+    const s = st[key] = st[key] || {}, old = (prev || []).filter(i => String(i.id).indexOf(prefix) === 0);
+    if (s.at && Date.now() - s.at < (s.perm ? 24 * 3600e3 : 30 * 60e3)) return { items: old, note: s.err ? note(s) : "" };
+    s.at = Date.now();
+    try { const items = await fetchItems(); s.err = ""; s.perm = false; return { items }; }
+    catch (e) { s.err = String(e && e.message || e).slice(0, 160); s.perm = !!(e && e.auth) || /permission|scope|not authorized|\((#)?(10|100|200|230|3)\)|OAuthException|insufficient|nonexisting|unsupported get request|does not exist/i.test(s.err); return { items: old, note: note(s) }; }
+  }
+  function igTagItem(m) {
+    const un = /^[\w.]{1,30}$/.test(m.username || "") ? m.username : "", ty = String(m.media_type || "").toUpperCase(), link = linkOf(m.permalink), full = urlOf(m.media_url), th = urlOf(m.thumbnail_url);
+    const a = tidy({ t: ty === "VIDEO" ? "video" : ty === "CAROUSEL_ALBUM" ? "post" : "image", url: full || th, prev: th && th !== (full || th) ? th : "", link, owner: un ? "@" + un : "", mediaId: String(m.id), state: full || th ? "ok" : "unknown" });
+    // media_url fehlt bei lizenzierter Musik bzw. gesperrtem Download → nur in der App teilen
+    return { id: "ig:t:" + m.id, kind: "mention", sub: "tag", from: { name: un || "Instagram-Nutzer", handle: un ? "@" + un : "" }, text: clipT(m.caption, 2000), label: "📸 hat dich in einem Beitrag markiert", at: m.timestamp || "", mine: false,
+      media: [a], links: link ? { app: link, web: link } : {}, can: { reply: false, like: false, story: full ? "app+reupload" : "app" }, ref: { mediaId: String(m.id), owner: un, mediaUrl: full, mediaType: ty } };
+  }
+  function fbTagItem(p) {
+    const link = linkOf(p.permalink_url), pic = urlOf(p.full_picture);
+    return { id: "fb:t:" + p.id, kind: "mention", sub: "tag", from: p.from && p.from.name ? { name: p.from.name, id: String(p.from.id || "") } : { name: "Jemand" }, text: clipT(p.message, 2000), label: "🏷 hat deine Seite markiert", at: p.created_time || "", mine: false,
+      media: pic ? [tidy({ t: "image", url: pic, link, state: "ok" })] : undefined, links: link ? { web: link } : {}, replies: [], can: { reply: true, like: false, story: false }, ref: { comment: String(p.id) } };
+  }
+  // Facebook-Kommentar mit Sticker, Foto, GIF oder Link-Vorschau
+  function fbAtt(a) {
+    if (!a) return null; const ty = String(a.type || "").toLowerCase(), im = (a.media && a.media.image) || {}, src = urlOf(im.src), vid = urlOf(a.media && a.media.source), link = urlOf(a.target && a.target.url) || urlOf(a.url);
+    if (!src && !link) return null;
+    return tidy({ t: /sticker/.test(ty) ? "sticker" : /animated|gif/.test(ty) ? "gif" : vid && /video/.test(ty) ? "video" : src ? "image" : "link", url: vid && /video/.test(ty) ? vid : src, prev: vid && /video/.test(ty) ? src : "", w: +im.width, h: +im.height,
+      link: /facebook\.com/.test(link) ? "" : link, title: clipT(a.title || a.description, 300), state: "ok" });
+  }
+  // Threads-Antwort mit Bild/Video
+  function thAtt(c) {
+    const ty = String(c.media_type || "").toUpperCase(), url = urlOf(c.media_url), th = urlOf(c.thumbnail_url);
+    if (ty === "IMAGE" && url) return [tidy({ t: "image", url, state: "ok" })];
+    if (ty === "VIDEO" && url) return [tidy({ t: "video", url, prev: th, state: "ok" })];
+    if (ty === "CAROUSEL_ALBUM" && (url || th)) return [tidy({ t: "image", url: url || th, state: "ok" })];
+    return undefined;
+  }
+  // Bluesky: fertige Embed-Ansichten aus getPosts (Bilder, Video, Link-Karte, Zitat) – öffentliche Adressen, lädt das Cockpit direkt
+  function bskyAtts(e, out) {
+    out = out || []; if (!e) return out; const ty = String(e.$type || ""), ar = v => v && v.aspectRatio || {};
+    if (/(images|gallery)#view$/.test(ty)) (e.images || e.items || []).slice(0, 4).forEach(im => out.push(tidy({ t: "image", url: urlOf(im.fullsize), prev: urlOf(im.thumb), w: +ar(im).width, h: +ar(im).height, title: clipT(im.alt, 300), state: "ok" })));
+    else if (/video#view$/.test(ty)) out.push(tidy({ t: "video", prev: urlOf(e.thumbnail), hls: urlOf(e.playlist), w: +ar(e).width, h: +ar(e).height, title: clipT(e.alt, 300), state: "ok" }));
+    else if (/external#view$/.test(ty)) { const x = e.external || {}; out.push(tidy({ t: "link", link: urlOf(x.uri), title: clipT(x.title || x.uri, 300), prev: urlOf(x.thumb), state: "ok" })); }
+    else if (/recordWithMedia#view$/.test(ty)) { bskyAtts(e.media, out); bskyQuote(e.record && e.record.record, out); }
+    else if (/record#view$/.test(ty)) bskyQuote(e.record, out);
+    return out;
+  }
+  function bskyQuote(r, out) {
+    if (!r) return; const ty = String(r.$type || "");
+    if (/viewNotFound$/.test(ty)) return out.push({ t: "quote", state: "gone", title: "Zitierter Beitrag wurde gelöscht" });
+    if (/viewBlocked$/.test(ty)) return out.push({ t: "quote", state: "gone", title: "Zitierter Beitrag ist blockiert" });
+    if (/viewDetached$/.test(ty)) return out.push({ t: "quote", state: "gone", title: "Zitat wurde vom Autor gelöst" });
+    if (!/viewRecord$/.test(ty)) return;
+    const h = r.author && r.author.handle || "", rk = String(r.uri || "").split("/").pop(), im = ((r.embeds || [])[0] || {});
+    out.push(tidy({ t: "quote", title: clipT(r.value && r.value.text, 300), owner: h ? "@" + h : "", link: h ? linkOf("https://bsky.app/profile/" + h + "/post/" + rk) : "", prev: urlOf(im.images && im.images[0] && im.images[0].thumb || im.thumbnail), state: "ok" }));
+  }
+  const bskyThumb = e => { const a = bskyAtts(e, []).find(x => x.t === "image" || x.t === "video"); return a ? a.prev || a.url || "" : ""; };
   async function inbox(platform, ch, tok, o) {
-    o = o || {}; const nPosts = o.posts || 25;
+    // o: { posts, prev (Einträge des letzten Stands dieses Kanals), st (Feldstufen/Abrufzeiten je Kanal, wird verändert), msgx (Einzelabrufe je Nachrichten-ID, wird ergänzt) }
+    o = o || {}; const nPosts = o.posts || 25, st = o.st || {};
     if (platform === "instagram") {
       const t = tok.access, me = String(ch.account.handle || "").replace(/^@/, "").toLowerCase(), out = { items: [], posts: [], notes: [] };
-      // Nachrichten parallel zu Beiträgen/Kommentaren laden (unabhängig voneinander)
-      const cvJob = pages(B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4).then(l => ({ l }), e => ({ e }));
+      // Nachrichten (mit Feldleiter) und Markierungen parallel zu Beiträgen/Kommentaren laden (unabhängig voneinander)
+      const cvJob = ladder(st, "msgLvl", IG_MSG, f => pages(B.ig + "/" + GV + "/me/conversations" + q({ platform: "instagram", fields: "id,updated_time,participants,messages.limit(50){" + f + "}", limit: "25", access_token: t }), 4)).then(l => ({ l }), e => ({ e }));
+      const tagJob = tagsOf(st, "tags", "ig:t:", o.prev, async () => ((await get(B.ig + "/" + GV + "/" + ch.account.id + "/tags" + q({ fields: "id,username,caption,media_type,media_url,thumbnail_url,permalink,timestamp", limit: "25", access_token: t }))).data || []).map(igTagItem),
+        s => s.perm ? "Markierungen in fremden Beiträgen: mit dem Instagram-Login nicht abrufbar – die siehst du in der App." : "Markierungen: " + s.err);
       const media = (await get(B.ig + "/" + GV + "/" + ch.account.id + "/media" + q({ fields: "id,caption,timestamp,permalink,media_type,thumbnail_url,media_url,like_count,comments_count", limit: String(nPosts), access_token: t }))).data || [];
       // Kommentare nur für Beiträge mit Kommentaren, je Beitrag eine Anfrage – höchstens 4 gleichzeitig
       const cms = await mapLimit(media, PAR, m => m.comments_count ? get(B.ig + "/" + GV + "/" + m.id + "/comments" + q({ fields: "id,username,text,timestamp,like_count,replies.limit(50){id,username,text,timestamp}", limit: "100", access_token: t })) : null);
@@ -420,37 +609,56 @@ module.exports = function (D) {
           can: { reply: true, like: false }, ref: { comment: c.id } }));
       });
       try {
-        const cv = await cvJob; if (cv.e) throw cv.e; const cvAll = cv.l;
-        cvAll.forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(ch.account.id) && String(p.username || "").toLowerCase() !== me) || {};
-          if (!msgs.length) return; const last = msgs[msgs.length - 1];
-          out.items.push({ id: "ig:m:" + c.id, kind: "message", from: { name: other.username || other.name || "Instagram-Nutzer", handle: other.username ? "@" + other.username : "", id: other.id || "" }, text: last.message || attTxt(last), at: last.created_time || c.updated_time || "",
-            mine: String(last.from && last.from.id) === String(ch.account.id), thread: msgs.map(x => ({ id: x.id, from: { name: (x.from && (x.from.username || x.from.name)) || other.username || "" }, text: x.message || attTxt(x), at: x.created_time || "", mine: String(x.from && x.from.id) === String(ch.account.id) || String(x.from && x.from.username || "").toLowerCase() === me })),
-            can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
+        const cv = await cvJob; if (cv.e) throw cv.e;
+        (await convItems(cv.l, { o, base: B.ig + "/" + GV, t, poor: (st.msgLvl || {}).n >= 2, detail: "story,shares,attachments",
+          isMine: x => String(x.from && x.from.id) === String(ch.account.id) || String(x.from && x.from.username || "").toLowerCase() === me,
+          nameOf: (x, other) => (x.from && (x.from.username || x.from.name)) || other.username || "",
+          other: c => ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(ch.account.id) && String(p.username || "").toLowerCase() !== me) || {},
+          // ig.me öffnet die Unterhaltung in der Instagram-App (dort „Zu deiner Story hinzufügen“), sonst das Profil
+          item: (c, other) => { const un = /^[\w.]{1,30}$/.test(other.username || "") ? other.username : "";
+            return { id: "ig:m:" + c.id, kind: "message", from: { name: other.username || other.name || "Instagram-Nutzer", handle: un ? "@" + un : "", id: other.id || "" }, at: c.updated_time || "",
+              links: un ? { app: "https://ig.me/m/" + un, web: "https://www.instagram.com/" + un + "/" } : {}, can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }; } })).forEach(i => out.items.push(i));
+        if ((st.msgLvl || {}).n > 0 && !st.msgLvlTold) { st.msgLvlTold = 1; console.log("marketing: Instagram-Nachrichten mit Feldstufe L" + (st.msgLvl.n + 1)); }
       } catch (e) { out.notes.push(permNote(e, "Instagram-Nachrichten")); }
+      const tg = await tagJob; tg.items.forEach(i => out.items.push(i)); if (tg.note) out.notes.push(tg.note);
       return out;
     }
     if (platform === "facebook") {
       const t = tok.access, pid = ch.account.id, out = { items: [], posts: [], notes: [] };
       // Messenger: alle vier Ordner gleichzeitig und parallel zu den Beiträgen (Fehler im Hauptordner → Hinweis wie bisher, andere Ordner sind freiwillig)
+      // Ordner: „pending“ = Nachrichtenanfrage, „other“ = gefiltert; mit Feldleiter (Hauptordner zuerst, ist die Stufe bekannt, alle gleichzeitig)
       const FOLDERS = ["inbox", "other", "pending", "page_done"];
-      const cvJob = Promise.all(FOLDERS.map(folder => pages(B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", folder, fields: "id,updated_time,participants,messages.limit(50){id,from,to,message,created_time,attachments}", limit: "25", access_token: t }), 4).catch(e => { if (folder === "inbox") throw e; return []; }))).then(l => ({ l }), e => ({ e }));
-      const ps = (await get(B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(100){id,message,from,created_time,like_count,parent}", limit: String(nPosts), access_token: t }))).data || [];
+      const fbConv = (folder, f) => pages(B.fb + "/" + GV + "/" + pid + "/conversations" + q({ platform: "messenger", folder, fields: "id,updated_time,participants,messages.limit(50){" + f + "}", limit: "25", access_token: t }), 4);
+      const lv0 = st.msgLvl && Date.now() - st.msgLvl.at < 7 * H24 ? Math.min(st.msgLvl.n, FB_MSG.length - 1) : -1;
+      const cvJob = (async () => {
+        const restAt = n => Promise.all(FOLDERS.slice(1).map(folder => fbConv(folder, FB_MSG[n]).catch(() => [])));
+        const early = lv0 >= 0 ? restAt(lv0) : null, inb = await ladder(st, "msgLvl", FB_MSG, f => fbConv("inbox", f));
+        return [inb].concat(early && st.msgLvl.n === lv0 ? await early : await restAt(st.msgLvl.n));
+      })().then(l => ({ l }), e => ({ e }));
+      const tagJob = tagsOf(st, "tagged", "fb:t:", o.prev, async () => ((await get(B.fb + "/" + GV + "/" + pid + "/tagged" + q({ fields: "id,message,created_time,permalink_url,full_picture,from", limit: "25", access_token: t }))).data || []).map(fbTagItem),
+        s => s.perm ? "Facebook-Markierungen: Berechtigung fehlt (pages_read_user_content) – Konto unter Kanäle neu verbinden." : "Facebook-Markierungen: " + s.err);
+      // Kommentare mit Anhang (Sticker, Foto, GIF): Feld „attachment“ – lehnt Facebook es ab, ohne
+      const CM_F = ["id,message,from,created_time,like_count,parent,attachment", "id,message,from,created_time,like_count,parent"];
+      const ps = await ladder(st, "cmLvl", CM_F, async f => (await get(B.fb + "/" + GV + "/" + pid + "/posts" + q({ fields: "id,message,created_time,permalink_url,full_picture,reactions.summary(total_count).limit(0),comments.summary(true).filter(stream).order(reverse_chronological).limit(100){" + f + "}", limit: String(nPosts), access_token: t }))).data || []);
       for (const p of ps) {
         const post = { id: p.id, text: clipT(p.message, 140), url: p.permalink_url || "", thumb: p.full_picture || "", at: p.created_time || "" }, cm = (p.comments && p.comments.data) || [];
         out.posts.push(Object.assign({ likes: (p.reactions && p.reactions.summary && p.reactions.summary.total_count) || 0, comments: (p.comments && p.comments.summary && p.comments.summary.total_count) || cm.length }, post));
         const top = cm.filter(c => !c.parent), sub = cm.filter(c => c.parent), isMe = c => String(c.from && c.from.id) === String(pid);
-        top.forEach(c => out.items.push({ id: "fb:c:" + c.id, kind: "comment", from: { name: (c.from && c.from.name) || "Facebook-Nutzer", id: c.from && c.from.id || "" }, text: c.message || "", at: c.created_time || "", likes: c.like_count || 0, mine: isMe(c), post,
-          replies: sub.filter(x => x.parent && x.parent.id === c.id).map(x => ({ from: { name: (x.from && x.from.name) || "" }, text: x.message || "", at: x.created_time || "", mine: isMe(x) })).sort((a, b) => a.at < b.at ? -1 : 1),
-          can: { reply: true, like: true }, ref: { comment: c.id } }));
+        top.forEach(c => { const a = fbAtt(c.attachment), media = a ? [a] : undefined;
+          out.items.push(Object.assign({ id: "fb:c:" + c.id, kind: "comment", from: { name: (c.from && c.from.name) || "Facebook-Nutzer", id: c.from && c.from.id || "" }, text: c.message || "", at: c.created_time || "", likes: c.like_count || 0, mine: isMe(c), post,
+            replies: sub.filter(x => x.parent && x.parent.id === c.id).map(x => ({ from: { name: (x.from && x.from.name) || "" }, text: x.message || (x.attachment ? labelOf([fbAtt(x.attachment)].filter(Boolean)) : ""), at: x.created_time || "", mine: isMe(x) })).sort((a, b) => a.at < b.at ? -1 : 1),
+            can: { reply: true, like: true }, ref: { comment: c.id } }, media ? { media, label: c.message ? "" : labelOf(media) } : {})); });
       }
       try {
         const seenCv = new Set(), cvAll = [], cv = await cvJob; if (cv.e) throw cv.e;
-        cv.l.forEach(l => l.forEach(c => { if (!seenCv.has(c.id)) { seenCv.add(c.id); cvAll.push(c); } }));
-        cvAll.forEach(c => { const msgs = ((c.messages && c.messages.data) || []).slice().reverse(); const other = ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(pid)) || {};
-          if (!msgs.length) return; const last = msgs[msgs.length - 1];
-          out.items.push({ id: "fb:m:" + c.id, kind: "message", from: { name: other.name || "Facebook-Nutzer", id: other.id || "" }, text: last.message || attTxt(last), at: last.created_time || c.updated_time || "", mine: String(last.from && last.from.id) === String(pid),
-            thread: msgs.map(x => ({ id: x.id, from: { name: (x.from && x.from.name) || other.name || "" }, text: x.message || attTxt(x), at: x.created_time || "", mine: String(x.from && x.from.id) === String(pid) })), can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }); });
+        cv.l.forEach((l, k) => l.forEach(c => { if (!seenCv.has(c.id)) { seenCv.add(c.id); c._folder = FOLDERS[k]; cvAll.push(c); } }));
+        (await convItems(cvAll, { o, base: B.fb + "/" + GV, t, poor: (st.msgLvl || {}).n >= 2, detail: "shares,attachments,sticker",
+          isMine: x => String(x.from && x.from.id) === String(pid), nameOf: (x, other) => (x.from && x.from.name) || other.name || "",
+          other: c => ((c.participants && c.participants.data) || []).find(p => String(p.id) !== String(pid)) || {},
+          item: (c, other) => Object.assign({ id: "fb:m:" + c.id, kind: "message", from: { name: other.name || "Facebook-Nutzer", id: other.id || "" }, at: c.updated_time || "",
+            links: { web: "https://business.facebook.com/latest/inbox/all" }, can: { reply: !!other.id, like: false }, ref: { recipient: other.id || "" } }, c._folder === "pending" || c._folder === "other" ? { request: true } : {}, c._folder === "other" ? { filtered: true } : {}) })).forEach(i => out.items.push(i));
       } catch (e) { out.notes.push(permNote(e, "Messenger-Nachrichten")); }
+      const tg = await tagJob; tg.items.forEach(i => out.items.push(i)); if (tg.note) out.notes.push(tg.note);
       return out;
     }
     if (platform === "threads") {
@@ -458,27 +666,35 @@ module.exports = function (D) {
       // Threads liefert keine Antwortzahl je Beitrag → Antworten der 15 neuesten Beiträge abfragen, höchstens 4 gleichzeitig
       const th = ((await get(B.th + "/v1.0/me/threads" + q({ fields: "id,text,permalink,timestamp,media_url,thumbnail_url", limit: String(Math.min(nPosts, 15)), access_token: t }))).data || []).slice(0, 15);
       let bad = null;   // fehlt die Berechtigung, nicht noch 14 weitere Male fragen
-      const rr = await mapLimit(th, PAR, p => bad ? { e: bad } : get(B.th + "/v1.0/" + p.id + "/replies" + q({ fields: "id,text,username,timestamp", reverse: "false", access_token: t })).then(r => ({ rs: r.data || [] }), e => { bad = bad || e; return { e }; }));
+      // Antworten mit Bild/Video (media_type/media_url); kennt Threads die Felder nicht, ohne (Stufe je Kanal gemerkt)
+      const RP_F = ["id,text,username,timestamp,permalink,media_type,media_url,thumbnail_url", "id,text,username,timestamp"];
+      const rp = (p, f) => get(B.th + "/v1.0/" + p.id + "/replies" + q({ fields: f, reverse: "false", access_token: t }));
+      const rr = await mapLimit(th, PAR, (p, k) => bad ? { e: bad } : (k ? rp(p, RP_F[(st.rpLvl || {}).n || 0]).catch(e => fieldErr(e) ? rp(p, RP_F[1]) : Promise.reject(e)) : ladder(st, "rpLvl", RP_F, f => rp(p, f))).then(r => ({ rs: r.data || [] }), e => { bad = bad || e; return { e }; }));
       for (let pi = 0; pi < th.length; pi++) {
         const p = th[pi], post = { id: p.id, text: clipT(p.text, 140), url: p.permalink || "", thumb: p.thumbnail_url || p.media_url || "", at: p.timestamp || "" };
         if (rr[pi].e) { out.notes.push(permNote(rr[pi].e, "Threads-Antworten")); break; } const rs = rr[pi].rs;
         out.posts.push(Object.assign({ likes: null, comments: rs.length }, post));
-        rs.forEach(c => out.items.push({ id: "th:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", mine: String(c.username || "").toLowerCase() === me, post, replies: [], can: { reply: true, like: false }, ref: { replyTo: c.id } }));
+        rs.forEach(c => { const media = thAtt(c); out.items.push(Object.assign({ id: "th:c:" + c.id, kind: "comment", from: { name: c.username || "", handle: c.username ? "@" + c.username : "" }, text: c.text || "", at: c.timestamp || "", mine: String(c.username || "").toLowerCase() === me, post, replies: [], can: { reply: true, like: false }, ref: { replyTo: c.id } },
+          media ? { media, label: c.text ? "" : labelOf(media) } : {}, linkOf(c.permalink) ? { links: { web: linkOf(c.permalink) } } : {})); });
       }
       return out;
     }
     if (platform === "bluesky") {
       const t = tok.access, did = ch.account.id, out = { items: [], posts: [], notes: [] };
       const n = (await get(B.bsky + "/xrpc/app.bsky.notification.listNotifications" + q({ limit: "60" }), { token: t })).notifications || [];
-      const subj = [...new Set(n.filter(x => x.reasonSubject).map(x => x.reasonSubject))].slice(0, 25), posts = {};
-      if (subj.length) { const u = B.bsky + "/xrpc/app.bsky.feed.getPosts?" + subj.map(x => "uris=" + encodeURIComponent(x)).join("&"); try { ((await get(u, { token: t })).posts || []).forEach(p => { posts[p.uri] = p; }); } catch (e) {} }
-      const pOf = uri => { const p = posts[uri]; const rk = String(uri || "").split("/").pop(); return p ? { id: uri, text: clipT(p.record && p.record.text, 140), url: "https://bsky.app/profile/" + (tok.handle || did) + "/post/" + rk, thumb: "", at: p.indexedAt || "" } : null; };
+      // eigene Beiträge (reasonSubject) und die Antworten/Erwähnungen/Zitate selbst (für Bilder, Video, Link-Karten, Zitate) – je Aufruf höchstens 25 Adressen
+      const own = n.filter(x => /^(reply|mention|quote)$/.test(x.reason)).map(x => x.uri), subj = n.filter(x => x.reasonSubject).map(x => x.reasonSubject);
+      const uris = [...new Set(subj.concat(own))].slice(0, 75), posts = {}, parts = []; for (let i = 0; i < uris.length; i += 25) parts.push(uris.slice(i, i + 25));
+      await mapLimit(parts, 3, async part => { try { ((await get(B.bsky + "/xrpc/app.bsky.feed.getPosts?" + part.map(x => "uris=" + encodeURIComponent(x)).join("&"), { token: t })).posts || []).forEach(p => { posts[p.uri] = p; }); } catch (e) {} });
+      const pOf = uri => { const p = posts[uri]; const rk = String(uri || "").split("/").pop(); return p ? { id: uri, text: clipT(p.record && p.record.text, 140), url: "https://bsky.app/profile/" + (tok.handle || did) + "/post/" + rk, thumb: urlOf(bskyThumb(p.embed)), at: p.indexedAt || "" } : null; };
       n.forEach(x => {
         const from = { name: (x.author && (x.author.displayName || x.author.handle)) || "", handle: x.author && x.author.handle ? "@" + x.author.handle : "", id: x.author && x.author.did || "" };
         if (x.reason === "like" || x.reason === "repost" || x.reason === "follow") out.items.push({ id: "bs:" + x.uri, kind: "like", sub: x.reason, from, text: x.reason === "like" ? "gefällt dein Beitrag" : x.reason === "repost" ? "hat deinen Beitrag geteilt" : "folgt dir jetzt", at: x.indexedAt || "", post: pOf(x.reasonSubject), isNew: !x.isRead, can: { reply: false, like: false } });
         else if (x.reason === "reply" || x.reason === "mention" || x.reason === "quote") {
           const rec = x.record || {}, root = rec.reply && rec.reply.root ? rec.reply.root : { uri: x.uri, cid: x.cid };
-          out.items.push({ id: "bs:" + x.uri, kind: x.reason === "reply" ? "comment" : "mention", from, text: rec.text || "", at: x.indexedAt || "", post: pOf(rec.reply && rec.reply.parent ? rec.reply.parent.uri : x.reasonSubject), isNew: !x.isRead, replies: [], can: { reply: true, like: true }, ref: { uri: x.uri, cid: x.cid, root } });
+          const media = bskyAtts(posts[x.uri] && posts[x.uri].embed, []), h = x.author && x.author.handle || "", rp = x.reason !== "reply", web = h ? linkOf("https://bsky.app/profile/" + h + "/post/" + String(x.uri || "").split("/").pop()) : "";
+          out.items.push(Object.assign({ id: "bs:" + x.uri, kind: x.reason === "reply" ? "comment" : "mention", from, text: rec.text || "", at: x.indexedAt || "", post: pOf(rec.reply && rec.reply.parent ? rec.reply.parent.uri : x.reasonSubject), isNew: !x.isRead, replies: [],
+            can: { reply: true, like: true, repost: rp, quote: rp }, ref: { uri: x.uri, cid: x.cid, root } }, x.reason === "quote" ? { sub: "quote" } : {}, media.length ? { media, label: rec.text ? "" : labelOf(media) } : {}, web ? { links: { web } } : {}));
         }
       });
       return out;
@@ -499,6 +715,7 @@ module.exports = function (D) {
   // Kommentar löschen (Instagram, Facebook) bzw. ausblenden (Threads, YouTube: ablehnen) – Direktnachrichten lassen sich über keine Schnittstelle löschen
   async function inboxDelete(platform, ch, tok, ref, kind) {
     const t = tok.access; if (kind === "message") throw pubErr("Nachrichten lassen sich über die Schnittstelle nicht löschen.");
+    if (kind !== "comment") throw pubErr("Löschen geht nur bei Kommentaren unter deinen Beiträgen.");   // Markierungen/Erwähnungen gehören anderen
     if (platform === "instagram" && ref.comment) return req("DELETE", B.ig + "/" + GV + "/" + ref.comment + q({ access_token: t }));
     if (platform === "facebook" && ref.comment) return req("DELETE", B.fb + "/" + GV + "/" + ref.comment + q({ access_token: t }));
     if (platform === "threads" && ref.replyTo) return req("POST", B.th + "/v1.0/" + ref.replyTo + "/manage_reply", { form: { hide: "true", access_token: t } });
@@ -532,6 +749,30 @@ module.exports = function (D) {
     if (platform === "bluesky") return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.like", record: { $type: "app.bsky.feed.like", subject: { uri: ref.uri, cid: ref.cid }, createdAt: new Date().toISOString() } } });
     throw pubErr("Liken ist hier über die Schnittstelle nicht möglich.");
   }
+  // Bluesky: Erwähnung bzw. Zitat reposten oder mit eigenem Text zitieren (Threads bräuchte die Erwähnungen – Berechtigung threads_manage_mentions fehlt noch)
+  async function inboxRepost(platform, ch, tok, ref) {
+    if (platform === "bluesky" && ref && ref.uri && ref.cid) return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.repost", record: { $type: "app.bsky.feed.repost", subject: { uri: ref.uri, cid: ref.cid }, createdAt: new Date().toISOString() } } });
+    throw pubErr("Reposten ist hier über die Schnittstelle nicht möglich.");
+  }
+  async function inboxQuote(platform, ch, tok, ref, text) {
+    const msg = Array.from(String(text || "").trim()).slice(0, 300).join(""); if (!msg) throw pubErr("Bitte einen Text eingeben.");
+    if (platform === "bluesky" && ref && ref.uri && ref.cid) return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.post", record: { $type: "app.bsky.feed.post", text: msg, createdAt: new Date().toISOString(), langs: ["de"], facets: bskyFacets(msg),
+      embed: { $type: "app.bsky.embed.record", record: { uri: ref.uri, cid: ref.cid } } } } });
+    throw pubErr("Zitieren ist hier über die Schnittstelle nicht möglich.");
+  }
+  // Instagram-Story aus einer vom Server vorbereiteten Datei (öffentliche Adresse /m/s….jpg|mp4) – Urheber als Markierung (user_tags, seit 07/2025 auch bei Storys).
+  // Lehnt Instagram die Markierung ab, ohne – mit Hinweis.
+  async function igStory(ch, tok, m) {   // m: { image | video, user }
+    const ig = ch.account.id, t = tok.access, P = form => req("POST", B.ig + "/" + GV + "/" + ig + "/" + (form.creation_id ? "media_publish" : "media"), { form: Object.assign({ access_token: t }, form) });
+    const lim = e => /limit|too many|\(#(4|9|32|613)\)/i.test(String(e && e.message)) ? pubErr("Tageslimit für Instagram-Posts erreicht (100 je 24 Stunden) – morgen nochmal.", { status: 429 }) : e;
+    const base = m.video ? { media_type: "STORIES", video_url: m.video } : { media_type: "STORIES", image_url: m.image };
+    let c, note = "";
+    try { c = (await P(Object.assign({}, base, m.user ? { user_tags: JSON.stringify([{ username: m.user }]) } : {}))).id; }
+    catch (e) { if (e.auth || !m.user || !(e.status >= 400 && e.status < 500) || /limit/i.test(String(e.message))) throw lim(e); try { c = (await P(base)).id; } catch (e2) { throw lim(e2); } note = "Die Markierung von @" + m.user + " hat Instagram nicht übernommen – bitte in der App ergänzen."; }
+    await igWait(B.ig, c, t, "Instagram");
+    const pub = await P({ creation_id: c }).catch(e => { throw lim(e); });
+    return { id: pub.id, note };
+  }
   // Zugang prüfen, ohne etwas zu verändern: eine leichte Leseanfrage je Konto (tägliche Kontrolle in mkt-posts.js und „Verbindungen“)
   async function verify(platform, ch, tok) {
     const t = tok.access, o = { timeout: 15000 }, bearer = Object.assign({ token: t }, o);
@@ -545,7 +786,8 @@ module.exports = function (D) {
     if (platform === "bluesky") return req("GET", B.bsky + "/xrpc/com.atproto.server.getSession", bearer);
     throw pubErr("Unbekannte Plattform");
   }
-  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete, _test: { liText, bskyFacets } };
+  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
+    inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;

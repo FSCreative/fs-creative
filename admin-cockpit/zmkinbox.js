@@ -9,6 +9,7 @@
 "use strict";
 var F=window.FSC, esc=F.esc, UI=F.UI;
 var BOX={}, CNT=null, CNTREQ=false, LOADING={}, REFR={}, BUSY={}, OPEN={}, DRAFT={}, MENU=false, PUSHED=false, LASTSEL="", PT=0;
+var FAILED={}, ALT={}, QUOTE={};   // Medien, die nicht laden (abgelaufen/gelöscht) bzw. statt als Bild als Video nachgeladen werden; Antwortfeld im Zitat-Modus
 var PULL=0, PV="", PLAST=0, PERR=false, PTIMER=0, SRV={keys:null,at:""};   // laufende Anfragen, Kennung des letzten Stands, letzte Antwort (fehlgeschlagen?), Marken laut Server
 UI.mkInBrand=UI.mkInBrand||F.ls("fsc_mkin_b")||"alle";
 UI.mkInKind=UI.mkInKind||"offen";
@@ -19,6 +20,18 @@ UI.mkInPane=UI.mkInPane||"";
 F.icons.minbox='<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/>';
 F.icons.mheart='<path d="M12 20s-7-4.4-9-9a4.6 4.6 0 0 1 8.2-4.1L12 8l.8-1.1A4.6 4.6 0 0 1 21 11c-2 4.6-9 9-9 9z"/>';
 F.icons.msort='<path d="M7 4v16M3.5 16.5 7 20l3.5-3.5"/><path d="M17 20V4M13.5 7.5 17 4l3.5 3.5"/>';
+F.icons.miplay='<path d="M8 5.5v13l10.5-6.5z"/>';
+F.icons.mistory='<circle cx="12" cy="12" r="8.5" stroke-dasharray="3.2 2.3"/><path d="M12 8.5v7M8.5 12h7"/>';
+F.icons.mirepost='<path d="M17 3.5 20.5 7 17 10.5"/><path d="M4 11V9.5A2.5 2.5 0 0 1 6.5 7h14"/><path d="M7 20.5 3.5 17 7 13.5"/><path d="M20 13v1.5a2.5 2.5 0 0 1-2.5 2.5h-14"/>';
+F.icons.miquote='<path d="M6.5 7h4v4c0 3-1.4 5-4 6"/><path d="M14 7h4v4c0 3-1.4 5-4 6"/>';
+F.icons.mifile='<path d="M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3.5V8h4.5"/>';
+F.icons.micopy='<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>';
+F.icons.miext='<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>';
+F.icons.miup='<path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 14.5V18A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5v-3.5"/>';
+F.icons.miimg='<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m20.5 16-5-5-8.5 8.5"/>';
+F.icons.mieye='<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>';
+F.icons.miclock='<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>';
+F.icons.mitag='<path d="M3.5 12.5V5A1.5 1.5 0 0 1 5 3.5h7.5l8 8-9 9z"/><circle cx="8.5" cy="8.5" r="1.5"/>';
 
 /* Alpenglas: EIN Fenster aus Glas (Werkzeugleiste, Infozeile, zwei Spalten) – nichts Bedienbares liegt direkt auf dem Foto.
    Unschärfe als ::before, nie auf dem Fenster selbst – sonst hängt die bildschirmfüllende Ansicht am Handy fest;
@@ -60,7 +73,7 @@ F.css(
 '.mi-q>svg{position:absolute;left:12px;top:50%;width:16px;height:16px;transform:translateY(-50%);color:var(--ink-3);pointer-events:none}'+
 '.mi-q input{width:100%;height:42px;padding:0 36px 0 38px;border-radius:14px;border:1px solid var(--glass-line,var(--line));background:var(--field,var(--panel));color:var(--ink);font:inherit;font-size:14px}'+
 '.mi-q input::placeholder{color:var(--ink-3)}.mi-q input:focus{outline:none;border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}'+
-'.mi-q input::-webkit-search-cancel-button{display:none}'+
+'.mi-q input::-webkit-search-cancel-button{display:none}.mi-q:not(.has) input{padding-right:10px}'+
 '.mi-q .mi-qx{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:32px;height:32px;border:0;border-radius:9px;background:none;color:var(--ink-3);display:grid;place-items:center;cursor:pointer}.mi-q .mi-qx:hover{background:var(--hover,var(--sunk));color:var(--ink)}.mi-q .mi-qx svg{width:14px;height:14px}'+
 /* Infozeile: Likes · Hinweise · Sortierung · Stand */
 '.mi-meta{display:flex;align-items:center;gap:4px 14px;flex-wrap:wrap;padding:6px 14px 6px 16px;font-size:12.5px;color:var(--ink-3);min-height:40px}'+
@@ -229,6 +242,68 @@ F.css(
 '  .mi-kpis{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}.mi-kpi{padding:10px 11px;min-height:64px}.mi-kpi b{font-size:19px}.mi-kpi span{font-size:12px;line-height:1.3}'+
 '}'
 );
+/* Anhänge im Verlauf: Fotos/GIFs (Klick vergrößert), Sticker, Videos, Sprachnachrichten, Dateien, geteilte Beiträge/Reels, Story-Erwähnungen (9:16 mit Restzeit),
+   Platzhalter mit Grund (abgelaufen, gelöscht, nur in der App), Kontextleiste (Anfrage, Teilen, Reposten) und die Dialoge zum Teilen */
+F.css(
+'.mi-atts{display:grid;gap:6px;justify-items:start;min-width:0;max-width:100%}.mi-b.me .mi-atts{justify-items:end}'+
+'.mi-at{max-width:100%;min-width:0}'+
+'.mi-img{display:block;position:relative;padding:0;width:240px;max-height:340px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--sunk);cursor:zoom-in}'+
+'.mi-img img{display:block;width:100%;height:100%;object-fit:cover}'+
+'.mi-gif{position:absolute;left:8px;bottom:8px;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:1px 6px;border-radius:6px;background:rgb(0 0 0/.55);color:#fff}'+
+'.mi-stk img{display:block;width:96px;height:96px;object-fit:contain}'+
+'.mi-vid{display:block;width:260px;max-height:380px;border-radius:16px;background:#000;border:1px solid var(--line)}'+
+'.mi-aud audio{display:block;width:min(280px,72vw);height:40px}'+
+'.mi-file{display:flex;align-items:center;gap:10px;width:270px;padding:9px 12px;border:1px solid var(--line);border-radius:14px;background:var(--sunk)}'+
+'.mi-file>svg{width:22px;height:22px;flex:none;color:var(--ink-2)}.mi-file>span{display:grid;min-width:0;flex:1}'+
+'.mi-file b{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mi-file small{font-size:12px;color:var(--ink-3)}'+
+'.mi-xl{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--glow-ink);text-decoration:none}.mi-xl:hover{text-decoration:underline}.mi-xl svg{width:13px;height:13px;flex:none}'+
+'.mi-card{display:grid;width:240px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--sunk);text-decoration:none;color:var(--ink)}'+
+'.mi-cm{position:relative;overflow:hidden;max-height:300px;background:var(--hover,var(--sunk))}.mi-card.reel .mi-cm{max-height:360px}'+
+'.mi-cm img,.mi-cm video{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}'+
+'.mi-cm .mi-ph2{position:absolute;inset:0;display:grid;place-items:center;color:var(--ink-3)}.mi-cm .mi-ph2 svg{width:28px;height:28px}'+
+'.mi-pl{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}.mi-pl svg{width:44px;height:44px;color:#fff;fill:rgb(255 255 255/.9);filter:drop-shadow(0 2px 6px rgb(0 0 0/.5))}'+
+'.mi-cb{display:grid;gap:4px;padding:9px 12px 11px;min-width:0}.mi-cb small{font-size:12px;color:var(--ink-3);font-weight:600}'+
+'.mi-cb .mi-cap{font-size:13.5px;line-height:1.4;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}'+
+'.mi-link{grid-template-columns:72px minmax(0,1fr);align-items:center;width:280px}.mi-link.nt{grid-template-columns:minmax(0,1fr)}.mi-link>img{display:block;width:72px;height:72px;object-fit:cover}'+
+'.mi-link b{font-size:13.5px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}'+
+'.mi-quote{display:grid;gap:4px;width:280px;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--info);border-radius:12px;background:var(--sunk);text-decoration:none;color:var(--ink);font-size:13.5px;line-height:1.4;overflow-wrap:anywhere}'+
+'.mi-quote small{font-size:12px;color:var(--ink-3);font-weight:600}.mi-quote img{width:100%;max-height:160px;object-fit:cover;border-radius:8px}.mi-quote.gone{color:var(--ink-3);font-style:italic;border-left-color:var(--line-2)}'+
+'.mi-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:min(380px,100%);padding:8px 12px;border-radius:12px;background:var(--sunk);border:1px dashed var(--line-2);font-size:13px;line-height:1.4;color:var(--ink-2)}'+
+'.mi-note>svg{width:16px;height:16px;flex:none;color:var(--ink-3)}.mi-note>span{flex:1 1 180px;min-width:0;text-wrap:pretty}'+
+'.mi-gone{display:grid;gap:6px;justify-items:start;width:250px;padding:14px;border-radius:16px;border:1px dashed var(--line-2);background:var(--sunk);color:var(--ink-2);font-size:13px;line-height:1.4;text-wrap:pretty}'+
+'.mi-gone>svg{width:22px;height:22px;color:var(--ink-3)}.mi-gone b{color:var(--ink);font-size:13.5px}'+
+/* Story-Erwähnung bzw. Antwort auf deine Story: Hochformat mit Restzeit, abgelaufen → dunkler Platzhalter mit Datum */
+'.mi-story{display:grid;width:200px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:var(--sunk)}.mi-story.rep{width:150px}'+
+'.mi-sth{padding:8px 11px;font-size:12.5px;line-height:1.35;color:var(--ink-2);text-wrap:pretty}.mi-sth b{color:var(--ink)}'+
+'.mi-stm{position:relative;aspect-ratio:9/16;overflow:hidden;background:#0d1117}.mi-stm img,.mi-stm video{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}'+
+'.mi-cd{position:absolute;left:8px;top:8px;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgb(0 0 0/.62);color:#fff;font-variant-numeric:tabular-nums}.mi-cd.low{background:#f59e0b;color:#1a1300}'+
+'.mi-stp{position:absolute;inset:0;display:grid;align-content:center;justify-items:center;gap:7px;padding:14px;text-align:center;color:#d6dbe4;background:linear-gradient(160deg,#1d2533,#0d1117)}'+
+'.mi-stp>svg{width:28px;height:28px;color:#9aa4b5}.mi-stp b{font-size:13.5px;line-height:1.3;color:#fff;text-wrap:balance}.mi-stp small{font-size:12px;color:#9aa4b5}.mi-stp .mi-xl{display:inline;color:#a9cbff;line-height:1.35}.mi-stp .mi-xl svg{display:inline;vertical-align:-2px;margin-right:4px}'+
+'.mi-sta{display:grid;gap:6px;padding:9px}.mi-sta .btn{justify-content:center}.mi-sta .btn svg{width:15px;height:15px}'+
+'.mi-rto{max-width:100%;margin:0 6px;padding:0 0 0 8px;border-left:2px solid var(--line-2);font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+'.mi-reacts{display:inline-flex;gap:3px}.mi-reacts span{font-size:12.5px;line-height:20px;padding:0 5px;border-radius:99px;background:var(--sunk);border:1px solid var(--line)}'+
+/* Kontextleiste unter dem Kopf: Anfrage annehmen, in die Story teilen, reposten/zitieren, Ergebnis */
+'.mi-xb{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:9px 14px 9px 18px;border-bottom:1px solid var(--line);font-size:13px;line-height:1.4;color:var(--ink-2);flex:none}'+
+'.mi-xb>svg{width:17px;height:17px;flex:none;color:var(--glow-ink)}.mi-xb>span:first-of-type{flex:1 1 220px;min-width:0;text-wrap:pretty}.mi-xb b{color:var(--ink)}'+
+'.mi-xb.req{background:var(--glow-soft)}.mi-xb.info>svg{color:var(--ink-3)}'+
+'.mi-xa{display:flex;gap:6px;flex-wrap:wrap}.mi-xa .btn svg{width:15px;height:15px}'+
+'.mi-chip{display:inline-flex;align-items:center;font-size:12px;font-weight:700;line-height:20px;padding:0 9px;border-radius:99px;background:var(--ok-soft);color:var(--ok)}'+
+'.mi-w24{display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;font-size:12.5px;line-height:1.4;color:var(--warn);text-wrap:pretty}.mi-w24 svg{width:15px;height:15px;flex:none;margin-top:1px}.mi-w24 a{color:inherit;font-weight:600}'+
+'.mi-qm{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:12.5px;color:var(--ink-2)}.mi-qm>svg{width:15px;height:15px;flex:none;color:var(--info)}.mi-qm>span{flex:1;min-width:0}'+
+/* Liste: Mini-Vorschau, Restzeit */
+'.mi-l2{display:flex;align-items:center;gap:8px;min-width:0}.mi-l2 .mi-pre{flex:1}'+
+'.mi-mt{width:34px;height:34px;flex:none;border-radius:8px;overflow:hidden;background:var(--sunk);border:1px solid var(--line)}.mi-mt img{display:block;width:100%;height:100%;object-fit:cover}'+
+'.mi-st.cd{background:var(--glow-soft);color:var(--glow-ink)}.mi-st.cd.low{background:var(--warn-soft);color:var(--warn)}.mi-st.ex{background:var(--sunk);color:var(--ink-3)}'+
+'.mi-rm .mi-kd.hl{color:var(--glow-ink);font-weight:600}.mi-rm .mi-l3 .mi-kd{flex:0 1 auto;min-width:2.5em;overflow:hidden;text-overflow:ellipsis}'+
+/* Dialoge: In die Story teilen (QR), als eigene Story hochladen, Bild groß */
+'.mi-shp{margin:0;font-size:13.5px;line-height:1.45;color:var(--ink-2);text-wrap:pretty}.mi-shp,.mi-steps,.mi-up,.mi-consent,.mi-xb{-webkit-hyphens:manual;hyphens:manual}.mi-nw{white-space:nowrap}'+
+'.mi-qr{justify-self:center;width:216px;height:216px;display:grid;place-items:center;padding:10px;border-radius:16px;background:#fff;color:#333}.mi-qr svg{width:100%;height:100%}'+
+'.mi-steps{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;line-height:1.45}'+
+'.mi-up{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:start}.mi-up img{width:96px;height:120px;object-fit:cover;border-radius:12px;background:var(--sunk)}.mi-up p{margin:0;font-size:13.5px;line-height:1.45}'+
+'.mi-consent{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk);font-size:14px;line-height:1.4;cursor:pointer}.mi-consent input{width:18px;height:18px;margin-top:2px;flex:none}'+
+'.mi-zoom{width:100%;max-height:75vh;object-fit:contain;border-radius:12px;background:var(--sunk)}'+
+'@media (max-width:900px){.mi-seg{flex-wrap:wrap;overflow:visible}.mi-xb{padding:8px 12px}.mi-xa{flex:1 1 100%}.mi-xa .btn{flex:1;justify-content:center;min-height:44px}.mi-img{width:220px}.mi-story{width:180px}.mi-sta .btn{min-height:44px}.mi-mt{width:38px;height:38px}}'
+);
 
 function api(path,body){ return F.api(path,body?{body:body}:undefined); }
 /* Aktionen (gelesen, antworten, liken, erledigt, ausblenden, löschen): eine Antwort von /inbox/all, die der Server vor dem Ende einer Aktion
@@ -264,8 +339,19 @@ function stOf(i){ return i.isNew?"neu":i.done?"erledigt":i.mine&&i.kind!=="messa
 var ST_LBL={neu:"Neu",offen:"Offen",beantwortet:"Beantwortet",erledigt:"Erledigt",eigen:"Von dir"};
 function isOpen(s){ return s==="neu"||s==="offen"; }
 function lastAt(i){ var m=ms(i.at); (i.replies||[]).concat(i.thread||[]).forEach(function(r){ m=Math.max(m,ms(r.at)); }); return m; }
-function kindLbl(i){ return i.kind==="message"?"Nachricht":i.kind==="mention"?"Erwähnung":"Kommentar"; }
-function preview(i){ if(i.kind==="message"){ var t=i.thread||[], l=t[t.length-1]; if(l) return {me:!!l.mine,t:l.text}; return {me:!!i.mine,t:i.text}; } return {me:false,t:i.text}; }
+function kindLbl(i){ return i.kind==="collab"?"Collab-Einladung":i.kind==="mention"?(i.sub==="tag"?"Markierung":i.sub==="quote"?"Zitat":"Erwähnung"):i.kind==="message"?(i.flags&&i.flags.storyMention?"Story-Erwähnung":i.request&&!i.accepted?"Anfrage":"Nachricht"):"Kommentar"; }
+function preview(i){ if(i.kind==="message"){ var t=i.thread||[], l=t[t.length-1]; if(l) return {me:!!l.mine,t:l.text||l.label||""}; return {me:!!i.mine,t:i.text||i.label||""}; }
+  if(i.kind==="mention"&&i.sub==="tag") return {me:false,t:(i.label||"hat dich markiert")+(i.text?" · "+i.text:"")};
+  return {me:false,t:i.text||i.label||""}; }
+/* Erwähnungen: Markierungen, @-Erwähnungen, Zitate, Collab und Unterhaltungen mit Story-Erwähnung (ohne zweiten Eintrag) */
+function isMen(i){ return i.kind==="mention"||i.kind==="collab"||!!(i.flags&&i.flags.storyMention); }
+/* Mini-Vorschau rechts in der Zeile (Bild aus der letzten Nachricht bzw. der Markierung) */
+function thumbOf(r){ var i=r.it, list=null, mid="";
+  if(i.kind==="message"){ var t=i.thread||[]; for(var k=t.length-1;k>=Math.max(0,t.length-3)&&!list;k--) if(t[k].att&&t[k].att.length){ list=t[k].att; mid=t[k].id; } } else list=i.media;
+  if(!list) return ""; for(var j=0;j<list.length;j++){ var a=list[j]; if((a.state||"ok")!=="ok"||["image","gif","sticker","video","post","reel","story_mention","story_reply"].indexOf(a.t)<0) continue;
+    if(a.t==="video"&&!hasPrev(r,a)) continue; var src=hasPrev(r,a)?msrc(r,mid,j,a,"prev"):msrc(r,mid,j,a,"full"); if(!src||FAILED[src]||ALT[src]) continue;
+    return '<span class="mi-mt" aria-hidden="true"><img src="'+esc(src)+'" data-misrc="'+esc(src)+'" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>'; }
+  return ""; }
 
 /* ---------- Laden: alle Marken in EINER Anfrage, sofort aus dem Zwischenspeicher des Servers ----------
    Der Server antwortet gleich mit dem letzten Stand (auch nach Neustart/Deploy) und frischt Veraltetes im Hintergrund auf („refreshing“).
@@ -310,14 +396,15 @@ function allRows(keys){ var out=[]; keys.forEach(function(k){ var d=BOX[k], b=br
   d.channels.forEach(function(c){ c.items.forEach(function(i){ if(i.kind==="like") return; var s=stOf(i); out.push({k:k,b:b,c:c,it:i,uid:k+"|"+c.platform+"|"+i.id,st:s,open:isOpen(s),last:lastAt(i)}); }); }); });
   return out; }
 function hay(r){ var i=r.it, p=[i.from&&i.from.name,i.from&&i.from.handle,i.text,i.post&&i.post.text,r.b.name,r.c.label];
-  (i.replies||[]).concat(i.thread||[]).forEach(function(m){ p.push(m.text); }); return p.join(" \n ").toLowerCase(); }
+  (i.replies||[]).concat(i.thread||[]).forEach(function(m){ p.push(m.text,m.label); (m.att||[]).forEach(function(a){ p.push(a.title,a.owner,a.name); }); });
+  (i.media||[]).forEach(function(a){ p.push(a.title,a.owner); }); p.push(i.label,kindLbl(i)); return p.filter(Boolean).join(" \n ").toLowerCase(); }
 function searched(rs){ var q=String(UI.mkInQ||"").trim().toLowerCase(); if(!q) return rs; var ws=q.split(/\s+/); return rs.filter(function(r){ var h=hay(r); return ws.every(function(w){ return h.indexOf(w)>-1; }); }); }
-function byKind(rs,k){ return rs.filter(function(r){ var i=r.it; return k==="alle"?true:k==="nachrichten"?i.kind==="message":k==="kommentare"?i.kind!=="message":r.open; }); }
+function byKind(rs,k){ return rs.filter(function(r){ var i=r.it; return k==="alle"?true:k==="nachrichten"?i.kind==="message":k==="kommentare"?i.kind==="comment":k==="erwaehnungen"?isMen(i):k==="anfragen"?!!i.request&&!i.accepted:r.open; }); }
 function sorted(rs){ var op=UI.mkInSort==="offen"; return rs.slice().sort(function(a,b){ return (op?(b.open?1:0)-(a.open?1:0):0)||b.last-a.last; }); }
 function loaded(keys){ return keys.some(function(k){ return BOX[k]&&BOX[k]._t; }); }
 /* Der geöffnete Eintrag bleibt in der Liste stehen, auch wenn er nach dem Antworten nicht mehr zum Reiter passt (wie im Mailprogramm) */
 function view(){ var rs=searched(allRows(scopeKeys())), inK=byKind(rs,UI.mkInKind), sel=UI.mkInSel&&inK.every(function(r){ return r.uid!==UI.mkInSel; })&&rs.find(function(r){ return r.uid===UI.mkInSel; });
-  return {all:rs,list:sorted(sel?inK.concat([sel]):inK),cnt:{offen:byKind(rs,"offen").length,kommentare:byKind(rs,"kommentare").length,nachrichten:byKind(rs,"nachrichten").length,alle:rs.length}}; }
+  return {all:rs,list:sorted(sel?inK.concat([sel]):inK),cnt:{offen:byKind(rs,"offen").length,kommentare:byKind(rs,"kommentare").length,nachrichten:byKind(rs,"nachrichten").length,erwaehnungen:byKind(rs,"erwaehnungen").length,anfragen:byKind(rs,"anfragen").length,alle:rs.length}}; }
 function openCount(k){ var d=BOX[k]; if(!d||!d.channels||!d._t) return CNT&&CNT[k]||0; return allRows([k]).filter(function(r){ return r.open; }).length; }
 function likesInfo(keys){ var wk=Date.now()-7*864e5, o={likes:0,com:0,fol:0,posts:[],notes:[],errs:[]};
   keys.forEach(function(k){ var d=BOX[k], b=brandOf(k); if(!d||!b) return; if(d.error) o.errs.push({k:k,b:b,t:d.error});
@@ -337,7 +424,7 @@ function brandMenu(bs){ var all=UI.mkInBrand==="alle", tot=0; bs.forEach(functio
     bs.map(function(b){ var n=b.chs.length; return it(b.key,'<i class="mi-dot" style="background:'+esc(b.color||"var(--ink-3)")+'"></i>',b.name,n?b.chs.map(function(c){ return pfName(c.platform); }).join(", "):"nicht verbunden",n?openCount(b.key):0,!n); }).join("")+'</div>'; }
 function topHtml(bs,v,solo){ var b=UI.mkInBrand==="alle"?null:brandOf(UI.mkInBrand), n=b?openCount(b.key):liveKeys().reduce(function(a,k){ return a+openCount(k); },0);
   var sel='<div class="mi-bw"><button type="button" class="mi-bsel" data-act="mibmenu" aria-haspopup="listbox" aria-expanded="'+MENU+'" title="Marke wählen">'+(b?'<i class="mi-dot" style="background:'+esc(b.color||"var(--ink-3)")+'"></i>':'<i class="mi-dot all"></i>')+'<span class="mi-bt">'+esc(b?b.name:"Alle Marken")+'</span>'+(n?'<span class="mi-n" title="'+n+' offen">'+n+'</span>':'')+F.svg("chevD")+'</button>'+(MENU?brandMenu(bs):'')+'</div>';
-  var tabs=[["offen","Offen"],["kommentare","Kommentare"],["nachrichten","Nachrichten"],["alle","Alle"]];
+  var tabs=[["offen","Offen"],["kommentare","Kommentare"],["nachrichten","Nachrichten"],["erwaehnungen","Erwähnungen"],["anfragen","Anfragen"],["alle","Alle"]].filter(function(t){ return (t[0]!=="erwaehnungen"&&t[0]!=="anfragen")||v.cnt[t[0]]||UI.mkInKind===t[0]; });   // Erwähnungen/Anfragen nur, wenn es welche gibt
   var seg='<div class="mi-seg" role="group" aria-label="Filter">'+tabs.map(function(t){ var c=v.cnt[t[0]]||0; return '<button type="button" data-act="mikind:'+t[0]+'" aria-pressed="'+(UI.mkInKind===t[0])+'">'+t[1]+(v.ld?' <span class="mi-c'+(t[0]==="offen"&&c?" hot":"")+'">'+c+'</span>':'')+'</button>'; }).join("")+'</div>';
   var q='<label class="mi-q'+(UI.mkInQ?" has":"")+'">'+F.svg("search")+'<input type="search" data-miq data-keepfocus="miq" data-mifocus="q" value="'+esc(UI.mkInQ)+'" placeholder="Suchen …" title="Name, Text oder Beitrag suchen" aria-label="Posteingang durchsuchen" autocomplete="off" enterkeyhint="search">'+(UI.mkInQ?'<button type="button" class="mi-qx" data-act="miqclear" aria-label="Suche löschen">'+F.svg("close")+'</button>':'')+'</label>';
   return '<div class="mi-top">'+sel+(solo?'':seg+q)+'</div>'; }
@@ -351,8 +438,11 @@ function metaHtml(keys,li,v){ var unread=v.all.filter(function(r){ return r.it.i
 function rowHtml(r){ var i=r.it, nm=(i.from&&i.from.name)||"Unbekannt", pv=preview(i), un=i.isNew;
   return '<div class="mi-row'+(un?" unread":"")+(r.uid===UI.mkInSel?" sel":"")+'" role="button" tabindex="0" data-act="misel:'+esc(r.uid)+'" data-miit="'+esc(r.uid)+'" aria-current="'+(r.uid===UI.mkInSel)+'">'+avatar(nm,r.c.platform)+
     '<span class="mi-rm"><span class="mi-l1"><span class="mi-who" title="'+esc(nm+(i.from&&i.from.handle&&i.from.handle.replace(/^@/,"")!==nm?" ("+i.from.handle+")":""))+'">'+esc(nm)+'</span><span class="mi-when" title="'+esc(when(new Date(r.last).toISOString()))+'">'+ago(new Date(r.last).toISOString())+'</span></span>'+
-    '<span class="mi-pre" title="'+esc(pv.t)+'">'+(pv.me?'<i>Du: </i>':'')+esc(String(pv.t||"").replace(/\s+/g," "))+'</span>'+
-    '<span class="mi-l3"><i class="mi-dot" style="background:'+esc(r.b.color||"var(--ink-3)")+'"></i><span class="mi-bn" title="'+esc(r.b.name)+'">'+esc(r.b.name)+'</span><span>·</span><span class="mi-kd" title="'+esc(r.c.label)+'">'+kindLbl(i)+'</span><span class="mi-sp"></span><span class="mi-st '+r.st+'">'+ST_LBL[r.st]+'</span></span></span></div>'; }
+    (function(){ var pre='<span class="mi-pre" title="'+esc(pv.t)+'">'+(pv.me?'<i>Du: </i>':'')+esc(String(pv.t||"").replace(/\s+/g," "))+'</span>', th=thumbOf(r); return th?'<span class="mi-l2">'+pre+th+'</span>':pre; })()+
+    '<span class="mi-l3"><i class="mi-dot" style="background:'+esc(r.b.color||"var(--ink-3)")+'"></i><span class="mi-bn" title="'+esc(r.b.name)+'">'+esc(r.b.name)+'</span><span>·</span><span class="mi-kd'+(i.kind!=="message"&&i.kind!=="comment"||i.flags&&i.flags.storyMention||i.request&&!i.accepted?" hl":"")+'" title="'+esc(r.c.label)+'">'+kindLbl(i)+'</span><span class="mi-sp"></span>'+smChip(i)+'<span class="mi-st '+r.st+'">'+ST_LBL[r.st]+'</span></span></span></div>'; }
+/* Story-Erwähnung in der Zeile: Restzeit zum Teilen bzw. „abgelaufen“ */
+function smChip(i){ var f=i.flags; if(!f||!f.storyMention||i.shared) return ""; var h=f.smState==="expired"?0:hrsLeft(f.smExp);
+  return h?'<span class="mi-st cd'+(h<3?" low":"")+'" title="So lange kannst du die Story noch in deiner Story teilen">noch '+h+' h</span>':'<span class="mi-st ex" title="Story nach 24 h abgelaufen oder gelöscht">abgelaufen</span>'; }
 function skel(n){ var s=""; for(var i=0;i<n;i++) s+='<div class="mi-sk" aria-hidden="true"><i class="mi-ska"></i><span class="mi-skb"><i style="width:'+(45+(i*17)%35)+'%"></i><i style="width:'+(70+(i*11)%25)+'%"></i><i style="width:30%"></i></span></div>'; return s; }
 function empty(icon,t,d,acts){ return '<div class="mi-empty"><span class="mi-ei">'+F.svg(icon)+'</span><b>'+t+'</b>'+(d?'<span>'+d+'</span>':'')+(acts?'<span class="mi-ea">'+acts+'</span>':'')+'</div>'; }
 function bansHtml(li){ return li.errs.length?'<div class="mi-bans">'+li.errs.map(function(e){ return '<div class="mi-ban bad" role="alert">'+F.svg("alertCircle")+'<span title="'+esc(e.t)+'"><b>'+esc(e.b.name)+':</b> '+esc(e.t)+'</span><button type="button" class="btn sm" data-act="mireload:'+esc(e.k)+'">'+F.svg("refresh")+' Erneut</button></div>'; }).join("")+'</div>':''; }
@@ -364,18 +454,94 @@ function listHtml(keys,v,li){
   else if(!v.list.length){ var q=String(UI.mkInQ||"").trim();
     body=q?empty("search","Nichts gefunden","Keine Einträge zu „"+esc(q)+"“"+(UI.mkInKind!=="alle"?" unter „"+esc(kindName(UI.mkInKind))+"“":"")+".",'<button type="button" class="btn sm" data-act="miqclear">Suche löschen</button>'+(UI.mkInKind!=="alle"?'<button type="button" class="btn sm" data-act="mikind:alle">In allen suchen</button>':''))
       :UI.mkInKind==="offen"?empty("checkCircle","Alles beantwortet","Keine offenen Kommentare oder Nachrichten"+(UI.mkInBrand==="alle"?"":" bei "+esc((brandOf(UI.mkInBrand)||{}).name||""))+".",v.cnt.alle?'<button type="button" class="btn sm" data-act="mikind:alle">Alle anzeigen</button>':'')
-      :empty(UI.mkInKind==="nachrichten"?"message":"minbox",UI.mkInKind==="nachrichten"?"Keine Nachrichten":UI.mkInKind==="kommentare"?"Keine Kommentare":"Noch nichts da","Sobald jemand kommentiert oder schreibt, erscheint es hier.","");
+      :empty(UI.mkInKind==="nachrichten"?"message":"minbox",UI.mkInKind==="nachrichten"?"Keine Nachrichten":UI.mkInKind==="kommentare"?"Keine Kommentare":UI.mkInKind==="erwaehnungen"?"Keine Erwähnungen":UI.mkInKind==="anfragen"?"Keine Anfragen":"Noch nichts da",UI.mkInKind==="erwaehnungen"?"Story-Erwähnungen, Markierungen und @-Erwähnungen erscheinen hier.":"Sobald jemand kommentiert oder schreibt, erscheint es hier.","");
   } else body=v.list.map(rowHtml).join("");
   return '<section class="mi-lp" aria-label="Einträge">'+info+'<div class="mi-scroll" id="miList">'+body+'</div></section>'; }
-function kindName(k){ return {offen:"Offen",kommentare:"Kommentare",nachrichten:"Nachrichten",alle:"Alle"}[k]||k; }
+function kindName(k){ return {offen:"Offen",kommentare:"Kommentare",nachrichten:"Nachrichten",erwaehnungen:"Erwähnungen",anfragen:"Anfragen",alle:"Alle"}[k]||k; }
 /* Links und E-Mail-Adressen im Text anklickbar (und nie mit Trennstrich umbrochen) */
 function rich(t){ t=String(t||""); var re=/(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)\]]|[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,})/gi, out="", last=0, m;
   while((m=re.exec(t))){ var s=m[0], href=/^https?:/i.test(s)?s:"mailto:"+s; out+=esc(t.slice(last,m.index))+'<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(s)+'</a>'; last=m.index+s.length; }
   return out+esc(t.slice(last)); }
-function bubble(m,cls,extra,noName){ var nm=m.mine?"":(m.from&&m.from.name)||""; return '<div class="mi-b'+(m.mine?" me":"")+(cls?" "+cls:"")+'">'+(nm&&!noName?'<span class="mi-bwho">'+esc(nm)+'</span>':'')+'<div class="mi-bb">'+rich(m.text)+'</div><span class="mi-bmeta"><span title="'+esc(when(m.at))+'">'+(cls==="lead"||cls==="rep"?ago(m.at):hm(m.at))+'</span>'+(extra||"")+'</span></div>'; }
+/* ---------- Anhänge ----------
+   Meta-Medien (Instagram, Facebook, Threads) kommen über den Server (/inbox/media – nur Kennungen, die Adresse kennt nur der Server), Bluesky-Medien direkt.
+   Abgelaufen, gelöscht oder nur in der App sichtbar → Platzhalter mit Grund und Link in die App, nie nur „Anhang“. */
+function enc(s){ return encodeURIComponent(String(s||"")); }
+function msrc(r,mid,idx,a,v){
+  if(r.c.platform==="bluesky"){ var u=v==="prev"?(a.prev||a.url):(a.url||a.prev); return /^https:\/\//.test(u||"")?u:""; }
+  if(!(a.f||a.p)) return "";
+  return "/admin/api/mkt/inbox/media?brand="+enc(r.k)+"&pf="+enc(r.c.platform)+"&id="+enc(r.it.id)+(mid?"&m="+enc(mid):"")+"&a="+idx+"&v="+v; }
+function hasPrev(r,a){ return r.c.platform==="bluesky"?!!a.prev:!!a.p; }
+function fmtSize(n){ n=+n||0; return n>=1048576?(n/1048576).toFixed(1).replace(".",",")+" MB":n>=1024?Math.round(n/1024)+" KB":""; }
+function hrsLeft(iso){ var t=ms(iso)-Date.now(); return t>0?Math.max(1,Math.round(t/3600e3)):0; }
+function cdChip(exp){ var h=hrsLeft(exp); return h?'<span class="mi-cd'+(h<3?" low":"")+'" title="Story läuft ab: '+esc(when(exp))+'">noch '+h+' h</span>':''; }
+function appLink(i){ var L=i&&i.links||{}; return /^https:\/\//.test(L.app||"")?L.app:/^https:\/\//.test(L.web||"")?L.web:""; }
+function extA(href,label,cls){ return href?'<a class="mi-xl'+(cls?" "+cls:"")+'" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+F.svg("miext")+esc(label)+'</a>':''; }
+function ratio(a,def){ var w=+a.w||0,h=+a.h||0; return w&&h?Math.max(.45,Math.min(2.2,w/h)).toFixed(3):def; }
+function dtShort(t){ return t?new Date(t).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""; }
+/* Bild oder Video: ist der Typ unklar (Story, geteilter Beitrag), erst als Bild, scheitert das, als Video */
+function media(src,a,o){ o=o||{}; if(!src) return '<span class="mi-ph2">'+F.svg("miimg")+'</span>';
+  var vid=o.video||ALT[src]||/^video\//.test(a.mime||"");
+  return vid?'<video src="'+esc(src)+'" data-misrc="'+esc(src)+'" playsinline preload="metadata"'+(o.controls!==false?' controls':' muted')+(o.poster?' poster="'+esc(o.poster)+'"':'')+'></video>'
+    :'<img src="'+esc(src)+'" data-misrc="'+esc(src)+'"'+(o.alt&&!/^image\//.test(a.mime||"")?' data-mialt="1"':'')+' alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">'; }
+function gonePh(a,r){ var ap=appLink(r.it);
+  return '<div class="mi-at mi-gone">'+F.svg("miclock")+'<b>Nicht mehr verfügbar</b><span>Der Link der Plattform ist abgelaufen oder der Inhalt wurde gelöscht.</span>'+extA(ap,"In der App ansehen")+'</div>'; }
+function storyHtml(a,r,mid,idx,mine){ var i=r.it, men=a.t==="story_mention", h=(i.from&&(i.from.handle||i.from.name))||"Jemand", full=msrc(r,mid,idx,a,"full"),
+  dead=a.state==="expired"||a.state==="gone"||FAILED[full], at=ms(a.exp)?ms(a.exp)-864e5:0, pu=profUrl(r.c.platform,i.from)||appLink(i), body;
+  if(dead) body='<div class="mi-stp">'+F.svg("miclock")+'<b>Story abgelaufen (24 h) oder gelöscht</b>'+(at?'<small>'+(men?"erwähnt":"geantwortet")+' am '+esc(dtShort(at))+'</small>':'')+(pu?extA(pu,"Profil von "+h+" öffnen"):'')+'</div>';
+  else if(!full||a.state==="unknown") body='<div class="mi-stp">'+F.svg("mieye")+'<b>Vorschau nur in der App</b><small>Instagram liefert für diese Story kein Bild.</small>'+extA(appLink(i),"In Instagram öffnen")+'</div>';
+  else body=media(full,a,{alt:1,controls:false})+cdChip(a.exp);
+  var acts=men&&!dead&&!mine?'<div class="mi-sta"><button type="button" class="btn sm primary" data-act="mistory:'+esc(r.uid)+'">'+F.svg("mistory")+' In meiner Story teilen</button>'+(i.can&&i.can.reply?'<button type="button" class="btn sm" data-act="mifocus:'+esc(r.uid)+'">Antworten</button>':'')+'</div>':'';
+  return '<div class="mi-at mi-story'+(men?"":" rep")+'"><div class="mi-sth">'+(men?(mine?'📣 Du hast '+esc(h)+' in deiner Story erwähnt':'📣 <b>'+esc(h)+'</b> hat dich in der Story erwähnt'):'↩︎ Antwort auf '+(mine?"eine Story":"deine Story"))+'</div><div class="mi-stm">'+body+'</div>'+acts+'</div>'; }
+function attHtml(a,r,mid,idx,mine){ var t=a.t, st=a.state||"ok", ttl=a.title||"", own=a.owner||"", link=/^https:\/\//.test(a.link||"")?a.link:"", ap=appLink(r.it), lbl=r.c.label;
+  var full=msrc(r,mid,idx,a,"full"), prev=hasPrev(r,a)?msrc(r,mid,idx,a,"prev"):"";
+  if(t==="story_mention"||t==="story_reply") return storyHtml(a,r,mid,idx,mine);
+  if(t==="ephemeral") return '<div class="mi-at mi-note">'+F.svg("mieye")+'<span>Einmal-Foto/-Video – nur in der '+esc(lbl)+'-App sichtbar.</span>'+extA(ap,"In der App öffnen")+'</div>';
+  if(t==="unsupported") return '<div class="mi-at mi-note">'+F.svg("alertCircle")+'<span>'+(a.old?"Älterer Anhang – Meta liefert den Inhalt nur für die 20 neuesten Nachrichten.":"Inhalt nur in der App sichtbar (z. B. Umfrage, Collab-Einladung, Anruf oder Sticker).")+'</span>'+extA(ap,"In der App öffnen")+'</div>';
+  if(t==="quote"){ var qi=prev&&!FAILED[prev]?'<img src="'+esc(prev)+'" data-misrc="'+esc(prev)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'';
+    return (link?'<a class="mi-at mi-quote'+(st==="gone"?" gone":"")+'" href="'+esc(link)+'" target="_blank" rel="noopener noreferrer">':'<div class="mi-at mi-quote'+(st==="gone"?" gone":"")+'">')+(own?'<small>Zitat von '+esc(own)+'</small>':'')+'<span>'+esc(ttl||"Zitierter Beitrag")+'</span>'+qi+(link?'</a>':'</div>'); }
+  if(t==="link"){ var th=prev&&!FAILED[prev]?'<img src="'+esc(prev)+'" data-misrc="'+esc(prev)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'', host=""; try{ host=new URL(link).hostname.replace(/^www\./,""); }catch(e){}
+    return link?'<a class="mi-at mi-card mi-link'+(th?"":" nt")+'" href="'+esc(link)+'" target="_blank" rel="noopener noreferrer">'+th+'<span class="mi-cb"><b>'+esc(ttl||host)+'</b><small>'+esc(host)+'</small></span></a>':''; }
+  if(st==="expired"||st==="gone"||FAILED[full]||(prev&&FAILED[prev]&&!full)) return gonePh(a,r);
+  if(t==="image"||t==="gif"){ var src=t==="gif"?full:(prev||full); if(!src) return gonePh(a,r);
+    return '<button type="button" class="mi-at mi-img" data-act="mizoom" data-full="'+esc(full||src)+'" style="aspect-ratio:'+ratio(a,"1")+'" aria-label="Bild vergrößern">'+media(src,a)+(t==="gif"?'<span class="mi-gif">GIF</span>':'')+'</button>'; }
+  if(t==="sticker") return full?'<span class="mi-at mi-stk">'+media(full,a)+'</span>':'';
+  if(t==="video"){
+    if(r.c.platform==="bluesky"&&!(a.hls&&document.createElement("video").canPlayType("application/vnd.apple.mpegurl"))) return '<div class="mi-at mi-card">'+'<div class="mi-cm" style="aspect-ratio:'+ratio(a,"9/16")+'">'+media(prev,a)+'<span class="mi-pl">'+F.svg("miplay")+'</span></div><div class="mi-cb">'+extA(appLink(r.it),"Video in Bluesky ansehen")+'</div></div>';
+    var vs=r.c.platform==="bluesky"?a.hls:full; if(!vs) return gonePh(a,r);
+    return '<video class="mi-at mi-vid" src="'+esc(vs)+'" data-misrc="'+esc(vs)+'" controls playsinline preload="metadata"'+(prev?' poster="'+esc(prev)+'"':'')+(ratio(a,"")?' style="aspect-ratio:'+ratio(a,"")+'"':'')+'></video>'; }
+  if(t==="audio") return full?'<div class="mi-at mi-aud"><audio src="'+esc(full)+'" data-misrc="'+esc(full)+'" controls preload="none"></audio></div>':gonePh(a,r);
+  if(t==="file") return '<div class="mi-at mi-file">'+F.svg("mifile")+'<span><b title="'+esc(a.name||"Datei")+'">'+esc(a.name||"Datei")+'</b><small>'+esc([fmtSize(a.size),(a.mime||"").split("/").pop().toUpperCase()].filter(Boolean).join(" · ")||"Datei")+'</small></span>'+(full?'<a class="mi-xl" href="'+esc(full)+'" target="_blank" rel="noopener">Öffnen</a>':'')+'</div>';
+  if(t==="post"||t==="reel"||t==="template"){ var reel=t==="reel", ms0=prev||full;
+    return '<div class="mi-at mi-card'+(reel?" reel":"")+'"><div class="mi-cm" style="aspect-ratio:'+(reel?"9/16":ratio(a,"4/5"))+'">'+media(ms0,a,{alt:1,controls:false,poster:full&&prev?prev:""})+(reel?'<span class="mi-pl">'+F.svg("miplay")+'</span>':'')+'</div>'+
+      '<div class="mi-cb"><small>'+(t==="template"?"Karte":reel?"Geteiltes Reel":r.it.kind==="mention"?"Beitrag":"Geteilter Beitrag")+(own?" von "+esc(own):"")+'</small>'+(ttl?'<span class="mi-cap">'+esc(ttl)+'</span>':'')+extA(link||ap,link?"Original öffnen":"In der App öffnen")+'</div></div>'; }
+  return ''; }
+function attsHtml(list,r,mid,mine){ return list&&list.length?'<div class="mi-atts">'+list.map(function(a,k){ return attHtml(a,r,mid,k,mine); }).join("")+'</div>':''; }
+/* Blase: Text (oder Kurztext, wenn nur ein Anhang ohne Darstellung da ist), Anhänge, zitierte Nachricht, Reaktionen; Antwort auf eine Story zeigt die Story über dem Text */
+function bubble(m,cls,extra,noName,ax){ var nm=m.mine?"":(m.from&&m.from.name)||"", list=ax&&ax.list||[], txt=m.text||"", ah=ax?attsHtml(list,ax.r,ax.mid,!!m.mine):"", lbl=!txt&&!ah?(m.label||""):"";
+  var top=list.some(function(a){ return a.t==="story_reply"; }), body=txt||lbl?'<div class="mi-bb">'+rich(txt||lbl)+'</div>':'';
+  var rt=m.replyTo&&m.replyTo.text?'<span class="mi-rto" title="'+esc(m.replyTo.text)+'">↩︎ '+esc(m.replyTo.text)+'</span>':'', re=m.react&&m.react.length?'<span class="mi-reacts" title="Reaktionen">'+m.react.map(function(x){ return '<span>'+esc(x.e)+'</span>'; }).join("")+'</span>':'';
+  return '<div class="mi-b'+(m.mine?" me":"")+(cls?" "+cls:"")+'">'+(nm&&!noName?'<span class="mi-bwho">'+esc(nm)+'</span>':'')+rt+(top?ah+body:body+ah)+'<span class="mi-bmeta"><span title="'+esc(when(m.at))+'">'+(cls==="lead"||cls==="rep"?ago(m.at):hm(m.at))+'</span>'+(extra||"")+re+'</span></div>'; }
+/* Kontextleiste unter dem Kopf: Nachrichtenanfrage annehmen, markierten Beitrag teilen, Bluesky reposten/zitieren, Collab, Ergebnisse */
+function xbarHtml(r){ var i=r.it, uid=esc(r.uid), out="", chips=[], h=(i.from&&(i.from.handle||i.from.name))||"", L=i.links||{};
+  if(i.shared) chips.push("✓ "+(i.shared.via==="reupload"?"Als Story hochgeladen":"In deiner Story geteilt")+" "+hm(i.shared.at));
+  if(i.reposted) chips.push("✓ Repostet "+hm(i.reposted.at));
+  if(i.quoted) chips.push("✓ Zitiert "+hm(i.quoted.at));
+  if(i.accepted) chips.push("✓ Anfrage angenommen");
+  var req=i.kind==="message"&&i.can&&i.can.reply&&!i.accepted&&(i.request||(r.c.platform==="instagram"&&!(i.thread||[]).some(function(m){ return m.mine; })));
+  if(req) out+='<div class="mi-xb req">'+F.svg("inbox")+'<span>'+(i.request?'<b>Nachrichtenanfrage'+(i.filtered?" (gefiltert)":"")+'</b> – mit deiner Antwort nimmst du sie an. Ablehnen oder blockieren geht nur in der App.':'<b>Neue Unterhaltung</b> – liegt sie in Instagram unter „Anfragen“, nimmst du sie mit deiner Antwort an.')+'</span>'+
+    '<span class="mi-xa"><button type="button" class="btn sm primary" data-act="mifocus:'+uid+'">'+F.svg("reply")+' Annehmen &amp; antworten</button><button type="button" class="btn sm" data-act="mihide:'+uid+'">Ignorieren</button>'+extA(appLink(i),"In der App öffnen")+'</span></div>';
+  if(i.kind==="mention"&&i.sub==="tag"&&r.c.platform==="instagram") out+='<div class="mi-xb">'+F.svg("mitag")+'<span><b>'+esc(h||"Jemand")+'</b> hat dich in einem Beitrag markiert.</span><span class="mi-xa">'+
+    (appLink(i)?'<button type="button" class="btn sm primary" data-act="mistory:'+uid+'">'+F.svg("mistory")+' In meiner Story teilen</button>':'')+(i.can&&i.can.story==="app+reupload"?'<button type="button" class="btn sm" data-act="mistoryup:'+uid+'">'+F.svg("miup")+' Als eigene Story hochladen …</button>':'')+'</span></div>';
+  if(i.kind==="mention"&&i.sub==="tag"&&r.c.platform==="facebook") out+='<div class="mi-xb">'+F.svg("mitag")+'<span><b>'+esc(h||"Jemand")+'</b> hat deine Seite markiert – deine Antwort erscheint als Kommentar unter dem Beitrag.</span><span class="mi-xa">'+extA(L.web,"Beitrag öffnen")+'</span></div>';
+  if(i.can&&(i.can.repost||i.can.quote)) out+='<div class="mi-xb">'+F.svg("mirepost")+'<span>'+(i.sub==="quote"?"Hat deinen Beitrag zitiert.":"Hat dich erwähnt.")+' Teile es mit deinen Followern.</span><span class="mi-xa">'+
+    (i.can.repost?'<button type="button" class="btn sm" data-act="mirepost:'+uid+'"'+(i.reposted||BUSY[i.id]==="repost"?' disabled':'')+'>'+F.svg("mirepost")+(i.reposted?" Repostet":BUSY[i.id]==="repost"?" …":" Reposten")+'</button>':'')+
+    (i.can.quote?'<button type="button" class="btn sm" data-act="miquote:'+uid+'">'+F.svg("miquote")+' Zitieren …</button>':'')+'</span></div>';
+  if(i.kind==="collab") out+='<div class="mi-xb info">'+F.svg("alertCircle")+'<span><b>Collab-Einladung</b> – annehmen oder ablehnen geht über die Schnittstelle nur mit Facebook-Login. Bis dahin in Instagram unter „Benachrichtigungen“.</span><span class="mi-xa">'+extA(appLink(i)||"https://www.instagram.com/","In Instagram öffnen")+'</span></div>';
+  if(chips.length) out+='<div class="mi-xb"><span class="mi-xa">'+chips.map(function(c){ return '<span class="mi-chip">'+esc(c)+'</span>'; }).join("")+'</span></div>';
+  return out; }
 function threadHtml(r){
   var i=r.it, uid=esc(r.uid), nm=(i.from&&i.from.name)||"Unbekannt", hd=i.from&&i.from.handle||"", pu=profUrl(r.c.platform,i.from), busy=BUSY[i.id], s=r.st;
-  var canDel=i.kind!=="message"&&["instagram","facebook","threads","youtube"].indexOf(r.c.platform)>-1, delT=r.c.platform==="threads"?"Auf Threads ausblenden":r.c.platform==="youtube"?"Auf YouTube ablehnen":"Auf "+r.c.label+" löschen";
+  var canDel=i.kind==="comment"&&["instagram","facebook","threads","youtube"].indexOf(r.c.platform)>-1, delT=r.c.platform==="threads"?"Auf Threads ausblenden":r.c.platform==="youtube"?"Auf YouTube ablehnen":"Auf "+r.c.label+" löschen";
   var head='<div class="mi-th"><button type="button" class="mi-ib mi-back" data-act="miback" aria-label="Zurück zur Liste">'+F.svg("chevL")+'</button>'+avatar(nm,r.c.platform,"lg")+
     '<div class="mi-tw"><b title="'+esc(nm)+'">'+esc(nm)+'</b><span>'+(hd&&hd.replace(/^@/,"")!==nm?'<span class="mi-bn" title="'+esc(hd)+'">'+esc(hd)+'</span><span>·</span>':'')+'<span>'+esc(r.c.label)+'</span><span>·</span><i class="mi-dot" style="background:'+esc(r.b.color||"var(--ink-3)")+'"></i><span class="mi-bn" title="'+esc(r.b.name)+'">'+esc(r.b.name)+'</span></span></div>'+
     '<div class="mi-ta">'+(pu?'<a class="mi-ib" href="'+esc(pu)+'" target="_blank" rel="noopener" title="Profil von '+esc(nm)+' auf '+esc(r.c.label)+' öffnen">'+F.svg("user")+'<span class="mi-rl">Profil</span></a>':'')+
@@ -386,21 +552,24 @@ function threadHtml(r){
   var tb;
   if(i.kind==="message"){ var th=i.thread&&i.thread.length?i.thread:[{from:i.from,text:i.text,at:i.at,mine:i.mine}], shown=OPEN[i.id]?th:th.slice(-30), lastDay="", lastWho=null;
     tb=(th.length>shown.length?'<button type="button" class="mi-more" data-act="mimore:'+uid+'">'+(th.length-shown.length)+' ältere Nachrichten anzeigen</button>':'')+
-      shown.map(function(m){ var dl=dayLbl(m.at), nd=dl!==lastDay, sep=nd?'<span class="mi-day">'+esc(dl)+'</span>':'', who=m.mine?"":(m.from&&m.from.name)||"", same=!nd&&who===lastWho; lastDay=dl; lastWho=who; return sep+bubble(m,"",null,same); }).join("");
+      shown.map(function(m){ var dl=dayLbl(m.at), nd=dl!==lastDay, sep=nd?'<span class="mi-day">'+esc(dl)+'</span>':'', who=m.mine?"":(m.from&&m.from.name)||"", same=!nd&&who===lastWho; lastDay=dl; lastWho=who; return sep+bubble(m,"",null,same,{r:r,mid:m.id,list:m.att}); }).join("");
   } else {
     var p=i.post, pu2=p&&/^https?:\/\//.test(p.url||"")?p.url:"", post=p&&(p.text||p.thumb||pu2)?(pu2?'<a class="mi-pctx" href="'+esc(pu2)+'" target="_blank" rel="noopener" title="'+esc(p.text||"Beitrag öffnen")+'">':'<div class="mi-pctx">')+
       (p.thumb?'<img src="'+esc(p.thumb)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span class="mi-ph">'+pfIcon(r.c.platform)+'</span>')+
       '<span class="mi-pt"><small>'+(r.c.platform==="youtube"?"Video auf YouTube":"Beitrag auf "+esc(r.c.label))+(p.at?" · "+ago(p.at):"")+'</small><span class="mi-cap">'+esc(p.text||(r.c.platform==="youtube"?"Kommentar zu deinem Video":"Ohne Text"))+'</span></span>'+(pu2?'<span class="mi-go">Zum Beitrag '+F.svg("external")+'</span></a>':'</div>'):'';
     var lk=(i.likes?'<span title="'+esc(i.likes)+' Likes">'+F.svg("mheart")+' '+esc(i.likes)+'</span>':'')+(i.can&&i.can.like?'<button type="button" class="mi-like" data-act="milike:'+uid+'"'+(i.liked||busy?' disabled':'')+'>'+F.svg("mheart")+(i.liked?"Gefällt dir":busy==="like"?"…":"Gefällt mir")+'</button>':'');
-    tb=post+bubble({from:i.from,text:i.text,at:i.at,mine:i.mine},"lead",lk)+(i.replies||[]).map(function(x){ return bubble(x,"rep"); }).join("");
+    tb=post+bubble({from:i.from,text:i.text,label:i.label,at:i.at,mine:i.mine},"lead",lk,false,{r:r,mid:"",list:i.media})+(i.replies||[]).map(function(x){ return bubble(x,"rep"); }).join("");
   }
-  var lim=r.c.platform==="bluesky"?300:r.c.platform==="threads"?500:0, dr=DRAFT[r.uid]||"", ki=!!(F.mktPlan&&F.mktPlan()&&F.mktPlan().ki);
-  var cmp=i.can&&i.can.reply?'<div class="mi-cmp"><div class="mi-cbox"><textarea rows="2" data-mirep="'+uid+'" data-keepfocus="mirep" data-mifocus="rep" data-lim="'+lim+'" placeholder="'+(i.kind==="message"?"Nachricht an ":"Antwort an ")+esc(nm)+' …" aria-label="Antwort schreiben">'+esc(dr)+'</textarea>'+
+  var qm=!!QUOTE[r.uid], lim=r.c.platform==="bluesky"?300:r.c.platform==="threads"?500:0, dr=DRAFT[r.uid]||"", ki=!!(F.mktPlan&&F.mktPlan()&&F.mktPlan().ki)&&!qm;
+  /* Instagram/Facebook: Antworten nur bis 24 h nach der letzten Nachricht der Person (danach nur in der App) */
+  var w24="", lt=0; if(i.kind==="message"&&(r.c.platform==="instagram"||r.c.platform==="facebook")){ (i.thread||[]).forEach(function(m){ if(!m.mine) lt=Math.max(lt,ms(m.at)); }); if(lt&&Date.now()-lt>864e5) w24='<p class="mi-w24">'+F.svg("miclock")+'<span>Antwortfenster abgelaufen: Meta lässt Antworten über die Schnittstelle nur bis 24 Stunden nach der letzten Nachricht zu.'+(appLink(i)?' <a href="'+esc(appLink(i))+'" target="_blank" rel="noopener noreferrer">In der App antworten</a>':'')+'</span></p>'; }
+  var qh=qm?'<p class="mi-qm">'+F.svg("miquote")+'<span>Zitat von '+esc((i.from&&(i.from.handle||i.from.name))||"")+' – dein Text erscheint über dem zitierten Beitrag.</span><button type="button" class="btn sm" data-act="miquotex:'+uid+'">Abbrechen</button></p>':'';
+  var cmp=i.can&&i.can.reply||qm?'<div class="mi-cmp">'+w24+qh+'<div class="mi-cbox"><textarea rows="2" data-mirep="'+uid+'" data-keepfocus="mirep" data-mifocus="rep" data-lim="'+lim+'" placeholder="'+(qm?"Dein Text zum Zitat":(i.kind==="message"?"Nachricht an ":i.sub==="tag"&&r.c.platform==="facebook"?"Kommentar unter dem Beitrag von ":"Antwort an ")+esc(nm))+' …" aria-label="'+(qm?"Zitat schreiben":"Antwort schreiben")+'">'+esc(dr)+'</textarea>'+
     '<div class="mi-cbar">'+(ki?'<button type="button" class="mi-ki" data-act="misuggest:'+uid+'"'+(busy==="ki"?' disabled':'')+' title="KI schreibt einen Vorschlag im Ton der Marke – Stichworte im Feld werden berücksichtigt. Du prüfst und sendest selbst.">'+F.svg("sparkle")+(busy==="ki"?"Schreibe …":"KI-Vorschlag")+'</button>':'')+
     '<span class="mi-sp"></span>'+(lim?'<span class="mi-cnt'+(dr.length>lim?" over":"")+'" data-micnt>'+dr.length+' / '+lim+'</span>':'')+'<span class="mi-hint">⌘↩ senden</span>'+
-    '<button type="button" class="btn primary sm mi-send" data-act="misend:'+uid+'"'+(busy||(lim&&dr.length>lim)?' disabled':'')+' title="Senden (⌘↩)">'+F.svg("send")+(busy==="send"?" Sende …":" Senden")+'</button></div></div></div>'
-    :'<div class="mi-cmp"><p class="mi-noreply">Antworten ist hier über die Schnittstelle nicht möglich – bitte direkt in der App von '+esc(r.c.label)+'.'+(pu?' <a href="'+esc(pu)+'" target="_blank" rel="noopener">Profil öffnen</a>':'')+'</p></div>';
-  return '<div class="mi-thread" style="display:contents">'+head+'<div class="mi-tb" id="miThread">'+tb+'</div>'+cmp+'</div>'; }
+    '<button type="button" class="btn primary sm mi-send" data-act="misend:'+uid+'"'+(busy||(lim&&dr.length>lim)?' disabled':'')+' title="'+(qm?"Zitieren":"Senden")+' (⌘↩)">'+F.svg(qm?"miquote":"send")+(busy==="send"?" Sende …":qm?" Zitieren":" Senden")+'</button></div></div></div>'
+    :'<div class="mi-cmp"><p class="mi-noreply">'+(i.kind==="mention"&&i.sub==="tag"?'Unter fremden Beiträgen kommentierst du in der App von '+esc(r.c.label)+'.'+(appLink(i)?' <a href="'+esc(appLink(i))+'" target="_blank" rel="noopener noreferrer">Beitrag öffnen</a>':''):'Antworten ist hier über die Schnittstelle nicht möglich – bitte direkt in der App von '+esc(r.c.label)+'.'+(pu?' <a href="'+esc(pu)+'" target="_blank" rel="noopener">Profil öffnen</a>':''))+'</p></div>';
+  return '<div class="mi-thread" style="display:contents">'+head+xbarHtml(r)+'<div class="mi-tb" id="miThread">'+tb+'</div>'+cmp+'</div>'; }
 function overviewHtml(keys,v,li,likesPane){
   var head=likesPane||mob()?'<div class="mi-th"><button type="button" class="mi-ib mi-back" data-act="miback" aria-label="Zurück zur Liste">'+F.svg("chevL")+'</button><div class="mi-tw"><b>Beiträge &amp; Likes</b><span>'+esc(UI.mkInBrand==="alle"?"Alle Marken":(brandOf(UI.mkInBrand)||{}).name||"")+'</span></div></div>':'';
   if(!v.ld) return head+'<div class="mi-ovb">'+empty("minbox","Lade Kommentare und Nachrichten …","Alle verbundenen Marken werden abgefragt – das dauert ein paar Sekunden.","")+'</div>';
@@ -472,16 +641,64 @@ window.addEventListener("popstate",function(){ if(!PUSHED) return; PUSHED=false;
 F.action("mibmenu",function(){ MENU=!MENU; paint(); if(MENU){ var f=document.querySelector('.mi-mi[aria-current="true"]')||document.querySelector(".mi-mi"); if(f) f.focus({preventScroll:true}); } });
 F.action("miopen",function(k){ UI.mkInBrand=k||"alle"; F.ls("fsc_mkin_b",UI.mkInBrand); MENU=false; if(UI.mkInSel&&UI.mkInBrand!=="alle"&&UI.mkInSel.split("|")[0]!==UI.mkInBrand) UI.mkInSel=""; ensure(); paint(); });
 F.action("mikind",function(k){ if(k==="likes"){ UI.mkInSel=""; UI.mkInPane="likes"; if(mob()&&!PUSHED){ try{ history.pushState({fscMi:1},""); PUSHED=true; }catch(e){} } paint(); return; }
-  UI.mkInKind=k==="ungelesen"?"offen":(["offen","kommentare","nachrichten","alle"].indexOf(k)>-1?k:"offen"); if(UI.mkInPane==="likes"&&!mob()) UI.mkInPane=""; paint(); });
+  UI.mkInKind=k==="ungelesen"?"offen":(["offen","kommentare","nachrichten","erwaehnungen","anfragen","alle"].indexOf(k)>-1?k:"offen"); if(UI.mkInPane==="likes"&&!mob()) UI.mkInPane=""; paint(); });
 F.action("misort",function(){ UI.mkInSort=UI.mkInSort==="offen"?"neu":"offen"; F.ls("fsc_mkin_sort",UI.mkInSort); paint(); });
 F.action("miqclear",function(){ UI.mkInQ=""; paint(); var q=document.querySelector("[data-miq]"); if(q&&!mob()) q.focus(); });
 F.action("mireload",function(k){ reloadAll(k||""); });
 F.action("mireplan",function(){ if(F.mktPlanReload) F.mktPlanReload(); });
 F.action("misend",function(a){ var o=itemOf(a); if(!o) return; var ta=document.querySelector('[data-mirep="'+CSS.escape(a)+'"]'), txt=(ta?ta.value:DRAFT[a]||"").trim(); if(!txt) return F.toast("Bitte zuerst einen Text schreiben",true);
-  DRAFT[a]=ta?ta.value:txt; BUSY[o.it.id]="send"; paint();
-  act({brand:o.key,platform:o.platform,id:o.it.id,op:"reply",text:txt}).then(function(j){ delete BUSY[o.it.id];
-    if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Senden fehlgeschlagen",true); }
-    var i=o.c.items.indexOf(o.it); o.c.items[i]=Object.assign(j.item,{isNew:false,done:o.it.done}); delete DRAFT[a]; paint(); F.toast("Gesendet"); }); });
+  var qm=!!QUOTE[a]; DRAFT[a]=ta?ta.value:txt; BUSY[o.it.id]="send"; paint();
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:qm?"quote":"reply",text:txt}).then(function(j){ delete BUSY[o.it.id];
+    if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||(qm?"Zitieren fehlgeschlagen":"Senden fehlgeschlagen"),true); }
+    var i=o.c.items.indexOf(o.it); o.c.items[i]=Object.assign(j.item,{isNew:false,done:o.it.done}); delete DRAFT[a]; delete QUOTE[a]; paint(); F.toast(qm?"Zitiert":"Gesendet"); }); });
+/* Eintrag nach einer Aktion durch die Antwort des Servers ersetzen (erledigt bleibt) */
+function replaceItem(o,item){ var k=o.c.items.indexOf(o.it); if(k>-1&&item) o.c.items[k]=Object.assign({done:o.it.done},item,{isNew:false}); }
+function focusRep(a){ var t=document.querySelector('[data-mirep="'+CSS.escape(a)+'"]'); if(t){ t.focus(); try{ t.setSelectionRange(t.value.length,t.value.length); }catch(e){} } }
+/* „Annehmen & antworten“ / „Antworten“: ins Antwortfeld (die Antwort nimmt eine Anfrage an) */
+F.action("mifocus",function(a){ focusRep(a); });
+/* Bild groß */
+F.action("mizoom",function(x,el){ var s=el&&el.getAttribute("data-full"); if(!s) return; F.modal('<div class="row-between"><h2 style="font-size:17px">Bild</h2>'+F.btnClose()+'</div><img class="mi-zoom" src="'+esc(s)+'" alt="" referrerpolicy="no-referrer">',"wide"); });
+F.action("micopy",function(x,el){ var u=el&&el.getAttribute("data-url"); if(!u) return;
+  (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(u):Promise.reject()).then(function(){ F.toast("Link kopiert"); },function(){ F.toast("Kopieren ging nicht – "+u,true); }); });
+/* „In meiner Story teilen“: Meta erlaubt das nur in der App. Am Handy direkt der Link, am Mac ein QR-Code zum Scannen (Server baut ihn aus dem Eintrag) */
+F.action("mistory",function(a){ var o=itemOf(a); if(!o) return; var i=o.it, url=appLink(i), sm=i.kind==="message", coarse=!!(window.matchMedia&&matchMedia("(pointer:coarse)").matches);
+  var h='<span class="mi-nw">'+esc((i.from&&(i.from.handle||i.from.name))||"der Person")+'</span>', ex=sm&&i.flags&&i.flags.smState!=="expired"?hrsLeft(i.flags.smExp):0;
+  if(!url) return F.toast("Für diesen Eintrag gibt es keinen Link in die App",true);
+  var open=coarse?'Link öffnen':'QR-Code mit dem Handy scannen (oder den Link am Handy öffnen)';
+  var steps=sm?[open+' – die Unterhaltung mit '+h+' öffnet sich in Instagram.','Unter der Erwähnung auf <b>„Zu deiner Story hinzufügen“</b> tippen – geht, solange die Story läuft und '+h+' das Teilen erlaubt.','Danach hier auf <b>„Geteilt“</b> tippen.']
+    :[open+' – der Beitrag öffnet sich in Instagram.','Auf <b>Teilen ✈</b> → <b>„Zu deiner Story hinzufügen“</b> tippen.','Danach hier auf <b>„Geteilt“</b> tippen.'];
+  F.modal('<div class="row-between"><h2 style="font-size:19px">In deiner Story teilen</h2>'+F.btnClose()+'</div>'+
+    '<p class="mi-shp">Instagram lässt das Teilen in die Story nur in der App zu, nicht über die Schnittstelle.'+(ex?' Die Story ist noch <b class="mi-nw">'+ex+' h</b> teilbar.':'')+'</p>'+
+    (coarse?'':'<div class="mi-qr" id="miQr" aria-label="QR-Code zum Link"><span class="mi-spin" aria-hidden="true"></span></div>')+
+    '<ol class="mi-steps">'+steps.map(function(x){ return '<li>'+x+'</li>'; }).join("")+'</ol>'+
+    '<div class="foot"><button type="button" class="btn sm" data-act="micopy" data-url="'+esc(url)+'">'+F.svg("micopy")+' Link kopieren</button><span class="row"><a class="btn'+(coarse?' primary':'')+'" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+F.svg("miext")+' In Instagram öffnen</a>'+
+    '<button type="button" class="btn'+(coarse?'':' primary')+'" data-act="mishared:'+esc(a)+'">'+F.svg("check")+' Geteilt</button></span></div>',"narrow");
+  if(!coarse) api("/admin/api/mkt/inbox/act",{brand:o.key,platform:o.platform,id:i.id,op:"deeplink"}).then(function(j){ var q=document.getElementById("miQr"); if(!q) return;
+    q.innerHTML=j&&j.ok&&/^<svg[\s>]/.test(String(j.qr||"").replace(/^<\?xml[^>]*>\s*/,""))?String(j.qr).replace(/^<\?xml[^>]*>\s*/,""):'<small>QR-Code nicht verfügbar – Link kopieren und am Handy öffnen.</small>'; },function(){});
+});
+F.action("mishared",function(a){ var o=itemOf(a); if(!o) return; F.closeModal();
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:"shared"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); replaceItem(o,j.item); setCnt(j); paint(); F.toast("Als geteilt vermerkt"); }); });
+/* Markierten Feed-Beitrag als eigene Story hochladen – nur mit Häkchen (Einverständnis), Urheber wird markiert; nie für Story-Erwähnungen */
+F.action("mistoryup",function(a){ var o=itemOf(a), r=rowOf(a); if(!o||!r) return; var i=o.it, h=(i.from&&i.from.handle)||"", m=(i.media||[])[0], src=m?(hasPrev(r,m)?msrc(r,"",0,m,"prev"):msrc(r,"",0,m,"full")):"", bn=(brandOf(o.key)||{}).name||"";
+  F.modal('<div class="row-between"><h2 style="font-size:19px">Als eigene Story hochladen</h2>'+F.btnClose()+'</div>'+
+    '<div class="mi-up">'+(src&&m.t!=="video"?'<img src="'+esc(src)+'" alt="" referrerpolicy="no-referrer">':'<span></span>')+'<p>Das Cockpit holt den Beitrag von <b class="mi-nw">'+esc(h)+'</b>, bringt ihn ins Story-Format (1080 × 1920, unten <span class="mi-nw">„📸 '+esc(h)+'“</span>) und veröffentlicht ihn als Story von <b>'+esc(bn)+'</b> – mit Markierung von <span class="mi-nw">'+esc(h)+'</span>. Die Datei wird danach sofort gelöscht.</p></div>'+
+    '<p class="mi-shp">Meist besser: in der App über Teilen ✈ → „Zu deiner Story hinzufügen“ – dann sieht man den Originalbeitrag und <span class="mi-nw">'+esc(h)+'</span> bekommt die Reichweite.</p>'+
+    '<label class="mi-consent"><input type="checkbox" id="miConsent"><span><span class="mi-nw">'+esc(h||"Die Person")+'</span> hat zugestimmt bzw. ich darf den Inhalt verwenden.</span></label>'+
+    '<div class="foot"><button type="button" class="btn" data-act="mistory:'+esc(a)+'">In der App teilen</button><button type="button" class="btn primary" id="miUpGo" data-act="mistoryupgo:'+esc(a)+'" disabled>'+F.svg("miup")+' Als Story veröffentlichen</button></div>',"narrow"); });
+F.listen("change","#miConsent",function(el){ var b=document.getElementById("miUpGo"); if(b) b.disabled=!el.checked; });
+F.action("mistoryupgo",function(a,el){ var o=itemOf(a), cb=document.getElementById("miConsent"); if(!o||!cb||!cb.checked) return; el.disabled=true; el.innerHTML='<span class="mi-spin" aria-hidden="true"></span> Wird veröffentlicht …';
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:"story_reupload",consent:true}).then(function(j){ F.closeModal(); if(!j||!j.ok) return F.toast((j&&j.error)||"Story-Upload fehlgeschlagen",true);
+    replaceItem(o,j.item); paint(); F.toast(j.note?"Story veröffentlicht – "+j.note:"Als Story veröffentlicht"); }); });
+/* Bluesky: reposten, zitieren (Antwortfeld im Zitat-Modus) */
+F.action("mirepost",function(a){ var o=itemOf(a); if(!o||o.it.reposted) return; BUSY[o.it.id]="repost"; paint();
+  act({brand:o.key,platform:o.platform,id:o.it.id,op:"repost"}).then(function(j){ delete BUSY[o.it.id]; if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Reposten fehlgeschlagen",true); } replaceItem(o,j.item); paint(); F.toast("Repostet"); }); });
+F.action("miquote",function(a){ QUOTE[a]=1; paint(); focusRep(a); });
+F.action("miquotex",function(a){ delete QUOTE[a]; paint(); });
+/* Medien, die nicht laden: unklarer Typ → als Video nochmal, sonst Platzhalter (abgelaufen/gelöscht); Mini-Vorschau in der Liste verschwindet einfach */
+document.addEventListener("error",function(e){ var t=e.target; if(!t||!t.getAttribute||!t.closest||!t.closest("#miRoot")) return; var s=t.getAttribute("data-misrc"); if(!s) return;
+  if(t.tagName==="IMG"&&t.getAttribute("data-mialt")&&!ALT[s]) ALT[s]=1; else FAILED[s]=1;
+  if(t.closest(".mi-mt")){ var m=t.closest(".mi-mt"); if(m&&m.parentNode) m.parentNode.removeChild(m); return; }
+  paintSoon(); },true);
 F.action("milike",function(a){ var o=itemOf(a); if(!o) return; BUSY[o.it.id]="like"; paint();
   act({brand:o.key,platform:o.platform,id:o.it.id,op:"like"}).then(function(j){ delete BUSY[o.it.id]; if(!j||!j.ok){ paint(); return F.toast((j&&j.error)||"Liken fehlgeschlagen",true); } o.it.liked=true; paint(); }); });
 F.action("misuggest",function(a){ var o=itemOf(a); if(!o) return; var ta=document.querySelector('[data-mirep="'+CSS.escape(a)+'"]'), hint=ta?ta.value.trim():""; BUSY[o.it.id]="ki"; paint();

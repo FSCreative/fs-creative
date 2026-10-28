@@ -1,9 +1,14 @@
 // Attrappe der Social-Media-Schnittstellen für test/mktpost.test.js: Instagram (Login + Graph), Facebook, Threads, LinkedIn, YouTube, TikTok, Pinterest, Bluesky.
 // Prüft wie die echten Plattformen das Nötigste (Pflichtfelder, Token) und holt Bilder/Videos über die öffentliche Adresse ab (wie Instagram & Co.).
+// Posteingang (test/inbox-anhaenge.test.js): nur wenn state.inbox gesetzt ist – Unterhaltungen mit Anhängen, Markierungen, Bluesky-Benachrichtigungen,
+// dazu ein Medien-CDN unter /cdn/… (ok* = Bild/Video mit Range, gone* = 403, redir-ext = Weiterleitung auf fremden Host).
 "use strict";
 const http = require("http");
 module.exports = function () {
-  const S = { log: [], posts: [], fetched: [], uploads: {}, n: 1, failNext: {} };
+  const S = { log: [], posts: [], fetched: [], uploads: {}, n: 1, failNext: {}, records: [], cdn: [], graph: [] };
+  // Graph-Felder wie die echte Schnittstelle: nicht angefragte Felder fehlen in der Antwort
+  const only = (msgs, fields) => (msgs || []).map(m => { const o = Object.assign({}, m); ["story", "shares", "reactions", "reply_to", "is_unsupported", "sticker"].forEach(k => { if (fields.indexOf(k) < 0) delete o[k]; }); return o; });
+  const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7), Buffer.from([0xff, 0xd9])]);
   const id = p => p + (S.n++);
   const server = http.createServer((req, res) => {
     const ch = []; req.on("data", d => ch.push(d)); req.on("end", async () => {
@@ -15,7 +20,37 @@ module.exports = function () {
       const end = (c, o, h) => { res.writeHead(c, Object.assign({ "Content-Type": "application/json" }, h || {})); res.end(typeof o === "string" ? o : JSON.stringify(o || {})); };
       const pull = async url => { const r = await fetch(url); S.fetched.push({ url, status: r.status, type: r.headers.get("content-type") }); if (!r.ok) throw new Error("fetch " + r.status); return Buffer.from(await r.arrayBuffer()); };
       try {
-        const fk = Object.keys(S.failNext).find(k => p.indexOf(k) > -1); if (fk) { const m = S.failNext[fk]; if ((m.times || 1) > 1) m.times--; else delete S.failNext[fk]; return end(m.status || 400, { error: { message: m.message || "Fehler" } }); }
+        const fk = Object.keys(S.failNext).find(k => p.indexOf(k) > -1 && (!S.failNext[k].method || S.failNext[k].method === req.method)); if (fk) { const m = S.failNext[fk]; if ((m.times || 1) > 1) m.times--; else delete S.failNext[fk]; return end(m.status || 400, { error: { message: m.message || "Fehler" } }); }
+        // ── Medien-CDN (lookaside/fbcdn-Ersatz): Range, abgelaufene Links (403), Weiterleitungen ──
+        if (p.indexOf("/cdn/") === 0) {
+          const f = p.slice(5); S.cdn.push({ f, range: req.headers.range || "" });
+          if (/^gone/.test(f)) return end(403, { error: { message: "URL signature expired" } });
+          if (f === "redir-ext") { res.writeHead(302, { Location: "http://example.invalid/x.jpg" }); return res.end(); }
+          if (f === "redir-ok") { res.writeHead(302, { Location: "/cdn/ok-redirected.jpg" }); return res.end(); }
+          const type = /\.mp4$/.test(f) ? (/audio/.test(f) ? "audio/mp4" : "video/mp4") : /\.png$/.test(f) ? "image/png" : /\.gif$/.test(f) ? "image/gif" : /\.pdf$/.test(f) ? "application/pdf" : /\.html$/.test(f) ? "text/html" : "image/jpeg", rg = String(req.headers.range || "").match(/^bytes=(\d+)-(\d*)$/);
+          const B0 = (S.cdnFiles || {})[f] || JPG;   // echte Bilder (z. B. für ffmpeg) legt der Test in state.cdnFiles ab
+          if (rg) { const a = +rg[1], z = Math.min(B0.length - 1, rg[2] ? +rg[2] : B0.length - 1); res.writeHead(206, { "Content-Type": type, "Content-Range": "bytes " + a + "-" + z + "/" + B0.length, "Content-Length": z - a + 1 }); return res.end(B0.slice(a, z + 1)); }
+          res.writeHead(200, { "Content-Type": type, "Content-Length": B0.length }); return res.end(B0);
+        }
+        // ── Posteingang (nur mit state.inbox) ──
+        const IB = S.inbox;
+        if (IB && req.method === "GET") {
+          const fields = String(u.searchParams.get("fields") || ""); let mm;
+          if (p === "/ig/v26.0/me/conversations" || p === "/fb/v26.0/pg1/conversations") {
+            const fb = p.indexOf("/fb/") === 0, rej = fb ? IB.fbReject : IB.igReject; S.graph.push({ p, fields, folder: u.searchParams.get("folder") || "" });
+            if (rej && rej.test(fields)) return end(400, { error: { message: "(#100) Tried accessing nonexisting field (" + fields.match(rej)[0] + ") on node type (Message)", type: "OAuthException", code: 100 } });
+            const list = fb ? (IB.fbConv[u.searchParams.get("folder")] || []) : IB.igConv;
+            return end(200, { data: list.map(c => Object.assign({}, c, { messages: { data: only(c.messages.data, fields).filter(m => !(IB.dropAtt || []).includes(m.id) || (delete m.attachments, true)) } })) });
+          }
+          if ((mm = p.match(/^\/(ig|fb)\/v26\.0\/(mx\w+)$/))) { S.graph.push({ p, fields }); const d = (IB.detail || {})[mm[2]]; return d ? end(200, Object.assign({ id: mm[2] }, d)) : end(404, { error: { message: "Unsupported get request" } }); }
+          if (p === "/ig/v26.0/1784/tags") { S.graph.push({ p, fields }); return IB.tagsErr ? end(400, { error: { message: IB.tagsErr, type: "OAuthException" } }) : end(200, { data: IB.tags || [] }); }
+          if (p === "/fb/v26.0/pg1/tagged") { S.graph.push({ p, fields }); return end(200, { data: IB.fbTagged || [] }); }
+          if (p === "/fb/v26.0/pg1/posts") { S.graph.push({ p, fields }); return IB.fbCmReject && IB.fbCmReject.test(fields) ? end(400, { error: { message: "(#100) Tried accessing nonexisting field (attachment)" } }) : end(200, { data: IB.fbPosts || [] }); }
+          if (p === "/th/v1.0/me/threads") return end(200, { data: IB.thPosts || [] });
+          if ((mm = p.match(/^\/th\/v1\.0\/(\w+)\/replies$/))) { S.graph.push({ p, fields }); return IB.thReject && IB.thReject.test(fields) ? end(400, { error: { message: "(#100) Tried accessing nonexisting field (media_type)" } }) : end(200, { data: (IB.thReplies || {})[mm[1]] || [] }); }
+          if (p === "/bsky/xrpc/app.bsky.notification.listNotifications") return end(200, { notifications: IB.bsNotifs || [] });
+          if (p === "/bsky/xrpc/app.bsky.feed.getPosts") { const us = u.searchParams.getAll("uris"); S.graph.push({ p, n: us.length }); if (us.length > 25) return end(400, { message: "too many uris" }); return end(200, { posts: us.map(x => (IB.bsPosts || {})[x]).filter(Boolean) }); }
+        }
         // ── Instagram ──
         if (p === "/igapi/oauth/access_token") return all.code === "code-ig" ? end(200, { access_token: "ig-short", user_id: "1784" }) : end(400, { error_message: "bad code" });
         if (p === "/ig/access_token") return end(200, { access_token: "ig-long", expires_in: 5184000 });
@@ -41,7 +76,7 @@ module.exports = function () {
           if (all.media_type === "CAROUSEL") { if (!all.children || all.children.split(",").length < 2) return end(400, { error: { message: "children fehlt" } }); return end(200, { id: id("cc") }); }
           if (all.media_type === "REELS") { if (!all.video_url) return end(400, { error: { message: "video_url fehlt" } }); const b = await pull(all.video_url); S.uploads.igVideo = b.length; if (all.cover_url) await pull(all.cover_url); return end(200, { id: id("cr") }); }
           if ((String(all.caption || "").match(/#\w+/g) || []).length > 5) return end(400, { error: { message: "The caption contains more than the maximum allowed number of hashtags." } });
-          if (!all.image_url) return end(400, { error: { message: "image_url fehlt" } }); await pull(all.image_url); return end(200, { id: id("ci") });
+          if (!all.image_url) return end(400, { error: { message: "image_url fehlt" } }); const ib = await pull(all.image_url); if (all.media_type === "STORIES") S.storyBuf = ib; return end(200, { id: id("ci") });
         }
         if ((m = p.match(/^\/ig\/v26\.0\/(c[a-z]*\d+)$/))) return end(200, { status_code: "FINISHED" });
         if (p === "/ig/v26.0/1784/media_publish") { const pid = id("igpost"); S.posts.push({ pf: "instagram", id: pid, creation: all.creation_id }); return end(200, { id: pid }); }
@@ -67,7 +102,8 @@ module.exports = function () {
         // ── Bluesky ──
         if (p === "/bsky/xrpc/com.atproto.server.createSession") return json.password === "app-pass-1" ? end(200, { did: "did:plc:kd", handle: "kochdu.bsky.social", accessJwt: "bs-acc", refreshJwt: "bs-ref" }) : end(401, { message: "Invalid identifier or password" });
         if (p === "/bsky/xrpc/com.atproto.repo.uploadBlob") { if (raw.length > 1000000) return end(400, { message: "BlobTooLarge" }); return end(200, { blob: { $type: "blob", ref: { $link: id("blob") }, mimeType: "image/jpeg", size: raw.length } }); }
-        if (p === "/bsky/xrpc/com.atproto.repo.createRecord") { const r = json.record || {}; if (Array.from(r.text || "").length > 300) return end(400, { message: "text too long" }); S.posts.push({ pf: "bluesky", text: r.text, facets: (r.facets || []).length, images: r.embed && r.embed.images ? r.embed.images.length : 0 }); return end(200, { uri: "at://did:plc:kd/app.bsky.feed.post/" + id("rk") }); }
+        if (p === "/bsky/xrpc/com.atproto.repo.createRecord") { const r = json.record || {}; S.records.push({ collection: json.collection, record: r, auth });
+          if (json.collection && json.collection !== "app.bsky.feed.post") return end(200, { uri: "at://did:plc:kd/" + json.collection + "/" + id("rk"), cid: "c" + S.n }); if (Array.from(r.text || "").length > 300) return end(400, { message: "text too long" }); S.posts.push({ pf: "bluesky", text: r.text, facets: (r.facets || []).length, images: r.embed && r.embed.images ? r.embed.images.length : 0 }); return end(200, { uri: "at://did:plc:kd/app.bsky.feed.post/" + id("rk") }); }
         // ── YouTube ──
         if (p === "/ytup/youtube/v3/videos") { if (!/^Bearer yt-acc/.test(auth)) return end(401, { error: { message: "auth" } }); S.ytMeta = json; return end(200, {}, { Location: "http://" + req.headers.host + "/ytput/1" }); }
         if (p === "/ytput/1") { S.uploads.yt = raw.length; const vid = id("yt"); S.posts.push({ pf: "youtube", id: vid, title: S.ytMeta.snippet.title }); return end(200, { id: vid }); }
