@@ -287,8 +287,10 @@ module.exports = function (D) {
     const j = await r.json().catch(() => ({})); if (!r.ok || !j.id) throw pubErr("YouTube: Hochladen fehlgeschlagen (" + r.status + (j.error && j.error.message ? ": " + j.error.message : "") + ")", { auth: r.status === 401 });
     return { id: j.id, url: "https://www.youtube.com/shorts/" + j.id };
   }
+  // TikTok-Stücke: bis 64 MB als Ganzes (unter 5 MB Pflicht), darüber 10-MB-Stücke, der Rest hängt am letzten Stück (Media Transfer Guide)
+  function ttChunks(size) { const MB = 1024 * 1024, chunk = size <= 64 * MB ? size : 10 * MB; return { chunk, n: Math.max(1, Math.floor(size / chunk)) }; }
   async function tiktok(ch, tok, m) {
-    const size = fs.statSync(m.video.file).size, CH = 10 * 1024 * 1024, chunk = size < 5 * 1024 * 1024 ? size : CH, n = Math.max(1, Math.floor(size / chunk));
+    const size = fs.statSync(m.video.file).size, { chunk, n } = ttChunks(size);
     const init = await req("POST", B.tt + "/v2/post/publish/inbox/video/init/", { token: tok.access, json: { source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: chunk, total_chunk_count: n } } });
     if (init.error && init.error.code && init.error.code !== "ok") throw pubErr("TikTok: " + (init.error.message || init.error.code), { auth: /token/i.test(init.error.code) });
     const d = init.data || {}, fd = fs.openSync(m.video.file, "r");
@@ -787,7 +789,7 @@ module.exports = function (D) {
     throw pubErr("Unbekannte Plattform");
   }
   return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
-    inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE } };
+    inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE, ttChunks } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;

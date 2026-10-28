@@ -240,6 +240,13 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     assert.ok(lib.items.some(x => /Testbild/.test(x.desc || "")), "Beschreibung in der Sammlung");
     delete KI.marketingVision;
   });
+  await t("TikTok: Stückgrößen nach TikTok-Regeln (5–10 MB als Ganzes, darüber 10-MB-Stücke mit Rest am Ende)", async () => {
+    const { ttChunks } = require(path.join(ROOT, "mkt-publish.js"))({})._test, MB = 1024 * 1024;
+    assert.deepStrictEqual(ttChunks(3 * MB), { chunk: 3 * MB, n: 1 });
+    assert.deepStrictEqual(ttChunks(7 * MB + 123), { chunk: 7 * MB + 123, n: 1 });   // vorher 10 MB > Videogröße → „The chunk size is invalid“
+    assert.deepStrictEqual(ttChunks(64 * MB), { chunk: 64 * MB, n: 1 });
+    const big = ttChunks(95 * MB + 5); assert.deepStrictEqual(big, { chunk: 10 * MB, n: 9 }); assert.ok(95 * MB + 5 - (big.n - 1) * big.chunk <= 128 * MB, "letztes Stück ≤ 128 MB");
+  });
   await t("Facebook Login for Business: mit Konfigurations-ID config_id statt scope", async () => {
     const P2 = require(path.join(ROOT, "mkt-publish.js"))({});
     const a = new URL(P2.authUrl("facebook", { clientId: "11", redirect: "https://x/cb", state: "s", configId: "987654" }));

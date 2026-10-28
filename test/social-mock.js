@@ -109,7 +109,10 @@ module.exports = function () {
         if (p === "/ytput/1") { S.uploads.yt = raw.length; const vid = id("yt"); S.posts.push({ pf: "youtube", id: vid, title: S.ytMeta.snippet.title }); return end(200, { id: vid }); }
         if (p === "/g/token") return end(200, { access_token: "yt-acc-2", expires_in: 3600 });
         // ── TikTok ──
-        if (p === "/tt/v2/post/publish/inbox/video/init/") { const si = json.source_info || {}; if (si.source !== "FILE_UPLOAD" || !si.video_size) return end(400, { error: { code: "invalid_params" } }); S.tt = { size: si.video_size, got: 0 }; return end(200, { data: { publish_id: "pub1", upload_url: "http://" + req.headers.host + "/ttup" }, error: { code: "ok" } }); }
+        if (p === "/tt/v2/post/publish/inbox/video/init/") { const si = json.source_info || {}; if (si.source !== "FILE_UPLOAD" || !si.video_size) return end(400, { error: { code: "invalid_params" } });
+          const MB = 1024 * 1024, cs = si.chunk_size, vs = si.video_size;   // Regeln wie bei TikTok: 5–64 MB je Stück, unter 5 MB als Ganzes, Anzahl abgerundet
+          if (!(cs > 0) || cs > 64 * MB || cs > vs || (vs < 5 * MB ? cs !== vs : cs < 5 * MB) || (vs > 64 * MB && cs === vs) || si.total_chunk_count !== Math.floor(vs / cs)) return end(400, { error: { code: "invalid_params", message: "The chunk size is invalid" } });
+          S.tt = { size: vs, got: 0 }; return end(200, { data: { publish_id: "pub1", upload_url: "http://" + req.headers.host + "/ttup" }, error: { code: "ok" } }); }
         if (p === "/ttup") { S.tt.got += raw.length; return end(201, ""); }
         if (p === "/tt/v2/post/publish/status/fetch/") { S.posts.push({ pf: "tiktok", bytes: S.tt.got, size: S.tt.size }); return end(200, { data: { status: "SEND_TO_USER_INBOX" }, error: { code: "ok" } }); }
         return end(404, { error: { message: "unbekannt " + p } });
