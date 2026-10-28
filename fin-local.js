@@ -36,6 +36,14 @@ module.exports = function (D) {
         if (o.header) o.header = String(o.header).replace(new RegExp("(^|\\D)" + old + "(?!\\d)"), "$1" + o.orderNumber);
         await save("Order", o); console.log("Buchhaltung: Angebot " + old + " → " + o.orderNumber + " (id " + o.id + ")");
       }
+      // Simon 28.10.2026: alle offenen Angebote (Entwurf/versendet, bis heute angelegt) gelten bis 31.12.2026 – Gültigkeitssatz im Fußtext ersetzen, PDF neu erzeugen
+      const VALID_TO = "31.12.2026", VALID_ISO = "2026-12-31", VALID_CUT = Date.parse("2026-10-29T00:00:00+01:00"), VRE = /(g(?:ü|ue)ltig\s+bis(?:\s+(?:zum|einschlie(?:ß|ss)lich))?\s*:?\s*)(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})/i;
+      for (const o of all("Order").filter(o => String(o.orderType || "AN") === "AN" && ["100", "200"].indexOf(String(o.status)) > -1 && Date.parse(o.create || "") < VALID_CUT)) {
+        const ft = String(o.footText || ""), m = ft.replace(/<[^>]+>/g, " ").match(VRE), cur = m ? m[4] + "-" + m[3].padStart(2, "0") + "-" + m[2].padStart(2, "0") : "";
+        if (cur && cur >= VALID_ISO) continue;
+        o.footText = m && VRE.test(ft) ? ft.replace(VRE, "$1" + VALID_TO) : "Dieses Angebot ist gültig bis " + VALID_TO + "." + (ft ? "\n" + ft : "");
+        o._dirty = true; await save("Order", o); console.log("Buchhaltung: Angebot " + o.orderNumber + " gültig bis " + VALID_TO + (cur ? " (vorher " + cur + ")" : ""));
+      }
       return true;
     })().catch(e => { loaded = null; throw e; });
     return loaded;

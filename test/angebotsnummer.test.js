@@ -36,7 +36,9 @@ const seq = { id: "77", objectType: "Order", forObject: "Order", type: "AN", nex
 const order = (id, nr, create, extra) => ["Order", Object.assign({ id, objectName: "Order", orderNumber: nr, orderType: "AN", status: "100", orderDate: "2026-10-28T00:00:00+01:00", header: "Angebot", create, contact: { id: "1", objectName: "Contact" } }, extra || {})];
 const SEED = [["SevSequence", seq],
   order("30421417", "AN-1051", "2026-09-16T10:00:00+02:00"), order("30425123", "AN-1052", "2026-09-16T11:00:00+02:00"),
-  order("900000000", "1052", "2026-10-28T09:00:00+01:00", { status: "200", header: "Angebot 1052" }), order("900000001", "1052", "2026-10-28T10:00:00+01:00")];
+  order("900000000", "1052", "2026-10-28T09:00:00+01:00", { status: "200", header: "Angebot 1052", footText: "Dieses Angebot ist gültig bis 27.11.2026.\nMit besten Grüßen" }), order("900000001", "1052", "2026-10-28T10:00:00+01:00"),
+  order("30340510", "AN-1049", "2026-09-11T10:00:00+02:00", { status: "500", footText: "Dieses Angebot ist gültig bis 11.10.2026." }),
+  order("30340511", "AN-1048", "2026-09-10T10:00:00+02:00", { status: "200", footText: "Gültig bis: 1.2.2027" })];
 
 (async () => {
   const fin = fileFin(SEED);
@@ -49,6 +51,13 @@ const SEED = [["SevSequence", seq],
     assert.strictEqual(b.orderNumber, "AN-1054"); assert.strictEqual(b.formerNumber, "1052"); assert.strictEqual(b.header, "Angebot");
     assert.strictEqual(a.status, "200", "Status bleibt"); assert.strictEqual(L.get("Order", "30425123").orderNumber, "AN-1052", "echte AN-1052 bleibt");
     assert.strictEqual(fin.stored("Order", "900000000").orderNumber, "AN-1053", "gespeichert");
+  });
+  await t("offene Angebote gelten bis 31.12.2026 (Satz ersetzt bzw. ergänzt, PDF wird neu erzeugt), angenommene und längere bleiben", async () => {
+    const a = L.get("Order", "900000000"), b = L.get("Order", "900000001");
+    assert.strictEqual(a.footText, "Dieses Angebot ist gültig bis 31.12.2026.\nMit besten Grüßen"); assert.strictEqual(a._dirty, true);
+    assert.strictEqual(b.footText, "Dieses Angebot ist gültig bis 31.12.2026.");
+    assert.strictEqual(L.get("Order", "30340510").footText, "Dieses Angebot ist gültig bis 11.10.2026.", "angenommen (500) unverändert");
+    assert.strictEqual(L.get("Order", "30340511").footText, "Gültig bis: 1.2.2027", "schon länger gültig → unverändert");
   });
   await t("Umnummerieren läuft nur einmal (zweites Laden ändert nichts)", async () => {
     await L.load(true);
