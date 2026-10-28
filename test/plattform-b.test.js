@@ -257,15 +257,23 @@ function unitTests(T) {
   }]);
 
   /* ---- dritte Prüfung (R3) ---- */
-  out.push(["R3-1/6: Blitzdings-Rechnung voll gutgeschrieben + Cockpit-Ersatz → keine Doppelrechnung; Ersatz storniert → wieder zu verrechnen (Hinweis); Firmenbuchung netto + Differenz → keine Doppelrechnung", () => {
+  out.push(["R3-1/6, R4-2: Blitzdings-Rechnung voll gutgeschrieben + Cockpit-Ersatz → keine Doppelrechnung; ohne (gültigen) Ersatz → verrechnet mit Prüfhinweis, keine Aktion; Firmenbuchung netto + Differenz → keine Doppelrechnung", () => {
     const b = bk({ id: "cr1", reference: "BD-CR0001", customerName: "Kunde C", paymentStatus: "PAID", sevdeskInvoiceId: "801" });
     const bdInv = I({ id: "801", nr: "RE-801", gross: 399, net: 332.5, paid: 399, contact: "Kunde C", credited: 399, date: "2026-10-01" });
     const recs = { "blitz:cr1": [{ id: "901", nr: "RE-901", gross: 399, date: "2026-11-02", bookingAmount: 399 }] };
     let it = blitz([b], [bdInv, I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02" })], recs)[0];
     assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.invoiced, 399); assert.ok(!(it.notes || []).some(n => /Doppelrechnung/.test(n.text)), JSON.stringify(it.notes));
     it = blitz([b], [bdInv, I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02", cancelled: true })], recs)[0];
-    assert.strictEqual(it.unbilled, 399, "voll gutgeschrieben + Ersatz storniert = nicht verrechnet"); assert.ok(it.action);
-    assert.ok(it.notes.some(n => /RE-801 ist voll gutgeschrieben/.test(n.text)), JSON.stringify(it.notes));
+    assert.strictEqual(it.unbilled, 0, "voll gutgeschrieben, Ersatz storniert → bleibt verrechnet (A3: bewusste Minderung)"); assert.strictEqual(it.action, null);
+    assert.ok(it.notes.some(n => n.lvl === "warn" && /RE-801 ist voll gutgeschrieben – Storno bzw. Kulanz prüfen/.test(n.text)), JSON.stringify(it.notes));
+    assert.ok(!it.notes.some(n => /gehört schon zu|Online bezahlt, aber ohne Rechnung/.test(n.text)), "kein Hinweis auf die eigene Rechnung, kein „ohne Rechnung“: " + JSON.stringify(it.notes));
+    // nur die Blitzdings-Rechnung, voll gutgeschrieben (Kulanz) bzw. nur eine voll gutgeschriebene Cockpit-Rechnung → ebenso
+    for (const [books, invs, rr] of [[[b], [bdInv], {}], [[bk({ id: "cr8", reference: "BD-CR0008", customerName: "Kunde C" })], [I({ id: "881", nr: "RE-881", gross: 399, contact: "Kunde C", credited: 399 })], { "blitz:cr8": [{ id: "881", nr: "RE-881", gross: 399, date: "2026-11-06" }] }]]) {
+      it = blitz(books, invs, rr)[0]; assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(it.notes.some(n => /voll gutgeschrieben – Storno bzw. Kulanz prüfen/.test(n.text)), JSON.stringify(it.notes));
+      assert.ok(!it.notes.some(n => /gehört schon zu|Online bezahlt/.test(n.text)), JSON.stringify(it.notes)); }
+    // stornierte Buchung mit voll gutgeschriebener Rechnung: schon erledigt, kein „Storno prüfen“
+    it = blitz([bk({ id: "cr9", reference: "BD-CR0009", customerName: "Kunde C", status: "CANCELLED", sevdeskInvoiceId: "801" })], [bdInv])[0];
+    assert.ok(!it || !(it.notes || []).some(n => /Storno prüfen/.test(n.text)), JSON.stringify(it && it.notes));
     // teilweise gutgeschrieben bleibt wie bisher (A3: Gutschrift = bewusste Minderung, keine Nachverrechnung)
     it = blitz([b], [Object.assign({}, bdInv, { credited: 99 })])[0]; assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null);
     // echte Doppelrechnung bleibt rot
