@@ -58,9 +58,10 @@ function unitTests(T) {
     const it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");
     assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.unbilled, 190.3); assert.strictEqual(it.refund, 0);
     const a = it.action; assert.ok(a); assert.strictEqual(a.items[0].priceGross, 190.3); assert.strictEqual(a.deliveryDate, "2026-10-01"); assert.strictEqual(a.deliveryDateUntil, "2026-12-31");
-    assert.ok(/Aufenthalte \(Anreise\) 01\.10\.2026 – 31\.12\.2026: 690,30 € · abzüglich bereits mit RE-1272 verrechnet \(Buchungseingang bis 30\.09\.2026\) 500,00 €/.test(a.items[0].text), a.items[0].text);
+    assert.ok(/Aufenthalte \(Anreise\) 01\.10\.2026 – 31\.12\.2026: 690,30 € · abzüglich bereits mit RE-1272 verrechnet \(Buchungseingang bis 30\.09\.2026, nach heutiger Regel\) 500,00 €/.test(a.items[0].text), a.items[0].text);
     assert.deepStrictEqual([a.after.billing.from, a.after.billing.to, a.after.billing.src, a.after.billing.basis], ["2026-10-01", "2026-12-31", "antonhaus", "arrival"]);
     assert.strictEqual(it.catchup, 30); assert.ok(it.catchupAction && it.catchupAction.items[0].priceGross === 30 && it.catchupAction.after.billing.adj === true && !it.catchupAction.after.billing.to);
+    assert.deepStrictEqual(it.catchupAction.after.billing.parts, [{ from: "2026-01-01", to: "2026-09-30", gross: 30 }], "Nachverrechnung trägt den gedeckten Zeitraum (A1)");
     assert.strictEqual(it.pending, 80);
   }]);
   out.push(["VALUERO/Antonhaus nach Umstellung, Ansicht 2026 am 28.10.2026: nichts fällig, keine falsche Erstattung, laufendes Quartal netto", () => {
@@ -70,7 +71,7 @@ function unitTests(T) {
   out.push(["VALUERO/Antonhaus: nach der Q4-Rechnung storniert jemand die Dez-Buchung (schon mit RE-1272 verrechnet) → nicht still abgezogen, Hinweis „mehr verrechnet als heute angefallen“", () => {
     const prev = ahObj("2026", { months: AH_MONTHS_2026.filter(m => m.month !== "2026-12") });
     const it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [prev] } }).find(x => x.key === "valuero:antonhaus");
-    assert.strictEqual(it.unbilled, 190.3, "Oktober bleibt fällig"); assert.ok((it.notes || []).some(n => /mehr verrechnet als heute angefallen.*500,00 €/.test(n)), JSON.stringify(it.notes));
+    assert.strictEqual(it.unbilled, 190.3, "Oktober bleibt fällig"); assert.ok((it.notes || []).some(n => /seither storniert oder gesenkt: 500,00 € mehr verrechnet als heute angefallen/.test(n)), JSON.stringify(it.notes));
   }]);
   out.push(["VA-2: Vorjahr nicht geladen (null) am 05.01.2027 → kein Verrechnen, keine Erstattung, „Gebührendaten 2026 fehlen – neu laden“", () => {
     const it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: null }).find(x => x.key === "valuero:antonhaus");
@@ -163,6 +164,91 @@ function unitTests(T) {
     it = site({ billedUntil: "2026-12-31", __ignore: { "site:cf:kunde-test.at": { amount: 120, at: "2026-02-01T10:00:00Z", from: "2026-01-01" } } }, [], [], "2027-02-01")[0]; assert.ok(!it.ignored); assert.strictEqual(it.unbilled, 120, "Folgejahr wieder fällig");
     it = site({ billedUntil: "2026-12-31", __ignore: { "site:cf:kunde-test.at": { amount: 120, at: "2026-02-01T10:00:00Z" } } }, [], [], "2027-02-01")[0]; assert.strictEqual(it.unbilled, 120, "alter Eintrag ohne from blendet 2027 nicht aus");
   }]);
+  // ── Review-Befunde Teil A (A1, A2, A4, A8, A9, A12): Abgleich je verrechnetem Zeitraum ──
+  const ahM = (arr) => arr.map(([month, c]) => ({ month, provisionCents: c, prebilledCents: 0 }));
+  const recQ = (id, date, gross, from, to, extra) => Object.assign({ id, nr: "RE-" + id, date, gross, from, to, label: "x", src: "antonhaus", basis: "arrival" }, extra || {});
+  out.push(["A1: Nachverrechnung trägt ihre Zeiträume – ein Jahr später kein „Nachverrechnen 792,95 €“ (Schnappschuss genau einmal), keine Erstattung", () => {
+    const recsA = AH_RECS.concat([recQ("1300", "2027-01-05", 190.3, "2026-10-01", "2026-12-31"), recQ("1301", "2027-01-05", 30, null, null, { adj: true, parts: [{ from: "2026-01-01", to: "2026-09-30", gross: 30 }] }),
+      recQ("1400", "2027-04-01", 80, "2027-01-01", "2027-03-31")]);
+    const sevA = mkSev(["1272", "1300", "1301", "1400"].map(id => I({ id, nr: "RE-" + id, gross: (recsA.find(r => r.id === id) || {}).gross })));
+    const bill = { prices: {}, sites: {}, invoices: { "valuero:antonhaus": recsA }, valuero: { antonhaus: { switch: AH_SWITCH } } };
+    let it = abgleichBuild({ year: "2028", today: "2028-01-05", sev: sevA, bill, sitesSnap: null, valuero: { objects: [ahObj("2028", { months: [] })] }, valueroPrev: { objects: [ahObj("2027")] } }).items.find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it.catchup, 0, JSON.stringify(it.notes)); assert.strictEqual(it.catchupAction, null); assert.strictEqual(it.refund, 0); assert.strictEqual(it.unbilled, 0);
+    it = abgleichBuild({ year: "2027", today: "2027-04-05", sev: sevA, bill, sitesSnap: null, valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [ahObj("2026")] } }).items.find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it.catchup, 0, "Sep-Nachtrag ist mit RE-1301 gedeckt"); assert.strictEqual(it.refund, 0); assert.strictEqual(it.unbilled, 0);
+    // Partner-Haus: Nachverrechnung 20 € für Q4 2026, Ansicht 2028 → keine „zu viel verrechnet 20 €“
+    const hs = (months) => ({ key: "waldheim", name: "Waldheim", src: "partner", basis: "arrival", billingStart: "2026-10-01", months });
+    const r2 = [{ id: "500", nr: "RE-500", date: "2027-01-02", gross: 100, from: "2026-10-01", to: "2026-12-31", src: "partner" }, { id: "505", nr: "RE-505", date: "2027-02-10", gross: 20, adj: true, parts: [{ from: "2026-10-01", to: "2026-12-31", gross: 20 }], src: "partner" },
+      { id: "510", nr: "RE-510", date: "2027-04-01", gross: 50, from: "2027-01-01", to: "2027-03-31", src: "partner" }];
+    const sevW = mkSev(r2.map(r => I({ id: r.id, nr: r.nr, gross: r.gross })));
+    it = abgleichBuild({ year: "2028", today: "2028-01-05", sev: sevW, bill: { prices: {}, sites: {}, invoices: { "valuero:waldheim": r2 } }, sitesSnap: null, valuero: { objects: [hs([])] }, valueroPrev: { objects: [hs([pm({ month: "2027-02", provisionCents: 5000 })])] } }).items.find(x => x.key === "valuero:waldheim");
+    assert.strictEqual(it.refund, 0); assert.strictEqual(it.catchup, 0);
+    it = abgleichBuild({ year: "2027", today: "2027-04-05", sev: sevW, bill: { prices: {}, sites: {}, invoices: { "valuero:waldheim": r2 } }, sitesSnap: null, valuero: { objects: [hs([pm({ month: "2027-02", provisionCents: 5000 })])] }, valueroPrev: { objects: [hs([pm({ month: "2026-12", provisionCents: 12000 })])] } }).items.find(x => x.key === "valuero:waldheim");
+    assert.strictEqual(it.refund, 0); assert.strictEqual(it.catchup, 0, "Q4 2026: 100 + 20 nachverrechnet = 120");
+    // Zeitraum storniert, Nachverrechnung bleibt gültig → bei der neuen Quartalsrechnung abgezogen (nie doppelt)
+    const r3 = [r2[0], r2[1]]; const sev3 = mkSev([I({ id: "500", nr: "RE-500", gross: 100, cancelled: true }), I({ id: "505", nr: "RE-505", gross: 20 })]);
+    it = abgleichBuild({ year: "2027", today: "2027-01-10", sev: sev3, bill: { prices: {}, sites: {}, invoices: { "valuero:waldheim": r3 } }, sitesSnap: null, valuero: { objects: [hs([])] }, valueroPrev: { objects: [hs([pm({ month: "2026-12", provisionCents: 12000 })])] } }).items.find(x => x.key === "valuero:waldheim");
+    assert.strictEqual(it.unbilled, 100, "120 fällig − 20 schon nachverrechnet"); assert.ok(/abzüglich bereits nachverrechnet 20,00 €/.test(it.action.items[0].text), it.action.items[0].text);
+    // Nachverrechnung ohne Zeitraumangabe (Altformat) → Hinweis, keine weitere Nachverrechnung
+    const r4 = [r2[0], { id: "506", nr: "RE-506", date: "2027-02-10", gross: 20, adj: true, src: "partner" }];
+    it = abgleichBuild({ year: "2027", today: "2027-01-10", sev: mkSev([I({ id: "500", nr: "RE-500", gross: 100 }), I({ id: "506", nr: "RE-506", gross: 20 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:waldheim": r4 } }, sitesSnap: null, valuero: { objects: [hs([])] }, valueroPrev: { objects: [hs([pm({ month: "2026-12", provisionCents: 15000 })])] } }).items.find(x => x.key === "valuero:waldheim");
+    assert.strictEqual(it.catchup, 0); assert.ok(it.notes.some(n => /ohne Zeitraumangabe/.test(n)), JSON.stringify(it.notes));
+  }]);
+  out.push(["A2: Gutschrift aus dem eigenen Hinweis (Storno-Provision, RE-1272 nach alter Regel) löst keine Nachverrechnung aus, Hinweis verschwindet", () => {
+    const cxlPrev = ha([pm({ month: "2026-07", provisionCents: 5000 }), pm({ month: "2026-08", provisionCents: 5000, mollieFeesCancelledCents: 1200 })]);
+    let it = vaA(null, cxlPrev); assert.ok((it.notes || []).some(n => /stornierten Buchungen.*12,00 €/.test(n)));
+    it = vaA(null, cxlPrev, null, null, { credited: 12 });
+    assert.strictEqual(it.catchup, 0, "keine Endlosschleife Gutschrift ↔ Nachverrechnung"); assert.strictEqual(it.catchupAction, null); assert.strictEqual(it.refund, 0);
+    assert.ok(!(it.notes || []).some(n => /stornierten Buchungen/.test(n)), "Hinweis erledigt: " + JSON.stringify(it.notes));
+    // Antonhaus: Gutschrift 300 € zu RE-1272 (5 % statt 2 %, wie im Hinweis) → keine Nachverrechnung 300 €, Hinweis weg
+    const sw = Object.assign({}, AH_SWITCH, { prebilledCurrentRuleByMonth: { "2026-06": 16750, "2026-08": 15545, "2026-12": 20000 } });
+    const prev = ahObj("2026", { months: ahM([["2026-06", 16750], ["2026-08", 15545], ["2026-09", 3000], ["2026-10", 19030], ["2026-12", 20000]]) });
+    const recsB = AH_RECS.concat([recQ("1300", "2027-01-05", 190.3, "2026-10-01", "2026-12-31"), recQ("1301", "2027-01-05", 30, null, null, { adj: true, parts: [{ from: "2026-01-01", to: "2026-09-30", gross: 30 }] })]);
+    const run = (cr) => abgleichBuild({ year: "2027", today: "2027-01-20", sev: mkSev([I({ id: "1272", nr: "RE-1272", gross: 475.41, credited: cr || undefined }), I({ id: "1300", nr: "RE-1300", gross: 190.3 }), I({ id: "1301", nr: "RE-1301", gross: 30 })]),
+      bill: { prices: {}, sites: {}, invoices: { "valuero:antonhaus": recsB }, valuero: { antonhaus: { switch: sw } } }, sitesSnap: null, valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [prev] } }).items.find(x => x.key === "valuero:antonhaus");
+    it = run(0); assert.ok(it.notes.some(n => /RE-1272 hat 300,00 € mehr verrechnet als nach heutiger Regel/.test(n)), JSON.stringify(it.notes)); assert.strictEqual(it.catchup, 0); assert.strictEqual(it.refund, 0);
+    it = run(300); assert.strictEqual(it.catchup, 0, "A2 greift nicht"); assert.strictEqual(it.refund, 0); assert.ok(!(it.notes || []).some(n => /mehr verrechnet/.test(n)), JSON.stringify(it.notes));
+  }]);
+  out.push(["A4: Antonhaus – abgezogen wird nur die Gebühr der schon verrechneten Buchungen nach heutiger Regel; neue Buchung im selben Monat wird verrechnet", () => {
+    const sw = Object.assign({}, AH_SWITCH, { prebilledCurrentRuleByMonth: { "2026-06": 16750, "2026-08": 15545, "2026-12": 20000 } });
+    const prev = ahObj("2026", { months: ahM([["2026-06", 16750], ["2026-08", 15545], ["2026-09", 3000], ["2026-10", 19030], ["2026-12", 50000]]) });   // Dez: alte Buchung heute 200 + neue 300
+    const it = va({ year: "2027", today: "2027-01-05", bill: { prices: {}, sites: {}, invoices: { "valuero:antonhaus": AH_RECS }, valuero: { antonhaus: { switch: sw } } }, valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [prev] } }).find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it.unbilled, 490.3, "Okt 190,30 + Dez 500 − 200"); assert.strictEqual(it.deducted.prebilled, 200);
+    assert.ok(/: 690,30 € · abzüglich bereits mit RE-1272 verrechnet \(Buchungseingang bis 30\.09\.2026, nach heutiger Regel\) 200,00 €/.test(it.action.items[0].text), it.action.items[0].text);
+    assert.ok(it.notes.some(n => /RE-1272 hat 300,00 € mehr verrechnet als nach heutiger Regel.*Gutschrift nur, wenn du das so entscheidest/.test(n)), JSON.stringify(it.notes));
+    assert.ok(!it.proposal && !it.notes.some(n => /zu viel verrechnet/.test(n)), "kein Knopf, keine Erstattung"); assert.strictEqual(it.refund, 0);
+    // Schnappschuss ohne heutige Regel (ältere Antonhaus-Version) → vorsichtig der damalige Betrag
+    const it2 = va({ year: "2027", today: "2027-01-05", bill: { prices: {}, sites: {}, invoices: { "valuero:antonhaus": AH_RECS }, valuero: { antonhaus: { switch: AH_SWITCH } } }, valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [prev] } }).find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it2.unbilled, 190.3);
+  }]);
+  out.push(["A8/A9: Abrechnungsbeginn nachträglich später bzw. Altbuchungen in schon verrechneten Quartalen → keine Erstattung, kein „zu viel“, keine Nachverrechnung", () => {
+    const hp = (key, months, bs) => ({ key, name: key, src: "partner", basis: "arrival", billingStart: bs || null, months });
+    const recsX = ["01", "04", "07"].map((m, i) => ({ id: "61" + i, nr: "RE-61" + i, date: "2026-" + ["04", "07", "10"][i] + "-01", gross: 100, from: "2026-" + m + "-01", to: ymdQ(m), src: "partner" }));
+    function ymdQ(m) { return { "01": "2026-03-31", "04": "2026-06-30", "07": "2026-09-30" }[m]; }
+    let it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev(recsX.map(r => I({ id: r.id, nr: r.nr, gross: 100 }))), bill: { prices: {}, sites: {}, invoices: { "valuero:haus-x": recsX } }, sitesSnap: null,
+      valuero: { objects: [hp("haus-x", ["01", "04", "07"].map(m => pm({ month: "2026-" + m, provisionCents: 10000 })), "2026-07-01")] }, valueroPrev: { objects: [hp("haus-x", [], "2026-07-01")] } }).items.find(x => x.key === "valuero:haus-x");
+    assert.strictEqual(it.refund, 0, "A8"); assert.strictEqual(it.catchup, 0);
+    const recsY = [{ id: "600", nr: "RE-600", date: "2026-10-01", gross: 300, from: "2026-07-01", to: "2026-09-30" }];
+    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev([I({ id: "600", nr: "RE-600", gross: 300 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:alpinappart": recsY } }, sitesSnap: null,
+      valuero: { objects: [hp("alpinappart", [pm({ month: "2026-07", provisionCents: 10000, importedCents: 10000 }), pm({ month: "2026-08", provisionCents: 10000, importedCents: 6000 }), pm({ month: "2026-09", provisionCents: 10000 })])] }, valueroPrev: { objects: [hp("alpinappart", [])] } }).items.find(x => x.key === "valuero:alpinappart");
+    assert.strictEqual(it.refund, 0, "A9"); assert.strictEqual(it.catchup, 0); assert.ok(!it.blocked, it.blocked + " (A12: Altbestand ohne src = Partner-Plattform)");
+    // echte Senkung bleibt erkannt: Q3 300 verrechnet, heute nur 250 (Storno) → zu viel 50
+    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev([I({ id: "600", nr: "RE-600", gross: 300 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:alpinappart": recsY } }, sitesSnap: null,
+      valuero: { objects: [hp("alpinappart", [pm({ month: "2026-07", provisionCents: 10000 }), pm({ month: "2026-08", provisionCents: 5000 }), pm({ month: "2026-09", provisionCents: 10000 })])] }, valueroPrev: { objects: [hp("alpinappart", [])] } }).items.find(x => x.key === "valuero:alpinappart");
+    assert.strictEqual(it.refund, 50);
+  }]);
+  out.push(["A12: Altbestand ohne Quelle = Altquelle → Antonhaus kommt über die Plattform: gesperrt bis zur Bestätigung (Quelle und Freigabe auf einen Klick)", () => {
+    const viaP = ahObj("2027", { src: "partner", billingLiveSince: "2026-12-01T10:00:00.000Z" });
+    let it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [viaP] }, valueroPrev: { objects: [ahObj("2026", { src: "partner" })] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(/Quelle gewechselt \(antonhaus → partner\)/.test(it.blocked || "") && /freigegeben/.test(it.blocked), it.blocked); assert.strictEqual(it.unbilled, 0);
+    assert.deepStrictEqual([it.proposal.op, it.proposal.src, it.proposal.liveSince], ["vaack", "partner", "2026-12-01T10:00:00.000Z"]);
+    const b2 = billSw(); b2.valuero.antonhaus.ackSrc = "partner"; b2.valuero.antonhaus.ackLive = "2026-12-01T10:00:00.000Z";
+    it = va({ year: "2027", today: "2027-01-05", bill: b2, valuero: { objects: [viaP] }, valueroPrev: { objects: [ahObj("2026", { src: "partner" })] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.unbilled, 190.3);
+    // RE-1272 storniert nach der Umstellung → Abzug stimmt nicht mehr → gesperrt
+    it = va({ year: "2027", today: "2027-01-05", sev: mkSev([I({ id: "1272", nr: "RE-1272", gross: 475.41, cancelled: true })]), bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(/storniert/.test(it.blocked || ""), it.blocked); assert.strictEqual(it.unbilled, 0);
+  }]);
   return out;
 }
 
@@ -184,8 +270,10 @@ function billingTests(T, dir) {
   }]);
   out.push(["billingOp: VALUERO-Eintrag mit Quelle/Basis/Nachverrechnung; Abrechnungsbeginn/Bestätigungen; Umstellung nur mit Server-Schnappschuss", () => {
     T.billingOp({ op: "invoice", key: "valuero:haus-a", invoice: { id: "1", nr: "RE-1", gross: 10, from: "2026-10-01", to: "2026-12-31", src: "partner", basis: "arrival" } });
-    T.billingOp({ op: "invoice", key: "valuero:haus-a", invoice: { id: "2", nr: "RE-2", gross: 5, adj: true, src: "x y" } });
+    T.billingOp({ op: "invoice", key: "valuero:haus-a", invoice: { id: "2", nr: "RE-2", gross: 5, adj: true, src: "x y", from: "2026-01-01", to: "2026-12-31", parts: [{ from: "2026-07-01", to: "2026-09-30", gross: "5.004" }, { from: "bad", to: "2026-09-30", gross: 1 }] } });
     const r = T.readBilling().invoices["valuero:haus-a"]; assert.strictEqual(r[0].src, "partner"); assert.strictEqual(r[0].basis, "arrival"); assert.strictEqual(r[1].adj, true); assert.strictEqual(r[1].src, undefined, "ungültige Quelle nicht gespeichert");
+    assert.deepStrictEqual(r[1].parts, [{ from: "2026-07-01", to: "2026-09-30", gross: 5 }], "Teilzeiträume der Nachverrechnung (A1)"); assert.strictEqual(r[1].to, null, "Nachverrechnung verschiebt „verrechnet bis“ nie");
+    T.billingOp({ op: "vaack", key: "haus-c", src: "partner", liveSince: "2026-12-01T10:00:00.000Z" }); assert.deepStrictEqual([T.readBilling().valuero["haus-c"].ackSrc, T.readBilling().valuero["haus-c"].ackLive], ["partner", "2026-12-01T10:00:00.000Z"]);
     T.billingOp({ op: "vastart", key: "valuero:haus-b", start: "2026-11-01" }); assert.strictEqual(T.readBilling().valuero["haus-b"].start, "2026-11-01");
     assert.throws(() => T.billingOp({ op: "vastart", key: "haus-b", start: "2026-11-15" }));
     T.billingOp({ op: "vaack", key: "haus-a", src: "partner" }); assert.strictEqual(T.readBilling().valuero["haus-a"].ackSrc, "partner");
@@ -282,7 +370,7 @@ function createMock() {
   if (T) {
     for (const [name, fn] of unitTests(T)) await t(name, fn);
     // billing.json nur in der Temp-Kopie schreiben (nie in ein echtes /data)
-    if (path.dirname(T.BILLING_FILE) === udir) { for (const [name, fn] of billingTests(T, udir)) await t(name, fn); }
+    if (fs.realpathSync(path.dirname(T.BILLING_FILE)) === fs.realpathSync(udir)) { for (const [name, fn] of billingTests(T, udir)) await t(name, fn); }   // realpath: macOS /var → /private/var
     else console.log("HINWEIS: billingOp-Tests übersprungen (DATA_DIR ist nicht die Temp-Kopie: " + path.dirname(T.BILLING_FILE) + ")");
   }
 

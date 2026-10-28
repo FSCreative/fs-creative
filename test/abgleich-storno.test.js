@@ -103,7 +103,7 @@ function unitTests(T) {
     const l = invLink({ id: "5", nr: "RE-5", date: "2026-01-10", gross: 120 }, by, "");
     assert.strictEqual(l.state, "storniert"); assert.strictEqual(l.label, "storniert (RE-6)"); assert.strictEqual(l.paid, 0); assert.strictEqual(l.open, 0);
     const s = sumState([l, invLink({ id: "7", gross: 50, date: "2026-01-10" }, { "7": I({ id: "7", gross: 50, paid: 50 }) }, "")]);
-    assert.deepStrictEqual(s, { invoiced: 50, paid: 50, open: 0 });
+    assert.deepStrictEqual(s, { invoiced: 50, paid: 50, open: 0, gross: 50, credited: 0 });   // gross/credited: Vergleich ohne Gutschriften (A3)
   }]);
   const rec = { id: "101", nr: "RE-101", date: "2026-01-10", gross: 120, from: "2026-01-01", to: "2026-12-31", label: "kunde-test.at" };
   out.push(["Website: Rechnung des Zeitraums storniert → wieder zu verrechnen (ab Zeitraumbeginn), nicht bezahlt", () => {
@@ -159,10 +159,13 @@ function unitTests(T) {
     let it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000 })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200, deposit: true }] }).find(x => x.key === "blitz:b3");
     assert.strictEqual(it.depositOnly, true); assert.strictEqual(it.invoiced, 200); assert.strictEqual(it.unbilled, 200); assert.strictEqual(it.paid, 200); assert.strictEqual(it.action, null);
     it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000 })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200 }] }).find(x => x.key === "blitz:b3");
-    // BD-7 (Plattform-Audit): Buchung 400 €, Rechnung 200 € ohne Anzahlungsvermerk → Betrag geändert, die Differenz ist zu verrechnen (früher still 0)
-    assert.strictEqual(it.depositOnly, undefined); assert.strictEqual(it.unbilled, 200); assert.ok(it.action && it.action.items[0].priceGross === 200 && /Differenz/.test(it.action.items[0].name), JSON.stringify(it.action));
+    // Review B6: Rechnung von Hand bzw. Zuordnung mit niedrigerem Betrag (z. B. Rabatt) → nur Hinweis, nichts „zu verrechnen“, keine Aktion
+    assert.strictEqual(it.depositOnly, undefined); assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(it.notes.some(n => n.lvl === "info" && /niedriger als die Buchung/.test(n.text)), JSON.stringify(it.notes));
+    // BD-7: Buchung nach der Rechnung geändert (updatedAt) → Betrag geändert, die Differenz ist zu verrechnen
+    it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000, updatedAt: "2026-05-20T10:00:00.000Z" })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200 }] }).find(x => x.key === "blitz:b3");
+    assert.strictEqual(it.unbilled, 200); assert.ok(it.action && it.action.items[0].priceGross === 200 && /Differenz/.test(it.action.items[0].name), JSON.stringify(it.action));
   }]);
-  out.push(["Abgleich: Nachschlagen per ID in allen Rechnungen, Heuristiken nur auf den neuesten 600", () => {
+  out.push(["Abgleich: Nachschlagen per ID in allen Rechnungen; eine ausdrücklich zugeordnete Rechnung (sevdeskInvoiceId) zählt nicht über den Kopftext für eine andere Buchung", () => {
     const all = []; for (let i = 0; i < 600; i++) all.push(I({ id: String(1000 + i), date: addDays("2026-01-01", Math.floor(i / 10)), contact: "Sonstige" }));
     all.push(I({ id: "999", nr: "RE-999", date: "2024-01-01", status: 200, paid: 0, open: 300, gross: 300, ref: "Buchung BD-2001", contact: "Fritz Alt" }));
     const items = blitz([bk({ id: "b5", reference: "BD-2001", customerName: "Fritz Alt" }), bk({ id: "b6", reference: "BD-2002", customerName: "Otto Neu", sevdeskInvoiceId: "999" })], all);

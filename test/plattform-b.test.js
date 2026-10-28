@@ -80,11 +80,12 @@ function unitTests(T) {
     assert.ok(it.notes.some(n => /entwurf/i.test(n.text) && /11,63 statt 9,69/.test(n.text) && n.inv === "512"), "Entwurf mit invoiceError");
     assert.ok(it.notes.some(n => /Erstattung 9,69 €/.test(n.text) && /Zur Prüfung/.test(n.text)), "Erstattung");
   }]);
-  out.push(["Kantineur alt (ohne apiVersion): wie bisher verrechnet = bezahlt = Umsatz; „Mollie tr_“-Rechnungen trotzdem nicht ohne Zuordnung", () => {
-    const r = build({ invs: [I({ id: "521", gross: 9.69, paid: 0, open: 9.69, status: 200, mpid: "tr_old" })], kantineur: { revenueGrossCents: 969, mrrCents: 969, subscribers: { paying: 1 } } });
+  out.push(["Kantineur alt (ohne apiVersion): wie bisher verrechnet = bezahlt = Umsatz; offene „Mollie tr_“-Rechnung bleibt sichtbar (ohne Zuordnung + Hinweis, Review B5b)", () => {
+    const r = build({ invs: [I({ id: "521", date: "2026-11-05", gross: 11.63, paid: 0, open: 11.63, status: 200, mpid: "tr_old" })], kantineur: { revenueGrossCents: 969, mrrCents: 969, subscribers: { paying: 1 } } });
     const it = r.items.find(x => x.key === "kantineur");
     assert.strictEqual(it.invoiced, 9.69); assert.strictEqual(it.paid, 9.69); assert.strictEqual(it.open, 0); assert.deepStrictEqual(it.invoices, []);
-    assert.ok(!r.unlinked.some(u => u.id === "521"));
+    assert.ok(r.unlinked.some(u => u.id === "521"), "offene Kantineur-Rechnung unter „ohne Zuordnung“");
+    assert.ok((it.notes || []).some(n => n.inv === "521" && /11,63 €/.test(n.text) && /offen/.test(n.text)), JSON.stringify(it.notes));
     assert.deepStrictEqual(kantineurV2({ revenue: { grossCents: 1 } }), {});
     const v2 = kantineurV2({ apiVersion: 2, revenue: { refundedCents: 100 }, payments: [{ molliePaymentId: "tr_1", grossCents: 969, invoiceId: 7 }], attention: { pastDue: [{ id: "c", name: "X", paidUntil: null }] } });
     assert.strictEqual(v2.payments[0].invoiceId, "7"); assert.strictEqual(v2.refundedCents, 100); assert.strictEqual(v2.attention.pastDue[0].name, "X");
@@ -165,6 +166,85 @@ function unitTests(T) {
     assert.strictEqual(it.unbilled, 9.69);
   }]);
 
+  /* ---- Review Teil B: B3 (kein Rückschritt im Abgleich), B6 (Gruppen/Rabatt), B7 (gemeldete Rechnungen), A3 (Gutschrift), B5/B10/B11 (Kantineur) ---- */
+  out.push(["B3a: Rechnung 61 Tage vor dem Event (Name + Betrag) zählt wie bisher; Rechnung vor Anlage der Buchung nie", () => {
+    let it = blitz([bk({ id: "a", reference: "BD-AAA701", customerName: "Hochzeit Huber", eventDate: "2026-10-20" })], [I({ id: "701", nr: "RE-701", gross: 399, contact: "Hochzeit Huber", date: "2026-08-20" })])[0];
+    assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.last.id, "701");
+    it = blitz([bk({ id: "a", reference: "BD-AAA701", customerName: "Hochzeit Huber", eventDate: "2026-10-20", createdAt: "2026-09-01T10:00:00.000Z" })], [I({ id: "701", nr: "RE-701", gross: 399, contact: "Hochzeit Huber", date: "2026-08-20" })])[0];
+    assert.strictEqual(it.unbilled, 399, "Rechnung älter als die Buchung gehört nicht dazu");
+  }]);
+  out.push(["B3b: zwei gleich teure Buchungen, zwei Rechnungen → jede bekommt die zeitlich nächste (März ↔ Februar, September ↔ August)", () => {
+    const items = blitz([bk({ id: "m", reference: "BD-MAR001", customerName: "Firma Roadshow", eventDate: "2026-03-01" }), bk({ id: "s", reference: "BD-SEP001", customerName: "Firma Roadshow", eventDate: "2026-09-01" })],
+      [I({ id: "712", nr: "RE-712", gross: 399, contact: "Firma Roadshow", date: "2026-08-25" }), I({ id: "711", nr: "RE-711", gross: 399, contact: "Firma Roadshow", date: "2026-02-20" })]);
+    assert.strictEqual(items.find(x => x.key === "blitz:m").last.id, "711"); assert.strictEqual(items.find(x => x.key === "blitz:s").last.id, "712");
+    assert.ok(items.every(x => x.unbilled === 0));
+  }]);
+  out.push(["B3c/B3d: Vorjahresbuchung findet ihre Rechnung auch außerhalb der neuesten 600 (Buchungsnummer, auch Altformat BD-2026-0042)", () => {
+    const invs = []; for (let k = 0; k < 600; k++) invs.push(I({ id: String(5000 + k), nr: "RE-" + (5000 + k), date: "2026-11-" + String(1 + (k % 19)).padStart(2, "0"), contact: "Druckshop Kunde " + k, gross: 20 }));
+    invs.push(I({ id: "721", nr: "RE-721", gross: 399, contact: "Verein Vorjahr", ref: "Buchung BD-PRV721 – vielen Dank", date: "2025-06-10" }));
+    invs.push(I({ id: "781", nr: "RE-781", gross: 399, contact: "Firma Z GmbH", ref: "Buchung BD-2026-0042 – vielen Dank", date: "2025-12-01" }));
+    const items = blitz([bk({ id: "p", reference: "BD-PRV721", customerName: "Verein Vorjahr", eventDate: "2025-06-14", _prev: true }), bk({ id: "z", reference: "BD-2026-0042", customerName: "Max Z", eventDate: "2025-12-05", _prev: true })], invs);
+    assert.ok(!items.some(x => x.key === "blitz:p" && x.unbilled > 0), "nicht mehr fälschlich „zu verrechnen“"); assert.ok(!items.some(x => x.key === "blitz:z" && x.unbilled > 0));
+    const z = blitz([bk({ id: "z", reference: "BD-2026-0042", customerName: "Max Z", eventDate: "2026-11-15" })], [I({ id: "782", nr: "RE-782", gross: 399, contact: "Firma Z GmbH", ref: "Buchung BD-2026-0042", date: "2026-11-01" })])[0];
+    assert.strictEqual(z.unbilled, 0); assert.strictEqual(z.last.id, "782");
+  }]);
+  out.push(["B6: gemeinsame Rechnung (zwei Buchungsnummern im Kopftext bzw. „Zuordnen“ zu zwei Buchungen) → Summe über die Gruppe, keine falschen Hinweise", () => {
+    let items = blitz([bk({ id: "g1", reference: "BD-GRP001", customerName: "Gemeinde X" }), bk({ id: "g2", reference: "BD-GRP002", customerName: "Gemeinde X", eventDate: "2026-11-11" })],
+      [I({ id: "751", nr: "RE-751", gross: 798, contact: "Gemeinde X", ref: "Buchungen BD-GRP001 und BD-GRP002", date: "2026-11-01", paid: 0, open: 798, status: 200 })]);
+    assert.ok(items.every(x => x.unbilled === 0 && !(x.notes || []).length), JSON.stringify(items.map(x => x.notes)));
+    items = blitz([bk({ id: "y1", reference: "BD-YYY001", customerName: "Gemeinde Y" }), bk({ id: "y2", reference: "BD-YYY002", customerName: "Gemeinde Y", totalCents: 29900 })], [I({ id: "801", nr: "RE-801", gross: 698, contact: "Gemeinde Y", date: "2026-11-02" })],
+      { "blitz:y1": [{ id: "801", nr: "RE-801", gross: 399, date: "2026-11-02" }], "blitz:y2": [{ id: "801", nr: "RE-801", gross: 299, date: "2026-11-02" }] });
+    assert.ok(items.every(x => x.unbilled === 0 && !(x.notes || []).length), JSON.stringify(items.map(x => x.notes)));
+    // Gruppe passt nicht → nur Hinweis, nie eine Aktion
+    items = blitz([bk({ id: "g1", reference: "BD-GRP001", customerName: "Gemeinde X" }), bk({ id: "g2", reference: "BD-GRP002", customerName: "Gemeinde X", eventDate: "2026-11-11" })], [I({ id: "752", nr: "RE-752", gross: 700, contact: "Gemeinde X", ref: "Buchungen BD-GRP001, BD-GRP002", date: "2026-11-01" })]);
+    assert.ok(items.every(x => x.unbilled === 0 && !x.action && x.notes.some(n => /Sammelrechnung RE-752/.test(n.text))));
+  }]);
+  out.push(["B6: bewusster Rabatt (349 statt 399) → Hinweis ohne Aktion und ohne „zu verrechnen“; nach der Rechnung erhöht (updatedAt) → Differenz", () => {
+    let it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R" })], [I({ id: "771", nr: "RE-771", gross: 349, contact: "Kunde R", ref: "Buchung BD-RAB771", date: "2026-11-01" })])[0];
+    assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(it.notes.some(n => n.lvl === "info" && /Rabatt/.test(n.text)));
+    it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R", updatedAt: "2026-11-10T08:00:00.000Z" })], [I({ id: "771", nr: "RE-771", gross: 349, contact: "Kunde R", ref: "Buchung BD-RAB771", date: "2026-11-01" })])[0];
+    assert.strictEqual(it.unbilled, 50); assert.ok(it.action && /Nachverrechnung/.test(it.action.title));
+  }]);
+  out.push(["B7: gemeldete Rechnung (cockpitInvoiceIds) zählt nur, wenn sie existiert, gültig ist, nicht einer anderen Buchung gehört und nicht zurückgenommen wurde", () => {
+    let items = blitz([bk({ id: "A", reference: "BD-AAA761", customerName: "Kunde A", cockpitInvoiceIds: ["761"], invoiceIds: ["761"] }), bk({ id: "B", reference: "BD-BBB761", customerName: "Kunde B" })],
+      [I({ id: "761", nr: "RE-761", gross: 399, contact: "Kunde B", ref: "Buchung BD-BBB761", date: "2026-11-01" })]);
+    assert.strictEqual(items.find(x => x.key === "blitz:A").unbilled, 399); assert.strictEqual(items.find(x => x.key === "blitz:B").last.id, "761");
+    items = blitz([bk({ id: "A", reference: "BD-AAA762", customerName: "Kunde A", cockpitInvoiceIds: ["762"] })], [I({ id: "762", nr: "RE-762", gross: 399, contact: "Kunde Q", cancelled: true, date: "2026-11-01" })]);
+    assert.strictEqual(items[0].unbilled, 399, "stornierte gemeldete Rechnung zählt nicht");
+    const ok = blitz([bk({ id: "A", reference: "BD-AAA763", customerName: "Kunde A", cockpitInvoiceIds: ["763"] })], [I({ id: "763", nr: "RE-763", gross: 399, contact: "Kunde Q", date: "2026-11-01" })]);
+    assert.strictEqual(ok[0].unbilled, 0, "gültige gemeldete Rechnung zählt");
+    const rv = build({ blitzAll: [bk({ id: "A", reference: "BD-AAA763", customerName: "Kunde A", cockpitInvoiceIds: ["763"] })], invs: [I({ id: "763", nr: "RE-763", gross: 399, contact: "Kunde Q", date: "2026-11-01" })], blitzRevoked: new Set(["A|763"]) }).items.find(x => x.key === "blitz:A");
+    assert.strictEqual(rv.unbilled, 399, "Meldung zurückgenommen (Rückgängig) → zählt nicht mehr");
+  }]);
+  out.push(["A3: Kulanz-Gutschrift zur Blitzdings-Rechnung (Buchungsbetrag unverändert) → nichts „zu verrechnen“, keine Nachverrechnung", () => {
+    const it = blitz([bk({ id: "c3", reference: "BD-ABC123", customerName: "Max Muster", paymentStatus: "PAID", totalCents: 50000, sevdeskInvoiceId: "701" })], [I({ id: "701", nr: "RE-701", gross: 500, net: 416.67, paid: 500, ref: "BD-ABC123", credited: 100 })])[0];
+    assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(!(it.notes || []).some(n => /Betrag geändert|nachverrechnen/.test(n.text)), JSON.stringify(it.notes)); assert.strictEqual(it.invoiced, 400);
+    // Senkung der Buchung nach der Rechnung, schon gutgeschrieben → kein „Gutschrift prüfen“ mehr
+    const it2 = blitz([bk({ id: "c4", reference: "BD-ABC124", customerName: "Max Muster", totalCents: 40000, sevdeskInvoiceId: "702" })], [I({ id: "702", nr: "RE-702", gross: 500, net: 416.67, paid: 500, credited: 100 })])[0];
+    assert.ok(!(it2.notes || []).some(n => /Gutschrift prüfen/.test(n.text)), JSON.stringify(it2.notes));
+  }]);
+  out.push(["B5: Kantineur v2 – zweite Rechnung zur selben Zahlung (trotz invoiceId) bleibt sichtbar; storniert mit Ersatz ohne Warnung; Rechnung ohne passende Zahlung gemeldet", () => {
+    let r = build({ invs: [I({ id: "902", nr: "RE-902", gross: 9.69, paid: 0, open: 9.69, status: 200, mpid: "tr_dup00001", overdue: true }), I({ id: "901", nr: "RE-901", gross: 9.69, paid: 9.69, mpid: "tr_dup00001" })],
+      kantineur: kStats([pay({ molliePaymentId: "tr_dup00001", invoiceId: "901" })]) });
+    let it = r.items.find(x => x.key === "kantineur");
+    assert.ok(it.notes.some(n => n.lvl === "bad" && /RE-901, RE-902/.test(n.text) && n.inv === "902"), JSON.stringify(it.notes)); assert.strictEqual(it.invoiced, 19.38, "beide zählen, bis eine storniert ist");
+    r = build({ invs: [I({ id: "741", nr: "RE-741", gross: 11.63, cancelled: true, mpid: "tr_k5" }), I({ id: "742", nr: "RE-742", gross: 9.69, paid: 9.69, mpid: "tr_k5" })], kantineur: kStats([pay({ molliePaymentId: "tr_k5", invoiceId: "741" })]) });
+    it = r.items.find(x => x.key === "kantineur"); assert.strictEqual(it.invoiced, 9.69); assert.ok(!(it.notes || []).some(n => /storniert/.test(n.text)), JSON.stringify(it.notes));
+    r = build({ invs: [I({ id: "751", nr: "RE-751", gross: 9.69, paid: 9.69, mpid: "tr_k6" }), I({ id: "752", nr: "RE-752", gross: 11.63, paid: 0, open: 11.63, status: 200, mpid: "tr_k7x" })], kantineur: kStats([pay({ molliePaymentId: "tr_k6", invoiceId: "751" })]) });
+    it = r.items.find(x => x.key === "kantineur"); assert.ok(it.notes.some(n => n.inv === "752" && /passt zu keiner Kantineur-Zahlung/.test(n.text)), JSON.stringify(it.notes)); assert.ok(r.unlinked.some(u => u.id === "752"), "offen → auch unter „ohne Zuordnung“");
+  }]);
+  out.push(["B10/B11: Rückbuchung → „Forderung wieder offen“, kein Gutschrift-Hinweis; Erstattungshinweis verschwindet nach der Gutschrift", () => {
+    let it = build({ invs: [I({ id: "761", nr: "RE-761", gross: 9.69, paid: 9.69, mpid: "tr_cb01" })], kantineur: kStats([pay({ molliePaymentId: "tr_cb01", invoiceId: "761", chargedBackCents: 969 })]) }).items.find(x => x.key === "kantineur");
+    assert.ok(it.notes.some(n => /Rückbuchung 9,69 €/.test(n.text) && /Forderung ist wieder offen, keine Gutschrift/.test(n.text)), JSON.stringify(it.notes)); assert.ok(!it.notes.some(n => /Gutschrift-Vorschlag/.test(n.text)));
+    it = build({ invs: [I({ id: "762", nr: "RE-762", gross: 9.69, paid: 9.69, mpid: "tr_rf01" })], kantineur: kStats([pay({ molliePaymentId: "tr_rf01", invoiceId: "762", refundedCents: 969 })]) }).items.find(x => x.key === "kantineur");
+    assert.ok(it.notes.some(n => /Erstattung 9,69 €/.test(n.text) && /Zur Prüfung/.test(n.text)));
+    it = build({ invs: [I({ id: "762", nr: "RE-762", gross: 9.69, paid: 9.69, mpid: "tr_rf01", credited: 9.69 })], kantineur: kStats([pay({ molliePaymentId: "tr_rf01", invoiceId: "762", refundedCents: 969 })]) }).items.find(x => x.key === "kantineur");
+    assert.ok(!(it.notes || []).some(n => /Erstattung/.test(n.text)), "nach der Gutschrift kein Hinweis mehr: " + JSON.stringify(it.notes));
+    // Zahlung ohne invoiceId, Rechnung über „Mollie tr_“ gefunden → derselbe Hinweis (Vorschlag entsteht über die Mollie-ID, siehe fin-credit)
+    it = build({ invs: [I({ id: "763", nr: "RE-763", gross: 9.69, paid: 9.69, mpid: "tr_rf02" })], kantineur: kStats([pay({ molliePaymentId: "tr_rf02", refundedCents: 969 })]) }).items.find(x => x.key === "kantineur");
+    assert.ok(it.notes.some(n => /Erstattung 9,69 € zu Rechnung RE-763/.test(n.text)));
+  }]);
+
   /* ---- fin-api Idempotency-Key (X8) mit der echten fin-local.js ---- */
   out.push(["fin-api: gleicher Idempotency-Key derselben Plattform → bestehende Rechnung, gleiches Format; andere Plattform/ohne Header → neu", async () => {
     const { L } = finSetup([contact("40", "SV Stainach")]); await L.load();
@@ -198,6 +278,48 @@ function unitTests(T) {
   Object.assign(process.env, { NODE_ENV: "test", ADMIN_AUTH_SECRET: "test-secret", ADMIN_PASSWORD: "x", PORT: "0" });
   let T = null; try { T = require(path.join(udir, "server.js"))._test; } catch (e) { fails.push("server.js laden\n    " + (e && e.stack || e)); fail++; }
   if (T) for (const [name, fn] of unitTests(T)) await t(name, fn);
+
+  /* Teil 1b: Doppelrechnungs-Meldung (B2) und Rücknahme einer Meldung (B7) – eigene Kopie mit Blitzdings-Zugang (nie erreichbar: Port 9) */
+  await (async () => {
+    const bdir = copyApp();
+    Object.assign(process.env, { BLITZDINGS_COCKPIT_TOKEN: "tok-test", BLITZDINGS_COCKPIT_URL: "http://127.0.0.1:9/api/cockpit" });
+    let B = null; try { B = Object.assign({}, require(path.join(bdir, "server.js"))._test, global.__fscBillingTest); } catch (e) { fails.push("server.js (Blitzdings) laden\n    " + (e && e.stack || e)); fail++; }
+    delete process.env.BLITZDINGS_COCKPIT_TOKEN; delete process.env.BLITZDINGS_COCKPIT_URL;
+    if (!B || fs.realpathSync(path.dirname(B.BLITZ_REPORT_FILE)) !== fs.realpathSync(bdir)) { if (B) console.log("HINWEIS: B2/B7-Tests übersprungen (DATA_DIR ist nicht die Temp-Kopie)"); return; }
+    const I = (o) => Object.assign({ type: "RE", status: 1000, date: "2026-11-05", contact: "Kunde", gross: 399, net: 332.5, paid: 399, open: 0, cancelled: false }, o);
+    const sev = (all) => ({ invoices: all, invoicesAll: all });
+    const bk = (o) => Object.assign({ totalCents: 39900, status: "CONFIRMED", paymentStatus: "UNPAID", eventDate: "2026-11-10", invoiceIds: [], cockpitInvoiceIds: [] }, o);
+    await t("B2: Blitzdings meldet „duplicate“ für eine Nachverrechnung bzw. einen Ersatz → keine Doppelrechnungs-Meldung, gespeicherter Eintrag verschwindet", () => {
+      const st = B.blitzReportState(); st.since = "2026-01-01T00:00:00.000Z";
+      st.dup = { "g|652": { bookingId: "g", invoiceId: "652", other: "651" }, "f|643": { bookingId: "f", invoiceId: "643", other: "641" }, "h|662": { bookingId: "h", invoiceId: "662", other: "661" } };
+      st.done = { "g|652": new Date().toISOString(), "f|643": new Date().toISOString(), "h|662": new Date().toISOString() }; B.blitzReportSave(st);
+      const books = [bk({ id: "g", reference: "BD-GGG777", totalCents: 44900, sevdeskInvoiceId: "651", invoiceIds: ["651", "652"] }), bk({ id: "f", reference: "BD-FFF666", sevdeskInvoiceId: "641", invoiceIds: ["641", "643"] }),
+        bk({ id: "h", reference: "BD-HHH888", sevdeskInvoiceId: "661", invoiceIds: ["661", "662"] })];
+      const bill = { invoices: { "blitz:g": [{ id: "652", nr: "RE-652", gross: 50, date: "2026-11-15" }], "blitz:f": [{ id: "643", nr: "RE-643", gross: 449, date: "2026-11-04" }], "blitz:h": [{ id: "662", nr: "RE-662", gross: 399, date: "2026-11-05" }] } };
+      const invs = [I({ id: "651", nr: "RE-651" }), I({ id: "652", nr: "RE-652", gross: 50 }), I({ id: "641", nr: "RE-641", cancelled: true }), I({ id: "643", nr: "RE-643", gross: 449 }), I({ id: "661", nr: "RE-661" }), I({ id: "662", nr: "RE-662" })];
+      const rep = B.blitzReportReconcile(books, bill, sev(invs));
+      assert.deepStrictEqual(rep.duplicates.map(d => d.bookingId + "|" + d.invoiceId), ["h|662"], JSON.stringify(rep.duplicates));
+      assert.deepStrictEqual(Object.keys(B.blitzReportState().dup), ["h|662"], "aufgelöste Einträge gelöscht");
+      // die echte Doppelrechnung löst sich auf (RE-662 storniert) → verschwindet
+      const rep2 = B.blitzReportReconcile(books, bill, sev(invs.map(i => i.id === "662" ? Object.assign({}, i, { cancelled: true }) : i)));
+      assert.strictEqual(rep2.duplicates.length, 0); assert.deepStrictEqual(Object.keys(B.blitzReportState().dup), []);
+      // Buchhaltung nicht geladen → nichts löschen
+      const st2 = B.blitzReportState(); st2.dup = { "h|662": { bookingId: "h", invoiceId: "662", other: "661" } }; B.blitzReportSave(st2);
+      assert.strictEqual(B.blitzReportReconcile(books, bill, null).duplicates.length, 1); assert.ok(B.blitzReportState().dup["h|662"]);
+    });
+    await t("B7: „Rückgängig“ einer Zuordnung blitz:<id> nimmt die wartende Meldung heraus bzw. vermerkt die gesendete als zurückgenommen", () => {
+      B.billingOp({ op: "invoice", key: "blitz:bkR1", invoice: { id: "9101", nr: "RE-9101", gross: 399 } });
+      assert.ok(B.blitzReportState().q["bkR1|9101"], "gemeldet (wartet, Blitzdings nicht erreichbar)");
+      B.billingOp({ op: "unbill", key: "blitz:bkR1" });
+      assert.ok(!B.blitzReportState().q["bkR1|9101"], "wartende Meldung entfernt");
+      const st = B.blitzReportState(); st.done["bkR2|9102"] = new Date().toISOString(); B.blitzReportSave(st);
+      B.billingOp({ op: "invoice", key: "blitz:bkR2", invoice: { id: "9102", nr: "RE-9102", gross: 399 } });
+      B.billingOp({ op: "unbill", key: "blitz:bkR2" });
+      assert.ok(B.blitzReportState().revoked["bkR2|9102"] && !B.blitzReportState().done["bkR2|9102"], JSON.stringify(B.blitzReportState()));
+      B.billingOp({ op: "invoice", key: "blitz:bkR2", invoice: { id: "9102", nr: "RE-9102", gross: 399 } });
+      assert.ok(!B.blitzReportState().revoked["bkR2|9102"], "wieder zugeordnet → gilt wieder");
+    });
+  })();
 
   /* Teil 2: Gutschrift-Vorschläge (fin-credit.js) mit fin-local + fin-proposals */
   await t("KA-2: Mollie-Erstattung zu bezahlter Kantineur-Rechnung → Vorschlag; Klick = Gutschrift genau 9,69 € (USt 1,62) + Zuordnung der Erstattung", async () => {

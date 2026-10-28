@@ -385,7 +385,7 @@ F.listen("change",'form[data-form="sdasg"] [name=k]',asgSum);
 F.form("sdasg",function(f){
   var keys=Array.prototype.map.call(f.querySelectorAll("[name=k]:checked"),function(c){return c.value;}); if(!keys.length) return;
   var inv=ASG.inv;
-  Promise.all(keys.map(function(k){ var x=F.D.abgleich.items.find(function(y){return y.key===k;})||{}; return F.api("/admin/api/billing",{body:{op:"invoice",key:k,invoice:{id:inv.id,nr:inv.nr,gross:x.amount||x.unbilled,date:inv.date,label:(x.name||"")+(keys.length>1?" (Sammelrechnung)":"")}}}); }))
+  Promise.all(keys.map(function(k){ var x=F.D.abgleich.items.find(function(y){return y.key===k;})||{}; return F.api("/admin/api/billing",{body:{op:"invoice",key:k,invoice:{id:inv.id,nr:inv.nr,gross:x.amount||x.unbilled,date:inv.date,label:(x.name||"")+(keys.length>1?" (Sammelrechnung)":""),group:keys.length>1||undefined}}}); }))   /* group: eine Rechnung für mehrere Buchungen – Abgleich über die Summe (B6) */
     .then(function(){ F.closeModal(); F.toast(keys.length+(keys.length===1?" Buchung":" Buchungen")+" "+(inv.nr||"")+" zugeordnet"); F.load(true); }).catch(function(){ F.toast("Nicht gespeichert",true); });
 });
 

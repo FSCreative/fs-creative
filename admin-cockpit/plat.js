@@ -671,7 +671,7 @@ F.action("vaprop",function(key){
 F.action("vapropok",function(key){
   var it=item("valuero:"+key), p=it&&it.proposal; if(!p) return; F.closeModal();
   if(p.op==="vaswitch") vaPost({op:"vaswitch",key:key},"Umstellung übernommen – ab jetzt nach Anreise");
-  else if(p.op==="vaack") vaPost(p.liveSince?{op:"vaack",key:key,liveSince:p.liveSince}:{op:"vaack",key:key,src:p.src},"Bestätigt – Verrechnen wieder möglich");
+  else if(p.op==="vaack") vaPost({op:"vaack",key:key,liveSince:p.liveSince||undefined,src:p.src||undefined},"Bestätigt – Verrechnen wieder möglich");   /* Freigabe und Quellenwechsel auf einen Klick */
   else if(p.op==="vastart") vaPost({op:"vastart",key:key,start:p.start},"Abrechnungsbeginn gespeichert");
 });
 F.form("vastart",function(f){ var key=f.getAttribute("data-key"), m=String(f.m.value||""); if(!/^\d{4}-\d{2}$/.test(m)) return; F.closeModal(); vaPost({op:"vastart",key:key,start:m+"-01"},"Abrechnungsbeginn gespeichert"); });
