@@ -124,6 +124,17 @@ function ffmpeg(args, opts) {
   });
 }
 const VENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30", "-movflags", "+faststart"];
+/* Musik-Kette fürs Reel (Eingang mit -stream_loop -1): Startpunkt im Titel (offset, auf dem Takt), statische Verstärkung auf −14 LUFS (gainDb),
+   kurzer Einstieg auf dem Taktanfang (0,04 s) bzw. 0,25 s ab Titelanfang, Ausblenden über einen Takt, optional Tempo-Angleichung (atempo, „Andere Musik“).
+   Ohne gainDb/offset/tempo wie bisher: ab 0 s, Fades, volume 0,9 (legacy: eigene Fade-Längen für reelVideo). */
+function musicChain(label, mm, T, legacy) {
+  mm = mm || {}; const tempo = +mm.tempo > 0.5 && +mm.tempo < 2 ? +mm.tempo : 1, fresh = mm.gainDb != null || +mm.offset > 0 || tempo !== 1;
+  if (!fresh) { const fi = legacy ? legacy.fadeIn : 0.25, fo = legacy ? legacy.fadeOut : 1.1;
+    return label + "atrim=0:" + T.toFixed(3) + ",asetpts=PTS-STARTPTS,afade=t=in:st=0:d=" + fi + ",afade=t=out:st=" + Math.max(0, T - fo).toFixed(3) + ":d=" + fo + ",volume=0.9"; }
+  const off = Math.max(0, +mm.offset || 0), fi = mm.fadeIn != null ? +mm.fadeIn : (off > 0 ? 0.04 : 0.25), fo = Math.min(T / 2, mm.fadeOut != null ? +mm.fadeOut : 1.1), g = Math.max(-20, Math.min(12, +mm.gainDb || 0));
+  return label + "atrim=start=" + off.toFixed(3) + ":duration=" + (T * tempo + 0.1).toFixed(3) + ",asetpts=PTS-STARTPTS," + (tempo !== 1 ? "atempo=" + tempo.toFixed(4) + "," : "") +
+    "aresample=48000,volume=" + g.toFixed(2) + "dB,afade=t=in:st=0:d=" + fi.toFixed(3) + ",afade=t=out:st=" + Math.max(0, T - fo).toFixed(3) + ":d=" + fo.toFixed(3) + ",atrim=0:" + T.toFixed(3);
+}
 
 // ───────────── Ton (WAV, mono 44,1 kHz) ─────────────
 function wav(seconds, events) {
@@ -471,7 +482,8 @@ async function reelVideo(scenes, brand, o) {
   fs.writeFileSync(P("list.txt"), segs.map(s => "file '" + s + "'").join("\n"));
   const out = o.outFile || P("reel.mp4"), music = o.music && fs.existsSync(o.music) ? o.music : "";
   const args = ["-f", "concat", "-safe", "0", "-i", P("list.txt")];
-  if (music) args.push("-stream_loop", "-1", "-i", music, "-filter_complex", "[1:a]atrim=0:" + total.toFixed(2) + ",afade=t=in:st=0:d=0.4,afade=t=out:st=" + Math.max(0, total - 1.2).toFixed(2) + ":d=1.2,volume=0.9[a]", "-map", "0:v", "-map", "[a]");
+  if (music) { const mm = o.musicMeta || null, fresh = mm && (mm.gainDb != null || +mm.offset > 0);   // neue Felder (mkt-music.js): Startpunkt, −14 LUFS, Limiter
+    args.push("-stream_loop", "-1", "-i", music, "-filter_complex", musicChain("[1:a]", fresh ? mm : null, total, { fadeIn: 0.4, fadeOut: 1.2 }) + (fresh ? ",alimiter=limit=0.84:level=disabled" : "") + "[a]", "-map", "0:v", "-map", "[a]"); }
   else args.push("-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v", "-map", "1:a");
   await ffmpeg(args.concat(["-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-t", total.toFixed(2), "-movflags", "+faststart", out]));
   // Titelbild = Bild aus dem fertigen Reel (erste Szene, Text schon eingeblendet)
@@ -480,4 +492,4 @@ async function reelVideo(scenes, brand, o) {
   return { file: out, cover, duration: Math.round(total * 10) / 10 };
 }
 
-module.exports = { ready, videoReady, h, img, png, rawFrame, svgOf, satoriExact: () => SATORI_EXACT, clean, fmtFor, FFMPEG: () => FFMPEG, VENC, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };
+module.exports = { ready, videoReady, h, img, png, rawFrame, svgOf, satoriExact: () => SATORI_EXACT, clean, fmtFor, FFMPEG: () => FFMPEG, VENC, musicChain, theme, mix, rgba, onColor, fit, ffmpeg, wav, giveawayVideo, postEl, slidePng, postImages, reelVideo, toJpeg, sceneDur, wantsPhoto: (k, t) => skins().wantsPhoto(k, t), hasSkin: k => skins().has(k), _test: { backC1, ease, lines } };

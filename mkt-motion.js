@@ -1,7 +1,7 @@
 /* Marketing: bewegte Reels. Ein Reel ist eine Folge von Szenen (Folien) im Look der Marke (mkt-skins.js).
    Hintergrund: Foto/Video mit Kamerafahrt (ffmpeg). Vordergrund: Text Bild für Bild aus dem Layout gerechnet (satori → resvg) –
    Zeilen, Wörter, Markierungen und Zahlen erscheinen einzeln, im Bewegungsstil der Marke (springen, knallen, gleiten, schweben …).
-   Szenenwechsel liegen auf Taktschlägen der Musik (bpm/beat0 aus music/index.json) und haben je Marke eigene Übergänge (ffmpeg xfade);
+   Szenenwechsel liegen auf Taktschlägen der Musik (bpm/beat0 bzw. Startpunkt/Verstärkung aus mkt-music.js) und haben je Marke eigene Übergänge (ffmpeg xfade);
    dazu Fortschrittsbalken oben und dezente Geräusche (Wusch beim Wechsel, Plopp beim Erscheinen).
    Nur die Bewegungsphase wird Bild für Bild gerechnet (danach steht der Text – ffmpeg wiederholt das letzte Bild), daher bleibt es schnell. */
 "use strict";
@@ -156,10 +156,34 @@ module.exports = function (R) {
   }
 
   // ───────────── Takt ─────────────
+  // energy ≥ 4 (mkt-music.js): Schnitte dürfen auf jeden Schlag fallen (ab 0,42 s je Schlag) statt auf jeden zweiten
   function beatGrid(music) {
-    const bpm = music && +music.bpm > 40 && +music.bpm < 220 ? +music.bpm : 0, beat = bpm ? 60 / bpm : 0.5;
-    return { beat, b0: bpm ? +music.beat0 || 0 : 0, cut: beat >= 0.55 ? beat : beat * 2, half: Math.max(0.2, beat / 2), synced: !!bpm };
+    const bpm = music && +music.bpm > 40 && +music.bpm < 220 ? +music.bpm : 0, beat = bpm ? 60 / bpm : 0.5, hi = !!bpm && +music.energy >= 4;
+    return { beat, b0: bpm ? +music.beat0 || 0 : 0, cut: beat >= (hi ? 0.42 : 0.55) ? beat : beat * 2, half: Math.max(0.2, beat / 2), synced: !!bpm, energy: (music && +music.energy) || 0 };
   }
+  /* Musik formt die Bewegung (nur mit den neuen musicMeta-Feldern aus mkt-music.js, sonst wie bisher):
+     Animationstempo aus BPM (schnelle Titel → knackigere Wörter, ruhige → weicher), Energie ≥ 4 → mehr harte Schnitte,
+     Energie ≤ 2 → keine harten Schnitte, längere Übergänge, Effekte −3 dB; viel Perkussion → nur jeder zweite Erscheinen-Tick */
+  function tune(P, G, mm) {
+    if (!mm || mm.energy == null) return P;
+    const e = +mm.energy || 3;
+    if (G.synced) { const k = clamp(115 / (60 / G.beat), 0.8, 1.25); P.ws *= k; P.du *= k; P.wd *= k; P.st *= k; }
+    if (e >= 4) P.trans = P.trans.map((t, i) => i % 2 ? "cut" : t);
+    if (e <= 2) { P.trans = P.trans.map(t => t === "cut" ? "fade" : t); P.tx *= 1.2; P.sfxVol = 0.71; }
+    if (+mm.onsetRate > 4) P.unitHalf = true;
+    P.ec = e >= 4 ? "hi" : e <= 2 ? "lo" : "mid";
+    return P;
+  }
+  // Szenenlängen → Schnitte auf dem Takt, Gesamtlänge (für reel() und plan())
+  function timeline(scenes, brand, o, mm) {
+    const G = beatGrid(mm), P = tune(profile(brand && brand.key), G, mm);
+    const durs = scenes.map((s, i) => { const d = +(o.durations && o.durations[i]) || R.sceneDur(s) * 0.9 * P.pace; return i === 0 ? clamp(d, 1.8, 2.8 * P.pace) : clamp(d, 1.8, 5.5); });
+    const c = cuts(durs, G), n = scenes.length;
+    while (c[n] < 7.5) c[n] = +(c[n] + G.cut).toFixed(3);   // mindestens 7,5 s: die letzte Szene (Aufruf) bleibt länger stehen
+    return { P, G, durs, c, T: c[n] };
+  }
+  // Nur planen (ohne Rendern): Schnitte und Länge für einen Musik-Takt – mkt-music.js wählt damit Startpunkt und Drop auf dem Aufruf-Schnitt
+  function plan(scenes, brand, mm, o) { const tl = timeline(scenes, brand, o || {}, mm || null); return { cuts: tl.c, T: tl.T, cut: tl.G.cut, synced: tl.G.synced, ec: tl.P.ec || "mid" }; }
   // Szenenlängen (Lesezeit) → Schnittzeitpunkte auf Taktschlägen
   function cuts(durs, G) {
     const c = [0]; let at = 0;
@@ -299,15 +323,14 @@ module.exports = function (R) {
   }
 
   // ───────────── Reel ─────────────
-  /* scenes: Folien · brand: renderBrand · o: { dir, url, v, bgVideos, music (Datei), musicMeta {bpm, beat0}, outFile, coverFile, variants, durations } */
+  /* scenes: Folien · brand: renderBrand · o: { dir, url, v, bgVideos, music (Datei), musicMeta, outFile, coverFile, variants, durations }
+     musicMeta: { bpm, beat0 } wie bisher; neu (mkt-music.js): offset (Startpunkt im Titel, auf dem Takt → beat0 = 0), gainDb (statisch auf −14 LUFS),
+     fadeIn, fadeOut, energy (1–5), onsetRate, drop (Sekunden ab Start, liegt auf dem Aufruf-Schnitt). Ohne die neuen Felder: Verhalten wie bisher. */
   async function reel(scenes, brand, o) {
     if (!R.videoReady()) throw new Error("Video-Erzeugung nicht verfügbar (ffmpeg fehlt)");
     o = Object.assign({}, o || {}); fs.mkdirSync(o.dir, { recursive: true });
-    const P = o.P = profile(brand && brand.key), G = o.G = beatGrid(o.music ? o.musicMeta : null); o.v = +o.v || 0;
-    const durs = scenes.map((s, i) => { const d = +(o.durations && o.durations[i]) || R.sceneDur(s) * 0.9 * P.pace; return i === 0 ? clamp(d, 1.8, 2.8 * P.pace) : clamp(d, 1.8, 5.5); });
-    const c = cuts(durs, G), n = scenes.length;
-    while (c[n] < 7.5) c[n] = +(c[n] + G.cut).toFixed(3);   // mindestens 7,5 s: die letzte Szene (Aufruf) bleibt länger stehen
-    const T = c[n];
+    const mm = o.music ? o.musicMeta : null, tl = timeline(scenes, brand, o, mm), P = o.P = tl.P, G = o.G = tl.G; o.v = +o.v || 0;
+    const c = tl.c, n = scenes.length, T = tl.T, fresh = !!(mm && (mm.gainDb != null || +mm.offset > 0 || mm.energy != null));
     // Übergänge: je Wechsel ein Typ aus dem Markenprofil (rotierend), „cut“ = harter Schnitt mit Ruck
     const tr = []; for (let k = 1; k < n; k++) { const t = P.trans[(o.v + k - 1) % P.trans.length]; tr[k] = { type: t === "cut" ? "fade" : t, X: t === "cut" ? 0.06 : Math.min(P.tx, (c[k] - c[k - 1]) * 0.4, (c[k + 1] - c[k]) * 0.4), cut: t === "cut" }; }
     const X = k => (k >= 1 && k < n ? tr[k].X : 0);
@@ -318,7 +341,7 @@ module.exports = function (R) {
     const ev = [];
     if (P.sfx.cut === "whoosh") for (let k = 1; k < n; k++) ev.push({ type: "whoosh", t: Math.max(0, c[k] - 0.24), d: 0.46, v: tr[k].cut ? 0.22 : 0.3 });
     if (P.sfx.cut === "soft") for (let k = 1; k < n; k++) ev.push({ type: "whoosh", t: Math.max(0, c[k] - 0.4), d: 0.8, v: 0.12 });
-    if (P.sfx.unit) unitTimes.slice(0, 40).forEach((t, j) => ev.push(P.sfx.unit === "pop" ? { type: "tick", t, f: 900 + (j % 3) * 180, v: 0.1 } : P.sfx.unit === "thump" ? { type: j % 4 ? "tick" : "thump", t, f: 1500, v: 0.08 } : { type: "tick", t, f: 2600, v: 0.07 }));
+    if (P.sfx.unit) unitTimes.slice(0, 40).filter((t, j) => !P.unitHalf || j % 2 === 0).forEach((t, j) => ev.push(P.sfx.unit === "pop" ? { type: "tick", t, f: 900 + (j % 3) * 180, v: 0.1 } : P.sfx.unit === "thump" ? { type: j % 4 ? "tick" : "thump", t, f: 1500, v: 0.08 } : { type: "tick", t, f: 2600, v: 0.07 }));
     const sfx = ev.length ? path.join(o.dir, "sfx.wav") : ""; if (sfx) fs.writeFileSync(sfx, R.wav(T + 0.5, ev));
     // zusammensetzen: Übergänge (xfade), Fortschrittsbalken, Ton
     const out = o.outFile || path.join(o.dir, "reel.mp4"), music = o.music && fs.existsSync(o.music) ? o.music : "";
@@ -327,16 +350,59 @@ module.exports = function (R) {
     for (let k = 1; k < n; k++) { const lbl = "[x" + k + "]"; fc += last + "[" + k + ":v]xfade=transition=" + tr[k].type + ":duration=" + tr[k].X.toFixed(3) + ":offset=" + (c[k] - tr[k].X / 2).toFixed(3) + lbl + ";"; last = lbl; }
     const bar = (P.bar || (brand && brand.colors && brand.colors.primary) || "#ffffff").replace("#", "0x");
     fc += "color=c=" + bar + ":s=1080x10:r=30:d=" + T.toFixed(3) + "[pb];" + last + "drawbox=x=0:y=0:w=iw:h=10:color=white@0.22:t=fill[xb];[xb][pb]overlay=x='-w+w*t/" + T.toFixed(3) + "':y=0:shortest=1,format=yuv420p[v]";
-    let ai = n;
-    if (music) { args.push("-stream_loop", "-1", "-i", music); fc += ";[" + ai + ":a]atrim=0:" + T.toFixed(3) + ",asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.25,afade=t=out:st=" + Math.max(0, T - 1.1).toFixed(3) + ":d=1.1,volume=0.9[m]"; ai++; }
-    if (sfx) { args.push("-i", sfx); fc += ";[" + ai + ":a]atrim=0:" + T.toFixed(3) + ",volume=0.9[s]"; ai++; }
-    if (music && sfx) fc += ";[m][s]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=disabled[a]"; else if (music) fc += ";[m]anull[a]"; else if (sfx) fc += ";[s]apad=whole_dur=" + T.toFixed(3) + "[a]";
+    let ai = n; const sfxVol = 0.9 * (P.sfxVol || 1);
+    if (music) { args.push("-stream_loop", "-1", "-i", music); fc += ";" + musicChain("[" + ai + ":a]", fresh ? mm : null, T) + "[m]"; ai++; }
+    if (sfx) { args.push("-i", sfx); fc += ";[" + ai + ":a]atrim=0:" + T.toFixed(3) + ",volume=" + sfxVol.toFixed(3) + "[s]"; ai++; }
+    // neue Musik (gainDb): Limiter −1,5 dBFS, damit nach AAC kein True Peak über −1 dBTP entsteht; bisher 0,95
+    const lim = "alimiter=limit=" + (fresh ? "0.84" : "0.95") + ":level=disabled";
+    if (music && sfx) fc += ";[m][s]amix=inputs=2:duration=first:normalize=0," + lim + "[a]"; else if (music) fc += fresh ? ";[m]" + lim + "[a]" : ";[m]anull[a]"; else if (sfx) fc += ";[s]apad=whole_dur=" + T.toFixed(3) + "[a]";
     else { args.push("-f", "lavfi", "-t", T.toFixed(3), "-i", "anullsrc=r=48000:cl=stereo"); fc += ";[" + ai + ":a]anull[a]"; }
     await ff(args.concat(["-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", T.toFixed(3)]).concat(R.VENC).concat(["-c:a", "aac", "-b:a", "160k", "-ar", "48000", out]));
+    const ld = music && fresh ? await loudFix(out) : {};
     // Titelbild: erste Szene, wenn der Text steht
     const cover = o.coverFile || path.join(o.dir, "cover.jpg"), ct = Math.min(c[1] - 0.15, Math.max(1.0, unitTimes.filter(t => t < c[1]).pop() + 0.6 || 1.2));
     await ff(["-ss", ct.toFixed(2), "-i", out, "-frames:v", "1", "-q:v", "2", cover]);
-    return { file: out, cover, duration: Math.round(T * 10) / 10, cuts: c, synced: G.synced };
+    // sfx (Ereignisliste, klein) + Raster: damit „Andere Musik“ nur den Ton neu mischen kann, ohne das Video neu zu rechnen
+    return { file: out, cover, duration: Math.round(T * 10) / 10, cuts: c, synced: G.synced, sfx: ev, grid: { T, cuts: c, cut: G.cut, synced: G.synced, ec: P.ec || "mid", sfxVol: P.sfxVol || 1 }, lufs: ld.lufs, tp: ld.tp };
+  }
+  // Musik-Kette (ffmpeg-Filter): R.musicChain aus mkt-render.js – Startpunkt, statische Verstärkung, Fades (ohne neue Felder wie bisher)
+  function musicChain(label, mm, T) {
+    if (R.musicChain) return R.musicChain(label, mm, T);
+    return label + "atrim=0:" + T.toFixed(3) + ",asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.25,afade=t=out:st=" + Math.max(0, T - 1.1).toFixed(3) + ":d=1.1,volume=0.9";
+  }
+  // Lautheit messen (ebur128 auf dem fertigen Ton) → { lufs, tp }
+  function measure(file) {
+    return new Promise(resolve => {
+      const bin = R.FFMPEG(); if (!bin) return resolve({});
+      const p = spawn(bin, ["-hide_banner", "-nostats", "-i", file, "-vn", "-af", "ebur128=peak=true:framelog=verbose", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
+      let err = ""; p.stderr.on("data", d => { err += d; if (err.length > 200000) err = err.slice(-200000); }); p.on("error", () => resolve({}));
+      p.on("close", () => { const s = err.slice(err.lastIndexOf("Summary:")), I = s.match(/I:\s*(-?[\d.]+)\s*LUFS/), tp = s.match(/Peak:\s*(-?[\d.]+|-inf)\s*dBFS/);
+        resolve({ lufs: I ? +I[1] : null, tp: tp && isFinite(+tp[1]) ? +tp[1] : null }); });
+    });
+  }
+  // Nachkontrolle: weicht das fertige Reel mehr als 0,5 LU von −14 LUFS ab (Fades kurzer Reels drücken etwas), nur den Ton neu muxen (Video bleibt, -c:v copy)
+  async function loudFix(out) {
+    let m = await measure(out);
+    if (m.lufs != null && Math.abs(m.lufs + 14) > 0.5) {
+      const tmp = out.replace(/\.mp4$/, "") + ".fix.mp4", g = Math.max(-12, Math.min(12, -14 - m.lufs));
+      await ff(["-i", out, "-map", "0:v", "-map", "0:a", "-c:v", "copy", "-af", "volume=" + g.toFixed(2) + "dB,alimiter=limit=0.79:level=disabled", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", tmp]);
+      fs.renameSync(tmp, out); m = await measure(out);
+    }
+    return { lufs: m.lufs != null ? Math.round(m.lufs * 10) / 10 : null, tp: m.tp != null ? Math.round(m.tp * 10) / 10 : null };
+  }
+  /* „Andere Musik“ mit gleichem Schnittraster: Video bleibt (-c:v copy), Ton = neue Musik (Startpunkt/Verstärkung/Tempo-Angleichung) + gemerkte Effekte.
+     o: { video, sfx (Ereignisse aus reel()), sfxVol, T, music, musicMeta { offset, gainDb, fadeIn, fadeOut, tempo }, outFile, dir } */
+  async function remux(o) {
+    if (!R.videoReady()) throw new Error("ffmpeg fehlt");
+    const dir = o.dir || path.join(os.tmpdir(), "remux-" + process.pid + "-" + Date.now()); fs.mkdirSync(dir, { recursive: true });
+    try {
+      const T = +o.T, ev = Array.isArray(o.sfx) ? o.sfx : [], sfx = path.join(dir, "sfx.wav"); if (ev.length) fs.writeFileSync(sfx, R.wav(T + 0.5, ev));
+      const args = ["-i", o.video, "-stream_loop", "-1", "-i", o.music].concat(ev.length ? ["-i", sfx] : []), lim = "alimiter=limit=0.84:level=disabled";
+      let fc = musicChain("[1:a]", Object.assign({ gainDb: 0 }, o.musicMeta || {}), T) + "[m]";
+      fc += ev.length ? ";[2:a]atrim=0:" + T.toFixed(3) + ",volume=" + (0.9 * (+o.sfxVol || 1)).toFixed(3) + "[s];[m][s]amix=inputs=2:duration=first:normalize=0," + lim + "[a]" : ";[m]" + lim + "[a]";
+      await ff(args.concat(["-filter_complex", fc, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-t", T.toFixed(3), "-movflags", "+faststart", o.outFile]));
+      return Object.assign({ file: o.outFile }, await loudFix(o.outFile));
+    } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {} }
   }
   // ───────────── Tempo eines Musikstücks (für eigene Uploads; Bibliothek hat bpm/beat0 schon in index.json) ─────────────
   // Spektraler Fluss (FFT 1024, Schritt 256 bei 22,05 kHz) → Autokorrelation 70–170 BPM → Phase des ersten Schlags
@@ -358,11 +424,12 @@ module.exports = function (R) {
     const on = new Float32Array(frames); for (let i = 0; i < frames; i++) { let s = 0, c = 0; for (let k = Math.max(0, i - 20); k < Math.min(frames, i + 20); k++) { s += flux[k]; c++; } on[i] = Math.max(0, flux[i] - s / c); }
     const fps = SR / HOP, val = t => { const i = Math.floor(t), f = t - i; return (on[i] || 0) * (1 - f) + (on[i + 1] || 0) * f; };
     const score = bpm => { const lag = fps * 60 / bpm; let s = 0; for (let i = 0; i + 4 * lag < frames; i++) s += on[i] * (val(i + lag) + val(i + 2 * lag) * 0.6 + val(i + 4 * lag) * 0.4); return s; };
-    let best = 0, bb = 0; for (let bpm = 70; bpm <= 170; bpm += 0.25) { const s = score(bpm) * Math.exp(-Math.pow(Math.log2(bpm / 112), 2) / 0.6); if (s > best) { best = s; bb = bpm; } }
+    let best = 0, bb = 0; const all = []; for (let bpm = 70; bpm <= 170; bpm += 0.25) { const s = score(bpm) * Math.exp(-Math.pow(Math.log2(bpm / 112), 2) / 0.6); all.push(s); if (s > best) { best = s; bb = bpm; } }
     let b2 = bb, s2 = 0; for (let bpm = bb - 0.5; bpm <= bb + 0.5; bpm += 0.02) { const s = score(bpm); if (s > s2) { s2 = s; b2 = bpm; } }
     const per = fps * 60 / b2; let bp = 0, bs = -1; for (let ph = 0; ph < per; ph += 0.25) { let s = 0; for (let t = ph; t < frames; t += per) s += val(t); if (s > bs) { bs = s; bp = ph; } }
     const bpm = Math.abs(b2 - Math.round(b2)) < 0.25 ? Math.round(b2) : Math.round(b2 * 100) / 100, b0 = Math.round((bp * HOP + N / 2) / SR * 1000) / 1000;
-    return best > 0 ? { bpm, beat0: b0 < 0.05 ? 0 : b0 } : null;
+    const med = all.sort((a, b) => a - b)[Math.floor(all.length / 2)] || 0;   // Konfidenz: 1 − Median/Bestwert (unter 0,35 gilt der Titel als ungesynct, siehe mkt-music.js)
+    return best > 0 ? { bpm, beat0: b0 < 0.05 ? 0 : b0, conf: Math.round(Math.max(0, 1 - med / best) * 100) / 100 } : null;
   }
-  return { reel, tempo, MOTION, profile, _scene: sceneSeg, _test: { prepare, setState, anim, countFmt, scramble, cuts, beatGrid, bgLayer, fgLayer, steady, counter } };
+  return { reel, plan, remux, measure, tempo, MOTION, profile, _scene: sceneSeg, _test: { prepare, setState, anim, countFmt, scramble, cuts, beatGrid, bgLayer, fgLayer, steady, counter, tune, timeline } };
 };

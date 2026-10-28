@@ -3,198 +3,1580 @@
   "file": "alpin--bavarian-seascape.m4a",
   "title": "Bavarian Seascape",
   "mood": "alpin",
+  "moods": [
+   "alpin",
+   "froehlich"
+  ],
+  "energy": 4,
+  "genres": [
+   "polka pop",
+   "apres ski party"
+  ],
+  "instruments": [
+   "accordion",
+   "tuba",
+   "brass"
+  ],
+  "vocals": false,
+  "vibe": "bavarian oompah, beer tent, cheerful",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 110,
-  "beat0": 0.255
+  "beat0": 0.255,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16,
+   "tp": -1.1,
+   "lra": 2,
+   "bpm": 110,
+   "beat0": 0.255,
+   "bpmRaw": 110,
+   "bpmConf": 0.91,
+   "introEnd": 0,
+   "outroStart": 44.8,
+   "sections": [
+    0.255,
+    43.891
+   ],
+   "hot": [
+    {
+     "off": 6.8,
+     "lufs12": -15.3,
+     "rise": 0.7
+    },
+    {
+     "off": 19.891,
+     "lufs12": -15.68,
+     "rise": -0.7
+    },
+    {
+     "off": 28.619,
+     "lufs12": -16.18,
+     "rise": 0
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAfHuAgX+BgICBf3+BgIOCgIOCgoN/fn98gYF/gX5+gH9/gX+Af32BgYODf399fH9/foGAg4OBgYCAgYB+gX+AgXx9fX6Af4CBgIGAfoGAgIKBgYSDhISAgYGEhYSDgoGBgX+BgIGBgIGBf4F/foGAgoKAgH9/gH59f36BhIWGhoWEg4CAfoKCgIKAgYKBgIGAgoKBg4GCgoCAgYCBgX5/fYCDg4SFg4WGhoaEhYOAgX5+gX9+f3x/f36Af3+CgYCCgIKDgIF/f399fX1+gIKDg4KCgoOEgoCCgH5+eX5+fX99fX99fYCAgH97enZ4gIKCg4CAf35/gIGEg4OCfoGBgoSDgoKAgH98goGChH+AgYCBgH2BgYKDgICCgYKAfX9/gYOAgYODhYWEhYSEhYOEg4CBf4CCf35/fH+AfoB+f4B+foB+gYB8fXx+f39/gH+CgH6BgYKCgIKDg4SAfHx6fX16e3t7fn19f31/f3yAf4CCgH9/e319e319fYB/foB/gYB+gH5/f3t6fHt/f36Af4B/fHx9fIB/fX99f399fHp4fHt8fXt8enh6e3t+fHp6dXZ1cXBraWplYmFeXVdR",
+   "bright": 0.156,
+   "onsetRate": 2.62,
+   "clip": 0.00009,
+   "energy": 3
+  }
  },
  {
   "file": "alpin--forest-frolic-loop.m4a",
   "title": "Forest Frolic Loop",
-  "mood": "alpin",
+  "mood": "lustig",
+  "moods": [
+   "lustig",
+   "froehlich"
+  ],
+  "energy": 3,
+  "genres": [
+   "indie folk"
+  ],
+  "instruments": [
+   "acoustic guitar",
+   "fiddle"
+  ],
+  "vocals": false,
+  "vibe": "banjo country, woodland frolic",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 103.35,
-  "beat0": 0.334
+  "beat0": 0.334,
+  "a": {
+   "v": 1,
+   "dur": 37.4,
+   "lufs": -16.1,
+   "tp": -3.4,
+   "lra": 1.6,
+   "bpm": 103.36,
+   "beat0": 0.337,
+   "bpmRaw": 103.36,
+   "bpmConf": 0.94,
+   "introEnd": 0,
+   "outroStart": 37.3,
+   "sections": [
+    0.337
+   ],
+   "hot": [
+    {
+     "off": 0.337,
+     "lufs12": -16.37,
+     "rise": 0.5
+    },
+    {
+     "off": 9.625,
+     "lufs12": -15.97,
+     "rise": -0.3
+    },
+    {
+     "off": 18.913,
+     "lufs12": -15.65,
+     "rise": 2.5
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAhIOCgX9/fXl6gISGhoOBf35+enN4fH+Bf31/f3+AfHt9f4CBf319e3p4cXV9goWFhIKBgH98eH2BhIaEgYF/fn53cnl9gIF+fn5+fnx4en6AgoF/gIB/fndsen+Bg4KAgoSGhoSBfn9/f3t7fHt8fnx+gYGCgX+AgICAfHh7foCCf3x4cXB4eXuAgIKCgICChIaFg4B9fn99ent6en16eX+AgoOBf4B/f357fYCCg4J/fX18e3Zsdn6DhoaFhIKBgHx6gYWIiYeEg4GBgHl4fYCCgoCAgYGCgX1+f4CBgH5+fXx8d3V+goaHhoWEg4KAfH2BhIaGhIKAfn56dHp+gIKBf4B/gIB8e36Bg4OBf4CAf312eH6AgoKAgoOFhoSDgYCAgH57fXx8f3x8gICCgoB/gYGBgHt7foGDgn98dnJ4enp/gIGDgX+BgoWGhIOBgIB/fHt7enx9e36AgoOCgIGAgH97e36BgoKAfH59fH13dQ==",
+   "bright": 0.155,
+   "onsetRate": 3.03,
+   "clip": 0,
+   "energy": 3
+  }
  },
  {
   "file": "alpin--lukewarm-banjo.m4a",
   "title": "Lukewarm Banjo",
-  "mood": "alpin",
+  "mood": "froehlich",
+  "moods": [
+   "froehlich",
+   "lustig"
+  ],
+  "energy": 3,
+  "genres": [
+   "indie folk"
+  ],
+  "instruments": [
+   "acoustic guitar",
+   "fiddle"
+  ],
+  "vocals": false,
+  "vibe": "banjo country, easygoing",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 120,
-  "beat0": 0.267
+  "beat0": 0.267,
+  "a": {
+   "v": 1,
+   "dur": 32.1,
+   "lufs": -15.8,
+   "tp": -3.1,
+   "lra": 0.7,
+   "bpm": 120,
+   "beat0": 0.264,
+   "bpmRaw": 120,
+   "bpmConf": 0.84,
+   "introEnd": 0,
+   "outroStart": 32,
+   "sections": [
+    0.264
+   ],
+   "hot": [
+    {
+     "off": 0.264,
+     "lufs12": -15.78,
+     "rise": -1.4
+    },
+    {
+     "off": 10.264,
+     "lufs12": -15.89,
+     "rise": -0.2
+    },
+    {
+     "off": 18.264,
+     "lufs12": -15.69,
+     "rise": 0
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAgoCBfoCBfn99gYKAgoCCgn9/fYGBf39+gIF/gH6Bg4KEg4SDgoKAgH97fn6BgYCAfoGAfX9+gYOAgH+AgYCBgYKDgYGAgoSCgoGCg4CAfoCAfn59gIF/gX+BgoCBfoCBf4B+gIKAgH+AgYCAf4GCgYKBgoOBgX1+fnx+fYCAfn58gIF/gYCCgn5+fH+AfX99gIKAgX6AgYGDgoODgYF/gH99fn2AgH5/fICBfn99gIF+f32BgX5+fH+Af39+goOBgoGEhIODgIKCf4GAg4OBgoCCgoCBf4GDgIGAgYKAgX+BgoCBfoCCgYOCgoKBgH1+fXx/f4KCf4B9gIF/goCCg3+Bf4GCf4B+gYKAgX+Bg4KEg4ODgYKAgH98fn6AgYCAfoGAfoB+gYKAgH6AgX+BgIGCgIF/gYKAgoGCg4E=",
+   "bright": 0.148,
+   "onsetRate": 3.68,
+   "clip": 0,
+   "energy": 4
+  }
  },
  {
   "file": "elegant--lovely-piano-song.m4a",
   "title": "Lovely Piano Song",
   "mood": "elegant",
+  "moods": [
+   "elegant",
+   "ruhig"
+  ],
+  "energy": 2,
+  "genres": [
+   "jazzy piano",
+   "neo classical"
+  ],
+  "instruments": [
+   "piano"
+  ],
+  "vocals": false,
+  "vibe": "tender piano, warm",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 100.35,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16.4,
+   "tp": -2.8,
+   "lra": 3.6,
+   "bpm": 100.34,
+   "beat0": 0,
+   "bpmRaw": 100.34,
+   "bpmConf": 0.94,
+   "introEnd": 0,
+   "outroStart": 44.75,
+   "sections": [
+    0,
+    40.662
+   ],
+   "hot": [
+    {
+     "off": 4.784,
+     "lufs12": -16.12,
+     "rise": -3.1
+    },
+    {
+     "off": 14.351,
+     "lufs12": -15.42,
+     "rise": 3.9
+    },
+    {
+     "off": 28.702,
+     "lufs12": -16.33,
+     "rise": 2.9
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAf315fH6AgoKCg4OCgoB+f4B/f315fX+AgoKCgoF/fnx7fn9/f313enx+f317fX1+f3t6eXp6end0dXd4eHZzdn6BgoJ9gIOEhYJ/gYOEhoaGhoWDgoB+gYODhIJ+gYKChIOCg4OBgoB/gIGAgH13en1/gH58fn5+fnp3en1+f315en1+f357eXp6enh1fICChIKAgoSFh4aEgn98enh2fIGChIOAg4WGiIeEg4KAgH57fYGBgX95eXx+f357fH19fXp3eXx+gH58e3t7fHt4eHt7fHt1e36AhIaHiImHh4eGhoWDgH14fH6Ag4WGiImJiYiGhoSAfXl2eX1+f315e35/gH57fHx8fHh1eHx+f359fH19fXp2d3l6e3l2fICBgn96fH5/gH57fYCBgX94f4OFhYN+foCBgoB+gIODg4B6e4CBgYB7fH6AgH57e3+AgH55eX6AgYB9fn+AgX99fX9/f355fYCBgX96fH+AgX97fIGCgoF8foGCgoB7fYGDhIOAgIKCgX54en+BgYB7ent8fHp3eHp6e3p3d3h5enh1dXZ3d3VyeHx9fXlwc3Z3eHVubm5ubmtmY2NhYFtN",
+   "bright": 0.048,
+   "onsetRate": 1.22,
+   "clip": 0,
+   "energy": 2
+  }
  },
  {
   "file": "elegant--martini-sunset.m4a",
   "title": "Martini Sunset",
   "mood": "elegant",
+  "moods": [
+   "elegant",
+   "lustig"
+  ],
+  "energy": 3,
+  "genres": [
+   "jazzy piano",
+   "swing pop"
+  ],
+  "instruments": [
+   "piano",
+   "upright bass",
+   "brass"
+  ],
+  "vocals": false,
+  "vibe": "cocktail lounge, sunset swing",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 139.67,
-  "beat0": 0.383
+  "beat0": 0.383,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16,
+   "tp": -1.3,
+   "lra": 4.6,
+   "bpm": 139.68,
+   "beat0": 0.383,
+   "bpmRaw": 139.68,
+   "bpmConf": 0.94,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0.383,
+    43.338
+   ],
+   "hot": [
+    {
+     "off": 0.383,
+     "lufs12": -15.24,
+     "rise": -5.4
+    },
+    {
+     "off": 8.974,
+     "lufs12": -14.86,
+     "rise": -0.9
+    },
+    {
+     "off": 17.565,
+     "lufs12": -15.66,
+     "rise": 0.8
+    },
+    {
+     "off": 29.593,
+     "lufs12": -16.84,
+     "rise": -2
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAhIF8eXd5fHx+fXp6enqChYaHgn57e3yAgIGCgH9+fYOFhoaDgoGAhIeIiIaBfn1+hIeHiISBgIOEhIR/enJtbW91enx/gH5+enZ6fH19eHJwcH6GiImHg39/gIaHhoV/e3h1eoKFh4eFg4GAgoOEhYSDgoODhIWDgn56gISHiYeFgn5/g4SHh4WEgX15dnV4d3Z1bWpsbnuAgoOBfXp2dYCDhYWBfHl3e4KDhISAfnx7g4WGh4J8fICChoaEg314gIKFiIaFg4OEhYWFhoaGg4B9eH+DhYWCfHp3doCDhYaDgoGBgIF/fHlybWxsfoSEhIBzcXV6hoeHh358goaHiIV/fHh3eHh6eX+CgYF6cnyBgoJ9dnFxcXZ3eHl2dXV1fYCAgXx2c29td3l6fXt6eoOFiYqIh4OAfXd+gYODf3x6f4KDg4B7dXBvcHyAgYOAfX58e359fX15dnRzd3l5eHRraGtsgIOFhYB8fX+AgX98eXV1gIKEhYKCgH1/g4SEg3t0b2psbXt+f396dXh7fX58eHRuaGptdX2BgoF9eHVzenx7e3JpaWp4fX+AfXhybWlsbGtqYFZVVlleXl1a",
+   "bright": 0.089,
+   "onsetRate": 3.62,
+   "clip": 0.00034,
+   "energy": 4
+  }
  },
  {
   "file": "elegant--night-in-venice.m4a",
   "title": "Night in Venice",
   "mood": "elegant",
+  "moods": [
+   "elegant",
+   "ruhig"
+  ],
+  "energy": 2,
+  "genres": [
+   "cinematic pop"
+  ],
+  "instruments": [
+   "strings",
+   "accordion",
+   "piano"
+  ],
+  "vocals": false,
+  "vibe": "romantic evening, italian waltz",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 115,
-  "beat0": 0.456
+  "beat0": 0.456,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16,
+   "tp": -4.5,
+   "lra": 3.1,
+   "bpm": 115,
+   "beat0": 0.441,
+   "bpmRaw": 115,
+   "bpmConf": 0.83,
+   "introEnd": 0,
+   "outroStart": 44.9,
+   "sections": [
+    0.441,
+    2.528,
+    15.05,
+    44.267
+   ],
+   "hot": [
+    {
+     "off": 2.528,
+     "lufs12": -15.4,
+     "rise": 3.1
+    },
+    {
+     "off": 10.876,
+     "lufs12": -16.43,
+     "rise": 2.2
+    },
+    {
+     "off": 21.311,
+     "lufs12": -15.77,
+     "rise": 0
+    },
+    {
+     "off": 29.658,
+     "lufs12": -15.48,
+     "rise": 4.1
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAd3l/goSEgn97dnR1e35/fXl9foCBfn2Cg4SHhoaGg4F+f4GCgn9/g4aHh4WDgX99e3p6eXh3gIGCgnp0cW5saGt3fH+AgH9/fn9/goWGhoWDg4GAfXp9gIGBgYOEhYWBgYCAgX9/gYGCgH6AgoKDgoKDg4SEhYaGh4aFhIOBf4GCgoJ/fHl1dHV3fYCBgYGCgoKAe3+BgoN+enZ1d3l8f4CAgH18enp8foGBgH16eXl4eHp8f4B+fYCDhISAe3t8fX19fn59e3p8fX18eX2AgoKAfn18e3p3e35/f31+f4B/fX5+fX16fIOGh4iHhYSBfn5/f39+e3+Cg4SDgoKBgH17fX+AgICAgYKCgYB+fXp1en+ChIOCgoODg4GAgICAfn18fHt6fYCBgoGCg4SEhIOBgYB+e35+foB9gISFhYSDg4KDgoCAf39/fn9+fHp3eHl3dXd5eXh2dnp+fX15dnd3eHV1foGDg3+BgoOFg4OFhYSDfYGDhYaEhoeHh4SEhIWHhYSDgoF/f39/gH18gYSGhoODgoKCgIGBgoSCgoB+e3d2eHh+gICBf3t5dnZ2dnd1dHNxcGxpZ2VkYVxX",
+   "bright": 0.062,
+   "onsetRate": 2.4,
+   "clip": 0,
+   "energy": 3
+  }
  },
  {
   "file": "elektronisch--arpent.m4a",
   "title": "Arpent",
   "mood": "elektronisch",
+  "moods": [
+   "elektronisch",
+   "episch"
+  ],
+  "energy": 3,
+  "genres": [
+   "synth pop",
+   "corporate electronic"
+  ],
+  "instruments": [
+   "synth plucks",
+   "synth bass",
+   "pads"
+  ],
+  "vocals": false,
+  "vibe": "pulsing arpeggio, focused",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 120,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16.7,
+   "tp": -1.4,
+   "lra": 2.3,
+   "bpm": 120,
+   "beat0": 0,
+   "bpmRaw": 120,
+   "bpmConf": 0.94,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0,
+    44
+   ],
+   "hot": [
+    {
+     "off": 0,
+     "lufs12": -16.2,
+     "rise": 105.1
+    },
+    {
+     "off": 8,
+     "lufs12": -16.19,
+     "rise": 0.4
+    },
+    {
+     "off": 24,
+     "lufs12": -16.56,
+     "rise": 1.1
+    },
+    {
+     "off": 32,
+     "lufs12": -16.47,
+     "rise": 7
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAf31/f4CBf4GAgIB8fn+AgX+BgIGCgIGBgoOBgYCAgYCBgYKCgYF+fn16fHx9fn1+fX19enx7fX59f31/gH1/f4CBf4F/gIF+f35/gH6Afn+Afn9+f4B/f31+f35+fYCAf4B9f4GAgoKDg4KDgYGCgIGCg4OCgn9/fnt8fH5/fn99fX57fHx+fn1/fX+Afn9+f4B/gH5+f31+foCAf39+gYOCg4GAgH9+fX5+fn5+gIB/gH+BgoGCgYGBgICAgYGAgYGBgoGAfX19e3x6enp5enp7fXx8fHx9fH17fX57fHp6enl7e31+fHx8fXx7e3t+f35/fXx9e319fX9+f39/fn5+fX+BgIKCgoKCgYGBgoGBgICBgH98fXx7fHp6enh6ent8e3t8e3t7e3t/gH+Af35+fHt5d3VwbG5ydHR5en6Af4OBgYF9fn5+f36BgoKBfYCAgoOBhYSEhICCgoKDgYSEhISAgH5/f3yAfn5+eHt6fHx6gICAgHp7eXt7eH59fX53e3x8fXqAgICAeXt7foB/goKBgX1/fn9/fYGBgoJ/f35/gH6BgICAfHx7e3t3eXd3dnFwbWpoYmNfXVxQ",
+   "bright": 0.084,
+   "onsetRate": 4.64,
+   "clip": 0.00003,
+   "energy": 4
+  }
  },
  {
   "file": "elektronisch--beat-one.m4a",
   "title": "Beat One",
   "mood": "elektronisch",
+  "moods": [
+   "elektronisch"
+  ],
+  "energy": 4,
+  "genres": [
+   "tech house light",
+   "corporate electronic"
+  ],
+  "instruments": [
+   "four on the floor",
+   "synth bass",
+   "claps"
+  ],
+  "vocals": false,
+  "vibe": "driving beat, modern",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 120,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15.9,
+   "tp": -1.4,
+   "lra": 3.3,
+   "bpm": 120,
+   "beat0": 0,
+   "bpmRaw": 120,
+   "bpmConf": 0.87,
+   "introEnd": 0,
+   "outroStart": 44.75,
+   "sections": [
+    0,
+    2,
+    10,
+    44
+   ],
+   "hot": [
+    {
+     "off": 2,
+     "lufs12": -15.15,
+     "rise": 7.2
+    },
+    {
+     "off": 10,
+     "lufs12": -16.25,
+     "rise": -3.4
+    },
+    {
+     "off": 18,
+     "lufs12": -15.48,
+     "rise": 7
+    },
+    {
+     "off": 30,
+     "lufs12": -16.1,
+     "rise": -4
+    }
+   ],
+   "drops": [
+    2
+   ],
+   "mc": "AAAAfXh7fHt6d317f395fHl9fXqGhYaHfX5+gH97d3aFh4iHhYOCgoaGhoZ0d3p8e3l0dIaIiYmFg4KChYSEhHh5eXp5dXJ3hIeHhoSBgYCDg4OEdnRxcm9vf4SJioiIh4aGgoSEhIR4eXl7enZzdYSFhoWCgH9/goKCg3F2eXt7eHN1hIeIiIWCgYGDg4ODd3h4eXd0cXKDhoeHhYGBgHVzcnVxdHRzcnF3dHl5dHZxdnZ0hISEhXl6enx7d3NzhIaGhoOBgH+EhISEcnZ4enp3c3OFh4iIhYKBgoSDg4N3eHh5eHVxd4SGh4aEgYB/g4ODg3VzcXFubn6DiYqIiIeGhoKEhISEeHl5e3p2c3WEhYaFgoB/f4KCgoNxdnl7e3hzdYSHiIiFgoGBg4ODg3d4eHl3dHFyg4eHh4WBgYB1c3J1cXR0c3JxdnN5eHR2cXV2c4ODhIR4enp8e3dzc4SGhoaDgIB/hISEhHJ1eHp6d3NzhYeIiIWCgYGEg4ODd3h4eXh0cXeEhoeGg4GAf4KDg4N1c3Fxbm5+g4iKiIiHhoaChISDhHd3dnd2cW5tenx8e3ZycXFvb25uWFlZVlZQ",
+   "bright": 0.116,
+   "onsetRate": 4.09,
+   "clip": 0.00624,
+   "energy": 4
+  }
  },
  {
   "file": "elektronisch--hear-what-they-say.m4a",
   "title": "Hear What They Say",
   "mood": "elektronisch",
+  "moods": [
+   "elektronisch",
+   "elegant"
+  ],
+  "energy": 3,
+  "genres": [
+   "chill hip hop",
+   "lo-fi house"
+  ],
+  "instruments": [
+   "rhodes",
+   "pads",
+   "synth bass"
+  ],
+  "vocals": false,
+  "vibe": "laid back groove, urban",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 116,
-  "beat0": 0.287
+  "beat0": 0.287,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16.6,
+   "tp": -2.9,
+   "lra": 4.5,
+   "bpm": 116,
+   "beat0": 0.287,
+   "bpmRaw": 116,
+   "bpmConf": 0.93,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0.287,
+    43.735
+   ],
+   "hot": [
+    {
+     "off": 2.356,
+     "lufs12": -16.04,
+     "rise": -0.6
+    },
+    {
+     "off": 10.632,
+     "lufs12": -17.68,
+     "rise": -0.7
+    },
+    {
+     "off": 23.046,
+     "lufs12": -17.5,
+     "rise": -0.4
+    },
+    {
+     "off": 31.321,
+     "lufs12": -15.13,
+     "rise": -2
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAg4ODgX9+fn9/gICAf39+fX1+gICCgoGBf35+f4B/f39/gIB/fXl9fX6CgYKDgYGAgH9+f39/gH99e3h6e36BgYKBgIB/fn17e3t6enl5d3uAgYSEg4SDgoF/gIGBg4KDg4KDgoOCgYKCgoOBgYCAgYGCgoGCgoB+ent7f4ODg4KAgYGBgYCAgIB/fnx6eHt7f4GBgoGAf318e3p5eXh4eHd0cGtieHt8fHh5eXh2cXV4enx6eHd2enl6fn5/fnp6eXl4dnl5enp2eHd4enh7fXx9enp6enl1c3p8fX14eXd7fHp/fn9/e3p5eXl1d3l6enh2d3h4dXV7fH19eXx8e3lxeXx9fnp5eHZ8fH+Bf398eXp6enl2eXl6eXV3d3l9e39/fX16e3x8enR3e31+fHl5eHt8fYGBgYF8e3l4dnN0dHNzcHp8fICBhIaGhoWDgoKDhISGhYWEgYGBgYOChISEg4CBgoKEgoOEg4SDgoB9fHx8g4SFh4SEg4ODgYSFhYWDgX98fXyAg4OEhIKCgICAgIKBgYB9f36Ag4OGh4aGhYOCgYKCgoSCgoB+fXt6eXd3dnV1cW9taWdlY2BZ",
+   "bright": 0.235,
+   "onsetRate": 2.89,
+   "clip": 0,
+   "energy": 4
+  }
  },
  {
   "file": "episch--adventure.m4a",
   "title": "Adventure",
   "mood": "episch",
+  "moods": [
+   "episch"
+  ],
+  "energy": 4,
+  "genres": [
+   "epic hybrid orchestral",
+   "cinematic pop"
+  ],
+  "instruments": [
+   "strings",
+   "brass",
+   "big drums"
+  ],
+  "vocals": false,
+  "vibe": "heroic adventure, uplifting",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 120,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -14.5,
+   "tp": -1.2,
+   "lra": 3.7,
+   "bpm": 120,
+   "beat0": 0,
+   "bpmRaw": 120,
+   "bpmConf": 0.81,
+   "introEnd": 0,
+   "outroStart": 44.9,
+   "sections": [
+    0,
+    44
+   ],
+   "hot": [
+    {
+     "off": 6,
+     "lufs12": -15.14,
+     "rise": 2.2
+    },
+    {
+     "off": 14,
+     "lufs12": -14.78,
+     "rise": 1.5
+    },
+    {
+     "off": 22,
+     "lufs12": -13.82,
+     "rise": 2
+    },
+    {
+     "off": 30,
+     "lufs12": -12.94,
+     "rise": 4.9
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAgH58fHyAgICAe3t7fH19gICDhYWFg4B/f4GBgYF/fn6AgICBgIKDgoJ/fHp6f4CAgH18fH5/foB+gIODg4F/fX2BgYGAe3t7f4GCg4CBgoKBf358fH9/f4B+fn5/gH+BgIGEhIWEgoGAgoKCgoB/foCAgIGAg4SDg4B/fn+CgoKCgYKBgoGAgoGCg4OEg4SFhYeFhYWEhIKEhYWGhYaHhoaEgoGAhISDg4CAgICAf4GBhIaGhoWDg4KDg4ODgYGAgYKBg4GDhYSEgX59fYCAgIB+f3+BgYCCgIKEhISCgIB/goKBgXx8fICBgoSDhYaFhYJ/f3+DhISEgYB/gYGAgYCChISFhIKCgoSEhISBgICBgoKEgoSGhYWCgICBg4KCgX+AgIGBgIKChIeJi4yNjY2Mi4uLiYiHh4mIiIeGhoaGhYaFhYaFhYSCgYB/gIGEhIWHh4iHhoaGh4eHhoODhYWGhoaGhoaFhoWFhYWGhYWFg4KAgICBhIaHiIeHhoWEg4SDg4SDhIaHh4eIhoaGhoeHh4eGhoaGhoWFg4OCgYOEhYaFh4aFhYOCgYB+e3t7e3t4d3Rzcm9vbGhlYl9a",
+   "bright": 0.133,
+   "onsetRate": 1.71,
+   "clip": 0,
+   "energy": 3
+  }
  },
  {
   "file": "episch--battle-ready.m4a",
   "title": "Battle Ready",
   "mood": "episch",
+  "moods": [
+   "episch",
+   "elektronisch"
+  ],
+  "energy": 4,
+  "genres": [
+   "epic hybrid orchestral",
+   "trailer rock"
+  ],
+  "instruments": [
+   "big drums",
+   "strings",
+   "brass"
+  ],
+  "vocals": false,
+  "vibe": "battle drums, tense",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 88,
-  "beat0": 0.154
+  "beat0": 0.154,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16,
+   "tp": -1,
+   "lra": 2.4,
+   "bpm": 88,
+   "beat0": 0.151,
+   "bpmRaw": 88,
+   "bpmConf": 0.9,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0.151,
+    43.787
+   ],
+   "hot": [
+    {
+     "off": 2.878,
+     "lufs12": -15.58,
+     "rise": 0
+    },
+    {
+     "off": 11.06,
+     "lufs12": -15.59,
+     "rise": 2.3
+    },
+    {
+     "off": 24.696,
+     "lufs12": -15.75,
+     "rise": -0.4
+    },
+    {
+     "off": 32.878,
+     "lufs12": -16.86,
+     "rise": 1.3
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAam1xcnN0dXRzcHFzdHV1dHd7gIaJioqIhoOEhYaGg4GAgoSFhYJ/foGEhYSCfXp9fn9+e3p7fYCBf355fYGCg4B9fH6AgYF+fX6BhIaGhIKAgYOEg4F+fn5/gH9+fXx+gICAf31+fX19e31+f4CAf319f4KEhIJ+e3x/f4B+fHuBhYeIhoSDhIWFhYOCgYOEhYWDgoGBgoOCgX9+f4CAf3x6e32AgYB9eHl8fn99e3p9fn5/fHx+gYOEhIODg4SEhIOBgIGBgoKAf31/gIGDgX98fHx9fn+AgIKCgoKBgICCg4KCf319f39/fnt7foKEhoaEgoGAgYKCgYCBgYKDgoGAgICBgYCAgYGBf318e3x8fX18fHh8f4CBf317fX9/f319foKEhYWDg4ODg4KBgIGDg4ODgoB/foGCg4J/fHx+f4CAfn6BgYKCgH58foCBgYB+f4CAf359fX+DhYaFg4KDg4ODgoGAgIGBgX58e36Bg4OBfnt8fX18eXd4en6Af314d3t9fnx5dHl6fH17e3p/goSFg4KCgoKDgX99fX5/f358eHh4eXp4dnFxcG9va2poamxra2ZhXVxdWldP",
+   "bright": 0.089,
+   "onsetRate": 2.42,
+   "clip": 0.00002,
+   "energy": 3
+  }
  },
  {
   "file": "episch--epic-blockbuster-2.m4a",
   "title": "Epic Blockbuster 2",
   "mood": "episch",
+  "moods": [
+   "episch"
+  ],
+  "energy": 5,
+  "genres": [
+   "epic hybrid orchestral"
+  ],
+  "instruments": [
+   "strings",
+   "brass",
+   "big drums"
+  ],
+  "vocals": false,
+  "vibe": "blockbuster trailer, massive",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 120,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15,
+   "tp": -2.6,
+   "lra": 3.2,
+   "bpm": 120,
+   "beat0": 0,
+   "bpmRaw": 120,
+   "bpmConf": 0.81,
+   "introEnd": 0,
+   "outroStart": 44.9,
+   "sections": [
+    0,
+    44
+   ],
+   "hot": [
+    {
+     "off": 2,
+     "lufs12": -15.82,
+     "rise": 2.3
+    },
+    {
+     "off": 10,
+     "lufs12": -15.19,
+     "rise": 2.1
+    },
+    {
+     "off": 22,
+     "lufs12": -14.68,
+     "rise": 0.6
+    },
+    {
+     "off": 30,
+     "lufs12": -13.77,
+     "rise": 0.5
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAgoGAf359fHt8fHx8fX5/gICAgICAgYKDg4OBgoKDg4ODg4KAgICBgYB/f35+fXp6enx9fH1+f39/f4B/gH9/gICAgIKEhYSDgH18enh7f4KCgYB+fn17e319fn19f3+Af4CAgYGBgoSEg4KChIWFhISEg4KAgoSEhIKAgH9+fXx8fX1+f4GBgoGAgIB/f35/f39+f4CAgH17e3p5d36ChYWEg4ODg4KAgoKCgoKDhISEg4ODg4OEhoaFhIODg4ODg4ODg4KDhIWFgoOCgoF+foCAgICAgIGBgYKDg4OBgYKDg4GBgYGAf359fHp5fYKEhYSCgYGBfn+BgYGAgYSFhYSCgoODg4SFhYSCg4SFhYWFhYSDgoSGh4aEg4ODg4F/f3+AgIGCg4KBgoKCgoCDhIWFg4SFhYWDgoKCgX+BhIWFhIOEhIOCgoSEhISCg4ODg4SFhYWGh4iIh4aGhoaGhoWFhoWFhYWFhYSEhIWGhoeHh4eGhoSEg4OFhoeHhoaHhoeGhoaGhoaFhIOBgIKDhISDgoODgoB/gYKDhISEhIOCg4SFhYSFhIOCf39/fn17e3l4d3RzcnFva2hlYl9Y",
+   "bright": 0.105,
+   "onsetRate": 0.16,
+   "clip": 0,
+   "energy": 2
+  }
  },
  {
   "file": "froehlich--city-sunshine.m4a",
   "title": "City Sunshine",
   "mood": "froehlich",
+  "moods": [
+   "froehlich",
+   "elegant"
+  ],
+  "energy": 3,
+  "genres": [
+   "funk pop",
+   "acoustic pop"
+  ],
+  "instruments": [
+   "bass guitar",
+   "electric guitar",
+   "claps"
+  ],
+  "vocals": false,
+  "vibe": "sunny city stroll, groovy",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 85,
-  "beat0": 0.711
+  "beat0": 0.711,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -14.9,
+   "tp": 2,
+   "lra": 4.5,
+   "bpm": 85,
+   "beat0": 0,
+   "bpmRaw": 85,
+   "bpmConf": 0.93,
+   "introEnd": 0,
+   "outroStart": 44.65,
+   "sections": [
+    0,
+    22.588,
+    42.353
+   ],
+   "hot": [
+    {
+     "off": 5.647,
+     "lufs12": -16.72,
+     "rise": 0.8
+    },
+    {
+     "off": 14.118,
+     "lufs12": -15.07,
+     "rise": 2.5
+    },
+    {
+     "off": 22.588,
+     "lufs12": -13.14,
+     "rise": 7.2
+    },
+    {
+     "off": 31.059,
+     "lufs12": -13.91,
+     "rise": -1.7
+    }
+   ],
+   "drops": [
+    22.588
+   ],
+   "mc": "AAAAgH5/f4KCgYF8e3x+fn5/fHx+gYGBf3l2dX2AgoOBgH+BgYGBfn2AgoGCgH5+foKBgoF+fXx/gIGCgoB/gYGBgH59fX9+fn19fHx/gICAfHZ0d3x+gIKBgYKCgH98eH1+fX14eHZ2en19f356eXR6e31/fX5+gYGAgHt7e319fX58fH2BgYB/eHV0fYCCg4GAfoGBgYF9foCCgYF/fn5/goGCgH5+fX+AgoOCgYCBgICAfn1+gH9/fn18fH+AgIB8d3V4fX+BgoKCg4KBf3x4fX59fXd3dXV7fn6AgX59gIOIiomGgX+FiYuKh4N6hIiLi4eDe4SHiYiEfXGDh4qLh4N8g4eJioaDf4SHiYiFgnyDh4mJiYmJi4mHhYWIioqHhICEh4iIhYB6g4aIiYaCfoOGiIiFgXyEh4mKhoN9goWJioaDeYCEh4iGgn6BhIaIh4WCfXh6foSHiIiEf3qDhoiHg354g4aIh4F6boGFiIiEgHmDhoiIg4B8g4aHh4N/eYOGh4iHh4eIh4SEhIaIiIWCgIKFh4aDfnuBhIaHhIF9goSGhoJ9d36BgoJ+enN2eHt7d3NoamxubmhhUE9N",
+   "bright": 0.139,
+   "onsetRate": 3.27,
+   "clip": 0.00045,
+   "energy": 3
+  }
  },
  {
   "file": "froehlich--fresh-focus.m4a",
   "title": "Fresh Focus",
   "mood": "froehlich",
+  "moods": [
+   "froehlich",
+   "elektronisch"
+  ],
+  "energy": 3,
+  "genres": [
+   "corporate electronic",
+   "acoustic pop"
+  ],
+  "instruments": [
+   "acoustic guitar",
+   "synth plucks",
+   "claps"
+  ],
+  "vocals": false,
+  "vibe": "fresh start, motivated",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 103.36,
-  "beat0": 0.522
+  "beat0": 0.522,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15.7,
+   "tp": -0.5,
+   "lra": 4.5,
+   "bpm": 103.36,
+   "beat0": 0.522,
+   "bpmRaw": 103.36,
+   "bpmConf": 0.93,
+   "introEnd": 0,
+   "outroStart": 44.9,
+   "sections": [
+    0.522,
+    42.318
+   ],
+   "hot": [
+    {
+     "off": 7.488,
+     "lufs12": -15.33,
+     "rise": -1.2
+    },
+    {
+     "off": 16.776,
+     "lufs12": -14.73,
+     "rise": -1.6
+    },
+    {
+     "off": 26.064,
+     "lufs12": -15.17,
+     "rise": -0.8
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAhIODgoB+fIF/fn57fHx+fH2AgIGCgICBgYGBgYB/gYB9fXZ1dnl4d3x7fIB/gIKCgoKBgoGCgn9/e31+f4B+gIGDg4KBgICBgYCCgICBfHx4eXp7gH5/g4KChIKDhISEgoOCgYOAgH+AgH+BgH+BgYGDg4ODgoGAgoGAgn9+fn19fX99f4GCgoODgoSEhIODgX+Bf35/fn5+gH+AgoKDg4KCg4OCgoGBgIGBgIB9e3p8foCCg4SFhoeHhoaGhoaEgoOEhIODgYKEg4SFhIWFhYWEhIWFhoSBgoKBgYB8fIKBgYF8foKDhISEhYWFhIGCgoKDgn9+goKChIKChISDhIKDhYWEgoCBgYGAfHh+f3+Bfn2AgoOFhISFhYSDgYKDg4KCgIKDg4SCgoSEhISCgoSDg4KAf4GBf398foGCg4OCg4OEhIKChISEg4GBgoKBgn9/g4GBgoGCg4ODgoKDg4SCf3+CgoOCf32BgH+Afn2BgYGCgYGBgoB+fnt6eXd4eHt6ent5eXh3dnZ5en1+fXt7enh3dXV2eXh2d3R1eXt7e3t9fn9+e3l4dnVzcnFxcW9vbmxramhlYV5cW1lS",
+   "bright": 0.134,
+   "onsetRate": 4.36,
+   "clip": 0,
+   "energy": 4
+  }
  },
  {
   "file": "froehlich--funshine.m4a",
   "title": "Funshine",
   "mood": "froehlich",
+  "moods": [
+   "froehlich",
+   "lustig"
+  ],
+  "energy": 3,
+  "genres": [
+   "acoustic pop",
+   "quirky pop"
+  ],
+  "instruments": [
+   "ukulele",
+   "glockenspiel",
+   "claps"
+  ],
+  "vocals": false,
+  "vibe": "sunny fun, carefree",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 95.71,
-  "beat0": 0.235
+  "beat0": 0.235,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16.1,
+   "tp": -4.6,
+   "lra": 0.9,
+   "bpm": 95.72,
+   "beat0": 0.203,
+   "bpmRaw": 95.72,
+   "bpmConf": 0.89,
+   "introEnd": 0,
+   "outroStart": 44.9,
+   "sections": [
+    0.203,
+    42.827
+   ],
+   "hot": [
+    {
+     "off": 0.203,
+     "lufs12": -16.08,
+     "rise": 0
+    },
+    {
+     "off": 10.232,
+     "lufs12": -16.02,
+     "rise": -1.1
+    },
+    {
+     "off": 20.262,
+     "lufs12": -15.87,
+     "rise": 0.8
+    },
+    {
+     "off": 30.291,
+     "lufs12": -15.96,
+     "rise": -0.8
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAgn6AgYGCgn+BgoKCgX59foGBgYF9fIB+foF9foB/gIF/gIF/f398fX9/f36AgIGDgYCBfn6Afn+AfX+AgICAfn1/gYGAgn9+gX5+gH58fn1+f359fn+AgYOCgYOBgIOCgYSCgoN/f4F/gYF+f4GAgYF+fX6BgYCCgH+DgH+BfH6Af4GBf3+Af39/fX1+f39/gX+AgoCAgX19f35/gH9+gYGBgoF/gIF/f4KBgYN/f4B9fX9+gIF/f39/gH99e3t9f4CCgX+CgICDf4CDgoSEgYKCgoOCgH5/gYCAgn59gX9/gn5/gYCBgYCAgYCAf319f39/foGAgYOAf4F+foF/gYF/f4CAgIB+fn+CgYCCf36Afn6Bf31/fX6Afn1+f4CCg4KBg4KBhIKBhIKBg39/gX+BgX9/gICBgH59f4GBgYOBgIOBf4F9foB/gIB/f4B/f398fH1+fn+Af4CCgICBfn6Af4GCgH6AgIGCgX9/gYB/goGBgn9+gH19f35/gH5/gICAf318fX5/gIKCgYKAgIJ/gIKCg4KBgYODg4KAf4CDgoKCfX1+fHx+enl6d3d2dHNzcXBva2pqaGViXlhV",
+   "bright": 0.17,
+   "onsetRate": 3.11,
+   "clip": 0,
+   "energy": 3
+  }
  },
  {
   "file": "froehlich--happy-whistling-ukulele.m4a",
   "title": "Happy Whistling Ukulele",
   "mood": "froehlich",
+  "moods": [
+   "froehlich",
+   "lustig"
+  ],
+  "energy": 4,
+  "genres": [
+   "acoustic pop"
+  ],
+  "instruments": [
+   "ukulele",
+   "whistle",
+   "claps"
+  ],
+  "vocals": false,
+  "vibe": "happy whistling, summer",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 130,
-  "beat0": 0.305
+  "beat0": 0.305,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16,
+   "tp": -1.1,
+   "lra": 1.8,
+   "bpm": 130,
+   "beat0": 0.305,
+   "bpmRaw": 130,
+   "bpmConf": 0.79,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0.305,
+    15.074,
+    42.767
+   ],
+   "hot": [
+    {
+     "off": 0.305,
+     "lufs12": -16.37,
+     "rise": 2.2
+    },
+    {
+     "off": 13.228,
+     "lufs12": -15.53,
+     "rise": -2.5
+    },
+    {
+     "off": 26.151,
+     "lufs12": -15.46,
+     "rise": 0.5
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAfn2ChYaHhYF/eXqAhIODgH5+fXl6fH1/fn18e3h4enl5eICCgoKAhIaGhH56d3h9g4WFg4B+fnx5gIKBgXt7e3x6e318fHqBgYGBfYKEhYOAfXl7foKEg4F+fHx7eHp8fX59fHt6dnZ3dnV4f39/fYCEhoeDf3p2eoCEhIOBfn9+fHmAgoKCfHx8fHp9f35/fH19fXt6e3x+fX+AgIaHhoWChIaHhH94fYKFh4iHhYJ8e3t6fX6AgH56e3x8fn2AgYCEhYWEgoCDhIOBfoB/fn1+gIGCf4KCgoKBgoCAenl8fX5+gIGAhYWFhISDhoaBf3h+gYOFhYWDgXt4eHV6fX5+fHh6fHx9fX5/gISFhIJ/f4KDgX5+gICAfX1+f4F/gYKBg4ODg4J/gYKCgoCBgoJ/gYGBgoCDhIOCf39/f3x/gICBf4KDg4KCg4KCgIKDgoKAgYGBf4B/f4CAgoKBgIOEhIR/goODhIGCg4OCgoKBgX+AgIB/gIKCgn+AgYCBf4KCgYB+f39/fX5/fn5/gYGCf4CBgIB/gIGBf4CBgYF/f39+fn5+f357fH18fHd3d3Z1cnFwcG1tbWtqYFpX",
+   "bright": 0.232,
+   "onsetRate": 4.33,
+   "clip": 0,
+   "energy": 5
+  }
  },
  {
   "file": "lustig--barnville.m4a",
   "title": "Barnville",
   "mood": "lustig",
+  "moods": [
+   "lustig",
+   "alpin"
+  ],
+  "energy": 4,
+  "genres": [
+   "quirky pop",
+   "indie folk"
+  ],
+  "instruments": [
+   "fiddle",
+   "acoustic guitar",
+   "stomps"
+  ],
+  "vocals": false,
+  "vibe": "barnyard hoedown, silly",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 120,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15.8,
+   "tp": -1.5,
+   "lra": 1.1,
+   "bpm": 120,
+   "beat0": 0,
+   "bpmRaw": 120,
+   "bpmConf": 0.98,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0,
+    44
+   ],
+   "hot": [
+    {
+     "off": 2,
+     "lufs12": -15.6,
+     "rise": -1.6
+    },
+    {
+     "off": 10,
+     "lufs12": -15.96,
+     "rise": 0.4
+    },
+    {
+     "off": 22,
+     "lufs12": -15.35,
+     "rise": 0.3
+    },
+    {
+     "off": 30,
+     "lufs12": -15.53,
+     "rise": -0.9
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAg319e3t+e4OEhIV+gYCAgn2Af31/e4GBgYJ8fnx8f3uCg4KEgISEg4R8f35+gHp/f3+CfoKBgIN9g4OBg3t/gIGDgIF+f4J/hYOChH6Dg4OFgoSCgYJ/gH5+gH6Bf4GDgIOBgIJ9goGBgnyAf4CCfoKBgYJ9gICBhIKCgH6Bf4GAgIF9g4KEhYGCf31+eIGBgYJ5e3t6e3SBgoKEfIKDgoN9fnx9gHyCgoKEgIKAf4F8f358f3t/gICCf4GAfn95gYKDhH6Dg4KEfX99fH54fn1/gn+BgH6BfYKBgIJ7gH9/gn6AfX6Af4SDgoN9goKDhYGCgX+BfoB+f4F/g4KChH+Eg4OEfYB/gIJ+gYB/gn+Dg4KDfYODhIaChIKAgn6Afn+BfoODhIaChIKAgXuBgYGDfYGBf390gYKChHqDhISFfoKAgYJ8g4OFh4OEgYCBfX97fH98g4OEhX+Bf35/eIGBgIJ6goKEhYCCf4CBe4KBg4WAg4GBgnx+ent+fIKCgoN9gH59f3iBg4KEfoGBgoWBhYSDhH+EgoOEfoGAgIF7gH5+f3V9fX19c3p6e3x1d3Vzc2htbG1uaGllYF9U",
+   "bright": 0.118,
+   "onsetRate": 3.98,
+   "clip": 0.0001,
+   "energy": 4
+  }
  },
  {
   "file": "lustig--busybody.m4a",
   "title": "Busybody",
   "mood": "lustig",
+  "moods": [
+   "lustig",
+   "froehlich"
+  ],
+  "energy": 4,
+  "genres": [
+   "quirky pop",
+   "swing pop"
+  ],
+  "instruments": [
+   "pizzicato strings",
+   "marimba",
+   "upright bass"
+  ],
+  "vocals": false,
+  "vibe": "busy bustle, cheeky",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 135,
-  "beat0": 0.319
+  "beat0": 0.319,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15.4,
+   "tp": -1.3,
+   "lra": 2.1,
+   "bpm": 135,
+   "beat0": 0.319,
+   "bpmRaw": 135,
+   "bpmConf": 0.95,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0.319,
+    42.986
+   ],
+   "hot": [
+    {
+     "off": 0.319,
+     "lufs12": -16.18,
+     "rise": -5.1
+    },
+    {
+     "off": 9.208,
+     "lufs12": -15.44,
+     "rise": 0.7
+    },
+    {
+     "off": 19.875,
+     "lufs12": -15.28,
+     "rise": 0.2
+    },
+    {
+     "off": 28.763,
+     "lufs12": -14.63,
+     "rise": 0.7
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAhYWBfn1+fXx8fHt8fHx9fYKCgoF+fX19foSFhYSAfX5+f4CAf32BgoODf319fn6BgYKBf4CAgICEhISDfn19fXx8e3p4foGCg4B/fn9+fXx8fH19fX18goODg39+fX19g4SFhIB+fn5+gICAfoCDg4OAfX19fYGCgoJ/gICAf4SFhYR+fn1+foGBgH59gYODgX99gICBgYCAgH9+fn6ChIWEgYB+gIGFhoaGg4GAgYGDg4KBgoSDhIKAf359gYGCg4KEg4KBhYWFhX9/fH18fXx7enyAgoOCgX9/fn5+fn9+fXx9fICDg4SCgYB/f4OFhYWCgICAf4GBgoKChIODgX58fHuAgICCf4KCgoGFhYWFgH99fXx8e3t8f4SFhoWDgoGBgYODhISDgoKBg4WEhYSDgoGBhIaGhoOCgoSEhYWDg4SFhYSDgoKCgoOEg4OCg4ODg4WFhYWBgYGBgYGBf35+goOFhIODgoGAgH+AgYGBgH+ChIOEg4ODgYGEhoaFg4GBgoGDg4KDg4WEhIKBgYGBgoODg4KDg4ODhYWFhYGAgICAgYB+fXt8fX58eXVzcnJzcHBuamVhXV1cWllS",
+   "bright": 0.111,
+   "onsetRate": 2.87,
+   "clip": 0,
+   "energy": 4
+  }
  },
  {
   "file": "lustig--fancy-family.m4a",
   "title": "Fancy Family",
   "mood": "lustig",
+  "moods": [
+   "lustig",
+   "elegant"
+  ],
+  "energy": 3,
+  "genres": [
+   "swing pop",
+   "quirky pop"
+  ],
+  "instruments": [
+   "pizzicato strings",
+   "upright bass",
+   "glockenspiel"
+  ],
+  "vocals": false,
+  "vibe": "fancy family, playful swing",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 100,
-  "beat0": 0.165
+  "beat0": 0.165,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15.5,
+   "tp": -0.1,
+   "lra": 1.6,
+   "bpm": 100,
+   "beat0": 0.165,
+   "bpmRaw": 100,
+   "bpmConf": 0.96,
+   "introEnd": 0,
+   "outroStart": 44.85,
+   "sections": [
+    0.165,
+    43.365
+   ],
+   "hot": [
+    {
+     "off": 7.365,
+     "lufs12": -15.22,
+     "rise": 1
+    },
+    {
+     "off": 19.365,
+     "lufs12": -15.08,
+     "rise": 0.9
+    },
+    {
+     "off": 28.965,
+     "lufs12": -15.35,
+     "rise": 0.1
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAd3t9f39/gIKEhIOCgoKCg4CDhISDf3x6eXl5fH1/gYGBgYGBgH98enh6ent8g4SFhH56eXh7enp5f4GCgoF/gIB+f4CAgICCgoOCg4SFhoWEhIWEg398e3p9foGChYiJiYeEgYB+e3l4fYKFhYeGhYWBfnx7e3p5eH6BgoKAfn5+fX5/gICBgYGCgoOEhIWDg4SFhIN/fHx8gICCg4OEg4OBgYCAfn17en+Ag4SGh4aFgH17e3t6eXmDhIWFf319fn+AgYKDg4WFhYSDhISEhIOEhISDgYB/f359gIGDhISEhISEhIOBf31/f3+AgoSEhIF/fn5+fnx8gYODg398fX2AgoSFhISDg4SDgoKBgYKChIWEhIF/fn5+fn+AgoSEhISDg4OBgIB/gIB/gIOFhYWCf35+fn59fYKEhISAfX19f4GCgoGCgoKDgoGBgYGBgIODg4OAfXx8gYGCg4GCgoOCg4OCgH57e35/gIGEiIiIhX9+fX18fHyAgoKCfXp9fYCCgoOBgYKCg4KCgYGBgYKEhYSEgH5/f4CBgoKCg4KCg4KBgX17fHx9fXx7e3x7enZzcG9ramppaGhmZVxW",
+   "bright": 0.175,
+   "onsetRate": 4.69,
+   "clip": 0,
+   "energy": 4
+  }
  },
  {
   "file": "ruhig--adding-the-sun.m4a",
   "title": "Adding the Sun",
   "mood": "ruhig",
+  "moods": [
+   "ruhig",
+   "froehlich"
+  ],
+  "energy": 2,
+  "genres": [
+   "ambient folk",
+   "cinematic acoustic"
+  ],
+  "instruments": [
+   "acoustic guitar",
+   "pads"
+  ],
+  "vocals": false,
+  "vibe": "warm sunrise, hopeful",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 90,
-  "beat0": 0.644
+  "beat0": 0.644,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16.1,
+   "tp": -1.3,
+   "lra": 2.1,
+   "bpm": 90,
+   "beat0": 0.618,
+   "bpmRaw": 90,
+   "bpmConf": 0.96,
+   "introEnd": 0,
+   "outroStart": 44.8,
+   "sections": [
+    0.618,
+    43.285
+   ],
+   "hot": [
+    {
+     "off": 5.951,
+     "lufs12": -15.38,
+     "rise": 1.5
+    },
+    {
+     "off": 13.951,
+     "lufs12": -15.77,
+     "rise": 0.1
+    },
+    {
+     "off": 21.951,
+     "lufs12": -16.07,
+     "rise": -0.4
+    },
+    {
+     "off": 29.951,
+     "lufs12": -16.5,
+     "rise": 0.1
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAgXl+g4WFg4GAgYOCgH98eXd+fX19dXR+goODgX1+g4ODgn58e39+fHx0cnl9fXx4bmp/goOEfnx9g4OCg4KDhYWDgX98e39/f395dneDhIWEfX6EhoeFgH6Ag4ODgn9/f4ODg4SBgIKFhISBfn+EhYSEgoGBgoB/f3x6fX9+fnp1c4CDhIWBgYKFhoSFgoGCgYCAfnx7fn5+gH1+foOEhIR+gYSFhYKBgIGDgoKBfnt6fn5+fXZ1foKDg398foKEg4KAf4CBgICAfXyAgoOFgn98f4OEhYGAf4ODgoF+f4CBgYF/fHp9fn9/fHx+hIWFhH59gYODgoB/gIOCgH55d3Z9fX18c297g4WFg35+g4SDgn19foGAgIB6eXx+fn98eHd/g4SFgn9/goKBgoKDhISCgH56eH19fXx1cGyBg4SEfn+ChIOBgYCBg4CAgH9+fYGBgIB6eH6Dg4SBfX6BgoGBf3+AgYGAgHx7fH19fHlzcYGCg4R9fHyAgYGCf3+Af319e3h3fH19fHZyb3+AgYJ9fYCCgX99ent/fX19eXZ1fH18fHFsen+AgH13eHp6eXdzcnJxbmtpY2BeW1dV",
+   "bright": 0.096,
+   "onsetRate": 2.53,
+   "clip": 0.00006,
+   "energy": 3
+  }
  },
  {
   "file": "ruhig--champ-de-tournesol.m4a",
   "title": "Champ de tournesol",
   "mood": "ruhig",
+  "moods": [
+   "ruhig",
+   "elegant"
+  ],
+  "energy": 2,
+  "genres": [
+   "cinematic acoustic",
+   "neo classical"
+  ],
+  "instruments": [
+   "acoustic guitar",
+   "piano",
+   "strings"
+  ],
+  "vocals": false,
+  "vibe": "sunflower field, gentle",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 105.48,
-  "beat0": 0.119
+  "beat0": 0.119,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -16.4,
+   "tp": -1.7,
+   "lra": 3,
+   "bpm": 105.48,
+   "beat0": 0.119,
+   "bpmRaw": 105.48,
+   "bpmConf": 0.51,
+   "introEnd": 0,
+   "outroStart": 44.9,
+   "sections": [
+    0.119,
+    43.35
+   ],
+   "hot": [
+    {
+     "off": 0.119,
+     "lufs12": -16.33,
+     "rise": -2.9
+    },
+    {
+     "off": 16.046,
+     "lufs12": -15.78,
+     "rise": 1.8
+    },
+    {
+     "off": 25.147,
+     "lufs12": -16.04,
+     "rise": 0
+    }
+   ],
+   "drops": [],
+   "mc": "AAAAgH59fHx8f4GDhIOCgYCAf4B/f39/f3+Af3+AgICAgIB/fnt5dXFtaGJcWnZ+gYOEg4KCgYCAgIB/fnx8foCBgoGBgH9/f39/f319f4CBgoB/f35/f39/f35+f4CAgoGBgH5+gICAgHx6fX+AgoGBgYCAfnx7ent8fX9/gH9/fn59fXx8fXx8e3p3dXd3d3d0cnN1d3l6e3x9fYCAgH99fX1+f399gYSFh4eFhIOBgYGDhYSBgX+Cg4KAfnx7e319fHx5eXp8fX5+fHt4dnZ3ent8e3p7e3+AgH99e3t7fX9/foOFhoeGhYSDgIGBg4KAfICDhYaEgoCBgYKDgoF/fn+Bg4SEg4KCgoGAfn19fH1+f4CBgYB/fX17enp6eXyAgYOEg4KBgH9/f3+Af35/f4CBgIB/fn18e3p6eXp8foCBgIGAf3+AgICBgYGCgoGBgYB/fXx9fYCCgoKCgoKEhIODg4KBf35+fn1+gICCgoCAgYCAf31+gYKDgoF/fn5+fXx7e3p8fX5+f4CBgoKBgH59f36AgYB/gICAgoKDg4KAgYGCg4F/fXt9fXx6d3V0c3RzcW9tbW1tbGhlYFpT",
+   "bright": 0.076,
+   "onsetRate": 2.18,
+   "clip": 0,
+   "energy": 3
+  }
  },
  {
   "file": "ruhig--infinite-peace.m4a",
   "title": "Infinite Peace",
   "mood": "ruhig",
+  "moods": [
+   "ruhig"
+  ],
+  "energy": 1,
+  "genres": [
+   "ambient folk",
+   "neo classical"
+  ],
+  "instruments": [
+   "pads",
+   "felt piano",
+   "bells"
+  ],
+  "vocals": false,
+  "vibe": "infinite calm, floating",
+  "confirmed": false,
   "license": "CC0 1.0 (Public Domain)",
+  "licKey": "cc0",
   "source": "FreePD.com (Archiv: a.ocv.me/pub/stuff/music/freepd)",
+  "sourceUrl": "https://a.ocv.me/pub/stuff/music/freepd/",
+  "contentId": "unbekannt",
   "bpm": 90.67,
-  "beat0": 0
+  "beat0": 0,
+  "a": {
+   "v": 1,
+   "dur": 45,
+   "lufs": -15.5,
+   "tp": -1.5,
+   "lra": 3.3,
+   "bpm": 0,
+   "beat0": 0,
+   "bpmRaw": 90.66,
+   "bpmConf": 0.22,
+   "introEnd": 0,
+   "outroStart": 44.8,
+   "sections": [
+    0,
+    2,
+    44
+   ],
+   "hot": [
+    {
+     "off": 4,
+     "lufs12": -14.97,
+     "rise": -1.5
+    },
+    {
+     "off": 14,
+     "lufs12": -16.04,
+     "rise": 3.9
+    },
+    {
+     "off": 28,
+     "lufs12": -14.67,
+     "rise": 0.7
+    }
+   ],
+   "drops": [
+    2
+   ],
+   "mc": "AAAAdXh5eXh3d3l7fHx8fHx/goOEhYWGhoSBfn5/gYKCgoaJioqIhIGAf3+AgYSGh4aFhIeIiYiHg4GAfn5+gIWHiIeDgIB/gYODg4J/fX1+f4CAgIGCg4WFhYSCf35/fn18e3t7e3t9fn+AgYOEhIWEg4OCgoKCgoGAf3+AgYB+e3l5eXl5enx9fX59foSJi4yKh4SDhYaFg4B9fX5/fn59fHx7e3p5eHd3eoCDhISCgH9+fXt7fX19g4WFhoJ/fXt6e3x9fX+AgIB+fX1+f4GBgYB+fn1+fn9/fn17eXh4eHh4eXp8fX5+f39/fn58fX19fYOFhoeEgYB+fHp7ent/gYKCgH18fX+AgYF/fnx7fH19fX5+fn18e3x+fn9+fn1+fn+AgoKCh4mKi4mHhYSCgYGAf318e3t6e3t8f4CBgH+BhYiJiYeEg4KDhoeHhYB+fX19fXx8f4SGh4eEg4WGhoeHhYaFhIODg4OCgX16eHh5e3x9f4KEhISBgIKEhoeGhYSCgYGBgH+AgYGIioqKhYB/fn9/fn18fX5+fn18e3t6e3x9fn9/f359e3l3dnZ1dHRzcnBubWtpZmJdWldQ",
+   "bright": 0.102,
+   "onsetRate": 1.2,
+   "clip": 0,
+   "energy": 2
+  }
  }
 ]
