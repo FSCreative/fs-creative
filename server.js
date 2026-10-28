@@ -1359,7 +1359,8 @@ async function finApiSaveCheck(who, fpath, body) {
   if ((ps != null && !Array.isArray(ps)) || (pd != null && !Array.isArray(pd))) return { bad: true };
   let cur = null;
   if (doc.id) {
-    const r = await finApiDoc(T, String(doc.id).replace(/\D/g, "")); if (r.err) return r;
+    if (!/^\d+$/.test(String(doc.id).trim())) return "ungültige Beleg-ID";   // „1260x“ o. ä. nie auf eine andere ID kürzen (R3-9)
+    const r = await finApiDoc(T, String(doc.id).trim()); if (r.err) return r;
     cur = r.doc; if (!finApiOwns(who, cur)) return "fremder Beleg";
     if (String(cur.status) !== "100" || cur.enshrined) return "Beleg ist kein Entwurf bzw. festgeschrieben";
   } else doc.finApiSource = who;
@@ -1376,12 +1377,17 @@ async function finApiSaveCheck(who, fpath, body) {
     const ex = await sev("GET", "/" + T, { query: { [nrF]: nr, limit: 10 } }).catch(e => ({ err: e }));
     if (ex && ex.err) return { err: ex.err };
     if (((ex && ex.objects) || []).some(o => o && String(o[nrF] || "") === nr && (!cur || String(o.id) !== String(cur.id)))) return "Nummer schon vergeben";
+    // R3-9: Format des Rechnungs-Nummernkreises (Präfix wie die nächste freie Nummer, sonst „RE-“), höchstens die nächste freie (ohne eigenen
+    // Nummernkreis liefert getNextInvoiceNumber beim Reservieren und Nachsehen dieselbe Nummer) und nicht weit darunter (eben reserviert)
     const nx = await sev("GET", "/Invoice/Factory/getNextInvoiceNumber", { query: { invoiceType: "RE", useNextNumber: "false" } }).catch(() => null), nxs = nx && String(nx.objects || "");
     const mA = nr.match(/^(.*?)(\d+)$/), mB = nxs && nxs.match(/^(.*?)(\d+)$/);
-    if (mA && mB && mA[1] === mB[1] && +mA[2] >= +mB[2]) return "Nummer über der nächsten freien (Lücke im Nummernkreis)";
+    if (!mA || mA[1] !== (mB ? mB[1] : "RE-")) return "Nummer nicht im Format des Rechnungs-Nummernkreises";
+    if (mB && +mA[2] > +mB[2]) return "Nummer über der nächsten freien (Lücke im Nummernkreis)";
+    if (mB && +mA[2] < +mB[2] - 100) return "Nummer weit unter der nächsten freien (nicht reserviert)";
   }
   if (k === "creditNote" && doc.refSrcInvoice && (doc.refSrcInvoice.id || doc.refSrcInvoice.id === 0)) {
-    const r = await finApiDoc("Invoice", String(doc.refSrcInvoice.id).replace(/\D/g, "")); if (r.err && !r.notFound) return r;
+    if (!/^\d+$/.test(String(doc.refSrcInvoice.id).trim())) return "ungültige Rechnungs-ID";
+    const r = await finApiDoc("Invoice", String(doc.refSrcInvoice.id).trim()); if (r.err && !r.notFound) return r;
     if (!finApiOwns(who, r.doc)) return "Gutschrift zu fremder Rechnung";
   }
   const ids = [].concat(ps || [], pd || []).filter(x => x && x.id != null && String(x.id) !== "").map(x => String(x.id));

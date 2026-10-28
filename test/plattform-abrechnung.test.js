@@ -592,6 +592,22 @@ function createMock() {
     r = await fa(K, "POST", "/Contact/21/addAddress", { street: "Gasse 1", zip: "6780", city: "Schruns" }); assert.strictEqual(r.status, 200); assert.deepStrictEqual(M.state.posted.slice(-1)[0].json, { street: "Gasse 1", zip: "6780", city: "Schruns" });
     assert.ok(/Feld „id“ verworfen/.test(srvOut), "protokolliert");
   });
+  await t("R3-9: Blitzdings-Nummer nur im Format des Nummernkreises, nicht weit darunter, höchstens die nächste freie (auch ohne Nummernkreis); Beleg-IDs nur Ziffern", async () => {
+    const K = "fin-kochdu-1", Bz = "fin-blitz-1";
+    const bz = (nr) => fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "Rechnung " + nr, invoiceNumber: nr, status: 200, invoiceType: "RE", reference: "BD-3001", headText: "Buchung BD-3001 – vielen Dank für Ihre Buchung bei Blitzdings." }, invoicePosSave: [] });
+    const before = M.state.saved.length;
+    assert.strictEqual((await bz("XY-99999")).status, 403, "fremdes Präfix"); assert.strictEqual((await bz("RE-17")).status, 403, "weit unter der nächsten freien");
+    assert.strictEqual((await bz("RE-" + (M.state.nextNr + 1))).status, 403, "über der nächsten freien");
+    assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "803x", header: "x", status: "100" }, invoicePosSave: [] })).status, 403, "ID mit Buchstaben nie gekürzt");
+    assert.strictEqual((await fa(K, "POST", "/CreditNote/Factory/saveCreditNote", { creditNote: { header: "x", status: "100", refSrcInvoice: { id: "801x", objectName: "Invoice" } }, creditNotePosSave: [] })).status, 403, "Bezug mit ungültiger ID");
+    assert.strictEqual(M.state.saved.length, before, "nichts erreichte die Buchhaltung");
+    // ohne Nummernkreis liefert die Buchhaltung beim Reservieren dieselbe Nummer wie beim Nachsehen → gleich der nächsten freien: erlaubt
+    const peek = (await fa(Bz, "GET", "/Invoice/Factory/getNextInvoiceNumber?invoiceType=RE&useNextNumber=false")).j.objects;
+    let r = await bz(peek); assert.strictEqual(r.status, 200, "Nummer = nächste freie: " + JSON.stringify(r.j)); M.state.nextNr++;   // (Buchhaltung ohne Nummernkreis: höchste Nummer + 1)
+    // normal: reserviert, danach weitere Rechnungen angelegt → reservierte Nummer liegt knapp unter der nächsten freien: erlaubt
+    const res = (await fa(Bz, "GET", "/Invoice/Factory/getNextInvoiceNumber?invoiceType=RE&useNextNumber=true")).j.objects; M.state.nextNr += 3;
+    r = await bz(res); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+  });
   await t("A5/A6/A11: gelöschter Beleg → 400 „<Typ> nicht gefunden“ (nicht 403); Positionen/Status/Nummer/Zahlung/Gutschrift nur eigene; alte Auszahlungs-Gutschrift erkannt", async () => {
     const K = "fin-kochdu-1", Bz = "fin-blitz-1", Ka = "fin-kant-1";
     let r = await fa(K, "GET", "/Invoice/999"); assert.strictEqual(r.status, 400); assert.strictEqual(r.j.error.message, "Invoice nicht gefunden");
