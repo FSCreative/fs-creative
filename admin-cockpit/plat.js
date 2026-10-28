@@ -59,6 +59,8 @@ F.css(
 '.pl-chev{display:inline-block;transition:transform .15s;color:var(--ink-3)}'+
 '.pl-chev.on{transform:rotate(90deg)}'+'@media (prefers-reduced-motion:reduce){.pl-chev{transition:none}}'+
 '.pl-refund{margin:0 18px 12px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad);font-size:13.5px}'+
+'.pl-block{margin:0 18px 12px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--ink);font-size:13.5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}'+
+'.pl-notes{margin:0 18px 12px;padding:0 0 0 18px;font-size:13px;color:var(--ink-2)}.pl-notes li{margin:2px 0}'+
 '.pl-months{padding:0 18px 14px}'+
 '.pl-months table{border:1px solid var(--line);border-radius:10px;overflow:hidden}'+
 '.pl-note{font-size:12.5px;color:var(--ink-3)}'+
@@ -195,7 +197,9 @@ function fscRevenue(){
 }
 function sums(){
   var p=P(), out=[];
-  if(p.kochdu){ var t=p.kochdu.totals||{}; out.push({id:"kochdu",label:"kochdu",paid:c2e(t.barSettledCents)+c2e(t.onlineProvisionCents),open:c2e(t.barOpenCents),note:"Bar verrechnet + Online-Provision"}); }
+  /* kochdu: bezahlt = verlinkte Monatsrechnungen laut Buchhaltung + Online-Provision (behält Mollie ein); offen = Rechnungen offen + Rückstand + laufender Monat (KO-12/X4) */
+  if(p.kochdu){ var t=p.kochdu.totals||{}, ki=items("kochdu"), kn=ki.length&&ki.some(function(x){ return x.pendingAuto!=null; });
+    out.push({id:"kochdu",label:"kochdu",paid:kn?ki.reduce(function(a,x){ return a+(+x.paid||0); },0)+c2e(t.onlineProvisionCents):c2e(t.barSettledCents)+c2e(t.onlineProvisionCents),open:kn?ki.reduce(function(a,x){ return a+(+x.open||0)+(+x.unbilled||0)+(+x.pendingAuto||0); },0):c2e(t.barOpenCents),note:"Bar per Monatsrechnung + Online-Provision"}); }
   if(p.kantineur) out.push({id:"kantineur",label:"Kantineur",paid:c2e(p.kantineur.revenueGrossCents),open:0,note:"Abos laufen automatisch"});
   if(p.blitzdings){ var r=p.blitzdings.revenue||{}; out.push({id:"blitz",label:"Blitzdings",paid:c2e(r.paidCents),open:c2e(r.openCents),note:"laut Blitzdings"}); }
   if(p.valuero){ var v=items("valuero"); out.push({id:"valuero",label:"VALUERO",paid:v.reduce(function(a,x){return a+vaYear(x);},0),open:v.reduce(function(a,x){return a+(+x.unbilled||0);},0),refund:v.reduce(function(a,x){return a+(+x.refund||0);},0),note:"verrechnet "+F.D.year}); }
@@ -215,7 +219,7 @@ function vUeb(){
   var badge=function(k){ return nc[k]?'<span class="tag glow">'+nc[k]+' neu</span>':''; };
   var ko=p.kochdu, kt=ko&&ko.totals||{}, bz=p.blitzdings, br=bz&&bz.revenue||{}, va=items("valuero");
   var cards=
-    (ko?card("kochdu","kochdu",'Bestellplattform '+badge("kochdu"),[["Bezahlt",money(c2e(kt.barSettledCents)+c2e(kt.onlineProvisionCents))],["Bar-Gebühren offen",money(c2e(kt.barOpenCents),kt.barOpenCents>0?"warn-t":""),""],["Restaurants",num((ko.restaurants||[]).length)]]):'<div class="panel pl-card"><h3>kochdu</h3>'+off("kochdu")+'</div>')+
+    (ko?card("kochdu","kochdu",'Bestellplattform '+badge("kochdu"),[["Bezahlt",money((s.find(function(x){return x.id==="kochdu";})||{}).paid||0)],["Bar-Gebühren offen",money(c2e(kt.barOpenCents),kt.barOpenCents>0?"warn-t":""),""],["Restaurants",num((ko.restaurants||[]).length)]]):'<div class="panel pl-card"><h3>kochdu</h3>'+off("kochdu")+'</div>')+
     (ka?card("kantineur","Kantineur","Vereinskasse",[["Eingenommen",money(c2e(ka.revenueGrossCents))],["MRR",money(c2e(ka.mrrCents))],["Aktive Abos",num((ka.subscribers||{}).active)]].concat(ka.trial?[["In Testzeit (Demo)",num(ka.trial.running)+(ka.trial.endingSoon?' <span class="muted">· '+num(ka.trial.endingSoon)+' enden bald</span>':'')]]:[])):'<div class="panel pl-card"><h3>Kantineur</h3>'+off("Kantineur")+'</div>')+
     (bz?card("blitz","Blitzdings",'Fotobox &amp; 360° '+badge("blitz"),[["Bezahlt",money(c2e(br.paidCents))],["Offen",money(c2e(br.openCents),br.openCents>0?"warn-t":"")],["Anstehend",num((bz.bookings||{}).upcomingCount!=null?bz.bookings.upcomingCount:(bz.upcoming||[]).length)]]):'<div class="panel pl-card"><h3>Blitzdings</h3>'+off("Blitzdings")+'</div>')+
     (p.valuero?card("valuero","VALUERO",'Tourismus &amp; Hosting '+badge("valuero"),[["Verrechnet "+esc(F.D.year),money(va.reduce(function(a,x){return a+vaYear(x);},0))],["Offen",money(va.reduce(function(a,x){return a+x.unbilled;},0),"warn-t")]].concat(refund>0.005?[["Zu erstatten",money(refund,"bad-t")]]:[])):'<div class="panel pl-card"><h3>VALUERO</h3>'+off("den VALUERO-Objekten")+'</div>')+
@@ -263,12 +267,12 @@ function vKochdu(){
   return (sevOk?'':'<div class="notice"><span>Die Buchhaltung antwortet gerade nicht. „Verrechnen“ markiert dann nur als verrechnet, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
     '<div class="kpis">'+
       kpi("Bestellungen",num((+bo||0)+(+oo||0)),num(bo)+" bar · "+num(oo)+" online")+
-      kpi("Bar-Gebühren offen",'<span class="money">'+eur(open)+'</span>',"verrechnest du selbst",{vcls:open>0.005?"warn-t":""})+
+      kpi("Bar-Gebühren offen",'<span class="money">'+eur(open)+'</span>',t.barDueCents!=null&&+t.barDueCents>0?"Rückstand "+eur(c2e(t.barDueCents))+" (Zur Prüfung) · Rest am 1. automatisch":"wird am 1. automatisch verrechnet (Monatsrechnung)",{vcls:t.barDueCents!=null&&+t.barDueCents>0?"warn-t":""})+
       kpi("Bar-Gebühren verrechnet",'<span class="money">'+eur(settled)+'</span>',"bereits abgerechnet",{vcls:"ok-t"})+
       kpi("Online-Gebühren",'<span class="money">'+eur(online)+'</span>',"automatisch einbehalten")+
     '</div>'+
     quote("Verrechnet-Quote Bar-Gebühren · "+eur0(settled)+" von "+eur0(settled+open),settled,settled+open)+
-    sec("Gebühren pro Restaurant",'<span class="muted">Bar = du verrechnest · Online = automatisch</span>',
+    sec("Gebühren pro Restaurant",'<span class="muted">Bar = Monatsrechnung durch kochdu · Online = Mollie behält ein</span>',
       rs.length?'<table class="pl-tbl"><thead><tr><th>Restaurant</th><th class="r">Best. bar / online</th><th class="r">Bar offen</th><th class="r">Bar verrechnet</th><th class="r">Online</th><th>Letzte Abrechnung</th><th></th></tr></thead><tbody>'+body+'</tbody>'+
         '<tfoot><tr><td>Gesamt</td><td class="r num" data-l="Bestellungen">'+num(bo)+' / '+num(oo)+'</td><td class="r" data-l="Bar offen">'+money(open,"warn-t")+'</td><td class="r" data-l="Bar verrechnet">'+money(settled,"ok-t")+'</td><td class="r" data-l="Online">'+money(online)+'</td><td></td><td></td></tr></tfoot></table>'
         :'<div class="empty">Keine aktiven Restaurants mit Umsätzen im Zeitraum.</div>')+
@@ -469,7 +473,7 @@ function vValuero(){
   if(!va) return '<div class="panel empty">Keine Verbindung zu den VALUERO-Objekten (Antonhaus, Alpinappart).</div>';
   var objs=va.objects||[], sevOk=!!F.D.sev, tOpen=0,tPaid=0,tTot=0,tRef=0;
   var cards=objs.map(function(o){
-    var it=item("valuero:"+o.key)||{invoiced:0,unbilled:c2e(o.provisionCents),refund:0}, prov=c2e(o.provisionCents), settled=vaYear(it), open=+it.unbilled||0, refund=+it.refund||0;
+    var it=item("valuero:"+o.key)||{invoiced:0,unbilled:0,refund:0}, prov=c2e(o.provisionCents), settled=vaYear(it), open=+it.unbilled||0, refund=+it.refund||0;
     var canUndo=billRecs("valuero:"+o.key).length>0||!!it.last, busy=!!BUSY["v"+o.key];
     tOpen+=open; tPaid+=settled; tTot+=prov; tRef+=refund;
     var opened=!!F.UI.platOpen[o.key];
@@ -481,15 +485,20 @@ function vValuero(){
         (it.last?'<span class="invs">Letzte Rechnung: '+invLine(it.last)+'</span>':'')+
       '</button><div class="pl-acts">'+
         (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Rechnungsentwurf für die fälligen Quartale anlegen">Verrechnen · '+money(open)+'</button>':'')+
+        (it.catchupAction?'<button class="btn" data-act="vacatch:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Rechnungsentwurf für Anreisen, die nach der Abrechnung dazugekommen sind">Nachverrechnen · '+money(it.catchup)+'</button>':'')+
         (canUndo?'<button class="btn" data-act="plvundo:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Letzte Abrechnung zurücknehmen">Rückgängig</button>':'')+
       '</div></div>'+
-      (refund>0.005?'<div class="pl-refund">Zu erstatten: <b class="money">'+eur(refund)+'</b>. Es wurde mehr verrechnet als aktuell an Gebühren angefallen ist (Storno nach der Abrechnung). Mit „Rückgängig“ die letzte Abrechnung zurücknehmen und neu verrechnen.</div>':'')+
+      vaBlock(o.key,it)+
+      (refund>0.005?'<div class="pl-refund">Zu viel verrechnet: <b class="money">'+eur(refund)+'</b>. Es wurde mehr verrechnet, als heute an Gebühren angefallen ist (Storno, Senkung oder später online bezahlt). Nicht „Rückgängig“ – die Rechnung bleibt gültig: Gutschrift prüfen.'+(it.last&&it.last.id?' <button class="btn" data-act="'+(/bezahlt|teil/i.test(it.last.label||"")?"fincn:":"fin:invd:")+esc(it.last.id)+'">'+(/bezahlt|teil/i.test(it.last.label||"")?"Gutschrift zu "+esc(it.last.nr||"Rechnung"):"Rechnung "+esc(it.last.nr||"")+" öffnen")+'</button>':'')+'</div>':'')+
       (opened?'<div class="pl-months"><table class="pl-tbl"><thead><tr><th>Anreisemonat</th><th class="r">Buchungen</th><th class="r">Gebühr</th></tr></thead><tbody>'+
         (months.length?months.map(function(m){ return '<tr><td>'+esc(mName(m.month))+'</td><td class="r num" data-l="Buchungen">'+num(m.bookings)+'</td><td class="r" data-l="Gebühr">'+money(c2e(m.provisionCents),"ok-t")+'</td></tr>'; }).join(""):'<tr><td colspan="3" class="empty">Keine Buchungen im Jahr.</td></tr>')+
         '</tbody></table></div>':'')+
     '</div>';
   }).join("");
+  var miss=items("valuero").filter(function(x){ return x.missing; }), nl=va.notLive||[];
   return (sevOk?'':'<div class="notice"><span>Die Buchhaltung antwortet gerade nicht. „Verrechnen“ vermerkt dann nur den Betrag, ohne Rechnung.</span><button class="btn" data-act="reload">Neu laden</button></div>')+
+    (miss.length?'<div class="notice"><span><b>Gebührendaten fehlen:</b> '+miss.map(function(x){ return esc(x.name)+(x.last&&x.last.nr?" (zuletzt "+esc(x.last.nr)+")":""); }).join(" · ")+' – kein Verrechnen und keine Erstattung, bis die Daten wieder da sind.</span><button class="btn" data-act="reload">Neu laden</button></div>':'')+
+    (nl.length?'<div class="notice"><span><b>Auf der Partner-Plattform, aber nicht für die Abrechnung freigegeben:</b> '+nl.map(function(h){ return esc(h.name||h.key)+(h.billingStartSuggestion?" (Start-Vorschlag "+esc(h.billingStartSuggestion.slice(5,7)+"/"+h.billingStartSuggestion.slice(0,4))+")":""); }).join(" · ")+' – wird nicht verrechnet.</span></div>':'')+
     '<div class="kpis">'+
       kpi("Fällige Gebühren",'<span class="money">'+eur(tOpen)+'</span>',"abgelaufene Quartale, nach Aufenthalt",{vcls:tOpen>0.005?"warn-t":""})+
       kpi("Verrechnet "+esc(F.D.year),'<span class="money">'+eur(tPaid)+'</span>',"Rechnungen "+esc(F.D.year)+", ohne Stornos",{vcls:"ok-t"})+
@@ -501,13 +510,48 @@ function vValuero(){
     sec("Verrechnet vs. offen","",donut([["Verrechnet",Math.min(tPaid,tTot),"ok",'<span class="money">'+eur(Math.min(tPaid,tTot))+'</span>'],["Offen",tOpen,"warn",'<span class="money">'+eur(tOpen)+'</span>']].concat(tRef>0.005?[["Zu erstatten",tRef,"bad",'<span class="money">'+eur(tRef)+'</span>']]:[]),tTot>0?Math.round(Math.min(tPaid,tTot)/tTot*100)+" %":"–"));
 }
 function vaObj(key){ return ((P().valuero||{}).objects||[]).find(function(o){ return o.key===key; }); }
+/* Gesperrtes Objekt (Daten fehlen, Datumsbasis, Umstellung/Freigabe/Abrechnungsbeginn offen): Hinweis + Ein-Klick-Vorschlag, dazu Hinweise ohne Aktion */
+function vaBlock(key,it){
+  if(!it) return "";
+  var p=it.proposal, sw=BILL&&BILL.valuero&&BILL.valuero[key]&&BILL.valuero[key].switch;
+  return (it.blocked?'<div class="pl-block"><span>'+esc(it.blocked)+'</span>'+(p?'<button class="btn primary" data-act="vaprop:'+esc(key)+'">'+esc(p.label||"Prüfen")+'</button>':(it.missing?'<button class="btn" data-act="reload">Neu laden</button>':''))+'</div>':'')+
+    ((it.notes||[]).length?'<ul class="pl-notes">'+it.notes.map(function(n){ return '<li>'+esc(n)+'</li>'; }).join("")+'</ul>':'')+
+    (sw?'<div class="muted small" style="margin:0 18px 10px">Umstellung auf Anreise bestätigt am '+esc(de(String(sw.confirmedAt||"").slice(0,10)))+' (bis '+esc(de(sw.cutoff))+' nach Eingang, '+esc(sw.invoiceNr||"RE-1272")+' bleibt bestehen) · <button class="link" data-act="vaswitchundo:'+esc(key)+'">zurücknehmen</button></div>':'');
+}
+function vaPost(body,msg){ BUSY["v"+body.key]=1; F.render();
+  return F.api("/admin/api/billing",{body:body}).then(function(j){ delete BUSY["v"+body.key]; if(!okRes(j)){ F.toast("Nicht gespeichert: "+((j&&j.error)||"unbekannt"),true); F.render(); return; } BILL=j.billing||BILL; F.toast(msg); F.load(true); })
+    .catch(function(){ delete BUSY["v"+body.key]; F.toast("Keine Verbindung zum Server",true); F.render(); }); }
+/* Ein-Klick-Vorschläge (nur auf ausdrücklichen Klick; Rechnungen bleiben unverändert) */
+F.action("vaprop",function(key){
+  var it=item("valuero:"+key), p=it&&it.proposal; if(!p) return;
+  var lines=(p.lines||[]).map(function(l){ return '<li>'+esc(l)+'</li>'; }).join("");
+  if(p.op==="vastart"&&!p.start){
+    F.modal('<form data-form="vastart" data-key="'+esc(key)+'" class="stackf"><div class="row-between"><h2 style="font-size:19px">Abrechnungsbeginn · '+esc(it.name||key)+'</h2>'+F.btnClose()+'</div>'+(lines?'<ul class="pl-notes" style="margin:0">'+lines+'</ul>':'')+
+      '<label class="fl">Erster Anreisemonat, der verrechnet wird<input class="f" type="month" name="m" required value="'+esc(F.D.today.slice(0,7))+'"></label>'+
+      '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Übernehmen</button></span></div></form>',"narrow"); return; }
+  var title=p.title||(p.op==="vastart"?"Abrechnungsbeginn · "+(it.name||key):(it.name||key)+" prüfen");
+  F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(title)+'</h2>'+F.btnClose()+'</div>'+(it.blocked?'<p class="muted" style="margin:0">'+esc(it.blocked)+'</p>':'')+(lines?'<ul class="pl-notes" style="margin:0">'+lines+'</ul>':'')+
+    (p.op==="vaswitch"?'<p class="muted" style="margin:0;font-size:13px">Es wird nichts storniert und keine Rechnung geändert. Gespeichert wird nur, was je Anreisemonat schon verrechnet ist – das wird ab der nächsten Quartalsrechnung abgezogen und auf der Rechnung ausgewiesen.</p>':'')+
+    '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" data-act="vapropok:'+esc(key)+'">'+esc(p.label||"Übernehmen")+'</button></span></div></div>',"wide");
+});
+F.action("vapropok",function(key){
+  var it=item("valuero:"+key), p=it&&it.proposal; if(!p) return; F.closeModal();
+  if(p.op==="vaswitch") vaPost({op:"vaswitch",key:key},"Umstellung übernommen – ab jetzt nach Anreise");
+  else if(p.op==="vaack") vaPost(p.liveSince?{op:"vaack",key:key,liveSince:p.liveSince}:{op:"vaack",key:key,src:p.src},"Bestätigt – Verrechnen wieder möglich");
+  else if(p.op==="vastart") vaPost({op:"vastart",key:key,start:p.start},"Abrechnungsbeginn gespeichert");
+});
+F.form("vastart",function(f){ var key=f.getAttribute("data-key"), m=String(f.m.value||""); if(!/^\d{4}-\d{2}$/.test(m)) return; F.closeModal(); vaPost({op:"vastart",key:key,start:m+"-01"},"Abrechnungsbeginn gespeichert"); });
+F.action("vaswitchundo",function(key){ F.confirm("Umstellung auf Anreise für "+key+" zurücknehmen? Danach gibt es bis zur erneuten Bestätigung kein Verrechnen.","Zurücknehmen",function(){ vaPost({op:"vaswitch",key:key,undo:true},"Umstellung zurückgenommen"); },true); });
+F.action("vacatch",function(key){ var it=item("valuero:"+key); if(!it||!it.catchupAction) return; var pre=JSON.parse(JSON.stringify(it.catchupAction)); pre.onDone=function(){ loadBill(); }; F.openInvoice(pre); });
 F.action("plvtog",function(k){ F.UI.platOpen[k]=!F.UI.platOpen[k]; F.render(); });
 F.action("plvbill",function(key){
   var o=vaObj(key), it=item("valuero:"+key); if(!o) return;
-  var open=it?+it.unbilled||0:c2e(o.provisionCents); if(!(open>0.005)){ F.toast("Noch nichts fällig – VALUERO wird quartalsweise am 1. nach Aufenthalt verrechnet"+(it&&it.nextBilling?" (nächste Abrechnung "+de(it.nextBilling)+")":"")); return; }
+  if(!it){ F.toast("Abgleich noch nicht geladen – bitte neu laden",true); return; }   /* nie die ganze Jahresprovision ohne Abgleich verrechnen */
+  if(it.blocked){ F.toast(it.blocked,true); return; }
+  var open=+it.unbilled||0; if(!(open>0.005)){ F.toast("Noch nichts fällig – VALUERO wird quartalsweise am 1. nach Aufenthalt verrechnet"+(it&&it.nextBilling?" (nächste Abrechnung "+de(it.nextBilling)+")":"")); return; }
   if(!F.D.sev){ F.confirm("Die Buchhaltung ist gerade nicht erreichbar. "+eur(open)+" für "+o.name+" nur als verrechnet vermerken (ohne Rechnung)?","Nur vermerken",function(){
       BUSY["v"+key]=1; F.render();
-      F.api("/admin/api/billing",{body:{op:"invoice",key:"valuero:"+key,invoice:{id:"",nr:"",gross:open,date:F.D.today,label:(o.name||key)+" (ohne Rechnung)",from:it&&it.action&&it.action.after.billing.from,to:it&&it.action&&it.action.after.billing.to}}}).then(function(j){
+      F.api("/admin/api/billing",{body:{op:"invoice",key:"valuero:"+key,invoice:{id:"",nr:"",gross:open,date:F.D.today,label:(o.name||key)+" (ohne Rechnung)",from:it&&it.action&&it.action.after.billing.from,to:it&&it.action&&it.action.after.billing.to,src:it&&it.action&&it.action.after.billing.src,basis:it&&it.action&&it.action.after.billing.basis}}}).then(function(j){
         delete BUSY["v"+key]; if(!okRes(j)){ F.toast("Speichern fehlgeschlagen",true); F.render(); return; } F.toast(o.name+" als verrechnet vermerkt"); F.load(true);
       }).catch(function(){ delete BUSY["v"+key]; F.toast("Keine Verbindung zum Server",true); F.render(); });
     }); return; }
@@ -542,7 +586,7 @@ function vPlat(){
   var subnav='<nav class="subnav pl-sub" aria-label="Plattformen">'+TABS.map(function(t){ var n=nc[TAB2SEEN[t[0]]]; return '<button type="button" data-act="pltab:'+t[0]+'" aria-current="'+(t[0]===tab)+'">'+t[1]+(n?'<span class="count">'+n+'</span>':'')+'</button>'; }).join("")+'</nav>';
   var src={kochdu:p.kochdu,kantineur:p.kantineur,blitz:p.blitzdings,valuero:p.valuero}[tab];
   var right=(LINKS[tab]?ext(LINKS[tab][0],LINKS[tab][1]+" öffnen"):'')+(tab!=="ueb"&&tab!=="ski"&&tab!=="hg"?(F.actions.fin?'<button class="btn" data-act="fin:inv">Rechnungen</button>':'<button class="btn" data-go="geld">Finanzen</button>'):'');
-  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren verrechnest du, Online-Provisionen laufen automatisch.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung per Rechnung.",ski:"App mit In-App-Käufen (Einmalkäufe).",hg:"Idle-Game für iOS mit Edelweiß-Paketen (Einmalkäufe)."};
+  var subs={ueb:"Alle eigenen Produkte für "+esc(F.D.year)+" auf einen Blick.",kochdu:"Bestellplattform · Bar-Gebühren rechnet kochdu monatlich selbst ab, Online-Provisionen behält Mollie ein.",kantineur:"Vereinskasse · Abos werden automatisch abgerechnet.",blitz:"Fotobox & 360° · Verfügbarkeit, Buchungen, Zahlungen und Rechnungen.",valuero:"Vermittlungsgebühren je Objekt · Abrechnung per Rechnung.",ski:"App mit In-App-Käufen (Einmalkäufe).",hg:"Idle-Game für iOS mit Edelweiß-Paketen (Einmalkäufe)."};
   var body=tab==="kochdu"?vKochdu():tab==="kantineur"?vKantineur():tab==="blitz"?vBlitz():tab==="valuero"?vValuero():tab==="ski"?(F.skikaiserView?F.skikaiserView():'<div class="panel empty">Skikaiser-Modul fehlt.</div>'):tab==="hg"?(F.huettengaudiView?F.huettengaudiView():'<div class="panel empty">Hüttengaudi-Modul fehlt.</div>'):vUeb();
   return F.head("Plattformen",subs[tab]+(src&&src.fetchedAt?' <span class="muted">· '+esc(stamp(src.fetchedAt))+'</span>':''),right?'<div class="row wrap pl-head-r">'+right+'</div>':'')+subnav+body;
 }

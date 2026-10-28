@@ -583,50 +583,96 @@ async function kochduStats(year) {
   if (!d || d.error) return null;
   return d;
 }
-// VALUERO: beide Objekte abrufen und zu einem einheitlichen Format zusammenführen.
+// VALUERO: Schlüssel, die zuletzt von der Partner-Plattform kamen (Datei, damit auch nach einem Neustart bei Ausfall der Plattform
+// nicht still auf eine Altquelle mit anderer Datumsbasis gewechselt wird – Audit „VALUERO wechselt still die Datenquelle“)
+const VA_SRC_FILE = path.join(DATA_DIR, "valuero-sources.json");
+let VA_PARTNER_LAST = null;
+function vaPartnerLast() { if (!VA_PARTNER_LAST) { try { VA_PARTNER_LAST = (JSON.parse(fs.readFileSync(VA_SRC_FILE, "utf8")).partner || []).filter(x => x && x.key); } catch (e) { VA_PARTNER_LAST = []; } } return VA_PARTNER_LAST; }
+function vaPartnerRemember(list) {
+  const sig = l => l.map(x => x.key + "|" + x.name).sort().join(",");
+  if (sig(list) === sig(vaPartnerLast())) return;
+  VA_PARTNER_LAST = list; try { fs.writeFileSync(VA_SRC_FILE, JSON.stringify({ partner: list, at: new Date().toISOString() })); } catch (e) {}
+}
+const vaUrl = (url, q) => url + (url.indexOf("?") > -1 ? "&" : "?") + q;
+// VALUERO: alle Objekte abrufen und zu einem einheitlichen Format zusammenführen.
+// objects: verrechenbare Häuser (je Monat provisionCents = volle Gebühr nach Anreisemonat, dazu – falls die Quelle sie liefert –
+//   mollieFeesCents (schon per Online-Zahlung einbehalten), importedCents (Altsystem), prebilledCents (Antonhaus: schon nach Eingang verrechnet)).
+// missing: Quelle hat nicht oder fehlerhaft geantwortet → im Abgleich „Gebührendaten fehlen – neu laden“, nie Verrechnen/Erstattung.
+// notLive: auf der Partner-Plattform, aber nicht für die Abrechnung freigegeben → nur Hinweis.
 async function valueroStats(year) {
-  const objects = [];
-  // VALUERO Partner: alle freigeschalteten Häuser (ohne Demo-Häuser) – ersetzt die Einzelquellen, sobald ein Haus dort läuft
+  const objects = [], missing = [], notLive = [];
+  const pct = (v) => String(v).replace(".", ",") + " %";
+  const months = (arr, f) => (arr || []).map(m => Object.assign({ month: m.month, provisionCents: +m.provisionCents || 0, bookings: +m.bookings || 0 }, f ? f(m) : {}));
+  // VALUERO Partner (Vertrag 2: Abrechnungsbeginn, Mollie-Anteil, Altbuchungen, Freigabe): ersetzt die Einzelquellen, sobald ein Haus dort freigegeben ist
   const fromPartner = new Set();
   if (VALUERO_PARTNER.token) {
-    const d = await getJSON(VALUERO_PARTNER.url + yearParam(year).replace(/^&/, "?"), VALUERO_PARTNER.token);
-    for (const h of (d && d.ok && Array.isArray(d.properties) ? d.properties : [])) {
-      if (h.isDemo) continue;
-      const key = VALUERO_KEYS[h.property] || h.property;
-      const pct = (v) => String(v).replace(".", ",") + " %";
-      fromPartner.add(key);
-      objects.push({
-        key, name: h.name || key,
-        ratesLabel: pct(h.feePercentDirect || 0) + " Website" + (h.feePercentOta ? " · " + pct(h.feePercentOta) + " Booking" : ""),
-        provisionCents: h.provisionCents || 0, feeBookings: h.feeBookings || 0,
-        months: (h.months || []).map(m => ({ month: m.month, provisionCents: m.provisionCents || 0, bookings: m.bookings || 0 })),
-      });
+    const d = await getJSON(vaUrl(VALUERO_PARTNER.url, "contract=2" + yearParam(year)), VALUERO_PARTNER.token);
+    if (d && d.ok && Array.isArray(d.properties)) {
+      const seen = [];
+      for (const h of d.properties) {
+        if (h.isDemo) continue;
+        const key = VALUERO_KEYS[h.property] || h.property;
+        if (h.billingLive === false) { notLive.push({ key, name: h.name || key, billingStartSuggestion: h.billingStartSuggestion || null, provisionCents: +h.provisionCents || 0 }); continue; }
+        fromPartner.add(key); seen.push({ key, name: h.name || key });
+        objects.push({
+          key, name: h.name || key, src: "partner", basis: h.basis || d.basis || "arrival", contract: +d.contract || 0,
+          ratesLabel: pct(h.feePercentDirect || 0) + " Website" + (h.feePercentOta ? " · " + pct(h.feePercentOta) + " Booking" : ""),
+          provisionCents: h.provisionCents || 0, feeBookings: h.feeBookings || 0,
+          billingStart: /^\d{4}-\d{2}-01$/.test(h.billingStart || "") ? h.billingStart : null, billingLiveSince: h.billingLiveSince || null,
+          billingStartSuggestion: /^\d{4}-\d{2}-01$/.test(h.billingStartSuggestion || "") ? h.billingStartSuggestion : null, firstOwnBookingOn: h.firstOwnBookingOn || null, legacyBookings: +h.legacyBookings || 0,
+          months: months(h.months, m => ({ mollieFeesCents: +m.mollieFeesCents || 0, mollieFeesCancelledCents: +m.mollieFeesCancelledCents || 0, importedCents: +m.importedCents || 0 })),
+        });
+      }
+      (Array.isArray(d.notLive) ? d.notLive : []).forEach(h => { if (h && !h.isDemo) notLive.push({ key: VALUERO_KEYS[h.property] || h.property, name: h.name || h.property, billingStartSuggestion: h.billingStartSuggestion || null, provisionCents: +h.provisionCents || 0 }); });
+      vaPartnerRemember(seen);
+    } else {
+      // Plattform nicht erreichbar: Häuser, die zuletzt von dort kamen, nicht aus den Altquellen holen (andere Datumsbasis), sondern als „fehlt“ melden
+      vaPartnerLast().forEach(x => { fromPartner.add(x.key); missing.push({ key: x.key, name: x.name || x.key, src: "partner", error: "Partner-Plattform nicht erreichbar" }); });
     }
   }
-  // Antonhaus (valuero-stats: provisionCents + months[{month,provisionCents,bookings}])
-  if (ANTONHAUS.token && !fromPartner.has("antonhaus")) {
-    const d = await getJSON(ANTONHAUS.url + yearParam(year).replace(/^&/, "?"), ANTONHAUS.token);
-    if (d && d.ok) {
+  // Antonhaus (antonhaus.at/api/valuero-stats): nur mit basis=arrival nach Anreise verrechenbar. Ohne „basis“ antwortet die alte Version
+  // (nach Buchungseingang) → im Abgleich nur Hinweis. „transition“ = was bis 30.09.2026 nach Eingang verrechnet wurde (Startwert + RE-1272).
+  // Kommt Antonhaus schon von der Partner-Plattform, liefert antonhaus.at nur noch die Umstellungsdaten.
+  if (ANTONHAUS.token) {
+    const viaPartner = fromPartner.has("antonhaus"), po = objects.find(o => o.key === "antonhaus");
+    const d = await getJSON(vaUrl(ANTONHAUS.url, "basis=arrival" + yearParam(year)), ANTONHAUS.token);
+    const ok = !!(d && d.ok && !d.error);
+    if (viaPartner) { if (po && ok && d.basis === "arrival" && d.transition) po.transition = d.transition; }
+    else if (ok) {
       objects.push({
-        key: "antonhaus", name: "Antonhaus", ratesLabel: "5 % Website",
-        provisionCents: d.provisionCents || 0, feeBookings: d.feeBookings || 0,
-        months: (d.months || []).map(m => ({ month: m.month, provisionCents: m.provisionCents || 0, bookings: m.bookings || 0 })),
+        key: "antonhaus", name: "Antonhaus", src: "antonhaus", basis: d.basis || "created", ratesLabel: d.ratesLabel || "5 % Website",
+        provisionCents: d.provisionCents || 0, feeBookings: d.feeBookings || 0, transition: d.basis === "arrival" && d.transition && typeof d.transition === "object" ? d.transition : null,
+        months: months(d.months, m => ({ prebilledCents: +m.prebilledCents || 0, prebilledCurrentRuleCents: +m.prebilledCurrentRuleCents || 0 })),
       });
-    }
+    } else missing.push({ key: "antonhaus", name: "Antonhaus", src: "antonhaus", error: "Gebührendaten Antonhaus fehlen" });
   }
-  // Alpinappart (/api/fees: totals.fees + byMonth[{month,count,revenue,fees}])
+  // Alpinappart (/api/fees: totals.fees + byMonth[{month,count,revenue,fees}]) – Datumsbasis ungeprüft; verrechnet wird Alpinappart nur über die
+  // Partner-Plattform (Simon 28.10.2026: ab dem ersten Monat live dort, ohne eingespielte Altbuchungen) → hier nur Anzeige
   if (ALPINAPPART.key && !fromPartner.has("alpinappart")) {
     const d = await getJSON(ALPINAPPART.url + "?key=" + encodeURIComponent(ALPINAPPART.key) + (year ? "&year=" + encodeURIComponent(year) : ""));
     if (d && d.totals) {
       objects.push({
-        key: "alpinappart", name: "Alpinappart", ratesLabel: "5 % Website · 2,5 % Booking",
+        key: "alpinappart", name: "Alpinappart", src: "alpinappart", basis: "unbekannt", ratesLabel: "5 % Website · 2,5 % Booking",
         provisionCents: Math.round((d.totals.fees || 0) * 100), feeBookings: d.totals.count || 0,
         months: (d.byMonth || []).map(m => ({ month: m.month, provisionCents: Math.round((m.fees || 0) * 100), bookings: m.count || 0 })),
       });
-    }
+    } else missing.push({ key: "alpinappart", name: "Alpinappart", src: "alpinappart", error: "Gebührendaten Alpinappart fehlen" });
   }
-  if (!objects.length) return null;
-  return { fetchedAt: new Date().toISOString(), objects };
+  if (!objects.length && !missing.length && !notLive.length) return null;
+  return { fetchedAt: new Date().toISOString(), objects, missing, notLive };
+}
+// Antonhaus-Umstellung (Ein-Klick „Umstellung übernehmen“): Schnappschuss aus den aktuellen Umstellungsdaten von antonhaus.at, damit spätere
+// Stornos schon verrechneter Buchungen den Abzug nicht still verändern (und für einen späteren Wechsel auf die Partner-Plattform)
+async function vaSwitchSnapshot(key) {
+  if (String(key || "").replace(/^valuero:/, "") !== "antonhaus") throw new Error("Umstellung gibt es nur für Antonhaus");
+  forgetStats(ANTONHAUS.url);   // frisch abrufen, nicht aus dem 25-s-Zwischenspeicher
+  const va = await valueroStats(viennaToday().slice(0, 4)), o = va && (va.objects || []).find(x => x.key === "antonhaus"), t = o && o.transition;
+  if (!t || !Array.isArray(t.byArrivalMonth)) throw new Error("Antonhaus liefert noch keine Umstellungsdaten (neue Version mit basis=arrival) – bitte neu laden");
+  const by = {}, byCur = {};
+  t.byArrivalMonth.forEach(m => { if (/^\d{4}-\d{2}$/.test(m.month || "") && +m.prebilledCents > 0) { by[m.month] = Math.round(+m.prebilledCents); byCur[m.month] = Math.round(+m.prebilledCurrentRuleCents || 0); } });
+  const cutoff = /^\d{4}-\d{2}-\d{2}$/.test(t.cutoffDate || "") ? t.cutoffDate : "2026-09-30", pre = (readBilling().invoices["valuero:antonhaus"] || []).filter(x => !x.to || x.to <= cutoff);
+  return { cutoff, prebilledByMonth: by, prebilledCurrentRuleByMonth: byCur, totalCents: Object.keys(by).reduce((a, k) => a + by[k], 0), legacyTotalCents: (t.legacyMonths || []).reduce((a, m) => a + (+m.provisionCents || 0), 0),
+    billedCents: Math.round(pre.reduce((a, x) => a + (+x.gross || 0), 0) * 100), invoiceNr: (pre.filter(x => x.nr && x.id).pop() || {}).nr || "RE-1272", notPrebilledCents: +t.notPrebilledArrivalUntilCutoffCents || 0, confirmedAt: new Date().toISOString() };
 }
 // ── Privater Kalender: iCloud (CalDAV) – lesen & schreiben, in beide Richtungen ──
 // Zugangsdaten (Apple-ID + App-spezifisches Passwort + gewählter Kalender) liegen im Volume unter /data/icloud.json
@@ -1106,25 +1152,54 @@ function formNested(str) {   // a[b]=1&c=2 → {a:{b:"1"},c:"2"}
 }
 // Schnittstelle für die Plattformen (kochdu, Blitzdings, …): Sicherheitsprüfung 19.10.2026 – falsche Tokens gebremst,
 // nie löschen, keine Einstellungen/Bankkonten/Buchungskategorien/Belege/Benutzer ändern, jeder Zugriff protokolliert.
-// Genutzt wird laut Protokoll: Kontakte anlegen, Rechnungen erstellen und per Mail senden.
+// Freigabeliste je Plattform (Audit X2, 28.10.2026) statt Sperrliste: nur die Aufrufe, die die Plattform laut Vertrag braucht – für die alte
+// UND die neue Plattform-Version (CONTRACT-fs-order §3, CONTRACT-der-kantineur §2, CONTRACT-blitzdings §5). Alles andere → 403 und Protokoll.
+// [Methode, Pfad, Art]: "own" = nur Belege dieser Plattform, "list" = Suche nur mit einem der genannten Filter, Ergebnis nur eigene Belege.
 const FINAPI_FAILS = hitCounter(2000, 3600000);
-const FINAPI_BLOCK = /^\/(FinSetting|CheckAccount|CheckAccountTransaction|AccountingType|AccountingContact|Voucher|VoucherPos|SevUser|SevClient|Tag|TagRelation|Export|ReceiptGuidance|Bank|Payment(?:Method)?)\b/i;
+const FINAPI_ALLOW = {
+  kochdu: [["GET", /^\/SevUser$/], ["GET", /^\/Contact$/], ["POST", /^\/Contact$/], ["POST", /^\/Contact\/\d+\/addAddress$/], ["POST", /^\/ContactAddress$/],
+    ["POST", /^\/Invoice\/Factory\/saveInvoice$/, "save"], ["POST", /^\/CreditNote\/Factory\/saveCreditNote$/, "save"], ["PUT", /^\/Invoice\/\d+\/sendBy$/, "own"], ["POST", /^\/Invoice\/\d+\/sendViaEmail$/, "own"],
+    ["GET", /^\/(Invoice|CreditNote)\/\d+$/, "own"], ["GET", /^\/(Invoice|CreditNote)$/, "list", ["platformRef", "contact[id]"]]],
+  blitzdings: [["GET", /^\/SevUser$/], ["GET", /^\/Contact$/], ["POST", /^\/Contact$/], ["POST", /^\/ContactAddress$/], ["POST", /^\/CommunicationWay$/],
+    ["GET", /^\/Invoice\/Factory\/getNextInvoiceNumber$/], ["POST", /^\/Invoice\/Factory\/saveInvoice$/, "save"], ["PUT", /^\/Invoice\/\d+\/enshrine$/, "own"], ["POST", /^\/Invoice\/\d+\/sendViaEmail$/, "own"]],
+  kantineur: [["GET", /^\/Tools\/bookkeepingSystemVersion$/], ["GET", /^\/SevUser$/], ["GET", /^\/Contact\/\d+$/], ["POST", /^\/Contact$/], ["POST", /^\/Invoice\/Factory\/saveInvoice$/, "save"],
+    ["POST", /^\/Invoice\/\d+\/sendViaEmail$/, "own"], ["GET", /^\/Invoice\/\d+$/, "own"], ["GET", /^\/Invoice$/, "list", ["customerInternalNote"]]],
+};
+// Beleg gehört der Plattform: beim Anlegen über die fin-api vermerkt (finApiSource) oder – ältere Belege – am Merkmal der Plattform
+const FINAPI_MARK = {
+  kochdu: o => /^kochdu:/.test(String(o.platformRef || "")) || /kochdu/i.test(String(o.header || "")),
+  blitzdings: o => /^BD-/i.test(String(o.reference || "")) || /blitzdings|^\s*Buchung BD-/i.test(String(o.headText || "") + " " + String(o.header || "")),
+  kantineur: o => /kantineur/i.test(String(o.headText || "") + " " + String(o.header || "")),   // „Vielen Dank für die Nutzung von Der Kantineur.“ (Mollie-ID allein reicht nicht – steht auch in Druckshop-Rechnungen)
+};
+function finApiOwns(who, o) { if (!o || typeof o !== "object") return false; const src = o.finApiSource || o.finApiWho; if (src) return src === who; return !!(FINAPI_MARK[who] && FINAPI_MARK[who](o)); }
+function finApiRule(who, method, fpath) { return (FINAPI_ALLOW[who] || []).find(r => r[0] === method && r[1].test(fpath)) || null; }
+async function finApiDoc(type, id) { const r = await sev("GET", "/" + type + "/" + id).catch(() => null); const o = r && r.objects; return Array.isArray(o) ? o[0] || null : (o || null); }
 async function finApi(req, res, u, p) {
   const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
   const ip = clientIp(req);
   if (FINAPI_FAILS.count(ip, 900000) >= 10) return J(429, { error: { message: "too_many" } });
   const who = finApiAuth(req); if (!who) { FINAPI_FAILS.hit(ip, 100, 900000); FINAPI_SEEN.bad = FINAPI_SEEN.bad.concat([Date.now()]).slice(-50); console.log("fin-api: falscher Token"); return J(401, { error: { message: "unauthorized" } }); }
   FINAPI_SEEN.last[who] = new Date().toISOString();
-  const fpath = p.slice("/fin-api/v1".length);
-  if (req.method === "DELETE" || (req.method !== "GET" && FINAPI_BLOCK.test(fpath))) { console.log("fin-api gesperrt", who, req.method, fpath.replace(/\d+/g, "{id}")); req.resume(); return J(403, { error: { message: "forbidden" } }); }
+  const fpath = p.slice("/fin-api/v1".length).replace(/\/+$/, ""), rule = req.method === "DELETE" ? null : finApiRule(who, req.method, fpath);
+  const deny = why => { console.log("fin-api gesperrt", who, req.method, fpath.replace(/\d+/g, "{id}") + (why ? " (" + why + ")" : "")); req.resume(); return J(403, { error: { message: "forbidden" } }); };
+  if (!rule) return deny("");
   let raw = ""; for await (const c of req) { raw += c; if (raw.length > 2000000) return J(413, { error: { message: "too_large" } }); }
   const ct = String(req.headers["content-type"] || "");
   let body; try { body = !raw ? undefined : /json/.test(ct) ? JSON.parse(raw) : /x-www-form-urlencoded/.test(ct) ? formNested(raw) : JSON.parse(raw); } catch (e) { return J(400, { error: { message: "bad_body" } }); }
   const query = {}; u.searchParams.forEach((v, k) => { if (k !== "token") query[k] = v; });
   const path = p.slice("/fin-api/v1".length);
+  // Eigentum: Versand/Festschreiben/Lesen nur für Belege dieser Plattform; Entwurf überarbeiten nur, wenn er ihr gehört; neue Belege werden ihr zugeschrieben
+  const docM = fpath.match(/^\/(Invoice|CreditNote)\/(\d+)/), kind = rule[2] || "";
+  if (kind === "own" && docM && !finApiOwns(who, await finApiDoc(docM[1], docM[2]))) return deny("fremder Beleg");
+  if (kind === "save") { const k = /CreditNote/.test(fpath) ? "creditNote" : "invoice", doc = body && body[k];
+    if (!doc || typeof doc !== "object") return J(400, { error: { message: "bad_body" } });
+    if (doc.id) { if (!finApiOwns(who, await finApiDoc(k === "invoice" ? "Invoice" : "CreditNote", String(doc.id).replace(/\D/g, "")))) return deny("fremder Beleg"); }
+    else doc.finApiSource = who; }
+  if (kind === "list" && !(rule[3] || []).some(f => query[f] != null && String(query[f]) !== "")) return deny("Suche ohne Filter");
   console.log("fin-api", who, req.method, path.replace(/\d+/g, "{id}"));   // jeder Zugriff, auch lesend (Grundlage für eine spätere Freigabeliste)
   try {
     const r = await sev(req.method, path, { query, body });
+    if (kind === "list" && r && Array.isArray(r.objects)) r.objects = r.objects.filter(o => finApiOwns(who, o));
     if (req.method !== "GET") { SEV_CACHE.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; }
     return J(200, r);
   } catch (e) { return J(e.status && e.status < 600 ? e.status : 500, { error: { message: String(e.message || e).slice(0, 300) } }); }
@@ -1181,7 +1256,7 @@ function printInvoiceIndex() {
 }
 async function sevBuild() {
   const today = viennaToday();
-  const [ver, invRaw, cas, tx, vou, txOpenRaw, vouDraftRaw, pidx] = await Promise.all([
+  const [ver, invRaw, cas, tx, vou, txOpenRaw, vouDraftRaw, pidx, cnRaw] = await Promise.all([
     sev("GET", "/Tools/bookkeepingSystemVersion").catch(() => null),
     sevList("/Invoice", { embed: "contact" }, 30000),
     sev("GET", "/CheckAccount", { query: { limit: 100 } }),
@@ -1190,7 +1265,9 @@ async function sevBuild() {
     sevList("/CheckAccountTransaction", { status: 100 }, 30000).catch(() => null),   // Zähler „nicht zugeordnet“ aus allen Umsätzen
     sevList("/Voucher", { status: 50 }, 30000).catch(() => null),                    // Zähler Beleg-Entwürfe aus allen Belegen
     printInvoiceIndex(),
+    sevList("/CreditNote", {}, 30000).catch(() => []),                                // Gutschriften zu Rechnungen (Abgleich: verrechnet abzüglich gutgeschrieben)
   ]);
+  const creditBy = {}; (cnRaw || []).forEach(c => { const src = c && c.refSrcInvoice && c.refSrcInvoice.id; if (!src || String(c.status) === "100" || c.cancelled) return; creditBy[String(src)] = Math.round(((creditBy[String(src)] || 0) + Math.abs(sevNum(c.sumGross))) * 100) / 100; });
   const all = invRaw.filter(o => o.invoiceType !== "MA" && o.invoiceType !== "WKR").map(o => {   // WKR = Vorlage für wiederkehrende Rechnungen, keine Forderung
     const date = sevDay(o.invoiceDate), gross = sevNum(o.sumGross), paid = sevNum(o.paidAmount), status = parseInt(o.status, 10) || 0;
     let due = null;
@@ -1207,6 +1284,7 @@ async function sevBuild() {
   // Herkunft Druckshop (src/printId/printNr) und Überzahlung (over = Guthaben des Kunden, nur Anzeige)
   all.forEach(i => { const px = pidx[i.id]; i.src = px ? "print" : ""; if (px) { i.printId = String(px.orderId || ""); i.printNr = String(px.nr || ""); }
     i.over = i.gross > 0 && !i.cancelled && (i.status === 750 || i.status === 1000) ? Math.max(0, Math.round((i.paid - i.gross) * 100) / 100) : 0; });
+  all.forEach(i => { if (creditBy[i.id]) i.credited = creditBy[i.id]; });   // Gutschriften zur Rechnung (Abgleich: verrechnet abzüglich gutgeschrieben)
   // Ausgeliefert: neueste 600 + alle Entwürfe/offenen (ältere offene fehlten sonst überall); die vollständige Liste bleibt am Server (invoicesAll)
   const invoices = all.slice(0, 600).concat(all.slice(600).filter(i => i.status === 100 || i.status === 200 || i.status === 750));
   // Mahnungen (MA) im Entwurf: angelegt, aber nie versendet – nur lesen
@@ -1355,7 +1433,8 @@ async function sevCreateInvoice(pl) {
       discount: 0, status: 100, taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", invoiceType: "RE", currency: "EUR", showNet: "1", smallSettlement: 0 },
     invoicePosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
       const disc = Math.max(0, Math.min(100, parseFloat(i.discount) || 0));   // Rabatt je Position in % (z. B. aus Angebot/Schlussrechnung)
-      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
+      // Bruttopreis maßgeblich (X3): die Buchhaltung rechnet netto/USt cent-genau vom Brutto zurück – sonst lag jede 6. Rechnung 1 Cent über dem Sollbetrag
+      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), priceGross: Math.round(parseFloat(i.priceGross) * 100) / 100, grossPricing: true, name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
     invoicePosDelete: null, takeDefaultAddress: false,
   };
   // Optional (KI-Rechnung): Steuerregel nach sevDesk Update 2.0 (z. B. Reverse Charge), Leistungszeitraum bis
@@ -1476,7 +1555,7 @@ async function sevCreateOffer(pl) {
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
       taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false },
     orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
-      return { objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),
+      return { objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q, price: sevNet(parseFloat(i.priceGross), r), priceGross: Math.round(parseFloat(i.priceGross) * 100) / 100, grossPricing: true, name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }; }),   // Bruttopreis maßgeblich (X3)
     orderPosDelete: null,
   };
   const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
@@ -1746,6 +1825,7 @@ function readBilling() {
     domainLabel: "Domain", hostingLabel: "Hosting & Wartung", mailLabel: "E-Mail" }, o.prices || {});
   o.sites = (o.sites && typeof o.sites === "object") ? o.sites : {};
   o.invoices = (o.invoices && typeof o.invoices === "object") ? o.invoices : {};
+  o.valuero = (o.valuero && typeof o.valuero === "object") ? o.valuero : {};   // VALUERO je Haus: Abrechnungsbeginn, Umstellung Antonhaus (Schnappschuss), bestätigte Freigabe
   return o;
 }
 function writeBilling(o) { try { if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0; o.updatedAt = new Date().toISOString(); fs.writeFileSync(BILLING_FILE, JSON.stringify(o)); return true; } catch (e) { return false; } }
@@ -1761,8 +1841,13 @@ function billingOp(pl) {
     if ("yearStart" in P) o.prices.yearStart = !!P.yearStart;
     ["domainLabel", "hostingLabel", "mailLabel"].forEach(k => { if (k in P) o.prices[k] = String(P[k] || "").slice(0, 80); });
   } else if (op === "site" && pl.key && pl.patch && typeof pl.patch === "object") {
-    const k = cleanKey(pl.key), cur = o.sites[k] || {}, P = pl.patch;
+    const k = cleanKey(pl.key), cur = o.sites[k] || {}, P = pl.patch, wasActive = !!cur.active;
     ["active", "domain", "hosting", "mail", "own", "hidden"].forEach(f => { if (f in P) cur[f] = (P[f] === null ? undefined : !!P[f]); });   // hidden: Website gibt es nicht mehr – ausgeblendet
+    // Jahresmodus anteilig ab dem Monat der Aktivierung (WEB-5): neue Website (noch nie verrechnet) oder nach einer echten Pause (> 31 Tage aus);
+    // kurz aus- und wieder eingeschaltet ändert nichts
+    if (wasActive && !cur.active) cur.inactiveSince = viennaToday();
+    if (!wasActive && cur.active) { const hist = cur.billedUntil || (Array.isArray(o.invoices["site:" + k]) && o.invoices["site:" + k].length);
+      if ((!hist && !cur.activeSince) || (cur.inactiveSince && cur.inactiveSince < ymdAdd(viennaToday(), -31))) cur.activeSince = viennaToday(); delete cur.inactiveSince; }
     if ("extra" in P) { const n = parseFloat(P.extra); cur.extra = isFinite(n) ? Math.round(n * 100) / 100 : 0; }
     if ("mailQty" in P) { const n = parseInt(P.mailQty, 10); cur.mailQty = n > 0 ? Math.min(n, 999) : 1; }
     if ("w4y" in P) cur.w4y = Array.isArray(P.w4y) ? P.w4y.filter(x => Object.prototype.hasOwnProperty.call(W4Y_PKG, x)).slice(0, 5) : undefined;
@@ -1774,22 +1859,34 @@ function billingOp(pl) {
     const k = cleanKey(pl.key), I = pl.invoice;
     const inv = { id: String(I.id || ""), nr: String(I.nr || ""), date: String(I.date || new Date().toISOString().slice(0, 10)), gross: Math.round((parseFloat(I.gross) || 0) * 100) / 100,
       from: /^\d{4}-\d{2}-\d{2}$/.test(I.from || "") ? I.from : null, to: /^\d{4}-\d{2}-\d{2}$/.test(I.to || "") ? I.to : null, label: String(I.label || "").slice(0, 200), group: I.group === true || undefined, deposit: I.deposit === true || undefined };   // group: Sammelrechnung (mehrere Buchungen), deposit: Anzahlung (Rest bleibt offen)
+    // VALUERO: Quelle/Datumsbasis der Abrechnung (Quellenwechsel erkennen), adj = Nachverrechnung ohne eigenen Zeitraum; Website: bisheriges „verrechnet bis“
+    if (/^[a-z0-9-]{1,20}$/.test(String(I.src || ""))) inv.src = String(I.src); if (/^[a-z]{1,12}$/.test(String(I.basis || ""))) inv.basis = String(I.basis); if (I.adj === true) inv.adj = true; const untilBefore = k.indexOf("site:") === 0 ? ((o.sites[k.slice(5)] || {}).billedUntil || "") : "";
     const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
     if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
+    if (inv.to && untilBefore > inv.to) o.sites[k.slice(5)].billedUntil = untilBefore;   // nie zurück: Nachverrechnung eines früheren (stornierten) Zeitraums (WEB-2)
   } else if (op === "ignore" && pl.key) {        // Posten in „Zu verrechnen“ ausblenden, bis der Betrag wieder steigt
     o.ignore = (o.ignore && typeof o.ignore === "object") ? o.ignore : {};
     o.ignore[cleanKey(pl.key)] = { amount: Math.round((parseFloat(pl.amount) || 0) * 100) / 100, at: new Date().toISOString(), note: String(pl.note || "").slice(0, 200) };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(pl.from || "")) o.ignore[cleanKey(pl.key)].from = pl.from;   // Website: nur dieser Zeitraum (Folgejahre kommen wieder)
   } else if (op === "unignore" && pl.key) {
     if (o.ignore) delete o.ignore[cleanKey(pl.key)];
   } else if (op === "unbill" && pl.key) {
     const k = cleanKey(pl.key); const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : [];
     const gone = arr.pop(); o.invoices[k] = arr;
-    if (k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; const prev = arr[arr.length - 1]; s.billedUntil = prev && prev.to ? prev.to : null; o.sites[k.slice(5)] = s; }
+    // ohne vorherigen Eintrag: Zeitraum des zurückgenommenen Eintrags gleich wieder fällig (nicht erst im nächsten Jänner, WEB-5)
+    if (k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; const prev = arr.filter(r => r && r.to).sort((a, b) => a.to.localeCompare(b.to)).pop(); s.billedUntil = prev ? prev.to : (gone && gone.from ? ymdAdd(gone.from, -1) : null); o.sites[k.slice(5)] = s; }
     if (!gone) throw new Error("nichts_zum_zuruecknehmen");
+  } else if ((op === "vastart" || op === "vaack" || op === "vaswitch") && pl.key) {   // VALUERO-Einstellungen je Haus (nur auf Simons Klick)
+    const k = cleanKey(pl.key).replace(/^valuero:/, ""), cur = o.valuero[k] || {};
+    if (op === "vastart") { if (/^\d{4}-\d{2}-01$/.test(pl.start || "")) cur.start = pl.start; else if (pl.start === "" || pl.start === null) delete cur.start; else throw new Error("Abrechnungsbeginn als JJJJ-MM-01"); }
+    if (op === "vaack") { if (pl.liveSince) cur.ackLive = String(pl.liveSince).slice(0, 40); else if (/^[a-z0-9-]{1,20}$/.test(String(pl.src || ""))) cur.ackSrc = String(pl.src); else throw new Error("liveSince oder src fehlt"); }
+    if (op === "vaswitch") { if (pl.undo === true) delete cur.switch; else if (pl._switch && typeof pl._switch === "object") cur.switch = pl._switch; else throw new Error("keine_umstellungsdaten"); }
+    o.valuero[k] = cur;
   } else throw new Error("bad_op");
   if (!writeBilling(o)) throw new Error("save_failed");
   return o;
 }
+if (process.env.NODE_ENV === "test") global.__fscBillingTest = { billingOp, readBilling, BILLING_FILE };   // nur Tests (test/plattform-abrechnung.test.js)
 
 // ── Railway: echte Kosten je Projekt (letzte 30 Tage, Listenpreise) ──
 let RWCOST = { at: 0, data: null, p: null };
@@ -1873,7 +1970,7 @@ function cockpitSites(snap) {
   zones.forEach(z => { if (used[z.name]) return; list.push({ key: "cf:" + z.name, name: z.name, domain: z.name, domains: [z.name], url: "https://" + z.name, up: z.up, status: null, rwId: null, requests7d: z.requests7d || 0 }); });
   return list.sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
-function siteCfgOf(bill, s) { const c = (bill.sites && bill.sites[s.key]) || {}; return { active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name), w4y: Array.isArray(c.w4y) ? c.w4y : w4yDefault(s.name), w4yQty: +c.w4yQty || 1 }; }
+function siteCfgOf(bill, s) { const c = (bill.sites && bill.sites[s.key]) || {}; return { hidden: !!c.hidden, activeSince: /^\d{4}-\d{2}-\d{2}$/.test(c.activeSince || "") ? c.activeSince : null, active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name), w4y: Array.isArray(c.w4y) ? c.w4y : w4yDefault(s.name), w4yQty: +c.w4yQty || 1 }; }
 function perPeriodOf(price, per, period) { price = +price || 0; return per === "year" ? price * period / 12 : price * period; }
 function siteLinesOf(s, c, P) {
   const n = +P.period || 12, L = [];
@@ -1897,9 +1994,10 @@ function invLink(rec, sevById, oldest) {
   // Storniert: zählt weder als verrechnet noch als bezahlt (die Buchhaltung führt das Original als „bezahlt“ durch die Stornorechnung)
   if (s.cancelled) return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: 0, open: 0, state: "storniert", label: "storniert" + (s.stornoNr ? " (" + s.stornoNr + ")" : ""), due: s.due };
   const state = s.overdue ? "ueberfaellig" : s.status === 1000 ? "bezahlt" : s.status === 100 ? "entwurf" : (s.status === 200 || s.status === 750) ? "offen" : "sonst";
-  return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: s.paid, open: s.open, state, label: s.overdue ? "überfällig" : (INV_LABEL[s.status] || "?"), due: s.due };
+  return { id: s.id, nr: s.nr || rec.nr || "", date: s.date || rec.date, gross: s.gross, paid: s.paid, open: s.open, state, label: (s.overdue ? "überfällig" : (INV_LABEL[s.status] || "?")) + (s.credited ? " · Gutschrift " + String(s.credited.toFixed(2)).replace(".", ",") + " €" : ""), due: s.due, credited: s.credited || undefined };
 }
-function sumState(links) { return links.reduce((t, l) => { if (!l || l.state === "storniert") return t; t.invoiced += +l.gross || 0; t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
+// verrechnet = Rechnung abzüglich Gutschriften zu ihr (sonst stünde nach einer Gutschrift weiter „zu viel verrechnet“ da – zweite Korrektur droht)
+function sumState(links) { return links.reduce((t, l) => { if (!l || l.state === "storniert") return t; t.invoiced += (+l.gross || 0) - (+l.credited || 0); t.paid += l.state === "bezahlt" ? (+l.gross || 0) : (+l.paid || 0); t.open += +l.open || 0; return t; }, { invoiced: 0, paid: 0, open: 0 }); }
 
 function abgleichBuild(ctx) {
   const { year, today, sev, bill, sitesSnap, kochdu, valuero, blitz, blitzAll, kantineur } = ctx;
@@ -1914,8 +2012,9 @@ function abgleichBuild(ctx) {
   const P = bill.prices || {};
   const recs = key => (bill.invoices && bill.invoices[key]) || [];
   // 1) Websites (Hosting/Domain/Mail)
+  const monthsIncl = (a, b) => (+b.slice(0, 4) * 12 + +b.slice(5, 7)) - (+a.slice(0, 4) * 12 + +a.slice(5, 7)) + 1;   // angefangene Monate von a bis b
   cockpitSites(sitesSnap).forEach(s => {
-    const c = siteCfgOf(bill, s); if (c.own || !c.active) return;
+    const c = siteCfgOf(bill, s); if (c.own || !c.active || c.hidden) return;   // hidden: Website gibt es nicht mehr – nicht mehr fällig (WEB-7)
     const lines = siteLinesOf(s, c, P); const sum = round2(lines.reduce((a, l) => a + l.amount, 0)); if (sum <= 0) return;
     const recArr = recs("site:" + s.key), links = recArr.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
     const n = +P.period || 12, tax = isFinite(+P.taxRate) ? +P.taxRate : 20;
@@ -1926,29 +2025,56 @@ function abgleichBuild(ctx) {
     const storno = top > -1 && dead[top] && c.billedUntil === recArr[top].to;
     const liveTo = recArr.reduce((m, r, i) => (r && r.to && !dead[i] && r.to > m ? r.to : m), "");
     const billedUntil = !storno ? c.billedUntil : (recArr[top].from ? [ymdAdd(recArr[top].from, -1), liveTo].sort().pop() : liveTo) || null;
-    // Stichtag 1.1.: jährlich je Kalenderjahr verrechnet; fällig erst ab 1.1. (nie verrechnete nur im Jänner – nach Storno sofort)
+    // Stichtag 1.1.: jährlich je Kalenderjahr verrechnet; fällig erst ab 1.1. (nie verrechnete nur im Jänner – nach Storno sofort).
+    // Jahresmodus anteilig ab Startmonat (Simon 28.10.2026): mit Aktivierungsdatum (activeSince) ab diesem Monat bis 31.12., sofort fällig;
+    // nach einer Pause erst ab dem Monat der Wiederaufnahme. Ohne Aktivierungsdatum (vor dieser Regel aktiviert) wie bisher.
     const yearly = n === 12 && P.yearStart !== false;
-    const due = storno && !billedUntil ? true : yearly ? (billedUntil ? billedUntil < today : today.slice(5, 7) === "01") : (!billedUntil || billedUntil < today);
-    const from = billedUntil ? ymdAdd(billedUntil, 1) : (yearly ? today.slice(0, 4) + "-01-01" : today), to = yearly ? from.slice(0, 4) + "-12-31" : ymdAdd(ymdAddMonths(from, n), -1), span = deDate(from) + " – " + deDate(to);
+    const startM = yearly && c.activeSince ? c.activeSince.slice(0, 8) + "01" : "";
+    let from = billedUntil ? ymdAdd(billedUntil, 1) : (yearly ? (startM || today.slice(0, 4) + "-01-01") : today);
+    if (startM && startM > from) from = startM;
+    const due = storno && !billedUntil ? true : yearly ? (billedUntil ? billedUntil < today : (!!startM || today.slice(5, 7) === "01")) : (!billedUntil || billedUntil < today);
+    const to = yearly ? from.slice(0, 4) + "-12-31" : ymdAdd(ymdAddMonths(from, n), -1);
     const st = sumState(links);
+    // Rechnung für einen Zeitraum: fac = Anteil am Abrechnungszeitraum (Jahresmodus: angefangene Monate ÷ 12)
+    const mk = (f, t, fac) => { const sp = deDate(f) + " – " + deDate(t), mo = monthsIncl(f, t), part = fac < 0.999 ? " (anteilig " + mo + " von " + n + " Monaten)" : "", ls = lines.map(l => ({ name: l.name, amount: round2(l.amount * fac) }));
+      return { amount: round2(ls.reduce((a, l) => a + l.amount, 0)), action: { kind: "site", title: "Rechnung · " + s.name, contactName: c.customer || s.name, deliveryDate: f, deliveryDateUntil: t, headText: "Leistungen für " + (s.domain || s.name) + " im Zeitraum " + sp + ".",
+        items: ls.map(l => ({ name: l.name, text: "Zeitraum " + sp + part, qty: 1, priceGross: round2(P.gross ? l.amount : l.amount * (1 + tax / 100)), taxRate: tax })),
+        after: { billing: { key: "site:" + s.key, from: f, to: t, label: s.name }, siteCustomer: c.customer ? null : s.key } } }; };
+    const cur = mk(from, to, yearly ? Math.min(12, Math.max(1, monthsIncl(from, to))) / 12 : 1);
     items.push({ src: "website", key: "site:" + s.key, name: c.customer || s.name, sub: (s.domain || s.name) + " · " + (storno && due ? "storniert – wieder zu verrechnen" : billedUntil ? "verrechnet bis " + deDate(billedUntil) : "noch nie verrechnet"),
-      unbilled: due ? sum : 0, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), refund: 0, billedUntil: billedUntil || null, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
-      action: due ? { kind: "site", title: "Rechnung · " + s.name, contactName: c.customer || s.name, deliveryDate: from, headText: "Leistungen für " + (s.domain || s.name) + " im Zeitraum " + span + ".",
-        items: lines.map(l => ({ name: l.name, text: "Zeitraum " + span, qty: 1, priceGross: round2(P.gross ? l.amount : l.amount * (1 + tax / 100)), taxRate: tax })),
-        after: { billing: { key: "site:" + s.key, from, to, label: s.name }, siteCustomer: c.customer ? null : s.key } } : null });
+      unbilled: due ? cur.amount : 0, invoiced: round2(st.invoiced), paid: round2(st.paid), open: round2(st.open), refund: 0, billedUntil: billedUntil || null, storno: storno && due ? true : undefined, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
+      next: { from, to, amount: cur.amount, date: due ? from : (billedUntil ? (from > today ? from : ymdAdd(billedUntil, 1)) : (yearly ? (+today.slice(0, 4) + 1) + "-01-01" : today)) }, nextAction: due ? undefined : cur.action, recCount: recArr.length, action: due ? cur.action : null });
+    // Storno einer früheren Periode (WEB-2): jeder stornierte Zeitraum vor „verrechnet bis“, den kein gültiger Eintrag abdeckt, wird ein eigener Posten
+    // (eigener Schlüssel je Zeitraum, damit „Ausblenden“ nur diesen trifft; die Abrechnung landet trotzdem unter site:<Website>).
+    const gaps = {};
+    recArr.forEach((r, i) => {
+      if (!dead[i] || !r || !r.from || !r.to || !billedUntil || r.to > billedUntil || gaps[r.from]) return;
+      if (recArr.some((q, j) => !dead[j] && q && q.from && q.to && q.from <= r.from && q.to >= r.to)) return;
+      gaps[r.from] = 1; const g = mk(r.from, r.to, yearly ? Math.min(12, Math.max(1, monthsIncl(r.from, r.to))) / 12 : 1);
+      items.push({ src: "website", key: "site:" + s.key + "@" + r.from, name: c.customer || s.name, sub: (s.domain || s.name) + " · storniert (" + (links[i].label || "storniert") + ") – Zeitraum " + deDate(r.from) + " – " + deDate(r.to) + " wieder zu verrechnen",
+        unbilled: g.amount, invoiced: 0, paid: 0, open: 0, refund: 0, billedUntil: billedUntil || null, gap: { site: "site:" + s.key, from: r.from, to: r.to }, storno: true, last: links[i], invoices: [links[i]], action: g.action });
+    });
   });
-  // 2) kochdu: Bar-Gebühren je Restaurant (Online-Provisionen werden automatisch einbehalten)
+  // 2) kochdu: Bar-Gebühren je Restaurant. kochdu rechnet seit 15.10.2026 selbst ab (Monatsrechnung am 1., Online-Provisionen behält Mollie ein):
+  //    keine eigene Rechnung mehr (KO-4); „zu verrechnen“ ist nur der Rückstand abgeschlossener Monate (barDueCents) – Ein-Klick dafür im kochdu-Reiter
+  //    (billMonth); der laufende Monat (barCurrentMonthCents) kommt am 1. automatisch. Die Monatsrechnungen von kochdu werden verlinkt (KO-3/X5),
+  //    verrechnet/bezahlt/offen kommen aus der Buchhaltung. Ältere kochdu-Version ohne barDueCents: offen wie bisher (inkl. laufendem Monat), ohne Aktion.
   ((kochdu && kochdu.restaurants) || []).forEach(r => {
-    const open = round2((+r.barOpenCents || 0) / 100), settled = round2((+r.barSettledCents || 0) / 100), online = round2((+r.onlineProvisionCents || 0) / 100);
-    const links = recs("kochdu:" + r.id).map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-    if (open < 0.005 && settled < 0.005 && !links.length && online < 0.005) return;
-    const st = sumState(links);
-    const since = r.lastSettledAt ? deDate(String(r.lastSettledAt).slice(0, 10)) : "", todayDE = deDate(today);
-    items.push({ src: "kochdu", key: "kochdu:" + r.id, name: r.name || "Restaurant", sub: (+r.barOrders || 0) + " Bar-Bestellungen · Online-Provision " + online.toFixed(2).replace(".", ",") + " € (automatisch)",
-      unbilled: open, invoiced: round2(Math.max(st.invoiced, settled)), paid: round2(st.paid), open: round2(st.open), refund: 0, settledWithoutInvoice: round2(Math.max(0, settled - st.invoiced)), last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
-      action: open > 0.005 ? { kind: "kochdu", title: "Rechnung · kochdu · " + (r.name || ""), contactName: r.name || "", headText: "kochdu-Gebühren für Bestellungen mit Barzahlung" + (since ? " seit " + since : "") + " bis " + todayDE + ".",
-        items: [{ name: "kochdu Vermittlungsgebühren (Barzahlungen)", text: (+r.barOrders || 0) + " Bar-Bestellungen" + (since ? " seit " + since : "") + " bis " + todayDE, qty: 1, priceGross: open, taxRate: 20 }],
-        after: { billing: { key: "kochdu:" + r.id, label: r.name || "" }, kochduSettle: { restaurantId: r.id, amountCents: Math.round(open * 100) } } } : null });
+    const hasDue = r.barDueCents != null, open = round2((+(hasDue ? r.barDueCents : r.barOpenCents) || 0) / 100), cur = round2((+r.barCurrentMonthCents || 0) / 100);
+    const settled = round2((+r.barSettledCents || 0) / 100), online = round2((+r.onlineProvisionCents || 0) / 100);
+    const own = recs("kochdu:" + r.id).map(link), ko = (r.invoices || []).filter(i => i && i.docId && !i.deleted && (i.docType || "Invoice") === "Invoice")
+      .map(i => link({ id: String(i.docId), nr: i.nr || "", date: String(i.at || "").slice(0, 10) || (i.month ? i.month + "-01" : ""), gross: (+(i.docGrossCents != null ? i.docGrossCents : i.grossCents) || 0) / 100 }));
+    const seenId = {}, links = own.concat(ko).filter(l => { if (!l) return false; if (!l.id) return true; if (seenId[l.id]) return false; seenId[l.id] = 1; linked[l.id] = 1; return true; });
+    if (open < 0.005 && cur < 0.005 && settled < 0.005 && !links.length && online < 0.005) return;
+    const st = sumState(links), stOwn = sumState(own.filter(Boolean));
+    // per Monatsrechnung verrechnet (neue kochdu-Version liefert es, sonst die verlinkten Monatsrechnungen) – nur der Rest ist „ohne Rechnung“
+    const viaMonth = r.barInvoicedCents != null ? round2(((+r.barInvoicedCents || 0) + (+r.barBalancedCents || 0)) / 100) : round2(sumState(ko.filter(Boolean)).invoiced);
+    const dead = ko.filter(l => l && l.state === "storniert");
+    items.push({ src: "kochdu", key: "kochdu:" + r.id, name: r.name || "Restaurant", sub: (+r.barOrders || 0) + " Bar-Bestellungen · Online-Provision " + online.toFixed(2).replace(".", ",") + " € (automatisch)" +
+        (cur > 0.005 ? " · laufend " + cur.toFixed(2).replace(".", ",") + " € – wird am 1. automatisch verrechnet" : !hasDue && open > 0.005 ? " · inkl. laufendem Monat – kochdu verrechnet am 1. automatisch" : "") +
+        (dead.length ? " · Monatsrechnung " + (dead[dead.length - 1].nr || "") + " storniert – im kochdu-Reiter neu abrechnen" : "") + (r.billingExclude ? " · von der Barabrechnung ausgenommen" : ""),
+      unbilled: r.billingExclude ? 0 : open, invoiced: round2(Math.max(st.invoiced, settled)), paid: round2(st.paid), open: round2(st.open), refund: 0, pendingAuto: cur, auto: true,
+      settledWithoutInvoice: round2(Math.max(0, settled - viaMonth - stOwn.invoiced)), last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(), action: null });
   });
   // 3) VALUERO: Vermittlungsgebühren je Objekt – quartalsweise am 1. (1.1./1.4./1.7./1.10.) für das abgelaufene Quartal,
   //    nach Aufenthalt (Anreisemonat), nicht nach Buchungsdatum: bis dahin stornierte Buchungen fallen von selbst heraus.
@@ -1957,30 +2083,106 @@ function abgleichBuild(ctx) {
   const yEnd = String(year) + "-12-31", dueThrough = qEnd(today <= yEnd ? today : ymdAdd(yEnd, 1));   // letzter Tag des zuletzt abgeschlossenen Quartals
   const nextQ = ymdAdd(qEnd(ymdAddMonths(dueThrough.slice(0, 8) + "01", 4)), 1);                    // nächster Abrechnungstag
   const vaPrevBy = {}; (((ctx.valueroPrev && ctx.valueroPrev.objects) || [])).forEach(o => { vaPrevBy[o.key] = o; });
-  const winStart = (+year - 1) + "-01-01";
+  const winStart = (+year - 1) + "-01-01", prevEnd = (+year - 1) + "-12-31";
+  // Vorjahr nicht geladen (Abruf gescheitert/Zeitüberschreitung oder Quelle meldet Fehler) → Zeiträume im Vorjahr nicht beurteilbar (VA-2)
+  const vaPrevMissing = k => !ctx.valueroPrev || (ctx.valueroPrev.missing || []).some(x => x.key === k);
+  const VS = bill.valuero || {}, eu = v => round2(v).toFixed(2).replace(".", ",") + " €";
+  const monDE = ym => { const M = ["Jänner", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]; return M[+String(ym).slice(5, 7) - 1] + " " + String(ym).slice(0, 4); };
+  // Abrechnungen eines Hauses im Fenster (Vorjahr + gewähltes Jahr); stornierte zählen nicht (bleiben zur Anzeige in invoices)
+  const vaRecs = k => { const all = recs("valuero:" + k).filter(x => String(x.to || x.date || "") >= winStart), links = all.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
+    const net = all.map((x, i) => (+x.gross || 0) - (+(links[i] && links[i].credited) || 0)), ok = all.map((x, i) => !(links[i] && links[i].state === "storniert")), live = all.filter((x, i) => ok[i]);   // Gutschriften zur Rechnung abziehen
+    return { links, live, billedSum: round2(all.reduce((a, x, i) => a + (ok[i] ? net[i] : 0), 0)), invoicedYear: round2(all.reduce((a, x, i) => a + (ok[i] && String(x.date || "").slice(0, 4) === String(year) ? net[i] : 0), 0)),   // „Verrechnet <Jahr>“
+      st: sumState(links.filter(l => l.state !== "manuell")), billedUntil: live.reduce((m, x) => (x.to && x.to > m ? x.to : m), "") }; };
+  // Antonhaus: Ein-Klick-Vorschlag „Umstellung auf Anreise übernehmen“ (VA-1) – was bis zum Stichtag nach Eingang verrechnet wurde, gegen die Angaben von Antonhaus
+  const vaSwitchLines = (t, arr) => { const cut = t.cutoffDate || "2026-09-30", pre = arr.filter(x => !x.to || x.to <= cut), billed = round2(pre.reduce((a, x) => a + (+x.gross || 0), 0)), nrs = pre.map(x => (x.id ? x.nr : "Startwert")).filter(Boolean).join(" + ");
+    const legacyT = round2((t.legacyMonths || []).reduce((a, m) => a + (+m.provisionCents || 0), 0) / 100), D = round2(legacyT - billed), tol = 0.01 * Math.max(1, (t.legacyMonths || []).length);
+    return ["Bis " + deDate(cut) + " nach Buchungseingang verrechnet: " + eu(billed) + (nrs ? " (" + nrs + ")" : "") + " – bleibt so bestehen",
+      "Antonhaus rechnet dieselben Buchungen heute (Regel vom 01.10.2026): " + eu(legacyT),
+      "Davon Anreise ab " + deDate(ymdAdd(cut, 1)) + ": " + eu((+t.prebilledArrivalAfterCutoffCents || 0) / 100) + " – wird bei den Anreise-Quartalen abgezogen und auf der Rechnung ausgewiesen",
+      +t.notPrebilledArrivalUntilCutoffCents > 0 ? "Nie verrechnete Anreisen bis " + deDate(cut) + " (erst danach eingegangen bzw. angenommen): " + eu(t.notPrebilledArrivalUntilCutoffCents / 100) + " – erscheint danach als Nachverrechnung" : "",
+      Math.abs(D) > tol ? (D < 0 ? "Abweichung " + eu(D) + ": seither storniert oder gesenkt – erscheint danach als „zu viel verrechnet“ (Gutschrift prüfen)" : "Abweichung +" + eu(D) + ": damals noch nicht bestätigt oder seither gestiegen – erscheint danach als Nachverrechnung") : "Abgleich mit den verrechneten Beträgen: passt"].filter(Boolean); };
+  // Quelle ohne gültige Antwort (Fehler, 502/503, ok:false) bzw. ganzer Abruf gescheitert: Hinweis statt Verrechnen/Erstattung (VA-2)
+  const vaKeys = new Set(((valuero && valuero.objects) || []).map(o => "valuero:" + o.key)), vaMiss = ((valuero && valuero.missing) || []).slice();
+  if (!valuero && (ctx.valueroConfigured != null ? ctx.valueroConfigured : !!(VALUERO_PARTNER.token || ANTONHAUS.token || ALPINAPPART.key))) Object.keys(bill.invoices || {}).filter(k => k.indexOf("valuero:") === 0).forEach(k => vaMiss.push({ key: k.slice(8), error: "Gebührendaten VALUERO fehlen" }));
+  vaMiss.forEach(x => {
+    const key = "valuero:" + x.key; if (vaKeys.has(key)) return; vaKeys.add(key);
+    const R = vaRecs(x.key), lbl = (recs(key).map(r => String(r.label || "").replace(/\s*\(.*\)\s*$/, "")).filter(Boolean).pop()) || x.name || x.key, msg = (x.error || "Gebührendaten fehlen") + " – neu laden";
+    items.push({ src: "valuero", key, name: x.name || lbl, sub: msg, unbilled: 0, invoiced: R.billedSum, invoicedYear: R.invoicedYear, paid: round2(R.st.paid), open: round2(R.st.open), refund: 0, nextBilling: nextQ, billedUntil: R.billedUntil || null,
+      blocked: msg, missing: true, last: R.links[R.links.length - 1] || null, invoices: R.links.slice(-4).reverse(), action: null });
+  });
   ((valuero && valuero.objects) || []).forEach(o => {
+    const key = "valuero:" + o.key, set = VS[o.key] || {}, notes = [], recAll = recs(key);
     const months = [].concat((vaPrevBy[o.key] && vaPrevBy[o.key].months) || [], o.months || []).filter(m => /^\d{4}-\d{2}$/.test(m.month || ""));
-    const sumM = (a, b) => round2(months.filter(m => m.month + "-01" >= a && m.month + "-01" <= b).reduce((t, m) => t + (+m.provisionCents || 0), 0) / 100);
-    const all = recs("valuero:" + o.key).filter(x => String(x.to || x.date || "") >= winStart);
-    const links = all.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-    const live = all.filter((x, i) => !(links[i] && links[i].state === "storniert"));   // stornierte Abrechnungen zählen nicht (bleiben zur Anzeige in invoices)
-    const billedSum = round2(live.reduce((a, x) => a + (+x.gross || 0), 0));
-    const invoicedYear = round2(live.filter(x => String(x.date || "").slice(0, 4) === String(year)).reduce((a, x) => a + (+x.gross || 0), 0));   // „Verrechnet <Jahr>“
-    const st = sumState(links.filter(l => l.state !== "manuell"));
-    const billedUntil = live.reduce((m, x) => (x.to && x.to > m ? x.to : m), "");
+    // Antonhaus nach der Umstellung: Schnappschuss (bei Simons Bestätigung gespeichert) = je Anreisemonat schon mit Startwert/RE-1272 nach Eingang verrechnet
+    const sw = o.key === "antonhaus" && set.switch && set.switch.prebilledByMonth ? set.switch : null;
+    // Monatswert netto = Gebühr − eingespielte Altbuchungen (nie verrechnen, Simon 28.10.2026; nicht bei Antonhaus, dort deckt die Umstellung den Altbestand)
+    //   − bei Online-Zahlung schon einbehalten (VA-3) − schon nach Eingang verrechnet (Antonhaus). over = mehr einbehalten/verrechnet als heute angefallen (nie still abziehen)
+    const P3 = m => { const g0 = +m.provisionCents || 0, imp = o.key === "antonhaus" ? 0 : Math.min(Math.max(0, g0), +m.importedCents || 0), g = g0 - imp, mol = +m.mollieFeesCents || 0, molD = Math.min(mol, Math.max(0, g)),
+      pre = sw ? Math.max(0, +sw.prebilledByMonth[m.month] || 0) : 0, preD = Math.max(0, Math.min(pre, g - molD));
+      return { g0, gross: g, imp, mol: molD, pre: preD, over: (mol - molD) + (pre - preD), net: g - molD - preD, cxl: +m.mollieFeesCancelledCents || 0 }; };
+    // schon verrechnete Monate, für die die Quelle nichts mehr liefert (z. B. Buchung storniert), trotzdem prüfen
+    if (sw) Object.keys(sw.prebilledByMonth).forEach(mk => { if (/^\d{4}-\d{2}$/.test(mk) && mk >= winStart.slice(0, 7) && mk <= yEnd.slice(0, 7) && !months.some(x => x.month === mk)) months.push({ month: mk, provisionCents: 0 }); });
+    const sumP = (a, b, f) => round2(months.filter(m => m.month + "-01" >= a && m.month + "-01" <= b).reduce((t, m) => t + P3(m)[f], 0) / 100);
+    const sumM = (a, b) => sumP(a, b, "net");
+    const R = vaRecs(o.key), billedUntil = R.billedUntil, billedSum = R.billedSum;
     const legacy = billedUntil ? 0 : billedSum;                                                       // Altbestand ohne Zeitraum
+    // Abrechnungsbeginn (VA-7): im Plattform-Admin festgelegt oder hier bestätigt; gilt nur für noch nicht verrechnete Monate
+    const start = o.billingStart || (/^\d{4}-\d{2}-01$/.test(set.start || "") ? set.start : null);
     const first = (months.find(m => (+m.provisionCents || 0) > 0) || {}).month;
-    const from = billedUntil ? ymdAdd(billedUntil, 1) : (first ? first + "-01" : winStart);
+    let from = billedUntil ? ymdAdd(billedUntil, 1) : (first ? first + "-01" : winStart);
+    if (start && start > from) from = start;
     const gross = from <= dueThrough ? sumM(from, dueThrough) : 0;
     const open = round2(Math.max(0, gross - legacy));
-    const covered = billedUntil ? sumM(winStart, billedUntil) : 0, refund = billedUntil ? round2(Math.max(0, billedSum - covered)) : round2(Math.max(0, legacy - gross));
+    const snapIn = sw && R.live.some(x => !x.to || x.to <= sw.cutoff) ? round2((+sw.totalCents || 0) / 100) : 0;   // Startwert + RE-1272 decken den Schnappschuss ab
+    // abgedeckt ab dem ersten abgerechneten Zeitraum (Monate davor, z. B. vor dem Abrechnungsbeginn, zählen nicht); ohne Zeiträume wie bisher ab Fensterbeginn
+    const fromMin = R.live.reduce((m, x) => (x.from && (!m || x.from < m) ? x.from : m), ""), periods = !!sw || (!!fromMin && !R.live.some(x => !x.from && !x.adj));
+    const covStart = !sw && periods ? [winStart, fromMin, start || ""].sort().pop() : winStart;
+    const covered = billedUntil ? round2(sumM(covStart, billedUntil) + snapIn) : 0, refund0 = billedUntil ? round2(Math.max(0, billedSum - covered)) : round2(Math.max(0, legacy - gross));
+    const refund = refund0 > 0.02 ? refund0 : 0;   // bis 2 Cent: Cent-Rundung älterer Cockpit-Rechnungen (X3), keine Erstattung
+    // Nachverrechnung (VA-4): in schon verrechneten Monaten seither dazugekommen – nur als eigener Ein-Klick-Entwurf, nie still in die Quartalsrechnung
+    const catchup = billedUntil && periods ? round2(Math.max(0, covered - billedSum)) : 0;
+    // Sperren: Daten fehlen, falsche Datumsbasis, Umstellung/Freigabe/Abrechnungsbeginn offen → kein Verrechnen, keine Erstattung, nur Hinweis (+ Ein-Klick-Vorschlag)
+    let blocked = "", proposal = null;
+    const lastRec = recAll[recAll.length - 1] || null, lastSrc = lastRec && lastRec.src ? lastRec.src : "";
+    if (vaPrevMissing(o.key) && (from <= prevEnd || R.live.length > 0)) blocked = "Gebührendaten " + (+year - 1) + " fehlen – neu laden";
+    else if ((o.basis || "arrival") !== "arrival") blocked = o.src === "antonhaus" ? "Antonhaus liefert noch nach Buchungseingang – Umstellung auf Anreise ausstehend (neue Antonhaus-Version nötig)" : o.src === "alpinappart" ? "Alpinappart kommt nicht von der Partner-Plattform – verrechnet wird nur über die Plattform (ab dem ersten Monat live)" : "Datumsbasis „" + (o.basis || "?") + "“ statt Anreise – nicht verrechenbar";
+    else if (o.key === "antonhaus" && !sw && recAll.length) {
+      blocked = "Umstellung auf Anreise noch nicht bestätigt – bis dahin kein Verrechnen";
+      if (o.transition) proposal = { op: "vaswitch", key: o.key, label: "Umstellung übernehmen", title: "Antonhaus: Umstellung Buchungseingang → Anreise", lines: vaSwitchLines(o.transition, recAll) };
+      else notes.push("Für die Umstellung fehlen die Daten von antonhaus.at (neue Antonhaus-Version mit „basis=arrival“).");
+    } else if (lastSrc && lastSrc !== o.src && set.ackSrc !== o.src) {
+      blocked = "Quelle gewechselt (" + lastSrc + " → " + o.src + ") – bitte prüfen, ob Zeiträume und Beträge passen";
+      proposal = { op: "vaack", key: o.key, src: o.src, label: "Passt – weiter ab " + deDate(from) + " verrechnen" };
+    } else if (o.src === "partner" && o.billingLiveSince && recAll.length && String(o.billingLiveSince).slice(0, 10) > String((lastRec && lastRec.date) || "") && set.ackLive !== o.billingLiveSince) {
+      blocked = "Am " + deDate(String(o.billingLiveSince).slice(0, 10)) + " (neu) für die Abrechnung freigegeben – nach der letzten Abrechnung. Bitte Quelle und Zeitraum prüfen";
+      proposal = { op: "vaack", key: o.key, liveSince: o.billingLiveSince, label: "Passt – weiter ab " + deDate(from) + " verrechnen" };
+    } else if (!recAll.length && !start) {
+      blocked = "Abrechnungsbeginn festlegen – erst dann wird verrechnet";
+      proposal = { op: "vastart", key: o.key, start: o.billingStartSuggestion || "", label: o.billingStartSuggestion ? "Ab " + monDE(o.billingStartSuggestion) + " verrechnen" : "Abrechnungsbeginn festlegen",
+        lines: [o.firstOwnBookingOn ? "Erste eigene Buchung auf der Plattform: " + deDate(o.firstOwnBookingOn) : "", o.legacyBookings ? o.legacyBookings + " eingespielte Altbuchungen – werden nie verrechnet" : "", "Verrechnet wird ab dem ersten Monat live auf der Plattform (deine Regel vom 28.10.2026)."].filter(Boolean) };
+    }
+    const off = !!blocked, span = deDate(from) + " – " + deDate(dueThrough);
+    const due = f => (from <= dueThrough ? sumP(from, dueThrough, f) : 0), fullDue = due("gross"), molDue = due("mol"), preDue = due("pre"), impDue = due("imp");
+    const over = sumP(winStart, "9999-12-31", "over"), cxl = sumP(winStart, "9999-12-31", "cxl");
+    if (impDue > 0.005) notes.push("Eingespielte Altbuchungen im fälligen Zeitraum nicht verrechnet: " + eu(impDue));
+    if (refund0 > 0.005 && !refund) notes.push("Rundungsdifferenz " + eu(refund0) + " (Cent-Rundung einer älteren Rechnung) – kein Handlungsbedarf");
+    if (over > 0.005) notes.push((sw ? "Mit " + (sw.invoiceNr || "RE-1272") + " nach der damaligen Regel mehr verrechnet als heute angefallen (z. B. 5 % statt 2 % Direkt): " : "Per Online-Zahlung mehr einbehalten als heute angefallen: ") + eu(over) + " – Gutschrift nur, wenn du das so entscheidest");
+    if (cxl > 0.005) notes.push("Zu stornierten Buchungen wurde schon Provision per Online-Zahlung einbehalten: " + eu(cxl) + " – Gutschrift prüfen");
+    if (!off && catchup > 0.02) notes.push("Nachverrechnung möglich: " + eu(catchup) + " (Anreisen bis " + deDate(billedUntil) + ", nach der Abrechnung dazugekommen oder gestiegen)");
     const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufendes Quartal (+ spätere Anreisen)
-    const span = deDate(from) + " – " + deDate(dueThrough);
-    items.push({ src: "valuero", key: "valuero:" + o.key, name: o.name, sub: (o.ratesLabel || "") + " · " + (billedUntil ? "verrechnet bis " + deDate(billedUntil) : "quartalsweise nach Aufenthalt") + " · nächste Abrechnung " + deDate(nextQ),
-      unbilled: open, invoiced: billedSum, invoicedYear, paid: round2(st.paid), open: round2(st.open), refund, accrued: round2(sumM(winStart, "9999-12-31")), pending, nextBilling: nextQ, billedUntil: billedUntil || null, last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(),
-      action: open > 0.005 ? { kind: "valuero", title: "Rechnung · VALUERO-Gebühren", contactName: o.name || "", deliveryDate: from, headText: "Vermittlungsgebühren VALUERO für Aufenthalte im Zeitraum " + span + ".",
-        items: [{ name: "VALUERO Vermittlungsgebühren", text: "Aufenthalte (Anreise) " + span + (o.ratesLabel ? " · " + o.ratesLabel : "") + (legacy > 0.005 ? " · abzüglich bereits verrechnet " + legacy.toFixed(2).replace(".", ",") + " €" : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: open, taxRate: 20 }],
-        after: { billing: { key: "valuero:" + o.key, from, to: dueThrough, label: o.name || o.key } } } : null });
+    const txt = "Aufenthalte (Anreise) " + span + (preDue > 0.005 || molDue > 0.005 ? ": " + eu(fullDue) : "") +
+      (preDue > 0.005 ? " · abzüglich bereits mit " + (sw.invoiceNr || "RE-1272") + " verrechnet (Buchungseingang bis " + deDate(sw.cutoff) + ") " + eu(preDue) : "") +
+      (molDue > 0.005 ? " · abzüglich bei Online-Zahlung bereits einbehalten " + eu(molDue) : "") + (o.ratesLabel ? " · " + o.ratesLabel : "") + (legacy > 0.005 ? " · abzüglich bereits verrechnet " + eu(legacy) : "") + " · lt. Buchungsaufstellung";
+    items.push({ src: "valuero", key, name: o.name, sub: (o.ratesLabel || "") + " · " + (billedUntil ? "verrechnet bis " + deDate(billedUntil) : "quartalsweise nach Aufenthalt") + " · nächste Abrechnung " + deDate(nextQ),
+      unbilled: off ? 0 : open, invoiced: billedSum, invoicedYear: R.invoicedYear, paid: round2(R.st.paid), open: round2(R.st.open), refund: off ? 0 : refund, accrued: sumP(winStart, "9999-12-31", "g0"), pending, nextBilling: nextQ, billedUntil: billedUntil || null,
+      blocked: blocked || undefined, proposal: proposal || undefined, notes: notes.length ? notes : undefined, catchup: off ? 0 : catchup, start: start || undefined, deducted: { mollie: molDue, prebilled: preDue, imported: impDue },
+      last: R.links[R.links.length - 1] || null, invoices: R.links.slice(-4).reverse(),
+      action: !off && open > 0.005 ? { kind: "valuero", title: "Rechnung · VALUERO-Gebühren", contactName: o.name || "", deliveryDate: from, deliveryDateUntil: dueThrough, headText: "Vermittlungsgebühren VALUERO für Aufenthalte im Zeitraum " + span + ".",
+        items: [{ name: "VALUERO Vermittlungsgebühren", text: txt, qty: 1, priceGross: open, taxRate: 20 }],
+        after: { billing: { key, from, to: dueThrough, label: o.name || o.key, src: o.src, basis: o.basis } } } : null,
+      catchupAction: !off && catchup > 0.02 ? { kind: "valuero", title: "Nachverrechnung · VALUERO-Gebühren", contactName: o.name || "", deliveryDate: billedUntil, headText: "Nachverrechnung Vermittlungsgebühren VALUERO für Aufenthalte bis " + deDate(billedUntil) + ", die nach der Abrechnung dazugekommen sind.",
+        items: [{ name: "VALUERO Vermittlungsgebühren – Nachverrechnung", text: "Anreisen bis " + deDate(billedUntil) + " (nach der Abrechnung nachgetragen oder gestiegen)" + (o.ratesLabel ? " · " + o.ratesLabel : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: catchup, taxRate: 20 }],
+        after: { billing: { key, label: (o.name || o.key) + " (Nachverrechnung)", adj: true, src: o.src, basis: o.basis } } } : null });
   });
   // 4) Blitzdings: jede bestätigte Buchung braucht eine Rechnung. Blitzdings legt sie bei Online-Zahlung/Firmenkunden selbst an
   //    (sevdeskInvoiceId), sonst Abgleich über Buchungsnummer bzw. Kunde + Betrag/Datum. „Zu verrechnen“ erst ab 14 Tage vor dem Event;
@@ -2062,7 +2264,9 @@ function abgleichBuild(ctx) {
     unbilled: 0, invoiced: round2((kantineur.revenueGrossCents || 0) / 100), paid: round2((kantineur.revenueGrossCents || 0) / 100), open: 0, refund: 0, auto: true, last: null, invoices: [], action: null });
   // Ausgeblendete Posten (bis der offene Betrag wieder steigt)
   const ign = bill.ignore || {};
-  items.forEach(x => { const g = ign[x.key]; if (g && x.unbilled > 0.005 && x.unbilled <= (+g.amount || 0) + 0.01) { x.ignored = { amount: x.unbilled, at: g.at, note: g.note || "" }; x.unbilled = 0; x.action = null; } });
+  // Websites: nur der ausgeblendete Zeitraum (mit „from“; ältere Einträge ohne „from“ nur für Zeiträume, die beim Ausblenden schon begonnen hatten) – Folgejahre kommen wieder (WEB-6)
+  const ignOk = (x, g) => { const f = x.src === "website" && x.action && x.action.after && x.action.after.billing ? x.action.after.billing.from : ""; return !f || (g.from ? g.from === f : f <= String(g.at || "").slice(0, 10)); };
+  items.forEach(x => { const g = ign[x.key]; if (g && x.unbilled > 0.005 && x.unbilled <= (+g.amount || 0) + 0.01 && ignOk(x, g)) { x.ignored = { amount: x.unbilled, at: g.at, note: g.note || "" }; x.unbilled = 0; x.action = null; } });
   // 6) Offene sevDesk-Rechnungen ohne Zuordnung (alle offenen, auch ältere)
   const unlinked = sevAllInv.filter(i => !linked[i.id] && (i.status === 200 || i.status === 750) && i.open > 0.005).map(i => ({ id: i.id, nr: i.nr, contact: i.contact, date: i.date, due: i.due, gross: i.gross, open: i.open, overdue: i.overdue }));
   const totals = items.reduce((t, x) => { t.unbilled += x.unbilled || 0; t.open += x.open || 0; t.refund += x.refund || 0; if (x.unbilled > 0.005) t.unbilledCount++; if (x.invoices.some(l => l && l.state === "fehlt")) t.missing++; return t; }, { unbilled: 0, open: 0, refund: 0, unbilledCount: 0, missing: 0 });
@@ -2295,7 +2499,7 @@ async function cockpitBuild(year, forceForecast) {
   const sites = cockpitSites(sitesSnap).map(s => {
     const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
     const doms = regDomainsOf(s.domains), domYear = doms.reduce((a, d) => a + (d.year || 0), 0);
-    const incomeYear = c.active && !c.own ? round2(siteLinesOf(s, c, P).reduce((a, l) => a + l.amount, 0) * 12 / (+P.period || 12)) : 0;
+    const incomeYear = c.active && !c.own && !c.hidden ? round2(siteLinesOf(s, c, P).reduce((a, l) => a + l.amount, 0) * 12 / (+P.period || 12)) : 0;
     const w4yY = w4yYear(c), costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear + w4yY);
     return Object.assign({}, s, { own: c.own, active: c.active, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), w4y: c.w4y, w4yQty: c.w4yQty, w4yYear: w4yY, incomeYear, costYear, result: round2(incomeYear - costYear) });
   });
@@ -3802,7 +4006,8 @@ async function handleAdmin(req, res, u, p) {
     return send(res, 200, JSON.stringify(readBilling()), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   if (p === "/admin/api/billing" && req.method === "POST") {
-    try { const pl = await sevBody(req, 100000); const o = billingOp(pl); return send(res, 200, JSON.stringify({ ok: true, billing: o }), TYPES[".json"]); }
+    try { const pl = await sevBody(req, 100000); delete pl._switch; if (pl.op === "vaswitch" && pl.undo !== true) pl._switch = await vaSwitchSnapshot(pl.key);
+      const o = billingOp(pl); return send(res, 200, JSON.stringify({ ok: true, billing: o }), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/railway-costs" && req.method === "GET") {

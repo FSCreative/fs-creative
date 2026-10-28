@@ -819,7 +819,7 @@ module.exports = function (D) {
   async function invoiceFromOrder(body) {
     const od = need("Order", body.order && body.order.id);
     const inv = { invoice: { contact: od.contact, address: od.address, addressCountry: od.addressCountry, contactPerson: od.contactPerson, header: "Rechnung", headText: od.headText, footText: "Zahlbar innerhalb von 14 Tagen ohne Abzug.", timeToPay: "14", taxRate: od.taxRate, taxType: od.taxType, taxSet: od.taxSet, taxRule: od.taxRule, invoiceType: "RE", origin: ref("Order", od.id), deliveryDate: iso(today()) },
-      invoicePosSave: positionsOf("Order", od.id).map((p, k) => ({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part })) };
+      invoicePosSave: positionsOf("Order", od.id).map((p, k) => Object.assign({ name: p.name, text: p.text, quantity: p.quantity, price: p.price, taxRate: p.taxRate, unity: p.unity, positionNumber: String(k), part: p.part }, p.grossPricing ? { grossPricing: true, priceGross: p.priceGross, discount: p.discount } : {})) };   // Bruttopreis-Angebot → Rechnung cent-gleich
     const r = await saveInvoice(inv);
     od.status = "1000"; await save("Order", od);
     return { objects: [r.objects.invoice] };

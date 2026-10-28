@@ -52,6 +52,7 @@ var NAV=[
   {sep:"Verwalten"},
   {id:"ct",label:"Kontakte",icon:"ct"},
   {id:"prod",label:"Produkte",icon:"prod"},
+  {id:"abgl",label:"Plattformen verrechnen",icon:"sync"},   /* Abgleich Plattformen ↔ Rechnungen (war seit 15.10.2026 nicht mehr erreichbar) */
   {id:"lock",label:"Festschreiben",icon:"lock"},
   {id:"mydata",label:"Meine Daten",icon:"id"},
   {id:"umstieg",label:"Firma & Einstellungen",icon:"set"}
@@ -578,7 +579,7 @@ function remDraftsCard(){
 }
 function dnPost(b,msg){ return F.api("/admin/api/fin/dunning",{body:b}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return; } DN=j; var r=j.result||[], bad=r.filter(function(x){ return !x.ok; });
   if(r.length){ F.toast(bad.length?(r.length-bad.length)+" gesendet, "+bad.length+" fehlgeschlagen: "+bad[0].error:(r.length===1?"Mahnung gesendet":r.length+" Mahnungen gesendet"),!!bad.length); F.load(true); } else if(msg) F.toast(msg); F.render(); }); }
-/* Aufgaben für Übersicht (Desktop + Handy): Mahnungen zur Freigabe, nicht versendete Mahnungen, VALUERO, offene USt-Zahllast */
+/* Aufgaben für Übersicht (Desktop + Handy): Mahnungen zur Freigabe, nicht versendete Mahnungen, Plattformen verrechnen, VALUERO, offene USt-Zahllast */
 function extraTasks(){ var t=[]; if(!DN) dnLoad();
   var rc=F.reviewCount?F.reviewCount():0; if(rc) t.push(["review",rc+(rc===1?" Vorschlag":" Vorschläge")+" zur Prüfung","Zuordnungen bestätigen oder ablehnen – nichts wird automatisch gebucht"]);
   if(!rc&&DN&&DN.ok&&DN.settings.enabled&&(DN.proposals||[]).length){ var n=DN.proposals.length; t.push(["dun",n+(n===1?" Mahnung":" Mahnungen")+" zur Freigabe","Mahnlauf – mit einem Klick senden"]); }
@@ -586,6 +587,13 @@ function extraTasks(){ var t=[]; if(!DN) dnLoad();
   /* VALUERO-Gebühren: fällig, sobald der Abgleich einen offenen Betrag zeigt – verrechnet wird unter Plattformen (nur Entwurf) */
   var vi=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return x.src==="valuero"&&x.unbilled>0.005; });
   if(vi.length){ var vs=vi.reduce(function(a,x){ return a+(+x.unbilled||0); },0); t.push(["valuero","VALUERO: "+eur(vs)+" fällig",vi.length+(vi.length===1?" Objekt":" Objekte")+" – unter Plattformen verrechnen","pltab:valuero"]); }
+  /* VALUERO gesperrt (Gebührendaten fehlen, Umstellung/Abrechnungsbeginn offen): sonst verschwände die Aufgabe genau am Stichtag */
+  var vb=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return x.src==="valuero"&&x.blocked; });
+  if(vb.length) t.push(["valuero","VALUERO: "+(vb.length===1?vb[0].name+" – ":vb.length+" Objekte – ")+"Verrechnen gesperrt",vb.length===1?vb[0].blocked:vb.map(function(x){ return x.name; }).join(", ")+" – Hinweis ansehen","pltab:valuero"+(vb.length===1?"~"+String(vb[0].key).replace(/^valuero:/,""):"")]);
+  /* Plattformen verrechnen (Websites, Blitzdings …): kochdu rechnet seit 15.10.2026 selbst monatlich ab, VALUERO hat die eigene Aufgabe oben */
+  var zi=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return x.unbilled>0.005&&x.src!=="kochdu"&&x.src!=="valuero"; });
+  if(zi.length){ var zs=zi.reduce(function(a,x){ return a+(+x.unbilled||0); },0), zn={}; zi.forEach(function(x){ zn[SRCN[x.src]||x.src]=1; });
+    t.push(["abgl",eur0(zs)+" zu verrechnen",zi.length+" Posten ohne Rechnung · "+Object.keys(zn).join(", ")]); }
   (F.uvaOpen?F.uvaOpen():[]).forEach(function(u){ t.push(["uva","USt-Zahllast "+u.short+" · "+eur0(u.amount),(u.due<F.D.today?"überfällig seit ":"fällig ")+de(u.due)+" – bis zur Zahlung offen","stgo:uva:"+u.key]); });
   return t; }
 function dunCard(){
@@ -851,7 +859,7 @@ function content(){
 var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["steuer","Steuern"]];
 var MMORE=[["Rechnungen & Belege",[["wkr","Wiederkehrende Rechnungen"],["rvou","Wiederkehrende Belege"],["dun","Mahnungen"],["cn","Gutschriften"],["orders","Angebote"]]],
   ["Bank & Steuern",[["pay","Zahlungsaufträge"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"],["uva","Voranmeldung (UVA)"],["anlagen","Abschreibungen"],["jab","Jahreserklärung"]]],
-  ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
+  ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen verrechnen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; if(g==="u1"||g==="prognose") g="steuer";
   var main=MNAV.some(function(n){ return n[0]===g; }), more=null; MMORE.forEach(function(sec){ sec[1].forEach(function(x){ if(x[0]===g) more=x[1]; }); });
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+(n[0]==="review"&&F.reviewCount&&F.reviewCount()?' ('+F.reviewCount()+')':'')+'</button>'; }).join("")+

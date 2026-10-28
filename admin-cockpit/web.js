@@ -90,10 +90,17 @@ function sitesAll(){
 }
 function siteBy(key){ return sitesAll().find(function(s){ return s.key===key; }); }
 function prices(){ return Object.assign({},DEFP,(B&&B.prices)||{}); }
+/* Abgleich-Posten des Servers (WEB-1): wirksames „verrechnet bis“ mit Storno-Erkennung, anteilige Beträge, stornierte frühere Zeiträume (gaps).
+   Nur solange er zum geladenen Abrechnungsstand passt (gleiche Zahl an Einträgen) – direkt nach dem Verrechnen gilt sonst der frische Stand. */
+function abItem(key){ var it=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).find(function(x){ return x.key==="site:"+key; })||null;
+  return it&&(it.recCount==null||it.recCount===invRecs(key).length)?it:null; }
+function abGaps(key){ return ((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return x.gap&&x.gap.site==="site:"+key&&x.unbilled>0.005&&!x.ignored; }); }
 function cfg(s){
   var c=(B&&B.sites&&B.sites[s.key])||{};
   if(!B) return {active:!!s.active,domain:false,hosting:false,mail:false,mailQty:1,extra:0,extraLabel:"",customer:s.customer||"",billedUntil:s.billedUntil||null,own:s.own!=null?!!s.own:OWN_RX.test(s.name),w4y:s.w4y||w4yDef(s.name),w4yQty:s.w4yQty||1};
-  return {hidden:!!c.hidden,active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:c.billedUntil||null,own:c.own!=null?!!c.own:OWN_RX.test(s.name),w4y:Array.isArray(c.w4y)?c.w4y:w4yDef(s.name),w4yQty:+c.w4yQty||1};
+  var ab=c.active&&!c.hidden?abItem(s.key):null;
+  return {hidden:!!c.hidden,active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:ab?ab.billedUntil:(c.billedUntil||null),own:c.own!=null?!!c.own:OWN_RX.test(s.name),w4y:Array.isArray(c.w4y)?c.w4y:w4yDef(s.name),w4yQty:+c.w4yQty||1,
+    ab:ab,gaps:ab?abGaps(s.key):[],storno:!!(ab&&ab.storno)};
 }
 function perPeriod(price,per,period){ price=+price||0; return per==="year"?price*period/12:price*period; }
 function siteLines(s,c){ var P=prices(), n=+P.period||12, L=[];
@@ -106,14 +113,18 @@ function siteLines(s,c){ var P=prices(), n=+P.period||12, L=[];
 function siteSum(s,c){ return siteLines(s,c).reduce(function(a,l){ return a+l.amount; },0); }
 /* Stichtag 1.1. (Standard): jährlich je Kalenderjahr verrechnet, fällig erst ab 1.1.; nie verrechnete Websites nur im Jänner fällig */
 function yearly(){ var P=prices(); return (+P.period||12)===12&&P.yearStart!==false; }
-function nextBill(c){ return c.billedUntil?ymdAdd(c.billedUntil,1):(yearly()?(F.D.today.slice(5,7)==="01"?F.D.today.slice(0,4):String(+F.D.today.slice(0,4)+1))+"-01-01":F.D.today); }
-function siteDue(c){ if(!c.active) return false; var t=F.D.today; if(!yearly()) return !c.billedUntil||c.billedUntil<t; return c.billedUntil?c.billedUntil<t:t.slice(5,7)==="01"; }
+function nextBill(c){ if(c.ab&&c.ab.next) return c.ab.next.date||c.ab.next.from; return c.billedUntil?ymdAdd(c.billedUntil,1):(yearly()?(F.D.today.slice(5,7)==="01"?F.D.today.slice(0,4):String(+F.D.today.slice(0,4)+1))+"-01-01":F.D.today); }
+function siteDue(c){ if(!c.active||c.hidden) return false; if(c.ab) return c.ab.unbilled>0.005||c.gaps.length>0; var t=F.D.today; if(!yearly()) return !c.billedUntil||c.billedUntil<t; return c.billedUntil?c.billedUntil<t:t.slice(5,7)==="01"; }
+/* fällig in €: laut Server (anteilig + stornierte Zeiträume), ohne Server-Posten die volle Periode */
+function dueAmt(s,c){ if(!siteDue(c)) return 0; if(c.ab) return Math.round(((+c.ab.unbilled||0)+c.gaps.reduce(function(a,g){ return a+(+g.unbilled||0); },0))*100)/100; return siteSum(s,c); }
 function invRecs(key){ return (B&&B.invoices&&B.invoices["site:"+key])||[]; }
 function lastInv(key){ var a=invRecs(key); return a[a.length-1]||null; }
 function sevInv(id){ return id&&F.D.sev?F.D.sev.invoices.find(function(i){ return i.id===id; }):null; }
 function invTag(rec){
   if(!rec.id) return '<span class="tag grey">ohne Rechnung</span>';
   var i=sevInv(rec.id); if(!i) return '<span class="tag grey">in der Buchhaltung</span>';
+  if(i.cancelled) return '<span class="tag grey">storniert'+(i.stornoNr?" ("+esc(i.stornoNr)+")":"")+'</span>';   /* storniertes Original hat intern Status 1000 – nie „bezahlt“ zeigen */
+  if(i.type==="SR") return '<span class="tag grey">Storno</span>';
   var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":i.status===750?"teilbezahlt":i.status===50?"deaktiviert":"offen";
   return '<span class="tag '+cls+'">'+lbl+'</span>';
 }
@@ -124,6 +135,8 @@ function invInfo(rec){
 }
 function stateTag(c){
   if(!c.active) return '<span class="tag grey">wird nicht verrechnet</span>';
+  if(c.gaps&&c.gaps.length) return '<span class="tag warn">storniert – '+c.gaps.map(function(g){ return de(g.gap.from)+" – "+de(g.gap.to); }).join(", ")+' wieder zu verrechnen</span>';
+  if(c.storno&&siteDue(c)) return '<span class="tag warn">storniert – wieder zu verrechnen ab '+de(nextBill(c))+'</span>';
   if(c.billedUntil&&!siteDue(c)) return '<span class="tag ok">verrechnet bis '+de(c.billedUntil)+'</span>';
   if(!siteDue(c)) return '<span class="tag grey">nächste Rechnung '+de(nextBill(c))+'</span>';
   return '<span class="tag warn">'+(c.billedUntil?"fällig seit "+de(ymdAdd(c.billedUntil,1)):"noch nie verrechnet")+'</span>';
@@ -132,7 +145,9 @@ function stateTag(c){
 function fscRevenue(){
   var r={paid:0,open:0,count:0}, yr=String(F.D.year); if(!B||!B.invoices) return r;
   Object.keys(B.invoices).forEach(function(k){ if(k.indexOf("site:")!==0) return;
-    (B.invoices[k]||[]).forEach(function(inv){ if(String(inv.date||"").slice(0,4)!==yr) return; r.count++; var x=sevInv(inv.id);
+    (B.invoices[k]||[]).forEach(function(inv){ if(String(inv.date||"").slice(0,4)!==yr) return; var x=sevInv(inv.id);
+      if(x&&(x.cancelled||x.type==="SR")) return;   /* storniert: weder bezahlt noch offen (wie Plattformen › Überblick) */
+      r.count++;
       if(x){ if(x.status===100||x.status===50){ r.open+=+inv.gross||0; return; } r.paid+=(+x.paid||0); r.open+=(+x.open||0); }
       else r.open+=(+inv.gross||0); }); });
   return r;
@@ -264,14 +279,14 @@ function vBill(){
   var custAll=all.filter(function(x){ return !x.c.own; }), own=all.filter(function(x){ return x.c.own; });
   var act=custAll.filter(function(x){ return x.c.active; });
   var perYear=act.reduce(function(a,x){ return a+siteSum(x.s,x.c)*12/n; },0);
-  var due=act.filter(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; }), dueSum=due.reduce(function(a,x){ return a+siteSum(x.s,x.c); },0);
+  var due=act.filter(function(x){ return dueAmt(x.s,x.c)>0.005; }), dueSum=due.reduce(function(a,x){ return a+dueAmt(x.s,x.c); },0);
   /* Kosten/Jahr: aktive Kundenseiten + eigene Projekte */
   var costOwn=Math.round(own.reduce(function(a,x){ return a+siteCosts(x.s).year; },0)*100)/100;
   var costAct=Math.round((act.reduce(function(a,x){ return a+siteCosts(x.s).year; },0)+costOwn)*100)/100;
   var noPrice=!(+P.domain||+P.hosting||+P.mail), rev=fscRevenue();
   var bf=U.bf, cust=custAll.filter(function(x){
     if(!hit(x.s.name+" "+(x.s.domains||[]).join(" ")+" "+x.c.customer)) return false;
-    if(bf==="due") return siteDue(x.c)&&siteSum(x.s,x.c)>0; if(bf==="active") return x.c.active; if(bf==="inactive") return !x.c.active; if(bf==="bad") return siteBad(x.s); return true; });
+    if(bf==="due") return dueAmt(x.s,x.c)>0.005; if(bf==="active") return x.c.active; if(bf==="inactive") return !x.c.active; if(bf==="bad") return siteBad(x.s); return true; });
   cust.sort(function(a,b){ return (b.c.active-a.c.active)||a.s.name.localeCompare(b.s.name,"de"); });
   var cnt=function(fn){ return custAll.filter(fn).length; };
   var rows=cust.map(function(x){
@@ -295,7 +310,7 @@ function vBill(){
     '<div class="panel kpi"><span class="k">Website-Rechnungen '+esc(F.D.year)+'</span><span class="v num">'+eur0(rev.paid)+'</span><span class="s">bezahlt · offen <span class="money">'+eur0(rev.open)+'</span></span></div>'+
   '</div>'+
   '<section class="panel"><div class="panel-h"><h2>Kunden-Websites &amp; Abrechnung</h2><div class="chips">'+
-    chip("wbf","all",bf,"Alle",custAll.length)+chip("wbf","due",bf,"Fällig",cnt(function(x){ return siteDue(x.c)&&siteSum(x.s,x.c)>0; }))+chip("wbf","active",bf,"Aktiv",act.length)+chip("wbf","inactive",bf,"Nicht verrechnet",custAll.length-act.length)+chip("wbf","bad",bf,"Probleme",cnt(function(x){ return siteBad(x.s); }))+
+    chip("wbf","all",bf,"Alle",custAll.length)+chip("wbf","due",bf,"Fällig",cnt(function(x){ return dueAmt(x.s,x.c)>0.005; }))+chip("wbf","active",bf,"Aktiv",act.length)+chip("wbf","inactive",bf,"Nicht verrechnet",custAll.length-act.length)+chip("wbf","bad",bf,"Probleme",cnt(function(x){ return siteBad(x.s); }))+
   '</div></div>'+
   (hid.length?'<p class="muted small w-hid">'+hid.length+' ausgeblendet ('+hid.map(function(x){ return esc(x.s.name); }).join(", ")+') · <button class="link" data-act="wshowhid">'+(U.showHidden?"wieder verbergen":"anzeigen")+'</button></p>':'')+
   '<div class="w-row hd"><span>Website · Kunde</span><span>Verrechnet wird</span><span style="text-align:right">Summe</span><span>Letzte Abrechnung</span><span></span></div>'+
@@ -389,7 +404,7 @@ function drawerHtml(){
   if(c.own) return head+'<div class="notice"><span>Wird nicht verrechnet.</span><button class="btn" data-act="wown:'+K+'|0">Als Kundenprojekt führen</button></div>'+costs;
   return head+
     '<div class="w-sec" data-wdkey="'+K+'"><div class="row wrap">'+stateTag(c)+'</div>'+
-      '<div class="row wrap"><button class="btn'+(c.active&&sum>0?" primary":"")+'" data-act="wbill:'+K+'"'+(c.active&&sum>0?"":" disabled")+'>Verrechnen · <span class="money">'+eur(sum)+'</span></button>'+(li?'<button class="btn" data-act="wunbill:'+K+'">↺ Letzte zurücknehmen</button>':'')+'</div>'+
+      '<div class="row wrap"><button class="btn'+(c.active&&sum>0?" primary":"")+'" data-act="wbill:'+K+'"'+(c.active&&sum>0?"":" disabled")+'>Verrechnen · <span class="money">'+eur(dueAmt(s,c)||sum)+'</span></button>'+(li?'<button class="btn" data-act="wunbill:'+K+'">↺ Letzte zurücknehmen</button>':'')+'</div>'+
       '<label class="fl">Kunde (Kontakt)<input class="f" data-wf="customer" list="wContacts" value="'+esc(c.customer)+'" placeholder="'+esc(s.name)+'" autocomplete="off"></label><datalist id="wContacts"></datalist>'+
       '<div><div class="sec-t">Was wird verrechnet?</div>'+
         opt("active","Aktiv – wird verrechnet","")+
@@ -436,6 +451,17 @@ function billSite(key){
   var s=siteBy(key); if(!s||!B) return;
   var c=cfg(s), P=prices(), n=+P.period||12, lines=siteLines(s,c);
   if(!lines.length){ F.toast("Für diese Website ist nichts zum Verrechnen angehakt",true); return; }
+  /* WEB-1: dieselbe Rechnung wie unter Finanzen › Plattformen verrechnen (Storno erkannt, anteilig, gleiche Zeiträume und Texte) –
+     zuerst stornierte frühere Zeiträume, dann der fällige; nicht fällig nur nach Rückfrage. Nie einen Zeitraum, für den es schon eine Abrechnung gibt. */
+  if(c.ab){
+    var open=function(a){ var bf=a.after&&a.after.billing||{}, dup=invRecs(key).find(function(r){ var i=sevInv(r.id); return r.from===bf.from&&r.to===bf.to&&!(i&&i.cancelled); });
+      var go1=function(){ var pre=JSON.parse(JSON.stringify(a)); pre.onDone=function(){ loadBilling(); }; F.closeDrawer(); F.openInvoice(pre); };
+      if(dup) F.confirm("Für "+de(bf.from)+" – "+de(bf.to)+" gibt es schon eine Abrechnung ("+(dup.nr||"ohne Nummer")+"). Trotzdem noch einmal verrechnen?","Trotzdem",go1,true); else go1(); };
+    var g=c.gaps.find(function(x){ return x.action; });
+    if(g) return open(g.action);
+    if(c.ab.action) return open(c.ab.action);
+    if(c.ab.nextAction){ var na=c.ab.nextAction; F.confirm((c.billedUntil?"Bereits verrechnet bis "+de(c.billedUntil)+".":"Noch nicht fällig (nächste Rechnung "+de(nextBill(c))+").")+" Trotzdem jetzt "+de(na.deliveryDate)+" – "+de(na.deliveryDateUntil)+" verrechnen ("+eur(c.ab.next.amount)+")?","Weiter",function(){ open(na); }); return; }
+  }
   var from=c.billedUntil?ymdAdd(c.billedUntil,1):(yearly()?F.D.today.slice(0,4)+"-01-01":F.D.today), to=yearly()?from.slice(0,4)+"-12-31":ymdAdd(ymdAddM(from,n),-1);
   var tax=+P.taxRate; if(!isFinite(tax)) tax=20;
   var span=de(from)+" – "+de(to);
@@ -445,6 +471,7 @@ function billSite(key){
     after:{billing:{key:"site:"+key,from:from,to:to,label:s.name},siteCustomer:c.customer?null:key},
     onDone:function(){ loadBilling(); }}); };
   if(c.billedUntil&&!siteDue(c)) F.confirm("Bereits verrechnet bis "+de(c.billedUntil)+". Trotzdem den nächsten Zeitraum ("+span+") verrechnen?","Weiter",go);
+  else if(!c.billedUntil&&!siteDue(c)) F.confirm("Noch nie verrechnet und noch nicht fällig (nächste Rechnung "+de(nextBill(c))+"). Trotzdem jetzt "+span+" verrechnen?","Weiter",go);
   else go();
 }
 
@@ -486,8 +513,11 @@ F.action("wbill",billSite);
 F.action("wtg",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), f=arg.slice(i+1), s=siteBy(key); if(!s||!B) return; var patch={}; patch[f]=!cfg(s)[f]; setSite(key,patch); });
 F.action("wown",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), v=arg.slice(i+1)==="1", s=siteBy(key);
   setSite(key,{own:v}).then(function(j){ if(j&&j.ok) F.toast((s?s.name+": ":"")+(v?"zu „Eigene Projekte“ verschoben":"wieder bei den Kunden-Websites"),false,"Rückgängig",function(){ setSite(key,{own:!v}); }); }); });
-F.action("whide",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), v=arg.slice(i+1)==="1", s=siteBy(key);
-  setSite(key,{hidden:v}).then(function(j){ if(j&&j.ok){ if(v&&F.closeModal) F.closeModal(); F.toast((s?s.name+": ":"")+(v?"ausgeblendet":"wieder sichtbar"),false,"Rückgängig",function(){ setSite(key,{hidden:!v}); }); F.render(); } }); });
+F.action("whide",function(arg){ var i=arg.lastIndexOf("|"), key=arg.slice(0,i), v=arg.slice(i+1)==="1", s=siteBy(key), c=s?cfg(s):{};
+  var go=function(patch,msg){ setSite(key,patch).then(function(j){ if(j&&j.ok){ if(v&&F.closeModal) F.closeModal(); var undo={}; Object.keys(patch).forEach(function(k){ undo[k]=k==="hidden"?!v:!!c[k]; }); F.toast((s?s.name+": ":"")+msg,false,"Rückgängig",function(){ setSite(key,undo); }); F.render(); } }); };
+  /* WEB-7: ausgeblendet = gibt es nicht mehr → auch nicht mehr verrechnen (nur auf ausdrückliche Bestätigung); Wieder-Anzeigen aktiviert nicht automatisch */
+  if(v&&c.active) F.confirm("„"+(s?s.name:key)+"“ ausblenden – gibt es nicht mehr? Dann wird sie auch nicht mehr verrechnet (Häkchen „Aktiv“ wird entfernt). Bisherige Rechnungen bleiben unverändert.","Ausblenden & nicht mehr verrechnen",function(){ go({hidden:true,active:false},"ausgeblendet, wird nicht mehr verrechnet"); });
+  else go({hidden:v},v?"ausgeblendet":"wieder sichtbar (Aktiv bei Bedarf wieder anhaken)"); });
 F.action("wshowhid",function(){ U.showHidden=!U.showHidden; F.render(); });
 F.action("wunbill",function(key){
   var rec=lastInv(key), s=siteBy(key); if(!rec) return;
