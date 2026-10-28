@@ -32,7 +32,7 @@ const AH_TRANSITION = { fromBasis: "created", toBasis: "arrival", cutoffDate: "2
   byArrivalMonth: [{ month: "2026-06", provisionCents: 16750, prebilledCents: 16750, prebilledCurrentRuleCents: 16750 }, { month: "2026-08", provisionCents: 15545, prebilledCents: 15545, prebilledCurrentRuleCents: 15000 }, { month: "2026-12", provisionCents: 50000, prebilledCents: 50000, prebilledCurrentRuleCents: 50000 }],
   legacyMonths: [{ month: "2026-05", provisionCents: 7090 }, { month: "2026-06", provisionCents: 16750 }, { month: "2026-07", provisionCents: 18005 }, { month: "2026-08", provisionCents: 20850 }, { month: "2026-09", provisionCents: 19600 }] };
 const AH_RECS = [{ id: "", nr: "manuell", date: "2026-07-30", gross: 347.54, from: null, to: null, label: "Antonhaus (übernommen)" }, { id: "1272", nr: "RE-1272", date: "2026-10-01", gross: 475.41, from: "2026-05-01", to: "2026-09-30", label: "Antonhaus" }];
-const AH_SWITCH = { cutoff: "2026-09-30", prebilledByMonth: { "2026-06": 16750, "2026-08": 15545, "2026-12": 50000 }, totalCents: 82295, legacyTotalCents: 82295, invoiceNr: "RE-1272", confirmedAt: "2026-10-28T10:00:00Z" };
+const AH_SWITCH = { cutoff: "2026-09-30", prebilledByMonth: { "2026-06": 16750, "2026-08": 15545, "2026-12": 50000 }, prebilledCurrentRuleByMonth: { "2026-06": 16750, "2026-08": 15545, "2026-12": 50000 }, totalCents: 82295, legacyTotalCents: 82295, invoiceNr: "RE-1272", confirmedAt: "2026-10-28T10:00:00Z" };
 const ahObj = (year, extra) => Object.assign({ key: "antonhaus", name: "Antonhaus", src: "antonhaus", basis: "arrival", ratesLabel: "5 % Website · 2 % Direkt", transition: AH_TRANSITION,
   months: year === "2026" ? AH_MONTHS_2026 : [{ month: "2027-02", provisionCents: 8000, prebilledCents: 0 }] }, extra || {});
 
@@ -223,6 +223,16 @@ function unitTests(T) {
     it = run(0); assert.ok(it.notes.some(n => /RE-1272 hat 300,00 € mehr verrechnet als nach heutiger Regel/.test(n)), JSON.stringify(it.notes)); assert.strictEqual(it.catchup, 0); assert.strictEqual(it.refund, 0);
     it = run(300); assert.strictEqual(it.catchup, 0, "A2 greift nicht"); assert.strictEqual(it.refund, 0); assert.ok(!(it.notes || []).some(n => /mehr verrechnet/.test(n)), JSON.stringify(it.notes));
   }]);
+  out.push(["R3-11: Antonhaus ohne Gebühren nach heutiger Regel – kein Umstellungs-Knopf (Hinweis); ältere, schon übernommene Umstellung ohne diese Werte → deutlicher Hinweis, Rechnungstext ohne „nach heutiger Regel“", () => {
+    const trNoCur = Object.assign({}, AH_TRANSITION, { byArrivalMonth: AH_TRANSITION.byArrivalMonth.map(m => ({ month: m.month, provisionCents: m.provisionCents, prebilledCents: m.prebilledCents })) });
+    let it = va({ year: "2027", today: "2027-01-05", bill: { prices: {}, sites: {}, invoices: { "valuero:antonhaus": AH_RECS } }, valuero: { objects: [ahObj("2027", { transition: trNoCur })] }, valueroPrev: { objects: [ahObj("2026", { transition: trNoCur })] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(/Umstellung/.test(it.blocked || ""), it.blocked); assert.ok(!it.proposal, "kein Knopf"); assert.ok(it.notes.some(n => /noch nicht nach heutiger Regel \(Juni 2026, August 2026, Dezember 2026\)/.test(n)), JSON.stringify(it.notes));
+    const old = Object.assign({}, AH_SWITCH); delete old.prebilledCurrentRuleByMonth;
+    it = va({ year: "2027", today: "2027-01-05", bill: { prices: {}, sites: {}, invoices: { "valuero:antonhaus": AH_RECS }, valuero: { antonhaus: { switch: old } } }, valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.unbilled, 190.3, "Beträge unverändert (damaliger Betrag abgezogen)");
+    assert.ok(/verrechnet \(Buchungseingang bis 30\.09\.2026\) 500,00 €/.test(it.action.items[0].text), it.action.items[0].text);
+    assert.ok(it.notes.some(n => /Umstellung ohne Gebühren nach heutiger Regel übernommen.*Juni 2026, August 2026, Dezember 2026.*neu bestätigen/.test(n)), JSON.stringify(it.notes));
+  }]);
   out.push(["A4: Antonhaus – abgezogen wird nur die Gebühr der schon verrechneten Buchungen nach heutiger Regel; neue Buchung im selben Monat wird verrechnet", () => {
     const sw = Object.assign({}, AH_SWITCH, { prebilledCurrentRuleByMonth: { "2026-06": 16750, "2026-08": 15545, "2026-12": 20000 } });
     const prev = ahObj("2026", { months: ahM([["2026-06", 16750], ["2026-08", 15545], ["2026-09", 3000], ["2026-10", 19030], ["2026-12", 50000]]) });   // Dez: alte Buchung heute 200 + neue 300
@@ -386,6 +396,7 @@ function createMock() {
         if (state.antonMode === "down") return send(502, { ok: false, error: "Beds24-Abruf fehlgeschlagen – Gebühren nicht verfügbar.", code: "BEDS24" });
         const months = AH_MONTHS_2026.filter(m => !y || m.month.slice(0, 4) === y).concat(y === "2027" ? [{ month: "2027-02", provisionCents: 8000, prebilledCents: 0 }] : []);
         if (state.antonMode === "old") return send(200, { ok: true, provisionCents: 0, months: months.map(m => ({ month: m.month, provisionCents: m.provisionCents, bookings: 1 })) });
+        if (state.antonMode === "nocur") return send(200, { ok: true, basis: "arrival", provisionCents: months.reduce((a, m) => a + m.provisionCents, 0), months, transition: Object.assign({}, AH_TRANSITION, { byArrivalMonth: AH_TRANSITION.byArrivalMonth.map(m => ({ month: m.month, provisionCents: m.provisionCents, prebilledCents: m.prebilledCents })) }) });
         return send(200, { ok: true, basis: "arrival", ratesLabel: "5 % Website · 2 % Direkt", provisionCents: months.reduce((a, m) => a + m.provisionCents, 0), months, transition: AH_TRANSITION });
       }
       if (!u.pathname.startsWith("/api/v1")) return send(404, { error: "nope" });
@@ -685,6 +696,9 @@ function createMock() {
     d = (await api("/admin/api/cockpit?force=1&year=" + year)).j; it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
     assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.refund, 0, "keine falsche Erstattung");
     M.state.antonMode = "old"; const r2 = await api("/admin/api/billing", { op: "vaswitch", key: "antonhaus" }); assert.strictEqual(r2.j.ok, false, "alte Antonhaus-Version → keine Umstellung");
+    M.state.antonMode = "nocur"; const r3 = await api("/admin/api/billing", { op: "vaswitch", key: "antonhaus" });   // R3-11: ohne Gebühren nach heutiger Regel → abgelehnt
+    assert.strictEqual(r3.j.ok, false, JSON.stringify(r3.j)); assert.ok(/nach heutiger Regel/.test(r3.j.error || ""), JSON.stringify(r3.j));
+    assert.deepStrictEqual((await api("/admin/api/billing")).j.valuero.antonhaus.switch.prebilledByMonth, sw.prebilledByMonth, "bestätigte Umstellung bleibt unverändert"); M.state.antonMode = "arrival";
   });
   await t("VA-2: Antonhaus 502 (Beds24) → Hinweis „Gebührendaten Antonhaus fehlen – neu laden“, keine Erstattung, kein Verrechnen", async () => {
     M.state.antonMode = "down"; await new Promise(r => setTimeout(r, 26000));   // 25-s-Zwischenspeicher der Statistik-Abrufe ablaufen lassen
