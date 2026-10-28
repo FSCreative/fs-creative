@@ -598,6 +598,17 @@ function unitTests(T) {
     r = run({ name: "Beratung", qty: 7, priceGross: 12.05, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.35", "brutto eingegeben");
     r = run(it0, row => { row.querySelector('[data-i="price"]').value = "150"; }); assert.strictEqual(r.items[0].priceNet, undefined, "Preis neu eingetippt"); assert.strictEqual(r.sum, "Summe brutto 150.00");
   });
+  await t("R3-12: Nachverrechnung mit zwei Teilzeiträumen, eine Position im Formular geändert → nur deren Zeitraum ändert sich (nicht anteilig über alle)", async () => {
+    const src = fs.readFileSync(path.join(ROOT, "admin-cockpit", "shared.js"), "utf8"), vm = require("vm"), ctx = {};
+    vm.createContext(ctx); vm.runInContext(src.slice(src.indexOf("function adjParts("), src.indexOf('F.listen("input","#irows",invSum);')), ctx);
+    const parts = [{ from: "2026-01-01", to: "2026-03-31", gross: 30 }, { from: "2026-04-01", to: "2026-06-30", gross: 20 }];
+    const items = [{ qty: 1, priceGross: 25, taxRate: 20 }, { qty: 1, priceGross: 20, taxRate: 20 }];
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.adjParts(parts, items))), [{ from: "2026-01-01", to: "2026-03-31", gross: 25 }, { from: "2026-04-01", to: "2026-06-30", gross: 20 }]);
+    assert.strictEqual(ctx.adjParts(parts, items.slice(0, 1)), parts, "Position gelöscht → Server rechnet anteilig um (wie bisher)");
+    const BT = global.__fscBillingTest; if (!BT || !BT.billingOp || !BT.readBilling || !fs.realpathSync(path.dirname(BT.BILLING_FILE)).startsWith(fs.realpathSync(os.tmpdir()))) { console.log("HINWEIS: R3-12 billingOp-Teil übersprungen"); return; }
+    BT.billingOp({ op: "invoice", key: "valuero:haus-r3", invoice: { id: "9701", nr: "RE-9701", gross: 45, adj: true, parts: ctx.adjParts(parts, items) } });
+    assert.deepStrictEqual(BT.readBilling().invoices["valuero:haus-r3"][0].parts.map(p => p.gross), [25, 20], "Server übernimmt die Teilbeträge unverändert");
+  });
   /* Teil 3: Mollie-Zuordnung über „Mollie tr_…“ nur exakt (fin-mollie.js matchOf) */
   await t("Mollie tr_ in der Notiz: exakt gleiches Brutto → Zuordnung; 11,63 statt 9,69 → keine; tr_abc trifft nicht tr_abcdef", async () => {
     const seed = [acc("2", "Mollie"), contact("40", "SV Stainach")].concat(invSeed("850", { gross: 9.69, extra: { customerInternalNote: "Mollie tr_exact001" } }), invSeed("851", { gross: 11.63, extra: { customerInternalNote: "Mollie tr_wrong001" } }), invSeed("852", { gross: 9.69, extra: { customerInternalNote: "Mollie tr_prefix0012" } }));

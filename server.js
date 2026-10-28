@@ -2764,7 +2764,7 @@ function abgleichBuild(ctx) {
     if (preOver > 0.005) notes.push("Mit " + (sw.invoiceNr || "RE-1272") + " verrechnete Buchungen sind seither storniert oder gesenkt: " + eu(preOver) + " mehr verrechnet als heute angefallen – Gutschrift nur, wenn du das so entscheidest");
     if (molOver > 0.005) notes.push("Per Online-Zahlung mehr einbehalten als heute angefallen: " + eu(molOver) + " – Gutschrift nur, wenn du das so entscheidest");
     if (cxl > 0.005) notes.push("Zu stornierten Buchungen wurde schon Provision per Online-Zahlung einbehalten: " + eu(cxl) + " – Gutschrift prüfen");
-    if (rest > 0.02) notes.push("Gutschriften über " + eu(rest) + " ohne passenden Hinweis gelten als bewusste Minderung – dafür wird keine Nachverrechnung vorgeschlagen");
+    if (rest > 0.02 && !(!off && catchup > 0.02)) notes.push("Gutschriften über " + eu(rest) + " ohne passenden Hinweis gelten als bewusste Minderung – dafür wird keine Nachverrechnung vorgeschlagen");   // nicht neben einer vorgeschlagenen Nachverrechnung (R3-12)
     if (!off && catchup > 0.02) notes.push("Nachverrechnung möglich: " + eu(catchup) + " (" + catchParts.map(p => "Anreisen " + deDate(p.from) + " – " + deDate(p.to) + (p.gap ? " – Rechnung storniert" : "")).join(", ") + ", nach der Abrechnung dazugekommen, gestiegen bzw. storniert)");
     const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufendes Quartal (+ spätere Anreisen)
     const txt = "Aufenthalte (Anreise) " + span + (preDue > 0.005 || molDue > 0.005 ? ": " + eu(fullDue) : "") +

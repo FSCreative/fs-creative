@@ -142,6 +142,11 @@ function invItems(){ var out=[]; document.querySelectorAll("#irows .irow").forEa
 function invSum(){ var c=function(n){ return Math.round(n*100)/100; }, n=0, t=0; invItems().forEach(function(i){ var d=1-(i.discount||0)/100, r=+i.taxRate||0, sn, sg;
     if(i.priceNet!=null){ sn=c(i.qty*i.priceNet*d); n+=sn; t+=c(sn*r/100); } else { sg=c(i.qty*i.priceGross*d); sn=c(sg/(1+r/100)); n+=sn; t+=c(sg-sn); } });
   var el=document.getElementById("invSum"); if(el) el.textContent="Summe brutto "+eur(c(c(n)+c(t))); }
+/* Nachverrechnung (VALUERO): je Teilzeitraum eine Position – im Formular geänderter Betrag zählt genau für seinen Zeitraum (R3-12);
+   passt die Zahl der Positionen nicht mehr, rechnet der Server die Teilbeträge anteilig um */
+function adjParts(parts,items){ if(!parts||!parts.length||!items||items.length!==parts.length) return parts||undefined;
+  var c=function(n){ return Math.round(n*100)/100; };
+  return parts.map(function(p,k){ var i=items[k], d=1-(i.discount||0)/100, r=+i.taxRate||0, sn=i.priceNet!=null?c(i.qty*i.priceNet*d):0; return {from:p.from,to:p.to,gross:i.priceNet!=null?c(sn+c(sn*r/100)):c(i.qty*i.priceGross*d)}; }); }
 F.listen("input","#irows",invSum);
 F.listen("change","#irows",invSum);
 /* Artikel gewählt → Preis, USt und Text übernehmen */
@@ -168,7 +173,7 @@ F.form("invoice",function(form){
     if(!body.contactId) META=null;   /* neuer Kunde → Kundenliste neu laden */
     var after=(INVCTX&&INVCTX.after)||{}, jobs=[];
     if(after.siteCustomer) jobs.push(F.api("/admin/api/billing",{body:{op:"site",key:after.siteCustomer.replace(/^site:/,""),patch:{customer:contact}}}));
-    if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:Object.assign({id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label},after.billing.deposit?{deposit:true}:{},after.billing.src?{src:after.billing.src,basis:after.billing.basis}:{},after.billing.adj?{adj:true,parts:after.billing.parts||undefined}:{},after.billing.bookingAmount!=null?{bookingAmount:after.billing.bookingAmount}:{})}}));   /* deposit: Anzahlung (Restrechnung folgt); src/basis: VALUERO-Quelle, adj: Nachverrechnung (parts: gedeckte Zeiträume) */
+    if(after.billing) jobs.push(F.api("/admin/api/billing",{body:{op:"invoice",key:after.billing.key,invoice:Object.assign({id:j.id,nr:j.nr,gross:j.gross,from:after.billing.from,to:after.billing.to,label:after.billing.label},after.billing.deposit?{deposit:true}:{},after.billing.src?{src:after.billing.src,basis:after.billing.basis}:{},after.billing.adj?{adj:true,parts:adjParts(after.billing.parts,items)}:{},after.billing.bookingAmount!=null?{bookingAmount:after.billing.bookingAmount}:{})}}));   /* deposit: Anzahlung (Restrechnung folgt); src/basis: VALUERO-Quelle, adj: Nachverrechnung (parts: gedeckte Zeiträume) */
     if(after.paid&&form.paidacc){ var pa=form.paidacc.value; jobs.push(F.api("/admin/api/sev/invoice-op",{body:{confirm:true,op:"sent",id:j.id,sendType:"VPDF"}}).then(function(r){ if(!r||!r.ok) return r; return F.api("/admin/api/sevdesk/book",{body:{id:j.id,amount:after.paid.amount,date:after.paid.date,accountId:pa}}); })); }
     if(after.kochduSettle) jobs.push(F.api("/admin/api/kochdu-settle",{body:{action:"settle",restaurantId:after.kochduSettle.restaurantId,amountCents:after.kochduSettle.amountCents}}));
     var cb=INVCTX&&INVCTX.onDone, soft=editing?[]:ctxJobs(after,j,contact,"invoice");   /* Lead/Auftrag merken sich den Beleg (nur Cockpit-Daten) */

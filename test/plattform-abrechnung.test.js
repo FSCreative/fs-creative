@@ -281,6 +281,11 @@ function unitTests(T) {
     assert.ok(/storniert/.test(it.catchupAction.items[0].text), it.catchupAction.items[0].text); assert.strictEqual(it.unbilled, 0);
     const rqn = rq.concat([{ id: "15", nr: "RE-15", date: "2026-10-20", gross: 200, adj: true, parts: [{ from: "2026-04-01", to: "2026-06-30", gross: 200 }], src: "partner" }]);
     it = runQ(rqn, invQ({ 12: { cancelled: true } }).concat([I({ id: "15", nr: "RE-15", gross: 200 })]), 10000); assert.strictEqual(it.catchup, 0, "nach der Nachverrechnung erledigt");
+    // R3-12: bewusste Gutschrift (RE-11, 50) neben einer vorgeschlagenen Nachverrechnung (Q3 gestiegen) → kein widersprüchlicher Hinweis
+    const hq3 = Object.assign(hq(10000), { months: hq(10000).months.map(m => m.month === "2026-07" ? Object.assign({}, m, { provisionCents: 33000 }) : m) });
+    const runC = (h) => abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev(invQ({ 11: { credited: 50 } })), bill: { prices: {}, sites: {}, invoices: { "valuero:haus-q": rq } }, sitesSnap: null, valuero: { objects: [h] }, valueroPrev: { objects: [] } }).items.find(x => x.key === "valuero:haus-q");
+    it = runC(hq3); assert.strictEqual(it.catchup, 30); assert.ok(!(it.notes || []).some(n => /keine Nachverrechnung vorgeschlagen/.test(n)), JSON.stringify(it.notes));
+    it = runC(hq(10000)); assert.strictEqual(it.catchup, 0); assert.ok(it.notes.some(n => /Gutschriften über 50,00 € .*bewusste Minderung/.test(n)), "ohne Nachverrechnung bleibt der Hinweis: " + JSON.stringify(it.notes));
     // vorgeschlagen 20, im Formular auf 10 geändert → 10 offen
     const rq7 = rq.concat([{ id: "16", nr: "RE-16", date: "2026-10-20", gross: 10, adj: true, parts: [{ from: "2026-07-01", to: "2026-09-30", gross: 20 }], src: "partner" }]);
     it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev(invQ().concat([I({ id: "16", nr: "RE-16", gross: 10 })])), bill: { prices: {}, sites: {}, invoices: { "valuero:haus-q": rq7 } }, sitesSnap: null,
