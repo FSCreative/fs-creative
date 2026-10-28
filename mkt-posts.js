@@ -977,7 +977,13 @@ module.exports = function (C) {
         if (!post.media || post.media.status !== "fertig") throw fail(400, "Die Medien werden noch erstellt – kurz warten.");
         post.approvedAt = post.approvedAt || nowIso(); post.scheduledAt = nowIso(); post.status = "geplant"; save(true); publishPost(post).catch(() => {}); return J(res, 200, { ok: true, post: postPublic(post) }), true;
       }
-      if (op === "retry") { const pf = String(pl.platform || ""); if (pf && post.results[pf]) delete post.results[pf]; if (!pf) Object.keys(post.results).forEach(k => { if (post.results[k].status === "fehler") delete post.results[k]; }); publishPost(post, pf || undefined).catch(() => {}); return J(res, 200, { ok: true, post: postPublic(post) }), true; }
+      if (op === "retry") { const pf = String(pl.platform || "");
+        if (pf === "tiktok" && pl.tt && typeof pl.tt === "object") {   // TikTok-Fenster beim Nachholen (Entwurf → direkt, Fehler): nur die TikTok-Wahl und den TikTok-Text übernehmen
+          const t0 = cleanOpts(pl.tt), o = Object.assign({}, post.opts || {}); Object.keys(o).forEach(k => { if (/^tt/.test(k)) delete o[k]; }); Object.keys(t0).forEach(k => { if (/^tt/.test(k)) o[k] = t0[k]; }); post.opts = ttCheck(o);
+          if (typeof pl.caption === "string") post.captions = Object.assign({}, post.captions, { tiktok: clip(pl.caption, 5000) });
+          if (Array.isArray(pl.hashtags)) post.hashtags = Object.assign({}, post.hashtags, { tiktok: pl.hashtags.map(t => clip(t, 60)).filter(Boolean).slice(0, 30) });
+          save(true);
+        } if (pf && post.results[pf]) delete post.results[pf]; if (!pf) Object.keys(post.results).forEach(k => { if (post.results[k].status === "fehler") delete post.results[k]; }); publishPost(post, pf || undefined).catch(() => {}); return J(res, 200, { ok: true, post: postPublic(post) }), true; }
       if (op === "rewrite") {
         if (["läuft", "gepostet", "teilweise"].indexOf(post.status) > -1) throw fail(400, "Schon veröffentlicht.");
         if (String(post.source || "").startsWith("gewinnspiel")) throw fail(400, "Gewinnspiel-Videos bitte direkt bearbeiten.");

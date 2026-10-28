@@ -188,6 +188,12 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     mock.state.ttUnaudited = false;
     rl.opts = {}; await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok" }); for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
     assert.strictEqual(rl.results.tiktok.status, "fehler"); assert.ok(/wer das Video sehen darf/.test(rl.results.tiktok.error), "ohne Wahl kein Entwurf (Scope video.upload fehlt), sondern klarer Hinweis");
+    // Nachholen mit TikTok-Fenster (auch bei schon geposteten Posts): nur TikTok-Wahl und TikTok-Text werden übernommen
+    rl.opts = { igStory: true, ttDuet: true };
+    await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok", tt: { ttPrivacy: "MUTUAL_FOLLOW_FRIENDS", ttComment: true, igTrial: true }, caption: "Neu für TikTok", hashtags: ["#neu"] });
+    for (let i = 0; i < 100 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50);
+    assert.strictEqual(rl.results.tiktok.status, "ok", JSON.stringify(rl.results)); assert.deepStrictEqual(rl.opts, { igStory: true, ttComment: true, ttPrivacy: "MUTUAL_FOLLOW_FRIENDS" });
+    pi = mock.state.ttDirect[mock.state.ttDirect.length - 1]; assert.strictEqual(pi.privacy_level, "MUTUAL_FOLLOW_FRIENDS"); assert.ok(/^Neu für TikTok/.test(pi.title) && /#neu/.test(pi.title), pi.title);
     const cj = (await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok" })).json();
     assert.ok(/scope=user\.info\.basic%2Cvideo\.publish/.test(cj.url), "nur die Scopes fürs direkte Posten");
     // Neu verbinden: dasselbe Konto bei FS Creative UND Druckshop erneuern (sonst behält der Druckshop den alten Zugang ohne video.publish), fremde Konten bleiben

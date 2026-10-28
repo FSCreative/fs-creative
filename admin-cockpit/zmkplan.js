@@ -354,7 +354,7 @@ function postCard(p,slim){
   if(hasRes) res='<div class="mp-res">'+Object.keys(p.results).map(function(k){ var r=p.results[k], can=p.can||{};
     var lk=r.status==="ok"&&r.id?((can.edit||[]).indexOf(k)>-1?'<button type="button" class="link small" data-act="mprem:'+esc(p.id)+'|'+k+'|edit">Text ändern</button>':'')+((can.comments||[]).indexOf(k)>-1?'<button type="button" class="link small" data-act="mprem:'+esc(p.id)+'|'+k+'|comments">Kommentare '+(r.commentsOff?'ein':'aus')+'</button>':'')+((can.remove||[]).indexOf(k)>-1?'<button type="button" class="link small" data-act="mprem:'+esc(p.id)+'|'+k+'|delete">Löschen</button>':''):'';
     var st=r.status==="gelöscht"?'<span class="muted">gelöscht</span>':r.status==="ok"?(r.url?'<a class="mp-ok" href="'+esc(r.url)+'" target="_blank" rel="noopener">'+F.svg("checkCircle")+' ansehen</a>':'<span class="mp-ok">'+F.svg("checkCircle")+' gepostet</span>')+(r.editedAt?' <span class="muted small">geändert</span>':''):
-      r.status==="entwurf"?'<b>Entwurf in der App</b>':r.status==="übersprungen"?'<span class="muted">übersprungen</span>':'<span class="bad-t mp-err">'+F.svg("alertCircle")+' Fehler</span><button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>';
+      r.status==="entwurf"?'<b>Entwurf in der App</b>'+(k==="tiktok"&&ttDirectFor(p)?' <button type="button" class="link" data-act="mpttnow:'+esc(p.id)+'">direkt posten</button>':''):r.status==="übersprungen"?'<span class="muted">übersprungen</span>':'<span class="bad-t mp-err">'+F.svg("alertCircle")+' Fehler</span><button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>';
     var bad=["ok","gelöscht","entwurf","übersprungen"].indexOf(r.status)<0;
     var msg=bad?'<span class="msg bad-t">'+esc(r.error||"Fehler")+'</span>':(r.status==="entwurf"||r.status==="ok")&&r.note?'<span class="msg muted">'+esc(r.note)+'</span>':r.status==="übersprungen"&&r.error?'<span class="msg muted">'+esc(r.error)+'</span>':'';
     return '<div class="mp-r'+(bad?' bad':'')+'"><span class="pfn">'+pfIcon(k)+esc(pfLabel(k))+'</span>'+st+msg+(lk?'<span class="lk">'+lk+'</span>':'')+'</div>'; }).join("")+'</div>';
@@ -527,7 +527,8 @@ function ttDirectFor(p){ var c=chFor(p.brand,"tiktok"); return !!(c&&c.direct); 
 function ttNeeds(p){ return p.platforms.indexOf("tiktok")>-1&&ttDirectFor(p)&&!(p.opts||{}).ttPrivacy; }
 function ttAskAll(list,verb,done){ var groups={}, order=[]; list.forEach(function(p){ var c=chFor(p.brand,"tiktok"), k=c?c.id:p.brand; if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(p); });
   var next=function(i){ if(i>=order.length) return done(); ttAsk(groups[order[i]],i<order.length-1?"Weiter":verb,function(){ next(i+1); }); }; next(0); }
-function ttAsk(list,verb,done){
+F.action("mpttnow",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); if(p) ttAsk([p],"Jetzt posten",null,true); });
+function ttAsk(list,verb,done,retry){   /* retry: Post ist schon (teilweise) gepostet → TikTok mit dieser Wahl nachholen */
   var p0=list[0], one=list.length===1;
   F.modal('<div class="mp-ed" id="ttDlg"><div class="row-between"><h2 style="font-size:19px">Auf TikTok posten</h2>'+F.btnClose()+'</div><p class="muted">TikTok-Konto wird geladen …</p></div>',"narrow");
   api("/admin/api/mkt/tiktok-creator?brand="+encodeURIComponent(p0.brand)).then(function(ci){
@@ -552,7 +553,7 @@ function ttAsk(list,verb,done){
       (ci.privateOnly?'<p class="tt-note small">Solange TikTok die App noch prüft, erscheint das Video zuerst nur für dich („Nur ich“). In der TikTok-App stellst du es dann mit ··· → Datenschutzeinstellungen auf „Alle“.</p>':'')+
       (long.length?'<p class="bad-t small" style="margin:0">'+(one?'Das Video ist':'Ein Video ist')+' länger als die '+ci.maxSec+' s, die dieses Konto posten darf.</p>':'')+
       '<div class="foot"><span class="muted small" id="ttWhy"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary" id="ttBtn" disabled>'+esc(verb)+'</button></span></div></form>';
-    var f=document.getElementById("ttDlg"); f._tt={list:list,done:done};
+    var f=document.getElementById("ttDlg"); f._tt={list:list,done:done,retry:retry};
     var sync=function(){ var pv=f.pv.value, cc=f.cc.checked, bo=f.bo.checked, bp=f.bp.checked, self=f.pv.querySelector('option[value="SELF_ONLY"]');
       f.querySelector(".tt-ccx").hidden=!cc; if(!cc){ f.bo.checked=f.bp.checked=false; bo=bp=false; }
       if(self){ self.disabled=bp; self.title=bp?"Markeninhalte können nicht privat sein":""; }
@@ -565,13 +566,17 @@ function ttAsk(list,verb,done){
     f.addEventListener("change",sync); sync(); }); }
 F.form("ttgo",function(form){ var t=form._tt; if(!t||form.querySelector("#ttBtn").disabled) return;
   var pick={ttPrivacy:form.pv.value,ttComment:form.cm.checked,ttDuet:form.du.checked,ttStitch:form.st.checked,ttBrandOwn:form.bo.checked,ttBrandPaid:form.bp.checked};
+  var tags=function(){ return String(form.tags.value||"").split(/[\s,]+/).filter(Boolean).map(function(x){ return x.charAt(0)==="#"?x:"#"+x; }); };
+  if(t.retry){ var p=t.list[0]; return api("/admin/api/mkt/post",{id:p.id,op:"retry",platform:"tiktok",tt:pick,caption:form.cap?form.cap.value:undefined,hashtags:form.cap?tags():undefined}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); if(j.post) upd(j.post); F.closeModal(); F.toast("Wird auf TikTok gepostet …"); F.render(); schedulePoll(); }); }
   var chain=Promise.resolve(true);
   t.list.forEach(function(p){ chain=chain.then(function(ok){ if(!ok) return false; var patch={opts:Object.assign({},p.opts||{},pick)};
-    if(form.cap){ patch.captions={tiktok:form.cap.value}; patch.hashtags={tiktok:String(form.tags.value||"").split(/[\s,]+/).filter(Boolean).map(function(x){ return x.charAt(0)==="#"?x:"#"+x; })}; }
+    if(form.cap){ patch.captions={tiktok:form.cap.value}; patch.hashtags={tiktok:tags()}; }
     return api("/admin/api/mkt/post",{id:p.id,op:"update",patch:patch}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return false; } upd(j.post); return true; }); }); });
   chain.then(function(ok){ if(!ok) return; F.closeModal(); t.done(); }); });
 F.action("mpstop",function(id){ postOp(id,"stop",null,"Gestoppt – wieder bei „Zur Freigabe“"); });
-F.action("mpretry",function(a){ var x=a.split("|"); postOp(x[0],"retry",{platform:x[1]||""},"Wird nochmal versucht …"); });
+F.action("mpretry",function(a){ var x=a.split("|"), p=PL.posts.find(function(q){ return q.id===x[0]; });
+  if(p&&x[1]==="tiktok"&&ttNeeds(p)) return ttAsk([p],"Jetzt posten",null,true);
+  postOp(x[0],"retry",{platform:x[1]||""},"Wird nochmal versucht …"); });
 F.action("mprer",function(id){ postOp(id,"rerender",null,"Wird neu erstellt …"); });
 F.action("mpdel",function(id){ var p=PL.posts.find(function(q){ return q.id===id; }); F.confirm(p&&p.status==="gepostet"?"Aus der Liste entfernen? (Bei den Plattformen bleibt der Post online.)":"Diesen Entwurf verwerfen?",p&&p.status==="gepostet"?"Entfernen":"Verwerfen",function(){ postOp(id,"delete",null,"Entfernt"); },true); });
 /* Caption ganz zeigen / wieder kürzen – direkt im DOM, der Zustand bleibt für das nächste Neuzeichnen gemerkt */
