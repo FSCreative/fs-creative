@@ -42,12 +42,17 @@ module.exports = function (D) {
     const rx = new RegExp("(^|[^a-z0-9_])" + pid + "(?![a-z0-9_])");
     return L.all("Invoice").filter(i => isInv(i) && rx.test(pidTxt(i)));
   }
-  // kochdu: Cockpit-Rechnungen der „Verrechnung von Hand“ (Abrechnung kochdu:<Lokal>), die seit dem Monat storniert wurden – damit ist die
-  // Doppelverrechnung schon (teilweise) aufgelöst (B4)
+  // kochdu: Cockpit-Rechnung der „Verrechnung von Hand“ (Abrechnung kochdu:<Lokal>) für diesen Monat storniert und nicht neu ausgestellt – damit
+  // ist die Doppelverrechnung schon (teilweise) aufgelöst (B4). Zum Monat gehört eine Verrechnung von Hand vom Monat bis 2 Monate danach;
+  // eine stornierte Rechnung mit gültigem Ersatz (gleicher Betrag, später) zählt nicht.
   function kochduManualCancelled(rid, month) {
     let bill = null; try { bill = typeof D.billing === "function" ? D.billing() : null; } catch (e) { bill = null; }
-    const recs = (bill && bill.invoices && bill.invoices["kochdu:" + rid]) || [];
-    return r2(recs.filter(x => x && x.id && String(x.date || "") >= String(month || "") + "-01").reduce((a, x) => { const i = L.get("Invoice", x.id); return a + (i && i.cancelled ? Math.abs(+i.sumGross || +x.gross || 0) : 0); }, 0));
+    const m = String(month || ""); if (!/^\d{4}-\d{2}$/.test(m) || !rid) return 0;
+    const lo = m + "-01", end = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7) + 2, 0)).toISOString().slice(0, 10);
+    const recs = ((bill && bill.invoices && bill.invoices["kochdu:" + rid]) || []).filter(x => x && x.id), inv = x => L.get("Invoice", x.id);
+    const live = recs.filter(x => { const i = inv(x); return i && !i.cancelled; });
+    return r2(recs.filter(x => { const i = inv(x), d = String(x.date || ""); return i && i.cancelled && d >= lo && d <= end && !live.some(y => Math.abs((+y.gross || 0) - (+x.gross || 0)) < 0.02 && String(y.date || "") >= d); })
+      .reduce((a, x) => a + Math.abs(+inv(x).sumGross || +x.gross || 0), 0));
   }
   const kochduRest = (inv, need, rid, month) => r2(need - creditedSum(inv.id) - kochduManualCancelled(rid, month));
   // liegt ein Datum in einem schon gemeldeten UVA-Zeitraum? (nur Hinweis – korrigiert wird über die Jahreserklärung)

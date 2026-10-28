@@ -710,7 +710,7 @@ function blitzReportReconcile(bookings, bill, sev) {
     const oid = String(otherId || (b && b.sevdeskInvoiceId) || ""); if (!oid) return b ? b.invoiceInProgress === true : !!inProgress;   // Blitzdings legt (noch) an
     const ot = byId[oid]; if (oid === String(invId) || !ot || ot.cancelled || ot.type === "SR") return false;
     if (b) return round2((+i.gross || 0) + (+ot.gross || 0)) > round2((+b.totalCents || 0) / 100) + 0.02;
-    return Math.abs((+i.gross || 0) - (+ot.gross || 0)) < 0.02;   // Buchung nicht geladen: nur gleicher Betrag gilt als doppelt
+    return Math.abs((+i.gross || 0) - (+ot.gross || 0)) < 0.02 ? true : null;   // Buchung nicht geladen: gleicher Betrag = doppelt, sonst unklar
   };
   if (supported) bookings.forEach(b => {
     if (!b || !BLITZ_ID.test(String(b.id || ""))) return;
@@ -728,7 +728,8 @@ function blitzReportReconcile(bookings, bill, sev) {
     });
   });
   // gespeicherte Doppelrechnungs-Meldungen von Blitzdings (duplicate:true) gegen den heutigen Stand prüfen – aufgelöste verschwinden (B2)
-  let dupChanged = false; const stored = Object.keys(o.dup).filter(k => { if (!sevLoaded) return true; const d = o.dup[k]; if (realDup(d.bookingId, d.invoiceId, d.other, d.inProgress)) return true; delete o.dup[k]; dupChanged = true; return false; }).map(k => o.dup[k]);
+  // gelöscht wird nur, was sicher aufgelöst ist – unklar (Buchung nicht geladen, verschiedene Beträge) bleibt stehen
+  let dupChanged = false; const stored = Object.keys(o.dup).filter(k => { if (!sevLoaded) return true; const d = o.dup[k], v = realDup(d.bookingId, d.invoiceId, d.other, d.inProgress); if (v !== false) return true; delete o.dup[k]; dupChanged = true; return false; }).map(k => o.dup[k]);
   if (dupChanged) blitzReportSave(o);   // vor dem Einreihen (das liest den Stand neu)
   again.forEach(x => blitzReportQueue(x[0], x[1], x[2], true));
   const q = blitzReportState().q, dupSeen = new Set();
@@ -1359,14 +1360,21 @@ async function finApiSaveCheck(who, fpath, body) {
     if (String(cur.status) !== "100" || cur.enshrined) return "Beleg ist kein Entwurf bzw. festgeschrieben";
   } else doc.finApiSource = who;
   const st = doc.status == null || doc.status === "" ? "100" : String(doc.status);
-  if (st !== "100" && !(st === "200" && k === "invoice" && !cur)) return "Status " + st;
+  if (st !== "100" && !(st === "200" && k === "invoice" && !cur && who === "blitzdings")) return "Status " + st;   // offen anlegen nur Blitzdings
   if (doc.paidAmount != null && doc.paidAmount !== "" && Math.abs(+doc.paidAmount || 0) > 0.004) return "paidAmount";
   if (doc.enshrined || doc.cancelled) return "Festschreiben/Storno nur über die dafür vorgesehenen Aufrufe";
+  // nur normale Rechnungen: eine Stornorechnung (SR) bzw. ein Bezug (origin) auf einen fremden Beleg ließe diesen als storniert erscheinen
+  if (k === "invoice" && doc.invoiceType != null && doc.invoiceType !== "" && String(doc.invoiceType) !== "RE") return "Rechnungsart " + doc.invoiceType;
+  if (doc.origin) return "origin";
   const nrF = k === "invoice" ? "invoiceNumber" : "creditNoteNumber";
-  if (doc[nrF] != null && String(doc[nrF]).trim()) {   // eigene Nummer (Blitzdings) nur, wenn sie noch nicht vergeben ist
-    const ex = await sev("GET", "/" + T, { query: { [nrF]: String(doc[nrF]).trim(), limit: 10 } }).catch(e => ({ err: e }));
+  if (doc[nrF] != null && String(doc[nrF]).trim()) {   // eigene Nummer nur Blitzdings (aus getNextInvoiceNumber): nicht vergeben, nicht über der nächsten freien
+    const nr = String(doc[nrF]).trim(); if (who !== "blitzdings" || k !== "invoice") return "eigene Nummer";
+    const ex = await sev("GET", "/" + T, { query: { [nrF]: nr, limit: 10 } }).catch(e => ({ err: e }));
     if (ex && ex.err) return { err: ex.err };
-    if (((ex && ex.objects) || []).some(o => o && String(o[nrF] || "") === String(doc[nrF]).trim() && (!cur || String(o.id) !== String(cur.id)))) return "Nummer schon vergeben";
+    if (((ex && ex.objects) || []).some(o => o && String(o[nrF] || "") === nr && (!cur || String(o.id) !== String(cur.id)))) return "Nummer schon vergeben";
+    const nx = await sev("GET", "/Invoice/Factory/getNextInvoiceNumber", { query: { invoiceType: "RE", useNextNumber: "false" } }).catch(() => null), nxs = nx && String(nx.objects || "");
+    const mA = nr.match(/^(.*?)(\d+)$/), mB = nxs && nxs.match(/^(.*?)(\d+)$/);
+    if (mA && mB && mA[1] === mB[1] && +mA[2] >= +mB[2]) return "Nummer über der nächsten freien (Lücke im Nummernkreis)";
   }
   if (k === "creditNote" && doc.refSrcInvoice && (doc.refSrcInvoice.id || doc.refSrcInvoice.id === 0)) {
     const r = await finApiDoc("Invoice", String(doc.refSrcInvoice.id).replace(/\D/g, "")); if (r.err && !r.notFound) return r;
@@ -2099,9 +2107,13 @@ function billingOp(pl) {
     if (/^[a-z0-9-]{1,20}$/.test(String(I.src || ""))) inv.src = String(I.src); if (/^[a-z]{1,12}$/.test(String(I.basis || ""))) inv.basis = String(I.basis); if (I.adj === true) inv.adj = true; const untilBefore = k.indexOf("site:") === 0 ? ((o.sites[k.slice(5)] || {}).billedUntil || "") : "";
     // Nachverrechnung: gedeckte Zeiträume mit Teilbetrag (A1) – ohne eigenen from/to, damit „verrechnet bis“ unverändert bleibt
     if (inv.adj) { inv.from = null; inv.to = null; const ps = (Array.isArray(I.parts) ? I.parts : []).slice(0, 12).filter(p => p && /^\d{4}-\d{2}-\d{2}$/.test(p.from || "") && /^\d{4}-\d{2}-\d{2}$/.test(p.to || "") && p.from <= p.to && isFinite(parseFloat(p.gross)))
-      .map(p => ({ from: p.from, to: p.to, gross: Math.round(parseFloat(p.gross) * 100) / 100 })); if (ps.length) inv.parts = ps; }
+      .map(p => ({ from: p.from, to: p.to, gross: Math.round(parseFloat(p.gross) * 100) / 100 }));
+      // im Formular geänderter Betrag: Teilbeträge auf den tatsächlich verrechneten Betrag umrechnen (Rest auf den letzten Teilzeitraum)
+      const tot = ps.reduce((a, p) => a + p.gross, 0); if (ps.length && tot > 0.004 && Math.abs(tot - inv.gross) > 0.004) { let left = inv.gross; ps.forEach((p, i) => { p.gross = i === ps.length - 1 ? Math.round(left * 100) / 100 : Math.round(p.gross * inv.gross / tot * 100) / 100; left -= p.gross; }); }
+      if (ps.length) inv.parts = ps; }
     const arr = Array.isArray(o.invoices[k]) ? o.invoices[k] : []; arr.push(inv); o.invoices[k] = arr.slice(-30);
     if (k.indexOf("blitz:") === 0 && inv.id) blitzReport = [k.slice(6), inv.id, inv.nr];   // Cockpit-Rechnung an Blitzdings melden (BD-3)
+    if (k.indexOf("blitz:") === 0 && I.bookingAmount != null && isFinite(parseFloat(I.bookingAmount)) && parseFloat(I.bookingAmount) >= 0) inv.bookingAmount = Math.round(parseFloat(I.bookingAmount) * 100) / 100;   // Buchungsbetrag beim Verrechnen (B6)
     if (inv.to && k.indexOf("site:") === 0) { const s = o.sites[k.slice(5)] || {}; s.billedUntil = inv.to; o.sites[k.slice(5)] = s; }
     if (inv.to && untilBefore > inv.to) o.sites[k.slice(5)].billedUntil = untilBefore;   // nie zurück: Nachverrechnung eines früheren (stornierten) Zeitraums (WEB-2)
   } else if (op === "ignore" && pl.key) {        // Posten in „Zu verrechnen“ ausblenden, bis der Betrag wieder steigt
@@ -2253,7 +2265,7 @@ function sumState(links) { return links.reduce((t, l) => { if (!l || l.state ===
 //     Vom Cockpit an Blitzdings gemeldete Rechnungen (cockpitInvoiceIds) zählen nur, wenn die Rechnung existiert, gültig ist, nicht
 //     anderweitig zugeordnet und die Meldung nicht zurückgenommen wurde (B7).
 //  2) nur für Buchungen ohne starken Treffer: Kunde + Betrag (brutto oder netto) bzw. Datum gegen freie Rechnungen ohne fremde Buchungsnummer,
-//     Rechnungsdatum ab Anlage der Buchung (ohne Anlagedatum: Event −300 Tage) bis Event +180 Tage. Zuordnung nach zeitlicher Nähe über alle
+//     Rechnungsdatum ab Event −300 Tage (früh angelegte Buchung: ab ihrer Anlage) bis Event +180 Tage. Zuordnung nach zeitlicher Nähe über alle
 //     Buchungen (die zeitlich nächste passende Rechnung gewinnt, B3); jeder Treffer ist danach vergeben (eine Rechnung ↔ eine Buchung).
 //  Danach Sammelrechnungen (mehrere Buchungen eines Kunden = genau eine freie Rechnung). Ist die Blitzdings-Rechnung storniert, zählt die
 //  neueste gültige Zuordnung (BD-6). Teilen sich Buchungen eine Rechnung (Kopftext mit mehreren Buchungsnummern, „Zuordnen“ zu mehreren
@@ -2312,7 +2324,8 @@ function abgleichBlitz(o) {
     const cust = lc(b.customerName).trim(), comp = lc(b.companyName).trim(), amt = amtOf(b), d = dayOf(b), own = lc(b.reference);
     if ((!cust && !comp) || !d) return;
     const amtOk = i => Math.abs(i.gross - amt) < 0.02 || Math.abs((+i.net || 0) - amt) < 0.02 || i.date === d || i.delivery === d;   // Firmen stehen teils netto (BD-11)
-    const lo = /^\d{4}-\d{2}-\d{2}/.test(String(b.createdAt || "")) ? ymdAdd(String(b.createdAt).slice(0, 10), -3) : ymdAdd(d, -300), hi = ymdAdd(d, 180);
+    // Untergrenze: Event −300 Tage, bei früh angelegten Buchungen ab Anlage (−3 Tage) – nie enger als −300 (Telefonbuchung später erfasst, Import)
+    const lo0 = ymdAdd(d, -300), cre = /^\d{4}-\d{2}-\d{2}/.test(String(b.createdAt || "")) ? ymdAdd(String(b.createdAt).slice(0, 10), -3) : "", lo = cre && cre < lo0 ? cre : lo0, hi = ymdAdd(d, 180);
     const cand = [].concat(byName[cust] || [], comp && comp !== cust ? byName[comp] || [] : []).filter(i => i.type !== "SR" && !i.cancelled && amtOk(i));
     candOf[b.id] = cand;
     cand.forEach(i => { if (!i.date || i.date < lo || i.date > hi || !free0(i) || claimed.has(String(i.id)) || !refsIn(i).every(r => r === own)) return;
@@ -2403,14 +2416,16 @@ function abgleichBlitz(o) {
     else if (links.length && !group && !c.weak && links.every(l => l.id && sevById[l.id])) {
       const n = round2(links.reduce((a, l) => a + (+sevById[l.id].net || 0), 0)), nCr = gG > 0 ? round2(cr * n / gG) : cr;
       const bl = links.filter(l => l.src === "blitz"), co = links.filter(l => l.src !== "blitz");
-      const lastInv = links.reduce((m, l) => (String(l.date || "") > m ? String(l.date || "") : m), "");
-      // erhöht nach der Verrechnung: Blitzdings-Rechnung lautet auf den damaligen Buchungsbetrag bzw. Buchung nach der letzten Rechnung geändert (updatedAt)
-      const raised = bl.length > 0 || (!!b.updatedAt && String(b.updatedAt).slice(0, 10) > lastInv);
+      // erhöht nach der Verrechnung: die Blitzdings-Rechnung lautet auf den damaligen Buchungsbetrag; bei Cockpit-Rechnungen bzw. „Zuordnen“ ist der
+      // Buchungsbetrag beim Verrechnen im Abrechnungs-Eintrag vermerkt (bookingAmount). Ohne diesen Vermerk (ältere Einträge, Kopftext, Name):
+      // unbekannt → nur Hinweis (B6 – ein bewusster Rabatt wird nie nachverrechnet)
+      const bases = c.recsB.filter(r => r && r.id && links.some(l => l.id === String(r.id)) && r.bookingAmount != null && isFinite(+r.bookingAmount)).map(r => +r.bookingAmount);
+      const base = bases.length ? Math.max.apply(null, bases) : null, raised = bl.length > 0 || (base != null && amt > base + 0.02);
       if (bl.length && co.length && gG > amt + 0.02 && Math.abs(n - amt) >= 0.02)
         notes.push({ lvl: "bad", text: "Doppelrechnung prüfen: " + bl.map(l => l.nr || "Entwurf").join(", ") + " (von Blitzdings) und " + co.map(l => l.nr || "Entwurf").join(", ") + " (Cockpit) für dieselbe Buchung – eine davon stornieren bzw. den Entwurf löschen (nicht automatisch)." });
       else if (Math.abs(gG - amt) < 0.02 || Math.abs(n - amt) < 0.02) { /* passt */ }
-      else if (amt > gG + 0.02 && raised) { diff = round2(amt - gG); unbilled = diff; notes.push({ lvl: "warn", text: "Betrag geändert: Buchung " + eu(amt) + ", verrechnet " + eu(gG) + " – Differenz " + eu(diff) + " nachverrechnen." }); }
-      else if (amt > gG + 0.02) notes.push({ lvl: "info", text: "Rechnung " + links.map(l => l.nr || "Entwurf").join(", ") + " über " + eu(gG) + " ist niedriger als die Buchung (" + eu(amt) + "), z. B. Rabatt – nichts zu verrechnen. Soll die Differenz " + eu(amt - gG) + " doch verrechnet werden, Rechnung von Hand erstellen." });
+      else if (amt > gG + 0.02 && raised) { diff = round2(Math.min(amt - gG, base != null && !bl.length ? amt - base : amt - gG)); unbilled = diff; notes.push({ lvl: "warn", text: "Betrag geändert: Buchung " + eu(amt) + ", verrechnet " + eu(gG) + " – Differenz " + eu(diff) + " nachverrechnen." }); }   // nur die Erhöhung seit dem Verrechnen – ein Rabatt bleibt
+      else if (amt > gG + 0.02) notes.push({ lvl: "info", text: "Rechnung " + links.map(l => l.nr || "Entwurf").join(", ") + " über " + eu(gG) + " ist niedriger als die Buchung (" + eu(amt) + ") – Rabatt oder Buchung nach der Rechnung erhöht? Nichts wird automatisch verrechnet; soll die Differenz " + eu(amt - gG) + " verrechnet werden, Rechnung von Hand erstellen." });
       else if (amt < gG - cr - 0.02 && amt < n - nCr - 0.02) notes.push({ lvl: "warn", text: "Betrag kleiner als verrechnet: Buchung " + eu(amt) + ", Rechnung " + eu(gG) + (cr > 0.005 ? " (Gutschrift " + eu(cr) + ")" : "") + " – Gutschrift prüfen (nicht automatisch)." });
       else if (cr > 0.005) { /* Gutschrift deckt die Senkung */ }
       else notes.push({ lvl: "warn", text: "Betrag weicht ab: Buchung " + eu(amt) + ", Rechnung brutto " + eu(gG) + " / netto " + eu(n) + " – bitte prüfen." });
@@ -2425,7 +2440,7 @@ function abgleichBlitz(o) {
       action: unbilled > 0.005 && !(deposit && links.length) ? { kind: "blitzdings", title: (diff ? "Nachverrechnung" : "Rechnung") + " · Blitzdings-Buchung", contactName: who, email: b.customerEmail || "", address: [who, b.billingStreet, [b.billingZip, b.billingCity].filter(Boolean).join(" ")].filter(Boolean).join("\n"), deliveryDate: day || undefined,
         headText: (ref ? "Buchung " + ref + " – " : "") + (diff ? "Nachverrechnung (Betrag nach der Rechnung geändert)." : "vielen Dank für Ihre Buchung bei Blitzdings."),
         items: [{ name: "Blitzdings " + (pkg || "Fotobox") + (diff ? " – Differenz" : ""), text: diff ? "Buchungsbetrag " + eu(amt) + " · bereits verrechnet " + eu(gG) + " (" + links.map(l => l.nr || "Entwurf").join(", ") + ")" : [day ? "Event am " + deDate(day) : "", (b.eventLocation || b.location) ? "Ort: " + (b.eventLocation || b.location) : "", extras ? "inkl. " + extras : ""].filter(Boolean).join(" · "), qty: 1, priceGross: diff || amt, taxRate: 20 }],
-        after: { billing: { key: "blitz:" + b.id, label: who + (diff ? " (Differenz)" : "") } } } : null });
+        after: { billing: { key: "blitz:" + b.id, label: who + (diff ? " (Differenz)" : ""), bookingAmount: amt } } } : null });   // Buchungsbetrag beim Verrechnen (B6)
     if (b._prev && !(item.unbilled > 0.005) && !(item.open > 0.005) && !notes.length) return;   // Vorjahr: nur, was noch offen ist
     out.push(item);
   });
@@ -2654,22 +2669,31 @@ function abgleichBuild(ctx) {
     if (sw) { const lf = Object.keys(sw.prebilledByMonth).filter(k => /^\d{4}-\d{2}$/.test(k)).sort()[0], y0 = String(sw.cutoff).slice(0, 4) + "-01-01";
       groups.unshift({ from: lf && lf + "-01" < y0 ? lf + "-01" : y0, to: sw.cutoff, gross: 0, credited: 0, adj: 0, nrs: [], legacy: true });
       R.liveAll.filter(o2 => isLegacyRec(o2.x)).forEach(o2 => { legacyCred += +(o2.l && o2.l.credited) || 0; }); }   // Gutschriften zu RE-1272 = bewusste Minderung
+    // Zeitraum einer stornierten Quartalsrechnung vor „verrechnet bis“ (ohne gültigen Ersatz): eigener Zeitraum mit 0 verrechnet → Nachverrechnung
+    R.deadAll.filter(x => x.from && x.to && !x.adj && !isLegacyRec(x) && billedUntil && x.to <= billedUntil).sort((a, b) => a.from.localeCompare(b.from)).forEach(x => {
+      if (groups.some(q => q.from <= x.to && x.from <= q.to)) return;
+      groups.push({ from: x.from, to: x.to, gross: 0, credited: 0, adj: 0, nrs: [], gap: true }); });
+    groups.sort((a, b) => (b.legacy ? 1 : 0) - (a.legacy ? 1 : 0) || a.from.localeCompare(b.from));
     let adjUnknown = 0, adjInDue = 0; const adjNrs = [];
     R.liveAll.filter(o2 => o2.x.adj).forEach(o2 => {
       const parts = Array.isArray(o2.x.parts) ? o2.x.parts.filter(p => p && /^\d{4}-\d{2}-\d{2}$/.test(p.from || "") && /^\d{4}-\d{2}-\d{2}$/.test(p.to || "") && isFinite(+p.gross)) : [];
       if (!parts.length) { adjUnknown += +o2.x.gross || 0; adjNrs.push(o2.x.nr || "Entwurf"); return; }
-      parts.forEach(p => { const g = groups.find(q => q.from <= p.from && p.to <= q.to) || groups.find(q => q.from <= p.to && p.from <= q.to);
-        if (g) g.adj += +p.gross || 0; else if (p.to >= from && p.from <= dueThrough) adjInDue += +p.gross || 0; });   // Zeitraum storniert: zählt gegen die neue Quartalsrechnung
+      let credG = null; const pt = parts.reduce((a, p) => a + (+p.gross || 0), 0), fac = pt > 0.004 && +o2.x.gross > 0 ? +o2.x.gross / pt : 1;   // zählt der tatsächlich verrechnete Betrag
+      parts.forEach(p => { const g = groups.find(q => q.from <= p.from && p.to <= q.to) || groups.find(q => q.from <= p.to && p.from <= q.to), v = round2((+p.gross || 0) * fac);
+        if (g) { g.adj += v; if (!credG) credG = g; } else if (p.to >= from && p.from <= dueThrough) adjInDue += v; });   // Zeitraum storniert: zählt gegen die neue Quartalsrechnung
+      if (credG) credG.credited += +(o2.l && o2.l.credited) || 0;   // Gutschrift zur Nachverrechnung
     });
-    let refund0 = 0, catchup = 0, deliberate = legacyCred; const catchParts = [];
+    // je Zeitraum: zu viel (vor Gutschriften) bzw. zu wenig verrechnet; Gutschriften zählen für das ganze Haus – die angebotene Gutschrift geht
+    // zur letzten Rechnung, nicht unbedingt zum Zeitraum, der zu viel verrechnet hat (A2: Gutschriften lösen nie eine Nachverrechnung aus)
+    let overG = 0, credJ = 0, catchup = 0; const catchParts = [];
     groups.forEach(g => {
       g.lo = sumP(g.from, g.to, "lo"); g.hi = sumP(g.from, g.to, "hi");
       if (!(g.from >= winStart && g.to <= yEnd)) return;   // nicht vollständig geladen → nicht beurteilbar
-      const billed = round2(g.gross + g.adj), ref = round2(billed - g.credited - g.hi), cu = round2(g.lo - billed);   // A2: Gutschriften lösen nie eine Nachverrechnung aus
-      if (ref > 0) refund0 = round2(refund0 + ref);
-      if (cu > 0.02) { catchup = round2(catchup + cu); catchParts.push({ from: g.from, to: g.to, gross: cu }); }
-      deliberate = round2(deliberate + Math.max(0, g.credited - Math.max(0, billed - g.hi)));
+      const billed = round2(g.gross + g.adj), cu = round2(g.lo - billed);
+      overG = round2(overG + Math.max(0, round2(billed - g.hi))); credJ = round2(credJ + g.credited);
+      if (cu > 0.02) { catchup = round2(catchup + cu); catchParts.push({ from: g.from, to: g.to, gross: cu, gap: !!g.gap }); }
     });
+    let refund0 = round2(Math.max(0, overG - credJ)), deliberate = round2(legacyCred + Math.max(0, credJ - overG));
     if (adjUnknown > 0.005) { catchup = 0; catchParts.length = 0; notes.push("Nachverrechnung " + adjNrs.join(", ") + " ohne Zeitraumangabe (" + eu(adjUnknown) + ") – bitte prüfen; bis dahin keine weitere Nachverrechnung vorgeschlagen"); }
     const gross = from <= dueThrough ? sumM(from, dueThrough) : 0;
     const open = round2(Math.max(0, gross - legacy - adjInDue));
@@ -2677,8 +2701,8 @@ function abgleichBuild(ctx) {
     const refund = refund0 > 0.02 ? refund0 : 0;   // bis 2 Cent: Cent-Rundung älterer Cockpit-Rechnungen (X3), keine Erstattung
     // Sperren: Daten fehlen, falsche Datumsbasis, Umstellung/Freigabe/Abrechnungsbeginn offen → kein Verrechnen, keine Erstattung, nur Hinweis (+ Ein-Klick-Vorschlag)
     let blocked = "", proposal = null;
-    // A12: Einträge ohne Quelle (vor dieser Version) stammen aus der Altquelle – Antonhaus von antonhaus.at, alle anderen von der Partner-Plattform
-    const lastRec = recAll[recAll.length - 1] || null, lastSrc = lastRec ? (lastRec.src || (o.key === "antonhaus" ? "antonhaus" : "partner")) : "";
+    // A12: Einträge ohne Quelle (vor dieser Version) stammen aus der Altquelle – Antonhaus/Alpinappart von ihrer eigenen Quelle, alle anderen von der Partner-Plattform
+    const lastRec = recAll[recAll.length - 1] || null, lastSrc = lastRec ? (lastRec.src || ({ antonhaus: "antonhaus", alpinappart: "alpinappart" }[o.key] || "partner")) : "";   // im Zweifel einmal bestätigen lassen
     const swDead = sw && R.deadAll.some(x => x.id && !x.adj && (!x.to || x.to <= sw.cutoff));
     const needSrc = !!lastSrc && lastSrc !== o.src && set.ackSrc !== o.src;
     const needLive = o.src === "partner" && !!o.billingLiveSince && recAll.length > 0 && String(o.billingLiveSince).slice(0, 10) > String((lastRec && lastRec.date) || "") && set.ackLive !== o.billingLiveSince;
@@ -2710,7 +2734,7 @@ function abgleichBuild(ctx) {
     if (molOver > 0.005) notes.push("Per Online-Zahlung mehr einbehalten als heute angefallen: " + eu(molOver) + " – Gutschrift nur, wenn du das so entscheidest");
     if (cxl > 0.005) notes.push("Zu stornierten Buchungen wurde schon Provision per Online-Zahlung einbehalten: " + eu(cxl) + " – Gutschrift prüfen");
     if (rest > 0.02) notes.push("Gutschriften über " + eu(rest) + " ohne passenden Hinweis gelten als bewusste Minderung – dafür wird keine Nachverrechnung vorgeschlagen");
-    if (!off && catchup > 0.02) notes.push("Nachverrechnung möglich: " + eu(catchup) + " (" + catchParts.map(p => "Anreisen " + deDate(p.from) + " – " + deDate(p.to)).join(", ") + ", nach der Abrechnung dazugekommen oder gestiegen)");
+    if (!off && catchup > 0.02) notes.push("Nachverrechnung möglich: " + eu(catchup) + " (" + catchParts.map(p => "Anreisen " + deDate(p.from) + " – " + deDate(p.to) + (p.gap ? " – Rechnung storniert" : "")).join(", ") + ", nach der Abrechnung dazugekommen, gestiegen bzw. storniert)");
     const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufendes Quartal (+ spätere Anreisen)
     const txt = "Aufenthalte (Anreise) " + span + (preDue > 0.005 || molDue > 0.005 ? ": " + eu(fullDue) : "") +
       (preDue > 0.005 ? " · abzüglich bereits mit " + (sw.invoiceNr || "RE-1272") + " verrechnet (Buchungseingang bis " + deDate(sw.cutoff) + ", nach heutiger Regel) " + eu(preDue) : "") +
@@ -2724,7 +2748,7 @@ function abgleichBuild(ctx) {
         items: [{ name: "VALUERO Vermittlungsgebühren", text: txt, qty: 1, priceGross: open, taxRate: 20 }],
         after: { billing: { key, from, to: dueThrough, label: o.name || o.key, src: o.src, basis: o.basis } } } : null,
       catchupAction: !off && catchup > 0.02 ? { kind: "valuero", title: "Nachverrechnung · VALUERO-Gebühren", contactName: o.name || "", deliveryDate: cuFrom, deliveryDateUntil: cuTo, headText: "Nachverrechnung Vermittlungsgebühren VALUERO für Aufenthalte, die nach der Abrechnung dazugekommen sind.",
-        items: catchParts.map(p => ({ name: "VALUERO Vermittlungsgebühren – Nachverrechnung", text: "Anreisen " + deDate(p.from) + " – " + deDate(p.to) + " (nach der Abrechnung nachgetragen oder gestiegen)" + (o.ratesLabel ? " · " + o.ratesLabel : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: round2(p.gross), taxRate: 20 })),
+        items: catchParts.map(p => ({ name: "VALUERO Vermittlungsgebühren – Nachverrechnung", text: "Anreisen " + deDate(p.from) + " – " + deDate(p.to) + (p.gap ? " (frühere Rechnung storniert)" : " (nach der Abrechnung nachgetragen oder gestiegen)") + (o.ratesLabel ? " · " + o.ratesLabel : "") + " · lt. Buchungsaufstellung", qty: 1, priceGross: round2(p.gross), taxRate: 20 })),
         after: { billing: { key, label: (o.name || o.key) + " (Nachverrechnung)", adj: true, parts: catchParts.map(p => ({ from: p.from, to: p.to, gross: round2(p.gross) })), src: o.src, basis: o.basis } } } : null });
   });
   // 4) Blitzdings und 5) Kantineur: eigene Funktionen (abgleichBlitz, abgleichKantineur). Kantineur zuerst zuordnen (linked), damit seine

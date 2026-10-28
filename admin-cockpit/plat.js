@@ -323,7 +323,7 @@ function koChecks(ko){
       /* B11: schon gebuchte Gutschriften zur Monatsrechnung abziehen – erledigt → keine Zeile mehr */
       var dbl=c2e(m.doubleBilledCents), di=d.docId&&inv[d.docId], cred=di?(+di.credited||0):0, restD=Math.round((dbl-cred)*100)/100;
       if(dbl>0.005&&restD>0.005){ var paid=!!di&&(di.status===750||di.status===1000);
-        rows.push({lvl:"bad",tag:"Doppelt verrechnet",text:nm+" "+mm+": "+eur(dbl)+" schon per Verrechnung von Hand abgerechnet und nochmals in "+(d.nr||"der Monatsrechnung")+(cred>0.005?" – davon "+eur(cred)+" gutgeschrieben, offen "+eur(restD):"")+". "+(paid?"Gutschrift-Vorschlag liegt unter „Zur Prüfung“ (nur auf Klick).":"Die Monatsrechnung ist noch nicht bezahlt – eine Gutschrift geht erst danach; nichts wird automatisch korrigiert."),inv:d.docId||"",acts:paid&&F.actions.fin?'<button class="btn" data-act="fin:review">Zur Prüfung</button>':''}); }
+        rows.push({lvl:"bad",tag:"Doppelt verrechnet",text:nm+" "+mm+": "+eur(dbl)+" schon per Verrechnung von Hand abgerechnet und nochmals in "+(d.nr||"der Monatsrechnung")+(cred>0.005?" – davon "+eur(cred)+" gutgeschrieben, offen "+eur(restD):"")+". "+(paid?"Gutschrift-Vorschlag unter „Zur Prüfung“ (nur auf Klick; entfällt, wenn die Rechnung der Verrechnung von Hand storniert wurde).":"Die Monatsrechnung ist noch nicht bezahlt – eine Gutschrift geht erst danach; nichts wird automatisch korrigiert."),inv:d.docId||"",acts:paid&&F.actions.fin?'<button class="btn" data-act="fin:review">Zur Prüfung</button>':''}); }
       if(m.state==="storniert"&&+m.openCents>0){ var cd=(m.cancelledDocs||[])[0]||{}; rows.push({lvl:"warn",tag:"Storniert",text:nm+" "+mm+": Monatsrechnung "+(cd.nr||"")+" storniert – "+eur(c2e(m.openCents))+" neu abrechnen.",inv:cd.docType==="CreditNote"?"":(cd.docId||""),acts:bm(r,m.month,"cash","Neu abrechnen")}); }
       else if(m.state==="ueberschneidung"&&+m.openCents>0) rows.push({lvl:"warn",tag:"Teilweise von Hand",text:nm+" "+mm+": "+eur(c2e(m.manualCents))+" schon von Hand verrechnet, Rest "+eur(c2e(m.openCents))+" offen.",acts:bm(r,m.month,"cash","Rest abrechnen")});
       else if(m.state==="rueckstand"&&+m.openCents>0) rows.push({lvl:"warn",tag:"Rückstand",text:nm+" "+mm+": weder Monatsrechnung noch Verrechnung von Hand ("+eur(c2e(m.openCents))+"). Vorsicht: Die alte Sammelrechnung „kochdu Provisionen "+mm+"“ kann den Monat schon enthalten – vorher prüfen.",acts:bm(r,m.month,"cash","Abrechnen …")});
@@ -598,7 +598,7 @@ F.action("plbinv",function(id){
   if(b.customerEmail&&!pre.email) pre.email=b.customerEmail;
   /* Bug #4 behoben: Rechnung wird in der Abrechnungs-Historie vermerkt */
   var lbl=b.customerName?b.customerName+(b.reference?" · "+b.reference:""):((pre.after&&pre.after.billing&&pre.after.billing.label)||"Buchung");
-  pre.after=Object.assign({},pre.after||{},{billing:{key:"blitz:"+id,label:lbl}});
+  pre.after=Object.assign({},pre.after||{},{billing:{key:"blitz:"+id,label:lbl,bookingAmount:b.totalCents!=null?c2e(b.totalCents):(it&&it.amount)}});   /* Buchungsbetrag beim Verrechnen (B6) */
   pre.onDone=function(){ loadBill(); };
   F.openInvoice(pre);
 });

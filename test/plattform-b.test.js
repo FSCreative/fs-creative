@@ -167,11 +167,13 @@ function unitTests(T) {
   }]);
 
   /* ---- Review Teil B: B3 (kein Rückschritt im Abgleich), B6 (Gruppen/Rabatt), B7 (gemeldete Rechnungen), A3 (Gutschrift), B5/B10/B11 (Kantineur) ---- */
-  out.push(["B3a: Rechnung 61 Tage vor dem Event (Name + Betrag) zählt wie bisher; Rechnung vor Anlage der Buchung nie", () => {
+  out.push(["B3a: Rechnung 61 Tage vor dem Event (Name + Betrag) zählt wie bisher – auch wenn die Buchung erst danach erfasst wurde; früh angelegte Buchung: Rechnung ab Anlage", () => {
     let it = blitz([bk({ id: "a", reference: "BD-AAA701", customerName: "Hochzeit Huber", eventDate: "2026-10-20" })], [I({ id: "701", nr: "RE-701", gross: 399, contact: "Hochzeit Huber", date: "2026-08-20" })])[0];
     assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.last.id, "701");
     it = blitz([bk({ id: "a", reference: "BD-AAA701", customerName: "Hochzeit Huber", eventDate: "2026-10-20", createdAt: "2026-09-01T10:00:00.000Z" })], [I({ id: "701", nr: "RE-701", gross: 399, contact: "Hochzeit Huber", date: "2026-08-20" })])[0];
-    assert.strictEqual(it.unbilled, 399, "Rechnung älter als die Buchung gehört nicht dazu");
+    assert.strictEqual(it.unbilled, 0, "Telefonbuchung später erfasst: Rechnung passt weiter");
+    it = blitz([bk({ id: "w", reference: "BD-WED001", customerName: "Hochzeit Lang", eventDate: "2026-11-15", createdAt: "2025-11-20T10:00:00.000Z" })], [I({ id: "702", nr: "RE-702", gross: 399, contact: "Hochzeit Lang", date: "2025-11-25" })])[0];
+    assert.strictEqual(it.unbilled, 0, "ein Jahr vorher gebucht und verrechnet");
   }]);
   out.push(["B3b: zwei gleich teure Buchungen, zwei Rechnungen → jede bekommt die zeitlich nächste (März ↔ Februar, September ↔ August)", () => {
     const items = blitz([bk({ id: "m", reference: "BD-MAR001", customerName: "Firma Roadshow", eventDate: "2026-03-01" }), bk({ id: "s", reference: "BD-SEP001", customerName: "Firma Roadshow", eventDate: "2026-09-01" })],
@@ -199,11 +201,14 @@ function unitTests(T) {
     items = blitz([bk({ id: "g1", reference: "BD-GRP001", customerName: "Gemeinde X" }), bk({ id: "g2", reference: "BD-GRP002", customerName: "Gemeinde X", eventDate: "2026-11-11" })], [I({ id: "752", nr: "RE-752", gross: 700, contact: "Gemeinde X", ref: "Buchungen BD-GRP001, BD-GRP002", date: "2026-11-01" })]);
     assert.ok(items.every(x => x.unbilled === 0 && !x.action && x.notes.some(n => /Sammelrechnung RE-752/.test(n.text))));
   }]);
-  out.push(["B6: bewusster Rabatt (349 statt 399) → Hinweis ohne Aktion und ohne „zu verrechnen“; nach der Rechnung erhöht (updatedAt) → Differenz", () => {
-    let it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R" })], [I({ id: "771", nr: "RE-771", gross: 349, contact: "Kunde R", ref: "Buchung BD-RAB771", date: "2026-11-01" })])[0];
+  out.push(["B6: bewusster Rabatt (349 statt 399) → Hinweis ohne Aktion und ohne „zu verrechnen“, auch wenn die Buchung danach geändert wurde (z. B. bezahlt); nach der Verrechnung erhöht → Differenz", () => {
+    const inv = [I({ id: "771", nr: "RE-771", gross: 349, contact: "Kunde R", ref: "Buchung BD-RAB771", date: "2026-11-01" })];
+    let it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R" })], inv)[0];
     assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(it.notes.some(n => n.lvl === "info" && /Rabatt/.test(n.text)));
-    it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R", updatedAt: "2026-11-10T08:00:00.000Z" })], [I({ id: "771", nr: "RE-771", gross: 349, contact: "Kunde R", ref: "Buchung BD-RAB771", date: "2026-11-01" })])[0];
-    assert.strictEqual(it.unbilled, 50); assert.ok(it.action && /Nachverrechnung/.test(it.action.title));
+    it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R", paymentStatus: "PAID", updatedAt: "2026-11-10T08:00:00.000Z" })], inv, { "blitz:r": [{ id: "771", nr: "RE-771", gross: 349, date: "2026-11-01", bookingAmount: 399 }] })[0];
+    assert.strictEqual(it.unbilled, 0, "Rabatt bleibt Rabatt (Buchungsbetrag beim Verrechnen 399)"); assert.strictEqual(it.action, null);
+    it = blitz([bk({ id: "r", reference: "BD-RAB771", customerName: "Kunde R", totalCents: 44900 })], inv, { "blitz:r": [{ id: "771", nr: "RE-771", gross: 349, date: "2026-11-01", bookingAmount: 399 }] })[0];
+    assert.strictEqual(it.unbilled, 50, "Buchung nach der Verrechnung von 399 auf 449 erhöht → nur die Erhöhung, der Rabatt bleibt"); assert.ok(it.action && /Nachverrechnung/.test(it.action.title));
   }]);
   out.push(["B7: gemeldete Rechnung (cockpitInvoiceIds) zählt nur, wenn sie existiert, gültig ist, nicht einer anderen Buchung gehört und nicht zurückgenommen wurde", () => {
     let items = blitz([bk({ id: "A", reference: "BD-AAA761", customerName: "Kunde A", cockpitInvoiceIds: ["761"], invoiceIds: ["761"] }), bk({ id: "B", reference: "BD-BBB761", customerName: "Kunde B" })],
@@ -222,6 +227,12 @@ function unitTests(T) {
     // Senkung der Buchung nach der Rechnung, schon gutgeschrieben → kein „Gutschrift prüfen“ mehr
     const it2 = blitz([bk({ id: "c4", reference: "BD-ABC124", customerName: "Max Muster", totalCents: 40000, sevdeskInvoiceId: "702" })], [I({ id: "702", nr: "RE-702", gross: 500, net: 416.67, paid: 500, credited: 100 })])[0];
     assert.ok(!(it2.notes || []).some(n => /Gutschrift prüfen/.test(n.text)), JSON.stringify(it2.notes));
+    // übrige Abschnitte: Website (Zeitraum verrechnet, Rechnung mit Kulanz-Gutschrift) und kochdu (alte Version, Monatsrechnung mit Gutschrift „doppelt verrechnet“)
+    const rs = abgleichBuild({ year: Y, today: TODAY, sitesSnap: { railway: { projects: [] }, sites: [{ name: "kunde-a3.at", up: true }] }, sev: mkSev([I({ id: "911", nr: "RE-911", gross: 120, credited: 20, date: "2026-01-05" }), I({ id: "912", nr: "RE-912", gross: 40, credited: 8, date: "2026-10-01" })]),
+      bill: { prices: { hosting: 10, hostingPer: "month", period: 12, taxRate: 20, gross: true }, sites: { "cf:kunde-a3.at": { active: true, hosting: true, billedUntil: "2026-12-31" } }, invoices: { "site:cf:kunde-a3.at": [{ id: "911", nr: "RE-911", date: "2026-01-05", gross: 120, from: "2026-01-01", to: "2026-12-31" }] } },
+      kochdu: { restaurants: [{ id: "7", name: "La Taverna", barOpenCents: 0, barSettledCents: 4000, invoices: [{ docId: "912", nr: "RE-912", month: "2026-09", grossCents: 4000, at: "2026-10-01T08:00:00Z" }] }] } }).items;
+    const ws = rs.find(x => x.key === "site:cf:kunde-a3.at"); assert.strictEqual(ws.unbilled, 0); assert.strictEqual(ws.refund, 0); assert.strictEqual(ws.invoiced, 100);
+    const kd = rs.find(x => x.key === "kochdu:7"); assert.strictEqual(kd.unbilled, 0); assert.strictEqual(kd.settledWithoutInvoice, 0, "Gutschrift macht nichts „ohne Rechnung“");
   }]);
   out.push(["B5: Kantineur v2 – zweite Rechnung zur selben Zahlung (trotz invoiceId) bleibt sichtbar; storniert mit Ersatz ohne Warnung; Rechnung ohne passende Zahlung gemeldet", () => {
     let r = build({ invs: [I({ id: "902", nr: "RE-902", gross: 9.69, paid: 0, open: 9.69, status: 200, mpid: "tr_dup00001", overdue: true }), I({ id: "901", nr: "RE-901", gross: 9.69, paid: 9.69, mpid: "tr_dup00001" })],
@@ -303,6 +314,10 @@ function unitTests(T) {
       // die echte Doppelrechnung löst sich auf (RE-662 storniert) → verschwindet
       const rep2 = B.blitzReportReconcile(books, bill, sev(invs.map(i => i.id === "662" ? Object.assign({}, i, { cancelled: true }) : i)));
       assert.strictEqual(rep2.duplicates.length, 0); assert.deepStrictEqual(Object.keys(B.blitzReportState().dup), []);
+      // Buchungsliste nicht geladen: echte Doppelrechnung mit verschiedenen Beträgen bleibt gespeichert
+      const st3 = B.blitzReportState(); st3.dup = { "h|662": { bookingId: "h", invoiceId: "662", other: "661" } }; B.blitzReportSave(st3);
+      const inv3 = invs.map(i => i.id === "662" ? Object.assign({}, i, { gross: 349 }) : i);
+      assert.strictEqual(B.blitzReportReconcile(null, bill, sev(inv3)).duplicates.length, 1); assert.ok(B.blitzReportState().dup["h|662"], "nicht gelöscht");
       // Buchhaltung nicht geladen → nichts löschen
       const st2 = B.blitzReportState(); st2.dup = { "h|662": { bookingId: "h", invoiceId: "662", other: "661" } }; B.blitzReportSave(st2);
       assert.strictEqual(B.blitzReportReconcile(books, bill, null).duplicates.length, 1); assert.ok(B.blitzReportState().dup["h|662"]);
@@ -438,6 +453,10 @@ function unitTests(T) {
     const bill = { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-09-20", gross: 8 }] } };
     E = finSetup(base().concat(invSeed("850", { gross: 8, extra: { status: "1000", paidAmount: "8.00", cancelled: true } })), null, bill); await E.L.load();
     assert.strictEqual(await E.C.kochduDouble(rest), 0, "Rechnung der Verrechnung von Hand storniert → nichts doppelt");
+    // storniert, aber gleich neu ausgestellt bzw. eine andere (spätere) Rechnung storniert → Doppelverrechnung besteht weiter
+    const bill2 = { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-09-20", gross: 8 }, { id: "851", nr: "RE-851", date: "2026-09-25", gross: 8 }, { id: "852", nr: "RE-852", date: "2027-02-10", gross: 40 }] } };
+    E = finSetup(base().concat(invSeed("850", { gross: 8, extra: { status: "1000", paidAmount: "8.00", cancelled: true } }), invSeed("851", { gross: 8, extra: { status: "1000", paidAmount: "8.00" } }), invSeed("852", { gross: 40, extra: { status: "1000", paidAmount: "40.00", cancelled: true } })), null, bill2); await E.L.load();
+    assert.strictEqual(await E.C.kochduDouble(rest), 1); assert.strictEqual((await E.P.list())[0].amount, -8, "Ersatz bzw. fremder Monat zählt nicht");
     // Vorschlag liegt, danach bucht Simon die Gutschrift von Hand → Vorschlag ungültig
     E = finSetup(base()); await E.L.load(); assert.strictEqual(await E.C.kochduDouble(rest), 1); const it = (await E.P.list())[0];
     await E.L.request("POST", "/Fin/creditNoteFromInvoice", { body: { invoiceId: "840", positions: [{ name: "Gutschrift von Hand", quantity: 1, priceGross: 8, grossPricing: true, taxRate: 20 }] } });

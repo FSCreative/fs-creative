@@ -161,8 +161,8 @@ function unitTests(T) {
     it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000 })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200 }] }).find(x => x.key === "blitz:b3");
     // Review B6: Rechnung von Hand bzw. Zuordnung mit niedrigerem Betrag (z. B. Rabatt) → nur Hinweis, nichts „zu verrechnen“, keine Aktion
     assert.strictEqual(it.depositOnly, undefined); assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(it.notes.some(n => n.lvl === "info" && /niedriger als die Buchung/.test(n.text)), JSON.stringify(it.notes));
-    // BD-7: Buchung nach der Rechnung geändert (updatedAt) → Betrag geändert, die Differenz ist zu verrechnen
-    it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000, updatedAt: "2026-05-20T10:00:00.000Z" })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200 }] }).find(x => x.key === "blitz:b3");
+    // BD-7: Buchungsbetrag beim Verrechnen 200 € (vermerkt), heute 400 € → erhöht, die Differenz ist zu verrechnen
+    it = blitz([bk({ id: "b3", reference: "BD-1003", customerName: "Anna Anzahlung", totalCents: 40000, updatedAt: "2026-05-20T10:00:00.000Z" })], invs, { "blitz:b3": [{ id: "305", nr: "RE-305", date: "2026-05-01", gross: 200, bookingAmount: 200 }] }).find(x => x.key === "blitz:b3");
     assert.strictEqual(it.unbilled, 200); assert.ok(it.action && it.action.items[0].priceGross === 200 && /Differenz/.test(it.action.items[0].name), JSON.stringify(it.action));
   }]);
   out.push(["Abgleich: Nachschlagen per ID in allen Rechnungen; eine ausdrücklich zugeordnete Rechnung (sevdeskInvoiceId) zählt nicht über den Kopftext für eine andere Buchung", () => {

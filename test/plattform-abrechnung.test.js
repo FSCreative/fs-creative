@@ -229,13 +229,39 @@ function unitTests(T) {
       valuero: { objects: [hp("haus-x", ["01", "04", "07"].map(m => pm({ month: "2026-" + m, provisionCents: 10000 })), "2026-07-01")] }, valueroPrev: { objects: [hp("haus-x", [], "2026-07-01")] } }).items.find(x => x.key === "valuero:haus-x");
     assert.strictEqual(it.refund, 0, "A8"); assert.strictEqual(it.catchup, 0);
     const recsY = [{ id: "600", nr: "RE-600", date: "2026-10-01", gross: 300, from: "2026-07-01", to: "2026-09-30" }];
+    const mY = [pm({ month: "2026-07", provisionCents: 10000, importedCents: 10000 }), pm({ month: "2026-08", provisionCents: 10000, importedCents: 6000 }), pm({ month: "2026-09", provisionCents: 10000 })];
     it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev([I({ id: "600", nr: "RE-600", gross: 300 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:alpinappart": recsY } }, sitesSnap: null,
-      valuero: { objects: [hp("alpinappart", [pm({ month: "2026-07", provisionCents: 10000, importedCents: 10000 }), pm({ month: "2026-08", provisionCents: 10000, importedCents: 6000 }), pm({ month: "2026-09", provisionCents: 10000 })])] }, valueroPrev: { objects: [hp("alpinappart", [])] } }).items.find(x => x.key === "valuero:alpinappart");
-    assert.strictEqual(it.refund, 0, "A9"); assert.strictEqual(it.catchup, 0); assert.ok(!it.blocked, it.blocked + " (A12: Altbestand ohne src = Partner-Plattform)");
+      valuero: { objects: [hp("alpinappart", mY)] }, valueroPrev: { objects: [hp("alpinappart", [])] } }).items.find(x => x.key === "valuero:alpinappart");
+    assert.ok(/Quelle gewechselt \(alpinappart → partner\)/.test(it.blocked || ""), "A12: Altbestand ohne src = Altquelle Alpinappart → einmal bestätigen: " + it.blocked);
+    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev([I({ id: "600", nr: "RE-600", gross: 300 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:alpinappart": recsY }, valuero: { alpinappart: { ackSrc: "partner" } } }, sitesSnap: null,
+      valuero: { objects: [hp("alpinappart", mY)] }, valueroPrev: { objects: [hp("alpinappart", [])] } }).items.find(x => x.key === "valuero:alpinappart");
+    assert.strictEqual(it.refund, 0, "A9"); assert.strictEqual(it.catchup, 0); assert.ok(!it.blocked, it.blocked);
     // echte Senkung bleibt erkannt: Q3 300 verrechnet, heute nur 250 (Storno) → zu viel 50
-    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev([I({ id: "600", nr: "RE-600", gross: 300 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:alpinappart": recsY } }, sitesSnap: null,
+    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev([I({ id: "600", nr: "RE-600", gross: 300 })]), bill: { prices: {}, sites: {}, invoices: { "valuero:alpinappart": recsY }, valuero: { alpinappart: { ackSrc: "partner" } } }, sitesSnap: null,
       valuero: { objects: [hp("alpinappart", [pm({ month: "2026-07", provisionCents: 10000 }), pm({ month: "2026-08", provisionCents: 5000 }), pm({ month: "2026-09", provisionCents: 10000 })])] }, valueroPrev: { objects: [hp("alpinappart", [])] } }).items.find(x => x.key === "valuero:alpinappart");
     assert.strictEqual(it.refund, 50);
+  }]);
+  out.push(["Review 2: Gutschrift zur letzten Rechnung beseitigt „zu viel verrechnet“ eines früheren Quartals; stornierte Zwischen-Rechnung → Nachverrechnung; Nachverrechnung zählt den tatsächlich verrechneten Betrag", () => {
+    const hq = (jan) => ({ key: "haus-q", name: "Haus Q", src: "partner", basis: "arrival", billingStart: "2026-01-01", months: [pm({ month: "2026-01", provisionCents: jan }), pm({ month: "2026-04", provisionCents: 20000 }), pm({ month: "2026-07", provisionCents: 30000 })] });
+    const rq = [["11", "2026-04-01", 100, "2026-01-01", "2026-03-31"], ["12", "2026-07-01", 200, "2026-04-01", "2026-06-30"], ["13", "2026-10-01", 300, "2026-07-01", "2026-09-30"]].map(x => ({ id: x[0], nr: "RE-" + x[0], date: x[1], gross: x[2], from: x[3], to: x[4], src: "partner" }));
+    const runQ = (recsQ, invs, jan) => abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev(invs), bill: { prices: {}, sites: {}, invoices: { "valuero:haus-q": recsQ } }, sitesSnap: null, valuero: { objects: [hq(jan)] }, valueroPrev: { objects: [hq(0)].map(o => Object.assign({}, o, { months: [] })) } }).items.find(x => x.key === "valuero:haus-q");
+    const invQ = (o) => ["11", "12", "13"].map(id => I(Object.assign({ id, nr: "RE-" + id, gross: +({ 11: 100, 12: 200, 13: 300 })[id] }, (o || {})[id] || {})));
+    let it = runQ(rq, invQ(), 6000); assert.strictEqual(it.refund, 40); assert.strictEqual(it.last.id, "13", "Gutschrift-Knopf geht zur letzten Rechnung");
+    it = runQ(rq, invQ({ 13: { credited: 40 } }), 6000); assert.strictEqual(it.refund, 0, "Gutschrift zu RE-13 beseitigt das Q1-Zuviel"); assert.ok(!(it.notes || []).some(n => /bewusste Minderung/.test(n)), JSON.stringify(it.notes));
+    const rqa = rq.concat([{ id: "14", nr: "RE-14", date: "2026-10-05", gross: 30, adj: true, parts: [{ from: "2026-07-01", to: "2026-09-30", gross: 30 }], src: "partner" }]);
+    const hq2 = (jan) => Object.assign(hq(jan), { months: hq(jan).months.map(m => m.month === "2026-07" ? Object.assign({}, m, { provisionCents: 33000 }) : m) });
+    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev(invQ().concat([I({ id: "14", nr: "RE-14", gross: 30, credited: 30 })])), bill: { prices: {}, sites: {}, invoices: { "valuero:haus-q": rqa } }, sitesSnap: null, valuero: { objects: [hq2(6000)] }, valueroPrev: { objects: [] } }).items.find(x => x.key === "valuero:haus-q");
+    assert.strictEqual(it.refund, 10, "Gutschrift zur Nachverrechnung zählt"); assert.strictEqual(it.catchup, 0, "Gutschrift löst keine Nachverrechnung aus");
+    // Q2 storniert, Q3 gültig → Q2 wieder zu verrechnen (als Nachverrechnung, Zeitraum der stornierten Rechnung)
+    it = runQ(rq, invQ({ 12: { cancelled: true } }), 10000); assert.strictEqual(it.catchup, 200); assert.deepStrictEqual(it.catchupAction.after.billing.parts, [{ from: "2026-04-01", to: "2026-06-30", gross: 200 }]);
+    assert.ok(/storniert/.test(it.catchupAction.items[0].text), it.catchupAction.items[0].text); assert.strictEqual(it.unbilled, 0);
+    const rqn = rq.concat([{ id: "15", nr: "RE-15", date: "2026-10-20", gross: 200, adj: true, parts: [{ from: "2026-04-01", to: "2026-06-30", gross: 200 }], src: "partner" }]);
+    it = runQ(rqn, invQ({ 12: { cancelled: true } }).concat([I({ id: "15", nr: "RE-15", gross: 200 })]), 10000); assert.strictEqual(it.catchup, 0, "nach der Nachverrechnung erledigt");
+    // vorgeschlagen 20, im Formular auf 10 geändert → 10 offen
+    const rq7 = rq.concat([{ id: "16", nr: "RE-16", date: "2026-10-20", gross: 10, adj: true, parts: [{ from: "2026-07-01", to: "2026-09-30", gross: 20 }], src: "partner" }]);
+    it = abgleichBuild({ year: "2026", today: "2026-10-28", sev: mkSev(invQ().concat([I({ id: "16", nr: "RE-16", gross: 10 })])), bill: { prices: {}, sites: {}, invoices: { "valuero:haus-q": rq7 } }, sitesSnap: null,
+      valuero: { objects: [Object.assign(hq(10000), { months: hq(10000).months.map(m => m.month === "2026-07" ? Object.assign({}, m, { provisionCents: 32000 }) : m) })] }, valueroPrev: { objects: [] } }).items.find(x => x.key === "valuero:haus-q");
+    assert.strictEqual(it.catchup, 10);
   }]);
   out.push(["A12: Altbestand ohne Quelle = Altquelle → Antonhaus kommt über die Plattform: gesperrt bis zur Bestätigung (Quelle und Freigabe auf einen Klick)", () => {
     const viaP = ahObj("2027", { src: "partner", billingLiveSince: "2026-12-01T10:00:00.000Z" });
@@ -273,6 +299,8 @@ function billingTests(T, dir) {
     T.billingOp({ op: "invoice", key: "valuero:haus-a", invoice: { id: "2", nr: "RE-2", gross: 5, adj: true, src: "x y", from: "2026-01-01", to: "2026-12-31", parts: [{ from: "2026-07-01", to: "2026-09-30", gross: "5.004" }, { from: "bad", to: "2026-09-30", gross: 1 }] } });
     const r = T.readBilling().invoices["valuero:haus-a"]; assert.strictEqual(r[0].src, "partner"); assert.strictEqual(r[0].basis, "arrival"); assert.strictEqual(r[1].adj, true); assert.strictEqual(r[1].src, undefined, "ungültige Quelle nicht gespeichert");
     assert.deepStrictEqual(r[1].parts, [{ from: "2026-07-01", to: "2026-09-30", gross: 5 }], "Teilzeiträume der Nachverrechnung (A1)"); assert.strictEqual(r[1].to, null, "Nachverrechnung verschiebt „verrechnet bis“ nie");
+    T.billingOp({ op: "invoice", key: "valuero:haus-a", invoice: { id: "3", nr: "RE-3", gross: 10, adj: true, parts: [{ from: "2026-04-01", to: "2026-06-30", gross: 15 }, { from: "2026-07-01", to: "2026-09-30", gross: 5 }] } });
+    assert.deepStrictEqual(T.readBilling().invoices["valuero:haus-a"][2].parts.map(p => p.gross), [7.5, 2.5], "Teilbeträge auf den tatsächlich verrechneten Betrag umgerechnet");
     T.billingOp({ op: "vaack", key: "haus-c", src: "partner", liveSince: "2026-12-01T10:00:00.000Z" }); assert.deepStrictEqual([T.readBilling().valuero["haus-c"].ackSrc, T.readBilling().valuero["haus-c"].ackLive], ["partner", "2026-12-01T10:00:00.000Z"]);
     T.billingOp({ op: "vastart", key: "valuero:haus-b", start: "2026-11-01" }); assert.strictEqual(T.readBilling().valuero["haus-b"].start, "2026-11-01");
     assert.throws(() => T.billingOp({ op: "vastart", key: "haus-b", start: "2026-11-15" }));
@@ -332,7 +360,7 @@ function createMock() {
   const cns = [{ id: "901", objectName: "CreditNote", creditNoteNumber: "GU-901", status: "100", header: "Auszahlung Online-Zahlungen 09/2026", footText: PAYOUT_FOOT_OLD, sumGross: "-80", contact: { id: "21", objectName: "Contact" } },
     { id: "902", objectName: "CreditNote", creditNoteNumber: "GU-902", status: "100", header: "Auszahlung Online-Zahlungen 09/2026", footText: "Auszahlung Fremdgeld an das Lokal", sumGross: "-50", contact: { id: "21", objectName: "Contact" } }];
   const pos = [{ id: "8011", invoice: { id: "801", objectName: "Invoice" } }, { id: "8021", invoice: { id: "802", objectName: "Invoice" } }, { id: "9011", creditNote: { id: "901", objectName: "CreditNote" } }];
-  const state = { inv, cns, pos, saved: [], calls: [], partnerQ: [], antonQ: [], antonMode: "arrival", partnerDown: false };
+  const state = { inv, cns, pos, saved: [], calls: [], partnerQ: [], antonQ: [], antonMode: "arrival", partnerDown: false, nextNr: 990 };
   let n = 0;
   const server = http.createServer((req, res) => {
     let body = ""; req.on("data", c => (body += c)); req.on("end", () => {
@@ -360,7 +388,7 @@ function createMock() {
       if (m === "GET" && p === "/Contact") return send(200, { objects: [] });
       if (m === "GET" && p === "/StaticCountry") return send(200, { objects: [{ id: "3", code: "at", name: "Österreich" }] });
       if (m === "GET" && p === "/Tools/bookkeepingSystemVersion") return send(200, { objects: { version: "2.0" } });
-      if (m === "GET" && p === "/Invoice/Factory/getNextInvoiceNumber") return send(200, { objects: "RE-990" });
+      if (m === "GET" && p === "/Invoice/Factory/getNextInvoiceNumber") { const v = "RE-" + state.nextNr; if (q.get("useNextNumber") === "true") state.nextNr++; return send(200, { objects: v }); }   // wie fin-local: reserviert nur mit useNextNumber=true
       if (m === "POST" || m === "PUT") return send(201, { objects: { id: "1" } });
       return send(200, { objects: [] });
     });
@@ -560,6 +588,11 @@ function createMock() {
     assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "803", header: "x", status: "200" }, invoicePosSave: [] })).status, 403, "offene (nicht Entwurf) eigene Rechnung");
     // Blitzdings: neue Rechnung „offen“ mit eigener Nummer aus getNextInvoiceNumber erlaubt, vergebene Nummer nicht
     assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "Rechnung RE-803", invoiceNumber: "RE-803", status: 200, reference: "BD-1002", headText: "Buchung BD-1002 – vielen Dank" }, invoicePosSave: [] })).status, 403);
+    assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "Rechnung RE-9999", invoiceNumber: "RE-9999", status: 200, reference: "BD-1002" }, invoicePosSave: [] })).status, 403, "Nummer weit über der nächsten freien (Lücke)");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: "200", contact: { id: "21", objectName: "Contact" } }, invoicePosSave: [] })).status, 403, "offen anlegen nur Blitzdings");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: "100", invoiceNumber: "RE-777" }, invoicePosSave: [] })).status, 403, "eigene Nummer nur Blitzdings");
+    assert.strictEqual((await fa(Ka, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: 100, invoiceType: "SR", origin: { id: "802", objectName: "Invoice" } }, invoicePosSave: [] })).status, 403, "Stornorechnung zu fremder Rechnung");
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "x", status: "100", origin: { id: "802", objectName: "Invoice" } }, invoicePosSave: [] })).status, 403, "Bezug auf fremde Rechnung");
     // A11: alte Auszahlungs-Gutschrift (Kopf + Fußtext von fs-order) gehört kochdu, die von Hand angelegte mit gleichem Kopf nicht
     assert.strictEqual((await fa(K, "GET", "/CreditNote/901")).status, 200); assert.strictEqual((await fa(K, "GET", "/CreditNote/902")).status, 403);
     r = await fa(K, "GET", "/CreditNote?contact[id]=21&contact[objectName]=Contact&limit=100"); assert.strictEqual(r.status, 200);

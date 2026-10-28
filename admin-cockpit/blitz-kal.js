@@ -280,7 +280,7 @@ F.action("bkinv",function(v){
     items=items.concat(deps.map(function(l){ return {name:"abzüglich Anzahlung "+(l.nr||"(Entwurf)")+(l.date?" vom "+de(String(l.date).slice(0,10)):""),text:"",qty:1,priceGross:-(Math.round((+l.gross||0)*100)/100),taxRate:depRate(l)}; })); }
   F.openInvoice(Object.assign({title:(dep?"Anzahlung":rest?"Restrechnung":"Rechnung")+" · Blitzdings-Buchung"},F.blitzInvTo(b),{
     deliveryDate:b.eventDate,headText:"Buchung "+b.reference+" – vielen Dank für Ihre Buchung bei Blitzdings.",items:items,
-    after:{billing:Object.assign({key:"blitz:"+b.id,label:b.customerName+" · "+b.reference+(dep?" (Anzahlung)":rest?" (Restrechnung)":"")},dep?{deposit:true}:{})}}));
+    after:{billing:Object.assign({key:"blitz:"+b.id,label:b.customerName+" · "+b.reference+(dep?" (Anzahlung)":rest?" (Restrechnung)":""),bookingAmount:c2e(b.totalCents)},dep?{deposit:true}:{})}}));
 });
 
 /* Steuersatz einer Anzahlungsrechnung (aus brutto/netto der Buchhaltung, sonst 20 %) */
