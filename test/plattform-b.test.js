@@ -520,23 +520,29 @@ function unitTests(T) {
     // neue ID, die es noch nicht gibt (z. B. Übernahme aus sevDesk): bleibt wie bisher
     assert.strictEqual(String((await E.L.request("POST", "/Contact", { body: { id: "4711", name: "Neu" } })).objects.id), "4711");
   });
-  await t("R3-2: kochdu – jede Verrechnung von Hand gehört zu genau einem Monat; storniert + korrigiert neu ausgestellt (anderer Betrag) → Doppelung besteht; Oktober-Storno nimmt dem September nichts", async () => {
-    const two = [contact("40", "La Taverna")].concat(invSeed("840", { gross: 120, extra: { status: "1000", paidAmount: "120.00" } }), invSeed("841", { gross: 130, date: "2026-11-01", extra: { status: "1000", paidAmount: "130.00" } }));
-    const months = [{ month: "2026-09", doubleBilledCents: 5000, manualCents: 5000, doc: { docId: "840", nr: "RE-840" } }, { month: "2026-10", doubleBilledCents: 6000, manualCents: 6000, doc: { docId: "841", nr: "RE-841" } }];
-    // Sept: Hand-Rechnung 03.10. gültig; Okt: Hand-Rechnung 02.11. storniert (nicht neu) → nur Sept 50
-    let E = finSetup(two.concat(invSeed("850", { gross: 50, extra: { status: "1000", paidAmount: "50" } }), invSeed("860", { gross: 60, extra: { status: "1000", paidAmount: "60", cancelled: true } })), null,
-      { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-10-03", gross: 50 }, { id: "860", nr: "RE-860", date: "2026-11-02", gross: 60 }] } }); await E.L.load();
-    await E.C.kochduDouble([{ id: "R1", name: "La Taverna", months }]);
-    assert.deepStrictEqual((await E.P.list()).map(x => [x.key, x.amount]), [["kodouble:840:5000", -50]]);
-    // Sept-Hand-Rechnung 50 storniert, korrigiert als 52 neu ausgestellt → Doppelung besteht (50)
-    const sept = [{ id: "R1", name: "La Taverna", months: [Object.assign({}, months[0], { manualCents: 5200 })] }];
-    E = finSetup(two.concat(invSeed("850", { gross: 50, extra: { status: "1000", paidAmount: "50", cancelled: true } }), invSeed("851", { gross: 52, extra: { status: "1000", paidAmount: "52" } })), null,
-      { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-10-03", gross: 50 }, { id: "851", nr: "RE-851", date: "2026-10-05", gross: 52 }] } }); await E.L.load();
-    await E.C.kochduDouble(sept); assert.deepStrictEqual((await E.P.list()).map(x => x.amount), [-50]);
-    // August-Hand-Rechnung (05.09.) storniert und als 48 neu → betrifft den September nicht
-    E = finSetup(two.concat(invSeed("830", { gross: 45, extra: { status: "1000", paidAmount: "45", cancelled: true } }), invSeed("831", { gross: 48, extra: { status: "1000", paidAmount: "48" } }), invSeed("850", { gross: 50, extra: { status: "1000", paidAmount: "50" } })), null,
-      { invoices: { "kochdu:R1": [{ id: "830", nr: "RE-830", date: "2026-09-05", gross: 45 }, { id: "831", nr: "RE-831", date: "2026-09-06", gross: 48 }, { id: "850", nr: "RE-850", date: "2026-10-03", gross: 50 }] } }); await E.L.load();
-    await E.C.kochduDouble(sept); assert.deepStrictEqual((await E.P.list()).map(x => x.amount), [-50]);
+  await t("R4-1: kochdu – Storno einer Verrechnung von Hand (vor 21.10.) hebt die Doppelung auf (auch ohne Sept-Teil neu ausgestellt); korrigiert neu ausgestellt → besteht; ältester Monat zuerst", async () => {
+    // realistische Daten: Monatsrechnung 09/2026 am 15.10. (RE-840), 10/2026 am 01.11. (RE-841)
+    const base = [contact("40", "La Taverna")].concat(invSeed("840", { gross: 120, date: "2026-10-15", extra: { status: "1000", paidAmount: "120.00" } }), invSeed("841", { gross: 130, date: "2026-11-01", extra: { status: "1000", paidAmount: "130.00" } }));
+    const sept = { month: "2026-09", doubleBilledCents: 5000, manualCents: 5000, doc: { docId: "840", nr: "RE-840" } }, okt = { month: "2026-10", doubleBilledCents: 6000, manualCents: 6000, doc: { docId: "841", nr: "RE-841" } };
+    const run = async (hand, months) => { const seed = base.slice(), recs = [];
+      hand.forEach(([id, date, gross, cancelled]) => { seed.push(...invSeed(id, { gross, date, extra: { status: "1000", paidAmount: String(gross), cancelled: !!cancelled } })); recs.push({ id, nr: "RE-" + id, date, gross }); });
+      const E = finSetup(seed, null, { invoices: { "kochdu:R1": recs } }); await E.L.load(); await E.C.kochduDouble([{ id: "R1", name: "La Taverna", months: months || [sept] }]);
+      return { E, list: (await E.P.list()).map(x => [x.key, x.amount]) }; };
+    assert.deepStrictEqual((await run([["850", "2026-10-16", 80, true]])).list, [], "16.10. (Sept 50 + Okt 30) storniert, nicht neu");
+    assert.deepStrictEqual((await run([["850", "2026-10-15", 80, true]])).list, [], "15.10. storniert");
+    assert.deepStrictEqual((await run([["850", "2026-10-20", 50, true]])).list, [], "20.10. storniert");
+    assert.deepStrictEqual((await run([["850", "2026-10-05", 80, true], ["851", "2026-10-06", 30]])).list, [], "storniert und ohne Sept-Teil neu ausgestellt");
+    assert.deepStrictEqual((await run([["850", "2026-10-03", 50]])).list, [["kodouble:840:5000", -50]], "Hand-Rechnung gültig → Doppelung besteht");
+    assert.deepStrictEqual((await run([["850", "2026-10-03", 50, true], ["851", "2026-10-05", 52]])).list, [["kodouble:840:5000", -50]], "korrigiert neu ausgestellt (52 statt 50) → besteht");
+    assert.deepStrictEqual((await run([["830", "2026-09-05", 45, true], ["831", "2026-09-06", 48], ["850", "2026-10-03", 50]])).list, [["kodouble:840:5000", -50]], "Aug-Verrechnung storniert und neu → betrifft den Sept nicht");
+    // nach dem 21.10. (Sept-Monatsrechnung gab es schon) deckt eine Verrechnung von Hand den September nicht mehr – ihr Storno ändert nichts
+    assert.deepStrictEqual((await run([["850", "2026-10-03", 50], ["860", "2026-10-28", 40, true]])).list, [["kodouble:840:5000", -50]]);
+    // zwei doppelte Monate, ein Storno über 80 (16.10.): zuerst September (50), Rest 30 für Oktober → Oktober 60 − 30
+    const two = await run([["850", "2026-10-16", 80, true]], [sept, okt]);
+    assert.deepStrictEqual(two.list, [["kodouble:841:3000", -30]]);
+    const it = (await two.E.P.list())[0]; assert.ok(/stornierte Verrechnung von Hand vorhanden – bitte prüfen/.test(it.detail), it.detail);
+    assert.ok(two.E.C.valid(it), "Vorschlag bleibt gültig (gleiche Rechnung beim Prüfen)");
+    const r = await two.E.P.accept(it.id); assert.strictEqual(+two.E.L.get("CreditNote", r.result.creditNoteId).sumGross, 30);
   });
   /* Teil 2c: Anzeigen (B11) – plat.js/geld.js in einer vm mit Stub-Cockpit */
   const bootUi = (file, D, UI, over) => { const vm = require("vm"), views = {};
