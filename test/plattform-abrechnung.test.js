@@ -95,6 +95,20 @@ function unitTests(T) {
     assert.ok(/: 100,00 € · abzüglich bei Online-Zahlung bereits einbehalten 40,00 €/.test(it.action.items[0].text), it.action.items[0].text);
     assert.ok((it.notes || []).some(n => /Altbuchungen.*20,00 €/.test(n)), JSON.stringify(it.notes)); assert.strictEqual(it.deducted.mollie, 40); assert.strictEqual(it.deducted.imported, 20);
   }]);
+  out.push(["R3-5: Vorjahr geladen, aber das Haus fehlt darin (bzw. ohne Monate) → keine Erstattung für Vorjahres-Zeiträume, Hinweis; fälliger Zeitraum im Vorjahr → gesperrt", () => {
+    const recs2 = haRec.concat([{ id: "302", nr: "RE-302", date: "2027-01-02", gross: 90, from: "2026-10-01", to: "2026-12-31", label: "Haus A", src: "partner" }]);
+    const sev2 = mkSev([I({ id: "301", nr: "RE-301", date: "2026-10-01", gross: 100, paid: 100 }), I({ id: "302", nr: "RE-302", date: "2027-01-02", gross: 90, paid: 90 })]);
+    const run = (prevObjs, rs) => va({ year: "2027", today: "2027-04-05", sev: sev2, bill: { prices: {}, sites: {}, invoices: { "valuero:haus-a": rs || recs2 } }, valuero: { objects: [ha([pm({ month: "2027-01", provisionCents: 1000 })])] }, valueroPrev: { objects: prevObjs } }).find(x => x.key === "valuero:haus-a");
+    let it = run([prevA()]); assert.strictEqual(it.refund, 10, "mit Vorjahresdaten: 90 statt höchstens 80 verrechnet → Erstattung prüfen");
+    for (const prev of [[], [ha([])], [ha(undefined)]]) {
+      it = run(prev); assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.refund, 0, "ohne Vorjahresdaten keine Erstattung"); assert.strictEqual(it.catchup, 0); assert.strictEqual(it.unbilled, 10, "laufendes Jahr wird weiter verrechnet");
+      assert.ok((it.notes || []).some(n => /Gebührendaten 2026 für dieses Haus fehlen/.test(n)), JSON.stringify(it.notes));
+    }
+    it = run([], haRec); assert.ok(/Gebührendaten 2026 fehlen/.test(it.blocked || ""), "fälliger Zeitraum beginnt im Vorjahr"); assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.refund, 0);
+    // neues Haus ohne Vorjahres-Abrechnungen: kein Hinweis, normal verrechnet
+    it = va({ year: "2027", today: "2027-04-05", sev: mkSev([]), bill: { prices: {}, sites: {}, invoices: {} }, valuero: { objects: [ha([pm({ month: "2027-01", provisionCents: 1000 })], { billingStart: "2027-01-01" })] }, valueroPrev: { objects: [] } }).find(x => x.key === "valuero:haus-a");
+    assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.unbilled, 10); assert.ok(!(it.notes || []).some(n => /Gebührendaten/.test(n)));
+  }]);
   out.push(["VA-3: Online-Zahlung nach der Abrechnung (Mollie-Anteil eines verrechneten Monats steigt) → „zu viel verrechnet“ (Gutschrift prüfen), nie still", () => {
     let it = vaA(null, prevA({ mollieFeesCents: 3000 }));
     assert.strictEqual(it.refund, 30); assert.strictEqual(it.unbilled, 60);
