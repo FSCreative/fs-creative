@@ -10,8 +10,8 @@ UI.kdView=UI.kdView||F.ls("fsc_kal_dview")||"workweek";
 
 F.css(
 '.kd{display:grid;grid-template-columns:248px minmax(0,1fr);gap:16px;align-items:start}'+
-'.kd-side{display:grid;gap:14px;padding:14px;position:sticky;top:60px}'+
-'.kd-new{justify-content:center;width:100%;min-height:36px!important}'+
+'.kd-side{display:grid;gap:14px;padding:14px;position:sticky;top:60px;align-content:start}'+   /* Zeilen nicht strecken (sonst riesiger Knopf, weite Abstände) */
+'.kd-new{justify-content:center;width:100%;height:36px;min-height:36px!important;align-self:start;padding:0 14px;font-size:13.5px}'+'.kd-minibox{background:color-mix(in srgb,var(--panel-solid,var(--sunk)) 72%,transparent);border-radius:14px;padding:10px 8px 8px}'+
 '.kd-mini-h{display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:14px;text-transform:capitalize}'+
 '.kd-mini-h button{border:0;background:none;color:var(--ink-2);width:28px;height:28px;border-radius:8px;font-size:16px;display:inline-grid;place-items:center}.kd-mini-h button:hover{background:var(--hover,var(--sunk))}.kd-mini-h button svg{width:16px;height:16px}'+
 '.kd-mini{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;text-align:center}'+
@@ -89,7 +89,7 @@ function miniHtml(map){
   var a=A(), s=sel(), m=(UI.kdMini||s.slice(0,7)).split("-"), y=+m[0], mo=+m[1]-1, first=new Date(y,mo,1), start=F.ymd(new Date(y,mo,1-((first.getDay()+6)%7))), t=a.today(), ds=UI.kdView==="month"?[]:days(), cells="";
   for(var i=0;i<42;i++){ var k=a.addDays(start,i), d=new Date(k+"T12:00:00");
     cells+='<button type="button" data-kdday="'+k+'" class="'+(d.getMonth()!==mo?"out ":"")+(k===t?"today ":"")+(ds.indexOf(k)>-1?"inr ":"")+((map[k]||[]).length?"has":"")+'" aria-label="'+esc(a.longDate(k))+'">'+d.getDate()+'</button>'; }
-  return '<div><div class="kd-mini-h"><span>'+esc(first.toLocaleDateString("de-AT",{month:"long",year:"numeric"}))+'</span><span><button type="button" data-act="kdmini:-1" aria-label="Voriger Monat">'+F.svg("chevL")+'</button><button type="button" data-act="kdmini:1" aria-label="Nächster Monat">'+F.svg("chevR")+'</button></span></div>'+
+  return '<div class="kd-minibox"><div class="kd-mini-h"><span>'+esc(first.toLocaleDateString("de-AT",{month:"long",year:"numeric"}))+'</span><span><button type="button" data-act="kdmini:-1" aria-label="Voriger Monat">'+F.svg("chevL")+'</button><button type="button" data-act="kdmini:1" aria-label="Nächster Monat">'+F.svg("chevR")+'</button></span></div>'+
     '<div class="kd-mini">'+DOW.map(function(x){ return '<span>'+x.charAt(0)+'</span>'; }).join("")+cells+'</div></div>';
 }
 function weekHtml(map){
