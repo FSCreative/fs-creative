@@ -132,6 +132,8 @@ module.exports = function (C) {
     "fs-creative": "Dunkler Apple-Look mit Verlaufsschrift; persönlich (Simon), regional.",
   };
   function profileFor(b) { return JSON.stringify({ name: b.name, website: b.url || "", appStore: b.appStoreUrl || "", playStore: b.playStoreUrl || "", oneLiner: b.oneLiner, whatItIs: b.whatItIs, audience: b.audience, usps: b.usps, tone: b.tone, pillars: b.pillars, hashtags: b.hashtags, ctas: b.ctas, seasonality: b.seasonality, guardrails: b.guardrails || "", handles: b.handles || [] }); }
+  // Stockquelle für Hintergrundvideos/-fotos (Pixabay bzw. Pexels): der KI sagen, dass es sie gibt und wie gute Suchbegriffe aussehen
+  const stockHint = () => (pixabayKey() || pexelsKey()) ? "\nStockvideos/-fotos sind aktiv (" + (pexelsKey() ? "Pexels" : "Pixabay") + "): bgQuery bei jedem Reel und photoQuery bei photo-Folien setzen, wenn kein eigenes Bild passt – 2–4 konkrete Wörter (englisch bevorzugt, deutsch geht auch), die das Motiv zeigen (z. B. \"alpine village autumn\", \"pizza oven flames close up\", \"wedding guests laughing photo booth\", \"printing press paper\"), passend zu Region/Jahreszeit, keine Markennamen, keine Texte im Bild." : "\nKeine Stockquelle verbunden: photoQuery und bgQuery leer lassen.";
   const igHint = () => igTags() > 5 ? "\nAbweichend von den Regeln: instagram-Hashtags genau " + igTags() + " (Mix aus großen, Nischen-, regionalen und Marken-Hashtags, die stärksten zuerst)." : "";
   const placesTxt = b => "<standorte>" + ((b.locations || []).map(l => l.name).join(" | ") || "(keine)") + "</standorte>\n";
   function placeOf(b, name) { const ls = b.locations || []; if (!ls.length) return null; const n = String(name || "").trim().toLowerCase(); const hit = n && ls.find(l => l.name.toLowerCase() === n) || (n && ls.find(l => l.name.toLowerCase().indexOf(n) > -1 || n.indexOf(l.name.toLowerCase()) > -1)); return hit || ls[0] || null; }
@@ -146,7 +148,7 @@ module.exports = function (C) {
     await webFresh(b);
     await describeLibrary(b.key).catch(() => 0);
     const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + placesTxt(b) + bilderTxt(b) + standing(b) + "<bisher_beitrag>" + JSON.stringify(cur) + "</bisher_beitrag>\n<vorgaben>" + clip(instruction, 2000) + "</vorgaben>\n" +
-      "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
+      "Schreibe genau diesen einen Beitrag neu (Format " + post.format + " bleibt) und setze die <vorgaben> um. Gib genau 1 Beitrag zurück." + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint() + stockHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 12000);
     const x = (r.json && r.json.posts || [])[0]; if (!x) throw fail(502, "Die KI hat keinen Beitrag geliefert – bitte nochmal.");
     const slides = withCover((x.slides || []).filter(s0 => s0 && (s0.headline || (s0.items && s0.items.length) || s0.number)).slice(0, post.format === "bild" ? 1 : 7), post.format); if (!slides.length) throw fail(502, "Die KI-Antwort war leer – bitte nochmal.");
@@ -168,7 +170,7 @@ module.exports = function (C) {
     const descEur = await describeLibrary(b.key).catch(e => { console.error("marketing: Bildbeschreibung", e.message); return 0; });
     const user = "<profil>" + profileFor(b) + "</profil>\n" + WEB.promptText(b.key) + "<bisher>\n" + (recent || "(noch nichts)") + "\n</bisher>\n" + placesTxt(b) + bilderTxt(b) + standing(b) + (vorg ? "<vorgaben>" + vorg + "</vorgaben>\n" : "") +
       "Heute ist " + today + ". Erstelle genau " + count + " Beiträge für " + b.name + ". Erlaubte Formate: " + mix.join(", ") + " – " + (mix.length > 1 ? (count === 1 ? "wähle das Format, das zum Thema am besten passt (Reel oder Karussell bringen meist die meiste Reichweite)." : "Mischung, Schwerpunkt auf Reels und Karussells (die bringen die meiste Reichweite).") : "nur dieses Format.") +
-      (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint();
+      (vorg ? " Setze die <vorgaben> in allen Beiträgen um." : "") + (VISUAL[b.key] ? "\nGestaltung dieser Marke: " + VISUAL[b.key] : "") + igHint() + stockHint();
     const r = await C.KI.marketingGen(SYSTEM, user, schema(), 24000);
     const list = (r.json && r.json.posts || []).slice(0, count), out = [], batch = newId("b");
     let notBefore = 0;
@@ -198,19 +200,30 @@ module.exports = function (C) {
     if (!key) return pixabayPhoto(query);
     const cache = path.join(STOCK, "p-" + crypto.createHash("sha1").update(query).digest("hex").slice(0, 12) + ".jpg");
     if (!fs.existsSync(cache)) {
-      const r = await fetch("https://api.pexels.com/v1/search?" + new URLSearchParams({ query, orientation: "portrait", per_page: "8", size: "large" }), { headers: { Authorization: key }, signal: AbortSignal.timeout(15000) });
+      const r = await fetch("https://api.pexels.com/v1/search?" + new URLSearchParams(Object.assign({ query, orientation: "portrait", per_page: "8", size: "large" }, langOf(query) === "de" ? { locale: "de-DE" } : {})), { headers: { Authorization: key }, signal: AbortSignal.timeout(15000) });
       if (!r.ok) return ""; const j = await r.json(); const ph = (j.photos || [])[crypto.randomInt(Math.max(1, Math.min(8, (j.photos || []).length)))]; if (!ph) return "";
       const im = await fetch(ph.src.large2x || ph.src.large, { signal: AbortSignal.timeout(30000) }); if (!im.ok) return ""; fs.writeFileSync(cache, Buffer.from(await im.arrayBuffer()));
     }
     return "data:image/jpeg;base64," + fs.readFileSync(cache).toString("base64");
+  }
+  // Suchbegriff deutsch oder englisch? (Umlaute/ß oder typische deutsche Wörter) – ohne Treffer wird die andere Sprache versucht
+  const DE_WORDS = /\b(der|die|das|und|mit|im|am|auf|für|von|bei|ein|eine|herbst|winter|sommer|frühling|fruehling|berg|berge|dorf|essen|hochzeit|feier|druck|schnee|see|wald|hütte|huette|kaffee|kuchen|familie|kinder|abend|morgen|nacht|stadt|straße|strasse)\b/i;
+  const langOf = q => /[äöüßÄÖÜ]/.test(q) || DE_WORDS.test(q) ? "de" : "en";
+  async function pixabaySearch(kind, query, extra) {
+    const key = pixabayKey(); if (!key || !query) return [];
+    const base = kind === "video" ? "https://pixabay.com/api/videos/?" : "https://pixabay.com/api/?", l1 = langOf(query);
+    for (const lang of [l1, l1 === "de" ? "en" : "de"]) {
+      const r = await fetch(base + new URLSearchParams(Object.assign({ key, q: clip(query, 100), safesearch: "true", lang }, extra)), { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) return []; const j = await r.json(); if ((j.hits || []).length) return j.hits;
+    }
+    return [];
   }
   async function pixabayPhoto(query) {
     const key = pixabayKey(); if (!key || !query) return "";
     const cache = path.join(STOCK, "px-" + crypto.createHash("sha1").update(query).digest("hex").slice(0, 12) + ".jpg");
     try {
       if (!fs.existsSync(cache)) {
-        const r = await fetch("https://pixabay.com/api/?" + new URLSearchParams({ key, q: clip(query, 100), image_type: "photo", orientation: "vertical", safesearch: "true", per_page: "10", lang: "en" }), { signal: AbortSignal.timeout(15000) });
-        if (!r.ok) return ""; const j = await r.json(), hits = j.hits || []; const ph = hits[crypto.randomInt(Math.max(1, Math.min(8, hits.length)))]; if (!ph) return "";
+        const hits = await pixabaySearch("photo", query, { image_type: "photo", orientation: "vertical", per_page: "10" }); const ph = hits[crypto.randomInt(Math.max(1, Math.min(8, hits.length)))]; if (!ph) return "";
         const im = await fetch(ph.largeImageURL || ph.webformatURL, { signal: AbortSignal.timeout(30000) }); if (!im.ok) return ""; fs.writeFileSync(cache, Buffer.from(await im.arrayBuffer()));
       }
       return "data:image/jpeg;base64," + fs.readFileSync(cache).toString("base64");
@@ -220,8 +233,7 @@ module.exports = function (C) {
   async function pixabayVideos(query, n) {
     const key = pixabayKey(); if (!key || !query || !n) return [];
     try {
-      const r = await fetch("https://pixabay.com/api/videos/?" + new URLSearchParams({ key, q: clip(query, 100), safesearch: "true", per_page: "20", lang: "en" }), { signal: AbortSignal.timeout(15000) });
-      if (!r.ok) return []; const j = await r.json(), out = [];
+      const j = { hits: await pixabaySearch("video", query, { per_page: "20" }) }, out = [];
       const pick = v => { const fs0 = ["large", "medium", "small"].map(k => v.videos && v.videos[k]).filter(f => f && f.url && f.width); return fs0.filter(f => f.height > f.width && f.width <= 1080).sort((a, b) => b.width - a.width)[0] || fs0.filter(f => f.width <= 1920).sort((a, b) => b.width - a.width)[0]; };
       const list = (j.hits || []).filter(v => v.duration >= 4 && v.duration <= 60).sort((a, b) => { const pa = pick(a), pb = pick(b); return (pb && pb.height > pb.width ? 1 : 0) - (pa && pa.height > pa.width ? 1 : 0); });
       for (const v of list.slice(0, n)) {
@@ -237,7 +249,7 @@ module.exports = function (C) {
     const key = pexelsKey(); if (!query || !n) return [];
     if (!key) return pixabayVideos(query, n);
     try {
-      const r = await fetch("https://api.pexels.com/videos/search?" + new URLSearchParams({ query, orientation: "portrait", per_page: "10", size: "medium" }), { headers: { Authorization: key }, signal: AbortSignal.timeout(15000) });
+      const r = await fetch("https://api.pexels.com/videos/search?" + new URLSearchParams(Object.assign({ query, orientation: "portrait", per_page: "10", size: "medium" }, langOf(query) === "de" ? { locale: "de-DE" } : {})), { headers: { Authorization: key }, signal: AbortSignal.timeout(15000) });
       if (!r.ok) return []; const j = await r.json(), out = [];
       for (const v of (j.videos || []).filter(v => v.duration >= 4 && v.duration <= 60).slice(0, n)) {
         const f = (v.video_files || []).filter(x => x.width && x.height > x.width && x.width <= 1080 && /mp4/.test(x.file_type || "mp4")).sort((a, b) => b.width - a.width)[0]; if (!f) continue;

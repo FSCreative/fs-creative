@@ -1,6 +1,6 @@
 /* Ansicht „Heute“ im Alpenglas-Look (Wunsch Simon 27.10.2026): große Uhr mit Datum und Wetter, „Für dich, jetzt“ (die wichtigsten Einträge
    aller Module als Karten, darunter „Alles, was ansteht“), rechts Termine, Geld-Ring, Druck live und Meine Aufgaben; darunter Posteingang,
-   Plattformen, Aufträge und Monatseinkommen. Unten schwebt „Frag dein Cockpit …“ (KI-Chat).
+   Plattformen, Aufträge und Monatseinkommen.
    Handy: eine Spalte – Uhr, Frage an die KI, Schnellaktionen, Termine, Geld, Druck, Für dich, Aufgaben, Post, Plattformen, Einkommen. */
 (function(){
 "use strict";
@@ -294,16 +294,8 @@ function monthsBar(l){
     return '<span class="mb" title="'+esc(lbl+" "+m.month.slice(0,4)+": "+F.eur(m.eur)+(m.orders!=null?" · "+m.orders+" Bestellungen":""))+'"><i style="height:'+h+'px"></i><em>'+esc(lbl)+'</em></span>'; }).join("")+'</div>';
 }
 
-/* ---------- Frag dein Cockpit: schwebende Leiste (Desktop) bzw. Karte oben (Handy) → KI-Chat ---------- */
+/* ---------- KI-Frage (Formular „agask“) – das Eingabefeld auf Heute ist entfernt, die Aktion bleibt für andere Stellen ---------- */
 var KEYJ=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||"")?"⌘J":"Strg+J";
-function askCard(){ return '<form class="panel ag-ask" data-form="agask" aria-label="Frag dein Cockpit"><span class="ag-ask-i" aria-hidden="true">'+F.svg("sparkle")+'</span>'+
-  '<input name="q" type="text" value="'+esc(F.UI.agAsk||"")+'" data-agask data-keepfocus="agask" placeholder="Frag dein Cockpit …" aria-label="Frage an den KI-Assistenten" autocomplete="off" enterkeyhint="send">'+
-  '<button type="submit" class="ag-go" aria-label="Frage senden">'+F.svg("send")+'</button></form>'; }
-function ensureDock(){ if(document.getElementById("agDock")) return;
-  var d=document.createElement("form"); d.id="agDock"; d.className="agdock"; d.setAttribute("data-form","agask"); d.setAttribute("aria-label","Frag dein Cockpit");
-  d.innerHTML='<span class="agdock-i" aria-hidden="true">'+F.svg("sparkle")+'</span><input name="q" type="text" placeholder="Frag dein Cockpit … z. B. „Was ist diese Woche offen?“" aria-label="Frage an den KI-Assistenten" autocomplete="off" enterkeyhint="send">'+
-    '<button type="button" class="agdock-k" data-act="kichat" title="KI-Assistent öffnen">'+KEYJ+'</button><button type="submit" class="ag-go" aria-label="Frage senden" title="Fragen (Enter)">'+F.svg("send")+'</button>';
-  document.body.appendChild(d); }
 function askKi(q){ if(F.kiAsk) F.kiAsk(q); else if(F.KI&&F.KI.chatSend&&q) F.KI.chatSend(q); else if(F.actions.kichat) F.actions.kichat(); }
 F.form("agask",function(f){ var q=(f.q&&f.q.value||"").trim(); if(f.q){ f.q.value=""; if(isMob()) f.q.blur(); } F.UI.agAsk=""; askKi(q); });
 F.listen("input","[data-agask]",function(el){ F.UI.agAsk=el.value; });
@@ -317,12 +309,12 @@ function desktopHeute(f){
     '<div class="ag-low">'+safe(inboxCard)+safe(platCard)+'</div>'+
     '<div class="ag-more">'+safe(projectsPanel)+safe(function(){ return incomeCard(false); })+'</div></div>'; }
 function mobileHeute(f){
-  return '<div class="agm">'+heroHtml(f)+safe(connNote)+askCard()+quickMob()+safe(agendaCard)+safe(moneyCard)+safe(druckCard)+safe(function(){ return forCard(f); })+
+  return '<div class="agm">'+heroHtml(f)+safe(connNote)+quickMob()+safe(agendaCard)+safe(moneyCard)+safe(druckCard)+safe(function(){ return forCard(f); })+
     safe(tasksCard)+safe(inboxCard)+safe(platCard)+safe(function(){ return incomeCard(true); })+'</div>'; }
 F.view({id:"heute",label:"Heute",short:"Heute",icon:"heute",order:10,mobile:true,
   count:function(){ return F.feedItems().length; },
   render:function(){ var f=feedSorted(); return isMob()?mobileHeute(f):desktopHeute(f); },
-  after:function(){ ensureDock(); tick(); }
+  after:function(){ var d=document.getElementById("agDock"); if(d&&d.parentNode) d.parentNode.removeChild(d); tick(); }
 });
 
 /* Eigener Takt (jede Minute): Uhr, laufender Termin („Jetzt · bis …“), nächster Termin („in 25 Min.“) – nur Text/Klassen, kein Neuaufbau */
