@@ -4523,12 +4523,21 @@ function mktState(pf, h) {
 });
 CONN.add({ key: "pexels", label: "Pexels", sub: "Stockfotos und -videos für Reels", category: "Marketing", icon: "eye", ttl: 6 * 3600e3, timeout: 12e3,
   usedBy: ["Marketing: Reels und Bilder"],
-  missing: () => { const P = mktP(); return P && P.channelHealth && P.channelHealth().pexels ? null : { detail: "Kein Schlüssel – Reels nutzen Farbverläufe statt Stockvideos", fix: actFix("mktab:kanaele", "Schlüssel eintragen", "mkt") }; },
+  missing: () => { const P = mktP(), h = P && P.channelHealth && P.channelHealth(); return h && h.pexels ? null : { detail: h && h.pixabay ? "Nicht nötig – Pixabay liefert die Stockvideos und -fotos" : "Kein Schlüssel – Reels nutzen Farbverläufe statt Stockvideos (Pixabay ist die kostenlose Alternative)", fix: actFix("mktab:kanaele", "Schlüssel eintragen", "mkt") }; },
   check: async () => {
     const r = await mktP().pexelsPing();
     if (r.ok) return cOk("Schlüssel gültig" + (r.remaining ? " · noch " + r.remaining + " Abrufe" : ""));
     if (r.status === 401 || r.status === 403) return cErr("Schlüssel ungültig – unter Marketing › Kanäle neu eintragen", actFix("mktab:kanaele", "Schlüssel eintragen", "mkt"));
     return cErr("Pexels: " + (r.error || "Fehler HTTP " + r.status));
+  } });
+CONN.add({ key: "pixabay", label: "Pixabay", sub: "Stockfotos und -videos für Reels (kostenlos)", category: "Marketing", icon: "eye", ttl: 6 * 3600e3, timeout: 12e3,
+  usedBy: ["Marketing: Reels und Bilder"],
+  missing: () => { const P = mktP(); return P && P.channelHealth && P.channelHealth().pixabay ? null : { detail: "Kein Schlüssel – kostenlos unter pixabay.com/api/docs (angemeldet steht er bei „key“)", fix: actFix("mktab:kanaele", "Schlüssel eintragen", "mkt") }; },
+  check: async () => {
+    const r = await mktP().pixabayPing();
+    if (r.ok) return cOk("Schlüssel gültig" + (r.remaining ? " · noch " + r.remaining + " Abrufe in dieser Minute" : ""));
+    if (r.status === 400 || r.status === 401 || r.status === 403) return cErr("Schlüssel ungültig – unter Marketing › Kanäle neu eintragen", actFix("mktab:kanaele", "Schlüssel eintragen", "mkt"));
+    return cErr("Pixabay: " + (r.error || "Fehler HTTP " + r.status));
   } });
 
 // ── Google & SEO ──

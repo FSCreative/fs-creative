@@ -33,6 +33,8 @@ module.exports = function (C) {
   }
   const appReady = provider => provider === "bluesky" || (() => { const c = appCfg(provider); return !!(c.clientId && c.secret); })();
   const pexelsKey = () => { const k = S().mkt.pexels ? unseal(S().mkt.pexels) : null; return (k && k.v) || process.env.PEXELS_API_KEY || ""; };
+  // Pixabay (kostenlos, Schlüssel sofort nach Registrierung): Ersatz bzw. Ergänzung zu Pexels – Dateien werden heruntergeladen und lokal gemerkt
+  const pixabayKey = () => { const k = S().mkt.pixabay ? unseal(S().mkt.pixabay) : null; return (k && k.v) || process.env.PIXABAY_API_KEY || ""; };
 
   // ───────────── Zeiten (Europe/Vienna) ─────────────
   const WD = ["so", "mo", "di", "mi", "do", "fr", "sa"];
@@ -192,7 +194,8 @@ module.exports = function (C) {
 
   // ───────────── Medien erzeugen ─────────────
   async function stockPhoto(query) {
-    const key = pexelsKey(); if (!key || !query) return "";
+    const key = pexelsKey(); if (!query) return "";
+    if (!key) return pixabayPhoto(query);
     const cache = path.join(STOCK, "p-" + crypto.createHash("sha1").update(query).digest("hex").slice(0, 12) + ".jpg");
     if (!fs.existsSync(cache)) {
       const r = await fetch("https://api.pexels.com/v1/search?" + new URLSearchParams({ query, orientation: "portrait", per_page: "8", size: "large" }), { headers: { Authorization: key }, signal: AbortSignal.timeout(15000) });
@@ -201,8 +204,38 @@ module.exports = function (C) {
     }
     return "data:image/jpeg;base64," + fs.readFileSync(cache).toString("base64");
   }
+  async function pixabayPhoto(query) {
+    const key = pixabayKey(); if (!key || !query) return "";
+    const cache = path.join(STOCK, "px-" + crypto.createHash("sha1").update(query).digest("hex").slice(0, 12) + ".jpg");
+    try {
+      if (!fs.existsSync(cache)) {
+        const r = await fetch("https://pixabay.com/api/?" + new URLSearchParams({ key, q: clip(query, 100), image_type: "photo", orientation: "vertical", safesearch: "true", per_page: "10", lang: "en" }), { signal: AbortSignal.timeout(15000) });
+        if (!r.ok) return ""; const j = await r.json(), hits = j.hits || []; const ph = hits[crypto.randomInt(Math.max(1, Math.min(8, hits.length)))]; if (!ph) return "";
+        const im = await fetch(ph.largeImageURL || ph.webformatURL, { signal: AbortSignal.timeout(30000) }); if (!im.ok) return ""; fs.writeFileSync(cache, Buffer.from(await im.arrayBuffer()));
+      }
+      return "data:image/jpeg;base64," + fs.readFileSync(cache).toString("base64");
+    } catch (e) { return ""; }
+  }
+  // Pixabay-Videos: hochkant bevorzugt, sonst quer (der Reel-Renderer schneidet auf 9:16 zu)
+  async function pixabayVideos(query, n) {
+    const key = pixabayKey(); if (!key || !query || !n) return [];
+    try {
+      const r = await fetch("https://pixabay.com/api/videos/?" + new URLSearchParams({ key, q: clip(query, 100), safesearch: "true", per_page: "20", lang: "en" }), { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) return []; const j = await r.json(), out = [];
+      const pick = v => { const fs0 = ["large", "medium", "small"].map(k => v.videos && v.videos[k]).filter(f => f && f.url && f.width); return fs0.filter(f => f.height > f.width && f.width <= 1080).sort((a, b) => b.width - a.width)[0] || fs0.filter(f => f.width <= 1920).sort((a, b) => b.width - a.width)[0]; };
+      const list = (j.hits || []).filter(v => v.duration >= 4 && v.duration <= 60).sort((a, b) => { const pa = pick(a), pb = pick(b); return (pb && pb.height > pb.width ? 1 : 0) - (pa && pa.height > pa.width ? 1 : 0); });
+      for (const v of list.slice(0, n)) {
+        const f = pick(v); if (!f) continue;
+        const cache = path.join(STOCK, "pxv-" + v.id + "-" + f.width + ".mp4");
+        if (!fs.existsSync(cache)) { const d = await fetch(f.url, { signal: AbortSignal.timeout(120000) }); if (!d.ok) continue; fs.writeFileSync(cache, Buffer.from(await d.arrayBuffer())); }
+        out.push(cache);
+      }
+      return out;
+    } catch (e) { return []; }
+  }
   async function stockVideos(query, n) {
-    const key = pexelsKey(); if (!key || !query || !n) return [];
+    const key = pexelsKey(); if (!query || !n) return [];
+    if (!key) return pixabayVideos(query, n);
     try {
       const r = await fetch("https://api.pexels.com/videos/search?" + new URLSearchParams({ query, orientation: "portrait", per_page: "10", size: "medium" }), { headers: { Authorization: key }, signal: AbortSignal.timeout(15000) });
       if (!r.ok) return []; const j = await r.json(), out = [];
@@ -436,7 +469,7 @@ module.exports = function (C) {
   // Für „Verbindungen“: Konten je Plattform ohne Zugangsdaten
   function channelHealth() {
     const brands = state().brands || {};
-    return { apps: Object.keys(PROVIDERS).reduce((o, k) => { o[k] = appReady(k); return o; }, {}), pexels: !!pexelsKey(),
+    return { apps: Object.keys(PROVIDERS).reduce((o, k) => { o[k] = appReady(k); return o; }, {}), pexels: !!pexelsKey(), pixabay: !!pixabayKey(),
       channels: S().channels.filter(c => c.status !== "getrennt").map(c => { const tk = c.platform === "tiktok" ? unseal(c.tok) : null;
         return { brand: c.brand, brandName: (brands[c.brand] && brands[c.brand].name) || c.brand, platform: c.platform, account: (c.account && (c.account.handle || c.account.name)) || "", status: c.status,
           expiresAt: c.expiresAt || "", refreshExpiresAt: (tk && tk.refreshExpiresAt) || "", verifiedAt: c.verifiedAt || "", verifyError: c.verifyError || "", lastError: c.lastError || "", lastOk: c.lastOk || "", checkedAt: c.checkedAt || "" }; }) };
@@ -449,6 +482,13 @@ module.exports = function (C) {
   async function pexelsPing() {
     const key = pexelsKey(); if (!key) return { ok: false, configured: false };
     let r; try { r = await fetch("https://api.pexels.com/v1/curated?per_page=1", { headers: { Authorization: key }, signal: AbortSignal.timeout(10000) }); }
+    catch (e) { return { ok: false, configured: true, status: 0, error: e && e.name === "TimeoutError" ? "keine Antwort (Zeitüberschreitung)" : "nicht erreichbar" }; }
+    try { await r.arrayBuffer(); } catch (e) {}
+    return { ok: r.ok, configured: true, status: r.status, remaining: r.headers.get("x-ratelimit-remaining") || "" };
+  }
+  async function pixabayPing() {
+    const key = pixabayKey(); if (!key) return { ok: false, configured: false };
+    let r; try { r = await fetch("https://pixabay.com/api/?" + new URLSearchParams({ key, q: "mountains", per_page: "3" }), { signal: AbortSignal.timeout(10000) }); }
     catch (e) { return { ok: false, configured: true, status: 0, error: e && e.name === "TimeoutError" ? "keine Antwort (Zeitüberschreitung)" : "nicht erreichbar" }; }
     try { await r.arrayBuffer(); } catch (e) {}
     return { ok: r.ok, configured: true, status: r.status, remaining: r.headers.get("x-ratelimit-remaining") || "" };
@@ -587,7 +627,7 @@ module.exports = function (C) {
     return { posts: s.posts.slice(0, 150).map(postPublic), channels: s.channels.filter(c => c.status !== "getrennt").map(channelPublic),
       platforms: Object.keys(PLATFORMS).map(k => Object.assign({ key: k }, PLATFORMS[k])),
       providers: Object.keys(PROVIDERS).map(k => ({ key: k, label: PROVIDERS[k].label, hint: PROVIDERS[k].hint, portal: PROVIDERS[k].portal, ready: appReady(k), clientId: k === "bluesky" ? "" : appCfg(k).clientId, configId: k === "facebook" ? appCfg(k).configId || "" : undefined })),
-      redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), igTags: igTags(), music: musicList().map(m => ({ id: m.id, name: m.name, mood: m.mood, license: m.license, seed: m.seed })), moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })),
+      redirectUri: redirectUri(), publicBase: publicBase(), pexels: !!pexelsKey(), pixabay: !!pixabayKey(), igTags: igTags(), music: musicList().map(m => ({ id: m.id, name: m.name, mood: m.mood, license: m.license, seed: m.seed })), moods: MOODS.map(k => ({ key: k, label: MOOD_DE[k] })),
       locations: Object.fromEntries(brandList().map(b => [b.key, b.locations || []])),
       web: Object.fromEntries(brandList().map(b => { const w = WEB.info(b.key); return [b.key, w ? { at: w.at, pages: (w.pages || []).length, images: w.images || 0, error: w.error || "", url: w.url || b.url || "" } : { url: b.url || "" }]; })),
       plans: Object.fromEntries(brandList().map(b => [b.key, plan(b)])), ki: !!(C.KI && C.KI.marketingOn && C.KI.marketingOn()) };
@@ -708,6 +748,7 @@ module.exports = function (C) {
     if (p === "/admin/api/mkt/app" && req.method === "POST") {   // App-Zugang einer Plattform (Client-ID/Secret) bzw. Pexels-Schlüssel
       const pl = await body(req, 20000), s = S();
       if (pl.provider === "pexels") { s.mkt.pexels = pl.key ? seal({ v: clip(pl.key, 200) }) : undefined; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
+      if (pl.provider === "pixabay") { s.mkt.pixabay = pl.key ? seal({ v: clip(String(pl.key).trim(), 200) }) : undefined; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
       if (pl.provider === "igTags") { s.mkt.igTags = Math.max(5, Math.min(30, parseInt(pl.value, 10) || 5)); save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
       if (pl.provider === "publicBase") { const v = clip(pl.value, 200).replace(/\/+$/, ""); if (v && !/^https:\/\/[a-z0-9.-]+$/i.test(v)) throw fail(400, "Adresse bitte als https://domain"); s.mkt.publicBase = v || undefined; save(true); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
       if (!PROVIDERS[pl.provider] || pl.provider === "bluesky") throw fail(400, "Unbekannter Anbieter");
@@ -839,5 +880,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, pixabayPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
 };

@@ -1,99 +1,100 @@
-/* Wetter auf „Heute“: realistische Wetter-Ebene über dem echten Bergfoto im Kopfbereich (Uhr/Wetterzeile).
-   Canvas statt Zeichnungen: Schnee in drei Tiefenebenen (vorne groß und unscharf), Regen als feine Schlieren mit Wind,
-   Nebel/Wolken als weiche, langsam ziehende Schleier, Sonne als warmes Gegenlicht, Gewitter als Aufhellen des Himmels,
-   nachts kühleres, dunkleres Licht. Nur im Kopfbereich (keine Glasflächen darunter), pausiert im Hintergrund,
-   „Bewegung reduzieren“ → ein ruhiges Standbild. Hängt sich an .ag-hero, ohne heute.js zu ändern. */
+/* Alpenflair auf „Heute“: Bergkulisse (Montafon) neben der Uhr mit dem aktuellen Wetter animiert –
+   Sonne, Wolken, Regen, Schnee, Nebel, Gewitter, nachts Mond und Sterne; Schneefallgrenze als Linie am Berg.
+   Hängt sich an den Kopfbereich von „Heute“ (.ag-hero), ohne heute.js zu ändern. „Bewegung reduzieren“ → still. */
 (function(){
 "use strict";
 var F=window.FSC;
-var still=function(){ return window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches; };
-function isDay(){ var d=new Date(), h=d.getHours()+d.getMinutes()/60, m=d.getMonth(); var up=[7.9,7.4,6.6,6.6,5.9,5.5,5.7,6.2,6.9,7.5,7.3,7.9][m], down=[16.9,17.6,18.3,20.1,20.7,21.1,21.0,20.4,19.4,18.3,16.8,16.5][m]; return h>=up&&h<down; }
 
-/* Weiche, kachelbare Nebeltextur (einmal berechnet): Summe aus verschobenen, unscharfen Kreisen */
-var FOG=null;
-function fogTex(){
-  if(FOG) return FOG; var c=document.createElement("canvas"), W=512, H=256; c.width=W; c.height=H; var g=c.getContext("2d"), s=1234567;
-  var r=function(){ s=(s*16807)%2147483647; return s/2147483647; };
-  for(var i=0;i<90;i++){ var x=r()*W, y=H*0.25+r()*H*0.6, rad=30+r()*90, a=0.05+r()*0.08;
-    for(var k=-1;k<=1;k++){ var gr=g.createRadialGradient(x+k*W,y,0,x+k*W,y,rad); gr.addColorStop(0,"rgba(255,255,255,"+a+")"); gr.addColorStop(1,"rgba(255,255,255,0)"); g.fillStyle=gr; g.fillRect(x+k*W-rad,y-rad,rad*2,rad*2); } }
-  FOG=c; return c;
+function rnd(seed){ var s=seed; return function(){ s=(s*9301+49297)%233280; return s/233280; }; }
+function isDay(){ var h=new Date().getHours(), m=new Date().getMonth(); var up=[8,7,7,6,6,5,5,6,7,7,7,8][m], down=[16,17,18,19,20,21,21,20,19,18,17,16][m]; return h>=up&&h<down; }
+/* Höhe in Metern → y im Bild (Tal Gaschurn ≈ 1000 m unten, Gipfel ≈ 3300 m oben) */
+function yOf(m){ return 200-(m-1000)/2300*170; }
+
+function mountains(){
+  return '<svg class="alp-mt" viewBox="0 0 600 200" preserveAspectRatio="xMidYMax slice" aria-hidden="true">'+
+    '<path class="m3" d="M0 150 L60 112 L105 128 L170 70 L215 96 L262 52 L318 104 L372 78 L430 118 L500 86 L560 110 L600 98 L600 200 L0 200Z"/>'+
+    '<path class="m2" d="M0 170 L48 140 L96 152 L150 108 L196 132 L246 92 L300 128 L352 100 L410 140 L468 104 L520 130 L600 116 L600 200 L0 200Z"/>'+
+    '<path class="snow" d="M246 92 L262 52 L280 74 L270 70 L262 80 L254 72Z M150 108 L170 70 L186 86 L176 84 L168 92 L160 86Z M352 100 L372 78 L388 94 L378 92 L372 98 L364 94Z M468 104 L500 86 L516 98 L504 96 L498 102 L488 98Z"/>'+
+    '<path class="m1" d="M0 200 L0 182 L70 158 L130 176 L200 150 L270 174 L340 156 L420 178 L500 160 L600 172 L600 200Z"/>'+
+    trees()+'</svg>';
+}
+function trees(){ var r=rnd(7), out=""; for(var i=0;i<16;i++){ var x=20+i*36+r()*14, b=184+r()*10, hgt=10+r()*9;
+  out+='<path class="tree" d="M'+x.toFixed(1)+' '+(b-hgt).toFixed(1)+' L'+(x-hgt*0.36).toFixed(1)+' '+b.toFixed(1)+' L'+(x+hgt*0.36).toFixed(1)+' '+b.toFixed(1)+'Z"/>'; } return out; }
+
+function scene(w){
+  var ic=(w&&w.icon)||"cloud", day=isDay(), r=rnd(13), h='', i;
+  var clouds=/cloud|rain|snow|storm|fog/.test(ic), sun=day&&/sun|cloudSun/.test(ic);
+  if(!day){ h+='<span class="alp-moon"></span>'; if(!/rain|snow|storm|fog/.test(ic)) for(i=0;i<16;i++) h+='<i class="alp-star" style="left:'+(4+r()*92).toFixed(1)+'%;top:'+(4+r()*34).toFixed(1)+'%;animation-delay:'+(r()*4).toFixed(2)+'s"></i>'; }
+  if(sun) h+='<span class="alp-sun'+(ic==="cloudSun"?" half":"")+'"><i></i></span>';
+  if(clouds||ic==="cloudSun"){ var n=ic==="cloudSun"?2:ic==="cloud"?3:4, dark=/rain|storm/.test(ic);
+    for(i=0;i<n;i++) h+='<svg class="alp-cloud'+(dark?" dark":"")+'" viewBox="0 0 120 56" style="top:'+(2+i*12+r()*6).toFixed(1)+'%;--s:'+(0.75+r()*0.55).toFixed(2)+';animation-duration:'+(55+r()*45).toFixed(0)+'s;animation-delay:-'+(r()*70).toFixed(0)+'s"><path d="M24 52h70a22 22 0 0 0 4-43.6A30 30 0 0 0 44.5 14 18 18 0 0 0 24 52z"/></svg>'; }
+  if(/rain|storm/.test(ic)) for(i=0;i<42;i++) h+='<i class="alp-rain" style="left:'+(r()*100).toFixed(1)+'%;animation-duration:'+(0.55+r()*0.35).toFixed(2)+'s;animation-delay:-'+(r()*1.2).toFixed(2)+'s"></i>';
+  if(ic==="snow") for(i=0;i<40;i++) h+='<i class="alp-snow" style="left:'+(r()*100).toFixed(1)+'%;--d:'+(2+r()*4).toFixed(1)+'px;animation-duration:'+(5+r()*5).toFixed(1)+'s;animation-delay:-'+(r()*9).toFixed(1)+'s"></i>';
+  if(ic==="fog") for(i=0;i<3;i++) h+='<span class="alp-fog" style="top:'+(48+i*14)+'%;animation-duration:'+(26+i*9)+'s"></span>';
+  if(ic==="storm") h+='<span class="alp-flash"></span>';
+  var sl=w&&w.snowLine?'<span class="alp-sl" style="top:'+(26+yOf(w.snowLine)/200*74).toFixed(1)+'%" title="Schneefallgrenze"><b>❄ '+String(w.snowLine).replace(/\B(?=(\d{3})+(?!\d))/g,".")+' m</b></span>':'';
+  return '<div class="ag-alp '+(day?"day":"night")+' wx-'+ic+'" aria-hidden="true"><div class="alp-sky">'+h+'</div>'+mountains()+sl+'</div>';
 }
 
-function Scene(host,w){
-  this.host=host; this.w=w||{}; this.ic=this.w.icon||"cloud"; this.day=isDay();
-  var c=this.c=document.createElement("canvas"); c.className="ag-wxfx"; c.setAttribute("aria-hidden","true"); host.insertBefore(c,host.firstChild);
-  this.g=c.getContext("2d"); this.parts=[]; this.t0=performance.now(); this.flash=0; this.nextFlash=this.t0+4000+Math.random()*6000;
-  this.size(); this.seed(); var self=this;
-  this.onR=function(){ self.size(); self.seed(); if(still()) self.frame(self.t0+16); }; window.addEventListener("resize",this.onR);
-  if(still()) this.frame(this.t0+16); else this.loop();
-}
-Scene.prototype.size=function(){ var r=this.host.getBoundingClientRect(), d=Math.min(2,window.devicePixelRatio||1); this.W=Math.max(1,r.width+24); this.H=Math.max(1,r.height+26);
-  this.c.width=Math.round(this.W*d); this.c.height=Math.round(this.H*d); this.c.style.width=this.W+"px"; this.c.style.height=this.H+"px"; this.g.setTransform(d,0,0,d,0,0); };
-Scene.prototype.seed=function(){
-  var ic=this.ic, W=this.W, H=this.H, P=this.parts=[], i, n;
-  if(ic==="snow"){ n=Math.round(W*H/5200);
-    for(i=0;i<n;i++){ var z=Math.random(); P.push({x:Math.random()*W,y:Math.random()*H,z:z,r:z<0.6?0.8+z*1.6:2.2+z*3.4,v:12+z*38,ph:Math.random()*6.28,sw:0.4+Math.random()*1.2}); } }
-  if(ic==="rain"||ic==="storm"){ n=Math.round(W*H/(ic==="storm"?1500:2300));
-    for(i=0;i<n;i++){ var zz=Math.random(); P.push({x:Math.random()*W,y:Math.random()*H,z:zz,l:9+zz*18,v:520+zz*480,a:0.08+zz*0.22}); } }
-};
-Scene.prototype.loop=function(){ var self=this; this.raf=requestAnimationFrame(function(t){ if(!self.c.isConnected){ self.stop(); return; } if(!document.hidden) self.frame(t); self.loop(); }); };
-Scene.prototype.stop=function(){ cancelAnimationFrame(this.raf); window.removeEventListener("resize",this.onR); };
-Scene.prototype.frame=function(t){
-  var g=this.g, W=this.W, H=this.H, ic=this.ic, dt=Math.min(0.05,((t-(this.last||t))/1000)||0.016); this.last=t;
-  var sec=(t-this.t0)/1000, wind=Math.sin(sec*0.13)*0.6+0.4;
-  g.clearRect(0,0,W,H);
-  /* Licht: Sonne (warmes Gegenlicht), bewölkt (kühler Schleier), Nacht (dunkler, kühl) */
-  if(this.day&&(ic==="sun"||ic==="cloudSun")){
-    var gx=W*0.82, gy=-H*0.15, sg=g.createRadialGradient(gx,gy,0,gx,gy,Math.max(W,H)*0.75);
-    sg.addColorStop(0,"rgba(255,226,170,"+(ic==="sun"?0.34:0.2)+")"); sg.addColorStop(0.35,"rgba(255,206,140,0.10)"); sg.addColorStop(1,"rgba(255,200,130,0)");
-    g.fillStyle=sg; g.fillRect(0,0,W,H);
-    var pulse=0.5+0.5*Math.sin(sec*0.4); g.fillStyle="rgba(255,240,210,"+(0.05+pulse*0.03)+")"; g.beginPath(); g.arc(gx,gy+H*0.12,H*0.32,0,6.283); g.fill();
-  }
-  if(/cloud|rain|storm|snow|fog/.test(ic)&&ic!=="cloudSun"){ var cg=g.createLinearGradient(0,0,0,H); cg.addColorStop(0,"rgba(150,165,185,"+(ic==="cloud"?0.09:0.14)+")"); cg.addColorStop(1,"rgba(150,165,185,0)"); g.fillStyle=cg; g.fillRect(0,0,W,H); }
-  if(!this.day){ var ng=g.createLinearGradient(0,0,0,H); ng.addColorStop(0,"rgba(10,20,45,0.28)"); ng.addColorStop(1,"rgba(10,20,45,0)"); g.fillStyle=ng; g.fillRect(0,0,W,H); }
-  /* Nebel / Wolkenschleier: weiche Textur, langsam ziehend (zwei Lagen gegeneinander) */
-  if(/fog|cloud|rain|snow|storm/.test(ic)){
-    var tx=fogTex(), k=ic==="fog"?1:ic==="cloudSun"?0.35:0.6;
-    for(var L=0;L<2;L++){ var sp=(L?9:5)*(1+wind*0.6), off=(sec*sp)%tx.width, yy=(L?H*0.35:-H*0.05), hh=H*(L?0.8:0.7);
-      g.globalAlpha=k*(L?0.55:0.8); for(var xx=-off;xx<W;xx+=tx.width) g.drawImage(tx,xx,yy,tx.width,hh); }
-    g.globalAlpha=1;
-  }
-  /* Schnee: drei Tiefen, vorne groß und unscharf */
-  if(ic==="snow"){ for(var i=0;i<this.parts.length;i++){ var p=this.parts[i];
-      p.y+=p.v*dt; p.x+=(Math.sin(sec*p.sw+p.ph)*10+wind*18*p.z)*dt; if(p.y>H+6){ p.y=-6; p.x=Math.random()*W; } if(p.x>W+6) p.x=-6; else if(p.x<-6) p.x=W+6;
-      var rr=p.r, gr=g.createRadialGradient(p.x,p.y,0,p.x,p.y,rr*(p.z>0.75?2.4:1.6)); gr.addColorStop(0,"rgba(255,255,255,"+(0.55+p.z*0.35)+")"); gr.addColorStop(1,"rgba(255,255,255,0)");
-      g.fillStyle=gr; g.beginPath(); g.arc(p.x,p.y,rr*(p.z>0.75?2.4:1.6),0,6.283); g.fill(); } }
-  /* Regen: feine, schräge Schlieren mit Bewegungsunschärfe */
-  if(ic==="rain"||ic==="storm"){ g.lineCap="round"; var ang=0.18+wind*0.12;
-    for(var j=0;j<this.parts.length;j++){ var q=this.parts[j]; q.y+=q.v*dt; q.x+=q.v*ang*dt; if(q.y>H+20){ q.y=-20; q.x=Math.random()*(W+60)-60; } if(q.x>W+20) q.x=-20;
-      var lg=g.createLinearGradient(q.x,q.y,q.x-q.l*ang,q.y-q.l); lg.addColorStop(0,"rgba(215,230,245,"+q.a+")"); lg.addColorStop(1,"rgba(215,230,245,0)");
-      g.strokeStyle=lg; g.lineWidth=q.z>0.7?1.4:0.8; g.beginPath(); g.moveTo(q.x,q.y); g.lineTo(q.x-q.l*ang,q.y-q.l); g.stroke(); } }
-  /* Gewitter: kurzes, doppeltes Aufhellen des Himmels */
-  if(ic==="storm"){ if(t>this.nextFlash){ this.flash=1; this.nextFlash=t+5000+Math.random()*9000; this.f2=t+160; }
-    if(this.f2&&t>this.f2){ this.flash=Math.max(this.flash,0.7); this.f2=0; }
-    if(this.flash>0.01){ g.fillStyle="rgba(225,232,255,"+(this.flash*0.35)+")"; g.fillRect(0,0,W,H); this.flash*=0.82; } }
-};
-
-var CUR=null;
+var LAST="";
 function mount(){
-  var hero=F.current==="heute"&&document.querySelector("#main .ag-hero");
-  if(!hero){ if(CUR&&!CUR.c.isConnected){ CUR.stop(); CUR=null; } return; }
-  var w=F.D&&F.D.weather||null, key=(w?w.icon:"none")+"|"+(isDay()?"d":"n");
-  if(CUR&&CUR.c.isConnected&&CUR.host===hero&&CUR.key===key) return;
-  if(CUR){ CUR.stop(); if(CUR.c.parentNode) CUR.c.parentNode.removeChild(CUR.c); CUR=null; }
-  if(!w) return;
-  hero.classList.add("has-wx"); CUR=new Scene(hero,w); CUR.key=key;
+  if(F.current!=="heute") return;
+  var hero=document.querySelector("#main .ag-hero"); if(!hero) return;
+  var w=F.D&&F.D.weather||null, key=(w?w.icon+"|"+w.snowLine:"none")+"|"+(isDay()?"d":"n");
+  var cur=hero.querySelector(".ag-alp");
+  if(cur&&cur.getAttribute("data-k")===key) return;
+  var tmp=document.createElement("div"); tmp.innerHTML=scene(w); var el=tmp.firstChild; el.setAttribute("data-k",key);
+  if(cur) hero.replaceChild(el,cur); else hero.insertBefore(el,hero.firstChild);
+  hero.classList.add("has-alp"); LAST=key;
 }
 var main=document.getElementById("main");
-if(main&&window.MutationObserver) new MutationObserver(function(){ mount(); }).observe(main,{childList:true});
+if(main&&window.MutationObserver) new MutationObserver(function(){ mount(); }).observe(main,{childList:true,subtree:false});
 if(F.onData) F.onData(function(){ setTimeout(mount,0); });
-setInterval(mount,5*60*1000);   // Tag/Nacht-Wechsel, neues Wetter
+setInterval(mount,5*60*1000);   // Tag/Nacht-Wechsel
 setTimeout(mount,1200);
 
 F.css(
-".ag-hero.has-wx{position:relative;isolation:isolate}.ag-hero.has-wx>*:not(.ag-wxfx){position:relative;z-index:1}"+
-/* Canvas deckt den Kopfbereich ab, Ränder weich auslaufen lassen */
-".ag-wxfx{position:absolute;left:-12px;top:-14px;z-index:0;pointer-events:none;"+
-"-webkit-mask-image:radial-gradient(ellipse 70% 75% at 42% 42%,#000 35%,transparent 100%);mask-image:radial-gradient(ellipse 70% 75% at 42% 42%,#000 35%,transparent 100%)}"
+/* Kulisse rechts im Kopfbereich (feste Höhe, weg von Text und Knöpfen), Text bleibt davor */
+".ag-hero.has-alp{position:relative;isolation:isolate}.ag-hero.has-alp>*:not(.ag-alp){position:relative;z-index:1}"+
+".ag-alp{position:absolute;right:0;top:-6px;height:236px;width:min(620px,52%);z-index:0;pointer-events:none;overflow:hidden;"+
+"-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 30%);mask-image:linear-gradient(90deg,transparent 0,#000 30%);color:var(--ink)}"+
+".alp-sky{position:absolute;inset:0}"+
+".alp-mt{position:absolute;left:0;right:0;bottom:0;width:100%;height:74%}"+
+".alp-mt .m3{fill:currentColor;opacity:.13}.alp-mt .m2{fill:currentColor;opacity:.2}.alp-mt .m1{fill:currentColor;opacity:.3}"+
+".alp-mt .snow{fill:#fff;opacity:.85}.alp-mt .tree{fill:currentColor;opacity:.42}"+
+":root[data-theme='light'] .alp-mt .snow{fill:#fff;stroke:rgba(0,0,0,.12);stroke-width:.6}"+
+/* Sonne */
+".alp-sun{position:absolute;right:16%;top:6%;width:62px;height:62px;border-radius:50%;background:radial-gradient(circle,#ffe9a8 0 38%,#ffc94d 39% 52%,rgba(255,201,77,0) 70%)}"+
+".alp-sun>i{position:absolute;inset:-22px;border-radius:50%;background:repeating-conic-gradient(from 0deg,rgba(255,210,110,.55) 0 4deg,transparent 4deg 30deg);"+
+"-webkit-mask:radial-gradient(circle,transparent 0 44%,#000 46% 64%,transparent 70%);mask:radial-gradient(circle,transparent 0 44%,#000 46% 64%,transparent 70%);animation:alpSpin 26s linear infinite}"+
+".alp-sun.half{right:22%;top:8%}"+
+/* Mond + Sterne */
+".alp-moon{position:absolute;right:20%;top:8%;width:42px;height:42px;border-radius:50%;box-shadow:-11px 5px 0 0 #f4f1e2;transform:rotate(-18deg);filter:drop-shadow(0 0 10px rgba(244,241,226,.45))}"+
+".alp-star{position:absolute;width:3px;height:3px;border-radius:50%;background:#fff;opacity:.2;animation:alpTwinkle 3.6s ease-in-out infinite}"+
+":root[data-theme='light'] .alp-star{background:#5a6b8a}"+
+/* Wolken: weiche Ballen aus Schatten, ziehen langsam quer */
+".alp-cloud{position:absolute;left:0;width:118px;height:56px;overflow:visible;transform:translateX(-140px) scale(var(--s));transform-origin:0 50%;animation:alpDrift 60s linear infinite;filter:drop-shadow(0 6px 10px rgba(0,0,0,.12))}"+
+".alp-cloud path{fill:rgba(255,255,255,.78)}.alp-cloud.dark path{fill:rgba(186,198,214,.8)}"+
+":root[data-theme='light'] .alp-cloud path{fill:rgba(150,166,190,.5)}:root[data-theme='light'] .alp-cloud.dark path{fill:rgba(110,125,150,.55)}"+
+/* Regen, Schnee, Nebel, Blitz */
+".alp-rain{position:absolute;top:-10%;width:1.5px;height:16px;border-radius:2px;background:linear-gradient(180deg,rgba(190,225,255,0),rgba(190,225,255,.75));transform:rotate(12deg);animation:alpRain .7s linear infinite}"+
+":root[data-theme='light'] .alp-rain{background:linear-gradient(180deg,rgba(60,110,170,0),rgba(60,110,170,.6))}"+
+".alp-snow{position:absolute;top:-6%;width:var(--d);height:var(--d);border-radius:50%;background:#fff;opacity:.9;animation:alpSnow 7s linear infinite}"+
+":root[data-theme='light'] .alp-snow{background:#c9d6e8}"+
+".alp-fog{position:absolute;left:-30%;width:160%;height:22px;border-radius:30px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);filter:blur(6px);animation:alpFog 30s ease-in-out infinite alternate}"+
+".alp-flash{position:absolute;inset:0;background:rgba(255,255,255,.0);animation:alpFlash 7s infinite}"+
+/* Schneefallgrenze */
+".alp-sl{position:absolute;left:18%;right:0;border-top:1px dashed rgba(255,255,255,.55);height:0}.alp-sl b{position:absolute;right:6px;top:-17px;font:600 10.5px/1 var(--f-body);letter-spacing:.02em;color:var(--ink-2);background:color-mix(in srgb,var(--panel-solid,#000) 45%,transparent);padding:2px 6px;border-radius:99px}"+
+":root[data-theme='light'] .alp-sl{border-top-color:rgba(40,60,90,.35)}"+
+"@keyframes alpSpin{to{transform:rotate(360deg)}}"+
+"@keyframes alpTwinkle{0%,100%{opacity:.15}50%{opacity:.95}}"+
+"@keyframes alpDrift{to{transform:translateX(660px) scale(var(--s))}}"+
+"@keyframes alpRain{to{transform:translate(-18px,220px) rotate(12deg)}}"+
+"@keyframes alpSnow{0%{transform:translate(0,0)}25%{transform:translate(8px,55px)}50%{transform:translate(-6px,110px)}75%{transform:translate(7px,165px)}100%{transform:translate(0,230px)}}"+
+"@keyframes alpFog{from{transform:translateX(-8%)}to{transform:translateX(8%)}}"+
+"@keyframes alpFlash{0%,88%,100%{background:rgba(255,255,255,0)}89%{background:rgba(255,255,255,.55)}90%{background:rgba(255,255,255,0)}91.5%{background:rgba(255,255,255,.35)}93%{background:rgba(255,255,255,0)}}"+
+/* Handy: Kulisse hinter der Uhr, etwas zurückhaltender */
+"@media (max-width:900px){.ag-alp{width:82%;height:190px;opacity:.9;top:calc(env(safe-area-inset-top,0px) - 4px)}}"+
+"@media (prefers-reduced-motion:reduce){.ag-alp *{animation:none!important}.alp-cloud{transform:translateX(40%) scale(var(--s))}.alp-rain,.alp-snow,.alp-flash{display:none}}"
 );
 })();
