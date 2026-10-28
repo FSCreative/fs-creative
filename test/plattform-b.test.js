@@ -513,6 +513,57 @@ function unitTests(T) {
     }
   });
 
+  /* Teil 4b: Review B8/B9 und „Belege mit positiver Summe exakt wie bisher“ (Vergleich mit dem Steuerkern vor dem Plattform-Umbau, Commit 092b4b0) */
+  const StIst = { docs: {}, uva: {}, mapping: {}, jabInput: {}, trips: {}, settings: { besteuerung: "ist", istAb: "2026-01-01" }, today: "2026-11-20" };
+  await t("B8: negative Summe mit Zahlung, Rücknahme, Zahlung → Anteil 1 (nicht 3) – positiv wie negativ gespeicherte Zahlungen; UVA, Kontrollrechnung, E1a", () => {
+    for (const sg of [1, -1]) {
+      const d = payout({ pays: [{ date: "2026-11-10", amount: 95.5 * sg }, { date: "2026-11-12", amount: -95.5 * sg }, { date: "2026-11-14", amount: 95.5 * sg }], paid: 95.5 * sg });
+      const u = S.computeUva({ invoices: [d], vouchers: [], creditNotes: [] }, StIst, Q4); assert.strictEqual(K(u, "022"), 0.75, "Vorzeichen " + sg); assert.strictEqual(K(u, "090"), 0);
+      assert.strictEqual(S.controlCheck({ invoices: [d], vouchers: [], creditNotes: [] }, StIst, Q4).ust, 0.75);
+      const j = S.computeJab({ invoices: [d], vouchers: [], creditNotes: [] }, StIst, 2026); assert.strictEqual(r2(j.revDocs.filter(x => x.doc.id === "iP").reduce((a, x) => a + x.net, 0)), -96.25, "E1a einmal");
+    }
+  });
+  await t("B9: Gutschrift mit USt-Positionen gleichen Vorzeichens und einer 0-%-Position mit anderem Vorzeichen → normal gebucht (wie vor dem Umbau); USt-Konflikt → Prüfung", () => {
+    const cnB = (lines, o) => Object.assign({ id: "cnB", nr: "GU-9", type: "GU", status: 1000, date: "2026-11-03", taxType: "default", taxRule: "1", contact: "Kunde", country: "AT", pays: [{ date: "2026-11-10", amount: 110 }], lines,
+      net: r2(lines.reduce((a, l) => a + l.net, 0)), tax: r2(lines.reduce((a, l) => a + l.tax, 0)), gross: r2(lines.reduce((a, l) => a + l.net + l.tax, 0)) }, o || {});
+    const ok = cnB([{ rate: 20, net: 100, tax: 20 }, { rate: 0, net: -10, tax: 0 }]);
+    for (const st of [{ docs: {}, uva: {}, settings: { besteuerung: "soll" }, today: "2026-11-20" }, StIst]) {
+      const u = S.computeUva({ invoices: [], vouchers: [], creditNotes: [ok] }, st, Q4); assert.ok(!u.review.some(x => x.doc.id === "cnB" && /beider Vorzeichen/.test(x.why)), "nicht wegen gemischter Vorzeichen zur Prüfung"); assert.strictEqual(K(u, "090"), -20);
+      const bad = S.computeUva({ invoices: [], vouchers: [], creditNotes: [cnB([{ rate: 20, net: 100, tax: 20 }, { rate: 20, net: -10, tax: -2 }])] }, st, Q4); assert.ok(bad.review.some(x => x.doc.id === "cnB" && /beider Vorzeichen/.test(x.why)), "USt-Positionen mit beiden Vorzeichen");
+      const fee = S.computeUva({ invoices: [], vouchers: [], creditNotes: [cnB([{ rate: 0, net: 100, tax: 0 }, { rate: 20, net: -3.75, tax: -0.75 }])] }, st, Q4); assert.ok(fee.review.some(x => x.doc.id === "cnB" && /beider Vorzeichen/.test(x.why)), "Gebühr mit USt gegen die Gutschrift");
+    }
+  });
+  await t("Belege mit positiver Summe: UVA (Soll und Ist, alle Quartale 2026), Kontrollrechnung und E1a exakt wie vor dem Plattform-Umbau (300 Zufallsbelege)", () => {
+    let Old = null; try { const src = require("child_process").execSync("git show 092b4b0:admin-cockpit/steuer-calc.js", { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "fsc-steuer-alt-")), "steuer-calc.js"); fs.writeFileSync(f, src); Old = require(f); } catch (e) { Old = null; }
+    if (!Old) { console.log("HINWEIS: Vergleich mit dem alten Steuerkern übersprungen (git-Verlauf nicht verfügbar)"); return; }
+    let seed = 20261028; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648, pick = a => a[Math.floor(rnd() * a.length)], money = (a, b) => r2(a + rnd() * (b - a));
+    const day = () => "2026-" + String(1 + Math.floor(rnd() * 12)).padStart(2, "0") + "-" + String(1 + Math.floor(rnd() * 28)).padStart(2, "0");
+    const mkLines = (n, rates, cat) => Array.from({ length: n }, () => { const rate = pick(rates), net = money(5, 900); return { rate, net, tax: r2(net * rate / 100), cat: cat || "", catId: "", catType: "" }; });
+    const sums = ls => ({ net: r2(ls.reduce((a, l) => a + l.net, 0)), tax: r2(ls.reduce((a, l) => a + l.tax, 0)) });
+    const payList = (gross, d0) => { const k = Math.floor(rnd() * 4), out = []; let rest = gross; for (let i = 0; i < k; i++) { const a = i === k - 1 && rnd() < 0.6 ? rest : r2(rest * (0.2 + rnd() * 0.6)); if (a <= 0.01) break; out.push({ date: d0 > "2026-12-20" ? d0 : (d => d < d0 ? d0 : d)(day()), amount: a }); rest = r2(rest - a); } return out; };
+    const docs = { invoices: [], vouchers: [], creditNotes: [] };
+    for (let i = 0; i < 150; i++) { const ls = mkLines(1 + Math.floor(rnd() * 3), [20, 20, 10, 13, 0]), sm = sums(ls), gross = r2(sm.net + sm.tax), d = day(), pays = payList(gross, d), paid = r2(pays.reduce((a, p) => a + p.amount, 0));
+      const viaPayDate = !pays.length && rnd() < 0.3;
+      docs.invoices.push({ id: "i" + i, nr: "RE-" + (1000 + i), type: pick(["RE", "RE", "RE", "AR"]), status: viaPayDate || paid >= gross - 0.005 ? 1000 : paid > 0 ? 750 : 200, date: d, delivery: rnd() < 0.5 ? d : day(), taxType: "default", taxRule: "1", contact: "Kunde " + i, country: "AT", uid: "",
+        net: sm.net, tax: sm.tax, gross, paid: viaPayDate ? gross : paid, payDate: viaPayDate ? day() : (pays.length ? pays[pays.length - 1].date : null), pays: pays.length ? pays : undefined, enshrined: false, lines: ls }); }
+    for (let i = 0; i < 100; i++) { const cd = pick(["C", "C", "D"]), ls = mkLines(1 + Math.floor(rnd() * 2), cd === "C" ? [20, 10, 0] : [20, 10], cd === "C" ? "Software" : "Erlöse"), sm = sums(ls), gross = r2(sm.net + sm.tax), d = day(), pays = payList(gross, d);
+      docs.vouchers.push({ id: "v" + i, date: d, delivery: null, payDate: pays.length ? pays[pays.length - 1].date : null, status: 1000, cd, taxType: "default", taxRule: cd === "C" ? "9" : "1", supplier: "Lieferant " + i, supplierUid: "", supplierCountry: "AT", desc: "", net: sm.net, tax: sm.tax, gross, paid: r2(pays.reduce((a, p) => a + p.amount, 0)), enshrined: false, pays: pays.length ? pays : undefined, lines: ls }); }
+    for (let i = 0; i < 50; i++) { const ls = mkLines(1 + Math.floor(rnd() * 2), [20, 10]), sm = sums(ls), gross = r2(sm.net + sm.tax), d = day(), pays = payList(gross, d);
+      docs.creditNotes.push({ id: "c" + i, sevId: String(i), nr: "GU-" + i, type: "GU", status: pick([200, 1000]), date: d, delivery: d, taxType: "default", taxRule: "1", contact: "Kunde", uid: "", net: sm.net, tax: sm.tax, gross, pays: pays.length ? pays : undefined, lines: ls, enshrined: false }); }
+    const st = b => ({ docs: {}, uvaManual: {}, mapping: {}, jabInput: {}, uva: {}, trips: {}, settings: b === "ist" ? { besteuerung: "ist", istAb: "2026-01-01" } : { besteuerung: "soll" }, today: "2026-12-31" });
+    const raw = () => JSON.parse(JSON.stringify(docs)), sig = u => JSON.stringify({ K: u.K, z: u.zahllast, r: (u.review || []).map(x => x.doc.id + ":" + x.why), i: (u.info || []).length });
+    let n = 0;
+    for (const b of ["soll", "ist"]) {
+      for (const q of [["2026-Q1", "2026-01-01", "2026-03-31"], ["2026-Q2", "2026-04-01", "2026-06-30"], ["2026-Q3", "2026-07-01", "2026-09-30"], ["2026-Q4", "2026-10-01", "2026-12-31"]]) {
+        const P = { key: q[0], from: q[1], to: q[2] };
+        assert.strictEqual(sig(S.computeUva(raw(), st(b), P)), sig(Old.computeUva(raw(), st(b), P)), "UVA " + b + " " + q[0]);
+        assert.strictEqual(JSON.stringify(S.controlCheck(raw(), st(b), P)), JSON.stringify(Old.controlCheck(raw(), st(b), P)), "Kontrollrechnung " + b + " " + q[0]); n += 2;
+      }
+      const a = S.computeJab(raw(), st(b), 2026), o = Old.computeJab(raw(), st(b), 2026); assert.strictEqual(a.rev, o.rev, "E1a " + b); assert.strictEqual(JSON.stringify(a.revDocs), JSON.stringify(o.revDocs)); n++;
+    }
+    assert.ok(n === 18);
+  });
   /* Teil 5: Cockpit-Rechnung an Blitzdings melden (BD-3) – Server-Kopie gegen einen kleinen Blitzdings-Mock (neu: Endpunkt da, alt: 404) */
   await (async () => {
     const http = require("http"), cp = require("child_process"), crypto = require("crypto");
