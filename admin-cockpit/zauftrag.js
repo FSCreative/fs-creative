@@ -98,9 +98,15 @@ function vAuftraege(){
     '<select class="f" data-tkf="prio" aria-label="Priorität"><option value="">Jede Priorität</option><option value="hoch"'+(UI.tkPrio==="hoch"?" selected":"")+'>Hoch und dringend</option><option value="dringend"'+(UI.tkPrio==="dringend"?" selected":"")+'>Nur dringend</option></select>'+
     '<input class="f tk-q" type="search" data-tkf="q" data-keepfocus="tkq" placeholder="Nach Titel, Auftrag oder Kunde filtern …" value="'+esc(UI.tkQ)+'" aria-label="Aufgaben filtern"></div>';
   if(!A().tasks.length&&!A().projects.length) return head+kpis+'<section class="panel tk-empty"><b>Noch keine Aufträge</b><p>Lege einen Auftrag an (z. B. „Website Relaunch Muster GmbH“) und plane die Aufgaben dazu – mit Frist, Priorität und Checkliste. Fristen erscheinen rechts in der Statusleiste.</p><div class="btns"><button type="button" class="btn primary" data-act="tkprojnew">+ Ersten Auftrag anlegen</button><button type="button" class="btn" data-act="tknew:">+ Aufgabe ohne Auftrag</button></div></section>';
+  var fp=UI.tkProj&&proj(UI.tkProj);
+  if(fp) bar+=projBar(fp);
   if(window.innerWidth<=900) return head+mobileBoard(l,s,bar);
   return head+kpis+bar+(UI.tkView==="list"?listView(l):board(l));
 }
+/* Ausgewählter Auftrag: Kunde, Belege und direkt Angebot/Rechnung schreiben (egal in welcher Spalte die Aufgaben stehen) */
+function projBar(p){ var ld=leadOf(p), nd=docsOf(p).length;
+  return '<div class="panel tk-pbar" style="--pc:'+PCOL[p.color||0]+'"><span class="sw"></span><div class="tk-pbi"><b>'+esc(p.name)+'</b><small>'+esc([p.customer||(ld&&(ld.company||ld.name))||"ohne Kunde",p.status!=="aktiv"?p.status:"",nd?nd+" Beleg"+(nd===1?"":"e"):""].filter(Boolean).join(" · "))+'</small></div>'+
+    '<div class="tk-pbb"><button type="button" class="btn sm" data-act="tkoffer:'+esc(p.id)+'">'+F.svg("offer")+'Angebot schreiben</button><button type="button" class="btn sm" data-act="tkinvoice:'+esc(p.id)+'">'+F.svg("euro")+'Rechnung schreiben</button><button type="button" class="btn sm" data-act="tkprojedit:'+esc(p.id)+'">Auftrag öffnen</button></div></div>'; }
 /* Handy: Status als Reiter, darunter die Karten in voller Breite (statt seitlich wischbarem Board) */
 function mobileBoard(l,s,bar){
   var cur=UI.tkMCol||"offen", cnt={}; COLS.forEach(function(c){ cnt[c[0]]=l.filter(function(t){ return t.status===c[0]; }).length; });
@@ -139,7 +145,8 @@ function openTask(id,status,pre){
     '<div class="tk-g3"><label class="fl">Frist<input class="f" type="date" name="due" value="'+esc(DR.due||"")+'"></label><div class="fl tk-quick"><span>Schnell</span><div><button type="button" class="btn sm" data-act="tkdue:0">Heute</button><button type="button" class="btn sm" data-act="tkdue:1">Morgen</button><button type="button" class="btn sm" data-act="tkdue:7">+1 Woche</button><button type="button" class="btn sm" data-act="tkdue:x">Keine</button></div></div></div>'+
     '<div class="fl">Checkliste<div id="tkCl">'+clHtml()+'</div><div class="tk-cladd"><input class="f" id="tkClNew" placeholder="Punkt hinzufügen und Enter drücken" maxlength="200"><button type="button" class="btn" data-act="tkcladd">Hinzufügen</button></div></div>'+
     '<label class="fl">Notizen<textarea class="f" name="notes" rows="3" maxlength="4000" placeholder="Details, Links, Zugangsinfos …">'+esc(DR.notes||"")+'</textarea></label>'+
-    (DR.mailRef||lead0||t?'<div class="tk-links">'+(DR.mailRef?'<button type="button" class="btn sm tk-lk" data-act="tkmail" title="'+esc(DR.mailRef.subject||"Mail öffnen")+'">'+F.svg("post")+'<span>Mail: '+esc(String(DR.mailRef.subject||"öffnen").slice(0,60))+'</span></button>':'')+(lead0?'<button type="button" class="btn sm tk-lk" data-act="tklead:'+esc(lead0.id)+'">'+F.svg("user")+'<span>Kundenakte: '+esc(lead0.company||lead0.name)+'</span></button>':'')+(t?'<button type="button" class="btn sm tk-lk" data-act="tktermin">'+F.svg("kal")+'<span>Als Termin eintragen</span></button>':'')+'</div>':'')+
+    (DR.mailRef||lead0||t?'<div class="tk-links">'+(DR.mailRef?'<button type="button" class="btn sm tk-lk" data-act="tkmail" title="'+esc(DR.mailRef.subject||"Mail öffnen")+'">'+F.svg("post")+'<span>Mail: '+esc(String(DR.mailRef.subject||"öffnen").slice(0,60))+'</span></button>':'')+(lead0?'<button type="button" class="btn sm tk-lk" data-act="tklead:'+esc(lead0.id)+'">'+F.svg("user")+'<span>Kundenakte: '+esc(lead0.company||lead0.name)+'</span></button>':'')+(t?'<button type="button" class="btn sm tk-lk" data-act="tktermin">'+F.svg("kal")+'<span>Als Termin eintragen</span></button>':'')+
+      (t&&!t.print?'<button type="button" class="btn sm tk-lk" data-act="tktaskbill:offer">'+F.svg("offer")+'<span>Angebot schreiben</span></button><button type="button" class="btn sm tk-lk" data-act="tktaskbill:invoice">'+F.svg("euro")+'<span>Rechnung schreiben</span></button>':'')+'</div>':'')+
     (t?'<div class="fl">Kommentare<div class="tk-cm">'+((t.comments||[]).slice().reverse().map(function(c){ return '<div><small>'+esc(new Date(c.at).toLocaleString("de-AT",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))+'</small><p>'+esc(c.text)+'</p></div>'; }).join("")||'<span class="mu">Noch keine Kommentare.</span>')+'</div><div class="tk-cladd"><input class="f" id="tkCmNew" placeholder="Kommentar schreiben …" maxlength="2000"><button type="button" class="btn" data-act="tkcomment">Senden</button></div></div>':'')+
     '<div class="foot">'+(t?'<button type="button" class="btn bad-t" data-act="tkdel:'+esc(t.id)+'">Löschen</button>':'<span></span>')+'<div class="btns"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></div></div></form>',"wide");
 }
@@ -267,6 +274,11 @@ function bill(pid,kind){ var p=proj(pid); if(!p||!F.openInvoice) return; var ld=
     F.openInvoice(pre); };
   if(cid&&!(F.metaCached&&F.metaCached())&&F.loadMeta) F.loadMeta(go); else go(); }
 F.action("tkoffer",function(pid){ bill(pid,"offer"); });
+F.action("tktaskbill",function(kind){ if(!DR) return; var offer=kind==="offer", f=document.querySelector(".tk-dlg"), pid=(f&&f.projectId&&f.projectId.value)||DR.projectId||"";
+  if(pid&&proj(pid)) return bill(pid,offer?"offer":"");
+  var ld=DR.leadId&&leads().find(function(l){ return l.id===DR.leadId; }); F.closeModal();
+  if(ld&&F.actions[offer?"leadoffer":"leadinvoice"]) return F.actions[offer?"leadoffer":"leadinvoice"](ld.id);
+  if(offer&&F.openOffer) F.openOffer({title:"Angebot · "+DR.title}); else F.openInvoice(offer?{kind:"offer",title:"Angebot · "+DR.title}:{title:"Rechnung · "+DR.title,reference:String(DR.title||"").slice(0,60)}); });
 F.action("tkinvoice",function(pid){ bill(pid,""); });
 /* Mail → Aufgabe: Betreff als Titel, Absender als Notiz, Mail verknüpft, Auftrag des Kunden vorausgewählt */
 F.tkFromMail=function(m){ if(!m) return;
@@ -296,6 +308,8 @@ F.css(
 '.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}.seg button{border:0;background:none;padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:6px}.seg button svg{width:15px;height:15px}.seg button[aria-pressed="true"]{background:var(--sunk);color:var(--ink)}'+
 '.tk-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}'+
 '.tk-kpi{display:grid;gap:4px;text-align:left;padding:14px 18px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);box-shadow:var(--shadow);color:var(--ink)}.tk-kpi span{font-size:13px;color:var(--ink-2);text-wrap:balance}.tk-kpi b{font:600 27px/1.1 var(--f-mono);letter-spacing:-.03em}.tk-kpi.bad b{color:var(--bad)}.tk-kpi.ok b{color:var(--ok)}'+
+'.tk-pbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-left:4px solid var(--pc)}.tk-pbar .sw{display:none}'+
+'.tk-pbi{flex:1 1 200px;min-width:0;display:grid}.tk-pbi b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tk-pbi small{color:var(--ink-2)}.tk-pbb{display:flex;flex-wrap:wrap;gap:6px}.tk-pbb .btn svg{width:15px;height:15px}'+
 '.tk-bar2{display:flex;flex-wrap:wrap;gap:10px}.tk-bar2 select.f{width:auto;min-width:170px}.tk-bar2 .tk-q{flex:1;min-width:220px}'+
 '.tk-board{display:grid;grid-template-columns:repeat(4,minmax(172px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px;align-items:start}'+
 '.tk-col{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px;min-height:120px;transition:outline-color .15s;outline:2px dashed transparent;outline-offset:-4px}.tk-col.over{outline-color:var(--glow)}'+
