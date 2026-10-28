@@ -527,10 +527,11 @@ function unitTests(T) {
     await E.C.kochduDouble(sept); assert.deepStrictEqual((await E.P.list()).map(x => x.amount), [-50]);
   });
   /* Teil 2c: Anzeigen (B11) – plat.js/geld.js in einer vm mit Stub-Cockpit */
-  const bootUi = (file, D, UI) => { const vm = require("vm"), views = {};
+  const bootUi = (file, D, UI, over) => { const vm = require("vm"), views = {};
     const base = { UI: Object.assign({ platOpen: {} }, UI || {}), D, actions: {}, icons: {}, geldTabs: [{ id: "uebersicht" }], _pendTabs: [], SRC: {}, api: () => new Promise(() => {}),
       esc: x => String(x == null ? "" : x), eur: n => (+n || 0).toFixed(2) + " €", eur0: n => Math.round(+n || 0) + " €", de: x => String(x || ""), deShort: x => String(x || ""),
       view(v) { views[v.id] = v; }, action(n, f) { base.actions[n] = f; }, head: (a, b, c) => "<h1>" + a + "</h1>" + (c || ""), ls: () => null };
+    Object.assign(base, over || {}); views._F = base;
     const F = new Proxy(base, { get: (o, k) => (k in o ? o[k] : (typeof k === "string" ? function () { return ""; } : undefined)) });
     const ctx = { window: { FSC: F }, document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] }, setTimeout: () => 0, clearTimeout() {}, Date, Math, JSON, Object, String, Array, Promise, console, Number, isFinite, parseFloat, encodeURIComponent };
     vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(ROOT, "admin-cockpit", file), "utf8"), ctx); return views; };
@@ -544,6 +545,26 @@ function unitTests(T) {
     const G = { year: "2026", today: "2026-11-20", sevConfigured: false, sev: null, abgleich: { items: [], unlinked: [], totals: { unbilled: 0 }, blitzStatus: { status: "fehlt", error: "keine Antwort" } }, platforms: {} };
     const g = bootUi("geld.js", G, { geldTab: "uebersicht", money: "zu" });
     assert.ok(/Blitzdings-Buchungen nicht geladen/.test(g.geld.render())); G.abgleich.blitzStatus = { status: "ok" }; assert.ok(!/Blitzdings-Buchungen nicht/.test(g.geld.render()));
+  });
+  await t("R3-7: Entwurf bearbeiten – sevDesk-Bruttoentwurf (3 × 10,00, netto 8,3333) bleibt 30,00 (nicht 29,99); netto-genauer Entwurf (7 × 10,04) bleibt 84,34", async () => {
+    const seedA = [contact("24", "Firma GmbH"), ["Invoice", { id: "1270", invoiceType: "RE", status: "100", header: "Rechnung", contact: { id: "24", objectName: "Contact" }, invoiceDate: iso("2026-09-20"), sumNet: "25.00", sumTax: "5.00", sumGross: "30.00" }],
+      ["InvoicePos", { id: "12701", invoice: { id: "1270", objectName: "Invoice" }, quantity: "3", price: "8.3333", priceNet: "8.3333", priceGross: "10", taxRate: "20", sumNet: "25.00", sumTax: "5.00", sumGross: "30.00", name: "Hosting", positionNumber: "0" }],
+      ["Invoice", { id: "1271", invoiceType: "RE", status: "100", header: "Rechnung", contact: { id: "24", objectName: "Contact" }, invoiceDate: iso("2026-10-20"), sumNet: "70.28", sumTax: "14.06", sumGross: "84.34" }],
+      ["InvoicePos", { id: "12711", invoice: { id: "1271", objectName: "Invoice" }, quantity: "7", price: "10.04", priceNet: "10.04", priceGross: "12.05", taxRate: "20", sumNet: "70.28", sumTax: "14.06", sumGross: "84.34", name: "Beratung", positionNumber: "0" }]];
+    const { L } = finSetup(seedA); await L.load();
+    const sevNum = x => parseFloat(x) || 0;
+    const O = require(path.join(ROOT, "sevdesk-ops.js"))({ sev: (m, p, o) => L.request(m, p, o), sevAll: async () => [], sevNum, sevDay: x => String(x || "").slice(0, 10), sevName: x => (x && x.name) || "",
+      sevDateDE: d => d, sevNet: (g, r) => r2(g / (1 + r / 100)), viennaToday: () => "2026-10-20", sevMeta: async () => ({}), snapshot: async () => ({}), invalidate: () => {}, sevBook: async () => ({}) });
+    for (const [id, want] of [["1270", "30.00"], ["1271", "84.34"]]) {
+      const det = Object.assign({ ok: true }, await O.invoiceDetail(id)); let pre = null;
+      const v = bootUi("sevdesk.js", {}, {}, { api: () => Promise.resolve(det), openInvoice: p => { pre = p; }, closeDrawer() {} });
+      await v._F.actions.sdedit(id); await new Promise(r => setImmediate(r));
+      assert.ok(pre && pre.items.length === 1, "Formular geöffnet");
+      // wie server.js sevCreateInvoice: Preis je Position über sevPosPrice, gespeichert mit fin-local
+      const pos = pre.items.map(it => Object.assign({ objectName: "InvoicePos", mapAll: true, quantity: it.qty, name: it.name, taxRate: it.taxRate }, T.sevPosPrice(it, it.taxRate)));
+      const inv = (await L.request("POST", "/Invoice/Factory/saveInvoice", { body: { invoice: { header: "Rechnung", invoiceType: "RE", status: 100, contact: { id: "24", objectName: "Contact" } }, invoicePosSave: pos } })).objects.invoice;
+      assert.strictEqual(inv.sumGross, want, "Entwurf " + id + ": " + JSON.stringify(pre.items));
+    }
   });
   /* Teil 3: Mollie-Zuordnung über „Mollie tr_…“ nur exakt (fin-mollie.js matchOf) */
   await t("Mollie tr_ in der Notiz: exakt gleiches Brutto → Zuordnung; 11,63 statt 9,69 → keine; tr_abc trifft nicht tr_abcdef", async () => {
