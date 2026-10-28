@@ -4,12 +4,19 @@
    Anmeldung mit Einwilligungs-Häkchen ist sofort aktiv (Wunsch Simon 25.10.2026, statt Double-Opt-in): Shop-Fußzeile/Kasse → Willkommensmail mit Abmeldelink;
    Einwilligung wird mit Text und Zeitpunkt gespeichert (Nachweis). Kundenkonten mit Häkchen „Newsletter“ (E-Mail bestätigt) zählen mit.
    Abmeldung in jeder Ausgabe mit einem Klick (Bestätigungsseite, damit Link-Scanner nicht abmelden). Versand nur nach Freigabe im Cockpit – „automatisch montags“ ist ein Schalter (Standard AUS).
-   Daten: Meta „print_newsletter“ { subs: {email: {status, source, createdAt, confirmedAt, unsubAt}}, settings, issues: {"2026-10-26": {...}} }. */
+   Daten: Meta „print_newsletter“ { subs: {email: {status, source, createdAt, confirmedAt, unsubAt}}, settings, issues: {"2026-10-26": {...}} }.
+   Weihnachtssaison (Montag der Ausgabe 15.10.–23.12., gleiche Saisonlogik wie /print/weihnachten in print-xmas.js): Betreff/Einleitung weihnachtlich und nach Intro/Monatscode
+   ein Weihnachtsblock (Titelbild, drei Vorschläge mit Preis und Liefertermin aus dem Weihnachts-Zwischenspeicher, Link zur Weihnachtsabteilung). Ab 24.12. kein Block mehr.
+   Bilder in Mails nur über unseren Bild-Proxy (absolute URL, JPG – viele Mailprogramme können kein WebP; keine Verbindung zu Contentful). */
+const XMAS = require("./print-xmas.js");
+const PRINT_BILD = require("./print-bild.js");
+const SUPPLIER_RX = /(?<![a-z])print[\s._-]{0,2}com(?![a-z])|drukwerkdeal|printdeal/i;
 module.exports = function (D) {
-  const { store, mailSend, sig, sigOk, nowIso, log, publicUrl, firm, products, priceFrom, vouchers, saveVouchers, accounts, limited } = D;
+  const { store, mailSend, sig, sigOk, nowIso, log, publicUrl, firm, products, priceFrom, vouchers, saveVouchers, accounts, limited, xmasData, scrub } = D;
   const KEY = "print_newsletter";
   const DEF = { autoSend: false, sendHour: 8, pct: 5, codeDays: 14, testTo: "simon@fs-creative.at" };
   const CODE_DAYS = 14;   // Monatscode: 2 Wochen gültig
+  const NL_V = 3;          // Entwurfs-Version: unbearbeitete automatische Entwürfe älterer Versionen werden beim nächsten Abruf neu aufgebaut (3 = Weihnachtsinhalt)
   const MON3 = ["JAN", "FEB", "MAR", "APR", "MAI", "JUN", "JUL", "AUG", "SEP", "OKT", "NOV", "DEZ"], MONDE = ["Jänner", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
   const codeIssue = mon => +String(mon).slice(8, 10) <= 7;   // erster Montag im Monat
   const monthCode = mon => "NL" + MON3[+String(mon).slice(5, 7) - 1] + String(mon).slice(2, 4);   // z. B. NLNOV26
@@ -40,12 +47,22 @@ module.exports = function (D) {
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const clip = (s, n) => String(s == null ? "" : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, n);
   const emailOk = e => /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i.test(e);
-  const eur = n => "€ " + (Math.round(n * 100) / 100).toFixed(2).replace(".", ",");
+  const eur = n => "€ " + (Math.round(n * 100) / 100).toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });   // wie die Weihnachtsseite: 1 669,44
   const deDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; };
+  const dayShort = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ""; const wd = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][new Date(m[0] + "T12:00:00Z").getUTCDay()]; return wd + ". " + +m[3] + "." + +m[2] + "."; };
+  // Texte aus dem Katalog (Lieferanten-CMS): nie den Produktionspartner nennen (scrubText aus print-shop.js; ohne → zumindest Namen ersetzen)
+  const scrubT = t => { const s = String(t == null ? "" : t); return typeof scrub === "function" ? scrub(s) : s.replace(/\b(?:www\.)?print\.com\b/gi, "FS Creative"); };
+  // Bild für die Mail: Contentful-Bild (Katalog) oder Proxy-Pfad (Weihnachtsabteilung) → absolute URL über unseren Bild-Proxy, JPG; sonst kein Bild
+  function mailImg(u, w, h) {
+    const s = String(u || ""), m = s.match(/^https:\/\/images\.ctfassets\.net\/([^?#]+)/) || s.match(/^\/print\/bild\/([^?#]+)/);
+    if (!m || /\.svg$/i.test(m[1]) || SUPPLIER_RX.test(m[1])) return "";
+    const q = "?fm=jpg&w=" + w + (h ? "&h=" + h + "&fit=fill" : "") + "&q=80";
+    return PRINT_BILD.upstreamUrl(PRINT_BILD.PREFIX + m[1], q) ? publicUrl() + PRINT_BILD.PREFIX + m[1] + q : "";
+  }
 
   // ── Kalender (Europe/Vienna): Montag der Woche, Kalenderwoche ──
   function vienna(d) {
-    const p = {}; new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d || new Date()).forEach(x => { p[x.type] = x.value; });
+    const p = {}; new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(d || (D.now ? new Date(D.now()) : new Date())).forEach(x => { p[x.type] = x.value; });
     return { date: p.year + "-" + p.month + "-" + p.day, hour: +p.hour, wd: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(p.weekday) };
   }
   const addDays = (iso, n) => { const t = new Date(iso + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
@@ -83,6 +100,21 @@ module.exports = function (D) {
     "Gut gedruckt ist halb gewonnen. Unsere Auswahl der Woche – in ganz Österreich versandkostenfrei.",
     "Kurz und knackig: drei Druck-Ideen und ein Designer-Tipp für deine Woche."
   ];
+  // Weihnachtssaison: {pct} = Rabatt in Prozent (Einstellungen)
+  const INTROS_XMAS_CODE = [
+    "Zeit für Weihnachtspost! Hier sind unsere Ideen für Karten, Kalender und kleine Geschenke – und dein Monatscode: {pct} % Rabatt auf deine nächste Bestellung, zwei Wochen lang.",
+    "Karten fürs Team, Geschenke für die Kundschaft, Verpackung fürs Geschäft: Mit deinem Monatscode sparst du jetzt zwei Wochen lang {pct} % auf deine nächste Bestellung.",
+    "Die Weihnachtszeit beginnt bei uns mit einem Dankeschön: {pct} % Rabatt mit deinem Monatscode – dazu Weihnachtsideen und die Druck-Tipps der Woche."
+  ];
+  const INTROS_XMAS = [
+    "Karten, Kalender und kleine Geschenke mit Logo oder Foto: Hier sind unsere Weihnachtsideen der Woche. Am besten rechtzeitig bestellen – bei jedem Produkt steht, wann es voraussichtlich ankommt.",
+    "Ob Karten fürs Team, Geschenke für deine Kundschaft oder Verpackung fürs Geschäft: Hier sind unsere Weihnachtsideen und die Druck-Tipps der Woche.",
+    "Weihnachten rückt näher – je früher du bestellst, desto entspannter wird’s. Bei jedem Produkt siehst du, wann es voraussichtlich ankommt."
+  ];
+  const XM_TEXT = "Karten, Kalender, Verpackung und kleine Geschenke – mit deinem Logo, Foto oder Motiv gedruckt. Am besten rechtzeitig bestellen: Bei jedem Produkt steht, wann es voraussichtlich ankommt.";
+  // Ausgabe in der Weihnachtssaison (Montag bis 23.12.)?
+  const xmSea = mon => XMAS.season(mon + "T12:00:00Z");
+  const xmIssue = mon => { const s = xmSea(mon); return !!(s.on && s.before); };
   const DESC = { flyer: "Der Klassiker für Angebote und Events – von A6 bis A3, matt oder glänzend.", visitenkarten: "Der erste Eindruck zum Mitnehmen – auf Wunsch mit edler Veredelung.", plakate: "Große Wirkung ab 1 Stück – für Veranstaltungen, Aktionen und Schaufenster.",
     folder: "Gefalzt für Speisekarten, Preislisten und Prospekte – mit Falz-Vorlage.", postcards: "Karten für Mailings, Einladungen und Grüße – in vielen Formaten.", aufkleber: "Logo-Sticker, Etiketten und Aufkleber in deiner Wunschform.",
     rollups: "Mobiler Blickfang für Messe und Empfang – inklusive System und Tasche.", "pvc-banner": "Wetterfestes Banner in Wunschgröße – mit Saum und Ösen.", "mesh-banner": "Winddurchlässiges Gitterbanner für Zäune und Gerüste.",
@@ -93,18 +125,22 @@ module.exports = function (D) {
   // Empfehlungen: Produkte, bei denen wir laut Preisvergleich günstiger als druck.at/Flyeralarm sind (im Cockpit frei änderbar)
   const PICKS = ["flyer", "postcards", "plakate", "pvc-banner", "folder", "tshirt-basic", "rollups", "mesh-banner", "tshirt-bio", "bauzaun"];
   async function draftFor(mon) {
-    const w = kw(mon), list = (await products()).filter(p => PICKS.indexOf(p.key) > -1).sort((a, b) => PICKS.indexOf(a.key) - PICKS.indexOf(b.key));
+    const w = kw(mon), xm = xmIssue(mon), list = (await products()).filter(p => PICKS.indexOf(p.key) > -1).sort((a, b) => PICKS.indexOf(a.key) - PICKS.indexOf(b.key));
     // Mischung: ein Papierprodukt, ein Großformat, abwechselnd Textil oder ein zweites Papierprodukt (jede Woche andere)
-    const have = k => list.some(p => p.key === k), PA = ["flyer", "postcards", "plakate", "folder"].filter(have), BI = ["pvc-banner", "rollups", "mesh-banner", "bauzaun"].filter(have), TX = ["tshirt-basic", "tshirt-bio"].filter(have);
+    // In der Weihnachtssaison keine Postkarten unter den Empfehlungen – die kommen als Weihnachtskarten im Weihnachtsblock
+    const have = k => list.some(p => p.key === k), PA = ["flyer", "postcards", "plakate", "folder"].filter(have).filter(k => !(xm && k === "postcards")), BI = ["pvc-banner", "rollups", "mesh-banner", "bauzaun"].filter(have), TX = ["tshirt-basic", "tshirt-bio"].filter(have);
     let pick = [PA[w % (PA.length || 1)], BI[w % (BI.length || 1)], w % 2 === 0 && TX.length ? TX[(w / 2) % TX.length] : PA[(w + 2) % (PA.length || 1)]].filter(Boolean).filter((k, i, a) => a.indexOf(k) === i);
     if (pick.length < 3) pick = pick.concat(list.map(p => p.key).filter(k => pick.indexOf(k) < 0)).slice(0, 3);
-    const tip = TIPS[w % TIPS.length], d = await data(), wc = codeIssue(mon);
-    return { monday: mon, kw: w, status: "draft", subject: "Druck-Tipps der Woche (KW " + w + ")" + (wc ? " + " + String(d.settings.pct).replace(".", ",") + " % Rabatt" : ""), intro: wc ? INTROS_CODE[w % INTROS_CODE.length] : INTROS[w % INTROS.length], products: pick.slice(0, 3),
-      tipTitle: tip[0], tipText: tip[1], code: wc ? monthCode(mon) : "", createdAt: nowIso(), auto: true, v: 2 };
+    const tip = TIPS[w % TIPS.length], d = await data(), wc = codeIssue(mon), pct = String(d.settings.pct).replace(".", ",");
+    const subject = (xm ? "Weihnachten mit deinem Design" : "Druck-Tipps der Woche") + " (KW " + w + ")" + (wc ? " + " + pct + " % Rabatt" : "");
+    const intro = xm ? (wc ? INTROS_XMAS_CODE[w % INTROS_XMAS_CODE.length] : INTROS_XMAS[w % INTROS_XMAS.length]).replace(/\{pct\}/g, pct) : wc ? INTROS_CODE[w % INTROS_CODE.length] : INTROS[w % INTROS.length];
+    return { monday: mon, kw: w, status: "draft", subject, intro, products: pick.slice(0, 3),
+      tipTitle: tip[0], tipText: tip[1], code: wc ? monthCode(mon) : "", xmas: xm, createdAt: nowIso(), auto: true, v: NL_V };
   }
-  // Nicht bearbeitete Entwürfe aus der Zeit mit Wochencode neu aufbauen (Code jetzt nur in der ersten Ausgabe im Monat)
+  // Nicht bearbeitete automatische Entwürfe älterer Versionen neu aufbauen (v2: Code nur in der ersten Ausgabe im Monat, v3: Weihnachtsinhalt).
+  // Von Hand bearbeitete Entwürfe (auto !== true) und versendete Ausgaben bleiben immer, wie sie sind.
   async function issueFor(mon, create) { const d = await data(), c = d.issues[mon];
-    if ((!c && create) || (c && c.status === "draft" && c.auto && c.v !== 2)) { d.issues[mon] = await draftFor(mon); await save(); }
+    if ((!c && create) || (c && c.status === "draft" && c.auto === true && c.v !== NL_V)) { d.issues[mon] = await draftFor(mon); await save(); }
     return d.issues[mon] || null; }
 
   // ── E-Mail (HTML + Text) ──
@@ -113,33 +149,63 @@ module.exports = function (D) {
     const nextMon = MONDE[(+String(iss.monday).slice(5, 7)) % 12];
     const items = [];
     for (const k of iss.products || []) { const p = all.find(x => x.key === k); if (!p) continue; let pr = null; try { pr = await priceFrom(k); } catch (e) {} items.push({ p, pr, url: base + "/print?produkt=" + encodeURIComponent(k) + "&utm_source=newsletter&utm_campaign=kw" + iss.kw }); }
+    // Weihnachtsblock: Montag in der Saison und Stichtag (heute bzw. Montag, je nachdem was später ist) noch vor dem 24.12.
+    const sea = xmSea(iss.monday), today = vienna().date, ref = today > iss.monday ? today : iss.monday;
+    let xm = null;
+    if (sea.on && sea.before && ref <= sea.deadline) {
+      const shown = {}, skip = {}; all.forEach(p => { shown[p.key] = 1; }); items.forEach(x => { skip[x.p.key] = 1; });
+      let xd = null; try { xd = typeof xmasData === "function" ? await xmasData() : null; } catch (e) { xd = null; }
+      const tag = "utm_source=newsletter&utm_campaign=kw" + iss.kw;
+      xm = { url: base + "/print/weihnachten?" + tag, hero: mailImg(XMAS.PROXY + XMAS.HERO.img, 1200), alt: XMAS.HERO.alt, year: sea.year,
+        items: XMAS.mailPicks(xd || {}, shown, sea, { ref, rot: (+iss.kw || 45) - 45, skip }).map(x => Object.assign({}, x, { name: scrubT(x.name), img: mailImg(XMAS.PROXY + x.photo, 400, 300),
+          url: base + "/print?produkt=" + encodeURIComponent(x.key) + (x.start && x.copies !== x.start ? "&menge=" + x.copies : "") + "&" + tag })) };
+    }
     const unsub = to ? base + "/print/newsletter/abmelden?e=" + encodeURIComponent(to) + "&t=" + sig("nlu", to.toLowerCase()) : base + "/print/newsletter/abmelden";
     const shop = base + "/print?utm_source=newsletter&utm_campaign=kw" + iss.kw;
     const legal = [
       "Du erhältst diesen Newsletter, weil du ihn im FS Creative Druckshop abonniert und bestätigt hast. Abmelden ist jederzeit kostenlos mit einem Klick möglich: " + unsub,
  hasCode ? "Gutschein " + iss.code + ": " + String(d.settings.pct).replace(".", ",") + " % Rabatt auf den Bestellwert (netto, inkl. Versand) einer Bestellung im Druckshop www.fs-creative.at/print, gültig bis " + deDate(until) + ", einmal je Kundin/Kunde einlösbar, nicht mit anderen Gutscheincodes kombinierbar, keine Barablöse. Der Bonusrabatt für Firmen bleibt zusätzlich erhalten." : "",
       "Alle Preise in Euro inkl. 20 % USt und Versand innerhalb Österreichs, Stand " + deDate(iss.monday) + "; „ab“-Preise gelten für die angegebene Stückzahl in Standardausführung. Druck- und Satzfehler vorbehalten. Es gelten unsere AGB für den Druckshop: " + base + "/print/agb",
+      xm ? "Weihnachtsvorschläge: Fotos sind Beispiele. Liefertermine sind voraussichtliche Termine bei Standard-Produktion und Versand innerhalb Österreichs; der genaue Termin steht im Konfigurator und in der Bestellbestätigung." : "",
       "Medieninhaber, Herausgeber und Verantwortlicher (Offenlegung gem. § 25 MedienG, Angaben gem. § 5 ECG): " + F.name + " – " + F.owner + ", Einzelunternehmen, " + F.street + ", " + F.zip + " " + F.city + ", Österreich · " + F.email + " · " + F.phone + " · UID " + F.uid + ". Grundlegende Richtung: Informationen über Angebote und Neuheiten des FS Creative Druckshops. Impressum: " + base + "/impressum · Datenschutz: " + base + "/datenschutz"
     ].filter(Boolean);
-    const btn = (href, t) => '<a href="' + esc(href) + '" style="display:inline-block;background:#0a84ff;color:#ffffff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px;font-size:15px">' + esc(t) + "</a>";
-    const card = x => '<td valign="top" style="width:33%;padding:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5ea;border-radius:14px;overflow:hidden;background:#ffffff"><tr><td>' +
-      (x.p.img ? '<a href="' + esc(x.url) + '"><img src="' + esc(x.p.img) + '" alt="' + esc(x.p.title) + '" width="180" style="display:block;width:100%;height:auto;border:0"></a>' : "") +
-      '</td></tr><tr><td style="padding:12px 12px 14px"><div style="font-weight:700;font-size:15px;margin-bottom:4px">' + esc(x.p.title) + '</div><div style="font-size:13px;color:#6e6e73;line-height:1.4;margin-bottom:8px">' + esc(String(DESC[x.p.key] || x.p.desc || "").slice(0, 110)) + "</div>" +
+    const btn = (href, t, bg) => '<a href="' + esc(href) + '" style="display:inline-block;background:' + (bg || "#0a84ff") + ';color:#ffffff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:999px;font-size:15px">' + esc(t) + "</a>";
+    const card = x => '<td class="nl-c" valign="top" style="width:33%;padding:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5ea;border-radius:14px;overflow:hidden;background:#ffffff"><tr><td>' +
+      (mailImg(x.p.img, 400) ? '<a href="' + esc(x.url) + '"><img src="' + esc(mailImg(x.p.img, 400)) + '" alt="' + esc(scrubT(x.p.title)) + '" width="180" style="display:block;width:100%;height:auto;border:0"></a>' : "") +
+      '</td></tr><tr><td style="padding:12px 12px 14px"><div style="font-weight:700;font-size:15px;margin-bottom:4px">' + esc(scrubT(x.p.title)) + '</div><div style="font-size:13px;color:#6e6e73;line-height:1.4;margin-bottom:8px">' + esc((DESC[x.p.key] || scrubT(x.p.desc || "")).slice(0, 110)) + "</div>" +
       (x.pr ? '<div style="font-size:13px;margin-bottom:10px">' + (+x.pr.copies).toLocaleString("de-AT") + " Stk. ab <b>" + eur(x.pr.gross) + "</b></div>" : "") + '<a href="' + esc(x.url) + '" style="color:#0a84ff;font-weight:600;text-decoration:none;font-size:14px">Jetzt gestalten →</a></td></tr></table></td>';
-    const html = '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(iss.subject) + '</title></head><body style="margin:0;background:#f5f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d1d1f">' +
+    const XR = "#b3261e", xw = xm && xm.items.length ? Math.floor(100 / xm.items.length) : 33;
+    const xPer = x => x.promo && +x.copies > 1;   // Werbeartikel: Stückpreis groß wie auf der Weihnachtsseite (print-xmas.js priceHtml)
+    const xPrice = x => xPer(x) ? "ab " + eur(x.gross / x.copies) + "/Stk. (" + (+x.copies).toLocaleString("de-AT") + " Stk. · " + eur(x.gross) + ")" : "ab " + eur(x.gross) + " für " + (+x.copies).toLocaleString("de-AT") + " Stk.";
+    const xcard = x => '<td class="nl-c" valign="top" style="width:' + xw + '%;padding:6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #efd9d3;border-radius:14px;overflow:hidden;background:#ffffff"><tr><td>' +
+      (x.img ? '<a href="' + esc(x.url) + '"><img src="' + esc(x.img) + '" alt="' + esc("Beispielfoto: " + x.name) + '" width="164" style="display:block;width:100%;height:auto;border:0"></a>' : "") +
+      '</td></tr><tr><td style="padding:11px 11px 13px"><div style="font-weight:700;font-size:15px;line-height:1.3;margin-bottom:5px">' + esc(x.name) + "</div>" +
+      (x.gross > 0 && x.copies > 0 ? '<div style="font-size:14px;line-height:1.4;margin-bottom:4px">' + (xPer(x) ? 'ab <b style="white-space:nowrap">' + eur(x.gross / x.copies) + '</b>/Stk. <span style="font-size:13px;color:#6e6e73;white-space:nowrap">' + (+x.copies).toLocaleString("de-AT") + " Stk. · " + eur(x.gross) + "</span>"
+        : 'ab <b style="white-space:nowrap">' + eur(x.gross) + '</b> <span style="font-size:13px;color:#6e6e73;white-space:nowrap">für ' + (+x.copies).toLocaleString("de-AT") + " Stk.</span>") + "</div>" : "") +
+      (x.date ? '<div style="font-size:12.5px;line-height:1.4;color:#1b7a3a;margin-bottom:8px">Lieferung voraussichtlich ab <span style="white-space:nowrap">' + esc(dayShort(x.date)) + "</span></div>" : "") +
+      '<div style="margin-top:6px"><a href="' + esc(x.url) + '" style="color:' + XR + ';font-weight:600;text-decoration:none;font-size:14px">Jetzt gestalten →</a></div></td></tr></table></td>';
+    const xmBlock = !xm ? "" : '<tr><td style="padding:14px 26px 6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fbf1ee;border-radius:16px;overflow:hidden">' +
+      (xm.hero ? '<tr><td><a href="' + esc(xm.url) + '"><img src="' + esc(xm.hero) + '" alt="' + esc(xm.alt) + '" width="548" style="display:block;width:100%;height:auto;border:0"></a></td></tr>' : "") +
+      '<tr><td style="padding:18px 18px 4px"><div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:' + XR + '">Weihnachten ' + xm.year + '</div>' +
+      '<div style="font-size:22px;font-weight:700;line-height:1.25;margin:4px 0 8px;color:#1d1d1f">Weihnachten mit deinem Design</div><div style="font-size:15px;line-height:1.5;color:#3a3a3c">' + esc(XM_TEXT) + "</div></td></tr>" +
+      (xm.items.length ? '<tr><td style="padding:8px 12px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' + xm.items.map(xcard).join("") + "</tr></table></td></tr>" : "") +
+      '<tr><td align="center" style="padding:14px 18px 22px">' + btn(xm.url, "Weihnachtsideen ansehen", XR) + "</td></tr></table></td></tr>";
+    const html = '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(iss.subject) + '</title><style>@media only screen and (max-width:520px){td.nl-c{display:block!important;width:auto!important;padding:6px 0!important}}</style></head><body style="margin:0;background:#f5f5f7;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1d1d1f">' +
       '<div style="display:none;max-height:0;overflow:hidden">' + esc(iss.intro) + "</div>" +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7"><tr><td align="center" style="padding:20px 10px">' +
       '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
       '<tr><td style="background:#0b0b10;color:#ffffff;padding:20px 26px 22px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td valign="middle" style="padding-right:12px"><a href="' + esc(shop) + '"><img src="' + esc(base) + '/logos/mail-logo-weiss.png" width="44" height="44" alt="FS Creative" style="display:block;width:44px;height:44px;border:0"></a></td><td valign="middle" style="font-size:19px;font-weight:700;letter-spacing:-.01em;color:#ffffff">FS Creative<div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7db6ff;margin-top:2px">Druckshop · KW ' + iss.kw + '</div></td></tr></table><div style="font-size:24px;font-weight:700;margin-top:16px">Druck-Tipps der Woche</div></td></tr>' +
       '<tr><td style="padding:22px 26px 6px;font-size:16px;line-height:1.5">' + esc(iss.intro).replace(/\n/g, "<br>") + "</td></tr>" +
       (hasCode ? '<tr><td style="padding:12px 26px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:2px dashed #0a84ff;border-radius:14px;background:#f0f7ff"><tr><td align="center" style="padding:16px"><div style="font-size:14px;color:#3a3a3c">🎉 Dein Monatscode für ' + String(d.settings.pct).replace(".", ",") + ' % Rabatt</div><div style="font-size:26px;font-weight:800;letter-spacing:.08em;margin:6px 0;font-family:ui-monospace,Menlo,monospace">' + esc(iss.code) + '</div><div style="font-size:13px;color:#6e6e73">gültig bis ' + deDate(until) + " (2 Wochen) · einfach an der Kasse eingeben</div></td></tr></table></td></tr>" : "") +
+      xmBlock +
       (items.length ? '<tr><td style="padding:16px 20px 6px"><div style="font-size:18px;font-weight:700;padding:0 6px 8px">Unsere Empfehlungen der Woche</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' + items.map(card).join("") + "</tr></table></td></tr>" : "") +
       '<tr><td style="padding:14px 26px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;border-radius:14px"><tr><td style="padding:16px 18px"><div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6e6e73">Designer-Tipp der Woche</div><div style="font-size:16px;font-weight:700;margin:4px 0 6px">' + esc(iss.tipTitle) + '</div><div style="font-size:14px;line-height:1.5;color:#3a3a3c">' + esc(iss.tipText) + '</div><div style="margin-top:8px"><a href="' + esc(base + "/print/hilfe#designer") + '" style="color:#0a84ff;font-weight:600;text-decoration:none;font-size:14px">Mehr zum Online-Designer →</a></div></td></tr></table></td></tr>' +
       '<tr><td align="center" style="padding:10px 26px 26px">' + btn(shop, "Zum Druckshop") + '<div style="font-size:13px;color:#6e6e73;margin-top:10px">Automatischer Datencheck · Versand in Österreich inklusive' + (hasCode ? "" : "<br>Den nächsten Rabattcode bekommst du mit dem ersten Newsletter im " + nextMon + ".") + "</div></td></tr>" +
       '<tr><td style="padding:18px 26px;background:#fafafa;border-top:1px solid #e5e5ea;font-size:11.5px;line-height:1.5;color:#86868b">' + legal.map(t => "<p style=\"margin:0 0 8px\">" + esc(t).replace(esc(unsub), '<a href="' + esc(unsub) + '" style="color:#6e6e73">Newsletter abbestellen</a>') + "</p>").join("") + "</td></tr>" +
       "</table></td></tr></table></body></html>";
-    const text = ["FS Creative Druckshop – Druck-Tipps der Woche (KW " + iss.kw + ")", "", iss.intro, ""].concat(hasCode ? ["DEIN MONATSCODE: " + iss.code + " – " + d.settings.pct + " % Rabatt, gültig bis " + deDate(until), ""] : [], [
-      "EMPFEHLUNGEN DER WOCHE"]).concat(items.map(x => "• " + x.p.title + (x.pr ? " – " + x.pr.copies + " Stk. ab " + eur(x.pr.gross) : "") + "\n  " + x.url),
+    const text = ["FS Creative Druckshop – Druck-Tipps der Woche (KW " + iss.kw + ")", "", iss.intro, ""].concat(hasCode ? ["DEIN MONATSCODE: " + iss.code + " – " + d.settings.pct + " % Rabatt, gültig bis " + deDate(until), ""] : [],
+      xm ? ["WEIHNACHTEN MIT DEINEM DESIGN", XM_TEXT].concat(xm.items.map(x => "• " + x.name + (x.gross > 0 && x.copies > 0 ? " – " + xPrice(x) : "") + (x.date ? ", Lieferung voraussichtlich ab " + dayShort(x.date) : "") + "\n  " + x.url), ["Weihnachtsideen ansehen: " + xm.url, ""]) : [], [
+      "EMPFEHLUNGEN DER WOCHE"]).concat(items.map(x => "• " + scrubT(x.p.title) + (x.pr ? " – " + x.pr.copies + " Stk. ab " + eur(x.pr.gross) : "") + "\n  " + x.url),
       ["", "DESIGNER-TIPP: " + iss.tipTitle, iss.tipText, "", "Zum Druckshop: " + shop, "", "—"], legal).join("\n");
     return { html, text, unsub, until };
   }
@@ -278,5 +344,5 @@ module.exports = function (D) {
     } catch (e) { return J(res, e.status || 500, { ok: false, error: e.message }); }
     return J(res, 400, { ok: false, error: "Unbekannte Aktion" });
   }
-  return { handlePublic, handleAdmin, tick, recipients, _test: { kw, addDays, vienna, codeIssue, monthCode } };
+  return { handlePublic, handleAdmin, tick, recipients, _test: { kw, addDays, vienna, codeIssue, monthCode, draftFor, issueFor, render, data, xmIssue } };
 };

@@ -218,6 +218,19 @@ const stop = srv => new Promise(r => { srv.once("exit", r); srv.kill(); });
       assert.strictEqual(M.log.filter(l => /\/price$/.test(l.path)).length, n0, "Seitenaufrufe fragen den Druckpartner nicht");
       assert.ok(/Weihnachtsabteilung geprüft – \d+ Vorschläge mit Preis/.test(srv.out), "Protokoll");
     });
+    await t("Newsletter in der Saison: Vorschau mit Weihnachtsblock aus dem Zwischenspeicher (Bilder über unseren Proxy als JPG), Testmail mit Weihnachtsbetreff und Link im Text-Teil", async () => {
+      // nächster Montag mit „rechtzeitig“-Hinweisen (PRINT_XMAS=1 erzwingt die Saison; Liefertermine zählen bis 23.12.)
+      let mon = ""; for (let i = 1; i < 400 && !mon; i++) { const iso = X.viennaDay(Date.now() + i * 864e5), md = iso.slice(5); if (new Date(iso + "T12:00:00Z").getUTCDay() === 1 && md >= "07-01" && md <= "12-16") mon = iso; }
+      const pv = await admin("/admin/api/print/newsletter", { op: "preview", monday: mon }), h = pv.html || "";
+      assert.ok(pv.ok && /Weihnachten mit deinem Design<\/div>/.test(h) && /Weihnachtsideen ansehen<\/a>/.test(h) && /\/print\/weihnachten\?utm_source=newsletter&amp;utm_campaign=kw\d+/.test(h), "Weihnachtsblock: " + (pv.error || h.slice(0, 200)));
+      assert.ok((h.match(/ab <b[^>]*>€ [\d.,]+<\/b> <span[^>]*>für [\d.]+ Stk\.<\/span>/g) || []).length >= 2, "Vorschläge mit Preis aus dem Zwischenspeicher");
+      (h.match(/<img [^>]*>/g) || []).forEach(im => { assert.ok(/ src="https?:\/\/[^/"]+\/(print\/bild\/ez9mp376cw6o\/[^"]*fm=jpg|logos\/)/.test(im), "Bild über unseren Proxy (JPG): " + im.slice(0, 160)); });
+      assert.ok(!/images\.ctfassets\.net|fm=webp/.test(h) && !/print\.?com/i.test(h), "nie Contentful direkt, kein WebP, kein Lieferanten-Name");
+      const n0 = M.mails.length; await admin("/admin/api/print/newsletter", { op: "test", monday: mon, to: "simon@fs-creative.at" });
+      let tm = null; for (let i = 0; i < 40 && !tm; i++) { tm = M.mails.slice(n0).find(m => /^\[Test\] Weihnachten mit deinem Design \(KW \d+\)/.test(m.subject)); if (!tm) await sleep(50); }
+      assert.ok(tm, "Testmail mit Weihnachtsbetreff: " + M.mails.slice(n0).map(m => m.subject).join(" | "));
+      assert.ok(/\nWEIHNACHTEN MIT DEINEM DESIGN\n/.test(tm.text) && /Weihnachtsideen ansehen: https?:\/\/[^\s]+\/print\/weihnachten\?utm_source=newsletter&utm_campaign=kw\d+/.test(tm.text), "Text-Teil mit Link");
+    });
   } finally { await stop(srv); }
   // ── 3) außerhalb der Saison: 302, keine Einstiege ──
   srv = await startServer(dir, Object.assign({}, env, { PRINT_XMAS: "0" }));

@@ -263,4 +263,29 @@ function render(data, shown, sea, opts) {
   return { html: '<div class="xm" data-xmas>' + hero + tiles + secs + foot + "</div>", count: keys.length, keys, preload, themes: themes.map(x => ({ slug: x.t.slug, title: x.t.title, items: x.items.map(i => i[0]) })) };
 }
 
-module.exports = { THEMES, HERO, SEASON, season, keys, staleYear, render, count, img, viennaDay };
+// ── Newsletter (print-newsletter.js): Weihnachtsblock mit drei Vorschlägen – je einer aus Karten, Geschenke/Kalender, Genießen/Verpacken,
+// wöchentlich rotierend (Rotation 0 = KW 45: Weihnachtskarten, Adventskalender, Geschenkpapier; günstige Einstiege zuerst, Weintaschen mit langer Lieferzeit zuletzt). Name und Weihnachtsfoto wie auf der Seite (Thema/Produkt-Key).
+// Nur mit aktuellem Preis aus dem Zwischenspeicher; was laut Liefertermin erst nach Weihnachten ankäme, wird nicht vorgeschlagen; fehlt ein Platz → nächster passender Vorschlag der Seite.
+const NL_SLOTS = [
+  ["karten/postcards", "karten/card-sets", "karten/luxurious-postcards", "karten/wooden-postcards", "karten/postcards-with-envelopes"],
+  ["verschenken/basic-advent-calendar", "verschenken/premium-advent-calendar", "planen/tear-off-calendars", "verschenken/christmas-baubles", "planen/wire-o-desk-calendars", "verschenken/scented-candles"],
+  ["verpacken/gift-wrapping", "geniessen/luxurious-labels", "verpacken/ribbon", "geniessen/wine-hang-tags", "verpacken/hangtags", "geniessen/wine-bags"]
+];
+const itemOf = ref => { const a = ref.split("/"), th = THEMES.find(t => t.slug === a[0]); return (th && th.items.find(i => i[0] === a[1])) || null; };
+// data/shown wie render(); opts: ref = Stichtag „nicht in der Vergangenheit“ (JJJJ-MM-TT), rot = Rotation, skip = { key: 1 } (schon im Newsletter), n = Anzahl
+function mailPicks(data, shown, sea, opts) {
+  data = data || {}; opts = opts || {};
+  const ref = opts.ref || sea.today, n = opts.n || 3, rot = opts.rot || 0, skip = opts.skip || {}, used = {}, out = [];
+  const ok = it => {
+    const x = data[it[0]]; if (used[it[0]] || skip[it[0]] || OFF[it[0]] || (shown && !shown[it[0]])) return false;
+    if (!x || x.ok !== true || x.stale || !(x.gross > 0) || !(x.copies > 0)) return false;
+    if (/advent-calendar/.test(it[0]) && (x.date && x.date >= ref ? x.date : ref).slice(5) > "11-30") return false;   // Adventskalender nur, wenn er vor dem 1.12. da ist
+    return !(sea.before && x.date && x.date >= ref && x.date > sea.deadline);   // käme erst nach Weihnachten an
+  };
+  const take = it => { const x = data[it[0]]; used[it[0]] = 1; out.push({ key: it[0], name: it[1], photo: it[2], gross: x.gross, copies: x.copies, start: x.start || 0, promo: !!x.promo, date: x.date && x.date >= ref ? x.date : "" }); };
+  NL_SLOTS.forEach(slot => { if (out.length >= n) return; const r = ((rot % slot.length) + slot.length) % slot.length, c = slot.slice(r).concat(slot.slice(0, r)).map(itemOf).find(it => it && ok(it)); if (c) take(c); });
+  THEMES.forEach(th => th.items.forEach(it => { if (out.length < n && ok(it)) take(it); }));
+  return out;
+}
+
+module.exports = { THEMES, HERO, SEASON, PROXY, season, keys, staleYear, render, count, img, viennaDay, mailPicks, NL_SLOTS };

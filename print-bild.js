@@ -67,7 +67,8 @@ function deliver(req, res, send, entry) {
     "Content-Length": String(entry.buf.length),
     "Cache-Control": "public, max-age=2592000, immutable",
     "X-Content-Type-Options": "nosniff",
-    "Cross-Origin-Resource-Policy": "same-site",
+    // öffentliche Produktfotos: auch auf fremden Seiten einbindbar – Newsletter-Bilder lädt das Mailprogramm bzw. Webmail (fremde Domain), „same-site“ würde sie dort blockieren
+    "Cross-Origin-Resource-Policy": "cross-origin",
     // SVG o. Ä. nie als aktives Dokument auf unserer Domain ausführen
     "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
     "X-Robots-Tag": "noindex"

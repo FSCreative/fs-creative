@@ -1668,7 +1668,8 @@ module.exports = function (D) {
   const nlMod = () => NEWS || (NEWS = require("./print-newsletter.js")({ store, mailSend: D.mailSend, sig, sigOk, nowIso, log, limited, send: D.send,
     publicUrl: () => cfg().publicUrl, firm: () => Object.assign({}, FIRM_DEFAULT, (D.firm && D.firm()) || {}),
     products: async () => { const s = await settings(); return publicCatalog(await catalog(false), s, await catalogAll().catch(() => null)); },
-    priceFrom, vouchers, saveVouchers: all => store.setMeta("print_vouchers", all), accounts: () => accountMod().listAll() }));
+    priceFrom, vouchers, saveVouchers: all => store.setMeta("print_vouchers", all), accounts: () => accountMod().listAll(),
+    xmasData: async () => { await xmasState(); return xmasData(); }, scrub: scrubText }));   // Weihnachtsblock: Preise/Liefertermine aus dem Weihnachts-Zwischenspeicher (nur frische Einträge)
   // Kundenkonten (print-account.js): erst bei Bedarf laden
   let ACCOUNT = null;
   const accountMod = () => ACCOUNT || (ACCOUNT = require("./print-account.js")({ store, mail, sig, sigOk, limited, nowIso, secure: /^https:/.test(cfg().publicUrl), uidCheck, reorderOf }));
