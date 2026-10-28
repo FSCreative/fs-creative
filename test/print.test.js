@@ -90,10 +90,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   srv = await startServer(dir, { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: undefined, MOLLIE_PRINT_API_KEY: undefined });
   await t("ohne PRINTCOM_API_KEY: /print liefert die Seite, Katalog meldet „setup“", async () => {
     const r = await fetch(srv.base + "/print"); assert.strictEqual(r.status, 200); const html = await r.text();
-    assert.ok(/Shop wird gerade eingerichtet/.test(html), "Hinweistext im HTML"); assert.ok(/\/print\/app\.js/.test(html));
+    assert.ok(!/Shop wird gerade eingerichtet/.test(html), "Hinweistext nicht im HTML (Suchmaschinen-Vorschau)"); assert.ok(/id="psSetup"/.test(html), "Platz für den Hinweis"); assert.ok(/\/print\/app\.js/.test(html));
     const c = await (await fetch(srv.base + "/print/api/catalog")).json(); assert.strictEqual(c.ready, false); assert.strictEqual(c.reason, "setup");
     const p = await fetch(srv.base + "/print/api/price", { method: "POST", headers: { "content-type": "application/json", "x-print-shop": "1" }, body: "{}" }); assert.strictEqual(p.status, 503);
-    const js = await fetch(srv.base + "/print/app.js"); assert.strictEqual(js.status, 200); assert.ok(/javascript/.test(js.headers.get("content-type")));
+    const js = await fetch(srv.base + "/print/app.js"); assert.strictEqual(js.status, 200); assert.ok(/javascript/.test(js.headers.get("content-type"))); assert.ok(/Shop wird gerade eingerichtet/.test(await js.text()), "Hinweistext kommt aus app.js");
     assert.strictEqual((await fetch(srv.base + "/print-shop.js")).status, 404, "Server-Code nie öffentlich");
   });
   srv.kill();

@@ -38,6 +38,14 @@
   function toast(msg, bad) { var t = document.getElementById("psToast"); if (!t) { t = document.createElement("div"); t.id = "psToast"; t.className = "ps-toast"; t.setAttribute("role", "status"); document.body.appendChild(t); } t.textContent = msg; t.className = "ps-toast on" + (bad ? " bad" : ""); clearTimeout(toastT); toastT = setTimeout(function () { t.className = "ps-toast"; }, bad ? 5000 : 2600); }
   window.PrintShop = { toast: toast, api: api, esc: esc };
 
+  // Hinweis, wenn der Shop nicht lädt – erst hier gesetzt (nicht im HTML), damit Suchmaschinen ihn nicht als Seitentext übernehmen
+  function showSetup(setup) {
+    var e = document.getElementById("psSetup"); if (!e) return;
+    e.innerHTML = '<div class="ps-setup-ic" aria-hidden="true">' + (setup ? "🛠️" : "⚠️") + "</div><h2>" + (setup ? "Shop wird gerade eingerichtet" : "Der Druckshop lädt gerade nicht") + "</h2><p>" +
+      (setup ? "Der Online-Druckshop geht in Kürze live. Bis dahin gestalten und drucken wir deine Drucksachen gern persönlich – mit kostenlosem Entwurf." : "Bitte lade die Seite in ein paar Sekunden neu – oder schick uns einfach deine Anfrage, wir melden uns rasch.") +
+      '</p><div class="btn-row"><a class="btn primary" href="/kontakt?von=print&amp;thema=Druck">Druck anfragen</a><a class="btn ghost" href="/druck">Mehr zu Druck &amp; Print</a></div>';
+    e.hidden = false;
+  }
   // ── Start ──
   var q = new URLSearchParams(location.search);
   // Weihnachtsabteilung (/print/weihnachten, saisonal): vom Server fertig gerendert – dieselbe Ansicht bleibt nach dem Laden des Shops stehen (S.view „xmas“)
@@ -45,14 +53,14 @@
   var XM_HTML = (function () { var e = XMP() && document.querySelector("#psLoading [data-xmas]"); return e ? e.outerHTML : ""; })();
   (window.__catP ? window.__catP.then(viaUs).catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
     document.getElementById("psLoading").hidden = true;
-    if (!c || !c.ready) { document.getElementById("psSetup").hidden = false; return; }
+    if (!c || !c.ready) { showSetup(c && c.reason === "setup"); return; }
     S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products); if (XM_HTML) S.view = "xmas";
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
     var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else setCopies(q.get("menge")); S.step = 2; render(); }); }
     render();
-  }).catch(function () { document.getElementById("psLoading").hidden = true; document.getElementById("psSetup").hidden = false; });
+  }).catch(function () { document.getElementById("psLoading").hidden = true; showSetup(false); });
 
   loadMe();
 
