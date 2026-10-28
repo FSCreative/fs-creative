@@ -43,6 +43,7 @@ function load(){
     if(!j||j.ok===false){ if(!ST) ST={ok:false,error:(j&&j.error)||"Fehler",convs:[]}; paint(); return; }
     if(j.same) return;
     var prevOn=ST&&ST.online; ST=j; VER=j.ver; F.renderNav(); beat(j.online); paint();
+    if(!j.online&&!MANOFF&&!document.hidden) autoOn();
     if(SEL&&F.current==="chat"&&MODE==="web") loadThread();
     if(prevOn===true&&j.online===false&&F.current==="chat") F.toast("Chat-Status: offline – die KI antwortet",true);
   }).catch(function(){ busy=false; });
@@ -55,11 +56,17 @@ function loadThread(){
     TH={id:id,conv:j.conv,msgs:j.msgs,pages:j.pages||[]}; if(!same) paintThread();
   });
 }
+/* Automatisch online, sobald das Cockpit offen und sichtbar ist (Bildschirm entsperrt). Von Hand ausgeschaltet bleibt es aus,
+   bis das Cockpit das nächste Mal verdeckt bzw. der Bildschirm gesperrt war. In der Ruhezeit (abends) meldet der Server ohnehin offline. */
+var MANOFF=false, WASHID=false, AUTOT=0;
+function autoOn(){ if(document.hidden||MANOFF||Date.now()-AUTOT<20000) return; AUTOT=Date.now();
+  api("/admin/api/chat/status",{online:true}).then(function(j){ if(!j||!j.ok) return; if(ST) ST.online=j.online; beat(j.online); VER=""; load(); }); }
 /* Herzschlag: solange du online bist und das Cockpit offen ist */
 function beat(on){ clearInterval(beatT); beatT=null; if(on) beatT=setInterval(function(){ api("/admin/api/chat/status",{online:true}).then(function(j){ if(j&&j.ok&&ST&&ST.online!==j.online){ ST.online=j.online; paint(); } }); },45000); }
 setInterval(function(){ ticks++; if(F.current==="chat"&&!document.hidden) load(); else if(ticks%5===0) load(); },4000);
-document.addEventListener("visibilitychange",function(){ if(!document.hidden&&ST&&ST.online) api("/admin/api/chat/status",{online:true}).then(function(){ VER=""; load(); }); });
-setTimeout(load,1500);
+document.addEventListener("visibilitychange",function(){ if(document.hidden){ WASHID=true; return; } if(WASHID){ WASHID=false; MANOFF=false; AUTOT=0; } autoOn(); });
+window.addEventListener("focus",function(){ autoOn(); });
+setTimeout(function(){ load(); autoOn(); },1500);
 
 var fmtT=function(iso){ var t=new Date(iso); if(isNaN(t)) return ""; var td=new Date(); return t.toDateString()===td.toDateString()?t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):t.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"})+" "+t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); };
 function nameOf(c){ return c.name||("Besucher #"+c.no); }
@@ -127,7 +134,7 @@ F.action("chmode",function(m){ m=m==="wa"?"wa":"web"; if(m===MODE) return; MODE=
 function setConv(c){ if(!c||!ST) return; ST.convs=(ST.convs||[]).map(function(x){ return x.id===c.id?c:x; }); if(TH&&TH.id===c.id) TH.conv=c; VER=""; paint(); }
 function op(body){ body.id=SEL; return api("/admin/api/chat/op",body).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return null; } if(j.conv) setConv(j.conv); VER=""; load(); loadThread(); return j; }); }
 
-F.action("chstatus",function(){ var on=!(ST&&ST.online); api("/admin/api/chat/status",{online:on}).then(function(j){ if(!j||!j.ok){ F.toast("Status konnte nicht gespeichert werden",true); return; } if(ST) ST.online=j.online; beat(j.online); VER=""; paint(); load(); F.toast(j.online?"Du bist online – Besucher sehen „Simon ist online“":"Offline – die KI nimmt Anfragen an"); }); });
+F.action("chstatus",function(){ var on=!(ST&&ST.online); MANOFF=!on; api("/admin/api/chat/status",{online:on}).then(function(j){ if(!j||!j.ok){ F.toast("Status konnte nicht gespeichert werden",true); return; } if(ST) ST.online=j.online; beat(j.online); VER=""; paint(); load(); F.toast(j.online?"Du bist online – Besucher sehen „Simon ist online“":on?"Ruhezeit (18–6 Uhr): Chat bleibt offline, die KI antwortet":"Offline bis zum nächsten Entsperren – die KI nimmt Anfragen an"); }); });
 F.action("chopen",function(id){ if(SEL===id&&TH) return; SEL=id; TH=null; compFor=null; paint(); loadThread(); });
 F.action("chback",function(){ SEL=null; TH=null; paint(); });
 F.action("chai",function(m){ op({op:"ai",mode:m}).then(function(j){ if(j) F.toast(m==="on"?"KI übernimmt diese Unterhaltung":m==="off"?"KI aus für diese Unterhaltung":"KI antwortet nur, wenn du offline bist"); }); });

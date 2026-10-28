@@ -104,7 +104,9 @@ module.exports = function (D) {
       for (const c of Array.from(CONVS.values())) if (Date.parse(c.updated || c.created) < lim) { CONVS.delete(c.id); await store.delConv(c.id).catch(() => {}); } }
   }
   async function status() { if (!ST) ST = (await store.getMeta("chat_status").catch(() => null)) || { online: false, beat: 0 }; return ST; }
-  const isOnline = () => !!(ST && ST.online && Date.now() - (ST.beat || 0) < cfg().beatTtl);
+  // Ruhezeit (Wiener Zeit, Standard 18:00–06:00): Chat immer offline, die KI antwortet – auch wenn das Cockpit offen ist
+  const quietHours = () => { const h = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "2-digit", hourCycle: "h23" }).format(new Date()), 10), f = intEnv("CHAT_OFF_FROM", 18), t = intEnv("CHAT_OFF_TO", 6); return f > t ? (h >= f || h < t) : (h >= f && h < t); };
+  const isOnline = () => !!(ST && ST.online && !quietHours() && Date.now() - (ST.beat || 0) < cfg().beatTtl);
   async function online() { await status(); return isOnline(); }
   async function setStatus(on) { await status(); const was = isOnline(); ST.online = !!on; ST.beat = on ? Date.now() : 0; if (!on) ST.since = nowIso(); else if (!was) ST.since = nowIso(); await store.setMeta("chat_status", ST).catch(e => log("Status speichern:", e.message)); bump(); return isOnline(); }
   async function aiDay() { const d = today(); if (!AIDAY || AIDAY.day !== d) { const m = await store.getMeta("chat_ai_day").catch(() => null); AIDAY = m && m.day === d ? m : { day: d, n: 0 }; } return AIDAY; }

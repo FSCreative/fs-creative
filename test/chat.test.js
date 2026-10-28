@@ -54,7 +54,7 @@ function copyApp() {
 }
 async function startServer(dir, env) {
   const port = 5900 + Math.floor(Math.random() * 600);
-  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x" }, env);
+  const e = Object.assign({}, process.env, { PORT: String(port), ADMIN_AUTH_SECRET: SECRET, ADMIN_PASSWORD: "x", CHAT_OFF_FROM: "1", CHAT_OFF_TO: "1" }, env);
   ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN", "RAILWAY_API_TOKEN", "CF_API_TOKEN", "DATABASE_URL", "MAIL_API_URL", "MAIL_API_TOKEN", "RAILWAY_GIT_COMMIT_SHA", "KI_MONTHLY_LIMIT_EUR"].forEach((k) => { if (!(k in env)) delete e[k]; });
   const srv = cp.spawn(process.execPath, ["server.js"], { cwd: dir, env: e, stdio: ["ignore", "pipe", "pipe"] });
   srv.out = ""; srv.stdout.on("data", (d) => (srv.out += d)); srv.stderr.on("data", (d) => (srv.out += d));
