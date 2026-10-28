@@ -1366,7 +1366,8 @@ async function finApiSaveCheck(who, fpath, body) {
     const r = await finApiDoc(T, String(doc.id).trim()); if (r.err) return r;
     cur = r.doc; if (!finApiOwns(who, cur)) return "fremder Beleg";
     if (String(cur.status) !== "100" || cur.enshrined) return "Beleg ist kein Entwurf bzw. festgeschrieben";
-  } else doc.finApiSource = who;
+  }
+  doc.finApiSource = who; delete doc.finApiWho;   // Eigentum setzt der Server – auch beim Überarbeiten nie an eine andere Plattform übergeben (R4-6)
   const st = doc.status == null || doc.status === "" ? "100" : String(doc.status);
   if (st !== "100" && !(st === "200" && k === "invoice" && !cur && who === "blitzdings")) return "Status " + st;   // offen anlegen nur Blitzdings
   if (doc.paidAmount != null && doc.paidAmount !== "" && Math.abs(+doc.paidAmount || 0) > 0.004) return "paidAmount";
@@ -2678,7 +2679,9 @@ function abgleichBuild(ctx) {
     // Vorjahr geladen, aber dieses Haus fehlt darin (bzw. ohne Monate), obwohl es im Vorjahr Abrechnungen gibt: Vorjahr nicht beurteilbar (R3-5) –
     // keine Erstattung/Nachverrechnung für Vorjahres-Zeiträume; liegt der fällige Zeitraum selbst im Vorjahr, gesperrt wie „Daten fehlen“
     const pv = vaPrevBy[o.key], touchesPrev = x => (x.from && x.to ? x.from <= prevEnd && x.to >= winStart : x.adj ? (Array.isArray(x.parts) ? x.parts : []).some(p => p && String(p.from || "") <= prevEnd) : String(x.date || "") <= prevEnd);
-    const prevUnk = !vaPrevMissing(o.key) && !(pv && Array.isArray(pv.months) && pv.months.length) && (from <= prevEnd || R.liveAll.some(o2 => touchesPrev(o2.x)));
+    // fälliger Zeitraum beginnt im Vorjahr – nicht beim bloßen Standardbeginn eines Hauses ohne Abrechnung, Gebühren und Abrechnungsbeginn (R4-5)
+    const fromPrev = from <= prevEnd && !!(billedUntil || first || start || R.liveAll.length);
+    const prevUnk = !vaPrevMissing(o.key) && !(pv && Array.isArray(pv.months) && pv.months.length) && (fromPrev || R.liveAll.some(o2 => touchesPrev(o2.x)));
     if (prevUnk) notes.push("Gebührendaten " + (+year - 1) + " für dieses Haus fehlen (die Quelle liefert es für " + (+year - 1) + " nicht) – Vorjahr nicht geprüft, keine Erstattung oder Nachverrechnung dafür. Bitte neu laden bzw. in der Quelle prüfen.");
     // ── Abgleich je verrechnetem Zeitraum (A1/A2/A8/A9): jede Quartalsrechnung (bzw. zusammenhängende Gruppe) wird nur mit den Anreisemonaten
     //    IHRES Zeitraums verglichen; Nachverrechnungen zählen über ihre Teilzeiträume (parts) genau dort. Geprüft werden nur Zeiträume, deren
@@ -2735,7 +2738,7 @@ function abgleichBuild(ctx) {
     const swDead = sw && R.deadAll.some(x => x.id && !x.adj && (!x.to || x.to <= sw.cutoff));
     const needSrc = !!lastSrc && lastSrc !== o.src && set.ackSrc !== o.src;
     const needLive = o.src === "partner" && !!o.billingLiveSince && recAll.length > 0 && String(o.billingLiveSince).slice(0, 10) > String((lastRec && lastRec.date) || "") && set.ackLive !== o.billingLiveSince;
-    if ((vaPrevMissing(o.key) && (from <= prevEnd || R.live.length > 0)) || (prevUnk && from <= prevEnd)) blocked = "Gebührendaten " + (+year - 1) + " fehlen – neu laden";
+    if ((vaPrevMissing(o.key) && (fromPrev || R.live.length > 0)) || (prevUnk && fromPrev)) blocked = "Gebührendaten " + (+year - 1) + " fehlen – neu laden";
     else if ((o.basis || "arrival") !== "arrival") blocked = o.src === "antonhaus" ? "Antonhaus liefert noch nach Buchungseingang – Umstellung auf Anreise ausstehend (neue Antonhaus-Version nötig)" : o.src === "alpinappart" ? "Alpinappart kommt nicht von der Partner-Plattform – verrechnet wird nur über die Plattform (ab dem ersten Monat live)" : "Datumsbasis „" + (o.basis || "?") + "“ statt Anreise – nicht verrechenbar";
     else if (o.key === "antonhaus" && !sw && recAll.length) {
       blocked = "Umstellung auf Anreise noch nicht bestätigt – bis dahin kein Verrechnen";
