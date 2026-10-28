@@ -6,6 +6,7 @@ let webpush = null;   // erst bei Bedarf laden
 module.exports = function (D) {
   const { getMeta, setMeta } = D;
   let ST = null;
+  const LAST = { sentAt: "", error: "", errorAt: "", dead: 0 };   // für „Verbindungen“: letzter Versand / letzter Fehler (ohne Inhalte)
   async function load() {
     if (ST) return ST;
     if (!webpush) webpush = require("web-push");
@@ -31,8 +32,11 @@ module.exports = function (D) {
     const body = JSON.stringify({ title: String(msg.title || "FS Cockpit").slice(0, 80), body: String(msg.body || "").slice(0, 240), url: msg.url || "/admin", tag: msg.tag || topic });
     let n = 0, dead = [];
     for (const s of ST.subs.filter(x => topic === "*" || (x.topics || []).indexOf(topic) > -1)) {   // "*" = Sicherheitswarnung an alle Geräte
-      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, { TTL: 3600, urgency: "normal" }); n++; }
-      catch (e) { if (e.statusCode === 404 || e.statusCode === 410) dead.push(s.endpoint); else console.error("Push:", e.statusCode || "", String(e.body || e.message || e).slice(0, 120)); }
+      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body, { TTL: 3600, urgency: "normal" }); n++; LAST.sentAt = new Date().toISOString(); }
+      catch (e) {
+        if (e.statusCode === 404 || e.statusCode === 410) { dead.push(s.endpoint); LAST.dead++; }
+        else { console.error("Push:", e.statusCode || "", String(e.body || e.message || e).slice(0, 120)); LAST.error = (s.device || "Gerät") + ": " + (e.statusCode ? "Push-Dienst meldet " + e.statusCode : "nicht zustellbar"); LAST.errorAt = new Date().toISOString(); }
+      }
     }
     if (dead.length) { ST.subs = ST.subs.filter(s => dead.indexOf(s.endpoint) < 0); await save(); }
     return n;
@@ -53,5 +57,7 @@ module.exports = function (D) {
   // Mail-Vorschau ohne CSS-Reste aus HTML-Mails
   function prev(t) { return String(t || "").replace(/@import[^;]*;?/gi, " ").replace(/[^{}]{0,300}\{[^{}]*\}/g, " ").replace(/[^{}]{0,300}\{[^}]*$/, " ").replace(/[{}]/g, " ").replace(/\s+/g, " ").trim().slice(0, 140);
   }
-  return { publicKey, subscribe, unsubscribe, setTopics, send, status, mailTick };
+  // Kurzinfo ohne Datenbankzugriff (Geräte erst nach dem ersten Laden bekannt)
+  function info() { return { loaded: !!ST, devices: ST ? ST.subs.map(x => ({ device: x.device, at: x.at, topics: x.topics })) : null, sentAt: LAST.sentAt, error: LAST.error, errorAt: LAST.errorAt, removed: LAST.dead }; }
+  return { publicKey, subscribe, unsubscribe, setTopics, send, status, mailTick, info };
 };

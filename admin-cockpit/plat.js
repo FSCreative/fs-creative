@@ -14,12 +14,13 @@ var BUSY={};                                // laufende Aktionen (Doppelklick-Sc
 
 F.css(
 '.pl-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}'+
-'.pl-card{padding:16px 18px;display:grid;gap:8px;align-content:start;text-align:left;font:inherit;color:inherit;cursor:pointer}'+
+'.pl-card{padding:16px 18px;display:grid;gap:8px;align-content:start;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0}'+
 '.pl-card:hover{border-color:var(--ink-3)}'+
-'.pl-card .pl-t{display:flex;justify-content:space-between;align-items:baseline;gap:8px}'+
-'.pl-card h3{font-size:17px}'+
-'.pl-fig{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;font-size:13.5px}'+
-'.pl-fig dt{color:var(--ink-2)} .pl-fig dd{margin:0;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}'+
+'.pl-card .pl-t{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 8px;min-width:0}'+
+'.pl-card .pl-t .muted{text-align:right;text-wrap:balance}'+
+'.pl-card h3{font-size:17px;min-width:0;overflow-wrap:anywhere}'+
+'.pl-fig{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;font-size:13.5px;margin:0;padding-top:8px;border-top:1px solid var(--line)}'+
+'.pl-fig dt{color:var(--ink-2);min-width:0}.pl-fig dd{margin:0;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}'+
 '.pl-bars{display:grid;gap:14px;padding:16px 18px}'+
 '.pl-bar .pl-bl{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;margin-bottom:5px;flex-wrap:wrap}'+
 '.pl-bar .pl-bl b{font-weight:600}'+
@@ -56,12 +57,17 @@ F.css(
 '.pl-objh .pl-tog{border:0;background:none;font:inherit;color:inherit;text-align:left;padding:0;display:grid;gap:4px;min-width:0;cursor:pointer}'+
 '.pl-objh .pl-tog h3{font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}'+
 '.pl-chev{display:inline-block;transition:transform .15s;color:var(--ink-3)}'+
-'.pl-chev.on{transform:rotate(90deg)}'+
+'.pl-chev.on{transform:rotate(90deg)}'+'@media (prefers-reduced-motion:reduce){.pl-chev{transition:none}}'+
 '.pl-refund{margin:0 18px 12px;padding:10px 12px;border-radius:10px;background:var(--bad-soft);color:var(--bad);font-size:13.5px}'+
 '.pl-months{padding:0 18px 14px}'+
 '.pl-months table{border:1px solid var(--line);border-radius:10px;overflow:hidden}'+
 '.pl-note{font-size:12.5px;color:var(--ink-3)}'+
 'body.priv .kpi.pl-nopriv .v{filter:none}'+
+/* Kennzahlen: Beschriftung ausgewogen, Zahl bricht nicht aus der Kachel, Zusatz leise */
+'.view-plat .kpi{min-width:0}.view-plat .kpi .k{text-wrap:balance}.view-plat .kpi .v{line-height:1.15}.view-plat .kpi .s{font-weight:500;color:var(--ink-3);text-wrap:pretty}'+
+/* Kacheln in einem Panel (z. B. App-Statistiken) sind verschachtelt: kein zweiter Panel-Grund */
+'@media (min-width:901px){.view-plat .panel .kpi.panel{background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}}'+
+'.pl-fig:empty{display:none}'+
 '@media (max-width:900px){'+
   '.pl-cards{grid-template-columns:minmax(0,1fr)}'+
   '.pl-tbl thead{display:none}'+
@@ -91,7 +97,8 @@ function item(key){ return ((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).find(fu
 function items(src){ return ((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){return x.src===src;}); }
 function billRecs(key){ return (BILL&&BILL.invoices&&BILL.invoices[key])||[]; }
 function stamp(iso){ return iso?'Stand '+new Date(iso).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):""; }
-function ext(url,label){ return '<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(label)+' ↗</a>'; }
+F.icons.external=F.icons.external||'<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>';
+function ext(url,label){ return '<a class="btn" href="'+esc(url)+'" target="_blank" rel="noopener" title="'+esc(label)+' in neuem Tab öffnen">'+esc(label)+F.svg("external")+'</a>'; }
 function okRes(j){ return j&&!j.error&&j.ok!==false; }
 function num(n){ return (+n||0).toLocaleString("de-AT"); }
 function kpi(k,v,s,opts){ opts=opts||{}; var tag=opts.act?'button':'div';

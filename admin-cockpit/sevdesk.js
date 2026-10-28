@@ -13,27 +13,28 @@ F.css(
 '.drawer.xl{width:min(900px,100%)}'+
 '.sd-list{display:grid}'+
 '.sd-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer;background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;font:inherit;color:inherit;width:100%}'+
-'.sd-row:first-child{border-top:0}.sd-row:hover{background:var(--sunk)}'+
-'.sd-row .t{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sd-row .s{font-size:13px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
-'.sd-row .r{text-align:right;display:grid;gap:3px;justify-items:end}.sd-row .amt{font-family:var(--f-mono,ui-monospace,monospace);font-weight:650}'+
+'.sd-row:first-child{border-top:0}.sd-row:hover{background:var(--hover,var(--sunk))}'+
+'.sd-row .t{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sd-row .s{font-size:13px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}'+
+'.sd-row .r{text-align:right;display:grid;gap:3px;justify-items:end}.sd-row .amt{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}'+
 '.sd-row .acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}'+
 '.sd-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}'+
 '.sd-tools input.f{max-width:260px}'+
 '.sd-hero{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;padding:4px 0 2px}'+
-'.sd-hero .big{font-size:30px;font-weight:700;font-family:var(--f-mono,ui-monospace,monospace);letter-spacing:-.02em}'+
+'.sd-hero .big{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}'+
 '.sd-acts{display:flex;flex-wrap:wrap;gap:8px}'+
-'.sd-pdf{width:100%;height:560px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}'+
+'.sd-pdf{width:100%;height:560px;border:1px solid var(--line);border-radius:12px;background:var(--panel-solid,var(--sunk))}'+
 '.sd-pos{width:100%;border-collapse:collapse;font-size:14px}.sd-pos td,.sd-pos th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}.sd-pos .r{text-align:right;white-space:nowrap}'+
-'.sd-sug{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ok,#2e8b57);background:var(--ok-soft,#e6f4ea);color:var(--ink);border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}'+
+'.sd-sug{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--ok);background:var(--ok-soft);color:var(--ink);border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;max-width:100%;text-align:left}'+
 '.sd-sug .m{color:var(--ink-3);font-weight:500}'+
 '.sd-tx{padding:14px 16px;border-top:1px solid var(--line);display:grid;gap:8px}.sd-tx:first-child{border-top:0}'+
-'.sd-tx .top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px}.sd-tx .amt{font-family:var(--f-mono,ui-monospace,monospace);font-weight:700;font-size:16px}'+
+'.sd-tx .top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px}.sd-tx .amt{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;white-space:nowrap}.sd-tx .why{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
 '.sd-tx.gone{opacity:.35;pointer-events:none;transition:opacity .3s}'+
 '.sd-pick{display:grid;max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:12px}'+
-'.sd-pick button{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border:0;border-top:1px solid var(--line);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}.sd-pick button:first-child{border-top:0}.sd-pick button:hover{background:var(--sunk)}'+
+'.sd-pick button{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border:0;border-top:1px solid var(--line);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}.sd-pick button>span:first-child{min-width:0;overflow-wrap:anywhere}.sd-pick button>.num{flex:none;white-space:nowrap}.sd-pick button:first-child{border-top:0}.sd-pick button:hover{background:var(--hover,var(--sunk))}'+
 '.sd-vrow{display:grid;grid-template-columns:84px 110px minmax(0,1fr) 34px;gap:6px;align-items:start;padding:8px;border:1px solid var(--line);border-radius:12px}.sd-vrow [data-v=cat]{grid-column:1/-1}@media (max-width:900px){.sd-vrow{grid-template-columns:96px minmax(0,1fr) 40px}.sd-vrow input.cm{grid-column:1/-1;order:9}}'+'.drawer .foot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}'+
 '.sd-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}'+
-'.sd-empty{padding:28px 18px;text-align:center;color:var(--ink-3)}.sd-empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}'+
+'.sd-empty{padding:28px 18px;text-align:center;color:var(--ink-3);text-wrap:pretty}.sd-empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}'+
+'.sd-box{border:1px solid var(--line);border-radius:12px;background:var(--sunk);overflow:hidden}.sd-split .facts dd{min-width:0;overflow-wrap:anywhere}.sd-split .facts dt{white-space:nowrap}'+
 '.sd-steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3)}.sd-steps span{padding:3px 9px;border-radius:99px;background:var(--sunk)}.sd-steps span.on{background:var(--glow-soft);color:var(--glow-ink);font-weight:650}'+
 '@media (max-width:760px){.sd-split{grid-template-columns:minmax(0,1fr)}.sd-pdf{height:420px}}'
 );
@@ -67,7 +68,8 @@ function invQuick(i){
   return '';
 }
 F.sevInvRow=function(i){
-  return '<div class="sd-row" role="button" tabindex="0" data-act="sdinv:'+esc(i.id)+'"><div style="min-width:0"><div class="t">'+esc(i.contact||"—")+'</div><div class="s">'+esc((i.nr||"Entwurf")+" · "+deShort(i.date)+(i.header&&i.header!=="Rechnung"?" · "+i.header:"")+(i.status!==100&&i.open>0.005&&i.due?" · fällig "+deShort(i.due):""))+'</div></div>'+
+  var meta=(i.nr||"Entwurf")+" · "+deShort(i.date)+(i.header&&i.header!=="Rechnung"?" · "+i.header:"")+(i.status!==100&&i.open>0.005&&i.due?" · fällig "+deShort(i.due):"");
+  return '<div class="sd-row" role="button" tabindex="0" data-act="sdinv:'+esc(i.id)+'"><div style="min-width:0"><div class="t" title="'+esc(i.contact||"")+'">'+esc(i.contact||"—")+'</div><div class="s" title="'+esc(meta)+'">'+esc(meta)+'</div></div>'+
     '<div class="r"><span class="amt">'+eur(i.gross)+'</span>'+invTag(i)+'</div>'+
     (invQuick(i)?'<div class="acts">'+invQuick(i)+'</div>':'')+'</div>';
 };
@@ -116,11 +118,11 @@ function invHtml(i){
   var tagI={status:st,overdue:open&&i.due&&i.due<F.D.today&&i.open>0.005,sent:i.sent};
   var steps=[["Entwurf",draft],["Versendet",open&&!(i.paid>0)],["Bezahlt",st===1000]];
   var acts=[];
-  if(draft){ acts.push('<button class="btn primary" data-act="sdsend:'+esc(i.id)+'">Per E-Mail senden</button>'); acts.push('<button class="btn" data-act="sdedit:'+esc(i.id)+'">Bearbeiten</button>'); acts.push('<button class="btn" data-act="sdsent:'+esc(i.id)+'">Als versendet markieren</button>'); }
-  if(open){ acts.push('<button class="btn primary" data-act="book:'+esc(i.id)+'">Zahlung erfassen</button>'); acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">Erneut senden</button>'); if(i.type==="RE") acts.push('<button class="btn" data-act="sdremind:'+esc(i.id)+'">Mahnung erstellen</button>'); if(!(i.paid>0)&&!i.enshrined) acts.push('<button class="btn" data-act="sddraft:'+esc(i.id)+'">Zurück auf Entwurf</button>'); }
-  if(st===1000) acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">Per E-Mail senden</button>');
-  acts.push('<button type="button" class="btn"'+F.docAttrs("/admin/api/sevdesk/pdf?id="+encodeURIComponent(i.id),kind+" "+(i.nr||"Entwurf"))+'>PDF ansehen</button>');
-  acts.push('<a class="btn" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'&dl=1">PDF laden</a>');
+  if(draft){ acts.push('<button class="btn primary" data-act="sdsend:'+esc(i.id)+'">'+F.svg("send")+'Per E-Mail senden</button>'); acts.push('<button class="btn" data-act="sdedit:'+esc(i.id)+'">'+F.svg("edit")+'Bearbeiten</button>'); acts.push('<button class="btn" data-act="sdsent:'+esc(i.id)+'">'+F.svg("check")+'Als versendet markieren</button>'); }
+  if(open){ acts.push('<button class="btn primary" data-act="book:'+esc(i.id)+'">'+F.svg("wallet")+'Zahlung erfassen</button>'); acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">'+F.svg("send")+'Erneut senden</button>'); if(i.type==="RE") acts.push('<button class="btn" data-act="sdremind:'+esc(i.id)+'">'+F.svg("alert")+'Mahnung erstellen</button>'); if(!(i.paid>0)&&!i.enshrined) acts.push('<button class="btn" data-act="sddraft:'+esc(i.id)+'">Zurück auf Entwurf</button>'); }
+  if(st===1000) acts.push('<button class="btn" data-act="sdsend:'+esc(i.id)+'">'+F.svg("send")+'Per E-Mail senden</button>');
+  acts.push('<button type="button" class="btn"'+F.docAttrs("/admin/api/sevdesk/pdf?id="+encodeURIComponent(i.id),kind+" "+(i.nr||"Entwurf"))+'>'+F.svg("eye")+'PDF ansehen</button>');
+  acts.push('<a class="btn" href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'&dl=1">'+F.svg("download")+'PDF laden</a>');
   if((open||st===1000)&&i.type==="RE") acts.push('<button class="btn danger" data-act="sdcancel:'+esc(i.id)+'" style="margin-left:auto">Stornieren</button>');
   var pos='<table class="sd-pos"><thead><tr><th>Position</th><th class="r">Menge</th><th class="r">Einzel brutto</th><th class="r">USt</th><th class="r">Summe</th></tr></thead><tbody>'+
     (i.positions.map(function(p){ return '<tr><td><b>'+esc(p.name)+'</b>'+(p.text?'<div class="muted">'+esc(p.text)+'</div>':'')+'</td><td class="r num">'+esc(String(p.qty).replace(".",","))+'</td><td class="r num">'+eur(p.priceGross)+'</td><td class="r num">'+esc(p.taxRate)+' %</td><td class="r num">'+eur(p.sumGross)+'</td></tr>'; }).join("")||'<tr><td colspan="5" class="muted">Keine Positionen</td></tr>')+
@@ -228,10 +230,10 @@ function renderBank(){
 }
 function txHtml(t){
   var pos=t.amount>0;
-  return '<div class="sd-tx" id="tx-'+esc(t.id)+'"><div class="top"><div style="min-width:0"><b>'+esc(t.name||"Umsatz")+'</b><div class="muted" style="overflow:hidden;text-overflow:ellipsis">'+esc(t.purpose)+'</div><div class="muted">'+de(t.date)+(t.account?' · '+esc(t.account):'')+'</div></div><div class="amt '+(pos?"ok-t":"bad-t")+'">'+(pos?"+":"")+eur(t.amount)+'</div></div>'+
+  return '<div class="sd-tx" id="tx-'+esc(t.id)+'"><div class="top"><div style="min-width:0"><b style="overflow-wrap:anywhere">'+esc(t.name||"Umsatz")+'</b><div class="muted why" title="'+esc(t.purpose)+'">'+esc(t.purpose)+'</div><div class="muted">'+de(t.date)+(t.account?' · '+esc(t.account):'')+'</div></div><div class="amt '+(pos?"ok-t":"bad-t")+'">'+(pos?"+":"")+eur(t.amount)+'</div></div>'+
     '<div class="sd-acts">'+t.suggestions.map(function(s,k){ return '<button class="sd-sug" data-act="sdbk:'+esc(t.id)+'|'+s.kind+'|'+esc(s.id)+'" title="Zuordnen">'+(k===0?'✓ ':'')+esc(s.label)+' <span class="m">'+esc(s.sub)+'</span></button>'; }).join("")+
       '<button class="btn" data-act="sdbkother:'+esc(t.id)+'">'+(t.suggestions.length?"Andere …":(pos?"Rechnung zuordnen …":"Beleg zuordnen …"))+'</button>'+
-      '<button class="btn" data-act="sdbknew:'+esc(t.id)+'">'+(pos?"Als Einnahme buchen":"Als Ausgabe buchen")+'</button></div></div>';
+      '<button class="btn" data-act="sdbknew:'+esc(t.id)+'">'+F.svg("plus")+(pos?"Als Einnahme buchen":"Als Ausgabe buchen")+'</button></div></div>';
 }
 function bankDo(txId,body,label){
   var el=document.getElementById("tx-"+txId); if(el) el.classList.add("gone");
@@ -394,9 +396,9 @@ function renderBelege(){
       '<button class="panel kpi" data-act="sdvf:nodoc"><span class="k">Ohne Datei</span><span class="v num'+(cnt.nodoc?" warn-t":"")+'">'+cnt.nodoc+'</span><span class="s">Beleg fehlt</span></button>'+
     '</div>'+
     '<section class="panel"><div class="sd-tools"><div class="chips">'+chip("sdvf","all",f,"Alle",all.length)+chip("sdvf","draft",f,"Entwürfe",cnt.draft)+chip("sdvf","open",f,"Unbezahlt",cnt.open)+chip("sdvf","paid",f,"Bezahlt")+chip("sdvf","nodoc",f,"Ohne Datei",cnt.nodoc)+chip("sdvf","inc",f,"Einnahmen",cnt.inc)+'</div>'+
-      '<div class="row" style="gap:8px"><input class="f" placeholder="Suchen: Lieferant, Kategorie, Betrag …" data-vq data-keepfocus="vq" value="'+esc(F.UI.vQ)+'" aria-label="Belege suchen"><button class="btn primary" data-act="voucher">+ Beleg</button></div></div>'+
+      '<div class="row" style="gap:8px"><input class="f" placeholder="Suchen: Lieferant, Kategorie, Betrag …" data-vq data-keepfocus="vq" value="'+esc(F.UI.vQ)+'" aria-label="Belege suchen"><button class="btn primary" data-act="voucher">'+F.svg("plus")+'Beleg</button></div></div>'+
     '<div class="sd-list">'+(list.slice(0,lim).map(function(v){
-      return '<div class="sd-row" role="button" tabindex="0" data-act="sdvou:'+esc(v.id)+'"><div style="min-width:0"><div class="t">'+esc(v.supplier||v.desc||"Beleg")+(v.hasDoc?'':' <span class="tag warn" style="font-size:11px">ohne Datei</span>')+'</div><div class="s">'+esc(deShort(v.date)+" · "+(v.category||"ohne Kategorie")+(v.desc&&v.supplier?" · "+v.desc:""))+'</div></div>'+
+      return '<div class="sd-row" role="button" tabindex="0" data-act="sdvou:'+esc(v.id)+'"><div style="min-width:0"><div class="t">'+esc(v.supplier||v.desc||"Beleg")+(v.hasDoc?'':' <span class="tag warn" style="font-size:11px">ohne Datei</span>')+'</div><div class="s" title="'+esc(deShort(v.date)+" · "+(v.category||"ohne Kategorie")+(v.desc&&v.supplier?" · "+v.desc:""))+'">'+esc(deShort(v.date)+" · "+(v.category||"ohne Kategorie")+(v.desc&&v.supplier?" · "+v.desc:""))+'</div></div>'+
         '<div class="r"><span class="amt '+(v.cd==="D"?"ok-t":"")+'">'+(v.cd==="D"?"+":"")+eur(v.gross)+'</span>'+vTag(v)+'</div></div>';
     }).join("")||'<div class="sd-empty">Keine Belege in dieser Ansicht.</div>')+'</div>'+
     (more?'<button class="more" data-act="sdvmore">Weitere '+Math.min(60,more)+' anzeigen ('+more+' übrig)</button>':'')+'</section>';
@@ -410,7 +412,7 @@ function vrow(p,cats){ p=p||{}; var r=p.taxRate!=null?+p.taxRate:20;
   return '<div class="sd-vrow"><select class="f" data-v="cat" aria-label="Kategorie"><option value="">— Kategorie —</option>'+cats.map(function(c){ return '<option value="'+esc(c.id)+'"'+(String(c.id)===String(p.accountingTypeId)?" selected":"")+'>'+esc(c.name)+'</option>'; }).join("")+(p.accountingTypeId&&!cats.some(function(c){return String(c.id)===String(p.accountingTypeId);})?'<option value="'+esc(p.accountingTypeId)+'" selected>'+esc(p.category||"Kategorie "+p.accountingTypeId)+'</option>':'')+'</select>'+
     '<select class="f" data-v="tax" aria-label="USt">'+[20,13,10,0].map(function(x){ return '<option value="'+x+'"'+(x===r?" selected":"")+'>'+x+' %</option>'; }).join("")+'</select>'+
     '<input class="f num" data-v="gross" type="number" step="0.01" min="0" placeholder="brutto €" value="'+(p.gross!=null?esc(p.gross):"")+'" aria-label="Brutto">'+
-    '<input class="f cm" data-v="comment" placeholder="Notiz" value="'+esc(p.comment||"")+'"><button type="button" class="btn icon" data-vdel aria-label="Position entfernen">✕</button></div>'; }
+    '<input class="f cm" data-v="comment" placeholder="Notiz" value="'+esc(p.comment||"")+'"><button type="button" class="btn icon" data-vdel aria-label="Position entfernen" title="Position entfernen">'+F.svg("close")+'</button></div>'; }
 /* Belegdatei-URL mit Versionskennung (Dokument-ID): darf im Browser-Cache bleiben → Vorschau öffnet sofort */
 F.vouDocUrl=function(v){ return "/admin/api/sev/voucher-doc?id="+encodeURIComponent(v.id)+(v.docId?"&v="+encodeURIComponent(v.docId):""); };
 function openVou(id){
@@ -419,11 +421,11 @@ function openVou(id){
     var cats=m.accountingTypes||[], draft=v.status===50, open=v.status===100||v.status===750, paid=v.status===1000, locked=v.enshrined||v.status>=750;
     var acts=[];
     if(draft) acts.push('<button class="btn primary" data-act="sdvop:'+esc(id)+'|open">Fertig erfasst</button>');
-    if(open&&v.open>0.005) acts.push('<button class="btn primary" data-act="sdvpay:'+esc(id)+'">Zahlung erfassen</button>');
+    if(open&&v.open>0.005) acts.push('<button class="btn primary" data-act="sdvpay:'+esc(id)+'">'+F.svg("wallet")+'Zahlung erfassen</button>');
     if(open&&!(v.paid>0)) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|draft">Zurück auf Entwurf</button>');
     if(paid) acts.push('<button class="btn" data-act="sdvop:'+esc(id)+'|reopen">Zahlung lösen</button>');
     var vdoc=F.vouDocUrl(v), vtitle="Beleg "+(v.supplier||"")+(v.date?" · "+de(v.date):"");
-    if(v.hasDoc) acts.push('<button type="button" class="btn"'+F.docAttrs(vdoc,vtitle)+'>Beleg ansehen</button>','<a class="btn" href="'+esc(vdoc)+'&dl=1">Datei laden</a>');
+    if(v.hasDoc) acts.push('<button type="button" class="btn"'+F.docAttrs(vdoc,vtitle)+'>'+F.svg("eye")+'Beleg ansehen</button>','<a class="btn" href="'+esc(vdoc)+'&dl=1">'+F.svg("download")+'Datei laden</a>');
     var d=document.getElementById("drawer"); d.classList.add("xl");
     F.openDrawer(drawerHead(v.cd==="D"?"Einnahme-Beleg":"Beleg",(v.supplier||"Beleg")+" · "+eur(v.gross),'<div class="row" style="gap:8px;margin-top:6px">'+vTag(v)+(v.enshrined?'<span class="tag grey">festgeschrieben</span>':'')+'</div>')+
       (open&&v.open>0.005&&F.sugBox?F.sugBox("voucher",id):'')+   /* Vorschlag: passender Bankumsatz (zreview.js) */
@@ -528,9 +530,10 @@ function renderContacts(){
   });
   if(!q&&f==="all") list=list.slice().sort(function(a,b){ return String(b.lastInvoice).localeCompare(String(a.lastInvoice))||a.name.localeCompare(b.name,"de"); });
   return '<section class="panel"><div class="sd-tools"><div class="chips">'+chip("sdctf","all",f,"Alle",S.ct.contacts.length)+chip("sdctf","kunde",f,"Kunden")+chip("sdctf","lief",f,"Lieferanten")+chip("sdctf","open",f,"Mit offenen Rechnungen")+'</div>'+
-    '<div class="row" style="gap:8px"><input class="f" placeholder="Suchen: Name, Ort, E-Mail, UID …" data-ctq data-keepfocus="ctq" value="'+esc(F.UI.ctQ)+'"><button class="btn primary" data-act="sdct:new">+ Kontakt</button></div></div>'+
+    '<div class="row" style="gap:8px"><input class="f" placeholder="Suchen: Name, Ort, E-Mail, UID …" data-ctq data-keepfocus="ctq" value="'+esc(F.UI.ctQ)+'"><button class="btn primary" data-act="sdct:new">'+F.svg("plus")+'Kontakt</button></div></div>'+
     '<div class="sd-list">'+(list.slice(0,150).map(function(c){
-      return '<div class="sd-row" role="button" tabindex="0" data-act="sdct:'+esc(c.id)+'"><div style="min-width:0"><div class="t">'+esc(c.name)+(c.catLabel?' <span class="tag grey" style="font-size:11px">'+esc(c.catLabel)+'</span>':'')+'</div><div class="s">'+esc([c.nr?"Nr. "+c.nr:"",c.email&&c.email.value,c.address&&[c.address.zip,c.address.city].filter(Boolean).join(" "),c.vat].filter(Boolean).join(" · ")||"—")+'</div></div>'+
+      var meta=[c.nr?"Nr. "+c.nr:"",c.email&&c.email.value,c.address&&[c.address.zip,c.address.city].filter(Boolean).join(" "),c.vat].filter(Boolean).join(" · ");
+      return '<div class="sd-row" role="button" tabindex="0" data-act="sdct:'+esc(c.id)+'"><div style="min-width:0"><div class="t" title="'+esc(c.name)+'">'+esc(c.name)+(c.catLabel?' <span class="tag grey" style="font-size:11px">'+esc(c.catLabel)+'</span>':'')+'</div><div class="s" title="'+esc(meta)+'">'+esc(meta||"—")+'</div></div>'+
         '<div class="r">'+(c.invoices?'<span class="amt">'+eur0(c.revenue)+'</span><span class="muted">'+c.invoices+' Rechnung'+(c.invoices===1?"":"en")+'</span>':'')+(c.open>0.005?'<span class="tag warn">'+eur(c.open)+' offen</span>':'')+'</div></div>';
     }).join("")||'<div class="sd-empty">Keine Kontakte gefunden.</div>')+'</div>'+(list.length>150?'<div class="muted" style="padding:10px 16px">'+(list.length-150)+' weitere – Suche verfeinern.</div>':'')+'</section>';
 }
@@ -539,7 +542,7 @@ F.action("sdct",function(id){
   var a=c.address||{}, inv=id!=="new"&&F.D.sev?F.D.sev.invoices.filter(function(i){ return i.contactId===c.id; }).slice(0,12):[];
   var d=document.getElementById("drawer"); d.classList.remove("xl");
   F.openDrawer(drawerHead(id==="new"?"Neuer Kontakt":"Kontakt",c.name||"Neuer Kontakt",c.nr?'<div class="muted">Kundennummer '+esc(c.nr)+'</div>':'')+
-    (id!=="new"?'<div class="sd-acts" style="margin-bottom:14px"><button class="btn primary" data-act="sdctinv:'+esc(c.id)+'">Neue Rechnung</button><button class="btn" data-act="sdctoffer:'+esc(c.id)+'">Neues Angebot</button>'+(c.email?'<button class="btn" data-act="sdctmail:'+esc(c.id)+'">Mail schreiben</button>':'')+'</div>':'')+
+    (id!=="new"?'<div class="sd-acts" style="margin-bottom:14px"><button class="btn primary" data-act="sdctinv:'+esc(c.id)+'">'+F.svg("doc")+'Neue Rechnung</button><button class="btn" data-act="sdctoffer:'+esc(c.id)+'">'+F.svg("offer")+'Neues Angebot</button>'+(c.email?'<button class="btn" data-act="sdctmail:'+esc(c.id)+'">'+F.svg("post")+'Mail schreiben</button>':'')+'</div>':'')+
     '<form data-form="sdct" data-id="'+esc(c.id)+'" class="stackf">'+
       '<label class="fl">Name / Firma<input class="f" name="name" required value="'+esc(c.name)+'"></label>'+
       '<div class="grid2"><label class="fl">Art<select class="f" name="cat">'+[["3","Kunde"],["2","Lieferant"],["4","Partner"],["28","Interessent"]].map(function(o){ return '<option value="'+o[0]+'"'+(c.cat===o[0]?" selected":"")+'>'+o[1]+'</option>'; }).join("")+'</select></label><label class="fl">Zahlungsziel (Tage)<input class="f num" name="ttp" type="number" min="0" max="365" value="'+(c.timeToPay||"")+'" placeholder="Standard"></label></div>'+
@@ -549,7 +552,7 @@ F.action("sdct",function(id){
       '<label class="fl">UID-Nummer<input class="f" name="vat" value="'+esc(c.vat||"")+'" placeholder="ATU…"></label>'+
       '<label class="fl">Notiz<textarea class="f" name="note" rows="2">'+esc(c.note||"")+'</textarea></label>'+
       '<div class="foot"><span></span><button class="btn primary" type="submit">'+(id==="new"?"Anlegen":"Speichern")+'</button></div><div class="err" id="ctErr"></div></form>'+
-    (inv.length?'<div style="margin-top:18px"><div class="sec-t">Rechnungen</div><div class="panel sd-list">'+inv.map(F.sevInvRow).join("")+'</div></div>':''));
+    (inv.length?'<div style="margin-top:18px"><div class="sec-t">Rechnungen</div><div class="sd-list sd-box">'+inv.map(F.sevInvRow).join("")+'</div></div>':''));
 });
 F.form("sdct",function(f){
   var id=f.getAttribute("data-id"), c=id?S.ct.contacts.find(function(x){return x.id===id;}):null, err=document.getElementById("ctErr"), btn=f.querySelector("[type=submit]");
@@ -571,7 +574,7 @@ function renderParts(){
   if(!S.parts.ok) return errBox(S.parts,"sdptreload");
   var q=(F.UI.ptQ||"").toLowerCase(), list=S.parts.parts.filter(function(p){ return !q||(p.name+" "+p.nr+" "+p.text).toLowerCase().indexOf(q)>-1; });
   return '<section class="panel"><div class="sd-tools"><span class="muted">Artikel erscheinen beim Schreiben einer Rechnung oder eines Angebots als Vorschlag – Preis und Text werden übernommen.</span>'+
-    '<div class="row" style="gap:8px"><input class="f" placeholder="Suchen …" data-ptq data-keepfocus="ptq" value="'+esc(F.UI.ptQ)+'"><button class="btn primary" data-act="sdpt:new">+ Artikel</button></div></div>'+
+    '<div class="row" style="gap:8px"><input class="f" placeholder="Suchen …" data-ptq data-keepfocus="ptq" value="'+esc(F.UI.ptQ)+'"><button class="btn primary" data-act="sdpt:new">'+F.svg("plus")+'Artikel</button></div></div>'+
     '<div class="sd-list">'+(list.map(function(p){
       return '<div class="sd-row" role="button" tabindex="0" data-act="sdpt:'+esc(p.id)+'"><div style="min-width:0"><div class="t">'+esc(p.name)+(p.active?'':' <span class="tag grey" style="font-size:11px">inaktiv</span>')+'</div><div class="s">'+esc([p.nr,p.text].filter(Boolean).join(" · ")||"—")+'</div></div><div class="r"><span class="amt">'+eur(p.priceGross)+'</span><span class="muted">brutto · '+esc(p.taxRate)+' % USt</span></div></div>';
     }).join("")||'<div class="sd-empty"><b>Noch keine Artikel</b>Lege deine Standard-Leistungen an (z. B. Hosting, Stundensatz), dann sind Rechnungen in Sekunden geschrieben.</div>')+'</div></section>';

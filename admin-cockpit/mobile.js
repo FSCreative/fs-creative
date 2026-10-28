@@ -46,11 +46,16 @@ var IC={
 var _more=F.actions.moresheet;
 F.action("moresheet",function(){
   if(!mob()&&_more) return _more();
-  var t=F.theme(), cnt=function(v){ var c=v.count?v.count():0; return c?'<span class="mt-c">'+c+'</span>':''; };
-  F.modal('<div class="msheet-t">Alle Bereiche</div><div class="mtiles" id="moreSheet">'+F.views.filter(function(v){ return !v.hidden; }).map(function(v){
-      return '<button type="button" class="mtile" data-go="'+v.id+'"'+(v.id===F.current?' aria-current="page"':'')+'><span class="mt-i">'+F.svg(v.icon)+cnt(v)+'</span><span class="mt-l">'+esc(v.short||v.label)+'</span></button>'; }).join("")+'</div>'+
-    '<div class="msheet-t">Darstellung</div><div class="seg">'+[["auto","Automatisch"],["light","Hell"],["dark","Dunkel"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>'+
-    '<div class="mquick"><button type="button" data-act="search">'+IC.search+'<span>Suchen</span></button><button type="button" data-act="priv">'+IC.eye+'<span>Beträge</span></button><button type="button" data-act="settings">'+IC.gear+'<span>Einstellungen</span></button><button type="button" data-act="pushcfg">'+F.svg("bell")+'<span>Mitteilungen</span></button><button type="button" data-act="reload">'+IC.refresh+'<span>Aktualisieren</span></button><a href="/admin/logout">'+IC.out+'<span>Abmelden</span></a></div>',"msheet");
+  var t=F.theme(), cnt=function(v){ var c=0; try{ c=F.D&&v.count?v.count():0; }catch(e){} return c?'<span class="mt-c">'+c+'</span>':''; };
+  var bad=F.connErrors?F.connErrors():0, conn=!!F.actions.conn;
+  var ico=function(v){ return F.navIcon?F.navIcon(v):F.svg(v.icon); };
+  F.modal((bad&&conn?'<button type="button" class="mconn" data-act="conn">'+F.svg("alertCircle")+'<span>'+(bad===1?"1 Verbindung gestört":bad+" Verbindungen gestört")+'</span>'+F.svg("chevR")+'</button>':'')+
+    '<div class="msheet-t">Alle Bereiche</div><div class="mtiles" id="moreSheet">'+F.views.filter(function(v){ return !v.hidden; }).map(function(v){
+      return '<button type="button" class="mtile" data-go="'+v.id+'"'+(v.id===F.current?' aria-current="page"':'')+'><span class="mt-i">'+ico(v)+cnt(v)+'</span><span class="mt-l">'+esc(v.short||v.label)+'</span></button>'; }).join("")+'</div>'+
+    '<div class="msheet-t">Darstellung</div>'+(F.themeSeg?F.themeSeg(true):'<div class="seg">'+[["glas","Alpenglas"],["dark","Dunkel"],["light","Hell"],["auto","System"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>')+
+    '<div class="mquick'+(conn?' q4':'')+'"><button type="button" data-act="search">'+IC.search+'<span>Suchen</span></button><button type="button" data-act="priv">'+IC.eye+'<span>Beträge</span></button><button type="button" data-act="settings">'+IC.gear+'<span>Einstellungen</span></button><button type="button" data-act="pushcfg">'+F.svg("bell")+'<span>Mitteilungen</span></button>'+
+      (conn?'<button type="button" data-act="conn">'+F.svg("plug")+(bad?'<i class="mq-dot" aria-hidden="true"></i>':'')+'<span>Verbindungen</span></button>':'')+
+      '<button type="button" data-act="reload">'+IC.refresh+'<span>Aktualisieren</span></button><a href="/admin/logout">'+IC.out+'<span>Abmelden</span></a></div>',"msheet");
 });
 /* Nach Navigation aus dem Blatt schließen */
 F.listen("click",".mtile",function(){ F.closeModal(); });
@@ -62,15 +67,20 @@ F.css(
   /* Kopfzeile */
   '.view>.head{display:none}'+
   '.view{margin-top:-16px}'+
-  '.mh{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;margin:0 calc(-1*clamp(16px,4vw,44px)) 6px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 10px;background:color-mix(in srgb,var(--ground) 88%,transparent);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}'+
+  /* klebende Kopfzeile mit eigenem Glas (--glass-bar/--bar-blur: hell/dunkel wie bisher, Alpenglas durchscheinend) */
+  '.mh{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;margin:0 calc(-1*clamp(16px,4vw,44px)) 6px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 10px;background:var(--glass-bar);backdrop-filter:var(--bar-blur);-webkit-backdrop-filter:var(--bar-blur);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}'+
+  ':where(:root[data-theme="glas"]) .mh{border-bottom-color:var(--glass-line);box-shadow:inset 0 -1px 0 rgba(0,0,0,.12)}'+
+  ':where(:root[data-theme="glas"]) .mh-t b{text-shadow:0 1px 12px rgba(0,0,0,.25)}'+
   '.mh-t{flex:1;min-width:0;display:grid;gap:1px}'+
   '.mh-t b{font-size:22px;letter-spacing:-.015em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-display)}'+
   '.mh-t b .tag{font-size:12px;vertical-align:3px}'+
   '.mh-t span{font-size:12.5px;color:var(--ink-3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'+
   '.mh-i{width:40px;height:40px;border-radius:50%;border:0;background:var(--sunk);color:var(--ink);display:grid;place-items:center;flex:none}.mh-i svg{width:20px;height:20px}'+
+  ':where(:root[data-theme="glas"]) .mh-i{width:44px;height:44px;background:var(--panel-2);border:1px solid var(--glass-line);box-shadow:var(--glass-hi)}'+
   '.view-post .mh,.view-kal .mh,.view-post .mfabx,.view-kal .mfabx{display:none!important}'+
   /* Haupt-Aktion als Pillen-Knopf */
-  '.mfabx{display:inline-flex;align-items:center;gap:8px;position:fixed;right:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:25;height:54px;padding:0 20px 0 16px;border-radius:18px;border:0;background:var(--m-blue,#0f6cbd);color:var(--on-glow);font:inherit;font-weight:700;font-size:15px;box-shadow:0 8px 24px rgba(0,0,0,.25);text-decoration:none;transition:transform .25s cubic-bezier(.2,.8,.2,1)}'+
+  '.mfabx{display:inline-flex;align-items:center;gap:8px;position:fixed;right:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:25;height:54px;padding:0 20px 0 16px;border-radius:18px;border:0;background:var(--btn-pri);color:var(--btn-pri-ink);font:inherit;font-weight:700;font-size:15px;box-shadow:0 8px 24px rgba(0,0,0,.25);text-decoration:none;transition:transform .25s cubic-bezier(.2,.8,.2,1)}'+
+  ':where(:root[data-theme="glas"]) .mfabx{border-radius:27px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.5),0 0 24px rgba(159,240,255,.18)}'+
   '.mfabx svg{width:20px;height:20px}.mfabx:active{transform:scale(.95)}'+
   'body:has(.toast.on) .mfabx{transform:translateY(-64px)}'+
   'main{padding-bottom:150px}'+
@@ -93,7 +103,8 @@ F.css(
   '.modal .dialog:not(.sheetdlg):before{content:"";display:block;width:38px;height:5px;border-radius:99px;background:var(--line);margin:0 auto 6px;flex:none}'+
   '@keyframes msheetu{from{transform:translateY(60px);opacity:.4}to{transform:none;opacity:1}}'+
   '.modal .dialog input.f,.modal .dialog textarea.f,.modal .dialog select.f{font-size:16px}'+
-  '.modal .dialog .foot{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));background:var(--panel);padding:10px 0 4px;margin-bottom:-4px}'+
+  '.modal .dialog .foot{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));background:var(--glass-strong);padding:10px 0 4px;margin-bottom:-4px}'+
+  ':where(:root[data-theme="glas"]) .modal .dialog:not(.sheetdlg){border-radius:26px 26px 0 0}'+
   /* Detail-Seitenleisten im Vollbild */
   '.drawer{width:100%!important;border-left:0;padding-top:calc(14px + env(safe-area-inset-top,0px))}'+
   /* Blatt-Listen (Aktionen, Mehr) */
@@ -105,11 +116,17 @@ F.css(
   '.mtile{border:0;background:none;color:var(--ink);display:grid;justify-items:center;gap:6px;padding:8px 2px;font:inherit;border-radius:14px}'+
   '.mtile .mt-i{position:relative;width:52px;height:52px;border-radius:16px;background:var(--sunk);display:grid;place-items:center}'+
   '.mtile .mt-i svg{width:24px;height:24px}'+
-  '.mtile[aria-current="page"] .mt-i{background:var(--m-blue,#0f6cbd);color:var(--on-glow)}'+
+  '.mtile[aria-current="page"] .mt-i{background:var(--glow);color:var(--on-glow)}'+
+  ':where(:root[data-theme="glas"]) .mtile .mt-i{border:1px solid var(--glass-line);box-shadow:var(--glass-hi)}'+
+  ':where(:root[data-theme="glas"]) .mtile[aria-current="page"] .mt-i{border-color:var(--glow);box-shadow:0 0 18px rgba(159,240,255,.35)}'+
+  '.mtile:active .mt-i{transform:scale(.92)}.mtile .mt-i{transition:transform .3s cubic-bezier(.3,1.6,.5,1)}'+
+  '.mconn{display:flex;align-items:center;gap:10px;width:100%;border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);background:var(--bad-soft);color:var(--ink);border-radius:14px;padding:12px 14px;font:inherit;font-weight:600;text-align:left}'+
+  '.mconn svg{width:20px;height:20px;flex:none;color:var(--bad)}.mconn svg:last-child{margin-left:auto;color:var(--ink-3)}.mconn span{flex:1;min-width:0}'+
   '.mtile .mt-l{font-size:12px;font-weight:600;text-align:center;line-height:1.2}'+
   '.mtile .mt-c{position:absolute;top:-4px;right:-6px;min-width:19px;height:19px;border-radius:99px;background:var(--glow);color:var(--on-glow);font:700 11px/19px var(--f-mono);padding:0 5px}'+
-  '.mquick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:4px}'+
-  '.mquick button,.mquick a{border:0;background:none;color:var(--ink-2);display:grid;justify-items:center;gap:5px;padding:8px 0;font:inherit;font-size:12px;overflow-wrap:normal;text-align:center;font-weight:600;text-decoration:none;border-radius:12px}'+
+  '.mquick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:4px}.mquick.q4{grid-template-columns:repeat(4,minmax(0,1fr))}'+
+  '.mquick button,.mquick a{position:relative;border:0;background:none;color:var(--ink-2);display:grid;justify-items:center;gap:5px;padding:8px 0;font:inherit;font-size:12px;overflow-wrap:normal;text-align:center;font-weight:600;text-decoration:none;border-radius:12px;min-height:44px}'+
+  '.mquick .mq-dot{position:absolute;top:6px;left:calc(50% + 6px);width:8px;height:8px;border-radius:50%;background:var(--bad)}'+
   '.mquick svg{width:22px;height:22px}.mquick button:active,.mquick a:active{background:var(--sunk)}'+
   '.dialog.msheet{gap:10px}'+
 '}'
@@ -148,11 +165,18 @@ var RULES=[
 ];
 var SG=null, TH=0.3;
 function vib(){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(e){} }
+/* Wischen zwischen Reitern: nur die Inhaltsblöcke bewegen, nicht .view selbst – ein Transform auf .view würde fixierte Knöpfe
+   und die Unschärfe der Glas-Karten darin brechen. Kopfzeile (.mh) und fixierte Elemente bleiben stehen. */
+function pivEls(){
+  var v=document.querySelector("#main .view"); if(!v) return [];
+  return Array.prototype.filter.call(v.children,function(c){ var l=c.classList; if(l.contains("mh")||l.contains("mfabx")||l.contains("head")) return false; var p=getComputedStyle(c).position; return p!=="fixed"&&p!=="sticky"; });
+}
+function pivSet(els,x,op,tr){ els.forEach(function(c){ c.style.transition=tr; c.style.transform=x; c.style.opacity=op; }); }
 document.addEventListener("touchstart",function(e){
   SG=null; if(!mob()||e.touches.length!==1||F.modalOpen()) return;
   var t=e.touches[0], tg=e.target; if(!tg.closest) return;
   if(F.current==="post"||F.current==="kal") return;
-  if(tg.closest("input,textarea,select,.chips,.subnav,.pipe,.scroll:not(:has(.mcards)),.kgrid,.chart")) return;
+  if(tg.closest(".tabbar,input,textarea,select,.chips,.subnav,.pipe,.scroll:not(:has(.mcards)),.kgrid,.chart")) return;   // Reiterleiste hat eigenes Ziehen (core.js)
   var rule=null, row=null;
   for(var i=0;i<RULES.length;i++){ var r=tg.closest(RULES[i].sel); if(r){ rule=RULES[i]; row=r; break; } }
   SG={x:t.clientX,y:t.clientY,dx:0,lock:null,rule:rule,row:row,piv:!!document.querySelector("#main .subnav"),ptr:window.scrollY<=0};
@@ -175,7 +199,7 @@ document.addEventListener("touchmove",function(e){
     if(act){ var bg=dx<0?bgL:bgR; bg.className="msw-bg gbg "+(dx<0?"l":"r")+" c-"+act.cls; bg.innerHTML='<span>'+esc(act.label)+'</span>'; var go=Math.abs(dx)>SG.w*TH; bg.classList.toggle("go",go); if(go!==SG.go){ SG.go=go; if(go) vib(); } }
     return;
   }
-  if(SG.piv&&!SG.row){ var m=document.querySelector("#main .view"); if(m){ m.style.transition="none"; m.style.transform="translateX("+dx*0.35+"px)"; m.style.opacity=String(1-Math.min(.35,Math.abs(dx)/700)); } }
+  if(SG.piv&&!SG.row){ if(!SG.pv) SG.pv=pivEls(); pivSet(SG.pv,"translateX("+dx*0.35+"px)",String(1-Math.min(.35,Math.abs(dx)/700)),"none"); }
 },{passive:true});
 function sgEnd(){
   if(!SG) return; var s=SG; SG=null;
@@ -190,7 +214,7 @@ function sgEnd(){
     r.style.transform=""; setTimeout(function(){ unwrap(); F._userAt=Date.now(); act.run(); },230); return;
   }
   if(s.piv&&!s.row){
-    var m=document.querySelector("#main .view"); if(m){ m.style.transition="transform .2s,opacity .2s"; m.style.transform=""; m.style.opacity=""; }
+    var pv=s.pv||[]; pivSet(pv,"","","transform .2s,opacity .2s"); setTimeout(function(){ pv.forEach(function(c){ c.style.transition=""; }); },220);
     if(Math.abs(s.dx)<70) return;
     var bs=Array.prototype.slice.call(document.querySelectorAll("#main .subnav button")), cur=bs.findIndex(function(b){ return b.getAttribute("aria-current")==="true"; }), nx=bs[cur+(s.dx<0?1:-1)];
     if(nx){ F._userAt=Date.now(); nx.click(); window.scrollTo(0,0); var sn=document.querySelector("#main .subnav button[aria-current=\"true\"]"); if(sn&&sn.scrollIntoView) sn.scrollIntoView({inline:"center",block:"nearest"}); }
@@ -227,16 +251,23 @@ document.addEventListener("touchend",function(){
 F.css(
 '.gptr{display:none}'+
 '@media (max-width:900px){'+
-  '.gptr{display:grid;place-items:center;position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:50%;z-index:60;width:40px;height:40px;border-radius:50%;background:var(--panel);color:var(--glow);box-shadow:0 4px 14px rgba(0,0,0,.2);transform:translate(-50%,-60px);opacity:0;transition:transform .25s,opacity .25s;pointer-events:none}'+
+  '.gptr{display:grid;place-items:center;position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:50%;z-index:60;width:40px;height:40px;border-radius:50%;background:var(--glass-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);color:var(--glow);box-shadow:0 4px 14px rgba(0,0,0,.2);transform:translate(-50%,-60px);opacity:0;transition:transform .25s,opacity .25s;pointer-events:none}'+
+  ':where(:root[data-theme="glas"]) .gptr{border:1px solid var(--glass-line);box-shadow:var(--glass-hi),0 8px 24px rgba(0,0,0,.3)}'+
   '.gptr svg{width:20px;height:20px;transition:transform .2s}.gptr.ready svg{transform:rotate(180deg)}.gptr.spin svg{animation:mspin .8s linear infinite}'+
   '@keyframes mspin{to{transform:rotate(360deg)}}'+
   '.gsw{position:relative;overflow:hidden}'+
   '.gbg{display:flex!important;position:absolute;inset:0;align-items:center;padding:0 22px;color:#fff;font-weight:700;font-size:14px}'+
   '.gbg.r{justify-content:flex-start}.gbg.l{justify-content:flex-end}'+
   '.gbg.c-r{background:var(--m-blue,#0f6cbd)}.gbg.c-l{background:var(--m-red,#d13438)}.gbg.c-l2{background:#8a6d1f}.gbg.c-g{background:#5c5c5c}'+
+  /* Alpenglas: helle Akzentfarben → dunkle Schrift; Braun/Grau durch Tokens ersetzt */
+  ':where(:root[data-theme="glas"]) .gbg.c-r{background:var(--glow);color:var(--on-glow)}:where(:root[data-theme="glas"]) .gbg.c-l{background:var(--bad);color:var(--ground)}'+
+  ':where(:root[data-theme="glas"]) .gbg.c-l2{background:var(--warn);color:var(--ground)}:where(:root[data-theme="glas"]) .gbg.c-g{background:var(--panel-solid);color:var(--ink)}'+
   '.gbg span{transition:transform .18s}.gbg.go span{transform:scale(1.12)}'+
   '.gsw.out{transition:height .22s ease,opacity .22s ease}'+
   '.view-heute .item,.sd-row,.sd-tx{background:var(--panel)}'+
+  /* Glas: Zeilen durchsichtig, deckend nur während des Wischens (verdeckt die farbige Aktion darunter) */
+  ':where(:root[data-theme="glas"]) :is(.view-heute .item,.sd-row,.sd-tx){background:transparent}'+
+  ':where(:root[data-theme="glas"]) .gsw>:is(.item,.sd-row,.sd-tx){background:var(--panel-solid)}'+
   '.view-heute .item [data-snooze]{display:none}'+
   /* Karten statt Tabellen */
   '.scroll:has(table.mcards){overflow:visible}'+
@@ -294,14 +325,20 @@ F.css(
   '.view-geld .mh-t span,.view-kunden .mh-t span,.view-web .mh-t span,.view-plat .mh-t span,.view-ki .mh-t span{display:none}'+
   /* flache, ruhige Flächen */
   '.view{gap:18px}'+
-  '.panel{border:0!important;box-shadow:none!important;border-radius:14px}'+
+  ':where(:root:not([data-theme="glas"])) .panel{border:0!important;box-shadow:none!important;border-radius:14px}'+
+  ':where(:root[data-theme="glas"]) .panel{border-radius:20px}'+   /* Glas: Rand und Lichtkante bleiben (aus dem Shell-CSS) */
   '.panel-h{border-bottom:0;padding:14px 16px 6px}'+
   '.panel-h h2{font-size:16px}'+
   '.panel-h .muted{font-size:12px}'+
-  '.kpis{gap:1px!important;background:var(--line);border-radius:14px;overflow:hidden}'+
-  '.kpis>.kpi,.kpis>.panel{border:0!important;border-radius:0!important;box-shadow:none!important;background:var(--panel)}'+
+  /* Kennzahlen: hell/dunkel Haarlinien-Raster; Glas: einzelne Karten mit echtem Rand (gestapelte Transparenz würde sonst tönen) */
+  ':where(:root:not([data-theme="glas"])) .kpis{gap:1px!important;background:var(--line);border-radius:14px;overflow:hidden}'+
+  ':where(:root:not([data-theme="glas"])) .kpis>:is(.kpi,.panel){border:0!important;border-radius:0!important;box-shadow:none!important;background:var(--panel)}'+
+  ':where(:root[data-theme="glas"]) .kpis{gap:8px!important;background:none}'+
+  ':where(:root[data-theme="glas"]) .kpis>:is(.kpi,.panel){border-radius:16px!important}'+
   '.kpi .v{font-size:20px}.kpi .k{letter-spacing:.04em}'+
-  '.todo button{background:var(--panel)!important;border:0!important;box-shadow:none!important;position:relative;padding-left:26px!important}'+
+  ':where(:root:not([data-theme="glas"])) .todo button{background:var(--panel)!important;border:0!important;box-shadow:none!important}'+
+  ':where(:root[data-theme="glas"]) .todo button{background:var(--sunk)!important;border:1px solid var(--line)!important;box-shadow:none!important;-webkit-backdrop-filter:none;backdrop-filter:none}'+
+  '.todo button{position:relative;padding-left:26px!important}'+
   '.todo button:before{content:"";position:absolute;left:12px;top:19px;width:7px;height:7px;border-radius:50%;background:var(--ink-3)}'+
   '.todo button.bad:before{background:var(--bad)}.todo button.warn:before{background:var(--warn)}.todo button.info:before{background:var(--glow)}'+
   '.todo .n{font-size:20px}'+
@@ -310,6 +347,7 @@ F.css(
   '.sd-tools{border-bottom:0}'+
   '.notice{border-radius:12px}'+
   'details.abg{background:var(--panel)}'+
+  ':where(:root[data-theme="glas"]) details.abg{background:var(--sunk)}'+
   '.chart{padding:4px 12px 10px}'+
   /* Kein Zoom: iOS zoomt bei Feldern unter 16px hinein und bleibt dort */
   'html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}'+

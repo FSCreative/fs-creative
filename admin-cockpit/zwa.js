@@ -10,16 +10,16 @@ F.icons.wadoc='<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h6"/>';
 F.icons.wapin='<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>';
 var WS=null, WL=null, VER="", SEL=null, TH=null, Q="", busy=false, again=false, ticks=0, setupKey="", qT=null, STICK=true, SHOWSETUP=false;
 F.css('.wa-p{padding:16px 18px;display:grid;gap:10px}.wa-p h2{font-size:19px;margin:0}.wa-p h3{font-size:16px;margin:0;display:flex;align-items:center;gap:9px}.wa-p p{margin:0}'+
-  '.wa-n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-size:13px;font-weight:800;flex:none}.wa-n.done{background:var(--ok);color:#fff}'+
+  '.wa-n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-size:13px;font-weight:800;flex:none}.wa-n.done{background:var(--ok);color:var(--on-glow)}'+
   '.wa-steps{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;line-height:1.5}.wa-p code{background:var(--sunk);border:1px solid var(--line);padding:0 6px;border-radius:6px;font-size:12.5px;overflow-wrap:anywhere}'+
   '.wa-copy{display:flex;gap:8px;align-items:center}.wa-copy input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}.wa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}'+
   '.wa-ok{color:var(--ok);font-weight:600}.wa-warn{color:var(--warn);font-weight:600}.wa-notes{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:var(--ink-2)}'+
   '.wa-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}.wa-bar .muted{flex:1 1 200px;font-size:12.5px}.wa-bar .notice{flex-basis:100%;font-size:13px}'+
   '.wa-ro{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:var(--info-soft);color:var(--info);font-weight:700;font-size:13px}.wa-ro svg,.wa-lk svg{width:15px;height:15px}.wa-lk svg{vertical-align:-2px}'+
-  '.wa-app{height:calc(100vh - 250px);height:calc(100dvh - 250px)}.wa-search{position:sticky;top:0;z-index:1;padding:10px;background:var(--panel);border-bottom:1px solid var(--line)}'+
-  '.wa-day{align-self:center;margin:8px 0 2px;padding:2px 10px;border-radius:99px;background:var(--panel);border:1px solid var(--line);font-size:11.5px;color:var(--ink-3)}'+
+  '.wa-app{height:calc(100vh - 250px);height:calc(100dvh - 250px)}.wa-search{position:sticky;top:0;z-index:1;padding:10px;background:var(--panel-solid,var(--panel));border-bottom:1px solid var(--line)}'+
+  '.wa-day{align-self:center;margin:8px 0 2px;padding:2px 10px;border-radius:99px;background:var(--glass-strong,var(--panel));border:1px solid var(--line);font-size:11.5px;color:var(--ink-3)}'+
   '.ch-m.wa-m{position:relative;white-space:normal}.wa-t{white-space:pre-wrap}.ch-m.wa-m.rx{margin-bottom:14px}'+
-  '.wa-rx{position:absolute;bottom:-13px;right:10px;padding:0 6px;border-radius:99px;background:var(--panel);border:1px solid var(--line);font-size:12.5px;line-height:20px}.ch-m.wa-in{align-self:flex-start;border-bottom-left-radius:5px}.ch-m.wa-in .wa-rx{right:auto;left:10px}'+
+  '.wa-rx{position:absolute;bottom:-13px;right:10px;padding:0 6px;border-radius:99px;background:var(--glass-strong,var(--panel));border:1px solid var(--line);font-size:12.5px;line-height:20px}.ch-m.wa-in{align-self:flex-start;border-bottom-left-radius:5px}.ch-m.wa-in .wa-rx{right:auto;left:10px}'+
   '.wa-img{display:block;padding:0;border:0;background:none;cursor:zoom-in;margin-bottom:4px}.wa-img img{display:block;max-width:min(280px,100%);max-height:320px;border-radius:10px}'+
   '.wa-stk{display:block;width:120px;height:120px;object-fit:contain}.wa-m audio{display:block;width:260px;max-width:100%}.wa-m video{display:block;max-width:min(320px,100%);max-height:360px;border-radius:10px;margin-bottom:4px}'+
   '.wa-doc{display:flex;gap:10px;align-items:center;padding:8px 10px;margin-bottom:4px;border-radius:10px;background:var(--sunk);color:inherit;text-decoration:none}.wa-doc svg{width:22px;height:22px;flex:none}.wa-doc small{display:block;color:var(--ink-3);margin:0}'+
@@ -138,14 +138,14 @@ function paintList(){
   if(!cs.length){ el.innerHTML='<div class="ch-empty">'+(Q?'Nichts gefunden für „'+esc(Q)+'“.':'Noch keine WhatsApp-Chats.<br>Neue Nachrichten und der Verlauf erscheinen hier, sobald Meta sie schickt.')+'</div>'; return; }
   var box=document.getElementById("waAside"), y=box?box.scrollTop:0;
   el.innerHTML=cs.map(function(c){ var l=c.last||{};
-    return '<button type="button" class="ch-c" data-act="waopen:'+esc(c.id)+'"'+(c.id===SEL?' aria-current="true"':'')+'><span class="ch-av" aria-hidden="true">'+esc(initials(c))+'</span><span class="t"><b>'+esc(c.name||c.number)+'</b>'+
+    return '<button type="button" class="ch-c" data-act="waopen:'+esc(c.id)+'" title="'+esc([c.name,c.number].filter(Boolean).join(" · "))+'"'+(c.id===SEL?' aria-current="true"':'')+'><span class="ch-av" aria-hidden="true">'+esc(initials(c))+'</span><span class="t"><b>'+esc(c.name||c.number)+'</b>'+
       '<span>'+(c.snip?esc(c.snip):(l.dir==="out"?"Du: ":"")+esc(l.text||""))+'</span>'+(c.name?'<em>'+esc(c.number)+'</em>':'')+'</span>'+
       '<span class="r"><span>'+esc(fmtT(c.hitAt||c.lastAt))+'</span>'+(c.unread?'<span class="ch-badge" aria-label="'+c.unread+' ungelesen">'+c.unread+'</span>':'')+'</span></button>'; }).join("");
   if(box) box.scrollTop=y;
 }
 function headHtml(c){
   var num=String(c.id||"").replace(/\D/g,"");
-  return '<button type="button" class="btn icon ch-back" data-act="waback" aria-label="Zurück zur Liste">←</button><span class="ch-av" aria-hidden="true">'+esc(initials(c))+'</span><div class="t"><b>'+esc(c.name||c.number)+'</b><span>'+esc(c.name?c.number:"WhatsApp")+'</span></div>'+
+  return '<button type="button" class="btn icon ch-back" data-act="waback" aria-label="Zurück zur Liste">'+(F.icons.chevL?F.svg("chevL"):"←")+'</button><span class="ch-av" aria-hidden="true">'+esc(initials(c))+'</span><div class="t"><b>'+esc(c.name||c.number)+'</b><span>'+esc(c.name?c.number:"WhatsApp")+'</span></div>'+
     '<div class="acts"><a class="btn primary" href="https://wa.me/'+num+'" target="_blank" rel="noopener noreferrer">In WhatsApp öffnen</a><button type="button" class="btn danger" data-act="wadel" aria-label="Chat aus dem Cockpit löschen">Löschen</button></div>';
 }
 var MST={wartet:"wird geladen …",fehlt:"nicht mehr verfügbar (älter als 14 Tage)",abgelaufen:"nicht mehr abrufbar",fehler:"konnte nicht geladen werden","zu groß":"zu groß fürs Cockpit (über 100 MB) – in der App ansehen","gelöscht":"gelöscht"};

@@ -41,6 +41,7 @@ module.exports = function (D) {
   function seal(t) { const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", KEY, iv), e = Buffer.concat([c.update(String(t), "utf8"), c.final()]); return [iv, c.getAuthTag(), e].map(b => b.toString("base64")).join("."); }
   function unseal(x) { try { const [iv, tag, e] = String(x).split(".").map(v => Buffer.from(v, "base64")); const d = crypto.createDecipheriv("aes-256-gcm", KEY, iv); d.setAuthTag(tag); return Buffer.concat([d.update(e), d.final()]).toString("utf8"); } catch (err) { return ""; } }
   const SEALED = ["appSecret", "accessToken", "verifyToken"];
+  const BAD_SIG = { n: 0, at: "" };   // abgelehnte Webhook-Signaturen seit dem Start (falsches App-Geheimnis?)
   let SET = null;
   function settings() {
     if (SET) return SET;
@@ -178,6 +179,13 @@ module.exports = function (D) {
     if (String(x.action || "add") === "remove") delete ix.contacts[num];
     else { const nm = clip(ct.full_name || [ct.first_name, ct.last_name].filter(Boolean).join(" ") || ct.business_name, 120); if (nm) ix.contacts[num] = nm; }
     k.lastAt = nowIso();
+  }
+  // account_update-Ereignisse, nach denen nichts mehr ankommt (getrennt, gesperrt, entfernt …)
+  const BAD_EVENT = /DISCONNECT|BANNED|\bBAN\b|VIOLATION|RESTRICT|DELETED|REMOVED|UNINSTALL|OFFBOARD|DISABLED/i;
+  function problemOf(s) {
+    const ev = s.account && s.account.event || "";
+    if (ev && BAD_EVENT.test(ev)) return "Meta meldet „" + ev + "“ – WhatsApp-Konto prüfen und neu verbinden";
+    return s.lastError || "";
   }
   function accountUpdate(v) { const ev = clip(v && v.event, 60).toUpperCase(); if (!ev) return; const info = v.disconnection_info || v.ban_info || v.violation_info || v.restriction_info; settings().account = { event: ev, at: nowIso(), info: info ? clip(JSON.stringify(info), 300) : "" }; }
   function notify(id, o) { if (!D.push) return; const nm = nameOf(id) || fmtNum(id); Promise.resolve().then(() => D.push("wa", { title: "WhatsApp: " + nm, body: (nameOf(id) ? fmtNum(id) + " · " : "") + "Nachricht\n" + preview(o).slice(0, 140), url: "/admin#chat", tag: "wa-" + id })).catch(() => {}); }
@@ -363,7 +371,7 @@ module.exports = function (D) {
       sync: { windowOpen: !!win && Date.now() < win, windowEnds: win ? new Date(win).toISOString() : "",
         contacts: { requestedAt: k.requestedAt || "", error: k.error || "", count: Object.keys(ix.contacts).length, lastAt: k.lastAt || "" },
         history: { requestedAt: h.requestedAt || "", error: h.error || "", progress: +h.progress || 0, phase: h.phase == null ? null : +h.phase, chunks: +h.chunks || 0, doneAt: h.doneAt || "", lastAt: h.lastAt || "" } },
-      account: s.account || null, lastError: s.lastError || "", retentionMonths: retention(), cleanupAt: s.cleanupAt || "",
+      account: s.account || null, lastError: s.lastError || "", problem: (s.accessToken && s.phoneNumberId) ? problemOf(s) : "", retentionMonths: retention(), cleanupAt: s.cleanupAt || "",
       chats: list.length, unread: list.reduce((a, e) => a + (+e.unread || 0), 0), mediaQueue: queue().length };
   }
   function listChats(q) {
@@ -478,10 +486,26 @@ module.exports = function (D) {
     let raw; try { raw = await readBody(req, MAX_HOOK); } catch (e) { return send(res, 413, "Too large", "text/plain"); }
     const secret = cfg().appSecret; if (!secret) return send(res, 503, "nicht eingerichtet", "text/plain; charset=utf-8");   // Meta versucht es später nochmal
     const exp = "sha256=" + crypto.createHmac("sha256", secret).update(raw).digest("hex");
-    if (!safeEq(String(req.headers["x-hub-signature-256"] || ""), exp)) return send(res, 401, "invalid signature", "text/plain");
+    if (!safeEq(String(req.headers["x-hub-signature-256"] || ""), exp)) { if (req.headers["x-hub-signature-256"]) { BAD_SIG.n++; BAD_SIG.at = nowIso(); } return send(res, 401, "invalid signature", "text/plain"); }   // nur signierte (Meta) zählen, keine Scanner
     send(res, 200, "OK", "text/plain");
     let body; try { body = JSON.parse(raw.toString("utf8")); } catch (e) { return; }
     CHAIN = CHAIN.then(() => new Promise(r => setImmediate(r))).then(() => ingest(body)).catch(e => console.error("WhatsApp-Webhook:", e && e.message));
+  }
+
+  // ───────────── Für „Verbindungen“: Zustand ohne Geheimnisse; live = Nummer bei Meta abfragen (Code 190 = Zugang abgelaufen) ─────────────
+  async function health(live) {
+    const s = settings(), c = cfg();
+    const out = { configured: !!(c.appId && c.appSecret && c.configId), connected: !!(s.accessToken && s.phoneNumberId), number: s.displayNumber || "", name: s.verifiedName || "",
+      account: s.account || null, problem: problemOf(s), lastWebhookAt: s.lastWebhookAt || "", connectedAt: s.connectedAt || "", badSignatures: BAD_SIG.n, badSignatureAt: BAD_SIG.at };
+    if (!live || !out.connected) return out;
+    try {
+      await graph("GET", "/" + s.phoneNumberId + "?fields=display_phone_number,verified_name"); out.live = { ok: true };
+      if (/abgelaufen oder entzogen/.test(s.lastError || "")) { s.lastError = ""; saveSettings(); out.problem = problemOf(s); }   // Zugang geht wieder
+    } catch (e) {
+      out.live = { ok: false, code: e.code || 0, error: String(e.message || e).slice(0, 200) };
+      if (e.code === 190) { s.lastError = "WhatsApp-Zugang abgelaufen oder entzogen – bitte neu verbinden."; saveSettings(); out.problem = problemOf(s); }
+    }
+    return out;
   }
 
   // ───────────── Cockpit-API /admin/api/wa/… ─────────────
@@ -531,6 +555,6 @@ module.exports = function (D) {
     }, 3600e3);
     if (t1.unref) t1.unref(); if (t2.unref) t2.unref();
   }
-  return { handleAdmin, handleWebhook, handleConnectPage, status,
+  return { handleAdmin, handleWebhook, handleConnectPage, status, health,
     _test: { idle: () => CHAIN.then(() => QRUN), media: force => kick(force), cleanup, ingest, settings, queue: () => queue(), reset: () => { SET = null; IDX = null; Q = null; CACHE.clear(); } } };
 };

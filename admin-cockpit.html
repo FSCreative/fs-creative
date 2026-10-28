@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="de" data-theme="glas">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -9,11 +9,18 @@
 <link rel="manifest" href="/cockpit.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cockpit">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#0b0e14">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d1520">
 <link href="/fonts/cockpit/fonts.css" rel="stylesheet"><!-- Plus Jakarta Sans + JetBrains Mono lokal (keine Verbindung zu Google) -->
 <title>FS Cockpit</title>
-<script>try{var t=JSON.parse(localStorage.getItem("fsc_theme")||"null")||"dark";if(t!=="auto")document.documentElement.setAttribute("data-theme",t);if(JSON.parse(localStorage.getItem("fsc_priv")||"false"))document.documentElement.classList.add("priv-pre");}catch(e){}</script>
+<!-- Darstellung vor dem ersten Zeichnen: „glas“ (Alpenglas) ist Standard; einmalig wird „dunkel“/nichts auf „glas“ umgestellt (Merker fsc_theme_glas1), hell/System bleiben -->
+<script>(function(){var d=document.documentElement,L,t="glas";try{L=window.localStorage;t=JSON.parse(L.getItem("fsc_theme")||"null");if(!L.getItem("fsc_theme_glas1")){if(!t||t==="dark"){t="glas";L.setItem("fsc_theme",JSON.stringify(t));}L.setItem("fsc_theme_glas1","1");}if(["glas","dark","light","auto"].indexOf(t)<0)t="glas";}catch(e){t="glas";}
+if(t==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",t);
+var mm=function(q){try{return !!(window.matchMedia&&matchMedia(q).matches);}catch(e){return false;}},dk=t==="auto"?mm("(prefers-color-scheme: dark)"):t!=="light";
+var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="glas"?"#0d1520":dk?"#0b0e14":"#f4f5f8");
+var s=document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');if(s)s.setAttribute("content",dk?"black-translucent":"default");
+if(t==="glas"){var l=document.createElement("link");l.rel="preload";l.as="image";l.href=mm("(max-width:700px),(orientation:portrait) and (max-width:1100px)")?"/logos/cockpit-bg-m.jpg?v=1":"/logos/cockpit-bg.jpg?v=1";document.head.appendChild(l);}
+try{if(JSON.parse(L.getItem("fsc_priv")||"false"))d.classList.add("priv-pre");}catch(e){}})();</script>
 <style>
 /* Layout: Seitenleiste (Desktop) bzw. Tab-Leiste unten (Handy); "Heute" als priorisierte Liste; Abgleich als Tabelle je Quelle. */
 :root{
@@ -26,6 +33,11 @@
   --f-body:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --r:14px; --r-sm:9px; color-scheme:light;
+  /* Glas-Tokens (Alpenglas): in hell/dunkel so belegt, dass alles wie bisher aussieht */
+  --panel-solid:var(--panel); --glass:var(--panel); --glass-strong:var(--panel); --glass-line:var(--line); --glass-hi:0 0 0 0 transparent; --glass-blur:none;
+  --field:var(--panel); --hover:var(--sunk);
+  --glass-bar:color-mix(in srgb,var(--ground) 88%,transparent); --bar-blur:saturate(1.6) blur(14px);   /* klebende Kopfleisten (Handy) */
+  --btn-pri:var(--glow); --btn-pri-ink:var(--on-glow);                                                 /* Haupt-Knopf */
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --ground:#0b0e14; --rail:#0e121a; --panel:#121620; --panel-2:#171c28; --sunk:#1a1f2b; --active:#1b2131; --ink:#eef1f7; --ink-2:#a3abbd; --ink-3:#8a93a8; --line:#1f2533; --line-2:#2a3142;
@@ -219,6 +231,7 @@ tr.grp td{background:var(--sunk);font-weight:700;font-size:13px;padding:8px 14px
 .loading{display:grid;place-items:center;min-height:50vh;color:var(--ink-3)}
 
 .tabbar{display:none}
+.tb-items{display:flex;flex:1;min-width:0;position:relative;z-index:1}
 @media (max-width:900px){
   .app{grid-template-columns:minmax(0,1fr)}
   .rail{display:none}
@@ -283,11 +296,15 @@ body.priv .money,body.priv .num.v,body.priv .kpi .v,body.priv .day .v,body.priv 
 
 /* ===== Look „Montafon Night“ (Wunsch Simon 19.10.2026): breite Seitenleiste mit Gruppen, Suche + „Neu“ oben im Inhalt, Statusleiste rechts,
    Indigo als einzige Akzentfarbe, ruhige Karten mit feinem Rahmen; hell = „Montafon Day“ ===== */
-:root{--rail-w:244px;--top-h:72px}
+:root{--rail-w:244px;--top-h:calc(72px + env(safe-area-inset-top,0px))}   /* Statusleiste (App am iPad/iPhone) zählt zur Kopfzeile; am Mac 0 */
 body{font-size:14px;letter-spacing:-.003em}
 .app{display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"rail top" "rail main";min-height:100vh}
-.rail{grid-area:rail;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;padding:20px 14px 14px;background:var(--rail);border-right:1px solid var(--line);overflow-y:auto;scrollbar-width:none}
-.rail::-webkit-scrollbar{display:none}
+.rail{grid-area:rail;position:sticky;top:0;height:100vh;display:block;padding:0;background:var(--rail);border-right:1px solid var(--line);overflow:hidden}
+/* innen: Marke oben und Einstellungen/Profil unten bleiben stehen, nur die Bereiche scrollen (außen bleiben Glas, Glanz und Rand) */
+.rail-in{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;gap:2px;padding:calc(20px + env(safe-area-inset-top,0px)) 14px 14px;overflow:hidden}
+.nav-sc{position:relative;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;margin:0 -4px;padding:0 4px 4px}
+.nav-sc::-webkit-scrollbar{display:none}
+.ru-n b,.ru-n small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 12px;font:700 16.5px/1 var(--f-display);color:var(--ink);letter-spacing:-.015em}
 .brand .bm{width:30px;height:30px;border-radius:9px;background:var(--glow);color:var(--on-glow);display:grid;place-items:center;font-size:11.5px;font-weight:800;letter-spacing:0;flex:none}
 .rail #nav{display:grid;gap:2px}
@@ -303,11 +320,17 @@ body{font-size:14px;letter-spacing:-.003em}
 .rail-user{display:flex;align-items:center;gap:10px;padding:12px 6px 2px;border-top:1px solid var(--line)}
 .ru-av{width:34px;height:34px;border-radius:50%;background:var(--sunk);color:var(--ink);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
 .ru-n{display:grid;min-width:0;flex:1;line-height:1.3}.ru-n b{color:var(--ink);font-weight:600;font-size:13.5px}.ru-n small{color:var(--ink-3);font-size:12px}
-.ru-out{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--ink-3);flex:none}.ru-out:hover{background:var(--sunk);color:var(--ink)}.ru-out svg{width:16px;height:16px}
+.ru-out{position:relative;width:30px;height:30px;padding:0;border:0;background:none;border-radius:8px;display:grid;place-items:center;color:var(--ink-3);flex:none}.ru-out:hover{background:var(--sunk);color:var(--ink)}.ru-out svg{width:16px;height:16px}
+.ru-me{display:flex;align-items:center;gap:10px;flex:1;min-width:0;margin:-4px;padding:4px;border:0;border-radius:12px;background:none;color:inherit;font:inherit;text-align:left}
+.ru-me:hover{background:var(--sunk)}
+.ru-me.bad small{color:var(--bad);font-weight:600}
+.ru-av{position:relative}
+.ru-dot,.tb-dot{position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px var(--rail)}
+.ru-av .ru-dot{top:-2px;right:-2px;width:11px;height:11px}
 .count{background:var(--glow);color:var(--on-glow)}
 
 /* Kopfzeile im Inhaltsbereich: Suche, Werkzeuge, „+ Neu“ */
-.topbar{grid-area:top;position:sticky;top:0;z-index:35;display:flex;align-items:center;gap:8px;height:var(--top-h);padding:0 clamp(16px,2.6vw,36px);background:color-mix(in srgb,var(--ground) 86%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.topbar{grid-area:top;position:sticky;top:0;z-index:35;display:flex;align-items:center;gap:8px;height:var(--top-h);padding:env(safe-area-inset-top,0px) clamp(16px,2.6vw,36px) 0;background:color-mix(in srgb,var(--ground) 86%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .tb-search{flex:1;min-width:140px;display:flex;align-items:center;gap:10px;height:42px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--ink-3);padding:0 12px 0 14px;font-size:14px;text-align:left;box-shadow:var(--shadow)}
 .tb-search:hover{border-color:var(--line-2)}
 .tb-search svg{width:16px;height:16px;flex:none}
@@ -328,7 +351,7 @@ body{font-size:14px;letter-spacing:-.003em}
 .tb-new:hover{filter:brightness(1.08)}
 .tb-new svg{width:16px;height:16px}
 @media (max-width:1500px){.tb-right .stamp{display:none}}
-.nmenu{position:fixed;z-index:80;min-width:240px;background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-pop);padding:6px;display:grid;gap:1px}
+.nmenu{position:fixed;z-index:80;min-width:240px;background:var(--glass-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-pop);padding:6px;display:grid;gap:1px}
 .nmenu button{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:8px;padding:9px 10px;text-align:left;color:var(--ink);font-weight:500}
 .nmenu button:hover,.nmenu button:focus-visible{background:var(--sunk)}
 .nmenu button svg{width:17px;height:17px;color:var(--ink-3);flex:none}
@@ -359,7 +382,8 @@ main{grid-area:main;padding-block:6px 80px;padding-inline:clamp(16px,2.6vw,36px)
 .subnav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:9px 12px;color:var(--ink-2)}
 .subnav button:hover{color:var(--ink);background:none}
 .subnav button[aria-current="true"]{background:none;border-color:var(--glow);color:var(--ink)}
-input.f,select.f,textarea.f{border-radius:9px;background:var(--panel);border-color:var(--line);color:var(--ink)}
+input.f,select.f,textarea.f{border-radius:9px;background:var(--field);border-color:var(--line);color:var(--ink)}
+select.f{background-color:var(--panel-solid)}
 input.f:focus,select.f:focus,textarea.f:focus{outline:none;border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}
 input.f::placeholder,textarea.f::placeholder{color:var(--ink-3)}
 :focus-visible{outline-color:var(--glow)}
@@ -401,7 +425,7 @@ th{color:var(--ink-3)}
 /* Mittlere Breite: Seitenleiste nur mit Symbolen */
 @media (min-width:901px) and (max-width:1180px){
   :root{--rail-w:76px}
-  .rail{padding:16px 8px 10px;align-items:stretch}
+  .rail-in{padding:calc(16px + env(safe-area-inset-top,0px)) 8px 10px;align-items:stretch}
   .brand{justify-content:center;padding:0 0 10px}.brand b{display:none}
   .nav-g{font-size:0;padding:8px 0 4px;border-top:1px solid var(--line);margin:6px 10px 0}
   .nav-g:first-child{border-top:0;margin-top:0}
@@ -409,7 +433,7 @@ th{color:var(--ink-3)}
   .rail .nav-btn .nl{display:none}
   .rail .nav-btn .count{position:absolute;top:2px;right:6px;margin:0;font-size:10px;line-height:16px;min-width:16px;padding:0 4px}
   .rail-set{display:none}
-  .rail-user{justify-content:center;padding:10px 0 0}.ru-n,.ru-out{display:none}
+  .rail-user{flex-direction:column;justify-content:center;gap:4px;padding:10px 0 0}.ru-n,.rail-user a.ru-out{display:none}.ru-me{flex:none;margin:0;justify-content:center}
 }
 /* Handy: Reiter unten, keine Seitenleiste/Kopfzeile (eigene Kopfzeilen je Seite) */
 @media (max-width:900px){
@@ -425,6 +449,205 @@ th{color:var(--ink-3)}
   .tabbar{background:color-mix(in srgb,var(--rail) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
   .tabbar button[aria-current="page"]{color:var(--glow)}
   .tabbar .count{background:var(--glow);color:var(--on-glow)}
+}
+/* ===== Text-Aufteilung (alle Themes): Überschriften ausgeglichen, Fließtext ohne Schusterjungen, Silbentrennung (lang="de") ===== */
+h1,h2,h3,h4,.panel-h h2,.sec-t{text-wrap:balance}
+p,li,dd,blockquote,figcaption,.muted,.notice,.empty,.item .d{text-wrap:pretty}
+p,li,dd,td,blockquote,figcaption,.notice,.empty{-webkit-hyphens:auto;hyphens:auto;hyphenate-limit-chars:7 3 3}
+button,.btn,.nav-btn,.chip,.tag,.count,.link,th,kbd,code,pre,input,select,textarea,.num,.v,.k{-webkit-hyphens:manual;hyphens:manual}
+/* Hilfsklassen: .ell einzeilig mit „…“ (bitte title-Attribut mitgeben), .anyw lange Wörter/E-Mails umbrechen, .tnum gleich breite Ziffern, .clamp2/.clamp3 Zeilen begrenzen */
+.ell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.anyw,a[href^="mailto:"]{overflow-wrap:anywhere}
+.tnum,.count,.v,.num,time,td.r,th.r{font-variant-numeric:tabular-nums}
+.clamp2,.clamp3{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
+.clamp2{-webkit-line-clamp:2;line-clamp:2}.clamp3{-webkit-line-clamp:3;line-clamp:3}
+
+/* ===== Liquid-Glas-Navigation: ein „Tropfen“ markiert den aktiven Eintrag (core.js bewegt ihn per Feder; hier nur das Aussehen).
+   Hell/Dunkel: sieht aus wie die bisherige Markierung, nur animiert. ===== */
+.lq-glare{display:none}
+.lq-drop{position:absolute;left:0;top:0;z-index:0;pointer-events:none;transform-origin:50% 50%;will-change:transform;transition:opacity .2s ease}
+.lq-drop.off{opacity:0}
+.lq-drop>i{position:absolute;inset:0;border-radius:9px;background:var(--active);box-shadow:inset 3px 0 0 var(--glow);transition:transform .55s cubic-bezier(.3,1.7,.45,1),background-color .2s,box-shadow .2s,opacity .2s}
+.lq-drop.away>i{background:var(--sunk);box-shadow:none}
+.lq-drop.press>i{transform:scale(.94);transition-duration:.14s}
+.rail.lq-on .nav-btn[aria-current="page"]{background:transparent;box-shadow:none}
+.rail.lq-hov .nav-btn:hover{background:transparent}
+.rail .nav-btn{z-index:1;transition:transform .4s cubic-bezier(.3,1.6,.5,1),color .15s}
+.rail .nav-btn:active{transform:scale(.97)}
+.tabbar .lq-drop>i{border-radius:14px;background:var(--glow-soft);box-shadow:none}
+.tabbar .lq-drop.away>i{background:var(--sunk)}
+.tabbar button{z-index:1;transition:transform .35s cubic-bezier(.3,1.6,.5,1),color .15s}
+.tabbar button:active{transform:scale(.93)}
+.tabbar button.lq-near{color:var(--ink)}
+.tabbar .tb-dot{top:1px;left:calc(50% + 7px);right:auto;box-shadow:0 0 0 2px var(--panel)}
+
+/* ===== Look „Alpenglas“ (Wunsch Simon 27.10.2026): Bergfoto, Milchglas, weiße Schrift, Cyan-Akzent – Standard-Theme „glas“.
+   Unschärfe (backdrop-filter) nur auf wenigen obersten Flächen: Leiste, Kopfzeile, Karten der obersten Ebene, Overlays.
+   Nie auf main/.view/.fsd/.fsm/.mbox/.mread/Kalender – dort hängen fixierte Knöpfe und Leisten. ===== */
+:root[data-theme="glas"]{
+  --ground:#0b1220; --rail:rgba(14,22,34,.38); --panel:rgba(255,255,255,.075); --panel-2:rgba(255,255,255,.1); --sunk:rgba(255,255,255,.065); --active:rgba(255,255,255,.16);
+  --ink:#f4f7fb; --ink-2:rgba(236,242,250,.8); --ink-3:rgba(226,235,245,.62); --line:rgba(255,255,255,.13); --line-2:rgba(255,255,255,.22);
+  --glow:#9ff0ff; --glow-ink:#c9f7ff; --glow-soft:rgba(159,240,255,.16); --on-glow:#06202a; --sel:rgba(159,240,255,.22);
+  --ok:#5eeaa8; --ok-soft:rgba(94,234,168,.16); --warn:#ffc566; --warn-soft:rgba(255,197,102,.16);
+  --bad:#ff7a85; --bad-soft:rgba(255,122,133,.18); --info:#9ff0ff; --info-soft:rgba(159,240,255,.14); --pink:#f0abfc;
+  --shadow:0 18px 50px rgba(0,0,0,.28); --shadow-pop:0 30px 80px rgba(0,0,0,.5);
+  --r:22px; --r-sm:12px;
+  --panel-solid:#131b28; --glass:rgba(255,255,255,.085); --glass-strong:rgba(16,24,37,.74);
+  --glass-line:rgba(255,255,255,.2); --glass-hi:inset 0 1px 0 rgba(255,255,255,.28); --glass-blur:blur(28px) saturate(170%);
+  --field:rgba(0,0,0,.26); --hover:rgba(255,255,255,.08);
+  --glass-bar:rgba(11,18,30,.42); --bar-blur:blur(24px) saturate(170%);
+  --btn-pri:#fff; --btn-pri-ink:#0d1520;
+  --rail-w:262px;
+  /* Liquid Glass: Lichtkante oben links, dunklere Kante unten rechts, leicht farbiger Rand */
+  --lq-rim:inset 1px 1px 0 rgba(255,255,255,.2),inset -1px -1px 0 rgba(0,0,0,.24);
+  --lq-ring:linear-gradient(140deg,rgba(255,255,255,.62),rgba(159,240,255,.32) 22%,rgba(255,255,255,.06) 46%,rgba(240,171,252,.22) 74%,rgba(255,255,255,.36));
+  --bg-ph:url("data:image/jpeg;base64,/9j/4AAQSkZJRgABAgAHhQdKAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb//gAPTGF2YzYzLjEuMTAyAP/bAEMACBAQExATFhYWFhYWGhgaGxsbGhoaGhsbGx0dHSIiIh0dHRsbHR0gICIiJSYlIyMiIyYmKCgoMDAuLjg4OkVFU//EAGUAAAMBAQEAAAAAAAAAAAAAAAYFBwMCBAEBAQAAAAAAAAAAAAAAAAAAAwIQAAEDAwQCAwEBAAAAAAAAAAECEQMABCESUUETMjGBkQUiwREAAwEBAAAAAAAAAAAAAAAAABEBITH/wAARCAAWACADASIAAhEAAxEA/9oADAMBAAIRAxEAPwCPWtmu5LBgAzk+g+K1mszCopJcjaiv8tYmQqPxKQGVn0+QpuNjlqJ02E1wWkQVYKkqRpJVjjPOKtyUlVYR7qNc9RqkLtYUjy/p20EMt9m/31Xl1WkCT2o7FZ8FYGwJbT9GkwN0Cba5ltZBJGplD6I2NFqv1J5Q6VKSHJZwz/AzQGKbQ+Bo0K8GE9/LMgIZKQ/sAaieSVM/wMUm1lmrk8VnS8D6f//Z");
+  color-scheme:dark; scrollbar-color:rgba(255,255,255,.26) transparent;
+}
+@media (max-width:900px){:root[data-theme="glas"]{--glass-blur:blur(22px) saturate(165%)}}
+@media (min-width:901px) and (max-width:1180px){:root[data-theme="glas"]{--rail-w:92px}}
+/* „Transparenz reduzieren“ (Systemeinstellung) bzw. Browser ohne backdrop-filter: deckendere Flächen, Text bleibt lesbar */
+@media (prefers-reduced-transparency:reduce){:root[data-theme="glas"]{--rail:rgba(14,22,34,.94);--panel:rgba(24,34,50,.94);--glass:rgba(24,34,50,.94);--glass-strong:rgba(16,24,37,.98);--glass-bar:rgba(11,18,30,.96)}}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){:root[data-theme="glas"]{--rail:rgba(14,22,34,.88);--panel:rgba(22,32,48,.86);--glass:rgba(22,32,48,.86);--glass-strong:rgba(16,24,37,.96);--glass-bar:rgba(11,18,30,.92)}}
+
+/* Bergfoto als feste Ebene unter allem (kein background-attachment:fixed – iOS); winziges Vorschaubild darunter, dunkler Verlauf darüber */
+:root[data-theme="glas"] body{background:var(--ground)}
+:root[data-theme="glas"] body::before{content:"";position:fixed;left:0;right:0;top:0;height:100vh;height:100lvh;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg,rgba(5,10,20,.34),rgba(5,10,20,.14) 38%,rgba(5,10,20,.6)),url("/logos/cockpit-bg.jpg?v=1") 50% 35%/cover no-repeat,var(--bg-ph) 50% 35%/cover no-repeat,var(--ground)}
+@media (max-width:700px),(orientation:portrait) and (max-width:1100px){
+  :root[data-theme="glas"] body::before{background:linear-gradient(180deg,rgba(5,10,20,.44),rgba(5,10,20,.12) 34%,rgba(5,10,20,.62)),url("/logos/cockpit-bg-m.jpg?v=1") 50% 30%/cover no-repeat,var(--bg-ph) 50% 30%/cover no-repeat,var(--ground)}
+}
+:root[data-theme="glas"] ::selection{background:var(--sel);color:var(--ink)}
+:where(:root[data-theme="glas"]) .head h1,:where(:root[data-theme="glas"]) .head p{text-shadow:0 1px 16px rgba(0,0,0,.3)}
+
+/* Glasflächen der obersten Ebene – verschachtelte Boxen bleiben flach (var(--sunk), keine zweite Unschärfe).
+   Spezifität bewusst niedrig (:where), damit Module Farbe/Rand/Radius selbst bestimmen können; die Unschärfe kommt von hier. */
+:where(:root[data-theme="glas"]) :is(.panel,.fsd-card,.fsm-card,.sb,.tk-kpi,.mx-card,.w-card):not(:where(.mread,.view-post *,.view-kal *,.mbox *,.kd *,.kmtodo *,.dialog *,.drawer *,.modal *,.cmdk *,.nmenu *,.kichat *,.glass *,.panel *,.fsd-card *,.fsm-card *,.sb *,.tk-kpi *,.mx-card *,.w-card *,.tk-col *)),
+:where(:root[data-theme="glas"]) .glass:not(:where(.glass *,.panel *,.dialog *,.drawer *,.modal *,.cmdk *,.nmenu *)){
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:var(--r);box-shadow:var(--glass-hi),var(--shadow);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur)}
+:where(:root[data-theme="glas"]) .day>button:not(:where(.panel *,.dialog *,.drawer *,.glass *)){background:var(--glass);border-color:var(--glass-line);box-shadow:var(--glass-hi),var(--shadow);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur)}
+:where(:root[data-theme="glas"]) .day>button:hover{background:rgba(255,255,255,.13);border-color:var(--line-2)}
+:where(:root[data-theme="glas"]) :where(.panel,.glass,.fsd-card,.fsm-card,.sb,.mx-card,.w-card,.dialog,.drawer) .panel{background:var(--sunk);border-color:var(--line);box-shadow:none;border-radius:16px}
+
+/* Knöpfe: Glas-Pillen; Haupt-Aktion = weiße Pille mit dunkler Schrift, .btn.glow = Cyan */
+:where(:root[data-theme="glas"]) .btn{background:var(--panel-2);border-color:var(--glass-line);border-radius:99px;color:var(--ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.1);transition:transform .3s cubic-bezier(.3,1.6,.5,1),background-color .15s,border-color .15s}
+:where(:root[data-theme="glas"]) .btn:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32)}
+:where(:root[data-theme="glas"]) .btn:active{transform:scale(.97)}
+:where(:root[data-theme="glas"]) .btn.primary{background:var(--btn-pri);border-color:var(--btn-pri);color:var(--btn-pri-ink);font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.2)}
+:where(:root[data-theme="glas"]) .btn.primary:hover{filter:none;background:#e6f9ff;border-color:#e6f9ff}
+:where(:root[data-theme="glas"]) .btn.glow{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}
+:where(:root[data-theme="glas"]) .btn.glow:hover{background:var(--glow-ink);border-color:var(--glow-ink)}
+:where(:root[data-theme="glas"]) .btn.danger{background:var(--bad);border-color:var(--bad);color:var(--ground)}
+:where(:root[data-theme="glas"]) .btn:disabled{transform:none}
+:where(:root[data-theme="glas"]) :is(option,optgroup){background-color:var(--panel-solid);color:var(--ink)}
+:where(:root[data-theme="glas"]) .sheet .nav-btn:hover{background:var(--hover)}
+:where(:root[data-theme="glas"]) .sheet .nav-btn[aria-current="page"]{background:var(--glow-soft);color:var(--glow-ink)}
+:where(:root[data-theme="glas"]) .toast .ta{color:var(--glow)}
+/* Hinweisbalken: dunkler Grund unter der Warnfarbe, damit weiße Schrift auch über hellen Bergflächen lesbar bleibt */
+:where(:root[data-theme="glas"]) .notice{background:color-mix(in srgb,var(--warn) 15%,rgba(16,24,37,.6));border-color:color-mix(in srgb,var(--warn) 38%,transparent)}
+:where(:root[data-theme="glas"]) .view>.notice{-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur)}
+
+/* Overlays: kräftiges Glas (Dialog, Seitenblatt, Menüs, Hinweis) */
+:where(:root[data-theme="glas"]) .scrim{background:rgba(4,9,16,.42)}
+:where(:root[data-theme="glas"]) .modal{background:rgba(4,9,16,.4);-webkit-backdrop-filter:blur(10px) saturate(130%);backdrop-filter:blur(10px) saturate(130%)}
+:where(:root[data-theme="glas"]) .dialog{background:var(--glass-strong);border:1px solid var(--glass-line);border-radius:26px;box-shadow:var(--glass-hi),var(--shadow-pop)}
+:where(:root[data-theme="glas"]) .drawer{background:var(--glass-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-line);box-shadow:var(--glass-hi),-18px 0 60px rgba(0,0,0,.35)}
+:where(:root[data-theme="glas"]) .drawer:not(.on){box-shadow:none}
+@media (min-width:901px){
+  :where(:root[data-theme="glas"]) .drawer{top:12px;right:12px;bottom:12px;border-radius:28px;transform:translateX(calc(100% + 32px))}
+  :where(:root[data-theme="glas"]) .drawer.on{transform:none}
+}
+:where(:root[data-theme="glas"]) .nmenu{border-color:var(--glass-line);border-radius:18px;box-shadow:var(--glass-hi),var(--shadow-pop);transform-origin:100% 0;animation:lqPop .22s cubic-bezier(.3,1.4,.5,1)}
+:where(:root[data-theme="glas"]) .nmenu button{border-radius:11px}
+:where(:root[data-theme="glas"]) .nmenu button:hover,:where(:root[data-theme="glas"]) .nmenu button:focus-visible{background:var(--hover)}
+:where(:root[data-theme="glas"]) .nmenu button svg{color:var(--glow)}
+@keyframes lqPop{from{opacity:0;transform:scale(.94) translateY(-4px)}}
+@media (prefers-reduced-motion:reduce){:where(:root[data-theme="glas"]) .nmenu{animation:none}}
+:where(:root[data-theme="glas"]) .toast{background:var(--glass-strong);color:var(--ink);border:1px solid var(--glass-line);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--glass-hi),0 14px 40px rgba(0,0,0,.35);border-radius:99px}
+:where(:root[data-theme="glas"]) .toast.bad{background:color-mix(in srgb,var(--bad) 30%,rgba(16,24,37,.9));color:var(--ink);border-color:color-mix(in srgb,var(--bad) 55%,transparent)}
+
+/* Seitenleiste: schwebendes Liquid-Glas-Panel (14px Abstand zu den Rändern), Glanz folgt dem Zeiger (--mx/--my aus core.js) */
+:where(:root[data-theme="glas"]) .rail{top:calc(14px + env(safe-area-inset-top,0px));height:calc(100vh - 28px - env(safe-area-inset-top,0px));margin:calc(14px + env(safe-area-inset-top,0px)) 0 14px 14px;border:0;border-radius:28px;background:var(--rail);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--lq-rim),0 24px 60px rgba(0,0,0,.3)}
+:where(:root[data-theme="glas"]) :is(.rail,.tabbar)::before{content:"";position:absolute;inset:0;z-index:0;border-radius:inherit;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.07),transparent 26%)}
+:where(:root[data-theme="glas"]) .lq-glare{display:block;position:absolute;inset:0;z-index:0;border-radius:inherit;pointer-events:none;background:radial-gradient(260px circle at var(--mx,22%) var(--my,-40px),rgba(255,255,255,.14),transparent 70%)}
+:where(:root[data-theme="glas"]) :is(.rail,.tabbar)::after,:where(:root[data-theme="glas"]) .lq-drop>i::after{content:"";position:absolute;inset:0;z-index:2;border-radius:inherit;padding:1px;pointer-events:none;background:var(--lq-ring);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude}
+:where(:root[data-theme="glas"]) .rail-in{padding:16px 12px 12px}
+/* Statusleiste (iPhone/iPad-App, durchscheinend): dunkler Verlauf darunter, damit Uhrzeit/Akku über hellem Foto lesbar bleiben (Höhe 0 am Mac) */
+:root[data-theme="glas"] body::after{content:"";position:fixed;left:0;right:0;top:0;height:env(safe-area-inset-top,0px);z-index:34;pointer-events:none;background:linear-gradient(180deg,rgba(5,10,20,.55),rgba(5,10,20,.2))}
+:where(:root[data-theme="glas"]) .brand{padding:4px 10px 14px}
+:where(:root[data-theme="glas"]) .brand .bm{border-radius:11px;background:linear-gradient(140deg,#fff,var(--glow));color:var(--on-glow);box-shadow:0 4px 14px rgba(159,240,255,.25),inset 0 1px 0 rgba(255,255,255,.8)}
+:where(:root[data-theme="glas"]) .nav-g{color:var(--ink-3);padding:14px 12px 5px;font-size:10.5px;letter-spacing:.14em}
+:where(:root[data-theme="glas"]) .rail .nav-btn{min-height:36px;padding:7px 12px;border-radius:13px;color:var(--ink-2);font-weight:500}
+:where(:root[data-theme="glas"]) .rail .nav-btn:hover{color:var(--ink);background:var(--hover)}
+:where(:root[data-theme="glas"]) .rail .nav-btn[aria-current="page"]{color:var(--ink);font-weight:700;background:var(--active);box-shadow:none}
+:where(:root[data-theme="glas"]) .rail .nav-btn[aria-current="page"] svg{color:var(--glow);filter:drop-shadow(0 0 6px rgba(159,240,255,.45))}
+:where(:root[data-theme="glas"]) .rail .nav-btn[aria-current="page"]::before{content:"";position:absolute;left:3px;top:50%;width:3px;height:16px;margin-top:-8px;border-radius:3px;background:var(--glow);box-shadow:0 0 10px var(--glow)}
+:where(:root[data-theme="glas"]) .rail .nav-btn:focus-visible{outline:2px solid var(--glow);outline-offset:-2px;border-radius:13px}
+:where(:root[data-theme="glas"]) .rail-set{padding:10px 2px 8px}
+:where(:root[data-theme="glas"]) .rail-set select{height:34px;border-radius:12px;border:1px solid var(--line);background-color:var(--panel-solid);color:var(--ink-2)}
+:where(:root[data-theme="glas"]) .rail-user{border-top:1px solid var(--line);padding:12px 6px 2px;gap:8px}
+:where(:root[data-theme="glas"]) .ru-av{background:linear-gradient(140deg,rgba(255,255,255,.28),rgba(255,255,255,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.35);color:var(--ink)}
+:where(:root[data-theme="glas"]) .ru-out{width:32px;height:32px;border-radius:50%}
+:where(:root[data-theme="glas"]) .ru-out:hover,:where(:root[data-theme="glas"]) .ru-me:hover{background:var(--hover);color:var(--ink)}
+:where(:root[data-theme="glas"]) .ru-dot{box-shadow:0 0 0 2px rgba(14,22,34,.9),0 0 8px var(--bad)}
+/* Mittlere Breite (nur Symbole): gleiche Glas-Leiste, schmal */
+@media (min-width:901px) and (max-width:1180px){
+  :where(:root[data-theme="glas"]) .rail-in{padding:14px 8px 10px}
+  :where(:root[data-theme="glas"]) .brand{padding:2px 0 10px}
+  :where(:root[data-theme="glas"]) .nav-g{font-size:0;padding:6px 0 4px;margin:6px 12px 0}
+  :where(:root[data-theme="glas"]) .rail .nav-btn{justify-content:center;padding:0;min-height:44px}
+  :where(:root[data-theme="glas"]) .rail-user{padding:10px 0 0;gap:6px}
+}
+/* Tropfen (aktiver Eintrag): Glas-Linse mit Lichtkante, Glanzpunkt folgt dem Zeiger (--dx/--dy) */
+:where(:root[data-theme="glas"]) :is(.rail,.tabbar) .lq-drop>i{border-radius:13px;background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,.09));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 1px 0 0 rgba(255,255,255,.14),inset -1px -1px 0 rgba(0,0,0,.18),0 8px 22px rgba(0,0,0,.22)}
+:where(:root[data-theme="glas"]) .lq-drop>i::before{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(120px circle at var(--dx,26%) var(--dy,-30%),rgba(255,255,255,.42),transparent 60%);opacity:.75}
+:where(:root[data-theme="glas"]) :is(.rail,.tabbar) .lq-drop.away>i{background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.05));box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 16px rgba(0,0,0,.14)}
+:where(:root[data-theme="glas"]) .lq-drop.drag>i{background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.12))}
+/* Brechung (nur Chromium, von core.js erkannt): SVG-Verschiebung der Kanten statt reiner Unschärfe; Safari behält blur+saturate */
+:where(:root[data-theme="glas"].lq-refract) .rail{backdrop-filter:url(#lqRail) blur(12px) saturate(175%) brightness(1.04)}
+
+/* Kopfzeile: oben durchsichtig, beim Scrollen eigenes Glas; Suche als Glas-Pille, runde Glas-Knöpfe, „+ Neu“ als weiße Pille */
+:where(:root[data-theme="glas"]) .topbar{gap:10px;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;transition:background-color .25s,box-shadow .25s}
+:where(:root[data-theme="glas"].is-scrolled) .topbar{background:var(--glass-bar);-webkit-backdrop-filter:var(--bar-blur);backdrop-filter:var(--bar-blur);box-shadow:0 1px 0 var(--line)}
+:where(:root[data-theme="glas"]) .tb-search{height:44px;border-radius:22px;border:1px solid var(--glass-line);background:var(--glass);color:var(--ink-2);box-shadow:var(--glass-hi),0 8px 24px rgba(0,0,0,.16);
+  -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);transition:background-color .2s,border-color .2s,transform .35s cubic-bezier(.3,1.6,.5,1)}
+:where(:root[data-theme="glas"]) .tb-search:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.3)}
+:where(:root[data-theme="glas"]) .tb-search kbd{border-color:var(--line-2);color:var(--ink-3)}
+:where(:root[data-theme="glas"]) .topbar .rail-foot .rf-ic,:where(:root[data-theme="glas"]) .topbar .tb-i{width:44px;height:44px;border-radius:50%;border:1px solid var(--glass-line);background:var(--glass);color:var(--ink);
+  box-shadow:var(--glass-hi),0 8px 24px rgba(0,0,0,.16);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);transition:transform .35s cubic-bezier(.3,1.6,.5,1),background-color .2s,border-color .2s}
+:where(:root[data-theme="glas"]) .topbar .rail-foot .rf-ic:hover,:where(:root[data-theme="glas"]) .topbar .tb-i:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32);color:var(--ink)}
+:where(:root[data-theme="glas"]) .topbar .rail-foot .rf-ic[aria-pressed="true"]{color:var(--glow);border-color:rgba(159,240,255,.45)}
+:where(:root[data-theme="glas"]) .topbar .rail-foot .rf-new{width:auto;padding:0 16px;border-radius:22px;background:var(--glow-soft);color:var(--glow-ink);border-color:rgba(159,240,255,.35)}
+:where(:root[data-theme="glas"]) .topbar .rail-foot .rf-new:hover{background:rgba(159,240,255,.24);color:var(--glow-ink)}
+:where(:root[data-theme="glas"]) .tb-new{height:44px;border-radius:22px;padding:0 20px;background:var(--btn-pri);color:var(--btn-pri-ink);font-weight:800;
+  box-shadow:0 8px 24px rgba(0,0,0,.22);transition:transform .35s cubic-bezier(.3,1.6,.5,1),background-color .2s}
+:where(:root[data-theme="glas"]) .tb-new:hover{filter:none;background:#e6f9ff}
+:where(:root[data-theme="glas"]) :is(.tb-new,.tb-search,.tb-i,.rf-ic):active{transform:scale(.95)}
+
+/* Statusleiste rechts (zside): Spalte durchsichtig, die Kästen sind Glas */
+:root[data-theme="glas"] .app.has-side .side{background:transparent;border-left:0}
+/* Modul-Regeln mit !important, die im Glas-Look unlesbar wären (Finanzen: dunkles Navy beim Darüberfahren, Postfach: weiß auf Cyan) */
+:root[data-theme="glas"] body .fsd .btn.primary:hover{background:var(--glow)!important;filter:brightness(1.08)}
+:root[data-theme="glas"] .mrow2.picked .mav{color:var(--on-glow)!important}
+
+/* Handy: schwebende Reiterleiste als Liquid-Glas-Pille (Safe-Area beachtet), Detailblatt im Vollbild */
+@media (max-width:900px){
+  :where(:root[data-theme="glas"]) .tabbar{left:12px;right:12px;bottom:max(8px,calc(env(safe-area-inset-bottom,0px) - 10px));height:56px;padding:0 4px;border:0;border-radius:28px;background:var(--rail);
+    -webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--lq-rim),0 14px 40px rgba(0,0,0,.34);overflow:hidden;align-items:center;
+    touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  :where(:root[data-theme="glas"]) .tabbar button{height:48px;padding:0;align-content:center;color:var(--ink-2);border-radius:22px}
+  :where(:root[data-theme="glas"]) .tabbar button[aria-current="page"]{color:var(--ink)}
+  :where(:root[data-theme="glas"]) .tabbar button[aria-current="page"] svg{color:var(--glow);filter:drop-shadow(0 0 6px rgba(159,240,255,.45))}
+  :where(:root[data-theme="glas"]) .tabbar button.lq-near{color:var(--ink)}
+  :where(:root[data-theme="glas"]) .tabbar .lq-drop>i{border-radius:22px}
+  :where(:root[data-theme="glas"]) .tabbar .count{top:2px}
+  :where(:root[data-theme="glas"]) .tabbar .tb-dot{box-shadow:0 0 0 2px rgba(14,22,34,.9),0 0 8px var(--bad)}
+  :where(:root[data-theme="glas"].lq-refract) .tabbar{backdrop-filter:url(#lqTab) blur(10px) saturate(175%) brightness(1.05)}
+  :where(:root[data-theme="glas"]) .drawer{border:0;border-radius:0}
 }
 </style>
 </head>
@@ -473,6 +696,16 @@ html[data-theme="light"] .sp-quote{color:#20232d}
 html[data-theme="light"] .sp-bar{background:rgba(0,0,0,.08)}
 .sp-bar i{position:absolute;inset:0;width:40%;border-radius:9px;background:linear-gradient(90deg,#6c63ff,#ff4d8d);animation:spBar 1.1s ease-in-out infinite}
 @keyframes spBar{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+/* Alpenglas: Bergfoto statt Neon-Flecken, Cyan statt Indigo/Pink (gleiches Bild wie der Hintergrund, wird vorgeladen) */
+html[data-theme="glas"] #fsSplash{background:#0b1220 url("/logos/cockpit-bg.jpg?v=1") 50% 35%/cover no-repeat}
+@media (max-width:700px),(orientation:portrait) and (max-width:1100px){html[data-theme="glas"] #fsSplash{background:#0b1220 url("/logos/cockpit-bg-m.jpg?v=1") 50% 30%/cover no-repeat}}
+html[data-theme="glas"] #fsSplash:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,10,20,.45),rgba(5,10,20,.25) 45%,rgba(5,10,20,.7))}
+html[data-theme="glas"] .sp-blob{display:none}
+html[data-theme="glas"] .sp-logo img{box-shadow:0 18px 50px rgba(0,0,0,.4),0 0 40px rgba(159,240,255,.25)}
+html[data-theme="glas"] .sp-ring{border-color:rgba(159,240,255,.6)}
+html[data-theme="glas"] .sp-quote{text-shadow:0 1px 18px rgba(0,0,0,.4)}
+html[data-theme="glas"] .sp-bar{background:rgba(255,255,255,.16)}
+html[data-theme="glas"] .sp-bar i{background:linear-gradient(90deg,#9ff0ff,#fff)}
 @media (prefers-reduced-motion:reduce){#fsSplash *{animation-duration:.01s!important;animation-iteration-count:1!important}.sp-quote i,.sp-name span{opacity:1;filter:none;transform:none}}
 </style>
 <script>
@@ -494,13 +727,18 @@ html[data-theme="light"] .sp-bar{background:rgba(0,0,0,.08)}
 
 <div class="app">
   <aside class="rail" aria-label="Hauptnavigation">
-    <div class="brand"><span class="bm">FS</span><b>FS Cockpit</b></div>
-    <nav id="nav"></nav>
-    <div class="rail-set">
-      <select id="year" aria-label="Jahr" title="Jahr"></select>
-      <select id="themeSel" aria-label="Darstellung" title="Darstellung"><option value="dark">Dunkel</option><option value="light">Hell</option><option value="auto">Wie System</option></select>
+    <div class="rail-in" id="railIn">
+      <div class="brand"><span class="bm">FS</span><b>FS Cockpit</b></div>
+      <div class="nav-sc" id="navSc"><nav id="nav" aria-label="Bereiche"></nav></div>
+      <div class="rail-set">
+        <select id="year" aria-label="Jahr" title="Jahr"></select>
+        <select id="themeSel" aria-label="Darstellung" title="Darstellung"><option value="glas">Alpenglas</option><option value="dark">Dunkel</option><option value="light">Hell</option><option value="auto">Wie System</option></select>
+      </div>
+      <div class="rail-user">
+        <!-- Profil = Einstellungen; bei gestörten Verbindungen (F.D.connections.error) roter Punkt + Hinweis, Klick öffnet „Verbindungen“ (core.js) -->
+        <button type="button" class="ru-me" id="railMe" data-act="settings" title="Einstellungen"><span class="ru-av" aria-hidden="true">SF<i class="ru-dot" hidden></i></span><span class="ru-n"><b>Simon Felder</b><small id="railSub">FS Creative</small></span></button>
+        <a href="/admin/logout" class="ru-out" title="Abmelden" aria-label="Abmelden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></a></div>
     </div>
-    <div class="rail-user"><span class="ru-av">SF</span><span class="ru-n"><b>Simon Felder</b><small>FS Creative</small></span><a href="/admin/logout" class="ru-out" title="Abmelden" aria-label="Abmelden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></a></div>
   </aside>
   <header class="topbar" aria-label="Kopfleiste">
     <button id="searchBtn" class="tb-search" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>Suchen oder Befehl eingeben … Mails, Kunden, Rechnungen, Termine</span><kbd>⌘K</kbd></button>
@@ -508,12 +746,12 @@ html[data-theme="light"] .sp-bar{background:rgba(0,0,0,.08)}
       <span class="stamp" id="stamp"></span>
       <button id="refresh" class="tb-i" type="button" title="Aktualisieren" aria-label="Aktualisieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
     </div>
-    <button type="button" class="tb-new" data-act="newmenu" aria-haspopup="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Neu</button>
+    <button type="button" class="tb-new" data-act="newmenu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Neu</button>
   </header>
   <main id="main"><div class="loading">Lade deine Daten …</div></main>
   <aside class="side" id="side" aria-label="Statusleiste" hidden></aside>
 </div>
-<nav class="tabbar" id="tabbar" aria-label="Navigation"></nav>
+<nav class="tabbar" id="tabbar" aria-label="Navigation"><div class="tb-items" id="tabItems"></div></nav>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-hidden="true"></aside>
 <div id="modalHost"></div>

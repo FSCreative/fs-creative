@@ -21,7 +21,10 @@ F.css(
 '.kwe.kdragging{z-index:5!important;box-shadow:var(--shadow-pop);opacity:.92;cursor:grabbing;transition:none}'+
 'html.kdrag-on,html.kdrag-on *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}html.kdrag-rs,html.kdrag-rs *{cursor:ns-resize!important}'+
 '.kdrop{outline:2px dashed var(--glow);outline-offset:-2px;background:color-mix(in srgb,var(--glow) 10%,transparent)!important}'+
-'.kghost{position:fixed;z-index:200;pointer-events:none;border-radius:4px;box-shadow:var(--shadow-pop);opacity:.95;max-width:240px;transform:translate(-50%,-50%)}'+
+/* Geist beim Ziehen (Kopie des Chips am body): deckender Grund, damit er über Glas lesbar bleibt */
+'.kghost{position:fixed;z-index:200;pointer-events:none;border-radius:4px;box-shadow:var(--shadow-pop);opacity:.95;max-width:240px;transform:translate(-50%,-50%);border:0;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 24%,var(--panel-solid,var(--panel)));color:var(--ink);padding:2px 6px;font-size:12px;font-weight:600;line-height:1.5;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+':root[data-theme] .kghost{background:color-mix(in srgb,var(--c) 24%,var(--panel-solid,var(--panel)))}'+   /* schlägt die Glas-Regel für .kc */
+'.kghost svg{width:11px;height:11px;vertical-align:-1px;margin-right:3px}'+
 '.kdtip{position:fixed;z-index:201;pointer-events:none;background:var(--ink);color:var(--ground);font:600 12px/1 var(--f-mono);padding:5px 8px;border-radius:6px;white-space:nowrap;transform:translate(12px,12px)}'+
 '[data-kev]{cursor:grab}'
 );

@@ -74,10 +74,11 @@ document.addEventListener("keydown",function(e){ if(!SG.el||e.target!==SG.input)
   else if(e.key==="Enter"){ e.preventDefault(); if(SG.i>-1) sgPick(SG.i); else sgClose(); }   /* Enter bei offener Liste schickt das Formular nie ab */
   else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); sgClose(); }
   else if(e.key==="Tab") sgClose(); },true);
-F.css('.fl{position:relative}form[data-form="invoice"] .grid2{align-items:start}.sugg{position:absolute;z-index:90;display:grid;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-pop,0 16px 40px rgba(0,0,0,.3));padding:4px}'+
+F.css('.fl{position:relative}form[data-form="invoice"] .grid2{align-items:start}.sugg{position:absolute;z-index:90;display:grid;max-height:320px;overflow-y:auto;background:var(--glass-strong,var(--panel));-webkit-backdrop-filter:var(--glass-blur,none);backdrop-filter:var(--glass-blur,none);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-pop,0 16px 40px rgba(0,0,0,.3));padding:4px}'+
+  ':where(:root[data-theme="glas"]) .sugg{border-color:var(--glass-line);border-radius:16px;box-shadow:var(--glass-hi),var(--shadow-pop)}'+
   '.sugg button{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;align-items:center;text-align:left;border:0;background:none;border-radius:8px;padding:7px 10px;color:var(--ink);cursor:pointer}'+
   '.sugg button b{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sugg button small{grid-column:1;font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sugg button .tag{grid-column:2;grid-row:1/span 2}'+
-  '.sugg button:hover,.sugg button.on{background:var(--sunk)}');
+  '.sugg button:hover,.sugg button.on{background:var(--hover,var(--sunk))}');
 /* Rechnung/Angebot „Firma / Name“: Kunden aus der Buchhaltung, dazu Kunden & Leads und Namen aus bisherigen Rechnungen (falls dort noch kein Kontakt) */
 function invPeople(){ var out=[], seen={};
   var add=function(it){ var k=sgNorm(it.label).trim(); if(!k||seen[k]) return; seen[k]=1; out.push(it); };

@@ -7,30 +7,34 @@ var F=window.FSC, esc=F.esc;
 F.icons.legal='<path d="M12 3.5v17M7.5 20.5h9M5 7h14"/><path d="M12 5.2 5 7M12 5.2 19 7"/><path d="m5 7-2.6 6.2a2.8 2.8 0 0 0 5.2 0z"/><path d="m19 7-2.6 6.2a2.8 2.8 0 0 0 5.2 0z"/>';
 var ST=null, busy=false, at=0;
 var TAG={open:"warn",signed:"ok",revoked:"grey"};
-F.css('.lg-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 18px;border-top:1px solid var(--line)}.lg-row:first-child{border-top:0}.lg-row b{display:block;overflow-wrap:anywhere}.lg-row .muted{display:block;overflow-wrap:anywhere}'+
-  '.lg-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.lg-acts .btn{padding:5px 10px;font-size:12.5px}@media(max-width:760px){.lg-row{grid-template-columns:minmax(0,1fr)}.lg-acts{justify-content:flex-start}}'+
-  '.lg-link{display:flex;gap:8px;align-items:center}.lg-link input{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}.lg-note{font-size:13px;line-height:1.5}');
+/* Zeilen in einer Glasfläche: links Gegenpartei + Status, Mitte Zeitpunkt/E-Mail, rechts Aktionen (umbrechend) */
+F.css('.lg-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:14px 18px;border-top:1px solid var(--line)}.lg-row:first-child,.panel-h+.lg-row{border-top:0}.lg-row:hover{background:var(--hover)}'+
+  '.lg-row .lg-t{display:grid;gap:3px;min-width:0}.lg-t>b{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:15px;font-weight:600;overflow-wrap:anywhere}.lg-row .muted{display:block;overflow-wrap:anywhere;text-wrap:pretty}'+
+  '.lg-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.lg-acts .btn{padding:5px 10px;font-size:12.5px}@media(max-width:760px){.lg-row{grid-template-columns:minmax(0,1fr)}.lg-acts{justify-content:flex-start}.lg-acts .btn{min-height:40px}}'+
+  '.lg-link{display:flex;gap:8px;align-items:center}.lg-link input{flex:1;min-width:0;font-family:var(--f-mono);font-size:12.5px}.lg-note{font-size:13px;line-height:1.5}'+
+  '.lg-note>span{display:flex;gap:10px;align-items:flex-start}.lg-note svg{width:17px;height:17px;flex:none;margin-top:1px;color:var(--warn)}'+
+  '.lg-sum{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;margin:0;font-size:13px;color:var(--ink-3)}.lg-sum b{color:var(--ink);font-variant-numeric:tabular-nums}');
 function load(){ if(busy) return; busy=true; F.api("/admin/api/nda/list").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",items:[]}; if(F.current==="legal") F.render(); }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",items:[]}; if(F.current==="legal") F.render(); }); }
 function dt(iso){ return iso?new Date(iso).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):""; }
 function item(id){ return ((ST&&ST.items)||[]).find(function(x){ return x.id===id; }); }
 function row(x){
   var when=x.status==="signed"?"unterschrieben "+dt(x.signedAt):x.status==="revoked"?"widerrufen "+dt(x.revokedAt):"erstellt "+dt(x.createdAt)+((x.mails||[]).length?" · gesendet an "+x.mails[x.mails.length-1].to:"");
-  var a='<button class="btn" data-act="lgcopy:'+esc(x.id)+'">Link kopieren</button>';
-  if(x.status==="signed") a+='<a class="btn" href="/admin/api/nda/pdf?id='+encodeURIComponent(x.id)+'" target="_blank" rel="noopener">PDF ansehen</a><a class="btn" href="/admin/api/nda/pdf?id='+encodeURIComponent(x.id)+'&amp;dl=1">Download</a>';
-  if(x.status==="open") a+='<button class="btn" data-act="lgmail:'+esc(x.id)+'">Per Mail senden</button>';
-  a+=x.status==="revoked"?'<button class="btn" data-act="lgreact:'+esc(x.id)+'">Reaktivieren</button>':'<button class="btn" data-act="lgrevoke:'+esc(x.id)+'">'+(x.status==="signed"?"Widerrufen":"Deaktivieren")+'</button>';
-  if(x.status!=="signed"&&!x.signedAt) a+='<button class="btn icon" data-act="lgdel:'+esc(x.id)+'" title="Löschen" aria-label="Löschen">✕</button>';
-  return '<div class="lg-row"><span><b>'+esc(x.party||"Gegenpartei noch offen")+' <span class="tag '+(TAG[x.status]||"grey")+'">'+esc(x.statusText)+'</span></b><span class="muted">'+esc(x.project||"Projekt noch offen")+(x.term?' · Gültigkeit: '+esc(x.term)+' + 3 Jahre':'')+(x.penalty?' · Vertragsstrafe '+esc(x.penalty):'')+(x.status==="signed"&&(x.mailed||[]).length<2?' · <b>PDF-Mail '+((x.mailed||[]).length?'teilweise':'nicht')+' versendet</b>':'')+'</span></span>'+
-    '<span class="muted">'+esc(when)+(x.email?'<br>'+esc(x.email):'')+'</span><span class="lg-acts">'+a+'</span></div>';
+  var a='<button class="btn" data-act="lgcopy:'+esc(x.id)+'">'+F.svg("copy")+' Link kopieren</button>';
+  if(x.status==="signed") a+='<a class="btn" href="/admin/api/nda/pdf?id='+encodeURIComponent(x.id)+'" target="_blank" rel="noopener">'+F.svg("eye")+' PDF ansehen</a><a class="btn" href="/admin/api/nda/pdf?id='+encodeURIComponent(x.id)+'&amp;dl=1">'+F.svg("download")+' Download</a>';
+  if(x.status==="open") a+='<button class="btn" data-act="lgmail:'+esc(x.id)+'">'+F.svg("send")+' Per Mail senden</button>';
+  a+=x.status==="revoked"?'<button class="btn" data-act="lgreact:'+esc(x.id)+'">'+F.svg("refresh")+' Reaktivieren</button>':'<button class="btn" data-act="lgrevoke:'+esc(x.id)+'">'+F.svg("xCircle")+' '+(x.status==="signed"?"Widerrufen":"Deaktivieren")+'</button>';
+  if(x.status!=="signed"&&!x.signedAt) a+='<button class="btn icon" data-act="lgdel:'+esc(x.id)+'" title="Löschen" aria-label="Löschen">'+F.svg("trash")+'</button>';
+  return '<div class="lg-row"><span class="lg-t"><b><span>'+esc(x.party||"Gegenpartei noch offen")+'</span><span class="tag '+(TAG[x.status]||"grey")+'">'+esc(x.statusText)+'</span></b><span class="muted">'+esc(x.project||"Projekt noch offen")+(x.term?' · Gültigkeit: '+esc(x.term)+' + 3 Jahre':'')+(x.penalty?' · Vertragsstrafe '+esc(x.penalty):'')+(x.status==="signed"&&(x.mailed||[]).length<2?' · <b>PDF-Mail '+((x.mailed||[]).length?'teilweise':'nicht')+' versendet</b>':'')+'</span></span>'+
+    '<span class="muted">'+esc(when)+(x.email?'<br><span class="anyw">'+esc(x.email)+'</span>':'')+'</span><span class="lg-acts">'+a+'</span></div>';
 }
 function render(){
-  var head=F.head("Rechtliches","Vertraulichkeitsvereinbarungen online unterschreiben lassen",'<button class="btn primary" data-act="lgnew">Neue Vertraulichkeitsvereinbarung</button><button class="btn" data-act="lgreload">Aktualisieren</button>');
+  var head=F.head("Rechtliches","Vertraulichkeitsvereinbarungen online unterschreiben lassen",'<button class="btn primary" data-act="lgnew">'+F.svg("plus")+' Neue Vertraulichkeitsvereinbarung</button><button class="btn" data-act="lgreload">'+F.svg("refresh")+' Aktualisieren</button>');
   if(!ST){ load(); return head+'<div class="empty">Lade …</div>'; }
-  if(!ST.ok) return head+'<div class="notice">'+esc(ST.error)+' <button class="btn" data-act="lgreload">Neu laden</button></div>';
+  if(!ST.ok) return head+'<div class="notice">'+esc(ST.error)+' <button class="btn" data-act="lgreload">'+F.svg("refresh")+' Neu laden</button></div>';
   var L=ST.items||[], n={open:0,signed:0,revoked:0}; L.forEach(function(x){ n[x.status]=(n[x.status]||0)+1; });
-  var note='<div class="notice lg-note"><span><b>Hinweis:</b> Die Vorlage '+esc(ST.version)+' (gegenseitige Vertraulichkeitsvereinbarung, österreichisches Recht) ist keine Rechtsberatung. Lass sie bitte einmal von einer Anwältin bzw. einem Anwalt prüfen, bevor du sie breit einsetzt.</span></div>';
-  var info='<p class="muted" style="margin:10px 2px">'+n.open+' offen · '+n.signed+' unterschrieben · '+n.revoked+' widerrufen'+(ST.mail?' · Kopien gehen an '+esc(ST.office):' · <b>Mailversand nicht eingerichtet</b>')+(ST.db?'':' · ohne Datenbank (Dateispeicher)')+'</p>';
-  return head+note+info+'<section class="panel">'+(L.length?L.map(row).join(""):'<div class="empty">Noch keine Vereinbarungen. Leg mit „Neue Vertraulichkeitsvereinbarung“ einen Link an.</div>')+'</section>';
+  var note='<div class="notice lg-note"><span>'+F.svg("shield")+'<span><b>Hinweis:</b> Die Vorlage '+esc(ST.version)+' (gegenseitige Vertraulichkeitsvereinbarung, österreichisches Recht) ist keine Rechtsberatung. Lass sie bitte einmal von einer Anwältin bzw. einem Anwalt prüfen, bevor du sie breit einsetzt.</span></span></div>';
+  var info='<div class="panel-h"><h2>Vereinbarungen</h2><p class="lg-sum"><span><b>'+n.open+'</b> offen</span><span><b>'+n.signed+'</b> unterschrieben</span><span><b>'+n.revoked+'</b> widerrufen</span><span class="anyw">'+(ST.mail?'Kopien gehen an '+esc(ST.office):'<b>Mailversand nicht eingerichtet</b>')+'</span>'+(ST.db?'':'<span>ohne Datenbank (Dateispeicher)</span>')+'</p></div>';
+  return head+note+'<section class="panel">'+info+(L.length?L.map(row).join(""):'<div class="empty">Noch keine Vereinbarungen. Leg mit „Neue Vertraulichkeitsvereinbarung“ einen Link an.</div>')+'</section>';
 }
 function copy(text){
   function fb(){ var t=document.createElement("textarea"); t.value=text; t.setAttribute("readonly",""); t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.select(); var ok=false; try{ ok=document.execCommand("copy"); }catch(e){} t.remove(); F.toast(ok?"Link kopiert":"Kopieren nicht möglich – bitte manuell markieren",!ok); }
@@ -40,9 +44,9 @@ function upsert(it){ if(!ST||!ST.items) return; var i=ST.items.findIndex(functio
 function op(o,msg){ return F.api("/admin/api/nda/op",{body:Object.assign({confirm:true},o)}).then(function(j){ if(!j||!j.ok){ F.toast((j&&j.error)||"Fehler",true); return null; } if(j.item) upsert(j.item); else if(o.op==="delete"&&ST) ST.items=ST.items.filter(function(x){ return x.id!==o.id; }); F.toast(msg); F.render(); return j; }); }
 function linkDialog(x){
   F.modal('<div class="row-between"><h2 style="font-size:20px">Link erstellt</h2>'+F.btnClose()+'</div><p style="margin:0">Schick diesen Link an '+esc(x.party||"die Gegenpartei")+'. Er ist nur für diese eine Vereinbarung gültig und kann nur einmal unterschrieben werden.</p>'+
-    '<div class="lg-link"><input class="f" id="lgUrl" readonly value="'+esc(x.url)+'"><button class="btn primary" data-act="lgcopy:'+esc(x.id)+'">Kopieren</button></div>'+
+    '<div class="lg-link"><input class="f" id="lgUrl" readonly value="'+esc(x.url)+'"><button class="btn primary" data-act="lgcopy:'+esc(x.id)+'">'+F.svg("copy")+' Kopieren</button></div>'+
     '<label class="fl">Per Mail senden an<input class="f" id="lgTo" type="email" value="'+esc(x.email||"")+'" placeholder="name@firma.at"></label>'+
-    '<div class="foot"><a class="btn" href="'+esc(x.url)+'" target="_blank" rel="noopener">Seite öffnen</a><span class="row"><button type="button" class="btn" data-closemodal>Fertig</button>'+(ST&&ST.mail?'<button class="btn primary" data-act="lgmailto:'+esc(x.id)+'">Per Mail senden</button>':'')+'</span></div>',"wide");
+    '<div class="foot"><a class="btn" href="'+esc(x.url)+'" target="_blank" rel="noopener">'+F.svg("external")+' Seite öffnen</a><span class="row"><button type="button" class="btn" data-closemodal>Fertig</button>'+(ST&&ST.mail?'<button class="btn primary" data-act="lgmailto:'+esc(x.id)+'">'+F.svg("send")+' Per Mail senden</button>':'')+'</span></div>',"wide");
 }
 function mailConfirm(id,to){
   var x=item(id); if(!x) return; to=String(to||x.email||"").trim();

@@ -10,6 +10,14 @@ F.icons.mkt='<path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1z"/><path
 F.icons.mgift='<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M12 8S10.5 3.5 8 4.2C5.8 4.8 7 8 12 8zM12 8s1.5-4.5 4-3.8C18.2 4.8 17 8 12 8z"/>';
 F.icons.mig='<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1"/>';
 F.icons.mdl='<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>';
+/* Plattformen, für die der gemeinsame Satz (core.js) kein Symbol hat – einfache Strich-Glyphen, keine Logos */
+F.icons.mtiktok='<path d="M14.5 3.5v11a4 4 0 1 1-4-4"/><path d="M14.5 3.5c.4 2.9 2.4 4.8 5.5 5"/>';
+F.icons.mthreads='<circle cx="12" cy="12" r="3.6"/><path d="M15.6 12v1.4a2.6 2.6 0 0 0 5.2 0V12a8.8 8.8 0 1 0-3.4 7"/>';
+F.icons.mbsky='<path d="M12 10.8C10.4 7.6 7.1 5 5 5c-1.2 0-1.9.9-1.9 2.2 0 1.8.9 5.4 3.1 5.9 1.4.3 2.8 0 2.8 0s-3.1 1-2 3.6c1.2 2.6 3.8 2 5-1.5 1.2 3.5 3.8 4.1 5 1.5 1.1-2.6-2-3.6-2-3.6s1.4.3 2.8 0c2.2-.5 3.1-4.1 3.1-5.9C20.9 5.9 20.2 5 19 5c-2.1 0-5.4 2.6-7 5.8z"/>';
+F.icons.mpin='<circle cx="12" cy="12" r="9"/><path d="m10.6 20.6 2.1-9"/><path d="M10.2 14.4c-1.3-.5-2-1.7-1.8-3.1.3-2 2.1-3.4 4.2-3.2 2 .2 3.4 1.8 3.2 3.8-.2 2.1-1.7 3.7-3.4 3.5-.8-.1-1.3-.5-1.5-1.1"/>';
+/* Symbol je Plattform (Planer, Kanäle, Posteingang) */
+var PFI={instagram:"instagram",facebook:"facebook",linkedin:"linkedin",youtube:"youtube",google:"youtube",tiktok:"mtiktok",threads:"mthreads",bluesky:"mbsky",pinterest:"mpin"};
+F.mktPfIcon=function(k){ var n=PFI[String(k||"").toLowerCase()]; return F.svg(n&&F.icons[n]?n:"globe"); };
 
 var ST=null, LOADING=false, POLL=null, PARSE=null, PARSE_T=null, BUSY=false;
 UI.mktTab=UI.mktTab||F.ls("fsc_mkt_tab")||"planer";
@@ -26,57 +34,68 @@ F.css(
 '@media(max-width:640px){.mk-row,.mk-row2{grid-template-columns:minmax(0,1fr)}}'+
 '.mk-ta{min-height:210px;font-family:var(--f-mono);font-size:13px;line-height:1.5}'+
 '.mk-count{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--ink-2);align-items:center}'+
-'.mk-count b{color:var(--ink);font-size:15px}'+
+'.mk-count b{color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}'+
 '.mk-chips{display:flex;flex-wrap:wrap;gap:5px}'+
-'.mk-chips span{font-size:12px;background:var(--sunk);border-radius:99px;padding:2px 9px;color:var(--ink-2)}'+
+'.mk-chips span{font-size:12px;background:var(--sunk);border-radius:99px;padding:2px 9px;color:var(--ink-2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
 '.mk-go{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-top:4px}'+
+'.mk-go>.muted{flex:1 1 240px;min-width:0}'+
 '.mk-res{padding:16px 18px;display:grid;gap:14px}'+
 '.mk-win{display:grid;gap:6px}'+
 '.mk-win .k{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);font-weight:700}'+
-'.mk-win .w{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--ink);word-break:break-word}'+
+'.mk-win .w{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.2;color:var(--ink);overflow-wrap:anywhere;text-wrap:balance}'+
 '.mk-win ol{margin:0;padding-left:22px;display:grid;gap:2px}'+
 '.mk-kdc{font:600 12px var(--f-mono);color:var(--ink-2);letter-spacing:.04em;vertical-align:middle}'+
 '.mk-vid{display:grid;grid-template-columns:200px minmax(0,1fr);gap:16px;align-items:start}'+
 '@media(max-width:640px){.mk-vid{grid-template-columns:minmax(0,1fr)}}'+
-'.mk-vid video{width:200px;aspect-ratio:9/16;border-radius:14px;background:#111;display:block}'+
+'.mk-vid video{width:200px;aspect-ratio:9/16;border-radius:14px;background:#111;display:block}'+   /* Video-Rand bleibt schwarz (Letterbox) */
 '.mk-vacts{display:grid;gap:8px;align-content:start}'+
 '.mk-vacts .btn{justify-content:flex-start}'+
 '.mk-spin{width:200px;aspect-ratio:9/16;border-radius:14px;background:var(--sunk);display:grid;place-items:center;text-align:center;padding:16px;color:var(--ink-2);font-size:13px}'+
 '.mk-spin i{display:block;width:28px;height:28px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--glow);animation:mkspin 0.9s linear infinite;margin:0 auto 10px}'+
 '@keyframes mkspin{to{transform:rotate(360deg)}}'+
+'@media (prefers-reduced-motion:reduce){.mk-spin i,.mp-wait i{animation:none}}'+
 '.mk-meta{font-size:12.5px;color:var(--ink-2);display:grid;gap:3px}'+
-'.mk-meta code{font-size:11.5px;word-break:break-all}'+
+'.mk-meta code{font-size:11.5px;overflow-wrap:anywhere}'+
 '.mk-hist{list-style:none;margin:0;padding:0}'+
 '.mk-hist li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:10px 18px;border-top:1px solid var(--line);cursor:pointer;font-size:13.5px}'+
-'.mk-hist li:hover{background:var(--sunk)} .mk-hist li[aria-current="true"]{background:var(--glow-soft)}'+
+'.mk-hist li>span:first-child{min-width:0;overflow-wrap:anywhere}'+
+'.mk-hist li:hover{background:var(--hover)} .mk-hist li[aria-current="true"]{background:var(--glow-soft);box-shadow:inset 3px 0 0 var(--glow)}'+
 '.mk-hist .s{color:var(--ink-2);font-size:12.5px}'+
 '.mk-brands{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}'+
 '.mk-b{padding:14px 16px;display:grid;gap:10px;align-content:start}'+
-'.mk-b .lg{height:46px;display:flex;align-items:center;justify-content:flex-start;border-radius:10px;padding:6px 10px;background:#fff;border:1px solid var(--line)}'+
+'.mk-b .row-between b{min-width:0;font-size:15.5px;overflow-wrap:anywhere}'+
+'.mk-b .lg{height:46px;display:flex;align-items:center;justify-content:flex-start;border-radius:12px;padding:6px 10px;background:#fff;border:1px solid var(--line)}'+   /* Logo-Vorschau bewusst auf Weiß bzw. Schwarz */
 '.mk-b .lg.dark{background:#111}'+
 '.mk-b .lg img{max-height:34px;max-width:100%;object-fit:contain}'+
-'.mk-sw{display:flex;gap:5px} .mk-sw i{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);display:block}'+
-'.mk-b p{margin:0;font-size:13px;color:var(--ink-2)}'+
+'.mk-sw{display:flex;gap:5px;flex:none} .mk-sw i{width:22px;height:22px;border-radius:6px;border:1px solid var(--line-2);display:block}'+
+'.mk-b p{margin:0;font-size:13px;color:var(--ink-2);text-wrap:pretty}'+
 '.mk-bf{display:grid;gap:10px}'+
 '.mk-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}'+
 '.mk-imp{display:flex;gap:10px;align-items:center;flex-wrap:wrap}'+
 '.mk-igg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:60vh;overflow:auto}'+
-'.mk-igm{display:grid;gap:4px;text-align:left;border:1px solid var(--line);border-radius:12px;padding:6px;background:var(--panel);font:inherit;color:inherit;cursor:pointer}'+
-'.mk-igm:hover{border-color:var(--ink-3)} .mk-igm img,.mk-igph{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:var(--sunk);display:block}'+
-'.mk-igm .c{font-size:12.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden} .mk-igm .s{font-size:11.5px;color:var(--ink-2)}'+
+'.mk-igm{display:grid;gap:4px;text-align:left;border:1px solid var(--line);border-radius:12px;padding:6px;background:var(--sunk);font:inherit;color:inherit;cursor:pointer}'+
+'.mk-igm:hover{border-color:var(--line-2);background:var(--hover)} .mk-igm img,.mk-igph{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:var(--sunk);display:block}'+
+'.mk-igm .c{font-size:12.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere} .mk-igm .s{font-size:11.5px;color:var(--ink-2)}'+
 '.mk-rules{display:grid;gap:9px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}'+
 '.mk-rules label{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}'+
 '.mk-rules label.dis{color:var(--ink-3)} .mk-rules label.dis span{font-size:12.5px}'+
 '.mk-rules .f.mk-n{width:64px;padding:4px 8px} .mk-rules .f.mk-w{width:220px;padding:4px 8px}'+
 '.mk-igres{padding:12px 2px;min-height:44px}'+
 '.mk-loc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px;margin:6px 0}'+
+'@media(max-width:640px){.mk-loc{grid-template-columns:minmax(0,1fr) auto;padding-bottom:8px;border-bottom:1px solid var(--line)}.mk-loc .f{grid-column:1}.mk-loc .btn{grid-column:2;grid-row:1/3;align-self:center}}'+
 '.mk-lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;max-height:55vh;overflow:auto}'+
 '.mk-li{position:relative;border-radius:10px;overflow:hidden;background:var(--sunk);aspect-ratio:4/5}'+
 '.mk-li img,.mk-li video{width:100%;height:100%;object-fit:cover;display:block}'+
 '.mk-li .btn{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:0}'+
 '.mk-li .d{position:absolute;left:0;right:0;bottom:0;padding:16px 8px 6px;font-size:11px;line-height:1.3;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.7))}'+
 '.mk-li .t{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;border-radius:99px;padding:2px 8px}'+
-'.mk-cols input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}'
+'.mk-cols input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--field);padding:2px}'+
+/* Reiter mit Symbol und Zähler; Hinweise mit Symbol; Plattform-Symbole in Texten */
+'.mk-tabs button{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.mk-tabs button svg{width:16px;height:16px;flex:none}'+
+'.mk-tabs .count{margin-left:0;font-size:11px;line-height:17px;padding:0 6px}'+
+'.mk-note{display:flex;gap:10px;align-items:flex-start;min-width:0;flex:1 1 260px}.mk-note>svg{width:17px;height:17px;flex:none;margin-top:1px;color:var(--glow-ink)}.mk-note>span{min-width:0;text-wrap:pretty}'+
+':where(:root[data-theme="glas"]) .mk-intro{color:var(--ink-2);text-shadow:0 1px 12px rgba(0,0,0,.65)}'+
+'.mk-pfi{display:inline-flex;align-items:center;gap:6px;min-width:0;vertical-align:middle}.mk-pfi svg{width:15px;height:15px;flex:none}'
 );
 
 /* ---------- Laden ---------- */
@@ -121,7 +140,7 @@ function formHtml(){
     '<label class="fl">Ersatzgewinner<input class="f" type="number" min="0" max="10" data-mkgw="backups" value="'+(+GW.backups||0)+'"></label>'+
     (isKd()?'':'<label class="fl" style="align-content:end"><span style="display:flex;gap:8px;align-items:center;padding:9px 0"><input type="checkbox" data-mkgw="dedupe"'+(GW.dedupe!==false?' checked':'')+'> Doppelte nur einmal</span></label>')+'</div>'+
     (isKd()?'<div class="mk-imp"><span class="small"><b>Teilnehmer:</b> alle kochdu-Registrierungen vom '+kdDay(GW.source.from)+' bis '+kdDay(GW.source.to)+(GW.source.verifiedOnly?' · nur bestätigte E-Mail-Adressen':'')+' · Mitarbeiter- und Admin-Konten sind nie dabei</span> <button type="button" class="link" data-act="mkkdimp">ändern</button> <button type="button" class="link" data-act="mkkdclear">entfernen</button></div>':
-    '<div class="mk-imp"><button type="button" class="btn" data-act="mkigimp">'+F.svg("mig")+' Aus Instagram-Beitrag laden</button>'+(GW.brand==="kochdu"?'<button type="button" class="btn" data-act="mkkdimp">'+F.svg("mgift")+' kochdu-Registrierungen</button>':'')+(GW.source?'<span class="muted small">Geladen: <a href="'+esc(GW.source.permalink||"#")+'" target="_blank" rel="noopener">Instagram-Beitrag</a> · '+esc(rulesTxt(GW.source.rules))+(GW.text!==GW.importedText?' · <b>von Hand geändert</b>':'')+' <button type="button" class="link" data-act="mkigclear">entfernen</button></span>':'<span class="muted small">oder Namen unten einfügen</span>')+'</div>'+
+    '<div class="mk-imp"><button type="button" class="btn" data-act="mkigimp">'+F.svg(F.icons.instagram?"instagram":"mig")+' Aus Instagram-Beitrag laden</button>'+(GW.brand==="kochdu"?'<button type="button" class="btn" data-act="mkkdimp">'+F.svg("mgift")+' kochdu-Registrierungen</button>':'')+(GW.source?'<span class="muted small">Geladen: <a href="'+esc(GW.source.permalink||"#")+'" target="_blank" rel="noopener">Instagram-Beitrag</a> · '+esc(rulesTxt(GW.source.rules))+(GW.text!==GW.importedText?' · <b>von Hand geändert</b>':'')+' <button type="button" class="link" data-act="mkigclear">entfernen</button></span>':'<span class="muted small">oder Namen unten einfügen</span>')+'</div>'+
     '<label class="fl">Teilnehmer<textarea class="f mk-ta" data-mkgw="text" spellcheck="false" placeholder="@lisa.montafon\n@markus_bludenz\nAnna Huber\n…">'+esc(GW.text)+'</textarea></label>')+
     '<div class="mk-count" id="mkCount">'+countHtml()+'</div>'+
     '<div class="mk-row2">'+(isKd()?'<span></span>':'<label class="fl">Nicht teilnehmen (eigene Konten)<textarea class="f" rows="2" data-mkgw="exclude" placeholder="@kochdu.at">'+esc(GW.exclude)+'</textarea></label>')+
@@ -137,9 +156,9 @@ function vidHtml(d){
     '<a class="btn" href="'+base+'&kind=cover&dl=1" download>'+F.svg("mdl")+' Titelbild (4:5)</a>'+
     '<a class="btn" href="/admin/api/mkt/giveaway/protocol?id='+encodeURIComponent(d.id)+'" download>'+F.svg("mdl")+' Protokoll</a>'+
     '<span class="muted small">'+(v.duration?String(v.duration).replace(".",",")+' s · ':'')+'1080×1920 · für Reel, Story, TikTok, Shorts</span>'+
-    (d.postId?'<button type="button" class="btn" data-act="mktab:planer">Im Planer ansehen</button>':'<button type="button" class="btn" data-act="mkgwpost:'+esc(d.id)+'">'+F.svg("mkt")+' Als Reel einplanen</button>')+
-    '<button type="button" class="btn sm" data-act="mkrevideo:'+esc(d.id)+'">Video neu erzeugen</button></div></div>';
-  if(v.status==="fehler") return '<div class="notice"><span><b>Video fehlgeschlagen:</b> '+esc(v.error||"unbekannt")+'</span><button type="button" class="btn sm" data-act="mkrevideo:'+esc(d.id)+'">Nochmal versuchen</button></div>'+
+    (d.postId?'<button type="button" class="btn" data-act="mktab:planer">'+F.svg("kal")+' Im Planer ansehen</button>':'<button type="button" class="btn" data-act="mkgwpost:'+esc(d.id)+'">'+F.svg("mkt")+' Als Reel einplanen</button>')+
+    '<button type="button" class="btn sm" data-act="mkrevideo:'+esc(d.id)+'">'+F.svg("refresh")+' Video neu erzeugen</button></div></div>';
+  if(v.status==="fehler") return '<div class="notice"><span><b>Video fehlgeschlagen:</b> '+esc(v.error||"unbekannt")+'</span><button type="button" class="btn sm" data-act="mkrevideo:'+esc(d.id)+'">'+F.svg("refresh")+' Nochmal versuchen</button></div>'+
     '<a class="btn" href="/admin/api/mkt/giveaway/protocol?id='+encodeURIComponent(d.id)+'" download>'+F.svg("mdl")+' Protokoll</a>';
   return '<div class="mk-vid"><div class="mk-spin"><div><i></i>'+(v.status==="läuft"?'Video wird erstellt …<br><span class="small">dauert etwa 20–40 Sekunden</span>':'Video wartet …')+'</div></div><div class="mk-vacts">'+
     '<a class="btn" href="/admin/api/mkt/giveaway/protocol?id='+encodeURIComponent(d.id)+'" download>'+F.svg("mdl")+' Protokoll</a></div></div>';
@@ -155,7 +174,7 @@ function resHtml(){
     (d.winnerCodes?'<span class="muted small">kochdu-Registrierungen '+kdDay(d.source&&d.source.from)+' – '+kdDay(d.source&&d.source.to)+(d.winnerFull?' · Vor- und Nachname (auch im Video); „Kontakt“ zeigt die E-Mail-Adresse':' · nur Vornamen; „Kontakt“ zeigt Name und E-Mail-Adresse')+' nur dir</span>':'')+'</div>'+
     vidHtml(d)+
     '<div class="mk-meta"><span>'+d.count.toLocaleString("de-AT")+' gültige Teilnahmen'+(d.dupes?' · '+d.dupes+' doppelte entfernt':'')+(d.excluded?' · '+d.excluded+' ausgeschlossen':'')+'</span><span>Prüfsumme der Liste: <code>'+esc(d.hash.slice(0,24))+'…</code></span></div>'+
-    '<div><button type="button" class="btn sm danger" data-act="mkdel:'+esc(d.id)+'">Auslosung löschen</button></div>'+
+    '<div><button type="button" class="btn sm danger" data-act="mkdel:'+esc(d.id)+'">'+F.svg("trash")+' Auslosung löschen</button></div>'+
     '</div>'+(ds.length>1?'<div class="panel-h" style="border-top:1px solid var(--line);border-bottom:0"><h2>Frühere Auslosungen</h2></div>'+hist:'')+'</section>';
 }
 // Vor- und Nachname (kochdu, nur im Cockpit) – ältere Auslosungen haben nur den Vornamen
@@ -290,10 +309,10 @@ F.action("mkigclear",function(){ GW.source=null; GW.importedText=""; F.render();
 /* ---------- Marken ---------- */
 function swatch(c){ return c?'<i style="background:'+esc(c)+'" title="'+esc(c)+'"></i>':''; }
 function brandsHtml(){
-  return '<p class="muted" style="margin:0 0 12px">Das Profil jeder App ist die Grundlage für Videos und Posts: Farben, Logo, Tonfall, Zielgruppe und Hashtags.</p><div class="mk-brands">'+(ST.brands||[]).map(function(b){ var c=b.colors||{};
+  return '<p class="muted mk-intro" style="margin:0 0 12px">Das Profil jeder App ist die Grundlage für Videos und Posts: Farben, Logo, Tonfall, Zielgruppe und Hashtags.</p><div class="mk-brands">'+(ST.brands||[]).map(function(b){ var c=b.colors||{};
     return '<div class="panel mk-b"><div class="lg'+(b.logoBg==="dark"?' dark':'')+'">'+(b.logo||b.logoUploaded?'<img src="/admin/api/mkt/logo?key='+encodeURIComponent(b.key)+'&v='+encodeURIComponent(b.logoUploaded?"u":"d")+'" alt="" onerror="this.replaceWith(document.createTextNode(\'kein Logo\'))">':'<span class="muted small">kein Logo – bitte hochladen</span>')+'</div>'+
       '<div class="row-between"><b>'+esc(b.name)+'</b><div class="mk-sw">'+swatch(c.primary)+swatch(c.dark)+swatch(c.light)+swatch(c.accent)+'</div></div>'+
-      '<p>'+esc(b.oneLiner||"")+'</p><div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="mkbrand:'+esc(b.key)+'">Bearbeiten</button><button type="button" class="btn sm" data-act="mklib:'+esc(b.key)+'">Bilder & Videos</button><button type="button" class="btn sm" data-act="mkloc:'+esc(b.key)+'">Standorte'+((b.locations||[]).length?' ('+b.locations.length+')':'')+'</button></div></div>'; }).join("")+'</div>';
+      '<p>'+esc(b.oneLiner||"")+'</p><div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="mkbrand:'+esc(b.key)+'">'+F.svg("edit")+' Bearbeiten</button><button type="button" class="btn sm" data-act="mklib:'+esc(b.key)+'">'+F.svg("upload")+' Bilder &amp; Videos</button><button type="button" class="btn sm" data-act="mkloc:'+esc(b.key)+'">'+F.svg("pin")+' Standorte'+((b.locations||[]).length?' ('+b.locations.length+')':'')+'</button></div></div>'; }).join("")+'</div>';
 }
 function lines(a){ return (a||[]).join("\n"); }
 F.action("mkbrand",function(key){
@@ -333,10 +352,10 @@ function libPaint(items,j){
   var b=brandOf(LIBK)||{name:LIBK}, w=j&&j.web;
   F.modal('<div class="row-between"><h2 style="font-size:19px">Bilder & Videos – '+esc(b.name)+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted small" style="margin:4px 0 12px">Daraus nimmt der Planer Fotos für Posts und Hintergründe für Reels. Eigene Fotos (JPG/PNG) und kurze Hochformat-Videos (MP4) machen die Posts persönlicher.</p>'+
-    (j&&j.url?'<div class="notice" style="margin-bottom:12px"><span>🌐 Website '+esc(j.url.replace(/^https:\/\/(www\.)?/,""))+': '+(w&&w.at?(w.error?'<span class="bad-t">'+esc(w.error)+'</span>':w.pages+' Seiten und '+w.images+' Fotos eingelesen')+' · Stand '+new Date(w.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):'noch nicht eingelesen')+' – die KI nutzt Texte und Fotos der Website.</span><button type="button" class="btn sm" data-act="mkweb">Jetzt neu einlesen</button></div>':'')+
+    (j&&j.url?'<div class="notice" style="margin-bottom:12px"><span class="mk-note">'+F.svg("globe")+'<span>Website '+esc(j.url.replace(/^https:\/\/(www\.)?/,""))+': '+(w&&w.at?(w.error?'<span class="bad-t">'+esc(w.error)+'</span>':w.pages+' Seiten und '+w.images+' Fotos eingelesen')+' · Stand '+new Date(w.at).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):'noch nicht eingelesen')+' – die KI nutzt Texte und Fotos der Website.</span></span><button type="button" class="btn sm" data-act="mkweb">'+F.svg("refresh")+' Jetzt neu einlesen</button></div>':'')+
     (items?(items.length?'<div class="mk-lib">'+items.map(function(x){ var src="/admin/api/mkt/library-file?brand="+encodeURIComponent(LIBK)+"&id="+encodeURIComponent(x.id);
       return '<div class="mk-li">'+(x.kind==="clip"?'<video src="'+src+'" muted playsinline preload="metadata"></video><span class="t">Video</span>':'<img src="'+src+'" alt="'+esc(x.desc||"")+'" title="'+esc((x.desc||"Noch ohne Beschreibung – die KI beschreibt neue Fotos beim nächsten Generieren")+(x.lic?"\nLizenz: "+x.lic:""))+'" loading="lazy">'+(x.lic?'<span class="t">Envato</span>':'')+(x.desc?'<span class="d">'+esc(x.desc)+'</span>':''))+'<button type="button" class="btn icon sm" data-act="mklibdel:'+esc(x.id)+'" title="Entfernen" aria-label="Entfernen">'+F.svg("close")+'</button></div>'; }).join("")+'</div>':'<p class="muted">Noch keine Bilder.</p>'):'<p class="muted">Lade …</p>')+
-    '<div class="foot"><label class="btn"><input type="file" id="mkLibUp" accept="image/jpeg,image/png,video/mp4" multiple hidden> Hochladen</label><label class="btn" title="ZIP-Download von Envato: Fotos und Videos landen hier, Sounds bei der Musik – mit Lizenz-Nachweis"><input type="file" id="mkEnvUp" accept=".zip,application/zip" multiple hidden> Envato-ZIP importieren</label><span class="muted small" id="mkLibMsg"></span><button type="button" class="btn" data-closemodal>Fertig</button></div>',"wide");
+    '<div class="foot"><label class="btn"><input type="file" id="mkLibUp" accept="image/jpeg,image/png,video/mp4" multiple hidden>'+F.svg("upload")+' Hochladen</label><label class="btn" title="ZIP-Download von Envato: Fotos und Videos landen hier, Sounds bei der Musik – mit Lizenz-Nachweis"><input type="file" id="mkEnvUp" accept=".zip,application/zip" multiple hidden>'+F.svg("box")+' Envato-ZIP importieren</label><span class="muted small" id="mkLibMsg"></span><button type="button" class="btn" data-closemodal>Fertig</button></div>',"wide");
 }
 function libLoad(){ api("/admin/api/mkt/library?brand="+encodeURIComponent(LIBK)).then(function(j){ if(LIBK) libPaint(j&&j.ok?j.items:[],j); }); }
 F.action("mkweb",function(){ F.toast("Website wird eingelesen – das dauert bis zu einer Minute …"); api("/admin/api/mkt/website",{brand:LIBK}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); F.toast("Website eingelesen"); libLoad(); }); });
@@ -362,7 +381,7 @@ function locRow(l){ return '<div class="mk-loc"><input class="f" data-ln placeho
 F.action("mkloc",function(k){ var b=brandOf(k)||{}; var ls=b.locations||[];
   F.modal('<form data-form="mkloc" data-key="'+esc(k)+'" class="mk-bf"><div class="row-between"><h2 style="font-size:19px">Standorte – '+esc(b.name||k)+'</h2>'+F.btnClose()+'</div>'+
     '<p class="muted small" style="margin:0">So findest du die ID: auf instagram.com nach dem Ort suchen (z. B. „Schruns“), den Ort öffnen und den Link aus der Adresszeile hier einfügen (…/explore/locations/<b>123456789</b>/…). Der erste Standort ist der Standard; die KI wählt pro Post den passenden aus deiner Liste.</p>'+
-    '<div id="mkLocs">'+(ls.length?ls.map(locRow).join(""):locRow(null))+'</div><div><button type="button" class="btn sm" data-act="mklocadd">+ Standort</button></div>'+
+    '<div id="mkLocs">'+(ls.length?ls.map(locRow).join(""):locRow(null))+'</div><div><button type="button" class="btn sm" data-act="mklocadd">'+F.svg("plus")+' Standort</button></div>'+
     '<div class="foot"><span class="bad-t small" id="mkLocErr"></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></span></div></form>',"narrow"); });
 F.action("mklocadd",function(){ var c=document.getElementById("mkLocs"); if(c) c.insertAdjacentHTML("beforeend",locRow(null)); });
 F.action("mklocdel",function(a,el){ var r=el&&el.closest(".mk-loc"); if(r) r.remove(); });
@@ -370,11 +389,15 @@ F.form("mkloc",function(form){ var k=form.getAttribute("data-key"), list=Array.p
   api("/admin/api/mkt/locations",{brand:k,locations:list}).then(function(j){ if(!j||!j.ok){ var e=document.getElementById("mkLocErr"); if(e) e.textContent=(j&&j.error)||"Fehler"; return; } ST.brands=ST.brands.map(function(b){ return b.key===k?Object.assign({},b,{locations:j.locations[k]||[]}):b; }); if(F.mktPlanReload) F.mktPlanReload(); F.closeModal(); F.toast("Standorte gespeichert"); F.render(); }); });
 
 /* ---------- Seite ---------- */
-/* Reiter: {id,label,order,sub,render,right} – Planer/Kanäle kommen aus zmkplan.js */
+/* Reiter: {id,label,icon,order,sub,render,right,count} – Planer/Kanäle kommen aus zmkplan.js, Posteingang aus zmkinbox.js */
 var TABS=F.mktTabs=F.mktTabs||[];
 F.mktTab=function(t){ TABS.push(t); TABS.sort(function(a,b){ return a.order-b.order; }); };
-F.mktTab({id:"gewinnspiel",label:"Gewinnspiel",order:2,sub:"Fair auslosen und ein Video für Reel, Story und TikTok bekommen",render:function(){ return gwHtml(); }});
-F.mktTab({id:"marken",label:"Marken",order:4,sub:"Profile deiner Apps",render:function(){ return brandsHtml(); }});
+F.mktTab({id:"gewinnspiel",label:"Gewinnspiel",icon:"mgift",order:2,sub:"Fair auslosen und ein Video für Reel, Story und TikTok bekommen",render:function(){ return gwHtml(); }});
+F.mktTab({id:"marken",label:"Marken",icon:"tag",order:4,sub:"Profile deiner Apps",render:function(){ return brandsHtml(); }});
+function tabCount(t){ try{ return t.count?(+t.count()||0):0; }catch(e){ return 0; } }
+function tabBtn(t,on){ var n=tabCount(t); return '<button type="button" data-act="mktab:'+t.id+'" aria-current="'+on+'">'+(t.icon?F.svg(t.icon):'')+'<span>'+t.label+'</span>'+(n?'<span class="count"'+(t.countTitle?' title="'+esc(t.countTitle(n))+'"':'')+'>'+n+'</span>':'')+'</button>'; }
+/* Zähler eines Reiters ohne Neuaufbau der Seite nachziehen (z. B. wenn ungelesene Kommentare nachgeladen sind) */
+F.mktTabPaint=function(id){ var t=TABS.find(function(x){ return x.id===id; }), b=document.querySelector('.mk-tabs [data-act="mktab:'+id+'"]'); if(!t||!b) return; b.outerHTML=tabBtn(t,b.getAttribute("aria-current")==="true"); };
 F.mktState=function(){ return ST; };
 F.mktReload=function(){ return load(); };
 function render(){
@@ -382,7 +405,7 @@ function render(){
   if(!ST.ok) return F.head("Marketing","")+'<div class="notice"><span>'+esc(ST.error||"Fehler")+'</span><button type="button" class="btn sm" data-act="mkreload">Erneut versuchen</button></div>';
   var tab=TABS.find(function(t){ return t.id===UI.mktTab; })||TABS[0];
   var warn=ST.render&&!ST.render.video?'<div class="notice" style="margin-bottom:12px"><span>Die Video-Erzeugung ist am Server noch nicht bereit (ffmpeg fehlt).</span></div>':'';
-  return F.head("Marketing",tab.sub||"",tab.right?tab.right():"")+'<nav class="subnav" aria-label="Marketing" style="margin-bottom:14px">'+TABS.map(function(t){ return '<button type="button" data-act="mktab:'+t.id+'" aria-current="'+(t.id===tab.id)+'">'+t.label+'</button>'; }).join("")+'</nav>'+warn+tab.render();
+  return F.head("Marketing",tab.sub||"",tab.right?tab.right():"")+'<nav class="subnav mk-tabs" aria-label="Marketing" style="margin-bottom:14px">'+TABS.map(function(t){ return tabBtn(t,t.id===tab.id); }).join("")+'</nav>'+warn+tab.render();
 }
 F.action("mktab",function(t){ UI.mktTab=t; F.ls("fsc_mkt_tab",t); if(t==="gewinnspiel"||t==="marken") load(); if((t==="planer"||t==="kanaele")&&F.mktPlanReload) F.mktPlanReload(); F.render(); });
 F.action("mkreload",function(){ ST=null; F.render(); });

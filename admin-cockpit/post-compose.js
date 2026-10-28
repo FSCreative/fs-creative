@@ -154,19 +154,24 @@ function openCompose(title,to,subj,bodyHtml,opts){
   if(C.open){ saveIfMeaningful(true); }
   var accs=accList(), want=opts.account||(UI.macct&&UI.macct!=="all"?UI.macct:M.primaryAcct());
   if(!accs.some(function(a){ return a.key===want; })) want=accs[0].key;
-  C={open:true,atts:(opts.atts||[]).slice(),title:title==="Verfassen"?"Neue Nachricht":(title||"Neue Nachricht"),inReplyTo:opts.inReplyTo||"",source:opts.source||null,draftId:opts.draftId||null,account:want,autoT:null};
+  C={open:true,atts:(opts.atts||[]).slice(),title:title==="Verfassen"?"Neue Nachricht":(title||"Neue Nachricht"),inReplyTo:opts.inReplyTo||"",source:opts.source||null,draftId:opts.draftId||null,account:want,autoT:null,
+    rc:{mcTo:splitAddr(to),mcCc:splitAddr(opts.cc),mcBcc:splitAddr(opts.bcc)}};
   var sig=getSig(want), raw=!!opts.raw;
   var sigOn=raw?(opts.sigOn!==false&&/class="fsig"/.test(bodyHtml||"")):sig.on;
   var html=raw?sanitize(bodyHtml||""):('<div><br></div>'+(sigOn?sigBlock(want):'')+(bodyHtml||""));
   if(opts.lead!=null&&!raw) html='<div>'+textToHtml(opts.lead)+'</div>'+(sigOn?sigBlock(want):'')+(bodyHtml||"");
   var h=host(), showCc=!!(opts.cc||opts.bcc);
+  /* Empfänger als Chips: fertige Adressen stehen in C.rc, im Eingabefeld steht nur die gerade getippte */
+  var rcf=function(id,ph){ return '<span class="mcin" data-rcf="'+id+'"><span class="mcchips" id="'+id+'C"></span><input class="f" id="'+id+'" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email" enterkeyhint="next"'+(ph?' placeholder="'+esc(ph)+'"':'')+'></span>'; };
   h.innerHTML='<div class="dialog mcd" id="mcDlg">'+
-    '<div class="row-between"><h2 id="mcTitle" style="font-size:19px">'+esc(C.title)+'</h2><span class="row"><span class="muted" id="mcSaved">'+(opts.draftId?"Entwurf":"")+'</span><button type="button" class="btn icon" data-act="mcclose" title="Schließen – wird als Entwurf gespeichert (Esc)" aria-label="Schließen">'+F.svg("close")+'</button></span></div>'+
+    '<div class="mchead"><h2 id="mcTitle">'+esc(C.title)+'</h2><span id="mcSaved">'+(opts.draftId?"Entwurf":"")+'</span>'+
+      '<button type="button" class="btn primary mcsend-top" data-act="mcsend">'+M.ic("send")+' Senden</button>'+
+      '<button type="button" class="btn icon mcx" data-act="mcclose" title="Schließen – wird als Entwurf gespeichert (Esc)" aria-label="Schließen">'+F.svg("close")+'</button></div>'+
     '<div class="mcfields">'+
       (accs.length>1?'<div class="mcf"><label for="mcFrom">Von</label><select class="f" id="mcFrom">'+accs.map(function(a){ return '<option value="'+esc(a.key)+'"'+(a.key===want?" selected":"")+'>'+esc(a.label||a.key)+(a.user?' &lt;'+esc(a.user)+'&gt;':'')+'</option>'; }).join("")+'</select></div>':'')+
-      '<div class="mcf"><label for="mcTo">An</label><span class="mcin"><input class="f" id="mcTo" autocomplete="off" placeholder="name@beispiel.at (mehrere mit Komma)" value="'+esc(to||"")+'"></span>'+(showCc?'':'<button type="button" class="link" data-act="mccc" id="mcCcT">Cc/Bcc</button>')+'</div>'+
-      '<div class="mcf mccc"'+(showCc?'':' hidden')+'><label for="mcCc">Cc</label><span class="mcin"><input class="f" id="mcCc" autocomplete="off" value="'+esc(opts.cc||"")+'"></span></div>'+
-      '<div class="mcf mccc"'+(showCc?'':' hidden')+'><label for="mcBcc">Bcc</label><span class="mcin"><input class="f" id="mcBcc" autocomplete="off" value="'+esc(opts.bcc||"")+'"></span></div>'+
+      '<div class="mcf"><label for="mcTo">An</label>'+rcf("mcTo","Name oder Adresse")+(showCc?'':'<button type="button" class="link" data-act="mccc" id="mcCcT">Cc/Bcc</button>')+'</div>'+
+      '<div class="mcf mccc"'+(showCc?'':' hidden')+'><label for="mcCc">Cc</label>'+rcf("mcCc","")+'</div>'+
+      '<div class="mcf mccc"'+(showCc?'':' hidden')+'><label for="mcBcc">Bcc</label>'+rcf("mcBcc","")+'</div>'+
       '<div class="mcf"><label for="mcSubj">Betreff</label><input class="f" id="mcSubj" autocomplete="off" value="'+esc(subj||"")+'"></div>'+
     '</div>'+
     '<div class="mced-wrap"><div class="mctb" role="toolbar" aria-label="Formatierung">'+
@@ -181,18 +186,40 @@ function openCompose(title,to,subj,bodyHtml,opts){
     '<div class="mcdrop">Dateien hier ablegen</div>'+
     '<div class="err" id="mcErr" role="alert"></div>'+
     '<div class="foot"><span class="row wrap"><button type="button" class="btn icon" data-act="mcdiscard" title="Entwurf verwerfen" aria-label="Entwurf verwerfen">'+M.ic("trash")+'</button><label class="row small" style="gap:6px"><input type="checkbox" id="mcSigOn"'+(sigOn?" checked":"")+'> Signatur</label><button type="button" class="link" data-act="mcsigedit">bearbeiten</button></span>'+
-    '<span class="row wrap"><button type="button" class="btn" data-act="mcdraft">Entwurf</button><button type="button" class="btn" data-act="mcattach">'+M.ic("clip")+' Anhang</button><button type="button" class="btn primary" data-act="mcsend">Senden <span class="kbd hide-m">⌘↵</span></button></span></div>'+
+    '<span class="row wrap"><button type="button" class="btn" data-act="mcdraft">Entwurf</button><button type="button" class="btn" data-act="mcattach">'+M.ic("clip")+' Anhang</button><button type="button" class="btn primary mcsend-bot" data-act="mcsend">'+M.ic("send")+' Senden <span class="kbd hide-m">⌘↵</span></button></span></div>'+
     '<div class="mcac" id="mcAc" role="listbox" hidden></div>'+
   '</div>';
   $("mcBody").innerHTML=html;
+  ["mcTo","mcCc","mcBcc"].forEach(rcPaint);
   h.hidden=false; document.body.classList.add("mc-open");
   renderAtts();
   if(opts.fwdFrom) loadFwdAtts(opts.fwdFrom);
   C.initial=sigNow();
-  setTimeout(function(){ var t=$("mcTo"), b=$("mcBody"); if(!t) return; if(!t.value&&!raw){ t.focus(); return; } if(b){ b.focus(); try{ var r=document.createRange(); r.selectNodeContents(b); r.collapse(true); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }catch(e){} } },40);
+  setTimeout(function(){ var t=$("mcTo"), b=$("mcBody"); if(!t) return; if(!C.rc.mcTo.length&&!t.value&&!raw){ t.focus(); return; } if(b){ b.focus(); try{ var r=document.createRange(); r.selectNodeContents(b); r.collapse(true); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }catch(e){} } },40);
 }
 M.openCompose=openCompose;
-function addrs(id){ return String($(id).value||"").replace(/^[\s,;]+|[\s,;]+$/g,"").replace(/\s*[,;]\s*(?=[,;])/g,"").trim(); }
+/* ---------- Empfänger-Chips ---------- */
+function splitAddr(v){ return String(v||"").split(/[,;]/).map(function(x){ return x.trim(); }).filter(Boolean); }
+function validAddr(x){ return /^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/.test(String(x||"").replace(/^.*<([^>]+)>.*$/,"$1")); }
+function rcList(id){ return (C.rc&&C.rc[id])||[]; }
+function rcPaint(id){
+  var h=$(id+"C"); if(!h) return; var names={};
+  contacts().forEach(function(c){ if(c.n) names[c.a.toLowerCase()]=c.n; });
+  h.innerHTML=rcList(id).map(function(a,i){ var ok=validAddr(a), m=a.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/), lbl=m&&m[1]?m[1]:(names[a.toLowerCase()]||a);
+    return '<span class="mcchip'+(ok?"":" bad")+'" title="'+esc(a+(ok?"":" – Adresse prüfen"))+'"><span>'+esc(lbl)+'</span><button type="button" data-act="mcrm:'+id+'|'+i+'" aria-label="'+esc(a)+' entfernen">'+F.svg("close")+'</button></span>'; }).join("");
+}
+/* Getippte Adressen zu Chips machen: bei Komma/Strichpunkt sofort, sonst (all) auch den letzten Teil – beim Verlassen nur, wenn er wie eine Adresse aussieht */
+function rcCommit(inp,all){
+  if(!inp||!C.rc||!C.rc[inp.id]) return false;
+  var parts=String(inp.value||"").split(/[,;]/), last=parts.pop();
+  if(all==="valid"){ if(validAddr(last)){ parts.push(last); last=""; } } else if(all){ parts.push(last); last=""; }
+  var add=parts.map(function(x){ return x.trim(); }).filter(Boolean); if(!add.length) return false;
+  var have=C.rc[inp.id].map(function(x){ return x.toLowerCase(); });
+  add.forEach(function(a){ if(have.indexOf(a.toLowerCase())<0){ C.rc[inp.id].push(a); have.push(a.toLowerCase()); } });
+  inp.value=String(last||"").replace(/^\s+/,""); rcPaint(inp.id); return true;
+}
+F.action("mcrm",function(v){ var i=v.lastIndexOf("|"), id=v.slice(0,i), n=+v.slice(i+1); if(!C.rc||!C.rc[id]) return; C.rc[id].splice(n,1); rcPaint(id); var inp=$(id); if(inp) inp.focus(); });
+function addrs(id){ var el=$(id); return rcList(id).concat(splitAddr(el&&el.value)).join(", "); }
 function data(){ var b=$("mcBody"); return {account:composeAcct(),to:addrs("mcTo"),cc:addrs("mcCc"),bcc:addrs("mcBcc"),subject:($("mcSubj").value||"").trim(),html:b.innerHTML,text:(b.innerText||"").trim()}; }
 function sigNow(){ var d=data(); return d.to+"|"+d.cc+"|"+d.bcc+"|"+d.subject+"|"+d.html+"|"+C.atts.length; }
 function dirty(){ return C.open&&sigNow()!==C.initial; }
@@ -265,8 +292,8 @@ function acTok(v){ var p=v.lastIndexOf(","), q=v.lastIndexOf(";"), k=Math.max(p,
 function acShow(input){
   var box=$("mcAc"); if(!box) return; var t=acTok(input.value).tok.toLowerCase();
   if(t.length<2){ acHide(); return; }
-  var have=input.value.toLowerCase();
-  AC.items=contacts().filter(function(c){ return (c.a.toLowerCase().indexOf(t)>-1||(c.n||"").toLowerCase().indexOf(t)>-1)&&have.indexOf(c.a.toLowerCase()+",")<0; }).slice(0,6);
+  var have=rcList(input.id).map(function(x){ return x.toLowerCase(); });
+  AC.items=contacts().filter(function(c){ return (c.a.toLowerCase().indexOf(t)>-1||(c.n||"").toLowerCase().indexOf(t)>-1)&&have.indexOf(c.a.toLowerCase())<0; }).slice(0,6);
   if(!AC.items.length){ acHide(); return; }
   AC.input=input; AC.i=0;
   var r=input.getBoundingClientRect(), dr=$("mcDlg").getBoundingClientRect();
@@ -275,14 +302,14 @@ function acShow(input){
   box.hidden=false;
 }
 function acHide(){ var b=$("mcAc"); if(b){ b.hidden=true; b.innerHTML=""; } AC.items=[]; }
-function acPick(i){ var c=AC.items[i], inp=AC.input; if(!c||!inp) return; var t=acTok(inp.value); inp.value=t.pre+c.a+", "; acHide(); inp.focus(); }
+function acPick(i){ var c=AC.items[i], inp=AC.input; if(!c||!inp) return; var t=acTok(inp.value); inp.value=t.pre+c.a+", "; rcCommit(inp,false); acHide(); inp.focus(); }
 F.action("mcac",function(i){ acPick(+i); });
 
 /* ---------- Ereignisse im Verfassen-Fenster ---------- */
 function bindHost(h){
   h.addEventListener("input",function(e){
     var t=e.target;
-    if(t.id==="mcTo"||t.id==="mcCc"||t.id==="mcBcc") acShow(t);
+    if(t.id==="mcTo"||t.id==="mcCc"||t.id==="mcBcc"){ if(/[,;]/.test(t.value)) rcCommit(t,false); acShow(t); }
     clearTimeout(C.autoT); C.autoT=setTimeout(function(){ if(C.open&&dirty()){ var d=data(); if(d.to||d.subject||d.text.length>40) saveDraft(true); } },2500);
   });
   h.addEventListener("keydown",function(e){
@@ -293,8 +320,14 @@ function bindHost(h){
       if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); acHide(); return; }
     }
     if(t.id==="mcLinkUrl"&&e.key==="Enter"){ e.preventDefault(); F.actions.mclinkok(); }
+    if(/^mc(To|Cc|Bcc)$/.test(t.id)){
+      if(e.key==="Enter"&&String(t.value||"").trim()){ e.preventDefault(); rcCommit(t,true); }
+      else if(e.key==="Backspace"&&!t.value&&rcList(t.id).length){ e.preventDefault(); t.value=C.rc[t.id].pop(); rcPaint(t.id); }   /* letzten Chip wieder zum Bearbeiten ins Feld */
+    }
   });
-  h.addEventListener("focusout",function(e){ if(/^mc(To|Cc|Bcc)$/.test(e.target.id)) setTimeout(function(){ var a=document.activeElement; if(!a||!a.closest||!a.closest("#mcAc")) acHide(); },150); });
+  h.addEventListener("focusout",function(e){ var t=e.target; if(/^mc(To|Cc|Bcc)$/.test(t.id)) setTimeout(function(){ var a=document.activeElement; if(!a||!a.closest||!a.closest("#mcAc")){ acHide(); if(C.open&&document.body.contains(t)) rcCommit(t,"valid"); } },150); });
+  /* Klick ins Empfängerfeld (neben die Chips) setzt den Cursor ins Eingabefeld */
+  h.addEventListener("click",function(e){ var f=e.target.closest&&e.target.closest(".mcin"); if(!f||e.target.closest("button,input")) return; var i=f.querySelector("input"); if(i) i.focus(); });
   h.addEventListener("change",function(e){
     var t=e.target;
     if(t.id==="mcFile"){ addFiles(t.files); t.value=""; }
@@ -362,39 +395,73 @@ F.compose=function(pre){
 };
 F.action("compose",function(){ F.compose({}); });
 
+/* Verfassen: Glas-Dialog (Shell), Empfänger als Chips, Editor als weißes „Papier“ (so sieht es die Empfängerin), Senden gut sichtbar */
 F.css([
 "#mcompose{z-index:65}",
 "body.mc-open{overflow:hidden}",
-".mcd{width:min(860px,100%);position:relative;gap:12px}",
+".mcd{width:min(880px,100%);position:relative;gap:12px}",
+".mchead{display:flex;align-items:center;gap:10px;min-width:0}",
+".mchead h2{font-size:19px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+"#mcSaved{font-size:12.5px;color:var(--ink-3);white-space:nowrap}",
+".mcsend-top{display:none}",
+".mcd .btn svg{width:16px;height:16px}",
 ".mcfields{display:grid;gap:8px}",
-".mcf{display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:8px;align-items:center}",
-".mcf>label{font-size:13px;color:var(--ink-2)}",
+".mcf{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:8px;align-items:center}",
+".mcf>label{font-size:13px;color:var(--ink-2);font-weight:600}",
 ".mcf>.mcin,.mcf>select,.mcf>#mcSubj{grid-column:2/3}",
 ".mcf>#mcSubj,.mcf>select{grid-column:2/4}",
-".mcin{position:relative;min-width:0}",
-".mced-wrap{display:grid}",
-".mctb{display:flex;flex-wrap:wrap;gap:2px;border:1px solid var(--line);border-bottom:0;border-radius:10px 10px 0 0;padding:4px;background:var(--sunk)}",
-".mctb button{border:0;background:none;border-radius:6px;padding:4px 9px;font-size:13px;color:var(--ink-2)}",
-".mctb button:hover{background:var(--panel);color:var(--ink)}",
-".mctb .tsep{width:1px;background:var(--line);margin:3px 4px}",
-".mclink{display:flex;gap:6px;padding:6px;border:1px solid var(--line);border-bottom:0;background:var(--sunk)}",
-".mced{min-height:260px;max-height:48vh;overflow-y:auto;border:1px solid var(--line);border-radius:0 0 10px 10px;padding:12px 14px;background:#fff;color:#1b2420;outline:none;overflow-wrap:anywhere;font-size:14.5px;line-height:1.55}",
+".mcf .link{white-space:nowrap}",
+".mcin{position:relative;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:4px 6px;min-height:40px;border:1px solid var(--line);border-radius:10px;background:var(--field,var(--panel));cursor:text}",
+".mcin:focus-within{border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
+".mcin .mcchips{display:contents}",
+".mcin input.f{flex:1 1 140px;width:auto;min-width:120px;min-height:30px;padding:4px;border:0!important;background:none!important;box-shadow:none!important;border-radius:6px}",
+".mcchip{display:inline-flex;align-items:center;gap:2px;max-width:100%;min-height:28px;padding:1px 2px 1px 10px;border-radius:99px;background:var(--glow-soft);color:var(--glow-ink);font-size:13px;font-weight:600}",
+".mcchip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
+".mcchip button{border:0;background:none;color:inherit;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:none;opacity:.7;padding:0}",
+".mcchip button:hover{opacity:1;background:var(--hover,var(--sunk))}.mcchip svg{width:12px;height:12px}",
+".mcchip.bad{background:var(--bad-soft);color:var(--bad)}",
+".mced-wrap{display:grid;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}",
+".mced-wrap:focus-within{border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
+".mctb{display:flex;flex-wrap:wrap;gap:2px;padding:5px;background:var(--panel-solid,var(--sunk));border-bottom:1px solid var(--line)}",
+".mctb button{border:0;background:none;border-radius:8px;padding:4px 10px;min-height:32px;font-size:13px;color:var(--ink-2);white-space:nowrap}",
+".mctb button:hover{background:var(--hover,var(--sunk));color:var(--ink)}",
+".mctb .tsep{width:1px;background:var(--line);margin:4px 4px;flex:none}",
+".mclink{display:flex;gap:6px;padding:6px;background:var(--panel-solid,var(--sunk));border-bottom:1px solid var(--line)}",
+".mced{min-height:260px;max-height:48vh;overflow-y:auto;padding:16px 18px;background:#fff;color:#1b2420;outline:none;overflow-wrap:anywhere;font-size:14.5px;line-height:1.55}",
 ".mced{overflow-x:auto}",
-".mced.small{min-height:110px;border-radius:10px}",
-".mced:focus{border-color:var(--ink-3)}",
+".mced.small{min-height:110px;border:1px solid var(--line);border-radius:12px}",
+".mced.small:focus{border-color:var(--glow)}",
 ".mced blockquote{margin:6px 0 6px 4px;padding-left:10px;border-left:3px solid #dcdfd8;color:#56605a}",
 ".mced img{max-width:100%;height:auto}",
 ".mced table{width:auto;font-size:inherit}",
 ".mced td,.mced th{padding:revert;border-bottom:0;vertical-align:revert}",
 ".mced a{color:#2c6e8f}",
 ".mced .qh{color:#56605a;font-size:13px}",
-".mcsig{border:1px dashed var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}",
+".mcsig{border:1px dashed var(--line);border-radius:12px;padding:10px;display:grid;gap:8px}",
+".mcd .foot .mcsend-bot{min-height:40px;padding:0 18px;font-size:14px}",
+".mcsend-bot .kbd{background:transparent;border-color:currentColor;color:inherit;opacity:.55;margin-left:2px}",
 ".mcdrop{display:none}",
 "#mcompose.dragover .mcdrop{display:grid;place-items:center;position:absolute;inset:8px;border:2px dashed var(--glow);border-radius:14px;background:var(--glow-soft);color:var(--glow-ink);font-weight:700;font-size:18px;z-index:3;pointer-events:none}",
-".mcac{position:absolute;z-index:4;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:4px;display:grid;max-width:calc(100% - 20px)}",
-".mcac button{border:0;background:none;text-align:left;padding:7px 10px;border-radius:7px;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-".mcac button[aria-selected=true],.mcac button:hover{background:var(--sunk)}",
+".mcac{position:absolute;z-index:4;background:var(--panel-solid,var(--panel));border:1px solid var(--line-2,var(--line));border-radius:12px;box-shadow:var(--shadow-pop);padding:4px;display:grid;max-width:calc(100% - 20px)}",
+".mcac button{border:0;background:none;text-align:left;padding:8px 10px;min-height:38px;border-radius:8px;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+".mcac button[aria-selected=true],.mcac button:hover{background:var(--hover,var(--sunk))}",
 ".att.bad{border-color:var(--bad);color:var(--bad)}",
-"@media (max-width:900px){#mcompose{padding:0;place-items:stretch}#mcompose .mcd{width:100%;max-height:100%;height:100%;border-radius:0;border:0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}.mced{min-height:42vh;max-height:none}.mcf{grid-template-columns:50px minmax(0,1fr) auto}}"
+"@media (max-width:900px){",
+"  #mcompose{padding:0;place-items:stretch}",
+"  #mcompose .mcd{width:100%;max-width:none;max-height:100%;height:100%;border-radius:0;border:0;padding:calc(10px + env(safe-area-inset-top,0px)) 14px calc(14px + env(safe-area-inset-bottom,0px));animation:none}",
+"  #mcompose .mcd:before{display:none}",
+"  .mchead .mcx{order:-1;width:44px;height:44px;border-radius:50%}",
+"  .mchead h2{font-size:17px}",
+"  #mcSaved{display:none}",
+"  .mcsend-top{display:inline-flex;min-height:44px;padding:0 18px;border-radius:99px;font-size:15px}",
+"  .mcd .foot .mcsend-bot{display:none}",
+"  #mcompose .foot{background:var(--panel-solid,var(--panel))}",
+"  #mcompose .foot .btn.icon{flex:none;width:46px;padding:0;justify-content:center}",
+"  .mced{min-height:42vh;max-height:none}",
+"  .mcf{grid-template-columns:50px minmax(0,1fr) auto}",
+"  .mcin{min-height:46px}",
+"  .mcchip{min-height:32px;font-size:14px}.mcchip button{width:30px;height:30px}",
+"  .mctb{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.mctb::-webkit-scrollbar{display:none}.mctb button{flex:none;min-height:38px}",
+"}"
 ].join("\n"));
 })();

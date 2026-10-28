@@ -57,7 +57,9 @@ module.exports = function (D) {
     if (!r.ok) {
       const m = (j.error && (j.error.message || j.error_description || j.error)) || j.error_description || j._text || "";
       const hint = r.status === 403 && /has not been used|disabled|not enabled/i.test(String(m)) ? " – die Google-Schnittstelle ist im Google-Cloud-Projekt noch nicht aktiviert." : r.status === 403 && /business/i.test(url) && /quota|permission/i.test(String(m)) ? " – Google hat den Zugang zum Unternehmensprofil noch nicht freigeschaltet (Antrag nötig)." : "";
-      throw fail(r.status === 401 ? 401 : 502, (r.status === 401 ? "Google-Anmeldung abgelaufen – bitte neu verbinden. " : "Google meldet " + r.status + ": ") + String(m).slice(0, 200) + hint);
+      // Token-Erneuerung abgelehnt (400 invalid_grant: widerrufen, Passwort geändert, „Testing“-Zustimmung nach 7 Tagen) = ebenfalls neu verbinden
+      const auth = r.status === 401 || (r.status === 400 && /invalid_grant|invalid_token|unauthorized_client/i.test(txt));
+      throw Object.assign(fail(auth ? 401 : 502, (auth ? "Google-Anmeldung abgelaufen – bitte neu verbinden. " : "Google meldet " + r.status + ": ") + String(m).slice(0, 200) + hint), { auth });
     }
     return j;
   }
@@ -227,22 +229,28 @@ module.exports = function (D) {
   async function gTok(email) {
     const L = S().gAcc, g = (email && L.find(x => x.email === email)) || L[0] || {}, t = g.tok && unseal(g.tok); if (!t) throw fail(400, "Google ist nicht verbunden.");
     if (t.exp - Date.now() > 120e3) return t.access;
-    const a = gApp(), r = await api("POST", B.gToken, { form: { client_id: a.clientId, client_secret: a.secret, refresh_token: t.refresh, grant_type: "refresh_token" } });
-    t.access = r.access_token; t.exp = Date.now() + (r.expires_in || 3600) * 1000; g.tok = seal(t); save(); return t.access;
+    const a = gApp(); let r;
+    try { r = await api("POST", B.gToken, { form: { client_id: a.clientId, client_secret: a.secret, refresh_token: t.refresh, grant_type: "refresh_token" } }); }
+    catch (e) { if (e.auth) { g.err = { at: nowIso(), auth: true, msg: "Anmeldung abgelaufen – bitte neu verbinden" }; save(); } throw e; }
+    t.access = r.access_token; t.exp = Date.now() + (r.expires_in || 3600) * 1000; g.tok = seal(t); if (g.err) delete g.err; save(); return t.access;
   }
+  // Konten mit abgelaufener Anmeldung (für Hinweise statt „nicht angelegt“)
+  const gExpired = () => S().gAcc.filter(x => x.err && x.err.auth).map(x => x.email || "Google-Konto");
   const CACHE = new Map(); async function cached(k, ms, fn, force) { const c = CACHE.get(k); if (!force && c && Date.now() - c.at < ms) return c.v; const v = await fn(); CACHE.set(k, { at: Date.now(), v }); return v; }
 
   // Search Console: passende Property zur Website (Domain-Property bevorzugt)
   const PROP_ACC = {};
-  async function gscSites(force) { return cached("gsc:sites", 10 * 60e3, async () => { const out = [];
-    for (const a of S().gAcc) { let l = []; try { l = (await api("GET", B.gsc + "/sites", { token: await gTok(a.email) })).siteEntry || []; } catch (e) { continue; }
+  async function gscSites(force) { return cached("gsc:sites", gExpired().length ? 60e3 : 10 * 60e3, async () => { const out = [];   // abgelaufenes Konto: nur 1 min merken
+    for (const a of S().gAcc) { let l = []; try { l = (await api("GET", B.gsc + "/sites", { token: await gTok(a.email) })).siteEntry || []; } catch (e) { if (e.auth && !a.err) { a.err = { at: nowIso(), auth: true, msg: "Anmeldung abgelaufen – bitte neu verbinden" }; save(); } continue; }
       l.forEach(x => { if (x.permissionLevel === "siteUnverifiedUser") return; if (!out.some(y => y.url === x.siteUrl)) { out.push({ url: x.siteUrl, level: x.permissionLevel, acct: a.email }); PROP_ACC[x.siteUrl] = a.email; } }); }
     return out; }, force); }
   async function propOf(site) { const list = await gscSites(); const reg = site.id;
     return (list.find(x => x.url === "sc-domain:" + reg) || list.find(x => hostOf(x.url).replace(/^www\./, "") === reg && x.url.indexOf("https://") === 0) || list.find(x => hostOf(x.url).replace(/^www\./, "") === reg) || {}).url || ""; }
   const ymd = d => d.toISOString().slice(0, 10);
   async function gsc(site, force) {
-    const prop = await propOf(site); if (!prop) return { connected: true, property: "", note: "Diese Website ist in der Google Search Console noch nicht angelegt bzw. bestätigt." };
+    const prop = await propOf(site), exp = gExpired();
+    if (!prop && exp.length) return { connected: true, property: "", reconnect: true, note: "Google-Anmeldung abgelaufen (" + exp.join(", ") + ") – bitte unter SEO › Google neu verbinden. Bis dahin kann die Website nicht zugeordnet werden." };
+    if (!prop) return { connected: true, property: "", note: "Diese Website ist in der Google Search Console noch nicht angelegt bzw. bestätigt." };
     return cached("gsc:" + site.id, 30 * 60e3, async () => {
       const t = await gTok(PROP_ACC[prop]), end = new Date(Date.now() - 2 * 864e5), start = new Date(end.getTime() - 27 * 864e5), prev0 = new Date(start.getTime() - 28 * 864e5), enc = encodeURIComponent(prop);
       const q = (dims, s, e, n) => api("POST", B.gsc + "/sites/" + enc + "/searchAnalytics/query", { token: t, json: { startDate: ymd(s), endDate: ymd(e), dimensions: dims, rowLimit: n || 25, dataState: "all" } });
@@ -262,7 +270,7 @@ module.exports = function (D) {
   async function gbpLocations(force) {
     return cached("gbp:loc", 30 * 60e3, async () => {
       const out = [];
-      for (const ga of S().gAcc) { let t, accs = []; try { t = await gTok(ga.email); accs = (await api("GET", B.gbpAcc + "/accounts", { token: t })).accounts || []; } catch (e) { continue; }
+      for (const ga of S().gAcc) { let t, accs = []; try { t = await gTok(ga.email); accs = (await api("GET", B.gbpAcc + "/accounts", { token: t })).accounts || []; } catch (e) { if (e.auth && !ga.err) { ga.err = { at: nowIso(), auth: true, msg: "Anmeldung abgelaufen – bitte neu verbinden" }; save(); } continue; }
       for (const a of accs) { let page = ""; for (let i = 0; i < 5; i++) { const r = await api("GET", B.gbpInfo + "/" + a.name + "/locations?" + new URLSearchParams(Object.assign({ readMask: "name,title,websiteUri,storefrontAddress,regularHours,phoneNumbers,metadata", pageSize: "100" }, page ? { pageToken: page } : {})).toString(), { token: t });
         (r.locations || []).forEach(l => { if (out.some(x => x.name === l.name)) return; out.push({ acct: ga.email, account: a.name, name: l.name, title: l.title, website: l.websiteUri || "", address: l.storefrontAddress ? [(l.storefrontAddress.addressLines || []).join(", "), l.storefrontAddress.postalCode, l.storefrontAddress.locality].filter(Boolean).join(" ") : "", hours: l.regularHours || null, phone: (l.phoneNumbers || {}).primaryPhone || "", maps: (l.metadata || {}).mapsUri || "", review: (l.metadata || {}).newReviewUri || "" }); });
         page = r.nextPageToken || ""; if (!page) break; } } }
@@ -309,7 +317,7 @@ module.exports = function (D) {
       if (p === "/admin/api/seo/oauth/callback") { const to = await callback(u); res.writeHead(302, { Location: to, "Cache-Control": "no-store" }); res.end(); return true; }
       if (p === "/admin/api/seo/state" && req.method === "GET") {
         const list = await siteList(u.searchParams.get("force") === "1"), g = S().gAcc[0] || {};
-        return J(res, 200, { ok: true, sites: list.map(sitePub), google: { connected: gConnected(), email: g.email || "", accounts: S().gAcc.map(a => ({ email: a.email || "", at: a.at || "" })), app: !!(gApp().clientId && gApp().secret), redirect: redirect(), scopes: g.scopes || "" }, psiKey: !!process.env.GOOGLE_PSI_KEY }), true;
+        return J(res, 200, { ok: true, sites: list.map(sitePub), google: { connected: gConnected(), email: g.email || "", accounts: S().gAcc.map(a => ({ email: a.email || "", at: a.at || "", expired: !!(a.err && a.err.auth) })), app: !!(gApp().clientId && gApp().secret), redirect: redirect(), scopes: g.scopes || "" }, psiKey: !!process.env.GOOGLE_PSI_KEY }), true;
       }
       if (p === "/admin/api/seo/site" && req.method === "GET") {
         const s = await siteOf(u.searchParams.get("id")), r = S().sites[s.id] || {};
@@ -348,5 +356,25 @@ module.exports = function (D) {
   }
   // wöchentlich alle Websites neu prüfen (nachts, nacheinander)
   async function tick() { const h = new Date().getHours(); if (h < 2 || h > 5) return; const list = await siteList().catch(() => []); for (const s of list) { const r = S().sites[s.id] || {}; if (r.hidden || RUN.size) continue; if (!r.check || Date.now() - Date.parse(r.check.at) > 7 * 864e5) { await runCheck(s).catch(() => {}); return; } } }
-  return { handleAdmin, tick, _test: { parsePage, pageIssues, crawl, siteList, regOf, S, seal, unseal, gsc, propOf, gbpOf, suggest } };
+  // Für „Verbindungen“ ohne Netz: App-Zugang, Konten (abgelaufen?), PageSpeed-Schlüssel und -Fehler
+  function info() {
+    const a = gApp(), out = { app: !!(a.clientId && a.secret), accounts: S().gAcc.filter(g => g.tok).map(g => ({ email: g.email || "Google-Konto", expired: !!(g.err && g.err.auth) })), psiKey: !!process.env.GOOGLE_PSI_KEY, psiLimited: 0, psiErrors: 0 };
+    Object.keys(S().sites).forEach(id => { const e = S().sites[id].psiError; if (e) { out.psiErrors++; if (/429|quota|Kontingent/i.test(e)) out.psiLimited++; } });
+    return out;
+  }
+  // Für „Verbindungen“: je Google-Konto Token erneuern + Search-Console-Liste (dieselben Aufrufe wie oben, ohne Fehler zu schlucken)
+  async function health(live) {
+    const a = gApp(), out = { app: !!(a.clientId && a.secret), accounts: [], psiKey: !!process.env.GOOGLE_PSI_KEY, psiLimited: 0, psiErrors: 0 };
+    Object.keys(S().sites).forEach(id => { const e = S().sites[id].psiError; if (e) { out.psiErrors++; if (/429|quota|Kontingent/i.test(e)) out.psiLimited++; } });
+    for (const g of S().gAcc) {
+      const x = { email: g.email || "Google-Konto", ok: !(g.err && g.err.auth), auth: !!(g.err && g.err.auth), error: g.err ? g.err.msg : "" };
+      if (live && g.tok) {
+        try { await api("GET", B.gsc + "/sites", { token: await gTok(g.email), timeout: 15000 }); x.ok = true; x.auth = false; x.error = ""; if (g.err) { delete g.err; save(); } }
+        catch (e) { x.ok = false; x.auth = !!e.auth; x.error = String(e.message || e).slice(0, 200); if (e.auth && !g.err) { g.err = { at: nowIso(), auth: true, msg: "Anmeldung abgelaufen – bitte neu verbinden" }; save(); } }
+      }
+      out.accounts.push(x);
+    }
+    return out;
+  }
+  return { handleAdmin, tick, health, info, _test: { parsePage, pageIssues, crawl, siteList, regOf, S, seal, unseal, gsc, propOf, gbpOf, suggest } };
 };

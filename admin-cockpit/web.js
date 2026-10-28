@@ -186,7 +186,7 @@ F.css(
 '.w-row.bad{background:var(--bad-soft)}'+
 '.w-site{display:flex;gap:2px;align-items:flex-start;min-width:0}.w-site>div{min-width:0}'+
 '.w-site .dot{margin-top:7px;flex:none}'+
-'.w-name{border:0;background:none;padding:0;text-align:left;font-weight:600;overflow-wrap:anywhere;color:var(--ink)}'+
+'.w-name{border:0;background:none;padding:0;text-align:left;font-weight:600;overflow-wrap:anywhere;hyphens:auto;line-height:1.35;color:var(--ink)}'+
 'button.w-name:hover{text-decoration:underline}'+
 '.w-url{display:block;font-size:12.5px;color:var(--ink-3);text-decoration:none;overflow-wrap:anywhere}.w-url:hover{color:var(--ink)}'+
 '.w-cust{font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}'+
@@ -201,6 +201,8 @@ F.css(
 '.w-st{display:grid;gap:4px;justify-items:start;min-width:0}'+
 '.w-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}'+
 '.w-det{padding:2px 18px 16px;border-bottom:1px solid var(--line);background:var(--ground)}'+
+/* Alpenglas: Detailzeile als abgedunkelte Mulde im Glas-Panel, Karten darin als verschachtelte Boxen */
+':root[data-theme="glas"] .w-det{background:color-mix(in srgb,var(--ground) 32%,transparent)}:root[data-theme="glas"] .w-card{background:var(--sunk)}'+
 '.w-cd{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-top:12px}'+
 '.w-card{border:1px solid var(--line);background:var(--panel);border-radius:11px;padding:12px 14px;display:grid;gap:6px;align-content:start;min-width:0}'+
 '.w-card h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-family:var(--f-body)}'+

@@ -14,10 +14,16 @@ function spKey(k){ return SPARTEN.some(function(s){ return s[0]===k; })?k:"fsc";
 function spName(k){ var s=SPARTEN.find(function(x){ return x[0]===k; }); return s?s[1]:"FS Creative"; }
 F.icons.lock=F.icons.lock||'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>';
 F.icons.todo=F.icons.todo||'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>';
+F.icons.flag=F.icons.flag||'<path d="M5 21V4"/><path d="M5 4h11.5l-2 4 2 4H5"/>';
+F.icons.chevL=F.icons.chevL||'<path d="m15 6-6 6 6 6"/>';
+F.icons.chevR=F.icons.chevR||'<path d="m9 6 6 6-6 6"/>';
+/* Sparten-Farben: hell (SPL) und dunkel (SPD, gilt auch für Alpenglas) */
 var SPL='--sp-fsc:#2f62e0;--sp-kochdu:#7c4ddb;--sp-kantineur:#2a7ab8;--sp-blitzdings:#b87304;--sp-valuero:#16885a;--sp-privat:#cf366c;--sp-todo:var(--info);--sp-inv:var(--ok);--sp-invbad:var(--bad);';
 var SPD='--sp-fsc:#86a8ff;--sp-kochdu:#b597ff;--sp-kantineur:#7cbce9;--sp-blitzdings:#f0b452;--sp-valuero:#62c895;--sp-privat:#ff86ad;';
+var GL=':root[data-theme="glas"] ';
+function ico(k){ return F.svg(k).replace("<svg ",'<svg class="lk" '); }
 F.css(
-':root{'+SPL+'}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){'+SPD+'}}:root[data-theme="dark"]{'+SPD+'}'+
+':root{'+SPL+'}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){'+SPD+'}}:root[data-theme="dark"],:root[data-theme="glas"]{'+SPD+'}'+
 '.kal-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}'+
 '.subnav .cnt{font-family:var(--f-mono);font-size:12px;margin-left:6px;opacity:.75}'+
 '.kcal-h{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--line)}'+
@@ -29,13 +35,15 @@ F.css(
 '.kgrid{border-top:1px solid var(--line);touch-action:pan-y}'+
 '.kcell{min-height:112px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:4px 5px 6px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0}'+
 '.kcell:nth-child(7n){border-right:0}.kcell:nth-last-child(-n+7){border-bottom:0}'+
-'.kcell:hover{background:var(--sunk)}'+
-'.kcell.out{background:color-mix(in srgb,var(--sunk) 50%,var(--panel))}.kcell.out .kdn{color:var(--ink-3)}'+
+'.kcell:hover{background:var(--hover,var(--sunk))}'+
+'.kcell.out{background:color-mix(in srgb,var(--sunk) 50%,transparent)}.kcell.out .kdn{color:var(--ink-3)}'+
 '.kdn{align-self:flex-start;border:0;background:none;font:600 13px/1.2 var(--f-mono);padding:3px 7px;border-radius:99px;color:var(--ink-2)}'+
 '.kdn:hover{background:var(--line)}'+
 '.kcell.today .kdn{background:var(--glow);color:var(--on-glow)}'+
-'.kc{display:block;width:100%;min-width:0;border:0;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 15%,var(--panel));color:var(--ink);border-radius:5px;padding:1px 5px;font-size:12px;line-height:1.5;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
-'.kc:hover{background:color-mix(in srgb,var(--c) 26%,var(--panel))}'+
+/* Termin-Chips: Spartenfarbe über durchsichtigem Grund – auf hellem/dunklem Panel wie bisher, auf Glas nicht milchig */
+'.kc{display:block;width:100%;min-width:0;border:0;border-left:3px solid var(--c);background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--ink);border-radius:5px;padding:1px 5px;font-size:12px;line-height:1.5;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+'.kc:hover{background:color-mix(in srgb,var(--c) 26%,transparent)}'+
+GL+'.kc{background:color-mix(in srgb,var(--c) 24%,transparent)}'+GL+'.kc:hover{background:color-mix(in srgb,var(--c) 36%,transparent)}'+
 '.kc .kt{font-family:var(--f-mono);font-size:11px;color:var(--ink-2);margin-right:4px}'+
 '.kc svg,.kdv svg.lk{width:11px;height:11px;vertical-align:-1px;margin-right:3px}'+
 '.kc.late{font-weight:600}'+
@@ -47,17 +55,19 @@ F.css(
 '.kag-h{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 18px}'+
 '.kag-h b{display:block;text-transform:capitalize}'+
 '.kdv{display:grid;grid-template-columns:58px 4px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;border:0;border-top:1px solid var(--line);background:none;padding:10px 18px;text-align:left;color:var(--ink)}'+
-'.kdv:hover{background:var(--sunk)}'+
-'.kdv-t{display:grid;font-family:var(--f-mono);font-size:13px;line-height:1.3}.kdv-t small{color:var(--ink-3);font-family:var(--f-body);font-size:12px}'+
+'.kdv:hover{background:var(--hover,var(--sunk))}'+
+'.kdv-t{display:grid;font-family:var(--f-mono);font-size:13px;line-height:1.3;font-variant-numeric:tabular-nums}.kdv-t small{color:var(--ink-3);font-family:var(--f-body);font-size:12px}'+
 '.kbar{align-self:stretch;border-radius:3px;background:var(--c);min-height:28px}'+
-'.kdv-m{display:grid;min-width:0}.kdv-m b{font-weight:600;overflow-wrap:anywhere}.kdv-m small{color:var(--ink-3);font-size:12.5px;overflow-wrap:anywhere}'+
-'.kdv .go{color:var(--ink-3)}'+
+/* Titel höchstens 2 Zeilen, Meta 1–2 Zeilen; ganzer Text im title-Attribut */
+'.kdv-m{display:grid;min-width:0;gap:1px}.kdv-m b{font-weight:600;line-height:1.35;overflow-wrap:anywhere;hyphens:auto;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.kdv-m small{color:var(--ink-3);font-size:12.5px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'+
+'.kdv .go{color:var(--ink-3)}.kdv .go svg{width:16px;height:16px;display:block}'+
+'.kcal-h .btn.icon svg{width:17px;height:17px}'+
 '.kdvlist{border:1px solid var(--line);border-radius:12px;overflow:hidden}.kdvlist .kdv:first-child{border-top:0}'+
 '.sppick{display:flex;flex-wrap:wrap;gap:6px;border:0;margin:0;padding:0;min-width:0}'+
 '.sppick legend{font-size:13px;color:var(--ink-2);padding:0;margin-bottom:6px}'+
 '.sppick label{position:relative;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:4px 11px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer}'+
 '.sppick input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}'+
-'.sppick label:has(input:checked){border-color:var(--c);color:var(--ink);background:color-mix(in srgb,var(--c) 16%,var(--panel))}'+
+'.sppick label:has(input:checked){border-color:var(--c);color:var(--ink);background:color-mix(in srgb,var(--c) 18%,transparent)}'+
 '.sppick label:focus-within{outline:2px solid var(--glow);outline-offset:2px}'+
 '.khint{font-size:12.5px;color:var(--ink-2);background:var(--sunk);border-radius:10px;padding:8px 11px}'+
 '.ktitle{display:flex;align-items:center;gap:10px;font-size:21px;overflow-wrap:anywhere;min-width:0}'+
@@ -163,18 +173,19 @@ function calItems(){
     push(e.date,{kind:"evt",id:e.id,editable:!readOnly(e)&&!e.pending,label:e.title||"Termin",time:e.time||"",end:e.endTime||"",loc:e.location||"",c:sp,priv:e.source==="icloud",
       sub:(e.source==="icloud"?"Privat · iCloud":e.source==="outlook"?"Mail-Kalender":spName(sp)),act:"eventview:"+e.id}); });
   (D.todos||[]).forEach(function(x){ if(x.due&&!x.done) push(x.due,{kind:"todo",label:x.text||"Aufgabe",c:"todo",time:"",sub:"To-Do"+(x.due<t?" · überfällig":""),late:x.due<t,act:"todoview:"+x.id}); });
-  if(F.tkOpenDue) F.tkOpenDue().forEach(function(x){ push(x.due,{kind:"todo",label:"⚑ "+x.title,c:"todo",time:"",sub:"Frist"+(x.project?" · "+x.project:"")+(x.due<t?" · überfällig":""),late:x.due<t,act:"tkopen:"+x.id}); });   // Fristen aus „Aufträge“
+  if(F.tkOpenDue) F.tkOpenDue().forEach(function(x){ push(x.due,{kind:"todo",label:x.title,ico:"flag",c:"todo",time:"",sub:"Frist"+(x.project?" · "+x.project:"")+(x.due<t?" · überfällig":""),late:x.due<t,act:"tkopen:"+x.id}); });   // Fristen aus „Aufträge“ (Symbol: Fahne)
   ((D.sev&&D.sev.invoices)||[]).forEach(function(i){ if(i.due&&i.open>0.005) push(i.due,{kind:"inv",label:(i.nr||"Entwurf")+" · "+(i.contact||""),c:i.overdue?"invbad":"inv",time:"",sub:(i.overdue?"Überfällig":"Rechnung fällig")+" · offen "+F.eur(i.open),money:true,act:"fincal:"+(i.nr||i.id)}); });
   Object.keys(map).forEach(function(k){ map[k].sort(function(a,b){ return (a.time||"")<(b.time||"")?-1:(a.time||"")>(b.time||"")?1:0; }); });
   return map;
 }
 function chip(e){
-  return '<button type="button" class="kc'+(e.late?" late":"")+'" style="--c:var(--sp-'+e.c+')" data-act="'+esc(e.act)+'"'+(e.editable?' data-kev="'+esc(e.id)+'"':'')+' title="'+esc((e.time?e.time+(e.end?"–"+e.end:"")+" · ":"")+e.label+" · "+e.sub)+'">'+(e.priv?F.svg("lock"):'')+(e.time?'<span class="kt">'+esc(e.time)+'</span>':'')+esc(e.label)+'</button>';
+  return '<button type="button" class="kc'+(e.late?" late":"")+'" style="--c:var(--sp-'+e.c+')" data-act="'+esc(e.act)+'"'+(e.editable?' data-kev="'+esc(e.id)+'"':'')+' title="'+esc((e.time?e.time+(e.end?"–"+e.end:"")+" · ":"")+e.label+" · "+(e.money?(e.c==="invbad"?"Überfällig":"Rechnung fällig"):e.sub))+'">'+(e.priv?F.svg("lock"):e.ico?F.svg(e.ico):'')+(e.time?'<span class="kt">'+esc(e.time)+'</span>':'')+esc(e.label)+'</button>';
 }
+F.kalIco=function(e){ return e.priv?ico("lock"):e.ico?ico(e.ico):""; };   /* Symbol vor dem Titel (privat = Schloss, Frist = Fahne) – auch für kald/kalm */
 function dvItem(e){
   var time=e.time?'<b>'+esc(e.time)+'</b>'+(e.end?'<small>bis '+esc(e.end)+'</small>':''):'<small>ganztägig</small>';
-  var sub=[e.sub,e.loc].filter(Boolean).map(esc).join(" · ");
-  return '<button type="button" class="kdv" data-act="'+esc(e.act)+'"><span class="kdv-t">'+time+'</span><span class="kbar" style="--c:var(--sp-'+e.c+')"></span><span class="kdv-m"><b>'+(e.priv?'<svg class="lk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">'+F.icons.lock+'</svg>':'')+esc(e.label)+'</b>'+(sub?'<small'+(e.money?' class="money"':'')+'>'+sub+'</small>':'')+'</span><span class="go" aria-hidden="true">›</span></button>';
+  var subT=[e.sub,e.loc].filter(Boolean).join(" · "), sub=esc(subT);
+  return '<button type="button" class="kdv" data-act="'+esc(e.act)+'" title="'+esc(e.label+(subT&&!e.money?" · "+subT:""))+'"><span class="kdv-t">'+time+'</span><span class="kbar" style="--c:var(--sp-'+e.c+')"></span><span class="kdv-m"><b>'+F.kalIco(e)+esc(e.label)+'</b>'+(sub?'<small'+(e.money?' class="money"':'')+'>'+sub+'</small>':'')+'</span><span class="go" aria-hidden="true">'+F.svg("chevR")+'</span></button>';
 }
 
 /* ---------- Monatsansicht ---------- */
@@ -195,7 +206,7 @@ function vCal(){
   var agList=map[sel]||[];
   var title=first.toLocaleDateString("de-AT",{month:"long",year:"numeric"});
   return '<section class="panel">'+
-    '<div class="kcal-h"><div class="row"><button type="button" class="btn icon" data-act="calnav:-1" aria-label="Voriger Monat" title="Voriger Monat (←)">‹</button><div class="kmonth" aria-live="polite">'+esc(title)+'</div><button type="button" class="btn icon" data-act="calnav:1" aria-label="Nächster Monat" title="Nächster Monat (→)">›</button></div>'+
+    '<div class="kcal-h"><div class="row"><button type="button" class="btn icon" data-act="calnav:-1" aria-label="Voriger Monat" title="Voriger Monat (←)">'+F.svg("chevL")+'</button><div class="kmonth" aria-live="polite">'+esc(title)+'</div><button type="button" class="btn icon" data-act="calnav:1" aria-label="Nächster Monat" title="Nächster Monat (→)">'+F.svg("chevR")+'</button></div>'+
       '<div class="row wrap"><button type="button" class="btn" data-act="calnav:0" title="Heute (T)">Heute</button><button type="button" class="btn primary" data-act="newevent:'+(isMobile()?sel:"")+'">+ Termin</button></div></div>'+
     statusLine()+
     '<div class="kdows" aria-hidden="true">'+DOW.map(function(x){ return '<div>'+x+'</div>'; }).join("")+'</div>'+
@@ -265,7 +276,7 @@ function openEventView(id){
     e.source==="outlook"?'Mail-Kalender<br><span class="muted">Wird aus dem Mail-Kalender übernommen – bitte dort ändern.</span>':'Dashboard (nur im Cockpit)';
   F.modal('<div class="row-between"><h2 class="ktitle"><span class="spdot" style="--c:var(--sp-'+sp+')"></span>'+esc(e.title||"Termin")+'</h2>'+F.btnClose()+'</div>'+
     '<dl class="kv"><dt>Datum</dt><dd>'+esc(longDate(e.date))+'</dd><dt>Zeit</dt><dd>'+esc(time)+'</dd>'+
-    '<dt>Bereich</dt><dd><span class="tag grey" style="background:color-mix(in srgb,var(--sp-'+sp+') 16%,var(--panel));color:var(--ink)">'+esc(spName(sp))+'</span></dd>'+
+    '<dt>Bereich</dt><dd><span class="tag grey" style="background:color-mix(in srgb,var(--sp-'+sp+') 20%,transparent);color:var(--ink)">'+esc(spName(sp))+'</span></dd>'+
     (e.location?'<dt>Ort</dt><dd>'+(/^https?:\/\//.test(e.location)?'<a href="'+esc(e.location)+'" target="_blank" rel="noopener">'+esc(e.location)+'</a>':'<a href="https://maps.apple.com/?q='+encodeURIComponent(e.location)+'" target="_blank" rel="noopener">'+esc(e.location)+'</a>')+'</dd>':'')+(e.notes?'<dt>Notizen</dt><dd class="pre">'+esc(e.notes)+'</dd>':'')+
     '<dt>Kalender</dt><dd>'+src+'</dd></dl>'+
     '<div class="foot"><span>'+(ro?'':'<button type="button" class="btn danger" data-act="eventdel:'+esc(e.id)+'">Löschen</button>')+'</span><span class="row"><button type="button" class="btn" data-closemodal>Schließen</button>'+(ro?'':'<button type="button" class="btn primary" data-act="eventedit:'+esc(e.id)+'">Bearbeiten</button>')+'</span></div>',"narrow ksheet");

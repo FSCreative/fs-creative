@@ -2,6 +2,25 @@
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, deShort=F.deShort;
+/* Symbole für Finanzen, Belege und Zahlungen (24×24, Strich) – nur falls FSC.icons sie noch nicht kennt */
+(function(I){ if(F.icons) Object.keys(I).forEach(function(k){ if(!F.icons[k]) F.icons[k]=I[k]; }); })({
+  doc:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  beleg:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  wallet:'<path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5.5a2.5 2.5 0 0 0 0 5H20v10a1 1 0 0 1-1 1H5.5A2.5 2.5 0 0 1 3 17.5v-11"/><path d="M16.5 14.5h.01"/>',
+  card:'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
+  download:'<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
+  upload:'<path d="M12 20V9"/><path d="m7 14 5-5 5 5"/><path d="M5 4h14"/>',
+  send:'<path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/>',
+  edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  chevD:'<path d="m6 9 6 6 6-6"/>', chevR:'<path d="m9 6 6 6-6 6"/>', chevL:'<path d="m15 6-6 6 6 6"/>',
+  checkCircle:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  alertCircle:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
+  offer:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/>',
+  camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'
+});
 F.UI.money=F.UI.money||"zu"; F.UI.invQ=F.UI.invQ||""; F.UI.invF=F.UI.invF||"open"; F.UI.geldTab=F.UI.geldTab||"uebersicht";
 /* Unterpunkte von "Finanzen": weitere Module melden sich mit F.geldTab({id,label,order,render}) an */
 F.geldTabs=[{id:"uebersicht",label:"Übersicht",order:10},{id:"prognose",label:"Jahresprognose",order:20}];
@@ -61,16 +80,17 @@ F.view({id:"geld",label:"Finanzen",short:"Finanzen",icon:"geld",order:30,mobile:
 F.css(
 '.todo{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}'+
 '.todo button{display:grid;gap:4px;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:16px 18px;border-radius:var(--r);border:1px solid var(--line);background:var(--panel);transition:transform .12s ease,box-shadow .12s ease}'+
-'.todo button:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.08)}'+
-'.todo .n{font-size:28px;font-weight:750;font-family:var(--f-mono,ui-monospace,monospace);letter-spacing:-.02em}'+
-'.todo .l{font-weight:650}.todo .h{font-size:13px;color:var(--ink-3)}'+
+'.todo button:hover{transform:translateY(-2px);box-shadow:0 8px 22px color-mix(in srgb,var(--glow) 18%,transparent)}'+
+'@media (prefers-reduced-motion:reduce){.todo button{transition:none}.todo button:hover{transform:none}}'+
+'.todo .n{font-size:28px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em}'+
+'.todo .l{font-weight:650}.todo .h{font-size:13px;color:var(--ink-3);text-wrap:pretty}'+
 '.todo .warn{border-color:var(--warn);background:var(--warn-soft)}.todo .bad{border-color:var(--bad);background:var(--bad-soft)}.todo .info{border-color:var(--info);background:var(--info-soft)}'+
-'.todo-ok{padding:18px;border-radius:var(--r);background:var(--ok-soft,#e6f4ea);font-weight:650}'+
+'.todo-ok{padding:18px;border-radius:var(--r);background:var(--ok-soft);font-weight:650}'+
 '.bill{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:14px}'+
-'.bill .c{border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:8px;background:var(--panel)}'+
+'.bill .c{border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:8px;background:var(--sunk);min-width:0}'+
 '.bill .c .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}'+
-'.bill .c .amt{font-size:22px;font-weight:750;font-family:var(--f-mono,ui-monospace,monospace)}'+
-'.bill .c .nm{font-weight:650}.bill .c .sb{font-size:13px;color:var(--ink-3)}'+
+'.bill .c .amt{font-size:22px;font-weight:750;font-variant-numeric:tabular-nums}'+
+'.bill .c .nm{font-weight:650;overflow-wrap:anywhere}.bill .c .sb{font-size:13px;color:var(--ink-3);text-wrap:pretty}'+
 '.bill .c .ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}'+
 'details.abg>summary{cursor:pointer;padding:14px 18px;font-weight:650;list-style:none;display:flex;justify-content:space-between;align-items:center}'+
 'details.abg>summary::-webkit-details-marker{display:none}details.abg>summary:after{content:"▾";color:var(--ink-3)}details.abg[open]>summary:after{content:"▴"}'
@@ -127,7 +147,7 @@ function renderUebersicht(){
   }).join("");
   var chip=function(k,l,n){ return '<button class="chip" data-act="money:'+k+'" aria-pressed="'+(f===k)+'">'+l+(n!=null?' · '+n:'')+'</button>'; };
   var cnt=function(fn){ return ab.items.filter(fn).length; };
-  return F.head("Finanzen","Was ansteht, auf einen Blick. Rechnungen, Bank, Belege und Kontakte findest du in den Reitern darunter.",'<button class="btn" data-act="voucher">Beleg erfassen</button><button class="btn primary" data-act="newinvoice">Neue Rechnung</button>')+subnav()+
+  return F.head("Finanzen","Was ansteht, auf einen Blick. Rechnungen, Bank, Belege und Kontakte findest du in den Reitern darunter.",'<button class="btn" data-act="voucher">'+F.svg("beleg")+'Beleg erfassen</button><button class="btn primary" data-act="newinvoice">'+F.svg("plus")+'Neue Rechnung</button>')+subnav()+
     (D.sevConfigured&&!sev?'<div class="notice">Die Buchhaltungsdaten konnten gerade nicht geladen werden. Die Plattform-Zahlen stimmen, der Abgleich mit Rechnungen folgt beim nächsten Laden. <button class="btn" data-act="reload">Neu laden</button></div>':'')+
     (mig.count?'<div class="notice"><span>Aus dem früheren Dashboard sind <b>'+mig.count+' VALUERO-Abrechnungen</b> ('+eur(mig.sum)+') noch nicht am Server gespeichert.</span><button class="btn primary" data-act="migrate">Übernehmen</button></div>':'')+
     '<section><div class="sec-t">Zu tun</div>'+(tiles.length?'<div class="todo">'+tiles.join("")+'</div>':'<div class="todo-ok">Alles erledigt 🎉 Keine Entwürfe, nichts überfällig.</div>')+'</section>'+
@@ -139,7 +159,7 @@ function renderUebersicht(){
     '</div>'+
     '<section class="panel" id="zuVerrechnen"><div class="panel-h"><h2>Zu verrechnen</h2><span class="muted">'+(zu.length?eur(ab.totals.unbilled)+' · '+zu.length+' Posten':'')+'</span></div>'+
       (zu.length?'<div class="bill">'+zu.map(card).join("")+'</div>':'<div class="sd-empty"><b>Nichts offen 🎉</b>Alle Leistungen sind verrechnet.</div>')+
-      (ign.length?'<div style="padding:0 16px 14px"><button class="link" data-act="sdshowign">'+(F.UI.showIgn?"Ausgeblendete verbergen":ign.length+" ausgeblendet · anzeigen")+'</button>'+(F.UI.showIgn?'<div class="sd-list panel" style="margin-top:8px">'+ign.map(function(x){ return '<div class="sd-row" style="cursor:default"><div><div class="t">'+esc(x.name)+'</div><div class="s">'+eur(x.ignored.amount)+' · ausgeblendet am '+de(String(x.ignored.at||"").slice(0,10))+'</div></div><div class="r"><button class="btn" data-act="sdunign:'+esc(x.key)+'">Wieder einblenden</button></div></div>'; }).join("")+'</div>':'')+'</div>':'')+
+      (ign.length?'<div style="padding:0 16px 14px"><button class="link" data-act="sdshowign">'+(F.UI.showIgn?"Ausgeblendete verbergen":ign.length+" ausgeblendet · anzeigen")+'</button>'+(F.UI.showIgn?'<div class="sd-list sd-box" style="margin-top:8px">'+ign.map(function(x){ return '<div class="sd-row" style="cursor:default"><div><div class="t">'+esc(x.name)+'</div><div class="s">'+eur(x.ignored.amount)+' · ausgeblendet am '+de(String(x.ignored.at||"").slice(0,10))+'</div></div><div class="r"><button class="btn" data-act="sdunign:'+esc(x.key)+'">Wieder einblenden</button></div></div>'; }).join("")+'</div>':'')+'</div>':'')+
     '</section>'+
     (sev?'<section class="panel"><div class="panel-h"><h2>Umsatz je Monat</h2><span class="muted">laut Rechnungen</span></div><div class="chart">'+F.barChart(sev.byMonth,{highlight:cm,label:"Umsatz je Monat"})+'</div></section>':'')+
     '<details class="panel abg"'+(F.UI.abgOpen?" open":"")+' data-abg><summary>Abgleich je Plattform<span class="muted" style="margin-left:auto;margin-right:10px;font-weight:500">angefallen ↔ verrechnet ↔ bezahlt</span></summary>'+
@@ -207,7 +227,7 @@ function renderPrognose(){
     '<div class="panel kpi"><span class="k">Noch erwartet</span><span class="v num money">'+eur0(tRest)+'</span><span class="s">bis 31.12.</span></div>'+
     '<div class="panel kpi"><span class="k">Vorjahr '+(yr-1)+'</span><span class="v num money">'+(prevTotal?eur0(prevTotal):"—")+'</span><span class="s">'+(prevTotal?((total-prevTotal>=0?"+":"")+Math.round((total/prevTotal-1)*100)+" % erwartet"):"keine Vorjahresdaten")+'</span></div>'+
   '</div>'+
-  '<section class="panel"><div class="panel-h"><h2>Verlauf '+yr+'</h2><span class="muted">dunkel = Ist, hell = Prognose (Rechnungen)</span></div><div class="chart">'+progChart(cur,chartVals,mNow)+'</div></section>'+
+  '<section class="panel"><div class="panel-h"><h2>Verlauf '+yr+'</h2><span class="muted">volle Balken = Ist, blasse = Prognose (Rechnungen)</span></div><div class="chart">'+progChart(cur,chartVals,mNow)+'</div></section>'+
   '<section class="panel"><div class="panel-h"><h2>So setzt sich die Prognose zusammen</h2></div><div class="scroll"><table><thead><tr><th>Quelle</th><th class="r">Ist bis heute</th><th class="r">Erwartet bis Jahresende</th><th class="r">Summe</th></tr></thead><tbody>'+
     rows.map(function(r){ return '<tr><td><b>'+esc(r[0])+'</b><div class="sub">'+esc(r[3])+'</div></td><td class="r num money">'+eur0(r[1])+'</td><td class="r num money">'+eur0(r[2])+'</td><td class="r num money"><b>'+eur0(r[1]+r[2])+'</b></td></tr>'; }).join("")+
     '<tr class="grp"><td>Gesamt</td><td class="r num money">'+eur0(tIst)+'</td><td class="r num money">'+eur0(tRest)+'</td><td class="r num money">'+eur0(total)+'</td></tr></tbody></table></div></section>'+

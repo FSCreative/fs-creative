@@ -371,7 +371,7 @@ module.exports = function (D) {
   async function handleAdmin(req, res, u, p) {
     if (!(D.adminAuthed && D.adminAuthed(req))) return J(res, 401, { ok: false, error: "login" });
     try {
-      if (p === "/admin/api/nda/list" && req.method === "GET") { const l = await store.list(); return J(res, 200, { ok: true, version: VERSION, mail: !!(D.mailSend && process.env.MAIL_API_URL && process.env.MAIL_API_TOKEN), db: useDb(), office: officeMail(), items: l.map(summary) }); }
+      if (p === "/admin/api/nda/list" && req.method === "GET") { const l = await store.list(); return J(res, 200, { ok: true, version: VERSION, mail: !!(D.mailSend && (D.mailReady ? D.mailReady() : process.env.MAIL_API_URL && process.env.MAIL_API_TOKEN)), db: useDb(), office: officeMail(), items: l.map(summary) }); }
       if (p === "/admin/api/nda/pdf" && req.method === "GET") { const o = await store.get(u.searchParams.get("id")); const buf = o && o.signed && await store.pdf(o.id); if (!buf) return J(res, 404, { ok: false, error: "PDF nicht gefunden" }); return pdfOut(res, buf, fileName(o), u.searchParams.get("dl") === "1"); }
       if (req.method !== "POST" || !/application\/json/.test(String(req.headers["content-type"] || ""))) return J(res, 405, { ok: false, error: "method_not_allowed" });
       const b = await readJson(req, 20000);

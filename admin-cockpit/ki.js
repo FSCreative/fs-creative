@@ -52,12 +52,14 @@ function costLine(){
   return "Claude Opus 5.5 · Kosten "+esc(monthName(s.month))+": <b class=\"money\">"+F.eur(s.cost.eur)+"</b> (≈, umgerechnet mit 1 $ = "+String(s.usdEur).replace(".",",")+" €)"+(s.limitEur?" · Limit "+F.eur(s.limitEur)+(s.overLimit?' <span class="tag bad">erreicht</span>':''):"");
 }
 function monthName(mk){ var m=String(mk||"").match(/^(\d{4})-(\d{2})$/); if(!m) return mk||""; return new Date(+m[1],+m[2]-1,15).toLocaleDateString("de-AT",{month:"long",year:"numeric"}); }
-function panel(id,title,sub,right,inner){ return '<section class="panel kip" id="'+id+'"><div class="panel-h"><div><b>'+title+'</b>'+(sub?'<div class="muted">'+sub+'</div>':'')+'</div><div class="row wrap">'+(right||"")+'</div></div><div class="kib">'+inner+'</div></section>'; }
+/* Bereich der KI-Seite: Symbol + Überschrift + Unterzeile links, Knöpfe rechts (umbrechend) – auch für ki-belege.js/ki-upload.js */
+var KIP_IC={"ki-queue":"inbox","ki-leads":"user","ki-set":"sliders","ki-belege":"checkCircle","ki-uva":"shield","ki-upload":"upload"};
+function panel(id,title,sub,right,inner){ var ic=KIP_IC[id]; return '<section class="panel kip" id="'+id+'"><div class="panel-h"><div class="kip-h">'+(ic&&F.icons[ic]?'<span class="kip-ic">'+F.svg(ic)+'</span>':'')+'<div class="kip-tt"><h2>'+title+'</h2>'+(sub?'<div class="muted">'+sub+'</div>':'')+'</div></div><div class="row wrap">'+(right||"")+'</div></div><div class="kib">'+inner+'</div></section>'; }
 K.panel=panel;
 
 function queueHtml(){
   var s=K.st, q=K.queue||[];
-  var right='<button type="button" class="btn" data-act="kiscan"'+(K.ui.busy.scan?" disabled":"")+'>'+(K.ui.busy.scan?"Prüfe Postfach …":"Postfach jetzt prüfen")+'</button>';
+  var right='<button type="button" class="btn" data-act="kiscan"'+(K.ui.busy.scan?" disabled":"")+'>'+F.svg("refresh")+(K.ui.busy.scan?" Prüfe Postfach …":" Postfach jetzt prüfen")+'</button>';
   var sub="Rechnungsmails bekannter Absender werden alle 15 Minuten ausgelesen und hier vorbereitet. Als Beleg gespeichert wird nur, was du freigibst.";
   var inner;
   if(!s||!s.configured) inner=K.notSetHtml();
@@ -65,7 +67,7 @@ function queueHtml(){
   else inner='<div class="kilist">'+q.map(function(it){ var x=it.x||{};
     return '<div class="kirow"><div class="kimain"><b>'+esc(x.supplier||it.mail.fromName||it.mail.from)+'</b> <span class="muted">'+esc(F.de(x.invoiceDate)||"")+(x.invoiceNumber?" · Nr. "+esc(x.invoiceNumber):"")+'</span><div class="muted">'+esc(it.att.filename)+' · '+esc(it.mail.subject||"")+'</div>'+
       '<div class="kitags"><span class="tag grey">'+esc(RULE_TXT[x.taxRule]||x.taxRule)+'</span><span class="tag grey">E1a '+esc(x.e1a)+'</span>'+(x.accountingTypeName?'<span class="tag grey">'+esc(x.accountingTypeName)+'</span>':'')+K.conf(x.confidence)+(x.currency&&x.currency!=="EUR"?'<span class="tag warn">'+esc(x.currency)+'</span>':'')+'</div>'+(x.notes?'<div class="muted">'+esc(x.notes)+'</div>':'')+'</div>'+
-      '<div class="kiamt num money">'+F.eur(x.gross)+'</div><div class="row wrap"><button type="button" class="btn primary" data-act="kiqopen:'+esc(it.key)+'">Prüfen &amp; erfassen</button><button type="button" class="btn" data-act="kiqdrop:'+esc(it.key)+'">Verwerfen</button></div></div>'; }).join("")+'</div>';
+      '<div class="kiamt num money">'+F.eur(x.gross)+'</div><div class="row wrap kiacts"><button type="button" class="btn primary" data-act="kiqopen:'+esc(it.key)+'">'+F.svg("checkCircle")+' Prüfen &amp; erfassen</button><button type="button" class="btn" data-act="kiqdrop:'+esc(it.key)+'">'+F.svg("trash")+' Verwerfen</button></div></div>'; }).join("")+'</div>';
   return panel("ki-queue","Vorbereitete Belege","",right,'<p class="muted kip-sub">'+sub+'</p>'+inner);
 }
 function leadsHtml(){
@@ -75,7 +77,7 @@ function leadsHtml(){
   else inner='<div class="kilist">'+ls.map(function(l){ var r=s&&s.leads&&s.leads[l.id];
     return '<div class="kirow"><div class="kimain"><b>'+esc(l.company||l.name)+'</b> <span class="muted">'+esc(l.topic||"")+' · '+esc(F.de(l.created))+'</span>'+
       (r?'<div class="kitags"><span class="tag '+(r.priority==="hoch"?"bad":r.priority==="mittel"?"warn":"grey")+'">Priorität '+esc(r.priority)+'</span>'+(r.budgetRange?'<span class="tag grey">'+esc(r.budgetRange)+'</span>':'')+(r.projectType?'<span class="tag grey">'+esc(r.projectType)+'</span>':'')+'</div><div class="muted">Nächster Schritt: '+esc(r.nextStep)+'</div>':'<div class="muted">'+esc(String(l.message||"").slice(0,140))+'</div>')+'</div>'+
-      '<div class="row wrap"><button type="button" class="btn" data-act="lead:'+esc(l.id)+'">Öffnen</button>'+(r?'':'<button type="button" class="btn" data-act="kilead:'+esc(l.id)+'"'+(K.ui.busy["lead"+l.id]?" disabled":"")+'>'+(K.ui.busy["lead"+l.id]?"Schätze ein …":"Einschätzen")+'</button>')+'</div></div>'; }).join("")+'</div>';
+      '<div class="row wrap kiacts"><button type="button" class="btn" data-act="lead:'+esc(l.id)+'">'+F.svg("chevR")+' Öffnen</button>'+(r?'':'<button type="button" class="btn" data-act="kilead:'+esc(l.id)+'"'+(K.ui.busy["lead"+l.id]?" disabled":"")+'>'+F.svg("sparkle")+(K.ui.busy["lead"+l.id]?" Schätze ein …":" Einschätzen")+'</button>')+'</div></div>'; }).join("")+'</div>';
   return panel("ki-leads","Neue Anfragen","Priorität, Budget und nächster Schritt – neue Anfragen werden automatisch eingeschätzt.","",inner);
 }
 function settingsHtml(){
@@ -92,11 +94,11 @@ function settingsHtml(){
       '<p class="muted">Monatslimit: '+(s.limitEur?F.eur(s.limitEur)+' – darüber laufen nur noch Beleg- und Steuerfunktionen.':'keines gesetzt (optional Variable <b>KI_MONTHLY_LIMIT_EUR</b> in Railway, z. B. 30).')+'</p></div>'+
     '<div><div class="sec-t">Funktionen</div><div class="kitogs">'+toggles+'</div>'+
       '<div class="sec-t" style="margin-top:12px">Bekannte Rechnungsabsender (Automatik)</div><textarea class="f" id="kiSenders" data-keepfocus="kiSenders" rows="6" placeholder="ein Begriff pro Zeile, z. B. railway">'+esc(senders)+'</textarea>'+
-      '<p class="muted">Trifft auf Absender, Name oder Betreff zu (Groß-/Kleinschreibung egal).</p><button type="button" class="btn" data-act="kisavesenders">Absender speichern</button></div></div>');
+      '<p class="muted">Trifft auf Absender, Name oder Betreff zu (Groß-/Kleinschreibung egal).</p><div><button type="button" class="btn" data-act="kisavesenders">'+F.svg("checkCircle")+' Absender speichern</button></div></div></div>');
 }
 function vKi(){
   var s=K.st;
-  return F.head("KI",costLine(),'<button type="button" class="btn" data-act="newinvoice">Rechnung mit KI</button><button type="button" class="btn primary" data-act="kichat">'+F.svg("spark")+' Assistent öffnen <span style="opacity:.7;font-size:12px">⌘J</span></button>')+
+  return F.head("KI",costLine(),'<button type="button" class="btn" data-act="newinvoice">'+F.svg("edit")+' Rechnung mit KI</button><button type="button" class="btn primary" data-act="kichat">'+F.svg(F.icons.sparkle?"sparkle":"spark")+' Assistent öffnen <kbd class="kbd ki-kbd">⌘J</kbd></button>')+
     (s&&!s.configured?K.notSetHtml():'')+
     '<div class="kistack">'+(K.uploadPanelHtml?K.uploadPanelHtml():'')+queueHtml()+(K.belegeHtml?K.belegeHtml():'')+(K.uvaHtml?K.uvaHtml():'')+leadsHtml()+settingsHtml()+'</div>';
 }
@@ -171,17 +173,24 @@ F.searcher(function(q){ return /^(ki|kü|ass|claude|chat|frag)/.test(q)?[{group:
 
 F.css([
 ".kistack{display:grid;gap:16px}",
+/* Kopf je Bereich: Symbol in Akzent-Kachel, Überschrift (h2) und leise Unterzeile */
+".kip-h{display:flex;gap:12px;align-items:flex-start;min-width:0;flex:1 1 260px}",
+".kip-ic{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:none;background:var(--glow-soft);color:var(--glow-ink)}.kip-ic svg{width:18px;height:18px}",
+".kip-tt{display:grid;gap:2px;min-width:0}.kip-tt h2{font-size:15.5px;line-height:1.3}.kip-tt .muted{text-wrap:pretty}",
 ".kib{padding:12px 18px 16px;display:grid;gap:10px}",
-".kip-sub{margin:0}",
+".kip-sub{margin:0;text-wrap:pretty}",
 ".kilist{display:grid;gap:0}",
-".kirow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px 14px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}",
+".kirow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px 14px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}",
 ".kirow:first-child{border-top:0}",
 ".kimain{min-width:0;display:grid;gap:3px;overflow-wrap:anywhere}",
+".kimain>b{font-size:14.5px;font-weight:600}",
 ".kitags{display:flex;flex-wrap:wrap;gap:5px}",
-".kiamt{font-weight:700;white-space:nowrap}",
+".kiamt{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}",
+".kiacts{justify-content:flex-end}",
+".ki-kbd{font:600 11px var(--f-mono);opacity:.65;border:0;background:none;padding:0;margin-left:2px;color:inherit}",
 ".kigrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}",
-".kitab{width:100%;border-collapse:collapse;font-size:13px}.kitab th,.kitab td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}.kitab .num{text-align:right}",
-".kitogs{display:grid;gap:6px}.kitog{display:flex;gap:8px;align-items:flex-start;font-size:13.5px}",
-"@media (max-width:700px){.kirow{grid-template-columns:minmax(0,1fr) auto}.kirow>.row{grid-column:1/-1}}"
+".kitab{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.kitab th,.kitab td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left}.kitab th{font-size:11.5px;color:var(--ink-3);font-weight:600;white-space:nowrap}.kitab .num{text-align:right;white-space:nowrap}.kitab tfoot td{border-bottom:0;border-top:1px solid var(--line-2)}",
+".kitogs{display:grid;gap:6px}.kitog{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;text-wrap:pretty}.kitog input{margin-top:3px;accent-color:var(--glow);flex:none}",
+"@media (max-width:700px){.kirow{grid-template-columns:minmax(0,1fr) auto}.kirow>.row{grid-column:1/-1;justify-content:flex-start}.kirow>.row .btn{min-height:40px}}"
 ].join("\n"));
 })();

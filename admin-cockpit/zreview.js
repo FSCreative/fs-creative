@@ -8,25 +8,27 @@ var F=window.FSC, esc=F.esc, eur=F.eur, de=F.de, UI=F.UI;
 var RV=null, busy=false, SG={}, OPEN={};
 try{ if(/[?&]fin=review\b/.test(location.search)){ UI.fin="review"; F.ls("fsc_fin_page","review"); history.replaceState(null,"",location.pathname+"#geld"); } }catch(e){}
 F.css(
-  '.rv-cnt{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700}'+
+  /* Zähler: dunkle Schrift auf Rot (--ground ist in allen Themes der Gegenpol zu --bad) */
+  '.rv-cnt{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--bad);color:var(--ground);font-size:11px;line-height:18px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}'+
   '.rv-hot{background:var(--warn-soft)!important}'+
-  '.rv-g{margin-bottom:14px}.rv-gh{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.rv-gh b{font-size:15px}'+
-  '.rv-i{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);flex-wrap:wrap}'+
-  '.rv-l{min-width:0;flex:1 1 260px}.rv-l b{display:block}.rv-l span{display:block;color:var(--ink-2);font-size:12.5px;overflow-wrap:anywhere}.rv-l .rv-err{color:var(--bad)}'+
-  '.rv-r{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.rv-amt{font-variant-numeric:tabular-nums;font-weight:700;min-width:90px;text-align:right}'+
+  '.rv-g{margin-bottom:14px}.rv-gh{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.rv-gh b{font-size:15px;text-wrap:balance}'+
+  '.rv-i{display:flex;gap:8px 12px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line);flex-wrap:wrap}'+
+  '.rv-l{min-width:0;flex:1 1 260px;display:grid;gap:2px}.rv-l b{display:block;font-size:14.5px;font-weight:600;overflow-wrap:anywhere;text-wrap:pretty}.rv-l span{display:block;color:var(--ink-2);font-size:12.5px;overflow-wrap:anywhere;text-wrap:pretty}.rv-l .rv-err{color:var(--bad)}'+
+  '.rv-r{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.rv-amt{font-variant-numeric:tabular-nums;font-weight:700;min-width:90px;text-align:right;white-space:nowrap}'+
   '.rv-sug{border:1.5px solid var(--warn);background:var(--warn-soft);border-radius:12px;padding:10px 12px;margin:0 0 12px}.rv-sug h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--warn)}'+
-  '.rv-sc{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(0,0,0,.07);flex-wrap:wrap}.rv-sc:first-of-type{border-top:0}.rv-sc .rv-l span{font-size:12px}'+
-  '.rv-why{color:var(--ok)!important}'
+  '.rv-sc{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);flex-wrap:wrap}.rv-sc:first-of-type{border-top:0}.rv-sc .rv-l span{font-size:12px}'+
+  '.rv-why{color:var(--ok)!important}'+
+  '@media (max-width:900px){.rv-r{justify-content:flex-start}.rv-r .btn{min-height:40px}.rv-amt{min-width:0;text-align:left;margin-right:auto}}'
 );
 function load(){ if(busy) return; busy=true; F.api("/admin/api/fin/proposals").then(function(j){ busy=false; RV=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",items:[],groups:[],count:0}; F.render(); }).catch(function(){ busy=false; RV={ok:false,error:"Vorschläge nicht erreichbar",items:[],groups:[],count:0}; }); }
 F.reviewCount=function(){ if(!RV) load(); return RV&&RV.ok?RV.count||0:0; };
 F.reviewReset=function(){ RV=null; load(); };
 F.onData(function(){ RV=null; load(); });
 function amt(x){ return x.amount==null?'':'<span class="rv-amt '+(x.amount<0?"bad-t":"ok-t")+'">'+eur(x.amount)+'</span>'; }
-function viewBtn(x){ var a=x.voucherId?"sdvou:"+x.voucherId:x.invoiceId?"fin:invd:"+x.invoiceId:(x.txId||(x.txIds||[])[0])?"ftxassign:"+(x.txId||x.txIds[0]):""; return a?'<button class="btn" data-act="'+esc(a)+'">Ansehen</button>':''; }
+function viewBtn(x){ var a=x.voucherId?"sdvou:"+x.voucherId:x.invoiceId?"fin:invd:"+x.invoiceId:(x.txId||(x.txIds||[])[0])?"ftxassign:"+(x.txId||x.txIds[0]):""; return a?'<button class="btn" data-act="'+esc(a)+'">'+F.svg("eye")+' Ansehen</button>':''; }
 function item(x){
   return '<div class="rv-i"><div class="rv-l"><b>'+esc(x.title||"Vorschlag")+'</b><span>'+(x.date?de(x.date)+' · ':'')+esc(x.detail||"")+'</span>'+(x.source?'<span>Quelle: '+esc(x.source)+'</span>':'')+(x.hint?'<span class="rv-err">'+esc(x.hint)+'</span>':'')+(x.error?'<span class="rv-err">Letzter Versuch: '+esc(x.error)+'</span>':'')+'</div>'+
-    '<div class="rv-r">'+amt(x)+'<button class="btn primary" data-act="rvok:'+esc(x.id)+'">Bestätigen</button><button class="btn" data-act="rvno:'+esc(x.id)+'">Ablehnen</button>'+((x.voucherId||x.invoiceId||x.txId||(x.txIds||[]).length)?'<button class="btn" data-act="rvdet:'+esc(x.id)+'">Details</button>':viewBtn(x))+'</div></div>';
+    '<div class="rv-r">'+amt(x)+'<button class="btn primary" data-act="rvok:'+esc(x.id)+'">'+F.svg("checkCircle")+' Bestätigen</button><button class="btn" data-act="rvno:'+esc(x.id)+'">'+F.svg("xCircle")+' Ablehnen</button>'+((x.voucherId||x.invoiceId||x.txId||(x.txIds||[]).length)?'<button class="btn" data-act="rvdet:'+esc(x.id)+'">'+F.svg("eye")+' Details</button>':viewBtn(x))+'</div></div>';
 }
 /* Details: Buchung(en) und Beleg/Rechnung nebeneinander, Beleg mit Vorschau – direkt bestätigen oder ablehnen */
 F.action("rvdet",function(id){
@@ -40,17 +42,18 @@ F.action("rvdet",function(id){
     var prev=v?v.doc:iv?iv.pdf:"";
     box.innerHTML='<div class="row-between"><h2 style="font-size:20px">'+esc(x.title||"Vorschlag")+'</h2>'+F.btnClose()+'</div>'+(x.detail?'<p class="muted" style="margin:0">'+esc(x.detail)+'</p>':'')+
       '<div class="rvd-g"><div class="rvd-s">'+tx+vh+ih+'</div>'+(prev?'<iframe class="rvd-f" src="'+esc(prev)+'" title="Beleg-Vorschau"></iframe>':'')+'</div>'+
-      '<div class="foot"><span>'+amt(x)+'</span><span class="row"><button class="btn" data-act="rvno:'+esc(x.id)+'">Ablehnen</button><button class="btn primary" data-act="rvok:'+esc(x.id)+'">Bestätigen</button></span></div>';
+      '<div class="foot"><span>'+amt(x)+'</span><span class="row"><button class="btn" data-act="rvno:'+esc(x.id)+'">'+F.svg("xCircle")+' Ablehnen</button><button class="btn primary" data-act="rvok:'+esc(x.id)+'">'+F.svg("checkCircle")+' Bestätigen</button></span></div>';
   });
 });
-F.css(".rvd-g{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:14px;margin-top:12px}.rvd-s{display:flex;flex-direction:column;gap:10px}.rvd-c{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line,rgba(127,127,127,.25));border-radius:12px}.rvd-k{font-size:12px;text-transform:uppercase;letter-spacing:.06em;opacity:.65}.rvd-c b{font-size:18px}.rvd-f{width:100%;min-height:60vh;border:1px solid var(--line,rgba(127,127,127,.25));border-radius:12px;background:#fff}@media(max-width:760px){.rvd-g{grid-template-columns:1fr}.rvd-f{min-height:50vh}}");
+/* Details-Dialog: Buchung/Beleg als flache Kästen im Glas-Dialog, Beleg-Vorschau bleibt weißes „Papier“ */
+F.css(".rvd-g{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:14px;margin-top:12px}.rvd-s{display:flex;flex-direction:column;gap:10px;min-width:0}.rvd-c{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--sunk);min-width:0;overflow-wrap:anywhere}.rvd-k{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600}.rvd-c b{font-size:18px;font-variant-numeric:tabular-nums}.rvd-f{width:100%;min-height:60vh;border:1px solid var(--line);border-radius:12px;background:#fff}.rvd .rv-err{color:var(--bad)}@media(max-width:760px){.rvd-g{grid-template-columns:1fr}.rvd-f{min-height:50vh}}");
 F.reviewPage=function(mobile){
   if(!RV){ load(); return (mobile?'':'<div class="fsd-head"><div><h1>Zur Prüfung</h1></div></div>')+'<div class="sd-empty">Lade Vorschläge …</div>'; }
   if(!RV.ok) return '<div class="notice">'+esc(RV.error||"Fehler")+' <button class="btn" data-act="rvreload">Neu laden</button></div>';
   var groups=RV.groups||[], items=RV.items||[];
-  var head=mobile?'':'<div class="fsd-head"><div><h1>Zur Prüfung</h1><p>Was das Cockpit selbst erkannt hat – gebucht wird erst, wenn du bestätigst.</p></div><div class="fsd-btns"><button class="btn" data-act="rvreload">Aktualisieren</button></div></div>';
+  var head=mobile?'':'<div class="fsd-head"><div><h1>Zur Prüfung</h1><p>Was das Cockpit selbst erkannt hat – gebucht wird erst, wenn du bestätigst.</p></div><div class="fsd-btns"><button class="btn" data-act="rvreload">'+F.svg("refresh")+' Aktualisieren</button></div></div>';
   var body=groups.length?groups.map(function(g){ var list=items.filter(function(x){ return x.kind===g.kind; });
-      return '<section class="'+(mobile?"fsm-card":"fsd-card")+' rv-g"><div class="rv-gh"><b>'+esc(g.label)+' <span class="muted">('+g.count+')</span></b>'+(g.count>1?'<button class="btn primary" data-act="rvall:'+esc(g.kind)+'">Alle bestätigen ('+g.count+')</button>':'')+'</div>'+list.map(item).join("")+'</section>'; }).join("")
+      return '<section class="'+(mobile?"fsm-card":"fsd-card")+' rv-g"><div class="rv-gh"><b>'+esc(g.label)+' <span class="muted">('+g.count+')</span></b>'+(g.count>1?'<button class="btn primary" data-act="rvall:'+esc(g.kind)+'">'+F.svg("checkCircle")+' Alle bestätigen ('+g.count+')</button>':'')+'</div>'+list.map(item).join("")+'</section>'; }).join("")
     :'<section class="'+(mobile?"fsm-card":"fsd-card")+'"><p class="sd-empty">Nichts zu prüfen. 🎉<br><span class="muted">Neue Vorschläge (Bankregeln, Mollie, Geldtransit, Belegdateien, USt-Zahlung …) erscheinen hier – nichts wird ohne dich gebucht.</span></p></section>';
   var log=(RV.log||[]).length?'<details class="'+(mobile?"fsm-card":"fsd-card")+'"><summary>Zuletzt erledigt</summary>'+RV.log.slice(0,12).map(function(l){ return '<div class="muted" style="font-size:12.5px;padding:3px 0">'+de(String(l.at).slice(0,10))+' · '+(l.rejected?"abgelehnt":"bestätigt")+' · '+esc(l.title||"")+(l.amount!=null?' · '+eur(l.amount):'')+'</div>'; }).join("")+'</details>':'';
   return head+body+log;

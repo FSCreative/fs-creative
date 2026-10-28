@@ -2012,6 +2012,8 @@ module.exports = function (D) {
   }
   let lastDaily = 0;
   let lastTrack = 0;
+  // Sendungsstatus höchstens alle 25 min: tick() und der 30-min-Takt im Server teilen sich diese Sperre (früher doppelt gegen das Print.com-Limit)
+  function pollDue() { if (!cfg().pcKey || Date.now() - lastTrack < 25 * 60e3) return false; lastTrack = Date.now(); return true; }
   // Vorwärmen (alle 2 h, niedrige Priorität): Hauptprodukte in der Standard-Ausführung samt Aufpreisen kurzer Optionen und Produktionszeiten –
   // die Print.com-Antworten liegen dann im Zwischenspeicher (3 h) und Preise/Aufpreise erscheinen beim Öffnen sofort
   // ── Startseite: „Heute im Fokus“ und „Neu im Sortiment“ täglich prüfen – nur Produkte mit abrufbarem Preis, Bild und ohne bekannten teureren Mitbewerberpreis zeigen ──
@@ -2260,13 +2262,13 @@ module.exports = function (D) {
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
-    if (cfg().pcKey && Date.now() - lastTrack > 30 * 60e3) { lastTrack = Date.now(); pollAll().catch(e => log("Sendungsstatus:", e.message)); }   // Status/Tracking alle 30 min (plus Webhook)
+    if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
     try {
       if (Date.now() - lastDaily < 20 * 3600e3) return;
       const m = (await store.getMeta("print_daily").catch(() => null)) || {};
       if (m.at && Date.now() - Date.parse(m.at) < 20 * 3600e3) { lastDaily = Date.parse(m.at); return; }
       lastDaily = Date.now(); await store.setMeta("print_daily", { at: nowIso() });
-      if (cfg().pcKey) { await catalog(true).catch(() => null); await pollAll(); }
+      if (cfg().pcKey) { await catalog(true).catch(() => null); lastTrack = Date.now(); await pollAll(); }
       await feedbackMails().catch(e => log("Feedback-Mails:", e.message));
       await cleanupFiles();
     } catch (e) { log("Tageslauf:", e.message); }
@@ -2725,6 +2727,23 @@ module.exports = function (D) {
       home: await homeState(), job: MG ? { running: MG.running, at: MG.at, done: MG.done, total: MG.total } : null, rows: MG ? MG.rows.slice().sort((a, b) => a.o - b.o || a.copies - b.copies) : [],
       orders: { month: r(sum(orders.filter(o => String(o.createdAt || "").slice(0, 7) === mon))), d30: r(sum(orders.filter(o => String(o.createdAt || "") >= d30))), all: r(sum(orders)) } };
   }
+  // Für „Verbindungen“: Zustand ohne Schlüssel; ping = { printcom, mollie }: je eine leichte Anfrage an Print.com (niedrige Priorität, über die Drossel) bzw. Mollie
+  async function health(ping) {
+    const c = cfg(), cat = CAT || await store.getMeta("print_catalog").catch(() => null);
+    const out = { printcom: !!c.pcKey, mollie: !!c.mollieKey, mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", live: live(),
+      catalogAt: (cat && cat.at) || "", catalogProducts: ((cat && cat.products) || []).length, catalogErrors: ((cat && cat.errors) || []).slice(0, 5), lastPoll: lastTrack ? new Date(lastTrack).toISOString() : "" };
+    if (!ping) return out;
+    if (c.pcKey && ping.printcom) {
+      const sku = (cat && cat.products && cat.products[0] && cat.products[0].sku) || CURATED[0].skus[0];
+      try { await pcApi("GET", "/products/" + encodeURIComponent(sku) + "?view=reseller", undefined, { low: true, timeout: 15000 }); out.pcPing = { ok: true }; }
+      catch (e) { out.pcPing = { ok: false, status: e.status || 0, error: String(e.message || e).slice(0, 200) }; }
+    }
+    if (c.mollieKey && ping.mollie) {
+      try { await mollie("GET", "/methods"); out.molliePing = { ok: true }; }
+      catch (e) { out.molliePing = { ok: false, status: e.status || 0, error: e && e.name === "TimeoutError" ? "keine Antwort (Zeitüberschreitung)" : String(e.message || e).slice(0, 200) }; }
+    }
+    return out;
+  }
   async function adminState() {
     const c = cfg(), s = await settings();
     const orders = await store.listOrders();
@@ -2889,6 +2908,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => cfg().pcKey ? pollAll() : Promise.resolve(0), proposalValid, catalog, syncTasks, marketingProducts, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
+  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim } };
 };
 module.exports._bonusCalc = bonusCalc;

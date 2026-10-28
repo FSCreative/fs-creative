@@ -17,10 +17,10 @@ module.exports = function (D) {
   function tokens() {
     return Object.keys(process.env).filter(k => /^MOLLIE_ORG_TOKEN(_\w+)?$/.test(k) && process.env[k]).sort().map(k => ({ key: k, token: String(process.env[k]).trim() }));
   }
-  async function api(token, pathOrUrl) {
+  async function api(token, pathOrUrl, ms) {
     const url = /^https:/.test(pathOrUrl) ? pathOrUrl : BASE + pathOrUrl;
     if (!/^https:\/\/api\.mollie\.com\//.test(url)) throw new Error("ungültige Mollie-URL");
-    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms || 30000);
     try {
       const r = await (D.fetch || fetch)(url, { headers: { Authorization: "Bearer " + token, Accept: "application/json" }, signal: ctl.signal });
       const j = await r.json().catch(() => ({}));
@@ -369,6 +369,15 @@ module.exports = function (D) {
     }
     return { count: n, sum };
   }
-  function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error }; }
-  return { sync, status, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept, onlineCheck, onlineNotices };
+  // Teilfehler sichtbar machen: STATE.error bleibt leer, wenn nur eine Organisation scheitert (abgelaufener Zugang)
+  function status() { return { configured: tokens().length, keys: tokens().map(t => t.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error,
+    orgErrors: ((STATE.last && STATE.last.orgs) || []).filter(o => o && o.error).map(o => ({ org: o.org, error: o.error })) }; }
+  // Verbindungstest je Zugang (nur lesen, eine Anfrage je Organisation): { key, ok, name | error, status }
+  async function ping() {
+    const out = [];
+    for (const tk of tokens()) { try { const o = await api(tk.token, "/organizations/me", 12000); out.push({ key: tk.key, ok: true, name: o.name || "" }); }
+      catch (e) { out.push({ key: tk.key, ok: false, status: e.status || 0, error: e.name === "AbortError" ? "keine Antwort (Zeitüberschreitung)" : e.message }); } }
+    return out;
+  }
+  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, summary, autoVouchers, accept, onlineCheck, onlineNotices };
 };

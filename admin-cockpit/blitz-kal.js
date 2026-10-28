@@ -11,22 +11,26 @@ var S={ month:null, data:null, key:"", loading:false, err:"", cat:null, catErr:"
 var TYPE_LABEL={MINI:"Mini",BUSINESS:"Business",VIDEO360:"360°"};
 var ST_LABEL={CONFIRMED:"bestätigt",PENDING:"Zahlung läuft",COMPLETED:"erledigt",CANCELLED:"storniert"};
 var WD=["Mo","Di","Mi","Do","Fr","Sa","So"];
+F.icons.chevL=F.icons.chevL||'<path d="m15 6-6 6 6 6"/>';
+F.icons.chevR=F.icons.chevR||'<path d="m9 6 6 6-6 6"/>';
 
 F.css(
 '.bk-cal{padding:12px 14px 16px}'+
 '.bk-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}'+
-'.bk-nav h3{font-size:16px;min-width:150px;text-align:center}'+
+'.bk-nav h3{font-size:16px;min-width:150px;text-align:center;text-transform:capitalize}.bk-nav .btn.icon svg{width:17px;height:17px}'+
+'.bk-pick{display:flex;width:100%;justify-content:space-between;gap:10px;margin-bottom:6px;min-width:0}.bk-pick>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}'+
 '.bk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:10px}'+
 '.bk-wd{font-size:11.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;text-align:center;padding:2px 0}'+
-'.bk-day{min-height:78px;border:1px solid var(--line);border-radius:9px;padding:5px 6px;display:grid;align-content:start;gap:3px;background:var(--panel);text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0}'+
-'.bk-day:hover{border-color:var(--ink-3)}'+
+/* Tageszellen im Panel: durchsichtig (kein Panel-auf-Panel), Hover über Token */
+'.bk-day{min-height:78px;border:1px solid var(--line);border-radius:9px;padding:5px 6px;display:grid;align-content:start;gap:3px;background:transparent;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0}'+
+'.bk-day:hover{border-color:var(--ink-3);background:var(--hover,var(--sunk))}'+
 '.bk-day.out{opacity:.45}'+
 '.bk-day.past{background:var(--sunk)}'+
 '.bk-day.full{background:var(--warn-soft)}'+
 '.bk-day.blk{background:var(--bad-soft)}'+
 '.bk-day.today{box-shadow:inset 0 0 0 2px var(--info)}'+
-'.bk-day .bk-n{font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:4px}'+
-'.bk-day.today .bk-n b{background:var(--info);color:#fff;border-radius:99px;padding:0 6px}'+
+'.bk-day .bk-n{font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:4px;font-variant-numeric:tabular-nums}'+
+'.bk-day.today .bk-n b{background:var(--info);color:var(--on-glow);border-radius:99px;padding:0 6px}'+
 '.bk-types{display:flex;gap:3px}'+
 '.bk-types i{display:block;width:100%;height:5px;border-radius:3px;background:var(--ok)}'+
 '.bk-types i.booked{background:var(--warn)} .bk-types i.blocked{background:var(--bad)}'+
@@ -95,7 +99,7 @@ function types(){ return ((S.data&&S.data.resources)||[{type:"MINI"},{type:"BUSI
 F.blitzKal=function(){
   if(!S.month) S.month=today().slice(0,7);
   var r=monthRange(S.month), t=today(), ty=types();
-  var head='<div class="bk-nav"><button class="btn icon" data-act="bkm:-1" aria-label="Vormonat">‹</button><h3>'+esc(monthLabel(S.month))+'</h3><button class="btn icon" data-act="bkm:1" aria-label="Nächster Monat">›</button>'+
+  var head='<div class="bk-nav"><button class="btn icon" data-act="bkm:-1" aria-label="Vormonat" title="Vormonat">'+F.svg("chevL")+'</button><h3>'+esc(monthLabel(S.month))+'</h3><button class="btn icon" data-act="bkm:1" aria-label="Nächster Monat" title="Nächster Monat">'+F.svg("chevR")+'</button>'+
     '<button class="btn" data-act="bkm:0">Heute</button><span style="flex:1"></span>'+
     (S.loading?'<span class="muted">Lade …</span>':'')+
     '<button class="btn" data-act="bkblock:">Sperre anlegen</button><button class="btn primary" data-act="bknew:">+ Buchung anlegen</button></div>';
@@ -137,7 +141,7 @@ function openDay(iso){
   var st=(S.data&&S.data.days||{})[iso]||{};
   F.modal('<div class="row-between"><h2 style="font-size:19px">'+esc(F.dayLabel(iso,today()))+' · '+de(iso)+'</h2>'+F.btnClose()+'</div>'+
     '<dl class="bk-dl" style="margin:10px 0">'+types().map(function(x){ return '<dt>'+esc(TYPE_LABEL[x]||x)+'</dt><dd>'+({free:'<span class="tag ok">frei</span>',booked:'<span class="tag warn">gebucht</span>',blocked:'<span class="tag bad">gesperrt</span>'})[st[x]||"free"]+'</dd>'; }).join("")+'</dl>'+
-    (bs.length?'<div class="sec-t">Buchungen</div>'+bs.map(function(b){ return '<button type="button" class="btn" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px" data-act="bkshow:'+esc(b.id)+'"><span>'+esc(b.customerName)+' · '+esc(b.package.name)+'</span><span class="tag '+(b.blocking?"warn":"grey")+'">'+esc(ST_LABEL[b.status]||b.status)+'</span></button>'; }).join(""):'')+
+    (bs.length?'<div class="sec-t">Buchungen</div>'+bs.map(function(b){ return '<button type="button" class="btn bk-pick" data-act="bkshow:'+esc(b.id)+'" title="'+esc(b.customerName+" · "+b.package.name)+'"><span>'+esc(b.customerName)+' · '+esc(b.package.name)+'</span><span class="tag '+(b.blocking?"warn":"grey")+'">'+esc(ST_LABEL[b.status]||b.status)+'</span></button>'; }).join(""):'')+
     (bl.length?'<div class="sec-t">Gesperrt</div>'+bl.map(function(x){ return '<div class="row-between" style="margin-bottom:6px"><span>'+(x.type?esc(TYPE_LABEL[x.type]||x.type):"Alle Boxen")+(x.reason?' – '+esc(x.reason):'')+'</span><button class="btn" data-act="bkunblock:'+esc(x.id)+'">Freigeben</button></div>'; }).join(""):'')+
     '<div class="foot"><span class="row"><button class="btn" data-act="bkblock:'+iso+'">Tag sperren</button></span><span class="row"><button class="btn" data-closemodal>Schließen</button>'+(iso>=today()?'<button class="btn primary" data-act="bknew:'+iso+'">Buchung anlegen</button>':'')+'</span></div>',"narrow");
 }

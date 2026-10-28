@@ -39,10 +39,22 @@ var IC={
   inv:'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   board:'<rect x="3.5" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="16.5" y="4" width="4" height="7" rx="1.5"/>',
   chev:'<path d="m6 9 6 6 6-6"/>',
-  check:'<path d="m5 12 5 5 9-10"/>'
+  check:'<path d="m5 12 5 5 9-10"/>',
+  archive:'<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/>',
+  alert:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/>',
+  plug:'<path d="M9 2v6M15 2v6"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v5"/>',
+  spark:'<path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.5l-1.8-5L5 9.7l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  swipe:'<path d="M4 12h16"/><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  filter:'<path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/>',
+  send:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>'
 };
 Object.keys(IC).forEach(function(k){ F.icons["m_"+k]=IC[k]; });
-M.ic=function(n){ if(n==="starfill") return '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true">'+IC.star+'</svg>'; return F.svg("m_"+n); };
+/* Gemeinsame Cockpit-Symbole (core.js, gleicher Strich) bevorzugen, sonst die eigenen von oben */
+var CIC={inbox:"inbox",trash:"trash",star:"star",reply:"reply",replyall:"replyAll",forward:"forward",clip:"clip",mailopen:"mailOpen",cloud:"cloud",refresh:"refresh",edit:"edit",ext:"external",down:"download",print:"printer",archive:"archive",alert:"alertCircle",plug:"plug",spark:"sparkle",plus:"plus",filter:"filter",send:"send"};
+function icPath(n){ var c=CIC[n]; return (c&&F.icons[c])||IC[n]||F.icons[n]||""; }
+M.ic=function(n){ if(n==="starfill") return '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true">'+icPath("star")+'</svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+icPath(n)+'</svg>'; };
 var ic=M.ic;
 
 /* ---------- Ordner-Erkennung ---------- */
@@ -140,14 +152,16 @@ M.changed=function(){
 };
 M.setOv=function(m,fields){ Object.assign(m,fields); if(m.local) return; OV[m.id]=Object.assign(OV[m.id]||{},fields,{at:Date.now()}); };
 M.refresh=function(){ if(F.current==="post") F.render(); else F.renderNav(); (M.refreshHooks||[]).forEach(function(h){ try{ h(); }catch(e){} }); };
+/* Zustand des Mail-Dienstes: meldet der Server „alter Stand“/Fehler (stale/error), merken – mit Zeitpunkt, damit der neuere Abruf gewinnt */
+function srvFlags(md){ if(md&&("stale" in md||"error" in md)) S.srvFlag={stale:!!md.stale,error:typeof md.error==="string"?md.error:"",at:Date.now()}; }
 M.loadFull=function(){
   if(M._lf) return M._lf; S.loading=true;
   M._lf=F.api("/admin/api/mail?fresh=1").then(function(md){
     var d={mail:md}; S.loading=false; M._lf=null;
-    if(md&&Array.isArray(md.messages)){ S.err=""; S.etag=md.etag||""; ingest(md,true);
+    if(md&&Array.isArray(md.messages)){ S.err=""; S.etag=md.etag||""; srvFlags(md); ingest(md,true);
       /* Der Server puffert den Abruf ~20 s: solange Verschiebungen noch nicht sichtbar sind, später erneut laden */
       if(Object.keys(OV).some(function(k){ return "folder" in OV[k]; })) M.scheduleReload(12000); }
-    else S.err="Postfach konnte nicht geladen werden.";
+    else S.err=md&&md.error==="mail_not_available"?"Der Mail-Dienst antwortet gerade nicht.":"Postfach konnte nicht geladen werden.";
     M.refresh(); return d;
   }).catch(function(){ S.loading=false; M._lf=null; S.err="Keine Verbindung zum Server."; M.refresh(); });
   return M._lf;
@@ -159,7 +173,7 @@ setInterval(function(){
   POLL_BUSY=true;
   F.api("/admin/api/mail?etag="+encodeURIComponent(S.etag||"")).then(function(md){
     POLL_BUSY=false;
-    if(md&&!md.same&&Array.isArray(md.messages)){ S.etag=md.etag||""; ingest(md,true); M.refresh(); }
+    if(md&&!md.same&&Array.isArray(md.messages)){ S.etag=md.etag||""; srvFlags(md); ingest(md,true); M.refresh(); }
   }).catch(function(){ POLL_BUSY=false; });
 },10000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden&&S.full&&Date.now()-S.fullAt>10000) M.loadFull(); });
@@ -351,13 +365,14 @@ M.attIconTxt=attIconTxt;
 /* ---------- Ordner-Spalte ---------- */
 function fb(key,icon,label,cnt,opts){ opts=opts||{};
   return '<button type="button" class="fbtn'+(opts.cls?" "+opts.cls:"")+'" data-act="mfolder:'+esc(key)+'"'+(opts.drop?' data-drop="'+esc(opts.drop)+'"':'')+(opts.fdrag?' draggable="true" data-fdrag="'+esc(opts.fdrag)+'"':'')+(opts.depth?' style="padding-left:'+(9+opts.depth*14)+'px"':'')+(UI.mf===key?' aria-current="true"':'')+' title="'+esc(label)+'">'+ic(icon)+'<span class="fl">'+esc(label)+'</span>'+(cnt?'<span class="n'+(opts.hot?" hot":"")+'">'+cnt+'</span>':'')+'</button>'; }
-function folderPanel(){
-  var c=counts(), h="";
+function folderPanel(o){
+  o=o||{}; var c=counts(), h="";
   if(multiAcc()){
     var ab=function(k,label,sub,tone,warn){ var n=inboxUnread(k); return '<button type="button" class="accbtn" data-act="macct:'+esc(k)+'"'+(UI.macct===k?' aria-current="true"':'')+' title="'+esc(sub||label)+'"><span class="adot" style="background:var(--'+tone+')"></span><span class="atx"><span class="atl">'+esc(label)+'</span>'+(sub?'<span class="atu">'+esc(sub)+'</span>':'')+'</span>'+(warn?'<span class="awarn" data-act="msettings:'+esc(k)+'" role="button" tabindex="0" title="'+esc(warn)+'" aria-label="'+esc(warn)+'">!</span>':'')+(n?'<span class="n hot">'+n+'</span>':'')+'</button>'; };
-    h+='<div class="accsw">'+ab("all","Alle Konten","","ink-3","")+accounts().map(function(a){ return ab(a.key,a.label||a.key,a.user,accTone(a.key),accWarn(a)); }).join("")+'</div>';
+    h+=(o.sheet?'<div class="fdiv">Konto</div>':'')+'<div class="accsw'+(o.sheet?" accseg":"")+'">'+ab("all","Alle Konten","","ink-3","")+accounts().map(function(a){ return ab(a.key,a.label||a.key,a.user,accTone(a.key),accWarn(a)); }).join("")+'</div>';
   }
   var ob=M.outbox?M.outbox():[];
+  if(o.sheet&&multiAcc()) h+='<div class="fdiv">Postfach</div>';
   h+=fb("inbox","inbox","Posteingang",c.inboxUnread,{hot:true,drop:"INBOX"})+fb("drafts","draft","Entwürfe",c.drafts)+
     fb("outbox","outbox","Postausgang",ob.length,{cls:ob.some(function(o){return o.status==="failed";})?"warn":"",hot:ob.length>0})+
     fb("sent","sent","Gesendet",0)+fb("spam","spam","Spam",c.spam,{drop:"__spam"})+fb("trash","trash","Papierkorb",0,{drop:"__trash"});
@@ -385,39 +400,53 @@ function rowHtml(m,o){ o=o||{};
   var canPick=!(m.outbox||m.draftLocal), picked=!!UI.mpick[m.id], qa="";
   if(canPick){
     if(isTrashed(m)) qa='<div class="mqa"><button type="button" data-act="mqa:restore|'+esc(m.id)+'" title="Wiederherstellen" aria-label="Wiederherstellen">'+ic("restore")+'</button><button type="button" class="dg" data-act="mqa:purge|'+esc(m.id)+'" title="Endgültig löschen" aria-label="Endgültig löschen">'+ic("trash")+'</button></div>';
-    else qa='<div class="mqa"><button type="button" data-act="mqa:read|'+esc(m.id)+'" title="'+(m.read?"Als ungelesen (U)":"Als gelesen (U)")+'" aria-label="'+(m.read?"Als ungelesen":"Als gelesen")+'">'+ic(m.read?"mail":"mailopen")+'</button><button type="button" data-act="mqa:move|'+esc(m.id)+'" title="Verschieben (V)" aria-label="Verschieben">'+ic("folder")+'</button><button type="button" class="dg" data-act="mqa:trash|'+esc(m.id)+'" title="Löschen (#)" aria-label="Löschen">'+ic("trash")+'</button></div>';
+    else qa='<div class="mqa"><button type="button" data-act="mqa:read|'+esc(m.id)+'" title="'+(m.read?"Als ungelesen (U)":"Als gelesen (U)")+'" aria-label="'+(m.read?"Als ungelesen":"Als gelesen")+'">'+ic(m.read?"mail":"mailopen")+'</button>'+
+      (canArchive(m)?'<button type="button" data-act="mqa:archive|'+esc(m.id)+'" title="Archivieren (E)" aria-label="Archivieren">'+ic("archive")+'</button>':'')+
+      '<button type="button" data-act="mqa:move|'+esc(m.id)+'" title="Verschieben (V)" aria-label="Verschieben">'+ic("folder")+'</button><button type="button" class="dg" data-act="mqa:trash|'+esc(m.id)+'" title="Löschen (#)" aria-label="Löschen">'+ic("trash")+'</button></div>';
   }
-  var star=canPick?'<button type="button" class="star'+(m.starred?" on":"")+'" data-act="mstar:'+esc(m.id)+'" title="Markieren (S)" aria-label="'+(m.starred?"Markierung entfernen":"Markieren")+'" aria-pressed="'+!!m.starred+'">'+(m.starred?"★":"☆")+'</button>':'';
+  var star=canPick?'<button type="button" class="star'+(m.starred?" on":"")+'" data-act="mstar:'+esc(m.id)+'" title="'+(m.starred?"Markierung entfernen (S)":"Markieren (S)")+'" aria-label="'+(m.starred?"Markierung entfernen":"Markieren")+'" aria-pressed="'+!!m.starred+'">'+ic(m.starred?"starfill":"star")+'</button>':'';
   var avBtn=canPick?av(nm,ad,"",' data-act="mpick:'+esc(m.id)+'" role="checkbox" aria-checked="'+picked+'" tabindex="0" title="Auswählen (X)"','<span class="ck">'+ic("check")+'</span>'):av(nm,ad);
   var thn=o.n>1?'<button type="button" class="thn'+(o.open?" on":"")+'" data-act="mthx:'+esc(m.id)+'" title="Unterhaltung mit '+o.n+' Mails '+(o.open?"zuklappen":"aufklappen")+'" aria-expanded="'+!!o.open+'">'+o.n+ic("chev")+'</button>':'';
-  return '<div class="mrow2'+(m.read&&!o.unread?"":" unread")+(UI.msel===m.id?" sel":"")+(picked?" picked":"")+(isTrashed(m)?" trashed":"")+(o.child?" thc":"")+(o.open?" thopen":"")+'" data-mid="'+esc(m.id)+'" tabindex="0"'+(canPick?' draggable="true"':'')+'>'+avBtn+
-    '<div class="mm"><div class="l1"><span class="who">'+who+'</span>'+accPill(m)+'<span class="when" title="'+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'">'+esc(fmtMailDate(m.date))+'</span></div>'+
-    '<div class="l2"><span class="subj">'+hl(m.subject||"(kein Betreff)")+'</span>'+fl+thn+'<span class="ics">'+ics+'</span>'+star+'</div>'+
+  var whoT=m.draftLocal?"Entwurf":(sent?"An: ":"")+((nm&&ad&&nm!==ad)?nm+" <"+ad+">":(nm||ad||""));
+  return '<div class="mrow2'+(m.read&&!o.unread?"":" unread")+(UI.msel===m.id?" sel":"")+(picked?" picked":"")+(isTrashed(m)?" trashed":"")+(o.child?" thc":"")+(o.open?" thopen":"")+'" data-mid="'+esc(m.id)+'" tabindex="0"'+(UI.msel===m.id?' aria-current="true"':'')+(canPick?' draggable="true"':'')+'>'+avBtn+
+    '<div class="mm"><div class="l1"><span class="who" title="'+esc(whoT)+'">'+who+'</span>'+accPill(m)+'<span class="when" title="'+esc(m.date?new Date(m.date).toLocaleString("de-AT"):"")+'">'+esc(fmtMailDate(m.date))+'</span></div>'+
+    '<div class="l2"><span class="subj" title="'+esc(m.subject||"")+'">'+hl(m.subject||"(kein Betreff)")+'</span>'+fl+thn+'<span class="ics">'+ics+'</span>'+star+'</div>'+
     (m.preview?'<div class="pre">'+esc(m.preview)+'</div>':'')+'</div>'+qa+'</div>';
 }
 function chipsHtml(list){
   var base=baseView(), f=UI.mf, cur=UI.mfilt||"all";
   var n={unread:base.filter(function(m){return !m.read;}).length,star:base.filter(function(m){return m.starred;}).length,att:base.filter(function(m){return m.attachments&&m.attachments.length;}).length,open:base.filter(isOpen).length};
-  function chip(k,l,c,tt){ return '<button type="button" class="chip" data-act="mfilt:'+k+'" aria-pressed="'+(cur===k)+'"'+(tt?' title="'+tt+'"':'')+'>'+l+(c!=null?' <span class="cn">'+c+'</span>':'')+'</button>'; }
-  var tools="";
+  function chip(k,l,c,tt){ return '<button type="button" class="chip" data-act="mfilt:'+k+'" aria-pressed="'+(cur===k)+'"'+(tt?' title="'+tt+'" aria-label="'+tt+'"':'')+'>'+l+(c?' <span class="cn">'+c+'</span>':'')+'</button>'; }
+  return chip("all","Alle")+chip("unread","Ungelesen",n.unread)+chip("star",'<span class="ci">'+ic("star")+'</span>',n.star,"Markiert")+chip("att",'<span class="ci">'+ic("clip")+'</span>',n.att,"Mit Anhang")+
+    (f==="sent"||f==="outbox"||f==="drafts"?"":chip("open","Offen",n.open,"Noch nicht beantwortet"))+
+    (thToggle()?'<button type="button" class="chip thchip" data-act="mthreads" aria-pressed="'+!!UI.mthreads+'" title="Mails eines Themas als Unterhaltung zusammenfassen (an/aus)" aria-label="Unterhaltungen zusammenfassen"><span class="ci">'+ic("replyall")+'</span></button>':'');
+}
+function thToggle(){ return !UI.mq&&["sent","trash","spam","drafts","outbox"].indexOf(UI.mf)<0;
+}
+/* Kopf der Mailliste (PC): Ordnername, Anzahl, Werkzeuge */
+function listHead(list){
+  var f=UI.mf, tools="", unread=list.filter(function(m){ return !m.read&&!m.outbox&&!m.draftLocal; }).length;
   if(f==="trash"&&list.length) tools='<button type="button" class="link bad-t" data-act="mempty">Papierkorb leeren</button>';
   else if(f==="spam"&&list.length) tools='<button type="button" class="link bad-t" data-act="mspamclear">Spam leeren</button>';
   var pickable=list.filter(function(m){ return !m.outbox&&!m.draftLocal; }).length;
-  return chip("all","Alle")+chip("unread","Ungelesen",n.unread)+chip("star","★",n.star,"Markiert")+chip("att",'<span class="ci">'+ic("clip")+'</span>',n.att,"Mit Anhang")+
-    (f==="sent"||f==="outbox"||f==="drafts"?"":chip("open","Offen",n.open,"Noch nicht beantwortet"))+
-    (["sent","trash","spam","drafts","outbox"].indexOf(f)<0?'<button type="button" class="chip" data-act="mthreads" aria-pressed="'+!!UI.mthreads+'" title="Mails eines Themas als Unterhaltung zusammenfassen (an/aus)"><span class="ci">'+ic("replyall")+'</span></button>':'')+'<span class="sp"></span>'+tools+(pickable?'<button type="button" class="link" data-act="mbulk:all" title="Alle auswählen">'+pickable+' auswählen</button>':'');
+  var t=UI.mq?"Suche":curFolderLabel()+(multiAcc()&&UI.macct!=="all"?" · "+accInfo(UI.macct).label:"");
+  return '<div class="mlh"><div class="mlh-t"><b title="'+esc(t)+'">'+esc(t)+'</b><span>'+list.length+(list.length===1?" Mail":" Mails")+(unread?" · "+unread+" ungelesen":"")+'</span></div>'+tools+
+    (pickable?'<button type="button" class="link" data-act="mbulk:all" title="Alle in dieser Liste auswählen">Alle auswählen</button>':'')+
+    (thToggle()?'<button type="button" class="mlh-th" data-act="mthreads" aria-pressed="'+!!UI.mthreads+'" title="'+(UI.mthreads?"Unterhaltungen: an – Mails eines Themas sind zusammengefasst":"Unterhaltungen: aus – jede Mail einzeln")+'" aria-label="Unterhaltungen zusammenfassen">'+ic("replyall")+'</button>':'')+'</div>';
 }
 function emptyHtml(){
-  var f=UI.mf, e=["inbox","Alles erledigt","Keine Nachrichten in dieser Ansicht."];
-  if(UI.mq) e=["mail","Nichts gefunden","Für „"+UI.mq+"“ gibt es keine Treffer."];
-  else if(UI.mfilt&&UI.mfilt!=="all") e=["inbox","Keine Treffer","Mit diesem Filter ist die Liste leer."];
+  var f=UI.mf, e=["inbox","Alles erledigt","Keine Nachrichten in dieser Ansicht. Neue Mails erscheinen hier von selbst."], act="";
+  if(UI.mq){ e=["search","Nichts gefunden","Für „"+UI.mq+"“ gibt es keine Treffer. Tipp: von:, betreff:, hat:anhang"]; act='<button type="button" class="btn" data-act="msearchx">Suche leeren</button>'; }
+  else if(UI.mfilt&&UI.mfilt!=="all"){ e=["inbox","Keine Treffer","Mit diesem Filter ist die Liste leer."]; act='<button type="button" class="btn" data-act="mfilt:all">Alle Mails zeigen</button>'; }
   else if(f==="drafts") e=["draft","Keine Entwürfe","Angefangene Mails werden hier automatisch gesichert."];
   else if(f==="outbox") e=["outbox","Postausgang leer","Alle Mails wurden versendet."];
-  else if(f==="trash") e=["trash","Papierkorb ist leer",""];
+  else if(f==="trash") e=["trash","Papierkorb ist leer","Gelöschte Mails landen hier und lassen sich wiederherstellen."];
   else if(f==="spam") e=["spam","Kein Spam","Hier ist alles sauber."];
   else if(f==="sent") e=["sent","Noch nichts gesendet",""];
-  if(!S.messages.length&&S.loading) e=["refresh","Postfach wird geladen …",""];
-  return '<div class="mempty"><span class="ei">'+ic(e[0])+'</span><b>'+esc(e[1])+'</b>'+(e[2]?'<span>'+esc(e[2])+'</span>':'')+'</div>';
+  else if(f==="inbox") act='<button type="button" class="btn" data-act="compose">'+ic("edit")+' Neue Mail</button>';
+  if(!S.messages.length&&S.loading){ e=["refresh","Postfach wird geladen …",""]; act=""; }
+  else if(!S.messages.length&&S.err){ e=["alert","Postfach nicht erreichbar",S.err]; act='<button type="button" class="btn" data-act="mretry">'+ic("refresh")+' Erneut versuchen</button>'; }
+  return '<div class="mempty'+(S.loading&&!S.messages.length?" busy":"")+'"><span class="ei">'+ic(e[0])+'</span><b>'+esc(e[1])+'</b>'+(e[2]?'<span>'+esc(e[2])+'</span>':'')+(act?'<div class="ea">'+act+'</div>':'')+'</div>';
 }
 function listHtml(list){
   if(!list.length) return emptyHtml();
@@ -432,7 +461,10 @@ function listHtml(list){
 }
 
 /* ---------- Lesebereich ---------- */
-function rb(act,icon,label,extra,showLabel){ return '<button type="button" class="rb'+(extra||"")+(/^(mback|mx:trash|mx:move|mx:read|mx:unread|mx:restore|mx:purge|mx:editdraft|mob:)/.test(act)?" mk":"")+'" data-act="'+act+'" title="'+esc(label)+'" aria-label="'+esc(label)+'">'+ic(icon)+(showLabel?'<span class="rl">'+esc(label.replace(/ \(.\)$/,""))+'</span>':'')+'</button>'; }
+/* Knopf in der Werkzeugleiste: o.lvl = ab welcher Breite die Beschriftung bleibt (1 = fast immer … 4 = nur breit, 0 = nur Symbol),
+   o.mob = auch am Handy oben sichtbar, o.key = Tastenkürzel im Tooltip */
+function rb(act,icon,label,o){ o=o||{}; var l=o.lvl||0;
+  return '<button type="button" class="rb'+(o.cls?" "+o.cls:"")+(l?" l"+l:"")+(o.mob?" mk":"")+'" data-act="'+act+'" title="'+esc(label+(o.key?" ("+o.key+")":""))+'" aria-label="'+esc(label)+'">'+ic(icon)+(l?'<span class="rl">'+esc(o.short||label)+'</span>':'')+'</button>'; }
 function frame(html,title){ return '<iframe class="mframe" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="'+esc(title||"Mail-Inhalt")+'" srcdoc="'+esc('<!doctype html><meta charset="utf-8"><base target="_blank"><style>html,body{background:#fff}body{font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:#1b2420;margin:14px;overflow-wrap:anywhere}img{max-width:100%;height:auto}blockquote{margin:6px 0 6px 4px;padding-left:10px;border-left:3px solid #dcdfd8;color:#56605a}details.fsq{margin-top:12px}details.fsq>summary{cursor:pointer;display:inline-block;list-style:none;font-size:12.5px;color:#5f6778;border:1px solid #e3e6ee;background:#f4f5f8;border-radius:99px;padding:2px 10px;margin-bottom:8px}details.fsq>summary::-webkit-details-marker{display:none}</style>'+(html||""))+'"></iframe>'; }
 /* Handy: Mail-Inhalt wie in Outlook – volle Höhe statt Rahmen mit eigenem Scrollbalken, breite Newsletter auf Bildschirmbreite verkleinert
    (allow-same-origin ohne allow-scripts: im Rahmen läuft kein Skript, das Cockpit darf nur messen) */
@@ -451,7 +483,7 @@ function attachmentsHtml(m){
   var chips=atts.map(function(a){
     var href=M.attHref(m,a), vs=M.voucherSent(m,a), canV=M.isVoucherAtt(a);
     var dv=/^(PDF|Bild)$/.test(attIconTxt(a))?' data-docview data-doctitle="'+esc(a.filename||"Anhang")+'"':'';
-    return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="Ansehen"'+dv+'><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
+    return '<span class="att"><a href="'+esc(href)+'&inline=1" target="_blank" rel="noopener" title="'+esc((a.filename||"Anhang")+" – ansehen")+'"'+dv+'><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename||"Anhang")+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></a>'+
       '<a href="'+esc(href)+'&dl=1" download="'+esc(a.filename||"anhang")+'" title="Herunterladen" aria-label="'+esc((a.filename||"Anhang")+" herunterladen")+'">'+ic("down")+'</a>'+
       (canV?'<button type="button" class="'+(vs?"done":"")+'" data-act="mvoucher:'+esc(m.id)+'|'+esc(a.index||0)+'" title="'+(vs?"Bereits als Beleg erfasst – erneut erfassen":"Als Beleg erfassen")+'" aria-label="Als Beleg erfassen">'+(vs?ic("check"):ic("receipt"))+'</button>':'')+(canV&&M.kiVoucherBtn?M.kiVoucherBtn(m,a):'')+(F.viwOn?'<button type="button" data-act="mviw:'+esc(m.id)+'|'+esc(a.index||0)+'" title="In VIW Cloud speichern" aria-label="In VIW Cloud speichern">'+ic("cloud")+'</button>':'')+(canV&&F.payFromMail?'<button type="button" data-act="mpay:'+esc(m.id)+'|'+esc(a.index||0)+'" title="Zahlung erfassen – KI liest Empfänger, IBAN, Betrag aus dieser Rechnung" aria-label="Zahlung erfassen">'+ic("pay")+'</button>':'')+'</span>';
   }).join("");
@@ -461,30 +493,34 @@ function attachmentsHtml(m){
   return '<div class="attbox"><div class="atth"><span>'+ic("clip")+' '+atts.length+(atts.length>1?" Anhänge":" Anhang")+'</span>'+zip+'</div><div class="attl">'+chips+'</div></div>';
 }
 function outboxReader(o){
-  var tb='<div class="rtool">'+rb("mback","back","Zurück"," rb-back")+(o.status==="failed"?rb("mob:retry|"+o.oid,"refresh","Erneut senden"," pri",true):'')+rb("mob:edit|"+o.oid,"edit","Bearbeiten","",true)+rb("mob:discard|"+o.oid,"trash","Verwerfen"," dg",true)+'</div>';
+  var tb='<div class="rtool" role="toolbar" aria-label="Aktionen">'+rb("mback","back","Zurück",{cls:"rb-back",mob:1})+(o.status==="failed"?rb("mob:retry|"+o.oid,"refresh","Erneut senden",{cls:"pri",lvl:1,mob:1}):'')+rb("mob:edit|"+o.oid,"edit","Bearbeiten",{lvl:2,mob:1})+rb("mob:discard|"+o.oid,"trash","Verwerfen",{cls:"dg",lvl:2,mob:1})+'</div>';
   return tb+'<div class="rin"><div class="rsender">'+av("",o.to,"lg")+'<div class="rw"><div class="rn">An: '+esc(o.to)+(o.cc?' <span class="muted">· Cc: '+esc(o.cc)+'</span>':'')+'</div><div class="rto">'+(o.status==="failed"?'<span class="bad-t">Senden fehlgeschlagen: '+esc(o.error||"unbekannter Fehler")+'</span>':'Wird gesendet …')+'</div></div><div class="rdate">'+esc(new Date(o.date).toLocaleString("de-AT"))+'</div></div>'+
     '<h2 class="rsubj">'+esc(o.subject||"(kein Betreff)")+'</h2>'+
     (o.attsDropped?'<div class="notice">Die Anhänge waren zu groß zum Zwischenspeichern im Browser. Bitte über „Bearbeiten“ neu anhängen.</div>':'')+
-    (o.attachments&&o.attachments.length?'<div class="attbox"><div class="atth"><span>'+ic("clip")+' '+o.attachments.length+(o.attachments.length>1?" Anhänge":" Anhang")+'</span></div><div class="attl">'+o.attachments.map(function(a){ return '<span class="att"><span class="ai"><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm">'+esc(a.filename)+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></span></span>'; }).join("")+'</div></div>':'')+
+    (o.attachments&&o.attachments.length?'<div class="attbox"><div class="atth"><span>'+ic("clip")+' '+o.attachments.length+(o.attachments.length>1?" Anhänge":" Anhang")+'</span></div><div class="attl">'+o.attachments.map(function(a){ return '<span class="att"><span class="ai"><span class="ak">'+esc(attIconTxt(a))+'</span><span class="nm" title="'+esc(a.filename)+'">'+esc(a.filename)+'</span><span class="sz">'+esc(fmtBytes(a.size))+'</span></span></span>'; }).join("")+'</div></div>':'')+
     frame(o.html,"Mail im Postausgang")+'</div>';
 }
 function readerHtml(){
   var sel=UI.msel;
   if(sel&&sel.indexOf("ob_")===0&&M.findOb){ var o=M.findOb(sel); if(o) return outboxReader(o); }
   var m=sel?find(sel):null;
-  if(!m){ var c=counts(); return '<div class="mempty tall"><span class="ei">'+ic("mailopen")+'</span><b>Keine Nachricht ausgewählt</b><span>'+(c.inboxUnread?c.inboxUnread+" ungelesen im Posteingang · ":"")+'Mit <span class="kbd">J</span> <span class="kbd">K</span> durchblättern, <span class="kbd">?</span> zeigt alle Tastenkürzel.</span></div>'; }
+  if(!m){ var c=counts(); return '<div class="mempty tall"><span class="ei">'+ic("mailopen")+'</span><b>Wähle links eine Mail aus</b><span>'+(c.inboxUnread?c.inboxUnread+" ungelesen im Posteingang. ":"")+'<span class="hide-m">Mit <span class="kbd">J</span> <span class="kbd">K</span> durchblättern, <span class="kbd">C</span> schreibt eine neue Mail, <span class="kbd">?</span> zeigt alle Tastenkürzel.</span></span><div class="ea"><button type="button" class="btn" data-act="compose">'+ic("edit")+' Neue Mail</button></div></div>'; }
   var sent=isSent(m), trashed=isTrashed(m), spam=isSpam(m), dbox=isDraftBox(m), id=esc(m.id);
-  var tb=rb("mback","back","Zurück"," rb-back");
-  if(trashed) tb+=rb("mx:restore","restore","Wiederherstellen","",true)+rb("mx:purge","trash","Endgültig löschen"," dg",true);
+  /* Hauptaktionen mit Beschriftung, Seltenes hinter „…“ (mxmore) */
+  var tb=rb("mback","back","Zurück",{cls:"rb-back",mob:1});
+  if(trashed) tb+=rb("mx:restore","restore","Wiederherstellen",{lvl:1,mob:1})+rb("mx:purge","trash","Endgültig löschen",{cls:"dg",lvl:2,mob:1});
   else {
-    if(dbox) tb+=rb("mx:editdraft","edit","Weiter bearbeiten"," pri",true);
-    tb+=rb("mx:reply","reply","Antworten (R)","",true)+rb("mx:replyall","replyall","Allen antworten (A)")+rb("mx:forward","forward","Weiterleiten (F)")+
-      '<span class="rsep"></span>'+rb("mx:auftrag","board","Als Aufgabe (T)")+rb("mx:zahlung","pay","Zahlung erfassen (KI liest Empfänger, IBAN, Betrag)")+rb("mx:rechnung","inv","Rechnung erstellen (KI liest die Mail)")+rb("mx:termin","cal","Als Termin")+
-      '<span class="rsep"></span>'+rb("mx:move","folder","Verschieben (V)")+(spam?rb("mx:notspam","inboxin","Kein Spam – in den Posteingang"):rb("mx:spam","spam","Als Spam"))+rb("mx:trash","trash","Löschen (#)"," dg");
+    if(dbox) tb+=rb("mx:editdraft","edit","Weiter bearbeiten",{cls:"pri",lvl:1,mob:1});
+    tb+=rb("mx:reply","reply","Antworten",{cls:dbox?"":"pri",lvl:1,key:"R"})+rb("mx:replyall","replyall","Allen antworten",{lvl:2,key:"A"})+rb("mx:forward","forward","Weiterleiten",{lvl:2,key:"F"})+
+      '<span class="rsep"></span>'+(canArchive(m)?rb("mx:archive","archive","Archivieren",{lvl:3,key:"E",mob:1}):'')+
+      (spam?rb("mx:notspam","inboxin","Kein Spam – in den Posteingang",{lvl:3,short:"Kein Spam",mob:1}):'')+
+      rb("mx:move","folder","Verschieben",{key:"V",mob:1})+rb("mx:trash","trash","Löschen",{cls:"dg",lvl:3,key:"#",mob:1});
   }
-  tb+='<span class="rsp"></span>'+rb("mx:"+(m.read?"unread":"read"),m.read?"mail":"mailopen",m.read?"Als ungelesen (U)":"Als gelesen (U)")+
-    rb("mx:star",m.starred?"starfill":"star",m.starred?"Markierung entfernen (S)":"Markieren (S)",m.starred?" on":"")+rb("mx:print","print","Drucken")+rb("mwebmail","ext","In Webmail öffnen")+
-    '<button type="button" class="rb mshow" data-act="mxmore" aria-label="Weitere Aktionen">'+F.svg("more")+'</button>';
+  tb+='<span class="rsep"></span>'+rb("mx:"+(m.read?"unread":"read"),m.read?"mail":"mailopen",m.read?"Als ungelesen markieren":"Als gelesen markieren",{lvl:4,key:"U",short:m.read?"Ungelesen":"Gelesen",mob:1})+
+    rb("mx:star",m.starred?"starfill":"star",m.starred?"Markierung entfernen":"Markieren",{cls:m.starred?"on":"",lvl:4,key:"S",short:m.starred?"Markiert":"Markieren"})+
+    (!trashed&&!dbox?rb("mx:termin","cal","Als Termin eintragen",{cls:"lx",lvl:4,short:"Termin"}):'')+
+    (!trashed&&F.actions.kimsum?rb("mxki","spark","KI: zusammenfassen oder Antwort vorschlagen",{cls:"ki lx",lvl:4,short:"KI"}):'')+
+    '<span class="rsp"></span><button type="button" class="rb rmore mk" data-act="mxmore" title="Weitere Aktionen: Aufgabe, Zahlung, Rechnung, Spam, Drucken …" aria-label="Weitere Aktionen" aria-haspopup="menu">'+F.svg("more")+'</button>';
   var who=sent?(m.toName||m.to):(m.fromName||m.from), addr=sent?m.to:m.from;
   var tos=(m.toList&&m.toList.length?m.toList:(m.to?[{name:m.toName,address:m.to}]:[])).map(function(x){ return esc(x.name||x.address); });
   var ccs=(m.ccList||[]).map(function(x){ return esc(x.name||x.address); });
@@ -508,24 +544,60 @@ function readerHtml(){
     if(op&&x.lite&&!x._loading){ x._loading=true; F.api("/admin/api/mail-message?account="+encodeURIComponent(accOf(x))+"&folder="+encodeURIComponent(x.folder||"INBOX")+"&uid="+encodeURIComponent(x.uid)).then(function(j){ if(j&&j.ok&&j.message){ var keep={read:x.read,starred:x.starred}; Object.assign(x,j.message,keep); x.lite=false; } else x._err=(j&&j.error)||"Inhalt konnte nicht geladen werden"; x._loading=false; F.render(); }); }
     return '<div class="rc'+(op?" open":"")+'"><button type="button" class="rch" data-act="mthshow:'+esc(x.id)+'" aria-expanded="'+op+'">'+av(xs?x.toName:x.fromName,xs?x.to:x.from)+'<span class="rcw"><b>'+(xs?"Du → "+esc(x.toName||x.to||""):esc(x.fromName||x.from||"—"))+'</b><small>'+esc(op?(x.subject||""):(x.preview||x.subject||""))+'</small></span><span class="rcd">'+esc(fmtMailDate(x.date))+ic("chev")+'</span></button>'+
       (op?'<div class="rcb">'+(x.lite?'<div class="mbody mu">'+(x._err?esc(x._err):"Inhalt wird geladen …")+'</div>':x.bodyHtml?frame(quoteHtml(x.body||"",x),x.subject):'<div class="mbody">'+quoteText(x.body||x.preview||"",x)+'</div>')+attachmentsHtml(x)+'<div class="rca"><button type="button" class="btn sm" data-act="mrel:'+esc(x.id)+'">Diese Mail öffnen</button></div></div>':'')+'</div>'; }).join("")+'</div>':'';
-  return '<div class="rtool">'+tb+'</div><div class="rin" id="mreadS">'+
+  return '<div class="rtool" role="toolbar" aria-label="Aktionen">'+tb+'</div><div class="rin" id="mreadS">'+
     '<h2 class="rsubj">'+esc(m.subject||"(kein Betreff)")+'</h2><div class="rtags">'+tags+'</div>'+
     '<div class="rsender">'+av(sent?m.toName:m.fromName,sent?m.to:m.from,"lg")+
-      '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an diese Adresse">&lt;'+esc(addr)+'&gt;</button>':'')+'</div><div class="rto">'+toLine+'</div></div>'+
+      '<div class="rw"><div class="rn">'+(sent?"An: ":"")+esc(who||"—")+(addr&&addr!==who?' <button type="button" class="raddr" data-act="mmailto:'+esc(addr)+'" title="Neue Mail an '+esc(addr)+'">&lt;'+esc(addr)+'&gt;</button>':'')+'</div>'+(toLine?'<div class="rto">'+toLine+'</div>':'')+'</div>'+
       '<div class="rdate">'+esc(m.date?new Date(m.date).toLocaleString("de-AT",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"")+'<span>'+esc(relTime(m.date))+'</span></div></div>'+
     attachmentsHtml(m)+(M.kiBar?M.kiBar(m):'')+body+convHtml+
     (m.body||m.preview?'':'<div class="notice"><span>Kein Textinhalt im Abruf. Die vollständige Nachricht findest du im Webmail.</span><button type="button" class="btn" data-act="mwebmail">In Webmail öffnen</button></div>')+
     qr+
-    (!trashed&&!dbox?'<div class="mrbar"><button type="button" data-act="mx:reply">'+ic("reply")+'<span>Antworten</span></button><button type="button" data-act="mx:replyall">'+ic("replyall")+'<span>Allen</span></button><button type="button" data-act="mx:forward">'+ic("forward")+'<span>Weiterleiten</span></button></div>':'')+
-    (rel.length?'<div class="rrel"><div class="sec-t">Weitere Mails '+(sent?"an":"von")+' '+esc(who)+'</div>'+rel.map(function(x){ return '<button type="button" class="ri" data-act="mrel:'+esc(x.id)+'">'+(isSent(x)?'<span class="muted" title="Gesendet">'+ic("sent")+'</span>':'')+'<span class="s">'+esc(x.subject||"(kein Betreff)")+'</span><span class="d">'+esc(fmtMailDate(x.date))+'</span></button>'; }).join("")+'</div>':'')+
+    (!trashed&&!dbox?'<div class="mrbar" role="toolbar" aria-label="Antworten"><button type="button" class="pri" data-act="mx:reply">'+ic("reply")+'<span>Antworten</span></button><button type="button" data-act="mx:replyall" aria-label="Allen antworten">'+ic("replyall")+'<span>Allen</span></button><button type="button" data-act="mx:forward">'+ic("forward")+'<span>Weiterleiten</span></button></div>':'')+
+    (rel.length?'<div class="rrel"><div class="sec-t">Weitere Mails '+(sent?"an":"von")+' '+esc(who)+'</div>'+rel.map(function(x){ return '<button type="button" class="ri" data-act="mrel:'+esc(x.id)+'">'+(isSent(x)?'<span class="muted" title="Gesendet">'+ic("sent")+'</span>':'')+'<span class="s" title="'+esc(x.subject||"")+'">'+esc(x.subject||"(kein Betreff)")+'</span><span class="d">'+esc(fmtMailDate(x.date))+'</span></button>'; }).join("")+'</div>':'')+
   '</div>';
 }
 
 /* ---------- Ansicht ---------- */
 function bulkHtml(){
   var n=M.selectedIds().length; if(!n) return "";
-  return '<div class="mbulk" role="toolbar" aria-label="Auswahl"><b>'+n+' ausgewählt</b><button type="button" class="btn" data-act="mbulk:read">Als gelesen</button><button type="button" class="btn" data-act="mbulk:unread">Als ungelesen</button><button type="button" class="btn" data-act="mbulk:star">★ Markieren</button><button type="button" class="btn" data-act="mbulk:move">Verschieben …</button><button type="button" class="btn" data-act="mbulk:spam">Spam</button><button type="button" class="btn danger" data-act="mbulk:trash">Löschen</button><span class="sp"></span><button type="button" class="btn" data-act="mbulk:all">Alle auswählen</button><button type="button" class="btn" data-act="mbulk:clear">Abwählen</button></div>';
+  var b=function(op,icon,l,cls){ return '<button type="button" class="btn'+(cls?" "+cls:"")+'" data-act="mbulk:'+op+'">'+ic(icon)+'<span>'+l+'</span></button>'; };
+  return '<div class="mbulk" role="toolbar" aria-label="Auswahl"><b>'+n+' ausgewählt</b>'+b("read","mailopen","Gelesen")+b("unread","mail","Ungelesen")+b("star","star","Markieren")+
+    (UI.mf!=="trash"?b("archive","archive","Archivieren"):'')+b("move","folder","Verschieben …")+b("spam","spam","Spam")+b("trash","trash","Löschen","danger")+
+    '<span class="sp"></span><button type="button" class="btn" data-act="mbulk:all">Alle auswählen</button><button type="button" class="btn" data-act="mbulk:clear">'+F.svg("close")+'<span>Abwählen</span></button></div>';
 }
+/* Hinweis-Balken: Mail-Dienst gestört (F.D.mail.stale/error oder eigener Abruf) bzw. Konto nicht verbunden */
+function mailHealth(){
+  var md=(F.D&&F.D.mail)||{}, cAt=(F.D&&Date.parse(F.D.fetchedAt))||0, own=S.srvFlag;
+  if(own&&own.at>cAt) return {stale:own.stale,error:own.error};   /* neuerer direkter Abruf gewinnt */
+  return {stale:!!md.stale,error:typeof md.error==="string"?md.error:(md.error?"Der Mail-Dienst meldet einen Fehler.":"")};
+}
+M.health=mailHealth;
+function connBanner(){
+  var h=mailHealth(), own=S.err, bad=accounts().filter(function(a){ return a.configured===false||a.ok===false; });
+  var t="", d="", tone="warn", extra="", x="", retry=true;
+  var since=S.fetchedAt?(relTime(S.fetchedAt)||new Date(S.fetchedAt).toLocaleString("de-AT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})).replace(/\.$/,""):"";
+  if(h.error||own){ tone="bad"; t="Postfach gerade nicht erreichbar"; d=(h.error||own)+(since&&S.messages.length?" Letzter Stand: "+since+".":""); }
+  else if(h.stale){ t="Postfach zeigt einen älteren Stand"; d="Der Mail-Dienst antwortet gerade nicht – neue Mails kommen eventuell verzögert."+(since?" Letzter Stand: "+since+".":""); }
+  else if(bad.length){
+    var sig=bad.map(function(a){ return a.key+(a.configured===false?"-c":"-o"); }).join(","); if(F.ls("fsc_mbanner_acc")===sig) return "";
+    t=bad.length===1?"Konto „"+(bad[0].label||bad[0].key)+"“ ist nicht verbunden":bad.length+" Konten sind nicht verbunden";
+    d=bad.map(function(a){ return (bad.length>1?(a.label||a.key)+": ":"")+accWarn(a); }).join(" · "); retry=false;
+    extra='<button type="button" class="btn" data-act="msettings:'+esc(bad[0].key)+'">'+ic("edit")+'<span>Konto prüfen</span></button>';
+    x='<button type="button" class="mb-x" data-act="mbannerx:'+esc(sig)+'" title="Ausblenden, bis sich etwas ändert" aria-label="Hinweis ausblenden">'+F.svg("close")+'</button>';
+  }
+  else return "";
+  return '<div class="mbanner '+tone+'" role="status"><span class="mb-i">'+ic("alert")+'</span><div class="mb-t"><b>'+esc(t)+'</b><span>'+esc(d)+'</span></div><div class="mb-a">'+extra+
+    (retry?'<button type="button" class="btn" data-act="mretry">'+ic("refresh")+'<span>Erneut versuchen</span></button>':'')+
+    '<button type="button" class="btn" data-act="conn:mail">'+ic("plug")+'<span>Verbindungen</span></button></div>'+x+'</div>';
+}
+F.action("mretry",function(){ S.err=""; F.toast("Verbinde neu …"); M.loadFull().then(function(){ if(S.err) F.toast(S.err,true); else F.toast("Postfach aktualisiert"); }); if(F.load) F.load(false); });
+F.action("mbannerx",function(sig){ F.ls("fsc_mbanner_acc",sig); F.render(); });
+/* Rückfall, falls die Verbindungs-Ansicht (zconn.js) nicht geladen ist: Konten in den Einstellungen öffnen */
+F.listen("click",'.mbanner [data-act^="conn"]',function(){ F.actions.msettings("mail"); });
+/* Handy: einmaliger Hinweis auf die Wisch-Gesten */
+function swipeTip(list){ if(!list.length||UI.mq||UI.mf==="outbox"||F.ls("fsc_mswipe_tip")) return "";
+  return '<div class="mtip">'+ic("swipe")+'<span><b>Tipp:</b> Mail nach links wischen löscht, nach rechts ändert gelesen/ungelesen. Lange drücken wählt mehrere aus.</span><button type="button" class="link" data-act="mtipx">Verstanden</button></div>'; }
+F.action("mtipx",function(){ F.ls("fsc_mswipe_tip",1); F.render(); });
 function subLine(){
   var accs=accounts(), bad=accs.filter(function(a){ return a.configured===false||a.ok===false; });
   var s=(multiAcc()?accs.length+" Konten":(accs[0].user||S.account||"Postfach"))+(bad.length?" · "+bad.map(function(a){return a.label;}).join(", ")+" nicht verbunden":"");
@@ -541,15 +613,15 @@ function vPost(){
   if(UI.msel&&!find(UI.msel)&&!(M.findOb&&M.findOb(UI.msel))) UI.msel=null;
   var list=mailView(), c=counts();
   return F.head("Postfach"+(c.inboxUnread?' <span class="tag glow hnew">'+c.inboxUnread+' neu</span>':''),subLine(),
-    '<button type="button" class="btn icon" data-act="mrefresh" title="Aktualisieren" aria-label="Postfach aktualisieren">'+ic("refresh")+'</button><button type="button" class="btn" data-act="mailrules" title="Regeln: Mails automatisch sortieren">Regeln</button><button type="button" class="btn icon hide-m" data-act="mkeys" title="Tastenkürzel (?)" aria-label="Tastenkürzel">'+ic("keys")+'</button><button type="button" class="btn icon" data-act="mwebmail" title="In Webmail öffnen" aria-label="In Webmail öffnen">'+ic("ext")+'</button><button type="button" class="btn primary" data-act="compose">'+ic("edit")+' Neue Mail</button>')+
-  '<div class="mtools"><button type="button" class="btn fpill" data-act="mfoldsheet" aria-haspopup="dialog">'+ic("folder")+' '+esc(curFolderLabel())+(multiAcc()&&UI.macct!=="all"?" · "+esc(accInfo(UI.macct).label):"")+' '+ic("chev")+'</button>'+
-    '<div class="msearch">'+F.svg("search")+'<input class="f" id="msearch" data-keepfocus="msearch" type="search" placeholder="Mails durchsuchen … (Taste /)" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'">'+(UI.mq?'<button type="button" class="x" data-act="msearchx" aria-label="Suche leeren">'+F.svg("close")+'</button>':'')+'</div></div>'+
-  bulkHtml()+mobileBar(c)+
+    '<button type="button" class="btn icon" data-act="mrefresh" title="Aktualisieren" aria-label="Postfach aktualisieren">'+ic("refresh")+'</button><button type="button" class="btn" data-act="mailrules" title="Regeln: Mails automatisch sortieren">'+ic("filter")+' Regeln</button><button type="button" class="btn icon hide-m" data-act="mkeys" title="Tastenkürzel (?)" aria-label="Tastenkürzel">'+ic("keys")+'</button><button type="button" class="btn icon" data-act="mwebmail" title="In Webmail öffnen" aria-label="In Webmail öffnen">'+ic("ext")+'</button><button type="button" class="btn primary" data-act="compose">'+ic("edit")+' Neue Mail</button>')+
+  '<div class="mtools"><button type="button" class="btn fpill" data-act="mfoldsheet" aria-haspopup="dialog" title="Ordner und Konten">'+ic("folder")+'<span>'+esc(curFolderLabel())+(multiAcc()&&UI.macct!=="all"?" · "+esc(accInfo(UI.macct).label):"")+'</span>'+ic("chev")+'</button>'+
+    '<div class="msearch">'+F.svg("search")+'<input class="f" id="msearch" data-keepfocus="msearch" type="search" placeholder="In allen Ordnern suchen … (Taste /)" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'">'+(UI.mq?'<button type="button" class="x" data-act="msearchx" aria-label="Suche leeren">'+F.svg("close")+'</button>':'')+'</div></div>'+
+  bulkHtml()+mobileBar(c)+connBanner()+folderStrip(c)+
   '<div class="mbox'+(UI.msel?" reading":"")+'"'+(listW()?' style="--mlist-w:'+listW()+'px"':'')+'>'+
-    '<nav class="mfold panel" aria-label="Ordner">'+folderPanel()+'</nav>'+
-    '<section class="panel mlistp" aria-label="Nachrichten"><div class="mptr" aria-hidden="true">'+ic("down")+'</div><div class="mchips">'+chipsHtml(list)+'</div><div class="mscroll" id="mlistS">'+searchInfo(list)+listHtml(list)+'</div><div class="mlist-rs" role="separator" aria-orientation="vertical" aria-label="Breite der Mailliste" tabindex="0" title="Ziehen: Breite der Mailliste ändern · Doppelklick: Standardbreite"></div></section>'+
-    '<section class="panel mread" aria-label="Lesebereich">'+readerHtml()+'</section>'+
-  '</div>'+(UI.msel||M.selectedIds().length?'':'<button type="button" class="mfab" data-act="compose" aria-label="Neue Mail">'+ic("edit")+'</button>');
+    '<nav class="mfold" aria-label="Ordner">'+folderPanel()+'</nav>'+
+    '<section class="mlistp" aria-label="Nachrichten"><div class="mptr" aria-hidden="true">'+ic("down")+'</div>'+listHead(list)+'<div class="mchips" role="group" aria-label="Filter">'+chipsHtml(list)+'</div><div class="mscroll" id="mlistS">'+swipeTip(list)+searchInfo(list)+listHtml(list)+'</div><div class="mlist-rs" role="separator" aria-orientation="vertical" aria-label="Breite der Mailliste" tabindex="0" title="Ziehen: Breite der Mailliste ändern · Doppelklick: Standardbreite"></div></section>'+
+    '<section class="mread" aria-label="Lesebereich">'+readerHtml()+'</section>'+
+  '</div>'+(UI.msel||M.selectedIds().length?'':'<button type="button" class="mfab lbl" data-act="compose" aria-label="Neue Mail">'+ic("edit")+'<span>Neue Mail</span></button>');
 }
 /* Breite der Mailliste am PC selbst ziehen (Wunsch Simon 20.10.2026): Griff am rechten Rand der Liste, Pfeiltasten ±20 px, Doppelklick = Standard; bleibt gespeichert */
 var MLW_MIN=240, MLW_READ=260;   // Mindestbreiten Liste bzw. Lesebereich
@@ -566,15 +638,27 @@ F.listen("keydown",".mlist-rs",function(el,e){ if(e.key!=="ArrowLeft"&&e.key!=="
 /* Handy: Kopfzeile wie in der Outlook-App (Konto/Ordner links, Titel, Suche) bzw. Auswahlleiste */
 function mobileBar(c){
   var nsel=M.selectedIds().length;
-  if(nsel) return '<div class="mapp sel"><button type="button" class="mapp-i" data-act="mbulk:clear" aria-label="Auswahl beenden">'+F.svg("close")+'</button><div class="mapp-t"><b>'+nsel+' ausgewählt</b></div><button type="button" class="mapp-x" data-act="mbulk:all">Alle</button></div>'+
-    '<div class="mselbar"><button type="button" data-act="mbulk:read">'+ic("mailopen")+'<span>Gelesen</span></button><button type="button" data-act="mbulk:star">'+ic("star")+'<span>Markieren</span></button><button type="button" data-act="mbulk:move">'+ic("folder")+'<span>Verschieben</span></button><button type="button" data-act="mbulk:spam">'+ic("spam")+'<span>Spam</span></button><button type="button" class="dg" data-act="mbulk:trash">'+ic("trash")+'<span>Löschen</span></button></div>';
+  if(nsel) return '<div class="mapp sel"><button type="button" class="mapp-i" data-act="mbulk:clear" aria-label="Auswahl beenden">'+F.svg("close")+'</button><div class="mapp-t"><b>'+nsel+' ausgewählt</b><span>Antippen wählt weitere aus</span></div><button type="button" class="mapp-x" data-act="mbulk:all">Alle</button></div>'+
+    '<div class="mselbar" role="toolbar" aria-label="Auswahl"><button type="button" data-act="mbulk:read">'+ic("mailopen")+'<span>Gelesen</span></button><button type="button" data-act="mbulk:star">'+ic("star")+'<span>Markieren</span></button>'+
+      (UI.mf!=="trash"?'<button type="button" data-act="mbulk:archive">'+ic("archive")+'<span>Archiv</span></button>':'')+
+      '<button type="button" data-act="mbulk:move">'+ic("folder")+'<span>Verschieben</span></button><button type="button" data-act="mbulk:spam">'+ic("spam")+'<span>Spam</span></button><button type="button" class="dg" data-act="mbulk:trash">'+ic("trash")+'<span>Löschen</span></button></div>';
   var acc=UI.macct==="all"?(multiAcc()?"Alle Konten":(accounts()[0].user||S.account||"")):(accInfo(UI.macct).user||accInfo(UI.macct).label);
   var me=UI.macct==="all"?"FS":initials(accInfo(UI.macct).label,accInfo(UI.macct).user);
   var srch=UI.msrch||!!UI.mq;
-  return '<div class="mapp"><button type="button" class="mapp-av" data-act="mfoldsheet" aria-label="Ordner und Konten"><span>'+esc(me)+'</span>'+(c.inboxUnread&&UI.mf!=="inbox"?'<i></i>':'')+'</button>'+
-    '<button type="button" class="mapp-t" data-act="mfoldsheet"><b>'+esc(curFolderLabel())+' '+ic("chev")+'</b><span>'+esc(acc)+(c.inboxUnread?' · '+c.inboxUnread+' ungelesen':'')+(S.loading?' · lädt …':'')+'</span></button>'+
-    '<button type="button" class="mapp-i" data-act="msrch" aria-label="Suchen">'+F.svg("search")+'</button></div>'+
-    (srch?'<div class="mapp-s"><div class="msearch">'+F.svg("search")+'<input class="f" id="msearchm" data-keepfocus="msearchm" type="search" placeholder="In Mails suchen" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'"></div><button type="button" class="mapp-x" data-act="msrchx">Abbrechen</button></div>':'');
+  return '<div class="mapp"><button type="button" class="mapp-av" data-act="mfoldsheet" aria-label="Konten und Ordner wechseln" title="Konten und Ordner"><span>'+esc(me)+'</span>'+(c.inboxUnread&&UI.mf!=="inbox"?'<i></i>':'')+'</button>'+
+    '<button type="button" class="mapp-t" data-act="mfoldsheet" aria-haspopup="dialog"><b>'+esc(UI.mq?"Suche":curFolderLabel())+' '+ic("chev")+'</b><span>'+esc(acc)+(c.inboxUnread?' · '+c.inboxUnread+' ungelesen':'')+(S.loading?' · lädt …':'')+'</span></button>'+
+    '<button type="button" class="mapp-i'+(srch?" on":"")+'" data-act="msrch" aria-label="Suchen" aria-pressed="'+srch+'">'+F.svg("search")+'</button></div>'+
+    (srch?'<div class="mapp-s"><div class="msearch">'+F.svg("search")+'<input class="f" id="msearchm" data-keepfocus="msearchm" type="search" enterkeyhint="search" placeholder="In allen Ordnern suchen" aria-label="Mails durchsuchen" autocomplete="off" value="'+esc(UI.mq)+'"></div><button type="button" class="mapp-x" data-act="msrchx">Abbrechen</button></div>':'');
+}
+/* Handy: Ordner als wischbare Chips direkt unter dem Kopf (ein Tipp statt Seitenblatt); „Alle Ordner“ öffnet das Blatt mit Konten und eigenen Ordnern */
+function folderStrip(c){
+  if(M.selectedIds().length||UI.mq) return "";
+  var ob=M.outbox?M.outbox():[], cur=UI.mf, it=[["inbox","inbox","Posteingang",c.inboxUnread],["drafts","draft","Entwürfe",c.drafts],["sent","sent","Gesendet",0]];
+  if(ob.length) it.push(["outbox","outbox","Postausgang",ob.length]);
+  it.push(["spam","spam","Spam",c.spam],["trash","trash","Papierkorb",0]);
+  var h=it.map(function(x){ return '<button type="button" class="mfs'+(x[0]==="outbox"&&ob.some(function(o){ return o.status==="failed"; })?" warn":"")+'" data-act="mfolder:'+x[0]+'"'+(cur===x[0]?' aria-current="true"':'')+'>'+ic(x[1])+'<span>'+esc(x[2])+'</span>'+(x[3]?'<i>'+x[3]+'</i>':'')+'</button>'; }).join("");
+  if(cur.indexOf("f:")===0||FNAMES[cur]&&!it.some(function(x){ return x[0]===cur; })) h+='<button type="button" class="mfs" aria-current="true" data-act="mfoldsheet">'+ic("folder")+'<span>'+esc(curFolderLabel())+'</span></button>';
+  return '<div class="mfstrip" role="group" aria-label="Ordner">'+h+'<button type="button" class="mfs more" data-act="mfoldsheet" aria-haspopup="dialog">'+ic("folder")+'<span>Alle Ordner'+(multiAcc()?" & Konten":"")+'</span></button></div>';
 }
 function after(){
   var ls=document.getElementById("mlistS"); if(ls&&UI.mlistTop) ls.scrollTop=UI.mlistTop;
@@ -584,6 +668,7 @@ function after(){
   document.body.classList.toggle("m-read",mob&&!!UI.msel);
   if(mob&&jump==="read"){ UI.mscrollTo=null; setTimeout(function(){ window.scrollTo(0,0); },0); }
   if(UI.msrchFocus){ UI.msrchFocus=false; var si=document.getElementById("msearchm"); if(si) si.focus(); }
+  if(mob){ var fs=document.querySelector(".mfstrip"), fc=fs&&fs.querySelector('[aria-current="true"]'); if(fc&&fc.offsetLeft+fc.offsetWidth>fs.scrollLeft+fs.clientWidth) fs.scrollLeft=Math.max(0,fc.offsetLeft-16); }
   if(UI.mscrollTo){ var row=document.querySelector('.mrow2[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(UI.mscrollTo):UI.mscrollTo)+'"]'); if(row&&row.scrollIntoView) setTimeout(function(){ row.scrollIntoView({block:mob&&jump==="list"?"center":"nearest"}); },0); UI.mscrollTo=null; }
   if(UI.mfocusQr){ UI.mfocusQr=false; var q=document.getElementById("mqr"); if(q) q.focus(); }
   if(!S.full&&!S.loading&&!S.err) M.loadFull();
@@ -635,7 +720,7 @@ F.action("mrel",function(id){ M.open(id,{fromOutside:!find(id)||M.folderKeyOf(fi
 F.action("msettings",function(k){ if(F.actions.settings) F.actions.settings(k||"mail"); else F.toast("Konten richtest du in den Einstellungen ein."); });
 F.action("mwebmail",function(){ window.open("https://webmail.world4you.com","_blank","noopener"); });
 F.action("mrefresh",function(){ F.toast("Postfach wird aktualisiert …"); M.loadFull().then(function(){ if(!S.err) F.toast("Postfach aktualisiert"); else F.toast(S.err,true); }); });
-F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">Ordner</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel()+'</nav><button type="button" class="btn" style="width:100%;margin-top:12px" data-act="mailrules">Regeln – Mails automatisch sortieren</button>',"sheetdlg"); });
+F.action("mfoldsheet",function(){ F.modal('<div class="row-between"><h2 style="font-size:19px">'+(multiAcc()?"Konten & Ordner":"Ordner")+'</h2>'+F.btnClose()+'</div><nav class="mfold sheetf" aria-label="Ordner">'+folderPanel({sheet:true})+'</nav><p class="muted small sheeth">Lange drücken auf einen Ordner: umbenennen, Unterordner, löschen …</p><button type="button" class="btn sheetrules" data-act="mailrules">'+ic("filter")+' Regeln – Mails automatisch sortieren</button>',"sheetdlg"); });
 F.action("mmailto",function(addr){ F.compose({to:addr}); });
 
 /* ---------- Ordner-Kontextmenü (Rechtsklick / langes Drücken am Handy) ---------- */
@@ -807,13 +892,29 @@ M.folderMenu={create:fCreate,rename:fRename,move:fMove,del:fDelete,markRead:fMar
 F.action("msrch",function(){ UI.msrch=!UI.msrch; if(UI.msrch) UI.msrchFocus=true; F.render(); });
 F.action("msrchx",function(){ UI.msrch=false; UI.mq=""; F.render(); });
 /* Handy: weitere Aktionen als Blatt von unten */
-F.action("mxmore",function(){
-  var m=M.cur(); if(!m) return; var sp=isSpam(m), go=function(op){ return function(){ F.actions.mx(op,null); }; };
-  M.ctx(0,0,[
-    {label:"Allen antworten",act:go("replyall")},{label:"Weiterleiten",act:go("forward")},{sep:true},
-    {label:m.starred?"★ Markierung entfernen":"☆ Markieren",act:go("star")},{label:"Als Aufgabe",act:go("auftrag")},{label:"Zahlung erfassen",act:go("zahlung")},{label:"Rechnung erstellen",act:go("rechnung")},{label:"Angebot erstellen",act:go("angebot")},{label:"Als Termin",act:go("termin")},{sep:true},
-    {label:sp?"Kein Spam":"Als Spam",act:go(sp?"notspam":"spam")},{label:"Drucken",act:go("print")},{label:"In Webmail öffnen",act:function(){ F.actions.mwebmail(); }}
-  ],m.subject||"Mail");
+/* „…“ im Lesebereich: seltene Aktionen (PC) bzw. alles, was oben keinen Platz hat (Handy) */
+F.action("mxmore",function(v,el){
+  var m=M.cur(); if(!m) return; var sp=isSpam(m), tr=isTrashed(m), mob=window.innerWidth<=900, go=function(op){ return function(){ F.actions.mx(op,null); }; }, its=[];
+  /* am PC sind Termin und KI oben, außer der Lesebereich ist schmal (dann blendet CSS sie dort aus) */
+  var narrow=!mob&&el&&el.closest&&el.closest(".mread")&&el.closest(".mread").clientWidth<860;
+  if(!tr){
+    if(mob) its.push({label:"Allen antworten",icon:"replyall",act:go("replyall")},{label:"Weiterleiten",icon:"forward",act:go("forward")},{sep:true},
+      {label:m.starred?"Markierung entfernen":"Markieren",icon:m.starred?"starfill":"star",act:go("star")});
+    if(mob||narrow) its.push({label:"Als Termin",icon:"cal",act:go("termin")});
+    its.push({label:"Als Aufgabe",icon:"board",act:go("auftrag")},{label:"Zahlung erfassen",icon:"pay",act:go("zahlung")},{label:"Rechnung erstellen",icon:"inv",act:go("rechnung")},{label:"Angebot erstellen",icon:"inv",act:go("angebot")});
+    if((mob||narrow)&&F.actions.kimsum){ its.push({sep:true},{label:"KI: Zusammenfassen",icon:"spark",act:function(){ F.actions.kimsum(m.id); }});
+      if(!isSent(m)&&F.actions.kimreply) its.push({label:"KI: Antwort vorschlagen",icon:"spark",act:function(){ F.actions.kimreply(m.id); }}); }
+    its.push({sep:true},{label:sp?"Kein Spam":"Als Spam",icon:sp?"inboxin":"spam",act:go(sp?"notspam":"spam")});
+  }
+  its.push({label:"Drucken",icon:"print",act:go("print")},{label:"In Webmail öffnen",icon:"ext",act:function(){ F.actions.mwebmail(); }});
+  var p=menuPos(el&&el.isConnected?el:null); M.ctx(p[0],p[1],its,"Weitere Aktionen");
+});
+/* KI-Knopf: Zusammenfassen / Antwortvorschlag / Assistent (ki-mail.js) */
+F.action("mxki",function(v,el){
+  var m=M.cur(); if(!m||!F.actions.kimsum) return; var its=[{label:"Zusammenfassen",icon:"spark",act:function(){ F.actions.kimsum(m.id); }}];
+  if(!isSent(m)&&F.actions.kimreply) its.push({label:"Antwort vorschlagen",icon:"reply",act:function(){ F.actions.kimreply(m.id); }});
+  if(F.actions.kimask) its.push({label:"Im Assistenten nachfragen",icon:"spark",act:function(){ F.actions.kimask(m.id); }});
+  var p=menuPos(el&&el.isConnected?el:null); M.ctx(p[0],p[1],its,"KI zu dieser Mail");
 });
 var _go=F.go; F.go=function(id){ if(id!=="post") document.body.classList.remove("m-read"); return _go.apply(this,arguments); };
 
@@ -832,7 +933,7 @@ M.togglePick=togglePick;
 F.action("mpick",function(id,el,e){ togglePick(id,e&&e.shiftKey); });
 
 /* ---------- Verschieben, Spam ---------- */
-function moveMessages(ids,target,op){
+function moveMessages(ids,target,op,doneMsg){
   var msgs=ids.map(find).filter(function(m){ return m&&!m.local; }); if(!msgs.length) return;
   op=op||"move"; var acc=accOf(msgs[0]);
   if(target&&op==="move"&&target.indexOf("|")>-1){ var bi=target.indexOf("|"), tAcc=target.slice(0,bi); target=target.slice(bi+1); if(tAcc!==acc){ F.toast("Mails können nicht zwischen verschiedenen Konten verschoben werden",true); return; } }
@@ -844,9 +945,32 @@ function moveMessages(ids,target,op){
   var nxt=mids.indexOf(UI.msel)>-1?neighborId(mids):UI.msel;
   msgs.forEach(function(m){ M.setOv(m,{folder:dest,deleted:false}); delete UI.mpick[m.id]; });
   UI.msel=nxt; M.changed(); F.render(); M.scheduleReload();
-  F.toast((op==="spam"?"Als Spam markiert":"Verschoben nach „"+(dest==="INBOX"?"Posteingang":folderName(dest,acc))+"“")+(other?" – "+other+" Mail(s) aus anderem Konto übersprungen":""));
+  F.toast((doneMsg||(op==="spam"?"Als Spam markiert":"Verschoben nach „"+(dest==="INBOX"?"Posteingang":folderName(dest,acc))+"“"))+(other?" – "+other+" Mail(s) aus anderem Konto übersprungen":""));
 }
 M.moveMessages=moveMessages;
+/* ---------- Archivieren: in den Archiv-Ordner des Kontos (\\Archive oder „Archiv“); fehlt er, nach Rückfrage anlegen ---------- */
+var ARX=/^(INBOX[.\/])?(archive|archiv|archives)$/i;
+var ARC={k:"",m:{}};   /* je Darstellung nur einmal suchen (wird für jede Zeile gefragt) */
+function archivePath(acc){ var k=S.ver+"|"+S.folders.length; if(ARC.k!==k) ARC={k:k,m:{}}; if(acc in ARC.m) return ARC.m[acc];
+  var mine=S.folders.filter(function(x){ return (x.account||primaryAcct())===acc; });
+  var f=mine.filter(function(x){ return /\\Archive/i.test(x.special||""); })[0]||mine.filter(function(x){ return ARX.test(x.path); })[0]; return (ARC.m[acc]=f?f.path:""); }
+function canArchive(m){ if(!m||m.local||m.outbox||m.draftLocal||isTrashed(m)||isDraftBox(m)||isSpam(m)) return false; var p=archivePath(accOf(m)); return !p||(m.folder||"INBOX")!==p; }
+function archiveMessages(ids){
+  var msgs=ids.map(find).filter(canArchive);
+  if(!msgs.length){ var f0=find(ids[0]); if(f0&&!isTrashed(f0)&&archivePath(accOf(f0))===(f0.folder||"")) F.toast("Liegt bereits im Archiv"); return; }
+  var acc=accOf(msgs[0]), ok=msgs.filter(function(m){ return accOf(m)===acc; }).map(function(m){ return m.id; }), p=archivePath(acc);
+  var n=ok.length, msg=(n>1?n+" Mails":"Mail")+" archiviert";
+  if(p){ moveMessages(ok,p,"move",msg); return; }
+  F.confirm("Es gibt noch keinen Archiv-Ordner"+(multiAcc()?" im Konto „"+(accInfo(acc).label||acc)+"“":"")+". Ordner „Archiv“ anlegen und "+(n>1?"die "+n+" Mails":"die Mail")+" dorthin verschieben?","Anlegen & archivieren",function(){
+    folderApi({op:"create",account:acc,parent:"",name:"Archiv"}).then(function(j){
+      if(j&&j.error==="exists"){ M.loadFull().then(function(){ var p2=archivePath(acc); if(p2) moveMessages(ok,p2,"move",msg); else F.toast("Archiv-Ordner nicht gefunden – bitte im Webmail prüfen",true); }); return; }
+      if(!j||j.ok===false||j.error){ F.toast(ferr(j),true); return; }
+      var path=j.path||"Archiv"; if(!fmeta(acc,path)) S.folders.push({account:acc,path:path,name:"Archiv",special:"",delim:fdelim(acc,""),total:0,unread:0});
+      moveMessages(ok,path,"move",msg);
+    });
+  });
+}
+M.archive=archiveMessages; M.canArchive=canArchive;
 M.showMoveMenu=function(x,y,ids){
   var first=find(ids[0]); if(!first) return; var acc=accOf(first), cur=first.folder||"INBOX";
   var its=moveTargets(acc).filter(function(f){ return !(ids.length===1&&f.path===cur&&!first.deleted); }).map(function(f){ return {label:f.name,act:function(){ moveMessages(ids,f.path,"move"); }}; });
@@ -984,6 +1108,7 @@ F.action("mqa",function(v,el,e){
   var i=v.indexOf("|"), op=v.slice(0,i), m=find(v.slice(i+1)); if(!m){ F.toast("Die Mail hat sich inzwischen geändert – Liste wird aktualisiert",true); M.loadFull(); return; }
   if(op==="read") setRead([m],!m.read);
   else if(op==="trash") trashMessages([m.id]);
+  else if(op==="archive") archiveMessages([m.id]);
   else if(op==="restore") restore([m.id]);
   else if(op==="purge") purge([m.id]);
   else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],[m.id]); }
@@ -996,6 +1121,7 @@ F.action("mbulk",function(op,el){
   if(op==="read"||op==="unread"){ setRead(ids.map(find),op==="read"); UI.mpick={}; F.render(); }
   else if(op==="star"){ var msgs=ids.map(find).filter(function(m){return m&&!m.local;}), on2=!msgs.every(function(m){return m.starred;}); msgs.forEach(function(m){ M.setOv(m,{starred:on2}); }); M.action(on2?"flag":"unflag",msgs); UI.mpick={}; M.changed(); F.render(); }
   else if(op==="spam") moveMessages(ids,null,"spam");
+  else if(op==="archive") archiveMessages(ids);
   else if(op==="trash"){ var tr=ids.filter(function(id){ return isTrashed(find(id)); }); if(tr.length===ids.length) purge(ids); else trashMessages(ids); }
   else if(op==="move"){ var p=menuPos(el); M.showMoveMenu(p[0],p[1],ids); }
 });
@@ -1017,6 +1143,7 @@ F.action("mx",function(op,el){
   else if(op==="spam") moveMessages([m.id],null,"spam");
   else if(op==="notspam") moveMessages([m.id],"INBOX","move");
   else if(op==="trash") trashMessages([m.id]);
+  else if(op==="archive") archiveMessages([m.id]);
   else if(op==="restore") restore([m.id]);
   else if(op==="purge") purge([m.id]);
   else if(op==="read") setRead([m],true);
@@ -1059,265 +1186,344 @@ F.searcher(function(q){
 });
 
 /* ---------- Styles ---------- */
+/* Alpenglas: nur die Postfach-Box ist Glas (Unschärfe als eigene Ebene ::before, nie auf .mbox/.mread selbst – sonst hängen fixierte Leisten fest);
+   Spalten, Zeilen und Leisten darin sind durchsichtig. Ohne „glas“ (hell/dunkel/automatisch) bleibt alles deckend wie bisher. */
 F.css([
-".view-post{max-width:1500px}",
+".view-post{max-width:1500px;--m-bg:var(--panel);--m-list:var(--ground);--m-solid:var(--panel-solid,var(--panel));--m-bar:color-mix(in srgb,var(--ground) 88%,transparent);--m-blur:saturate(1.6) blur(14px);--m-search:var(--field,var(--panel))}",
+":root[data-theme=\"glas\"] .view-post{--m-bg:color-mix(in srgb,var(--panel-solid) 58%,transparent);--m-list:color-mix(in srgb,var(--panel-solid) 80%,transparent);--m-bar:var(--glass-strong);--m-blur:var(--glass-blur);--m-search:var(--glass-strong)}",
+"@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){:root[data-theme=\"glas\"] .view-post{--m-bg:color-mix(in srgb,var(--panel-solid) 90%,transparent)}}",
+"@media (prefers-reduced-transparency:reduce){:root[data-theme=\"glas\"] .view-post{--m-bg:var(--panel-solid);--m-list:var(--panel-solid);--m-search:var(--panel-solid)}}",
 ".hnew{font-size:13px;vertical-align:middle;margin-left:6px}",
-".mtools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}",
-".msearch{position:relative;flex:1;min-width:0;max-width:460px}",
-".msearch>svg{position:absolute;left:11px;top:50%;width:15px;height:15px;transform:translateY(-50%);color:var(--ink-3);pointer-events:none}",
-".msearch input{padding-left:34px;padding-right:32px}",
+/* Werkzeugzeile: Ordnerknopf (schmale Fenster) + große Suche */
+".mtools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}",
+".msearch{position:relative;flex:1;min-width:0;max-width:600px}",
+".msearch>svg{position:absolute;left:13px;top:50%;width:17px;height:17px;transform:translateY(-50%);color:var(--ink-3);pointer-events:none}",
+".msearch input{padding-left:40px;padding-right:34px}",
+".mtools .msearch input{height:44px;border-radius:14px;background:var(--m-search);border-color:var(--glass-line,var(--line));font-size:14.5px;box-shadow:var(--glass-hi,0 0 0 0 transparent)}",
 ".msearch input::-webkit-search-cancel-button{display:none}",
-".msearch .x{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--ink-3);padding:4px;display:grid}",
-".msearch .x svg{width:14px;height:14px}",
-".fpill{display:none}",
-".fpill svg{width:14px;height:14px}",
-".mbox{display:grid;grid-template-columns:212px minmax(0,var(--mlist-w,360px)) minmax(0,1fr);gap:14px;align-items:start}",
+".msearch .x{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--ink-3);padding:6px;display:grid;border-radius:8px}",
+".msearch .x:hover{color:var(--ink);background:var(--hover,var(--sunk))}",
+".msearch .x svg{width:15px;height:15px}",
+".fpill{display:none;min-height:44px;border-radius:14px;max-width:min(320px,40vw)}",
+".fpill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
+".fpill svg{width:15px;height:15px;flex:none}",
+/* Hinweis-Balken (Mail-Dienst gestört / Konto nicht verbunden) */
+".mbanner{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;padding:10px 12px 10px 14px;border-radius:var(--r-sm);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);background:linear-gradient(var(--warn-soft),var(--warn-soft)),var(--m-solid);position:relative}",
+".mbanner.bad{border-color:color-mix(in srgb,var(--bad) 45%,transparent);background:linear-gradient(var(--bad-soft),var(--bad-soft)),var(--m-solid)}",
+".mb-i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--warn-soft);color:var(--warn);flex:none}.mb-i svg{width:19px;height:19px}",
+".mbanner.bad .mb-i{background:var(--bad-soft);color:var(--bad)}",
+".mb-t{flex:1 1 260px;min-width:0;display:grid;gap:1px}",
+".mb-t b{font-size:14.5px;font-weight:700;color:var(--ink);text-wrap:balance}",
+".mb-t span{font-size:13px;color:var(--ink-2);text-wrap:pretty;overflow-wrap:anywhere;hyphens:auto}",
+".mb-a{display:flex;gap:6px;flex-wrap:wrap}.mb-a .btn svg{width:15px;height:15px}",
+".mb-x{width:32px;height:32px;border:0;background:none;border-radius:8px;color:var(--ink-3);display:grid;place-items:center;flex:none}.mb-x:hover{background:var(--hover,var(--sunk));color:var(--ink)}.mb-x svg{width:15px;height:15px}",
+/* Drei Spalten: Ordner | Liste | Lesebereich */
+".mbox{display:grid;grid-template-columns:220px minmax(0,var(--mlist-w,370px)) minmax(0,1fr);gap:14px;align-items:start}",
 ".mlistp{position:relative}.mlist-rs{position:absolute;top:0;right:0;bottom:0;width:9px;cursor:col-resize;z-index:6;touch-action:none}.mlist-rs::after{content:\"\";position:absolute;top:0;bottom:0;right:0;width:2px;background:transparent;transition:background .15s}.mlist-rs:hover::after,.mlist-rs:focus-visible::after,.mrs-drag .mlist-rs::after{background:var(--glow)}.mlist-rs:focus-visible{outline:none}",
 "body.mrs-drag{cursor:col-resize;user-select:none;-webkit-user-select:none}body.mrs-drag iframe{pointer-events:none}",
-".mfold{display:grid;gap:1px;align-content:start;padding:8px;position:sticky;top:60px;max-height:calc(100vh - 80px);overflow-y:auto}",
-".fbtn,.accbtn{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border:0;background:none;border-radius:9px;color:var(--ink-2);font-weight:500;text-align:left;font-size:14px;min-width:0}",
-".fbtn svg{width:16px;height:16px;flex:none}",
+/* Ordnerspalte */
+".mfold{display:grid;gap:2px;align-content:start;padding:10px 8px;position:sticky;top:60px;max-height:calc(100vh - 80px);overflow-y:auto;scrollbar-width:thin}",
+".fbtn,.accbtn{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:6px 10px;border:0;background:none;border-radius:10px;color:var(--ink-2);font-weight:500;text-align:left;font-size:14px;min-width:0;transition:background .12s,color .12s}",
+".fbtn svg{width:17px;height:17px;flex:none;color:var(--ink-3)}",
 ".fbtn .fl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
-".fbtn:hover,.accbtn:hover{background:var(--sunk);color:var(--ink)}",
-".fbtn[aria-current=true],.accbtn[aria-current=true]{background:var(--ink);color:var(--ground)}",
-".fbtn .n,.accbtn .n{margin-left:auto;font-family:var(--f-mono);font-size:12px;color:var(--ink-3);flex:none}",
-".fbtn .n.hot,.accbtn .n.hot{background:var(--glow);color:var(--on-glow);border-radius:99px;padding:0 7px}",
-".fbtn.warn{color:var(--bad)}",
+".fbtn:hover,.accbtn:hover{background:var(--hover,var(--sunk));color:var(--ink)}.fbtn:hover svg{color:var(--ink-2)}",
+".fbtn[aria-current=true],.accbtn[aria-current=true]{background:var(--sel);color:var(--ink);font-weight:600}",
+".fbtn[aria-current=true] svg{color:var(--glow)}",
+".fbtn .n,.accbtn .n{margin-left:auto;font-size:12px;color:var(--ink-3);flex:none;font-variant-numeric:tabular-nums}",
+".fbtn .n.hot,.accbtn .n.hot{background:var(--glow-soft);color:var(--glow-ink);border-radius:99px;padding:1px 8px;font-weight:700}",
+".fbtn.warn,.fbtn.warn svg{color:var(--bad)}",
 ".fbtn.dropok{outline:2px dashed var(--glow);outline-offset:-2px}",
 ".mfold .fbtn,.mfold .accbtn,.mfold .fdiv{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}",
-".fdiv{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:12px 9px 4px}",
-".accsw{display:grid;gap:1px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--line)}",
+".fdiv{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:700;padding:14px 10px 4px}",
+".accsw{display:grid;gap:2px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--line)}",
 ".adot{width:9px;height:9px;border-radius:50%;flex:none}",
-".atx{display:grid;min-width:0}.atl,.atu{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.atu{font-size:11.5px;opacity:.75}",
-".awarn{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--bad);color:#fff;font-size:12px;font-weight:700;flex:none}",
+".atx{display:grid;min-width:0}.atl,.atu{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.atu{font-size:11.5px;color:var(--ink-3);font-weight:500}",
+".awarn{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--bad);color:var(--on-glow);font-size:12px;font-weight:800;flex:none}",
+/* Mailliste */
 ".mlistp{display:flex;flex-direction:column;max-height:calc(100vh - 190px);min-height:320px;overflow:hidden}",
-".mchips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}",
-".mchips .sp{flex:1}",".mchips .cn{font-family:var(--f-mono);font-size:11.5px;opacity:.75}",
-".mchips .ci svg{width:13px;height:13px;vertical-align:-2px}",
-".mscroll{overflow-y:auto;flex:1;min-height:0}",
-".msinfo{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-2);background:var(--panel)}",
+".mlh{display:flex;align-items:center;gap:10px;padding:12px 14px 4px;min-width:0}",
+".mlh-t{flex:1;min-width:0;display:grid;gap:0}",
+".mlh-t b{font-size:15.5px;font-weight:700;letter-spacing:-.01em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}",
+".mlh-t span{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}",
+".mlh .link{white-space:nowrap;flex:none}",
+".mlh-th{width:32px;height:32px;border:1px solid var(--line);background:none;border-radius:9px;color:var(--ink-3);display:grid;place-items:center;flex:none}.mlh-th svg{width:16px;height:16px}",
+".mlh-th:hover{color:var(--ink);background:var(--hover,var(--sunk))}.mlh-th[aria-pressed=true]{color:var(--glow-ink);background:var(--sel);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}",
+"@media (min-width:901px){.mchips .chip.thchip{display:none}}",
+".mchips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:6px 12px 10px;border-bottom:1px solid var(--line)}",
+".mchips .chip{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 10px;background:transparent;border-color:var(--line)}",
+".mchips .chip:hover{background:var(--hover,var(--sunk));color:var(--ink)}",
+".mchips .chip[aria-pressed=true]{background:var(--sel);color:var(--ink);border-color:color-mix(in srgb,var(--glow) 45%,transparent)}",
+".mchips .cn{font-size:11.5px;opacity:.8;font-variant-numeric:tabular-nums}",
+".mchips .ci svg{width:14px;height:14px;display:block}",
+".mscroll{overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}",
+".msinfo{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}",
 ".msinfo svg{width:14px;height:14px;opacity:.7}.msinfo .mu{color:var(--ink-3)}",
-".msinfo .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--acc,#2f6bff);border-radius:50%;animation:msspin .8s linear infinite;vertical-align:-1px}",
+".msinfo .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--glow);border-radius:50%;animation:msspin .8s linear infinite;vertical-align:-1px}",
 "@keyframes msspin{to{transform:rotate(360deg)}}",
-".mrow2 mark{background:rgba(255,200,0,.35);color:inherit;border-radius:3px;padding:0 1px}",
-".mgrp{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:10px 14px 4px;position:sticky;top:0;background:var(--panel);z-index:1}",
-".mrow2{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;padding:10px 12px 10px 14px;border-bottom:1px solid var(--line);cursor:pointer;position:relative;touch-action:pan-y;background:var(--panel);transition:transform .15s}",
-".fmv{display:grid;gap:4px;max-height:50vh;overflow:auto}.fmv button{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px 12px;text-align:left;color:var(--ink);cursor:pointer}.fmv button:hover{border-color:var(--glow);background:var(--sunk)}.fmv svg{width:16px;height:16px;color:var(--ink-3)}",
+".mrow2 mark{background:color-mix(in srgb,var(--warn) 38%,transparent);color:inherit;border-radius:3px;padding:0 1px}",
+".mgrp{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:700;padding:10px 14px 5px 18px;position:sticky;top:0;background:var(--m-solid);z-index:1;border-bottom:1px solid var(--line)}",
+/* Zeile: Absender (fett), Betreff, Vorschau (gedämpft), Zeit rechts, Punkt = ungelesen; Zeilen sind durchsichtig */
+".mrow2{display:grid;grid-template-columns:34px minmax(0,1fr);gap:11px;padding:10px 12px 10px 18px;border-bottom:1px solid var(--line);cursor:pointer;position:relative;touch-action:pan-y;background:transparent;transition:background .12s,transform .15s}",
+".mrow2:hover{background:var(--hover,var(--sunk))}",
+".mrow2.sel{background:var(--sel);box-shadow:inset 3px 0 0 var(--glow)}",
+".mrow2.picked{background:var(--info-soft)}",
+".mrow2.trashed{opacity:.75}",
+".mrow2.dragging{opacity:.5}",
+".mrow2.unread::before{content:'';position:absolute;left:6px;top:23px;width:7px;height:7px;border-radius:50%;background:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
+".fmv{display:grid;gap:4px;max-height:50vh;overflow:auto}.fmv button{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:10px 12px;text-align:left;color:var(--ink);cursor:pointer;min-height:42px}.fmv button:hover{border-color:var(--glow);background:var(--hover,var(--sunk))}.fmv svg{width:16px;height:16px;color:var(--ink-3);flex:none}.fmv span{overflow-wrap:anywhere}",
 ".mfold .fbtn[draggable=true]{cursor:grab}.mfold .fdiv.dropok{color:var(--glow);background:var(--glow-soft);border-radius:8px}",
 /* Unterhaltungen: Anzahl-Knopf in der Zeile, aufgeklappte ältere Mails eingerückt, Unterhaltung im Lesebereich */
-".thn{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);border-radius:99px;font:600 11.5px/1 var(--f-body);padding:2px 5px 2px 8px;margin-left:6px;flex:none;cursor:pointer}.thn svg{width:12px;height:12px;transition:transform .15s}.thn.on svg{transform:rotate(180deg)}.thn:hover{border-color:var(--glow);color:var(--glow)}",
-".mrow2.thopen{border-bottom-color:transparent}.mrow2.thc{padding-left:44px;background:var(--sunk)}.mrow2.thc .mav{width:28px;height:28px;font-size:11px}.mrow2.thc .pre{display:none}.mrow2.thc .l1 .who{font-weight:500}",
-".rconv{display:grid;gap:6px;margin-top:6px}.rc{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}.rc.open{border-color:var(--line-2,var(--line))}",
-".rch{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;border:0;background:none;text-align:left;padding:9px 12px;color:var(--ink);cursor:pointer}.rch:hover{background:var(--sunk)}.rch .mav{width:30px;height:30px;font-size:11.5px}",
+".thn{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);background:var(--sunk);color:var(--ink-2);border-radius:99px;font:600 11.5px/1 var(--f-body);padding:3px 5px 3px 8px;margin-left:6px;flex:none;cursor:pointer;font-variant-numeric:tabular-nums}.thn svg{width:12px;height:12px;transition:transform .15s}.thn.on svg{transform:rotate(180deg)}.thn:hover{border-color:var(--glow);color:var(--glow-ink)}",
+".mrow2.thopen{border-bottom-color:transparent}.mrow2.thc{padding-left:46px;background:var(--sunk)}.mrow2.thc .mav{width:28px;height:28px;font-size:11px}.mrow2.thc .pre{display:none}.mrow2.thc .l1 .who{font-weight:500}",
+".rconv{display:grid;gap:6px;margin-top:6px}.rc{border:1px solid var(--line);border-radius:12px;background:var(--sunk);overflow:hidden}.rc.open{border-color:var(--line-2,var(--line))}",
+".rch{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;border:0;background:none;text-align:left;padding:9px 12px;color:var(--ink);cursor:pointer;min-height:48px}.rch:hover{background:var(--hover,var(--sunk))}.rch .mav{width:30px;height:30px;font-size:11.5px}",
 ".rcw{display:grid;min-width:0}.rcw b{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rcw small{font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
 ".rcd{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-3);white-space:nowrap}.rcd svg{width:13px;height:13px;transition:transform .15s}.rc.open .rcd svg{transform:rotate(180deg)}",
 ".rcb{padding:4px 12px 12px;display:grid;gap:10px}.rcb .mframe{min-height:220px}.rca{display:flex;justify-content:flex-end}",
 "details.mq{margin-top:10px}details.mq>summary{cursor:pointer;display:inline-block;list-style:none;font-size:12.5px;color:var(--ink-3);border:1px solid var(--line);background:var(--sunk);border-radius:99px;padding:2px 10px}details.mq>summary::-webkit-details-marker{display:none}details.mq>div{margin-top:8px;color:var(--ink-3);white-space:pre-wrap}",
-".mrow2:hover{background:var(--sunk)}",
-".mrow2.sel{background:var(--glow-soft)}",
-".mrow2.picked{background:var(--info-soft)}",
-".mrow2.trashed{opacity:.75}",
-".mrow2.dragging{opacity:.5}",
-".mrow2.unread::before{content:'';position:absolute;left:4px;top:24px;width:6px;height:6px;border-radius:50%;background:var(--glow)}",
-".mav{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:12.5px;font-weight:700;flex:none;cursor:pointer;user-select:none}",
-".mav.lg{width:42px;height:42px;font-size:14px;cursor:default}",
+".mav{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:12.5px;font-weight:700;flex:none;cursor:pointer;user-select:none;-webkit-user-select:none}",
+".mav.lg{width:44px;height:44px;font-size:14.5px;cursor:default}",
 ".mav .ck{display:none}.mav .ck svg{width:16px;height:16px}",
-".mrow2.picked .mav{background:var(--info)!important;color:#fff!important}",
+".mrow2.picked .mav{background:var(--info)!important;color:var(--on-glow)!important}",
 ".mrow2.picked .mav .i{display:none}.mrow2.picked .mav .ck{display:grid}",
-".mm{min-width:0;display:grid;gap:1px}",
+".mm{min-width:0;display:grid;gap:2px}",
 ".mm .l1,.mm .l2{display:flex;gap:6px;align-items:center;min-width:0}",
-".mm .who{font-weight:500;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}",
+".mm .who{font-weight:600;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-size:14px}",
 ".mrow2.unread .who{font-weight:700;color:var(--ink)}",
-".mm .when{font-size:12px;color:var(--ink-3);white-space:nowrap;margin-left:auto;flex:none}",
-".mm .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;flex:1;min-width:0}",
-".mrow2.unread .subj{font-weight:600}",
+".mm .when{font-size:12px;color:var(--ink-3);white-space:nowrap;margin-left:auto;flex:none;font-variant-numeric:tabular-nums}",
+".mrow2.unread .when{color:var(--glow-ink);font-weight:600}",
+".mm .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;flex:1;min-width:0;color:var(--ink-2)}",
+".mrow2.unread .subj{font-weight:600;color:var(--ink)}",
 ".mm .pre{font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
 ".mm .tag{flex:none}",
-".ics{display:flex;gap:3px;color:var(--ink-3);flex:none}.ics svg{width:13px;height:13px}",
-".star{border:0;background:none;padding:0 2px;color:var(--ink-3);font-size:15px;line-height:1;flex:none}",
-".star.on{color:var(--glow)}",
+".ics{display:flex;gap:4px;color:var(--ink-3);flex:none}.ics svg{width:14px;height:14px;display:block}",
+".star{border:0;background:none;padding:2px;color:var(--ink-3);line-height:0;flex:none;border-radius:6px}.star svg{width:15px;height:15px}",
+".star.on{color:var(--warn)}.star:hover{color:var(--warn)}",
+"@media (hover:hover){.mrow2:not(:hover):not(:focus-within) .star:not(.on){opacity:0}}",
 ".accpill{font-size:11px;font-weight:600;padding:0 7px;border-radius:99px;white-space:nowrap;flex:none}",
-".mqa{position:absolute;right:8px;top:6px;display:none;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}",
-".mrow2:hover .mqa{display:flex}",
+/* Schnellaktionen beim Überfahren (deckend, damit nichts durchscheint) */
+".mqa{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:none;gap:2px;background:var(--m-solid);border:1px solid var(--line-2,var(--line));border-radius:11px;padding:3px;box-shadow:0 6px 18px rgb(0 0 0/.22)}",
+".mrow2:hover .mqa,.mrow2:focus-visible .mqa,.mqa:focus-within{display:flex}",
 "@media (hover:none){.mrow2:hover .mqa{display:none}}",
-".mqa button{border:0;background:none;padding:5px;border-radius:6px;color:var(--ink-2);display:grid}",
-".mqa button:hover{background:var(--sunk);color:var(--ink)}.mqa button.dg:hover{color:var(--bad)}",
-".mqa svg{width:15px;height:15px}",
-".mempty{display:grid;justify-items:center;gap:6px;padding:40px 20px;color:var(--ink-3);text-align:center;font-size:13.5px}",
-".mempty b{color:var(--ink-2);font-size:15px}.mempty.tall{padding:90px 20px}",
-".mempty .ei{width:46px;height:46px;border-radius:50%;background:var(--sunk);display:grid;place-items:center;color:var(--ink-3)}.mempty .ei svg{width:22px;height:22px}",
+".mqa button{border:0;background:none;width:32px;height:32px;border-radius:8px;color:var(--ink-2);display:grid;place-items:center}",
+".mqa button:hover{background:var(--hover,var(--sunk));color:var(--ink)}.mqa button.dg:hover{color:var(--bad);background:var(--bad-soft)}",
+".mqa svg{width:16px;height:16px}",
+/* Leere Zustände */
+".mempty{display:grid;justify-items:center;gap:6px;padding:44px 22px;color:var(--ink-3);text-align:center;font-size:13.5px;text-wrap:pretty}",
+".mempty b{color:var(--ink);font-size:16px;font-weight:700;text-wrap:balance}.mempty.tall{padding:90px 22px}",
+".mempty .ei{width:52px;height:52px;border-radius:18px;background:var(--sunk);display:grid;place-items:center;color:var(--ink-2);margin-bottom:4px}.mempty .ei svg{width:24px;height:24px}",
+".mempty .ea{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px}.mempty .ea .btn svg{width:15px;height:15px}",
+".mempty.busy .ei svg{animation:msspin 1s linear infinite}",
 ".kbd{display:inline-block;font-family:var(--f-mono);font-size:11.5px;line-height:1.5;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--sunk);color:var(--ink-2);min-width:20px;text-align:center}",
-".mread{display:flex;flex-direction:column;max-height:calc(100vh - 130px);min-height:320px;overflow:hidden;position:sticky;top:60px;container-type:inline-size}",
-"@container (max-width:600px){.rb .rl{display:none}.rb{padding:7px 6px}.rsep{margin:0 1px}}",
-".rtool{display:flex;gap:2px;flex-wrap:wrap;padding:6px 8px;border-bottom:1px solid var(--line);align-items:center}",
-".rb{display:inline-flex;align-items:center;gap:6px;border:0;background:none;border-radius:8px;padding:7px 8px;color:var(--ink-2);font-size:13px;font-weight:600}",
-".rb:hover{background:var(--sunk);color:var(--ink)}",
-".rb svg{width:17px;height:17px}",
-".rb.dg:hover{color:var(--bad)}.rb.on{color:var(--glow)}",
-".rb.pri{background:var(--ink);color:var(--ground)}",
-".rsep{width:1px;height:20px;background:var(--line);margin:0 4px}.rsp{flex:1}",
+/* Lesebereich: Werkzeugleiste mit Beschriftung, die bei wenig Platz schrittweise zu Symbolen wird */
+".mread{display:flex;flex-direction:column;max-height:calc(100vh - 130px);min-height:320px;overflow:hidden;position:sticky;top:60px}",
+".rtool{display:flex;gap:4px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--line);align-items:center}",
+".rb{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;min-width:36px;border:1px solid transparent;background:none;border-radius:10px;padding:0 9px;color:var(--ink-2);font-size:13px;font-weight:600;white-space:nowrap;transition:background .12s,color .12s}",
+".rb.l1,.rb.l2,.rb.l3,.rb.l4{padding:0 12px 0 10px}",
+".rb:hover{background:var(--hover,var(--sunk));color:var(--ink)}",
+".rb svg{width:18px;height:18px;flex:none}",
+".rb.dg:hover{color:var(--bad);background:var(--bad-soft)}.rb.on,.rb.on:hover{color:var(--warn)}.rb.ki svg{color:var(--glow)}",
+".rb.pri{background:var(--btn-pri,var(--glow));border-color:var(--btn-pri,var(--glow));color:var(--btn-pri-ink,var(--on-glow));box-shadow:0 4px 14px rgb(0 0 0/.16)}.rb.pri:hover{background:var(--btn-pri,var(--glow));color:var(--btn-pri-ink,var(--on-glow));filter:brightness(1.07)}",
+".rsep{width:1px;height:22px;background:var(--line);margin:0 4px;flex:none}.rsp{flex:1}",
 ".rb-back{display:none}",
-".rin{padding:16px 20px 22px;overflow-y:auto;display:grid;gap:14px;align-content:start;min-width:0;flex:1}",
-".rsubj{font-size:21px;overflow-wrap:anywhere;line-height:1.25}",
+".rin{padding:18px 22px 24px;overflow-y:auto;display:grid;gap:14px;align-content:start;min-width:0;flex:1;overscroll-behavior:contain}",
+".rsubj{font-size:21px;font-weight:700;overflow-wrap:anywhere;line-height:1.25;text-wrap:balance;hyphens:auto}",
 ".rtags{display:flex;gap:6px;flex-wrap:wrap;margin-top:-6px}",
 ".tagbtn{border:0;cursor:pointer}",
-".rsender{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:12px;align-items:center}",
-".rn{font-weight:600;overflow-wrap:anywhere}",
+".rsender{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center}",
+".rw{display:grid;gap:2px;min-width:0}",
+".rn{font-weight:600;font-size:15px;overflow-wrap:anywhere}",
 ".raddr{border:0;background:none;padding:0;color:var(--info);font:inherit;font-weight:500;font-size:13.5px;cursor:pointer;overflow-wrap:anywhere;text-align:left}",
 ".raddr:hover{text-decoration:underline}",
 ".rto{font-size:13px;color:var(--ink-3);overflow-wrap:anywhere}",
-".rdate{font-size:12.5px;color:var(--ink-3);text-align:right;display:grid}",
-".mframe{width:100%;height:max(440px,calc(100vh - 470px));border:1px solid var(--line);border-radius:10px;background:#fff}",
+".rdate{font-size:12.5px;color:var(--ink-3);text-align:right;display:grid;font-variant-numeric:tabular-nums}",
+/* Mail-Inhalt: HTML-Mails auf weißem „Papier“ (für weißen Hintergrund gestaltet), Text-Mails auf der Glasfläche */
+".mframe{width:100%;height:max(440px,calc(100vh - 470px));border:1px solid var(--line);border-radius:14px;background:#fff;display:block}",
+":root[data-theme=\"glas\"] .mframe{border-color:transparent;box-shadow:0 10px 30px rgb(0 0 0/.25)}",
+".rin>.mbody,.rcb>.mbody{background:var(--sunk);border-radius:14px;padding:14px 16px;line-height:1.55;text-wrap:pretty}",
 ".mbody a{color:var(--info)}",
-".attbox{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px}",
+".attbox{border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:grid;gap:8px}",
 ".atth{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--ink-2);font-weight:600;flex-wrap:wrap;align-items:center}",
 ".atth svg{width:14px;height:14px;vertical-align:-2px}",
 ".atth .link{display:inline-flex;gap:5px;align-items:center;padding:0}",
 ".atth .atta{display:inline-flex;gap:14px;flex-wrap:wrap}.atth button.link{border:0;background:none;font:inherit;font-weight:600;color:var(--glow);cursor:pointer}",
 ".attl{display:flex;flex-wrap:wrap;gap:6px}",
-".att{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:100%;font-size:13px;background:var(--panel)}",
-".att>a,.att>button,.att>.ai{display:flex;align-items:center;gap:6px;padding:5px 9px;text-decoration:none;color:var(--ink);border:0;background:none;min-width:0}",
-".att>a:hover,.att>button:hover{background:var(--sunk)}",
+".att{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:100%;font-size:13px;background:var(--sunk)}",
+".att>a,.att>button,.att>.ai{display:flex;align-items:center;gap:6px;padding:6px 10px;min-height:34px;text-decoration:none;color:var(--ink);border:0;background:none;min-width:0}",
+".att>a:hover,.att>button:hover{background:var(--hover,var(--sunk))}",
 ".att>*+*{border-left:1px solid var(--line)!important}",
 ".att svg{width:15px;height:15px}",
 ".att .ak{font-size:10.5px;font-weight:700;font-family:var(--f-mono);color:var(--ink-3);text-transform:uppercase}",
-".att .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;min-width:0}",
+".att .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;min-width:0}",
 ".att .sz{color:var(--ink-3);font-size:12px;white-space:nowrap}",
 ".att .done{color:var(--ok)}",
-".qreply{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:6px;background:var(--panel)}",
+".qreply{border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:grid;gap:6px;background:var(--field,var(--panel))}",
+".qreply:focus-within{border-color:var(--glow);box-shadow:0 0 0 3px var(--glow-soft)}",
 ".qreply textarea{border:0;background:none;resize:vertical;min-height:64px;width:100%;font:inherit;color:inherit;outline:none}",
+".qreply textarea::placeholder{color:var(--ink-3)}",
 ".qbar{display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap}",
 ".qh{margin-right:auto;font-size:12px;color:var(--ink-3)}",
 ".rrel{display:grid;gap:2px}",
-".ri{display:flex;gap:8px;align-items:center;border:0;background:none;padding:7px 8px;border-radius:8px;text-align:left;font-size:13.5px;color:var(--ink);min-width:0}",
-".ri:hover{background:var(--sunk)}.ri svg{width:13px;height:13px}",
-".ri .s{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ri .d{font-size:12px;color:var(--ink-3)}",
-".mbulk{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 12px;border-radius:var(--r);background:var(--info-soft);position:sticky;top:56px;z-index:5}",
-".mbulk .sp{flex:1}",
+".ri{display:flex;gap:8px;align-items:center;border:0;background:none;padding:8px;border-radius:10px;text-align:left;font-size:13.5px;color:var(--ink);min-width:0;min-height:38px}",
+".ri:hover{background:var(--hover,var(--sunk))}.ri svg{width:13px;height:13px}",
+".ri .s{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ri .d{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}",
+/* Auswahl (PC) */
+".mbulk{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px 8px 14px;border-radius:var(--r-sm);border:1px solid color-mix(in srgb,var(--info) 35%,transparent);background:linear-gradient(var(--info-soft),var(--info-soft)),var(--m-solid);position:sticky;top:56px;z-index:5}",
+".mbulk>b{margin-right:4px;font-variant-numeric:tabular-nums}.mbulk .sp{flex:1}.mbulk .btn svg{width:15px;height:15px}",
+/* Ordner-/Kontenblatt */
 ".sheetf{position:static;max-height:none;padding:0}",
+".accseg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;border-bottom:0;padding:2px 0 6px;margin:0}.accseg::-webkit-scrollbar{display:none}",
+".accseg .accbtn{flex:none;width:auto;max-width:78vw;min-height:40px;border:1px solid var(--line);border-radius:99px;padding:6px 14px}",
+".accseg .accbtn[aria-current=true]{border-color:color-mix(in srgb,var(--glow) 45%,transparent)}.accseg .atu{display:none}",
+".sheeth{margin:10px 2px 0}.sheetrules{width:100%;justify-content:center;margin-top:10px;min-height:44px}",
+/* Handy: Ordner-Chips und Wisch-Tipp nur am Handy */
+".mapp,.mapp-s,.mselbar,.mfab,.mrbar,.msw-bg,.mptr,.mfstrip,.mtip{display:none}",
 "@media (max-width:1180px){.mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.mbox>.mfold{display:none}.fpill{display:inline-flex}}",
 /* Statusleiste rechts eingeblendet und Bildschirm unter ~1750 px: Ordner als Knopf, damit der Lesebereich breit genug bleibt */
 "@media (min-width:901px) and (max-width:1750px){.app.has-side .mbox{grid-template-columns:minmax(0,var(--mlist-w,340px)) minmax(0,1fr)}.app.has-side .mbox>.mfold{display:none}.app.has-side .fpill{display:inline-flex}}",
-".mapp,.mapp-s,.mselbar,.mfab,.mrbar,.rb.mshow,.msw-bg,.mptr{display:none}",
-/* Outlook am PC: flache Ordnerspalte, blauer Balken bei Ungelesenen, hellblaue Auswahl */
+/* PC: eine Glas-Box mit drei Spalten, feine Trennlinien statt eigener Flächen */
 "@media (min-width:901px){",
-"  .mbox{gap:0;background:var(--panel);border-radius:8px;box-shadow:var(--shadow);overflow:clip}",
-"  .mbox>.panel{box-shadow:none;border-radius:0;border:0}",
-"  .mfold{background:var(--ground);border-right:1px solid var(--line)!important;padding:10px 8px}",
-"  .mlistp{border-right:1px solid var(--line)!important}",
-"  .fbtn,.accbtn{border-radius:4px;padding:6px 10px}",
-"  .fbtn[aria-current=true],.accbtn[aria-current=true]{background:var(--sel);color:var(--ink);font-weight:600}",
-"  .fbtn .n.hot{background:none;color:var(--glow);padding:0;font-weight:700}",
-"  .mrow2{border-left:3px solid transparent}",
-"  .mrow2.unread{border-left-color:var(--glow)}.mrow2.unread::before{display:none}",
-"  .mrow2.unread .subj{color:var(--glow)}",
-"  .mrow2.sel{background:var(--sel)}.mrow2.sel.unread{border-left-color:var(--glow)}",
-"  .mrow2:hover{background:var(--sunk)}.mrow2.sel:hover{background:var(--sel)}",
-"  .mav{width:32px;height:32px;font-size:12px}",
-"  .rtool{background:var(--panel)}",
-"  .rb{border-radius:4px}.rb.pri{background:var(--glow);color:var(--on-glow)}",
-"  .mchips{background:var(--panel)}",
-"  .mtools .msearch input{border-radius:4px}",
+"  .mbox{gap:0;background:var(--m-bg);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:clip}",
+"  :root[data-theme=\"glas\"] .mbox{position:relative;z-index:0;background:transparent;border-color:var(--glass-line,var(--line));box-shadow:var(--glass-hi,0 0 0 0 transparent),var(--shadow)}",
+"  :root[data-theme=\"glas\"] .mbox::before{content:\"\";position:absolute;inset:0;z-index:-1;background:var(--m-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);pointer-events:none}",
+"  .mfold{border-right:1px solid var(--line);padding:12px 8px}",
+"  .mlistp{border-right:1px solid var(--line)}",
+"  .mread{container-type:inline-size}",
+"  .mav{width:34px;height:34px;font-size:12px}",
 "}",
-":root{--m-blue:var(--glow);--m-red:var(--bad)}   /* Handy: Akzent = Montafon-Indigo */",
+"@container (max-width:1239px){.rb.l4 .rl{display:none}.rb.l4{padding:0 9px}}",
+"@container (max-width:999px){.rb.l3 .rl{display:none}.rb.l3{padding:0 9px}}",
+"@container (max-width:859px){.rb.lx{display:none}}",
+"@container (max-width:739px){.rb.l2 .rl{display:none}.rb.l2{padding:0 9px}.rtool{gap:2px}}",
+"@container (max-width:399px){.rb.l1 .rl{display:none}.rb.l1{padding:0 9px}.rsep{display:none}}",
+":root{--m-blue:var(--glow);--m-red:var(--bad)}   /* Handy-Akzent (auch kalm.js/mobile.js) */",
 "@media (max-width:900px){",
-/* Grundgerüst: Kopf und Werkzeugleiste des Desktops weg, Liste randlos */
-"  .view-post .head,.view-post .mtools,.view-post .mbulk{display:none}",
-"  .view-post{margin-top:-16px}",
+/* Grundgerüst: Kopf und Werkzeugleiste des Desktops weg, Liste randlos auf einer (getönten) Fläche ohne Lücken */
+"  .view-post .head,.view-post .mtools,.view-post .mbulk,.view-post .mlh{display:none}",
+"  .view-post{margin-top:-16px}.view.view-post{gap:0}",
 "  .mbox{grid-template-columns:minmax(0,1fr);gap:0;margin-inline:calc(-1*clamp(16px,4vw,44px))}",
 "  .mbox.reading>.mlistp{display:none}.mbox:not(.reading)>.mread{display:none}",
-"  .mlistp,.mread{max-height:none;min-height:0;overflow:visible;position:static;border:0;border-radius:0;background:var(--ground)}",
+"  .mlistp,.mread{max-height:none;min-height:0;overflow:visible;position:static;border:0;border-radius:0;background:var(--m-list)}",
+"  .mlistp{border-radius:0 0 22px 22px;padding-bottom:6px}",
 "  .mlist-rs{display:none}",
 "  .mscroll{overflow:visible}",
-/* Kopfzeile wie Outlook */
+/* Kopfzeile wie Outlook (gemeinsam mit kalm.js) */
 "  .mapp{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;margin-inline:calc(-1*clamp(16px,4vw,44px));padding:calc(10px + env(safe-area-inset-top,0px)) 12px 8px;background:color-mix(in srgb,var(--ground) 88%,transparent);backdrop-filter:saturate(1.6) blur(14px);-webkit-backdrop-filter:saturate(1.6) blur(14px)}",
-"  .mapp-av{position:relative;width:38px;height:38px;border-radius:50%;border:0;background:var(--ink);color:var(--ground);font-weight:700;font-size:13px;display:grid;place-items:center;flex:none}",
-"  .mapp-av i{position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--glow);border:2px solid var(--ground)}",
-"  .mapp-t{flex:1;min-width:0;display:grid;text-align:left;border:0;background:none;color:inherit;font:inherit;padding:0}",
+"  .view-post .mapp{background:var(--m-bar);-webkit-backdrop-filter:var(--m-blur);backdrop-filter:var(--m-blur);border-bottom:1px solid var(--line)}",
+"  .mapp-av{position:relative;width:40px;height:40px;border-radius:50%;border:0;background:var(--glow-soft);color:var(--glow-ink);font-weight:800;font-size:13px;display:grid;place-items:center;flex:none}",
+"  .mapp-av i{position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--glow);box-shadow:0 0 0 2px var(--m-solid)}",
+"  .mapp-t{flex:1;min-width:0;display:grid;text-align:left;border:0;background:none;color:inherit;font:inherit;padding:0;min-height:44px;align-content:center}",
 "  .mapp-t b{font-size:19px;letter-spacing:-.01em;display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden}",
 "  .mapp-t b svg{width:16px;height:16px;color:var(--ink-3);flex:none}",
-"  .mapp-t span{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-"  .mapp-i{width:40px;height:40px;border-radius:50%;border:0;background:var(--sunk);color:var(--ink);display:grid;place-items:center;flex:none}",
-"  .mapp-i svg{width:19px;height:19px}",
-"  .mapp-x{border:0;background:none;color:var(--info);font:inherit;font-weight:600;padding:8px 4px;flex:none}",
-"  .mapp.sel{background:var(--info-soft)}",
-"  .mapp-s{display:flex;gap:8px;align-items:center;padding:0 12px 8px;margin-inline:calc(-1*clamp(16px,4vw,44px));position:sticky;top:60px;z-index:19;background:var(--ground)}",
-"  .mapp-s .msearch{flex:1;max-width:none}.mapp-s input{border-radius:99px;background:var(--sunk);border-color:transparent;height:40px;font-size:16px}",
+"  .mapp-t span{font-size:12.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+"  .mapp-i{width:42px;height:42px;border-radius:50%;border:0;background:var(--sunk);color:var(--ink);display:grid;place-items:center;flex:none}",
+"  .mapp-i.on{background:var(--sel);color:var(--glow)}",
+"  .mapp-i svg{width:20px;height:20px}",
+"  .mapp-x{border:0;background:none;color:var(--info);font:inherit;font-weight:600;padding:8px 4px;flex:none;min-height:44px}",
+"  .view-post .mapp.sel{background:linear-gradient(var(--info-soft),var(--info-soft)),var(--m-bar)}",
+"  .mapp-s{display:flex;gap:8px;align-items:center;padding:4px 12px 10px;margin-inline:calc(-1*clamp(16px,4vw,44px));position:sticky;top:calc(58px + env(safe-area-inset-top,0px));z-index:19;background:var(--m-bar);-webkit-backdrop-filter:var(--m-blur);backdrop-filter:var(--m-blur);border-bottom:1px solid var(--line)}",
+"  .mapp-s .msearch{flex:1;max-width:none}.mapp-s input{border-radius:99px;background:var(--field,var(--sunk));border-color:var(--line);height:42px;font-size:16px}",
+/* Hinweis-Balken randlos */
+"  .view-post .mbanner{margin-inline:calc(-1*clamp(16px,4vw,44px));border-radius:0;border-width:0 0 1px;padding:12px 16px}",
+"  .view-post .mbanner .btn{min-height:40px}",
+"  body.m-read .view-post .mbanner,body.m-read .mfstrip{display:none}",
+/* Ordner als Chips */
+"  .mfstrip{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:10px 16px 2px;margin-inline:calc(-1*clamp(16px,4vw,44px));background:var(--m-list);position:relative;-webkit-overflow-scrolling:touch}",
+"  .mfstrip::-webkit-scrollbar{display:none}",
+"  .mfs{flex:none;display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:0 14px;border-radius:99px;border:1px solid var(--line);background:var(--sunk);color:var(--ink-2);font:inherit;font-weight:600;font-size:14px;white-space:nowrap}",
+"  .mfs svg{width:17px;height:17px;flex:none}",
+"  .mfs i{font-style:normal;font-size:12px;font-weight:700;background:var(--glow-soft);color:var(--glow-ink);border-radius:99px;padding:0 7px;line-height:19px;font-variant-numeric:tabular-nums}",
+"  .mfs[aria-current=true]{background:var(--sel);border-color:color-mix(in srgb,var(--glow) 45%,transparent);color:var(--ink)}",
+"  .mfs[aria-current=true] svg{color:var(--glow)}",
+"  .mfs.warn,.mfs.warn svg{color:var(--bad)}.mfs.warn i{background:var(--bad-soft);color:var(--bad)}",
+"  .mfs.more{color:var(--ink-3);border-style:dashed}",
 /* Filter als wischbare Chips */
-"  .mchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:4px 12px 10px;border-bottom:0;gap:8px}",
+"  .mchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:8px 16px 10px;border-bottom:0;gap:8px}",
 "  .mchips::-webkit-scrollbar{display:none}",
-"  .mchips .chip{flex:none;padding:7px 14px;font-size:14px}",
-"  .mchips .sp,.mchips .link{display:none}",
-"  .mgrp{position:static;background:none;padding:14px 16px 6px;font-size:12px}",
+"  .mchips .chip{flex:none;min-height:36px;padding:0 14px;font-size:14px}",
+"  .mgrp{position:static;background:none;border:0;padding:14px 16px 6px 20px;font-size:12px}",
+/* Wisch-Tipp (einmalig) */
+"  .mtip{display:flex;align-items:center;gap:10px;margin:2px 12px 8px;padding:10px 12px;border-radius:14px;background:var(--info-soft);color:var(--ink-2);font-size:13px;line-height:1.4;text-wrap:pretty}",
+"  .mtip>svg{width:22px;height:22px;color:var(--info);flex:none}.mtip b{color:var(--ink)}.mtip .link{flex:none;min-height:40px;padding:0 4px}",
 /* Zeilen */
-"  .mrow2{grid-template-columns:42px minmax(0,1fr);gap:12px;padding:12px 16px 12px 18px;border-bottom:0;background:var(--ground);transition:transform .25s cubic-bezier(.2,.8,.2,1),background .2s}",
-"  .mrow2::after{content:'';position:absolute;left:72px;right:0;bottom:0;border-bottom:1px solid var(--line)}",
-"  .mrow2:hover{background:var(--ground)}.mrow2:active{background:var(--sunk)}",
-"  .mrow2.unread::before{left:6px;top:28px;width:8px;height:8px;background:var(--m-blue)}",
-"  .mav{width:42px;height:42px;font-size:14px}",
+"  .mrow2{grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px 16px 12px 20px;border-bottom:0;background:transparent;transition:transform .25s cubic-bezier(.2,.8,.2,1),background .2s}",
+"  .mrow2::after{content:'';position:absolute;left:76px;right:0;bottom:0;border-bottom:1px solid var(--line)}",
+"  .mrow2:hover{background:transparent}.mrow2:active{background:var(--hover,var(--sunk))}",
+"  .mrow2.sel{background:transparent;box-shadow:none}",
+"  .msw>.mrow2{background:var(--m-solid)}",
+"  .mrow2.unread::before{left:7px;top:30px;width:8px;height:8px;box-shadow:none}",
+"  .mav{width:44px;height:44px;font-size:14.5px}",
 "  .mm{gap:2px}.mm .who{font-size:15.5px}.mm .when{font-size:12.5px}",
-"  .mrow2.unread .when{color:var(--info);font-weight:600}",
 "  .mm .subj{font-size:14.5px}",
 "  .mm .pre{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:13.5px;line-height:1.4}",
-"  .star{font-size:17px;padding:2px 4px}",
+"  .star{padding:4px}.star svg{width:17px;height:17px}",
 "  .mrow2 .mqa{display:none!important}",
-"  .mrow2.picked{background:var(--info-soft)}",
-/* Wischen: farbige Aktion hinter der Zeile */
+"  .mrow2.picked{background:var(--sel)}",
+/* Wischen: farbige Aktion hinter der Zeile (rechts = gelesen, links = löschen) */
 "  .msw{position:relative;overflow:hidden}",
-"  .msw-bg{display:flex;position:absolute;inset:0;align-items:center;padding:0 26px;color:#fff;font-weight:700;font-size:14px;gap:10px}",
+"  .msw-bg{display:flex;position:absolute;inset:0;align-items:center;padding:0 24px;color:var(--on-glow);font-weight:700;font-size:14px;gap:10px}",
 "  .msw-bg.l{background:var(--m-red);justify-content:flex-end}.msw-bg.r{background:var(--m-blue);justify-content:flex-start}",
 "  .msw-bg svg{width:22px;height:22px;transition:transform .18s cubic-bezier(.2,.8,.2,1)}",
-"  .msw-bg.go svg{transform:scale(1.35)}",
-"  .msw-bg span{opacity:.0;transition:opacity .15s}.msw-bg.go span{opacity:1}",
+"  .msw-bg.go svg{transform:scale(1.3)}",
+"  .msw-bg span{opacity:.7;transition:opacity .15s}.msw-bg.go span{opacity:1}",
 "  .msw.out{transition:height .22s ease,opacity .22s ease}",
 /* Ziehen zum Aktualisieren */
 "  .mptr{display:grid;place-items:center;height:0;overflow:hidden;color:var(--ink-3);transition:height .2s}",
 "  .mptr svg{width:20px;height:20px;transition:transform .2s}.mptr.ready svg{transform:rotate(180deg)}.mptr.spin svg{animation:mspin .8s linear infinite}",
 "  @keyframes mspin{to{transform:rotate(360deg)}}",
-/* Neue Mail */
-"  .mfab{display:grid;place-items:center;position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;border-radius:18px;border:0;background:var(--m-blue);color:var(--on-glow);box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:25;transition:transform .25s cubic-bezier(.2,.8,.2,1)}",
+/* Neue Mail: schwebender Knopf über der Reiterleiste */
+"  .mfab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;border-radius:18px;border:0;background:var(--btn-pri,var(--m-blue));color:var(--btn-pri-ink,var(--on-glow));box-shadow:0 10px 28px rgb(0 0 0/.3);z-index:25;transition:transform .25s cubic-bezier(.2,.8,.2,1)}",
+"  .mfab.lbl{display:inline-flex;align-items:center;gap:8px;width:auto;height:54px;padding:0 20px 0 16px;border-radius:27px;font:inherit;font-weight:800;font-size:15px}",
 "  body:has(.toast.on) .mfab{transform:translateY(-64px)}",
 "  .toast{left:12px;right:12px;max-width:none;transform:translateY(20px);display:flex;justify-content:space-between;align-items:center;border-radius:14px;padding:13px 16px}.toast.on{transform:none}.toast .ta{flex:none}",
-"  .mfab svg{width:24px;height:24px}",
+"  .mfab svg{width:22px;height:22px}",
 "  .mfab:active{transform:scale(.94)}",
-/* Auswahlleiste unten */
-"  .mselbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:35;background:var(--panel);border-top:1px solid var(--line);padding:6px 4px calc(8px + env(safe-area-inset-bottom,0px))}",
-"  .mselbar button{flex:1;border:0;background:none;display:grid;justify-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--ink-2);padding:6px 0}",
+/* Auswahlleiste: schwebend wie die Reiterleiste (die solange ausgeblendet ist) */
+"  .mselbar{display:flex;position:fixed;left:12px;right:12px;bottom:max(8px,calc(env(safe-area-inset-bottom,0px) - 10px));z-index:35;background:var(--m-bar);-webkit-backdrop-filter:var(--m-blur);backdrop-filter:var(--m-blur);border:1px solid var(--glass-line,var(--line));border-radius:28px;box-shadow:var(--glass-hi,0 0 0 0 transparent),var(--shadow-pop);padding:4px}",
+"  body:has(.view-post .mselbar) .tabbar{display:none}",
+"  .mselbar button{flex:1;min-width:0;border:0;background:none;display:grid;justify-items:center;align-content:center;gap:2px;font-size:11px;font-weight:600;color:var(--ink-2);padding:4px 0;min-height:52px;border-radius:24px}",
+"  .mselbar button:active{background:var(--hover,var(--sunk))}",
 "  .mselbar svg{width:22px;height:22px}.mselbar .dg{color:var(--bad)}",
+"  body:has(.view-post .mselbar) main{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}",
 /* Lesen: Vollbild, Navigation ausgeblendet */
 "  body.m-read .tabbar,body.m-read .mfab{display:none}",
-"  body.m-read main{padding-bottom:calc(86px + env(safe-area-inset-bottom,0px))}",
-"  .rtool{position:sticky;top:0;z-index:20;gap:2px;padding:calc(8px + env(safe-area-inset-top,0px)) 8px 8px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--ground) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);flex-wrap:nowrap}",
-"  .rtool .rb:not(.mk):not(.mshow),.rtool .rsep,.rtool .rsp{display:none}",
+"  body.m-read main{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}",
+"  .rtool{position:sticky;top:0;z-index:20;gap:2px;padding:calc(8px + env(safe-area-inset-top,0px)) 8px 8px;border-bottom:1px solid var(--line);background:var(--m-bar);-webkit-backdrop-filter:var(--m-blur);backdrop-filter:var(--m-blur);flex-wrap:nowrap}",
+"  .rtool .rb:not(.mk),.rtool .rsep,.rtool .rsp{display:none}",
 "  .rtool .rb-back{display:inline-flex;margin-right:auto}",
 "  body.m-read .mapp,body.m-read .mapp-s{display:none}",
-"  .rb{padding:9px;border-radius:50%}.rb svg{width:21px;height:21px}.rb .rl{display:none}",
-"  .rb.pri{border-radius:99px;padding:8px 14px}.rb.pri .rl{display:inline}",
-"  .rb.mshow{display:inline-flex}",
+"  .rb{width:44px;height:44px;padding:0!important;border-radius:50%}.rb svg{width:21px;height:21px}.rb .rl{display:none}",
+"  .rb.pri{width:auto;border-radius:99px;padding:0 16px!important}.rb.pri .rl{display:inline}",
 "  .rin{overflow:visible;padding:18px 16px 24px;gap:16px}",
 "  .rsubj{font-size:22px;letter-spacing:-.01em}",
-"  .rsender{grid-template-columns:42px minmax(0,1fr)}.rdate{grid-column:2;text-align:left;display:block}.rdate span{margin-left:6px}",
+"  .rsender{grid-template-columns:44px minmax(0,1fr)}.rdate{grid-column:2;text-align:left;display:block}.rdate span{margin-left:6px}",
 "  .attl{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.attl::-webkit-scrollbar{display:none}.att{flex:none}",
-"  .mframe{height:60vh;border:0;border-radius:0;display:block}",
-"  .kibar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.kibar::-webkit-scrollbar{display:none}.kibar>*{flex:none}",
-"  .mrow2 .accpill{display:none}.mrow2 .star:not(.on){display:none}.mrow2 .ics{opacity:.7}",
+"  .att>a,.att>button,.att>.ai{min-height:42px}",
+"  .att .nm{max-width:min(240px,55vw)}",
+"  .mframe{height:60vh;border:0;border-radius:14px;display:block}",
+"  .mrow2 .accpill{display:none}.mrow2 .star:not(.on){display:none}.mrow2 .ics{opacity:.75}",
 "  .qreply{display:none}",
-"  .mrbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;gap:8px;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}",
-"  .mrbar button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:11px 8px;font:inherit;font-weight:600;font-size:14px}",
-"  .mrbar button:first-child{background:var(--m-blue);border-color:var(--m-blue);color:var(--on-glow)}",
-"  .mrbar svg{width:18px;height:18px}",
+/* Antworten-Leiste unten: schwebend, Antworten als Hauptknopf */
+"  .mrbar{display:flex;position:fixed;left:12px;right:12px;bottom:max(8px,calc(env(safe-area-inset-bottom,0px) - 10px));z-index:30;gap:6px;padding:6px;background:var(--m-bar);-webkit-backdrop-filter:var(--m-blur);backdrop-filter:var(--m-blur);border:1px solid var(--glass-line,var(--line));border-radius:30px;box-shadow:var(--glass-hi,0 0 0 0 transparent),var(--shadow-pop)}",
+"  .mrbar button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;min-height:46px;border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:99px;padding:0 10px;font:inherit;font-weight:600;font-size:14.5px;min-width:0;white-space:nowrap}",
+"  .mrbar button:not(.pri){flex-direction:column;gap:1px;font-size:11.5px;padding:2px 6px;border-radius:22px}.mrbar button:not(.pri) span{max-width:100%;overflow:hidden;text-overflow:ellipsis}",
+"  .mrbar button.pri{flex:1.35;background:var(--btn-pri,var(--m-blue));border-color:var(--btn-pri,var(--m-blue));color:var(--btn-pri-ink,var(--on-glow));font-weight:700}",
+"  .mrbar button:active{filter:brightness(.92)}",
+"  .mrbar svg{width:19px;height:19px;flex:none}",
 "  .mread.swback{transition:transform .2s}",
 /* Ordner-/Kontenblatt von links */
 "  .modal:has(.dialog.sheetdlg){place-items:stretch start;padding:0}",
-"  .dialog.sheetdlg{width:min(320px,86vw);max-height:none;height:100%;border-radius:0 18px 18px 0;padding:calc(16px + env(safe-area-inset-top,0px)) 12px 20px;animation:msheetl .22s cubic-bezier(.2,.8,.2,1)}",
+"  .dialog.sheetdlg{width:min(340px,88vw);max-height:none;height:100%;border-radius:0 22px 22px 0;padding:calc(16px + env(safe-area-inset-top,0px)) 12px calc(20px + env(safe-area-inset-bottom,0px));animation:msheetl .22s cubic-bezier(.2,.8,.2,1)}",
 "  @keyframes msheetl{from{transform:translateX(-100%)}to{transform:none}}",
-"  .sheetf .fbtn,.sheetf .accbtn{padding:11px 12px;font-size:15.5px;border-radius:12px}",
+"  .sheetf .fbtn,.sheetf .accbtn{min-height:46px;padding:10px 12px;font-size:15.5px;border-radius:12px}",
+"  .sheetf .accseg .accbtn{min-height:40px;padding:6px 14px;border-radius:99px;font-size:14.5px}",
 "  .sheetf .fbtn svg{width:20px;height:20px}",
 /* Menüs als Blatt von unten */
-"  .mctx{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:70vh;overflow-y:auto;border-radius:18px!important;padding:8px!important;box-shadow:0 0 0 100vmax rgba(0,0,0,.35)!important;animation:msheetb .2s cubic-bezier(.2,.8,.2,1)}",
+"  .mctx{left:8px!important;right:8px;width:auto!important;max-width:none!important;background:color-mix(in srgb,var(--panel-solid,var(--panel)) 94%,transparent)!important;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom,0px));max-height:70vh;overflow-y:auto;border-radius:20px!important;padding:8px!important;box-shadow:0 0 0 100vmax rgb(0 0 0/.35)!important;animation:msheetb .2s cubic-bezier(.2,.8,.2,1)}",
 "  @keyframes msheetb{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}",
-"  .mctx button{width:100%;padding:13px 14px!important;font-size:16px!important}",
-"}"
+"  .mctx button{width:100%;min-height:48px;padding:12px 14px!important;font-size:16px!important}",
+"}",
+"@media (prefers-reduced-motion:reduce){.mrow2,.mfab,.msw-bg svg,.mptr,.mptr svg,.thn svg,.rcd svg,.mread.swback{transition:none!important}.dialog.sheetdlg,.mctx,.mempty.busy .ei svg,.mptr.spin svg,.msinfo .spin{animation:none!important}}"
 ].join("\n"));
 
 F.view({id:"post",label:"Postfach",short:"Post",icon:"post",order:40,mobile:true,count:function(){ return inboxUnread(); },render:vPost,after:after});

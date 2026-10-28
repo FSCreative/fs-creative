@@ -59,7 +59,7 @@ var ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-widt
 function bell(){ var host=document.querySelector(".topbar .tb-right"); if(!host) return; var b=document.getElementById("dnotBtn");
   if(!b){ b=document.createElement("button"); b.id="dnotBtn"; b.type="button"; b.className="tb-i"; b.setAttribute("data-act","dnotcfg"); var st=document.getElementById("stamp"); host.insertBefore(b,st?st.nextSibling:host.firstChild); }
   var on=cfg().on; b.innerHTML=ICON+(on?'<span class="dn-dot" aria-hidden="true"></span>':''); b.title=on?"Hinweise am PC: an":"Hinweise am PC: aus"; b.setAttribute("aria-label",b.title); }
-F.css(".topbar #dnotBtn{position:relative}.topbar #dnotBtn .dn-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:#30d158}");
+F.css(".topbar #dnotBtn{position:relative}.topbar #dnotBtn .dn-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ok)}");
 if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",bell); else bell();
 F.action("dnotcfg",function(){
   var c=cfg(), perm=hasN?Notification.permission:"unsupported";

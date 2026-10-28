@@ -34,17 +34,17 @@ F.payPage=function(){
   var rows=L.map(function(o){ var s=ST[o.status]||[o.status,"grey"], late=o.date&&o.date<t&&["bereit","entwurf"].indexOf(o.status)>-1, canSel=OPENST[o.status]&&!(o.problems||[]).length;
     return '<div class="pay-r" data-act="payedit:'+esc(o.id)+'" role="button" tabindex="0">'+
       '<span class="pay-ck" data-noact>'+(canSel?'<input type="checkbox" data-paysel="'+esc(o.id)+'"'+(SEL[o.id]?" checked":"")+' aria-label="Für SEPA-Datei auswählen">':'')+'</span>'+
-      '<span class="pay-who"><b>'+esc(o.name||"—")+'</b><small>'+esc(ibanFmt(o.iban)||"IBAN fehlt")+'</small></span>'+
-      '<span class="pay-why"><span>'+esc(o.reference?"Ref. "+o.reference:(o.text||"—"))+'</span>'+((o.problems||[]).length?'<small class="bad-t">'+esc(o.problems[0])+'</small>':o.source&&o.source.kind==="mail"?'<small>📧 '+esc(o.source.subject||"aus Mail")+(o.voucherId?' · 📄 Beleg angelegt':'')+'</small>':o.voucherId?'<small>📄 Beleg angelegt</small>':'')+'</span>'+
+      '<span class="pay-who"><b title="'+esc(o.name||"")+'">'+esc(o.name||"—")+'</b><small class="pay-iban" title="'+esc(ibanFmt(o.iban))+'">'+esc(ibanFmt(o.iban)||"IBAN fehlt")+'</small></span>'+
+      '<span class="pay-why"><span title="'+esc(o.reference?"Ref. "+o.reference:(o.text||""))+'">'+esc(o.reference?"Ref. "+o.reference:(o.text||"—"))+'</span>'+((o.problems||[]).length?'<small class="bad-t" title="'+esc(o.problems[0])+'">'+esc(o.problems[0])+'</small>':o.source&&o.source.kind==="mail"?'<small title="'+esc(o.source.subject||"aus Mail")+'">'+F.svg("post")+esc(o.source.subject||"aus Mail")+(o.voucherId?' · '+F.svg("beleg")+'Beleg angelegt':'')+'</small>':o.voucherId?'<small>'+F.svg("beleg")+'Beleg angelegt</small>':'')+'</span>'+
       '<span class="pay-when'+(late?" bad-t":"")+'">'+(o.date?esc(F.de(o.date)):'<span class="muted">sofort</span>')+'</span>'+
       '<span class="pay-amt"><b class="num">'+eur(o.amount)+'</b><span class="fsd-pill '+s[1]+'">'+esc(s[0])+'</span></span>'+
       '<span class="pay-acts" data-noact>'+(o.status==="bereit"&&b.ok?'<button type="button" class="btn primary sm" data-act="paybank:'+esc(o.id)+'">In George freigeben</button>':'')+
         (o.status==="bereit"?'<button type="button" class="btn sm" data-act="payqr:'+esc(o.id)+'" title="QR-Code für die George-App">QR</button>':'')+
         (o.status==="bank"?'<small class="muted">in George bestätigen</small>':'')+'</span></div>'; }).join("");
   return head("Zahlungsaufträge",open.length?open.length+" offen · "+eur(sum):"Überweisungen erfassen und in George freigeben",
-      (sel.length?'<button class="btn" data-act="paysepa">SEPA-Datei ('+sel.length+')</button>':'')+'<button class="btn primary" data-act="paynew">+ Zahlung erfassen</button>')+
+      (sel.length?'<button class="btn" data-act="paysepa">'+F.svg("download")+'SEPA-Datei ('+sel.length+')</button>':'')+'<button class="btn primary" data-act="paynew">'+F.svg("plus")+'Zahlung erfassen</button>')+
     info+chips+
-    (L.length?'<div class="pay-l">'+rows+'</div>'
+    (L.length?'<div class="fsd-card flush pay-l">'+rows+'</div>'
       :'<div class="sd-empty">'+(UI.payF==="offen"?"Keine offenen Zahlungen. Im Postfach bei einer Rechnung auf „Zahlung erfassen“ (Kartensymbol) klicken – die KI füllt alles aus.":"Keine Einträge.")+'</div>');
 };
 
@@ -73,7 +73,7 @@ function form(o,x){ o=o||{}; x=x||{};
     (x.isPayable===false?'<div class="notice"><span>Das sieht nicht nach einer Zahlungsaufforderung aus.</span></div>':'')+(x.notes?'<p class="muted small" style="margin:0">KI-Hinweis: '+esc(x.notes)+'</p>':'');
   var editable=!o.status||OPENST[o.status];
   F.modal('<form data-form="paysave" class="stackf"><div class="row-between"><h2 style="font-size:20px">'+(o.id?"Zahlung":"Neue Zahlung")+'</h2>'+F.btnClose()+'</div>'+warn+
-    (o.source&&o.source.kind==="mail"?'<p class="muted small" style="margin:0">📧 Aus Mail: '+esc(o.source.subject||"")+(o.source.filename?" · "+esc(o.source.filename):"")+'</p>':'')+
+    (o.source&&o.source.kind==="mail"?'<p class="muted small pay-src">'+F.svg("post")+'<span>Aus Mail: '+esc(o.source.subject||"")+(o.source.filename?" · "+esc(o.source.filename):"")+'</span></p>':'')+
     '<div class="grid2"><label class="fl">Empfänger<input class="f" name="name" required maxlength="70" value="'+esc(o.name||"")+'"'+(editable?"":" disabled")+'></label>'+
     '<label class="fl">Betrag (€)<input class="f num" name="amount" required inputmode="decimal" value="'+esc(o.amount?String(o.amount).replace(".",","):"")+'"'+(editable?"":" disabled")+'></label></div>'+
     '<div class="grid2"><label class="fl">IBAN<input class="f" name="iban" required autocomplete="off" spellcheck="false" value="'+esc(ibanFmt(o.iban||""))+'"'+(editable?"":" disabled")+'><span class="small" id="payIbanOk"></span></label>'+
@@ -88,7 +88,7 @@ function form(o,x){ o=o||{}; x=x||{};
     '<div class="err" id="payErr"></div>'+
     '<div class="foot"><span class="row wrap">'+(o.id&&(OPENST[o.status]||o.status==="storniert")?'<button type="button" class="btn bad-t" data-act="paydel:'+esc(o.id)+'">Löschen</button>':'')+
       (o.id&&o.status!=="bezahlt"?'<button type="button" class="btn" data-act="paypaid:'+esc(o.id)+'">Als bezahlt markieren</button>':'')+(o.id&&o.status==="bezahlt"&&o.paid&&o.paid.manual?'<button type="button" class="btn" data-act="payunpaid:'+esc(o.id)+'">Doch nicht bezahlt</button>':'')+
-      (o.source&&o.source.mailId?'<button type="button" class="btn" data-act="paymail:'+esc(o.source.mailId)+'">Mail öffnen</button>':'')+(o.voucherId?'<button type="button" class="btn" data-act="payvou">Beleg ansehen</button>':'')+'</span>'+
+      (o.source&&o.source.mailId?'<button type="button" class="btn" data-act="paymail:'+esc(o.source.mailId)+'">'+F.svg("post")+'Mail öffnen</button>':'')+(o.voucherId?'<button type="button" class="btn" data-act="payvou">'+F.svg("beleg")+'Beleg ansehen</button>':'')+'</span>'+
       '<span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button type="submit" class="btn primary">'+(editable?"Speichern":"Notiz speichern")+'</button></span></div></form>',"wide");
   ibanHint(); if(!o.id&&ATT&&ATT.a){ belegCats(); var rs=document.querySelector('form[data-form="paysave"] [name=brule]'); if(rs) F.taxRuleSync(rs); }
 }
@@ -180,11 +180,12 @@ F.feed(function(){ var o=((PAY&&PAY.orders)||[]), t=today(), due=o.filter(functi
   return due.length?[{id:"pay-due-"+due.length,rank:2,sev:due.some(function(x){ return x.date<t; })?"bad":"warn",icon:"euro",tag:["warn","Zahlung"],t:due.length===1?"Zahlung fällig: "+due[0].name+" · "+eur(due[0].amount):due.length+" Zahlungen fällig · "+eur(due.reduce(function(s,x){ return s+x.amount; },0)),d:"bis "+F.de(due.map(function(x){ return x.date; }).sort()[0])+" – in George freigeben",acts:[["Ansehen","fin:pay","primary"]]}]:[]; });
 
 F.css('form[data-form="paysave"] .grid2{align-items:end}.pay-bel{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--sunk)}.pay-bel.off .pay-belf{opacity:.45;pointer-events:none}.pay-belf{display:grid;gap:10px}.pay-info{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--warn-soft);color:var(--ink);font-size:13.5px;line-height:1.45}.pay-info.ok{background:var(--ok-soft)}.pay-info svg{width:18px;height:18px;flex:none;margin-top:1px}'+
-  '.pay-l{display:grid;border:1px solid var(--line);border-radius:var(--r,14px);background:var(--panel);overflow:hidden}'+
-  '.pay-r{display:grid;grid-template-columns:28px minmax(0,1.3fr) minmax(0,1.2fr) 92px 128px auto;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer}.pay-r:first-child{border-top:0}.pay-r:hover{background:var(--sunk)}'+
-  '.pay-r small{display:block;font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-who,.pay-why{min-width:0;display:grid}.pay-who b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-why>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
-  '.pay-when{font-size:13.5px;white-space:nowrap}.pay-amt{display:grid;justify-items:end;gap:3px}.pay-amt b{font-size:15px}'+
-  '.pay-ck input{width:17px;height:17px}.pay-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}'+
+  '.pay-l{display:grid}'+
+  '.pay-r{display:grid;grid-template-columns:28px minmax(0,1.3fr) minmax(0,1.2fr) 92px 128px auto;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer}.pay-r:first-child{border-top:0}.pay-r:hover{background:var(--hover,var(--sunk))}'+
+  '.pay-r small{display:block;font-size:12.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-r small svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}.pay-iban{font-variant-numeric:tabular-nums;letter-spacing:.01em}.pay-who,.pay-why{min-width:0;display:grid}.pay-who b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pay-why>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+  '.pay-src{margin:0;display:flex;gap:6px;align-items:flex-start}.pay-src svg{width:15px;height:15px;flex:none;margin-top:2px}.pay-src span{min-width:0;overflow-wrap:anywhere}'+
+  '.pay-when{font-size:13.5px;white-space:nowrap;font-variant-numeric:tabular-nums}.pay-amt{display:grid;justify-items:end;gap:3px}.pay-amt b{font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}'+
+  '.pay-ck{display:grid;place-items:center;min-height:28px}.pay-ck input{width:18px;height:18px}.pay-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}'+
   '@container fsdw (max-width:1100px){.pay-r{grid-template-columns:28px minmax(0,1fr) 120px;row-gap:6px}.pay-why{grid-column:2}.pay-when{grid-column:3;grid-row:2;text-align:right}.pay-amt{grid-column:3;grid-row:1}.pay-acts{grid-column:2/-1;justify-content:flex-start}}'+
   '@media (max-width:900px){.pay-r{grid-template-columns:28px minmax(0,1fr) auto;row-gap:6px}.pay-why{grid-column:2}.pay-when{grid-column:3;grid-row:2;text-align:right}.pay-amt{grid-column:3;grid-row:1}.pay-acts{grid-column:2/-1;justify-content:flex-start}}'+
   '.pay-qr{display:grid;place-items:center;background:#fff;border-radius:14px;padding:14px}.pay-qr svg{width:min(280px,100%);height:auto}'+

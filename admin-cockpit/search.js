@@ -6,7 +6,15 @@ var F=window.FSC, esc=F.esc;
 F.css(
 '.cmdk{position:fixed;inset:0;z-index:80;display:none;align-items:flex-start;justify-content:center;padding:12vh 16px 16px;background:rgba(10,14,12,.45)}'+
 '.cmdk.on{display:flex}'+
-'.cmdk .box{width:min(640px,100%);max-height:min(560px,76vh);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)}'+
+'.cmdk .box{width:min(640px,100%);max-height:min(560px,76vh);display:flex;flex-direction:column;background:var(--glass-strong);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)}'+
+/* Alpenglas: abgedunkelter, leicht unscharfer Hintergrund; Palette als kräftiges Glas (Unschärfe kommt vom Hintergrund) */
+':where(:root[data-theme="glas"]) .cmdk{background:rgba(3,8,14,.45);-webkit-backdrop-filter:blur(6px) saturate(130%);backdrop-filter:blur(6px) saturate(130%)}'+
+':where(:root[data-theme="glas"]) .cmdk .box{border-color:var(--glass-line);border-radius:26px;box-shadow:var(--glass-hi),var(--shadow-pop);animation:cmdkIn .2s cubic-bezier(.3,1.3,.5,1)}'+
+':where(:root[data-theme="glas"]) .cmdk .in input{color:var(--ink)}'+
+':where(:root[data-theme="glas"]) .cmdk .it.on{background:var(--active)}'+
+':where(:root[data-theme="glas"]) .cmdk .it.on .ii{color:var(--glow)}'+
+'@keyframes cmdkIn{from{opacity:0;transform:translateY(-6px) scale(.98)}}'+
+'@media (prefers-reduced-motion:reduce){.cmdk .box{animation:none!important}}'+
 '.cmdk .in{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}'+
 '.cmdk .in svg{width:18px;height:18px;color:var(--ink-3);flex:none}'+
 '.cmdk .in input{flex:1;min-width:0;border:0;background:none;font-size:16px;outline:none;padding:4px 0}'+
@@ -59,14 +67,16 @@ function baseActions(){
     {label:"Neue Aufgabe",sub:"Aufträge – mit Frist und Checkliste",icon:"board",act:has("tknew")?"tknew:":"go:auftraege",kw:"aufgabe auftrag task frist deadline"},
     {label:"Neuer Auftrag",sub:"Aufträge – Projekt für einen Kunden",icon:"board",act:has("tkprojnew")?"tkprojnew:":"go:auftraege",kw:"auftrag projekt kunde"},
     {label:"Einstellungen & E-Mail-Konten",sub:"Passwörter, iCloud, Verbindungen",icon:"gear",act:"settings:",kw:"einstellungen konten passwort"},
-    {label:"Darstellung: Automatisch",sub:t==="auto"?"aktiv":"wie System",icon:"sun",act:"theme:auto",kw:"theme modus dunkel hell"},
+    has("conn")?{label:"Verbindungen",sub:F.connErrors&&F.connErrors()?F.connErrors()+" gestört":"Status aller Dienste prüfen",icon:"plug",act:"conn:",kw:"verbindung status dienste api token fehler gestört prüfen"}:null,
+    {label:"Darstellung: Alpenglas",sub:t==="glas"?"aktiv":"Bergfoto mit Milchglas",icon:"cloudSun",act:"theme:glas",kw:"theme modus glas alpen standard foto berge"},
+    {label:"Darstellung: Wie System",sub:t==="auto"?"aktiv":"hell oder dunkel wie das Gerät",icon:"sun",act:"theme:auto",kw:"theme modus automatisch system"},
     {label:"Darstellung: Hell",sub:t==="light"?"aktiv":"",icon:"sun",act:"theme:light",kw:"theme modus light"},
     {label:"Darstellung: Dunkel",sub:t==="dark"?"aktiv":"",icon:"moon",act:"theme:dark",kw:"theme modus dark nacht"},
     {label:p?"Beträge einblenden":"Beträge ausblenden",sub:"Privatsphäre",icon:"eye",act:"priv:",kw:"beträge privat verbergen ein aus"},
     {label:"Alles aktualisieren",sub:"Live-Daten neu laden",icon:"refresh",act:"reload:",kw:"neu laden refresh"},
     {label:"Abmelden",sub:"",icon:"close",act:"_logout",kw:"logout"}
   ];
-  return a;
+  return a.filter(Boolean);
 }
 function norm(s){ return String(s||"").toLowerCase(); }
 function collect(q){

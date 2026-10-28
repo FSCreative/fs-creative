@@ -423,6 +423,36 @@ module.exports = function (C) {
     if (n) { tok = n; ch.tok = seal(tok); ch.expiresAt = tok.expiresAt || ""; save(); }
     return tok;
   }
+  // Zugang prüfen: auffrischen + Leseanfrage (P.verify). Erfolg setzt „abgelaufen“ zurück und löscht einen alten Anmelde-Fehler.
+  async function verifyChannel(ch) {
+    ch.checkedAt = nowIso();
+    try {
+      const tok = await tokFor(ch); if (P.verify) await P.verify(ch.platform, ch, tok);
+      ch.verifiedAt = nowIso(); ch.verifyError = ""; if (ch.status === "abgelaufen") ch.status = "ok";
+      if (ch.lastError && /Anmeldung abgelaufen|neu verbinden|nicht lesbar/i.test(ch.lastError)) ch.lastError = "";
+    } catch (e) { const msg = String(e.message || e).slice(0, 200); ch.verifyError = msg; ch.lastError = msg; if (e.auth) ch.status = "abgelaufen"; }
+    save(); return ch;
+  }
+  // Für „Verbindungen“: Konten je Plattform ohne Zugangsdaten
+  function channelHealth() {
+    const brands = state().brands || {};
+    return { apps: Object.keys(PROVIDERS).reduce((o, k) => { o[k] = appReady(k); return o; }, {}), pexels: !!pexelsKey(),
+      channels: S().channels.filter(c => c.status !== "getrennt").map(c => { const tk = c.platform === "tiktok" ? unseal(c.tok) : null;
+        return { brand: c.brand, brandName: (brands[c.brand] && brands[c.brand].name) || c.brand, platform: c.platform, account: (c.account && (c.account.handle || c.account.name)) || "", status: c.status,
+          expiresAt: c.expiresAt || "", refreshExpiresAt: (tk && tk.refreshExpiresAt) || "", verifiedAt: c.verifiedAt || "", verifyError: c.verifyError || "", lastError: c.lastError || "", lastOk: c.lastOk || "", checkedAt: c.checkedAt || "" }; }) };
+  }
+  // force = sofort prüfen; sonst nur Konten, deren letzte Prüfung über 20 Std. her ist (die tägliche Kontrolle in tick() zählt mit)
+  async function verifyPlatform(platform, force) {
+    for (const ch of S().channels.filter(c => c.platform === platform && (c.status === "ok" || c.status === "abgelaufen") && (force || !c.checkedAt || Date.now() - Date.parse(c.checkedAt) > 20 * 3600e3))) await verifyChannel(ch);
+    return channelHealth();
+  }
+  async function pexelsPing() {
+    const key = pexelsKey(); if (!key) return { ok: false, configured: false };
+    let r; try { r = await fetch("https://api.pexels.com/v1/curated?per_page=1", { headers: { Authorization: key }, signal: AbortSignal.timeout(10000) }); }
+    catch (e) { return { ok: false, configured: true, status: 0, error: e && e.name === "TimeoutError" ? "keine Antwort (Zeitüberschreitung)" : "nicht erreichbar" }; }
+    try { await r.arrayBuffer(); } catch (e) {}
+    return { ok: r.ok, configured: true, status: r.status, remaining: r.headers.get("x-ratelimit-remaining") || "" };
+  }
   const RUNNING = new Set();
   async function publishPost(p, only) {
     if (RUNNING.has(p.id)) return; RUNNING.add(p.id);
@@ -459,10 +489,8 @@ module.exports = function (C) {
     try {
       const due = S().posts.filter(p => p.status === "geplant" && Date.parse(p.scheduledAt) <= Date.now() && p.media && p.media.status === "fertig").sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
       for (const p of due.slice(0, 3)) await publishPost(p);
-      // Zugänge rechtzeitig auffrischen (einmal am Tag je Konto)
-      for (const ch of S().channels.filter(c => c.status === "ok" && (!c.checkedAt || Date.now() - Date.parse(c.checkedAt) > 864e5))) {
-        ch.checkedAt = nowIso(); try { await tokFor(ch); } catch (e) { ch.lastError = String(e.message || e).slice(0, 200); if (e.auth) ch.status = "abgelaufen"; } save();
-      }
+      // Zugänge rechtzeitig auffrischen und einmal am Tag je Konto mit einer leichten Leseanfrage prüfen (auch „abgelaufene“ – vielleicht wieder gültig)
+      for (const ch of S().channels.filter(c => (c.status === "ok" || c.status === "abgelaufen") && (!c.checkedAt || Date.now() - Date.parse(c.checkedAt) > 864e5))) await verifyChannel(ch);
       // Posteingang alle 10 Minuten im Hintergrund: neue Kommentare/Nachrichten zählen und als Mitteilung melden (je Eintrag nur einmal)
       const st = S().mkt; if (!st.inboxPollAt || Date.now() - Date.parse(st.inboxPollAt) > 10 * 60e3) {
         st.inboxPollAt = nowIso(); const told = st.inboxTold = st.inboxTold || {}, first = !st.inboxToldInit;
@@ -553,7 +581,7 @@ module.exports = function (C) {
       media: { status: md.status || "", error: md.error || "", images: (md.images || []).length, video: !!md.video, cover: !!md.cover, duration: md.duration || 0, rev: md.at || "" },
       preview: Object.fromEntries(PLATFORMS ? Object.keys(PLATFORMS).filter(pf => (p.platforms || []).indexOf(pf) > -1).map(pf => [pf, captionFor(p, pf)]) : []) };
   }
-  function channelPublic(c) { return { id: c.id, brand: c.brand, platform: c.platform, account: c.account, status: c.status, expiresAt: c.expiresAt || "", connectedAt: c.connectedAt, lastError: c.lastError || "", lastOk: c.lastOk || "" }; }
+  function channelPublic(c) { return { id: c.id, brand: c.brand, platform: c.platform, account: c.account, status: c.status, expiresAt: c.expiresAt || "", connectedAt: c.connectedAt, lastError: c.lastError || "", lastOk: c.lastOk || "", verifiedAt: c.verifiedAt || "" }; }
   function overview() {
     const s = S();
     return { posts: s.posts.slice(0, 150).map(postPublic), channels: s.channels.filter(c => c.status !== "getrennt").map(channelPublic),
@@ -811,5 +839,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, upsertChannel, generate, S, PENDING } };
 };

@@ -326,5 +326,5 @@ module.exports = function (D) {
     } catch (e) { if (!res.headersSent) return J(res, e.status || 500, { ok: false, error: String(e.message || e).slice(0, 300) }); try { res.end(); } catch (e2) {} }
   }
   function handlePublic(req, res, p) { try { return POSTS.handlePublic(req, res, p); } catch (e) { return J(res, 404, { ok: false }); } }
-  return { handleAdmin, handlePublic, tick: () => POSTS.tick(), googleApp: () => POSTS.appCfg("google"), _test: { parseParticipants, drawIndices, protocol, kochduRange, state, draw, runQueue: () => runQueue(), queue: Q, posts: POSTS, publisher: PUB } };
+  return { handleAdmin, handlePublic, posts: POSTS, tick: () => POSTS.tick(), googleApp: () => POSTS.appCfg("google"), _test: { parseParticipants, drawIndices, protocol, kochduRange, state, draw, runQueue: () => runQueue(), queue: Q, posts: POSTS, publisher: PUB } };
 };

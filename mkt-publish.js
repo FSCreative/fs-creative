@@ -517,7 +517,20 @@ module.exports = function (D) {
     if (platform === "bluesky") return req("POST", B.bsky + "/xrpc/com.atproto.repo.createRecord", { token: tok.access, json: { repo: ch.account.id, collection: "app.bsky.feed.like", record: { $type: "app.bsky.feed.like", subject: { uri: ref.uri, cid: ref.cid }, createdAt: new Date().toISOString() } } });
     throw pubErr("Liken ist hier über die Schnittstelle nicht möglich.");
   }
-  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete, _test: { liText, bskyFacets } };
+  // Zugang prüfen, ohne etwas zu verändern: eine leichte Leseanfrage je Konto (tägliche Kontrolle in mkt-posts.js und „Verbindungen“)
+  async function verify(platform, ch, tok) {
+    const t = tok.access, o = { timeout: 15000 }, bearer = Object.assign({ token: t }, o);
+    if (platform === "instagram") return req("GET", B.ig + "/" + GV + "/me" + q({ fields: "user_id,username", access_token: t }), o);
+    if (platform === "facebook") return req("GET", B.fb + "/" + GV + "/me" + q({ fields: "id,name", access_token: t }), o);   // Seiten-Zugang → liefert die Seite
+    if (platform === "threads") return req("GET", B.th + "/v1.0/me" + q({ fields: "id,username", access_token: t }), o);
+    if (platform === "linkedin") return req("GET", B.li + "/v2/userinfo", bearer);
+    if (platform === "youtube") return req("GET", B.yt + "/youtube/v3/channels" + q({ part: "id", mine: "true" }), bearer);
+    if (platform === "tiktok") { const r = await req("GET", B.tt + "/v2/user/info/" + q({ fields: "open_id" }), bearer); const er = r && r.error; if (er && er.code && er.code !== "ok") throw pubErr("TikTok: " + (er.message || er.code), { auth: /token|auth/i.test(String(er.code)) }); return r; }
+    if (platform === "pinterest") return req("GET", B.pin + "/v5/user_account", bearer);
+    if (platform === "bluesky") return req("GET", B.bsky + "/xrpc/com.atproto.server.getSession", bearer);
+    throw pubErr("Unbekannte Plattform");
+  }
+  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete, _test: { liText, bskyFacets } };
 };
 module.exports.PLATFORMS = PLATFORMS;
 module.exports.PROVIDERS = PROVIDERS;

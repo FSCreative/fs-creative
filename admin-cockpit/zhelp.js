@@ -107,7 +107,7 @@ function body(q){
     '<div class="hp-sec">Begriffe kurz erklärt</div>'+(gl.map(function(g){ return '<div class="hp-g"><b>'+esc(g[0])+'</b><p>'+esc(g[1])+'</p></div>'; }).join("")||'<p class="muted">Kein Begriff gefunden.</p>');
 }
 F.action("help",function(){
-  F.openDrawer('<div class="hp"><div class="row-between"><h2 style="font-size:20px;margin:0">Hilfe</h2><button class="btn" data-close aria-label="Schließen">✕</button></div>'+
+  F.openDrawer('<div class="hp"><div class="row-between"><h2 style="font-size:20px;margin:0">Hilfe</h2>'+F.btnClose("data-close")+'</div>'+
     '<input class="f" id="hpQ" type="search" placeholder="Suchen, z. B. Mahngebühr, Abschreibung, UVA …" autocomplete="off" style="margin:12px 0">'+
     '<div id="hpB">'+body("")+'</div><p class="muted small" style="margin-top:16px">Tipp: Die Taste „?“ öffnet die Hilfe jederzeit.</p></div>');
   setTimeout(function(){ var i=document.getElementById("hpQ"); if(i&&window.innerWidth>900) i.focus(); },60);
@@ -115,6 +115,6 @@ F.action("help",function(){
 F.listen("input","#hpQ",function(el){ var b=document.getElementById("hpB"); if(b) b.innerHTML=body(el.value); });
 document.addEventListener("keydown",function(e){ if(e.key==="?"&&!/input|textarea|select/i.test((e.target&&e.target.tagName)||"")&&!e.target.isContentEditable&&F.current==="geld"){ e.preventDefault(); F.actions.help(); } });
 F.css('.hp-sec{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin:18px 0 6px;font-weight:600}'+
- '.hp-t{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}.hp-t summary{cursor:pointer;padding:10px 12px;display:grid;gap:2px;list-style:none}.hp-t summary::-webkit-details-marker{display:none}.hp-t summary span{font-size:13px;color:var(--ink-3)}'+
+ '.hp-t{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}:where(:root[data-theme="glas"]) .hp-t{background:var(--sunk);border-radius:14px}.hp-t summary{cursor:pointer;padding:10px 12px;display:grid;gap:2px;list-style:none}.hp-t summary::-webkit-details-marker{display:none}.hp-t summary span{font-size:13px;color:var(--ink-3)}'+
  '.hp-t[open] summary{border-bottom:1px solid var(--line)}.hp-p{padding:8px 12px}.hp-p p,.hp-g p{margin:2px 0 0;font-size:14px;line-height:1.5;color:var(--ink-2)}.hp-g{padding:6px 0;border-bottom:1px solid var(--line)}');
 })();

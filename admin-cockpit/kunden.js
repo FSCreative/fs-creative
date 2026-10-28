@@ -4,6 +4,7 @@
 var F=window.FSC, esc=F.esc, eur=F.eur, eur0=F.eur0, de=F.de, deShort=F.deShort;
 var STAGES=F.STAGES=[["anfrage","Anfrage"],["entwurf","Entwurf"],["angebot","Angebot"],["auftrag","Auftrag"],["live","Live"]];
 function val(l){ return +l.value||0; }
+var GL=':root[data-theme="glas"] ';
 
 F.invLine=function(i){ var cls=i.overdue?"bad":i.status===1000?"ok":i.status===100?"grey":"warn", lbl=i.overdue?"überfällig":i.status===1000?"bezahlt":i.status===100?"Entwurf":i.status===750?"teilbezahlt":"offen"; return '<span><a href="/admin/api/sevdesk/pdf?id='+encodeURIComponent(i.id)+'" target="_blank" rel="noopener" data-docview data-doctitle="Rechnung '+esc(i.nr||"Entwurf")+'">'+esc(i.nr||"Entwurf")+'</a> · '+de(i.date)+' · '+eur(i.gross)+' <span class="tag '+cls+'">'+lbl+'</span></span>'; };
 /* Mails zur Kundenakte: Absender/Empfänger, „Antwort an“, CC und Text (Formular-Mails kommen von FS Creative mit der Kundenadresse als „Antwort an“).
@@ -113,7 +114,7 @@ function openLead(id){
   var l=F.D.leads.find(function(x){return x.id===id;}); if(!l) return; F.UI.leadSel=id;
   var st=l.stage||"anfrage", mails=leadMails(l), invs=leadInvoices(l), offs=leadOffers(l); leadMailSearch(l);
   if(mob()){ F.openDrawer(leadSheet(l,st,mails,invs,offs),function(){ if(F.UI.leadSel) openLead(F.UI.leadSel); }); return; }
-  F.openDrawer('<div class="row-between" style="align-items:flex-start"><div style="min-width:0"><div class="sec-t">Kundenakte</div><h2>'+esc(l.company||l.name)+'</h2><div class="muted">'+esc(l.topic||"")+' · seit '+de(l.created)+'</div></div><button class="btn icon" data-close aria-label="Schließen">'+F.svg("close")+'</button></div>'+
+  F.openDrawer('<div class="row-between" style="align-items:flex-start"><div style="min-width:0"><div class="sec-t">Kundenakte</div><h2 style="overflow-wrap:anywhere;hyphens:auto">'+esc(l.company||l.name)+'</h2><div class="muted">'+esc(l.topic||"")+' · seit '+de(l.created)+'</div></div><button class="btn icon" data-close aria-label="Schließen">'+F.svg("close")+'</button></div>'+
     '<div><div class="sec-t">Phase</div><div class="stages">'+STAGES.map(function(s){ return '<button data-stage="'+s[0]+'" class="'+(s[0]===st?"on":"")+'">'+s[1]+'</button>'; }).join("")+'</div><div style="margin-top:6px"><button class="link" data-stage="verloren">'+(st==="verloren"?"✓ als verloren markiert":"Als verloren markieren")+'</button></div></div>'+
     '<div class="row wrap"><button class="btn primary" data-act="replylead:'+esc(l.id)+'"'+(l.email?'':' disabled')+'>Mail schreiben</button><button class="btn" data-act="leadoffer:'+esc(l.id)+'">Angebot erstellen</button><button class="btn" data-act="leadinvoice:'+esc(l.id)+'">Rechnung erstellen</button><button class="btn" data-act="tkprojfromlead:'+esc(l.id)+'">Auftrag anlegen</button>'+(l.phone?'<a class="btn" href="tel:'+esc(l.phone.replace(/\s+/g,""))+'">Anrufen</a>':'')+'<button class="btn" data-act="leadtodo:'+esc(l.id)+'">Als Aufgabe</button></div>'+
     (F.tkLeadHtml?F.tkLeadHtml(l):'')+(F.kiLeadHtml?F.kiLeadHtml(l):'')+'<form data-form="leadedit" class="stackf"><div class="grid2"><label class="fl">Name<input class="f" name="name" value="'+esc(l.name||"")+'"></label><label class="fl">Firma / Verein<input class="f" name="company" value="'+esc(l.company||"")+'"></label><label class="fl">E-Mail<input class="f" name="email" type="email" value="'+esc(l.email||"")+'"></label><label class="fl">Telefon<input class="f" name="phone" value="'+esc(l.phone||"")+'"></label><label class="fl">Thema<input class="f" name="topic" value="'+esc(l.topic||"")+'"></label><label class="fl">Projektwert (€)<input class="f num" name="value" type="number" min="0" step="50" value="'+(l.value||"")+'"></label></div>'+
@@ -227,12 +228,15 @@ F.css(
   ".mx-seg{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:0 14px;font-size:14px;font-weight:600;color:var(--ink-2)}"+
   ".mx-seg b{font:600 12.5px var(--f-mono);color:var(--ink-3)}"+
   ".mx-seg[aria-pressed=\"true\"]{background:var(--ink);border-color:var(--ink);color:var(--ground)}.mx-seg[aria-pressed=\"true\"] b{color:inherit;opacity:.75}"+
+  GL+".mx-seg[aria-pressed=\"true\"]{background:var(--glow-soft);border-color:color-mix(in srgb,var(--glow) 45%,transparent);color:var(--glow-ink)}"+
   ".mx-sticky{position:sticky;top:calc(64px + env(safe-area-inset-top,0px));z-index:6;background:var(--ground);padding-top:6px;padding-bottom:8px}"+
+  /* Alpenglas: Phasen-Leiste als Milchglas (eine Leiste je Ansicht, enthält nur Chips) */
+  GL+".mx-sticky{background:var(--glass-bar,var(--glass-strong));backdrop-filter:var(--bar-blur,var(--glass-blur));-webkit-backdrop-filter:var(--bar-blur,var(--glass-blur));border-bottom:1px solid var(--glass-line,var(--line))}"+
   ".mx-sum{font-size:13px;color:var(--ink-3);white-space:nowrap}"+
   ".mx-lead{position:relative;display:grid;gap:3px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;padding:12px 40px 12px 16px;min-height:76px;color:var(--ink);font:inherit;cursor:pointer}"+
-  ".mx-lead:active{background:var(--sunk)}.mx-lead>svg{position:absolute;right:12px;top:50%;width:18px;height:18px;transform:translateY(-50%);color:var(--ink-3)}"+
+  ".mx-lead:active{background:var(--hover,var(--sunk))}.mx-lead>svg{position:absolute;right:12px;top:50%;width:18px;height:18px;transform:translateY(-50%);color:var(--ink-3)}"+
   ".mx-lead.st-anfrage{box-shadow:inset 3px 0 0 var(--glow)}"+
-  ".mx-lt{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-width:0}.mx-lt b{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mx-lt .num{font-weight:600;font-size:15px;white-space:nowrap;flex:none}"+
+  ".mx-lt{display:flex;justify-content:space-between;gap:12px;align-items:baseline;min-width:0}.mx-lt b{min-width:0;font-size:16px;font-weight:600;line-height:1.3;overflow-wrap:anywhere;hyphens:auto;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.mx-lt .num{font-weight:600;font-size:15px;white-space:nowrap;flex:none}"+
   ".mx-ls{display:flex;gap:8px;align-items:center;min-width:0;font-size:13px;color:var(--ink-2)}.mx-ls>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
   ".mx-st{flex:none;font-style:normal;font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:var(--sunk);color:var(--ink-2)}.st-anfrage .mx-st{background:var(--glow-soft);color:var(--glow-ink)}.st-auftrag .mx-st,.st-live .mx-st{background:var(--ok-soft);color:var(--ok)}"+
   ".mx-ln{display:flex;justify-content:space-between;gap:10px;align-items:flex-end;min-width:0;font-size:13px;color:var(--ink-3)}.mx-ln>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-width:0;line-height:1.35}.mx-ln i{font-style:normal;color:var(--ink-2);font-weight:600}.mx-ln small{flex:none;font-size:12px}"+
@@ -242,14 +246,15 @@ F.css(
   ".mx-or{display:grid;justify-items:end;gap:4px;flex:none}.mx-or b{font-weight:600;font-size:15px;white-space:nowrap}"+
   ".mx-oa{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}.mx-oa::-webkit-scrollbar{display:none}.mx-oa .btn{flex:none;min-height:40px;padding:0 14px;font-size:14px}"+
   /* Kundenakte als Vollbild-Blatt */
-  ".drawer:has(.lm){background:var(--ground);padding:0 0 calc(28px + env(safe-area-inset-bottom,0px));gap:0}"+
+  ".drawer:has(.lm){background:var(--ground);padding:0 0 calc(28px + env(safe-area-inset-bottom,0px));gap:0}"+GL+".drawer:has(.lm){background:var(--glass-strong,var(--ground))}"+
   ".lm{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:0 12px;min-width:0}.lm>*{min-width:0}"+
   ".lm-h{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;margin:0 -12px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:color-mix(in srgb,var(--ground) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}"+
+  GL+".lm-h{background:var(--panel-solid,var(--ground));backdrop-filter:none;-webkit-backdrop-filter:none}"+   /* im Blatt (Drawer hat schon Blur): deckend statt eigenem Blur */
   ".lm-back{width:44px;height:44px;flex:none;border-radius:50%;border:0;background:var(--sunk);display:grid;place-items:center;color:var(--ink)}.lm-back svg{width:22px;height:22px}"+
-  ".lm-ht{display:grid;min-width:0}.lm-ht b{font-size:19px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-display)}.lm-ht span{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
+  ".lm-ht{display:grid;min-width:0}.lm-ht b{font-size:19px;font-weight:700;letter-spacing:-.01em;line-height:1.25;overflow-wrap:anywhere;hyphens:auto;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-family:var(--f-display)}.lm-ht span{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"+
   ".lm-acts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}"+
   ".lm-a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:70px;border-radius:14px;border:1px solid color-mix(in srgb,var(--line) 75%,transparent);background:var(--panel);color:var(--ink);font-size:13px;font-weight:600;text-decoration:none;font-family:inherit;padding:6px 2px}"+
-  ".lm-a svg{width:22px;height:22px}.lm-a.pri{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}.lm-a[disabled]{opacity:.4}.lm-a:active{transform:scale(.97)}"+
+  ".lm-a svg{width:22px;height:22px}.lm-a.pri{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}"+GL+".lm-a:not(.pri){background:var(--sunk)}"+".lm-a[disabled]{opacity:.4}.lm-a:active{transform:scale(.97)}"+
   ".lm-stages{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}"+
   ".lm-stages button{min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--sunk);font-size:12.5px;font-weight:600;color:var(--ink-2);padding:0 2px;overflow:hidden;text-overflow:ellipsis}"+
   ".lm-stages button.on{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}"+
@@ -263,6 +268,17 @@ F.css(
   ".mx .tag,.lm .tag{font-size:12px}"+
   ".lm-hist{list-style:none;margin:0;padding:0}.lm-hist li{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.lm-hist li:first-child{border-top:0}.lm-hist span{color:var(--ink-3);font-size:13px}.lm-hist b{font-weight:500}"+
 "}");
+/* Pipeline am PC: Karten luftiger, Namen dürfen zweizeilig umbrechen; Alpenglas: Spalte als Glas, Karten als verschachtelte Box */
+F.css(
+'.view-kunden .pipe .col-h{gap:8px;align-items:baseline}.view-kunden .pipe .col-h>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.view-kunden .pipe .col-h .num{white-space:nowrap}'+
+'.view-kunden .pipe .card{gap:5px;padding:12px 13px;transition:border-color .12s,background-color .12s}.view-kunden .pipe .card:hover{border-color:var(--line-2)}'+
+'.view-kunden .pipe .card .n{font-size:14.5px;line-height:1.3;hyphens:auto;text-wrap:pretty;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'+
+'.view-kunden .pipe .card .m{align-items:baseline;min-width:0}.view-kunden .pipe .card .m>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.view-kunden .pipe .card .m .num{flex:none;font-weight:600;color:var(--ink)}'+
+'.view-kunden .pipe .card .x{line-height:1.35;overflow-wrap:anywhere}'+
+GL+'.view-kunden .pipe .col{background:color-mix(in srgb,var(--ground) 45%,var(--panel));border:1px solid var(--line)}'+
+GL+'.view-kunden .pipe .card{background:var(--sunk);box-shadow:none}'+GL+'.view-kunden .pipe .card:hover{background:var(--hover,var(--sunk))}'+
+'@media (prefers-reduced-motion:reduce){.lm-a:active{transform:none}}'
+);
 F.view({id:"kunden",label:"Kunden & Leads",short:"Kunden",icon:"kunden",order:20,mobile:true,
   count:function(){ return F.newLeads().length; },
   after:function(){ if(F.D.sevConfigured!==false&&!OFF.busy&&(!OFF.at||Date.now()-OFF.at>120000)) F.offersLoad(false); },
@@ -274,7 +290,7 @@ F.view({id:"kunden",label:"Kunden & Leads",short:"Kunden",icon:"kunden",order:20
       var oo=s[0]==="angebot"&&OFF.list?OFF.list.filter(offOpen):[];
       return '<div class="col"><div class="col-h"><span>'+s[1]+'</span><span class="num">'+ls.length+(ls.some(val)?' · '+eur0(ls.reduce(function(a,l){return a+val(l);},0)):'')+'</span></div>'+
         (oo.length?'<button class="link small" data-act="offf:open" style="padding:0 6px 4px;text-align:left">'+oo.length+' offene Angebote · '+eur0(oo.reduce(function(a,o){return a+o.gross;},0))+'</button>':'')+
-        (ls.map(function(l){ return '<button class="card" data-act="lead:'+esc(l.id)+'"><span class="n">'+esc(l.company||l.name)+'</span><span class="m"><span>'+esc(l.topic||"")+'</span>'+(val(l)?'<span class="num">'+eur0(l.value)+'</span>':'')+'</span><span class="x">'+esc((l.company?l.name+" · ":"")+F.ago(l.updated||l.created))+(l.entwurf&&s[0]==="anfrage"?" · Gratis-Entwurf":"")+'</span>'+(function(){ var lo=leadOffers(l).filter(offOpen)[0]; return lo?'<span class="x">'+esc(lo.nr||"Angebot")+' · '+eur0(lo.gross)+(lo.overdue?' · abgelaufen':'')+'</span>':''; })()+'</button>'; }).join("")||'<span class="muted" style="padding:6px">Keine</span>')+'</div>';
+        (ls.map(function(l){ return '<button class="card" data-act="lead:'+esc(l.id)+'" title="'+esc((l.company||l.name||"")+(l.topic?" · "+l.topic:""))+'"><span class="n">'+esc(l.company||l.name)+'</span><span class="m"><span>'+esc(l.topic||"")+'</span>'+(val(l)?'<span class="num">'+eur0(l.value)+'</span>':'')+'</span><span class="x">'+esc((l.company?l.name+" · ":"")+F.ago(l.updated||l.created))+(l.entwurf&&s[0]==="anfrage"?" · Gratis-Entwurf":"")+'</span>'+(function(){ var lo=leadOffers(l).filter(offOpen)[0]; return lo?'<span class="x">'+esc(lo.nr||"Angebot")+' · '+eur0(lo.gross)+(lo.overdue?' · abgelaufen':'')+'</span>':''; })()+'</button>'; }).join("")||'<span class="muted" style="padding:6px">Keine</span>')+'</div>';
     }).join("");
     var lost=D.leads.filter(function(l){return l.stage==="verloren";});
     var bySrc={}; D.leads.forEach(function(l){ var k=l.source||"unbekannt"; bySrc[k]=(bySrc[k]||0)+1; });

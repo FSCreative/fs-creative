@@ -128,8 +128,8 @@ F.action("mvki",function(v){
 });
 
 F.css([
-".kireason{font-size:13.5px;color:var(--ink-2)}",
-".kidupe{border-left:3px solid var(--bad);padding:4px 8px;background:var(--bad-soft);border-radius:6px;font-size:13px}",
+".kireason{font-size:13.5px;color:var(--ink-2);text-wrap:pretty;overflow-wrap:anywhere}",
+".kidupe{border-left:3px solid var(--bad);padding:4px 8px;background:var(--bad-soft);border-radius:6px;font-size:13px;overflow-wrap:anywhere}",
 ".kibox{border:1px solid var(--line);border-radius:11px;padding:10px 12px;display:grid;gap:6px;background:var(--sunk)}",
 ".kibox svg,.kiatt svg{width:14px;height:14px;vertical-align:-2px}",
 ".att .kiatt{border:0;background:none;padding:0 8px;color:var(--info)}"

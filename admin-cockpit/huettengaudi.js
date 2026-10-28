@@ -21,7 +21,9 @@ F.css(
 '.hg-stl{display:flex;gap:3px;margin-top:4px;font-size:10.5px;color:var(--ink-3)}'+
 '.hg-stl span{flex:1 1 0;min-width:0;text-align:center}'+
 '.hg-status{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13.5px;color:var(--ink-2)}'+
-'#hgEinst textarea.f{min-height:64px}'
+'#hgEinst textarea.f{min-height:64px}'+
+'.hg-status .tag{flex:none}'+
+'#hgUpBar{accent-color:var(--glow)}'
 );
 
 /* ---------- Hilfen (wie skikaiser.js) ---------- */
@@ -100,7 +102,7 @@ function hinweis(s){
   if(c.video===false) l.push("das Video-Angebot ist aus");
   if(!l.length) return "";
   var t=l.join(", "); t=t.charAt(0).toUpperCase()+t.slice(1);
-  return '<div class="notice"><span><b>Achtung:</b> '+esc(t)+'.</span><button type="button" class="btn" data-act="hgtab:einst">Einstellungen</button></div>';
+  return '<div class="notice"><span><b>Achtung:</b> '+esc(t)+'.</span><button type="button" class="btn" data-act="hgtab:einst">'+F.svg("sliders")+' Einstellungen</button></div>';
 }
 
 /* ---------- Reiter „Zu erledigen“: Feedback und Programmfehler in einer Liste ---------- */
@@ -119,18 +121,18 @@ function technik(x){
   return [x.meldung||"", x.stack||"", [x.modell,x.os].filter(Boolean).join(" · "), x.szene?"Ort im Spiel: "+x.szene:"",
     (x.erstmals?"Zuerst "+dt(x.erstmals):"")+(x.zuletzt?(x.erstmals?" · ":"")+"Zuletzt "+dt(x.zuletzt):"")].filter(Boolean).join("\n");
 }
-function zeile(titel,wann,inhalt,knoepfe){ return '<li><div class="sk-t"><b>'+titel+'</b><span class="muted">'+wann+'</span></div><div class="sk-c">'+inhalt+'</div><div class="sk-b">'+knoepfe+'</div></li>'; }
+function zeile(titel,wann,inhalt,knoepfe,ic,ton){ return '<li><div class="sk-t"><b'+(ton?' class="'+ton+'"':'')+'>'+(ic?F.svg(ic):'')+titel+'</b><span class="muted">'+wann+'</span></div><div class="sk-c">'+inhalt+'</div><div class="sk-b">'+knoepfe+'</div></li>'; }
 function tabTodo(s,liste){
   var hint='<p class="sk-hint">Feedback aus dem Spiel, Abstürze und Programmfehler. Einmal erledigt, verschwindet der Eintrag.</p>';
   if(!liste.length) return hint+'<section class="panel"><div class="empty">Nichts zu tun – alles erledigt.</div></section>';
   var z=liste.slice(0,F.UI.hgAlle?300:30).map(function(a){
     var x=a.x;
     if(a.art==="fb") return zeile("Feedback",esc(ART[x.art]||"Nachricht")+" · "+esc(ago(a.datum)),'<p>'+esc(x.text)+'</p><span class="muted">'+esc(geraet(x))+'</span>',
-      '<button type="button" class="btn primary" data-act="hgfb:'+esc(x.id)+'">Erledigt</button>');
+      '<button type="button" class="btn primary" data-act="hgfb:'+esc(x.id)+'">'+F.svg("checkCircle")+' Erledigt</button>',"message");
     var vs=String(x.versionen||"").trim().split(/\s+/).filter(Boolean), ab=x.art==="abbruch";
     return zeile(ab?"Absturz":"Programmfehler",esc(ago(a.datum)),'<p>'+(ab?"Die App wurde unerwartet beendet.":esc(fehlerText(x)))+'</p><span class="muted">'+num(x.anzahl)+'-mal bei '+num(x.spieler)+(+x.spieler===1?" Spieler":" Spielern")+(x.szene?" · "+esc(ort(x.szene)):"")+(vs.length?" · Version "+esc(vs.join(", ")):"")+'</span>'+
       '<details><summary class="muted">Technische Details</summary><pre class="sk-code">'+esc(technik(x))+'</pre></details>',
-      '<button type="button" class="btn primary" data-act="hgerr:'+esc(x.hash)+'" title="Taucht der Fehler in einer neueren Version wieder auf, kommt er zurück in die Liste.">Behoben</button>');
+      '<button type="button" class="btn primary" data-act="hgerr:'+esc(x.hash)+'" title="Taucht der Fehler in einer neueren Version wieder auf, kommt er zurück in die Liste.">'+F.svg("checkCircle")+' Behoben</button>',ab?"alertCircle":"cpu","bad");
   }).join("");
   return hint+'<section class="panel"><ul class="sk-todo">'+z+'</ul>'+(liste.length>30?'<div class="sk-foot"><button type="button" class="link" data-act="hgalle">'+(F.UI.hgAlle?"Weniger anzeigen":"Alle "+liste.length+" anzeigen")+'</button></div>':'')+'</section>';
 }
@@ -237,7 +239,7 @@ function kaeufe(s){
         var d=String(r.date||""); return '<li><span class="num muted">'+esc(deShort(d.slice(0,10)))+'</span><span style="min-width:0"><span class="nm" style="display:block">'+esc(r.name||"Kauf")+'</span><span class="muted">'+esc(land(r.country))+(d.length>10&&Date.parse(d)?" · "+esc(new Date(d).toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})):"")+'</span></span>'+money(c2e(r.priceCents))+'</li>'; }).join("")+'</ul>'+
         (recentAll.length>6?'<div class="panel-b" style="padding-top:8px"><button type="button" class="link" data-act="hgall">'+(F.UI.hgAll?"Weniger anzeigen":"Alle "+recentAll.length+" anzeigen")+'</button></div>':''):'<div class="empty">Noch keine Käufe in '+esc(F.D.year)+'.</div>')+
     '</div>'+
-    '<p class="pl-note">Edelweiß-Pakete sind Einmalkäufe. Brutto = Preis inkl. USt., Erlös = Auszahlung von Apple nach 15 % Provision. Erstattete Käufe, Käufe aus der Sandbox und Testgeräte zählen nicht. <button type="button" class="link" data-act="hghelp">'+(F.UI.hgHelp?"Einrichtung ausblenden":"Wie ist die Verbindung eingerichtet?")+'</button></p>'+
+    '<p class="pl-note sk-pn">Edelweiß-Pakete sind Einmalkäufe. Brutto = Preis inkl. USt., Erlös = Auszahlung von Apple nach 15 % Provision. Erstattete Käufe, Käufe aus der Sandbox und Testgeräte zählen nicht. <button type="button" class="link" data-act="hghelp">'+(F.UI.hgHelp?"Einrichtung ausblenden":"Wie ist die Verbindung eingerichtet?")+'</button></p>'+
     (F.UI.hgHelp?'<section class="panel sk-empty">'+setupHelp()+'</section>':'');
 }
 function tabZahlen(s){
@@ -284,9 +286,9 @@ function tabEinst(s){
       chk("hgPakete",c.pakete!==false,"Edelweiß-Pakete im Shop anbieten")+chk("hgVideo",c.video!==false,"Video ansehen statt warten (bei „Gas geben“)"))+
     karte("Gas geben","„Gas geben“ verdoppelt die Einnahmen für ein paar Minuten. Danach heißt es warten – oder ein Video ansehen. Mit dem Bonus Turbo-Gas hält es dreimal so lang.",
       '<div class="row2">'+eingabe("hgGasMin","Dauer in Minuten (1 bis 60)",c.gasMinuten,{typ:"number",zahl:[1,60,1]})+eingabe("hgGasPause","Pause in Stunden (0 bis 48)",c.gasPauseStunden,{typ:"number",zahl:[0,48,1]})+'</div>')+
-    '<div><button type="button" class="btn primary" data-act="hgcfg">Speichern</button></div>'+
+    '<div><button type="button" class="btn primary" data-act="hgcfg">'+F.svg("checkCircle")+' Speichern</button></div>'+
   '</div>'+werbeVideo(s,c)+
-  sec("Vor dem Verkaufsstart",'','<div class="sk-card"><p>Während der Testphase wurden Käufe aus der Sandbox und Spielstände von Testgeräten gespeichert. In den Zahlen zählen sie nicht mit. Vor dem Start im App Store kannst du sie endgültig entfernen.</p><div class="sk-foot" style="padding:0"><button type="button" class="btn" data-act="hgclean">Testdaten löschen</button></div></div>');
+  sec("Vor dem Verkaufsstart",'','<div class="sk-card"><p>Während der Testphase wurden Käufe aus der Sandbox und Spielstände von Testgeräten gespeichert. In den Zahlen zählen sie nicht mit. Vor dem Start im App Store kannst du sie endgültig entfernen.</p><div class="sk-foot" style="padding:0"><button type="button" class="btn" data-act="hgclean">'+F.svg("trash")+' Testdaten löschen</button></div></div>');
 }
 /* Werbe-Video für „Gas geben“: liegt im Railway-Bucket des App-Backends; die App lädt das aktuelle beim Start bzw. alle 10 Minuten herunter.
    Hochladen geht sofort (eigener Knopf, nicht über „Speichern“); Fortschritt und Vorschau laufen in einem Fenster, das die Hintergrund-Aktualisierung nicht stört. */
@@ -295,8 +297,8 @@ function mb(n){ return ((+n||0)/1048576).toLocaleString("de-AT",{maximumFraction
 function werbeVideo(s,c){
   var w=s.werbung;
   var info=w?'<p><b>'+esc(w.name||"Video")+'</b> · '+esc(mb(w.groesse))+' · hochgeladen '+esc(ago(w.hochgeladen))+'</p>':'<p><b>Noch kein Video hochgeladen.</b> Bis dahin zeigt das Spiel einen kurzen Platzhalter.</p>';
-  var knoepfe='<label class="btn primary" for="hgVidDatei" style="cursor:pointer">'+(w?"Anderes Video hochladen":"Video hochladen")+'</label><input type="file" id="hgVidDatei" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" hidden>'+
-    (w?'<button type="button" class="btn" data-act="hgvidan">Ansehen</button><button type="button" class="btn" data-act="hgvidweg">Entfernen</button>':'');
+  var knoepfe='<label class="btn primary" for="hgVidDatei" style="cursor:pointer">'+F.svg("upload")+(w?" Anderes Video hochladen":" Video hochladen")+'</label><input type="file" id="hgVidDatei" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" hidden>'+
+    (w?'<button type="button" class="btn" data-act="hgvidan">'+F.svg("eye")+' Ansehen</button><button type="button" class="btn" data-act="hgvidweg">'+F.svg("trash")+' Entfernen</button>':'');
   return sec("Werbe-Video",'<span class="muted">läuft bei „Gas geben“</span>','<div class="sk-card"><p>Wer nicht warten will, bis „Gas geben“ wieder bereit ist, schaut dieses Video bis zum Ende und darf sofort wieder Gas geben. MP4 oder MOV, am besten 15 bis 30 Sekunden, höchstens 80 MB.</p>'+
     info+'<div class="sk-foot" style="padding:0">'+knoepfe+'</div>'+
     (s.speicher===false?'<p class="bad-t">Im App-Backend ist kein Speicher eingerichtet (S3_BUCKET) – Hochladen geht noch nicht.</p>':'')+
@@ -380,7 +382,7 @@ F.huettengaudiView=function(){
   if(!s||!s.configured) return emptyState();
   if(s.error||!s.totals){
     var why={timeout:"Die Statistik hat nicht rechtzeitig geantwortet.",keine_antwort:"Die Statistik-Adresse antwortet nicht, lehnt das Token ab oder liefert kein JSON. Prüfe HUETTENGAUDI_STATS_URL und HUETTENGAUDI_STATS_TOKEN.",unauthorized:"Das Token wird abgelehnt. Prüfe HUETTENGAUDI_STATS_TOKEN."}[s.error]||("Fehler: "+s.error);
-    return '<div class="notice"><span><b>Hüttengaudi ist eingerichtet, liefert aber gerade keine Daten.</b> '+esc(why)+'</span><button class="btn" data-act="reload">Neu laden</button></div>'+
+    return '<div class="notice"><span><b>Hüttengaudi ist eingerichtet, liefert aber gerade keine Daten.</b> '+esc(why)+'</span><button class="btn" data-act="reload">'+F.svg("refresh")+' Neu laden</button></div>'+
       '<section class="panel sk-empty"><h2>So ist die Verbindung eingerichtet</h2>'+setupHelp()+'</section>';
   }
   var tab=F.UI.hgTab||(F.ls&&F.ls("fsc_hg_tab"))||"todo"; if(["todo","zahlen","einst"].indexOf(tab)<0) tab="todo"; F.UI.hgTab=tab;

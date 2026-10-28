@@ -7,13 +7,14 @@ F.icons.offer=F.icons.offer||'<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 1
 F.icons.plus=F.icons.plus||'<path d="M12 5v14M5 12h14"/>';
 F.icons.pay=F.icons.pay||'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>';
 var ITEMS=[["post","Neue Mail","compose"],["kal","Neuer Termin","newevent:"],["check","Neue Aufgabe","tknew:"],["board","Neuer Auftrag","newproj"],"-",["euro","Neue Rechnung","newinvoice"],["pay","Neue Zahlung (Überweisung)","paynew"],["offer","Neues Angebot","newoffer"],["kunden","Neuer Kunde / Lead","newlead"]];
-var menu=null;
-function close(){ if(menu){ menu.remove(); menu=null; document.removeEventListener("mousedown",outside,true); } }
+var menu=null, anc=null;
+function close(){ if(menu){ menu.remove(); menu=null; document.removeEventListener("mousedown",outside,true); } if(anc){ anc.setAttribute("aria-expanded","false"); anc=null; } }
 function outside(e){ if(menu&&!menu.contains(e.target)&&!e.target.closest(".tb-new")) close(); }
 function open(anchor){
   close(); menu=document.createElement("div"); menu.className="nmenu"; menu.setAttribute("role","menu");
   menu.innerHTML=ITEMS.filter(function(x){ return x==="-"||F.actions[x[2].split(":")[0]]; }).map(function(x){ return x==="-"?'<hr>':'<button type="button" role="menuitem" data-nmenu="'+F.esc(x[2])+'">'+F.svg(x[0])+'<span>'+F.esc(x[1])+'</span></button>'; }).join("");
   document.body.appendChild(menu);
+  if(anchor&&anchor.setAttribute){ anc=anchor; anchor.setAttribute("aria-expanded","true"); }
   var r=anchor?anchor.getBoundingClientRect():{right:window.innerWidth-24,bottom:70};
   menu.style.top=Math.round(r.bottom+8)+"px"; menu.style.left=Math.max(12,Math.round(r.right-menu.offsetWidth))+"px";
   document.addEventListener("mousedown",outside,true);

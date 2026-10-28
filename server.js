@@ -389,24 +389,39 @@ function forgetStats(baseUrl) { for (const k of Array.from(JSON_MEMO.keys())) if
 // Token im Header statt in der URL (URLs landen in Zugriffsprotokollen – Sicherheitsprüfung 19.10.2026).
 // Kennt ein Dienst den Header nicht (401/403), einmal mit ?token= nachfragen und das merken.
 const TOKEN_IN_URL = new Set();
+// Letztes Ergebnis je Statistik-Adresse (ohne Abfrage): getJSON liefert weiter null bei jedem Fehler, hier steht der Grund
+// (Schlüssel abgelehnt, Zeitüberschreitung, nicht erreichbar …) – für „Verbindungen“ und platformStatus im Cockpit.
+const JSON_STATUS = new Map();
+const statsKey = url => String(url || "").split("?")[0];
+function jsonStatus(url) { return JSON_STATUS.get(statsKey(url)) || null; }
 async function getJSON(url, token) {
   const hit = JSON_MEMO.get(url);
   if (hit && Date.now() - hit.at < 25000) return hit.p;
   const p = (async () => {
-    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 9000);
+    // 7,5 s: endet sicher vor dem 8-s-Limit von cockpitBuild (sonst kam die späte Antwort erst beim nächsten Aufbau an)
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 7500);
     const host = (() => { try { return new URL(url).host; } catch (e) { return url; } })();
     const withQ = () => url + (url.indexOf("?") > -1 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    const note = o => { JSON_STATUS.set(statsKey(url), Object.assign({ at: Date.now(), ok: false, status: 0, auth: false, timeout: false, error: "" }, o)); if (JSON_STATUS.size > 100) JSON_STATUS.delete(JSON_STATUS.keys().next().value); };
+    const lost = e => e && e.name === "AbortError" ? { timeout: true, error: "keine Antwort (Zeitüberschreitung)" } : { error: "nicht erreichbar" };
     try {
       let r = await fetch(token && TOKEN_IN_URL.has(host) ? withQ() : url, { headers: token ? { "x-api-token": token, "x-stats-token": token, authorization: "Bearer " + token } : {}, signal: ctrl.signal });
       if (token && (r.status === 401 || r.status === 403) && !TOKEN_IN_URL.has(host)) { TOKEN_IN_URL.add(host); console.log("Token per Header abgelehnt, nutze URL:", host); r = await fetch(withQ(), { signal: ctrl.signal }); }
-      if (!r.ok) return null; return await r.json(); }
-    catch (e) { return null; } finally { clearTimeout(t); }
+      if (!r.ok) { const auth = r.status === 401 || r.status === 403; note({ status: r.status, auth, error: auth ? "Schlüssel abgelehnt (HTTP " + r.status + ")" : "Fehler HTTP " + r.status }); return null; }
+      let j; try { j = await r.json(); } catch (e) { note(e && e.name === "AbortError" ? lost(e) : { status: r.status, error: "ungültige Antwort (kein JSON)" }); return null; }
+      if (j && j.error) { const m = String(typeof j.error === "string" ? j.error : (j.error.message || "Fehler")), scrub = token ? m.split(token).join("…") : m;   // Antworttext nie mit dem Schlüssel weitergeben
+        note({ status: r.status, auth: /unauthori|token|forbidden/i.test(m), error: "meldet: " + scrub.slice(0, 120) }); }
+      else note({ ok: true, status: r.status });
+      return j; }
+    catch (e) { note(lost(e)); return null; } finally { clearTimeout(t); }
   })();
   JSON_MEMO.set(url, { at: Date.now(), p });
   if (JSON_MEMO.size > 200) { const now = Date.now(); for (const [k, v] of JSON_MEMO) if (now - v.at > 60000) JSON_MEMO.delete(k); }
   return p;
 }
 function yearParam(year) { return year ? "&year=" + encodeURIComponent(year) : ""; }
+// Fehlercode der App-Statistiken (Skikaiser/Hüttengaudi) – die Cockpit-Seiten kennen unauthorized / timeout / keine_antwort
+function statsErrCode(url) { const st = jsonStatus(url); return st && st.auth ? "unauthorized" : st && st.timeout ? "timeout" : "keine_antwort"; }
 async function kantineurStats(year) {
   if (!KANTINEUR.token) return null;
   const d = await getJSON(KANTINEUR.url + yearParam(year).replace(/^&/, "?"), KANTINEUR.token);
@@ -423,24 +438,35 @@ async function kantineurStats(year) {
   };
 }
 // Mail-Snapshot mit ETag: unverändert -> 304 (fast kein Traffic). Max. alle 20 s ein Abruf.
-let MAIL_SNAP = { at: 0, etag: "", data: null, p: null };
+// err/errAt/okAt: Fehler des letzten Abrufs (sonst lieferte ein toter Mail-Dienst unbemerkt den alten Stand) → mailFlags() fürs Cockpit
+let MAIL_SNAP = { at: 0, etag: "", data: null, p: null, err: "", errAt: 0, okAt: 0 };
 async function mailSnapshot() {
   if (!MAIL.url || !MAIL.token) return null;
   if (MAIL_SNAP.data && Date.now() - MAIL_SNAP.at < 5000) return MAIL_SNAP.data;   // kurz puffern; Nachfragen sind dank ETag/304 billig
   if (MAIL_SNAP.p) return MAIL_SNAP.p;
+  const bad = msg => { if (!MAIL_SNAP.err) MAIL_SNAP.errAt = Date.now(); MAIL_SNAP.err = msg; return MAIL_SNAP.data; };
+  const good = () => { MAIL_SNAP.err = ""; MAIL_SNAP.errAt = 0; MAIL_SNAP.okAt = Date.now(); };
   MAIL_SNAP.p = (async () => {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
     try {
       const headers = Object.assign({ "x-api-token": MAIL.token }, MAIL_SNAP.etag && MAIL_SNAP.data ? { "If-None-Match": MAIL_SNAP.etag } : {});
       const r = await fetch(MAIL.url, { headers, signal: ctrl.signal });
-      if (r.status === 304 && MAIL_SNAP.data) { MAIL_SNAP.at = Date.now(); return MAIL_SNAP.data; }
-      if (!r.ok) return MAIL_SNAP.data;
-      const d = await r.json(); if (!d || d.error || d.warming) return MAIL_SNAP.data;
-      MAIL_SNAP.data = d; MAIL_SNAP.etag = r.headers.get("etag") || d.etag || ""; MAIL_SNAP.at = Date.now();
+      if (r.status === 304 && MAIL_SNAP.data) { MAIL_SNAP.at = Date.now(); good(); return MAIL_SNAP.data; }
+      if (!r.ok) return bad(r.status === 401 || r.status === 403 ? "Der Mail-Dienst lehnt den Zugang ab (HTTP " + r.status + ")" : "Der Mail-Dienst meldet einen Fehler (HTTP " + r.status + ")");
+      const d = await r.json(); if (!d || d.error || d.warming) return bad(d && d.warming ? "Der Mail-Dienst startet gerade" : "Der Mail-Dienst meldet: " + String((d && (typeof d.error === "string" ? d.error : d.error && d.error.message)) || "keine Daten").slice(0, 120));
+      MAIL_SNAP.data = d; MAIL_SNAP.etag = r.headers.get("etag") || d.etag || ""; MAIL_SNAP.at = Date.now(); good();
       return d;
-    } catch (e) { return MAIL_SNAP.data; } finally { clearTimeout(t); MAIL_SNAP.p = null; }
+    } catch (e) { return bad(e && e.name === "AbortError" ? "Der Mail-Dienst antwortet nicht (Zeitüberschreitung)" : "Der Mail-Dienst ist nicht erreichbar"); } finally { clearTimeout(t); MAIL_SNAP.p = null; }
   })();
   return MAIL_SNAP.p;
+}
+// Für Postfach/Heute: stale = alter Stand wird gezeigt (Fehler seit > 90 s, ein einzelner Aussetzer zählt nicht), error = Grund auf Deutsch
+function mailFlags() {
+  if (!MAIL.url || !MAIL.token || !MAIL_SNAP.err) return { stale: false, error: "" };
+  const hm = t => new Intl.DateTimeFormat("de-AT", { timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit" }).format(new Date(t));
+  if (!MAIL_SNAP.data) return { stale: false, error: MAIL_SNAP.err };
+  if (Date.now() - MAIL_SNAP.errAt < 90e3) return { stale: false, error: "" };
+  return { stale: true, error: MAIL_SNAP.err + (MAIL_SNAP.okAt ? " – angezeigt wird der Stand von " + hm(MAIL_SNAP.okAt) + " Uhr" : "") };
 }
 // Mail-Regeln (Outlook-artig): laufen alle 2 Minuten für neue Mails im Posteingang
 const MAIL_RULES = require("./mail-rules.js")({
@@ -449,7 +475,7 @@ const MAIL_RULES = require("./mail-rules.js")({
   snapshot: () => { MAIL_SNAP.at = 0; return mailSnapshot(); },
   action: async (op, items, target) => {
     if (!items || !items.length) return;
-    const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/action"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, op, items, target }) });
+    const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/action"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, op, items, target }), signal: AbortSignal.timeout(30000) });
     if (!r.ok) throw new Error("Mailserver " + r.status);
     MAIL_SNAP.at = 0; if (typeof COCKPIT_MEMO !== "undefined") COCKPIT_MEMO.at = 0;
   },
@@ -901,7 +927,12 @@ async function pingSite(host) {
 let SITES_BUSY = null, ADMIN_SEEN = Date.now();
 async function buildSitesSnapshot() {
   const zj = await cfGet("/zones?status=active&per_page=200");
-  if (!zj || !zj.success || !Array.isArray(zj.result)) return SITES_CACHE.data || { fetchedAt: new Date().toISOString(), configured: true, error: "cf_zones_failed", totals: {}, sites: [] };
+  if (!zj || !zj.success || !Array.isArray(zj.result)) {
+    // wie keepRailway: alten Stand zeigen, aber als veraltet markieren (cfStale = Stand von, cfError = Grund) – sonst fiel ein abgelaufener Schlüssel nie auf
+    const er = zj && Array.isArray(zj.errors) && zj.errors[0], error = !zj ? "Cloudflare nicht erreichbar" : er ? "Cloudflare meldet: " + String(er.message || er.code || "Fehler").slice(0, 120) : "Cloudflare-Antwort ohne Zonen";
+    if (SITES_CACHE.data) return Object.assign({}, SITES_CACHE.data, { cfStale: SITES_CACHE.data.cfStale || SITES_CACHE.data.fetchedAt, cfError: error });
+    return { fetchedAt: new Date().toISOString(), configured: true, error: "cf_zones_failed", cfError: error, totals: {}, sites: [] };
+  }
   const zones = zj.result.map(z => ({ id: z.id, name: z.name }));
   const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const until = new Date().toISOString().slice(0, 10);
@@ -1030,6 +1061,7 @@ const SEV_TEST = /^http:\/\/127\.0\.0\.1[:/]/.test(process.env.SEVDESK_API_BASE 
 const SEV = { key: SEV_TEST ? (process.env.SEVDESK_API_KEY || "").trim() : "", src: SEV_TEST ? "test" : "", base: SEV_TEST ? process.env.SEVDESK_API_BASE.replace(/\/$/, "") : "", triedAt: 0, err: "" };
 async function sevKey() { return SEV.key; }
 const FINAPI_LEGACY = {};
+const FINAPI_SEEN = { last: {}, bad: [] };   // für „Verbindungen“: letzter erfolgreicher Zugriff je Plattform, abgelehnte Zugriffe (Zeitpunkte, max. 50)
 function finApiAuth(req) {
   const got = String(req.headers["authorization"] || req.headers["x-api-token"] || "").replace(/^Bearer\s+/i, "").trim();
   if (!got) return "";
@@ -1057,7 +1089,8 @@ async function finApi(req, res, u, p) {
   const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
   const ip = clientIp(req);
   if (FINAPI_FAILS.count(ip, 900000) >= 10) return J(429, { error: { message: "too_many" } });
-  const who = finApiAuth(req); if (!who) { FINAPI_FAILS.hit(ip, 100, 900000); console.log("fin-api: falscher Token"); return J(401, { error: { message: "unauthorized" } }); }
+  const who = finApiAuth(req); if (!who) { FINAPI_FAILS.hit(ip, 100, 900000); FINAPI_SEEN.bad = FINAPI_SEEN.bad.concat([Date.now()]).slice(-50); console.log("fin-api: falscher Token"); return J(401, { error: { message: "unauthorized" } }); }
+  FINAPI_SEEN.last[who] = new Date().toISOString();
   const fpath = p.slice("/fin-api/v1".length);
   if (req.method === "DELETE" || (req.method !== "GET" && FINAPI_BLOCK.test(fpath))) { console.log("fin-api gesperrt", who, req.method, fpath.replace(/\d+/g, "{id}")); req.resume(); return J(403, { error: { message: "forbidden" } }); }
   let raw = ""; for await (const c of req) { raw += c; if (raw.length > 2000000) return J(413, { error: { message: "too_large" } }); }
@@ -1443,7 +1476,7 @@ async function fetchMailAttachment(m) {
   if (!MAIL.url || !MAIL.token) throw new Error("Postfach nicht verbunden");
   m = m || {};
   const attUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/attachment") + "?folder=" + encodeURIComponent(m.folder || "INBOX") + "&uid=" + encodeURIComponent(m.uid || "") + "&index=" + encodeURIComponent(m.index || "0") + "&account=" + encodeURIComponent(m.account || "");
-  const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token } });
+  const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token }, signal: AbortSignal.timeout(60000) });
   if (!r.ok) throw new Error(r.status === 404 ? "Anhang nicht gefunden – die Mail wurde evtl. verschoben" : "Anhang konnte nicht geladen werden (Mail-Dienst " + r.status + ")");
   const buf = Buffer.from(await r.arrayBuffer()); if (!buf.length) throw new Error("Anhang nicht mehr verfügbar – die Mail wurde verschoben oder gelöscht");
   const cd = r.headers.get("content-disposition") || "", m5987 = cd.match(/filename\*=UTF-8''([^;]+)/i), mPlain = cd.match(/filename="([^"]*)"/i);
@@ -1692,10 +1725,15 @@ function billingOp(pl) {
 
 // ── Railway: echte Kosten je Projekt (letzte 30 Tage, Listenpreise) ──
 let RWCOST = { at: 0, data: null, p: null };
-let FXRATE = { at: 0, eur: 0.86 };
-async function usdEur() {
-  if (Date.now() - FXRATE.at < 12 * 3600 * 1000) return FXRATE.eur;
-  try { const r = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR"); const j = await r.json(); const v = j && j.rates && j.rates.EUR; if (v > 0.5 && v < 1.5) FXRATE = { at: Date.now(), eur: v }; else FXRATE.at = Date.now(); } catch (e) { FXRATE.at = Date.now(); }
+// Wechselkurs USD→EUR (EZB über frankfurter.app). fallback = noch nie ein echter Kurs (0,86 geschätzt); bei Fehlern in 1 Std. neu versuchen statt 12 Std.
+const FX_URL = process.env.FX_URL || "https://api.frankfurter.app/latest?from=USD&to=EUR";
+let FXRATE = { at: 0, eur: 0.86, fallback: true, okAt: 0, err: "" };
+async function usdEur(force) {
+  if (!force && Date.now() - FXRATE.at < 12 * 3600 * 1000) return FXRATE.eur;
+  const fail = msg => { FXRATE.at = Date.now() - 11 * 3600 * 1000; FXRATE.err = msg; };
+  try { const r = await fetch(FX_URL, { signal: AbortSignal.timeout(8000) }); const j = await r.json(); const v = j && j.rates && j.rates.EUR;
+    if (v > 0.5 && v < 1.5) FXRATE = { at: Date.now(), eur: v, fallback: false, okAt: Date.now(), err: "" }; else fail("unplausibler Kurs"); }
+  catch (e) { fail(e && e.name === "TimeoutError" ? "keine Antwort (Zeitüberschreitung)" : "nicht erreichbar"); }
   return FXRATE.eur;
 }
 async function railwayCostsBuild() {
@@ -1719,7 +1757,7 @@ async function railwayCostsBuild() {
   const fx = await usdEur();
   let total = 0;
   Object.keys(projects).forEach(k => { const p = projects[k]; p.usd = Math.round(p.usd * 100) / 100; p.eur = Math.round(p.usd * fx * 100) / 100; total += p.usd; });
-  return { configured: true, fetchedAt: new Date().toISOString(), days: 30, fx, totalUsd: Math.round(total * 100) / 100, totalEur: Math.round(total * fx * 100) / 100, projects };
+  return { configured: true, fetchedAt: new Date().toISOString(), days: 30, fx, fxFallback: !!FXRATE.fallback, totalUsd: Math.round(total * 100) / 100, totalEur: Math.round(total * fx * 100) / 100, projects };
 }
 async function railwayCosts(force) {
   if (RWCOST.data && !force && Date.now() - RWCOST.at < 30 * 60 * 1000) return RWCOST.data;
@@ -1957,7 +1995,7 @@ const SKIKAISER = { url: process.env.SKIKAISER_STATS_URL || "", token: process.e
 async function skikaiserStats(year) {
   if (!SKIKAISER.url) return { configured: false };
   const d = await getJSON(SKIKAISER.url + (SKIKAISER.url.indexOf("?") > -1 ? yearParam(year) : yearParam(year).replace(/^&/, "?")), SKIKAISER.token);
-  if (!d || d.error) return { configured: true, error: (d && d.error) || "keine_antwort" };
+  if (!d || d.error) return { configured: true, error: (d && d.error) || statsErrCode(SKIKAISER.url) };
   const yr = String(year);
   let byMonth = {}, byProduct = {}, byPlatform = {}, totals = { grossCents: 0, proceedsCents: 0, count: 0, refunds: 0 }, recent = [];
   if (Array.isArray(d.purchases)) {
@@ -2011,7 +2049,7 @@ function appKaufSummen(d, year) {
 async function huettengaudiStats(year) {
   if (!HUETTENGAUDI.url) return { configured: false };
   const d = await getJSON(HUETTENGAUDI.url + (HUETTENGAUDI.url.indexOf("?") > -1 ? yearParam(year) : yearParam(year).replace(/^&/, "?")), HUETTENGAUDI.token);
-  if (!d || d.error) return { configured: true, error: (d && d.error) || "keine_antwort" };
+  if (!d || d.error) return { configured: true, error: (d && d.error) || statsErrCode(HUETTENGAUDI.url) };
   // Backend liefert zusätzlich Nutzung, Fortschritt (Welten/Stufen), Ereignisse, Feedback, Fehler und die aktuelle Fernsteuerung (config)
   return Object.assign({ configured: true, fetchedAt: d.fetchedAt || new Date().toISOString() }, appKaufSummen(d, year), {
     users: d.users || null, fortschritt: d.fortschritt || null, ereignisse: d.ereignisse || null, feedback: Array.isArray(d.feedback) ? d.feedback : null,
@@ -2101,8 +2139,54 @@ async function incomeForecast(ctx) {
   const next = fc.computedAt ? new Date(Date.parse(fc.computedAt) + 14 * 864e5).toISOString().slice(0, 10) : null;
   return { lines, total: round2(lines.reduce((a, l) => a + l.monthly, 0)), computedAt: fc.computedAt || null, nextAt: next };
 }
+// ── Wetter Gaschurn für „Heute“ (Open-Meteo, ohne Schlüssel, serverseitig – der Browser ruft nichts Fremdes ab): 30 min gemerkt, 3 s Zeitlimit, Fehler → null ──
+const WEATHER_URL = process.env.WEATHER_URL || "https://api.open-meteo.com/v1/forecast";
+const WEATHER_AT = { lat: 46.985, lon: 10.03, place: "Gaschurn" };
+let WEATHER = { at: 0, data: null, p: null };
+// WMO-Wettercode → [Codes, Text am Tag, Text in der Nacht, Symbol (sun|cloudSun|cloud|snow|rain|fog|storm)]
+const WMO = [[[0], "sonnig", "klar", "sun"], [[1], "heiter", "überwiegend klar", "cloudSun"], [[2], "teils bewölkt", "teils bewölkt", "cloudSun"], [[3], "bedeckt", "bedeckt", "cloud"],
+  [[45, 48], "Nebel", "Nebel", "fog"], [[51, 53, 55], "Nieselregen", "Nieselregen", "rain"], [[56, 57], "gefrierender Nieselregen", "gefrierender Nieselregen", "rain"],
+  [[61], "leichter Regen", "leichter Regen", "rain"], [[63], "Regen", "Regen", "rain"], [[65], "starker Regen", "starker Regen", "rain"], [[66, 67], "gefrierender Regen", "gefrierender Regen", "rain"],
+  [[71], "leichter Schneefall", "leichter Schneefall", "snow"], [[73], "Schneefall", "Schneefall", "snow"], [[75], "starker Schneefall", "starker Schneefall", "snow"], [[77], "Schneegriesel", "Schneegriesel", "snow"],
+  [[80], "Regenschauer", "Regenschauer", "rain"], [[81, 82], "kräftige Regenschauer", "kräftige Regenschauer", "rain"], [[85], "Schneeschauer", "Schneeschauer", "snow"], [[86], "kräftige Schneeschauer", "kräftige Schneeschauer", "snow"],
+  [[95], "Gewitter", "Gewitter", "storm"], [[96, 99], "Gewitter mit Hagel", "Gewitter mit Hagel", "storm"]];
+function weatherNow() {
+  if (WEATHER.at && Date.now() - WEATHER.at < (WEATHER.data ? 30 : 5) * 60e3) return Promise.resolve(WEATHER.data);   // Fehler nur 5 min merken
+  if (WEATHER.p) return WEATHER.p;
+  const q = "?latitude=" + WEATHER_AT.lat + "&longitude=" + WEATHER_AT.lon + "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&hourly=freezing_level_height&timezone=Europe%2FVienna&forecast_days=1";
+  WEATHER.p = (async () => {
+    try {
+      const r = await fetch(WEATHER_URL + q, { signal: AbortSignal.timeout(3000) }); if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json(), c = j && j.current || {}, dl = j && j.daily || {}, h = j && j.hourly || {};
+      if (!isFinite(+c.temperature_2m) || c.weather_code == null) throw new Error("unvollständig");
+      const w = WMO.find(x => x[0].indexOf(+c.weather_code) > -1) || [[], "wechselhaft", "wechselhaft", "cloud"], day = c.is_day !== 0;
+      const out = { temp: Math.round(+c.temperature_2m), text: day ? w[1] : w[2], icon: w[3], code: +c.weather_code, place: WEATHER_AT.place,
+        min: isFinite(+(dl.temperature_2m_min || [])[0]) ? Math.round(+dl.temperature_2m_min[0]) : null, max: isFinite(+(dl.temperature_2m_max || [])[0]) ? Math.round(+dl.temperature_2m_max[0]) : null, at: new Date().toISOString() };
+      // Schneefallgrenze ≈ Nullgradgrenze − 300 m (nur bei Niederschlag und wenn sie über dem Tal liegt)
+      const hi = Array.isArray(h.time) ? h.time.indexOf(String(c.time || "").slice(0, 13) + ":00") : -1, fl = hi > -1 ? +(h.freezing_level_height || [])[hi] : NaN;
+      if (+c.weather_code >= 51 && isFinite(fl)) { const sl = Math.round((fl - 300) / 100) * 100; if (sl >= 1000 && sl <= 3500) out.snowLine = sl; }
+      WEATHER = { at: Date.now(), data: out, p: null };
+    } catch (e) { WEATHER = { at: Date.now(), data: null, p: null }; }
+    return WEATHER.data;
+  })();
+  return WEATHER.p;
+}
+// Plattform-Statistiken: „nicht eingerichtet“ vs. „Abruf fehlgeschlagen“ (Grund aus getJSON), ohne die bisherigen Rückgaben zu ändern
+function platStatus(on, url) {
+  if (!on) return { configured: false };
+  const st = jsonStatus(url); if (!st) return { configured: true, ok: null };
+  return { configured: true, ok: !!st.ok, error: st.ok ? "" : CONN.clean(st.error), auth: !!st.auth, at: new Date(st.at).toISOString() };
+}
+function platformStatus() {
+  const va = [["Partner-Plattform", !!VALUERO_PARTNER.token, VALUERO_PARTNER.url], ["Antonhaus", !!ANTONHAUS.token, ANTONHAUS.url], ["Alpinappart", !!ALPINAPPART.key, ALPINAPPART.url]].filter(x => x[1]).map(x => Object.assign({ name: x[0] }, platStatus(true, x[2])));
+  const vaBad = va.filter(x => x.ok === false);
+  return { kochdu: platStatus(!!KOCHDU.token, KOCHDU.url), kantineur: platStatus(!!KANTINEUR.token, KANTINEUR.url), blitzdings: platStatus(!!BLITZ.token, BLITZ.url),
+    valuero: va.length ? { configured: true, ok: va.every(x => x.ok === null) ? null : !vaBad.length, error: vaBad.map(x => x.name + ": " + x.error).join(" · "), sources: va } : { configured: false },
+    skikaiser: platStatus(!!SKIKAISER.url, SKIKAISER.url), huettengaudi: platStatus(!!HUETTENGAUDI.url, HUETTENGAUDI.url) };
+}
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
+  const weatherP = withTimeout(weatherNow(), 3000, null);
   const [sev, sitesSnap, rwc, k, b, ko, va, vaPrev, mail, cal, pc, ski, hg, bya] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
@@ -2126,8 +2210,9 @@ async function cockpitBuild(year, forceForecast) {
     readEvents().map(e => ({ id: e.id, title: e.title || "Termin", date: String(e.date || "").slice(0, 10), time: e.time || "", source: "manuell", sparte: e.sparte || "" }))
   ).filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= ymdAdd(today, -1) && e.date <= ymdAdd(today, 60)).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   const income = await withTimeout(incomeForecast({ today, year, k, ko, va, ski, hg, sites, force: forceForecast }), 10000, null);
+  const weather = await weatherP;
   return {
-    fetchedAt: new Date().toISOString(), year, today, income, skikaiser: ski, huettengaudi: hg,
+    fetchedAt: new Date().toISOString(), year, today, income, skikaiser: ski, huettengaudi: hg, weather, platformStatus: platformStatus(),
     leads: readLeads().slice().reverse(),
     sev: sevSummary(sev, year, today), sevConfigured: true,
     abgleich,
@@ -2136,8 +2221,8 @@ async function cockpitBuild(year, forceForecast) {
       blitzdings: b ? { revenue: b.revenue || {}, bookings: b.bookings || {}, upcoming: b.upcoming || [], fetchedAt: b.fetchedAt } : null,
       kantineur: k, valuero: va,
     },
-    sites, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
-    mail: { accounts: (mail && mail.accounts) || [], fetchedAt: mail && mail.fetchedAt, messages: msgs.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 200) },
+    sites, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx, fxFallback: !!rwc.fxFallback } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
+    mail: Object.assign({ accounts: (mail && mail.accounts) || [], fetchedAt: mail && mail.fetchedAt, messages: msgs.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 200) }, mailFlags()),
     events, todos: readTodos(),
   };
 }
@@ -2806,6 +2891,8 @@ async function handleAdmin(req, res, u, p) {
   if (p.indexOf("/admin/api/seo/") === 0) return guard(res, SEO.handleAdmin(req, res, u, p));
   // WhatsApp nur lesen (Cloud API, Coexistence) – Cockpit „Chat“ → WhatsApp (admin-cockpit/zwa.js), Logik in whatsapp.js; /admin/wa/connect = Verbinden-Seite (Embedded Signup, eigene CSP)
   if (p.indexOf("/admin/api/wa/") === 0 || p === "/admin/wa/connect") return guard(res, WA.handleAdmin(req, res, u, p));
+  // Verbindungen: Liste aus dem Zwischenspeicher (schnell) und „Jetzt prüfen“ – Cockpit-Seite admin-cockpit/zconn.js, Logik in connections.js
+  if (p === "/admin/api/connections" || p === "/admin/api/connections/check") { ADMIN_SEEN = Date.now(); return guard(res, CONN.handle(req, res, u, p)); }
 
   if (p === "/admin/sw.js") { let js = ""; try { js = fs.readFileSync(path.join(ROOT, "admin-sw.js"), "utf8"); } catch (e) {} return send(res, 200, js, "text/javascript; charset=utf-8", { "Cache-Control": "no-cache", "Service-Worker-Allowed": "/admin/" }); }
   if (p === "/admin/api/push") {
@@ -2848,11 +2935,11 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/mail" && req.method === "GET") {
     if (u.searchParams.get("fresh") === "1") MAIL_SNAP.at = 0;
-    const m = await mailSnapshot();
-    if (!m) return send(res, 503, JSON.stringify({ error: "mail_not_available" }), TYPES[".json"], { "Cache-Control": "no-store" });
+    const m = await mailSnapshot(), fl = mailFlags();   // stale/error: alter Stand bzw. Grund (z. B. Mail-Dienst antwortet nicht)
+    if (!m) return send(res, 503, JSON.stringify({ error: "mail_not_available", detail: fl.error || MAIL_SNAP.err || "" }), TYPES[".json"], { "Cache-Control": "no-store" });
     const known = u.searchParams.get("etag") || "";
-    if (known && m.etag && known === m.etag) return send(res, 200, JSON.stringify({ same: true, etag: m.etag }), TYPES[".json"], { "Cache-Control": "no-store" });
-    return sendGz(req, res, 200, JSON.stringify(m), TYPES[".json"], { "Cache-Control": "no-store" });
+    if (known && m.etag && known === m.etag) return send(res, 200, JSON.stringify(Object.assign({ same: true, etag: m.etag }, fl)), TYPES[".json"], { "Cache-Control": "no-store" });
+    return sendGz(req, res, 200, JSON.stringify(fl.stale || fl.error ? Object.assign({}, m, fl) : m), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   // Skikaiser-Steuerung (Namen, App-Einstellungen, Rangliste, Fehler): leitet an POST <App-Backend>/v1/stats/<was> weiter, Token bleibt am Server
   if (p === "/admin/api/skikaiser/steuer" && req.method === "POST") {
@@ -2861,7 +2948,7 @@ async function handleAdmin(req, res, u, p) {
       const b = await sevBody(req, 8000); const was = String(b.was || "");
       if (["namen", "config", "zeit", "zeiten-zuruecksetzen", "aufraeumen", "fehler", "feedback"].indexOf(was) < 0) return send(res, 200, JSON.stringify({ ok: false, error: "aktion" }), TYPES[".json"]);
       const url = SKIKAISER.url.replace(/\/stats\/?(\?.*)?$/, "/stats/" + was);
-      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify(b.daten || {}) });
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify(b.daten || {}), signal: AbortSignal.timeout(15000) });
       const j = await r.json().catch(() => ({})); forgetStats(SKIKAISER.url);
       return send(res, 200, JSON.stringify(Object.assign({}, j, { ok: !!(r.ok && j.ok) })), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
@@ -2871,7 +2958,7 @@ async function handleAdmin(req, res, u, p) {
     try {
       if (!SKIKAISER.url) return send(res, 200, JSON.stringify({ ok: false, error: "nicht_eingerichtet" }), TYPES[".json"]);
       const b = await sevBody(req, 2000); const url = SKIKAISER.url.replace(/\/stats\/?(\?.*)?$/, "/stats/feedback");
-      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify({ id: +b.id, erledigt: b.erledigt !== false }) });
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-api-token": SKIKAISER.token }, body: JSON.stringify({ id: +b.id, erledigt: b.erledigt !== false }), signal: AbortSignal.timeout(15000) });
       const j = await r.json().catch(() => ({})); forgetStats(SKIKAISER.url);
       return send(res, 200, JSON.stringify({ ok: !!(r.ok && j.ok) }), TYPES[".json"]);
     } catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
@@ -3355,7 +3442,7 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", async () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       try {
-        const r = await fetch(KOCHDU.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: KOCHDU.token }, payload)) });
+        const r = await fetch(KOCHDU.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: KOCHDU.token }, payload)), signal: AbortSignal.timeout(20000) });
         const txt = await r.text();
         if (r.ok) forgetStats(KOCHDU.url);
         return send(res, r.status, txt, TYPES[".json"]);
@@ -3370,7 +3457,7 @@ async function handleAdmin(req, res, u, p) {
     req.on("end", async () => {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       try {
-        const r = await fetch(BLITZ.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: BLITZ.token, id: payload.id, paid: !!payload.paid }) });
+        const r = await fetch(BLITZ.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: BLITZ.token, id: payload.id, paid: !!payload.paid }), signal: AbortSignal.timeout(20000) });
         const txt = await r.text();
         if (r.ok) forgetStats(BLITZ.url);
         return send(res, r.status, txt, TYPES[".json"]);
@@ -3415,26 +3502,13 @@ async function handleAdmin(req, res, u, p) {
   }
   // ---- Einstellungen: Status der Verbindungen + Mail-Passwörter setzen ----
   if (p === "/admin/api/settings" && req.method === "GET") {
-    let accounts = [];
-    try {
-      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 6000);
-      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/health"), { signal: ctrl.signal }); clearTimeout(t);
-      const j = await r.json(); accounts = Array.isArray(j.accounts) ? j.accounts : [];
-    } catch (e) {}
-    const integrations = [
-      { key: "mail", label: "Postfach (Mail-Dienst)", ok: !!(MAIL.url && MAIL.token) },
-      { key: "cloudflare", label: "Cloudflare", ok: !!CF.token },
-      { key: "railway", label: "Railway", ok: !!RW.token },
-      { key: "kochdu", label: "kochdu", ok: !!KOCHDU.token },
-      { key: "kantineur", label: "Kantineur", ok: !!KANTINEUR.token },
-      { key: "blitzdings", label: "Blitzdings", ok: !!BLITZ.token },
-      { key: "valuero", label: "VALUERO (Partner-Plattform, Antonhaus, Alpinappart)", ok: !!(VALUERO_PARTNER.token || ANTONHAUS.token || ALPINAPPART.key) },
-    ];
-    integrations.push({ key: "buchhaltung", label: "Buchhaltung (eigene, im Cockpit)", ok: FIN_STATE.local });
-    integrations.push({ key: "ki", label: "KI (Claude von Anthropic)", ok: KI.configured() });
+    // Kein Live-Abruf je Abfrage (der Dialog fragt alle 8 s): Mail-Konten und Verbindungen kommen aus der Verbindungs-Prüfung
+    // (Mail höchstens alle 5 min; nach „Prüfen & speichern“ 4 min lang alle 10 s, damit „Wird verbunden …“ umspringt)
+    if (MAIL.url && MAIL.token) { const cur = CONN.get("mail"); await CONN.check("mail", !cur || !cur.meta ? { maxAge: 0 } : Date.now() < MAIL_WATCH_UNTIL ? { maxAge: 10e3 } : {}).catch(() => null); }
+    const mr = CONN.get("mail"), accounts = (mr && mr.meta && Array.isArray(mr.meta.accounts)) ? mr.meta.accounts : [];
+    const integrations = CONN.list().map(x => ({ key: x.key, label: x.label, category: x.category, icon: x.icon, state: x.state, ok: x.state === "ok" || (x.state === "warn" && !x.pending), pending: !!x.pending, detail: x.detail, fix: x.fix, checkedAt: x.checkedAt }));
     const ic = icloudCfg();
-    integrations.push({ key: "icloud", label: "Privater Kalender (iCloud)", ok: !!(ic.user && ic.pass && ic.calUrl) });
-    return send(res, 200, JSON.stringify({ accounts, integrations, canSave: !!RW.token, icloud: { configured: !!(ic.user && ic.pass && ic.calUrl), user: ic.user, calName: ic.calName, calColor: ic.calColor } }), TYPES[".json"], { "Cache-Control": "no-store" });
+    return send(res, 200, JSON.stringify({ accounts, integrations, connections: CONN.summary(), canSave: !!RW.token, icloud: { configured: !!(ic.user && ic.pass && ic.calUrl), user: ic.user, calName: ic.calName, calColor: ic.calColor } }), TYPES[".json"], { "Cache-Control": "no-store" });
   }
   // ---- Privater iCloud-Kalender ----
   if (p === "/admin/api/private-cal" && req.method === "GET") {
@@ -3488,11 +3562,11 @@ async function handleAdmin(req, res, u, p) {
       const base = MAIL.url.replace(/\/api\/mails.*$/, "");
       try {
         // 1) Konto-Infos (welche Variable) vom Mail-Dienst
-        const h = await (await fetch(base + "/api/health")).json();
+        const h = await (await fetch(base + "/api/health", { signal: AbortSignal.timeout(10000) })).json();
         const acc = (h.accounts || []).find(a => a.key === key);
         if (!acc || !acc.env) return send(res, 404, JSON.stringify({ ok: false, error: "unknown_account" }), TYPES[".json"]);
         // 2) Zugangsdaten testen (Anmeldung am Postfach)
-        const tr = await fetch(base + "/api/test-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, key, pass, login: login || undefined }) });
+        const tr = await fetch(base + "/api/test-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, key, pass, login: login || undefined }), signal: AbortSignal.timeout(45000) });
         const tj = await tr.json().catch(() => ({}));
         if (!tj.ok && !payload.force) return send(res, 200, JSON.stringify({ ok: false, error: tj.error || "test_failed", detail: tj.detail || "" }), TYPES[".json"]);
         // 3) In Railway als Variable des Mail-Dienstes speichern -> Dienst startet mit neuen Zugangsdaten neu
@@ -3502,7 +3576,7 @@ async function handleAdmin(req, res, u, p) {
         const input = { projectId: process.env.RAILWAY_PROJECT_ID || "5ab009b1-4a14-436e-9c60-f06d94e68f6b", environmentId: process.env.RAILWAY_ENVIRONMENT_ID || "43bc9c87-f97f-4d1b-8294-abdf1e48e552", serviceId: process.env.MAIL_API_SERVICE_ID || "3fb095c5-f0b7-4143-941d-d79bc9d163c4", variables: vars };
         const rj = await rwGQL(q, { input });
         if (!rj || rj.errors) return send(res, 500, JSON.stringify({ ok: false, error: "save_failed", detail: (rj && rj.errors && rj.errors[0] && rj.errors[0].message) || "" }), TYPES[".json"]);
-        MAIL_SNAP.at = 0;
+        MAIL_SNAP.at = 0; MAIL_WATCH_UNTIL = Date.now() + 4 * 60e3;
         return send(res, 200, JSON.stringify({ ok: true, tested: !!tj.ok, restarting: true }), TYPES[".json"]);
       } catch (e) { return send(res, 500, JSON.stringify({ ok: false, error: "failed", detail: String(e && e.message || e).slice(0, 160) }), TYPES[".json"]); }
     });
@@ -3526,7 +3600,12 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/cockpit" && req.method === "GET") {
     const yr = (u.searchParams.get("year") || "").replace(/[^0-9]/g, "").slice(0, 4) || String(new Date().getFullYear());
-    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1", u.searchParams.get("forecast") === "1"); ADMIN_SEEN = Date.now(); return sendGz(req, res, 200, JSON.stringify(Object.assign({}, d, { auftraege: readAuftraege() })), TYPES[".json"], { "Cache-Control": "no-store" }); }   // Aufträge immer frisch (nicht aus dem Zwischenspeicher)
+    try { const d = await cockpitData(yr, u.searchParams.get("force") === "1", u.searchParams.get("forecast") === "1"); ADMIN_SEEN = Date.now();
+      // immer frisch (nicht aus dem Zwischenspeicher): Aufträge, Verbindungs-Kurzfassung (nur Cache, keine Prüfung), Mail-Status, Wetter
+      weatherNow().catch(() => {});
+      const fresh = { auftraege: readAuftraege(), connections: CONN.summary(), weather: WEATHER.data || d.weather || null, platformStatus: platformStatus() };
+      if (d.mail) fresh.mail = Object.assign({}, d.mail, mailFlags());
+      return sendGz(req, res, 200, JSON.stringify(Object.assign({}, d, fresh)), TYPES[".json"], { "Cache-Control": "no-store" }); }
     catch (e) { return send(res, 500, JSON.stringify({ error: String(e && e.message || e).slice(0, 200) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/leads" && req.method === "POST") {
@@ -3653,7 +3732,7 @@ async function handleAdmin(req, res, u, p) {
     try {
       const files = []; const used = {};
       for (const it of items) {
-        const r = await fetch(base + "&index=" + encodeURIComponent(String(it.index)), { headers: { "x-api-token": MAIL.token } });
+        const r = await fetch(base + "&index=" + encodeURIComponent(String(it.index)), { headers: { "x-api-token": MAIL.token }, signal: AbortSignal.timeout(60000) });
         if (!r.ok) continue;
         const data = Buffer.from(await r.arrayBuffer());
         let name = String(it.filename || "anhang").replace(/[\\/:*?"<>|\r\n]/g, "_").slice(0, 150) || "anhang";
@@ -3677,7 +3756,7 @@ async function handleAdmin(req, res, u, p) {
       "&index=" + encodeURIComponent(u.searchParams.get("index") || "0") +
       "&account=" + encodeURIComponent(u.searchParams.get("account") || "");
     try {
-      const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token } });   // Token nur im Header (nicht mehr in der Adresse)
+      const r = await fetch(attUrl, { headers: { "x-api-token": MAIL.token }, signal: AbortSignal.timeout(60000) });   // Token nur im Header (nicht mehr in der Adresse)
       if (!r.ok) return send(res, r.status === 401 || r.status === 403 ? 502 : r.status, r.status === 404 ? "Anhang nicht gefunden – die Mail wurde evtl. verschoben." : "Anhang konnte nicht geladen werden (Mail-Dienst " + r.status + ").", "text/plain; charset=utf-8", { "Cache-Control": "no-store" });
       const buf = Buffer.from(await r.arrayBuffer());
       // Mail inzwischen verschoben/gelöscht (UID ungültig): der Mail-Dienst liefert eine leere Datei → Hinweis statt Download
@@ -3718,7 +3797,7 @@ async function handleAdmin(req, res, u, p) {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const sendUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/send");
       try {
-        const r = await fetch(sendUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)) });
+        const r = await fetch(sendUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)), signal: AbortSignal.timeout(120000) });
         const txt = await r.text();
         if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
         return send(res, r.status, txt, TYPES[".json"]);
@@ -3737,7 +3816,7 @@ async function handleAdmin(req, res, u, p) {
   if (p === "/admin/api/mail-mkdir" && req.method === "POST") {
     if (!MAIL.url || !MAIL.token) return send(res, 503, JSON.stringify({ error: "mail_not_configured" }), TYPES[".json"]);
     try { const pl = await sevBody(req, 4000);
-      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/mkdir"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, account: String(pl.account || ""), path: String(pl.path || "") }) });
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/mkdir"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: MAIL.token, account: String(pl.account || ""), path: String(pl.path || "") }), signal: AbortSignal.timeout(30000) });
       const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
     } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_mkdir_failed" }), TYPES[".json"]); }
   }
@@ -3754,7 +3833,7 @@ async function handleAdmin(req, res, u, p) {
       const fwd = { token: MAIL.token, account: String(pl.account || ""), op: String(pl.op || ""), path: String(pl.path || "") };
       if (pl.newPath != null) fwd.newPath = String(pl.newPath); if (pl.name != null) fwd.name = String(pl.name);
       if (pl.parent != null) fwd.parent = String(pl.parent); if (pl.force === true) fwd.force = true;
-      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/folder"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fwd) });
+      const r = await fetch(MAIL.url.replace(/\/api\/mails.*$/, "/api/folder"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fwd), signal: AbortSignal.timeout(60000) });
       const txt = await r.text(); if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; } return send(res, r.status, txt, TYPES[".json"]);
     } catch (e) { return send(res, 502, JSON.stringify({ error: "mail_folder_failed" }), TYPES[".json"]); }
   }
@@ -3766,7 +3845,7 @@ async function handleAdmin(req, res, u, p) {
       let payload; try { payload = JSON.parse(body || "{}"); } catch (e) { return send(res, 400, JSON.stringify({ error: "bad_json" }), TYPES[".json"]); }
       const actionUrl = MAIL.url.replace(/\/api\/mails.*$/, "/api/action");
       try {
-        const r = await fetch(actionUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)) });
+        const r = await fetch(actionUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ token: MAIL.token }, payload)), signal: AbortSignal.timeout(60000) });
         const txt = await r.text();
         if (r.ok) { MAIL_SNAP.at = 0; COCKPIT_MEMO.at = 0; }
         return send(res, r.status, txt, TYPES[".json"]);
@@ -4083,13 +4162,393 @@ FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it
 if (require.main === module) { setTimeout(() => PRINT.tick(), 90 * 1000); setInterval(() => PRINT.tick(), 3600 * 1000); }
 if (require.main === module) setInterval(() => PRINT.pollActive().catch(e => console.error("Druck-Status:", e.message)), 30 * 60 * 1000).unref();   // laufende Druckaufträge: Status/Tracking alle 30 min
 // ── Vertraulichkeitsvereinbarungen (nda.js): Links aus dem Cockpit „Rechtliches“, online unterschreiben, PDF an beide Seiten ──
-const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m) });
+const NDA = require("./nda.js")({ DATA_DIR, ORIGIN, send, sendGz, fin: FIN, firm: () => FIN_STATE.firm, adminAuthed, mailSend: m => mailApiSend(m), mailReady: () => !!(MAIL.url && MAIL.token) });
 // PayPal täglich (Transaction Search liefert mit ~3 Std. Verzögerung) – Prüfung stündlich, Abruf wenn letzter > 20 Std. her
 setInterval(() => { const st = FIN_PAYPAL.status(); if (FIN_STATE.local && st.configured && !st.running && (!st.at || Date.now() - Date.parse(st.at) > 20 * 3600 * 1000)) FIN_PAYPAL.sync().then(() => { SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); }).catch(e => console.error("PayPal:", e.message)); }, 3600 * 1000);
 // Mollie alle 6 Std.: importiert nur die Saldo-Bewegungen; Zuordnungen/Gebühren/Auszahlungen/Einnahme-Belege → „Zur Prüfung“ (nie selbst gebucht)
 // Beim Start: nachgelieferte Zahlungen von Betrieben, deren Mollie-Zahlungen schon als Fremdgeld markiert sind, gleich mit markieren (sonst erst beim nächsten Abruf)
 setTimeout(() => { if (FIN_STATE.local && process.env.DATABASE_URL) FIN_LOCAL.load().then(() => FIN_MOLLIE.autoPassthrough()).then(n => { if (n) { console.log("Mollie: " + n + " Zahlung(en) automatisch als Fremdgeld markiert"); SEV_CACHE.at = 0; if (SEV_OPS.resetCaches) SEV_OPS.resetCaches(); } }).catch(e => console.error("Mollie-Fremdgeld:", e.message)); }, 15000);
 setInterval(() => { if (FIN_STATE.local && FIN_MOLLIE.status().configured) FIN_MOLLIE.sync().then(() => { SEV_CACHE.at = 0; }).catch(e => console.error("Mollie:", e.message)); }, 6 * 3600 * 1000);
+
+// ===========================================================================
+// VERBINDUNGEN: alle Schnittstellen mit echter, sparsamer Prüfung (Registry in connections.js) – Cockpit-Seite admin-cockpit/zconn.js,
+// Kurzfassung in /admin/api/cockpit (connections), Mail-Konten für die Einstellungen. Nie Geheimnisse in Texten.
+// ===========================================================================
+const CONN_CATS = ["Post & Kalender", "Plattformen", "Finanzen", "Druckshop", "Marketing", "Google & SEO", "Kommunikation", "KI", "Server & Cloud"];
+const CONN = (() => {
+  // Tests mit fester Dateiliste kopieren connections.js evtl. nicht – dann läuft das Cockpit ohne Verbindungs-Seite weiter
+  let mk = null; try { mk = require("./connections.js"); } catch (e) { if (!e || e.code !== "MODULE_NOT_FOUND") throw e; console.error("Verbindungen: connections.js fehlt"); }
+  if (mk) return mk({ DATA_DIR, send, categories: CONN_CATS, adminSeen: () => ADMIN_SEEN, secrets: () => [ADMIN_SECRET, ADMIN_PW] });
+  const none = () => null;
+  return { add() {}, list: () => [], summary: none, get: none, check: async () => ({ item: null }), checkAll: async () => ({ items: [] }), start() {}, kick() {}, clean: s => String(s == null ? "" : s),
+    handle: (req, res) => send(res, 503, JSON.stringify({ ok: false, error: "Verbindungen sind gerade nicht verfügbar" }), TYPES[".json"], { "Cache-Control": "no-store" }) };
+})();
+let MAIL_WATCH_UNTIL = 0;   // nach „Prüfen & speichern“ eines Mail-Passworts: Konten kurz öfter prüfen
+const RW_HINT = "Railway → Projekt → Dienst fs-creative → Variables";
+const rwFix = (vars, label, hint) => ({ kind: "railway", label: label || "In Railway eintragen", vars, hint: hint || RW_HINT });
+const actFix = (act, label, go) => ({ kind: "action", act, label, go });
+const cOk = (detail, extra) => Object.assign({ state: "ok", detail }, extra || {});
+const cWarn = (detail, fix, extra) => Object.assign({ state: "warn", detail, fix: fix || null }, extra || {});
+const cErr = (detail, fix, extra) => Object.assign({ state: "error", detail, fix: fix || null }, extra || {});
+const cYear = () => viennaToday().slice(0, 4);
+function agoDe(iso) { const t = typeof iso === "number" ? iso : Date.parse(iso); if (!t) return ""; const m = Math.round((Date.now() - t) / 60000);
+  return m < 2 ? "gerade eben" : m < 60 ? "vor " + m + " Min." : m < 36 * 60 ? "vor " + Math.round(m / 60) + " Std." : "vor " + Math.round(m / 1440) + " Tagen"; }
+const eurDe = n => (+n || 0).toFixed(2).replace(".", ",") + " €";
+// kleine Prüfanfrage: { ok, status, json, text, timeout } – wirft nie
+async function httpProbe(url, o) {
+  o = o || {};
+  try {
+    const r = await fetch(url, { method: o.method || "GET", headers: o.headers || {}, body: o.body, signal: AbortSignal.timeout(o.timeout || 10000) });
+    const text = await r.text().catch(() => ""); let json = null; try { json = text ? JSON.parse(text) : null; } catch (e) {}
+    return { ok: r.ok, status: r.status, json, text: text.slice(0, 2000), headers: r.headers };
+  } catch (e) { return { ok: false, status: 0, timeout: !!(e && (e.name === "TimeoutError" || e.name === "AbortError")) }; }
+}
+// Plattform-Statistik: letzten Abruf nutzen (cockpitBuild ruft sie ohnehin ab), sonst einmal abrufen
+async function statsCheck(url, fetcher, vars, what) {
+  let st = jsonStatus(url);
+  if (!st || Date.now() - st.at > 9 * 60e3) { await Promise.resolve().then(fetcher).catch(() => null); st = jsonStatus(url); }
+  if (!st) return cErr("Keine Antwort erhalten", rwFix(vars, "Adresse/Schlüssel prüfen"));
+  if (st.ok) return cOk((what || "Statistik") + " antwortet · " + agoDe(st.at));
+  if (st.auth) return cErr("Schlüssel abgelehnt – " + vars[vars.length - 1] + " in Railway prüfen", rwFix(vars, "Schlüssel prüfen"));
+  return cErr((what || "Statistik") + " " + st.error, st.timeout ? null : rwFix(vars, "Adresse prüfen"));
+}
+const mktP = () => (MKT && (MKT.posts || (MKT._test && MKT._test.posts))) || null;   // Post-Planer (mkt-posts.js) aus marketing.js
+
+// ── Post & Kalender ──
+CONN.add({ key: "mail", label: "Postfach", sub: "Mail-Dienst und E-Mail-Konten", category: "Post & Kalender", icon: "inbox", ttl: 5 * 60e3, timeout: 12e3,
+  usedBy: ["Postfach", "Heute", "Rechnungs- und Mahnversand", "Anfragen per Mail", "Druckshop-Mails", "NDA-Versand", "Belege aus Mails", "Mitteilungen"],
+  missing: () => MAIL.url && MAIL.token ? null : { detail: "Nicht eingerichtet – Railway-Variablen MAIL_API_URL und MAIL_API_TOKEN fehlen", fix: rwFix(["MAIL_API_URL", "MAIL_API_TOKEN"]) },
+  check: async () => {
+    const h = await httpProbe(MAIL.url.replace(/\/api\/mails.*$/, "/api/health"), { timeout: 8000 });
+    if (!h.ok) return cErr(h.timeout ? "Mail-Dienst antwortet nicht (Zeitüberschreitung)" : h.status ? "Mail-Dienst meldet einen Fehler (HTTP " + h.status + ")" : "Mail-Dienst nicht erreichbar",
+      { kind: "railway", label: "Mail-Dienst in Railway prüfen", vars: [], hint: "Railway → Dienst fs-creative-mail-api: Deploy-Status und Logs ansehen" }, { meta: { accounts: [] } });
+    const accs = Array.isArray(h.json && h.json.accounts) ? h.json.accounts : [], meta = { accounts: accs }, nm = a => a.label || a.user || a.key;
+    const bad = accs.filter(a => a.ok === false && a.configured !== false), noPw = accs.filter(a => a.configured === false), fix = actFix("settings:mail", "Passwort eintragen");
+    if (accs.length && bad.length + noPw.length === accs.length) return cErr((bad.length ? "Anmeldung fehlgeschlagen: " + bad.map(nm).join(", ") : "Passwort fehlt: " + noPw.map(nm).join(", ")) + " – Passwort neu eintragen", fix, { meta });
+    if (bad.length || noPw.length) return cWarn([bad.length ? "Anmeldung fehlgeschlagen: " + bad.map(nm).join(", ") : "", noPw.length ? "Passwort fehlt: " + noPw.map(nm).join(", ") : ""].filter(Boolean).join(" · "), fix, { meta });
+    const fl = mailFlags(); if (fl.stale) return cWarn(fl.error, null, { meta });
+    return cOk(accs.length ? accs.length + (accs.length === 1 ? " Konto" : " Konten") + " angemeldet" + (MAIL_SNAP.okAt ? " · Mails " + agoDe(MAIL_SNAP.okAt) + " geladen" : "") : "Mail-Dienst antwortet", { meta });
+  } });
+CONN.add({ key: "mail-calendar", label: "Geschäftskalender", sub: "Outlook/CalDAV über den Mail-Dienst", category: "Post & Kalender", icon: "kal", ttl: 15 * 60e3, timeout: 12e3,
+  usedBy: ["Kalender", "Heute: Termine"],
+  missing: () => MAIL.url && MAIL.token ? null : { detail: "Braucht den Mail-Dienst (MAIL_API_URL, MAIL_API_TOKEN)", fix: rwFix(["MAIL_API_URL", "MAIL_API_TOKEN"]) },
+  check: async () => {
+    const h = await httpProbe(MAIL.url.replace(/\/api\/mails.*$/, "/api/calendar"), { timeout: 9000, headers: { "x-api-token": MAIL.token, "x-stats-token": MAIL.token, authorization: "Bearer " + MAIL.token } });
+    if (h.ok && h.json && Array.isArray(h.json.events)) return cOk(h.json.events.length + " Termine geladen");
+    const msg = h.json && h.json.error ? String(typeof h.json.error === "string" ? h.json.error : h.json.error.message || "") : "";
+    if (h.status === 404 || /not.?config|nicht eingerichtet|caldav.*(fehlt|missing)|disabled/i.test(msg)) return { state: "off", detail: "Im Mail-Dienst ist kein Geschäftskalender eingerichtet", quiet: true };
+    if (h.status === 401 || h.status === 403) return cErr("Der Mail-Dienst lehnt den Zugang ab (HTTP " + h.status + ")", rwFix(["MAIL_API_TOKEN"], "Schlüssel prüfen"));
+    return cErr(h.timeout ? "Kalender antwortet nicht (Zeitüberschreitung)" : msg ? "Kalender meldet: " + msg.slice(0, 120) : h.status ? "Kalender meldet einen Fehler (HTTP " + h.status + ")" : "Kalender nicht erreichbar");
+  } });
+CONN.add({ key: "icloud", label: "Privater Kalender", sub: "iCloud (CalDAV)", category: "Post & Kalender", icon: "kal", ttl: 15 * 60e3, timeout: 22e3,
+  usedBy: ["Kalender", "Heute: Termine", "Blitzdings-Kalender privat", "Mail → Termin"],
+  missing: () => { const c = icloudCfg(); return c.user && c.pass && c.calUrl ? null : { detail: "Nicht verbunden – in den Einstellungen mit Apple-ID und App-Passwort verbinden", fix: actFix("settings:icloud", "iCloud verbinden") }; },
+  check: async () => {
+    const c = icloudCfg(); let r;
+    try { r = await dav("PROPFIND", c.calUrl, { user: c.user, pass: c.pass, depth: 0, body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/></d:prop></d:propfind>' }); }
+    catch (e) { return cErr(e && e.name === "AbortError" ? "iCloud antwortet nicht (Zeitüberschreitung)" : "iCloud nicht erreichbar"); }
+    if (r.status >= 200 && r.status < 300) return cOk("Kalender „" + (c.calName || "Kalender") + "“ verbunden");
+    if (r.status === 401 || r.status === 403) return cErr("Anmeldung abgelehnt – App-spezifisches Passwort neu eintragen", actFix("settings:icloud", "Neu verbinden"));
+    if (r.status === 404) return cErr("Kalender „" + (c.calName || "") + "“ nicht mehr gefunden – in den Einstellungen neu wählen", actFix("settings:icloud", "Kalender wählen"));
+    return cErr("iCloud meldet einen Fehler (HTTP " + r.status + ")");
+  } });
+
+// ── Plattformen ──
+const platVars = { kochdu: ["KOCHDU_STATS_URL", "KOCHDU_STATS_TOKEN"], kantineur: ["KANTINEUR_STATS_URL", "KANTINEUR_STATS_TOKEN"], blitzdings: ["BLITZDINGS_STATS_URL", "BLITZDINGS_STATS_TOKEN"],
+  skikaiser: ["SKIKAISER_STATS_URL", "SKIKAISER_STATS_TOKEN"], huettengaudi: ["HUETTENGAUDI_STATS_URL", "HUETTENGAUDI_STATS_TOKEN"] };
+CONN.add({ key: "kochdu", label: "kochdu", sub: "Statistik, Verrechnung, Verlosung", category: "Plattformen", icon: "plat", ttl: 10 * 60e3, timeout: 15e3,
+  usedBy: ["Plattformen › kochdu", "Einkommens-Prognose", "Abgleich mit der Buchhaltung", "Mollie-Connect-Provision", "Marketing-Verlosung"],
+  missing: () => KOCHDU.token ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable KOCHDU_STATS_TOKEN)", fix: rwFix(platVars.kochdu) },
+  check: () => statsCheck(KOCHDU.url, () => kochduStats(cYear()), platVars.kochdu) });
+CONN.add({ key: "kantineur", label: "Kantineur", sub: "Abos und Umsatz", category: "Plattformen", icon: "plat", ttl: 10 * 60e3, timeout: 15e3,
+  usedBy: ["Plattformen › Kantineur", "Heute: MRR", "Einkommens-Prognose", "Abgleich mit der Buchhaltung"],
+  missing: () => KANTINEUR.token ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable KANTINEUR_STATS_TOKEN)", fix: rwFix(platVars.kantineur) },
+  check: () => statsCheck(KANTINEUR.url, () => kantineurStats(cYear()), platVars.kantineur) });
+CONN.add({ key: "blitzdings", label: "Blitzdings", sub: "Statistik und Buchungs-Schnittstelle", category: "Plattformen", icon: "plat", ttl: 10 * 60e3, timeout: 25e3,
+  usedBy: ["Plattformen › Blitzdings", "Blitzdings-Kalender", "Abgleich mit der Buchhaltung", "Heute: nächste Termine"],
+  missing: () => BLITZ.token ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable BLITZDINGS_STATS_TOKEN)", fix: rwFix(platVars.blitzdings) },
+  check: async () => {
+    const s = await statsCheck(BLITZ.url, () => blitzdingsStats(cYear()), platVars.blitzdings);
+    if (!BLITZ_COCKPIT.token || !BLITZ_COCKPIT.base) return s;
+    const fresh = BLITZ_CATALOG.data && Date.now() - BLITZ_CATALOG.at < 10 * 60e3, r = fresh ? null : await blitzCockpit("GET", "/catalog");
+    if (fresh || (r.status === 200 && r.json && r.json.ok)) { if (r) BLITZ_CATALOG = { at: Date.now(), data: r.json }; return s.state === "ok" ? cOk(s.detail + " · Buchungen ok") : s; }
+    const er = r.json && r.json.error, why = r.status === 401 || r.status === 403 ? "Schlüssel abgelehnt (BLITZDINGS_COCKPIT_TOKEN)" : er === "blitz_timeout" ? "keine Antwort" : er === "blitz_unreachable" ? "nicht erreichbar" : "Fehler HTTP " + r.status;
+    const fix = rwFix(["BLITZDINGS_COCKPIT_URL", "BLITZDINGS_COCKPIT_TOKEN"], "Schlüssel prüfen");
+    return s.state === "ok" ? cWarn("Statistik ok, Buchungs-Schnittstelle: " + why, fix) : cErr(s.detail + " · Buchungs-Schnittstelle: " + why, s.fix || fix);
+  } });
+CONN.add({ key: "valuero", label: "VALUERO", sub: "Partner-Plattform, Antonhaus, Alpinappart", category: "Plattformen", icon: "plat", ttl: 10 * 60e3, timeout: 25e3,
+  usedBy: ["Plattformen › VALUERO", "Abgleich mit der Buchhaltung", "Einkommens-Prognose"],
+  missing: () => VALUERO_PARTNER.token || ANTONHAUS.token || ALPINAPPART.key ? null : { detail: "Nicht eingerichtet – keine Quelle hinterlegt", fix: rwFix(["VALUERO_PARTNER_STATS_URL", "VALUERO_PARTNER_STATS_TOKEN"]) },
+  check: async () => {
+    const src = [["Partner-Plattform", VALUERO_PARTNER.token, VALUERO_PARTNER.url, "VALUERO_PARTNER_STATS_TOKEN"], ["Antonhaus", ANTONHAUS.token, ANTONHAUS.url, "ANTONHAUS_STATS_TOKEN"], ["Alpinappart", ALPINAPPART.key, ALPINAPPART.url, "ALPINAPPART_FEES_KEY"]].filter(x => x[1]);
+    if (src.some(x => { const st = jsonStatus(x[2]); return !st || Date.now() - st.at > 9 * 60e3; })) await valueroStats(cYear()).catch(() => null);
+    const res = src.map(x => ({ name: x[0], v: x[3], st: jsonStatus(x[2]) })).filter(x => x.st);   // ohne Ergebnis: über die Partner-Plattform abgedeckt
+    const bad = res.filter(x => !x.st.ok);
+    if (!res.length) return cErr("Keine Antwort erhalten");
+    if (!bad.length) return cOk(res.map(x => x.name).join(", ") + " antworten · " + agoDe(Math.min.apply(null, res.map(x => x.st.at))));
+    const d = bad.map(x => x.name + ": " + (x.st.auth ? "Schlüssel abgelehnt" : x.st.error)).join(" · "), fix = rwFix(bad.map(x => x.v), "Schlüssel prüfen");
+    return bad.length === res.length ? cErr(d, fix) : cWarn(d, fix);
+  } });
+CONN.add({ key: "skikaiser", label: "Skikaiser", sub: "App-Backend: Käufe, Nutzung, Fernsteuerung", category: "Plattformen", icon: "snow", ttl: 30 * 60e3, timeout: 15e3,
+  usedBy: ["Plattformen › Skikaiser", "Einkommens-Prognose"],
+  missing: () => SKIKAISER.url ? null : { detail: "Nicht eingerichtet (SKIKAISER_STATS_URL, SKIKAISER_STATS_TOKEN)", fix: rwFix(platVars.skikaiser) },
+  check: () => statsCheck(SKIKAISER.url, () => skikaiserStats(cYear()), platVars.skikaiser) });
+CONN.add({ key: "huettengaudi", label: "Hüttengaudi", sub: "App-Backend: Käufe, Fernsteuerung, Werbe-Video", category: "Plattformen", icon: "sun", ttl: 30 * 60e3, timeout: 15e3,
+  usedBy: ["Plattformen › Hüttengaudi", "Einkommens-Prognose"],
+  missing: () => HUETTENGAUDI.url ? null : { detail: "Nicht eingerichtet (HUETTENGAUDI_STATS_URL, HUETTENGAUDI_STATS_TOKEN)", fix: rwFix(platVars.huettengaudi) },
+  check: () => statsCheck(HUETTENGAUDI.url, () => huettengaudiStats(cYear()), platVars.huettengaudi) });
+CONN.add({ key: "finapi", label: "Rechnungs-Schnittstelle", sub: "kochdu, Blitzdings und Kantineur legen Rechnungen an", category: "Plattformen", icon: "key", ttl: 5 * 60e3, timeout: 3e3,
+  usedBy: ["Plattform-Rechnungen in der Buchhaltung"],
+  missing: () => ["KOCHDU", "BLITZDINGS", "KANTINEUR"].some(k => String(process.env["FINAPI_TOKEN_" + k] || "").trim()) || KOCHDU.token || BLITZ.token || KANTINEUR.token ? null
+    : { detail: "Keine Plattform-Schlüssel hinterlegt", fix: rwFix(["FINAPI_TOKEN_KOCHDU", "FINAPI_TOKEN_BLITZDINGS", "FINAPI_TOKEN_KANTINEUR"]) },
+  check: () => {
+    const NM = { kochdu: "kochdu", blitzdings: "Blitzdings", kantineur: "Kantineur" }, legacy = Object.keys(FINAPI_LEGACY), bad = FINAPI_SEEN.bad.filter(t => Date.now() - t < 3600e3).length;
+    const seen = Object.keys(FINAPI_SEEN.last).map(k => NM[k] + " " + agoDe(FINAPI_SEEN.last[k]));
+    if (bad >= 5) return cWarn(bad + " abgelehnte Zugriffe in der letzten Stunde – hat eine Plattform den falschen Schlüssel?", rwFix(["FINAPI_TOKEN_KOCHDU", "FINAPI_TOKEN_BLITZDINGS", "FINAPI_TOKEN_KANTINEUR"], "Schlüssel abgleichen"));
+    if (legacy.length) return cWarn(legacy.map(k => NM[k]).join(", ") + " nutzt noch den Statistik-Schlüssel – eigenen Rechnungs-Schlüssel setzen", rwFix(legacy.map(k => "FINAPI_TOKEN_" + k.toUpperCase()), "Eigenen Schlüssel setzen", "Railway: Variable bei fs-creative UND im Dienst der Plattform gleich setzen"), { quiet: true });
+    return cOk(seen.length ? "Zuletzt genutzt: " + seen.join(", ") : "Bereit – seit dem Start noch kein Zugriff");
+  } });
+
+// ── Finanzen ──
+CONN.add({ key: "buchhaltung", label: "Buchhaltung", sub: "Eigene Buchhaltung im Cockpit", category: "Finanzen", icon: "geld", ttl: 10 * 60e3, timeout: 8e3,
+  usedBy: ["Finanzen", "Steuer", "Plattform-Verrechnung", "Rechnungs-Schnittstelle"],
+  check: async () => {
+    if (!FIN_STATE.local) return cOk("Testbetrieb");
+    if (!process.env.DATABASE_URL) return cErr("Keine Datenbank – die Buchhaltung kann nichts speichern", rwFix(["DATABASE_URL"], "Datenbank verknüpfen"));
+    await FIN.init();
+    const firm = FIN_STATE.firm || await FIN.getMeta("firm").catch(() => null);
+    if (!firm || !firm.name) return cWarn("Firmendaten fehlen – unter Finanzen › Meine Daten eintragen", actFix("fin:mydata", "Meine Daten öffnen", "geld"));
+    return cOk("Eigene Buchhaltung · " + firm.name);
+  } });
+CONN.add({ key: "ebank", label: "Bank (George)", sub: "Kontoumsätze und Überweisungen über Enable Banking", category: "Finanzen", icon: "bank", ttl: 60 * 60e3, minForce: 120e3, timeout: 20e3,
+  usedBy: ["Finanzen › Bank & Kasse", "Zahlungsaufträge", "Bankregeln"],
+  missing: () => String(process.env.EB_APP_ID || "").trim() && String(process.env.EB_PRIVATE_KEY || "").trim() ? null : { detail: "Nicht eingerichtet – Railway-Variablen EB_APP_ID und EB_PRIVATE_KEY fehlen", fix: rwFix(["EB_APP_ID", "EB_PRIVATE_KEY"]) },
+  check: async () => {
+    const st = await FIN_EBANK.status(), reconnect = actFix("febconnect", "George neu verbinden");
+    if (!st.sessions.length) return cWarn("Eingerichtet, aber keine Bank verbunden", actFix("febconnect", "George verbinden"));
+    const pg = await FIN_EBANK.ping().catch(e => ({ ok: false, status: e.status || 0, error: e.message }));
+    if (!pg.ok) return pg.status === 401 || pg.status === 403 ? cErr("Enable Banking lehnt den App-Schlüssel ab – EB_PRIVATE_KEY prüfen", rwFix(["EB_APP_ID", "EB_PRIVATE_KEY"])) : cErr("Enable Banking: " + pg.error);
+    const days = st.sessions.filter(s => s.validUntil).map(s => ({ bank: s.bank, d: Math.floor((Date.parse(s.validUntil) - Date.now()) / 864e5) })).sort((a, b) => a.d - b.d);
+    const gone = days.filter(x => x.d < 0), soon = days.filter(x => x.d >= 0 && x.d < 14);
+    if (gone.length) return cErr("Freigabe für " + gone.map(x => x.bank).join(", ") + " abgelaufen – in George neu bestätigen", reconnect);
+    if (st.error) return cErr("Letzter Abruf fehlgeschlagen: " + st.error, actFix("fin:bank", "Bankkonten öffnen", "geld"));
+    if (st.problems && st.problems.length) return cWarn(st.problems.map(x => (x.account || x.bank) + ": " + x.error).join(" · "), st.problems.some(x => /neu verbinden|ungültig/i.test(x.error)) ? reconnect : actFix("fin:bank", "Bankkonten öffnen", "geld"));
+    if (soon.length) return cWarn("Freigabe für " + soon[0].bank + " läuft in " + soon[0].d + (soon[0].d === 1 ? " Tag" : " Tagen") + " ab – in George erneuern", actFix("febconnect", "Freigabe erneuern"));
+    if (FIN_STATE.local && st.at && Date.now() - Date.parse(st.at) > 48 * 3600e3) return cWarn("Letzter Abruf " + agoDe(st.at), actFix("febsync", "Jetzt abrufen", "geld"));
+    const n = st.sessions.reduce((a, s) => a + (s.accounts || []).length, 0);
+    return cOk(n + (n === 1 ? " Konto" : " Konten") + (days.length ? " · Freigabe noch " + days[0].d + " Tage" : "") + (st.at ? " · Abruf " + agoDe(st.at) : ""));
+  } });
+CONN.add({ key: "mollie-org", label: "Mollie (Buchhaltung)", sub: "Zahlungen, Gebühren und Auszahlungen je Organisation", category: "Finanzen", icon: "wallet", ttl: 60 * 60e3, timeout: 30e3,
+  usedBy: ["Finanzen › Mollie", "Zur Prüfung: Mollie-Zuordnungen", "kochdu-Connect-Provision"],
+  missing: () => FIN_MOLLIE.status().configured ? null : { detail: "Nicht eingerichtet – Railway-Variable MOLLIE_ORG_TOKEN fehlt", fix: rwFix(["MOLLIE_ORG_TOKEN"]) },
+  check: async () => {
+    const pings = await FIN_MOLLIE.ping(), bad = pings.filter(x => !x.ok), st = FIN_MOLLIE.status();
+    const why = x => x.status === 401 ? "Zugang abgelaufen oder widerrufen" : x.status === 403 ? "fehlende Rechte" : x.error;
+    if (bad.length) { const d = bad.map(x => x.key + ": " + why(x)).join(" · "), fix = rwFix(bad.map(x => x.key), "Neuen Zugang eintragen"); return bad.length === pings.length ? cErr(d, fix) : cWarn(d, fix); }
+    if (st.error) return cWarn("Letzter Abruf fehlgeschlagen: " + st.error, actFix("fmollie", "Erneut abrufen", "geld"));
+    if (st.orgErrors && st.orgErrors.length) return cWarn(st.orgErrors.map(o => o.org + ": " + o.error).join(" · "), actFix("fmollie", "Erneut abrufen", "geld"));
+    return cOk(pings.map(x => x.name || x.key).join(", ") + (st.at ? " · Abruf " + agoDe(st.at) : ""));
+  } });
+CONN.add({ key: "paypal", label: "PayPal", sub: "Umsätze importieren (nur lesen)", category: "Finanzen", icon: "wallet", ttl: 10 * 60e3, timeout: 3e3,
+  usedBy: ["Finanzen › PayPal-Konto", "Bankregeln"],
+  missing: () => FIN_PAYPAL.status().configured ? null : { detail: "Nicht eingerichtet (PAYPAL_CLIENT_ID, PAYPAL_SECRET)", fix: rwFix(["PAYPAL_CLIENT_ID", "PAYPAL_SECRET"]) },
+  check: () => {
+    const st = FIN_PAYPAL.status();
+    if (st.error) return cErr("Letzter Abruf fehlgeschlagen: " + st.error, actFix("fpaypal", "Erneut abrufen", "geld"));
+    if (!st.at) return cWarn("Seit dem Start noch kein Abruf", actFix("fpaypal", "Jetzt abrufen", "geld"), { quiet: true });
+    if (Date.now() - Date.parse(st.at) > 48 * 3600e3) return cWarn("Letzter Abruf " + agoDe(st.at), actFix("fpaypal", "Jetzt abrufen", "geld"));
+    return cOk("Abruf " + agoDe(st.at));
+  } });
+CONN.add({ key: "finanzonline", label: "FinanzOnline", sub: "UVA, ZM und Jahreserklärung senden", category: "Finanzen", icon: "building", ttl: 6 * 3600e3, timeout: 12e3,
+  usedBy: ["Steuer › UVA/ZM senden", "Jahreserklärung"],
+  missing: () => { const z = fonZugang(); return z.fehlt ? { detail: "Nicht eingerichtet – " + z.fehlt, fix: rwFix(["FON_HERSTELLERID", "FON_TID", "FON_BENID"]) } : null; },
+  check: async () => {
+    const h = await httpProbe(FON.sessionUrl + "?wsdl", { timeout: 9000 });
+    if (!h.status) return cWarn(h.timeout ? "FinanzOnline antwortet nicht – Senden später versuchen" : "FinanzOnline nicht erreichbar – Senden später versuchen");
+    if (h.status >= 500 && !/definitions|Envelope|Fault/i.test(h.text || "")) return cWarn("FinanzOnline meldet einen Fehler (HTTP " + h.status + ") – evtl. Wartung");
+    return cOk("Webservice erreichbar" + (fonZugang().pinEnv ? "" : " · PIN wird beim Senden abgefragt"));
+  } });
+CONN.add({ key: "vies", label: "UID-Prüfung (VIES)", sub: "EU-Dienst für UID-Nummern", category: "Finanzen", icon: "shield", ttl: 60 * 60e3, timeout: 12e3,
+  usedBy: ["Steuer › VIES", "Druckshop: Firmenkunden-UID"],
+  check: async () => {
+    const h = await httpProbe(VIES_URL.replace(/\/ms\/?$/, "") + "/check-status", { timeout: 10000, headers: { Accept: "application/json" } });
+    if (!h.ok || !h.json) return cWarn(h.timeout ? "VIES antwortet nicht – UID-Prüfungen später wiederholen" : "VIES gerade nicht erreichbar – UID-Prüfungen später wiederholen");
+    const cs = Array.isArray(h.json.countries) ? h.json.countries : [], down = cs.filter(c => /^unavailable$/i.test(String(c.availability || ""))).map(c => c.countryCode), at = cs.find(c => c.countryCode === "AT");
+    if (h.json.vow && h.json.vow.available === false) return cWarn("Der EU-Dienst ist gestört – UID-Prüfungen später wiederholen");
+    if (at && /^unavailable$/i.test(String(at.availability || ""))) return cWarn("Österreich ist bei VIES gerade nicht prüfbar");
+    return cOk("Erreichbar" + (down.length ? " · gerade nicht prüfbar: " + down.slice(0, 6).join(", ") : ""));
+  } });
+CONN.add({ key: "fx", label: "Wechselkurse", sub: "USD → EUR (EZB über frankfurter.app)", category: "Finanzen", icon: "euro", ttl: 6 * 3600e3, timeout: 10e3,
+  usedBy: ["Railway-Kosten in Euro", "Beleg-Abgleich Fremdwährung"],
+  check: async () => {
+    if (FXRATE.fallback || Date.now() - FXRATE.okAt > 24 * 3600e3) await usdEur(true);
+    if (FXRATE.fallback) return cWarn("Kein Kurs abrufbar (" + (FXRATE.err || "unbekannt") + ") – Railway-Kosten mit Schätzkurs 0,86 gerechnet", null, { quiet: true });
+    if (FXRATE.err) return cWarn("Abruf fehlgeschlagen (" + FXRATE.err + ") – Kurs vom " + new Date(FXRATE.okAt).toLocaleDateString("de-AT", { timeZone: "Europe/Vienna" }) + " gilt weiter", null, { quiet: true });
+    return cOk("1 USD = " + FXRATE.eur.toFixed(4).replace(".", ",") + " €");
+  } });
+
+// ── Druckshop ──
+CONN.add({ key: "printcom", label: "Print.com", sub: "Katalog, Preise, Bestellungen, Versand", category: "Druckshop", icon: "printer", ttl: 60 * 60e3, minForce: 120e3, timeout: 25e3,
+  usedBy: ["Druckshop", "Druckaufträge", "Zur Prüfung: Druckbestellungen", "Marketing-Produktfotos", "Website-Chat: Preise"],
+  missing: () => String(process.env.PRINTCOM_API_KEY || "").trim() ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable PRINTCOM_API_KEY)", fix: rwFix(["PRINTCOM_API_KEY"]) },
+  check: async () => {
+    const h = await PRINT.health({ printcom: true }), p = h.pcPing || {};
+    if (!p.ok) return p.status === 401 || p.status === 403 ? cErr("Print.com lehnt den Schlüssel ab – PRINTCOM_API_KEY prüfen", rwFix(["PRINTCOM_API_KEY"], "Schlüssel prüfen")) : cErr(p.error || "Print.com antwortet nicht");
+    if (!h.catalogAt) return cWarn("Katalog noch nicht geladen", actFix("prcat", "Katalog laden", "print"));
+    const age = Date.now() - Date.parse(h.catalogAt);
+    if (h.catalogErrors.length) return cWarn(h.catalogErrors.length + (h.catalogErrors.length === 1 ? " Produkt" : " Produkte") + " nicht geladen: " + h.catalogErrors[0], actFix("prcat", "Katalog neu laden", "print"));
+    if (age > 3 * 864e5) return cWarn("Katalog ist " + Math.round(age / 864e5) + " Tage alt", actFix("prcat", "Katalog neu laden", "print"));
+    return cOk(h.catalogProducts + " Produkte · Katalog " + agoDe(h.catalogAt) + (h.lastPoll ? " · Sendungsstatus " + agoDe(h.lastPoll) : ""));
+  } });
+CONN.add({ key: "mollie-print", label: "Mollie (Druckshop-Kasse)", sub: "Online-Zahlung im Druckshop", category: "Druckshop", icon: "card", ttl: 60 * 60e3, timeout: 30e3,
+  usedBy: ["Druckshop-Kasse", "Erstattungen", "Zahlungs-Webhook"],
+  missing: () => String(process.env.MOLLIE_PRINT_API_KEY || "").trim() ? null : { detail: "Nicht eingerichtet – Online-Zahlung braucht MOLLIE_PRINT_API_KEY", fix: rwFix(["MOLLIE_PRINT_API_KEY"]) },
+  check: async () => {
+    const h = await PRINT.health({ mollie: true }), p = h.molliePing || {}, fix = rwFix(["MOLLIE_PRINT_API_KEY"], "Schlüssel prüfen");
+    if (!p.ok) return cErr(p.status === 401 ? "Mollie lehnt den Schlüssel ab – MOLLIE_PRINT_API_KEY erneuern" : "Mollie: " + (p.error || "keine Antwort"), p.status === 401 ? fix : null);
+    if (h.mollieMode === "test") return h.live ? cErr("Der Shop ist live, aber Mollie läuft mit Testschlüssel – echte Zahlungen gehen nicht", rwFix(["MOLLIE_PRINT_API_KEY"], "Live-Schlüssel eintragen")) : cWarn("Testschlüssel aktiv – vor dem Start den Live-Schlüssel eintragen", rwFix(["MOLLIE_PRINT_API_KEY"], "Live-Schlüssel eintragen"), { quiet: true });
+    return cOk("Live-Zahlungen bereit");
+  } });
+
+// ── Marketing ──
+const MKT_PROV = { instagram: "instagram", facebook: "facebook", threads: "threads", linkedin: "linkedin", youtube: "google", tiktok: "tiktok", pinterest: "pinterest", bluesky: "bluesky" };
+function mktState(pf, h) {
+  const list = h.channels.filter(c => c.platform === pf), who = c => c.brandName + (c.account ? " (" + c.account + ")" : ""), days = iso => iso ? Math.floor((Date.parse(iso) - Date.now()) / 864e5) : null;
+  if (!list.length) return { state: "off", detail: "Kein Konto verbunden", fix: actFix("mktab:kanaele", "Konto verbinden", "mkt") };
+  const exp = list.filter(c => c.status === "abgelaufen"), errs = list.filter(c => c.status !== "abgelaufen" && c.verifyError);
+  if (exp.length) return Object.assign(exp.length === list.length ? cErr("") : cWarn(""), { detail: exp.map(who).join(", ") + ": Anmeldung abgelaufen – neu verbinden", fix: actFix("mkcon:" + exp[0].brand + "|" + pf, exp.length > 1 ? "Erstes neu verbinden" : "Neu verbinden") });
+  if (errs.length) return cWarn(errs.map(c => who(c) + ": " + c.verifyError).join(" · "), actFix("mktab:kanaele", "Kanäle öffnen", "mkt"));
+  // LinkedIn läuft nach 60 Tagen hart ab, TikTok braucht nach 365 Tagen eine neue Anmeldung – rechtzeitig Bescheid geben
+  const soon = list.map(c => ({ c, d: pf === "linkedin" ? days(c.expiresAt) : pf === "tiktok" ? days(c.refreshExpiresAt) : null })).filter(x => x.d != null && x.d < 10).sort((a, b) => a.d - b.d)[0];
+  if (soon) return cWarn(who(soon.c) + ": Anmeldung läuft in " + Math.max(0, soon.d) + (soon.d === 1 ? " Tag" : " Tagen") + " ab – neu verbinden", actFix("mkcon:" + soon.c.brand + "|" + pf, "Jetzt erneuern"));
+  const v = list.map(c => c.verifiedAt).filter(Boolean).sort()[0];
+  return cOk(list.length + (list.length === 1 ? " Konto: " : " Konten: ") + list.map(who).join(", ") + (v ? " · geprüft " + agoDe(v) : ""));
+}
+[["instagram", "Instagram", "instagram", ["Marketing › Planer & Posten", "Marketing › Posteingang", "Gewinnspiel-Import"]], ["facebook", "Facebook", "facebook", ["Marketing › Planer & Posten", "Marketing › Posteingang", "Gewinnspiel"]],
+  ["threads", "Threads", "message", ["Marketing › Planer & Posten", "Marketing › Posteingang"]], ["linkedin", "LinkedIn", "linkedin", ["Marketing › Planer & Posten"]],
+  ["youtube", "YouTube Shorts", "youtube", ["Marketing › Planer & Posten", "Marketing › Posteingang"]], ["tiktok", "TikTok", "zap", ["Marketing: Reels als Entwurf"]],
+  ["pinterest", "Pinterest", "pin", ["Marketing › Planer & Posten"]], ["bluesky", "Bluesky", "cloud", ["Marketing › Planer & Posten", "Marketing › Posteingang"]]].forEach(x => {
+  const pf = x[0];
+  CONN.add({ key: "mkt-" + pf, label: x[1], sub: "Marketing-Kanal", category: "Marketing", icon: x[2], ttl: 24 * 3600e3, timeout: 60e3, usedBy: x[3],
+    missing: () => { const P = mktP(); if (!P || !P.channelHealth) return { detail: "Marketing ist nicht geladen" }; const h = P.channelHealth();
+      if (h.channels.some(c => c.platform === pf)) return null;
+      return h.apps[MKT_PROV[pf]] ? { detail: "Kein Konto verbunden", fix: actFix("mktab:kanaele", "Konto verbinden", "mkt") } : { detail: "App-Zugang fehlt – unter Marketing › Kanäle eintragen", fix: actFix("mktab:kanaele", "Kanäle öffnen", "mkt") }; },
+    check: async ctx => mktState(pf, await mktP().verifyPlatform(pf, !!(ctx && ctx.force))) });
+});
+CONN.add({ key: "pexels", label: "Pexels", sub: "Stockfotos und -videos für Reels", category: "Marketing", icon: "eye", ttl: 6 * 3600e3, timeout: 12e3,
+  usedBy: ["Marketing: Reels und Bilder"],
+  missing: () => { const P = mktP(); return P && P.channelHealth && P.channelHealth().pexels ? null : { detail: "Kein Schlüssel – Reels nutzen Farbverläufe statt Stockvideos", fix: actFix("mktab:kanaele", "Schlüssel eintragen", "mkt") }; },
+  check: async () => {
+    const r = await mktP().pexelsPing();
+    if (r.ok) return cOk("Schlüssel gültig" + (r.remaining ? " · noch " + r.remaining + " Abrufe" : ""));
+    if (r.status === 401 || r.status === 403) return cErr("Schlüssel ungültig – unter Marketing › Kanäle neu eintragen", actFix("mktab:kanaele", "Schlüssel eintragen", "mkt"));
+    return cErr("Pexels: " + (r.error || "Fehler HTTP " + r.status));
+  } });
+
+// ── Google & SEO ──
+CONN.add({ key: "google-seo", label: "Google", sub: "Search Console und Unternehmensprofile", category: "Google & SEO", icon: "google", ttl: 60 * 60e3, timeout: 40e3,
+  usedBy: ["SEO › Search Console", "SEO › Unternehmensprofil", "Bewertungen beantworten", "Google-Beiträge und Öffnungszeiten"],
+  missing: () => { const i = SEO.info(); if (i.accounts.length) return null;
+    return i.app ? { detail: "Kein Google-Konto verbunden", fix: actFix("seogcon", "Google verbinden") } : { detail: "Google-App-Zugang fehlt (Marketing › Kanäle › YouTube/Google)", fix: actFix("mktab:kanaele", "Google-App eintragen", "mkt") }; },
+  check: async () => {
+    const h = await SEO.health(true), bad = h.accounts.filter(a => !a.ok), auth = bad.filter(a => a.auth);
+    if (!h.app) return cErr("Google-App-Zugang fehlt – Anmeldungen können nicht erneuert werden", actFix("mktab:kanaele", "Google-App eintragen", "mkt"));
+    if (bad.length) { const d = bad.map(a => a.email + ": " + (a.auth ? "Anmeldung abgelaufen" : a.error)).join(" · ") + (auth.length ? " – neu verbinden" : ""), fix = auth.length ? actFix("seogcon", "Google neu verbinden") : actFix("go:seo", "SEO öffnen");
+      return bad.length === h.accounts.length ? cErr(d, fix) : cWarn(d, fix); }
+    return cOk(h.accounts.length + (h.accounts.length === 1 ? " Konto: " : " Konten: ") + h.accounts.map(a => a.email).join(", "));
+  } });
+CONN.add({ key: "pagespeed", label: "Google PageSpeed", sub: "Ladezeit der Websites messen", category: "Google & SEO", icon: "zap", ttl: 60 * 60e3, timeout: 3e3,
+  usedBy: ["SEO › Geschwindigkeit"],
+  check: () => {
+    const i = SEO.info();
+    if (i.psiLimited) return cWarn(i.psiLimited + (i.psiLimited === 1 ? " Messung" : " Messungen") + " wegen Kontingent abgelehnt" + (i.psiKey ? "" : " – eigener Schlüssel hilft"), i.psiKey ? null : rwFix(["GOOGLE_PSI_KEY"], "Schlüssel eintragen"));
+    if (!i.psiKey) return cWarn("Ohne eigenen Schlüssel – geteiltes Kontingent, Messungen scheitern öfter", rwFix(["GOOGLE_PSI_KEY"], "Schlüssel eintragen"), { quiet: true });
+    return cOk("Eigener Schlüssel hinterlegt");
+  } });
+
+// ── Kommunikation ──
+CONN.add({ key: "whatsapp", label: "WhatsApp Business", sub: "Chats lesen (Cloud API, App am Handy läuft weiter)", category: "Kommunikation", icon: "whatsapp", ttl: 60 * 60e3, timeout: 35e3,
+  usedBy: ["Chat › WhatsApp", "Mitteilungen: WhatsApp"],
+  missing: () => WA.status().configured ? null : { detail: "Nicht eingerichtet – Meta-App (App-ID, App-Geheimnis, Konfigurations-ID) fehlt", fix: actFix("chmode:wa", "WhatsApp einrichten", "chat") },
+  check: async () => {
+    const h = await WA.health(true), reconnect = { kind: "link", url: "/admin/wa/connect", label: "WhatsApp neu verbinden" };
+    if (!h.connected) return cWarn("App eingerichtet, aber keine Nummer verbunden", { kind: "link", url: "/admin/wa/connect", label: "WhatsApp verbinden" });
+    if (h.problem) return cErr(h.problem, reconnect);
+    if (h.live && !h.live.ok) return cErr("Meta: " + h.live.error, h.live.code === 190 ? reconnect : null);
+    if (h.badSignatures >= 3 && Date.now() - Date.parse(h.badSignatureAt) < 864e5) return cWarn(h.badSignatures + " Webhooks mit falscher Signatur abgelehnt – App-Geheimnis prüfen", actFix("chmode:wa", "WhatsApp öffnen", "chat"));
+    const quiet = h.lastWebhookAt ? Math.floor((Date.now() - Date.parse(h.lastWebhookAt)) / 864e5) : null;
+    if (quiet != null && quiet >= 7) return cWarn("Seit " + quiet + " Tagen nichts von Meta empfangen – Webhook prüfen", actFix("chmode:wa", "WhatsApp öffnen", "chat"));
+    return cOk((h.name || "Verbunden") + (h.number ? " · " + h.number : "") + (h.lastWebhookAt ? " · zuletzt " + agoDe(h.lastWebhookAt) : ""));
+  } });
+CONN.add({ key: "push", label: "Mitteilungen", sub: "Push aufs iPhone und den Mac", category: "Kommunikation", icon: "bell", ttl: 10 * 60e3, timeout: 8e3,
+  usedBy: ["Mitteilungen zu Mails, Anfragen, Finanzen, Chat, Marketing, WhatsApp und Sicherheit"],
+  missing: () => process.env.DATABASE_URL ? null : { detail: "Braucht die Datenbank (DATABASE_URL)", fix: rwFix(["DATABASE_URL"], "Datenbank verknüpfen") },
+  check: async () => {
+    const st = await PUSH.status(""), inf = PUSH.info(), n = st.devices.length;
+    if (!n) return cWarn("Kein Gerät angemeldet – Mitteilungen am iPhone oder Mac einschalten", actFix("pushcfg", "Mitteilungen einrichten"), { quiet: true });
+    if (inf.error && (!inf.sentAt || inf.errorAt > inf.sentAt)) return cWarn("Letzter Versand fehlgeschlagen – " + inf.error, actFix("pushcfg", "Mitteilungen prüfen"));
+    return cOk(n + (n === 1 ? " Gerät: " : " Geräte: ") + st.devices.map(d => d.device).slice(0, 4).join(", ") + (inf.sentAt ? " · zuletzt gesendet " + agoDe(inf.sentAt) : ""));
+  } });
+
+// ── KI ──
+CONN.add({ key: "ki", label: "KI (Claude)", sub: "Assistent, Belege, Mails, SEO, Marketing", category: "KI", icon: "sparkle", ttl: 60 * 60e3, timeout: 15e3,
+  usedBy: ["KI-Assistent", "Belege aus Mails", "Mail-Entwürfe", "Website-Chat offline", "SEO-Vorschläge", "Marketing-Posts", "Druck-Design"],
+  missing: () => KI.configured() ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable ANTHROPIC_API_KEY)", fix: rwFix(["ANTHROPIC_API_KEY"]) },
+  check: async () => {
+    const p = await KI.ping(), h = KI.health();
+    if (!p.ok) return p.auth ? cErr("Schlüssel ungültig – ANTHROPIC_API_KEY in Railway erneuern", rwFix(["ANTHROPIC_API_KEY"], "Neuen Schlüssel eintragen")) : cErr(p.error);
+    if (h.overLimit) return cWarn("Monatslimit erreicht (" + eurDe(h.limitEur) + ") – bis Monatsende laufen nur Belege und Steuer", rwFix(["KI_MONTHLY_LIMIT_EUR"], "Limit anpassen"));
+    if (h.scan && h.scan.err && !/Monatslimit/.test(h.scan.err)) return cWarn("Beleg-Suche in Mails: " + h.scan.err, actFix("go:ki", "KI öffnen"));
+    return cOk("Bereit · " + eurDe(h.costEur) + " diesen Monat" + (h.limitEur ? " von " + eurDe(h.limitEur) : ""));
+  } });
+
+// ── Server & Cloud ──
+CONN.add({ key: "cloudflare", label: "Cloudflare", sub: "Websites, Besucherzahlen, Erreichbarkeit", category: "Server & Cloud", icon: "globe", ttl: 15 * 60e3, timeout: 12e3,
+  usedBy: ["Websites", "Heute: Website offline", "SEO-Websiteliste", "Abrechnung Hosting"],
+  missing: () => CF.token ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable CF_API_TOKEN)", fix: rwFix(["CF_API_TOKEN"]) },
+  check: async () => {
+    const j = await cfGet("/zones?status=active&per_page=1");
+    if (!j) return cErr("Cloudflare nicht erreichbar");
+    if (!j.success) { const e = (j.errors || [])[0] || {}, auth = /auth|token|9109|10000|\b1000\b/i.test(String(e.message || "") + " " + e.code);
+      return cErr(auth ? "Schlüssel abgelehnt – CF_API_TOKEN erneuern" : "Cloudflare meldet: " + String(e.message || "Fehler").slice(0, 120), auth ? rwFix(["CF_API_TOKEN"], "Neuen Schlüssel eintragen") : null); }
+    const n = j.result_info && j.result_info.total_count, snap = SITES_CACHE.data;
+    if (snap && snap.cfStale) return cWarn("Websites-Liste ist " + agoDe(snap.cfStale).replace(/^vor /, "seit ") + " nicht aktualisiert – " + (snap.cfError || "letzter Abruf fehlgeschlagen"));
+    return cOk((n != null ? n + " Websites" : "Verbunden") + (snap && snap.fetchedAt ? " · Stand " + agoDe(snap.fetchedAt) : ""));
+  } });
+CONN.add({ key: "railway", label: "Railway", sub: "Server, Deploys, Kosten, Rechnungen", category: "Server & Cloud", icon: "server", ttl: 15 * 60e3, timeout: 20e3,
+  usedBy: ["Websites/Projekte", "Heute: Deploy fehlgeschlagen", "Kosten je Website", "Railway-Rechnungen als Beleg", "Mail-Passwort speichern"],
+  missing: () => RW.token ? null : { detail: "Nicht eingerichtet – Schlüssel fehlt (Railway-Variable RAILWAY_API_TOKEN)", fix: rwFix(["RAILWAY_API_TOKEN"]) },
+  check: async () => {
+    const j = await rwGQL("query($w:String){projects(workspaceId:$w,first:1){edges{node{id}}}}", { w: RW.workspace || null });
+    if (!(j && j.data && j.data.projects)) {
+      const m = (j && j.errors && j.errors[0] && j.errors[0].message) || "keine Antwort";
+      if (/not authori|unauthori|invalid token|forbidden/i.test(m)) return cErr("Schlüssel abgelehnt – RAILWAY_API_TOKEN erneuern", rwFix(["RAILWAY_API_TOKEN"], "Neuen Schlüssel eintragen"));
+      return cErr(/abort/i.test(m) ? "Railway antwortet nicht (Zeitüberschreitung)" : "Railway meldet: " + m.slice(0, 120));
+    }
+    const rw = SITES_CACHE.data && SITES_CACHE.data.railway, inv = FIN_RAILWAY.status ? FIN_RAILWAY.status() : null;
+    if (rw && rw.stale) return cWarn("Projektliste vom " + new Date(rw.stale).toLocaleString("de-AT", { timeZone: "Europe/Vienna", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " – " + (rw.staleError || "letzter Abruf fehlgeschlagen"));
+    if (inv && inv.err) return cWarn("Railway-Rechnungen: " + inv.err, null, { quiet: true });
+    return cOk("Verbunden" + (rw && rw.totals ? " · " + rw.totals.projects + " Projekte" : ""));
+  } });
+CONN.add({ key: "postgres", label: "Datenbank", sub: "Postgres: Buchhaltung, Mitteilungen, Chat, NDA, Druckshop", category: "Server & Cloud", icon: "database", ttl: 5 * 60e3, timeout: 6e3,
+  usedBy: ["Buchhaltung", "Mitteilungen", "Website-Chat", "NDA", "Druckshop-Bestellungen", "Mail-Regeln", "Zur Prüfung"],
+  missing: () => process.env.DATABASE_URL ? null : { detail: "Keine Datenbank verbunden (Railway-Variable DATABASE_URL)", fix: rwFix(["DATABASE_URL"], "Datenbank verknüpfen", "Railway → Dienst fs-creative → Variables → DATABASE_URL als Verweis auf den Postgres-Dienst") },
+  check: async () => {
+    const t0 = Date.now();
+    try { await FIN.db().query("select 1"); } catch (e) { return cErr("Datenbank antwortet nicht: " + String(e && e.message || e).replace(/postgres(ql)?:\/\/\S+/gi, "…").slice(0, 120)); }
+    return cOk("Antwortet in " + (Date.now() - t0) + " ms");
+  } });
+CONN.add({ key: "viw", label: "VIW Cloud", sub: "Nextcloud: Dateien und Mail-Anhänge ablegen", category: "Server & Cloud", icon: "cloud", ttl: 30 * 60e3, timeout: 35e3,
+  usedBy: ["VIW Cloud", "Mail-Anhänge ablegen"],
+  missing: () => process.env.VIW_CLOUD_URL || fs.existsSync(path.join(DATA_DIR, "viw-cloud.json")) ? null : { detail: "Nicht angemeldet – in der VIW Cloud anmelden", fix: actFix("go:viw", "VIW Cloud öffnen") },
+  check: async () => {
+    const st = await VIW.status(true);
+    if (!st.configured) return { state: "off", detail: st.error || "Nicht angemeldet", fix: actFix("go:viw", "VIW Cloud öffnen") };
+    if (!st.reachable) return cErr(/401|403|anmeld|login|passwort|unauthori/i.test(st.error || "") ? "Anmeldung abgelehnt – in der VIW Cloud neu anmelden" : "Nicht erreichbar: " + (st.error || "keine Antwort"), actFix("go:viw", "VIW Cloud öffnen"));
+    return cOk((st.host || "Verbunden") + (st.user ? " · " + st.user : ""));
+  } });
+// Hintergrund: gestaffelt prüfen (erst nach dem Umschalten auf den neuen Container)
+if (require.main === module) CONN.start(45e3);
 
 // Einmalige Steuer-Diagnose ins Log (nur wenn STEUER_DIAG=<Zeitraum>, z. B. 2026-Q3): liest sevDesk nur, schreibt nichts.
 async function steuerDiag(key) {

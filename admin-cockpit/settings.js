@@ -1,15 +1,16 @@
-/* Einstellungen: Mail-Konten (Passwörter), privater iCloud-Kalender, Verbindungen, Darstellung, Beträge ausblenden.
-   Öffnen: F.actions.settings() bzw. data-act="settings" – optional "settings:mail" / "settings:icloud" / "settings:<kontoKey>". */
+/* Einstellungen: Mail-Konten (Passwörter), privater iCloud-Kalender, Verbindungen (Kurzfassung → Seite „Verbindungen“, zconn.js), Darstellung, Beträge ausblenden.
+   Öffnen: F.actions.settings() bzw. data-act="settings" – optional "settings:mail" / "settings:icloud" / "settings:int" (= "conn") / "settings:prefs" / "settings:ki" / "settings:<kontoKey>". */
 (function(){
 "use strict";
 var F=window.FSC, esc=F.esc;
 
 F.css(
-'.set{display:grid;gap:18px}'+
-'.set-sec{display:grid;gap:10px}'+
-'.set-sec>h3{font-size:16px}'+
-'.set-p{margin:0;color:var(--ink-2);font-size:13.5px}'+
-'.acard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:10px;background:var(--panel)}'+
+'.set{display:grid;gap:20px}'+
+'.set-sec{display:grid;gap:10px;scroll-margin-top:12px}'+
+'.set-sec>h3{font-size:16px;font-weight:600;margin:0;text-wrap:balance}'+
+'.set-p{margin:0;color:var(--ink-2);font-size:13.5px;line-height:1.45;text-wrap:pretty;hyphens:auto}'+
+/* Karten liegen im Dialog (selbst Glas/Fläche) → verschachtelte Fläche, kein zweites Glas */
+'.acard{border:1px solid var(--line);border-radius:var(--r-sm,12px);padding:12px 14px;display:grid;gap:10px;background:var(--sunk)}'+
 '.acard .ah{display:flex;align-items:center;gap:10px;flex-wrap:wrap}'+
 '.acard .an{display:grid;min-width:0;flex:1}'+
 '.acard .an span{color:var(--ink-3);font-size:13px;overflow-wrap:anywhere}'+
@@ -23,16 +24,32 @@ F.css(
 '.amsg.wait{background:var(--info-soft);color:var(--info)}'+
 '.icl{display:grid;gap:4px}'+
 '.icl label{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;cursor:pointer}'+
-'.icl label:hover{background:var(--sunk)}'+
+'.icl label:hover{background:var(--hover,var(--sunk))}'+
 '.icl label.ro{opacity:.55;cursor:default}'+
 '.icl i{width:11px;height:11px;border-radius:50%;flex:none}'+
 '.icl em{font-style:normal;font-size:11.5px;color:var(--ink-3);margin-left:auto}'+
-'.set-int{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px 16px}'+
-'.set-int>div{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13.5px;min-width:0}'+
-'.set-int>div span:last-child{margin-left:auto;color:var(--ink-3);font-size:12px;white-space:nowrap}'+
+/* Verbindungen: Kurzfassung mit Balken, Probleme antippbar */
+'.set-cn{display:grid;gap:10px;padding:14px;border-radius:var(--r-sm,12px);border:1px solid var(--line);background:var(--sunk)}'+
+'.set-cn-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;font-size:13.5px;color:var(--ink-2)}'+
+'.set-cn-h b{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}'+
+'.set-cn-h em{font-style:normal;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}'+
+'.set-cn-h em.bad{color:var(--bad)}.set-cn-h em.warn{color:var(--warn)}'+
+'.set-cn-bar{display:flex;gap:2px;height:6px;border-radius:99px;overflow:hidden;background:var(--line)}'+
+'.set-cn-bar i{display:block;height:100%;min-width:3px}'+
+'.set-cn-bar .ok{background:var(--ok)}.set-cn-bar .warn{background:var(--warn)}.set-cn-bar .bad{background:var(--bad)}'+
+'.set-cn-l{display:grid;gap:2px}'+
+'.set-cn-p{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 8px;border:0;border-radius:10px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}'+
+'.set-cn-p:hover{background:var(--hover,var(--panel))}'+
+'.set-cn-p .dot{flex:none;margin:0}'+
+'.set-cn-p>span:last-child{display:grid;min-width:0}'+
+'.set-cn-p b{font-size:14px;font-weight:600}'+
+'.set-cn-p small{font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
+'.set-cn .af .btn{min-height:44px}'+
 '.set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}'+
-'.set .seg{max-width:360px;flex:1 1 240px}'+
-'.set-tabs{position:sticky;top:-20px;background:var(--panel);z-index:1;padding:4px 0}'
+'.set .seg{max-width:460px;flex:1 1 280px}'+
+'.set .seg button{min-height:40px}'+
+'.set-tabs{position:sticky;top:-20px;background:var(--panel-solid,var(--panel));z-index:1;padding:4px 0}'+
+'@media (max-width:900px){#setRoot .f{font-size:16px}#setRoot .acard .btn,#setRoot .acard .f{min-height:44px}.set .seg button{min-height:44px}}'
 );
 
 /* ---------- Zustand ---------- */
@@ -87,12 +104,20 @@ function icHtml(){
     (st.configured?'<div><button type="button" class="link" data-ic="cancel">Abbrechen</button></div>':'')+msg+'</div>';
 }
 
+/* Verbindungen: nur die Kurzfassung (echte Prüfung am Server, hier nichts „verbunden“, nur weil eine Variable existiert) */
 function intHtml(){
-  var d=S.data, rows=((d&&d.integrations)||[]).map(function(x){ return '<div><span class="dot '+(x.ok?"ok":"")+'"></span><span>'+esc(x.label)+'</span><span>'+(x.ok?"verbunden":"nicht eingerichtet")+'</span></div>'; });
-  var sk=F.D&&F.D.skikaiser;
-  if(sk) rows.push('<div><span class="dot '+(sk.configured?(sk.error?"bad":"ok"):"")+'"></span><span>Skikaiser (App-Verkäufe)</span><span>'+(!sk.configured?"nicht eingerichtet":sk.error?"Fehler":"verbunden")+'</span></div>');
-  if(!rows.length) return '<div class="muted">'+(S.err?esc(S.err):(d?"—":"Lade …"))+'</div>';
-  return '<div class="set-int">'+rows.join("")+'</div>';
+  var c=(S.data&&S.data.connections)||(F.D&&F.D.connections)||null;
+  var btn='<div class="af"><button type="button" class="btn primary" data-act="conn">Verbindungen öffnen</button></div>';
+  if(!c) return '<div class="set-cn"><p class="set-p">'+(S.err?esc(S.err):(S.data?"Noch nicht geprüft.":"Lade …"))+'</p>'+btn+'</div>';
+  var act=c.total-c.off, prob=(c.problems||[]).slice(0,4), seg=function(n,k){ return n?'<i class="'+k+'" style="flex:'+n+'"></i>':""; };
+  return '<div class="set-cn">'+
+    '<div class="set-cn-h" role="status"><b>'+(act?esc(c.ok)+' von '+esc(act)+' laufen':'Noch nichts eingerichtet')+'</b>'+
+      (c.error?'<em class="bad">'+esc(c.error)+(c.error===1?' Störung':' Störungen')+'</em>':'')+(c.warn?'<em class="warn">'+esc(c.warn)+(c.warn===1?' Hinweis':' Hinweise')+'</em>':'')+
+      (c.checkedAt?'<span>geprüft '+esc(F.ago(c.checkedAt))+'</span>':'')+'</div>'+
+    '<div class="set-cn-bar" aria-hidden="true">'+seg(c.error,"bad")+seg(c.warn,"warn")+seg(c.ok,"ok")+'</div>'+
+    (prob.length?'<div class="set-cn-l">'+prob.map(function(p){ return '<button type="button" class="set-cn-p" data-act="conn:'+esc(p.key)+'"><span class="dot '+(p.state==="error"?"bad":"warn")+'"></span><span><b>'+esc(p.label)+'</b><small title="'+esc(p.detail||"")+'">'+esc(p.detail||"")+'</small></span></button>'; }).join("")+'</div>'
+      :'<p class="set-p">Alle eingerichteten Verbindungen laufen.</p>')+
+    btn+'</div>';
 }
 function skiHtml(){
   var sk=F.D&&F.D.skikaiser;
@@ -105,7 +130,7 @@ function skiHtml(){
 
 function prefsHtml(){
   var t=F.theme(), p=!!F.ls("fsc_priv");
-  return '<div class="set-row"><span>Darstellung</span><div class="seg" role="group" aria-label="Darstellung">'+[["auto","Automatisch"],["light","Hell"],["dark","Dunkel"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div></div>'+
+  return '<div class="set-row"><span>Darstellung</span><div class="seg" role="group" aria-label="Darstellung">'+[["glas","Alpenglas"],["auto","Automatisch"],["light","Hell"],["dark","Dunkel"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div></div>'+
     '<div class="set-row"><span>Beträge ausblenden<br><span class="muted" style="font-size:12.5px">Verdeckt alle Summen, z. B. beim Bildschirm teilen.</span></span><div class="seg" role="group" aria-label="Beträge" style="max-width:240px"><button type="button" data-setpriv="0" aria-pressed="'+!p+'">Sichtbar</button><button type="button" data-setpriv="1" aria-pressed="'+p+'">Ausgeblendet</button></div></div>';
 }
 
@@ -121,7 +146,7 @@ function body(){
     '<section class="set-sec" id="set-prefs"><h3>Ansicht</h3><p class="set-p">Wird nur in diesem Browser gespeichert.</p>'+prefsHtml()+'</section>'+
     '<section class="set-sec" id="set-ski"><h3>Skikaiser</h3>'+skiHtml()+'</section>'+
     (F.kiSettingsHtml?'<section class="set-sec" id="set-ki"><h3>KI (Claude)</h3>'+F.kiSettingsHtml()+'</section>':'')+
-    '<section class="set-sec" id="set-int"><h3>Verbindungen</h3><p class="set-p">Schnittstellen, die am Server eingerichtet sind. Fehlende Zugänge werden in Railway als Variablen hinterlegt.</p>'+intHtml()+'</section>'+
+    '<section class="set-sec" id="set-int"><h3>Verbindungen</h3><p class="set-p">Alle Schnittstellen werden am Server regelmäßig geprüft – mit Grund, was davon abhängt und dem Weg zur Behebung.</p>'+intHtml()+'</section>'+
     '<div class="row" style="flex-wrap:wrap;gap:8px"><a class="btn" href="/admin/logout">Abmelden</a></div>'+
   '</div>';
 }
@@ -163,11 +188,11 @@ F.action("settings",function(where){
   F.closeDrawer();
   F.modal(body(),"wide");
   load(); startPoll();
-  var target=where==="icloud"?"set-icloud":where==="mail"||where==="konten"?"set-mail":where==="prefs"?"set-prefs":"";
+  var target=where==="icloud"?"set-icloud":where==="mail"||where==="konten"?"set-mail":where==="prefs"?"set-prefs":where==="int"||where==="conn"?"set-int":where==="ki"?"set-ki":where==="ski"?"set-ski":"";
   var acc=where&&!target?document.querySelector('#setRoot [data-akey="'+(window.CSS&&CSS.escape?CSS.escape(where):where)+'"]'):null;
   setTimeout(function(){
     var el=acc||(target&&document.getElementById(target));
-    if(el){ el.scrollIntoView({block:"start"}); var i=el.querySelector("input"); if(i) i.focus(); }
+    if(el){ el.scrollIntoView({block:"start"}); var i=el.querySelector("input")||(target==="set-int"&&el.querySelector("[data-act]")); if(i) i.focus(); }
     else { var c=document.querySelector("#setRoot [data-closemodal]"); if(c) c.focus(); }
   },40);
 });
@@ -246,10 +271,10 @@ F.listen("click","#setRoot [data-setpriv]",function(b){ var on=b.getAttribute("d
 var origTheme=F.theme; F.theme=function(t){ var r=origTheme.apply(this,arguments); if(t!==undefined) syncPrefs(); return r; };
 var origPriv=F.priv; F.priv=function(on){ var r=origPriv.apply(this,arguments); if(on!==undefined) syncPrefs(); return r; };
 function syncPrefs(){ var s=document.querySelector("#setRoot #set-prefs"); if(!s) return; s.innerHTML='<h3>Ansicht</h3><p class="set-p">Wird nur in diesem Browser gespeichert.</p>'+prefsHtml(); }
-F.onData(function(){ if(root()){ var s=document.querySelector("#setRoot #set-ski"); if(s) s.innerHTML='<h3>Skikaiser</h3>'+skiHtml(); } });
+F.onData(function(){ if(root()){ var s=document.querySelector("#setRoot #set-ski"); if(s) s.innerHTML='<h3>Skikaiser</h3>'+skiHtml(); if(!(S.data&&S.data.connections)){ var c=document.querySelector("#setRoot #set-int .set-cn"); if(c) c.outerHTML=intHtml(); } } });
 
 F.searcher(function(q){
-  var hits=[["E-Mail-Konten & Passwörter","settings:mail","Einstellungen"],["Privater Kalender (iCloud) verbinden","settings:icloud","Einstellungen"],["Verbindungen & Schnittstellen","settings:","Einstellungen"],["Skikaiser einrichten","settings:","Einstellungen"]];
+  var hits=[["E-Mail-Konten & Passwörter","settings:mail","Einstellungen"],["Privater Kalender (iCloud) verbinden","settings:icloud","Einstellungen"],["Darstellung: Alpenglas, Hell, Dunkel","settings:prefs","Einstellungen"],["Skikaiser einrichten","settings:ski","Einstellungen"]];   // „Verbindungen“ liefert zconn.js
   return hits.filter(function(h){ return h[0].toLowerCase().indexOf(q)>-1; }).map(function(h){ return {group:"Einstellungen",label:h[0],sub:h[2],act:h[1]}; });
 });
 })();

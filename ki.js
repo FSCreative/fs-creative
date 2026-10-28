@@ -135,6 +135,8 @@ module.exports = function createKi(deps) {
     return CLIENT;
   }
   function kiErr(msg, code) { const e = new Error(msg); e.kiCode = code || "error"; return e; }
+  // Ungültiger Schlüssel fällt sonst erst beim nächsten Aufruf auf – merken (für „Verbindungen“ und status())
+  let KEY_BAD = null;
   function gate(feature) {
     if (!configured()) throw kiErr(NOT_SET, "not_configured");
     if (!featureOn(feature)) throw kiErr("Diese KI-Funktion ist in den Einstellungen ausgeschaltet.", "disabled");
@@ -143,7 +145,7 @@ module.exports = function createKi(deps) {
   function mapErr(e, feature) {
     if (e && e.kiCode) return e;
     let msg = "KI-Anfrage fehlgeschlagen.";
-    if (Anthropic && e instanceof Anthropic.AuthenticationError) msg = "Der Anthropic-API-Schlüssel ist ungültig (ANTHROPIC_API_KEY in Railway prüfen).";
+    if (Anthropic && e instanceof Anthropic.AuthenticationError) { msg = "Der Anthropic-API-Schlüssel ist ungültig (ANTHROPIC_API_KEY in Railway prüfen)."; KEY_BAD = { at: new Date().toISOString(), error: msg }; }
     else if (Anthropic && e instanceof Anthropic.PermissionDeniedError) msg = "Der API-Schlüssel hat keine Berechtigung für dieses Modell.";
     else if (Anthropic && e instanceof Anthropic.RateLimitError) msg = "Zu viele KI-Anfragen gerade – bitte in einer Minute nochmal versuchen.";
     else if (Anthropic && e instanceof Anthropic.BadRequestError) msg = "Anthropic hat die Anfrage abgelehnt: " + String(e.message || "").slice(0, 200);
@@ -175,7 +177,7 @@ module.exports = function createKi(deps) {
         if (opts.onText) st.on("text", d => { try { opts.onText(d); } catch (e) {} });
         msg = await st.finalMessage();
       } catch (e) { throw mapErr(e, feature); }
-      track(feature, msg.usage);
+      KEY_BAD = null; track(feature, msg.usage);
       if (msg.stop_reason !== "pause_turn" || (opts.tools && !opts.serverTools)) break;
       // Pausierte Runde fortsetzen (nur ohne eigene Tools; mit Tools übernimmt das die Schleife des Aufrufers)
       params.messages = params.messages.concat([{ role: "assistant", content: msg.content }]);
@@ -761,8 +763,20 @@ module.exports = function createKi(deps) {
     const s = settings(), C = cache();
     return { ok: true, configured: configured(), sdk: !!Anthropic, model: MODEL, modelFast: MODEL_FAST, opusFor: Object.keys(FEATURES).filter(f => PUBLIC_FEATURES.indexOf(f) < 0), notSetText: NOT_SET, month: mk, cost: monthCost(mk), months, limitEur: limitEur(), overLimit: overLimit(), usdEur: USD_EUR, priceUsd: PRICE_USD,
       features: Object.keys(FEATURES).map(k => ({ key: k, label: FEATURES[k].label, on: featureOn(k), essential: FEATURES[k].essential })), senders: s.senders,
-      queue: C.queue.filter(q => q.status === "neu").length, scan: SCAN_LAST, leads: Object.keys(C.leads).reduce((o, k) => { o[k] = C.leads[k].r; return o; }, {}) };
+      queue: C.queue.filter(q => q.status === "neu").length, scan: SCAN_LAST, keyError: KEY_BAD, leads: Object.keys(C.leads).reduce((o, k) => { o[k] = C.leads[k].r; return o; }, {}) };
   }
+
+  // Verbindungstest ohne Kosten: Modell-Liste (1 Eintrag) – prüft Schlüssel und Erreichbarkeit
+  async function ping() {
+    const c = client(); if (!c) return { ok: false, error: NOT_SET };
+    try { await c.models.list({ limit: 1 }, { timeout: 10000, maxRetries: 0 }); KEY_BAD = null; return { ok: true }; }
+    catch (e) {
+      const auth = !!(Anthropic && (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError));
+      if (auth) KEY_BAD = { at: new Date().toISOString(), error: "Der Anthropic-API-Schlüssel ist ungültig." };
+      return { ok: false, auth, status: e && e.status || 0, error: auth ? "Schlüssel ungültig oder gesperrt" : (Anthropic && e instanceof Anthropic.APIConnectionError) ? "Anthropic nicht erreichbar" : "Anthropic meldet Fehler " + ((e && e.status) || "") };
+    }
+  }
+  function health() { return { configured: configured(), overLimit: overLimit(), limitEur: limitEur(), costEur: monthCost().eur, keyError: KEY_BAD, scan: SCAN_LAST }; }
 
   // ── Hintergrund: alle 15 Minuten Rechnungsmails + neue Anfragen (nur mit Schlüssel und eingeschalteter Funktion) ──
   async function tick() { try { await autoScan(false); } catch (e) {} try { await autoLeads(); } catch (e) {} }
@@ -846,5 +860,5 @@ module.exports = function createKi(deps) {
     const j = jsonOf(msg) || {}; return { images: (j.images || []).map(x => ({ id: String(x.id || ""), desc: String(x.desc || "").slice(0, 160) })), eur: usd * USD_EUR };
   }
   async function chatReply(system, state, messages, schema) { const msg = await claude("chat", { system, system2: state, messages, maxTokens: 400, effort: "low", schema }); return jsonOf(msg); }
-  return { handle, configured, status, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign") && !overLimit(), marketingGen, marketingVision, marketingOn: () => configured() && featureOn("marketing") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
+  return { handle, configured, status, ping, health, chatReply, printDesign, printDesignOn: () => configured() && featureOn("printdesign") && !overLimit(), marketingGen, marketingVision, marketingOn: () => configured() && featureOn("marketing") && !overLimit(), fetchAttachment, docmatchReady, extractPayment, extractForDocmatch: (mm, info) => extractBeleg("docmatch", mm, info), uploadFile: id => { const f = UPLOADS.get(id); return f ? { buf: f.buf, fname: f.fname, ctype: f.ctype } : null; }, _test: { periodOf, unclearVouchers, autoScan, sessionFor } };
 };

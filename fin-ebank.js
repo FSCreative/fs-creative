@@ -17,8 +17,10 @@ module.exports = function (D) {
     const now = Math.floor(Date.now() / 1000), h = b64({ typ: "JWT", alg: "RS256", kid: c.app }), p = b64({ iss: "enablebanking.com", aud: "api.enablebanking.com", iat: now, exp: now + 3600 });
     return h + "." + p + "." + crypto.createSign("RSA-SHA256").update(h + "." + p).sign(c.key).toString("base64url");
   }
-  async function api(method, path, body) {
-    const r = await (D.fetch || fetch)(BASE + path, { method, headers: { Authorization: "Bearer " + jwt(), "Content-Type": "application/json", Accept: "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  // Zeitlimit je Anfrage: ein hängender Abruf ließ sonst running=true stehen und der tägliche Abruf lief nie wieder
+  async function api(method, path, body, ms) {
+    let r; try { r = await (D.fetch || fetch)(BASE + path, { method, headers: { Authorization: "Bearer " + jwt(), "Content-Type": "application/json", Accept: "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(ms || 30000) }); }
+    catch (e) { if (e && (e.name === "TimeoutError" || e.name === "AbortError")) throw Object.assign(new Error("Bank: keine Antwort (Zeitüberschreitung)"), { status: 504 }); throw e; }
     const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error("Bank " + r.status + ": " + (j.message || j.error || j.detail || "Fehler")); e.status = r.status; throw e; } return j;
   }
   async function meta() { if (!META) META = (await getMeta("ebank").catch(() => null)) || { sessions: [], pending: null }; return META; }
@@ -111,9 +113,12 @@ module.exports = function (D) {
     return out;
   }
   async function disconnect(bank) { await meta(); const s = (META.sessions || []).find(x => x.bank === bank); if (s) { try { await api("DELETE", "/sessions/" + encodeURIComponent(s.id)); } catch (e) {} } META.sessions = (META.sessions || []).filter(x => x.bank !== bank); await saveMeta(); return {}; }
+  // Verbindungstest ohne Bankzugriff (nur Bankenliste bei Enable Banking – prüft App-ID und Schlüssel, zählt nicht gegen PSD2-Grenzen)
+  async function ping() { const j = await api("GET", "/aspsps?country=AT&psu_type=business", undefined, 12000); return { ok: true, banks: (j.aspsps || []).length }; }
   async function status() {
     const c = cfg(); await meta();
     return { configured: !!(c.app && c.key), at: STATE.at, running: STATE.running, last: STATE.last, error: STATE.error,
+      problems: ((STATE.last && STATE.last.accounts) || []).filter(a => a && a.error).map(a => ({ bank: a.bank, account: a.account || "", error: a.error })),
       sessions: (META.sessions || []).map(s => ({ bank: s.bank, validUntil: s.validUntil, accounts: s.accounts.map(a => { const acc = L.get("CheckAccount", a.accountId) || {}; return { id: a.accountId, name: acc.name || a.name, iban: a.iban, balance: acc.ebankBalance, diff: acc.ebankDiff, at: acc.ebankAt }; }) })) };
   }
   // ── Überweisungen (Payment Initiation) ──
@@ -146,5 +151,5 @@ module.exports = function (D) {
     return { paymentId: String(j.payment_id || ""), url: String(j.url || ""), status: String(j.status || "") };
   }
   async function payStatus(id) { const j = await api("GET", "/payments/" + encodeURIComponent(id)); return { status: String(j.status || ""), final: !!j.final_status, reason: (j.status_reason_information || {}).status_reason_description || "" }; }
-  return { banks, start, finish, sync, check, disconnect, status, payCaps, payStart, payStatus };
+  return { banks, start, finish, sync, check, disconnect, status, ping, payCaps, payStart, payStatus };
 };

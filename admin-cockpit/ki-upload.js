@@ -162,7 +162,7 @@ function footHtml(it){
 function itemHtml(it){
   var k=it.key, st=it.status;
   if(st==="warte"||st==="scanne"||st==="lese") return '<div class="kq kq-busy" id="kq-'+k+'">'+thumbHtml(it)+'<div class="kq-hl"><b>'+spin()+' '+(st==="scanne"?"Scanne …":st==="lese"?"Lese Beleg …":"Wartet …")+'</b><span class="muted small">'+esc(it.name)+' · '+Math.max(1,Math.round(it.size/1024))+' KB</span></div></div>';
-  if(st==="fehler") return '<div class="kq kq-busy" id="kq-'+k+'">'+thumbHtml(it)+'<div class="kq-hl"><b>'+esc(it.name)+'</b><span class="bad-t small">'+esc(it.err)+'</span></div><button type="button" class="btn icon" data-act="kiupdrop:'+k+'" title="Entfernen" aria-label="Entfernen">✕</button></div>';
+  if(st==="fehler") return '<div class="kq kq-busy" id="kq-'+k+'">'+thumbHtml(it)+'<div class="kq-hl"><b>'+esc(it.name)+'</b><span class="bad-t small">'+esc(it.err)+'</span></div><button type="button" class="btn icon" data-act="kiupdrop:'+k+'" title="Entfernen" aria-label="Entfernen">'+F.svg("close")+'</button></div>';
   if(st==="erledigt") return '<div class="kq kq-busy kq-done" id="kq-'+k+'">'+thumbHtml(it)+'<div class="kq-hl"><b><span class="kq-ok">✓</span> '+esc(it.f.supplier||it.name)+' · <span class="money">'+F.eur(num(it.f.gross))+'</span></b><span class="muted small">'+esc(it.doneTxt||"gespeichert")+'</span></div>'+(it.vid?'<button type="button" class="btn" data-act="sdvou:'+esc(it.vid)+'">Ansehen</button>':'')+'</div>';
   return '<div class="kq" id="kq-'+k+'"><div class="kq-top">'+thumbHtml(it)+'<div class="kq-sum" id="kqs-'+k+'">'+sumHtml(it)+'</div></div>'+notesHtml(it)+
     (it.open?fieldsHtml(it):'<button type="button" class="kq-link kq-more" data-act="kqopen:'+k+'">Details ändern</button>')+
@@ -176,8 +176,8 @@ function headHtml(){
 }
 function dropHtml(){
   return '<div class="kidrop" id="kiDrop" tabindex="0" role="button" aria-label="Dateien hier ablegen oder auswählen">'+F.svg("spark")+'<b>Belege hierher ziehen</b><span class="muted">PDF, JPG, PNG, HEIC oder XML-Rechnung · bis 15 MB · mehrere auf einmal</span>'+
-    '<span class="row wrap" style="justify-content:center"><label class="btn primary">Dateien wählen<input type="file" id="kiFiles" multiple accept="application/pdf,image/*,.pdf,.xml,.heic,.heif" hidden></label>'+
-    '<label class="btn">Foto aufnehmen<input type="file" id="kiCam" accept="image/*,application/pdf" capture="environment" multiple hidden></label></span></div>';
+    '<span class="row wrap" style="justify-content:center"><label class="btn primary">'+F.svg("upload")+'Dateien wählen<input type="file" id="kiFiles" multiple accept="application/pdf,image/*,.pdf,.xml,.heic,.heif" hidden></label>'+
+    '<label class="btn">'+F.svg("camera")+'Foto aufnehmen<input type="file" id="kiCam" accept="image/*,application/pdf" capture="environment" multiple hidden></label></span></div>';
 }
 function bodyHtml(){
   var scan=MODE==="scan";
@@ -291,11 +291,11 @@ F.listen("change","[data-kq]",function(el){ var it=find(el.getAttribute("data-kq
 F.css([
 ".kidrop{border:2px dashed var(--line);border-radius:14px;padding:22px 14px;display:grid;gap:8px;justify-items:center;text-align:center;cursor:pointer}",
 ".kidrop.on,.kidrop:hover{border-color:var(--info);background:var(--info-soft)}",
-".kidrop svg{width:26px;height:26px;color:var(--info)}",
+".kidrop>svg{width:26px;height:26px;color:var(--info)}.kidrop .btn svg{width:16px;height:16px;color:currentColor}",
 ".dialog.kqdlg{gap:12px}",
 ".kq-list{display:grid;gap:12px}",
 ".kq-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.kq-head:empty{display:none}",
-".kq{border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:10px;background:var(--panel)}",
+".kq{border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:10px;background:var(--sunk)}",
 ".kq-busy{grid-template-columns:auto minmax(0,1fr) auto;align-items:center}",
 ".kq-done{background:var(--ok-soft);border-color:transparent}",
 ".kq-top{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start}",
@@ -305,7 +305,7 @@ F.css([
 ".kq-pdf{font-size:11px;font-weight:700;color:var(--ink-2)}",
 ".kq-sum,.kq-hl{display:grid;gap:2px;min-width:0}",
 ".kq-sum .kitags{margin-top:3px}",
-".kq-sup{font-size:16px;overflow-wrap:anywhere}",
+".kq-sup{font-size:16px;overflow-wrap:anywhere;text-wrap:balance}",
 ".kq-amt{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}",
 ".kq .small,.kq-head .small{font-size:12.5px}",
 ".kq-f{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}.kq-f .kq-w{grid-column:1/-1}",
@@ -314,7 +314,9 @@ F.css([
 ".kq-hit{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:start;background:var(--ok-soft);border-radius:10px;padding:8px 10px}",
 ".kq-ok{color:var(--ok);font-weight:800}",
 ".kq-cl{display:grid;gap:6px}",
-".kq-c{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:none;color:inherit;font:inherit;cursor:pointer}",
+".kq-c{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:none;color:inherit;font:inherit;cursor:pointer;min-height:44px}",
+".kq-c:hover{background:var(--hover,var(--sunk))}",
+".kq-hl>span,.kq-hl>div{overflow-wrap:anywhere}",
 ".kq-c.on{border-color:var(--ok);background:var(--ok-soft)}.kq-r{color:var(--ok);font-weight:800}",
 ".kq-foot{display:flex;justify-content:space-between;align-items:center;gap:10px}",
 ".kq-go{flex:1 1 auto;max-width:280px;min-height:44px;font-size:15px}",
@@ -324,6 +326,7 @@ F.css([
 ".kq-addcam{justify-self:center}",
 ".kq-spin{display:inline-block;width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:kqspin .8s linear infinite}",
 "@keyframes kqspin{to{transform:rotate(360deg)}}",
+"@media (prefers-reduced-motion:reduce){.kq-spin{animation-duration:2.4s}}",
 "@media (max-width:600px){.dialog.kqdlg{padding:14px}.kq-go{max-width:none}.kq-f{grid-template-columns:1fr 1fr}}"
 ].join("\n"));
 })();
