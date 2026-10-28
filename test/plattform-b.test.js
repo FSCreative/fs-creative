@@ -566,6 +566,26 @@ function unitTests(T) {
       assert.strictEqual(inv.sumGross, want, "Entwurf " + id + ": " + JSON.stringify(pre.items));
     }
   });
+  await t("R3-8: Rechnungsformular – netto vorgegebener Preis nur mit unverändertem Steuersatz netto-genau; Vorschau = Rechnung (je Position wie die Buchhaltung)", async () => {
+    // irow/invItems/invSum aus shared.js mit einer Mini-Zeile (Attribute aus dem erzeugten HTML)
+    const src = fs.readFileSync(path.join(ROOT, "admin-cockpit", "shared.js"), "utf8"), vm = require("vm");
+    const iRow = src.slice(src.indexOf("function irow(it){"), src.indexOf("\n", src.indexOf("function irow(it){"))), iInv = src.slice(src.indexOf("function invItems(){"), src.indexOf('F.listen("input","#irows",invSum);'));
+    const parse = html => { const els = []; html.replace(/<input([^>]*)>|<select([^>]*)>([\s\S]*?)<\/select>/g, (m, ai, as, inner) => { const a = {}, tag = ai != null ? "input" : "select", attrs = ai != null ? ai : as; attrs.replace(/([\w-]+)="([^"]*)"/g, (x, k, v) => { a[k] = v; });
+      let value = a.value || ""; if (tag === "select") { const sel = (inner || "").match(/<option value="([^"]*)" selected>/); value = sel ? sel[1] : ""; }
+      els.push({ a, value, getAttribute: k => (k in a ? a[k] : null) }); }); return { els, querySelector: q => els.find(e => '[data-i="' + e.a["data-i"] + '"]' === q) || null }; };
+    const run = (item, edit) => { const ctx = { esc: x => String(x == null ? "" : x).replace(/"/g, "&quot;"), eur: n => (+n).toFixed(2), out: {} };
+      vm.createContext(ctx); vm.runInContext(iRow + "\n" + iInv, ctx); const row = parse(ctx.irow(item)); if (edit) edit(row);
+      ctx.document = { querySelectorAll: () => [row], getElementById: () => ctx.out }; const items = ctx.invItems(); ctx.invSum(); return { items, sum: ctx.out.textContent }; };
+    const it0 = { name: "Website-Betreuung", qty: 1, priceGross: 120, priceNet: 100, taxRate: 20 };
+    let r = run(it0); assert.strictEqual(r.items[0].priceNet, 100, "unverändert → netto-genau"); assert.strictEqual(r.sum, "Summe brutto 120.00");
+    r = run(it0, row => { row.querySelector('[data-i="tax"]').value = "0"; });
+    assert.strictEqual(r.items[0].priceNet, undefined, "Steuersatz geändert → Bruttopreis gilt"); assert.strictEqual(r.sum, "Summe brutto 120.00");
+    assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 120, priceGross: 120, grossPricing: true }, "Rechnung = Vorschau (120)");
+    // 7 × 10,04 netto: Vorschau wie die Buchhaltung (84,34), nicht 7 × 12,05 = 84,35
+    r = run({ name: "Beratung", qty: 7, priceGross: 12.05, priceNet: 10.04, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.34");
+    r = run({ name: "Beratung", qty: 7, priceGross: 12.05, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.35", "brutto eingegeben");
+    r = run(it0, row => { row.querySelector('[data-i="price"]').value = "150"; }); assert.strictEqual(r.items[0].priceNet, undefined, "Preis neu eingetippt"); assert.strictEqual(r.sum, "Summe brutto 150.00");
+  });
   /* Teil 3: Mollie-Zuordnung über „Mollie tr_…“ nur exakt (fin-mollie.js matchOf) */
   await t("Mollie tr_ in der Notiz: exakt gleiches Brutto → Zuordnung; 11,63 statt 9,69 → keine; tr_abc trifft nicht tr_abcdef", async () => {
     const seed = [acc("2", "Mollie"), contact("40", "SV Stainach")].concat(invSeed("850", { gross: 9.69, extra: { customerInternalNote: "Mollie tr_exact001" } }), invSeed("851", { gross: 11.63, extra: { customerInternalNote: "Mollie tr_wrong001" } }), invSeed("852", { gross: 9.69, extra: { customerInternalNote: "Mollie tr_prefix0012" } }));
