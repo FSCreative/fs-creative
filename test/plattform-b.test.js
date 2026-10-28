@@ -257,15 +257,23 @@ function unitTests(T) {
   }]);
 
   /* ---- dritte Prüfung (R3) ---- */
-  out.push(["R3-1/6: Blitzdings-Rechnung voll gutgeschrieben + Cockpit-Ersatz → keine Doppelrechnung; Ersatz storniert → wieder zu verrechnen (Hinweis); Firmenbuchung netto + Differenz → keine Doppelrechnung", () => {
+  out.push(["R3-1/6, R4-2: Blitzdings-Rechnung voll gutgeschrieben + Cockpit-Ersatz → keine Doppelrechnung; ohne (gültigen) Ersatz → verrechnet mit Prüfhinweis, keine Aktion; Firmenbuchung netto + Differenz → keine Doppelrechnung", () => {
     const b = bk({ id: "cr1", reference: "BD-CR0001", customerName: "Kunde C", paymentStatus: "PAID", sevdeskInvoiceId: "801" });
     const bdInv = I({ id: "801", nr: "RE-801", gross: 399, net: 332.5, paid: 399, contact: "Kunde C", credited: 399, date: "2026-10-01" });
     const recs = { "blitz:cr1": [{ id: "901", nr: "RE-901", gross: 399, date: "2026-11-02", bookingAmount: 399 }] };
     let it = blitz([b], [bdInv, I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02" })], recs)[0];
     assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.invoiced, 399); assert.ok(!(it.notes || []).some(n => /Doppelrechnung/.test(n.text)), JSON.stringify(it.notes));
     it = blitz([b], [bdInv, I({ id: "901", nr: "RE-901", gross: 399, net: 332.5, contact: "Kunde C", date: "2026-11-02", cancelled: true })], recs)[0];
-    assert.strictEqual(it.unbilled, 399, "voll gutgeschrieben + Ersatz storniert = nicht verrechnet"); assert.ok(it.action);
-    assert.ok(it.notes.some(n => /RE-801 ist voll gutgeschrieben/.test(n.text)), JSON.stringify(it.notes));
+    assert.strictEqual(it.unbilled, 0, "voll gutgeschrieben, Ersatz storniert → bleibt verrechnet (A3: bewusste Minderung)"); assert.strictEqual(it.action, null);
+    assert.ok(it.notes.some(n => n.lvl === "warn" && /RE-801 ist voll gutgeschrieben – Storno bzw. Kulanz prüfen/.test(n.text)), JSON.stringify(it.notes));
+    assert.ok(!it.notes.some(n => /gehört schon zu|Online bezahlt, aber ohne Rechnung/.test(n.text)), "kein Hinweis auf die eigene Rechnung, kein „ohne Rechnung“: " + JSON.stringify(it.notes));
+    // nur die Blitzdings-Rechnung, voll gutgeschrieben (Kulanz) bzw. nur eine voll gutgeschriebene Cockpit-Rechnung → ebenso
+    for (const [books, invs, rr] of [[[b], [bdInv], {}], [[bk({ id: "cr8", reference: "BD-CR0008", customerName: "Kunde C" })], [I({ id: "881", nr: "RE-881", gross: 399, contact: "Kunde C", credited: 399 })], { "blitz:cr8": [{ id: "881", nr: "RE-881", gross: 399, date: "2026-11-06" }] }]]) {
+      it = blitz(books, invs, rr)[0]; assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null); assert.ok(it.notes.some(n => /voll gutgeschrieben – Storno bzw. Kulanz prüfen/.test(n.text)), JSON.stringify(it.notes));
+      assert.ok(!it.notes.some(n => /gehört schon zu|Online bezahlt/.test(n.text)), JSON.stringify(it.notes)); }
+    // stornierte Buchung mit voll gutgeschriebener Rechnung: schon erledigt, kein „Storno prüfen“
+    it = blitz([bk({ id: "cr9", reference: "BD-CR0009", customerName: "Kunde C", status: "CANCELLED", sevdeskInvoiceId: "801" })], [bdInv])[0];
+    assert.ok(!it || !(it.notes || []).some(n => /Storno prüfen/.test(n.text)), JSON.stringify(it && it.notes));
     // teilweise gutgeschrieben bleibt wie bisher (A3: Gutschrift = bewusste Minderung, keine Nachverrechnung)
     it = blitz([b], [Object.assign({}, bdInv, { credited: 99 })])[0]; assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.action, null);
     // echte Doppelrechnung bleibt rot
@@ -520,23 +528,29 @@ function unitTests(T) {
     // neue ID, die es noch nicht gibt (z. B. Übernahme aus sevDesk): bleibt wie bisher
     assert.strictEqual(String((await E.L.request("POST", "/Contact", { body: { id: "4711", name: "Neu" } })).objects.id), "4711");
   });
-  await t("R3-2: kochdu – jede Verrechnung von Hand gehört zu genau einem Monat; storniert + korrigiert neu ausgestellt (anderer Betrag) → Doppelung besteht; Oktober-Storno nimmt dem September nichts", async () => {
-    const two = [contact("40", "La Taverna")].concat(invSeed("840", { gross: 120, extra: { status: "1000", paidAmount: "120.00" } }), invSeed("841", { gross: 130, date: "2026-11-01", extra: { status: "1000", paidAmount: "130.00" } }));
-    const months = [{ month: "2026-09", doubleBilledCents: 5000, manualCents: 5000, doc: { docId: "840", nr: "RE-840" } }, { month: "2026-10", doubleBilledCents: 6000, manualCents: 6000, doc: { docId: "841", nr: "RE-841" } }];
-    // Sept: Hand-Rechnung 03.10. gültig; Okt: Hand-Rechnung 02.11. storniert (nicht neu) → nur Sept 50
-    let E = finSetup(two.concat(invSeed("850", { gross: 50, extra: { status: "1000", paidAmount: "50" } }), invSeed("860", { gross: 60, extra: { status: "1000", paidAmount: "60", cancelled: true } })), null,
-      { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-10-03", gross: 50 }, { id: "860", nr: "RE-860", date: "2026-11-02", gross: 60 }] } }); await E.L.load();
-    await E.C.kochduDouble([{ id: "R1", name: "La Taverna", months }]);
-    assert.deepStrictEqual((await E.P.list()).map(x => [x.key, x.amount]), [["kodouble:840:5000", -50]]);
-    // Sept-Hand-Rechnung 50 storniert, korrigiert als 52 neu ausgestellt → Doppelung besteht (50)
-    const sept = [{ id: "R1", name: "La Taverna", months: [Object.assign({}, months[0], { manualCents: 5200 })] }];
-    E = finSetup(two.concat(invSeed("850", { gross: 50, extra: { status: "1000", paidAmount: "50", cancelled: true } }), invSeed("851", { gross: 52, extra: { status: "1000", paidAmount: "52" } })), null,
-      { invoices: { "kochdu:R1": [{ id: "850", nr: "RE-850", date: "2026-10-03", gross: 50 }, { id: "851", nr: "RE-851", date: "2026-10-05", gross: 52 }] } }); await E.L.load();
-    await E.C.kochduDouble(sept); assert.deepStrictEqual((await E.P.list()).map(x => x.amount), [-50]);
-    // August-Hand-Rechnung (05.09.) storniert und als 48 neu → betrifft den September nicht
-    E = finSetup(two.concat(invSeed("830", { gross: 45, extra: { status: "1000", paidAmount: "45", cancelled: true } }), invSeed("831", { gross: 48, extra: { status: "1000", paidAmount: "48" } }), invSeed("850", { gross: 50, extra: { status: "1000", paidAmount: "50" } })), null,
-      { invoices: { "kochdu:R1": [{ id: "830", nr: "RE-830", date: "2026-09-05", gross: 45 }, { id: "831", nr: "RE-831", date: "2026-09-06", gross: 48 }, { id: "850", nr: "RE-850", date: "2026-10-03", gross: 50 }] } }); await E.L.load();
-    await E.C.kochduDouble(sept); assert.deepStrictEqual((await E.P.list()).map(x => x.amount), [-50]);
+  await t("R4-1: kochdu – Storno einer Verrechnung von Hand (vor 21.10.) hebt die Doppelung auf (auch ohne Sept-Teil neu ausgestellt); korrigiert neu ausgestellt → besteht; ältester Monat zuerst", async () => {
+    // realistische Daten: Monatsrechnung 09/2026 am 15.10. (RE-840), 10/2026 am 01.11. (RE-841)
+    const base = [contact("40", "La Taverna")].concat(invSeed("840", { gross: 120, date: "2026-10-15", extra: { status: "1000", paidAmount: "120.00" } }), invSeed("841", { gross: 130, date: "2026-11-01", extra: { status: "1000", paidAmount: "130.00" } }));
+    const sept = { month: "2026-09", doubleBilledCents: 5000, manualCents: 5000, doc: { docId: "840", nr: "RE-840" } }, okt = { month: "2026-10", doubleBilledCents: 6000, manualCents: 6000, doc: { docId: "841", nr: "RE-841" } };
+    const run = async (hand, months) => { const seed = base.slice(), recs = [];
+      hand.forEach(([id, date, gross, cancelled]) => { seed.push(...invSeed(id, { gross, date, extra: { status: "1000", paidAmount: String(gross), cancelled: !!cancelled } })); recs.push({ id, nr: "RE-" + id, date, gross }); });
+      const E = finSetup(seed, null, { invoices: { "kochdu:R1": recs } }); await E.L.load(); await E.C.kochduDouble([{ id: "R1", name: "La Taverna", months: months || [sept] }]);
+      return { E, list: (await E.P.list()).map(x => [x.key, x.amount]) }; };
+    assert.deepStrictEqual((await run([["850", "2026-10-16", 80, true]])).list, [], "16.10. (Sept 50 + Okt 30) storniert, nicht neu");
+    assert.deepStrictEqual((await run([["850", "2026-10-15", 80, true]])).list, [], "15.10. storniert");
+    assert.deepStrictEqual((await run([["850", "2026-10-20", 50, true]])).list, [], "20.10. storniert");
+    assert.deepStrictEqual((await run([["850", "2026-10-05", 80, true], ["851", "2026-10-06", 30]])).list, [], "storniert und ohne Sept-Teil neu ausgestellt");
+    assert.deepStrictEqual((await run([["850", "2026-10-03", 50]])).list, [["kodouble:840:5000", -50]], "Hand-Rechnung gültig → Doppelung besteht");
+    assert.deepStrictEqual((await run([["850", "2026-10-03", 50, true], ["851", "2026-10-05", 52]])).list, [["kodouble:840:5000", -50]], "korrigiert neu ausgestellt (52 statt 50) → besteht");
+    assert.deepStrictEqual((await run([["830", "2026-09-05", 45, true], ["831", "2026-09-06", 48], ["850", "2026-10-03", 50]])).list, [["kodouble:840:5000", -50]], "Aug-Verrechnung storniert und neu → betrifft den Sept nicht");
+    // nach dem 21.10. (Sept-Monatsrechnung gab es schon) deckt eine Verrechnung von Hand den September nicht mehr – ihr Storno ändert nichts
+    assert.deepStrictEqual((await run([["850", "2026-10-03", 50], ["860", "2026-10-28", 40, true]])).list, [["kodouble:840:5000", -50]]);
+    // zwei doppelte Monate, ein Storno über 80 (16.10.): zuerst September (50), Rest 30 für Oktober → Oktober 60 − 30
+    const two = await run([["850", "2026-10-16", 80, true]], [sept, okt]);
+    assert.deepStrictEqual(two.list, [["kodouble:841:3000", -30]]);
+    const it = (await two.E.P.list())[0]; assert.ok(/stornierte Verrechnung von Hand vorhanden – bitte prüfen/.test(it.detail), it.detail);
+    assert.ok(two.E.C.valid(it), "Vorschlag bleibt gültig (gleiche Rechnung beim Prüfen)");
+    const r = await two.E.P.accept(it.id); assert.strictEqual(+two.E.L.get("CreditNote", r.result.creditNoteId).sumGross, 30);
   });
   /* Teil 2c: Anzeigen (B11) – plat.js/geld.js in einer vm mit Stub-Cockpit */
   const bootUi = (file, D, UI, over) => { const vm = require("vm"), views = {};
@@ -578,21 +592,28 @@ function unitTests(T) {
       assert.strictEqual(inv.sumGross, want, "Entwurf " + id + ": " + JSON.stringify(pre.items));
     }
   });
-  await t("R3-8: Rechnungsformular – netto vorgegebener Preis nur mit unverändertem Steuersatz netto-genau; Vorschau = Rechnung (je Position wie die Buchhaltung)", async () => {
+  await t("R3-8/R4-3: Rechnungsformular – netto vorgegebener Preis bleibt netto-genau, auch bei geändertem Steuersatz (Brutto neu aus dem Netto); Vorschau = Rechnung", async () => {
     // irow/invItems/invSum aus shared.js mit einer Mini-Zeile (Attribute aus dem erzeugten HTML)
     const src = fs.readFileSync(path.join(ROOT, "admin-cockpit", "shared.js"), "utf8"), vm = require("vm");
     const iRow = src.slice(src.indexOf("function irow(it){"), src.indexOf("\n", src.indexOf("function irow(it){"))), iInv = src.slice(src.indexOf("function invItems(){"), src.indexOf('F.listen("input","#irows",invSum);'));
     const parse = html => { const els = []; html.replace(/<input([^>]*)>|<select([^>]*)>([\s\S]*?)<\/select>/g, (m, ai, as, inner) => { const a = {}, tag = ai != null ? "input" : "select", attrs = ai != null ? ai : as; attrs.replace(/([\w-]+)="([^"]*)"/g, (x, k, v) => { a[k] = v; });
       let value = a.value || ""; if (tag === "select") { const sel = (inner || "").match(/<option value="([^"]*)" selected>/); value = sel ? sel[1] : ""; }
-      els.push({ a, value, getAttribute: k => (k in a ? a[k] : null) }); }); return { els, querySelector: q => els.find(e => '[data-i="' + e.a["data-i"] + '"]' === q) || null }; };
+      els.push({ a, value, getAttribute: k => (k in a ? a[k] : null), setAttribute: (k, v) => { a[k] = String(v); } }); }); return { els, querySelector: q => els.find(e => '[data-i="' + e.a["data-i"] + '"]' === q) || null }; };
     const run = (item, edit) => { const ctx = { esc: x => String(x == null ? "" : x).replace(/"/g, "&quot;"), eur: n => (+n).toFixed(2), out: {} };
-      vm.createContext(ctx); vm.runInContext(iRow + "\n" + iInv, ctx); const row = parse(ctx.irow(item)); if (edit) edit(row);
+      vm.createContext(ctx); vm.runInContext(iRow + "\n" + iInv, ctx); const row = parse(ctx.irow(item)); if (edit) edit(row, ctx);
       ctx.document = { querySelectorAll: () => [row], getElementById: () => ctx.out }; const items = ctx.invItems(); ctx.invSum(); return { items, sum: ctx.out.textContent }; };
     const it0 = { name: "Website-Betreuung", qty: 1, priceGross: 120, priceNet: 100, taxRate: 20 };
     let r = run(it0); assert.strictEqual(r.items[0].priceNet, 100, "unverändert → netto-genau"); assert.strictEqual(r.sum, "Summe brutto 120.00");
-    r = run(it0, row => { row.querySelector('[data-i="tax"]').value = "0"; });
-    assert.strictEqual(r.items[0].priceNet, undefined, "Steuersatz geändert → Bruttopreis gilt"); assert.strictEqual(r.sum, "Summe brutto 120.00");
-    assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 120, priceGross: 120, grossPricing: true }, "Rechnung = Vorschau (120)");
+    // Steuersatz 20 → 0 % (wie der Handler: netTax, dann Summe): Netto 100 bleibt, Brutto wird 100; Rechnung = Vorschau = 100
+    r = run(it0, (row, c) => { row.querySelector('[data-i="tax"]').value = "0"; c.netTax(row); });
+    assert.strictEqual(r.items[0].priceNet, 100, "Netto bleibt"); assert.strictEqual(r.items[0].priceGross, 100); assert.strictEqual(r.sum, "Summe brutto 100.00");
+    assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 100 }, "Rechnung netto 100 = Vorschau");
+    r = run(it0, (row, c) => { row.querySelector('[data-i="tax"]').value = "10"; c.netTax(row); }); assert.strictEqual(r.items[0].priceNet, 100); assert.strictEqual(r.sum, "Summe brutto 110.00");
+    // Preis von Hand geändert, danach Steuersatz → der eingetippte Bruttopreis gilt (Vorschau = Rechnung)
+    r = run(it0, (row, c) => { row.querySelector('[data-i="price"]').value = "150"; row.querySelector('[data-i="tax"]').value = "0"; c.netTax(row); });
+    assert.strictEqual(r.items[0].priceNet, undefined); assert.strictEqual(r.sum, "Summe brutto 150.00"); assert.deepStrictEqual(T.sevPosPrice(r.items[0], 0), { price: 150, priceGross: 150, grossPricing: true });
+    // Netto mit mehr als 2 Nachkommastellen (z. B. KI): Vorschau rundet den Einzelpreis wie der Server (7 × 36,93 = 258,51 netto → 310,21)
+    r = run({ name: "KI", qty: 7, priceGross: 44.32, priceNet: 36.9333, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 310.21");
     // 7 × 10,04 netto: Vorschau wie die Buchhaltung (84,34), nicht 7 × 12,05 = 84,35
     r = run({ name: "Beratung", qty: 7, priceGross: 12.05, priceNet: 10.04, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.34");
     r = run({ name: "Beratung", qty: 7, priceGross: 12.05, taxRate: 20 }); assert.strictEqual(r.sum, "Summe brutto 84.35", "brutto eingegeben");
@@ -690,6 +711,16 @@ function unitTests(T) {
       assert.strictEqual(K(u1, "090"), -20); assert.strictEqual(K(u3, "090"), -20, "Rücknahme zählt gegen (Vorzeichen " + sg + ")");
       const e = d => r2(S.computeJab({ invoices: [], vouchers: [], creditNotes: [d] }, StIst, 2026).rev);
       assert.strictEqual(e(once), -100); assert.strictEqual(e(thrice), -100);
+    }
+  });
+  await t("R4-4: Rücknahme am selben Tag vor der Zahlung gelistet → Richtung aus der Summe der Zahlungen (Gutschrift und Beleg mit negativer Summe zählen einmal, Vorzeichen richtig)", () => {
+    const cn = pays => ({ id: "cnR4", sevId: "1", nr: "GU-1", type: "GU", status: 1000, date: "2026-11-03", delivery: "2026-11-03", taxType: "default", taxRule: "1", contact: "Kunde", country: "AT", uid: "", net: 100, tax: 20, gross: 120, pays, lines: [{ rate: 20, net: 100, tax: 20 }], enshrined: false });
+    for (const sg of [1, -1]) {
+      const d = cn([{ date: "2026-11-10", amount: -120 * sg }, { date: "2026-11-10", amount: 120 * sg }, { date: "2026-11-12", amount: 120 * sg }]);
+      assert.strictEqual(K(S.computeUva({ invoices: [], vouchers: [], creditNotes: [d] }, StIst, Q4), "090"), -20, "UVA (Vorzeichen " + sg + ")");
+      assert.strictEqual(r2(S.computeJab({ invoices: [], vouchers: [], creditNotes: [d] }, StIst, 2026).rev), -100, "E1a (Vorzeichen " + sg + ")");
+      const p = payout({ pays: [{ date: "2026-11-10", amount: -95.5 * sg }, { date: "2026-11-10", amount: 95.5 * sg }, { date: "2026-11-14", amount: 95.5 * sg }], paid: 95.5 * sg });
+      assert.strictEqual(K(S.computeUva({ invoices: [p], vouchers: [], creditNotes: [] }, StIst, Q4), "022"), 0.75, "Beleg mit negativer Summe (Vorzeichen " + sg + ")");
     }
   });
   await t("B9: Gutschrift mit USt-Positionen gleichen Vorzeichens und einer 0-%-Position mit anderem Vorzeichen → normal gebucht (wie vor dem Umbau); USt-Konflikt → Prüfung", () => {

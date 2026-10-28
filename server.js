@@ -1367,7 +1367,8 @@ async function finApiSaveCheck(who, fpath, body) {
     const r = await finApiDoc(T, String(doc.id).trim()); if (r.err) return r;
     cur = r.doc; if (!finApiOwns(who, cur)) return "fremder Beleg";
     if (String(cur.status) !== "100" || cur.enshrined) return "Beleg ist kein Entwurf bzw. festgeschrieben";
-  } else doc.finApiSource = who;
+  }
+  doc.finApiSource = who; delete doc.finApiWho;   // Eigentum setzt der Server – auch beim Überarbeiten nie an eine andere Plattform übergeben (R4-6)
   const st = doc.status == null || doc.status === "" ? "100" : String(doc.status);
   if (st !== "100" && !(st === "200" && k === "invoice" && !cur && who === "blitzdings")) return "Status " + st;   // offen anlegen nur Blitzdings
   if (doc.paidAmount != null && doc.paidAmount !== "" && Math.abs(+doc.paidAmount || 0) > 0.004) return "paidAmount";
@@ -2326,14 +2327,15 @@ function abgleichBlitz(o) {
     claim(id, c); return true; }); });
   C.forEach(c => {
     const ls = [], seen = {}, b = c.b;
-    // voll gutgeschriebene Rechnung zählt wie eine stornierte (B2: aufgehobene Blitzdings-Rechnung + Ersatz ist keine Doppelrechnung)
-    const push = (l, src) => { if (!l || l.state === "storniert" || fullCr(l) || (l.id && seen[l.id])) return; if (l.id) seen[l.id] = 1; l.src = src; ls.push(l); };
-    if (c.sevI) { if (!c.sevI.cancelled && !fullCr(c.sevI)) push(L0(c.sevI, "blitz"), "blitz"); }
+    const push = (l, src) => { if (!l || l.state === "storniert" || (l.id && seen[l.id])) return; if (l.id) seen[l.id] = 1; l.src = src; ls.push(l); };
+    if (c.sevI) { if (!c.sevI.cancelled) push(L0(c.sevI, "blitz"), "blitz"); }
     else if (b.sevdeskInvoiceId) push(invLink({ id: String(b.sevdeskInvoiceId), nr: "", date: dayOf(b), gross: amtOf(b) }, sevById, oldest), "blitz");   // (noch) nicht geladen
     c.recsB.forEach(r => push(invLink(r, sevById, oldest), "cockpit"));
     c.cockpitOk.forEach(id => { if (!seen[id]) push(L0(sevById[id], "cockpit"), "cockpit"); });
     c.refHits.forEach(i => { if (!i.cancelled) push(L0(i, "ref"), "ref"); });
-    c.live = ls;
+    // voll gutgeschriebene Rechnung zählt nur dann wie eine stornierte, wenn es zur Buchung eine andere gültige Rechnung gibt (Ersatz, B2);
+    // allein bleibt sie „verrechnet“ (A3: Gutschrift = bewusste Minderung) – mit Prüfhinweis, ohne Aktion (R4-2)
+    const alive = ls.filter(l => !fullCr(l)); c.live = alive.length ? alive : ls;
   });
   // Durchgang 2: Kunde + Betrag/Datum nur gegen freie Rechnungen – Zuordnung nach zeitlicher Nähe (eine Rechnung ↔ eine Buchung, B3)
   const days = (a, b2) => Math.round((Date.parse(a + "T12:00:00Z") - Date.parse(b2 + "T12:00:00Z")) / 864e5);
@@ -2352,7 +2354,7 @@ function abgleichBlitz(o) {
   });
   pairs.sort((x, y) => x.dist - y.dist || x.after - y.after || dayOf(x.c.b).localeCompare(dayOf(y.c.b)) || String(x.i.id).localeCompare(String(y.i.id)));
   pairs.forEach(p => { if (p.c.weak || claimed.has(String(p.i.id))) return; p.c.weak = p.i; claim(p.i.id, p.c); });
-  C.forEach(c => { if (c.live.length || c.weak || !candOf[c.b.id]) return; const t = candOf[c.b.id].find(i => claimed.has(String(i.id))); if (t) c.takenBy = { inv: t, by: claimed.get(String(t.id)) }; });
+  C.forEach(c => { if (c.live.length || c.weak || !candOf[c.b.id]) return; const t = candOf[c.b.id].find(i => claimed.has(String(i.id)) && claimedBy.get(String(i.id)) !== String(c.b.id)); if (t) c.takenBy = { inv: t, by: claimed.get(String(t.id)) }; });   // eigene Rechnung nie als „gehört schon zu …“
   // Sammelrechnungen: mehrere Buchungen desselben Kunden, die zusammen genau eine noch freie Rechnung ergeben
   const bnorm = x => String(x || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|mbh|ges\.?m\.?b\.?h\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
   const nameHit = (a, b2) => { a = bnorm(a); b2 = bnorm(b2); return a.length >= 4 && b2.length >= 4 && (a.indexOf(b2) > -1 || b2.indexOf(a) > -1); };
@@ -2396,7 +2398,7 @@ function abgleichBlitz(o) {
     // Storniert/erstattet: zählt nie zu „Zu verrechnen“; mit gültiger Rechnung bzw. Zahlung → „Storno prüfen“ (nie automatisch stornieren)
     if (cancelledB(b)) {
       c.live.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-      const inv = c.live.filter(l => l.id && l.state !== "manuell");
+      const inv = c.live.filter(l => l.id && l.state !== "manuell" && !fullCr(l));   // voll gutgeschrieben = schon erledigt
       if (inv.length) out.push(review("Storno prüfen: Buchung " + (b.status === "CANCELLED" ? "storniert" : "erstattet") + ", Rechnung " + inv.map(l => l.nr || "Entwurf").join(", ") + " ist noch gültig – offen: stornieren, bezahlt: Gutschrift oder bewusst behalten (Stornogebühr). Nichts wird automatisch gebucht.", "bad", inv, { cancelled: true }));
       else if (b.status === "CANCELLED" && b.paymentStatus === "PAID") out.push(review("Zahlung nach Storno: in Mollie erstatten oder Storno aufheben (danach normale Verrechnung).", "bad", [], { cancelled: true, paidAfterCancel: true }));
       return;
@@ -2416,10 +2418,9 @@ function abgleichBlitz(o) {
     const viaGroup = !c.live.length && !c.weak && groupInv[b.id];
     const links = c.live.length ? c.live.slice() : c.weak ? [L0(c.weak, "name")] : viaGroup ? [L0(viaGroup, "group")] : [];
     links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
-    const dead = !links.length ? (c.sevI && (c.sevI.cancelled || fullCr(c.sevI)) ? L0(c.sevI, "blitz") : rec ? invLink(rec, sevById, oldest) : null) : null;   // nur zur Historie (storniert bzw. voll gutgeschrieben)
+    const dead = !links.length ? (c.sevI && c.sevI.cancelled ? L0(c.sevI, "blitz") : rec ? invLink(rec, sevById, oldest) : null) : null;   // nur zur Historie (storniert)
     if (dead && dead.id) linked[dead.id] = 1;
-    const crDead = !links.length && [c.sevI].concat(c.recsB.map(r => r && r.id && sevById[String(r.id)])).find(x => x && !x.cancelled && fullCr(x));
-    if (crDead) notes.push({ lvl: "info", text: "Rechnung " + (crDead.nr || "Entwurf") + " ist voll gutgeschrieben und zählt wie storniert. War die Buchung bewusst kostenlos (Kulanz), Buchung in Blitzdings anpassen statt neu zu verrechnen." });
+    if (links.length && links.every(fullCr)) notes.push({ lvl: "warn", text: "Rechnung " + links.map(l => l.nr || "Entwurf").join(", ") + " ist voll gutgeschrieben – Storno bzw. Kulanz prüfen: bewusst kostenlos → so lassen; sonst neue Rechnung von Hand (nichts wird automatisch verrechnet)." });
     const team = c.live.length ? mates(c) : [c], shared = team.length > 1;
     const deposit = c.recsB.some(r => r && r.deposit), group = !!viaGroup || shared || c.recsB.some(r => r && r.group);
     const st = sumState(links), sorted = links.slice().sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
@@ -2679,7 +2680,9 @@ function abgleichBuild(ctx) {
     // Vorjahr geladen, aber dieses Haus fehlt darin (bzw. ohne Monate), obwohl es im Vorjahr Abrechnungen gibt: Vorjahr nicht beurteilbar (R3-5) –
     // keine Erstattung/Nachverrechnung für Vorjahres-Zeiträume; liegt der fällige Zeitraum selbst im Vorjahr, gesperrt wie „Daten fehlen“
     const pv = vaPrevBy[o.key], touchesPrev = x => (x.from && x.to ? x.from <= prevEnd && x.to >= winStart : x.adj ? (Array.isArray(x.parts) ? x.parts : []).some(p => p && String(p.from || "") <= prevEnd) : String(x.date || "") <= prevEnd);
-    const prevUnk = !vaPrevMissing(o.key) && !(pv && Array.isArray(pv.months) && pv.months.length) && (from <= prevEnd || R.liveAll.some(o2 => touchesPrev(o2.x)));
+    // fälliger Zeitraum beginnt im Vorjahr – nicht beim bloßen Standardbeginn eines Hauses ohne Abrechnung, Gebühren und Abrechnungsbeginn (R4-5)
+    const fromPrev = from <= prevEnd && !!(billedUntil || first || start || R.liveAll.length);
+    const prevUnk = !vaPrevMissing(o.key) && !(pv && Array.isArray(pv.months) && pv.months.length) && (fromPrev || R.liveAll.some(o2 => touchesPrev(o2.x)));
     if (prevUnk) notes.push("Gebührendaten " + (+year - 1) + " für dieses Haus fehlen (die Quelle liefert es für " + (+year - 1) + " nicht) – Vorjahr nicht geprüft, keine Erstattung oder Nachverrechnung dafür. Bitte neu laden bzw. in der Quelle prüfen.");
     // ── Abgleich je verrechnetem Zeitraum (A1/A2/A8/A9): jede Quartalsrechnung (bzw. zusammenhängende Gruppe) wird nur mit den Anreisemonaten
     //    IHRES Zeitraums verglichen; Nachverrechnungen zählen über ihre Teilzeiträume (parts) genau dort. Geprüft werden nur Zeiträume, deren
@@ -2736,7 +2739,7 @@ function abgleichBuild(ctx) {
     const swDead = sw && R.deadAll.some(x => x.id && !x.adj && (!x.to || x.to <= sw.cutoff));
     const needSrc = !!lastSrc && lastSrc !== o.src && set.ackSrc !== o.src;
     const needLive = o.src === "partner" && !!o.billingLiveSince && recAll.length > 0 && String(o.billingLiveSince).slice(0, 10) > String((lastRec && lastRec.date) || "") && set.ackLive !== o.billingLiveSince;
-    if ((vaPrevMissing(o.key) && (from <= prevEnd || R.live.length > 0)) || (prevUnk && from <= prevEnd)) blocked = "Gebührendaten " + (+year - 1) + " fehlen – neu laden";
+    if ((vaPrevMissing(o.key) && (fromPrev || R.live.length > 0)) || (prevUnk && fromPrev)) blocked = "Gebührendaten " + (+year - 1) + " fehlen – neu laden";
     else if ((o.basis || "arrival") !== "arrival") blocked = o.src === "antonhaus" ? "Antonhaus liefert noch nach Buchungseingang – Umstellung auf Anreise ausstehend (neue Antonhaus-Version nötig)" : o.src === "alpinappart" ? "Alpinappart kommt nicht von der Partner-Plattform – verrechnet wird nur über die Plattform (ab dem ersten Monat live)" : "Datumsbasis „" + (o.basis || "?") + "“ statt Anreise – nicht verrechenbar";
     else if (o.key === "antonhaus" && !sw && recAll.length) {
       blocked = "Umstellung auf Anreise noch nicht bestätigt – bis dahin kein Verrechnen";

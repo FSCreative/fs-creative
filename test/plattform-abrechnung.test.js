@@ -108,6 +108,15 @@ function unitTests(T) {
     // neues Haus ohne Vorjahres-Abrechnungen: kein Hinweis, normal verrechnet
     it = va({ year: "2027", today: "2027-04-05", sev: mkSev([]), bill: { prices: {}, sites: {}, invoices: {} }, valuero: { objects: [ha([pm({ month: "2027-01", provisionCents: 1000 })], { billingStart: "2027-01-01" })] }, valueroPrev: { objects: [] } }).find(x => x.key === "valuero:haus-a");
     assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.unbilled, 10); assert.ok(!(it.notes || []).some(n => /Gebührendaten/.test(n)));
+    // R4-5: Haus ganz ohne Gebühren, Abrechnung und Abrechnungsbeginn, im Vorjahr nicht geliefert bzw. Vorjahr nicht geladen → nicht „Daten fehlen“
+    for (const pv of [{ objects: [] }, { objects: [], missing: [{ key: "haus-c" }] }]) {
+      it = va({ year: "2027", today: "2027-04-05", sev: mkSev([]), bill: { prices: {}, sites: {}, invoices: {} }, valuero: { objects: [ha([pm({ month: "2027-01", provisionCents: 0 })], { key: "haus-c", billingStart: null })] }, valueroPrev: pv }).find(x => x.key === "valuero:haus-c");
+      assert.ok(!/Gebührendaten/.test(it.blocked || ""), it.blocked); assert.ok(/Abrechnungsbeginn/.test(it.blocked || ""), it.blocked); assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.refund, 0);
+      assert.ok(!(it.notes || []).some(n => /Gebührendaten/.test(n)), JSON.stringify(it.notes));
+    }
+    // … mit Abrechnungsbeginn im Vorjahr bleibt es gesperrt (fälliger Zeitraum im Vorjahr nicht beurteilbar)
+    it = va({ year: "2027", today: "2027-04-05", sev: mkSev([]), bill: { prices: {}, sites: {}, invoices: {} }, valuero: { objects: [ha([pm({ month: "2027-01", provisionCents: 0 })], { key: "haus-c", billingStart: "2026-10-01" })] }, valueroPrev: { objects: [] } }).find(x => x.key === "valuero:haus-c");
+    assert.ok(/Gebührendaten 2026 fehlen/.test(it.blocked || ""), it.blocked); assert.strictEqual(it.unbilled, 0);
   }]);
   out.push(["VA-3: Online-Zahlung nach der Abrechnung (Mollie-Anteil eines verrechneten Monats steigt) → „zu viel verrechnet“ (Gutschrift prüfen), nie still", () => {
     let it = vaA(null, prevA({ mollieFeesCents: 3000 }));
@@ -644,6 +653,11 @@ function createMock() {
     assert.strictEqual(M.state.saved.length, before, "nichts davon erreichte die Buchhaltung");
     // eigener Entwurf: eigene Position überarbeiten erlaubt, festgeschriebene/offene eigene Rechnung nicht
     assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "801", header: "kochdu-Gebühr Barzahlungen 10/2026", status: "100" }, invoicePosSave: [{ id: "8011", price: "2.00", quantity: 1, taxRate: 20 }], invoicePosDelete: null })).status, 200);
+    // R4-6: eigenen Entwurf nicht an eine andere Plattform übergeben – finApiSource/finApiWho setzt der Server
+    assert.strictEqual((await fa(K, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "801", header: "kochdu-Gebühr Barzahlungen 10/2026", status: "100", finApiSource: "kantineur", finApiWho: "kantineur" }, invoicePosSave: [] })).status, 200);
+    assert.strictEqual(M.state.saved.slice(-1)[0].invoice.finApiSource, "kochdu"); assert.ok(!("finApiWho" in M.state.saved.slice(-1)[0].invoice));
+    assert.strictEqual((await fa(K, "POST", "/CreditNote/Factory/saveCreditNote", { creditNote: { header: "Auszahlung", finApiSource: "blitzdings" }, creditNotePosSave: [] })).status, 200);
+    assert.strictEqual(M.state.saved.slice(-1)[0].creditNote.finApiSource, "kochdu", "neue Gutschrift: mitgeschicktes finApiSource überschrieben");
     assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { id: "803", header: "x", status: "200" }, invoicePosSave: [] })).status, 403, "offene (nicht Entwurf) eigene Rechnung");
     // Blitzdings: neue Rechnung „offen“ mit eigener Nummer aus getNextInvoiceNumber erlaubt, vergebene Nummer nicht
     assert.strictEqual((await fa(Bz, "POST", "/Invoice/Factory/saveInvoice", { invoice: { header: "Rechnung RE-803", invoiceNumber: "RE-803", status: 200, reference: "BD-1002", headText: "Buchung BD-1002 – vielen Dank" }, invoicePosSave: [] })).status, 403);

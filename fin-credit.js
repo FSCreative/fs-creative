@@ -51,26 +51,46 @@ module.exports = function (D) {
     const rx = new RegExp("(^|[^a-z0-9_])" + pid + "(?![a-z0-9_])");
     return L.all("Invoice").filter(i => isInv(i) && rx.test(pidTxt(i)));
   }
-  // kochdu: Cockpit-Rechnung der „Verrechnung von Hand“ (Abrechnung kochdu:<Lokal>) für diesen Monat storniert und nicht neu ausgestellt – damit
-  // ist die Doppelverrechnung schon (teilweise) aufgelöst (B4). Jede Verrechnung von Hand gehört zu genau einem Monat: Sie rechnet die
-  // Bar-Gebühren „bis <Datum>“ ab – gezählt wird der Monat mit den meisten Tagen in den 31 Tagen bis zum Rechnungsdatum (gleich viele: der
-  // frühere; 03.10. → September, 02.11. → Oktober). Eine stornierte zählt nur, wenn für denselben Monat danach keine gültige Verrechnung von Hand
-  // ausgestellt wurde – unabhängig vom Betrag (korrigiert neu ausgestellt = Doppelung besteht weiter).
-  function kochduMonthOf(d) {
-    d = day(d); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
-    const t = Date.parse(d + "T12:00:00Z"), cnt = {};
-    for (let i = 0; i < 31; i++) { const m = new Date(t - i * 864e5).toISOString().slice(0, 7); cnt[m] = (cnt[m] || 0) + 1; }
-    return Object.keys(cnt).sort().reduce((best, m) => (!best || cnt[m] > cnt[best] ? m : best), "");
-  }
-  function kochduManualCancelled(rid, month) {
+  // kochdu (B4/R4-1): Doppelt verrechnet ist laut CONTRACT-fs-order der Teil der Bar-Gebühren eines Monats, den eine Verrechnung von Hand
+  // (Cockpit-Rechnung, Abrechnung kochdu:<Lokal>) schon gedeckt hatte – Verrechnungen ab Monatsbeginn bis 21.10.2026 (danach überspringt kochdu
+  // Monate mit Monatsrechnung) bzw. vor der Monatsrechnung; kochdu ordnet sie den ältesten offenen Gebühren zu. Ist eine solche Rechnung
+  // storniert (bzw. gutgeschrieben), ist die Doppelung insoweit schon aufgehoben – abzüglich danach gültig neu ausgestellter Verrechnungen von
+  // Hand (korrigiert neu ausgestellt). Verbraucht wird wie bei kochdu ab dem ältesten doppelten Monat. Im Zweifel lieber kein bzw. ein kleinerer
+  // Vorschlag als ein zu hoher.
+  const KOCHDU_AWARE_DAY = "2026-10-21";
+  function kochduManual(rid) {
     let bill = null; try { bill = typeof D.billing === "function" ? D.billing() : null; } catch (e) { bill = null; }
-    const m = String(month || ""); if (!/^\d{4}-\d{2}$/.test(m) || !rid) return 0;
-    const recs = ((bill && bill.invoices && bill.invoices["kochdu:" + rid]) || []).filter(x => x && x.id && kochduMonthOf(x.date) === m), inv = x => L.get("Invoice", x.id);
-    const live = recs.filter(x => { const i = inv(x); return i && !i.cancelled; });
-    return r2(recs.filter(x => { const i = inv(x), d = day(x.date); return i && i.cancelled && !live.some(y => day(y.date) >= d); })
-      .reduce((a, x) => a + Math.abs(+inv(x).sumGross || +x.gross || 0), 0));
+    return ((bill && bill.invoices && rid && bill.invoices["kochdu:" + rid]) || []).filter(x => x && x.id && L.get("Invoice", x.id));
   }
-  const kochduRest = (inv, need, rid, month) => r2(need - creditedSum(inv.id) - kochduManualCancelled(rid, month));
+  function kochduRemovals(rid) {
+    const recs = kochduManual(rid), gOf = x => Math.abs(+L.get("Invoice", x.id).sumGross || +x.gross || 0), items = [];
+    recs.forEach(x => { const i = L.get("Invoice", x.id), d = day(x.date);
+      if (i.cancelled) { const sr = L.all("Invoice").find(o => String(o.invoiceType) === "SR" && o.origin && String(o.origin.id) === String(i.id)); items.push({ date: d, cdate: day(sr && sr.invoiceDate) || d, amt: gOf(x), storno: true }); }
+      else { const c = creditedSum(i.id); if (c > 0.004) items.push({ date: d, cdate: d, amt: c, storno: false }); } });
+    // gültige Verrechnung von Hand nach einem Storno = neu ausgestellt: hebt das Storno (betragsunabhängig, bis zu ihrem Betrag) wieder auf
+    recs.filter(x => !L.get("Invoice", x.id).cancelled).sort((a, b) => day(a.date).localeCompare(day(b.date))).forEach(v => {
+      let left = gOf(v);
+      items.filter(it => it.storno && it.cdate <= day(v.date) && it.amt > 0.004).sort((a, b) => b.cdate.localeCompare(a.cdate)).forEach(it => { const t = Math.min(left, it.amt); it.amt = r2(it.amt - t); left = r2(left - t); });
+    });
+    return items.filter(it => it.amt > 0.004).sort((a, b) => a.date.localeCompare(b.date));
+  }
+  // list: doppelt verrechnete Monate eines Lokals [{ month, cents, inv }] → je Monat der schon aufgehobene Teil (€)
+  function kochduCuts(rid, list) {
+    const items = kochduRemovals(rid), out = {};
+    list.filter(m => m && /^\d{4}-\d{2}$/.test(String(m.month || ""))).sort((a, b) => String(a.month).localeCompare(String(b.month))).forEach(m => {
+      const lo = m.month + "-01", invD = day(m.inv && m.inv.invoiceDate), hi = invD > KOCHDU_AWARE_DAY ? invD : KOCHDU_AWARE_DAY;
+      let need = Math.max(0, r2((+m.cents || 0) / 100 - (m.inv ? creditedSum(m.inv.id) : 0))), cut = 0;
+      items.filter(it => it.date >= lo && it.date <= hi).forEach(it => { const t = Math.min(need, it.amt); it.amt = r2(it.amt - t); need = r2(need - t); cut = r2(cut + t); });
+      out[m.month] = cut;
+    });
+    return out;
+  }
+  // prior: frühere doppelt verrechnete Monate desselben Lokals [{ month, cents, docId }] (verbrauchen stornierte Verrechnungen zuerst)
+  const kochduRest = (inv, need, rid, month, prior) => {
+    const list = (Array.isArray(prior) ? prior : []).filter(p => p && String(p.month || "") < String(month)).map(p => ({ month: String(p.month), cents: +p.cents || 0, inv: L.get("Invoice", p.docId) }))
+      .concat([{ month: String(month || ""), cents: Math.round(need * 100), inv }]);
+    return r2(need - creditedSum(inv.id) - (kochduCuts(rid, list)[String(month || "")] || 0));
+  };
   // liegt ein Datum in einem schon gemeldeten UVA-Zeitraum? (nur Hinweis – korrigiert wird über die Jahreserklärung)
   function reported(d) { let rep = null; try { rep = typeof D.reportedPeriods === "function" ? D.reportedPeriods() : null; } catch (e) { rep = null; } return !!rep && rep.some(x => x && d >= String(x.from) && d <= String(x.to)); }
 
@@ -115,7 +135,7 @@ module.exports = function (D) {
       const open = L.all(CAT).filter(t => refundTx(t) && String(t.molliePayment) === String(pl.pid));
       return r2((+pl.need || 0) / 100 - creditedSum(inv.id) - absSum(open)) >= want - 0.005;
     }
-    if (pl.src === "kochdu") return kochduRest(inv, r2((+pl.need || +pl.cents || 0) / 100), pl.rid, pl.month) >= want - 0.005 && creditedSum(inv.id) + want <= r2(+inv.sumGross || 0) + 0.005;
+    if (pl.src === "kochdu") return kochduRest(inv, r2((+pl.need || +pl.cents || 0) / 100), pl.rid, pl.month, pl.prior) >= want - 0.005 && creditedSum(inv.id) + want <= r2(+inv.sumGross || 0) + 0.005;
     return creditedSum(inv.id) + want <= r2(+inv.sumGross || 0) + 0.005;
   }
 
@@ -173,20 +193,26 @@ module.exports = function (D) {
   // ── 3) kochdu: doppelt verrechnet (Verrechnung von Hand + Monatsrechnung, z. B. 09/2026) ──
   async function kochduDouble(restaurants) {
     const prop = P(); if (!prop) return 0; let n = 0;
-    for (const r of restaurants || []) for (const m of (r && r.months) || []) {
+    for (const r of restaurants || []) {
+     // alle doppelt verrechneten Monate des Lokals (auch mit offener Monatsrechnung) – für die Reihenfolge beim Abziehen stornierter Verrechnungen
+     const dbl = ((r && r.months) || []).filter(m => m && Math.round(+m.doubleBilledCents || 0) > 0 && m.doc && m.doc.docId).map(m => ({ month: String(m.month || ""), cents: Math.round(+m.doubleBilledCents), docId: String(m.doc.docId) }));
+     const storno = kochduManual(r && r.id).some(x => L.get("Invoice", x.id).cancelled);
+     for (const m of (r && r.months) || []) {
       const cents = Math.round(+m.doubleBilledCents || 0), doc = m.doc || {}; if (!(cents > 0) || !doc.docId) continue;
       const inv = L.get("Invoice", doc.docId); if (!paidInv(inv)) continue;   // Monatsrechnung noch offen → nur Hinweis im kochdu-Bereich
       // Rest: schon gebuchte Gutschriften zur Monatsrechnung (auch von Hand) und stornierte Cockpit-Rechnungen der Verrechnung von Hand abziehen (B4)
-      const rest = Math.min(r2(cents / 100), kochduRest(inv, r2(cents / 100), r && r.id, m.month)); if (rest < 0.01) continue;
+      const prior = dbl.filter(p => p.month < String(m.month || ""));
+      const rest = Math.min(r2(cents / 100), kochduRest(inv, r2(cents / 100), r && r.id, m.month, prior)); if (rest < 0.01) continue;
       if (creditedSum(inv.id) + rest > r2(+inv.sumGross || 0) + 0.005) continue;
       const restC = Math.round(rest * 100), mm = String(m.month || "").split("-").reverse().join("/"), nr = inv.invoiceNumber || doc.nr || inv.id;
       try {
         if (await prop.add({ kind: "invoice-credit", key: "kodouble:" + inv.id + ":" + restC, invoiceId: String(inv.id), amount: -rest, date: todayIso(),
           title: "Gutschrift über " + eu(rest) + " zu Rechnung " + nr + " (kochdu " + (r.name || "") + ", " + mm + " doppelt verrechnet)",
-          detail: "Bar-Gebühren " + mm + " schon per Verrechnung von Hand abgerechnet" + (+m.manualCents > 0 ? " (" + eu(+m.manualCents / 100) + ")" : "") + " und nochmals in der Monatsrechnung " + nr + (restC < cents ? " · bereits gutgeschrieben bzw. storniert: " + eu(cents / 100 - rest) : ""), source: "kochdu-Statistik",
-          payload: { invoiceId: String(inv.id), cents: restC, need: cents, rid: String((r && r.id) || ""), month: String(m.month || ""), txIds: [], rate: 20, src: "kochdu", reason: "Die kochdu-Gebühren " + mm + " wurden teilweise doppelt verrechnet (Verrechnung von Hand und Monatsrechnung " + nr + "). Wir schreiben dir folgenden Betrag gut:",
+          detail: "Bar-Gebühren " + mm + " schon per Verrechnung von Hand abgerechnet" + (+m.manualCents > 0 ? " (" + eu(+m.manualCents / 100) + ")" : "") + " und nochmals in der Monatsrechnung " + nr + (restC < cents ? " · bereits gutgeschrieben bzw. storniert: " + eu(cents / 100 - rest) : "") + (storno ? " · Achtung: stornierte Verrechnung von Hand vorhanden – bitte prüfen" : ""), source: "kochdu-Statistik",
+          payload: { invoiceId: String(inv.id), cents: restC, need: cents, rid: String((r && r.id) || ""), month: String(m.month || ""), prior, txIds: [], rate: 20, src: "kochdu", reason: "Die kochdu-Gebühren " + mm + " wurden teilweise doppelt verrechnet (Verrechnung von Hand und Monatsrechnung " + nr + "). Wir schreiben dir folgenden Betrag gut:",
             posName: "kochdu-Gebühr Barzahlungen " + mm + " – doppelt verrechnet" } })) n++;
       } catch (e) { console.error("Gutschrift-Vorschlag (kochdu):", e.message); }
+     }
     }
     return n;
   }
