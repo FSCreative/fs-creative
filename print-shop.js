@@ -12,6 +12,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const XMAS = require("./print-xmas.js");   // Weihnachtsabteilung /print/weihnachten (Themen, Texte, Bilder, Saison)
 
 const MM_PT = 72 / 25.4;
 // nur Österreich: Print.com liefert direkt aus den NL – bei Lieferung nach DE wäre es kein ig. Erwerb in AT mehr (Dreiecksgeschäft bzw. DE-Registrierung)
@@ -42,7 +43,7 @@ function categoryOf(sku, single, plural) { const t = (String(sku || "") + " " + 
 const slugN = v => String(v || "").trim().replace(/^\/+|\/+$/g, "").toLowerCase();
 // Print.com-CMS (öffentliches JSON der Reseller-App): Bilder, Namen, Beschreibungen, Produktbaum – gekürzt auf das Nötige (nicht die ganzen ~10 MB speichern)
 // Print.com-Namen, die maschinell falsch übersetzt sind (werden sonst so im Shop angezeigt)
-const NAME_FIX = { "bar-apron-pocket": "Barschürzen mit Tasche", "bar-apron-green-generation": "Barschürzen „Green Generation“", "bar-apron-canvas": "Barschürzen aus Canvas", "apron-canvas": "Schürzen aus Canvas", "houston-cap": "Caps „Houston“" };
+const NAME_FIX = { "bar-apron-pocket": "Barschürzen mit Tasche", "bar-apron-green-generation": "Barschürzen „Green Generation“", "bar-apron-canvas": "Barschürzen aus Canvas", "apron-canvas": "Schürzen aus Canvas", "houston-cap": "Caps „Houston“", "whiteboards-premium": "Whiteboards Premium (bedruckt)", "tubes-giftset": "Reagenzglas-Geschenksets" };
 function cmsTrim(j, keepSkus) {
   j = j || {};
   const A = ref => { const id = ref && (ref.id || ref); const a = id && j.asset && j.asset[id]; const f = a && String(a.file || ""); return f && /^\/\/images\.ctfassets\.net\/[\w\-./%]+$/i.test(f) ? f.slice(23) : ""; };   // Pfad ohne „//images.ctfassets.net/“ (spart Platz)
@@ -441,6 +442,8 @@ module.exports = function (D) {
       ranges: (Array.isArray(r.options) ? r.options : []).map(o => ({ min: +o.min, max: +o.max, step: +o.steps > 0 ? +o.steps : 1 })).filter(g => g.min > 0 && g.max >= g.min) })).filter(r => r.ranges.length);
     const qtyAny = n => qty.some(r => qtyIn(r, n));
     let avail = (by.copies && Array.isArray(by.copies.options) ? by.copies.options : []).map(o => parseInt(o.slug != null ? o.slug : o.name, 10)).filter(n => n > 0).sort((a, b) => a - b);
+    // Mengen-Bereiche gehen vor: Auflagen-Liste und Bereiche passen bei Print.com nicht immer zusammen (Schiebeschachteln: Liste 5/25, druckbar erst ab 50)
+    if (qty.length && avail.some(n => !qtyAny(n))) avail = avail.filter(qtyAny);
     if (!avail.length && qty.length) avail = Array.from(new Set([].concat.apply([], qty.map(r => r.summary)))).filter(qtyAny).sort((a, b) => a - b);
     // Auflagen: kuratiert (soweit bei Print.com vorhanden); allgemein aus den Print.com-Auflagen (runde Werte), sonst Standard je Art
     let tiers = c.generic && avail.length ? [] : (c.tiers || DEF_TIERS[kind] || DEF_TIERS.flat).filter(t => qty.length ? qtyAny(t) : !avail.length || avail.indexOf(t) > -1);
@@ -554,8 +557,15 @@ module.exports = function (D) {
       if (!pref[pr.slug] && PRINTISH.test(pr.slug)) { const blank = pr.options.filter(BLANK).map(x => x.slug); rest = rest.filter(x => blank.indexOf(x) < 0).concat(rest.filter(x => blank.indexOf(x) > -1)); }
       if (!pref[pr.slug] && paper && /^(material|paper)/.test(pr.slug)) { const good = pr.options.filter(x => { const g = weightOf(x); return g >= paper[0] && g <= paper[1]; }).sort((a, b) => coated(b) - coated(a) || weightOf(a) - weightOf(b)).map(x => x.slug); rest = good.concat(rest.filter(x => good.indexOf(x) < 0)); }
       return p.concat(rest); };
-    const base = {}; Object.keys(fixed).forEach(k => { if (!auto[k]) base[k] = fixed[k]; });
-    const sol = solveSel(exposed.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => [k, OMITTABLE.test(k) ? auto[k].concat([null]) : auto[k]])), base, prod.excludes, aliasOf(prod));
+    // Nie mitgeschickte Eigenschaften (Personalisierung aus Excel): Print.com rechnet dann mit „ohne“ – die Ausschlussregeln genauso prüfen
+    // (Saatpapier-Kuverts: bedruckt nur mit Personalisierung → sonst „excluded configuration was provided“, also Vorauswahl unbedruckt)
+    const implicit = {}; ["personalize"].forEach(k => { const o = by[k] && Array.isArray(by[k].options) && by[k].options.find(x => x && NONE_SLUG.test(String(x.slug))); if (o) implicit[k] = String(o.slug); });
+    if (Object.keys(implicit).length) prod.implicit = implicit;
+    const base = Object.assign({}, implicit); Object.keys(fixed).forEach(k => { if (!auto[k]) base[k] = fixed[k]; });
+    // Druckverfahren passend zur Startauflage – sonst wird z. B. das unbedruckte 1-Stück-Muster (eigenes Verfahren „sample“) zur Vorauswahl
+    const pm0 = kind === "textile" ? null : pmsFor(prod, startCopies(prod)), autoL = k => k === "printingmethod" && pm0 ? auto[k].filter(x => pm0.indexOf(x) > -1) : auto[k];
+    const solve0 = lim => solveSel(exposed.map(pr => [pr.slug, order(pr)]).concat(Object.keys(auto).map(k => { const l = lim ? autoL(k) : auto[k]; return [k, OMITTABLE.test(k) ? l.concat([null]) : l]; })), base, prod.excludes, aliasOf(prod));
+    const sol = (pm0 && solve0(true)) || solve0(false);
     exposed.forEach(pr => { prod.defaults[pr.slug] = sol && sol[pr.slug] != null ? sol[pr.slug] : order(pr)[0]; });
     return prod;
   }
@@ -699,7 +709,7 @@ module.exports = function (D) {
     const p = cat && (cat.products || []).find(x => x.key === key); if (!p) return null;
     const g = catOf(p.sku, s, p.group || OTHER, p.cat);
     if (!any && !shown(s, p.sku, p.key, g)) return null;
-    return Object.assign(withAllow(p, s), { group: g.main, cat: g });
+    return withStart(p, Object.assign(withAllow(p, s), { group: g.main, cat: g }), s);
   }
   // Produkt für Shop/Preis/Bestellung: kuratiert (Schlüssel) oder allgemein (Print.com-SKU, nur wenn im Cockpit freigeschaltet; any = Cockpit-Vorschau)
   async function findProduct(key, s, any) {
@@ -718,7 +728,7 @@ module.exports = function (D) {
       hit = { at: Date.now(), p }; PD_CACHE.set(key, hit);
     }
     const g = catOf(it.sku, s, it.auto, hit.p.cat);
-    return Object.assign(withAllow(hit.p, s), { group: g.main, cat: g });
+    return withStart(hit.p, Object.assign(withAllow(hit.p, s), { group: g.main, cat: g }), s);
   }
   // Kurzbeschreibung für die Karte: Untertitel bzw. erste Zeile der Print.com-Beschreibung
   // Print.com-interne Produkte (z. B. „Probe intern“ / samples-internal, Test-Artikel) nie im Shop zeigen
@@ -747,7 +757,7 @@ module.exports = function (D) {
     return { key: p.key, title: NAME_FIX[p.sku] || (p.generic && cp && cp.n ? cp.n : p.title), added: (cp && cp.da) || "", icon: p.icon || GROUP_ICON[g.main] || "📦", desc: shortDesc(cp, p.desc), group: g.main, cat: catPub(g), img: cp && cp.i ? IMG(cp.i, 600) : "",
       pop: (cp && cp.pp) || 0, images: cp ? [cp.i].concat(cp.g || []).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 7).map(x => IMG(x, 1000)) : [], about: cp ? clip(cmsClean(cp.d).split("\n").map(noHtml).join("\n"), 4000) : "", summary: cp ? clip(noHtml(cmsClean(cp.s)), 200) : "",
       kind: p.kind || "flat", designer: p.designer, bleed: p.bleed, safe: p.safe, dpi: p.dpi, props: p.props, tiers: p.tiers, qty: p.qty || [], urgency: p.urgency, fixed: p.fixed, auto: p.auto || {},
-      excludes: p.excludes, defaults: p.defaults || {}, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
+      excludes: p.excludes, defaults: p.defaults || {}, start: p.start || null, implicit: p.implicit || null, dims: p.dims || null, dimsArea: !!p.dimsArea, sizeLabel: p.sizeLabel || "", specs: (p.specs || []).map(x => [x[0], x[1], x[2]]), custom: p.custom || null, sizes: p.sizes || null, positions: p.positions || null, methods: p.methods || null, maxCopies: p.maxCopies || null, areaProp: p.areaProp || null, areas: p.areas || {}, printArea: p.printArea || null }; };
   // Sortiment aufräumen (nur Anzeige, Preise/Margen rechnen weiter mit der Print.com-Kategorie): Mini-Hauptgruppen, die anderswo Untergruppe sind,
   // dort einordnen; Produkte ohne Untergruppe per Stichwort in die passende Untergruppe. Hand-Zuordnungen im Cockpit gehen immer vor.
   const MAIN_INTO = { "gift-packaging": ["packaging-bags", "gift-packaging"], "displays-pos-material": ["indoor-interior", "displays-pos-material"], "outdoor-furniture": ["outdoor-advertising", "outdoor-furniture"], "materials-samples": ["outdoor-advertising", "banners-outdoor"] };
@@ -831,12 +841,57 @@ module.exports = function (D) {
     return { w: v[0], h: v[1] };
   }
   // feste + gewählte Werte, dazu die Pflicht-Eigenschaften ohne Auswahl so ergänzen, dass keine Ausschlussregel greift
+  // Druckverfahren, die eine Menge drucken (Print.com: Mengen-Bereiche je Verfahren, z. B. 1 Stk. nur als Muster); null = keine Einschränkung
+  function pmsFor(p, n) { const Q = p.qty || []; if (!Q.some(x => x.pm) || Q.some(x => !x.pm && qtyIn(x, n))) return null; return Q.filter(x => x.pm && qtyIn(x, n)).map(x => x.pm); }
+  const qtyOk = (p, n) => p.qty && p.qty.length ? p.qty.some(r => qtyIn(r, n)) : (p.tiers || []).indexOf(n) > -1;
+  const bigOf = p => p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "");
+  const posterOf = p => /plakat|poster|wahlplakat/i.test(p.key + " " + p.title);
+  // Startauflage wie bisher im Shop: Bestseller-Auflage (500, sonst 250/1 000; Plakate 5/10/25), Großformat 1 Stk., sonst eine runde, übliche Menge
+  function startCopies(p) { const T = p.tiers || [], bt = (posterOf(p) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1), nice = [100, 50, 250, 25, 500, 10].find(x => T.indexOf(x) > -1);
+    return bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : T[0] === 1 && bigOf(p) ? 1 : nice || T[Math.min(1, T.length - 1)] || 0; }
+  // ── Startausführung: womit der Konfigurator ein Produkt öffnet (Wunsch Simon 28.10.2026: beim Öffnen immer eine bestellbare Ausführung mit Preis) ──
+  // Auflage und Vorauswahl wie bisher (Bestseller bei Format/Papier/Druck), aber passend zu den Mengen je Druckverfahren und zu den Ausschlussregeln:
+  // geht die Vorauswahl mit dem Verfahren dieser Menge nicht, werden die übrigen Optionen angepasst; geht die Menge gar nicht, die nächstliegende Auflage.
+  // Eine Quelle für Konfigurator (pubProd.start → print/app.js), „ab“-Preise (/print/api/from), Startseiten-Prüfung, Preisübersicht und Weihnachtsabteilung.
+  function startOf(p) {
+    if (!p) return null;
+    if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: 10, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }
+    const C = p.custom, cm = C && C.unit === "cm", f = cm ? 10 : 1, cl = (v, a, b) => Math.max(a, Math.min(b, v));
+    const custom = C ? { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f } : null, cu = sel => p.kind === "banner" || (!!C && sel.size === "custom");
+    const ok = (sel, n) => { const pm = pmsFor(p, n), r = resolveSel(p, sel, cu(sel) ? { size: "custom" } : null, pm ? { printingmethod: pm } : null);
+      return !r.excluded && (!pm || r.all.printingmethod == null || pm.indexOf(String(r.all.printingmethod)) > -1); };
+    const fix = (sel, n) => {   // übrige Optionen auf die nächste gültige Kombination (aktuelle Werte zuerst), Druckverfahren passend zur Menge
+      const pm = pmsFor(p, n), base = Object.assign({}, p.implicit || {}); Object.keys(p.fixed || {}).forEach(k => { if (!(p.auto || {})[k]) base[k] = p.fixed[k]; }); if (cu(sel)) base.size = "custom";
+      const vars = p.props.map(pr => [pr.slug, [sel[pr.slug]].concat(pr.options.map(o => o.slug).filter(x => x !== sel[pr.slug]))])
+        .concat(Object.keys(p.auto || {}).map(k => { const l = k === "printingmethod" && pm ? p.auto[k].filter(x => pm.indexOf(x) > -1) : p.auto[k]; return [k, OMITTABLE.test(k) ? [null].concat(l) : l]; }));
+      const r = solveSel(vars, base, p.excludes, aliasOf(p)); if (!r) return null; const out = {}; p.props.forEach(pr => { out[pr.slug] = r[pr.slug] != null ? r[pr.slug] : sel[pr.slug]; }); return out; };
+    const def = {}; p.props.forEach(pr => { const d = (p.defaults || {})[pr.slug]; def[pr.slug] = d != null && pr.options.some(o => o.slug === d) ? d : pr.options[0].slug; });
+    const T = p.tiers || [], first = startCopies(p), poster = posterOf(p), dist = x => first > 0 ? Math.abs(Math.log(x / first)) : x;
+    const cands = [first].concat(T.slice().sort((a, b) => dist(a) - dist(b) || b - a)).filter((x, i, a) => x > 0 && a.indexOf(x) === i && qtyOk(p, x));
+    for (const n of cands) {
+      let sel = Object.assign({}, def);
+      if (!ok(sel, n)) { sel = fix(sel, n); if (!sel || !ok(sel, n)) continue; }
+      for (const k of ["size", "material", "printtype"]) { const pr = p.props.find(x => x.slug === k); if (!pr) continue;   // Bestseller wie im Shop
+        for (const b of ((poster && BEST_POSTER[k]) || BEST_SEL[k]).filter(x => pr.options.some(o => o.slug === x)).slice(0, 4)) { if (b === sel[k]) break; const t = Object.assign({}, sel, { [k]: b }); if (ok(t, n)) { sel = t; break; } } }
+      return Object.assign({ copies: n, sel }, cu(sel) && custom ? { custom } : {});
+    }
+    return Object.assign({ copies: first || T[0] || 1, sel: def }, cu(def) && custom ? { custom } : {});   // nichts lösbar: Print.com entscheidet beim Preis (wie bisher)
+  }
+  // Startausführung je Produkt merken (Katalog-Objekt + Freigaben/Kategorie aus dem Cockpit) – der Katalog wird bei jedem Shop-Aufruf neu zusammengestellt
+  const START_MEMO = new WeakMap();
+  function withStart(base, p, s) {
+    const sig = JSON.stringify([((s && s.products && s.products[p.key]) || {}).allow || null, p.cat && p.cat.main, p.title]); let m = START_MEMO.get(base); if (!m) START_MEMO.set(base, m = new Map());
+    if (!m.has(sig)) { let st = null; try { st = startOf(p); } catch (e) { log("Startausführung " + p.key + ":", e.message); } if (m.size > 20) m.clear(); m.set(sig, st); }
+    p.start = m.get(sig); return p;
+  }
   function resolveSel(prod, sel, extra, only) {
     const base = {}; Object.keys(prod.fixed).forEach(k => { if (!prod.auto || !prod.auto[k]) base[k] = prod.fixed[k]; });
     prod.props.forEach(pr => { if (sel[pr.slug] != null) base[pr.slug] = sel[pr.slug]; }); Object.assign(base, extra || {});
+    const imp = prod.implicit || {}; Object.keys(imp).forEach(k => { if (base[k] == null) base[k] = imp[k]; });   // nur für die Ausschlussregeln (nie mitgeschickt)
     const vars = Object.keys(prod.auto || {}).map(k => [k, only && only[k] ? prod.auto[k].filter(x => only[k].indexOf(x) > -1) : prod.auto[k]]).map(v => OMITTABLE.test(v[0]) ? [v[0], [null].concat(v[1])] : v);   // only: z. B. Druckverfahren passend zur Auflage; Bündeln/Bogengröße/Verpackung zuerst weglassen (wie die Print.com-App, sonst Aufpreis – z. B. Digital-Bogen bei Offset +6 %), Werte nur als Ausweichlösung
     let all = solveSel(vars, base, prod.excludes, aliasOf(prod)); const excl = !all;
     if (!all) all = Object.assign({}, prod.fixed, base);
+    Object.keys(imp).forEach(k => { if (all[k] === imp[k] && !(extra && extra[k] != null)) delete all[k]; });
     prod.props.forEach(pr => { if (pr.sets) { pr.sets.forEach(x => { all[x] = all[pr.slug]; }); delete all[pr.slug]; } });
     Object.keys(all).forEach(k => { if (all[k] === NONE_OPT) delete all[k]; });
     return { all, excluded: excl };
@@ -952,10 +1007,27 @@ module.exports = function (D) {
       for (const v of l.concat(OMITTABLE.test(k) ? [null] : [])) { if (out.length >= 5) break; if (v === opts[k] || (v === null && opts[k] === undefined)) continue; const o = Object.assign({}, opts); if (v === null) delete o[k]; else o[k] = v; if (!hitRules(prod.excludes, o, al)) out.push(o); } }
     return out;
   }
+  // Logistik-Angaben (Bündelung, Palette, Verpackung …) schickt der Shop zuerst nicht mit – wie die Print.com-App, sonst oft Aufpreis. Manche Produkte rechnet
+  // Print.com aber nur mit Angabe (Hängeetiketten: „no supplier prices found“ ohne Bündelung). Deshalb NUR nach einer echten Preis-Ablehnung (noPrice, nie bei
+  // Versand-Ablehnung oder Störung) als letzte Ausweich-Variante hinter allen Varianten ohne Angabe; nichts wird je Produkt gemerkt – ohne Angabe wird immer zuerst
+  // gefragt (abgelehnte Kombinationen merkt NOPRICE 10 min, damit das nicht jedes Mal eine Anfrage kostet). Was gerechnet wurde (pcOpts), wird genau so bestellt.
+  function filledOf(prod, opts) {
+    const o = Object.assign({}, opts), al = aliasOf(prod); let ch = false;
+    Object.keys(prod.auto || {}).filter(k => OMITTABLE.test(k) && o[k] === undefined).forEach(k => { const v = prod.auto[k].find(x => !hitRules(prod.excludes, Object.assign({}, prod.implicit || {}, o, { [k]: x }), al)); if (v != null) { o[k] = v; ch = true; } });
+    return ch ? o : null;
+  }
+  async function buyFilled(prod, n, opts, country, postcode, e0) {
+    const f = !n.excluded && e0 && e0.noPrice && filledOf(prod, opts); if (!f) throw e0;
+    let v; try { v = await purchase(prod, Object.assign({}, n, { pcOpts: f }), country, postcode); } catch (e) { throw e0; }
+    return { v, pcOpts: f };
+  }
+  // Fehler für die Weitergabe: „hart“ (kein 400) geht vor, sonst eine echte Preis-Ablehnung (für das Nachschicken), sonst der erste
+  const pickErr = errs => errs.find(e => e && e.status !== 400) || errs.find(e => e && e.noPrice) || errs[0];
   // Erste lieferbare Variante (nacheinander, sparsam): für den ersten Durchgang je Druckverfahren
   async function buyFirst(prod, n, list, country, postcode) {
-    let last; for (const o of (list && list.length ? list : [n.pcOpts]).slice(0, 4)) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { last = e; if (e.status !== 400) break; } }
-    throw last;
+    const L = (list && list.length ? list : [n.pcOpts]).slice(0, 4), errs = [];
+    for (const o of L) { try { return { v: await purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode), pcOpts: o }; } catch (e) { errs.push(e); if (e.status !== 400) break; } }
+    return buyFilled(prod, n, L[0], country, postcode, pickErr(errs));
   }
   // Immer die günstigste Produktionsvariante (Wunsch Simon 19.10.2026): bis zu 3 Varianten (z. B. mit/ohne Bogengröße → anderer Produzent/Versand)
   // parallel anfragen und die mit dem niedrigsten Gesamtpreis inkl. Versand nehmen; Print.com-Antworten 30 min zwischengespeichert
@@ -963,7 +1035,7 @@ module.exports = function (D) {
     const L = (list && list.length ? list : [n.pcOpts]).slice(0, 3);
     const rs = await Promise.all(L.map(o => purchase(prod, Object.assign({}, n, { pcOpts: o }), country, postcode).then(v => ({ v, pcOpts: o }), e => ({ e }))));
     const ok = rs.filter(r => r.v).sort((a, b) => a.v.total - b.v.total); if (ok.length) return ok[0];
-    throw (rs.find(r => r.e && r.e.status !== 400) || rs[0]).e;
+    return buyFilled(prod, n, L[0], country, postcode, pickErr(rs.map(r => r.e)));
   }
   // Viele Besucher: gleiche Print.com-Anfragen, die gerade laufen, teilen sich ein Ergebnis (INFLIGHT); Zwischenspeicher 6 h (Kasse: frisch, max. 5 min)
   const INFLIGHT = new Map();
@@ -971,9 +1043,11 @@ module.exports = function (D) {
   function pickDay(v, wish) { const d = wish && Array.isArray(v.days) ? v.days.find(x => x.d === wish) : null; if (!d || d.d === v.deliveryDate) return v;
     return Object.assign({}, v, { shipping: d.ship, total: r2(v.product + d.ship), deliveryDate: d.d, carrier: d.carrier, method: d.method, wish: d.d, def: v.deliveryDate }); }
   async function purchase(prod, n, country, postcode) { return pickDay(await purchase0(prod, n, country, postcode), n.wish); }
+  const NOPRICE = new Map();   // echte Preis-Ablehnungen („no supplier prices“) je Anfrage, 10 min – spart wiederholte Anfragen ohne Logistik-Angabe
   async function purchase0(prod, n, country, postcode) {
     const key = JSON.stringify([prod.sku, n.pcOpts, country, postcode || ""]);
     const hit = PRICE_CACHE.get(key); if (hit && Date.now() - hit.at < (n.fresh ? 5 * 60e3 : 6 * 3600e3)) return hit.v;
+    const np = NOPRICE.get(key); if (np && Date.now() - np.at < 10 * 60e3) throw np.e;
     if (n.cacheOnly) throw Object.assign(new Error("busy"), { status: 429, busy: true });   // Andrang: Nebensächliches nur aus dem Zwischenspeicher
     if (INFLIGHT.has(key)) return INFLIGHT.get(key);
     const run = purchase1(prod, n, country, postcode, key); INFLIGHT.set(key, run);
@@ -989,7 +1063,8 @@ module.exports = function (D) {
     // Versandmöglichkeiten gleichzeitig mit dem Preis anfragen (halbe Wartezeit); schlägt der Preis fehl, wird das Ergebnis verworfen
     const shipP = pcApi("POST", "/shipping/shipping-possibilities", { item: { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, address: { country, postcode: postcode || (country === "DE" ? "10115" : "6793") }, numberOfDays: 21 }, lo); shipP.catch(() => {});
     let pr; try { pr = await pcApi("POST", "/products/" + encodeURIComponent(prod.sku) + "/price", { sku: prod.sku, options: n.pcOpts, deliveryPromise: 0 }, lo); }
-    catch (e) { priceFail(prod, n, e.status, e.message); if (n.excluded || e.status === 400 || e.status === 422) throw Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400 }); throw e; }
+    catch (e) { priceFail(prod, n, e.status, e.message); if (n.excluded || e.status === 400 || e.status === 422) { const noPrice = !n.excluded && /no supplier prices/i.test(String(e.message)), e2 = Object.assign(new Error(n.excluded ? "Diese Kombination ist leider nicht lieferbar" : "Für diese Auswahl gibt es gerade keinen Preis"), { status: 400, noPrice });
+      if (noPrice) { NOPRICE.set(key, { at: Date.now(), e: e2 }); if (NOPRICE.size > 3000) NOPRICE.clear(); } throw e2; } throw e; }
     const P = pr && pr.prices || {};
     if (!(+P.salesPrice > 0 || +P.productPrice > 0 || +P.normalPrice > 0)) priceFail(prod, n, 200, "Preis 0 / leer");
     const productPrice = +P.salesPrice > 0 ? +P.salesPrice : +P.productPrice > 0 ? +P.productPrice : +P.normalPrice;
@@ -1003,7 +1078,7 @@ module.exports = function (D) {
     const same = poss.filter(x => !x.urgency || x.urgency === n.urgency); if (same.length) poss = same;
     const cost = x => { const p = x.price || {}; return +p.cost > 0 ? +p.cost : (+p.base || 0) + (+p.urgency || 0); };
     poss.sort((a, b) => cost(a) - cost(b) || String(a.deliveryDate).localeCompare(String(b.deliveryDate)));
-    if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 502 });
+    if (!poss.length) throw Object.assign(new Error("Versand in dieses Land ist für diese Auswahl gerade nicht möglich"), { status: 400, shipping: true });   // 400 statt 502: Cloudflare ersetzt 502-Antworten durch eine HTML-Fehlerseite (Shop zeigte nur „Fehler 502“); andere Menge/Ausführung kann gehen. shipping: oft nur kurze Störung (Weihnachtsseite, Aufpreise: wie Störung behandeln)
     const fastest = poss.slice().sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)) || cost(a) - cost(b))[0];
     const best = n.urgency === "urgent" ? fastest : poss[0];   // Standard/Schnell: günstigste Lieferung, Express: schnellste (Wunsch Simon)
     const v = { product: r2(productPrice), shipping: r2(cost(best)), total: r2(productPrice + cost(best)), deliveryDate: String(best.deliveryDate || "").slice(0, 10), carrier: String(best.carrier || ""), method: String(best.method || ""), earliest: String(fastest.deliveryDate || "").slice(0, 10),
@@ -1635,15 +1710,11 @@ module.exports = function (D) {
   // ── Rabatte: Bonusprogramm (Firmenkonto) oder eigener Kundenrabatt (der höhere gilt) + Gutscheincode ──
   let VOUCHERS = null; const FROM = new Map();
   const fromSet = (k, v) => { if (FROM.size >= 6000) { let n = 1000; for (const x of FROM.keys()) { FROM.delete(x); if (--n <= 0) break; } } FROM.delete(k); FROM.set(k, v); };   // „ab“-Preise: höchstens 6 000 Einträge
-  // „ab“-Preis ohne mitgeschickte Auswahl (z. B. Hero der Startseite): dieselbe Vorauswahl wie die Produktkarten im Shop (print/app.js BEST, fromSel und
-  // typische Auflage in loadFrom) – gleicher Preis, gleicher Eintrag in FROM. BEST muss mit print/app.js übereinstimmen (test/print.test.js prüft das).
-  const FROM_BEST = { size: ["a5", "a4", "a6", "us_large", "bc", "bc_plus"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "135gr_silk_mc", "350gr_silk_mc", "350gr_gesatineerd_mc", "300gr_silk_mc"], printtype: ["44"] };
+  // „ab“-Preis ohne mitgeschickte Auswahl (Shop-Karten, Hero der Startseite, Weihnachtsabteilung): die Startausführung des Konfigurators (startOf) –
+  // gleicher Preis wie beim Öffnen des Produkts, gleicher Eintrag in FROM
   function fromDefaultSel(prod) {
-    const o = {}; (prod.props || []).forEach(pr => { const b = (FROM_BEST[pr.slug] || []).find(x => (pr.options || []).some(q => q.slug === x)); if (b) o[pr.slug] = b; });
-    const t = prod.tiers || [], big = prod.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((prod.cat && prod.cat.main) || prod.group || "");
-    const bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && big ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)];
-    if (bq) o.__copies = bq;
-    return o;
+    const st = prod && (prod.start || startOf(prod)); if (!st || !st.sel) return {};
+    const o = Object.assign({}, st.sel); if (st.copies) o.__copies = st.copies; return o;
   }
   async function vouchers() { if (!VOUCHERS) VOUCHERS = (await store.getMeta("print_vouchers").catch(() => null)) || {}; return VOUCHERS; }
   const vCode = c => String(c || "").trim().toUpperCase().replace(/\s+/g, "").slice(0, 40);
@@ -2122,19 +2193,16 @@ module.exports = function (D) {
   let HOME = null, homeRun = false;
   const BEST_SEL = { size: ["a5", "a4", "a6", "us_large", "bc", "bc_plus"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "135gr_silk_mc", "350gr_silk_mc", "350gr_gesatineerd_mc", "300gr_silk_mc"], printtype: ["44"] },
     BEST_POSTER = { size: ["a2", "a1", "a3", "a0"], material: ["135gr_gesatineerd_mc", "170gr_gesatineerd_mc", "115gr_blueback"], printtype: ["40"] };
-  function bestSel(p, base) {   // wie app.js beim Öffnen eines Produkts: Format, Papier, Druck auf den ersten lieferbaren Bestseller
-    let sel = Object.assign({}, p.defaults || {}); const poster = /plakat|poster|wahlplakat/i.test(p.key + " " + p.title);
+  function bestSel(p, base) {   // Marge-Übersicht (mehrere Mengen): von der Startausführung aus Format, Papier, Druck auf den ersten lieferbaren Bestseller
+    let sel = Object.assign({}, (p.start && p.start.sel) || p.defaults || {}); const poster = posterOf(p);
     for (const k of ["size", "material", "printtype"]) { const pr = (p.props || []).find(x => x.slug === k); if (!pr) continue;
       for (const v of ((poster && BEST_POSTER[k]) || BEST_SEL[k]).filter(x => pr.options.some(o => o.slug === x)).slice(0, 4)) {
         const t = Object.assign({}, sel, { [k]: v }); try { if (!normalizeSel(p, Object.assign({}, base, { sel: t })).excluded) { sel = t; break; } } catch (e) {} } }
     return sel;
   }
-  function stdInput(p) {   // Standard-/Bestseller-Ausführung wie im Shop vorausgewählt
-    if (p.kind === "textile") { const m = (p.methods || [])[0], sz = (p.sizes || []).find(x => /(^|_)m$/i.test(x.slug)) || (p.sizes || [])[0]; return m && sz ? { copies: 10, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: Math.max(10, m.min || 1) } } } : null; }
-    const T = p.tiers || [], bt = (/plakat|poster/i.test(p.key + " " + p.title) ? [5, 10, 25] : [250, 500, 1000]).filter(x => T.indexOf(x) > -1);
-    const big = p.kind === "banner" || /^(outdoor-advertising|indoor-interior|displays-pos-material|outdoor-furniture)$/.test((p.cat && p.cat.main) || p.group || "");
-    const base = { copies: bt.indexOf(500) > -1 ? 500 : bt[0] || (T[0] === 1 && big ? 1 : T[Math.min(1, T.length - 1)]), sel: {}, urgency: "standard", custom: p.kind === "banner" && p.custom ? { w: 200, h: 100 } : undefined };
-    base.sel = bestSel(p, base); return base;
+  function stdInput(p) {   // Standard-Ausführung = Startausführung im Shop (startOf)
+    const st = p && (p.start || startOf(p)); if (!st) return null;
+    return Object.assign({ urgency: "standard" }, JSON.parse(JSON.stringify(st)), { sel: Object.assign({}, st.sel || {}) });
   }
   async function homeCheck() {
     if (homeRun) return; homeRun = true;
@@ -2196,7 +2264,7 @@ module.exports = function (D) {
   const dateDe = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("de-AT", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Vienna" }); };
   function offersLd(it) {
     const url = SITE + "/print?produkt=" + encodeURIComponent(it.key), g = it.rows.map(r => r.gross);
-    return { "@type": "Product", name: it.title, description: it.label || it.desc, url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
+    return { "@type": "Product", name: it.title, description: scrubText(it.label || it.desc || ""), url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
       offers: { "@type": "AggregateOffer", priceCurrency: "EUR", lowPrice: Math.min.apply(null, g).toFixed(2), highPrice: Math.max.apply(null, g).toFixed(2), offerCount: it.rows.length,
         offers: it.rows.map(r => ({ "@type": "Offer", price: r.gross.toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url, eligibleQuantity: { "@type": "QuantitativeValue", value: r.copies, unitText: "Stück" },
           priceSpecification: { "@type": "UnitPriceSpecification", price: r.gross.toFixed(2), priceCurrency: "EUR", valueAddedTaxIncluded: true }, shippingDetails: { "@type": "OfferShippingDetails", shippingRate: { "@type": "MonetaryAmount", value: "0", currency: "EUR" }, shippingDestination: { "@type": "DefinedRegion", addressCountry: "AT" } }, seller: { "@type": "Organization", name: "FS Creative" } })) } };
@@ -2221,7 +2289,7 @@ module.exports = function (D) {
   }
   // Preisübersicht als eigene, ohne JavaScript lesbare Seite
   async function pricesPage(req, res) {
-    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    let html = ""; try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); } catch (e) { return D.send(res, 404, "Not found"); }   // Navigationspunkt „Weihnachten“ nur in der Saison
     const P = await pubState(), items = (P && P.items) || [], groups = [];
     items.forEach(it => { let g = groups.find(x => x.n === it.group); if (!g) groups.push(g = { n: it.group || "Weitere Produkte", l: [] }); g.l.push(it); });
     const card = it => '<div class="pp-c"><h3><a href="/print?produkt=' + escH(encodeURIComponent(it.key)) + '">' + escH(it.title) + "</a></h3>" + (it.label ? '<p class="pp-l">' + escH(it.label) + "</p>" : "") +
@@ -2247,7 +2315,7 @@ module.exports = function (D) {
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + SITE + '/print/preise"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + SITE + "/print/preise")
       .replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
       .replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "")
-      .replace("</head>", '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
+      .replace("</head>", () => '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, "\\u003c") + "</script>\n</head>");
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
   }
   // Produktseite (/print?produkt=…): Inhalte schon im HTML – für Suchmaschinen und KI-Crawler ohne JavaScript; der Konfigurator ersetzt sie beim Laden
@@ -2265,10 +2333,10 @@ module.exports = function (D) {
     const P = await pubState(), it = P && P.items ? P.items.find(y => y.key === key) : null, url = SITE + "/print?produkt=" + encodeURIComponent(key);
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
-    const desc = noHtml(x.about || x.desc || "").replace(/\s+/g, " ").slice(0, 400);
+    const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400);   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
     const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title) + " online drucken</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
       (it ? "<h2>Preise (Stand " + escH(dateDe(P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
-      (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(z[0]) + ":</b> " + escH(z[1]) + "</li>").join("") + "</ul>" : "") +
+      (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(scrubText(z[0])) + ":</b> " + escH(scrubText(z[1])) + "</li>").join("") + "</ul>" : "") +
       '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p>' + simHtml(pub, x) + '<p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
     const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
@@ -2280,7 +2348,7 @@ module.exports = function (D) {
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
       .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(x.cat, x.title, url)))
-      .replace("</head>", ldTag(ld) + "\n</head>");
+      .replace("</head>", () => ldTag(ld) + "\n</head>");
   }
   // ── SEO für Sortiment und Kategorien (/print?produkte[&kategorie=…[&unter=…]]): vorgerendert mit Links, Brotkrumen, strukturierten Daten ──
   const ldTag = o => '<script type="application/ld+json">' + JSON.stringify(Object.assign({ "@context": "https://schema.org" }, o)).replace(/</g, "\\u003c") + "</script>";
@@ -2317,7 +2385,7 @@ module.exports = function (D) {
       h1 = (sg ? sg.name : g.name) + " online drucken";
       intro = list.length + " Produkte" + (sg ? " in „" + sg.name + "“ (" + g.name + ")" : " in „" + g.name + "“") + ": individuell bedruckt, Preis sofort online, Druckdaten hochladen oder online gestalten – Lieferung in ganz Österreich, Preise inkl. Versand.";
       body = (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
-        "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(noHtml(p.desc), 110)) : "") + "</li>").join("") + "</ul>";
+        "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
       items = list.slice(0, 60);
     }
     const t = escH(h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"), d = escH(intro.slice(0, 158));
@@ -2328,7 +2396,7 @@ module.exports = function (D) {
       .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t).replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d)
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(c, "", url)))
-      .replace("</head>", ldTag(coll) + "\n</head>");
+      .replace("</head>", () => ldTag(coll) + "\n</head>");
   }
   // Sitemap: Preisübersicht + Produktseiten (nur mit Bild)
   async function sitemapExtra() {
@@ -2336,8 +2404,88 @@ module.exports = function (D) {
     const groups = publicGroups(pub), has = (m, su) => pub.some(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su)), loc = u => "  <url><loc>" + u.replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>";
     const cats = [loc(catUrl("", "", true)) + "0.7</priority></url>"].concat(groups.filter(g => has(g.slug)).map(g => loc(catUrl(g.slug, "", true)) + "0.7</priority></url>"),
       [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(catUrl(g.slug, su.slug, true)) + "0.6</priority></url>")))).join("\n") + "\n";
-    return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' + cats +
+    return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
+      (XMAS.season().on ? '  <url><loc>' + SITE + '/print/weihnachten</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' : "") + cats +
       pub.filter(x => x.img).map(x => '  <url><loc>' + SITE + "/print?produkt=" + encodeURIComponent(x.key) + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
+  }
+  // ── Weihnachtsabteilung /print/weihnachten (Themen/Texte/Bilder: print-xmas.js) ──
+  // Preis je Vorschlag = Startausführung des Konfigurators (wie die Shop-Karten, „ab … für N Stk.“), Liefertermin = frühester Tag aus derselben Preisberechnung
+  // (Standard-Produktion, Versand nach Österreich). Alle 12 h im Hintergrund, nacheinander mit Pause und niedriger Priorität (Print.com-Limit) – nie je Seitenaufruf.
+  // Geht die Startausführung bei Print.com nicht (z. B. kein Versand für 500 Stk.), die nächstliegende Auflage; ganz ohne Preis → Vorschlag wird ausgeblendet.
+  let XMD = null, xmRun = false, xmTry = 0, XPUB = null, XREN = null;
+  // Nur Einträge der letzten 36 h zählen (sonst ohne Preiszeile): kein alter Preis, kein vergangenes Lieferdatum, keine Vorjahresdaten am Saisonstart
+  const XM_MAX = 36 * 3600e3, xmFresh = it => !!(it && it.at && Date.now() - Date.parse(it.at) < XM_MAX);
+  function xmasData() { const out = {}, it = (XMD && XMD.items) || {}; Object.keys(it).forEach(k => { if (xmFresh(it[k])) out[k] = it[k]; }); return out; }
+  // Freigeschaltete Produkte für die Weihnachtsseite: Katalog-Stand höchstens alle 5 min neu zusammenstellen (viele Besucher erwartet)
+  async function xmasShown() {
+    const s = await settings(), cat = await catalog(false).catch(() => null); if (!cat) return null;
+    const all = await catalogAll().catch(() => null);
+    if (XPUB && XPUB.cat === cat && XPUB.all === all && XPUB.s === s && Date.now() - XPUB.t < 5 * 60e3) return XPUB;
+    const shown = {}; publicCatalog(cat, s, all).forEach(p => { shown[p.key] = p.title; });
+    XPUB = { cat, all, s, t: Date.now(), id: Math.random().toString(36).slice(2), shown }; return XPUB;
+  }
+  async function xmasState() { if (!XMD) XMD = (await store.getMeta("print_xmas").catch(() => null)) || { at: null, items: {} }; return XMD; }
+  function xmasKick() {
+    if (xmRun || !cfg().pcKey || !live() || !XMAS.season().on || Date.now() - xmTry < 30 * 60e3) return;
+    xmasState().then(x => { if (!x.at || Date.now() - Date.parse(x.at) > 12 * 3600e3) return xmasBuild(); }).catch(e => log("Weihnachtsabteilung:", e.message));
+  }
+  async function xmasBuild() {
+    if (xmRun) return; xmRun = true; xmTry = Date.now();
+    try {
+      const s = await settings(), sea = XMAS.season(), items = {}, bad = [], pv = parseInt(process.env.PRINT_XMAS_PAUSE_MS, 10), pause = isFinite(pv) && pv >= 0 ? pv : 1200;
+      for (const k of XMAS.keys()) {
+        const r = { ok: false, at: nowIso() }; let asked = false;
+        try {
+          const p = await findProduct(k, s); if (!p) throw Object.assign(new Error("im Shop nicht freigeschaltet"), { status: 400 });
+          const pp = pubProd(p); r.title = pp.title; r.promo = p.kind === "promo" || (p.cat && p.cat.main) === PROMO;
+          if (XMAS.staleYear(pp.title, sea)) { r.stale = true; throw new Error("Kalender mit altem Jahr"); }
+          const inp = stdInput(p); if (!inp) throw new Error("keine Startausführung");
+          const alt = p.kind === "textile" ? [] : (p.tiers || []).filter(t => t !== inp.copies && qtyOk(p, t)).sort((a, b) => Math.abs(a - inp.copies) - Math.abs(b - inp.copies)).slice(0, 2);
+          let q = null, n = null, e0 = null; asked = true;
+          for (const c of [inp.copies].concat(alt)) {
+            try { n = normalizeSel(p, Object.assign({}, inp, { copies: c })); n.low = true; q = await quote(p, n, "AT", "", {}); break; } catch (e) { e0 = e; q = null; if (e.status !== 400) break; }
+          }
+          if (!q) throw e0 || new Error("kein Preis");
+          const days = (q.days || []).map(d => d.d).filter(Boolean).sort();
+          Object.assign(r, { ok: true, gross: q.gross, copies: n.copies, start: inp.copies, date: days[0] || q.deliveryDate || "" });
+        } catch (e) { r.why = clip(e.message, 160); if (!r.stale) bad.push(k + ": " + r.why); r.status = e.status || 0; r.shipping = !!e.shipping; }
+        // Kurze Störung beim Druckpartner (kein endgültiges „kein Preis“, auch Versand-Ablehnung): letzten guten Stand behalten, solange er jünger als 36 h ist –
+        // sonst ohne Preis zeigen (ok: null) statt den Vorschlag 12 h auszublenden
+        const prev = (XMD && XMD.items && XMD.items[k]) || null, transient = !r.ok && !r.stale && (r.status !== 400 || r.shipping);
+        items[k] = transient && prev && prev.ok && xmFresh(prev) ? Object.assign({}, prev, { kept: true }) : transient ? Object.assign(r, { ok: null }) : r;
+        if (asked && pause) await new Promise(res => setTimeout(res, pause));   // Pause nur nach Print.com-Abfragen
+      }
+      XMD = { at: nowIso(), items }; await store.setMeta("print_xmas", XMD).catch(() => {});
+      log("Druckshop: Weihnachtsabteilung geprüft – " + Object.values(items).filter(x => x.ok).length + " Vorschläge mit Preis" + (bad.length ? "; ausgeblendet: " + bad.join(" · ") : ""));
+    } finally { xmRun = false; }
+  }
+  // Startseiten-Teaser im Shop (print/app.js): nur in der Saison
+  function xmasTeaser(products) { const sea = XMAS.season(); if (!sea.on) return null; const shown = {}; (products || []).forEach(p => { shown[p.key] = 1; });
+    return { year: sea.year, before: sea.before, n: XMAS.count(xmasData(), shown), img: XMAS.HERO.img }; }
+  async function xmasPage(req, res, preview) {
+    const sea = XMAS.season();
+    if (!sea.on) return D.send(res, 302, "", "text/plain", { Location: "/print", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex" });   // außerhalb der Saison: zurück in den Shop
+    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    await xmasState(); const xs = await xmasShown(); xmasKick();
+    // Inhalt je Datenstand zwischenspeichern (Preise, Freigaben, Tag) – nicht bei jedem Aufruf neu zusammensetzen
+    const rk = [XMD && XMD.at, xs ? xs.id : "-", sea.today, sea.before, Math.floor(Date.now() / 3600e3)].join("|");
+    if (!XREN || XREN.k !== rk) { const data = xmasData(); XREN = { k: rk, data, r: XMAS.render(data, xs ? xs.shown : null, sea) }; }
+    const r = XREN.r, data = XREN.data, shown = xs ? xs.shown : {}, url = SITE + "/print/weihnachten";
+    const t = escH("Weihnachten " + sea.year + ": Karten, Kalender & Geschenke mit Logo drucken | FS Creative Druckshop");
+    const d = escH("Weihnachtskarten, Kalender, Verpackung und Geschenke mit Logo online gestalten und drucken – mit Liefertermin je Produkt und Versand in ganz Österreich.");
+    const list = r.keys.map((k, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(k, true), name: scrubText((data[k] && data[k].title) || shown[k] || k) }));
+    const coll = { "@type": "CollectionPage", name: "Weihnachten im FS Creative Druckshop", url, description: d.replace(/&amp;/g, "&"), isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" }, mainEntity: { "@type": "ItemList", numberOfItems: list.length, itemListElement: list } };
+    const crumbs = { "@type": "BreadcrumbList", itemListElement: [["Start", SITE + "/"], ["Druckshop", SITE + "/print"], ["Weihnachten", url]].map((z, i) => ({ "@type": "ListItem", position: i + 1, name: z[0], item: z[1] })) };
+    const og = SITE + XMAS.img(XMAS.HERO.img, 1200).replace("fm=webp", "fm=jpg"), head = r.preload + "\n" + ldTag(coll) + "\n</head>";
+    // Ersetzungen immer als Funktion: „$&“, „$'“ o. Ä. in Produktnamen dürfen das HTML nicht verändern
+    html = shell(html, preview).replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => '<div class="ps-loading ps-xmas-ssr" id="psLoading">' + r.html + "</div>")
+      .replace(/<title>[^<]*<\/title>/, () => "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, (m, a) => a + d)
+      .replace(/<link rel="canonical" href="[^"]*"/, () => '<link rel="canonical" href="' + url + '"').replace(/(<meta property="og:url" content=")[^"]*/, (m, a) => a + url).replace(/(<meta property="og:title" content=")[^"]*/, (m, a) => a + t)
+      .replace(/(<meta property="og:description" content=")[^"]*/, (m, a) => a + d).replace(/(<meta property="og:image" content=")[^"]*/, (m, a) => a + escH(og))
+      .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbs))
+      .replace('class="ps-xnav" data-xnav>', () => 'class="ps-xnav active" data-xnav aria-current="page">')
+      .replace("</head>", () => head);
+    return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
   }
   async function homeState() { if (!HOME) HOME = await store.getMeta("print_home").catch(() => null); return HOME; }
   let lastWarm = 0;
@@ -2362,6 +2510,7 @@ module.exports = function (D) {
     if (cfg().pcKey && live() && Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
+    xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
     if (Date.now() - lastFb > 55 * 60e3) { lastFb = Date.now(); feedbackMails().catch(e => log("Bewertungsmails:", e.message)); }   // stündlich: Bewertungsbitte 2–3 Tage nach der Zustellung
@@ -2436,8 +2585,9 @@ module.exports = function (D) {
       '<button type="button" class="code" data-promo-copy="' + c + '" aria-label="Code ' + c + ' kopieren"><span>' + c + '</span><i>Kopieren</i></button>' +
       '<span class="sm">' + (pr.once ? "einmal pro Kunde" : "") + (pr.once && until ? " · " : "") + (until ? "gültig bis " + escH(until) : "") + '</span><button type="button" class="x" data-promo-x="' + c + '" aria-label="Banner schließen">×</button></div></div>';
   }
-  async function shopPage(req, res, preview, u) {
-    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+  // Gemeinsame Hülle der Shop-Seiten (/print, /print/weihnachten): Aktionsbanner, Datei-Versionen je Deploy, Vorschau-Hinweis, Navigation „Weihnachten“ (nur in der Saison)
+  const xmasNav = html => html.replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "");
+  function shell(html, preview) {
     const pr = promoOf(); if (pr) html = html.replace('<html lang="de">', '<html lang="de" class="has-promo">').replace("</head>", '<script>try{if(localStorage.getItem("fsc-print-promo-x")==="' + pr.code + '")document.documentElement.classList.add("promo-x")}catch(e){}</script>\n</head>').replace(/<body([^>]*)>/, m => m + promoHtml(pr));
     // Shop-Dateien je Deploy neu laden (sonst bleibt bis zu 1 Std. die alte app.js/print.css im Browser-Cache)
     html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace("</head>", '<script>window.PRINT_V="' + ASSET_V + '";</script>\n</head>');
@@ -2445,6 +2595,11 @@ module.exports = function (D) {
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:calc(100vw - 32px);text-align:center">Bestellungen sind in Kürze möglich – der Druckshop startet bald</div>');
     else if (preview) html = html.replace(/<meta name="robots" content="[^"]*"\s*\/?>/, '<meta name="robots" content="noindex, nofollow" />')
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
+    return xmasNav(html);
+  }
+  async function shopPage(req, res, preview, u) {
+    let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
+    html = shell(html, preview);
     const pk = u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120);
     if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk); } catch (e) { log("Produkt-SEO:", e.message); } }
     else if (u && u.searchParams && u.searchParams.has("produkte")) { const km = String(u.searchParams.get("kategorie") || ""), ks = String(u.searchParams.get("unter") || "");
@@ -2459,6 +2614,7 @@ module.exports = function (D) {
     if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
     if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u); }
     if ((p === "/print/preise" || p === "/print/preise/") && (req.method === "GET" || req.method === "HEAD")) return pricesPage(req, res);
+    if ((p === "/print/weihnachten" || p === "/print/weihnachten/") && (req.method === "GET" || req.method === "HEAD")) { if (p !== "/print/weihnachten") return D.send(res, 301, "", "text/plain", { Location: "/print/weihnachten" + (u.search || "") }); return xmasPage(req, res, open ? false : (view && !admin) ? "view" : true); }
     try {
       // Druckdatei für Print.com: nur mit Signatur und nur für echte, freigegebene Bestellungen
       let m = p.match(/^\/print-files\/(f[a-f0-9]{24})\/([a-f0-9]{40})\.pdf$/);
@@ -2479,7 +2635,7 @@ module.exports = function (D) {
         html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main).replace(/<title>[^<]*<\/title>/, "<title>So geht’s &amp; FAQ – Druckshop | FS Creative</title>")
           .replace(/(<meta name="description" content=")[^"]*/, "$1So funktioniert der FS Creative Druckshop: bestellen, Online-Designer mit Vorlagen und KI-Assistent, Bonusprogramm für Firmen, Digital- oder Offsetdruck und Antworten auf häufige Fragen.")
           .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
-          .replace('data-hilfe>', 'data-hilfe class="active">').replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
+          .replace('data-hilfe>', 'data-hilfe class="active">').replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "").replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
         return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
       }
       if (p === "/print/sonderfarben.ase" && (req.method === "GET" || req.method === "HEAD")) {   // Sonderfarben-Palette (Adobe Swatch Exchange) für Weiß, Schnitt, Bohrung, Veredelung
@@ -2550,8 +2706,8 @@ module.exports = function (D) {
         const c = cfg(), s = await settings();
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
         const cat = await catalog(false), all = await catalogAll().catch(() => null); cms(false).catch(() => {});   // CMS bei Versionswechsel im Hintergrund auffrischen
-        const products = publicCatalog(cat, s, all), rvAll = await ratings(), rv = {}; Object.keys(rvAll).forEach(k => { if (rvAll[k].n >= RATING_MIN) rv[k] = { avg: rvAll[k].avg, n: rvAll[k].n }; });
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        const products = publicCatalog(cat, s, all), rvAll = await ratings(), rv = {}; if (XMAS.season().on) await xmasState().catch(() => null); /* Teaser zählt die Weihnachts-Vorschläge mit Preis */ Object.keys(rvAll).forEach(k => { if (rvAll[k].n >= RATING_MIN) rv[k] = { avg: rvAll[k].avg, n: rvAll[k].n }; });
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, xmas: xmasTeaser(products), payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
@@ -2561,11 +2717,10 @@ module.exports = function (D) {
         const rawSel = String(u.searchParams.get("sel") || "{}"); let sels = {}; if (rawSel.length <= 8000) try { sels = JSON.parse(rawSel) || {}; } catch (e) {}
         if (typeof sels !== "object" || Array.isArray(sels)) sels = {};
         const keys = String(u.searchParams.get("keys") || "").split(",").map(x => x.trim()).filter(x => /^[\w.-]{1,80}$/.test(x)).slice(0, 12), out = {}, s0 = await settings();
-        const cat0 = keys.some(k => !(sels[k] && typeof sels[k] === "object" && !Array.isArray(sels[k]))) ? await catalog(false).catch(() => null) : null;
         await Promise.all(keys.map(async k => {
           let s1 = sels[k] && typeof sels[k] === "object" && !Array.isArray(sels[k]) ? sels[k] : null, pd = null; const sel = {};
-          // ohne Auswahl: kuratierte Produkte wie die Shop-Karte (Bestseller + typische Auflage); allgemeine kennt die Karte nur ohne Optionen → Standard wie bisher
-          if (!s1) { s1 = {}; if (cat0 && (cat0.products || []).some(x => x.key === k)) { try { pd = await findProduct(k, s0); } catch (e) {} if (!pd) return; s1 = fromDefaultSel(pd); } }
+          // ohne Auswahl: Startausführung des Konfigurators (Auflage + Vorauswahl, passend zu Druckverfahren und Ausschlussregeln) – für alle Produkte
+          if (!s1) { try { pd = await findProduct(k, s0); } catch (e) {} if (!pd) return; s1 = fromDefaultSel(pd); }
           Object.keys(s1).slice(0, 30).forEach(x => { if (/^[\w-]{1,60}$/.test(x) && (typeof s1[x] === "string" || typeof s1[x] === "number")) sel[x] = String(s1[x]).slice(0, 80); });
           const qc = parseInt(sel.__copies, 10) || 0, ck = k + JSON.stringify(sel); delete sel.__copies;
           const hit = FROM.get(ck); if (hit && Date.now() - hit.at < 12 * 3600e3) { out[k] = hit.v; return; }
@@ -2679,10 +2834,10 @@ module.exports = function (D) {
         const dd = await discFor(await accountMod().current(req), cust.company, b.voucher, ""); cust.disc = dd.disc;
         const busy = pcLow.length > 24 || pcWait.length > 6;   // Andrang: Aufpreise nur aus dem Zwischenspeicher, der Rest kommt ein paar Sekunden später (Client fragt nach)
         const run = (sel, urg) => { const n = normalizeSel(prod, Object.assign({}, b, { sel, wish: "" }, urg ? { urgency: String(urg) } : {})); n.quick = true; n.low = true; n.cacheOnly = busy; return quote(prod, n, country, zip, cust); };   // urg: andere Produktionszeit (Standard/Schnell/Express)
-        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!e.busy }); }
+        let base; try { base = await run(b.sel); } catch (e) { return J(res, 200, { ok: true, d: {}, busy: !!(e.busy || e.shipping) }); }
         const alts = (Array.isArray(b.alts) ? b.alts : []).slice(0, 12), d = {}; let i = 0;
         await Promise.all([0, 1, 2, 3].map(async () => { while (i < alts.length) { const a = alts[i++] || {}, k = String(a.k == null ? "" : a.k).slice(0, 120); if (!k || !a.sel || typeof a.sel !== "object") continue;
-          try { const q = await run(a.sel, a.urgency); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency ? { an: q.net, ag: q.gross, days: q.days || [] } : {}); } catch (e) { d[k] = e.busy ? { busy: true } : { off: e.status === 400 }; } } }));
+          try { const q = await run(a.sel, a.urgency); d[k] = Object.assign({ net: r2(q.net - base.net), gross: r2(q.gross - base.gross), date: q.deliveryDate || "" }, a.urgency ? { an: q.net, ag: q.gross, days: q.days || [] } : {}); } catch (e) { d[k] = e.busy || e.shipping ? { busy: true } : { off: e.status === 400 }; } } }));   // Versand-Ablehnung: später nochmal statt „nicht lieferbar“
         return J(res, 200, { ok: true, d, busy });
       }
       if (p === "/print/api/ai/design") {
@@ -3017,6 +3172,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA } };
+  return { xmasOn: () => XMAS.season().on, llmsTxt, chatPrices, sitemapExtra, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA } };
 };
 module.exports._bonusCalc = bonusCalc;

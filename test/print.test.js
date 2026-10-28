@@ -18,7 +18,7 @@ async function t(name, fn) { try { await fn(); pass++; } catch (e) { fail++; fai
 
 function copyApp() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-"));
-  ["server.js", "connections.js", "client-ip.js", "print-bild.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-music.js", "mkt-web.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "seo.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "fin-credit.js", "print-shop.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
+  ["server.js", "connections.js", "client-ip.js", "print-bild.js", "fin-pay.js", "viw-cloud.js", "whatsapp.js", "marketing.js", "mkt-render.js", "mkt-brands.json", "mkt-posts.js", "mkt-music.js", "mkt-web.js", "mkt-publish.js", "mkt-skins.js", "mkt-motion.js", "mkt-motion-worker.js", "seo.js", "sevdesk-ops.js", "fin.js", "fin-local.js", "fin-pdf.js", "fin-bank.js", "fin-mollie.js", "fin-paypal.js", "fin-ebank.js", "fin-bankrules.js", "fin-docmatch.js", "fin-proposals.js", "fin-credit.js", "print-shop.js", "print-xmas.js", "nda.js", "fin-railway.js", "print-account.js", "print-newsletter.js", "mail-rules.js", "push.js", "admin-sw.js", "ki.js", "chat.js", "chat-widget.js", "admin-cockpit.html", "print.html", "landing.css", "index.html", "druck.html", "sitemap.xml"]
     .forEach((f) => fs.copyFileSync(path.join(ROOT, f), path.join(dir, f)));
   const cpDir = (d) => { fs.mkdirSync(path.join(dir, d), { recursive: true }); fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).forEach((e) => { if (e.isDirectory()) cpDir(path.join(d, e.name)); else fs.copyFileSync(path.join(ROOT, d, e.name), path.join(dir, d, e.name)); }); };
   ["admin-cockpit", "print"].forEach(cpDir);
@@ -90,10 +90,10 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
   srv = await startServer(dir, { PRINT_SHOP_LIVE: "1", PRINTCOM_API_KEY: undefined, MOLLIE_PRINT_API_KEY: undefined });
   await t("ohne PRINTCOM_API_KEY: /print liefert die Seite, Katalog meldet „setup“", async () => {
     const r = await fetch(srv.base + "/print"); assert.strictEqual(r.status, 200); const html = await r.text();
-    assert.ok(/Shop wird gerade eingerichtet/.test(html), "Hinweistext im HTML"); assert.ok(/\/print\/app\.js/.test(html));
+    assert.ok(!/Shop wird gerade eingerichtet/.test(html), "Hinweistext nicht im HTML (Suchmaschinen-Vorschau)"); assert.ok(/id="psSetup"/.test(html), "Platz für den Hinweis"); assert.ok(/\/print\/app\.js/.test(html));
     const c = await (await fetch(srv.base + "/print/api/catalog")).json(); assert.strictEqual(c.ready, false); assert.strictEqual(c.reason, "setup");
     const p = await fetch(srv.base + "/print/api/price", { method: "POST", headers: { "content-type": "application/json", "x-print-shop": "1" }, body: "{}" }); assert.strictEqual(p.status, 503);
-    const js = await fetch(srv.base + "/print/app.js"); assert.strictEqual(js.status, 200); assert.ok(/javascript/.test(js.headers.get("content-type")));
+    const js = await fetch(srv.base + "/print/app.js"); assert.strictEqual(js.status, 200); assert.ok(/javascript/.test(js.headers.get("content-type"))); assert.ok(/Shop wird gerade eingerichtet/.test(await js.text()), "Hinweistext kommt aus app.js");
     assert.strictEqual((await fetch(srv.base + "/print-shop.js")).status, 404, "Server-Code nie öffentlich");
   });
   srv.kill();
@@ -794,16 +794,12 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(x.email, "maria@example.com"); assert.ok(x.invoice && x.invoice.id, JSON.stringify(x.invoice)); assert.ok(x.invoice.sentAt, "gesendet"); assert.strictEqual(x.invoice.draft, false);
   });
   // (leert den Preis-Zwischenspeicher – deshalb als letzte Prüfung am laufenden Server)
-  await t("„ab“-Preise: ohne Auswahl (Startseite) dieselbe Vorauswahl wie die Shop-Karten → gleicher Preis aus demselben Zwischenspeicher; BEST gleich in app.js und Server", async () => {
-    // Vorauswahl der Produktkarten direkt aus print/app.js (BEST, bigFmt, fromSel, Auflage aus loadFrom)
-    const app = fs.readFileSync(path.join(ROOT, "print", "app.js"), "utf8"), grab = (re) => { const m = app.match(re); assert.ok(m, "print/app.js: " + re); return m[1]; };
-    const cardSel = Function(grab(/(var BEST = \{[^;]*\};)/) + grab(/(function bigFmt\(p\) \{[^\n]*\})/) + grab(/(function fromSel\(p\) \{[^\n]*\})/) +
-      "return function (p) { var o = fromSel(p); var t = p.tiers || [], bq = " + grab(/var t = p\.tiers \|\| \[\], bq = ([^;]*);/) + "; if (bq) o.__copies = bq; return o; };")();
+  await t("„ab“-Preise: ohne Auswahl (Startseite, Shop-Karten) = Startausführung des Konfigurators (start) → gleicher Preis aus demselben Zwischenspeicher; BEST gleich in app.js und Server", async () => {
     const best = (f, re) => Function("return " + fs.readFileSync(path.join(ROOT, f), "utf8").match(re)[1])();
-    assert.deepStrictEqual(best("print-shop.js", /const FROM_BEST = (\{[^;]*\});/), best("print/app.js", /var BEST = (\{[^;]*\});/), "FROM_BEST (Server) = BEST (print/app.js)");
+    assert.deepStrictEqual(best("print-shop.js", /const BEST_SEL = (\{[^;]*\}),/), best("print/app.js", /var BEST = (\{[^;]*\});/), "BEST_SEL (Server) = BEST (print/app.js)");
     const cat2 = await (await fetch(B + "/print/api/catalog")).json(), keys = ["visitenkarten", "flyer", "rollups"], sels = {};
-    keys.forEach(k => { const o = cardSel(cat2.products.find(p => p.key === k)); if (Object.keys(o).length) sels[k] = o; });
-    assert.ok(Object.keys(sels).length === 3 && sels.flyer.__copies, JSON.stringify(sels));
+    keys.forEach(k => { const p = cat2.products.find(x => x.key === k); assert.ok(p && p.start && p.start.sel && p.tiers.indexOf(p.start.copies) > -1, k + " ohne gültige Startausführung " + JSON.stringify(p && p.start)); sels[k] = Object.assign({}, p.start.sel, { __copies: p.start.copies }); });
+    assert.strictEqual(sels.flyer.__copies, 500, "Flyer starten mit 500 Stk. (Bestseller-Auflage)");
     const from = async (sel) => (await fetch(B + "/print/api/from?keys=" + keys.join(",") + (sel ? "&sel=" + encodeURIComponent(JSON.stringify(sel)) : ""))).json();
     const shop = await from(sels); assert.ok(keys.every(k => shop.from[k] && shop.from[k].gross > 0), JSON.stringify(shop));
     const sp0 = M.price.salesPrice; M.price.salesPrice = 40; await admin("/admin/api/print/settings", {});   // Einkauf teurer, Preis-Zwischenspeicher leer: alter Preis kommt nur noch aus dem gemeinsamen FROM-Eintrag
