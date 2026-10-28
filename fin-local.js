@@ -30,6 +30,12 @@ module.exports = function (D) {
       r.rows.forEach(x => { (C[x.type] = C[x.type] || new Map()).set(String(x.id), x.data); });
       // Kunden mit Fremdnummer (z. B. „KANT-…“ von früheren Plattform-Anlagen) einmalig in den Kundennummernkreis übernehmen
       for (const c of all("Contact").filter(c => c.customerNumber && !/^\d+$/.test(String(c.customerNumber))).sort((a, b) => String(a.create || "").localeCompare(String(b.create || "")))) { c.externalNumber = c.externalNumber || String(c.customerNumber); c.customerNumber = await nextCustomerNumber(); await save("Contact", c); }
+      // Angebote mit nackter Nummer („1052“ – bis 28.10.2026 wurde der Nummernkreis ohne „AN-“ gelesen und nie weitergezählt) einmalig auf die nächste freie AN-Nummer umstellen; die alte Nummer bleibt als formerNumber
+      for (const o of all("Order").filter(o => String(o.orderType || "AN") === "AN" && /^\d+$/.test(String(o.orderNumber || ""))).sort((a, b) => String(a.create || "").localeCompare(String(b.create || "")) || (+a.id - +b.id))) {
+        const old = String(o.orderNumber); o.formerNumber = old; o.orderNumber = await nextNumber("Order", "AN", "orderNumber", "AN-");
+        if (o.header) o.header = String(o.header).replace(new RegExp("(^|\\D)" + old + "(?!\\d)"), "$1" + o.orderNumber);
+        await save("Order", o); console.log("Buchhaltung: Angebot " + old + " → " + o.orderNumber + " (id " + o.id + ")");
+      }
       return true;
     })().catch(e => { loaded = null; throw e; });
     return loaded;
@@ -107,6 +113,12 @@ module.exports = function (D) {
     const d = today();
     if (seq && seq.format && /\[%NUMBER\]/.test(seq.format)) return String(seq.format).replace("[%NUMBER]", n).replace(/\[%YEAR\]/g, d.slice(0, 4)).replace(/\[%SHORTYEAR\]/g, d.slice(2, 4)).replace(/\[%MONTH\]/g, d.slice(5, 7)).replace(/\[%DAY\]/g, d.slice(8, 10));
     return null;
+  }
+  // Vorschau der nächsten Angebotsnummer (ohne weiterzuzählen): immer mit Präfix und nie unter der höchsten vergebenen Nummer
+  function orderSeqPeek(type, seq) {
+    const prefix = type + "-"; let best = 0;
+    all("Order").forEach(o => { if (String(o.orderType || "AN") !== type) return; const m = String(o.orderNumber || "").match(/^(.*?)(\d+)$/); if (m && m[1] === prefix && +m[2] > best) best = +m[2]; });
+    return Object.assign({}, seq || {}, { objectType: "Order", forObject: "Order", type, format: seq && seq.format && /\[%NUMBER\]/.test(seq.format) ? seq.format : prefix + "[%NUMBER]", nextSequence: String(Math.max(best + 1, (seq && +seq.nextSequence) || 0)) });
   }
   async function nextNumber(objectType, type, field, prefix) {
     const seq = seqFor(objectType, type);
@@ -826,6 +838,11 @@ module.exports = function (D) {
     o = Object.assign(o || { id: newId("Order"), status: "100", orderType: "AN", currency: "EUR", version: "0" }, stripMeta(od));
     if (od.orderDate) o.orderDate = iso(dayOf(od.orderDate)); if (!o.orderDate) o.orderDate = iso(today());
     if (isNew && !od.orderNumber) o.orderNumber = await nextNumber("Order", o.orderType || "AN", "orderNumber", (o.orderType || "AN") + "-");
+    else if (isNew) {   // mitgeschickte Nummer: nackt („1052“) oder schon vergeben → nächste freie; sonst Nummernkreis nachziehen, damit die nächste Abfrage weiterzählt
+      const nr = String(o.orderNumber), ty = o.orderType || "AN", m = nr.match(/^(.*?)(\d+)$/), seq = seqFor("Order", ty);
+      if (/^\d+$/.test(nr) || all("Order").some(x => String(x.orderNumber || "") === nr)) o.orderNumber = await nextNumber("Order", ty, "orderNumber", ty + "-");
+      else if (m && seq && +m[2] >= (+seq.nextSequence || 0)) { seq.nextSequence = String(+m[2] + 1); await save("SevSequence", seq); }
+    }
     (body.orderPosDelete || []).forEach(p => { if (p && p.id && C.OrderPos) C.OrderPos.delete(String(p.id)); });
     for (const p of (body.orderPosSave || [])) { const x = Object.assign(p.id ? (get("OrderPos", p.id) || {}) : { id: newId("OrderPos") }, stripMeta(p), { order: ref("Order", o.id) }); posSums(x); await save("OrderPos", x); }
     docSums(o, positionsOf("Order", o.id)); await save("Order", o);
@@ -918,7 +935,7 @@ module.exports = function (D) {
     if (p === "/Tools/bookkeepingSystemVersion") return { objects: { version: "1.0" } };
     if (/^\/ReceiptGuidance\//.test(p)) return { objects: [] };
     if (p === "/StaticCountry") return { objects: [{ id: "1", code: "de", name: "Deutschland" }, { id: "3", code: "at", name: "Österreich" }, { id: "4", code: "ch", name: "Schweiz" }, { id: "10", code: "it", name: "Italien" }, { id: "15", code: "li", name: "Liechtenstein" }] };
-    if (p === "/SevSequence/Factory/getByType") { const s = seqFor(String(q.objectType || ""), String(q.type || "")); return { objects: s ? [s] : [] }; }
+    if (p === "/SevSequence/Factory/getByType") { const ot = String(q.objectType || ""), ty = String(q.type || ""), s = seqFor(ot, ty); return { objects: ot === "Order" ? [orderSeqPeek(ty || "AN", s)] : s ? [s] : [] }; }
     if (p === "/Invoice/Factory/getNextInvoiceNumber") {
       const t = String(q.invoiceType || "RE"), nr = await nextNumber("Invoice", t, "invoiceNumber", INV_PREFIX[t] || "RE-");
       if (String(q.useNextNumber) !== "true") { const seq = seqFor("Invoice", t); if (seq) { seq.nextSequence = String((+seq.nextSequence || 1) - 1); await save("SevSequence", seq); } }
