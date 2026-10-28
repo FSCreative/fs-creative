@@ -98,10 +98,13 @@ const LIST = [{ sku: "businesscards", titleSingle: "Visitenkarte", titlePlural: 
   { sku: "pvc-510", titlePlural: "PVC Banner", active: true }, { sku: "t-shirt-budget-5", titlePlural: "T-Shirts", active: true }, { sku: "pen-apollo-hardcolor", titlePlural: "Kugelschreiber", active: true },
   { sku: "notepads", titleSingle: "Notizblock", titlePlural: "Notizblöcke", active: true }, { sku: "beachflags", titlePlural: "Beachflags", active: true }, { sku: "mentos-rolls", titlePlural: "Mentos", active: true }, { sku: "aluminium-signs", titlePlural: "Alu-Schilder", active: true },
   { sku: "cardboard-boxes", titlePlural: "Kartons", active: true }, { sku: "umbrellas", titlePlural: "Regenschirme", active: true }, { sku: "tablecloths", titlePlural: "Tischdecken", active: true }, { sku: "inactive-thing", titlePlural: "Alt", active: false }];
-// Print.com-Verhalten nachbilden: Ausschlussregel trifft zu, wenn ALLE Bedingungen einer Regel zutreffen
-const hit = (pd, o) => (pd.excludes || []).some(r => r.length && r.every(x => o[x.property] != null && x.options.map(String).indexOf(String(o[x.property])) > -1));
+// Print.com-Verhalten nachbilden: Ausschlussregel trifft zu, wenn ALLE Bedingungen einer Regel zutreffen; nicht mitgeschickte Eigenschaften mit Standardwert
+// (pd.implied, z. B. personalize = none) zählen wie mitgeschickt
+const hit = (pd, o) => { o = Object.assign({}, pd.implied || {}, o); return (pd.excludes || []).some(r => r.length && r.every(x => o[x.property] != null && x.options.map(String).indexOf(String(o[x.property])) > -1)); };
 
-module.exports = function createMocks() {
+// opts.products / opts.list: zusätzliche Produkte für einzelne Tests (z. B. Weihnachtsabteilung); pd.needs = Eigenschaften, ohne die Print.com keinen Preis liefert
+module.exports = function createMocks(opts) {
+  const PRODUCTS2 = Object.assign({}, PRODUCTS, (opts && opts.products) || {}), LIST2 = LIST.concat((opts && opts.list) || []);
   const state = { log: [], orders: [], payments: {}, refunds: [], mails: [], pcOrderStatus: "ACCEPTEDBYSUPPLIER", price: { salesPrice: 20, shipping: 5 }, vies: { DE123456789: true, ATU12345678: true } };
   const send = (res, code, obj) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const server = http.createServer((req, res) => {
@@ -115,9 +118,10 @@ module.exports = function createMocks() {
       if (p.indexOf("/pc/") === 0) {
         if (req.headers.authorization !== "PrintApiKey pc-test-key") return send(res, 401, { message: "unauthorized" });
         const q = p.slice(3);
-        if (m === "GET" && q === "/products") return send(res, 200, LIST);
-        if (m === "GET" && (mm = q.match(/^\/products\/([\w-]+)$/))) return PRODUCTS[mm[1]] ? send(res, 200, PRODUCTS[mm[1]]) : send(res, 404, { message: "not found" });
-        if (m === "POST" && (mm = q.match(/^\/products\/([\w-]+)\/price$/))) { if (!PRODUCTS[mm[1]]) return send(res, 404, { message: "nope" }); if (hit(PRODUCTS[mm[1]], body.options || {})) return send(res, 400, { message: "Invalid combination of options" }); const sp = state.priceOf ? state.priceOf(mm[1], body.options || {}) : state.price.salesPrice; return send(res, 200, { includes: {}, prices: { salesPrice: sp, productPrice: sp, normalPrice: sp, urgencyPrice: 0, deliveryPromisePrice: 0, deliveryPromisePremiumPrice: 0, agreementPriceType: "none" } }); }
+        if (m === "GET" && q === "/products") return send(res, 200, LIST2);
+        if (m === "GET" && (mm = q.match(/^\/products\/([\w-]+)$/))) return PRODUCTS2[mm[1]] ? send(res, 200, PRODUCTS2[mm[1]]) : send(res, 404, { message: "not found" });
+        if (m === "POST" && (mm = q.match(/^\/products\/([\w-]+)\/price$/))) { const pd0 = PRODUCTS2[mm[1]]; if (!pd0) return send(res, 404, { message: "nope" }); if (hit(pd0, body.options || {})) return send(res, 400, { message: "Invalid combination of options" });
+          if ((pd0.needs || []).some(k => (body.options || {})[k] == null)) return send(res, 400, { errorMessage: "[400] no supplier prices found for input" }); const sp = state.priceOf ? state.priceOf(mm[1], body.options || {}) : state.price.salesPrice; return send(res, 200, { includes: {}, prices: { salesPrice: sp, productPrice: sp, normalPrice: sp, urgencyPrice: 0, deliveryPromisePrice: 0, deliveryPromisePremiumPrice: 0, agreementPriceType: "none" } }); }
         if (m === "POST" && q === "/shipping/shipping-possibilities" && state.possOf) return send(res, 200, { results: [{ deliveryDate: "", possibilities: state.possOf(body.item.options.urgency || "standard") }] });
         if (m === "POST" && q === "/shipping/shipping-possibilities") return send(res, 200, { results: [{ deliveryDate: "2026-10-22", possibilities: [
           { carrier: "DPD", method: "DPD_B2C", deliveryDate: state.dateOf ? state.dateOf(body.item.options.urgency || "standard") : "2026-10-22", pickupDate: "2026-10-20", urgency: body.item.options.urgency || "standard", price: { base: state.price.shipping, cost: state.price.shipping, urgency: 0 }, reliability: 1, submission: "x", transitDuration: 2, allowedDeliveryPromises: [0] },

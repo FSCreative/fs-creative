@@ -244,6 +244,7 @@ html.light .hx-web .hx-tag{background:rgba(10,111,224,.09)}
 .hx-more i{font-style:normal;font-weight:600;color:var(--hx-acc);transition:transform .25s var(--ease)}
 .hx-more:hover{text-decoration:underline;text-underline-offset:4px}
 .hx-more:hover i{transform:translateX(3px)}
+.hx-xm svg{width:14px;height:14px;flex:none;color:#f5b400}   /* Link zur Weihnachtsabteilung (nur in der Saison) */
 .hx-stage{position:relative;grid-row:5;height:clamp(200px,31vh,330px);margin-top:clamp(12px,2.2vh,22px);container-type:inline-size}
 /* Web-Bühne: echte Projekte – VALUERO im Browser, kochdu am Handy (Maße in cqi = % der Bühnenbreite) */
 .hx-browser{position:absolute;left:10cqi;right:10cqi;top:7%;border-radius:2.4cqi 2.4cqi 0 0;background:var(--hx-scr);border:1px solid var(--hx-scr-b);box-shadow:0 30px 70px -30px rgba(0,0,0,.75);overflow:hidden;transition:transform .6s var(--ease)}
@@ -323,6 +324,7 @@ html.hx-pv .fscc-print{opacity:0;visibility:hidden;pointer-events:none;transform
   .hx-cta{flex-direction:column;align-items:stretch;align-self:end;width:100%;gap:0;margin-top:12px}
   .hx-cta .btn{justify-content:center;gap:6px;padding:10px 8px;font-size:14px;min-height:44px}
   .hx-more{justify-content:center;gap:4px;font-size:13px;text-align:center}
+  .hx-xm{display:none}
   .hx-phone,.hx-sticker{display:none}
   .hx-browser{left:9cqi;right:9cqi;top:13%;border-radius:3.4cqi 3.4cqi 0 0;box-shadow:0 14px 30px -14px rgba(0,0,0,.6)}
   .hx-bar{height:9cqi;padding:0 3cqi;gap:1.6cqi}
@@ -887,6 +889,7 @@ html.light{
               <div class="hx-cta">
                 <a href="/print" class="btn hx-btn-ink">Zum Druckshop <span class="arr" aria-hidden="true">→</span></a>
                 <a href="/druck" class="hx-more">Gestaltung vom Profi <i aria-hidden="true">›</i></a>
+                <!--PRINT_XMAS--><a href="/print/weihnachten" class="hx-more hx-xm"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.6l2.7 6 6.6.7-4.9 4.4 1.4 6.5L12 16.9l-5.8 3.3 1.4-6.5-4.9-4.4 6.6-.7z"/></svg>Weihnachtsideen <i aria-hidden="true">›</i></a><!--/PRINT_XMAS-->
               </div>
             </div>
             <div class="hx-stage hx-fan">

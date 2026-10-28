@@ -40,14 +40,17 @@
 
   // ── Start ──
   var q = new URLSearchParams(location.search);
+  // Weihnachtsabteilung (/print/weihnachten, saisonal): vom Server fertig gerendert – dieselbe Ansicht bleibt nach dem Laden des Shops stehen (S.view „xmas“)
+  var XMP = function () { return /^\/print\/weihnachten\/?$/.test(location.pathname); };
+  var XM_HTML = (function () { var e = XMP() && document.querySelector("#psLoading [data-xmas]"); return e ? e.outerHTML : ""; })();
   (window.__catP ? window.__catP.then(viaUs).catch(function () { return api("/print/api/catalog"); }) : api("/print/api/catalog")).then(function (c) {
     document.getElementById("psLoading").hidden = true;
     if (!c || !c.ready) { document.getElementById("psSetup").hidden = false; return; }
-    S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products);
+    S.cat = c; window.PrintShop.ai = !!c.ai; fixLabels(c.products); if (XM_HTML) S.view = "xmas";
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
-    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } S.step = 2; render(); }); }
+    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else setCopies(q.get("menge")); S.step = 2; render(); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; document.getElementById("psSetup").hidden = false; });
 
@@ -178,7 +181,7 @@
   function loadMe() { api("/print/api/account/me").then(function (j) { if (j.ok) { applyMe(j); if (S.cat) { var sp = root.querySelector(".ps-status[data-oid]"); if (sp && LIVE.o) { if (!liveBusy()) renderStatus(LIVE.o, LIVE.id, LIVE.t); } else if (!sp && !(LIVE.statusMode && !S.view)) render(); } } }).catch(function () {}); }   // Bestellseite nicht durch die Startseite ersetzen
   function headUpdate() {
     document.querySelectorAll("[data-acct-link]").forEach(function (a) { var l = a.querySelector("[data-acct-label]"); if (l) l.textContent = S.me ? "Konto" : "Anmelden"; else a.textContent = S.me ? "Mein Konto" : "Anmelden"; });
-    var cur = S.view === "konto" ? "konto" : !S.view && root.querySelector(".ps-status[data-oid]") ? (S.me ? "konto" : "") : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
+    var cur = S.view === "konto" ? "konto" : S.view === "xmas" ? "" : !S.view && root.querySelector(".ps-status[data-oid]") ? (S.me ? "konto" : "") : S.step >= 4 && !S.view ? "cart" : S.step === 1 ? (S.page === "produkte" ? "produkte" : "home") : "produkte";
     document.querySelectorAll("[data-bn]").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-bn") === cur); });
     document.querySelectorAll("[data-cart-n]").forEach(function (b) { b.textContent = S.cart.length ? String(S.cart.length) : ""; b.hidden = !S.cart.length; });
   }
@@ -363,8 +366,11 @@
     return goV(0) ? cur : null;
   }
   var OMITTABLE = /^(pallet_delivery|bundle|cross_bundle|packaging_extras|sheet_size|special_size)$/;   // wie Server: darf als letzter Ausweg fehlen
-  function autoVars() { var au = S.prod.auto || {}; return Object.keys(au).map(function (k) { return [k, OMITTABLE.test(k) ? au[k].concat([null]) : au[k]]; }); }
-  function baseOf(sel) { var p = S.prod, b = {}, au = p.auto || {}; Object.keys(p.fixed || {}).forEach(function (k) { if (!au[k]) b[k] = p.fixed[k]; }); if (kind() === "banner") b.size = "custom"; return Object.assign(b, sel); }
+  // Mengen gibt es je Druckverfahren (z. B. 1 Stk. nur als unbedrucktes Muster): Ausschlüsse immer mit den Verfahren prüfen, die die aktuelle Menge drucken (wie der Server)
+  var qtyIn = function (r, n) { return r.ranges.some(function (g) { return n >= g.min && n <= g.max && (n - g.min) % g.step === 0; }); };
+  function pmsFor(n) { var Q = (S.prod && S.prod.qty) || []; if (kind() === "textile" || !Q.some(function (x) { return x.pm; }) || Q.some(function (x) { return !x.pm && qtyIn(x, n); })) return null; return Q.filter(function (x) { return x.pm && qtyIn(x, n); }).map(function (x) { return x.pm; }); }
+  function autoVars() { var au = S.prod.auto || {}, pm = pmsFor(+S.copies); return Object.keys(au).map(function (k) { var l = k === "printingmethod" && pm ? au[k].filter(function (x) { return pm.indexOf(x) > -1; }) : au[k]; return [k, OMITTABLE.test(k) ? l.concat([null]) : l]; }); }
+  function baseOf(sel) { var p = S.prod, b = Object.assign({}, p.implicit || {}), au = p.auto || {}; Object.keys(p.fixed || {}).forEach(function (k) { if (!au[k]) b[k] = p.fixed[k]; }); if (kind() === "banner") b.size = "custom"; return Object.assign(b, sel); }
   function excluded(sel) { return !solve(autoVars(), baseOf(sel)); }
   function fixSel(changed) { // ausgeschlossene Kombination → die übrigen Optionen auf die nächste gültige Kombination setzen (aktuelle Werte zuerst probieren)
     var p = S.prod; if (!excluded(S.sel)) return;
@@ -644,17 +650,22 @@
       return;
     }
     if (!S.prod || S.prod.key !== key) {
-      recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; S.autoFix = key; S.pmkImg = 0; p.props.forEach(function (pr) { var d = (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
-      ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;
-        bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); });
+      recentAdd(key); S.prod = p; S.sel = {}; S.gal = 0; S.autoFix = key; S.pmkImg = 0;
+      // Startausführung vom Server (print-shop.js startOf: Auflage + Auswahl passend zu Druckverfahren und Ausschlussregeln – gleicher Preis wie Karten/Weihnachtsseite)
+      var st = p.start && p.start.sel && p.kind !== "textile" && (p.tiers || []).indexOf(+p.start.copies) > -1 ? p.start : null;
+      p.props.forEach(function (pr) { var d = st && st.sel[pr.slug] != null ? st.sel[pr.slug] : (p.defaults || {})[pr.slug]; S.sel[pr.slug] = d != null && pr.options.some(function (o) { return o.slug === d; }) ? d : pr.options[0].slug; });
       S.mot = { n: 1, split: [], files: [], i: 0 }; var bt = bestTiers(p); var nice = [100, 50, 250, 25, 500, 10].filter(function (n) { return p.tiers.indexOf(n) > -1; })[0];   // ohne Bestseller-Auflage: runde, übliche Menge statt z. B. 42
-      S.copies = bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.dday = ""; S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
+      S.copies = st ? +st.copies : bt.length ? (bt.indexOf(500) > -1 ? 500 : bt[0]) : p.tiers[0] === 1 && bigFmt(p) ? 1 : nice || (p.tiers.length ? p.tiers[Math.min(1, p.tiers.length - 1)] : 0); S.dday = "";
+      if (!st) ["size", "material", "printtype"].forEach(function (k) { var pr = p.props.filter(function (x) { return x.slug === k; })[0]; if (!pr) return;   // ohne Startausführung (alter Katalog): Bestseller wie bisher
+        bestOf(pr).some(function (b) { var t = Object.assign({}, S.sel); t[k] = b; if (excluded(t)) return false; S.sel = t; return true; }); }); S.urgency = p.urgency.some(function (u) { return u.slug === "standard"; }) ? "standard" : (p.urgency[0] || {}).slug || "standard"; S.file = null; S.previews = null; S.design = null; S.price = null; S.mode = ""; S.logos = {}; S.pm = "auto"; S.dd = "";
       var C = p.custom; if (C) { var cm = C.unit === "cm", f = cm ? 10 : 1, cl = function (v, a, b) { return Math.max(a, Math.min(b, v)); }; S.custom = { w: cl(cm ? 2000 : 148, C.minW, C.maxW) / f, h: cl(cm ? 1000 : 210, C.minH, C.maxH) / f }; }
       if (p.kind === "textile") { var m = p.methods[0], sz = {}, ms = p.sizes.filter(function (x) { return /^(unisex_)?m$/i.test(x.slug); })[0] || p.sizes[0]; sz[ms.slug] = Math.max(10, m.min); S.textile = { method: m.key, positions: [m.positions[0]], sizes: sz }; } else S.textile = null;
       fixSel(); S.presetBase = Object.assign({}, S.sel);
     }
     loadPrice(); if (cb) cb();
   }
+  // Auflage aus einem Link (?menge=…, Weihnachtsseite data-copies): nur angebotene Mengen
+  function setCopies(v) { var n = parseInt(v, 10); if (!S.prod || !(n > 0) || kind() === "textile" || (S.prod.tiers || []).indexOf(n) < 0 || n === S.copies) return; S.copies = n; motBalance(); loadPrice(); }
   var FOLD_RX = /^(single|singlehorizontal|wikkel|zigzag|luik|cross)_\d+$/;
   function sizeOf() {
     if (S.sel.fold && FOLD_RX.test(S.sel.fold)) return S.price && S.price.folds && S.price.size ? S.price.size : null;   // Folder: Größe = gefalzt, Datei = offenes Format (vom Server)
@@ -825,6 +836,8 @@
   function render0() {
     document.querySelectorAll("[data-nav]").forEach(function (a) { if (a.closest(".nav-links")) a.classList.toggle("active", !S.view && S.step === 1 && S.page === a.getAttribute("data-nav")); });
     var acl = document.querySelector(".nav-links [data-acct-link]"); if (acl) acl.classList.toggle("active", S.view === "konto");
+    var xnl = document.querySelector(".nav-links [data-xnav]"); if (xnl) { xnl.classList.toggle("active", S.view === "xmas"); if (S.view === "xmas") xnl.setAttribute("aria-current", "page"); else xnl.removeAttribute("aria-current"); }
+    if (S.view === "xmas" && XM_HTML) { root.innerHTML = XM_HTML; headUpdate(); try { document.title = document.title; } catch (e) {} return; }
     if (!S.view && S.step === 1 && S.page !== "produkte") { root.innerHTML = vHome(); headUpdate();   /* Startseite ohne Preise (Wunsch Simon) */ return; }
     var h = S.step > 1 ? stepsHtml() : "";
     if (S.view === "konto") { root.innerHTML = vAccount(); headUpdate(); return; }
@@ -891,7 +904,8 @@
   function loadFrom(keys) { var seen = {}; keys = keys.filter(function (k) { if (k in FROMP || seen[k]) return false; seen[k] = 1; return true; }); if (!keys.length) return;
     if (keys.length > 12) { for (var ci = 0; ci < keys.length; ci += 12) loadFrom(keys.slice(ci, ci + 12)); return; }   // Server nimmt max. 12 je Anfrage
     keys.forEach(function (k) { FROMP[k] = null; });
-    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p) return; var o = fromSel(p); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && bigFmt(p) ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
+    // Produkte mit Startausführung: ohne Auswahl rechnet der Server genau diese (= Konfigurator beim Öffnen); sonst Bestseller + typische Auflage wie bisher
+    var sels = {}; keys.forEach(function (k) { var p = prodByKey(k); if (!p || p.start) return; var o = fromSel(p); var t = p.tiers || [], bq = t.indexOf(500) > -1 ? 500 : t.indexOf(250) > -1 ? 250 : t[0] === 1 && bigFmt(p) ? 1 : t.indexOf(5) > -1 && t[0] === 1 ? 5 : t[Math.min(1, t.length - 1)]; if (bq) o.__copies = bq; if (Object.keys(o).length) sels[k] = o; });
     api("/print/api/from?keys=" + encodeURIComponent(keys.join(",")) + "&sel=" + encodeURIComponent(JSON.stringify(sels))).then(function (j) { if (!j.ok) return; Object.keys(j.from || {}).forEach(function (k) { FROMP[k] = j.from[k]; document.querySelectorAll('[data-from="' + k + '"]').forEach(function (el) { el.innerHTML = fromTxt(k); }); }); }).catch(function () {}); }
   function fromTxt(k) { var f = FROMP[k], pp = f && prodByKey(k), g0 = f && (S.ctype === "company" ? f.gross / 1.2 : f.gross);
     if (f && isPromo(pp) && f.copies > 1) return "<b>" + eur(g0 / f.copies).replace(/(,\d\d)\d*/, "$1") + "</b>/Stk. <small>(" + (+f.copies).toLocaleString("de-AT") + "\u00a0Stk. " + eur(g0) + ")</small>";   // Werbeartikel: Stückpreis groß
@@ -931,7 +945,7 @@
       '<div class="ps-h1tiles">' + tiles.map(function (p) { return '<button type="button" data-prod="' + esc(p.key) + '"><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy">' : '<i aria-hidden="true">' + esc(p.icon) + "</i>") + "</span><b>" + esc(p.kind === "promo" ? "Werbeartikel" : p.kind === "textile" ? "T-Shirts" : shortName(p)) + "</b></button>"; }).join("") + "</div>" +
       '<button type="button" class="ps-link ps-h1all" data-nav="produkte">Alle Produkte ansehen →</button>' +
       '<ul class="ps-h1trust"><li>Preis sofort inkl. Versand</li><li>Datencheck gratis</li><li>Firmen auf Rechnung</li></ul></section>' +
-      savedHomeHtml() + recentHtml() +
+      xmasTeaser() + savedHomeHtml() + recentHtml() +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Unsere Klassiker</h2></div><div class="ps-feats two">' + classics().map(function (p) { return featCard(p, true); }).join("") + "</div></section>" +
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Heute im Fokus</h2><span class="pd-muted">Jeden Tag vier andere Ideen aus unserem Sortiment</span></div><div class="ps-feats four">' + dailyPicks().map(function (p) { return featCard(p); }).join("") + "</div></section>" +
       (nw.length ? '<section class="ps-hsec ps-new"><div class="ps-hsec-h"><h2>Neu im Sortiment</h2><span class="pd-muted">Die vier neuesten Produkte – frisch aufgenommen</span></div><div class="ps-feats four">' + nw.map(function (p) { return featCard(Object.assign({}, p, { __new: true })); }).join("") + "</div></section>" : "") +
@@ -945,6 +959,13 @@
       '<section class="ps-hsec"><div class="ps-hsec-h"><h2>Alle Kategorien</h2><button type="button" class="ps-link" data-nav="produkte">Alle Produkte ansehen →</button></div><div class="ps-cats">' + groups.map(function (x) { return '<button type="button" class="ps-catt" data-nav="produkte" data-navgroup="' + esc(x.g.slug) + '"><span class="ci">' + (x.img ? '<img src="' + esc(x.img) + '" alt="" loading="lazy">' : "") + '</span><span class="ct"><b>' + esc(x.g.name) + "</b><span>" + x.n + " Produkte →</span></span></button>"; }).join("") + "</div></section>" +
       '<section class="ps-hsec ps-hsteps"><div class="ps-hsec-h"><h2>So einfach geht’s</h2><a class="ps-link" href="/print/hilfe">So geht’s &amp; FAQ →</a></div><ol><li><b>Produkt wählen</b><span>Format, Papier, Auflage – Preis sofort</span></li><li><b>Gestalten oder hochladen</b><span>Im Designer oder als fertige PDF</span></li><li><b>Bezahlen</b><span>Online oder als Firma auf Rechnung</span></li><li><b>Prüfen &amp; drucken</b><span>Automatischer Datencheck, Versand in ganz Österreich</span></li></ol></section>';
   }
+  // Weihnachts-Teaser (nur in der Saison, Server liefert catalog.xmas): Bild über unseren Bild-Proxy, Link auf die Weihnachtsabteilung
+  function xmasTeaser() {
+    var x = S.cat && S.cat.xmas; if (!x || !x.img) return "";
+    var im = function (w) { return "/print/bild/ez9mp376cw6o/" + x.img + "?fm=webp&w=" + w + "&q=75"; };
+    return '<a class="ps-xteaser" href="/print/weihnachten"><span class="im"><img src="' + esc(im(1200)) + '" srcset="' + esc(im(800)) + " 800w, " + esc(im(1200)) + " 1200w, " + esc(im(1600)) + ' 1600w" sizes="(max-width: 1760px) 96vw, 1680px" width="1200" height="522" alt="" loading="lazy" decoding="async"></span>' +
+      '<span class="tx"><span class="eyebrow">Weihnachten ' + esc(x.year) + "</span><b>Weihnachten mit deinem Design</b><span>Karten, Kalender, Verpackung und kleine Geschenke" + (x.n > 9 ? " – " + x.n + " Ideen" : "") + (x.before ? ", bei jedem Produkt mit Liefertermin." : ".") + '</span><span class="ps-btn primary">Zur Weihnachtsabteilung <span aria-hidden="true">→</span></span></span></a>';
+  }
   function setPage(pg, push) {
     S.view = ""; S.page = pg; S.step = 1; S.dd = "";
     if (push !== false) try { history.pushState({ pg: pg }, "", pg === "produkte" ? "/print?produkte" + (S.group ? "&kategorie=" + encodeURIComponent(S.group) : "") : "/print"); } catch (e) {}
@@ -952,6 +973,7 @@
   }
   window.addEventListener("popstate", function () { if (!S.cat) return; var st = history.state;
     if (st && st.psStep && S.prod) { closeSheet(); S.view = ""; S.dd = ""; if (st.psStep === 3) S.mode = S.file ? S.mode : st.psMode || ""; go(st.psStep, true); return; }   // Schritt zurück/vor
+    if (XMP() && XM_HTML) { if (S.view !== "xmas" || S.step !== 1) { closeSheet(); S.view = "xmas"; S.step = 1; S.dd = ""; render(); } return; }   // zurück zur Weihnachtsabteilung (auch Sprungmarken #…)
     var qq = new URLSearchParams(location.search); if (qq.has("konto")) { S.view = "konto"; render(); return; } if (qq.has("warenkorb")) { S.view = ""; go(4, true); return; } S.group = qq.get("kategorie") || ""; S.sub = qq.get("unter") || ""; S.q = qq.get("q") || ""; setPage(qq.has("produkte") ? "produkte" : "home", false); });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-nav]"); if (!a || !S.cat) return; e.preventDefault();
@@ -1849,13 +1871,14 @@
     var fl = e.target.closest("[data-flt]"); if (fl) { var fk = fl.getAttribute("data-flt"); S.flt = S.flt || {}; if (!fk) S.flt = {}; else S.flt[fk] = !S.flt[fk]; var gg = document.getElementById("psGrid"); if (gg) { gg.innerHTML = gridHtml(); fromObserve(); } return; }
     var t = e.target.closest("[data-go],[data-prod],[data-act],[data-ctype],[data-group],[data-sub],[data-gal]"); if (!t || t.disabled) return;
     if (t.hasAttribute("data-go")) { e.preventDefault(); go(+t.getAttribute("data-go")); return; }
-    if (t.hasAttribute("data-prod")) { pickProduct(t.getAttribute("data-prod"), function () { go(2); }); return; }
+    if (t.hasAttribute("data-prod")) { var cq = t.getAttribute("data-copies"); pickProduct(t.getAttribute("data-prod"), function () { if (S.view === "xmas") S.view = ""; setCopies(cq); go(2); }); return; }
     if (t.hasAttribute("data-group")) { navCat(t.getAttribute("data-group"), ""); return; }
     if (t.hasAttribute("data-sub")) { navCat(S.group, t.getAttribute("data-sub")); return; }
     if (t.hasAttribute("data-gal")) { S.gal = +t.getAttribute("data-gal"); var gm = root.querySelector(".ps-gal .main img"), th = t.querySelector("img"), gn = root.querySelector(".ps-gal-n"); if (gm && th) gm.src = th.src.replace(/w=\d+/, "w=1000"); if (gn) gn.textContent = (S.gal + 1) + " / " + root.querySelectorAll("[data-gal]").length; root.querySelectorAll("[data-gal]").forEach(function (b) { b.setAttribute("aria-pressed", String(b === t)); }); return; }
     if (t.hasAttribute("data-ctype")) { saveAddr(); S.ctype = t.getAttribute("data-ctype"); if (S.ctype === "private") S.uidRes = null; reprice(); render(); return; }
     var a = t.getAttribute("data-act"), i = a.indexOf(":"), k = i > -1 ? a.slice(0, i) : a, v = i > -1 ? a.slice(i + 1) : "";
     if (k === "psheet") { openSheet(); return; }
+    if (k === "xmall") { var xs = t.closest(".xm-sec"); if (xs) xs.classList.add("open"); t.remove(); return; }   // Weihnachtsabteilung (Handy): alle Ideen eines Themas
     if (k === "cwarn") { warnPop(v); return; }
     if (k === "brief") { briefPop(); return; }
     if (k === "bleedfix" && S.file) { var f0 = S.file; t.disabled = true; t.textContent = "Wird ergänzt …";

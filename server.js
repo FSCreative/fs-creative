@@ -258,7 +258,8 @@ function printOn(known) {
 function printLiveBlocks(html, known) {
   const on = printOn(known);
   return String(html).replace(/<!--PRINT_LIVE-->([\s\S]*?)<!--\/PRINT_LIVE-->/g, (m, inner) => on ? inner : "")
-    .replace(/<!--PRINT_OFF-->([\s\S]*?)<!--\/PRINT_OFF-->/g, (m, inner) => on ? "" : inner);
+    .replace(/<!--PRINT_OFF-->([\s\S]*?)<!--\/PRINT_OFF-->/g, (m, inner) => on ? "" : inner)
+    .replace(/<!--PRINT_XMAS-->([\s\S]*?)<!--\/PRINT_XMAS-->/g, (m, inner) => { let x = false; try { x = on && !!PRINT && PRINT.xmasOn(); } catch (e) {} return x ? inner : ""; });   // Weihnachtsabteilung (nur in der Saison)
 }
 function renderIndex(baseHtml, route, live) {
   const on = printOn(live);
@@ -4090,7 +4091,7 @@ const server = http.createServer((req, res) => {
     // Druckshop-Produktbilder über unseren Server (Bild-Proxy nur für images.ctfassets.net) – print-bild.js
     if (p.indexOf("/print/bild/") === 0) return void guard(res, PRINT_BILD.handle(req, res, u, p, send));
     // Druckshop (/print): API, Webhooks (Mollie, Print.com), signierte Druckdateien für Print.com, Skripte, AGB – Logik in print-shop.js
-    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
+    if (p === "/print" || p === "/print/" || p === "/print.html" || p.indexOf("/print/api/") === 0 || p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0 || p === "/print/app.js" || p === "/print/sonderfarben.ase" || p === "/print/preise" || p === "/print/preise/" || p === "/print/weihnachten" || p === "/print/weihnachten/" || p === "/print/designer.js" || p === "/print/templates.js" || p === "/print/agb" || p === "/print/agb/" || p === "/print/agb.html" || p === "/print/hilfe" || p === "/print/hilfe/" || p.indexOf("/print/newsletter/") === 0) {
       return void guard(res, PRINT.handlePublic(req, res, u, p));
     }
     // Vertraulichkeitsvereinbarungen (nda.js): öffentliche Seite /nda/<token> und Cockpit-API /admin/api/nda/… (eigene Anmeldeprüfung)
