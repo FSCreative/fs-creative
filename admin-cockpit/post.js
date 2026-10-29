@@ -71,6 +71,9 @@ M.isTrashed=isTrashed; M.isSent=isSent; M.isSpam=isSpam; M.isDraftBox=isDraftBox
 var S=M.store={accounts:[],folders:[],messages:[],account:"",fetchedAt:null,full:false,fullAt:0,loading:false,err:"",ver:0};
 var OV=M.ov={};            // lokale Änderungen, bis der Server sie bestätigt (max. 10 Min.)
 var OV_TTL=600000;
+/* „Ältere Mails laden“ (Simon 29.10.2026): Der Abruf bringt je Ordner nur die neuesten Mails (plus alle ungelesenen) – ältere holt der Knopf
+   am Listenende nach (nur Kopfzeilen, Inhalt beim Öffnen). Sie bleiben bis zum Neuladen der Seite, solange der Abruf sie nicht selbst liefert. */
+S.older=[]; S.olderN={}; S.olderBusy=false;
 M.local=M.local||[];       // lokale Kopien gesendeter Mails, bis die Server-Kopie im Gesendet-Ordner auftaucht
 if(!UI.mf) UI.mf="inbox";
 if(!UI.macct) UI.macct="all";
@@ -135,16 +138,39 @@ function ingest(d,full){
   if(Array.isArray(d.accounts)&&d.accounts.length) S.accounts=d.accounts;
   if(d.account) S.account=d.account;
   if(full&&Array.isArray(d.folders)) S.folders=d.folders;
-  if(full){ var ids={}; d.messages.forEach(function(m){ ids[m.id]=1; }); Object.keys(OV).forEach(function(k){ if(!ids[k]) delete OV[k]; }); }
+  if(full){ var ids={}; d.messages.concat(S.older).forEach(function(m){ ids[m.id]=1; }); Object.keys(OV).forEach(function(k){ if(!ids[k]) delete OV[k]; }); }
   /* Cockpit-Daten (max. 200 Mails) nur einmischen, wenn sie neuer sind als der volle Abruf – sonst kämen verschobene Mails mit alter ID zurück */
   if(!full&&S.full&&(!d.fetchedAt||!S.fetchedAt||Date.parse(d.fetchedAt)<=Date.parse(S.fetchedAt))){ M.changed(); return; }
   var inc=d.messages.map(norm), server;
   if(full||!S.full){ server=inc; if(full){ S.full=true; S.fullAt=Date.now(); } }
   else { var idx={}; server=S.messages.filter(function(m){return !m.local;}).map(function(m,i){ idx[m.id]=i; return m; }); inc.forEach(function(m){ if(idx[m.id]!=null) server[idx[m.id]]=m; else server.push(m); }); }
   if(d.fetchedAt) S.fetchedAt=d.fetchedAt;
-  S.messages=server.map(function(m){ return m.local?m:applyOv(m); }).concat(liveLocals(server));
+  S.messages=server.map(function(m){ return m.local?m:applyOv(m); }).concat(liveLocals(server)).concat(olderKeep(server));
   M.changed();
 }
+function olderKeep(server){ var ids={}; server.forEach(function(m){ ids[m.id]=1; }); return S.older.filter(function(m){ return !ids[m.id]; }).map(applyOv); }
+/* Ordner der aktuellen Ansicht mit älteren Mails am Server: before = kleinste UID des Blocks der neuesten Mails, rest = noch nicht nachgeladen */
+function olderTargets(){
+  var f=UI.mf, t=[]; if(UI.mq) return t;
+  var each=function(fn){ accounts().forEach(function(a){ if(UI.macct==="all"||UI.macct===a.key) t.push({acc:a.key,path:fn(a.key)}); }); };
+  if(f==="inbox") each(function(){ return "INBOX"; }); else if(f==="sent") each(M.sentPath); else if(f.indexOf("f:")===0) t.push(parseFolderKey(f));
+  return t.map(function(x){ var fo=S.folders.filter(function(y){ return y.path===x.path&&(y.account||primaryAcct())===x.acc; })[0], k=x.acc+"|"+x.path;
+    return fo&&fo.before&&fo.older>0?{acc:x.acc,path:x.path,key:k,before:fo.before,n:S.olderN[k]||0,rest:Math.max(0,fo.older-(S.olderN[k]||0))}:null; }).filter(function(x){ return x&&x.rest>0; });
+}
+function olderBtn(){ var ts=olderTargets(); if(!ts.length) return ""; var rest=ts.reduce(function(a,x){ return a+x.rest; },0);
+  return '<button type="button" class="more" data-act="molder"'+(S.olderBusy?" disabled":"")+'>'+(S.olderBusy?'<span class="spin"></span> Lade ältere Mails …':'Ältere Mails laden <span class="mu">· noch '+rest.toLocaleString("de-AT")+' am Server</span>')+'</button>'; }
+/* je Ordner alles ab dem Block neu holen (bisher nachgeladene + 50) – so entsteht keine Lücke, wenn inzwischen neue Mails dazukamen */
+F.action("molder",function(){
+  var ts=olderTargets(); if(!ts.length||S.olderBusy) return; S.olderBusy=true; M.refresh();
+  Promise.all(ts.map(function(t){ var lim=Math.min(500,t.n+50);
+    return F.api("/admin/api/mail-older?account="+encodeURIComponent(t.acc)+"&folder="+encodeURIComponent(t.path)+"&before="+encodeURIComponent(t.before)+"&limit="+lim).then(function(j){
+      if(!j||!j.ok||!Array.isArray(j.messages)) return (j&&j.error)||"Fehler";
+      var got=j.messages.map(function(m){ var x=norm(m); x.lite=!!m.lite; return x; });
+      S.older=S.older.filter(function(m){ return !(accOf(m)===t.acc&&m.olderOf===t.path); }).concat(got.map(function(x){ x.olderOf=t.path; return x; }));
+      S.olderN[t.key]=got.length; return ""; }); }))
+  .then(function(errs){ var e=errs.filter(Boolean)[0]; if(e) F.toast("Ältere Mails: "+e,true); }, function(){ F.toast("Ältere Mails konnten nicht geladen werden – keine Verbindung",true); })
+  .then(function(){ S.olderBusy=false; var srv=S.messages.filter(function(m){ return !m.olderOf; }); S.messages=srv.concat(olderKeep(srv.filter(function(m){ return !m.local; }))); UI.mshow=Math.max(UI.mshow||150,baseView().length); M.changed(); M.refresh(); });
+});
 /* Nach jeder lokalen Änderung: andere Module (Heute, Zähler) sehen denselben Stand */
 M.changed=function(){
   S.ver++;
@@ -457,6 +483,7 @@ function listHtml(list){
     out.push(rowHtml(m,{n:th.length,open:open,unread:th.some(function(x){ return !x.read&&!isSent(x); })}));
     if(open) th.forEach(function(x){ if(x.id!==m.id) out.push(rowHtml(x,{child:true})); }); });   /* aufgeklappt: ältere Mails der Unterhaltung darunter */
   if(list.length>shown.length) out.push('<button type="button" class="more" data-act="mmore">Weitere '+Math.min(150,list.length-shown.length)+' von '+(list.length-shown.length)+' anzeigen</button>');
+  else out.push(olderBtn());
   return out.join("");
 }
 
