@@ -127,6 +127,22 @@ module.exports = function () {
         if (p === "/tt/v2/post/publish/status/fetch/") { S.posts.push({ pf: "tiktok", bytes: S.tt.got, size: S.tt.size, direct: S.tt.direct });
           if (S.tt.direct) return end(200, '{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":[' + (S.tt.privacy === "SELF_ONLY" ? "" : "7431234567890123456") + '],"uploaded_bytes":' + S.tt.got + '},"error":{"code":"ok"}}');   // 19-stellige Zahl wie bei TikTok
           return end(200, { data: { status: "SEND_TO_USER_INBOX" }, error: { code: "ok" } }); }
+        // ── Zernio (TikTok über geprüfte App): Schlüssel sk_test, ein TikTok-Konto; holt das Video über die öffentliche Adresse; gleicher Inhalt binnen 24 h → 409 ──
+        if (p.indexOf("/zn/") === 0) { S.zn = S.zn || { posts: [], got: [] };
+          if (auth !== "Bearer sk_test") return end(401, { error: "Invalid API key", type: "authentication_error" });
+          if (p === "/zn/v1/accounts") return end(200, { accounts: [{ _id: "zacc1", platform: "tiktok", username: "fs.creative.at", displayName: "FS Creative", isActive: true }], hasAnalyticsAccess: false });
+          if (p === "/zn/v1/accounts/zacc1/health") return end(200, { accountId: "zacc1", platform: "tiktok", integrationLane: "business", status: S.znHealth || "healthy", tokenStatus: { valid: S.znHealth !== "error" } });
+          if (p === "/zn/v1/accounts/zacc1/tiktok/creator-info") return end(200, { creator: { nickname: "FS Creative", avatarUrl: "", canPostMore: true }, privacyLevels: [{ value: "PUBLIC_TO_EVERYONE", label: "Public To Everyone" }],
+            postingLimits: { maxVideoDurationSec: 600, interactionSettings: { allow_comment: { enabled: true, required: true }, allow_duet: { enabled: true, required: true }, allow_stitch: { enabled: false, required: true } } } });
+          if (p === "/zn/v1/posts" && req.method === "POST") { const ts = json.tiktokSettings || {}, mi = (json.mediaItems || [])[0] || {}, pf = (json.platforms || [])[0] || {};
+            if (pf.platform !== "tiktok" || pf.accountId !== "zacc1" || mi.type !== "video" || !ts.content_preview_confirmed || !ts.express_consent_given || ["allow_comment", "allow_duet", "allow_stitch"].some(k => typeof ts[k] !== "boolean")) return end(400, { error: "Missing required TikTok settings" });
+            if (ts.privacy_level !== "PUBLIC_TO_EVERYONE") return end(400, { error: "TikTok Business app accounts publish videos as public only" });
+            const dup = S.zn.posts.find(x => x.json.content === json.content && x.json.mediaItems[0].url === mi.url); if (dup) return end(409, { error: "This exact content is already scheduled, publishing, or was posted to this account within the last 24 hours.", details: { accountId: "zacc1", platform: "tiktok", existingPostId: dup.id } });
+            const buf = await pull(mi.url); S.zn.got.push(buf.length); const zid = id("zp"); S.zn.posts.push({ id: zid, json, polls: 0 });
+            return end(201, { post: { _id: zid, status: "publishing", platforms: [{ platform: "tiktok", accountId: "zacc1", status: "processing" }] } }); }
+          const zm = p.match(/^\/zn\/v1\/posts\/([^/]+)$/); if (zm) { const z = S.zn.posts.find(x => x.id === zm[1]); if (!z) return end(404, { error: "Not found" }); z.polls++;
+            return end(200, { post: { _id: z.id, status: z.polls > 1 ? "published" : "publishing", platforms: [z.polls > 1 ? { platform: "tiktok", status: "published", platformPostId: "7439999999999999999", platformPostUrl: "https://www.tiktok.com/@fs.creative.at/video/7439999999999999999" } : { platform: "tiktok", status: "processing" }] } }); }
+        }
         return end(404, { error: { message: "unbekannt " + p } });
       } catch (e) { return end(500, { error: { message: String(e.message || e) } }); }
     });

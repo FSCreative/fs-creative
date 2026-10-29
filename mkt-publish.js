@@ -1,7 +1,8 @@
 /* Marketing: Veröffentlichen über die offiziellen Schnittstellen (kostenlos) – Anmeldung (OAuth), Token erneuern, Posten.
    Plattformen: Instagram (Instagram-Login, graph.instagram.com), Facebook-Seite, Threads, LinkedIn (Profil), YouTube Shorts, TikTok (direkt aufs Profil, sonst als Entwurf in die App),
    Pinterest, Bluesky (App-Passwort). X/Twitter kostet seit 2026 pro Post – nicht eingebaut.
-   Medien holen Instagram/Facebook/Threads/Pinterest selbst über eine öffentliche Adresse (marketing.js: /m/…); LinkedIn, YouTube, TikTok und Bluesky bekommen die Datei hochgeladen.
+   TikTok wahlweise über Zernio (zernio.com, von TikTok geprüfte App, API-Schlüssel statt eigener App): öffentlich mit Text und Hashtags – TikTok prüft keine internen Werkzeuge für Direct Post.
+   Medien holen Instagram/Facebook/Threads/Pinterest (und Zernio) selbst über eine öffentliche Adresse (marketing.js: /m/…); LinkedIn, YouTube, TikTok und Bluesky bekommen die Datei hochgeladen.
    Alle Adressen sind über D.base überschreibbar (Tests mit Attrappen). Fehler kommen als lesbare deutsche Meldung zurück. */
 "use strict";
 const fs = require("fs");
@@ -16,6 +17,7 @@ const DEF = {
   ttAuth: "https://www.tiktok.com/v2/auth/authorize/", tt: "https://open.tiktokapis.com",
   pinAuth: "https://www.pinterest.com/oauth/", pin: "https://api.pinterest.com",
   bsky: "https://bsky.social", bskyVideo: "https://video.bsky.app",
+  zn: "https://zernio.com/api",
 };
 // Plattform → Anbieter (App-Zugang), Formate, Textgrenzen
 const PLATFORMS = {
@@ -33,7 +35,7 @@ const PROVIDERS = {
   facebook: { label: "Facebook (Meta)", portal: "https://developers.facebook.com/apps", hint: "Dieselbe Meta-App: App-ID und App-Geheimcode (App-Einstellungen → Allgemeines). „Facebook Login for Business“ → Konfiguration mit den Seiten-Berechtigungen anlegen und deren Konfigurations-ID eintragen. Damit Posts öffentlich sind, muss die App auf „Live“ stehen." },
   threads: { label: "Threads (Meta)", portal: "https://developers.facebook.com/apps", hint: "Meta-App mit Anwendungsfall „Threads-API“: Threads-App-ID und -Geheimschlüssel; dich als Threads-Tester eintragen und in Threads bestätigen." },
   google: { label: "YouTube (Google)", portal: "https://console.cloud.google.com/apis/credentials", hint: "Google-Cloud-Projekt → YouTube Data API v3 aktivieren → OAuth-Client (Webanwendung). Zustimmungsbildschirm auf „In Produktion“ stellen, sonst läuft die Anmeldung nach 7 Tagen ab." },
-  tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "TikTok-App mit Login Kit und Content Posting API, dort „Direct Post“ einschalten. Videos gehen direkt auf dein Profil, sobald TikTok die App geprüft hat – bis dahin als Entwurf in deine TikTok-App." },
+  tiktok: { label: "TikTok", portal: "https://developers.tiktok.com/apps", hint: "Nur nötig, wenn TikTok nicht über Zernio verbunden ist (empfohlen, siehe unten beim TikTok-Konto). Eigene TikTok-App mit Login Kit und Content Posting API: Videos landen als Entwurf in deiner TikTok-App – direktes Posten gibt TikTok internen Werkzeugen nicht frei." },
   linkedin: { label: "LinkedIn", portal: "https://www.linkedin.com/developers/apps", hint: "LinkedIn-App mit „Share on LinkedIn“ und „Sign In with LinkedIn using OpenID Connect“. Postet auf dein Profil; die Anmeldung gilt 60 Tage." },
   pinterest: { label: "Pinterest", portal: "https://developers.pinterest.com/apps", hint: "Pinterest-App (Business-Konto). Mit „Trial access“ sind Pins nur für dich sichtbar – für öffentliche Pins „Standard access“ beantragen." },
   bluesky: { label: "Bluesky", portal: "https://bsky.app/settings/app-passwords", hint: "Kein Entwickler-Zugang nötig: in Bluesky unter Einstellungen → App-Passwörter ein App-Passwort anlegen und beim Verbinden eingeben." },
@@ -144,8 +146,27 @@ module.exports = function (D) {
     const s = await req("POST", B.bsky + "/xrpc/com.atproto.server.createSession", { json: { identifier: String(handle).replace(/^@/, ""), password: appPassword } });
     return { platform: "bluesky", account: { id: s.did, name: s.handle, handle: "@" + s.handle }, tok: { access: s.accessJwt, refresh: s.refreshJwt, pass: appPassword, handle: s.handle, expiresAt: inSec(3600) } };
   }
+  // TikTok über Zernio: Schlüssel prüfen und die dort verbundenen TikTok-Konten holen (das TikTok-Konto verbindet Simon bei Zernio selbst)
+  async function zreq(method, pth, tok, o) {
+    o = o || {};
+    const r = await req(method, B.zn + pth, Object.assign({ token: tok.key, okStatus: true, withHeaders: true, timeout: o.timeout || 30000 }, o.json !== undefined ? { json: o.json } : {})), j = r.j || {};
+    if (r.status >= 400 && (o.ok || []).indexOf(r.status) < 0) {
+      const m = typeof j.error === "string" ? j.error : (j.error && j.error.message) || j.message || j._text || "";
+      throw pubErr("TikTok (Zernio): " + (r.status === 401 ? "API-Schlüssel ungültig – bitte neu verbinden." : String(m || "Fehler " + r.status).slice(0, 240)), { status: r.status, auth: r.status === 401 });
+    }
+    return { j, status: r.status };
+  }
+  async function zernioLogin(key) {
+    key = String(key || "").trim(); if (!key) throw pubErr("Zernio: Bitte den API-Schlüssel eintragen.");
+    const { j } = await zreq("GET", "/v1/accounts" + q({ platform: "tiktok" }), { key });
+    const acc = (j.accounts || []).filter(a => a && a.platform === "tiktok" && a.isActive !== false);
+    if (!acc.length) throw pubErr("Zernio: Dort ist noch kein TikTok-Konto verbunden – in Zernio zuerst TikTok verbinden, dann hier nochmal.");
+    return acc.map(a => { const h = String(a.username || "").replace(/^@/, "");
+      return { platform: "tiktok", account: { id: String(a._id), name: a.displayName || h || "TikTok", handle: h ? "@" + h : "" }, tok: { via: "zernio", key, account: String(a._id), handle: h, scope: "video.publish", expiresAt: "" } }; });
+  }
   // Zugang auffrischen (vor dem Posten bzw. täglich). Liefert neue tok oder null (unverändert).
   async function refresh(platform, tok, c) {
+    if (tok && tok.via === "zernio") return null;   // API-Schlüssel läuft nicht ab
     const left = tok.expiresAt ? Date.parse(tok.expiresAt) - Date.now() : Infinity;
     if (platform === "instagram" && left < 20 * 864e5) { const r = await req("GET", B.ig + "/refresh_access_token" + q({ grant_type: "ig_refresh_token", access_token: tok.access })); return Object.assign({}, tok, { access: r.access_token, expiresAt: inSec(r.expires_in || 5184000) }); }
     if (platform === "threads" && left < 20 * 864e5) { const r = await req("GET", B.th + "/refresh_access_token" + q({ grant_type: "th_refresh_token", access_token: tok.access })); return Object.assign({}, tok, { access: r.access_token, expiresAt: inSec(r.expires_in || 5184000) }); }
@@ -298,6 +319,12 @@ module.exports = function (D) {
   const ttAuthErr = code => /token|scope/i.test(String(code || ""));
   // Konto-Angaben fürs direkte Posten: Spitzname, erlaubte Sichtbarkeiten, ausgeschaltete Interaktionen, Höchstlänge – laut TikTok vor jedem Posten frisch holen
   async function tiktokCreator(tok) {
+    if (tok.via === "zernio") {
+      const { j } = await zreq("GET", "/v1/accounts/" + encodeURIComponent(tok.account) + "/tiktok/creator-info" + q({ mediaType: "video" }), tok, { timeout: 15000 });
+      const cr = j.creator || {}, lim = j.postingLimits || {}, is = lim.interactionSettings || {}, off = k => !!(is[k] && is[k].enabled === false);
+      return { nickname: cr.nickname || "", username: tok.handle || "", avatar: cr.avatarUrl || "", privacy: (j.privacyLevels || []).map(x => x && x.value).filter(Boolean),
+        commentOff: off("allow_comment"), duetOff: off("allow_duet"), stitchOff: off("allow_stitch"), maxSec: +lim.maxVideoDurationSec || 0 };
+    }
     const r = await req("POST", B.tt + "/v2/post/publish/creator_info/query/", { token: tok.access, json: {}, okStatus: true }), er = r && r.error;
     if (er && er.code && er.code !== "ok") throw pubErr(ttMsg(er), { auth: ttAuthErr(er.code) });
     const d = r.data || {};
@@ -307,7 +334,31 @@ module.exports = function (D) {
   // Direkt aufs Profil (Direct Post, Scope video.publish), sobald im Planer die Sichtbarkeit gewählt ist (opts.ttPrivacy, TikTok verlangt die Wahl ohne Vorgabe).
   // Ohne Wahl oder ohne Freigabe: als Entwurf in die TikTok-App. Ungeprüfte App: TikTok nimmt nur Posts auf private Konten an („Nur ich“) –
   // erst privat versuchen, bei öffentlichem Konto dann als Entwurf (audit: "private" bzw. "draft" → Hinweis im Cockpit).
+  // Über Zernio: dieselbe Wahl aus dem TikTok-Fenster (Sichtbarkeit ohne Vorgabe, Kommentare/Duett/Stitch, Werbekennzeichnung), Text samt Hashtags,
+  // Video holt Zernio über die öffentliche Adresse. Zernio lehnt denselben Inhalt binnen 24 h ab (409) – dann gilt der schon angelegte Post (kein Doppelpost bei „nochmal“).
+  async function zernioTiktok(ch, tok, m) {
+    const o = m.opts || {}, privacy = o.ttPrivacy;
+    if (!privacy) throw pubErr("TikTok: Bitte im Planer wählen, wer das Video sehen darf (Bearbeiten → Mehr Optionen → TikTok), dann „nochmal“.");
+    if (!m.video || !m.video.url) throw pubErr("TikTok: Video fehlt.");
+    const ci = await tiktokCreator(tok);
+    if (ci.maxSec && m.duration > ci.maxSec) throw pubErr("TikTok: Das Video ist " + Math.round(m.duration) + " s lang, dieses Konto darf höchstens " + ci.maxSec + " s posten.");
+    if (ci.privacy.length && ci.privacy.indexOf(privacy) < 0) throw pubErr(ttMsg({ code: "privacy_level_option_mismatch" }) + (ci.privacy.length === 1 && ci.privacy[0] === "PUBLIC_TO_EVERYONE" ? " Über Zernio gehen Videos nur öffentlich („Alle“)." : ""));
+    const ts = { privacy_level: privacy, allow_comment: !!o.ttComment && !ci.commentOff, allow_duet: !!o.ttDuet && !ci.duetOff, allow_stitch: !!o.ttStitch && !ci.stitchOff,
+      content_preview_confirmed: true, express_consent_given: true, video_made_with_ai: !!o.ytAi, commercialContentType: o.ttBrandPaid ? "brand_content" : o.ttBrandOwn ? "brand_organic" : "none" };
+    if (o.ttBrandPaid && o.ttBrandOwn) ts.isBrandOrganicPost = true;
+    const tgt = p => ((p && p.platforms) || []).find(x => x.platform === "tiktok") || {}, fin = s => /^(published|failed|cancelled)$/.test(s || "");
+    let { j, status } = await zreq("POST", "/v1/posts", tok, { timeout: 300000, ok: [409], json: { content: String(m.caption || "").slice(0, 2200), mediaItems: [{ type: "video", url: m.video.url }],
+      platforms: [{ platform: "tiktok", accountId: tok.account }], tiktokSettings: ts, publishNow: true } });
+    if (status === 409) { const ex = j.details && j.details.existingPostId; if (!ex) throw pubErr("TikTok (Zernio): " + String(j.error || "Dieser Inhalt wurde schon gepostet.").slice(0, 240)); j = (await zreq("GET", "/v1/posts/" + encodeURIComponent(ex), tok)).j; }
+    let post = j.post || {}, t = tgt(post);
+    for (let i = 0; i < 48 && post._id && !fin(t.status); i++) { await sleep(waitMs); post = (await zreq("GET", "/v1/posts/" + encodeURIComponent(post._id), tok)).j.post || post; t = tgt(post); }
+    if (t.status === "failed" || t.status === "cancelled") throw pubErr("TikTok (Zernio): " + String(t.errorMessage || "Veröffentlichen fehlgeschlagen").slice(0, 240) + (t.errorCategory === "auth_expired" ? " – in Zernio TikTok neu verbinden." : ""));
+    const prof = tok.handle ? "https://www.tiktok.com/@" + tok.handle : "";
+    if (t.status !== "published") return { id: String(post._id || ""), url: prof, note: "Zernio postet das Video gerade – es erscheint in ein paar Minuten auf deinem Profil.", privacy };
+    return { id: String(t.platformPostId || post._id || ""), url: t.platformPostUrl || prof, note: t.platformPostUrl ? "" : "TikTok verarbeitet das Video noch – es erscheint in ein paar Minuten auf deinem Profil.", privacy };
+  }
   async function tiktok(ch, tok, m) {
+    if (tok.via === "zernio") return zernioTiktok(ch, tok, m);
     const o = m.opts || {}, size = fs.statSync(m.video.file).size, { chunk, n } = ttChunks(size), src = { source: "FILE_UPLOAD", video_size: size, chunk_size: chunk, total_chunk_count: n };
     const sc = String(tok.scope || ""); let direct = !!o.ttPrivacy && /video\.publish/.test(sc), audit = "";
     if (!direct && /video\.publish/.test(sc) && !/video\.upload/.test(sc)) throw pubErr("TikTok: Bitte im Planer wählen, wer das Video sehen darf (Bearbeiten → Mehr Optionen → TikTok), dann „nochmal“.");
@@ -822,12 +873,17 @@ module.exports = function (D) {
     if (platform === "threads") return req("GET", B.th + "/v1.0/me" + q({ fields: "id,username", access_token: t }), o);
     if (platform === "linkedin") return req("GET", B.li + "/v2/userinfo", bearer);
     if (platform === "youtube") return req("GET", B.yt + "/youtube/v3/channels" + q({ part: "id", mine: "true" }), bearer);
+    if (platform === "tiktok" && tok.via === "zernio") {   // Schlüssel gültig (401 → neu verbinden) und TikTok bei Zernio noch verbunden
+      const { j } = await zreq("GET", "/v1/accounts/" + encodeURIComponent(tok.account) + "/health", tok, { timeout: 15000 });
+      if (j.status === "error" || (j.tokenStatus && j.tokenStatus.valid === false)) throw pubErr("TikTok (Zernio): Die TikTok-Verbindung bei Zernio ist abgelaufen – in Zernio TikTok neu verbinden.");
+      return j;
+    }
     if (platform === "tiktok") { const r = await req("GET", B.tt + "/v2/user/info/" + q({ fields: "open_id" }), bearer); const er = r && r.error; if (er && er.code && er.code !== "ok") throw pubErr("TikTok: " + (er.message || er.code), { auth: /token|auth/i.test(String(er.code)) }); return r; }
     if (platform === "pinterest") return req("GET", B.pin + "/v5/user_account", bearer);
     if (platform === "bluesky") return req("GET", B.bsky + "/xrpc/com.atproto.server.getSession", bearer);
     throw pubErr("Unbekannte Plattform");
   }
-  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
+  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, zernioLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
     inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, tiktokCreator, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE, ttChunks } };
 };
 module.exports.PLATFORMS = PLATFORMS;

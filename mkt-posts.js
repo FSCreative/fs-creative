@@ -856,7 +856,8 @@ module.exports = function (C) {
       preview: Object.fromEntries(PLATFORMS ? Object.keys(PLATFORMS).filter(pf => (p.platforms || []).indexOf(pf) > -1).map(pf => [pf, captionFor(p, pf)]) : []) };
   }
   const ttDirect = c => c && c.platform === "tiktok" && /video\.publish/.test(String((unseal(c.tok) || {}).scope || ""));
-  function channelPublic(c) { return Object.assign({ id: c.id, brand: c.brand, platform: c.platform, account: c.account, status: c.status, expiresAt: c.expiresAt || "", connectedAt: c.connectedAt, lastError: c.lastError || "", lastOk: c.lastOk || "", verifiedAt: c.verifiedAt || "" }, c.platform === "tiktok" ? { direct: ttDirect(c) } : {}); }
+  const ttVia = c => c && c.platform === "tiktok" && (unseal(c.tok) || {}).via === "zernio" ? "zernio" : "";
+  function channelPublic(c) { return Object.assign({ id: c.id, brand: c.brand, platform: c.platform, account: c.account, status: c.status, expiresAt: c.expiresAt || "", connectedAt: c.connectedAt, lastError: c.lastError || "", lastOk: c.lastOk || "", verifiedAt: c.verifiedAt || "" }, c.platform === "tiktok" ? { direct: ttDirect(c), via: ttVia(c) } : {}); }
   // TikTok direkt: ohne gewählte Sichtbarkeit keine Freigabe (TikTok-Vorgabe: keine Voreinstellung) – das Cockpit fragt vorher im TikTok-Fenster
   function ttReady(post) {
     if ((post.platforms || []).indexOf("tiktok") < 0 || (post.opts || {}).ttPrivacy) return;
@@ -1029,6 +1030,15 @@ module.exports = function (C) {
     if (p === "/admin/api/mkt/connect" && req.method === "POST") {
       const pl = await body(req, 20000);
       if (pl.platform === "bluesky") { const o = await P.bskyLogin(clip(pl.handle, 100), clip(pl.password, 100)); upsertChannel(brand(pl.brand).key, o); return J(res, 200, Object.assign({ ok: true }, overview())), true; }
+      // TikTok über Zernio (API-Schlüssel): bisheriges Konto ersetzen – auch bei anderen Marken mit demselben TikTok-Konto (gemeinsames fs.creative.at)
+      if (pl.platform === "tiktok" && pl.zernioKey !== undefined) {
+        let opts; try { opts = await P.zernioLogin(clip(pl.zernioKey, 300)); } catch (e) { throw fail(400, String(e.message || e).slice(0, 240)); }
+        const bk = brand(pl.brand).key, old = S().channels.find(c => c.brand === bk && c.platform === "tiktok" && c.status !== "getrennt"), oa = (old && old.account) || {};
+        const nh = x => String(x || "").replace(/^@/, "").toLowerCase(), o = opts.find(x => oa.handle && nh(x.account.handle) === nh(oa.handle)) || opts[0];
+        const same = S().channels.filter(c => c.brand !== bk && c.platform === "tiktok" && c.status !== "getrennt" && old && String((c.account || {}).id) === String(oa.id));
+        upsertChannel(bk, o); same.forEach(c => upsertChannel(c.brand, o)); TTC.clear();
+        return J(res, 200, Object.assign({ ok: true }, overview())), true;
+      }
       return J(res, 200, { ok: true, url: startOAuth(pl.brand, pl.platform) }), true;
     }
     if (p === "/admin/api/mkt/oauth/callback" && req.method === "GET") { const to = await oauthCallback(u); res.writeHead(302, { Location: to, "Cache-Control": "no-store" }); res.end(); return true; }

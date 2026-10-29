@@ -44,7 +44,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
   let kiCalls = 0, kiUser = "";
   const KI = { configured: () => true, marketingOn: () => true, marketingGen: async (sys, user, schema) => { kiCalls++; kiUser = user; assert.ok(schema && schema.properties.posts); assert.ok(/NICHTS ERFINDEN/.test(sys)); return { json: KI_POSTS, eur: 0.06 }; } };
   M = require(path.join(ROOT, "marketing.js"))({ send, DATA_DIR: dir, ROOT, secret: "test-secret", KI: () => KI, publicBase: "http://127.0.0.1:" + pport, background: false,
-    publish: { waitMs: 5, pollMax: 5, base: { igAuth: MB + "/igauth", igToken: MB + "/igapi/oauth/access_token", ig: MB + "/ig", fbAuth: MB + "/fbauth", fb: MB + "/fb", fbUpload: MB + "/fbup", thAuth: MB + "/thauth", th: MB + "/th", liAuth: MB + "/liauth", liToken: MB + "/li/token", li: MB + "/li", gAuth: MB + "/gauth", gToken: MB + "/g/token", yt: MB + "/yt", ytUpload: MB + "/ytup", ttAuth: MB + "/ttauth", tt: MB + "/tt", pinAuth: MB + "/pinauth", pin: MB + "/pin", bsky: MB + "/bsky", bskyVideo: MB + "/bskyv" } },
+    publish: { waitMs: 5, pollMax: 5, base: { igAuth: MB + "/igauth", igToken: MB + "/igapi/oauth/access_token", ig: MB + "/ig", fbAuth: MB + "/fbauth", fb: MB + "/fb", fbUpload: MB + "/fbup", thAuth: MB + "/thauth", th: MB + "/th", liAuth: MB + "/liauth", liToken: MB + "/li/token", li: MB + "/li", gAuth: MB + "/gauth", gToken: MB + "/g/token", yt: MB + "/yt", ytUpload: MB + "/ytup", ttAuth: MB + "/ttauth", tt: MB + "/tt", pinAuth: MB + "/pinauth", pin: MB + "/pin", bsky: MB + "/bsky", bskyVideo: MB + "/bskyv", zn: MB + "/zn" } },
     push: async () => 0 });
   const PT = M._test.posts._test;
   const call = async (method, p, body, qs) => { const r = res(); await M.handleAdmin(req(method, body), r, new URL("http://x" + p + (qs || "")), p); await r.finished; return r; };
@@ -212,6 +212,33 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const toks = b => PT.unseal(PT.S().channels.find(c => c.brand === b && c.platform === "tiktok").tok);
     assert.strictEqual(toks("fs-creative").access, "tt-neu"); assert.strictEqual(toks("druckshop").access, "tt-neu", "Druckshop mit erneuert"); assert.ok(/video\.publish/.test(toks("druckshop").scope));
     assert.strictEqual(toks("kochdu").access, "tt-acc", "anderes Konto unberührt");
+  });
+  await t("TikTok über Zernio: Schlüssel verbinden (gemeinsames Konto mit), direkt öffentlich mit Text + Hashtags, kein Doppelpost", async () => {
+    let r = await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok", zernioKey: "sk_falsch" }); assert.strictEqual(r.code, 400); assert.ok(/API-Schlüssel ungültig/.test(r.json().error), r.json().error);
+    r = await call("POST", "/admin/api/mkt/connect", { brand: "fs-creative", platform: "tiktok", zernioKey: " sk_test " }); assert.strictEqual(r.code, 200, JSON.stringify(r.json()));
+    assert.ok(JSON.stringify(r.json()).indexOf("sk_test") < 0, "Schlüssel nie zurück ans Cockpit");
+    const tch = b => PT.S().channels.find(c => c.brand === b && c.platform === "tiktok"), zt = b => PT.unseal(tch(b).tok);
+    assert.strictEqual(zt("fs-creative").via, "zernio"); assert.strictEqual(zt("fs-creative").key, "sk_test"); assert.strictEqual(tch("fs-creative").account.handle, "@fs.creative.at");
+    assert.strictEqual(zt("druckshop").via, "zernio", "Druckshop (dasselbe TikTok-Konto) mit umgestellt"); assert.strictEqual(zt("kochdu").access, "tt-acc", "anderes Konto unberührt");
+    const chp = r.json().channels.find(c => c.brand === "fs-creative" && c.platform === "tiktok"); assert.strictEqual(chp.direct, true); assert.strictEqual(chp.via, "zernio");
+    const ci = (await call("GET", "/admin/api/mkt/tiktok-creator", null, "?brand=fs-creative")).json(); assert.deepStrictEqual(ci.privacy, ["PUBLIC_TO_EVERYONE"]); assert.strictEqual(ci.stitchOff, true); assert.strictEqual(ci.username, "fs.creative.at");
+    // kochdu ebenfalls über Zernio, dann das Reel direkt posten
+    await call("POST", "/admin/api/mkt/connect", { brand: "kochdu", platform: "tiktok", zernioKey: "sk_test" });
+    const rl = PT.S().posts.find(p => p.id === reel.id); rl.status = "gepostet"; rl.results = {}; rl.platforms = ["tiktok"]; rl.opts = {};
+    const go = async tt => { await call("POST", "/admin/api/mkt/post", { id: reel.id, op: "retry", platform: "tiktok", tt }); for (let i = 0; i < 200 && (rl.status === "geplant" || rl.status === "läuft"); i++) await sleep(50); return rl.results.tiktok; };
+    let res1 = await go({ ttPrivacy: "SELF_ONLY" }); assert.strictEqual(res1.status, "fehler"); assert.ok(/nur öffentlich/.test(res1.error), res1.error);
+    res1 = await go({ ttPrivacy: "PUBLIC_TO_EVERYONE", ttComment: true, ttDuet: true, ttStitch: true });
+    assert.strictEqual(res1.status, "ok", JSON.stringify(res1)); assert.strictEqual(res1.url, "https://www.tiktok.com/@fs.creative.at/video/7439999999999999999");
+    const zp = mock.state.zn.posts[mock.state.zn.posts.length - 1].json, ts = zp.tiktokSettings;
+    assert.ok(/#/.test(zp.content) && zp.content.length > 5, "Text mit Hashtags: " + zp.content); assert.ok(/\/m\//.test(zp.mediaItems[0].url)); assert.ok(mock.state.zn.got[0] > 10000, "Zernio hat das Video abgeholt");
+    assert.strictEqual(ts.privacy_level, "PUBLIC_TO_EVERYONE"); assert.strictEqual(ts.allow_comment, true); assert.strictEqual(ts.allow_duet, true); assert.strictEqual(ts.allow_stitch, false, "Stitch beim Konto aus");
+    assert.strictEqual(ts.commercialContentType, "none"); assert.strictEqual(PT.S().mkt.ttAudit, "");
+    // nochmal mit gleichem Inhalt: Zernio meldet 409 → der vorhandene Post gilt, kein zweiter
+    const n = mock.state.zn.posts.length; res1 = await go({ ttPrivacy: "PUBLIC_TO_EVERYONE", ttComment: true });
+    assert.strictEqual(res1.status, "ok", JSON.stringify(res1)); assert.strictEqual(mock.state.zn.posts.length, n, "kein Doppelpost");
+    // tägliche Prüfung: TikTok bei Zernio abgelaufen → Hinweis, Schlüssel bleibt gültig
+    mock.state.znHealth = "error"; const vh = (await M._test.posts.verifyPlatform("tiktok", true)).channels.find(c => c.brand === "kochdu" && c.platform === "tiktok");
+    assert.ok(/in Zernio TikTok neu verbinden/.test(vh.verifyError), vh.verifyError); assert.strictEqual(vh.status, "ok"); mock.state.znHealth = "";
   });
   await t("Bearbeiten: Folientext ändern erzeugt Bilder neu; gepostete Posts sind gesperrt", async () => {
     let r = await call("POST", "/admin/api/mkt/post", { id: car.id, op: "update", patch: { captions: { instagram: "x" } } }); assert.strictEqual(r.code, 400);
