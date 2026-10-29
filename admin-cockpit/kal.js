@@ -138,7 +138,7 @@ function loadCal(force){
   CAL.p=F.api("/admin/api/all?year="+encodeURIComponent(F.year)).then(function(d){
     CAL.loading=false;
     if(!d||d.ok===false||d.error) CAL.err=(d&&d.error)||"Fehler"; else applyAll(d);
-    rerender();
+    rerender(); if(F.renderNav) F.renderNav();
   }).catch(function(e){ CAL.loading=false; CAL.err=String(e&&e.message||e); rerender(); });
   return CAL.p;
 }
@@ -155,6 +155,21 @@ function allEvents(){
 }
 function findEvent(id){ return allEvents().find(function(e){ return String(e.id)===String(id); }); }
 F.calEvents=allEvents;
+/* Zahl beim Kalender (Wunsch Simon 29.10.2026): nur neue künftige Termine, die er im Cockpit noch nicht gesehen hat – aus iCloud und dem Mail-Kalender.
+   Eigene Cockpit-Termine zählen nie; eine Terminserie zählt einmal. Gesehen = Kalender geöffnet (je Gerät, F.ls). Schlüssel über den Inhalt,
+   weil Mail-Kalender-Termine ohne feste ID kommen; ein geänderter Termin gilt damit wieder als neu. */
+var SEENK="fsc_kal_seen";
+function seenKey(e){ var src=e.source==="icloud"?"icloud":"outlook"; return e.recurring?"r|"+src+"|"+(e.title||"")+"|"+(e.time||""):src+"|"+(e.title||"")+"|"+e.date+"|"+(e.time||""); }
+function futureForeign(){ var t=today(); return allEvents().filter(function(e){ return e.source!=="manual"&&isoOk(e.date)&&e.date>=t; }); }
+function kalSeen(){ var s=F.ls(SEENK); return s&&s.k?s:null; }
+function markSeen(list){ var s=kalSeen()||{k:{}}, t=today(), ch=false;
+  list.forEach(function(e){ var k=seenKey(e), d=e.recurring?"9999-12-31":e.date; if(s.k[k]!==d){ s.k[k]=d; ch=true; } });
+  Object.keys(s.k).forEach(function(k){ if(s.k[k]<t){ delete s.k[k]; ch=true; } });
+  if(ch||!kalSeen()) F.ls(SEENK,s); return ch; }
+function newEventCount(){ if(!CAL.ready) return 0; var s=kalSeen(), l=futureForeign(); if(!s){ markSeen(l); return 0; }
+  var seen={}; return l.filter(function(e){ var k=seenKey(e); if(s.k[k]||seen[k]) return false; seen[k]=1; return true; }).length; }
+/* selbst angelegte private Termine (Cockpit → iCloud) gleich als gesehen merken */
+F.kalMarkSeen=function(ev){ if(ev&&isoOk(ev.date)) markSeen([{source:"icloud",title:ev.title||"Termin",date:ev.date,time:ev.time||""}]); };
 function icloudOn(){ return !!(CAL.priv&&CAL.priv.configured); }
 function calName(){ return (CAL.priv&&CAL.priv.calName)||"privat"; }
 function readOnly(e){ return e.source==="outlook"||(e.source==="icloud"&&e.recurring); }
@@ -359,7 +374,7 @@ F.form("kalevent",function(f){
       if(wasPriv&&old.recurring){ err.textContent="Serientermine bitte direkt am iPhone ändern."; return; }
       busy(true);
       if(obj.sparte==="privat"&&wasPriv){ privOp("update",{href:old.href,etag:old.etag,uid:old.uid,event:obj},"Privater Termin aktualisiert – auch am iPhone").then(function(r){ if(r.ok) F.closeModal(); else fail(r.msg); }); return; }
-      if(obj.sparte==="privat"){ privOp("create",{event:obj},"Privater Termin angelegt – erscheint auch am iPhone").then(function(r){ if(!r.ok) return fail(r.msg); F.closeModal(); if(old&&old.source==="manual") postManual(CAL.manualRaw.filter(function(x){ return x.id!==old.id; })); }); return; }
+      if(obj.sparte==="privat"){ privOp("create",{event:obj},"Privater Termin angelegt – erscheint auch am iPhone").then(function(r){ if(!r.ok) return fail(r.msg); F.kalMarkSeen(obj); F.closeModal(); if(old&&old.source==="manual") postManual(CAL.manualRaw.filter(function(x){ return x.id!==old.id; })); }); return; }
       // privat → geschäftlich: aus iCloud entfernen und im Cockpit anlegen
       privOp("delete",{href:old.href,etag:old.etag,recurring:!!old.recurring},"").then(function(r){ if(!r.ok) return fail(r.msg); obj.id=newId(); postManual(CAL.manualRaw.concat([obj])).then(function(ok){ F.closeModal(); if(ok) F.toast("Termin aus dem privaten Kalender in „"+spName(obj.sparte)+"“ verschoben"); }); });
       return;
@@ -493,7 +508,7 @@ F.action("newtodo",function(){ F.actions.tknew&&F.actions.tknew("offen"); });
 F.action("todoedit",function(){ F.go("auftraege"); });
 F.action("todoview",function(){ F.go("auftraege"); });
 F.view({id:"kal",label:"Kalender",short:"Kalender",icon:"kal",order:50,mobile:true,
-  count:function(){ var t=today(); try{ return allEvents().filter(function(e){ return e.date===t; }).length; }catch(e){ return 0; } },
+  count:function(){ try{ return newEventCount(); }catch(e){ return 0; } },   // nur neue, noch nicht gesehene Termine (früher: alle Termine von heute)
   render:function(){
     if(isMobile()&&F.kalMobile) return F.kalMobile();
     var t=today();
@@ -502,7 +517,7 @@ F.view({id:"kal",label:"Kalender",short:"Kalender",icon:"kal",order:50,mobile:tr
     return F.head("Kalender",esc(sub),'<button class="btn" data-act="tknew:offen">+ Aufgabe</button><button class="btn primary" data-act="newevent:">+ Termin</button>')+
       (F.kalDesk?F.kalDesk():vCal());
   },
-  after:function(){ if(UI.kalTab!=="todo") loadCal(false); if(isMobile()&&F.kalMobileAfter) F.kalMobileAfter(); }
+  after:function(){ if(UI.kalTab!=="todo") loadCal(false).then(function(){ if(F.current==="kal"&&CAL.ready&&markSeen(futureForeign())) F.renderNav(); }); if(CAL.ready&&markSeen(futureForeign())) setTimeout(F.renderNav,0); if(isMobile()&&F.kalMobileAfter) F.kalMobileAfter(); }
 });
 /* Für die Handy-Ansicht (kalm.js) */
 /* Termin verschieben/verlängern (Ziehen im Kalender, kaldrag.js): sofort anzeigen, dann speichern (Cockpit bzw. iCloud); bei Fehler zurück */

@@ -74,7 +74,7 @@ function invSt(i){ return i.cancelled?" · storniert":i.type==="SR"?" · Storno"
 F.searcher(function(q){ return F.D.sev?F.D.sev.invoices.filter(function(i){ return i.type!=="MA"&&(i.nr+" "+i.contact+" "+(i.header||"")).toLowerCase().indexOf(q)>-1; }).slice(0,6).map(function(i){ return {group:"Rechnungen",label:(i.nr||"Entwurf")+" · "+i.contact,sub:eur(i.gross)+invSt(i),act:"fin:invd:"+i.id}; }):[]; });
 
 F.view({id:"geld",label:"Finanzen",short:"Finanzen",icon:"geld",order:30,mobile:true,
-  count:function(){ return (F.reviewCount?F.reviewCount():0)+((F.D.sev&&F.D.sev.overdueCount)||0); },   // Zur Prüfung + überfällige Rechnungen (früher: Plattform-Posten ohne Rechnung)
+  count:function(){ return F.reviewCount?F.reviewCount():0; },   // nur „Zur Prüfung“ – überfällige Rechnungen nicht mehr in der Zahl (Wunsch Simon 29.10.2026)
   render:function(){
     var tab=F.geldTabs.find(function(t){return t.id===F.UI.geldTab;})||F.geldTabs[0];
     if(tab.id!=="uebersicht") return F.head("Finanzen",tab.sub||"")+subnav()+(tab.id==="prognose"?renderPrognose():tab.render());

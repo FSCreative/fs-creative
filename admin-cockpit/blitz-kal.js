@@ -259,7 +259,7 @@ F.action("bkical",function(id,el){
     notes:["Blitzdings "+b.reference,b.eventEndDate&&b.eventEndDate!==b.eventDate?"bis "+de(b.eventEndDate):"",b.customerPhone?"Tel. "+b.customerPhone:"",b.customerEmail,(b.extras||[]).map(function(e){return e.name;}).join(", "),b.note].filter(Boolean).join("\n")};
   if(el) el.disabled=true;
   F.api("/admin/api/private-cal",{body:{op:"create",event:ev}}).then(function(j){
-    if(j&&j.ok){ F.toast("Im iCloud-Kalender eingetragen"); if(el) el.textContent="✓ Im iCloud-Kalender"; }
+    if(j&&j.ok){ if(F.kalMarkSeen) F.kalMarkSeen(ev); F.toast("Im iCloud-Kalender eingetragen"); if(el) el.textContent="✓ Im iCloud-Kalender"; }
     else { if(el) el.disabled=false; var e=String(j&&j.error||""); F.toast(/not_configured/.test(e)?"iCloud-Kalender ist nicht verbunden (Einstellungen).":"iCloud: "+(e||"Fehler"),true); }
   }).catch(function(){ if(el) el.disabled=false; F.toast("Keine Verbindung",true); });
 });

@@ -225,7 +225,7 @@ F.form("mevent",function(f){
   var done=function(msg){ F.closeModal(); F.toast(msg,false,"Kalender",function(){ F.go("kal"); }); F.load(true); };
   var fail=function(msg){ btn.disabled=false; err.textContent=msg; };
   if(ev.sparte==="privat"){
-    F.api("/admin/api/private-cal",{body:{op:"create",event:ev}}).then(function(j){ if(j&&j.ok) done("Privater Termin angelegt – erscheint auch am iPhone"); else fail(calErr(j&&j.error)); }).catch(function(){ fail("Keine Verbindung zum Server."); });
+    F.api("/admin/api/private-cal",{body:{op:"create",event:ev}}).then(function(j){ if(j&&j.ok&&F.kalMarkSeen) F.kalMarkSeen(ev); if(j&&j.ok) done("Privater Termin angelegt – erscheint auch am iPhone"); else fail(calErr(j&&j.error)); }).catch(function(){ fail("Keine Verbindung zum Server."); });
     return;
   }
   ev.id="e"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
