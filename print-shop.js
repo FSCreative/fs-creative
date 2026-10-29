@@ -2661,6 +2661,7 @@ module.exports = function (D) {
   const orderPublic = o => ({ id: o.id, nr: o.nr, check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
     createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(),
+    canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
     trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!(o.feedback && ((o.feedback.order && o.feedback.order.source) || (o.feedback.product && o.feedback.product.source))) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
@@ -2895,6 +2896,23 @@ module.exports = function (D) {
         o.feedback = o.feedback || {}; const first = !o.feedback[stage]; o.feedback[stage] = Object.assign({ rating, text, at: nowIso() }, source ? { source } : {}, sourceText ? { sourceText } : {}); RV = null; hist(o, "Feedback (" + (stage === "product" ? "Drucksachen" : "Bestellung") + "): " + rating + "/5"); await store.putOrder(o);
         if (D.push && (rating <= 3 || (text && first))) D.push("lead", { title: (rating <= 2 ? "⚠️ " : "") + "Feedback: " + ((o.customer && (o.customer.company || [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" "))) || o.nr), body: "★".repeat(rating) + "☆".repeat(5 - rating) + " · " + o.nr + " · " + (stage === "product" ? "Drucksachen" : "Bestellvorgang") + "\n" + (text || "ohne Kommentar") + (source ? "\nGefunden über: " + source + (sourceText ? " (" + sourceText + ")" : "") : ""), url: "/admin#print", tag: "fb-" + o.id }).catch(() => {});
         return J(res, 200, { ok: true, reviewUrl: reviewUrl() });
+      }
+      // Gastbestellung nachträglich als Kundenkonto speichern (Wunsch Simon 29.10.2026): nur mit gültigem Bestell-Link; Konto unbestätigt,
+      // Code per Mail wie beim Häkchen an der Kasse; alle Bestellungen des Warenkorbs werden verknüpft. Gibt es die Adresse schon → anmelden.
+      const acm = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})\/account$/);
+      if (acm && req.method === "POST") {
+        if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+        if (!sigOk("order", acm[1], u.searchParams.get("t"))) return J(res, 404, { ok: false, error: "not_found" });
+        if (limited("acct", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Versuche – bitte später erneut" });
+        const o = await store.getOrder(acm[1]); if (!o || !o.customer) return J(res, 404, { ok: false, error: "not_found" });
+        if (o.customerId) return J(res, 400, { ok: false, error: "Diese Bestellung gehört schon zu einem Kundenkonto." });
+        const b = await readJson(req, 4000), ex = await accountMod().byEmail(o.customer.email);
+        if (ex) return J(res, 409, { ok: false, exists: true, email: o.customer.email, error: "Zu " + o.customer.email + " gibt es schon ein Kundenkonto – melde dich an, dann siehst du die Bestellung dort." });
+        let c; try { c = await accountMod().createFromCheckout(o.customer, String(b.password || "")); } catch (e) { return J(res, e.status || 400, { ok: false, error: e.message }); }
+        if (!c) return J(res, 400, { ok: false, error: "Die E-Mail-Adresse der Bestellung ist ungültig." });
+        const grp = o.groupId ? (await store.listOrders()).filter(x => x.groupId === o.groupId && !x.customerId) : [o];
+        for (const x of grp.length ? grp : [o]) { x.customerId = c.id; hist(x, "Als Kundenkonto gespeichert (" + c.id + ")"); await store.putOrder(x); }
+        return J(res, 200, { ok: true, accountCreated: !c.verified, email: c.email });
       }
       m = p.match(/^\/print\/api\/order\/([A-Za-z0-9_-]{6,60})(\/pay)?$/);
       if (m) {

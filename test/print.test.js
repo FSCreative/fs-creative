@@ -514,6 +514,20 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const u3 = await upload(await pdfOf(89, 59, 2), "k3.pdf", BC);
     r = await post("/print/api/checkout", Object.assign({ items: [it(u3, 38.4)], createAccount: true, accountPassword: "neuespw123" }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));
     assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(r.j.accountCreated, true); assert.ok(M.mails.some(m => m.to === "gast@example.com" && /Code/.test(m.subject)));
+    // Gastbestellung nachträglich als Kundenkonto speichern (Bestellseite)
+    const u5 = await upload(await pdfOf(89, 59, 2), "k5.pdf", BC);
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u5, 38.4)] }, base, { customer: Object.assign({}, cust, { email: "spaet@example.com" }) })); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    const gid = r.j.orderId, gt = r.j.token, gst = async () => (await (await fetch(B + "/print/api/order/" + gid + "?t=" + gt)).json()).order;
+    assert.strictEqual((await gst()).canAccount, true, "Gast → Angebot sichtbar");
+    assert.strictEqual((await post("/print/api/order/" + gid + "/account?t=falsch", { password: "neuespw123" })).status, 404, "nur mit gültigem Bestell-Link");
+    assert.strictEqual((await post("/print/api/order/" + gid + "/account?t=" + gt, { password: "kurz" })).status, 400);
+    let ga = await post("/print/api/order/" + gid + "/account?t=" + gt, { password: "neuespw123" });
+    assert.strictEqual(ga.status, 200, JSON.stringify(ga.j)); assert.strictEqual(ga.j.accountCreated, true); assert.ok(M.mails.some(m => m.to === "spaet@example.com" && /Code/.test(m.subject)));
+    assert.strictEqual((await gst()).canAccount, false, "danach verknüpft");
+    assert.strictEqual((await post("/print/api/order/" + gid + "/account?t=" + gt, { password: "neuespw123" })).status, 400, "nicht zweimal");
+    const u6 = await upload(await pdfOf(89, 59, 2), "k6.pdf", BC);
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u6, 38.4)] }, base, { customer: Object.assign({}, cust, { email: "gast@example.com" }) }));
+    ga = await post("/print/api/order/" + r.j.orderId + "/account?t=" + r.j.token, { password: "neuespw123" }); assert.strictEqual(ga.status, 409); assert.strictEqual(ga.j.exists, true, "Konto gibt es schon → anmelden");
   });
   await t("Ablehnen/Erstatten: Mollie-Erstattung nur auf Klick, Rechnungsentwurf gelöscht, Kunde informiert", async () => {
     const up = await upload(await pdfOf(89, 59, 2), "ref.pdf", BC);

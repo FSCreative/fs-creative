@@ -325,6 +325,19 @@
     }).catch(function () { A.busy = false; A.err = "Keine Verbindung – bitte erneut versuchen."; render(); });
   }
   root.addEventListener("submit", function (e) { var f = e.target.closest("[data-acct-form]"); if (!f) return; e.preventDefault(); acctDo(f.getAttribute("data-acct-form"), f); });
+  // Gastbestellung als Kundenkonto speichern (Bestellseite): danach wie beim Häkchen an der Kasse – Code per Mail, Formular „Kundenkonto bestätigen“
+  root.addEventListener("submit", function (e) {
+    var f = e.target.closest("[data-mkacct]"); if (!f) return; e.preventDefault();
+    var x = f.getAttribute("data-mkacct").split("|"), pw = f.password.value, er = f.querySelector(".ps-err"), bt = f.querySelector("button");
+    var fail = function (msg) { er.innerHTML = msg; er.hidden = false; bt.disabled = false; };
+    if (pw.length < 8) return fail("Das Passwort braucht mindestens 8 Zeichen.");
+    bt.disabled = true; er.hidden = true;
+    api("/print/api/order/" + encodeURIComponent(x[0]) + "/account?t=" + encodeURIComponent(x[1]), { password: pw }).then(function (j) {
+      if (j.ok) { try { localStorage.setItem("fsc-print-verify", j.email); } catch (err) {} toast("Fast geschafft – wir haben dir einen Code geschickt."); if (LIVE.o) { LIVE.o.canAccount = false; renderStatus(LIVE.o, LIVE.id, LIVE.t); } return; }
+      if (j.exists) { S.acct.email = j.email; S.acct.mode = "login"; return fail(esc(j.error) + ' <a href="/print?konto">Zur Anmeldung</a>'); }
+      fail(esc(j.error || "Das hat nicht geklappt – bitte nochmal versuchen."));
+    }).catch(function () { fail("Keine Verbindung – bitte nochmal versuchen."); });
+  });
 
   // ── Mehrere Motive (Sortenmix): Anzahl + Stückzahl je Motiv in „Ausführung“, je Motiv eine Datei/Gestaltung in „Gestalten“ ──
   S.mot = { n: 1, split: [], files: [], i: 0 };
@@ -2173,6 +2186,8 @@
       (o.groupSize > 1 && k !== "pay" && k !== "rejected" ? '<p class="pd-muted ps-grp">Teil eines Warenkorbs mit ' + o.groupSize + " Positionen – alle Bestellungen findest du in der Bestätigungsmail" + (S.me ? " und in deinem Kundenkonto" : "") + ".</p>" : "") +
       (k === "pay" ? "" : '<div class="btn-row ps-sbtns"><a class="ps-btn" href="/print">' + (k === "rejected" || k === "problem" ? "Zum Shop" : "Weitere Drucksachen bestellen") + "</a>" + (S.me ? '<a class="ps-btn" href="/print?konto">Mein Konto</a>' : "") + "</div>");
     var pv = ""; try { pv = localStorage.getItem("fsc-print-verify") || ""; } catch (e) {}
+    if (!pv && !S.me && o.canAccount && k !== "pay" && k !== "rejected") h += '<div class="ps-verify ps-mkacct"><h3>Als Kundenkonto speichern?</h3><p>Du hast als Gast bestellt. Mit einem Passwort wird daraus dein Kundenkonto – Bestellungen, Rechnungen und Sendungsverfolgung an einem Ort, nachbestellen mit einem Klick.</p>' +
+      '<form class="ps-form" data-mkacct="' + esc(id) + "|" + esc(t) + '" novalidate><div class="ps-uidrow"><input type="password" name="password" autocomplete="new-password" minlength="8" placeholder="Passwort (mind. 8 Zeichen)" aria-label="Passwort (mind. 8 Zeichen)"><button type="submit" class="ps-btn primary small">Konto anlegen</button></div><p class="ps-err" role="alert" hidden></p></form></div>';
     if (pv && !S.me) { S.acct.email = pv; S.acct.mode = "code"; h += '<div class="ps-verify"><h3>Kundenkonto bestätigen</h3><p>Wir haben dir einen Code an <b>' + esc(pv) + '</b> geschickt.</p><form class="ps-form" data-acct-form="verify" novalidate><div class="ps-uidrow"><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" class="ps-code" aria-label="Code"><button type="submit" class="ps-btn primary small">Bestätigen</button></div></form></div>'; }
     root.innerHTML = '<div class="ps-panel ps-status st-' + k + '" data-oid="' + esc(id) + '" data-t="' + esc(t) + '" data-st="' + esc(o.status) + '" data-sig="' + esc(liveSig(o)) + '">' + h + "</div>";
     headUpdate();   // Bestellseite: in der Handy-Leiste nicht „Start“ markieren

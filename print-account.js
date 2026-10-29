@@ -196,5 +196,6 @@ module.exports = function (D) {
   // Cockpit: alle Kunden, eigener Rabatt je Kunde (zusätzlich zum Bonusprogramm – der höhere gilt)
   async function listAll() { const m = await all(); return Object.values(m).map(c => Object.assign(pub(c), { newsletterAt: c.newsletterAt || "", lastLogin: c.lastLogin || "", discountPct: +c.discountPct || 0, discountNote: c.discountNote || "" })); }
   async function setDiscount(id, pct, note) { const c = await byId(id); if (!c) return null; const n = parseFloat(String(pct == null ? "" : pct).replace(",", ".")); c.discountPct = isFinite(n) && n > 0 ? Math.min(50, Math.round(n * 10) / 10) : 0; c.discountNote = clip(note, 200); await save(); return c; }
-  return { handle, current, createFromCheckout, pub, listAll, setDiscount, addDraft, _test: { codeOk, newCode, hash } };
+  const byEmail = async e => (await all())[normMail(e)] || null;   // gibt es zu dieser Adresse schon ein Konto?
+  return { handle, current, createFromCheckout, byEmail, pub, listAll, setDiscount, addDraft, _test: { codeOk, newCode, hash } };
 };
