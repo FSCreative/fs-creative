@@ -77,18 +77,65 @@ function upTitle(s){ return s.up===false?"offline":s.up?"online":"ohne Cloudflar
 function projects(){ return (S&&S.railway&&S.railway.projects)||[]; }
 function zones(){ return (S&&S.sites)||[]; }
 
-/* Website-Liste wie im klassischen Dashboard: Railway-Projekte + Cloudflare-Zonen ohne Projekt */
+/* Projekte mit mehreren Websites (VALUERO) je Website – gleiche Regeln wie am Server (projectParts/cockpitSites in server.js) */
+var SITE_RANK={FAILED:5,CRASHED:5,BUILDING:3,DEPLOYING:3,INITIALIZING:3,QUEUED:3,WAITING:3,SLEEPING:1};
+function siteNorm(x){ return String(x||"").toLowerCase().replace(/ä/g,"ae").replace(/ö/g,"oe").replace(/ü/g,"ue").replace(/ß/g,"ss").replace(/^web[-_ ]+/,"").replace(/[^a-z0-9]/g,""); }
+function regDomainOf(d){ d=String(d||"").toLowerCase().replace(/^www\./,""); return d.split(".").slice(-(/\.(co|or|gv|ac)\.at$/.test(d)?3:2)).join("."); }
+function projectParts(p){
+  var svs=p.services||[], groups=[];
+  svs.forEach(function(sv){ var regs=(sv.customDomains||[]).map(regDomainOf); if(!regs.length) return;
+    var g=groups.find(function(x){ return regs.some(function(r){ return x.regs.indexOf(r)>-1; }); }); if(!g){ g={regs:[],svs:[]}; groups.push(g); }
+    regs.forEach(function(r){ if(g.regs.indexOf(r)<0) g.regs.push(r); }); g.svs.push(sv); });
+  if(groups.length<2) return null;
+  var pn=siteNorm(p.name), main=groups.find(function(g){ return g.regs.some(function(r){ return siteNorm(r.split(".")[0])===pn; }); });
+  var parts=groups.filter(function(g){ return g!==main; }).map(function(g){ return g.svs; });
+  svs.forEach(function(sv){ if(!(sv.customDomains||[]).length&&(sv.railwayDomains||[]).length&&!sv.db) parts.push([sv]); });
+  var inPart={}; parts.forEach(function(ps){ ps.forEach(function(sv){ inPart[sv.id]=1; }); });
+  return {main:svs.filter(function(sv){ return !inPart[sv.id]; }),parts:parts};
+}
+/* Website-Liste wie im klassischen Dashboard: Railway-Projekte + Cloudflare-Zonen ohne Projekt; einzelne Websites eines Projekts mit Schlüssel
+   „cf:<Zone>“ (frühere Einstellungen gelten weiter) bzw. „rws:<Service>“; leere Alt-Projekte gleichen Namens gehen in der Website auf (alias) */
 function sitesAll(){
   if(!S) return (F.D.sites||[]).slice();
-  var zs=zones(), used={}, list=[];
+  var zs=zones(), used={}, list=[], loose=[], invs=(B&&B.invoices)||{};
+  var push=function(o,doms,rd){ var z=doms.map(function(dm){ return zoneFor(dm,zs); }).filter(Boolean); z.forEach(function(x){ used[x.name]=1; });
+    var s=Object.assign({key:"",name:"",domain:doms[0]||"",domains:doms,url:doms[0]?"https://"+doms[0]:(rd?"https://"+rd:""),up:z.length?z[0].up:null},o); list.push(s); return s; };
+  var agg=function(svs){ var doms=[], rds=[], st=svs.length?"SUCCESS":"EMPTY", last=null;
+    svs.forEach(function(sv){ (sv.customDomains||[]).forEach(function(d){ if(doms.indexOf(d)<0) doms.push(d); }); (sv.railwayDomains||[]).forEach(function(d){ if(rds.indexOf(d)<0) rds.push(d); });
+      if((SITE_RANK[sv.status]||0)>(SITE_RANK[st]||0)) st=sv.status; if(sv.deployedAt&&(!last||sv.deployedAt>last)) last=sv.deployedAt; });
+    return {doms:doms,rd:rds[0]||"",status:st,last:last}; };
   projects().forEach(function(p){ var doms=p.domains||[]; if(!(p.services||[]).length&&!doms.length) return;
-    var z=doms.map(function(dm){ return zoneFor(dm,zs); }).filter(Boolean); z.forEach(function(x){ used[x.name]=1; });
-    var rd=(p.railwayDomains||[])[0]||"";
-    list.push({key:"rw:"+p.id,name:p.name,domain:doms[0]||"",domains:doms,url:doms[0]?"https://"+doms[0]:(rd?"https://"+rd:""),up:z.length?z[0].up:null,status:p.status,rwId:p.id,envId:p.envId,lastDeploy:p.lastDeploy||null}); });
+    var sp=projectParts(p);
+    if(!sp){ if(!doms.length) loose.push(p); else push({key:"rw:"+p.id,name:p.name,status:p.status,rwId:p.id,envId:p.envId,lastDeploy:p.lastDeploy||null},doms,(p.railwayDomains||[])[0]||""); return; }
+    var partIds=[].concat.apply([],sp.parts).map(function(sv){ return sv.id; });
+    if(sp.main.length){ var a=agg(sp.main); push({key:"rw:"+p.id,name:p.name,status:a.status,rwId:p.id,envId:p.envId,lastDeploy:a.last,svcIds:sp.main.map(function(sv){ return sv.id; }),partSvcIds:partIds},a.doms,a.rd); }
+    sp.parts.forEach(function(svs){
+      var a=agg(svs), z=a.doms.map(function(dm){ return zoneFor(dm,zs); }).filter(Boolean)[0], reg=a.doms.length?regDomainOf(a.doms[0]):"";
+      var s=push({key:reg?"cf:"+(z?z.name:reg):"rws:"+svs[0].id,name:reg||String(svs[0].name||"").replace(/^web[-_ ]+/i,""),status:a.status,rwId:p.id,envId:p.envId,lastDeploy:a.last,
+        svcIds:svs.map(function(sv){ return sv.id; }),group:p.name,services:svs.map(function(sv){ return sv.name; })},a.doms,a.rd);
+      s._norms=svs.map(function(sv){ return siteNorm(sv.name); }).concat(reg?[siteNorm(reg.split(".")[0])]:[]); }); });
+  loose.forEach(function(p){
+    var n=siteNorm(p.name), part=n&&!(invs["site:rw:"+p.id]||[]).length?list.find(function(s){ return s._norms&&!s.alias&&s._norms.indexOf(n)>-1; }):null;
+    if(part){ part.alias="rw:"+p.id; part.foldIds=[p.id]; return; }
+    push({key:"rw:"+p.id,name:p.name,status:p.status,rwId:p.id,envId:p.envId,lastDeploy:p.lastDeploy||null},[],(p.railwayDomains||[])[0]||""); });
   zs.forEach(function(z){ if(used[z.name]) return; list.push({key:"cf:"+z.name,name:z.name,domain:z.name,domains:[z.name],url:"https://"+z.name,up:z.up,status:null,rwId:null}); });
   return list.sort(function(a,b){ return a.name.localeCompare(b.name,"de"); });
 }
 function siteBy(key){ return sitesAll().find(function(s){ return s.key===key; }); }
+/* Railway-Kosten einer Zeile wie siteRwCost am Server: aufgeteilte Projekte je Service (Projektzeile = Rest), zugeschlagene Alt-Projekte zählen mit */
+function siteRw(s){
+  if(!R||!R.projects||!s.rwId) return null;
+  var ids=[s.rwId].concat(s.foldIds||[]); if(!ids.some(function(id){ return R.projects[id]; })) return null;
+  var acc={eur:0,parts:{}}, sv=R.services||null;
+  var add=function(x,f){ if(!x) return; acc.eur+=f*(+x.eur||0); Object.keys(x.parts||{}).forEach(function(k){ acc.parts[k]=(acc.parts[k]||0)+f*(+x.parts[k]||0); }); };
+  if(!s.svcIds) add(R.projects[s.rwId],1);
+  else if(s.partSvcIds){ add(R.projects[s.rwId],1); if(sv) s.partSvcIds.forEach(function(id){ add(sv[id],-1); }); }
+  else if(sv) s.svcIds.forEach(function(id){ add(sv[id],1); });
+  else acc.unknown=true;
+  (s.foldIds||[]).forEach(function(id){ add(R.projects[id],1); });
+  acc.eur=Math.max(0,Math.round(acc.eur*100)/100); Object.keys(acc.parts).forEach(function(k){ acc.parts[k]=Math.max(0,acc.parts[k]); });
+  return acc;
+}
 function prices(){ return Object.assign({},DEFP,(B&&B.prices)||{}); }
 /* Abgleich-Posten des Servers (WEB-1): wirksames „verrechnet bis“ mit Storno-Erkennung, anteilige Beträge, stornierte frühere Zeiträume (gaps).
    Nur solange er zum geladenen Abrechnungsstand passt (gleiche Zahl an Einträgen) – direkt nach dem Verrechnen gilt sonst der frische Stand. */
@@ -96,7 +143,7 @@ function abItem(key){ var it=((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).find(
   return it&&(it.recCount==null||it.recCount===invRecs(key).length)?it:null; }
 function abGaps(key){ return ((F.D&&F.D.abgleich&&F.D.abgleich.items)||[]).filter(function(x){ return x.gap&&x.gap.site==="site:"+key&&x.unbilled>0.005&&!x.ignored; }); }
 function cfg(s){
-  var c=(B&&B.sites&&B.sites[s.key])||{};
+  var c=Object.assign({},s.alias&&B&&B.sites?B.sites[s.alias]:null,(B&&B.sites&&B.sites[s.key])||{});   /* alias: Einstellungen des aufgegangenen Alt-Projekts als Vorgabe */
   if(!B) return {active:!!s.active,domain:false,hosting:false,mail:false,mailQty:1,extra:0,extraLabel:"",customer:s.customer||"",billedUntil:s.billedUntil||null,own:s.own!=null?!!s.own:OWN_RX.test(s.name),w4y:s.w4y||w4yDef(s.name),w4yQty:s.w4yQty||1};
   var ab=c.active&&!c.hidden?abItem(s.key):null;
   return {hidden:!!c.hidden,active:!!c.active,domain:!!c.domain,hosting:!!c.hosting,mail:!!c.mail,mailQty:+c.mailQty||1,extra:+c.extra||0,extraLabel:c.extraLabel||"",customer:c.customer||"",billedUntil:ab?ab.billedUntil:(c.billedUntil||null),own:c.own!=null?!!c.own:OWN_RX.test(s.name),w4y:Array.isArray(c.w4y)?c.w4y:w4yDef(s.name),w4yQty:+c.w4yQty||1,
@@ -156,12 +203,12 @@ function fscRevenue(){
 /* ---------- Echte Kosten: Railway (letzte 30 Tage) + Domains (world4you) ---------- */
 function regDomains(s){ var seen={}, out=[]; (s.domains||[]).forEach(function(d){ d=String(d||"").toLowerCase().replace(/^www\./,""); if(!d||/\.up\.railway\.app$/.test(d)) return; var parts=d.split("."), n=/\.(co|or|gv|ac)\.at$/.test(d)?3:2, reg=parts.slice(-n).join("."); if(seen[reg]) return; seen[reg]=1; var tld=parts.slice(-(n-1)).join("."), pr=W4Y[tld]||null, rb=function(v){ return v!=null?Math.round(v*(1-W4R.domain)*100)/100:null; }; out.push({name:reg,tld:tld,year:pr?rb(pr.y):null,p1:pr?rb(pr.p1):null}); }); return out; }
 function siteCosts(s){
-  var p=(R&&R.projects&&s.rwId)?R.projects[s.rwId]:null, fx=(R&&R.fx)||(F.D.railwayCosts&&F.D.railwayCosts.fx)||0.86;
+  var p=siteRw(s), fx=(R&&R.fx)||(F.D.railwayCosts&&F.D.railwayCosts.fx)||0.86;
   var rwMonth=p?(+p.eur||0):(!R&&s.railwayMonth!=null?s.railwayMonth:0), parts={};
   if(p&&p.parts) Object.keys(p.parts).forEach(function(k){ parts[k]=Math.round(p.parts[k]*fx*100)/100; });
   var doms=regDomains(s), domYear=doms.reduce(function(a,d){ return a+(d.year||0); },0);
   var w4=w4yLines(cfg(s)), w4Year=Math.round(w4.reduce(function(a,l){ return a+l.year; },0)*100)/100;
-  return {loaded:!!(R&&R.projects)||s.railwayMonth!=null||w4Year>0, detail:!!(R&&R.projects), hasRw:!!s.rwId, rwMonth:rwMonth, rwYear:Math.round(rwMonth*365/30*100)/100, parts:parts, doms:doms, domYear:Math.round(domYear*100)/100, w4:w4, w4Year:w4Year, year:Math.round((rwMonth*365/30+domYear+w4Year)*100)/100, fx:fx};
+  return {loaded:!!(R&&R.projects)||s.railwayMonth!=null||w4Year>0, detail:!!(R&&R.projects), hasRw:!!s.rwId, unknown:!!(p&&p.unknown), rwMonth:rwMonth, rwYear:Math.round(rwMonth*365/30*100)/100, parts:parts, doms:doms, domYear:Math.round(domYear*100)/100, w4:w4, w4Year:w4Year, year:Math.round((rwMonth*365/30+domYear+w4Year)*100)/100, fx:fx};
 }
 function w4Card(s,c,k){
   var K=esc(s.key), sel=c.w4y||[];
@@ -176,7 +223,8 @@ function costDetail(s,c){
   var k=siteCosts(s), P=prices(), n=+P.period||12, inc=siteSum(s,c)*12/n, res=inc-k.year;
   var PL={cpu:"CPU",ram:"Arbeitsspeicher",egress:"Datenverkehr",disk:"Speicher (Volume)",backup:"Backups"};
   var rw=!k.hasRw?'<div class="muted">Kein Railway-Projekt (nur Domain/Cloudflare)</div>':(!k.detail?(R&&R.error?'<div class="muted">Railway-Kosten nicht verfügbar: '+esc(R.error)+'</div>':'<div class="muted">Lade Railway-Kosten …</div>'):
-    '<div class="w-big num money">'+eur(k.rwMonth)+' <span class="muted">/ Monat</span></div><div class="muted">≈ <span class="money">'+eur(k.rwYear)+'</span> pro Jahr · letzte 30 Tage</div>'+
+    (k.unknown?'<div class="muted">Anteil dieser Website nicht einzeln verfügbar – zählt beim Projekt „'+esc(s.group)+'“</div>':
+    '<div class="w-big num money">'+eur(k.rwMonth)+' <span class="muted">/ Monat</span></div><div class="muted">≈ <span class="money">'+eur(k.rwYear)+'</span> pro Jahr · letzte 30 Tage'+(s.group?' · nur dieser Service':'')+(s.foldIds?' · inkl. altem Projekt':'')+'</div>')+
     Object.keys(PL).filter(function(x){ return k.parts[x]>=0.005; }).map(function(x){ return '<div class="w-line"><span>'+PL[x]+'</span><b class="num money">'+eur(k.parts[x])+'</b></div>'; }).join(""));
   var dm=k.doms.length?k.doms.map(function(d){ return '<div class="w-line"><span><b>'+esc(d.name)+'</b> <span class="muted">.'+esc(d.tld)+'</span></span><b class="num money">'+(d.year!=null?eur(d.year)+' / Jahr':'Preis unbekannt')+'</b></div>'+(d.p1?'<div class="muted">1. Jahr bei Neuregistrierung: '+eur(d.p1)+'</div>':''); }).join(""):'<div class="muted">Keine eigene Domain</div>';
   var bal='<div class="w-line"><span>Einnahmen</span><b class="num pos money">'+eur(inc)+'</b></div><div class="w-line"><span>Railway</span><b class="num neg money">− '+eur(k.rwYear)+'</b></div><div class="w-line"><span>Domain'+(k.doms.length>1?"s":"")+'</span><b class="num neg money">− '+eur(k.domYear)+'</b></div>'+
@@ -258,7 +306,8 @@ F.css(
 function chip(act,k,cur,label,n){ return '<button class="chip" data-act="'+act+':'+k+'" aria-pressed="'+(cur===k)+'">'+label+(n!=null?' · '+n:'')+'</button>'; }
 function hit(txt){ var q=(U.q||"").toLowerCase().trim(); return !q||String(txt||"").toLowerCase().indexOf(q)>-1; }
 function siteName(s){ return '<div class="w-site"><span class="dot '+upDot(s)+'" title="'+upTitle(s)+'"></span><div><button class="w-name" data-act="wsite:'+esc(s.key)+'">'+esc(s.name)+'</button>'+
-  (s.url?'<a class="w-url" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+(s.domain?"":" (Railway)")+' ↗</a>':'<span class="w-url">ohne Domain</span>'); }
+  (s.url?'<a class="w-url" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+(s.domain?"":" (Railway)")+' ↗</a>':'<span class="w-url">ohne Domain</span>')+
+  (s.group?'<span class="w-url">Railway: '+esc(s.group)+' › '+esc((s.services||[]).join(", "))+'</span>':''); }
 
 function kpisTech(){
   var t=(S&&S.totals)||{}, rw=(S&&S.railway)||null, rt=(rw&&rw.totals)||{}, cfOff=S&&S.configured===false;
@@ -397,7 +446,7 @@ function drawerHtml(){
   var opt=function(f,label,sub){ return '<label class="w-opt"><input type="checkbox" data-wf="'+f+'"'+(c[f]?" checked":"")+'><span>'+label+'</span><span class="num money">'+(sub||"")+'</span></label>'; };
   var head='<div class="row-between" style="align-items:flex-start"><div style="min-width:0"><div class="sec-t">'+(c.own?"Eigenes Projekt":"Kunden-Website")+'</div><h2 style="overflow-wrap:anywhere">'+esc(s.name)+'</h2>'+
     (s.url?'<a class="w-url" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+' ↗</a>':'<span class="muted">ohne Domain</span>')+
-    '<div class="row wrap" style="margin-top:6px">'+(s.up===false?'<span class="tag bad">offline</span>':s.up?'<span class="tag ok">online</span>':'<span class="tag grey">ohne Cloudflare</span>')+(s.rwId?rwTag(s.status):'')+(s.rwId?'<a class="link" href="https://railway.com/project/'+encodeURIComponent(s.rwId)+(s.envId?'?environmentId='+encodeURIComponent(s.envId):'')+'" target="_blank" rel="noopener">Railway ↗</a>':'')+'</div></div>'+
+    '<div class="row wrap" style="margin-top:6px">'+(s.up===false?'<span class="tag bad">offline</span>':s.up?'<span class="tag ok">online</span>':'<span class="tag grey">ohne Cloudflare</span>')+(s.rwId?rwTag(s.status):'')+(s.rwId?'<a class="link" href="https://railway.com/project/'+encodeURIComponent(s.rwId)+(s.group&&s.svcIds?'/service/'+encodeURIComponent(s.svcIds[0]):'')+(s.envId?'?environmentId='+encodeURIComponent(s.envId):'')+'" target="_blank" rel="noopener">Railway ↗</a>':'')+(s.group?'<span class="muted small">'+esc(s.group)+' › '+esc((s.services||[]).join(", "))+'</span>':'')+'</div></div>'+
     '<button class="btn icon" data-close aria-label="Schließen">'+F.svg("close")+'</button></div>';
   if(!B) return head+'<div class="empty">Lade Abrechnung …</div>';
   var costs='<div class="w-sec"><div class="sec-t">Echte Kosten</div>'+costDetail(s,c).replace('class="w-cd"','class="w-cd" style="grid-template-columns:minmax(0,1fr);padding-top:0"')+'</div>';

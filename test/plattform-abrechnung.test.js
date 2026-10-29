@@ -179,6 +179,40 @@ function unitTests(T) {
     it = site({ billedUntil: "2026-12-31", activeSince: "2027-06-10" }, [], [], "2027-07-01")[0];
     assert.strictEqual(it.unbilled, 70, "nach einer Pause erst ab Wiederaufnahme"); assert.strictEqual(it.action.after.billing.from, "2027-06-01");
   }]);
+  out.push(["WEB-8: Railway-Projekt mit mehreren Websites (VALUERO) je Website – frühere cf:-Einstellungen gelten, leeres Alt-Projekt geht auf, Kosten je Service", () => {
+    const { cockpitSites, siteRwCost, siteCfgOf } = T;
+    const sv = (id, name, cd, rd, extra) => Object.assign({ id, name, status: "SUCCESS", deployedAt: "2026-10-29T10:00:00Z", db: false, customDomains: cd || [], railwayDomains: rd || [] }, extra || {});
+    const snap = { sites: [{ name: "valuero.at", up: true, requests7d: 5 }, { name: "antonhaus.at", up: true, requests7d: 7 }, { name: "alpinappart.at", up: false, requests7d: 1 }, { name: "steincult.at", up: true }],
+      railway: { projects: [
+        { id: "P-VA", name: "Valuero", status: "SUCCESS", domains: [], services: [sv("s-va", "valuero", ["www.valuero.at", "valuero.at"]), sv("s-adm", "admin", ["admin.valuero.at"]), sv("s-db", "Postgres", [], [], { db: true }),
+          sv("s-ah", "web-antonhaus", ["antonhaus.at", "www.antonhaus.at"]), sv("s-al", "web-alpinappart", ["www.alpinappart.at"], [], { status: "CRASHED" }), sv("s-gt", "web-gutertropfen", [], ["web-gutertropfen-production.up.railway.app"])] },
+        { id: "P-AH", name: "Antonhaus", status: "SUCCESS", domains: [], services: [sv("s-old", "antonhaus")] },
+        { id: "P-GT", name: "guter-tropfen", status: "SUCCESS", domains: [], services: [sv("s-old2", "website", [], [], { status: "NONE" })] },
+        { id: "P-ST", name: "STEINCULT", status: "SUCCESS", domains: ["steincult.at", "steincult.ch"], services: [sv("s-st", "web", ["steincult.at", "steincult.ch"])] }] } };
+    snap.railway.projects[0].domains = [].concat(...snap.railway.projects[0].services.map(x => x.customDomains));
+    const bill = { sites: { "cf:antonhaus.at": { active: true }, "rw:P-AH": { active: true, domain: true, billedUntil: "2026-12-31" }, "cf:alpinappart.at": { active: true, hosting: true } }, invoices: {} };
+    const list = cockpitSites(snap, bill), by = k => list.find(x => x.key === k);
+    assert.deepStrictEqual(list.map(x => x.key).sort(), ["cf:alpinappart.at", "cf:antonhaus.at", "rw:P-ST", "rw:P-VA", "rws:s-gt"], JSON.stringify(list.map(x => x.key)));
+    const va = by("rw:P-VA"), ah = by("cf:antonhaus.at"), al = by("cf:alpinappart.at"), gt = by("rws:s-gt");
+    assert.deepStrictEqual(va.domains, ["www.valuero.at", "valuero.at", "admin.valuero.at"]); assert.deepStrictEqual(va.svcIds, ["s-va", "s-adm", "s-db"]); assert.strictEqual(va.status, "SUCCESS");
+    assert.strictEqual(ah.name, "antonhaus.at"); assert.strictEqual(ah.up, true); assert.strictEqual(ah.requests7d, 7); assert.strictEqual(ah.alias, "rw:P-AH"); assert.deepStrictEqual(ah.foldIds, ["P-AH"]);
+    assert.strictEqual(al.status, "CRASHED"); assert.strictEqual(al.up, false); assert.strictEqual(al.group, "Valuero");
+    assert.strictEqual(gt.name, "gutertropfen"); assert.strictEqual(gt.url, "https://web-gutertropfen-production.up.railway.app"); assert.strictEqual(gt.alias, "rw:P-GT", "leeres Alt-Projekt guter-tropfen geht auf");
+    // Einstellungen: eigene Zeile gewinnt, Alt-Projekt als Vorgabe (Domain + verrechnet bis vom alten Antonhaus-Projekt)
+    const c = siteCfgOf(bill, ah); assert.strictEqual(c.active, true); assert.strictEqual(c.domain, true); assert.strictEqual(c.billedUntil, "2026-12-31");
+    assert.strictEqual(siteCfgOf({ sites: { "cf:antonhaus.at": { domain: false }, "rw:P-AH": { active: true, domain: true } } }, ah).domain, false, "Abwählen in der neuen Zeile gilt");
+    // Alt-Projekt mit Abrechnungen bleibt eine eigene Zeile (nie Rechnungsverlauf verstecken)
+    assert.ok(cockpitSites(snap, { sites: {}, invoices: { "site:rw:P-AH": [{ id: "1", gross: 10 }] } }).some(x => x.key === "rw:P-AH"));
+    // Abgleich: alle Websites einzeln fällig (Alpinappart Hosting), nicht doppelt über das Alt-Projekt
+    const its = abgleichBuild({ year: "2027", today: "2027-01-05", sev: mkSev([]), bill: Object.assign({ prices: { hosting: 10, hostingPer: "month", domain: 30, domainPer: "year", period: 12, gross: true } }, bill), sitesSnap: snap }).items.filter(x => x.src === "website");
+    assert.deepStrictEqual(its.map(x => x.key).sort(), ["site:cf:alpinappart.at", "site:cf:antonhaus.at"], JSON.stringify(its.map(x => x.key)));
+    assert.strictEqual(its.find(x => x.key === "site:cf:alpinappart.at").unbilled, 120); assert.strictEqual(its.find(x => x.key === "site:cf:antonhaus.at").unbilled, 30);
+    // Kosten: Websites je Service, Projektzeile = Rest, Alt-Projekt zählt mit; ohne Service-Daten trägt die Projektzeile alles
+    const rc = { projects: { "P-VA": { eur: 20, parts: { cpu: 10, ram: 12 } }, "P-AH": { eur: 1.5, parts: { ram: 2 } } }, services: { "s-ah": { eur: 2, parts: { ram: 2.5 } }, "s-al": { eur: 3, parts: { cpu: 1 } }, "s-gt": { eur: 1, parts: {} } } };
+    assert.strictEqual(siteRwCost(va, rc).eur, 14); assert.strictEqual(siteRwCost(ah, rc).eur, 3.5); assert.strictEqual(siteRwCost(al, rc).eur, 3);
+    const rc0 = { projects: rc.projects }; assert.strictEqual(siteRwCost(va, rc0).eur, 20); assert.ok(siteRwCost(al, rc0).unknown); assert.strictEqual(siteRwCost(al, rc0).eur, 0);
+    assert.strictEqual(siteRwCost(by("rw:P-ST"), rc), null);
+  }]);
   out.push(["WEB-7: ausgeblendete Website (gibt es nicht mehr) ist nie fällig", () => {
     assert.strictEqual(site({ hidden: true, billedUntil: "2025-12-31" }).length, 0);
   }]);

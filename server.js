@@ -2194,10 +2194,23 @@ async function railwayCostsBuild() {
     p.parts[KEY[u.measurement] || u.measurement] = Math.round(((p.parts[KEY[u.measurement]] || 0) + usd) * 10000) / 10000;
     p.usd += usd;
   });
+  // je Service für Projekte mit mehreren Websites (siteRwCost); klappt das nicht, trägt die Projektzeile die ganzen Kosten
+  let services = null;
+  const js = await rwGQL(q.replace("tags { projectId }", "tags { serviceId }"), { w: RW.workspace, m: M, g: ["SERVICE_ID"], s: start.toISOString(), e: end.toISOString() });
+  if (js && !js.errors && js.data && Array.isArray(js.data.usage)) {
+    services = {};
+    js.data.usage.forEach(u => {
+      const sid = u.tags && u.tags.serviceId; if (!sid) return;
+      const sv = services[sid] || (services[sid] = { usd: 0, parts: {} }), usd = (+u.value || 0) * (PRICE[u.measurement] || 0);
+      sv.parts[KEY[u.measurement] || u.measurement] = Math.round(((sv.parts[KEY[u.measurement]] || 0) + usd) * 10000) / 10000;
+      sv.usd += usd;
+    });
+  }
   const fx = await usdEur();
   let total = 0;
   Object.keys(projects).forEach(k => { const p = projects[k]; p.usd = Math.round(p.usd * 100) / 100; p.eur = Math.round(p.usd * fx * 100) / 100; total += p.usd; });
-  return { configured: true, fetchedAt: new Date().toISOString(), days: 30, fx, fxFallback: !!FXRATE.fallback, totalUsd: Math.round(total * 100) / 100, totalEur: Math.round(total * fx * 100) / 100, projects };
+  if (services) Object.keys(services).forEach(k => { const sv = services[k]; sv.usd = Math.round(sv.usd * 100) / 100; sv.eur = Math.round(sv.usd * fx * 100) / 100; });
+  return { configured: true, fetchedAt: new Date().toISOString(), days: 30, fx, fxFallback: !!FXRATE.fallback, totalUsd: Math.round(total * 100) / 100, totalEur: Math.round(total * fx * 100) / 100, projects, services };
 }
 async function railwayCosts(force) {
   if (RWCOST.data && !force && Date.now() - RWCOST.at < 30 * 60 * 1000) return RWCOST.data;
@@ -2232,20 +2245,76 @@ function regDomainsOf(domains) {
   (domains || []).forEach(d => { d = String(d || "").toLowerCase().replace(/^www\./, ""); if (!d || /\.up\.railway\.app$/.test(d)) return; const parts = d.split("."); const n = /\.(co|or|gv|ac)\.at$/.test(d) ? 3 : 2; const reg = parts.slice(-n).join("."); if (seen[reg]) return; seen[reg] = 1; const tld = parts.slice(-(n - 1)).join("."); out.push({ name: reg, tld, year: W4Y[tld] != null ? round2(W4Y[tld] * (1 - W4Y_RABATT.domain)) : null }); });
   return out;
 }
-// Gleiche Website-Liste wie im klassischen Dashboard (Railway-Projekte + Cloudflare-Zonen ohne Projekt)
-function cockpitSites(snap) {
+// Railway-Projekte mit mehreren Websites (VALUERO: web-antonhaus, web-alpinappart …) einzeln führen (Simon 29.10.2026; gleich in admin-cockpit/web.js):
+// Services mit eigener Domain nach registrierter Domain gruppieren – ab zwei Gruppen wird jede Website eine eigene Zeile. Die Gruppe mit dem
+// Projektnamen (valuero.at) und Services ohne öffentliche Adresse (Datenbanken) bleiben die Projektzeile; Website-Services ohne eigene Domain
+// (noch im Aufbau) werden ebenfalls eigene Zeilen.
+const SITE_RANK = { FAILED: 5, CRASHED: 5, BUILDING: 3, DEPLOYING: 3, INITIALIZING: 3, QUEUED: 3, WAITING: 3, SLEEPING: 1 };
+function siteNorm(x) { return String(x || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/^web[-_ ]+/, "").replace(/[^a-z0-9]/g, ""); }
+function regDomainOf(d) { d = String(d || "").toLowerCase().replace(/^www\./, ""); return d.split(".").slice(-(/\.(co|or|gv|ac)\.at$/.test(d) ? 3 : 2)).join("."); }
+function projectParts(p) {
+  const svs = p.services || [], groups = [];
+  svs.forEach(sv => { const regs = (sv.customDomains || []).map(regDomainOf); if (!regs.length) return;
+    let g = groups.find(x => regs.some(r => x.regs.indexOf(r) > -1)); if (!g) groups.push(g = { regs: [], svs: [] });
+    regs.forEach(r => { if (g.regs.indexOf(r) < 0) g.regs.push(r); }); g.svs.push(sv); });
+  if (groups.length < 2) return null;
+  const pn = siteNorm(p.name), main = groups.find(g => g.regs.some(r => siteNorm(r.split(".")[0]) === pn));
+  const parts = groups.filter(g => g !== main).map(g => g.svs);
+  svs.forEach(sv => { if (!(sv.customDomains || []).length && (sv.railwayDomains || []).length && !sv.db) parts.push([sv]); });
+  const inPart = {}; parts.forEach(ps => ps.forEach(sv => { inPart[sv.id] = 1; }));
+  return { main: svs.filter(sv => !inPart[sv.id]), parts };
+}
+// Gleiche Website-Liste wie im klassischen Dashboard (Railway-Projekte + Cloudflare-Zonen ohne Projekt), Projekte mit mehreren Websites je Website (projectParts).
+// Schlüssel einer einzelnen Website: „cf:<Zone>“ wie früher als reine Cloudflare-Website (bestehende Einstellungen gelten weiter), ohne eigene Domain „rws:<Service>“.
+// Alt-Projekte gleichen Namens ohne Domain und ohne Abrechnungen (Antonhaus, ferienhaus-lerch, guter-tropfen) gehen in der Website auf, statt doppelt
+// verrechnet zu werden: ihre Einstellungen gelten dort als Vorgabe (alias, siteCfgOf), ihre Railway-Kosten zählen mit (foldIds, siteRwCost).
+function cockpitSites(snap, bill) {
   const rw = (snap && snap.railway) || {}, projects = rw.projects || [], zones = (snap && snap.sites) || [];
-  const used = {}, list = [];
+  const used = {}, list = [], loose = [], norms = new Map(), invs = (bill && bill.invoices) || {};
+  const push = (o, doms, rd) => { const zs = [...new Set(doms.map(dm => zoneFor(dm, zones)).filter(Boolean))]; zs.forEach(z => { used[z.name] = 1; });   // apex + www = eine Zone (nicht doppelt zählen)
+    const s = Object.assign({ key: "", name: "", domain: doms[0] || "", domains: doms, url: doms[0] ? "https://" + doms[0] : (rd ? "https://" + rd : ""), up: zs.length ? zs[0].up : null }, o, { requests7d: zs.reduce((a, z) => a + (z.requests7d || 0), 0) });
+    list.push(s); return s; };
+  const agg = svs => { const doms = [], rds = []; let status = svs.length ? "SUCCESS" : "EMPTY", last = null;
+    svs.forEach(sv => { (sv.customDomains || []).forEach(d => { if (doms.indexOf(d) < 0) doms.push(d); }); (sv.railwayDomains || []).forEach(d => { if (rds.indexOf(d) < 0) rds.push(d); });
+      if ((SITE_RANK[sv.status] || 0) > (SITE_RANK[status] || 0)) status = sv.status; if (sv.deployedAt && (!last || sv.deployedAt > last)) last = sv.deployedAt; });
+    return { doms, rd: rds[0] || "", status, last }; };
   projects.forEach(p => {
     const doms = p.domains || []; if (!(p.services || []).length && !doms.length) return;
-    const zs = doms.map(dm => zoneFor(dm, zones)).filter(Boolean); zs.forEach(z => { used[z.name] = 1; });
-    const rd = (p.railwayDomains || [])[0] || "";
-    list.push({ key: "rw:" + p.id, name: p.name, domain: doms[0] || "", domains: doms, url: doms[0] ? "https://" + doms[0] : (rd ? "https://" + rd : ""), up: zs.length ? zs[0].up : null, status: p.status, rwId: p.id, lastDeploy: p.lastDeploy || null, requests7d: zs.reduce((a, z) => a + (z.requests7d || 0), 0) });
+    const sp = projectParts(p);
+    if (!sp) { if (!doms.length) loose.push(p); else push({ key: "rw:" + p.id, name: p.name, status: p.status, rwId: p.id, lastDeploy: p.lastDeploy || null }, doms, (p.railwayDomains || [])[0] || ""); return; }
+    const partIds = [].concat(...sp.parts).map(sv => sv.id);
+    if (sp.main.length) { const a = agg(sp.main); push({ key: "rw:" + p.id, name: p.name, status: a.status, rwId: p.id, lastDeploy: a.last, svcIds: sp.main.map(sv => sv.id), partSvcIds: partIds }, a.doms, a.rd); }
+    sp.parts.forEach(svs => {
+      const a = agg(svs), z = a.doms.map(dm => zoneFor(dm, zones)).filter(Boolean)[0], reg = a.doms.length ? regDomainOf(a.doms[0]) : "";
+      const s = push({ key: reg ? "cf:" + (z ? z.name : reg) : "rws:" + svs[0].id, name: reg || String(svs[0].name || "").replace(/^web[-_ ]+/i, ""), status: a.status, rwId: p.id, lastDeploy: a.last,
+        svcIds: svs.map(sv => sv.id), group: p.name, services: svs.map(sv => sv.name) }, a.doms, a.rd);
+      norms.set(s, svs.map(sv => siteNorm(sv.name)).concat(reg ? [siteNorm(reg.split(".")[0])] : []));
+    });
+  });
+  loose.forEach(p => {
+    const n = siteNorm(p.name), part = n && !(invs["site:rw:" + p.id] || []).length ? list.find(s => norms.has(s) && !s.alias && norms.get(s).indexOf(n) > -1) : null;
+    if (part) { part.alias = "rw:" + p.id; part.foldIds = [p.id]; return; }
+    push({ key: "rw:" + p.id, name: p.name, status: p.status, rwId: p.id, lastDeploy: p.lastDeploy || null }, [], (p.railwayDomains || [])[0] || "");
   });
   zones.forEach(z => { if (used[z.name]) return; list.push({ key: "cf:" + z.name, name: z.name, domain: z.name, domains: [z.name], url: "https://" + z.name, up: z.up, status: null, rwId: null, requests7d: z.requests7d || 0 }); });
   return list.sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
-function siteCfgOf(bill, s) { const c = (bill.sites && bill.sites[s.key]) || {}; return { hidden: !!c.hidden, activeSince: /^\d{4}-\d{2}-\d{2}$/.test(c.activeSince || "") ? c.activeSince : null, active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name), w4y: Array.isArray(c.w4y) ? c.w4y : w4yDefault(s.name), w4yQty: +c.w4yQty || 1 }; }
+// Railway-Kosten einer Website-Zeile (eur, parts in USD): ganzes Projekt; bei aufgeteilten Projekten je Service (Projektzeile = Rest des Projekts),
+// zugeschlagene Alt-Projekte zählen mit. Ohne Kosten je Service: Projektzeile trägt alles, die Websites zeigen „unknown“.
+function siteRwCost(s, rc) {
+  if (!rc || !rc.projects || !s.rwId) return null;
+  const ids = [s.rwId].concat(s.foldIds || []); if (!ids.some(id => rc.projects[id])) return null;
+  const acc = { eur: 0, parts: {} }, sv = rc.services || null;
+  const add = (x, f) => { if (!x) return; acc.eur += f * (+x.eur || 0); Object.keys(x.parts || {}).forEach(k => { acc.parts[k] = (acc.parts[k] || 0) + f * (+x.parts[k] || 0); }); };
+  if (!s.svcIds) add(rc.projects[s.rwId], 1);
+  else if (s.partSvcIds) { add(rc.projects[s.rwId], 1); if (sv) s.partSvcIds.forEach(id => add(sv[id], -1)); }
+  else if (sv) s.svcIds.forEach(id => add(sv[id], 1));
+  else acc.unknown = true;
+  (s.foldIds || []).forEach(id => add(rc.projects[id], 1));
+  acc.eur = Math.max(0, round2(acc.eur)); Object.keys(acc.parts).forEach(k => { acc.parts[k] = Math.max(0, Math.round(acc.parts[k] * 10000) / 10000); });
+  return acc;
+}
+function siteCfgOf(bill, s) { const c = Object.assign({}, s.alias && bill.sites ? bill.sites[s.alias] : null, (bill.sites && bill.sites[s.key]) || {}); return { hidden: !!c.hidden, activeSince: /^\d{4}-\d{2}-\d{2}$/.test(c.activeSince || "") ? c.activeSince : null, active: !!c.active, domain: !!c.domain, hosting: !!c.hosting, mail: !!c.mail, mailQty: +c.mailQty || 1, extra: +c.extra || 0, extraLabel: c.extraLabel || "", customer: c.customer || "", billedUntil: c.billedUntil || null, own: c.own != null ? !!c.own : OWN_DEFAULT_RX.test(s.name), w4y: Array.isArray(c.w4y) ? c.w4y : w4yDefault(s.name), w4yQty: +c.w4yQty || 1 }; }
 function perPeriodOf(price, per, period) { price = +price || 0; return per === "year" ? price * period / 12 : price * period; }
 function siteLinesOf(s, c, P) {
   const n = +P.period || 12, L = [];
@@ -2542,7 +2611,7 @@ function abgleichBuild(ctx) {
   const recs = key => (bill.invoices && bill.invoices[key]) || [];
   // 1) Websites (Hosting/Domain/Mail)
   const monthsIncl = (a, b) => (+b.slice(0, 4) * 12 + +b.slice(5, 7)) - (+a.slice(0, 4) * 12 + +a.slice(5, 7)) + 1;   // angefangene Monate von a bis b
-  cockpitSites(sitesSnap).forEach(s => {
+  cockpitSites(sitesSnap, bill).forEach(s => {
     const c = siteCfgOf(bill, s); if (c.own || !c.active || c.hidden) return;   // hidden: Website gibt es nicht mehr – nicht mehr fällig (WEB-7)
     const lines = siteLinesOf(s, c, P); const sum = round2(lines.reduce((a, l) => a + l.amount, 0)); if (sum <= 0) return;
     const recArr = recs("site:" + s.key), links = recArr.map(link); links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
@@ -3044,8 +3113,8 @@ async function cockpitBuild(year, forceForecast) {
   const blitzReport = withSafe(() => blitzReportReconcile(bya.bookings, bill, sev));
   platCreditSoon(k, ko);   // Gutschrift-Vorschläge (Kantineur-Erstattungen, kochdu doppelt verrechnet) – nur „Zur Prüfung“, im Hintergrund
   const P = bill.prices || {};
-  const sites = cockpitSites(sitesSnap).map(s => {
-    const c = siteCfgOf(bill, s), cost = rwc && rwc.projects && s.rwId ? rwc.projects[s.rwId] : null;
+  const sites = cockpitSites(sitesSnap, bill).map(s => {
+    const c = siteCfgOf(bill, s), cost = siteRwCost(s, rwc);
     const doms = regDomainsOf(s.domains), domYear = doms.reduce((a, d) => a + (d.year || 0), 0);
     const incomeYear = c.active && !c.own && !c.hidden ? round2(siteLinesOf(s, c, P).reduce((a, l) => a + l.amount, 0) * 12 / (+P.period || 12)) : 0;
     const w4yY = w4yYear(c), costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear + w4yY);
@@ -5114,7 +5183,7 @@ const MKT = require("./marketing.js")({ send, DATA_DIR, ROOT, secret: ADMIN_SECR
     const j = await r.json().catch(() => null); if (!r.ok || !j || !j.ok) throw new Error(r.status === 404 ? "Bei kochdu nicht gefunden" : "kochdu antwortet nicht (HTTP " + r.status + ")"); return j; } });
 // ── SEO (seo.js): alle eigenen Websites prüfen, PageSpeed, KI-Vorschläge, Google Search Console + Unternehmensprofil – Cockpit-Seite admin-cockpit/zseo.js ──
 const SEO = require("./seo.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, KI: () => KI, googleApp: () => MKT.googleApp(),
-  sites: async () => cockpitSites(await sitesSnapshot()) });
+  sites: async () => cockpitSites(await sitesSnapshot(), readBilling()) });
 if (require.main === module) setInterval(() => SEO.tick().catch(() => {}), 30 * 60 * 1000).unref();
 // ── WhatsApp nur lesen (whatsapp.js): Cloud API mit Coexistence – Webhook /api/whatsapp/webhook, Cockpit „Chat“ → WhatsApp, Push-Thema „wa“ ──
 const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
@@ -5585,4 +5654,4 @@ if (require.main === module) {
 
 module.exports = { renderIndex, ROUTE_META, NOINDEX_ROUTES };
 // nur für Tests (test/abgleich-storno.test.js): Abgleich-Rechenkern direkt prüfen
-if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, sevSummary, finApiIdem, kantineurStats, kantineurV2, notePid, blitzReportReconcile, blitzReportState, blitzReportSave, blitzReportRevoke, BLITZ_REPORT_FILE, sevPosPrice };
+if (process.env.NODE_ENV === "test") module.exports._test = { invLink, sumState, abgleichBuild, cockpitSites, siteRwCost, siteCfgOf, sevSummary, finApiIdem, kantineurStats, kantineurV2, notePid, blitzReportReconcile, blitzReportState, blitzReportSave, blitzReportRevoke, BLITZ_REPORT_FILE, sevPosPrice };
