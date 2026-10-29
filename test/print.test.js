@@ -403,6 +403,8 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const r = await admin("/admin/api/print/op", { op: "place", id: o1.orderId, confirm: true }); assert.strictEqual(r.ok, true, JSON.stringify(r));
     assert.strictEqual(r.order.status, "ordered"); assert.strictEqual(r.order.printcom.orderNumber, "6000001");
     const b = M.orders[0]; assert.strictEqual(b.billingAddress.companyName, "FS Creative"); assert.strictEqual(b.billingAddress.email, "simon@fs-creative.at");
+    assert.strictEqual(b.items[0].senderAddress.companyName, "FS Creative"); assert.strictEqual(b.items[0].senderAddress.stickySlipImageUrl, "https://www.fs-creative.at/logos/absender-logo.png", "Absender mit Logo");
+    assert.strictEqual(fs.readFileSync(path.join(__dirname, "..", "logos", "absender-logo.png")).slice(1, 4).toString(), "PNG", "Logo-Datei liegt öffentlich unter /logos");
     assert.strictEqual(b.deDuplicationId, o1.orderId); assert.strictEqual(b.items[0].sku, "businesscards"); assert.strictEqual(b.items[0].options.copies, 250); assert.strictEqual(b.items[0].options.printingmethod, "offset", "automatisch Offset, wo möglich");
     assert.strictEqual(b.items[0].fileOptions.isProduction, true); assert.strictEqual(b.items[0].approveDesign, true);
     assert.strictEqual(b.items[0].shipments[0].address.email, "maria@example.com"); assert.strictEqual(b.items[0].shipments[0].copies, 250);

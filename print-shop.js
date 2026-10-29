@@ -1986,6 +1986,8 @@ module.exports = function (D) {
     PADDED.set(k, out); if (PADDED.size > 40) PADDED.delete(PADDED.keys().next().value);
     return out;
   }
+  // Absender-Aufkleber mit unserem Logo (Glühbirne) – wie die Absenderadresse „mit Logo“ im Print.com-Konto; ohne Bild nimmt Print.com die Adresse ohne Logo
+  const senderLogo = base => process.env.PRINT_SENDER_LOGO_URL || base + "/logos/absender-logo.png";
   const pcFileUrl = (base, id) => base + "/print-files/" + id + "/" + sig("pcfile", id) + ".pdf";
   const motifDesigns = (o, base) => Array.isArray(o.motifs) && o.motifs.length > 1 ? o.motifs.map(m => ({ fileUrl: pcFileUrl(base, m.fileId), copies: m.copies })) : null;
   // Bei Print.com bestellen – nur per Klick im Cockpit (bzw. Einstellung „automatisch“ für bezahlte Bestellungen)
@@ -2003,7 +2005,7 @@ module.exports = function (D) {
         items: [Object.assign({ sku: o.product.sku, customerReference: itemRef(o), options: o.pcOptions },
           // Mehrere Motive: laut Print.com-Doku „designs“ – je Motiv eigene PDF + Stückzahl (schließt fileUrl aus); Textil: Größen-Mix als variants + eine Logo-PDF
           motifDesigns(o, base) ? { designs: motifDesigns(o, base) } : Object.assign(Array.isArray(o.variants) && o.variants.length && !(o.motifs && o.motifs.length > 1) ? { variants: o.variants } : {}, { fileUrl: pcFileUrl(base, fm.id) }), { fileOptions: { isProduction: true }, approveDesign: true,
-          senderAddress: Object.assign({}, billingFs(), { vatNr: undefined }), shipments: [{ address: addr, copies: o.copies }] })] };
+          senderAddress: Object.assign({}, billingFs(), { vatNr: undefined, stickySlipImageUrl: senderLogo(base) }), shipments: [{ address: addr, copies: o.copies }] })] };
       // Wunsch-Liefertag aus der Datumsleiste: Termin + Versandart mitgeben (Print.com prüft gegen die Produktionszeit); ist der Tag nicht mehr möglich → ohne Wunschtermin bestellen und vermerken
       const pw = o.price && o.price.wish, pm = o.price && o.price.purchase && o.price.purchase.method, wishOk = pw && pm && pw > today();
       if (wishOk) Object.assign(body.items[0].shipments[0], { deliveryDate: pw, method: pm });
