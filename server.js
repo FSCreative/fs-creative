@@ -749,6 +749,32 @@ async function kochduStats(year) {
   if (!d || d.error) return null;
   return d;
 }
+// kochdu-Provisionen je Tag (Wunsch Simon 29.10.2026, Kachel auf „Heute“): kochdu liefert nur Jahressummen – kurz nach Mitternacht (Wien)
+// den Stand merken (Bar-Gebühren offen + verrechnet, Online-Provisionen). Vortag = heute − gestern, montags Freitag bis Sonntag.
+// Nur Stände bis 3 Uhr zählen (sonst fehlten oder doppelten sich die Bestellungen des Tages); 21 Tage aufbewahren.
+const KO_DAY_FILE = path.join(DATA_DIR, "kochdu-days.json");
+function koDays() { try { return JSON.parse(fs.readFileSync(KO_DAY_FILE, "utf8")) || {}; } catch (e) { return {}; } }
+function koSum(ko) { const t = (ko && ko.totals) || {}; let bar = 0, online = 0;
+  if (t.barOpenCents != null || t.onlineProvisionCents != null) { bar = (+t.barOpenCents || 0) + (+t.barSettledCents || 0); online = +t.onlineProvisionCents || 0; }
+  else ((ko && ko.restaurants) || []).forEach(r => { bar += (+r.barOpenCents || 0) + (+r.barSettledCents || 0); online += +r.onlineProvisionCents || 0; });
+  return { bar, online }; }
+const viennaHour = () => +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Vienna", hour: "numeric", hourCycle: "h23" }).format(new Date());
+async function koSnap() {
+  if (!KOCHDU.token) return; const day = viennaToday(), d = koDays(); if (d[day]) return;
+  const ko = await kochduStats(day.slice(0, 4)); if (!ko) return;
+  const prev = Object.keys(d).sort().pop(), snap = Object.assign({ at: new Date().toISOString(), year: day.slice(0, 4), early: viennaHour() < 3 }, koSum(ko));
+  if (prev && d[prev].year !== snap.year) { const ko0 = await kochduStats(d[prev].year); if (ko0) snap.prevYearEnd = koSum(ko0); }   // Jahreswechsel: Endstand des Vorjahrs
+  d[day] = snap; Object.keys(d).sort().slice(0, -21).forEach(k => { delete d[k]; });
+  try { fs.writeFileSync(KO_DAY_FILE, JSON.stringify(d)); } catch (e) { console.error("kochdu-Tagesstand:", e.message); }
+}
+if (require.main === module) { setTimeout(() => koSnap().catch(() => {}), 60e3); setInterval(() => koSnap().catch(() => {}), 10 * 60e3).unref(); }
+function koDayInfo(today) {
+  const d = koDays(), wd = new Date(today + "T12:00:00Z").getUTCDay(), from = ymdAdd(today, wd === 1 ? -3 : -1), a = d[from], b = d[today];
+  const out = { from, to: ymdAdd(today, -1), weekend: wd === 1 };
+  if (!a || !b || !a.early || !b.early) { const k = Object.keys(d).filter(x => d[x].early).sort(); out.ready = false; out.since = k.length ? ymdAdd(k[0], wd === 1 ? 3 : 1) : ymdAdd(today, 2); return out; }
+  const part = f => (b.year !== a.year ? ((b.prevYearEnd ? b.prevYearEnd[f] : a[f]) - a[f]) + b[f] : b[f] - a[f]);
+  out.ready = true; out.bar = Math.max(0, part("bar")); out.online = Math.max(0, part("online")); out.cents = out.bar + out.online; return out;
+}
 // VALUERO: Schlüssel, die zuletzt von der Partner-Plattform kamen (Datei, damit auch nach einem Neustart bei Ausfall der Plattform
 // nicht still auf eine Altquelle mit anderer Datumsbasis gewechselt wird – Audit „VALUERO wechselt still die Datenquelle“)
 const VA_SRC_FILE = path.join(DATA_DIR, "valuero-sources.json");
@@ -3118,7 +3144,7 @@ async function cockpitBuild(year, forceForecast) {
     const doms = regDomainsOf(s.domains), domYear = doms.reduce((a, d) => a + (d.year || 0), 0);
     const incomeYear = c.active && !c.own && !c.hidden ? round2(siteLinesOf(s, c, P).reduce((a, l) => a + l.amount, 0) * 12 / (+P.period || 12)) : 0;
     const w4yY = w4yYear(c), costYear = round2((cost ? cost.eur * 365 / 30 : 0) + domYear + w4yY);
-    return Object.assign({}, s, { own: c.own, active: c.active, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), w4y: c.w4y, w4yQty: c.w4yQty, w4yYear: w4yY, incomeYear, costYear, result: round2(incomeYear - costYear) });
+    return Object.assign({}, s, { own: c.own, active: c.active, hidden: c.hidden, customer: c.customer, billedUntil: c.billedUntil, railwayMonth: cost ? cost.eur : null, domains: s.domains, domainYear: round2(domYear), w4y: c.w4y, w4yQty: c.w4yQty, w4yYear: w4yY, incomeYear, costYear, result: round2(incomeYear - costYear) });
   });
   const msgs = mail && Array.isArray(mail.messages) ? mail.messages : [];
   const events = [].concat(
@@ -3138,7 +3164,7 @@ async function cockpitBuild(year, forceForecast) {
       blitzdings: b ? { revenue: b.revenue || {}, bookings: b.bookings || {}, upcoming: b.upcoming || [], fetchedAt: b.fetchedAt, invoiceReport: blitzReport } : null,
       kantineur: k, valuero: va,
     },
-    sites, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx, fxFallback: !!rwc.fxFallback } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
+    sites, kochduDay: KOCHDU.token ? withSafe(() => koDayInfo(today)) : null, railwayCosts: rwc ? { totalEur: rwc.totalEur, fx: rwc.fx, fxFallback: !!rwc.fxFallback } : null, railwayFailed: (sitesSnap && sitesSnap.railway && sitesSnap.railway.totals && sitesSnap.railway.totals.failed) || 0,
     mail: Object.assign({ accounts: (mail && mail.accounts) || [], fetchedAt: mail && mail.fetchedAt, messages: msgs.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 200) }, mailFlags()),
     events, todos: readTodos(),
   };

@@ -132,27 +132,41 @@ function connNote(){ var c=F.D.connections; if(!c||!(+c.error>0)) return "";
   var p=(c.problems||[]).filter(function(x){ return x&&x.state==="error"; }).map(function(x){ return x.label; }).filter(Boolean), n=+c.error;
   return '<button type="button" class="ag-conn glass" data-act="'+(F.actions.conn?"conn":"settings")+'">'+F.svg("plug")+'<span><b>'+n+(n===1?" Verbindung gestört":" Verbindungen gestört")+'</b><small>'+esc(p.slice(0,3).join(", ")||"Details ansehen")+'</small></span>'+F.svg("chevR")+'</button>'; }
 
-/* ---------- Für dich, jetzt ---------- */
-function primOf(x){ var a=x.acts||[]; return a.filter(function(y){ return /\bprimary\b/.test(y[2]||""); })[0]||a[0]||null; }
+/* ---------- Für dich, jetzt (Wunsch Simon 29.10.2026): drei Kacheln – Websites online, nächste Blitzdings-Buchung, kochdu-Provisionen
+   vom Vortag (montags Freitag bis Sonntag); alles, was ansteht, darunter zum Aufklappen ---------- */
 function snoozeBtn(x){ return '<button type="button" class="btn icon" data-snooze="'+esc(x.id)+'" title="Bis morgen ausblenden" aria-label="Bis morgen ausblenden">'+F.svg("close")+'</button>'; }
-/* Karte = li.item (Handy: Wischen rechts = Hauptaktion, links = ausblenden, Antippen = Aktionsblatt aus mobile.js) */
-function cardHtml(x){ var tg=x.tag||["grey",""], pr=primOf(x), rest=(x.acts||[]).filter(function(a){ return a!==pr; });
-  return '<li class="item ag-fc"><span class="sev '+esc(x.sev||"")+'"></span><div class="ag-fb"><div class="ag-k"><span class="ico">'+F.svg(x.icon)+'</span>'+(tg[1]?'<span class="tag '+esc(tg[0])+'">'+esc(tg[1])+'</span>':'')+'</div>'+
-    '<div class="t" title="'+esc(x.t)+'">'+esc(x.t)+'</div>'+(x.d?'<div class="d" title="'+esc(x.d)+'">'+esc(x.d)+'</div>':'')+'</div>'+
-    '<div class="acts">'+(pr?'<button type="button" class="btn primary" data-act="'+esc(pr[1])+'">'+esc(pr[0])+'</button>':'')+
-    rest.map(function(a){ return '<button type="button" class="btn ag-sec" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+snoozeBtn(x)+'</div></li>'; }
+function tileHtml(o){ return '<button type="button" class="ag-tile'+(o.cls?" "+o.cls:"")+'" data-act="'+esc(o.act)+'"><span class="ag-tk"><span class="ico">'+F.svg(o.icon)+'</span><span class="ag-tl">'+esc(o.k)+'</span>'+(o.tag?'<span class="tag '+esc(o.tag[0])+'">'+esc(o.tag[1])+'</span>':'')+'</span>'+
+  '<b class="ag-tv">'+esc(o.v)+'</b><span class="ag-td" title="'+esc(o.d)+'">'+esc(o.d)+'</span></button>'; }
+function dShort(iso){ return new Date(iso+"T12:00:00").toLocaleDateString("de-AT",{weekday:"short",day:"numeric",month:"short"}); }
+function siteTile(){
+  var all=(F.D.sites||[]).filter(function(s){ return !s.hidden; }), mon=all.filter(function(s){ return s.up!=null; }), bad=all.filter(F.siteBad);
+  if(!all.length) return tileHtml({k:"Websites",icon:"web",v:"Lade …",d:"Railway & Cloudflare",act:"go:web"});
+  return tileHtml({k:"Websites",icon:"web",cls:bad.length?"bad":"ok",tag:bad.length?["bad",bad.length+" Problem"+(bad.length===1?"":"e")]:["ok","OK"],act:"go:web",
+    v:bad.length?bad.length+(bad.length===1?" Website gestört":" Websites gestört"):"Alle online",
+    d:bad.length?bad.map(function(s){ return s.name+(s.up===false?" offline":" Deploy fehlgeschlagen"); }).join(" · "):mon.length+" Websites geprüft · keine Störung"}); }
+function blitzTile(){
+  var bz=F.D.platforms&&F.D.platforms.blitzdings, t=F.D.today;
+  if(!bz) return tileHtml({k:"Blitzdings",icon:"kal",v:"Nicht verbunden",d:"Buchungen können nicht geladen werden",act:"pltab:blitz"});
+  var n=(bz.upcoming||[]).filter(function(b){ return String(b.eventDate||"").slice(0,10)>=t; }).sort(function(a,b){ return String(a.eventDate).localeCompare(String(b.eventDate)); })[0];
+  if(!n) return tileHtml({k:"Nächste Fotobox",icon:"kal",v:"Keine Buchung",d:"In nächster Zeit ist nichts gebucht",act:"pltab:blitz"});
+  var d=String(n.eventDate).slice(0,10), dd=Math.round((new Date(d+"T12:00:00")-new Date(t+"T12:00:00"))/864e5), pk=n.package&&typeof n.package==="object"?n.package.name:n.package;
+  return tileHtml({k:"Nächste Fotobox",icon:"kal",tag:dd<=2?["warn",dd===0?"heute":dd===1?"morgen":"übermorgen"]:["grey","in "+dd+" Tagen"],act:n.id!=null?"bzopen:"+n.id:"pltab:blitz",
+    v:dShort(d)+(n.customerName?" · "+n.customerName:""),d:[pk,n.eventLocation||n.location].filter(Boolean).join(" · ")||"Blitzdings-Buchung"}); }
+function kochduTile(){
+  var kd=F.D.kochduDay; if(!kd) return tileHtml({k:"kochdu-Provision",icon:"euro",v:"Nicht verbunden",d:"kochdu-Statistik fehlt",act:"pltab:kochdu"});
+  var when=kd.weekend?"Fr–So, "+de(kd.from).slice(0,6)+"–"+de(kd.to).slice(0,6):"gestern, "+dShort(kd.to);
+  if(!kd.ready) return tileHtml({k:"kochdu-Provision",icon:"euro",v:"Ab "+dShort(kd.since),d:"Der Tagesstand wird jede Nacht gemerkt – dann siehst du hier "+(kd.weekend?"Fr–So":"den Vortag"),act:"pltab:kochdu"});
+  return tileHtml({k:"kochdu-Provision",icon:"euro",tag:["grey",kd.weekend?"Wochenende":"Vortag"],v:eur(c2e(kd.cents)),d:when+" · bar "+eur(c2e(kd.bar))+" · online "+eur(c2e(kd.online)),act:"pltab:kochdu"}); }
 /* kompakte Zeile für „Alles, was ansteht“ */
 function feedItemHtml(x){ var tg=x.tag||["grey",""];
   return '<li class="item"><span class="sev '+esc(x.sev||"")+'"></span><span class="ico">'+F.svg(x.icon)+'</span><div style="min-width:0"><div class="t">'+(tg[1]?'<span class="tag '+esc(tg[0])+'">'+esc(tg[1])+'</span>':'')+esc(x.t)+'</div><div class="d">'+esc(x.d||"")+'</div></div>'+
     '<div class="acts">'+(x.acts||[]).map(function(a){ return '<button type="button" class="btn '+esc(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+snoozeBtn(x)+'</div></li>'; }
 function forCard(f){
-  var cards=f.filter(function(x){ return String(x.id).indexOf("mail:")!==0; }).slice(0,3), inC={}; cards.forEach(function(x){ inC[x.id]=1; });
-  var rest=f.filter(function(x){ return !inC[x.id]; }), open=!!F.UI.feedAll;
-  var body=!f.length?'<p class="ag-empty">'+F.svg("checkCircle")+'<span>Nichts offen. Genieß den Tag.</span></p>':
-    cards.length?'<ul class="feed ag-fcs">'+cards.map(cardHtml).join("")+'</ul>':'<p class="ag-none">Sonst nichts offen – nur ungelesene Mails, siehe Posteingang.</p>';
-  return '<section class="panel agp ag-for">'+hdr("Für dich, jetzt",f.length?'<span class="ag-meta">'+cards.length+' von '+f.length+'</span>':'')+body+
-    (rest.length?(open?'<ul class="feed ag-list">'+rest.map(feedItemHtml).join("")+'</ul>':'')+
-      '<button type="button" class="ag-tog'+(open?" on":"")+'" data-act="togglefeed" aria-expanded="'+open+'">'+(open?"Weniger anzeigen":"Alles, was ansteht ("+f.length+")")+F.svg("chevD")+'</button>':'')+'</section>'; }
+  var open=!!F.UI.feedAll;
+  return '<section class="panel agp ag-for">'+hdr("Für dich, jetzt")+'<div class="ag-tiles">'+safe(siteTile)+safe(blitzTile)+safe(kochduTile)+'</div>'+
+    (!f.length?'<p class="ag-empty">'+F.svg("checkCircle")+'<span>Nichts offen. Genieß den Tag.</span></p>':
+      (open?'<ul class="feed ag-list">'+f.map(feedItemHtml).join("")+'</ul>':'')+
+      '<button type="button" class="ag-tog'+(open?" on":"")+'" data-act="togglefeed" aria-expanded="'+open+'">'+(open?"Weniger anzeigen":"Alles, was ansteht ("+f.length+")")+F.svg("chevD")+'</button>')+'</section>'; }
 
 /* ---------- Termine: heute (jetzt hervorgehoben, nächster mit „in 25 Min.“), danach die nächsten Tage ---------- */
 function bzEvents(){ var D=F.D;
@@ -472,6 +486,17 @@ F.css(
 ".ag-incb{display:flex;align-items:baseline;gap:8px;width:100%;border:0;background:none;padding:0;color:var(--ink);font:inherit;text-align:left}button.ag-incb{cursor:pointer}.ag-incb svg{width:18px;height:18px;margin-left:auto;align-self:center;color:var(--ink-3)}.ag-incb[aria-expanded=true] svg{transform:rotate(180deg)}"+
 ".ag-inc .income{margin-top:12px}.ag-inc .income .muted{text-wrap:pretty}"+
 
+/* „Für dich, jetzt“ – drei Kacheln (Websites, nächste Fotobox, kochdu-Provision) */
+".ag-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}"+
+".ag-tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;text-align:left;padding:15px 16px 14px;border:1px solid var(--line);border-radius:18px;background:var(--sunk);color:var(--ink);font:inherit;cursor:pointer}"+
+".ag-tile:hover{background:var(--hover,var(--sunk));border-color:var(--line-2)}"+
+".ag-tk{display:flex;align-items:center;gap:7px;width:100%;min-width:0;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}"+
+".ag-tk .ico{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;flex:none;background:var(--panel);color:var(--glow)}.ag-tk .ico svg{width:14px;height:14px}"+
+".ag-tl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ag-tk .tag{margin-left:auto;flex:none;text-transform:none;letter-spacing:0}"+
+".ag-tv{margin-top:8px;font-size:19px;font-weight:700;line-height:1.25;letter-spacing:-.01em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
+".ag-td{font-size:13px;line-height:1.4;color:var(--ink-2);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}"+
+".ag-tile.ok .ag-tk .ico{color:var(--ok)}.ag-tile.bad{border-color:color-mix(in srgb,var(--bad) 40%,transparent);background:var(--bad-soft)}.ag-tile.bad .ag-tk .ico{color:var(--bad)}"+
+".agm .ag-tiles{grid-template-columns:minmax(0,1fr);gap:10px;padding:0 16px 4px}.agm .ag-tile{padding:12px 14px}.agm .ag-tv{font-size:17px;margin-top:4px}"+
 /* „Für dich, jetzt“ – Karten (Desktop) und Liste „Alles, was ansteht“ */
 "@media (min-width:901px){"+
   ".view-heute .ag-fcs{display:flex;flex-wrap:wrap;gap:14px}"+

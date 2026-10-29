@@ -1840,3 +1840,10 @@ html.light .xm-card:hover,html.light .xm-tile:hover .xm-tph{box-shadow:0 12px 28
   .ps-xteaser{margin:0 0 34px}.ps-xteaser .tx>b{font-size:28px}
 }
 @media (prefers-reduced-motion:reduce){.xm-card,.xm-ph img,.xm-tph,.ps-xteaser .im img{transition:none}.xm-card:hover,.xm-card:hover .xm-ph img,.xm-tile:hover .xm-tph,.ps-xteaser:hover .im img{transform:none}}
+/* Glühbirne im Kopf (Wunsch Simon 29.10.2026): groß und unten angeschnitten – Strahlen, Kopf und Brille schauen über die Unterkante der Leiste */
+.print-page header.nav .nav-inner{height:100%}
+.print-page header.nav .brand{align-self:stretch}
+.print-page header.nav .brand .mark{position:relative;align-self:stretch;width:clamp(62px,6vw,82px);height:auto;overflow:hidden;display:block;margin-right:-2px}
+.print-page header.nav .brand .mark img{position:absolute;left:0;top:calc(var(--nav-h,60px) - clamp(62px,6vw,82px)*.68);width:100%;height:auto;object-fit:initial;transform-origin:50% 100%;transition:transform .35s var(--ease,ease)}
+.print-page header.nav .brand:hover .mark img{transform:translateY(-3px) rotate(-3deg)}
+@media (prefers-reduced-motion:reduce){.print-page header.nav .brand .mark img{transition:none}.print-page header.nav .brand:hover .mark img{transform:none}}
