@@ -83,8 +83,12 @@ var ACC={spg:"#15884a",spr:"#d8262e",fw:"#c42a2e",fwl:"#951c22",flr:"#cf2234",ca
 var LIT={spg:1,spr:1,txt:1,hh:1,hg:1};
 /* Wetter verändert das Licht: bedeckt = entsättigt und dunstig, Gewitter = dunkler, Nebel = die Kette verschwindet im Grau */
 /* sv = Schneebedeckung (0–1) der oberen Talwiese (u) und des Talbodens mit dem Dorf (v) */
+/* Hell: Nacht und Dämmerung sichtbar dunkler (Wunsch Simon 29.10.2026 – „es wird nicht dunkel“): Himmel, Berge, Wald und Wiese Richtung Nachtblau */
+var LNIGHT={night:["#111a30",.55],dusk:["#2a2440",.22]};
 function palette(theme,phase,ic,sv,season){
-  var p=Object.assign({},PAL[theme==="light"?"light":"dark"][phase]), k={cloud:.45,rain:.55,snow:.42,fog:.5,storm:.62,cloudSun:.12}[ic]||0, dk=ic==="storm"?.16:ic==="rain"?.06:0;
+  var p=Object.assign({},PAL[theme==="light"?"light":"dark"][phase]), ln=theme==="light"&&LNIGHT[phase];
+  if(ln) ["s1","s2","s3","hz","m1","m2","ms","mss","n1","n2","t1","t2","g1","g2","lx","pl","pls","wd","wdk","rf","rfl","pa","rv","fn","shut","ch","sp","spl","cl1","cl2"].forEach(function(n){ if(p[n]) p[n]=mix(p[n],ln[0],n==="ms"||n==="mss"?ln[1]*.7:ln[1]); });
+  var k={cloud:.45,rain:.55,snow:.42,fog:.5,storm:.62,cloudSun:.12}[ic]||0, dk=ic==="storm"?.16:ic==="rain"?.06:0;
   var tone=phase==="night"?(theme==="light"?["#3d4864",.42]:["#0d1422",.62]):phase==="dusk"?["#6e5468",.2]:null;
   for(var a in ACC){ var c=ACC[a]; if(tone) c=mix(c,tone[0],LIT[a]&&phase==="night"?tone[1]*.3:tone[1]); if(k) c=grey(c,k*.5,dk*.8); p[a]=c; }
   if(k){
