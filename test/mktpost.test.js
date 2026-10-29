@@ -322,7 +322,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     await ff(["-f", "lavfi", "-i", "color=red:s=800x600", "-frames:v", "1", path.join(tmp, "a.jpg")]);
     await ff(["-f", "lavfi", "-i", "color=blue:s=640x360:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(tmp, "v.mp4")]);
     await ff(["-f", "lavfi", "-i", "sine=f=440:d=1", path.join(tmp, "s.wav")]);
-    const fz = require(path.join(ROOT, "node_modules", "fflate")), inner = fz.zipSync({ "Song/s.wav": fs.readFileSync(path.join(tmp, "s.wav")) });
+    const fz = require("fflate"), inner = fz.zipSync({ "Song/s.wav": fs.readFileSync(path.join(tmp, "s.wav")) });
     const zip = Buffer.from(fz.zipSync({ "Foto/a.jpg": fs.readFileSync(path.join(tmp, "a.jpg")), "Clip/v.mp4": fs.readFileSync(path.join(tmp, "v.mp4")), "sound.zip": inner, "License.txt": Buffer.from("Envato Elements License Certificate – Item: Test"), "__MACOSX/._a.jpg": Buffer.from("x") }));
     const r = await PT.envatoImport({ key: "kochdu", name: "kochdu" }, zip, "kochdu Social Media", "test.zip");
     assert.deepStrictEqual([r.photos, r.clips, r.sounds], [1, 1, 1], JSON.stringify(r)); assert.strictEqual(r.license.hasText, true);
