@@ -5,8 +5,8 @@
    Postbus, Holzbrücke, Gondelbahn (Schneise hinauf zur Bergstation am Kamm) und verstreute Höfe – nur so weit, wie neben
    Uhr, Text und Schnellknöpfen Platz ist. Autos und Postbus fahren auf der Dorfstraße, Gondeln am Seil (nur CSS-transform,
    läuft im Compositor; nachts stehen die Gondeln, Autos fahren mit Licht).
-   Wetter aus F.D.weather (Sonne, Wolken, Regen, Schnee, Nebel, Gewitter, Schneefallgrenze) und Tag/Dämmerung/Nacht
-   nach Wiener Zeit. Alle Farben als CSS-Variablen je Darstellung (Hell/Alpenglas/Dunkel).
+   Wetter aus F.D.weather (Sonne, Wolken, Regen, Schnee, Nebel, Gewitter, Schneefallgrenze) und Tageszeit nach dem echten
+   Sonnenstand über Gaschurn (Nacht, Dämmerung, Morgen-/Abendlicht, Tag mit wandernder Sonne). Alle Farben als CSS-Variablen je Darstellung (Hell/Alpenglas/Dunkel).
    Hängt sich an .ag-hero, ohne heute.js zu ändern. „Bewegung reduzieren“ → Standbild. */
 (function(){
 "use strict";
@@ -126,18 +126,22 @@ function palette(theme,phase,ic,sv,season){
   return p;
 }
 
-/* ---------- Tageszeit (Wiener Zeit), Sonnenauf-/untergang im Montafon je Monatsmitte (MEZ, ohne Sommerzeit) ---------- */
-var UP=[8.02,7.44,6.56,5.62,4.85,4.46,4.72,5.32,5.92,6.56,7.29,7.92], DN=[16.94,17.69,18.4,19.04,19.69,20.21,20.14,19.48,18.58,17.64,16.87,16.58];
-function vienna(){ var d=new Date(), o={};
-  try{ new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Vienna",year:"numeric",month:"numeric",day:"numeric",hour:"numeric",minute:"numeric",hourCycle:"h23"}).formatToParts(d).forEach(function(x){ o[x.type]=x.value; });
-    var h=+o.hour+(+o.minute)/60, utc=d.getUTCHours()+d.getUTCMinutes()/60, off=Math.round(((h-utc)%24+24)%24);
-    return {h:h,m:+o.month-1,d:+o.day,dst:off===2?1:0}; }
-  catch(e){ return {h:d.getHours()+d.getMinutes()/60,m:d.getMonth(),d:d.getDate(),dst:0}; } }
-function sunTimes(v){ var m=v.m, t=(v.d-15)/30.5, m2=t<0?(m+11)%12:(m+1)%12, a=Math.abs(t);
-  return {up:UP[m]+(UP[m2]-UP[m])*a+v.dst, dn:DN[m]+(DN[m2]-DN[m])*a+v.dst}; }
-function sky(){ var v=vienna(), s=sunTimes(v), h=v.h, ph="night";
-  if(h>=s.up+.4&&h<s.dn-.4) ph="day"; else if((h>=s.up-.6&&h<s.up+.4)||(h>=s.dn-.4&&h<s.dn+.6)) ph="dusk";
-  return {phase:ph,t:Math.max(0,Math.min(1,(h-s.up)/(s.dn-s.up))),month:v.m}; }
+/* ---------- Tageszeit nach dem echten Sonnenstand über Gaschurn (Wunsch Simon 29.10.2026; vorher Monatstabelle) ----------
+   Sonnenhöhe e in Grad: Nacht unter −4° (im Tal ist es dann dunkel), Dämmerung bis +2° (Sonne hinter den Bergen, Himmel noch hell),
+   Morgen- bzw. Abendlicht bis +12° (warm = 0–1, Farben Richtung Dämmerung), darüber Tag – Vormittag, Mittag und Nachmittag zeigt
+   die Sonne selbst: t = ihr Weg zwischen Auf- und Untergang (über den Bergen, e = 2°), Höhe am Himmel nach e. */
+var LAT=47.006, LON=10.03, HZ=2;
+function sunElev(ms){ var r=Math.PI/180, n=ms/864e5+2440587.5-2451545, L=(280.46+.9856474*n)%360, g=((357.528+.9856003*n)%360)*r,
+  lam=(L+1.915*Math.sin(g)+.02*Math.sin(2*g))*r, eps=(23.439-4e-7*n)*r, ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam)), dec=Math.asin(Math.sin(eps)*Math.sin(lam)),
+  gmst=((18.697374558+24.06570982441908*n)%24+24)%24, ha=(gmst*15+LON)*r-ra;
+  return Math.asin(Math.sin(LAT*r)*Math.sin(dec)+Math.cos(LAT*r)*Math.cos(dec)*Math.cos(ha))/r; }
+function viennaMonth(){ try{ return +new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Vienna",month:"numeric"}).format(new Date())-1; }catch(e){ return new Date().getMonth(); } }
+function sky(){ var now=Date.now(), e=sunElev(now), ph=e<-4?"night":e<HZ?"dusk":"day", warm=ph==="day"&&e<12?(12-e)/(12-HZ):0;
+  /* Auf- und Untergang hinter den Bergen: UTC-Tag im 10-Minuten-Raster (Sonnenaufgang im Montafon liegt immer nach 0 Uhr UTC) */
+  var d0=now-now%864e5, up=null, dn=null, pv=sunElev(d0);
+  for(var m=10;m<=1440;m+=10){ var x=sunElev(d0+m*6e4); if(pv<HZ&&x>=HZ&&up===null) up=m; if(pv>=HZ&&x<HZ) dn=m; pv=x; }
+  var tm=(now-d0)/6e4, t=up!==null&&dn!==null&&dn>up?Math.max(0,Math.min(1,(tm-up)/(dn-up))):.5;
+  return {phase:ph,warm:Math.round(warm*4)/4,e:e,t:t,month:viennaMonth()}; }
 
 /* ---------- Landschaft (einmal berechnet, danach aus dem Speicher) ---------- */
 /* eine Bergkette (in Gaschurn sieht man nur eine): wenige markante Gipfel, über dem Dorf der höchste */
@@ -717,9 +721,13 @@ function snowTile(p,w,n,rmin,rmax,seed){ var r=rng(seed), sh=rgba(p.flk)[3]>0, s
   return tile(s+'</g></svg>'); }
 
 function build(st){
-  var p=palette(st.theme,st.phase,st.ic,{u:cover(1100,st.ground),v:cover(A_VAL+10,st.ground)},st.season), L=landscape(st.fresh,st.ground,st.season,!st.rm,!st.rm&&st.phase!=="night"), ic=st.ic, night=st.phase==="night", r=rng(99), i, h='';
+  var sv={u:cover(1100,st.ground),v:cover(A_VAL+10,st.ground)}, p=palette(st.theme,st.phase,st.ic,sv,st.season);
+  /* Morgen- und Abendlicht: Tagesfarben ein Stück Richtung Dämmerung (nur Farben; Fenster bleiben dunkel, Gondeln fahren) */
+  if(st.warm){ var q=palette(st.theme,"dusk",st.ic,sv,st.season), cr=/^(#[0-9a-f]{6}|rgba?\()/i;
+    for(var pk in p) if(typeof p[pk]==="string"&&typeof q[pk]==="string"&&cr.test(p[pk])&&cr.test(q[pk])) p[pk]=mix(p[pk],q[pk],st.warm*.55); }
+  var L=landscape(st.fresh,st.ground,st.season,!st.rm,!st.rm&&st.phase!=="night"), ic=st.ic, night=st.phase==="night", r=rng(99), i, h='';
   var vars=""; for(var k in p) vars+="--a-"+k+":"+p[k]+";";
-  var clouds=/cloud|rain|snow|storm|fog/.test(ic), sun=!night&&/sun|cloudSun/.test(ic), clear=/sun|cloudSun/.test(ic);
+  var clouds=/cloud|rain|snow|storm|fog/.test(ic), sun=st.phase==="day"&&/sun|cloudSun/.test(ic), clear=/sun|cloudSun/.test(ic);   // Sonne nur, solange sie über den Bergen steht
   h+='<div class="alp-sky"></div>';
   if(night&&!/rain|snow|storm|fog/.test(ic)){ for(var g=0;g<3;g++){ h+='<div class="alp-stars" style="animation-delay:-'+(g*1.7).toFixed(1)+'s;animation-duration:'+(4.6+g*1.3).toFixed(1)+'s">';
       for(i=0;i<(clear?6:3);i++) h+='<i style="left:'+(34+r()*64).toFixed(1)+'%;top:'+(5+r()*40).toFixed(1)+'%;--z:'+(1.2+r()*1.3).toFixed(1)+'px"></i>'; h+='</div>'; } }
@@ -769,7 +777,7 @@ function state(){ var w=F.D&&F.D.weather||{}, ic=/^(sun|cloudSun|cloud|rain|snow
      ground = bis wohin Schnee liegt: wie fresh, im Winter (Dez.–März) immer bis ins Tal (Schneedecke). */
   var winter=[11,0,1,2].indexOf(s.month)>-1, fresh=sl||(ic==="snow"?900:0), ground=winter?Math.min(fresh||900,900):fresh;
   var season=[8,9,10].indexOf(s.month)>-1?"autumn":[4,5,6,7].indexOf(s.month)>-1?"summer":"other";
-  return {theme:theme(),phase:s.phase,t:s.t,ic:ic,snowLine:sl,fresh:fresh,ground:ground,season:season,rm:reduced()}; }
+  return {theme:theme(),phase:s.phase,warm:s.warm,e:s.e,t:s.t,ic:ic,snowLine:sl,fresh:fresh,ground:ground,season:season,rm:reduced()}; }
 /* „Bewegung reduzieren“: Fahrzeuge parken (wie im Standbild), Kabinen hängen still – das Bild wird dafür neu gebaut */
 var MQ=null; try{ MQ=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)"); }catch(e){}
 function reduced(){ return !!(MQ&&MQ.matches); }
@@ -779,9 +787,9 @@ var CUR={key:"",el:null}, RO=null, OBS=[], RAF=0, LASTFIT="";
 function mount(){
   if(F.current!=="heute") return;
   var hero=document.querySelector("#main .ag-hero"); if(!hero) return;
-  var st=state(), key=[st.theme,st.phase,st.ic,st.snowLine,st.fresh,st.ground,st.season,st.rm].join("|");
+  var st=state(), key=[st.theme,st.phase,st.warm,st.ic,st.snowLine,st.fresh,st.ground,st.season,st.rm].join("|");
   if(CUR.key!==key||!CUR.el){ var old=CUR.el; CUR.el=build(st); CUR.key=key; CUR.st=st; LASTFIT=""; if(old&&old.parentNode) old.parentNode.removeChild(old); }
-  CUR.st.t=st.t;
+  CUR.st.t=st.t; CUR.st.e=st.e;
   hero.querySelectorAll(":scope>.ag-alp").forEach(function(x){ if(x!==CUR.el) x.parentNode.removeChild(x); });
   if(CUR.el.parentNode!==hero){ hero.insertBefore(CUR.el,hero.firstChild); LASTFIT=""; }
   hero.classList.add("has-alp");
@@ -824,7 +832,7 @@ function fit(){
   var ux=Math.min(1530,VW-(W-((big||all)+70))/sc);   // Sonne/Mond nie hinter der Uhr
   el.querySelectorAll("[data-x]").forEach(function(e){ var x=+e.getAttribute("data-x"); if(e.classList.contains("alp-moon")) x=Math.max(x,ux);
     var q=P(x,+e.getAttribute("data-y")); e.style.transform="translate("+q[0].toFixed(1)+"px,"+q[1].toFixed(1)+"px)"; });
-  var su=el.querySelector(".alp-sun"); if(su){ var t=CUR.st.t, x0=Math.max(1300,ux), q=P(x0+(1540-x0)*t,100-46*Math.sin(Math.PI*t)); su.style.transform="translate("+q[0].toFixed(1)+"px,"+q[1].toFixed(1)+"px)"; }
+  var su=el.querySelector(".alp-sun"); if(su){ var t=CUR.st.t, x0=Math.max(1300,ux), q=P(x0+(1540-x0)*t,104-50*Math.min(1,Math.max(0,CUR.st.e||0)/35)); su.style.transform="translate("+q[0].toFixed(1)+"px,"+q[1].toFixed(1)+"px)"; }
   /* Schild der Schneefallgrenze: über der Linie; liegt sie über dem sichtbaren Bild (sehr breit, oben angeschnitten),
      bleibt das Schild sichtbar am oberen Rand und zeigt mit ↑, dass die Grenze noch höher liegt */
   var sl=el.querySelector(".alp-slb"); if(sl){ var sy=P(0,+sl.getAttribute("data-y"))[1], smin=(CUR.st.theme==="light"?Math.min(.16*H,44):Math.min(.2*H,56))+20;
