@@ -394,7 +394,7 @@ function fb(key,icon,label,cnt,opts){ opts=opts||{};
 function folderPanel(o){
   o=o||{}; var c=counts(), h="";
   if(multiAcc()){
-    var ab=function(k,label,sub,tone,warn){ var n=inboxUnread(k); return '<button type="button" class="accbtn" data-act="macct:'+esc(k)+'"'+(UI.macct===k?' aria-current="true"':'')+' title="'+esc(sub||label)+'"><span class="adot" style="background:var(--'+tone+')"></span><span class="atx"><span class="atl">'+esc(label)+'</span>'+(sub?'<span class="atu">'+esc(sub)+'</span>':'')+'</span>'+(warn?'<span class="awarn" data-act="msettings:'+esc(k)+'" role="button" tabindex="0" title="'+esc(warn)+'" aria-label="'+esc(warn)+'">!</span>':'')+(n?'<span class="n hot">'+n+'</span>':'')+'</button>'; };
+    var ab=function(k,label,sub,tone,warn){ var n=inboxUnread(k), fo=foldBadge(k); return '<button type="button" class="accbtn" data-act="macct:'+esc(k)+'"'+(UI.macct===k?' aria-current="true"':'')+' title="'+esc(sub||label)+'"><span class="adot" style="background:var(--'+tone+')"></span><span class="atx"><span class="atl">'+esc(label)+'</span>'+(sub||fo?'<span class="atu">'+(sub?'<span class="atm">'+esc(sub)+'</span>':'')+fo+'</span>':'')+'</span>'+(warn?'<span class="awarn" data-act="msettings:'+esc(k)+'" role="button" tabindex="0" title="'+esc(warn)+'" aria-label="'+esc(warn)+'">!</span>':'')+(n?'<span class="n hot">'+n+'</span>':'')+'</button>'; };
     h+=(o.sheet?'<div class="fdiv">Konto</div>':'')+'<div class="accsw'+(o.sheet?" accseg":"")+'">'+ab("all","Alle Konten","","ink-3","")+accounts().map(function(a){ return ab(a.key,a.label||a.key,a.user,accTone(a.key),accWarn(a)); }).join("")+'</div>';
   }
   var ob=M.outbox?M.outbox():[];
@@ -409,6 +409,15 @@ function folderPanel(o){
   return h;
 }
 M.folderPanel=folderPanel;
+/* Ungelesene in Unterordnern je Konto (Wunsch Simon 29.10.2026): Ordner-Zeichen mit Anzahl neben der Mailadresse;
+   Klick springt in den ersten Ordner mit Ungelesenen, jeder weitere Klick in den nächsten */
+function foldUnread(k){ return customFolders(k==="all"?null:k).filter(function(f){ return f.unread>0; }); }
+function foldBadge(k){ var l=foldUnread(k); if(!l.length) return ""; var n=l.reduce(function(a,f){ return a+f.unread; },0);
+  var tip="Ungelesen in Ordnern: "+l.map(function(f){ return fpathLabel(f.acc,f.path)+(k==="all"&&multiAcc()?" ("+accInfo(f.acc).label+")":"")+" · "+f.unread; }).join(", ");
+  return '<span class="afold" data-act="mfjump:'+esc(k)+'" role="button" tabindex="0" title="'+esc(tip)+'" aria-label="'+esc(tip)+'">'+ic("folder")+n+'</span>'; }
+F.action("mfjump",function(k){ var l=foldUnread(k); if(!l.length) return;
+  var keys=l.map(function(f){ return "f:"+f.acc+"|"+f.path; }), i=keys.indexOf(UI.mf), next=keys[(i+1)%keys.length];
+  UI.macct=k; UI.mf=next; UI.mfilt="all"; UI.mpick={}; UI.msel=null; UI.mlistTop=0; UI.mshow=150; F.closeModal(); F.render(); });
 var FNAMES={inbox:"Posteingang",drafts:"Entwürfe",outbox:"Postausgang",sent:"Gesendet",spam:"Spam",trash:"Papierkorb",unread:"Ungelesen",starred:"Markiert"};
 function curFolderLabel(){ var f=UI.mf; if(FNAMES[f]) return FNAMES[f]; if(f.indexOf("f:")===0){ var p=parseFolderKey(f); return folderName(p.path,p.acc); } return f; }
 
@@ -1371,7 +1380,8 @@ F.css([
 ".fdiv{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:700;padding:14px 10px 4px}",
 ".accsw{display:grid;gap:2px;padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--line)}",
 ".adot{width:9px;height:9px;border-radius:50%;flex:none}",
-".atx{display:grid;min-width:0}.atl,.atu{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.atu{font-size:11.5px;color:var(--ink-3);font-weight:500}",
+".atx{display:grid;min-width:0}.atl,.atm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.atu{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;color:var(--ink-3);font-weight:500}",
+".afold{display:inline-flex;align-items:center;gap:3px;flex:none;border-radius:99px;padding:0 7px 0 5px;background:var(--glow-soft);color:var(--glow-ink);font-weight:700;font-size:11px;line-height:17px;cursor:pointer}.afold svg{width:12px;height:12px}.afold:hover{filter:brightness(1.08)}",
 ".awarn{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--bad);color:var(--on-glow);font-size:12px;font-weight:800;flex:none}",
 /* Mailliste */
 ".mlistp{display:flex;flex-direction:column;max-height:calc(100vh - 190px);min-height:320px;overflow:hidden}",
@@ -1519,7 +1529,7 @@ F.css([
 ".sheetf{position:static;max-height:none;padding:0;overflow:visible;flex:none}",
 ".accseg{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;border-bottom:0;padding:2px 0 6px;margin:0;flex-shrink:0;min-height:50px}.accseg::-webkit-scrollbar{display:none}",
 ".accseg .accbtn{flex:none;width:auto;max-width:78vw;min-height:40px;border:1px solid var(--line);border-radius:99px;padding:6px 14px}",
-".accseg .accbtn[aria-current=true]{border-color:color-mix(in srgb,var(--glow) 45%,transparent)}.accseg .atu{display:none}",
+".accseg .accbtn[aria-current=true]{border-color:color-mix(in srgb,var(--glow) 45%,transparent)}.accseg .atm{display:none}.accseg .atu:not(:has(.afold)){display:none}",
 ".sheeth{margin:10px 2px 0}.sheetrules{width:100%;justify-content:center;margin-top:10px;min-height:44px}",
 /* Handy: Ordner-Chips und Wisch-Tipp nur am Handy */
 ".mapp,.mapp-s,.mselbar,.mfab,.mrbar,.msw-bg,.mptr,.mfstrip,.mtip{display:none}",
