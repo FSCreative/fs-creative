@@ -1408,13 +1408,13 @@ F.css([
 ".star.on{color:var(--warn)}.star:hover{color:var(--warn)}",
 "@media (hover:hover){.mrow2:not(:hover):not(:focus-within) .star:not(.on){opacity:0}}",
 ".accpill{font-size:11px;font-weight:600;padding:0 7px;border-radius:99px;white-space:nowrap;flex:none}",
-/* Schnellaktionen beim Überfahren (deckend, damit nichts durchscheint) */
-".mqa{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:none;gap:2px;background:var(--m-solid);border:1px solid var(--line-2,var(--line));border-radius:11px;padding:3px;box-shadow:0 6px 18px rgb(0 0 0/.22)}",
+/* Schnellaktionen beim Überfahren (deckend, damit nichts durchscheint) – oben in der Absender-/Datumszeile, damit der Unterhaltungs-Knopf in der Betreffzeile klickbar bleibt */
+".mqa{position:absolute;right:10px;top:3px;display:none;gap:1px;background:var(--m-solid);border:1px solid var(--line-2,var(--line));border-radius:10px;padding:2px;box-shadow:0 6px 18px rgb(0 0 0/.22)}",
 ".mrow2:hover .mqa,.mrow2:focus-visible .mqa,.mqa:focus-within{display:flex}",
 "@media (hover:none){.mrow2:hover .mqa{display:none}}",
-".mqa button{border:0;background:none;width:32px;height:32px;border-radius:8px;color:var(--ink-2);display:grid;place-items:center}",
+".mqa button{border:0;background:none;width:30px;height:24px;border-radius:7px;color:var(--ink-2);display:grid;place-items:center}",
 ".mqa button:hover{background:var(--hover,var(--sunk));color:var(--ink)}.mqa button.dg:hover{color:var(--bad);background:var(--bad-soft)}",
-".mqa svg{width:16px;height:16px}",
+".mqa svg{width:15px;height:15px}",
 /* Leere Zustände */
 ".mempty{display:grid;justify-items:center;gap:6px;padding:44px 22px;color:var(--ink-3);text-align:center;font-size:13.5px;text-wrap:pretty}",
 ".mempty b{color:var(--ink);font-size:16px;font-weight:700;text-wrap:balance}.mempty.tall{padding:90px 22px}",
