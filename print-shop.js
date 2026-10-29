@@ -661,10 +661,22 @@ module.exports = function (D) {
     const s = await settings();
     const list = await pcApi("GET", "/products");
     const items = (Array.isArray(list) ? list : (list && (list.items || list.results)) || []).filter(p => p && p.sku && p.active !== false);
+    const prevAll = ALL || await store.getMeta("print_catalog_all").catch(() => null);
     await cms(false);
     // ganzes Sortiment (für Cockpit „Sortiment“ und allgemeine Produkte)
     ALL = { at: nowIso(), items: items.filter(p => SKU_RX.test(String(p.sku))).map(p => ({ sku: String(p.sku), title: clip(p.titlePlural || p.titleSingle || p.title || p.sku, 120), single: clip(p.titleSingle || "", 120), auto: categoryOf(p.sku, p.titleSingle, p.titlePlural) })) };
     await store.setMeta("print_catalog_all", ALL); PD_CACHE.clear();
+    // Neu bei Print.com (Wunsch Simon 29.10.2026): der tägliche Abgleich meldet neue Produkte per Push und merkt sie (print_new_skus);
+    // im Shop erscheinen sie, wenn ihre Kategorie freigeschaltet ist, sonst über „Sortiment“ im Cockpit
+    if (prevAll && prevAll.items && prevAll.items.length) {
+      const seen = new Set(prevAll.items.map(x => x.sku)), nw = ALL.items.filter(x => !seen.has(x.sku));
+      if (nw.length && nw.length < 200) {
+        const m = (await store.getMeta("print_new_skus").catch(() => null)) || {}; m.at = nowIso(); m.items = nw.map(x => ({ sku: x.sku, title: x.title, at: m.at })).concat(m.items || []).slice(0, 100);
+        await store.setMeta("print_new_skus", m).catch(() => {});
+        log("Print.com: " + nw.length + " neue Produkte – " + nw.slice(0, 8).map(x => x.title).join(", "));
+        if (D.push) D.push("lead", { title: "Print.com: " + nw.length + (nw.length === 1 ? " neues Produkt" : " neue Produkte"), body: nw.slice(0, 5).map(x => x.title).join(" · ") + (nw.length > 5 ? " …" : "") + "\nIm Cockpit unter Druckaufträge › Sortiment freischalten", url: "/admin#print", tag: "pc-new-" + m.at.slice(0, 10) }).catch(() => {});
+      }
+    }
     const out = { at: nowIso(), cv: CUR_V, products: [], errors: [] };
     for (const c of CURATED) {
       const ov = s.products[c.key] || {};
