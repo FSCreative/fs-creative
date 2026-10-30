@@ -268,7 +268,7 @@ module.exports = function (D) {
   async function settings() {
     if (SETTINGS) return SETTINGS;
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin) };
+    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin) };
     // Mitbewerber-Preisanker aus print-anchors.json (versioniert im Repo): neue Version → Produkte daraus übernehmen, übrige Anker bleiben
     if (process.env.PRINT_ANCHORS_FILE !== "off") try { const f = JSON.parse(fs.readFileSync(path.join(__dirname, "print-anchors.json"), "utf8")); if (f && f.version && String(f.version) !== SETTINGS.anchorsFile && f.anchors) { await saveSettings({ anchors: f.anchors, anchorsFile: String(f.version) }); log("Preisanker " + f.version + " übernommen (" + Object.keys(f.anchors).length + " Produkte)"); } } catch (e) { if (e.code !== "ENOENT") log("Preisanker-Datei:", e.message); }
     return SETTINGS;
@@ -289,6 +289,8 @@ module.exports = function (D) {
       s.anchors[k] = a.slice(0, 400).map(x => Object.assign({ sig: Object.assign({}, x.sig || {}), tiers: tc(x.tiers), src: clip(x.src || "druck.at", 60), at: x.at || today() },
         Array.isArray(x.area) ? { area: x.area.slice(0, 120).map(p => [parseFloat(p && p[0]), tc(p && p[1])]).filter(p => p[0] > 0 && Object.keys(p[1]).length) } : {})).filter(x => Object.keys(x.tiers).length || (x.area && x.area.length > 1)); });
     if (pl.anchorGap !== undefined) { const g = parseFloat(String(pl.anchorGap).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 50) s.anchorGap = g; }
+    if (pl.anchorRaiseMaxPct !== undefined) { const g = parseFloat(String(pl.anchorRaiseMaxPct).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 1000) s.anchorRaiseMaxPct = g; }
+    if (pl.anchorGapWide !== undefined) { const g = parseFloat(String(pl.anchorGapWide).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 50) s.anchorGapWide = g; }
     if (pl.minMarginPct !== undefined) { const g = parseFloat(String(pl.minMarginPct).replace(",", ".")); if (isFinite(g) && g >= 0 && g <= 100) s.minMarginPct = g; }
     if (pl.applyAll === true) Object.keys(s.products).forEach(k => { delete s.products[k].markupPct; delete s.products[k].minMarginEur; });   // Startschalter im Cockpit (zusätzlich zu PRINT_SHOP_LIVE)
     if (pl.autoSend !== undefined) s.autoSend = pl.autoSend === true;
@@ -1126,6 +1128,8 @@ module.exports = function (D) {
       }
       return n.kind === "banner" ? 0 : at(a.tiers); })();
     const ancNet = ancGross ? (ancGross - (s.anchorGap != null ? s.anchorGap : 2)) / (1 + 20 / 100) : 0;   // Anker sind österreichische Bruttopreise (20 %)
+    // Größerer Abstand (anchorGapWide, Standard 1,50 €), solange die normale Mindestmarge hält – sonst nur anchorGap (Wunsch Simon 31.10.2026: „0,90 reicht, 1,50 auch gut“)
+    const gapW = s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, ancNetW = ancGross && gapW > (s.anchorGap != null ? s.anchorGap : 2) ? (ancGross - gapW) / (1 + 20 / 100) : 0;
     // Mit Mitbewerberpreis darf die Marge bis auf anchorMinPct (Standard 5 % vom Nettopreis nach Gebühr, Freigabe Simon 19.10.2026) sinken, damit wir knapp darunter bleiben
     const ancMin = s.anchorMinPct != null && isFinite(+s.anchorMinPct) ? +s.anchorMinPct : 5, ancUp = ancMin / (100 - ancMin) * 100 / (1 - 1.2 * fee.pct / 100);
     const floorA = b => gmUp == null && ancNet ? ((b.product + b.shipping) * (1 + Math.min(ancUp, s.minMarginPct != null ? s.minMarginPct : 10) / 100) + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100) : floorOf(b);
@@ -1134,7 +1138,11 @@ module.exports = function (D) {
       return t <= a ? 1 : t >= z ? f : 1 - (1 - f) * (t - a) / (z - a); };
     // Werbeartikel: höchstens 15 % Aufschlag auf den Produkt-Einkauf (Wunsch Simon 19.10.2026, sonst zu teuer) – gilt auch gegenüber Mitbewerber-Ankern; die Zahlungsgebühr wird immer gedeckt
     const promoCap = prod.kind === "promo" || gmMain === PROMO ? (s.promoMaxPct != null && isFinite(+s.promoMaxPct) ? +s.promoMaxPct : 15) : null;
-    const netOf0 = b => Math.max(floorA(b), ancNet || (Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping));
+    const ancOf = b => ancNetW && ancNetW >= floorOf(b) ? ancNetW : ancNet;
+    // Ein Mitbewerberpreis hebt unseren Preis höchstens anchorRaiseMaxPct (Standard 25 %) über den normalen Aufschlag – eine teure Einzelquelle soll uns nicht teuer machen
+    const mkp = b => Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping, raiseMax = s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25;
+    const ancCap = b => { const a = ancOf(b); return a ? Math.min(a, mkp(b) * (1 + raiseMax / 100)) : 0; };
+    const netOf0 = b => Math.max(floorA(b), ancCap(b) || mkp(b));
     const netOf = b => Math.ceil((promoCap != null ? Math.min(netOf0(b), Math.max(b.product * (1 + promoCap / 100) + b.shipping, (b.product + b.shipping + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100))) : netOf0(b)) * 10 - 1e-6) / 10;
     const tax = taxFor(country, cust);
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
@@ -1169,7 +1177,7 @@ module.exports = function (D) {
     const days = (buy.days || []).map(d => { const nt = netFin({ product: buy.product, shipping: d.ship, total: r2(buy.product + d.ship) }); return { d: d.d, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }; });
     const net = Math.max(net0, Math.ceil((promoCap != null ? Math.min(floorA(buy), list) : floorA(buy)) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
     // Welche Regel hat den Preis bestimmt? (für die Marge-Übersicht im Cockpit)
-    const rule = (b => { if (promoCap != null && netOf(b) < Math.ceil(netOf0(b) * 10 - 1e-6) / 10 - 0.05) return "promoCap"; const f = floorA(b); if (ancNet) return ancNet >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
+    const rule = (b => { if (promoCap != null && netOf(b) < Math.ceil(netOf0(b) * 10 - 1e-6) / 10 - 0.05) return "promoCap"; const f = floorA(b); if (ancNet) return ancCap(b) >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
       const up = b.product * (1 + markup * bulkF(b) / 100), mk = Math.max(up, b.product + minM) + b.shipping; if (f >= mk) return "floor"; if (b.product + minM > up) return "minEur";
       return ov.markupPct != null ? "product" : bulkF(b) < 1 ? "bulk" : "markup"; })(buy);
     return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, defDate: buy.def || buy.deliveryDate, wish: buy.wish || "", days, at: nowIso() };
@@ -3210,7 +3218,7 @@ module.exports = function (D) {
     const mon = today().slice(0, 7), d30 = new Date(Date.now() - 30 * 864e5).toISOString();
     const r = x => Object.keys(x).reduce((o, k) => { o[k] = k === "n" ? x[k] : r2(x[k]); return o; }, {});
     return { ok: true, rules: { markupPct: s.markupPct != null ? s.markupPct : c.markup, minMarginPct: s.minMarginPct != null ? s.minMarginPct : 10,
-        anchorMinPct: s.anchorMinPct != null ? +s.anchorMinPct : 5, anchorGap: s.anchorGap != null ? s.anchorGap : 2, anchors: Object.keys(s.anchors || {}).length, bulkFrom: s.bulkFrom != null ? +s.bulkFrom : 150, bulkTo: s.bulkTo != null ? +s.bulkTo : 1500, bulkFactor: s.bulkFactor != null ? +s.bulkFactor : 0.4,
+        anchorMinPct: s.anchorMinPct != null ? +s.anchorMinPct : 5, anchorGap: s.anchorGap != null ? s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null ? +s.anchorGapWide : 1.5, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null ? +s.anchorRaiseMaxPct : 25, anchors: Object.keys(s.anchors || {}).length, bulkFrom: s.bulkFrom != null ? +s.bulkFrom : 150, bulkTo: s.bulkTo != null ? +s.bulkTo : 1500, bulkFactor: s.bulkFactor != null ? +s.bulkFactor : 0.4,
         feePct: fee.pct, feeFix: fee.fix, proCheck: PRO_CHECK_GROSS, groupMargin: Object.keys(s.groupMargin || {}).filter(k => s.groupMargin[k] != null).map(k => ({ name: groupName(k), pct: s.groupMargin[k] })),
         overrides: Object.keys(s.products || {}).filter(k => s.products[k] && s.products[k].markupPct != null).map(k => ({ key: k, title: (CURATED.find(x => x.key === k) || {}).title || k, pct: s.products[k].markupPct })) },
       home: await homeState(), job: MG ? { running: MG.running, at: MG.at, done: MG.done, total: MG.total } : null, rows: MG ? MG.rows.slice().sort((a, b) => a.o - b.o || a.copies - b.copies) : [],
