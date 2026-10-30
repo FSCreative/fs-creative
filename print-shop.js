@@ -74,7 +74,8 @@ const CURATED = [
   { key: "visitenkarten", group: PAPER, title: "Visitenkarten", icon: "💼", desc: "Der erste Eindruck zum Mitnehmen – ein- oder beidseitig.", skus: ["businesscards", "business-cards", "visitekaartjes"], rx: /business ?cards?|visitenkart|visitekaart/i,
     expose: "auto", tiers: [100, 250, 500, 1000, 2500], designer: true, safe: 3, prefer: { size: ["85x55", "85_x_55", "85_x_55_mm"] } },
   { key: "flyer", group: PAPER, title: "Flyer", icon: "📄", desc: "Angebote, Events und Infos – von A6 bis A4.", skus: ["flyers", "flyer"], rx: /^flyers?$|^flyer/i,
-    expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3, prefer: { size: ["a5", "a6", "dl", "din_lang"] } },
+    expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3, prefer: { size: ["a5", "a6", "dl", "din_lang"] },
+    feedFormats: ["a6", "a4", "din_large"] },   // zusätzliche Google-Shopping-Einträge je Format (Link ?format=…)
   { key: "plakate", group: PAPER, title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
     expose: "auto", tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } },
   { key: "folder", group: PAPER, title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
@@ -2331,7 +2332,17 @@ module.exports = function (D) {
             if (!label) { label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); attrs = attrsOf(p, n); } } catch (e) {}
         }
         if (!rows.length || (rows.length > 1 && rows.every(r => Math.abs(r.gross - rows[0].gross) < 0.01))) { if (rows.length > 1) log("Preisübersicht: " + key + " ausgelassen (gleicher Preis für alle Mengen)"); continue; }
-        const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows });
+        // weitere Formate für Google Shopping (CURATED.feedFormats): gleiche Startausführung, nur das Format anders – je Format die zwei kleinsten verlinkbaren Auflagen
+        const cp = CURATED.find(c => c.key === key), szp = (p.props || []).find(x => x.slug === "size"), formats = [];
+        if (cp && cp.feedFormats && szp && startOk && p.kind !== "textile") for (const v of cp.feedFormats) {
+          const opt = (szp.options || []).find(o => o.slug === v); if (!opt || v === base.sel.size) continue; const fr = [];
+          for (const q of qs.filter(n => (p.tiers || []).indexOf(n) > -1).slice(0, 2)) {
+            const inp = JSON.parse(JSON.stringify(base)); inp.sel.size = v; inp.copies = q;
+            try { const n = normalizeSel(p, inp); if (n.sel.size !== v) break; n.low = true; const qt = await quote(p, n, "AT", "", {}); fr.push({ copies: n.copies, gross: qt.gross, net: qt.net }); } catch (e) {}
+          }
+          if (fr.length) formats.push({ v, label: clip(opt.title || opt.name || v, 60), rows: fr });
+        }
+        const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows, formats: formats.length ? formats : undefined });
       }
       if (items.length) { PUB = { at: nowIso(), items }; await store.setMeta("print_pub", PUB).catch(() => {}); }
       log("Druckshop: Preisübersicht aktualisiert (" + items.length + " Produkte)");
@@ -2346,7 +2357,7 @@ module.exports = function (D) {
   // kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG), also keine Rückgabe; Gewährleistung (Punkt 8) bleibt unberührt. Lieferung nur nach Österreich.
   const RETURN_LD = { "@type": "MerchantReturnPolicy", applicableCountry: "AT", returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted", merchantReturnLink: SITE + "/print/agb" };
   function offersLd(it) {
-    const url = SITE + "/print?produkt=" + encodeURIComponent(it.key), g = it.rows.map(r => r.gross);
+    const url = it.url || SITE + "/print?produkt=" + encodeURIComponent(it.key), g = it.rows.map(r => r.gross);
     return { "@type": "Product", name: it.title, description: scrubText(it.label || it.desc || ""), url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
       offers: { "@type": "AggregateOffer", priceCurrency: "EUR", lowPrice: Math.min.apply(null, g).toFixed(2), highPrice: Math.max.apply(null, g).toFixed(2), offerCount: it.rows.length,
         offers: it.rows.map(r => ({ "@type": "Offer", price: r.gross.toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url, eligibleQuantity: { "@type": "QuantitativeValue", value: r.copies, unitText: "Stück" },
@@ -2411,9 +2422,11 @@ module.exports = function (D) {
     Object.keys(by).forEach(k => { by[k].avg = Math.round(by[k].sum / by[k].n * 10) / 10; }); RV = { at: Date.now(), by }; return by;
   }
   const RATING_MIN = 3;
-  async function productSeo(html, key) {
+  async function productSeo(html, key, fmt) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), x = pub.find(y => y.key === key); if (!x) return html;
-    const P = await pubState(), it = P && P.items ? P.items.find(y => y.key === key) : null, url = SITE + "/print?produkt=" + encodeURIComponent(key);
+    const P = await pubState(), url = SITE + "/print?produkt=" + encodeURIComponent(key); let it = P && P.items ? P.items.find(y => y.key === key) : null;
+    // Link mit ?format=… (Google-Shopping-Eintrag je Format): Preise und Ausführung dieses Formats – wie im Konfigurator vorgewählt
+    const fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label), url: url + "&format=" + encodeURIComponent(fv.v) });
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
     const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400);   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
@@ -2537,6 +2550,8 @@ module.exports = function (D) {
     const row = (it.rows || []).filter(r => r && r.gross > 0 && r.copies > 0 && ok(r)).sort((a, b) => a.copies - b.copies)[0]; if (!row) return null;
     return { row, link: prodUrl(it.key, true) + (row.copies !== start ? "&menge=" + row.copies : "") };
   }
+  // Ausführungstext („A5 - 148 x 210 mm · 135 g … · 4/4“): Format-Teil gegen ein anderes Format tauschen
+  const FMT_SEG = /^((DIN\s)?[A-C]\d{1,2}|DL)\b|\d+(,\d+)?\s*[x×]\s*\d+/i, fmtSwap = (label, f) => String(label || "").split(" · ").map(v => FMT_SEG.test(v.trim()) ? f : v.trim()).join(" · ");
   const fmtNice = f => String(f || "").replace(/\s+x\s+/g, " × ").replace(/^((?:DIN\s)?[A-C]\d{1,2}|DL|1\/3 A4)\s+-\s+(.+)$/i, "$1 ($2)").replace(/\s*\($/, "").trim();
   function feedBuild(s, cat, all, P) {
     const pub = cat ? publicCatalog(cat, s, all) : [], byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
@@ -2558,12 +2573,23 @@ module.exports = function (D) {
       const gpc = gpcOf(it.key, title, x.group || (x.cat && x.cat.main), kind), ptype = scrubText([x.cat && x.cat.mainName, x.cat && x.cat.subName].filter(Boolean).join(" > "));
       const tag = (k, v) => v ? "<g:" + k + ">" + xmlEsc(v) + "</g:" + k + ">" : "";
       const apparel = gpc === 212 || gpc === 1604 ? tag("gender", "unisex") + tag("age_group", "adult") + tag("color", a.color || (kind === "textile" ? seg[0] : "")) + tag("size", a.size || (kind === "textile" ? "M" : "")) : "";
-      const xml = "<item>" + tag("id", it.key.length <= 50 ? it.key : it.key.slice(0, 41) + "-" + crypto.createHash("sha1").update(it.key).digest("hex").slice(0, 8)) + tag("title", t) + tag("description", desc) + tag("link", pk.link) +
-        tag("image_link", imgs[0]) + imgs.slice(1, 6).map(u => tag("additional_image_link", u)).join("") + tag("availability", "in_stock") + tag("condition", "new") + tag("price", pk.row.gross.toFixed(2) + " EUR") +
+      const fid = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8), grp = it.formats && it.formats.length ? tag("item_group_id", fid(it.key)) : "";
+      const itemXml = (id, title, dsc, link, gross) => "<item>" + tag("id", id) + grp + tag("title", title) + tag("description", dsc) + tag("link", link) +
+        tag("image_link", imgs[0]) + imgs.slice(1, 6).map(u => tag("additional_image_link", u)).join("") + tag("availability", "in_stock") + tag("condition", "new") + tag("price", gross.toFixed(2) + " EUR") +
         tag("brand", "FS Creative") + tag("identifier_exists", "no") + tag("google_product_category", String(gpc)) + tag("product_type", ptype) + apparel +
         "<g:shipping><g:country>AT</g:country><g:service>Standard</g:service><g:price>0.00 EUR</g:price></g:shipping></item>\n";
+      const xml = itemXml(fid(it.key), t, desc, pk.link, pk.row.gross);
       if (SUPPLIER_RX.test(xml)) { skipped.push(it.key + " (Lieferanten-Name)"); continue; }
       items.push(xml);
+      // weitere Formate: eigener Eintrag (gleiche Gruppe), Link wählt Format und Auflage genau so vor (?format=…&menge=…)
+      for (const f of it.formats || []) {
+        const row = f.rows.filter(r => r && r.gross > 0 && r.copies > 0).sort((a, b) => a.copies - b.copies)[0]; if (!row) continue;
+        const ff = fmtNice(f.label), lb = fmtSwap(it.label, f.label);
+        const ft = clip(title + " " + ff + " " + verb + " – " + row.copies.toLocaleString("de-AT") + " Stück", 150);
+        const fd = clip(desc.replace("Ausführung: " + scrubText(it.label || ""), "Ausführung: " + scrubText(lb)), 4900);
+        const link = prodUrl(it.key, true) + "&format=" + encodeURIComponent(f.v) + (row.copies !== it.start ? "&menge=" + row.copies : "");
+        const fx = itemXml(fid(it.key + "-" + f.v.replace(/[^a-z0-9]+/gi, "-")), ft, fd, link, row.gross); if (!SUPPLIER_RX.test(fx)) items.push(fx);
+      }
     }
     const head = '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">\n<channel>\n<title>FS Creative Druckshop</title>\n<link>' + SITE + "/print</link>\n" +
       "<description>Drucksachen und Werbeartikel online gestalten und drucken – Endpreise inkl. 20 % USt und Versand innerhalb Österreichs" + (P && P.at ? " (Stand " + xmlEsc(dateDe(P.at)) + ")" : "") + ".</description>\n";
@@ -2770,7 +2796,7 @@ module.exports = function (D) {
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
     html = shell(html, preview);
     const pk = u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120);
-    if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk); } catch (e) { log("Produkt-SEO:", e.message); } }
+    if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk, u.searchParams.get("format")); } catch (e) { log("Produkt-SEO:", e.message); } }
     else if (u && u.searchParams && u.searchParams.has("produkte")) { const km = String(u.searchParams.get("kategorie") || ""), ks = String(u.searchParams.get("unter") || "");
       if (/^[\w-]{0,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks)) { try { html = await catSeo(html, km, ks); } catch (e) { log("Kategorie-SEO:", e.message); } } }
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });

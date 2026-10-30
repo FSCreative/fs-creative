@@ -60,7 +60,7 @@
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
-    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else setCopies(q.get("menge")); S.step = 2; render(); }); }
+    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; showSetup(false); });
 
@@ -687,6 +687,8 @@
     }
     loadPrice(); if (cb) cb();
   }
+  // Format aus einem Link (?format=…, Google-Shopping-Einträge je Format): nur angebotene Formate, übrige Auswahl wie die Startausführung
+  function setFormat(v) { var pr = S.prod && (S.prod.props || []).filter(function (x) { return x.slug === "size"; })[0]; if (!v || !pr || S.sel.size === v || !pr.options.some(function (o) { return o.slug === v; })) return; S.sel.size = String(v); fixSel("size"); loadPrice(); }
   // Auflage aus einem Link (?menge=…, Weihnachtsseite data-copies): nur angebotene Mengen
   function setCopies(v) { var n = parseInt(v, 10); if (!S.prod || !(n > 0) || kind() === "textile" || (S.prod.tiers || []).indexOf(n) < 0 || n === S.copies) return; S.copies = n; motBalance(); loadPrice(); }
   var FOLD_RX = /^(single|singlehorizontal|wikkel|zigzag|luik|cross)_\d+$/;

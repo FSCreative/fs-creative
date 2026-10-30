@@ -165,7 +165,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
       assert.ok(/^<\?xml version="1\.0" encoding="UTF-8"\?>\n<rss version="2\.0" xmlns:g="http:\/\/base\.google\.com\/ns\/1\.0">/.test(feed) && /<\/channel>\n<\/rss>\n$/.test(feed));
       assert.ok(!/print[\s._-]{0,2}com(?![a-z])|drukwerkdeal|printdeal|ctfassets/i.test(feed), "kein Lieferanten-Name, keine direkten Contentful-Adressen");
       const items = feed.match(/<item>[\s\S]*?<\/item>/g) || []; assert.ok(items.length >= 3, "Produkte im Feed: " + items.length + "\n" + srv.out.slice(-800));
-      assert.ok(items.length <= pb.pub.n, "nur Produkte der Preisübersicht");
+      const baseOf = i => tagOf(i, "item_group_id") || tagOf(i, "id"); assert.ok(new Set(items.map(baseOf)).size <= pb.pub.n, "nur Produkte der Preisübersicht");
       const ids = items.map(i => tagOf(i, "id")); assert.strictEqual(new Set(ids).size, ids.length, "g:id eindeutig");
       for (const it of items) {
         const id = tagOf(it, "id");
@@ -174,7 +174,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
         assert.ok(/^\d+\.\d\d EUR$/.test(tagOf(it, "price")), tagOf(it, "price")); assert.ok(/^\d+$/.test(tagOf(it, "google_product_category")));
         assert.ok(/<g:shipping><g:country>AT<\/g:country><g:service>Standard<\/g:service><g:price>0\.00 EUR<\/g:price><\/g:shipping>/.test(it), "Versand im Preis enthalten");
         assert.ok(/ (drucken|bedrucken) – [\d.  ]+ Stück$/.test(tagOf(it, "title")) && tagOf(it, "title").length <= 150, tagOf(it, "title"));
-        assert.ok(tagOf(it, "link").indexOf(SITE + "/print?produkt=" + encodeURIComponent(id)) === 0, tagOf(it, "link"));
+        assert.ok(tagOf(it, "link").indexOf(SITE + "/print?produkt=" + encodeURIComponent(baseOf(it)) + (baseOf(it) === id ? "" : "&format=")) === 0, tagOf(it, "link"));
         const img = tagOf(it, "image_link"); assert.ok(img.indexOf(SITE + "/print/bild/") === 0 && /\?fm=jpg&w=1200$/.test(img), img);
         assert.ok(require(path.join(ROOT, "print-bild.js")).upstreamUrl(img.slice(SITE.length).split("?")[0], "?fm=jpg&w=1200"), "Bild-Proxy nimmt den Pfad an: " + img);
         assert.ok(tagOf(it, "description").length > 40 && tagOf(it, "description").length <= 5000);
@@ -183,6 +183,11 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
       assert.ok(/^Flyer A5 drucken – 100 Stück$/.test(tagOf(fl, "title")), tagOf(fl, "title")); assert.strictEqual(tagOf(fl, "google_product_category"), "5884");
       assert.ok(/FS Creative druckt Flyer/.test(tagOf(fl, "description")), "Lieferanten-Name im Text ersetzt: " + tagOf(fl, "description").slice(0, 200));
       assert.ok(!/Rekordzeit|16 Uhr/.test(tagOf(fl, "description")), "keine Lieferzeit-Versprechen aus dem Lieferanten-Text");
+      // weitere Formate als eigene Einträge derselben Gruppe – Link wählt das Format vor
+      const fa6 = items.find(i => tagOf(i, "id") === "flyer-a6"); assert.ok(fa6, "Flyer A6 als eigener Eintrag: " + items.map(i => tagOf(i, "id")).join(", "));
+      assert.strictEqual(tagOf(fa6, "item_group_id"), "flyer"); assert.strictEqual(tagOf(fl, "item_group_id"), "flyer", "Haupteintrag in derselben Gruppe");
+      assert.ok(/^Flyer A6( \(105 × 148 mm\))? drucken – 100 Stück$/.test(tagOf(fa6, "title")), tagOf(fa6, "title")); assert.ok(/[?&]format=a6(&|$)/.test(tagOf(fa6, "link")), tagOf(fa6, "link"));
+      assert.ok(/Ausführung: A6\b/.test(tagOf(fa6, "description")) && !/Ausführung: A5/.test(tagOf(fa6, "description")), tagOf(fa6, "description").slice(-200));
       const tx = items.find(i => tagOf(i, "id") === "tshirt-basic");
       if (tx) { assert.ok(/mit Logo bedrucken – 10 Stück$/.test(tagOf(tx, "title")), tagOf(tx, "title")); assert.deepStrictEqual([tagOf(tx, "gender"), tagOf(tx, "age_group")], ["unisex", "adult"]); assert.ok(tagOf(tx, "color") && tagOf(tx, "size"), "Textil: Farbe und Größe"); assert.ok(!/menge=/.test(tagOf(tx, "link")), "Textil ohne ?menge="); }
     });
