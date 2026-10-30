@@ -706,7 +706,8 @@ module.exports = function (C) {
       const r = p.results[pf]; if (!r || r.status !== "ok" || !r.id || !PLATFORMS[pf] || (!force && !statsDue(p, r))) continue;
       const ch = channelsOf(p.brand).find(c => c.platform === pf); if (!ch) continue;
       try {
-        const s = await P.statsRemote(pf, ch, await tokFor(ch), { id: r.id, zid: r.zid || "", format: p.format }), o = { at: nowIso() };
+        const s = await P.statsRemote(pf, ch, await tokFor(ch), { id: r.id, zid: r.zid || "", format: p.format, at: r.at || p.postedAt || "" }), o = { at: nowIso() };
+        if (s.zid && !r.zid) r.zid = s.zid;   // Zernio-Kennung nachgetragen (ältere TikTok-Posts)
         if (s.wait) Object.assign(o, r.stats || {}, { at: o.at, wait: true });   // Plattform rechnet noch – alten Stand behalten
         else { STAT_KEYS.forEach(k => { if (typeof s[k] === "number") o[k] = s[k]; }); ["need", "none", "note"].forEach(k => { if (s[k]) o[k] = clip(s[k], 200); }); }
         delete o.err; r.stats = o;

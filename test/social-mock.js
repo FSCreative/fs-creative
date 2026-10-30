@@ -144,6 +144,9 @@ module.exports = function () {
         if (p.indexOf("/zn/") === 0) { S.zn = S.zn || { posts: [], got: [] };
           if (auth !== "Bearer sk_test") return end(401, { error: "Invalid API key", type: "authentication_error" });
           if (p === "/zn/v1/analytics") { if (S.znAnalytics === 402) return end(402, { error: "Analytics add-on required", code: "analytics_addon_required" });
+            const pid = u.searchParams.get("postId");
+            if (pid && /^v_pub_url/.test(pid)) return end(404, { error: "Post not found" });   // Zernio kennt die TikTok-Veröffentlichungskennung nicht direkt
+            if (!pid) return end(200, { posts: [{ postId: "zp-alt", publishedAt: "2026-10-30T18:01:50.000Z", analytics: { views: 500 }, platformAnalytics: [{ platform: "tiktok", platformPostId: "v_pub_url~v2.77", analytics: { views: 512, likes: 9, comments: 1, shares: 2 } }] }], hasAnalyticsAccess: true });
             return end(200, { postId: u.searchParams.get("postId"), analytics: { views: 1000 }, platformAnalytics: [{ platform: "tiktok", accountId: u.searchParams.get("accountId"), analytics: { views: 999, likes: 50, comments: 4, shares: 7, saves: 1 } }] }); }
           if (p === "/zn/v1/accounts") return end(200, { accounts: [{ _id: "zacc1", platform: "tiktok", username: "fs.creative.at", displayName: "FS Creative", isActive: true }], hasAnalyticsAccess: false });
           if (p === "/zn/v1/accounts/zacc1/health") return end(200, { accountId: "zacc1", platform: "tiktok", integrationLane: "business", status: S.znHealth || "healthy", tokenStatus: { valid: S.znHealth !== "error" } });

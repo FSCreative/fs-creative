@@ -170,6 +170,7 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const rl = await P2.statsRemote("facebook", {}, { access: "x" }, { id: "v77", format: "reel" }); assert.strictEqual(rl.views, 77); assert.strictEqual(rl.reach, 55); assert.strictEqual(rl.likes, 9);
     const zt = { via: "zernio", key: "sk_test", account: "zacc1" }, tk = await P2.statsRemote("tiktok", {}, zt, { id: "7439999999999999999", zid: "zp1" });
     assert.deepStrictEqual([tk.views, tk.likes, tk.comments, tk.shares, tk.saves], [999, 50, 4, 7, 1]);
+    const tk3 = await P2.statsRemote("tiktok", {}, zt, { id: "v_pub_url~v2.77", at: "2026-10-30T18:01:57.180Z" }); assert.deepStrictEqual([tk3.views, tk3.likes, tk3.zid], [512, 9, "zp-alt"], "ältere Posts über Zernios Liste gefunden");
     mock.state.znAnalytics = 402; const tk2 = await P2.statsRemote("tiktok", {}, zt, { id: "x" }); assert.ok(/Analyse-Zusatz/.test(tk2.none)); assert.strictEqual(tk2.views, null); delete mock.state.znAnalytics;
     assert.ok(/nur, wenn TikTok über Zernio/.test((await P2.statsRemote("tiktok", {}, { access: "t" }, { id: "x" })).none));
     const yt = await P2.statsRemote("youtube", {}, { access: "y" }, { id: "vid1" }); assert.deepStrictEqual([yt.views, yt.likes, yt.comments], [1234, 20, 2]);

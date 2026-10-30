@@ -482,8 +482,11 @@ module.exports = function (D) {
     }
     if (platform === "facebook") {
       const base = B.fb + "/" + GV + "/" + ref.id, reel = ref.format === "reel", sum = x => x && x.summary ? num(x.summary.total_count) : null;
-      try { const f = await req("GET", base + q({ fields: "reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)" + (reel ? "" : ",shares"), access_token: t }));
-        fill({ likes: sum(f.reactions), comments: sum(f.comments), shares: reel ? null : f.shares ? num(f.shares.count) : 0 }); } catch (e) { if (e.auth) throw e; }
+      // Reaktionen/Kommentare: Beiträge über reactions, Reels (Video-Knoten) notfalls über likes – was die Plattform nicht kennt, bleibt leer
+      for (const fl of reel ? ["reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)", "likes.summary(total_count).limit(0),comments.summary(total_count).limit(0)", "comments.summary(total_count).limit(0)"]
+        : ["reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0),shares", "comments.summary(total_count).limit(0),shares"]) {
+        try { const f = await req("GET", base + q({ fields: fl, access_token: t })); fill({ likes: sum(f.reactions || f.likes), comments: sum(f.comments), shares: reel ? null : f.shares ? num(f.shares.count) : 0 }); break; }
+        catch (e) { if (e.auth) throw e; } }
       try {
         if (reel) { const m = await tryIns(l => base + "/video_insights" + q({ metric: l, access_token: t }), [["blue_reels_play_count", "post_impressions_unique"], ["fb_reels_total_plays"], ["total_video_views"]]);
           fill({ views: num(m.blue_reels_play_count != null ? m.blue_reels_play_count : m.fb_reels_total_plays != null ? m.fb_reels_total_plays : m.total_video_views), reach: num(m.post_impressions_unique) }); }
@@ -499,12 +502,19 @@ module.exports = function (D) {
     }
     if (platform === "tiktok") {
       if (tok.via !== "zernio") return Object.assign(out, { none: "Zahlen zu TikTok-Videos gibt es nur, wenn TikTok über Zernio verbunden ist." });
-      const { j, status } = await zreq("GET", "/v1/analytics" + q({ postId: ref.zid || ref.id, accountId: tok.account }), tok, { ok: [202, 402, 404, 424] });
+      let { j, status } = await zreq("GET", "/v1/analytics" + q({ postId: ref.zid || ref.id, accountId: tok.account }), tok, { ok: [202, 402, 404, 424] }), zid = "";
       if (status === 402) return Object.assign(out, { none: "Zernio gibt Zahlen nur mit dem Analyse-Zusatz im Zernio-Tarif heraus." });
+      if (status === 404 && !ref.zid) {   // ältere Posts: nur die TikTok-Kennung gespeichert → in Zernios Liste suchen (gleiche Kennung oder ±20 Min. um den Postzeitpunkt)
+        const at = Date.parse(ref.at || 0), day = d => new Date(d).toISOString().slice(0, 10), from = at ? day(at - 864e5) : "", to = at ? day(at + 864e5) : "";
+        const L = (await zreq("GET", "/v1/analytics" + q(Object.assign({ platform: "tiktok", accountId: tok.account, limit: "50" }, from ? { fromDate: from, toDate: to } : {})), tok, { ok: [402, 404] })).j || {};
+        const hit = (L.posts || []).find(x => (x.platformAnalytics || []).some(y => y && String(y.platformPostId || "") === String(ref.id)))
+          || (at ? (L.posts || []).find(x => x.publishedAt && Math.abs(Date.parse(x.publishedAt) - at) < 20 * 60e3) : null);
+        if (hit) { j = hit; status = 200; zid = String(hit.postId || hit._id || ""); }
+      }
       if (status === 202) return Object.assign(out, { wait: true });
       if (status === 404 || status === 424) return Object.assign(out, { none: "Zernio findet zu diesem Video keine Zahlen." });
       const pa = (j.platformAnalytics || []).find(x => x && x.platform === "tiktok"), a = (pa && pa.analytics) || j.analytics || {};
-      return fill({ views: num(a.views), reach: num(a.reach), likes: num(a.likes), comments: num(a.comments), shares: num(a.shares), saves: num(a.saves) });
+      return Object.assign(fill({ views: num(a.views), reach: num(a.reach), likes: num(a.likes), comments: num(a.comments), shares: num(a.shares), saves: num(a.saves) }), zid ? { zid } : {});
     }
     if (platform === "youtube") {
       const s = (((await req("GET", B.yt + "/youtube/v3/videos" + q({ part: "statistics", id: ref.id }), { token: t })).items || [])[0] || {}).statistics || {};
