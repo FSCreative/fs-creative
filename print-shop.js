@@ -3214,6 +3214,64 @@ module.exports = function (D) {
       return [Math.max(10, m.min), 50].filter((n, i, a) => a.indexOf(n) === i).map(n => ({ copies: n, textile: { method: m.key, positions: m.positions.slice(0, 1), sizes: { [sz.slug]: n } } })); }
     return qs.map(n => ({ copies: n, custom, sel: bestSel(p, { copies: n, custom, urgency: "standard" }) }));   // Bestseller-Ausführung wie im Shop
   }
+  // ── Sortiments-Prüfung (nur lesend): jedes Produkt mit Print.com abgleichen – wählbare Optionen, die im Shop fehlen, Formate ohne Maße,
+  // Bezeichnungen mit Codes/Fremdwörtern. Läuft langsam im Hintergrund (niedrige Priorität, Kundenanfragen gehen vor); Ergebnis im Speicher + DB.
+  let AUDIT = null;
+  const AUD_NL = /\b(geen|gesatineerd|zonder|met|enkelzijdig|dubbelzijdig|wit|zwart|staand|liggend|gevouwen|vouw|nietjes|lijmgebonden|bedrukt|onbedrukt|achterkant|voorkant|kleur)\b/i;
+  const AUD_EN = /\b(white|black|matt?e|glossy?|without|with|single|double|sided|portrait|landscape|round(ed)?|corners?|none|front|back|sheets?|pages?|yes|no|natural|silver|gold|blue|red|green|yellow|orange|grey|gray|brown|pink|purple)\b/i;
+  function audLabel(v) {
+    v = String(v == null ? "" : v); if (!v.trim()) return "leer";
+    if (/^[a-z0-9]+([_-][a-z0-9]+)+$/.test(v)) return "Code statt Text"; if (/_/.test(v)) return "Unterstrich";
+    if (AUD_NL.test(v)) return "Niederländisch"; if (AUD_EN.test(v) && !/[äöüß]/i.test(v)) return "Englisch"; if (/\s{2,}/.test(v)) return "doppelte Leerzeichen";
+    return "";
+  }
+  function auditOne(x, pd, ours) {
+    const r = { key: x.key, sku: x.sku, title: (ours && ours.title) || x.title || "", missing: [], auto: [], noDims: [], labels: [] };
+    if (!ours || ours.err) { r.err = ours && ours.err ? clip(ours.err, 160) : "nicht im Shop darstellbar"; return r; }
+    const have = new Set(); (ours.props || []).forEach(pr => { have.add(pr.slug); (pr.sets || []).forEach(z => have.add(z)); });
+    if (ours.kind === "textile") ["textile_sizes", "printingmethod", "color_textile"].forEach(z => have.add(z));
+    if (ours.kind === "banner") ["size", "width", "height"].forEach(z => have.add(z));
+    (Array.isArray(pd.properties) ? pd.properties : []).forEach(pp => {
+      if (!pp || !pp.slug || HIDDEN_PROPS.test(pp.slug) || pp.locked || have.has(pp.slug)) return;
+      const opts = (pp.options || []).filter(o => o && o.slug != null && String(o.slug).trim() !== "-"); if (opts.length < 2) return;
+      if (pp.viewMode && String(pp.viewMode.reseller || "") === "hidden") return;
+      if (/^(finish_(left|right|top|bottom)|printingmethod|positions_.*)$/.test(pp.slug)) return;
+      const why = AUTO_SKIP.test(pp.slug) ? "bewusst ausgelassen" : (ours.fixed || {})[pp.slug] !== undefined ? ((ours.auto || {})[pp.slug] ? "wählt der Shop automatisch" : "fest eingestellt") : "fehlt";
+      (why === "fehlt" ? r.missing : r.auto).push({ slug: pp.slug, title: clip(pp.title || pp.slug, 60), n: opts.length, why });
+    });
+    (ours.props || []).forEach(pr => {
+      const tl = audLabel(pr.title); if (tl) r.labels.push({ where: "Titel", slug: pr.slug, text: clip(pr.title, 80), issue: tl });
+      (pr.options || []).forEach(o => { const li = audLabel(o.name); if (li) r.labels.push({ where: pr.slug, slug: o.slug, text: clip(o.name, 80), issue: li });
+        if (pr.slug === "size" && ours.kind === "flat" && o.slug !== "custom" && !(o.w > 0 && o.h > 0)) r.noDims.push({ slug: o.slug, text: clip(o.name, 60) }); });
+    });
+    return r;
+  }
+  async function auditRun(max) {
+    if (AUDIT && AUDIT.running) return;
+    AUDIT = { running: true, at: nowIso(), done: 0, total: 0, items: [] };
+    try {
+      const s = await settings(), cat = await catalog(false), all = await catalogAll();
+      const list = (cat && cat.products || []).map(p => ({ key: p.key, sku: p.sku, title: p.title, cur: true }));
+      ((all && all.items) || []).forEach(it => { if (!list.some(y => y.sku === it.sku)) list.push({ key: it.sku, sku: it.sku, title: it.title, it }); });
+      AUDIT.total = Math.min(list.length, max || 5000);
+      for (const x of list.slice(0, AUDIT.total)) {
+        try {
+          const pd = await pcApi("GET", "/products/" + encodeURIComponent(x.sku) + "?view=reseller", undefined, { low: true });
+          let ours; if (x.cur) ours = productOf(cat, x.key, s, true);
+          else { try { const g0 = catOf(x.it.sku, s, x.it.auto); ours = parseProduct(genericCfg(x.it, g0), x.sku, pd); } catch (e) { ours = { err: e.message }; } }
+          AUDIT.items.push(auditOne(x, pd || {}, ours));
+        } catch (e) { AUDIT.items.push({ key: x.key, sku: x.sku, title: x.title || "", err: clip(e.message, 160) }); }
+        AUDIT.done++; await new Promise(r => setTimeout(r, 250));
+      }
+    } finally { AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
+  }
+  async function auditState() {
+    if (!AUDIT) AUDIT = await store.getMeta("print_audit").catch(() => null);
+    const A = AUDIT || { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
+    it.forEach(x => (x.labels || []).forEach(l => { const k = l.issue + ": " + l.text; by[k] = (by[k] || 0) + 1; }));
+    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length,
+      missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]), items: it };
+  }
   async function marginsRun() {
     if (MG && MG.running) return; const s = await settings(), cat = await catalog(false);
     const prods = CURATED.map(c => productOf(cat, c.key, s)).filter(Boolean), cases = [];
@@ -3297,6 +3355,11 @@ module.exports = function (D) {
         const asked = (await store.listOrders()).filter(o => o.mails && o.mails.feedback && o.mails.feedback !== "skip").length;
         const sources = {}; (await store.listOrders()).forEach(o => { const f = foundOf(o); if (f) sources[f.source] = (sources[f.source] || 0) + 1; });
         return J(res, 200, { ok: true, order: avg("order"), product: avg("productFb"), asked, sources, reviewUrl: reviewUrl(), rows: rows.slice(0, 100) });
+      }
+      if (p === "/admin/api/print/audit") {   // Sortiments-Prüfung: GET = Stand, POST {op:"run", max?} = starten (Hintergrund)
+        const ab = req.method === "POST" ? await readJson(req, 1000) : {};
+        if (ab.op === "run" && cfg().pcKey) auditRun(+ab.max > 0 ? +ab.max : 0).catch(e => log("Sortiments-Prüfung:", e.message));
+        return J(res, 200, Object.assign({ ok: true }, await auditState()));
       }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};

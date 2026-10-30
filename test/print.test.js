@@ -645,6 +645,13 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const up = await upload(await pdfOf(2080, 1080, 1), "banner.pdf", { product: "pvc-banner", copies: 1, sel: { konfektion: "hem_eyelets_50" }, custom: { w: 200, h: 100 } });
     assert.strictEqual(up.status, 200, JSON.stringify(up.j)); assert.ok(up.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text)), JSON.stringify(up.j.checks));
   });
+  await t("Sortiments-Prüfung: gleicht Produkte mit Print.com ab (fehlende Optionen, Formate ohne Maße, Bezeichnungen) – nur lesend, im Hintergrund", async () => {
+    let a = await admin("/admin/api/print/audit", { op: "run", max: 6 });
+    for (let i = 0; i < 200 && a.running; i++) { await new Promise(r => setTimeout(r, 100)); a = await admin("/admin/api/print/audit", {}); }
+    assert.ok(!a.running && a.products === 6, JSON.stringify(a).slice(0, 300));
+    a.items.forEach(x => { assert.ok(x.key && x.sku, JSON.stringify(x)); if (!x.err) ["missing", "auto", "noDims", "labels"].forEach(k => assert.ok(Array.isArray(x[k]), k)); });
+    assert.ok(typeof a.missing === "number" && Array.isArray(a.topLabels));
+  });
   await t("Werbeartikel: Druckfläche aus printing_size, Farbe immer gesendet, Preis 0 → Fehler", async () => {
     const pen = cat.products.find(p => p.key === "kugelschreiber"); assert.strictEqual(pen.kind, "promo"); assert.strictEqual(pen.designer, false);
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 150 }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
