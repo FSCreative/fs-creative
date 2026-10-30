@@ -617,10 +617,10 @@ function vValuero(){
     var mName=function(m){ var d=new Date(m+"-15T12:00:00"); return isNaN(d)?m:d.toLocaleDateString("de-AT",{month:"long",year:"numeric"}); };
     return '<div class="pl-obj"><div class="pl-objh"><button type="button" class="pl-tog" data-act="plvtog:'+esc(o.key)+'" aria-expanded="'+opened+'">'+
         '<h3><span class="pl-chev'+(opened?" on":"")+'">›</span>'+esc(o.name)+(o.ratesLabel?' <span class="tag ok">'+esc(o.ratesLabel)+'</span>':'')+'</h3>'+
-        '<span class="muted">fällig '+money(open)+' · verrechnet '+money(settled)+' · gesamt '+money(prov)+(it.pending>0.005?' · laufendes Quartal '+money(it.pending):'')+(it.nextBilling?' · nächste Abrechnung '+esc(de(it.nextBilling)):'')+(refund>0.005?' · <b class="bad-t">erstatten '+money(refund)+'</b>':'')+' · '+num(o.feeBookings)+' Buchungen</span>'+
+        '<span class="muted">fällig '+money(open)+' · verrechnet '+money(settled)+' · gesamt '+money(prov)+(it.pending>0.005?' · noch nicht fällig '+money(it.pending):'')+(it.nextBilling?' · nächste Abrechnung '+esc(de(it.nextBilling)):'')+(refund>0.005?' · <b class="bad-t">erstatten '+money(refund)+'</b>':'')+' · '+num(o.feeBookings)+' Buchungen</span>'+
         (it.last?'<span class="invs">Letzte Rechnung: '+invLine(it.last)+'</span>':'')+
       '</button><div class="pl-acts">'+
-        (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Rechnungsentwurf für die fälligen Quartale anlegen">Verrechnen · '+money(open)+'</button>':'')+
+        (open>0.005?'<button class="btn primary" data-act="plvbill:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Rechnungsentwurf für die fälligen Zeiträume anlegen">Verrechnen · '+money(open)+'</button>':'')+
         (it.catchupAction?'<button class="btn" data-act="vacatch:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Rechnungsentwurf für Anreisen, die nach der Abrechnung dazugekommen sind">Nachverrechnen · '+money(it.catchup)+'</button>':'')+
         (canUndo?'<button class="btn" data-act="plvundo:'+esc(o.key)+'"'+(busy?" disabled":"")+' title="Letzte Abrechnung zurücknehmen">Rückgängig</button>':'')+
       '</div></div>'+
@@ -636,7 +636,7 @@ function vValuero(){
     (miss.length?'<div class="notice"><span><b>Gebührendaten fehlen:</b> '+miss.map(function(x){ return esc(x.name)+(x.last&&x.last.nr?" (zuletzt "+esc(x.last.nr)+")":""); }).join(" · ")+' – kein Verrechnen und keine Erstattung, bis die Daten wieder da sind.</span><button class="btn" data-act="reload">Neu laden</button></div>':'')+
     (nl.length?'<div class="notice"><span><b>Auf der Partner-Plattform, aber nicht für die Abrechnung freigegeben:</b> '+nl.map(function(h){ return esc(h.name||h.key)+(h.billingStartSuggestion?" (Start-Vorschlag "+esc(h.billingStartSuggestion.slice(5,7)+"/"+h.billingStartSuggestion.slice(0,4))+")":""); }).join(" · ")+' – wird nicht verrechnet.</span></div>':'')+
     '<div class="kpis">'+
-      kpi("Fällige Gebühren",'<span class="money">'+eur(tOpen)+'</span>',"abgelaufene Quartale, nach Aufenthalt",{vcls:tOpen>0.005?"warn-t":""})+
+      kpi("Fällige Gebühren",'<span class="money">'+eur(tOpen)+'</span>',"abgelaufene Zeiträume, nach Aufenthalt",{vcls:tOpen>0.005?"warn-t":""})+
       kpi("Verrechnet "+esc(F.D.year),'<span class="money">'+eur(tPaid)+'</span>',"Rechnungen "+esc(F.D.year)+", ohne Stornos",{vcls:"ok-t"})+
       kpi("Gebühren gesamt",'<span class="money">'+eur(tTot)+'</span>',num(objs.reduce(function(a,o){return a+(+o.feeBookings||0);},0))+" Buchungen")+
       (tRef>0.005?kpi("Zu erstatten",'<span class="money">'+eur(tRef)+'</span>',"mehr verrechnet als angefallen",{vcls:"bad-t"}):kpi("Objekte",num(objs.length),"Antonhaus, Alpinappart …"))+
@@ -667,7 +667,7 @@ F.action("vaprop",function(key){
       '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" type="submit">Übernehmen</button></span></div></form>',"narrow"); return; }
   var title=p.title||(p.op==="vastart"?"Abrechnungsbeginn · "+(it.name||key):(it.name||key)+" prüfen");
   F.modal('<div class="stackf"><div class="row-between"><h2 style="font-size:19px">'+esc(title)+'</h2>'+F.btnClose()+'</div>'+(it.blocked?'<p class="muted" style="margin:0">'+esc(it.blocked)+'</p>':'')+(lines?'<ul class="pl-notes" style="margin:0">'+lines+'</ul>':'')+
-    (p.op==="vaswitch"?'<p class="muted" style="margin:0;font-size:13px">Es wird nichts storniert und keine Rechnung geändert. Gespeichert wird nur, was je Anreisemonat schon verrechnet ist – das wird ab der nächsten Quartalsrechnung abgezogen und auf der Rechnung ausgewiesen.</p>':'')+
+    (p.op==="vaswitch"?'<p class="muted" style="margin:0;font-size:13px">Es wird nichts storniert und keine Rechnung geändert. Gespeichert wird nur, was je Anreisemonat schon verrechnet ist – das wird ab der nächsten Abrechnung abgezogen und auf der Rechnung ausgewiesen.</p>':'')+
     '<div class="foot"><span></span><span class="row"><button type="button" class="btn" data-closemodal>Abbrechen</button><button class="btn primary" data-act="vapropok:'+esc(key)+'">'+esc(p.label||"Übernehmen")+'</button></span></div></div>',"wide");
 });
 F.action("vapropok",function(key){
@@ -684,7 +684,7 @@ F.action("plvbill",function(key){
   var o=vaObj(key), it=item("valuero:"+key); if(!o) return;
   if(!it){ F.toast("Abgleich noch nicht geladen – bitte neu laden",true); return; }   /* nie die ganze Jahresprovision ohne Abgleich verrechnen */
   if(it.blocked){ F.toast(it.blocked,true); return; }
-  var open=+it.unbilled||0; if(!(open>0.005)){ F.toast("Noch nichts fällig – VALUERO wird quartalsweise am 1. nach Aufenthalt verrechnet"+(it&&it.nextBilling?" (nächste Abrechnung "+de(it.nextBilling)+")":"")); return; }
+  var open=+it.unbilled||0; if(!(open>0.005)){ F.toast("Noch nichts fällig – VALUERO wird am 1. nach Aufenthalt verrechnet (bis Ende 2026 quartalsweise, ab 2027 monatlich)"+(it&&it.nextBilling?" (nächste Abrechnung "+de(it.nextBilling)+")":"")); return; }
   if(!F.D.sev){ F.confirm("Die Buchhaltung ist gerade nicht erreichbar. "+eur(open)+" für "+o.name+" nur als verrechnet vermerken (ohne Rechnung)?","Nur vermerken",function(){
       BUSY["v"+key]=1; F.render();
       F.api("/admin/api/billing",{body:{op:"invoice",key:"valuero:"+key,invoice:{id:"",nr:"",gross:open,date:F.D.today,label:(o.name||key)+" (ohne Rechnung)",from:it&&it.action&&it.action.after.billing.from,to:it&&it.action&&it.action.after.billing.to,src:it&&it.action&&it.action.after.billing.src,basis:it&&it.action&&it.action.after.billing.basis}}}).then(function(j){

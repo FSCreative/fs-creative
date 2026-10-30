@@ -73,6 +73,29 @@ function unitTests(T) {
     const it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [prev] } }).find(x => x.key === "valuero:antonhaus");
     assert.strictEqual(it.unbilled, 190.3, "Oktober bleibt fällig"); assert.ok((it.notes || []).some(n => /seither storniert oder gesenkt: 500,00 € mehr verrechnet als heute angefallen/.test(n)), JSON.stringify(it.notes));
   }]);
+  // Ab 1.1.2027 monatlich am 1. für den Vormonat (Simon 30.10.2026); bis dahin quartalsweise (1.1.2027 = Oktober–Dezember)
+  const billQ4 = () => { const b = billSw(); b.invoices["valuero:antonhaus"] = AH_RECS.concat([{ id: "", nr: "manuell", date: "2027-01-02", gross: 190.3, from: "2026-10-01", to: "2026-12-31", label: "Antonhaus" }]); return b; };
+  const ahJan = (extra) => ahObj("2027", Object.assign({ months: [{ month: "2027-01", provisionCents: 6000, prebilledCents: 0 }, { month: "2027-02", provisionCents: 8000, prebilledCents: 0 }] }, extra || {}));
+  out.push(["Monatlich ab 2027: am 03.02.2027 nur die Jänner-Aufenthalte fällig (Leistungszeitraum 01.–31.01.), Februar noch nicht; nächste Abrechnung 01.03.2027", () => {
+    const it = va({ year: "2027", today: "2027-02-03", bill: billQ4(), valuero: { objects: [ahJan()] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(!it.blocked, it.blocked); assert.strictEqual(it.unbilled, 60); assert.strictEqual(it.pending, 80); assert.strictEqual(it.nextBilling, "2027-03-01"); assert.strictEqual(it.refund, 0);
+    assert.deepStrictEqual([it.action.deliveryDate, it.action.deliveryDateUntil, it.action.after.billing.from, it.action.after.billing.to], ["2027-01-01", "2027-01-31", "2027-01-01", "2027-01-31"]);
+    assert.ok(/Aufenthalte \(Anreise\) 01\.01\.2027 – 31\.01\.2027/.test(it.action.items[0].text), it.action.items[0].text);
+  }]);
+  out.push(["Monatlich ab 2027: am 05.01.2027 Oktober–Dezember fällig (letzte Quartalsrechnung), nächste Abrechnung schon 01.02.2027; Jänner-Rechnung am 01.02. schließt lückenlos an", () => {
+    let it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahJan()] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it.action.deliveryDate, "2026-10-01"); assert.strictEqual(it.action.deliveryDateUntil, "2026-12-31"); assert.strictEqual(it.nextBilling, "2027-02-01");
+    it = va({ year: "2027", today: "2027-02-01", bill: billQ4(), valuero: { objects: [ahJan()] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it.unbilled, 60); assert.strictEqual(it.action.deliveryDate, "2027-01-01"); assert.strictEqual(it.action.deliveryDateUntil, "2027-01-31");
+  }]);
+  out.push(["Bis Ende 2026 quartalsweise: am 30.10.2026 nichts fällig, nächste Abrechnung 01.01.2027; Haus ohne Rechnung zeigt „quartalsweise …, ab 01.01.2027 monatlich“", () => {
+    const it = va({ year: "2026", today: "2026-10-30", bill: billSw(), valuero: { objects: [ahObj("2026")] }, valueroPrev: { objects: [ahObj("2025", { months: [] })] } }).find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.nextBilling, "2027-01-01");
+    const hb = va({ year: "2026", today: "2026-10-30", bill: { prices: {}, sites: {}, invoices: {}, valuero: { "haus-b": { start: "2027-01-01" } } }, valuero: { objects: [{ key: "haus-b", name: "Haus B", src: "partner", basis: "arrival", ratesLabel: "5 % Website", months: [] }] }, valueroPrev: { objects: [] } }).find(x => x.key === "valuero:haus-b");
+    assert.ok(/quartalsweise nach Aufenthalt, ab 01\.01\.2027 monatlich · nächste Abrechnung 01\.01\.2027/.test(hb.sub), hb.sub);
+    const hb2 = va({ year: "2027", today: "2027-03-10", bill: { prices: {}, sites: {}, invoices: {}, valuero: { "haus-b": { start: "2027-01-01" } } }, valuero: { objects: [{ key: "haus-b", name: "Haus B", src: "partner", basis: "arrival", ratesLabel: "5 % Website", months: [{ month: "2027-01", provisionCents: 1000 }, { month: "2027-02", provisionCents: 2000 }, { month: "2027-03", provisionCents: 4000 }] }] }, valueroPrev: { objects: [] } }).find(x => x.key === "valuero:haus-b");
+    assert.ok(/monatlich nach Aufenthalt · nächste Abrechnung 01\.04\.2027/.test(hb2.sub), hb2.sub); assert.strictEqual(hb2.unbilled, 30, "Jänner + Februar fällig (erste Rechnung ab dem Abrechnungsbeginn)"); assert.strictEqual(hb2.action.deliveryDateUntil, "2027-02-28");
+  }]);
   out.push(["VA-2: Vorjahr nicht geladen (null) am 05.01.2027 → kein Verrechnen, keine Erstattung, „Gebührendaten 2026 fehlen – neu laden“", () => {
     const it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: null }).find(x => x.key === "valuero:antonhaus");
     assert.ok(/Gebührendaten 2026 fehlen – neu laden/.test(it.blocked || ""), it.blocked); assert.strictEqual(it.unbilled, 0); assert.strictEqual(it.refund, 0); assert.strictEqual(it.action, null); assert.strictEqual(it.catchupAction, null);
@@ -438,7 +461,11 @@ function createMock() {
     let body = ""; req.on("data", c => (body += c)); req.on("end", () => {
       const u = new URL(req.url, "http://x"), q = u.searchParams; let json = null; try { json = body ? JSON.parse(body) : null; } catch (e) {}
       const send = (st, o) => { res.writeHead(st, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
-      if (u.pathname === "/valuero") { state.partnerQ.push(Object.fromEntries(q)); if (state.partnerDown) return send(503, { ok: false }); return send(200, { ok: true, contract: q.get("contract") === "2" ? 2 : undefined, properties: [] }); }
+      if (u.pathname === "/valuero") { state.partnerQ.push(Object.fromEntries(q)); if (state.partnerDown) return send(503, { ok: false });
+        // Antonhaus über die Plattform: Umstellungsdaten nur auf Anfrage (transition=antonhaus:2026-09-30)
+        const y = q.get("year") || "", ah = state.partnerAH ? [{ property: "antonhaus", name: "Antonhaus", feePercentDirect: 5, months: AH_MONTHS_2026.filter(m => !y || m.month.slice(0, 4) === y).map(m => ({ month: m.month, provisionCents: m.provisionCents, bookings: 1 })),
+          transition: q.get("transition") === "antonhaus:2026-09-30" ? AH_TRANSITION : undefined }] : [];
+        return send(200, { ok: true, contract: q.get("contract") === "2" ? 2 : undefined, properties: ah }); }
       if (u.pathname === "/antonhaus") {
         state.antonQ.push(Object.fromEntries(q)); const y = q.get("year") || "";
         if (state.antonMode === "down") return send(502, { ok: false, error: "Beds24-Abruf fehlgeschlagen – Gebühren nicht verfügbar.", code: "BEDS24" });
@@ -757,6 +784,22 @@ function createMock() {
     M.state.antonMode = "down"; await new Promise(r => setTimeout(r, 26000));   // 25-s-Zwischenspeicher der Statistik-Abrufe ablaufen lassen
     const d = (await api("/admin/api/cockpit?force=1&year=" + viennaToday().slice(0, 4))).j, it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
     assert.ok(it && it.missing && /Gebührendaten Antonhaus fehlen – neu laden/.test(it.blocked), JSON.stringify(it)); assert.strictEqual(it.refund, 0); assert.strictEqual(it.action, null);
+  });
+
+  await t("Antonhaus über die Partner-Plattform: Umstellungsdaten von dort (antonhaus.at alt) → Ein-Klick-Umstellung; bestätigt damit auch den Quellenwechsel", async () => {
+    await api("/admin/api/billing", { op: "vaswitch", key: "antonhaus", undo: true });
+    M.state.partnerAH = true; M.state.antonMode = "old"; await new Promise(r => setTimeout(r, 26000));   // Zwischenspeicher ablaufen lassen
+    const year = viennaToday().slice(0, 4);
+    let d = (await api("/admin/api/cockpit?force=1&year=" + year)).j, it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
+    assert.ok(M.state.partnerQ.some(q => q.transition === "antonhaus:2026-09-30"), JSON.stringify(M.state.partnerQ.slice(-2)));
+    assert.ok(it && /Umstellung auf Anreise noch nicht bestätigt/.test(it.blocked || "") && it.proposal && it.proposal.op === "vaswitch", JSON.stringify(it));
+    assert.ok(/822,95 € \(Startwert \+ RE-1272\)/.test(it.proposal.lines.join("\n")), it.proposal.lines.join("\n"));
+    const r = await api("/admin/api/billing", { op: "vaswitch", key: "antonhaus" });
+    assert.strictEqual(r.j.ok, true, JSON.stringify(r.j)); const sw = r.j.billing.valuero.antonhaus.switch;
+    assert.deepStrictEqual(sw.prebilledByMonth, { "2026-06": 16750, "2026-08": 15545, "2026-12": 50000 }); assert.deepStrictEqual(sw.prebilledCurrentRuleByMonth, { "2026-06": 16750, "2026-08": 15000, "2026-12": 50000 }); assert.strictEqual(sw.src, "partner");
+    d = (await api("/admin/api/cockpit?force=1&year=" + year)).j; it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
+    assert.ok(!it.blocked, it.blocked + " " + JSON.stringify(it.proposal)); assert.strictEqual(it.refund, 0); assert.strictEqual(it.billedUntil, "2026-09-30");
+    M.state.partnerAH = false; M.state.antonMode = "arrival";
   });
 
   srv.kill(); M.server.close();

@@ -361,6 +361,8 @@ const ALPINAPPART = { url: process.env.ALPINAPPART_FEES_URL || "https://www.alpi
 const VALUERO_PARTNER = { url: process.env.VALUERO_PARTNER_STATS_URL || "https://partner.valuero.at/api/stats/valuero", token: process.env.VALUERO_PARTNER_STATS_TOKEN || "" };
 // Plattform-Slug → bisheriger Schlüssel im Cockpit (damit Rechnungen/Abrechnungen je Objekt weiter zusammenpassen)
 const VALUERO_KEYS = { "alpinappart-wachter": "alpinappart", "antonhaus": "antonhaus" };
+const AH_CUTOFF = "2026-09-30";
+const VA_MONTHLY_FROM = "2027-01-01";   // VALUERO: ab hier monatlich am 1. für den Vormonat (vorher quartalsweise)   // Antonhaus: bis hierher nach Buchungseingang verrechnet (Startwert + RE-1272), danach nach Anreise
 // Cloudflare: Zonen (= aktive Websites) + Insights
 const CF = { token: process.env.CF_API_TOKEN || "" };
 
@@ -798,7 +800,8 @@ async function valueroStats(year) {
   // VALUERO Partner (Vertrag 2: Abrechnungsbeginn, Mollie-Anteil, Altbuchungen, Freigabe): ersetzt die Einzelquellen, sobald ein Haus dort freigegeben ist
   const fromPartner = new Set();
   if (VALUERO_PARTNER.token) {
-    const d = await getJSON(vaUrl(VALUERO_PARTNER.url, "contract=2" + yearParam(year)), VALUERO_PARTNER.token);
+    // transition: was das Antonhaus-Altsystem bis zum Stichtag nach Eingang verrechnet hat, je Anreisemonat (Plattform kennt das Eingangsdatum)
+    const d = await getJSON(vaUrl(VALUERO_PARTNER.url, "contract=2" + yearParam(year) + "&transition=antonhaus:" + AH_CUTOFF), VALUERO_PARTNER.token);
     if (d && d.ok && Array.isArray(d.properties)) {
       const seen = [];
       for (const h of d.properties) {
@@ -813,6 +816,7 @@ async function valueroStats(year) {
           billingStart: /^\d{4}-\d{2}-01$/.test(h.billingStart || "") ? h.billingStart : null, billingLiveSince: h.billingLiveSince || null,
           billingStartSuggestion: /^\d{4}-\d{2}-01$/.test(h.billingStartSuggestion || "") ? h.billingStartSuggestion : null, firstOwnBookingOn: h.firstOwnBookingOn || null, legacyBookings: +h.legacyBookings || 0,
           months: months(h.months, m => ({ mollieFeesCents: +m.mollieFeesCents || 0, mollieFeesCancelledCents: +m.mollieFeesCancelledCents || 0, importedCents: +m.importedCents || 0 })),
+          transition: key === "antonhaus" && h.transition && typeof h.transition === "object" && Array.isArray(h.transition.byArrivalMonth) ? h.transition : null,
         });
       }
       (Array.isArray(d.notLive) ? d.notLive : []).forEach(h => { if (h && !h.isDemo) notLive.push({ key: VALUERO_KEYS[h.property] || h.property, name: h.name || h.property, billingStartSuggestion: h.billingStartSuggestion || null, provisionCents: +h.provisionCents || 0 }); });
@@ -824,12 +828,12 @@ async function valueroStats(year) {
   }
   // Antonhaus (antonhaus.at/api/valuero-stats): nur mit basis=arrival nach Anreise verrechenbar. Ohne „basis“ antwortet die alte Version
   // (nach Buchungseingang) → im Abgleich nur Hinweis. „transition“ = was bis 30.09.2026 nach Eingang verrechnet wurde (Startwert + RE-1272).
-  // Kommt Antonhaus schon von der Partner-Plattform, liefert antonhaus.at nur noch die Umstellungsdaten.
+  // Kommt Antonhaus schon von der Partner-Plattform, liefert die Plattform die Umstellungsdaten (antonhaus.at nur noch ersatzweise).
   if (ANTONHAUS.token) {
     const viaPartner = fromPartner.has("antonhaus"), po = objects.find(o => o.key === "antonhaus");
     const d = await getJSON(vaUrl(ANTONHAUS.url, "basis=arrival" + yearParam(year)), ANTONHAUS.token);
     const ok = !!(d && d.ok && !d.error);
-    if (viaPartner) { if (po && ok && d.basis === "arrival" && d.transition) po.transition = d.transition; }
+    if (viaPartner) { if (po && !po.transition && ok && d.basis === "arrival" && d.transition) po.transition = d.transition; }
     else if (ok) {
       objects.push({
         key: "antonhaus", name: "Antonhaus", src: "antonhaus", basis: d.basis || "created", ratesLabel: d.ratesLabel || "5 % Website",
@@ -857,9 +861,9 @@ async function valueroStats(year) {
 // Stornos schon verrechneter Buchungen den Abzug nicht still verändern (und für einen späteren Wechsel auf die Partner-Plattform)
 async function vaSwitchSnapshot(key) {
   if (String(key || "").replace(/^valuero:/, "") !== "antonhaus") throw new Error("Umstellung gibt es nur für Antonhaus");
-  forgetStats(ANTONHAUS.url);   // frisch abrufen, nicht aus dem 25-s-Zwischenspeicher
+  forgetStats(ANTONHAUS.url); forgetStats(VALUERO_PARTNER.url);   // frisch abrufen, nicht aus dem 25-s-Zwischenspeicher
   const va = await valueroStats(viennaToday().slice(0, 4)), o = va && (va.objects || []).find(x => x.key === "antonhaus"), t = o && o.transition;
-  if (!t || !Array.isArray(t.byArrivalMonth)) throw new Error("Antonhaus liefert noch keine Umstellungsdaten (neue Version mit basis=arrival) – bitte neu laden");
+  if (!t || !Array.isArray(t.byArrivalMonth)) throw new Error("Für Antonhaus kommen noch keine Umstellungsdaten (Partner-Plattform) – bitte neu laden");
   const by = {}, byCur = {};
   // heutige Regel nur übernehmen, wenn Antonhaus sie liefert (fehlt sie, rechnet der Abgleich vorsichtig mit dem damaligen Betrag, A4)
   t.byArrivalMonth.forEach(m => { if (/^\d{4}-\d{2}$/.test(m.month || "") && +m.prebilledCents > 0) { by[m.month] = Math.round(+m.prebilledCents); if (m.prebilledCurrentRuleCents != null && isFinite(+m.prebilledCurrentRuleCents)) byCur[m.month] = Math.max(0, Math.round(+m.prebilledCurrentRuleCents)); } });
@@ -868,7 +872,7 @@ async function vaSwitchSnapshot(key) {
   if (curMiss.length) throw new Error("Antonhaus liefert die schon verrechneten Gebühren noch nicht nach heutiger Regel (" + curMiss.join(", ") + ") – ohne diese Werte würden neue Buchungen dieser Anreisemonate nie verrechnet. Bitte erst die neue Antonhaus-Version einspielen.");
   const cutoff = /^\d{4}-\d{2}-\d{2}$/.test(t.cutoffDate || "") ? t.cutoffDate : "2026-09-30", pre = (readBilling().invoices["valuero:antonhaus"] || []).filter(x => !x.to || x.to <= cutoff);
   return { cutoff, prebilledByMonth: by, prebilledCurrentRuleByMonth: byCur, totalCents: Object.keys(by).reduce((a, k) => a + by[k], 0), legacyTotalCents: (t.legacyMonths || []).reduce((a, m) => a + (+m.provisionCents || 0), 0),
-    billedCents: Math.round(pre.reduce((a, x) => a + (+x.gross || 0), 0) * 100), invoiceNr: (pre.filter(x => x.nr && x.id).pop() || {}).nr || "RE-1272", notPrebilledCents: +t.notPrebilledArrivalUntilCutoffCents || 0, confirmedAt: new Date().toISOString() };
+    billedCents: Math.round(pre.reduce((a, x) => a + (+x.gross || 0), 0) * 100), invoiceNr: (pre.filter(x => x.nr && x.id).pop() || {}).nr || "RE-1272", notPrebilledCents: +t.notPrebilledArrivalUntilCutoffCents || 0, src: o.src || "", confirmedAt: new Date().toISOString() };
 }
 // ── Privater Kalender: iCloud (CalDAV) – lesen & schreiben, in beide Richtungen ──
 // Zugangsdaten (Apple-ID + App-spezifisches Passwort + gewählter Kalender) liegen im Volume unter /data/icloud.json
@@ -2700,12 +2704,14 @@ function abgleichBuild(ctx) {
       unbilled: r.billingExclude ? 0 : open, invoiced: round2(Math.max(st.invoiced, settled)), paid: round2(st.paid), open: round2(st.open), refund: 0, pendingAuto: cur, auto: true,
       settledWithoutInvoice: round2(Math.max(0, settled - viaMonth - stOwn.gross)), last: links[links.length - 1] || null, invoices: links.slice(-4).reverse(), action: null });
   });
-  // 3) VALUERO: Vermittlungsgebühren je Objekt – quartalsweise am 1. (1.1./1.4./1.7./1.10.) für das abgelaufene Quartal,
-  //    nach Aufenthalt (Anreisemonat), nicht nach Buchungsdatum: bis dahin stornierte Buchungen fallen von selbst heraus.
-  //    Alte Abrechnungen ohne Zeitraum (vor der Umstellung) werden bei der ersten Quartalsrechnung abgezogen.
+  // 3) VALUERO: Vermittlungsgebühren je Objekt nach Aufenthalt (Anreisemonat), nicht nach Buchungsdatum: bis dahin stornierte Buchungen
+  //    fallen von selbst heraus. Bis Ende 2026 quartalsweise am 1. für das abgelaufene Quartal (1.1.2027: Oktober–Dezember), ab 1.1.2027
+  //    monatlich am 1. für die Aufenthalte des Vormonats (Simon 30.10.2026). Alte Abrechnungen ohne Zeitraum werden bei der ersten Rechnung abgezogen.
   const qEnd = d => { const y = +d.slice(0, 4), q = Math.floor((+d.slice(5, 7) - 1) / 3); return q === 0 ? (y - 1) + "-12-31" : y + "-" + String(q * 3).padStart(2, "0") + "-" + (q === 2 || q === 3 ? "30" : "31"); };
-  const yEnd = String(year) + "-12-31", dueThrough = qEnd(today <= yEnd ? today : ymdAdd(yEnd, 1));   // letzter Tag des zuletzt abgeschlossenen Quartals
-  const nextQ = ymdAdd(qEnd(ymdAddMonths(dueThrough.slice(0, 8) + "01", 4)), 1);                    // nächster Abrechnungstag
+  const pEnd = d => (d >= VA_MONTHLY_FROM ? ymdAdd(d.slice(0, 8) + "01", -1) : qEnd(d));          // letzter Tag des zuletzt abgeschlossenen Abrechnungszeitraums
+  const yEnd = String(year) + "-12-31", dueThrough = pEnd(today <= yEnd ? today : ymdAdd(yEnd, 1));
+  const nextQ = ymdAdd(dueThrough, 1) >= VA_MONTHLY_FROM ? ymdAddMonths(ymdAdd(dueThrough, 1), 1) : ymdAdd(qEnd(ymdAddMonths(dueThrough.slice(0, 8) + "01", 4)), 1);   // nächster Abrechnungstag
+  const vaCycle = today >= VA_MONTHLY_FROM ? "monatlich nach Aufenthalt" : "quartalsweise nach Aufenthalt, ab " + deDate(VA_MONTHLY_FROM) + " monatlich";
   const vaPrevBy = {}; (((ctx.valueroPrev && ctx.valueroPrev.objects) || [])).forEach(o => { vaPrevBy[o.key] = o; });
   const winStart = (+year - 1) + "-01-01", prevEnd = (+year - 1) + "-12-31";
   // Vorjahr nicht geladen (Abruf gescheitert/Zeitüberschreitung oder Quelle meldet Fehler) → Zeiträume im Vorjahr nicht beurteilbar (VA-2)
@@ -2723,11 +2729,11 @@ function abgleichBuild(ctx) {
     return { links, live, liveAll, deadAll: recAll0.filter((x, i) => linksAll[i] && linksAll[i].state === "storniert"), billedSum: round2(all.reduce((a, x, i) => a + (ok[i] ? net[i] : 0), 0)), adjSum: round2(all.reduce((a, x, i) => a + (ok[i] && x.adj ? net[i] : 0), 0)), invoicedYear: round2(all.reduce((a, x, i) => a + (ok[i] && String(x.date || "").slice(0, 4) === String(year) ? net[i] : 0), 0)),   // „Verrechnet <Jahr>“
       st: sumState(links.filter(l => l.state !== "manuell")), billedUntil: live.reduce((m, x) => (x.to && !x.adj && x.to > m ? x.to : m), "") }; };
   // Antonhaus: Ein-Klick-Vorschlag „Umstellung auf Anreise übernehmen“ (VA-1) – was bis zum Stichtag nach Eingang verrechnet wurde, gegen die Angaben von Antonhaus
-  const vaSwitchLines = (t, arr) => { const cut = t.cutoffDate || "2026-09-30", pre = arr.filter(x => !x.to || x.to <= cut), billed = round2(pre.reduce((a, x) => a + (+x.gross || 0), 0)), nrs = pre.map(x => (x.id ? x.nr : "Startwert")).filter(Boolean).join(" + ");
+  const vaSwitchLines = (t, arr) => { const cut = t.cutoffDate || "2026-09-30", pre = arr.filter(x => !x.to || x.to <= cut), billed = round2(pre.reduce((a, x) => a + (+x.gross || 0), 0)), nrs = pre.map(x => (x.id ? x.nr || (link(x) || {}).nr || "Rechnung" : "Startwert")).filter(Boolean).join(" + ");
     const legacyT = round2((t.legacyMonths || []).reduce((a, m) => a + (+m.provisionCents || 0), 0) / 100), D = round2(legacyT - billed), tol = 0.01 * Math.max(1, (t.legacyMonths || []).length);
     return ["Bis " + deDate(cut) + " nach Buchungseingang verrechnet: " + eu(billed) + (nrs ? " (" + nrs + ")" : "") + " – bleibt so bestehen",
       "Antonhaus rechnet dieselben Buchungen heute (Regel vom 01.10.2026): " + eu(legacyT),
-      "Davon Anreise ab " + deDate(ymdAdd(cut, 1)) + ": " + eu((+t.prebilledArrivalAfterCutoffCents || 0) / 100) + " – wird bei den Anreise-Quartalen abgezogen und auf der Rechnung ausgewiesen",
+      "Davon Anreise ab " + deDate(ymdAdd(cut, 1)) + ": " + eu((+t.prebilledArrivalAfterCutoffCents || 0) / 100) + " – wird bei der Abrechnung dieser Anreisemonate abgezogen und auf der Rechnung ausgewiesen",
       +t.notPrebilledArrivalUntilCutoffCents > 0 ? "Nie verrechnete Anreisen bis " + deDate(cut) + " (erst danach eingegangen bzw. angenommen): " + eu(t.notPrebilledArrivalUntilCutoffCents / 100) + " – erscheint danach als Nachverrechnung" : "",
       Math.abs(D) > tol ? (D < 0 ? "Abweichung " + eu(D) + ": seither storniert oder gesenkt – erscheint danach als „zu viel verrechnet“ (Gutschrift prüfen)" : "Abweichung +" + eu(D) + ": damals noch nicht bestätigt oder seither gestiegen – erscheint danach als Nachverrechnung") : "Abgleich mit den verrechneten Beträgen: passt"].filter(Boolean); };
   // Quelle ohne gültige Antwort (Fehler, 502/503, ok:false) bzw. ganzer Abruf gescheitert: Hinweis statt Verrechnen/Erstattung (VA-2)
@@ -2833,7 +2839,7 @@ function abgleichBuild(ctx) {
     // A12: Einträge ohne Quelle (vor dieser Version) stammen aus der Altquelle – Antonhaus/Alpinappart von ihrer eigenen Quelle, alle anderen von der Partner-Plattform
     const lastRec = recAll[recAll.length - 1] || null, lastSrc = lastRec ? (lastRec.src || ({ antonhaus: "antonhaus", alpinappart: "alpinappart" }[o.key] || "partner")) : "";   // im Zweifel einmal bestätigen lassen
     const swDead = sw && R.deadAll.some(x => x.id && !x.adj && (!x.to || x.to <= sw.cutoff));
-    const needSrc = !!lastSrc && lastSrc !== o.src && set.ackSrc !== o.src;
+    const needSrc = !!lastSrc && lastSrc !== o.src && set.ackSrc !== o.src && !(sw && sw.src === o.src);   // Umstellung mit Daten dieser Quelle bestätigt = Quelle bestätigt
     const needLive = o.src === "partner" && !!o.billingLiveSince && recAll.length > 0 && String(o.billingLiveSince).slice(0, 10) > String((lastRec && lastRec.date) || "") && set.ackLive !== o.billingLiveSince;
     if ((vaPrevMissing(o.key) && (fromPrev || R.live.length > 0)) || (prevUnk && fromPrev)) blocked = "Gebührendaten " + (+year - 1) + " fehlen – neu laden";
     else if ((o.basis || "arrival") !== "arrival") blocked = o.src === "antonhaus" ? "Antonhaus liefert noch nach Buchungseingang – Umstellung auf Anreise ausstehend (neue Antonhaus-Version nötig)" : o.src === "alpinappart" ? "Alpinappart kommt nicht von der Partner-Plattform – verrechnet wird nur über die Plattform (ab dem ersten Monat live)" : "Datumsbasis „" + (o.basis || "?") + "“ statt Anreise – nicht verrechenbar";
@@ -2842,7 +2848,7 @@ function abgleichBuild(ctx) {
       const trMiss = o.transition ? (o.transition.byArrivalMonth || []).filter(m => m && +m.prebilledCents > 0 && !(m.prebilledCurrentRuleCents != null && isFinite(+m.prebilledCurrentRuleCents))) : [];
       if (o.transition && trMiss.length) notes.push("Antonhaus liefert die schon verrechneten Gebühren noch nicht nach heutiger Regel (" + trMiss.map(m => monDE(m.month)).join(", ") + ") – Umstellung erst mit der neuen Antonhaus-Version, sonst würden neue Buchungen dieser Anreisemonate nie verrechnet.");
       else if (o.transition) proposal = { op: "vaswitch", key: o.key, label: "Umstellung übernehmen", title: "Antonhaus: Umstellung Buchungseingang → Anreise", lines: vaSwitchLines(o.transition, recAll) };
-      else notes.push("Für die Umstellung fehlen die Daten von antonhaus.at (neue Antonhaus-Version mit „basis=arrival“).");
+      else notes.push("Für die Umstellung fehlen die Daten der Partner-Plattform (Eingangsdatum je Buchung) – bitte neu laden.");
     } else if (swDead) blocked = "Eine bei der Umstellung schon verrechnete Rechnung (" + (sw.invoiceNr || "RE-1272") + ") ist inzwischen storniert – der Abzug stimmt so nicht mehr. Bitte prüfen (Umstellung zurücknehmen und neu bestätigen).";
     else if (needSrc || needLive) {
       blocked = [needSrc ? "Quelle gewechselt (" + lastSrc + " → " + o.src + ") – bitte prüfen, ob Zeiträume und Beträge passen" : "", needLive ? "Am " + deDate(String(o.billingLiveSince).slice(0, 10)) + " (neu) für die Abrechnung freigegeben – nach der letzten Abrechnung. Bitte Quelle und Zeitraum prüfen" : ""].filter(Boolean).join(" · ");
@@ -2866,12 +2872,12 @@ function abgleichBuild(ctx) {
     if (cxl > 0.005) notes.push("Zu stornierten Buchungen wurde schon Provision per Online-Zahlung einbehalten: " + eu(cxl) + " – Gutschrift prüfen");
     if (rest > 0.02 && !(!off && catchup > 0.02)) notes.push("Gutschriften über " + eu(rest) + " ohne passenden Hinweis gelten als bewusste Minderung – dafür wird keine Nachverrechnung vorgeschlagen");   // nicht neben einer vorgeschlagenen Nachverrechnung (R3-12)
     if (!off && catchup > 0.02) notes.push("Nachverrechnung möglich: " + eu(catchup) + " (" + catchParts.map(p => "Anreisen " + deDate(p.from) + " – " + deDate(p.to) + (p.gap ? " – Rechnung storniert" : "")).join(", ") + ", nach der Abrechnung dazugekommen, gestiegen bzw. storniert)");
-    const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufendes Quartal (+ spätere Anreisen)
+    const pend0 = ymdAdd(dueThrough, 1), pending = sumM(pend0 > from ? pend0 : from, "9999-12-31");   // laufender Zeitraum (+ spätere Anreisen)
     const txt = "Aufenthalte (Anreise) " + span + (preDue > 0.005 || molDue > 0.005 ? ": " + eu(fullDue) : "") +
       (preDue > 0.005 ? " · abzüglich bereits mit " + (sw.invoiceNr || "RE-1272") + " verrechnet (Buchungseingang bis " + deDate(sw.cutoff) + (swCurMiss.length ? "" : ", nach heutiger Regel") + ") " + eu(preDue) : "") +
       (molDue > 0.005 ? " · abzüglich bei Online-Zahlung bereits einbehalten " + eu(molDue) : "") + (adjInDue > 0.005 ? " · abzüglich bereits nachverrechnet " + eu(adjInDue) : "") + (o.ratesLabel ? " · " + o.ratesLabel : "") + (legacy > 0.005 ? " · abzüglich bereits verrechnet " + eu(legacy) : "") + " · lt. Buchungsaufstellung";
     const cuFrom = catchParts.length ? catchParts[0].from : "", cuTo = catchParts.length ? catchParts[catchParts.length - 1].to : "";
-    items.push({ src: "valuero", key, name: o.name, sub: (o.ratesLabel || "") + " · " + (billedUntil ? "verrechnet bis " + deDate(billedUntil) : "quartalsweise nach Aufenthalt") + " · nächste Abrechnung " + deDate(nextQ),
+    items.push({ src: "valuero", key, name: o.name, sub: (o.ratesLabel || "") + " · " + (billedUntil ? "verrechnet bis " + deDate(billedUntil) : vaCycle) + " · nächste Abrechnung " + deDate(nextQ),
       unbilled: off ? 0 : open, invoiced: billedSum, invoicedYear: R.invoicedYear, paid: round2(R.st.paid), open: round2(R.st.open), refund: off ? 0 : refund, accrued: sumP(winStart, "9999-12-31", "g0"), pending, nextBilling: nextQ, billedUntil: billedUntil || null,
       blocked: blocked || undefined, proposal: proposal || undefined, notes: notes.length ? notes : undefined, catchup: off ? 0 : catchup, start: start || undefined, deducted: { mollie: molDue, prebilled: preDue, imported: impDue, adjusted: round2(adjInDue) },
       last: R.links[R.links.length - 1] || null, invoices: R.links.slice(-4).reverse(),
