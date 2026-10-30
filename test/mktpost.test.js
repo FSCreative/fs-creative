@@ -150,6 +150,31 @@ if (!R.videoReady()) { console.log("mktpost: übersprungen (ffmpeg/satori fehlen
     const cm = mock.state.comments || []; assert.ok(cm.some(x => x.pf === "instagram" && x.text === "Was bestellst du heute?") && cm.some(x => x.pf === "facebook" && x.text === "Was bestellst du heute?"), "erster Kommentar ohne Hashtags");
     const fb = mock.state.posts.filter(p => p.pf === "facebook").pop(); assert.strictEqual(fb.images, 3); assert.strictEqual(fb.place, "106097539419617"); assert.ok(/utm_source=facebook/.test(fb.message), "Link mit Kampagnen-Kennung");
   });
+  await t("Zahlen je Plattform: Aufrufe, Reichweite, Likes; ohne Statistik-Berechtigung nur Likes + Hinweis; LinkedIn ohne Zahlen; Abruf-Takt", async () => {
+    const c = PT.S().posts.find(p => p.id === car.id); mock.state.stats = { igNoSaved: true };
+    delete c.results.instagram.stats;   // tick() hat im Hintergrund schon einmal (ohne Zahlen) nachgesehen
+    assert.ok(PT.statsDue(c, c.results.instagram), "frisch gepostet → fällig");
+    const r = (await call("POST", "/admin/api/mkt/post", { id: car.id, op: "stats" })).json(); assert.ok(r.ok, JSON.stringify(r));
+    const ig = r.post.results.instagram.stats; assert.strictEqual(ig.views, 321); assert.strictEqual(ig.reach, 200); assert.strictEqual(ig.likes, 12, "Metrik-Liste gekürzt, Likes aus den Feldern"); assert.ok(!ig.need && !ig.err, JSON.stringify(ig));
+    const fb = r.post.results.facebook.stats; assert.strictEqual(fb.views, 88); assert.strictEqual(fb.reach, 61); assert.strictEqual(fb.likes, 9); assert.strictEqual(fb.comments, 1); assert.strictEqual(fb.shares, 4);
+    assert.strictEqual(r.post.results.threads.stats.views, 40); assert.strictEqual(r.post.results.threads.stats.likes, 6);
+    assert.ok(/LinkedIn/.test(r.post.results.linkedin.stats.none)); assert.strictEqual(r.post.results.linkedin.stats.views, undefined);
+    assert.ok(!PT.statsDue(c, c.results.instagram), "gerade geholt → erst in 3 Std. wieder");
+    mock.state.stats = { igNoPerm: true }; await PT.statsFor(c, true);
+    const ig2 = c.results.instagram.stats; assert.strictEqual(ig2.need, "insights"); assert.strictEqual(ig2.views, undefined); assert.strictEqual(ig2.likes, 12); assert.strictEqual(ig2.comments, 3);
+    const old = { postedAt: new Date(Date.now() - 40 * 864e5).toISOString() }, ago = d => ({ stats: { at: new Date(Date.now() - d * 864e5).toISOString() } });
+    assert.ok(!PT.statsDue(old, ago(2)) && PT.statsDue(old, ago(8)), "nach 30 Tagen wöchentlich");
+    assert.ok(!PT.statsDue({ postedAt: new Date(Date.now() - 91 * 864e5).toISOString() }, {}), "nach 90 Tagen nicht mehr");
+    // direkt über die Schnittstelle: Facebook-Reel, TikTok über Zernio (auch ohne Analyse-Zusatz), YouTube
+    const P2 = require(path.join(ROOT, "mkt-publish.js"))({ base: { fb: MB + "/fb", zn: MB + "/zn", yt: MB + "/yt" } });
+    const rl = await P2.statsRemote("facebook", {}, { access: "x" }, { id: "v77", format: "reel" }); assert.strictEqual(rl.views, 77); assert.strictEqual(rl.reach, 55); assert.strictEqual(rl.likes, 9);
+    const zt = { via: "zernio", key: "sk_test", account: "zacc1" }, tk = await P2.statsRemote("tiktok", {}, zt, { id: "7439999999999999999", zid: "zp1" });
+    assert.deepStrictEqual([tk.views, tk.likes, tk.comments, tk.shares, tk.saves], [999, 50, 4, 7, 1]);
+    mock.state.znAnalytics = 402; const tk2 = await P2.statsRemote("tiktok", {}, zt, { id: "x" }); assert.ok(/Analyse-Zusatz/.test(tk2.none)); assert.strictEqual(tk2.views, null); delete mock.state.znAnalytics;
+    assert.ok(/nur, wenn TikTok über Zernio/.test((await P2.statsRemote("tiktok", {}, { access: "t" }, { id: "x" })).none));
+    const yt = await P2.statsRemote("youtube", {}, { access: "y" }, { id: "vid1" }); assert.deepStrictEqual([yt.views, yt.likes, yt.comments], [1234, 20, 2]);
+    delete mock.state.stats;
+  });
   await t("Reel jetzt posten: Instagram, YouTube Shorts, TikTok (Entwurf), Threads; Token wird rechtzeitig erneuert", async () => {
     const rl = PT.S().posts.find(p => p.id === reel.id);
     const ig = PT.S().channels.find(c => c.platform === "instagram"); const tok = PT.unseal(ig.tok); tok.expiresAt = new Date(Date.now() + 5 * 864e5).toISOString(); ig.tok = PT.seal(tok);

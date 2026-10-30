@@ -51,6 +51,19 @@ module.exports = function () {
           if (p === "/bsky/xrpc/app.bsky.notification.listNotifications") return end(200, { notifications: IB.bsNotifs || [] });
           if (p === "/bsky/xrpc/app.bsky.feed.getPosts") { const us = u.searchParams.getAll("uris"); S.graph.push({ p, n: us.length }); if (us.length > 25) return end(400, { message: "too many uris" }); return end(200, { posts: us.map(x => (IB.bsPosts || {})[x]).filter(Boolean) }); }
         }
+        // ── Zahlen zu Beiträgen (nur mit state.stats): Insights wie bei Meta – unpassende Metrik → (#100), fehlende Berechtigung → (#10) ──
+        const ST = S.stats;
+        if (ST && req.method === "GET") { let mm; const fields = String(u.searchParams.get("fields") || ""), metric = String(u.searchParams.get("metric") || ""), ml = metric.split(","), row = (n, v) => ({ name: n, period: "lifetime", values: [{ value: v }] });
+          if ((mm = p.match(/^\/ig\/v26\.0\/([\w-]+)\/insights$/))) { if (ST.igNoPerm) return end(400, { error: { message: "(#10) Application does not have permission for this action", type: "OAuthException", code: 10 } });
+            if (ST.igNoSaved && ml.indexOf("saved") > -1) return end(400, { error: { message: "(#100) metric[5] must be one of the following values: views, reach", code: 100 } });
+            return end(200, { data: [["views", 321], ["reach", 200], ["likes", 14], ["comments", 3], ["shares", 2], ["saved", 5]].filter(x => ml.indexOf(x[0]) > -1).map(x => row(x[0], x[1])) }); }
+          if ((mm = p.match(/^\/ig\/v26\.0\/([\w-]+)$/)) && /like_count/.test(fields)) return end(200, { id: mm[1], like_count: 12, comments_count: 3 });
+          if ((mm = p.match(/^\/fb\/v26\.0\/([\w-]+)\/insights$/))) return ml.indexOf("post_media_view") > -1 ? end(200, { data: [row("post_media_view", 88), row("post_total_media_view_unique", 61)].filter(x => ml.indexOf(x.name) > -1) }) : end(400, { error: { message: "(#100) The value must be a valid insights metric" } });
+          if ((mm = p.match(/^\/fb\/v26\.0\/([\w-]+)\/video_insights$/))) return end(200, { data: [row("blue_reels_play_count", 77), row("post_impressions_unique", 55)].filter(x => ml.indexOf(x.name) > -1) });
+          if ((mm = p.match(/^\/fb\/v26\.0\/([\w-]+)$/)) && /reactions/.test(fields)) return end(200, { id: mm[1], reactions: { data: [], summary: { total_count: 9 } }, comments: { data: [], summary: { total_count: 1 } }, shares: { count: 4 } });
+          if ((mm = p.match(/^\/th\/v1\.0\/([\w-]+)\/insights$/))) return end(200, { data: [row("views", 40), { name: "likes", period: "lifetime", total_value: { value: 6 } }] });
+          if (p === "/yt/youtube/v3/videos" && /statistics/.test(u.searchParams.get("part") || "")) return end(200, { items: [{ id: u.searchParams.get("id"), statistics: { viewCount: "1234", likeCount: "20", commentCount: "2" } }] });
+        }
         // ── Instagram ──
         if (p === "/igapi/oauth/access_token") return all.code === "code-ig" ? end(200, { access_token: "ig-short", user_id: "1784" }) : end(400, { error_message: "bad code" });
         if (p === "/ig/access_token") return end(200, { access_token: "ig-long", expires_in: 5184000 });
@@ -130,6 +143,8 @@ module.exports = function () {
         // ── Zernio (TikTok über geprüfte App): Schlüssel sk_test, ein TikTok-Konto; holt das Video über die öffentliche Adresse; gleicher Inhalt binnen 24 h → 409 ──
         if (p.indexOf("/zn/") === 0) { S.zn = S.zn || { posts: [], got: [] };
           if (auth !== "Bearer sk_test") return end(401, { error: "Invalid API key", type: "authentication_error" });
+          if (p === "/zn/v1/analytics") { if (S.znAnalytics === 402) return end(402, { error: "Analytics add-on required", code: "analytics_addon_required" });
+            return end(200, { postId: u.searchParams.get("postId"), analytics: { views: 1000 }, platformAnalytics: [{ platform: "tiktok", accountId: u.searchParams.get("accountId"), analytics: { views: 999, likes: 50, comments: 4, shares: 7, saves: 1 } }] }); }
           if (p === "/zn/v1/accounts") return end(200, { accounts: [{ _id: "zacc1", platform: "tiktok", username: "fs.creative.at", displayName: "FS Creative", isActive: true }], hasAnalyticsAccess: false });
           if (p === "/zn/v1/accounts/zacc1/health") return end(200, { accountId: "zacc1", platform: "tiktok", integrationLane: "business", status: S.znHealth || "healthy", tokenStatus: { valid: S.znHealth !== "error" } });
           if (p === "/zn/v1/accounts/zacc1/tiktok/creator-info") return end(200, { creator: { nickname: "FS Creative", avatarUrl: "", canPostMore: true }, privacyLevels: [{ value: "PUBLIC_TO_EVERYONE", label: "Public To Everyone" }],

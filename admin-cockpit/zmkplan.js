@@ -208,6 +208,8 @@ F.css(
 '.mp-r.bad{background:var(--bad-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bad) 30%,transparent)}'+
 '.mp-err{display:inline-flex;align-items:center;gap:4px;font-weight:600}.mp-err svg{width:14px;height:14px;flex:none}'+
 '.mp-ok{display:inline-flex;gap:4px;align-items:center;color:var(--ok);font-weight:600}.mp-ok svg{width:14px;height:14px;flex:none}'+
+'.mp-nums{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;font-size:12.5px;color:var(--ink-2)}.mp-nums>span{display:inline-flex;align-items:center;gap:4px}.mp-nums svg{width:13px;height:13px;flex:none}.mp-nums b{color:var(--ink);font-weight:700}'+
+'.mp-vsum{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--ink-2);margin-right:8px}.mp-vsum svg{width:15px;height:15px}.mp-vsum b{color:var(--ink)}.mp-statbtn{margin-top:2px;justify-self:start}'+
 '@media (max-width:900px){.mp-main .btn,.mp-pf button,.mp-gh{min-height:40px}}'+
 /* Leer-Zustände, „weitere“, Laden */
 '.mp-empty{display:flex;align-items:center;gap:12px 14px;flex-wrap:wrap;padding:18px 20px}'+
@@ -342,6 +344,22 @@ function whenTile(p){
   return '<div class="mp-when"><div class="mp-c1" aria-hidden="true"><span>'+WD[d.getDay()]+'</span><b>'+d.getDate()+'</b><span>'+MON[d.getMonth()]+'</span></div>'+
     '<div class="mp-wt"><span class="lb">'+(p.status==="läuft"?stIcon("läuft"):'')+esc(lb)+'</span><span class="tm">'+hm(d)+' Uhr</span><span class="rel">'+WDL[d.getDay()]+', '+d.getDate()+'. '+MON[d.getMonth()]+' · '+relDay(d)+'</span></div></div>';
 }
+/* Zahlen je Plattform (vom Server regelmäßig geholt): Aufrufe, Likes, Kommentare, Geteilt, Gespeichert */
+function nfmt(v){ return Number(v).toLocaleString("de-AT"); }
+function numLine(k,r){ var s=r.stats; if(r.status!=="ok"||!s) return "";
+  var part=function(ic,v,lb,t){ return '<span title="'+esc(t)+'">'+F.svg(ic)+'<b>'+nfmt(v)+'</b>'+(lb?' '+lb:'')+'</span>'; }, pts=[];
+  if(s.views!=null) pts.push(part("eye",s.views,"Aufrufe","Aufrufe"+(s.reach!=null?" · "+nfmt(s.reach)+" Personen erreicht":"")));
+  else if(s.reach!=null) pts.push(part("eye",s.reach,"erreicht","Erreichte Personen"));
+  if(s.likes!=null) pts.push(part("mheart",s.likes,"","Likes"));
+  if(s.comments!=null) pts.push(part("message",s.comments,"","Kommentare"));
+  if(s.shares) pts.push(part("mirepost",s.shares,"","Geteilt"));
+  if(s.saves) pts.push(part("pin",s.saves,"","Gespeichert"));
+  var why=s.views!=null?"":s.need==="insights"?(k==="facebook"?"Aufrufe: Statistik-Berechtigung fehlt (siehe oben)":"Aufrufe: Konto unter Kanäle neu verbinden"):s.none?s.none:s.wait&&!pts.length?"Zahlen kommen noch":s.err?"Zahlen: "+s.err:"";
+  if(!pts.length&&!why) return "";
+  return '<span class="mp-nums" title="Stand '+esc(new Date(s.at).toLocaleString("de-AT"))+'">'+pts.join("")+(why?'<span class="muted">'+esc(why)+'</span>':'')+'</span>'; }
+function viewSum(list){ var n=0, any=false; list.forEach(function(p){ Object.keys(p.results||{}).forEach(function(k){ var s=p.results[k].stats; if(s&&s.views!=null){ n+=s.views; any=true; } }); }); return any?n:null; }
+function statsNeed(list){ var need={}; list.forEach(function(p){ Object.keys(p.results||{}).forEach(function(k){ var s=p.results[k].stats; if(s&&s.need==="insights"&&s.views==null) need[k]=1; }); });
+  return Object.keys(need).map(function(k){ return k==="facebook"?"Facebook: In der Meta-App bei „Facebook Login for Business“ → Konfiguration die Berechtigung „read_insights“ ergänzen, dann Facebook unter Kanäle neu verbinden.":pfLabel(k)+": Für Aufrufe das Konto unter Kanäle einmal neu verbinden (neue Berechtigung „Statistiken“)."; }).join(" "); }
 function postCard(p,slim){
   var md=p.media||{}, base=fileBase(p), prev, reel=p.format==="reel";
   if(md.status!=="fertig") prev=md.status==="fehler"?'<div class="mp-wait bad'+(reel?' r':'')+'"><div><b class="bad-t">Fehler</b><br>'+esc(md.error||"")+'<br><button type="button" class="btn sm" data-act="mprer:'+esc(p.id)+'">Nochmal</button></div></div>':'<div class="mp-wait'+(reel?' r':'')+'"><div><i></i>'+(reel?"Reel wird animiert …"+(slim?'':'<br><span class="small">dauert 1–2 Minuten</span>'):"Bilder werden erstellt …")+'</div></div>';
@@ -357,7 +375,8 @@ function postCard(p,slim){
       r.status==="entwurf"?'<b>Entwurf in der App</b>'+(k==="tiktok"&&ttDirectFor(p)?' <button type="button" class="link" data-act="mpttnow:'+esc(p.id)+'">direkt posten</button>':''):r.status==="übersprungen"?'<span class="muted">übersprungen</span>':'<span class="bad-t mp-err">'+F.svg("alertCircle")+' Fehler</span><button type="button" class="link" data-act="mpretry:'+esc(p.id)+'|'+k+'">nochmal</button>';
     var bad=["ok","gelöscht","entwurf","übersprungen"].indexOf(r.status)<0;
     var msg=bad?'<span class="msg bad-t">'+esc(r.error||"Fehler")+'</span>':(r.status==="entwurf"||r.status==="ok")&&r.note?'<span class="msg muted">'+esc(r.note)+'</span>':r.status==="übersprungen"&&r.error?'<span class="msg muted">'+esc(r.error)+'</span>':'';
-    return '<div class="mp-r'+(bad?' bad':'')+'"><span class="pfn">'+pfIcon(k)+esc(pfLabel(k))+'</span>'+st+msg+(lk?'<span class="lk">'+lk+'</span>':'')+'</div>'; }).join("")+'</div>';
+    return '<div class="mp-r'+(bad?' bad':'')+'"><span class="pfn">'+pfIcon(k)+esc(pfLabel(k))+'</span>'+st+msg+numLine(k,r)+(lk?'<span class="lk">'+lk+'</span>':'')+'</div>'; }).join("")+
+    (Object.keys(p.results).some(function(k){ return p.results[k].status==="ok"; })?'<button type="button" class="link small mp-statbtn" data-act="mpstat:'+esc(p.id)+'">Zahlen aktualisieren</button>':'')+'</div>';
   var ready=md.status==="fertig", main="", subs="", hint="", time=editable?'<label class="mp-time"><span>Zeit</span><input class="f" type="datetime-local" value="'+esc(localDT(p.scheduledAt))+'" data-mptime="'+esc(p.id)+'" title="Geplante Zeit"></label>':'';
   if(p.status==="entwurf"){ var dis=!ready||!p.platforms.length?' disabled':'';
     main='<button type="button" class="btn primary" data-act="mpgo:'+esc(p.id)+'"'+dis+'>'+F.svg("mgo")+' Go</button><button type="button" class="btn" data-act="mpnow:'+esc(p.id)+'"'+dis+'>'+F.svg("send")+' Jetzt posten</button>';
@@ -465,7 +484,7 @@ function planHtml(){
     sec("mps-frei","entwurf","Zur Freigabe","Prüfen, Zeit und Plattformen anpassen, dann „Go“",drafts,allGo>1?'<button type="button" class="btn primary sm" data-act="mpgoall">'+F.svg("mgo")+' Alle '+allGo+' freigeben</button>':'',
       alle?emptyBox("edit","Keine Entwürfe","Wähle oben eine Marke – dort schreibt die KI über „Generieren“ neue Posts."):emptyBox("checkCircle","Keine Entwürfe für "+esc(b.name),"Alles freigegeben. Neue Posts, Reels und Karussells schreibt die KI – oben bei „Neue Posts“ auf „Generieren“."),false)+
     sec("mps-plan","geplant","Geplant","Geht zur geplanten Zeit automatisch raus",planned,"",emptyBox("clock","Nichts geplant","Mit „Go“ landen Posts hier und gehen zur geplanten Zeit automatisch raus."),true)+
-    (done.length?sec("mps-done","gepostet","Veröffentlicht","",doneShow,"","",true,done.length>DONE_N?'<div class="mp-morebar"><button type="button" class="btn sm" data-act="mpdone">'+(UI.mpDoneAll?'Weniger anzeigen':'Alle '+done.length+' anzeigen')+'</button></div>':''):'')+
+    (done.length?sec("mps-done","gepostet","Veröffentlicht",esc(statsNeed(done)),doneShow,(viewSum(done)!=null?'<span class="mp-vsum" title="Aufrufe aller hier gezeigten Beiträge, alle Plattformen">'+F.svg("eye")+'<b>'+nfmt(viewSum(done))+'</b> Aufrufe</span>':'')+'<button type="button" class="btn sm" data-act="mpstatsall">'+F.svg("refresh")+' Zahlen holen</button>',"",true,done.length>DONE_N?'<div class="mp-morebar"><button type="button" class="btn sm" data-act="mpdone">'+(UI.mpDoneAll?'Weniger anzeigen':'Alle '+done.length+' anzeigen')+'</button></div>':''):'')+
     '</div>';
 }
 function byTime(a,b){ return String(a.scheduledAt||"").localeCompare(String(b.scheduledAt||"")); }
@@ -950,6 +969,9 @@ F.action("mkmusun",function(id){ musSet({op:"restore",id:id},"Wird wieder verwen
 
 // Nach dem Posten: Text ändern / Kommentare ein-aus / auf der Plattform löschen
 // (stand bisher außerhalb der Funktionsklammer – dort gab es weder F noch PL, die Knöpfe taten nichts)
+F.action("mpstat",function(id){ F.toast("Hole Zahlen …"); api("/admin/api/mkt/post",{id:id,op:"stats"}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); upd(j.post); F.toast("Zahlen aktualisiert"); F.render(); }); });
+F.action("mpstatsall",function(){ api("/admin/api/mkt/stats",{brand:UI.mkBrand}).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true);
+  F.toast(j.running?"Zahlen werden schon geholt – gleich da":"Zahlen werden geholt – dauert etwa eine Minute"); [25000,70000].forEach(function(ms){ setTimeout(function(){ if(F.current==="mkt"&&!F.modalOpen()) load(); },ms); }); }); });
 F.action("mprem",function(v){ var x=v.split("|"), p=PL.posts.find(function(q){ return q.id===x[0]; }); if(!p) return; var pf=x[1], act=x[2], r=(p.results||{})[pf]||{};
   var run=function(extra){ api("/admin/api/mkt/post",Object.assign({id:p.id,op:"remote",platform:pf,action:act},extra)).then(function(j){ if(!j||!j.ok) return F.toast((j&&j.error)||"Fehler",true); upd(j.post); F.closeModal(); F.toast(act==="delete"?"Auf "+pfLabel(pf)+" gelöscht":act==="edit"?"Text auf "+pfLabel(pf)+" geändert":"Gespeichert"); F.render(); }); };
   if(act==="delete") return F.confirm("Diesen Beitrag auf "+pfLabel(pf)+" endgültig löschen? Das lässt sich nicht rückgängig machen.","Löschen",function(){ run({confirm:true}); },true);

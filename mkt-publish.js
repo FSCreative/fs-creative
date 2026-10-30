@@ -73,11 +73,11 @@ module.exports = function (D) {
   function authUrl(provider, c) {   // c: { clientId, redirect, state }
     const st = c.state, rd = c.redirect;
     switch (provider) {
-      case "instagram": return B.igAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages", state: st, enable_fb_login: "0", force_authentication: "1" });
+      case "instagram": return B.igAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages,instagram_business_manage_insights", state: st, enable_fb_login: "0", force_authentication: "1" });
       // Facebook Login for Business: Berechtigungen stehen in der Konfiguration (config_id), sonst klassisch per scope
       case "facebook": return B.fbAuth + q(c.configId ? { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", config_id: c.configId, override_default_response_type: "true" }
-        : { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement,pages_read_user_content,pages_messaging" });
-      case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies", response_type: "code", state: st });
+        : { client_id: c.clientId, redirect_uri: rd, state: st, response_type: "code", scope: "pages_show_list,pages_read_engagement,pages_manage_posts,pages_manage_engagement,pages_read_user_content,pages_messaging,read_insights" });
+      case "threads": return B.thAuth + q({ client_id: c.clientId, redirect_uri: rd, scope: "threads_basic,threads_content_publish,threads_read_replies,threads_manage_replies,threads_manage_insights", response_type: "code", state: st });
       case "linkedin": return B.liAuth + q({ response_type: "code", client_id: c.clientId, redirect_uri: rd, scope: "openid profile w_member_social", state: st });
       case "google": return B.gAuth + q({ client_id: c.clientId, redirect_uri: rd, response_type: "code", scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl", access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: st });
       case "tiktok": return B.ttAuth + q({ client_key: c.clientId, scope: "user.info.basic,video.upload,video.publish", response_type: "code", redirect_uri: rd, state: st });
@@ -354,8 +354,8 @@ module.exports = function (D) {
     for (let i = 0; i < 48 && post._id && !fin(t.status); i++) { await sleep(waitMs); post = (await zreq("GET", "/v1/posts/" + encodeURIComponent(post._id), tok)).j.post || post; t = tgt(post); }
     if (t.status === "failed" || t.status === "cancelled") throw pubErr("TikTok (Zernio): " + String(t.errorMessage || "Veröffentlichen fehlgeschlagen").slice(0, 240) + (t.errorCategory === "auth_expired" ? " – in Zernio TikTok neu verbinden." : ""));
     const prof = tok.handle ? "https://www.tiktok.com/@" + tok.handle : "";
-    if (t.status !== "published") return { id: String(post._id || ""), url: prof, note: "Zernio postet das Video gerade – es erscheint in ein paar Minuten auf deinem Profil.", privacy };
-    return { id: String(t.platformPostId || post._id || ""), url: t.platformPostUrl || prof, note: t.platformPostUrl ? "" : "TikTok verarbeitet das Video noch – es erscheint in ein paar Minuten auf deinem Profil.", privacy };
+    if (t.status !== "published") return { id: String(post._id || ""), zid: String(post._id || ""), url: prof, note: "Zernio postet das Video gerade – es erscheint in ein paar Minuten auf deinem Profil.", privacy };
+    return { id: String(t.platformPostId || post._id || ""), zid: String(post._id || ""), url: t.platformPostUrl || prof, note: t.platformPostUrl ? "" : "TikTok verarbeitet das Video noch – es erscheint in ein paar Minuten auf deinem Profil.", privacy };
   }
   async function tiktok(ch, tok, m) {
     if (tok.via === "zernio") return zernioTiktok(ch, tok, m);
@@ -459,6 +459,68 @@ module.exports = function (D) {
   async function commentsRemote(platform, ch, tok, ref, on) {
     if (platform !== "instagram") throw pubErr("Kommentare lassen sich nur bei Instagram über die Schnittstelle ein- und ausschalten.");
     return req("POST", B.ig + "/" + GV + "/" + ref.id, { form: { comment_enabled: on ? "true" : "false", access_token: tok.access } });
+  }
+  // Zahlen zu einem veröffentlichten Beitrag: { views, reach, likes, comments, shares, saves } (null = liefert die Plattform nicht).
+  // Fehlt die Statistik-Berechtigung, kommen die frei lesbaren Werte (Likes, Kommentare) und need: "insights"; none: Plattform gibt gar keine Aufrufe heraus.
+  async function statsRemote(platform, ch, tok, ref) {   // ref = { id, format, zid }
+    const t = tok.access, out = { views: null, reach: null, likes: null, comments: null, shares: null, saves: null };
+    const num = v => v == null || v === "" || !isFinite(+v) ? null : +v, fill = o => { Object.keys(o).forEach(k => { if (o[k] != null) out[k] = o[k]; }); return out; };
+    const noPerm = e => /permission|scope|not authorized|nicht berechtigt|insufficient|requires|\(#(10|200|230|3)\)/i.test(String(e && e.message));
+    const badMetric = e => /\(#100\)|metric/i.test(String(e && e.message)) && !noPerm(e);
+    // Insights-Antwort (Meta/Threads): data[].total_value.value oder letzter Wert in values[]
+    const ins = data => (data || []).reduce((o, x) => { const v = x.total_value ? x.total_value.value : x.values && x.values.length ? x.values[x.values.length - 1].value : null;
+      o[x.name] = typeof v === "number" ? v : v && typeof v === "object" ? Object.keys(v).reduce((a, k) => a + (+v[k] || 0), 0) : null; return o; }, {});
+    // Meta lehnt die ganze Abfrage ab, wenn eine Metrik für diesen Beitrag nicht passt → kürzere Listen probieren
+    const tryIns = async (url, lists) => { let last; for (const l of lists) { try { return ins((await req("GET", url(l.join(",")))).data); } catch (e) { if (e.auth || !badMetric(e)) throw e; last = e; } } throw last; };
+    const insErr = e => { if (e.auth) throw e; if (noPerm(e)) out.need = "insights"; else out.note = String(e.message || e).slice(0, 160); };
+    if (platform === "instagram") {
+      const base = B.ig + "/" + GV + "/" + ref.id;
+      try { const f = await req("GET", base + q({ fields: "like_count,comments_count", access_token: t })); fill({ likes: num(f.like_count), comments: num(f.comments_count) }); } catch (e) { if (e.auth) throw e; }
+      try { const m = await tryIns(l => base + "/insights" + q({ metric: l, access_token: t }), [["views", "reach", "likes", "comments", "shares", "saved"], ["views", "reach"], ["reach"]]);
+        fill({ views: num(m.views), reach: num(m.reach), likes: num(m.likes), comments: num(m.comments), shares: num(m.shares), saves: num(m.saved) }); } catch (e) { insErr(e); }
+      return out;
+    }
+    if (platform === "facebook") {
+      const base = B.fb + "/" + GV + "/" + ref.id, reel = ref.format === "reel", sum = x => x && x.summary ? num(x.summary.total_count) : null;
+      try { const f = await req("GET", base + q({ fields: "reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)" + (reel ? "" : ",shares"), access_token: t }));
+        fill({ likes: sum(f.reactions), comments: sum(f.comments), shares: reel ? null : f.shares ? num(f.shares.count) : 0 }); } catch (e) { if (e.auth) throw e; }
+      try {
+        if (reel) { const m = await tryIns(l => base + "/video_insights" + q({ metric: l, access_token: t }), [["blue_reels_play_count", "post_impressions_unique"], ["fb_reels_total_plays"], ["total_video_views"]]);
+          fill({ views: num(m.blue_reels_play_count != null ? m.blue_reels_play_count : m.fb_reels_total_plays != null ? m.fb_reels_total_plays : m.total_video_views), reach: num(m.post_impressions_unique) }); }
+        else { const m = await tryIns(l => base + "/insights" + q({ metric: l, access_token: t }), [["post_media_view", "post_total_media_view_unique"], ["post_media_view"], ["post_impressions", "post_impressions_unique"]]);
+          fill({ views: num(m.post_media_view != null ? m.post_media_view : m.post_impressions), reach: num(m.post_total_media_view_unique != null ? m.post_total_media_view_unique : m.post_impressions_unique) }); }
+      } catch (e) { insErr(e); }
+      return out;
+    }
+    if (platform === "threads") {
+      try { const m = ins((await req("GET", B.th + "/v1.0/" + ref.id + "/insights" + q({ metric: "views,likes,replies,reposts,quotes", access_token: t }))).data);
+        fill({ views: num(m.views), likes: num(m.likes), comments: num(m.replies), shares: m.reposts != null || m.quotes != null ? (m.reposts || 0) + (m.quotes || 0) : null }); } catch (e) { insErr(e); }
+      return out;
+    }
+    if (platform === "tiktok") {
+      if (tok.via !== "zernio") return Object.assign(out, { none: "Zahlen zu TikTok-Videos gibt es nur, wenn TikTok über Zernio verbunden ist." });
+      const { j, status } = await zreq("GET", "/v1/analytics" + q({ postId: ref.zid || ref.id, accountId: tok.account }), tok, { ok: [202, 402, 404, 424] });
+      if (status === 402) return Object.assign(out, { none: "Zernio gibt Zahlen nur mit dem Analyse-Zusatz im Zernio-Tarif heraus." });
+      if (status === 202) return Object.assign(out, { wait: true });
+      if (status === 404 || status === 424) return Object.assign(out, { none: "Zernio findet zu diesem Video keine Zahlen." });
+      const pa = (j.platformAnalytics || []).find(x => x && x.platform === "tiktok"), a = (pa && pa.analytics) || j.analytics || {};
+      return fill({ views: num(a.views), reach: num(a.reach), likes: num(a.likes), comments: num(a.comments), shares: num(a.shares), saves: num(a.saves) });
+    }
+    if (platform === "youtube") {
+      const s = (((await req("GET", B.yt + "/youtube/v3/videos" + q({ part: "statistics", id: ref.id }), { token: t })).items || [])[0] || {}).statistics || {};
+      return fill({ views: num(s.viewCount), likes: num(s.likeCount), comments: num(s.commentCount) });
+    }
+    if (platform === "pinterest") {   // Pinterest liefert höchstens 90 Tage rückwirkend
+      const day = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+      const r = await req("GET", B.pin + "/v5/pins/" + encodeURIComponent(ref.id) + "/analytics" + q({ start_date: day(89), end_date: day(0), metric_types: "IMPRESSION,SAVE", app_types: "ALL" }), { token: t });
+      const s = (r.all && (r.all.lifetime_metrics || r.all.summary_metrics)) || {}; return fill({ views: num(s.IMPRESSION), saves: num(s.SAVE) });
+    }
+    if (platform === "bluesky") {
+      const p = ((await req("GET", B.bsky + "/xrpc/app.bsky.feed.getPosts" + q({ uris: ref.id }), { token: t })).posts || [])[0] || {};
+      return Object.assign(fill({ likes: num(p.likeCount), comments: num(p.replyCount), shares: p.repostCount != null ? (p.repostCount || 0) + (p.quoteCount || 0) : null }), { none: "Bluesky zählt keine Aufrufe." });
+    }
+    if (platform === "linkedin") return Object.assign(out, { none: "LinkedIn zeigt Zahlen zu Profil-Beiträgen nur in der LinkedIn-App." });
+    throw pubErr("Für diese Plattform gibt es keine Zahlen.");
   }
   // Orte suchen (Facebook-Seiten mit Adresse, nutzbar für Instagram und Facebook) – braucht ein verbundenes Facebook-Konto
   async function placeSearch(ch, tok, query) {
@@ -883,7 +945,7 @@ module.exports = function (D) {
     if (platform === "bluesky") return req("GET", B.bsky + "/xrpc/com.atproto.server.getSession", bearer);
     throw pubErr("Unbekannte Plattform");
   }
-  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, zernioLogin, publish, editRemote, removeRemote, commentsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
+  return { PLATFORMS, PROVIDERS, CAN, authUrl, exchange, refresh, verify, bskyLogin, zernioLogin, publish, editRemote, removeRemote, commentsRemote, statsRemote, placeSearch, igMedia, igComments, inbox, inboxReply, inboxLike, inboxDelete,
     inboxRepost, inboxQuote, igStory, cdnOk, cdnFetch, linkOk: v => !!linkOf(v), labelOf, tiktokCreator, _test: { liText, bskyFacets, attsOf, labelOf, probe, PROBE, ttChunks } };
 };
 module.exports.PLATFORMS = PLATFORMS;

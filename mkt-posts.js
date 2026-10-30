@@ -676,7 +676,7 @@ module.exports = function (C) {
         try {
           const tok = await tokFor(ch); let r, note = "";
           r = await P.publish(pf, ch, tok, mediaFor(p, pf));
-          p.results[pf] = { status: r.draft ? "entwurf" : "ok", id: r.id || "", url: r.url || "", note: r.note || note, at: nowIso() }; ch.lastOk = nowIso(); ch.lastError = "";
+          p.results[pf] = Object.assign({ status: r.draft ? "entwurf" : "ok", id: r.id || "", url: r.url || "", note: r.note || note, at: nowIso() }, r.zid ? { zid: r.zid } : {}); ch.lastOk = nowIso(); ch.lastError = "";
           if (pf === "tiktok") { if (r.audit) S().mkt.ttAudit = r.audit; else if (r.privacy && r.privacy !== "SELF_ONLY") S().mkt.ttAudit = ""; }   // App noch ungeprüft („private“/„draft“) bzw. geprüft
         } catch (e) {
           p.results[pf] = { status: "fehler", error: String(e.message || e).slice(0, 300), at: nowIso() }; ch.lastError = p.results[pf].error; if (e.auth) ch.status = "abgelaufen";
@@ -691,6 +691,39 @@ module.exports = function (C) {
       if (C.push) C.push("mkt", { title: "Marketing: " + b.name, body: (p.status === "gepostet" ? "Gepostet" : p.status === "teilweise" ? "Teilweise gepostet" : "Posten fehlgeschlagen") + " · " + (p.platforms || []).map(pf => PLATFORMS[pf].label + " " + ({ ok: "✓", entwurf: "Entwurf", fehler: "✗", "übersprungen": "–" }[(p.results[pf] || {}).status] || "?")).join(", ") + (p.idea ? "\n" + String(p.idea).slice(0, 140) : ""), url: "/admin#mkt", tag: "mkt-" + p.id }).catch(() => {});
     } catch (e) { p.status = "fehler"; p.lastError = String(e.message || e).slice(0, 300); save(true); }
     finally { RUNNING.delete(p.id); }
+  }
+  // ───────────── Zahlen je Plattform (Aufrufe, Likes …) ─────────────
+  // Frisch gepostet alle 3 Std., bis 30 Tage täglich, bis 90 Tage wöchentlich – danach bleibt der letzte Stand stehen
+  function statsDue(p, r) {
+    const age = Date.now() - Date.parse(p.postedAt || r.at || 0), last = r.stats && r.stats.at ? Date.parse(r.stats.at) : 0;
+    if (!(age >= 0) || age > 90 * 864e5) return false;
+    return Date.now() - last > (age < 3 * 864e5 ? 3 * 3600e3 : age < 30 * 864e5 ? 864e5 : 7 * 864e5);
+  }
+  const STAT_KEYS = ["views", "reach", "likes", "comments", "shares", "saves"];
+  async function statsFor(p, force) {
+    let n = 0;
+    for (const pf of Object.keys(p.results || {})) {
+      const r = p.results[pf]; if (!r || r.status !== "ok" || !r.id || !PLATFORMS[pf] || (!force && !statsDue(p, r))) continue;
+      const ch = channelsOf(p.brand).find(c => c.platform === pf); if (!ch) continue;
+      try {
+        const s = await P.statsRemote(pf, ch, await tokFor(ch), { id: r.id, zid: r.zid || "", format: p.format }), o = { at: nowIso() };
+        if (s.wait) Object.assign(o, r.stats || {}, { at: o.at, wait: true });   // Plattform rechnet noch – alten Stand behalten
+        else { STAT_KEYS.forEach(k => { if (typeof s[k] === "number") o[k] = s[k]; }); ["need", "none", "note"].forEach(k => { if (s[k]) o[k] = clip(s[k], 200); }); }
+        delete o.err; r.stats = o;
+      } catch (e) { r.stats = Object.assign({}, r.stats || {}, { at: nowIso(), err: clip(e.message || e, 200) }); }
+      n++;
+    }
+    if (n) save();
+    return n;
+  }
+  let statsRunning = false;
+  async function statsPoll(brandKey, force) {
+    if (statsRunning) return; statsRunning = true;
+    try {
+      const want = p => ["gepostet", "teilweise"].indexOf(p.status) > -1 && (!brandKey || p.brand === brandKey) && Object.keys(p.results || {}).some(pf => { const r = p.results[pf]; return r && r.status === "ok" && r.id && (force ? Date.now() - Date.parse(p.postedAt || 0) < 90 * 864e5 : statsDue(p, r)); });
+      const list = S().posts.filter(want).sort((a, b) => Date.parse(b.postedAt || 0) - Date.parse(a.postedAt || 0)).slice(0, force ? 40 : 6);
+      for (const p of list) await statsFor(p, force);
+    } finally { statsRunning = false; }
   }
   let TICKING = false;
   async function tick() {
@@ -707,6 +740,7 @@ module.exports = function (C) {
         st.inboxPollAt = nowIso(); inboxPolling = true;
         pollInbox().catch(e => console.error("marketing: Posteingang", e.message)).then(() => { inboxPolling = false; });
       }
+      if (!statsRunning && (!st.statsPollAt || Date.now() - Date.parse(st.statsPollAt) > 10 * 60e3)) { st.statsPollAt = nowIso(); statsPoll().catch(e => console.error("marketing: Zahlen", e.message)); }
       MU.weekly().catch(e => console.error("marketing: Musik-Nachschub", e.message));
     } catch (e) { console.error("marketing: tick", e.message); }
     TICKING = false;
@@ -935,9 +969,15 @@ module.exports = function (C) {
   async function handleAdmin(req, res, u, p) {
     if (p === "/admin/api/mkt/posts" && req.method === "GET") return J(res, 200, Object.assign({ ok: true }, overview())), true;
     if (p === "/admin/api/mkt/generate" && req.method === "POST") { const pl = await body(req, 50000); const r = await generate(pl); return J(res, 200, { ok: true, posts: r.posts.map(postPublic), eur: r.eur }), true; }
+    if (p === "/admin/api/mkt/stats" && req.method === "POST") {   // alle Zahlen der letzten 90 Tage neu holen (im Hintergrund)
+      const pl = await body(req, 2000), bk = String(pl.brand || ""), was = statsRunning;
+      if (!was) statsPoll(bk && bk !== "alle" ? bk : "", true).catch(e => console.error("marketing: Zahlen", e.message));
+      return J(res, 200, { ok: true, running: was }), true;
+    }
     if (p === "/admin/api/mkt/post" && req.method === "POST") {
       const pl = await body(req, 300000), s = S(), post = s.posts.find(x => x.id === String(pl.id || "")); if (!post) throw fail(404, "Post nicht gefunden");
       const op = String(pl.op || "");
+      if (op === "stats") { await statsFor(post, true); return J(res, 200, { ok: true, post: postPublic(post) }), true; }
       if (op === "update") {
         if (["läuft", "gepostet"].indexOf(post.status) > -1) throw fail(400, "Schon veröffentlicht.");
         const pa = pl.patch || {}; let rerender = false;
@@ -1194,5 +1234,5 @@ module.exports = function (C) {
     }
     return false;
   }
-  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, pixabayPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, MU, upsertChannel, generate, S, PENDING, INBOX, refreshInbox, inboxFlush: () => { clearTimeout(inboxSaveT); return inboxSave(); }, pollInbox } };
+  return { handleAdmin, handlePublic, giveawayPost, tick, library, appCfg, channelHealth, verifyPlatform, pexelsPing, pixabayPing, _test: { envatoImport, library, photoPlan, describeLibrary, syncPrintPhotos, filterComments, nextSlot, viennaToMs, viennaParts, captionFor, titleFor, publishPost, seal, unseal, MU, upsertChannel, generate, S, PENDING, INBOX, refreshInbox, inboxFlush: () => { clearTimeout(inboxSaveT); return inboxSave(); }, pollInbox, statsFor, statsDue } };
 };
