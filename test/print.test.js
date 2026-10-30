@@ -471,8 +471,19 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const it = (u, g) => Object.assign({}, BC, { fileId: u.j.fileId, fileToken: u.j.token, expectedGross: g });
     const base = { customer: Object.assign({}, cust, { email: em }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true };
     r = await post("/print/api/checkout", Object.assign({ items: [it(u1, 38.4), it(u2, 10)] }, base), { cookie: ck }); assert.strictEqual(r.status, 409); assert.strictEqual(r.j.index, 1);
-    r = await post("/print/api/checkout", Object.assign({ items: [it(u1, 38.4), it(u2, 38.4)] }, base), { cookie: ck }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
-    assert.strictEqual(r.j.orders.length, 2); assert.strictEqual(Object.keys(M.payments).length, nPay + 1, "eine Zahlung für den ganzen Warenkorb");
+    const IPH = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
+    r = await post("/print/api/checkout", Object.assign({ items: [it(u1, 38.4), it(u2, 38.4)], origin: { ref: "https://www.google.com/", land: "/print?produkt=visitenkarten&srsltid=AfmB&bestellung=PX&t=geheim" } }, base), { cookie: ck, "user-agent": IPH }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
+    assert.strictEqual(r.j.orders.length, 2);
+    // Herkunft: an jeder Position des Warenkorbs, im Cockpit mit Region aus der PLZ; ohne fremde Parameter (Bestell-Token)
+    const so = (await admin("/admin/api/print/state")).orders.filter(x => r.j.orders.some(y => y.id === x.id)); assert.strictEqual(so.length, 2);
+    for (const x of so) { const { at, ...og } = x.origin; assert.ok(at); assert.deepStrictEqual(og, { channel: "Google", detail: "google.com", land: "/print?produkt=visitenkarten", device: "Handy" }); assert.strictEqual(x.region, "Vorarlberg"); assert.strictEqual(x.zip, "6793"); assert.ok(x.groupId && x.groupId === so[0].groupId); assert.strictEqual(x.found, null); }
+    // „Wie hast du uns gefunden?“ als eigene Frage: ohne Sterne, nur bekannte Antworten, einmal je Bestellung
+    const sfb = (body, o) => post("/print/api/order/" + o.id + "/feedback?t=" + o.token, body), o2 = r.j.orders[1];
+    assert.strictEqual((await sfb({ stage: "source", source: "Plakatwand" }, o2)).status, 400);
+    assert.strictEqual((await sfb({ stage: "source", source: "Empfehlung", sourceText: "  von   Max " }, o2)).j.ok, true);
+    assert.strictEqual((await sfb({ stage: "source", source: "Instagram" }, o2)).j.already, true, "zweite Antwort ändert nichts");
+    assert.deepStrictEqual((await admin("/admin/api/print/state")).orders.find(x => x.id === o2.id).found, { source: "Empfehlung", text: "von Max" });
+    assert.strictEqual((await (await fetch(B + "/print/api/order/" + o2.id + "?t=" + o2.token)).json()).order.feedback.source, true); assert.strictEqual(Object.keys(M.payments).length, nPay + 1, "eine Zahlung für den ganzen Warenkorb");
     const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "76.80");
     M.payments[pid].status = "paid"; await fetch(B + "/print/mollie-webhook", { method: "POST", body: "id=" + pid });
     for (const o of r.j.orders) { const st = await (await fetch(B + "/print/api/order/" + o.id + "?t=" + o.token)).json(); assert.notStrictEqual(st.order.status, "pending_payment", o.id); assert.strictEqual(st.order.groupSize, 2); }
@@ -911,6 +922,38 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
       assert.strictEqual(await PS._test.feedbackMails(NOW + 3 * DAY + HR), 0);
       assert.ok(!sent.some(m => /nein@|ohne@|pfb07|pfb09|pfb10/.test(m.to)), "ohne Zustimmung, schon bewertet, nicht versendet oder zu alt → keine Mail");
     } finally { Object.keys(env0).forEach(k => { if (env0[k] === undefined) delete process.env[k]; else process.env[k] = env0[k]; }); try { fs.rmSync(ddir, { recursive: true, force: true }); } catch (e) {} }
+  });
+  await t("Herkunft der Bestellung: Kanal aus Vorseite, Kampagne oder App; Einstieg ohne fremde Parameter; Region aus der PLZ", async () => {
+    const tdir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-or-"));
+    try {
+      const T = require(path.join(dir, "print-shop.js"))({ DATA_DIR: tdir })._test, O = (ref, land, ua) => { const { at, ...r } = T.originOf({ ref, land }, ua); assert.ok(at); return r; };
+      const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15", IPH = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
+      assert.deepStrictEqual(O("https://www.google.com/", "/print?produkt=visitenkarten&srsltid=AfmB&t=geheim&bestellung=P1", MAC), { channel: "Google", detail: "google.com", land: "/print?produkt=visitenkarten", device: "Computer" });
+      assert.deepStrictEqual(O("", "/print?produkt=flyer&srsltid=x", IPH), { channel: "Google", detail: "Suche/Shopping", land: "/print?produkt=flyer", device: "Handy" });
+      assert.deepStrictEqual(O("", "/print?utm_source=newsletter&utm_campaign=kw44", MAC), { channel: "Newsletter", detail: "kw44", land: "/print?utm_source=newsletter&utm_campaign=kw44", device: "Computer" });
+      assert.strictEqual(O("https://www.facebook.com/", "/print?utm_source=facebook&utm_medium=social&utm_campaign=druckshop-2026-11", MAC).channel, "Facebook");
+      assert.strictEqual(O("", "/print?utm_source=instagram&utm_medium=paid_social", IPH).channel, "Instagram (Werbung)");
+      assert.strictEqual(O("https://chatgpt.com/", "/print?utm_source=chatgpt.com", MAC).channel, "KI-Assistent");
+      assert.deepStrictEqual(O("https://www.google.at/", "/print?gclid=abc&produkt=flyer", MAC), { channel: "Google Ads", land: "/print?produkt=flyer", device: "Computer" });
+      assert.deepStrictEqual(O("", "/print", IPH + " Instagram 380.0.0.24.110"), { channel: "Instagram", detail: "App", land: "/print", device: "Handy" });
+      assert.strictEqual(O("", "/print", IPH + " [FBAN/FBIOS;FBAV/480.0.0]").channel, "Facebook");
+      assert.deepStrictEqual(O("https://l.instagram.com/", "/print", IPH), { channel: "Instagram", detail: "l.instagram.com", land: "/print", device: "Handy" });
+      assert.deepStrictEqual(O("https://www.fs-creative.at/", "/print", MAC), { channel: "Eigene Website", detail: "Startseite", land: "/print", device: "Computer" });
+      assert.strictEqual(O("https://www.fs-creative.at/print/weihnachten?x=1", "/print", MAC).detail, "/print/weihnachten");
+      assert.strictEqual(O("https://mail.google.com/", "/print", MAC).channel, "E-Mail");
+      assert.strictEqual(O("android-app://com.google.android.gm/", "/print", IPH).channel, "E-Mail");
+      assert.strictEqual(O("android-app://com.google.android.googlequicksearchbox/https/www.google.com", "/print", IPH).channel, "Google");
+      assert.strictEqual(O("https://duckduckgo.com/", "/print", MAC).channel, "Andere Suchmaschine");
+      assert.deepStrictEqual(O("https://www.wko.at/firmen/druck?q=x", "/print", MAC), { channel: "Verlinkung", detail: "wko.at", land: "/print", device: "Computer" });
+      assert.deepStrictEqual(O("", "/print", MAC), { channel: "Direkt", land: "/print", device: "Computer" });
+      assert.deepStrictEqual(O("javascript:alert(1)", "", ""), { channel: "Direkt", land: "/print" });
+      assert.strictEqual(O("", "/print", "Mozilla/5.0 (iPad; CPU OS 19_0 like Mac OS X)").device, "Tablet");
+      assert.strictEqual(O("", "/print?produkt=" + "x".repeat(500), MAC).land.length <= 200, true);
+      const R = T.regionOf;
+      assert.deepStrictEqual(["5020", "5280", "6900", "6793", "6020", "9900", "9020", "4600", "1010", "8010", "7000", "3100", "2340", ""].map(z => R("AT", z)),
+        ["Salzburg", "Oberösterreich", "Vorarlberg", "Vorarlberg", "Tirol", "Tirol", "Kärnten", "Oberösterreich", "Wien", "Steiermark", "Burgenland", "Niederösterreich", "Niederösterreich", "Österreich"]);
+      assert.strictEqual(R("DE", "80331"), "Deutschland"); assert.strictEqual(R("ch", ""), "Schweiz"); assert.strictEqual(R("SE", "1"), "SE");
+    } finally { try { fs.rmSync(tdir, { recursive: true, force: true }); } catch (e) {} }
   });
   await t("orderPublic: Datum je Schritt (statusAt, sonst Verlauf), voraussichtliche Lieferung, Google-Link nur https, keine internen Daten", async () => {
     const env0 = { u: process.env.PRINT_GOOGLE_REVIEW_URL, a: process.env.PRINT_ANCHORS_FILE }, tdir = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-print-sd-")); process.env.PRINT_ANCHORS_FILE = "off";

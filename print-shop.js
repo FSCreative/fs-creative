@@ -1811,6 +1811,60 @@ module.exports = function (D) {
   const reviewUrl = () => { let v = String(process.env.PRINT_GOOGLE_REVIEW_URL || "").trim(); if (!v && typeof D.googleReviewUrl === "function") { try { v = String(D.googleReviewUrl() || "").trim(); } catch (e) { v = ""; } } return /^https:\/\/[^\s"'<>]{6,300}$/.test(v) ? v : ""; };
   // „Wie hast du uns gefunden?“ – feste Auswahl, sonst leer
   const FOUND_VIA = ["Google-Suche", "Google Maps", "Empfehlung", "Instagram", "Facebook", "Flyer/Werbung", "Schon Kunde", "Sonstiges"];
+  // Herkunft der Bestellung (Wunsch Simon 30.10.2026): Vorseite (document.referrer) und Einstiegsadresse des Seitenaufrufs, in dem bestellt wurde, plus
+  // Browser-Kennung (In-App-Browser von Instagram/Facebook/TikTok senden oft keine Vorseite). Im Browser wird dafür nichts gespeichert – es zählt der letzte Besuch.
+  // Gespeichert: Kanal, Detail (Host der Vorseite bzw. Kampagne), Einstieg (Pfad + nur bekannte Shop-/Kampagnen-Parameter), Gerät
+  const ORIGIN_REF = [
+    [/^(mail\.google\.com|outlook\.(live|office|office365)\.com|mail\.yahoo\.[a-z.]+|(web)?mail\.[a-z0-9-]+\.[a-z.]+|([a-z0-9-]+\.)?gmx\.[a-z.]+|web\.de|email\.t-online\.de)$/, "E-Mail"],
+    [/^(chatgpt\.com|chat\.openai\.com|perplexity\.ai|gemini\.google\.com|copilot\.microsoft\.com|claude\.ai|chat\.mistral\.ai)$/, "KI-Assistent"],
+    [/(^|\.)google\.[a-z.]+$|^[a-z0-9.-]+\.doubleclick\.net$/, "Google"],
+    [/(^|\.)(bing\.com|duckduckgo\.com|ecosia\.org|yahoo\.[a-z.]+|startpage\.com|qwant\.com|search\.brave\.com|yandex\.[a-z.]+)$/, "Andere Suchmaschine"],
+    [/(^|\.)instagram\.com$/, "Instagram"], [/(^|\.)(facebook\.com|fb\.com|fb\.me|messenger\.com)$/, "Facebook"], [/(^|\.)tiktok\.com$/, "TikTok"], [/(^|\.)pinterest\.[a-z.]+$|^pin\.it$/, "Pinterest"],
+    [/(^|\.)(linkedin\.com|lnkd\.in)$/, "LinkedIn"], [/(^|\.)(youtube\.com|youtu\.be)$/, "YouTube"], [/^(t\.co|x\.com|twitter\.com)$/, "X (Twitter)"], [/(^|\.)whatsapp\.(com|net)$|^wa\.me$/, "WhatsApp"]];
+  const ORIGIN_UTM = [[/^(newsletter|nl)$/i, "Newsletter"], [/mail/i, "E-Mail"], [/^(ig|instagram)/i, "Instagram"], [/^(fb|facebook)/i, "Facebook"], [/tiktok/i, "TikTok"], [/chatgpt|openai|perplexity|gemini|copilot|claude/i, "KI-Assistent"],
+    [/google/i, "Google"], [/linkedin/i, "LinkedIn"], [/pinterest/i, "Pinterest"], [/youtube/i, "YouTube"], [/whatsapp/i, "WhatsApp"], [/qr|flyer|plakat|visitenkarte|aufkleber|print/i, "Flyer/QR-Code"]];
+  const ORIGIN_APP = [[/googlequicksearchbox|\.apps\.(maps|searchlite)$/, "Google"], [/\.gm$|mail|outlook/i, "E-Mail"], [/instagram/, "Instagram"], [/facebook|\.orca$/, "Facebook"], [/whatsapp/, "WhatsApp"],
+    [/linkedin/, "LinkedIn"], [/tiktok|musically|trill/, "TikTok"], [/pinterest/, "Pinterest"]];   // Android-Apps als Vorseite: android-app://<Paket>/
+  const ORIGIN_KEEP = ["produkt", "produkte", "kategorie", "unter", "menge", "utm_source", "utm_medium", "utm_campaign"];
+  function originOf(raw, ua) {
+    raw = raw && typeof raw === "object" ? raw : {}; ua = String(ua || "");
+    const device = /iPad|Tablet|Android(?!.*Mobi)/i.test(ua) ? "Tablet" : /Mobi|iPhone|iPod|Android/i.test(ua) ? "Handy" : ua ? "Computer" : "";
+    let land = null; try { land = new URL(clip(raw.land, 400) || "/print", "https://www.fs-creative.at"); } catch (e) { land = null; }
+    let ref = null; try { ref = raw.ref ? new URL(clip(raw.ref, 400)) : null; if (ref && !/^https?:$|^android-app:$/.test(ref.protocol)) ref = null; } catch (e) { ref = null; }
+    const q = k => land ? clip(land.searchParams.get(k), 60) : "", pkg = ref && ref.protocol === "android-app:" ? clip(ref.hostname, 80).toLowerCase() : "", host = ref && !pkg ? ref.hostname.toLowerCase().replace(/^www\./, "") : "";
+    const us = q("utm_source").toLowerCase(), um = q("utm_medium").toLowerCase(), uc = q("utm_campaign");
+    const paid = !!(q("gclid") || q("gbraid") || q("wbraid") || q("gad_source")), shop = !!q("srsltid");
+    const hit = (l, v) => { const r = l.find(x => x[0].test(v)); return r ? r[1] : ""; };
+    let channel = "", detail = "";
+    if (paid) { channel = "Google Ads"; detail = uc; }
+    else if (us) { channel = hit(ORIGIN_UTM, us) || us.slice(0, 40); if (/^(cpc|ppc|paid|paid_?social|ads?|display)$/.test(um)) channel += " (Werbung)"; detail = [um, uc].filter(Boolean).join(" · "); }
+    else if (pkg) { channel = hit(ORIGIN_APP, pkg) || "App"; detail = pkg; }
+    else if (host && !/(^|\.)fs-creative\.at$/.test(host)) { channel = hit(ORIGIN_REF, host) || "Verlinkung"; detail = host; }
+    else if (host) { channel = "Eigene Website"; const pth = ref.pathname.replace(/\/+$/, "") || "/"; detail = pth === "/" ? "Startseite" : pth.slice(0, 80); }
+    if (!channel || channel === "Eigene Website") {   // In-App-Browser erkennen (geben meist keine Vorseite mit)
+      const app = /Instagram/.test(ua) ? "Instagram" : /FBAN|FBAV|FB_IAB|FBIOS|\[FB/.test(ua) ? "Facebook" : /musical_ly|BytedanceWebview|TikTok/i.test(ua) ? "TikTok" : /LinkedInApp/.test(ua) ? "LinkedIn" : /Pinterest/.test(ua) ? "Pinterest" : /\bGSA\//.test(ua) ? "Google" : "";
+      if (app && !channel) { channel = app; detail = "App"; }
+    }
+    if (!channel) channel = shop ? "Google" : "Direkt";
+    if (channel === "Google" && shop && !detail) detail = "Suche/Shopping";
+    let path = "";
+    if (land) { const kept = new URLSearchParams(); ORIGIN_KEEP.forEach(k => { const v = land.searchParams.get(k); if (v != null) kept.set(k, clip(v, 60)); }); path = (land.pathname.slice(0, 80) + (String(kept) ? "?" + kept : "")).slice(0, 200); }
+    return Object.assign({ channel: clip(channel, 50) }, detail ? { detail: clip(detail, 100) } : {}, path ? { land: path } : {}, device ? { device } : {}, { at: nowIso() });
+  }
+  // Region aus Land + PLZ für die Herkunfts-Übersicht: Österreich grob nach Bundesland (PLZ-Bereiche; 52xx Innviertel → OÖ, 67–69xx Vorarlberg, 99xx Osttirol)
+  const COUNTRY_DE = { AT: "Österreich", DE: "Deutschland", CH: "Schweiz", LI: "Liechtenstein", IT: "Italien", NL: "Niederlande", BE: "Belgien", LU: "Luxemburg", FR: "Frankreich", SI: "Slowenien", CZ: "Tschechien", SK: "Slowakei", HU: "Ungarn", PL: "Polen", DK: "Dänemark" };
+  function regionOf(country, zip) {
+    const c = String(country || "AT").toUpperCase(), z = parseInt(String(zip || "").replace(/\D/g, "").slice(0, 4), 10);
+    if (c !== "AT") return COUNTRY_DE[c] || c;
+    if (!(z >= 1000 && z <= 9999)) return "Österreich";
+    const d = Math.floor(z / 1000);
+    if (d === 5) return z >= 5200 && z < 5300 ? "Oberösterreich" : "Salzburg";
+    if (d === 6) return z >= 6700 ? "Vorarlberg" : "Tirol";
+    if (d === 9) return z >= 9900 ? "Tirol" : "Kärnten";
+    return ["", "Wien", "Niederösterreich", "Niederösterreich", "Oberösterreich", "", "", "Burgenland", "Steiermark"][d];
+  }
+  // Angabe „Wie hast du uns gefunden?“ (eigene Frage oder aus einer Bewertung)
+  const foundOf = o => { const f = o.feedback || {}, x = [f.source, f.order, f.product].find(v => v && v.source); return x ? Object.assign({ source: x.source }, x.sourceText ? { text: x.sourceText } : {}) : null; };
   function validCustomer(c) {
     c = c || {};
     const x = { type: c.type === "company" ? "company" : "private", company: clip(c.company, 120), uid: clip(c.uid, 20).replace(/[\s.\-]/g, "").toUpperCase(), firstName: clip(c.firstName, 60), lastName: clip(c.lastName, 60),
@@ -1861,6 +1915,7 @@ module.exports = function (D) {
     }
     for (const x of prepared) {
       const o = x.o; o.check = check; if (account) o.customerId = account.id; if (groupId) { o.groupId = groupId; o.groupSize = prepared.length; }
+      if (input.__origin) o.origin = Object.assign({}, input.__origin);
       if (Array.isArray(x.clientWarn) && x.clientWarn.length) { o.clientChecks = x.clientWarn.slice(0, 10).map(t => clip(t, 300)); }
       hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
@@ -2674,7 +2729,7 @@ module.exports = function (D) {
     payment: { method: o.payment.method, status: o.payment.status, refunded: !!(o.payment.refund && ["failed", "canceled"].indexOf(o.payment.refund.status) < 0) }, deliveryDate: o.price.deliveryDate, tracks: (o.printcom && o.printcom.tracks) || [],
     createdAt: o.createdAt || "", business: !!(o.customer && o.customer.type === "company"), steps: stepDates(o), reviewUrl: reviewUrl(),
     canAccount: !o.customerId && Date.now() - Date.parse(o.createdAt || 0) < 60 * 864e5,   // Gastbestellung: auf der Bestellseite „Als Kundenkonto speichern“
-    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!(o.feedback && ((o.feedback.order && o.feedback.order.source) || (o.feedback.product && o.feedback.product.source))) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
+    trackInfo: (o.printcom && o.printcom.trackInfo) || ((o.printcom && o.printcom.tracks) || []).map(u => ({ url: u, code: "", carrier: carrierOf(u) })), checkedAt: (o.printcom && o.printcom.checkedAt) || "", feedback: { order: !!(o.feedback && o.feedback.order), product: !!(o.feedback && o.feedback.product), source: !!foundOf(o) }, shippedAt: (o.history || []).filter(h => /Versandmail/.test(h.what)).map(h => h.at)[0] || "", email: o.customer.email.replace(/^(.).*(@.*)$/, "$1…$2") });
 
   // Startschalter: solange PRINT_SHOP_LIVE nicht "1" ist, ist der Shop für Besucher gesperrt („Bald verfügbar“);
   // im Cockpit angemeldete Admins sehen /print als Vorschau (Banner, noindex). Webhooks und signierte Druckdateien bleiben erreichbar.
@@ -2902,6 +2957,13 @@ module.exports = function (D) {
         const o = await store.getOrder(fbm[1]); if (!o) return J(res, 404, { ok: false, error: "not_found" });
         const b = await readJson(req, 6000), stage = b.stage === "product" ? "product" : "order", rating = parseInt(b.rating, 10), text = clip(String(b.text || "").replace(/\s+/g, " "), 1000);
         const source = FOUND_VIA.indexOf(String(b.source || "")) > -1 ? String(b.source) : "", sourceText = source ? clip(String(b.sourceText || "").replace(/\s+/g, " "), 120) : "";   // „Wie hast du uns gefunden?“ (freiwillig)
+        if (b.stage === "source") {   // eigene Frage auf der Bestellseite, ohne Sterne – ein Tipp genügt; nur einmal je Bestellung
+          if (!source) return J(res, 400, { ok: false, error: "Bitte eine Antwort wählen" });
+          if (foundOf(o)) return J(res, 200, { ok: true, already: true });
+          if (Date.now() - Date.parse(o.createdAt) > 120 * 864e5) return J(res, 400, { ok: false, error: "Diese Bestellung ist schon zu lange her" });
+          o.feedback = o.feedback || {}; o.feedback.source = Object.assign({ source, at: nowIso() }, sourceText ? { sourceText } : {}); hist(o, "Gefunden über: " + source + (sourceText ? " (" + sourceText + ")" : "")); await store.putOrder(o);
+          return J(res, 200, { ok: true });
+        }
         if (!(rating >= 1 && rating <= 5)) return J(res, 400, { ok: false, error: "Bitte 1 bis 5 Sterne wählen" });
         if (stage === "product" && ["shipped", "delivered"].indexOf(o.status) < 0) return J(res, 400, { ok: false, error: "Die Drucksachen sind noch nicht unterwegs" });
         if (Date.now() - Date.parse(o.createdAt) > 120 * 864e5) return J(res, 400, { ok: false, error: "Diese Bestellung ist schon zu lange her" });
@@ -3050,7 +3112,7 @@ module.exports = function (D) {
       }
       if (p === "/print/api/checkout") {   // Warenkorb mit mehreren Positionen
         if (limited("order", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
-        const b = await readJson(req, 400000); const me = await accountMod().current(req); b.__customerId = me ? me.id : null;
+        const b = await readJson(req, 400000); const me = await accountMod().current(req); b.__customerId = me ? me.id : null; b.__origin = b.origin && typeof b.origin === "object" ? originOf(b.origin, req.headers["user-agent"]) : null;
         const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email);
         if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc;
         const r = await createCheckout(b);
@@ -3061,7 +3123,7 @@ module.exports = function (D) {
       }
       if (p === "/print/api/order") {
         if (limited("order", ip, 40, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Bestellversuche – bitte später erneut" });
-        const b = await readJson(req, 40000); { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email); if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc; b.__voucher = dd.voucher; }
+        const b = await readJson(req, 40000); b.__origin = b.origin && typeof b.origin === "object" ? originOf(b.origin, req.headers["user-agent"]) : null; { const me = await accountMod().current(req); b.__customerId = me ? me.id : null; const dd = await discFor(me, b.customer && b.customer.type === "company", b.voucher, b.customer && b.customer.email); if (dd.voucherErr) return J(res, 400, { ok: false, error: dd.voucherErr }); b.__disc = dd.disc; b.__voucher = dd.voucher; }
         const r = await createOrder(b);
         if (r.priceChanged) return J(res, 409, { ok: false, error: "Der Preis hat sich geändert – bitte prüfen und erneut bestellen", price: r.price });
         if (b.__voucher) await useVoucher(b.__voucher.code, b.customer && b.customer.email);
@@ -3081,7 +3143,8 @@ module.exports = function (D) {
     return { id: o.id, nr: o.nr, createdAt: o.createdAt, updatedAt: o.updatedAt, status: o.status, statusText: STATUS_DE[o.status] || o.status, review: !!REVIEW[o.status], product: o.product.title, copies: o.copies,
       customer: o.customer.company || (o.customer.firstName + " " + o.customer.lastName), country: o.customer.country, gross: o.price.gross, net: o.price.net, margin: o.price.margin, purchase: o.price.purchase && o.price.purchase.total,
       payment: o.payment.method, paymentStatus: o.payment.status, pcOrder: o.printcom && o.printcom.orderNumber || "", warn: (o.fileChecks || []).some(c => c.level !== "ok"), progress: progressOf(o),
-      email: (o.customer && o.customer.email) || "", invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
+      email: (o.customer && o.customer.email) || "", zip: o.customer.zip || "", city: o.customer.city || "", region: regionOf(o.customer.country, o.customer.zip), groupId: o.groupId || "", origin: o.origin || null, found: foundOf(o),
+      invoice: o.invoice && o.invoice.id && !o.invoice.deleted ? { id: String(o.invoice.id), nr: o.invoice.nr || "", sentAt: o.invoice.sentAt || "", draft: !!o.invoice.draft, needsStorno: !!o.invoice.needsStorno } : null };
   }
   // Fortschritt für die Leiste im Cockpit: Schritte mit Zeitpunkt (aus dem Verlauf), Print.com-Rohstatus, Liefertermin, Tracking
   function progressOf(o) {
@@ -3183,7 +3246,7 @@ module.exports = function (D) {
           order: o.feedback.order || null, productFb: o.feedback.product || null, at: (o.feedback.product || o.feedback.order).at })).sort((a, b) => a.at < b.at ? 1 : -1);
         const avg = k => { const l = rows.map(r => r[k]).filter(Boolean); return l.length ? { n: l.length, avg: Math.round(l.reduce((a, x) => a + x.rating, 0) / l.length * 10) / 10 } : { n: 0, avg: null }; };
         const asked = (await store.listOrders()).filter(o => o.mails && o.mails.feedback && o.mails.feedback !== "skip").length;
-        const sources = {}; rows.forEach(r => { const f = (r.order && r.order.source) ? r.order : (r.productFb && r.productFb.source) ? r.productFb : null; if (f) sources[f.source] = (sources[f.source] || 0) + 1; });
+        const sources = {}; (await store.listOrders()).forEach(o => { const f = foundOf(o); if (f) sources[f.source] = (sources[f.source] || 0) + 1; });
         return J(res, 200, { ok: true, order: avg("order"), product: avg("productFb"), asked, sources, reviewUrl: reviewUrl(), rows: rows.slice(0, 100) });
       }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
@@ -3309,6 +3372,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { xmasOn: () => XMAS.season().on, llmsTxt, chatPrices, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, feedImg, gpcOf, fmtNice, RETURN_LD } };
+  return { xmasOn: () => XMAS.season().on, llmsTxt, chatPrices, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD } };
 };
 module.exports._bonusCalc = bonusCalc;

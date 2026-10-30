@@ -45,7 +45,7 @@ function stepper(o,pr,big){ pr=pr||{}; var bad=o.status==="problem"||o.status===
       (pr.track&&pr.track.url?'<a href="'+esc(pr.track.url)+'" target="_blank" rel="noopener" class="pr-st-tr" onclick="event.stopPropagation()">Sendung verfolgen'+(pr.track.carrier?" · "+esc(pr.track.carrier):"")+' ↗</a>':'')+
       (big&&pr.checkedAt?'<span class="muted">zuletzt abgefragt '+esc(dd(pr.checkedAt))+'</span>':'')+'</div></div>'; }
 function row(o){ return '<button type="button" class="pr-row" data-act="prord:'+esc(o.id)+'" title="'+esc([o.nr,o.customer,o.product,o.copies+" Stk."].filter(Boolean).join(" · "))+'"><span><b>'+esc(o.nr)+' · '+esc(o.customer)+'</b><span class="muted">'+esc(o.product)+' · '+o.copies+' Stk. · '+de(String(o.createdAt).slice(0,10))+(o.warn?' · <span class="warn-t">'+ico("alertCircle")+'Datei-Hinweise</span>':'')+(o.invoice&&o.invoice.needsStorno?' · <span class="bad-t">'+ico("alertCircle")+'Rechnung stornieren</span>':'')+'</span></span>'+
-  '<span class="pr-c2 muted">'+(o.payment==="invoice"?"Rechnung":"Mollie ("+esc(o.paymentStatus)+")")+(o.pcOrder?' · Print.com '+esc(o.pcOrder):'')+'</span><span class="num" style="text-align:right"><b>'+eur(o.gross)+'</b><span class="muted">Marge '+eur(o.margin)+'</span></span><span class="tag '+(TAG[o.status]||"grey")+'">'+esc(o.statusText)+'</span>'+(FILTER==="active"&&o.progress?stepper(o,o.progress):'')+'</button>'; }
+  '<span class="pr-c2 muted">'+(o.payment==="invoice"?"Rechnung":"Mollie ("+esc(o.paymentStatus)+")")+(o.pcOrder?' · Print.com '+esc(o.pcOrder):'')+(o.origin?'<br>über '+esc(o.origin.channel)+(o.city?' · '+esc(o.city):''):'')+'</span><span class="num" style="text-align:right"><b>'+eur(o.gross)+'</b><span class="muted">Marge '+eur(o.margin)+'</span></span><span class="tag '+(TAG[o.status]||"grey")+'">'+esc(o.statusText)+'</span>'+(FILTER==="active"&&o.progress?stepper(o,o.progress):'')+'</button>'; }
 function render(){
   if(!ST){ load(); return F.head("Druckaufträge","Druckshop www.fs-creative.at/print")+'<div class="empty">Lade …</div>'; }
   if(!ST.ok) return F.head("Druckaufträge","")+'<div class="notice">'+esc(ST.error)+' <button class="btn" data-act="prreload">Neu laden</button></div>';
@@ -55,10 +55,11 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
-  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
   if(FILTER==="kunden") return head+stat+tabs+customers();
+  if(FILTER==="herkunft") return head+stat+tabs+originView();
   if(FILTER==="gutscheine") return head+stat+tabs+voucherView();
   if(FILTER==="newsletter") return head+stat+tabs+nlView();
   if(FILTER==="marge") return head+stat+tabs+mgView();
@@ -82,6 +83,35 @@ function settings(){
     '<section class="panel"><div class="panel-h"><h2>Kuratierte Produkte &amp; Preise</h2><span class="muted">Aufschlag Standard '+d.markupPct+' % (PRINT_MARKUP_PCT)</span></div><div class="panel-b pr-set"><p class="muted small">Im Shop freischalten: Reiter „Sortiment“. Hier Aufschlag, SKU und Optionen der kuratierten Produkte (alle anderen Print.com-Produkte nutzen den Standard).</p><div class="pr-prod muted small"><span>Produkt</span><span>Aufschlag %</span><span>SKU</span></div>'+prods+
     '<div class="pr-acts"><button class="btn primary" data-act="prsave">Speichern</button><button class="btn" data-act="prcat">Katalog neu laden</button>'+(cat?'<span class="muted">Katalog vom '+esc(new Date(cat.at).toLocaleString("de-AT"))+'</span>':'')+'</div>'+((cat&&cat.errors||[]).length?'<div class="notice">'+cat.errors.map(esc).join("<br>")+'</div>':'')+'</div></section>';
 }
+/* Herkunft der Bestellungen (Wunsch Simon 30.10.2026): Kanal automatisch an der Kasse erfasst (Vorseite, Kampagnen-Link, App), Region aus der Lieferadresse,
+   Gerät, dazu die freiwillige Angabe „Wie hast du uns gefunden?“. Gezählt werden verbindliche Bestellungen; ein Warenkorb mit mehreren Positionen = eine Bestellung. */
+var ORIGIN_SINCE="2026-10-30";
+F.css('.pr-orow{grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) auto}.pr-oc{font-size:12.5px;line-height:1.4;min-width:0}.pr-oc>*{display:block;overflow-wrap:anywhere}@media(max-width:700px){.pr-orow{grid-template-columns:minmax(0,1fr) auto}.pr-orow .pr-oc{grid-column:1/-1;grid-row:2}}');
+function originTxt(g){ return g.channel+(g.detail?" ("+g.detail+")":"")+(g.device?" · "+g.device:""); }
+function foundTxt(o){ var f=o.found||(o.feedback&&[o.feedback.source,o.feedback.order,o.feedback.product].filter(function(x){ return x&&x.source; })[0]); return f?f.source+((f.text||f.sourceText)?" – "+(f.text||f.sourceText):""):""; }
+function originView(){
+  var ok=function(o){ return ["pending_payment","payment_failed","rejected"].indexOf(o.status)<0; }, by={}, list=[];
+  ((ST&&ST.orders)||[]).filter(ok).forEach(function(o){ var k=o.groupId||o.id, g=by[k]; if(!g){ g=by[k]={o:o,net:0,n:0,prods:[]}; list.push(g); } g.net+=+o.net||0; g.n++; if(g.prods.indexOf(o.product)<0) g.prods.push(o.product); if(String(o.createdAt)<String(g.o.createdAt)) g.o=o; });
+  list.sort(function(a,b){ return String(b.o.createdAt).localeCompare(String(a.o.createdAt)); });
+  var seen={}; list.slice().reverse().forEach(function(g){ var e=String(g.o.email||"").toLowerCase(); g.again=!!(e&&seen[e]); if(e) seen[e]=1; });
+  var tally=function(f){ var m={}; list.forEach(function(g){ var k=f(g); if(!k) return; m[k]=m[k]||{n:0,net:0}; m[k].n++; m[k].net+=g.net; }); return m; };
+  var bars=function(t,m,sub){ var ks=Object.keys(m).sort(function(a,b){ return m[b].n-m[a].n||m[b].net-m[a].net; }), tot=ks.reduce(function(a,k){ return a+m[k].n; },0);
+    return '<div class="panel" style="padding:14px 16px;margin:0;min-width:0"><div class="muted" style="font-size:12.5px">'+t+'</div>'+(tot?ks.map(function(k){ var pc=Math.round(m[k].n/tot*100);
+      return '<div style="display:flex;align-items:center;gap:8px;margin:7px 0 0;font-size:13px"><span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(k)+'">'+esc(k)+'</span><span style="flex:0 0 56px;height:6px;border-radius:3px;background:var(--line);overflow:hidden"><span style="display:block;height:100%;width:'+pc+'%;background:var(--glow)"></span></span><span class="muted" style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums">'+m[k].n+' · '+eur(m[k].net)+'</span></div>'; }).join(""):'<div class="muted" style="font-size:13px;margin-top:8px">'+(sub||"Noch keine Angaben.")+'</div>')+'</div>'; };
+  var auto=list.filter(function(g){ return g.o.origin; }).length;
+  var cards='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:0 0 14px">'+
+    bars("Kanal (automatisch erfasst)",tally(function(g){ return g.o.origin?g.o.origin.channel:""; }),"Wird ab jetzt bei jeder Bestellung erfasst.")+
+    bars("Region (Lieferadresse)",tally(function(g){ return g.o.region; }))+
+    bars("Gerät",tally(function(g){ return g.o.origin&&g.o.origin.device; }),"Wird ab jetzt bei jeder Bestellung erfasst.")+
+    bars("Angabe „Wie hast du uns gefunden?“",tally(function(g){ var f=g.o.found; return f&&f.source; }))+'</div>';
+  var note='<p class="muted" style="font-size:12.5px;margin:0;padding:10px 18px 12px;border-top:1px solid var(--line)">'+list.length+' Bestellung'+(list.length===1?"":"en")+' (netto '+eur(list.reduce(function(a,g){ return a+g.net; },0))+') · Kanal bei '+auto+' davon bekannt – automatisch erfasst seit '+de(ORIGIN_SINCE)+'. '+
+    'Kanal = Seite direkt vor dem Shop bzw. Kampagnen-Link (Newsletter, Social-Posts mit utm-Kennung) oder In-App-Browser. „Direkt“ = Adresse getippt, Lesezeichen, QR-Code oder App ohne Kennung. Es zählt der Besuch, in dem bestellt wurde; im Browser wird dafür nichts gespeichert.</p>';
+  var rows=list.map(function(g){ var o=g.o, og=o.origin;
+    return '<button type="button" class="pr-row pr-orow" data-act="prord:'+esc(o.id)+'"><span><b>'+esc(o.nr)+' · '+esc(o.customer)+'</b><span class="muted">'+de(String(o.createdAt).slice(0,10))+' · '+esc(g.prods.join(", "))+(g.n>1?' ('+g.n+' Positionen)':'')+(g.again?' · Wiederkauf':'')+'</span></span>'+
+      '<span class="pr-oc"><b style="font-weight:600">'+esc([o.zip,o.city].filter(Boolean).join(" ")||"–")+'</b><span class="muted">'+esc(o.region||"")+'</span><span class="muted">'+(og?esc(originTxt(og)):'Kanal unbekannt (vor '+de(ORIGIN_SINCE)+')')+(o.found?' · Angabe: '+esc(o.found.source)+(o.found.text?' – '+esc(o.found.text):''):'')+'</span></span>'+
+      '<span class="num" style="text-align:right"><b>'+eur(g.net)+'</b><span class="muted">netto</span></span></button>'; }).join("");
+  return cards+'<section class="panel"><div class="panel-h"><h2>Bestellungen nach Herkunft</h2><span class="muted">neueste zuerst</span></div>'+note+(rows?'<div class="pr-list">'+rows+'</div>':'<div class="empty">Noch keine Bestellungen.</div>')+'</section>';
+}
 /* Kundenakte zur E-Mail: F.who (kunden.js), sonst exakt gleiche E-Mail unter den Leads */
 function leadOf(email){ var e=String(email||"").trim().toLowerCase(); if(!e) return null;
   try{ if(F.who){ var w=F.who({email:e}); return (w&&w.lead)||null; } }catch(x){}
@@ -101,6 +131,7 @@ function detail(j){
     (o.printcom&&o.printcom.error?'<div class="notice">Print.com: '+esc(o.printcom.error)+'</div>':'')+
     (iv.needsStorno?'<div class="notice"><span>Die Rechnung '+esc(iv.nr||"")+' war schon versendet und wurde deshalb nicht gelöscht. Bitte storniere sie unter Finanzen.</span>'+(F.actions.fin?'<button class="btn" data-act="fin:invd:'+esc(iv.id)+'">Rechnung öffnen</button>':'')+'</div>':'')+
     '<div class="pr-kv"><span>Kunde</span><b>'+esc([c.company,c.firstName+" "+c.lastName].filter(Boolean).join(" · "))+(c.uid?' · UID '+esc(c.uid)+(c.uidValid?' ✓':' (nicht bestätigt)'):'')+'</b><span>Adresse</span><b>'+esc(c.street+", "+c.zip+" "+c.city+", "+c.country)+'</b><span>Kontakt</span><b><a href="mailto:'+esc(c.email)+'"'+(F.actions.mmailto?' data-act="mmailto:'+esc(c.email)+'" title="Mail im Cockpit schreiben"':'')+'>'+esc(c.email)+'</a> · '+esc(c.phone)+'</b>'+
+    (o.origin?'<span>Herkunft</span><b>'+esc(originTxt(o.origin))+(o.origin.land?'<br><span class="muted">Einstieg '+esc(o.origin.land)+'</span>':'')+'</b>':'')+(foundTxt(o)?'<span>Gefunden über</span><b>'+esc(foundTxt(o))+' <span class="muted">(Angabe der Kundin/des Kunden)</span></b>':'')+
     '<span>Produkt</span><b>'+esc(o.product.title)+' · '+o.copies+' Stk. · SKU '+esc(o.product.sku)+'</b>'+
     (o.custom?'<span>Eigenes Format</span><b>'+o.custom.w+' × '+o.custom.h+' mm (an Print.com: size custom, width/height)</b>':'')+
     (o.textile?'<span>Textil</span><b>'+esc(o.textile.methodLabel||o.textile.method)+'<br>'+(o.textile.sizes||[]).map(function(x){ return esc(x.name)+' × '+x.n; }).join(", ")+'</b>':'')+

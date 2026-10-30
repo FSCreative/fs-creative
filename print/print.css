@@ -1749,6 +1749,7 @@ html.light .ps-fb-done .ok b{color:#1f7a36}   /* Hell-Modus: Grün sonst kaum le
 .ps-fb-src .ch button[aria-pressed="true"]{border-color:var(--accent);background:var(--ps-chipon);box-shadow:0 0 0 1px var(--accent) inset}
 .ps-fb .ps-fb-srct{display:block;margin-top:8px;width:100%;box-sizing:border-box;border:1px solid var(--ps-line2);background:var(--ps-field);color:var(--text);border-radius:10px;padding:9px 11px;font:inherit;font-size:14px}
 .ps-fb-srct[hidden]{display:none}
+.ps-src .ps-fb-src{margin-bottom:0}.ps-src [data-srcsend]{margin-top:10px}.ps-src [data-srcsend][hidden]{display:none}   /* „Wie hast du uns gefunden?“ als eigene Frage */
 .ps-fb.done{padding:16px 18px}
 .ps-fb-done{margin:0;font-weight:400;color:var(--text-dim)}
 .ps-status .ps-fb-done .ok{margin:0 auto 6px;color:var(--text)}.ps-fb-done .ok b{color:var(--ps-ok)}

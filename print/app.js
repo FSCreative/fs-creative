@@ -11,6 +11,8 @@
   var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
+  // Herkunft (Wunsch Simon 30.10.2026): Vorseite + Einstieg dieses Seitenaufrufs – nur im Speicher, nichts im Browser abgelegt; geht nur mit der Bestellung an uns
+  var ORIGIN = { ref: String(document.referrer || "").slice(0, 400), land: (location.pathname + location.search).slice(0, 400) };
   S.page = "home"; S.check = "self"; S.cart = cartLoad(); S.me = null; S.orders = []; S.view = ""; S.acct = { mode: "login", email: "", msg: "", err: "" };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var eur = function (n) { return (+n || 0).toLocaleString("de-AT", { style: "currency", currency: "EUR" }).replace(/\s/g, " "); };   // „€ 95,24“ nie umbrechen
@@ -2123,7 +2125,7 @@
     S.busy = true; S.err = ""; render();
     var body = { items: S.cart.map(function (x) { return { product: x.product, sel: x.sel, copies: x.copies, urgency: x.urgency, wish: x.wish, pm: x.pm, custom: x.custom, textile: x.textile, fileId: x.fileId, fileToken: x.fileToken, expectedGross: x.price.gross, clientWarn: x.clientWarn || undefined, motifs: x.motifs ? x.motifs.map(function (m) { return { copies: m.copies, fileId: m.fileId, fileToken: m.fileToken }; }) : undefined }; }),
       customer: Object.assign({ type: S.ctype, uid: S.ctype === "company" ? S.uid : "" }, S.customer), payment: S.payment, acceptTerms: true, acceptFagg: true, acceptProof: true,
-      check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
+      check: S.check === "pro" ? "pro" : "self", voucher: S.voucher && !S.voucherErr ? S.voucher : "", feedbackOk: !!S.fbOpt, origin: ORIGIN, createAccount: !S.me && !!S.newAcct, accountPassword: !S.me && S.newAcct ? S.newPw : undefined };
     api("/print/api/checkout", body).then(function (j) {
       S.busy = false;
       if (j.status === 409 && j.price) { var x = S.cart[j.index || 0]; if (x) { x.price = Object.assign({}, x.price, { gross: j.price.gross, net: j.price.net, vat: j.price.vat, rate: j.price.rate }); cartSave(true); }
@@ -2179,7 +2181,7 @@
   function renderStatus(o, id, t) {
     var hd = statusHead(o, SF, Date.now()), k = hd.key;
     LIVE.o = o; LIVE.id = id; LIVE.t = t;
-    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : fbHtml(o, id, t);
+    var tr = trackHtml(o.status, o.steps), tc = trackCard(o, id, t), fb = k === "problem" || k === "rejected" || k === "pay" ? "" : srcHtml(o, id, t) + fbHtml(o, id, t);
     var body = k === "pay" ? '<div class="btn-row" style="justify-content:center"><button type="button" class="ps-btn primary" data-act="retrypay:' + esc(id) + "|" + esc(t) + '">Erneut bezahlen</button></div>'
       : k === "rejected" ? "" : k === "shipped" ? tc + tr + fb : k === "delivered" ? fb + tr + tc : tr + tc + fb;
     var h = '<div class="big" aria-hidden="true">' + hd.icon + "</div><h2>" + hd.title + "</h2>" + (k === "pay" ? "" : hd.sub) + hd.html + body +
@@ -2200,14 +2202,26 @@
     return '<div class="ps-fb-done"><p class="ok"><b>Danke für dein Feedback!</b>' + (r ? (r >= 4 ? " Das freut uns sehr." : " Wir schauen uns das genau an.") : "") + "</p>" +
       (url ? '<p class="g">Magst du deine Erfahrung auch auf Google teilen? Das hilft anderen bei der Entscheidung.</p><a class="ps-btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Auch auf Google bewerten ↗</a>' : "") + "</div>";
   }
+  // „Wie hast du uns gefunden?“ als eigene Frage (Wunsch Simon 30.10.2026): ein Tipp genügt, ohne Sterne; einmal je Bestellung
+  function srcHtml(o, id, t) {
+    if ((o.feedback || {}).source) return "";
+    return '<div class="ps-fb ps-src" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><fieldset class="ps-fb-src"><legend>Wie hast du uns gefunden? <span>(ein Tipp genügt)</span></legend><div class="ch">' +
+      FOUND.map(function (x) { return '<button type="button" aria-pressed="false" data-fbsrc="' + esc(x) + '">' + esc(x) + "</button>"; }).join("") +
+      '</div><input type="text" class="ps-fb-srct" maxlength="120" hidden aria-label="Ergänzung (optional)"></fieldset><button type="button" class="ps-btn small" data-srcsend hidden>Senden</button><p class="ps-fb-msg" role="status"></p></div>';
+  }
+  function srcSend(bx, v, txt) {
+    var msg = bx.querySelector(".ps-fb-msg"), sb = bx.querySelector("[data-srcsend]"); if (sb) sb.disabled = true; msg.textContent = "";
+    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/feedback?t=" + encodeURIComponent(bx.getAttribute("data-t")), { stage: "source", source: v, sourceText: txt || "" }).then(function (j) {
+      if (j.ok) { bx.className = "ps-fb done"; bx.innerHTML = '<div class="ps-fb-done"><p class="ok"><b>Danke!</b> Das hilft uns sehr.</p></div>'; if (LIVE.o) { LIVE.o.feedback = LIVE.o.feedback || {}; LIVE.o.feedback.source = true; } }
+      else { msg.textContent = j.error || "Hat nicht geklappt – bitte später erneut versuchen."; if (sb) sb.disabled = false; }
+    }).catch(function () { msg.textContent = "Hat nicht geklappt – bitte später erneut versuchen."; if (sb) sb.disabled = false; });
+  }
   function fbHtml(o, id, t) {
     var f = o.feedback || {}, shipped = o.status === "shipped" || o.status === "delivered", ask = shipped ? (f.product ? "" : "product") : (f.order ? "" : "order");
     if (!ask) return f.order || f.product ? '<div class="ps-fb done">' + fbThanks(0, o.reviewUrl) + "</div>" : "";
     return '<div class="ps-fb" id="feedback" data-fb="' + ask + '" data-id="' + esc(id) + '" data-t="' + esc(t) + '"><h3>' + (ask === "product" ? "Wie zufrieden bist du mit deinen Drucksachen?" : "Wie war das Bestellen bei uns?") + "</h3>" +
       '<div class="ps-fb-stars" role="radiogroup" aria-label="Bewertung von 1 bis 5 Sternen (Pflichtfeld)">' + [1, 2, 3, 4, 5].map(function (n) { return '<button type="button" role="radio" aria-checked="false" data-fbstar="' + n + '" aria-label="' + n + " von 5 Sternen" + '">★</button>'; }).join("") + "</div>" +
       '<label class="ps-fb-l" for="psFbTxt">Was können wir besser machen? <span>(optional)</span></label><textarea id="psFbTxt" maxlength="1000" rows="2" placeholder="' + (ask === "product" ? "z. B. Papier, Farben, Versand …" : "z. B. Gestaltung, Upload, Bezahlung …") + '"></textarea>' +
-      (f.source ? "" : '<fieldset class="ps-fb-src"><legend>Wie hast du uns gefunden? <span>(optional)</span></legend><div class="ch">' + FOUND.map(function (x) { return '<button type="button" aria-pressed="false" data-fbsrc="' + esc(x) + '">' + esc(x) + "</button>"; }).join("") +
-        '</div><input type="text" class="ps-fb-srct" maxlength="120" hidden aria-label="Ergänzung (optional)"></fieldset>') +
       '<button type="button" class="ps-btn primary small" data-fbsend>Feedback senden</button><p class="ps-fb-msg" role="status"></p></div>';
   }
   document.addEventListener("click", function (e) {
@@ -2215,16 +2229,17 @@
     if (sb) { var box = sb.closest(".ps-fb"), n = +sb.getAttribute("data-fbstar"); box.setAttribute("data-r", n); box.querySelector(".ps-fb-msg").textContent = "";
       [].forEach.call(box.querySelectorAll("[data-fbstar]"), function (b) { var v = +b.getAttribute("data-fbstar"); b.classList.toggle("on", v <= n); b.setAttribute("aria-checked", String(v === n)); }); return; }
     var sc = e.target.closest && e.target.closest("[data-fbsrc]");
-    if (sc) { var fs = sc.closest(".ps-fb-src"), on = sc.getAttribute("aria-pressed") !== "true", inp = fs.querySelector(".ps-fb-srct"), v0 = sc.getAttribute("data-fbsrc");
+    if (sc) { var fs = sc.closest(".ps-fb-src"), on = sc.getAttribute("aria-pressed") !== "true", inp = fs.querySelector(".ps-fb-srct"), v0 = sc.getAttribute("data-fbsrc"), sbx = sc.closest(".ps-src");
       [].forEach.call(fs.querySelectorAll("[data-fbsrc]"), function (b) { b.setAttribute("aria-pressed", String(on && b === sc)); });
-      inp.hidden = !(on && FOUND_Q[v0]); if (!inp.hidden) { inp.placeholder = FOUND_Q[v0]; inp.setAttribute("aria-label", FOUND_Q[v0]); } return; }
+      inp.hidden = !(on && FOUND_Q[v0]); if (!inp.hidden) { inp.placeholder = FOUND_Q[v0]; inp.setAttribute("aria-label", FOUND_Q[v0]); inp.focus(); }
+      if (sbx) { var ssb = sbx.querySelector("[data-srcsend]"); ssb.hidden = inp.hidden; if (on && !FOUND_Q[v0]) srcSend(sbx, v0, ""); } return; }
+    var ssd = e.target.closest && e.target.closest("[data-srcsend]");
+    if (ssd) { var sbx2 = ssd.closest(".ps-src"), sel = sbx2.querySelector('[data-fbsrc][aria-pressed="true"]'); if (sel) srcSend(sbx2, sel.getAttribute("data-fbsrc"), sbx2.querySelector(".ps-fb-srct").value); return; }
     var fsb = e.target.closest && e.target.closest("[data-fbsend]"); if (!fsb) return;
     var bx = fsb.closest(".ps-fb"), r = +bx.getAttribute("data-r") || 0, msg = bx.querySelector(".ps-fb-msg");
     if (!r) { msg.textContent = "Bitte zuerst 1 bis 5 Sterne wählen."; var s1 = bx.querySelector("[data-fbstar]"); if (s1) s1.focus(); return; }
-    var srcB = bx.querySelector('[data-fbsrc][aria-pressed="true"]'), srcT = bx.querySelector(".ps-fb-srct");
     fsb.disabled = true; msg.textContent = "";
-    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/feedback?t=" + encodeURIComponent(bx.getAttribute("data-t")), { stage: bx.getAttribute("data-fb"), rating: r, text: bx.querySelector("textarea").value,
-      source: srcB ? srcB.getAttribute("data-fbsrc") : "", sourceText: srcB && srcT && !srcT.hidden ? srcT.value : "" }).then(function (j) {
+    api("/print/api/order/" + encodeURIComponent(bx.getAttribute("data-id")) + "/feedback?t=" + encodeURIComponent(bx.getAttribute("data-t")), { stage: bx.getAttribute("data-fb"), rating: r, text: bx.querySelector("textarea").value }).then(function (j) {
       if (j.ok) { bx.className = "ps-fb done"; bx.removeAttribute("data-r"); bx.innerHTML = fbThanks(r, j.reviewUrl); if (LIVE.o) { LIVE.o.feedback = LIVE.o.feedback || {}; LIVE.o.feedback[bx.getAttribute("data-fb")] = true; } }
       else { msg.textContent = j.error || "Hat nicht geklappt – bitte später erneut versuchen."; fsb.disabled = false; }
     }).catch(function () { msg.textContent = "Hat nicht geklappt – bitte später erneut versuchen."; fsb.disabled = false; });
