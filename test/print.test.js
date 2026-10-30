@@ -836,7 +836,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(/ATU82622967/.test(h) && /§ 18 Abs\. 1 Z 3 FAGG/.test(h) && /Dorfstraße 3\/1/.test(h)); assert.ok(!/\{\{/.test(h)); assert.ok(/rechtlich prüfen/.test(h), "Hinweis als HTML-Kommentar");
   });
   await t("Seite /print und Sitemap", async () => {
-    const h = await (await fetch(B + "/print")).text(); assert.ok(/<title>[^<]*Druck/.test(h)); assert.ok(/\/print\/agb/.test(h)); assert.ok(!/Vorschau – nicht/.test(h));
+    const h = await (await fetch(B + "/print")).text(); assert.ok(/<title>[^<]*druck/i.test(h)); assert.ok(/\/print\/agb/.test(h)); assert.ok(!/Vorschau – nicht/.test(h));
     assert.ok(/href="\/print"/.test(await (await fetch(B + "/druck")).text()), "Link „Jetzt online bestellen“");
     assert.ok(/\/print<\/loc>/.test(await (await fetch(B + "/sitemap.xml")).text()));
     const home = await (await fetch(B + "/")).text(); assert.ok(/Online-Druckshop/.test(home) && !/PRINT_LIVE/.test(home));

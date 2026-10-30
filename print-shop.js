@@ -2560,6 +2560,7 @@ module.exports = function (D) {
   async function catSeo(html, main, sub) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), groups = publicGroups(pub);
     const g = groups.find(x => x.slug === main) || null, sg = g && sub ? g.subs.find(x => x.slug === sub) || null : null;
+    const PB = await pubState(), lowOf = {}; ((PB && PB.items) || []).forEach(it => { const r = it.rows.slice().sort((a, b) => a.gross - b.gross)[0]; if (r) lowOf[it.key] = r; });   // „ab“-Preise aus der Preisübersicht
     const inG = (m, su) => pub.filter(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su));
     let h1, intro, body, items, url, c;
     if (!g) {
@@ -2572,10 +2573,10 @@ module.exports = function (D) {
       h1 = (sg ? sg.name : g.name) + " online drucken";
       intro = list.length + " Produkte" + (sg ? " in „" + sg.name + "“ (" + g.name + ")" : " in „" + g.name + "“") + ": individuell bedruckt, Preis sofort online, Druckdaten hochladen oder online gestalten – Lieferung in ganz Österreich, Preise inkl. Versand.";
       body = (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
-        "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
+        "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (lowOf[p.key] ? " – " + lowOf[p.key].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lowOf[p.key].gross) : "") + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
       items = list.slice(0, 60);
     }
-    const t = escH(h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"), d = escH(intro.slice(0, 158));
+    const t = escH(h1 + (g ? " – " + inG(g.slug, sg ? sg.slug : "").length + " Produkte" : " – " + pub.length + " Drucksachen & Werbeartikel") + " | FS Creative Druckshop"), d = escH(cutWords(intro, 158));
     const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(c, "") + "<h1>" + escH(h1) + "</h1><p>" + escH(intro) + "</p>" + body + '<p class="pd-muted">Sortiment wird geladen …</p></article></div>';
     const coll = { "@type": "CollectionPage", name: h1, url, description: intro, isPartOf: { "@type": "WebSite", name: "FS Creative", url: SITE + "/" },
       mainEntity: { "@type": "ItemList", numberOfItems: items.length, itemListElement: items.map((p, i) => ({ "@type": "ListItem", position: i + 1, url: prodUrl(p.key, true), name: p.title })) } };
