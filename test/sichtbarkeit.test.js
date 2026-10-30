@@ -174,7 +174,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
         assert.ok(/^\d+\.\d\d EUR$/.test(tagOf(it, "price")), tagOf(it, "price")); assert.ok(/^\d+$/.test(tagOf(it, "google_product_category")));
         assert.ok(/<g:shipping><g:country>AT<\/g:country><g:service>Standard<\/g:service><g:price>0\.00 EUR<\/g:price><\/g:shipping>/.test(it), "Versand im Preis enthalten");
         assert.ok(/ (drucken|bedrucken) – [\d.  ]+ Stück$/.test(tagOf(it, "title")) && tagOf(it, "title").length <= 150, tagOf(it, "title"));
-        assert.ok(tagOf(it, "link").indexOf(SITE + "/print?produkt=" + encodeURIComponent(baseOf(it)) + (baseOf(it) === id ? "" : "&format=")) === 0, tagOf(it, "link"));
+        assert.ok(tagOf(it, "link").indexOf(SITE + "/print/" + baseOf(it) + (baseOf(it) === id ? "" : "?format=")) === 0 && !/produkt=/.test(tagOf(it, "link")), tagOf(it, "link"));
         const img = tagOf(it, "image_link"); assert.ok(img.indexOf(SITE + "/print/bild/") === 0 && /\?fm=jpg&w=1200$/.test(img), img);
         assert.ok(require(path.join(ROOT, "print-bild.js")).upstreamUrl(img.slice(SITE.length).split("?")[0], "?fm=jpg&w=1200"), "Bild-Proxy nimmt den Pfad an: " + img);
         assert.ok(tagOf(it, "description").length > 40 && tagOf(it, "description").length <= 5000);
@@ -225,7 +225,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
     });
     await t("Feed: zwischengespeichert, nicht in der Sitemap, robots.txt erlaubt ihn; keine IndexNow-Meldung außerhalb der Produktion", async () => {
       const n0 = M.log.length, again = await (await fetch(B + "/print/merchant.xml")).text(); assert.strictEqual(again, feed); assert.strictEqual(M.log.length, n0, "kein Abruf beim Druckpartner");
-      const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\?produkt=flyer<\/loc>/.test(sm) && !/merchant/.test(sm));
+      const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/flyer<\/loc>/.test(sm) && !/merchant/.test(sm) && !/produkt=/.test(sm));
       const rb = await (await fetch(B + "/robots.txt")).text(); assert.ok(/Allow: \//.test(rb) && !/Disallow: \/print/.test(rb));
       assert.strictEqual((await fetch(B + "/print/merchant.xml", { method: "POST" })).status, 404);
       await sleep(400); assert.strictEqual(im.calls.length, 0, "nicht Produktion"); assert.ok(!fs.existsSync(path.join(dir, "indexnow.json")));
@@ -242,10 +242,10 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
       const b = im.calls[0].body, sm = await (await fetch(srv.base + "/sitemap.xml")).text(), locs = (sm.match(/<loc>[^<]+<\/loc>/g) || []).map(x => x.slice(5, -6).replace(/&amp;/g, "&"));
       assert.deepStrictEqual([b.host, b.key, b.keyLocation], ["www.fs-creative.at", IN.KEY, SITE + "/" + IN.KEY + ".txt"]);
       assert.deepStrictEqual(b.urlList.slice().sort(), locs.slice().sort(), "genau die Sitemap");
-      [SITE + "/", SITE + "/print", SITE + "/print/preise", SITE + "/print?produkt=flyer", SITE + "/print?produkte"].forEach(u => assert.ok(b.urlList.indexOf(u) > -1, u));
+      [SITE + "/", SITE + "/print", SITE + "/print/preise", SITE + "/print/flyer", SITE + "/print?produkte"].forEach(u => assert.ok(b.urlList.indexOf(u) > -1, u));
       assert.ok(b.urlList.some(u => /\/print\?produkte&kategorie=/.test(u)), "Kategorien mit &"); assert.ok(!b.urlList.some(u => /merchant/.test(u)));
       const st = JSON.parse(fs.readFileSync(path.join(dir, "indexnow.json"), "utf8")); assert.strictEqual(Object.keys(st.sigs).length, locs.length); assert.ok(/IndexNow: \d+ Adressen gemeldet/.test(srv.out));
-      assert.ok(st.sigs[SITE + "/print?produkt=flyer"] !== st.sigs[SITE + "/print?produkt=visitenkarten"], "Shop-Seiten: Prüfsumme je Inhalt (nicht das lastmod „heute“)");
+      assert.ok(st.sigs[SITE + "/print/flyer"] !== st.sigs[SITE + "/print/visitenkarten"], "Shop-Seiten: Prüfsumme je Inhalt (nicht das lastmod „heute“)");
     });
   } finally { await stop(srv); }
   srv = await startServer(dir, Object.assign({}, env, { RAILWAY_ENVIRONMENT_NAME: "production", INDEXNOW_DELAY_MS: "300" }));

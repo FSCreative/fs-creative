@@ -60,7 +60,8 @@
     if (q.get("bestellung") && q.get("t")) return showStatus(q.get("bestellung"), q.get("t"));
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
-    var pk = q.get("produkt"); if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); }); }
+    var pm = location.pathname.match(/^\/print\/([a-z0-9-]+)\/?$/), pk = q.get("produkt") || (pm && (c.products.filter(function (p) { return p.slug === pm[1]; })[0] || {}).key);   // sprechende Adresse /print/<slug>
+    if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; showSetup(false); });
 
@@ -70,7 +71,7 @@
   var b64e = function (t) { return btoa(unescape(encodeURIComponent(t))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
   var b64d = function (t) { t = String(t).replace(/-/g, "+").replace(/_/g, "/"); while (t.length % 4) t += "="; return decodeURIComponent(escape(atob(t))); };
   function cfgPack() { var c = { s: S.sel, q: S.copies, u: S.urgency }; if (S.pm && S.pm !== "auto") c.m = S.pm; if (isCustom()) c.c = S.custom; if (kind() === "textile" && S.textile) c.t = S.textile; return b64e(JSON.stringify(c)); }
-  function cfgLink(p, code) { return location.origin + "/print?produkt=" + encodeURIComponent(p) + "&c=" + code; }
+  function cfgLink(p, code) { var x = prodByKey(p); return location.origin + (x && x.slug ? "/print/" + x.slug + "?c=" : "/print?produkt=" + encodeURIComponent(p) + "&c=") + code; }
   function cfgApply(code) {
     var c; try { c = JSON.parse(b64d(code)); } catch (e) { return false; } if (!c || typeof c !== "object") return false;
     var p = S.prod; (p.props || []).forEach(function (pr) { var v = c.s && c.s[pr.slug]; if (v != null && pr.options.some(function (o) { return String(o.slug) === String(v); })) S.sel[pr.slug] = String(v); });
@@ -669,7 +670,7 @@
     var p = prodByKey(key); if (!p) return;
     if (p.lazy) { // allgemeine Produkte: Details erst jetzt laden
       toast("Produkt wird geladen …");
-      api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); fixLabels([j.product]); S.cat.products[i] = j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
+      api("/print/api/product?key=" + encodeURIComponent(key)).then(function (j) { if (!j.ok) { toast(j.error || "Produkt nicht verfügbar", true); return; } var i = S.cat.products.indexOf(p); fixLabels([j.product]); if (p.slug && !j.product.slug) j.product.slug = p.slug; S.cat.products[i] = j.product; pickProduct(key, cb); }).catch(function () { toast("Keine Verbindung", true); });
       return;
     }
     if (!S.prod || S.prod.key !== key) {
@@ -885,8 +886,8 @@
     [].forEach.call(g.children, function (c) { if (c.classList.contains("seg") || c.classList.contains("wide") || c.classList.contains("full")) end(); else run.push(c); }); end(); }); }
   // Schritte im Browser-Verlauf: Zurück-Taste/Wisch-Geste geht Schritt für Schritt zurück statt aus dem Shop (Upload → Auswahl → Ausführung)
   function stepPush(n, mode) { if (!S.prod || n < 2) return; var st = history.state || {}; if (st.psStep === n && (st.psMode || "") === (mode || "")) return;
-    try { if (!history.state && n === 2 && /[?&]produkt=/.test(location.search)) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung (sonst neuer Eintrag – Zurück führt zur Startseite)
-      else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", location.href); } } catch (e) {} }
+    try { if (!history.state && n === 2 && (/[?&]produkt=/.test(location.search) || /^\/print\/[a-z0-9-]+\/?$/.test(location.pathname))) history.replaceState({ psStep: 2, psMode: "" }, "", location.href);   // per Link direkt geöffnetes Produkt: dieser Eintrag ist die Ausführung (sonst neuer Eintrag – Zurück führt zur Startseite)
+      else { if (!st.psStep && S.step === 2 && n > 2) history.replaceState(Object.assign({}, st, { psStep: 2, psMode: "" }), "", location.href); history.pushState({ psStep: n, psMode: mode || "" }, "", n === 2 && S.prod.slug ? "/print/" + S.prod.slug : location.href); } } catch (e) {} }   // Produkt gewählt → seine sprechende Adresse
   function go(n, nopush) { if (!nopush && n === 3 && S.step < 3 && !S.file && S.mode === "upload") S.mode = "";   // von der Ausführung kommend ohne Datei: zuerst die Auswahl
     if (!nopush) stepPush(n, n === 3 ? S.mode : ""); S.step = n; S.err = ""; render(); var f = root.querySelector("h2"); if (f) { f.setAttribute("tabindex", "-1"); f.focus({ preventScroll: true }); } }
 
@@ -1032,7 +1033,7 @@
   // Sortiment (Wunsch Simon 19.10.2026): Übersicht mit Kategorien + Unterkategorien statt aller Produkte untereinander;
   // Kategorie-Ansicht mit Seitenleiste (Unterkategorien), Filtern, Sortierung und kompakten Karten; Preise laden, sobald Karten sichtbar werden
   function cardSm(p) {
-    return '<a class="ps-pc' + (p.best ? " best" : "") + '" href="/print?produkt=' + encodeURIComponent(p.key) + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : isNew(p) ? '<span class="ps-badge nw">Neu</span>' : "") +
+    return '<a class="ps-pc' + (p.best ? " best" : "") + '" href="' + (p.slug ? "/print/" + p.slug : "/print?produkt=" + encodeURIComponent(p.key)) + '" data-prod="' + esc(p.key) + '"><span class="ph">' + (p.best ? '<span class="ps-badge">★ Bestseller</span>' : isNew(p) ? '<span class="ps-badge nw">Neu</span>' : "") +
       (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async">' : '<span class="ic" aria-hidden="true">' + esc(p.icon) + "</span>") + '</span><span class="bd"><b>' + esc(p.title) + "</b>" +
       (p.designer ? '<span class="ps-pc-d">Online-Designer</span>' : "") + '<span class="ps-from" data-from="' + esc(p.key) + '">' + fromTxt(p.key) + "</span></span></a>";
   }

@@ -2379,7 +2379,7 @@ module.exports = function (D) {
   // kein Rücktrittsrecht (§ 18 Abs. 1 Z 3 FAGG), also keine Rückgabe; Gewährleistung (Punkt 8) bleibt unberührt. Lieferung nur nach Österreich.
   const RETURN_LD = { "@type": "MerchantReturnPolicy", applicableCountry: "AT", returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted", merchantReturnLink: SITE + "/print/agb" };
   function offersLd(it) {
-    const url = it.url || SITE + "/print?produkt=" + encodeURIComponent(it.key), g = it.rows.map(r => r.gross);
+    const url = it.url || prodUrl(it.key, true), g = it.rows.map(r => r.gross);
     return { "@type": "Product", name: it.title, description: scrubText(it.label || it.desc || ""), url, image: it.img || undefined, brand: { "@type": "Brand", name: "FS Creative" }, category: it.group || undefined,
       offers: { "@type": "AggregateOffer", priceCurrency: "EUR", lowPrice: Math.min.apply(null, g).toFixed(2), highPrice: Math.max.apply(null, g).toFixed(2), offerCount: it.rows.length,
         offers: it.rows.map(r => ({ "@type": "Offer", price: r.gross.toFixed(2), priceCurrency: "EUR", availability: "https://schema.org/InStock", url, eligibleQuantity: { "@type": "QuantitativeValue", value: r.copies, unitText: "Stück" },
@@ -2387,7 +2387,7 @@ module.exports = function (D) {
   }
   // Kurzfassung für den Website-Chat (Systemkontext) und llms.txt
   function pubLines(max) { const P = PUB; if (!P || !P.items) return [];
-    return P.items.slice(0, max || 40).map(it => "- " + it.title + (it.label ? " (" + it.label + ")" : "") + ": " + it.rows.map(r => r.copies.toLocaleString("de-AT") + " Stk. " + eurDe(r.gross)).join(" · ") + " – " + SITE + "/print?produkt=" + encodeURIComponent(it.key)); }
+    return P.items.slice(0, max || 40).map(it => "- " + it.title + (it.label ? " (" + it.label + ")" : "") + ": " + it.rows.map(r => r.copies.toLocaleString("de-AT") + " Stk. " + eurDe(r.gross)).join(" · ") + " – " + prodUrl(it.key, true)); }
   function chatPrices() { const L = pubLines(30); if (!L.length) return "";
     return "\n\nDruckshop-Preisliste (Stand " + dateDe(PUB.at) + "; Endpreise inkl. 20 % USt und Versand innerhalb Österreichs, Standard-Ausführung – andere Ausführungen und Mengen zeigt der Konfigurator sofort):\n" + L.join("\n"); }
   async function llmsTxt() {
@@ -2408,9 +2408,10 @@ module.exports = function (D) {
     let html = ""; try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); } catch (e) { return D.send(res, 404, "Not found"); }   // Navigationspunkt „Weihnachten“ nur in der Saison
     const P = await pubState(), items = (P && P.items) || [], groups = [];
     items.forEach(it => { let g = groups.find(x => x.n === it.group); if (!g) groups.push(g = { n: it.group || "Weitere Produkte", l: [] }); g.l.push(it); });
-    const card = it => '<div class="pp-c"><h3><a href="/print?produkt=' + escH(encodeURIComponent(it.key)) + '">' + escH(it.title) + "</a></h3>" + (it.label ? '<p class="pp-l">' + escH(it.label) + "</p>" : "") +
+    await slugMap().catch(() => null);
+    const card = it => '<div class="pp-c"><h3><a href="' + escH(prodUrl(it.key)) + '">' + escH(it.title) + "</a></h3>" + (it.label ? '<p class="pp-l">' + escH(it.label) + "</p>" : "") +
       '<table class="pp-t"><thead><tr><th>Menge</th><th>Endpreis inkl. USt &amp; Versand</th><th>pro Stück</th></tr></thead><tbody>' + it.rows.map(r => "<tr><td>" + r.copies.toLocaleString("de-AT") + " Stk.</td><td><b>" + eurDe(r.gross) + "</b></td><td>" + (pieceDe(r.gross, r.copies) || "–") + "</td></tr>").join("") + "</tbody></table>" +
-      '<a class="pp-go" href="/print?produkt=' + escH(encodeURIComponent(it.key)) + '">Andere Ausführung oder Menge konfigurieren →</a></div>';
+      '<a class="pp-go" href="' + escH(prodUrl(it.key)) + '">Andere Ausführung oder Menge konfigurieren →</a></div>';
     const faq = [["Sind die Preise Endpreise?", "Ja. Alle Preise sind Endpreise inklusive 20 % österreichischer Umsatzsteuer und Versand innerhalb Österreichs. Firmen können sich im Shop Nettopreise anzeigen lassen; die Rechnung weist die Umsatzsteuer aus."],
       ["Warum kann mein Preis abweichen?", "Die Tabelle zeigt die im Shop vorausgewählte Standard-Ausführung. Andere Formate, Papiere, Veredelungen, Mengen oder eine schnellere Produktion ändern den Preis – der Konfigurator zeigt ihn sofort an."],
       ["Wie aktuell sind die Preise?", "Die Übersicht wird mehrmals täglich automatisch aus dem Shop aktualisiert" + (P ? " (Stand " + dateDe(P.at) + ")" : "") + ". Verbindlich ist der Preis im Konfigurator bzw. in der Kasse."],
@@ -2446,9 +2447,9 @@ module.exports = function (D) {
   const RATING_MIN = 3;
   async function productSeo(html, key, fmt) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), x = pub.find(y => y.key === key); if (!x) return html;
-    const P = await pubState(), url = SITE + "/print?produkt=" + encodeURIComponent(key); let it = P && P.items ? P.items.find(y => y.key === key) : null;
+    await slugMap().catch(() => null); const P = await pubState(), url = prodUrl(key, true); let it = P && P.items ? P.items.find(y => y.key === key) : null;
     // Link mit ?format=… (Google-Shopping-Eintrag je Format): Preise und Ausführung dieses Formats – wie im Konfigurator vorgewählt
-    const it0 = it, fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label, fv.from), url: url + "&format=" + encodeURIComponent(fv.v) });
+    const it0 = it, fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label, fv.from), url: prodLink(key, true, "format=" + encodeURIComponent(fv.v)) });
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
     const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400);   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
@@ -2489,13 +2490,34 @@ module.exports = function (D) {
   function seoFormats(it, key, title) {
     if (!it || !it.formats || !it.formats.length) return "";
     const lo = rows => rows.slice().sort((a, b) => a.gross - b.gross)[0], base = lo(it.rows), first = String(it.label || "").split(" · ")[0];
-    const li = [[prodUrl(key), fmtNice(first), base]].concat(it.formats.map(f => [prodUrl(key) + "&format=" + encodeURIComponent(f.v), fmtNice(f.label), lo(f.rows)]));
+    const li = [[prodUrl(key), fmtNice(first), base]].concat(it.formats.map(f => [prodLink(key, false, "format=" + encodeURIComponent(f.v)), fmtNice(f.label), lo(f.rows)]));
     return "<h2>Beliebte Formate</h2><ul>" + li.map(z => '<li><a href="' + escH(z[0]) + '">' + escH(title + " " + z[1]) + "</a> – " + z[2].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(z[2].gross) + "</li>").join("") + "</ul>";
   }
   // ── SEO für Sortiment und Kategorien (/print?produkte[&kategorie=…[&unter=…]]): vorgerendert mit Links, Brotkrumen, strukturierten Daten ──
   const ldTag = o => '<script type="application/ld+json">' + JSON.stringify(Object.assign({ "@context": "https://schema.org" }, o)).replace(/</g, "\\u003c") + "</script>";
   const catUrl = (main, sub, abs) => (abs ? SITE : "") + "/print?produkte" + (main ? "&kategorie=" + encodeURIComponent(main) : "") + (sub ? "&unter=" + encodeURIComponent(sub) : "");
-  const prodUrl = (key, abs) => (abs ? SITE : "") + "/print?produkt=" + encodeURIComponent(key);
+  // Sprechende Produktadressen /print/<slug>: kuratierte Produkte behalten ihren (deutschen) Schlüssel, allgemeine bekommen einen Slug aus dem Titel
+  // („Broschüren geheftet“ → /print/broschueren-geheftet). Alte Links /print?produkt=… leiten dauerhaft (301) dorthin weiter, Abfrageteile bleiben.
+  const SLUG_RES = /^(preise|hilfe|agb|weihnachten|api|bild|newsletter|merchant|app|designer|templates|fonts|print|produkte|konto|warenkorb|bestellung|mollie-webhook|printcom-webhook|sonderfarben)$/;
+  const slugOf = t => String(t || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/&/g, " und ").replace(/[®™©]/g, "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70).replace(/-+$/, "");
+  let SLUGS = { byKey: {}, bySlug: {} };
+  function slugsFor(pub) {
+    const byKey = {}, bySlug = {}, cur = new Set(CURATED.map(c => c.key));
+    pub.slice().sort((a, b) => (cur.has(b.key) - cur.has(a.key)) || ((+b.pop || 0) - (+a.pop || 0)) || String(a.key).localeCompare(String(b.key))).forEach(x => {
+      let sl = cur.has(x.key) ? x.key : slugOf(scrubText(x.title)) || slugOf(x.key);
+      if (!sl || SLUG_RES.test(sl) || bySlug[sl]) sl = (sl && !SLUG_RES.test(sl) ? sl + "-" : "") + slugOf(x.key);
+      if (bySlug[sl]) sl = slugOf(x.key) + "-" + crypto.createHash("sha1").update(String(x.key)).digest("hex").slice(0, 4);
+      byKey[x.key] = sl; bySlug[sl] = x.key; });
+    return { byKey, bySlug };
+  }
+  async function slugMap() {
+    const st = await settings(), cat = await catalog(false).catch(() => null), all = await catalogAll().catch(() => null); if (!cat) return SLUGS;
+    if (SLUGS.cat === cat && SLUGS.s === st && SLUGS.all === all) return SLUGS;
+    SLUGS = Object.assign(slugsFor(publicCatalog(cat, st, all)), { cat, s: st, all }); return SLUGS;
+  }
+  const prodUrl = (key, abs) => (abs ? SITE : "") + (SLUGS.byKey[key] ? "/print/" + SLUGS.byKey[key] : "/print?produkt=" + encodeURIComponent(key));
+  const prodLink = (key, abs, qs) => { const u0 = prodUrl(key, abs); return qs ? u0 + (u0.indexOf("?") > -1 ? "&" : "?") + qs : u0; };
   function crumbsHtml(c, last) {
     c = c || {}; const l = ['<a href="/print">Druckshop</a>', '<a href="' + escH(catUrl()) + '">Alle Produkte</a>'];
     if (c.main) l.push('<a href="' + escH(catUrl(c.main)) + '">' + escH(c.mainName || c.main) + "</a>");
@@ -2542,17 +2564,18 @@ module.exports = function (D) {
   }
   // Sitemap: Preisübersicht + Produktseiten (nur mit Bild)
   async function sitemapExtra() {
-    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), d = today();
+    await slugMap().catch(() => null); const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), d = today();
     const groups = publicGroups(pub), has = (m, su) => pub.some(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su)), loc = u => "  <url><loc>" + u.replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>";
     const cats = [loc(catUrl("", "", true)) + "0.7</priority></url>"].concat(groups.filter(g => has(g.slug)).map(g => loc(catUrl(g.slug, "", true)) + "0.7</priority></url>"),
       [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(catUrl(g.slug, su.slug, true)) + "0.6</priority></url>")))).join("\n") + "\n";
     return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
       (XMAS.season().on ? '  <url><loc>' + SITE + '/print/weihnachten</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' : "") + cats +
-      pub.filter(x => x.img).map(x => '  <url><loc>' + SITE + "/print?produkt=" + encodeURIComponent(x.key) + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
+      pub.filter(x => x.img).map(x => '  <url><loc>' + prodUrl(x.key, true).replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
   }
   // IndexNow (indexnow.js): Inhalts-Prüfsumme je Shop-Adresse der Sitemap (deren lastmod ist immer „heute“) – nur echte Änderungen werden an Bing & Co. gemeldet.
   // Produktseite: Name, Kurztext, Bild, Preise der Übersicht; Kategorie: enthaltene Produkte; Preisübersicht: alle Preise; Weihnachten: Vorschläge mit Preis. Wirft, wenn der Katalog fehlt.
   async function indexSigs() {
+    await slugMap().catch(() => null);
     const s = await settings(), cat = await catalog(false); if (!cat) throw new Error("Katalog nicht geladen");
     const pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), P = await pubState(), groups = publicGroups(pub), out = {};
     const h = v => crypto.createHash("sha1").update(JSON.stringify(v)).digest("hex").slice(0, 12), price = {};
@@ -2594,7 +2617,7 @@ module.exports = function (D) {
       if (!tex && (p.tiers || []).indexOf(start) < 0) return null;
       ok = r => r.copies === start || (!tex && (p.tiers || []).indexOf(r.copies) > -1); }
     const row = (it.rows || []).filter(r => r && r.gross > 0 && r.copies > 0 && ok(r)).sort((a, b) => a.copies - b.copies)[0]; if (!row) return null;
-    return { row, link: prodUrl(it.key, true) + (row.copies !== start ? "&menge=" + row.copies : "") };
+    return { row, link: prodLink(it.key, true, row.copies !== start ? "menge=" + row.copies : "") };
   }
   // Ausführungstext („A5 - 148 x 210 mm · 135 g … · 4/4“): Format-Teil gegen ein anderes Format tauschen
   const FMT_SEG = /^((DIN\s)?[A-C]\d{1,2}|DL)\b|\d+(,\d+)?\s*[x×]\s*\d+/i, fmtSwap = (label, f, from) => { const sg = String(label || "").split(" · ").map(v => v.trim()), i = from ? sg.indexOf(from) : -1;
@@ -2634,7 +2657,7 @@ module.exports = function (D) {
         const ff = fmtNice(f.label), lb = fmtSwap(it.label, f.label, f.from);
         const ft = clip(title + " " + ff + " " + verb + " – " + row.copies.toLocaleString("de-AT") + " Stück", 150);
         const fd = clip(desc.replace("Ausführung: " + scrubText(it.label || ""), "Ausführung: " + scrubText(lb)), 4900);
-        const link = prodUrl(it.key, true) + "&format=" + encodeURIComponent(f.v) + (row.copies !== it.start ? "&menge=" + row.copies : "");
+        const link = prodLink(it.key, true, "format=" + encodeURIComponent(f.v) + (row.copies !== it.start ? "&menge=" + row.copies : ""));
         const fx = itemXml(fid(it.key + "-" + f.v.replace(/[^a-z0-9]+/gi, "-")), ft, fd, link, row.gross); if (!SUPPLIER_RX.test(fx)) items.push(fx);
       }
     }
@@ -2644,6 +2667,7 @@ module.exports = function (D) {
   }
   let MF = null;
   async function merchantFeed() {
+    await slugMap().catch(() => null);
     const s = await settings(), cat = await catalog(false).catch(() => null), all = await catalogAll().catch(() => null), P = await pubState(), pat = (P && P.at) || "";
     if (MF && MF.s === s && MF.cat === cat && MF.all === all && MF.pat === pat && Date.now() - MF.t < 3600e3) return MF;
     const r = feedBuild(s, cat, all, P); if (r.skipped.length && (!MF || MF.pat !== pat)) log("Shopping-Feed: " + r.n + " Produkte, ausgelassen: " + r.skipped.join(", "));
@@ -2839,10 +2863,11 @@ module.exports = function (D) {
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
     return xmasNav(html);
   }
-  async function shopPage(req, res, preview, u) {
+  async function shopPage(req, res, preview, u, pathKey) {
     let html = ""; try { html = fs.readFileSync(path.join(__dirname, "print.html"), "utf8"); } catch (e) { return D.send(res, 404, "Not found"); }
     html = shell(html, preview);
-    const pk = u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120);
+    const pk = pathKey || (u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120));
+    { await slugMap().catch(() => null); html = html.replace(/href="\/print\?produkt=([\w-]+)"/g, (m, k) => 'href="' + escH(prodUrl(k)) + '"'); }
     if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk, u.searchParams.get("format")); } catch (e) { log("Produkt-SEO:", e.message); } }
     else if (u && u.searchParams && u.searchParams.has("produkte")) { const km = String(u.searchParams.get("kategorie") || ""), ks = String(u.searchParams.get("unter") || "");
       if (/^[\w-]{0,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks)) { try { html = await catSeo(html, km, ks); } catch (e) { log("Kategorie-SEO:", e.message); } } }
@@ -2854,7 +2879,11 @@ module.exports = function (D) {
     const gated = !(p.indexOf("/print-files/") === 0 || p === "/print/mollie-webhook" || p.indexOf("/print/printcom-webhook/") === 0);
     if (gated && !open && !admin && !view) { if (p.indexOf("/print/api/") === 0) return J(res, 404, { ok: false, error: "not_found" }); return soonPage(res); }
     if (view && !open && !admin && req.method === "POST" && /^\/print\/api\/(order|draft|upload)$/.test(p)) return J(res, 403, { ok: false, error: VIEW_MSG });
-    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u); }
+    if (p === "/print" || p === "/print/" || p === "/print.html") { if (p !== "/print") return D.send(res, 301, "", "text/plain", { Location: "/print" + (u.search || "") });
+      // alter Produktlink /print?produkt=… → dauerhaft auf die sprechende Adresse (übrige Abfrageteile wie ?format=, ?menge=, ?c= bleiben)
+      const pk0 = u.searchParams.get("produkt"); if (pk0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), sl = M && M.byKey[pk0];
+        if (sl) { const q2 = new URLSearchParams(u.search); q2.delete("produkt"); const qs = q2.toString(); return D.send(res, 301, "", "text/plain", { Location: "/print/" + sl + (qs ? "?" + qs : ""), "Cache-Control": "public, max-age=3600" }); } }
+      return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u); }
     if ((p === "/print/preise" || p === "/print/preise/") && (req.method === "GET" || req.method === "HEAD")) return pricesPage(req, res);
     // Google-Merchant-Center-Feed: nur wenn der Shop öffentlich ist (Admins sehen ihn auch vorher); nicht in der Sitemap, robots.txt erlaubt ihn
     if (p === "/print/merchant.xml" && (req.method === "GET" || req.method === "HEAD")) {
@@ -2910,6 +2939,11 @@ module.exports = function (D) {
         return D.send(res, 200, "ok");
       }
       if (p.indexOf("/print/newsletter/") === 0 || p === "/print/api/newsletter") { const r = await nlMod().handlePublic(req, res, p, u, ipOf(req), J, readJson, sameOrigin); if (r !== false) return; }
+      // Produktseite unter sprechender Adresse /print/<slug>
+      const pm0 = p.match(/^\/print\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/);
+      if (pm0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), key = M && M.bySlug[pm0[1]];
+        if (key) { if (p.slice(-1) === "/") return D.send(res, 301, "", "text/plain", { Location: p.slice(0, -1) + (u.search || "") }); return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u, key); }
+        return D.send(res, 404, '<!doctype html><meta charset="utf-8"><title>Nicht gefunden | FS Creative Druckshop</title><p>Dieses Produkt gibt es nicht (mehr). <a href="/print?produkte">Alle Produkte im Druckshop</a></p>', "text/html; charset=utf-8", { "X-Robots-Tag": "noindex" }); }
       if (p.indexOf("/print/api/") !== 0) return D.send(res, 404, "Not found");
       const ip = ipOf(req);
       // „Wir gestalten für dich“: Briefing mit Konfiguration, Text und Dateien → Anfrage im Cockpit (Lead + Mail an Simon)
@@ -2954,8 +2988,8 @@ module.exports = function (D) {
         const c = cfg(), s = await settings();
         if (!c.pcKey || !s.open) return J(res, 200, { ok: true, ready: false, reason: !c.pcKey ? "setup" : "closed" });
         const cat = await catalog(false), all = await catalogAll().catch(() => null); cms(false).catch(() => {});   // CMS bei Versionswechsel im Hintergrund auffrischen
-        const products = publicCatalog(cat, s, all), rvAll = await ratings(), rv = {}; if (XMAS.season().on) await xmasState().catch(() => null); /* Teaser zählt die Weihnachts-Vorschläge mit Preis */ Object.keys(rvAll).forEach(k => { if (rvAll[k].n >= RATING_MIN) rv[k] = { avg: rvAll[k].avg, n: rvAll[k].n }; });
-        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, xmas: xmasTeaser(products), payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
+        const products = publicCatalog(cat, s, all), rvAll = await ratings(), rv = {}; await slugMap().catch(() => null); if (XMAS.season().on) await xmasState().catch(() => null); /* Teaser zählt die Weihnachts-Vorschläge mit Preis */ Object.keys(rvAll).forEach(k => { if (rvAll[k].n >= RATING_MIN) rv[k] = { avg: rvAll[k].avg, n: rvAll[k].n }; });
+        return J(res, 200, { ok: true, ready: products.length > 0, reason: products.length ? "" : "setup", products: scrubPub(products).map(x => SLUGS.byKey[x.key] ? Object.assign({}, x, { slug: SLUGS.byKey[x.key] }) : x), ratings: rv, groups: publicGroups(products), fonts: FONTS, ai: !!(D.ki && D.ki.printDesignOn && D.ki.printDesignOn()), agbVersion: AGB_VERSION, home: HOME && HOME.date === today() ? { focus: HOME.focus, fresh: HOME.fresh } : null, xmas: xmasTeaser(products), payments: { mollie: !!c.mollieKey, invoice: true }, countries: Object.keys(COUNTRIES).map(k => ({ code: k, name: COUNTRIES[k] })) });
       }
       // Produktdetails (allgemeine Produkte werden erst beim Öffnen geladen)
       // „ab“-Preise für Produktkarten (Standardausführung, kleinste Auflage), 12 Std. zwischengespeichert
