@@ -77,7 +77,8 @@ const CURATED = [
     expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500, 5000], designer: true, safe: 3, prefer: { size: ["a5", "a6", "dl", "din_lang"] },
     feedFormats: ["a6", "a4", "din_large"] },   // zusätzliche Google-Shopping-Einträge je Format (Link ?format=…)
   { key: "plakate", group: PAPER, title: "Plakate", icon: "📢", desc: "Große Wirkung für Veranstaltungen und Aktionen.", skus: ["posters", "poster"], rx: /posters?|plakat/i,
-    expose: "auto", tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } },
+    expose: "auto", tiers: [1, 2, 5, 10, 25, 50, 100], designer: true, safe: 5, prefer: { size: ["a2", "a1"] } ,
+    feedFormats: ["a3", "a1", "a0"] },
   { key: "folder", group: PAPER, title: "Folder", icon: "🗂️", desc: "Gefalzte Folder für Speisekarten, Preislisten und Prospekte.", skus: ["folders", "folder", "folded-leaflets"], rx: /folders?|falz/i,
     expose: "auto", tiers: [50, 100, 250, 500, 1000, 2500], designer: true, safe: 4 },   // „size“ = gefalztes Format (print.com: „gevouwen A5 = 148 × 210“), Datei = offenes Format → foldSpec()
   { key: "aufkleber", group: PAPER, title: "Aufkleber", icon: "🏷️", desc: "Sticker und Etiketten in vielen Formen.", skus: ["stickers", "sticker"], rx: /stickers?|aufkleber/i,
@@ -119,6 +120,18 @@ const CURATED = [
   { key: "luftballons", group: PROMO, kind: "promo", title: "Luftballons", icon: "🎈", desc: "Bedruckte Luftballons in vielen Farben.", skus: ["balloons"], expose: ["size", "color", "printtype"], titles: { size: "Ballon", color: "Farbe", printtype: "Druck" }, only: { printtype: ["10", "11"] },
     optLabels: { size: { balloon: "Luftballon (Standard)", heart_balloon: "Herzballon", big_balloon_60: "Riesenballon 60 cm", big_balloon_90: "Riesenballon 90 cm" }, printtype: { "10": "1-farbig, einseitig", "11": "1-farbig, beidseitig" } },
     fixedOpts: { printingmethod: "screen_printing" }, tiers: [100, 250, 500, 1000], printArea: [100, 100] },
+];
+// Weitere gefragte Produkte für Preisübersicht, Produktseiten mit Preis und Google Shopping (nach Beliebtheit im Print.com-Sortiment ausgewählt,
+// ohne Jahresprodukte wie „Kalender 2026“); formats = zusätzliche Google-Shopping-Einträge je Format (Link ?format=…), wie bei den Flyern
+const PUB_MORE = [
+  { key: "postcards", formats: ["a6", "din_large", "a4"] }, { key: "stapled-magazines", formats: ["a4", "a6"] }, { key: "bounded-magazines", formats: ["a4"] }, { key: "wire-o-magazines" },
+  { key: "printed-envelopes", formats: ["ea5/6", "c5", "c4"] }, { key: "printed-letterheads" }, { key: "blocknotes" }, { key: "presentation-folders" }, { key: "carbon-copy-pads" }, { key: "bookmarks" },
+  { key: "menus" }, { key: "placemats" }, { key: "beer-mats" }, { key: "door-hangers" }, { key: "tickets" }, { key: "postcards-with-envelopes" }, { key: "sticky-notes" }, { key: "desk-pads" },
+  { key: "wire-o-wall-calendar" }, { key: "wire-o-desk-calendars" }, { key: "books" }, { key: "pvc-cards" }, { key: "multiloft-businesscards" }, { key: "luxurious-businesscards" },
+  { key: "sticker-vinyl" }, { key: "labels-on-roll" }, { key: "car-stickers" }, { key: "window-sticker" }, { key: "doming-stickers" }, { key: "floor-decal" },
+  { key: "beachflags", formats: ["beach_flag_medium", "beach_flag_large"] }, { key: "pole-flags" }, { key: "pavement-board" }, { key: "real-estate-signs" }, { key: "facade-banner" },
+  { key: "cardboard-roller-banners" }, { key: "framed-posters" }, { key: "canvas-print" }, { key: "acrylic-photo-prints" }, { key: "display-standing" }, { key: "zipper-walls" },
+  { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const CUR_V = require("crypto").createHash("sha1").update("10" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
@@ -2322,7 +2335,7 @@ module.exports = function (D) {
     if (pubRun) return; pubRun = true;
     try {
       const s = await settings(), cat = await catalog(false), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
-      const h = await homeState(), keys = CURATED.map(c => c.key).concat((h && h.focus) || [], (h && h.fresh) || []).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
+      const h = await homeState(), keys = CURATED.map(c => c.key).concat(PUB_MORE.map(c => c.key), (h && h.focus) || [], (h && h.fresh) || []).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
       const items = [];
       for (const key of keys) {
         const p = await findProduct(key, s).catch(() => null), base = p && stdInput(p); if (!base) continue;
@@ -2341,14 +2354,15 @@ module.exports = function (D) {
         }
         if (!rows.length || (rows.length > 1 && rows.every(r => Math.abs(r.gross - rows[0].gross) < 0.01))) { if (rows.length > 1) log("Preisübersicht: " + key + " ausgelassen (gleicher Preis für alle Mengen)"); continue; }
         // weitere Formate für Google Shopping (CURATED.feedFormats): gleiche Startausführung, nur das Format anders – je Format die zwei kleinsten verlinkbaren Auflagen
-        const cp = CURATED.find(c => c.key === key), szp = (p.props || []).find(x => x.slug === "size"), formats = [];
-        if (cp && cp.feedFormats && szp && startOk && p.kind !== "textile") for (const v of cp.feedFormats) {
+        const cp = CURATED.find(c => c.key === key), fl = (cp && cp.feedFormats) || ((PUB_MORE.find(c => c.key === key) || {}).formats), szp = (p.props || []).find(x => x.slug === "size"), formats = [];
+        const sOpt = szp && (szp.options || []).find(o => o.slug === base.sel.size), sLabel = sOpt ? clip(sOpt.title || sOpt.name || "", 60) : "";
+        if (fl && szp && startOk && p.kind !== "textile") for (const v of fl) {
           const opt = (szp.options || []).find(o => o.slug === v); if (!opt || v === base.sel.size) continue; const fr = [];
           for (const q of qs.filter(n => (p.tiers || []).indexOf(n) > -1).slice(0, 2)) {
             const inp = JSON.parse(JSON.stringify(base)); inp.sel.size = v; inp.copies = q;
             try { const n = normalizeSel(p, inp); if (n.sel.size !== v) break; n.low = true; const qt = await quote(p, n, "AT", "", {}); fr.push({ copies: n.copies, gross: qt.gross, net: qt.net }); } catch (e) {}
           }
-          if (fr.length) formats.push({ v, label: clip(opt.title || opt.name || v, 60), rows: fr });
+          if (fr.length) formats.push({ v, label: clip(opt.title || opt.name || v, 60), from: sLabel, rows: fr });
         }
         const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows, formats: formats.length ? formats : undefined });
       }
@@ -2434,7 +2448,7 @@ module.exports = function (D) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), x = pub.find(y => y.key === key); if (!x) return html;
     const P = await pubState(), url = SITE + "/print?produkt=" + encodeURIComponent(key); let it = P && P.items ? P.items.find(y => y.key === key) : null;
     // Link mit ?format=… (Google-Shopping-Eintrag je Format): Preise und Ausführung dieses Formats – wie im Konfigurator vorgewählt
-    const fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label), url: url + "&format=" + encodeURIComponent(fv.v) });
+    const fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label, fv.from), url: url + "&format=" + encodeURIComponent(fv.v) });
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
     const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400);   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
@@ -2559,7 +2573,8 @@ module.exports = function (D) {
     return { row, link: prodUrl(it.key, true) + (row.copies !== start ? "&menge=" + row.copies : "") };
   }
   // Ausführungstext („A5 - 148 x 210 mm · 135 g … · 4/4“): Format-Teil gegen ein anderes Format tauschen
-  const FMT_SEG = /^((DIN\s)?[A-C]\d{1,2}|DL)\b|\d+(,\d+)?\s*[x×]\s*\d+/i, fmtSwap = (label, f) => String(label || "").split(" · ").map(v => FMT_SEG.test(v.trim()) ? f : v.trim()).join(" · ");
+  const FMT_SEG = /^((DIN\s)?[A-C]\d{1,2}|DL)\b|\d+(,\d+)?\s*[x×]\s*\d+/i, fmtSwap = (label, f, from) => { const sg = String(label || "").split(" · ").map(v => v.trim()), i = from ? sg.indexOf(from) : -1;
+    return (i > -1 ? sg.map((v, k) => k === i ? f : v) : sg.map(v => FMT_SEG.test(v) ? f : v)).join(" · "); };
   const fmtNice = f => String(f || "").replace(/\s+x\s+/g, " × ").replace(/^((?:DIN\s)?[A-C]\d{1,2}|DL|1\/3 A4)\s+-\s+(.+)$/i, "$1 ($2)").replace(/\s*\($/, "").trim();
   function feedBuild(s, cat, all, P) {
     const pub = cat ? publicCatalog(cat, s, all) : [], byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
@@ -2592,7 +2607,7 @@ module.exports = function (D) {
       // weitere Formate: eigener Eintrag (gleiche Gruppe), Link wählt Format und Auflage genau so vor (?format=…&menge=…)
       for (const f of it.formats || []) {
         const row = f.rows.filter(r => r && r.gross > 0 && r.copies > 0).sort((a, b) => a.copies - b.copies)[0]; if (!row) continue;
-        const ff = fmtNice(f.label), lb = fmtSwap(it.label, f.label);
+        const ff = fmtNice(f.label), lb = fmtSwap(it.label, f.label, f.from);
         const ft = clip(title + " " + ff + " " + verb + " – " + row.copies.toLocaleString("de-AT") + " Stück", 150);
         const fd = clip(desc.replace("Ausführung: " + scrubText(it.label || ""), "Ausführung: " + scrubText(lb)), 4900);
         const link = prodUrl(it.key, true) + "&format=" + encodeURIComponent(f.v) + (row.copies !== it.start ? "&menge=" + row.copies : "");
