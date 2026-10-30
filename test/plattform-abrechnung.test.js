@@ -53,6 +53,12 @@ function unitTests(T) {
     const L = it.proposal.lines.join("\n");
     assert.ok(/verrechnet: 822,95 € \(Startwert \+ RE-1272\)/.test(L) && /bleibt so bestehen/.test(L), L); assert.ok(/Anreise ab 01\.10\.2026: 500,00 €/.test(L), L); assert.ok(/30,00 €/.test(L), L); assert.ok(/passt/.test(L), L);
   }]);
+  out.push(["VALUERO/Antonhaus: Eingangsdatum aus Beds24 fehlt noch (unknownBookings) → kein Umstellungs-Knopf, Hinweis; nichts verrechnet", () => {
+    const tr = Object.assign({}, AH_TRANSITION, { unknownBookings: 2, unknownCents: 24588 });
+    const it = va({ year: "2026", today: "2026-10-30", bill: { prices: {}, sites: {}, invoices: { "valuero:antonhaus": AH_RECS } }, valuero: { objects: [ahObj("2026", { transition: tr })] }, valueroPrev: { objects: [ahObj("2025", { months: [], transition: tr })] } }).find(x => x.key === "valuero:antonhaus");
+    assert.ok(/Umstellung auf Anreise noch nicht bestätigt/.test(it.blocked || ""), it.blocked); assert.ok(!it.proposal, JSON.stringify(it.proposal)); assert.strictEqual(it.action, null);
+    assert.ok((it.notes || []).some(n => /Bei 2 Buchungen mit Anreise ab 01\.10\.2026 \(245,88 €\) fehlt noch das Eingangsdatum aus Beds24/.test(n)), JSON.stringify(it.notes));
+  }]);
   const billSw = () => ({ prices: {}, sites: {}, invoices: { "valuero:antonhaus": AH_RECS }, valuero: { antonhaus: { switch: AH_SWITCH } } });
   out.push(["VALUERO/Antonhaus nach Umstellung, 05.01.2027: Q4 2026 nach Anreise, RE-1272-Anteil abgezogen und auf der Rechnung ausgewiesen; keine Erstattung; Nachtrag als Nachverrechnung", () => {
     const it = va({ year: "2027", today: "2027-01-05", bill: billSw(), valuero: { objects: [ahObj("2027")] }, valueroPrev: { objects: [ahObj("2026")] } }).find(x => x.key === "valuero:antonhaus");

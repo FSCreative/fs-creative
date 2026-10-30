@@ -864,6 +864,7 @@ async function vaSwitchSnapshot(key) {
   forgetStats(ANTONHAUS.url); forgetStats(VALUERO_PARTNER.url);   // frisch abrufen, nicht aus dem 25-s-Zwischenspeicher
   const va = await valueroStats(viennaToday().slice(0, 4)), o = va && (va.objects || []).find(x => x.key === "antonhaus"), t = o && o.transition;
   if (!t || !Array.isArray(t.byArrivalMonth)) throw new Error("Für Antonhaus kommen noch keine Umstellungsdaten (Partner-Plattform) – bitte neu laden");
+  if (+t.unknownBookings > 0) throw new Error("Bei " + t.unknownBookings + " Antonhaus-Buchung(en) fehlt noch das Eingangsdatum aus Beds24 – Umstellung erst nach dem nächsten Beds24-Abgleich");
   const by = {}, byCur = {};
   // heutige Regel nur übernehmen, wenn Antonhaus sie liefert (fehlt sie, rechnet der Abgleich vorsichtig mit dem damaligen Betrag, A4)
   t.byArrivalMonth.forEach(m => { if (/^\d{4}-\d{2}$/.test(m.month || "") && +m.prebilledCents > 0) { by[m.month] = Math.round(+m.prebilledCents); if (m.prebilledCurrentRuleCents != null && isFinite(+m.prebilledCurrentRuleCents)) byCur[m.month] = Math.max(0, Math.round(+m.prebilledCurrentRuleCents)); } });
@@ -2846,7 +2847,9 @@ function abgleichBuild(ctx) {
     else if (o.key === "antonhaus" && !sw && recAll.length) {
       blocked = "Umstellung auf Anreise noch nicht bestätigt – bis dahin kein Verrechnen";
       const trMiss = o.transition ? (o.transition.byArrivalMonth || []).filter(m => m && +m.prebilledCents > 0 && !(m.prebilledCurrentRuleCents != null && isFinite(+m.prebilledCurrentRuleCents))) : [];
-      if (o.transition && trMiss.length) notes.push("Antonhaus liefert die schon verrechneten Gebühren noch nicht nach heutiger Regel (" + trMiss.map(m => monDE(m.month)).join(", ") + ") – Umstellung erst mit der neuen Antonhaus-Version, sonst würden neue Buchungen dieser Anreisemonate nie verrechnet.");
+      const trUnk = o.transition && +o.transition.unknownBookings > 0 ? +o.transition.unknownBookings : 0;
+      if (trUnk) notes.push("Bei " + trUnk + " Buchung" + (trUnk === 1 ? "" : "en") + " mit Anreise ab " + deDate(ymdAdd(o.transition.cutoffDate || AH_CUTOFF, 1)) + " (" + eu((+o.transition.unknownCents || 0) / 100) + ") fehlt noch das Eingangsdatum aus Beds24 – die Plattform holt es beim nächsten Beds24-Abgleich (alle 6 Stunden). Umstellung erst danach, damit nichts doppelt oder gar nicht verrechnet wird.");
+      else if (o.transition && trMiss.length) notes.push("Antonhaus liefert die schon verrechneten Gebühren noch nicht nach heutiger Regel (" + trMiss.map(m => monDE(m.month)).join(", ") + ") – Umstellung erst mit der neuen Antonhaus-Version, sonst würden neue Buchungen dieser Anreisemonate nie verrechnet.");
       else if (o.transition) proposal = { op: "vaswitch", key: o.key, label: "Umstellung übernehmen", title: "Antonhaus: Umstellung Buchungseingang → Anreise", lines: vaSwitchLines(o.transition, recAll) };
       else notes.push("Für die Umstellung fehlen die Daten der Partner-Plattform (Eingangsdatum je Buchung) – bitte neu laden.");
     } else if (swDead) blocked = "Eine bei der Umstellung schon verrechnete Rechnung (" + (sw.invoiceNr || "RE-1272") + ") ist inzwischen storniert – der Abzug stimmt so nicht mehr. Bitte prüfen (Umstellung zurücknehmen und neu bestätigen).";
