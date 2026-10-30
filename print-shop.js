@@ -2458,7 +2458,7 @@ module.exports = function (D) {
       (it ? "<h2>Preise (Stand " + escH(dateDe(P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
       (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(scrubText(z[0])) + ":</b> " + escH(scrubText(z[1])) + "</li>").join("") + "</ul>" : "") +
       seoFormats(it0, key, x.title) + faqHtml(faq) +
-      '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p>' + simHtml(pub, x) + '<p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
+      '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a> · Ratgeber: <a href="/print/ratgeber/druckformate">Formate &amp; Maße</a>, <a href="/print/ratgeber/papier">Papier</a>, <a href="/print/ratgeber/druckdaten">Druckdaten</a></p>' + simHtml(pub, x) + '<p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
     const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
     if (!ld.image && x.img) ld.image = x.img;
@@ -2485,6 +2485,29 @@ module.exports = function (D) {
     q.push(["Kann ich als Firma auf Rechnung bestellen?", "Ja. Firmen können auch auf Rechnung bestellen, Preise werden für Firmen netto angezeigt. Privatkunden bezahlen sicher online."]);
     return q;
   }
+  // ── Ratgeber-Seiten ──
+  const GUIDES = [
+    { slug: "druckformate", file: "ratgeber-druckformate.html", title: "Druckformate & Maße: DIN A0–A8, DIN lang, Visitenkarte", short: "Druckformate & Maße", desc: "Alle Papierformate mit Maßen in mm: DIN A0 bis A8, DIN lang, Visitenkarte, Kuverts C6/C5/C4 – mit Beschnitt für die Druckdatei und welches Format wofür passt." },
+    { slug: "papier", file: "ratgeber-papier.html", title: "Papier & Grammatur: welches Papier für Flyer, Karten, Plakate?", short: "Papier & Grammatur", desc: "Was g/m² bedeutet, matt oder glänzend, Recyclingpapier und Veredelung – mit Empfehlungen für Flyer, Visitenkarten, Plakate, Karten und Broschüren." },
+    { slug: "druckdaten", file: "ratgeber-druckdaten.html", title: "Druckdaten anlegen: Checkliste für Beschnitt, Auflösung & CMYK", short: "Druckdaten-Checkliste", desc: "Druckdaten richtig anlegen: PDF, 3 mm Beschnitt, Sicherheitsabstand, 300 dpi, CMYK und Schriften – Checkliste mit häufigen Fehlern und wie wir deine Datei prüfen." },
+  ];
+  function guidePage(req, res, g) {
+    let html = "", main = "";
+    try { html = xmasNav(fs.readFileSync(path.join(__dirname, "print.html"), "utf8")); main = g ? fs.readFileSync(path.join(__dirname, "print", g.file), "utf8") : ""; } catch (e) { return D.send(res, 404, "Not found"); }
+    const url = SITE + "/print/ratgeber" + (g ? "/" + g.slug : ""), title = g ? g.title : "Druck-Ratgeber: Formate, Papier & Druckdaten", desc = g ? g.desc : "Ratgeber zum Drucken: Druckformate und Maße, Papier und Grammatur, Druckdaten richtig anlegen – kurz, verständlich und mit Beispielen.";
+    if (!g) main = '<main id="main"><div class="wrap ps-helppage ps-guide"><section class="lhero ps-hero"><nav class="ps-crumbs" aria-label="Brotkrumen"><a href="/print">Druckshop</a> › Ratgeber</nav><span class="eyebrow">Ratgeber</span><h1>Druck-Ratgeber</h1><p class="lead">Formate, Papier und Druckdaten – alles, was du vor dem Bestellen wissen solltest.</p></section><section class="sect"><div class="ps-help-cards">' +
+      GUIDES.map(x => '<a class="ps-help-card" href="/print/ratgeber/' + x.slug + '"><h2>' + escH(x.short) + "</h2><p>" + escH(x.desc) + "</p></a>").join("") + '</div><div class="btn-row"><a class="btn primary" href="/print">Zum Druckshop</a><a class="btn" href="/print/hilfe">So geht’s &amp; FAQ</a></div></section></div></main>';
+    const crumbs = [["Druckshop", SITE + "/print"], ["Ratgeber", SITE + "/print/ratgeber"]].concat(g ? [[g.short, url]] : []);
+    const ld = [{ "@type": "BreadcrumbList", itemListElement: crumbs.map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c[0], item: c[1] })) }];
+    if (g) ld.push({ "@type": "Article", headline: g.title, description: g.desc, inLanguage: "de-AT", url, mainEntityOfPage: url, author: { "@type": "Organization", name: "FS Creative" }, publisher: { "@type": "Organization", name: "FS Creative", url: SITE }, dateModified: GUIDE_V });
+    html = html.replace(/(\/print\/(?:app\.js|print\.css))\?v=[\w.-]+/g, "$1?v=" + ASSET_V).replace(/<main id="main">[\s\S]*<\/main>/, () => main)
+      .replace(/<title>[^<]*<\/title>/, "<title>" + escH(title) + " | FS Creative</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + escH(desc))
+      .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + url + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + url).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + escH(title))
+      .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + escH(desc)).replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, "").replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "")
+      .replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "").replace("</head>", () => ld.map(ldTag).join("\n") + '\n<style>.ps-guide .pp-t{width:100%;border-collapse:collapse;font-size:15px;margin:10px 0 6px}.ps-guide .pp-t th{text-align:left;font-weight:600;font-size:13px;color:var(--text-dim);padding:6px 8px 6px 0}.ps-guide .pp-t td{padding:8px 8px 8px 0;border-top:1px solid var(--border,rgba(255,255,255,.08));vertical-align:top}.ps-crumbs{font-size:13px;color:var(--text-dim);margin-bottom:8px}.ps-crumbs a{color:inherit}.ps-help-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:18px}.ps-help-cards .ps-help-card{display:block;text-decoration:none;color:inherit}.ps-help-cards h2{font-size:19px;margin:0 0 6px}@media (max-width:600px){.ps-guide .pp-t{font-size:14px}}</style>\n</head>');
+    return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
+  }
+  const GUIDE_V = "2026-10-31";
   const faqHtml = faq => faq.length ? "<h2>Häufige Fragen</h2>" + faq.map(q => "<h3>" + escH(q[0]) + "</h3><p>" + escH(q[1]) + "</p>").join("") : "";
   // Beliebte Formate mit eigenem Link und Preis (wie die Google-Shopping-Einträge je Format)
   function seoFormats(it, key, title) {
@@ -2498,14 +2521,14 @@ module.exports = function (D) {
   const catUrl = (main, sub, abs) => (abs ? SITE : "") + "/print?produkte" + (main ? "&kategorie=" + encodeURIComponent(main) : "") + (sub ? "&unter=" + encodeURIComponent(sub) : "");
   // Sprechende Produktadressen /print/<slug>: kuratierte Produkte behalten ihren (deutschen) Schlüssel, allgemeine bekommen einen Slug aus dem Titel
   // („Broschüren geheftet“ → /print/broschueren-geheftet). Alte Links /print?produkt=… leiten dauerhaft (301) dorthin weiter, Abfrageteile bleiben.
-  const SLUG_RES = /^(preise|hilfe|agb|weihnachten|api|bild|newsletter|merchant|app|designer|templates|fonts|print|produkte|konto|warenkorb|bestellung|mollie-webhook|printcom-webhook|sonderfarben)$/;
+  const SLUG_RES = /^(preise|hilfe|agb|weihnachten|ratgeber|api|bild|newsletter|merchant|app|designer|templates|fonts|print|produkte|konto|warenkorb|bestellung|mollie-webhook|printcom-webhook|sonderfarben)$/;
   const slugOf = t => String(t || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/&/g, " und ").replace(/[®™©]/g, "")
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70).replace(/-+$/, "");
   let SLUGS = { byKey: {}, bySlug: {} };
   function slugsFor(pub) {
     const byKey = {}, bySlug = {}, cur = new Set(CURATED.map(c => c.key));
     pub.slice().sort((a, b) => (cur.has(b.key) - cur.has(a.key)) || ((+b.pop || 0) - (+a.pop || 0)) || String(a.key).localeCompare(String(b.key))).forEach(x => {
-      let sl = cur.has(x.key) ? x.key : slugOf(scrubText(x.title)) || slugOf(x.key);
+      let sl = cur.has(x.key) ? x.key : slugOf(scrubText(x.title).replace(/\s*\([^)]*\)/g, "")) || slugOf(x.key);   // Klammerzusätze weglassen: „Aufkleber auf Rolle (Anzahl …)“ → aufkleber-auf-rolle
       if (!sl || SLUG_RES.test(sl) || bySlug[sl]) sl = (sl && !SLUG_RES.test(sl) ? sl + "-" : "") + slugOf(x.key);
       if (bySlug[sl]) sl = slugOf(x.key) + "-" + crypto.createHash("sha1").update(String(x.key)).digest("hex").slice(0, 4);
       byKey[x.key] = sl; bySlug[sl] = x.key; });
@@ -2569,6 +2592,7 @@ module.exports = function (D) {
     const cats = [loc(catUrl("", "", true)) + "0.7</priority></url>"].concat(groups.filter(g => has(g.slug)).map(g => loc(catUrl(g.slug, "", true)) + "0.7</priority></url>"),
       [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(catUrl(g.slug, su.slug, true)) + "0.6</priority></url>")))).join("\n") + "\n";
     return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
+      ["", ...GUIDES.map(g => "/" + g.slug)].map(x => '  <url><loc>' + SITE + "/print/ratgeber" + x + "</loc><lastmod>" + GUIDE_V + "</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>\n").join("") +
       (XMAS.season().on ? '  <url><loc>' + SITE + '/print/weihnachten</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' : "") + cats +
       pub.filter(x => x.img).map(x => '  <url><loc>' + prodUrl(x.key, true).replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>").join("\n") + "\n";
   }
@@ -2914,6 +2938,13 @@ module.exports = function (D) {
           .replace(/https:\/\/www\.fs-creative\.at\/print"/g, 'https://www.fs-creative.at/print/hilfe"').replace(/<script src="\/print\/app\.js[^"]*" defer><\/script>/, '<script>try{var c=JSON.parse(localStorage.getItem("fsc-print-cart")||"null");var n=c&&Date.now()-c.at<2592e6&&c.items?c.items.length:0;document.querySelectorAll("[data-cart-n]").forEach(function(b){b.textContent=n||"";b.hidden=!n;});}catch(e){}</script>')
           .replace('data-hilfe>', 'data-hilfe class="active">').replace(/<!--XMAS-->([\s\S]*?)<!--\/XMAS-->/g, (m, i) => XMAS.season().on ? i : "").replace(/<script>try\{window\.__catP[\s\S]*?<\/script>/, "");
         return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache" });
+      }
+      // Ratgeber (/print/ratgeber[/…]): Inhaltsseiten im Shop-Layout für Suchanfragen wie „DIN A5 Maße“, „Grammatur Flyer“, „Beschnitt Druck“
+      const gm = p.match(/^\/print\/ratgeber(?:\/([a-z0-9-]+))?\/?$/);
+      if (gm && (req.method === "GET" || req.method === "HEAD")) {
+        if (p.slice(-1) === "/") return D.send(res, 301, "", "text/plain", { Location: p.slice(0, -1) });
+        const g = gm[1] ? GUIDES.find(x => x.slug === gm[1]) : null; if (gm[1] && !g) return D.send(res, 404, "Not found");
+        return guidePage(req, res, g);
       }
       if (p === "/print/sonderfarben.ase" && (req.method === "GET" || req.method === "HEAD")) {   // Sonderfarben-Palette (Adobe Swatch Exchange) für Weiß, Schnitt, Bohrung, Veredelung
         let b = null; try { b = fs.readFileSync(path.join(__dirname, "print", "sonderfarben.ase")); } catch (e) { return D.send(res, 404, "Not found"); }

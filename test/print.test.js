@@ -166,6 +166,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pr = await (await fetch(B + "/print?produkt=visitenkarten")).text();
     assert.ok(/<h1>Visitenkarten online drucken<\/h1>/.test(pr) && /"@type":"Product"/.test(pr) && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\/visitenkarten"/.test(pr) && /Stück: [\d.,]+ €/.test(pr), "Produktseite für Crawler");
     const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/preise<\/loc>/.test(sm), "Sitemap mit Preisübersicht");
+    // Ratgeber: Übersicht + 3 Seiten mit Titel, kanonischer Adresse, Article/Breadcrumb, verlinkt von Produktseite und Sitemap
+    for (const [u, h] of [["/print/ratgeber", "Druck-Ratgeber"], ["/print/ratgeber/druckformate", "DIN A0 bis A8"], ["/print/ratgeber/papier", "Grammatur"], ["/print/ratgeber/druckdaten", "Checkliste"]]) {
+      const r = await fetch(B + u), t = await r.text(); assert.strictEqual(r.status, 200, u);
+      assert.ok(t.indexOf(h) > -1 && t.indexOf('rel="canonical" href="https://www.fs-creative.at' + u + '"') > -1 && /"@type":"BreadcrumbList"/.test(t) && !/print\.com/i.test(t), u);
+      if (u !== "/print/ratgeber") assert.ok(/"@type":"Article"/.test(t), u + " Article");
+    }
+    assert.strictEqual((await fetch(B + "/print/ratgeber/gibtsnicht")).status, 404);
+    assert.ok(/\/print\/ratgeber\/druckformate<\/loc>/.test(sm) && /href="\/print\/ratgeber\/druckdaten"/.test(pr), "Ratgeber in Sitemap und auf der Produktseite");
     // Sortiment/Kategorien vorgerendert (Titel, Brotkrumen, Links, CollectionPage), Sitemap mit Kategorien, Produktseite mit Brotkrumen
     const catj = await (await fetch(B + "/print/api/catalog")).json(), vk = catj.products.find(p => p.key === "visitenkarten"), main = vk.cat.main;
     const ov = await (await fetch(B + "/print?produkte")).text();
