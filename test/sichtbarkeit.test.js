@@ -211,6 +211,11 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
     });
     await t("Produktseite: JSON-LD je Angebot mit Rückgaberichtlinie „keine Rückgabe“ (AT, Link auf die AGB) – passend zu AGB Punkt 6 (kein Rücktrittsrecht, § 18 FAGG)", async () => {
       const html = await (await fetch(B + "/print?produkt=visitenkarten")).text(), prod = ldOf(html).find(x => x["@type"] === "Product");
+      const ti = (html.match(/<title>([^<]*)<\/title>/) || [])[1] || "", de = (html.match(/<meta name="description" content="([^"]*)"/) || [])[1] || "";
+      assert.ok(/^Visitenkarten drucken – ab [\d.,]+ € inkl\. Versand \| FS Creative$/.test(ti.replace(/&amp;/g, "&")), "Titel mit Preis: " + ti);
+      assert.ok(de.length <= 160 && /inkl\. 20 % USt und Versand/.test(de), "Beschreibung: " + de);
+      const fq = ldOf(html).find(x => x["@type"] === "FAQPage"); assert.ok(fq && fq.mainEntity.length >= 4 && /<h2>Häufige Fragen<\/h2>/.test(html), "Häufige Fragen sichtbar + FAQPage");
+      assert.ok(/Was kostet Visitenkarten drucken\?/.test(html) && /mm Beschnitt/.test(html));
       assert.ok(prod && prod.offers.offers.length >= 2);
       prod.offers.offers.forEach(o => { assert.deepStrictEqual(o.hasMerchantReturnPolicy, { "@type": "MerchantReturnPolicy", applicableCountry: "AT", returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted", merchantReturnLink: SITE + "/print/agb" });
         assert.deepStrictEqual(o.shippingDetails.shippingDestination, { "@type": "DefinedRegion", addressCountry: "AT" }); assert.ok(!("deliveryTime" in o.shippingDetails), "keine erfundene Lieferzeit"); });

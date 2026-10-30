@@ -2448,25 +2448,49 @@ module.exports = function (D) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), x = pub.find(y => y.key === key); if (!x) return html;
     const P = await pubState(), url = SITE + "/print?produkt=" + encodeURIComponent(key); let it = P && P.items ? P.items.find(y => y.key === key) : null;
     // Link mit ?format=… (Google-Shopping-Eintrag je Format): Preise und Ausführung dieses Formats – wie im Konfigurator vorgewählt
-    const fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label, fv.from), url: url + "&format=" + encodeURIComponent(fv.v) });
+    const it0 = it, fv = fmt && it && (it.formats || []).find(f => f.v === fmt); if (fv) it = Object.assign({}, it, { rows: fv.rows, label: fmtSwap(it.label, fv.label, fv.from), url: url + "&format=" + encodeURIComponent(fv.v) });
     const cp = cat && (cat.products || []).find(y => y.key === key), full = cp ? productOf(cat, key, s) : (PD_CACHE.get(key) || {}).p || null;
     const specs = full ? [].concat((full.props || []).slice(0, 8).map(pr => [pr.title, pr.options.slice(0, 12).map(o => o.name).join(", ") + (pr.options.length > 12 ? " …" : "")]), (full.specs || []).map(z => [z[0], z[1]])) : [];
     const desc = scrubText(noHtml(x.about || x.desc || "")).replace(/\s+/g, " ").slice(0, 400);   // Texte aus dem Lieferanten-CMS: nie den Produktionspartner nennen
-    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title) + " online drucken</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
+    const lo = it ? it.rows.slice().sort((a, b) => a.gross - b.gross)[0] : null, fvT = fv ? " " + fmtNice(fv.label) : "", faq = productFaq(x, full, it, lo, fvT);
+    const block = '<div class="ps-loading ps-seo" id="psLoading"><article style="padding:24px 0">' + crumbsHtml(x.cat, x.title) + '<p class="eyebrow">FS Creative Druckshop' + (x.cat && x.cat.mainName ? " · " + escH(x.cat.mainName) : "") + "</p><h1>" + escH(x.title + (fv ? " " + fmtNice(fv.label) : "")) + " online drucken</h1>" + (desc ? "<p>" + escH(desc) + "</p>" : "") +
       (it ? "<h2>Preise (Stand " + escH(dateDe(P.at)) + ", inkl. 20 % USt und Versand in Österreich)</h2><p>" + escH(it.label) + "</p><ul>" + it.rows.map(r => "<li>" + r.copies.toLocaleString("de-AT") + " Stück: " + eurDe(r.gross) + (r.copies > 1 ? " (" + pieceDe(r.gross, r.copies) + " pro Stück)" : "") + "</li>").join("") + "</ul>" : "<p>Preis inkl. USt und Versand sofort im Konfigurator.</p>") +
       (specs.length ? "<h2>Ausführungen</h2><ul>" + specs.map(z => "<li><b>" + escH(scrubText(z[0])) + ":</b> " + escH(scrubText(z[1])) + "</li>").join("") + "</ul>" : "") +
+      seoFormats(it0, key, x.title) + faqHtml(faq) +
       '<p>Online gestalten oder Druckdatei hochladen, automatischer Datencheck, Lieferung in ganz Österreich. <a href="/print/preise">Alle Preise im Überblick</a></p>' + simHtml(pub, x) + '<p class="pd-muted">Konfigurator wird geladen …</p></article></div>';
     const ld = Object.assign({ "@context": "https://schema.org" }, it ? offersLd(it) : { "@type": "Product", name: x.title, description: desc || x.title, url, image: x.img || undefined, brand: { "@type": "Brand", name: "FS Creative" } });
     const rv = (await ratings())[key]; if (rv && rv.n >= RATING_MIN) ld.aggregateRating = { "@type": "AggregateRating", ratingValue: rv.avg.toFixed(1), bestRating: "5", worstRating: "1", ratingCount: rv.n };
     if (!ld.image && x.img) ld.image = x.img;
-    const t = escH(x.title) + " online drucken – Preis sofort inkl. Versand | FS Creative Druckshop", d = escH((x.title + ": " + (desc || "individuell bedruckt") + "").slice(0, 120) + (it ? " Ab " + eurDe(Math.min.apply(null, it.rows.map(r => r.gross))) + " inkl. USt und Versand." : " Preis sofort im Konfigurator.") + " Online gestalten oder Datei hochladen.");
+    // Titel/Beschreibung: Produkt (+ Format), günstigster Preis der Preisübersicht, Versand inkl. – Beschreibung an der Wortgrenze gekürzt
+    const t = escH(x.title + fvT + (lo ? " drucken – ab " + eurDe(lo.gross) + " inkl. Versand" : " online drucken – Preis sofort") + " | FS Creative");
+    const d = escH(cutWords(x.title + fvT + " drucken" + (lo ? ": " + lo.copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lo.gross) + " inkl. 20 % USt und Versand in ganz Österreich." : " mit Preis sofort im Konfigurator, Versand in ganz Österreich inklusive.") + " Online gestalten oder Druckdaten hochladen, automatischer Datencheck. FS Creative aus dem Montafon.", 158));
     const rvP = ld.aggregateRating ? "<p>★ " + escH(String(ld.aggregateRating.ratingValue).replace(".", ",")) + " von 5 – " + ld.aggregateRating.ratingCount + " Kundenbewertungen</p>" : "";
     return html.replace(/<div class="ps-loading" id="psLoading">[\s\S]*?<\/section><\/div>/, () => rvP ? block.replace('<p class="pd-muted">Konfigurator wird geladen', rvP + '<p class="pd-muted">Konfigurator wird geladen') : block)
       .replace(/<title>[^<]*<\/title>/, "<title>" + t + "</title>").replace(/(<meta name="description" content=")[^"]*/, "$1" + d)
       .replace(/<link rel="canonical" href="[^"]*"/, '<link rel="canonical" href="' + escH(url) + '"').replace(/(<meta property="og:url" content=")[^"]*/, "$1" + escH(url)).replace(/(<meta property="og:title" content=")[^"]*/, "$1" + t)
       .replace(/(<meta property="og:description" content=")[^"]*/, "$1" + d).replace(/(<meta property="og:image" content=")[^"]*/, "$1" + escH(x.img ? x.img.replace(/w=\d+/, "w=1200") : SITE + "/og-image.png"))
       .replace(/<script type="application\/ld\+json">\{"@context": "https:\/\/schema.org", "@type": "BreadcrumbList"[^<]*<\/script>/, () => ldTag(crumbsLd(x.cat, x.title, url)))
-      .replace("</head>", () => ldTag(ld) + "\n</head>");
+      .replace("</head>", () => ldTag(ld) + (faq.length ? "\n" + ldTag({ "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }) : "") + "\n</head>");
+  }
+  const cutWords = (v, n) => { v = String(v || "").replace(/\s+/g, " ").trim(); if (v.length <= n) return v; const c = v.slice(0, n - 1), i = c.lastIndexOf(" "); return (i > n * 0.6 ? c.slice(0, i) : c).replace(/[,;:–-]\s*$/, "") + " …"; };
+  // Häufige Fragen je Produkt (sichtbar + FAQPage): nur Angaben, die der Shop wirklich einhält (Preis aus der Preisübersicht, Beschnitt/Sicherheitsabstand des Produkts)
+  function productFaq(x, full, it, lo, fvT) {
+    const T = x.title + (fvT || ""), q = [], bl = full && full.bleed != null ? +full.bleed : 3, sf = full && full.safe != null ? +full.safe : 3, des = full ? full.designer !== false : true, kind = (full && full.kind) || x.kind || "flat";
+    if (lo) q.push(["Was kostet " + T + " drucken?", T + " gibt es bei FS Creative ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stück" + (it && it.label ? " (" + scrubText(it.label) + ")" : "") + ", inklusive 20 % USt und Versand innerhalb Österreichs. Den genauen Preis für jede andere Ausführung und Menge zeigt der Konfigurator sofort."]);
+    if (kind === "textile" || kind === "promo") q.push(["Was brauche ich für den Druck?", "Dein Logo als PDF (am besten mit Vektorgrafik) oder als hochauflösendes PNG bzw. JPG – PNG gern mit transparentem Hintergrund. Druckfläche und Vorschau siehst du vor der Bestellung."]);
+    else q.push(["Welche Druckdaten brauche ich?", "Am besten ein PDF (oder JPG/PNG in hoher Auflösung) im Endformat plus " + String(bl).replace(".", ",") + " mm Beschnitt rundum; wichtige Texte und Logos mindestens " + String(sf).replace(".", ",") + " mm vom Rand." + (des ? " Du kannst " + x.title + " auch direkt im Browser gestalten – ohne Grafikprogramm." : "")]);
+    q.push(["Werden meine Druckdaten geprüft?", "Ja. Jede Datei wird vor dem Druck automatisch geprüft (Format, Beschnitt, Auflösung, Farben) – du siehst das Ergebnis sofort. Auf Wunsch gibt es zusätzlich den Profi-Datencheck, bei dem wir deine Daten persönlich kontrollieren."]);
+    q.push(["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum zeigt der Konfigurator vor der Bestellung – meist 6 bis 11 Werktage nach der Freigabe deiner Daten. Der Versand innerhalb Österreichs ist im Preis enthalten."]);
+    q.push(["Kann ich als Firma auf Rechnung bestellen?", "Ja. Firmen können auch auf Rechnung bestellen, Preise werden für Firmen netto angezeigt. Privatkunden bezahlen sicher online."]);
+    return q;
+  }
+  const faqHtml = faq => faq.length ? "<h2>Häufige Fragen</h2>" + faq.map(q => "<h3>" + escH(q[0]) + "</h3><p>" + escH(q[1]) + "</p>").join("") : "";
+  // Beliebte Formate mit eigenem Link und Preis (wie die Google-Shopping-Einträge je Format)
+  function seoFormats(it, key, title) {
+    if (!it || !it.formats || !it.formats.length) return "";
+    const lo = rows => rows.slice().sort((a, b) => a.gross - b.gross)[0], base = lo(it.rows), first = String(it.label || "").split(" · ")[0];
+    const li = [[prodUrl(key), fmtNice(first), base]].concat(it.formats.map(f => [prodUrl(key) + "&format=" + encodeURIComponent(f.v), fmtNice(f.label), lo(f.rows)]));
+    return "<h2>Beliebte Formate</h2><ul>" + li.map(z => '<li><a href="' + escH(z[0]) + '">' + escH(title + " " + z[1]) + "</a> – " + z[2].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(z[2].gross) + "</li>").join("") + "</ul>";
   }
   // ── SEO für Sortiment und Kategorien (/print?produkte[&kategorie=…[&unter=…]]): vorgerendert mit Links, Brotkrumen, strukturierten Daten ──
   const ldTag = o => '<script type="application/ld+json">' + JSON.stringify(Object.assign({ "@context": "https://schema.org" }, o)).replace(/</g, "\\u003c") + "</script>";
