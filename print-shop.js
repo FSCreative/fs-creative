@@ -134,7 +134,7 @@ const PUB_MORE = [
   { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("10" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("11" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -417,6 +417,23 @@ module.exports = function (D) {
   }
   // Rohe Print.com-Slugs als Optionsname lesbar machen (v. a. Farben, teils englisch/niederländisch mit angehängtem Produktnamen)
   const COL_DE = { navy_blue: "Navyblau", navy: "Navy", off_white: "Off-White", heather_grey: "Grau meliert", heather_gray: "Grau meliert", grijsmelange: "Grau meliert", grey_melange: "Grau meliert", army_green: "Armeegrün", light_blue: "Hellblau", sky_blue: "Himmelblau", royal_blue: "Royalblau", dark_blue: "Dunkelblau", moss_green: "Moosgrün", bottle_green: "Flaschengrün", dark_grey: "Dunkelgrau", light_grey: "Hellgrau", charcoal: "Anthrazit", burgundy: "Bordeaux", black: "Schwarz", white: "Weiß", red: "Rot", blue: "Blau", green: "Grün", yellow: "Gelb", orange: "Orange", pink: "Rosa", purple: "Lila", grey: "Grau", gray: "Grau", brown: "Braun", beige: "Beige", natural: "Natur", zwart: "Schwarz", wit: "Weiß", rood: "Rot", blauw: "Blau", groen: "Grün", geel: "Gelb", grijs: "Grau" };
+  // Englische Farbnamen von Print.com (v. a. Textilien) → Deutsch: „Bottle green“ → „Flaschengrün“, „Light grey melange“ → „Hellgrau meliert“;
+  // unbekannte Wörter (Markenfarben wie „Mindful blue“) bleiben, nur in Großschreibung („Mindful Blue“)
+  const COL_B = { blue: "blau", green: "grün", red: "rot", grey: "grau", gray: "grau", pink: "pink", black: "schwarz", white: "weiß", yellow: "gelb", orange: "orange", brown: "braun", purple: "lila", violet: "violett",
+    beige: "beige", gold: "gold", silver: "silber", navy: "marineblau", turquoise: "türkis", khaki: "khaki", olive: "oliv", burgundy: "bordeaux", cream: "creme", sand: "sand", natural: "natur", mint: "mint",
+    lime: "limette", coral: "koralle", lilac: "flieder", lavender: "lavendel", charcoal: "anthrazit", anthracite: "anthrazit", petrol: "petrol", fuchsia: "fuchsia", aqua: "aqua", ecru: "ecru", taupe: "taupe", stone: "stein" };
+  const COL_P = { light: "hell", dark: "dunkel", deep: "tief", royal: "royal", bright: "leucht", pale: "blass", ice: "eis", sky: "himmel", ocean: "ozean", forest: "wald", bottle: "flaschen", apple: "apfel",
+    cherry: "kirsch", lemon: "zitronen", sport: "sport", neon: "neon", signal: "signal", safety: "warn", military: "militär", army: "armee", old: "alt", powder: "puder", leaf: "blatt", sun: "sonnen", fire: "feuer",
+    wine: "wein", steel: "stahl", slate: "schiefer", mid: "mittel", moss: "moos", baby: "baby", azure: "azur", aqua: "aqua", sea: "meer", emerald: "smaragd", pastel: "pastell" };
+  const COL_S = { melange: " meliert", heather: " meliert", marl: " meliert", raw: " (roh)" }, COL_X = { "light pink": "Hellrosa", "baby pink": "Babyrosa", "pink": "Pink", "off white": "Off-White" };
+  function colorDe(v) {
+    const t = String(v || "").trim(); if (!/^[A-Za-z][A-Za-z\s-]*$/.test(t)) return t;   // schon deutsch/mit Zahlen/Sonderzeichen: unverändert
+    const lc = t.toLowerCase().replace(/\s+/g, " "); if (COL_X[lc]) return COL_X[lc];
+    const w = lc.split(/[\s-]+/), bi = w.map(x => !!COL_B[x]).lastIndexOf(true), tc = () => t.replace(/\s+/g, " ").split(" ").map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(" ");
+    if (bi < 0) return tc(); const pre = [], suf = [];
+    for (let i = 0; i < w.length; i++) { if (i === bi) continue; if (COL_S[w[i]]) suf.push(COL_S[w[i]]); else if (i < bi && COL_P[w[i]] && !pre.length) pre.push(COL_P[w[i]]); else return tc(); }
+    const core = pre.join("") + COL_B[w[bi]]; return core.charAt(0).toUpperCase() + core.slice(1) + Array.from(new Set(suf)).join("");
+  }
   function humanSlug(v) {
     const t = String(v).toLowerCase().split("_"), stop = /^(pms|pantone|hoodie|hood|sweater|sweat|tshirt|t|shirt|polo|jacket|cap|bag|bc|fotl|clique|gildan|stanley|stella|russell|zipped|zip|premium|basic|budget|\d{3,})$/;
     let n = []; for (const w of t) { if (stop.test(w)) break; n.push(w); }
@@ -488,6 +505,8 @@ module.exports = function (D) {
       if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(nm) || /^(color|colour|color_.*)$/.test(slug) && /^[a-z]/.test(nm)) nm = humanSlug(nm);   // „navy_blue_hoodie_bc_inspire_zipped_hood“ → „Navyblau“
       const OPT_DE = { selfcover: "Ohne eigenen Umschlag (wie Innenseiten)", "basic kit": "Basis-Set", "premium kit": "Premium-Set" }, ox = OPT_DE[String(nm).trim().toLowerCase()];
       if (ox) nm = ox; else nm = String(nm).replace(/^Din Large\b/i, "DIN lang");
+      nm = String(nm).replace(/\s{2,}/g, " ").replace(/(\d)\s*x\s*(\d)/g, "$1 × $2").trim();   // „1/3 A4 -  99 x 210 mm“ → „1/3 A4 - 99 × 210 mm“
+      if (/^colou?r(_|$)/.test(slug)) nm = colorDe(nm);
       const nm2 = /^[a-zäöü]/.test(nm) && !/^\d|^[a-z]\d|^(x|ca\.|mm|cm)\b/.test(nm) ? nm.charAt(0).toUpperCase() + nm.slice(1) : nm;   // „stuhl“ → „Stuhl“
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm2, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
@@ -3319,12 +3338,13 @@ module.exports = function (D) {
     const r = { key: x.key, sku: x.sku, title: (ours && ours.title) || x.title || "", missing: [], auto: [], noDims: [], labels: [] };
     if (!ours || ours.err) { r.err = ours && ours.err ? clip(ours.err, 160) : "nicht im Shop darstellbar"; return r; }
     const have = new Set(); (ours.props || []).forEach(pr => { have.add(pr.slug); (pr.sets || []).forEach(z => have.add(z)); });
+    const pHid = {}; (Array.isArray(pd.propertyGroups) ? pd.propertyGroups : []).forEach(g => { const cw = String((g && ((g.columnWidth && g.columnWidth.reseller) || (g.viewMode && g.viewMode.reseller))) || ""); ((g && g.properties) || []).forEach(z => { const sl = z && typeof z === "object" ? z.slug : z; if (sl && /hidden|summary/.test(cw)) pHid[sl] = 1; }); });   // wie parseProduct: von Print.com ausgeblendet
     if (ours.kind === "textile") ["textile_sizes", "printingmethod", "color_textile"].forEach(z => have.add(z));
     if (ours.kind === "banner") ["size", "width", "height"].forEach(z => have.add(z));
     (Array.isArray(pd.properties) ? pd.properties : []).forEach(pp => {
       if (!pp || !pp.slug || HIDDEN_PROPS.test(pp.slug) || pp.locked || have.has(pp.slug)) return;
       const opts = (pp.options || []).filter(o => o && o.slug != null && String(o.slug).trim() !== "-"); if (opts.length < 2) return;
-      if (pp.viewMode && String(pp.viewMode.reseller || "") === "hidden") return;
+      if (pHid[pp.slug] || (pp.viewMode && String(pp.viewMode.reseller || "") === "hidden")) return;
       if (/^(finish_(left|right|top|bottom)|printingmethod|positions_.*)$/.test(pp.slug)) return;
       const why = AUTO_SKIP.test(pp.slug) ? "bewusst ausgelassen" : (ours.fixed || {})[pp.slug] !== undefined ? ((ours.auto || {})[pp.slug] ? "wählt der Shop automatisch" : "fest eingestellt") : "fehlt";
       (why === "fehlt" ? r.missing : r.auto).push({ slug: pp.slug, title: clip(pp.title || pp.slug, 60), n: opts.length, why });
