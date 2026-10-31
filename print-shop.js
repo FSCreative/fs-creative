@@ -3451,7 +3451,7 @@ module.exports = function (D) {
       AUDIT.total = Math.min(list.length, max || 5000); const doneKeys = new Set(AUDIT.items.map(z => z.key));
       for (const x of list.slice(0, AUDIT.total)) { if (doneKeys.has(x.key)) continue;
         try {
-          const pd = await pcApi("GET", "/products/" + encodeURIComponent(x.sku) + "?view=reseller", undefined, { low: true });
+          let pd; for (let i = 0; ; i++) { try { pd = await pcApi("GET", "/products/" + encodeURIComponent(x.sku) + "?view=reseller", undefined, { low: true }); break; } catch (e) { if (i >= 2 || e.status !== 429) throw e; await new Promise(r => setTimeout(r, 8000 * (i + 1))); } }   // Drosselung: nachfragen
           let ours; if (x.cur) ours = productOf(cat, x.key, s, true);
           else { try { const g0 = catOf(x.it.sku, s, x.it.auto); ours = parseProduct(genericCfg(x.it, g0), x.sku, pd); } catch (e) { ours = { err: e.message }; } }
           const r = auditOne(x, pd || {}, ours);
