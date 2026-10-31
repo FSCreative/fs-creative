@@ -2608,6 +2608,15 @@ module.exports = function (D) {
     const c = x.cat || {}, l = pub.filter(y => y.key !== x.key && y.cat && y.cat.main === c.main && (!c.sub || y.cat.sub === c.sub)).sort((a, b) => (b.pop || 0) - (a.pop || 0)).slice(0, 12);
     return l.length ? "<h2>Ähnliche Produkte</h2><ul>" + l.map(y => '<li><a href="' + escH(prodUrl(y.key)) + '">' + escH(y.title) + "</a></li>").join("") + "</ul>" : "";
   }
+  // Einleitung je Hauptkategorie (eigener Text statt nur Produktliste)
+  const CAT_INTRO = {
+    "paper-print": "Flyer, Visitenkarten, Plakate, Folder, Broschüren, Briefpapier, Kuverts und Kalender – klassische Drucksachen für Werbung, Büro und Veranstaltungen. Papier, Format und Veredelung wählst du selbst, der Preis inklusive Versand steht sofort da.",
+    "outdoor-advertising": "Werbung für draußen: PVC- und Mesh-Banner, Bauzaunbanner, Beachflags, Fahnen und Kundenstopper – wetterfest gedruckt und fertig konfektioniert, z. B. mit Saum und Ösen.",
+    "indoor-interior": "Roll-ups, Displays, Leinwände, Acrylglas- und Alu-Bilder, Textilrahmen und Messewände – für Geschäft, Messe, Büro und Wohnung.",
+    "stickers-tapes": "Aufkleber in jeder Form: Etiketten auf Rolle, Vinyl-, Fenster-, Boden- und Fahrzeugaufkleber sowie Doming-Aufkleber mit 3D-Effekt.",
+    "packaging-bags": "Bedruckte Verpackungen und Taschen: Papiertragetaschen, Stoffbeutel, Versandkartons, Geschenkboxen und Gastro-Verpackungen mit deinem Logo.",
+    "gifts-merchandise-promotional": "Werbeartikel mit Logo: Tassen, Trinkflaschen, Kugelschreiber, Feuerzeuge, Schlüsselbänder, Süßigkeiten und viele weitere Give-aways – schon ab kleinen Stückzahlen.",
+    "clothing-textile": "T-Shirts, Hoodies, Polos, Schürzen und Mützen mit Logo – per Transferdruck ab 1 Stück, im Siebdruck ab 25 Stück oder bestickt." };
   async function catSeo(html, main, sub) {
     const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), groups = publicGroups(pub);
     const g = groups.find(x => x.slug === main) || null, sg = g && sub ? g.subs.find(x => x.slug === sub) || null : null;
@@ -2621,9 +2630,9 @@ module.exports = function (D) {
       items = pub.filter(p => p.best).slice(0, 20);
     } else {
       const list = inG(g.slug, sg ? sg.slug : "").sort((a, b) => (b.pop || 0) - (a.pop || 0)); url = catUrl(g.slug, sg ? sg.slug : "", true); c = { main: g.slug, mainName: g.name, sub: sg ? sg.slug : "", subName: sg ? sg.name : "" };
-      h1 = (sg ? sg.name : g.name) + " online drucken";
+      h1 = (sg ? sg.name : g.name) + " online drucken"; const ci = !sg && CAT_INTRO[g.slug] ? "<p>" + escH(CAT_INTRO[g.slug]) + "</p>" : "";
       intro = list.length + " Produkte" + (sg ? " in „" + sg.name + "“ (" + g.name + ")" : " in „" + g.name + "“") + ": individuell bedruckt, Preis sofort online, Druckdaten hochladen oder online gestalten – Lieferung in ganz Österreich, Preise inkl. Versand.";
-      body = (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
+      body = ci + (!sg && g.subs.length > 1 ? "<h2>Bereiche</h2><ul>" + g.subs.filter(su => inG(g.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(g.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(g.slug, su.slug).length + ")</li>").join("") + "</ul>" : "") +
         "<h2>Produkte</h2><ul>" + list.slice(0, 400).map(p => '<li><a href="' + escH(prodUrl(p.key)) + '">' + escH(p.title) + "</a>" + (lowOf[p.key] ? " – " + lowOf[p.key].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(lowOf[p.key].gross) : "") + (p.desc && !/^individuell bedruckt/i.test(p.desc) ? " – " + escH(clip(scrubText(noHtml(p.desc)), 110)) : "") + "</li>").join("") + "</ul>";
       items = list.slice(0, 60);
     }
