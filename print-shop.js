@@ -3381,7 +3381,8 @@ module.exports = function (D) {
             catch (e) { r.noPrice = clip(e.message || e, 160); } }
           AUDIT.items.push(r);
         } catch (e) { AUDIT.items.push({ key: x.key, sku: x.sku, title: x.title || "", err: clip(e.message, 160) }); }
-        AUDIT.done++; await new Promise(r => setTimeout(r, 250));
+        AUDIT.done++; if (AUDIT.done % 100 === 0) store.setMeta("print_audit", AUDIT).catch(() => {});   // Zwischenstand (Neustart verliert höchstens 100 Produkte)
+        await new Promise(r => setTimeout(r, 250));
       }
     } finally { AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
   }
