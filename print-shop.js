@@ -135,7 +135,7 @@ const PUB_MORE = [
   { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("14" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("15" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -281,6 +281,7 @@ module.exports = function (D) {
   const objOf = x => x && typeof x === "object" && !Array.isArray(x) ? x : {};
   async function settings() {
     if (SETTINGS) return SETTINGS;
+    startFixLoad().catch(() => {});   // ersetzte Startausführungen aus der Sortiments-Prüfung
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
     SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin) };
     // Mitbewerber-Preisanker aus print-anchors.json (versioniert im Repo): neue Version → Produkte daraus übernehmen, übrige Anker bleiben
@@ -936,7 +937,13 @@ module.exports = function (D) {
   function withStart(base, p, s) {
     const sig = JSON.stringify([((s && s.products && s.products[p.key]) || {}).allow || null, p.cat && p.cat.main, p.title]); let m = START_MEMO.get(base); if (!m) START_MEMO.set(base, m = new Map());
     if (!m.has(sig)) { let st = null; try { st = startOf(p); } catch (e) { log("Startausführung " + p.key + ":", e.message); } if (m.size > 20) m.clear(); m.set(sig, st); }
-    p.start = m.get(sig); return p;
+    p.start = startFixed(p.key, m.get(sig)); return p;
+  }
+  // Startausführung, die bei Print.com keinen Preis hat, ersetzt die Sortiments-Prüfung durch eine gefundene Alternative (DB print_startfix)
+  let START_FIX = null; const startFixLoad = () => START_FIX ? Promise.resolve(START_FIX) : store.getMeta("print_startfix").then(v => (START_FIX = v || {}), () => (START_FIX = {}));
+  function startFixed(key, st) {
+    const f = START_FIX && START_FIX[key]; if (!f || !st) return st;
+    return Object.assign({}, st, f.copies ? { copies: f.copies } : {}, { sel: Object.assign({}, st.sel || {}, f.sel || {}) }, f.textile ? { textile: f.textile } : {});
   }
   function resolveSel(prod, sel, extra, only) {
     const base = {}; Object.keys(prod.fixed).forEach(k => { if (!prod.auto || !prod.auto[k]) base[k] = prod.fixed[k]; });
@@ -3363,10 +3370,27 @@ module.exports = function (D) {
     });
     return r;
   }
+  // Alternativen für eine Startausführung ohne Preis (wie der Konfigurator): andere Auflagen, je Eigenschaft andere Optionen, bei Textilien Farbe/Größe
+  async function auditFix(prod, base) {
+    const C = [], add = (lbl, f) => { if (C.length < 16) C.push([lbl, f]); }, cl = () => JSON.parse(JSON.stringify(base));
+    (prod.tiers || []).filter(t => t !== base.copies).sort((a, b) => Math.abs(a - base.copies) - Math.abs(b - base.copies)).slice(0, 4).forEach(t => add("Auflage " + t, i => { i.copies = t; }));
+    if (prod.kind === "textile" && base.textile) {
+      const cp = (prod.props || []).find(x => x.slug === "color_textile"), cur = base.sel && base.sel.color_textile, n0 = Object.values(base.textile.sizes || {})[0] || base.copies || 10;
+      ((cp && cp.options) || []).map(o => o.slug).filter(v => v !== cur).slice(0, 6).forEach(v => add("Farbe " + v, i => { i.sel = Object.assign({}, i.sel, { color_textile: v }); }));
+      (prod.sizes || []).map(z => z.slug).filter(z => !(z in (base.textile.sizes || {}))).slice(0, 4).forEach(z => add("Größe " + z, i => { i.textile.sizes = { [z]: n0 }; }));
+    }
+    (prod.props || []).forEach(pr => { const cur = base.sel && base.sel[pr.slug]; (pr.options || []).map(o => o.slug).filter(v => v !== cur).slice(0, 3).forEach(v => add(pr.title + " " + v, i => { i.sel = Object.assign({}, i.sel, { [pr.slug]: v }); })); });
+    for (const [lbl, f] of C) {
+      try { const inp = cl(); f(inp); const n = normalizeSel(prod, inp); n.low = true; const q = await quote(prod, n, "AT", "", {});
+        const sel = {}; (prod.props || []).forEach(pr => { if (inp.sel && inp.sel[pr.slug] != null) sel[pr.slug] = inp.sel[pr.slug]; });
+        return { label: lbl, gross: q.gross, start: Object.assign({ copies: inp.copies, sel }, inp.textile ? { textile: inp.textile } : {}) }; } catch (e) {}
+    }
+    return null;
+  }
   async function auditRun(max) {
     if (AUDIT && AUDIT.running) return;
     AUDIT = { running: true, at: nowIso(), done: 0, total: 0, items: [] };
-    try {
+    try { await startFixLoad();
       const s = await settings(), cat = await catalog(false), all = await catalogAll();
       const list = (cat && cat.products || []).map(p => ({ key: p.key, sku: p.sku, title: p.title, cur: true }));
       ((all && all.items) || []).forEach(it => { if (!list.some(y => y.sku === it.sku)) list.push({ key: it.sku, sku: it.sku, title: it.title, it }); });
@@ -3379,19 +3403,27 @@ module.exports = function (D) {
           const r = auditOne(x, pd || {}, ours);
           // Preis-Check: Startausführung einmal rechnen (niedrige Priorität) – ohne Preis ist das Produkt im Shop nicht bestellbar
           if (!r.err && ours && !ours.err) { try { const b0 = stdInput(x.cur ? ours : withStart(ours, ours, s)); if (!b0) throw new Error("keine Startausführung"); const n = normalizeSel(ours, b0); n.low = true; const q = await quote(ours, n, "AT", "", {}); r.price = { copies: n.copies, gross: q.gross }; }
-            catch (e) { r.noPrice = clip(e.message || e, 160); } }
+            catch (e) { r.noPrice = clip(e.message || e, 160);
+              const def = /keinen Preis|no supplier|nicht möglich|Maximal/i.test(r.noPrice), b0 = stdInput(x.cur ? ours : withStart(ours, ours, s));
+              const fx = b0 && !/Versand in dieses Land/i.test(r.noPrice) ? await auditFix(ours, b0).catch(() => null) : null;
+              if (fx) { r.fixed = fx.label + " (" + eurDe(fx.gross) + ")"; START_FIX[x.key] = Object.assign({ at: nowIso() }, fx.start); store.setMeta("print_startfix", START_FIX).catch(() => {}); }
+              else if (def) r.unorderable = true; } }
           AUDIT.items.push(r);
         } catch (e) { AUDIT.items.push({ key: x.key, sku: x.sku, title: x.title || "", err: clip(e.message, 160) }); }
         AUDIT.done++; if (AUDIT.done % 100 === 0) store.setMeta("print_audit", AUDIT).catch(() => {});   // Zwischenstand (Neustart verliert höchstens 100 Produkte)
         await new Promise(r => setTimeout(r, 250));
       }
+      // nicht bestellbar (auch keine Alternative, bzw. kein Versand nach Österreich): allgemeine Produkte ausblenden – nie kuratierte, höchstens 15 % des Sortiments je Lauf
+      const bad = AUDIT.items.filter(z => z.unorderable && !CURATED.some(c => c.key === z.key) && SKU_RX.test(z.sku));
+      if (bad.length && bad.length <= Math.max(5, AUDIT.items.length * 0.15)) { const st = await settings(); bad.forEach(z => { if (st.enabled[z.sku] !== true) { st.enabled[z.sku] = false; z.hidden = true; } }); await store.setMeta("print_settings", st); SETTINGS = st; PRICE_CACHE.clear(); }
+      AUDIT.hidden = bad.filter(z => z.hidden).length;
     } finally { AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
   }
   async function auditState() {
     if (!AUDIT) AUDIT = await store.getMeta("print_audit").catch(() => null);
     const A = AUDIT || { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
     it.forEach(x => (x.labels || []).forEach(l => { const k = l.issue + ": " + l.text; by[k] = (by[k] || 0) + 1; }));
-    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length,
+    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length, fixedStart: it.filter(x => x.fixed).length, hidden: A.hidden || 0,
       missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]),
       items: it.filter(x => x.err || x.noPrice || (x.missing || []).length || (x.labels || []).length || (x.noDims || []).length) };   // nur Produkte mit Befund
   }
