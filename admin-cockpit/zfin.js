@@ -54,6 +54,7 @@ var NAV=[
   {id:"prod",label:"Produkte",icon:"prod"},
   {id:"abgl",label:"Plattformen verrechnen",icon:"sync"},   /* Abgleich Plattformen ↔ Rechnungen (war seit 15.10.2026 nicht mehr erreichbar) */
   {id:"lock",label:"Festschreiben",icon:"lock"},
+  {id:"archiv",label:"Archiv (7 Jahre)",icon:"dl"},   /* Jahres-ZIP mit allen PDFs, Belegen, Bank – Aufbewahrungspflicht, sevDesk endet */
   {id:"mydata",label:"Meine Daten",icon:"id"},
   {id:"umstieg",label:"Firma & Einstellungen",icon:"set"}
 ];
@@ -636,6 +637,18 @@ function pageLock(){
     '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px">'+T.map(function(t){ return '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="t" value="'+t[0]+'" checked> '+t[1]+'</label>'; }).join("")+'</div>'+
     '<p class="muted" style="font-size:12.5px">Entwürfe werden nicht festgeschrieben. Später im Zeitraum erfasste Dokumente musst du erneut festschreiben. Empfehlung: monatlich, spätestens mit der UVA.</p><div style="display:flex;justify-content:flex-end"><button class="btn primary" type="submit">Festschreiben …</button></div></form>';
 }
+/* ---------- Archiv: je Jahr ein ZIP (Rechnungen/Gutschriften/Angebote als PDF, Belegdateien, Bank-CSV, Listen, Rohdaten, Prüfsummen) ---------- */
+var AR=null;
+function arLoad(){ if(C.busy.ar) return; C.busy.ar=1; F.api("/admin/api/fin/archive").then(function(j){ C.busy.ar=0; AR=j||{ok:false}; F.render(); }); }
+function pageArchiv(){
+  var h=head("Archiv","Aufbewahrungspflicht 7 Jahre (§ 132 BAO): je Jahr ein ZIP mit allen Rechnungen, Gutschriften und Angeboten als PDF, allen Belegdateien, Bankumsätzen und Listen (Excel-tauglich) – lesbar ohne Cockpit und ohne sevDesk.");
+  if(!AR){ arLoad(); return h+'<div class="sd-empty">Lade …</div>'; }
+  if(!AR.ok) return h+'<div class="notice">'+esc(AR.error||"Nicht verfügbar")+'</div>';
+  return h+'<section class="fsd-card"><div class="fsd-ctitle">Jahre</div><dl class="fsd-rows" style="margin:0">'+(AR.years||[]).map(function(y){
+    return '<div><dt><b>'+esc(y.year)+'</b> <span class="muted">'+y.invoices+' Rechnungen · '+y.vouchers+' Belege ('+y.withFile+' mit Datei) · '+y.bank+' Bankumsätze'+(y.creditNotes?' · '+y.creditNotes+' Gutschriften':'')+(y.offers?' · '+y.offers+' Angebote':'')+'</span></dt>'+
+      '<dd><a class="btn" href="/admin/api/fin/archive?year='+encodeURIComponent(y.year)+'" download>'+ic("dl")+' ZIP</a></dd></div>'; }).join("")+'</dl></section>'+
+    '<p class="muted" style="font-size:12.5px">Empfehlung: nach jedem Jahresabschluss (und einmalig jetzt für alle Jahre aus sevDesk) herunterladen und zusätzlich außerhalb des Cockpits sichern, z. B. iCloud Drive oder externe Festplatte. Große Jahre brauchen ein paar Sekunden.</p>';
+}
 function lastMonthEnd(){ var d=new Date(F.D.today+"T12:00:00"); d.setDate(0); return d.toISOString().slice(0,10); }
 F.listen("change","[data-lkauto]",function(el){ F.api("/admin/api/fin/settings",{body:{confirm:true,autoEnshrine:el.checked}}).then(function(j){ if(j&&j.ok){ F.toast(el.checked?"Automatisches Festschreiben an":"Automatisches Festschreiben aus"); LK=null; F.render(); } else F.toast((j&&j.error)||"Fehler",true); }); });
 F.form("finlock",function(f){
@@ -852,6 +865,7 @@ function content(){
   if(p==="uva"||p==="u1"||p==="jab"||p==="prognose"||p==="umstieg"||p==="anlagen") return p==="prognose"?head("Jahresprognose","")+(F.renderPrognose?F.renderPrognose():pageTab("prognose")):pageTab(p);
   if(p==="abgl") return pageAbgl();
   if(p==="lock") return pageLock();
+  if(p==="archiv") return pageArchiv();
   if(p==="mydata") return pageMyData();
   return pageDash();
 }
@@ -859,7 +873,7 @@ function content(){
 var MNAV=[["dash","Übersicht"],["review","Zur Prüfung"],["inv","Rechnungen"],["vou","Belege"],["bank","Bank"],["steuer","Steuern"]];
 var MMORE=[["Rechnungen & Belege",[["wkr","Wiederkehrende Rechnungen"],["rvou","Wiederkehrende Belege"],["dun","Mahnungen"],["cn","Gutschriften"],["orders","Angebote"]]],
   ["Bank & Steuern",[["pay","Zahlungsaufträge"],["open","Nicht zugeordnet"],["kasse","Kassenbuch"],["uva","Voranmeldung (UVA)"],["anlagen","Abschreibungen"],["jab","Jahreserklärung"]]],
-  ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen verrechnen"],["mydata","Meine Daten"],["lock","Festschreiben"],["umstieg","Firma & Einstellungen"]]]];
+  ["Verwalten",[["ct","Kontakte"],["prod","Produkte"],["abgl","Plattformen verrechnen"],["mydata","Meine Daten"],["lock","Festschreiben"],["archiv","Archiv"],["umstieg","Firma & Einstellungen"]]]];
 function mNav(){ var g=UI.fin.split(":")[0]; if(g==="invd") g="inv"; if(g==="u1"||g==="prognose") g="steuer";
   var main=MNAV.some(function(n){ return n[0]===g; }), more=null; MMORE.forEach(function(sec){ sec[1].forEach(function(x){ if(x[0]===g) more=x[1]; }); });
   return '<nav class="fsm-nav" aria-label="Finanzen">'+MNAV.map(function(n){ return '<button type="button" data-act="fin:'+n[0]+'"'+(g===n[0]?' aria-current="page"':'')+'>'+esc(n[1])+(n[0]==="review"&&F.reviewCount&&F.reviewCount()?' ('+F.reviewCount()+')':'')+'</button>'; }).join("")+

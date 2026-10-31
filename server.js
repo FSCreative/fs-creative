@@ -2006,6 +2006,7 @@ async function mailApiSend(m) {
   const j = await r.json().catch(() => ({})); if (!r.ok || j.ok === false) throw new Error("Versand fehlgeschlagen: " + (j.detail || j.error || r.status)); return j;
 }
 const FIN_LOCAL = require("./fin-local.js")({ fin: FIN, renderPdf: FIN_PDF, mailSend: mailApiSend });
+const FIN_ARCHIVE = require("./fin-archive.js")({ fin: FIN, local: FIN_LOCAL });   // Jahresarchiv als ZIP (Aufbewahrung 7 Jahre)
 (async () => { try { if (!process.env.DATABASE_URL) return; await FIN.init(); FIN_STATE.local = !SEV_TEST; FIN_STATE.firm = await FIN.getMeta("firm");
   // office@ gibt es nicht (Wunsch Simon 20.10.2026): auf Rechnungen/Angeboten die richtige Adresse – einmalig umstellen, wenn noch die alte Vorgabe gespeichert ist
   if (FIN_STATE.firm && String(FIN_STATE.firm.email || "").trim().toLowerCase() === "office@fs-creative.at") { FIN_STATE.firm = Object.assign({}, FIN_STATE.firm, { email: "simon@fs-creative.at" }); await FIN.setMeta("firm", FIN_STATE.firm); console.log("Firmendaten: E-Mail auf simon@fs-creative.at umgestellt"); }
@@ -4173,6 +4174,11 @@ async function handleAdmin(req, res, u, p) {
   // Belege ohne Datei + automatische Zuordnung von Rechnungsmails (fin-docmatch.js)
   if (p === "/admin/api/fin/railway") { const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try { if (!FIN_STATE.local) return J(200, { ok: false, error: "Nur mit der eigenen Buchhaltung verfügbar" }); return J(200, { ok: true, result: req.method === "POST" ? await FIN_RAILWAY.run() : FIN_RAILWAY.status() }); } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 300) }); } }
+  // Buchhaltungs-Archiv: GET ohne Jahr = Übersicht, ?year=JJJJ = ZIP mit allen PDFs, Belegdateien, Bank-CSV, Listen, Rohdaten
+  if (p === "/admin/api/fin/archive" && req.method === "GET") {
+    if (!FIN_STATE.local) return send(res, 200, JSON.stringify({ ok: false, error: "Nur mit der eigenen Buchhaltung verfügbar" }), TYPES[".json"]);
+    return FIN_ARCHIVE.handle(req, res, u, send);
+  }
   if (p === "/admin/api/fin/missing-docs") {
     const J = (code, o) => send(res, code, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
     try {
