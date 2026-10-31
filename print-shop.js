@@ -134,7 +134,7 @@ const PUB_MORE = [
   { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("13" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("14" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -518,7 +518,10 @@ module.exports = function (D) {
       if (only[p.slug]) { const f = opts.filter(o => only[p.slug].indexOf(String(o.slug)) > -1); if (f.length) opts = f; }
       if (EXTRA_PROPS.test(p.slug) && !opts.some(o => NONE_SLUG.test(String(o.slug)))) { p = Object.assign({}, p, { required: false }); opts = [{ slug: NONE_OPT, name: "Ohne" }].concat(opts); }   // „Ohne“ = Eigenschaft weglassen
       if (skip[p.slug]) { const f = opts.filter(o => skip[p.slug].indexOf(String(o.slug)) < 0); if (f.length) opts = f; }
-      if (!opts.length) return;
+      if (!opts.length) {   // Pflicht-Eigenschaft nur mit Platzhalter (z. B. Hoodies: size „-“): Print.com verlangt genau diesen Wert, sonst „missing required property“
+        const raw = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null && String(o.slug) !== "");
+        if (p.required && raw.length === 1) fixed[p.slug] = String(raw[0].slug);
+        return; }
       const hidden = pHidden[p.slug] || (p.viewMode && String(p.viewMode.reseller || "") === "hidden");
       const want = autoExp ? opts.length > 1 && !hidden && fo[p.slug] === undefined && !/^(finish_(left|right|top|bottom)|printingmethod)$/.test(p.slug) && !AUTO_SKIP.test(p.slug) : expose.indexOf(p.slug) > -1;   // Druckverfahren wählt der Shop passend zu Menge/Ausschlüssen
       // parentOptions sind bei Print.com Gruppenüberschriften der Optionen (z. B. „A-Formate“, „Quadrat“, Papierfamilien) – keine Bedingung
@@ -559,7 +562,7 @@ module.exports = function (D) {
     const specs = [], inExp = sl => exposed.some(x => x.slug === sl || (x.sets || []).indexOf(sl) > -1);
     props.forEach(p => {
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || SPEC_SKIP.test(p.slug) || inExp(p.slug) || fixed[p.slug] == null || auto[p.slug]) return;
-      const v = String(fixed[p.slug]), o = (p.options || []).find(x => x && String(x.slug) === v); if (!o || NONE_SLUG.test(v)) return;
+      const v = String(fixed[p.slug]), o = (p.options || []).find(x => x && String(x.slug) === v); if (!o || NONE_SLUG.test(v) || v === "-" || !String(o.name || "").trim()) return;   // Platzhalter nie als technische Angabe zeigen
       const nm = p.slug === "printingmethod" ? SPEC_PM[v] || (String(o.name || "") !== v ? String(o.name) : "") : (L[p.slug] && L[p.slug][v]) || (/^printtype/.test(p.slug) && ptName(o.name, v)) || (o.name != null && String(o.name) !== v ? String(o.name) : "");
       if (nm && !/^(geen|none|nee|no|keine?|ohne)$/i.test(nm.trim())) specs.push([clip(T[p.slug] || (p.slug === "printingmethod" ? "Druckverfahren" : p.title) || p.slug, 60), clip(nm, 140), p.slug]);
     });
