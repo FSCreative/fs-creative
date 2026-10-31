@@ -2863,7 +2863,7 @@ module.exports = function (D) {
     // unterbrochene Sortiments-Prüfung (Deploy/Neustart) nach dem Start einmal fortsetzen
     if (!auditResumed && cfg().pcKey && live()) { auditResumed = true; store.getMeta("print_audit").then(a => { if (a && !a.end && Array.isArray(a.items) && a.items.length && Date.now() - Date.parse(a.at) < 6 * 3600e3) auditRun(0, true).catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
     // Sortiments-Prüfung wöchentlich in der Nacht (Sonntag 2–5 Uhr Wien): Startausführungen heilen, nicht bestellbare Produkte ausblenden
-    if (cfg().pcKey && live() && !(AUDIT && AUDIT.running)) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
+    if (cfg().pcKey && live() && !auditLive) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
       if (wd.replace(",", "") === "Sun" && +hh >= 2 && +hh < 5) store.getMeta("print_audit").then(a => { if (!a || !a.end || Date.now() - Date.parse(a.end) > 6 * 864e5) auditRun().catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
@@ -3373,7 +3373,7 @@ module.exports = function (D) {
   }
   // ── Sortiments-Prüfung (nur lesend): jedes Produkt mit Print.com abgleichen – wählbare Optionen, die im Shop fehlen, Formate ohne Maße,
   // Bezeichnungen mit Codes/Fremdwörtern. Läuft langsam im Hintergrund (niedrige Priorität, Kundenanfragen gehen vor); Ergebnis im Speicher + DB.
-  let AUDIT = null, auditResumed = false;
+  let AUDIT = null, auditResumed = false, auditLive = false;   // auditLive: läuft in DIESEM Prozess (der gespeicherte Stand sagt nach einem Neustart nichts darüber)
   const AUD_NL = /\b(geen|gesatineerd|zonder|met|enkelzijdig|dubbelzijdig|wit|zwart|staand|liggend|gevouwen|vouw|nietjes|lijmgebonden|bedrukt|onbedrukt|achterkant|voorkant|kleur)\b/i;
   const AUD_EN = /\b(white|black|matt?e|glossy?|without|with|single|double|sided|portrait|landscape|round(ed)?|corners?|none|front|back|sheets?|pages?|yes|no|natural|silver|blue|red|green|yellow|grey|gray|brown|purple)\b/i;   // orange, gold, pink sind auch deutsch
   function audLabel(v, slug) {
@@ -3423,7 +3423,7 @@ module.exports = function (D) {
     return null;
   }
   async function auditRun(max, resume) {
-    if (AUDIT && AUDIT.running) return;
+    if (auditLive) return; auditLive = true;
     const prev = resume ? await store.getMeta("print_audit").catch(() => null) : null, cont = prev && !prev.end && Array.isArray(prev.items) && prev.items.length;   // nach Neustart fortsetzen
     AUDIT = cont ? Object.assign(prev, { running: true }) : { running: true, at: nowIso(), done: 0, total: 0, items: [] };
     try { await startFixLoad();
@@ -3453,11 +3453,11 @@ module.exports = function (D) {
       const bad = AUDIT.items.filter(z => z.unorderable && !CURATED.some(c => c.key === z.key) && SKU_RX.test(z.sku));
       if (bad.length && bad.length <= Math.max(5, AUDIT.items.length * 0.15)) { const st = await settings(); bad.forEach(z => { if (st.enabled[z.sku] !== true) { st.enabled[z.sku] = false; z.hidden = true; } }); await store.setMeta("print_settings", st); SETTINGS = st; PRICE_CACHE.clear(); }
       AUDIT.hidden = bad.filter(z => z.hidden).length;
-    } finally { AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
+    } finally { auditLive = false; AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
   }
   async function auditState() {
     if (!AUDIT) AUDIT = await store.getMeta("print_audit").catch(() => null);
-    const A = AUDIT || { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
+    const A = AUDIT ? Object.assign({}, AUDIT, { running: auditLive }) : { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
     it.forEach(x => (x.labels || []).forEach(l => { const k = l.issue + ": " + l.text; by[k] = (by[k] || 0) + 1; }));
     return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length, fixedStart: it.filter(x => x.fixed).length, hidden: A.hidden || 0,
       missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]),
