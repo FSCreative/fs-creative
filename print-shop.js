@@ -3342,10 +3342,10 @@ module.exports = function (D) {
   let AUDIT = null;
   const AUD_NL = /\b(geen|gesatineerd|zonder|met|enkelzijdig|dubbelzijdig|wit|zwart|staand|liggend|gevouwen|vouw|nietjes|lijmgebonden|bedrukt|onbedrukt|achterkant|voorkant|kleur)\b/i;
   const AUD_EN = /\b(white|black|matt?e|glossy?|without|with|single|double|sided|portrait|landscape|round(ed)?|corners?|none|front|back|sheets?|pages?|yes|no|natural|silver|gold|blue|red|green|yellow|orange|grey|gray|brown|pink|purple)\b/i;
-  function audLabel(v) {
+  function audLabel(v, slug) {
     v = String(v == null ? "" : v); if (!v.trim()) return "leer";
     if (/^[a-z0-9]+([_-][a-z0-9]+)+$/.test(v)) return "Code statt Text"; if (/_/.test(v)) return "Unterstrich";
-    if (AUD_NL.test(v)) return "Niederländisch"; if (AUD_EN.test(v) && !/[äöüß]/i.test(v)) return "Englisch"; if (/\s{2,}/.test(v)) return "doppelte Leerzeichen";
+    if (AUD_NL.test(v)) return "Niederländisch"; if (/^colou?r/.test(slug || "") && AUD_EN.test(v) && !/[äöüß]/i.test(v)) return "Englisch"; if (/\s{2,}/.test(v)) return "doppelte Leerzeichen";   // Englisch nur bei Farben (Papier-/Markennamen sind Eigennamen)
     return "";
   }
   function auditOne(x, pd, ours) {
@@ -3365,7 +3365,7 @@ module.exports = function (D) {
     });
     (ours.props || []).forEach(pr => {
       const tl = audLabel(pr.title); if (tl) r.labels.push({ where: "Titel", slug: pr.slug, text: clip(pr.title, 80), issue: tl });
-      (pr.options || []).forEach(o => { const li = audLabel(o.name); if (li) r.labels.push({ where: pr.slug, slug: o.slug, text: clip(o.name, 80), issue: li });
+      (pr.options || []).forEach(o => { const li = audLabel(o.name, pr.slug); if (li) r.labels.push({ where: pr.slug, slug: o.slug, text: clip(o.name, 80), issue: li });
         if (pr.slug === "size" && ours.kind === "flat" && o.slug !== "custom" && !(o.w > 0 && o.h > 0)) r.noDims.push({ slug: o.slug, text: clip(o.name, 60) }); });
     });
     return r;
