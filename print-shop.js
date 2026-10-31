@@ -2860,6 +2860,8 @@ module.exports = function (D) {
     if (cfg().pcKey && live() && Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
+    // unterbrochene Sortiments-Prüfung (Deploy/Neustart) nach dem Start einmal fortsetzen
+    if (!auditResumed && cfg().pcKey && live()) { auditResumed = true; store.getMeta("print_audit").then(a => { if (a && !a.end && Array.isArray(a.items) && a.items.length && Date.now() - Date.parse(a.at) < 6 * 3600e3) auditRun(0, true).catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
     // Sortiments-Prüfung wöchentlich in der Nacht (Sonntag 2–5 Uhr Wien): Startausführungen heilen, nicht bestellbare Produkte ausblenden
     if (cfg().pcKey && live() && !(AUDIT && AUDIT.running)) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
       if (wd.replace(",", "") === "Sun" && +hh >= 2 && +hh < 5) store.getMeta("print_audit").then(a => { if (!a || !a.end || Date.now() - Date.parse(a.end) > 6 * 864e5) auditRun().catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
@@ -3371,7 +3373,7 @@ module.exports = function (D) {
   }
   // ── Sortiments-Prüfung (nur lesend): jedes Produkt mit Print.com abgleichen – wählbare Optionen, die im Shop fehlen, Formate ohne Maße,
   // Bezeichnungen mit Codes/Fremdwörtern. Läuft langsam im Hintergrund (niedrige Priorität, Kundenanfragen gehen vor); Ergebnis im Speicher + DB.
-  let AUDIT = null;
+  let AUDIT = null, auditResumed = false;
   const AUD_NL = /\b(geen|gesatineerd|zonder|met|enkelzijdig|dubbelzijdig|wit|zwart|staand|liggend|gevouwen|vouw|nietjes|lijmgebonden|bedrukt|onbedrukt|achterkant|voorkant|kleur)\b/i;
   const AUD_EN = /\b(white|black|matt?e|glossy?|without|with|single|double|sided|portrait|landscape|round(ed)?|corners?|none|front|back|sheets?|pages?|yes|no|natural|silver|blue|red|green|yellow|grey|gray|brown|purple)\b/i;   // orange, gold, pink sind auch deutsch
   function audLabel(v, slug) {
@@ -3420,15 +3422,16 @@ module.exports = function (D) {
     }
     return null;
   }
-  async function auditRun(max) {
+  async function auditRun(max, resume) {
     if (AUDIT && AUDIT.running) return;
-    AUDIT = { running: true, at: nowIso(), done: 0, total: 0, items: [] };
+    const prev = resume ? await store.getMeta("print_audit").catch(() => null) : null, cont = prev && !prev.end && Array.isArray(prev.items) && prev.items.length;   // nach Neustart fortsetzen
+    AUDIT = cont ? Object.assign(prev, { running: true }) : { running: true, at: nowIso(), done: 0, total: 0, items: [] };
     try { await startFixLoad();
       const s = await settings(), cat = await catalog(false), all = await catalogAll();
       const list = (cat && cat.products || []).map(p => ({ key: p.key, sku: p.sku, title: p.title, cur: true }));
       ((all && all.items) || []).forEach(it => { if (!list.some(y => y.sku === it.sku)) list.push({ key: it.sku, sku: it.sku, title: it.title, it }); });
-      AUDIT.total = Math.min(list.length, max || 5000);
-      for (const x of list.slice(0, AUDIT.total)) {
+      AUDIT.total = Math.min(list.length, max || 5000); const doneKeys = new Set(AUDIT.items.map(z => z.key));
+      for (const x of list.slice(0, AUDIT.total)) { if (doneKeys.has(x.key)) continue;
         try {
           const pd = await pcApi("GET", "/products/" + encodeURIComponent(x.sku) + "?view=reseller", undefined, { low: true });
           let ours; if (x.cur) ours = productOf(cat, x.key, s, true);
@@ -3546,7 +3549,7 @@ module.exports = function (D) {
       }
       if (p === "/admin/api/print/audit") {   // Sortiments-Prüfung: GET = Stand, POST {op:"run", max?} = starten (Hintergrund)
         const ab = req.method === "POST" ? await readJson(req, 1000) : {};
-        if (ab.op === "run" && cfg().pcKey) auditRun(+ab.max > 0 ? +ab.max : 0).catch(e => log("Sortiments-Prüfung:", e.message));
+        if (ab.op === "run" && cfg().pcKey) auditRun(+ab.max > 0 ? +ab.max : 0, ab.resume === true).catch(e => log("Sortiments-Prüfung:", e.message));
         return J(res, 200, Object.assign({ ok: true }, await auditState()));
       }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
