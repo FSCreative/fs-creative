@@ -2851,6 +2851,9 @@ module.exports = function (D) {
     if (cfg().pcKey && live() && Date.now() - lastPub > 6 * 3600e3) { lastPub = Date.now(); setTimeout(() => pubBuild().catch(e => log("Preisübersicht:", e.message)), 5 * 60e3); }   // nach dem Vorwärmen (Cache)
     if (cfg().pcKey && live() && Date.now() - lastWarm > 110 * 60e3) { lastWarm = Date.now(); warmPrices().catch(e => log("Vorwärmen:", e.message)); }
     syncTasks().catch(e => log("Aufträge:", e.message));   // Druckaufträge ↔ Aufträge im Cockpit
+    // Sortiments-Prüfung wöchentlich in der Nacht (Sonntag 2–5 Uhr Wien): Startausführungen heilen, nicht bestellbare Produkte ausblenden
+    if (cfg().pcKey && live() && !(AUDIT && AUDIT.running)) { const vp = new Date().toLocaleString("en-GB", { timeZone: "Europe/Vienna", weekday: "short", hour: "2-digit", hour12: false }), [wd, hh] = vp.split(" ");
+      if (wd.replace(",", "") === "Sun" && +hh >= 2 && +hh < 5) store.getMeta("print_audit").then(a => { if (!a || !a.end || Date.now() - Date.parse(a.end) > 6 * 864e5) auditRun().catch(e => log("Sortiments-Prüfung:", e.message)); }).catch(() => {}); }
     xmasKick();   // Weihnachtsabteilung: Preise/Liefertermine alle 12 h (nur in der Saison)
     nlMod().tick().catch(() => {});   // Newsletter: Entwurf bereitstellen, ggf. montags versenden (stündlich)
     if (pollDue()) pollAll().catch(e => log("Sendungsstatus:", e.message));   // Status/Tracking alle 30 min (plus Webhook)
@@ -3397,6 +3400,7 @@ module.exports = function (D) {
       const cp = (prod.props || []).find(x => x.slug === "color_textile"), cur = base.sel && base.sel.color_textile, n0 = Object.values(base.textile.sizes || {})[0] || base.copies || 10;
       ((cp && cp.options) || []).map(o => o.slug).filter(v => v !== cur).slice(0, 6).forEach(v => add("Farbe " + v, i => { i.sel = Object.assign({}, i.sel, { color_textile: v }); }));
       (prod.sizes || []).map(z => z.slug).filter(z => !(z in (base.textile.sizes || {}))).slice(0, 4).forEach(z => add("Größe " + z, i => { i.textile.sizes = { [z]: n0 }; }));
+      [1, 25, 50].filter(nn => nn !== n0).forEach(nn => add("Menge " + nn, i => { const z = Object.keys(i.textile.sizes || {})[0]; if (z) i.textile.sizes = { [z]: nn }; i.copies = nn; }));
     }
     (prod.props || []).forEach(pr => { const cur = base.sel && base.sel[pr.slug]; (pr.options || []).map(o => o.slug).filter(v => v !== cur).slice(0, 3).forEach(v => add(pr.title + " " + v, i => { i.sel = Object.assign({}, i.sel, { [pr.slug]: v }); })); });
     for (const [lbl, f] of C) {
