@@ -2373,6 +2373,8 @@ module.exports = function (D) {
   }
   async function pubBuild() {
     if (pubRun) return; pubRun = true;
+    // Print.com-Drosselung (429), kurze Störung oder leere Versandantwort: bis zu 2× nachfragen, sonst fällt das Produkt aus dem Feed bzw. die Menge springt
+    const qRetry = async (p, n) => { for (let i = 0; ; i++) { try { return await quote(p, n, "AT", "", {}); } catch (e) { if (i >= 2 || !(e && (e.status === 429 || e.busy || e.shipping || +e.status >= 500 || !e.status))) throw e; await new Promise(r => setTimeout(r, 5000 * (i + 1))); } } };
     try {
       const s = await settings(), cat = await catalog(false), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
       const h = await homeState(), keys = CURATED.map(c => c.key).concat(PUB_MORE.map(c => c.key), (h && h.focus) || [], (h && h.fresh) || []).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
@@ -2389,7 +2391,7 @@ module.exports = function (D) {
         const startOk = startN != null && (p.kind === "textile" || (p.tiers || []).indexOf(startN) > -1);
         for (const q of qs) {
           const inp = JSON.parse(JSON.stringify(base)); inp.copies = q; if (inp.textile) { const sz = Object.keys(inp.textile.sizes)[0]; inp.textile.sizes = { [sz]: q }; }
-          try { const n = normalizeSel(p, inp); n.low = true; const qt = await quote(p, n, "AT", "", {}); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net, link: startOk && (n.copies === startN || (p.kind !== "textile" && (p.tiers || []).indexOf(n.copies) > -1)) });
+          try { const n = normalizeSel(p, inp); n.low = true; const qt = await qRetry(p, n); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net, link: startOk && (n.copies === startN || (p.kind !== "textile" && (p.tiers || []).indexOf(n.copies) > -1)) });
             if (!label) { label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); attrs = attrsOf(p, n); } } catch (e) {}
         }
         if (!rows.length || (rows.length > 1 && rows.every(r => Math.abs(r.gross - rows[0].gross) < 0.01))) { if (rows.length > 1) log("Preisübersicht: " + key + " ausgelassen (gleicher Preis für alle Mengen)"); continue; }
@@ -2400,7 +2402,7 @@ module.exports = function (D) {
           const opt = (szp.options || []).find(o => o.slug === v); if (!opt || v === base.sel.size) continue; const fr = [];
           for (const q of qs.filter(n => (p.tiers || []).indexOf(n) > -1).slice(0, 2)) {
             const inp = JSON.parse(JSON.stringify(base)); inp.sel.size = v; inp.copies = q;
-            try { const n = normalizeSel(p, inp); if (n.sel.size !== v) break; n.low = true; const qt = await quote(p, n, "AT", "", {}); fr.push({ copies: n.copies, gross: qt.gross, net: qt.net }); } catch (e) {}
+            try { const n = normalizeSel(p, inp); if (n.sel.size !== v) break; n.low = true; const qt = await qRetry(p, n); fr.push({ copies: n.copies, gross: qt.gross, net: qt.net }); } catch (e) {}
           }
           if (fr.length) formats.push({ v, label: clip(opt.title || opt.name || v, 60), from: sLabel, rows: fr });
         }
