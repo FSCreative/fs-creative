@@ -129,12 +129,12 @@ const PUB_MORE = [
   { key: "menus" }, { key: "placemats" }, { key: "beer-mats" }, { key: "door-hangers" }, { key: "tickets" }, { key: "postcards-with-envelopes" }, { key: "sticky-notes" }, { key: "desk-pads" },
   { key: "wire-o-wall-calendar" }, { key: "wire-o-desk-calendars" }, { key: "books" }, { key: "pvc-cards" }, { key: "multiloft-businesscards" }, { key: "luxurious-businesscards" },
   { key: "sticker-vinyl" }, { key: "labels-on-roll" }, { key: "car-stickers" }, { key: "window-sticker" }, { key: "doming-stickers" }, { key: "floor-decal" },
-  { key: "beachflags", formats: ["beach_flag_medium", "beach_flag_large"] }, { key: "pole-flags" }, { key: "pavement-board" }, { key: "real-estate-signs" }, { key: "facade-banner" },
+  { key: "beachflags", formats: ["beach_flag_medium", "beach_flag_large"] }, { key: "pole-flags" }, { key: "pavement-board" }, { key: "real-estate-signs" },
   { key: "cardboard-roller-banners" }, { key: "framed-posters" }, { key: "canvas-print" }, { key: "acrylic-photo-prints" }, { key: "display-standing" }, { key: "zipper-walls" },
   { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("11" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("13" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -421,15 +421,15 @@ module.exports = function (D) {
   // unbekannte Wörter (Markenfarben wie „Mindful blue“) bleiben, nur in Großschreibung („Mindful Blue“)
   const COL_B = { blue: "blau", green: "grün", red: "rot", grey: "grau", gray: "grau", pink: "pink", black: "schwarz", white: "weiß", yellow: "gelb", orange: "orange", brown: "braun", purple: "lila", violet: "violett",
     beige: "beige", gold: "gold", silver: "silber", navy: "marineblau", turquoise: "türkis", khaki: "khaki", olive: "oliv", burgundy: "bordeaux", cream: "creme", sand: "sand", natural: "natur", mint: "mint",
-    lime: "limette", coral: "koralle", lilac: "flieder", lavender: "lavendel", charcoal: "anthrazit", anthracite: "anthrazit", petrol: "petrol", fuchsia: "fuchsia", aqua: "aqua", ecru: "ecru", taupe: "taupe", stone: "stein" };
+    lime: "limette", coral: "koralle", graphite: "graphit", lilac: "flieder", lavender: "lavendel", charcoal: "anthrazit", anthracite: "anthrazit", petrol: "petrol", fuchsia: "fuchsia", aqua: "aqua", ecru: "ecru", taupe: "taupe", stone: "stein" };
   const COL_P = { light: "hell", dark: "dunkel", deep: "tief", royal: "royal", bright: "leucht", pale: "blass", ice: "eis", sky: "himmel", ocean: "ozean", forest: "wald", bottle: "flaschen", apple: "apfel",
-    cherry: "kirsch", lemon: "zitronen", sport: "sport", neon: "neon", signal: "signal", safety: "warn", military: "militär", army: "armee", old: "alt", powder: "puder", leaf: "blatt", sun: "sonnen", fire: "feuer",
+    cherry: "kirsch", brick: "ziegel", lemon: "zitronen", sport: "sport", neon: "neon", signal: "signal", safety: "warn", military: "militär", army: "armee", old: "alt", powder: "puder", leaf: "blatt", sun: "sonnen", fire: "feuer",
     wine: "wein", steel: "stahl", slate: "schiefer", mid: "mittel", moss: "moos", baby: "baby", azure: "azur", aqua: "aqua", sea: "meer", emerald: "smaragd", pastel: "pastell" };
-  const COL_S = { melange: " meliert", heather: " meliert", marl: " meliert", raw: " (roh)" }, COL_X = { "light pink": "Hellrosa", "baby pink": "Babyrosa", "pink": "Pink", "off white": "Off-White" };
+  const COL_S = { melange: " meliert", heather: " meliert", marl: " meliert", raw: " (roh)" }, COL_X = { "light pink": "Hellrosa", "baby pink": "Babyrosa", "pink": "Pink", "off white": "Off-White", "deep navy": "Dunkles Marineblau" };
   function colorDe(v) {
     const t = String(v || "").trim(); if (!/^[A-Za-z][A-Za-z\s-]*$/.test(t)) return t;   // schon deutsch/mit Zahlen/Sonderzeichen: unverändert
     const lc = t.toLowerCase().replace(/\s+/g, " "); if (COL_X[lc]) return COL_X[lc];
-    const w = lc.split(/[\s-]+/), bi = w.map(x => !!COL_B[x]).lastIndexOf(true), tc = () => t.replace(/\s+/g, " ").split(" ").map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(" ");
+    const w = lc.split(/[\s-]+/), bi = w.map(x => !!COL_B[x]).lastIndexOf(true), tc = () => t.replace(/\s+/g, " ");   // nicht übersetzbar (Markenfarbe, schon deutsch): unverändert
     if (bi < 0) return tc(); const pre = [], suf = [];
     for (let i = 0; i < w.length; i++) { if (i === bi) continue; if (COL_S[w[i]]) suf.push(COL_S[w[i]]); else if (i < bi && COL_P[w[i]] && !pre.length) pre.push(COL_P[w[i]]); else return tc(); }
     const core = pre.join("") + COL_B[w[bi]]; return core.charAt(0).toUpperCase() + core.slice(1) + Array.from(new Set(suf)).join("");
@@ -583,6 +583,8 @@ module.exports = function (D) {
     const prod = { key: c.key, title: c.title, icon: c.icon, desc: c.desc, group: c.group || OTHER, kind, generic: !!c.generic, designer: c.designer !== undefined ? c.designer : (kind === "flat" || kind === "banner") && !huge && !exposed.some(x => x.slug === "pages") && fixed.pages == null && fixed.number_of_pages == null, safe: c.safe || 3, sku: String(sku),
       bleed: kind === "textile" || kind === "promo" ? 0 : +pd.bleed > 0 && +pd.bleed <= 100 ? +pd.bleed : c.bleed != null ? c.bleed : 2, dpi: c.dpi || (kind === "banner" || large ? 100 : 300), specs,
       props: exposed, tiers, qty, urgency, fixed, auto, excludes: [], dims, dimsArea, sizeLabel, custom, sizes, positions, methods, maxCopies, areaProp, areas, printArea: c.printArea ? c.printArea.slice() : null, defaults: {},
+      // Weißdruck (Print.com blendet „white_print“ aus): bei Druck „Farbe + Weiß“ (5/…) muss er mit, sonst gibt es keinen Preis (Acrylglas, Fotokacheln …)
+      white: by.white_print && !exposed.some(x => x.slug === "white_print") && fixed.white_print == null ? (wo => ({ yes: wo.find(v => !NONE_SLUG.test(v)) || "", no: wo.find(v => NONE_SLUG.test(v)) || "" }))((by.white_print.options || []).map(o => String(o.slug))) : null,
       cat: c.cat ? { main: c.cat.split("/")[0], sub: c.cat.split("/")[1] || "" } : Array.isArray(pd.category) && pd.category[0] ? { main: slugN(pd.category[0]), sub: slugN(pd.category[1]) } : null };
     prod.excludes = (Array.isArray(pd.excludes) ? pd.excludes : []).filter(Array.isArray).slice(0, 600).map(rule => rule.filter(x => x && x.property && Array.isArray(x.options)).map(x => ({ property: String(x.property), options: x.options.map(o => String(o && typeof o === "object" ? o.slug : o)) }))).filter(r => r.length);
     // Vorauswahl: bevorzugte Optionen zuerst (kuratiert bzw. Papier 115–170 g Bilderdruck), dann die erste Kombination ohne Ausschluss
@@ -1006,6 +1008,7 @@ module.exports = function (D) {
     if (kind === "promo") { const a = areaOf(prod, all), two = /^(44|11)$/.test(String(all.printtype || ""));
       positions = two ? [{ slug: "area", title: "Vorderseite", area: [a.w, a.h] }, { slug: "area2", title: "Rückseite", area: [a.w, a.h] }] : [{ slug: "area", title: "Druckfläche", area: [a.w, a.h] }]; fileSel = { pos: positions.map(x => x.slug), area: [a.w, a.h] }; more.push(["Druckfläche", a.w + " × " + a.h + " mm"]); }
     const pcOpts = Object.assign({}, all, { copies }); if (prod.urgency.length) pcOpts.urgency = urgency;
+    if (prod.white && prod.white.yes && /^5/.test(String(all.printtype || ""))) pcOpts.white_print = prod.white.yes;   // sonst wie bisher nicht senden
     if (kind === "flat" && !size) size = sizeOf(prod, all);
     let folds = null, closed = null;
     if (size && all.fold) { folds = foldSpec(all.fold, size.w, size.h); if (folds) { closed = size; size = folds.open; more.push(["Format offen", size.w + " × " + size.h + " mm"]); } }
