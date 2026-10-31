@@ -3372,7 +3372,11 @@ module.exports = function (D) {
           const pd = await pcApi("GET", "/products/" + encodeURIComponent(x.sku) + "?view=reseller", undefined, { low: true });
           let ours; if (x.cur) ours = productOf(cat, x.key, s, true);
           else { try { const g0 = catOf(x.it.sku, s, x.it.auto); ours = parseProduct(genericCfg(x.it, g0), x.sku, pd); } catch (e) { ours = { err: e.message }; } }
-          AUDIT.items.push(auditOne(x, pd || {}, ours));
+          const r = auditOne(x, pd || {}, ours);
+          // Preis-Check: Startausführung einmal rechnen (niedrige Priorität) – ohne Preis ist das Produkt im Shop nicht bestellbar
+          if (!r.err && ours && !ours.err) { try { const b0 = stdInput(x.cur ? ours : withStart(ours, ours, s)); if (!b0) throw new Error("keine Startausführung"); const n = normalizeSel(ours, b0); n.low = true; const q = await quote(ours, n, "AT", "", {}); r.price = { copies: n.copies, gross: q.gross }; }
+            catch (e) { r.noPrice = clip(e.message || e, 160); } }
+          AUDIT.items.push(r);
         } catch (e) { AUDIT.items.push({ key: x.key, sku: x.sku, title: x.title || "", err: clip(e.message, 160) }); }
         AUDIT.done++; await new Promise(r => setTimeout(r, 250));
       }
@@ -3382,7 +3386,7 @@ module.exports = function (D) {
     if (!AUDIT) AUDIT = await store.getMeta("print_audit").catch(() => null);
     const A = AUDIT || { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
     it.forEach(x => (x.labels || []).forEach(l => { const k = l.issue + ": " + l.text; by[k] = (by[k] || 0) + 1; }));
-    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length,
+    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length,
       missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]), items: it };
   }
   async function marginsRun() {
