@@ -620,13 +620,14 @@ function landscape(fresh,ground,season,move,cab){
   body+=tree("Pine2",1342,276,.44,"k-t2")+tree("Pine",1506,272,.4,"k-t2")+tree("Tree",1446,270,.36,"k-lx")+tree("Pine2",1562,270,.42,"k-t1");
   H.slice(0,4).forEach(house);
   body+='<g transform="translate(1414 274) scale(.96)">'+church(vRoof)+'</g>';
-  body+=tree("Tree",1290,300,.46,"k-lx")+tree("Pine",1432,302,.44,"k-t2")+tree("Pine2",1516,302,.52,"k-t1");
-  /* Handy (schmal, das größere Dorf links ist nicht zu sehen): die zwei mittleren Häuser vorne werden SPAR und Feuerwehr (Wunsch Simon 31.10.2026) */
-  H.slice(4).forEach(function(h,i){ house(h,i===1||i===2?"alp-dsk":""); });
-  [[spar(vRoof),1376,299.5,.84],[feuerwehr(rng(4242),vRoof),1474,299,.86]].forEach(function(m){ var tr='translate('+m[1]+' '+m[2]+') scale('+m[3]+')';
+  body+=tree("Tree",1290,300,.46,"k-lx")+tree("Pine",1432,302,.44,"k-t2")+'<g class="alp-dsk">'+tree("Pine2",1516,302,.52,"k-t1")+'</g>';
+  /* Handy (schmal, das größere Dorf links ist nicht zu sehen): die zwei rechten Häuser vorne werden Feuerwehr und SPAR (Wunsch Simon 31.10.2026) –
+     ganz rechts, weil am Handy nur der rechte Bildrand sicher sichtbar ist */
+  H.slice(4).forEach(function(h,i){ house(h,i>=2?"alp-dsk":""); });
+  [[feuerwehr(rng(4242),vRoof),1486,299,.86],[spar(vRoof),1550,300,.84]].forEach(function(m){ var tr='translate('+m[1]+' '+m[2]+') scale('+m[3]+')';
     body+='<g class="alp-mbo" transform="'+tr+'">'+m[0].b+'</g>'; glow+='<g class="alp-mbo" transform="'+tr+'">'+m[0].g+'</g>'; });
   body+=tree("Pine",1288,312,.66,"k-t2")+tree("Pine2",1274,316,.5,"k-t1")+
-        tree("Pine2",1572,318,.66,"k-t2");
+        '<g class="alp-dsk">'+tree("Pine2",1572,318,.66,"k-t2")+'</g>';
   function house(h,cls){ var o=h[2]==="F"?chaletF(vr,vRoof):chaletS(vr,vRoof), fl=h[4]?-1:1, tr='translate('+h[0]+' '+h[1]+') scale('+(h[3]*fl)+' '+h[3]+')', c=cls?' class="'+cls+'"':'';
     body+='<g'+c+' transform="'+tr+'">'+o.b+'</g>'; glow+='<g'+c+' transform="'+tr+'">'+o.g+'</g>';
     if(h[5]) smoke.push([h[0]+o.ch[0]*h[3]*fl,h[1]+o.ch[1]*h[3],null,null,cls||""]); }

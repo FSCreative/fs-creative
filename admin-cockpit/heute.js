@@ -564,7 +564,10 @@ F.css(
   ".agm{display:grid;gap:12px;min-width:0}"+
   ".view-heute .agm .ag-hero{padding:calc(16px + env(safe-area-inset-top,0px)) 4px 4px}"+
   ".agm .ag-clock{font-size:76px;line-height:.95}"+
-  ".agm .ag-fc4{gap:5px;margin-top:8px;max-width:none}.agm .ag-fd{font-size:12px;padding:3px 8px 3px 7px;gap:4px}.agm .ag-fd svg{width:14px;height:14px}.agm .ag-fd b{min-width:0}"+
+  /* Handy: vier kleine Spalten in einer Zeile (Tag, Symbol, Höchst/Tiefst) – hält den Kopf niedrig, das Dorfbild bleibt im Ausschnitt */
+  ".agm .ag-fc4{display:grid;grid-template-columns:repeat(4,58px);gap:2px;margin-top:9px;max-width:none}"+
+  ".agm .ag-fd{flex-direction:column;align-items:flex-start;gap:2px;padding:0;border:0;background:none;font-size:12.5px}.agm .ag-fd b{min-width:0;font-size:11.5px;font-weight:600;color:var(--ink-3)}"+
+  ".agm .ag-fd svg{width:17px;height:17px}.agm .ag-fd .ag-pop{font-size:10.5px;margin-top:-1px}"+
   ".agm .ag-date{margin-top:8px;font-size:19px}.agm .ag-wx{font-size:14.5px;align-items:flex-start}.agm .ag-wx svg{margin-top:1px}.agm .ag-wx span{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.agm .ag-greet{margin-top:8px}"+
   ".agm .agp{padding:16px 16px 14px}"+
   ".agm .ag-h h2{font-size:12px}"+
