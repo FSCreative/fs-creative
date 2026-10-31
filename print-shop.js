@@ -3533,7 +3533,16 @@ module.exports = function (D) {
     const cat = c.pcKey ? await catalog(false).catch(() => null) : null;
     return { ok: true, live: live(), envLive: process.env.PRINT_SHOP_LIVE === "1", mollieMode: c.mollieKey ? (/^test_/.test(c.mollieKey) ? "test" : "live") : "", configured: { printcom: !!c.pcKey, mollie: !!c.mollieKey, preflight: c.preflight, db: useDb(), base: c.pcBase }, defaults: { markupPct: SETTINGS && SETTINGS.markupPct != null ? SETTINGS.markupPct : c.markup, minMarginEur: SETTINGS && SETTINGS.minMarginEur != null ? SETTINGS.minMarginEur : c.minMargin, envMarkupPct: c.markup, envMinMarginEur: c.minMargin },
       settings: s, groups: mainsList().map(m => ({ slug: m.slug, name: m.name })), catalog: cat ? { at: cat.at, errors: cat.errors || [], products: (cat.products || []).map(p => ({ key: p.key, title: p.title, sku: p.sku, group: p.group, kind: p.kind, props: p.props.map(x => ({ slug: x.slug, title: x.title, options: x.options.map(o => ({ slug: o.slug, name: o.name })) })), tiers: p.tiers })) } : null,
-      curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary) };
+      curated: CURATED.map(x => { const p = cat && (cat.products || []).find(y => y.key === x.key), g = p ? catOf(p.sku, s, p.group, p.cat) : { main: x.group || OTHER }; return { key: x.key, title: x.title, group: groupName(g.main) }; }), review: orders.filter(o => REVIEW[o.status]).length, orders: orders.slice(0, 300).map(orderSummary), margins: marginStats(orders) };
+  }
+  // Marge des Druckshops (Kachel „Für dich, jetzt“): bestätigte Bestellungen (wie Treuebonus: bezahlt bis zugestellt) – dieser Monat, dieses Jahr, gesamt
+  function marginStats(orders) {
+    const t = today(), m = t.slice(0, 7), y = t.slice(0, 4), day = iso => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(new Date(iso));
+    const z = () => ({ n: 0, margin: 0, net: 0 }), out = { month: m, m: z(), y: z(), all: z() };
+    orders.forEach(o => { if (!o || !BONUS_COUNTS[o.status] || !o.createdAt) return; const p = o.price || {}, d = day(o.createdAt), mg = +p.margin || 0, nt = +p.net || 0;
+      [["all", true], ["y", d.slice(0, 4) === y], ["m", d.slice(0, 7) === m]].forEach(([k, ok]) => { if (ok) { out[k].n++; out[k].margin += mg; out[k].net += nt; } }); });
+    ["m", "y", "all"].forEach(k => { out[k].margin = r2(out[k].margin); out[k].net = r2(out[k].net); });
+    return out;
   }
   async function sortimentState() {
     const s = await settings(), all = await catalogAll().catch(() => null), cat = CAT;

@@ -113,12 +113,19 @@ function wxLine(){ var w=F.D.weather; if(!w||w.temp==null||!isFinite(+w.temp)) r
   if(w.snowLine!=null&&isFinite(+w.snowLine)&&+w.snowLine>0) parts.push("Schneefallgrenze "+Math.round(+w.snowLine).toLocaleString("de-AT")+" m");
   var txt=parts.filter(Boolean).join(" · ");
   return '<p class="ag-wx" title="'+esc(txt)+'">'+F.svg(Object.prototype.hasOwnProperty.call(F.icons,w.icon)?w.icon:"cloud")+'<span>'+esc(txt)+'</span></p>'; }
+/* Vorschau heute + 3 Tage (Wunsch Simon 31.10.2026): Symbol, Höchst/Tiefst, Regenrisiko ab 30 % */
+function wxDays(){ var ds=(F.D.weather&&F.D.weather.days)||[]; if(ds.length<2) return "";
+  return '<div class="ag-fc4" role="list" aria-label="Wetter der nächsten Tage">'+ds.slice(0,4).map(function(d,i){
+    var dt=new Date(d.date+"T12:00:00"), lbl=i===0||d.date===F.D.today?"Heute":dt.toLocaleDateString("de-AT",{weekday:"short"}).replace(/\.$/,""), ok=d.max!=null&&d.min!=null, rain=d.pop!=null&&d.pop>=30;
+    var t=dt.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"numeric"})+": "+(d.text||"")+(ok?", "+d.min+"° bis "+d.max+"°":"")+(d.pop!=null?", Niederschlag "+d.pop+" %":"");
+    return '<span class="ag-fd" role="listitem" title="'+esc(t)+'"><b>'+esc(lbl)+'</b>'+F.svg(Object.prototype.hasOwnProperty.call(F.icons,d.icon)?d.icon:"cloud")+
+      (ok?'<span>'+d.max+'°<i>/'+d.min+'°</i></span>':'')+(rain?'<i class="ag-pop">'+d.pop+' %</i>':'')+'</span>'; }).join("")+'</div>'; }
 function chips(){ var out="", nl=F.newLeads().length, cust=(F.D.sites||[]).filter(function(s){ return !s.own&&s.active; }), bad=cust.filter(F.siteBad).length;
   if(nl) out+=' · <button type="button" class="ag-chip glow" data-go="kunden">'+nl+(nl===1?" neue Anfrage":" neue Anfragen")+'</button>';
   if(bad) out+=' · <button type="button" class="ag-chip bad" data-go="web">'+bad+(bad===1?" Website mit Problem":" Websites mit Problem")+'</button>';
   return out; }
 function heroHtml(f){ var dl=new Date().toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"});
-  return '<div class="ag-hero"><time class="ag-clock" id="agClock"></time><p class="ag-date">'+esc(dl)+'</p>'+safe(wxLine)+
+  return '<div class="ag-hero"><time class="ag-clock" id="agClock"></time><p class="ag-date">'+esc(dl)+'</p>'+safe(wxLine)+safe(wxDays)+
     '<p class="ag-greet">'+esc(greet())+', Simon · '+esc(openTxt(f.length))+chips()+'</p>'+(isMob()?'':quickDesk())+'</div>'; }
 /* Schnellaktionen (gleich wie „+ Neu“ oben, plus Beleg); .glass = Unschärfe aus der Shell, damit die Schrift über hellem Schnee lesbar bleibt */
 function scanIn(cap){ return '<input type="file" class="fsd-scan" accept="image/*,application/pdf"'+(cap?' capture="environment"':'')+' multiple hidden>'; }
@@ -152,6 +159,12 @@ function blitzTile(){
   var d=String(n.eventDate).slice(0,10), dd=Math.round((new Date(d+"T12:00:00")-new Date(t+"T12:00:00"))/864e5), pk=n.package&&typeof n.package==="object"?n.package.name:n.package;
   return tileHtml({k:"Nächste Fotobox",icon:"kal",tag:dd<=2?["warn",dd===0?"heute":dd===1?"morgen":"übermorgen"]:["grey","in "+dd+" Tagen"],act:n.id!=null?"bzopen:"+n.id:"pltab:blitz",
     v:dShort(d)+(n.customerName?" · "+n.customerName:""),d:[pk,n.eventLocation||n.location].filter(Boolean).join(" · ")||"Blitzdings-Buchung"}); }
+function druckTile(){
+  var M=F.prMargin?F.prMargin():null;
+  if(!M) return tileHtml({k:"Druckshop-Marge",icon:"print",v:"Lade …",d:"Bestellungen im Druckshop",act:"go:print"});
+  var m=M.m||{}, y=M.y||{}, mon=new Date(F.D.today+"T12:00:00").toLocaleDateString("de-AT",{month:"long"});
+  return tileHtml({k:"Druckshop-Marge",icon:"print",tag:["grey",mon],act:"go:print",v:eur(m.margin||0),
+    d:(m.n||0)+((m.n||0)===1?" Bestellung":" Bestellungen")+" · Umsatz "+eur(m.net||0)+" netto · "+String(F.D.today).slice(0,4)+": "+eur(y.margin||0)}); }
 function kochduTile(){
   var kd=F.D.kochduDay; if(!kd) return tileHtml({k:"kochdu-Provision",icon:"euro",v:"Nicht verbunden",d:"kochdu-Statistik fehlt",act:"pltab:kochdu"});
   var when=kd.weekend?"Fr–So, "+de(kd.from).slice(0,6)+"–"+de(kd.to).slice(0,6):"gestern, "+dShort(kd.to);
@@ -163,7 +176,7 @@ function feedItemHtml(x){ var tg=x.tag||["grey",""];
     '<div class="acts">'+(x.acts||[]).map(function(a){ return '<button type="button" class="btn '+esc(a[2]||"")+'" data-act="'+esc(a[1])+'">'+esc(a[0])+'</button>'; }).join("")+snoozeBtn(x)+'</div></li>'; }
 function forCard(f){
   var open=!!F.UI.feedAll;
-  return '<section class="panel agp ag-for">'+hdr("Für dich, jetzt")+'<div class="ag-tiles">'+safe(siteTile)+safe(blitzTile)+safe(kochduTile)+'</div>'+
+  return '<section class="panel agp ag-for">'+hdr("Für dich, jetzt")+'<div class="ag-tiles">'+safe(siteTile)+safe(blitzTile)+safe(kochduTile)+safe(druckTile)+'</div>'+
     (!f.length?'<p class="ag-empty">'+F.svg("checkCircle")+'<span>Nichts offen. Genieß den Tag.</span></p>':
       (open?'<ul class="feed ag-list">'+f.map(feedItemHtml).join("")+'</ul>':'')+
       '<button type="button" class="ag-tog'+(open?" on":"")+'" data-act="togglefeed" aria-expanded="'+open+'">'+(open?"Weniger anzeigen":"Alles, was ansteht ("+f.length+")")+F.svg("chevD")+'</button>')+'</section>'; }
@@ -421,6 +434,9 @@ F.css(
 ".ag-date{margin:12px 0 0;font:600 20px/1.3 var(--f-display);letter-spacing:-.01em;color:var(--ink)}"+
 ".ag-wx{display:flex;align-items:center;gap:7px;margin:5px 0 0;font-size:15px;color:var(--ink-2);min-width:0}.ag-wx svg{width:18px;height:18px;flex:none}.ag-wx span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"+
 ".ag-greet{margin:12px 0 0;font-size:14px;color:var(--ink-2);text-wrap:pretty}"+
+".ag-fc4{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 0;max-width:420px}"+
+".ag-fd{display:inline-flex;align-items:center;gap:5px;padding:4px 10px 4px 9px;border-radius:99px;border:1px solid var(--line);background:color-mix(in srgb,var(--sunk) 78%,transparent);font-size:12.5px;color:var(--ink);white-space:nowrap;font-variant-numeric:tabular-nums}"+
+".ag-fd b{font-weight:650;color:var(--ink-2);min-width:2.2em}.ag-fd svg{width:16px;height:16px;flex:none;color:var(--ink-2)}.ag-fd i{font-style:normal;color:var(--ink-3)}.ag-fd .ag-pop{color:var(--info,var(--glow));font-size:11.5px;font-weight:600}"+
 ".ag-chip{border:0;background:none;padding:0;font:inherit;font-weight:700;cursor:pointer}.ag-chip.glow{color:var(--glow)}.ag-chip.bad{color:var(--bad)}.ag-chip:hover{text-decoration:underline}"+
 ".ag-qa{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}"+
 ".ag-q{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px 0 11px;border-radius:99px;border:1px solid var(--line);background:var(--sunk);color:var(--ink);font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}"+
@@ -548,6 +564,7 @@ F.css(
   ".agm{display:grid;gap:12px;min-width:0}"+
   ".view-heute .agm .ag-hero{padding:calc(16px + env(safe-area-inset-top,0px)) 4px 4px}"+
   ".agm .ag-clock{font-size:76px;line-height:.95}"+
+  ".agm .ag-fc4{gap:5px;margin-top:8px;max-width:none}.agm .ag-fd{font-size:12px;padding:3px 8px 3px 7px;gap:4px}.agm .ag-fd svg{width:14px;height:14px}.agm .ag-fd b{min-width:0}"+
   ".agm .ag-date{margin-top:8px;font-size:19px}.agm .ag-wx{font-size:14.5px;align-items:flex-start}.agm .ag-wx svg{margin-top:1px}.agm .ag-wx span{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}.agm .ag-greet{margin-top:8px}"+
   ".agm .agp{padding:16px 16px 14px}"+
   ".agm .ag-h h2{font-size:12px}"+

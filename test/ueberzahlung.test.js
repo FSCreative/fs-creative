@@ -14,7 +14,7 @@ const r2 = n => Math.round((+n || 0) * 100) / 100;
 // ── Temp-Kopie der Module ──
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "fsc-ueberzahlung-"));
 fs.mkdirSync(path.join(TMP, "admin-cockpit"));
-["fin-local.js", "fin-proposals.js", "fin-mollie.js", "fin-bankrules.js"].forEach(f => fs.copyFileSync(path.join(ROOT, f), path.join(TMP, f)));
+["fin-local.js", "fin-archive.js", "fin-proposals.js", "fin-mollie.js", "fin-bankrules.js"].forEach(f => fs.copyFileSync(path.join(ROOT, f), path.join(TMP, f)));
 fs.copyFileSync(path.join(ROOT, "admin-cockpit", "steuer-calc.js"), path.join(TMP, "admin-cockpit", "steuer-calc.js"));
 const S = require(path.join(TMP, "admin-cockpit", "steuer-calc.js"));
 

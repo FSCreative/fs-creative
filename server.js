@@ -3089,7 +3089,7 @@ const WMO = [[[0], "sonnig", "klar", "sun"], [[1], "heiter", "überwiegend klar"
 function weatherNow() {
   if (WEATHER.at && Date.now() - WEATHER.at < (WEATHER.data ? 30 : 5) * 60e3) return Promise.resolve(WEATHER.data);   // Fehler nur 5 min merken
   if (WEATHER.p) return WEATHER.p;
-  const q = "?latitude=" + WEATHER_AT.lat + "&longitude=" + WEATHER_AT.lon + "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&hourly=freezing_level_height&timezone=Europe%2FVienna&forecast_days=1";
+  const q = "?latitude=" + WEATHER_AT.lat + "&longitude=" + WEATHER_AT.lon + "&current=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&hourly=freezing_level_height&timezone=Europe%2FVienna&forecast_days=4";
   WEATHER.p = (async () => {
     try {
       const r = await fetch(WEATHER_URL + q, { signal: AbortSignal.timeout(3000) }); if (!r.ok) throw new Error("HTTP " + r.status);
@@ -3098,6 +3098,9 @@ function weatherNow() {
       const w = WMO.find(x => x[0].indexOf(+c.weather_code) > -1) || [[], "wechselhaft", "wechselhaft", "cloud"], day = c.is_day !== 0;
       const out = { temp: Math.round(+c.temperature_2m), text: day ? w[1] : w[2], icon: w[3], code: +c.weather_code, place: WEATHER_AT.place,
         min: isFinite(+(dl.temperature_2m_min || [])[0]) ? Math.round(+dl.temperature_2m_min[0]) : null, max: isFinite(+(dl.temperature_2m_max || [])[0]) ? Math.round(+dl.temperature_2m_max[0]) : null, at: new Date().toISOString() };
+      // Vorschau heute + 3 Tage (Tageswerte: Symbol aus dem Tages-Wettercode, Tiefst/Höchst, Niederschlagsrisiko)
+      out.days = (Array.isArray(dl.time) ? dl.time : []).slice(0, 4).map((d, i) => { const cd = +(dl.weather_code || [])[i], ww = WMO.find(x => x[0].indexOf(cd) > -1) || [[], "wechselhaft", "", "cloud"], n = k => isFinite(+((dl[k] || [])[i])) && (dl[k] || [])[i] != null ? Math.round(+dl[k][i]) : null;
+        return { date: String(d).slice(0, 10), icon: ww[3], text: ww[1], min: n("temperature_2m_min"), max: n("temperature_2m_max"), pop: n("precipitation_probability_max") }; }).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.date));
       // Schneefallgrenze ≈ Nullgradgrenze − 300 m (nur bei Niederschlag und wenn sie über dem Tal liegt)
       const hi = Array.isArray(h.time) ? h.time.indexOf(String(c.time || "").slice(0, 13) + ":00") : -1, fl = hi > -1 ? +(h.freezing_level_height || [])[hi] : NaN;
       if (+c.weather_code >= 51 && isFinite(fl)) { const sl = Math.round((fl - 300) / 100) * 100; if (sl >= 1000 && sl <= 3500) out.snowLine = sl; }

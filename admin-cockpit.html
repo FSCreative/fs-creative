@@ -13,8 +13,8 @@
 <meta name="theme-color" content="#0d1520">
 <link href="/fonts/cockpit/fonts.css" rel="stylesheet"><!-- Plus Jakarta Sans + JetBrains Mono lokal (keine Verbindung zu Google) -->
 <title>FS Cockpit</title>
-<!-- Darstellung vor dem ersten Zeichnen: „glas“ (Alpenglas) ist Standard; einmalig wird jede bisherige Wahl auf „glas“ umgestellt (Merker fsc_theme_glas2), danach gilt die eigene Wahl -->
-<script>(function(){var d=document.documentElement,L,t="glas";try{L=window.localStorage;t=JSON.parse(L.getItem("fsc_theme")||"null");if(!L.getItem("fsc_theme_glas2")){t="glas";L.setItem("fsc_theme",JSON.stringify(t));L.setItem("fsc_theme_glas1","1");L.setItem("fsc_theme_glas2","1");}if(["glas","dark","light","auto"].indexOf(t)<0)t="glas";}catch(e){t="glas";}
+<!-- Darstellung vor dem ersten Zeichnen: „Dunkel“ ist Standard; „Alpenglas“ gibt es nicht mehr (Wunsch Simon 31.10.2026) – gespeichertes „glas“ wird zu „dark“ -->
+<script>(function(){var d=document.documentElement,L,t="dark";try{L=window.localStorage;t=JSON.parse(L.getItem("fsc_theme")||"null");if(t==="glas"){t="dark";L.setItem("fsc_theme",JSON.stringify(t));}if(["dark","light","auto"].indexOf(t)<0)t="dark";}catch(e){t="dark";}
 if(t==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",t);
 var mm=function(q){try{return !!(window.matchMedia&&matchMedia(q).matches);}catch(e){return false;}},dk=t==="auto"?mm("(prefers-color-scheme: dark)"):t!=="light";
 var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="glas"?"#0d1520":dk?"#0b0e14":"#f4f5f8");

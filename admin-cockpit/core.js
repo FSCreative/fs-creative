@@ -244,16 +244,16 @@ FSC.confirm = function(text,okLabel,fn,danger){
   document.getElementById("cfOk").onclick=function(){ FSC.closeModal(); fn(); };
 };
 
-/* ---------- Darstellung: Alpenglas (Standard) / Dunkel / Hell / Wie System ---------- */
-FSC.THEMES=[["glas","Alpenglas"],["dark","Dunkel"],["light","Hell"],["auto","Wie System"]];
-var THEME_IDS=["glas","dark","light","auto"], DARKQ=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;
+/* ---------- Darstellung: Dunkel (Standard) / Hell / Wie System – „Alpenglas“ entfernt (Wunsch Simon 31.10.2026), gespeichertes „glas“ → Dunkel ---------- */
+FSC.THEMES=[["dark","Dunkel"],["light","Hell"],["auto","Wie System"]];
+var THEME_IDS=["dark","light","auto"], DARKQ=window.matchMedia?window.matchMedia("(prefers-color-scheme: dark)"):null;
 /* true für Alpenglas und Dunkel, bei „Wie System“ je nach Systemeinstellung – für Module, die per JS hell/dunkel unterscheiden */
 FSC.isDark = function(){ var a=document.documentElement.getAttribute("data-theme"); if(a) return a!=="light"; return !!(DARKQ&&DARKQ.matches); };
 function themeMeta(t){ var m=document.querySelector('meta[name="theme-color"]'); if(m) m.setAttribute("content",t==="glas"?"#0d1520":FSC.isDark()?"#0b0e14":"#f4f5f8"); }
 FSC.theme = function(t){
   var want=t;
-  if(want!==undefined){ if(THEME_IDS.indexOf(want)<0) want="glas"; FSC.ls("fsc_theme",want); }
-  t=FSC.ls("fsc_theme"); if(THEME_IDS.indexOf(t)<0) t=want||"glas";
+  if(want!==undefined){ if(THEME_IDS.indexOf(want)<0) want="dark"; FSC.ls("fsc_theme",want); }
+  t=FSC.ls("fsc_theme"); if(THEME_IDS.indexOf(t)<0){ t=want||"dark"; FSC.ls("fsc_theme",t); }
   var de=document.documentElement, was=de.getAttribute("data-theme")||"auto";
   if(t==="auto") de.removeAttribute("data-theme"); else de.setAttribute("data-theme",t);
   themeMeta(t);
@@ -262,7 +262,7 @@ FSC.theme = function(t){
   return t;
 };
 if(DARKQ&&DARKQ.addEventListener) DARKQ.addEventListener("change",function(){ if(document.documentElement.hasAttribute("data-theme")) return; themeMeta("auto"); try{ document.dispatchEvent(new CustomEvent("fsc-theme",{detail:{theme:"auto",dark:FSC.isDark()}})); }catch(e){} });
-FSC.action("theme",function(v){ v=FSC.theme(v); FSC.toast(v==="glas"?"Alpenglas":v==="light"?"Heller Modus":v==="dark"?"Dunkler Modus":"Darstellung wie System"); if(document.getElementById("moreSheet")) FSC.actions.moresheet(); });
+FSC.action("theme",function(v){ v=FSC.theme(v); FSC.toast(v==="light"?"Heller Modus":v==="dark"?"Dunkler Modus":"Darstellung wie System"); if(document.getElementById("moreSheet")) FSC.actions.moresheet(); });
 FSC.themeSeg = function(short){ var t=FSC.theme(); return '<div class="seg" role="group" aria-label="Darstellung">'+FSC.THEMES.map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+(short&&o[0]==="auto"?"System":o[1])+'</button>'; }).join("")+'</div>'; };
 
 /* ---------- Mehr-Menü (Handy) ---------- */

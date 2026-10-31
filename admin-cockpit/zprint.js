@@ -13,6 +13,8 @@ function ico(k){ return F.svg(k).replace("<svg ",'<svg class="pr-i" '); }
 var ST=null, busy=false, at=0, CUR=null, FILTER="review";
 /* Für „Heute“ (Karte „Druck live“): Stand der Druckaufträge, sobald geladen */
 F.prLive=function(){ return ST&&ST.ok?{review:ST.review||0,orders:ST.orders||[]}:null; };
+/* Für „Heute“ (Kachel „Druckshop-Marge“): Summen der bestätigten Bestellungen – Monat, Jahr, gesamt (vom Server gerechnet) */
+F.prMargin=function(){ return ST&&ST.ok&&ST.margins?ST.margins:null; };
 var TAG={pending_payment:"grey",payment_failed:"bad",paid:"warn",invoice_requested:"warn",ordered:"info",in_production:"info",shipped:"ok",delivered:"ok",rejected:"grey",problem:"bad"};
 F.css('.pr-list{display:grid}.pr-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;width:100%;color:inherit}.pr-row:hover{background:var(--hover,var(--sunk))}.pr-row b{display:block}.pr-row .muted{display:block}'+
   '.pr-row>span{min-width:0}.pr-row>span:first-child>b{overflow-wrap:anywhere;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.pr-row>span:first-child>.muted{margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pr-row .pr-c2{font-size:12.5px;line-height:1.4}.pr-row .num b{font-variant-numeric:tabular-nums}'+

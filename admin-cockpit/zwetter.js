@@ -621,15 +621,18 @@ function landscape(fresh,ground,season,move,cab){
   H.slice(0,4).forEach(house);
   body+='<g transform="translate(1414 274) scale(.96)">'+church(vRoof)+'</g>';
   body+=tree("Tree",1290,300,.46,"k-lx")+tree("Pine",1432,302,.44,"k-t2")+tree("Pine2",1516,302,.52,"k-t1");
-  H.slice(4).forEach(house);
+  /* Handy (schmal, das größere Dorf links ist nicht zu sehen): die zwei mittleren Häuser vorne werden SPAR und Feuerwehr (Wunsch Simon 31.10.2026) */
+  H.slice(4).forEach(function(h,i){ house(h,i===1||i===2?"alp-dsk":""); });
+  [[spar(vRoof),1376,299.5,.84],[feuerwehr(rng(4242),vRoof),1474,299,.86]].forEach(function(m){ var tr='translate('+m[1]+' '+m[2]+') scale('+m[3]+')';
+    body+='<g class="alp-mbo" transform="'+tr+'">'+m[0].b+'</g>'; glow+='<g class="alp-mbo" transform="'+tr+'">'+m[0].g+'</g>'; });
   body+=tree("Pine",1288,312,.66,"k-t2")+tree("Pine2",1274,316,.5,"k-t1")+
         tree("Pine2",1572,318,.66,"k-t2");
-  function house(h){ var o=h[2]==="F"?chaletF(vr,vRoof):chaletS(vr,vRoof), fl=h[4]?-1:1, tr='translate('+h[0]+' '+h[1]+') scale('+(h[3]*fl)+' '+h[3]+')';
-    body+='<g transform="'+tr+'">'+o.b+'</g>'; glow+='<g transform="'+tr+'">'+o.g+'</g>';
-    if(h[5]) smoke.push([h[0]+o.ch[0]*h[3]*fl,h[1]+o.ch[1]*h[3]]); }
+  function house(h,cls){ var o=h[2]==="F"?chaletF(vr,vRoof):chaletS(vr,vRoof), fl=h[4]?-1:1, tr='translate('+h[0]+' '+h[1]+') scale('+(h[3]*fl)+' '+h[3]+')', c=cls?' class="'+cls+'"':'';
+    body+='<g'+c+' transform="'+tr+'">'+o.b+'</g>'; glow+='<g'+c+' transform="'+tr+'">'+o.g+'</g>';
+    if(h[5]) smoke.push([h[0]+o.ch[0]*h[3]*fl,h[1]+o.ch[1]*h[3],null,null,cls||""]); }
   /* ganzes Dorf etwas größer (um die Dorfmitte), Rauchpunkte mitrechnen */
   var VS=1.1, VX=1449, VT='translate('+VX+' 300) scale('+VS+') translate(-1440 -300)';
-  smoke=smoke.map(function(c){ return [VX+(c[0]-1440)*VS,300+(c[1]-300)*VS]; });
+  smoke=smoke.map(function(c){ return [VX+(c[0]-1440)*VS,300+(c[1]-300)*VS,null,null,c[4]||""]; });
   /* Weiler auf einer Waldlichtung (nur auf breiten Bildschirmen sichtbar, über/rechts neben den Schnellknöpfen): zwei Höfe und ein Stadel */
   var hb='', hg='';
   SN.roof=wRoof; SN.cap=wCap;
@@ -753,7 +756,7 @@ function build(st){
   if(st.snowLine&&L.sll) h+='<svg class="alp-sll" viewBox="0 0 1600 320" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><path class="h" d="'+L.sll+'"/><path d="'+L.sll+'"/></svg>';
   if(ic==="fog") for(i=0;i<3;i++) h+='<div class="alp-fog" style="bottom:'+(8+i*12)+'%;animation-duration:'+(38+i*14)+'s;animation-delay:-'+(i*9)+'s"></div>';
   h+=L.front;
-  h+='<div class="alp-smoke">'; L.smoke.forEach(function(c,j){ h+='<div class="alp-chim" data-x="'+n1(c[0])+'" data-y="'+n1(c[1])+'"'+(c[2]!=null?' data-vb="'+c[2]+'" data-k="'+c[3]+'"':'')+'>';
+  h+='<div class="alp-smoke">'; L.smoke.forEach(function(c,j){ h+='<div class="alp-chim'+(c[4]?" "+c[4]:"")+'" data-x="'+n1(c[0])+'" data-y="'+n1(c[1])+'"'+(c[2]!=null?' data-vb="'+c[2]+'" data-k="'+c[3]+'"':'')+'>';
     for(var w=0;w<2;w++) h+='<i style="animation-delay:-'+(w*3.6+j*1.3).toFixed(1)+'s"><svg viewBox="0 0 20 60"><path d="M10 59C6.5 50 13.5 42 10 33C6.5 24 13 15 9.5 3" fill="none" stroke="url(#alpSm)" stroke-width="2.6" stroke-linecap="round"/></svg></i>';
     h+='</div>'; }); h+='</div>';
   if(ic==="fog") h+='<div class="alp-fog alp-fog2" style="bottom:2%;animation-duration:46s"></div>';
@@ -814,7 +817,7 @@ function fit(){
   var W=Math.max(40,(right!==null?right:hb.right)-hb.left), H=Math.max(40,(below!==null?below:hb.bottom)-hb.top);
   /* Text-Ausdehnung (nur die Schrift, nicht die Blockbreite) für die Ausblendung */
   var rects=[], big=0, all=0, mob=W<620;
-  ["ag-clock","ag-date","ag-wx","ag-greet"].forEach(function(c){ var e=hero.querySelector("."+c); if(!e) return; var rg=document.createRange(); rg.selectNodeContents(e);
+  ["ag-clock","ag-date","ag-wx","ag-fc4","ag-greet"].forEach(function(c){ var e=hero.querySelector("."+c); if(!e) return; var rg=document.createRange(); rg.selectNodeContents(e);
     var rs=rg.getClientRects(); for(var j=0;j<rs.length;j++){ var q=rs[j]; if(q.width<1) continue; var x1=q.right-hb.left;
       rects.push([q.left-hb.left,q.top-hb.top,x1,q.bottom-hb.top]); all=Math.max(all,x1); if(c==="ag-clock"||c==="ag-date") big=Math.max(big,x1); } });
   /* rechter Rand der Schnellknöpfe (die Gebäude des größeren Dorfs bleiben rechts davon) */
@@ -971,6 +974,8 @@ F.css(
 ".alp-deck.d2{top:4%;height:30%;left:-5%;width:120%;opacity:.5;background:radial-gradient(ellipse 50% 50% at 50% 50%,var(--a-cl1),transparent 70%);animation-duration:70s;animation-direction:alternate-reverse}"+
 /* Rauch aus den Kaminen */
 ".alp-smoke{inset:0}.alp-chim{left:0;top:0;width:0;height:0}"+
+/* Handy: SPAR und Feuerwehr statt zweier Häuser im Ortskern; breit: umgekehrt (dort stehen sie im größeren Dorf links) */
+".alp-mob .alp-dsk,.ag-alp:not(.alp-mob) .alp-mbo{display:none}"+
 ".alp-chim>i{position:absolute;left:calc(var(--sc)*-6px);bottom:0;width:calc(var(--sc)*12px);height:calc(var(--sc)*38px);transform-origin:50% 100%;opacity:0;animation:alpSmoke 7.2s ease-out infinite}"+
 ".alp-chim>i>svg{display:block;width:100%;height:100%;overflow:visible}"+
 /* Niederschlag: Kacheln, die sich nur verschieben */

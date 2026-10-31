@@ -130,7 +130,7 @@ function skiHtml(){
 
 function prefsHtml(){
   var t=F.theme(), p=!!F.ls("fsc_priv");
-  return '<div class="set-row"><span>Darstellung</span><div class="seg" role="group" aria-label="Darstellung">'+[["glas","Alpenglas"],["auto","Automatisch"],["light","Hell"],["dark","Dunkel"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div></div>'+
+  return '<div class="set-row"><span>Darstellung</span><div class="seg" role="group" aria-label="Darstellung">'+[["auto","Automatisch"],["light","Hell"],["dark","Dunkel"]].map(function(o){ return '<button type="button" data-act="theme:'+o[0]+'" aria-pressed="'+(t===o[0])+'">'+o[1]+'</button>'; }).join("")+'</div></div>'+
     '<div class="set-row"><span>Beträge ausblenden<br><span class="muted" style="font-size:12.5px">Verdeckt alle Summen, z. B. beim Bildschirm teilen.</span></span><div class="seg" role="group" aria-label="Beträge" style="max-width:240px"><button type="button" data-setpriv="0" aria-pressed="'+!p+'">Sichtbar</button><button type="button" data-setpriv="1" aria-pressed="'+p+'">Ausgeblendet</button></div></div>';
 }
 

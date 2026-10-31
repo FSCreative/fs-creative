@@ -1022,6 +1022,26 @@ function mVou(){
     scanInput("fsm-fab","");
 }
 F.listen("change","[data-fvsel]",function(el){ UI.fvcat=el.value; UI.fpg=0; F.render(); });
+/* Handy: Konten aktualisieren (Wunsch Simon 31.10.2026) – George/Mollie/PayPal abrufen, Kontoauszug importieren, Freigabe & Saldo-Abgleich */
+function mSync(){
+  if(!MO&&!C.busy.mo){ C.busy.mo=1; F.api("/admin/api/fin/mollie?year="+F.D.year).then(function(j){ C.busy.mo=0; MO=j||{ok:false}; F.render(); }); }
+  if(!PP&&!C.busy.pp){ C.busy.pp=1; F.api("/admin/api/fin/paypal").then(function(j){ C.busy.pp=0; PP=j||{ok:false}; F.render(); }); }
+  if(!EB&&!C.busy.eb){ C.busy.eb=1; F.api("/admin/api/fin/ebank").then(function(j){ C.busy.eb=0; EB=j||{ok:false}; F.render(); }); }
+  var ss=(EB&&EB.sessions)||[], b=[], info=[], accs="";
+  ss.forEach(function(x){ var d=x.validUntil?Math.round((Date.parse(x.validUntil)-Date.now())/864e5):null;
+    info.push(x.bank+(d!=null?(d>0?" · Freigabe noch "+d+" Tage":" · Freigabe abgelaufen"):""));
+    if(d!=null&&d<14) b.unshift('<button type="button" class="btn primary" data-act="febconnect">'+ic("sync")+'Freigabe erneuern</button>');
+    accs+=x.accounts.map(function(a){ var df=a.diff; return '<div class="fsm-sacc"><span>'+esc(a.name)+'</span><b class="num">'+(a.balance!=null?eur(a.balance):"—")+'</b>'+
+      (df==null?'<span class="fsd-pill grey">offen</span>':Math.abs(df)<0.02?'<span class="fsd-pill paid">stimmt</span>':'<span class="fsd-pill due">'+eur(df)+'</span>')+'</div>'; }).join(""); });
+  if(EB&&EB.at) info.push("zuletzt "+de(EB.at.slice(0,10))+" "+EB.at.slice(11,16));
+  if(ss.length) b.push('<button type="button" class="btn'+(b.length?'':' primary')+'" data-act="febsync">'+ic("sync")+'George abrufen</button>');
+  else if(EB&&EB.ok&&EB.configured) b.push('<button type="button" class="btn primary" data-act="febconnect">George verbinden</button>');
+  if(MO&&MO.configured) b.push('<button type="button" class="btn" data-act="fmollie">'+ic("sync")+'Mollie</button>');
+  if(PP&&PP.configured) b.push('<button type="button" class="btn" data-act="fpaypal">'+ic("sync")+'PayPal</button>');
+  b.push('<button type="button" class="btn" data-act="sdbkimp">'+ic("up")+'Auszug importieren</button>');
+  return '<section class="fsm-card fsm-sync"><div class="fsm-st"><b>Konten aktualisieren</b>'+(info.length?'<span class="muted">'+esc(info.join(" · "))+'</span>':'')+'</div>'+
+    (accs?'<div class="fsm-saccs">'+accs+'</div>':'')+'<div class="fsm-sb">'+b.join("")+'</div>'+(EB&&EB.error?'<div class="notice">'+esc(EB.error)+'</div>':'')+'</section>';
+}
 function mBank(mode){
   if(!C.tx){ txLoad(); return '<p class="fsm-empty">Lade Bankumsätze …</p>'; }
   if(!C.tx.ok) return noSev();
@@ -1042,7 +1062,7 @@ function mBank(mode){
     else if(t.status===300) foot='<div class="fsm-txl"><button type="button" data-act="ftxunpriv:'+id+'">Privat aufheben</button></div>';
     else if(t.transit) foot='<div class="fsm-txl"><button type="button" data-act="ftxuntransit:'+id+'">Geldtransit aufheben</button></div>';
     return '<div class="fsm-tx'+(t.status===100?" open":"")+'">'+(t.status===100?'<button type="button" class="fsm-txm" data-act="ftxassign:'+id+'">'+main+'</button>':'<div class="fsm-txm">'+main+'</div>')+foot+'</div>'; };
-  return mChips(chips)+
+  return mChips(chips)+(mode==="bank"?mSync():'')+
     '<div class="fsm-filt fsm-filt3">'+mSearch("tx","Name, Zweck, Betrag …")+'<div class="fsm-fb">'+transitBtn(true)+'<button type="button" class="btn" data-act="bankrules">'+ic("rules")+'Regeln</button></div></div>'+
     '<section class="fsm-card flush fsm-list">'+(mGrouped(list,list.slice(pg*per,(pg+1)*per),function(t){return t.date;},function(t){return t.amount;},row,function(s){ return (s>0?"+":"")+eur0(s); })||'<p class="fsm-empty">'+(mode==="open"?"Alles zugeordnet. 🎉":"Keine Umsätze.")+'</p>')+pager(list.length,per)+'</section>';
 }
@@ -1159,6 +1179,8 @@ F.css(
 '.fsm-nav button{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:7px 14px;min-height:36px;font-size:14px;font-weight:500;color:var(--ink);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}.fsm-nav button svg{width:15px;height:15px}'+
 '.fsm-nav button[aria-current]{background:var(--glow);border-color:var(--glow);color:var(--on-glow)}'+
 '.fsm-body{padding:0 12px;display:grid;gap:12px}'+
+'.fsm-sync{display:grid;gap:10px;margin:0 0 12px}.fsm-st{display:grid;gap:2px}.fsm-st b{font-size:15px}.fsm-st .muted{font-size:12.5px}.fsm-sb{display:flex;flex-wrap:wrap;gap:8px}.fsm-sb .btn{flex:1 1 auto;justify-content:center;min-height:40px}'+
+'.fsm-saccs{display:grid;gap:6px}.fsm-sacc{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;font-size:13.5px}.fsm-sacc span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'+
 '.fsm-card{background:var(--panel);border-radius:14px;border:1px solid var(--line);padding:14px 16px}.fsm-card.flush{padding:0;overflow:hidden}.fsm-card h3{font-size:15px;font-weight:600;margin:0 0 6px}'+
 '.fsm-row{display:flex;width:100%;gap:12px;align-items:center;justify-content:space-between;text-align:left;border:0;background:transparent;padding:12px 16px;border-bottom:1px solid var(--line);min-height:62px;color:var(--ink);font:inherit}'+
 '.fsm-card:not(.flush) .fsm-row{padding:11px 0}.fsm-row:last-child{border-bottom:0}.fsm-row:active{background:var(--sd-hov)}'+
