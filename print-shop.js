@@ -135,7 +135,7 @@ const PUB_MORE = [
   { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("15" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("16" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -425,9 +425,9 @@ module.exports = function (D) {
     beige: "beige", gold: "gold", silver: "silber", navy: "marineblau", turquoise: "türkis", khaki: "khaki", olive: "oliv", burgundy: "bordeaux", cream: "creme", sand: "sand", natural: "natur", mint: "mint",
     lime: "limette", coral: "koralle", graphite: "graphit", lilac: "flieder", lavender: "lavendel", charcoal: "anthrazit", anthracite: "anthrazit", petrol: "petrol", fuchsia: "fuchsia", aqua: "aqua", ecru: "ecru", taupe: "taupe", stone: "stein" };
   const COL_P = { light: "hell", dark: "dunkel", deep: "tief", royal: "royal", bright: "leucht", pale: "blass", ice: "eis", sky: "himmel", ocean: "ozean", forest: "wald", bottle: "flaschen", apple: "apfel",
-    cherry: "kirsch", brick: "ziegel", lemon: "zitronen", sport: "sport", neon: "neon", signal: "signal", safety: "warn", military: "militär", army: "armee", old: "alt", powder: "puder", leaf: "blatt", sun: "sonnen", fire: "feuer",
+    cherry: "kirsch", brick: "ziegel", lemon: "zitronen", navy: "marine", red: "rot", indigo: "indigo", cardinal: "kardinal", sport: "sport", neon: "neon", signal: "signal", safety: "warn", military: "militär", army: "armee", old: "alt", powder: "puder", leaf: "blatt", sun: "sonnen", fire: "feuer",
     wine: "wein", steel: "stahl", slate: "schiefer", mid: "mittel", moss: "moos", baby: "baby", azure: "azur", aqua: "aqua", sea: "meer", emerald: "smaragd", pastel: "pastell" };
-  const COL_S = { melange: " meliert", heather: " meliert", marl: " meliert", raw: " (roh)" }, COL_X = { "light pink": "Hellrosa", "baby pink": "Babyrosa", "pink": "Pink", "off white": "Off-White", "deep navy": "Dunkles Marineblau" };
+  const COL_S = { melange: " meliert", heather: " meliert", marl: " meliert", meliert: " meliert", raw: " (roh)" }, COL_X = { "light pink": "Hellrosa", "baby pink": "Babyrosa", "pink": "Pink", "off white": "Off-White", "deep navy": "Dunkles Marineblau" };
   function colorDe(v) {
     const t = String(v || "").trim(); if (!/^[A-Za-z][A-Za-z\s-]*$/.test(t)) return t;   // schon deutsch/mit Zahlen/Sonderzeichen: unverändert
     const lc = t.toLowerCase().replace(/\s+/g, " "); if (COL_X[lc]) return COL_X[lc];
@@ -508,7 +508,7 @@ module.exports = function (D) {
       const OPT_DE = { selfcover: "Ohne eigenen Umschlag (wie Innenseiten)", "basic kit": "Basis-Set", "premium kit": "Premium-Set" }, ox = OPT_DE[String(nm).trim().toLowerCase()];
       if (ox) nm = ox; else nm = String(nm).replace(/^Din Large\b/i, "DIN lang");
       nm = String(nm).replace(/\s{2,}/g, " ").replace(/(\d)\s*x\s*(\d)/g, "$1 × $2").trim();   // „1/3 A4 -  99 x 210 mm“ → „1/3 A4 - 99 × 210 mm“
-      if (/^colou?r(_|$)/.test(slug)) nm = colorDe(nm);
+      if (/^colou?r(_|$)/.test(slug)) nm = colorDe(/^[A-Za-z]+(_[A-Za-z]+)+$/.test(nm) ? nm.replace(/_/g, " ") : nm);
       const nm2 = /^[a-zäöü]/.test(nm) && !/^\d|^[a-z]\d|^(x|ca\.|mm|cm)\b/.test(nm) ? nm.charAt(0).toUpperCase() + nm.slice(1) : nm;   // „stuhl“ → „Stuhl“
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm2, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
@@ -3372,7 +3372,7 @@ module.exports = function (D) {
   // Bezeichnungen mit Codes/Fremdwörtern. Läuft langsam im Hintergrund (niedrige Priorität, Kundenanfragen gehen vor); Ergebnis im Speicher + DB.
   let AUDIT = null;
   const AUD_NL = /\b(geen|gesatineerd|zonder|met|enkelzijdig|dubbelzijdig|wit|zwart|staand|liggend|gevouwen|vouw|nietjes|lijmgebonden|bedrukt|onbedrukt|achterkant|voorkant|kleur)\b/i;
-  const AUD_EN = /\b(white|black|matt?e|glossy?|without|with|single|double|sided|portrait|landscape|round(ed)?|corners?|none|front|back|sheets?|pages?|yes|no|natural|silver|gold|blue|red|green|yellow|orange|grey|gray|brown|pink|purple)\b/i;
+  const AUD_EN = /\b(white|black|matt?e|glossy?|without|with|single|double|sided|portrait|landscape|round(ed)?|corners?|none|front|back|sheets?|pages?|yes|no|natural|silver|blue|red|green|yellow|grey|gray|brown|purple)\b/i;   // orange, gold, pink sind auch deutsch
   function audLabel(v, slug) {
     v = String(v == null ? "" : v); if (!v.trim()) return "leer";
     if (/^[a-z0-9]+([_-][a-z0-9]+)+$/.test(v)) return "Code statt Text"; if (/_/.test(v)) return "Unterstrich";
