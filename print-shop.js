@@ -283,7 +283,7 @@ module.exports = function (D) {
     if (SETTINGS) return SETTINGS;
     startFixLoad().catch(() => {});   // ersetzte Startausführungen aus der Sortiments-Prüfung
     const s = (await store.getMeta("print_settings").catch(() => null)) || {};
-    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin) };
+    SETTINGS = { anchors: objOf(s.anchors), anchorGap: s.anchorGap != null && isFinite(+s.anchorGap) ? +s.anchorGap : 2, anchorGapWide: s.anchorGapWide != null && isFinite(+s.anchorGapWide) ? +s.anchorGapWide : 1.5, anchorRaiseMaxPct: s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25, minMarginPct: s.minMarginPct != null && isFinite(+s.minMarginPct) ? +s.minMarginPct : 10, markupPct: s.markupPct != null && isFinite(+s.markupPct) ? +s.markupPct : null, minMarginEur: s.minMarginEur != null && isFinite(+s.minMarginEur) ? +s.minMarginEur : null, live: s.live === true, autoSend: s.autoSend === true, open: s.open !== false, products: objOf(s.products), enabled: objOf(s.enabled), catEnabled: objOf(s.catEnabled), catOverride: objOf(s.catOverride), seeded: objOf(s.seeded), anchorsFile: String(s.anchorsFile || ""), groupMargin: objOf(s.groupMargin), auditHid: objOf(s.auditHid) };
     // Mitbewerber-Preisanker aus print-anchors.json (versioniert im Repo): neue Version → Produkte daraus übernehmen, übrige Anker bleiben
     if (process.env.PRINT_ANCHORS_FILE !== "off") try { const f = JSON.parse(fs.readFileSync(path.join(__dirname, "print-anchors.json"), "utf8")); if (f && f.version && String(f.version) !== SETTINGS.anchorsFile && f.anchors) { await saveSettings({ anchors: f.anchors, anchorsFile: String(f.version) }); log("Preisanker " + f.version + " übernommen (" + Object.keys(f.anchors).length + " Produkte)"); } } catch (e) { if (e.code !== "ENOENT") log("Preisanker-Datei:", e.message); }
     return SETTINGS;
@@ -333,7 +333,7 @@ module.exports = function (D) {
   const CAT_RX = /^[a-z0-9-]{1,80}(\/[a-z0-9-]{1,80})?$/;
   async function sortimentOp(b) {
     const s = await settings(), op = String(b.op || ""), sku = String(b.sku || ""), cat = String(b.cat || "");
-    if (op === "set") { if (!SKU_RX.test(sku)) throw new Error("SKU ungültig"); if (b.on === true || b.on === false) s.enabled[sku] = b.on; else delete s.enabled[sku];
+    if (op === "set") { if (!SKU_RX.test(sku)) throw new Error("SKU ungültig"); if (b.on === true || b.on === false) s.enabled[sku] = b.on; else delete s.enabled[sku]; if (s.auditHid) delete s.auditHid[sku];   // Entscheidung von Hand geht vor
       if (b.on === true) CURATED.forEach(c => { const ov = s.products[c.key]; if (ov && ov.enabled === false && CAT && (CAT.products || []).some(p => p.key === c.key && p.sku === sku)) delete ov.enabled; }); }
     else if (op === "cat") { if (!/^[a-z0-9-]{1,80}$/.test(cat)) throw new Error("Kategorie unbekannt"); if (b.on === true || b.on === false) s.catEnabled[cat] = b.on; else delete s.catEnabled[cat]; }
     else if (op === "catAll") { if (!/^[a-z0-9-]{1,80}$/.test(cat)) throw new Error("Kategorie unbekannt"); const all = await catalogAll(); ((all && all.items) || []).forEach(it => { const c = catOf(it.sku, s, it.auto); if (c.main === cat || c.sub === cat) s.enabled[it.sku] = b.on === true; }); }
@@ -512,6 +512,8 @@ module.exports = function (D) {
       const nm2 = /^[a-zäöü]/.test(nm) && !/^\d|^[a-z]\d|^(x|ca\.|mm|cm)\b/.test(nm) ? nm.charAt(0).toUpperCase() + nm.slice(1) : nm;   // „stuhl“ → „Stuhl“
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm2, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
+      // Interne bzw. gesperrte Pflichtangaben mit genau einem Wert (z. B. Pullover: brezo_article „sts.stsu178“, Zubehör: article_number, weight) trotzdem mitsenden – sonst „no supplier prices found“
+      if (p && p.slug && (HIDDEN_PROPS.test(p.slug) || p.locked) && p.required && !/^(copies|urgency)$/.test(p.slug) && Array.isArray(p.options) && p.options.length === 1 && p.options[0] && p.options[0].slug != null && String(p.options[0].slug) !== "") { fixed[p.slug] = String(p.options[0].slug); return; }
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || p.locked) return;
       let opts = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null && String(o.slug).trim() !== "-" && String(o.name == null ? o.slug : o.name).trim() !== "");   // Print.com-Platzhalter („-“, leerer Name) weglassen
       if (areaProp && p.slug === areaProp) opts.forEach(o => { const d = dimsOf(o); if (d) areas[String(o.slug)] = d; });
@@ -3428,8 +3430,12 @@ module.exports = function (D) {
   async function auditRun(max, resume) {
     if (auditLive) return; auditLive = true;
     const prev = resume ? await store.getMeta("print_audit").catch(() => null) : null, cont = prev && !prev.end && Array.isArray(prev.items) && prev.items.length;   // nach Neustart fortsetzen
-    AUDIT = cont ? Object.assign(prev, { running: true }) : { running: true, at: nowIso(), done: 0, total: 0, items: [] };
-    try { await startFixLoad();
+    const old0 = AUDIT; AUDIT = cont ? Object.assign(prev, { running: true }) : { running: true, at: nowIso(), done: 0, total: 0, items: [] };
+    try {
+      if (!cont) { const old = old0 || await store.getMeta("print_audit").catch(() => null), st0 = await settings(); let ch = false;   // ältere Läufe: von der Prüfung ausgeblendete Produkte merken (dürfen wieder erscheinen)
+        ((old && old.items) || []).forEach(z => { if (z.hidden && SKU_RX.test(z.sku || "") && st0.enabled[z.sku] === false && !st0.auditHid[z.sku]) { st0.auditHid[z.sku] = old.end || nowIso(); ch = true; } });
+        if (ch) await store.setMeta("print_settings", st0); }
+      await startFixLoad();
       const s = await settings(), cat = await catalog(false), all = await catalogAll();
       const list = (cat && cat.products || []).map(p => ({ key: p.key, sku: p.sku, title: p.title, cur: true }));
       ((all && all.items) || []).forEach(it => { if (!list.some(y => y.sku === it.sku)) list.push({ key: it.sku, sku: it.sku, title: it.title, it }); });
@@ -3454,15 +3460,19 @@ module.exports = function (D) {
       }
       // nicht bestellbar (auch keine Alternative, bzw. kein Versand nach Österreich): allgemeine Produkte ausblenden – nie kuratierte, höchstens 15 % des Sortiments je Lauf
       const bad = AUDIT.items.filter(z => z.unorderable && !CURATED.some(c => c.key === z.key) && SKU_RX.test(z.sku));
-      if (bad.length && bad.length <= Math.max(5, AUDIT.items.length * 0.15)) { const st = await settings(); bad.forEach(z => { if (st.enabled[z.sku] !== true) { st.enabled[z.sku] = false; z.hidden = true; } }); await store.setMeta("print_settings", st); SETTINGS = st; PRICE_CACHE.clear(); }
-      AUDIT.hidden = bad.filter(z => z.hidden).length;
+      const st = await settings(); let ch = false;
+      if (bad.length && bad.length <= Math.max(5, AUDIT.items.length * 0.15)) bad.forEach(z => { if (st.enabled[z.sku] !== true) { if (st.enabled[z.sku] !== false) st.auditHid[z.sku] = nowIso(); st.enabled[z.sku] = false; z.hidden = true; ch = true; } });
+      // wieder bestellbar: nur Produkte, die die Prüfung selbst ausgeblendet hat, wieder einblenden (von Hand ausgeblendete bleiben aus)
+      AUDIT.items.forEach(z => { if (z.price && z.price.gross > 0 && st.auditHid[z.sku] && st.enabled[z.sku] === false) { delete st.enabled[z.sku]; delete st.auditHid[z.sku]; z.shown = true; ch = true; } });
+      if (ch) { await store.setMeta("print_settings", st); SETTINGS = st; PRICE_CACHE.clear(); }
+      AUDIT.hidden = bad.filter(z => z.hidden).length; AUDIT.shown = AUDIT.items.filter(z => z.shown).length;
     } finally { auditLive = false; AUDIT.running = false; AUDIT.end = nowIso(); store.setMeta("print_audit", AUDIT).catch(() => {}); }
   }
   async function auditState() {
     if (!AUDIT) AUDIT = await store.getMeta("print_audit").catch(() => null);
     const A = AUDIT ? Object.assign({}, AUDIT, { running: auditLive }) : { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
     it.forEach(x => (x.labels || []).forEach(l => { const k = l.issue + ": " + l.text; by[k] = (by[k] || 0) + 1; }));
-    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length, fixedStart: it.filter(x => x.fixed).length, hidden: A.hidden || 0,
+    return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length, fixedStart: it.filter(x => x.fixed).length, hidden: A.hidden || 0, shown: A.shown || 0,
       missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]),
       items: it.filter(x => x.err || x.noPrice || (x.missing || []).length || (x.labels || []).length || (x.noDims || []).length) };   // nur Produkte mit Befund
   }

@@ -656,12 +656,17 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const up = await upload(await pdfOf(2080, 1080, 1), "banner.pdf", { product: "pvc-banner", copies: 1, sel: { konfektion: "hem_eyelets_50" }, custom: { w: 200, h: 100 } });
     assert.strictEqual(up.status, 200, JSON.stringify(up.j)); assert.ok(up.j.checks.some(c => c.level === "ok" && /Beschnitt passt/.test(c.text)), JSON.stringify(up.j.checks));
   });
-  await t("Katalog: Pflicht-Platzhalter wird mitgeschickt (Hoodies: size „-“), Farben deutsch, Maße mit ×, keine doppelten Leerzeichen", async () => {
+  await t("Katalog: Pflicht-Platzhalter wird mitgeschickt (Hoodies: size „-“, Pullover: brezo_article, Zubehör: article_number), Farben deutsch, Maße mit ×, keine doppelten Leerzeichen", async () => {
     const T = require(path.join(ROOT, "print-shop.js"))({ DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "fsc-parse-")) })._test;
     const pd = { properties: [{ slug: "size", required: true, options: [{ slug: "-", name: " " }] }, { slug: "material", required: true, options: [{ slug: "m1", name: "130 g/m²  Bilderdruck" }, { slug: "m2", name: "Karton 105 x 148 mm" }] },
-      { slug: "color", required: true, options: [{ slug: "c1", name: "Bottle green" }, { slug: "c2", name: "Mindful blue" }, { slug: "c3", name: "Grau meliert " }, { slug: "c4", name: "Light grey melange" }] }, { slug: "copies", options: [{ slug: "100" }, { slug: "250" }] }] };
+      { slug: "color", required: true, options: [{ slug: "c1", name: "Bottle green" }, { slug: "c2", name: "Mindful blue" }, { slug: "c3", name: "Grau meliert " }, { slug: "c4", name: "Light grey melange" }] }, { slug: "copies", options: [{ slug: "100" }, { slug: "250" }] },
+      { slug: "brezo_article", required: true, options: [{ slug: "sts.stsu178" }] }, { slug: "article_number", required: true, options: [{ slug: "06-0500-0655" }] }, { slug: "frame", required: true, locked: true, options: [{ slug: "alu" }] },
+      { slug: "weight", options: [{ slug: "40_grams" }] }, { slug: "personalize", required: true, options: [{ slug: "none" }, { slug: "personalize_from_excel" }] }] };
     const p = T.parseProduct({ key: "t1", title: "Test", generic: true, expose: "auto", kind: "promo", printArea: [50, 50] }, "t1", pd);
-    assert.strictEqual(p.fixed.size, "-", "Platzhalter als feste Angabe"); assert.ok(!p.specs.some(x => x[2] === "size"), "Platzhalter nicht als technische Angabe");
+    assert.strictEqual(p.fixed.size, "-", "Platzhalter als feste Angabe");
+    assert.deepStrictEqual([p.fixed.brezo_article, p.fixed.article_number, p.fixed.frame], ["sts.stsu178", "06-0500-0655", "alu"], "interne/gesperrte Pflichtangaben mit einem Wert werden mitgeschickt");
+    assert.ok(!("weight" in p.fixed) && !("personalize" in p.fixed) && !("copies" in p.fixed), "freiwillige bzw. mehrdeutige interne Angaben nicht");
+    assert.ok(!p.props.some(x => /^(brezo_article|article_number|frame)$/.test(x.slug)), "nicht als Auswahl"); assert.ok(!p.specs.some(x => x[2] === "size"), "Platzhalter nicht als technische Angabe");
     assert.deepStrictEqual(p.props.find(x => x.slug === "material").options.map(o => o.name), ["130 g/m² Bilderdruck", "Karton 105 × 148 mm"]);
     assert.deepStrictEqual(p.props.find(x => x.slug === "color").options.map(o => o.name), ["Flaschengrün", "Mindful blue", "Grau meliert", "Hellgrau meliert"]);
   });
