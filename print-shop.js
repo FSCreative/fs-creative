@@ -143,6 +143,7 @@ const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotore
 // bei „alle Optionen“ nicht anbieten: braucht eigene Dateien/Stanzformen/Daten oder betrifft Verpackung & Palettenlieferung
 const AUTO_SKIP = /^(personalize|die_cut|spot_finish.*|variable_creasing_line|pallet_delivery|sealed|bundle|box_delivery|flexibleprintingmethod|delivery|standard_bundling|provide_label|designs)$/;
 const HIDDEN_PROPS = /^(copies|urgency|hidden|summary_image.*|brezo_article|product_weight|weight|article_number.*|personalize)$/;   // personalize: Personalisierung aus Excel – nie stillschweigend mitbestellen
+const REQ_ONE = /^(brezo_article|product_weight|weight|article_number.*)$/;   // interne Pflichtangaben, die Print.com mit ihrem einzigen Wert braucht (nie personalize!)
 // Zusatzleistungen, die Print.com als „Pflicht“ markiert, obwohl sie ohne Angabe gültig (und günstiger) sind – z. B. Briefpapier: Bohrlöcher/Ecken ohne „keine“-Option
 const EXTRA_PROPS = /^(drillholes|rounded_corners|perforation|sealed|punching|eyelets|creasing_lines?|numbering)$/;
 const NONE_OPT = "__none", NONE_SLUG = /^(none|no|geen|no_.*|without.*|0)$/;
@@ -513,7 +514,7 @@ module.exports = function (D) {
       return Object.assign({ slug: String(o.slug), name: String(o.slug) === "custom" && slug === "size" ? "Eigenes Format" : nm2, w: d ? d[0] : null, h: d ? d[1] : null }, optExtra(slug, o)); };
     props.forEach(p => {
       // Interne bzw. gesperrte Pflichtangaben mit genau einem Wert (z. B. Pullover: brezo_article „sts.stsu178“, Zubehör: article_number, weight) trotzdem mitsenden – sonst „no supplier prices found“
-      if (p && p.slug && (HIDDEN_PROPS.test(p.slug) || p.locked) && p.required && !/^(copies|urgency)$/.test(p.slug) && Array.isArray(p.options) && p.options.length === 1 && p.options[0] && p.options[0].slug != null && String(p.options[0].slug) !== "") { fixed[p.slug] = String(p.options[0].slug); return; }
+      if (p && p.slug && (REQ_ONE.test(p.slug) || (p.locked && !HIDDEN_PROPS.test(p.slug))) && p.required && Array.isArray(p.options) && p.options.length === 1 && p.options[0] && p.options[0].slug != null && String(p.options[0].slug) !== "") { fixed[p.slug] = String(p.options[0].slug); return; }
       if (!p || !p.slug || HIDDEN_PROPS.test(p.slug) || p.locked) return;
       let opts = (Array.isArray(p.options) ? p.options : []).filter(o => o && o.slug != null && String(o.slug).trim() !== "-" && String(o.name == null ? o.slug : o.name).trim() !== "");   // Print.com-Platzhalter („-“, leerer Name) weglassen
       if (areaProp && p.slug === areaProp) opts.forEach(o => { const d = dimsOf(o); if (d) areas[String(o.slug)] = d; });
