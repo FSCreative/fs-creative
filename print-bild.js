@@ -63,16 +63,15 @@ async function fetchImage(url) {
 }
 
 function deliver(req, res, send, entry) {
-  send(res, 200, req.method === "HEAD" ? "" : entry.buf, entry.type, {
+  send(res, 200, req.method === "HEAD" ? "" : entry.buf, entry.type, Object.assign({
     "Content-Length": String(entry.buf.length),
     "Cache-Control": "public, max-age=2592000, immutable",
     "X-Content-Type-Options": "nosniff",
     // öffentliche Produktfotos: auch auf fremden Seiten einbindbar – Newsletter-Bilder lädt das Mailprogramm bzw. Webmail (fremde Domain), „same-site“ würde sie dort blockieren
     "Cross-Origin-Resource-Policy": "cross-origin",
     // SVG o. Ä. nie als aktives Dokument auf unserer Domain ausführen
-    "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
-    "X-Robots-Tag": "noindex"
-  });
+    "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
+  }, /svg/.test(entry.type) ? { "X-Robots-Tag": "noindex" } : {}));   // Produktfotos dürfen in Google (Shopping, Bildersuche) erscheinen – „noindex“ nur noch für SVG
 }
 
 async function handle(req, res, u, p, send) {

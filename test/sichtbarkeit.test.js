@@ -128,7 +128,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
     process.env.PRINT_ANCHORS_FILE = "off";
     const PS = require(path.join(ROOT, "print-shop.js"))({ DATA_DIR: fs.mkdtempSync(path.join(tmp, "ps-")), ORIGIN: SITE }), T = PS._test;
     const ct = f => "https://images.ctfassets.net/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/0123456789abcdef0123456789abcdef/" + f + "?fm=webp&w=600";
-    assert.strictEqual(T.feedImg(ct("Flyers.jpg")), SITE + "/print/bild/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/0123456789abcdef0123456789abcdef/Flyers.jpg?fm=jpg&w=1200");
+    assert.strictEqual(T.feedImg(ct("Flyers.jpg")), SITE + "/print/bild/ez9mp376cw6o/27Tx0BQ76RdegkACwfsC0V/0123456789abcdef0123456789abcdef/Flyers.jpg?fm=jpg&w=1200&v=2");
     ["Printcom_flyer.jpg", "print.com-flyer.jpg", "Print.Com.jpg", "print-com.jpg", "flyer_printcom.jpg", "drukwerkdeal.jpg", "logo.svg"].forEach(f => assert.strictEqual(T.feedImg(ct(f)), "", f));
     assert.strictEqual(T.feedImg("https://example.com/x.jpg"), ""); assert.strictEqual(T.feedImg("https://images.ctfassets.net/../etc/passwd"), "");
     assert.strictEqual(T.feedImg(ct("Blueprint_company.jpg")).indexOf(SITE), 0, "kein Fehlalarm bei „Blueprint company“");
@@ -175,7 +175,7 @@ const ldOf = html => (html.match(/<script type="application\/ld\+json">([\s\S]*?
         assert.ok(/<g:shipping><g:country>AT<\/g:country><g:service>Standard<\/g:service><g:price>0\.00 EUR<\/g:price><\/g:shipping>/.test(it), "Versand im Preis enthalten");
         assert.ok(/ (drucken|bedrucken) – [\d.  ]+ Stück$/.test(tagOf(it, "title")) && tagOf(it, "title").length <= 150, tagOf(it, "title"));
         assert.ok(tagOf(it, "link").indexOf(SITE + "/print/" + baseOf(it) + (baseOf(it) === id ? "" : "?format=")) === 0 && !/produkt=/.test(tagOf(it, "link")), tagOf(it, "link"));
-        const img = tagOf(it, "image_link"); assert.ok(img.indexOf(SITE + "/print/bild/") === 0 && /\?fm=jpg&w=1200$/.test(img), img);
+        const img = tagOf(it, "image_link"); assert.ok(img.indexOf(SITE + "/print/bild/") === 0 && /\?fm=jpg&w=1200&v=2$/.test(img), img);
         assert.ok(require(path.join(ROOT, "print-bild.js")).upstreamUrl(img.slice(SITE.length).split("?")[0], "?fm=jpg&w=1200"), "Bild-Proxy nimmt den Pfad an: " + img);
         assert.ok(tagOf(it, "description").length > 40 && tagOf(it, "description").length <= 5000);
       }

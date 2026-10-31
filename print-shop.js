@@ -2706,7 +2706,7 @@ module.exports = function (D) {
   function feedImg(u) {
     const m = String(u || "").match(/^https:\/\/images\.ctfassets\.net\/([^?#]+)/); if (!m || /\.svg$/i.test(m[1])) return "";
     const pth = PRINT_BILD.PREFIX + m[1]; if (SUPPLIER_RX.test(pth) || !PRINT_BILD.upstreamUrl(pth, "")) return "";
-    return SITE + pth + "?fm=jpg&w=1200";
+    return SITE + pth + "?fm=jpg&w=1200&v=2";   // v=2: neue Bildadresse, damit Google die Bilder neu abruft (Merchant Center meldete am 31.10.2026 „Ungültige Bildcodierung“)
   }
   // Menge für den Feed: kleinste Zeile der Preisübersicht, die der Link genau so zeigt (Stand ab dieser Version in pubBuild gemerkt; ältere Stände: kuratierte Produkte nachrechnen)
   function feedPick(it, cat, s) {

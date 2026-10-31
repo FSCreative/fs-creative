@@ -53,6 +53,7 @@ const imgResp = (buf, type, extra) => ({ ok: true, status: 200, headers: new Map
     assert.strictEqual(r.headers["Content-Type"], "image/webp");
     assert.ok(/max-age=\d+/.test(r.headers["Cache-Control"]) && /public/.test(r.headers["Cache-Control"]));
     assert.ok(/sandbox/.test(r.headers["Content-Security-Policy"])); assert.strictEqual(r.headers["X-Content-Type-Options"], "nosniff");
+    assert.ok(!("X-Robots-Tag" in r.headers), "Produktfotos ohne noindex (Google Shopping/Bildersuche)");
     assert.strictEqual(calls.length, 1); assert.strictEqual(calls[0].url, UP + "?fm=webp&w=400");
     assert.strictEqual(calls[0].opt.redirect, "error"); assert.ok(!calls[0].opt.headers.Cookie && !calls[0].opt.headers["X-Forwarded-For"]);
     const r2 = await call(OK_PATH, "?fm=webp&w=400"); assert.strictEqual(r2.status, 200); assert.strictEqual(calls.length, 1, "zweiter Abruf aus dem Zwischenspeicher");
