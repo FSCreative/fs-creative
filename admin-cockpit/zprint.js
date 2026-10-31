@@ -55,11 +55,12 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
-  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
+  var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["pruefung","Sortiments-Prüfung"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
   if(FILTER==="kunden") return head+stat+tabs+customers();
   if(FILTER==="herkunft") return head+stat+tabs+originView();
+  if(FILTER==="pruefung") return head+stat+tabs+auditView();
   if(FILTER==="gutscheine") return head+stat+tabs+voucherView();
   if(FILTER==="newsletter") return head+stat+tabs+nlView();
   if(FILTER==="marge") return head+stat+tabs+mgView();
@@ -89,6 +90,25 @@ var ORIGIN_SINCE="2026-10-30";
 F.css('.pr-orow{grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) auto}.pr-oc{font-size:12.5px;line-height:1.4;min-width:0}.pr-oc>*{display:block;overflow-wrap:anywhere}@media(max-width:700px){.pr-orow{grid-template-columns:minmax(0,1fr) auto}.pr-orow .pr-oc{grid-column:1/-1;grid-row:2}}');
 function originTxt(g){ return g.channel+(g.detail?" ("+g.detail+")":"")+(g.device?" · "+g.device:""); }
 function foundTxt(o){ var f=o.found||(o.feedback&&[o.feedback.source,o.feedback.order,o.feedback.product].filter(function(x){ return x&&x.source; })[0]); return f?f.source+((f.text||f.sourceText)?" – "+(f.text||f.sourceText):""):""; }
+/* Sortiments-Prüfung: alle Print.com-Produkte gegen den Shop abgleichen (fehlende wählbare Optionen, Startausführung ohne Preis, Bezeichnungen) – läuft am Server im Hintergrund */
+var AU=null, auT=null;
+function loadAu(run){ clearTimeout(auT); F.api("/admin/api/print/audit",run?{body:{op:"run"}}:undefined).then(function(j){ AU=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler"}; if(FILTER==="pruefung"){ F.render(); if(AU.ok&&AU.running) auT=setTimeout(loadAu,6000); } }); }
+F.action("aurun",function(){ loadAu(true); F.toast("Prüfung gestartet – läuft im Hintergrund (ca. 30–40 Minuten)"); });
+function auditView(){
+  if(!AU){ loadAu(); return '<section class="panel"><div class="empty">Lade …</div></section>'; }
+  if(!AU.ok) return '<div class="notice">'+esc(AU.error)+'</div>';
+  var it=AU.items||[], lnk=function(x){ return '<a href="/print?produkt='+encodeURIComponent(x.key)+'" target="_blank" rel="noopener"><b>'+esc(x.title||x.key)+'</b></a> <span class="muted small">'+esc(x.key)+'</span>'; };
+  var st=AU.running?'<span class="tag warn">läuft · '+AU.done+' / '+AU.total+'</span>':AU.end?'<span class="muted">Stand '+esc(new Date(AU.end).toLocaleString("de-AT"))+' · '+AU.products+' Produkte</span>':'<span class="muted">noch nicht geprüft</span>';
+  var k=function(n,l,s){ return '<div><span>'+l+'</span><b class="'+(n?"mg-w":"mg-g")+'">'+n+'</b><span>'+s+'</span></div>'; };
+  var head='<section class="panel"><div class="panel-h"><h2>Sortiments-Prüfung</h2>'+st+(AU.running?'':'<button class="btn" data-act="aurun">Prüfung starten</button>')+'</div><div class="panel-b"><p class="muted small" style="margin:0 0 10px">Gleicht jedes Print.com-Produkt mit dem Shop ab: wählbare Optionen, Preis der Startausführung, Formate und Bezeichnungen. Nur lesend, Kundenanfragen haben Vorrang.</p><div class="mg-k">'+
+    k(AU.noPrice||0,"Ohne Preis","Startausführung nicht bestellbar")+k(AU.missing||0,"Optionen fehlen","bei Print.com wählbar, im Shop nicht")+k(AU.labels||0,"Bezeichnungen","Code, Fremdwort, Leerzeichen")+k(AU.noDims||0,"Formate ohne Maße","Endformat unbekannt")+'</div></div></section>';
+  var sec=function(t,l,fn){ return l.length?'<section class="panel"><div class="panel-h"><h2>'+t+'</h2><span class="muted">'+l.length+'</span></div><div class="panel-b"><ul class="au-l">'+l.slice(0,150).map(fn).join("")+'</ul>'+(l.length>150?'<p class="muted small">… und '+(l.length-150)+' weitere</p>':'')+'</div></section>':''; };
+  return '<style>.au-l{margin:0;padding-left:18px;display:grid;gap:6px;line-height:1.45}.au-l .muted{font-size:12px}</style>'+head+
+    sec("Startausführung ohne Preis",it.filter(function(x){ return x.noPrice; }),function(x){ return '<li>'+lnk(x)+'<br><span class="muted">'+esc(x.noPrice)+'</span></li>'; })+
+    sec("Wählbare Optionen fehlen im Shop",it.filter(function(x){ return (x.missing||[]).length; }),function(x){ return '<li>'+lnk(x)+' – '+x.missing.map(function(m){ return esc(m.title)+' ('+m.n+')'; }).join(", ")+'</li>'; })+
+    sec("Bezeichnungen prüfen",(AU.topLabels||[]),function(x){ return '<li>'+esc(x[0])+' <span class="muted">'+x[1]+'×</span></li>'; })+
+    sec("Fehler beim Abruf",it.filter(function(x){ return x.err; }),function(x){ return '<li>'+lnk(x)+' – <span class="muted">'+esc(x.err)+'</span></li>'; });
+}
 function originView(){
   var ok=function(o){ return ["pending_payment","payment_failed","rejected"].indexOf(o.status)<0; }, by={}, list=[];
   ((ST&&ST.orders)||[]).filter(ok).forEach(function(o){ var k=o.groupId||o.id, g=by[k]; if(!g){ g=by[k]={o:o,net:0,n:0,prods:[]}; list.push(g); } g.net+=+o.net||0; g.n++; if(g.prods.indexOf(o.product)<0) g.prods.push(o.product); if(String(o.createdAt)<String(g.o.createdAt)) g.o=o; });
@@ -151,7 +171,7 @@ function detail(j){
 function openOrder(id){ CUR=id; F.api("/admin/api/print/order?id="+encodeURIComponent(id)).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.openDrawer(detail(j)); }); }
 function op(body,msg,quiet){ F.toast("Bitte warten …"); return F.api("/admin/api/print/op",{body:Object.assign({confirm:true},body)}).then(function(j){ if(!j.ok){ F.toast(j.error||"Fehler",true); return; } F.toast(msg); load(true); if(j.order&&!quiet) openOrder(j.order.id); if(F.reviewReset) F.reviewReset(); if(F.tkReload) F.tkReload(); }); }
 F.action("prreload",function(){ load(true); });
-F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); if(v==="marge") loadMg(); if(v==="feedback") loadFb(); });
+F.action("prf",function(v){ FILTER=v; F.render(); if(v==="sortiment") soPoll(); if(v==="kunden") loadCust(); if(v==="gutscheine") loadVou(); if(v==="newsletter") loadNl(); if(v==="pruefung") loadAu(); if(v==="marge") loadMg(); if(v==="feedback") loadFb(); });
 // ── Kunden: Liste, Umsatz, Bonusstufe, eigener Rabatt ──
 var CU=null, CUQ="", VO=null;
 function loadCust(){ F.api("/admin/api/print/customers").then(function(j){ CU=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",customers:[]}; F.render(); }); }

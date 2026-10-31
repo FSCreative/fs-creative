@@ -3391,7 +3391,8 @@ module.exports = function (D) {
     const A = AUDIT || { items: [] }, it = A.items || [], cnt = k => it.reduce((n, x) => n + ((x[k] || []).length), 0), by = {};
     it.forEach(x => (x.labels || []).forEach(l => { const k = l.issue + ": " + l.text; by[k] = (by[k] || 0) + 1; }));
     return { running: !!A.running, at: A.at || "", end: A.end || "", done: A.done || 0, total: A.total || 0, products: it.length, errors: it.filter(x => x.err).length, noPrice: it.filter(x => x.noPrice).length,
-      missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]), items: it };
+      missing: cnt("missing"), auto: cnt("auto"), noDims: cnt("noDims"), labels: cnt("labels"), topLabels: Object.keys(by).sort((a, b) => by[b] - by[a]).slice(0, 80).map(k => [k, by[k]]),
+      items: it.filter(x => x.err || x.noPrice || (x.missing || []).length || (x.labels || []).length || (x.noDims || []).length) };   // nur Produkte mit Befund
   }
   async function marginsRun() {
     if (MG && MG.running) return; const s = await settings(), cat = await catalog(false);

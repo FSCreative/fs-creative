@@ -671,7 +671,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.ok(!a.running && a.products === 6, JSON.stringify(a).slice(0, 300));
     a.items.forEach(x => { assert.ok(x.key && x.sku, JSON.stringify(x)); if (!x.err) ["missing", "auto", "noDims", "labels"].forEach(k => assert.ok(Array.isArray(x[k]), k)); });
     assert.ok(typeof a.missing === "number" && Array.isArray(a.topLabels));
-    assert.ok(typeof a.noPrice === "number" && a.items.filter(x => !x.err).some(x => x.price && x.price.gross > 0), "Preis-Check der Startausführung");
+    assert.ok(typeof a.noPrice === "number" && a.noPrice < a.products, "Preis-Check der Startausführung"); assert.ok(a.items.every(x => x.err || x.noPrice || x.missing.length || x.labels.length || x.noDims.length), "nur Produkte mit Befund");
   });
   await t("Werbeartikel: Druckfläche aus printing_size, Farbe immer gesendet, Preis 0 → Fehler", async () => {
     const pen = cat.products.find(p => p.key === "kugelschreiber"); assert.strictEqual(pen.kind, "promo"); assert.strictEqual(pen.designer, false);
