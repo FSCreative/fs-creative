@@ -941,8 +941,10 @@ module.exports = function (D) {
   }
   // Startausführung, die bei Print.com keinen Preis hat, ersetzt die Sortiments-Prüfung durch eine gefundene Alternative (DB print_startfix)
   let START_FIX = null; const startFixLoad = () => START_FIX ? Promise.resolve(START_FIX) : store.getMeta("print_startfix").then(v => (START_FIX = v || {}), () => (START_FIX = {}));
+  // feste Wünsche für die Startausführung (z. B. Jahreskalender: 13 Blatt, übliche Menge) – eine von der Prüfung gefundene Alternative geht vor
+  const START_PREF = { "wire-o-wall-calendar": { copies: 25, sel: { pages: "26.0" } }, "wire-o-desk-calendars": { copies: 25, sel: { pages: "26.0" } } };
   function startFixed(key, st) {
-    const f = START_FIX && START_FIX[key]; if (!f || !st) return st;
+    const f = (START_FIX && START_FIX[key]) || START_PREF[key]; if (!f || !st) return st;
     return Object.assign({}, st, f.copies ? { copies: f.copies } : {}, { sel: Object.assign({}, st.sel || {}, f.sel || {}) }, f.textile ? { textile: f.textile } : {});
   }
   function resolveSel(prod, sel, extra, only) {
