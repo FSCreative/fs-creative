@@ -2563,7 +2563,7 @@ module.exports = function (D) {
   // Beliebte Formate mit eigenem Link und Preis (wie die Google-Shopping-Einträge je Format)
   function seoFormats(it, key, title) {
     if (!it || !it.formats || !it.formats.length) return "";
-    const lo = rows => rows.slice().sort((a, b) => a.gross - b.gross)[0], base = lo(it.rows), first = String(it.label || "").split(" · ")[0];
+    const lo = rows => rows.slice().sort((a, b) => a.gross - b.gross)[0], base = lo(it.rows), first = (it.formats[0] && it.formats[0].from) || String(it.label || "").split(" · ").map(v => v.trim()).find(v => FMT_SEG.test(v)) || "";   // Startformat, nicht das erste Merkmal
     const li = [[prodUrl(key), fmtNice(first), base]].concat(it.formats.map(f => [prodLink(key, false, "format=" + encodeURIComponent(f.v)), fmtNice(f.label), lo(f.rows)]));
     return "<h2>Beliebte Formate</h2><ul>" + li.map(z => '<li><a href="' + escH(z[0]) + '">' + escH(title + " " + z[1]) + "</a> – " + z[2].copies.toLocaleString("de-AT") + " Stück ab " + eurDe(z[2].gross) + "</li>").join("") + "</ul>";
   }
