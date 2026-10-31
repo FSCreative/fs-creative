@@ -1193,7 +1193,9 @@ module.exports = function (D) {
     const mkp = b => Math.max(b.product * (1 + markup * bulkF(b) / 100), b.product + minM) + b.shipping, raiseMax = s.anchorRaiseMaxPct != null && isFinite(+s.anchorRaiseMaxPct) ? +s.anchorRaiseMaxPct : 25;
     const ancCap = b => { const a = ancOf(b); return a ? Math.min(a, mkp(b) * (1 + raiseMax / 100)) : 0; };
     const netOf0 = b => Math.max(floorA(b), ancCap(b) || mkp(b));
-    const netOf = b => Math.ceil((promoCap != null ? Math.min(netOf0(b), Math.max(b.product * (1 + promoCap / 100) + b.shipping, (b.product + b.shipping + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100))) : netOf0(b)) * 10 - 1e-6) / 10;
+    const capOf = b => Math.max(b.product * (1 + promoCap / 100) + b.shipping, (b.product + b.shipping + fee.fix) / (1 - (1 + tax0.rate / 100) * fee.pct / 100));
+    // auf 10 Cent: aufrunden – nur ein Preis knapp unter dem Mitbewerber wird abgerundet, damit der Abstand nicht unter anchorGap fällt (Mindestmarge sichert netFin)
+    const netOf = b => { const v0 = netOf0(b), v = promoCap != null ? Math.min(v0, capOf(b)) : v0, a = ancCap(b); return (a && v === v0 && v0 === a ? Math.floor(v * 10 + 1e-6) : Math.ceil(v * 10 - 1e-6)) / 10; };
     const tax = taxFor(country, cust);
     // Druckverfahren: lässt Print.com mehrere zu (z. B. Digital/Offset), jedes rechnen und standardmäßig das günstigste nehmen; gewähltes Verfahren geht in die Bestellung
     let buy, methods = null;
@@ -1227,7 +1229,7 @@ module.exports = function (D) {
     const days = (buy.days || []).map(d => { const nt = netFin({ product: buy.product, shipping: d.ship, total: r2(buy.product + d.ship) }); return { d: d.d, net: r2(nt), gross: r2(nt + r2(nt * tax.rate / 100)) }; });
     const net = Math.max(net0, Math.ceil((promoCap != null ? Math.min(floorA(buy), list) : floorA(buy)) * 10 - 1e-6) / 10), vat = r2(net * tax.rate / 100), payCost = r2((net + vat) * fee.pct / 100 + fee.fix);
     // Welche Regel hat den Preis bestimmt? (für die Marge-Übersicht im Cockpit)
-    const rule = (b => { if (promoCap != null && netOf(b) < Math.ceil(netOf0(b) * 10 - 1e-6) / 10 - 0.05) return "promoCap"; const f = floorA(b); if (ancNet) return ancCap(b) >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
+    const rule = (b => { if (promoCap != null && capOf(b) < netOf0(b) - 0.05) return "promoCap"; const f = floorA(b); if (ancNet) return ancCap(b) >= f ? "anchor" : "floor"; if (gmUp != null && ov.markupPct == null) return "category";
       const up = b.product * (1 + markup * bulkF(b) / 100), mk = Math.max(up, b.product + minM) + b.shipping; if (f >= mk) return "floor"; if (b.product + minM > up) return "minEur";
       return ov.markupPct != null ? "product" : bulkF(b) < 1 ? "bulk" : "markup"; })(buy);
     return { anchor: ancGross ? r2(ancGross) : null, rule, methods, pm: n.pm || null, net: r2(net), vat, gross: r2(net + vat), bonus: bp ? { pct: r2((1 - fac) * 100), tier: dl.map(d => d.label).join(" + "), items: dl, listNet: r2(list), saved: r2(list - net) } : null, rate: tax.rate, taxCase: tax.case, taxNote: tax.note, uid: tax.uid, purchase: buy, payFee: payCost, margin: r2(net - buy.total - payCost), markupPct: r2(markup * bulkF(buy)), minMarginEur: minM, deliveryDate: buy.deliveryDate, defDate: buy.def || buy.deliveryDate, wish: buy.wish || "", days, at: nowIso() };

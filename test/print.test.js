@@ -641,14 +641,14 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const aq = async (w, h, c, k) => (await admin("/admin/api/print/quote", { product: "pvc-banner", sel: { konfektion: k || "hem_eyelets_50" }, custom: { w, h }, copies: c || 1, urgency: "standard" })).quote;
     assert.strictEqual((await aq(200, 100)).anchor, 100); assert.strictEqual((await aq(300, 100)).anchor, 125); assert.strictEqual((await aq(200, 100, 2)).anchor, 180);
     assert.strictEqual((await aq(500, 300)).anchor, null, "größer als verglichen"); assert.strictEqual((await aq(200, 100, 1, "trimmed")).anchor, null, "andere Konfektion");
-    // Abstand zum Anker: 1,50 €, solange die normale Mindestmarge hält – sonst 0,90 €; ein viel teurerer Mitbewerber hebt höchstens 25 % über den normalen Aufschlag
-    const s0 = (await admin("/admin/api/print/settings", {})).settings, g = (A, gap) => Math.round(Math.ceil((A - gap) / 1.2 * 10 - 1e-6) / 10 * 1.2 * 100) / 100, flat = A => [[0.5, { 1: A }], [4, { 1: A }]];
+    // Abstand zum Anker: 1,50 €, solange die normale Mindestmarge hält – sonst 0,90 € (knapp unter dem Anker abgerundet, damit der Abstand nicht schrumpft); ein viel teurerer Mitbewerber hebt höchstens 25 % über den normalen Aufschlag
+    const s0 = (await admin("/admin/api/print/settings", {})).settings, g = (A, gap) => Math.round(Math.floor((A - gap) / 1.2 * 10 + 1e-6) / 10 * 1.2 * 100) / 100, flat = A => [[0.5, { 1: A }], [4, { 1: A }]];
     await admin("/admin/api/print/settings", { anchorGap: "0,90", anchorGapWide: 1.5, anchorRaiseMaxPct: 1000, markupPct: 0, anchors: { "pvc-banner": null } });
     const F = (await aq(200, 100)).gross;   // ohne Aufschlag und Anker = Preis an der normalen Mindestmarge
     await admin("/admin/api/print/settings", { anchors: { "pvc-banner": [{ sig: { konfektion: "hem_eyelets_50" }, area: flat(F + 10), src: "test" }] } });
     let qa = await aq(200, 100); assert.strictEqual(qa.rule, "anchor"); assert.strictEqual(qa.gross, g(F + 10, 1.5), "Marge hält → 1,50 € darunter: " + qa.gross + " / " + qa.anchor);
     await admin("/admin/api/print/settings", { anchors: { "pvc-banner": [{ sig: { konfektion: "hem_eyelets_50" }, area: flat(F + 1.2), src: "test" }] } });
-    qa = await aq(200, 100); assert.strictEqual(qa.rule, "anchor"); assert.strictEqual(qa.gross, g(F + 1.2, 0.9), "1,50 € darunter wäre unter der Mindestmarge → 0,90 € darunter: " + qa.gross + " / " + qa.anchor + " / " + F);
+    qa = await aq(200, 100); assert.strictEqual(qa.rule, "anchor"); assert.strictEqual(qa.gross, g(F + 1.2, 0.9), "1,50 € darunter wäre unter der Mindestmarge → 0,90 € darunter: " + qa.gross + " / " + qa.anchor + " / " + F); assert.ok(qa.anchor - qa.gross >= 0.9 - 1e-9 && qa.gross >= F, "mind. 0,90 € Abstand, nie unter der Mindestmarge");
     await admin("/admin/api/print/settings", { markupPct: 30, anchorRaiseMaxPct: 25, anchors: { "pvc-banner": [{ sig: { konfektion: "hem_eyelets_50" }, area: flat(F * 10), src: "test" }] } });
     const pc = qa.purchase; qa = await aq(200, 100); const capG = Math.round(Math.ceil((pc.product * 1.3 + pc.shipping) * 1.25 * 10 - 1e-6) / 10 * 1.2 * 100) / 100;
     assert.ok(qa.gross < F * 5 && Math.abs(qa.gross - capG) <= 0.13, "teurer Mitbewerber → höchstens 25 % über dem normalen Aufschlag: " + qa.gross + " / " + capG);
