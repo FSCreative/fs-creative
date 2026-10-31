@@ -2507,6 +2507,24 @@ module.exports = function (D) {
       .replace("</head>", () => ldTag(ld) + (faq.length ? "\n" + ldTag({ "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) }) : "") + "\n</head>");
   }
   const cutWords = (v, n) => { v = String(v || "").replace(/\s+/g, " ").trim(); if (v.length <= n) return v; const c = v.slice(0, n - 1), i = c.lastIndexOf(" "); return (i > n * 0.6 ? c.slice(0, i) : c).replace(/[,;:–-]\s*$/, "") + " …"; };
+  // Shop-Startseite (/print): unter dem Ladebild ein Text für Suchmaschinen/KI-Crawler – beliebte Produkte mit „ab“-Preisen, Kategorien, Vorteile, Fragen;
+  // der Shop ersetzt den Ladebereich beim Start wie auf den Produktseiten
+  async function homeSeo(html) {
+    await slugMap().catch(() => null);
+    const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), groups = publicGroups(pub), P = await pubState();
+    const items = ((P && P.items) || []).slice(0, 30), low = it => it.rows.slice().sort((a, b) => a.gross - b.gross)[0];
+    const faq = [["Was kostet der Versand?", "Nichts extra: Alle Preise sind Endpreise inklusive 20 % USt und Versand innerhalb Österreichs."],
+      ["Wie lange dauert die Lieferung?", "Das voraussichtliche Lieferdatum siehst du vor der Bestellung im Konfigurator – meist 6 bis 11 Werktage nach der Freigabe deiner Daten."],
+      ["Welche Druckdaten brauche ich?", "Am besten ein PDF im Endformat plus Beschnitt (meist 3 mm). JPG und PNG in hoher Auflösung gehen auch. Jede Datei wird automatisch geprüft – oder du gestaltest direkt im Online-Designer."],
+      ["Kann ich als Firma auf Rechnung bestellen?", "Ja. Firmen sehen Nettopreise und können auch auf Rechnung bestellen, Privatkunden bezahlen sicher online."]];
+    const art = '<article class="ps-seo-home" style="padding:28px 0 8px"><h2>Online drucken in Österreich</h2><p>Flyer, Visitenkarten, Plakate, Broschüren, Aufkleber, Banner und Werbeartikel: online gestalten oder Druckdaten hochladen, den Preis sofort sehen und bestellen. Alle Preise inklusive 20 % USt und Versand innerhalb Österreichs – vom Druckshop von FS Creative aus Gaschurn im Montafon.</p>' +
+      (items.length ? "<h2>Beliebte Produkte</h2><ul>" + items.map(it => { const r = low(it); return '<li><a href="' + escH(prodUrl(it.key)) + '">' + escH(it.title) + "</a>" + (r ? " – " + r.copies.toLocaleString("de-AT") + " Stück ab " + eurDe(r.gross) : "") + "</li>"; }).join("") + "</ul>" : "") +
+      (groups.length ? "<h2>Kategorien</h2><ul>" + groups.map(g => '<li><a href="' + escH(catUrl(g.slug)) + '">' + escH(g.name) + "</a></li>").join("") + "</ul>" : "") +
+      "<h2>Darum FS Creative</h2><ul><li>Preis sofort – Endpreis inklusive Versand in ganz Österreich</li><li>Automatischer Datencheck für jede Datei, auf Wunsch persönlicher Profi-Datencheck</li><li>Online-Designer mit Vorlagen – ganz ohne Grafikprogramm</li><li>Firmen: Nettopreise und Kauf auf Rechnung</li></ul>" +
+      faqHtml(faq) + '<p><a href="/print/preise">Alle Preise im Überblick</a> · <a href="/print/ratgeber">Ratgeber: Formate, Papier, Druckdaten</a> · <a href="/print/hilfe">So geht’s &amp; FAQ</a></p></article>';
+    const ld = { "@type": "FAQPage", mainEntity: faq.map(q => ({ "@type": "Question", name: q[0], acceptedAnswer: { "@type": "Answer", text: q[1] } })) };
+    return html.replace(/(<div class="ps-loading" id="psLoading">[\s\S]*?<\/section>)(<\/div>)/, (m, a, b) => a + art + b).replace("</head>", () => ldTag(ld) + "\n</head>");
+  }
   // Häufige Fragen je Produkt (sichtbar + FAQPage): nur Angaben, die der Shop wirklich einhält (Preis aus der Preisübersicht, Beschnitt/Sicherheitsabstand des Produkts)
   function productFaq(x, full, it, lo, fvT) {
     const T = x.title + (fvT || ""), q = [], bl = full && full.bleed != null ? +full.bleed : 3, sf = full && full.safe != null ? +full.safe : 3, des = full ? full.designer !== false : true, kind = (full && full.kind) || x.kind || "flat";
@@ -2927,6 +2945,7 @@ module.exports = function (D) {
     const pk = pathKey || (u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120));
     { await slugMap().catch(() => null); html = html.replace(/href="\/print\?produkt=([\w-]+)"/g, (m, k) => 'href="' + escH(prodUrl(k)) + '"'); }
     if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk, u.searchParams.get("format")); } catch (e) { log("Produkt-SEO:", e.message); } }
+    else if (u && u.searchParams && !String(u.search || "").replace(/^\?/, "")) { try { html = await homeSeo(html); } catch (e) { log("Start-SEO:", e.message); } }   // /print ohne Abfrage: Startseite
     else if (u && u.searchParams && u.searchParams.has("produkte")) { const km = String(u.searchParams.get("kategorie") || ""), ks = String(u.searchParams.get("unter") || "");
       if (/^[\w-]{0,80}$/.test(km) && /^[\w-]{0,80}$/.test(ks)) { try { html = await catSeo(html, km, ks); } catch (e) { log("Kategorie-SEO:", e.message); } } }
     return D.sendGz(req, res, 200, html, "text/html; charset=utf-8", { "Cache-Control": "no-cache", "X-Robots-Tag": preview ? "noindex, nofollow" : "index, follow" });
