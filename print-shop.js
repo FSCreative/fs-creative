@@ -2589,8 +2589,9 @@ module.exports = function (D) {
   }
   async function slugMap() {
     const st = await settings(), cat = await catalog(false).catch(() => null), all = await catalogAll().catch(() => null); if (!cat) return SLUGS;
-    if (SLUGS.cat === cat && SLUGS.s === st && SLUGS.all === all) return SLUGS;
-    SLUGS = Object.assign(slugsFor(publicCatalog(cat, st, all)), { cat, s: st, all }); return SLUGS;
+    const sig = JSON.stringify([st.enabled, st.catEnabled, st.catOverride, st.products && Object.keys(st.products).filter(k => st.products[k] && st.products[k].enabled === false)]);   // Sortiment geändert (Objekt bleibt dasselbe) → neu
+    if (SLUGS.cat === cat && SLUGS.sig === sig && SLUGS.all === all) return SLUGS;
+    SLUGS = Object.assign(slugsFor(publicCatalog(cat, st, all)), { cat, sig, all }); return SLUGS;
   }
   const prodUrl = (key, abs) => (abs ? SITE : "") + (SLUGS.byKey[key] ? "/print/" + SLUGS.byKey[key] : "/print?produkt=" + encodeURIComponent(key));
   const prodLink = (key, abs, qs) => { const u0 = prodUrl(key, abs); return qs ? u0 + (u0.indexOf("?") > -1 ? "&" : "?") + qs : u0; };
