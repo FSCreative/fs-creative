@@ -2377,7 +2377,11 @@ module.exports = function (D) {
     const qRetry = async (p, n) => { for (let i = 0; ; i++) { try { return await quote(p, n, "AT", "", {}); } catch (e) { if (i >= 2 || !(e && (e.status === 429 || e.busy || e.shipping || +e.status >= 500 || !e.status))) throw e; await new Promise(r => setTimeout(r, 5000 * (i + 1))); } } };
     try {
       const s = await settings(), cat = await catalog(false), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), byKey = {}; pub.forEach(x => { byKey[x.key] = x; });
-      const h = await homeState(), keys = CURATED.map(c => c.key).concat(PUB_MORE.map(c => c.key), (h && h.focus) || [], (h && h.fresh) || []).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
+      // Startseiten-Fokus/Neu wechseln täglich: was dort war, bleibt 14 Tage in Preisübersicht und Google-Feed (stabiler Feed statt täglichem Rein/Raus)
+      const h = await homeState(), old = await pubState(), seen = Object.assign({}, (old && old.seen) || {}), now0 = Date.now();
+      ((h && h.focus) || []).concat((h && h.fresh) || []).forEach(k => { seen[k] = nowIso(); });
+      Object.keys(seen).sort((x, y) => String(seen[y]).localeCompare(String(seen[x]))).forEach((k, i) => { if (i >= 40 || now0 - Date.parse(seen[k]) > 14 * 864e5) delete seen[k]; });   // höchstens 40 (Print.com-Anfragen)
+      const keys = CURATED.map(c => c.key).concat(PUB_MORE.map(c => c.key), Object.keys(seen)).filter((k, i, a) => a.indexOf(k) === i && byKey[k]);
       const items = [];
       for (const key of keys) {
         const p = await findProduct(key, s).catch(() => null), base = p && stdInput(p); if (!base) continue;
@@ -2408,7 +2412,7 @@ module.exports = function (D) {
         }
         const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows, formats: formats.length ? formats : undefined });
       }
-      if (items.length) { PUB = { at: nowIso(), items }; await store.setMeta("print_pub", PUB).catch(() => {}); }
+      if (items.length) { PUB = { at: nowIso(), items, seen }; await store.setMeta("print_pub", PUB).catch(() => {}); }
       log("Druckshop: Preisübersicht aktualisiert (" + items.length + " Produkte)");
     } finally { pubRun = false; }
   }
