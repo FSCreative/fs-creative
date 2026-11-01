@@ -1186,6 +1186,29 @@ async function cfGraphQL(query, variables) {
   try { const r = await fetch("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { Authorization: "Bearer " + CF.token, "Content-Type": "application/json" }, body: JSON.stringify({ query, variables }), signal: ctrl.signal }); return await r.json(); }
   catch (e) { return null; } finally { clearTimeout(t); }
 }
+// Echte Seitenaufrufe (Wunsch Simon 01.11.2026): Cloudflare-Rohdaten je Tag – nur GET-HTML mit Status 200 von Besuchern (requestSource eyeball),
+// ohne Cockpit (/admin), ohne Bots/Vorschauen/Skripte (Browserkennung) und ohne unsere eigenen Prüf-Abrufe (fs-research, HeadlessChrome).
+// Getrennt: Hauptseite vs. Druckshop (/print…). Kein Tracking auf den Seiten – nur die Zugriffe, die Cloudflare ohnehin sieht.
+const VISIT_BOT = /bot|crawl|spider|slurp|preview|externalhit|facebookcatalog|monitor|uptime|pingdom|statuscake|lighthouse|pagespeed|headless|phantom|puppeteer|playwright|selenium|curl|wget|python|node|axios|go-http|java\/|okhttp|libwww|httpclient|fs-research|feedfetcher|validator|checker|scan|probe|semrush|ahrefs|majestic|mj12|dotbot|petal|yandex|baidu|bytespider|gptbot|chatgpt|claude|anthropic|perplexity|ccbot|amazonbot|applebot|google|bing|duckduck|whatsapp|telegram|skype|discord|slack|^$/i;
+async function siteVisits(host, from, to) {
+  const zj = await cfGet("/zones?name=" + encodeURIComponent(host)); const z = zj && zj.success && zj.result && zj.result[0]; if (!z) throw new Error("Cloudflare-Zone " + host + " nicht gefunden");
+  const q = 'query($zt:String!,$a:Time!,$b:Time!,$h:[String!]){viewer{zones(filter:{zoneTag:$zt}){httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200,clientRequestHTTPHost_in:$h}){count dimensions{clientRequestPath userAgent}}}}}';
+  const days = [], out = { host, from, to, main: 0, print: 0, bots: 0, admin: 0, days: [], top: {}, errors: [] };
+  for (let d = new Date(from + "T00:00:00Z"); d.toISOString().slice(0, 10) <= to; d = new Date(d.getTime() + 864e5)) days.push(d.toISOString().slice(0, 10));
+  for (const day of days) {
+    const a = new Date(day + "T00:00:00+01:00"), b = new Date(a.getTime() + 864e5), row = { date: day, main: 0, print: 0, bots: 0 };   // Kalendertag Wien (Winterzeit)
+    const j = await cfGraphQL(q, { zt: z.id, a: a.toISOString(), b: b.toISOString(), h: [host, "www." + host] });
+    const gs = j && j.data && j.data.viewer && j.data.viewer.zones && j.data.viewer.zones[0] && j.data.viewer.zones[0].httpRequestsAdaptiveGroups;
+    if (!Array.isArray(gs)) { out.errors.push(day + ": " + String((j && j.errors && j.errors[0] && j.errors[0].message) || "keine Daten").slice(0, 160)); out.days.push(row); continue; }
+    gs.forEach(g => { const p = String(g.dimensions.clientRequestPath || "/"), ua = String(g.dimensions.userAgent || ""), n = +g.count || 0;
+      if (/^\/admin(\/|$)/.test(p)) { out.admin += n; return; }
+      if (VISIT_BOT.test(ua)) { row.bots += n; return; }
+      const k = /^\/print(\/|$)/.test(p) ? "print" : "main"; row[k] += n; out.top[p] = (out.top[p] || 0) + n; });
+    out.main += row.main; out.print += row.print; out.bots += row.bots; out.days.push(row);
+  }
+  out.top = Object.keys(out.top).sort((x, y) => out.top[y] - out.top[x]).slice(0, 25).map(k => [k, out.top[k]]);
+  return out;
+}
 async function pingSite(host) {
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 7000); const t0 = Date.now();
   try {
@@ -4693,6 +4716,12 @@ async function handleAdmin(req, res, u, p) {
     try { const pl = await sevBody(req, 100000); delete pl._switch; if (pl.op === "vaswitch" && pl.undo !== true) pl._switch = await vaSwitchSnapshot(pl.key);
       const o = billingOp(pl); return send(res, 200, JSON.stringify({ ok: true, billing: o }), TYPES[".json"]); }
     catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 200) }), TYPES[".json"]); }
+  }
+  if (p === "/admin/api/visits" && req.method === "GET") {   // ?host=fs-creative.at&from=JJJJ-MM-TT&to=JJJJ-MM-TT (höchstens 8 Tage)
+    const J = (c, o) => send(res, c, JSON.stringify(o), TYPES[".json"], { "Cache-Control": "no-store" });
+    const host = String(u.searchParams.get("host") || "fs-creative.at").toLowerCase(), from = String(u.searchParams.get("from") || ""), to = String(u.searchParams.get("to") || "");
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host) || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from || (Date.parse(to) - Date.parse(from)) > 7 * 864e5) return J(400, { ok: false, error: "host/from/to ungültig" });
+    try { return J(200, Object.assign({ ok: true }, await siteVisits(host, from, to))); } catch (e) { return J(200, { ok: false, error: String(e.message || e).slice(0, 200) }); }
   }
   if (p === "/admin/api/railway-costs" && req.method === "GET") {
     try { const d = await railwayCosts(u.searchParams.get("force") === "1"); return send(res, 200, JSON.stringify(d), TYPES[".json"], { "Cache-Control": "no-store" }); }
