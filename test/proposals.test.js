@@ -43,7 +43,7 @@ function setup(seed) {
   L.setProposer(P);
   P.register("rule", { exec: it => R.acceptProposal(it.payload) });
   const M = require(path.join(ROOT, "fin-mollie.js"))({ L, P: () => P, today: () => TODAY });
-  ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => P.register(k, { exec: it => M.accept(k, it.payload) }));
+  ["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit", "mollie-txfee"].forEach(k => P.register(k, { exec: it => M.accept(k, it.payload) }));
   P.register("transfer", { exec: it => L.pairApply(it.payload.aId, it.payload.bId) });
   return { fin, L, P, R, M };
 }
@@ -357,6 +357,39 @@ const logsOf = (L, txId) => L.all("CheckAccountTransactionLog").filter(l => l.ch
       ["7002", "7003", "7004", "7005"].forEach(id => assert.strictEqual(String(E.L.get("Invoice", id).status), "200", "Rechnung " + id + " offen"));
       assert.ok((await E.P.suggestTx("3003")).candidates.some(c => c.type === "invoice" && c.id === "7004"), "alte Zahlung: Rechnung als Kandidat");
       assert.ok((await E.P.suggestTx("3005")).candidates.some(c => c.type === "invoice" && c.id === "7005"), "unbekannter Zahler: Rechnung als Kandidat");
+    });
+  }
+  // Druckshop über PayPal (via Mollie): PayPal-Eingang netto + Bestellnummer/Mollie-ID → Rechnung automatisch (Gebühr als Zahlungsgebühr),
+  // die Mollie-Gebühr (Umsatz „payment“ mit −0,10 €) als Zahlungsgebühr derselben Rechnung (Simon 01.11.2026)
+  {
+    const pid = "tr_TestPayPal123456";
+    const inv = (id, nr, ord, gross, p) => ["Invoice", { id, invoiceType: "RE", status: "200", invoiceNumber: nr, contact: { id: "c9", objectName: "Contact" }, sumGross: gross.toFixed(2), paidAmount: "0", invoiceDate: "2026-10-26T00:00:00+02:00",
+      header: "Rechnung Druckauftrag " + ord, headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung " + ord + "). Bezahlt online – Mollie " + p + "." }];
+    const ppTx = (id, net, fee, ord, p, date) => ["CheckAccountTransaction", { id, checkAccount: { id: "2", objectName: "CheckAccount" }, amount: net.toFixed(2), feeAmt: fee.toFixed(2), grossAmt: (net + fee).toFixed(2), feeBy: "PayPal",
+      valueDate: (date || "2026-10-26") + "T00:00:00+02:00", entryDate: (date || "2026-10-26") + "T00:00:00+02:00", payeePayerName: "Julia Beispiel", paymtPurpose: "FS Creative Druck " + ord + " · FS Creative Druck " + ord + " · " + p + " · 9XX00000TEST0001", status: "100" }];
+    const molFee = (id, p, ord) => ["CheckAccountTransaction", { id, checkAccount: { id: "3", objectName: "CheckAccount" }, amount: "-0.10", mollieGross: "-0.10", mollieFeeAmt: "0.10", molliePayment: p, mollieType: "payment", mollieId: "m" + id,
+      valueDate: "2026-10-26T00:00:00+02:00", entryDate: "2026-10-26T00:00:00+02:00", payeePayerName: "Julia Beispiel", paymtPurpose: "FS Creative Print: FS Creative Druck " + ord + " · " + p, status: "100" }];
+    const E = setup([acc("1", "George"), acc("2", "PayPal"), acc("3", "Mollie – FS Creative Print"), ["Contact", { id: "c9", name: "Julia Maria Beispiel" }],
+      ["AccountingType", { id: "61", name: "Nebenkosten des Geldverkehrs", status: "100" }],
+      inv("8001", "RE-9277", "D-261026-TE51", 31.5, pid), inv("8002", "RE-9278", "D-261026-TE52", 52, "tr_Zweite12345"), inv("8003", "RE-9279", "D-261026-XX11", 34.6, "tr_Dritte12345"),
+      ppTx("4001", 30.1, 1.4, "D-261026-TE51", pid), ppTx("4002", 48.0, 1.4, "D-261026-TE52", "tr_Zweite12345"), ppTx("4003", 33.0, 1.6, "D-261026-ZZ99", "tr_Unbekannt9999"),
+      molFee("4101", pid, "D-261026-TE51"), molFee("4102", "tr_Niemand12345", "D-261026-QQ00")]);
+    await E.L.load();
+    await t("PayPal-Eingang mit Bestellnummer + Mollie-ID: brutto (Umsatz + PayPal-Gebühr) = offen → automatisch verbucht, Gebühr als Zahlungsgebühr; falscher Betrag/unbekannte Nummer bleibt offen", async () => {
+      const d = await E.P.autoBookIncoming(); assert.deepStrictEqual(d.map(x => x.nr), ["RE-9277"], JSON.stringify(d));
+      const i = E.L.get("Invoice", "8001"); assert.strictEqual(String(i.status), "1000"); assert.strictEqual(String(E.L.get("CheckAccountTransaction", "4001").status), "200");
+      const cost = E.L.all("Voucher").filter(v => String(v.creditDebit) === "C" && /PayPal/i.test(String(v.supplierName || "") + String(v.description || "")));
+      assert.ok(cost.length === 1 && Math.abs(+cost[0].sumGross - 1.4) < 0.001, "PayPal-Gebühr 1,40 € als Zahlungsgebühr: " + JSON.stringify(cost));
+      assert.strictEqual(String(E.L.get("Invoice", "8002").status), "200", "48,00 + 1,40 ≠ 52,00 → bleibt offen"); assert.strictEqual(String(E.L.get("CheckAccountTransaction", "4002").status), "100");
+      assert.strictEqual(String(E.L.get("CheckAccountTransaction", "4003").status), "100", "unbekannte Bestellnummer → nichts");
+      assert.ok((await E.P.view()).auto.some(a => a.nr === "RE-9277"), "unter „Automatisch verbucht“ (rückgängig möglich)");
+    });
+    await t("Mollie-Gebühr der PayPal-Zahlung (−0,10 €) → automatisch Zahlungsgebühr zu genau dieser Rechnung; ohne Rechnung bleibt sie offen", async () => {
+      assert.strictEqual(await E.M.paypalFees(), 1);
+      assert.strictEqual(String(E.L.get("CheckAccountTransaction", "4101").status), "200");
+      const v = E.L.all("Voucher").find(x => x.fromMollie === "4101"); assert.ok(v && Math.abs(+v.sumGross - 0.1) < 0.001 && String(v.creditDebit) === "C" && String(v.status) === "1000" && /RE-9277/.test(v.description), JSON.stringify(v));
+      assert.strictEqual(String(E.L.get("CheckAccountTransaction", "4102").status), "100", "keine Rechnung zur Mollie-ID → offen");
+      assert.strictEqual(await E.M.paypalFees(), 0, "nur einmal");
     });
   }
   console.log((fail ? "FEHLER" : "OK") + ": " + pass + " bestanden, " + fail + " fehlgeschlagen");

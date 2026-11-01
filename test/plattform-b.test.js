@@ -308,6 +308,34 @@ function unitTests(T) {
     assert.strictEqual(await finApiIdem("kantineur", "POST", "/Invoice/Factory/saveInvoice", "k", { invoice: { id: made.id } }, sevFn), null);
     assert.strictEqual(await finApiIdem("kantineur", "POST", "/Contact", "k", { name: "x" }, sevFn), null);
   }]);
+  /* ---- B12: Fotobox-Altbuchungen (Import aus dem alten Buchungssystem) über Einnahme-Belege SI-… erledigt ---- */
+  out.push(["B12: Altbuchung online bezahlt ↔ Einnahme-Beleg (Betrag inkl. Extras, Zahler, jeder Beleg einmal) – Rest bleibt offen, neue Buchungen unberührt", () => {
+    const imp = (o) => bk(Object.assign({ source: "import", status: "CONFIRMED", paymentStatus: "PAID", paymentMethod: "STRIPE" }, o));
+    const books = [
+      imp({ id: "j", reference: "1ulwtst1", customerName: "Max Beispiel", eventDate: "2026-05-09", totalCents: 21000, extras: [{ name: "+ 200 Ausdrucke", priceCents: 3950 }] }),
+      imp({ id: "l", reference: "1ulwtst2", customerName: "Lena Muster", eventDate: "2026-07-17", totalCents: 21000 }),
+      imp({ id: "f", reference: "1ulwtst3", customerName: "Paula Probe", eventDate: "2026-06-15", totalCents: 12500, extras: [{ name: "+ 200 Ausdrucke", priceCents: 4000 }] }),
+      imp({ id: "d", reference: "1ulwtst4", customerName: "Maria Beispiel-Huber", eventDate: "2026-02-09", totalCents: 18900, extras: [{ name: "Transport", priceCents: 5100 }] }),
+      imp({ id: "m", reference: "1ulwtst5", customerName: "Tourismus Beispiel GmbH", eventDate: "2026-08-01", totalCents: 21000, paymentMethod: "INVOICE" }),
+      bk({ id: "n", reference: "BD-NEU111", customerName: "Neu Kunde", eventDate: "2026-11-15", totalCents: 21000, paymentStatus: "PAID" }),
+    ];
+    const incomeVouchers = [
+      { id: "v3", nr: "SI-2099000103", date: "2026-02-12", gross: 210, payers: [] },
+      { id: "v4", nr: "SI-2099000104", date: "2026-02-13", gross: 249.5, payers: [] },
+      { id: "v7", nr: "SI-2099000107", date: "2026-05-28", gross: 151.2, payers: ["Paula Probe"] },
+      { id: "vx", nr: "BD9", date: "2026-01-16", gross: 412, payers: [] },
+    ];
+    const r = build({ blitzAll: books, incomeVouchers }), by = id => r.items.find(x => x.key === "blitz:" + id);
+    assert.ok(by("j").viaVoucher && by("j").invoices[0].nr === "SI-2099000104" && by("j").unbilled === 0, "Beispiel: 210 + 39,50 Extras = SI-…104 " + JSON.stringify(by("j")));
+    assert.ok(by("l").viaVoucher && by("l").invoices[0].nr === "SI-2099000103", "Muster: 210 ohne Extras = SI-…103 (Beispiel nimmt den vollen Betrag)");
+    assert.ok(by("f").viaVoucher && by("f").invoices[0].nr === "SI-2099000107" && by("f").paid === 151.2, "Probe: über den Zahler (Rabatt auf Extras)");
+    assert.strictEqual(by("j").action, null); assert.ok(/Einnahme-Beleg SI-2099000104/.test(by("j").notes[0].text));
+    assert.ok(by("d").unbilled === 189 && by("d").action && /kein Einnahme-Beleg/.test(by("d").notes.map(n => n.text).join(" ")), "Beispiel-Huber: kein Beleg → bleibt offen mit Hinweis");
+    assert.ok(!by("m") || !by("m").viaVoucher, "Firmen-/Rechnungsbuchung nie über Beleg");
+    assert.ok(!by("n") || !by("n").viaVoucher, "neue Buchung nie über Beleg");
+    assert.strictEqual(r.totals.unbilledCount, r.items.filter(x => x.unbilled > 0.005).length);
+    const none = build({ blitzAll: books }); assert.ok(none.items.find(x => x.key === "blitz:j").unbilled === 210, "ohne Belege wie bisher");
+  }]);
   return out;
 }
 

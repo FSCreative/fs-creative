@@ -61,7 +61,7 @@ module.exports = function (D) {
     // Seit 28.10.2026 auch Mollie-Zahlung → Rechnung, wenn exakt und eindeutig (fin-mollie.js matchOf) – mit Eintrag „Automatisch verbucht“ und „Rückgängig“.
     // Einmal rückgängig gemachte Zuordnungen (autoSkip) bleiben normale Vorschläge.
     // Kundenzahlungen nur, wenn der Server das automatische Verbuchen eingeschaltet hat (D.autoPay) – sonst wie bisher nur Vorschlag.
-    const autoOk = p.kind === "mollie-payout" || p.kind === "transfer" || p.kind === "mollie-credit" || (p.kind === "mollie-match" && (!payMatch || payAuto()));
+    const autoOk = p.kind === "mollie-payout" || p.kind === "transfer" || p.kind === "mollie-credit" || p.kind === "mollie-txfee" || (p.kind === "mollie-match" && (!payMatch || payAuto()));
     if (p.autoAccept && autoOk) {
       try { await accept(it.id, { auto: true }); it.auto = true;
         if (payMatch) await recordAuto({ txId: it.txId, invoiceId: it.invoiceId, amount: it.amount, date: it.date, why: "Mollie-Zahlung gehört zur Rechnung", source: "Mollie" });
@@ -168,6 +168,19 @@ module.exports = function (D) {
   // Läufe (Takt alle 4 Min., nach George-/PayPal-Abruf) nacheinander, nie parallel – sonst könnten zwei Läufe denselben Umsatz buchen
   let autoChain = Promise.resolve();
   function autoBookIncoming(o) { const run = autoChain.then(() => autoBookRun(o)); autoChain = run.catch(() => {}); return run; }
+  // Kennungen im Verwendungszweck, die genau eine Rechnung bezeichnen: Druckshop-Bestellnummer (D-JJMMTT-XXXX) und Mollie-Zahlung (tr_…),
+  // als ganzes Wort in Kopf-/Fußtext bzw. Referenz der Rechnung. null = keine Kennung im Zweck; sonst die offenen Rechnungen mit dieser Kennung
+  // (eine Kennung, die nur eine schon bezahlte oder stornierte Rechnung trifft → leere Liste: Doppelzahlung o. Ä., nie raten).
+  const ID_RX = /(?:^|[^a-z0-9_-])(d-\d{6}-[a-z0-9]{4}|tr_[a-z0-9]{8,})(?![a-z0-9_])/gi;
+  function idInvoices(t) {
+    const ids = []; let m; const purp = String(t.paymtPurpose || ""); ID_RX.lastIndex = 0; while ((m = ID_RX.exec(purp))) { const v = m[1].toLowerCase(); if (ids.indexOf(v) < 0) ids.push(v); }
+    if (!ids.length) return null;
+    const rx = new RegExp("(^|[^a-z0-9_-])(" + ids.map(v => v.replace(/[^a-z0-9_]/g, "\\$&")).join("|") + ")(?![a-z0-9_])");
+    const txt = i => fold([i.invoiceNumber, i.header, i.headText, i.footText, i.customerInternalNote, i.reference, i.customerReference].filter(Boolean).join(" "));
+    const any = L.all("Invoice").filter(i => !i.cancelled && String(i.status) !== "100" && ["RE", "AR", "ER", "TR"].indexOf(String(i.invoiceType || "RE")) > -1 && rx.test(txt(i)));
+    if (!any.length) return null;   // Kennung unbekannt (z. B. fremde Bestellnummer) → wie bisher über Rechnungsnummer/Betrag
+    return any.filter(i => ["200", "750"].indexOf(String(i.status)) > -1);
+  }
   async function autoBookRun(o) {
     o = o || {}; await state(); await L.load();
     const busy = await busyTx(), refunds = new Set(), own = ownNames(), rep = reportedNow();
@@ -185,9 +198,16 @@ module.exports = function (D) {
       return !!ibanIdx[ib] && ibanIdx[ib].has(String(ic.id)); };
     for (const t of txs) {
       const hay = String(t.payeePayerName || "") + " " + String(t.paymtPurpose || "");
-      if (AUTO_NOT.test(hay)) continue;
       const pn = fold(t.payeePayerName); if (pn && own.some(x => x && pn.indexOf(x) > -1)) continue;   // eigene Überweisung
-      const A = r2(+t.amount), exact = inv.filter(i => Math.abs(openOf(i) - A) <= 0.005); if (!exact.length) continue;
+      const A = r2(+t.amount), fee = r2(Math.abs(+t.feeAmt || 0)), AG = fee > 0.004 ? r2(A + fee) : 0;
+      // Druckshop/PayPal (Simon 01.11.2026: „ohne Prüfung, wenn sie zu den Belegen passen“): Bestellnummer D-… bzw. Mollie-Zahlung tr_… im Verwendungszweck
+      // = genau diese Rechnung; PayPal zieht seine Gebühr vorher ab → Betrag brutto (Umsatz + Gebühr), die Gebühr wird als Zahlungsgebühr gebucht
+      const idHits = idInvoices(t);
+      if (idHits) { const i = idHits.length === 1 ? idHits[0] : null, T = i ? [A, AG].find(x => x > 0 && Math.abs(openOf(i) - x) <= 0.005) : null;
+        if (i && T && !ST.autoSkip[String(t.id) + ":" + String(i.id)]) { plan.push({ t, i, why: "Bestellnummer/Mollie-Zahlung im Verwendungszweck, Betrag exakt" + (T !== A ? " (brutto, PayPal-Gebühr " + String(fee.toFixed(2)).replace(".", ",") + " € als Zahlungsgebühr)" : ""), A, T, old: !autoDateOk(t.valueDate, rep) }); (hitsBy[i.id] = hitsBy[i.id] || []).push(String(t.id)); }
+        continue; }   // Kennung trifft keine bzw. mehrere offene Rechnungen → nie nach Betrag/Name raten
+      if (AUTO_NOT.test(hay)) continue;   // Zahlungsdienst/Umbuchung ohne eindeutige Kennung → nur Vorschlag
+      const exact = inv.filter(i => Math.abs(openOf(i) - A) <= 0.005); if (!exact.length) continue;
       const purp = fold(t.paymtPurpose), purpN = purp.replace(/[^a-z0-9]/g, "");
       // Ziffern immer als ganze Zahl (sonst trifft „RE-123“ auch „RE-1233“)
       const numHit = i => { const nr = fold(i.invoiceNumber); if (!nr) return false; const full = nr.replace(/[^a-z0-9]/g, ""), dg = (nr.match(/(\d{3,})\s*$/) || [])[1], dgHit = () => !!dg && new RegExp("(^|[^0-9])" + dg + "([^0-9]|$)").test(purp); if (full.length >= 4 && /[a-z]/.test(full) && purpN.indexOf(full) > -1 && (!dg || dgHit())) return true; return dgHit(); };
@@ -210,13 +230,13 @@ module.exports = function (D) {
       }
       if (!pick || ST.autoSkip[String(t.id) + ":" + String(pick.id)]) continue;
       // alt oder in einem gemeldeten Zeitraum → bleibt zur Prüfung (zählt aber mit, wenn ein zweiter Eingang dieselbe Rechnung trifft)
-      plan.push({ t, i: pick, why, A, old: !autoDateOk(t.valueDate, rep) }); (hitsBy[pick.id] = hitsBy[pick.id] || []).push(String(t.id));
+      plan.push({ t, i: pick, why, A, T: A, old: !autoDateOk(t.valueDate, rep) }); (hitsBy[pick.id] = hitsBy[pick.id] || []).push(String(t.id));
     }
     const done = [];
     for (const p of plan) {
       if (p.old || hitsBy[p.i.id].length > 1) continue;   // alt/gemeldet bzw. zwei Eingänge für dieselbe Rechnung → mehrdeutig, bleibt zur Prüfung
       const t = L.get("CheckAccountTransaction", p.t.id), i = L.get("Invoice", p.i.id);
-      if (!t || String(t.status) !== "100" || !i || ["200", "750"].indexOf(String(i.status)) < 0 || Math.abs(openOf(i) - p.A) > 0.005) continue;
+      if (!t || String(t.status) !== "100" || !i || ["200", "750"].indexOf(String(i.status)) < 0 || Math.abs(openOf(i) - p.T) > 0.005) continue;
       if (o.dry) { done.push({ txId: String(t.id), invoiceId: String(i.id), nr: i.invoiceNumber || "", amount: p.A, why: p.why }); continue; }
       try {
         await L.request("PUT", "/Invoice/" + i.id + "/bookAmount", { body: { amount: p.A, date: day(t.valueDate), checkAccountTransaction: { id: String(t.id) }, auto: true } });

@@ -159,7 +159,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const pp = await fetch(B + "/print/preise"); const ph = await pp.text(); assert.strictEqual(pp.status, 200);
     assert.ok(/Druckpreise im Überblick/.test(ph) && /Visitenkarten/.test(ph) && /inkl\. 20 % USt/.test(ph) && /"@type":"ItemList"/.test(ph) && /"@type":"FAQPage"/.test(ph) && /\/print\/preise"/.test(ph), "Preisseite");
     assert.ok(!/print\.com/i.test(ph), "kein Lieferantenname");
-    const lt = await fetch(B + "/llms.txt"); const ltx = await lt.text(); assert.strictEqual(lt.status, 200, ltx.slice(0, 200)); assert.ok(/# FS Creative/.test(ltx) && /Beispielpreise/.test(ltx) && /Visitenkarten.*€/.test(ltx) && !/print\.com/i.test(ltx), ltx.slice(0, 600));
+    const lt = await fetch(B + "/llms.txt"); const ltx = await lt.text(); assert.strictEqual(lt.status, 200, ltx.slice(0, 200)); assert.ok(/# FS Creative/.test(ltx) && /Einstiegspreise je Kategorie/.test(ltx) && /Preise beliebter Produkte/.test(ltx) && /Visitenkarten.*€/.test(ltx) && /Online-Designer mit KI-Assistent/.test(ltx) && /llms-full\.txt/.test(ltx) && !/print\.com/i.test(ltx), ltx.slice(0, 600));
     const r301 = await fetch(B + "/print?produkt=visitenkarten&menge=250&utm_source=x", { redirect: "manual" }); assert.strictEqual(r301.status, 301); assert.strictEqual(r301.headers.get("location"), "/print/visitenkarten?menge=250&utm_source=x", "alter Link → sprechende Adresse, Abfrage bleibt");
     assert.strictEqual((await fetch(B + "/print/gibtsnicht")).status, 404); assert.strictEqual((await fetch(B + "/print/visitenkarten/", { redirect: "manual" })).headers.get("location"), "/print/visitenkarten");
     const cj = await (await fetch(B + "/print/api/catalog")).json(); assert.strictEqual(cj.products.find(x => x.key === "visitenkarten").slug, "visitenkarten", "Katalog kennt die Adresse");
@@ -677,6 +677,16 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     a.items.forEach(x => { assert.ok(x.key && x.sku, JSON.stringify(x)); if (!x.err) ["missing", "auto", "noDims", "labels"].forEach(k => assert.ok(Array.isArray(x[k]), k)); });
     assert.ok(typeof a.missing === "number" && Array.isArray(a.topLabels));
     assert.ok(typeof a.noPrice === "number" && a.noPrice < a.products, "Preis-Check der Startausführung"); assert.ok(a.items.every(x => x.err || x.noPrice || x.missing.length || x.labels.length || x.noDims.length), "nur Produkte mit Befund");
+  });
+  await t("ChatGPT & Co.: Einstiegspreise aus der Sortiments-Prüfung in llms-full.txt, /print/llms.txt, Online-Designer-Seite mit WebApplication/FAQ, Sitemap", async () => {
+    const lf = await fetch(B + "/llms-full.txt"), lft = await lf.text(); assert.strictEqual(lf.status, 200, lft.slice(0, 200));
+    assert.ok(/^# FS Creative Druckshop – alle Produkte mit Einstiegspreis/.test(lft) && /\n## .+ \(\d+\)\n/.test(lft) && /: ab [\d.,]+ € für [\d.]+ Stk\./.test(lft) && /https:\/\/www\.fs-creative\.at\/print\/visitenkarten/.test(lft) && !/print\.com/i.test(lft), lft.slice(0, 800));
+    assert.ok((lft.match(/: ab [\d.,]+ €/g) || []).length >= 6, "Einstiegspreise auch außerhalb der Preisübersicht (Prüfung mit 6 Produkten)");
+    const lp = await fetch(B + "/print/llms.txt"); assert.strictEqual(lp.status, 200); assert.ok(/# FS Creative/.test(await lp.text()));
+    const dz = await fetch(B + "/print/online-designer"), dh = await dz.text(); assert.strictEqual(dz.status, 200);
+    assert.ok(/KI-Assistent/.test(dh) && /"@type":"WebApplication"/.test(dh) && /"@type":"FAQPage"/.test(dh) && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\/online-designer"/.test(dh) && !/print\.com/i.test(dh), "Designer-Seite");
+    const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/online-designer<\/loc>/.test(sm), "Sitemap mit Designer-Seite");
+    const pp = await (await fetch(B + "/print/preise")).text(); assert.ok(/Online-Designer|online-designer|Einstiegspreise|Druckpreise/.test(pp));
   });
   await t("Werbeartikel: Druckfläche aus printing_size, Farbe immer gesendet, Preis 0 → Fehler", async () => {
     const pen = cat.products.find(p => p.key === "kugelschreiber"); assert.strictEqual(pen.kind, "promo"); assert.strictEqual(pen.designer, false);

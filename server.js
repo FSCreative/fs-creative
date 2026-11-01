@@ -620,6 +620,22 @@ async function blitzAbgleichBookings(year, today) {
   return { bookings: out, status: stale.length ? "stale" : "ok", at: Math.min.apply(null, [main, prev, next].filter(x => x && x.data).map(x => x.at)), error: stale.map(x => x.error).filter(Boolean).join(" · "),
     partial: [prev, next].some(x => x && !x.data) };
 }
+// Einnahme-Belege aus dem alten Fotobox-Buchungssystem (SBPay „SI-2026…“, Wix „BD2“ …): die Blitzdings-Altbuchungen (Import) wurden dort bezahlt
+// und als Einnahme verbucht – keine Rechnung nötig (B12). Zahler aus der verknüpften Bankbuchung (PayPal nennt den Namen, Stripe nicht).
+let BLITZ_INC = { at: 0, data: null, p: null };
+function blitzIncomeVouchers() {
+  if (BLITZ_INC.data && Date.now() - BLITZ_INC.at < 10 * 60e3) return Promise.resolve(BLITZ_INC.data);
+  if (BLITZ_INC.p) return BLITZ_INC.p;
+  BLITZ_INC.p = (async () => {
+    const [vs, tx] = await Promise.all([sevAll("/Voucher", {}, 8000), SEV_OPS.transactions(false).catch(() => null)]);
+    const payers = {}; ((tx && tx.transactions) || []).forEach(t => { if (!(t.amount > 0) || !t.name) return; (t.links || []).forEach(l => { if (l && l.type === "Voucher" && l.id) (payers[l.id] = payers[l.id] || []).push(t.name); }); });
+    const hint = v => /blitz|fotobox/i.test(String(v.supplierName || "")) || /^(SI-\d{6,}|BD\d+)\b/i.test(String(v.description || "").trim());
+    const data = (vs || []).filter(v => v && v.creditDebit === "D" && ["100", "1000"].indexOf(String(v.status)) > -1 && sevNum(v.sumGross) > 0 && hint(v))
+      .map(v => ({ id: String(v.id), nr: String(v.description || "Beleg").trim().slice(0, 40), date: sevDay(v.voucherDate), gross: sevNum(v.sumGross), payers: payers[String(v.id)] || [] }));
+    BLITZ_INC = { at: Date.now(), data, p: null }; return data;
+  })().catch(e => { BLITZ_INC.p = null; throw e; });
+  return BLITZ_INC.p;
+}
 // Nach einem Storno einer Rechnung bzw. einer Abrechnung (billMonth) den Belegstatus bei kochdu ohne Zwischenspeicher laden (&fresh=1,
 // CONTRACT-fs-order §1) – sonst gälte eine eben stornierte Monatsrechnung bis zu 5 min weiter als gültig und der Monat ließe sich nicht neu abrechnen.
 // Ein altes kochdu ignoriert den Parameter.
@@ -2520,9 +2536,28 @@ function abgleichBlitz(o) {
   // Sammelrechnungen: mehrere Buchungen desselben Kunden, die zusammen genau eine noch freie Rechnung ergeben
   const bnorm = x => String(x || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/\b(gmbh|og|kg|e\.?u\.?|ag|co|mbh|ges\.?m\.?b\.?h\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
   const nameHit = (a, b2) => { a = bnorm(a); b2 = bnorm(b2); return a.length >= 4 && b2.length >= 4 && (a.indexOf(b2) > -1 || b2.indexOf(a) > -1); };
+  // Durchgang 2b (B12): Altbuchungen aus dem alten Buchungssystem (source „import“), dort online bezahlt → Einnahme-Beleg (SBPay „SI-2026…“, Wix „BD…“)
+  // statt Rechnung. Treffer: Betrag (Blitzdings-Betrag bzw. inkl. Extras – der Import führt die Extras teils getrennt) oder Zahler der verknüpften
+  // Bankbuchung = Kunde, Beleg höchstens 400 Tage vor bis 60 Tage nach dem Event; jeder Beleg nur einmal, bester Treffer zuerst.
+  (function () {
+    const vs = Array.isArray(o.incomeVouchers) ? o.incomeVouchers : []; if (!vs.length) return;
+    const pairs = [];
+    C.forEach(c => {
+      const b = c.b, d = dayOf(b); if (b.source !== "import" || c.live.length || c.weak || c.recsB.length || !billable(b) || b.paymentStatus !== "PAID" || String(b.paymentMethod || "").toUpperCase() === "INVOICE" || !d) return;
+      const ex = round2((b.extras || []).reduce((s, e) => s + (+(e && e.priceCents) || 0), 0) / 100), amt = amtOf(b), full = round2(amt + ex), who = [b.customerName, b.companyName].filter(Boolean);
+      vs.forEach(v => {
+        if (!v.date || v.date < ymdAdd(d, -400) || v.date > ymdAdd(d, 60)) return;
+        const hitFull = Math.abs(v.gross - full) < 0.015, hitPkg = ex > 0 && Math.abs(v.gross - amt) < 0.015, hitName = (v.payers || []).some(p => who.some(w => nameHit(p, w)));
+        if (!hitFull && !hitPkg && !hitName) return;
+        pairs.push({ c, v, score: (hitName ? 2 : 0) + (hitFull ? 1.5 : hitPkg ? 1 : 0), dist: Math.abs(days(v.date, d)) });
+      });
+    });
+    pairs.sort((x, y) => y.score - x.score || x.dist - y.dist || String(x.v.id).localeCompare(String(y.v.id)));
+    const usedV = {}; pairs.forEach(p => { if (p.c.inc || usedV[p.v.id]) return; usedV[p.v.id] = 1; p.c.inc = p.v; });
+  })();
   const groupInv = {};
   (function () {
-    const pool = C.filter(c => billable(c.b) && !c.live.length && !c.weak && !c.recsB.length).map(c => c.b);   // auch mit stornierter Blitzdings-Rechnung (BD-6)
+    const pool = C.filter(c => billable(c.b) && !c.live.length && !c.weak && !c.recsB.length && !c.inc).map(c => c.b);   // auch mit stornierter Blitzdings-Rechnung (BD-6)
     if (!pool.length) return;
     const poolRefs = new Set(pool.map(b => lc(b.reference)).filter(Boolean)), recent = new Set(sevInv.map(i => String(i.id)));
     // ältere Rechnungen (außerhalb der neuesten 600, z. B. für Vorjahresbuchungen) nur, wenn der Kunde der Rechnung zu einer Buchung im Pool passt (B3)
@@ -2577,6 +2612,12 @@ function abgleichBlitz(o) {
       if (hang || (day && day <= soon)) out.push(review(hang ? "Rechnungsanlage in Blitzdings hängt – Buchhaltung nach „Buchung " + ref + "“ durchsuchen, nicht blind neu anlegen." : "Blitzdings legt die Rechnung gerade an.", hang ? "bad" : "info", [], { inProgress: true }));
       return;
     }
+    if (c.inc && !c.live.length && !c.weak) {   // Altbuchung: im alten Buchungssystem bezahlt und als Einnahme verbucht – erledigt, keine Rechnung (B12)
+      const v = c.inc, l = { id: "", nr: v.nr, date: v.date, gross: v.gross, paid: v.gross, open: 0, state: "bezahlt", label: "Einnahme-Beleg", src: "beleg", voucherId: v.id };
+      out.push(Object.assign({}, base, { name: who + (pkg ? " · " + pkg : ""), sub: subOf(" · Einnahme-Beleg " + v.nr), unbilled: 0, invoiced: v.gross, paid: v.gross, open: 0, last: l, invoices: [l], action: null, viaVoucher: true,
+        notes: [{ lvl: "info", text: "Im alten Buchungssystem bezahlt und als Einnahme-Beleg " + v.nr + " vom " + deDate(v.date) + " (" + eu(v.gross) + ") verbucht – keine Rechnung nötig." + (Math.abs(v.gross - amt) >= 0.02 ? " Blitzdings führt " + eu(amt) + " (Extras bzw. Rabatt im Beleg)." : "") }] }));
+      return;
+    }
     const viaGroup = !c.live.length && !c.weak && groupInv[b.id];
     const links = c.live.length ? c.live.slice() : c.weak ? [L0(c.weak, "name")] : viaGroup ? [L0(viaGroup, "group")] : [];
     links.forEach(l => { if (l && l.id) linked[l.id] = 1; });
@@ -2615,7 +2656,11 @@ function abgleichBlitz(o) {
       else notes.push({ lvl: "warn", text: "Betrag weicht ab: Buchung " + eu(amt) + ", Rechnung brutto " + eu(gG) + " / netto " + eu(n) + " – bitte prüfen." });
     }
     if (!links.length && c.takenBy) notes.push({ lvl: "warn", text: "Rechnung " + (c.takenBy.inv.nr || "Entwurf") + " (gleicher Kunde, gleicher Betrag) gehört schon zu " + c.takenBy.by + " – diese Buchung ist noch nicht verrechnet: Rechnung erstellen oder bewusst zuordnen." });
-    if (b.paymentStatus === "PAID" && unbilled > 0.005 && !links.length && String(b.paymentMethod || "STRIPE").toUpperCase() !== "INVOICE") notes.push({ lvl: "info", text: "Online bezahlt, aber ohne Rechnung – normale Rechnung (mit Buchungsnummer) erstellen; der Mollie-Abgleich ordnet die Zahlung zu." });
+    if (b.paymentStatus === "PAID" && unbilled > 0.005 && !links.length && String(b.paymentMethod || "STRIPE").toUpperCase() !== "INVOICE") {
+      const ex = round2((b.extras || []).reduce((s, e) => s + (+(e && e.priceCents) || 0), 0) / 100);
+      notes.push(b.source === "import" ? { lvl: "info", text: "Altbuchung aus dem alten Buchungssystem (" + (b.paymentMethod || "online") + " bezahlt): kein Einnahme-Beleg (SI-…) mit passendem Betrag " + eu(amt) + (ex > 0 ? " bzw. " + eu(amt + ex) + " inkl. Extras" : "") + " oder Zahler gefunden. Anderswo verbucht → „Ausblenden“, sonst Rechnung erstellen." }
+        : { lvl: "info", text: "Online bezahlt, aber ohne Rechnung – normale Rechnung (mit Buchungsnummer) erstellen; der Mollie-Abgleich ordnet die Zahlung zu." });
+    }
     const dueNow = !!day && day <= soon;
     if (!links.length && !dead && !dueNow) return;                                  // Event noch weit weg: noch nichts zu tun
     const item = Object.assign({}, base, { name: who + (pkg ? " · " + pkg : ""), sub: subOf((viaGroup || group) ? " · Sammelrechnung" : ""),
@@ -2956,7 +3001,7 @@ function abgleichBuild(ctx) {
   //    Rechnungen nie über Name + Betrag als Blitzdings-Rechnung zählen; der Posten steht weiter am Ende.
   const reserved = {};   // Kantineur-Rechnungen (Mollie-ID in der Notiz): nie über Name + Betrag als Blitzdings-Rechnung, auch wenn (noch) keiner Zahlung zugeordnet
   const kaItem = abgleichKantineur(kantineur, { sevAllInv, sevById, link, linked, reserved, year, today, sevOk: !!(sev && sev.invoices) });
-  abgleichBlitz({ list: Array.isArray(blitzAll) ? blitzAll : ((blitz && blitz.upcoming) || []), today, sevInv, sevAll: sevAllInv, sevById, oldest, recs, linked, reserved, revoked: ctx.blitzRevoked }).forEach(x => items.push(x));
+  abgleichBlitz({ list: Array.isArray(blitzAll) ? blitzAll : ((blitz && blitz.upcoming) || []), today, sevInv, sevAll: sevAllInv, sevById, oldest, recs, linked, reserved, revoked: ctx.blitzRevoked, incomeVouchers: ctx.incomeVouchers }).forEach(x => items.push(x));
   if (kaItem) items.push(kaItem);
   // Ausgeblendete Posten (bis der offene Betrag wieder steigt)
   const ign = bill.ignore || {};
@@ -3199,14 +3244,15 @@ function platCreditSoon(k, ko) {
 async function cockpitBuild(year, forceForecast) {
   const today = viennaToday();
   const weatherP = withTimeout(weatherNow(), 3000, null);
+  const incP = BLITZ_COCKPIT.token ? withTimeout(blitzIncomeVouchers(), 8000, null).catch(() => null) : Promise.resolve(null);   // Einnahme-Belege der Fotobox-Altbuchungen (B12)
   const [sev, sitesSnap, rwc, k, b, ko, va, vaPrev, mail, cal, pc, ski, hg, bya] = await Promise.all([
     withTimeout(sevSnapshot(), 12000, null), withTimeout(sitesSnapshot(), 9000, null), withTimeout(railwayCosts(), 6000, null),
     withTimeout(kantineurStats(year), 8000, null), withTimeout(blitzdingsStats(year), 8000, null), withTimeout(kochduStats(year), 8000, null), withTimeout(valueroStats(year), 8000, null),
     withTimeout(valueroStats(String(+year - 1)), 8000, null), withTimeout(mailSnapshot(), 8000, null), withTimeout(calendarEvents(), 6000, null), withTimeout(privateCalQuick(), 7000, null), withTimeout(skikaiserStats(year), 8000, { configured: !!SKIKAISER.url, error: "timeout" }),
     withTimeout(huettengaudiStats(year), 8000, { configured: !!HUETTENGAUDI.url, error: "timeout" }), withTimeout(blitzAbgleichBookings(year, today), 9500, { bookings: null, status: "fehlt", error: "keine Antwort (Zeitüberschreitung)" }),
   ]);
-  const bill = readBilling();
-  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, valueroPrev: vaPrev, blitz: b, blitzAll: bya.bookings, kantineur: k, blitzRevoked: BLITZ_COCKPIT.token ? withSafe(blitzRevokedSet) : null });
+  const bill = readBilling(), incomeVouchers = await incP;
+  const abgleich = abgleichBuild({ year, today, sev, bill, sitesSnap, kochdu: ko, valuero: va, valueroPrev: vaPrev, blitz: b, blitzAll: bya.bookings, kantineur: k, blitzRevoked: BLITZ_COCKPIT.token ? withSafe(blitzRevokedSet) : null, incomeVouchers });
   // BD-10: Blitzdings-Buchungsliste nicht (aktuell) ladbar → nie still auf „Nächste Termine“ zurückfallen, sondern Banner „Liste unvollständig“
   abgleich.blitzStatus = { status: bya.status, at: bya.at ? new Date(bya.at).toISOString() : null, error: bya.error || "", partial: !!bya.partial };
   const blitzReport = withSafe(() => blitzReportReconcile(bya.bookings, bill, sev));
@@ -5062,9 +5108,10 @@ const server = http.createServer((req, res) => {
     // IndexNow-Schlüsseldatei /<Schlüssel>.txt (indexnow.js)
     if (INDEXNOW.handle(req, res, p, send)) return;
     // llms.txt: Kurzinfo für KI-Assistenten (ChatGPT, Perplexity, Claude …) – Agentur + Druckshop mit aktuellen Beispielpreisen
-    if ((req.method === "GET" || req.method === "HEAD") && p === "/llms.txt") {
+    // /print/llms.txt = dieselbe Datei (manche Assistenten suchen sie im Shop-Pfad), /llms-full.txt = alle Produkte mit Einstiegspreis
+    if ((req.method === "GET" || req.method === "HEAD") && (p === "/llms.txt" || p === "/print/llms.txt" || p === "/llms-full.txt")) {
       return void Promise.resolve(PRINT && PRINT.liveReady ? PRINT.liveReady() : false).catch(() => false).then(async on => {
-        const t = on && PRINT.llmsTxt ? await PRINT.llmsTxt().catch(() => "") : "";
+        const fn = p === "/llms-full.txt" ? PRINT && PRINT.llmsFull : PRINT && PRINT.llmsTxt, t = on && fn ? await fn().catch(e => { console.error("llms:", e.message); return ""; }) : "";
         send(res, t ? 200 : 404, t || "Not found", "text/plain; charset=utf-8", { "Cache-Control": "public, max-age=3600" }); });
     }
     // Marketing: Bilder/Videos freigegebener Posts für Instagram, Facebook, Threads, Pinterest (die holen die Datei selbst ab) – marketing.js
@@ -5154,7 +5201,7 @@ setInterval(() => { FIN_EBANK.status().then(st => { if (FIN_STATE.local && st.co
 const FIN_PAYPAL = require("./fin-paypal.js")({ L: FIN_LOCAL, after: async () => ({ mollie: await FIN_MOLLIE.relink().catch(() => 0), rules: await FIN_RULES.run().catch(() => ({ done: 0 })), auto: await autoBook().then(l => l.length).catch(() => 0) }) });
 // Ausführung bestätigter Vorschläge: jeweils genau die Funktion, die früher automatisch lief
 FIN_PROP.register("rule", { exec: it => FIN_RULES.acceptProposal(it.payload) });
-["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
+["mollie-match", "mollie-fee", "mollie-payout", "mollie-income", "mollie-credit", "mollie-txfee"].forEach(k => FIN_PROP.register(k, { exec: it => FIN_MOLLIE.accept(k, it.payload) }));
 FIN_PROP.register("transfer", { exec: it => FIN_LOCAL.pairApply(it.payload.aId, it.payload.bId) });
 // Gutschrift zu einer Plattform-Rechnung (Kantineur-Erstattung/Rückbuchung, kochdu doppelt verrechnet): nur auf Klick, nie automatisch
 const FIN_CREDIT = require("./fin-credit.js")({ L: FIN_LOCAL, P: () => FIN_PROP, today: () => viennaToday(), reportedPeriods: () => steuerReportedPeriods(), billing: () => readBilling() });

@@ -286,6 +286,31 @@ module.exports = function (D) {
       return v.id;
     }
   }
+  // PayPal über Mollie (Druckshop): das Geld landet direkt auf PayPal (eigener Umsatz, wird dort der Rechnung zugeordnet), bei Mollie bleibt nur
+  // die Mollie-Gebühr – ein Umsatz „payment“ mit negativem Betrag. Gehört die Zahlung (tr_… im Rechnungstext) zu genau einer Rechnung, wird die
+  // Gebühr als Zahlungsgebühr dieser Rechnung gebucht (feste Regel, Simon 01.11.2026: „ohne Prüfung, wenn sie zu den Belegen passen“).
+  async function paypalFees() {
+    let n = 0, idx = null; const prop = P(); if (!prop) return 0;
+    for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "payment" && String(x.status) === "100" && +x.amount < 0 && +x.amount > -5 && !x.transitWith)) {
+      if (!idx) idx = pidIndex();
+      const hits = pidInvoices(tx, ["200", "750", "1000"], idx); if (hits.length !== 1) continue;   // keine bzw. mehrere Rechnungen (Warenkorb) → bleibt offen
+      const i = hits[0], fee = r2(-(+tx.amount));
+      try { if (await prop.add({ autoAccept: true, kind: "mollie-txfee", key: "mtxfee:" + tx.id + ":" + i.id, txId: String(tx.id), invoiceId: String(i.id), amount: -fee, date: day(tx.valueDate), title: "Mollie-Gebühr " + eu(fee) + " (PayPal-Zahlung) als Zahlungsgebühr zu Rechnung " + (i.invoiceNumber || i.id), detail: (tx.payeePayerName || "") + " · " + String(tx.mollieDesc || tx.paymtPurpose || "").slice(0, 120), source: "Mollie-Abruf", payload: { txId: String(tx.id), invoiceId: String(i.id) } })) n++; }
+      catch (e) { console.error("Mollie-Gebühr (PayPal):", e.message); }
+    }
+    return n;
+  }
+  async function bookTxFee(pl) {
+    const tx = L.get("CheckAccountTransaction", pl.txId), i = L.get("Invoice", pl.invoiceId);
+    if (!tx || String(tx.status) !== "100" || !(+tx.amount < 0)) throw new Error("Der Mollie-Umsatz ist nicht mehr offen");
+    if (!i || i.cancelled) throw new Error("Rechnung nicht gefunden oder storniert");
+    const at = L.all("AccountingType").find(x => /geldverkehr|bankspesen|nebenkosten des geld/i.test(String(x.name || ""))) || feeCat(), fee = r2(-(+tx.amount)), d = day(tx.valueDate);
+    const body = { voucher: { supplierName: "Mollie B.V.", description: "Mollie-Zahlungsgebühr (PayPal) zu Rechnung " + (i.invoiceNumber || "") + " – ohne Vorsteuer", voucherDate: d, creditDebit: "C", status: "100", voucherType: "VOU", taxType: "default", fromMollie: String(tx.id), origin: { id: String(i.id), objectName: "Invoice" } },
+      voucherPosSave: [{ accountingType: at ? { id: String(at.id), objectName: "AccountingType" } : undefined, taxRate: "0", sumGross: String(fee), net: "false", comment: "Nebenkosten des Geldverkehrs (Mollie, PayPal-Zahlung)" }] };
+    const v = (await L.request("POST", "/Voucher/Factory/saveVoucher", { body })).objects.voucher;
+    await L.request("PUT", "/Voucher/" + v.id + "/bookAmount", { body: { amount: fee, date: d, checkAccountTransaction: { id: String(tx.id) } } });
+    return v.id;
+  }
   // offene Mollie-Zahlungen nachträglich zuordnen (z. B. Rechnung erst später erstellt)
   async function rematch() { let n = 0; for (const tx of L.all("CheckAccountTransaction").filter(x => x.mollieType === "payment" && String(x.status) === "100")) if (await autoMatch(tx)) n++; return n; }
   // Auszahlung ↔ Bankumsatz: gleicher Betrag, Bank-Datum 0–7 Tage nach der Auszahlung, nicht schon vergeben (auch nicht in einem offenen Vorschlag)
@@ -319,6 +344,7 @@ module.exports = function (D) {
     if (kind === "mollie-payout") return bookPayout(pl);
     if (kind === "mollie-income") return incomeVoucher(pl);
     if (kind === "mollie-credit") return creditVoucher(pl);
+    if (kind === "mollie-txfee") return bookTxFee(pl);
     throw new Error("unbekannter Mollie-Vorschlag");
   }
   async function syncOrg(tk, since, opt) {
@@ -408,7 +434,8 @@ module.exports = function (D) {
       const out = []; for (const tk of tks) out.push(await syncOrg(tk, since, opt).catch(e => ({ org: tk.key, error: e.message })));
       const passthrough = await autoPassthrough();   // vor Zuordnung/Vorschlägen: Fremdgeld ist nie eigener Umsatz
       const relinked = await relink(), feesLinked = await linkFees(), rematched = await rematch(), vouchers = await autoVouchers();
-      STATE.last = { at: new Date().toISOString(), orgs: out, passthrough, relinked, feesLinked, rematched, vouchers }; STATE.at = STATE.last.at; return STATE.last;
+      const txFees = await paypalFees().catch(e => { console.error("Mollie-Gebühren (PayPal):", e.message); return 0; });
+      STATE.last = { at: new Date().toISOString(), orgs: out, passthrough, relinked, feesLinked, rematched, vouchers, txFees }; STATE.at = STATE.last.at; return STATE.last;
     } catch (e) { STATE.error = e.message; throw e; } finally { STATE.running = false; }
   }
   // Abgleich je Mollie-Konto: eingenommen (brutto), Gebühren, netto, ausbezahlt (mit/ohne Bankumsatz), noch bei Mollie, Kontrolle gegen Mollie-Saldo
@@ -476,5 +503,5 @@ module.exports = function (D) {
       catch (e) { out.push({ key: tk.key, ok: false, status: e.status || 0, error: e.name === "AbortError" ? "keine Antwort (Zeitüberschreitung)" : e.message }); } }
     return out;
   }
-  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, draftHit, invoiceHit, summary, autoVouchers, accept, onlineCheck, onlineNotices, backfillRefunds, feePlatform };
+  return { sync, status, ping, passthrough, autoPassthrough, relink, linkFees, rematch, autoMatch, matchOf, draftHit, invoiceHit, summary, autoVouchers, accept, onlineCheck, onlineNotices, backfillRefunds, feePlatform, paypalFees };
 };
