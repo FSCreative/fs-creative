@@ -1209,6 +1209,42 @@ async function siteVisits(host, from, to) {
   out.top = Object.keys(out.top).sort((x, y) => out.top[y] - out.top[x]).slice(0, 25).map(k => [k, out.top[k]]);
   return out;
 }
+// Echte Seitenaufrufe ALLER Websites (Wunsch Simon 01.11.2026): letzte 7 Kalendertage (Wien, inkl. heute), je Tag eine Abfrage für bis zu 10 Zonen,
+// gleiche Regeln wie siteVisits (HTML-GET 200 von Besuchern, ohne Bots/Vorschauen/eigene Prüfungen, ohne /admin bzw. WordPress-Login). 3 h gemerkt, im Hintergrund.
+let VIEWS = { at: 0, data: null, p: null };
+const viennaDay = d => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(d);
+function viennaStart(day) { for (const o of ["+01:00", "+02:00"]) { const t = new Date(day + "T00:00:00" + o); if (viennaDay(t) === day && viennaDay(new Date(t.getTime() - 1)) !== day) return t; } return new Date(day + "T00:00:00+01:00"); }
+async function buildSiteViews(zones) {
+  const days = []; for (let i = 6; i >= 0; i--) days.push(viennaDay(new Date(Date.now() - i * 864e5)));
+  const by = {}; zones.forEach(z => { by[z.id] = { name: z.name, views: 0, print: 0, bots: 0, days: days.map(() => 0), ok: false }; });
+  const q = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientRequestPath userAgent}}}}}';
+  for (let di = 0; di < days.length; di++) {
+    const a = viennaStart(days[di]), b = di < days.length - 1 ? viennaStart(days[di + 1]) : new Date(a.getTime() + 864e5);
+    for (let i = 0; i < zones.length; i += 10) {
+      const chunk = zones.slice(i, i + 10), j = await cfGraphQL(q, { tags: chunk.map(z => z.id), a: a.toISOString(), b: b.toISOString() });
+      const zs = j && j.data && j.data.viewer && j.data.viewer.zones; if (!Array.isArray(zs)) continue;
+      zs.forEach(zz => { const v = by[zz.zoneTag]; if (!v) return; v.ok = true;
+        (zz.httpRequestsAdaptiveGroups || []).forEach(g => { const p = String(g.dimensions.clientRequestPath || "/"), n = +g.count || 0;
+          if (/^\/(admin|wp-admin|wp-login\.php)(\/|$)/.test(p)) return;
+          if (VISIT_BOT.test(String(g.dimensions.userAgent || ""))) { v.bots += n; return; }
+          v.views += n; v.days[di] += n; if (/^\/print(\/|$)/.test(p)) v.print += n; }); });
+    }
+  }
+  const byName = {}; Object.keys(by).forEach(id => { const v = by[id]; if (v.ok) byName[v.name] = { views: v.views, print: v.print || undefined, bots: v.bots, days: v.days }; });
+  return { at: new Date().toISOString(), days, byName };
+}
+function applyViews(d) {   // Aufrufe in den Websites-Stand übernehmen (ohne Cloudflare neu zu fragen)
+  const V = VIEWS.data; if (!d || !Array.isArray(d.sites) || !V) return d;
+  let tot = 0, any = false; d.sites.forEach(x => { const v = V.byName[x.name]; if (v) { x.views7d = v.views; x.viewsDays = v.days; if (v.print) x.print7d = v.print; tot += v.views; any = true; } });
+  if (any && d.totals) { d.totals.views7d = tot; d.totals.viewsAt = V.at; d.totals.viewsDays = V.days; }
+  return d;
+}
+function refreshViews(zones) {
+  if (VIEWS.p || (VIEWS.data && Date.now() - VIEWS.at < 3 * 3600e3)) return VIEWS.p || Promise.resolve(VIEWS.data);
+  VIEWS.p = buildSiteViews(zones).then(v => { VIEWS = { at: Date.now(), data: v, p: null }; if (SITES_CACHE.data) applyViews(SITES_CACHE.data); return v; })
+    .catch(e => { console.log("Seitenaufrufe:", e.message); VIEWS.p = null; VIEWS.at = Date.now() - 2.5 * 3600e3; return VIEWS.data; });   // Fehler: in 30 min erneut
+  return VIEWS.p;
+}
 async function pingSite(host) {
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 7000); const t0 = Date.now();
   try {
@@ -1247,7 +1283,8 @@ async function buildSitesSnapshot() {
     .sort((a, b) => (a.up === b.up ? a.name.localeCompare(b.name) : (a.up ? 1 : -1)));
   const totals = sites.reduce((t, s) => { t.sites++; if (s.up) t.online++; t.requests7d += s.requests7d; t.threats7d += s.threats7d; t.uniques7d += s.uniques7d; t.bytes7d += s.bytes7d || 0; return t; }, { sites: 0, online: 0, requests7d: 0, threats7d: 0, uniques7d: 0, bytes7d: 0 });
   let railway = null; try { railway = await railwaySnapshot(); } catch (e) { railway = { configured: !!RW.token, error: String(e && e.message || e), projects: [] }; }
-  return { fetchedAt: new Date().toISOString(), configured: true, totals, sites, railway };
+  refreshViews(zones);   // echte Seitenaufrufe im Hintergrund (3 h gemerkt)
+  return applyViews({ fetchedAt: new Date().toISOString(), configured: true, totals, sites, railway });
 }
 function refreshSites() {
   if (!CF.token && !RW.token) return Promise.resolve(null);

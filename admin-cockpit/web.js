@@ -309,14 +309,17 @@ function siteName(s){ return '<div class="w-site"><span class="dot '+upDot(s)+'"
   (s.url?'<a class="w-url" href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.url.replace(/^https:\/\//,""))+(s.domain?"":" (Railway)")+' ↗</a>':'<span class="w-url">ohne Domain</span>')+
   (s.group?'<span class="w-url">Railway: '+esc(s.group)+' › '+esc((s.services||[]).join(", "))+'</span>':''); }
 
+/* echte Seitenaufrufe je Tag (Server: Cloudflare, ohne Bots) – Tooltip „Mo 26.10.: 245 · …“ */
+function viewsTitle(x){ var ds=(S&&S.totals&&S.totals.viewsDays)||[], v=x.viewsDays||[]; if(!v.length) return "Echte Seitenaufrufe der letzten 7 Tage (ohne Bots) – wird gezählt";
+  return "Echte Seitenaufrufe (ohne Bots, Vorschauen, Cockpit): "+ds.map(function(d,i){ return new Date(d+"T12:00:00").toLocaleDateString("de-AT",{weekday:"short",day:"numeric",month:"numeric"})+" "+num(v[i]||0); }).join(" · ")+(x.print7d?" · davon Druckshop "+num(x.print7d):""); }
 function kpisTech(){
   var t=(S&&S.totals)||{}, rw=(S&&S.railway)||null, rt=(rw&&rw.totals)||{}, cfOff=S&&S.configured===false;
   var ds=F.D.sites||[], rwFail=S?(+rt.failed||0):(F.D.railwayFailed||0);
   var k=function(act,label,val,sub,cls){ return '<button class="panel kpi" data-act="'+act+'"><span class="k">'+label+'</span><span class="v num'+(cls?" "+cls:"")+'">'+val+'</span><span class="s">'+sub+'</span></button>'; };
   return '<div class="w-kpis'+(U.tab==="bill"?" w-hidem":"")+'">'+
     k("wtab:cf","Websites online",S?(cfOff?"—":num(t.online)):num(ds.filter(function(s){return s.up;}).length),S?(cfOff?"Cloudflare-Token fehlt":"von "+num(t.sites)+" Websites"):"lade Cloudflare …",S&&!cfOff&&t.online<t.sites?"warn-t":"")+
-    k("wtab:cf","Requests (7 Tage)",S&&!cfOff?num(t.requests7d):"—","über alle Sites")+
-    k("wtab:cf","Besucher (7 T, ~)",S&&!cfOff?num(t.uniques7d):"—","Cloudflare-Schätzung")+
+    k("wtab:cf","Seitenaufrufe (7 T)",S&&!cfOff?(t.views7d!=null?num(t.views7d):"…"):"—",t.views7d!=null?"echte Besucher · ohne Bots":"wird gezählt …")+
+    k("wtab:cf","Requests (7 Tage)",S&&!cfOff?num(t.requests7d):"—","alle Anfragen inkl. Bots & Dateien")+
     k("wtab:cf","Bedrohungen geblockt",S&&!cfOff?num(t.threats7d):"—","letzte 7 Tage",S&&t.threats7d>0?"warn-t":"")+
     k("wtab:rw","Railway-Projekte",rw&&rw.configured?num(+rt.projects||projects().length):(S?"—":"…"),rw&&rw.configured?num(+rt.services||0)+" Services"+(rwFail?" · "+rwFail+" mit Fehler":" · alles grün")+((+rt.deploying)?" · "+rt.deploying+" im Deploy":""):(S?"Railway-Token fehlt":"lade Railway …"),rwFail?"bad-t":"")+
   '</div>';
@@ -405,11 +408,11 @@ function vCloudflare(){
   var list=zs.filter(function(x){ var p=zp[x.name]; if(!hit(x.name+" "+(p?p.name:""))) return false;
     if(f==="err") return !x.up; if(f==="linked") return !!p; if(f==="norw") return !p; if(f==="nocf") return false; return true; });
   return '<section class="panel"><div class="panel-h"><h2>Cloudflare-Websites</h2><span class="muted">Status per Live-Ping · Insights aus Cloudflare (7 Tage)'+(S.error?' · Fehler: '+esc(S.error):'')+'</span></div>'+
-    '<div class="w-row cf hd"><span>Domain</span><span>Railway</span><span style="text-align:right">Antwort</span><span style="text-align:right">Requests</span><span style="text-align:right">Besucher</span><span style="text-align:right">Bedroh.</span><span style="text-align:right">Daten</span><span></span></div>'+
+    '<div class="w-row cf hd"><span>Domain</span><span>Railway</span><span style="text-align:right">Antwort</span><span style="text-align:right">Requests</span><span style="text-align:right">Aufrufe</span><span style="text-align:right">Bedroh.</span><span style="text-align:right">Daten</span><span></span></div>'+
     (list.map(function(x){ var p=zp[x.name];
       return '<div class="w-row cf'+(x.up?"":" bad")+'"><div class="w-site"><span class="dot '+(x.up?"ok":"bad")+'" title="'+(x.up?"online":"offline")+'"></span><div><b>'+esc(x.name)+'</b>'+(x.up?'':'<div><span class="tag bad">offline'+(x.status?" · HTTP "+esc(x.status):"")+'</span></div>')+'</div></div>'+
         '<div>'+(p?'<a class="w-chip" href="https://railway.com/project/'+encodeURIComponent(p.id)+'" target="_blank" rel="noopener" title="'+esc(p.status||"")+'"><span class="dot '+rwDot(p.status)+'"></span>'+esc(p.name)+'</a>':'<span class="muted">—</span>')+'</div>'+
-        '<div class="w-mets"><span class="w-m'+(x.up?"":" bad")+'"><i>Antwort</i>'+(x.up?esc(x.ms)+" ms":"offline")+'</span><span class="w-m"><i>Requests</i>'+num(x.requests7d)+'</span><span class="w-m"><i>Besucher</i>'+num(x.uniques7d)+'</span><span class="w-m'+((+x.threats7d)>0?" warn":"")+'"><i>Bedrohungen</i>'+num(x.threats7d)+'</span><span class="w-m"><i>Daten</i>'+(x.bytes7d!=null?bytes(x.bytes7d):"—")+'</span></div>'+
+        '<div class="w-mets"><span class="w-m'+(x.up?"":" bad")+'"><i>Antwort</i>'+(x.up?esc(x.ms)+" ms":"offline")+'</span><span class="w-m"><i>Requests</i>'+num(x.requests7d)+'</span><span class="w-m" title="'+esc(viewsTitle(x))+'"><i>Aufrufe</i>'+(x.views7d!=null?num(x.views7d):"…")+(x.print7d?'<small class="muted"> · Shop '+num(x.print7d)+'</small>':'')+'</span><span class="w-m'+((+x.threats7d)>0?" warn":"")+'"><i>Bedrohungen</i>'+num(x.threats7d)+'</span><span class="w-m"><i>Daten</i>'+(x.bytes7d!=null?bytes(x.bytes7d):"—")+'</span></div>'+
         '<div class="w-acts"><a class="btn" href="https://'+esc(x.name)+'" target="_blank" rel="noopener">öffnen ↗</a></div></div>';
     }).join("")||'<div class="empty">'+(zs.length?"Keine Websites in dieser Ansicht.":"Keine aktiven Zonen gefunden.")+'</div>')+'</section>';
 }
