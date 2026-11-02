@@ -356,6 +356,7 @@ const BLITZ = { url: process.env.BLITZDINGS_STATS_URL || "https://blitzdings.co.
 const KOCHDU = { url: process.env.KOCHDU_STATS_URL || "https://kochdu.at/api/stats", token: process.env.KOCHDU_STATS_TOKEN || "" };
 // VALUERO: Gebühren pro Objekt (Antonhaus über valuero-stats, Alpinappart über /api/fees).
 const ANTONHAUS = { url: process.env.ANTONHAUS_STATS_URL || "https://antonhaus.at/api/valuero-stats", token: process.env.ANTONHAUS_STATS_TOKEN || "" };
+let ANTONHAUS_MOVED = false;   // antonhaus.at/api/valuero-stats meldet 410 „umgezogen“ → nur noch die Partner-Plattform
 const ALPINAPPART = { url: process.env.ALPINAPPART_FEES_URL || "https://www.alpinappart.at/api/fees", key: process.env.ALPINAPPART_FEES_KEY || "" };
 // VALUERO Partner (Plattform): alle Häuser auf einmal, gleiches Format wie Antonhaus (provisionCents + months)
 const VALUERO_PARTNER = { url: process.env.VALUERO_PARTNER_STATS_URL || "https://partner.valuero.at/api/stats/valuero", token: process.env.VALUERO_PARTNER_STATS_TOKEN || "" };
@@ -845,9 +846,13 @@ async function valueroStats(year) {
   // Antonhaus (antonhaus.at/api/valuero-stats): nur mit basis=arrival nach Anreise verrechenbar. Ohne „basis“ antwortet die alte Version
   // (nach Buchungseingang) → im Abgleich nur Hinweis. „transition“ = was bis 30.09.2026 nach Eingang verrechnet wurde (Startwert + RE-1272).
   // Kommt Antonhaus schon von der Partner-Plattform, liefert die Plattform die Umstellungsdaten (antonhaus.at nur noch ersatzweise).
+  // Liefert die Plattform Antonhaus samt Umstellungsdaten, wird antonhaus.at gar nicht mehr gefragt. Antwortet antonhaus.at mit 410
+  // („Dieser Bereich ist umgezogen“, Antonhaus läuft über VALUERO), gilt das nicht als Störung: bis zum Neustart nicht mehr fragen.
   if (ANTONHAUS.token) {
-    const viaPartner = fromPartner.has("antonhaus"), po = objects.find(o => o.key === "antonhaus");
-    const d = await getJSON(vaUrl(ANTONHAUS.url, "basis=arrival" + yearParam(year)), ANTONHAUS.token);
+    const viaPartner = fromPartner.has("antonhaus"), po = objects.find(o => o.key === "antonhaus"), skip = ANTONHAUS_MOVED || !!(viaPartner && po && po.transition);
+    if (skip) JSON_STATUS.delete(statsKey(ANTONHAUS.url));   // keine alte Störung von antonhaus.at stehen lassen
+    const d = skip ? null : await getJSON(vaUrl(ANTONHAUS.url, "basis=arrival" + yearParam(year)), ANTONHAUS.token);
+    if (!skip && !d) { const st = jsonStatus(ANTONHAUS.url); if (st && st.status === 410) { ANTONHAUS_MOVED = true; JSON_STATUS.delete(statsKey(ANTONHAUS.url)); console.log("Antonhaus: valuero-stats umgezogen (HTTP 410) – nur noch über die Partner-Plattform"); } }
     const ok = !!(d && d.ok && !d.error);
     if (viaPartner) { if (po && !po.transition && ok && d.basis === "arrival" && d.transition) po.transition = d.transition; }
     else if (ok) {
@@ -856,7 +861,7 @@ async function valueroStats(year) {
         provisionCents: d.provisionCents || 0, feeBookings: d.feeBookings || 0, transition: d.basis === "arrival" && d.transition && typeof d.transition === "object" ? d.transition : null,
         months: months(d.months, m => ({ prebilledCents: +m.prebilledCents || 0, prebilledCurrentRuleCents: +m.prebilledCurrentRuleCents || 0 })),
       });
-    } else missing.push({ key: "antonhaus", name: "Antonhaus", src: "antonhaus", error: "Gebührendaten Antonhaus fehlen" });
+    } else missing.push({ key: "antonhaus", name: "Antonhaus", src: "antonhaus", error: ANTONHAUS_MOVED ? "Antonhaus ist auf die VALUERO-Plattform umgezogen, dort aber noch nicht für die Abrechnung freigegeben" : "Gebührendaten Antonhaus fehlen", moved: ANTONHAUS_MOVED || undefined });
   }
   // Alpinappart (/api/fees: totals.fees + byMonth[{month,count,revenue,fees}]) – Datumsbasis ungeprüft; verrechnet wird Alpinappart nur über die
   // Partner-Plattform (Simon 28.10.2026: ab dem ersten Monat live dort, ohne eingespielte Altbuchungen) → hier nur Anzeige
@@ -2848,7 +2853,7 @@ function abgleichBuild(ctx) {
   if (!valuero && (ctx.valueroConfigured != null ? ctx.valueroConfigured : !!(VALUERO_PARTNER.token || ANTONHAUS.token || ALPINAPPART.key))) Object.keys(bill.invoices || {}).filter(k => k.indexOf("valuero:") === 0).forEach(k => vaMiss.push({ key: k.slice(8), error: "Gebührendaten VALUERO fehlen" }));
   vaMiss.forEach(x => {
     const key = "valuero:" + x.key; if (vaKeys.has(key)) return; vaKeys.add(key);
-    const R = vaRecs(x.key), lbl = (recs(key).map(r => String(r.label || "").replace(/\s*\(.*\)\s*$/, "")).filter(Boolean).pop()) || x.name || x.key, msg = (x.error || "Gebührendaten fehlen") + " – neu laden";
+    const R = vaRecs(x.key), lbl = (recs(key).map(r => String(r.label || "").replace(/\s*\(.*\)\s*$/, "")).filter(Boolean).pop()) || x.name || x.key, msg = (x.error || "Gebührendaten fehlen") + (x.moved ? "" : " – neu laden");
     items.push({ src: "valuero", key, name: x.name || lbl, sub: msg, unbilled: 0, invoiced: R.billedSum, invoicedYear: R.invoicedYear, paid: round2(R.st.paid), open: round2(R.st.open), refund: 0, nextBilling: nextQ, billedUntil: R.billedUntil || null,
       blocked: msg, missing: true, last: R.links[R.links.length - 1] || null, invoices: R.links.slice(-4).reverse(), action: null });
   });

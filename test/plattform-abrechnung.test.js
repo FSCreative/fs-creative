@@ -474,6 +474,7 @@ function createMock() {
         return send(200, { ok: true, contract: q.get("contract") === "2" ? 2 : undefined, properties: ah }); }
       if (u.pathname === "/antonhaus") {
         state.antonQ.push(Object.fromEntries(q)); const y = q.get("year") || "";
+        if (state.antonMode === "gone") return send(410, { error: "Dieser Bereich ist umgezogen.", booking: "https://gast.example/b/antonhaus" });
         if (state.antonMode === "down") return send(502, { ok: false, error: "Beds24-Abruf fehlgeschlagen – Gebühren nicht verfügbar.", code: "BEDS24" });
         const months = AH_MONTHS_2026.filter(m => !y || m.month.slice(0, 4) === y).concat(y === "2027" ? [{ month: "2027-02", provisionCents: 8000, prebilledCents: 0 }] : []);
         if (state.antonMode === "old") return send(200, { ok: true, provisionCents: 0, months: months.map(m => ({ month: m.month, provisionCents: m.provisionCents, bookings: 1 })) });
@@ -805,7 +806,23 @@ function createMock() {
     assert.deepStrictEqual(sw.prebilledByMonth, { "2026-06": 16750, "2026-08": 15545, "2026-12": 50000 }); assert.deepStrictEqual(sw.prebilledCurrentRuleByMonth, { "2026-06": 16750, "2026-08": 15000, "2026-12": 50000 }); assert.strictEqual(sw.src, "partner");
     d = (await api("/admin/api/cockpit?force=1&year=" + year)).j; it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
     assert.ok(!it.blocked, it.blocked + " " + JSON.stringify(it.proposal)); assert.strictEqual(it.refund, 0); assert.strictEqual(it.billedUntil, "2026-09-30");
+    // Plattform liefert Antonhaus samt Umstellungsdaten → antonhaus.at wird nicht mehr gefragt (dort 410 „umgezogen“) und ist keine Störung
+    M.state.antonMode = "gone"; await new Promise(r => setTimeout(r, 26000)); const n0 = M.state.antonQ.length;
+    d = (await api("/admin/api/cockpit?force=1&year=" + year)).j; it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
+    assert.strictEqual(M.state.antonQ.length, n0, "antonhaus.at nicht gefragt"); assert.ok(!it.blocked && !it.missing, JSON.stringify(it));
+    assert.ok(d.platformStatus.valuero.ok !== false && !/Antonhaus/.test(d.platformStatus.valuero.error || ""), JSON.stringify(d.platformStatus.valuero));
     M.state.partnerAH = false; M.state.antonMode = "arrival";
+  });
+
+  await t("Antonhaus.at 410 „umgezogen“, aber (noch) nicht auf der Plattform → klarer Hinweis statt „HTTP 410“, kein Verrechnen, danach nicht mehr gefragt", async () => {
+    M.state.partnerAH = false; M.state.antonMode = "gone"; await new Promise(r => setTimeout(r, 26000));
+    const year = viennaToday().slice(0, 4);
+    let d = (await api("/admin/api/cockpit?force=1&year=" + year)).j, it = d.abgleich.items.find(x => x.key === "valuero:antonhaus");
+    assert.ok(it && it.missing && /umgezogen/.test(it.blocked) && !/neu laden/.test(it.blocked), JSON.stringify(it)); assert.strictEqual(it.action, null); assert.strictEqual(it.refund, 0);
+    assert.ok(!/HTTP 410/.test(JSON.stringify(d.platformStatus)), JSON.stringify(d.platformStatus.valuero));
+    const n0 = M.state.antonQ.length; await new Promise(r => setTimeout(r, 26000)); await api("/admin/api/cockpit?force=1&year=" + year);
+    assert.strictEqual(M.state.antonQ.length, n0, "nach 410 nicht mehr gefragt");
+    M.state.antonMode = "arrival";
   });
 
   srv.kill(); M.server.close();
