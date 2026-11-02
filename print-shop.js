@@ -148,6 +148,10 @@ const PUB_MORE = [
   { key: "printed-binder-filler" }, { key: "with-compliment-cards" }, { key: "coffee-paper-cups" }, { key: "cardboard-shipping-envelopes" }, { key: "popcorn-boxes" }, { key: "stapled-wall-calendar" },
   { key: "abri-posters" }, { key: "neon-posters" }, { key: "magnet-posters" }, { key: "scratch-off" }, { key: "lightbox-posters" }, { key: "food-wrappers" },
   { key: "vinyl-cut-letters" }, { key: "burger-boxes" }, { key: "french-fries-boxes" }, { key: "cone-bags" }, { key: "lunch-boxes-with-handle" }, { key: "cube-boxes" },
+  // Mitbewerber-Vergleich 02.11.2026 (Recherche je Kategorie)
+  { key: "fabrics" }, { key: "custom-banner" }, { key: "flat-cubes" }, { key: "slipcases" }, { key: "chocolate-boxes" }, { key: "luxury-paper-bag" },
+  { key: "t-shirt-budget-8" }, { key: "t-shirt-budget-4" }, { key: "t-shirt-basic-3" }, { key: "t-shirt-budget-10" }, { key: "t-shirt-basic-workwear-1" }, { key: "polo-budget-2" },
+  { key: "polo-budget-9" }, { key: "t-shirt-premium-5" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const CUR_V = require("crypto").createHash("sha1").update("16" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
