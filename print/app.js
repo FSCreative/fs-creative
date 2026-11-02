@@ -1556,7 +1556,7 @@
     } else if (S.mode === "upload") {
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
         : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
-      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
+      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() || multiMot() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : multiMot() ? " · mehrere Dateien auf einmal = je Datei ein Motiv (ab Motiv " + (S.mot.i + 1) + ")" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
         reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
@@ -1985,7 +1985,7 @@
     if (t.hasAttribute("data-logo") && t.files && t.files[0]) return uploadFile(t.files[0], t.getAttribute("data-logo"));
     if (t.name === "urgency") { S.urgency = t.value; S.dday = ""; loadPrice(); return; }
     if (t.matches("[data-country]")) { S.customer.country = t.value; if (S.customer.zip && !(t.value === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(S.customer.zip)) S.customer.zip = ""; loadPrice(); return; }
-    if (t.id === "psFile" && t.files && t.files[0]) return uploadFile(t.files[0], "", twoUp() && t.files[1] ? t.files[1] : null);
+    if (t.id === "psFile" && t.files && t.files[0]) { if (multiMot() && t.files.length > 1) return uploadMotifs(t.files); return uploadFile(t.files[0], "", twoUp() && t.files[1] ? t.files[1] : null); }
     if (t.id === "psBack" && t.files && t.files[0]) return uploadBack(t.files[0]);
     if (t.hasAttribute("data-pagein") && t.files && t.files[0]) return uploadPage(t.files[0], t.getAttribute("data-pagein"));
     if (t.id === "country" || t.id === "zip") { saveAddr(); reprice(); return; }
@@ -2034,7 +2034,7 @@
   }
   root.addEventListener("dragover", function (e) { var d = e.target.closest(".ps-drop"); if (d) { e.preventDefault(); d.classList.add("over"); } });
   root.addEventListener("dragleave", function (e) { var d = e.target.closest(".ps-drop"); if (d) d.classList.remove("over"); });
-  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-cback")) return uploadCommonBack(f); if (d.hasAttribute("data-back")) return uploadBack(f); if (d.hasAttribute("data-page")) return uploadPage(f, d.getAttribute("data-page")); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
+  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-cback")) return uploadCommonBack(f); if (d.hasAttribute("data-back")) return uploadBack(f); if (d.hasAttribute("data-page")) return uploadPage(f, d.getAttribute("data-page")); if (!d.hasAttribute("data-logo") && multiMot() && fs.length > 1) return uploadMotifs(fs); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
 
   // Upload: Druckdatei bzw. Logo für eine Position (logo = Positions-Slug)
   // Lade-Fenster beim Hochladen: Fortschritt, danach „wird geprüft“
@@ -2109,6 +2109,23 @@
     x.send(f);
   }
   // Rückseite an ein Motiv: fehlt sie → /file/back, ist eine andere drauf → Seite 2 ersetzen; Quelle = gemeinsame Rückseiten-Datei (kein neuer Upload)
+  // Mehrere Motive: mehrere Dateien auf einmal → der Reihe nach ab dem offenen Motiv verteilen (bei gemeinsamer Rückseite gleich mit Rückseite);
+  // ohne gemeinsame Rückseite und beidseitig zählen mehrere Dateien weiter als Vorder-/Rückseite eines Motivs
+  function multiMot() { return S.mot.n > 1 && motOk() && !isLogo() && (sides() !== 2 || sameBack()); }
+  function uploadMotifs(list) {
+    var files = [].slice.call(list).filter(function (f) { return /\.(pdf|jpe?g|png)$/i.test(f.name) && f.size <= 50 * 1024 * 1024; }); motSave();
+    var start = S.mot.i, n = Math.min(files.length, S.mot.n - start), done = 0, fails = []; if (!n) { toast("Bitte PDF, JPG oder PNG (max. 50 MB) wählen.", true); return; }
+    if (files.length > n) toast("Nur " + n + " von " + files.length + " Dateien passen ab Motiv " + (start + 1) + " – der Rest wurde nicht hochgeladen.", true);
+    var one = function (k) {
+      if (k >= n) { motLoad(start); render(); upPop("close"); toast(fails.length ? fails.length + " Datei(en) nicht hochgeladen: " + fails.join(", ") : n + " Motive hochgeladen ✓", !!fails.length); return; }
+      var f = files[k], idx = start + k; upPop("up", Math.round(k / n * 100), "Motiv " + (idx + 1) + " von " + S.mot.n + ": " + f.name);
+      fetch("/print/api/upload", { method: "POST", credentials: "same-origin", body: f, headers: { "X-Print-Shop": "1", "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(f.name), "X-Print-Config": encodeURIComponent(JSON.stringify(cfgOf())) } })
+        .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "Upload fehlgeschlagen");
+          return (sameBack() && S.mot.back && j.needBack ? backToMotif(j).catch(function () { return null; }) : Promise.resolve(null)).then(function (b) { S.mot.files[idx] = { file: b || j, previews: null, design: null, mode: "upload" }; done++; }); })
+        .catch(function (e) { fails.push(f.name + " (" + e.message + ")"); }).then(function () { one(k + 1); });
+    };
+    one(0);
+  }
   function backToMotif(f) {
     var b = S.mot.back; if (!b || !f || f.kind !== "upload" || f.cback === b.fileId || !(f.needBack || (+f.pages === 2))) return Promise.resolve(null);
     var h = { "X-Print-Shop": "1", "X-Print-File": f.fileId, "X-Print-Token": f.token, "X-Print-Src-File": b.fileId, "X-Print-Src-Token": b.token };
