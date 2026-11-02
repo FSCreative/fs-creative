@@ -47,10 +47,12 @@ var chatSeen=null, chatVer="";
 function pollChat(){ if(!cfg().on||!cfg().chat) return;
   F.api("/admin/api/chat/state?v="+encodeURIComponent(chatVer)).then(function(j){
     if(!j||!j.ok||j.same||!Array.isArray(j.convs)) return; chatVer=j.ver||"";
-    var cur={}; j.convs.forEach(function(c){ cur[c.id]=c.unread||0; });
+    /* Die KI antwortet zuerst – Hinweis nur, wenn ein Besucher an dich übergeben wurde (human) bzw. dort weiterschreibt */
+    var cur={}; j.convs.forEach(function(c){ cur[c.id]=(c.human?"h":"")+(c.unread||0); });
     if(!chatSeen){ chatSeen=cur; return; }
-    var up=j.convs.filter(function(c){ return (c.unread||0)>(chatSeen[c.id]||0); }); chatSeen=cur;
-    if(up.length){ var c=up[0]; pop("chat","Website-Chat: "+(c.name||("Besucher #"+c.no)),"Neue Nachricht auf der Website\n"+((c.last&&c.last.text)||""),"chat","chat-"+c.id); }
+    var up=j.convs.filter(function(c){ var o=chatSeen[c.id]||""; return c.human&&(o.charAt(0)!=="h"||(c.unread||0)>parseInt(o.slice(1)||"0",10)); });
+    var old=chatSeen; chatSeen=cur;
+    if(up.length){ var c=up[0], nw=(old[c.id]||"").charAt(0)!=="h"; pop("chat",(nw?"Chat-Übergabe: ":"Website-Chat: ")+(c.name||("Besucher #"+c.no)),(nw?"Möchte mit dir sprechen – die KI hat übergeben\n":"Neue Nachricht\n")+((c.last&&c.last.text)||""),"chat","chat-"+c.id); }
   }).catch(function(){});
 }
 setInterval(pollMail,30000); setInterval(pollChat,15000); setTimeout(function(){ pollMail(); pollChat(); },4000);

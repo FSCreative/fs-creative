@@ -1,6 +1,6 @@
 /* Website-Chat (Overlay auf www.fs-creative.at, Server chat.js): Unterhaltungen links, Verlauf rechts (Handy: Liste → Verlauf), oben Online/Offline.
    Online nur, solange das Cockpit offen ist (Herzschlag alle 45 s, 3 Min. ohne = offline → KI antwortet). Keine Push-Nachrichten für den Chat.
-   KI je Unterhaltung: Auto (nur wenn du offline bist) · An (immer) · Aus. Schreibst du selbst, hört die KI auf.
+   KI je Unterhaltung: Auto (KI antwortet zuerst; will der Besucher einen Menschen oder kommt die KI nicht weiter, übergibt sie an dich, solange du online bist) · An (immer) · Aus. Schreibst du selbst, hört die KI auf.
    Daten: /admin/api/chat/state (?v= → {same}), …/conv?id=&read=1, …/send, …/status, …/op (ai, close, reopen, delete, lead).
    Umschalter oben „Website | WhatsApp“ (gemerkt in fsc_chat_mode): WhatsApp (nur lesen) zeichnet admin-cockpit/zwa.js über F.waChat. */
 (function(){
@@ -71,7 +71,7 @@ setTimeout(function(){ load(); autoOn(); },1500);
 var fmtT=function(iso){ var t=new Date(iso); if(isNaN(t)) return ""; var td=new Date(); return t.toDateString()===td.toDateString()?t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}):t.toLocaleDateString("de-AT",{day:"2-digit",month:"2-digit"})+" "+t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); };
 function nameOf(c){ return c.name||("Besucher #"+c.no); }
 function initials(c){ if(!c.name) return "#"; var p=c.name.trim().split(/\s+/); return (p[0][0]+(p.length>1?p[p.length-1][0]:"")).toUpperCase(); }
-function aiTxt(c){ return c.ai==="on"?"KI an":c.ai==="off"?"KI aus":(ST&&ST.online?"KI wartet (du bist online)":"KI antwortet (du bist offline)"); }
+function aiTxt(c){ return c.ai==="on"?"KI an":c.ai==="off"?"KI aus":(c.human&&ST&&ST.online?"An dich übergeben – du antwortest":c.human?"Übergabe – du bist offline, KI nimmt die Anfrage auf":"KI antwortet zuerst"); }
 
 function statusBtn(){ var on=ST&&ST.online; return '<button type="button" class="ch-st'+(on?" on":"")+'" data-act="chstatus" role="switch" aria-checked="'+(!!on)+'" aria-label="Chat-Status: '+(on?"Online":"Offline")+' – umschalten"><span class="sw" aria-hidden="true"></span><span>'+(on?"Online":"Offline")+'<small>'+(on?"Besucher sehen „Simon ist online“":"Die KI nimmt Anfragen an")+'</small></span></button>'; }
 function listHtml(){
@@ -137,7 +137,7 @@ function op(body){ body.id=SEL; return api("/admin/api/chat/op",body).then(funct
 F.action("chstatus",function(){ var on=!(ST&&ST.online); MANOFF=!on; api("/admin/api/chat/status",{online:on}).then(function(j){ if(!j||!j.ok){ F.toast("Status konnte nicht gespeichert werden",true); return; } if(ST) ST.online=j.online; beat(j.online); VER=""; paint(); load(); F.toast(j.online?"Du bist online – Besucher sehen „Simon ist online“":on?"Ruhezeit (18–6 Uhr): Chat bleibt offline, die KI antwortet":"Offline bis zum nächsten Entsperren – die KI nimmt Anfragen an"); }); });
 F.action("chopen",function(id){ if(SEL===id&&TH) return; SEL=id; TH=null; compFor=null; paint(); loadThread(); });
 F.action("chback",function(){ SEL=null; TH=null; paint(); });
-F.action("chai",function(m){ op({op:"ai",mode:m}).then(function(j){ if(j) F.toast(m==="on"?"KI übernimmt diese Unterhaltung":m==="off"?"KI aus für diese Unterhaltung":"KI antwortet nur, wenn du offline bist"); }); });
+F.action("chai",function(m){ op({op:"ai",mode:m}).then(function(j){ if(j) F.toast(m==="on"?"KI übernimmt diese Unterhaltung":m==="off"?"KI aus für diese Unterhaltung":"KI antwortet zuerst und übergibt bei Bedarf an dich"); }); });
 F.action("chclose",function(){ op({op:"close"}).then(function(j){ if(j) F.toast("Unterhaltung beendet"); }); });
 F.action("chreopen",function(){ op({op:"reopen"}); });
 F.action("chdel",function(){ var id=SEL; F.confirm("Diese Unterhaltung endgültig löschen?","Löschen",function(){ api("/admin/api/chat/op",{op:"delete",id:id}).then(function(j){ if(!j||!j.ok){ F.toast("Löschen fehlgeschlagen",true); return; } SEL=null; TH=null; if(ST) ST.convs=ST.convs.filter(function(x){ return x.id!==id; }); VER=""; paint(); load(); F.toast("Unterhaltung gelöscht"); }); },true); });

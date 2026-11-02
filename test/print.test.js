@@ -671,6 +671,7 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     assert.strictEqual(p.fixed.size, "-", "Platzhalter als feste Angabe");
     assert.deepStrictEqual([p.fixed.brezo_article, p.fixed.article_number, p.fixed.frame], ["sts.stsu178", "06-0500-0655", "alu"], "interne/gesperrte Pflichtangaben mit einem Wert werden mitgeschickt");
     assert.ok(!("weight" in p.fixed) && !("personalize" in p.fixed) && !("summary_image" in p.fixed) && !("copies" in p.fixed), "freiwillige Angaben, Bild und NIE die Excel-Personalisierung (Briefpapier!)");
+    const pz = p.props.find(x => x.slug === "personalize"); assert.ok(pz && pz.options[0].name === "Ohne" && p.defaults.personalize === pz.options[0].slug, "Excel-Personalisierung wird angeboten, Vorauswahl „Ohne“");
     assert.ok(!p.props.some(x => /^(brezo_article|article_number|frame)$/.test(x.slug)), "nicht als Auswahl"); assert.ok(!p.specs.some(x => x[2] === "size"), "Platzhalter nicht als technische Angabe");
     assert.deepStrictEqual(p.props.find(x => x.slug === "material").options.map(o => o.name), ["130 g/m² Bilderdruck", "Karton 105 × 148 mm"]);
     assert.deepStrictEqual(p.props.find(x => x.slug === "color").options.map(o => o.name), ["Flaschengrün", "Mindful blue", "Grau meliert", "Hellgrau meliert"]);

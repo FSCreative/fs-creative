@@ -1,10 +1,10 @@
 "use strict";
 // Website-Chat (Overlay auf allen öffentlichen Seiten, Skript /chat/w.js aus chat-widget.js) + Cockpit-Ansicht „Chat“ (admin-cockpit/zchat.js).
 // Ablauf: Besucher schreibt → Nachricht gespeichert, Push „chat“ (neue Unterhaltung immer, sonst nur wenn Simon online ist).
-//   Simon online (Herzschlag aus dem offenen Cockpit, nach 3 Min. ohne Herzschlag automatisch offline) → er antwortet selbst.
-//   Simon offline (oder „KI: An“ in der Unterhaltung) → die KI (Sonnet über ki.js, Funktion „chat“) antwortet kurz, fragt Name + Kontakt + Anliegen ab
-//   und legt bei vollständigen Angaben selbst einen Lead an (gleich wie das Kontaktformular, Quelle „Website-Chat (KI)“).
-//   Schreibt Simon selbst, schweigt die KI (Modus „auto“ = nur offline; „an“ = immer; „aus“ = nie).
+//   Immer zuerst antwortet die KI (Sonnet über ki.js, Funktion „chat“). Will der Besucher einen Mitarbeiter oder kommt die KI nicht weiter (handoff),
+//   und Simon ist online (Herzschlag aus dem offenen Cockpit, nach 3 Min. ohne Herzschlag automatisch offline) → Übergabe an Simon, die KI schweigt.
+//   Simon offline → die KI fragt Name + Kontakt + Anliegen ab und legt bei vollständigen Angaben selbst einen Lead an (Quelle „Website-Chat (KI)“).
+//   Schreibt Simon selbst, schweigt die KI ebenfalls, solange er online ist (Modus „auto“; „an“ = immer KI; „aus“ = nie).
 // Öffentlich: POST /chat/api/start, POST /chat/api/send, GET /chat/api/poll, GET /chat/api/status – nur gleiche Herkunft, Längen-/Format-Prüfung, Honeypot, Rate-Limits.
 // Admin (hinter dem Cockpit-Login): /admin/api/chat/state, /conv, /send, /status, /op.
 // Speicher: mit DATABASE_URL in Postgres (chat_conv, chat_msg; Status in fin_meta „chat_status“), sonst Dateien unter DATA_DIR/chat. IP-Adressen nur im Arbeitsspeicher (Rate-Limit).
@@ -19,7 +19,10 @@ const RETAIN_DAYS = 365;
 
 const SYSTEM = [
   "Du bist der freundliche Chat-Assistent von FS Creative auf www.fs-creative.at. FS Creative ist die Kreativ- und Digitalagentur von Simon Felder aus Gaschurn im Montafon (Vorarlberg, Österreich).",
-  "Simon ist gerade nicht online. Deine Aufgabe: Fragen kurz beantworten, das Anliegen verstehen und die Anfrage für Simon aufnehmen, damit er sich persönlich meldet.",
+  "Du antwortest immer zuerst. Deine Aufgabe: Fragen selbst kurz beantworten und das Anliegen verstehen. Ob Simon gerade online ist, steht im Stand der Unterhaltung.",
+  "Übergabe an einen Menschen (handoff = true) NUR, wenn der Besucher ausdrücklich Simon, einen Mitarbeiter oder einen Menschen sprechen will, oder wenn du nach einem Versuch nicht weiterhelfen kannst bzw. nur Simon es klären kann (Agentur-Preise, Termine, Zusagen, Reklamation einer Bestellung).",
+  "- Simon online + handoff: sag kurz, dass du an Simon übergibst und er gleich hier im Chat antwortet. Frag dann nichts mehr.",
+  "- Simon nicht online (mit oder ohne handoff): nimm die Anfrage für Simon auf (Name, Kontakt, Anliegen), damit er sich persönlich meldet.",
   "",
   "Leistungen von FS Creative:",
   "- Websites & Online-Shops: moderne, schnelle, mobile Websites, Online-Shops, Buchungssysteme und Plattformen, SEO & Sichtbarkeit, Relaunch.",
@@ -44,7 +47,7 @@ const SYSTEM = [
   "Ausgabe: ausschließlich das JSON-Objekt laut Schema.",
   "reply = deine Antwort an den Besucher (reiner Text).",
   "name, email, phone, request = was der Besucher im GANZEN Gespräch angegeben hat (leer lassen, wenn unbekannt; nichts erfinden). request = kurze Zusammenfassung des Anliegens für Simon (1–3 Sätze, Deutsch).",
-  "topic = passendstes Thema aus der Liste. ready = true, wenn Kontakt (E-Mail oder Telefon) und Anliegen vorliegen und der Besucher nichts Wichtiges mehr ergänzen will.",
+  "handoff = true laut Regel oben, sonst false. topic = passendstes Thema aus der Liste. ready = true, wenn Kontakt (E-Mail oder Telefon) und Anliegen vorliegen und der Besucher nichts Wichtiges mehr ergänzen will.",
 ].join("\n");
 
 module.exports = function (D) {
@@ -120,12 +123,13 @@ module.exports = function (D) {
     await store.putConv(c); bump(); return m;
   }
   const pubMsg = m => ({ id: m.id, at: m.at, from: m.from, text: m.text });
-  const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", typing: BUSY.has(c.id) });
+  const summary = c => ({ id: c.id, no: c.no, name: c.name, email: c.email, phone: c.phone, request: c.request, topic: c.topic, page: c.page, created: c.created, updated: c.updated, last: c.last, unread: c.unread || 0, ai: c.ai, aiCount: c.aiCount || 0, closed: !!c.closed, leadId: c.leadId || "", human: c.human || "", typing: BUSY.has(c.id) });
 
   // ───────────────────────── KI ─────────────────────────
-  const aiActive = c => !c.closed && c.ai !== "off" && (c.ai === "on" || !isOnline());
-  const SCHEMA = { type: "object", additionalProperties: false, required: ["reply", "name", "email", "phone", "request", "topic", "ready"],
-    properties: { reply: { type: "string" }, name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, request: { type: "string" }, topic: { type: "string", enum: TOPICS.concat([""]) }, ready: { type: "boolean" } } };
+  const aiActive = c => !c.closed && c.ai !== "off" && (c.ai === "on" || !(c.human && isOnline()));   // KI zuerst; nach Übergabe an Simon nur, solange er online ist
+  const SCHEMA = { type: "object", additionalProperties: false, required: ["reply", "name", "email", "phone", "request", "topic", "ready", "handoff"],
+    properties: { reply: { type: "string" }, name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, request: { type: "string" }, topic: { type: "string", enum: TOPICS.concat([""]) }, ready: { type: "boolean" }, handoff: { type: "boolean" } } };
+  const T_HANDOFF = "Simon ist informiert und antwortet dir gleich hier im Chat.";
   const T_FALLBACK = "Danke für deine Nachricht! Simon ist gerade nicht online. Hinterlass hier gern deinen Namen, deine E-Mail-Adresse oder Telefonnummer und worum es geht – er meldet sich persönlich, meist innerhalb von 1–2 Werktagen.";
   const T_CAP = "Danke! Ab hier übernimmt Simon persönlich – er meldet sich meist innerhalb von 1–2 Werktagen. Falls noch nicht geschehen: hinterlass gern deine E-Mail-Adresse oder Telefonnummer.";
   const T_LEAD = "✓ Deine Anfrage ist bei Simon angekommen. Er meldet sich persönlich bei dir, meist innerhalb von 1–2 Werktagen.";
@@ -149,12 +153,12 @@ module.exports = function (D) {
     const msgs = await store.msgs(c.id, 0, 40), lastV = msgs.filter(m => m.from === "v").pop();
     if (!lastV || msgs[msgs.length - 1].from !== "v") return;           // nichts Neues zu beantworten
     const conv = history(msgs); if (!conv.length) return;
-    const state = "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
+    const state = (isOnline() ? "Simon ist gerade ONLINE und kann bei handoff sofort übernehmen. " : "Simon ist gerade NICHT online. ") + "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
       (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + (D.printPrices ? D.printPrices() : "");
     day.n++; c.aiCount = (c.aiCount || 0) + 1; store.setMeta("chat_ai_day", day).catch(() => {});
     let x;
     try { x = await ki.chatReply(SYSTEM, state, conv, SCHEMA); }
-    catch (e) { log("KI-Antwort fehlgeschlagen:", String(e && e.message || e).slice(0, 160)); await store.putConv(c); return sysOnce(c, "fallback", T_FALLBACK); }
+    catch (e) { log("KI-Antwort fehlgeschlagen:", String(e && e.message || e).slice(0, 160)); if (isOnline()) { c.human = nowIso(); await store.putConv(c); bump(); return sysOnce(c, "handoff", T_HANDOFF); } await store.putConv(c); return sysOnce(c, "fallback", T_FALLBACK); }
     // Inzwischen gelöscht, von Simon übernommen oder neue Besucher-Nachricht? Dann diese Antwort verwerfen (die nächste Runde antwortet).
     const cur = CONVS.get(c.id); if (!cur) return;
     const after = await store.msgs(c.id, lastV.id, 20); if (after.some(m => m.from === "me" || m.from === "v") || !aiActive(cur)) { await store.putConv(cur); return; }
@@ -165,7 +169,9 @@ module.exports = function (D) {
     if (ph && okPhone(ph)) cur.phone = ph;
     if (rq) cur.request = rq;
     if (x && TOPICS.indexOf(x.topic) > -1) cur.topic = x.topic;
+    if (x && x.handoff === true && isOnline() && cur.ai !== "on") { cur.human = nowIso(); cur.unread = Math.max(1, cur.unread || 0); }   // Übergabe: ab jetzt antwortet Simon
     if (reply) await addMsg(cur, "ki", reply); else await store.putConv(cur);
+    if (cur.human && isOnline()) { bump(); await sysOnce(cur, "handoff", T_HANDOFF); }
     if (!cur.leadId && (cur.email || cur.phone) && cur.request && (cur.name || (x && x.ready)) && D.saveLead) {
       try {
         const r = await D.saveLead({ name: cur.name || "Chat-Besucher #" + cur.no, email: cur.email, phone: cur.phone, company: "", topic: cur.topic || "Etwas anderes", entwurf: false,
@@ -292,12 +298,13 @@ module.exports = function (D) {
       if (p === "/admin/api/chat/send") {
         const text = clean(d.text, MAX_TEXT + 1); if (!text) return J(res, 400, { ok: false, error: "empty" }); if (text.length > MAX_TEXT) return J(res, 400, { ok: false, error: "too_long" });
         if (c.ai === "on") c.ai = "auto";           // Simon übernimmt: KI hört auf (wieder einschalten mit „KI: An“)
+        if (!c.human) c.human = nowIso();
         c.closed = false; c.unread = 0;
         const m = await addMsg(c, "me", text);
         return J(res, 200, { ok: true, msg: pubMsg(m), conv: summary(c) });
       }
       if (p === "/admin/api/chat/op") {
-        if (d.op === "ai") { if (AI_MODES.indexOf(d.mode) < 0) return J(res, 400, { ok: false, error: "bad_mode" }); c.ai = d.mode; await store.putConv(c); bump(); if (c.ai === "on") maybeAi(c).catch(() => {}); return J(res, 200, { ok: true, conv: summary(c) }); }
+        if (d.op === "ai") { if (AI_MODES.indexOf(d.mode) < 0) return J(res, 400, { ok: false, error: "bad_mode" }); c.ai = d.mode; if (c.ai === "on") delete c.human; await store.putConv(c); bump(); if (c.ai === "on") maybeAi(c).catch(() => {}); return J(res, 200, { ok: true, conv: summary(c) }); }
         if (d.op === "close") { c.closed = true; c.unread = 0; await addMsg(c, "sys", "Die Unterhaltung wurde beendet. Du kannst jederzeit wieder schreiben."); return J(res, 200, { ok: true, conv: summary(c) }); }
         if (d.op === "reopen") { c.closed = false; await store.putConv(c); bump(); return J(res, 200, { ok: true, conv: summary(c) }); }
         if (d.op === "read") { c.unread = 0; await store.putConv(c); bump(); return J(res, 200, { ok: true }); }

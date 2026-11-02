@@ -1503,6 +1503,9 @@
       if (/^printtype/.test(k) && /white/.test(x)) add("White", "Weiß wird nur dort gedruckt, wo du Flächen in „White“ anlegst – z. B. unter Farbflächen und Logos");
       if (/kiss_?cut/.test(x)) add("Kisscut", "Schnittkontur als geschlossene Linie um jedes Motiv – nur die Folie wird geschnitten");
       else if (/die_?cut|thru_?cut/.test(x)) add("Thrucut", "Schnittkontur als geschlossene Linie – hier wird komplett durchgeschnitten");
+      if (k === "die_cut" && !/kiss/.test(x)) add("Thrucut", "Stanzkontur deiner Form als geschlossene Linie – hier wird ausgestanzt");
+      if (/^(variable_creasing_line|creasing_lines?)$/.test(k)) add("Creasing", "Lage der Rilllinie(n) als gerade Linie einzeichnen");
+      if (/^spot_finish/.test(k) && !/foil|sense|3d/.test(x)) add("Scodix Spot", "Flächen, die veredelt (glänzend lackiert) werden");
       if (/^perforation/.test(k)) add("Perforation", "Lage der Perforationslinie(n) als gerade Linie einzeichnen");
       if (/drill/.test(k)) add("Drilling", "Bohrlöcher als Kreis in Originalgröße an die gewünschte Stelle setzen");
       if (/numbering/.test(k)) add("Numbering", "Feld für die fortlaufende Nummer als Rechteck markieren");
@@ -1548,6 +1551,7 @@
       ["📦", "Datei", "<b>PDF</b> (am besten PDF/X-4), alternativ JPG/PNG · max. 50 MB · keine Schnittmarken"]
     ];
     var spi = spotItem(); if (spi) items.splice(5, 0, spi);
+    var pz = String((S.sel || {}).personalize || ""); if (pz && !/^(__none|none|no|nee|geen|without.*|no_.*|0)$/i.test(pz)) items.splice(5, 0, ["📇", "Personalisierung (Excel)", "Lege in der Druckdatei die Felder an, die sich ändern (Name, Nummer, Code …). Die Daten schickst du als <b>Excel- oder CSV-Datei</b> – eine Zeile pro Exemplar, eine Spalte je Feld, Spaltenüberschrift = Feldname. Antworte nach der Bestellung einfach mit der Datei auf die Bestellbestätigung; wir prüfen sie vor dem Druck."]);
     if (Math.max(fileW, fileH) > 5000) items.splice(1, 0, ["🔎", "Maßstab", "So große Formate legst du am besten im <b>Maßstab 1:10</b> an (" + mmF(fileW / 10) + " × " + mmF(fileH / 10) + " mm inkl. Beschnitt) – Bilder dann mit " + dpi * 10 + " dpi"]);
     if (f) items.splice(2, 0, ["📐", "Falz", "Falzlinien laut Vorlage – keine Texte direkt auf die Falz legen, " + esc(f.name || "") + (f.note ? " · " + esc(f.note) : "")]);
     return '<details class="ps-req"' + (open ? " open" : "") + '><summary><span class="ic" aria-hidden="true">✓</span><span><b>Druckdaten-Anforderungen</b><small>' + esc(p.title) + " · " + unit(fileW) + " × " + unit(fileH) + " inkl. Beschnitt</small></span><i aria-hidden=\"true\">▾</i></summary>" +

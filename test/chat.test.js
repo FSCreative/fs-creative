@@ -24,9 +24,10 @@ function anthropicMock() {
       calls.push({ url: req.url, headers: req.headers, body });
       const msgs = body.messages || [], lastUser = [].concat(msgs).reverse().find(m => m.role === "user") || { content: "" };
       const txt = typeof lastUser.content === "string" ? lastUser.content : (lastUser.content || []).map(x => x.text || "").join(" ");
-      const out = /@/.test(txt)
-        ? { reply: "Danke, Max! Ich habe alles für Simon notiert.", name: "Max Muster", email: "max@example.com", phone: "", request: "Neue Website für eine Tischlerei in Schruns.", topic: "Website", ready: true }
-        : { reply: "Gerne! Wie heißt du und wie kann Simon dich erreichen? <b>kein HTML</b>", name: "", email: "", phone: "", request: /website/i.test(txt) ? "Neue Website" : "", topic: "Website", ready: false };
+      const out = /mitarbeiter|mensch/i.test(txt.split("\n\n").pop()) ? { reply: "Klar, ich übergebe an Simon.", name: "", email: "", phone: "", request: "", topic: "", ready: false, handoff: true }
+        : /@/.test(txt)
+        ? { reply: "Danke, Max! Ich habe alles für Simon notiert.", name: "Max Muster", email: "max@example.com", phone: "", request: "Neue Website für eine Tischlerei in Schruns.", topic: "Website", ready: true, handoff: false }
+        : { reply: "Gerne! Wie heißt du und wie kann Simon dich erreichen? <b>kein HTML</b>", name: "", email: "", phone: "", request: /website/i.test(txt) ? "Neue Website" : "", topic: "Website", ready: false, handoff: false };
       const text = JSON.stringify(out), usage = { input_tokens: 812, output_tokens: 64 };
       if (!body.stream) { res.writeHead(200, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null, usage })); }
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
@@ -66,7 +67,7 @@ async function startServer(dir, env) {
 (async () => {
   const mock = anthropicMock(); await new Promise(r => mock.server.listen(0, "127.0.0.1", r));
   const dir = copyApp();
-  const srv = await startServer(dir, { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: "http://127.0.0.1:" + mock.server.address().port, CHAT_BEAT_TTL_MS: "1500", CHAT_AI_CONV_MAX: "4" });
+  const srv = await startServer(dir, { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: "http://127.0.0.1:" + mock.server.address().port, CHAT_BEAT_TTL_MS: "1500", CHAT_AI_CONV_MAX: "5" });
   const B = srv.base;
   let ipN = 1;
   const pub = (p, body, hdr) => fetch(B + p, body ? { method: "POST", headers: Object.assign({ "Content-Type": "application/json", "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}), body: JSON.stringify(body) } : { headers: Object.assign({ "X-Forwarded-For": "203.0.113." + ipN }, hdr || {}) });
@@ -118,18 +119,20 @@ async function startServer(dir, env) {
 
   const XSS = "Hallo <script>alert(1)</script> & \"Grüße\" <img src=x onerror=alert(2)>";
   let lastId = 0;
-  await t("Besucher-Nachricht: gespeichert als reiner Text (XSS bleibt Text), JSON mit nosniff, keine KI solange online", async () => {
+  await t("Besucher-Nachricht: gespeichert als reiner Text (XSS bleibt Text), JSON mit nosniff, KI antwortet zuerst – auch wenn Simon online ist", async () => {
     const r = await pub("/chat/api/send", { cid: A, text: XSS, name: "Max <b>M</b>", page: "/webdesign-montafon" });
     assert.ok(/application\/json/.test(r.headers.get("content-type"))); assert.strictEqual(r.headers.get("x-content-type-options"), "nosniff");
     const j = await r.json(); assert.strictEqual(j.ok, true); assert.strictEqual(j.msg.text, XSS); assert.strictEqual(j.msg.from, "v"); lastId = j.msg.id;
-    await sleep(400); assert.strictEqual(mock.calls.length, 0, "Simon ist online → keine KI");
+    assert.ok(await waitFor(async () => mock.calls.length === 1 && (await pj("/chat/api/poll?c=" + A + "&after=" + lastId)).msgs.some(m => m.from === "ki")), "KI zuerst, obwohl online");
+    lastId = (await pj("/chat/api/poll?c=" + A + "&after=0")).msgs.pop().id;
+    assert.ok(/ONLINE/.test(JSON.stringify(mock.calls[0].body.system)), "KI weiß, dass Simon online ist");
   });
 
   await t("Cockpit sieht die Unterhaltung (ungelesen, Seite, Vorschau), Lesen setzt ungelesen zurück", async () => {
     const s = await adm("/admin/api/chat/state"); assert.strictEqual(s.convs.length, 1); const c = s.convs[0];
-    assert.strictEqual(c.id, A); assert.strictEqual(c.unread, 1); assert.strictEqual(s.unread, 1); assert.strictEqual(c.page, "/webdesign-montafon"); assert.strictEqual(c.name, "Max <b>M</b>"); assert.strictEqual(c.last.text, XSS.slice(0, 160)); assert.ok(/^\d{4}$/.test(c.no));
+    assert.strictEqual(c.id, A); assert.strictEqual(c.unread, 1); assert.strictEqual(s.unread, 1); assert.strictEqual(c.page, "/webdesign-montafon"); assert.strictEqual(c.name, "Max <b>M</b>"); assert.strictEqual(c.last.from, "ki"); assert.ok(!c.human, "noch keine Übergabe"); assert.ok(/^\d{4}$/.test(c.no));
     const same = await adm("/admin/api/chat/state?v=" + encodeURIComponent(s.ver)); assert.strictEqual(same.same, true, "unverändert → {same}");
-    const cv = await adm("/admin/api/chat/conv?id=" + A + "&read=1"); assert.strictEqual(cv.msgs.length, 1); assert.strictEqual(cv.msgs[0].text, XSS);
+    const cv = await adm("/admin/api/chat/conv?id=" + A + "&read=1"); assert.strictEqual(cv.msgs.length, 2); assert.strictEqual(cv.msgs[0].text, XSS);
     assert.strictEqual((await adm("/admin/api/chat/state")).convs[0].unread, 0);
   });
 
@@ -137,8 +140,8 @@ async function startServer(dir, env) {
     const r = await adm("/admin/api/chat/send", { id: A, text: "Hallo Max, wie kann ich helfen?" }); assert.strictEqual(r.ok, true); assert.strictEqual(r.msg.from, "me");
     const p = await pj("/chat/api/poll?c=" + A + "&after=" + lastId); assert.strictEqual(p.online, true); assert.strictEqual(p.msgs.length, 1); assert.strictEqual(p.msgs[0].text, "Hallo Max, wie kann ich helfen?"); assert.strictEqual(p.msgs[0].from, "me");
     lastId = p.msgs[0].id;
-    const st = await pj("/chat/api/status?c=" + A + "&a=1"); assert.strictEqual(st.n, 1, "1 neue Antwort für das Abzeichen");
-    const again = await pj("/chat/api/start", { cid: A, page: "/kontakt" }); assert.strictEqual(again.exists, true); assert.strictEqual(again.msgs.length, 2, "Verlauf beim Wiederöffnen");
+    const st = await pj("/chat/api/status?c=" + A + "&a=1"); assert.strictEqual(st.n, 2, "2 neue Antworten (KI + Simon) für das Abzeichen");
+    const again = await pj("/chat/api/start", { cid: A, page: "/kontakt" }); assert.strictEqual(again.exists, true); assert.strictEqual(again.msgs.length, 3, "Verlauf beim Wiederöffnen");
     assert.strictEqual(r.conv.ai, "auto");
   });
 
@@ -153,14 +156,14 @@ async function startServer(dir, env) {
     const ki = await waitFor(async () => { const p = await pj("/chat/api/poll?c=" + A + "&after=" + lastId); return p.msgs.find(m => m.from === "ki") && p; });
     assert.ok(ki, "KI-Antwort kommt"); const m = ki.msgs.find(x => x.from === "ki"); assert.ok(/Wie heißt du/.test(m.text)); assert.ok(/<b>kein HTML<\/b>/.test(m.text), "Text unverändert, Darstellung escaped der Client");
     lastId = ki.msgs[ki.msgs.length - 1].id;
-    assert.strictEqual(mock.calls.length, 1); const c = mock.calls[0].body;
+    assert.strictEqual(mock.calls.length, 2); const c = mock.calls[1].body;
     assert.strictEqual(c.model, "claude-sonnet-5-5"); assert.strictEqual(c.max_tokens, 400); assert.ok(c.messages.length <= 12);
     assert.ok(/FS Creative/.test(JSON.stringify(c.system)) && /Preise/.test(JSON.stringify(c.system)) && /webdesign-montafon|kontakt/.test(JSON.stringify(c.system)));
     assert.strictEqual(c.messages[c.messages.length - 1].role, "user"); assert.strictEqual(c.messages[0].role, "user");
     assert.ok(c.messages.some(x => x.role === "assistant" && /Simon persönlich/.test(x.content)));
     assert.ok(c.output_config && c.output_config.format && c.output_config.format.type === "json_schema");
-    assert.ok(/^sk-test$/.test(mock.calls[0].headers["x-api-key"] || ""), "Schlüssel nur serverseitig");
-    const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.strictEqual(conv.aiCount, 1); assert.strictEqual(conv.request, "Neue Website");
+    assert.ok(/^sk-test$/.test(mock.calls[1].headers["x-api-key"] || ""), "Schlüssel nur serverseitig");
+    const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.strictEqual(conv.aiCount, 2); assert.strictEqual(conv.request, "Neue Website");
   });
 
   await t("Kontaktdaten + Anliegen → Lead automatisch (Quelle „Website-Chat (KI)“), Bestätigung an den Besucher, Nutzung unter „chat“ geloggt", async () => {
@@ -173,9 +176,9 @@ async function startServer(dir, env) {
     assert.strictEqual(l.name, "Max <b>M</b>", "vom Besucher eingegebener Name bleibt");
     const conv = (await adm("/admin/api/chat/conv?id=" + A)).conv; assert.strictEqual(conv.leadId, l.id); assert.strictEqual(conv.email, "max@example.com");
     const auf = JSON.parse(fs.readFileSync(path.join(dir, "auftraege.json"), "utf8")); assert.ok(auf.tasks.some(x => x.leadId === l.id && /^Anfrage: /.test(x.title)), "Anfrage als Aufgabe (Aufträge)");
-    const u = JSON.parse(fs.readFileSync(path.join(dir, "ki-usage.json"), "utf8")); const mk = Object.keys(u.months).pop(); assert.ok(u.months[mk].chat && u.months[mk].chat.calls === 2 && u.months[mk].chat.model === "claude-sonnet-5-5");
+    const u = JSON.parse(fs.readFileSync(path.join(dir, "ki-usage.json"), "utf8")); const mk = Object.keys(u.months).pop(); assert.ok(u.months[mk].chat && u.months[mk].chat.calls === 3 && u.months[mk].chat.model === "claude-sonnet-5-5");
     await sleep(300); await pj("/chat/api/send", { cid: A, text: "Danke!" });
-    await waitFor(async () => (await adm("/admin/api/chat/conv?id=" + A)).conv.aiCount === 3);
+    await waitFor(async () => (await adm("/admin/api/chat/conv?id=" + A)).conv.aiCount === 4);
     assert.strictEqual(leads().length, before + 1, "kein zweiter Lead");
     assert.ok(/bereits an Simon übermittelt/.test(JSON.stringify(mock.calls[mock.calls.length - 1].body.system)));
   });
@@ -194,11 +197,22 @@ async function startServer(dir, env) {
     assert.strictEqual((await adm("/admin/api/chat/op", { id: A, op: "ai", mode: "bogus" }))._status, 400);
   });
 
-  await t("KI-Limit je Unterhaltung (Test: 4) → danach feste Nachricht, keine weiteren API-Aufrufe", async () => {
+  await t("KI-Limit je Unterhaltung (Test: 5) → danach feste Nachricht, keine weiteren API-Aufrufe", async () => {
     ipN = 2; const C = cidOf("capconv");
-    for (let i = 0; i < 6; i++) { const before = (await pj("/chat/api/poll?c=" + C + "&after=0")).msgs.length; await pj("/chat/api/send", { cid: C, text: "Frage " + i }); await waitFor(async () => (await pj("/chat/api/poll?c=" + C + "&after=0")).msgs.length >= before + 2, 4000); }
-    const all = (await pj("/chat/api/poll?c=" + C + "&after=0")).msgs; assert.strictEqual(all.filter(m => m.from === "ki").length, 4);
+    for (let i = 0; i < 7; i++) { const before = (await pj("/chat/api/poll?c=" + C + "&after=0")).msgs.length; await pj("/chat/api/send", { cid: C, text: "Frage " + i }); await waitFor(async () => (await pj("/chat/api/poll?c=" + C + "&after=0")).msgs.length >= before + 2, 4000); }
+    const all = (await pj("/chat/api/poll?c=" + C + "&after=0")).msgs; assert.strictEqual(all.filter(m => m.from === "ki").length, 5);
     assert.strictEqual(all.filter(m => m.from === "sys" && /übernimmt Simon persönlich/.test(m.text)).length, 1, "Hinweis nur einmal");
+  });
+
+  await t("Übergabe: Besucher will einen Mitarbeiter → Simon online übernimmt (KI schweigt); offline nimmt die KI wieder auf", async () => {
+    ipN = 5; const H = cidOf("handoff"); await adm("/admin/api/chat/status", { online: true }); const n0 = mock.calls.length;
+    await pj("/chat/api/send", { cid: H, text: "Ich möchte bitte mit einem Mitarbeiter sprechen" });
+    const p = await waitFor(async () => { const x = await pj("/chat/api/poll?c=" + H + "&after=0"); return x.msgs.some(m => m.from === "sys" && /antwortet dir gleich/.test(m.text)) && x; });
+    assert.ok(p, "Übergabe-Hinweis"); assert.ok(p.msgs.some(m => m.from === "ki" && /übergebe/.test(m.text)));
+    const cv = (await adm("/admin/api/chat/conv?id=" + H)).conv; assert.ok(cv.human, "an Simon übergeben");
+    await pj("/chat/api/send", { cid: H, text: "Hallo?" }); await sleep(500); assert.strictEqual(mock.calls.length, n0 + 1, "nach Übergabe keine KI, solange Simon online ist");
+    await adm("/admin/api/chat/status", { online: false });
+    await pj("/chat/api/send", { cid: H, text: "Noch da?" }); assert.ok(await waitFor(async () => mock.calls.length === n0 + 2), "offline → KI nimmt die Anfrage auf");
   });
 
   await t("Rate-Limit: 20 Nachrichten / 10 Min. je IP + Unterhaltung → 429", async () => {
