@@ -686,6 +686,9 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const dz = await fetch(B + "/print/online-designer"), dh = await dz.text(); assert.strictEqual(dz.status, 200);
     assert.ok(/KI-Assistent/.test(dh) && /"@type":"WebApplication"/.test(dh) && /"@type":"FAQPage"/.test(dh) && /rel="canonical" href="https:\/\/www\.fs-creative\.at\/print\/online-designer"/.test(dh) && !/print\.com/i.test(dh), "Designer-Seite");
     const sm = await (await fetch(B + "/sitemap.xml")).text(); assert.ok(/\/print\/online-designer<\/loc>/.test(sm), "Sitemap mit Designer-Seite");
+    const A = require(path.join(ROOT, "print-shop.js"))({ DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), "fsc-acc-")) })._test.ACC_RX;
+    ["Karabiner", "Kabelbinder", "Gummispanner mit Haken", "Flaggenstangen", "Metallfuß Platten 6 kg mit Drehgelenk", "Perfax Tapezierspachtel", "Prospektständer einfach", "Briefumschläge farbig (unbedruckt)", "Muster Geschenkbänder"].forEach(t => assert.ok(A.test(t), "Zubehör: " + t));
+    ["Visitenkarten", "Flyer", "PVC Banner", "Beachflags", "Flaggen für Masten ohne Ausleger", "Papiertragetaschen mit Flachhenkel", "Fußmatten", "Strandstühle mit Getränkehalter", "Kundenstopper mit Wassertank", "Pullover Stanley/Stella Roller", "Tassen bunt", "Roll-up Banner"].forEach(t => assert.ok(!A.test(t), "kein Zubehör: " + t));
     const pp = await (await fetch(B + "/print/preise")).text(); assert.ok(/Online-Designer|online-designer|Einstiegspreise|Druckpreise/.test(pp));
   });
   await t("Werbeartikel: Druckfläche aus printing_size, Farbe immer gesendet, Preis 0 → Fehler", async () => {

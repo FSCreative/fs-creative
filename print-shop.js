@@ -2476,11 +2476,14 @@ module.exports = function (D) {
     const rows = pub.map(x => ({ x, lo: lowestOf(x.key, P, E) }));
     return { pub, groups, P, E, rows };
   }
+  // Zubehör ohne eigenen Druck (Karabiner, Spanngummis, Fahnenstangen, Füße, Halter, Tapezierwerkzeug …): nie „günstigstes Produkt“ einer Kategorie,
+  // in llms-full.txt je Kategorie am Ende unter „Zubehör“ – sonst nennt ChatGPT für „günstige Banner“ einen Kabelbinder
+  const ACC_RX = /karabiner|kabelbinder|spanngummi|gummispanner|seilschlaufe|halterung|aufhänge|ständer\b|spachtel|universalmesser|pinsel|kleister|rakel|plastikabdeckung|ventilatorabdeckung|beach-flag tragetasche|transporttasche|gewicht|drehgelenk|flagclip|ösen|fahnenstange|flaggenstange|stange\b|sockel|bodenplatte|^wassertank|erddübel|hering|^muster|farbfächer|spender|tapetenroller|klebebandroller|klemmprofil|haken\b|ersatz|zubehör|unbedruckt|kartenhalter|prospekthalter|plakathalter|namensschildhalter|fensterfahnenhalter|stück-halter|\bfüße\b|fußplatten|kreuzfuß|metallfuß|plattenfuß|lampen für/i;
   const lineOf = (x, lo) => "- " + x.title + ": " + (lo ? "ab " + eurDe(lo.gross) + " für " + lo.copies.toLocaleString("de-AT") + " Stk." + (lo.label ? " (" + lo.label + ")" : "") : "Preis sofort im Konfigurator") + " – " + prodUrl(x.key, true);
   async function llmsTxt() {
     const { pub, groups, P, E, rows } = await llmsData(), L = pubLines(40), stand = [P && P.at, E && E.end].filter(Boolean).sort().pop();
     const withP = rows.filter(r => r.lo), cheap = [];
-    groups.forEach(g => { const l = withP.filter(r => r.x.cat && r.x.cat.main === g.slug).sort((a, b) => a.lo.gross - b.lo.gross || (b.x.pop || 0) - (a.x.pop || 0)).slice(0, 6); if (l.length) cheap.push("", "### " + g.name, ...l.map(r => lineOf(r.x, r.lo))); });
+    groups.forEach(g => { const l = withP.filter(r => r.x.cat && r.x.cat.main === g.slug && !ACC_RX.test(r.x.title)).sort((a, b) => a.lo.gross - b.lo.gross || (b.x.pop || 0) - (a.x.pop || 0)).slice(0, 6); if (l.length) cheap.push("", "### " + g.name, ...l.map(r => lineOf(r.x, r.lo))); });
     return ["# FS Creative", "", "> Kreativ- und Digitalagentur von Simon Felder aus Gaschurn im Montafon (Vorarlberg, Österreich): Websites, Grafikdesign, Druck & Werbemittel – mit eigenem Online-Druckshop für ganz Österreich.", "",
       "## Online-Druckshop: " + SITE + "/print",
       "- " + (pub.length > 100 ? "Über " + Math.floor(pub.length / 50) * 50 : pub.length || "Über 900") + " Druckprodukte: Flyer, Visitenkarten, Plakate, Folder, Broschüren, Briefpapier, Banner (PVC, Mesh, Vlies), Roll-ups, Aufkleber, Textilien und Werbeartikel – " + withP.length + " davon mit Einstiegspreis in dieser Datei bzw. in " + SITE + "/llms-full.txt",
@@ -2498,7 +2501,9 @@ module.exports = function (D) {
   }
   async function llmsFull() {
     const { pub, groups, P, E, rows } = await llmsData(), stand = [P && P.at, E && E.end].filter(Boolean).sort().pop(), out = [];
-    groups.forEach(g => { const l = rows.filter(r => r.x.cat && r.x.cat.main === g.slug).sort((a, b) => (a.lo ? 0 : 1) - (b.lo ? 0 : 1) || (a.lo && b.lo ? a.lo.gross - b.lo.gross : 0) || a.x.title.localeCompare(b.x.title, "de")); if (l.length) out.push("", "## " + g.name + " (" + l.length + ")", ...l.map(r => lineOf(r.x, r.lo))); });
+    const ord = (a, b) => (a.lo ? 0 : 1) - (b.lo ? 0 : 1) || (a.lo && b.lo ? a.lo.gross - b.lo.gross : 0) || a.x.title.localeCompare(b.x.title, "de");
+    groups.forEach(g => { const l = rows.filter(r => r.x.cat && r.x.cat.main === g.slug).sort(ord), main = l.filter(r => !ACC_RX.test(r.x.title)), acc = l.filter(r => ACC_RX.test(r.x.title));
+      if (l.length) out.push("", "## " + g.name + " (" + l.length + ")", ...main.map(r => lineOf(r.x, r.lo)), ...(acc.length ? ["", "### Zubehör – " + g.name, ...acc.map(r => lineOf(r.x, r.lo))] : [])); });
     const rest = rows.filter(r => !r.x.cat || !groups.some(g => g.slug === r.x.cat.main)); if (rest.length) out.push("", "## Weitere Produkte", ...rest.map(r => lineOf(r.x, r.lo)));
     return ["# FS Creative Druckshop – alle Produkte mit Einstiegspreis", "", "> Online-Druckerei für ganz Österreich: " + pub.length + " Drucksachen und Werbeartikel. Alle Preise sind Endpreise inkl. 20 % USt und Versand innerhalb Österreichs" + (stand ? " (Stand " + dateDe(stand) + ")" : "") + ", jeweils die kleinste bestellbare Auflage der im Shop vorausgewählten Ausführung. Andere Formate, Papiere, Veredelungen und Mengen: Preis sofort im Konfigurator unter dem jeweiligen Link. Gestalten im Online-Designer mit Vorlagen und gratis KI-Assistent (" + SITE + "/print/online-designer) oder Druckdatei hochladen."]
       .concat(out, ["", "Mehr: " + SITE + "/llms.txt · Preisübersicht nach Mengen: " + SITE + "/print/preise", ""]).join("\n");
@@ -3792,6 +3797,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD } };
+  return { xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;
