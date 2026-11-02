@@ -424,15 +424,15 @@ function vCloudflare(){
 var SRC_LBL=[["google","Google"],["ki","KI (ChatGPT & Co.)"],["suche","Andere Suchmaschinen"],["social","Social Media"],["web","Andere Websites"],["direkt","Direkt / App"]];
 var CC_DE={AT:"Österreich",DE:"Deutschland",CH:"Schweiz",IT:"Italien",LI:"Liechtenstein",NL:"Niederlande",US:"USA",GB:"Großbritannien",FR:"Frankreich",PL:"Polen",CZ:"Tschechien",HU:"Ungarn",SK:"Slowakei",SI:"Slowenien",HR:"Kroatien",BE:"Belgien",ES:"Spanien",SE:"Schweden",DK:"Dänemark",IE:"Irland",RO:"Rumänien",UA:"Ukraine",RU:"Russland",CN:"China",IN:"Indien",SG:"Singapur",CA:"Kanada",BR:"Brasilien",JP:"Japan",AU:"Australien",T1:"Tor-Netz",XX:"unbekannt"};
 function originsHtml(list){
-  var rows=(list||[]).filter(function(x){ return x.src7d&&Object.keys(x.src7d).length; }).sort(function(a,b){ return (+b.views7d||0)-(+a.views7d||0); });
+  var rows=(list||[]).filter(function(x){ return (x.src7d&&Object.keys(x.src7d).length)||(x.geo7d&&x.geo7d.length); }).sort(function(a,b){ return (+b.views7d||0)-(+a.views7d||0); });
   if(!rows.length) return "";
   var tot=(S&&S.totals&&S.totals.src7d)||{}, sum=function(o){ return SRC_LBL.reduce(function(a,k){ return a+(+o[k[0]]||0); },0); }, T=sum(tot);
   var pct=function(v,t){ return t?Math.round(v/t*100)+" %":"–"; };
   var cells=function(o){ var t=sum(o); return SRC_LBL.map(function(k){ var v=+o[k[0]]||0; return '<span class="w-m'+(k[0]==="ki"&&v?" ok":"")+'"><i>'+esc(k[1])+'</i>'+num(v)+'<small class="muted"> · '+pct(v,t)+'</small></span>'; }).join(""); };
-  return '<section class="panel"><div class="panel-h"><h2>Woher kommen die Besucher</h2><span class="muted">letzte 7 Tage · Einstiege von außen (Verweis der vorigen Seite), ohne Bots und ohne Klicks innerhalb der Website · Länder aus Cloudflare</span></div>'+
-    '<div class="w-org"><div class="w-org-r hd"><b>Alle Websites</b><div class="w-mets">'+cells(tot)+'</div></div>'+
+  return '<section class="panel"><div class="panel-h"><h2>Woher kommen die Besucher</h2><span class="muted">letzte 7 Tage · Länder der echten Besucher (ohne Bots) aus Cloudflare</span></div>'+
+    '<div class="w-org">'+(T?'<div class="w-org-r hd"><b>Alle Websites</b><div class="w-mets">'+cells(tot)+'</div></div>':'')+
     rows.map(function(x){ var g=(x.geo7d||[]).map(function(c){ return esc(CC_DE[c[0]]||c[0])+" "+num(c[1]); }).join(" · "), r=(x.refs7d||[]).slice(0,6).map(function(c){ return esc(c[0])+" "+num(c[1]); }).join(" · ");
-      return '<div class="w-org-r"><b>'+esc(x.name)+'</b><div class="w-mets">'+cells(x.src7d)+'</div>'+(g?'<div class="muted w-org-x">Länder: '+g+'</div>':'')+(r?'<div class="muted w-org-x">Verweise: '+r+'</div>':'')+'</div>'; }).join("")+'</div></section>';
+      return '<div class="w-org-r"><b>'+esc(x.name)+' <span class="muted">· '+num(x.views7d)+' Aufrufe</span></b>'+(x.src7d&&sum(x.src7d)?'<div class="w-mets">'+cells(x.src7d)+'</div>':'')+(g?'<div class="muted w-org-x">Länder: '+g+'</div>':'')+(r?'<div class="muted w-org-x">Verweise: '+r+'</div>':'')+'</div>'; }).join("")+'</div></section>';
 }
 
 function techChips(){

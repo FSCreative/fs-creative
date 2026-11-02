@@ -1248,7 +1248,7 @@ async function buildSiteViews(zones) {
   const days = []; for (let i = 6; i >= 0; i--) days.push(viennaDay(new Date(Date.now() - i * 864e5)));
   const by = {}; zones.forEach(z => { by[z.id] = { name: z.name, views: 0, print: 0, bots: 0, days: days.map(() => 0), ok: false, src: {}, refs: {}, geo: {} }; });
   // Herkunft (Wunsch Simon 02.11.2026): eigene Abfrage ohne Pfad (weniger Gruppen) – Verweis-Domain (Referer) und Land; Klicks innerhalb der eigenen Website zählen nicht
-  const q2 = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientRefererHost clientCountryName userAgent}}}}}';
+  const q2 = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientCountryName userAgent}}}}}';
   const q = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientRequestPath userAgent}}}}}';
   for (let di = 0; di < days.length; di++) {
     const a = viennaStart(days[di]), b = di < days.length - 1 ? viennaStart(days[di + 1]) : new Date(a.getTime() + 864e5);
@@ -1264,8 +1264,7 @@ async function buildSiteViews(zones) {
       const z2 = j2 && j2.data && j2.data.viewer && j2.data.viewer.zones; if (!Array.isArray(z2)) { console.log("Herkunft (Cloudflare):", String((j2 && j2.errors && j2.errors[0] && j2.errors[0].message) || "keine Daten").slice(0, 300)); continue; }
       z2.forEach(zz => { const v = by[zz.zoneTag]; if (!v) return;
         (zz.httpRequestsAdaptiveGroups || []).forEach(g => { const d = g.dimensions || {}, n = +g.count || 0; if (VISIT_BOT.test(String(d.userAgent || ""))) return;
-          const ref = String(d.clientRefererHost || "").toLowerCase().replace(/^www\./, ""), own = ref && (ref === v.name || ref.endsWith("." + v.name)); if (own) return;
-          const c = visitSource(ref); v.src[c] = (v.src[c] || 0) + n; if (ref) v.refs[ref] = (v.refs[ref] || 0) + n;
+          // Verweis-Domain (clientRefererHost) gibt es im Cloudflare-Gratistarif nicht – nur Länder; Herkunft dafür über visitSource, sobald eine Quelle sie liefert
           const cc = String(d.clientCountryName || ""); if (cc) v.geo[cc] = (v.geo[cc] || 0) + n; }); });
     }
   }
