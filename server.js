@@ -1261,7 +1261,7 @@ async function buildSiteViews(zones) {
           if (VISIT_BOT.test(String(g.dimensions.userAgent || ""))) { v.bots += n; return; }
           v.views += n; v.days[di] += n; if (/^\/print(\/|$)/.test(p)) v.print += n; }); });
       const j2 = await cfGraphQL(q2, { tags: chunk.map(z => z.id), a: a.toISOString(), b: b.toISOString() }).catch(() => null);
-      const z2 = j2 && j2.data && j2.data.viewer && j2.data.viewer.zones; if (!Array.isArray(z2)) continue;
+      const z2 = j2 && j2.data && j2.data.viewer && j2.data.viewer.zones; if (!Array.isArray(z2)) { console.log("Herkunft (Cloudflare):", String((j2 && j2.errors && j2.errors[0] && j2.errors[0].message) || "keine Daten").slice(0, 300)); continue; }
       z2.forEach(zz => { const v = by[zz.zoneTag]; if (!v) return;
         (zz.httpRequestsAdaptiveGroups || []).forEach(g => { const d = g.dimensions || {}, n = +g.count || 0; if (VISIT_BOT.test(String(d.userAgent || ""))) return;
           const ref = String(d.clientRefererHost || "").toLowerCase().replace(/^www\./, ""), own = ref && (ref === v.name || ref.endsWith("." + v.name)); if (own) return;
