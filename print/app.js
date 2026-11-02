@@ -1057,10 +1057,27 @@
     else c.sort(function (a, b) { return (b.best ? 1 : 0) - (a.best ? 1 : 0) || (b.pop || 0) - (a.pop || 0); });
     return c; }
   function fltd(l) { var f = S.flt || {}; return l.filter(function (p) { return (!f.best || p.best) && (!f.neu || isNew(p)) && (!f.des || p.designer); }); }
+  // KI-Produktsuche: findet Produkte, die anders heißen als gesucht (Claude am Server, Ergebnis je Anfrage gemerkt)
+  var AIS = {}, aiT = null, aiBusy = "";
+  function aiKick(q, local) {
+    clearTimeout(aiT); var k = q.toLowerCase(); if (AIS[k]) return aiPaint(q, local);
+    aiT = setTimeout(function () { if (S.q.trim() !== q) return; aiBusy = q; aiPaint(q, local);
+      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[k] = j && j.ok ? j : { keys: [] }; }, function () { AIS[k] = { keys: [] }; }).then(function () { aiBusy = ""; if (S.q.trim() === q) aiPaint(q, local); }); }, 650);
+  }
+  function aiPaint(q, local) {
+    var el = document.getElementById("psAi"), none = document.getElementById("psNone"); if (!el) return; var r = AIS[q.toLowerCase()];
+    if (!r) { el.innerHTML = aiBusy === q && !none ? '<p class="pd-muted ps-ai-busy"><span class="ps-spin"></span> KI sucht weitere passende Produkte …</p>' : ""; return; }
+    var ps = (r.keys || []).map(function (k) { return S.cat.products.filter(function (p) { return p.key === k; })[0]; }).filter(function (p) { return p && (local || []).indexOf(p.key) < 0; });
+    if (none) none.innerHTML = ps.length ? "Keine direkten Treffer für „" + esc(q) + "“ – aber das hier passt wahrscheinlich:" : 'Nichts gefunden – probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.';
+    el.innerHTML = ps.length ? '<h3 class="ps-grp-h">✨ Passend zu deiner Suche <span>' + esc(r.hint || "Vorschläge unserer KI") + '</span></h3><div class="ps-pcs">' + ps.map(cardSm).join("") + "</div>" : "";
+    if (ps.length && typeof fromObserve === "function") fromObserve();
+  }
   function gridHtml() {
     var qq = S.q.trim();
-    if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, ql); })); return l.length ? '<p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + '<div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
-      : '<p class="pd-muted" style="padding:20px 0">Nichts gefunden – probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.</p>'; }
+    if (qq) { var ql = qq.toLowerCase(), l = sorted(S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, ql); }));
+      if (l.length < 6 && qq.length >= 3) setTimeout(function () { aiKick(qq, l.map(function (p) { return p.key; })); }, 0);   // wenig Treffer → KI-Suche ergänzt
+      return (l.length ? '<p class="ps-cv-n">' + l.length + " Treffer für „" + esc(qq) + "“</p>" + '<div class="ps-pcs">' + l.map(cardSm).join("") + "</div>"
+      : '<p class="pd-muted" id="psNone" style="padding:20px 0">Keine direkten Treffer – ' + (qq.length >= 3 ? "unsere KI sucht passende Produkte …" : 'probier einen anderen Begriff, ' + catA("", "", "ps-link", "stöbere in den Kategorien") + ' oder <a class="ps-link" href="#" data-chat-open>frag uns</a>.') + "</p>") + '<div id="psAi"></div>'; }
     var g = S.group && grpOf(S.group);
     if (!g) {   // Übersicht: Bestseller + Kategorien mit Unterkategorien
       var top = S.cat.products.filter(function (p) { return p.best; }).sort(function (a, b) { return (b.pop || 0) - (a.pop || 0); }).slice(0, 10);
