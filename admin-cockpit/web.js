@@ -300,7 +300,11 @@ F.css(
  '.w-tools input.f{max-width:none}.w-hidem{display:none}'+
  '.w-pgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.w-pgrid .h{display:none}.w-pgrid b{grid-column:1/-1;margin-top:6px}.w-pgrid .lb{grid-column:1/-1}'+
 '}'+
-'@media (min-width:901px){.w-mets{display:contents}}'
+'@media (min-width:901px){.w-mets{display:contents}}'+
+/* Herkunft der Besucher */
+'.w-org{display:grid;gap:0}.w-org-r{padding:12px 4px;border-top:1px solid var(--line)}.w-org-r:first-child{border-top:0}.w-org-r>b{display:block;margin-bottom:6px}'+
+'.w-org .w-mets{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px}.w-org .w-m{text-align:left}.w-org .w-m i{display:block;font-size:11.5px;margin-bottom:2px}'+
+'.w-org .w-m.ok{color:var(--ok,#30d158)}.w-org-x{font-size:12.5px;margin-top:6px}.w-org-r.hd{background:var(--surface);border-radius:12px;padding:12px}'
 );
 
 function chip(act,k,cur,label,n){ return '<button class="chip" data-act="'+act+':'+k+'" aria-pressed="'+(cur===k)+'">'+label+(n!=null?' · '+n:'')+'</button>'; }
@@ -414,7 +418,21 @@ function vCloudflare(){
         '<div>'+(p?'<a class="w-chip" href="https://railway.com/project/'+encodeURIComponent(p.id)+'" target="_blank" rel="noopener" title="'+esc(p.status||"")+'"><span class="dot '+rwDot(p.status)+'"></span>'+esc(p.name)+'</a>':'<span class="muted">—</span>')+'</div>'+
         '<div class="w-mets"><span class="w-m'+(x.up?"":" bad")+'"><i>Antwort</i>'+(x.up?esc(x.ms)+" ms":"offline")+'</span><span class="w-m"><i>Requests</i>'+num(x.requests7d)+'</span><span class="w-m" title="'+esc(viewsTitle(x))+'"><i>Aufrufe</i>'+(x.views7d!=null?num(x.views7d):"…")+(x.print7d?'<small class="muted"> · Shop '+num(x.print7d)+'</small>':'')+'</span><span class="w-m'+((+x.threats7d)>0?" warn":"")+'"><i>Bedrohungen</i>'+num(x.threats7d)+'</span><span class="w-m"><i>Daten</i>'+(x.bytes7d!=null?bytes(x.bytes7d):"—")+'</span></div>'+
         '<div class="w-acts"><a class="btn" href="https://'+esc(x.name)+'" target="_blank" rel="noopener">öffnen ↗</a></div></div>';
-    }).join("")||'<div class="empty">'+(zs.length?"Keine Websites in dieser Ansicht.":"Keine aktiven Zonen gefunden.")+'</div>')+'</section>';
+    }).join("")||'<div class="empty">'+(zs.length?"Keine Websites in dieser Ansicht.":"Keine aktiven Zonen gefunden.")+'</div>')+'</section>'+originsHtml(list);
+}
+/* Herkunft der Besucher (7 Tage, Cloudflare-Verweise ohne Bots, ohne Klicks innerhalb der Website) – Wunsch Simon 02.11.2026 */
+var SRC_LBL=[["google","Google"],["ki","KI (ChatGPT & Co.)"],["suche","Andere Suchmaschinen"],["social","Social Media"],["web","Andere Websites"],["direkt","Direkt / App"]];
+var CC_DE={AT:"Österreich",DE:"Deutschland",CH:"Schweiz",IT:"Italien",LI:"Liechtenstein",NL:"Niederlande",US:"USA",GB:"Großbritannien",FR:"Frankreich",PL:"Polen",CZ:"Tschechien",HU:"Ungarn",SK:"Slowakei",SI:"Slowenien",HR:"Kroatien",BE:"Belgien",ES:"Spanien",SE:"Schweden",DK:"Dänemark",IE:"Irland",RO:"Rumänien",UA:"Ukraine",RU:"Russland",CN:"China",IN:"Indien",SG:"Singapur",CA:"Kanada",BR:"Brasilien",JP:"Japan",AU:"Australien",T1:"Tor-Netz",XX:"unbekannt"};
+function originsHtml(list){
+  var rows=(list||[]).filter(function(x){ return x.src7d&&Object.keys(x.src7d).length; }).sort(function(a,b){ return (+b.views7d||0)-(+a.views7d||0); });
+  if(!rows.length) return "";
+  var tot=(S&&S.totals&&S.totals.src7d)||{}, sum=function(o){ return SRC_LBL.reduce(function(a,k){ return a+(+o[k[0]]||0); },0); }, T=sum(tot);
+  var pct=function(v,t){ return t?Math.round(v/t*100)+" %":"–"; };
+  var cells=function(o){ var t=sum(o); return SRC_LBL.map(function(k){ var v=+o[k[0]]||0; return '<span class="w-m'+(k[0]==="ki"&&v?" ok":"")+'"><i>'+esc(k[1])+'</i>'+num(v)+'<small class="muted"> · '+pct(v,t)+'</small></span>'; }).join(""); };
+  return '<section class="panel"><div class="panel-h"><h2>Woher kommen die Besucher</h2><span class="muted">letzte 7 Tage · Einstiege von außen (Verweis der vorigen Seite), ohne Bots und ohne Klicks innerhalb der Website · Länder aus Cloudflare</span></div>'+
+    '<div class="w-org"><div class="w-org-r hd"><b>Alle Websites</b><div class="w-mets">'+cells(tot)+'</div></div>'+
+    rows.map(function(x){ var g=(x.geo7d||[]).map(function(c){ return esc(CC_DE[c[0]]||c[0])+" "+num(c[1]); }).join(" · "), r=(x.refs7d||[]).slice(0,6).map(function(c){ return esc(c[0])+" "+num(c[1]); }).join(" · ");
+      return '<div class="w-org-r"><b>'+esc(x.name)+'</b><div class="w-mets">'+cells(x.src7d)+'</div>'+(g?'<div class="muted w-org-x">Länder: '+g+'</div>':'')+(r?'<div class="muted w-org-x">Verweise: '+r+'</div>':'')+'</div>'; }).join("")+'</div></section>';
 }
 
 function techChips(){

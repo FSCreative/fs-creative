@@ -1235,9 +1235,20 @@ async function siteVisits(host, from, to) {
 let VIEWS = { at: 0, data: null, p: null };
 const viennaDay = d => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Vienna" }).format(d);
 function viennaStart(day) { for (const o of ["+01:00", "+02:00"]) { const t = new Date(day + "T00:00:00" + o); if (viennaDay(t) === day && viennaDay(new Date(t.getTime() - 1)) !== day) return t; } return new Date(day + "T00:00:00+01:00"); }
+// Herkunft eines Besuchs aus der Verweis-Domain: KI-Assistenten, Google, andere Suchmaschinen, Social Media, andere Websites, ohne Verweis = direkt/App
+function visitSource(ref) {
+  if (!ref) return "direkt";
+  if (/(^|\.)(chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com|you\.com|phind\.com|meta\.ai|mistral\.ai|deepseek\.com)$/.test(ref)) return "ki";
+  if (/(^|\.)google\.[a-z.]+$/.test(ref)) return "google";
+  if (/(^|\.)(bing\.com|duckduckgo\.com|ecosia\.org|yahoo\.com|qwant\.com|startpage\.com|search\.brave\.com|yandex\.[a-z]+|baidu\.com)$/.test(ref)) return "suche";
+  if (/(^|\.)(facebook\.com|fb\.com|instagram\.com|t\.co|x\.com|twitter\.com|linkedin\.com|lnkd\.in|tiktok\.com|pinterest\.[a-z.]+|youtube\.com|whatsapp\.com|threads\.net|reddit\.com|snapchat\.com)$/.test(ref)) return "social";
+  return "web";
+}
 async function buildSiteViews(zones) {
   const days = []; for (let i = 6; i >= 0; i--) days.push(viennaDay(new Date(Date.now() - i * 864e5)));
-  const by = {}; zones.forEach(z => { by[z.id] = { name: z.name, views: 0, print: 0, bots: 0, days: days.map(() => 0), ok: false }; });
+  const by = {}; zones.forEach(z => { by[z.id] = { name: z.name, views: 0, print: 0, bots: 0, days: days.map(() => 0), ok: false, src: {}, refs: {}, geo: {} }; });
+  // Herkunft (Wunsch Simon 02.11.2026): eigene Abfrage ohne Pfad (weniger Gruppen) – Verweis-Domain (Referer) und Land; Klicks innerhalb der eigenen Website zählen nicht
+  const q2 = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientRefererHost clientCountryName userAgent}}}}}';
   const q = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientRequestPath userAgent}}}}}';
   for (let di = 0; di < days.length; di++) {
     const a = viennaStart(days[di]), b = di < days.length - 1 ? viennaStart(days[di + 1]) : new Date(a.getTime() + 864e5);
@@ -1249,15 +1260,24 @@ async function buildSiteViews(zones) {
           if (/^\/(admin|wp-admin|wp-login\.php)(\/|$)/.test(p)) return;
           if (VISIT_BOT.test(String(g.dimensions.userAgent || ""))) { v.bots += n; return; }
           v.views += n; v.days[di] += n; if (/^\/print(\/|$)/.test(p)) v.print += n; }); });
+      const j2 = await cfGraphQL(q2, { tags: chunk.map(z => z.id), a: a.toISOString(), b: b.toISOString() }).catch(() => null);
+      const z2 = j2 && j2.data && j2.data.viewer && j2.data.viewer.zones; if (!Array.isArray(z2)) continue;
+      z2.forEach(zz => { const v = by[zz.zoneTag]; if (!v) return;
+        (zz.httpRequestsAdaptiveGroups || []).forEach(g => { const d = g.dimensions || {}, n = +g.count || 0; if (VISIT_BOT.test(String(d.userAgent || ""))) return;
+          const ref = String(d.clientRefererHost || "").toLowerCase().replace(/^www\./, ""), own = ref && (ref === v.name || ref.endsWith("." + v.name)); if (own) return;
+          const c = visitSource(ref); v.src[c] = (v.src[c] || 0) + n; if (ref) v.refs[ref] = (v.refs[ref] || 0) + n;
+          const cc = String(d.clientCountryName || ""); if (cc) v.geo[cc] = (v.geo[cc] || 0) + n; }); });
     }
   }
-  const byName = {}; Object.keys(by).forEach(id => { const v = by[id]; if (v.ok) byName[v.name] = { views: v.views, print: v.print || undefined, bots: v.bots, days: v.days }; });
+  const top = (o, k) => Object.keys(o).sort((x, y) => o[y] - o[x]).slice(0, k).map(x => [x, o[x]]);
+  const byName = {}; Object.keys(by).forEach(id => { const v = by[id]; if (v.ok) byName[v.name] = { views: v.views, print: v.print || undefined, bots: v.bots, days: v.days, src: v.src, refs: top(v.refs, 8), geo: top(v.geo, 6) }; });
   return { at: new Date().toISOString(), days, byName };
 }
 function applyViews(d) {   // Aufrufe in den Websites-Stand übernehmen (ohne Cloudflare neu zu fragen)
   const V = VIEWS.data; if (!d || !Array.isArray(d.sites) || !V) return d;
-  let tot = 0, any = false; d.sites.forEach(x => { const v = V.byName[x.name]; if (v) { x.views7d = v.views; x.viewsDays = v.days; if (v.print) x.print7d = v.print; tot += v.views; any = true; } });
-  if (any && d.totals) { d.totals.views7d = tot; d.totals.viewsAt = V.at; d.totals.viewsDays = V.days; }
+  let tot = 0, any = false; const src = {}; d.sites.forEach(x => { const v = V.byName[x.name]; if (v) { x.views7d = v.views; x.viewsDays = v.days; if (v.print) x.print7d = v.print; tot += v.views; any = true;
+    if (v.src) { x.src7d = v.src; x.refs7d = v.refs; x.geo7d = v.geo; Object.keys(v.src).forEach(k => { src[k] = (src[k] || 0) + v.src[k]; }); } } });
+  if (any && d.totals) { d.totals.views7d = tot; d.totals.viewsAt = V.at; d.totals.viewsDays = V.days; d.totals.src7d = src; }
   return d;
 }
 function refreshViews(zones) {
