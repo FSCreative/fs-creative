@@ -1983,6 +1983,7 @@
     if (t.matches("[data-country]")) { S.customer.country = t.value; if (S.customer.zip && !(t.value === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(S.customer.zip)) S.customer.zip = ""; loadPrice(); return; }
     if (t.id === "psFile" && t.files && t.files[0]) return uploadFile(t.files[0], "", twoUp() && t.files[1] ? t.files[1] : null);
     if (t.id === "psBack" && t.files && t.files[0]) return uploadBack(t.files[0]);
+    if (t.hasAttribute("data-pagein") && t.files && t.files[0]) return uploadPage(t.files[0], t.getAttribute("data-pagein"));
     if (t.id === "country" || t.id === "zip") { saveAddr(); reprice(); return; }
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
@@ -2029,7 +2030,7 @@
   }
   root.addEventListener("dragover", function (e) { var d = e.target.closest(".ps-drop"); if (d) { e.preventDefault(); d.classList.add("over"); } });
   root.addEventListener("dragleave", function (e) { var d = e.target.closest(".ps-drop"); if (d) d.classList.remove("over"); });
-  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-back")) return uploadBack(f); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
+  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-back")) return uploadBack(f); if (d.hasAttribute("data-page")) return uploadPage(f, d.getAttribute("data-page")); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
 
   // Upload: Druckdatei bzw. Logo für eine Position (logo = Positions-Slug)
   // Lade-Fenster beim Hochladen: Fortschritt, danach „wird geprüft“
@@ -2059,11 +2060,32 @@
   // Beidseitige Produkte: Vorder- und Rückseite (gefalzt: Außen- und Innenseite) auch als zwei Bilder/Dateien – der Server fügt sie zu einer 2-seitigen PDF zusammen
   function twoUp() { return sides() === 2 && !pagesNeeded() && !isLogo(); }
   function sideNames() { return S.price && S.price.folds ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"]; }
+  // Seiten der hochgeladenen Datei: fehlt die Rückseite → hinzufügen; sonst jede Seite einzeln ersetzen (beidseitig je Zeile, mehrseitig Seitennummer wählen)
+  var ACC_UP = ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
   function backHtml(f) {
-    var nm = sideNames()[1];
-    if (f.back && !S.backEdit) return '<div class="ps-back ok"><span>✓ ' + nm + ": <b>" + esc(f.backName || "hinzugefügt") + '</b></span><span><button type="button" class="ps-link" data-act="backedit">ersetzen</button>' + (S.fileFront ? ' · <button type="button" class="ps-link" data-act="backremove">entfernen</button>' : "") + "</span></div>";
-    if (!f.needBack && !(f.back && S.backEdit)) return "";
-    return '<label class="ps-drop small ps-back" data-back="1"><input type="file" id="psBack" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><b>' + nm + ' hinzufügen</b><small>PDF, JPG oder PNG – wird als Seite 2 eingefügt' + (f.back ? "" : ", sonst bleibt die " + nm + " weiß") + '.</small><div class="ps-prog" id="psBackProg" hidden><i></i></div></label>' + (f.back ? '<p class="ps-back-x"><button type="button" class="ps-link" data-act="backcancel">Abbrechen</button></p>' : "") + '<div id="psBackErr"></div>';
+    var nm = sideNames()[1], n = +f.pages || 0;
+    if (f.needBack) return '<label class="ps-drop small ps-back" data-back="1"><input type="file" id="psBack" accept="' + ACC_UP + '"><b>' + nm + ' hinzufügen</b><small>PDF, JPG oder PNG – wird als Seite 2 eingefügt, sonst bleibt die ' + nm + ' weiß.</small><div class="ps-prog" id="psBackProg" hidden><i></i></div></label><div id="psBackErr"></div>';
+    if (f.kind !== "upload" || n < 2 || isLogo()) return "";
+    if (twoUp() && n === 2) return '<div class="ps-pgs">' + [0, 1].map(function (i) { var src = f.pageNames && f.pageNames[i] ? f.pageNames[i] : f.name + " · Seite " + (i + 1);
+        return '<label class="ps-drop ps-pg" data-page="' + (i + 1) + '" title="Datei hierher ziehen oder klicken, um nur diese Seite zu ersetzen"><input type="file" data-pagein="' + (i + 1) + '" accept="' + ACC_UP + '"><span class="nm"><b>' + sideNames()[i] + "</b>" + esc(src) + '</span><span class="ps-link">ersetzen</span><div class="ps-prog" hidden><i></i></div></label>'; }).join("") +
+      (S.fileFront ? '<p class="ps-back-x"><button type="button" class="ps-link" data-act="backremove">' + nm + " entfernen</button></p>" : "") + '<div id="psPgErr"></div></div>';
+    return '<div class="ps-pgs"><div class="ps-pgx"><span>Einzelne Seite ersetzen: Seite</span><input type="number" id="psPgN" min="1" max="' + n + '" value="1" inputmode="numeric" aria-label="Seitennummer"><label class="ps-btn small">Datei wählen<input type="file" data-pagein="sel" accept="' + ACC_UP + '" hidden></label></div><div id="psPgErr"></div></div>';
+  }
+  function uploadPage(f, page) {
+    var cur = S.file; if (!cur) return; var n = +cur.pages || 0, pg = page === "sel" ? parseInt((document.getElementById("psPgN") || {}).value, 10) : +page, er = document.getElementById("psPgErr");
+    var lab = twoUp() && n === 2 ? sideNames()[pg - 1] : "Seite " + pg, fail = function (m) { upPop("close"); if (er) er.innerHTML = '<p class="ps-err">' + esc(m) + "</p>"; else toast(m, true); };
+    if (!(pg >= 1 && pg <= n)) return fail("Bitte eine Seite zwischen 1 und " + n + " wählen.");
+    if (f.size > 50 * 1024 * 1024) return fail("Die Datei ist größer als 50 MB.");
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return fail("Bitte PDF, JPG oder PNG hochladen.");
+    var x = new XMLHttpRequest(); x.open("POST", "/print/api/file/page");
+    x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
+    x.setRequestHeader("X-Print-File", cur.fileId); x.setRequestHeader("X-Print-Token", cur.token); x.setRequestHeader("X-Print-Page", String(pg));
+    upPop("up", 0, f.name);
+    x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
+    x.onload = function () { var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (!j.ok) return fail(j.error || lab + " konnte nicht ersetzt werden");
+      upPop("close"); S.file = j; S.previews = null; S.fileFront = null; render(); toast(j.blocked ? "Bitte die markierten Punkte prüfen." : lab + " ersetzt ✓"); pollPreflight(); };
+    x.onerror = function () { fail("Upload fehlgeschlagen – bitte erneut versuchen."); };
+    x.send(f);
   }
   function uploadBack(f) {
     var cur = S.file; if (!cur) return; var er = document.getElementById("psBackErr"), pr = document.getElementById("psBackProg"), nm = sideNames()[1];
