@@ -2423,6 +2423,9 @@ module.exports = function (D) {
           try { const n = normalizeSel(p, inp); n.low = true; const qt = await qRetry(p, n); rows.push({ copies: n.copies, gross: qt.gross, net: qt.net, link: startOk && (n.copies === startN || (p.kind !== "textile" && (p.tiers || []).indexOf(n.copies) > -1)) });
             if (!label) { label = (n.labels || []).filter(l => !/Druckverfahren|Zuschnitt|^Bündelung/i.test(l[0]) && !/^(ohne|nein|keine?)$/i.test(String(l[1]).trim())).map(l => l[1]).slice(0, 5).join(" · "); attrs = attrsOf(p, n); } } catch (e) {}
         }
+        // Menge, die eine größere Menge gleich teuer oder billiger schlägt (z. B. 250 Flyer im Digitaldruck teurer als 500 im Offset): nicht in Übersicht,
+        // Google-Feed und llms.txt – dort zählt der beste Preis je Menge; bestellbar bleibt sie im Konfigurator (Simon 02.11.2026)
+        for (let i = rows.length - 2; i >= 0; i--) if (rows.slice(i + 1).some(x => x.gross <= rows[i].gross + 0.004)) rows.splice(i, 1);
         if (!rows.length || (rows.length > 1 && rows.every(r => Math.abs(r.gross - rows[0].gross) < 0.01))) { if (rows.length > 1) log("Preisübersicht: " + key + " ausgelassen (gleicher Preis für alle Mengen)"); continue; }
         // weitere Formate für Google Shopping (CURATED.feedFormats): gleiche Startausführung, nur das Format anders – je Format die zwei kleinsten verlinkbaren Auflagen
         const cp = CURATED.find(c => c.key === key), fl = (cp && cp.feedFormats) || ((PUB_MORE.find(c => c.key === key) || {}).formats), szp = (p.props || []).find(x => x.slug === "size"), formats = [];
@@ -2433,6 +2436,7 @@ module.exports = function (D) {
             const inp = JSON.parse(JSON.stringify(base)); inp.sel.size = v; inp.copies = q;
             try { const n = normalizeSel(p, inp); if (n.sel.size !== v) break; n.low = true; const qt = await qRetry(p, n); fr.push({ copies: n.copies, gross: qt.gross, net: qt.net }); } catch (e) {}
           }
+          for (let i = fr.length - 2; i >= 0; i--) if (fr.slice(i + 1).some(x => x.gross <= fr[i].gross + 0.004)) fr.splice(i, 1);   // wie oben: größere Menge nicht teurer
           if (fr.length) formats.push({ v, label: clip(opt.title || opt.name || v, 60), from: sLabel, rows: fr });
         }
         const x = byKey[key]; items.push({ key, title: x.title, group: (x.cat && x.cat.mainName) || "", label: clip(label, 180), desc: clip(x.desc || "", 160), img: x.img || "", kind: p.kind, start: startN, attrs: attrs || undefined, rows, formats: formats.length ? formats : undefined });
