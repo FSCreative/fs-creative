@@ -2117,7 +2117,7 @@
     var start = S.mot.i, n = Math.min(files.length, S.mot.n - start), done = 0, fails = []; if (!n) { toast("Bitte PDF, JPG oder PNG (max. 50 MB) wählen.", true); return; }
     if (files.length > n) toast("Nur " + n + " von " + files.length + " Dateien passen ab Motiv " + (start + 1) + " – der Rest wurde nicht hochgeladen.", true);
     var one = function (k) {
-      if (k >= n) { motLoad(start); render(); upPop("close"); toast(fails.length ? fails.length + " Datei(en) nicht hochgeladen: " + fails.join(", ") : n + " Motive hochgeladen ✓", !!fails.length); return; }
+      if (k >= n) { var f0 = S.mot.files[start] || {}; S.mot.i = start; S.file = f0.file || null; S.previews = f0.previews || null; S.design = f0.design || null; S.mode = f0.mode || ""; render(); /* nicht motLoad: das würde den leeren Stand über Motiv 1 speichern */ upPop("close"); toast(fails.length ? fails.length + " Datei(en) nicht hochgeladen: " + fails.join(", ") : n + " Motive hochgeladen ✓", !!fails.length); return; }
       var f = files[k], idx = start + k; upPop("up", Math.round(k / n * 100), "Motiv " + (idx + 1) + " von " + S.mot.n + ": " + f.name);
       fetch("/print/api/upload", { method: "POST", credentials: "same-origin", body: f, headers: { "X-Print-Shop": "1", "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(f.name), "X-Print-Config": encodeURIComponent(JSON.stringify(cfgOf())) } })
         .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "Upload fehlgeschlagen");
