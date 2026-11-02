@@ -1201,6 +1201,26 @@ async function cfGet(pathq) {
   try { const r = await fetch("https://api.cloudflare.com/client/v4" + pathq, { headers: { Authorization: "Bearer " + CF.token }, signal: ctrl.signal }); return await r.json(); }
   catch (e) { return null; } finally { clearTimeout(t); }
 }
+async function cfSend(method, pathq, body) {
+  if (!CF.token) return null;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
+  try { const r = await fetch("https://api.cloudflare.com/client/v4" + pathq, { method, headers: { Authorization: "Bearer " + CF.token, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal }); return await r.json(); }
+  catch (e) { return { success: false, errors: [{ message: e.message }] }; } finally { clearTimeout(t); }
+}
+// Cloudflare Web Analytics (Wunsch Simon 02.11.2026: echte Besucher + Herkunft, ohne Cookies): je aktiver Zone eine RUM-Site mit Auto-Install
+// (Cloudflare fügt das Skript selbst ein – an den Websites ändert sich nichts). Nur auf Simons Klick bzw. Aufruf; vorhandene Sites bleiben.
+async function rumSetup() {
+  const zj = await cfGet("/zones?status=active&per_page=50"); const zones = (zj && zj.result) || []; if (!zones.length) throw new Error((zj && zj.errors && zj.errors[0] && zj.errors[0].message) || "keine Zonen");
+  const acc = zones[0].account && zones[0].account.id, out = [];
+  const lj = await cfGet("/accounts/" + acc + "/rum/site_info/list?per_page=100"); if (!lj || !lj.success) throw new Error("Web Analytics nicht erlaubt: " + ((lj && lj.errors && lj.errors[0] && lj.errors[0].message) || "keine Antwort") + " – der Cloudflare-Schlüssel braucht die Berechtigung „Account · Account Analytics/Web Analytics: Bearbeiten“");
+  const have = new Set(((lj.result) || []).map(x => x.ruleset && x.ruleset.zone_tag || x.zone_tag).filter(Boolean));
+  for (const z of zones) {
+    if (have.has(z.id)) { out.push({ zone: z.name, status: "schon aktiv" }); continue; }
+    const r = await cfSend("POST", "/accounts/" + acc + "/rum/site_info", { zone_tag: z.id, auto_install: true });
+    out.push({ zone: z.name, status: r && r.success ? "aktiviert" : "Fehler: " + String((r && r.errors && r.errors[0] && r.errors[0].message) || "unbekannt").slice(0, 160) });
+  }
+  return { account: acc, zones: out };
+}
 async function cfGraphQL(query, variables) {
   if (!CF.token) return null;
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 10000);
@@ -4736,6 +4756,10 @@ async function handleAdmin(req, res, u, p) {
   }
   if (p === "/admin/api/version") {
     return send(res, 200, JSON.stringify({ build: cockpitVer().all, deploy: String(BUILD).slice(0, 12) }), TYPES[".json"], { "Cache-Control": "no-store" });
+  }
+  if (p === "/admin/api/web/rum" && req.method === "POST") {   // Cloudflare Web Analytics für alle Zonen einrichten (Auto-Install)
+    try { return send(res, 200, JSON.stringify(Object.assign({ ok: true }, await rumSetup())), TYPES[".json"], { "Cache-Control": "no-store" }); }
+    catch (e) { return send(res, 200, JSON.stringify({ ok: false, error: String(e.message || e).slice(0, 300) }), TYPES[".json"]); }
   }
   if (p === "/admin/api/sites") {
     try { const s = await sitesSnapshot(u.searchParams.get("force") === "1"); return sendGz(req, res, 200, JSON.stringify(s), TYPES[".json"], { "Cache-Control": "no-store" }); }
