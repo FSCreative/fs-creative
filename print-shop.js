@@ -133,6 +133,21 @@ const PUB_MORE = [
   { key: "beachflags", formats: ["beach_flag_medium", "beach_flag_large"] }, { key: "pole-flags" }, { key: "pavement-board" }, { key: "real-estate-signs" },
   { key: "cardboard-roller-banners" }, { key: "framed-posters" }, { key: "canvas-print" }, { key: "acrylic-photo-prints" }, { key: "display-standing" }, { key: "zipper-walls" },
   { key: "cotton-tote-bags-long" }, { key: "paper-bag" }, { key: "basic-advent-calendar" }, { key: "playing-cards" }, { key: "tumbler-with-handle" }, { key: "hoodie-premium-1" }, { key: "t-shirt-premium-1" },
+  // Mitbewerber-Vergleich 02.11.2026 (Recherche je Kategorie)
+  { key: "hoodie-budget-2" }, { key: "hoodie-premium-4" }, { key: "polo-premium-2" }, { key: "sweater-basic-1" }, { key: "sweater-budget-2" }, { key: "sweater-premium-1" },
+  { key: "sweater-premium-8" }, { key: "t-shirt-budget-3" }, { key: "t-shirt-premium-11" }, { key: "t-shirt-premium-12" }, { key: "t-shirt-premium-7" }, { key: "zipped-hoodie-premium-2" },
+  { key: "towel" }, { key: "guest-towels" }, { key: "washcloth" }, { key: "sport-towels" }, { key: "beach-towels" }, { key: "big-towels" },
+  { key: "towel-all-over-1" }, { key: "knitted-hats-with-patch" }, { key: "fruit-gummy" }, { key: "mentos-rolls" }, { key: "coffee-cookies" }, { key: "cinnamon-stars" },
+  { key: "filled-gingerbread-heart" }, { key: "chocolate-mountain-cookies" }, { key: "tic-tac-wrapped" }, { key: "dextro-energy" }, { key: "fruit-gummy-juice-bears" }, { key: "chocolate-bar-large" },
+  { key: "tic-tac-box" }, { key: "oreo-keks" }, { key: "prince-cookies" }, { key: "salty-mini-pretzels" }, { key: "m-and-m-bag" }, { key: "tyvek-wristbands" },
+  { key: "stamps_trodat_printy" }, { key: "stamps_trodat_proffesional" }, { key: "stamps_colop_printer" }, { key: "stamps_colop_classic" }, { key: "stamps" }, { key: "buttons" },
+  { key: "puzzles" }, { key: "puzzles-1000" }, { key: "colour-mix-sunglasses" }, { key: "subyard-safety" }, { key: "subyard-buckle" }, { key: "subyard-safety-buckle" },
+  { key: "canvas-print-floating-frame" }, { key: "fut-cards" }, { key: "photo-aluminium" }, { key: "photo-decotex" }, { key: "photo-cardboard" }, { key: "photo-dibond" },
+  { key: "photo-foamed-pvc" }, { key: "photo-poster" }, { key: "wall-circles" }, { key: "splashback" }, { key: "pvc-510" }, { key: "wall-signs" },
+  { key: "vertical-pole-flags" }, { key: "waterproof-posters" }, { key: "pavement-sign-posters" }, { key: "rally-shield" }, { key: "nameplates" }, { key: "card-sets" },
+  { key: "printed-binder-filler" }, { key: "with-compliment-cards" }, { key: "coffee-paper-cups" }, { key: "cardboard-shipping-envelopes" }, { key: "popcorn-boxes" }, { key: "stapled-wall-calendar" },
+  { key: "abri-posters" }, { key: "neon-posters" }, { key: "magnet-posters" }, { key: "scratch-off" }, { key: "lightbox-posters" }, { key: "food-wrappers" },
+  { key: "vinyl-cut-letters" }, { key: "burger-boxes" }, { key: "french-fries-boxes" }, { key: "cone-bags" }, { key: "lunch-boxes-with-handle" }, { key: "cube-boxes" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
 const CUR_V = require("crypto").createHash("sha1").update("16" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
