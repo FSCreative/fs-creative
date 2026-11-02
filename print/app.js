@@ -916,10 +916,23 @@
     qq = (qq || "").trim().toLowerCase(); if (!qq) return "";
     var l = S.cat.products.filter(function (p) { var c = p.cat || {}; return prodMatch(p, qq); })
       .sort(function (a, b) { var at = a.title.toLowerCase().indexOf(qq) === 0, bt = b.title.toLowerCase().indexOf(qq) === 0; return (bt - at) || ((b.pop || 0) - (a.pop || 0)); }).slice(0, 7);
+    var ai = qq.length >= 3 && l.length < 3 ? AIS[qq] : null, have = l.map(function (p) { return p.key; }), aiL = ai ? (ai.keys || []).map(function (k) { return S.cat.products.filter(function (p) { return p.key === k; })[0]; }).filter(function (p) { return p && have.indexOf(p.key) < 0; }).slice(0, 3 - Math.min(l.length, 3) || 3) : [];
+    var aiH = aiL.length ? '<div class="ps-sug-ai">✨ Passend zu deiner Suche' + (ai.hint ? " <small>" + esc(ai.hint) + "</small>" : "") + "</div>" + aiL.map(function (p) { return '<button type="button" class="ps-sug-it" role="option" data-prod="' + esc(p.key) + '"><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="">' : esc(p.icon)) + "</span><span><b>" + esc(p.title) + "</b><small>" + esc((p.cat && p.cat.mainName) || "") + "</small></span></button>"; }).join("")
+      : qq.length >= 3 && l.length < 3 && heroBusy === qq ? '<div class="ps-sug-ai"><span class="ps-spin"></span> KI sucht passende Produkte …</div>' : "";
+    if (!l.length && aiH) return aiH + '<button type="button" class="ps-sug-all" data-act="searchall">Alle Treffer für „' + esc(qq) + "“ anzeigen →</button>";
     if (!l.length) return '<div class="ps-sug-empty">Nichts gefunden – <button type="button" class="ps-link" data-nav="produkte">alle Produkte ansehen</button> oder <a class="ps-link" href="#" data-chat-open>frag uns im Chat</a>.</div>';
     return l.map(function (p, i) { return '<button type="button" class="ps-sug-it" role="option" data-prod="' + esc(p.key) + '"' + (i === 0 ? ' aria-selected="true"' : "") + '><span class="im">' + (imgOk(p.img) ? '<img src="' + esc(p.img) + '" alt="">' : esc(p.icon)) + "</span><span><b>" + esc(p.title) + "</b><small>" + esc((p.cat && p.cat.mainName) || p.desc || "") + "</small></span>" + (p.best ? '<span class="ps-badge sm">★</span>' : "") + "</button>"; }).join("") +
-      '<button type="button" class="ps-sug-all" data-act="searchall">Alle Treffer für „' + esc(qq) + "“ anzeigen →</button>";
+      aiH + '<button type="button" class="ps-sug-all" data-act="searchall">Alle Treffer für „' + esc(qq) + "“ anzeigen →</button>";
   }
+  // Startseite: wenig Treffer → nach kurzer Pause KI fragen (gleiche Merkliste wie die Produktsuche), dann die Vorschläge neu zeichnen
+  var heroT = null, heroBusy = "";
+  function heroAi(v) {
+    var q = String(v || "").trim().toLowerCase(); clearTimeout(heroT); if (q.length < 3 || AIS[q]) return;
+    var l = S.cat.products.filter(function (p) { return prodMatch(p, q); }); if (l.length >= 3) return;
+    heroT = setTimeout(function () { var inp = document.getElementById("psHomeQ"); if (!inp || inp.value.trim().toLowerCase() !== q) return; heroBusy = q; heroPaint();
+      api("/print/api/ai/search", { q: q }).then(function (j) { AIS[q] = j && j.ok ? j : { keys: [] }; }, function () { AIS[q] = { keys: [] }; }).then(function () { heroBusy = ""; heroPaint(); }); }, 550);
+  }
+  function heroPaint() { var inp = document.getElementById("psHomeQ"), sg = document.getElementById("psSug"); if (!inp || !sg || document.activeElement !== inp && !inp.value) return; var hv = sugHtml(inp.value); sg.innerHTML = hv; sg.hidden = !hv; inp.parentNode.setAttribute("aria-expanded", String(!!hv)); }
   var SHORT = { "tshirt-basic": "T-Shirts", "tshirt-bio": "Bio-Shirts", "hoodie-bio": "Hoodies", "pvc-banner": "Banner", "mesh-banner": "Mesh-Banner", rollups: "Roll-ups" };
   var shortName = function (p) { return SHORT[p.key] || String(p.title).replace(/\s*\(.*\)\s*$/, ""); };
   var badDesc = function (p) { var d = txt(p.desc); return !d || d.toLowerCase() === String(p.title).toLowerCase() || /angebotsanfrage|nicht verfügbar|e-mail|@/i.test(d); };
@@ -2022,7 +2035,7 @@
     if (e.target.id === "psAdjS") { var ao = document.getElementById("psAdjO"); if (ao) ao.textContent = e.target.value + " %"; return; }
     if (e.target.classList && e.target.classList.contains("ps-ddq")) { var qv = e.target.value.trim().toLowerCase(); root.querySelectorAll(".ps-ddo,.ps-oc").forEach(function (o) { o.hidden = !!qv && o.getAttribute("data-q").indexOf(qv) < 0; }); root.querySelectorAll(".ps-ddg").forEach(function (g) { g.hidden = !!qv; }); var dsx = root.querySelector(".ps-dds"); if (dsx) dsx.classList.toggle("q", !!qv); return; }
     var t = e.target;
-    if (t.id === "psHomeQ") { var sg = document.getElementById("psSug"), hv = sugHtml(t.value); sg.innerHTML = hv; sg.hidden = !hv; t.parentNode.setAttribute("aria-expanded", String(!!hv)); return; }
+    if (t.id === "psHomeQ") { var sg = document.getElementById("psSug"), hv = sugHtml(t.value); sg.innerHTML = hv; sg.hidden = !hv; t.parentNode.setAttribute("aria-expanded", String(!!hv)); heroAi(t.value); return; }
     if (t.id === "psQ") { S.q = t.value; var g = document.getElementById("psGrid"); if (g) { g.innerHTML = gridHtml(); fromObserve(); } return; }
     if (t.hasAttribute("data-tsize")) { var n = Math.max(0, Math.min(5000, parseInt(t.value, 10) || 0)); if (n) S.textile.sizes[t.getAttribute("data-tsize")] = n; else delete S.textile.sizes[t.getAttribute("data-tsize")]; renderPrice(); loadPrice(); return; }
   });

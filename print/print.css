@@ -1886,3 +1886,5 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .ps-cfg .ps-more .ps-grid2>.ps-tile>:not(.ps-tl){grid-column:2}
 .ps-cfg .ps-more .ps-grid2>.ps-tile .ps-dd{padding:6px 0}
 @media(max-width:600px){.ps-cfg .ps-more .ps-grid2>.ps-tile{grid-template-columns:1fr;padding:10px 12px}.ps-cfg .ps-more .ps-grid2>.ps-tile>*{grid-column:1}}   /* wie die Zeilen darüber */
+.ps-sug-ai{padding:8px 12px 4px;font-size:12.5px;font-weight:600;color:var(--text-dim);border-top:1px solid var(--ps-line)}.ps-sug-ai small{display:block;font-weight:400;color:var(--text-faint);margin-top:2px}
+
