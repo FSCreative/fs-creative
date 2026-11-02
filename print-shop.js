@@ -2592,6 +2592,22 @@ module.exports = function (D) {
   // Kurzfassung für den Website-Chat (Systemkontext) und llms.txt
   function pubLines(max) { const P = PUB; if (!P || !P.items) return [];
     return P.items.slice(0, max || 40).map(it => "- " + it.title + (it.label ? " (" + it.label + ")" : "") + ": " + it.rows.map(r => r.copies.toLocaleString("de-AT") + " Stk. " + eurDe(r.gross)).join(" · ") + " – " + prodUrl(it.key, true)); }
+  // Website-Chat: passende Produkte zur Besucher-Frage mit ALLEN Optionen aus dem Konfigurator (KI-Suche, 7 Tage gecacht) – damit die Chat-KI konkret beraten kann
+  async function chatProducts(q) {
+    q = clip(String(q || "").replace(/\s+/g, " ").trim(), 120); if (q.length < 3 || !cfg().pcKey || !D.ki || !D.ki.printDesignOn || !D.ki.printDesignOn()) return "";
+    try {
+      const hit = AIS.get(q.toLowerCase()); let r = hit && Date.now() - hit.at < 7 * 864e5 ? hit.r : null;
+      if (!r) { r = await Promise.race([aiSearch(q), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000))]); AIS.set(q.toLowerCase(), { at: Date.now(), r }); }
+      const lines = [];
+      for (const k of (r.keys || []).slice(0, 4)) {
+        const prod = await findProduct(k).catch(() => null); if (!prod) continue;
+        const opts = (prod.props || []).map(pr => pr.title + ": " + pr.options.slice(0, 10).map(o => o.name).join(", ") + (pr.options.length > 10 ? " … (" + pr.options.length + " Optionen)" : "")).join("; ");
+        const fix = (prod.specs || []).map(x => x[0] + " " + x[1]).join(", ");
+        lines.push("- " + prod.title + " – " + prodUrl(k, true) + "\n  Optionen: " + clip(opts, 1100) + (fix ? "\n  Immer dabei: " + clip(fix, 300) : ""));
+      }
+      return lines.length ? "\n\nPassende Druckshop-Produkte zur Frage (live aus dem Konfigurator – genau diese Optionen sind bestellbar)" + (r.hint ? "; Tipp der Produktsuche: " + r.hint : "") + ":\n" + lines.join("\n") : "";
+    } catch (e) { return ""; }
+  }
   function chatPrices() { const L = pubLines(30); if (!L.length) return "";
     return "\n\nDruckshop-Preisliste (Stand " + dateDe(PUB.at) + "; Endpreise inkl. 20 % USt und Versand innerhalb Österreichs, Standard-Ausführung – andere Ausführungen und Mengen zeigt der Konfigurator sofort):\n" + L.join("\n"); }
   // KI-Assistenten (ChatGPT, Perplexity, Claude …): /llms.txt = Überblick mit Einstiegspreisen je Kategorie, Preisen beliebter Produkte und dem
@@ -3977,6 +3993,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

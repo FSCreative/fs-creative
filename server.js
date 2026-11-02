@@ -5402,7 +5402,7 @@ if (require.main === module) setInterval(() => SEO.tick().catch(() => {}), 30 * 
 // ── WhatsApp nur lesen (whatsapp.js): Cloud API mit Coexistence – Webhook /api/whatsapp/webhook, Cockpit „Chat“ → WhatsApp, Push-Thema „wa“ ──
 const WA = require("./whatsapp.js")({ send, DATA_DIR, secret: ADMIN_SECRET, publicBase: ORIGIN, background: require.main === module,
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
-const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""),
+const CHAT = require("./chat.js")({ DATA_DIR, send, sendGz, fin: FIN, ki: KI, leadTopics: LEAD_TOPICS, printPrices: () => (PRINT && PRINT.chatPrices ? PRINT.chatPrices() : ""), printProducts: q => (PRINT && PRINT.chatProducts ? PRINT.chatProducts(q) : Promise.resolve("")),
   saveLead: async (d, opt) => { const l = makeLead(d); const r = await saveLead(l, opt); return r.stored || r.mailed ? l : null; },
   push: (topic, msg) => process.env.DATABASE_URL ? PUSH.send(topic, msg) : Promise.resolve(0) });
 FIN_PROP.register("print-order", { label: "Druckaufträge (Print.com)", exec: it => PRINT.placeOrder(it.payload.orderId, "Zur Prüfung").then(o => ({ orderNumber: o.printcom.orderNumber })), valid: it => PRINT.proposalValid(it.payload.orderId) });

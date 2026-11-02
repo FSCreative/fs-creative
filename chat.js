@@ -38,6 +38,7 @@ const SYSTEM = [
   "- Antworte in der Sprache der Besucherin bzw. des Besuchers (Standard: Deutsch, per du). Kurz und freundlich: höchstens 2–4 Sätze, keine Listen mit mehr als 3 Punkten, kein Markdown.",
   "- Für Agentur-Projekte (Websites, Design, Fotobox …) nenne NIE Preise, Termine, Lieferzeiten oder Zusagen – das klärt Simon persönlich. Erfinde nichts; wenn du etwas nicht weißt, sag, dass Simon das beantwortet.",
   "- Ausnahme Online-Druckshop: Preise aus der mitgelieferten Druckshop-Preisliste darfst du nennen – immer mit Stand-Datum, als Endpreis inkl. 20 % USt und Versand in Österreich für die Standard-Ausführung, und mit Link zum Produkt bzw. zu www.fs-creative.at/print/preise. Andere Ausführungen/Mengen: auf den Konfigurator verweisen (Preis sofort). Behaupte keine Vergleiche mit anderen Druckereien.",
+  "- Druckfragen beantwortest du selbst und konkret: Bekommst du „Passende Druckshop-Produkte“ mitgeliefert, nenne das passende Produkt mit Link und die Optionen, die der Kunde dort wählen soll (z. B. Bohrloch, Gummiband, eigene Form gestanzt, Format). Gibt es etwas nicht genau so, schlag den Workaround vor. Übergib Druckfragen nicht an Simon, wenn der Konfigurator sie abdeckt; frag höchstens nach Menge/Format.",
   "- Finde heraus, was gebraucht wird (Art des Projekts, Umfang, ggf. Firma/Verein, gewünschter Zeitraum), aber frag nicht zu viel auf einmal (eine Frage pro Antwort).",
   "- Sammle für Simon: Name, E-Mail-Adresse ODER Telefonnummer, und das Anliegen. Frag freundlich danach, wenn es fehlt.",
   "- Sobald Kontakt und Anliegen da sind: bestätige, dass Simon sich persönlich meldet, meist innerhalb von 1–2 Werktagen.",
@@ -153,8 +154,10 @@ module.exports = function (D) {
     const msgs = await store.msgs(c.id, 0, 40), lastV = msgs.filter(m => m.from === "v").pop();
     if (!lastV || msgs[msgs.length - 1].from !== "v") return;           // nichts Neues zu beantworten
     const conv = history(msgs); if (!conv.length) return;
+    // Druckfrage? Passende Produkte mit allen Optionen live mitgeben (letzte zwei Besucher-Nachrichten als Suchbegriff)
+    let prodCtx = ""; if (D.printProducts) { const vq = msgs.filter(m => m.from === "v").slice(-2).map(m => m.text).join(" ").slice(-160); prodCtx = await D.printProducts(vq).catch(() => ""); }
     const state = (isOnline() ? "Simon ist gerade ONLINE und kann bei handoff sofort übernehmen. " : "Simon ist gerade NICHT online. ") + "Stand dieser Unterhaltung: Seite " + (c.page || "unbekannt") + ". Bisher erfasst – Name: " + (c.name || "–") + ", E-Mail: " + (c.email || "–") + ", Telefon: " + (c.phone || "–") + ", Anliegen: " + (c.request || "–") + ". " +
-      (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + (D.printPrices ? D.printPrices() : "");
+      (c.leadId ? "Die Anfrage wurde bereits an Simon übermittelt – nicht erneut nach Kontaktdaten fragen, nur noch Ergänzungen aufnehmen." : "Die Anfrage wurde noch nicht übermittelt.") + " Heute: " + today() + "." + (D.printPrices ? D.printPrices() : "") + prodCtx;
     day.n++; c.aiCount = (c.aiCount || 0) + 1; store.setMeta("chat_ai_day", day).catch(() => {});
     let x;
     try { x = await ki.chatReply(SYSTEM, state, conv, SCHEMA); }
