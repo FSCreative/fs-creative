@@ -60,7 +60,7 @@ function init(){
   var go=function(){ checkStatus(); }; if(W.requestIdleCallback) W.requestIdleCallback(go,{timeout:3000}); else setTimeout(go,1200);
   d.addEventListener("visibilitychange",function(){ if(!d.hidden&&isOpen) poll(); });
 }
-function label(){ if(!btn) return; btn.setAttribute("aria-label","Chat öffnen – "+(online?"Simon ist online":"Simon ist gerade offline, die KI nimmt deine Anfrage an")); dot.className="fscc-dot"+(online?" on":""); if(el.adot) el.adot.className="fscc-dot"+(online?" on":""); }
+function label(){ if(!btn) return; btn.setAttribute("aria-label","Chat öffnen – "+(online?"KI-Assistent, Simon ist online und übernimmt bei Bedarf":"KI-Assistent, Simon meldet sich persönlich")); dot.className="fscc-dot"+(online?" on":""); if(el.adot) el.adot.className="fscc-dot"+(online?" on":""); }
 function setBadge(n){ if(!btn) return; if(n>0&&!isOpen){ if(!badge){ badge=h("span","fscc-n"); badge.setAttribute("aria-hidden","true"); btn.appendChild(badge); } badge.textContent=n>9?"9+":String(n); } else if(badge){ badge.remove(); badge=null; } }
 function checkStatus(){
   var q=st.cid&&st.started?"?c="+st.cid+"&a="+(st.seen||0):"";
@@ -77,7 +77,7 @@ function build(){
   var t=h("div","fscc-t"); el.title=h("b"); el.sub=h("span"); t.appendChild(el.title); t.appendChild(el.sub);
   var x=h("button","fscc-x","×"); x.type="button"; x.setAttribute("aria-label","Chat schließen"); x.addEventListener("click",function(){ toggle(false); });
   hd.appendChild(av); hd.appendChild(t); hd.appendChild(x); p.appendChild(hd);
-  el.off=h("div","fscc-off","Ich bin gerade nicht online – aber meine KI kann deine Anfrage annehmen."); el.off.setAttribute("role","note"); p.appendChild(el.off);
+  el.off=h("div","fscc-off","Simon ist gerade nicht online – der KI-Assistent hilft dir weiter und nimmt deine Anfrage für ihn auf."); el.off.setAttribute("role","note"); p.appendChild(el.off);
   el.list=h("div","fscc-l"); el.list.setAttribute("role","log"); el.list.setAttribute("aria-live","polite"); el.list.setAttribute("aria-label","Nachrichten"); el.list.tabIndex=0; p.appendChild(el.list);
   el.pv=h("div","fscc-pv"); el.pv.appendChild(d.createTextNode("Mit dem Chat akzeptierst du unsere ")); var a=h("a",null,"Datenschutzerklärung"); a.href="/datenschutz"; el.pv.appendChild(a); el.pv.appendChild(d.createTextNode(".")); p.appendChild(el.pv);
   var f=el.form=h("form","fscc-f"); f.setAttribute("novalidate","");
@@ -94,7 +94,7 @@ function build(){
   d.body.appendChild(p); head();
 }
 function grow(){ el.in.style.height="auto"; el.in.style.height=Math.min(130,el.in.scrollHeight+2)+"px"; }
-function head(){ if(!built) return; el.title.textContent=online?"Simon ist online":"FS Creative"; el.sub.textContent=online?"Antwortet dir hier persönlich":"Gerade nicht online · KI-Assistent hilft weiter"; el.off.style.display=online?"none":""; label(); }
+function head(){ if(!built) return; el.title.textContent="FS Creative"; el.sub.textContent=online?"KI-Assistent antwortet sofort · Simon ist online und übernimmt bei Bedarf":"KI-Assistent antwortet sofort · Simon meldet sich persönlich"; el.off.style.display=online?"none":""; label(); }
 function toggle(on){
   if(on===isOpen) return; isOpen=on;
   if(on&&!built) build();
@@ -116,7 +116,7 @@ function add(arr){ var n=0; arr.forEach(function(m){ if(m.id>last){ msgs.push(m)
 function fmt(iso){ var t=new Date(iso); return isNaN(t)?"":t.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"}); }
 function paint(){
   if(!built) return; var L=el.list, atEnd=L.scrollHeight-L.scrollTop-L.clientHeight<60; L.textContent="";
-  if(!msgs.length) L.appendChild(h("div","fscc-hi",online?"Hallo! 👋 Wie kann ich dir helfen? Schreib mir einfach hier.":"Hallo! 👋 Erzähl kurz, worum es geht – Website, Grafik, Druck oder etwas anderes. Simon meldet sich persönlich."));
+  if(!msgs.length) L.appendChild(h("div","fscc-hi","Hallo! 👋 Ich bin der KI-Assistent von FS Creative – frag mich einfach (Website, Grafik, Druck …)."+(online?" Möchtest du lieber mit Simon sprechen? Schreib es einfach – er ist gerade online.":" Simon meldet sich bei Bedarf persönlich.")));
   msgs.forEach(function(m){ var b=h("div","fscc-m "+(m.from==="v"||m.from==="me"||m.from==="ki"||m.from==="sys"?m.from:"sys"));
     if(m.from==="me"||m.from==="ki") b.appendChild(h("span","who",m.from==="me"?"Simon":"KI-Assistent · Angaben unverbindlich"));
     b.appendChild(d.createTextNode(m.text)); if(m.from!=="sys") b.appendChild(h("small",null,fmt(m.at))); L.appendChild(b); });
@@ -132,7 +132,7 @@ function send(){
     sending=false; el.s.disabled=false;
     if(!j||!j.ok){ el.err.textContent=j&&j.error==="too_many"?"Zu viele Nachrichten – bitte kurz warten.":j&&j.error==="too_long"?"Bitte höchstens 2000 Zeichen.":"Senden hat nicht geklappt – bitte nochmal versuchen."; return; }
     el.in.value=""; grow(); st.started=1; if(nm) st.name=nm; save();
-    if(j.msg) add([j.msg]); if(!online) typing=true; paint(); schedule();
+    if(j.msg) add([j.msg]); typing=true; paint(); schedule();
   }).catch(function(){ sending=false; el.s.disabled=false; el.err.textContent="Keine Verbindung – bitte nochmal versuchen."; });
 }
 if(d.readyState==="loading") d.addEventListener("DOMContentLoaded",init); else init();

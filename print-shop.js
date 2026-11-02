@@ -154,7 +154,7 @@ const PUB_MORE = [
   { key: "polo-budget-9" }, { key: "t-shirt-premium-5" },
 ];
 // Prüfsumme der kuratierten Auswahl (+ Version der Zuordnungslogik): ändert sie sich (Deploy), wird der Katalog sofort neu eingelesen statt erst nach 24 h
-const CUR_V = require("crypto").createHash("sha1").update("17" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
+const CUR_V = require("crypto").createHash("sha1").update("18" + JSON.stringify(CURATED, (k, v) => v instanceof RegExp ? String(v) : v)).digest("hex").slice(0, 10);
 // Textil: Druckpositionen (Reihenfolge = Seitenreihenfolge der Logo-PDF) mit maximaler Druckfläche in mm; Druckarten vereinfacht
 const TEX_POS = [["positions_chest", "Brust links", [100, 100]], ["positions_chest_right", "Brust rechts", [100, 100]], ["positions_front", "Vorne groß", [280, 380]], ["positions_back", "Rücken", [280, 380]], ["positions_sleeve_left", "Ärmel links", [80, 80]], ["positions_sleeve_right", "Ärmel rechts", [80, 80]]];
 const TEX_METHODS = [{ key: "transfer", label: "Transferdruck (ab 1 Stk., fotorealistisch)", pm: "heat_transfer", val: "transfer", min: 1 }, { key: "screen1", label: "Siebdruck 1-farbig (günstiger ab 25 Stk.)", pm: "screen_printing", val: "1pms", min: 25 },
@@ -167,7 +167,7 @@ const OPT_EXTRA = /^(die_cut|spot_finish.*|variable_creasing_line|pallet_deliver
 const HIDDEN_PROPS = /^(copies|urgency|hidden|summary_image.*|brezo_article|product_weight|weight|article_number.*)$/;
 const REQ_ONE = /^(brezo_article|product_weight|weight|article_number.*)$/;   // interne Pflichtangaben, die Print.com mit ihrem einzigen Wert braucht (nie personalize!)
 // Zusatzleistungen, die Print.com als „Pflicht“ markiert, obwohl sie ohne Angabe gültig (und günstiger) sind – z. B. Briefpapier: Bohrlöcher/Ecken ohne „keine“-Option
-const EXTRA_PROPS = /^(drillholes|rounded_corners|perforation|sealed|punching|eyelets|creasing_lines?|numbering|personalize|die_cut)$/;   // personalize: Print.com führt sie teils als Pflicht mit nur „aus Excel“ – nie stillschweigend mitbestellen, „Ohne“ ist Vorauswahl
+const EXTRA_PROPS = /^(drillholes|rounded_corners|perforation|sealed|punching|eyelets|creasing_lines?|numbering|personalize|die_cut|bundle|standard_bundling|pallet_delivery|box_delivery|packaging_extras|spot_finish.*|variable_creasing_line)$/;   // personalize: Print.com führt sie teils als Pflicht mit nur „aus Excel“ – nie stillschweigend mitbestellen, „Ohne“ ist Vorauswahl
 const NONE_OPT = "__none", NONE_SLUG = /^(none|no|geen|no_.*|without.*|0)$/;
 const DEF_TIERS = { flat: [100, 250, 500, 1000, 2500], banner: [1, 2, 3, 5, 10], promo: [50, 100, 250, 500, 1000], textile: [] };
 const NICE_TIERS = [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
@@ -437,6 +437,7 @@ module.exports = function (D) {
   const coated = o => /bilderdruck|gloss|glänz|matt|silk|satin|(^|_)mc(_|$)/i.test(String(o.slug) + " " + String(o.name || "")) ? 1 : 0;
   // Größen klein → groß, Papiere leicht → schwer (ohne Angabe ans Ende, sonst Reihenfolge von Print.com)
   function sortOpts(slug, opts) {
+    if (OPT_EXTRA.test(slug)) { const no = o => o.slug === NONE_OPT || NONE_SLUG.test(String(o.slug)); opts = opts.filter(no).concat(opts.filter(o => !no(o))); }   // „Nein/Ohne“ zuerst
     const by = f => opts.map((o, i) => [o, i]).sort((a, b) => f(a[0]) - f(b[0]) || a[1] - b[1]).map(x => x[0]);
     if (opts.some(o => o.w && o.h)) return by(o => o.w && o.h ? o.w * o.h : 1e12);
     if (/^(material|paper)/.test(slug) && opts.some(weightOf)) return by(o => weightOf(o) || 1e9);
