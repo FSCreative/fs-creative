@@ -425,7 +425,7 @@ var SRC_LBL=[["google","Google"],["ki","KI (ChatGPT & Co.)"],["suche","Andere Su
 var CC_DE={AT:"Österreich",DE:"Deutschland",CH:"Schweiz",IT:"Italien",LI:"Liechtenstein",NL:"Niederlande",US:"USA",GB:"Großbritannien",FR:"Frankreich",PL:"Polen",CZ:"Tschechien",HU:"Ungarn",SK:"Slowakei",SI:"Slowenien",HR:"Kroatien",BE:"Belgien",ES:"Spanien",SE:"Schweden",DK:"Dänemark",IE:"Irland",RO:"Rumänien",UA:"Ukraine",RU:"Russland",CN:"China",IN:"Indien",SG:"Singapur",CA:"Kanada",BR:"Brasilien",JP:"Japan",AU:"Australien",T1:"Tor-Netz",XX:"unbekannt"};
 function originsHtml(list){
   var rows=(list||[]).filter(function(x){ return (x.src7d&&Object.keys(x.src7d).length)||(x.geo7d&&x.geo7d.length); }).sort(function(a,b){ return (+b.views7d||0)-(+a.views7d||0); });
-  var rum='<div class="w-org-r"><button class="btn" id="wRumSetup">Echte Besucher &amp; Herkunft aktivieren (Cloudflare Web Analytics)</button> <span class="muted small">einmalig · für alle Cloudflare-Websites · ohne Cookies · Cloudflare fügt das Messskript selbst ein</span><div id="wRumRes" class="muted small" style="margin-top:6px"></div></div>';
+  var rum='<div class="w-org-r"><button type="button" class="btn" id="wRumSetup" data-act="wrumsetup">Echte Besucher &amp; Herkunft aktivieren (Cloudflare Web Analytics)</button> <span class="muted small">einmalig · für alle Cloudflare-Websites · ohne Cookies · Cloudflare fügt das Messskript selbst ein</span><div id="wRumRes" class="muted small" style="margin-top:6px"></div></div>';
   if(!rows.length) return '<section class="panel"><div class="panel-h"><h2>Woher kommen die Besucher</h2></div><div class="w-org">'+rum+'</div></section>';
   var tot=(S&&S.totals&&S.totals.src7d)||{}, sum=function(o){ return SRC_LBL.reduce(function(a,k){ return a+(+o[k[0]]||0); },0); }, T=sum(tot);
   var pct=function(v,t){ return t?Math.round(v/t*100)+" %":"–"; };
@@ -609,11 +609,10 @@ F.view({id:"web",label:"Websites",short:"Web",icon:"web",order:60,
   render:vWeb,
   after:function(){ loadSites(false); if((!B&&!bBusy&&Date.now()-bTry>15000)||(bStale&&!bBusy)) loadBilling(); if(!R) loadCosts(false); }
 });
-})();
 /* Web Analytics einrichten – nur auf Simons Klick */
-document.addEventListener("click",function(e){ var b=e.target.closest&&e.target.closest("#wRumSetup"); if(!b) return;
+F.action("wrumsetup",function(){ var b=document.getElementById("wRumSetup"); if(!b) return;
   if(!confirm("Cloudflare Web Analytics für alle Cloudflare-Websites aktivieren?\n\nCloudflare fügt ein kleines Messskript ohne Cookies in die Seiten ein. Bitte die Datenschutzerklärungen um einen Satz dazu ergänzen.")) return;
   b.disabled=true; var o=document.getElementById("wRumRes"); if(o) o.textContent="wird eingerichtet …";
   fetch("/admin/api/web/rum",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:"{}"}).then(function(r){ return r.json(); }).then(function(j){ var o2=document.getElementById("wRumRes"); b.disabled=false; if(!o2) return;
-    o2.innerHTML=j.ok?j.zones.map(function(z){ return esc(z.zone)+": "+esc(z.status); }).join(" · "):'<span style="color:var(--bad,#ff453a)">'+esc(j.error||"Fehler")+'</span>'; }).catch(function(){ b.disabled=false; }); });
-
+    o2.innerHTML=j.ok?j.zones.map(function(z){ return esc(z.zone)+": "+esc(z.status); }).join(" · "):'<span style="color:var(--bad,#ff453a)">'+esc(j.error||"Fehler")+'</span>'; }).catch(function(){ b.disabled=false; }); });   /* über F.action wie alle Cockpit-Knöpfe */
+})();
