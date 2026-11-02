@@ -38,7 +38,7 @@ module.exports = function (D) {
     const positions = ((pj && pj.objects) || []).slice().sort((a, b) => (parseInt(a.positionNumber, 10) || 0) - (parseInt(b.positionNumber, 10) || 0)).map(x => {
       const q = x.quantity != null ? sevNum(x.quantity) : 1, rate = sevNum(x.taxRate), net = sevNum(x.priceNet != null ? x.priceNet : x.price);
       const gross = x.priceGross != null && sevNum(x.priceGross) ? sevNum(x.priceGross) : r2(net * (1 + rate / 100)), disc = Math.max(0, Math.min(100, sevNum(x.discount) || 0));
-      return { id: String(x.id), name: String(x.name || ""), text: String(x.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), qty: q, priceNet: r2(net), priceGross: r2(gross), taxRate: rate, discount: disc, sumGross: r2(gross * q * (1 - disc / 100)), grossPricing: x.grossPricing === true || x.grossPricing === "true" || undefined,
+      return { id: String(x.id), name: String(x.name || ""), text: String(x.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), qty: q, priceNet: r2(net), priceGross: r2(gross), taxRate: rate, discount: disc, sumGross: r2(gross * q * (1 - disc / 100)), unity: x.unity && x.unity.id ? String(x.unity.id) : "1", grossPricing: x.grossPricing === true || x.grossPricing === "true" || undefined,
         netExact: Math.abs(net * 100 - Math.round(net * 100)) < 1e-6 || undefined };   // Netto cent-genau gespeichert (sonst z. B. sevDesk-Brutto 10,00 → 8,3333: beim Bearbeiten brutto übernehmen, A10)
     });
     const status = parseInt(o.status, 10) || 0, date = sevDay(o.invoiceDate);

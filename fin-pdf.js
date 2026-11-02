@@ -116,7 +116,8 @@ module.exports = function (D) {
     const header = () => { doc.rect(L, y, R - L, 22).fill(DARK); doc.font("Helvetica-Bold").fontSize(8.2).fillColor("#fff");
       doc.text("Pos.", cx.pos, y + 7, { width: 26 }).text("Beschreibung", cx.desc, y + 7, { width: 240 }).text("Menge", cx.qty - 10, y + 7, { width: 66, align: "right" }).text("Einzelpreis", cx.unit, y + 7, { width: 56, align: "right" }).text("USt.", cx.tax, y + 7, { width: 30, align: "right" }).text("Gesamt", cx.sum, y + 7, { width: R - cx.sum - 8, align: "right" }); y += 22; };
     header();
-    const unitName = u => { const x = u && u.id && ctx.get("Unity", u.id); return x ? (x.translationCode === "UNITY_PIECE" ? "Stk" : (x.name || "")) : ""; };
+    const UNIT0 = { 1: "Stk", 2: "m²", 3: "m", 4: "kg", 5: "t", 6: "lfm", 7: "pauschal", 8: "m³", 9: "Std", 10: "km", 12: "Tag(e)", 13: "l" };   // sevDesk-Standardeinheiten, falls nicht übernommen
+    const unitName = u => { const x = u && u.id && ctx.get("Unity", u.id); return x ? (x.translationCode === "UNITY_PIECE" ? "Stk" : (x.name || "")) : (u && UNIT0[parseInt(u.id, 10)]) || ""; };
     pos.forEach((p, i) => {
       const q = +p.quantity || 0, U = unitOf(p, showNet), sum = U.sum, unitTxt = U.cents ? eur(U.unit) : eurX(U.unit);   // Einzelpreis passend zur Zeilensumme (A10)
       const disc = +p.discount || 0, txt = (strip(p.text) + (disc > 0 ? (strip(p.text) ? "\n" : "") + "abzüglich " + String(disc).replace(".", ",") + " % Rabatt" : "")).trim(), hName = doc.font("Helvetica-Bold").fontSize(9).heightOfString(p.name || "", { width: 268 }), hTxt = txt ? doc.font("Helvetica").fontSize(7.8).heightOfString(txt, { width: 268 }) + 2 : 0;

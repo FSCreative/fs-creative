@@ -1847,7 +1847,7 @@ async function sevCreateInvoice(pl) {
     invoicePosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
       const disc = Math.max(0, Math.min(100, parseFloat(i.discount) || 0));   // Rabatt je Position in % (z. B. aus Angebot/Schlussrechnung)
       // Bruttopreis maßgeblich (X3) außer bei netto eingegebenen Preisen (A10): sevPosPrice
-      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
+      return Object.assign({ objectName: "InvoicePos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: parseInt(i.unity, 10) > 0 ? parseInt(i.unity, 10) : 1, objectName: "Unity" }, taxRate: r }, disc ? { discount: disc } : {}); }),
     invoicePosDelete: null, takeDefaultAddress: false,
   };
   // Optional (KI-Rechnung): Steuerregel nach sevDesk Update 2.0 (z. B. Reverse Charge), Leistungszeitraum bis
@@ -1968,7 +1968,7 @@ async function sevCreateOffer(pl) {
       contact: { id: contactId, objectName: "Contact" }, contactPerson: { id: SEV_USER, objectName: "SevUser" },
       taxRate: taxRate, taxText: "Umsatzsteuer " + taxRate + "%", taxType: "default", currency: "EUR", showNet: true, smallSettlement: false },
     orderPosSave: items.map((i, k) => { const r = isFinite(parseFloat(i.taxRate)) ? parseFloat(i.taxRate) : 20; const q = parseFloat(i.qty) || 1;
-      return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: 1, objectName: "Unity" }, taxRate: r }); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
+      return Object.assign({ objectName: "OrderPos", mapAll: true, positionNumber: k, quantity: q }, sevPosPrice(i, r), { name: String(i.name).slice(0, 250), text: String(i.text || ""), unity: { id: parseInt(i.unity, 10) > 0 ? parseInt(i.unity, 10) : 1, objectName: "Unity" }, taxRate: r }); }),   // Bruttopreis maßgeblich (X3), netto eingegeben bleibt netto (A10)
     orderPosDelete: null,
   };
   const rule = /^\d{1,2}$/.test(String(pl.taxRule || "")) ? String(pl.taxRule) : "";
