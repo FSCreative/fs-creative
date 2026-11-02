@@ -2821,8 +2821,11 @@ module.exports = function (D) {
   function feedImg(u) {
     const m = String(u || "").match(/^https:\/\/images\.ctfassets\.net\/([^?#]+)/); if (!m || /\.svg$/i.test(m[1])) return "";
     const pth = PRINT_BILD.PREFIX + m[1]; if (SUPPLIER_RX.test(pth) || !PRINT_BILD.upstreamUrl(pth, "")) return "";
-    return SITE + pth + "?fm=jpg&w=1200&v=2";   // v=2: neue Bildadresse, damit Google die Bilder neu abruft (Merchant Center meldete am 31.10.2026 „Ungültige Bildcodierung“)
+    const bump = FEED_IMG_BUMP.find(x => pth.indexOf(x[0]) > -1);
+    return SITE + pth + "?fm=jpg&w=1200&v=" + (bump ? bump[1] : 2);   // v=2: neue Bildadresse, damit Google die Bilder neu abruft (Merchant Center meldete am 31.10.2026 „Ungültige Bildcodierung“)
   }
+  // Einzelne Bilder, die das Merchant Center mit „Bild nicht verarbeitet“ abgelehnt hat (Google merkt sich Bild-URLs bis 30 Tage): neue Adresse erzwingen
+  const FEED_IMG_BUMP = [["SS-Cruiser2.0STSU177", 3]];   // 02.11.2026 Hoodie Stanley/Stella Cruiser 2.0
   // Menge für den Feed: kleinste Zeile der Preisübersicht, die der Link genau so zeigt (Stand ab dieser Version in pubBuild gemerkt; ältere Stände: kuratierte Produkte nachrechnen)
   function feedPick(it, cat, s) {
     let start = it.start, ok = r => r.link === true;
