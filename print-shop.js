@@ -3090,6 +3090,16 @@ module.exports = function (D) {
   const { clientIp, hitCounter } = require("./client-ip.js");
   const HITS = hitCounter(20000);
   const limited = (bucket, ip, max, windowMs) => HITS.hit(bucket + "|" + ip, max, windowMs);
+  // Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): nur im Speicher, aktiv = Lebenszeichen in den letzten 70 s; nichts Persönliches, nichts gespeichert
+  const LIVE = new Map(), LIVE_MS = 70e3;
+  const liveGc = () => { const c = Date.now() - LIVE_MS; for (const [k, v] of LIVE) if (v.at < c) LIVE.delete(k); };
+  const STEP_DE = ["Übersicht", "Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
+  function liveState() {
+    const pages = {}, steps = {}, prods = {}; let cart = 0;
+    for (const v of LIVE.values()) { pages[v.path] = (pages[v.path] || 0) + 1; const st = v.view || STEP_DE[v.step] || "Übersicht"; steps[st] = (steps[st] || 0) + 1; if (v.prod) prods[v.prod] = (prods[v.prod] || 0) + 1; if (v.cart) cart++; }
+    const top = o => Object.keys(o).sort((a, b) => o[b] - o[a]).map(k => [k, o[k]]);
+    return { at: new Date().toISOString(), total: LIVE.size, cart, pages: top(pages).slice(0, 20), steps: top(steps), prods: top(prods).slice(0, 10) };
+  }
   // Rechenintensive PDF-Arbeit (Designer-PDF, Logos, Beschnitt, Upload-Prüfung): höchstens 2 gleichzeitig, weitere warten (max. 12 in der Schlange, 60 s)
   const PDF_SLOTS = { busy: 0, wait: [] };
   function pdfSlot() {
@@ -3263,6 +3273,13 @@ module.exports = function (D) {
         const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "brief", name, ext: ext.toLowerCase(), bytes: buf.length, createdAt: nowIso(), orderId: null, sha256: crypto.createHash("sha256").update(buf).digest("hex") };
         await store.putFile(meta, buf);
         return J(res, 200, { ok: true, id: meta.id, token: sig("brief", meta.id), name, bytes: buf.length });
+      }
+      if (p === "/print/api/hb" && req.method === "POST") {   // Live-Besucher (anonym: Zufalls-ID je Tab, kein Cookie) – Seite, Schritt, Produkt
+        if (limited("hb", ip, 240, 3600e3)) { req.resume(); return J(res, 204, {}); }
+        const b = await readJson(req, 1000).catch(() => ({})), sid = String(b.sid || "").replace(/[^a-z0-9]/gi, "").slice(0, 24);
+        if (sid.length >= 8) { if (b.bye) LIVE.delete(sid); else LIVE.set(sid, { at: Date.now(), path: clip(String(b.path || "/print").replace(/[?#].*$/, ""), 120), step: Math.max(0, Math.min(6, +b.step || 0)), prod: clip(String(b.prod || ""), 60), view: clip(String(b.view || ""), 20), cart: Math.max(0, Math.min(99, +b.cart || 0)) }); }
+        if (LIVE.size > 5000) liveGc();
+        return J(res, 200, { ok: true });
       }
       if (p === "/print/api/brief" && req.method === "POST") {
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
@@ -3801,6 +3818,7 @@ module.exports = function (D) {
         if (ab.op === "run" && cfg().pcKey) auditRun(+ab.max > 0 ? +ab.max : 0, ab.resume === true).catch(e => log("Sortiments-Prüfung:", e.message));
         return J(res, 200, Object.assign({ ok: true }, await auditState()));
       }
+      if (p === "/admin/api/print/live" && req.method === "GET") { liveGc(); return J(res, 200, Object.assign({ ok: true }, liveState())); }
       if (p === "/admin/api/print/margins") {   // Marge-Übersicht: GET = Stand (startet beim ersten Aufruf bzw. nach 12 h die Beispielrechnung), POST {op:"run"} = neu berechnen
         const mb = req.method === "POST" ? await readJson(req, 1000) : {};
         if (mb.op === "pub" && cfg().pcKey) { await pubBuild(); return J(res, 200, Object.assign(await marginsState(), { pub: (await pubState()) ? { at: PUB.at, n: PUB.items.length } : null })); }   // Preisübersicht jetzt neu erstellen

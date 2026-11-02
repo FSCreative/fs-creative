@@ -30,6 +30,7 @@ F.css('.pr-list{display:grid}.pr-row{display:grid;grid-template-columns:minmax(0
   '.pr-so{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.pr-so img{width:40px;height:40px;border-radius:8px;object-fit:cover;background:#fff}.pr-so .t{display:grid;min-width:0}.pr-so .t b{overflow-wrap:anywhere}.pr-so .t .muted{font-size:12px;overflow-wrap:anywhere}'+
   '.pr-so .a{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.pr-so .a select{width:auto;max-width:190px;padding:4px 8px}.pr-sw{display:inline-flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap}'+
   '@media(max-width:700px){.pr-so{grid-template-columns:40px minmax(0,1fr)}.pr-so .a{grid-column:1/-1;justify-content:flex-start}}.pr-grp{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-top:8px}'+
+  '.pr-livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#30d158;vertical-align:middle;margin-right:4px;animation:prpulse 1.6s infinite}@keyframes prpulse{0%{box-shadow:0 0 0 0 rgba(48,209,88,.55)}70%{box-shadow:0 0 0 8px rgba(48,209,88,0)}100%{box-shadow:0 0 0 0 rgba(48,209,88,0)}}'+
   '.pr-live{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;font-weight:600;font-size:13px}.pr-live.off{background:var(--warn-soft);color:var(--warn)}.pr-live.on{background:var(--ok-soft);color:var(--ok)}');
 function load(force){ if(busy) return; busy=true; F.api("/admin/api/print/state").then(function(j){ busy=false; at=Date.now(); ST=j&&j.ok?j:{ok:false,error:(j&&j.error)||"Fehler",orders:[]}; F.render(); }).catch(function(){ busy=false; ST={ok:false,error:"Nicht erreichbar",orders:[]}; F.render(); }); }
 function list(){ var o=(ST&&ST.orders)||[]; if(FILTER==="review") return o.filter(function(x){ return x.review; }); if(FILTER==="active") return o.filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }); if(FILTER==="done") return o.filter(function(x){ return ["shipped","delivered","rejected"].indexOf(x.status)>-1; }); return o; }
@@ -57,6 +58,7 @@ function render(){
     '<span class="pr-live '+(live?"on":"off")+'">'+(live?"● Shop öffentlich":"● Shop gesperrt")+'</span><span class="muted" style="flex:1 1 280px">'+(live?"/print ist für alle sichtbar und nimmt Bestellungen an; Links auf /druck, Startseite und Sitemap sind aktiv.":"Für Besucher noch nicht bestellbar. Du siehst /print als angemeldeter Admin als Vorschau.")+'</span>'+
     '<label class="pr-switch"><input type="checkbox" id="prLive"'+(live?" checked":"")+(ST.envLive?" disabled":"")+(!c.mollie&&!live?" disabled":"")+'> <b>Shop live</b></label>'+(ST.envLive?'<span class="muted small">(per Railway PRINT_SHOP_LIVE=1)</span>':(!c.mollie?'<span class="muted small">erst mit Mollie-Schlüssel</span>':''))+
     '<span class="tag '+(c.printcom?"ok":"bad")+'">Print.com '+(c.printcom?"verbunden":"fehlt")+'</span><span class="tag '+(c.mollie?"ok":"warn")+'">Mollie '+(c.mollie?(ST.mollieMode==="test"?"Testmodus":"eingerichtet"):"fehlt")+'</span>'+(c.db?'':'<span class="tag warn">ohne Datenbank (Dateispeicher)</span>')+'</div></section>';
+  stat+='<section class="panel" id="prLiveBox"><div class="panel-h"><h2><span class="pr-livedot"></span> Live im Shop</h2><span class="muted">echte Browser auf /print in der letzten Minute · anonym, ohne Cookies · alle 15 s</span></div><div class="panel-b" id="prLiveB">'+(PRLIVE?liveHtml(PRLIVE):'<span class="muted">wird geladen …</span>')+'</div></section>';
   var tabs='<div class="subnav">'+[["review","Zur Prüfung ("+ST.review+")"],["active","In Arbeit ("+(ST.orders||[]).filter(function(x){ return ["ordered","in_production","problem","pending_payment","payment_failed"].indexOf(x.status)>-1; }).length+")"],["done","Erledigt"],["all","Alle"],["kunden","Kunden"],["herkunft","Herkunft"],["gutscheine","Gutscheine"],["newsletter","Newsletter"],["sortiment","Sortiment"],["pruefung","Sortiments-Prüfung"],["marge","Marge"],["feedback","Feedback"],["settings","Preise & Einstellungen"]].map(function(t){ return '<button type="button" data-act="prf:'+t[0]+'" aria-current="'+(FILTER===t[0])+'">'+esc(t[1])+'</button>'; }).join("")+'</div>';
   if(FILTER==="settings") return head+stat+tabs+settings();
   if(FILTER==="sortiment") return head+stat+tabs+sortiment();
@@ -398,3 +400,20 @@ F.searcher(function(q){
 });
 F.view({id:"print",label:"Druckaufträge",short:"Druck",icon:"print",order:36,count:function(){ return ST&&ST.ok?ST.review:0; },render:render,after:function(){ if(!ST||Date.now()-at>60000) load(); }});
 })();
+/* Live-Besucher im Druckshop (Wunsch Simon 02.11.2026): /admin/api/print/live alle 15 s, solange die Druck-Seite offen ist */
+var PRLIVE=null;
+function liveHtml(L){
+  var pill=function(a){ return '<span class="tag">'+esc(a[0])+' <b>'+a[1]+'</b></span>'; };
+  return '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:baseline"><div><div class="muted small">gerade im Shop</div><div style="font-size:30px;font-weight:700">'+L.total+'</div></div>'+
+    '<div><div class="muted small">mit Warenkorb</div><div style="font-size:30px;font-weight:700">'+L.cart+'</div></div></div>'+
+    (L.total?'<div style="margin-top:10px"><div class="muted small">Schritt</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.steps.map(pill).join("")+'</div></div>'+
+    (L.prods.length?'<div style="margin-top:10px"><div class="muted small">Produkte</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.prods.map(pill).join("")+'</div></div>':'')+
+    '<div style="margin-top:10px"><div class="muted small">Seiten</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+L.pages.map(pill).join("")+'</div></div>':'<div class="muted" style="margin-top:8px">Gerade niemand im Shop.</div>');
+}
+function liveTick(){
+  var b=document.getElementById("prLiveB"); if(!b||document.hidden) return;
+  fetch("/admin/api/print/live",{credentials:"same-origin"}).then(function(r){ return r.json(); }).then(function(L){ if(!L||!L.ok) return; PRLIVE=L; var b2=document.getElementById("prLiveB"); if(b2) b2.innerHTML=liveHtml(L); }).catch(function(){});
+}
+setInterval(liveTick,15000); setTimeout(liveTick,800);
+document.addEventListener("visibilitychange",function(){ if(!document.hidden) liveTick(); });
+

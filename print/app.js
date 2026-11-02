@@ -10,6 +10,12 @@
   var H = { "Content-Type": "application/json", "X-Print-Shop": "1" };
   var S = { ddGrp: {}, ddCat: {}, cat: null, step: 1, prod: null, sel: {}, copies: 0, urgency: "standard", country: "AT", zip: "", ctype: "private", uid: "", uidRes: null, group: "", sub: "", q: "", gal: 0,
     custom: { w: 0, h: 0 }, textile: null, logos: {}, price: null, priceErr: "", priceBusy: false, file: null, previews: null, design: null, mode: "", customer: { country: "AT" }, payment: "", accept: {}, busy: false, err: "" };
+  // Live-Besucher fürs Cockpit: anonymes Lebenszeichen alle 25 s (Zufalls-ID nur für diesen Tab in sessionStorage, kein Cookie, nichts Persönliches)
+  (function () { var sid = ""; try { sid = sessionStorage.getItem("psSid") || ""; if (!sid) { sid = Math.random().toString(36).slice(2, 12) + Date.now().toString(36); sessionStorage.setItem("psSid", sid); } } catch (e) { sid = Math.random().toString(36).slice(2, 14) + "t"; }
+    var beat = function (bye) { if (document.hidden && !bye) return; try { fetch("/print/api/hb", { method: "POST", keepalive: true, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-Print-Shop": "1" },
+      body: JSON.stringify({ sid: sid, path: location.pathname, step: S.step || 0, prod: S.prod ? S.prod.title : "", view: S.view || "", cart: (S.cart || []).length, bye: !!bye }) }).catch(function () {}); } catch (e) {} };
+    setTimeout(beat, 1500); setInterval(beat, 25000); document.addEventListener("visibilitychange", function () { if (!document.hidden) beat(); }); window.addEventListener("pagehide", function () { beat(true); });
+  })();
   var STEPS = ["Produkt", "Ausführung", "Gestalten", "Warenkorb", "Lieferung", "Bezahlen"];
   // Herkunft (Wunsch Simon 30.10.2026): Vorseite + Einstieg dieses Seitenaufrufs – nur im Speicher, nichts im Browser abgelegt; geht nur mit der Bestellung an uns
   var ORIGIN = { ref: String(document.referrer || "").slice(0, 400), land: (location.pathname + location.search).slice(0, 400) };
