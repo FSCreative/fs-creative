@@ -1195,6 +1195,8 @@ module.exports = function (D) {
     // Preisanker: passender Mitbewerberpreis (brutto, AT) für diese Ausführung → knapp darunter; zwischen zwei Auflagen linear interpoliert
     const anc = (s.anchors || {})[prod.key], ancGross = (() => { if (!anc || !n.sel || (n.urgency && n.urgency !== "standard")) return 0;   // Textil: sig z. B. { druck: "transfer", positionen: "positions_front" }
       const a = anc.find(x => Object.keys(x.sig).every(k => String(n.sel[k]) === String(x.sig[k]))); if (!a) return 0;
+      // Zusatzoptionen (Stanzung, Veredelung, Bohrloch, Bündelung …), die der Vergleich nicht kennt: Vergleichspreis gilt nicht (sonst drückt der Standardpreis z. B. die Stanzung auf die Mindestmarge)
+      if (Object.keys(n.sel).some(k => (OPT_EXTRA.test(k) || EXTRA_PROPS.test(k)) && !(k in a.sig) && n.sel[k] != null && String(n.sel[k]) !== NONE_OPT && !NONE_SLUG.test(String(n.sel[k])))) return 0;
       const c = +n.copies, at = t => { const cs = Object.keys(t || {}).map(Number).sort((x, y) => x - y); if (!cs.length || c < cs[0] || c > cs[cs.length - 1]) return 0;
         if (t[c]) return t[c]; const hi = cs.find(x => x > c), lo = cs.filter(x => x < c).pop(); return t[lo] + (t[hi] - t[lo]) * (c - lo) / (hi - lo); };
       if (a.area) {   // Wunschgröße: Preis über die Fläche interpolieren (gleiche Fläche → günstigster Mitbewerberpreis), nur innerhalb der verglichenen Flächen
