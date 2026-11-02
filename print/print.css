@@ -1879,8 +1879,8 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .ps-mtabs{flex-wrap:wrap}
 
 /* „Weitere Optionen“ wie die Zeilen darüber: eine Liste, alle Zeilen volle Breite und gleich gebaut (alle Produkte, Simon 02.11.2026) */
-.ps-cfg .ps-more .ps-grid2{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:1fr;gap:0;margin-top:8px;border:1px solid var(--ps-line);border-radius:14px;background:var(--ps-card);overflow:visible}
-.ps-cfg .ps-more .ps-grid2>.ps-tile{display:grid;grid-template-columns:184px minmax(0,1fr);column-gap:16px;row-gap:4px;align-items:center;min-height:52px;padding:8px 16px;border:0;border-top:1px solid var(--ps-line);border-radius:0;background:transparent;grid-column:auto}
+.ps-cfg .ps-more .ps-grid2{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:auto;gap:0;margin-top:8px;border:1px solid var(--ps-line);border-radius:14px;background:var(--ps-card);overflow:visible}
+.ps-cfg .ps-more .ps-grid2>.ps-tile{display:grid;grid-template-columns:184px minmax(0,1fr);column-gap:16px;row-gap:4px;align-items:center;min-height:74px;padding:8px 16px;border:0;border-top:1px solid var(--ps-line);border-radius:0;background:transparent;grid-column:auto}
 .ps-cfg .ps-more .ps-grid2>.ps-tile:first-child{border-top:0}
 .ps-cfg .ps-more .ps-grid2>.ps-tile>.ps-tl{grid-column:1;font-size:14px;font-weight:500;color:var(--text-dim);align-self:center;padding-top:0}
 .ps-cfg .ps-more .ps-grid2>.ps-tile>:not(.ps-tl){grid-column:2}
