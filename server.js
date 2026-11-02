@@ -1246,9 +1246,9 @@ function visitSource(ref) {
 }
 async function buildSiteViews(zones) {
   const days = []; for (let i = 6; i >= 0; i--) days.push(viennaDay(new Date(Date.now() - i * 864e5)));
-  const by = {}; zones.forEach(z => { by[z.id] = { name: z.name, views: 0, print: 0, bots: 0, days: days.map(() => 0), ok: false, src: {}, refs: {}, geo: {} }; });
+  const by = {}; zones.forEach(z => { by[z.id] = { name: z.name, views: 0, print: 0, bots: 0, days: days.map(() => 0), ok: false, src: {}, refs: {}, geo: {}, asn: {} }; });
   // Herkunft (Wunsch Simon 02.11.2026): eigene Abfrage ohne Pfad (weniger Gruppen) – Verweis-Domain (Referer) und Land; Klicks innerhalb der eigenen Website zählen nicht
-  const q2 = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientCountryName userAgent}}}}}';
+  const q2 = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientCountryName clientASNDescription userAgent}}}}}';
   const q = 'query($tags:[String!],$a:Time!,$b:Time!){viewer{zones(filter:{zoneTag_in:$tags}){zoneTag httpRequestsAdaptiveGroups(limit:10000,filter:{datetime_geq:$a,datetime_lt:$b,requestSource:"eyeball",edgeResponseContentTypeName:"html",clientRequestHTTPMethodName:"GET",edgeResponseStatus:200}){count dimensions{clientRequestPath userAgent}}}}}';
   for (let di = 0; di < days.length; di++) {
     const a = viennaStart(days[di]), b = di < days.length - 1 ? viennaStart(days[di + 1]) : new Date(a.getTime() + 864e5);
@@ -1265,17 +1265,18 @@ async function buildSiteViews(zones) {
       z2.forEach(zz => { const v = by[zz.zoneTag]; if (!v) return;
         (zz.httpRequestsAdaptiveGroups || []).forEach(g => { const d = g.dimensions || {}, n = +g.count || 0; if (VISIT_BOT.test(String(d.userAgent || ""))) return;
           // Verweis-Domain (clientRefererHost) gibt es im Cloudflare-Gratistarif nicht – nur Länder; Herkunft dafür über visitSource, sobald eine Quelle sie liefert
+          const asn = String(d.clientASNDescription || ""); if (asn) v.asn[asn] = (v.asn[asn] || 0) + n;
           const cc = String(d.clientCountryName || ""); if (cc) v.geo[cc] = (v.geo[cc] || 0) + n; }); });
     }
   }
   const top = (o, k) => Object.keys(o).sort((x, y) => o[y] - o[x]).slice(0, k).map(x => [x, o[x]]);
-  const byName = {}; Object.keys(by).forEach(id => { const v = by[id]; if (v.ok) byName[v.name] = { views: v.views, print: v.print || undefined, bots: v.bots, days: v.days, src: v.src, refs: top(v.refs, 8), geo: top(v.geo, 6) }; });
+  const byName = {}; Object.keys(by).forEach(id => { const v = by[id]; if (v.ok) byName[v.name] = { views: v.views, print: v.print || undefined, bots: v.bots, days: v.days, src: v.src, refs: top(v.refs, 8), geo: top(v.geo, 6), asn: top(v.asn, 12) }; });
   return { at: new Date().toISOString(), days, byName };
 }
 function applyViews(d) {   // Aufrufe in den Websites-Stand übernehmen (ohne Cloudflare neu zu fragen)
   const V = VIEWS.data; if (!d || !Array.isArray(d.sites) || !V) return d;
   let tot = 0, any = false; const src = {}; d.sites.forEach(x => { const v = V.byName[x.name]; if (v) { x.views7d = v.views; x.viewsDays = v.days; if (v.print) x.print7d = v.print; tot += v.views; any = true;
-    if (v.src) { x.src7d = v.src; x.refs7d = v.refs; x.geo7d = v.geo; Object.keys(v.src).forEach(k => { src[k] = (src[k] || 0) + v.src[k]; }); } } });
+    if (v.src) { x.src7d = v.src; x.refs7d = v.refs; x.geo7d = v.geo; x.asn7d = v.asn; Object.keys(v.src).forEach(k => { src[k] = (src[k] || 0) + v.src[k]; }); } } });
   if (any && d.totals) { d.totals.views7d = tot; d.totals.viewsAt = V.at; d.totals.viewsDays = V.days; d.totals.src7d = src; }
   return d;
 }
