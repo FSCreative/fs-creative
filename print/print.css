@@ -1851,3 +1851,16 @@ html.light .xm-card:hover,html.light .xm-tile:hover .xm-tph{box-shadow:0 12px 28
 .print-page header.nav .brand:hover .mark img{transform:translateY(-3px) rotate(-3deg)}
 @media (prefers-reduced-motion:reduce){.print-page header.nav .brand .mark img{transition:none}.print-page header.nav .brand:hover .mark img{transform:none}}
 html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne-kopf-dunkel.png)}
+/* Druckdaten-Anforderungen in der schmalen rechten Spalte (nach dem Upload): Skizze oben, Liste darunter */
+.ps-upv-r .ps-req-b{grid-template-columns:minmax(0,1fr);gap:14px}
+.ps-upv-r .ps-req-svg{width:170px}
+/* Rückseite / Innenseite hinzufügen */
+.ps-back{margin:10px 0}
+.ps-drop.small.ps-back{padding:14px;text-align:center}
+.ps-back.ok{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;padding:10px 12px;border-radius:12px;background:var(--surface);font-size:13.5px}
+.ps-back-x{margin:-4px 0 8px;font-size:13px;text-align:right}
+/* Produktvorschau: Vorder-/Rückseite umschalten */
+.ps-pmk-sd{display:flex;width:max-content;gap:2px;padding:2px;border-radius:999px;background:var(--surface);margin:0 auto 10px}
+.ps-pmk-sd button{border:0;background:transparent;font:inherit;font-size:12.5px;padding:4px 10px;border-radius:999px;cursor:pointer;color:var(--text-dim)}
+.ps-pmk-sd button[aria-pressed="true"]{background:var(--ps-card);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+

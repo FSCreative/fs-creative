@@ -1536,7 +1536,7 @@
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
     var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
-      var f = S.file, tab = S.pvTab === "pfv" ? "pfv" : "mock", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : []).join(" · ");
+      var f = S.file, tab = S.pvTab === "mock" ? "mock" : "pfv", sum = [p.title].concat(p.props.slice(0, 3).map(function (pr) { return labelOf(pr.slug); }).filter(Boolean)).concat(S.mot.n > 1 && motOk() && S.mot.split[S.mot.i] ? [(+S.mot.split[S.mot.i]).toLocaleString("de-AT") + " von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : S.copies ? [(+S.copies).toLocaleString("de-AT") + "\u00a0Stk."] : []).join(" · ");
       var ch = f.checks || [], okN = ch.filter(function (c) { return c.level === "ok"; }), top = ch.filter(function (c) { return c.level !== "ok"; }).concat(okN), shown = top.slice(0, 4), rest = top.slice(4);
       var left = '<div class="ps-upv-l">' + mtabs + "<h2>" + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) : f.kind === "design" ? "Deine Gestaltung" : "Deine Datei") + '</h2><p class="sub">' + esc(sum) + "</p>" +
         '<div class="ps-upv-st"><div class="ps-upv-tabs" role="tablist" aria-label="Vorschau"><button type="button" role="tab" data-pvtab="mock" aria-selected="' + (tab === "mock") + '">Auf dem Produkt</button><button type="button" role="tab" data-pvtab="pfv" aria-selected="' + (tab === "pfv") + '">Mit Druckrändern</button></div>' +
@@ -1546,7 +1546,7 @@
         (spec ? '<p class="ps-upv-spec">' + (p.dimsArea ? "Druckfläche " : "Endformat ") + esc(spec) + "</p>" : "") + "</div>";
       var right = '<aside class="ps-upv-r"><div class="ps-upv-file"><span class="ic">' + (f.kind === "design" ? "✎" : "PDF") + '</span><div><b>' + (f.kind === "design" ? "Deine Gestaltung" : esc(f.name)) + '</b><small>' + (f.pages || "?") + " Seite" + (f.pages === 1 ? "" : "n") + (f.bytes ? " · " + (f.bytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "") + '</small></div><div class="act">' +
         (f.kind === "design" ? '<button type="button" class="ps-link" data-act="editdesign">Bearbeiten</button>' : "") + '<a class="ps-link" target="_blank" rel="noopener" href="' + esc(fileUrl(f)) + '">PDF</a><button type="button" class="ps-link" data-act="clearfile">Andere Datei</button></div></div>' +
-        qualHtml(f) + adjHtml(f) + bleedFixHtml(f) +
+        backHtml(f) + qualHtml(f) + adjHtml(f) + bleedFixHtml(f) +
         '<div class="ps-upv-chk">' + checksHtml(shown) + (rest.length ? '<details><summary>Alle Prüfungen anzeigen (' + top.length + ")</summary>" + checksHtml(rest) + "</details>" : "") + '<div id="psPfvW"></div></div>' +
         (f.preflight && f.preflight.status === "PROCESSING" ? '<p class="pd-muted"><span class="ps-spin"></span> Die Datei wird zusätzlich geprüft …</p>' : "") + reqHtml(false) +
         (!f.blocked ? '<button type="button" class="ps-btn primary ps-upv-go" data-act="next3">' + (S.mot.n > 1 && motOk() ? "Weiter" : "In den Warenkorb") + " →</button>" : '<p class="ps-nav-hint">Bitte die rot markierten Punkte korrigieren.</p>') +
@@ -1555,7 +1555,7 @@
     } else if (S.mode === "upload") {
       h += (p.designer && sz ? '<div class="ps-modesw" role="group" aria-label="Wie möchtest du gestalten?"><button type="button" data-act="mode:design">🎨 Online gestalten</button><button type="button" class="on" aria-pressed="true">⬆️ Datei hochladen</button></div>'
         : '<p class="ps-modeback"><button type="button" class="ps-link" data-act="mode:">← Zurück zur Auswahl</button></p>');
-      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : sd === 2 ? " · 2 Seiten" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
+      h += '<label class="ps-drop" id="psDrop"><input type="file" id="psFile"' + (twoUp() ? " multiple" : "") + ' accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><span style="font-size:30px" aria-hidden="true">📄</span><b>Datei auswählen oder hierher ziehen</b><small>' + (sz ? "PDF (empfohlen), JPG oder PNG" : "Druckfertige PDF") + " · max. 50 MB" + (spec ? " · " + esc(spec) : "") + (pagesNeeded() ? " · " + pagesNeeded() + " Seiten als PDF" : sd === 2 ? " · 2 Seiten: eine 2-seitige PDF oder zwei Bilder (" + sideNames()[0] + " + " + sideNames()[1] + ")" : "") + '</small><div class="ps-prog" id="psProg" hidden><i></i></div></label><div id="psUpErr"></div>' + tplBtn() +
         reqHtml(true) + '<p class="ps-terms"><button type="button" class="ps-link" data-act="mode:">Zurück zur Auswahl</button></p>';
     } else {
       h += '<div class="ps-modes"><button type="button" class="ps-mode" data-act="mode:design"' + (p.designer && sz ? "" : " disabled") + '><span class="ic" aria-hidden="true">🎨</span><b>Online gestalten</b><span>' + (p.designer && sz ? "Nutze Vorlagen, designe selbst oder nutze gratis unsere KI – Beschnitt und Sicherheitsabstand sind eingezeichnet." : "Für dieses Produkt bitte eine Druckdatei hochladen.") + '</span></button>' +
@@ -1675,7 +1675,9 @@
   // ── Druck auf dem Produkt: Produktfoto mit Motiv/Logo in der Druckfläche (Textil, Werbeartikel, Taschen) bzw. Blatt-Vorschau (Papier) ──
   var PMK = {};
   function onPhoto() { var k = kind(); return (k === "textile" || k === "promo" || !!S.prod.dimsArea) && galImgs(S.prod).length > 0; }
-  function pmkHtml() { return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div><div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }
+  function pmkSides() { return !isLogo() && sides() === 2 && !(S.price && S.price.folds) && S.file && (S.file.pages || 0) >= 2 && !S.file.needBack; }
+  function pmkHtml() { var sd = pmkSides() ? '<div class="ps-pmk-sd" role="group" aria-label="Seite">' + sideNames().map(function (n, i) { return '<button type="button" data-pmkside="' + i + '" aria-pressed="' + ((S.pmkSide || 0) === i) + '">' + n + "</button>"; }).join("") + "</div>" : "";
+    return '<section class="ps-pmk" id="psPmk"><div class="ps-pmk-h"><b>So sieht dein Druck aus</b><span class="pd-muted">Vorschau – Farben &amp; Platzierung ungefähr</span></div>' + sd + '<div class="ps-pmk-c"><span class="ps-spin"></span> Vorschau wird erstellt …</div></section>'; }
   function fileUrl(f) { return "/print/api/file/" + encodeURIComponent(f.fileId) + "?t=" + encodeURIComponent(f.token) + "&pdf=1"; }
   // PDF-Seiten als Bild (Beschnitt abgeschnitten); transparent für Logos
   function pdfImgs(url, o) {
@@ -1698,11 +1700,11 @@
   function pmkPaint() {
     var box = document.getElementById("psPmk"); if (!box) return; var c = box.querySelector(".ps-pmk-c"), p = S.prod, fid = S.file ? S.file.fileId : "", jobs;
     if (isLogo()) jobs = logoPositions().filter(function (x) { return S.logos[x.slug] && !S.logos[x.slug].blocked; }).map(function (x) { return pmkSrc(S.logos[x.slug], true).then(function (a) { return a && { slug: x.slug, title: x.title, area: x.area, src: a[0] }; }); });
-    else if (S.file) { var sz = S.file.size || sizeOf(); jobs = sz ? [pmkSrc(S.file, false).then(function (a) { return a && { slug: "area", title: "Dein Druck", area: [sz.w, sz.h], src: a[0], pages: a, full: true }; })] : []; }
+    else if (S.file) { var sz = S.file.size || sizeOf(); jobs = sz ? [pmkSrc(S.file, false).then(function (a) { var i = pmkSides() && a && a[S.pmkSide || 0] ? S.pmkSide || 0 : 0; return a && { slug: "area", title: "Dein Druck", area: [sz.w, sz.h], src: a[i], pages: i ? [a[i], a[0]] : a, all: a, full: true }; })] : []; }
     if (!jobs || !jobs.length) { box.hidden = true; return; }
     Promise.all(jobs).then(function (L) { L = L.filter(Boolean); var b2 = document.getElementById("psPmk"); if (!b2 || (S.file ? S.file.fileId : "") !== fid) return;
       if (!L.length) { b2.hidden = true; return; }
-      if (!isLogo() && S.file && S.file.kind === "upload" && !S.previews && L[0].pages) S.previews = L[0].pages.map(function (u) { return thumbOf(u); }).filter(Boolean);   // Warenkorb-Vorschau für hochgeladene Dateien
+      if (!isLogo() && S.file && S.file.kind === "upload" && !S.previews && L[0].pages) S.previews = (L[0].all || L[0].pages).map(function (u) { return thumbOf(u); }).filter(Boolean);   // Warenkorb-Vorschau für hochgeladene Dateien
       b2.querySelector(".ps-pmk-c").innerHTML = onPhoto() ? photoMock(L) : sheetMock(L[0].pages || [L[0].src]); if (onPhoto()) pmkLayout(); });
   }
   function thumbOf(u) { try { var im = new Image(); im.src = u; if (!im.complete || !im.naturalWidth) return u.length < 90000 ? u : ""; var f = Math.min(1, 320 / im.naturalWidth), cv = document.createElement("canvas"); cv.width = Math.round(im.naturalWidth * f); cv.height = Math.round(im.naturalHeight * f); cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); return cv.toDataURL("image/jpeg", 0.8); } catch (e) { return ""; } }
@@ -1861,6 +1863,7 @@
       [].forEach.call(document.querySelectorAll(".ps-dimc"), function (b) { var on = b.getAttribute("data-dim") === S.custom.w + "x" + S.custom.h; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); loadPrice(); return; }
     var pvt = e.target.closest("[data-pvtab]"); if (pvt) { S.pvTab = pvt.getAttribute("data-pvtab"); [].forEach.call(root.querySelectorAll("[data-pvtab]"), function (b) { b.setAttribute("aria-selected", b === pvt); }); [].forEach.call(root.querySelectorAll("[data-pane]"), function (x) { x.hidden = x.getAttribute("data-pane") !== S.pvTab; }); return; }
     var pmi = e.target.closest("[data-pmkimg]"); if (pmi) { S.pmkImg = +pmi.getAttribute("data-pmkimg"); pmkPaint(); return; }
+    var pms = e.target.closest("[data-pmkside]"); if (pms) { S.pmkSide = +pms.getAttribute("data-pmkside"); [].forEach.call(root.querySelectorAll("[data-pmkside]"), function (b) { b.setAttribute("aria-pressed", b === pms); }); pmkPaint(); return; }
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
@@ -1920,7 +1923,10 @@
     if (k === "next2") { if (S.price && !S.priceBusy) { if (!S.file && S.mode === "upload") S.mode = ""; go(3); } else toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar – bitte eine andere Option wählen", true); return; }   // nur mit gültigem, aktuellem Preis weiter
     if (k === "clearlogo") { delete S.logos[v]; S.file = null; render(); return; }
     if (k === "mode") { if (v === "design") return openDesigner(); S.mode = v; if (v) stepPush(3, v); render(); return; }
-    if (k === "clearfile") { S.file = null; S.previews = null; S.mode = ""; render(); return; }
+    if (k === "clearfile") { S.file = null; S.fileFront = null; S.backEdit = false; S.previews = null; S.mode = ""; render(); return; }
+    if (k === "backedit") { S.backEdit = true; render(); return; }
+    if (k === "backcancel") { S.backEdit = false; render(); return; }
+    if (k === "backremove") { if (S.fileFront) { S.file = S.fileFront; S.fileFront = null; } S.backEdit = false; S.previews = null; S.pmkSide = 0; render(); return; }
     if (k === "editdesign") return openDesigner();
     if (k === "next3") { if (!S.file || S.file.blocked) return; if (!S.price || S.priceBusy) { toast(S.priceBusy ? "Einen Moment – der Preis wird noch berechnet" : "Diese Ausführung ist so nicht bestellbar", true); return; }
       if (S.mot.n > 1 && motOk()) { motSave(); var miss = -1; for (var mi = 0; mi < S.mot.n; mi++) { var mf = S.mot.files[mi]; if (!mf || !mf.file || mf.file.blocked) { miss = mi; break; } }
@@ -1975,7 +1981,8 @@
     if (t.hasAttribute("data-logo") && t.files && t.files[0]) return uploadFile(t.files[0], t.getAttribute("data-logo"));
     if (t.name === "urgency") { S.urgency = t.value; S.dday = ""; loadPrice(); return; }
     if (t.matches("[data-country]")) { S.customer.country = t.value; if (S.customer.zip && !(t.value === "DE" ? /^\d{5}$/ : /^\d{4}$/).test(S.customer.zip)) S.customer.zip = ""; loadPrice(); return; }
-    if (t.id === "psFile" && t.files && t.files[0]) return uploadFile(t.files[0]);
+    if (t.id === "psFile" && t.files && t.files[0]) return uploadFile(t.files[0], "", twoUp() && t.files[1] ? t.files[1] : null);
+    if (t.id === "psBack" && t.files && t.files[0]) return uploadBack(t.files[0]);
     if (t.id === "country" || t.id === "zip") { saveAddr(); reprice(); return; }
     if (t.id === "uid") { S.uid = t.value; S.uidRes = null; return; }
     if (t.name === "pay") { S.payment = t.value; render(); return; }
@@ -2022,7 +2029,7 @@
   }
   root.addEventListener("dragover", function (e) { var d = e.target.closest(".ps-drop"); if (d) { e.preventDefault(); d.classList.add("over"); } });
   root.addEventListener("dragleave", function (e) { var d = e.target.closest(".ps-drop"); if (d) d.classList.remove("over"); });
-  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) uploadFile(f, d.getAttribute("data-logo") || ""); });
+  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-back")) return uploadBack(f); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
 
   // Upload: Druckdatei bzw. Logo für eine Position (logo = Positions-Slug)
   // Lade-Fenster beim Hochladen: Fortschritt, danach „wird geprüft“
@@ -2034,7 +2041,7 @@
     m.innerHTML = '<div class="ps-pop-c ps-uppop-c"><div class="ps-uprings"><span class="ps-spin"></span></div><b>' + (up ? "Datei wird hochgeladen …" : "Datei wird geprüft …") + '</b><span class="pd-muted">' + esc(name || "") + '</span>' +
       '<div class="ps-upbar"><i style="width:' + (up ? pct : 100) + '%"></i></div><small>' + (up ? pct + " %" : "Format, Beschnitt, Seiten, Auflösung und Schriften – dauert nur ein paar Sekunden.") + "</small></div>";
   }
-  function uploadFile(f, logo) {
+  function uploadFile(f, logo, back) {
     var er = logo ? root.querySelector('[data-err="' + logo + '"]') : document.getElementById("psUpErr"); er.innerHTML = "";
     if (f.size > 50 * 1024 * 1024) { er.innerHTML = '<p class="ps-err">Die Datei ist größer als 50 MB.</p>'; return; }
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { er.innerHTML = '<p class="ps-err">Bitte PDF, JPG oder PNG hochladen.</p>'; return; }
@@ -2045,8 +2052,33 @@
     upPop("up", 0, f.name);
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
-    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos(); } else if (j.ok) { S.file = j; S.previews = null; S.design = null; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos(); } else if (j.ok) { S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
+    x.send(f);
+  }
+  // Beidseitige Produkte: Vorder- und Rückseite (gefalzt: Außen- und Innenseite) auch als zwei Bilder/Dateien – der Server fügt sie zu einer 2-seitigen PDF zusammen
+  function twoUp() { return sides() === 2 && !pagesNeeded() && !isLogo(); }
+  function sideNames() { return S.price && S.price.folds ? ["Außenseite", "Innenseite"] : ["Vorderseite", "Rückseite"]; }
+  function backHtml(f) {
+    var nm = sideNames()[1];
+    if (f.back && !S.backEdit) return '<div class="ps-back ok"><span>✓ ' + nm + ": <b>" + esc(f.backName || "hinzugefügt") + '</b></span><span><button type="button" class="ps-link" data-act="backedit">ersetzen</button>' + (S.fileFront ? ' · <button type="button" class="ps-link" data-act="backremove">entfernen</button>' : "") + "</span></div>";
+    if (!f.needBack && !(f.back && S.backEdit)) return "";
+    return '<label class="ps-drop small ps-back" data-back="1"><input type="file" id="psBack" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"><b>' + nm + ' hinzufügen</b><small>PDF, JPG oder PNG – wird als Seite 2 eingefügt' + (f.back ? "" : ", sonst bleibt die " + nm + " weiß") + '.</small><div class="ps-prog" id="psBackProg" hidden><i></i></div></label>' + (f.back ? '<p class="ps-back-x"><button type="button" class="ps-link" data-act="backcancel">Abbrechen</button></p>' : "") + '<div id="psBackErr"></div>';
+  }
+  function uploadBack(f) {
+    var cur = S.file; if (!cur) return; var er = document.getElementById("psBackErr"), pr = document.getElementById("psBackProg"), nm = sideNames()[1];
+    var fail = function (m) { upPop("close"); if (pr) pr.hidden = true; if (er) er.innerHTML = '<p class="ps-err">' + esc(m) + "</p>"; else toast(m, true); };
+    if (f.size > 50 * 1024 * 1024) return fail("Die Datei ist größer als 50 MB.");
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) return fail("Bitte PDF, JPG oder PNG hochladen.");
+    if (pr) pr.hidden = false;
+    var x = new XMLHttpRequest(); x.open("POST", "/print/api/file/back");
+    x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream"); x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
+    x.setRequestHeader("X-Print-File", cur.fileId); x.setRequestHeader("X-Print-Token", cur.token);
+    upPop("up", 0, f.name);
+    x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); if (pr) pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
+    x.onload = function () { var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (!j.ok) return fail(j.error || nm + " konnte nicht hinzugefügt werden");
+      upPop("close"); if (!S.fileFront) S.fileFront = cur.back ? null : cur; S.file = j; S.previews = null; S.backEdit = false; PMK = {}; render(); toast(j.blocked ? "Bitte die markierten Punkte prüfen." : nm + " hinzugefügt ✓"); pollPreflight(); };
+    x.onerror = function () { fail("Upload fehlgeschlagen – bitte erneut versuchen."); };
     x.send(f);
   }
   // alle Logos da → eine gemeinsame PDF (Seite je Position) auf dem Server

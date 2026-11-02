@@ -1508,7 +1508,10 @@ module.exports = function (D) {
     } catch (e) { log("Preflight:", e.message); }
     return meta;
   }
-  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null });
+  const fileView = m => ({ fileId: m.id, token: sig("file", m.id), name: m.name, kind: m.kind, pages: m.pages, size: m.size, bleed: m.bleed, checks: m.checks || [], blocked: (m.checks || []).some(c => c.level === "error"), preflight: m.preflight ? { status: m.preflight.status } : null, bytes: m.bytes, adj: m.kind === "upload" && !!m.src && !!m.size, place: m.place || null,
+    needBack: needBackOf(m), back: !!m.front, backName: m.front ? m.backName || "" : "" });
+  // Beidseitiges Produkt (4/4, gefalzt außen/innen), aber nur eine Seite hochgeladen (Bild oder 1-seitige PDF) → im Konfigurator „Rückseite hinzufügen“
+  const needBackOf = m => !!(m && m.kind === "upload" && !m.front && m.size && (+m.sides || 1) === 2 && (m.pages === 1 || (m.checks || []).some(c => /Rückseite bleibt weiß/.test(c.text || ""))));
   // Datei aufs Format setzen: „fill“ = füllt die Seite inkl. Beschnitt (Ränder werden angeschnitten), „fit“ = ganz sichtbar im Endformat (Rest weiß),
   // rotate 0/90/180/270 (im Uhrzeigersinn), scale 0,25–4 (1 = passend), dx/dy = Verschiebung in mm. Quelle: PDF (alle Seiten) oder JPG/PNG (eine Seite).
   async function placeFile(buf, type, size, bleed, o, sides) {
@@ -1585,6 +1588,46 @@ module.exports = function (D) {
   async function keepSrc(buf, type, name) {
     const meta = { id: "f" + crypto.randomBytes(12).toString("hex"), kind: "src", name: clip(String(name || "original"), 120), bytes: buf.length, createdAt: nowIso(), original: type, orderId: null };
     await store.putFile(meta, buf); return meta.id;
+  }
+  // Rückseite (bzw. Innenseite) zu einer hochgeladenen Vorderseite: PDF (Seite 1) oder JPG/PNG aufs Format setzen (Beschnitt, Drehung, Auflösung wie
+  // beim normalen Upload) und mit Seite 1 der Vorderseite zu einer 2-seitigen Druck-PDF zusammenführen. Für alle beidseitigen Produkte (Simon 02.11.2026).
+  async function addBackSide(base, buf, name) {
+    const type = sniff(buf); if (!type) throw Object.assign(new Error("Nur PDF, JPG oder PNG möglich"), { status: 415 });
+    const front = await store.fileData(base.id); if (!front) throw bad("Vorderseite nicht mehr vorhanden – bitte neu hochladen");
+    const prod = await findProduct(base.product).catch(() => null), size = base.size, bleed = +base.bleed || 0, W = size.w + 2 * bleed, H = size.h + 2 * bleed;
+    const folded = !!(base.sel && base.sel.fold && !/^(no_fold|none|geen)$/.test(String(base.sel.fold))), label = folded ? "Innenseite" : "Rückseite", checks = [];   // gefalzt: Seite 1 außen, Seite 2 innen
+    let back;
+    if (type === "pdf") {
+      const info = await pdfInfoX(buf); if (info.encrypted) throw bad("Die PDF ist verschlüsselt/geschützt – bitte ohne Kennwortschutz exportieren");
+      if (info.pages > 1) checks.push({ level: "warn", text: label + ": die PDF hat " + info.pages + " Seiten – verwendet wird Seite 1." });
+      if (info.media && fits(info.media, W, H, 1.2)) back = buf;
+      else {
+        if (info.media && fits(info.media, size.w, size.h, 1)) checks.push({ level: "warn", text: label + ": ohne Beschnitt (" + bleed + " mm je Seite) – Motive bis zum Rand werden evtl. mit weißem Blitzer geschnitten." });
+        else if (info.media) checks.push({ level: "warn", text: label + ": Seitengröße " + info.media.w + " × " + info.media.h + " mm automatisch auf " + W + " × " + H + " mm (inkl. Beschnitt) gesetzt – bitte in der Vorschau kontrollieren." });
+        back = info.media && fits(info.media, size.w, size.h, 1) ? buf : (await withPdf(() => placeFile(buf, "pdf", size, bleed, { mode: "fill" }, 1))).pdf;
+      }
+    } else {
+      const dm = imgDims(buf, type); if (!dm || !dm.w || !dm.h) throw bad("Bild konnte nicht gelesen werden");
+      if (dm.w * dm.h > 150e6) throw bad("Bild ist zu groß (max. 150 Megapixel)");
+      const rot = (dm.w > dm.h) !== (W > H) && Math.abs(W - H) > 1 && dm.w !== dm.h && (r => r > 0.87 && r < 1.15)((dm.h / dm.w) / (W / H));
+      const dpi = Math.round(Math.min((rot ? dm.h : dm.w) / (W / 25.4), (rot ? dm.w : dm.h) / (H / 25.4))), D0 = (prod && prod.dpi) || 300, f = D0 / 300;
+      if (dpi >= D0) checks.push({ level: "ok", text: label + ": Auflösung " + dpi + " dpi – passt." });
+      else if (dpi >= Math.round(150 * f)) checks.push({ level: "warn", text: label + ": Auflösung nur " + dpi + " dpi (empfohlen " + D0 + " dpi) – kann leicht unscharf wirken." });
+      else if (dpi >= Math.round(72 * f)) checks.push({ level: "warn", text: label + ": Auflösung sehr gering (" + dpi + " dpi) – der Druck wird sichtbar unscharf." });
+      else checks.push({ level: "error", text: label + ": Auflösung viel zu gering (" + dpi + " dpi) für " + W + " × " + H + " mm." });
+      if (rot) checks.push({ level: "ok", text: label + ": Bild automatisch um 90° gedreht, damit es zum Format passt." });
+      const ar = ((rot ? dm.h : dm.w) / (rot ? dm.w : dm.h)) / (W / H), far = Math.abs(ar - 1) > 0.25, mode = far ? "fit" : "fill";
+      if (far) checks.push({ level: "warn", text: label + ": ganz anderes Seitenverhältnis – vollständig eingepasst, freie Flächen bleiben weiß." });
+      else if (Math.abs(ar - 1) > 0.03) checks.push({ level: "warn", text: label + ": Seitenverhältnis weicht ab – das Bild füllt das Format und wird an den Rändern etwas angeschnitten." });
+      back = (await withPdf(() => placeFile(buf, type, size, bleed, { mode, rotate: rot ? 90 : 0 }, 1))).pdf;
+    }
+    const { PDFDocument } = require("pdf-lib"), out = await PDFDocument.create(), fd = await PDFDocument.load(front), bd = await PDFDocument.load(back);
+    out.addPage((await out.copyPages(fd, [0]))[0]); out.addPage((await out.copyPages(bd, [0]))[0]);
+    const pdf = Buffer.from(await out.save({ useObjectStreams: false }));
+    const keep = (base.checks || []).filter(c => !/Rückseite bleibt weiß|füllt nur die Vorderseite|Seite\(n\)/.test(c.text || ""));
+    const all = [{ level: "ok", text: "2 Seiten: Seite 1 = " + (label === "Innenseite" ? "Außenseite" : "Vorderseite") + ", Seite 2 = " + label + " („" + clip(name, 60) + "“)." }].concat(keep, checks);
+    return newFile("upload", String(base.name || "druck.pdf").replace(/\.pdf$/i, "") + " + " + label + ".pdf", pdf, { product: base.product, sel: base.sel, size, bleed, sides: 2, pages: 2 }, all,
+      { original: "pdf", front: base.id, backName: clip(name, 120) });
   }
   async function handleUpload(buf, name, input) {
     const t0 = await uploadTarget(input);
@@ -3396,6 +3439,16 @@ module.exports = function (D) {
         await uploadTarget(input).catch(e => { req.resume(); throw e; });
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
         try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
+        return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
+      }
+      if (p === "/print/api/file/back" && req.method === "POST") {   // Rückseite/Innenseite zur hochgeladenen Vorderseite (Body = Datei, Header wie Upload + X-Print-File/X-Print-Token)
+        if (limited("upload", ip, 60, 3600e3)) { req.resume(); return J(res, 429, { ok: false, error: "Zu viele Uploads – bitte später erneut" }); }
+        const id = String(req.headers["x-print-file"] || ""); if (!sigOk("file", id, String(req.headers["x-print-token"] || ""))) { req.resume(); return J(res, 403, { ok: false, error: "Datei nicht gefunden" }); }
+        const fm = await store.fileMeta(id), base = fm && fm.front ? await store.fileMeta(fm.front) : fm;   // Rückseite ersetzen: wieder von der Vorderseite aus
+        if (!base || base.orderId || (fm && fm.orderId) || base.kind !== "upload" || !base.size || (+base.sides || 1) !== 2) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "rueckseite")), 120).replace(/[\\/:*?"<>|]/g, "_");
+        const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
+        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await addBackSide(base, buf, name); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/fit" && req.method === "POST") {   // Anpassen: einpassen/füllen, drehen, skalieren, verschieben – immer vom Original aus (neue Datei)

@@ -803,6 +803,25 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const u3 = await upload(await pdfOf(89, 59, 2), "m3.pdf", BC);
     assert.strictEqual((await post("/print/api/checkout", Object.assign({ items: [Object.assign({}, BC, { fileId: m1.j.fileId, fileToken: m1.j.token, expectedGross: 38.4, motifs: [{ copies: 150, fileId: m1.j.fileId, fileToken: m1.j.token }, { copies: 100, fileId: u3.j.fileId, fileToken: u3.j.token }] })] }, base))).status, 409, "Motiv-Datei schon verwendet");
   });
+  await t("Beidseitig: Rückseite als eigenes Bild/PDF → 2-seitige Druck-PDF (alle beidseitigen Produkte; gefalzt = Innenseite); einseitig nicht möglich", async () => {
+    const back = async (f, buf, name) => { const r = await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "content-type": "application/octet-stream", "x-file-name": encodeURIComponent(name), "x-print-file": f.fileId, "x-print-token": f.token }, body: buf }); return { status: r.status, j: await r.json() }; };
+    const fr = await upload(png(1060, 700, [200, 30, 30]), "vorne.png", BC); assert.strictEqual(fr.j.needBack, true, JSON.stringify(fr.j));
+    const b1 = await back(fr.j, png(700, 1060, [10, 10, 200]), "hinten.png"); assert.strictEqual(b1.status, 200, JSON.stringify(b1.j));
+    assert.strictEqual(b1.j.pages, 2); assert.strictEqual(b1.j.back, true); assert.strictEqual(b1.j.needBack, false); assert.strictEqual(b1.j.backName, "hinten.png");
+    assert.ok(b1.j.checks.some(c => /Rückseite: .*gedreht/.test(c.text)) && !b1.j.checks.some(c => /Rückseite bleibt weiß/.test(c.text)), JSON.stringify(b1.j.checks));
+    const { PDFDocument } = require(path.join(ROOT, "node_modules", "pdf-lib"));
+    const doc = await PDFDocument.load(Buffer.from(await (await fetch(B + "/print/api/file/" + b1.j.fileId + "?t=" + b1.j.token + "&pdf=1")).arrayBuffer()));
+    assert.strictEqual(doc.getPageCount(), 2); doc.getPages().forEach(pg => { const z = pg.getSize(); assert.deepStrictEqual([mm(z.width), mm(z.height)], [89, 59]); });
+    const b2 = await back(b1.j, await pdfOf(89, 59, 1), "hinten.pdf"); assert.strictEqual(b2.status, 200, JSON.stringify(b2.j)); assert.strictEqual(b2.j.pages, 2); assert.strictEqual(b2.j.backName, "hinten.pdf", "ersetzen – wieder von der Vorderseite aus");
+    const pf = await upload(await pdfOf(89, 59, 1), "vorne.pdf", BC); assert.strictEqual(pf.j.needBack, true, "1-seitige PDF bei 4/4");
+    const two = await upload(await pdfOf(89, 59, 2), "beide.pdf", BC); assert.strictEqual(two.j.needBack, false, "2-seitige PDF braucht keine Rückseite");
+    const one = await upload(png(1060, 700, [1, 1, 1]), "x.png", Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { printtype: "40" }) })); assert.strictEqual(one.status, 200, JSON.stringify(one.j)); assert.strictEqual(one.j.needBack, false);
+    assert.strictEqual((await back(one.j, png(1060, 700, [1, 1, 1]), "y.png")).status, 400, "einseitig: keine Rückseite");
+    assert.strictEqual((await back({ fileId: fr.j.fileId, token: "falsch" }, png(10, 10, [1, 1, 1]), "z.png")).status, 403);
+    const FO = { product: "folder", sel: { size: "1/3_a4", fold: "wikkel_6", printtype: "44" }, copies: 100, urgency: "standard" };
+    const fo = await upload(png(1500, 1060, [9, 9, 9]), "aussen.png", FO); assert.strictEqual(fo.j.needBack, true, JSON.stringify(fo.j));
+    const fi = await back(fo.j, png(1500, 1060, [99, 9, 9]), "innen.png"); assert.strictEqual(fi.status, 200, JSON.stringify(fi.j)); assert.ok(fi.j.checks.some(c => /Seite 2 = Innenseite/.test(c.text)), JSON.stringify(fi.j.checks));
+  });
   await t("Folder: Größe = gefalztes Format → Datei im offenen Format mit Falzlinien; Druckvorlage als PDF je Ausführung", async () => {
     const FO = { product: "folder", sel: { size: "1/3_a4", fold: "wikkel_6", printtype: "44" }, copies: 100, urgency: "standard" };
     const pr = await post("/print/api/price", FO); assert.strictEqual(pr.status, 200, JSON.stringify(pr.j));
