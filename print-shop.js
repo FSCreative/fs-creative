@@ -193,7 +193,7 @@ function scrubPub(v, key) {
 // Bonusprogramm für Geschäftskunden: Nettoumsatz (bezahlt bzw. freigegeben) der letzten 12 Monate im Firmenkonto → Rabatt auf alles
 const BONUS_TIERS = [{ key: "bronze", name: "Bronze", from: 5000, pct: 3 }, { key: "silber", name: "Silber", from: 10000, pct: 5 }, { key: "gold", name: "Gold", from: 20000, pct: 8 }, { key: "platin", name: "Platin", from: 25000, pct: 10 }];
 // Datencheck: „self“ = Kunde gibt frei (automatische Hinweise), bezahlte Aufträge gehen sofort an Print.com; „pro“ = Profi-Check gegen Aufpreis (je Warenkorb), landet in der Warteschlange
-const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 10;
+const PRO_CHECK_GROSS = 5, MAX_MOTIFS = 50;   // Sortenmix: bis 50 Motive (Print.com „designs“, ohne Aufpreis)
 // Zahlungsgebühr (Mollie) für die Kalkulation: Standard Kreditkarte EU 1,8 % + 0,25 € (anpassbar per Railway)
 const payFee = () => ({ pct: isFinite(parseFloat(process.env.PRINT_PAY_FEE_PCT)) ? parseFloat(process.env.PRINT_PAY_FEE_PCT) : 1.8, fix: isFinite(parseFloat(process.env.PRINT_PAY_FEE_FIX)) ? parseFloat(process.env.PRINT_PAY_FEE_FIX) : 0.25 });
 const BONUS_COUNTS = { paid: 1, ordered: 1, in_production: 1, shipped: 1, delivered: 1, problem: 1 };
@@ -1642,6 +1642,14 @@ module.exports = function (D) {
     const frontChecks = (base.checks || []).filter(c => !PAGE_GENERIC.test(c.text || "")).map(c => Object.assign({}, c, { text: l0 + ": " + String(c.text || "").replace(/^Bitte beachte: /, "") }));
     return savePages(Object.assign({}, base, { front: base.id }), pdf, 2, [frontChecks, r.checks], [], [base.name || "", name],
       { level: "ok", text: "2 Seiten: Seite 1 = " + l0 + ", Seite 2 = " + l1 + " („" + clip(name, 60) + "“)." });
+  }
+  // Quelle = schon hochgeladene Datei (Header X-Print-Src-File/-Token, z. B. gemeinsame Rückseite aller Motive) statt neuem Upload: Seite 1 dieser Druck-PDF
+  async function srcFileBuf(req) {
+    const id = String(req.headers["x-print-src-file"] || ""); if (!id) return null; req.resume();
+    if (!sigOk("file", id, String(req.headers["x-print-src-token"] || ""))) throw bad("Rückseiten-Datei nicht gefunden");
+    const m = await store.fileMeta(id), buf = m && !m.orderId && (m.kind === "upload" || m.kind === "design") && await store.fileData(id); if (!buf) throw bad("Rückseiten-Datei nicht mehr vorhanden – bitte neu hochladen");
+    const { PDFDocument } = require("pdf-lib"), src = await PDFDocument.load(buf), one = await PDFDocument.create(); one.addPage((await one.copyPages(src, [0]))[0]);   // nur Seite 1 (Bild-Upload hat eine leere 2. Seite)
+    return { buf: Buffer.from(await one.save({ useObjectStreams: false })), name: String(m.pageNames && m.pageNames[0] || m.name || "rueckseite").replace(/\.pdf$/i, "") };
   }
   async function replacePage(m, idx, buf, name) {
     const cur = await store.fileData(m.id); if (!cur) throw bad("Datei nicht mehr vorhanden – bitte neu hochladen");
@@ -3472,7 +3480,7 @@ module.exports = function (D) {
         if (!base || base.orderId || (fm && fm.orderId) || base.kind !== "upload" || !base.size || (+base.sides || 1) !== 2) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "rueckseite")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await addBackSide(base, buf, name); } finally { rel(); }
+        try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await addBackSide(base, buf, sb ? sb.name : name); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/page" && req.method === "POST") {   // einzelne Seite ersetzen (Body = Datei; Header X-Print-File/X-Print-Token/X-Print-Page = 1 … Seitenzahl)
@@ -3482,7 +3490,7 @@ module.exports = function (D) {
         if (!fm || fm.orderId || fm.kind !== "upload" || !fm.size || !((+fm.pages || 1) >= 2) || !(pg >= 1 && pg <= +fm.pages)) { req.resume(); return J(res, 400, { ok: false, error: "Für diese Datei nicht möglich" }); }
         const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "seite")), 120).replace(/[\\/:*?"<>|]/g, "_");
         const rel = await pdfSlot().catch(e => { req.resume(); throw e; }); let meta;
-        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await replacePage(fm, pg - 1, buf, name); } finally { rel(); }
+        try { const sb = await srcFileBuf(req); const buf = sb ? sb.buf : await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await replacePage(fm, pg - 1, buf, sb ? sb.name : name); } finally { rel(); }
         return J(res, 200, Object.assign({ ok: true }, fileView(meta)));
       }
       if (p === "/print/api/file/fit" && req.method === "POST") {   // Anpassen: einpassen/füllen, drehen, skalieren, verschieben – immer vom Original aus (neue Datei)

@@ -355,11 +355,12 @@
   function motHtml() {
     if (!motOk()) return "";
     var n = S.mot.n, sum = motSum(), ok = sum === +S.copies;
-    var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + '<button type="button" class="ps-mn' + (n > 5 ? " on" : "") + '" data-motn="' + (n > 5 ? n : 6) + '">' + (n > 5 ? n : "6+") + "</button>";
+    var segs = [1, 2, 3, 4, 5].map(function (k) { return '<button type="button" class="ps-mn' + (n === k ? " on" : "") + '" data-motn="' + k + '" aria-pressed="' + (n === k) + '">' + k + "</button>"; }).join("") + (n > 5 ? '<label class="ps-mn on ps-mnin"><input type="number" inputmode="numeric" min="2" max="50" data-motcount="1" value="' + n + '" aria-label="Anzahl Motive"></label>' : '<button type="button" class="ps-mn" data-motn="6">6+</button>');
     var rows = n > 1 ? '<div class="ps-msplit">' + S.mot.split.map(function (v, i) { return '<label class="ps-ms"><span>Motiv ' + (i + 1) + '</span><input type="number" inputmode="numeric" min="1" data-mots="' + i + '" value="' + v + '"><small>Stk.</small></label>'; }).join("") +
       '<p class="ps-msum ' + (ok ? "ok" : "bad") + '">Summe: <b>' + sum.toLocaleString("de-AT") + "</b> von " + (+S.copies).toLocaleString("de-AT") + "\u00a0Stk." + (ok ? " ✓" : " – bitte anpassen") + ' <button type="button" class="ps-link" data-motbal="1">gleichmäßig aufteilen</button></p></div>' : "";
     return '<div class="ps-tile wide ps-mot"><span class="ps-tl">Anzahl Motive <span class="pd-muted">· verschiedene Designs in einer Auflage, ohne Aufpreis</span></span><div class="ps-mns" role="group" aria-label="Anzahl Motive">' + segs + "</div>" + rows +
-      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln – jeweils mit Vorder- und Rückseite.</p>' : "") + "</div>";
+      (n > 1 && sides() === 2 ? '<label class="ps-cb sm ps-msb"><input type="checkbox" data-motsb="1"' + (S.mot.sameBack !== false ? " checked" : "") + '><span>' + sideNames()[1] + " für alle Motive gleich – nur einmal hochladen</span></label>" : "") +
+      (n > 1 ? '<p class="ps-help">Im nächsten Schritt lädst bzw. gestaltest du jedes Motiv einzeln' + (sides() === 2 ? (S.mot.sameBack !== false ? " – die gemeinsame " + sideNames()[1] + " kommt automatisch dazu." : " – jeweils mit Vorder- und Rückseite.") : ".") + " Bis zu 50 Motive, ohne Aufpreis.</p>" : "") + "</div>";
   }
 
   // Verständliche Namen + Erklärungen für Fachbegriffe aus dem Print.com-Katalog
@@ -1532,7 +1533,7 @@
     var cl = S.price && S.price.folds && S.price.closed;
     var spec = sz ? (cl ? "offen " : "") + sz.w + " × " + sz.h + " mm" + (cl ? ", gefalzt " + cl.w + " × " + cl.h + " mm" : "") + (b ? " (Datei mit Beschnitt " + (sz.w + 2 * b) + " × " + (sz.h + 2 * b) + " mm)" : "") : "";
     var mtabs = "";
-    if (S.mot.n > 1 && motOk()) { motSave(); mtabs = '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
+    if (S.mot.n > 1 && motOk()) { motSave(); mtabs = cbackHtml() + '<div class="ps-mtabs" role="tablist" aria-label="Motive">' + S.mot.split.map(function (v, i) { var f = S.mot.files[i], done = f && f.file && !f.file.blocked;
       return '<button type="button" role="tab" data-moti="' + i + '" aria-selected="' + (i === S.mot.i) + '" class="' + (done ? "done" : "") + '"><b>Motiv ' + (i + 1) + "</b><small>" + v.toLocaleString("de-AT") + "\u00a0Stk. · " + (done ? "✓ fertig" : "offen") + "</small></button>"; }).join("") + "</div>"; }
     var h = '<div class="ps-panel">' + mtabs + '<h2>' + (S.mot.n > 1 && motOk() ? "Motiv " + (S.mot.i + 1) + ": gestalten oder hochladen" : "Gestalten oder Datei hochladen") + '</h2><p class="sub">' + esc(p.title) + (spec ? (p.dimsArea ? (prodSize(p) ? " · Produkt " + esc(prodSize(p)) : "") + " · Druckfläche " : " · Endformat ") + esc(spec) : " · Format bitte laut Produktbeschreibung anlegen") + " · " + (pagesNeeded() ? pagesNeeded() + " Seiten (inkl. Umschlag)" : sd === 2 ? (p.key === "folder" ? "Außen- und Innenseite" : "Vorder- und Rückseite") : "einseitig") + "</p>";
     if (S.file) {   // Upload-/Ergebnis-Ansicht: links große Vorschau (auf dem Produkt / mit Druckrändern), rechts Datei, Status, Anpassen, Prüfungen
@@ -1867,7 +1868,7 @@
     var swa = e.target.closest("[data-swall]"); if (swa) { S.swAll = S.swAll || {}; S.swAll[swa.getAttribute("data-swall")] = 1; render(); return; }
     var mn = e.target.closest("[data-motn],[data-motbal],[data-moti]");
     if (mn) {
-      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(10, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); return; }
+      if (mn.hasAttribute("data-motn")) { var nn = Math.max(1, Math.min(50, +mn.getAttribute("data-motn"))); if (nn > S.copies) { toast("Mehr Motive als Stück geht nicht", true); return; } motSave(); S.mot.n = nn; S.mot.files = S.mot.files.slice(0, nn); S.mot.i = 0; motBalance(); render(); return; }
       if (mn.hasAttribute("data-motbal")) { motBalance(); render(); return; }
       if (mn.hasAttribute("data-moti")) { motLoad(+mn.getAttribute("data-moti")); render(); return; }
     }
@@ -1971,6 +1972,9 @@
     if (t.matches("select[data-urgency]")) { S.urgency = t.value; S.dday = ""; render(); loadPrice(); return; }
     if (t.name === "copies") { S.copies = +t.value; var qi = document.getElementById("psQty"); if (qi) qi.value = ""; loadPrice(); return; }
     if (t.id === "psQty") { var n = parseInt(t.value, 10); if (n > 0) { S.copies = n; motBalance(); render(); loadPrice(); } return; }
+    if (t.hasAttribute("data-motcount")) { var mc = Math.max(2, Math.min(50, parseInt(t.value, 10) || 2)); if (mc > S.copies) { toast("Mehr Motive als Stück geht nicht", true); render(); return; } motSave(); S.mot.n = mc; S.mot.files = S.mot.files.slice(0, mc); S.mot.i = Math.min(S.mot.i, mc - 1); motLoad(S.mot.i); motBalance(); render(); return; }
+    if (t.hasAttribute("data-motsb")) { S.mot.sameBack = t.checked; render(); if (t.checked) applyBackAll(); return; }
+    if (t.id === "psCBack" && t.files && t.files[0]) return uploadCommonBack(t.files[0]);
     if (t.hasAttribute("data-mots")) { S.mot.split[+t.getAttribute("data-mots")] = Math.max(1, parseInt(t.value, 10) || 1); render(); return; }
     if (t.id === "psW" || t.id === "psH") { S.custom[t.id === "psW" ? "w" : "h"] = t.value;
       if (!isCustom() && S.prod.custom && S.sel.size !== "custom") { var ow = document.getElementById("psW"), oh = document.getElementById("psH"), sz0 = sizeOf() || {}, f0 = S.prod.custom.unit === "cm" ? 10 : 1;
@@ -2030,7 +2034,7 @@
   }
   root.addEventListener("dragover", function (e) { var d = e.target.closest(".ps-drop"); if (d) { e.preventDefault(); d.classList.add("over"); } });
   root.addEventListener("dragleave", function (e) { var d = e.target.closest(".ps-drop"); if (d) d.classList.remove("over"); });
-  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-back")) return uploadBack(f); if (d.hasAttribute("data-page")) return uploadPage(f, d.getAttribute("data-page")); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
+  root.addEventListener("drop", function (e) { var d = e.target.closest(".ps-drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); var fs = e.dataTransfer.files || [], f = fs[0]; if (!f) return; if (d.hasAttribute("data-cback")) return uploadCommonBack(f); if (d.hasAttribute("data-back")) return uploadBack(f); if (d.hasAttribute("data-page")) return uploadPage(f, d.getAttribute("data-page")); uploadFile(f, d.getAttribute("data-logo") || "", !d.hasAttribute("data-logo") && twoUp() && fs[1] ? fs[1] : null); });
 
   // Upload: Druckdatei bzw. Logo für eine Position (logo = Positions-Slug)
   // Lade-Fenster beim Hochladen: Fortschritt, danach „wird geprüft“
@@ -2053,7 +2057,7 @@
     upPop("up", 0, f.name);
     x.upload.onprogress = function (ev) { if (ev.lengthComputable) { var pc = Math.round(ev.loaded / ev.total * 100); pr.firstChild.style.width = pc + "%"; upPop(pc >= 100 ? "check" : "up", pc, f.name); } };
     x.upload.onload = function () { upPop("check", 100, f.name); };
-    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos(); } else if (j.ok) { S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
+    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e2) {} if (j.ok && logo) { S.logos[logo] = j; S.file = null; render(); toast(j.blocked ? "Bitte ein anderes Logo verwenden." : "Logo geprüft ✓"); mergeLogos(); } else if (j.ok) { S.file = j; S.previews = null; S.design = null; S.fileFront = null; S.pmkSide = 0; render(); toast(j.blocked ? "Bitte die markierten Punkte korrigieren." : "Datei geprüft ✓"); pollPreflight(); if (back && j.needBack) uploadBack(back); else if (sameBack() && S.mot.back && j.needBack) backToMotif(j).then(function (r) { if (r && S.file && S.file.fileId === j.fileId) { S.file = r; S.previews = null; render(); } }, function (e) { toast(e.message, true); }); } else { pr.hidden = true; er.innerHTML = '<p class="ps-err">' + esc(j.error || "Upload fehlgeschlagen") + "</p>"; } };
     x.onerror = function () { upPop("close"); pr.hidden = true; er.innerHTML = '<p class="ps-err">Upload fehlgeschlagen – bitte erneut versuchen.</p>'; };
     x.send(f);
   }
@@ -2086,6 +2090,36 @@
       upPop("close"); S.file = j; S.previews = null; S.fileFront = null; render(); toast(j.blocked ? "Bitte die markierten Punkte prüfen." : lab + " ersetzt ✓"); pollPreflight(); };
     x.onerror = function () { fail("Upload fehlgeschlagen – bitte erneut versuchen."); };
     x.send(f);
+  }
+  // Mehrere Motive mit gleicher Rückseite: einmal hochladen (normaler Upload), dann an jedes Motiv als Seite 2 (Server nimmt Seite 1 der Rückseiten-Datei)
+  function sameBack() { return S.mot.n > 1 && motOk() && sides() === 2 && S.mot.sameBack !== false; }
+  function cbackHtml() {
+    if (!sameBack()) return ""; var b = S.mot.back, nm = sideNames()[1];
+    if (b) return '<div class="ps-back ok ps-cback"><span>✓ Gemeinsame ' + nm + ": <b>" + esc(b.name) + "</b>" + (S.mot.backBusy ? ' <span class="ps-spin"></span>' : "") + '</span><label class="ps-link">ersetzen<input type="file" id="psCBack" accept="' + ACC_UP + '" hidden></label></div>';
+    return '<label class="ps-drop small ps-back ps-cback" data-cback="1"><input type="file" id="psCBack" accept="' + ACC_UP + '"><b>Gemeinsame ' + nm + " für alle " + S.mot.n + ' Motive</b><small>PDF, JPG oder PNG – einmal hochladen, wird automatisch an jedes Motiv angehängt.</small><div class="ps-prog" hidden><i></i></div></label>';
+  }
+  function uploadCommonBack(f) {
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) { toast("Bitte PDF, JPG oder PNG hochladen.", true); return; }
+    var x = new XMLHttpRequest(); x.open("POST", "/print/api/upload"); x.setRequestHeader("X-Print-Shop", "1"); x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.setRequestHeader("X-File-Name", encodeURIComponent(f.name)); x.setRequestHeader("X-Print-Config", encodeURIComponent(JSON.stringify(cfgOf()))); upPop("up", 0, f.name);
+    x.upload.onprogress = function (ev) { if (ev.lengthComputable) upPop(ev.loaded >= ev.total ? "check" : "up", Math.round(ev.loaded / ev.total * 100), f.name); };
+    x.onload = function () { upPop("close"); var j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} if (!j.ok) { toast(j.error || "Upload fehlgeschlagen", true); return; }
+      S.mot.back = { fileId: j.fileId, token: j.token, name: f.name }; render(); applyBackAll(); };
+    x.onerror = function () { upPop("close"); toast("Upload fehlgeschlagen – bitte erneut versuchen.", true); };
+    x.send(f);
+  }
+  // Rückseite an ein Motiv: fehlt sie → /file/back, ist eine andere drauf → Seite 2 ersetzen; Quelle = gemeinsame Rückseiten-Datei (kein neuer Upload)
+  function backToMotif(f) {
+    var b = S.mot.back; if (!b || !f || f.kind !== "upload" || f.cback === b.fileId || !(f.needBack || (+f.pages === 2))) return Promise.resolve(null);
+    var h = { "X-Print-Shop": "1", "X-Print-File": f.fileId, "X-Print-Token": f.token, "X-Print-Src-File": b.fileId, "X-Print-Src-Token": b.token };
+    if (!f.needBack) h["X-Print-Page"] = "2";
+    return fetch(f.needBack ? "/print/api/file/back" : "/print/api/file/page", { method: "POST", headers: h, credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "Rückseite konnte nicht angehängt werden"); j.cback = b.fileId; return j; });
+  }
+  function applyBackAll() {
+    if (!sameBack() || !S.mot.back || S.mot.backBusy) return; motSave(); S.mot.backBusy = true; var i = 0, err = "";
+    var next = function () { if (i >= S.mot.n) { S.mot.backBusy = false; motLoad(S.mot.i); render(); if (err) toast(err, true); return; }
+      var k = i++, mf = S.mot.files[k]; backToMotif(mf && mf.file).then(function (j) { if (j) { mf.file = j; mf.previews = null; } }, function (e) { err = e.message; }).then(next); };
+    render(); next();
   }
   function uploadBack(f) {
     var cur = S.file; if (!cur) return; var er = document.getElementById("psBackErr"), pr = document.getElementById("psBackProg"), nm = sideNames()[1];

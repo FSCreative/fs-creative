@@ -1872,4 +1872,9 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 .ps-drop.ps-pg .ps-prog{display:none}
 .ps-pgx{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13.5px}
 .ps-pgx input[type=number]{width:64px;padding:6px 8px;border-radius:8px;border:1px solid var(--ps-line2);background:var(--ps-card);color:var(--text);font:inherit}
+/* Motive: Anzahl ab 6 als Zahlenfeld, gemeinsame Rückseite */
+.ps-mn.ps-mnin{padding:0}.ps-mn.ps-mnin input{width:58px;border:0;background:transparent;color:inherit;font:inherit;text-align:center;padding:8px 4px}
+.ps-msb{margin-top:10px}
+.ps-cback{margin:0 0 12px}
+.ps-mtabs{flex-wrap:wrap}
 

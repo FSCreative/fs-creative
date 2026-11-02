@@ -822,6 +822,13 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     const two0 = await upload(await pdfOf(89, 59, 2), "beide0.pdf", BC), p2 = await page(two0.j, 2, png(1060, 700, [9, 9, 9]), "rueck.png");
     assert.strictEqual(p2.status, 200, JSON.stringify(p2.j)); assert.deepStrictEqual(p2.j.pageNames, ["beide0.pdf", "rueck.png"]);
     assert.strictEqual((await page(two0.j, 3, png(10, 10, [1, 1, 1]), "x.png")).status, 400, "Seite 3 gibt es nicht");
+    // gemeinsame Rückseite (mehrere Motive): schon hochgeladene Datei als Quelle, kein neuer Upload; nur ihre Seite 1
+    const cb = await upload(png(1060, 700, [30, 30, 30]), "gemeinsam.png", BC), m2 = await upload(png(1060, 700, [200, 200, 0]), "motiv2.png", BC);
+    const src = async (f, url, extra) => { const r = await fetch(B + url, { method: "POST", headers: Object.assign({ "x-print-shop": "1", "x-print-file": f.fileId, "x-print-token": f.token, "x-print-src-file": cb.j.fileId, "x-print-src-token": cb.j.token }, extra || {}) }); return { status: r.status, j: await r.json() }; };
+    const sb = await src(m2.j, "/print/api/file/back"); assert.strictEqual(sb.status, 200, JSON.stringify(sb.j)); assert.deepStrictEqual(sb.j.pageNames, ["motiv2.pdf", "gemeinsam"]);
+    assert.ok(!sb.j.checks.some(c => /verwendet wird Seite 1/.test(c.text)), JSON.stringify(sb.j.checks));
+    const sp = await src(p1.j, "/print/api/file/page", { "x-print-page": "2" }); assert.strictEqual(sp.status, 200, JSON.stringify(sp.j)); assert.deepStrictEqual(sp.j.pageNames, ["neu-vorne.png", "gemeinsam"]);
+    assert.strictEqual((await fetch(B + "/print/api/file/back", { method: "POST", headers: { "x-print-shop": "1", "x-print-file": m2.j.fileId, "x-print-token": m2.j.token, "x-print-src-file": cb.j.fileId, "x-print-src-token": "falsch" } })).status, 400);
     const pf = await upload(await pdfOf(89, 59, 1), "vorne.pdf", BC); assert.strictEqual(pf.j.needBack, true, "1-seitige PDF bei 4/4");
     const two = await upload(await pdfOf(89, 59, 2), "beide.pdf", BC); assert.strictEqual(two.j.needBack, false, "2-seitige PDF braucht keine Rückseite");
     const one = await upload(png(1060, 700, [1, 1, 1]), "x.png", Object.assign({}, BC, { sel: Object.assign({}, BC.sel, { printtype: "40" }) })); assert.strictEqual(one.status, 200, JSON.stringify(one.j)); assert.strictEqual(one.j.needBack, false);
