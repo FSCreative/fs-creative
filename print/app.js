@@ -1780,6 +1780,27 @@
       return { imgs: imgs, fonts: Object.keys(fonts) };
     });
   }
+  /* Schnitt-/Beschnittmarken erkennen (Wunsch Simon 03.11.2026): je Ecke kurze, dünne, gerade Linie (waagrecht oder senkrecht, 2–15 mm lang,
+     höchstens ~0,6 mm dick), die frei auf hellem Grund steht – Rahmenlinien und Motive laufen weiter und zählen nicht. Ergebnis: Anzahl Ecken mit Marke */
+  function cropMarks(data, W, H, pxmm) {
+    var lum = function (xx, yy) { var o = (yy * W + xx) * 4; return (data[o] * 3 + data[o + 1] * 6 + data[o + 2]) / 10; };
+    var R = Math.max(8, Math.min(Math.round(16 * pxmm), Math.round(Math.min(W, H) * 0.3))), minL = 1.2 * pxmm, maxL = 15 * pxmm, th = Math.max(2, Math.round(0.7 * pxmm)), gap = Math.max(2, Math.round(0.8 * pxmm));
+    var dark = function (v) { return v < 170; }, light = function (v) { return v > 225; };
+    // Linie entlang einer Achse: lauf(i) liefert Helligkeit an Position i der Linie, quer(i, d) die Helligkeit d Pixel daneben
+    // längster Lauf, der vor dem Ende des Eckbereichs aufhört (Rahmenlinien laufen weiter → zählen nicht)
+    var line = function (len, at, beside) { var best = 0, run = 0; for (var i = 0; i < len; i++) { if (dark(at(i)) && light(beside(i, -gap - th)) && light(beside(i, gap + th))) run++; else { if (run > best) best = run; run = 0; } } return best; };
+    var corner = function (cx, cy, sx, sy) {   // (cx,cy) = Eckpunkt, sx/sy = Richtung ins Bild
+      var hits = 0, k, xx, yy;
+      for (k = 0; k < R && !(hits & 1); k++) { yy = cy + sy * k; if (yy < th + gap || yy >= H - th - gap) continue;   // waagrechte Linie in Zeile yy
+        var L = line(R, function (i) { return lum(cx + sx * i, yy); }, function (i, d) { var y2 = yy + d; return y2 < 0 || y2 >= H ? 255 : lum(cx + sx * i, y2); });
+        if (L >= minL && L <= maxL) hits |= 1; }
+      for (k = 0; k < R && !(hits & 2); k++) { xx = cx + sx * k; if (xx < th + gap || xx >= W - th - gap) continue;   // senkrechte Linie in Spalte xx
+        var L2 = line(R, function (i) { return lum(xx, cy + sy * i); }, function (i, d) { var x2 = xx + d; return x2 < 0 || x2 >= W ? 255 : lum(x2, cy + sy * i); });
+        if (L2 >= minL && L2 <= maxL) hits |= 2; }
+      return hits; };
+    var cs = [corner(0, 0, 1, 1), corner(W - 1, 0, -1, 1), corner(0, H - 1, 1, -1), corner(W - 1, H - 1, -1, -1)];
+    return cs.filter(function (h) { return h === 3; }).length + (cs.filter(function (h) { return h; }).length >= 3 ? 1 : 0);
+  }
   function pfvRender() {
     var box = document.getElementById("psPfv"); if (!box || !S.file) return; var f = S.file, key = f.fileId + (S.pfvOff ? ":0" : ":1"), c = box.querySelector(".ps-pfv-c");
     if (PFV[key]) { c.innerHTML = PFV[key].html; document.getElementById("psPfvW").innerHTML = PFV[key].warn; return; }
@@ -1805,7 +1826,9 @@
             var med = [0, 1, 2].map(function (c2) { var a = ref.map(function (p2) { return p2[c2]; }).sort(function (m, n2) { return m - n2; }); return a[a.length >> 1]; });
             var rows = 0; for (k = Math.round(sp); k < sd[2] - Math.round(sp); k++) { for (d = 0; d <= s0 - b0; d++) { var q = sd[1](k, d); if (dist(px(q[0], q[1]), med) > 120) { rows++; break; } } }
             if (rows / pxmm > 1.2) { hit++; sideNames.push(sd[0]); } });
-          if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
+          var cmk = cropMarks(data, W, H, pxmm);
+          if (cmk >= 2) warns.push("!" + lab + "Die Datei enthält Schnittmarken (Beschnittmarken) an den Ecken – die würden mitgedruckt. Bitte die PDF ohne Schnittmarken exportieren (nur mit " + (r.b || S.prod.bleed || 2) + " mm Beschnitt), z. B. in InDesign/Illustrator unter „Marken und Anschnitt“ die Schnittmarken abwählen.");
+          else if (hit) warns.push(lab + "Inhalte liegen sehr nah am Rand (" + sideNames.join(", ") + ", im Sicherheitsabstand von " + safe + " mm) – Texte und Logos bitte weiter nach innen rücken, sonst können sie angeschnitten werden.");
           if (r.b > 0) { var wo = 0, ci = 0, tot = 0; for (var yy = Math.round(sp); yy < H - sp; yy += 5) { tot++; var o1 = px(Math.max(0, Math.round(bp * 0.4)), yy), i1 = px(Math.round(bp) + 2, yy); if (o1[0] > 245 && o1[1] > 245 && o1[2] > 245 && !(i1[0] > 245 && i1[1] > 245 && i1[2] > 245)) wo++; }
             if (tot && wo / tot > 0.4) warns.push(lab + "Der Hintergrund reicht nicht bis in den Beschnitt – nach dem Schneiden können weiße Ränder (Blitzer) entstehen."); }
         } catch (e) {}
