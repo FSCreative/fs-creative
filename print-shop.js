@@ -97,8 +97,8 @@ const CURATED = [
     expose: ["material"], fixedOpts: { printtype: "40", all_sides_equal_finish: "yes" }, tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100, custom: [300, 5000, 3000], prefer: { konfektion: ["hem_eyelets_50"] } },
   // Bauzaun: Größe „banner_site_fences“ ohne Maße im Slug → 3410 × 1730 mm (Standard-Bauzaunfeld; vor Livegang mit Print.com-Vorlage prüfen)
   { key: "bauzaun", group: BANNER, title: "Bauzaun-Banner", icon: "🚧", desc: "Werbung am Bauzaun – passend für Standard-Bauzaunfelder.", skus: ["construction-fence-banners"],
-    expose: ["material", "finish_all_around"], titles: { material: "Material", finish_all_around: "Konfektion" }, only: { material: ["280gr_mesh_b1", "pes_outdoor", "510gr_pvc"], finish_all_around: ["eyelets_30", "hem_eyelets_30"] },
-    optLabels: { material: { "280gr_mesh_b1": "Mesh (winddurchlässig, B1)", pes_outdoor: "Textil (PES outdoor)", "510gr_pvc": "PVC 510 g" }, finish_all_around: { eyelets_30: "Ösen alle 30 cm", hem_eyelets_30: "Gesäumt, Ösen alle 30 cm" } },
+    expose: ["material", "finish_all_around"], titles: { material: "Material", finish_all_around: "Konfektion" },   // alle Materialien/Konfektionen zeigen, die Print.com anbietet (Wunsch Simon: nichts ausblenden)
+    optLabels: { material: { "280gr_mesh_b1": "Mesh (winddurchlässig, B1)", pes_outdoor: "Textil (PES outdoor)", "510gr_pvc": "PVC 510 g" }, finish_all_around: { eyelets_30: "Ösen alle 30 cm", hem_eyelets_30: "Gesäumt, Ösen alle 30 cm", eyelets_50: "Ösen alle 50 cm", hem_eyelets_50: "Gesäumt, Ösen alle 50 cm" } },
     fixedOpts: { printtype: "40" }, dims: [3410, 1730], tiers: [1, 2, 3, 5, 10], designer: true, safe: 30, bleed: 40, dpi: 100 },
   // Textil: Logodruck, Größen-Mix über variants, keine Gestaltung im Designer
   Object.assign({ key: "tshirt-basic", title: "T-Shirt Basic (Fruit of the Loom)", icon: "👕", desc: "Klassisches Baumwoll-Shirt mit deinem Logo – schon ab 1 Stück.", skus: ["t-shirt-budget-5"] }, TEX_OPTS),
