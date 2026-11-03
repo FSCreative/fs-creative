@@ -67,7 +67,7 @@
     if (q.get("entwurf") && q.get("t")) return loadDraft(q.get("entwurf"), q.get("t"));
     if (q.has("konto")) S.view = "konto"; else if (q.has("warenkorb")) S.step = 4; else if (q.has("produkte") || q.get("q") || q.get("kategorie")) { S.page = "produkte"; S.q = q.get("q") || ""; S.group = q.get("kategorie") || ""; S.sub = q.get("unter") || ""; }
     var pm = location.pathname.match(/^\/print\/([a-z0-9-]+)\/?$/), pk = q.get("produkt") || (pm && (c.products.filter(function (p) { return p.slug === pm[1]; })[0] || {}).key);   // sprechende Adresse /print/<slug>
-    if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); }); }
+    if (pk && c.products.some(function (p) { return p.key === pk; })) { pickProduct(pk, function () { if (q.get("c") && cfgApply(q.get("c"))) { if (!q.get("angebot")) toast("Gespeicherte Konfiguration geladen"); loadPrice(); } else { setFormat(q.get("format")); setCopies(q.get("menge")); } S.step = 2; render(); if (q.get("angebot")) offerLoad(q.get("angebot")); }); }
     render();
   }).catch(function () { document.getElementById("psLoading").hidden = true; showSetup(false); });
 
@@ -123,6 +123,17 @@
     if (S.me && !noSync) api("/print/api/account/cart", { items: S.cart.map(function (x) { return Object.assign({}, x, { preview: "" }); }) });
     headUpdate();
   }
+  /* Gestaltungsangebot (Cockpit → Gestaltungsanfrage → „Angebot senden“): Link ?angebot=… lädt Konfiguration + fertige Druckdatei;
+     der Grafik-Aufschlag hängt fest an dieser Datei (Server rechnet ihn an der Kasse immer dazu) – im Warenkorb nicht entfernbar */
+  function offerLoad(code) {
+    api("/print/api/brief/offer?e=" + encodeURIComponent(code)).then(function (j) {
+      if (!j.ok) { toast(j.error || "Dieses Angebot ist nicht mehr gültig", true); return; }
+      S.file = j.file; S.previews = null; S.design = null; S.fileFront = null; S.mode = "upload"; S.offer = { fileId: j.file.fileId, fee: j.fee, note: j.note || "" };
+      S.step = 3; render(); pollPreflight(); toast("Deine fertige Gestaltung ist geladen ✓");
+    }).catch(function () { toast("Angebot konnte nicht geladen werden", true); });
+  }
+  function offerOn() { return !!(S.offer && S.file && S.file.fileId === S.offer.fileId); }
+  function feeLine(x) { var f = x.designFee; if (!f) return ""; var co = S.ctype === "company"; return '<span class="ps-ci-fee">+ Grafikbearbeitung durch FS Creative: <b>' + eur(co ? f.net : f.gross) + "</b> " + (co ? "netto" : "inkl. USt") + " · fester Bestandteil dieses Angebots</span>"; }
   function cartAdd() {
     var pr = S.price || {}, pv = S.previews && S.previews[0];
     var it = JSON.parse(JSON.stringify(cfgOf()));
@@ -131,13 +142,14 @@
       n: pr.copies || totalCopies(), labels: (pr.labels || []).slice(0, 12), size: isCustom() && sizeOf() ? S.custom.w + " × " + S.custom.h + " " + S.prod.custom.unit : labelOf("size"),
       price: S.price ? { net: pr.net, gross: pr.gross, vat: pr.vat, rate: pr.rate, deliveryDate: pr.deliveryDate } : null, warn: (S.file.checks || []).some(function (c) { return c.level !== "ok"; }) || !!(S.file.edgeWarn && S.file.edgeWarn.length), clientWarn: (S.file.edgeWarn || []).map(function (w) { return w.replace(/^!/, ""); }).slice(0, 10), checks: (S.file.checks || []).filter(function (c) { return c.level !== "ok"; }).map(function (c) { return { level: c.level, text: String(c.text || "").slice(0, 400) }; }).slice(0, 10), at: Date.now() });
     if (S.mot.n > 1 && motOk()) { it.motifs = S.mot.split.map(function (v, i) { var f = S.mot.files[i]; return { copies: v, fileId: f.file.fileId, fileToken: f.file.token, fileName: f.file.kind === "design" ? "Eigene Gestaltung" : (f.file.name || "Druckdatei"), preview: f.thumb || (f.previews && f.previews[0] && f.previews[0].length < 60000 ? f.previews[0] : "") }; }); it.fileName = it.motifs.length + " Motive (" + S.mot.split.join(" / ") + " Stk.)"; }
+    if (offerOn() && S.offer.fee && S.offer.fee.net > 0) { var fe = S.offer.fee; it.designFee = { net: fe.net, gross: fe.gross, vat: Math.round((fe.gross - fe.net) * 100) / 100 }; }
     S.cart.push(it); cartSave();
     if (it.motifs) it.motifs.forEach(function (m, i) { var f = S.mot.files[i], src = f && f.previews && f.previews[0]; if (!m.preview && src) mkThumb(src, function (t) { m.preview = t; cartSave(); if (S.step === 4) render(); }); });
     S.file = null; S.previews = null; S.design = null; S.mode = ""; S.logos = {}; S.accept = {}; motReset();
     toast("„" + it.title + "“ liegt im Warenkorb");
   }
   var PRO_CHECK = 5;
-  function cartTotals(noFee) { var t = { net: 0, vat: 0, gross: 0, rate: null, missing: false }; S.cart.forEach(function (x) { if (!x.price) { t.missing = true; return; } t.net += +x.price.net || 0; t.vat += +x.price.vat || 0; t.gross += +x.price.gross || 0; if (t.rate == null) t.rate = x.price.rate; });
+  function cartTotals(noFee) { var t = { net: 0, vat: 0, gross: 0, rate: null, missing: false }; S.cart.forEach(function (x) { if (!x.price) { t.missing = true; return; } t.net += +x.price.net || 0; t.vat += +x.price.vat || 0; t.gross += +x.price.gross || 0; if (x.designFee) { t.net += +x.designFee.net || 0; t.vat += +x.designFee.vat || 0; t.gross += +x.designFee.gross || 0; } if (t.rate == null) t.rate = x.price.rate; });
     if (!noFee && S.check === "pro" && S.cart.length) { var fn = PRO_CHECK / (1 + (t.rate || 0) / 100); t.gross += PRO_CHECK; t.net += fn; t.vat += PRO_CHECK - fn; t.fee = PRO_CHECK; }
     ["net", "vat", "gross"].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; }); return t; }
   var rqSeq = 0;
@@ -171,7 +183,7 @@
     S.cart.forEach(function (x) {
       var tl = (x.tiers && x.tiers.length ? x.tiers : (prodByKey(x.product) || {}).tiers) || [], canQ = tl.length > 1 && !x.motifs && !(x.textile && x.textile.sizes && Object.keys(x.textile.sizes).length),
         qs = canQ ? '<label class="ps-ciq"><span>Stück</span><select data-cartq="' + esc(x.id) + '" aria-label="Stückzahl ' + esc(x.title) + '">' + (tl.indexOf(+x.copies) < 0 ? '<option value="' + (+x.copies) + '" selected>' + (+x.copies).toLocaleString("de-AT") + "</option>" : "") + tl.map(function (n) { return '<option value="' + n + '"' + (n === +x.copies ? " selected" : "") + ">" + n.toLocaleString("de-AT") + "</option>"; }).join("") + "</select></label>" : "";
-      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
+      h += "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x, canQ)) + "</span>" + qs + feeLine(x) + '<span class="ps-ci-f">' + esc(x.fileName || "") + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") +
         ' · <a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">PDF</a></span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b><small>" + (co ? "netto" : "inkl. USt") + "</small>" : '<small>' + esc((S.cartErr || {})[x.id] || (S.quoting ? "wird berechnet …" : "Preis folgt")) + "</small>") +
         '<button type="button" class="ps-link" data-act="cartdel:' + esc(x.id) + '" aria-label="' + esc(x.title) + ' entfernen">Entfernen</button></div></li>';
     });
@@ -1568,7 +1580,9 @@
       '<li><span class="ri" aria-hidden="true">✓</span><div><b>Kein Rahmen, kein Hintergrund</b><span>Nur das Logo selbst – weiße Flächen um das Logo werden sonst mitgedruckt</span></div></li></ul></div></div>';
   }
   // Schritt 3: Gestalten / Druckdatei (Drucksachen, Banner)
-  function vDesign() {
+  function vDesign() { var h0 = vDesign0(); if (!offerOn()) return h0; var f = S.offer.fee || {}, co = S.ctype === "company";
+    return '<div class="ps-offer"><span class="ic" aria-hidden="true">🎨</span><div><b>Von FS Creative für dich gestaltet</b><span>Die fertige Druckdatei ist schon eingesetzt – bitte kurz prüfen und in den Warenkorb legen.' + (f.net > 0 ? " Die Grafikbearbeitung (" + eur(co ? f.net : f.gross) + " " + (co ? "netto" : "inkl. USt") + ") wird automatisch hinzugefügt." : "") + (S.offer.note ? "<br>" + esc(S.offer.note) : "") + "</span></div></div>" + h0; }
+  function vDesign0() {
     var p = S.prod, sz = sizeOf(), sd = sides(), b = (S.price && S.price.bleed != null) ? S.price.bleed : p.bleed;
     var cl = S.price && S.price.folds && S.price.closed;
     var spec = sz ? (cl ? "offen " : "") + sz.w + " × " + sz.h + " mm" + (cl ? ", gefalzt " + cl.w + " × " + cl.h + " mm" : "") + (b ? " (Datei mit Beschnitt " + (sz.w + 2 * b) + " × " + (sz.h + 2 * b) + " mm)" : "") : "";
@@ -1855,7 +1869,7 @@
     var lastDel = S.cart.reduce(function (m, x) { var d = x.price && x.price.deliveryDate; return d && d > m ? d : m; }, "");
     var money = S.quoting ? '<div class="total"><span><span class="ps-spin"></span> Preise werden bestätigt …</span><b></b></div>' : co ? '<div><span>Netto</span><b>' + eur(t.net) + "</b></div><div><span>" + (t.rate ? "zzgl. " + t.rate + " % USt" : "USt (steuerfreie ig. Lieferung)") + "</span><b>" + eur(t.vat) + '</b></div><div class="total"><span>Gesamt</span><b>' + eur(t.gross) + "</b></div>"
       : '<div class="total"><span>Gesamt inkl. ' + (t.rate || 0) + " % USt und Versand</span><b>" + eur(t.gross) + "</b></div>";
-    var items = '<ul class="ps-cart ps-cart-co">' + S.cart.map(function (x) { return "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span><span class="ps-ci-f"><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF prüfen</a>' + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b>" : '<small>' + esc((S.cartErr || {})[x.id] || "…") + "</small>") + "</div></li>"; }).join("") + "</ul>";
+    var items = '<ul class="ps-cart ps-cart-co">' + S.cart.map(function (x) { return "<li>" + itemThumb(x) + '<div class="ps-ci-bd"><b>' + esc(x.title) + "</b><span>" + esc(itemLine(x)) + '</span>' + feeLine(x) + '<span class="ps-ci-f"><a class="ps-link" target="_blank" rel="noopener" href="/print/api/file/' + esc(x.fileId) + "?t=" + esc(x.fileToken) + '&pdf=1">Druck-PDF prüfen</a>' + (x.warn ? ' · <button type="button" class="ps-link ps-warnl" data-act="cwarn:' + esc(x.id) + '">⚠ Hinweise zur Datei ansehen</button>' : "") + '</span></div><div class="ps-ci-pr">' + (x.price ? "<b>" + eur(co ? x.price.net : x.price.gross) + "</b>" : '<small>' + esc((S.cartErr || {})[x.id] || "…") + "</small>") + "</div></li>"; }).join("") + "</ul>";
     var addr = [c.company, c.firstName + " " + c.lastName, c.street, c.zip + " " + c.city, "Österreich"].filter(Boolean).join(", ");
     var saved = S.cart.reduce(function (a, x) { return a + (x.price && x.price.bonus ? +x.price.bonus.saved || 0 : 0); }, 0), dlab = (S.cart.filter(function (x) { return x.price && x.price.bonus; })[0] || { price: {} }).price.bonus;
     var warnN = S.cart.filter(function (x) { return x.warn; }).length;

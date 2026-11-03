@@ -1888,3 +1888,8 @@ html.light .print-page header.nav .brand .mark img{content:url(/logos/gluehbirne
 @media(max-width:600px){.ps-cfg .ps-more .ps-grid2>.ps-tile{grid-template-columns:1fr;padding:10px 12px}.ps-cfg .ps-more .ps-grid2>.ps-tile>*{grid-column:1}}   /* wie die Zeilen darüber */
 .ps-sug-ai{padding:8px 12px 4px;font-size:12.5px;font-weight:600;color:var(--text-dim);border-top:1px solid var(--ps-line)}.ps-sug-ai small{display:block;font-weight:400;color:var(--text-faint);margin-top:2px}
 
+
+/* Gestaltungsangebot von FS Creative */
+.ps-offer{display:flex;gap:12px;align-items:flex-start;margin:0 0 14px;padding:12px 16px;border-radius:14px;background:color-mix(in srgb,var(--ps-focus,#0a84ff) 10%,transparent);border:1px solid color-mix(in srgb,var(--ps-focus,#0a84ff) 30%,transparent)}
+.ps-offer .ic{font-size:22px;line-height:1}.ps-offer b{display:block;margin-bottom:2px}.ps-offer span{font-size:14px;line-height:1.45}
+.ps-ci-fee{display:block;font-size:13px;margin-top:4px;color:inherit;opacity:.85}

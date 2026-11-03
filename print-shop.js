@@ -2115,6 +2115,7 @@ module.exports = function (D) {
       hist(o, "Bestellung eingegangen (" + (method === "invoice" ? "Rechnung" : "Mollie") + ", " + (check === "pro" ? "Profi-Datencheck gewünscht" : check === "self" ? "Daten vom Kunden direkt freigegeben" : "Prüfung durch FS Creative") + ")" + (groupId ? " · Warenkorb " + groupId + " mit " + prepared.length + " Positionen" : ""));
       if (o.clientChecks) hist(o, "Hinweise der automatischen Prüfung im Browser: " + o.clientChecks.join(" | "));
       x.fm.orderId = o.id; await store.putFile(x.fm); await store.putOrder(o);
+      if (o.briefId) { const all = await briefsGet().catch(() => null), br = all && all.find(z => z.id === o.briefId); if (br && br.offer) { br.offer.order = { id: o.id, nr: o.nr, at: nowIso() }; br.status = "erledigt"; br.updated = nowIso(); await briefsSet(all).catch(() => {}); } }
       for (const lid of (x.fm.logos || []).concat(x.fm.motifFiles || [])) { const lm = await store.fileMeta(lid); if (lm && !lm.orderId) { lm.orderId = o.id; await store.putFile(lm); } }
     }
     const orders = prepared.map(x => x.o);
@@ -2166,6 +2167,13 @@ module.exports = function (D) {
       price: { net: q.net, vat: q.vat, gross: q.gross, rate: q.rate, taxCase: q.taxCase, taxNote: q.taxNote, deliveryDate: q.deliveryDate, wish: q.wish || undefined, purchase: q.purchase, margin: q.margin, markupPct: q.markupPct, minMarginEur: q.minMarginEur, bonus: q.bonus || undefined },
       payment: { method, status: method === "invoice" ? "invoice" : "open" }, invoice: {}, printcom: {}, mails: {}, history: [],
       consent: { agbVersion: AGB_VERSION, agbAcceptedAt: nowIso(), faggNotice: true, proofConfirmed: true } };
+    if (fm.briefId) {   // von FS Creative gestaltet (Gestaltungsanfrage): Grafik-Aufschlag ist Pflicht und nicht abwählbar
+      const br = (await briefsGet()).find(x => x.id === fm.briefId), of = br && br.offer;
+      if (!of || of.fileId !== fm.id) throw fail("Dieses Gestaltungsangebot ist nicht mehr gültig – bitte melde dich bei uns");
+      const net = r2(+of.feeNet || 0), vat = r2(net * (o.price.rate || 0) / 100), gross = r2(net + vat);
+      if (net > 0) { o.price.designFee = { net, vat, gross }; o.price.net = r2(o.price.net + net); o.price.vat = r2(o.price.vat + vat); o.price.gross = r2(o.price.gross + gross); o.price.margin = r2((o.price.margin || 0) + net); }
+      o.briefId = br.id;
+    }
     return { o, fm, clientWarn: Array.isArray(input.clientWarn) ? input.clientWarn : null };
   }
   // Bestellung ist verbindlich (bezahlt bzw. Rechnung gewählt): Rechnungsentwurf, Vorschlag, Push, Mails – dann ggf. automatisch senden
@@ -2202,7 +2210,7 @@ module.exports = function (D) {
           headText: "Vielen Dank für Ihre Bestellung im FS Creative Druckshop (Bestellung " + o.nr + ")." + (o.payment.method === "mollie" && o.payment.mollieId ? " Bezahlt online – Mollie " + o.payment.mollieId + "." : ""),
           footText: (o.price.taxNote ? o.price.taxNote + "\n" : "") + (o.payment.method === "mollie" ? "Der Betrag wurde bereits online bezahlt." : "Zahlbar innerhalb von 14 Tagen ohne Abzug."),
           timeToPay: o.payment.method === "mollie" ? 0 : 14, taxRule: o.price.taxCase === "igl" ? cfg().taxRuleIgl : "",
-          items: [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.checkFee ? [{ name: "Profi-Datencheck", text: "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []) });
+          items: [{ name: posName, text: posText, qty: 1, priceGross: r2(o.price.gross - (o.price.checkFee ? o.price.checkFee.gross : 0) - (o.price.designFee ? o.price.designFee.gross : 0)), taxRate: o.price.rate }].concat(o.price.designFee ? [{ name: "Grafikbearbeitung", text: "Gestaltung der Druckdaten durch FS Creative", qty: 1, priceNet: o.price.designFee.net, priceGross: o.price.designFee.gross, taxRate: o.price.rate }] : []).concat(o.price.checkFee ? [{ name: "Profi-Datencheck", text: "Persönliche Prüfung der Druckdaten vor Produktionsstart", qty: 1, priceGross: o.price.checkFee.gross, taxRate: o.price.rate }] : []) });
         o.invoice = { id: r.id, nr: r.nr || "", draft: true, at: nowIso() }; hist(o, "Rechnungsentwurf angelegt" + (r.nr ? " " + r.nr : ""));
       } catch (e) { o.invoice = { error: clip(e.message, 300) }; hist(o, "Rechnungsentwurf fehlgeschlagen: " + e.message); log("Rechnungsentwurf", o.nr, e.message); }
     }
@@ -2620,6 +2628,17 @@ module.exports = function (D) {
     return n;
   }
   let BRIEF_IMP = false;
+  // Konfigurations-Link aus dem Shop (/print/<slug>?c=… bzw. /print?produkt=…&c=…) → Eingabe wie beim Upload/Preis
+  async function inputFromLink(link) {
+    let u; try { u = new URL(String(link || ""), SITE); } catch (e) { throw bad("Konfigurations-Link ungültig"); }
+    await slugMap().catch(() => null);
+    const m = u.pathname.match(/^\/print\/([^/]+)\/?$/), key = u.searchParams.get("produkt") || (m && SLUGS.bySlug[decodeURIComponent(m[1])]) || "";
+    if (!key) throw bad("Im Link fehlt das Produkt – bitte im Shop „Konfiguration teilen“ verwenden");
+    let c = {}; const code = u.searchParams.get("c");
+    if (code) { try { c = JSON.parse(Buffer.from(code.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")) || {}; } catch (e) { throw bad("Konfiguration im Link nicht lesbar"); } }
+    return { product: key, sel: c.s && typeof c.s === "object" ? c.s : {}, copies: +c.q || undefined, urgency: c.u || "standard", pm: c.m || "auto", custom: c.c || undefined, textile: c.t || undefined, code: code || "" };
+  }
+  const offerUrl = (br) => { const of = br.offer, base = SITE + prodUrl(of.input.product); return base + (base.indexOf("?") > -1 ? "&" : "?") + (of.input.code ? "c=" + of.input.code + "&" : "") + "angebot=" + br.id + "." + sig("brief-offer", br.id + ":" + of.fileId); };
   // Website-Chat: passende Produkte zur Besucher-Frage mit ALLEN Optionen aus dem Konfigurator (KI-Suche, 7 Tage gecacht) – damit die Chat-KI konkret beraten kann
   async function chatProducts(q) {
     q = clip(String(q || "").replace(/\s+/g, " ").trim(), 120); if (q.length < 3 || !cfg().pcKey || !D.ki || !D.ki.printDesignOn || !D.ki.printDesignOn()) return "";
@@ -3364,6 +3383,14 @@ module.exports = function (D) {
         livePush();
         return J(res, 200, { ok: true });
       }
+      if (p === "/print/api/brief/offer" && req.method === "GET") {   // Gestaltungsangebot öffnen: Konfiguration + fertige Druckdatei + Grafik-Aufschlag
+        const [bid, tok] = String(u.searchParams.get("e") || "").split("."), br = (await briefsGet()).find(x => x.id === bid), of = br && br.offer;
+        if (!of || !sigOk("brief-offer", br.id + ":" + of.fileId, tok || "")) return J(res, 404, { ok: false, error: "Dieses Angebot ist nicht mehr gültig – bitte melde dich bei uns" });
+        const fm = await store.fileMeta(of.fileId); if (!fm) return J(res, 410, { ok: false, error: "Die Druckdatei ist nicht mehr vorhanden – bitte melde dich bei uns" });
+        if (fm.orderId) return J(res, 409, { ok: false, error: "Dieses Angebot wurde bereits bestellt (" + ((of.order && of.order.nr) || "") + ")" });
+        const net = r2(+of.feeNet || 0);
+        return J(res, 200, { ok: true, product: of.input.product, code: of.input.code, file: fileView(fm), fee: { net, gross: r2(net * 1.2), rate: 20 }, note: of.note || "", name: br.name || "" });
+      }
       if (p === "/print/api/brief" && req.method === "POST") {
         if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
         if (limited("brief", ip, 6, 3600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte später erneut" });
@@ -3986,12 +4013,32 @@ module.exports = function (D) {
         if (!BRIEF_IMP) { BRIEF_IMP = true; await briefsImport().catch(e => log("Gestaltungsanfragen übernehmen:", e.message)); }
         const all = await briefsGet(), have = new Set();
         for (const b of all) for (const f of b.files || []) { const m = await store.fileMeta(f.id).catch(() => null); f.ok = !!m; if (m) have.add(f.id); }
-        return J(res, 200, { ok: true, briefs: all.slice().reverse() });
+        return J(res, 200, { ok: true, briefs: all.slice().reverse().map(b => b.offer ? Object.assign({}, b, { offerUrl: offerUrl(b) }) : b) });
+      }
+      if (p === "/admin/api/print/brief/file" && req.method === "POST") {   // fertige Gestaltung zur Anfrage hochladen (wie im Shop geprüft, passend zur Konfiguration aus dem Link)
+        const br = (await briefsGet()).find(x => x.id === String(req.headers["x-brief-id"] || "")); if (!br) { req.resume(); return J(res, 404, { ok: false, error: "Anfrage nicht gefunden" }); }
+        let input; try { input = await inputFromLink(decodeURIComponent(String(req.headers["x-brief-link"] || ""))); } catch (e) { req.resume(); return J(res, 400, { ok: false, error: e.message }); }
+        const prod = await findProduct(input.product); if (!prod) { req.resume(); return J(res, 400, { ok: false, error: "Produkt nicht verfügbar" }); }
+        if (isLogo(prod)) { req.resume(); return J(res, 400, { ok: false, error: "Für Textilien/Werbeartikel bitte das Logo direkt im Shop hochladen – Angebot mit Druckdatei geht bei Drucksachen" }); }
+        const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "gestaltung.pdf")), 120).replace(/[\\/:*?"<>|]/g, "_");
+        const rel = await pdfSlot(); let meta;
+        try { const buf = await readBody(req, MAX_UPLOAD); if (buf.length < 100) return J(res, 400, { ok: false, error: "Datei ist leer" }); meta = await handleUpload(buf, name, input); } finally { rel(); }
+        meta.briefId = br.id; meta.keepUntil = new Date(Date.now() + 120 * 864e5).toISOString(); await store.putFile(meta);
+        return J(res, 200, Object.assign({ ok: true, product: prod.title }, fileView(meta)));
       }
       if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
       const b = await readJson(req, 100000);
       if (p === "/admin/api/print/brief") {   // Status („neu“ / „in Arbeit“ / „erledigt“) und Notiz einer Gestaltungsanfrage
         const all = await briefsGet(), x = all.find(z => z.id === String(b.id || "")); if (!x) return J(res, 404, { ok: false, error: "Anfrage nicht gefunden" });
+        if (b.op === "offer") {   // Angebot erstellen: Datei (vorher hochgeladen) + Konfigurations-Link + Grafik-Aufschlag netto
+          const fee = parseFloat(String(b.feeNet == null ? "" : b.feeNet).replace(",", ".")); if (!isFinite(fee) || fee < 0 || fee > 20000) return J(res, 400, { ok: false, error: "Grafik-Aufschlag ungültig" });
+          const fm = await store.fileMeta(String(b.fileId || "")); if (!fm || fm.briefId !== x.id) return J(res, 400, { ok: false, error: "Bitte zuerst die fertige Druckdatei hochladen" });
+          if ((fm.checks || []).some(c => c.level === "error")) return J(res, 400, { ok: false, error: "Die Druckdatei hat noch Fehler – bitte korrigieren" });
+          let input; try { input = await inputFromLink(b.link); } catch (e) { return J(res, 400, { ok: false, error: e.message }); }
+          if (input.product !== fm.product) return J(res, 400, { ok: false, error: "Datei und Konfiguration passen nicht zusammen – bitte die Datei erneut hochladen" });
+          x.offer = { at: nowIso(), feeNet: r2(fee), fileId: fm.id, fileName: fm.name, input, note: clip(b.note || "", 500) }; x.status = "arbeit";
+          x.updated = nowIso(); await briefsSet(all); return J(res, 200, { ok: true, brief: x, url: offerUrl(x) });
+        }
         if (["neu", "arbeit", "erledigt"].indexOf(b.status) > -1) x.status = b.status;
         if (typeof b.note === "string") x.note = clip(b.note, 2000);
         x.updated = nowIso(); await briefsSet(all); return J(res, 200, { ok: true, brief: x });

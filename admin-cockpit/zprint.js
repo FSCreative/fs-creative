@@ -454,9 +454,41 @@ function brCard(b){
       (b.link?'<span>Konfiguration</span><b><a href="'+esc(b.link)+'" target="_blank" rel="noopener">Im Shop öffnen ↗</a></b>':'')+'</div>'+
     '<div><div class="muted small" style="margin-bottom:4px">Wünsche / Briefing</div><div style="white-space:pre-wrap;overflow-wrap:anywhere">'+(b.text?esc(b.text):'<span class="muted">kein Text – siehe Dateien</span>')+'</div></div>'+
     '<div><div class="muted small" style="margin-bottom:4px">Dateien ('+(b.files||[]).length+')</div>'+(files?'<ul class="pr-bfl">'+files+'</ul>':'<span class="muted">keine Dateien hochgeladen</span>')+'</div>'+
+    brOffer(b)+
     '<div class="pr-acts">'+(b.email?'<a class="btn primary" href="mailto:'+esc(b.email)+'?subject='+encodeURIComponent(subj)+'">Antworten</a>':'')+
       Object.keys(BRST).filter(function(k){ return k!==b.status; }).map(function(k){ return '<button type="button" class="btn" data-act="prbrst:'+esc(b.id)+':'+k+'">'+(k==="erledigt"?"✓ ":"")+BRST[k][0]+'</button>'; }).join("")+'</div></div></section>';
 }
+/* Angebot mit fertiger Gestaltung: Druckdatei hochladen (Prüfung wie im Shop, passend zur Konfiguration aus dem Link) + Grafik-Aufschlag netto →
+   persönlicher Link: Kunde öffnet Konfiguration mit Datei, legt in den Warenkorb, Aufschlag hängt fest dran (Server rechnet ihn an der Kasse dazu) */
+var BRUP={};
+function brMail(b){ var first=String(b.name||"").split(" ")[0], o=b.offer, fee=o&&o.feeNet>0?"\nDie Grafikbearbeitung ("+eur(o.feeNet)+" netto) ist im Warenkorb bereits enthalten.":"";
+  var body="Hallo "+first+",\n\ndeine Gestaltung"+(b.product?" für "+b.product:"")+" ist fertig! Über diesen Link öffnest du deine Konfiguration mit der fertigen Druckdatei und kannst sie direkt prüfen und bestellen:\n\n"+b.offerUrl+"\n"+fee+"\n\nWenn du noch Änderungen möchtest, antworte einfach auf diese Mail.\n\nLiebe Grüße\nSimon";
+  return "mailto:"+encodeURIComponent(b.email||"")+"?subject="+encodeURIComponent("Deine Gestaltung ist fertig"+(b.product?" – "+b.product:""))+"&body="+encodeURIComponent(body); }
+function brOffer(b){
+  var o=b.offer, up=BRUP[b.id]||{}, link=up.link!=null?up.link:(o&&o.input?b.offerUrl.replace(/[?&]angebot=[^&]*/,""):b.link||"");
+  var done=o&&o.order?'<div class="notice" style="margin:0">✓ Bestellt: <b>'+esc(o.order.nr)+'</b></div>':'';
+  var cur=o&&!up.edit?'<div class="pr-kv"><span>Angebot</span><b>'+esc(o.fileName||"Druckdatei")+' · Grafik '+eur(o.feeNet)+' netto ('+eur(o.feeNet*1.2)+' brutto)</b><span>Link für Kunden</span><b><a href="'+esc(b.offerUrl)+'" target="_blank" rel="noopener">Angebot öffnen ↗</a></b></div>'+
+    '<div class="pr-acts">'+(b.email?'<a class="btn primary" href="'+esc(brMail(b))+'">Per Mail senden</a>':'')+'<button type="button" class="btn" data-act="prbrcopy:'+esc(b.id)+'">Link kopieren</button><button type="button" class="btn" data-act="prbredit:'+esc(b.id)+'">Neues Angebot</button></div>':'';
+  var form=!o||up.edit?'<div class="pr-set" style="gap:8px">'+
+    '<label class="small">Konfigurations-Link (Produkt, Format, Menge – im Shop „Konfiguration teilen“ bzw. der Link der Anfrage)<input class="f" data-brlink="'+esc(b.id)+'" value="'+esc(link)+'"></label>'+
+    '<label class="small">Fertige Druckdatei (PDF, JPG oder PNG) – wird wie im Shop geprüft<input class="f" type="file" accept=".pdf,.jpg,.jpeg,.png" data-brfile="'+esc(b.id)+'"></label>'+
+    (up.busy?'<div class="muted small">Datei wird geprüft …</div>':'')+(up.err?'<div class="notice">'+esc(up.err)+'</div>':'')+
+    (up.file?'<div class="small"><b>'+esc(up.file.name)+'</b> · '+esc(up.product||"")+(up.file.checks||[]).map(function(c){ return '<div style="color:'+(c.level==="error"?"var(--bad)":c.level==="warn"?"var(--warn)":"var(--ok)")+'">'+(c.level==="ok"?"✓ ":"⚠ ")+esc(c.text)+'</div>'; }).join("")+'</div>':'')+
+    '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:end"><label class="small">Grafik-Aufschlag netto (€)<br><input class="f" data-brfee="'+esc(b.id)+'" style="width:140px" inputmode="decimal" value="'+esc(up.fee!=null?up.fee:(o?String(o.feeNet).replace(".",","):""))+'" placeholder="z. B. 45"></label>'+
+    '<label class="small" style="flex:1 1 240px">Hinweis für den Kunden (optional)<br><input class="f" data-brnote="'+esc(b.id)+'" value="'+esc(up.note!=null?up.note:(o&&o.note)||"")+'" placeholder="z. B. Schrift wie besprochen vergrößert"></label>'+
+    '<button type="button" class="btn primary" data-act="prbroffer:'+esc(b.id)+'"'+(up.file&&!up.file.blocked?'':' disabled')+'>Angebot erstellen</button></div></div>':'';
+  return '<div style="border-top:1px solid var(--line);padding-top:12px;display:grid;gap:10px"><div class="muted small">Fertige Gestaltung als Angebot senden</div>'+done+cur+form+'</div>';
+}
+function brKeep(id){ var g=function(a){ var el=document.querySelector('['+a+'="'+id+'"]'); return el?el.value:null; }; var u=BRUP[id]=BRUP[id]||{}; var l=g("data-brlink"),f=g("data-brfee"),n=g("data-brnote"); if(l!=null) u.link=l; if(f!=null) u.fee=f; if(n!=null) u.note=n; return u; }
+F.listen("change","[data-brfile]",function(el){ var id=el.getAttribute("data-brfile"), f=el.files&&el.files[0]; if(!f) return; var u=brKeep(id); u.busy=true; u.err=""; u.file=null; F.render();
+  var x=new XMLHttpRequest(); x.open("POST","/admin/api/print/brief/file"); x.setRequestHeader("Content-Type","application/octet-stream"); x.setRequestHeader("X-Brief-Id",id); x.setRequestHeader("X-Brief-Link",encodeURIComponent(u.link||"")); x.setRequestHeader("X-File-Name",encodeURIComponent(f.name));
+  x.onload=function(){ var j={}; try{ j=JSON.parse(x.responseText); }catch(e){} u.busy=false; if(j.ok){ u.file=j; u.product=j.product; } else u.err=j.error||"Upload fehlgeschlagen"; F.render(); };
+  x.onerror=function(){ u.busy=false; u.err="Keine Verbindung"; F.render(); }; x.send(f); });
+F.action("prbroffer",function(id){ var u=brKeep(id); if(!u.file) return;
+  F.api("/admin/api/print/brief",{body:{id:id,op:"offer",fileId:u.file.fileId,link:u.link,feeNet:u.fee,note:u.note||""}}).then(function(j){ if(!j||!j.ok){ u.err=(j&&j.error)||"Fehler"; F.render(); return; }
+    delete BRUP[id]; (BR||[]).forEach(function(b,i){ if(b.id===id){ BR[i]=Object.assign({},j.brief,{offerUrl:j.url}); } }); F.toast("Angebot erstellt – jetzt per Mail senden oder Link kopieren"); F.render(); }); });
+F.action("prbrcopy",function(id){ var b=(BR||[]).filter(function(x){ return x.id===id; })[0]; if(!b||!b.offerUrl) return; (navigator.clipboard?navigator.clipboard.writeText(b.offerUrl):Promise.reject()).then(function(){ F.toast("Link kopiert"); },function(){ window.prompt("Link kopieren:",b.offerUrl); }); });
+F.action("prbredit",function(id){ var u=brKeep(id); u.edit=true; F.render(); });
 var BRF="offen";
 function briefView(){
   if(!BR){ brLoad(); return '<div class="empty">Lade Gestaltungsanfragen …</div>'; }

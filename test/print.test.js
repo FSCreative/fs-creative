@@ -223,6 +223,24 @@ const mm = (pt) => Math.round(pt / 72 * 25.4 * 100) / 100;
     await hb({ sid: "livetest001", bye: true }); assert.ok(await next(j => !j.prods.some(p => p[0] === "Flyer")), "Abschied sofort");
     ctl.abort();
   });
+  await t("Gestaltungsangebot: fertige Datei + Grafik-Aufschlag im Cockpit → Kunden-Link → Kasse rechnet den Aufschlag fest dazu, Rechnung mit eigener Zeile", async () => {
+    const bl = await admin("/admin/api/print/briefs"), br = bl.briefs[0];
+    const code = Buffer.from(JSON.stringify({ s: BC.sel, q: BC.copies, u: "standard" })).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const link = B + "/print?produkt=visitenkarten&c=" + code;
+    const upf = await (await fetch(B + "/admin/api/print/brief/file", { method: "POST", headers: { cookie: COOKIE, "content-type": "application/octet-stream", "x-brief-id": br.id, "x-brief-link": encodeURIComponent(link), "x-file-name": "fertig.pdf" }, body: await pdfOf(89, 59, 2) })).json();
+    assert.ok(upf.ok && upf.fileId && !upf.blocked, JSON.stringify(upf));
+    assert.strictEqual((await admin("/admin/api/print/brief", { id: br.id, op: "offer", fileId: upf.fileId, link, feeNet: "abc" })).ok, false, "Aufschlag muss Zahl sein");
+    const of = await admin("/admin/api/print/brief", { id: br.id, op: "offer", fileId: upf.fileId, link, feeNet: "45", note: "Schrift größer" }); assert.strictEqual(of.ok, true, JSON.stringify(of));
+    const e = new URL(of.url).searchParams.get("angebot"); assert.ok(e && new URL(of.url).searchParams.get("c") === code, of.url);
+    assert.strictEqual((await fetch(B + "/print/api/brief/offer?e=" + br.id + ".falsch")).status, 404, "Token geprüft");
+    const op = await (await fetch(B + "/print/api/brief/offer?e=" + encodeURIComponent(e))).json(); assert.strictEqual(op.ok, true, JSON.stringify(op)); assert.deepStrictEqual(op.fee, { net: 45, gross: 54, rate: 20 }); assert.strictEqual(op.file.fileId, upf.fileId);
+    const nPay = Object.keys(M.payments).length;
+    const r = await post("/print/api/checkout", { items: [Object.assign({}, BC, { fileId: op.file.fileId, fileToken: op.file.token, expectedGross: 38.4 })], customer: Object.assign({}, cust, { email: "angebot@example.com" }), payment: "mollie", acceptTerms: true, acceptFagg: true, acceptProof: true });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.j)); assert.strictEqual(Object.keys(M.payments).length, nPay + 1);
+    const pid = r.j.checkoutUrl.split("/").pop(); assert.strictEqual(M.payments[pid].amount.value, "92.40", "Druck 38,40 + Grafik 54,00 – ohne Zutun des Kunden");
+    const after = (await admin("/admin/api/print/briefs")).briefs.find(x => x.id === br.id); assert.strictEqual(after.offer.order.nr, r.j.nr); assert.strictEqual(after.status, "erledigt");
+    assert.strictEqual((await fetch(B + "/print/api/brief/offer?e=" + encodeURIComponent(e))).status, 409, "bereits bestellt");
+  });
   await t("Werbeartikel: höchstens 15 % Aufschlag (statt 35 %), Zahlungsgebühr bleibt gedeckt", async () => {
     const r = await post("/print/api/price", { product: "kugelschreiber", copies: 500, sel: { color: "red" }, country: "AT" }); assert.strictEqual(r.status, 200, JSON.stringify(r.j));
     // Einkauf 20 + 5 Versand: 20 × 1,15 + 5 = 28,00 netto (mit 35 % wären es 32,00)
