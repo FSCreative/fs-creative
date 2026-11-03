@@ -42,7 +42,7 @@
   function loadFont(fam, bold, italic) {
     if (!document.fonts || !fontInfo(fam)) return Promise.resolve();
     var p = document.fonts.load((italic ? "italic " : "") + (bold ? "700 " : "400 ") + "24px \"" + fam + "\"");
-    return Promise.race([p, new Promise(function (r) { setTimeout(r, 4000); })]).then(function () { try { fabric.util.clearFabricFontCache(fam); } catch (e) {} });
+    return Promise.race([p.catch(function () {}), new Promise(function (r) { setTimeout(r, 4000); })]).then(function () { try { fabric.util.clearFabricFontCache(fam); } catch (e) {} });   // Schrift lädt nicht → Ersatzschrift, Vorlage trotzdem anwenden
   }
   function loadFontsOf(objs) {
     var seen = {}, ps = [];
