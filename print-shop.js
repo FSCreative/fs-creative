@@ -3287,6 +3287,16 @@ module.exports = function (D) {
   if (visitsTimer.unref) visitsTimer.unref();
   // Bestellungen der letzten 7 Tage je Produkt (für den Hinweis im Konfigurator), 10 Min. zwischengespeichert
   let OWEEK = { at: 0, by: {} };
+  // Fürs Monatseinkommen im Cockpit (Wunsch Simon 03.11.2026): Marge der echten Bestellungen (bezahlt/bestellt/… – BONUS_COUNTS) im Schnitt pro Monat,
+  // über die letzten 90 Tage bzw. seit der ersten Bestellung (mind. 14 Tage, sonst zu wenig Verlauf); Marge = Verkauf netto − Einkauf − Zahlungsgebühr
+  async function incomeStats() {
+    const now = Date.now(), from = now - 90 * 864e5, list = (await store.listOrders().catch(() => [])).filter(o => o && o.price && BONUS_COUNTS[o.status] && Date.parse(o.createdAt || 0) > from);
+    if (!list.length) return null;
+    const first = Math.min.apply(null, list.map(o => Date.parse(o.createdAt))), days = Math.max(14, Math.min(90, (now - first) / 864e5));
+    const margin = list.reduce((a, o) => a + (+o.price.margin || 0), 0), net = list.reduce((a, o) => a + (+o.price.net || 0), 0);
+    const r2 = v => Math.round(v * 100) / 100;
+    return { monthly: r2(margin / days * 30.4), revenueMonthly: r2(net / days * 30.4), orders: list.length, days: Math.round(days) };
+  }
   async function ordersWeek() {
     if (Date.now() - OWEEK.at < 10 * 60e3) return OWEEK.by;
     const by = {}, from = Date.now() - 7 * 864e5;
@@ -4253,6 +4263,6 @@ module.exports = function (D) {
     return pub.filter(p => p.img).map((p, i) => [p, i]).sort((a, b) => (b[0].best ? 1 : 0) - (a[0].best ? 1 : 0) || (b[0].pop || 0) - (a[0].pop || 0) || a[1] - b[1]).slice(0, n || 30)
       .map(x => ({ key: x[0].key, title: x[0].title, desc: x[0].desc || "", img: x[0].img.replace(/fm=webp/, "fm=jpg&q=85").replace(/([?&])w=\d+/, "$1w=1080") }));
   }
-  return { gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
+  return { incomeStats, gtagOn: () => !!(SETTINGS && SETTINGS.gtagId), xmasOn: () => XMAS.season().on, llmsTxt, llmsFull, chatPrices, chatProducts, sitemapExtra, indexSigs, live, liveReady, handlePublic, handleAdmin, tick, placeOrder, linkFromMails, pollActive: () => pollDue() ? pollAll() : Promise.resolve(0), health, proposalValid, catalog, syncTasks, marketingProducts, invoiceIndex, _test: { taxFor, pdfInfo, svgSafe, imgDims, sniff, dimsOf, cmyk, svgPagesToPdf, FONTS, AGB_VERSION, categoryOf, parseProduct, normalizeSel, solveSel, hitRules, startOf, filledOf, CURATED, cmsTrim, rejectOrder, taskInfo, orderSummary, feedbackMails, feedbackDue, stepDates, orderPublic, FOUND_VIA, originOf, regionOf, feedImg, gpcOf, fmtNice, RETURN_LD, ACC_RX } };
 };
 module.exports._bonusCalc = bonusCalc;

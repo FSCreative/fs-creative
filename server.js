@@ -3228,6 +3228,9 @@ async function incomeForecast(ctx) {
   // kochdu mit Trend-Daten: bei jedem Aufruf live berechnen statt 14 Tage einzufrieren
   const koLive = curYear && ko && ko.trend && ko.totals ? kochduForecast(fc, ko, today) : null;
   ["kochdu", "valuero", "skikaiser", "huettengaudi"].forEach(key => { const s = key === "kochdu" && koLive ? koLive : (fc.sources && fc.sources[key]); if (s) lines.push(Object.assign({ key, label: { kochdu: "kochdu", valuero: "VALUERO", skikaiser: "Skikaiser", huettengaudi: "Hüttengaudi" }[key], live: false }, s)); });
+  // Druckshop: Marge der Bestellungen im Monatsschnitt (live)
+  const pr = curYear && PRINT && PRINT.incomeStats ? await withTimeout(PRINT.incomeStats(), 4000, null).catch(() => null) : null;
+  if (pr && pr.monthly > 0) lines.push({ key: "druckshop", label: "Druckshop", monthly: pr.monthly, basis: "Marge der Bestellungen, Schnitt der letzten " + pr.days + " Tage (" + pr.orders + " Bestellungen, Umsatz netto ca. " + String(Math.round(pr.revenueMonthly)).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " € pro Monat)", live: true });
   const hosting = round2((sites || []).filter(s => s.active && !s.own).reduce((a, s) => a + (s.incomeYear || 0), 0) / 12);
   if (hosting > 0) lines.push({ key: "hosting", label: "Websites (Hosting & Domains)", monthly: hosting, basis: "fixe Verträge, Jahresbetrag ÷ 12", live: true });
   const next = fc.computedAt ? new Date(Date.parse(fc.computedAt) + 14 * 864e5).toISOString().slice(0, 10) : null;
