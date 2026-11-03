@@ -2701,21 +2701,21 @@ module.exports = function (D) {
   // KI-Themenseiten (Wunsch Simon 03.11.2026): ChatGPT & Co. sollen uns bei „Schokolade mit Logo“, „T-Shirts bedrucken“, „Caps mit Logo“ (Österreich) nennen –
   // je Thema eigener Abschnitt in llms.txt und eine Kategorieseite mit eigener Überschrift, Text und FAQ (FAQPage). sub = Untergruppe, rx = passende Produkte (zuerst gelistet)
   const LLM_TOPICS = [
-    { id: "food", main: "gifts-merchandise-promotional", sub: "foods-beverages", rx: /schoko|choco|praline|fruchtgummi|fruit-gummy|gummy|mentos|tic.?tac|bonbon|keks|cookie|lebkuchen|zimtstern|saft|juice|smoothie|oliven|olive|dextro|pfefferminz|peppermint|celebrations|honig|adventskalender|advent-calendar/i,
+    { id: "food", slug: "schokolade-suessigkeiten-mit-logo", main: "gifts-merchandise-promotional", sub: "foods-beverages", rx: /schoko|choco|praline|fruchtgummi|fruit-gummy|gummy|mentos|tic.?tac|bonbon|keks|cookie|lebkuchen|zimtstern|saft|juice|smoothie|oliven|olive|dextro|pfefferminz|peppermint|celebrations|honig|adventskalender|advent-calendar/i,
       h: "Essbare Werbeartikel mit Logo – Schokolade, Süßes & Getränke", h1: "Essbare Werbeartikel mit Logo – Schokolade, Fruchtgummi & Getränke",
       title: "Schokolade & Süßigkeiten mit Logo bedrucken | FS Creative", desc: "Essbare Werbeartikel mit Logo: Schokolade, Pralinen, Fruchtgummi, Mentos, Kekse und Säfte – ab kleinen Stückzahlen, Preis sofort online, Versand in ganz Österreich inklusive.",
       txt: "Essbare Werbeartikel mit Logo: Schokolade (Tafeln, Pralinen, Schoko-Herzen, Osterhasen, Adventskalender), Fruchtgummi in Werbetütchen, Mentos und Tic Tac in bedruckten Papierhüllen, Bonbondosen, Kekse, Lebkuchenherzen sowie Säfte und Smoothies mit eigenem Etikett – als Give-away für Messen, Kundschaft, Mitarbeitende und Events, schon ab kleinen Stückzahlen und mit Lieferung in ganz Österreich.",
       faq: [["Wo kann ich in Österreich Schokolade oder Süßigkeiten mit Logo bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): Schokolade, Pralinen, Fruchtgummi, Mentos, Tic Tac, Bonbons, Kekse und Säfte mit eigenem Logo oder Motiv – Preis sofort online, Lieferung in ganz Österreich inklusive."],
         ["Ab welcher Stückzahl gibt es essbare Werbeartikel mit Logo?", "Je nach Produkt schon ab kleinen Auflagen – die kleinste bestellbare Menge und den Preis pro Stück zeigt der Konfigurator sofort."],
         ["Wie kommt mein Logo auf die Verpackung?", "Druckdatei hochladen (PDF, JPG, PNG) oder im Online-Designer gestalten; bedruckt wird die Verpackung bzw. Banderole, das Etikett oder das Werbetütchen. Vor dem Druck gibt es einen automatischen Datencheck."]] },
-    { id: "textil", main: "clothing-textile", sub: "clothing", rx: /shirt|hoodie|polo|pullover|sweat|jacke|weste|zip/i,
+    { id: "textil", slug: "t-shirts-bedrucken", main: "clothing-textile", sub: "clothing", rx: /shirt|hoodie|polo|pullover|sweat|jacke|weste|zip/i,
       h: "T-Shirts, Hoodies & Polos mit Logo bedrucken", h1: "T-Shirts, Hoodies & Polos mit Logo bedrucken",
       title: "T-Shirts & Hoodies mit Logo bedrucken | FS Creative", desc: "T-Shirts, Hoodies und Polos mit Logo: Transferdruck ab 1 Stück, Siebdruck ab 25 Stück, Markenware wie Stanley/Stella – Versand in Österreich inklusive.",
       txt: "T-Shirts, Hoodies, Pullover, Poloshirts und Sportshirts mit Logo oder eigenem Motiv: Transferdruck (fotorealistisch) schon ab 1 Stück, Siebdruck ab 25 Stück, Druck vorne, hinten oder auf der Brust, Markenware wie Stanley/Stella (Bio-Baumwolle), Fruit of the Loom, B&C, Gildan und Russell – für Vereine, Firmen, Teams, Events und Junggesellenabschiede, Größen frei kombinierbar, Lieferung in ganz Österreich.",
       faq: [["Wo kann ich in Österreich T-Shirts oder Hoodies mit Logo bedrucken lassen?", "Im Online-Druckshop von FS Creative (Montafon, Vorarlberg): T-Shirts, Hoodies, Pullover und Poloshirts mit Logo – Preis sofort online, Versand in ganz Österreich inklusive."],
         ["Kann ich einzelne T-Shirts bedrucken lassen?", "Ja – mit Transferdruck schon ab 1 Stück, fotorealistisch und waschbeständig; ab 25 Stück ist Siebdruck oft günstiger."],
         ["Kann ich verschiedene Größen in einer Bestellung mischen?", "Ja, die Stückzahl je Größe wird im Konfigurator eingegeben, der Preis gilt für die Gesamtmenge."]] },
-    { id: "hats", main: "clothing-textile", sub: "clothing-accessories", rx: /cap|hat|mütze|hut|visier|visor|stirnband|headband|beanie|bommel/i,
+    { id: "hats", slug: "caps-muetzen-mit-logo", main: "clothing-textile", sub: "clothing-accessories", rx: /cap|hat|mütze|hut|visier|visor|stirnband|headband|beanie|bommel/i,
       h: "Caps, Mützen & Hüte mit Logo", h1: "Caps, Mützen & Hüte mit Logo bedrucken oder besticken",
       title: "Caps, Mützen & Hüte mit Logo | FS Creative", desc: "Caps, Trucker Caps, Strickmützen und Bucket Hats mit Logo – bedruckt oder bestickt, ab kleinen Stückzahlen, Versand in ganz Österreich inklusive.",
       txt: "Kopfbedeckungen mit Logo: Basic Caps, Base Caps, Trucker Caps, Bucket Hats (Fischerhüte), Strickmützen und Bommelmützen (auch recycelt oder mit Aufnäher), Thinsulate-Mützen, Stirnbänder und Sonnenvisiere – für Vereine, Skischulen, Firmen und Events, ab kleinen Stückzahlen, Lieferung in ganz Österreich.",
@@ -2724,6 +2724,8 @@ module.exports = function (D) {
         ["Ab welcher Stückzahl gibt es Mützen und Caps mit Logo?", "Je nach Produkt ab kleinen Auflagen (z. B. 10 Stück) – die kleinste Menge und den Preis pro Stück zeigt der Konfigurator sofort."]] }
   ];
   const topicOf = (main, sub) => LLM_TOPICS.find(t => t.main === main && t.sub === sub) || null;
+  // sprechende Adresse je Thema (/print/t-shirts-bedrucken …) – Kanonische Adresse der Kategorie, in Sitemap, IndexNow und llms.txt; im Browser zeigt die App dieselbe Kategorie
+  const topicUrl = (main, sub, abs) => { const t = topicOf(main, sub); return t ? (abs ? SITE : "") + "/print/" + t.slug : catUrl(main, sub, abs); };
   // Alle anderen Kategorien (Haupt- und Untergruppen): Text und FAQ automatisch aus echten Shop-Daten – Produktnamen, kleinste Auflage, Einstiegspreis
   const LOGO_MAINS = { "gifts-merchandise-promotional": 1, "clothing-textile": 1, "packaging-bags": 1 };
   function autoTopic(g, sg, list, lowOf) {
@@ -2745,14 +2747,14 @@ module.exports = function (D) {
     const cats = ["", "## Alle Kategorien (jeweils mit Produktliste, Preisen und häufigen Fragen)"];
     (groups || []).forEach(g => g.subs.forEach(su => { const l = rows.filter(r => r.x.cat && r.x.cat.main === g.slug && r.x.cat.sub === su.slug).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0)); if (!l.length) return;
       const lo = l.filter(r => r.lo && !ACC_RX.test(r.x.title)).sort((a, b) => a.lo.gross - b.lo.gross)[0];
-      cats.push("- " + g.name + " › " + su.name + " (" + l.length + " Produkte" + (lo ? ", ab " + eurDe(lo.lo.gross) + " für " + lo.lo.copies.toLocaleString("de-AT") + " Stk." : "") + "): " + l.slice(0, 5).map(r => r.x.title).join(", ") + " – " + catUrl(g.slug, su.slug, true)); }));
+      cats.push("- " + g.name + " › " + su.name + " (" + l.length + " Produkte" + (lo ? ", ab " + eurDe(lo.lo.gross) + " für " + lo.lo.copies.toLocaleString("de-AT") + " Stk." : "") + "): " + l.slice(0, 5).map(r => r.x.title).join(", ") + " – " + topicUrl(g.slug, su.slug, true)); }));
     return [].concat.apply([], LLM_TOPICS.map(t => {
       const l = rows.filter(r => inTopic(t, r.x)).sort((a, b) => (b.x.pop || 0) - (a.x.pop || 0)).slice(0, 40); if (!l.length) return [];
       // Textil & Hüte: Preis pro Stück dazu und eine Preisfrage mit echten Zahlen (günstigstes Produkt pro Stück) – ChatGPT & Co. vergleichen Stückpreise
       const per = r => r.lo && r.lo.copies > 1 ? " – " + eurDe(r.lo.gross / r.lo.copies) + " pro Stück inkl. Druck und Versand" : "";
       const pp = t.id !== "food" ? l.filter(r => r.lo && r.lo.copies > 1 && (t.id !== "textil" || /t-?shirt/i.test(r.x.title))).sort((a, b) => a.lo.gross / a.lo.copies - b.lo.gross / b.lo.copies)[0] : null;
       const faq = t.faq.concat(pp ? [[t.id === "hats" ? "Was kostet eine Cap oder Mütze mit Logo?" : "Was kostet ein T-Shirt mit Logo?", "Ab " + eurDe(pp.lo.gross / pp.lo.copies) + " pro Stück (" + pp.x.title + ", " + pp.lo.copies + " Stück für " + eurDe(pp.lo.gross) + ") – Endpreis inklusive Logo-Druck, 20 % USt und Versand innerhalb Österreichs."]] : []);
-      return ["", "## " + t.h + ": " + catUrl(t.main, t.sub, true), t.txt, ""].concat(l.map(r => lineOf(r.x, r.lo) + (t.id !== "food" ? per(r) : "")), ["", "Häufige Fragen:"], faq.map(q => "- " + q[0] + " " + q[1]));
+      return ["", "## " + t.h + ": " + topicUrl(t.main, t.sub, true), t.txt, ""].concat(l.map(r => lineOf(r.x, r.lo) + (t.id !== "food" ? per(r) : "")), ["", "Häufige Fragen:"], faq.map(q => "- " + q[0] + " " + q[1]));
     })).concat(cats.length > 2 ? cats : []);
   }
   async function llmsTxt() {
@@ -3007,7 +3009,7 @@ module.exports = function (D) {
       body = groups.map(x => '<h2><a href="' + escH(catUrl(x.slug)) + '">' + escH(x.name) + "</a> (" + inG(x.slug).length + ")</h2><ul>" + x.subs.filter(su => inG(x.slug, su.slug).length).map(su => '<li><a href="' + escH(catUrl(x.slug, su.slug)) + '">' + escH(su.name) + "</a> (" + inG(x.slug, su.slug).length + ")</li>").join("") + "</ul>").join("");
       items = pub.filter(p => p.best).slice(0, 20);
     } else {
-      const list = inG(g.slug, sg ? sg.slug : "").sort((a, b) => (b.pop || 0) - (a.pop || 0)); url = catUrl(g.slug, sg ? sg.slug : "", true); c = { main: g.slug, mainName: g.name, sub: sg ? sg.slug : "", subName: sg ? sg.name : "" };
+      const list = inG(g.slug, sg ? sg.slug : "").sort((a, b) => (b.pop || 0) - (a.pop || 0)); url = sg ? topicUrl(g.slug, sg.slug, true) : catUrl(g.slug, "", true); c = { main: g.slug, mainName: g.name, sub: sg ? sg.slug : "", subName: sg ? sg.name : "" };
       tp = (sg ? topicOf(g.slug, sg.slug) : null) || autoTopic(g, sg, list, lowOf);
       h1 = tp.h1; const ci = !sg && CAT_INTRO[g.slug] ? "<p>" + escH(CAT_INTRO[g.slug]) + "</p>" : "<p>" + escH(tp.txt) + "</p>";
       if (tp.rx) list.sort((a, b) => (inTopic(tp, b) ? 1 : 0) - (inTopic(tp, a) ? 1 : 0));   // passende Produkte zuerst (z. B. Essbares vor Gastro-Verpackungen)
@@ -3034,7 +3036,7 @@ module.exports = function (D) {
     await slugMap().catch(() => null); const s = await settings(), cat = await catalog(false).catch(() => null), pub = publicCatalog(cat, s, await catalogAll().catch(() => null)), d = today();
     const groups = publicGroups(pub), has = (m, su) => pub.some(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su)), loc = u => "  <url><loc>" + u.replace(/&/g, "&amp;") + "</loc><lastmod>" + d + "</lastmod><changefreq>weekly</changefreq><priority>";
     const cats = [loc(catUrl("", "", true)) + "0.7</priority></url>"].concat(groups.filter(g => has(g.slug)).map(g => loc(catUrl(g.slug, "", true)) + "0.7</priority></url>"),
-      [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(catUrl(g.slug, su.slug, true)) + "0.6</priority></url>")))).join("\n") + "\n";
+      [].concat.apply([], groups.map(g => g.subs.filter(su => has(g.slug, su.slug)).map(su => loc(topicUrl(g.slug, su.slug, true)) + (topicOf(g.slug, su.slug) ? "0.8" : "0.6") + "</priority></url>")))).join("\n") + "\n";
     return '  <url><loc>' + SITE + '/print/preise</loc><lastmod>' + d + '</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>\n' +
       '  <url><loc>' + SITE + '/print/online-designer</loc><lastmod>' + DESIGNER_V + '</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>\n' +
       ["", ...GUIDES.map(g => "/" + g.slug)].map(x => '  <url><loc>' + SITE + "/print/ratgeber" + x + "</loc><lastmod>" + GUIDE_V + "</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>\n").join("") +
@@ -3053,7 +3055,7 @@ module.exports = function (D) {
     if (XMAS.season().on) { await xmasState(); const xd = xmasData(); out[SITE + "/print/weihnachten"] = h(Object.keys(xd).sort().map(k => [k, xd[k].ok, xd[k].gross, xd[k].copies])); }
     const inG = (m, su) => pub.filter(p => p.cat && p.cat.main === m && (!su || p.cat.sub === su)).map(p => [p.key, p.title]).sort();
     out[catUrl("", "", true)] = h(groups.map(g => [g.slug, g.name, g.subs.map(x => x.slug)]));
-    groups.forEach(g => { out[catUrl(g.slug, "", true)] = h(inG(g.slug)); g.subs.forEach(su => { out[catUrl(g.slug, su.slug, true)] = h(inG(g.slug, su.slug)); }); });
+    groups.forEach(g => { out[catUrl(g.slug, "", true)] = h(inG(g.slug)); g.subs.forEach(su => { out[topicUrl(g.slug, su.slug, true)] = h(inG(g.slug, su.slug)); }); });
     const EN = await entryState().catch(() => ({ by: {} }));
     pub.forEach(x => { const e = EN.by[x.key]; out[prodUrl(x.key, true)] = h([x.title, x.desc, x.img, price[x.key] || (e ? [e.copies, Math.round(+e.gross || 0), e.min] : null)]); });   // Einstiegspreis auf ganze Euro: Tagesschwankungen von Print.com sind keine Seitenänderung (Bing: „kein IndexNow-Sammelmodus“)
     return out;
@@ -3374,7 +3376,7 @@ module.exports = function (D) {
       req.on("end", () => { if (!dead) resolve(Buffer.concat(chunks)); }); req.on("error", e => { if (!dead) reject(e); });
     });
   }
-  async function readJson(req, max) { const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
+  async function readJson(req, max) { if (req.__json) return req.__json; const b = await readBody(req, max); try { return JSON.parse(b.toString("utf8") || "{}"); } catch (e) { throw Object.assign(new Error("bad_json"), { status: 400 }); } }
   function J(res, code, o) { D.send(res, code, JSON.stringify(o), "application/json; charset=utf-8", { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); }
   const feedId = k => k.length <= 50 ? k : k.slice(0, 41) + "-" + crypto.createHash("sha1").update(k).digest("hex").slice(0, 8);   // wie im Merchant-Feed
   const orderPublic = o => ({ id: o.id, nr: o.nr, pkey: o.product && o.product.key ? feedId(o.product.key) : "", check: o.check || "review", groupSize: o.groupSize || 1, status: o.status, statusText: STATUS_PUB[o.status] || o.status, product: o.product.title, copies: o.copies, labels: o.labels, gross: o.price.gross, net: o.price.net, rate: o.price.rate,
@@ -3418,9 +3420,10 @@ module.exports = function (D) {
       .replace(/<body([^>]*)>/, '<body$1><div role="note" style="position:fixed;left:50%;top:calc(var(--nav-h) + 8px);transform:translateX(-50%);z-index:150;background:#ffd60a;color:#1d1d1f;font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4)">Vorschau – nicht öffentlich (PRINT_SHOP_LIVE ist aus)</div>');
     return xmasNav(html);
   }
-  async function shopPage(req, res, preview, u, pathKey) {
+  async function shopPage(req, res, preview, u, pathKey, appUrl) {
     let html = ""; try { html = printHtmlRaw(); } catch (e) { return D.send(res, 404, "Not found"); }
     html = shell(html, preview);
+    if (appUrl) html = html.replace("<head>", () => '<head>\n<script>try{history.replaceState(null,"",' + JSON.stringify(appUrl) + "+location.hash)}catch(e){}</script>");   // App liest die Kategorie aus der Adresse
     const pk = pathKey || (u && u.searchParams && String(u.searchParams.get("produkt") || "").slice(0, 120));
     { await slugMap().catch(() => null); html = html.replace(/href="\/print\?produkt=([\w-]+)"/g, (m, k) => 'href="' + escH(prodUrl(k)) + '"'); }
     if (pk && /^[\w-]+$/.test(pk) && !isInternal(pk, "")) { try { html = await productSeo(html, pk, u.searchParams.get("format")); } catch (e) { log("Produkt-SEO:", e.message); } }
@@ -3503,6 +3506,11 @@ module.exports = function (D) {
         return D.send(res, 200, "ok");
       }
       if (p.indexOf("/print/newsletter/") === 0 || p === "/print/api/newsletter") { const r = await nlMod().handlePublic(req, res, p, u, ipOf(req), J, readJson, sameOrigin); if (r !== false) return; }
+      // Themenseite unter sprechender Adresse (/print/t-shirts-bedrucken …): Inhalt wie die Kategorie, im Browser öffnet die App diese Kategorie
+      const tp0 = (p.match(/^\/print\/([a-z0-9-]+)$/) || [])[1], tpc = tp0 && LLM_TOPICS.find(t => t.slug === tp0);
+      if (tpc && (req.method === "GET" || req.method === "HEAD")) {
+        const qs = "?produkte&kategorie=" + encodeURIComponent(tpc.main) + "&unter=" + encodeURIComponent(tpc.sub), u2 = new URL(SITE + "/print" + qs);
+        return shopPage(req, res, open ? false : (view && !admin) ? "view" : true, u2, null, "/print" + qs); }
       // Produktseite unter sprechender Adresse /print/<slug>
       const pm0 = p.match(/^\/print\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/);
       if (pm0 && (req.method === "GET" || req.method === "HEAD")) { const M = await slugMap().catch(() => null), key = M && M.bySlug[pm0[1]];
@@ -3722,8 +3730,10 @@ module.exports = function (D) {
         }
         return J(res, 405, { ok: false, error: "method_not_allowed" });
       }
-      if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
-      if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
+      // Preis auch per GET (?q=<JSON wie beim POST>) – nur lesend: manche Browser-Umgebungen (z. B. der Browser von ChatGPT) blockieren POST und zeigten „Fehler 501“
+      if (p === "/print/api/price" && req.method === "GET" && u.searchParams.get("q")) { try { req.__json = JSON.parse(String(u.searchParams.get("q")).slice(0, 8000)) || {}; } catch (e) { return J(res, 400, { ok: false, error: "bad_json" }); } }
+      else if (req.method !== "POST") return J(res, 405, { ok: false, error: "method_not_allowed" });
+      else if (!sameOrigin(req)) return J(res, 403, { ok: false, error: "forbidden" });
       if (!cfg().pcKey) return J(res, 503, { ok: false, error: "Der Shop wird gerade eingerichtet" });
       if (p === "/print/api/price") {
         if (limited("price", ip, 240, 600e3)) return J(res, 429, { ok: false, error: "Zu viele Anfragen – bitte kurz warten" });

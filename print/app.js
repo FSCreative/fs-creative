@@ -42,7 +42,11 @@
   var imgOk = function (u) { return /^(https:\/\/images\.ctfassets\.net\/|\/print\/bild\/)/.test(String(u || "")); };
   function api(path, body, method) {
     return fetch(path, { method: method || (body ? "POST" : "GET"), headers: body ? H : {}, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status }; }).then(function (j) { j = viaUs(j); j.status = r.status; return j; }); });
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Fehler " + r.status, noJson: true }; }).then(function (j) { j = viaUs(j); j.status = r.status; return j; }); })
+      .then(function (j) {   // POST blockiert (z. B. eingeschränkte Browser-Umgebungen, „Fehler 501“): Preis lesend per GET nachfragen
+        if (j && j.noJson && path === "/print/api/price" && body && !method) { var q = JSON.stringify(body); if (q.length < 7000) return api(path + "?q=" + encodeURIComponent(q), null, "GET"); }
+        if (j && j.noJson) j.error = "Der Preis konnte gerade nicht berechnet werden – bitte die Seite neu laden. Preise je Menge stehen auch in der Preisübersicht unter /print/preise.";
+        return j; });
   }
   var toastT;
   function toast(msg, bad) { var t = document.getElementById("psToast"); if (!t) { t = document.createElement("div"); t.id = "psToast"; t.className = "ps-toast"; t.setAttribute("role", "status"); document.body.appendChild(t); } t.textContent = msg; t.className = "ps-toast on" + (bad ? " bad" : ""); clearTimeout(toastT); toastT = setTimeout(function () { t.className = "ps-toast"; }, bad ? 5000 : 2600); }
